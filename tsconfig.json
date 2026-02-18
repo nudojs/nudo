@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@justscript/core": ["packages/core/src"],
+      "@justscript/parser": ["packages/parser/src"],
+      "@justscript/cli": ["packages/cli/src"]
+    }
+  },
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/parser" },
+    { "path": "packages/cli" }
+  ]
+}

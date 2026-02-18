@@ -1,0 +1,17 @@
+{
+  "name": "@justscript/cli",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": {
+    "justscript": "src/index.ts"
+  },
+  "dependencies": {
+    "@justscript/core": "workspace:*",
+    "@justscript/parser": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts"
+  }
+}

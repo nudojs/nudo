@@ -1,0 +1,208 @@
+import type { Node } from "@babel/types";
+import type { Environment } from "./environment.ts";
+
+// --- TypeValue discriminated union ---
+
+export type LiteralValue = string | number | boolean | null | undefined;
+
+export type TypeValue =
+  | { kind: "literal"; value: LiteralValue }
+  | {
+      kind: "primitive";
+      type: "number" | "string" | "boolean" | "bigint" | "symbol";
+    }
+  | { kind: "object"; properties: Record<string, TypeValue>; id: symbol }
+  | { kind: "array"; element: TypeValue }
+  | { kind: "tuple"; elements: TypeValue[] }
+  | {
+      kind: "function";
+      params: string[];
+      body: Node;
+      closure: Environment;
+    }
+  | { kind: "union"; members: TypeValue[] }
+  | { kind: "never" }
+  | { kind: "unknown" };
+
+// --- T: static factory ---
+
+function createUnion(...members: TypeValue[]): TypeValue {
+  return simplifyUnion(members);
+}
+
+export const T = {
+  literal: (value: LiteralValue): TypeValue => ({ kind: "literal", value }),
+  number: { kind: "primitive", type: "number" } as TypeValue,
+  string: { kind: "primitive", type: "string" } as TypeValue,
+  boolean: { kind: "primitive", type: "boolean" } as TypeValue,
+  bigint: { kind: "primitive", type: "bigint" } as TypeValue,
+  symbol: { kind: "primitive", type: "symbol" } as TypeValue,
+  null: { kind: "literal", value: null } as TypeValue,
+  undefined: { kind: "literal", value: undefined } as TypeValue,
+  unknown: { kind: "unknown" } as TypeValue,
+  never: { kind: "never" } as TypeValue,
+
+  object: (properties: Record<string, TypeValue>): TypeValue => ({
+    kind: "object",
+    properties,
+    id: Symbol("object"),
+  }),
+  array: (element: TypeValue): TypeValue => ({ kind: "array", element }),
+  tuple: (elements: TypeValue[]): TypeValue => ({ kind: "tuple", elements }),
+  union: createUnion,
+  fn: (
+    params: string[],
+    body: Node,
+    closure: Environment,
+  ): TypeValue => ({
+    kind: "function",
+    params,
+    body,
+    closure,
+  }),
+} as const;
+
+// --- Helpers ---
+
+export function typeValueEquals(a: TypeValue, b: TypeValue): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "literal" && b.kind === "literal") return a.value === b.value;
+  if (a.kind === "primitive" && b.kind === "primitive") return a.type === b.type;
+  if (a.kind === "never" && b.kind === "never") return true;
+  if (a.kind === "unknown" && b.kind === "unknown") return true;
+  if (a.kind === "union" && b.kind === "union") {
+    return (
+      a.members.length === b.members.length &&
+      a.members.every((m, i) => typeValueEquals(m, b.members[i]))
+    );
+  }
+  return a === b;
+}
+
+export function simplifyUnion(members: TypeValue[]): TypeValue {
+  const flat: TypeValue[] = [];
+  for (const m of members) {
+    if (m.kind === "never") continue;
+    if (m.kind === "union") {
+      flat.push(...m.members);
+    } else {
+      flat.push(m);
+    }
+  }
+
+  const deduped: TypeValue[] = [];
+  for (const m of flat) {
+    if (!deduped.some((d) => typeValueEquals(d, m))) {
+      deduped.push(m);
+    }
+  }
+
+  if (deduped.length === 0) return T.never;
+  if (deduped.length === 1) return deduped[0];
+  if (deduped.some((m) => m.kind === "unknown")) return T.unknown;
+  return { kind: "union", members: deduped };
+}
+
+export function widenLiteral(tv: TypeValue): TypeValue {
+  if (tv.kind !== "literal") return tv;
+  const v = tv.value;
+  if (typeof v === "number") return T.number;
+  if (typeof v === "string") return T.string;
+  if (typeof v === "boolean") return T.boolean;
+  if (v === null) return T.null;
+  if (v === undefined) return T.undefined;
+  return T.unknown;
+}
+
+export function isSubtypeOf(a: TypeValue, b: TypeValue): boolean {
+  if (b.kind === "unknown") return true;
+  if (a.kind === "never") return true;
+  if (typeValueEquals(a, b)) return true;
+
+  if (a.kind === "literal" && b.kind === "primitive") {
+    const v = a.value;
+    if (b.type === "number" && typeof v === "number") return true;
+    if (b.type === "string" && typeof v === "string") return true;
+    if (b.type === "boolean" && typeof v === "boolean") return true;
+    return false;
+  }
+
+  if (a.kind === "union") {
+    return a.members.every((m) => isSubtypeOf(m, b));
+  }
+
+  if (b.kind === "union") {
+    return b.members.some((m) => isSubtypeOf(a, m));
+  }
+
+  return false;
+}
+
+export function typeValueToString(tv: TypeValue): string {
+  switch (tv.kind) {
+    case "literal": {
+      const v = tv.value;
+      if (v === null) return "null";
+      if (v === undefined) return "undefined";
+      if (typeof v === "string") return JSON.stringify(v);
+      return String(v);
+    }
+    case "primitive":
+      return tv.type;
+    case "object": {
+      const entries = Object.entries(tv.properties);
+      if (entries.length === 0) return "{}";
+      const inner = entries
+        .map(([k, v]) => `${k}: ${typeValueToString(v)}`)
+        .join(", ");
+      return `{ ${inner} }`;
+    }
+    case "array":
+      return `${typeValueToString(tv.element)}[]`;
+    case "tuple": {
+      const inner = tv.elements.map(typeValueToString).join(", ");
+      return `[${inner}]`;
+    }
+    case "function": {
+      const params = tv.params.join(", ");
+      return `(${params}) => ...`;
+    }
+    case "union": {
+      return tv.members.map(typeValueToString).join(" | ");
+    }
+    case "never":
+      return "never";
+    case "unknown":
+      return "unknown";
+  }
+}
+
+export function narrowType(
+  tv: TypeValue,
+  predicate: (member: TypeValue) => boolean,
+): TypeValue {
+  if (tv.kind === "union") {
+    return simplifyUnion(tv.members.filter(predicate));
+  }
+  return predicate(tv) ? tv : T.never;
+}
+
+export function subtractType(
+  tv: TypeValue,
+  predicate: (member: TypeValue) => boolean,
+): TypeValue {
+  return narrowType(tv, (m) => !predicate(m));
+}
+
+export function getPrimitiveTypeOf(tv: TypeValue): string | undefined {
+  if (tv.kind === "literal") {
+    const v = tv.value;
+    if (v === null) return "object";
+    return typeof v;
+  }
+  if (tv.kind === "primitive") return tv.type;
+  if (tv.kind === "object") return "object";
+  if (tv.kind === "array" || tv.kind === "tuple") return "object";
+  if (tv.kind === "function") return "function";
+  return undefined;
+}
