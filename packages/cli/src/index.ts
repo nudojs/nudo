@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
 import { Command } from "commander";
 import {
   T,
@@ -7,8 +7,8 @@ import {
   simplifyUnion,
   createEnvironment,
 } from "@justscript/core";
-import { parse, extractDirectives } from "@justscript/parser";
-import { evaluateFunction } from "./evaluator.ts";
+import { parse, extractDirectives, parseTypeValueExpr } from "@justscript/parser";
+import { evaluateFunction, evaluateProgram } from "./evaluator.ts";
 
 const program = new Command();
 
@@ -16,6 +16,27 @@ program
   .name("justscript")
   .description("JustScript type inference engine")
   .version("0.0.1");
+
+function applyMocks(
+  directives: ReturnType<typeof extractDirectives>[number]["directives"],
+  env: ReturnType<typeof createEnvironment>,
+  filePath: string,
+): void {
+  for (const d of directives) {
+    if (d.kind !== "mock") continue;
+    if (d.expression) {
+      env.bind(d.name, parseTypeValueExpr(d.expression));
+    } else if (d.fromPath) {
+      const mockPath = resolve(dirname(filePath), d.fromPath);
+      const mockSource = readFileSync(mockPath, "utf-8");
+      const mockAst = parse(mockSource);
+      const mockEnv = createEnvironment();
+      evaluateProgram(mockAst, mockEnv);
+      const mockVal = mockEnv.lookup(d.name);
+      env.bind(d.name, mockVal);
+    }
+  }
+}
 
 program
   .command("infer")
@@ -37,9 +58,12 @@ program
     for (const fn of functions) {
       console.log(`=== ${fn.name} ===\n`);
 
+      applyMocks(fn.directives, globalEnv, filePath);
+
+      const caseDirectives = fn.directives.filter((d) => d.kind === "case");
       const caseResults: { name: string; args: string; result: string }[] = [];
 
-      for (const directive of fn.directives) {
+      for (const directive of caseDirectives) {
         const result = evaluateFunction(fn.node, directive.args, globalEnv);
         const argsStr = directive.args.map(typeValueToString).join(", ");
         const resultStr = typeValueToString(result);
@@ -52,11 +76,9 @@ program
       }
 
       if (caseResults.length > 1) {
-        const allResults = functions
-          .filter((f) => f.name === fn.name)
-          .flatMap((f) =>
-            f.directives.map((d) => evaluateFunction(fn.node, d.args, globalEnv)),
-          );
+        const allResults = caseDirectives.map((d) =>
+          evaluateFunction(fn.node, d.args, globalEnv),
+        );
         const combined = simplifyUnion(allResults);
         console.log(`\nCombined: ${typeValueToString(combined)}`);
       }

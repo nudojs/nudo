@@ -127,6 +127,27 @@ export function isSubtypeOf(a: TypeValue, b: TypeValue): boolean {
     return false;
   }
 
+  if (a.kind === "object" && b.kind === "object") {
+    return Object.entries(b.properties).every(
+      ([k, bv]) => k in a.properties && isSubtypeOf(a.properties[k], bv),
+    );
+  }
+
+  if (a.kind === "array" && b.kind === "array") {
+    return isSubtypeOf(a.element, b.element);
+  }
+
+  if (a.kind === "tuple" && b.kind === "tuple") {
+    return (
+      a.elements.length === b.elements.length &&
+      a.elements.every((el, i) => isSubtypeOf(el, b.elements[i]))
+    );
+  }
+
+  if (a.kind === "tuple" && b.kind === "array") {
+    return a.elements.every((el) => isSubtypeOf(el, b.element));
+  }
+
   if (a.kind === "union") {
     return a.members.every((m) => isSubtypeOf(m, b));
   }
@@ -136,6 +157,50 @@ export function isSubtypeOf(a: TypeValue, b: TypeValue): boolean {
   }
 
   return false;
+}
+
+export function deepCloneTypeValue(tv: TypeValue, idMap?: Map<symbol, symbol>): TypeValue {
+  const map = idMap ?? new Map<symbol, symbol>();
+  if (tv.kind === "object") {
+    let newId = map.get(tv.id);
+    if (!newId) {
+      newId = Symbol("object");
+      map.set(tv.id, newId);
+    }
+    const newProps: Record<string, TypeValue> = {};
+    for (const [k, v] of Object.entries(tv.properties)) {
+      newProps[k] = deepCloneTypeValue(v, map);
+    }
+    return { kind: "object", properties: newProps, id: newId };
+  }
+  if (tv.kind === "array") {
+    return { kind: "array", element: deepCloneTypeValue(tv.element, map) };
+  }
+  if (tv.kind === "tuple") {
+    return { kind: "tuple", elements: tv.elements.map((e) => deepCloneTypeValue(e, map)) };
+  }
+  if (tv.kind === "union") {
+    return simplifyUnion(tv.members.map((m) => deepCloneTypeValue(m, map)));
+  }
+  return tv;
+}
+
+export function mergeObjectProperties(
+  a: TypeValue & { kind: "object" },
+  b: TypeValue & { kind: "object" },
+): TypeValue {
+  const allKeys = new Set([...Object.keys(a.properties), ...Object.keys(b.properties)]);
+  const merged: Record<string, TypeValue> = {};
+  for (const k of allKeys) {
+    const av = a.properties[k];
+    const bv = b.properties[k];
+    if (av && bv) {
+      merged[k] = simplifyUnion([av, bv]);
+    } else {
+      merged[k] = av ?? bv;
+    }
+  }
+  return { kind: "object", properties: merged, id: a.id };
 }
 
 export function typeValueToString(tv: TypeValue): string {

@@ -1,11 +1,20 @@
 import type { Node, Comment } from "@babel/types";
 import { type TypeValue, T } from "@justscript/core";
 
-export type Directive = {
+export type CaseDirective = {
   kind: "case";
   name: string;
   args: TypeValue[];
 };
+
+export type MockDirective = {
+  kind: "mock";
+  name: string;
+  expression?: string;
+  fromPath?: string;
+};
+
+export type Directive = CaseDirective | MockDirective;
 
 export type FunctionWithDirectives = {
   node: Node;
@@ -14,6 +23,8 @@ export type FunctionWithDirectives = {
 };
 
 const CASE_NAME_REGEX = /@just:case\s+"([^"]+)"\s*\(/g;
+const MOCK_INLINE_REGEX = /@just:mock\s+(\w+)\s*=\s*(.+)/g;
+const MOCK_FROM_REGEX = /@just:mock\s+(\w+)\s+from\s+"([^"]+)"/g;
 
 export function parseTypeValueExpr(expr: string): TypeValue {
   const s = expr.trim();
@@ -36,16 +47,71 @@ export function parseTypeValueExpr(expr: string): TypeValue {
     return T.literal(parsePrimitiveValue(literalMatch[1].trim()));
   }
 
-  const unionMatch = s.match(/^T\.union\((.+)\)$/);
-  if (unionMatch) {
-    const args = splitTopLevelArgs(unionMatch[1]);
+  if (s.startsWith("T.union(") && s.endsWith(")")) {
+    const inner = s.slice("T.union(".length, -1);
+    const args = splitTopLevelArgs(inner);
     return T.union(...args.map(parseTypeValueExpr));
+  }
+
+  if (s.startsWith("T.array(") && s.endsWith(")")) {
+    const inner = s.slice("T.array(".length, -1);
+    return T.array(parseTypeValueExpr(inner));
+  }
+
+  if (s.startsWith("T.tuple(") && s.endsWith(")")) {
+    const inner = s.slice("T.tuple(".length, -1).trim();
+    if (inner.startsWith("[") && inner.endsWith("]")) {
+      const elements = splitTopLevelArgs(inner.slice(1, -1));
+      return T.tuple(elements.map(parseTypeValueExpr));
+    }
+    return T.tuple([]);
+  }
+
+  if (s.startsWith("T.object(") && s.endsWith(")")) {
+    const inner = s.slice("T.object(".length, -1).trim();
+    if (inner.startsWith("{") && inner.endsWith("}")) {
+      const content = inner.slice(1, -1).trim();
+      if (!content) return T.object({});
+      const entries = splitTopLevelArgs(content);
+      const props: Record<string, TypeValue> = {};
+      for (const entry of entries) {
+        const colonIdx = entry.indexOf(":");
+        if (colonIdx === -1) continue;
+        const key = entry.slice(0, colonIdx).trim();
+        const val = entry.slice(colonIdx + 1).trim();
+        props[key] = parseTypeValueExpr(val);
+      }
+      return T.object(props);
+    }
+    return T.object({});
   }
 
   if (/^-?\d+(\.\d+)?$/.test(s)) return T.literal(Number(s));
 
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     return T.literal(s.slice(1, -1));
+  }
+
+  if (s.startsWith("{") && s.endsWith("}")) {
+    const content = s.slice(1, -1).trim();
+    if (!content) return T.object({});
+    const entries = splitTopLevelArgs(content);
+    const props: Record<string, TypeValue> = {};
+    for (const entry of entries) {
+      const colonIdx = findTopLevelColon(entry);
+      if (colonIdx === -1) continue;
+      const key = entry.slice(0, colonIdx).trim().replace(/^["']|["']$/g, "");
+      const val = entry.slice(colonIdx + 1).trim();
+      props[key] = parseTypeValueExpr(val);
+    }
+    return T.object(props);
+  }
+
+  if (s.startsWith("[") && s.endsWith("]")) {
+    const content = s.slice(1, -1).trim();
+    if (!content) return T.tuple([]);
+    const elements = splitTopLevelArgs(content);
+    return T.tuple(elements.map(parseTypeValueExpr));
   }
 
   return T.unknown;
@@ -68,8 +134,8 @@ function splitTopLevelArgs(s: string): string[] {
   let depth = 0;
   let current = "";
   for (const ch of s) {
-    if (ch === "(") depth++;
-    if (ch === ")") depth--;
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    if (ch === ")" || ch === "]" || ch === "}") depth--;
     if (ch === "," && depth === 0) {
       result.push(current.trim());
       current = "";
@@ -79,6 +145,17 @@ function splitTopLevelArgs(s: string): string[] {
   }
   if (current.trim()) result.push(current.trim());
   return result;
+}
+
+function findTopLevelColon(s: string): number {
+  let depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    if (ch === ")" || ch === "]" || ch === "}") depth--;
+    if (ch === ":" && depth === 0) return i;
+  }
+  return -1;
 }
 
 function extractBalancedParens(text: string, startIdx: number): string | null {
@@ -96,6 +173,33 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
   const directives: Directive[] = [];
   for (const comment of comments) {
     const text = comment.value;
+
+    MOCK_FROM_REGEX.lastIndex = 0;
+    let mockFromMatch: RegExpExecArray | null;
+    const mockFromRanges: [number, number][] = [];
+    while ((mockFromMatch = MOCK_FROM_REGEX.exec(text)) !== null) {
+      directives.push({
+        kind: "mock",
+        name: mockFromMatch[1],
+        fromPath: mockFromMatch[2],
+      });
+      mockFromRanges.push([mockFromMatch.index, mockFromMatch.index + mockFromMatch[0].length]);
+    }
+
+    MOCK_INLINE_REGEX.lastIndex = 0;
+    let mockMatch: RegExpExecArray | null;
+    while ((mockMatch = MOCK_INLINE_REGEX.exec(text)) !== null) {
+      const inFromRange = mockFromRanges.some(
+        ([s, e]) => mockMatch!.index >= s && mockMatch!.index < e,
+      );
+      if (inFromRange) continue;
+      directives.push({
+        kind: "mock",
+        name: mockMatch[1],
+        expression: mockMatch[2].trim(),
+      });
+    }
+
     CASE_NAME_REGEX.lastIndex = 0;
     let match: RegExpExecArray | null;
     while ((match = CASE_NAME_REGEX.exec(text)) !== null) {

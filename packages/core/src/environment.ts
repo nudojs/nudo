@@ -3,6 +3,7 @@ import { type TypeValue, T } from "./type-value.ts";
 export type Environment = {
   lookup(name: string): TypeValue;
   bind(name: string, value: TypeValue): Environment;
+  update(name: string, value: TypeValue): boolean;
   extend(bindings: Record<string, TypeValue>): Environment;
   has(name: string): boolean;
   snapshot(): Environment;
@@ -25,6 +26,15 @@ export function createEnvironment(
     bind(name, value) {
       store.set(name, value);
       return env;
+    },
+
+    update(name, value) {
+      if (store.has(name)) {
+        store.set(name, value);
+        return true;
+      }
+      if (parent) return parent.update(name, value);
+      return false;
     },
 
     extend(newBindings) {

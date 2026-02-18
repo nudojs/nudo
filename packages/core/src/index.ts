@@ -10,6 +10,8 @@ export {
   narrowType,
   subtractType,
   getPrimitiveTypeOf,
+  deepCloneTypeValue,
+  mergeObjectProperties,
 } from "./type-value.ts";
 
 export { Ops, applyBinaryOp } from "./ops.ts";

@@ -7,6 +7,9 @@ import {
   Ops,
   type Environment,
   createEnvironment,
+  deepCloneTypeValue,
+  mergeObjectProperties,
+  typeValueEquals,
 } from "@justscript/core";
 import { narrow } from "./narrowing.ts";
 
@@ -317,11 +320,9 @@ export function evaluate(node: Node, env: Environment): EvalResult {
 
     case "VariableDeclaration": {
       for (const decl of node.declarations) {
-        if (decl.id.type === "Identifier") {
-          const init = decl.init ? evaluate(decl.init, env) : T.undefined;
-          if (isReturn(init) || isBranch(init)) return init;
-          env.bind(decl.id.name, init);
-        }
+        const init = decl.init ? evaluate(decl.init, env) : T.undefined;
+        if (isReturn(init) || isBranch(init)) return init;
+        bindPattern(decl.id, init, env);
       }
       return T.undefined;
     }
@@ -330,23 +331,81 @@ export function evaluate(node: Node, env: Environment): EvalResult {
       if (node.left.type === "Identifier") {
         const val = evaluate(node.right, env);
         if (isReturn(val) || isBranch(val)) return val;
-        env.bind(node.left.name, val);
+        if (!env.update(node.left.name, val)) {
+          env.bind(node.left.name, val);
+        }
         return val;
       }
       if (node.left.type === "MemberExpression") {
         const val = evaluate(node.right, env);
         if (isReturn(val) || isBranch(val)) return val;
+        const objVal = evaluate(node.left.object, env);
+        if (isReturn(objVal) || isBranch(objVal)) return val;
+        if (objVal.kind === "object") {
+          const propName = getMemberKey(node.left, env);
+          if (propName !== null) {
+            objVal.properties[propName] = val;
+          }
+        }
+        if (objVal.kind === "tuple" || objVal.kind === "array") {
+          const propVal = node.left.computed
+            ? evaluate(node.left.property, env)
+            : null;
+          if (
+            objVal.kind === "tuple" &&
+            propVal &&
+            !isReturn(propVal) &&
+            !isBranch(propVal) &&
+            propVal.kind === "literal" &&
+            typeof propVal.value === "number"
+          ) {
+            objVal.elements[propVal.value] = val;
+          }
+        }
+        return val;
+      }
+      if (
+        node.left.type === "ObjectPattern" ||
+        node.left.type === "ArrayPattern"
+      ) {
+        const val = evaluate(node.right, env);
+        if (isReturn(val) || isBranch(val)) return val;
+        bindPattern(node.left, val, env);
         return val;
       }
       return T.unknown;
     }
 
+    case "ForOfStatement": {
+      const rightVal = evaluate(node.right, env);
+      if (isReturn(rightVal) || isBranch(rightVal)) return rightVal;
+      return evaluateForOf(node, rightVal, env);
+    }
+
+    case "ForInStatement": {
+      const rightVal = evaluate(node.right, env);
+      if (isReturn(rightVal) || isBranch(rightVal)) return rightVal;
+      return evaluateForIn(node, rightVal, env);
+    }
+
+    case "ForStatement": {
+      if (node.init) {
+        const initResult = evaluate(node.init, env);
+        if (isReturn(initResult) || isBranch(initResult)) return initResult;
+      }
+      return T.undefined;
+    }
+
+    case "WhileStatement":
+      return T.undefined;
+
     case "FunctionDeclaration": {
       if (!node.id) return T.undefined;
       const paramNames = node.params.map((p) =>
-        p.type === "Identifier" ? p.name : "_",
+        p.type === "Identifier" ? p.name : `_p${Math.random().toString(36).slice(2, 6)}`,
       );
       const fnType = T.fn(paramNames, node.body, env);
+      (fnType as any)._paramPatterns = node.params;
       env.bind(node.id.name, fnType);
       return T.undefined;
     }
@@ -354,26 +413,31 @@ export function evaluate(node: Node, env: Environment): EvalResult {
     case "FunctionExpression":
     case "ArrowFunctionExpression": {
       const paramNames = node.params.map((p) =>
-        p.type === "Identifier" ? p.name : "_",
+        p.type === "Identifier" ? p.name : `_p${Math.random().toString(36).slice(2, 6)}`,
       );
       const body = node.body;
-      return T.fn(paramNames, body, env);
+      const fnType = T.fn(paramNames, body, env);
+      (fnType as any)._paramPatterns = node.params;
+      return fnType;
     }
 
     case "CallExpression": {
-      const calleeVal = evaluate(node.callee as Node, env);
+      const callee = node.callee as Node;
+
+      if (callee.type === "MemberExpression") {
+        const methodResult = evaluateMethodCall(callee, node.arguments as Node[], env);
+        if (methodResult !== null) return methodResult;
+      }
+
+      const calleeVal = evaluate(callee, env);
       if (isReturn(calleeVal) || isBranch(calleeVal)) return calleeVal;
 
-      const argVals: TypeValue[] = [];
-      for (const arg of node.arguments) {
-        const v = evaluate(arg as Node, env);
-        if (isReturn(v) || isBranch(v)) return v;
-        argVals.push(v);
-      }
+      const argVals = evaluateArgs(node.arguments as Node[], env);
+      if (isReturn(argVals) || isBranch(argVals)) return argVals;
 
       return distributeOverUnion(calleeVal, (fn) => {
         if (fn.kind !== "function") return T.unknown;
-        return callFunction(fn, argVals);
+        return callFunction(fn, argVals as TypeValue[]);
       });
     }
 
@@ -414,8 +478,14 @@ export function evaluate(node: Node, env: Environment): EvalResult {
       const props: Record<string, TypeValue> = {};
       for (const prop of node.properties) {
         if (prop.type === "ObjectProperty") {
-          const key =
-            prop.key.type === "Identifier"
+          const key = prop.computed
+            ? (() => {
+                const kv = evaluate(prop.key, env);
+                return !isReturn(kv) && !isBranch(kv) && kv.kind === "literal" && typeof kv.value === "string"
+                  ? kv.value
+                  : null;
+              })()
+            : prop.key.type === "Identifier"
               ? prop.key.name
               : prop.key.type === "StringLiteral"
                 ? prop.key.value
@@ -424,6 +494,12 @@ export function evaluate(node: Node, env: Environment): EvalResult {
             const val = evaluate(prop.value as Node, env);
             if (isReturn(val) || isBranch(val)) return val;
             props[key] = val;
+          }
+        } else if (prop.type === "SpreadElement") {
+          const spreadVal = evaluate(prop.argument, env);
+          if (isReturn(spreadVal) || isBranch(spreadVal)) return spreadVal;
+          if (spreadVal.kind === "object") {
+            Object.assign(props, spreadVal.properties);
           }
         }
       }
@@ -435,6 +511,18 @@ export function evaluate(node: Node, env: Environment): EvalResult {
       for (const elem of node.elements) {
         if (!elem) {
           elements.push(T.undefined);
+          continue;
+        }
+        if (elem.type === "SpreadElement") {
+          const spreadVal = evaluate(elem.argument, env);
+          if (isReturn(spreadVal) || isBranch(spreadVal)) return spreadVal;
+          if (spreadVal.kind === "tuple") {
+            elements.push(...spreadVal.elements);
+          } else if (spreadVal.kind === "array") {
+            return T.array(simplifyUnion([...elements, spreadVal.element]));
+          } else {
+            elements.push(T.unknown);
+          }
           continue;
         }
         const val = evaluate(elem as Node, env);
@@ -451,10 +539,14 @@ export function evaluate(node: Node, env: Environment): EvalResult {
           const newVal = node.operator === "++"
             ? T.literal(current.value + 1)
             : T.literal(current.value - 1);
-          env.bind(node.argument.name, newVal);
+          if (!env.update(node.argument.name, newVal)) {
+            env.bind(node.argument.name, newVal);
+          }
           return node.prefix ? newVal : current;
         }
-        env.bind(node.argument.name, T.number);
+        if (!env.update(node.argument.name, T.number)) {
+          env.bind(node.argument.name, T.number);
+        }
         return T.number;
       }
       return T.number;
@@ -465,10 +557,428 @@ export function evaluate(node: Node, env: Environment): EvalResult {
   }
 }
 
+function getMemberKey(node: Node & { type: "MemberExpression" }, env: Environment): string | null {
+  if (!node.computed && node.property.type === "Identifier") {
+    return node.property.name;
+  }
+  if (node.computed) {
+    const propVal = evaluate(node.property, env);
+    if (!isReturn(propVal) && !isBranch(propVal) && propVal.kind === "literal") {
+      return String(propVal.value);
+    }
+  }
+  return null;
+}
+
+function bindPattern(pattern: Node, value: TypeValue, env: Environment): void {
+  if (pattern.type === "Identifier") {
+    env.bind(pattern.name, value);
+    return;
+  }
+
+  if (pattern.type === "AssignmentPattern") {
+    const defaultVal = evaluate(pattern.right, env);
+    const resolved = (value.kind === "literal" && value.value === undefined)
+      ? (!isReturn(defaultVal) && !isBranch(defaultVal) ? defaultVal : T.unknown)
+      : value;
+    bindPattern(pattern.left, resolved, env);
+    return;
+  }
+
+  if (pattern.type === "ObjectPattern") {
+    const restKeys: string[] = [];
+    for (const prop of pattern.properties) {
+      if (prop.type === "RestElement") {
+        if (value.kind === "object") {
+          const remaining: Record<string, TypeValue> = {};
+          for (const [k, v] of Object.entries(value.properties)) {
+            if (!restKeys.includes(k)) remaining[k] = v;
+          }
+          bindPattern(prop.argument, T.object(remaining), env);
+        } else {
+          bindPattern(prop.argument, T.object({}), env);
+        }
+        continue;
+      }
+      if (prop.type !== "ObjectProperty") continue;
+      const key = prop.key.type === "Identifier"
+        ? prop.key.name
+        : prop.key.type === "StringLiteral"
+          ? prop.key.value
+          : null;
+      if (!key) continue;
+      restKeys.push(key);
+      const propVal = value.kind === "object"
+        ? (value.properties[key] ?? T.undefined)
+        : T.unknown;
+      bindPattern(prop.value as Node, propVal, env);
+    }
+    return;
+  }
+
+  if (pattern.type === "ArrayPattern") {
+    for (let i = 0; i < pattern.elements.length; i++) {
+      const elem = pattern.elements[i];
+      if (!elem) continue;
+      if (elem.type === "RestElement") {
+        if (value.kind === "tuple") {
+          bindPattern(elem.argument, T.tuple(value.elements.slice(i)), env);
+        } else if (value.kind === "array") {
+          bindPattern(elem.argument, value, env);
+        } else {
+          bindPattern(elem.argument, T.tuple([]), env);
+        }
+        continue;
+      }
+      const elemVal = value.kind === "tuple"
+        ? (value.elements[i] ?? T.undefined)
+        : value.kind === "array"
+          ? value.element
+          : T.unknown;
+      bindPattern(elem, elemVal, env);
+    }
+    return;
+  }
+}
+
+function evaluateArgs(args: Node[], env: Environment): TypeValue[] | ReturnSignal | BranchSignal {
+  const result: TypeValue[] = [];
+  for (const arg of args) {
+    if (arg.type === "SpreadElement") {
+      const spreadVal = evaluate(arg.argument, env);
+      if (isReturn(spreadVal) || isBranch(spreadVal)) return spreadVal;
+      if (spreadVal.kind === "tuple") {
+        result.push(...spreadVal.elements);
+      } else if (spreadVal.kind === "array") {
+        result.push(spreadVal.element);
+      } else {
+        result.push(T.unknown);
+      }
+      continue;
+    }
+    const v = evaluate(arg, env);
+    if (isReturn(v) || isBranch(v)) return v;
+    result.push(v);
+  }
+  return result;
+}
+
+function evaluateMethodCall(
+  callee: Node & { type: "MemberExpression" },
+  args: Node[],
+  env: Environment,
+): EvalResult | null {
+  const objVal = evaluate(callee.object, env);
+  if (isReturn(objVal) || isBranch(objVal)) return objVal;
+
+  const methodName = !callee.computed && callee.property.type === "Identifier"
+    ? callee.property.name
+    : null;
+  if (!methodName) return null;
+
+  if (
+    callee.object.type === "Identifier" &&
+    callee.object.name === "Object" &&
+    args.length >= 1
+  ) {
+    const argVal = evaluate(args[0], env);
+    if (isReturn(argVal) || isBranch(argVal)) return argVal;
+    return evaluateObjectStaticMethod(methodName, argVal);
+  }
+
+  if (objVal.kind === "array" || objVal.kind === "tuple") {
+    return evaluateArrayMethod(objVal, methodName, args, env);
+  }
+
+  return null;
+}
+
+function evaluateObjectStaticMethod(
+  method: string,
+  obj: TypeValue,
+): TypeValue | null {
+  if (obj.kind !== "object") {
+    if (method === "keys") return T.array(T.string);
+    if (method === "values") return T.array(T.unknown);
+    if (method === "entries") return T.array(T.tuple([T.string, T.unknown]));
+    return null;
+  }
+
+  const keys = Object.keys(obj.properties);
+  const values = Object.values(obj.properties);
+
+  if (method === "keys") {
+    return T.tuple(keys.map((k) => T.literal(k)));
+  }
+  if (method === "values") {
+    return T.tuple(values);
+  }
+  if (method === "entries") {
+    return T.tuple(
+      keys.map((k) => T.tuple([T.literal(k), obj.properties[k]])),
+    );
+  }
+  return null;
+}
+
+function evaluateArrayMethod(
+  arr: TypeValue & { kind: "array" | "tuple" },
+  method: string,
+  args: Node[],
+  env: Environment,
+): EvalResult | null {
+  const argVals = evaluateArgs(args, env);
+  if (isReturn(argVals) || isBranch(argVals)) return argVals;
+
+  const callbackFn = (argVals as TypeValue[])[0];
+
+  if (method === "push") {
+    if (arr.kind === "tuple") {
+      arr.elements.push(...(argVals as TypeValue[]));
+      return T.literal(arr.elements.length);
+    }
+    return T.number;
+  }
+
+  if (method === "length") {
+    return arr.kind === "tuple" ? T.literal(arr.elements.length) : T.number;
+  }
+
+  if (method === "indexOf" || method === "lastIndexOf") {
+    return T.number;
+  }
+
+  if (method === "includes") {
+    if (arr.kind === "tuple" && (argVals as TypeValue[])[0]?.kind === "literal") {
+      const searchVal = (argVals as TypeValue[])[0];
+      const found = arr.elements.some((e) => typeValueEquals(e, searchVal));
+      return T.literal(found);
+    }
+    return T.boolean;
+  }
+
+  if (method === "join") {
+    return T.string;
+  }
+
+  if (method === "concat") {
+    if (arr.kind === "tuple") {
+      const otherElements: TypeValue[] = [];
+      for (const a of argVals as TypeValue[]) {
+        if (a.kind === "tuple") otherElements.push(...a.elements);
+        else if (a.kind === "array") return T.array(simplifyUnion([...arr.elements, a.element]));
+        else otherElements.push(a);
+      }
+      return T.tuple([...arr.elements, ...otherElements]);
+    }
+    return T.array(arr.element);
+  }
+
+  if (method === "slice") {
+    if (arr.kind === "tuple") {
+      const start = (argVals as TypeValue[])[0];
+      const end = (argVals as TypeValue[])[1];
+      const startIdx = start?.kind === "literal" && typeof start.value === "number" ? start.value : 0;
+      const endIdx = end?.kind === "literal" && typeof end.value === "number" ? end.value : arr.elements.length;
+      return T.tuple(arr.elements.slice(startIdx, endIdx));
+    }
+    return T.array(arr.element);
+  }
+
+  if (!callbackFn || callbackFn.kind !== "function") {
+    if (method === "map") return arr.kind === "tuple" ? T.tuple(arr.elements.map(() => T.unknown)) : T.array(T.unknown);
+    if (method === "filter") return arr.kind === "tuple" ? T.array(simplifyUnion(arr.elements)) : arr;
+    if (method === "find") return arr.kind === "tuple" ? simplifyUnion([...arr.elements, T.undefined]) : simplifyUnion([arr.element, T.undefined]);
+    if (method === "some" || method === "every") return T.boolean;
+    if (method === "reduce") return (argVals as TypeValue[])[1] ?? T.unknown;
+    if (method === "forEach") return T.undefined;
+    if (method === "flatMap") return T.array(T.unknown);
+    return null;
+  }
+
+  const fn = callbackFn as TypeValue & { kind: "function" };
+
+  if (method === "map") {
+    if (arr.kind === "tuple") {
+      const mapped = arr.elements.map((el, i) =>
+        callFunction(fn, [el, T.literal(i), arr]),
+      );
+      return T.tuple(mapped);
+    }
+    return T.array(callFunction(fn, [arr.element, T.number, arr]));
+  }
+
+  if (method === "filter") {
+    if (arr.kind === "tuple") {
+      const kept: TypeValue[] = [];
+      for (let i = 0; i < arr.elements.length; i++) {
+        const result = callFunction(fn, [arr.elements[i], T.literal(i), arr]);
+        if (result.kind === "literal" && !result.value) continue;
+        kept.push(arr.elements[i]);
+      }
+      if (kept.length === 0) return T.tuple([]);
+      return T.array(simplifyUnion(kept));
+    }
+    return T.array(arr.element);
+  }
+
+  if (method === "reduce") {
+    const init = (argVals as TypeValue[])[1];
+    if (arr.kind === "tuple") {
+      let acc = init ?? arr.elements[0] ?? T.unknown;
+      const startIdx = init ? 0 : 1;
+      for (let i = startIdx; i < arr.elements.length; i++) {
+        acc = callFunction(fn, [acc, arr.elements[i], T.literal(i), arr]);
+      }
+      return acc;
+    }
+    const acc = init ?? arr.element;
+    return callFunction(fn, [acc, arr.element, T.number, arr]);
+  }
+
+  if (method === "find") {
+    const elementType = arr.kind === "tuple"
+      ? simplifyUnion(arr.elements)
+      : arr.element;
+    return simplifyUnion([elementType, T.undefined]);
+  }
+
+  if (method === "some" || method === "every") {
+    if (arr.kind === "tuple") {
+      const results = arr.elements.map((el, i) =>
+        callFunction(fn, [el, T.literal(i), arr]),
+      );
+      const allLiteral = results.every((r) => r.kind === "literal");
+      if (allLiteral) {
+        const boolVals = results.map((r) => !!(r as TypeValue & { kind: "literal" }).value);
+        return T.literal(method === "some" ? boolVals.some(Boolean) : boolVals.every(Boolean));
+      }
+    }
+    return T.boolean;
+  }
+
+  if (method === "forEach") {
+    if (arr.kind === "tuple") {
+      arr.elements.forEach((el, i) => callFunction(fn, [el, T.literal(i), arr]));
+    } else {
+      callFunction(fn, [arr.element, T.number, arr]);
+    }
+    return T.undefined;
+  }
+
+  if (method === "flatMap") {
+    if (arr.kind === "tuple") {
+      const results: TypeValue[] = [];
+      for (let i = 0; i < arr.elements.length; i++) {
+        const r = callFunction(fn, [arr.elements[i], T.literal(i), arr]);
+        if (r.kind === "tuple") results.push(...r.elements);
+        else if (r.kind === "array") return T.array(r.element);
+        else results.push(r);
+      }
+      return T.tuple(results);
+    }
+    const r = callFunction(fn, [arr.element, T.number, arr]);
+    if (r.kind === "tuple") return T.array(simplifyUnion(r.elements));
+    if (r.kind === "array") return T.array(r.element);
+    return T.array(r);
+  }
+
+  return null;
+}
+
+function evaluateForOf(
+  node: Node & { type: "ForOfStatement" },
+  iterable: TypeValue,
+  env: Environment,
+): EvalResult {
+  if (iterable.kind === "tuple") {
+    const returnValues: TypeValue[] = [];
+    let currentEnv = env;
+    for (const element of iterable.elements) {
+      const loopEnv = currentEnv.extend({});
+      bindForLoopVar(node.left, element, loopEnv);
+      const result = evaluate(node.body, loopEnv);
+      if (isReturn(result)) {
+        returnValues.push(result.value);
+        return makeReturn(simplifyUnion(returnValues));
+      }
+      if (isBranch(result)) {
+        returnValues.push(result.returnedValue);
+        currentEnv = result.fallthroughEnv;
+      }
+    }
+    if (returnValues.length > 0) {
+      return makeBranch(simplifyUnion(returnValues), currentEnv);
+    }
+    return T.undefined;
+  }
+
+  if (iterable.kind === "array") {
+    const loopEnv = env.extend({});
+    bindForLoopVar(node.left, iterable.element, loopEnv);
+    const result = evaluate(node.body, loopEnv);
+    if (isReturn(result)) return makeBranch(result.value, env);
+    return T.undefined;
+  }
+
+  return T.undefined;
+}
+
+function evaluateForIn(
+  node: Node & { type: "ForInStatement" },
+  obj: TypeValue,
+  env: Environment,
+): EvalResult {
+  if (obj.kind === "object") {
+    const keys = Object.keys(obj.properties);
+    if (keys.length > 0) {
+      const returnValues: TypeValue[] = [];
+      let currentEnv = env;
+      for (const key of keys) {
+        const loopEnv = currentEnv.extend({});
+        bindForLoopVar(node.left, T.literal(key), loopEnv);
+        const result = evaluate(node.body, loopEnv);
+        if (isReturn(result)) {
+          returnValues.push(result.value);
+          return makeReturn(simplifyUnion(returnValues));
+        }
+        if (isBranch(result)) {
+          returnValues.push(result.returnedValue);
+          currentEnv = result.fallthroughEnv;
+        }
+      }
+      if (returnValues.length > 0) {
+        return makeBranch(simplifyUnion(returnValues), currentEnv);
+      }
+      return T.undefined;
+    }
+  }
+
+  const loopEnv = env.extend({});
+  bindForLoopVar(node.left, T.string, loopEnv);
+  evaluate(node.body, loopEnv);
+  return T.undefined;
+}
+
+function bindForLoopVar(left: Node, value: TypeValue, env: Environment): void {
+  if (left.type === "VariableDeclaration") {
+    const decl = left.declarations[0];
+    if (decl) bindPattern(decl.id, value, env);
+  } else if (left.type === "Identifier") {
+    env.bind(left.name, value);
+  }
+}
+
 function callFunction(fn: TypeValue & { kind: "function" }, args: TypeValue[]): TypeValue {
   const callEnv = fn.closure.extend({});
+  const paramPatterns = (fn as any)._paramPatterns as Node[] | undefined;
   for (let i = 0; i < fn.params.length; i++) {
-    callEnv.bind(fn.params[i], args[i] ?? T.undefined);
+    const argVal = args[i] ?? T.undefined;
+    if (paramPatterns && paramPatterns[i]) {
+      bindPattern(paramPatterns[i], argVal, callEnv);
+    } else {
+      callEnv.bind(fn.params[i], argVal);
+    }
   }
   const result = evaluate(fn.body, callEnv);
   if (isReturn(result)) return result.value;
@@ -482,12 +992,9 @@ export function evaluateFunction(
   env: Environment,
 ): TypeValue {
   if (fnNode.type === "FunctionDeclaration" || fnNode.type === "FunctionExpression") {
-    const paramNames = fnNode.params.map((p) =>
-      p.type === "Identifier" ? p.name : "_",
-    );
     const callEnv = env.extend({});
-    for (let i = 0; i < paramNames.length; i++) {
-      callEnv.bind(paramNames[i], args[i] ?? T.undefined);
+    for (let i = 0; i < fnNode.params.length; i++) {
+      bindPattern(fnNode.params[i], args[i] ?? T.undefined, callEnv);
     }
     const result = evaluate(fnNode.body, callEnv);
     if (isReturn(result)) return result.value;
