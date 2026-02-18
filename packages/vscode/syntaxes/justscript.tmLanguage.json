@@ -1,0 +1,10 @@
+{
+  "scopeName": "source.js",
+  "name": "JustScript",
+  "comment": "JustScript reuses JavaScript syntax highlighting. This file delegates to the built-in JS grammar.",
+  "patterns": [
+    {
+      "include": "source.js"
+    }
+  ]
+}

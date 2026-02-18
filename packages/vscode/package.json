@@ -1,0 +1,50 @@
+{
+  "name": "justscript-vscode",
+  "displayName": "JustScript",
+  "description": "JustScript type inference engine for VS Code / Cursor",
+  "version": "0.0.1",
+  "private": true,
+  "publisher": "justscript",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:javascript"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "justscript",
+        "aliases": [
+          "JustScript",
+          "justscript"
+        ],
+        "extensions": [
+          ".just.js"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "justscript",
+        "scopeName": "source.js",
+        "path": "./syntaxes/justscript.tmLanguage.json"
+      }
+    ]
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0"
+  },
+  "scripts": {
+    "build": "tsup src/extension.ts --format cjs --outDir out --external vscode",
+    "package": "npx @vscode/vsce package --no-dependencies"
+  }
+}
