@@ -10,11 +10,14 @@ import {
   deepCloneTypeValue,
   mergeObjectProperties,
   typeValueEquals,
+  typeValueToString,
+  isSubtypeOf,
 } from "@justscript/core";
 import { narrow } from "./narrowing.ts";
 
 const RETURN_SIGNAL = Symbol("ReturnSignal");
 const BRANCH_SIGNAL = Symbol("BranchSignal");
+const THROW_SIGNAL = Symbol("ThrowSignal");
 
 type ReturnSignal = {
   readonly [RETURN_SIGNAL]: true;
@@ -27,12 +30,21 @@ type BranchSignal = {
   readonly fallthroughEnv: Environment;
 };
 
+type ThrowSignal = {
+  readonly [THROW_SIGNAL]: true;
+  readonly thrown: TypeValue;
+};
+
 function makeReturn(value: TypeValue): ReturnSignal {
   return { [RETURN_SIGNAL]: true, value };
 }
 
 function makeBranch(returnedValue: TypeValue, fallthroughEnv: Environment): BranchSignal {
   return { [BRANCH_SIGNAL]: true, returnedValue, fallthroughEnv };
+}
+
+function makeThrow(thrown: TypeValue): ThrowSignal {
+  return { [THROW_SIGNAL]: true, thrown };
 }
 
 function isReturn(v: unknown): v is ReturnSignal {
@@ -43,7 +55,35 @@ function isBranch(v: unknown): v is BranchSignal {
   return typeof v === "object" && v !== null && BRANCH_SIGNAL in v;
 }
 
-type EvalResult = TypeValue | ReturnSignal | BranchSignal;
+function isThrow(v: unknown): v is ThrowSignal {
+  return typeof v === "object" && v !== null && THROW_SIGNAL in v;
+}
+
+type EvalResult = TypeValue | ReturnSignal | BranchSignal | ThrowSignal;
+
+const MEMO_IN_PROGRESS = Symbol("MemoInProgress");
+const callMemo = new Map<string, TypeValue | typeof MEMO_IN_PROGRESS>();
+
+function buildMemoKey(fn: TypeValue & { kind: "function" }, args: TypeValue[]): string | null {
+  const fnName = (fn as any)._memoize as string | undefined;
+  if (!fnName) return null;
+  const argsKey = args.map(typeValueToString).join(",");
+  return `${fnName}(${argsKey})`;
+}
+
+const moduleCache = new Map<string, Environment>();
+
+export function resetMemo(): void {
+  callMemo.clear();
+  moduleCache.clear();
+}
+
+export function setModuleResolver(resolver: ((source: string, fromDir: string) => { ast: Node; filePath: string } | null) | null): void {
+  currentModuleResolver = resolver;
+}
+
+let currentModuleResolver: ((source: string, fromDir: string) => { ast: Node; filePath: string } | null) | null = null;
+let currentFileDir = "";
 
 function distributeOverUnion(
   tv: TypeValue,
@@ -84,6 +124,8 @@ function evaluateStatements(
 
   for (const stmt of stmts) {
     const result = evaluate(stmt, currentEnv);
+
+    if (isThrow(result)) return result;
 
     if (isReturn(result)) {
       returnValues.push(result.value);
@@ -134,6 +176,9 @@ export function evaluate(node: Node, env: Environment): EvalResult {
       return env.lookup(node.name);
     }
 
+    case "ThisExpression":
+      return env.lookup("this");
+
     case "TemplateLiteral": {
       if (node.expressions.length === 0 && node.quasis.length === 1) {
         return T.literal(node.quasis[0].value.cooked ?? node.quasis[0].value.raw);
@@ -145,7 +190,7 @@ export function evaluate(node: Node, env: Environment): EvalResult {
         if (raw) parts.push(T.literal(raw));
         if (i < node.expressions.length) {
           const exprVal = evaluate(node.expressions[i], env);
-          if (isReturn(exprVal) || isBranch(exprVal)) return exprVal;
+          if (isReturn(exprVal) || isBranch(exprVal) || isThrow(exprVal)) return exprVal;
           parts.push(exprVal);
         }
       }
@@ -162,9 +207,13 @@ export function evaluate(node: Node, env: Environment): EvalResult {
 
     case "BinaryExpression": {
       const leftVal = evaluate(node.left, env);
-      if (isReturn(leftVal) || isBranch(leftVal)) return leftVal;
+      if (isReturn(leftVal) || isBranch(leftVal) || isThrow(leftVal)) return leftVal;
       const rightVal = evaluate(node.right, env);
-      if (isReturn(rightVal) || isBranch(rightVal)) return rightVal;
+      if (isReturn(rightVal) || isBranch(rightVal) || isThrow(rightVal)) return rightVal;
+
+      if (node.operator === "instanceof") {
+        return evaluateInstanceof(leftVal, rightVal, node.right, env);
+      }
       return distributeBinaryOverUnion(leftVal, rightVal, (l, r) =>
         applyBinaryOp(node.operator, l, r),
       );
@@ -172,7 +221,7 @@ export function evaluate(node: Node, env: Environment): EvalResult {
 
     case "UnaryExpression": {
       const argVal = evaluate(node.argument, env);
-      if (isReturn(argVal) || isBranch(argVal)) return argVal;
+      if (isReturn(argVal) || isBranch(argVal) || isThrow(argVal)) return argVal;
       if (node.operator === "typeof") {
         return distributeOverUnion(argVal, (v) => Ops.typeof_(v));
       }
@@ -187,16 +236,16 @@ export function evaluate(node: Node, env: Environment): EvalResult {
 
     case "LogicalExpression": {
       const leftVal = evaluate(node.left, env);
-      if (isReturn(leftVal) || isBranch(leftVal)) return leftVal;
+      if (isReturn(leftVal) || isBranch(leftVal) || isThrow(leftVal)) return leftVal;
 
       if (node.operator === "&&") {
         if (leftVal.kind === "literal" && !leftVal.value) return leftVal;
         if (leftVal.kind === "literal" && leftVal.value) {
           const rv = evaluate(node.right, env);
-          return isReturn(rv) || isBranch(rv) ? rv : rv;
+          return isReturn(rv) || isBranch(rv) || isThrow(rv) ? rv : rv;
         }
         const rv = evaluate(node.right, env);
-        const rightTV = isReturn(rv) || isBranch(rv) ? T.unknown : rv;
+        const rightTV = isReturn(rv) || isBranch(rv) || isThrow(rv) ? T.unknown : rv;
         return simplifyUnion([leftVal, rightTV]);
       }
 
@@ -204,10 +253,10 @@ export function evaluate(node: Node, env: Environment): EvalResult {
         if (leftVal.kind === "literal" && leftVal.value) return leftVal;
         if (leftVal.kind === "literal" && !leftVal.value) {
           const rv = evaluate(node.right, env);
-          return isReturn(rv) || isBranch(rv) ? rv : rv;
+          return isReturn(rv) || isBranch(rv) || isThrow(rv) ? rv : rv;
         }
         const rv = evaluate(node.right, env);
-        const rightTV = isReturn(rv) || isBranch(rv) ? T.unknown : rv;
+        const rightTV = isReturn(rv) || isBranch(rv) || isThrow(rv) ? T.unknown : rv;
         return simplifyUnion([leftVal, rightTV]);
       }
 
@@ -217,10 +266,10 @@ export function evaluate(node: Node, env: Environment): EvalResult {
         }
         if (leftVal.kind === "literal" && (leftVal.value === null || leftVal.value === undefined)) {
           const rv = evaluate(node.right, env);
-          return isReturn(rv) || isBranch(rv) ? rv : rv;
+          return isReturn(rv) || isBranch(rv) || isThrow(rv) ? rv : rv;
         }
         const rv = evaluate(node.right, env);
-        const rightTV = isReturn(rv) || isBranch(rv) ? T.unknown : rv;
+        const rightTV = isReturn(rv) || isBranch(rv) || isThrow(rv) ? T.unknown : rv;
         return simplifyUnion([leftVal, rightTV]);
       }
 
@@ -231,7 +280,7 @@ export function evaluate(node: Node, env: Environment): EvalResult {
       const test = node.test;
       const [trueEnv, falseEnv] = narrow(test, env);
       const testVal = evaluate(test, env);
-      if (isReturn(testVal) || isBranch(testVal)) return testVal;
+      if (isReturn(testVal) || isBranch(testVal) || isThrow(testVal)) return testVal;
 
       if (testVal.kind === "literal") {
         return testVal.value
@@ -250,7 +299,7 @@ export function evaluate(node: Node, env: Environment): EvalResult {
       const test = node.test;
       const [trueEnv, falseEnv] = narrow(test, env);
       const testVal = evaluate(test, env);
-      if (isReturn(testVal) || isBranch(testVal)) return testVal;
+      if (isReturn(testVal) || isBranch(testVal) || isThrow(testVal)) return testVal;
 
       if (testVal.kind === "literal") {
         if (testVal.value) {
@@ -313,15 +362,14 @@ export function evaluate(node: Node, env: Environment): EvalResult {
       const arg = node.argument;
       if (!arg) return makeReturn(T.undefined);
       const val = evaluate(arg, env);
-      if (isReturn(val)) return val;
-      if (isBranch(val)) return val;
+      if (isReturn(val) || isBranch(val) || isThrow(val)) return val;
       return makeReturn(val);
     }
 
     case "VariableDeclaration": {
       for (const decl of node.declarations) {
         const init = decl.init ? evaluate(decl.init, env) : T.undefined;
-        if (isReturn(init) || isBranch(init)) return init;
+        if (isReturn(init) || isBranch(init) || isThrow(init)) return init;
         bindPattern(decl.id, init, env);
       }
       return T.undefined;
@@ -330,7 +378,7 @@ export function evaluate(node: Node, env: Environment): EvalResult {
     case "AssignmentExpression": {
       if (node.left.type === "Identifier") {
         const val = evaluate(node.right, env);
-        if (isReturn(val) || isBranch(val)) return val;
+        if (isReturn(val) || isBranch(val) || isThrow(val)) return val;
         if (!env.update(node.left.name, val)) {
           env.bind(node.left.name, val);
         }
@@ -338,9 +386,9 @@ export function evaluate(node: Node, env: Environment): EvalResult {
       }
       if (node.left.type === "MemberExpression") {
         const val = evaluate(node.right, env);
-        if (isReturn(val) || isBranch(val)) return val;
+        if (isReturn(val) || isBranch(val) || isThrow(val)) return val;
         const objVal = evaluate(node.left.object, env);
-        if (isReturn(objVal) || isBranch(objVal)) return val;
+        if (isReturn(objVal) || isBranch(objVal) || isThrow(objVal)) return val;
         if (objVal.kind === "object") {
           const propName = getMemberKey(node.left, env);
           if (propName !== null) {
@@ -369,7 +417,7 @@ export function evaluate(node: Node, env: Environment): EvalResult {
         node.left.type === "ArrayPattern"
       ) {
         const val = evaluate(node.right, env);
-        if (isReturn(val) || isBranch(val)) return val;
+        if (isReturn(val) || isBranch(val) || isThrow(val)) return val;
         bindPattern(node.left, val, env);
         return val;
       }
@@ -378,20 +426,20 @@ export function evaluate(node: Node, env: Environment): EvalResult {
 
     case "ForOfStatement": {
       const rightVal = evaluate(node.right, env);
-      if (isReturn(rightVal) || isBranch(rightVal)) return rightVal;
+      if (isReturn(rightVal) || isBranch(rightVal) || isThrow(rightVal)) return rightVal;
       return evaluateForOf(node, rightVal, env);
     }
 
     case "ForInStatement": {
       const rightVal = evaluate(node.right, env);
-      if (isReturn(rightVal) || isBranch(rightVal)) return rightVal;
+      if (isReturn(rightVal) || isBranch(rightVal) || isThrow(rightVal)) return rightVal;
       return evaluateForIn(node, rightVal, env);
     }
 
     case "ForStatement": {
       if (node.init) {
         const initResult = evaluate(node.init, env);
-        if (isReturn(initResult) || isBranch(initResult)) return initResult;
+        if (isReturn(initResult) || isBranch(initResult) || isThrow(initResult)) return initResult;
       }
       return T.undefined;
     }
@@ -406,6 +454,7 @@ export function evaluate(node: Node, env: Environment): EvalResult {
       );
       const fnType = T.fn(paramNames, node.body, env);
       (fnType as any)._paramPatterns = node.params;
+      if (node.async) (fnType as any)._async = true;
       env.bind(node.id.name, fnType);
       return T.undefined;
     }
@@ -418,7 +467,71 @@ export function evaluate(node: Node, env: Environment): EvalResult {
       const body = node.body;
       const fnType = T.fn(paramNames, body, env);
       (fnType as any)._paramPatterns = node.params;
+      if (node.async) (fnType as any)._async = true;
       return fnType;
+    }
+
+    case "AwaitExpression": {
+      const argVal = evaluate(node.argument, env);
+      if (isReturn(argVal) || isBranch(argVal) || isThrow(argVal)) return argVal;
+      return distributeOverUnion(argVal, (v) =>
+        v.kind === "promise" ? v.value : v,
+      );
+    }
+
+    case "ClassDeclaration": {
+      return evaluateClassDeclaration(node, env);
+    }
+
+    case "ImportDeclaration": {
+      return evaluateImportDeclaration(node, env);
+    }
+
+    case "ExportNamedDeclaration": {
+      if (node.declaration) {
+        const result = evaluate(node.declaration, env);
+        if (isReturn(result) || isBranch(result) || isThrow(result)) return result;
+        if (node.declaration.type === "VariableDeclaration") {
+          for (const decl of node.declaration.declarations) {
+            if (decl.id.type === "Identifier") {
+              const val = env.lookup(decl.id.name);
+              env.bind(`__export_${decl.id.name}`, val);
+            }
+          }
+        } else if (node.declaration.type === "FunctionDeclaration" && node.declaration.id) {
+          const val = env.lookup(node.declaration.id.name);
+          env.bind(`__export_${node.declaration.id.name}`, val);
+        } else if (node.declaration.type === "ClassDeclaration" && node.declaration.id) {
+          const val = env.lookup(node.declaration.id.name);
+          env.bind(`__export_${node.declaration.id.name}`, val);
+        }
+      }
+      if (node.specifiers) {
+        for (const spec of node.specifiers) {
+          if (spec.type === "ExportSpecifier") {
+            const localName = spec.local.type === "Identifier" ? spec.local.name : null;
+            const exportedName = spec.exported.type === "Identifier" ? spec.exported.name : null;
+            if (localName && exportedName) {
+              env.bind(`__export_${exportedName}`, env.lookup(localName));
+            }
+          }
+        }
+      }
+      return T.undefined;
+    }
+
+    case "ExportDefaultDeclaration": {
+      const decl = node.declaration;
+      const result = evaluate(decl, env);
+      if (isReturn(result) || isBranch(result) || isThrow(result)) return result;
+      if (decl.type === "FunctionDeclaration" && decl.id) {
+        env.bind(`__export_default`, env.lookup(decl.id.name));
+      } else if (decl.type === "ClassDeclaration" && decl.id) {
+        env.bind(`__export_default`, env.lookup(decl.id.name));
+      } else {
+        env.bind(`__export_default`, result);
+      }
+      return T.undefined;
     }
 
     case "CallExpression": {
@@ -430,10 +543,10 @@ export function evaluate(node: Node, env: Environment): EvalResult {
       }
 
       const calleeVal = evaluate(callee, env);
-      if (isReturn(calleeVal) || isBranch(calleeVal)) return calleeVal;
+      if (isReturn(calleeVal) || isBranch(calleeVal) || isThrow(calleeVal)) return calleeVal;
 
       const argVals = evaluateArgs(node.arguments as Node[], env);
-      if (isReturn(argVals) || isBranch(argVals)) return argVals;
+      if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
 
       return distributeOverUnion(calleeVal, (fn) => {
         if (fn.kind !== "function") return T.unknown;
@@ -443,11 +556,11 @@ export function evaluate(node: Node, env: Environment): EvalResult {
 
     case "MemberExpression": {
       const objVal = evaluate(node.object, env);
-      if (isReturn(objVal) || isBranch(objVal)) return objVal;
+      if (isReturn(objVal) || isBranch(objVal) || isThrow(objVal)) return objVal;
 
       if (node.computed) {
         const propVal = evaluate(node.property, env);
-        if (isReturn(propVal) || isBranch(propVal)) return propVal;
+        if (isReturn(propVal) || isBranch(propVal) || isThrow(propVal)) return propVal;
         return distributeOverUnion(objVal, (obj) => {
           if (obj.kind === "object" && propVal.kind === "literal" && typeof propVal.value === "string") {
             return obj.properties[propVal.value] ?? T.undefined;
@@ -464,6 +577,7 @@ export function evaluate(node: Node, env: Environment): EvalResult {
         const propName = node.property.name;
         return distributeOverUnion(objVal, (obj) => {
           if (obj.kind === "object") return obj.properties[propName] ?? T.undefined;
+          if (obj.kind === "instance") return obj.properties[propName] ?? T.undefined;
           if (propName === "length" && (obj.kind === "array" || obj.kind === "tuple")) {
             return obj.kind === "tuple" ? T.literal(obj.elements.length) : T.number;
           }
@@ -481,7 +595,7 @@ export function evaluate(node: Node, env: Environment): EvalResult {
           const key = prop.computed
             ? (() => {
                 const kv = evaluate(prop.key, env);
-                return !isReturn(kv) && !isBranch(kv) && kv.kind === "literal" && typeof kv.value === "string"
+                return !isReturn(kv) && !isBranch(kv) && !isThrow(kv) && kv.kind === "literal" && typeof kv.value === "string"
                   ? kv.value
                   : null;
               })()
@@ -492,12 +606,12 @@ export function evaluate(node: Node, env: Environment): EvalResult {
                 : null;
           if (key) {
             const val = evaluate(prop.value as Node, env);
-            if (isReturn(val) || isBranch(val)) return val;
+            if (isReturn(val) || isBranch(val) || isThrow(val)) return val;
             props[key] = val;
           }
         } else if (prop.type === "SpreadElement") {
           const spreadVal = evaluate(prop.argument, env);
-          if (isReturn(spreadVal) || isBranch(spreadVal)) return spreadVal;
+          if (isReturn(spreadVal) || isBranch(spreadVal) || isThrow(spreadVal)) return spreadVal;
           if (spreadVal.kind === "object") {
             Object.assign(props, spreadVal.properties);
           }
@@ -515,7 +629,7 @@ export function evaluate(node: Node, env: Environment): EvalResult {
         }
         if (elem.type === "SpreadElement") {
           const spreadVal = evaluate(elem.argument, env);
-          if (isReturn(spreadVal) || isBranch(spreadVal)) return spreadVal;
+          if (isReturn(spreadVal) || isBranch(spreadVal) || isThrow(spreadVal)) return spreadVal;
           if (spreadVal.kind === "tuple") {
             elements.push(...spreadVal.elements);
           } else if (spreadVal.kind === "array") {
@@ -526,10 +640,28 @@ export function evaluate(node: Node, env: Environment): EvalResult {
           continue;
         }
         const val = evaluate(elem as Node, env);
-        if (isReturn(val) || isBranch(val)) return val;
+        if (isReturn(val) || isBranch(val) || isThrow(val)) return val;
         elements.push(val);
       }
       return T.tuple(elements);
+    }
+
+    case "ThrowStatement": {
+      const argVal = node.argument ? evaluate(node.argument, env) : T.undefined;
+      if (isReturn(argVal) || isBranch(argVal) || isThrow(argVal)) return argVal;
+      return makeThrow(argVal);
+    }
+
+    case "TryStatement": {
+      return evaluateTryStatement(node, env);
+    }
+
+    case "NewExpression": {
+      return evaluateNewExpression(node, env);
+    }
+
+    case "SwitchStatement": {
+      return evaluateSwitchStatement(node, env);
     }
 
     case "UpdateExpression": {
@@ -563,7 +695,7 @@ function getMemberKey(node: Node & { type: "MemberExpression" }, env: Environmen
   }
   if (node.computed) {
     const propVal = evaluate(node.property, env);
-    if (!isReturn(propVal) && !isBranch(propVal) && propVal.kind === "literal") {
+    if (!isReturn(propVal) && !isBranch(propVal) && !isThrow(propVal) && propVal.kind === "literal") {
       return String(propVal.value);
     }
   }
@@ -641,12 +773,12 @@ function bindPattern(pattern: Node, value: TypeValue, env: Environment): void {
   }
 }
 
-function evaluateArgs(args: Node[], env: Environment): TypeValue[] | ReturnSignal | BranchSignal {
+function evaluateArgs(args: Node[], env: Environment): TypeValue[] | ReturnSignal | BranchSignal | ThrowSignal {
   const result: TypeValue[] = [];
   for (const arg of args) {
     if (arg.type === "SpreadElement") {
       const spreadVal = evaluate(arg.argument, env);
-      if (isReturn(spreadVal) || isBranch(spreadVal)) return spreadVal;
+      if (isReturn(spreadVal) || isBranch(spreadVal) || isThrow(spreadVal)) return spreadVal;
       if (spreadVal.kind === "tuple") {
         result.push(...spreadVal.elements);
       } else if (spreadVal.kind === "array") {
@@ -657,7 +789,7 @@ function evaluateArgs(args: Node[], env: Environment): TypeValue[] | ReturnSigna
       continue;
     }
     const v = evaluate(arg, env);
-    if (isReturn(v) || isBranch(v)) return v;
+    if (isReturn(v) || isBranch(v) || isThrow(v)) return v;
     result.push(v);
   }
   return result;
@@ -669,7 +801,7 @@ function evaluateMethodCall(
   env: Environment,
 ): EvalResult | null {
   const objVal = evaluate(callee.object, env);
-  if (isReturn(objVal) || isBranch(objVal)) return objVal;
+  if (isReturn(objVal) || isBranch(objVal) || isThrow(objVal)) return objVal;
 
   const methodName = !callee.computed && callee.property.type === "Identifier"
     ? callee.property.name
@@ -682,7 +814,7 @@ function evaluateMethodCall(
     args.length >= 1
   ) {
     const argVal = evaluate(args[0], env);
-    if (isReturn(argVal) || isBranch(argVal)) return argVal;
+    if (isReturn(argVal) || isBranch(argVal) || isThrow(argVal)) return argVal;
     return evaluateObjectStaticMethod(methodName, argVal);
   }
 
@@ -728,7 +860,7 @@ function evaluateArrayMethod(
   env: Environment,
 ): EvalResult | null {
   const argVals = evaluateArgs(args, env);
-  if (isReturn(argVals) || isBranch(argVals)) return argVals;
+  if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
 
   const callbackFn = (argVals as TypeValue[])[0];
 
@@ -969,9 +1101,260 @@ function bindForLoopVar(left: Node, value: TypeValue, env: Environment): void {
   }
 }
 
-function callFunction(fn: TypeValue & { kind: "function" }, args: TypeValue[]): TypeValue {
+function evaluateImportDeclaration(node: Node & { type: "ImportDeclaration" }, env: Environment): EvalResult {
+  const source = node.source.value;
+  if (!currentModuleResolver) return T.undefined;
+
+  const resolved = currentModuleResolver(source, currentFileDir);
+  if (!resolved) return T.undefined;
+
+  let moduleEnv = moduleCache.get(resolved.filePath);
+  if (!moduleEnv) {
+    moduleEnv = createEnvironment();
+    moduleCache.set(resolved.filePath, moduleEnv);
+    const savedDir = currentFileDir;
+    currentFileDir = resolved.filePath.replace(/\/[^/]+$/, "");
+    evaluateProgram(resolved.ast, moduleEnv);
+    currentFileDir = savedDir;
+  }
+
+  for (const spec of node.specifiers) {
+    if (spec.type === "ImportDefaultSpecifier") {
+      const val = moduleEnv.has(`__export_default`) ? moduleEnv.lookup(`__export_default`) : T.unknown;
+      env.bind(spec.local.name, val);
+    } else if (spec.type === "ImportSpecifier") {
+      const importedName = spec.imported.type === "Identifier" ? spec.imported.name : null;
+      if (importedName) {
+        const val = moduleEnv.has(`__export_${importedName}`) ? moduleEnv.lookup(`__export_${importedName}`) : T.unknown;
+        env.bind(spec.local.name, val);
+      }
+    } else if (spec.type === "ImportNamespaceSpecifier") {
+      const exports: Record<string, TypeValue> = {};
+      const bindings = moduleEnv.getOwnBindings();
+      for (const [k, v] of Object.entries(bindings)) {
+        if (k.startsWith("__export_") && k !== "__export_default") {
+          exports[k.slice("__export_".length)] = v;
+        }
+      }
+      env.bind(spec.local.name, T.object(exports));
+    }
+  }
+
+  return T.undefined;
+}
+
+function evaluateClassDeclaration(node: Node & { type: "ClassDeclaration" }, env: Environment): EvalResult {
+  const className = node.id?.name ?? "<anonymous>";
+  const methods: Record<string, TypeValue> = {};
+  let constructorFn: (TypeValue & { kind: "function" }) | null = null;
+
+  for (const member of node.body.body) {
+    if (member.type !== "ClassMethod") continue;
+    const methodName = member.key.type === "Identifier" ? member.key.name : null;
+    if (!methodName) continue;
+
+    const paramNames = member.params.map((p: Node) =>
+      p.type === "Identifier" ? p.name : `_p${Math.random().toString(36).slice(2, 6)}`,
+    );
+    const fnType = T.fn(paramNames, member.body, env) as TypeValue & { kind: "function" };
+    (fnType as any)._paramPatterns = member.params;
+    if (member.async) (fnType as any)._async = true;
+
+    if (member.kind === "constructor") {
+      constructorFn = fnType;
+    } else {
+      methods[methodName] = fnType;
+    }
+  }
+
+  const ctorFn = constructorFn ?? T.fn([], { type: "BlockStatement", body: [], directives: [] } as any, env) as TypeValue & { kind: "function" };
+  (ctorFn as any)._classInfo = { className, methods };
+
+  if (node.id) {
+    env.bind(className, ctorFn);
+  }
+  return T.undefined;
+}
+
+function evaluateInstanceof(left: TypeValue, _right: TypeValue, rightNode: Node, _env: Environment): TypeValue {
+  const className = rightNode.type === "Identifier" ? rightNode.name : null;
+  if (!className) return T.boolean;
+
+  return distributeOverUnion(left, (lv) => {
+    if (lv.kind === "instance") {
+      const matches = lv.className === className ||
+        isSubtypeOf(lv, T.instanceOf(className));
+      return T.literal(matches);
+    }
+    return T.boolean;
+  });
+}
+
+const BUILTIN_ERROR_CLASSES = new Set([
+  "Error", "TypeError", "SyntaxError", "RangeError", "ReferenceError", "URIError", "EvalError",
+]);
+
+function evaluateNewExpression(node: Node & { type: "NewExpression" }, env: Environment): EvalResult {
+  const callee = node.callee as Node;
+  if (callee.type === "Identifier" && BUILTIN_ERROR_CLASSES.has(callee.name)) {
+    const argVals = evaluateArgs(node.arguments as Node[], env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const msgVal = (argVals as TypeValue[])[0] ?? T.undefined;
+    return T.instanceOf(callee.name, { message: msgVal });
+  }
+
+  const calleeVal = evaluate(callee, env);
+  if (isReturn(calleeVal) || isBranch(calleeVal) || isThrow(calleeVal)) return calleeVal;
+
+  if (calleeVal.kind === "function") {
+    const argVals = evaluateArgs(node.arguments as Node[], env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+
+    const classInfo = (calleeVal as any)._classInfo as { className: string; methods: Record<string, TypeValue> } | undefined;
+    if (classInfo) {
+      const instanceProps: Record<string, TypeValue> = {};
+      const constructEnv = calleeVal.closure.extend({});
+      const thisObj = T.object(instanceProps);
+      constructEnv.bind("this", thisObj);
+      const paramPatterns = (calleeVal as any)._paramPatterns as Node[] | undefined;
+      for (let i = 0; i < calleeVal.params.length; i++) {
+        const argVal = (argVals as TypeValue[])[i] ?? T.undefined;
+        if (paramPatterns?.[i]) {
+          bindPattern(paramPatterns[i], argVal, constructEnv);
+        } else {
+          constructEnv.bind(calleeVal.params[i], argVal);
+        }
+      }
+      const result = evaluate(calleeVal.body, constructEnv);
+      if (isThrow(result)) return result;
+      const finalThis = constructEnv.lookup("this");
+      const props = finalThis.kind === "object" ? { ...finalThis.properties } : instanceProps;
+      for (const [k, v] of Object.entries(classInfo.methods)) {
+        props[k] = v;
+      }
+      return T.instanceOf(classInfo.className, props);
+    }
+
+    return callFunction(calleeVal, argVals as TypeValue[]);
+  }
+
+  return T.unknown;
+}
+
+function evaluateTryStatement(node: Node & { type: "TryStatement" }, env: Environment): EvalResult {
+  const tryResult = evaluateStatements(node.block.body, env.extend({}));
+
+  const thrownType = isThrow(tryResult) ? tryResult.thrown : null;
+
+  const tryValue = isThrow(tryResult)
+    ? null
+    : isReturn(tryResult)
+      ? tryResult
+      : isBranch(tryResult)
+        ? tryResult
+        : tryResult;
+
+  let catchResult: EvalResult | null = null;
+  if (node.handler && thrownType) {
+    const catchEnv = env.extend({});
+    if (node.handler.param) {
+      bindPattern(node.handler.param, thrownType, catchEnv);
+    }
+    catchResult = evaluateStatements(node.handler.body.body, catchEnv);
+  }
+
+  if (node.finalizer) {
+    const finallyResult = evaluateStatements(node.finalizer.body, env.extend({}));
+    if (isThrow(finallyResult)) return finallyResult;
+    if (isReturn(finallyResult)) return finallyResult;
+  }
+
+  if (catchResult !== null) {
+    if (isThrow(catchResult)) return catchResult;
+    if (isReturn(catchResult)) {
+      if (tryValue !== null && isReturn(tryValue)) {
+        return makeReturn(simplifyUnion([tryValue.value, catchResult.value]));
+      }
+      return catchResult;
+    }
+    if (tryValue !== null && isReturn(tryValue)) {
+      return tryValue;
+    }
+    if (tryValue !== null && isBranch(tryValue)) {
+      return tryValue;
+    }
+    return catchResult;
+  }
+
+  if (thrownType && !node.handler) {
+    return makeThrow(thrownType);
+  }
+
+  if (tryValue !== null) return tryValue;
+  return T.undefined;
+}
+
+function evaluateSwitchStatement(node: Node & { type: "SwitchStatement" }, env: Environment): EvalResult {
+  const discriminant = evaluate(node.discriminant, env);
+  if (isReturn(discriminant) || isBranch(discriminant) || isThrow(discriminant)) return discriminant;
+
+  const isConcreteDiscriminant = discriminant.kind === "literal";
+
+  if (isConcreteDiscriminant) {
+    let matched = false;
+    const returnValues: TypeValue[] = [];
+    for (const caseNode of node.cases) {
+      if (caseNode.test) {
+        const testVal = evaluate(caseNode.test, env);
+        if (isReturn(testVal) || isBranch(testVal) || isThrow(testVal)) return testVal;
+        if (testVal.kind === "literal" && discriminant.value === testVal.value) matched = true;
+      } else {
+        matched = true;
+      }
+      if (matched) {
+        const result = evaluateStatements(caseNode.consequent, env);
+        if (isThrow(result)) return result;
+        if (isReturn(result)) {
+          returnValues.push(result.value);
+          break;
+        }
+        if (isBranch(result)) {
+          returnValues.push(result.returnedValue);
+          continue;
+        }
+      }
+    }
+    if (returnValues.length > 0) {
+      return makeBranch(simplifyUnion(returnValues), env);
+    }
+    return T.undefined;
+  }
+
+  const returnValues: TypeValue[] = [];
+  for (const caseNode of node.cases) {
+    const result = evaluateStatements(caseNode.consequent, env);
+    if (isThrow(result)) continue;
+    if (isReturn(result)) {
+      returnValues.push(result.value);
+      continue;
+    }
+    if (isBranch(result)) {
+      returnValues.push(result.returnedValue);
+      continue;
+    }
+  }
+  if (returnValues.length > 0) {
+    return makeBranch(simplifyUnion(returnValues), env);
+  }
+  return T.undefined;
+}
+
+type CallResult = { value: TypeValue; throws: TypeValue };
+
+function callFunctionFull(fn: TypeValue & { kind: "function" }, args: TypeValue[]): CallResult {
   const callEnv = fn.closure.extend({});
   const paramPatterns = (fn as any)._paramPatterns as Node[] | undefined;
+  const isAsync = !!(fn as any)._async;
   for (let i = 0; i < fn.params.length; i++) {
     const argVal = args[i] ?? T.undefined;
     if (paramPatterns && paramPatterns[i]) {
@@ -980,10 +1363,41 @@ function callFunction(fn: TypeValue & { kind: "function" }, args: TypeValue[]): 
       callEnv.bind(fn.params[i], argVal);
     }
   }
+
+  const memoKey = buildMemoKey(fn, args);
+  if (memoKey !== null) {
+    const cached = callMemo.get(memoKey);
+    if (cached !== undefined) {
+      if (cached === MEMO_IN_PROGRESS) {
+        return { value: T.unknown, throws: T.never };
+      }
+      return { value: cached, throws: T.never };
+    }
+    callMemo.set(memoKey, MEMO_IN_PROGRESS);
+    const result = evaluate(fn.body, callEnv);
+    const value = isReturn(result) ? result.value
+      : isBranch(result) ? result.returnedValue
+      : isThrow(result) ? T.never
+      : result;
+    const throws = isThrow(result) ? result.thrown : T.never;
+    const wrapped = isAsync ? T.promise(value) : value;
+    callMemo.set(memoKey, wrapped);
+    return { value: wrapped, throws };
+  }
+
   const result = evaluate(fn.body, callEnv);
-  if (isReturn(result)) return result.value;
-  if (isBranch(result)) return result.returnedValue;
-  return result;
+  if (isThrow(result)) {
+    return { value: T.never, throws: result.thrown };
+  }
+  const value = isReturn(result) ? result.value
+    : isBranch(result) ? result.returnedValue
+    : result;
+  const wrapped = isAsync ? T.promise(value) : value;
+  return { value: wrapped, throws: T.never };
+}
+
+function callFunction(fn: TypeValue & { kind: "function" }, args: TypeValue[]): TypeValue {
+  return callFunctionFull(fn, args).value;
 }
 
 export function evaluateFunction(
@@ -991,22 +1405,39 @@ export function evaluateFunction(
   args: TypeValue[],
   env: Environment,
 ): TypeValue {
+  return evaluateFunctionFull(fnNode, args, env).value;
+}
+
+export function evaluateFunctionFull(
+  fnNode: Node,
+  args: TypeValue[],
+  env: Environment,
+): CallResult {
   if (fnNode.type === "FunctionDeclaration" || fnNode.type === "FunctionExpression") {
     const callEnv = env.extend({});
+    const isAsync = !!(fnNode as any).async;
     for (let i = 0; i < fnNode.params.length; i++) {
       bindPattern(fnNode.params[i], args[i] ?? T.undefined, callEnv);
     }
     const result = evaluate(fnNode.body, callEnv);
-    if (isReturn(result)) return result.value;
-    if (isBranch(result)) return result.returnedValue;
-    return result;
+    if (isThrow(result)) return { value: T.never, throws: result.thrown };
+    const value = isReturn(result) ? result.value
+      : isBranch(result) ? result.returnedValue
+      : result;
+    const wrapped = isAsync ? T.promise(value) : value;
+    return { value: wrapped, throws: T.never };
   }
-  return T.unknown;
+  return { value: T.unknown, throws: T.never };
 }
 
 export function evaluateProgram(node: Node, env: Environment): TypeValue {
   const result = evaluate(node, env);
   if (isReturn(result)) return result.value;
   if (isBranch(result)) return result.returnedValue;
+  if (isThrow(result)) return T.never;
   return result;
+}
+
+export function setCurrentFileDir(dir: string): void {
+  currentFileDir = dir;
 }

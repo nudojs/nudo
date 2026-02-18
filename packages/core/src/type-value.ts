@@ -20,6 +20,8 @@ export type TypeValue =
       body: Node;
       closure: Environment;
     }
+  | { kind: "promise"; value: TypeValue }
+  | { kind: "instance"; className: string; properties: Record<string, TypeValue> }
   | { kind: "union"; members: TypeValue[] }
   | { kind: "never" }
   | { kind: "unknown" };
@@ -49,6 +51,12 @@ export const T = {
   }),
   array: (element: TypeValue): TypeValue => ({ kind: "array", element }),
   tuple: (elements: TypeValue[]): TypeValue => ({ kind: "tuple", elements }),
+  promise: (value: TypeValue): TypeValue => ({ kind: "promise", value }),
+  instanceOf: (className: string, properties: Record<string, TypeValue> = {}): TypeValue => ({
+    kind: "instance",
+    className,
+    properties,
+  }),
   union: createUnion,
   fn: (
     params: string[],
@@ -70,6 +78,12 @@ export function typeValueEquals(a: TypeValue, b: TypeValue): boolean {
   if (a.kind === "primitive" && b.kind === "primitive") return a.type === b.type;
   if (a.kind === "never" && b.kind === "never") return true;
   if (a.kind === "unknown" && b.kind === "unknown") return true;
+  if (a.kind === "promise" && b.kind === "promise") {
+    return typeValueEquals(a.value, b.value);
+  }
+  if (a.kind === "instance" && b.kind === "instance") {
+    return a.className === b.className;
+  }
   if (a.kind === "union" && b.kind === "union") {
     return (
       a.members.length === b.members.length &&
@@ -148,6 +162,14 @@ export function isSubtypeOf(a: TypeValue, b: TypeValue): boolean {
     return a.elements.every((el) => isSubtypeOf(el, b.element));
   }
 
+  if (a.kind === "promise" && b.kind === "promise") {
+    return isSubtypeOf(a.value, b.value);
+  }
+
+  if (a.kind === "instance" && b.kind === "instance") {
+    return a.className === b.className || isErrorSubclass(a.className, b.className);
+  }
+
   if (a.kind === "union") {
     return a.members.every((m) => isSubtypeOf(m, b));
   }
@@ -157,6 +179,21 @@ export function isSubtypeOf(a: TypeValue, b: TypeValue): boolean {
   }
 
   return false;
+}
+
+const errorHierarchy: Record<string, string> = {
+  TypeError: "Error",
+  SyntaxError: "Error",
+  RangeError: "Error",
+  ReferenceError: "Error",
+  URIError: "Error",
+  EvalError: "Error",
+};
+
+function isErrorSubclass(child: string, parent: string): boolean {
+  if (child === parent) return true;
+  const sup = errorHierarchy[child];
+  return sup ? isErrorSubclass(sup, parent) : false;
 }
 
 export function deepCloneTypeValue(tv: TypeValue, idMap?: Map<symbol, symbol>): TypeValue {
@@ -178,6 +215,16 @@ export function deepCloneTypeValue(tv: TypeValue, idMap?: Map<symbol, symbol>): 
   }
   if (tv.kind === "tuple") {
     return { kind: "tuple", elements: tv.elements.map((e) => deepCloneTypeValue(e, map)) };
+  }
+  if (tv.kind === "promise") {
+    return { kind: "promise", value: deepCloneTypeValue(tv.value, map) };
+  }
+  if (tv.kind === "instance") {
+    const newProps: Record<string, TypeValue> = {};
+    for (const [k, v] of Object.entries(tv.properties)) {
+      newProps[k] = deepCloneTypeValue(v, map);
+    }
+    return { kind: "instance", className: tv.className, properties: newProps };
   }
   if (tv.kind === "union") {
     return simplifyUnion(tv.members.map((m) => deepCloneTypeValue(m, map)));
@@ -232,6 +279,16 @@ export function typeValueToString(tv: TypeValue): string {
       const params = tv.params.join(", ");
       return `(${params}) => ...`;
     }
+    case "promise":
+      return `Promise<${typeValueToString(tv.value)}>`;
+    case "instance": {
+      const entries = Object.entries(tv.properties);
+      if (entries.length === 0) return tv.className;
+      const inner = entries
+        .map(([k, v]) => `${k}: ${typeValueToString(v)}`)
+        .join(", ");
+      return `${tv.className} { ${inner} }`;
+    }
     case "union": {
       return tv.members.map(typeValueToString).join(" | ");
     }
@@ -269,5 +326,7 @@ export function getPrimitiveTypeOf(tv: TypeValue): string | undefined {
   if (tv.kind === "object") return "object";
   if (tv.kind === "array" || tv.kind === "tuple") return "object";
   if (tv.kind === "function") return "function";
+  if (tv.kind === "promise") return "object";
+  if (tv.kind === "instance") return "object";
   return undefined;
 }

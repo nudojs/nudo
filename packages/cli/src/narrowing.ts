@@ -113,6 +113,16 @@ export function narrow(
     return [falseEnv, trueEnv];
   }
 
+  // x instanceof C
+  if (
+    test.type === "BinaryExpression" &&
+    test.operator === "instanceof" &&
+    test.left.type === "Identifier" &&
+    test.right.type === "Identifier"
+  ) {
+    return narrowByInstanceof(test.left.name, test.right.name, env);
+  }
+
   // !expr (negate)
   if (test.type === "UnaryExpression" && test.operator === "!") {
     const [trueEnv, falseEnv] = narrow(test.argument, env);
@@ -215,6 +225,27 @@ function narrowByTypeof(
   }
 
   return [env, env];
+}
+
+function narrowByInstanceof(
+  varName: string,
+  className: string,
+  env: Environment,
+): [Environment, Environment] {
+  const current = env.lookup(varName);
+
+  const narrowed = narrowType(current, (m) =>
+    m.kind === "instance" && m.className === className,
+  );
+  const excluded = subtractType(current, (m) =>
+    m.kind === "instance" && m.className === className,
+  );
+
+  const trueEnv = env.extend({});
+  trueEnv.bind(varName, narrowed.kind === "never" ? T.instanceOf(className) : narrowed);
+  const falseEnv = env.extend({});
+  falseEnv.bind(varName, excluded.kind === "never" ? current : excluded);
+  return [trueEnv, falseEnv];
 }
 
 function narrowByStrictEqual(

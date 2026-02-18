@@ -14,7 +14,26 @@ export type MockDirective = {
   fromPath?: string;
 };
 
-export type Directive = CaseDirective | MockDirective;
+export type PureDirective = {
+  kind: "pure";
+};
+
+export type SkipDirective = {
+  kind: "skip";
+  returns?: TypeValue;
+};
+
+export type SampleDirective = {
+  kind: "sample";
+  count: number;
+};
+
+export type ReturnsDirective = {
+  kind: "returns";
+  expected: TypeValue;
+};
+
+export type Directive = CaseDirective | MockDirective | PureDirective | SkipDirective | SampleDirective | ReturnsDirective;
 
 export type FunctionWithDirectives = {
   node: Node;
@@ -25,6 +44,10 @@ export type FunctionWithDirectives = {
 const CASE_NAME_REGEX = /@just:case\s+"([^"]+)"\s*\(/g;
 const MOCK_INLINE_REGEX = /@just:mock\s+(\w+)\s*=\s*(.+)/g;
 const MOCK_FROM_REGEX = /@just:mock\s+(\w+)\s+from\s+"([^"]+)"/g;
+const PURE_REGEX = /@just:pure\b/g;
+const SKIP_REGEX = /@just:skip(?:\s+(.+))?/g;
+const SAMPLE_REGEX = /@just:sample\s+(\d+)/g;
+const RETURNS_REGEX = /@just:returns\s*\(/g;
 
 export function parseTypeValueExpr(expr: string): TypeValue {
   const s = expr.trim();
@@ -209,6 +232,36 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
       if (argsStr === null) continue;
       const args = splitTopLevelArgs(argsStr).map(parseTypeValueExpr);
       directives.push({ kind: "case", name, args });
+    }
+
+    PURE_REGEX.lastIndex = 0;
+    if (PURE_REGEX.test(text)) {
+      directives.push({ kind: "pure" });
+    }
+
+    SKIP_REGEX.lastIndex = 0;
+    let skipMatch: RegExpExecArray | null;
+    while ((skipMatch = SKIP_REGEX.exec(text)) !== null) {
+      const returnsExpr = skipMatch[1]?.trim();
+      directives.push({
+        kind: "skip",
+        returns: returnsExpr ? parseTypeValueExpr(returnsExpr) : undefined,
+      });
+    }
+
+    SAMPLE_REGEX.lastIndex = 0;
+    let sampleMatch: RegExpExecArray | null;
+    while ((sampleMatch = SAMPLE_REGEX.exec(text)) !== null) {
+      directives.push({ kind: "sample", count: Number(sampleMatch[1]) });
+    }
+
+    RETURNS_REGEX.lastIndex = 0;
+    let returnsMatch: RegExpExecArray | null;
+    while ((returnsMatch = RETURNS_REGEX.exec(text)) !== null) {
+      const parenStart = returnsMatch.index + returnsMatch[0].length - 1;
+      const argsStr = extractBalancedParens(text, parenStart);
+      if (argsStr === null) continue;
+      directives.push({ kind: "returns", expected: parseTypeValueExpr(argsStr) });
     }
   }
   return directives;

@@ -7,6 +7,7 @@ export type Environment = {
   extend(bindings: Record<string, TypeValue>): Environment;
   has(name: string): boolean;
   snapshot(): Environment;
+  getOwnBindings(): Record<string, TypeValue>;
 };
 
 export function createEnvironment(
@@ -53,6 +54,14 @@ export function createEnvironment(
       const clonedStore = new Map(store);
       const clonedParent = parent?.snapshot();
       return createEnvironment(clonedParent, clonedStore);
+    },
+
+    getOwnBindings() {
+      const result: Record<string, TypeValue> = {};
+      for (const [k, v] of store) {
+        result[k] = v;
+      }
+      return result;
     },
   };
 

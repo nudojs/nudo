@@ -104,6 +104,8 @@ export const Ops = {
     if (operand.kind === "array" || operand.kind === "tuple")
       return T.literal("object");
     if (operand.kind === "function") return T.literal("function");
+    if (operand.kind === "promise") return T.literal("object");
+    if (operand.kind === "instance") return T.literal("object");
     return T.string;
   },
 
