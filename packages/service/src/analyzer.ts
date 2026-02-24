@@ -21,6 +21,8 @@ import {
   setModuleResolver,
   setCurrentFileDir,
   resetMemo,
+  getUnreachableRanges,
+  resetUnreachableRanges,
 } from "@justscript/cli/evaluator";
 
 export type SourceLocation = {
@@ -30,10 +32,13 @@ export type SourceLocation = {
 
 export type DiagnosticSeverity = "error" | "warning" | "info";
 
+export type DiagnosticTag = "unnecessary";
+
 export type Diagnostic = {
   range: SourceLocation;
   severity: DiagnosticSeverity;
   message: string;
+  tags?: DiagnosticTag[];
 };
 
 export type CaseResult = {
@@ -41,6 +46,7 @@ export type CaseResult = {
   args: TypeValue[];
   result: TypeValue;
   throws: TypeValue;
+  throwLoc?: SourceLocation;
 };
 
 export type FunctionAnalysis = {
@@ -103,6 +109,29 @@ function applyMocks(
   }
 }
 
+function rangeKey(r: SourceLocation): string {
+  return `${r.start.line}:${r.start.column}-${r.end.line}:${r.end.column}`;
+}
+
+function findCommonUnreachable(perCase: SourceLocation[][]): SourceLocation[] {
+  if (perCase.length === 0) return [];
+  const counts = new Map<string, { count: number; range: SourceLocation }>();
+  for (const ranges of perCase) {
+    for (const r of ranges) {
+      const key = rangeKey(r);
+      const existing = counts.get(key);
+      if (existing) {
+        existing.count++;
+      } else {
+        counts.set(key, { count: 1, range: r });
+      }
+    }
+  }
+  return [...counts.values()]
+    .filter((v) => v.count === perCase.length)
+    .map((v) => v.range);
+}
+
 function locFromNode(node: Node): SourceLocation {
   return {
     start: { line: node.loc?.start.line ?? 1, column: node.loc?.start.column ?? 0 },
@@ -119,11 +148,22 @@ export function analyzeFile(filePath: string, source: string): AnalysisResult {
   const functionResults: FunctionAnalysis[] = [];
 
   resetMemo();
+  resetUnreachableRanges();
   setModuleResolver(resolveModule);
   setCurrentFileDir(dirname(filePath));
 
   const globalEnv = createEnvironment();
   evaluateProgram(ast, globalEnv);
+
+  const unreachableRanges = getUnreachableRanges();
+  for (const ur of unreachableRanges) {
+    diagnostics.push({
+      range: ur,
+      severity: "info",
+      message: "Unreachable code",
+      tags: ["unnecessary"],
+    });
+  }
 
   collectBindings(ast, globalEnv, bindings);
 
@@ -154,20 +194,39 @@ export function analyzeFile(filePath: string, source: string): AnalysisResult {
 
     const caseDirectives = fn.directives.filter((d) => d.kind === "case");
 
+    const perCaseUnreachable: SourceLocation[][] = [];
+
     for (const directive of caseDirectives) {
+      resetUnreachableRanges();
       const fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
+      perCaseUnreachable.push([...getUnreachableRanges()]);
+
       analysis.cases.push({
         name: directive.name,
         args: directive.args,
         result: fullResult.value,
         throws: fullResult.throws,
+        throwLoc: fullResult.throwLoc,
       });
 
       if (fullResult.throws.kind !== "never") {
+        const throwRange = fullResult.throwLoc ?? fnLoc;
         diagnostics.push({
-          range: fnLoc,
+          range: throwRange,
           severity: "warning",
           message: `Function "${fn.name}" case "${directive.name}" may throw: ${typeValueToString(fullResult.throws)}`,
+        });
+      }
+    }
+
+    if (perCaseUnreachable.length > 0) {
+      const commonUnreachable = findCommonUnreachable(perCaseUnreachable);
+      for (const ur of commonUnreachable) {
+        diagnostics.push({
+          range: ur,
+          severity: "info",
+          message: "Unreachable code",
+          tags: ["unnecessary"],
         });
       }
     }

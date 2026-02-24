@@ -28,6 +28,16 @@ function safeSqrt(x) {
 /**
  * @just:case "test" ()
  */
+function testSafeSqrt() {
+  const result1 = safeSqrt(10);
+  console.log("safeSqrt(10) done", result1);
+  const result2 = safeSqrt(-1);
+  console.log("dead code", result2);
+}
+
+/**
+ * @just:case "test" ()
+ */
 async function fetchData() {
   const data = await Promise.resolve(42);
   return data;

@@ -4,6 +4,7 @@ export {
   type CaseResult,
   type Diagnostic,
   type DiagnosticSeverity,
+  type DiagnosticTag,
   type SourceLocation,
   type BindingInfo,
   type CompletionItem,

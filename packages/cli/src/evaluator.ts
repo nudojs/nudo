@@ -15,6 +15,8 @@ import {
 } from "@justscript/core";
 import { narrow } from "./narrowing.ts";
 
+type SourceRange = { start: { line: number; column: number }; end: { line: number; column: number } };
+
 const RETURN_SIGNAL = Symbol("ReturnSignal");
 const BRANCH_SIGNAL = Symbol("BranchSignal");
 const THROW_SIGNAL = Symbol("ThrowSignal");
@@ -33,6 +35,7 @@ type BranchSignal = {
 type ThrowSignal = {
   readonly [THROW_SIGNAL]: true;
   readonly thrown: TypeValue;
+  readonly loc?: SourceRange;
 };
 
 function makeReturn(value: TypeValue): ReturnSignal {
@@ -43,8 +46,8 @@ function makeBranch(returnedValue: TypeValue, fallthroughEnv: Environment): Bran
   return { [BRANCH_SIGNAL]: true, returnedValue, fallthroughEnv };
 }
 
-function makeThrow(thrown: TypeValue): ThrowSignal {
-  return { [THROW_SIGNAL]: true, thrown };
+function makeThrow(thrown: TypeValue, loc?: SourceRange): ThrowSignal {
+  return { [THROW_SIGNAL]: true, thrown, loc };
 }
 
 function isReturn(v: unknown): v is ReturnSignal {
@@ -114,6 +117,20 @@ function distributeBinaryOverUnion(
   return fn(left, right);
 }
 
+let _unreachableRanges: SourceRange[] = [];
+
+function collectUnreachable(stmts: readonly Node[], fromIndex: number): void {
+  for (let j = fromIndex; j < stmts.length; j++) {
+    const s = stmts[j];
+    if (s.loc) {
+      _unreachableRanges.push({
+        start: { line: s.loc.start.line, column: s.loc.start.column },
+        end: { line: s.loc.end.line, column: s.loc.end.column },
+      });
+    }
+  }
+}
+
 function evaluateStatements(
   stmts: readonly Node[],
   env: Environment,
@@ -122,13 +139,18 @@ function evaluateStatements(
   let currentEnv = env;
   let lastValue: TypeValue = T.undefined;
 
-  for (const stmt of stmts) {
+  for (let i = 0; i < stmts.length; i++) {
+    const stmt = stmts[i];
     const result = evaluate(stmt, currentEnv);
 
-    if (isThrow(result)) return result;
+    if (isThrow(result)) {
+      collectUnreachable(stmts, i + 1);
+      return result;
+    }
 
     if (isReturn(result)) {
       returnValues.push(result.value);
+      collectUnreachable(stmts, i + 1);
       return makeReturn(simplifyUnion(returnValues));
     }
 
@@ -317,8 +339,32 @@ export function evaluate(node: Node, env: Environment): EvalResult {
 
       const cReturns = isReturn(consequentResult);
       const cBranches = isBranch(consequentResult);
+      const cThrows = isThrow(consequentResult);
       const aReturns = alternateResult !== null && isReturn(alternateResult);
       const aBranches = alternateResult !== null && isBranch(alternateResult);
+      const aThrows = alternateResult !== null && isThrow(alternateResult);
+
+      if (cThrows && aThrows) {
+        return consequentResult;
+      }
+
+      if (cThrows && !node.alternate) {
+        return makeBranch(T.never, falseEnv);
+      }
+
+      if (cThrows) {
+        const aVal = aReturns ? (alternateResult as ReturnSignal).value
+          : aBranches ? (alternateResult as BranchSignal).returnedValue
+          : alternateResult as TypeValue;
+        return makeBranch(aVal, falseEnv);
+      }
+
+      if (aThrows) {
+        const cVal = cReturns ? consequentResult.value
+          : cBranches ? consequentResult.returnedValue
+          : consequentResult as TypeValue;
+        return makeBranch(cVal, trueEnv);
+      }
 
       const cVal = cReturns ? consequentResult.value
         : cBranches ? consequentResult.returnedValue
@@ -548,6 +594,18 @@ export function evaluate(node: Node, env: Environment): EvalResult {
       const argVals = evaluateArgs(node.arguments as Node[], env);
       if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
 
+      if (calleeVal.kind === "function") {
+        const full = callFunctionFull(calleeVal, argVals as TypeValue[]);
+        if (full.value.kind === "never" && full.throws.kind !== "never") {
+          const callLoc = node.loc ? {
+            start: { line: node.loc.start.line, column: node.loc.start.column },
+            end: { line: node.loc.end.line, column: node.loc.end.column },
+          } : full.throwLoc;
+          return makeThrow(full.throws, callLoc);
+        }
+        return full.value;
+      }
+
       return distributeOverUnion(calleeVal, (fn) => {
         if (fn.kind !== "function") return T.unknown;
         return callFunction(fn, argVals as TypeValue[]);
@@ -649,7 +707,11 @@ export function evaluate(node: Node, env: Environment): EvalResult {
     case "ThrowStatement": {
       const argVal = node.argument ? evaluate(node.argument, env) : T.undefined;
       if (isReturn(argVal) || isBranch(argVal) || isThrow(argVal)) return argVal;
-      return makeThrow(argVal);
+      const throwLoc = node.loc ? {
+        start: { line: node.loc.start.line, column: node.loc.start.column },
+        end: { line: node.loc.end.line, column: node.loc.end.column },
+      } : undefined;
+      return makeThrow(argVal, throwLoc);
     }
 
     case "TryStatement": {
@@ -1349,7 +1411,11 @@ function evaluateSwitchStatement(node: Node & { type: "SwitchStatement" }, env: 
   return T.undefined;
 }
 
-type CallResult = { value: TypeValue; throws: TypeValue };
+type CallResult = {
+  value: TypeValue;
+  throws: TypeValue;
+  throwLoc?: SourceRange;
+};
 
 function callFunctionFull(fn: TypeValue & { kind: "function" }, args: TypeValue[]): CallResult {
   const callEnv = fn.closure.extend({});
@@ -1364,10 +1430,14 @@ function callFunctionFull(fn: TypeValue & { kind: "function" }, args: TypeValue[
     }
   }
 
+  const savedUnreachable = _unreachableRanges;
+  _unreachableRanges = [];
+
   const memoKey = buildMemoKey(fn, args);
   if (memoKey !== null) {
     const cached = callMemo.get(memoKey);
     if (cached !== undefined) {
+      _unreachableRanges = savedUnreachable;
       if (cached === MEMO_IN_PROGRESS) {
         return { value: T.unknown, throws: T.never };
       }
@@ -1375,19 +1445,22 @@ function callFunctionFull(fn: TypeValue & { kind: "function" }, args: TypeValue[
     }
     callMemo.set(memoKey, MEMO_IN_PROGRESS);
     const result = evaluate(fn.body, callEnv);
+    _unreachableRanges = savedUnreachable;
     const value = isReturn(result) ? result.value
       : isBranch(result) ? result.returnedValue
       : isThrow(result) ? T.never
       : result;
     const throws = isThrow(result) ? result.thrown : T.never;
+    const throwLoc = isThrow(result) ? result.loc : undefined;
     const wrapped = isAsync ? T.promise(value) : value;
     callMemo.set(memoKey, wrapped);
-    return { value: wrapped, throws };
+    return { value: wrapped, throws, throwLoc };
   }
 
   const result = evaluate(fn.body, callEnv);
+  _unreachableRanges = savedUnreachable;
   if (isThrow(result)) {
-    return { value: T.never, throws: result.thrown };
+    return { value: T.never, throws: result.thrown, throwLoc: result.loc };
   }
   const value = isReturn(result) ? result.value
     : isBranch(result) ? result.returnedValue
@@ -1420,7 +1493,7 @@ export function evaluateFunctionFull(
       bindPattern(fnNode.params[i], args[i] ?? T.undefined, callEnv);
     }
     const result = evaluate(fnNode.body, callEnv);
-    if (isThrow(result)) return { value: T.never, throws: result.thrown };
+    if (isThrow(result)) return { value: T.never, throws: result.thrown, throwLoc: result.loc };
     const value = isReturn(result) ? result.value
       : isBranch(result) ? result.returnedValue
       : result;
@@ -1436,6 +1509,14 @@ export function evaluateProgram(node: Node, env: Environment): TypeValue {
   if (isBranch(result)) return result.returnedValue;
   if (isThrow(result)) return T.never;
   return result;
+}
+
+export function getUnreachableRanges(): SourceRange[] {
+  return _unreachableRanges;
+}
+
+export function resetUnreachableRanges(): void {
+  _unreachableRanges = [];
 }
 
 export function setCurrentFileDir(dir: string): void {

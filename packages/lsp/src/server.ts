@@ -7,6 +7,7 @@ import {
   type InitializeResult,
   type Diagnostic as LspDiagnostic,
   DiagnosticSeverity,
+  DiagnosticTag,
   type CompletionItem as LspCompletionItem,
   CompletionItemKind,
   MarkupKind,
@@ -75,15 +76,21 @@ function validateDocument(document: TextDocument): void {
 
   try {
     const result = analyzeFile(filePath, source);
-    const diagnostics: LspDiagnostic[] = result.diagnostics.map((d) => ({
-      severity: severityMap[d.severity],
-      range: {
-        start: { line: d.range.start.line - 1, character: d.range.start.column },
-        end: { line: d.range.end.line - 1, character: d.range.end.column },
-      },
-      message: d.message,
-      source: "justscript",
-    }));
+    const diagnostics: LspDiagnostic[] = result.diagnostics.map((d) => {
+      const diag: LspDiagnostic = {
+        severity: severityMap[d.severity],
+        range: {
+          start: { line: d.range.start.line - 1, character: d.range.start.column },
+          end: { line: d.range.end.line - 1, character: d.range.end.column },
+        },
+        message: d.message,
+        source: "justscript",
+      };
+      if (d.tags?.includes("unnecessary")) {
+        diag.tags = [DiagnosticTag.Unnecessary];
+      }
+      return diag;
+    });
     connection.sendDiagnostics({ uri, diagnostics });
   } catch (err) {
     connection.sendDiagnostics({

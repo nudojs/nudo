@@ -6,6 +6,8 @@ export {
   setModuleResolver,
   setCurrentFileDir,
   resetMemo,
+  getUnreachableRanges,
+  resetUnreachableRanges,
 } from "./evaluator.ts";
 
 export { narrow } from "./narrowing.ts";
