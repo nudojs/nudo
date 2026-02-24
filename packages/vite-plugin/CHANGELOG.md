@@ -9,4 +9,4 @@
 ### Patch Changes
 
 - Updated dependencies
-  - @nudo/service@0.1.0
+  - @nudojs/service@0.1.0

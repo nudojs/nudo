@@ -1,4 +1,4 @@
-# @nudo/parser
+# @nudojs/parser
 
 ## 0.1.0
 
@@ -9,4 +9,4 @@
 ### Patch Changes
 
 - Updated dependencies
-  - @nudo/core@0.1.0
+  - @nudojs/core@0.1.0

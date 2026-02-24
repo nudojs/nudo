@@ -4,7 +4,7 @@
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "@nudo/service": "workspace:*"
+    "@nudojs/service": "workspace:*"
   },
   "peerDependencies": {
     "vite": ">=5.0.0"

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { resolve } from "node:path";
-import { T, typeValueToString } from "@nudo/core";
+import { T, typeValueToString } from "@nudojs/core";
 import { analyzeFile, getTypeAtPosition, getCompletionsAtPosition } from "../analyzer.ts";
 
 const FIXTURE_PATH = resolve(import.meta.dirname, "fixtures", "sample.js");

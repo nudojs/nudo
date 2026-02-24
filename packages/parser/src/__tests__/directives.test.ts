@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "../parse.ts";
 import { extractDirectives, parseTypeValueExpr } from "../directives.ts";
-import { T, typeValueEquals } from "@nudo/core";
+import { T, typeValueEquals } from "@nudojs/core";
 
 describe("parseTypeValueExpr", () => {
   it("parses T.number", () => {

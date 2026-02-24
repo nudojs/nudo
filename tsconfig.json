@@ -3,9 +3,9 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@nudo/core": ["packages/core/src"],
-      "@nudo/parser": ["packages/parser/src"],
-      "nudo": ["packages/cli/src"]
+      "@nudojs/core": ["packages/core/src"],
+      "@nudojs/parser": ["packages/parser/src"],
+      "@nudojs/cli": ["packages/cli/src"]
     }
   },
   "references": [

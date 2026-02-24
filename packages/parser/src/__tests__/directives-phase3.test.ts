@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { T } from "@nudo/core";
+import { T } from "@nudojs/core";
 import { extractDirectives } from "../directives.ts";
 import { parse } from "../parse.ts";
 

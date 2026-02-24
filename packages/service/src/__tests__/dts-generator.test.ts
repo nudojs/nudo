@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { T } from "@nudo/core";
+import { T } from "@nudojs/core";
 import { typeValueToTSType, generateDts } from "../dts-generator.ts";
 import { analyzeFile } from "../analyzer.ts";
 

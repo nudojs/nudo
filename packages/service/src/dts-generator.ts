@@ -1,5 +1,5 @@
-import type { TypeValue } from "@nudo/core";
-import { typeValueToString } from "@nudo/core";
+import type { TypeValue } from "@nudojs/core";
+import { typeValueToString } from "@nudojs/core";
 import type { AnalysisResult } from "./analyzer.ts";
 
 export function typeValueToTSType(tv: TypeValue): string {

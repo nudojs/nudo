@@ -7,9 +7,9 @@ import {
   simplifyUnion,
   createEnvironment,
   isSubtypeOf,
-} from "@nudo/core";
-import type { TypeValue } from "@nudo/core";
-import { parse, extractDirectives, parseTypeValueExpr } from "@nudo/parser";
+} from "@nudojs/core";
+import type { TypeValue } from "@nudojs/core";
+import { parse, extractDirectives, parseTypeValueExpr } from "@nudojs/parser";
 import { evaluateFunction, evaluateFunctionFull, evaluateProgram, setModuleResolver, setCurrentFileDir, resetMemo } from "./evaluator.ts";
 
 const program = new Command();

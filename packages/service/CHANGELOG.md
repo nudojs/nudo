@@ -1,4 +1,4 @@
-# @nudo/service
+# @nudojs/service
 
 ## 0.1.0
 
@@ -10,5 +10,5 @@
 
 - Updated dependencies
   - nudo@0.1.0
-  - @nudo/core@0.1.0
-  - @nudo/parser@0.1.0
+  - @nudojs/core@0.1.0
+  - @nudojs/parser@0.1.0

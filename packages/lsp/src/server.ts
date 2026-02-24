@@ -17,14 +17,14 @@ import {
   InlayHintKind,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
-import { typeValueToString } from "@nudo/core";
+import { typeValueToString } from "@nudojs/core";
 import {
   analyzeFile,
   getTypeAtPosition,
   getCompletionsAtPosition,
   getCasesForFile,
   type DiagnosticSeverity as JsDiagSeverity,
-} from "@nudo/service";
+} from "@nudojs/service";
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);

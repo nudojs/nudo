@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { T, typeValueEquals, typeValueToString, createEnvironment, isSubtypeOf } from "@nudo/core";
-import { parse } from "@nudo/parser";
+import { T, typeValueEquals, typeValueToString, createEnvironment, isSubtypeOf } from "@nudojs/core";
+import { parse } from "@nudojs/parser";
 import { evaluateFunction, evaluateProgram } from "../evaluator.ts";
 
 function evalExpr(source: string) {

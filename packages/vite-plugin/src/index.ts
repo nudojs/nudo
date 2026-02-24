@@ -1,4 +1,4 @@
-import { analyzeFile, type AnalysisResult } from "@nudo/service";
+import { analyzeFile, type AnalysisResult } from "@nudojs/service";
 
 export type NudoPluginOptions = {
   include?: string[];

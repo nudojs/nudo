@@ -1,12 +1,12 @@
 {
-  "name": "@nudo/service",
+  "name": "@nudojs/service",
   "version": "0.1.0",
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "@nudo/core": "workspace:*",
-    "@nudo/parser": "workspace:*",
-    "nudo": "workspace:*",
+    "@nudojs/core": "workspace:*",
+    "@nudojs/parser": "workspace:*",
+    "@nudojs/cli": "workspace:*",
     "@babel/traverse": "^7.29.0",
     "@babel/types": "^7.29.0"
   },

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { T, typeValueEquals, typeValueToString, createEnvironment } from "@nudo/core";
-import { parse, extractDirectives } from "@nudo/parser";
+import { T, typeValueEquals, typeValueToString, createEnvironment } from "@nudojs/core";
+import { parse, extractDirectives } from "@nudojs/parser";
 import { evaluateFunction, evaluateProgram } from "../evaluator.ts";
 
 function inferFromSource(source: string) {

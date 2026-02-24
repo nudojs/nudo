@@ -45,10 +45,10 @@ importers:
 
   packages/cli:
     dependencies:
-      '@nudo/core':
+      '@nudojs/core':
         specifier: workspace:*
         version: link:../core
-      '@nudo/parser':
+      '@nudojs/parser':
         specifier: workspace:*
         version: link:../parser
 
@@ -56,10 +56,10 @@ importers:
 
   packages/lsp:
     dependencies:
-      '@nudo/core':
+      '@nudojs/core':
         specifier: workspace:*
         version: link:../core
-      '@nudo/service':
+      '@nudojs/service':
         specifier: workspace:*
         version: link:../service
       vscode-languageserver:
@@ -71,7 +71,7 @@ importers:
 
   packages/parser:
     dependencies:
-      '@nudo/core':
+      '@nudojs/core':
         specifier: workspace:*
         version: link:../core
 
@@ -83,19 +83,19 @@ importers:
       '@babel/types':
         specifier: ^7.29.0
         version: 7.29.0
-      '@nudo/core':
-        specifier: workspace:*
-        version: link:../core
-      '@nudo/parser':
-        specifier: workspace:*
-        version: link:../parser
-      nudo:
+      '@nudojs/cli':
         specifier: workspace:*
         version: link:../cli
+      '@nudojs/core':
+        specifier: workspace:*
+        version: link:../core
+      '@nudojs/parser':
+        specifier: workspace:*
+        version: link:../parser
 
   packages/vite-plugin:
     dependencies:
-      '@nudo/service':
+      '@nudojs/service':
         specifier: workspace:*
         version: link:../service
       vite:

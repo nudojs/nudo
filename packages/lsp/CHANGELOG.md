@@ -1,4 +1,4 @@
-# @nudo/lsp
+# @nudojs/lsp
 
 ## 0.1.0
 
@@ -9,5 +9,5 @@
 ### Patch Changes
 
 - Updated dependencies
-  - @nudo/core@0.1.0
-  - @nudo/service@0.1.0
+  - @nudojs/core@0.1.0
+  - @nudojs/service@0.1.0

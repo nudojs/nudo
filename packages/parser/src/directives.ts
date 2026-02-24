@@ -1,5 +1,5 @@
 import type { Node, Comment } from "@babel/types";
-import { type TypeValue, T } from "@nudo/core";
+import { type TypeValue, T } from "@nudojs/core";
 
 export type CaseDirective = {
   kind: "case";

@@ -7,7 +7,7 @@ import {
   subtractType,
   getPrimitiveTypeOf,
   typeValueEquals,
-} from "@nudo/core";
+} from "@nudojs/core";
 
 /**
  * Given a test expression and the current environment, produce two

@@ -9,5 +9,5 @@
 ### Patch Changes
 
 - Updated dependencies
-  - @nudo/core@0.1.0
-  - @nudo/parser@0.1.0
+  - @nudojs/core@0.1.0
+  - @nudojs/parser@0.1.0

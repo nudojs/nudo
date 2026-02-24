@@ -1,5 +1,5 @@
 {
-  "name": "nudo",
+  "name": "@nudojs/cli",
   "version": "0.1.0",
   "type": "module",
   "main": "src/index.ts",
@@ -11,8 +11,8 @@
     "nudo": "src/index.ts"
   },
   "dependencies": {
-    "@nudo/core": "workspace:*",
-    "@nudo/parser": "workspace:*"
+    "@nudojs/core": "workspace:*",
+    "@nudojs/parser": "workspace:*"
   },
   "scripts": {
     "build": "tsup src/index.ts src/evaluator-api.ts --format esm --dts"

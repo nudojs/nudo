@@ -10,9 +10,9 @@ import {
   createEnvironment,
   isSubtypeOf,
   type Environment,
-} from "@nudo/core";
-import { parse, extractDirectives, parseTypeValueExpr } from "@nudo/parser";
-import type { FunctionWithDirectives } from "@nudo/parser";
+} from "@nudojs/core";
+import { parse, extractDirectives, parseTypeValueExpr } from "@nudojs/parser";
+import type { FunctionWithDirectives } from "@nudojs/parser";
 import {
   evaluate,
   evaluateFunction,
@@ -24,7 +24,7 @@ import {
   getUnreachableRanges,
   resetUnreachableRanges,
   setNodeTypeCollector,
-} from "nudo/evaluator";
+} from "@nudojs/cli/evaluator";
 
 export type SourceLocation = {
   start: { line: number; column: number };

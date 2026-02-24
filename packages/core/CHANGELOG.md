@@ -1,4 +1,4 @@
-# @nudo/core
+# @nudojs/core
 
 ## 0.1.0
 

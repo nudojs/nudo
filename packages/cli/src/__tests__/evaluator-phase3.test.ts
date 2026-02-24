@@ -5,9 +5,9 @@ import {
   typeValueToString,
   createEnvironment,
   isSubtypeOf,
-} from "@nudo/core";
-import type { TypeValue } from "@nudo/core";
-import { parse } from "@nudo/parser";
+} from "@nudojs/core";
+import type { TypeValue } from "@nudojs/core";
+import { parse } from "@nudojs/parser";
 import { evaluate, evaluateFunction, evaluateFunctionFull, evaluateProgram, resetMemo, setModuleResolver, setCurrentFileDir } from "../evaluator.ts";
 
 function evalCode(code: string): TypeValue {
