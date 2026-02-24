@@ -14,7 +14,10 @@ dist-ssr
 
 # Editor directories and files
 .vscode/*
-!.vscode/extensions.json
+packages/*/.vscode/*
+packages/*/out/*
+!packages/*/.vscode/launch.json
+!packages/*/.vscode/tasks.json
 .idea
 .DS_Store
 *.suo
@@ -25,4 +28,3 @@ dist-ssr
 
 .wrangler/
 
-.dev.vars
