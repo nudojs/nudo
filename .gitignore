@@ -26,5 +26,7 @@ packages/*/out/*
 *.sln
 *.sw?
 
+*.vsix
+
 .wrangler/
 
