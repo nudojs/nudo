@@ -63,11 +63,18 @@ export type BindingInfo = {
   loc?: SourceLocation;
 };
 
+export type CaseHint = {
+  line: number;
+  label: string;
+  ok: boolean;
+};
+
 export type AnalysisResult = {
   functions: FunctionAnalysis[];
   diagnostics: Diagnostic[];
   bindings: Map<string, BindingInfo>;
   nodeTypeMap: Map<Node, TypeValue>;
+  caseHints: CaseHint[];
 };
 
 export type CompletionItem = {
@@ -147,6 +154,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   const bindings = new Map<string, BindingInfo>();
   const nodeTypeMap = new Map<Node, TypeValue>();
   const functionResults: FunctionAnalysis[] = [];
+  const caseHints: CaseHint[] = [];
 
   resetMemo();
   resetUnreachableRanges();
@@ -210,6 +218,32 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         throwLoc: fullResult.throwLoc,
       });
 
+      if (directive.commentLine) {
+        const hasThrow = fullResult.throws.kind !== "never";
+        const resultStr = fullResult.value.kind !== "never"
+          ? typeValueToString(fullResult.value)
+          : "";
+        const throwStr = hasThrow
+          ? `throws ${typeValueToString(fullResult.throws)}`
+          : "";
+        const label = [resultStr, throwStr].filter(Boolean).join(" ");
+        const hintLabel = `=> ${label}`;
+
+        let ok = true;
+        if (directive.expected) {
+          ok = isSubtypeOf(fullResult.value, directive.expected);
+          if (!ok) {
+            diagnostics.push({
+              range: { start: { line: directive.commentLine, column: 0 }, end: { line: directive.commentLine, column: 999 } },
+              severity: "error",
+              message: `Case "${directive.name}": expected ${typeValueToString(directive.expected)}, got ${typeValueToString(fullResult.value)}`,
+            });
+          }
+        }
+
+        caseHints.push({ line: directive.commentLine, label: hintLabel, ok });
+      }
+
       const isActive = ci === Math.min(activeCaseIdx, caseDirectives.length - 1);
 
       if (isActive) {
@@ -268,6 +302,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     diagnostics,
     bindings,
     nodeTypeMap,
+    caseHints,
   };
 }
 

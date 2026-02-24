@@ -13,6 +13,8 @@ import {
   MarkupKind,
   type CodeLens,
   CodeLensRefreshRequest,
+  type InlayHint,
+  InlayHintKind,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { typeValueToString } from "@justscript/core";
@@ -54,6 +56,7 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => ({
     codeLensProvider: {
       resolveProvider: false,
     },
+    inlayHintProvider: true,
   },
 }));
 
@@ -211,6 +214,39 @@ connection.onCodeLens((params) => {
     }
 
     return lenses;
+  } catch {
+    return [];
+  }
+});
+
+connection.languages.inlayHint.on((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return [];
+  if (!isJustFile(params.textDocument.uri)) return [];
+
+  const filePath = uriToFilePath(params.textDocument.uri);
+  const source = document.getText();
+  const cases = getActiveCasesForUri(params.textDocument.uri);
+  const lines = source.split("\n");
+
+  try {
+    const result = analyzeFile(filePath, source, cases);
+    const hints: InlayHint[] = [];
+
+    for (const hint of result.caseHints) {
+      const lineIdx = hint.line - 1;
+      if (lineIdx < 0 || lineIdx >= lines.length) continue;
+      const lineLen = lines[lineIdx].length;
+
+      hints.push({
+        position: { line: lineIdx, character: lineLen },
+        label: `  ${hint.label}`,
+        kind: InlayHintKind.Type,
+        paddingLeft: true,
+      });
+    }
+
+    return hints;
   } catch {
     return [];
   }

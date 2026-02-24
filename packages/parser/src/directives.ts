@@ -5,6 +5,8 @@ export type CaseDirective = {
   kind: "case";
   name: string;
   args: TypeValue[];
+  expected?: TypeValue;
+  commentLine?: number;
 };
 
 export type MockDirective = {
@@ -225,13 +227,23 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
 
     CASE_NAME_REGEX.lastIndex = 0;
     let match: RegExpExecArray | null;
+    const commentStartLine = comment.loc?.start.line ?? 0;
     while ((match = CASE_NAME_REGEX.exec(text)) !== null) {
       const name = match[1];
       const parenStart = match.index + match[0].length - 1;
       const argsStr = extractBalancedParens(text, parenStart);
       if (argsStr === null) continue;
       const args = splitTopLevelArgs(argsStr).map(parseTypeValueExpr);
-      directives.push({ kind: "case", name, args });
+
+      const afterParen = parenStart + argsStr.length + 2;
+      const restLine = text.slice(afterParen).split("\n")[0].trim();
+      const arrowMatch = restLine.match(/^=>\s*(.+)/);
+      const expected = arrowMatch ? parseTypeValueExpr(arrowMatch[1].trim()) : undefined;
+
+      const linesBeforeMatch = text.slice(0, match.index).split("\n").length - 1;
+      const commentLine = commentStartLine + linesBeforeMatch;
+
+      directives.push({ kind: "case", name, args, expected, commentLine });
     }
 
     PURE_REGEX.lastIndex = 0;

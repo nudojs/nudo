@@ -3,6 +3,7 @@ export {
   type FunctionAnalysis,
   type CaseResult,
   type CaseInfo,
+  type CaseHint,
   type Diagnostic,
   type DiagnosticSeverity,
   type DiagnosticTag,
