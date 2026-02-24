@@ -345,7 +345,19 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
       if (testVal.kind === "literal") {
         if (testVal.value) {
+          if (node.alternate?.loc) {
+            _unreachableRanges.push({
+              start: { line: node.alternate.loc.start.line, column: node.alternate.loc.start.column },
+              end: { line: node.alternate.loc.end.line, column: node.alternate.loc.end.column },
+            });
+          }
           return evaluate(node.consequent, trueEnv);
+        }
+        if (node.consequent.loc) {
+          _unreachableRanges.push({
+            start: { line: node.consequent.loc.start.line, column: node.consequent.loc.start.column },
+            end: { line: node.consequent.loc.end.line, column: node.consequent.loc.end.column },
+          });
         }
         return node.alternate
           ? evaluate(node.alternate, falseEnv)

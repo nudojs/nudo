@@ -140,7 +140,7 @@ function locFromNode(node: Node): SourceLocation {
   };
 }
 
-export function analyzeFile(filePath: string, source: string): AnalysisResult {
+export function analyzeFile(filePath: string, source: string, activeCases?: Map<string, number>): AnalysisResult {
   const ast = parse(source);
   const functions = extractDirectives(ast);
   const diagnostics: Diagnostic[] = [];
@@ -194,13 +194,13 @@ export function analyzeFile(filePath: string, source: string): AnalysisResult {
     }
 
     const caseDirectives = fn.directives.filter((d) => d.kind === "case");
+    const activeCaseIdx = activeCases?.get(fn.name) ?? 0;
 
-    const perCaseUnreachable: SourceLocation[][] = [];
-
-    for (const directive of caseDirectives) {
+    for (let ci = 0; ci < caseDirectives.length; ci++) {
+      const directive = caseDirectives[ci];
       resetUnreachableRanges();
       const fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
-      perCaseUnreachable.push([...getUnreachableRanges()]);
+      const caseUnreachable = [...getUnreachableRanges()];
 
       analysis.cases.push({
         name: directive.name,
@@ -210,25 +210,26 @@ export function analyzeFile(filePath: string, source: string): AnalysisResult {
         throwLoc: fullResult.throwLoc,
       });
 
-      if (fullResult.throws.kind !== "never") {
-        const throwRange = fullResult.throwLoc ?? fnLoc;
-        diagnostics.push({
-          range: throwRange,
-          severity: "warning",
-          message: `Function "${fn.name}" case "${directive.name}" may throw: ${typeValueToString(fullResult.throws)}`,
-        });
-      }
-    }
+      const isActive = ci === Math.min(activeCaseIdx, caseDirectives.length - 1);
 
-    if (perCaseUnreachable.length > 0) {
-      const commonUnreachable = findCommonUnreachable(perCaseUnreachable);
-      for (const ur of commonUnreachable) {
-        diagnostics.push({
-          range: ur,
-          severity: "info",
-          message: "Unreachable code",
-          tags: ["unnecessary"],
-        });
+      if (isActive) {
+        if (fullResult.throws.kind !== "never") {
+          const throwRange = fullResult.throwLoc ?? fnLoc;
+          diagnostics.push({
+            range: throwRange,
+            severity: "warning",
+            message: `Function "${fn.name}" case "${directive.name}" may throw: ${typeValueToString(fullResult.throws)}`,
+          });
+        }
+
+        for (const ur of caseUnreachable) {
+          diagnostics.push({
+            range: ur,
+            severity: "info",
+            message: "Unreachable code",
+            tags: ["unnecessary"],
+          });
+        }
       }
     }
 

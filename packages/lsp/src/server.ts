@@ -89,9 +89,10 @@ function validateDocument(document: TextDocument): void {
 
   const filePath = uriToFilePath(uri);
   const source = document.getText();
+  const cases = getActiveCasesForUri(uri);
 
   try {
-    const result = analyzeFile(filePath, source);
+    const result = analyzeFile(filePath, source, cases);
     const diagnostics: LspDiagnostic[] = result.diagnostics.map((d) => {
       const diag: LspDiagnostic = {
         severity: severityMap[d.severity],
