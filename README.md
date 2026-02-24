@@ -155,12 +155,12 @@ pnpm run infer <file.js>
 
 ## Documentation
 
-Full documentation is available at the [Nudo docs site](https://nicepkg.github.io/nudo/), with support for English and Chinese.
+Full documentation is available at the [Nudo docs site](https://nudojs.github.io/nudo/), with support for English and Chinese.
 
-- [Getting Started](https://nicepkg.github.io/nudo/docs/getting-started/installation)
-- [Core Concepts](https://nicepkg.github.io/nudo/docs/concepts/type-values)
-- [API Reference](https://nicepkg.github.io/nudo/docs/api/core)
-- [Design Document](https://nicepkg.github.io/nudo/docs/design/design-doc)
+- [Getting Started](https://nudojs.github.io/nudo/docs/getting-started/installation)
+- [Core Concepts](https://nudojs.github.io/nudo/docs/concepts/type-values)
+- [API Reference](https://nudojs.github.io/nudo/docs/api/core)
+- [Design Document](https://nudojs.github.io/nudo/docs/design/design-doc)
 
 ## License
 
