@@ -24,7 +24,7 @@ import {
   getUnreachableRanges,
   resetUnreachableRanges,
   setNodeTypeCollector,
-} from "@nudo/cli/evaluator";
+} from "nudo/evaluator";
 
 export type SourceLocation = {
   start: { line: number; column: number };

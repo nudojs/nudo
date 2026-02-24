@@ -5,7 +5,7 @@
     "paths": {
       "@nudo/core": ["packages/core/src"],
       "@nudo/parser": ["packages/parser/src"],
-      "@nudo/cli": ["packages/cli/src"]
+      "nudo": ["packages/cli/src"]
     }
   },
   "references": [

@@ -7,7 +7,7 @@
   "dependencies": {
     "@nudo/core": "workspace:*",
     "@nudo/parser": "workspace:*",
-    "@nudo/cli": "workspace:*",
+    "nudo": "workspace:*",
     "@babel/traverse": "^7.29.0",
     "@babel/types": "^7.29.0"
   },

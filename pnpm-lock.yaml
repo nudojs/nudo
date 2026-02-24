@@ -76,15 +76,15 @@ importers:
       '@babel/types':
         specifier: ^7.29.0
         version: 7.29.0
-      '@nudo/cli':
-        specifier: workspace:*
-        version: link:../cli
       '@nudo/core':
         specifier: workspace:*
         version: link:../core
       '@nudo/parser':
         specifier: workspace:*
         version: link:../parser
+      nudo:
+        specifier: workspace:*
+        version: link:../cli
 
   packages/vite-plugin:
     dependencies:
