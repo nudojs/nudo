@@ -182,6 +182,26 @@ function evaluateStatements(
   return lastValue;
 }
 
+function describeParam(p: Node): string {
+  if (p.type === "Identifier") return p.name;
+  if (p.type === "AssignmentPattern" && p.left.type === "Identifier") return p.left.name;
+  if (p.type === "AssignmentPattern") return describeParam(p.left);
+  if (p.type === "RestElement") return `...${describeParam(p.argument)}`;
+  if (p.type === "ObjectPattern") {
+    const keys = p.properties.map((prop: any) => {
+      if (prop.type === "RestElement") return `...${describeParam(prop.argument)}`;
+      const key = prop.key?.type === "Identifier" ? prop.key.name : "?";
+      return key;
+    });
+    return `{ ${keys.join(", ")} }`;
+  }
+  if (p.type === "ArrayPattern") {
+    const elems = p.elements.map((e: any) => (e ? describeParam(e) : ""));
+    return `[${elems.join(", ")}]`;
+  }
+  return "_";
+}
+
 export function evaluate(node: Node, env: Environment): EvalResult {
   const result = evaluateNode(node, env);
   if (_nodeTypeCollector && node.loc && !isReturn(result) && !isBranch(result) && !isThrow(result)) {
@@ -530,9 +550,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
     case "FunctionDeclaration": {
       if (!node.id) return T.undefined;
-      const paramNames = node.params.map((p) =>
-        p.type === "Identifier" ? p.name : `_p${Math.random().toString(36).slice(2, 6)}`,
-      );
+      const paramNames = node.params.map(describeParam);
       const fnType = T.fn(paramNames, node.body, env);
       (fnType as any)._paramPatterns = node.params;
       if (node.async) (fnType as any)._async = true;
@@ -542,9 +560,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
     case "FunctionExpression":
     case "ArrowFunctionExpression": {
-      const paramNames = node.params.map((p) =>
-        p.type === "Identifier" ? p.name : `_p${Math.random().toString(36).slice(2, 6)}`,
-      );
+      const paramNames = node.params.map(describeParam);
       const body = node.body;
       const fnType = T.fn(paramNames, body, env);
       (fnType as any)._paramPatterns = node.params;
