@@ -8,6 +8,7 @@ export {
   resetMemo,
   getUnreachableRanges,
   resetUnreachableRanges,
+  setNodeTypeCollector,
 } from "./evaluator.ts";
 
 export { narrow } from "./narrowing.ts";

@@ -35,6 +35,12 @@
         "scopeName": "source.js",
         "path": "./syntaxes/justscript.tmLanguage.json"
       }
+    ],
+    "commands": [
+      {
+        "command": "justscript.selectCase",
+        "title": "JustScript: Select Case"
+      }
     ]
   },
   "dependencies": {

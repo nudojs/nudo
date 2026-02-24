@@ -88,6 +88,18 @@ export function setModuleResolver(resolver: ((source: string, fromDir: string) =
 let currentModuleResolver: ((source: string, fromDir: string) => { ast: Node; filePath: string } | null) | null = null;
 let currentFileDir = "";
 
+let _nodeTypeCollector: ((node: Node, tv: TypeValue) => void) | null = null;
+
+export function setNodeTypeCollector(collector: ((node: Node, tv: TypeValue) => void) | null): void {
+  _nodeTypeCollector = collector;
+}
+
+function recordNodeType(node: Node, tv: TypeValue): void {
+  if (_nodeTypeCollector && node.loc) {
+    _nodeTypeCollector(node, tv);
+  }
+}
+
 function distributeOverUnion(
   tv: TypeValue,
   fn: (member: TypeValue) => TypeValue,
@@ -171,6 +183,14 @@ function evaluateStatements(
 }
 
 export function evaluate(node: Node, env: Environment): EvalResult {
+  const result = evaluateNode(node, env);
+  if (_nodeTypeCollector && node.loc && !isReturn(result) && !isBranch(result) && !isThrow(result)) {
+    recordNodeType(node, result);
+  }
+  return result;
+}
+
+function evaluateNode(node: Node, env: Environment): EvalResult {
   switch (node.type) {
     case "File":
       return evaluate(node.program, env);
@@ -417,6 +437,9 @@ export function evaluate(node: Node, env: Environment): EvalResult {
         const init = decl.init ? evaluate(decl.init, env) : T.undefined;
         if (isReturn(init) || isBranch(init) || isThrow(init)) return init;
         bindPattern(decl.id, init, env);
+        if (decl.id.type === "Identifier") {
+          recordNodeType(decl.id, init);
+        }
       }
       return T.undefined;
     }

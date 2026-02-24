@@ -2,6 +2,7 @@ export {
   type AnalysisResult,
   type FunctionAnalysis,
   type CaseResult,
+  type CaseInfo,
   type Diagnostic,
   type DiagnosticSeverity,
   type DiagnosticTag,
@@ -11,6 +12,7 @@ export {
   analyzeFile,
   getTypeAtPosition,
   getCompletionsAtPosition,
+  getCasesForFile,
 } from "./analyzer.ts";
 
 export {

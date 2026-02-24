@@ -11,6 +11,8 @@ import {
   type CompletionItem as LspCompletionItem,
   CompletionItemKind,
   MarkupKind,
+  type CodeLens,
+  CodeLensRefreshRequest,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { typeValueToString } from "@justscript/core";
@@ -18,11 +20,22 @@ import {
   analyzeFile,
   getTypeAtPosition,
   getCompletionsAtPosition,
+  getCasesForFile,
   type DiagnosticSeverity as JsDiagSeverity,
 } from "@justscript/service";
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
+
+const activeCases = new Map<string, Map<string, number>>();
+
+function getActiveCasesForUri(uri: string): Map<string, number> {
+  const existing = activeCases.get(uri);
+  if (existing) return existing;
+  const map = new Map<string, number>();
+  activeCases.set(uri, map);
+  return map;
+}
 
 const severityMap: Record<JsDiagSeverity, DiagnosticSeverity> = {
   error: DiagnosticSeverity.Error,
@@ -36,6 +49,9 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => ({
     hoverProvider: true,
     completionProvider: {
       triggerCharacters: ["."],
+      resolveProvider: false,
+    },
+    codeLensProvider: {
       resolveProvider: false,
     },
   },
@@ -116,9 +132,10 @@ connection.onHover((params) => {
   const source = document.getText();
   const line = params.position.line + 1;
   const column = params.position.character;
+  const cases = getActiveCasesForUri(params.textDocument.uri);
 
   try {
-    const tv = getTypeAtPosition(filePath, source, line, column);
+    const tv = getTypeAtPosition(filePath, source, line, column, cases);
     if (!tv) return null;
 
     return {
@@ -156,6 +173,69 @@ connection.onCompletion((params) => {
   } catch {
     return [];
   }
+});
+
+connection.onCodeLens((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return [];
+  if (!isJustFile(params.textDocument.uri)) return [];
+
+  const filePath = uriToFilePath(params.textDocument.uri);
+  const source = document.getText();
+  const cases = getActiveCasesForUri(params.textDocument.uri);
+
+  try {
+    const fnCases = getCasesForFile(filePath, source);
+    const lenses: CodeLens[] = [];
+
+    for (const fn of fnCases) {
+      if (fn.cases.length === 0) continue;
+      const activeIdx = cases.get(fn.functionName) ?? 0;
+
+      for (const c of fn.cases) {
+        const isActive = c.index === activeIdx;
+        const title = isActive ? `● case "${c.name}"` : `○ case "${c.name}"`;
+        lenses.push({
+          range: {
+            start: { line: fn.loc.start.line - 1, character: 0 },
+            end: { line: fn.loc.start.line - 1, character: 0 },
+          },
+          command: {
+            title,
+            command: "justscript.selectCase",
+            arguments: [params.textDocument.uri, fn.functionName, c.index, c.name],
+          },
+        });
+      }
+    }
+
+    return lenses;
+  } catch {
+    return [];
+  }
+});
+
+connection.onRequest("justscript/selectCase", (params: { uri: string; functionName: string; caseIndex: number }) => {
+  const cases = getActiveCasesForUri(params.uri);
+  cases.set(params.functionName, params.caseIndex);
+
+  const document = documents.get(params.uri);
+  if (document) {
+    validateDocument(document);
+  }
+
+  connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {});
+
+  return { success: true };
+});
+
+connection.onRequest("justscript/getActiveCases", (params: { uri: string }) => {
+  const cases = getActiveCasesForUri(params.uri);
+  const result: Record<string, number> = {};
+  for (const [fn, idx] of cases) {
+    result[fn] = idx;
+  }
+  return result;
 });
 
 function isJustFile(uri: string): boolean {

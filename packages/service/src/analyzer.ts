@@ -23,6 +23,7 @@ import {
   resetMemo,
   getUnreachableRanges,
   resetUnreachableRanges,
+  setNodeTypeCollector,
 } from "@justscript/cli/evaluator";
 
 export type SourceLocation = {
@@ -333,11 +334,29 @@ function buildNodeTypeMap(ast: Node, env: Environment, nodeTypeMap: Map<Node, Ty
   }
 }
 
+export type CaseInfo = {
+  functionName: string;
+  caseName: string;
+  caseIndex: number;
+};
+
+export function getCasesForFile(filePath: string, source: string): { functionName: string; cases: { name: string; index: number }[]; loc: SourceLocation }[] {
+  const ast = parse(source);
+  const functions = extractDirectives(ast);
+  return functions.map((fn) => {
+    const cases = fn.directives
+      .filter((d) => d.kind === "case")
+      .map((d, i) => ({ name: d.name, index: i }));
+    return { functionName: fn.name, cases, loc: locFromNode(fn.node) };
+  });
+}
+
 export function getTypeAtPosition(
   filePath: string,
   source: string,
   line: number,
   column: number,
+  activeCases?: Map<string, number>,
 ): TypeValue | null {
   const ast = parse(source);
   resetMemo();
@@ -351,13 +370,50 @@ export function getTypeAtPosition(
   buildNodeTypeMap(ast, globalEnv, nodeTypeMap);
 
   const functions = extractDirectives(ast);
-  for (const fn of functions) {
-    const caseDirectives = fn.directives.filter((d) => d.kind === "case");
-    for (const directive of caseDirectives) {
-      evaluateFunctionFull(fn.node, directive.args, globalEnv);
+  const enclosingFn = findEnclosingFunction(functions, line);
+
+  if (enclosingFn) {
+    const caseDirectives = enclosingFn.directives.filter((d) => d.kind === "case");
+    if (caseDirectives.length > 0) {
+      const caseIndex = activeCases?.get(enclosingFn.name) ?? 0;
+      const directive = caseDirectives[Math.min(caseIndex, caseDirectives.length - 1)];
+
+      const fnNodeTypeMap = new Map<Node, TypeValue>();
+      setNodeTypeCollector((node, tv) => fnNodeTypeMap.set(node, tv));
+      evaluateFunctionFull(enclosingFn.node, directive.args, globalEnv);
+      setNodeTypeCollector(null);
+
+      for (const [node, tv] of fnNodeTypeMap) {
+        nodeTypeMap.set(node, tv);
+      }
     }
   }
 
+  setModuleResolver(null);
+  return findBestTypeAtPosition(nodeTypeMap, globalEnv, ast, line, column);
+}
+
+function findEnclosingFunction(
+  functions: FunctionWithDirectives[],
+  line: number,
+): FunctionWithDirectives | null {
+  for (const fn of functions) {
+    const loc = fn.node.loc;
+    if (!loc) continue;
+    if (loc.start.line <= line && loc.end.line >= line) {
+      return fn;
+    }
+  }
+  return null;
+}
+
+function findBestTypeAtPosition(
+  nodeTypeMap: Map<Node, TypeValue>,
+  globalEnv: Environment,
+  ast: Node,
+  line: number,
+  column: number,
+): TypeValue | null {
   let bestMatch: TypeValue | null = null;
   let bestSize = Infinity;
 
@@ -385,7 +441,6 @@ export function getTypeAtPosition(
     }
   }
 
-  setModuleResolver(null);
   return bestMatch;
 }
 
