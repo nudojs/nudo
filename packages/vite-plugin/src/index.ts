@@ -1,12 +1,12 @@
-import { analyzeFile, type AnalysisResult } from "@justscript/service";
+import { analyzeFile, type AnalysisResult } from "@nudo/service";
 
-export type JustScriptPluginOptions = {
+export type NudoPluginOptions = {
   include?: string[];
   exclude?: string[];
   failOnError?: boolean;
 };
 
-const DEFAULT_INCLUDE = ["**/*.just.js"];
+const DEFAULT_INCLUDE = ["**/*.js"];
 const DEFAULT_EXCLUDE = ["**/node_modules/**"];
 
 function matchesPatterns(id: string, include: string[], exclude: string[]): boolean {
@@ -16,7 +16,7 @@ function matchesPatterns(id: string, include: string[], exclude: string[]): bool
 }
 
 function minimatch(str: string, pattern: string): boolean {
-  if (pattern === "**/*.just.js") return str.endsWith(".just.js");
+  if (pattern === "**/*.js") return str.endsWith(".js");
   if (pattern === "**/node_modules/**") return str.includes("/node_modules/");
   if (pattern.startsWith("**/")) {
     return str.endsWith(pattern.slice(3)) || str.includes(pattern.slice(2));
@@ -24,7 +24,7 @@ function minimatch(str: string, pattern: string): boolean {
   return str.includes(pattern);
 }
 
-export default function justscriptPlugin(options: JustScriptPluginOptions = {}): any {
+export default function nudoPlugin(options: NudoPluginOptions = {}): any {
   const include = options.include ?? DEFAULT_INCLUDE;
   const exclude = options.exclude ?? DEFAULT_EXCLUDE;
   const failOnError = options.failOnError ?? false;
@@ -32,7 +32,7 @@ export default function justscriptPlugin(options: JustScriptPluginOptions = {}):
   const analysisCache = new Map<string, AnalysisResult>();
 
   return {
-    name: "vite-plugin-justscript",
+    name: "vite-plugin-nudo",
 
     buildStart() {
       analysisCache.clear();
@@ -40,6 +40,7 @@ export default function justscriptPlugin(options: JustScriptPluginOptions = {}):
 
     transform(code: string, id: string) {
       if (!matchesPatterns(id, include, exclude)) return null;
+      if (!/@nudo:(case|mock|pure|skip|sample|returns)\b/.test(code)) return null;
 
       try {
         const result = analyzeFile(id, code);
@@ -47,7 +48,7 @@ export default function justscriptPlugin(options: JustScriptPluginOptions = {}):
 
         for (const diag of result.diagnostics) {
           const loc = `${id}:${diag.range.start.line}:${diag.range.start.column}`;
-          const msg = `[justscript] ${loc} ${diag.severity}: ${diag.message}`;
+          const msg = `[nudo] ${loc} ${diag.severity}: ${diag.message}`;
 
           if (diag.severity === "error") {
             if (failOnError) {
@@ -60,7 +61,7 @@ export default function justscriptPlugin(options: JustScriptPluginOptions = {}):
           }
         }
       } catch (err) {
-        (this as any).warn(`[justscript] Failed to analyze ${id}: ${(err as Error).message}`);
+        (this as any).warn(`[nudo] Failed to analyze ${id}: ${(err as Error).message}`);
       }
 
       return null;
@@ -73,7 +74,7 @@ export default function justscriptPlugin(options: JustScriptPluginOptions = {}):
         const errorCount = Array.from(analysisCache.values())
           .reduce((sum, r) => sum + r.diagnostics.filter((d) => d.severity === "error").length, 0);
         const warnCount = totalDiags - errorCount;
-        console.log(`[justscript] Analysis complete: ${errorCount} error(s), ${warnCount} warning(s)`);
+        console.log(`[nudo] Analysis complete: ${errorCount} error(s), ${warnCount} warning(s)`);
       }
     },
   };

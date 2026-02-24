@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { T } from "@justscript/core";
+import { T } from "@nudo/core";
 import { typeValueToTSType, generateDts } from "../dts-generator.ts";
 import { analyzeFile } from "../analyzer.ts";
 
@@ -66,14 +66,14 @@ describe("generateDts", () => {
   it("generates .d.ts from analysis result", () => {
     const source = `
 /**
- * @just:case "concrete" (1, 2)
- * @just:case "symbolic" (T.number, T.number)
+ * @nudo:case "concrete" (1, 2)
+ * @nudo:case "symbolic" (T.number, T.number)
  */
 function add(a, b) {
   return a + b;
 }
 `;
-    const result = analyzeFile("/test/gen.just.js", source);
+    const result = analyzeFile("/test/gen.js", source);
     const dts = generateDts(result);
     expect(dts).toContain("export declare function add");
     expect(dts).toContain("): 3;");
@@ -83,13 +83,13 @@ function add(a, b) {
   it("generates single overload for single case", () => {
     const source = `
 /**
- * @just:case "test" (T.number)
+ * @nudo:case "test" (T.number)
  */
 function identity(x) {
   return x;
 }
 `;
-    const result = analyzeFile("/test/single.just.js", source);
+    const result = analyzeFile("/test/single.js", source);
     const dts = generateDts(result);
     const lines = dts.trim().split("\n");
     expect(lines).toHaveLength(1);

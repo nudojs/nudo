@@ -38,10 +38,10 @@ importers:
 
   packages/cli:
     dependencies:
-      '@justscript/core':
+      '@nudo/core':
         specifier: workspace:*
         version: link:../core
-      '@justscript/parser':
+      '@nudo/parser':
         specifier: workspace:*
         version: link:../parser
 
@@ -49,10 +49,10 @@ importers:
 
   packages/lsp:
     dependencies:
-      '@justscript/core':
+      '@nudo/core':
         specifier: workspace:*
         version: link:../core
-      '@justscript/service':
+      '@nudo/service':
         specifier: workspace:*
         version: link:../service
       vscode-languageserver:
@@ -64,7 +64,7 @@ importers:
 
   packages/parser:
     dependencies:
-      '@justscript/core':
+      '@nudo/core':
         specifier: workspace:*
         version: link:../core
 
@@ -76,19 +76,19 @@ importers:
       '@babel/types':
         specifier: ^7.29.0
         version: 7.29.0
-      '@justscript/cli':
+      '@nudo/cli':
         specifier: workspace:*
         version: link:../cli
-      '@justscript/core':
+      '@nudo/core':
         specifier: workspace:*
         version: link:../core
-      '@justscript/parser':
+      '@nudo/parser':
         specifier: workspace:*
         version: link:../parser
 
   packages/vite-plugin:
     dependencies:
-      '@justscript/service':
+      '@nudo/service':
         specifier: workspace:*
         version: link:../service
       vite:

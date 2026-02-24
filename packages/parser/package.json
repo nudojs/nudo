@@ -1,5 +1,5 @@
 {
-  "name": "@justscript/parser",
+  "name": "@nudo/parser",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@justscript/core": "workspace:*"
+    "@nudo/core": "workspace:*"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts"

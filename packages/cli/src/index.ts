@@ -7,16 +7,16 @@ import {
   simplifyUnion,
   createEnvironment,
   isSubtypeOf,
-} from "@justscript/core";
-import type { TypeValue } from "@justscript/core";
-import { parse, extractDirectives, parseTypeValueExpr } from "@justscript/parser";
+} from "@nudo/core";
+import type { TypeValue } from "@nudo/core";
+import { parse, extractDirectives, parseTypeValueExpr } from "@nudo/parser";
 import { evaluateFunction, evaluateFunctionFull, evaluateProgram, setModuleResolver, setCurrentFileDir, resetMemo } from "./evaluator.ts";
 
 const program = new Command();
 
 program
-  .name("justscript")
-  .description("JustScript type inference engine")
+  .name("nudo")
+  .description("Nudo type inference engine")
   .version("0.0.1");
 
 function applyMocks(
@@ -41,7 +41,7 @@ function applyMocks(
 }
 
 function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string } | null {
-  const extensions = [".js", ".just.js", ".ts", ".mjs"];
+  const extensions = [".js", ".ts", ".mjs"];
   const basePath = resolve(fromDir, source);
 
   for (const ext of ["", ...extensions]) {
@@ -99,7 +99,7 @@ function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = 
   const functions = extractDirectives(ast);
 
   if (functions.length === 0) {
-    console.log("No functions with @just:case directives found.");
+    console.log("No functions with @nudo:case directives found.");
     return;
   }
 
@@ -178,7 +178,7 @@ function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = 
         const result = evaluateFunction(fn.node, directive.args, globalEnv);
         const matches = isSubtypeOf(result, returnsDirective.expected);
         if (!matches) {
-          console.log(`\n⚠ @just:returns assertion failed for case "${directive.name}": expected ${typeValueToString(returnsDirective.expected)}, got ${typeValueToString(result)}`);
+          console.log(`\n⚠ @nudo:returns assertion failed for case "${directive.name}": expected ${typeValueToString(returnsDirective.expected)}, got ${typeValueToString(result)}`);
         }
       }
     }
@@ -200,7 +200,7 @@ function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = 
   }
 
   if (options.dts && dtsLines.length > 0) {
-    const dtsPath = filePath.replace(/\.(just\.)?js$/, ".d.ts");
+    const dtsPath = filePath.replace(/\.js$/, ".d.ts");
     const dtsContent = dtsLines.join("\n") + "\n";
     writeFileSync(dtsPath, dtsContent, "utf-8");
     console.log(`Generated: ${relative(process.cwd(), dtsPath)}`);
@@ -211,8 +211,8 @@ function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = 
 
 program
   .command("infer")
-  .description("Infer types from a .just.js file")
-  .argument("<file>", "Path to the .just.js file")
+  .description("Infer types from a JS file with @nudo: directives")
+  .argument("<file>", "Path to the JS file")
   .option("--dts", "Generate .d.ts file")
   .option("--loc", "Show source locations in output")
   .action((file: string, opts: { dts?: boolean; loc?: boolean }) => {
@@ -230,7 +230,7 @@ program
 
     const getFiles = (): string[] => {
       if (!isDir) return [resolved];
-      return collectJustFiles(resolved);
+      return collectNudoFiles(resolved);
     };
 
     const runAll = () => {
@@ -254,21 +254,24 @@ program
     watch(watchTarget, { recursive: isDir }, (_event, filename) => {
       if (!filename) return;
       const fullPath = isDir ? join(watchTarget, filename) : resolved;
-      if (!fullPath.endsWith(".just.js") && !fullPath.endsWith(".js")) return;
+      if (!fullPath.endsWith(".js")) return;
 
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(runAll, 200);
     });
   });
 
-function collectJustFiles(dir: string): string[] {
+function collectNudoFiles(dir: string): string[] {
   const results: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory() && entry.name !== "node_modules") {
-      results.push(...collectJustFiles(fullPath));
-    } else if (entry.isFile() && entry.name.endsWith(".just.js")) {
-      results.push(fullPath);
+      results.push(...collectNudoFiles(fullPath));
+    } else if (entry.isFile() && entry.name.endsWith(".js")) {
+      const content = readFileSync(fullPath, "utf-8");
+      if (/@nudo:(case|mock|pure|skip|sample|returns)\b/.test(content)) {
+        results.push(fullPath);
+      }
     }
   }
   return results;

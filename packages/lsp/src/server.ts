@@ -17,14 +17,14 @@ import {
   InlayHintKind,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
-import { typeValueToString } from "@justscript/core";
+import { typeValueToString } from "@nudo/core";
 import {
   analyzeFile,
   getTypeAtPosition,
   getCompletionsAtPosition,
   getCasesForFile,
   type DiagnosticSeverity as JsDiagSeverity,
-} from "@justscript/service";
+} from "@nudo/service";
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
@@ -64,6 +64,7 @@ let debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 documents.onDidChangeContent((change) => {
   const uri = change.document.uri;
+  nudoFileCache.delete(uri);
   const existing = debounceTimers.get(uri);
   if (existing) clearTimeout(existing);
 
@@ -80,12 +81,13 @@ documents.onDidClose((event) => {
   const timer = debounceTimers.get(event.document.uri);
   if (timer) clearTimeout(timer);
   debounceTimers.delete(event.document.uri);
+  nudoFileCache.delete(event.document.uri);
   connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
 });
 
 function validateDocument(document: TextDocument): void {
   const uri = document.uri;
-  if (!isJustFile(uri)) {
+  if (!isNudoFile(uri)) {
     connection.sendDiagnostics({ uri, diagnostics: [] });
     return;
   }
@@ -104,7 +106,7 @@ function validateDocument(document: TextDocument): void {
           end: { line: d.range.end.line - 1, character: d.range.end.column },
         },
         message: d.message,
-        source: "justscript",
+        source: "nudo",
       };
       if (d.tags?.includes("unnecessary")) {
         diag.tags = [DiagnosticTag.Unnecessary];
@@ -120,7 +122,7 @@ function validateDocument(document: TextDocument): void {
           severity: DiagnosticSeverity.Error,
           range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
           message: `Analysis error: ${(err as Error).message}`,
-          source: "justscript",
+          source: "nudo",
         },
       ],
     });
@@ -130,7 +132,7 @@ function validateDocument(document: TextDocument): void {
 connection.onHover((params) => {
   const document = documents.get(params.textDocument.uri);
   if (!document) return null;
-  if (!isJustFile(params.textDocument.uri)) return null;
+  if (!isNudoFile(params.textDocument.uri)) return null;
 
   const filePath = uriToFilePath(params.textDocument.uri);
   const source = document.getText();
@@ -145,7 +147,7 @@ connection.onHover((params) => {
     return {
       contents: {
         kind: MarkupKind.Markdown,
-        value: `\`\`\`justscript\n${typeValueToString(tv)}\n\`\`\``,
+        value: `\`\`\`nudo\n${typeValueToString(tv)}\n\`\`\``,
       },
     };
   } catch {
@@ -156,7 +158,7 @@ connection.onHover((params) => {
 connection.onCompletion((params) => {
   const document = documents.get(params.textDocument.uri);
   if (!document) return [];
-  if (!isJustFile(params.textDocument.uri)) return [];
+  if (!isNudoFile(params.textDocument.uri)) return [];
 
   const filePath = uriToFilePath(params.textDocument.uri);
   const source = document.getText();
@@ -182,7 +184,7 @@ connection.onCompletion((params) => {
 connection.onCodeLens((params) => {
   const document = documents.get(params.textDocument.uri);
   if (!document) return [];
-  if (!isJustFile(params.textDocument.uri)) return [];
+  if (!isNudoFile(params.textDocument.uri)) return [];
 
   const filePath = uriToFilePath(params.textDocument.uri);
   const source = document.getText();
@@ -206,7 +208,7 @@ connection.onCodeLens((params) => {
           },
           command: {
             title,
-            command: "justscript.selectCase",
+            command: "nudo.selectCase",
             arguments: [params.textDocument.uri, fn.functionName, c.index, c.name],
           },
         });
@@ -222,7 +224,7 @@ connection.onCodeLens((params) => {
 connection.languages.inlayHint.on((params) => {
   const document = documents.get(params.textDocument.uri);
   if (!document) return [];
-  if (!isJustFile(params.textDocument.uri)) return [];
+  if (!isNudoFile(params.textDocument.uri)) return [];
 
   const filePath = uriToFilePath(params.textDocument.uri);
   const source = document.getText();
@@ -252,7 +254,7 @@ connection.languages.inlayHint.on((params) => {
   }
 });
 
-connection.onRequest("justscript/selectCase", (params: { uri: string; functionName: string; caseIndex: number }) => {
+connection.onRequest("nudo/selectCase", (params: { uri: string; functionName: string; caseIndex: number }) => {
   const cases = getActiveCasesForUri(params.uri);
   cases.set(params.functionName, params.caseIndex);
 
@@ -266,7 +268,7 @@ connection.onRequest("justscript/selectCase", (params: { uri: string; functionNa
   return { success: true };
 });
 
-connection.onRequest("justscript/getActiveCases", (params: { uri: string }) => {
+connection.onRequest("nudo/getActiveCases", (params: { uri: string }) => {
   const cases = getActiveCasesForUri(params.uri);
   const result: Record<string, number> = {};
   for (const [fn, idx] of cases) {
@@ -275,8 +277,21 @@ connection.onRequest("justscript/getActiveCases", (params: { uri: string }) => {
   return result;
 });
 
-function isJustFile(uri: string): boolean {
-  return uri.endsWith(".just.js") || uri.endsWith(".just.ts");
+const nudoFileCache = new Map<string, boolean>();
+
+function isNudoFile(uri: string): boolean {
+  if (!uri.endsWith(".js") && !uri.endsWith(".ts") && !uri.endsWith(".mjs")) return false;
+  const cached = nudoFileCache.get(uri);
+  if (cached !== undefined) return cached;
+  const doc = documents.get(uri);
+  if (!doc) return false;
+  const result = hasNudoDirectives(doc.getText());
+  nudoFileCache.set(uri, result);
+  return result;
+}
+
+function hasNudoDirectives(source: string): boolean {
+  return /@nudo:(case|mock|pure|skip|sample|returns)\b/.test(source);
 }
 
 function uriToFilePath(uri: string): string {

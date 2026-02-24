@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { T, typeValueEquals, typeValueToString, createEnvironment } from "@justscript/core";
-import { parse } from "@justscript/parser";
+import { T, typeValueEquals, typeValueToString, createEnvironment } from "@nudo/core";
+import { parse } from "@nudo/parser";
 import { narrow } from "../narrowing.ts";
 import type { ExpressionStatement } from "@babel/types";
 

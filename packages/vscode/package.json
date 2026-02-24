@@ -1,10 +1,10 @@
 {
-  "name": "justscript-vscode",
-  "displayName": "JustScript",
-  "description": "JustScript type inference engine for VS Code / Cursor",
+  "name": "nudo-vscode",
+  "displayName": "Nudo",
+  "description": "Nudo type inference engine for VS Code / Cursor",
   "version": "0.0.1",
   "private": true,
-  "publisher": "justscript",
+  "publisher": "nudo",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -16,30 +16,10 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
-    "languages": [
-      {
-        "id": "justscript",
-        "aliases": [
-          "JustScript",
-          "justscript"
-        ],
-        "extensions": [
-          ".just.js"
-        ],
-        "configuration": "./language-configuration.json"
-      }
-    ],
-    "grammars": [
-      {
-        "language": "justscript",
-        "scopeName": "source.js",
-        "path": "./syntaxes/justscript.tmLanguage.json"
-      }
-    ],
     "commands": [
       {
-        "command": "justscript.selectCase",
-        "title": "JustScript: Select Case"
+        "command": "nudo.selectCase",
+        "title": "Nudo: Select Case"
       }
     ]
   },

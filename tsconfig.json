@@ -3,9 +3,9 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@justscript/core": ["packages/core/src"],
-      "@justscript/parser": ["packages/parser/src"],
-      "@justscript/cli": ["packages/cli/src"]
+      "@nudo/core": ["packages/core/src"],
+      "@nudo/parser": ["packages/parser/src"],
+      "@nudo/cli": ["packages/cli/src"]
     }
   },
   "references": [

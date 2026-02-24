@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "../parse.ts";
 import { extractDirectives, parseTypeValueExpr } from "../directives.ts";
-import { T, typeValueEquals } from "@justscript/core";
+import { T, typeValueEquals } from "@nudo/core";
 
 describe("parseTypeValueExpr", () => {
   it("parses T.number", () => {
@@ -50,11 +50,11 @@ describe("parseTypeValueExpr", () => {
 });
 
 describe("extractDirectives", () => {
-  it("extracts @just:case directives from function", () => {
+  it("extracts @nudo:case directives from function", () => {
     const source = `
 /**
- * @just:case "concrete" (1, 2)
- * @just:case "symbolic" (T.number, T.number)
+ * @nudo:case "concrete" (1, 2)
+ * @nudo:case "symbolic" (T.number, T.number)
  */
 function calc(a, b) {
   return a + b;
@@ -82,12 +82,12 @@ function calc(a, b) {
   it("extracts from multiple functions", () => {
     const source = `
 /**
- * @just:case "test" (1)
+ * @nudo:case "test" (1)
  */
 function foo(x) { return x; }
 
 /**
- * @just:case "test2" ("hello")
+ * @nudo:case "test2" ("hello")
  */
 function bar(s) { return s; }
 `;
@@ -103,7 +103,7 @@ function bar(s) { return s; }
 function noDirective(x) { return x; }
 
 /**
- * @just:case "test" (T.number)
+ * @nudo:case "test" (T.number)
  */
 function withDirective(x) { return x + 1; }
 `;
@@ -116,7 +116,7 @@ function withDirective(x) { return x + 1; }
   it("handles string arguments in case", () => {
     const source = `
 /**
- * @just:case "string test" ("hello", "world")
+ * @nudo:case "string test" ("hello", "world")
  */
 function greet(a, b) { return a + b; }
 `;

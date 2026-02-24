@@ -1,13 +1,13 @@
 {
-  "name": "@justscript/service",
+  "name": "@nudo/service",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "@justscript/core": "workspace:*",
-    "@justscript/parser": "workspace:*",
-    "@justscript/cli": "workspace:*",
+    "@nudo/core": "workspace:*",
+    "@nudo/parser": "workspace:*",
+    "@nudo/cli": "workspace:*",
     "@babel/traverse": "^7.29.0",
     "@babel/types": "^7.29.0"
   },

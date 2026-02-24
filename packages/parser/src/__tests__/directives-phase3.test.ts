@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { T } from "@justscript/core";
+import { T } from "@nudo/core";
 import { extractDirectives } from "../directives.ts";
 import { parse } from "../parse.ts";
 
@@ -8,12 +8,12 @@ function getDirectives(source: string) {
   return extractDirectives(ast);
 }
 
-describe("@just:pure directive", () => {
-  it("parses @just:pure", () => {
+describe("@nudo:pure directive", () => {
+  it("parses @nudo:pure", () => {
     const fns = getDirectives(`
       /**
-       * @just:pure
-       * @just:case "test" (1, 2)
+       * @nudo:pure
+       * @nudo:case "test" (1, 2)
        */
       function add(a, b) { return a + b; }
     `);
@@ -24,11 +24,11 @@ describe("@just:pure directive", () => {
   });
 });
 
-describe("@just:skip directive", () => {
-  it("parses @just:skip without return type", () => {
+describe("@nudo:skip directive", () => {
+  it("parses @nudo:skip without return type", () => {
     const fns = getDirectives(`
       /**
-       * @just:skip
+       * @nudo:skip
        */
       function external() {}
     `);
@@ -40,10 +40,10 @@ describe("@just:skip directive", () => {
     }
   });
 
-  it("parses @just:skip with return type", () => {
+  it("parses @nudo:skip with return type", () => {
     const fns = getDirectives(`
       /**
-       * @just:skip T.number
+       * @nudo:skip T.number
        */
       function external() {}
     `);
@@ -56,12 +56,12 @@ describe("@just:skip directive", () => {
   });
 });
 
-describe("@just:sample directive", () => {
-  it("parses @just:sample with count", () => {
+describe("@nudo:sample directive", () => {
+  it("parses @nudo:sample with count", () => {
     const fns = getDirectives(`
       /**
-       * @just:sample 5
-       * @just:case "test" (T.number)
+       * @nudo:sample 5
+       * @nudo:case "test" (T.number)
        */
       function loop(n) { return n; }
     `);
@@ -74,12 +74,12 @@ describe("@just:sample directive", () => {
   });
 });
 
-describe("@just:returns directive", () => {
-  it("parses @just:returns with type", () => {
+describe("@nudo:returns directive", () => {
+  it("parses @nudo:returns with type", () => {
     const fns = getDirectives(`
       /**
-       * @just:returns (T.number)
-       * @just:case "test" (1, 2)
+       * @nudo:returns (T.number)
+       * @nudo:case "test" (1, 2)
        */
       function add(a, b) { return a + b; }
     `);

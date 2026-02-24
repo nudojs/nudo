@@ -6,9 +6,9 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@justscript/core": new URL("./packages/core/src", import.meta.url)
+      "@nudo/core": new URL("./packages/core/src", import.meta.url)
         .pathname,
-      "@justscript/parser": new URL("./packages/parser/src", import.meta.url)
+      "@nudo/parser": new URL("./packages/parser/src", import.meta.url)
         .pathname,
     },
   },

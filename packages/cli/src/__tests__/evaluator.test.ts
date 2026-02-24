@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { T, typeValueEquals, typeValueToString, createEnvironment } from "@justscript/core";
-import { parse, extractDirectives } from "@justscript/parser";
+import { T, typeValueEquals, typeValueToString, createEnvironment } from "@nudo/core";
+import { parse, extractDirectives } from "@nudo/parser";
 import { evaluateFunction, evaluateProgram } from "../evaluator.ts";
 
 function inferFromSource(source: string) {
@@ -19,8 +19,8 @@ function inferFromSource(source: string) {
 describe("End-to-end: calc example from design doc", () => {
   const source = `
 /**
- * @just:case "concrete" (1, 2)
- * @just:case "symbolic" (T.number, T.number)
+ * @nudo:case "concrete" (1, 2)
+ * @nudo:case "symbolic" (T.number, T.number)
  */
 function calc(a, b) {
   if (a > b) return a - b;
@@ -48,9 +48,9 @@ function calc(a, b) {
 describe("End-to-end: subtract example", () => {
   const source = `
 /**
- * @just:case "positive numbers" (5, 3)
- * @just:case "negative result" (1, 10)
- * @just:case "symbolic" (T.number, T.number)
+ * @nudo:case "positive numbers" (5, 3)
+ * @nudo:case "negative result" (1, 10)
+ * @nudo:case "symbolic" (T.number, T.number)
  */
 function subtract(a, b) {
   return a - b;
@@ -79,9 +79,9 @@ function subtract(a, b) {
 describe("End-to-end: typeof narrowing", () => {
   const source = `
 /**
- * @just:case "with number" (42)
- * @just:case "with string" ("hello")
- * @just:case "symbolic" (T.union(T.number, T.string))
+ * @nudo:case "with number" (42)
+ * @nudo:case "with string" ("hello")
+ * @nudo:case "symbolic" (T.union(T.number, T.string))
  */
 function describe(x) {
   if (typeof x === "number") return x + 1;
@@ -111,9 +111,9 @@ function describe(x) {
 describe("End-to-end: strict equality narrowing", () => {
   const source = `
 /**
- * @just:case "null case" (null)
- * @just:case "number case" (5)
- * @just:case "symbolic" (T.union(T.null, T.number))
+ * @nudo:case "null case" (null)
+ * @nudo:case "number case" (5)
+ * @nudo:case "symbolic" (T.union(T.null, T.number))
  */
 function safe(x) {
   if (x === null) return 0;

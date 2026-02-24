@@ -1,5 +1,5 @@
 {
-  "name": "@justscript/cli",
+  "name": "@nudo/cli",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -9,11 +9,11 @@
     "./evaluator": "./src/evaluator-api.ts"
   },
   "bin": {
-    "justscript": "src/index.ts"
+    "nudo": "src/index.ts"
   },
   "dependencies": {
-    "@justscript/core": "workspace:*",
-    "@justscript/parser": "workspace:*"
+    "@nudo/core": "workspace:*",
+    "@nudo/parser": "workspace:*"
   },
   "scripts": {
     "build": "tsup src/index.ts src/evaluator-api.ts --format esm --dts"

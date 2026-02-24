@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "../parse.ts";
 import { extractDirectives, parseTypeValueExpr } from "../directives.ts";
-import { T, typeValueEquals, typeValueToString } from "@justscript/core";
+import { T, typeValueEquals, typeValueToString } from "@nudo/core";
 
 describe("parseTypeValueExpr: Phase 2 enhancements", () => {
   it("parses T.array(T.number)", () => {
@@ -56,12 +56,12 @@ describe("parseTypeValueExpr: Phase 2 enhancements", () => {
   });
 });
 
-describe("extractDirectives: @just:mock", () => {
+describe("extractDirectives: @nudo:mock", () => {
   it("extracts inline mock directive", () => {
     const source = `
 /**
- * @just:mock fetch = T.unknown
- * @just:case "test" (1)
+ * @nudo:mock fetch = T.unknown
+ * @nudo:case "test" (1)
  */
 function foo(x) { return x; }
 `;
@@ -80,8 +80,8 @@ function foo(x) { return x; }
   it("extracts mock from file directive", () => {
     const source = `
 /**
- * @just:mock utils from "./utils.mock.js"
- * @just:case "test" (1)
+ * @nudo:mock utils from "./utils.mock.js"
+ * @nudo:case "test" (1)
  */
 function foo(x) { return x; }
 `;
@@ -98,8 +98,8 @@ function foo(x) { return x; }
   it("extracts both mock and case directives", () => {
     const source = `
 /**
- * @just:mock helper = T.number
- * @just:case "test" (T.number)
+ * @nudo:mock helper = T.number
+ * @nudo:case "test" (T.number)
  */
 function foo(x) { return x; }
 `;

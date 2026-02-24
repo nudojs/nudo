@@ -51,30 +51,29 @@ export function activate(context: ExtensionContext): void {
 
   const clientOptions: LanguageClientOptions = {
     documentSelector: [
-      { scheme: "file", language: "justscript" },
-      { scheme: "file", language: "javascript", pattern: "**/*.just.js" },
+      { scheme: "file", language: "javascript" },
     ],
     synchronize: {
-      fileEvents: workspace.createFileSystemWatcher("**/*.just.js"),
+      fileEvents: workspace.createFileSystemWatcher("**/*.js"),
     },
   };
 
   client = new LanguageClient(
-    "justscript",
-    "JustScript Language Server",
+    "nudo",
+    "Nudo Language Server",
     serverOptions,
     clientOptions,
   );
 
   const statusBar = window.createStatusBarItem(StatusBarAlignment.Right, 100);
-  statusBar.text = "$(symbol-type-parameter) JustScript";
-  statusBar.tooltip = "JustScript Type Inference Engine";
+  statusBar.text = "$(symbol-type-parameter) Nudo";
+  statusBar.tooltip = "Nudo Type Inference Engine";
   statusBar.show();
   context.subscriptions.push(statusBar);
 
   context.subscriptions.push(
     commands.registerCommand(
-      "justscript.selectCase",
+      "nudo.selectCase",
       async (uri: string, functionName: string, caseIndex: number, caseName: string) => {
         if (!client) return;
 
@@ -83,7 +82,7 @@ export function activate(context: ExtensionContext): void {
 
         updateHighlights();
 
-        await client.sendRequest("justscript/selectCase", { uri, functionName, caseIndex });
+        await client.sendRequest("nudo/selectCase", { uri, functionName, caseIndex });
       },
     ),
   );
@@ -132,7 +131,7 @@ function findCaseCommentDecorations(
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const caseMatch = line.match(/@just:case\s+"([^"]+)"/);
+    const caseMatch = line.match(/@nudo:case\s+"([^"]+)"/);
     if (caseMatch) {
       pendingCases.push({ name: caseMatch[1], lineIndex: i });
       continue;

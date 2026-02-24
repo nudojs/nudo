@@ -1,6 +1,6 @@
-# JustScript 设计文档
+# Nudo 设计文档
 
-> **JustScript** — 一个 JS 超集求值引擎，通过对符号化的"类型值"执行代码来推导精确类型。
+> **Nudo** — 一个 JS 超集求值引擎，通过对符号化的"类型值"执行代码来推导精确类型。
 
 ## 1. 愿景与核心思想
 
@@ -29,11 +29,11 @@ type Transform<T> =
 
 **如果值级代码本身就是类型级计算呢？**
 
-JustScript 既不像 TypeScript 那样静态分析代码，也不像测试那样用具体值运行代码，而是**用符号化的"类型值"来执行代码**——这些特殊对象代表一组可能的值。执行过程本身就产生了类型。
+Nudo 既不像 TypeScript 那样静态分析代码，也不像测试那样用具体值运行代码，而是**用符号化的"类型值"来执行代码**——这些特殊对象代表一组可能的值。执行过程本身就产生了类型。
 
 ```
 传统方式：   源代码  →  静态分析  →  类型
-JustScript： 源代码  +  类型值    →  执行  →  类型
+Nudo： 源代码  +  类型值    →  执行  →  类型
 ```
 
 这不是"通过样例归纳类型"（从有限样本进行归纳推理）。这是**抽象解释（Abstract Interpretation）**——编程语言理论中一种成熟的技术——以开发者熟悉的"运行代码"心智模型呈现。
@@ -43,10 +43,10 @@ JustScript： 源代码  +  类型值    →  执行  →  类型
 | 方式 | 输入 | 输出 | 完备性 |
 |---|---|---|---|
 | 单元测试 | 具体值（`1`, `"hello"`） | 具体结果 | 仅覆盖测试用例 |
-| JustScript | 类型值（`T.number`, `T.string`） | 类型值 | 覆盖类型集合中的所有值 |
+| Nudo | 类型值（`T.number`, `T.string`） | 类型值 | 覆盖类型集合中的所有值 |
 | TypeScript | AST（不执行） | 类型 | 覆盖所有语法路径 |
 
-当 JustScript 执行 `transform(T.string)` 时，引擎将 `T.string` 在函数体中传播。在 `typeof x === "string"` 处，引擎知道该分支会被进入。在 `x.toUpperCase()` 处，引擎知道结果是 `T.string`。结果不是一个具体值——而是一个**类型**。
+当 Nudo 执行 `transform(T.string)` 时，引擎将 `T.string` 在函数体中传播。在 `typeof x === "string"` 处，引擎知道该分支会被进入。在 `x.toUpperCase()` 处，引擎知道结果是 `T.string`。结果不是一个具体值——而是一个**类型**。
 
 ---
 
@@ -181,13 +181,13 @@ function add(left: TypeValue, right: TypeValue): TypeValue {
 
 ---
 
-## 3. 求值引擎（JustScript Engine）
+## 3. 求值引擎（Nudo Engine）
 
 ### 3.1 架构概览
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                   JustScript Engine                  │
+│                   Nudo Engine                  │
 │                                                     │
 │  ┌───────────┐   ┌────────────┐   ┌──────────────┐ │
 │  │  Parser    │──▶│ Directive  │──▶│  Evaluator   │ │
@@ -212,7 +212,7 @@ function add(left: TypeValue, right: TypeValue): TypeValue {
 | 组件 | 职责 |
 |---|---|
 | **Parser** | 将 JS/TS 源码解析为 AST（委托给 SWC 或 Babel） |
-| **Directive Extractor** | 从注释中提取 `@just:*` 指令 |
+| **Directive Extractor** | 从注释中提取 `@nudo:*` 指令 |
 | **Evaluator** | 遍历 AST，使用类型值对每个节点求值 |
 | **Ops** | 定义所有 JS 运算符和 native 内置方法（如 `Array.prototype.map`、`String.prototype.toUpperCase` 等无 JS 源码可执行的方法）的类型值语义 |
 | **Environment** | 管理变量作用域和绑定（变量 → TypeValue） |
@@ -384,7 +384,7 @@ async function fetchUser(id) {
 }
 
 // 配合 mock：
-// @just:mock fetch = (url) => T.promise(T.object({ json: T.fn({ params: [], returns: T.object({ id: T.number, name: T.string }) }) }))
+// @nudo:mock fetch = (url) => T.promise(T.object({ json: T.fn({ params: [], returns: T.object({ id: T.number, name: T.string }) }) }))
 //
 // fetchUser(T.number) → T.promise(T.object({ id: T.number, name: T.string }))
 ```
@@ -393,7 +393,7 @@ async function fetchUser(id) {
 
 ### 4.5 异常与 `throws` 类型
 
-JustScript 将异常视为函数类型的一等属性。每个函数的推导结果不仅包含 `returns`，还包含 `throws`——这是 TypeScript 类型系统不具备的能力。
+Nudo 将异常视为函数类型的一等属性。每个函数的推导结果不仅包含 `returns`，还包含 `throws`——这是 TypeScript 类型系统不具备的能力。
 
 #### 4.5.1 基本模型
 
@@ -603,19 +603,19 @@ if (condition) {
 
 ---
 
-## 5. 指令系统（`@just:*`）
+## 5. 指令系统（`@nudo:*`）
 
-指令是引导引擎行为的结构化注释。它们位于 JSDoc 风格的块注释中，使用 `@just:` 命名空间以避免冲突。
+指令是引导引擎行为的结构化注释。它们位于 JSDoc 风格的块注释中，使用 `@nudo:` 命名空间以避免冲突。
 
-### 5.1 `@just:case` — 提供输入样例
+### 5.1 `@nudo:case` — 提供输入样例
 
 定义一个具名执行用例，可使用具体值或符号化的类型值。
 
 ```javascript
 /**
- * @just:case "positive numbers" (5, 3)
- * @just:case "negative result" (1, 10)
- * @just:case "symbolic" (T.number, T.number)
+ * @nudo:case "positive numbers" (5, 3)
+ * @nudo:case "negative result" (1, 10)
+ * @nudo:case "symbolic" (T.number, T.number)
  */
 function subtract(a, b) {
   return a - b;
@@ -627,47 +627,47 @@ function subtract(a, b) {
 // 组合类型：((5, 3) => 2) & ((1, 10) => -9) & ((number, number) => number)
 ```
 
-当没有提供 `@just:case` 时，引擎从 TypeScript 注解推断输入类型（如果有的话），否则每个参数默认为 `T.unknown`。
+当没有提供 `@nudo:case` 时，引擎从 TypeScript 注解推断输入类型（如果有的话），否则每个参数默认为 `T.unknown`。
 
-### 5.2 `@just:mock` — Mock 外部依赖
+### 5.2 `@nudo:mock` — Mock 外部依赖
 
 在求值期间将函数或模块替换为类型值感知的 mock 实现。
 
 ```javascript
 /**
- * @just:mock fetch = (url: T.string) => T.promise(T.object({
+ * @nudo:mock fetch = (url: T.string) => T.promise(T.object({
  *   ok: T.boolean,
  *   json: T.fn({ params: [], returns: T.object({ id: T.number, name: T.string }) })
  * }))
  */
 
 /**
- * @just:mock fs from "./mocks/fs.just.js"
+ * @nudo:mock fs from "./mocks/fs.js"
  */
 ```
 
 Mock 的作用是为引擎无法直接执行的外部依赖提供类型值级别的替代实现。与静态的类型声明不同，Mock 本身就是可执行的代码，因此它们可组合、可测试，并且能表达任意复杂的类型逻辑。
 
-### 5.3 `@just:pure` — 标记纯函数
+### 5.3 `@nudo:pure` — 标记纯函数
 
 启用记忆化。引擎对相同类型值输入的结果进行缓存。
 
 ```javascript
 /**
- * @just:pure
+ * @nudo:pure
  */
 function add(a, b) {
   return a + b;
 }
 ```
 
-### 5.4 `@just:skip` — 跳过求值
+### 5.4 `@nudo:skip` — 跳过求值
 
-指示引擎跳过函数体的求值，直接使用已有的类型信息（TypeScript 注解或 `@just:returns` 指定的类型）。
+指示引擎跳过函数体的求值，直接使用已有的类型信息（TypeScript 注解或 `@nudo:returns` 指定的类型）。
 
 ```javascript
 /**
- * @just:skip
+ * @nudo:skip
  */
 function heavyComputation(data: number[]): number {
   // ... 复杂算法 ...
@@ -675,26 +675,26 @@ function heavyComputation(data: number[]): number {
 // 引擎从返回类型注解得到 T.number，不求值函数体
 ```
 
-### 5.5 `@just:sample` — 循环采样
+### 5.5 `@nudo:sample` — 循环采样
 
 控制引擎在切换到不动点分析之前，对循环求值多少次迭代。
 
 ```javascript
 /**
- * @just:sample 10
+ * @nudo:sample 10
  */
 for (let i = 0; i < arr.length; i++) {
   // 引擎求值 10 次具体迭代，然后泛化
 }
 ```
 
-### 5.6 `@just:returns` — 断言预期类型
+### 5.6 `@nudo:returns` — 断言预期类型
 
 验证指令。求值完成后，引擎检查推导出的类型是否满足谓词。
 
 ```javascript
 /**
- * @just:returns (type) => type.isSubtypeOf(T.union(T.number, T.string))
+ * @nudo:returns (type) => type.isSubtypeOf(T.union(T.number, T.string))
  */
 function process(x) { /* ... */ }
 ```
@@ -707,7 +707,7 @@ function process(x) { /* ... */ }
 
 ### 6.1 无需独立的类型语言
 
-TypeScript 要求学习两种语言：JavaScript 用于值，TypeScript 类型语言用于类型。JustScript 将它们统一——值级代码本身就是类型计算。
+TypeScript 要求学习两种语言：JavaScript 用于值，TypeScript 类型语言用于类型。Nudo 将它们统一——值级代码本身就是类型计算。
 
 **TypeScript：**
 ```typescript
@@ -723,7 +723,7 @@ type Repeat<S extends string, N extends number, Acc extends string = ""> =
 // （还需要一个单独的 Subtract 类型工具等等……）
 ```
 
-**JustScript：**
+**Nudo：**
 ```javascript
 function repeat(s, n) {
   return s.repeat(n);
@@ -743,7 +743,7 @@ function parseVersion(str) {
   return { major, minor, patch };
 }
 
-// JustScript：
+// Nudo：
 // parseVersion(T.literal("1.2.3"))
 // → T.object({ major: T.literal(1), minor: T.literal(2), patch: T.literal(3) })
 
@@ -752,7 +752,7 @@ function parseVersion(str) {
 
 ### 6.3 第三方 JS 库
 
-对于有 JS 源码的第三方库，JustScript 可以直接执行其代码来推导类型，不需要 `.d.ts`。对于 native 模块或引擎无法直接执行的依赖，则通过 `@just:mock` 提供类型值级别的替代实现：
+对于有 JS 源码的第三方库，Nudo 可以直接执行其代码来推导类型，不需要 `.d.ts`。对于 native 模块或引擎无法直接执行的依赖，则通过 `@nudo:mock` 提供类型值级别的替代实现：
 
 ```javascript
 // 有 JS 源码的库——直接执行推导
@@ -766,12 +766,12 @@ const result = groupBy(
 // → T.object({ a: T.array(...), b: T.array(...) })
 
 // native 模块——通过 mock 提供类型
-/* @just:mock fs from "./mocks/fs.just.js" */
+/* @nudo:mock fs from "./mocks/fs.js" */
 ```
 
 ### 6.4 精确的依赖类型
 
-JustScript 天然产生依赖类型（依赖于值的类型），无需任何特殊语法：
+Nudo 天然产生依赖类型（依赖于值的类型），无需任何特殊语法：
 
 ```javascript
 function clamp(value, min, max) {
@@ -795,8 +795,8 @@ function clamp(value, min, max) {
 
 ```javascript
 /**
- * @just:case "concrete" (1, 2)
- * @just:case "symbolic" (T.number, T.number)
+ * @nudo:case "concrete" (1, 2)
+ * @nudo:case "symbolic" (T.number, T.number)
  */
 function calc(a, b) {
   if (a > b) return a - b;
@@ -841,7 +841,7 @@ function calc(a, b) {
 
 ### 组合结果
 
-引擎输出 JustScript 自有的类型值表示：
+引擎输出 Nudo 自有的类型值表示：
 
 ```
 calc: T.fn([
@@ -874,10 +874,10 @@ calc: T.fn([
 - 实现运算符语义：`+`, `-`, `*`, `/`, `%`, `===`, `!==`, `>`, `<`, `>=`, `<=`, `typeof`, `!`
 - 实现求值器：字面量、变量、二元表达式、if-else、函数声明、函数调用、return 语句
 - 实现窄化：`typeof x === "..."`、`x === literal`
-- 实现 `@just:case` 指令解析
-- 输出 JustScript 类型值的可读表示
+- 实现 `@nudo:case` 指令解析
+- 输出 Nudo 类型值的可读表示
 
-**交付物：** 一个 CLI 工具，接受 `.just.js` 文件并输出推导的类型值。
+**交付物：** 一个 CLI 工具，接受 `.js` 文件并输出推导的类型值。
 
 **预估工作量：** ~2-4 周
 
@@ -891,7 +891,7 @@ calc: T.fn([
 - `Array.prototype` 方法：`map`, `filter`, `reduce`, `find`, `some`, `every`, `push`, `length`
 - `Object.keys`, `Object.values`, `Object.entries`
 - for-of 循环、for-in 循环
-- 实现 `@just:mock` 指令
+- 实现 `@nudo:mock` 指令
 
 **预估工作量：** ~3-5 周
 
@@ -907,7 +907,7 @@ calc: T.fn([
 - 类实例和 `instanceof`
 - 模板字面量
 - 正则表达式（基础）
-- `@just:pure`, `@just:skip`, `@just:sample` 指令
+- `@nudo:pure`, `@nudo:skip`, `@nudo:sample` 指令
 - 模块导入/导出
 
 **预估工作量：** ~4-8 周
@@ -942,7 +942,7 @@ calc: T.fn([
 
 - **增量求值：** 文件修改后只重新求值受影响的函数，而非整个文件。这对 IDE 实时反馈至关重要。
 - **REPL：** 交互式环境，开发者可以直接输入表达式，实时看到类型值推导结果。与"通过执行理解类型"的心智模型天然契合。
-- **Ops 社区扩展：** 内置方法的类型值语义（Ops）数量庞大，可以设计插件机制让社区贡献，如 `@just/ops-lodash`、`@just/ops-rxjs` 等。
+- **Ops 社区扩展：** 内置方法的类型值语义（Ops）数量庞大，可以设计插件机制让社区贡献，如 `@nudo/ops-lodash`、`@nudo/ops-rxjs` 等。
 - **类型值可视化：** 对于复杂的联合类型、嵌套对象类型，提供树状/图形化的可视化展示，帮助开发者理解推导结果。
 - **求值追踪（Trace）：** 类似 debugger，展示类型值在函数中的传播路径，帮助开发者理解"为什么推导出了这个类型"。
 
@@ -958,7 +958,7 @@ calc: T.fn([
 | **io-ts / zod** | 运行时验证 schema | 桥接运行时和编译时 | 手动定义 schema，非推导 |
 | **QuickCheck / fast-check** | 基于属性的测试 | 擅长发现边界情况 | 测试属性，非类型 |
 | **Pyright** | Python 的静态分析 | 优秀的类型窄化 | Python 专用 |
-| **JustScript** | 通过执行进行抽象解释 | 统一的值/类型模型，精确依赖类型 | 全新方案，未经验证，运算符覆盖工作量 |
+| **Nudo** | 通过执行进行抽象解释 | 统一的值/类型模型，精确依赖类型 | 全新方案，未经验证，运算符覆盖工作量 |
 
 ## 附录 B：完整运算符语义表
 

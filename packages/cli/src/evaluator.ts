@@ -12,7 +12,7 @@ import {
   typeValueEquals,
   typeValueToString,
   isSubtypeOf,
-} from "@justscript/core";
+} from "@nudo/core";
 import { narrow } from "./narrowing.ts";
 
 type SourceRange = { start: { line: number; column: number }; end: { line: number; column: number } };

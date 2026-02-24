@@ -5,9 +5,9 @@ import {
   typeValueToString,
   createEnvironment,
   isSubtypeOf,
-} from "@justscript/core";
-import type { TypeValue } from "@justscript/core";
-import { parse } from "@justscript/parser";
+} from "@nudo/core";
+import type { TypeValue } from "@nudo/core";
+import { parse } from "@nudo/parser";
 import { evaluate, evaluateFunction, evaluateFunctionFull, evaluateProgram, resetMemo, setModuleResolver, setCurrentFileDir } from "../evaluator.ts";
 
 function evalCode(code: string): TypeValue {

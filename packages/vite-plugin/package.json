@@ -1,11 +1,11 @@
 {
-  "name": "vite-plugin-justscript",
+  "name": "vite-plugin-nudo",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "@justscript/service": "workspace:*"
+    "@nudo/service": "workspace:*"
   },
   "peerDependencies": {
     "vite": ">=5.0.0"

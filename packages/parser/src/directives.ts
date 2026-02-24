@@ -1,5 +1,5 @@
 import type { Node, Comment } from "@babel/types";
-import { type TypeValue, T } from "@justscript/core";
+import { type TypeValue, T } from "@nudo/core";
 
 export type CaseDirective = {
   kind: "case";
@@ -43,13 +43,13 @@ export type FunctionWithDirectives = {
   directives: Directive[];
 };
 
-const CASE_NAME_REGEX = /@just:case\s+"([^"]+)"\s*\(/g;
-const MOCK_INLINE_REGEX = /@just:mock\s+(\w+)\s*=\s*(.+)/g;
-const MOCK_FROM_REGEX = /@just:mock\s+(\w+)\s+from\s+"([^"]+)"/g;
-const PURE_REGEX = /@just:pure\b/g;
-const SKIP_REGEX = /@just:skip(?:\s+(.+))?/g;
-const SAMPLE_REGEX = /@just:sample\s+(\d+)/g;
-const RETURNS_REGEX = /@just:returns\s*\(/g;
+const CASE_NAME_REGEX = /@nudo:case\s+"([^"]+)"\s*\(/g;
+const MOCK_INLINE_REGEX = /@nudo:mock\s+(\w+)\s*=\s*(.+)/g;
+const MOCK_FROM_REGEX = /@nudo:mock\s+(\w+)\s+from\s+"([^"]+)"/g;
+const PURE_REGEX = /@nudo:pure\b/g;
+const SKIP_REGEX = /@nudo:skip(?:\s+(.+))?/g;
+const SAMPLE_REGEX = /@nudo:sample\s+(\d+)/g;
+const RETURNS_REGEX = /@nudo:returns\s*\(/g;
 
 export function parseTypeValueExpr(expr: string): TypeValue {
   const s = expr.trim();

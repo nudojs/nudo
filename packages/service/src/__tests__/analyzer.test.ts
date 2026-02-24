@@ -1,21 +1,21 @@
 import { describe, it, expect } from "vitest";
 import { resolve } from "node:path";
-import { T, typeValueToString } from "@justscript/core";
+import { T, typeValueToString } from "@nudo/core";
 import { analyzeFile, getTypeAtPosition, getCompletionsAtPosition } from "../analyzer.ts";
 
-const FIXTURE_PATH = resolve(import.meta.dirname, "fixtures", "sample.just.js");
+const FIXTURE_PATH = resolve(import.meta.dirname, "fixtures", "sample.js");
 
 const SAMPLE_SOURCE = `
 /**
- * @just:case "concrete" (1, 2)
- * @just:case "symbolic" (T.number, T.number)
+ * @nudo:case "concrete" (1, 2)
+ * @nudo:case "symbolic" (T.number, T.number)
  */
 function add(a, b) {
   return a + b;
 }
 
 /**
- * @just:case "test" ({ name: "Alice", age: 30 })
+ * @nudo:case "test" ({ name: "Alice", age: 30 })
  */
 function greet({ name, age }) {
   return name;
@@ -24,8 +24,8 @@ function greet({ name, age }) {
 
 const THROWS_SOURCE = `
 /**
- * @just:case "valid" (10)
- * @just:case "negative" (-1)
+ * @nudo:case "valid" (10)
+ * @nudo:case "negative" (-1)
  */
 function safeSqrt(x) {
   if (x < 0) {
@@ -39,7 +39,7 @@ const OBJ_SOURCE = `
 const obj = { x: 1, y: "hello", z: true };
 
 /**
- * @just:case "test" (T.number)
+ * @nudo:case "test" (T.number)
  */
 function identity(x) {
   return x;
@@ -47,8 +47,8 @@ function identity(x) {
 `;
 
 describe("analyzeFile", () => {
-  it("analyzes functions with @just:case directives", () => {
-    const result = analyzeFile("/test/sample.just.js", SAMPLE_SOURCE);
+  it("analyzes functions with @nudo:case directives", () => {
+    const result = analyzeFile("/test/sample.js", SAMPLE_SOURCE);
     expect(result.functions).toHaveLength(2);
 
     const addFn = result.functions[0];
@@ -61,14 +61,14 @@ describe("analyzeFile", () => {
   });
 
   it("provides combined type for multiple cases", () => {
-    const result = analyzeFile("/test/sample.just.js", SAMPLE_SOURCE);
+    const result = analyzeFile("/test/sample.js", SAMPLE_SOURCE);
     const addFn = result.functions[0];
     expect(addFn.combined).toBeDefined();
     expect(typeValueToString(addFn.combined!)).toBe("3 | number");
   });
 
   it("reports throws as diagnostics", () => {
-    const result = analyzeFile("/test/throws.just.js", THROWS_SOURCE);
+    const result = analyzeFile("/test/throws.js", THROWS_SOURCE);
     expect(result.functions).toHaveLength(1);
     const fn = result.functions[0];
     expect(fn.cases).toHaveLength(2);
@@ -78,14 +78,14 @@ describe("analyzeFile", () => {
   });
 
   it("returns source locations for functions", () => {
-    const result = analyzeFile("/test/sample.just.js", SAMPLE_SOURCE);
+    const result = analyzeFile("/test/sample.js", SAMPLE_SOURCE);
     const addFn = result.functions[0];
     expect(addFn.loc.start.line).toBeGreaterThan(0);
     expect(addFn.loc.end.line).toBeGreaterThan(addFn.loc.start.line);
   });
 
   it("collects top-level bindings", () => {
-    const result = analyzeFile("/test/obj.just.js", OBJ_SOURCE);
+    const result = analyzeFile("/test/obj.js", OBJ_SOURCE);
     expect(result.bindings.has("obj")).toBe(true);
     const objBinding = result.bindings.get("obj")!;
     expect(objBinding.type.kind).toBe("object");
@@ -95,13 +95,13 @@ describe("analyzeFile", () => {
 describe("getTypeAtPosition", () => {
   it("returns type for identifier at position", () => {
     const source = `const x = 42;\nconst y = x;\n`;
-    const tv = getTypeAtPosition("/test/pos.just.js", source, 1, 6);
+    const tv = getTypeAtPosition("/test/pos.js", source, 1, 6);
     expect(tv).not.toBeNull();
   });
 
   it("returns null for empty position", () => {
     const source = `\n\n\n`;
-    const tv = getTypeAtPosition("/test/empty.just.js", source, 2, 0);
+    const tv = getTypeAtPosition("/test/empty.js", source, 2, 0);
     expect(tv).toBeNull();
   });
 });
@@ -109,7 +109,7 @@ describe("getTypeAtPosition", () => {
 describe("getCompletionsAtPosition", () => {
   it("returns variable completions without dot trigger", () => {
     const source = `const x = 42;\nfunction add(a, b) { return a + b; }\n`;
-    const completions = getCompletionsAtPosition("/test/comp.just.js", source, 2, 0);
+    const completions = getCompletionsAtPosition("/test/comp.js", source, 2, 0);
     expect(completions.length).toBeGreaterThan(0);
     const names = completions.map((c) => c.label);
     expect(names).toContain("x");
@@ -118,7 +118,7 @@ describe("getCompletionsAtPosition", () => {
 
   it("returns property completions for object after dot", () => {
     const source = `const obj = { x: 1, y: "hello" };\nobj.x;\n`;
-    const completions = getCompletionsAtPosition("/test/dot.just.js", source, 2, 4);
+    const completions = getCompletionsAtPosition("/test/dot.js", source, 2, 4);
     expect(completions.length).toBeGreaterThan(0);
     const names = completions.map((c) => c.label);
     expect(names).toContain("x");
@@ -127,7 +127,7 @@ describe("getCompletionsAtPosition", () => {
 
   it("returns array method completions after dot", () => {
     const source = `const arr = [1, 2, 3];\narr.map;\n`;
-    const completions = getCompletionsAtPosition("/test/arr.just.js", source, 2, 4);
+    const completions = getCompletionsAtPosition("/test/arr.js", source, 2, 4);
     const names = completions.map((c) => c.label);
     expect(names).toContain("map");
     expect(names).toContain("filter");

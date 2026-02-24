@@ -1,6 +1,6 @@
 /**
- * @just:case "concrete" (5)
- * @just:case "zero" (0)
+ * @nudo:case "concrete" (5)
+ * @nudo:case "zero" (0)
  */
 function factorial(n) {
   if (n === 0) return 1;
@@ -9,8 +9,8 @@ function factorial(n) {
 }
 
 /**
- * @just:case "valid" (10)
- * @just:case "negative" (-1)
+ * @nudo:case "valid" (10)
+ * @nudo:case "negative" (-1)
  */
 function safeSqrt(x) {
   if (x < 0) {
@@ -20,7 +20,7 @@ function safeSqrt(x) {
 }
 
 /**
- * @just:case "test" ()
+ * @nudo:case "test" ()
  */
 async function fetchData() {
   const data = await Promise.resolve(42);
@@ -28,7 +28,7 @@ async function fetchData() {
 }
 
 /**
- * @just:case "test" (T.number)
+ * @nudo:case "test" (T.number)
  */
 function checkType(x) {
   if (x instanceof Error) {

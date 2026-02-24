@@ -1,12 +1,12 @@
 {
-  "name": "@justscript/lsp",
+  "name": "@nudo/lsp",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "main": "src/server.ts",
   "dependencies": {
-    "@justscript/service": "workspace:*",
-    "@justscript/core": "workspace:*",
+    "@nudo/service": "workspace:*",
+    "@nudo/core": "workspace:*",
     "vscode-languageserver": "^9.0.0",
     "vscode-languageserver-textdocument": "^1.0.0"
   },

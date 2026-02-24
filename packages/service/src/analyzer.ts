@@ -10,9 +10,9 @@ import {
   createEnvironment,
   isSubtypeOf,
   type Environment,
-} from "@justscript/core";
-import { parse, extractDirectives, parseTypeValueExpr } from "@justscript/parser";
-import type { FunctionWithDirectives } from "@justscript/parser";
+} from "@nudo/core";
+import { parse, extractDirectives, parseTypeValueExpr } from "@nudo/parser";
+import type { FunctionWithDirectives } from "@nudo/parser";
 import {
   evaluate,
   evaluateFunction,
@@ -24,7 +24,7 @@ import {
   getUnreachableRanges,
   resetUnreachableRanges,
   setNodeTypeCollector,
-} from "@justscript/cli/evaluator";
+} from "@nudo/cli/evaluator";
 
 export type SourceLocation = {
   start: { line: number; column: number };
@@ -84,7 +84,7 @@ export type CompletionItem = {
 };
 
 function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string } | null {
-  const extensions = [".js", ".just.js", ".ts", ".mjs"];
+  const extensions = [".js", ".ts", ".mjs"];
   const basePath = resolve(fromDir, source);
   for (const ext of ["", ...extensions]) {
     const candidate = basePath + ext;
@@ -279,7 +279,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         const result = evaluateFunction(fn.node, directive.args, globalEnv);
         const matches = isSubtypeOf(result, returnsDirective.expected);
         if (!matches) {
-          const msg = `@just:returns assertion failed for case "${directive.name}": expected ${typeValueToString(returnsDirective.expected)}, got ${typeValueToString(result)}`;
+          const msg = `@nudo:returns assertion failed for case "${directive.name}": expected ${typeValueToString(returnsDirective.expected)}, got ${typeValueToString(result)}`;
           analysis.assertionErrors.push(msg);
           diagnostics.push({
             range: fnLoc,
