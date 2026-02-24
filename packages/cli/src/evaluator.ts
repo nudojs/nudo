@@ -352,8 +352,8 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
       const cResult = evaluate(node.consequent, trueEnv);
       const aResult = evaluate(node.alternate, falseEnv);
-      const cVal = isReturn(cResult) ? cResult.value : isBranch(cResult) ? cResult.returnedValue : cResult;
-      const aVal = isReturn(aResult) ? aResult.value : isBranch(aResult) ? aResult.returnedValue : aResult;
+      const cVal = isReturn(cResult) ? cResult.value : isBranch(cResult) ? cResult.returnedValue : isThrow(cResult) ? T.never : cResult;
+      const aVal = isReturn(aResult) ? aResult.value : isBranch(aResult) ? aResult.returnedValue : isThrow(aResult) ? T.never : aResult;
       return simplifyUnion([cVal, aVal]);
     }
 
@@ -505,6 +505,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             propVal &&
             !isReturn(propVal) &&
             !isBranch(propVal) &&
+            !isThrow(propVal) &&
             propVal.kind === "literal" &&
             typeof propVal.value === "number"
           ) {
@@ -824,7 +825,7 @@ function bindPattern(pattern: Node, value: TypeValue, env: Environment): void {
   if (pattern.type === "AssignmentPattern") {
     const defaultVal = evaluate(pattern.right, env);
     const resolved = (value.kind === "literal" && value.value === undefined)
-      ? (!isReturn(defaultVal) && !isBranch(defaultVal) ? defaultVal : T.unknown)
+      ? (!isReturn(defaultVal) && !isBranch(defaultVal) && !isThrow(defaultVal) ? defaultVal : T.unknown)
       : value;
     bindPattern(pattern.left, resolved, env);
     return;
