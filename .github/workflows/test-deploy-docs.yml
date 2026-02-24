@@ -1,0 +1,36 @@
+name: Test Docs Build
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "packages/website/**"
+      - "docs/**"
+
+jobs:
+  test-build:
+    name: Test Docusaurus Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/website
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test build
+        run: pnpm run build

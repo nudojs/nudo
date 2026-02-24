@@ -7,7 +7,9 @@
     "build": "pnpm -r run build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "infer": "tsx packages/cli/src/index.ts infer"
+    "infer": "tsx packages/cli/src/index.ts infer",
+    "docs:dev": "pnpm --filter website run start",
+    "docs:build": "pnpm --filter website run build"
   },
   "devDependencies": {
     "@babel/parser": "^7.29.0",

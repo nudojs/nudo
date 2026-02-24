@@ -30,3 +30,8 @@ packages/*/out/*
 
 .wrangler/
 
+# Docusaurus
+packages/website/build
+packages/website/.docusaurus
+packages/website/.cache-loader
+
