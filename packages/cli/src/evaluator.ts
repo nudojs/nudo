@@ -95,9 +95,14 @@ let currentFileDir = "";
 
 let _nodeTypeCollector: ((node: Node, tv: TypeValue) => void) | null = null;
 let _sampleCount = 3;
+let _maxConcreteIter = 1000;
 
 export function setSampleCount(count: number): void {
   _sampleCount = count;
+}
+
+export function setMaxConcreteIter(count: number): void {
+  _maxConcreteIter = count;
 }
 
 export function setNodeTypeCollector(collector: ((node: Node, tv: TypeValue) => void) | null): void {
@@ -1475,18 +1480,20 @@ function evaluateForStatement(
 
   const varNames = node.init ? getLoopVarNames(node.init) : [];
   const returnValues: TypeValue[] = [];
-  const maxIter = _sampleCount;
+  let concreteCompleted = false;
 
-  for (let i = 0; i < maxIter; i++) {
+  for (let i = 0; i < _maxConcreteIter; i++) {
     if (node.test) {
       const testVal = evaluate(node.test, loopEnv);
       if (isReturn(testVal) || isBranch(testVal) || isThrow(testVal)) return testVal;
-      if (testVal.kind === "literal" && testVal.value === false) break;
+      if (testVal.kind === "literal" && testVal.value === false) { concreteCompleted = true; break; }
+      if (testVal.kind !== "literal") break;
     }
 
     const bodyResult = evaluate(node.body, loopEnv);
     if (isReturn(bodyResult)) {
       returnValues.push(bodyResult.value);
+      concreteCompleted = true;
       break;
     }
     if (isBranch(bodyResult)) {
@@ -1497,29 +1504,18 @@ function evaluateForStatement(
       const updateResult = evaluate(node.update, loopEnv);
       if (isReturn(updateResult) || isBranch(updateResult) || isThrow(updateResult)) return updateResult;
     }
-
-    if (node.test) {
-      const testVal = evaluate(node.test, loopEnv);
-      if (!isReturn(testVal) && !isBranch(testVal) && !isThrow(testVal) &&
-          testVal.kind === "literal" && testVal.value === false) break;
-    }
   }
 
-  if (node.test) {
-    const testVal = evaluate(node.test, loopEnv);
-    if (!isReturn(testVal) && !isBranch(testVal) && !isThrow(testVal)) {
-      if (testVal.kind !== "literal" || testVal.value !== false) {
-        widenVars(varNames, loopEnv);
-        const prevSnap = snapshotVars(varNames, loopEnv);
+  if (!concreteCompleted) {
+    widenVars(varNames, loopEnv);
+    const prevSnap = snapshotVars(varNames, loopEnv);
 
-        for (let i = 0; i < 10; i++) {
-          evaluate(node.body, loopEnv);
-          if (node.update) evaluate(node.update, loopEnv);
-          widenVars(varNames, loopEnv);
-          const currSnap = snapshotVars(varNames, loopEnv);
-          if (varsStabilized(prevSnap, currSnap)) break;
-        }
-      }
+    for (let i = 0; i < 10; i++) {
+      evaluate(node.body, loopEnv);
+      if (node.update) evaluate(node.update, loopEnv);
+      widenVars(varNames, loopEnv);
+      const currSnap = snapshotVars(varNames, loopEnv);
+      if (varsStabilized(prevSnap, currSnap)) break;
     }
   }
 
@@ -1538,17 +1534,13 @@ function evaluateWhileStatement(
   node: Node & { type: "WhileStatement" },
   env: Environment,
 ): EvalResult {
-  const testVal = evaluate(node.test, env);
-  if (isReturn(testVal) || isBranch(testVal) || isThrow(testVal)) return testVal;
-  if (testVal.kind === "literal" && testVal.value === false) return T.undefined;
-
   const returnValues: TypeValue[] = [];
-  const maxIter = _sampleCount;
 
-  for (let i = 0; i < maxIter; i++) {
+  for (let i = 0; i < _maxConcreteIter; i++) {
     const tv = evaluate(node.test, env);
     if (isReturn(tv) || isBranch(tv) || isThrow(tv)) return tv;
     if (tv.kind === "literal" && tv.value === false) break;
+    if (tv.kind !== "literal") break;
 
     const bodyResult = evaluate(node.body, env);
     if (isReturn(bodyResult)) {
@@ -1571,9 +1563,8 @@ function evaluateDoWhileStatement(
   env: Environment,
 ): EvalResult {
   const returnValues: TypeValue[] = [];
-  const maxIter = _sampleCount;
 
-  for (let i = 0; i < maxIter; i++) {
+  for (let i = 0; i < _maxConcreteIter; i++) {
     const bodyResult = evaluate(node.body, env);
     if (isReturn(bodyResult)) {
       returnValues.push(bodyResult.value);
@@ -1586,6 +1577,7 @@ function evaluateDoWhileStatement(
     const tv = evaluate(node.test, env);
     if (isReturn(tv) || isBranch(tv) || isThrow(tv)) return tv;
     if (tv.kind === "literal" && tv.value === false) break;
+    if (tv.kind !== "literal") break;
   }
 
   if (returnValues.length > 0) {
