@@ -1,0 +1,183 @@
+name: Publish
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'         # npm publish
+      - 'vscode-v*'  # VSCode extension publish
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Publish target'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - npm
+          - vscode
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      publish_npm: ${{ steps.check.outputs.publish_npm }}
+      publish_vscode: ${{ steps.check.outputs.publish_vscode }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine publish targets
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TARGET="${{ github.inputs.target }}"
+          elif [ "${{ startsWith(github.ref, 'refs/tags/vscode-') }}" = "true" ]; then
+            TARGET="vscode"
+          else
+            TARGET="npm"
+          fi
+          
+          echo "Publish target: $TARGET"
+          
+          if [ "$TARGET" = "all" ] || [ "$TARGET" = "npm" ]; then
+            echo "publish_npm=true" >> $GITHUB_OUTPUT
+          else
+            echo "publish_npm=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if [ "$TARGET" = "all" ] || [ "$TARGET" = "vscode" ]; then
+            echo "publish_vscode=true" >> $GITHUB_OUTPUT
+          else
+            echo "publish_vscode=false" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Build VSCode extension
+        if: needs.setup.outputs.publish_vscode == 'true'
+        run: |
+          cd packages/vscode
+          pnpm run build
+
+      - name: Package VSCode extension
+        if: needs.setup.outputs.publish_vscode == 'true'
+        run: |
+          cd packages/vscode
+          npx @vscode/vsce package --no-dependencies -o ../../dist/nudo-vscode.vsix
+
+      - name: Upload VSCode artifact
+        if: needs.setup.outputs.publish_vscode == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-extension
+          path: dist/nudo-vscode.vsix
+
+  publish-npm:
+    name: Publish to npm
+    needs: [setup, build]
+    runs-on: ubuntu-latest
+    if: needs.setup.outputs.publish_npm == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Test
+        run: pnpm run test
+
+      - name: Create version bump
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: pnpm ci:version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to npm
+        if: steps.changesets.outputs.changesets == 'true'
+        run: pnpm publish -r --no-git-checks
+
+  publish-vscode:
+    name: Publish VSCode Extension
+    needs: [setup, build]
+    runs-on: ubuntu-latest
+    if: needs.setup.outputs.publish_vscode == 'true'
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: vscode-extension
+          path: dist
+
+      - name: Publish to VSCode Marketplace
+        if: env.VSCODE_MARKETPLACE_TOKEN != ''
+        run: |
+          cd packages/vscode
+          npx @vscode/vsce publish --no-dependencies -p ${{ secrets.VSCODE_MARKETPLACE_TOKEN }} ../../dist/nudo-vscode.vsix
+        env:
+          VSCODE_MARKETPLACE_TOKEN: ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
+
+      - name: Publish to Open VSX
+        if: env.OVSX_MARKETPLACE_TOKEN != ''
+        run: |
+          cd packages/vscode
+          npx ovsx publish -p ${{ secrets.OVSX_MARKETPLACE_TOKEN }} ../../dist/nudo-vscode.vsix
+        env:
+          OVSX_MARKETPLACE_TOKEN: ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/nudo-vscode.vsix
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
