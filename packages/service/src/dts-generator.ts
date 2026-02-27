@@ -1,5 +1,5 @@
 import type { TypeValue } from "@nudojs/core";
-import { typeValueToString } from "@nudojs/core";
+import { typeValueToString, isTemplate, getTemplateParts } from "@nudojs/core";
 import type { AnalysisResult } from "./analyzer.ts";
 
 export function typeValueToTSType(tv: TypeValue): string {
@@ -14,6 +14,16 @@ export function typeValueToTSType(tv: TypeValue): string {
     }
     case "primitive":
       return tv.type;
+    case "refined": {
+      if (isTemplate(tv)) {
+        const parts = getTemplateParts(tv)!;
+        const inner = parts
+          .map((p) => (p.kind === "literal" && typeof p.value === "string" ? p.value : `\${${typeValueToTSType(p)}}`))
+          .join("");
+        return `\`${inner}\``;
+      }
+      return typeValueToTSType(tv.base);
+    }
     case "object": {
       const entries = Object.entries(tv.properties);
       if (entries.length === 0) return "{}";

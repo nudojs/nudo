@@ -1,4 +1,5 @@
-import { type TypeValue, T, isSubtypeOf } from "./type-value.ts";
+import { type TypeValue, T, isSubtypeOf, getRefinedBase } from "./type-value.ts";
+import { concatTemplates, isTemplate } from "./refinements/template.ts";
 
 function bothLiteral(
   l: TypeValue,
@@ -16,7 +17,17 @@ export const Ops = {
     if (lit) {
       return T.literal((lit.lv as any) + (lit.rv as any));
     }
-    if (isSubtypeOf(left, T.string) || isSubtypeOf(right, T.string)) {
+
+    const leftIsString = isSubtypeOf(left, T.string) || isTemplate(left);
+    const rightIsString = isSubtypeOf(right, T.string) || isTemplate(right);
+    if (leftIsString || rightIsString) {
+      const hasStructure =
+        (left.kind === "literal" && typeof left.value === "string") ||
+        (right.kind === "literal" && typeof right.value === "string") ||
+        isTemplate(left) || isTemplate(right);
+      if (hasStructure) {
+        return concatTemplates(left, right);
+      }
       return T.string;
     }
     if (isSubtypeOf(left, T.number) && isSubtypeOf(right, T.number)) {
@@ -100,6 +111,7 @@ export const Ops = {
       return T.literal(typeof v);
     }
     if (operand.kind === "primitive") return T.literal(operand.type);
+    if (operand.kind === "refined") return Ops.typeof_(getRefinedBase(operand));
     if (operand.kind === "object") return T.literal("object");
     if (operand.kind === "array" || operand.kind === "tuple")
       return T.literal("object");
@@ -144,4 +156,55 @@ export function applyBinaryOp(
   const fn = binaryOpMap[op];
   if (!fn) return T.unknown;
   return fn(left, right);
+}
+
+export function dispatchBinaryOp(
+  op: string,
+  left: TypeValue,
+  right: TypeValue,
+): TypeValue {
+  if (left.kind === "refined" && left.refinement.ops?.[op]) {
+    const result = left.refinement.ops[op](left, right);
+    if (result !== undefined) return result;
+  }
+  if (right.kind === "refined" && right.refinement.ops?.[op]) {
+    const result = right.refinement.ops[op](right, left);
+    if (result !== undefined) return result;
+  }
+
+  const baseLeft = left.kind === "refined" ? left.base : left;
+  const baseRight = right.kind === "refined" ? right.base : right;
+  if (baseLeft !== left || baseRight !== right) {
+    return dispatchBinaryOp(op, baseLeft, baseRight);
+  }
+  return applyBinaryOp(op, left, right);
+}
+
+export function dispatchMethod(
+  receiver: TypeValue,
+  name: string,
+  args: TypeValue[],
+): TypeValue | undefined {
+  if (receiver.kind === "refined" && receiver.refinement.methods?.[name]) {
+    const result = receiver.refinement.methods[name](receiver, args);
+    if (result !== undefined) return result;
+  }
+  if (receiver.kind === "refined") {
+    return dispatchMethod(receiver.base, name, args);
+  }
+  return undefined;
+}
+
+export function dispatchProperty(
+  receiver: TypeValue,
+  name: string,
+): TypeValue | undefined {
+  if (receiver.kind === "refined" && receiver.refinement.properties?.[name]) {
+    const result = receiver.refinement.properties[name](receiver);
+    if (result !== undefined) return result;
+  }
+  if (receiver.kind === "refined") {
+    return dispatchProperty(receiver.base, name);
+  }
+  return undefined;
 }

@@ -4,6 +4,9 @@ import {
   T,
   simplifyUnion,
   applyBinaryOp,
+  dispatchBinaryOp,
+  dispatchMethod,
+  dispatchProperty,
   Ops,
   type Environment,
   createEnvironment,
@@ -12,6 +15,8 @@ import {
   typeValueEquals,
   typeValueToString,
   isSubtypeOf,
+  widenLiteral,
+  createTemplate,
 } from "@nudojs/core";
 import { narrow } from "./narrowing.ts";
 
@@ -89,6 +94,16 @@ let currentModuleResolver: ((source: string, fromDir: string) => { ast: Node; fi
 let currentFileDir = "";
 
 let _nodeTypeCollector: ((node: Node, tv: TypeValue) => void) | null = null;
+let _sampleCount = 3;
+let _maxConcreteIter = 1000;
+
+export function setSampleCount(count: number): void {
+  _sampleCount = count;
+}
+
+export function setMaxConcreteIter(count: number): void {
+  _maxConcreteIter = count;
+}
 
 export function setNodeTypeCollector(collector: ((node: Node, tv: TypeValue) => void) | null): void {
   _nodeTypeCollector = collector;
@@ -264,7 +279,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           parts.map((p) => (p.kind === "literal" ? String(p.value) : "")).join(""),
         );
       }
-      return T.string;
+      return createTemplate(parts);
     }
 
     case "BinaryExpression": {
@@ -277,7 +292,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         return evaluateInstanceof(leftVal, rightVal, node.right, env);
       }
       return distributeBinaryOverUnion(leftVal, rightVal, (l, r) =>
-        applyBinaryOp(node.operator, l, r),
+        dispatchBinaryOp(node.operator, l, r),
       );
     }
 
@@ -539,15 +554,16 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
     }
 
     case "ForStatement": {
-      if (node.init) {
-        const initResult = evaluate(node.init, env);
-        if (isReturn(initResult) || isBranch(initResult) || isThrow(initResult)) return initResult;
-      }
-      return T.undefined;
+      return evaluateForStatement(node, env);
     }
 
-    case "WhileStatement":
-      return T.undefined;
+    case "WhileStatement": {
+      return evaluateWhileStatement(node, env);
+    }
+
+    case "DoWhileStatement": {
+      return evaluateDoWhileStatement(node, env);
+    }
 
     case "FunctionDeclaration": {
       if (!node.id) return T.undefined;
@@ -690,6 +706,16 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           if (obj.kind === "instance") return obj.properties[propName] ?? T.undefined;
           if (propName === "length" && (obj.kind === "array" || obj.kind === "tuple")) {
             return obj.kind === "tuple" ? T.literal(obj.elements.length) : T.number;
+          }
+          if (propName === "length" && obj.kind === "literal" && typeof obj.value === "string") {
+            return T.literal(obj.value.length);
+          }
+          if (propName === "length" && obj.kind === "primitive" && obj.type === "string") {
+            return T.number;
+          }
+          if (obj.kind === "refined") {
+            const result = dispatchProperty(obj, propName);
+            if (result !== undefined) return result;
           }
           return T.unknown;
         });
@@ -936,7 +962,198 @@ function evaluateMethodCall(
     return evaluateArrayMethod(objVal, methodName, args, env);
   }
 
+  if (isStringLike(objVal)) {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+
+    if (objVal.kind === "refined") {
+      const refined = dispatchMethod(objVal, methodName, argVals as TypeValue[]);
+      if (refined !== undefined) return refined;
+    }
+
+    return evaluateStringMethod(objVal, methodName, argVals as TypeValue[]);
+  }
+
+  if (objVal.kind === "refined") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const result = dispatchMethod(objVal, methodName, argVals as TypeValue[]);
+    if (result !== undefined) return result;
+  }
+
   return null;
+}
+
+function isStringLike(tv: TypeValue): boolean {
+  if (tv.kind === "literal" && typeof tv.value === "string") return true;
+  if (tv.kind === "primitive" && tv.type === "string") return true;
+  if (tv.kind === "refined") return isStringLike(tv.base);
+  return false;
+}
+
+function evaluateStringMethod(
+  receiver: TypeValue,
+  method: string,
+  args: TypeValue[],
+): TypeValue | null {
+  if (receiver.kind === "literal" && typeof receiver.value === "string") {
+    return evaluateStringMethodLiteral(receiver.value, method, args);
+  }
+  return evaluateStringMethodAbstract(method, args);
+}
+
+function evaluateStringMethodLiteral(
+  str: string,
+  method: string,
+  args: TypeValue[],
+): TypeValue | null {
+  const litArg = (i: number): string | number | undefined => {
+    const a = args[i];
+    if (a?.kind === "literal" && (typeof a.value === "string" || typeof a.value === "number")) return a.value;
+    return undefined;
+  };
+
+  switch (method) {
+    case "toUpperCase": return T.literal(str.toUpperCase());
+    case "toLowerCase": return T.literal(str.toLowerCase());
+    case "trim": return T.literal(str.trim());
+    case "trimStart": return T.literal(str.trimStart());
+    case "trimEnd": return T.literal(str.trimEnd());
+    case "charAt": {
+      const idx = litArg(0);
+      return typeof idx === "number" ? T.literal(str.charAt(idx)) : T.string;
+    }
+    case "charCodeAt": {
+      const idx = litArg(0);
+      return typeof idx === "number" ? T.literal(str.charCodeAt(idx)) : T.number;
+    }
+    case "at": {
+      const idx = litArg(0);
+      if (typeof idx === "number") {
+        const ch = str.at(idx);
+        return ch !== undefined ? T.literal(ch) : T.undefined;
+      }
+      return T.union(T.string, T.undefined);
+    }
+    case "startsWith": {
+      const search = litArg(0);
+      return typeof search === "string" ? T.literal(str.startsWith(search as string)) : T.boolean;
+    }
+    case "endsWith": {
+      const search = litArg(0);
+      return typeof search === "string" ? T.literal(str.endsWith(search as string)) : T.boolean;
+    }
+    case "includes": {
+      const search = litArg(0);
+      return typeof search === "string" ? T.literal(str.includes(search as string)) : T.boolean;
+    }
+    case "indexOf": {
+      const search = litArg(0);
+      return typeof search === "string" ? T.literal(str.indexOf(search as string)) : T.number;
+    }
+    case "lastIndexOf": {
+      const search = litArg(0);
+      return typeof search === "string" ? T.literal(str.lastIndexOf(search as string)) : T.number;
+    }
+    case "slice": {
+      const start = litArg(0);
+      const end = litArg(1);
+      if (typeof start === "number") {
+        return T.literal(str.slice(start, typeof end === "number" ? end : undefined));
+      }
+      return T.string;
+    }
+    case "substring": {
+      const start = litArg(0);
+      const end = litArg(1);
+      if (typeof start === "number") {
+        return T.literal(str.substring(start, typeof end === "number" ? end : undefined));
+      }
+      return T.string;
+    }
+    case "split": {
+      const sep = litArg(0);
+      if (typeof sep === "string") {
+        const parts = str.split(sep);
+        return T.tuple(parts.map((p) => T.literal(p)));
+      }
+      return T.array(T.string);
+    }
+    case "replace": {
+      const search = litArg(0);
+      const replacement = litArg(1);
+      if (typeof search === "string" && typeof replacement === "string") {
+        return T.literal(str.replace(search, replacement));
+      }
+      return T.string;
+    }
+    case "replaceAll": {
+      const search = litArg(0);
+      const replacement = litArg(1);
+      if (typeof search === "string" && typeof replacement === "string") {
+        return T.literal(str.replaceAll(search, replacement));
+      }
+      return T.string;
+    }
+    case "repeat": {
+      const count = litArg(0);
+      return typeof count === "number" ? T.literal(str.repeat(count)) : T.string;
+    }
+    case "padStart": {
+      const len = litArg(0);
+      const fill = litArg(1);
+      if (typeof len === "number") {
+        return T.literal(str.padStart(len, typeof fill === "string" ? fill : undefined));
+      }
+      return T.string;
+    }
+    case "padEnd": {
+      const len = litArg(0);
+      const fill = litArg(1);
+      if (typeof len === "number") {
+        return T.literal(str.padEnd(len, typeof fill === "string" ? fill : undefined));
+      }
+      return T.string;
+    }
+    default:
+      return null;
+  }
+}
+
+function evaluateStringMethodAbstract(
+  method: string,
+  _args: TypeValue[],
+): TypeValue | null {
+  switch (method) {
+    case "toUpperCase":
+    case "toLowerCase":
+    case "trim":
+    case "trimStart":
+    case "trimEnd":
+    case "charAt":
+    case "slice":
+    case "substring":
+    case "replace":
+    case "replaceAll":
+    case "repeat":
+    case "padStart":
+    case "padEnd":
+      return T.string;
+    case "charCodeAt":
+    case "indexOf":
+    case "lastIndexOf":
+      return T.number;
+    case "at":
+      return T.union(T.string, T.undefined);
+    case "startsWith":
+    case "endsWith":
+    case "includes":
+      return T.boolean;
+    case "split":
+      return T.array(T.string);
+    default:
+      return null;
+  }
 }
 
 function evaluateObjectStaticMethod(
@@ -1213,6 +1430,160 @@ function bindForLoopVar(left: Node, value: TypeValue, env: Environment): void {
   } else if (left.type === "Identifier") {
     env.bind(left.name, value);
   }
+}
+
+function getLoopVarNames(node: Node): string[] {
+  if (node.type === "VariableDeclaration") {
+    return node.declarations
+      .map((d: any) => d.id?.type === "Identifier" ? d.id.name : null)
+      .filter((n: string | null): n is string => n !== null);
+  }
+  return [];
+}
+
+function snapshotVars(names: string[], env: Environment): Map<string, TypeValue> {
+  const snap = new Map<string, TypeValue>();
+  for (const name of names) {
+    snap.set(name, env.lookup(name));
+  }
+  return snap;
+}
+
+function varsStabilized(prev: Map<string, TypeValue>, curr: Map<string, TypeValue>): boolean {
+  for (const [name, prevVal] of prev) {
+    const currVal = curr.get(name);
+    if (!currVal || !typeValueEquals(prevVal, currVal)) return false;
+  }
+  return true;
+}
+
+function widenVars(names: string[], env: Environment): void {
+  for (const name of names) {
+    const val = env.lookup(name);
+    const widened = widenLiteral(val);
+    if (!typeValueEquals(val, widened)) {
+      if (!env.update(name, widened)) env.bind(name, widened);
+    }
+  }
+}
+
+function evaluateForStatement(
+  node: Node & { type: "ForStatement" },
+  env: Environment,
+): EvalResult {
+  const loopEnv = env.extend({});
+
+  if (node.init) {
+    const initResult = evaluate(node.init, loopEnv);
+    if (isReturn(initResult) || isBranch(initResult) || isThrow(initResult)) return initResult;
+  }
+
+  const varNames = node.init ? getLoopVarNames(node.init) : [];
+  const returnValues: TypeValue[] = [];
+  let concreteCompleted = false;
+
+  for (let i = 0; i < _maxConcreteIter; i++) {
+    if (node.test) {
+      const testVal = evaluate(node.test, loopEnv);
+      if (isReturn(testVal) || isBranch(testVal) || isThrow(testVal)) return testVal;
+      if (testVal.kind === "literal" && testVal.value === false) { concreteCompleted = true; break; }
+      if (testVal.kind !== "literal") break;
+    }
+
+    const bodyResult = evaluate(node.body, loopEnv);
+    if (isReturn(bodyResult)) {
+      returnValues.push(bodyResult.value);
+      concreteCompleted = true;
+      break;
+    }
+    if (isBranch(bodyResult)) {
+      returnValues.push(bodyResult.returnedValue);
+    }
+
+    if (node.update) {
+      const updateResult = evaluate(node.update, loopEnv);
+      if (isReturn(updateResult) || isBranch(updateResult) || isThrow(updateResult)) return updateResult;
+    }
+  }
+
+  if (!concreteCompleted) {
+    widenVars(varNames, loopEnv);
+    const prevSnap = snapshotVars(varNames, loopEnv);
+
+    for (let i = 0; i < 10; i++) {
+      evaluate(node.body, loopEnv);
+      if (node.update) evaluate(node.update, loopEnv);
+      widenVars(varNames, loopEnv);
+      const currSnap = snapshotVars(varNames, loopEnv);
+      if (varsStabilized(prevSnap, currSnap)) break;
+    }
+  }
+
+  for (const name of varNames) {
+    const val = loopEnv.lookup(name);
+    if (!env.update(name, val)) env.bind(name, val);
+  }
+
+  if (returnValues.length > 0) {
+    return makeBranch(simplifyUnion(returnValues), env);
+  }
+  return T.undefined;
+}
+
+function evaluateWhileStatement(
+  node: Node & { type: "WhileStatement" },
+  env: Environment,
+): EvalResult {
+  const returnValues: TypeValue[] = [];
+
+  for (let i = 0; i < _maxConcreteIter; i++) {
+    const tv = evaluate(node.test, env);
+    if (isReturn(tv) || isBranch(tv) || isThrow(tv)) return tv;
+    if (tv.kind === "literal" && tv.value === false) break;
+    if (tv.kind !== "literal") break;
+
+    const bodyResult = evaluate(node.body, env);
+    if (isReturn(bodyResult)) {
+      returnValues.push(bodyResult.value);
+      break;
+    }
+    if (isBranch(bodyResult)) {
+      returnValues.push(bodyResult.returnedValue);
+    }
+  }
+
+  if (returnValues.length > 0) {
+    return makeBranch(simplifyUnion(returnValues), env);
+  }
+  return T.undefined;
+}
+
+function evaluateDoWhileStatement(
+  node: Node & { type: "DoWhileStatement" },
+  env: Environment,
+): EvalResult {
+  const returnValues: TypeValue[] = [];
+
+  for (let i = 0; i < _maxConcreteIter; i++) {
+    const bodyResult = evaluate(node.body, env);
+    if (isReturn(bodyResult)) {
+      returnValues.push(bodyResult.value);
+      break;
+    }
+    if (isBranch(bodyResult)) {
+      returnValues.push(bodyResult.returnedValue);
+    }
+
+    const tv = evaluate(node.test, env);
+    if (isReturn(tv) || isBranch(tv) || isThrow(tv)) return tv;
+    if (tv.kind === "literal" && tv.value === false) break;
+    if (tv.kind !== "literal") break;
+  }
+
+  if (returnValues.length > 0) {
+    return makeBranch(simplifyUnion(returnValues), env);
+  }
+  return T.undefined;
 }
 
 function evaluateImportDeclaration(node: Node & { type: "ImportDeclaration" }, env: Environment): EvalResult {

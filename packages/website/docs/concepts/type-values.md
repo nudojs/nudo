@@ -14,6 +14,7 @@ Nudo's type system is built around a discriminated union of type value kinds:
 TypeValue
 ├── Literal<V>      — single concrete value: 1, "hello", true, null, undefined
 ├── Primitive<T>    — all possible values of a primitive: number, string, boolean, bigint, symbol
+├── RefinedType     — a subset of a base type with metadata and custom operation rules
 ├── ObjectType      — object with known property types
 ├── ArrayType       — array with element type
 ├── TupleType       — fixed-length array
@@ -90,6 +91,32 @@ The empty set. Represents unreachable code or impossible types (e.g. the result 
 
 The universal set. Represents "any value" when the type cannot be determined.
 
+### RefinedType
+
+Represents a **subset of a base type** with attached metadata and optional custom operation rules. Refined types are the unified mechanism behind template strings, numeric ranges, and user-defined type constraints.
+
+```javascript
+// Built-in: template string (created automatically by string concatenation)
+T.literal("0x") + T.string   // → refined(T.string, template { parts: ["0x", T.string] })
+
+// Built-in: numeric range (created by narrowing)
+// if (x >= 0) → x is refined(T.number, range { min: 0 })
+
+// User-defined:
+T.refine(T.number, {
+  name: "odd",
+  check: (v) => Number.isInteger(v) && v % 2 !== 0,
+  ops: {
+    "%"(self, other) {
+      if (other.kind === "literal" && other.value === 2) return T.literal(1);
+      return undefined; // fall back to base type behavior
+    },
+  },
+})
+```
+
+A refined type is always a subtype of its base. When an operation is not handled by the refinement's custom rules (or returns `undefined`), the engine falls back to the base type's behavior, recursively until a primitive type is reached.
+
 ---
 
 ## T Factory API
@@ -113,6 +140,7 @@ In directives and when defining type values in code, you use the `T` factory:
 | `T.tuple([...])` | Fixed-length array |
 | `T.union(...)` | Union of type values |
 | `T.fn(params, body, closure)` | Function type (used internally) |
+| `T.refine(base, refinement)` | Refined subset of base type with custom rules |
 
 ### Examples in Directives
 
@@ -154,14 +182,16 @@ This keeps inferred types precise when enough information is available.
 
 ### 2. Widening on Abstraction
 
-When any input is abstract (non-literal), the result widens to the appropriate abstract type.
+When any input is abstract (non-literal), the result widens to the appropriate abstract type — but Nudo preserves as much structure as possible through refined types.
 
 ```javascript
-T.literal(1) + T.number   // → T.number
-T.string + T.literal("!") // → T.string
+T.literal(1) + T.number       // → T.number
+T.literal("xy") + T.string    // → `xy${string}` (template refined type, not just T.string)
+T.string + T.literal("!")     // → `${string}!`
+T.string + T.string           // → T.string (no structure to preserve)
 ```
 
-Abstraction in the input implies abstraction in the output.
+When string concatenation involves at least one literal, Nudo produces a **template string** refined type that preserves the known prefix/suffix. This enables precise inference for methods like `startsWith` and `endsWith`.
 
 ### 3. Lazy Union Distribution
 

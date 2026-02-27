@@ -66,6 +66,7 @@ Nudo：       源代码  +  类型值     →  执行  →  类型
 TypeValue
 ├── Literal<V>          — 单个具体值：1, "hello", true, null, undefined
 ├── Primitive<T>        — 某基本类型的所有可能值：number, string, boolean, bigint, symbol
+├── RefinedType         — 基础类型的精化子集，携带元数据和自定义运算规则
 ├── ObjectType          — 具有已知属性类型的对象：{ id: number, name: Literal<"Alice"> }
 ├── ArrayType           — 具有元素类型的数组：Array<number>
 ├── TupleType           — 固定长度数组：[Literal<1>, Primitive<string>]
@@ -83,10 +84,11 @@ TypeValue
 T.literal(1) + T.literal(2)  // → T.literal(3)，而非 T.number
 ```
 
-**原则 2：抽象时拓宽。** 当任一输入是抽象的（非字面量），结果拓宽为对应的抽象类型。
+**原则 2：抽象时拓宽。** 当任一输入是抽象的（非字面量），结果拓宽为对应的抽象类型——但通过精化类型尽可能保留结构信息。
 
 ```javascript
-T.literal(1) + T.number  // → T.number
+T.literal(1) + T.number       // → T.number
+T.literal("0x") + T.string    // → `0x${string}`（模板精化类型）
 ```
 
 **原则 3：联合类型懒分配。** 对联合类型的运算分配到每个成员上，但采用**懒求值**策略——联合类型作为整体传播，只在运算符**必须区分成员**时才展开。这避免了笛卡尔积导致的组合爆炸。
@@ -129,9 +131,10 @@ T.array(TypeValue)            // 数组类型
 T.tuple([TypeValue, ...])     // 元组类型
 T.union(TypeValue, ...)       // 联合类型
 T.fn(params, body, closure)  // 函数类型
+T.refine(base, refinement)   // 基础类型的精化子集，携带自定义规则
 
 // --- 内省 ---
-typeValue.kind                // "literal" | "primitive" | "object" | "array" | ...
+typeValue.kind                // "literal" | "primitive" | "refined" | "object" | "array" | ...
 typeValueToString(tv)         // 可读表示："number", "1 | 2", "string | number"
 isSubtypeOf(a, b)             // 子类型检查
 ```
@@ -152,6 +155,8 @@ Ops.add(a, b)
 ```
 
 每个 JS 运算符和内置方法在 Ops 中都有对应的类型值语义规则。
+
+对于**精化类型**，引擎使用分派回退链：首先尝试精化类型的自定义 `ops`/`methods`/`properties` handler；如果返回 `undefined`，则解包到基础类型并递归，直到到达原始类型的默认规则。
 
 ---
 
@@ -319,6 +324,55 @@ function clamp(value, min, max) {
 // clamp(T.number, 0, 10) → T.number
 ```
 
+### 6.5 更精确的字符串拼接
+
+Nudo 在字符串拼接中保留结构，产生模板字符串类型：
+
+```javascript
+const url = "https://api.example.com" + T.string;
+// Nudo: `https://api.example.com${string}`
+// TypeScript: string（丢失已知前缀）
+
+url.startsWith("https://")  // Nudo: true | TypeScript: boolean
+```
+
+### 6.6 字面量级别的字符串方法推导
+
+Nudo 在编译时对字面量执行字符串方法：
+
+```javascript
+"hello".toUpperCase()    // Nudo: "HELLO"     | TS: string
+"a,b,c".split(",")      // Nudo: ["a","b","c"]| TS: string[]
+"hello".indexOf("l")    // Nudo: 2            | TS: number
+```
+
+### 6.7 循环的类型级求值
+
+Nudo 对具体边界的循环求值，计算精确结果：
+
+```javascript
+let sum = 0;
+for (let i = 0; i < 5; i++) sum += i;
+// Nudo: sum → 10 | TS: number
+```
+
+### 6.8 用户可扩展的类型精化
+
+用户可通过 `T.refine` 定义自定义精化类型，附加领域特定的运算规则：
+
+```javascript
+const Odd = T.refine(T.number, {
+  name: "odd",
+  check: (v) => Number.isInteger(v) && v % 2 !== 0,
+  ops: { "%"(self, other) {
+    if (other.kind === "literal" && other.value === 2) return T.literal(1);
+    return undefined; // 回退到 T.number 行为
+  }},
+});
+// Odd % 2 → 1（自定义规则）
+// Odd + 1 → number（回退到基础类型）
+```
+
 ---
 
 ## 7. 端到端示例：calc
@@ -359,14 +413,27 @@ function calc(a, b) {
 ### 阶段 1：最小可行求值器（已完成）
 - Babel 解析、TypeValue 核心、基本 Ops、求值器、窄化、`@nudo:case`、CLI。
 
-### 阶段 2：对象与数组
+### 阶段 2：对象与数组（已完成）
 - ObjectType、ArrayType、TupleType、属性访问、`Array.prototype` 方法、`@nudo:mock`。
 
-### 阶段 3：高级特性
+### 阶段 3：高级特性（已完成）
 - 闭包、递归、async/Promise、try-catch、instanceof、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`。
 
-### 阶段 4：工具链
+### 阶段 4：工具链（已完成）
 - LSP、watch 模式、`.d.ts` 导出、Vite 插件、VS Code 扩展。
+
+### 阶段 5：精化类型值（已完成）
+- `RefinedType` 类型种类及 `Refinement` 接口（name、meta、check、ops、methods、properties）。
+- 内置模板字符串精化（parts、拼接、startsWith/endsWith/includes、length）。
+- 内置数值区间精化（min、max、integer、比较运算符）。
+- 用户自定义精化类型 `T.refine`。
+- 分派回退链：refined → base → primitive。
+
+### 阶段 6：求值器完善（已完成）
+- 完整字符串方法语义（20+ 方法，字面量与抽象）。
+- 循环求值与不动点迭代（for、while、do-while）。
+- `@nudo:sample` 指令控制循环采样次数。
+- 比较窄化到区间类型。
 
 ---
 

@@ -24,6 +24,7 @@ import {
   getUnreachableRanges,
   resetUnreachableRanges,
   setNodeTypeCollector,
+  setSampleCount,
 } from "@nudojs/cli/evaluator";
 
 export type SourceLocation = {
@@ -199,6 +200,13 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       if (fnVal && fnVal.kind === "function") {
         (fnVal as any)._memoize = fn.name;
       }
+    }
+
+    const sampleDirective = fn.directives.find((d) => d.kind === "sample");
+    if (sampleDirective && sampleDirective.kind === "sample") {
+      setSampleCount(sampleDirective.count);
+    } else {
+      setSampleCount(3);
     }
 
     const caseDirectives = fn.directives.filter((d) => d.kind === "case");

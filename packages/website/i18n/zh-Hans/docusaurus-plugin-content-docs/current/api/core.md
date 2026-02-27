@@ -22,6 +22,7 @@ core 包提供类型值体系、运算符语义以及环境抽象，是 Nudo 抽
 | `function` | 具有 `params`、`body`（AST）和 `closure`（Environment）的函数 |
 | `promise` | 包装 TypeValue 的 Promise |
 | `instance` | 类实例（如 `Error`），可选属性 |
+| `refined` | 基础类型的子集，携带元数据和自定义运算规则 |
 | `union` | 多个 TypeValue 的联合 |
 | `never` | 空集（不可达） |
 | `unknown` | 全集（任意值） |
@@ -57,7 +58,25 @@ T.promise(value)          // value: TypeValue
 T.instanceOf(className, properties?)  // className: string, properties?: Record<string, TypeValue>
 T.union(...members)       // members: TypeValue[]
 T.fn(params, body, closure)  // params: string[], body: Node (Babel AST), closure: Environment
+T.refine(base, refinement)
 ```
+
+### 精化类型
+
+`T.refine` 创建精化类型——基础类型的子集，可选自定义运算规则：
+
+```typescript
+type Refinement = {
+  name: string;                    // 可读名称，用于 toString/toTSType
+  meta: Record<string, unknown>;   // 元数据（如模板 parts、区间边界）
+  check?: (value: unknown) => boolean;  // 判断具体值是否属于此类型
+  ops?: Record<string, (self: TypeValue, other: TypeValue) => TypeValue | undefined>;
+  methods?: Record<string, (self: TypeValue, args: TypeValue[]) => TypeValue | undefined>;
+  properties?: Record<string, (self: TypeValue) => TypeValue | undefined>;
+};
+```
+
+任何 handler 返回 `undefined` 将回退到基础类型的行为。
 
 ---
 
@@ -74,6 +93,7 @@ T.fn(params, body, closure)  // params: string[], body: Node (Babel AST), closur
 | `subtractType(tv, predicate)` | 保留谓词为 false 的成员。 |
 | `getPrimitiveTypeOf(tv)` | 返回 `typeof` 字符串：`"number"`、`"string"`、`"object"`、`"function"` 或 `undefined`。 |
 | `deepCloneTypeValue(tv, idMap?)` | 深度克隆；可选 `idMap` 在克隆间保持对象同一性。 |
+| `getRefinedBase(tv)` | 递归解包精化类型，获取最内层的非精化基础类型。 |
 | `mergeObjectProperties(a, b)` | 合并两个对象 TypeValue；重叠键变为联合类型。 |
 
 ---
@@ -113,6 +133,43 @@ applyBinaryOp(op: string, left: TypeValue, right: TypeValue): TypeValue
 ```
 
 将运算符字符串（`"+"`、`"-"` 等）映射到对应的二元 Op。未知运算符返回 `T.unknown`。
+
+### 分派函数（精化类型感知）
+
+这些函数封装了基本运算，支持精化类型的回退链：
+
+```typescript
+dispatchBinaryOp(op: string, left: TypeValue, right: TypeValue): TypeValue
+dispatchMethod(receiver: TypeValue, name: string, args: TypeValue[]): TypeValue | undefined
+dispatchProperty(receiver: TypeValue, name: string): TypeValue | undefined
+```
+
+分派链：尝试精化类型的自定义 handler → 返回 `undefined` 则解包到 base → 递归直到原始类型 → 使用默认 `Ops`。
+
+---
+
+## 内置精化类型
+
+### 模板字符串
+
+```typescript
+createTemplate(parts: TypeValue[]): TypeValue   // 如 [T.literal("0x"), T.string]
+isTemplate(tv: TypeValue): boolean
+getTemplateParts(tv: TypeValue): TypeValue[] | undefined
+concatTemplates(left: TypeValue, right: TypeValue): TypeValue
+```
+
+模板字符串在字面量字符串与抽象字符串拼接时自动创建。支持 `startsWith`、`endsWith`、`includes` 方法和 `length` 属性。
+
+### 数值区间
+
+```typescript
+createRange(opts: { min?: number; max?: number; integer?: boolean }): TypeValue
+isRange(tv: TypeValue): boolean
+getRangeMeta(tv: TypeValue): { min?: number; max?: number; integer?: boolean } | undefined
+```
+
+区间通过比较窄化创建（如 `x >= 0`）。支持 `>=`、`>`、`<=`、`<` 比较运算符，当边界已知时返回确定性结果。
 
 ---
 

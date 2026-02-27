@@ -156,6 +156,122 @@ Nudo models control flow: the `valid` case returns `number`, the `negative` case
 
 ---
 
+## 6. Template Strings — Nudo vs TypeScript
+
+Nudo preserves string structure through concatenation, enabling precise inference that TypeScript cannot achieve.
+
+```javascript
+/**
+ * @nudo:case "symbolic" (T.string)
+ */
+function makeApiUrl(path) {
+  return "https://api.example.com" + path;
+}
+```
+
+**Nudo infers:** `` `https://api.example.com${string}` ``
+
+**TypeScript infers:** `string` (loses the known prefix)
+
+This means Nudo can reason about the result:
+
+```javascript
+/**
+ * @nudo:case "symbolic" (T.string)
+ */
+function isApiUrl(path) {
+  const url = "https://api.example.com" + path;
+  return url.startsWith("https://");  // → true (known from template prefix)
+}
+```
+
+Nudo knows the result is always `true` because the template's prefix starts with `"https://"`. TypeScript would infer `boolean`.
+
+---
+
+## 7. Precise String Methods
+
+Nudo evaluates string methods on literals at compile time, producing exact results.
+
+```javascript
+/**
+ * @nudo:case "test" ()
+ */
+function stringDemo() {
+  const upper = "hello".toUpperCase();    // → "HELLO" (TS: string)
+  const parts = "a,b,c".split(",");       // → ["a", "b", "c"] (TS: string[])
+  const idx = "hello".indexOf("l");       // → 2 (TS: number)
+  const sliced = "hello".slice(1, 3);     // → "el" (TS: string)
+  const len = "hello".length;             // → 5 (TS: number)
+  return { upper, parts, idx, sliced, len };
+}
+```
+
+Every result is a precise literal type. TypeScript can only infer `string`, `string[]`, or `number` for these operations.
+
+---
+
+## 8. Loop Evaluation
+
+Nudo can evaluate loops with concrete bounds, computing exact results at type level — something TypeScript cannot do at all.
+
+```javascript
+/**
+ * @nudo:case "concrete" (5)
+ * @nudo:case "symbolic" (T.number)
+ */
+function sumTo(n) {
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    sum = sum + i;
+  }
+  return sum;
+}
+```
+
+**Inferred output:**
+
+```
+=== sumTo ===
+
+Case "concrete": (5) => 10
+Case "symbolic": (number) => number
+
+Combined: number
+```
+
+With concrete input `5`, Nudo evaluates the loop and produces the exact result `10`. With abstract input `T.number`, it widens to `number` after fixed-point iteration.
+
+---
+
+## 9. User-Defined Refined Types
+
+Users can create custom type constraints with `T.refine`, attaching domain-specific operation rules.
+
+```javascript
+const Odd = T.refine(T.number, {
+  name: "odd",
+  check: (v) => Number.isInteger(v) && v % 2 !== 0,
+  ops: {
+    "%"(self, other) {
+      if (other.kind === "literal" && other.value === 2) return T.literal(1);
+      return undefined;
+    },
+  },
+});
+
+/**
+ * @nudo:case "test" (Odd)
+ */
+function checkOdd(x) {
+  return x % 2;  // → 1 (custom op rule)
+}
+```
+
+The `Odd` type knows that `odd % 2` is always `1`. Operations without custom rules (like `+`) fall back to `T.number`'s default behavior.
+
+---
+
 ## Summary of Directives Used
 
 | Directive       | Purpose                                      |

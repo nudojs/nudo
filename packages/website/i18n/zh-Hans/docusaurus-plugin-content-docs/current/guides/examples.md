@@ -156,6 +156,122 @@ Nudo 建模控制流：`valid` case 返回 `number`，`negative` case 抛出 `Ra
 
 ---
 
+## 6. 模板字符串 — Nudo vs TypeScript
+
+Nudo 在字符串拼接中保留结构信息，实现 TypeScript 无法达到的精确推断。
+
+```javascript
+/**
+ * @nudo:case "symbolic" (T.string)
+ */
+function makeApiUrl(path) {
+  return "https://api.example.com" + path;
+}
+```
+
+**Nudo 推断：** `https://api.example.com${string}`
+
+**TypeScript 推断：** `string`（丢失了已知前缀）
+
+这意味着 Nudo 可以对结果进行推理：
+
+```javascript
+/**
+ * @nudo:case "symbolic" (T.string)
+ */
+function isApiUrl(path) {
+  const url = "https://api.example.com" + path;
+  return url.startsWith("https://");  // → true（从模板前缀推导）
+}
+```
+
+Nudo 知道结果一定是 `true`，因为模板的前缀以 `"https://"` 开头。TypeScript 只能推断为 `boolean`。
+
+---
+
+## 7. 精确的字符串方法
+
+Nudo 在编译时对字面量执行字符串方法，产生精确结果。
+
+```javascript
+/**
+ * @nudo:case "test" ()
+ */
+function stringDemo() {
+  const upper = "hello".toUpperCase();    // → "HELLO"（TS: string）
+  const parts = "a,b,c".split(",");       // → ["a", "b", "c"]（TS: string[]）
+  const idx = "hello".indexOf("l");       // → 2（TS: number）
+  const sliced = "hello".slice(1, 3);     // → "el"（TS: string）
+  const len = "hello".length;             // → 5（TS: number）
+  return { upper, parts, idx, sliced, len };
+}
+```
+
+每个结果都是精确的字面量类型。TypeScript 对这些操作只能推断出 `string`、`string[]` 或 `number`。
+
+---
+
+## 8. 循环求值
+
+Nudo 可以对具体边界的循环进行求值，在类型层面计算精确结果——这是 TypeScript 完全无法做到的。
+
+```javascript
+/**
+ * @nudo:case "concrete" (5)
+ * @nudo:case "symbolic" (T.number)
+ */
+function sumTo(n) {
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    sum = sum + i;
+  }
+  return sum;
+}
+```
+
+**推断输出：**
+
+```
+=== sumTo ===
+
+Case "concrete": (5) => 10
+Case "symbolic": (number) => number
+
+Combined: number
+```
+
+输入具体值 `5` 时，Nudo 执行循环并产生精确结果 `10`。输入抽象值 `T.number` 时，通过不动点迭代拓宽为 `number`。
+
+---
+
+## 9. 用户自定义精化类型
+
+用户可以通过 `T.refine` 创建自定义类型约束，附加领域特定的运算规则。
+
+```javascript
+const Odd = T.refine(T.number, {
+  name: "odd",
+  check: (v) => Number.isInteger(v) && v % 2 !== 0,
+  ops: {
+    "%"(self, other) {
+      if (other.kind === "literal" && other.value === 2) return T.literal(1);
+      return undefined;
+    },
+  },
+});
+
+/**
+ * @nudo:case "test" (Odd)
+ */
+function checkOdd(x) {
+  return x % 2;  // → 1（自定义运算规则）
+}
+```
+
+`Odd` 类型知道 `odd % 2` 总是 `1`。没有自定义规则的运算（如 `+`）回退到 `T.number` 的默认行为。
+
+---
+
 ## 所用指令小结
 
 | Directive       | Purpose                                      |
