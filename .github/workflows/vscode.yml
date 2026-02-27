@@ -21,11 +21,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: "9"
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -63,7 +58,6 @@ jobs:
           name: vscode-extension
           path: dist
 
-      # 发布到 VS Code Marketplace
       - name: Publish to VSCode Marketplace
         if: env.VSCODE_MARKETPLACE_TOKEN != ''
         run: |
@@ -72,7 +66,6 @@ jobs:
         env:
           VSCODE_MARKETPLACE_TOKEN: ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
 
-      # 发布到 Open VSX
       - name: Publish to Open VSX
         if: env.OVSX_MARKETPLACE_TOKEN != ''
         run: |

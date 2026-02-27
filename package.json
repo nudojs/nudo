@@ -3,8 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@9.1.0",
+  "scripts": {
     "ci:version": "changesets version",
-    "build": "pnpm -r run build",
     "build": "pnpm -r run build",
     "test": "vitest run",
     "test:watch": "vitest",
