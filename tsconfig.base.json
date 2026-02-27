@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "esModuleInterop": true,
     "strict": true,
+    "composite": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "skipLibCheck": true,
