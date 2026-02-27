@@ -1,0 +1,84 @@
+name: VSCode Extension
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'vscode-v*'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Build VSCode extension
+        run: cd packages/vscode && pnpm run build
+
+      - name: Package VSCode extension
+        run: cd packages/vscode && npx @vscode/vsce package --no-dependencies -o ../../dist/nudo-vscode.vsix
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-extension
+          path: dist/nudo-vscode.vsix
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/vscode-v')
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: vscode-extension
+          path: dist
+
+      - name: Publish to VSCode Marketplace
+        if: env.VSCODE_MARKETPLACE_TOKEN != ''
+        run: |
+          cd packages/vscode
+          npx @vscode/vsce publish --no-dependencies -p ${{ secrets.VSCODE_MARKETPLACE_TOKEN }} ../../dist/nudo-vscode.vsix
+        env:
+          VSCODE_MARKETPLACE_TOKEN: ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
+
+      - name: Publish to Open VSX
+        if: env.OVSX_MARKETPLACE_TOKEN != ''
+        run: |
+          cd packages/vscode
+          npx ovsx publish -p ${{ secrets.OVSX_MARKETPLACE_TOKEN }} ../../dist/nudo-vscode.vsix
+        env:
+          OVSX_MARKETPLACE_TOKEN: ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/vscode-v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/nudo-vscode.vsix
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
