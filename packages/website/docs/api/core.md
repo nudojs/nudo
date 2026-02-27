@@ -22,6 +22,7 @@ The core package provides the type value system, operator semantics, and environ
 | `function` | Function with `params`, `body` (AST), and `closure` (Environment) |
 | `promise` | Promise wrapping a TypeValue |
 | `instance` | Class instance (e.g. `Error`) with optional properties |
+| `refined` | Subset of a base type with metadata and custom operation rules |
 | `union` | Union of multiple TypeValues |
 | `never` | Empty set (unreachable) |
 | `unknown` | Universal set (any value) |
@@ -57,7 +58,25 @@ T.promise(value)          // value: TypeValue
 T.instanceOf(className, properties?)  // className: string, properties?: Record<string, TypeValue>
 T.union(...members)       // members: TypeValue[]
 T.fn(params, body, closure)  // params: string[], body: Node (Babel AST), closure: Environment
+T.refine(base, refinement)   // base: TypeValue, refinement: Refinement
 ```
+
+### Refinement Type
+
+`T.refine` creates a refined type — a subset of a base type with optional custom operation rules:
+
+```typescript
+type Refinement = {
+  name: string;                    // readable name for toString/toTSType
+  meta: Record<string, unknown>;   // metadata (e.g. template parts, range bounds)
+  check?: (value: unknown) => boolean;  // test if a concrete value belongs to this type
+  ops?: Record<string, (self: TypeValue, other: TypeValue) => TypeValue | undefined>;
+  methods?: Record<string, (self: TypeValue, args: TypeValue[]) => TypeValue | undefined>;
+  properties?: Record<string, (self: TypeValue) => TypeValue | undefined>;
+};
+```
+
+Returning `undefined` from any handler falls back to the base type's behavior.
 
 ---
 
@@ -74,6 +93,7 @@ T.fn(params, body, closure)  // params: string[], body: Node (Babel AST), closur
 | `subtractType(tv, predicate)` | Keep members where predicate is false. |
 | `getPrimitiveTypeOf(tv)` | Return `typeof` string: `"number"`, `"string"`, `"object"`, `"function"`, or `undefined`. |
 | `deepCloneTypeValue(tv, idMap?)` | Deep clone; optional `idMap` preserves object identity across clones. |
+| `getRefinedBase(tv)` | Recursively unwrap refined types to get the innermost non-refined base. |
 | `mergeObjectProperties(a, b)` | Merge two object TypeValues; overlapping keys become unions. |
 
 ---
@@ -113,6 +133,43 @@ applyBinaryOp(op: string, left: TypeValue, right: TypeValue): TypeValue
 ```
 
 Maps operator strings (`"+"`, `"-"`, etc.) to the corresponding binary Op. Unknown ops return `T.unknown`.
+
+### Dispatch Functions (Refined-Aware)
+
+These functions wrap the basic ops with support for refined type fallback chains:
+
+```typescript
+dispatchBinaryOp(op: string, left: TypeValue, right: TypeValue): TypeValue
+dispatchMethod(receiver: TypeValue, name: string, args: TypeValue[]): TypeValue | undefined
+dispatchProperty(receiver: TypeValue, name: string): TypeValue | undefined
+```
+
+The dispatch chain: try refined type's custom handler → if `undefined`, unwrap to base → recurse until primitive type → use default `Ops`.
+
+---
+
+## Built-in Refinements
+
+### Template String
+
+```typescript
+createTemplate(parts: TypeValue[]): TypeValue   // e.g. [T.literal("0x"), T.string]
+isTemplate(tv: TypeValue): boolean
+getTemplateParts(tv: TypeValue): TypeValue[] | undefined
+concatTemplates(left: TypeValue, right: TypeValue): TypeValue
+```
+
+Template strings are automatically created when concatenating a literal string with an abstract string. They support `startsWith`, `endsWith`, `includes` methods and `length` property.
+
+### Numeric Range
+
+```typescript
+createRange(opts: { min?: number; max?: number; integer?: boolean }): TypeValue
+isRange(tv: TypeValue): boolean
+getRangeMeta(tv: TypeValue): { min?: number; max?: number; integer?: boolean } | undefined
+```
+
+Ranges are created by comparison narrowing (e.g. `x >= 0`). They support `>=`, `>`, `<=`, `<` comparison operators with deterministic results when bounds are known.
 
 ---
 

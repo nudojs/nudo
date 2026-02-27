@@ -66,6 +66,7 @@ When Nudo executes `transform(T.string)`, the engine propagates `T.string` throu
 TypeValue
 ├── Literal<V>          — Single concrete value: 1, "hello", true, null, undefined
 ├── Primitive<T>        — All values of a primitive: number, string, boolean, bigint, symbol
+├── RefinedType         — Subset of a base type with metadata and custom operation rules
 ├── ObjectType          — Object with known property types: { id: number, name: Literal<"Alice"> }
 ├── ArrayType           — Array with element type: Array<number>
 ├── TupleType           — Fixed-length array: [Literal<1>, Primitive<string>]
@@ -83,10 +84,11 @@ TypeValue
 T.literal(1) + T.literal(2)  // → T.literal(3), not T.number
 ```
 
-**Principle 2: Widen when abstract.** When any input is abstract (non-literal), the result widens to the corresponding abstract type.
+**Principle 2: Widen when abstract.** When any input is abstract (non-literal), the result widens to the corresponding abstract type — but preserves structure through refined types when possible.
 
 ```javascript
-T.literal(1) + T.number  // → T.number
+T.literal(1) + T.number       // → T.number
+T.literal("0x") + T.string    // → `0x${string}` (template refined type)
 ```
 
 **Principle 3: Lazy union distribution.** Operations on unions are distributed over members, but using **lazy evaluation**—unions propagate as a whole and are expanded only when an operator **must distinguish** members. This avoids combinatorial explosion from Cartesian products.
@@ -129,9 +131,10 @@ T.array(TypeValue)            // Array type
 T.tuple([TypeValue, ...])     // Tuple type
 T.union(TypeValue, ...)       // Union type
 T.fn(params, body, closure)  // Function type
+T.refine(base, refinement)   // Refined subset of base type with custom rules
 
 // --- Introspection ---
-typeValue.kind                // "literal" | "primitive" | "object" | "array" | ...
+typeValue.kind                // "literal" | "primitive" | "refined" | "object" | "array" | ...
 typeValueToString(tv)         // Human-readable: "number", "1 | 2", "string | number"
 isSubtypeOf(a, b)             // Subtype check
 ```
@@ -152,6 +155,8 @@ Ops.add(a, b)
 ```
 
 Each JS operator and built-in method has a corresponding type-value semantic rule in Ops.
+
+For **refined types**, the engine uses a dispatch fallback chain: it first tries the refined type's custom `ops`/`methods`/`properties` handlers; if they return `undefined`, it unwraps to the base type and recurses until a primitive type's default rule is reached.
 
 ---
 
@@ -319,6 +324,55 @@ function clamp(value, min, max) {
 // clamp(T.number, 0, 10) → T.number
 ```
 
+### 6.5 Precise String Concatenation
+
+Nudo preserves string structure through concatenation, producing template string types:
+
+```javascript
+const url = "https://api.example.com" + T.string;
+// Nudo: `https://api.example.com${string}`
+// TypeScript: string (loses the known prefix)
+
+url.startsWith("https://")  // Nudo: true | TypeScript: boolean
+```
+
+### 6.6 Literal-Level String Method Inference
+
+Nudo evaluates string methods on literals at compile time:
+
+```javascript
+"hello".toUpperCase()    // Nudo: "HELLO"     | TS: string
+"a,b,c".split(",")      // Nudo: ["a","b","c"]| TS: string[]
+"hello".indexOf("l")    // Nudo: 2            | TS: number
+```
+
+### 6.7 Type-Level Loop Evaluation
+
+Nudo evaluates loops with concrete bounds, computing exact results:
+
+```javascript
+let sum = 0;
+for (let i = 0; i < 5; i++) sum += i;
+// Nudo: sum → 10 | TS: number
+```
+
+### 6.8 User-Extensible Type Refinements
+
+Users can define custom refined types with domain-specific operation rules via `T.refine`:
+
+```javascript
+const Odd = T.refine(T.number, {
+  name: "odd",
+  check: (v) => Number.isInteger(v) && v % 2 !== 0,
+  ops: { "%"(self, other) {
+    if (other.kind === "literal" && other.value === 2) return T.literal(1);
+    return undefined; // fall back to T.number behavior
+  }},
+});
+// Odd % 2 → 1 (custom rule)
+// Odd + 1 → number (falls back to base)
+```
+
 ---
 
 ## 7. End-to-End Example: calc
@@ -359,14 +413,27 @@ function calc(a, b) {
 ### Phase 1: Minimal Viable Evaluator (done)
 - Babel parser, TypeValue core, basic ops, evaluator, narrowing, `@nudo:case`, CLI.
 
-### Phase 2: Objects and Arrays
+### Phase 2: Objects and Arrays (done)
 - ObjectType, ArrayType, TupleType, property access, `Array.prototype` methods, `@nudo:mock`.
 
-### Phase 3: Advanced Features
+### Phase 3: Advanced Features (done)
 - Closures, recursion, async/Promise, try-catch, instanceof, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`.
 
-### Phase 4: Tooling
+### Phase 4: Tooling (done)
 - LSP, watch mode, `.d.ts` export, Vite plugin, VS Code extension.
+
+### Phase 5: Refined TypeValues (done)
+- `RefinedType` kind with `Refinement` interface (name, meta, check, ops, methods, properties).
+- Built-in template string refinement (parts, concatenation, startsWith/endsWith/includes, length).
+- Built-in numeric range refinement (min, max, integer, comparison operators).
+- User-defined refined types via `T.refine`.
+- Dispatch fallback chain: refined → base → primitive.
+
+### Phase 6: Evaluator Completion (done)
+- Full string method semantics (20+ methods, literal and abstract).
+- Loop evaluation with fixed-point iteration (for, while, do-while).
+- `@nudo:sample` directive for loop sampling control.
+- Comparison narrowing to range types.
 
 ---
 

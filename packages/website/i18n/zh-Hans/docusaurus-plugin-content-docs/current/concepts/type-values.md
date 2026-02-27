@@ -14,6 +14,7 @@ Nudo 的类型系统围绕类型值种类的 discriminated union 构建：
 TypeValue
 ├── Literal<V>      — 单一具体值: 1, "hello", true, null, undefined
 ├── Primitive<T>    — 基本类型的所有可能值: number, string, boolean, bigint, symbol
+├── RefinedType     — 基础类型的精化子集，携带元数据和自定义运算规则
 ├── ObjectType      — 具有已知属性类型的对象
 ├── ArrayType       — 具有元素类型的数组
 ├── TupleType       — 固定长度数组
@@ -90,6 +91,32 @@ T.union(T.string, T.number)
 
 全集。当类型无法确定时表示「任意值」。
 
+### RefinedType
+
+表示**基础类型的子集**，携带元数据和可选的自定义运算规则。精化类型是模板字符串、数值区间和用户自定义类型约束背后的统一机制。
+
+```javascript
+// 内置：模板字符串（字符串拼接时自动创建）
+T.literal("0x") + T.string   // → refined(T.string, template { parts: ["0x", T.string] })
+
+// 内置：数值区间（窄化时创建）
+// if (x >= 0) → x 被窄化为 refined(T.number, range { min: 0 })
+
+// 用户自定义：
+T.refine(T.number, {
+  name: "odd",
+  check: (v) => Number.isInteger(v) && v % 2 !== 0,
+  ops: {
+    "%"(self, other) {
+      if (other.kind === "literal" && other.value === 2) return T.literal(1);
+      return undefined; // 回退到基础类型行为
+    },
+  },
+})
+```
+
+精化类型始终是其基础类型的子类型。当运算未被精化类型的自定义规则处理（或返回 `undefined`）时，引擎回退到基础类型的行为，逐层递归直到原始类型。
+
 ---
 
 ## T Factory API
@@ -113,6 +140,7 @@ T.union(T.string, T.number)
 | `T.tuple([...])` | 固定长度数组 |
 | `T.union(...)` | 类型值的联合 |
 | `T.fn(params, body, closure)` | 函数类型（内部使用） |
+| `T.refine(base, refinement)` | 基础类型的精化子集，携带自定义规则 |
 
 ### 指令中的示例
 
@@ -154,14 +182,16 @@ T.literal("a") + T.literal("b") // → T.literal("ab"), not T.string
 
 ### 2. 抽象时拓宽（Widening on Abstraction）
 
-当任意输入是抽象的（非字面量）时，结果拓宽为合适的抽象类型。
+当任一输入是抽象的（非字面量），结果拓宽为对应的抽象类型——但 Nudo 会通过精化类型尽可能保留结构信息。
 
 ```javascript
-T.literal(1) + T.number   // → T.number
-T.string + T.literal("!") // → T.string
+T.literal(1) + T.number       // → T.number
+T.literal("xy") + T.string    // → `xy${string}`（模板精化类型，而非 T.string）
+T.string + T.literal("!")     // → `${string}!`
+T.string + T.string           // → T.string（无结构可保留）
 ```
 
-输入的抽象意味着输出的抽象。
+当字符串拼接涉及至少一个字面量时，Nudo 会产生**模板字符串**精化类型，保留已知的前缀/后缀。这使得 `startsWith` 和 `endsWith` 等方法能够精确推理。
 
 ### 3. 联合类型懒分配（Lazy Union Distribution）
 

@@ -15,7 +15,7 @@ The **nudo-vscode** extension brings Nudo's type inference into your editor with
 Or install from the command line:
 
 ```bash
-code --install-extension nudojs.nudo-vscode
+code --install-extension wmzy.nudo-vscode
 ```
 
 ## Activation

@@ -36,6 +36,26 @@ With `@nudo:case` directives, you tell Nudo which inputs to "execute" with. For 
 
 **With TypeScript**, you would typically annotate `x: string | number` and `: number` yourself. Nudo infers both from execution.
 
+## Beyond TypeScript
+
+Nudo can infer types that TypeScript's type system cannot express:
+
+```javascript
+// String concatenation preserves structure
+"0x" + T.string                // → `0x${string}` (TS: string)
+
+// String methods compute precise results on literals
+"hello".toUpperCase()          // → "HELLO" (TS: string)
+"a,b,c".split(",")            // → ["a", "b", "c"] (TS: string[])
+
+// Loops evaluate at type level
+let sum = 0;
+for (let i = 0; i < 5; i++) sum += i;
+// sum → 10 (TS: number)
+```
+
+Users can also define custom refined types with domain-specific operation rules via `T.refine`. See [Examples](/docs/guides/examples) for more.
+
 ## What's Next
 
 - **[Installation](/docs/getting-started/installation)** — Install the CLI, VS Code extension, and Vite plugin

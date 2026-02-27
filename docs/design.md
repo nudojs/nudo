@@ -792,6 +792,126 @@ function clamp(value, min, max) {
 // clamp(T.number, T.literal(0), T.literal(10)) → T.number
 ```
 
+### 6.5 更精确的字符串拼接
+
+TypeScript 在拼接字面量与抽象字符串时直接丢失所有结构信息。Nudo 通过精化类型保留已知的前缀、后缀等结构。
+
+**TypeScript：**
+```typescript
+function makeUrl(path: string): string {
+  return "https://api.example.com" + path;
+}
+// 返回类型：string —— 丢失了已知前缀
+
+function isApiUrl(url: string): boolean {
+  return url.startsWith("https://api.example.com");
+}
+// TypeScript 无法推导出 isApiUrl(makeUrl(x)) 一定为 true
+```
+
+**Nudo：**
+```javascript
+function makeUrl(path) {
+  return "https://api.example.com" + path;
+}
+// makeUrl(T.string) → `https://api.example.com${string}`
+
+function isApiUrl(url) {
+  return url.startsWith("https://api.example.com");
+}
+// isApiUrl(makeUrl(T.string)) → T.literal(true)
+// Nudo 知道 makeUrl 的结果一定以 "https://api.example.com" 开头
+```
+
+### 6.6 字面量级别的字符串方法推导
+
+TypeScript 的字符串方法返回类型几乎总是 `string`、`number` 或 `boolean`，即使输入是字面量。Nudo 在字面量输入时直接计算出精确结果。
+
+**TypeScript：**
+```typescript
+const x = "hello".toUpperCase();     // string
+const y = "a,b,c".split(",");        // string[]
+const z = "hello".indexOf("l");      // number
+const w = "hello".slice(1, 3);       // string
+const v = "hello".length;            // number
+```
+
+**Nudo：**
+```javascript
+const x = "hello".toUpperCase();     // "HELLO"
+const y = "a,b,c".split(",");        // ["a", "b", "c"]
+const z = "hello".indexOf("l");      // 2
+const w = "hello".slice(1, 3);       // "el"
+const v = "hello".length;            // 5
+```
+
+这意味着 Nudo 可以在编译时验证字符串操作的正确性：
+
+```javascript
+function extractDomain(email) {
+  const parts = email.split("@");
+  return parts[1];
+}
+// extractDomain(T.literal("user@example.com")) → T.literal("example.com")
+// TypeScript 只能推导出 string | undefined
+```
+
+### 6.7 循环的类型级求值
+
+TypeScript 的类型系统完全无法在类型层面执行循环。Nudo 可以对具体边界的循环进行完整求值，对抽象边界的循环通过不动点迭代推导出收敛类型。
+
+**TypeScript：**
+```typescript
+// TypeScript 无法在类型层面表达这个计算
+function sumTo(n: number): number {
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += i;
+  return sum;
+}
+// 返回类型只能标注为 number
+```
+
+**Nudo：**
+```javascript
+function sumTo(n) {
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum = sum + i;
+  return sum;
+}
+// sumTo(T.literal(5)) → T.literal(10)  —— 精确计算
+// sumTo(T.number)     → T.number       —— 抽象时自动拓宽
+```
+
+### 6.8 用户可扩展的类型精化
+
+TypeScript 的类型系统是封闭的——用户无法定义新的类型运算规则。Nudo 通过 `T.refine` 允许用户创建自定义精化类型，携带领域特定的运算语义。
+
+**TypeScript：**
+```typescript
+// 无法表达 "奇数" 类型，也无法推导 odd % 2 === 1
+type Odd = number; // 只能用类型别名，无实际约束
+```
+
+**Nudo：**
+```javascript
+const Odd = T.refine(T.number, {
+  name: "odd",
+  check: (v) => Number.isInteger(v) && v % 2 !== 0,
+  ops: {
+    "%"(self, other) {
+      if (other.kind === "literal" && other.value === 2) return T.literal(1);
+      return undefined; // 其他情况回退到 T.number 的行为
+    },
+  },
+});
+
+// 使用：
+// Odd % 2 → T.literal(1)  —— 精确推导
+// Odd + 1 → T.number      —— 未定义的运算回退到 base
+// isSubtypeOf(T.literal(3), Odd) → true
+// isSubtypeOf(T.literal(4), Odd) → false
+```
+
 ---
 
 ## 7. 端到端示例

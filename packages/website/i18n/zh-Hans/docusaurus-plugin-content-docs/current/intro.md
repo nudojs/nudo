@@ -36,6 +36,26 @@ function process(x) {
 
 **使用 TypeScript** 时，你通常需要自己写 `x: string | number` 和 `: number`。Nudo 则通过执行推断出两者。
 
+## 超越 TypeScript
+
+Nudo 可以推断出 TypeScript 类型系统无法表达的类型：
+
+```javascript
+// 字符串拼接保留结构
+"0x" + T.string                // → `0x${string}`（TS: string）
+
+// 字符串方法对字面量计算精确结果
+"hello".toUpperCase()          // → "HELLO"（TS: string）
+"a,b,c".split(",")            // → ["a", "b", "c"]（TS: string[]）
+
+// 循环在类型层面求值
+let sum = 0;
+for (let i = 0; i < 5; i++) sum += i;
+// sum → 10（TS: number）
+```
+
+用户还可以通过 `T.refine` 定义自定义精化类型，附加领域特定的运算规则。详见[示例](/docs/guides/examples)。
+
 ## 下一步
 
 - **[安装](/docs/getting-started/installation)** — 安装 CLI、VS Code 扩展和 Vite 插件
