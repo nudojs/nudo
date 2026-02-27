@@ -60,6 +60,7 @@ Nudo： 源代码  +  类型值    →  执行  →  类型
 TypeValue
 ├── Literal<V>          — 单个具体值：1, "hello", true, null, undefined
 ├── Primitive<T>        — 某个原始类型的所有可能值：number, string, boolean, bigint, symbol
+├── RefinedType         — 基础类型的精化子集：template string, number range, 用户自定义（详见第 8 节）
 ├── ObjectType          — 具有已知属性类型的对象：{ id: Primitive<number>, name: Literal<"Alice"> }
 ├── ArrayType           — 具有元素类型的数组：Array<Primitive<number>>
 ├── TupleType           — 固定长度的数组：[Literal<1>, Primitive<string>]
@@ -135,12 +136,16 @@ T.tuple([TypeValue, ...])     // 元组类型
 T.union(TypeValue, ...)       // 联合类型
 T.fn({ params, returns, throws? })  // 函数类型（throws 默认为 T.never）
 
+T.refine(base, refinement)    // 精化类型值（详见第 8 节）
+                               // base: 基础类型值（可以是另一个 refined）
+                               // refinement: { name, meta?, check?, ops?, methods?, properties? }
+
 // --- 内省 ---
-typeValue.kind                 // "literal" | "primitive" | "object" | "array" | "union" | ...
+typeValue.kind                 // "literal" | "primitive" | "refined" | "object" | "array" | "union" | ...
 typeValue.contains(other)      // 此类型值的集合是否包含另一个？
 typeValue.narrow(guard)        // 经过类型守卫后返回窄化的类型值
 typeValue.widen()              // 将字面量拓宽为其原始类型：T.literal(1).widen() → T.number
-typeValue.toString()           // 可读表示："number", "1", "string | number"
+typeValue.toString()           // 可读表示："number", "1", "string | number", "`xy${string}`"
 typeValue.toTSType()           // （可选导出）输出 TypeScript 类型语法
 ```
 
@@ -178,6 +183,8 @@ function add(left: TypeValue, right: TypeValue): TypeValue {
 ```
 
 每个 JS 运算符和内置方法都需要对应的类型值语义规则。这是主要的实现工作量，但它是**有限且定义明确的**——JS 运算符和核心内置方法的集合是固定的。
+
+当操作数是精化类型值（`refined`）时，引擎先尝试精化类型自定义的运算规则，若返回 `undefined` 则回退到 base 类型的默认行为（详见第 8.6 节）。
 
 ---
 
@@ -862,85 +869,370 @@ calc: T.fn([
 
 ---
 
-## 8. 实现路线图
+## 8. 精化类型值（Refined TypeValue）
 
-### 阶段 1：最小可行求值器
+### 8.1 动机
 
-**目标：** 验证核心概念可行。
+当前的运算符语义在 `Literal × Abstract` 时直接拓宽为原始类型，丢失了部分已知信息：
 
-**范围：**
-- 使用 Babel/SWC 解析 JS
-- 实现 TypeValue 核心类型：Literal, Primitive（number, string, boolean）, Union, Never
-- 实现运算符语义：`+`, `-`, `*`, `/`, `%`, `===`, `!==`, `>`, `<`, `>=`, `<=`, `typeof`, `!`
-- 实现求值器：字面量、变量、二元表达式、if-else、函数声明、函数调用、return 语句
-- 实现窄化：`typeof x === "..."`、`x === literal`
-- 实现 `@nudo:case` 指令解析
-- 输出 Nudo 类型值的可读表示
+```javascript
+T.literal("xy") + T.string  // 当前结果：T.string
+// 但我们知道结果一定以 "xy" 开头，长度 >= 2
 
-**交付物：** 一个 CLI 工具，接受 `.js` 文件并输出推导的类型值。
+T.literal("x") + T.string + T.literal("!")  // 当前结果：T.string
+// 但我们知道结果以 "x" 开头、以 "!" 结尾
+```
 
-**预估工作量：** ~2-4 周
+TypeScript 通过模板字面量类型（`` `xy${string}` ``）解决了字符串场景，但这是一种特化方案。Nudo 需要一个**统一的抽象**，既能处理模板字符串，也能处理数值区间、用户自定义约束等场景。
 
-### 阶段 2：对象与数组支持
+### 8.2 核心思想：类型值 = 值集合 + 运算规则
 
-**目标：** 处理真实世界的数据结构。
+每个类型值本质上定义了两件事：
 
-**范围：**
-- 实现 ObjectType, ArrayType, TupleType
-- 属性访问、解构、展开运算符
-- `Array.prototype` 方法：`map`, `filter`, `reduce`, `find`, `some`, `every`, `push`, `length`
-- `Object.keys`, `Object.values`, `Object.entries`
-- for-of 循环、for-in 循环
-- 实现 `@nudo:mock` 指令
+1. **值集合** — 哪些具体值属于这个类型
+2. **运算规则** — 这个类型如何参与运算
 
-**预估工作量：** ~3-5 周
+现有的类型值已经隐式遵循这个模型：`T.number` 的值集合是所有 JS 数值，运算规则由 `Ops` 定义。精化类型值（Refined TypeValue）将这个模型**显式化**——它是一个基础类型的子集，可以携带元数据并重写部分运算规则。
 
-### 阶段 3：高级特性
+### 8.3 设计
 
-**目标：** 处理复杂的真实世界模式。
+新增一个 TypeValue kind：
 
-**范围：**
-- 闭包和高阶函数
-- 递归与不动点
-- async/await 和 Promise 建模
-- try-catch 和异常类型追踪
-- 类实例和 `instanceof`
-- 模板字面量
-- 正则表达式（基础）
-- `@nudo:pure`, `@nudo:skip`, `@nudo:sample` 指令
-- 模块导入/导出
+```typescript
+type TypeValue =
+  | ... // 现有 kinds
+  | { kind: "refined"; base: TypeValue; refinement: Refinement }
+```
 
-**预估工作量：** ~4-8 周
+其中 `Refinement` 定义了精化类型的完整语义：
 
-### 阶段 4：工具链与集成
+```typescript
+type Refinement = {
+  name: string;                    // 可读名称，用于 toString / toTSType
+  meta: Record<string, unknown>;   // 元数据（template 存 parts，range 存 min/max 等）
 
-**目标：** 使其在真实开发工作流中可用。
+  // 判断一个具体值是否属于此类型
+  check?: (value: unknown) => boolean;
 
-**范围：**
-- LSP（Language Server Protocol）实现，用于 IDE 集成
-- Watch 模式与增量重新求值
-- Source map 支持，用于错误报告
-- （可选）TypeScript `.d.ts` 文件导出，便于与 TS 生态互操作
-- 与现有构建工具集成（Vite, esbuild, webpack）
-- VS Code / Cursor 扩展
+  // 运算符重写：返回 undefined 表示回退到 base 类型的默认行为
+  ops?: Record<string, (self: TypeValue, other: TypeValue) => TypeValue | undefined>;
 
-**预估工作量：** ~4-6 周
+  // 方法重写：返回 undefined 表示回退到 base 类型的默认行为
+  methods?: Record<string, (self: TypeValue, args: TypeValue[]) => TypeValue | undefined>;
 
-### 技术选型
+  // 属性重写：返回 undefined 表示回退到 base 类型的默认行为
+  properties?: Record<string, (self: TypeValue) => TypeValue | undefined>;
+};
+```
 
-| 组件 | 推荐方案 | 理由 |
-|---|---|---|
-| 解析器 | **SWC**（Babel 作为备选） | SWC 速度快，JS/TS 支持好；Babel 插件生态更丰富 |
-| AST 格式 | **Babel 兼容 AST** | 文档完善，广泛使用，工具丰富 |
-| 实现语言 | **TypeScript** | 自举（dogfooding）；目标用户写 TS；适合原型开发 |
-| 运行时 | **Node.js** | JS 工具链的标准选择 |
-| 测试框架 | **Vitest** | 快速、现代、TS 支持好 |
+### 8.4 内置精化类型
+
+引擎预置两种常用的精化类型，它们与用户自定义的精化类型使用完全相同的机制。
+
+#### 8.4.1 模板字符串（Template String）
+
+表示由多个片段拼接而成的字符串，等价于 TypeScript 的模板字面量类型。
+
+```javascript
+T.literal("xy") + T.string
+// → refined(T.string, template { parts: [T.literal("xy"), T.string] })
+// 语义：所有形如 "xy..." 的字符串
+
+T.literal("x") + T.string + T.literal("!")
+// → refined(T.string, template { parts: [T.literal("x"), T.string, T.literal("!")] })
+// 语义：所有形如 "x...!" 的字符串
+```
+
+模板字符串重写了以下方法和属性：
+
+```javascript
+// startsWith —— 基于已知前缀推理
+template(["xy", T.string]).startsWith("x")   // → T.literal(true)，"xy" 以 "x" 开头
+template(["xy", T.string]).startsWith("xy")  // → T.literal(true)
+template(["xy", T.string]).startsWith("xyz") // → T.boolean，不确定
+template(["xy", T.string]).startsWith("a")   // → T.literal(false)，"xy" 不以 "a" 开头
+
+// endsWith —— 基于已知后缀推理
+template([T.string, "!"]).endsWith("!")       // → T.literal(true)
+
+// length —— 基于已知部分计算长度下界
+template(["xy", T.string]).length             // → refined(T.number, range { min: 2 })
+template(["xy", T.string]).length >= 2        // → T.literal(true)
+template(["xy", T.string]).length >= 100      // → T.boolean，不确定
+```
+
+#### 8.4.2 数值区间（Range）
+
+表示一个数值范围，可选标记为整数。
+
+```javascript
+// 通过窄化产生
+const x = T.number;
+if (x >= 0) {
+  // x 被窄化为 refined(T.number, range { min: 0 })
+}
+
+if (x >= 0 && x <= 100) {
+  // x 被窄化为 refined(T.number, range { min: 0, max: 100 })
+}
+```
+
+数值区间重写了比较运算符：
+
+```javascript
+range({ min: 0 }) >= T.literal(0)            // → T.literal(true)
+range({ min: 0 }) >= T.literal(-1)           // → T.literal(true)
+range({ min: 0, max: 100 }) <= T.literal(100) // → T.literal(true)
+range({ min: 0, max: 100 }) > T.literal(200)  // → T.literal(false)
+range({ min: 0, max: 100 }) > T.literal(50)   // → T.boolean，不确定
+```
+
+### 8.5 用户自定义精化类型
+
+用户通过 `T.refine` 创建自定义精化类型，使用与引擎内置精化类型完全相同的机制：
+
+```javascript
+// 最简形式：只提供 check
+const Integer = T.refine(T.number, {
+  name: "integer",
+  check: (v) => Number.isInteger(v),
+});
+
+// 带运算规则重写
+const Odd = T.refine(T.number, {
+  name: "odd",
+  check: (v) => Number.isInteger(v) && v % 2 !== 0,
+  ops: {
+    "%"(self, other) {
+      if (other.kind === "literal" && other.value === 2) return T.literal(1);
+      return undefined;  // 其他情况回退到 T.number 的行为
+    },
+  },
+});
+
+// 可组合：refined 的 base 可以是另一个 refined
+const PositiveInteger = T.refine(Integer, {
+  name: "positive integer",
+  check: (v) => v > 0,
+});
+
+// 字符串精化
+const HexString = T.refine(T.string, {
+  name: "hex string",
+  meta: { prefix: "0x" },
+  check: (v) => typeof v === "string" && /^0x[0-9a-f]+$/i.test(v),
+  methods: {
+    startsWith(self, [arg]) {
+      if (arg.kind === "literal" && typeof arg.value === "string") {
+        if ("0x".startsWith(arg.value)) return T.literal(true);
+      }
+      return undefined;
+    },
+  },
+});
+```
+
+### 8.6 运算分派规则
+
+引擎在执行运算时，按以下优先级分派：
+
+```
+1. 字面量 × 字面量 → 直接计算（字面量保留原则）
+2. refined 类型有自定义 ops/methods → 尝试使用
+3. 自定义规则返回 undefined → 回退到 base 类型
+4. base 也是 refined → 递归回退
+5. base 是原始类型 → 使用 Ops 的默认规则
+```
+
+伪代码：
+
+```typescript
+function dispatchBinaryOp(op: string, left: TypeValue, right: TypeValue): TypeValue {
+  // 1. 字面量保留
+  if (left.kind === "literal" && right.kind === "literal") {
+    return computeLiteral(op, left, right);
+  }
+
+  // 2. refined 类型尝试自定义规则
+  if (left.kind === "refined" && left.refinement.ops?.[op]) {
+    const result = left.refinement.ops[op](left, right);
+    if (result !== undefined) return result;
+  }
+  if (right.kind === "refined" && right.refinement.ops?.[op]) {
+    const result = right.refinement.ops[op](right, left);
+    if (result !== undefined) return result;
+  }
+
+  // 3. 回退到 base 类型
+  const baseLeft = left.kind === "refined" ? left.base : left;
+  const baseRight = right.kind === "refined" ? right.base : right;
+  return dispatchBinaryOp(op, baseLeft, baseRight);  // 递归，处理嵌套 refined
+}
+
+function dispatchMethod(receiver: TypeValue, name: string, args: TypeValue[]): TypeValue {
+  // refined 类型尝试自定义规则
+  if (receiver.kind === "refined" && receiver.refinement.methods?.[name]) {
+    const result = receiver.refinement.methods[name](receiver, args);
+    if (result !== undefined) return result;
+  }
+
+  // 回退到 base 类型
+  const base = receiver.kind === "refined" ? receiver.base : receiver;
+  if (base.kind === "refined") return dispatchMethod(base, name, args);
+  return applyMethod(base, name, args);
+}
+```
+
+### 8.7 子类型关系
+
+精化类型是其 base 类型的子类型：
+
+```
+refined(T.number, odd) <: T.number
+refined(Integer, odd) <: Integer <: T.number
+template(["xy", T.string]) <: T.string
+range({ min: 0, max: 100 }) <: T.number
+```
+
+字面量与精化类型的子类型关系通过 `check` 判定：
+
+```javascript
+isSubtypeOf(T.literal(3), Odd)   // → Odd.check(3) → true
+isSubtypeOf(T.literal(4), Odd)   // → Odd.check(4) → false
+isSubtypeOf(T.literal("0xff"), HexString)  // → HexString.check("0xff") → true
+```
+
+### 8.8 窄化
+
+精化类型参与窄化的方式与其他类型一致。当条件中使用了 `check` 函数时，引擎可以在 true 分支中将变量窄化为对应的精化类型：
+
+```javascript
+const x = T.number;
+if (Number.isInteger(x)) {
+  // x 被窄化为 Integer（如果 Integer 已注册且其 check 与 Number.isInteger 匹配）
+}
+```
+
+### 8.9 序列化
+
+精化类型需要支持可读输出和 TypeScript 类型导出：
+
+| 精化类型 | `toString()` | `toTSType()` |
+|---------|-------------|-------------|
+| `template(["xy", T.string])` | `` `xy${string}` `` | `` `xy${string}` `` |
+| `template([T.string, "!"])` | `` `${string}!` `` | `` `${string}!` `` |
+| `range({ min: 0 })` | `number (>= 0)` | `number`（TS 无法表达） |
+| `Odd` | `odd` | `number`（TS 无法表达） |
+| `HexString` | `hex string` | `` `0x${string}` ``（如果可映射） |
+
+对于 TypeScript 无法表达的精化类型，降级为 base 类型的 TS 表示。
+
+### 8.10 设计总结
+
+| 概念 | 说明 |
+|------|------|
+| **统一抽象** | 内置的 template、range 和用户自定义的 Odd、HexString 使用完全相同的 `refined` 机制 |
+| **回退策略** | 运算规则返回 `undefined` → 回退到 base 类型，逐层递归直到原始类型 |
+| **可组合** | refined 的 base 可以是另一个 refined，形成精化链 |
+| **最小定义** | 用户只需提供 `check` 即可获得子类型判断和窄化能力，运算规则可选 |
+| **无魔法** | 引擎不猜测、不采样，未定义的运算规则一律回退到 base 类型 |
 
 ---
 
-## 9. 未来方向
+## 9. 实现路线图
 
-- **增量求值：** 文件修改后只重新求值受影响的函数，而非整个文件。这对 IDE 实时反馈至关重要。
+### 已完成
+
+#### 阶段 1：最小可行求值器（MVP） ✓
+
+- [x] 使用 Babel 解析 JS/TS
+- [x] TypeValue 核心类型：Literal, Primitive（number, string, boolean, bigint, symbol）, Union, Never, Unknown
+- [x] 运算符语义：`+`, `-`, `*`, `/`, `%`, `===`, `!==`, `>`, `<`, `>=`, `<=`, `typeof`, `!`, 一元 `-`
+- [x] 求值器：字面量、变量、二元表达式、if-else、函数声明、函数调用、return 语句
+- [x] 窄化：`typeof x === "..."`、`x === literal`、`x instanceof C`
+- [x] `@nudo:case` 指令解析
+- [x] 可读的 TypeValue 输出（`typeValueToString`）
+- [x] CLI 工具（`nudo infer <file>`）
+
+#### 阶段 2：对象与数组支持 ✓
+
+- [x] ObjectType, ArrayType, TupleType
+- [x] 属性访问、解构（对象/数组）、展开运算符
+- [x] `Array.prototype` 方法：`map`, `filter`, `reduce`, `find`, `some`, `every`, `push`, `length`, `includes`, `join`, `concat`, `slice`, `forEach`, `flatMap`
+- [x] `Object.keys`, `Object.values`, `Object.entries`
+- [x] for-of 循环、for-in 循环
+- [x] `@nudo:mock` 指令
+
+#### 阶段 3：高级特性（部分完成）
+
+- [x] 闭包和高阶函数
+- [x] 递归与不动点（记忆化 + `MEMO_IN_PROGRESS`）
+- [x] async/await 和 Promise 建模
+- [x] try-catch 和异常类型追踪（`throws` 传播）
+- [x] 类实例和 `instanceof`
+- [x] 模板字面量（字面量拼接，非字面量回退为 `T.string`）
+- [x] `@nudo:pure`、`@nudo:skip` 指令
+- [x] 模块导入/导出
+
+#### 阶段 4：工具链与集成（部分完成）
+
+- [x] LSP 实现（hover、补全、code lens、inlay hints）
+- [x] Watch 模式（`nudo watch`，带防抖）
+- [x] TypeScript `.d.ts` 文件导出（`--dts` 选项）
+- [x] Vite 插件
+- [x] VS Code / Cursor 扩展
+
+### 待实现
+
+#### 阶段 5：精化类型值与运算精度提升
+
+**目标：** 在 `Literal × Abstract` 运算中保留更多类型信息，支持用户自定义类型值。
+
+**范围：**
+- 实现 `refined` kind 和 `Refinement` 数据结构
+- 实现 `T.refine(base, refinement)` API
+- 实现运算分派回退链（refined → base → 原始类型）
+- 内置模板字符串精化类型（template）：`Literal + T.string` → template
+- 内置数值区间精化类型（range）：窄化产生区间
+- 字符串方法的精化推理：`startsWith`、`endsWith`、`includes`、`length`
+- 数值区间的比较运算推理
+- 精化类型的子类型判断（`check` 函数）
+- 精化类型的序列化（`toString`、`toTSType`）
+
+#### 阶段 6：求值器补全
+
+**目标：** 补全求值器中尚未实现的语言特性。
+
+**范围：**
+- 正则表达式（基础）
+- `@nudo:sample` 指令的求值器集成（当前仅解析，未用于循环展开）
+- for / while 循环的不动点迭代（当前返回 `T.undefined`）
+- `String.prototype` 方法的类型值语义
+
+#### 阶段 7：工具链完善
+
+**目标：** 提升工具链的完整性和开发体验。
+
+**范围：**
+- Source map 支持，用于错误报告定位
+- 增量求值（文件修改后只重新求值受影响的函数）
+- esbuild / webpack 插件
+
+### 技术选型
+
+| 组件 | 方案 | 说明 |
+|---|---|---|
+| 解析器 | **Babel**（`@babel/parser`） | 插件生态丰富，AST 文档完善 |
+| AST 格式 | **Babel AST** | 广泛使用，工具丰富 |
+| 实现语言 | **TypeScript** | 自举（dogfooding）；目标用户写 TS |
+| 运行时 | **Node.js** | JS 工具链的标准选择 |
+| 测试框架 | **Vitest** | 快速、现代、TS 支持好 |
+| 构建工具 | **tsup** | 快速打包，支持 CJS/ESM |
+
+---
+
+## 10. 未来方向
+
 - **REPL：** 交互式环境，开发者可以直接输入表达式，实时看到类型值推导结果。与"通过执行理解类型"的心智模型天然契合。
 - **Ops 社区扩展：** 内置方法的类型值语义（Ops）数量庞大，可以设计插件机制让社区贡献，如 `@nudojs/ops-lodash`、`@nudojs/ops-rxjs` 等。
 - **类型值可视化：** 对于复杂的联合类型、嵌套对象类型，提供树状/图形化的可视化展示，帮助开发者理解推导结果。
@@ -964,21 +1256,23 @@ calc: T.fn([
 
 联合类型的展开由求值器统一处理（原则 3），下表仅列出非联合类型值之间的运算语义。
 
-| 运算符 | Literal × Literal | Literal × Abstract | Abstract × Abstract |
-|---|---|---|---|
-| `+`（数值） | `T.literal(a + b)` | `T.number` | `T.number` |
-| `+`（字符串拼接） | `T.literal(a + b)` | `T.string` | `T.string` |
-| `-`, `*`, `/`, `%` | `T.literal(op(a, b))` | `T.number` | `T.number` |
-| `===` | `T.literal(a === b)` | `T.boolean` | `T.boolean` |
-| `!==` | `T.literal(a !== b)` | `T.boolean` | `T.boolean` |
-| `>`, `<`, `>=`, `<=` | `T.literal(op(a, b))` | `T.boolean` | `T.boolean` |
-| `&&` | 短路求值 | 窄化感知 | `T.union(falsy_type, right_type)` |
-| `\|\|` | 短路求值 | 窄化感知 | `T.union(left_type, right_type)` |
-| `??` | 短路求值 | 窄化感知 | `T.union(non_nullish_left, right_type)` |
-| `typeof` | `T.literal("...")` | `T.literal("...")` | `T.string`（已知子集） |
-| `!` | `T.literal(!a)` | `T.boolean` | `T.boolean` |
-| `in` | `T.literal(bool)` | `T.boolean` | `T.boolean` |
-| `instanceof` | `T.literal(bool)` | `T.boolean` | `T.boolean` |
+当操作数是精化类型值（`refined`）时，引擎先尝试其自定义的 `ops` 规则；若返回 `undefined`，则回退到 base 类型参与下表中的运算（详见第 8.6 节）。
+
+| 运算符 | Literal × Literal | Literal × Abstract | Abstract × Abstract | Refined 行为 |
+|---|---|---|---|---|
+| `+`（数值） | `T.literal(a + b)` | `T.number` | `T.number` | 回退到 base |
+| `+`（字符串拼接） | `T.literal(a + b)` | `T.string` | `T.string` | `Literal + T.string` → template（内置） |
+| `-`, `*`, `/`, `%` | `T.literal(op(a, b))` | `T.number` | `T.number` | 自定义或回退到 base |
+| `===` | `T.literal(a === b)` | `T.boolean` | `T.boolean` | 自定义或回退到 base |
+| `!==` | `T.literal(a !== b)` | `T.boolean` | `T.boolean` | 自定义或回退到 base |
+| `>`, `<`, `>=`, `<=` | `T.literal(op(a, b))` | `T.boolean` | `T.boolean` | range 可精确推理（内置） |
+| `&&` | 短路求值 | 窄化感知 | `T.union(falsy_type, right_type)` | 回退到 base |
+| `\|\|` | 短路求值 | 窄化感知 | `T.union(left_type, right_type)` | 回退到 base |
+| `??` | 短路求值 | 窄化感知 | `T.union(non_nullish_left, right_type)` | 回退到 base |
+| `typeof` | `T.literal("...")` | `T.literal("...")` | `T.string`（已知子集） | 使用 base 的 typeof |
+| `!` | `T.literal(!a)` | `T.boolean` | `T.boolean` | 回退到 base |
+| `in` | `T.literal(bool)` | `T.boolean` | `T.boolean` | 回退到 base |
+| `instanceof` | `T.literal(bool)` | `T.boolean` | `T.boolean` | 回退到 base |
 
 **属性访问语义：**
 
@@ -989,3 +1283,15 @@ calc: T.fn([
 | `T.null.x` / `T.undefined.x` | — | `T.instanceOf(TypeError)` |
 | `T.array(V)[T.number]` | `T.union(V, T.undefined)` | — |
 | `T.tuple([A, B])[T.literal(0)]` | `A` | — |
+| `refined.prop` | 尝试 `properties[prop]`，回退到 base | — |
+
+**方法调用语义（refined 相关）：**
+
+| 操作 | 结果 |
+|---|---|
+| `template(["xy", T.string]).startsWith("x")` | `T.literal(true)`（已知前缀包含 "x"） |
+| `template(["xy", T.string]).startsWith("a")` | `T.literal(false)`（已知前缀不以 "a" 开头） |
+| `template(["xy", T.string]).length` | `range({ min: 2 })`（已知固定部分长度为 2） |
+| `range({ min: 0 }) >= T.literal(0)` | `T.literal(true)`（下界 >= 比较值） |
+| `range({ min: 0, max: 100 }) > T.literal(200)` | `T.literal(false)`（上界 < 比较值） |
+| `refined.method(args)` | 尝试 `methods[name]`，回退到 base 的方法语义 |

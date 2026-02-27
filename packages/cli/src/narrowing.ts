@@ -7,6 +7,8 @@ import {
   subtractType,
   getPrimitiveTypeOf,
   typeValueEquals,
+  isSubtypeOf,
+  createRange,
 } from "@nudojs/core";
 
 /**
@@ -121,6 +123,33 @@ export function narrow(
     test.right.type === "Identifier"
   ) {
     return narrowByInstanceof(test.left.name, test.right.name, env);
+  }
+
+  // x >= literal / x > literal / x <= literal / x < literal
+  if (
+    test.type === "BinaryExpression" &&
+    (test.operator === ">=" || test.operator === ">" || test.operator === "<=" || test.operator === "<") &&
+    test.left.type === "Identifier" &&
+    isLiteralNode(test.right)
+  ) {
+    const litVal = getLiteralValue(test.right);
+    if (litVal.kind === "literal" && typeof litVal.value === "number") {
+      return narrowByComparison(test.left.name, test.operator, litVal.value, env);
+    }
+  }
+
+  // literal >= x / literal > x / literal <= x / literal < x
+  if (
+    test.type === "BinaryExpression" &&
+    (test.operator === ">=" || test.operator === ">" || test.operator === "<=" || test.operator === "<") &&
+    isLiteralNode(test.left) &&
+    test.right.type === "Identifier"
+  ) {
+    const litVal = getLiteralValue(test.left);
+    if (litVal.kind === "literal" && typeof litVal.value === "number") {
+      const flipped = { ">=": "<=", ">": "<", "<=": ">=", "<": ">" } as const;
+      return narrowByComparison(test.right.name, flipped[test.operator as keyof typeof flipped], litVal.value, env);
+    }
   }
 
   // !expr (negate)
@@ -262,5 +291,32 @@ function narrowByStrictEqual(
   trueEnv.bind(varName, narrowed.kind === "never" ? literalTV : narrowed);
   const falseEnv = env.extend({});
   falseEnv.bind(varName, excluded.kind === "never" ? current : excluded);
+  return [trueEnv, falseEnv];
+}
+
+function narrowByComparison(
+  varName: string,
+  op: ">=" | ">" | "<=" | "<",
+  value: number,
+  env: Environment,
+): [Environment, Environment] {
+  const current = env.lookup(varName);
+  if (!isSubtypeOf(current, T.number) && current.kind !== "union") return [env, env];
+
+  const trueEnv = env.extend({});
+  const falseEnv = env.extend({});
+
+  const trueRange = op === ">=" ? createRange({ min: value })
+    : op === ">" ? createRange({ min: value + 1 })
+    : op === "<=" ? createRange({ max: value })
+    : createRange({ max: value - 1 });
+
+  const falseRange = op === ">=" ? createRange({ max: value - 1 })
+    : op === ">" ? createRange({ max: value })
+    : op === "<=" ? createRange({ min: value + 1 })
+    : createRange({ min: value });
+
+  trueEnv.bind(varName, trueRange);
+  falseEnv.bind(varName, falseRange);
   return [trueEnv, falseEnv];
 }

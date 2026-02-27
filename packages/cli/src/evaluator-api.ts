@@ -9,6 +9,7 @@ export {
   getUnreachableRanges,
   resetUnreachableRanges,
   setNodeTypeCollector,
+  setSampleCount,
 } from "./evaluator.ts";
 
 export { narrow } from "./narrowing.ts";

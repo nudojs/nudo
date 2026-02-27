@@ -5,12 +5,22 @@ import type { Environment } from "./environment.ts";
 
 export type LiteralValue = string | number | boolean | null | undefined;
 
+export type Refinement = {
+  name: string;
+  meta: Record<string, unknown>;
+  check?: (value: unknown) => boolean;
+  ops?: Record<string, (self: TypeValue, other: TypeValue) => TypeValue | undefined>;
+  methods?: Record<string, (self: TypeValue, args: TypeValue[]) => TypeValue | undefined>;
+  properties?: Record<string, (self: TypeValue) => TypeValue | undefined>;
+};
+
 export type TypeValue =
   | { kind: "literal"; value: LiteralValue }
   | {
       kind: "primitive";
       type: "number" | "string" | "boolean" | "bigint" | "symbol";
     }
+  | { kind: "refined"; base: TypeValue; refinement: Refinement }
   | { kind: "object"; properties: Record<string, TypeValue>; id: symbol }
   | { kind: "array"; element: TypeValue }
   | { kind: "tuple"; elements: TypeValue[] }
@@ -68,6 +78,11 @@ export const T = {
     body,
     closure,
   }),
+  refine: (base: TypeValue, refinement: Refinement): TypeValue => ({
+    kind: "refined",
+    base,
+    refinement,
+  }),
 } as const;
 
 // --- Helpers ---
@@ -78,6 +93,9 @@ export function typeValueEquals(a: TypeValue, b: TypeValue): boolean {
   if (a.kind === "primitive" && b.kind === "primitive") return a.type === b.type;
   if (a.kind === "never" && b.kind === "never") return true;
   if (a.kind === "unknown" && b.kind === "unknown") return true;
+  if (a.kind === "refined" && b.kind === "refined") {
+    return a.refinement.name === b.refinement.name && typeValueEquals(a.base, b.base);
+  }
   if (a.kind === "promise" && b.kind === "promise") {
     return typeValueEquals(a.value, b.value);
   }
@@ -139,6 +157,18 @@ export function isSubtypeOf(a: TypeValue, b: TypeValue): boolean {
     if (b.type === "string" && typeof v === "string") return true;
     if (b.type === "boolean" && typeof v === "boolean") return true;
     return false;
+  }
+
+  if (a.kind === "literal" && b.kind === "refined") {
+    if (!isSubtypeOf(a, b.base)) return false;
+    return b.refinement.check ? b.refinement.check(a.value) : false;
+  }
+
+  if (a.kind === "refined") {
+    if (b.kind === "refined" && a.refinement.name === b.refinement.name) {
+      return isSubtypeOf(a.base, b.base);
+    }
+    return isSubtypeOf(a.base, b);
   }
 
   if (a.kind === "object" && b.kind === "object") {
@@ -226,6 +256,9 @@ export function deepCloneTypeValue(tv: TypeValue, idMap?: Map<symbol, symbol>): 
     }
     return { kind: "instance", className: tv.className, properties: newProps };
   }
+  if (tv.kind === "refined") {
+    return { kind: "refined", base: deepCloneTypeValue(tv.base, map), refinement: tv.refinement };
+  }
   if (tv.kind === "union") {
     return simplifyUnion(tv.members.map((m) => deepCloneTypeValue(m, map)));
   }
@@ -261,6 +294,8 @@ export function typeValueToString(tv: TypeValue): string {
     }
     case "primitive":
       return tv.type;
+    case "refined":
+      return tv.refinement.name;
     case "object": {
       const entries = Object.entries(tv.properties);
       if (entries.length === 0) return "{}";
@@ -323,10 +358,15 @@ export function getPrimitiveTypeOf(tv: TypeValue): string | undefined {
     return typeof v;
   }
   if (tv.kind === "primitive") return tv.type;
+  if (tv.kind === "refined") return getPrimitiveTypeOf(tv.base);
   if (tv.kind === "object") return "object";
   if (tv.kind === "array" || tv.kind === "tuple") return "object";
   if (tv.kind === "function") return "function";
   if (tv.kind === "promise") return "object";
   if (tv.kind === "instance") return "object";
   return undefined;
+}
+
+export function getRefinedBase(tv: TypeValue): TypeValue {
+  return tv.kind === "refined" ? getRefinedBase(tv.base) : tv;
 }
