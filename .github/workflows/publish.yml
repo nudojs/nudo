@@ -4,7 +4,6 @@ name: Publish
 
 on:
   push:
-    branches: [main]
     tags:
       - 'v*'
   workflow_dispatch:
@@ -77,7 +76,7 @@ jobs:
           VSCODE_MARKETPLACE_TOKEN: ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
 
       - name: Publish to Open VSX
-        if: env.OVSX_MARKETSPACE_TOKEN != ''
+        if: env.OVSX_MARKETPLACE_TOKEN != ''
         run: npx ovsx publish dist/nudo-vscode.vsix -p ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
         env:
           OVSX_MARKETPLACE_TOKEN: ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
