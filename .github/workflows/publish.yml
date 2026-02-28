@@ -107,19 +107,13 @@ jobs:
 
       - name: Publish to VSCode Marketplace
         if: env.VSCODE_MARKETPLACE_TOKEN != ''
-        run: |
-          cp dist/nudo-vscode.vsix packages/vscode/
-          cd packages/vscode
-          npx @vscode/vsce publish --no-dependencies -p ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
+        run: npx @vscode/vsce publish --packagePath dist/nudo-vscode.vsix -p ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
         env:
           VSCODE_MARKETPLACE_TOKEN: ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
 
       - name: Publish to Open VSX
         if: env.OVSX_MARKETPLACE_TOKEN != ''
-        run: |
-          cp dist/nudo-vscode.vsix packages/vscode/
-          cd packages/vscode
-          npx ovsx publish -p ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
+        run: npx ovsx publish dist/nudo-vscode.vsix -p ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
         env:
           OVSX_MARKETPLACE_TOKEN: ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
 
