@@ -1,0 +1,8 @@
+node_modules/
+src/
+.vscode/
+*.ts
+!*.d.ts
+*.map
+*.log
+.DS_Store
