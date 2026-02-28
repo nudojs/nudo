@@ -1,3 +1,5 @@
+# @format
+
 name: Publish
 
 on:
@@ -46,9 +48,6 @@ jobs:
       - name: Package VSCode extension
         run: |
           mkdir -p dist
-          cd packages/vscode
-          npx @vscode/vsce package --no-dependencies -o ../../dist/nudo-vscode.vsix
-        run: |
           cd packages/vscode
           npx @vscode/vsce package --no-dependencies -o ../../dist/nudo-vscode.vsix
 
