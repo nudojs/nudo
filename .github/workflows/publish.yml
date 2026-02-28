@@ -18,12 +18,14 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build
+  publish:
+    name: Publish
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -51,37 +53,6 @@ jobs:
           cd packages/vscode
           npx @vscode/vsce package --no-dependencies -o ../../dist/nudo-vscode.vsix
 
-      - name: Upload VSCode artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: vscode-extension
-          path: dist/nudo-vscode.vsix
-
-  publish:
-    name: Publish
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build
-        run: pnpm run build
-
       - name: Test
         run: pnpm run test
 
@@ -99,12 +70,6 @@ jobs:
         run: pnpm publish -r --no-git-checks
 
       # Publish to VSCode Marketplace
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: vscode-extension
-          path: dist
-
       - name: Publish to VSCode Marketplace
         if: env.VSCODE_MARKETPLACE_TOKEN != ''
         run: npx @vscode/vsce publish --packagePath dist/nudo-vscode.vsix -p ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
@@ -112,19 +77,12 @@ jobs:
           VSCODE_MARKETPLACE_TOKEN: ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
 
       - name: Publish to Open VSX
-        if: env.OVSX_MARKETPLACE_TOKEN != ''
+        if: env.OVSX_MARKETSPACE_TOKEN != ''
         run: npx ovsx publish dist/nudo-vscode.vsix -p ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
         env:
           OVSX_MARKETPLACE_TOKEN: ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
 
       # Create GitHub Release
-      - name: Download artifact
-        if: steps.changesets.outputs.changesets == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: vscode-extension
-          path: dist
-
       - name: Create GitHub Release
         if: steps.changesets.outputs.changesets == 'true'
         uses: softprops/action-gh-release@v1
