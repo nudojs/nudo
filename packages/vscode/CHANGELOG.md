@@ -1,4 +1,4 @@
-# @nudojs/core
+# nudo-vscode
 
 ## 0.2.0
 
@@ -7,9 +7,3 @@
 - 6c38283: docs and ci
 - 9f7f819: fix pkg info
 - c175f71: version
-
-## 0.1.0
-
-### Minor Changes
-
-- Conceptual design and basic implementation.
