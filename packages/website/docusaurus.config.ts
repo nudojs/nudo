@@ -53,6 +53,11 @@ const config: Config = {
           label: "Docs",
         },
         {
+          to: "/playground",
+          label: "Playground",
+          position: "left",
+        },
+        {
           href: "https://github.com/nudojs/nudo",
           label: "GitHub",
           position: "right",
