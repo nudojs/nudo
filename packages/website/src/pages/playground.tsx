@@ -1,7 +1,8 @@
 import React, { lazy, useRef, useState, useEffect, Suspense } from 'react';
 import Layout from '@theme/Layout';
 import { parse, extractDirectives, type CaseDirective } from '@nudojs/parser';
-import { typeValueToString, type TypeValue, createEnvironment, evaluateFunctionFull } from '@nudojs/core';
+import { typeValueToString, type TypeValue, createEnvironment } from '@nudojs/core';
+import { evaluateFunctionFull } from '@nudojs/cli/evaluator';
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react'));
 
@@ -168,7 +169,7 @@ export default function Playground() {
 
   const handleEditorDidMount = (_editor: any, monaco: any) => {
     try {
-      // Hover provider
+      // Hover provider - show parameter types on hover
       monaco.languages.registerHoverProvider('javascript', {
         provideHover: (model: any, position: any) => {
           const currentCaseIndex = activeCaseIndexRef.current;
@@ -207,39 +208,44 @@ export default function Playground() {
         }
       });
 
-      // Inlay hints provider
+      // Inlay hints provider - show type inference after @nudo:case lines
       monaco.languages.registerInlayHintsProvider('javascript', {
         provideInlayHints: (model: any) => {
           const currentCaseIndex = activeCaseIndexRef.current;
-          const currentCases = extractCases(model.getValue());
-          const activeCase = currentCases[currentCaseIndex];
-
-          if (!activeCase) return { hints: [] };
-
           const hints: any[] = [];
 
           try {
-            const ast = parse(model.getValue());
+            const code = model.getValue();
+            const ast = parse(code);
             const functions = extractDirectives(ast);
-
+            const allCases: { fn: typeof functions[0], directive: typeof functions[0]['directives'][0], index: number }[] = [];
+            let caseIndex = 0;
+            
             for (const fn of functions) {
-              const node = fn.node as any;
-              if (node.type === "FunctionDeclaration" || node.type === "FunctionExpression") {
-                const params = node.params || [];
-                for (let i = 0; i < params.length; i++) {
-                  const param = params[i];
-                  if (param.type === "Identifier" && i < activeCase.args.length) {
-                    const paramStart = model.getPositionAt(param.start!);
-                    hints.push({
-                      kind: monaco.languages.InlayHintKind.Type,
-                      position: { lineNumber: paramStart.lineNumber, column: paramStart.column + param.name.length },
-                      label: `: ${typeValueToString(activeCase.args[i])}`,
-                      paddingLeft: false,
-                      paddingRight: true,
-                    });
-                  }
-                }
+              const caseDirectives = fn.directives.filter((d): d is CaseDirective => d.kind === "case");
+              for (const directive of caseDirectives) {
+                allCases.push({ fn, directive, index: caseIndex });
+                caseIndex++;
               }
+            }
+            
+            const activeCase = allCases[currentCaseIndex];
+            if (!activeCase) return { hints: [] };
+            
+            const { fn, directive } = activeCase;
+            const env = createEnvironment();
+            const fullResult = evaluateFunctionFull(fn.node, directive.args, env);
+            const resultStr = typeValueToString(fullResult.value);
+            const argsStr = directive.args.map(typeValueToString).join(', ');
+            
+            if (directive.commentLine) {
+              const lineLength = model.getLineLength(directive.commentLine);
+              hints.push({
+                kind: monaco.languages.InlayHintKind.Type,
+                position: { lineNumber: directive.commentLine, column: lineLength + 1 },
+                label: `(${argsStr}) => ${resultStr}`,
+                paddingLeft: true,
+              });
             }
           } catch {}
 
