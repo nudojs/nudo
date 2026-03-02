@@ -148,6 +148,8 @@ export default function Playground() {
         setOutput(`=== ${fn.name} ===\nCase "${directive.name}": (${argsStr}) => ${resultStr}\n\nSelected Case Result: ${resultStr}`);
       } else if (allCases.length === 0) {
         setOutput('No @nudo:case directives found. Add cases to see type inference results.');
+      } else {
+        setOutput('Selected case index out of range. Please select a valid case.');
       }
     } catch (error) {
       setOutput(`Error: ${error instanceof Error ? error.message : String(error)}`);
@@ -211,41 +213,36 @@ export default function Playground() {
       // Inlay hints provider - show type inference after @nudo:case lines
       monaco.languages.registerInlayHintsProvider('javascript', {
         provideInlayHints: (model: any) => {
-          const currentCaseIndex = activeCaseIndexRef.current;
           const hints: any[] = [];
 
           try {
             const code = model.getValue();
             const ast = parse(code);
             const functions = extractDirectives(ast);
-            const allCases: { fn: typeof functions[0], directive: typeof functions[0]['directives'][0], index: number }[] = [];
-            let caseIndex = 0;
+            const allCases: { fn: typeof functions[0], directive: typeof functions[0]['directives'][0] }[] = [];
             
             for (const fn of functions) {
               const caseDirectives = fn.directives.filter((d): d is CaseDirective => d.kind === "case");
               for (const directive of caseDirectives) {
-                allCases.push({ fn, directive, index: caseIndex });
-                caseIndex++;
+                allCases.push({ fn, directive });
               }
             }
             
-            const activeCase = allCases[currentCaseIndex];
-            if (!activeCase) return { hints: [] };
-            
-            const { fn, directive } = activeCase;
-            const env = createEnvironment();
-            const fullResult = evaluateFunctionFull(fn.node, directive.args, env);
-            const resultStr = typeValueToString(fullResult.value);
-            const argsStr = directive.args.map(typeValueToString).join(', ');
-            
-            if (directive.commentLine) {
-              const lineLength = model.getLineLength(directive.commentLine);
-              hints.push({
-                kind: monaco.languages.InlayHintKind.Type,
-                position: { lineNumber: directive.commentLine, column: lineLength + 1 },
-                label: `(${argsStr}) => ${resultStr}`,
-                paddingLeft: true,
-              });
+            // Show inlay hints for ALL cases
+            for (const { fn, directive } of allCases) {
+              const env = createEnvironment();
+              const fullResult = evaluateFunctionFull(fn.node, directive.args, env);
+              const resultStr = typeValueToString(fullResult.value);
+              
+              if (directive.commentLine) {
+                const lineLength = model.getLineLength(directive.commentLine);
+                hints.push({
+                  kind: monaco.languages.InlayHintKind.Type,
+                  position: { lineNumber: directive.commentLine, column: lineLength + 1 },
+                  label: `=> ${resultStr}`,
+                  paddingLeft: true,
+                });
+              }
             }
           } catch {}
 

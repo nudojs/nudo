@@ -257,6 +257,7 @@
   justify-content: center;
   color: var(--ifm-color-emphasis-500);
   min-height: 500px;
+}
 
 
 .editor-loading {
@@ -269,7 +270,6 @@
   flex: 1;
   padding: 1rem;
   min-height: 500px;
-}
 }
 
 .output-placeholder {
@@ -358,9 +358,6 @@
   color: var(--ifm-color-emphasis-800);
 }
 
-[data-theme="dark"] .output-result {
-  color: var(--ifm-color-emphasis-200);
-}
 [data-theme="dark"] .output-result {
   color: var(--ifm-color-emphasis-200);
 }
