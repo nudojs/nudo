@@ -189,3 +189,222 @@
   margin: 0 !important;
   border-radius: 0 !important;
 }
+
+/* Playground styles */
+.playground-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.playground-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.playground-header h1 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.playground-header p {
+  color: var(--ifm-color-emphasis-700);
+  font-size: 1.1rem;
+}
+
+[data-theme="dark"] .playground-header p {
+  color: var(--ifm-color-emphasis-500);
+}
+
+.playground-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  min-height: 500px;
+}
+
+@media (max-width: 768px) {
+  .playground-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.playground-editor,
+.playground-output {
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.playground-panel-header {
+  padding: 0.75rem 1rem;
+  background: var(--ifm-color-emphasis-100);
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+  font-weight: 600;
+  font-size: 0.9rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.playground-editor-placeholder,
+.playground-output-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ifm-color-emphasis-500);
+  min-height: 500px;
+}
+
+
+.editor-loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--ifm-color-emphasis-500);
+}
+
+.playground-output-content {
+  flex: 1;
+  padding: 1rem;
+  min-height: 500px;
+}
+
+.output-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--ifm-color-emphasis-500);
+  font-style: italic;
+}
+
+/* Run button */
+.run-button {
+  background: var(--ifm-color-primary);
+  color: white;
+  border: none;
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.run-button:hover {
+  background: var(--ifm-color-primary-dark);
+}
+
+.run-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.share-button {
+  background: transparent;
+  color: var(--ifm-color-emphasis-700);
+  border: 1px solid var(--ifm-color-emphasis-300);
+  padding: 0.35rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.share-button:hover {
+  background: var(--ifm-color-emphasis-200);
+}
+
+/* Output tabs */
+.output-tabs {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.output-tab {
+  background: transparent;
+  border: none;
+  padding: 0.3rem 0.8rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--ifm-color-emphasis-600);
+  transition: all 0.2s ease;
+}
+
+.output-tab:hover {
+  background: var(--ifm-color-emphasis-200);
+}
+
+.output-tab.active {
+  background: var(--ifm-color-primary);
+  color: white;
+}
+
+.output-result {
+  margin: 0;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ifm-color-emphasis-800);
+}
+
+[data-theme="dark"] .output-result {
+  color: var(--ifm-color-emphasis-200);
+}
+
+/* Presets bar */
+.presets-bar {
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: center;
+}
+
+.preset-select {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  font-size: 0.9rem;
+  cursor: pointer;
+  min-width: 200px;
+}
+
+.preset-select:focus {
+  outline: none;
+  border-color: var(--ifm-color-primary);
+}
+
+/* Cases bar */
+.cases-bar {
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: center;
+}
+
+.case-select {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  font-size: 0.9rem;
+  cursor: pointer;
+  min-width: 300px;
+  max-width: 600px;
+}
+
+.case-select:focus {
+  outline: none;
+  border-color: var(--ifm-color-primary);
+}
