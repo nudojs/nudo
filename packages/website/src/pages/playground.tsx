@@ -229,21 +229,23 @@ export default function Playground() {
               }
             }
             
-            // Show inlay hints for ALL cases
-            for (const { fn, directive } of allCases) {
-              const env = createEnvironment();
-              const fullResult = evaluateFunctionFull(fn.node, directive.args, env);
-              const resultStr = typeValueToString(fullResult.value);
-              
-              if (directive.commentLine) {
-                const lineLength = model.getLineLength(directive.commentLine);
-                hints.push({
-                  kind: monaco.languages.InlayHintKind.Type,
-                  position: { lineNumber: directive.commentLine, column: lineLength + 1 },
-                  label: `=> ${resultStr}`,
-                  paddingLeft: true,
-                });
-              }
+            const activeCase = allCases[currentCaseIndex];
+            if (!activeCase) return { hints: [] };
+            
+            const { fn, directive } = activeCase;
+            const env = createEnvironment();
+            const fullResult = evaluateFunctionFull(fn.node, directive.args, env);
+            const resultStr = typeValueToString(fullResult.value);
+            const argsStr = directive.args.map(typeValueToString).join(', ');
+            
+            if (directive.commentLine) {
+              const lineLength = model.getLineLength(directive.commentLine);
+              hints.push({
+                kind: monaco.languages.InlayHintKind.Type,
+                position: { lineNumber: directive.commentLine, column: lineLength + 1 },
+                label: `(${argsStr}) => ${resultStr}`,
+                paddingLeft: true,
+              });
             }
           } catch {}
 
