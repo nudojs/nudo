@@ -259,7 +259,7 @@ export default function Playground() {
 
   return (
     <Layout title="Playground" description="Nudo Playground">
-      <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
+      <div style={{ padding: '20px', minHeight: "calc(100vh - 200px)", background: "#f5f5f5" }}>
         <h1>Nudo Playground</h1>
         <p style={{ color: '#666' }}>Write JavaScript code with @nudo directives and see the type inference results</p>
 
@@ -304,7 +304,7 @@ export default function Playground() {
           </button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', height: '500px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', minHeight: "calc(100vh - 250px)" }}>
           <div style={{ border: '1px solid #ddd', borderRadius: '4px', overflow: 'hidden' }}>
             <MonacoEditor
               height="100%"
@@ -324,7 +324,7 @@ export default function Playground() {
             />
           </div>
 
-          <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '15px', background: '#f9f9f9', overflow: 'auto', fontFamily: 'monospace', fontSize: '13px', whiteSpace: 'pre-wrap' }}>
+          <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '15px', background: "#1e1e1e", color: "#d4d4d4", overflow: 'auto', fontFamily: 'monospace', fontSize: '13px', whiteSpace: 'pre-wrap' }}>
             {output}
           </div>
         </div>
