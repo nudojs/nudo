@@ -17,7 +17,8 @@
   "main": "./out/extension.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nudojs/nudo"
+    "url": "https://github.com/nudojs/nudo.git",
+    "directory": "packages/vscode"
   },
   "contributes": {
     "commands": [

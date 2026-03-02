@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "type": "module",
   "main": "src/index.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nudojs/nudo.git",
+    "directory": "packages/vite-plugin"
+  },
   "dependencies": {
     "@nudojs/service": "workspace:*"
   },
