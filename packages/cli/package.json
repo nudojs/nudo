@@ -10,6 +10,11 @@
   "bin": {
     "nudo": "src/index.ts"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nudojs/nudo.git",
+    "directory": "packages/cli"
+  },
   "dependencies": {
     "@nudojs/core": "workspace:*",
     "@nudojs/parser": "workspace:*"

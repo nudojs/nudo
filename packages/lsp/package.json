@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "type": "module",
   "main": "src/server.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nudojs/nudo.git",
+    "directory": "packages/lsp"
+  },
   "dependencies": {
     "@nudojs/service": "workspace:*",
     "@nudojs/core": "workspace:*",
