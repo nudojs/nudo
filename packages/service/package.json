@@ -1,13 +1,25 @@
 {
   "name": "@nudojs/service",
   "version": "0.2.0",
+  "description": "Shared inference service for Nudo IDE integrations — file analysis, completions, and .d.ts generation",
   "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "nudo",
+    "type-inference",
+    "javascript",
+    "language-service",
+    "dts-generation",
+    "analysis"
+  ],
   "main": "src/index.ts",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nudojs/nudo.git",
     "directory": "packages/service"
   },
+  "homepage": "https://github.com/nudojs/nudo/tree/main/packages/service",
+  "bugs": "https://github.com/nudojs/nudo/issues",
   "publishConfig": {
     "access": "public",
     "provenance": true,

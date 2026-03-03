@@ -1,7 +1,17 @@
 {
   "name": "@nudojs/parser",
   "version": "0.2.0",
+  "description": "Babel-based parser and directive extraction for Nudo",
   "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "nudo",
+    "type-inference",
+    "javascript",
+    "parser",
+    "babel",
+    "directives"
+  ],
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts"
@@ -11,6 +21,8 @@
     "url": "git+https://github.com/nudojs/nudo.git",
     "directory": "packages/parser"
   },
+  "homepage": "https://github.com/nudojs/nudo/tree/main/packages/parser",
+  "bugs": "https://github.com/nudojs/nudo/issues",
   "publishConfig": {
     "access": "public",
     "provenance": true,

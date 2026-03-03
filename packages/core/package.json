@@ -1,7 +1,16 @@
 {
   "name": "@nudojs/core",
   "version": "0.2.0",
+  "description": "Core type value primitives and type system for the Nudo inference engine",
   "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "nudo",
+    "type-inference",
+    "javascript",
+    "abstract-interpretation",
+    "type-system"
+  ],
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts"
@@ -11,6 +20,8 @@
     "url": "git+https://github.com/nudojs/nudo.git",
     "directory": "packages/core"
   },
+  "homepage": "https://github.com/nudojs/nudo/tree/main/packages/core",
+  "bugs": "https://github.com/nudojs/nudo/issues",
   "publishConfig": {
     "access": "public",
     "provenance": true,

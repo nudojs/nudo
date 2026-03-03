@@ -1,13 +1,24 @@
 {
   "name": "@nudojs/lsp",
   "version": "0.2.0",
+  "description": "Language Server Protocol implementation for the Nudo type inference engine",
   "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "nudo",
+    "type-inference",
+    "javascript",
+    "lsp",
+    "language-server"
+  ],
   "main": "src/server.ts",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nudojs/nudo.git",
     "directory": "packages/lsp"
   },
+  "homepage": "https://github.com/nudojs/nudo/tree/main/packages/lsp",
+  "bugs": "https://github.com/nudojs/nudo/issues",
   "publishConfig": {
     "access": "public",
     "provenance": true,

@@ -1,13 +1,24 @@
 {
   "name": "vite-plugin-nudo",
   "version": "0.2.0",
+  "description": "Vite plugin for build-time JavaScript type inference with Nudo",
   "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "nudo",
+    "type-inference",
+    "javascript",
+    "vite",
+    "vite-plugin"
+  ],
   "main": "src/index.ts",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nudojs/nudo.git",
     "directory": "packages/vite-plugin"
   },
+  "homepage": "https://github.com/nudojs/nudo/tree/main/packages/vite-plugin",
+  "bugs": "https://github.com/nudojs/nudo/issues",
   "publishConfig": {
     "access": "public",
     "provenance": true,

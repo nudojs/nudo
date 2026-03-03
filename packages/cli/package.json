@@ -1,7 +1,17 @@
 {
   "name": "@nudojs/cli",
   "version": "0.2.0",
+  "description": "CLI and evaluator API for the Nudo type inference engine",
   "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "nudo",
+    "type-inference",
+    "javascript",
+    "cli",
+    "dts",
+    "abstract-interpretation"
+  ],
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
@@ -15,6 +25,8 @@
     "url": "git+https://github.com/nudojs/nudo.git",
     "directory": "packages/cli"
   },
+  "homepage": "https://github.com/nudojs/nudo/tree/main/packages/cli",
+  "bugs": "https://github.com/nudojs/nudo/issues",
   "publishConfig": {
     "access": "public",
     "provenance": true,
