@@ -1,6 +1,6 @@
 # @format
 
-name: Publish
+name: Release
 
 on:
   push:
@@ -16,10 +16,11 @@ permissions:
   id-token: write
   contents: write
   pull-requests: write
+  pages: write
 
 jobs:
-  publish:
-    name: Publish
+  release:
+    name: Release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -33,18 +34,19 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Test
-        run: npm run test
-
       - name: Build packages
         run: npm run build
+
+      - name: Upload Website Build Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/website/build
 
       # Publish to npm
       - name: Create version bump
@@ -55,7 +57,6 @@ jobs:
           publish: npx @changesets/cli publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Package VSCode extension
         run: |
@@ -85,3 +86,15 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: release
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
