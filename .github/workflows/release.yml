@@ -34,12 +34,18 @@ jobs:
         with:
           node-version: 24
           cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build packages
         run: npm run build
+
+      - name: Configure npm for OIDC publishing
+        run: |
+          sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
+          cat "$NPM_CONFIG_USERCONFIG"
 
       - name: Create version bump
         id: changesets
@@ -50,7 +56,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
-          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
 
       - name: Upload Website Build Artifact
         if: steps.changesets.outputs.hasChangesets == 'false'
