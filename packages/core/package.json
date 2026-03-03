@@ -8,8 +8,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/nudojs/nudo.git",
+    "url": "git+https://github.com/nudojs/nudo.git",
     "directory": "packages/core"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts"

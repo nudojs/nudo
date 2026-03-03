@@ -8,8 +8,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/nudojs/nudo.git",
+    "url": "git+https://github.com/nudojs/nudo.git",
     "directory": "packages/parser"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
     "@nudojs/core": "workspace:*"

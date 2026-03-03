@@ -34,7 +34,6 @@ jobs:
         with:
           node-version: 24
           cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -42,7 +41,6 @@ jobs:
       - name: Build packages
         run: npm run build
 
-      # Publish to npm
       - name: Create version bump
         id: changesets
         uses: changesets/action@v1
@@ -52,6 +50,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
 
       - name: Upload Website Build Artifact
         if: steps.changesets.outputs.hasChangesets == 'false'

@@ -5,8 +5,13 @@
   "main": "src/index.ts",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nudojs/nudo.git",
+    "url": "git+https://github.com/nudojs/nudo.git",
     "directory": "packages/vite-plugin"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
     "@nudojs/service": "workspace:*"
