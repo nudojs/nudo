@@ -36,17 +36,13 @@ jobs:
         with:
           node-version: 24
           cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build packages
         run: npm run build
-
-      - name: Upload Website Build Artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: packages/website/build
 
       # Publish to npm
       - name: Create version bump
@@ -57,8 +53,16 @@ jobs:
           publish: npx @changesets/cli publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: Upload Website Build Artifact
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/website/build
 
       - name: Package VSCode extension
+        if: steps.changesets.outputs.hasChangesets == 'false'
         run: |
           mkdir -p dist
           cd packages/vscode
@@ -66,20 +70,20 @@ jobs:
 
       # Publish to VSCode Marketplace
       - name: Publish to VSCode Marketplace
-        if: env.VSCODE_MARKETPLACE_TOKEN != ''
+        if: steps.changesets.outputs.hasChangesets == 'false' && env.VSCODE_MARKETPLACE_TOKEN != ''
         run: npx @vscode/vsce publish --packagePath dist/nudo-vscode.vsix -p ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
         env:
           VSCODE_MARKETPLACE_TOKEN: ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
 
       - name: Publish to Open VSX
-        if: env.OVSX_MARKETPLACE_TOKEN != ''
+        if: steps.changesets.outputs.hasChangesets == 'false' && env.OVSX_MARKETPLACE_TOKEN != ''
         run: npx ovsx publish dist/nudo-vscode.vsix -p ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
         env:
           OVSX_MARKETPLACE_TOKEN: ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
 
       # Create GitHub Release
       - name: Create GitHub Release
-        if: steps.changesets.outputs.changesets == 'true'
+        if: steps.changesets.outputs.hasChangesets == 'true'
         uses: softprops/action-gh-release@v1
         with:
           files: dist/nudo-vscode.vsix
