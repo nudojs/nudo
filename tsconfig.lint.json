@@ -1,0 +1,32 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@nudojs/core": ["packages/core/src"],
+      "@nudojs/core/*": ["packages/core/src/*"],
+      "@nudojs/parser": ["packages/parser/src"],
+      "@nudojs/parser/*": ["packages/parser/src/*"],
+      "@nudojs/cli": ["packages/cli/src"],
+      "@nudojs/cli/*": ["packages/cli/src/*"],
+      "@nudojs/service": ["packages/service/src"],
+      "@nudojs/service/*": ["packages/service/src/*"],
+      "@nudojs/lsp": ["packages/lsp/src"],
+      "@nudojs/lsp/*": ["packages/lsp/src/*"]
+    }
+  },
+  "include": [
+    "packages/core/src",
+    "packages/parser/src",
+    "packages/cli/src",
+    "packages/service/src",
+    "packages/lsp/src",
+    "packages/vite-plugin/src"
+  ],
+  "exclude": [
+    "**/__tests__",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
+}
