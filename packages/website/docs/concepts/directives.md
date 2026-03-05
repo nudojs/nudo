@@ -257,6 +257,201 @@ function process(x) {
 
 ---
 
+## @nudo:env — Runtime Environment
+
+Declare which runtime environment APIs are available in the file. This is a **file-level** directive using triple-slash comments at the top of the file. Nudo provides built-in type definitions for common environments so you don't need to write manual mocks for standard APIs.
+
+### Syntax
+
+```text
+/// @nudo:env name1, name2, ...
+```
+
+- **names** — Comma-separated environment names. Built-in environments: `es`, `web`, `node`.
+- `web` and `node` automatically include `es`.
+
+### Supported Environments
+
+| Name | Provides |
+|------|----------|
+| `es` | `JSON`, `Math`, `Number`, `Array`, `console`, `Promise`, `Date`, error constructors, etc. |
+| `web` | `fetch`, `Request`, `Response`, `URL`, `localStorage`, `document`, `navigator`, `crypto`, `performance`, timers, etc. |
+| `node` | `process`, `Buffer`, `__dirname`, `__filename`, timers, and modules: `fs`, `path`, `os`, `crypto`, `url`, `child_process`, `util` |
+
+### Examples
+
+```javascript
+/// @nudo:env web
+
+/**
+ * @nudo:case "test" (T.number)
+ */
+async function fetchUser(id) {
+  const res = await fetch(`/api/users/${id}`);
+  return res.json();
+}
+```
+
+```javascript
+/// @nudo:env node
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+/**
+ * @nudo:case "test" (T.string)
+ */
+function loadConfig(dir) {
+  const content = readFileSync(join(dir, "config.json"), "utf-8");
+  return JSON.parse(content);
+}
+```
+
+### Project-Level Configuration
+
+You can also set environments in `package.json` so every file in the project uses them:
+
+```json
+{
+  "nudo": {
+    "env": ["node"]
+  }
+}
+```
+
+File-level `@nudo:env` directives are merged with project-level settings (union of all environment names).
+
+---
+
+## @nudo:mock-module — Module-Level Mock
+
+Replace or partially replace an imported module with a custom mock file. This is a **file-level** directive using triple-slash comments.
+
+### Syntax
+
+**Full replacement:**
+
+```text
+/// @nudo:mock-module "original-module" from "./mock-file.js"
+```
+
+**Partial replacement (only specified exports):**
+
+```text
+/// @nudo:mock-module "original-module" { export1, export2 } from "./mock-file.js"
+```
+
+- **original-module** — The module specifier to intercept (e.g. `"lodash"`, `"node:fs"`).
+- **exports** (optional) — Specific named exports to replace. Unspecified exports fall through to the original module.
+- **mock-file** — Path to the file providing mock implementations.
+
+### Examples
+
+```javascript
+/// @nudo:mock-module "axios" from "./mocks/axios.js"
+
+import axios from "axios";
+
+/**
+ * @nudo:case "test" ()
+ */
+async function getUsers() {
+  const res = await axios.get("/api/users");
+  return res.data;
+}
+```
+
+```javascript
+/// @nudo:mock-module "lodash" { debounce } from "./mocks/lodash-debounce.js"
+
+import { debounce, throttle } from "lodash";
+// debounce comes from the mock; throttle resolves normally
+```
+
+### Project-Level Configuration
+
+```json
+{
+  "nudo": {
+    "mocks": {
+      "axios": "./nudo-mocks/axios.js"
+    }
+  }
+}
+```
+
+File-level `@nudo:mock-module` directives override project-level mocks for the same module.
+
+---
+
+## @nudo:as — Type Assertion
+
+Override the type of the next statement's value. Similar to TypeScript's `as` keyword, but placed as a line comment above the statement. Affects `VariableDeclaration`, `ReturnStatement`, and `ExpressionStatement`.
+
+### Syntax
+
+```text
+// @nudo:as typeValueExpr
+```
+
+### Examples
+
+```javascript
+// @nudo:as T.object({ port: T.number, host: T.string })
+const config = JSON.parse(content);
+// config is now { port: number, host: string } instead of unknown
+```
+
+```javascript
+// @nudo:as T.array(T.object({ id: T.number, name: T.string }))
+return JSON.parse(response);
+```
+
+---
+
+## @nudo:replace — Sub-Expression Type Replacement
+
+Replace a specific sub-expression's type within the next statement. The target expression is matched by source text against AST nodes, so it won't match partial identifiers or string contents.
+
+### Syntax
+
+```text
+// @nudo:replace targetExpr typeValueExpr
+```
+
+- **targetExpr** — The source text of the expression to replace (e.g. `a`, `res.data`, `JSON.parse(input)`).
+- **typeValueExpr** — The type value to use instead.
+
+### Examples
+
+```javascript
+// @nudo:replace a T.number
+const x = a + b;
+// only `a` is replaced; `b` evaluates normally
+```
+
+```javascript
+// @nudo:replace res.data T.array(T.object({ id: T.number }))
+const items = res.data;
+```
+
+```javascript
+// @nudo:replace JSON.parse(input) T.object({ name: T.string })
+const data = JSON.parse(input);
+```
+
+Multiple replacements can be stacked:
+
+```javascript
+// @nudo:replace a T.number
+// @nudo:replace b T.string
+const result = a + b;
+```
+
+**Note:** Each `@nudo:replace` only affects the immediately following statement.
+
+---
+
 ## Summary Table
 
 | Directive | Syntax | Purpose |
@@ -267,3 +462,7 @@ function process(x) {
 | `@nudo:skip` | `[returnsExpr]` | Skip evaluation, use existing type info |
 | `@nudo:sample` | `N` | Control loop sampling before fixed-point |
 | `@nudo:returns` | `(typeValueExpr)` | Assert expected return type |
+| `@nudo:env` | `name1, name2` (file-level `///`) | Declare runtime environment APIs |
+| `@nudo:mock-module` | `"module" from "path"` (file-level `///`) | Replace imported modules with mocks |
+| `@nudo:as` | `typeValueExpr` (line comment `//`) | Override next statement's value type |
+| `@nudo:replace` | `targetExpr typeValueExpr` (line comment `//`) | Replace sub-expression type in next statement |

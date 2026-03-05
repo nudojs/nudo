@@ -17,10 +17,42 @@ import {
   isSubtypeOf,
   widenLiteral,
   createTemplate,
+  getFnSig,
 } from "@nudojs/core";
+import { extractInlineDirectives, type InlineDirective } from "@nudojs/parser";
 import { narrow } from "./narrowing.ts";
 
 type SourceRange = { start: { line: number; column: number }; end: { line: number; column: number } };
+
+let _currentSource = "";
+
+export function setCurrentSource(source: string): void {
+  _currentSource = source;
+}
+
+type ActiveReplace = { targetSource: string; typeExpr: TypeValue };
+let _activeReplacements: ActiveReplace[] = [];
+let _activeAsOverride: TypeValue | null = null;
+
+function nodeSourceText(node: Node): string | null {
+  if (node.start == null || node.end == null || !_currentSource) return null;
+  return _currentSource.slice(node.start, node.end);
+}
+
+function normalizeWhitespace(s: string): string {
+  return s.replace(/\s+/g, "");
+}
+
+function matchesReplacement(node: Node): TypeValue | null {
+  if (_activeReplacements.length === 0) return null;
+  const src = nodeSourceText(node);
+  if (!src) return null;
+  const normalized = normalizeWhitespace(src);
+  for (const r of _activeReplacements) {
+    if (normalizeWhitespace(r.targetSource) === normalized) return r.typeExpr;
+  }
+  return null;
+}
 
 const RETURN_SIGNAL = Symbol("ReturnSignal");
 const BRANCH_SIGNAL = Symbol("BranchSignal");
@@ -92,6 +124,25 @@ export function setModuleResolver(resolver: ((source: string, fromDir: string) =
 
 let currentModuleResolver: ((source: string, fromDir: string) => { ast: Node; filePath: string } | null) | null = null;
 let currentFileDir = "";
+
+let envModules: Record<string, Record<string, TypeValue>> = {};
+let mockModules: Map<string, { fromPath: string; names?: string[] }> = new Map();
+
+export function setEnvModules(modules: Record<string, Record<string, TypeValue>>): void {
+  envModules = modules;
+}
+
+export function resetEnvModules(): void {
+  envModules = {};
+}
+
+export function setMockModules(mocks: Map<string, { fromPath: string; names?: string[] }>): void {
+  mockModules = mocks;
+}
+
+export function resetMockModules(): void {
+  mockModules = new Map();
+}
 
 let _nodeTypeCollector: ((node: Node, tv: TypeValue) => void) | null = null;
 let _sampleCount = 3;
@@ -168,7 +219,23 @@ function evaluateStatements(
 
   for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i];
+
+    const inlineDirectives = extractInlineDirectives(stmt);
+    const savedAs = _activeAsOverride;
+    const savedReplacements = _activeReplacements;
+
+    const asDir = inlineDirectives.find((d): d is InlineDirective & { kind: "as" } => d.kind === "as");
+    const replaceDirs = inlineDirectives.filter((d): d is InlineDirective & { kind: "replace" } => d.kind === "replace");
+
+    _activeAsOverride = asDir?.typeExpr ?? null;
+    _activeReplacements = replaceDirs.length > 0
+      ? replaceDirs.map((d) => ({ targetSource: d.targetSource, typeExpr: d.typeExpr }))
+      : [];
+
     const result = evaluate(stmt, currentEnv);
+
+    _activeAsOverride = savedAs;
+    _activeReplacements = savedReplacements;
 
     if (isThrow(result)) {
       collectUnreachable(stmts, i + 1);
@@ -218,6 +285,9 @@ function describeParam(p: Node): string {
 }
 
 export function evaluate(node: Node, env: Environment): EvalResult {
+  const replacement = matchesReplacement(node);
+  if (replacement) return replacement;
+
   const result = evaluateNode(node, env);
   if (_nodeTypeCollector && node.loc && !isReturn(result) && !isBranch(result) && !isThrow(result)) {
     recordNodeType(node, result);
@@ -234,6 +304,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       return evaluateStatements(node.body, env);
 
     case "ExpressionStatement":
+      if (_activeAsOverride) return _activeAsOverride;
       return evaluate(node.expression, env);
 
     case "NumericLiteral":
@@ -472,6 +543,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
     }
 
     case "ReturnStatement": {
+      if (_activeAsOverride) return makeReturn(_activeAsOverride);
       const arg = node.argument;
       if (!arg) return makeReturn(T.undefined);
       const val = evaluate(arg, env);
@@ -481,7 +553,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
     case "VariableDeclaration": {
       for (const decl of node.declarations) {
-        const init = decl.init ? evaluate(decl.init, env) : T.undefined;
+        const init = _activeAsOverride ?? (decl.init ? evaluate(decl.init, env) : T.undefined);
         if (isReturn(init) || isBranch(init) || isThrow(init)) return init;
         bindPattern(decl.id, init, env);
         if (decl.id.type === "Identifier") {
@@ -1588,6 +1660,121 @@ function evaluateDoWhileStatement(
 
 function evaluateImportDeclaration(node: Node & { type: "ImportDeclaration" }, env: Environment): EvalResult {
   const source = node.source.value;
+
+  const mockModule = mockModules.get(source);
+  if (mockModule && currentModuleResolver) {
+    const mockResolved = currentModuleResolver(mockModule.fromPath, currentFileDir);
+    if (mockResolved) {
+      let mockEnv = moduleCache.get(mockResolved.filePath);
+      if (!mockEnv) {
+        mockEnv = createEnvironment();
+        moduleCache.set(mockResolved.filePath, mockEnv);
+        const savedDir = currentFileDir;
+        currentFileDir = mockResolved.filePath.replace(/\/[^/]+$/, "");
+        evaluateProgram(mockResolved.ast, mockEnv);
+        currentFileDir = savedDir;
+      }
+
+      if (mockModule.names) {
+        const originalResolved = currentModuleResolver(source, currentFileDir);
+        let originalEnv: Environment | undefined;
+        if (originalResolved) {
+          originalEnv = moduleCache.get(originalResolved.filePath);
+          if (!originalEnv) {
+            originalEnv = createEnvironment();
+            moduleCache.set(originalResolved.filePath, originalEnv);
+            const savedDir = currentFileDir;
+            currentFileDir = originalResolved.filePath.replace(/\/[^/]+$/, "");
+            evaluateProgram(originalResolved.ast, originalEnv);
+            currentFileDir = savedDir;
+          }
+        }
+
+        for (const spec of node.specifiers) {
+          if (spec.type === "ImportSpecifier") {
+            const importedName = spec.imported.type === "Identifier" ? spec.imported.name : null;
+            if (importedName && mockModule.names.includes(importedName)) {
+              const val = mockEnv.has(`__export_${importedName}`) ? mockEnv.lookup(`__export_${importedName}`) : T.unknown;
+              env.bind(spec.local.name, val);
+            } else if (importedName && originalEnv) {
+              const val = originalEnv.has(`__export_${importedName}`) ? originalEnv.lookup(`__export_${importedName}`) : T.unknown;
+              env.bind(spec.local.name, val);
+            }
+          } else if (spec.type === "ImportDefaultSpecifier") {
+            const sourceEnv = originalEnv ?? mockEnv;
+            const val = sourceEnv.has(`__export_default`) ? sourceEnv.lookup(`__export_default`) : T.unknown;
+            env.bind(spec.local.name, val);
+          } else if (spec.type === "ImportNamespaceSpecifier") {
+            const exports: Record<string, TypeValue> = {};
+            const sourceEnv = originalEnv ?? mockEnv;
+            const bindings = sourceEnv.getOwnBindings();
+            for (const [k, v] of Object.entries(bindings)) {
+              if (k.startsWith("__export_") && k !== "__export_default") {
+                const name = k.slice("__export_".length);
+                exports[name] = mockModule.names.includes(name)
+                  ? (mockEnv.has(k) ? mockEnv.lookup(k) : v)
+                  : v;
+              }
+            }
+            const mockBindings = mockEnv.getOwnBindings();
+            for (const [k, v] of Object.entries(mockBindings)) {
+              if (k.startsWith("__export_") && k !== "__export_default") {
+                const name = k.slice("__export_".length);
+                if (mockModule.names.includes(name)) {
+                  exports[name] = v;
+                }
+              }
+            }
+            env.bind(spec.local.name, T.object(exports));
+          }
+        }
+        return T.undefined;
+      }
+
+      for (const spec of node.specifiers) {
+        if (spec.type === "ImportDefaultSpecifier") {
+          const val = mockEnv.has(`__export_default`) ? mockEnv.lookup(`__export_default`) : T.unknown;
+          env.bind(spec.local.name, val);
+        } else if (spec.type === "ImportSpecifier") {
+          const importedName = spec.imported.type === "Identifier" ? spec.imported.name : null;
+          if (importedName) {
+            const val = mockEnv.has(`__export_${importedName}`) ? mockEnv.lookup(`__export_${importedName}`) : T.unknown;
+            env.bind(spec.local.name, val);
+          }
+        } else if (spec.type === "ImportNamespaceSpecifier") {
+          const exports: Record<string, TypeValue> = {};
+          const bindings = mockEnv.getOwnBindings();
+          for (const [k, v] of Object.entries(bindings)) {
+            if (k.startsWith("__export_") && k !== "__export_default") {
+              exports[k.slice("__export_".length)] = v;
+            }
+          }
+          env.bind(spec.local.name, T.object(exports));
+        }
+      }
+      return T.undefined;
+    }
+  }
+
+  const envModule = envModules[source];
+  if (envModule) {
+    for (const spec of node.specifiers) {
+      if (spec.type === "ImportDefaultSpecifier") {
+        const defaultExport = envModule["default"];
+        env.bind(spec.local.name, defaultExport ?? T.unknown);
+      } else if (spec.type === "ImportSpecifier") {
+        const importedName = spec.imported.type === "Identifier" ? spec.imported.name : null;
+        if (importedName) {
+          env.bind(spec.local.name, envModule[importedName] ?? T.unknown);
+        }
+      } else if (spec.type === "ImportNamespaceSpecifier") {
+        const { default: _default, ...rest } = envModule;
+        env.bind(spec.local.name, T.object(rest));
+      }
+    }
+    return T.undefined;
+  }
+
   if (!currentModuleResolver) return T.undefined;
 
   const resolved = currentModuleResolver(source, currentFileDir);
@@ -1841,6 +2028,12 @@ type CallResult = {
 };
 
 function callFunctionFull(fn: TypeValue & { kind: "function" }, args: TypeValue[]): CallResult {
+  const sig = getFnSig(fn);
+  if (sig) {
+    const implResult = sig.impl?.(args);
+    return { value: implResult ?? sig.returnType, throws: sig.throwsType };
+  }
+
   const callEnv = fn.closure.extend({});
   const paramPatterns = (fn as any)._paramPatterns as Node[] | undefined;
   const isAsync = !!(fn as any)._async;

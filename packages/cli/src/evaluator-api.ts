@@ -11,6 +11,17 @@ export {
   setNodeTypeCollector,
   setSampleCount,
   setMaxConcreteIter,
+  setEnvModules,
+  resetEnvModules,
+  setMockModules,
+  resetMockModules,
+  setCurrentSource,
 } from "./evaluator.ts";
 
 export { narrow } from "./narrowing.ts";
+
+export { loadEnvs, type LoadedEnv } from "./env-loader.ts";
+
+export { findProjectConfig, type NudoConfig } from "./config.ts";
+
+export { resolveNpmNudo } from "./resolve-npm.ts";
