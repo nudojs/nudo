@@ -215,7 +215,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     diagnostics.push({
       range: ur,
       severity: "info",
-      message: "Unreachable code",
+      message: "Code after return/throw statement is unreachable",
       tags: ["unnecessary"],
       code: "nudo-unreachable",
     });
@@ -291,7 +291,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
             diagnostics.push({
               range: { start: { line: directive.commentLine, column: 0 }, end: { line: directive.commentLine, column: 999 } },
               severity: "error",
-              message: `Case "${directive.name}": expected ${typeValueToString(directive.expected)}, got ${typeValueToString(fullResult.value)}`,
+              message: `Case "${directive.name}": expected ${typeValueToString(directive.expected)}, got ${typeValueToString(fullResult.value)}. The inferred return type does not match the expected type declared in the @nudo:case directive`,
             });
           }
         }
@@ -307,7 +307,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           diagnostics.push({
             range: throwRange,
             severity: "warning",
-            message: `Function "${fn.name}" case "${directive.name}" may throw: ${typeValueToString(fullResult.throws)}`,
+            message: `Function "${fn.name}" case "${directive.name}" may throw: ${typeValueToString(fullResult.throws)}. Consider adding a try-catch block or using @nudo:returns to declare expected behavior`,
             code: "nudo-may-throw",
           });
         }
@@ -316,7 +316,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           diagnostics.push({
             range: ur,
             severity: "info",
-            message: "Unreachable code",
+            message: "Code after return/throw statement is unreachable",
             tags: ["unnecessary"],
             code: "nudo-unreachable",
           });
@@ -336,7 +336,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         const result = evaluateFunction(fn.node, directive.args, globalEnv);
         const matches = isSubtypeOf(result, returnsDirective.expected);
         if (!matches) {
-          const msg = `@nudo:returns assertion failed for case "${directive.name}": expected ${typeValueToString(returnsDirective.expected)}, got ${typeValueToString(result)}`;
+          const msg = `@nudo:returns assertion failed for case "${directive.name}": expected ${typeValueToString(returnsDirective.expected)}, got ${typeValueToString(result)}. Update the @nudo:returns directive to match the inferred type, or fix the function implementation`;
           analysis.assertionErrors.push(msg);
           diagnostics.push({
             range: fnLoc,
