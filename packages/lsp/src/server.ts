@@ -63,6 +63,9 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => ({
     definitionProvider: true,
     referencesProvider: true,
     renameProvider: true,
+    codeActionProvider: {
+      codeActionKinds: ["quickfix"],
+    },
     semanticTokensProvider: {
       full: true,
       legend: {
@@ -120,6 +123,8 @@ function validateDocument(document: TextDocument): void {
         },
         message: d.message,
         source: "nudo",
+        code: d.code,
+        data: d.data,
       };
       if (d.tags?.includes("unnecessary")) {
         diag.tags = [DiagnosticTag.Unnecessary];
@@ -361,6 +366,43 @@ connection.onRenameRequest((params) => {
       [params.textDocument.uri]: edits,
     },
   };
+});
+
+connection.onCodeAction((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return [];
+  if (!isNudoFile(params.textDocument.uri)) return [];
+
+  const actions = [];
+
+  for (const diag of params.context.diagnostics) {
+    if (diag.code === "nudo-unreachable") {
+      actions.push({
+        title: "Remove unreachable code",
+        kind: "quickfix",
+        diagnostics: [diag],
+        edit: {
+          changes: {
+            [params.textDocument.uri]: [{
+              range: diag.range,
+              newText: "",
+            }],
+          },
+        },
+      });
+    }
+
+    if (diag.code === "nudo-assertion-failed") {
+      actions.push({
+        title: "Update @nudo:returns to match inferred type",
+        kind: "quickfix",
+        diagnostics: [diag],
+        isPreferred: false,
+      });
+    }
+  }
+
+  return actions;
 });
 
 connection.languages.semanticTokens.on((params) => {

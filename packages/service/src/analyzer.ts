@@ -41,6 +41,8 @@ export type Diagnostic = {
   severity: DiagnosticSeverity;
   message: string;
   tags?: DiagnosticTag[];
+  code?: string;
+  data?: unknown;
 };
 
 export type CaseResult = {
@@ -215,6 +217,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       severity: "info",
       message: "Unreachable code",
       tags: ["unnecessary"],
+      code: "nudo-unreachable",
     });
   }
 
@@ -305,6 +308,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
             range: throwRange,
             severity: "warning",
             message: `Function "${fn.name}" case "${directive.name}" may throw: ${typeValueToString(fullResult.throws)}`,
+            code: "nudo-may-throw",
           });
         }
 
@@ -314,6 +318,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
             severity: "info",
             message: "Unreachable code",
             tags: ["unnecessary"],
+            code: "nudo-unreachable",
           });
         }
       }
@@ -337,6 +342,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
             range: fnLoc,
             severity: "error",
             message: msg,
+            code: "nudo-assertion-failed",
           });
         }
       }
