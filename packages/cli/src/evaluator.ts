@@ -17,6 +17,7 @@ import {
   isSubtypeOf,
   widenLiteral,
   createTemplate,
+  subtractType,
 } from "@nudojs/core";
 import { narrow } from "./narrowing.ts";
 
@@ -345,9 +346,17 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           const rv = evaluate(node.right, env);
           return isReturn(rv) || isBranch(rv) || isThrow(rv) ? rv : rv;
         }
+        // For non-literal types, narrow by removing null/undefined from the left side
+        const narrowedLeft = subtractType(leftVal, (m) =>
+          (m.kind === "literal" && (m.value === null || m.value === undefined))
+        );
+        if (narrowedLeft.kind !== "never") {
+          return narrowedLeft;
+        }
+        // If all members were null/undefined, use the right side
         const rv = evaluate(node.right, env);
         const rightTV = isReturn(rv) || isBranch(rv) || isThrow(rv) ? T.unknown : rv;
-        return simplifyUnion([leftVal, rightTV]);
+        return rightTV;
       }
 
       return T.unknown;
