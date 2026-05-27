@@ -152,6 +152,16 @@ export function narrow(
     }
   }
 
+  // "key" in obj
+  if (
+    test.type === "BinaryExpression" &&
+    test.operator === "in" &&
+    test.left.type === "StringLiteral" &&
+    test.right.type === "Identifier"
+  ) {
+    return narrowByPropertyIn(test.left.value, test.right.name, env);
+  }
+
   // !expr (negate)
   if (test.type === "UnaryExpression" && test.operator === "!") {
     const [trueEnv, falseEnv] = narrow(test.argument, env);
@@ -323,6 +333,23 @@ function narrowByComparison(
 
   trueEnv.bind(varName, trueRange);
   falseEnv.bind(varName, falseRange);
+  return [trueEnv, falseEnv];
+}
+
+function narrowByPropertyIn(propName: string, varName: string, env: Environment): [Environment, Environment] {
+  const current = env.lookup(varName);
+
+  const narrowed = narrowType(current, (m) =>
+    m.kind === "object" && propName in m.properties
+  );
+  const excluded = subtractType(current, (m) =>
+    m.kind === "object" && propName in m.properties
+  );
+
+  const trueEnv = env.extend({});
+  trueEnv.bind(varName, narrowed.kind === "never" ? current : narrowed);
+  const falseEnv = env.extend({});
+  falseEnv.bind(varName, excluded.kind === "never" ? current : excluded);
   return [trueEnv, falseEnv];
 }
 
