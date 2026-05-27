@@ -61,6 +61,7 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => ({
     inlayHintProvider: true,
     definitionProvider: true,
     referencesProvider: true,
+    renameProvider: true,
   },
 }));
 
@@ -306,6 +307,52 @@ connection.onReferences((params) => {
       end: { line: ref.loc.end.line - 1, character: ref.loc.end.column },
     },
   }));
+});
+
+connection.onRenameRequest((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return null;
+  if (!isNudoFile(params.textDocument.uri)) return null;
+
+  const source = document.getText();
+  const ast = parse(source);
+  const table = buildSymbolTable(ast, params.textDocument.uri);
+
+  const line = params.position.line + 1;
+  const column = params.position.character;
+  const identAtPos = findIdentifierAtPosition(ast, line, column);
+  if (!identAtPos) return null;
+
+  const def = findDefinition(table, identAtPos);
+  const refs = findReferences(table, identAtPos);
+
+  const edits = [];
+
+  if (def) {
+    edits.push({
+      range: {
+        start: { line: def.loc.start.line - 1, character: def.loc.start.column },
+        end: { line: def.loc.end.line - 1, character: def.loc.end.column },
+      },
+      newText: params.newName,
+    });
+  }
+
+  for (const ref of refs) {
+    edits.push({
+      range: {
+        start: { line: ref.loc.start.line - 1, character: ref.loc.start.column },
+        end: { line: ref.loc.end.line - 1, character: ref.loc.end.column },
+      },
+      newText: params.newName,
+    });
+  }
+
+  return {
+    changes: {
+      [params.textDocument.uri]: edits,
+    },
+  };
 });
 
 connection.onRequest("nudo/selectCase", (params: { uri: string; functionName: string; caseIndex: number }) => {
