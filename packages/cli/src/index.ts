@@ -222,14 +222,98 @@ function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = 
   setModuleResolver(null);
 }
 
+function runInferJson(file: string): void {
+  const filePath = resolve(file);
+  const source = readFileSync(filePath, "utf-8");
+  const ast = parse(source);
+  const functions = extractDirectives(ast);
+
+  if (functions.length === 0) {
+    console.log(JSON.stringify({ functions: [], diagnostics: [] }, null, 2));
+    return;
+  }
+
+  resetMemo();
+  setModuleResolver(resolveModule);
+  setCurrentFileDir(dirname(filePath));
+
+  const globalEnv = createEnvironment();
+  evaluateProgram(ast, globalEnv);
+
+  const jsonOutput: any = { functions: [], diagnostics: [] };
+
+  for (const fn of functions) {
+    applyMocks(fn.directives, globalEnv, filePath);
+
+    const skipDirective = fn.directives.find((d) => d.kind === "skip");
+    if (skipDirective && skipDirective.kind === "skip") {
+      jsonOutput.functions.push({
+        name: fn.name,
+        loc: fn.node.loc,
+        skipped: true,
+        combined: skipDirective.returns ? typeValueToString(skipDirective.returns) : null,
+      });
+      continue;
+    }
+
+    const isPure = fn.directives.some((d) => d.kind === "pure");
+    if (isPure) {
+      const fnVal = globalEnv.has(fn.name) ? globalEnv.lookup(fn.name) : null;
+      if (fnVal && fnVal.kind === "function") {
+        (fnVal as any)._memoize = fn.name;
+      }
+    }
+
+    const caseDirectives = fn.directives.filter((d) => d.kind === "case");
+    const caseResults = caseDirectives.map((directive) => {
+      const fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
+      return {
+        name: directive.name,
+        args: directive.args.map(typeValueToString),
+        result: typeValueToString(fullResult.value),
+        throws: fullResult.throws.kind !== "never" ? typeValueToString(fullResult.throws) : null,
+      };
+    });
+
+    const returnsDirective = fn.directives.find((d) => d.kind === "returns");
+    const assertionErrors: string[] = [];
+    if (returnsDirective && returnsDirective.kind === "returns") {
+      for (const directive of caseDirectives) {
+        const result = evaluateFunction(fn.node, directive.args, globalEnv);
+        const matches = isSubtypeOf(result, returnsDirective.expected);
+        if (!matches) {
+          assertionErrors.push(
+            `Case "${directive.name}": expected ${typeValueToString(returnsDirective.expected)}, got ${typeValueToString(result)}`
+          );
+        }
+      }
+    }
+
+    jsonOutput.functions.push({
+      name: fn.name,
+      loc: fn.node.loc,
+      cases: caseResults,
+      assertionErrors: assertionErrors.length > 0 ? assertionErrors : undefined,
+    });
+  }
+
+  console.log(JSON.stringify(jsonOutput, null, 2));
+  setModuleResolver(null);
+}
+
 program
   .command("infer")
   .description("Infer types from a JS file with @nudo: directives")
   .argument("<file>", "Path to the JS file")
   .option("--dts", "Generate .d.ts file")
   .option("--loc", "Show source locations in output")
-  .action((file: string, opts: { dts?: boolean; loc?: boolean }) => {
-    runInfer(file, { dts: opts.dts, showLoc: opts.loc });
+  .option("--json", "Output as JSON")
+  .action((file: string, opts: { dts?: boolean; loc?: boolean; json?: boolean }) => {
+    if (opts.json) {
+      runInferJson(file);
+    } else {
+      runInfer(file, { dts: opts.dts, showLoc: opts.loc });
+    }
   });
 
 program
