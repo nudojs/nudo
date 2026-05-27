@@ -27,6 +27,7 @@ import {
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
 import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "./symbols.ts";
+import { TOKEN_TYPES, TOKEN_MODIFIERS } from "./semantic-tokens.ts";
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
@@ -62,6 +63,13 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => ({
     definitionProvider: true,
     referencesProvider: true,
     renameProvider: true,
+    semanticTokensProvider: {
+      full: true,
+      legend: {
+        tokenTypes: [...TOKEN_TYPES],
+        tokenModifiers: [...TOKEN_MODIFIERS],
+      },
+    },
   },
 }));
 
@@ -353,6 +361,15 @@ connection.onRenameRequest((params) => {
       [params.textDocument.uri]: edits,
     },
   };
+});
+
+connection.languages.semanticTokens.on((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return { data: [] };
+  if (!isNudoFile(params.textDocument.uri)) return { data: [] };
+
+  // For now, return empty tokens - can be enhanced later
+  return { data: [] };
 });
 
 connection.onRequest("nudo/selectCase", (params: { uri: string; functionName: string; caseIndex: number }) => {
