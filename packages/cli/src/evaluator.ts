@@ -1917,7 +1917,27 @@ function evaluateSwitchStatement(node: Node & { type: "SwitchStatement" }, env: 
 
   const returnValues: TypeValue[] = [];
   for (const caseNode of node.cases) {
-    const result = evaluateStatements(caseNode.consequent, env);
+    let caseEnv = env;
+    if (caseNode.test) {
+      const testVal = evaluate(caseNode.test, env);
+      if (isReturn(testVal) || isBranch(testVal) || isThrow(testVal)) return testVal;
+
+      // Try to narrow discriminant for this case using existing narrow()
+      // Construct a synthetic BinaryExpression: discriminant === caseTest
+      const syntheticTest = {
+        type: "BinaryExpression",
+        operator: "===",
+        left: node.discriminant,
+        right: caseNode.test,
+        start: 0,
+        end: 0,
+        loc: null,
+      } as unknown as Node;
+      const [narrowedEnv] = narrow(syntheticTest, env);
+      caseEnv = narrowedEnv;
+    }
+
+    const result = evaluateStatements(caseNode.consequent, caseEnv);
     if (isThrow(result)) continue;
     if (isReturn(result)) {
       returnValues.push(result.value);
