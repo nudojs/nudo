@@ -665,6 +665,12 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         if (methodResult !== null) return methodResult;
       }
 
+      // Handle built-in global functions
+      if (callee.type === "Identifier") {
+        const builtinResult = evaluateBuiltinCall(callee.name, node.arguments as Node[], env);
+        if (builtinResult !== null) return builtinResult;
+      }
+
       const calleeVal = evaluate(callee, env);
       if (isReturn(calleeVal) || isBranch(calleeVal) || isThrow(calleeVal)) return calleeVal;
 
@@ -1035,6 +1041,87 @@ function evaluateArgs(args: Node[], env: Environment): TypeValue[] | ReturnSigna
   return result;
 }
 
+function evaluateBuiltinCall(
+  name: string,
+  args: Node[],
+  env: Environment,
+): EvalResult | null {
+  // Type conversion functions
+  if (name === "String" || name === "Number" || name === "Boolean") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    if (argVals.length === 0) {
+      if (name === "String") return T.literal("");
+      if (name === "Number") return T.literal(0);
+      if (name === "Boolean") return T.literal(false);
+    }
+    // For literals, try to convert
+    if (argVals.length === 1) {
+      const arg = argVals[0];
+      if (name === "String") {
+        if (arg.kind === "literal") return T.literal(String(arg.value));
+        return T.string;
+      }
+      if (name === "Number") {
+        if (arg.kind === "literal") {
+          // Number() converts literals to their numeric value
+          if (arg.value === null) return T.literal(0);
+          if (arg.value === undefined) return T.literal(NaN);
+          if (typeof arg.value === "boolean") return T.literal(arg.value ? 1 : 0);
+          if (typeof arg.value === "number") return arg;
+          if (typeof arg.value === "string") {
+            const num = Number(arg.value);
+            if (!isNaN(num)) return T.literal(num);
+            return T.literal(NaN);
+          }
+        }
+        return T.number;
+      }
+      if (name === "Boolean") {
+        if (arg.kind === "literal") return T.literal(Boolean(arg.value));
+        return T.boolean;
+      }
+    }
+    if (name === "String") return T.string;
+    if (name === "Number") return T.number;
+    if (name === "Boolean") return T.boolean;
+  }
+
+  // parseInt and parseFloat
+  if (name === "parseInt" || name === "parseFloat") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    return T.number;
+  }
+
+  // isNaN and isFinite
+  if (name === "isNaN" || name === "isFinite") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    return T.boolean;
+  }
+
+  // encodeURIComponent, decodeURIComponent, encodeURI, decodeURI
+  if (name === "encodeURIComponent" || name === "decodeURIComponent" ||
+      name === "encodeURI" || name === "decodeURI") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    return T.string;
+  }
+
+  // Math functions (accessed via member expression, not here)
+  if (name === "Math") {
+    return null;
+  }
+
+  // console functions (accessed via member expression, not here)
+  if (name === "console") {
+    return null;
+  }
+
+  return null;
+}
+
 function evaluateMethodCall(
   callee: Node & { type: "MemberExpression" },
   args: Node[],
@@ -1047,6 +1134,30 @@ function evaluateMethodCall(
     ? callee.property.name
     : null;
   if (!methodName) return null;
+
+  // Handle console methods (no return value)
+  if (callee.object.type === "Identifier" && callee.object.name === "console") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    return T.undefined;
+  }
+
+  // Handle Math methods
+  if (callee.object.type === "Identifier" && callee.object.name === "Math") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    // Math methods return numbers
+    if (["abs", "ceil", "floor", "round", "sqrt", "pow", "min", "max",
+         "random", "log", "log2", "log10", "exp", "sin", "cos", "tan",
+         "asin", "acos", "atan", "atan2"].includes(methodName)) {
+      return T.number;
+    }
+    // Math constants
+    if (["PI", "E", "LN2", "LN10", "LOG2E", "LOG10E", "SQRT1_2", "SQRT2"].includes(methodName)) {
+      return T.number;
+    }
+    return T.number;
+  }
 
   if (
     callee.object.type === "Identifier" &&
