@@ -73,6 +73,43 @@ export function narrow(
     }
   }
 
+  // obj.prop === literal (discriminated union)
+  if (
+    test.type === "BinaryExpression" &&
+    test.operator === "===" &&
+    test.left.type === "MemberExpression" &&
+    test.left.object.type === "Identifier" &&
+    test.left.property.type === "Identifier" &&
+    isLiteralNode(test.right)
+  ) {
+    return narrowByDiscriminant(test.left.object.name, test.left.property.name, getLiteralValue(test.right), env);
+  }
+
+  // literal === obj.prop
+  if (
+    test.type === "BinaryExpression" &&
+    test.operator === "===" &&
+    isLiteralNode(test.left) &&
+    test.right.type === "MemberExpression" &&
+    test.right.object.type === "Identifier" &&
+    test.right.property.type === "Identifier"
+  ) {
+    return narrowByDiscriminant(test.right.object.name, test.right.property.name, getLiteralValue(test.left), env);
+  }
+
+  // obj.prop !== literal
+  if (
+    test.type === "BinaryExpression" &&
+    test.operator === "!==" &&
+    test.left.type === "MemberExpression" &&
+    test.left.object.type === "Identifier" &&
+    test.left.property.type === "Identifier" &&
+    isLiteralNode(test.right)
+  ) {
+    const [trueEnv, falseEnv] = narrowByDiscriminant(test.left.object.name, test.left.property.name, getLiteralValue(test.right), env);
+    return [falseEnv, trueEnv];
+  }
+
   // x === literal
   if (
     test.type === "BinaryExpression" &&
@@ -377,6 +414,35 @@ function narrowByIsArray(varName: string, env: Environment): [Environment, Envir
   trueEnv.bind(varName, narrowed.kind === "never" ? T.array(T.unknown) : narrowed);
   const falseEnv = env.extend({});
   falseEnv.bind(varName, excluded.kind === "never" ? current : excluded);
+  return [trueEnv, falseEnv];
+}
+
+function narrowByDiscriminant(
+  objName: string,
+  propName: string,
+  literalValue: TypeValue,
+  env: Environment,
+): [Environment, Environment] {
+  const current = env.lookup(objName);
+
+  const narrowed = narrowType(current, (m) => {
+    if (m.kind !== "object") return false;
+    const propType = m.properties[propName];
+    if (!propType) return false;
+    return typeValueEquals(propType, literalValue);
+  });
+
+  const excluded = subtractType(current, (m) => {
+    if (m.kind !== "object") return false;
+    const propType = m.properties[propName];
+    if (!propType) return false;
+    return typeValueEquals(propType, literalValue);
+  });
+
+  const trueEnv = env.extend({});
+  trueEnv.bind(objName, narrowed.kind === "never" ? current : narrowed);
+  const falseEnv = env.extend({});
+  falseEnv.bind(objName, excluded.kind === "never" ? current : excluded);
   return [trueEnv, falseEnv];
 }
 
