@@ -25,6 +25,8 @@ import {
   getCasesForFile,
   type DiagnosticSeverity as JsDiagSeverity,
 } from "@nudojs/service";
+import { parse } from "@nudojs/parser";
+import { buildSymbolTable, findDefinition, findIdentifierAtPosition } from "./symbols.ts";
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
@@ -57,6 +59,7 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => ({
       resolveProvider: false,
     },
     inlayHintProvider: true,
+    definitionProvider: true,
   },
 }));
 
@@ -252,6 +255,32 @@ connection.languages.inlayHint.on((params) => {
   } catch {
     return [];
   }
+});
+
+connection.onDefinition((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return null;
+  if (!isNudoFile(params.textDocument.uri)) return null;
+
+  const source = document.getText();
+  const ast = parse(source);
+  const table = buildSymbolTable(ast, params.textDocument.uri);
+
+  const line = params.position.line + 1;
+  const column = params.position.character;
+  const identAtPos = findIdentifierAtPosition(ast, line, column);
+  if (!identAtPos) return null;
+
+  const def = findDefinition(table, identAtPos);
+  if (!def) return null;
+
+  return {
+    uri: params.textDocument.uri,
+    range: {
+      start: { line: def.loc.start.line - 1, character: def.loc.start.column },
+      end: { line: def.loc.end.line - 1, character: def.loc.end.column },
+    },
+  };
 });
 
 connection.onRequest("nudo/selectCase", (params: { uri: string; functionName: string; caseIndex: number }) => {
