@@ -162,6 +162,20 @@ export function narrow(
     return narrowByPropertyIn(test.left.value, test.right.name, env);
   }
 
+  // Array.isArray(x)
+  if (
+    test.type === "CallExpression" &&
+    test.callee.type === "MemberExpression" &&
+    test.callee.object.type === "Identifier" &&
+    test.callee.object.name === "Array" &&
+    test.callee.property.type === "Identifier" &&
+    test.callee.property.name === "isArray" &&
+    test.arguments.length === 1 &&
+    test.arguments[0].type === "Identifier"
+  ) {
+    return narrowByIsArray(test.arguments[0].name, env);
+  }
+
   // !expr (negate)
   if (test.type === "UnaryExpression" && test.operator === "!") {
     const [trueEnv, falseEnv] = narrow(test.argument, env);
@@ -348,6 +362,19 @@ function narrowByPropertyIn(propName: string, varName: string, env: Environment)
 
   const trueEnv = env.extend({});
   trueEnv.bind(varName, narrowed.kind === "never" ? current : narrowed);
+  const falseEnv = env.extend({});
+  falseEnv.bind(varName, excluded.kind === "never" ? current : excluded);
+  return [trueEnv, falseEnv];
+}
+
+function narrowByIsArray(varName: string, env: Environment): [Environment, Environment] {
+  const current = env.lookup(varName);
+
+  const narrowed = narrowType(current, (m) => m.kind === "array" || m.kind === "tuple");
+  const excluded = subtractType(current, (m) => m.kind === "array" || m.kind === "tuple");
+
+  const trueEnv = env.extend({});
+  trueEnv.bind(varName, narrowed.kind === "never" ? T.array(T.unknown) : narrowed);
   const falseEnv = env.extend({});
   falseEnv.bind(varName, excluded.kind === "never" ? current : excluded);
   return [trueEnv, falseEnv];

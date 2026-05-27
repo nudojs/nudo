@@ -39,3 +39,14 @@ describe("narrow: truthiness", () => {
     expect(typeValueEquals(falseEnv.lookup("x"), T.string)).toBe(true);
   });
 });
+
+describe("narrow: Array.isArray", () => {
+  it("narrows Array.isArray(x) to array type", () => {
+    const env = createEnvironment();
+    env.bind("x", T.union(T.array(T.string), T.object({ foo: T.number })));
+    const expr = getTestExpr("Array.isArray(x)");
+    const [trueEnv, falseEnv] = narrow(expr, env);
+    expect(trueEnv.lookup("x").kind).toBe("array");
+    expect(falseEnv.lookup("x").kind).toBe("object");
+  });
+});
