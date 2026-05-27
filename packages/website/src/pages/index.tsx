@@ -36,23 +36,23 @@ const features = [
     titleDefault: "IDE & Build Integration",
     descId: "homepage.feature.integrationsDesc",
     descDefault:
-      "First-class VS Code extension with hover types, completions, and CodeLens. Vite plugin for build-time type checking. CLI for scripting and CI.",
+      "Full-featured VS Code extension with hover types, go-to-definition, find references, rename, signature help, and CodeLens. Vite plugin for build-time type checking. CLI for scripting and CI.",
   },
   {
-    icon: "🧩",
-    titleId: "homepage.feature.jsTitle",
-    titleDefault: "Pure JavaScript",
-    descId: "homepage.feature.jsDesc",
+    icon: "🤖",
+    titleId: "homepage.feature.aiTitle",
+    titleDefault: "AI Agent Integration",
+    descId: "homepage.feature.aiDesc",
     descDefault:
-      "Works with plain .js files. No TypeScript compilation step required. Infer types for any JavaScript code, including third-party libraries without type definitions.",
+      "MCP server lets AI coding agents explore types interactively. What-if analysis, type tracing, and diagnostics — giving AI the type context it needs to write correct JavaScript.",
   },
   {
-    icon: "🔬",
-    titleId: "homepage.feature.soundTitle",
-    titleDefault: "Theoretically Sound",
-    descId: "homepage.feature.soundDesc",
+    icon: "🔧",
+    titleId: "homepage.feature.runtimeTitle",
+    titleDefault: "Runtime Type Generation",
+    descId: "homepage.feature.runtimeDesc",
     descDefault:
-      "Built on abstract interpretation — a well-established technique from programming language theory — presented in a developer-friendly \"just run the code\" mental model.",
+      "Bridge static inference and runtime validation. Generate Zod schemas, native type guards, and TypeScript declarations from inferred types — one command, zero hand-written validators.",
   },
 ];
 
