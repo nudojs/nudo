@@ -80,6 +80,41 @@ function classify(n) {
 function greet(name = "World") {
   return "Hello, " + name + "!";
 }` },
+  { id: 'discriminated-union', name: 'Discriminated Union', code: `// @nudo:case "circle" ({ kind: "circle", radius: 5 })
+// @nudo:case "rect" ({ kind: "rect", width: 10, height: 20 })
+function area(shape) {
+  switch (shape.kind) {
+    case "circle":
+      return Math.PI * shape.radius ** 2;
+    case "rect":
+      return shape.width * shape.height;
+  }
+}` },
+  { id: 'optional-chaining', name: 'Optional Chaining', code: `// @nudo:case "full" ({ user: { profile: { name: "Alice" } } })
+// @nudo:case "missing" ({})
+function getName(config) {
+  return config.user?.profile?.name ?? "Anonymous";
+}` },
+  { id: 'truthiness-narrowing', name: 'Truthiness Narrowing', code: `// @nudo:case "value" ("hello")
+// @nudo:case "null" (null)
+// @nudo:case "zero" (0)
+function process(val) {
+  if (!val) return "empty";
+  return val.toUpperCase();
+}` },
+  { id: 'isarray-narrowing', name: 'Array.isArray Narrowing', code: `// @nudo:case "array" ([1, 2, 3])
+// @nudo:case "string" ("hello")
+function first(x) {
+  if (Array.isArray(x)) return x[0];
+  return x;
+}` },
+  { id: 'in-operator', name: 'in Operator Narrowing', code: `// @nudo:case "dog" ({ name: "Rex", bark: true })
+// @nudo:case "cat" ({ name: "Whiskers", purr: true })
+function sound(animal) {
+  if ("bark" in animal) return "Woof!";
+  if ("purr" in animal) return "Purr~";
+  return "...";
+}` },
 ];
 
 function extractCases(code: string): CaseInfo[] {
