@@ -137,6 +137,11 @@ Narrowing refines type values based on conditions. The engine supports these pat
 | `Array.isArray(x)` | `x ∩ T.array(T.unknown)` | `x - T.array(T.unknown)` |
 | `x` (truthiness) | `x - T.null - T.undefined - T.literal(0) - T.literal("") - T.literal(false)` | complement |
 | `x instanceof C` | `x ∩ T.instanceOf(C)` | `x - T.instanceOf(C)` |
+| `"key" in x` | union members with `key` property | union members without `key` |
+| `x?.prop` | normal member access (short-circuits to `undefined` for nullish) | — |
+| `a ?? b` | `a` with null/undefined removed | — |
+| `switch(x) { case v: ... }` | `x ∩ T.literal(v)` per case | remaining after all cases |
+| `x.kind === "a"` (discriminated union) | union members where `kind` matches literal | union members where `kind` differs |
 
 Where `∩` is type intersection and `-` is type subtraction.
 

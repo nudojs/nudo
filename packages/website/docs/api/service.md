@@ -87,7 +87,39 @@ Serializes a TypeValue to TypeScript type syntax (e.g. `number`, `string | numbe
 generateDts(result: AnalysisResult): string
 ```
 
-Generates TypeScript declaration content (`.d.ts`) from an analysis result. Produces `declare function` signatures for each function and case.
+Generates TypeScript declaration content (`.d.ts`) from an analysis result. Produces `declare function` signatures with real parameter names, inferred return types, and JSDoc comments.
+
+---
+
+## typeValueToZodSchema
+
+```typescript
+typeValueToZodSchema(tv: TypeValue): string
+```
+
+Converts a TypeValue to a Zod schema string. Handles all type kinds including primitives, literals, objects, arrays, tuples, unions, and more.
+
+**Example:**
+```typescript
+typeValueToZodSchema(T.object({ name: T.string, age: T.number }))
+// → "z.object({ name: z.string(), age: z.number() })"
+```
+
+---
+
+## generateGuardFunction
+
+```typescript
+generateGuardFunction(name: string, tv: TypeValue): string
+```
+
+Generates a zero-dependency runtime type guard function as a string. The generated function uses `typeof`, `Array.isArray`, and property checks for validation.
+
+**Example:**
+```typescript
+generateGuardFunction("isUser", T.object({ name: T.string }))
+// → "function isUser(data) { ... }"
+```
 
 ---
 
@@ -111,6 +143,7 @@ type AnalysisResult = {
 type FunctionAnalysis = {
   name: string;
   loc: SourceLocation;
+  paramNames: string[];        // actual parameter names from AST
   cases: CaseResult[];
   combined?: TypeValue;        // union of case results
   assertionErrors?: string[]; // @nudo:returns failures
@@ -137,6 +170,8 @@ type Diagnostic = {
   severity: "error" | "warning" | "info";
   message: string;
   tags?: DiagnosticTag[];
+  code?: string;   // e.g., "nudo-unreachable", "nudo-may-throw", "nudo-assertion-failed"
+  data?: unknown;  // additional context for code actions
 }
 ```
 

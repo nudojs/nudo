@@ -14,6 +14,13 @@ Nudo is a type inference engine for JavaScript. Instead of a separate type syste
 - Completions based on inferred types
 - Diagnostics from abstract interpretation
 - Case navigation for `@nudo:case` directives
+- Go-to-Definition
+- Find References
+- Rename Symbol
+- Signature Help (parameter hints)
+- Code Actions / Quick Fixes
+- Semantic Tokens (type-aware highlighting)
+- Inlay Hints
 
 Typically consumed by the [nudo-vscode](https://marketplace.visualstudio.com/items?itemName=wmzy.nudo-vscode) extension, but compatible with any LSP client.
 
