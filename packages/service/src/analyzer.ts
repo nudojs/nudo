@@ -84,6 +84,24 @@ export type CompletionItem = {
   detail?: string;
 };
 
+export type SymbolInfo = {
+  name: string;
+  kind: "function" | "variable" | "class" | "parameter";
+  loc: SourceLocation;
+  uri?: string;
+};
+
+export type ReferenceInfo = {
+  name: string;
+  loc: SourceLocation;
+  uri?: string;
+};
+
+export type SymbolTable = {
+  definitions: Map<string, SymbolInfo>;
+  references: ReferenceInfo[];
+};
+
 function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string } | null {
   const extensions = [".js", ".ts", ".mjs"];
   const basePath = resolve(fromDir, source);

@@ -10,6 +10,8 @@ export default defineConfig({
         .pathname,
       "@nudojs/parser": new URL("./packages/parser/src", import.meta.url)
         .pathname,
+      "@nudojs/service": new URL("./packages/service/src", import.meta.url)
+        .pathname,
     },
   },
 });
