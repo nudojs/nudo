@@ -87,7 +87,39 @@ typeValueToTSType(tv: TypeValue): string
 generateDts(result: AnalysisResult): string
 ```
 
-根据分析结果生成 TypeScript 声明内容（`.d.ts`）。为每个函数和用例生成 `declare function` 签名。
+根据分析结果生成 TypeScript 声明内容（`.d.ts`）。产出带真实参数名、推断返回类型和 JSDoc 注释的 `declare function` 签名。
+
+---
+
+## typeValueToZodSchema
+
+```typescript
+typeValueToZodSchema(tv: TypeValue): string
+```
+
+将 TypeValue 转换为 Zod schema 字符串。处理所有类型种类，包括原始类型、字面量、对象、数组、元组、联合等。
+
+**示例：**
+```typescript
+typeValueToZodSchema(T.object({ name: T.string, age: T.number }))
+// → "z.object({ name: z.string(), age: z.number() })"
+```
+
+---
+
+## generateGuardFunction
+
+```typescript
+generateGuardFunction(name: string, tv: TypeValue): string
+```
+
+生成零依赖的运行时类型守卫函数字符串。生成的函数使用 `typeof`、`Array.isArray` 和属性检查进行验证。
+
+**示例：**
+```typescript
+generateGuardFunction("isUser", T.object({ name: T.string }))
+// → "function isUser(data) { ... }"
+```
 
 ---
 
@@ -111,9 +143,10 @@ type AnalysisResult = {
 type FunctionAnalysis = {
   name: string;
   loc: SourceLocation;
+  paramNames: string[];        // AST 中的实际参数名
   cases: CaseResult[];
-  combined?: TypeValue;        // union of case results
-  assertionErrors?: string[]; // @nudo:returns failures
+  combined?: TypeValue;        // 用例结果的联合
+  assertionErrors?: string[]; // @nudo:returns 失败
 }
 ```
 
@@ -137,6 +170,8 @@ type Diagnostic = {
   severity: "error" | "warning" | "info";
   message: string;
   tags?: DiagnosticTag[];
+  code?: string;   // 如 "nudo-unreachable"、"nudo-may-throw"、"nudo-assertion-failed"
+  data?: unknown;  // 用于代码操作的额外上下文
 }
 ```
 
