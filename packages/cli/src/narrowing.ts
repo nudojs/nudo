@@ -158,6 +158,11 @@ export function narrow(
     return [falseEnv, trueEnv];
   }
 
+  // Truthiness narrowing: if (x)
+  if (test.type === "Identifier") {
+    return narrowByTruthy(test.name, env);
+  }
+
   return [env, env];
 }
 
@@ -318,5 +323,25 @@ function narrowByComparison(
 
   trueEnv.bind(varName, trueRange);
   falseEnv.bind(varName, falseRange);
+  return [trueEnv, falseEnv];
+}
+
+function isFalsyType(tv: TypeValue): boolean {
+  if (tv.kind === "literal") {
+    return tv.value === null || tv.value === undefined || tv.value === false || tv.value === 0 || tv.value === "";
+  }
+  return false;
+}
+
+function narrowByTruthy(varName: string, env: Environment): [Environment, Environment] {
+  const current = env.lookup(varName);
+
+  const narrowed = narrowType(current, (m) => !isFalsyType(m));
+  const excluded = subtractType(current, (m) => !isFalsyType(m));
+
+  const trueEnv = env.extend({});
+  trueEnv.bind(varName, narrowed.kind === "never" ? current : narrowed);
+  const falseEnv = env.extend({});
+  falseEnv.bind(varName, excluded.kind === "never" ? current : excluded);
   return [trueEnv, falseEnv];
 }
