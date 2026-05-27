@@ -680,10 +680,101 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       });
     }
 
+    case "OptionalCallExpression": {
+      const callee = node.callee as Node;
+
+      if (callee.type === "OptionalMemberExpression" || callee.type === "MemberExpression") {
+        const objVal = evaluate(callee.object, env);
+        if (isReturn(objVal) || isBranch(objVal) || isThrow(objVal)) return objVal;
+        if (objVal.kind === "literal" && (objVal.value === null || objVal.value === undefined)) {
+          return T.undefined;
+        }
+        const methodResult = evaluateMethodCall(callee as Node & { type: "MemberExpression" }, node.arguments as Node[], env);
+        if (methodResult !== null) return methodResult;
+      }
+
+      const calleeVal = evaluate(callee, env);
+      if (isReturn(calleeVal) || isBranch(calleeVal) || isThrow(calleeVal)) return calleeVal;
+
+      if (calleeVal.kind === "literal" && (calleeVal.value === null || calleeVal.value === undefined)) {
+        return T.undefined;
+      }
+
+      const argVals = evaluateArgs(node.arguments as Node[], env);
+      if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+
+      if (calleeVal.kind === "function") {
+        const full = callFunctionFull(calleeVal, argVals as TypeValue[]);
+        if (full.value.kind === "never" && full.throws.kind !== "never") {
+          const callLoc = node.loc ? {
+            start: { line: node.loc.start.line, column: node.loc.start.column },
+            end: { line: node.loc.end.line, column: node.loc.end.column },
+          } : full.throwLoc;
+          return makeThrow(full.throws, callLoc);
+        }
+        return full.value;
+      }
+
+      return distributeOverUnion(calleeVal, (fn) => {
+        if (fn.kind !== "function") return T.unknown;
+        return callFunction(fn, argVals as TypeValue[]);
+      });
+    }
+
     case "MemberExpression": {
       const objVal = evaluate(node.object, env);
       if (isReturn(objVal) || isBranch(objVal) || isThrow(objVal)) return objVal;
 
+      if (node.computed) {
+        const propVal = evaluate(node.property, env);
+        if (isReturn(propVal) || isBranch(propVal) || isThrow(propVal)) return propVal;
+        return distributeOverUnion(objVal, (obj) => {
+          if (obj.kind === "object" && propVal.kind === "literal" && typeof propVal.value === "string") {
+            return obj.properties[propVal.value] ?? T.undefined;
+          }
+          if ((obj.kind === "array" || obj.kind === "tuple") && propVal.kind === "literal" && typeof propVal.value === "number") {
+            if (obj.kind === "tuple") return obj.elements[propVal.value] ?? T.undefined;
+            return obj.element;
+          }
+          return T.unknown;
+        });
+      }
+
+      if (node.property.type === "Identifier") {
+        const propName = node.property.name;
+        return distributeOverUnion(objVal, (obj) => {
+          if (obj.kind === "object") return obj.properties[propName] ?? T.undefined;
+          if (obj.kind === "instance") return obj.properties[propName] ?? T.undefined;
+          if (propName === "length" && (obj.kind === "array" || obj.kind === "tuple")) {
+            return obj.kind === "tuple" ? T.literal(obj.elements.length) : T.number;
+          }
+          if (propName === "length" && obj.kind === "literal" && typeof obj.value === "string") {
+            return T.literal(obj.value.length);
+          }
+          if (propName === "length" && obj.kind === "primitive" && obj.type === "string") {
+            return T.number;
+          }
+          if (obj.kind === "refined") {
+            const result = dispatchProperty(obj, propName);
+            if (result !== undefined) return result;
+          }
+          return T.unknown;
+        });
+      }
+
+      return T.unknown;
+    }
+
+    case "OptionalMemberExpression": {
+      const objVal = evaluate(node.object, env);
+      if (isReturn(objVal) || isBranch(objVal) || isThrow(objVal)) return objVal;
+
+      // If object is null or undefined, short-circuit to undefined
+      if (objVal.kind === "literal" && (objVal.value === null || objVal.value === undefined)) {
+        return T.undefined;
+      }
+
+      // Otherwise, evaluate like a normal member expression
       if (node.computed) {
         const propVal = evaluate(node.property, env);
         if (isReturn(propVal) || isBranch(propVal) || isThrow(propVal)) return propVal;
