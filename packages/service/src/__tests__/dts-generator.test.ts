@@ -95,4 +95,68 @@ function identity(x) {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("export declare function identity");
   });
+
+  it("uses actual parameter names from AST", () => {
+    const source = `
+/**
+ * @nudo:case "numbers" (T.number, T.number)
+ */
+function add(a, b) {
+  return a + b;
+}
+`;
+    const result = analyzeFile("/test/params.js", source);
+    const dts = generateDts(result);
+    expect(dts).toContain("a: number");
+    expect(dts).toContain("b: number");
+    expect(dts).not.toContain("arg0");
+    expect(dts).not.toContain("arg1");
+  });
+
+  it("generates JSDoc comments", () => {
+    const source = `
+/**
+ * @nudo:case "test" (T.string)
+ */
+function greet(name) {
+  return "hello " + name;
+}
+`;
+    const result = analyzeFile("/test/jsdoc.js", source);
+    const dts = generateDts(result);
+    expect(dts).toContain("/**");
+    expect(dts).toContain("* @param name - string");
+    expect(dts).toContain("* @returns string");
+    expect(dts).toContain("*/");
+  });
+
+  it("generates JSDoc with case names for multiple overloads", () => {
+    const source = `
+/**
+ * @nudo:case "str" (T.string) => T.number
+ * @nudo:case "num" (T.number) => T.string
+ */
+function convert(x) {
+  return typeof x === "string" ? Number(x) : String(x);
+}
+`;
+    const result = analyzeFile("/test/multi.js", source);
+    const dts = generateDts(result);
+    expect(dts).toContain("Case: str");
+    expect(dts).toContain("Case: num");
+  });
+
+  it("handles rest parameters", () => {
+    const source = `
+/**
+ * @nudo:case "test" (T.array(T.number))
+ */
+function sum(...nums) {
+  return nums;
+}
+`;
+    const result = analyzeFile("/test/rest.js", source);
+    const dts = generateDts(result);
+    expect(dts).toContain("...nums");
+  });
 });

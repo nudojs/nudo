@@ -54,6 +54,7 @@ export type CaseResult = {
 export type FunctionAnalysis = {
   name: string;
   loc: SourceLocation;
+  paramNames: string[];
   cases: CaseResult[];
   combined?: TypeValue;
   assertionErrors?: string[];
@@ -166,6 +167,30 @@ function locFromNode(node: Node): SourceLocation {
   };
 }
 
+function extractParamNames(node: Node): string[] {
+  const fn = node.type === "ExportDefaultDeclaration" ? node.declaration : node;
+  if (fn.type === "FunctionDeclaration" || fn.type === "FunctionExpression") {
+    return fn.params.map((p: any) => {
+      if (p.type === "Identifier") return p.name;
+      if (p.type === "AssignmentPattern" && p.left.type === "Identifier") return p.left.name;
+      if (p.type === "RestElement" && p.argument.type === "Identifier") return `...${p.argument.name}`;
+      return "_";
+    });
+  }
+  if (fn.type === "VariableDeclaration") {
+    const decl = fn.declarations[0];
+    if (decl.init?.type === "FunctionExpression" || decl.init?.type === "ArrowFunctionExpression") {
+      return decl.init.params.map((p: any) => {
+        if (p.type === "Identifier") return p.name;
+        if (p.type === "AssignmentPattern" && p.left.type === "Identifier") return p.left.name;
+        if (p.type === "RestElement" && p.argument.type === "Identifier") return `...${p.argument.name}`;
+        return "_";
+      });
+    }
+  }
+  return [];
+}
+
 export function analyzeFile(filePath: string, source: string, activeCases?: Map<string, number>): AnalysisResult {
   const ast = parse(source);
   const functions = extractDirectives(ast);
@@ -203,7 +228,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     const returnsDirective = fn.directives.find((d) => d.kind === "returns");
 
     const fnLoc = locFromNode(fn.node);
-    const analysis: FunctionAnalysis = { name: fn.name, loc: fnLoc, cases: [] };
+    const paramNames = extractParamNames(fn.node);
+    const analysis: FunctionAnalysis = { name: fn.name, loc: fnLoc, paramNames, cases: [] };
 
     if (skipDirective && skipDirective.kind === "skip") {
       if (skipDirective.returns) {
