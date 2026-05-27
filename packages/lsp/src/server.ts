@@ -66,6 +66,9 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => ({
     codeActionProvider: {
       codeActionKinds: ["quickfix"],
     },
+    signatureHelpProvider: {
+      triggerCharacters: ["(", ","],
+    },
     semanticTokensProvider: {
       full: true,
       legend: {
@@ -404,6 +407,88 @@ connection.onCodeAction((params) => {
 
   return actions;
 });
+
+connection.onSignatureHelp((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return null;
+  if (!isNudoFile(params.textDocument.uri)) return null;
+
+  const filePath = uriToFilePath(params.textDocument.uri);
+  const source = document.getText();
+  const line = params.position.line + 1;
+  const column = params.position.character;
+  const cases = getActiveCasesForUri(params.textDocument.uri);
+
+  try {
+    const ast = parse(source);
+    const callInfo = findEnclosingCall(ast, line, column);
+    if (!callInfo) return null;
+
+    const fnType = getTypeAtPosition(filePath, source, callInfo.calleeLine, callInfo.calleeCol, cases);
+    if (!fnType || fnType.kind !== "function") return null;
+
+    const paramLabels = fnType.params.map((p) => `${p}: unknown`);
+    const activeParam = callInfo.currentParamIndex;
+
+    return {
+      signatures: [{
+        label: `(${paramLabels.join(", ")}) => unknown`,
+        parameters: paramLabels.map((label) => ({ label })),
+        activeParameter: activeParam,
+      }],
+      activeSignature: 0,
+      activeParameter: activeParam,
+    };
+  } catch {
+    return null;
+  }
+});
+
+function findEnclosingCall(ast: any, line: number, column: number): { calleeLine: number; calleeCol: number; currentParamIndex: number } | null {
+  let result: any = null;
+
+  function visit(node: any): void {
+    if (!node || result) return;
+
+    if (node.type === "CallExpression") {
+      const loc = node.loc;
+      if (loc && loc.start.line <= line && loc.end.line >= line) {
+        const calleeLoc = node.callee.loc;
+        if (calleeLoc) {
+          let paramIndex = 0;
+          for (let i = 0; i < node.arguments.length; i++) {
+            const argLoc = node.arguments[i].loc;
+            if (argLoc) {
+              if (argLoc.start.line < line || (argLoc.start.line === line && argLoc.start.column <= column)) {
+                paramIndex = i + 1;
+              }
+            }
+          }
+          result = {
+            calleeLine: calleeLoc.start.line,
+            calleeCol: calleeLoc.start.column,
+            currentParamIndex: Math.min(paramIndex, node.arguments.length),
+          };
+        }
+      }
+    }
+
+    for (const key of Object.keys(node)) {
+      if (key === "type" || key === "loc" || key === "start" || key === "end") continue;
+      const child = node[key];
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          if (item && typeof item === "object" && item.type) visit(item);
+        }
+      } else if (child && typeof child === "object" && child.type) {
+        visit(child);
+      }
+    }
+  }
+
+  visit(ast);
+  return result;
+}
 
 connection.languages.semanticTokens.on((params) => {
   const document = documents.get(params.textDocument.uri);
