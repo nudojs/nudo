@@ -23,3 +23,6 @@ export {
   typeValueToTSType,
   generateDts,
 } from "./dts-generator.ts";
+
+export { typeValueToZodSchema } from "./schema-generator.ts";
+export { generateGuardFunction } from "./guard-generator.ts";

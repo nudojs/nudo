@@ -13,6 +13,7 @@ import {
 import type { TypeValue } from "@nudojs/core";
 import { parse, extractDirectives, parseTypeValueExpr } from "@nudojs/parser";
 import { evaluateFunction, evaluateFunctionFull, evaluateProgram, setModuleResolver, setCurrentFileDir, resetMemo } from "./evaluator.ts";
+import { typeValueToZodSchema, generateGuardFunction } from "@nudojs/service";
 
 const program = new Command();
 
@@ -288,5 +289,78 @@ function collectNudoFiles(dir: string): string[] {
   }
   return results;
 }
+
+program
+  .command("generate")
+  .description("Generate runtime validators from inferred types")
+  .argument("<file>", "JavaScript file to analyze")
+  .option("--format <format>", "Output format: zod, guard, dts, all", "all")
+  .option("--output <dir>", "Output directory", ".")
+  .action((file: string, options: { format: string; output: string }) => {
+    const filePath = resolve(file);
+    const source = readFileSync(filePath, "utf-8");
+    const ast = parse(source);
+    const functions = extractDirectives(ast);
+
+    if (functions.length === 0) {
+      console.log("No functions with @nudo:case directives found.");
+      return;
+    }
+
+    resetMemo();
+    setModuleResolver(resolveModule);
+    setCurrentFileDir(dirname(filePath));
+
+    const globalEnv = createEnvironment();
+    evaluateProgram(ast, globalEnv);
+
+    for (const fn of functions) {
+      applyMocks(fn.directives, globalEnv, filePath);
+
+      const caseDirectives = fn.directives.filter((d) => d.kind === "case");
+      if (caseDirectives.length === 0) continue;
+
+      const caseResults = caseDirectives.map((directive) => {
+        const fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
+        return {
+          name: directive.name,
+          args: directive.args,
+          result: fullResult.value,
+        };
+      });
+
+      const baseName = fn.name;
+
+      if (options.format === "zod" || options.format === "all") {
+        console.log(`\n// === ${baseName} Zod Schemas ===`);
+        for (const c of caseResults) {
+          const inputSchemas = c.args.map((a, i) => `arg${i}: ${typeValueToZodSchema(a)}`).join(", ");
+          const outputSchema = typeValueToZodSchema(c.result);
+          console.log(`// Case "${c.name}":`);
+          console.log(`// Input: { ${inputSchemas} }`);
+          console.log(`// Output: ${outputSchema}`);
+        }
+      }
+
+      if (options.format === "guard" || options.format === "all") {
+        console.log(`\n// === ${baseName} Type Guards ===`);
+        for (const c of caseResults) {
+          const guard = generateGuardFunction(`is${baseName}${c.name.charAt(0).toUpperCase() + c.name.slice(1)}Output`, c.result);
+          console.log(guard);
+        }
+      }
+
+      if (options.format === "dts" || options.format === "all") {
+        console.log(`\n// === ${baseName} TypeScript Declarations ===`);
+        for (const c of caseResults) {
+          const params = c.args.map((a, i) => `arg${i}: ${typeValueToTSType(a)}`).join(", ");
+          const ret = typeValueToTSType(c.result);
+          console.log(`export declare function ${baseName}(${params}): ${ret};`);
+        }
+      }
+    }
+
+    setModuleResolver(null);
+  });
 
 program.parse();
