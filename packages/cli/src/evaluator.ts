@@ -628,8 +628,20 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
     case "AssignmentExpression": {
       if (node.left.type === "Identifier") {
-        const val = evaluate(node.right, env);
-        if (isReturn(val) || isBranch(val) || isThrow(val)) return val;
+        const rightVal = evaluate(node.right, env);
+        if (isReturn(rightVal) || isBranch(rightVal) || isThrow(rightVal)) return rightVal;
+
+        // Handle compound assignment operators
+        let val = rightVal;
+        if (node.operator !== "=") {
+          const leftVal = env.lookup(node.left.name);
+          if (leftVal && leftVal.kind !== "unknown") {
+            // Extract the binary operator (e.g., "+=" -> "+")
+            const binaryOp = node.operator.slice(0, -1);
+            val = dispatchBinaryOp(binaryOp, leftVal, rightVal);
+          }
+        }
+
         if (!env.update(node.left.name, val)) {
           env.bind(node.left.name, val);
         }
@@ -2702,7 +2714,10 @@ export function evaluateFunctionFull(
     const value = isReturn(result) ? result.value
       : isBranch(result) ? result.returnedValue
       : result;
-    const wrapped = isAsync ? T.promise(value) : value;
+    // For async functions, unwrap Promise values to avoid double wrapping
+    const wrapped = isAsync
+      ? (value.kind === "promise" ? value : T.promise(value))
+      : value;
     return { value: wrapped, throws: T.never };
   }
   return { value: T.unknown, throws: T.never };
