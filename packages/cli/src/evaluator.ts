@@ -1416,6 +1416,35 @@ function evaluateMethodCall(
     return T.unknown;
   }
 
+  // Handle Array methods (Array.from, Array.isArray, etc.)
+  if (callee.object.type === "Identifier" && callee.object.name === "Array") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    if (methodName === "from") {
+      if (argVals.length > 0) {
+        const iterable = argVals[0];
+        // Array.from(Set) -> array of Set's element type
+        if (iterable.kind === "instance" && iterable.className === "Set") {
+          const typeArgs = (iterable as any)._typeArgs;
+          if (typeArgs?.T) return T.array(typeArgs.T);
+        }
+        // Array.from(tuple) -> tuple (preserve types)
+        if (iterable.kind === "tuple") {
+          return iterable;
+        }
+        // Array.from(array) -> array
+        if (iterable.kind === "array") {
+          return iterable;
+        }
+      }
+      return T.array(T.unknown);
+    }
+    if (methodName === "isArray") {
+      return T.boolean;
+    }
+    return T.unknown;
+  }
+
   // Handle Promise methods
   if (callee.object.type === "Identifier" && callee.object.name === "Promise") {
     const argVals = evaluateArgs(args, env);
