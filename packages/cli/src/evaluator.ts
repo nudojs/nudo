@@ -1969,8 +1969,13 @@ function evaluateArrayMethod(
       }
       return acc;
     }
+    // For arrays, we can't iterate all elements, but we can call the function
+    // with the accumulator and element type to infer the result type
     const acc = init ?? arr.element;
-    return callFunction(fn, [acc, arr.element, T.number, arr]);
+    const result = callFunction(fn, [acc, arr.element, T.number, arr]);
+    // If the result is the same type as the accumulator, it's likely correct
+    // (e.g., number + number = number)
+    return result;
   }
 
   if (method === "find") {
