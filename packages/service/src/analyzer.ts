@@ -10,9 +10,10 @@ import {
   createEnvironment,
   isSubtypeOf,
   type Environment,
+  mockHelperToTypeValue,
 } from "@nudojs/core";
 import { parse, extractDirectives, parseTypeValueExpr } from "@nudojs/parser";
-import type { FunctionWithDirectives } from "@nudojs/parser";
+import type { FunctionWithDirectives, SinonExpression } from "@nudojs/parser";
 import {
   evaluate,
   evaluateFunction,
@@ -42,6 +43,7 @@ export type Diagnostic = {
   message: string;
   tags?: DiagnosticTag[];
   code?: string;
+  suggestions?: string[];
   data?: unknown;
 };
 
@@ -125,7 +127,20 @@ function applyMocks(
 ): void {
   for (const d of directives) {
     if (d.kind !== "mock") continue;
-    if (d.expression) {
+    if (d.arrowFn) {
+      // Create a function TypeValue from the parsed arrow function
+      const fnType = T.fn(d.arrowFn.params, d.arrowFn.body, env);
+      (fnType as any)._paramPatterns = d.arrowFn.paramPatterns;
+      env.bind(d.name, fnType);
+    } else if (d.nudoMock) {
+      // Handle Nudo mock helpers (stub, spy, mock)
+      const typeVal = mockHelperToTypeValue(d.nudoMock, env);
+      env.bind(d.name, typeVal);
+    } else if (d.sinonExpr) {
+      // Handle sinon expressions
+      const sinonType = createSinonTypeValue(d.sinonExpr, env);
+      env.bind(d.name, sinonType);
+    } else if (d.expression) {
       env.bind(d.name, parseTypeValueExpr(d.expression));
     } else if (d.fromPath) {
       const mockPath = resolve(dirname(filePath), d.fromPath);
@@ -137,6 +152,31 @@ function applyMocks(
       env.bind(d.name, mockVal);
     }
   }
+}
+
+function createSinonTypeValue(sinonExpr: SinonExpression, env: Environment): TypeValue {
+  // For stub and spy, create a function that returns the specified value
+  if (sinonExpr.type === "stub" || sinonExpr.type === "spy") {
+    const body = { type: "BlockStatement", body: [] } as any;
+    const fn = T.fn(["...args"], body, env);
+
+    if (sinonExpr.returnValue) {
+      // Store the return value directly on the function
+      (fn as any)._directReturn = sinonExpr.returnValue;
+    } else if (sinonExpr.resolvedValue) {
+      // Store as promise
+      (fn as any)._directReturn = T.promise(sinonExpr.resolvedValue);
+    } else if (sinonExpr.rejectedValue) {
+      // Store as never (rejected promise)
+      (fn as any)._directReturn = T.never;
+    } else {
+      // Default: return unknown
+      (fn as any)._directReturn = T.unknown;
+    }
+    return fn;
+  }
+  // For mock, return unknown for now
+  return T.unknown;
 }
 
 function rangeKey(r: SourceLocation): string {
@@ -218,6 +258,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       message: "Code after return/throw statement is unreachable",
       tags: ["unnecessary"],
       code: "nudo-unreachable",
+      suggestions: ["Remove the unreachable code after the return/throw statement"],
     });
   }
 
@@ -319,6 +360,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
             message: "Code after return/throw statement is unreachable",
             tags: ["unnecessary"],
             code: "nudo-unreachable",
+            suggestions: ["Remove the unreachable code after the return/throw statement"],
           });
         }
       }
@@ -343,6 +385,10 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
             severity: "error",
             message: msg,
             code: "nudo-assertion-failed",
+            suggestions: [
+              "Update @nudo:returns to match the inferred type",
+              "Fix the function to return the expected type",
+            ],
           });
         }
       }
