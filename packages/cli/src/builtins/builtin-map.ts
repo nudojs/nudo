@@ -6,7 +6,16 @@ export const MAP_INSTANCE_METHODS: Record<string, (...args: TypeValue[]) => Type
     if (typeArgs?.V) return T.union(typeArgs.V, T.undefined);
     return T.undefined;
   },
-  set: (_key: TypeValue, _value: TypeValue, map?: TypeValue) => map ?? T.unknown,
+  set: (_key: TypeValue, _value: TypeValue, map?: TypeValue) => {
+    if (map) {
+      const typeArgs = (map as any)._typeArgs || { K: T.unknown, V: T.unknown };
+      (map as any)._typeArgs = {
+        K: typeArgs.K.kind === "unknown" ? _key : simplifyUnion([typeArgs.K, _key]),
+        V: typeArgs.V.kind === "unknown" ? _value : simplifyUnion([typeArgs.V, _value]),
+      };
+    }
+    return map ?? T.unknown;
+  },
   has: () => T.boolean,
   delete: () => T.boolean,
   clear: () => T.undefined,

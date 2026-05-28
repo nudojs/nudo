@@ -24,6 +24,21 @@ import { PROMISE_STATIC_METHODS, evaluatePromiseStaticMethod, evaluatePromiseIns
 import { MAP_INSTANCE_METHODS, createMapType } from "./builtins/builtin-map.ts";
 import { SET_INSTANCE_METHODS, createSetType } from "./builtins/builtin-set.ts";
 import { REGEXP_INSTANCE_METHODS, createRegExpType } from "./builtins/builtin-regexp.ts";
+import { URL_INSTANCE_METHODS, URLSearchParams_INSTANCE_METHODS, createURLType, createURLSearchParamsType } from "./builtins/builtin-url.ts";
+import {
+  RESPONSE_INSTANCE_METHODS,
+  HEADERS_INSTANCE_METHODS,
+  FORMDATA_INSTANCE_METHODS,
+  ABORTCONTROLLER_INSTANCE_METHODS,
+  createResponseType,
+  createHeadersType,
+  createFormDataType,
+  createAbortControllerType,
+} from "./builtins/builtin-web.ts";
+import { WEAKMAP_INSTANCE_METHODS, WEAKSET_INSTANCE_METHODS, createWeakMapType, createWeakSetType } from "./builtins/builtin-weak.ts";
+import { SYMBOL_STATIC_METHODS, SYMBOL_STATIC_PROPS } from "./builtins/builtin-symbol.ts";
+import { REFLECT_METHODS } from "./builtins/builtin-reflect.ts";
+import { INTL_DATETIMEFORMAT_METHODS, INTL_NUMBERFORMAT_METHODS, createDateTimeFormatType, createNumberFormatType } from "./builtins/builtin-intl.ts";
 
 // Built-in JavaScript API type mappings
 const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue>> = {
@@ -67,6 +82,12 @@ const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue>> = {
     fromCharCode: T.string,
   },
   Promise: PROMISE_STATIC_METHODS,
+  Symbol: { ...SYMBOL_STATIC_METHODS, ...SYMBOL_STATIC_PROPS },
+  Reflect: REFLECT_METHODS as unknown as Record<string, TypeValue>,
+  Intl: {
+    DateTimeFormat: T.fn(["...args"], { type: "BlockStatement", body: [] } as any, undefined as any),
+    NumberFormat: T.fn(["...args"], { type: "BlockStatement", body: [] } as any, undefined as any),
+  },
   parseInt: T.number,
   parseFloat: T.number,
   isNaN: T.boolean,
@@ -87,6 +108,10 @@ const BUILTIN_INSTANCE_METHODS: Record<string, Record<string, (...args: TypeValu
     toString: () => T.string,
     valueOf: () => T.number,
   },
+  WeakMap: WEAKMAP_INSTANCE_METHODS,
+  WeakSet: WEAKSET_INSTANCE_METHODS,
+  DateTimeFormat: INTL_DATETIMEFORMAT_METHODS,
+  NumberFormat: INTL_NUMBERFORMAT_METHODS,
 };
 
 type SourceRange = { start: { line: number; column: number }; end: { line: number; column: number } };
@@ -766,8 +791,8 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         if (methodResult !== null) return methodResult;
       }
 
-      // Handle built-in global functions
-      if (callee.type === "Identifier") {
+      // Handle built-in global functions (only if not overridden in environment, e.g., by mocks)
+      if (callee.type === "Identifier" && !env.has(callee.name)) {
         const builtinResult = evaluateBuiltinCall(callee.name, node.arguments as Node[], env);
         if (builtinResult !== null) return builtinResult;
       }
@@ -973,6 +998,24 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           if (isReturn(spreadVal) || isBranch(spreadVal) || isThrow(spreadVal)) return spreadVal;
           if (spreadVal.kind === "object") {
             Object.assign(props, spreadVal.properties);
+          } else if (spreadVal.kind === "union") {
+            const objectMembers = spreadVal.members.filter((m: TypeValue) => m.kind === "object");
+            if (objectMembers.length > 0) {
+              const allKeys = new Set<string>();
+              for (const m of objectMembers) {
+                if (m.kind === "object") {
+                  for (const k of Object.keys(m.properties)) allKeys.add(k);
+                }
+              }
+              for (const key of allKeys) {
+                const values = objectMembers
+                  .filter((m: TypeValue) => m.kind === "object" && key in (m as any).properties)
+                  .map((m: TypeValue) => (m as any).properties[key]);
+                if (values.length > 0) {
+                  props[key] = simplifyUnion(values);
+                }
+              }
+            }
           }
         }
       }
@@ -1245,6 +1288,49 @@ function evaluateBuiltinCall(
     return null;
   }
 
+  // fetch global function
+  if (name === "fetch") {
+    return T.promise(createResponseType());
+  }
+
+  return null;
+}
+
+function evaluateMethodForMember(
+  objVal: TypeValue,
+  methodName: string,
+  argVals: TypeValue[],
+  callee: Node & { type: "MemberExpression" },
+  env: Environment,
+): TypeValue | null {
+  // Promise instance methods
+  if (objVal.kind === "promise") {
+    const result = evaluatePromiseInstanceMethod(objVal, methodName, argVals);
+    if (result !== null) return result;
+  }
+
+  // Instance methods (Map, Set, RegExp, etc.)
+  if (objVal.kind === "instance") {
+    const classMethods: Record<string, Record<string, (...args: TypeValue[]) => TypeValue>> = {
+      Map: MAP_INSTANCE_METHODS,
+      Set: SET_INSTANCE_METHODS,
+      RegExp: REGEXP_INSTANCE_METHODS,
+    };
+    const methods = classMethods[objVal.className];
+    if (methods) {
+      const method = methods[methodName];
+      if (method) return method(...argVals, objVal);
+    }
+  }
+
+  // Array/tuple methods - need to pass original AST nodes
+  // Not handled here; fall through to the main evaluateMethodCall which has access to AST nodes
+
+  // String methods
+  if (isStringLike(objVal)) {
+    return evaluateStringMethod(objVal, methodName, argVals);
+  }
+
   return null;
 }
 
@@ -1260,6 +1346,17 @@ function evaluateMethodCall(
     ? callee.property.name
     : null;
   if (!methodName) return null;
+
+  // Distribute method calls over union types
+  if (objVal.kind === "union") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    return distributeOverUnion(objVal, (member) => {
+      // Create a temporary env with the member bound, then re-evaluate the method call
+      const memberResult = evaluateMethodForMember(member, methodName, argVals as TypeValue[], callee, env);
+      return memberResult ?? T.unknown;
+    });
+  }
 
   // Handle console methods (no return value)
   if (callee.object.type === "Identifier" && callee.object.name === "console") {
@@ -1328,6 +1425,24 @@ function evaluateMethodCall(
     return T.unknown;
   }
 
+  // Handle Symbol methods
+  if (callee.object.type === "Identifier" && callee.object.name === "Symbol") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    if (methodName === "for") return T.symbol;
+    if (methodName === "keyFor") return T.union(T.string, T.undefined);
+    return T.unknown;
+  }
+
+  // Handle Reflect methods
+  if (callee.object.type === "Identifier" && callee.object.name === "Reflect") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const method = (REFLECT_METHODS as Record<string, (...args: TypeValue[]) => TypeValue>)[methodName];
+    if (method) return method(...(argVals as TypeValue[]));
+    return T.unknown;
+  }
+
   // Handle Promise instance methods (.then, .catch, .finally)
   if (objVal.kind === "promise") {
     const argVals = evaluateArgs(args, env);
@@ -1361,6 +1476,106 @@ function evaluateMethodCall(
     const argVals = evaluateArgs(args, env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     const method = REGEXP_INSTANCE_METHODS[methodName];
+    if (method) {
+      return method(...(argVals as TypeValue[]), objVal);
+    }
+  }
+
+  // Handle URL instance methods
+  if (objVal.kind === "instance" && objVal.className === "URL") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const method = URL_INSTANCE_METHODS[methodName];
+    if (method) {
+      return method(...(argVals as TypeValue[]), objVal);
+    }
+  }
+
+  // Handle URLSearchParams instance methods
+  if (objVal.kind === "instance" && objVal.className === "URLSearchParams") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const method = URLSearchParams_INSTANCE_METHODS[methodName];
+    if (method) {
+      return method(...(argVals as TypeValue[]), objVal);
+    }
+  }
+
+  // Handle Response instance methods
+  if (objVal.kind === "instance" && objVal.className === "Response") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const method = RESPONSE_INSTANCE_METHODS[methodName];
+    if (method) {
+      return method(...(argVals as TypeValue[]), objVal);
+    }
+  }
+
+  // Handle Headers instance methods
+  if (objVal.kind === "instance" && objVal.className === "Headers") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const method = HEADERS_INSTANCE_METHODS[methodName];
+    if (method) {
+      return method(...(argVals as TypeValue[]), objVal);
+    }
+  }
+
+  // Handle FormData instance methods
+  if (objVal.kind === "instance" && objVal.className === "FormData") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const method = FORMDATA_INSTANCE_METHODS[methodName];
+    if (method) {
+      return method(...(argVals as TypeValue[]), objVal);
+    }
+  }
+
+  // Handle AbortController instance methods
+  if (objVal.kind === "instance" && objVal.className === "AbortController") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const method = ABORTCONTROLLER_INSTANCE_METHODS[methodName];
+    if (method) {
+      return method(...(argVals as TypeValue[]), objVal);
+    }
+  }
+
+  // Handle WeakMap instance methods
+  if (objVal.kind === "instance" && objVal.className === "WeakMap") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const method = WEAKMAP_INSTANCE_METHODS[methodName];
+    if (method) {
+      return method(...(argVals as TypeValue[]), objVal);
+    }
+  }
+
+  // Handle WeakSet instance methods
+  if (objVal.kind === "instance" && objVal.className === "WeakSet") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const method = WEAKSET_INSTANCE_METHODS[methodName];
+    if (method) {
+      return method(...(argVals as TypeValue[]), objVal);
+    }
+  }
+
+  // Handle DateTimeFormat instance methods
+  if (objVal.kind === "instance" && objVal.className === "DateTimeFormat") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const method = INTL_DATETIMEFORMAT_METHODS[methodName];
+    if (method) {
+      return method(...(argVals as TypeValue[]), objVal);
+    }
+  }
+
+  // Handle NumberFormat instance methods
+  if (objVal.kind === "instance" && objVal.className === "NumberFormat") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const method = INTL_NUMBERFORMAT_METHODS[methodName];
     if (method) {
       return method(...(argVals as TypeValue[]), objVal);
     }
@@ -2125,6 +2340,60 @@ function evaluateNewExpression(node: Node & { type: "NewExpression" }, env: Envi
     return createRegExpType();
   }
 
+  // Handle new URL()
+  if (callee.type === "Identifier" && callee.name === "URL") {
+    return createURLType();
+  }
+
+  // Handle new URLSearchParams()
+  if (callee.type === "Identifier" && callee.name === "URLSearchParams") {
+    return createURLSearchParamsType();
+  }
+
+  // Handle new Response()
+  if (callee.type === "Identifier" && callee.name === "Response") {
+    return createResponseType();
+  }
+
+  // Handle new Headers()
+  if (callee.type === "Identifier" && callee.name === "Headers") {
+    return createHeadersType();
+  }
+
+  // Handle new FormData()
+  if (callee.type === "Identifier" && callee.name === "FormData") {
+    return createFormDataType();
+  }
+
+  // Handle new AbortController()
+  if (callee.type === "Identifier" && callee.name === "AbortController") {
+    return createAbortControllerType();
+  }
+
+  // Handle new WeakMap()
+  if (callee.type === "Identifier" && callee.name === "WeakMap") {
+    return createWeakMapType();
+  }
+
+  // Handle new WeakSet()
+  if (callee.type === "Identifier" && callee.name === "WeakSet") {
+    return createWeakSetType();
+  }
+
+  // Handle new Intl.DateTimeFormat() and new Intl.NumberFormat()
+  if (callee.type === "MemberExpression" && !callee.computed) {
+    const obj = callee.object as Node;
+    const prop = callee.property as Node;
+    if (obj.type === "Identifier" && obj.name === "Intl" && prop.type === "Identifier") {
+      if (prop.name === "DateTimeFormat") {
+        return createDateTimeFormatType();
+      }
+      if (prop.name === "NumberFormat") {
+        return createNumberFormatType();
+      }
+    }
+  }
+
   const calleeVal = evaluate(callee, env);
   if (isReturn(calleeVal) || isBranch(calleeVal) || isThrow(calleeVal)) return calleeVal;
 
@@ -2177,10 +2446,10 @@ function evaluateTryStatement(node: Node & { type: "TryStatement" }, env: Enviro
         : tryResult;
 
   let catchResult: EvalResult | null = null;
-  if (node.handler && thrownType) {
+  if (node.handler) {
     const catchEnv = env.fork();
     if (node.handler.param) {
-      bindPattern(node.handler.param, thrownType, catchEnv);
+      bindPattern(node.handler.param, thrownType ?? T.unknown, catchEnv);
     }
     catchResult = evaluateStatements(node.handler.body.body, catchEnv);
   }

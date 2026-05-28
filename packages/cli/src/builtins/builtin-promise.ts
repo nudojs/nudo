@@ -28,10 +28,10 @@ export function evaluatePromiseStaticMethod(
         if (e.kind === "promise") return e.value;
         return T.unknown;
       });
-      return T.promise(T.array(simplifyUnion(elemTypes)));
+      return T.promise(T.tuple(elemTypes));
     }
     if (args.length > 0 && args[0].kind === "array") {
-      return T.promise(args[0].element);
+      return T.promise(T.array(args[0].element));
     }
     return T.promise(T.array(T.unknown));
   }

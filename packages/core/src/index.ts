@@ -38,3 +38,11 @@ export {
   getRangeMeta,
   type RangeMeta,
 } from "./refinements/range.ts";
+
+export {
+  type MockHelper,
+  stub,
+  spy,
+  mock,
+  mockHelperToTypeValue,
+} from "./mock-helpers.ts";

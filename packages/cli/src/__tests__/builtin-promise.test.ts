@@ -44,15 +44,14 @@ function fn() {
     expect(results[0].result).toBe("Promise<never>");
   });
 
-  it("Promise.all([...]) should return Promise<T[]>", () => {
+  it("Promise.all([...]) should return Promise<[T1, T2]> (tuple)", () => {
     const results = runTest(`
 // @nudo:case "all" ()
 function fn() {
   return Promise.all([Promise.resolve(1), Promise.resolve(2)]);
 }
 `);
-    expect(results[0].result).toContain("Promise");
-    expect(results[0].result).toContain("[]");
+    expect(results[0].result).toBe("Promise<[1, 2]>");
   });
 
   it("Promise.race([...]) should return Promise<T>", () => {

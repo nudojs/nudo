@@ -8,6 +8,7 @@ export {
   type SampleDirective,
   type ReturnsDirective,
   type FunctionWithDirectives,
+  type SinonExpression,
   extractDirectives,
   parseTypeValueExpr,
 } from "./directives.ts";

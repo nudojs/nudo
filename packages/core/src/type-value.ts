@@ -112,6 +112,24 @@ export function typeValueEquals(a: TypeValue, b: TypeValue): boolean {
 }
 
 export function simplifyUnion(members: TypeValue[]): TypeValue {
+  // Fast path: empty or single element
+  if (members.length === 0) return T.never;
+  if (members.length === 1) return members[0].kind === "never" ? T.never : members[0];
+
+  // Fast path: two non-union elements, check equality first
+  if (members.length === 2) {
+    const a = members[0];
+    const b = members[1];
+    // Only use fast path if neither is a union (need flattening)
+    if (a.kind !== "union" && b.kind !== "union") {
+      if (a.kind === "never") return b.kind === "never" ? T.never : b;
+      if (b.kind === "never") return a;
+      if (typeValueEquals(a, b)) return a;
+      if (a.kind === "unknown" || b.kind === "unknown") return T.unknown;
+      return { kind: "union", members: [a, b] };
+    }
+  }
+
   const flat: TypeValue[] = [];
   for (const m of members) {
     if (m.kind === "never") continue;
