@@ -1005,6 +1005,21 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             if (isReturn(val) || isBranch(val) || isThrow(val)) return val;
             props[key] = val;
           }
+        } else if (prop.type === "ObjectMethod") {
+          // Handle shorthand method syntax: { method() { ... } }
+          const key = prop.key.type === "Identifier"
+            ? prop.key.name
+            : prop.key.type === "StringLiteral"
+              ? prop.key.value
+              : null;
+          if (key) {
+            const params = prop.params.map((p: Node) => {
+              if (p.type === "Identifier") return p.name;
+              if (p.type === "RestElement" && p.argument.type === "Identifier") return `...${p.argument.name}`;
+              return `__param`;
+            });
+            props[key] = T.fn(params, prop.body, env);
+          }
         } else if (prop.type === "SpreadElement") {
           const spreadVal = evaluate(prop.argument, env);
           if (isReturn(spreadVal) || isBranch(spreadVal) || isThrow(spreadVal)) return spreadVal;
