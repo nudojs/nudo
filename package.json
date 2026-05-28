@@ -12,7 +12,10 @@
     "test:watch": "vitest",
     "infer": "tsx packages/cli/src/index.ts infer",
     "docs:dev": "pnpm --filter website run start",
-    "docs:build": "pnpm --filter website run build"
+    "docs:build": "pnpm --filter website run build",
+    "benchmark": "node benchmark/src/runner.js",
+    "benchmark:ts": "node benchmark/src/typescript-runner.js",
+    "benchmark:compare": "node benchmark/src/compare.js"
   },
   "devDependencies": {
     "@babel/parser": "^7.29.0",

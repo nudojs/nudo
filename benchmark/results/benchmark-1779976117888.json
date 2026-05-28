@@ -1,0 +1,680 @@
+{
+  "summary": {
+    "timestamp": "2026-05-28T13:48:37.888Z",
+    "totalCases": 24,
+    "results": {
+      "exactMatches": 0,
+      "partialMatches": 0,
+      "unknownCount": 0,
+      "errorCount": 24
+    },
+    "accuracy": {
+      "exact": "0.0%",
+      "partial": "0.0%",
+      "unknown": "0.0%",
+      "error": "100.0%"
+    },
+    "performance": {
+      "totalTimeMs": "8801.2",
+      "averageTimeMs": "366.7",
+      "casesPerSecond": "3"
+    },
+    "byComplexity": {
+      "level1": {
+        "total": 3,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "level2": {
+        "total": 3,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "level3": {
+        "total": 4,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "level4": {
+        "total": 3,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "level5": {
+        "total": 3,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "level6": {
+        "total": 2,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "level7": {
+        "total": 3,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "level8": {
+        "total": 3,
+        "exact": 0,
+        "accuracy": "0.0%"
+      }
+    },
+    "byCategory": {
+      "string": {
+        "total": 1,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "array": {
+        "total": 1,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "object": {
+        "total": 3,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "conditional": {
+        "total": 1,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "loop": {
+        "total": 1,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "switch": {
+        "total": 1,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "array-method": {
+        "total": 4,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "destructuring": {
+        "total": 1,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "promise": {
+        "total": 2,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "error-handling": {
+        "total": 1,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "map": {
+        "total": 1,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "set": {
+        "total": 1,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "pipeline": {
+        "total": 1,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "async": {
+        "total": 1,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "higher-order": {
+        "total": 1,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "real-world": {
+        "total": 1,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "validation": {
+        "total": 1,
+        "exact": 0,
+        "accuracy": "0.0%"
+      },
+      "pattern": {
+        "total": 1,
+        "exact": 0,
+        "accuracy": "0.0%"
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "basic-01",
+      "name": "String concatenation",
+      "complexity": 1,
+      "code": "\nfunction greet(name) {\n  return \"Hello, \" + name + \"!\";\n}\n",
+      "args": [
+        "World"
+      ],
+      "expected": "Hello, World!",
+      "category": "string",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 369.044411
+    },
+    {
+      "id": "basic-02",
+      "name": "Array literal",
+      "complexity": 1,
+      "code": "\nfunction makeArray(a, b, c) {\n  return [a, b, c];\n}\n",
+      "args": [
+        1,
+        2,
+        3
+      ],
+      "expected": [
+        1,
+        2,
+        3
+      ],
+      "category": "array",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 361.88531200000006
+    },
+    {
+      "id": "basic-03",
+      "name": "Object literal",
+      "complexity": 1,
+      "code": "\nfunction makeUser(name, age) {\n  return { name, age, active: true };\n}\n",
+      "args": [
+        "Alice",
+        30
+      ],
+      "expected": {
+        "name": "Alice",
+        "age": 30,
+        "active": true
+      },
+      "category": "object",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 367.1456969999999
+    },
+    {
+      "id": "flow-01",
+      "name": "Conditional return",
+      "complexity": 2,
+      "code": "\nfunction classify(score) {\n  if (score >= 90) return \"A\";\n  if (score >= 80) return \"B\";\n  if (score >= 70) return \"C\";\n  return \"F\";\n}\n",
+      "args": [
+        85
+      ],
+      "expected": "B",
+      "category": "conditional",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 365.9685589999999
+    },
+    {
+      "id": "flow-02",
+      "name": "Loop accumulation",
+      "complexity": 2,
+      "code": "\nfunction sum(arr) {\n  let total = 0;\n  for (const n of arr) {\n    total += n;\n  }\n  return total;\n}\n",
+      "args": [
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      ],
+      "expected": 15,
+      "category": "loop",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 369.7696030000002
+    },
+    {
+      "id": "flow-03",
+      "name": "Switch statement",
+      "complexity": 2,
+      "code": "\nfunction getDayName(day) {\n  switch (day) {\n    case 0: return \"Sunday\";\n    case 1: return \"Monday\";\n    case 2: return \"Tuesday\";\n    case 3: return \"Wednesday\";\n    case 4: return \"Thursday\";\n    case 5: return \"Friday\";\n    case 6: return \"Saturday\";\n    default: return \"Unknown\";\n  }\n}\n",
+      "args": [
+        3
+      ],
+      "expected": "Wednesday",
+      "category": "switch",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 363.79699900000014
+    },
+    {
+      "id": "array-01",
+      "name": "Array.map",
+      "complexity": 3,
+      "code": "\nfunction doubleAll(arr) {\n  return arr.map(n => n * 2);\n}\n",
+      "args": [
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "expected": [
+        2,
+        4,
+        6
+      ],
+      "category": "array-method",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 362.39148899999964
+    },
+    {
+      "id": "array-02",
+      "name": "Array.filter",
+      "complexity": 3,
+      "code": "\nfunction filterEvens(arr) {\n  return arr.filter(n => n % 2 === 0);\n}\n",
+      "args": [
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      ],
+      "expected": [
+        2,
+        4
+      ],
+      "category": "array-method",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 371.33373800000027
+    },
+    {
+      "id": "array-03",
+      "name": "Array.reduce",
+      "complexity": 3,
+      "code": "\nfunction flatten(arrays) {\n  return arrays.reduce((acc, arr) => acc.concat(arr), []);\n}\n",
+      "args": [
+        [
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            4
+          ],
+          [
+            5
+          ]
+        ]
+      ],
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "category": "array-method",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 366.6754070000002
+    },
+    {
+      "id": "array-04",
+      "name": "Array chaining",
+      "complexity": 3,
+      "code": "\nfunction processNumbers(arr) {\n  return arr\n    .filter(n => n > 0)\n    .map(n => n * n)\n    .reduce((sum, n) => sum + n, 0);\n}\n",
+      "args": [
+        [
+          -2,
+          3,
+          -1,
+          4,
+          2
+        ]
+      ],
+      "expected": 29,
+      "category": "array-method",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 363.9406859999999
+    },
+    {
+      "id": "obj-01",
+      "name": "Object spread",
+      "complexity": 4,
+      "code": "\nfunction updateUser(user, updates) {\n  return { ...user, ...updates, updatedAt: Date.now() };\n}\n",
+      "args": [
+        {
+          "id": 1,
+          "name": "Alice"
+        },
+        {
+          "name": "Bob"
+        }
+      ],
+      "expected": {
+        "id": 1,
+        "name": "Bob",
+        "updatedAt": 1000
+      },
+      "category": "object",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 367.2241119999999
+    },
+    {
+      "id": "obj-02",
+      "name": "Destructuring",
+      "complexity": 4,
+      "code": "\nfunction getFullName({ first, last, middle }) {\n  if (middle) return first + \" \" + middle + \" \" + last;\n  return first + \" \" + last;\n}\n",
+      "args": [
+        {
+          "first": "John",
+          "last": "Doe",
+          "middle": "M"
+        }
+      ],
+      "expected": "John M Doe",
+      "category": "destructuring",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 364.8761969999996
+    },
+    {
+      "id": "obj-03",
+      "name": "Nested access",
+      "complexity": 4,
+      "code": "\nfunction getDeepValue(obj) {\n  return obj.a.b.c;\n}\n",
+      "args": [
+        {
+          "a": {
+            "b": {
+              "c": 42
+            }
+          }
+        }
+      ],
+      "expected": 42,
+      "category": "object",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 368.8223390000003
+    },
+    {
+      "id": "async-01",
+      "name": "Promise.resolve",
+      "complexity": 5,
+      "code": "\nasync function getValue(x) {\n  return Promise.resolve(x);\n}\n",
+      "args": [
+        42
+      ],
+      "expected": 42,
+      "category": "promise",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 366.99821299999985
+    },
+    {
+      "id": "async-02",
+      "name": "Promise.all",
+      "complexity": 5,
+      "code": "\nasync function fetchAll() {\n  const [a, b] = await Promise.all([\n    Promise.resolve(1),\n    Promise.resolve(2)\n  ]);\n  return [a, b];\n}\n",
+      "args": [],
+      "expected": [
+        1,
+        2
+      ],
+      "category": "promise",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 363.3982219999998
+    },
+    {
+      "id": "async-03",
+      "name": "Try/catch",
+      "complexity": 5,
+      "code": "\nfunction safeDivide(a, b) {\n  try {\n    if (b === 0) throw new Error(\"Division by zero\");\n    return { success: true, value: a / b };\n  } catch (e) {\n    return { success: false, error: e.message };\n  }\n}\n",
+      "args": [
+        10,
+        2
+      ],
+      "expected": {
+        "success": true,
+        "value": 5
+      },
+      "category": "error-handling",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 373.0588199999993
+    },
+    {
+      "id": "map-01",
+      "name": "Map operations",
+      "complexity": 6,
+      "code": "\nfunction createLookup(items) {\n  const map = new Map();\n  for (const item of items) {\n    map.set(item.id, item);\n  }\n  return {\n    found: map.get(\"a\"),\n    missing: map.get(\"z\"),\n    size: map.size\n  };\n}\n",
+      "args": [
+        [
+          {
+            "id": "a",
+            "name": "Alice"
+          },
+          {
+            "id": "b",
+            "name": "Bob"
+          }
+        ]
+      ],
+      "expected": {
+        "found": {
+          "id": "a",
+          "name": "Alice"
+        },
+        "size": 2
+      },
+      "category": "map",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 366.04582200000004
+    },
+    {
+      "id": "set-01",
+      "name": "Set operations",
+      "complexity": 6,
+      "code": "\nfunction uniqueValues(arr) {\n  const set = new Set(arr);\n  return Array.from(set);\n}\n",
+      "args": [
+        [
+          1,
+          2,
+          2,
+          3,
+          3,
+          3
+        ]
+      ],
+      "expected": [
+        1,
+        2,
+        3
+      ],
+      "category": "set",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 360.2304600000007
+    },
+    {
+      "id": "complex-01",
+      "name": "Data transformation pipeline",
+      "complexity": 7,
+      "code": "\nfunction processUsers(users) {\n  return users\n    .filter(u => u.active)\n    .map(u => ({\n      id: u.id,\n      displayName: u.firstName + \" \" + u.lastName,\n      role: u.isAdmin ? \"admin\" : \"user\"\n    }))\n    .sort((a, b) => a.displayName.localeCompare(b.displayName));\n}\n",
+      "args": [
+        [
+          {
+            "id": 1,
+            "firstName": "Bob",
+            "lastName": "Smith",
+            "active": true,
+            "isAdmin": false
+          },
+          {
+            "id": 2,
+            "firstName": "Alice",
+            "lastName": "Jones",
+            "active": true,
+            "isAdmin": true
+          },
+          {
+            "id": 3,
+            "firstName": "Charlie",
+            "lastName": "Brown",
+            "active": false,
+            "isAdmin": false
+          }
+        ]
+      ],
+      "expected": [
+        {
+          "id": 2,
+          "displayName": "Alice Jones",
+          "role": "admin"
+        },
+        {
+          "id": 1,
+          "displayName": "Bob Smith",
+          "role": "user"
+        }
+      ],
+      "category": "pipeline",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 366.7541719999999
+    },
+    {
+      "id": "complex-02",
+      "name": "Error handling with retries",
+      "complexity": 7,
+      "code": "\nasync function fetchWithRetry(url, maxRetries) {\n  let lastError;\n  for (let i = 0; i < maxRetries; i++) {\n    try {\n      const response = await Promise.resolve({ ok: true, data: \"success\" });\n      if (response.ok) return { success: true, data: response.data };\n    } catch (e) {\n      lastError = e;\n    }\n  }\n  return { success: false, error: \"max retries exceeded\" };\n}\n",
+      "args": [
+        "https://api.example.com",
+        3
+      ],
+      "expected": {
+        "success": true,
+        "data": "success"
+      },
+      "category": "async",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 371.8727850000005
+    },
+    {
+      "id": "complex-03",
+      "name": "Generic data processor",
+      "complexity": 7,
+      "code": "\nfunction processItems(items, transform, filter) {\n  const result = [];\n  for (const item of items) {\n    if (filter(item)) {\n      result.push(transform(item));\n    }\n  }\n  return result;\n}\n",
+      "args": [
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        null,
+        null
+      ],
+      "expected": [
+        6,
+        8,
+        10
+      ],
+      "category": "higher-order",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 367.0215470000003
+    },
+    {
+      "id": "real-01",
+      "name": "API response handler",
+      "complexity": 8,
+      "code": "\nfunction handleApiResponse(response) {\n  if (!response) {\n    return { status: \"error\", message: \"No response\" };\n  }\n\n  if (response.statusCode >= 200 && response.statusCode < 300) {\n    return {\n      status: \"success\",\n      data: response.body,\n      meta: {\n        timestamp: Date.now(),\n        requestId: response.headers[\"x-request-id\"]\n      }\n    };\n  }\n\n  if (response.statusCode >= 400) {\n    return {\n      status: \"error\",\n      code: response.statusCode,\n      message: response.body?.error || \"Unknown error\"\n    };\n  }\n\n  return { status: \"unknown\", code: response.statusCode };\n}\n",
+      "args": [
+        {
+          "statusCode": 200,
+          "body": {
+            "id": 1
+          },
+          "headers": {
+            "x-request-id": "req-123"
+          }
+        }
+      ],
+      "expected": {
+        "status": "success",
+        "data": {
+          "id": 1
+        },
+        "meta": {
+          "timestamp": 1000,
+          "requestId": "req-123"
+        }
+      },
+      "category": "real-world",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 372.09295199999997
+    },
+    {
+      "id": "real-02",
+      "name": "Configuration validator",
+      "complexity": 8,
+      "code": "\nfunction validateConfig(config) {\n  const errors = [];\n\n  if (!config.host || typeof config.host !== \"string\") {\n    errors.push(\"host is required and must be a string\");\n  }\n\n  if (config.port !== undefined) {\n    if (typeof config.port !== \"number\" || config.port < 1 || config.port > 65535) {\n      errors.push(\"port must be a number between 1 and 65535\");\n    }\n  }\n\n  if (config.debug !== undefined && typeof config.debug !== \"boolean\") {\n    errors.push(\"debug must be a boolean\");\n  }\n\n  return {\n    valid: errors.length === 0,\n    errors,\n    config: errors.length === 0 ? config : undefined\n  };\n}\n",
+      "args": [
+        {
+          "host": "localhost",
+          "port": 3000,
+          "debug": true
+        }
+      ],
+      "expected": {
+        "valid": true,
+        "errors": [],
+        "config": {
+          "host": "localhost",
+          "port": 3000,
+          "debug": true
+        }
+      },
+      "category": "validation",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 367.9581300000009
+    },
+    {
+      "id": "real-03",
+      "name": "Event emitter pattern",
+      "complexity": 8,
+      "code": "\nfunction createEventEmitter() {\n  const listeners = new Map();\n\n  return {\n    on(event, fn) {\n      if (!listeners.has(event)) {\n        listeners.set(event, []);\n      }\n      listeners.get(event).push(fn);\n      return () => this.off(event, fn);\n    },\n    off(event, fn) {\n      const fns = listeners.get(event);\n      if (fns) {\n        const idx = fns.indexOf(fn);\n        if (idx >= 0) fns.splice(idx, 1);\n      }\n    },\n    emit(event, ...args) {\n      const fns = listeners.get(event);\n      if (fns) {\n        for (const fn of fns) fn(...args);\n      }\n    }\n  };\n}\n",
+      "args": [],
+      "expected": "function",
+      "category": "pattern",
+      "inferredType": "error",
+      "comparison": "error",
+      "duration": 362.93697900000006
+    }
+  ]
+}
