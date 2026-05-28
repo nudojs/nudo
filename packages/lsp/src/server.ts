@@ -127,7 +127,7 @@ function validateDocument(document: TextDocument): void {
         message: d.message,
         source: "nudo",
         code: d.code,
-        data: d.data,
+        data: { ...(d.data as object || {}), suggestions: d.suggestions },
       };
       if (d.tags?.includes("unnecessary")) {
         diag.tags = [DiagnosticTag.Unnecessary];
