@@ -22,6 +22,8 @@ import {
 import { narrow } from "./narrowing.ts";
 import { PROMISE_STATIC_METHODS, evaluatePromiseStaticMethod, evaluatePromiseInstanceMethod } from "./builtins/builtin-promise.ts";
 import { MAP_INSTANCE_METHODS, createMapType } from "./builtins/builtin-map.ts";
+import { SET_INSTANCE_METHODS, createSetType } from "./builtins/builtin-set.ts";
+import { REGEXP_INSTANCE_METHODS, createRegExpType } from "./builtins/builtin-regexp.ts";
 
 // Built-in JavaScript API type mappings
 const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue>> = {
@@ -326,6 +328,9 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
     case "NullLiteral":
       return T.null;
+
+    case "RegExpLiteral":
+      return createRegExpType();
 
     case "Identifier": {
       if (node.name === "undefined") return T.undefined;
@@ -866,6 +871,10 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           if (obj.kind === "instance" && obj.className === "Map" && propName === "size") {
             return T.number;
           }
+          // Check for Set.size property
+          if (obj.kind === "instance" && obj.className === "Set" && propName === "size") {
+            return T.number;
+          }
           if (obj.kind === "object") return obj.properties[propName] ?? T.undefined;
           if (obj.kind === "instance") return obj.properties[propName] ?? T.undefined;
           if (propName === "length" && (obj.kind === "array" || obj.kind === "tuple")) {
@@ -1332,6 +1341,26 @@ function evaluateMethodCall(
     const argVals = evaluateArgs(args, env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     const method = MAP_INSTANCE_METHODS[methodName];
+    if (method) {
+      return method(...(argVals as TypeValue[]), objVal);
+    }
+  }
+
+  // Handle Set instance methods
+  if (objVal.kind === "instance" && objVal.className === "Set") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const method = SET_INSTANCE_METHODS[methodName];
+    if (method) {
+      return method(...(argVals as TypeValue[]), objVal);
+    }
+  }
+
+  // Handle RegExp instance methods
+  if (objVal.kind === "instance" && objVal.className === "RegExp") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const method = REGEXP_INSTANCE_METHODS[methodName];
     if (method) {
       return method(...(argVals as TypeValue[]), objVal);
     }
@@ -2082,6 +2111,18 @@ function evaluateNewExpression(node: Node & { type: "NewExpression" }, env: Envi
     const argVals = evaluateArgs(node.arguments as Node[], env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     return createMapType(argVals as TypeValue[]);
+  }
+
+  // Handle new Set()
+  if (callee.type === "Identifier" && callee.name === "Set") {
+    const argVals = evaluateArgs(node.arguments as Node[], env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    return createSetType(argVals as TypeValue[]);
+  }
+
+  // Handle new RegExp()
+  if (callee.type === "Identifier" && callee.name === "RegExp") {
+    return createRegExpType();
   }
 
   const calleeVal = evaluate(callee, env);
