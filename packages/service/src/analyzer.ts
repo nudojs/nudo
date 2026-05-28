@@ -125,23 +125,34 @@ function applyMocks(
   directives: FunctionWithDirectives["directives"],
   env: Environment,
   filePath: string,
+  diagnostics: Diagnostic[],
 ): void {
   for (const d of directives) {
     if (d.kind !== "mock") continue;
     if (d.arrowFn) {
-      // Create a function TypeValue from the parsed arrow function
       const fnType = T.fn(d.arrowFn.params, d.arrowFn.body, env);
       (fnType as any)._paramPatterns = d.arrowFn.paramPatterns;
       env.bind(d.name, fnType);
     } else if (d.nudoMock) {
-      // Handle Nudo mock helpers (stub, spy, mock)
       const typeVal = mockHelperToTypeValue(d.nudoMock, env);
       env.bind(d.name, typeVal);
     } else if (d.sinonExpr) {
-      // Handle sinon expressions
       const sinonType = createSinonTypeValue(d.sinonExpr, env);
       env.bind(d.name, sinonType);
     } else if (d.expression) {
+      const expr = d.expression.trim();
+      if (expr.includes("(") && expr.includes(")") && !expr.startsWith("T.")) {
+        diagnostics.push({
+          range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
+          severity: "warning",
+          message: `Mock expression "${expr}" could not be parsed as a known pattern`,
+          code: "nudo:mock-invalid",
+          suggestions: [
+            "Supported formats: stub(), stub().returns(value), spy(), mock()",
+            "Arrow functions: (args) => expression or (args) => { statements; return value; }",
+          ],
+        });
+      }
       env.bind(d.name, parseTypeValueExpr(d.expression));
     } else if (d.fromPath) {
       const mockPath = resolve(dirname(filePath), d.fromPath);
@@ -279,7 +290,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   collectBindings(ast, globalEnv, bindings);
 
   for (const fn of functions) {
-    applyMocks(fn.directives, globalEnv, filePath);
+    applyMocks(fn.directives, globalEnv, filePath, diagnostics);
 
     const isPure = fn.directives.some((d) => d.kind === "pure");
     const skipDirective = fn.directives.find((d) => d.kind === "skip");

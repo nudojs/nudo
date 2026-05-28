@@ -73,4 +73,18 @@ function fn() {
     expect(builtin!.suggestions).toBeDefined();
     expect(builtin!.suggestions![0]).toContain("@nudo:mock");
   });
+
+  it("should generate nudo:mock-invalid for unparseable mock expressions", () => {
+    const source = `
+// @nudo:mock handler = invalid!@#syntax()
+// @nudo:case "test" (1)
+function fn(x) {
+  return handler(x);
+}
+`;
+    const result = analyzeFile("test.js", source);
+    const mockDiag = result.diagnostics.find(d => d.code === "nudo:mock-invalid");
+    expect(mockDiag).toBeDefined();
+    expect(mockDiag!.suggestions).toBeDefined();
+  });
 });
