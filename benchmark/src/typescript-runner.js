@@ -47,6 +47,7 @@ function generateTypeScript(caseItem) {
 function runTypeScriptCheck(caseItem) {
   const tsCode = generateTypeScript(caseItem);
   const tempFile = `/tmp/ts-bench-${caseItem.id}.ts`;
+  const annotationCount = caseItem.args.length; // Number of parameter annotations
 
   writeFileSync(tempFile, tsCode);
 
@@ -63,7 +64,7 @@ function runTypeScriptCheck(caseItem) {
     return {
       success: true,
       duration,
-      typeAnnotations: paramTypes.length
+      typeAnnotations: annotationCount
     };
   } catch (error) {
     const duration = performance.now() - start;
@@ -71,7 +72,7 @@ function runTypeScriptCheck(caseItem) {
       success: false,
       duration,
       error: error.message,
-      typeAnnotations: paramTypes.length
+      typeAnnotations: annotationCount
     };
   }
 }
