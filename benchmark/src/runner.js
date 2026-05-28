@@ -55,27 +55,13 @@ ${caseItem.code}
   }
 }
 
+import { compareTypeWithValue } from "./type-comparator.js";
+
 /**
  * Compare inferred type with expected runtime value
  */
 function compareResults(inferredType, expected) {
-  // For now, we'll do a simple string comparison
-  // A more sophisticated comparison would parse the inferred type
-  const expectedStr = typeof expected === "function" ? "function" :
-    expected === undefined ? "undefined" :
-    expected === null ? "null" :
-    JSON.stringify(expected);
-
-  // Simple match check
-  if (inferredType === expectedStr) return "exact";
-  if (inferredType === "unknown") return "unknown";
-  if (inferredType === "error") return "error";
-
-  // Check if it's a partial match (e.g., inferred array vs expected array)
-  if (inferredType.includes("[") && Array.isArray(expected)) return "partial";
-  if (inferredType.includes("{") && typeof expected === "object") return "partial";
-
-  return "mismatch";
+  return compareTypeWithValue(inferredType, expected);
 }
 
 /**
