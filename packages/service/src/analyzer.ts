@@ -26,6 +26,7 @@ import {
   resetUnreachableRanges,
   setNodeTypeCollector,
   setSampleCount,
+  setUnknownBuiltinHandler,
 } from "@nudojs/cli/evaluator";
 
 export type SourceLocation = {
@@ -247,6 +248,19 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   setModuleResolver(resolveModule);
   setCurrentFileDir(dirname(filePath));
 
+  setUnknownBuiltinHandler((name, loc) => {
+    diagnostics.push({
+      range: loc ? { start: loc.start, end: loc.end } : { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
+      severity: "warning",
+      message: `Built-in API "${name}" is not covered by Nudo's type inference`,
+      code: "nudo:builtin-unknown",
+      suggestions: [
+        `Use @nudo:mock to define the type: @nudo:mock ${name} = stub().returns(...)`,
+        `Or use @nudo:returns to declare the expected return type`,
+      ],
+    });
+  });
+
   const globalEnv = createEnvironment();
   evaluateProgram(ast, globalEnv);
 
@@ -399,6 +413,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
   buildNodeTypeMap(ast, globalEnv, nodeTypeMap);
 
+  setUnknownBuiltinHandler(null);
   setModuleResolver(null);
 
   return {

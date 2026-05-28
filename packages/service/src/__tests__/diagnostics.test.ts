@@ -59,4 +59,18 @@ function fn(x) {
     expect(assertion!.suggestions).toBeDefined();
     expect(assertion!.suggestions!.length).toBeGreaterThan(0);
   });
+
+  it("should generate nudo:builtin-unknown for uncovered APIs", () => {
+    const source = `
+// @nudo:case "test" ()
+function fn() {
+  return WeakRef;
+}
+`;
+    const result = analyzeFile("test.js", source);
+    const builtin = result.diagnostics.find(d => d.code === "nudo:builtin-unknown");
+    expect(builtin).toBeDefined();
+    expect(builtin!.suggestions).toBeDefined();
+    expect(builtin!.suggestions![0]).toContain("@nudo:mock");
+  });
 });

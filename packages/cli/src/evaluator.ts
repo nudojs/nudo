@@ -21,6 +21,69 @@ import {
 } from "@nudojs/core";
 import { narrow } from "./narrowing.ts";
 
+// Built-in JavaScript API type mappings
+const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue>> = {
+  Date: {
+    now: T.number,
+    parse: T.number,
+    UTC: T.number,
+  },
+  Math: {
+    random: T.number,
+    floor: T.fn(["x"], { type: "BlockStatement", body: [] } as any, undefined as any),
+    ceil: T.fn(["x"], { type: "BlockStatement", body: [] } as any, undefined as any),
+    round: T.fn(["x"], { type: "BlockStatement", body: [] } as any, undefined as any),
+    abs: T.fn(["x"], { type: "BlockStatement", body: [] } as any, undefined as any),
+    max: T.fn(["...args"], { type: "BlockStatement", body: [] } as any, undefined as any),
+    min: T.fn(["...args"], { type: "BlockStatement", body: [] } as any, undefined as any),
+    sqrt: T.fn(["x"], { type: "BlockStatement", body: [] } as any, undefined as any),
+    pow: T.fn(["base", "exp"], { type: "BlockStatement", body: [] } as any, undefined as any),
+  },
+  JSON: {
+    parse: T.unknown,
+    stringify: T.string,
+  },
+  Object: {
+    keys: T.array(T.string),
+    values: T.array(T.unknown),
+    entries: T.array(T.tuple([T.string, T.unknown])),
+    assign: T.unknown,
+  },
+  Array: {
+    isArray: T.boolean,
+    from: T.array(T.unknown),
+  },
+  Number: {
+    isNaN: T.boolean,
+    isFinite: T.boolean,
+    parseInt: T.number,
+    parseFloat: T.number,
+  },
+  String: {
+    fromCharCode: T.string,
+  },
+  parseInt: T.number,
+  parseFloat: T.number,
+  isNaN: T.boolean,
+  isFinite: T.boolean,
+};
+
+const BUILTIN_INSTANCE_METHODS: Record<string, Record<string, (...args: TypeValue[]) => TypeValue>> = {
+  Date: {
+    getTime: () => T.number,
+    getFullYear: () => T.number,
+    getMonth: () => T.number,
+    getDate: () => T.number,
+    getHours: () => T.number,
+    getMinutes: () => T.number,
+    getSeconds: () => T.number,
+    getMilliseconds: () => T.number,
+    toISOString: () => T.string,
+    toString: () => T.string,
+    valueOf: () => T.number,
+  },
+};
+
 type SourceRange = { start: { line: number; column: number }; end: { line: number; column: number } };
 
 const RETURN_SIGNAL = Symbol("ReturnSignal");
@@ -98,6 +161,12 @@ let _nodeTypeCollector: ((node: Node, tv: TypeValue) => void) | null = null;
 let _sampleCount = 3;
 let _maxConcreteIter = 1000;
 
+let _onUnknownBuiltin: ((name: string, loc?: { start: { line: number; column: number }; end: { line: number; column: number } }) => void) | null = null;
+
+export function setUnknownBuiltinHandler(handler: ((name: string, loc?: { start: { line: number; column: number }; end: { line: number; column: number } }) => void) | null) {
+  _onUnknownBuiltin = handler;
+}
+
 export function setSampleCount(count: number): void {
   _sampleCount = count;
 }
@@ -126,12 +195,18 @@ function distributeOverUnion(
   return fn(tv);
 }
 
+const MAX_UNION_PRODUCT = 50;
+
 function distributeBinaryOverUnion(
   left: TypeValue,
   right: TypeValue,
   fn: (l: TypeValue, r: TypeValue) => TypeValue,
 ): TypeValue {
   if (left.kind === "union" && right.kind === "union") {
+    // Cap combinatorial blowup
+    if (left.members.length * right.members.length > MAX_UNION_PRODUCT) {
+      return T.unknown;
+    }
     return simplifyUnion(
       left.members.flatMap((l) => right.members.map((r) => fn(l, r))),
     );
@@ -251,6 +326,24 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
     case "Identifier": {
       if (node.name === "undefined") return T.undefined;
+      // Check for built-in global objects
+      if (node.name in BUILTIN_STATIC_METHODS) {
+        const builtin = BUILTIN_STATIC_METHODS[node.name];
+        if (typeof builtin === "object" && builtin !== null && !("kind" in builtin)) {
+          // It's a namespace object (like Date, Math, JSON)
+          const obj = T.object({});
+          (obj as any)._builtinName = node.name;
+          return obj;
+        }
+        // It's a direct value (like parseInt, isNaN)
+        return builtin as TypeValue;
+      }
+      // Check if it looks like a built-in but isn't covered
+      if (node.name[0] === node.name[0].toUpperCase() && !env.has(node.name)) {
+        if (_onUnknownBuiltin) {
+          _onUnknownBuiltin(node.name, node.loc as any);
+        }
+      }
       return env.lookup(node.name);
     }
 
@@ -475,7 +568,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
     }
 
     case "BlockStatement": {
-      const blockEnv = env.extend({});
+      const blockEnv = env.fork();
       const result = evaluateStatements(node.body, blockEnv);
       return result;
     }
@@ -758,6 +851,14 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       if (node.property.type === "Identifier") {
         const propName = node.property.name;
         return distributeOverUnion(objVal, (obj) => {
+          // Check for built-in static methods (e.g., Date.now, Math.floor)
+          const builtinName = (obj as any)._builtinName as string | undefined;
+          if (builtinName && BUILTIN_STATIC_METHODS[builtinName]) {
+            const builtin = BUILTIN_STATIC_METHODS[builtinName];
+            if (typeof builtin === "object" && propName in builtin) {
+              return (builtin as Record<string, TypeValue>)[propName];
+            }
+          }
           if (obj.kind === "object") return obj.properties[propName] ?? T.undefined;
           if (obj.kind === "instance") return obj.properties[propName] ?? T.undefined;
           if (propName === "length" && (obj.kind === "array" || obj.kind === "tuple")) {
@@ -951,6 +1052,15 @@ function getMemberKey(node: Node & { type: "MemberExpression" }, env: Environmen
 function bindPattern(pattern: Node, value: TypeValue, env: Environment): void {
   if (pattern.type === "Identifier") {
     env.bind(pattern.name, value);
+    return;
+  }
+
+  if (pattern.type === "RestElement") {
+    // Handle rest parameters: (...args) => ...
+    // The value should be a tuple of all remaining arguments
+    if (pattern.argument.type === "Identifier") {
+      env.bind(pattern.argument.name, value);
+    }
     return;
   }
 
@@ -1157,6 +1267,40 @@ function evaluateMethodCall(
       return T.number;
     }
     return T.number;
+  }
+
+  // Handle Date methods
+  if (callee.object.type === "Identifier" && callee.object.name === "Date") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    // Date static methods
+    if (["now", "parse", "UTC"].includes(methodName)) {
+      return T.number;
+    }
+    // Date constructor
+    if (methodName === "constructor") {
+      return T.instanceOf("Date", {
+        getTime: T.fn(["...args"], { type: "BlockStatement", body: [] } as any, undefined as any),
+        getFullYear: T.fn(["...args"], { type: "BlockStatement", body: [] } as any, undefined as any),
+        toISOString: T.fn(["...args"], { type: "BlockStatement", body: [] } as any, undefined as any),
+      });
+    }
+    return T.unknown;
+  }
+
+  // Handle JSON methods
+  if (callee.object.type === "Identifier" && callee.object.name === "JSON") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    // JSON.parse returns any
+    if (methodName === "parse") {
+      return T.unknown;
+    }
+    // JSON.stringify returns string
+    if (methodName === "stringify") {
+      return T.string;
+    }
+    return T.unknown;
   }
 
   if (
@@ -1588,7 +1732,7 @@ function evaluateForOf(
   }
 
   if (iterable.kind === "array") {
-    const loopEnv = env.extend({});
+    const loopEnv = env.fork();
     bindForLoopVar(node.left, iterable.element, loopEnv);
     const result = evaluate(node.body, loopEnv);
     if (isReturn(result)) return makeBranch(result.value, env);
@@ -1628,7 +1772,7 @@ function evaluateForIn(
     }
   }
 
-  const loopEnv = env.extend({});
+  const loopEnv = env.fork();
   bindForLoopVar(node.left, T.string, loopEnv);
   evaluate(node.body, loopEnv);
   return T.undefined;
@@ -1682,7 +1826,7 @@ function evaluateForStatement(
   node: Node & { type: "ForStatement" },
   env: Environment,
 ): EvalResult {
-  const loopEnv = env.extend({});
+  const loopEnv = env.fork();
 
   if (node.init) {
     const initResult = evaluate(node.init, loopEnv);
@@ -1938,7 +2082,7 @@ function evaluateNewExpression(node: Node & { type: "NewExpression" }, env: Envi
 }
 
 function evaluateTryStatement(node: Node & { type: "TryStatement" }, env: Environment): EvalResult {
-  const tryResult = evaluateStatements(node.block.body, env.extend({}));
+  const tryResult = evaluateStatements(node.block.body, env.fork());
 
   const thrownType = isThrow(tryResult) ? tryResult.thrown : null;
 
@@ -1952,7 +2096,7 @@ function evaluateTryStatement(node: Node & { type: "TryStatement" }, env: Enviro
 
   let catchResult: EvalResult | null = null;
   if (node.handler && thrownType) {
-    const catchEnv = env.extend({});
+    const catchEnv = env.fork();
     if (node.handler.param) {
       bindPattern(node.handler.param, thrownType, catchEnv);
     }
@@ -1960,7 +2104,7 @@ function evaluateTryStatement(node: Node & { type: "TryStatement" }, env: Enviro
   }
 
   if (node.finalizer) {
-    const finallyResult = evaluateStatements(node.finalizer.body, env.extend({}));
+    const finallyResult = evaluateStatements(node.finalizer.body, env.fork());
     if (isThrow(finallyResult)) return finallyResult;
     if (isReturn(finallyResult)) return finallyResult;
   }
@@ -2072,15 +2216,34 @@ type CallResult = {
 };
 
 function callFunctionFull(fn: TypeValue & { kind: "function" }, args: TypeValue[]): CallResult {
+  // Check for direct return value (used by sinon mocks)
+  const directReturn = (fn as any)._directReturn as TypeValue | undefined;
+  if (directReturn) {
+    return { value: directReturn, throws: T.never };
+  }
+
   const callEnv = fn.closure.extend({});
   const paramPatterns = (fn as any)._paramPatterns as Node[] | undefined;
   const isAsync = !!(fn as any)._async;
   for (let i = 0; i < fn.params.length; i++) {
-    const argVal = args[i] ?? T.undefined;
-    if (paramPatterns && paramPatterns[i]) {
-      bindPattern(paramPatterns[i], argVal, callEnv);
+    const paramName = fn.params[i];
+    // Check if this is a rest parameter (starts with ...)
+    if (paramName.startsWith("...")) {
+      // Collect all remaining arguments into a tuple
+      const restArgs = args.slice(i);
+      const restValue = T.tuple(restArgs);
+      if (paramPatterns && paramPatterns[i]) {
+        bindPattern(paramPatterns[i], restValue, callEnv);
+      } else {
+        callEnv.bind(paramName.slice(3), restValue); // Remove "..." prefix
+      }
     } else {
-      callEnv.bind(fn.params[i], argVal);
+      const argVal = args[i] ?? T.undefined;
+      if (paramPatterns && paramPatterns[i]) {
+        bindPattern(paramPatterns[i], argVal, callEnv);
+      } else {
+        callEnv.bind(paramName, argVal);
+      }
     }
   }
 
@@ -2141,7 +2304,7 @@ export function evaluateFunctionFull(
   env: Environment,
 ): CallResult {
   if (fnNode.type === "FunctionDeclaration" || fnNode.type === "FunctionExpression") {
-    const callEnv = env.extend({});
+    const callEnv = env.fork();
     const isAsync = !!(fnNode as any).async;
     for (let i = 0; i < fnNode.params.length; i++) {
       bindPattern(fnNode.params[i], args[i] ?? T.undefined, callEnv);

@@ -11,6 +11,7 @@ export {
   setNodeTypeCollector,
   setSampleCount,
   setMaxConcreteIter,
+  setUnknownBuiltinHandler,
 } from "./evaluator.ts";
 
 export { narrow } from "./narrowing.ts";
