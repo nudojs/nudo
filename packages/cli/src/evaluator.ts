@@ -20,6 +20,7 @@ import {
   subtractType,
 } from "@nudojs/core";
 import { narrow } from "./narrowing.ts";
+import { PROMISE_STATIC_METHODS, evaluatePromiseStaticMethod, evaluatePromiseInstanceMethod } from "./builtins/builtin-promise.ts";
 
 // Built-in JavaScript API type mappings
 const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue>> = {
@@ -62,6 +63,7 @@ const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue>> = {
   String: {
     fromCharCode: T.string,
   },
+  Promise: PROMISE_STATIC_METHODS,
   parseInt: T.number,
   parseFloat: T.number,
   isNaN: T.boolean,
@@ -1301,6 +1303,23 @@ function evaluateMethodCall(
       return T.string;
     }
     return T.unknown;
+  }
+
+  // Handle Promise methods
+  if (callee.object.type === "Identifier" && callee.object.name === "Promise") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const result = evaluatePromiseStaticMethod(methodName, argVals as TypeValue[]);
+    if (result !== null) return result;
+    return T.unknown;
+  }
+
+  // Handle Promise instance methods (.then, .catch, .finally)
+  if (objVal.kind === "promise") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const result = evaluatePromiseInstanceMethod(objVal, methodName, argVals as TypeValue[]);
+    if (result !== null) return result;
   }
 
   if (
