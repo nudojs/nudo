@@ -21,6 +21,7 @@ import {
 } from "@nudojs/core";
 import { narrow } from "./narrowing.ts";
 import { PROMISE_STATIC_METHODS, evaluatePromiseStaticMethod, evaluatePromiseInstanceMethod } from "./builtins/builtin-promise.ts";
+import { MAP_INSTANCE_METHODS, createMapType } from "./builtins/builtin-map.ts";
 
 // Built-in JavaScript API type mappings
 const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue>> = {
@@ -861,6 +862,10 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
               return (builtin as Record<string, TypeValue>)[propName];
             }
           }
+          // Check for Map.size property
+          if (obj.kind === "instance" && obj.className === "Map" && propName === "size") {
+            return T.number;
+          }
           if (obj.kind === "object") return obj.properties[propName] ?? T.undefined;
           if (obj.kind === "instance") return obj.properties[propName] ?? T.undefined;
           if (propName === "length" && (obj.kind === "array" || obj.kind === "tuple")) {
@@ -1320,6 +1325,16 @@ function evaluateMethodCall(
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     const result = evaluatePromiseInstanceMethod(objVal, methodName, argVals as TypeValue[]);
     if (result !== null) return result;
+  }
+
+  // Handle Map instance methods
+  if (objVal.kind === "instance" && objVal.className === "Map") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const method = MAP_INSTANCE_METHODS[methodName];
+    if (method) {
+      return method(...(argVals as TypeValue[]), objVal);
+    }
   }
 
   if (
@@ -2060,6 +2075,13 @@ function evaluateNewExpression(node: Node & { type: "NewExpression" }, env: Envi
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     const msgVal = (argVals as TypeValue[])[0] ?? T.undefined;
     return T.instanceOf(callee.name, { message: msgVal });
+  }
+
+  // Handle new Map()
+  if (callee.type === "Identifier" && callee.name === "Map") {
+    const argVals = evaluateArgs(node.arguments as Node[], env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    return createMapType(argVals as TypeValue[]);
   }
 
   const calleeVal = evaluate(callee, env);
