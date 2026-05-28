@@ -9,11 +9,12 @@ import {
   isSubtypeOf,
   isTemplate,
   getTemplateParts,
+  mockHelperToTypeValue,
 } from "@nudojs/core";
 import type { TypeValue } from "@nudojs/core";
 import { parse, extractDirectives, parseTypeValueExpr } from "@nudojs/parser";
 import { evaluateFunction, evaluateFunctionFull, evaluateProgram, setModuleResolver, setCurrentFileDir, resetMemo } from "./evaluator.ts";
-import { typeValueToZodSchema, generateGuardFunction } from "@nudojs/service";
+import { typeValueToZodSchema, generateGuardFunction, analyzeFile } from "@nudojs/service";
 
 const program = new Command();
 
@@ -29,7 +30,20 @@ function applyMocks(
 ): void {
   for (const d of directives) {
     if (d.kind !== "mock") continue;
-    if (d.expression) {
+    if (d.arrowFn) {
+      // Create a function TypeValue from the parsed arrow function
+      const fnType = T.fn(d.arrowFn.params, d.arrowFn.body, env);
+      (fnType as any)._paramPatterns = d.arrowFn.paramPatterns;
+      env.bind(d.name, fnType);
+    } else if (d.nudoMock) {
+      // Handle Nudo mock helpers (stub, spy, mock)
+      const typeVal = mockHelperToTypeValue(d.nudoMock, env);
+      env.bind(d.name, typeVal);
+    } else if (d.sinonExpr) {
+      // Handle sinon expressions
+      const sinonType = createSinonTypeValue(d.sinonExpr);
+      env.bind(d.name, sinonType);
+    } else if (d.expression) {
       env.bind(d.name, parseTypeValueExpr(d.expression));
     } else if (d.fromPath) {
       const mockPath = resolve(dirname(filePath), d.fromPath);
@@ -41,6 +55,23 @@ function applyMocks(
       env.bind(d.name, mockVal);
     }
   }
+}
+
+function createSinonTypeValue(sinonExpr: { type: string; returnValue?: TypeValue; resolvedValue?: TypeValue; rejectedValue?: TypeValue }): TypeValue {
+  const body = { type: "BlockStatement", body: [] } as any;
+  const fn = T.fn(["...args"], body, createEnvironment());
+
+  if (sinonExpr.returnValue) {
+    (fn as any)._directReturn = sinonExpr.returnValue;
+  } else if (sinonExpr.resolvedValue) {
+    (fn as any)._directReturn = T.promise(sinonExpr.resolvedValue);
+  } else if (sinonExpr.rejectedValue) {
+    (fn as any)._directReturn = T.never;
+  } else {
+    (fn as any)._directReturn = T.unknown;
+  }
+
+  return fn;
 }
 
 function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string } | null {
@@ -225,80 +256,31 @@ function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = 
 function runInferJson(file: string): void {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
-  const ast = parse(source);
-  const functions = extractDirectives(ast);
+  const result = analyzeFile(filePath, source);
 
-  if (functions.length === 0) {
-    console.log(JSON.stringify({ functions: [], diagnostics: [] }, null, 2));
-    return;
-  }
-
-  resetMemo();
-  setModuleResolver(resolveModule);
-  setCurrentFileDir(dirname(filePath));
-
-  const globalEnv = createEnvironment();
-  evaluateProgram(ast, globalEnv);
-
-  const jsonOutput: any = { functions: [], diagnostics: [] };
-
-  for (const fn of functions) {
-    applyMocks(fn.directives, globalEnv, filePath);
-
-    const skipDirective = fn.directives.find((d) => d.kind === "skip");
-    if (skipDirective && skipDirective.kind === "skip") {
-      jsonOutput.functions.push({
-        name: fn.name,
-        loc: fn.node.loc,
-        skipped: true,
-        combined: skipDirective.returns ? typeValueToString(skipDirective.returns) : null,
-      });
-      continue;
-    }
-
-    const isPure = fn.directives.some((d) => d.kind === "pure");
-    if (isPure) {
-      const fnVal = globalEnv.has(fn.name) ? globalEnv.lookup(fn.name) : null;
-      if (fnVal && fnVal.kind === "function") {
-        (fnVal as any)._memoize = fn.name;
-      }
-    }
-
-    const caseDirectives = fn.directives.filter((d) => d.kind === "case");
-    const caseResults = caseDirectives.map((directive) => {
-      const fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
-      return {
-        name: directive.name,
-        args: directive.args.map(typeValueToString),
-        result: typeValueToString(fullResult.value),
-        throws: fullResult.throws.kind !== "never" ? typeValueToString(fullResult.throws) : null,
-      };
-    });
-
-    const returnsDirective = fn.directives.find((d) => d.kind === "returns");
-    const assertionErrors: string[] = [];
-    if (returnsDirective && returnsDirective.kind === "returns") {
-      for (const directive of caseDirectives) {
-        const result = evaluateFunction(fn.node, directive.args, globalEnv);
-        const matches = isSubtypeOf(result, returnsDirective.expected);
-        if (!matches) {
-          assertionErrors.push(
-            `Case "${directive.name}": expected ${typeValueToString(returnsDirective.expected)}, got ${typeValueToString(result)}`
-          );
-        }
-      }
-    }
-
-    jsonOutput.functions.push({
-      name: fn.name,
-      loc: fn.node.loc,
-      cases: caseResults,
-      assertionErrors: assertionErrors.length > 0 ? assertionErrors : undefined,
-    });
-  }
+  const jsonOutput = {
+    functions: result.functions.map((f) => ({
+      name: f.name,
+      loc: f.loc,
+      cases: f.cases.map((c) => ({
+        name: c.name,
+        args: c.args.map(typeValueToString),
+        result: typeValueToString(c.result),
+        throws: c.throws.kind !== "never" ? typeValueToString(c.throws) : null,
+      })),
+      assertionErrors: f.assertionErrors,
+    })),
+    diagnostics: result.diagnostics.map((d) => ({
+      range: d.range,
+      severity: d.severity,
+      message: d.message,
+      code: d.code,
+      suggestions: d.suggestions,
+      tags: d.tags,
+    })),
+  };
 
   console.log(JSON.stringify(jsonOutput, null, 2));
-  setModuleResolver(null);
 }
 
 program
