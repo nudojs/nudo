@@ -2654,13 +2654,21 @@ export function evaluateFunctionFull(
   args: TypeValue[],
   env: Environment,
 ): CallResult {
-  if (fnNode.type === "FunctionDeclaration" || fnNode.type === "FunctionExpression") {
+  // Unwrap export declarations to get the actual function
+  let actualNode = fnNode;
+  if (fnNode.type === "ExportNamedDeclaration" && fnNode.declaration) {
+    actualNode = fnNode.declaration;
+  } else if (fnNode.type === "ExportDefaultDeclaration") {
+    actualNode = fnNode.declaration;
+  }
+
+  if (actualNode.type === "FunctionDeclaration" || actualNode.type === "FunctionExpression") {
     const callEnv = env.fork();
-    const isAsync = !!(fnNode as any).async;
-    for (let i = 0; i < fnNode.params.length; i++) {
-      bindPattern(fnNode.params[i], args[i] ?? T.undefined, callEnv);
+    const isAsync = !!(actualNode as any).async;
+    for (let i = 0; i < actualNode.params.length; i++) {
+      bindPattern(actualNode.params[i], args[i] ?? T.undefined, callEnv);
     }
-    const result = evaluate(fnNode.body, callEnv);
+    const result = evaluate(actualNode.body, callEnv);
     if (isThrow(result)) return { value: T.never, throws: result.thrown, throwLoc: result.loc };
     const value = isReturn(result) ? result.value
       : isBranch(result) ? result.returnedValue

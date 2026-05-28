@@ -545,6 +545,9 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
 
 function getFunctionName(node: Node): string {
   if (node.type === "FunctionDeclaration" && node.id) return node.id.name;
+  if (node.type === "ExportNamedDeclaration" && node.declaration?.type === "FunctionDeclaration" && node.declaration.id) {
+    return node.declaration.id.name;
+  }
   if (node.type === "ExportDefaultDeclaration" && node.declaration.type === "FunctionDeclaration" && node.declaration.id) {
     return node.declaration.id.name;
   }
