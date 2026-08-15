@@ -11,8 +11,11 @@ import {
   getTemplateParts,
 } from "@nudojs/core";
 import type { TypeValue } from "@nudojs/core";
-import { parse, extractDirectives, parseTypeValueExpr } from "@nudojs/parser";
-import { evaluateFunction, evaluateFunctionFull, evaluateProgram, setModuleResolver, setCurrentFileDir, resetMemo } from "./evaluator.ts";
+import { parse, extractDirectives, extractFileDirectives, parseTypeValueExpr } from "@nudojs/parser";
+import { evaluateFunction, evaluateFunctionFull, evaluateProgram, setModuleResolver, setCurrentFileDir, resetMemo, setEnvModules, resetEnvModules, setMockModules, resetMockModules, setCurrentSource } from "./evaluator.ts";
+import { loadEnvs } from "./env-loader.ts";
+import { findProjectConfig } from "./config.ts";
+import { resolveNpmNudo } from "./resolve-npm.ts";
 
 const program = new Command();
 
@@ -44,6 +47,13 @@ function applyMocks(
 
 function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string } | null {
   const extensions = [".js", ".ts", ".mjs"];
+
+  const nudoPath = resolveNpmNudo(source, fromDir);
+  if (nudoPath) {
+    const src = readFileSync(nudoPath, "utf-8");
+    return { ast: parse(src), filePath: nudoPath };
+  }
+
   const basePath = resolve(fromDir, source);
 
   for (const ext of ["", ...extensions]) {
@@ -116,10 +126,45 @@ function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = 
   }
 
   resetMemo();
+  resetEnvModules();
+  resetMockModules();
   setModuleResolver(resolveModule);
   setCurrentFileDir(dirname(filePath));
+  setCurrentSource(source);
+
+  const fileDirectives = extractFileDirectives(ast);
+  const fileEnvNames = fileDirectives
+    .filter((d) => d.kind === "env")
+    .flatMap((d) => d.envs);
+
+  const projectConfig = findProjectConfig(dirname(filePath));
+  const projectEnvNames = projectConfig?.config.env ?? [];
+  const envNames = [...new Set([...projectEnvNames, ...fileEnvNames])];
 
   const globalEnv = createEnvironment();
+
+  if (envNames.length > 0) {
+    const loaded = loadEnvs(envNames, globalEnv);
+    setEnvModules(loaded.modules);
+  }
+
+  const mocks = new Map<string, { fromPath: string; names?: string[] }>();
+
+  if (projectConfig?.config.mocks) {
+    for (const [source, mockPath] of Object.entries(projectConfig.config.mocks)) {
+      mocks.set(source, { fromPath: resolve(projectConfig.projectDir, mockPath) });
+    }
+  }
+
+  const mockModuleDirectives = fileDirectives.filter((d) => d.kind === "mock-module");
+  for (const d of mockModuleDirectives) {
+    mocks.set(d.source, { fromPath: d.fromPath, names: d.names });
+  }
+
+  if (mocks.size > 0) {
+    setMockModules(mocks);
+  }
+
   evaluateProgram(ast, globalEnv);
 
   const dtsLines: string[] = [];
@@ -219,6 +264,8 @@ function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = 
   }
 
   setModuleResolver(null);
+  resetEnvModules();
+  resetMockModules();
 }
 
 program
@@ -281,7 +328,7 @@ function collectNudoFiles(dir: string): string[] {
       results.push(...collectNudoFiles(fullPath));
     } else if (entry.isFile() && entry.name.endsWith(".js")) {
       const content = readFileSync(fullPath, "utf-8");
-      if (/@nudo:(case|mock|pure|skip|sample|returns)\b/.test(content)) {
+      if (/@nudo:(case|mock|pure|skip|sample|returns|env|mock-module|as|replace)\b/.test(content)) {
         results.push(fullPath);
       }
     }

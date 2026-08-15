@@ -272,6 +272,90 @@ The `Odd` type knows that `odd % 2` is always `1`. Operations without custom rul
 
 ---
 
+## 10. Web Environment — fetch, localStorage, URL
+
+Use `@nudo:env web` to get built-in type definitions for Web APIs. No manual mocking needed for standard browser globals.
+
+```javascript
+/// @nudo:env web
+
+/**
+ * @nudo:case "get user" (1)
+ * @nudo:case "symbolic" (T.number)
+ */
+async function fetchUser(id) {
+  const res = await fetch(`/api/users/${id}`);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return res.json();
+}
+```
+
+**Inferred output:**
+
+Nudo knows `fetch` returns `Promise<Response>`, `res.ok` is `boolean`, `res.status` is `number`, and `res.json()` returns `Promise<unknown>`. The function may throw `Error`.
+
+```javascript
+/// @nudo:env web
+
+/**
+ * @nudo:case "save" ("theme", "dark")
+ */
+function savePreference(key, value) {
+  localStorage.setItem(key, value);
+  return localStorage.getItem(key);
+}
+```
+
+**Inferred output:** `string | null` — Nudo knows `localStorage.getItem` returns `string | null`.
+
+---
+
+## 11. Node.js Environment — fs, path, crypto
+
+Use `@nudo:env node` to get built-in type definitions for Node.js globals and modules.
+
+```javascript
+/// @nudo:env node
+
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+
+/**
+ * @nudo:case "test" (T.string)
+ */
+function loadConfig(dir) {
+  const filePath = join(dir, "config.json");
+  if (!existsSync(filePath)) return null;
+  const content = readFileSync(filePath, "utf-8");
+  return JSON.parse(content);
+}
+```
+
+**Inferred output:**
+
+Nudo infers `unknown | null` — `JSON.parse` returns `unknown`, and the early return produces `null`. It also tracks that `JSON.parse` may throw `SyntaxError`.
+
+```javascript
+/// @nudo:env node
+
+import { createHash } from "node:crypto";
+
+/**
+ * @nudo:case "hash" ("hello world")
+ */
+function hashContent(data) {
+  const hash = createHash("sha256");
+  hash.update(data);
+  return hash.digest("hex");
+}
+```
+
+**Inferred output:** `string | Buffer` — from the `digest` return type.
+
+---
+
 ## Summary of Directives Used
 
 | Directive       | Purpose                                      |
@@ -282,5 +366,7 @@ The `Odd` type knows that `odd % 2` is always `1`. Operations without custom rul
 | `@nudo:skip`    | Skip evaluation; use declared return type    |
 | `@nudo:sample`  | Control loop sampling count                  |
 | `@nudo:returns` | Assert expected return type                  |
+| `@nudo:env`     | Declare runtime environment (web, node, es)  |
+| `@nudo:mock-module` | Replace imported modules with mock files |
 
 For more on type values (`T.number`, `T.object`, etc.) and abstract interpretation, see [Type Values](/docs/concepts/type-values) and [Abstract Interpretation](/docs/concepts/abstract-interpretation).

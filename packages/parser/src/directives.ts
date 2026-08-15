@@ -35,6 +35,33 @@ export type ReturnsDirective = {
   expected: TypeValue;
 };
 
+export type EnvDirective = {
+  kind: "env";
+  envs: string[];
+};
+
+export type MockModuleDirective = {
+  kind: "mock-module";
+  source: string;
+  names?: string[];
+  fromPath: string;
+};
+
+export type AsDirective = {
+  kind: "as";
+  typeExpr: TypeValue;
+};
+
+export type ReplaceDirective = {
+  kind: "replace";
+  targetSource: string;
+  typeExpr: TypeValue;
+};
+
+export type InlineDirective = AsDirective | ReplaceDirective;
+
+export type FileDirective = EnvDirective | MockModuleDirective;
+
 export type Directive = CaseDirective | MockDirective | PureDirective | SkipDirective | SampleDirective | ReturnsDirective;
 
 export type FunctionWithDirectives = {
@@ -306,6 +333,112 @@ export function extractDirectives(ast: Node): FunctionWithDirectives[] {
 
     const name = getFunctionName(stmt);
     results.push({ node: stmt, name, directives });
+  }
+
+  return results;
+}
+
+const AS_REGEX = /^\s*@nudo:as\s+(.+)/;
+const REPLACE_REGEX = /^\s*@nudo:replace\s+(.+)/;
+
+export function extractInlineDirectives(node: Node): InlineDirective[] {
+  const comments = (node as any).leadingComments as Comment[] | undefined;
+  if (!comments) return [];
+
+  const results: InlineDirective[] = [];
+  for (const comment of comments) {
+    if (comment.type !== "CommentLine") continue;
+    const text = comment.value;
+
+    const asMatch = text.match(AS_REGEX);
+    if (asMatch) {
+      results.push({ kind: "as", typeExpr: parseTypeValueExpr(asMatch[1].trim()) });
+      continue;
+    }
+
+    const replaceMatch = text.match(REPLACE_REGEX);
+    if (replaceMatch) {
+      const raw = replaceMatch[1].trim();
+      const sepIdx = findReplaceSeparator(raw);
+      if (sepIdx !== -1) {
+        const targetSource = raw.slice(0, sepIdx).trim();
+        const typeExprStr = raw.slice(sepIdx + 1).trim();
+        results.push({
+          kind: "replace",
+          targetSource,
+          typeExpr: parseTypeValueExpr(typeExprStr),
+        });
+      }
+    }
+  }
+  return results;
+}
+
+function findReplaceSeparator(raw: string): number {
+  let depth = 0;
+  let inString: string | null = null;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (inString) {
+      if (ch === inString && raw[i - 1] !== "\\") inString = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { inString = ch; continue; }
+    if (ch === "(" || ch === "[" || ch === "{") { depth++; continue; }
+    if (ch === ")" || ch === "]" || ch === "}") { depth--; continue; }
+    if (ch === " " && depth === 0) {
+      const rest = raw.slice(i + 1).trimStart();
+      if (rest.startsWith("T.") || rest.startsWith("{") || rest.startsWith("[") ||
+          rest.startsWith('"') || rest.startsWith("'") ||
+          /^-?\d/.test(rest) || rest === "true" || rest === "false" ||
+          rest === "null" || rest === "undefined") {
+        return i;
+      }
+    }
+  }
+  return -1;
+}
+
+const ENV_REGEX = /^\/\s*@nudo:env\s+(.+)/;
+const MOCK_MODULE_REGEX = /^\/\s*@nudo:mock-module\s+"([^"]+)"\s+from\s+"([^"]+)"/;
+const MOCK_MODULE_PARTIAL_REGEX = /^\/\s*@nudo:mock-module\s+"([^"]+)"\s*\{([^}]+)\}\s*from\s+"([^"]+)"/;
+
+export function extractFileDirectives(ast: Node): FileDirective[] {
+  const results: FileDirective[] = [];
+  if (ast.type !== "File") return results;
+
+  const comments: readonly Comment[] = (ast as any).comments ?? [];
+  for (const comment of comments) {
+    if (comment.type !== "CommentLine") continue;
+    const text = comment.value;
+
+    const partialMatch = text.match(MOCK_MODULE_PARTIAL_REGEX);
+    if (partialMatch) {
+      const names = partialMatch[2].split(",").map((n) => n.trim()).filter(Boolean);
+      results.push({
+        kind: "mock-module",
+        source: partialMatch[1],
+        names,
+        fromPath: partialMatch[3],
+      });
+      continue;
+    }
+
+    const mockModuleMatch = text.match(MOCK_MODULE_REGEX);
+    if (mockModuleMatch) {
+      results.push({
+        kind: "mock-module",
+        source: mockModuleMatch[1],
+        fromPath: mockModuleMatch[2],
+      });
+      continue;
+    }
+
+    const envMatch = text.match(ENV_REGEX);
+    if (envMatch) {
+      const envs = envMatch[1].split(",").map((e) => e.trim()).filter(Boolean);
+      results.push({ kind: "env", envs });
+    }
   }
 
   return results;

@@ -11,7 +11,7 @@ import {
   isSubtypeOf,
   type Environment,
 } from "@nudojs/core";
-import { parse, extractDirectives, parseTypeValueExpr } from "@nudojs/parser";
+import { parse, extractDirectives, extractFileDirectives, parseTypeValueExpr } from "@nudojs/parser";
 import type { FunctionWithDirectives } from "@nudojs/parser";
 import {
   evaluate,
@@ -25,6 +25,14 @@ import {
   resetUnreachableRanges,
   setNodeTypeCollector,
   setSampleCount,
+  setEnvModules,
+  resetEnvModules,
+  setMockModules,
+  resetMockModules,
+  setCurrentSource,
+  loadEnvs,
+  findProjectConfig,
+  resolveNpmNudo,
 } from "@nudojs/cli/evaluator";
 
 export type SourceLocation = {
@@ -86,6 +94,13 @@ export type CompletionItem = {
 
 function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string } | null {
   const extensions = [".js", ".ts", ".mjs"];
+
+  const nudoPath = resolveNpmNudo(source, fromDir);
+  if (nudoPath) {
+    const src = readFileSync(nudoPath, "utf-8");
+    return { ast: parse(src), filePath: nudoPath };
+  }
+
   const basePath = resolve(fromDir, source);
   for (const ext of ["", ...extensions]) {
     const candidate = basePath + ext;
@@ -159,10 +174,45 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
   resetMemo();
   resetUnreachableRanges();
+  resetEnvModules();
+  resetMockModules();
   setModuleResolver(resolveModule);
   setCurrentFileDir(dirname(filePath));
+  setCurrentSource(source);
+
+  const fileDirectives = extractFileDirectives(ast);
+  const fileEnvNames = fileDirectives
+    .filter((d) => d.kind === "env")
+    .flatMap((d) => d.envs);
+
+  const projectConfig = findProjectConfig(dirname(filePath));
+  const projectEnvNames = projectConfig?.config.env ?? [];
+  const envNames = [...new Set([...projectEnvNames, ...fileEnvNames])];
 
   const globalEnv = createEnvironment();
+
+  if (envNames.length > 0) {
+    const loaded = loadEnvs(envNames, globalEnv);
+    setEnvModules(loaded.modules);
+  }
+
+  const mocks = new Map<string, { fromPath: string; names?: string[] }>();
+
+  if (projectConfig?.config.mocks) {
+    for (const [source, mockPath] of Object.entries(projectConfig.config.mocks)) {
+      mocks.set(source, { fromPath: resolve(projectConfig.projectDir, mockPath) });
+    }
+  }
+
+  const mockModuleDirectives = fileDirectives.filter((d) => d.kind === "mock-module");
+  for (const d of mockModuleDirectives) {
+    mocks.set(d.source, { fromPath: d.fromPath, names: d.names });
+  }
+
+  if (mocks.size > 0) {
+    setMockModules(mocks);
+  }
+
   evaluateProgram(ast, globalEnv);
 
   const unreachableRanges = getUnreachableRanges();
@@ -304,6 +354,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   buildNodeTypeMap(ast, globalEnv, nodeTypeMap);
 
   setModuleResolver(null);
+  resetEnvModules();
+  resetMockModules();
 
   return {
     functions: functionResults,
@@ -404,10 +456,23 @@ export function getTypeAtPosition(
 ): TypeValue | null {
   const ast = parse(source);
   resetMemo();
+  resetEnvModules();
   setModuleResolver(resolveModule);
   setCurrentFileDir(dirname(filePath));
+  setCurrentSource(source);
+
+  const fileDirectives = extractFileDirectives(ast);
+  const envNames = fileDirectives
+    .filter((d) => d.kind === "env")
+    .flatMap((d) => d.envs);
 
   const globalEnv = createEnvironment();
+
+  if (envNames.length > 0) {
+    const loaded = loadEnvs(envNames, globalEnv);
+    setEnvModules(loaded.modules);
+  }
+
   evaluateProgram(ast, globalEnv);
 
   const nodeTypeMap = new Map<Node, TypeValue>();
@@ -434,6 +499,8 @@ export function getTypeAtPosition(
   }
 
   setModuleResolver(null);
+  resetEnvModules();
+  resetMockModules();
   return findBestTypeAtPosition(nodeTypeMap, globalEnv, ast, line, column);
 }
 

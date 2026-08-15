@@ -272,9 +272,93 @@ function checkOdd(x) {
 
 ---
 
+## 10. Web 环境 — fetch、localStorage、URL
+
+使用 `@nudo:env web` 获取 Web API 的内置类型定义。标准浏览器全局对象无需手动 mock。
+
+```javascript
+/// @nudo:env web
+
+/**
+ * @nudo:case "get user" (1)
+ * @nudo:case "symbolic" (T.number)
+ */
+async function fetchUser(id) {
+  const res = await fetch(`/api/users/${id}`);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return res.json();
+}
+```
+
+**推断输出：**
+
+Nudo 知道 `fetch` 返回 `Promise<Response>`，`res.ok` 是 `boolean`，`res.status` 是 `number`，`res.json()` 返回 `Promise<unknown>`。函数可能抛出 `Error`。
+
+```javascript
+/// @nudo:env web
+
+/**
+ * @nudo:case "save" ("theme", "dark")
+ */
+function savePreference(key, value) {
+  localStorage.setItem(key, value);
+  return localStorage.getItem(key);
+}
+```
+
+**推断输出：** `string | null` — Nudo 知道 `localStorage.getItem` 返回 `string | null`。
+
+---
+
+## 11. Node.js 环境 — fs、path、crypto
+
+使用 `@nudo:env node` 获取 Node.js 全局对象和模块的内置类型定义。
+
+```javascript
+/// @nudo:env node
+
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+
+/**
+ * @nudo:case "test" (T.string)
+ */
+function loadConfig(dir) {
+  const filePath = join(dir, "config.json");
+  if (!existsSync(filePath)) return null;
+  const content = readFileSync(filePath, "utf-8");
+  return JSON.parse(content);
+}
+```
+
+**推断输出：**
+
+Nudo 推断为 `unknown | null` — `JSON.parse` 返回 `unknown`，提前返回产生 `null`。同时追踪到 `JSON.parse` 可能抛出 `SyntaxError`。
+
+```javascript
+/// @nudo:env node
+
+import { createHash } from "node:crypto";
+
+/**
+ * @nudo:case "hash" ("hello world")
+ */
+function hashContent(data) {
+  const hash = createHash("sha256");
+  hash.update(data);
+  return hash.digest("hex");
+}
+```
+
+**推断输出：** `string | Buffer` — 来自 `digest` 的返回类型。
+
+---
+
 ## 所用指令小结
 
-| Directive       | Purpose                                      |
+| 指令            | 用途                                         |
 |-----------------|----------------------------------------------|
 | `@nudo:case`    | 提供具体或符号化的输入样本                   |
 | `@nudo:mock`    | 用类型值 mock 替换全局对象/模块              |
@@ -282,5 +366,7 @@ function checkOdd(x) {
 | `@nudo:skip`    | 跳过求值；使用声明的返回类型                 |
 | `@nudo:sample`  | 控制循环采样次数                             |
 | `@nudo:returns` | 断言期望的返回类型                           |
+| `@nudo:env`     | 声明运行时环境（web、node、es）              |
+| `@nudo:mock-module` | 替换导入的模块为 mock 文件              |
 
 关于类型值（`T.number`、`T.object` 等）和抽象解释的更多内容，请参阅 [Type Values](/docs/concepts/type-values) 和 [Abstract Interpretation](/docs/concepts/abstract-interpretation)。
