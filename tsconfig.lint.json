@@ -9,6 +9,7 @@
       "@nudojs/parser": ["packages/parser/src"],
       "@nudojs/parser/*": ["packages/parser/src/*"],
       "@nudojs/cli": ["packages/cli/src"],
+      "@nudojs/cli/evaluator": ["packages/cli/src/evaluator-api.ts"],
       "@nudojs/cli/*": ["packages/cli/src/*"],
       "@nudojs/service": ["packages/service/src"],
       "@nudojs/service/*": ["packages/service/src/*"],

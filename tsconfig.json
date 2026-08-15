@@ -6,6 +6,7 @@
       "@nudojs/core": ["packages/core/src"],
       "@nudojs/parser": ["packages/parser/src"],
       "@nudojs/cli": ["packages/cli/src"],
+      "@nudojs/cli/evaluator": ["packages/cli/src/evaluator-api.ts"],
       "@nudojs/service": ["packages/service/src"]
     }
   },

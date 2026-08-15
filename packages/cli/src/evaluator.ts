@@ -43,7 +43,8 @@ import { REFLECT_METHODS } from "./builtins/builtin-reflect.ts";
 import { INTL_DATETIMEFORMAT_METHODS, INTL_NUMBERFORMAT_METHODS, createDateTimeFormatType, createNumberFormatType } from "./builtins/builtin-intl.ts";
 
 // Built-in JavaScript API type mappings
-const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue>> = {
+// Namespace objects (e.g. Math.floor) and direct global values (e.g. parseInt)
+const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue> | TypeValue> = {
   Date: {
     now: T.number,
     parse: T.number,
