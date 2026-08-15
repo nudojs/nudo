@@ -303,6 +303,7 @@ export type UnknownRecord = {
   receiverType?: TypeValue;
   loc?: { line: number; column: number };
   reason?: string;
+  origin?: { line: number; column: number };
 };
 
 let _unknownCollector: ((record: UnknownRecord) => void) | null = null;
@@ -311,10 +312,48 @@ export function setUnknownCollector(collector: ((record: UnknownRecord) => void)
   _unknownCollector = collector;
 }
 
+// --- Provenance side table ---
+// Maps an argument TypeValue (annotated at its call-site expression in
+// evaluateArgs) back to the source location of the expression that produced it.
+// The same object references flow into parameter bindings, so recordUnknown can
+// reverse-lookup where a receiver value originated from. Disabled by default;
+// zero overhead when off.
+
+const _originMap = new WeakMap<TypeValue, { line: number; column: number }>();
+let _provenanceEnabled = false;
+
+export function setProvenanceTracking(enabled: boolean): void {
+  _provenanceEnabled = enabled;
+}
+
+function extractOrigin(
+  tv: TypeValue | undefined,
+): { line: number; column: number } | undefined {
+  if (!_provenanceEnabled || !tv) return undefined;
+  const direct = _originMap.get(tv);
+  if (direct) return direct;
+  if (tv.kind === "union") {
+    for (const member of tv.members) {
+      const found = _originMap.get(member);
+      if (found) return found;
+    }
+  } else if (tv.kind === "object") {
+    for (const propVal of Object.values(tv.properties)) {
+      const found = _originMap.get(propVal);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
 function recordUnknown(r: Omit<UnknownRecord, "loc"> & { loc?: Node["loc"] }): void {
   if (!_unknownCollector) return;
+  const origin = r.kind === "method" || r.kind === "property"
+    ? extractOrigin(r.receiverType)
+    : undefined;
   _unknownCollector({
     ...r,
+    origin,
     loc: r.loc ? { line: r.loc.start.line, column: r.loc.start.column } : undefined,
   });
 }
@@ -1422,6 +1461,9 @@ function evaluateArgs(args: Node[], env: Environment): TypeValue[] | ReturnSigna
     }
     const v = evaluate(arg, env);
     if (isReturn(v) || isBranch(v) || isThrow(v)) return v;
+    if (_provenanceEnabled && arg.loc) {
+      _originMap.set(v, { line: arg.loc.start.line, column: arg.loc.start.column });
+    }
     result.push(v);
   }
   return result;

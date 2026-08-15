@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { resolve } from "node:path";
+import { join } from "node:path";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { T, typeValueToString } from "@nudojs/core";
-import { analyzeFile, getTypeAtPosition, getCompletionsAtPosition } from "../analyzer.ts";
+import { analyzeFile, getTypeAtPosition, getCompletionsAtPosition, buildModuleGraph, computeDirtySet, topoSortDirty } from "../analyzer.ts";
 
 const FIXTURE_PATH = resolve(import.meta.dirname, "fixtures", "sample.js");
 
@@ -233,6 +236,36 @@ function lonely(u) {
     expect(diag!.message).toContain("toUpperCase");
     expect(result.diagnostics.some((d) => d.code === "nudo:no-method" && d.message.includes("toUpperCase"))).toBe(false);
   });
+
+  it("attaches callsite argument provenance to no-method diagnostics", () => {
+    const source = `
+function badNum(n) {
+  return n.toUpperCase();
+}
+
+const boom = badNum(42);
+`;
+    const result = analyzeFile("/test/badnum.js", source);
+    const diag = result.diagnostics.find((d) => d.code === "nudo:no-method");
+    expect(diag).toBeDefined();
+    expect(diag!.origin).toBeDefined();
+    expect(diag!.origin!.line).toBe(6);
+    expect(diag!.origin!.column).toBeGreaterThanOrEqual(0);
+    expect(diag!.origin!.column).toBeLessThan(30);
+  });
+
+  it("omits provenance for unknown receivers without callsite origin", () => {
+    const source = `
+function lonely(u) {
+  return u.toUpperCase();
+}
+`;
+    const result = analyzeFile("/test/lonely-origin.js", source);
+    const diag = result.diagnostics.find((d) => d.code === "nudo:unknown-recv");
+    expect(diag).toBeDefined();
+    expect(diag!.origin).toBeUndefined();
+    expect(diag!.message).toBe("Cannot resolve 'toUpperCase' on unknown value");
+  });
 });
 
 describe("getTypeAtPosition", () => {
@@ -276,5 +309,74 @@ describe("getCompletionsAtPosition", () => {
     expect(names).toContain("filter");
     expect(names).toContain("reduce");
     expect(names).toContain("length");
+  });
+});
+
+describe("buildModuleGraph / computeDirtySet / topoSortDirty", () => {
+  const tmpWrite = (dir: string, name: string, content: string) => {
+    const path = resolve(dir, name);
+    writeFileSync(path, content);
+    return path;
+  };
+
+  it("builds imports/dependents edges and propagates dirt to transitive dependents", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-"));
+    try {
+      const a = tmpWrite(dir, "a.js", `import { b } from "./b.js";\nexport const a = b;\n`);
+      const b = tmpWrite(dir, "b.js", `export const b = 1;\n`);
+      const { imports, dependents } = buildModuleGraph([a, b]);
+      expect(imports.get(a)).toContain(b);
+      expect(dependents.get(b)).toContain(a);
+
+      expect(new Set(computeDirtySet(dependents, b))).toEqual(new Set([b, a]));
+      expect(computeDirtySet(dependents, a)).toEqual([a]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("propagates dirt along a three-file chain", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-"));
+    try {
+      const a = tmpWrite(dir, "a.js", `import { b } from "./b.js";\n`);
+      const b = tmpWrite(dir, "b.js", `import { c } from "./c.js";\n`);
+      const c = tmpWrite(dir, "c.js", `export const c = 1;\n`);
+      const { dependents } = buildModuleGraph([a, b, c]);
+      expect(new Set(computeDirtySet(dependents, c))).toEqual(new Set([c, b, a]));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("handles import cycles without infinite loop", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-"));
+    try {
+      const a = tmpWrite(dir, "a.js", `import { b } from "./b.js";\nexport const a = 1;\n`);
+      const b = tmpWrite(dir, "b.js", `import { a } from "./a.js";\nexport const b = 2;\n`);
+      const { imports, dependents } = buildModuleGraph([a, b]);
+      const dirty = computeDirtySet(dependents, a);
+      expect(new Set(dirty)).toEqual(new Set([a, b]));
+
+      const ordered = topoSortDirty(imports, dirty);
+      expect(new Set(ordered)).toEqual(new Set([a, b]));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("skips bare npm specifiers and orders dirty set dependencies-first", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-"));
+    try {
+      const a = tmpWrite(dir, "a.js", `import _ from "lodash";\nimport { b } from "./b.js";\n`);
+      const b = tmpWrite(dir, "b.js", `export const b = 1;\n`);
+      const { imports, dependents } = buildModuleGraph([a, b]);
+      expect(imports.get(a)).toEqual(new Set([b]));
+
+      const dirty = computeDirtySet(dependents, b);
+      const ordered = topoSortDirty(imports, dirty);
+      expect(ordered.indexOf(b)).toBeLessThan(ordered.indexOf(a));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

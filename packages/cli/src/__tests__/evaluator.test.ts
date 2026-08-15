@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { T, typeValueEquals, typeValueToString, createEnvironment } from "@nudojs/core";
 import { parse, extractDirectives } from "@nudojs/parser";
-import { evaluateFunction, evaluateProgram, evaluateFunctionFull, setUnknownCollector, type UnknownRecord } from "../evaluator.ts";
+import { evaluateFunction, evaluateProgram, evaluateFunctionFull, setUnknownCollector, setProvenanceTracking, type UnknownRecord } from "../evaluator.ts";
 
 function inferFromSource(source: string) {
   const ast = parse(source);
@@ -316,5 +316,51 @@ describe("Evaluator: basic expressions", () => {
     setUnknownCollector(null);
     const result = evaluateFunctionFull(fnNode, [T.number], createEnvironment());
     expect(result.value.kind).toBe("unknown");
+  });
+
+  it("attaches origin pointing at the call-site argument when provenance tracking is enabled", () => {
+    // 42 is on line 5, column 20 (0-based) of this source.
+    const source = `
+function badNum(n) {
+  return n.toUpperCase();
+}
+const boom = badNum(42);
+`;
+    const ast = parse(source);
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    setProvenanceTracking(true);
+    try {
+      evaluateProgram(ast, createEnvironment());
+      const rec = records.find((r) => r.kind === "method" && r.name === "toUpperCase");
+      expect(rec).toBeDefined();
+      expect(rec!.receiverType?.kind).toBe("literal");
+      expect((rec!.receiverType as any).value).toBe(42);
+      expect(rec!.origin).toEqual({ line: 5, column: 20 });
+    } finally {
+      setProvenanceTracking(false);
+      setUnknownCollector(null);
+    }
+  });
+
+  it("emits no origin when provenance tracking is disabled (default)", () => {
+    const source = `
+function badNum(n) {
+  return n.toUpperCase();
+}
+const boom = badNum(42);
+`;
+    const ast = parse(source);
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    setProvenanceTracking(false);
+    try {
+      evaluateProgram(ast, createEnvironment());
+      const rec = records.find((r) => r.kind === "method" && r.name === "toUpperCase");
+      expect(rec).toBeDefined();
+      expect(rec!.origin).toBeUndefined();
+    } finally {
+      setUnknownCollector(null);
+    }
   });
 });

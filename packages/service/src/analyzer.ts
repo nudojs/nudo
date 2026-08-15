@@ -30,6 +30,7 @@ import {
   setCallCollector,
   type CallRecord,
   setUnknownCollector,
+  setProvenanceTracking,
   type UnknownRecord,
   setSampleCount,
   setUnknownBuiltinHandler,
@@ -60,6 +61,8 @@ export type Diagnostic = {
   code?: string;
   suggestions?: string[];
   data?: unknown;
+  /** provenance of the receiver value (callsite argument that flowed into the error) */
+  origin?: { line: number; column: number };
 };
 
 export type CaseResult = {
@@ -145,6 +148,97 @@ function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeo
     }
   }
   return null;
+}
+
+/** Resolve a relative import specifier to an existing file (extension rules identical to CLI resolveModule: ''/'.js'/'.ts'/'.mjs'); null when unresolvable. */
+function resolveImportPath(specifier: string, fromDir: string): string | null {
+  const basePath = resolve(fromDir, specifier);
+  for (const ext of ["", ".js", ".ts", ".mjs"]) {
+    const candidate = basePath + ext;
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+/** Statically extract each file's relative import edges (extension resolution identical to CLI resolveModule: ''/'.js'/'.ts'/'.mjs'; bare npm specifiers skipped). */
+export function buildModuleGraph(files: string[]): {
+  imports: Map<string, Set<string>>;
+  dependents: Map<string, Set<string>>;
+} {
+  const imports = new Map<string, Set<string>>();
+  const dependents = new Map<string, Set<string>>();
+  const edge = (from: string, to: string) => {
+    if (!imports.has(from)) imports.set(from, new Set());
+    if (!dependents.has(to)) dependents.set(to, new Set());
+    imports.get(from)!.add(to);
+    dependents.get(to)!.add(from);
+  };
+  for (const file of files) {
+    if (!imports.has(file)) imports.set(file, new Set());
+    if (!dependents.has(file)) dependents.set(file, new Set());
+    let ast: ReturnType<typeof parse>;
+    try {
+      ast = parse(readFileSync(file, "utf-8"));
+    } catch {
+      continue;
+    }
+    for (const stmt of ast.program.body) {
+      if (stmt.type !== "ImportDeclaration") continue;
+      const specifier = stmt.source.value;
+      if (!specifier.startsWith(".") && !specifier.startsWith("/")) continue;
+      const resolved = resolveImportPath(specifier, dirname(file));
+      if (resolved) edge(file, resolved);
+    }
+  }
+  return { imports, dependents };
+}
+
+/** changed plus its transitive dependents (reverse-edge BFS); cycle-safe via visited. */
+export function computeDirtySet(dependents: Map<string, Set<string>>, changedFile: string): string[] {
+  const dirty: string[] = [];
+  const visited = new Set<string>();
+  const queue = [changedFile];
+  while (queue.length > 0) {
+    const file = queue.shift()!;
+    if (visited.has(file)) continue;
+    visited.add(file);
+    dirty.push(file);
+    for (const dep of dependents.get(file) ?? []) {
+      if (!visited.has(dep)) queue.push(dep);
+    }
+  }
+  return dirty;
+}
+
+/** Topological order with dependencies before dependents (only imports edges internal to dirty; cycles tolerated — remaining files appended in arbitrary order). */
+export function topoSortDirty(imports: Map<string, Set<string>>, dirty: string[]): string[] {
+  const inSet = new Set(dirty);
+  const pending = new Map<string, number>();
+  for (const file of dirty) {
+    let count = 0;
+    for (const dep of imports.get(file) ?? []) {
+      if (inSet.has(dep)) count++;
+    }
+    pending.set(file, count);
+  }
+  const ordered: string[] = [];
+  const ready = dirty.filter((f) => pending.get(f) === 0);
+  while (ready.length > 0) {
+    const file = ready.shift()!;
+    ordered.push(file);
+    for (const other of dirty) {
+      if (pending.get(other) === undefined) continue;
+      if ((imports.get(other) ?? new Set<string>()).has(file)) {
+        const next = pending.get(other)! - 1;
+        pending.set(other, next);
+        if (next === 0) ready.push(other);
+      }
+    }
+  }
+  for (const file of dirty) {
+    if (pending.has(file) && pending.get(file)! > 0) ordered.push(file);
+  }
+  return ordered;
 }
 
 function applyMocks(
@@ -395,6 +489,7 @@ function unknownRecordsToDiagnostics(records: UnknownRecord[]): Diagnostic[] {
         severity: "error",
         message: `${kindLabel} '${r.name}' does not exist on type '${receiverTypeToDisplay(receiver)}'`,
         code: "nudo:no-method",
+        ...(r.origin ? { origin: r.origin } : {}),
       });
     } else {
       out.push({
@@ -402,6 +497,7 @@ function unknownRecordsToDiagnostics(records: UnknownRecord[]): Diagnostic[] {
         severity: "warning",
         message: `Cannot resolve '${r.name}' on unknown value`,
         code: "nudo:unknown-recv",
+        ...(r.origin ? { origin: r.origin } : {}),
       });
     }
   }
@@ -476,6 +572,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
   const unknownRecords: UnknownRecord[] = [];
   setUnknownCollector((r) => unknownRecords.push(r));
+
+  setProvenanceTracking(true);
 
   evaluateProgram(ast, globalEnv);
 
@@ -704,6 +802,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   setUnknownBuiltinHandler(null);
   setCallCollector(null);
   setUnknownCollector(null);
+  setProvenanceTracking(false);
   setModuleResolver(null);
   resetEnvModules();
   resetMockModules();

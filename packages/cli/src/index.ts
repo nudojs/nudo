@@ -12,7 +12,14 @@ import {
 import type { TypeValue } from "@nudojs/core";
 import { parse, extractDirectives, parseTypeValueExpr } from "@nudojs/parser";
 import { evaluateFunctionFull, evaluateProgram, setModuleResolver, setCurrentFileDir, resetMemo } from "./evaluator.ts";
-import { typeValueToZodSchema, generateGuardFunction, analyzeFile } from "@nudojs/service";
+import {
+  typeValueToZodSchema,
+  generateGuardFunction,
+  analyzeFile,
+  buildModuleGraph,
+  computeDirtySet,
+  topoSortDirty,
+} from "@nudojs/service";
 import { resolveNpmNudo } from "./resolve-npm.ts";
 
 const program = new Command();
@@ -216,6 +223,9 @@ function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = 
     for (const d of result.diagnostics) {
       const loc = `${relative(process.cwd(), filePath)}:${d.range.start.line}:${d.range.start.column}`;
       console.log(`  [${d.severity}] ${loc} ${d.message}${d.code ? ` (${d.code})` : ""}`);
+      if (d.origin) {
+        console.log(`    → value originates at ${d.origin.line}:${d.origin.column}`);
+      }
     }
     console.log();
   }
@@ -247,6 +257,7 @@ function runInferJson(file: string): void {
       code: d.code,
       suggestions: d.suggestions,
       tags: d.tags,
+      origin: d.origin,
     })),
   };
 
@@ -281,6 +292,9 @@ function runCheck(file: string): void {
   for (const d of result.diagnostics) {
     const loc = `${relative(process.cwd(), filePath)}:${d.range.start.line}:${d.range.start.column}`;
     console.log(`[${d.severity}] ${loc} ${d.message}${d.code ? ` (${d.code})` : ""}`);
+    if (d.origin) {
+      console.log(`    → value originates at ${d.origin.line}:${d.origin.column}`);
+    }
   }
 
   if (result.diagnostics.some((d) => d.severity === "error")) {
@@ -310,6 +324,8 @@ program
       return collectNudoFiles(resolved);
     };
 
+    let graph = buildModuleGraph(getFiles());
+
     const runAll = () => {
       console.clear();
       console.log(`[${new Date().toLocaleTimeString()}] Analyzing...\n`);
@@ -320,7 +336,43 @@ program
           console.error(`Error analyzing ${relative(process.cwd(), f)}:`, (err as Error).message);
         }
       }
+      graph = buildModuleGraph(getFiles());
       console.log(`[${new Date().toLocaleTimeString()}] Watching for changes...`);
+    };
+
+    const runIncremental = (changedFiles: string[]) => {
+      const files = getFiles();
+      const tracked = new Set(files);
+
+      // 合并多文件变更的脏集（union）：每个变更文件的脏集 = 自身 + 传递依赖方
+      const dirtyUnion = new Set<string>();
+      for (const cf of changedFiles) {
+        for (const d of computeDirtySet(graph.dependents, cf)) dirtyUnion.add(d);
+      }
+      const dirty = [...dirtyUnion].filter((f) => tracked.has(f));
+      if (dirty.length === 0) return;
+
+      // 依赖先析：moduleCache 中未重析依赖的类型可被复用
+      const ordered = topoSortDirty(graph.imports, dirty);
+
+      console.clear();
+      console.log(`[${new Date().toLocaleTimeString()}] Analyzing (incremental)...\n`);
+      const t0 = performance.now();
+      // 缓存失效：callMemo 按名键陈旧 + moduleCache 嵌入旧类型
+      resetMemo();
+      for (const f of ordered) {
+        try {
+          runInfer(f, { dts: opts.dts, showLoc: true });
+        } catch (err) {
+          console.error(`Error analyzing ${relative(process.cwd(), f)}:`, (err as Error).message);
+        }
+      }
+      const elapsed = Math.round(performance.now() - t0);
+      console.log(`Incremental: re-analyzed ${ordered.length}, skipped ${files.length - ordered.length} (${elapsed}ms)`);
+      console.log(`[${new Date().toLocaleTimeString()}] Watching for changes...`);
+
+      // 重建全图：文件数少时开销可忽略，选简单路线
+      graph = buildModuleGraph(getFiles());
     };
 
     runAll();
@@ -328,13 +380,22 @@ program
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const watchTarget = isDir ? resolved : dirname(resolved);
 
+    const pendingChanged = new Set<string>();
+
     watch(watchTarget, { recursive: isDir }, (_event, filename) => {
       if (!filename) return;
       const fullPath = isDir ? join(watchTarget, filename) : resolved;
       if (!fullPath.endsWith(".js")) return;
+      if (!existsSync(fullPath)) return; // deleted
+
+      pendingChanged.add(fullPath);
 
       if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(runAll, 200);
+      debounceTimer = setTimeout(() => {
+        const changedFiles = [...pendingChanged];
+        pendingChanged.clear();
+        runIncremental(changedFiles);
+      }, 200);
     });
   });
 

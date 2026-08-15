@@ -12,6 +12,7 @@ export {
   setCallCollector,
   type CallRecord,
   setUnknownCollector,
+  setProvenanceTracking,
   type UnknownRecord,
   setSampleCount,
   setMaxConcreteIter,
