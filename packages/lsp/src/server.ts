@@ -5,9 +5,6 @@ import {
   TextDocumentSyncKind,
   type InitializeParams,
   type InitializeResult,
-  type Diagnostic as LspDiagnostic,
-  DiagnosticSeverity,
-  DiagnosticTag,
   type CompletionItem as LspCompletionItem,
   CompletionItemKind,
   MarkupKind,
@@ -19,15 +16,21 @@ import {
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { typeValueToString } from "@nudojs/core";
 import {
-  analyzeFile,
   getTypeAtPosition,
   getCompletionsAtPosition,
   getCasesForFile,
-  type DiagnosticSeverity as JsDiagSeverity,
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
 import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "./symbols.ts";
 import { TOKEN_TYPES, TOKEN_MODIFIERS } from "./semantic-tokens.ts";
+import {
+  analysisCache,
+  getCachedOrAnalyze,
+  hasNudoDirectives,
+  uriToFilePath,
+  validateText,
+  type ValidateTextDeps,
+} from "./validation.ts";
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
@@ -41,12 +44,6 @@ function getActiveCasesForUri(uri: string): Map<string, number> {
   activeCases.set(uri, map);
   return map;
 }
-
-const severityMap: Record<JsDiagSeverity, DiagnosticSeverity> = {
-  error: DiagnosticSeverity.Error,
-  warning: DiagnosticSeverity.Warning,
-  info: DiagnosticSeverity.Information,
-};
 
 connection.onInitialize((_params: InitializeParams): InitializeResult => ({
   capabilities: {
@@ -91,7 +88,7 @@ documents.onDidChangeContent((change) => {
     uri,
     setTimeout(() => {
       debounceTimers.delete(uri);
-      validateDocument(change.document);
+      validateDocument(change.document, true).catch(() => {});
     }, 300),
   );
 });
@@ -101,53 +98,29 @@ documents.onDidClose((event) => {
   if (timer) clearTimeout(timer);
   debounceTimers.delete(event.document.uri);
   nudoFileCache.delete(event.document.uri);
+  analysisCache.delete(uriToFilePath(event.document.uri));
   connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
 });
 
-function validateDocument(document: TextDocument): void {
-  const uri = document.uri;
-  if (!isNudoFile(uri)) {
-    connection.sendDiagnostics({ uri, diagnostics: [] });
-    return;
-  }
+function validationDeps(): ValidateTextDeps {
+  return {
+    sendDiagnostics: (params) => connection.sendDiagnostics(params),
+    isNudoUri: (uri) => isNudoFile(uri),
+    getActiveCases: (uri) => getActiveCasesForUri(uri),
+    getOpenDocumentByPath: (filePath) =>
+      documents.all().find((doc) => uriToFilePath(doc.uri) === filePath),
+  };
+}
 
-  const filePath = uriToFilePath(uri);
-  const source = document.getText();
-  const cases = getActiveCasesForUri(uri);
-
-  try {
-    const result = analyzeFile(filePath, source, cases);
-    const diagnostics: LspDiagnostic[] = result.diagnostics.map((d) => {
-      const diag: LspDiagnostic = {
-        severity: severityMap[d.severity],
-        range: {
-          start: { line: d.range.start.line - 1, character: d.range.start.column },
-          end: { line: d.range.end.line - 1, character: d.range.end.column },
-        },
-        message: d.message,
-        source: "nudo",
-        code: d.code,
-        data: { ...(d.data as object || {}), suggestions: d.suggestions },
-      };
-      if (d.tags?.includes("unnecessary")) {
-        diag.tags = [DiagnosticTag.Unnecessary];
-      }
-      return diag;
-    });
-    connection.sendDiagnostics({ uri, diagnostics });
-  } catch (err) {
-    connection.sendDiagnostics({
-      uri,
-      diagnostics: [
-        {
-          severity: DiagnosticSeverity.Error,
-          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-          message: `Analysis error: ${(err as Error).message}`,
-          source: "nudo",
-        },
-      ],
-    });
-  }
+function validateDocument(document: TextDocument, propagate = false): Promise<void> {
+  return validateText(
+    uriToFilePath(document.uri),
+    document.uri,
+    document.getText(),
+    document.version,
+    validationDeps(),
+    propagate,
+  );
 }
 
 connection.onHover((params) => {
@@ -253,7 +226,7 @@ connection.languages.inlayHint.on((params) => {
   const lines = source.split("\n");
 
   try {
-    const result = analyzeFile(filePath, source, cases);
+    const result = getCachedOrAnalyze(filePath, source, document.version, cases);
     const hints: InlayHint[] = [];
 
     for (const hint of result.caseHints) {
@@ -499,13 +472,13 @@ connection.languages.semanticTokens.on((params) => {
   return { data: [] };
 });
 
-connection.onRequest("nudo/selectCase", (params: { uri: string; functionName: string; caseIndex: number }) => {
+connection.onRequest("nudo/selectCase", async (params: { uri: string; functionName: string; caseIndex: number }) => {
   const cases = getActiveCasesForUri(params.uri);
   cases.set(params.functionName, params.caseIndex);
 
   const document = documents.get(params.uri);
   if (document) {
-    validateDocument(document);
+    await validateDocument(document);
   }
 
   connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {});
@@ -533,14 +506,6 @@ function isNudoFile(uri: string): boolean {
   const result = hasNudoDirectives(doc.getText());
   nudoFileCache.set(uri, result);
   return result;
-}
-
-function hasNudoDirectives(source: string): boolean {
-  return /@nudo:(case|mock|pure|skip|sample|returns|env|mock-module|as|replace)\b/.test(source);
-}
-
-function uriToFilePath(uri: string): string {
-  return uri.startsWith("file://") ? decodeURIComponent(uri.slice(7)) : uri;
 }
 
 documents.listen(connection);

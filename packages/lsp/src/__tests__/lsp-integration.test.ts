@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import {
   analyzeFile,
   getTypeAtPosition,
@@ -11,6 +14,15 @@ import {
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
 import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "../symbols.ts";
+import {
+  analysisCache,
+  clearValidationState,
+  getCachedOrAnalyze,
+  hasNudoDirectives,
+  knownFiles,
+  validateText,
+  type ValidateTextDeps,
+} from "../validation.ts";
 
 const filePath = "/test/lsp-integration.js";
 const testCode = `
@@ -129,6 +141,120 @@ function foo(x) {
       expect(greetingCases!.cases.length).toBe(2);
       expect(greetingCases!.cases[0].name).toBe("admin");
       expect(greetingCases!.cases[1].name).toBe("user");
+    });
+  });
+
+  describe("validation core (validateText / analysis cache / dirty propagation)", () => {
+    it("getCachedOrAnalyze reuses the cached result for the same document version", () => {
+      clearValidationState();
+      const src = `function badNum(n) { return n.toUpperCase(); }\nconst boom = badNum(42);\n`;
+
+      const first = getCachedOrAnalyze("/test/cache.js", src, 1);
+      const second = getCachedOrAnalyze("/test/cache.js", src, 1);
+      expect(second).toBe(first); // identical reference → no re-analysis on cache hit
+
+      const bumped = getCachedOrAnalyze("/test/cache.js", src, 2);
+      expect(bumped).not.toBe(first); // version change → re-evaluated
+      expect(bumped.diagnostics.some((d) => d.code === "nudo:no-method")).toBe(true);
+    });
+
+    it("validateText maps origin provenance to relatedInformation at the argument literal", async () => {
+      clearValidationState();
+      const src = [
+        "function badNum(n) {",
+        "  return n.toUpperCase();",
+        "}",
+        "const boom = badNum(42);",
+        "",
+      ].join("\n");
+
+      const sent = new Map<string, any[]>();
+      await validateText("/test/origin.js", "file:///test/origin.js", src, 1, {
+        sendDiagnostics: (p) => sent.set(p.uri, p.diagnostics),
+      });
+
+      expect([...sent.keys()]).toEqual(["file:///test/origin.js"]);
+      const noMethod = sent.get("file:///test/origin.js")!.find((d) => d.code === "nudo:no-method");
+      expect(noMethod).toBeDefined();
+      expect(noMethod.relatedInformation).toHaveLength(1);
+      const related = noMethod.relatedInformation[0];
+      expect(related.message).toBe("value originates here");
+      expect(related.location.uri).toBe("file:///test/origin.js");
+      expect(related.location.range.start.line).toBe(3); // 1-based line 4 → 0-based
+      const col = related.location.range.start.character;
+      expect(col).toBeGreaterThanOrEqual(18); // points at the 42 literal
+      expect(col).toBeLessThanOrEqual(22);
+
+      // async validation refreshes the analysis cache for subsequent handlers
+      expect(analysisCache.get("/test/origin.js")?.version).toBe(1);
+      expect(knownFiles.has("/test/origin.js")).toBe(true);
+    });
+
+    it("revalidates open dependents when an imported module changes", async () => {
+      clearValidationState();
+      const dir = mkdtempSync(join(tmpdir(), "nudo-lsp-prop-"));
+      try {
+        const bPath = resolve(dir, "b.js");
+        const aPath = resolve(dir, "a.js");
+        const uriOf = (p: string) => `file://${p}`;
+        // a.js: calls the imported g(42) from inside a function (top-level call makes it evaluate)
+        const aSrc = [
+          'import { g } from "./b.js";',
+          '// @nudo:case "smoke" (1)',
+          "function tiny(v) { return v; }",
+          "function useG() { return g(42); }",
+          "useG();",
+          "",
+        ].join("\n");
+        const bV1 = '// @nudo:case "s" ("hi")\nexport function g(x) { return x; }\n';
+        const bV2 = '// @nudo:case "s" ("hi")\nexport function g(x) { return x.toUpperCase(); }\n';
+        writeFileSync(bPath, bV1);
+        writeFileSync(aPath, aSrc);
+
+        let bText = bV1;
+        let bVersion = 1;
+        const openDocs = new Map<string, { uri: string; version: number; getText(): string }>([
+          [aPath, { uri: uriOf(aPath), version: 1, getText: () => aSrc }],
+          [bPath, { uri: uriOf(bPath), version: bVersion, getText: () => bText }],
+        ]);
+        const sent = new Map<string, any[]>();
+        const deps: ValidateTextDeps = {
+          sendDiagnostics: (p) => sent.set(p.uri, p.diagnostics),
+          isNudoUri: (uri) => {
+            const doc = [...openDocs.values()].find((d) => d.uri === uri);
+            return doc ? hasNudoDirectives(doc.getText()) : false;
+          },
+          getActiveCases: () => new Map(),
+          getOpenDocumentByPath: (p) => openDocs.get(p),
+        };
+
+        // initial validation: b v1 is safe, a must have no no-method diagnostic
+        await validateText(aPath, uriOf(aPath), aSrc, 1, deps, true);
+        const initial = sent.get(uriOf(aPath)) ?? [];
+        expect(initial.some((d) => d.code === "nudo:no-method")).toBe(false);
+
+        // b changes (buffer + disk, so a's import resolution sees the new body)
+        bText = bV2;
+        bVersion = 2;
+        writeFileSync(bPath, bV2);
+        await validateText(bPath, uriOf(bPath), bText, bVersion, deps, true);
+
+        // a was revalidated via dirty propagation and now flags g(42)
+        const refreshed = sent.get(uriOf(aPath)) ?? [];
+        const noMethod = refreshed.find((d) => d.code === "nudo:no-method");
+        expect(noMethod).toBeDefined();
+        expect(noMethod.message).toContain("toUpperCase");
+        expect(noMethod.relatedInformation).toHaveLength(1);
+        expect(noMethod.relatedInformation[0].location.uri).toBe(uriOf(aPath));
+        expect(noMethod.relatedInformation[0].location.range.start.line).toBe(3); // `function useG() { return g(42); }`
+
+        // propagation registered both files and refreshed a's cached result
+        expect(knownFiles.has(aPath)).toBe(true);
+        expect(knownFiles.has(bPath)).toBe(true);
+        expect(analysisCache.get(aPath)?.result.diagnostics.some((d) => d.code === "nudo:no-method")).toBe(true);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
   });
 });
