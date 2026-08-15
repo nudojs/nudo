@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { T, typeValueEquals, typeValueToString, createEnvironment } from "@nudojs/core";
 import { parse, extractDirectives } from "@nudojs/parser";
-import { evaluateFunction, evaluateProgram } from "../evaluator.ts";
+import { evaluateFunction, evaluateProgram, evaluateFunctionFull, setUnknownCollector, type UnknownRecord } from "../evaluator.ts";
 
 function inferFromSource(source: string) {
   const ast = parse(source);
@@ -239,5 +239,82 @@ describe("Evaluator: basic expressions", () => {
     const env = createEnvironment();
     const result = evaluateProgram(ast, env);
     expect(typeValueEquals(result, T.literal("hello"))).toBe(true);
+  });
+
+  it("collects method dispatch failure on number receiver via setUnknownCollector", () => {
+    const ast = parse("function f(n) { return n.toUpperCase(); }");
+    const fnNode = (ast.program.body as any[]).find((s) => s.type === "FunctionDeclaration");
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    try {
+      const result = evaluateFunctionFull(fnNode, [T.number], createEnvironment());
+      // Evaluation behavior unchanged: still degrades to unknown
+      expect(result.value.kind).toBe("unknown");
+      const methodRecords = records.filter((r) => r.kind === "method");
+      expect(methodRecords.length).toBeGreaterThanOrEqual(1);
+      const rec = methodRecords.find((r) => r.name === "toUpperCase");
+      expect(rec).toBeDefined();
+      expect(rec!.receiverType?.kind).toBe("primitive");
+      expect((rec!.receiverType as any).type).toBe("number");
+      expect(rec!.reason).toBe("no method 'toUpperCase' on primitive");
+      expect(rec!.loc).toBeDefined();
+      expect(typeof rec!.loc!.line).toBe("number");
+      expect(typeof rec!.loc!.column).toBe("number");
+    } finally {
+      setUnknownCollector(null);
+    }
+  });
+
+  it("collects method dispatch failure even when receiver is unknown", () => {
+    const ast = parse("function f(n) { return n.toUpperCase(); }");
+    const fnNode = (ast.program.body as any[]).find((s) => s.type === "FunctionDeclaration");
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    try {
+      const result = evaluateFunctionFull(fnNode, [T.unknown], createEnvironment());
+      expect(result.value.kind).toBe("unknown");
+      const rec = records.find((r) => r.kind === "method" && r.name === "toUpperCase");
+      expect(rec).toBeDefined();
+      expect(rec!.receiverType?.kind).toBe("unknown");
+    } finally {
+      setUnknownCollector(null);
+    }
+  });
+
+  it("does not record method failures for valid string methods", () => {
+    const ast = parse('function g(s) { return s.toUpperCase(); }');
+    const fnNode = (ast.program.body as any[]).find((s) => s.type === "FunctionDeclaration");
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    try {
+      const result = evaluateFunctionFull(fnNode, [T.string], createEnvironment());
+      expect(typeValueEquals(result.value, T.string)).toBe(true);
+      expect(records.filter((r) => r.name === "toUpperCase")).toHaveLength(0);
+    } finally {
+      setUnknownCollector(null);
+    }
+  });
+
+  it("collects unknown global identifiers as kind 'global'", () => {
+    const ast = parse("function h() { return Foo(); }");
+    const fnNode = (ast.program.body as any[]).find((s) => s.type === "FunctionDeclaration");
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    try {
+      evaluateFunctionFull(fnNode, [], createEnvironment());
+      const rec = records.find((r) => r.kind === "global" && r.name === "Foo");
+      expect(rec).toBeDefined();
+      expect(rec!.reason).toBe("unknown global identifier 'Foo'");
+    } finally {
+      setUnknownCollector(null);
+    }
+  });
+
+  it("behaves identically without a collector installed (regression)", () => {
+    const ast = parse("function f(n) { return n.toUpperCase(); }");
+    const fnNode = (ast.program.body as any[]).find((s) => s.type === "FunctionDeclaration");
+    setUnknownCollector(null);
+    const result = evaluateFunctionFull(fnNode, [T.number], createEnvironment());
+    expect(result.value.kind).toBe("unknown");
   });
 });

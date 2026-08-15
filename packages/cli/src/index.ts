@@ -210,6 +210,15 @@ function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = 
     writeFileSync(dtsPath, dtsContent, "utf-8");
     console.log(`Generated: ${relative(process.cwd(), dtsPath)}`);
   }
+
+  if (result.diagnostics.length > 0) {
+    console.log("Diagnostics:\n");
+    for (const d of result.diagnostics) {
+      const loc = `${relative(process.cwd(), filePath)}:${d.range.start.line}:${d.range.start.column}`;
+      console.log(`  [${d.severity}] ${loc} ${d.message}${d.code ? ` (${d.code})` : ""}`);
+    }
+    console.log();
+  }
 }
 
 function runInferJson(file: string): void {
@@ -257,6 +266,34 @@ program
     } else {
       runInfer(file, { dts: opts.dts, showLoc: opts.loc });
     }
+  });
+
+function runCheck(file: string): void {
+  const filePath = resolve(file);
+  const source = readFileSync(filePath, "utf-8");
+  const result = analyzeFile(filePath, source);
+
+  if (result.diagnostics.length === 0) {
+    console.log("No issues found.");
+    return;
+  }
+
+  for (const d of result.diagnostics) {
+    const loc = `${relative(process.cwd(), filePath)}:${d.range.start.line}:${d.range.start.column}`;
+    console.log(`[${d.severity}] ${loc} ${d.message}${d.code ? ` (${d.code})` : ""}`);
+  }
+
+  if (result.diagnostics.some((d) => d.severity === "error")) {
+    process.exitCode = 1;
+  }
+}
+
+program
+  .command("check")
+  .description("Check a JS file for type errors — exits with code 1 when errors are found")
+  .argument("<file>", "Path to the JS file")
+  .action((file: string) => {
+    runCheck(file);
   });
 
 program

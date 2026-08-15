@@ -297,6 +297,28 @@ function recordCall(
   });
 }
 
+export type UnknownRecord = {
+  kind: "method" | "property" | "global";
+  name: string;
+  receiverType?: TypeValue;
+  loc?: { line: number; column: number };
+  reason?: string;
+};
+
+let _unknownCollector: ((record: UnknownRecord) => void) | null = null;
+
+export function setUnknownCollector(collector: ((record: UnknownRecord) => void) | null): void {
+  _unknownCollector = collector;
+}
+
+function recordUnknown(r: Omit<UnknownRecord, "loc"> & { loc?: Node["loc"] }): void {
+  if (!_unknownCollector) return;
+  _unknownCollector({
+    ...r,
+    loc: r.loc ? { line: r.loc.start.line, column: r.loc.start.column } : undefined,
+  });
+}
+
 function distributeOverUnion(
   tv: TypeValue,
   fn: (member: TypeValue) => TypeValue,
@@ -479,6 +501,12 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         if (_onUnknownBuiltin) {
           _onUnknownBuiltin(node.name, node.loc as any);
         }
+        recordUnknown({
+          kind: "global",
+          name: node.name,
+          loc: node.loc,
+          reason: `unknown global identifier '${node.name}'`,
+        });
       }
       return env.lookup(node.name);
     }
@@ -991,7 +1019,8 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       if (node.computed) {
         const propVal = evaluate(node.property, env);
         if (isReturn(propVal) || isBranch(propVal) || isThrow(propVal)) return propVal;
-        return distributeOverUnion(objVal, (obj) => {
+        let propMissed = false;
+        const result = distributeOverUnion(objVal, (obj) => {
           if (obj.kind === "object" && propVal.kind === "literal" && typeof propVal.value === "string") {
             return obj.properties[propVal.value] ?? T.undefined;
           }
@@ -999,13 +1028,27 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             if (obj.kind === "tuple") return obj.elements[propVal.value] ?? T.undefined;
             return obj.element;
           }
+          if (propVal.kind === "literal" && typeof propVal.value === "string") {
+            propMissed = true;
+          }
           return T.unknown;
         });
+        if (propMissed && propVal.kind === "literal" && typeof propVal.value === "string") {
+          recordUnknown({
+            kind: "property",
+            name: propVal.value,
+            receiverType: objVal,
+            loc: node.loc,
+            reason: `no property '${propVal.value}' on ${objVal.kind}`,
+          });
+        }
+        return result;
       }
 
       if (node.property.type === "Identifier") {
         const propName = node.property.name;
-        return distributeOverUnion(objVal, (obj) => {
+        let propMissed = false;
+        const result = distributeOverUnion(objVal, (obj) => {
           // Check for built-in static methods (e.g., Date.now, Math.floor)
           const builtinName = (obj as any)._builtinName as string | undefined;
           if (builtinName && BUILTIN_STATIC_METHODS[builtinName]) {
@@ -1037,8 +1080,19 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             const result = dispatchProperty(obj, propName);
             if (result !== undefined) return result;
           }
+          propMissed = true;
           return T.unknown;
         });
+        if (propMissed) {
+          recordUnknown({
+            kind: "property",
+            name: propName,
+            receiverType: objVal,
+            loc: node.loc,
+            reason: `no property '${propName}' on ${objVal.kind}`,
+          });
+        }
+        return result;
       }
 
       return T.unknown;
@@ -1057,7 +1111,8 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       if (node.computed) {
         const propVal = evaluate(node.property, env);
         if (isReturn(propVal) || isBranch(propVal) || isThrow(propVal)) return propVal;
-        return distributeOverUnion(objVal, (obj) => {
+        let propMissed = false;
+        const result = distributeOverUnion(objVal, (obj) => {
           if (obj.kind === "object" && propVal.kind === "literal" && typeof propVal.value === "string") {
             return obj.properties[propVal.value] ?? T.undefined;
           }
@@ -1065,13 +1120,27 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             if (obj.kind === "tuple") return obj.elements[propVal.value] ?? T.undefined;
             return obj.element;
           }
+          if (propVal.kind === "literal" && typeof propVal.value === "string") {
+            propMissed = true;
+          }
           return T.unknown;
         });
+        if (propMissed && propVal.kind === "literal" && typeof propVal.value === "string") {
+          recordUnknown({
+            kind: "property",
+            name: propVal.value,
+            receiverType: objVal,
+            loc: node.loc,
+            reason: `no property '${propVal.value}' on ${objVal.kind}`,
+          });
+        }
+        return result;
       }
 
       if (node.property.type === "Identifier") {
         const propName = node.property.name;
-        return distributeOverUnion(objVal, (obj) => {
+        let propMissed = false;
+        const result = distributeOverUnion(objVal, (obj) => {
           if (obj.kind === "object") return obj.properties[propName] ?? T.undefined;
           if (obj.kind === "instance") return obj.properties[propName] ?? T.undefined;
           if (propName === "length" && (obj.kind === "array" || obj.kind === "tuple")) {
@@ -1087,8 +1156,19 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             const result = dispatchProperty(obj, propName);
             if (result !== undefined) return result;
           }
+          propMissed = true;
           return T.unknown;
         });
+        if (propMissed) {
+          recordUnknown({
+            kind: "property",
+            name: propName,
+            receiverType: objVal,
+            loc: node.loc,
+            reason: `no property '${propName}' on ${objVal.kind}`,
+          });
+        }
+        return result;
       }
 
       return T.unknown;
@@ -1488,11 +1568,29 @@ function evaluateMethodCall(
   if (objVal.kind === "union") {
     const argVals = evaluateArgs(args, env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
-    return distributeOverUnion(objVal, (member) => {
+    let methodMissed = false;
+    const result = distributeOverUnion(objVal, (member) => {
       // Create a temporary env with the member bound, then re-evaluate the method call
       const memberResult = evaluateMethodForMember(member, methodName, argVals as TypeValue[], callee, env);
+      if (
+        memberResult === null &&
+        member.kind !== "object" && member.kind !== "instance" &&
+        member.kind !== "refined" && member.kind !== "promise"
+      ) {
+        methodMissed = true;
+      }
       return memberResult ?? T.unknown;
     });
+    if (methodMissed) {
+      recordUnknown({
+        kind: "method",
+        name: methodName,
+        receiverType: objVal,
+        loc: callee.loc,
+        reason: `no method '${methodName}' on ${objVal.kind}`,
+      });
+    }
+    return result;
   }
 
   // Handle console methods (no return value)
@@ -1759,7 +1857,17 @@ function evaluateMethodCall(
   }
 
   if (objVal.kind === "array" || objVal.kind === "tuple") {
-    return evaluateArrayMethod(objVal, methodName, args, env);
+    const arrResult = evaluateArrayMethod(objVal, methodName, args, env);
+    if (arrResult === null) {
+      recordUnknown({
+        kind: "method",
+        name: methodName,
+        receiverType: objVal,
+        loc: callee.loc,
+        reason: `no method '${methodName}' on ${objVal.kind}`,
+      });
+    }
+    return arrResult;
   }
 
   if (isStringLike(objVal)) {
@@ -1771,7 +1879,17 @@ function evaluateMethodCall(
       if (refined !== undefined) return refined;
     }
 
-    return evaluateStringMethod(objVal, methodName, argVals as TypeValue[]);
+    const strResult = evaluateStringMethod(objVal, methodName, argVals as TypeValue[]);
+    if (strResult === null) {
+      recordUnknown({
+        kind: "method",
+        name: methodName,
+        receiverType: objVal,
+        loc: callee.loc,
+        reason: `no method '${methodName}' on ${objVal.kind}`,
+      });
+    }
+    return strResult;
   }
 
   if (objVal.kind === "refined") {
@@ -1779,6 +1897,23 @@ function evaluateMethodCall(
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     const result = dispatchMethod(objVal, methodName, argVals as TypeValue[]);
     if (result !== undefined) return result;
+  }
+
+  // Method dispatch fallback: no handler matched. For receivers whose property
+  // lookup may still succeed (object/instance/refined/promise — resolved by the
+  // MemberExpression evaluation downstream), stay silent; for everything else
+  // this call will degrade to T.unknown, so record it.
+  if (
+    objVal.kind !== "object" && objVal.kind !== "instance" &&
+    objVal.kind !== "refined" && objVal.kind !== "promise"
+  ) {
+    recordUnknown({
+      kind: "method",
+      name: methodName,
+      receiverType: objVal,
+      loc: callee.loc,
+      reason: `no method '${methodName}' on ${objVal.kind}`,
+    });
   }
 
   return null;

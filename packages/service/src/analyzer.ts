@@ -27,6 +27,8 @@ import {
   setNodeTypeCollector,
   setCallCollector,
   type CallRecord,
+  setUnknownCollector,
+  type UnknownRecord,
   setSampleCount,
   setUnknownBuiltinHandler,
   setEnvModules,
@@ -326,6 +328,73 @@ function dedupeCallRecords(records: CallRecord[]): CallRecord[] {
   return out;
 }
 
+function receiverTypeToDisplay(tv: TypeValue): string {
+  switch (tv.kind) {
+    case "literal": {
+      const v = tv.value;
+      if (v === null) return "null";
+      if (v === undefined) return "undefined";
+      return typeof v;
+    }
+    case "union":
+      return tv.members.map(receiverTypeToDisplay).join(" | ");
+    default:
+      return typeValueToString(tv);
+  }
+}
+
+function receiverIsConcrete(tv: TypeValue): boolean {
+  if (tv.kind === "unknown") return false;
+  if (tv.kind === "union") return tv.members.every((m) => m.kind !== "unknown");
+  return true;
+}
+
+function unknownRecordsToDiagnostics(records: UnknownRecord[]): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const seen = new Set<string>();
+  for (const r of records) {
+    const line = r.loc?.line ?? 0;
+    const column = r.loc?.column ?? 0;
+    const key = `${line}:${column}:${r.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const range = {
+      start: { line, column },
+      end: { line, column: column + r.name.length },
+    };
+
+    if (r.kind === "global") {
+      out.push({
+        range,
+        severity: "warning",
+        message: `Unknown global identifier '${r.name}'`,
+        code: "nudo:unknown-global",
+      });
+      continue;
+    }
+
+    const receiver = r.receiverType;
+    if (receiver && receiverIsConcrete(receiver)) {
+      const kindLabel = r.kind === "method" ? "Method" : "Property";
+      out.push({
+        range,
+        severity: "error",
+        message: `${kindLabel} '${r.name}' does not exist on type '${receiverTypeToDisplay(receiver)}'`,
+        code: "nudo:no-method",
+      });
+    } else {
+      out.push({
+        range,
+        severity: "warning",
+        message: `Cannot resolve '${r.name}' on unknown value`,
+        code: "nudo:unknown-recv",
+      });
+    }
+  }
+  return out;
+}
+
 export function analyzeFile(filePath: string, source: string, activeCases?: Map<string, number>): AnalysisResult {
   const ast = parse(source);
   const functions = extractDirectives(ast);
@@ -391,6 +460,9 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
   const callRecords: CallRecord[] = [];
   setCallCollector((record) => callRecords.push(record));
+
+  const unknownRecords: UnknownRecord[] = [];
+  setUnknownCollector((r) => unknownRecords.push(r));
 
   evaluateProgram(ast, globalEnv);
 
@@ -593,9 +665,12 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
   setUnknownBuiltinHandler(null);
   setCallCollector(null);
+  setUnknownCollector(null);
   setModuleResolver(null);
   resetEnvModules();
   resetMockModules();
+
+  diagnostics.push(...unknownRecordsToDiagnostics(unknownRecords));
 
   return {
     functions: functionResults,

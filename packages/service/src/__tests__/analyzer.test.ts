@@ -140,6 +140,50 @@ function lonely(x) {
     expect(typeValueToString(addFn!.combined!)).toBe("3 | number");
     expect(addFn!.skipped).toBeUndefined();
   });
+
+  it("reports error diagnostic for method missing on concrete receiver", () => {
+    const source = `
+function badNum(n) {
+  return n.toUpperCase();
+}
+
+const boom = badNum(42);
+`;
+    const result = analyzeFile("/test/badnum.js", source);
+    const diag = result.diagnostics.find((d) => d.code === "nudo:no-method");
+    expect(diag).toBeDefined();
+    expect(diag!.severity).toBe("error");
+    expect(diag!.message).toContain("toUpperCase");
+    expect(diag!.message).toContain("number");
+    expect(diag!.range.start.line).toBeGreaterThan(0);
+  });
+
+  it("does not report method diagnostics for valid calls on string receivers", () => {
+    const source = `
+function bad(x) {
+  return x.toUpperCase();
+}
+
+const ok = bad("hello");
+`;
+    const result = analyzeFile("/test/goodstr.js", source);
+    const methodDiags = result.diagnostics.filter((d) => d.code === "nudo:no-method" || d.code === "nudo:unknown-recv");
+    expect(methodDiags).toHaveLength(0);
+  });
+
+  it("downgrades unknown-receiver method failures to warnings", () => {
+    const source = `
+function lonely(u) {
+  return u.toUpperCase();
+}
+`;
+    const result = analyzeFile("/test/lonely-unknown.js", source);
+    const diag = result.diagnostics.find((d) => d.code === "nudo:unknown-recv");
+    expect(diag).toBeDefined();
+    expect(diag!.severity).toBe("warning");
+    expect(diag!.message).toContain("toUpperCase");
+    expect(result.diagnostics.some((d) => d.code === "nudo:no-method" && d.message.includes("toUpperCase"))).toBe(false);
+  });
 });
 
 describe("getTypeAtPosition", () => {

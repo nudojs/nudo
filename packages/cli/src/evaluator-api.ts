@@ -11,6 +11,8 @@ export {
   setNodeTypeCollector,
   setCallCollector,
   type CallRecord,
+  setUnknownCollector,
+  type UnknownRecord,
   setSampleCount,
   setMaxConcreteIter,
   setUnknownBuiltinHandler,
