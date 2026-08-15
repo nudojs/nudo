@@ -8,6 +8,7 @@ export {
   typeValueEquals,
   simplifyUnion,
   widenLiteral,
+  collapseLiteralUnion,
   isSubtypeOf,
   typeValueToString,
   narrowType,

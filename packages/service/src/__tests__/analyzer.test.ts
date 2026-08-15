@@ -115,6 +115,55 @@ function caller(y) {
     expect(uncalled!.entryOnly).toBeFalsy();
   });
 
+  it("caps precise call-site cases and folds the rest into a symbolic case", () => {
+    const calls = Array.from({ length: 20 }, (_, i) => `sq(${i + 1});`).join("\n");
+    const source = `
+function sq(x) {
+  return x * x;
+}
+${calls}
+`;
+    const result = analyzeFile("/test/many-calls.js", source);
+    const sq = result.functions.find((f) => f.name === "sq");
+    expect(sq).toBeDefined();
+    expect(sq!.cases).toHaveLength(4);
+    const precise = sq!.cases.slice(0, 3);
+    for (const c of precise) {
+      expect(c.name).toMatch(/^call@L\d+$/);
+      expect(c.source).toBe("callsite");
+      expect(c.aggregatedFrom).toBeUndefined();
+    }
+    expect(typeValueToString(precise[0].args[0])).toBe("1");
+    const symbolic = sq!.cases[3];
+    expect(symbolic.name).toBe("call@symbolic");
+    expect(symbolic.source).toBe("callsite");
+    expect(symbolic.aggregatedFrom).toBe(17);
+    expect(symbolic.args).toHaveLength(1);
+    expect(symbolic.args[0]).toEqual(T.number);
+    expect(typeValueToString(symbolic.result)).toBe("number");
+    expect(sq!.combined).toEqual(T.number);
+    expect(sq!.entryOnly).toBeFalsy();
+  });
+
+  it("keeps per-call-site cases unchanged for few call sites", () => {
+    const source = `
+function twice(x) {
+  return x * 2;
+}
+twice(3);
+twice(21);
+`;
+    const result = analyzeFile("/test/two-calls.js", source);
+    const twice = result.functions.find((f) => f.name === "twice")!;
+    expect(twice.cases).toHaveLength(2);
+    expect(twice.cases.every((c) => /^call@L\d+$/.test(c.name))).toBe(true);
+    expect(twice.cases.some((c) => c.name === "call@symbolic")).toBe(false);
+    expect(twice.cases.some((c) => c.aggregatedFrom !== undefined)).toBe(false);
+    expect(typeValueToString(twice.cases[0].result)).toBe("6");
+    expect(typeValueToString(twice.cases[1].result)).toBe("42");
+    expect(typeValueToString(twice.combined!)).toBe("6 | 42");
+  });
+
   it("infers entry-only functions in directive-free files", () => {
     const source = `
 function lonely(x) {

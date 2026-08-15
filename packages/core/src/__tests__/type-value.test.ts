@@ -4,6 +4,7 @@ import {
   typeValueEquals,
   simplifyUnion,
   widenLiteral,
+  collapseLiteralUnion,
   isSubtypeOf,
   typeValueToString,
   narrowType,
@@ -117,6 +118,44 @@ describe("widenLiteral", () => {
 
   it("returns non-literal unchanged", () => {
     expect(widenLiteral(T.number)).toBe(T.number);
+  });
+
+  it("collapses 20 number literals beyond maxLiterals to number", () => {
+    const members = Array.from({ length: 20 }, (_, i) => T.literal((i + 1) ** 2));
+    const u = { kind: "union", members } as const;
+    const result = collapseLiteralUnion(u, 4);
+    expect(result).toEqual(T.number);
+  });
+
+  it("collapses 5 string literals to string", () => {
+    const u = {
+      kind: "union",
+      members: ["a", "b", "c", "d", "e"].map((s) => T.literal(s)),
+    } as const;
+    const result = collapseLiteralUnion(u, 4);
+    expect(result).toEqual(T.string);
+  });
+
+  it("returns union unchanged when member count equals maxLiterals", () => {
+    const u = {
+      kind: "union",
+      members: [T.literal(1), T.literal(2), T.literal(3), T.literal(4)],
+    } as const;
+    expect(collapseLiteralUnion(u, 4)).toBe(u);
+  });
+
+  it("returns mixed union unchanged (number literal + T.number + string literal)", () => {
+    const u = {
+      kind: "union",
+      members: [T.literal(1), T.number, T.literal("x"), T.literal(2), T.literal(3)],
+    } as const;
+    expect(collapseLiteralUnion(u, 4)).toBe(u);
+  });
+
+  it("returns non-union unchanged (single literal / T.number)", () => {
+    const lit = T.literal(1);
+    expect(collapseLiteralUnion(lit, 0)).toBe(lit);
+    expect(collapseLiteralUnion(T.number, 0)).toBe(T.number);
   });
 });
 

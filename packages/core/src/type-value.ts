@@ -188,6 +188,20 @@ export function widenLiteral(tv: TypeValue): TypeValue {
   return T.unknown;
 }
 
+/**
+ * union 成员全部为同原语基底的字面量且数量 > maxLiterals 时塌缩为该基类型；
+ * 非 union、混合类型（含非字面量成员）、或数量不超限的原样返回。
+ */
+export function collapseLiteralUnion(tv: TypeValue, maxLiterals: number): TypeValue {
+  if (tv.kind !== "union") return tv;
+  if (tv.members.length <= maxLiterals) return tv;
+  // 保守：成员中含非字面量（如显式 T.number）时不塌缩
+  if (!tv.members.every((m) => m.kind === "literal")) return tv;
+  const first = widenLiteral(tv.members[0]);
+  if (!tv.members.every((m) => typeValueEquals(widenLiteral(m), first))) return tv;
+  return first;
+}
+
 export function isSubtypeOf(a: TypeValue, b: TypeValue): boolean {
   if (b.kind === "unknown") return true;
   if (a.kind === "never") return true;

@@ -7,6 +7,8 @@ import {
   T,
   typeValueToString,
   simplifyUnion,
+  widenLiteral,
+  collapseLiteralUnion,
   createEnvironment,
   isSubtypeOf,
   type Environment,
@@ -67,6 +69,8 @@ export type CaseResult = {
   throws: TypeValue;
   throwLoc?: SourceLocation;
   source?: "directive" | "callsite";
+  /** number of additional call sites folded into a symbolic case */
+  aggregatedFrom?: number;
 };
 
 export type FunctionAnalysis = {
@@ -314,6 +318,15 @@ function typeStructureKey(tv: TypeValue): string {
     default:
       return tv.kind;
   }
+}
+
+const MAX_PRECISE_CALLSITE_CASES = 3;
+const COLLAPSE_LITERAL_THRESHOLD = 4;
+
+/** widenLiteral for unions: widen each member, then dedupe (1|2|…|20 → number). */
+function widenType(tv: TypeValue): TypeValue {
+  if (tv.kind === "union") return simplifyUnion(tv.members.map(widenLiteral));
+  return widenLiteral(tv);
 }
 
 function dedupeCallRecords(records: CallRecord[]): CallRecord[] {
@@ -590,7 +603,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     }
 
     if (analysis.cases.length > 1) {
-      analysis.combined = simplifyUnion(analysis.cases.map((c) => c.result));
+      analysis.combined = collapseLiteralUnion(simplifyUnion(analysis.cases.map((c) => c.result)), COLLAPSE_LITERAL_THRESHOLD);
     } else if (analysis.cases.length === 1) {
       analysis.combined = analysis.cases[0].result;
     }
@@ -634,7 +647,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   for (const candidate of synthCandidates) {
     const records = dedupeCallRecords(callRecords.filter((r) => r.fnName === candidate.name));
     if (records.length > 0) {
-      for (const rec of records) {
+      const precise = records.slice(0, MAX_PRECISE_CALLSITE_CASES);
+      for (const rec of precise) {
         candidate.analysis.cases.push({
           name: `call@L${rec.callLoc?.line ?? candidate.analysis.loc.start.line}`,
           args: rec.argTypes,
@@ -643,7 +657,31 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           source: "callsite",
         });
       }
-      candidate.analysis.combined = simplifyUnion(candidate.analysis.cases.map((c) => c.result));
+      const remaining = records.slice(MAX_PRECISE_CALLSITE_CASES);
+      if (remaining.length > 0) {
+        const fnNode = resolveFunctionNode(candidate.node);
+        const paramCount = extractParamNames(fnNode).length;
+        const widenedArgs = Array.from({ length: paramCount }, (_, i) =>
+          widenType(simplifyUnion(remaining.map((rec) => rec.argTypes[i] ?? T.unknown))),
+        );
+        const full = evaluateFunctionFull(fnNode, widenedArgs, globalEnv);
+        candidate.analysis.cases.push({
+          name: "call@symbolic",
+          args: widenedArgs,
+          result: full.value,
+          throws: full.throws,
+          throwLoc: full.throwLoc,
+          source: "callsite",
+          aggregatedFrom: remaining.length,
+        });
+      }
+      // Combined covers every observed call site (not just the retained
+      // cases), so a large set of same-base literal results collapses to
+      // the widened base type instead of a 20-literal union.
+      candidate.analysis.combined = collapseLiteralUnion(
+        simplifyUnion(records.map((r) => r.resultType)),
+        COLLAPSE_LITERAL_THRESHOLD,
+      );
       continue;
     }
 
@@ -658,7 +696,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       throwLoc: full.throwLoc,
     });
     candidate.analysis.entryOnly = true;
-    candidate.analysis.combined = full.value;
+    candidate.analysis.combined = collapseLiteralUnion(full.value, COLLAPSE_LITERAL_THRESHOLD);
   }
 
   buildNodeTypeMap(ast, globalEnv, nodeTypeMap);
