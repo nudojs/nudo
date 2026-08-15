@@ -413,6 +413,120 @@ const boom = badNum(42);
     }
   });
 
+  it("types X.prototype on built-in classes as instances without error-level unknowns", () => {
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    const env = createEnvironment();
+    try {
+      const ast = parse(`
+        const d = Date.prototype;
+        const a = Array.prototype;
+        const e = Error.prototype;
+        const m = Map.prototype;
+        const o = Object.prototype;
+      `);
+      evaluateProgram(ast, env);
+    } finally {
+      setUnknownCollector(null);
+    }
+
+    const cases: Array<[string, string]> = [
+      ["d", "Date"],
+      ["a", "Array"],
+      ["e", "Error"],
+      ["m", "Map"],
+      ["o", "Object"],
+    ];
+    for (const [binding, className] of cases) {
+      const tv = env.lookup(binding);
+      expect(tv.kind).toBe("instance");
+      if (tv.kind === "instance") {
+        expect(tv.className).toBe(className);
+      }
+    }
+    // Error-level diagnostics come from property/method unknowns with a
+    // concrete receiver — there must be none for `.prototype` access.
+    expect(records.filter((r) => r.kind === "property" || r.kind === "method")).toEqual([]);
+  });
+
+  it("evaluates unrecognized built-in identifiers to unknown (not undefined)", () => {
+    const ast = parse(`const u = WeakRef;\n`);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+    expect(env.lookup("u").kind).toBe("unknown");
+  });
+
+  it("types Object.prototype.toString.call(x) as string and never leaks native JS members", () => {
+    const ast = parse(`
+      const brand = Object.prototype.toString.call(5);
+      const direct = Object.prototype.toString;
+      const plain = ({}).toString();
+      const mapStr = new Map().toString;
+    `);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+    expect(typeValueToString(env.lookup("brand"))).toBe("string");
+    expect(env.lookup("direct").kind).toBe("function");
+    expect(typeValueToString(env.lookup("plain"))).toBe("string");
+    expect(env.lookup("mapStr").kind).toBe("function");
+    // The bug this locks down: property records are plain objects, so bracket
+    // access used to return the real native JS toString (a non-TypeValue).
+    for (const name of ["brand", "direct", "plain", "mapStr"]) {
+      const tv = env.lookup(name) as unknown as { kind?: string };
+      expect(typeof tv.kind).toBe("string");
+    }
+  });
+
+  it("tags call records of require()d CJS functions with targetModule/targetExport", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-cjs-tag-"));
+    try {
+      const bPath = join(dir, "b.js");
+      const cPath = join(dir, "c.js");
+      const aPath = join(dir, "a.js");
+      writeFileSync(bPath, 'function triple(x) { return x * 3; }\nmodule.exports = { triple };\n');
+      writeFileSync(cPath, 'module.exports = function (x) { return x; };\n');
+      writeFileSync(
+        aPath,
+        'const b = require("./b");\nconst triple = b.triple;\nconst r1 = triple(4);\nconst id = require("./c");\nconst r2 = id(9);\n',
+      );
+
+      setModuleResolver((source) => {
+        if (source === "./b") {
+          return { ast: parse(readFileSync(bPath, "utf8")), filePath: bPath };
+        }
+        if (source === "./c") {
+          return { ast: parse(readFileSync(cPath, "utf8")), filePath: cPath };
+        }
+        return null;
+      });
+      setCurrentFileDir(dir);
+
+      const records: CallRecord[] = [];
+      setCallCollector((r) => records.push(r));
+      try {
+        evaluateProgram(parse(readFileSync(aPath, "utf8")), createEnvironment());
+      } finally {
+        setCallCollector(null);
+        setModuleResolver(null);
+        setCurrentFileDir("");
+      }
+
+      const named = records.find((r) => r.fnName === "triple");
+      expect(named).toBeDefined();
+      expect(named!.targetModule).toBe(bPath);
+      expect(named!.targetExport).toBe("triple");
+      expect(typeValueEquals(named!.resultType, T.literal(12))).toBe(true);
+
+      const main = records.find((r) => r.fnName === "id");
+      expect(main).toBeDefined();
+      expect(main!.targetModule).toBe(cPath);
+      expect(main!.targetExport).toBe("default");
+      expect(typeValueEquals(main!.resultType, T.literal(9))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("evaluates imported calls identically with no call collector installed (regression)", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-export-tag-"));
     try {
@@ -440,5 +554,87 @@ const boom = badNum(42);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("terminates self-recursive functions via the call-depth budget instead of overflowing the stack", () => {
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    const env = createEnvironment();
+    try {
+      // Isomorphic to hoek's clone(): under abstract args `seen.has(obj)`
+      // cannot concretely short-circuit, so the recursion must be cut off by
+      // MAX_CALL_DEPTH and soundly degrade to unknown.
+      evaluateProgram(parse(`
+        function clone(obj, seen = new Map()) {
+          if (obj === null) return obj;
+          if (seen.has(obj)) return obj;
+          return clone(obj, seen);
+        }
+        const c = clone({ a: 1 });
+      `), env);
+    } finally {
+      setUnknownCollector(null);
+    }
+
+    const c = env.lookup("c");
+    const members = c.kind === "union" ? c.members : [c];
+    expect(members.some((m) => m.kind === "unknown")).toBe(true);
+    expect(records.some((r) => r.kind === "global" && r.name === "recursion:clone")).toBe(true);
+  });
+
+  it("supports Function.prototype.call/apply/bind on function values", () => {
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    const env = createEnvironment();
+    try {
+      evaluateProgram(parse(`
+        function fn(x) { return x * 2; }
+        const a = fn.call(null, 5);
+        const b = fn.apply(null, [6]);
+        const g = fn.bind(null, 7);
+      `), env);
+    } finally {
+      setUnknownCollector(null);
+    }
+
+    expect(typeValueEquals(env.lookup("a"), T.literal(10))).toBe(true);
+    expect(typeValueEquals(env.lookup("b"), T.literal(12))).toBe(true);
+    // bind approximates to the original function value
+    expect(env.lookup("g").kind).toBe("function");
+    expect(records.filter((r) => r.kind === "method" || r.kind === "property")).toEqual([]);
+  });
+
+  it("types Object.prototype.toString.call(obj) as string without error-level unknowns", () => {
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    const env = createEnvironment();
+    try {
+      evaluateProgram(parse(`
+        const s = Object.prototype.toString.call({ a: 1 });
+        const u = Object.prototype.toString.call(5);
+      `), env);
+    } finally {
+      setUnknownCollector(null);
+    }
+
+    expect(typeValueEquals(env.lookup("s"), T.string)).toBe(true);
+    expect(typeValueEquals(env.lookup("u"), T.string)).toBe(true);
+    expect(records.filter((r) => r.kind === "method" || r.kind === "property")).toEqual([]);
+  });
+
+  it("analyzes deep non-recursive call chains within the depth budget", () => {
+    // 50 alternating a->b->a calls plus the leaf: depth 51 <= MAX_CALL_DEPTH,
+    // so nothing is truncated and the concrete result survives exactly.
+    const pairs = 25;
+    let source = "function leaf(x) { return x * 2; }\n";
+    for (let i = 0; i < pairs; i++) {
+      source += `function a${i}(x) { return b${i}(x); }\n`;
+      source += `function b${i}(x) { return ${i < pairs - 1 ? `a${i + 1}` : "leaf"}(x); }\n`;
+    }
+    source += "const deep = a0(5);\n";
+
+    const env = createEnvironment();
+    evaluateProgram(parse(source), env);
+    expect(typeValueEquals(env.lookup("deep"), T.literal(10))).toBe(true);
   });
 });

@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { T, typeValueToString } from "@nudojs/core";
 import { analyzeFile, getTypeAtPosition, getCompletionsAtPosition, buildModuleGraph, computeDirtySet, topoSortDirty } from "../analyzer.ts";
+import { generateDts } from "../dts-generator.ts";
 
 const FIXTURE_PATH = resolve(import.meta.dirname, "fixtures", "sample.js");
 
@@ -299,6 +300,126 @@ function lonely(u) {
     const source = `function id(x) { return x; }\nconst y = id(1);\n`;
     const result = analyzeFile("/test/no-import.js", source);
     expect(result.externalFunctions ?? []).toHaveLength(0);
+  });
+
+  it("collects chained CJS exports as named functions with entry fallback", () => {
+    const source = `
+const internals = {};
+module.exports = internals.clone = function (obj, options = {}) {
+  return obj;
+};
+`;
+    const result = analyzeFile("/test/cjs-clone.js", source);
+    const clone = result.functions.find((f) => f.name === "clone");
+    expect(clone).toBeDefined();
+    expect(clone!.paramNames).toEqual(["obj", "options"]);
+    expect(clone!.noDeclaration).toBe(true);
+    expect(clone!.entryOnly).toBe(true);
+    expect(clone!.cases).toHaveLength(1);
+    // entry fallback: parameters enter as unknown, so returning obj propagates unknown
+    expect(clone!.cases[0].args).toEqual([T.unknown, T.unknown]);
+    expect(clone!.cases[0].name).toMatch(/^entry@L\d+$/);
+    expect(clone!.cases[0].result.kind).toBe("unknown");
+  });
+
+  it("names chained exports after the first non-module.exports property", () => {
+    const source = `
+module.exports = function (solo) {
+  return solo;
+};
+module.exports.pick = function (which) {
+  return which;
+};
+`;
+    const result = analyzeFile("/test/cjs-default.js", source);
+    const names = result.functions.map((f) => f.name);
+    expect(names).toContain("default");
+    expect(names).toContain("pick");
+  });
+
+  it("prefers a named function expression id over the assigned property name", () => {
+    const source = `
+exports.applyToDefaults = function _apply(src, opts) {
+  return src;
+};
+`;
+    const result = analyzeFile("/test/cjs-named-fn.js", source);
+    const fn = result.functions.find((f) => f.name === "_apply");
+    expect(fn).toBeDefined();
+    expect(fn!.noDeclaration).toBe(true);
+    expect(fn!.cases[0].result.kind).toBe("unknown");
+  });
+
+  it("collects exports.X assignment functions", () => {
+    const source = `
+exports.applyToDefaults = function (a, b) {
+  return a;
+};
+`;
+    const result = analyzeFile("/test/cjs-exports.js", source);
+    const fn = result.functions.find((f) => f.name === "applyToDefaults");
+    expect(fn).toBeDefined();
+    expect(fn!.paramNames).toEqual(["a", "b"]);
+    expect(fn!.entryOnly).toBe(true);
+    expect(fn!.noDeclaration).toBe(true);
+    expect(fn!.cases).toHaveLength(1);
+    expect(fn!.cases[0].result.kind).toBe("unknown");
+  });
+
+  it("synthesizes callsite cases for const-declared arrow functions", () => {
+    const source = `
+const f = (x) => x * 2;
+f(3);
+`;
+    const result = analyzeFile("/test/const-arrow.js", source);
+    const f = result.functions.find((fn) => fn.name === "f");
+    expect(f).toBeDefined();
+    expect(f!.noDeclaration).toBe(true);
+    expect(f!.entryOnly).toBeFalsy();
+    expect(f!.cases).toHaveLength(1);
+    expect(f!.cases[0].source).toBe("callsite");
+    expect(f!.cases[0].name).toMatch(/^call@L\d+$/);
+    expect(f!.cases[0].args.map(typeValueToString)).toEqual(["3"]);
+    expect(typeValueToString(f!.cases[0].result)).toBe("6");
+    expect(typeValueToString(f!.combined!)).toBe("6");
+  });
+
+  it("keeps pure FunctionDeclaration collection unchanged alongside CJS forms", () => {
+    const source = `
+function lonely(x) {
+  return x * 2;
+}
+exports.helper = function (y) {
+  return y;
+};
+`;
+    const result = analyzeFile("/test/mixed-forms.js", source);
+    const lonely = result.functions.find((f) => f.name === "lonely")!;
+    expect(lonely).toBeDefined();
+    expect(lonely.noDeclaration).toBeUndefined();
+    expect(lonely.entryOnly).toBe(true);
+    expect(typeValueToString(lonely.combined!)).toBe("number");
+    const helper = result.functions.find((f) => f.name === "helper")!;
+    expect(helper).toBeDefined();
+    expect(helper.noDeclaration).toBe(true);
+  });
+
+  it("skips CJS-bound functions in d.ts generation while keeping them in analysis", () => {
+    const source = `
+function declared(x) {
+  return x * 2;
+}
+module.exports = internals.clone = function (obj) {
+  return obj;
+};
+`;
+    const result = analyzeFile("/test/dts-skip.js", source);
+    const clone = result.functions.find((f) => f.name === "clone");
+    expect(clone).toBeDefined();
+    const dts = generateDts(result);
+    expect(dts).toContain("export declare function declared");
+    expect(dts).not.toContain("clone");
+    expect(dts).not.toContain("module");
   });
 });
 

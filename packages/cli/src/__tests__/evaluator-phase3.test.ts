@@ -8,7 +8,7 @@ import {
 } from "@nudojs/core";
 import type { TypeValue } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
-import { evaluate, evaluateFunction, evaluateFunctionFull, evaluateProgram, resetMemo, setModuleResolver, setCurrentFileDir } from "../evaluator.ts";
+import { evaluate, evaluateFunction, evaluateFunctionFull, evaluateProgram, resetMemo, setModuleResolver, setCurrentFileDir, setUnknownCollector, type UnknownRecord } from "../evaluator.ts";
 
 function evalCode(code: string): TypeValue {
   const ast = parse(code);
@@ -435,6 +435,143 @@ describe("modules import/export", () => {
     expect(typeValueEquals(env.lookup("x2"), T.literal(1))).toBe(true);
 
     setModuleResolver(null);
+  });
+
+  it("resolves require() of a CJS module exporting an object", () => {
+    setModuleResolver((source) => {
+      if (source === "./b") {
+        return {
+          ast: parse(`function triple(x) { return x * 3; }\nmodule.exports = { triple };\n`),
+          filePath: "/fake/b.js",
+        };
+      }
+      return null;
+    });
+    setCurrentFileDir("/fake");
+
+    const ast = parse(`
+      const b = require("./b");
+      const r = b.triple(4);
+    `);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+
+    const b = env.lookup("b");
+    expect(b.kind).toBe("object");
+    if (b.kind === "object") {
+      expect(b.properties.triple.kind).toBe("function");
+    }
+    expect(typeValueEquals(env.lookup("r"), T.literal(12))).toBe(true);
+
+    setModuleResolver(null);
+  });
+
+  it("require() picks up a chained module.exports = internals.x = function assignment", () => {
+    setModuleResolver((source) => {
+      if (source === "./clone") {
+        return {
+          ast: parse(`
+            const internals = {};
+            module.exports = internals.clone = function (obj, options = {}) {
+              if (options.shallow) {
+                return obj;
+              }
+              return obj;
+            };
+          `),
+          filePath: "/fake/clone.js",
+        };
+      }
+      return null;
+    });
+    setCurrentFileDir("/fake");
+
+    const ast = parse(`
+      const Clone = require("./clone");
+      const r = Clone(5);
+    `);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+
+    expect(env.lookup("Clone").kind).toBe("function");
+    expect(typeValueEquals(env.lookup("r"), T.literal(5))).toBe(true);
+
+    setModuleResolver(null);
+  });
+
+  it("supports exports.name assignments", () => {
+    setModuleResolver((source) => {
+      if (source === "./b") {
+        return {
+          ast: parse(`exports.triple = function (x) { return x * 3; };\n`),
+          filePath: "/fake/b.js",
+        };
+      }
+      return null;
+    });
+    setCurrentFileDir("/fake");
+
+    const ast = parse(`
+      const b = require("./b");
+      const r = b.triple(2);
+    `);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+
+    expect(typeValueEquals(env.lookup("r"), T.literal(6))).toBe(true);
+
+    setModuleResolver(null);
+  });
+
+  it("require() of an ES module returns its exports as properties", () => {
+    setModuleResolver((source) => {
+      if (source === "./esm") {
+        return {
+          ast: parse(`export const n = 1;\nexport function f(x) { return x + 1; }\n`),
+          filePath: "/fake/esm.js",
+        };
+      }
+      return null;
+    });
+    setCurrentFileDir("/fake");
+
+    const ast = parse(`
+      const b = require("./esm");
+      const r = b.f(b.n);
+    `);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+
+    expect(typeValueEquals(env.lookup("r"), T.literal(2))).toBe(true);
+
+    setModuleResolver(null);
+  });
+
+  it("require() with a bare specifier returns unknown and records a warning", () => {
+    setCurrentFileDir("/fake");
+
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    const env = createEnvironment();
+    try {
+      const ast = parse(`const u = require("@hapi/hoek");\n`);
+      evaluateProgram(ast, env);
+    } finally {
+      setUnknownCollector(null);
+      setCurrentFileDir("");
+    }
+
+    expect(env.lookup("u").kind).toBe("unknown");
+    expect(records.some((r) => r.kind === "global" && r.name === `require('@hapi/hoek')`)).toBe(true);
+  });
+
+  it("pre-binds __dirname and __filename as strings", () => {
+    const ast = parse(`const d = __dirname;\nconst f = __filename;\n`);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+
+    expect(typeValueEquals(env.lookup("d"), T.string)).toBe(true);
+    expect(typeValueEquals(env.lookup("f"), T.string)).toBe(true);
   });
 });
 

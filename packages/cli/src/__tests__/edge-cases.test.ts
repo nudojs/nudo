@@ -179,8 +179,8 @@ function getInf() {
   return Infinity;
 }
 `);
-      // Design limitation: global identifiers not resolved
-      expect(results[0].result).toBe("undefined");
+      // Unresolved built-in globals propagate unknown (not undefined)
+      expect(results[0].result).toBe("unknown");
     });
 
     it("negative infinity", () => {
@@ -201,8 +201,8 @@ function getNaN() {
   return NaN;
 }
 `);
-      // Design limitation: global identifiers not resolved
-      expect(results[0].result).toBe("undefined");
+      // Unresolved built-in globals propagate unknown (not undefined)
+      expect(results[0].result).toBe("unknown");
     });
 
     it("empty array index", () => {

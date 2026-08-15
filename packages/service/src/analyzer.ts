@@ -86,6 +86,13 @@ export type FunctionAnalysis = {
   assertionErrors?: string[];
   entryOnly?: boolean;
   skipped?: boolean;
+  /**
+   * True for functions collected from CJS-style bindings/assignments
+   * (`exports.X = fn`, `module.exports = fn`, `const f = fn`): their name has
+   * no declaration-level stability, so .d.ts generation skips them while
+   * infer/JSON output still reports them.
+   */
+  noDeclaration?: boolean;
   /** absolute path of the module this function is imported from (externalFunctions only) */
   fromModule?: string;
 };
@@ -380,13 +387,107 @@ function resolveFunctionNode(node: Node): Node {
   return node;
 }
 
-function collectTopLevelFunctions(ast: Node): { name: string; node: Node }[] {
-  const results: { name: string; node: Node }[] = [];
+function isFnExprValue(node: Node | null | undefined): node is Node {
+  return !!node && (node.type === "FunctionExpression" || node.type === "ArrowFunctionExpression");
+}
+
+function namedFnExprId(node: Node): string | null {
+  return node.type === "FunctionExpression" && node.id ? node.id.name : null;
+}
+
+/** `module.exports` — the only assignment target carrying no stable name of its own. */
+function isModuleExportsTarget(node: Node): boolean {
+  return (
+    node.type === "MemberExpression" &&
+    !node.computed &&
+    (node as any).object?.type === "Identifier" &&
+    (node as any).object.name === "module" &&
+    (node as any).property?.type === "Identifier" &&
+    (node as any).property.name === "exports"
+  );
+}
+
+function memberPropertyKey(member: Node): string | null {
+  if (member.type !== "MemberExpression" || member.computed) return null;
+  const prop = (member as any).property;
+  if (prop?.type === "Identifier") return prop.name;
+  if (prop?.type === "StringLiteral") return String(prop.value);
+  return null;
+}
+
+/** Rightmost value of a chained assignment (`a = b = fn` → fn). */
+function deepestAssignValue(expr: Node): Node | null {
+  let cur: any = expr;
+  while (cur?.type === "AssignmentExpression") cur = cur.right;
+  return cur ?? null;
+}
+
+/**
+ * First stable name on an assignment chain, left to right: an identifier
+ * binding, or a member property that is not `module.exports` itself. Returns
+ * null for chains ending in a bare `module.exports = fn` or in computed
+ * members (`exports[k] = fn`) — callers fall back to "default".
+ */
+function assignmentChainName(expr: Node): string | null {
+  let cur: any = expr;
+  while (cur?.type === "AssignmentExpression") {
+    const target = cur.left;
+    if (target.type === "Identifier") return target.name;
+    if (target.type === "MemberExpression") {
+      if (isModuleExportsTarget(target)) {
+        cur = cur.right;
+        continue;
+      }
+      return memberPropertyKey(target);
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Top-level functions eligible for case synthesis. Besides FunctionDeclarations
+ * this collects CJS-style function bindings:
+ *
+ *   const f = function () {};                           // declarator init
+ *   exports.applyToDefaults = function (a, b) {};       // namespace property
+ *   module.exports = internals.clone = function () {};  // chained export
+ *
+ * Naming: identifier bindings win (call sites dispatch on them, and the
+ * evaluator's call records key on the callee identifier); a named function
+ * expression's own id beats a member property name; a bare
+ * `module.exports = fn` becomes "default" (ESM default-export analogue).
+ * Collected non-declaration entries carry `noDeclaration` — see FunctionAnalysis.
+ *
+ * v1 limitation: `internals.clone()`-style member calls go through method
+ * dispatch and never produce call records, so such functions fall back to the
+ * entry@ evaluation; same-file `X(...)` calls after `exports.X = fn` are not
+ * tracked either.
+ */
+function collectTopLevelFunctions(ast: Node): { name: string; node: Node; stmt: Node; noDeclaration: boolean }[] {
+  const results: { name: string; node: Node; stmt: Node; noDeclaration: boolean }[] = [];
   if (ast.type !== "File") return results;
   for (const stmt of (ast as any).program.body) {
     const decl = resolveFunctionNode(stmt);
     if (decl.type === "FunctionDeclaration" && decl.id) {
-      results.push({ name: decl.id.name, node: decl });
+      results.push({ name: decl.id.name, node: decl, stmt, noDeclaration: false });
+      continue;
+    }
+    if (stmt.type === "VariableDeclaration") {
+      for (const declarator of (stmt as any).declarations) {
+        if (declarator.id?.type === "Identifier" && isFnExprValue(declarator.init)) {
+          results.push({ name: declarator.id.name, node: declarator.init, stmt, noDeclaration: true });
+        }
+      }
+      continue;
+    }
+    if (stmt.type === "ExpressionStatement" && (stmt as any).expression?.type === "AssignmentExpression") {
+      const expr = (stmt as any).expression as Node;
+      const fn = deepestAssignValue(expr);
+      if (isFnExprValue(fn)) {
+        const name = namedFnExprId(fn) ?? assignmentChainName(expr) ?? "default";
+        results.push({ name, node: fn, stmt, noDeclaration: true });
+      }
     }
   }
   return results;
@@ -560,6 +661,16 @@ function unknownRecordsToDiagnostics(records: UnknownRecord[]): Diagnostic[] {
     };
 
     if (r.kind === "global") {
+      // 递归截断记录（name 形如 "recursion:fnName"）来自求值预算，非未知全局
+      if (r.name.startsWith("recursion:")) {
+        out.push({
+          range,
+          severity: "warning",
+          message: `Recursive evaluation of '${r.name.slice("recursion:".length)}' was truncated (depth/size budget); result widened to unknown`,
+          code: "nudo:recursion-truncated",
+        });
+        continue;
+      }
       out.push({
         range,
         severity: "warning",
@@ -854,9 +965,14 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   // get cases synthesized from observed call sites; functions with no call
   // sites at all get a single entry evaluation with unknown parameters.
   const directiveFnNames = new Set(functions.map((f) => f.name));
-  for (const { name, node } of collectTopLevelFunctions(ast)) {
+  const directiveFnStmts = new Set(functions.map((f) => f.node));
+  for (const { name, node, stmt, noDeclaration } of collectTopLevelFunctions(ast)) {
     if (directiveFnNames.has(name)) continue;
+    // A statement carrying @nudo directives is already analyzed through the
+    // directive path above (possibly under its "<anonymous>" name).
+    if (directiveFnStmts.has(stmt)) continue;
     const analysis: FunctionAnalysis = { name, loc: locFromNode(node), paramNames: extractParamNames(node), cases: [] };
+    if (noDeclaration) analysis.noDeclaration = true;
     functionResults.push(analysis);
     synthCandidates.push({ name, node, analysis });
   }

@@ -117,6 +117,20 @@ const BUILTIN_INSTANCE_METHODS: Record<string, Record<string, (...args: TypeValu
   NumberFormat: INTL_NUMBERFORMAT_METHODS,
 };
 
+const BUILTIN_ERROR_CLASSES = new Set([
+  "Error", "TypeError", "SyntaxError", "RangeError", "ReferenceError", "URIError", "EvalError",
+]);
+
+// Constructible built-in classes. A bare reference to one of these names
+// resolves to a namespace object (like the BUILTIN_STATIC_METHODS entries),
+// and `X.prototype` evaluates to an instance of X instead of degrading to
+// undefined/unknown.
+const BUILTIN_PROTOTYPE_CLASSES = new Set([
+  ...BUILTIN_ERROR_CLASSES,
+  "Date", "Object", "Map", "Set", "Promise", "RegExp", "Array", "Function",
+  "String", "Number", "Boolean", "Symbol", "WeakMap", "WeakSet",
+]);
+
 type SourceRange = { start: { line: number; column: number }; end: { line: number; column: number } };
 
 let _currentSource = "";
@@ -211,6 +225,9 @@ const moduleCache = new Map<string, Environment>();
 export function resetMemo(): void {
   callMemo.clear();
   moduleCache.clear();
+  _callDepth = 0;
+  _totalCalls = 0;
+  _activeCallKeys.length = 0;
 }
 
 export function setModuleResolver(resolver: ((source: string, fromDir: string) => { ast: Node; filePath: string } | null) | null): void {
@@ -296,6 +313,47 @@ function tagModuleExports(env: Environment, filePath: string): void {
   }
 }
 
+// --- CommonJS module scope ---
+// v1 does not distinguish module systems: every evaluated program (top-level
+// or module load) gets the implicit CJS bindings, so `require` /
+// `module.exports` / `exports.x` patterns analyze even inside ESM files.
+
+const _cjsRequireValue = T.fn(["specifier"], { type: "BlockStatement", body: [] } as any, undefined as any);
+
+function bindCommonJsGlobals(env: Environment): void {
+  if (env.has("module")) return; // already set up as a module scope
+  const exportsObj = T.object({});
+  // Marker so require() can tell "target never wrote CJS exports" apart from
+  // an explicit `module.exports = {...}` replacement.
+  (exportsObj as any).__cjsExportsRoot = true;
+  const moduleObj = T.object({ exports: exportsObj });
+  env.bind("exports", exportsObj);
+  env.bind("module", moduleObj);
+  env.bind("require", _cjsRequireValue);
+  env.bind("__dirname", T.string);
+  env.bind("__filename", T.string);
+}
+
+// CJS exports are plain values (`module.exports` itself, or its properties),
+// not `__export_` bindings; tag the function values the same way so
+// cross-module call attribution also works for require()d modules.
+function tagCommonJsExports(env: Environment, filePath: string): void {
+  if (!env.has("module")) return;
+  const moduleVal = env.lookup("module");
+  if (moduleVal.kind !== "object") return;
+  const exp = moduleVal.properties["exports"];
+  if (!exp) return;
+  if (exp.kind === "function") {
+    _exportTags.set(exp, { module: filePath, export: "default" });
+    return;
+  }
+  if (exp.kind === "object") {
+    for (const [k, v] of Object.entries(exp.properties)) {
+      if (v.kind === "function") _exportTags.set(v, { module: filePath, export: k });
+    }
+  }
+}
+
 let _callCollector: ((record: CallRecord) => void) | null = null;
 
 export function setCallCollector(collector: ((record: CallRecord) => void) | null): void {
@@ -372,6 +430,13 @@ function extractOrigin(
     }
   }
   return undefined;
+}
+
+/** Own-property check for TypeValue property records. Plain `{}` records
+ * inherit Object.prototype, so bracket access would leak native members
+ * (e.g. the real JS `toString`) into the type system as bogus values. */
+function hasOwnProp(props: Record<string, TypeValue>, name: string): boolean {
+  return Object.prototype.hasOwnProperty.call(props, name);
 }
 
 function recordUnknown(r: Omit<UnknownRecord, "loc"> & { loc?: Node["loc"] }): void {
@@ -563,6 +628,14 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         // It's a direct value (like parseInt, isNaN)
         return builtin as TypeValue;
       }
+      // Constructible built-in classes without static-method coverage (Error,
+      // Map, Set, ...) still resolve to a namespace object so `X.prototype`
+      // can be typed as an instance.
+      if (BUILTIN_PROTOTYPE_CLASSES.has(node.name) && !env.has(node.name)) {
+        const obj = T.object({});
+        (obj as any)._builtinName = node.name;
+        return obj;
+      }
       // Check if it looks like a built-in but isn't covered
       if (node.name[0] === node.name[0].toUpperCase() && !env.has(node.name)) {
         if (_onUnknownBuiltin) {
@@ -574,6 +647,10 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           loc: node.loc,
           reason: `unknown global identifier '${node.name}'`,
         });
+        // Unresolved builtins propagate unknown (not undefined) so property
+        // access on them degrades to unknown instead of a false
+        // "property does not exist on undefined" error.
+        return T.unknown;
       }
       return env.lookup(node.name);
     }
@@ -817,6 +894,11 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       for (const decl of node.declarations) {
         const init = _activeAsOverride ?? (decl.init ? evaluate(decl.init, env) : T.undefined);
         if (isReturn(init) || isBranch(init) || isThrow(init)) return init;
+        // Name anonymous function values after their binding so recursion
+        // truncation records can cite e.g. `recursion:fn`.
+        if (init.kind === "function" && decl.id.type === "Identifier" && !(init as any)._name) {
+          (init as any)._name = decl.id.name;
+        }
         bindPattern(decl.id, init, env);
         if (decl.id.type === "Identifier") {
           recordNodeType(decl.id, init);
@@ -844,11 +926,23 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         if (!env.update(node.left.name, val)) {
           env.bind(node.left.name, val);
         }
+        if (val.kind === "function" && !(val as any)._name) {
+          (val as any)._name = node.left.name;
+        }
         return val;
       }
       if (node.left.type === "MemberExpression") {
         const val = evaluate(node.right, env);
         if (isReturn(val) || isBranch(val) || isThrow(val)) return val;
+        // `obj.method = function () {...}` — name the function after the
+        // assigned property (e.g. `recursion:internals.clone`).
+        if (val.kind === "function" && !(val as any)._name) {
+          const memberKey = getMemberKey(node.left, env);
+          if (memberKey !== null) {
+            const objKey = node.left.object.type === "Identifier" ? `${node.left.object.name}.` : "";
+            (val as any)._name = `${objKey}${memberKey}`;
+          }
+        }
         const objVal = evaluate(node.left.object, env);
         if (isReturn(objVal) || isBranch(objVal) || isThrow(objVal)) return val;
         if (objVal.kind === "object") {
@@ -916,6 +1010,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       const paramNames = node.params.map(describeParam);
       const fnType = T.fn(paramNames, node.body, env);
       (fnType as any)._paramPatterns = node.params;
+      if (node.id) (fnType as any)._name = node.id.name;
       if (node.async) (fnType as any)._async = true;
       env.bind(node.id.name, fnType);
       return T.undefined;
@@ -927,6 +1022,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       const body = node.body;
       const fnType = T.fn(paramNames, body, env);
       (fnType as any)._paramPatterns = node.params;
+      if ((node as any).id) (fnType as any)._name = (node as any).id.name;
       if (node.async) (fnType as any)._async = true;
       return fnType;
     }
@@ -1000,6 +1096,17 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       if (callee.type === "MemberExpression") {
         const methodResult = evaluateMethodCall(callee, node.arguments as Node[], env);
         if (methodResult !== null) return methodResult;
+      }
+
+      // CommonJS require(specifier) — resolved through the same module
+      // resolver/cache as ESM import. The identity check keeps user-defined
+      // `require` bindings on the normal call path.
+      if (
+        callee.type === "Identifier" &&
+        callee.name === "require" &&
+        env.lookup("require") === _cjsRequireValue
+      ) {
+        return evaluateRequireCall(node, env);
       }
 
       // Handle built-in global functions (only if not overridden in environment, e.g., by mocks)
@@ -1089,7 +1196,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         let propMissed = false;
         const result = distributeOverUnion(objVal, (obj) => {
           if (obj.kind === "object" && propVal.kind === "literal" && typeof propVal.value === "string") {
-            return obj.properties[propVal.value] ?? T.undefined;
+            return (hasOwnProp(obj.properties, propVal.value) ? obj.properties[propVal.value] : undefined) ?? T.undefined;
           }
           if ((obj.kind === "array" || obj.kind === "tuple") && propVal.kind === "literal" && typeof propVal.value === "number") {
             if (obj.kind === "tuple") return obj.elements[propVal.value] ?? T.undefined;
@@ -1124,6 +1231,10 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
               return (builtin as Record<string, TypeValue>)[propName];
             }
           }
+          // `X.prototype` on a constructible built-in resolves to instances of X
+          if (propName === "prototype" && builtinName && BUILTIN_PROTOTYPE_CLASSES.has(builtinName)) {
+            return T.instanceOf(builtinName);
+          }
           // Check for Map.size property
           if (obj.kind === "instance" && obj.className === "Map" && propName === "size") {
             return T.number;
@@ -1132,8 +1243,25 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           if (obj.kind === "instance" && obj.className === "Set" && propName === "size") {
             return T.number;
           }
-          if (obj.kind === "object") return obj.properties[propName] ?? T.undefined;
-          if (obj.kind === "instance") return obj.properties[propName] ?? T.undefined;
+          if (obj.kind === "object") {
+            const ownVal = hasOwnProp(obj.properties, propName) ? obj.properties[propName] : undefined;
+            if (ownVal) return ownVal;
+            if (propName === "toString") return T.fnSig([], T.string);
+            return T.undefined;
+          }
+          if (obj.kind === "instance") {
+            // Own-property lookup only: a plain `{}` properties record would
+            // otherwise leak native Object.prototype members (e.g. the real
+            // JS `toString` function) into the type system.
+            const own = hasOwnProp(obj.properties, propName) ? obj.properties[propName] : undefined;
+            if (own) return own;
+            // Every object inherits Object.prototype.toString: () => string.
+            // Materializing it (instead of undefined) lets the common
+            // `Object.prototype.toString.call(x)` brand-check idiom type as
+            // string instead of erroring on `.call` of undefined.
+            if (propName === "toString") return T.fnSig([], T.string);
+            return T.undefined;
+          }
           if (propName === "length" && (obj.kind === "array" || obj.kind === "tuple")) {
             return obj.kind === "tuple" ? T.literal(obj.elements.length) : T.number;
           }
@@ -1181,7 +1309,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         let propMissed = false;
         const result = distributeOverUnion(objVal, (obj) => {
           if (obj.kind === "object" && propVal.kind === "literal" && typeof propVal.value === "string") {
-            return obj.properties[propVal.value] ?? T.undefined;
+            return (hasOwnProp(obj.properties, propVal.value) ? obj.properties[propVal.value] : undefined) ?? T.undefined;
           }
           if ((obj.kind === "array" || obj.kind === "tuple") && propVal.kind === "literal" && typeof propVal.value === "number") {
             if (obj.kind === "tuple") return obj.elements[propVal.value] ?? T.undefined;
@@ -1208,8 +1336,30 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         const propName = node.property.name;
         let propMissed = false;
         const result = distributeOverUnion(objVal, (obj) => {
-          if (obj.kind === "object") return obj.properties[propName] ?? T.undefined;
-          if (obj.kind === "instance") return obj.properties[propName] ?? T.undefined;
+          // `X.prototype` on a constructible built-in resolves to instances of X
+          const optBuiltinName = (obj as any)._builtinName as string | undefined;
+          if (propName === "prototype" && optBuiltinName && BUILTIN_PROTOTYPE_CLASSES.has(optBuiltinName)) {
+            return T.instanceOf(optBuiltinName);
+          }
+          if (obj.kind === "object") {
+            const ownVal = hasOwnProp(obj.properties, propName) ? obj.properties[propName] : undefined;
+            if (ownVal) return ownVal;
+            if (propName === "toString") return T.fnSig([], T.string);
+            return T.undefined;
+          }
+          if (obj.kind === "instance") {
+            // Own-property lookup only (see MemberExpression note): a plain
+            // `{}` properties record would otherwise leak native
+            // Object.prototype members into the type system.
+            const own = hasOwnProp(obj.properties, propName) ? obj.properties[propName] : undefined;
+            if (own) return own;
+            // Every object inherits Object.prototype.toString: () => string.
+            // Materializing it (instead of undefined) lets the common
+            // `Object.prototype.toString.call(x)` brand-check idiom type as
+            // string instead of erroring on `.call` of undefined.
+            if (propName === "toString") return T.fnSig([], T.string);
+            return T.undefined;
+          }
           if (propName === "length" && (obj.kind === "array" || obj.kind === "tuple")) {
             return obj.kind === "tuple" ? T.literal(obj.elements.length) : T.number;
           }
@@ -1583,6 +1733,37 @@ function evaluateBuiltinCall(
   return null;
 }
 
+// --- Function.prototype.call / apply / bind ---
+// When the receiver of a method call is itself a function value,
+// `f.call(thisArg, ...args)` / `f.apply(thisArg, argsArray)` re-invoke that
+// function with the args following the leading thisArg; `f.bind(...)`
+// approximates to the original function value. Non-function receivers keep
+// the existing fallback.
+function evaluateFunctionPrototypeMethod(
+  fnVal: TypeValue & { kind: "function" },
+  methodName: string,
+  argVals: TypeValue[],
+): TypeValue | null {
+  if (methodName === "bind") return fnVal;
+  if (methodName === "call") {
+    return callFunctionFull(fnVal, argVals.slice(1)).value;
+  }
+  if (methodName === "apply") {
+    const listArg = argVals[1];
+    let spreadArgs: TypeValue[];
+    if (listArg?.kind === "tuple") {
+      spreadArgs = listArg.elements;
+    } else {
+      // Unknown-length array (or non-array): approximate with the element
+      // type (or unknown) repeated to the callee's arity.
+      const el = listArg?.kind === "array" ? listArg.element : T.unknown;
+      spreadArgs = fnVal.params.map(() => el);
+    }
+    return callFunctionFull(fnVal, spreadArgs).value;
+  }
+  return null;
+}
+
 function evaluateMethodForMember(
   objVal: TypeValue,
   methodName: string,
@@ -1590,6 +1771,12 @@ function evaluateMethodForMember(
   callee: Node & { type: "MemberExpression" },
   env: Environment,
 ): TypeValue | null {
+  // Function.prototype.call/apply/bind on function-valued union members
+  if (objVal.kind === "function") {
+    const fnProto = evaluateFunctionPrototypeMethod(objVal, methodName, argVals);
+    if (fnProto !== null) return fnProto;
+  }
+
   // Promise instance methods
   if (objVal.kind === "promise") {
     const result = evaluatePromiseInstanceMethod(objVal, methodName, argVals);
@@ -1661,6 +1848,14 @@ function evaluateMethodCall(
       });
     }
     return result;
+  }
+
+  // Function.prototype.call/apply/bind re-invoking a function value
+  if (objVal.kind === "function") {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const fnProto = evaluateFunctionPrototypeMethod(objVal, methodName, argVals as TypeValue[]);
+    if (fnProto !== null) return fnProto;
   }
 
   // Handle console methods (no return value)
@@ -2596,6 +2791,96 @@ function evaluateDoWhileStatement(
   return T.undefined;
 }
 
+/** Load (or fetch from cache) the environment for a resolved module file.
+ * Shared by ESM import and CJS require — one loading path, one cache. */
+function loadModuleEnv(resolved: { ast: Node; filePath: string }): Environment {
+  let moduleEnv = moduleCache.get(resolved.filePath);
+  if (!moduleEnv) {
+    moduleEnv = createEnvironment();
+    moduleCache.set(resolved.filePath, moduleEnv);
+    const savedDir = currentFileDir;
+    currentFileDir = resolved.filePath.replace(/\/[^/]+$/, "");
+    evaluateProgram(resolved.ast, moduleEnv);
+    currentFileDir = savedDir;
+    tagModuleExports(moduleEnv, resolved.filePath);
+    tagCommonJsExports(moduleEnv, resolved.filePath);
+  }
+  return moduleEnv;
+}
+
+/** Build an exports namespace object from a module's `__export_` bindings
+ * (ESM exports required from CJS). Null when the module exports nothing. */
+function namespaceFromExportBindings(env: Environment): TypeValue | null {
+  const exports: Record<string, TypeValue> = {};
+  const bindings = env.getOwnBindings();
+  for (const [k, v] of Object.entries(bindings)) {
+    if (!k.startsWith("__export_")) continue;
+    exports[k === "__export_default" ? "default" : k.slice("__export_".length)] = v;
+  }
+  if (Object.keys(exports).length === 0) return null;
+  return T.object(exports);
+}
+
+/** The value of require() for an evaluated module: `module.exports` when the
+ * target assigned it, the (possibly `exports.x`-mutated) exports object
+ * otherwise, and the ESM namespace when the target is an ES module. */
+function commonJsExportsValue(moduleEnv: Environment): TypeValue {
+  if (moduleEnv.has("module")) {
+    const moduleVal = moduleEnv.lookup("module");
+    if (moduleVal.kind === "object") {
+      const exp = moduleVal.properties["exports"];
+      if (exp) {
+        if (
+          exp.kind === "object" &&
+          (exp as any).__cjsExportsRoot === true &&
+          Object.keys(exp.properties).length === 0
+        ) {
+          // Target never wrote CJS exports — surface ESM exports instead.
+          return namespaceFromExportBindings(moduleEnv) ?? exp;
+        }
+        return exp;
+      }
+    }
+  }
+  return T.unknown;
+}
+
+function evaluateRequireCall(node: Node & { type: "CallExpression" }, _env: Environment): EvalResult {
+  const arg = (node.arguments as Node[])[0];
+  if (!arg || arg.type !== "StringLiteral") {
+    recordUnknown({
+      kind: "global",
+      name: "require",
+      loc: node.loc,
+      reason: "require() with non-literal specifier",
+    });
+    return T.unknown;
+  }
+  const specifier = arg.value as string;
+  // Bare specifiers (npm packages) are not resolved in v1.
+  if (!specifier.startsWith(".") && !specifier.startsWith("/")) {
+    recordUnknown({
+      kind: "global",
+      name: `require('${specifier}')`,
+      loc: node.loc,
+      reason: `bare module specifier '${specifier}' is not resolved (npm packages unsupported)`,
+    });
+    return T.unknown;
+  }
+  if (!currentModuleResolver) return T.unknown;
+  const resolved = currentModuleResolver(specifier, currentFileDir);
+  if (!resolved) {
+    recordUnknown({
+      kind: "global",
+      name: `require('${specifier}')`,
+      loc: node.loc,
+      reason: `cannot resolve module '${specifier}'`,
+    });
+    return T.unknown;
+  }
+  return commonJsExportsValue(loadModuleEnv(resolved));
+}
+
 function evaluateImportDeclaration(node: Node & { type: "ImportDeclaration" }, env: Environment): EvalResult {
   const source = node.source.value;
 
@@ -2603,31 +2888,13 @@ function evaluateImportDeclaration(node: Node & { type: "ImportDeclaration" }, e
   if (mockModule && currentModuleResolver) {
     const mockResolved = currentModuleResolver(mockModule.fromPath, currentFileDir);
     if (mockResolved) {
-      let mockEnv = moduleCache.get(mockResolved.filePath);
-      if (!mockEnv) {
-        mockEnv = createEnvironment();
-        moduleCache.set(mockResolved.filePath, mockEnv);
-        const savedDir = currentFileDir;
-        currentFileDir = mockResolved.filePath.replace(/\/[^/]+$/, "");
-        evaluateProgram(mockResolved.ast, mockEnv);
-        currentFileDir = savedDir;
-        tagModuleExports(mockEnv, mockResolved.filePath);
-      }
+      const mockEnv = loadModuleEnv(mockResolved);
 
       if (mockModule.names) {
         const originalResolved = currentModuleResolver(source, currentFileDir);
         let originalEnv: Environment | undefined;
         if (originalResolved) {
-          originalEnv = moduleCache.get(originalResolved.filePath);
-          if (!originalEnv) {
-            originalEnv = createEnvironment();
-            moduleCache.set(originalResolved.filePath, originalEnv);
-            const savedDir = currentFileDir;
-            currentFileDir = originalResolved.filePath.replace(/\/[^/]+$/, "");
-            evaluateProgram(originalResolved.ast, originalEnv);
-            currentFileDir = savedDir;
-            tagModuleExports(originalEnv, originalResolved.filePath);
-          }
+          originalEnv = loadModuleEnv(originalResolved);
         }
 
         for (const spec of node.specifiers) {
@@ -2720,16 +2987,7 @@ function evaluateImportDeclaration(node: Node & { type: "ImportDeclaration" }, e
   const resolved = currentModuleResolver(source, currentFileDir);
   if (!resolved) return T.undefined;
 
-  let moduleEnv = moduleCache.get(resolved.filePath);
-  if (!moduleEnv) {
-    moduleEnv = createEnvironment();
-    moduleCache.set(resolved.filePath, moduleEnv);
-    const savedDir = currentFileDir;
-    currentFileDir = resolved.filePath.replace(/\/[^/]+$/, "");
-    evaluateProgram(resolved.ast, moduleEnv);
-    currentFileDir = savedDir;
-    tagModuleExports(moduleEnv, resolved.filePath);
-  }
+  const moduleEnv = loadModuleEnv(resolved);
 
   for (const spec of node.specifiers) {
     if (spec.type === "ImportDefaultSpecifier") {
@@ -2771,6 +3029,7 @@ function evaluateClassDeclaration(node: Node & { type: "ClassDeclaration" }, env
     );
     const fnType = T.fn(paramNames, member.body, env) as TypeValue & { kind: "function" };
     (fnType as any)._paramPatterns = member.params;
+    (fnType as any)._name = `${className}.${methodName}`;
     if (member.async) (fnType as any)._async = true;
 
     if (member.kind === "constructor") {
@@ -2802,10 +3061,6 @@ function evaluateInstanceof(left: TypeValue, _right: TypeValue, rightNode: Node,
     return T.boolean;
   });
 }
-
-const BUILTIN_ERROR_CLASSES = new Set([
-  "Error", "TypeError", "SyntaxError", "RangeError", "ReferenceError", "URIError", "EvalError",
-]);
 
 function evaluateNewExpression(node: Node & { type: "NewExpression" }, env: Environment): EvalResult {
   const callee = node.callee as Node;
@@ -3061,7 +3316,101 @@ type CallResult = {
   throwLoc?: SourceRange;
 };
 
+// --- Recursion termination: cycle detection + depth/work budgets ---
+// Abstract interpretation unrolls calls instead of iterating to a fixpoint,
+// so recursive functions invoked under unconstrained arguments (e.g. an
+// entry@ case where `seen.has(obj)` cannot concretely short-circuit) expand
+// forever. Three guards cut the expansion, all returning T.unknown — the
+// call-side dual of loop widening: the result simply drops the deeper
+// iterations' effects instead of guessing them, a sound over-approximation.
+//
+// 1. Cycle detection: a call whose (function value, abstract args) pair is
+//    already being evaluated higher on the stack makes no abstract progress
+//    (clone(obj, seen) re-invoking itself with identical types). Unrolling it
+//    anyway fans out exponentially, so the re-entrant edge is cut at its
+//    first recurrence — the same treatment the call memo applies on
+//    MEMO_IN_PROGRESS. Accumulator-growing recursion (deepEqual's `seen`
+//    tuple getting one entry longer per level) never repeats a key verbatim,
+//    so cycle keys are *widened*: tuples longer than CYCLE_TUPLE_CAP and
+//    objects with more than CYCLE_PROP_CAP properties all normalize to the
+//    same key, making accumulator growth collapse after a few levels.
+//    Args-changing recursion (factorial(5) -> factorial(4)) is unaffected
+//    because each level still has a distinct widened key.
+// 2. Depth budget: backstop for recursion whose argument types keep morphing
+//    without structurally repeating (f(n) -> f([n]) -> f([[n]]) ...) beyond
+//    what the widening recognizes.
+// 3. Total call budget: absolute bound on the unrolled call tree so no
+//    pathological branching shape can exhaust memory; analysis of any file
+//    stays linear in this budget.
+const MAX_CALL_DEPTH = 64;
+const MAX_TOTAL_CALLS = 200_000;
+const CYCLE_TUPLE_CAP = 4;
+const CYCLE_PROP_CAP = 8;
+let _callDepth = 0;
+let _totalCalls = 0;
+const _activeCallKeys: string[] = [];
+const _fnCallIds = new WeakMap<object, string>();
+let _fnCallIdSeq = 0;
+
+function cycleArgKey(tv: TypeValue): string {
+  if (tv.kind === "tuple") {
+    if (tv.elements.length > CYCLE_TUPLE_CAP) {
+      return `[${tv.elements.slice(0, CYCLE_TUPLE_CAP).map(cycleArgKey).join(",")},…widened]`;
+    }
+    return `[${tv.elements.map(cycleArgKey).join(",")}]`;
+  }
+  if (tv.kind === "object") {
+    const entries = Object.entries(tv.properties);
+    if (entries.length > CYCLE_PROP_CAP) {
+      return `{${entries.slice(0, CYCLE_PROP_CAP).map(([k, v]) => `${k}:${cycleArgKey(v)}`).join(",")},…widened}`;
+    }
+    return `{${entries.map(([k, v]) => `${k}:${cycleArgKey(v)}`).join(",")}}`;
+  }
+  if (tv.kind === "union") {
+    return tv.members.map(cycleArgKey).join("|");
+  }
+  return typeValueToString(tv);
+}
+
+function fnCallKey(fn: TypeValue & { kind: "function" }, args: TypeValue[]): string {
+  let id = _fnCallIds.get(fn);
+  if (!id) {
+    id = `fn#${++_fnCallIdSeq}`;
+    _fnCallIds.set(fn, id);
+  }
+  return `${id}(${args.map(cycleArgKey).join(",")})`;
+}
+
+function callBudgetExhausted(fnName: string, loc: Node["loc"]): CallResult {
+  // kind "global" reuses the existing UnknownRecord union (the analyzer
+  // renders it as a warning-level record; no analyzer change needed).
+  recordUnknown({
+    kind: "global",
+    name: `recursion:${fnName}`,
+    loc,
+    reason: `recursive call truncated to unknown (cycle, depth > ${MAX_CALL_DEPTH}, or work budget)`,
+  });
+  return { value: T.unknown, throws: T.never };
+}
+
 function callFunctionFull(fn: TypeValue & { kind: "function" }, args: TypeValue[]): CallResult {
+  const callKey = fnCallKey(fn, args);
+  const fnName = (fn as any)._name ?? "<anonymous>";
+  if (_activeCallKeys.includes(callKey) || _callDepth >= MAX_CALL_DEPTH || _totalCalls >= MAX_TOTAL_CALLS) {
+    return callBudgetExhausted(fnName, fn.body?.loc);
+  }
+  _totalCalls++;
+  _callDepth++;
+  _activeCallKeys.push(callKey);
+  try {
+    return callFunctionUnchecked(fn, args);
+  } finally {
+    _activeCallKeys.pop();
+    _callDepth--;
+  }
+}
+
+function callFunctionUnchecked(fn: TypeValue & { kind: "function" }, args: TypeValue[]): CallResult {
   // Check for direct return value (used by sinon mocks)
   const directReturn = (fn as any)._directReturn as TypeValue | undefined;
   if (directReturn) {
@@ -3165,26 +3514,35 @@ export function evaluateFunctionFull(
   }
 
   if (actualNode.type === "FunctionDeclaration" || actualNode.type === "FunctionExpression" || actualNode.type === "ArrowFunctionExpression") {
-    const callEnv = env.fork();
-    const isAsync = !!(actualNode as any).async;
-    for (let i = 0; i < actualNode.params.length; i++) {
-      bindPattern(actualNode.params[i], args[i] ?? T.undefined, callEnv);
+    if (_callDepth >= MAX_CALL_DEPTH) {
+      return callBudgetExhausted((actualNode as any).id?.name ?? "<anonymous>", actualNode.loc);
     }
-    const result = evaluate(actualNode.body, callEnv);
-    if (isThrow(result)) return { value: T.never, throws: result.thrown, throwLoc: result.loc };
-    const value = isReturn(result) ? result.value
-      : isBranch(result) ? result.returnedValue
-      : result;
-    // For async functions, unwrap Promise values to avoid double wrapping
-    const wrapped = isAsync
-      ? (value.kind === "promise" ? value : T.promise(value))
-      : value;
-    return { value: wrapped, throws: T.never };
+    _callDepth++;
+    try {
+      const callEnv = env.fork();
+      const isAsync = !!(actualNode as any).async;
+      for (let i = 0; i < actualNode.params.length; i++) {
+        bindPattern(actualNode.params[i], args[i] ?? T.undefined, callEnv);
+      }
+      const result = evaluate(actualNode.body, callEnv);
+      if (isThrow(result)) return { value: T.never, throws: result.thrown, throwLoc: result.loc };
+      const value = isReturn(result) ? result.value
+        : isBranch(result) ? result.returnedValue
+        : result;
+      // For async functions, unwrap Promise values to avoid double wrapping
+      const wrapped = isAsync
+        ? (value.kind === "promise" ? value : T.promise(value))
+        : value;
+      return { value: wrapped, throws: T.never };
+    } finally {
+      _callDepth--;
+    }
   }
   return { value: T.unknown, throws: T.never };
 }
 
 export function evaluateProgram(node: Node, env: Environment): TypeValue {
+  bindCommonJsGlobals(env);
   const result = evaluate(node, env);
   if (isReturn(result)) return result.value;
   if (isBranch(result)) return result.returnedValue;

@@ -93,6 +93,10 @@ export function generateDts(result: AnalysisResult): string {
   const lines: string[] = [];
 
   for (const fn of result.functions) {
+    // CJS-style binding/assignment functions have no declaration-stable
+    // export name; they stay in infer/JSON output only.
+    if (fn.noDeclaration) continue;
+
     const jsdoc = generateJSDoc(fn);
 
     if (fn.cases.length === 0 && fn.combined) {
