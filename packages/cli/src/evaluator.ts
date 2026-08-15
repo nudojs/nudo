@@ -18,7 +18,9 @@ import {
   widenLiteral,
   createTemplate,
   subtractType,
+  getFnSig,
 } from "@nudojs/core";
+import { extractInlineDirectives, type InlineDirective } from "@nudojs/parser";
 import { narrow } from "./narrowing.ts";
 import { PROMISE_STATIC_METHODS, evaluatePromiseStaticMethod, evaluatePromiseInstanceMethod } from "./builtins/builtin-promise.ts";
 import { MAP_INSTANCE_METHODS, createMapType } from "./builtins/builtin-map.ts";
@@ -116,6 +118,36 @@ const BUILTIN_INSTANCE_METHODS: Record<string, Record<string, (...args: TypeValu
 
 type SourceRange = { start: { line: number; column: number }; end: { line: number; column: number } };
 
+let _currentSource = "";
+
+export function setCurrentSource(source: string): void {
+  _currentSource = source;
+}
+
+type ActiveReplace = { targetSource: string; typeExpr: TypeValue };
+let _activeReplacements: ActiveReplace[] = [];
+let _activeAsOverride: TypeValue | null = null;
+
+function nodeSourceText(node: Node): string | null {
+  if (node.start == null || node.end == null || !_currentSource) return null;
+  return _currentSource.slice(node.start, node.end);
+}
+
+function normalizeWhitespace(s: string): string {
+  return s.replace(/\s+/g, "");
+}
+
+function matchesReplacement(node: Node): TypeValue | null {
+  if (_activeReplacements.length === 0) return null;
+  const src = nodeSourceText(node);
+  if (!src) return null;
+  const normalized = normalizeWhitespace(src);
+  for (const r of _activeReplacements) {
+    if (normalizeWhitespace(r.targetSource) === normalized) return r.typeExpr;
+  }
+  return null;
+}
+
 const RETURN_SIGNAL = Symbol("ReturnSignal");
 const BRANCH_SIGNAL = Symbol("BranchSignal");
 const THROW_SIGNAL = Symbol("ThrowSignal");
@@ -186,6 +218,25 @@ export function setModuleResolver(resolver: ((source: string, fromDir: string) =
 
 let currentModuleResolver: ((source: string, fromDir: string) => { ast: Node; filePath: string } | null) | null = null;
 let currentFileDir = "";
+
+let envModules: Record<string, Record<string, TypeValue>> = {};
+let mockModules: Map<string, { fromPath: string; names?: string[] }> = new Map();
+
+export function setEnvModules(modules: Record<string, Record<string, TypeValue>>): void {
+  envModules = modules;
+}
+
+export function resetEnvModules(): void {
+  envModules = {};
+}
+
+export function setMockModules(mocks: Map<string, { fromPath: string; names?: string[] }>): void {
+  mockModules = mocks;
+}
+
+export function resetMockModules(): void {
+  mockModules = new Map();
+}
 
 let _nodeTypeCollector: ((node: Node, tv: TypeValue) => void) | null = null;
 let _sampleCount = 3;
@@ -274,7 +325,23 @@ function evaluateStatements(
 
   for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i];
+
+    const inlineDirectives = extractInlineDirectives(stmt);
+    const savedAs = _activeAsOverride;
+    const savedReplacements = _activeReplacements;
+
+    const asDir = inlineDirectives.find((d): d is InlineDirective & { kind: "as" } => d.kind === "as");
+    const replaceDirs = inlineDirectives.filter((d): d is InlineDirective & { kind: "replace" } => d.kind === "replace");
+
+    _activeAsOverride = asDir?.typeExpr ?? null;
+    _activeReplacements = replaceDirs.length > 0
+      ? replaceDirs.map((d) => ({ targetSource: d.targetSource, typeExpr: d.typeExpr }))
+      : [];
+
     const result = evaluate(stmt, currentEnv);
+
+    _activeAsOverride = savedAs;
+    _activeReplacements = savedReplacements;
 
     if (isThrow(result)) {
       collectUnreachable(stmts, i + 1);
@@ -324,6 +391,9 @@ function describeParam(p: Node): string {
 }
 
 export function evaluate(node: Node, env: Environment): EvalResult {
+  const replacement = matchesReplacement(node);
+  if (replacement) return replacement;
+
   const result = evaluateNode(node, env);
   if (_nodeTypeCollector && node.loc && !isReturn(result) && !isBranch(result) && !isThrow(result)) {
     recordNodeType(node, result);
@@ -340,6 +410,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       return evaluateStatements(node.body, env);
 
     case "ExpressionStatement":
+      if (_activeAsOverride) return _activeAsOverride;
       return evaluate(node.expression, env);
 
     case "NumericLiteral":
@@ -359,8 +430,9 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
     case "Identifier": {
       if (node.name === "undefined") return T.undefined;
-      // Check for built-in global objects
-      if (node.name in BUILTIN_STATIC_METHODS) {
+      // Check for built-in global objects (env-injected values take priority,
+      // e.g. @nudo:env es binds fnSig-backed globals with precise impls)
+      if (node.name in BUILTIN_STATIC_METHODS && !env.has(node.name)) {
         const builtin = BUILTIN_STATIC_METHODS[node.name];
         if (typeof builtin === "object" && builtin !== null && !("kind" in builtin)) {
           // It's a namespace object (like Date, Math, JSON)
@@ -607,6 +679,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
     }
 
     case "ReturnStatement": {
+      if (_activeAsOverride) return makeReturn(_activeAsOverride);
       const arg = node.argument;
       if (!arg) return makeReturn(T.undefined);
       const val = evaluate(arg, env);
@@ -616,7 +689,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
     case "VariableDeclaration": {
       for (const decl of node.declarations) {
-        const init = decl.init ? evaluate(decl.init, env) : T.undefined;
+        const init = _activeAsOverride ?? (decl.init ? evaluate(decl.init, env) : T.undefined);
         if (isReturn(init) || isBranch(init) || isThrow(init)) return init;
         bindPattern(decl.id, init, env);
         if (decl.id.type === "Identifier") {
@@ -1386,14 +1459,14 @@ function evaluateMethodCall(
   }
 
   // Handle console methods (no return value)
-  if (callee.object.type === "Identifier" && callee.object.name === "console") {
+  if (callee.object.type === "Identifier" && callee.object.name === "console" && !env.has("console")) {
     const argVals = evaluateArgs(args, env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     return T.undefined;
   }
 
   // Handle Math methods
-  if (callee.object.type === "Identifier" && callee.object.name === "Math") {
+  if (callee.object.type === "Identifier" && callee.object.name === "Math" && !env.has("Math")) {
     const argVals = evaluateArgs(args, env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     // Math methods return numbers
@@ -1410,7 +1483,7 @@ function evaluateMethodCall(
   }
 
   // Handle Date methods
-  if (callee.object.type === "Identifier" && callee.object.name === "Date") {
+  if (callee.object.type === "Identifier" && callee.object.name === "Date" && !env.has("Date")) {
     const argVals = evaluateArgs(args, env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     // Date static methods
@@ -1429,7 +1502,7 @@ function evaluateMethodCall(
   }
 
   // Handle JSON methods
-  if (callee.object.type === "Identifier" && callee.object.name === "JSON") {
+  if (callee.object.type === "Identifier" && callee.object.name === "JSON" && !env.has("JSON")) {
     const argVals = evaluateArgs(args, env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     // JSON.parse returns any
@@ -1444,7 +1517,7 @@ function evaluateMethodCall(
   }
 
   // Handle Array methods (Array.from, Array.isArray, etc.)
-  if (callee.object.type === "Identifier" && callee.object.name === "Array") {
+  if (callee.object.type === "Identifier" && callee.object.name === "Array" && !env.has("Array")) {
     const argVals = evaluateArgs(args, env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     if (methodName === "from") {
@@ -1473,7 +1546,7 @@ function evaluateMethodCall(
   }
 
   // Handle Promise methods
-  if (callee.object.type === "Identifier" && callee.object.name === "Promise") {
+  if (callee.object.type === "Identifier" && callee.object.name === "Promise" && !env.has("Promise")) {
     const argVals = evaluateArgs(args, env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     const result = evaluatePromiseStaticMethod(methodName, argVals as TypeValue[]);
@@ -1482,7 +1555,7 @@ function evaluateMethodCall(
   }
 
   // Handle Symbol methods
-  if (callee.object.type === "Identifier" && callee.object.name === "Symbol") {
+  if (callee.object.type === "Identifier" && callee.object.name === "Symbol" && !env.has("Symbol")) {
     const argVals = evaluateArgs(args, env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     if (methodName === "for") return T.symbol;
@@ -1491,7 +1564,7 @@ function evaluateMethodCall(
   }
 
   // Handle Reflect methods
-  if (callee.object.type === "Identifier" && callee.object.name === "Reflect") {
+  if (callee.object.type === "Identifier" && callee.object.name === "Reflect" && !env.has("Reflect")) {
     const argVals = evaluateArgs(args, env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     const method = (REFLECT_METHODS as Record<string, (...args: TypeValue[]) => TypeValue>)[methodName];
@@ -1640,6 +1713,7 @@ function evaluateMethodCall(
   if (
     callee.object.type === "Identifier" &&
     callee.object.name === "Object" &&
+    !env.has("Object") &&
     args.length >= 1
   ) {
     const argVal = evaluate(args[0], env);
@@ -2282,6 +2356,121 @@ function evaluateDoWhileStatement(
 
 function evaluateImportDeclaration(node: Node & { type: "ImportDeclaration" }, env: Environment): EvalResult {
   const source = node.source.value;
+
+  const mockModule = mockModules.get(source);
+  if (mockModule && currentModuleResolver) {
+    const mockResolved = currentModuleResolver(mockModule.fromPath, currentFileDir);
+    if (mockResolved) {
+      let mockEnv = moduleCache.get(mockResolved.filePath);
+      if (!mockEnv) {
+        mockEnv = createEnvironment();
+        moduleCache.set(mockResolved.filePath, mockEnv);
+        const savedDir = currentFileDir;
+        currentFileDir = mockResolved.filePath.replace(/\/[^/]+$/, "");
+        evaluateProgram(mockResolved.ast, mockEnv);
+        currentFileDir = savedDir;
+      }
+
+      if (mockModule.names) {
+        const originalResolved = currentModuleResolver(source, currentFileDir);
+        let originalEnv: Environment | undefined;
+        if (originalResolved) {
+          originalEnv = moduleCache.get(originalResolved.filePath);
+          if (!originalEnv) {
+            originalEnv = createEnvironment();
+            moduleCache.set(originalResolved.filePath, originalEnv);
+            const savedDir = currentFileDir;
+            currentFileDir = originalResolved.filePath.replace(/\/[^/]+$/, "");
+            evaluateProgram(originalResolved.ast, originalEnv);
+            currentFileDir = savedDir;
+          }
+        }
+
+        for (const spec of node.specifiers) {
+          if (spec.type === "ImportSpecifier") {
+            const importedName = spec.imported.type === "Identifier" ? spec.imported.name : null;
+            if (importedName && mockModule.names.includes(importedName)) {
+              const val = mockEnv.has(`__export_${importedName}`) ? mockEnv.lookup(`__export_${importedName}`) : T.unknown;
+              env.bind(spec.local.name, val);
+            } else if (importedName && originalEnv) {
+              const val = originalEnv.has(`__export_${importedName}`) ? originalEnv.lookup(`__export_${importedName}`) : T.unknown;
+              env.bind(spec.local.name, val);
+            }
+          } else if (spec.type === "ImportDefaultSpecifier") {
+            const sourceEnv = originalEnv ?? mockEnv;
+            const val = sourceEnv.has(`__export_default`) ? sourceEnv.lookup(`__export_default`) : T.unknown;
+            env.bind(spec.local.name, val);
+          } else if (spec.type === "ImportNamespaceSpecifier") {
+            const exports: Record<string, TypeValue> = {};
+            const sourceEnv = originalEnv ?? mockEnv;
+            const bindings = sourceEnv.getOwnBindings();
+            for (const [k, v] of Object.entries(bindings)) {
+              if (k.startsWith("__export_") && k !== "__export_default") {
+                const name = k.slice("__export_".length);
+                exports[name] = mockModule.names.includes(name)
+                  ? (mockEnv.has(k) ? mockEnv.lookup(k) : v)
+                  : v;
+              }
+            }
+            const mockBindings = mockEnv.getOwnBindings();
+            for (const [k, v] of Object.entries(mockBindings)) {
+              if (k.startsWith("__export_") && k !== "__export_default") {
+                const name = k.slice("__export_".length);
+                if (mockModule.names.includes(name)) {
+                  exports[name] = v;
+                }
+              }
+            }
+            env.bind(spec.local.name, T.object(exports));
+          }
+        }
+        return T.undefined;
+      }
+
+      for (const spec of node.specifiers) {
+        if (spec.type === "ImportDefaultSpecifier") {
+          const val = mockEnv.has(`__export_default`) ? mockEnv.lookup(`__export_default`) : T.unknown;
+          env.bind(spec.local.name, val);
+        } else if (spec.type === "ImportSpecifier") {
+          const importedName = spec.imported.type === "Identifier" ? spec.imported.name : null;
+          if (importedName) {
+            const val = mockEnv.has(`__export_${importedName}`) ? mockEnv.lookup(`__export_${importedName}`) : T.unknown;
+            env.bind(spec.local.name, val);
+          }
+        } else if (spec.type === "ImportNamespaceSpecifier") {
+          const exports: Record<string, TypeValue> = {};
+          const bindings = mockEnv.getOwnBindings();
+          for (const [k, v] of Object.entries(bindings)) {
+            if (k.startsWith("__export_") && k !== "__export_default") {
+              exports[k.slice("__export_".length)] = v;
+            }
+          }
+          env.bind(spec.local.name, T.object(exports));
+        }
+      }
+      return T.undefined;
+    }
+  }
+
+  const envModule = envModules[source];
+  if (envModule) {
+    for (const spec of node.specifiers) {
+      if (spec.type === "ImportDefaultSpecifier") {
+        const defaultExport = envModule["default"];
+        env.bind(spec.local.name, defaultExport ?? T.unknown);
+      } else if (spec.type === "ImportSpecifier") {
+        const importedName = spec.imported.type === "Identifier" ? spec.imported.name : null;
+        if (importedName) {
+          env.bind(spec.local.name, envModule[importedName] ?? T.unknown);
+        }
+      } else if (spec.type === "ImportNamespaceSpecifier") {
+        const { default: _default, ...rest } = envModule;
+        env.bind(spec.local.name, T.object(rest));
+      }
+    }
+    return T.undefined;
+  }
+
   if (!currentModuleResolver) return T.undefined;
 
   const resolved = currentModuleResolver(source, currentFileDir);
@@ -2375,7 +2564,7 @@ const BUILTIN_ERROR_CLASSES = new Set([
 
 function evaluateNewExpression(node: Node & { type: "NewExpression" }, env: Environment): EvalResult {
   const callee = node.callee as Node;
-  if (callee.type === "Identifier" && BUILTIN_ERROR_CLASSES.has(callee.name)) {
+  if (callee.type === "Identifier" && BUILTIN_ERROR_CLASSES.has(callee.name) && !env.has(callee.name)) {
     const argVals = evaluateArgs(node.arguments as Node[], env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     const msgVal = (argVals as TypeValue[])[0] ?? T.undefined;
@@ -2383,61 +2572,61 @@ function evaluateNewExpression(node: Node & { type: "NewExpression" }, env: Envi
   }
 
   // Handle new Map()
-  if (callee.type === "Identifier" && callee.name === "Map") {
+  if (callee.type === "Identifier" && callee.name === "Map" && !env.has("Map")) {
     const argVals = evaluateArgs(node.arguments as Node[], env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     return createMapType(argVals as TypeValue[]);
   }
 
   // Handle new Set()
-  if (callee.type === "Identifier" && callee.name === "Set") {
+  if (callee.type === "Identifier" && callee.name === "Set" && !env.has("Set")) {
     const argVals = evaluateArgs(node.arguments as Node[], env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
     return createSetType(argVals as TypeValue[]);
   }
 
   // Handle new RegExp()
-  if (callee.type === "Identifier" && callee.name === "RegExp") {
+  if (callee.type === "Identifier" && callee.name === "RegExp" && !env.has("RegExp")) {
     return createRegExpType();
   }
 
   // Handle new URL()
-  if (callee.type === "Identifier" && callee.name === "URL") {
+  if (callee.type === "Identifier" && callee.name === "URL" && !env.has("URL")) {
     return createURLType();
   }
 
   // Handle new URLSearchParams()
-  if (callee.type === "Identifier" && callee.name === "URLSearchParams") {
+  if (callee.type === "Identifier" && callee.name === "URLSearchParams" && !env.has("URLSearchParams")) {
     return createURLSearchParamsType();
   }
 
   // Handle new Response()
-  if (callee.type === "Identifier" && callee.name === "Response") {
+  if (callee.type === "Identifier" && callee.name === "Response" && !env.has("Response")) {
     return createResponseType();
   }
 
   // Handle new Headers()
-  if (callee.type === "Identifier" && callee.name === "Headers") {
+  if (callee.type === "Identifier" && callee.name === "Headers" && !env.has("Headers")) {
     return createHeadersType();
   }
 
   // Handle new FormData()
-  if (callee.type === "Identifier" && callee.name === "FormData") {
+  if (callee.type === "Identifier" && callee.name === "FormData" && !env.has("FormData")) {
     return createFormDataType();
   }
 
   // Handle new AbortController()
-  if (callee.type === "Identifier" && callee.name === "AbortController") {
+  if (callee.type === "Identifier" && callee.name === "AbortController" && !env.has("AbortController")) {
     return createAbortControllerType();
   }
 
   // Handle new WeakMap()
-  if (callee.type === "Identifier" && callee.name === "WeakMap") {
+  if (callee.type === "Identifier" && callee.name === "WeakMap" && !env.has("WeakMap")) {
     return createWeakMapType();
   }
 
   // Handle new WeakSet()
-  if (callee.type === "Identifier" && callee.name === "WeakSet") {
+  if (callee.type === "Identifier" && callee.name === "WeakSet" && !env.has("WeakSet")) {
     return createWeakSetType();
   }
 
@@ -2445,7 +2634,7 @@ function evaluateNewExpression(node: Node & { type: "NewExpression" }, env: Envi
   if (callee.type === "MemberExpression" && !callee.computed) {
     const obj = callee.object as Node;
     const prop = callee.property as Node;
-    if (obj.type === "Identifier" && obj.name === "Intl" && prop.type === "Identifier") {
+    if (obj.type === "Identifier" && obj.name === "Intl" && !env.has("Intl") && prop.type === "Identifier") {
       if (prop.name === "DateTimeFormat") {
         return createDateTimeFormatType();
       }
@@ -2632,6 +2821,13 @@ function callFunctionFull(fn: TypeValue & { kind: "function" }, args: TypeValue[
   const directReturn = (fn as any)._directReturn as TypeValue | undefined;
   if (directReturn) {
     return { value: directReturn, throws: T.never };
+  }
+
+  // Check for function signature impl (used by @nudo:env / @nudo:mock-module)
+  const sig = getFnSig(fn);
+  if (sig) {
+    const implResult = sig.impl?.(args);
+    return { value: implResult ?? sig.returnType, throws: sig.throwsType };
   }
 
   const callEnv = fn.closure.extend({});

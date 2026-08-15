@@ -536,7 +536,7 @@ function isNudoFile(uri: string): boolean {
 }
 
 function hasNudoDirectives(source: string): boolean {
-  return /@nudo:(case|mock|pure|skip|sample|returns)\b/.test(source);
+  return /@nudo:(case|mock|pure|skip|sample|returns|env|mock-module|as|replace)\b/.test(source);
 }
 
 function uriToFilePath(uri: string): string {

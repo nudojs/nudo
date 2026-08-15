@@ -1259,7 +1259,295 @@ if (Number.isInteger(x)) {
 
 ---
 
-## 9. 实现路线图
+## 9. 运行时环境与模块 Mock
+
+### 9.1 问题
+
+Nudo 的求值器对全局 API 的支持非常有限——当前只有 `Object.keys/values/entries` 通过 AST 硬编码特判。`fetch`、`console`、`JSON`、`Math`、`setTimeout` 等常见 API 均不存在于求值环境中。模块 import 也只支持本地文件解析，不支持 npm 包。
+
+这意味着用户在推导涉及环境 API 或第三方包的代码时，必须手动为每个 API 编写 `@nudo:mock`，体验很差。这类似于 TypeScript 生态中缺少 `lib.dom.d.ts` 和 `@types/node` 的情况。
+
+### 9.2 声明式函数签名（`T.fnSig`）
+
+环境 API 的类型定义需要大量的函数类型。现有的 `T.fn(params, body, closure)` 需要 AST body 和闭包环境，不适合声明式地定义函数签名。因此新增 `T.fnSig`：
+
+```typescript
+T.fnSig(
+  [T.string, T.object({ method: T.string })],  // 参数类型列表
+  T.promise(Response),                           // 返回类型
+  T.never                                        // throws 类型（可选，默认 T.never）
+)
+```
+
+`T.fnSig` 产生一个特殊的 `kind: "function"` 类型值，携带 `_signature` 标记。求值器在调用此类函数时，不执行 body，而是直接返回声明的返回类型。如果声明了参数类型，求值器还可以用它们来验证调用参数。
+
+```typescript
+// TypeValue 扩展
+type FunctionSignatureInfo = {
+  paramTypes: TypeValue[];
+  returnType: TypeValue;
+  throwsType: TypeValue;
+};
+
+// T 工厂扩展
+T.fnSig(paramTypes: TypeValue[], returnType: TypeValue, throwsType?: TypeValue): TypeValue
+```
+
+求值器中的调用逻辑：
+
+```
+callFunction(fn, args):
+  if fn._signature:
+    return fn._signature.returnType
+  else:
+    // 现有逻辑：执行 fn.body
+```
+
+### 9.3 `@nudo:env` 指令 — 内置环境加载
+
+#### 9.3.1 语法
+
+```javascript
+/// @nudo:env web, node
+```
+
+- 文件级指令（非函数级），使用 `///` 三斜线注释（类似 TypeScript 的 `/// <reference />`）
+- 支持逗号分隔多个环境
+- 也支持项目级配置（`package.json` 的 `"nudo"` 字段，详见 9.6 节）
+
+#### 9.3.2 内置环境
+
+| 环境 | 提供的全局绑定 |
+|---|---|
+| `es` | `JSON`, `Math`, `parseInt`, `parseFloat`, `isNaN`, `isFinite`, `Number.*`, `Array.isArray`, `Promise`, `Symbol`, `console` 等 ES 标准 API |
+| `web` | 隐含 `es`；额外提供 `fetch`, `Request`, `Response`, `Headers`, `URL`, `URLSearchParams`, `setTimeout`, `setInterval`, `localStorage` 等 |
+| `node` | 隐含 `es`；额外提供 `process`, `Buffer`, `__dirname`, `__filename`，以及 `fs`, `path`, `os` 等模块的 mock |
+
+#### 9.3.3 环境定义格式
+
+每个环境定义是一个 TypeScript 模块，导出一个函数，接收 `T` 工厂，返回两类绑定：
+
+```typescript
+type EnvDefinition = {
+  // 全局绑定：直接注入到全局环境
+  globals: Record<string, TypeValue>;
+  // 模块绑定：当 import 对应模块时使用
+  modules?: Record<string, Record<string, TypeValue>>;
+};
+
+// 示例：env-es 的部分定义
+export function defineEnv(T): EnvDefinition {
+  return {
+    globals: {
+      JSON: T.object({
+        parse: T.fnSig([T.string], T.unknown, T.instanceOf("SyntaxError")),
+        stringify: T.fnSig([T.unknown], T.string),
+      }),
+      Math: T.object({
+        floor: T.fnSig([T.number], T.number),
+        ceil: T.fnSig([T.number], T.number),
+        round: T.fnSig([T.number], T.number),
+        max: T.fnSig([T.number, T.number], T.number),
+        min: T.fnSig([T.number, T.number], T.number),
+        random: T.fnSig([], T.number),
+        abs: T.fnSig([T.number], T.number),
+        // ...
+      }),
+      console: T.object({
+        log: T.fnSig([T.unknown], T.undefined),
+        error: T.fnSig([T.unknown], T.undefined),
+        warn: T.fnSig([T.unknown], T.undefined),
+      }),
+      parseInt: T.fnSig([T.string], T.number),
+      parseFloat: T.fnSig([T.string], T.number),
+      isNaN: T.fnSig([T.unknown], T.boolean),
+      isFinite: T.fnSig([T.unknown], T.boolean),
+    },
+  };
+}
+
+// 示例：env-node 的部分定义
+export function defineEnv(T): EnvDefinition {
+  return {
+    globals: {
+      process: T.object({
+        env: T.object({}),  // Record<string, string | undefined>
+        argv: T.array(T.string),
+        cwd: T.fnSig([], T.string),
+        exit: T.fnSig([T.number], T.never),
+      }),
+      Buffer: T.object({
+        from: T.fnSig([T.union(T.string, T.array(T.number))], T.instanceOf("Buffer")),
+        alloc: T.fnSig([T.number], T.instanceOf("Buffer")),
+      }),
+      __dirname: T.string,
+      __filename: T.string,
+    },
+    modules: {
+      "node:fs": {
+        readFileSync: T.fnSig([T.string, T.string], T.string),
+        writeFileSync: T.fnSig([T.string, T.string], T.undefined),
+        existsSync: T.fnSig([T.string], T.boolean),
+        // ...
+      },
+      "node:path": {
+        join: T.fnSig([T.string, T.string], T.string),
+        resolve: T.fnSig([T.string], T.string),
+        dirname: T.fnSig([T.string], T.string),
+        basename: T.fnSig([T.string], T.string),
+        extname: T.fnSig([T.string], T.string),
+        // ...
+      },
+    },
+  };
+}
+```
+
+#### 9.3.4 加载流程
+
+```
+1. Parser 解析文件级 /// @nudo:env 指令，提取环境名列表
+2. Env Loader 根据环境名加载对应的定义模块
+3. 将 globals 绑定到全局 Environment
+4. 将 modules 注册到模块解析器的 mock 映射中
+5. Evaluator 正常执行用户代码（环境 API 已在作用域中）
+```
+
+#### 9.3.5 包结构
+
+环境定义分为三个包，作为 `@nudojs/cli` 和 `@nudojs/service` 的依赖内置，用户无需安装：
+
+| 包 | 内容 | 依赖 |
+|---|---|---|
+| `@nudojs/env-es` | ES 标准全局 API | `@nudojs/core` |
+| `@nudojs/env-web` | Web 平台 API | `@nudojs/env-es` |
+| `@nudojs/env-node` | Node.js API | `@nudojs/env-es` |
+
+`web` 和 `node` 环境隐含加载 `es`，用户无需显式声明。
+
+### 9.4 `@nudo:mock-module` 指令 — 模块级 Mock
+
+#### 9.4.1 语法
+
+```javascript
+/// @nudo:mock-module "axios" from "./mocks/axios.mock.js"
+/// @nudo:mock-module "lodash" { pick, omit } from "./mocks/lodash-partial.mock.js"
+```
+
+- 全模块替换：`import` 该模块时，使用 mock 文件的导出代替
+- 部分替换：只替换指定的导出，其余仍尝试从原模块解析
+
+#### 9.4.2 与现有 `@nudo:mock` 的区别
+
+| | `@nudo:mock` | `@nudo:mock-module` |
+|---|---|---|
+| 粒度 | 变量级 | 模块级 |
+| 作用域 | 函数级（在 JSDoc 中） | 文件级（三斜线注释） |
+| 用途 | mock 单个全局变量 | mock 整个 import 来源 |
+
+#### 9.4.3 实现
+
+在 `evaluateImportDeclaration` 中，先检查是否有匹配的 `mock-module` 指令：
+
+```
+evaluateImportDeclaration(node, env):
+  source = node.source.value
+
+  // 1. 检查 mock-module 指令
+  mockModule = findMockModule(source)
+  if mockModule:
+    if mockModule.names:
+      // 部分替换：只替换指定的导出
+      resolved = resolveModule(source)  // 尝试解析原模块
+      mockResolved = resolveModule(mockModule.fromPath)
+      // 合并：指定的导出用 mock，其余用原模块
+    else:
+      // 全模块替换
+      resolved = resolveModule(mockModule.fromPath)
+
+  // 2. 检查环境模块映射（来自 @nudo:env）
+  envModule = findEnvModule(source)
+  if envModule:
+    // 使用环境定义的模块绑定
+
+  // 3. 正常模块解析（现有逻辑）
+  resolved = currentModuleResolver(source, currentFileDir)
+```
+
+### 9.5 `package.json` 的 `"nudo"` 导出条件
+
+第三方库可以在 `package.json` 的 `exports` 中声明 `"nudo"` 条件，为 Nudo 引擎提供专用的类型 mock：
+
+```json
+{
+  "name": "some-library",
+  "exports": {
+    ".": {
+      "nudo": "./nudo/index.js",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  }
+}
+```
+
+当 Nudo 的模块解析器遇到 npm 包 import 时，优先查找 `"nudo"` 条件指向的文件：
+
+```
+resolveModule(source, fromDir):
+  if isRelativePath(source):
+    // 现有逻辑：解析本地文件
+  else:
+    // npm 包解析
+    pkgJson = readPackageJson(node_modules/<source>/package.json)
+    nudoEntry = pkgJson.exports["."].nudo  // 或 exports[subpath].nudo
+    if nudoEntry:
+      return resolve(nudoEntry)
+    // 回退：尝试解析包的实际入口文件
+```
+
+这使得库作者可以主动为 Nudo 提供类型 mock，形成生态。
+
+### 9.6 项目级配置
+
+用户可以在 `package.json` 的 `"nudo"` 字段中配置项目级的环境和 mock：
+
+```json
+{
+  "nudo": {
+    "env": ["web"],
+    "mocks": {
+      "axios": "./nudo-mocks/axios.js",
+      "lodash": "./nudo-mocks/lodash.js"
+    }
+  }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `env` | 项目默认加载的环境列表，所有文件共享 |
+| `mocks` | 模块 mock 映射，等价于每个文件都声明 `@nudo:mock-module` |
+
+文件级的 `/// @nudo:env` 指令与项目级配置合并（取并集）。文件级的 `/// @nudo:mock-module` 优先于项目级配置。
+
+### 9.7 优先级与解析顺序
+
+当多种机制同时存在时，按以下优先级解析模块：
+
+```
+1. 文件级 @nudo:mock-module 指令（最高优先级）
+2. 项目级 mocks 配置（package.json 的 nudo.mocks）
+3. 环境模块映射（@nudo:env 提供的 modules）
+4. package.json exports 中的 "nudo" 条件
+5. 正常模块解析（现有逻辑）
+```
+
+---
+
+## 10. 实现路线图
+
+> 注：第 9 节（运行时环境与模块 Mock）的实现计划见下方阶段 8。
 
 ### 已完成
 
@@ -1338,6 +1626,20 @@ if (Number.isInteger(x)) {
 - 增量求值（文件修改后只重新求值受影响的函数）
 - esbuild / webpack 插件
 
+#### 阶段 8：运行时环境与模块 Mock
+
+**目标：** 提供开箱即用的运行时环境 API 支持，以及灵活的模块 mock 机制。详见第 9 节。
+
+**范围：**
+- `T.fnSig` 声明式函数签名
+- `@nudo:env` 文件级指令解析与环境加载
+- `@nudojs/env-es` 包（ES 标准 API）
+- `@nudojs/env-web` 包（Web 平台 API）
+- `@nudojs/env-node` 包（Node.js API）
+- `@nudo:mock-module` 模块级 mock 指令
+- 项目级配置（`package.json` 的 `"nudo"` 字段）
+- `package.json` exports 中的 `"nudo"` 导出条件
+
 ### 技术选型
 
 | 组件 | 方案 | 说明 |
@@ -1351,7 +1653,7 @@ if (Number.isInteger(x)) {
 
 ---
 
-## 10. 未来方向
+## 11. 未来方向
 
 - **REPL：** 交互式环境，开发者可以直接输入表达式，实时看到类型值推导结果。与"通过执行理解类型"的心智模型天然契合。
 - **Ops 社区扩展：** 内置方法的类型值语义（Ops）数量庞大，可以设计插件机制让社区贡献，如 `@nudojs/ops-lodash`、`@nudojs/ops-rxjs` 等。

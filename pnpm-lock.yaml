@@ -48,6 +48,15 @@ importers:
       '@nudojs/core':
         specifier: workspace:*
         version: link:../core
+      '@nudojs/env-es':
+        specifier: workspace:*
+        version: link:../env-es
+      '@nudojs/env-node':
+        specifier: workspace:*
+        version: link:../env-node
+      '@nudojs/env-web':
+        specifier: workspace:*
+        version: link:../env-web
       '@nudojs/parser':
         specifier: workspace:*
         version: link:../parser
@@ -56,6 +65,30 @@ importers:
         version: link:../service
 
   packages/core: {}
+
+  packages/env-es:
+    dependencies:
+      '@nudojs/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/env-node:
+    dependencies:
+      '@nudojs/core':
+        specifier: workspace:*
+        version: link:../core
+      '@nudojs/env-es':
+        specifier: workspace:*
+        version: link:../env-es
+
+  packages/env-web:
+    dependencies:
+      '@nudojs/core':
+        specifier: workspace:*
+        version: link:../core
+      '@nudojs/env-es':
+        specifier: workspace:*
+        version: link:../env-es
 
   packages/lsp:
     dependencies:

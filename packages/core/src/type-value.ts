@@ -5,6 +5,15 @@ import type { Environment } from "./environment.ts";
 
 export type LiteralValue = string | number | boolean | null | undefined;
 
+export type SigImpl = (args: TypeValue[]) => TypeValue | undefined;
+
+export type FunctionSignature = {
+  paramTypes: TypeValue[];
+  returnType: TypeValue;
+  throwsType: TypeValue;
+  impl?: SigImpl;
+};
+
 export type Refinement = {
   name: string;
   meta: Record<string, unknown>;
@@ -83,6 +92,21 @@ export const T = {
     base,
     refinement,
   }),
+  fnSig: (
+    paramTypes: TypeValue[],
+    returnType: TypeValue,
+    throwsType: TypeValue = { kind: "never" },
+    impl?: SigImpl,
+  ): TypeValue => {
+    const dummy = {
+      kind: "function" as const,
+      params: paramTypes.map((_p, i) => `_arg${i}`),
+      body: { type: "BlockStatement", body: [], directives: [] } as unknown as Node,
+      closure: null as unknown as Environment,
+    };
+    (dummy as any)._signature = { paramTypes, returnType, throwsType, impl } satisfies FunctionSignature;
+    return dummy;
+  },
 } as const;
 
 // --- Helpers ---
@@ -329,6 +353,11 @@ export function typeValueToString(tv: TypeValue): string {
       return `[${inner}]`;
     }
     case "function": {
+      const sig = getFnSig(tv);
+      if (sig) {
+        const params = sig.paramTypes.map((p, i) => `${tv.params[i]}: ${typeValueToString(p)}`).join(", ");
+        return `(${params}) => ${typeValueToString(sig.returnType)}`;
+      }
       const params = tv.params.join(", ");
       return `(${params}) => ...`;
     }
@@ -387,4 +416,15 @@ export function getPrimitiveTypeOf(tv: TypeValue): string | undefined {
 
 export function getRefinedBase(tv: TypeValue): TypeValue {
   return tv.kind === "refined" ? getRefinedBase(tv.base) : tv;
+}
+
+export function isFnSig(tv: TypeValue): boolean {
+  return tv.kind === "function" && "_signature" in tv;
+}
+
+export function getFnSig(tv: TypeValue): FunctionSignature | undefined {
+  if (tv.kind === "function" && "_signature" in tv) {
+    return (tv as any)._signature as FunctionSignature;
+  }
+  return undefined;
 }

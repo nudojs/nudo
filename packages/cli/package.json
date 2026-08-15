@@ -35,7 +35,10 @@
   "dependencies": {
     "@nudojs/core": "workspace:*",
     "@nudojs/parser": "workspace:*",
-    "@nudojs/service": "workspace:*"
+    "@nudojs/service": "workspace:*",
+    "@nudojs/env-es": "workspace:*",
+    "@nudojs/env-web": "workspace:*",
+    "@nudojs/env-node": "workspace:*"
   },
   "scripts": {
     "build": "tsup src/index.ts src/evaluator-api.ts --format esm --dts"

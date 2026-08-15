@@ -2,6 +2,8 @@ export {
   type TypeValue,
   type LiteralValue,
   type Refinement,
+  type FunctionSignature,
+  type SigImpl,
   T,
   typeValueEquals,
   simplifyUnion,
@@ -14,6 +16,8 @@ export {
   getRefinedBase,
   deepCloneTypeValue,
   mergeObjectProperties,
+  isFnSig,
+  getFnSig,
 } from "./type-value.ts";
 
 export { Ops, applyBinaryOp, dispatchBinaryOp, dispatchMethod, dispatchProperty } from "./ops.ts";
