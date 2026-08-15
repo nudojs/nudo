@@ -90,6 +90,56 @@ describe("analyzeFile", () => {
     const objBinding = result.bindings.get("obj")!;
     expect(objBinding.type.kind).toBe("object");
   });
+
+  it("synthesizes cases from call sites for directive-less functions", () => {
+    const source = `
+function uncalled(x) {
+  return x * 2;
+}
+
+/**
+ * @nudo:case "t" (5)
+ */
+function caller(y) {
+  return uncalled(y);
+}
+`;
+    const result = analyzeFile("/test/callsite.js", source);
+    const uncalled = result.functions.find((f) => f.name === "uncalled");
+    expect(uncalled).toBeDefined();
+    expect(uncalled!.cases).toHaveLength(1);
+    expect(uncalled!.cases[0].source).toBe("callsite");
+    expect(uncalled!.cases[0].name).toMatch(/^call@L\d+$/);
+    expect(typeValueToString(uncalled!.cases[0].result)).toBe("10");
+    expect(typeValueToString(uncalled!.combined!)).toBe("10");
+    expect(uncalled!.entryOnly).toBeFalsy();
+  });
+
+  it("infers entry-only functions in directive-free files", () => {
+    const source = `
+function lonely(x) {
+  return x * 2;
+}
+`;
+    const result = analyzeFile("/test/lonely.js", source);
+    const lonely = result.functions.find((f) => f.name === "lonely");
+    expect(lonely).toBeDefined();
+    expect(lonely!.entryOnly).toBe(true);
+    expect(lonely!.cases).toHaveLength(1);
+    expect(typeValueToString(lonely!.combined!)).toBe("number");
+  });
+
+  it("keeps directive case output unchanged for functions with @nudo:case", () => {
+    const result = analyzeFile("/test/sample.js", SAMPLE_SOURCE);
+    const addFn = result.functions.find((f) => f.name === "add");
+    expect(addFn!.cases).toHaveLength(2);
+    expect(addFn!.cases[0].name).toBe("concrete");
+    expect(addFn!.cases[0].source).toBeUndefined();
+    expect(addFn!.entryOnly).toBeUndefined();
+    expect(typeValueToString(addFn!.cases[0].result)).toBe("3");
+    expect(typeValueToString(addFn!.combined!)).toBe("3 | number");
+    expect(addFn!.skipped).toBeUndefined();
+  });
 });
 
 describe("getTypeAtPosition", () => {

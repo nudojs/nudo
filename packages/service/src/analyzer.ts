@@ -25,6 +25,8 @@ import {
   getUnreachableRanges,
   resetUnreachableRanges,
   setNodeTypeCollector,
+  setCallCollector,
+  type CallRecord,
   setSampleCount,
   setUnknownBuiltinHandler,
   setEnvModules,
@@ -62,6 +64,7 @@ export type CaseResult = {
   result: TypeValue;
   throws: TypeValue;
   throwLoc?: SourceLocation;
+  source?: "directive" | "callsite";
 };
 
 export type FunctionAnalysis = {
@@ -71,6 +74,8 @@ export type FunctionAnalysis = {
   cases: CaseResult[];
   combined?: TypeValue;
   assertionErrors?: string[];
+  entryOnly?: boolean;
+  skipped?: boolean;
 };
 
 export type BindingInfo = {
@@ -238,7 +243,7 @@ function locFromNode(node: Node): SourceLocation {
 
 function extractParamNames(node: Node): string[] {
   const fn = node.type === "ExportDefaultDeclaration" ? node.declaration : node;
-  if (fn.type === "FunctionDeclaration" || fn.type === "FunctionExpression") {
+  if (fn.type === "FunctionDeclaration" || fn.type === "FunctionExpression" || fn.type === "ArrowFunctionExpression") {
     return fn.params.map((p: any) => {
       if (p.type === "Identifier") return p.name;
       if (p.type === "AssignmentPattern" && p.left.type === "Identifier") return p.left.name;
@@ -258,6 +263,67 @@ function extractParamNames(node: Node): string[] {
     }
   }
   return [];
+}
+
+function resolveFunctionNode(node: Node): Node {
+  if (node.type === "ExportNamedDeclaration" && node.declaration) return resolveFunctionNode(node.declaration);
+  if (node.type === "ExportDefaultDeclaration") return resolveFunctionNode(node.declaration);
+  if (node.type === "VariableDeclaration") {
+    const init = (node as any).declarations[0]?.init;
+    if (init && (init.type === "ArrowFunctionExpression" || init.type === "FunctionExpression")) return init;
+  }
+  return node;
+}
+
+function collectTopLevelFunctions(ast: Node): { name: string; node: Node }[] {
+  const results: { name: string; node: Node }[] = [];
+  if (ast.type !== "File") return results;
+  for (const stmt of (ast as any).program.body) {
+    const decl = resolveFunctionNode(stmt);
+    if (decl.type === "FunctionDeclaration" && decl.id) {
+      results.push({ name: decl.id.name, node: decl });
+    }
+  }
+  return results;
+}
+
+function typeStructureKey(tv: TypeValue): string {
+  switch (tv.kind) {
+    case "literal":
+      return `lit(${typeof tv.value}:${String(tv.value)})`;
+    case "primitive":
+      return `prim(${tv.type})`;
+    case "array":
+      return `arr(${typeStructureKey(tv.element)})`;
+    case "tuple":
+      return `tup(${tv.elements.map(typeStructureKey).join(",")})`;
+    case "object":
+      return `obj(${Object.keys(tv.properties).sort().map((k) => `${k}:${typeStructureKey(tv.properties[k])}`).join(",")})`;
+    case "function":
+      return `fn(${tv.params.join(",")})`;
+    case "promise":
+      return `prom(${typeStructureKey(tv.value)})`;
+    case "instance":
+      return `inst(${tv.className})`;
+    case "refined":
+      return `ref(${typeStructureKey(tv.base)})`;
+    case "union":
+      return `uni(${tv.members.map(typeStructureKey).sort().join("|")})`;
+    default:
+      return tv.kind;
+  }
+}
+
+function dedupeCallRecords(records: CallRecord[]): CallRecord[] {
+  const seen = new Set<string>();
+  const out: CallRecord[] = [];
+  for (const rec of records) {
+    const key = rec.argTypes.map(typeStructureKey).join(",");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(rec);
+  }
+  return out;
 }
 
 export function analyzeFile(filePath: string, source: string, activeCases?: Map<string, number>): AnalysisResult {
@@ -323,6 +389,9 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     setMockModules(mocks);
   }
 
+  const callRecords: CallRecord[] = [];
+  setCallCollector((record) => callRecords.push(record));
+
   evaluateProgram(ast, globalEnv);
 
   const unreachableRanges = getUnreachableRanges();
@@ -339,6 +408,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
   collectBindings(ast, globalEnv, bindings);
 
+  const synthCandidates: { name: string; node: Node; analysis: FunctionAnalysis }[] = [];
+
   for (const fn of functions) {
     applyMocks(fn.directives, globalEnv, filePath, diagnostics);
 
@@ -351,6 +422,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     const analysis: FunctionAnalysis = { name: fn.name, loc: fnLoc, paramNames, cases: [] };
 
     if (skipDirective && skipDirective.kind === "skip") {
+      analysis.skipped = true;
       if (skipDirective.returns) {
         analysis.combined = skipDirective.returns;
       }
@@ -374,6 +446,10 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
     const caseDirectives = fn.directives.filter((d) => d.kind === "case");
     const activeCaseIdx = activeCases?.get(fn.name) ?? 0;
+
+    if (caseDirectives.length === 0) {
+      synthCandidates.push({ name: fn.name, node: fn.node, analysis });
+    }
 
     for (let ci = 0; ci < caseDirectives.length; ci++) {
       const directive = caseDirectives[ci];
@@ -472,9 +548,51 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     functionResults.push(analysis);
   }
 
+  // Whole-program call inference: functions without @nudo:case directives
+  // get cases synthesized from observed call sites; functions with no call
+  // sites at all get a single entry evaluation with unknown parameters.
+  const directiveFnNames = new Set(functions.map((f) => f.name));
+  for (const { name, node } of collectTopLevelFunctions(ast)) {
+    if (directiveFnNames.has(name)) continue;
+    const analysis: FunctionAnalysis = { name, loc: locFromNode(node), paramNames: extractParamNames(node), cases: [] };
+    functionResults.push(analysis);
+    synthCandidates.push({ name, node, analysis });
+  }
+
+  for (const candidate of synthCandidates) {
+    const records = dedupeCallRecords(callRecords.filter((r) => r.fnName === candidate.name));
+    if (records.length > 0) {
+      for (const rec of records) {
+        candidate.analysis.cases.push({
+          name: `call@L${rec.callLoc?.line ?? candidate.analysis.loc.start.line}`,
+          args: rec.argTypes,
+          result: rec.resultType,
+          throws: rec.throws,
+          source: "callsite",
+        });
+      }
+      candidate.analysis.combined = simplifyUnion(candidate.analysis.cases.map((c) => c.result));
+      continue;
+    }
+
+    const fnNode = resolveFunctionNode(candidate.node);
+    const args = extractParamNames(fnNode).map(() => T.unknown);
+    const full = evaluateFunctionFull(fnNode, args, globalEnv);
+    candidate.analysis.cases.push({
+      name: `entry@L${candidate.analysis.loc.start.line}`,
+      args,
+      result: full.value,
+      throws: full.throws,
+      throwLoc: full.throwLoc,
+    });
+    candidate.analysis.entryOnly = true;
+    candidate.analysis.combined = full.value;
+  }
+
   buildNodeTypeMap(ast, globalEnv, nodeTypeMap);
 
   setUnknownBuiltinHandler(null);
+  setCallCollector(null);
   setModuleResolver(null);
   resetEnvModules();
   resetMockModules();

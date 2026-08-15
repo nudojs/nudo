@@ -1,22 +1,18 @@
 import { readFileSync, existsSync, watch, readdirSync, statSync, writeFileSync } from "node:fs";
-import { resolve, dirname, relative, extname, join } from "node:path";
+import { resolve, dirname, relative, join } from "node:path";
 import { Command } from "commander";
 import {
   T,
   typeValueToString,
-  simplifyUnion,
   createEnvironment,
-  isSubtypeOf,
   isTemplate,
   getTemplateParts,
   mockHelperToTypeValue,
 } from "@nudojs/core";
 import type { TypeValue } from "@nudojs/core";
-import { parse, extractDirectives, extractFileDirectives, parseTypeValueExpr } from "@nudojs/parser";
-import { evaluateFunction, evaluateFunctionFull, evaluateProgram, setModuleResolver, setCurrentFileDir, resetMemo, setEnvModules, resetEnvModules, setMockModules, resetMockModules, setCurrentSource } from "./evaluator.ts";
+import { parse, extractDirectives, parseTypeValueExpr } from "@nudojs/parser";
+import { evaluateFunctionFull, evaluateProgram, setModuleResolver, setCurrentFileDir, resetMemo } from "./evaluator.ts";
 import { typeValueToZodSchema, generateGuardFunction, analyzeFile } from "@nudojs/service";
-import { loadEnvs } from "./env-loader.ts";
-import { findProjectConfig } from "./config.ts";
 import { resolveNpmNudo } from "./resolve-npm.ts";
 
 const program = new Command();
@@ -149,75 +145,26 @@ function typeValueToTSType(tv: TypeValue): string {
 function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = {}): void {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
-  const ast = parse(source);
-  const functions = extractDirectives(ast);
+  const result = analyzeFile(filePath, source);
 
-  if (functions.length === 0) {
+  if (result.functions.length === 0) {
     console.log("No functions with @nudo:case directives found.");
     return;
   }
 
-  resetMemo();
-  resetEnvModules();
-  resetMockModules();
-  setModuleResolver(resolveModule);
-  setCurrentFileDir(dirname(filePath));
-  setCurrentSource(source);
-
-  const fileDirectives = extractFileDirectives(ast);
-  const fileEnvNames = fileDirectives
-    .filter((d) => d.kind === "env")
-    .flatMap((d) => d.envs);
-
-  const projectConfig = findProjectConfig(dirname(filePath));
-  const projectEnvNames = projectConfig?.config.env ?? [];
-  const envNames = [...new Set([...projectEnvNames, ...fileEnvNames])];
-
-  const globalEnv = createEnvironment();
-
-  if (envNames.length > 0) {
-    const loaded = loadEnvs(envNames, globalEnv);
-    setEnvModules(loaded.modules);
-  }
-
-  const mocks = new Map<string, { fromPath: string; names?: string[] }>();
-
-  if (projectConfig?.config.mocks) {
-    for (const [source, mockPath] of Object.entries(projectConfig.config.mocks)) {
-      mocks.set(source, { fromPath: resolve(projectConfig.projectDir, mockPath) });
-    }
-  }
-
-  const mockModuleDirectives = fileDirectives.filter((d) => d.kind === "mock-module");
-  for (const d of mockModuleDirectives) {
-    mocks.set(d.source, { fromPath: d.fromPath, names: d.names });
-  }
-
-  if (mocks.size > 0) {
-    setMockModules(mocks);
-  }
-
-  evaluateProgram(ast, globalEnv);
-
   const dtsLines: string[] = [];
 
-  for (const fn of functions) {
-    const loc = fn.node.loc;
-    const locStr = loc ? `${relative(process.cwd(), filePath)}:${loc.start.line}:${loc.start.column}` : relative(process.cwd(), filePath);
+  for (const fn of result.functions) {
+    const loc = fn.loc;
+    const locStr = `${relative(process.cwd(), filePath)}:${loc.start.line}:${loc.start.column}`;
     const header = options.showLoc ? `=== ${fn.name} (${locStr}) ===` : `=== ${fn.name} ===`;
     console.log(`${header}\n`);
 
-    applyMocks(fn.directives, globalEnv, filePath);
-
-    const isPure = fn.directives.some((d) => d.kind === "pure");
-    const skipDirective = fn.directives.find((d) => d.kind === "skip");
-    const returnsDirective = fn.directives.find((d) => d.kind === "returns");
-
-    if (skipDirective && skipDirective.kind === "skip") {
-      if (skipDirective.returns) {
-        console.log(`Skipped (declared): ${typeValueToString(skipDirective.returns)}`);
+    if (fn.skipped) {
+      if (fn.combined) {
+        console.log(`Skipped (declared): ${typeValueToString(fn.combined)}`);
         if (options.dts) {
-          dtsLines.push(`export declare function ${fn.name}(...args: unknown[]): ${typeValueToTSType(skipDirective.returns)};`);
+          dtsLines.push(`export declare function ${fn.name}(...args: unknown[]): ${typeValueToTSType(fn.combined)};`);
         }
       } else {
         console.log("Skipped (no return type declared)");
@@ -226,62 +173,31 @@ function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = 
       continue;
     }
 
-    if (isPure) {
-      const fnVal = globalEnv.has(fn.name) ? globalEnv.lookup(fn.name) : null;
-      if (fnVal && fnVal.kind === "function") {
-        (fnVal as any)._memoize = fn.name;
-      }
-    }
-
-    const caseDirectives = fn.directives.filter((d) => d.kind === "case");
-    const caseResults: { name: string; args: TypeValue[]; argsStr: string; result: string; resultTV: TypeValue; throws?: string }[] = [];
-
-    for (const directive of caseDirectives) {
-      const fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
-      const argsStr = directive.args.map(typeValueToString).join(", ");
-      const resultStr = typeValueToString(fullResult.value);
-      const throwsStr = fullResult.throws.kind !== "never" ? typeValueToString(fullResult.throws) : undefined;
-      caseResults.push({
-        name: directive.name,
-        args: directive.args,
-        argsStr,
-        result: resultStr,
-        resultTV: fullResult.value,
-        throws: throwsStr,
-      });
-      let line = `Case "${directive.name}": (${argsStr}) => ${resultStr}`;
-      if (throwsStr) line += ` throws ${throwsStr}`;
+    for (const c of fn.cases) {
+      const argsStr = c.args.map(typeValueToString).join(", ");
+      let line = `Case "${c.name}": (${argsStr}) => ${typeValueToString(c.result)}`;
+      if (c.throws.kind !== "never") line += ` throws ${typeValueToString(c.throws)}`;
       console.log(line);
     }
 
-    if (caseResults.length > 1) {
-      const allResults = caseDirectives.map((d) =>
-        evaluateFunctionFull(fn.node, d.args, globalEnv),
-      );
-      const combined = simplifyUnion(allResults.map((r) => r.value));
-      console.log(`\nCombined: ${typeValueToString(combined)}`);
+    if (fn.entryOnly) {
+      console.log("# no call sites found; parameters default to unknown");
     }
 
-    if (returnsDirective && returnsDirective.kind === "returns") {
-      for (const directive of caseDirectives) {
-        const result = evaluateFunction(fn.node, directive.args, globalEnv);
-        const matches = isSubtypeOf(result, returnsDirective.expected);
-        if (!matches) {
-          console.log(`\n⚠ @nudo:returns assertion failed for case "${directive.name}": expected ${typeValueToString(returnsDirective.expected)}, got ${typeValueToString(result)}`);
-        }
+    if (fn.cases.length > 1 && fn.combined) {
+      console.log(`\nCombined: ${typeValueToString(fn.combined)}`);
+    }
+
+    if (fn.assertionErrors && fn.assertionErrors.length > 0) {
+      for (const err of fn.assertionErrors) {
+        console.log(`\n⚠ ${err}`);
       }
     }
 
     if (options.dts) {
-      if (caseResults.length === 1) {
-        const c = caseResults[0];
+      for (const c of fn.cases) {
         const params = c.args.map((a, i) => `arg${i}: ${typeValueToTSType(a)}`).join(", ");
-        dtsLines.push(`export declare function ${fn.name}(${params}): ${typeValueToTSType(c.resultTV)};`);
-      } else {
-        for (const c of caseResults) {
-          const params = c.args.map((a, i) => `arg${i}: ${typeValueToTSType(a)}`).join(", ");
-          dtsLines.push(`export declare function ${fn.name}(${params}): ${typeValueToTSType(c.resultTV)};`);
-        }
+        dtsLines.push(`export declare function ${fn.name}(${params}): ${typeValueToTSType(c.result)};`);
       }
     }
 
@@ -294,10 +210,6 @@ function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = 
     writeFileSync(dtsPath, dtsContent, "utf-8");
     console.log(`Generated: ${relative(process.cwd(), dtsPath)}`);
   }
-
-  setModuleResolver(null);
-  resetEnvModules();
-  resetMockModules();
 }
 
 function runInferJson(file: string): void {
@@ -314,7 +226,9 @@ function runInferJson(file: string): void {
         args: c.args.map(typeValueToString),
         result: typeValueToString(c.result),
         throws: c.throws.kind !== "never" ? typeValueToString(c.throws) : null,
+        source: c.source ?? null,
       })),
+      entryOnly: f.entryOnly ?? false,
       assertionErrors: f.assertionErrors,
     })),
     diagnostics: result.diagnostics.map((d) => ({
@@ -332,7 +246,7 @@ function runInferJson(file: string): void {
 
 program
   .command("infer")
-  .description("Infer types from a JS file with @nudo: directives")
+  .description("Infer types from a JS file — functions with @nudo:case directives use them; all other functions are inferred from call sites (whole-program analysis)")
   .argument("<file>", "Path to the JS file")
   .option("--dts", "Generate .d.ts file")
   .option("--loc", "Show source locations in output")
@@ -394,10 +308,8 @@ function collectNudoFiles(dir: string): string[] {
     if (entry.isDirectory() && entry.name !== "node_modules") {
       results.push(...collectNudoFiles(fullPath));
     } else if (entry.isFile() && entry.name.endsWith(".js")) {
-      const content = readFileSync(fullPath, "utf-8");
-      if (/@nudo:(case|mock|pure|skip|sample|returns|env|mock-module|as|replace)\b/.test(content)) {
-        results.push(fullPath);
-      }
+      // 全程序推断：无指令的纯 JS 文件也能推导类型，无需 @nudo: 过滤
+      results.push(fullPath);
     }
   }
   return results;

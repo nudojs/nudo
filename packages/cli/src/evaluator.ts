@@ -267,6 +267,36 @@ function recordNodeType(node: Node, tv: TypeValue): void {
   }
 }
 
+export type CallRecord = {
+  fnName: string;
+  argTypes: TypeValue[];
+  resultType: TypeValue;
+  throws: TypeValue;
+  callLoc?: { line: number; column: number };
+};
+
+let _callCollector: ((record: CallRecord) => void) | null = null;
+
+export function setCallCollector(collector: ((record: CallRecord) => void) | null): void {
+  _callCollector = collector;
+}
+
+function recordCall(
+  fnName: string,
+  args: TypeValue[],
+  result: { value: TypeValue; throws: TypeValue },
+  loc: Node["loc"],
+): void {
+  if (!_callCollector) return;
+  _callCollector({
+    fnName,
+    argTypes: args,
+    resultType: result.value,
+    throws: result.throws,
+    callLoc: loc ? { line: loc.start.line, column: loc.start.column } : undefined,
+  });
+}
+
 function distributeOverUnion(
   tv: TypeValue,
   fn: (member: TypeValue) => TypeValue,
@@ -891,6 +921,9 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
       if (calleeVal.kind === "function") {
         const full = callFunctionFull(calleeVal, argVals as TypeValue[]);
+        if (_callCollector && callee.type === "Identifier") {
+          recordCall(callee.name, argVals as TypeValue[], full, node.loc);
+        }
         if (full.value.kind === "never" && full.throws.kind !== "never") {
           const callLoc = node.loc ? {
             start: { line: node.loc.start.line, column: node.loc.start.column },
@@ -932,6 +965,9 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
       if (calleeVal.kind === "function") {
         const full = callFunctionFull(calleeVal, argVals as TypeValue[]);
+        if (_callCollector && callee.type === "Identifier") {
+          recordCall(callee.name, argVals as TypeValue[], full, node.loc);
+        }
         if (full.value.kind === "never" && full.throws.kind !== "never") {
           const callLoc = node.loc ? {
             start: { line: node.loc.start.line, column: node.loc.start.column },
@@ -2920,7 +2956,7 @@ export function evaluateFunctionFull(
     actualNode = fnNode.declaration;
   }
 
-  if (actualNode.type === "FunctionDeclaration" || actualNode.type === "FunctionExpression") {
+  if (actualNode.type === "FunctionDeclaration" || actualNode.type === "FunctionExpression" || actualNode.type === "ArrowFunctionExpression") {
     const callEnv = env.fork();
     const isAsync = !!(actualNode as any).async;
     for (let i = 0; i < actualNode.params.length; i++) {

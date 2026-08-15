@@ -9,6 +9,8 @@ export {
   getUnreachableRanges,
   resetUnreachableRanges,
   setNodeTypeCollector,
+  setCallCollector,
+  type CallRecord,
   setSampleCount,
   setMaxConcreteIter,
   setUnknownBuiltinHandler,

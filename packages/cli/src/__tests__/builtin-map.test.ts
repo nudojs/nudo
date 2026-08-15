@@ -64,4 +64,14 @@ function fn() {
 `);
     expect(results[0].result).toBe("number");
   });
+
+  it("arrow function case argument works as Array.map callback", () => {
+    const results = runTest(`
+// @nudo:case "double" ([1, 2, 3], (a) => a * 2)
+function doubleAll(items, cb) {
+  return items.map(cb);
+}
+`);
+    expect(results[0].result).toBe("[2, 4, 6]");
+  });
 });

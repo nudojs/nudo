@@ -6,7 +6,7 @@ A type inference engine for JavaScript powered by **abstract interpretation** �
 
 | | TypeScript | Nudo |
 |---|---|---|
-| Type annotations | Required everywhere | Only `@nudo:case` directives |
+| Type annotations | Required everywhere | Optional — `@nudo:case` directives add precision; all functions inferred from call sites without any directives |
 | Separate type system | Yes (structural) | No — types derived from execution |
 | Build step | `tsc` compilation | None — works on plain `.js` |
 | Type accuracy | Depends on annotations | Follows actual runtime semantics |
@@ -46,6 +46,30 @@ subtract:
   Case "negative result": (1, 10) => -9
   Case "symbolic": (T.number, T.number) => T.number
   Combined: (number, number) => number
+```
+
+### Whole-program inference (no directives needed)
+
+Functions without `@nudo:case` directives are inferred from their call sites — every call with inferable arguments becomes a synthetic case:
+
+```bash
+nudo infer plain.js
+```
+
+```
+double:
+  Case "call@L12": (5) => 10        # synthesized from call site double(5)
+
+helper:
+  Case "entry@L7": (unknown) => string
+  # no call sites found; parameters default to unknown
+```
+
+Callbacks passed at call sites propagate precisely (polyvariant evaluation):
+
+```
+processItems:
+  Case "call@L20": ([1, 2, 3], (x) => ...) => [2, 4, 6]
 ```
 
 Generate TypeScript declarations:

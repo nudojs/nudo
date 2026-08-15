@@ -149,6 +149,16 @@ export function parseTypeValueExpr(expr: string): TypeValue {
     return T.object({});
   }
 
+  // Function literals: (x) => expr, x => expr, (x, y) => expr, function(x) { ... }
+  if (findTopLevelArrow(s) !== -1 || /^function\s*[\w$]*\s*\(/.test(s)) {
+    const fnExpr = parseArrowFunctionExpr(s);
+    if (fnExpr) {
+      const fnType = T.fn(fnExpr.params, fnExpr.body, createEnvironment());
+      (fnType as any)._paramPatterns = fnExpr.paramPatterns;
+      return fnType;
+    }
+  }
+
   if (/^-?\d+(\.\d+)?$/.test(s)) return T.literal(Number(s));
 
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
@@ -221,6 +231,17 @@ function findTopLevelColon(s: string): number {
   return -1;
 }
 
+function findTopLevelArrow(s: string): number {
+  let depth = 0;
+  for (let i = 0; i < s.length - 1; i++) {
+    const ch = s[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (depth === 0 && ch === "=" && s[i + 1] === ">") return i;
+  }
+  return -1;
+}
+
 function extractBalancedParens(text: string, startIdx: number): string | null {
   if (text[startIdx] !== "(") return null;
   let depth = 0;
@@ -243,7 +264,9 @@ function parseArrowFunctionExpr(expr: string): { params: string[]; body: Node; p
     if (decl.type !== "VariableDeclaration") return null;
 
     const init = decl.declarations[0]?.init;
-    if (!init || init.type !== "ArrowFunctionExpression") return null;
+    if (!init || (init.type !== "ArrowFunctionExpression" && init.type !== "FunctionExpression")) {
+      return null;
+    }
 
     const params: string[] = [];
     const paramPatterns: Node[] = [];
