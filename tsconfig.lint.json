@@ -26,7 +26,8 @@
     "packages/service/src",
     "packages/lsp/src",
     "packages/vite-plugin/src",
-    "packages/mcp/src"
+    "packages/mcp/src",
+    "packages/harvester/src"
   ],
   "exclude": [
     "**/__tests__",

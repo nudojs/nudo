@@ -1,5 +1,5 @@
 import { readFileSync, existsSync, watch, readdirSync, statSync, writeFileSync } from "node:fs";
-import { resolve, dirname, relative, join } from "node:path";
+import { resolve, dirname, relative, join, basename } from "node:path";
 import { Command } from "commander";
 import {
   T,
@@ -15,11 +15,13 @@ import { evaluateFunctionFull, evaluateProgram, setModuleResolver, setCurrentFil
 import {
   typeValueToZodSchema,
   generateGuardFunction,
-  analyzeFile,
+  analyzeFileAsync,
   buildModuleGraph,
   computeDirtySet,
   topoSortDirty,
+  type FunctionAnalysis,
 } from "@nudojs/service";
+import { harvestDts, emitEnvModule } from "@nudojs/harvester";
 import { resolveNpmNudo } from "./resolve-npm.ts";
 
 const program = new Command();
@@ -149,12 +151,12 @@ function typeValueToTSType(tv: TypeValue): string {
   }
 }
 
-function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = {}): void {
+async function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = {}): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
-  const result = analyzeFile(filePath, source);
+  const result = await analyzeFileAsync(filePath, source);
 
-  if (result.functions.length === 0) {
+  if (result.functions.length === 0 && !(result.externalFunctions?.length)) {
     console.log("No functions with @nudo:case directives found.");
     return;
   }
@@ -211,6 +213,36 @@ function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = 
     console.log();
   }
 
+  // Imported functions inferred from this file's cross-file call sites.
+  // d.ts generation skips them on purpose: they belong to another file's
+  // declaration boundary, not this one.
+  if (result.externalFunctions && result.externalFunctions.length > 0) {
+    const byModule = new Map<string, FunctionAnalysis[]>();
+    for (const fn of result.externalFunctions) {
+      const mod = fn.fromModule ?? "";
+      const list = byModule.get(mod);
+      if (list) list.push(fn);
+      else byModule.set(mod, [fn]);
+    }
+    for (const [mod, fns] of byModule) {
+      const rel = relative(process.cwd(), mod) || mod;
+      console.log(`--- ${rel} (imported) ---\n`);
+      for (const fn of fns) {
+        console.log(`=== ${fn.name} ===\n`);
+        for (const c of fn.cases) {
+          const argsStr = c.args.map(typeValueToString).join(", ");
+          let line = `Case "${c.name}": (${argsStr}) => ${typeValueToString(c.result)}`;
+          if (c.throws.kind !== "never") line += ` throws ${typeValueToString(c.throws)}`;
+          console.log(line);
+        }
+        if (fn.cases.length > 1 && fn.combined) {
+          console.log(`\nCombined: ${typeValueToString(fn.combined)}`);
+        }
+        console.log();
+      }
+    }
+  }
+
   if (options.dts && dtsLines.length > 0) {
     const dtsPath = filePath.replace(/\.js$/, ".d.ts");
     const dtsContent = dtsLines.join("\n") + "\n";
@@ -231,10 +263,10 @@ function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = 
   }
 }
 
-function runInferJson(file: string): void {
+async function runInferJson(file: string): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
-  const result = analyzeFile(filePath, source);
+  const result = await analyzeFileAsync(filePath, source);
 
   const jsonOutput = {
     functions: result.functions.map((f) => ({
@@ -249,6 +281,17 @@ function runInferJson(file: string): void {
       })),
       entryOnly: f.entryOnly ?? false,
       assertionErrors: f.assertionErrors,
+    })),
+    externalFunctions: result.externalFunctions?.map((f) => ({
+      name: f.name,
+      fromModule: f.fromModule,
+      cases: f.cases.map((c) => ({
+        name: c.name,
+        args: c.args.map(typeValueToString),
+        result: typeValueToString(c.result),
+        throws: c.throws.kind !== "never" ? typeValueToString(c.throws) : null,
+        source: c.source ?? null,
+      })),
     })),
     diagnostics: result.diagnostics.map((d) => ({
       range: d.range,
@@ -271,18 +314,18 @@ program
   .option("--dts", "Generate .d.ts file")
   .option("--loc", "Show source locations in output")
   .option("--json", "Output as JSON")
-  .action((file: string, opts: { dts?: boolean; loc?: boolean; json?: boolean }) => {
+  .action(async (file: string, opts: { dts?: boolean; loc?: boolean; json?: boolean }) => {
     if (opts.json) {
-      runInferJson(file);
+      await runInferJson(file);
     } else {
-      runInfer(file, { dts: opts.dts, showLoc: opts.loc });
+      await runInfer(file, { dts: opts.dts, showLoc: opts.loc });
     }
   });
 
-function runCheck(file: string): void {
+async function runCheck(file: string): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
-  const result = analyzeFile(filePath, source);
+  const result = await analyzeFileAsync(filePath, source);
 
   if (result.diagnostics.length === 0) {
     console.log("No issues found.");
@@ -306,8 +349,8 @@ program
   .command("check")
   .description("Check a JS file for type errors — exits with code 1 when errors are found")
   .argument("<file>", "Path to the JS file")
-  .action((file: string) => {
-    runCheck(file);
+  .action(async (file: string) => {
+    await runCheck(file);
   });
 
 program
@@ -326,12 +369,12 @@ program
 
     let graph = buildModuleGraph(getFiles());
 
-    const runAll = () => {
+    const runAll = async () => {
       console.clear();
       console.log(`[${new Date().toLocaleTimeString()}] Analyzing...\n`);
       for (const f of getFiles()) {
         try {
-          runInfer(f, { dts: opts.dts, showLoc: true });
+          await runInfer(f, { dts: opts.dts, showLoc: true });
         } catch (err) {
           console.error(`Error analyzing ${relative(process.cwd(), f)}:`, (err as Error).message);
         }
@@ -340,7 +383,7 @@ program
       console.log(`[${new Date().toLocaleTimeString()}] Watching for changes...`);
     };
 
-    const runIncremental = (changedFiles: string[]) => {
+    const runIncremental = async (changedFiles: string[]) => {
       const files = getFiles();
       const tracked = new Set(files);
 
@@ -362,7 +405,7 @@ program
       resetMemo();
       for (const f of ordered) {
         try {
-          runInfer(f, { dts: opts.dts, showLoc: true });
+          await runInfer(f, { dts: opts.dts, showLoc: true });
         } catch (err) {
           console.error(`Error analyzing ${relative(process.cwd(), f)}:`, (err as Error).message);
         }
@@ -375,7 +418,7 @@ program
       graph = buildModuleGraph(getFiles());
     };
 
-    runAll();
+    runAll().catch(() => { /* per-file errors already reported */ });
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const watchTarget = isDir ? resolved : dirname(resolved);
@@ -394,7 +437,7 @@ program
       debounceTimer = setTimeout(() => {
         const changedFiles = [...pendingChanged];
         pendingChanged.clear();
-        runIncremental(changedFiles);
+        runIncremental(changedFiles).catch(() => { /* per-file errors already reported */ });
       }, 200);
     });
   });
@@ -486,4 +529,115 @@ program
     setModuleResolver(null);
   });
 
-program.parse();
+// ---------------------------------------------------------------------------
+// harvest — convert @types/<pkg> .d.ts into a Nudo env module
+// ---------------------------------------------------------------------------
+
+const HARVEST_MAX_FILES = 200;
+
+const REFERENCE_PATH_REGEX = /<reference\s+path=["']([^"']+)["']\s*\/>/g;
+const RELATIVE_FROM_REGEX = /\bfrom\s+["'](\.[^"']+)["']/g;
+
+function collectDtsFiles(entry: string): string[] {
+  const files: string[] = [];
+  const seen = new Set<string>();
+  const queue: string[] = [entry];
+
+  while (queue.length > 0 && files.length < HARVEST_MAX_FILES) {
+    const current = queue.shift()!;
+    if (seen.has(current) || !existsSync(current)) continue;
+    seen.add(current);
+    if (!current.endsWith(".d.ts")) continue;
+    files.push(current);
+
+    let text: string;
+    try {
+      text = readFileSync(current, "utf-8");
+    } catch {
+      continue;
+    }
+
+    const dir = dirname(current);
+    for (const match of text.matchAll(REFERENCE_PATH_REGEX)) {
+      queue.push(resolve(dir, match[1]));
+    }
+    for (const match of text.matchAll(RELATIVE_FROM_REGEX)) {
+      const base = resolve(dir, match[1]);
+      for (const candidate of [`${base}.d.ts`, join(base, "index.d.ts")]) {
+        if (existsSync(candidate)) {
+          queue.push(candidate);
+          break;
+        }
+      }
+    }
+  }
+
+  return files;
+}
+
+function runHarvest(pkg: string, outOpt?: string): void {
+  const typesDir = resolve(process.cwd(), "node_modules", "@types", pkg);
+  if (!existsSync(typesDir)) {
+    console.error(`Error: ${relative(process.cwd(), typesDir)} not found.`);
+    console.error(`Install the package first, e.g. pnpm add -D @types/${pkg}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  let entry = join(typesDir, "index.d.ts");
+  const pkgJsonPath = join(typesDir, "package.json");
+  if (existsSync(pkgJsonPath)) {
+    try {
+      const pkgJson = JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as { types?: string; typings?: string };
+      const declared = pkgJson.types ?? pkgJson.typings;
+      if (typeof declared === "string") {
+        const candidate = resolve(typesDir, declared);
+        if (existsSync(candidate)) entry = candidate;
+      }
+    } catch {
+      // malformed package.json — fall back to index.d.ts
+    }
+  }
+  if (!existsSync(entry)) {
+    console.error(`Error: no .d.ts entry found in ${relative(process.cwd(), typesDir)} (tried ${basename(entry)}).`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const files = collectDtsFiles(entry);
+  if (files.length === 0) {
+    console.error(`Error: no .d.ts files collected from ${relative(process.cwd(), entry)}.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const env = harvestDts(files);
+  const code = emitEnvModule(env, `@types/${pkg}`);
+
+  const out = resolve(outOpt ?? `nudo-harvest-${pkg}.ts`);
+  writeFileSync(out, code, "utf-8");
+
+  console.log(`Harvested @types/${pkg} → ${relative(process.cwd(), out) || out}`);
+  console.log(`  files:    ${env.stats.files}`);
+  console.log(`  symbols:  ${env.stats.symbols}`);
+  console.log(`  skipped:  ${env.stats.skipped}`);
+  console.log(`\nUsage — add this directive at the top of your JS file:`);
+  const outDir = dirname(out);
+  const hintPath =
+    resolve(process.cwd()) === outDir ? basename(out) : out;
+  console.log(`  /// @nudo:env ${hintPath}`);
+}
+
+program
+  .command("harvest")
+  .description("Convert @types/<pkg> .d.ts declarations into a Nudo env file (TS source using T.* constructors)")
+  .argument("<pkg>", "Package name under @types (e.g. node)")
+  .option("--out <file>", "Output .ts env file (default: ./nudo-harvest-<pkg>.ts)")
+  .action((pkg: string, opts: { out?: string }) => {
+    runHarvest(pkg, opts.out);
+  });
+
+program.parseAsync(process.argv).catch((err: unknown) => {
+  console.error(err instanceof Error ? err.message : err);
+  process.exitCode = 1;
+});

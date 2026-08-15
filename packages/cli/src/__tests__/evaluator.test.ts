@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { T, typeValueEquals, typeValueToString, createEnvironment } from "@nudojs/core";
 import { parse, extractDirectives } from "@nudojs/parser";
-import { evaluateFunction, evaluateProgram, evaluateFunctionFull, setUnknownCollector, setProvenanceTracking, type UnknownRecord } from "../evaluator.ts";
+import { evaluateFunction, evaluateProgram, evaluateFunctionFull, setUnknownCollector, setProvenanceTracking, setCallCollector, setModuleResolver, setCurrentFileDir, type UnknownRecord, type CallRecord } from "../evaluator.ts";
 
 function inferFromSource(source: string) {
   const ast = parse(source);
@@ -361,6 +364,81 @@ const boom = badNum(42);
       expect(rec!.origin).toBeUndefined();
     } finally {
       setUnknownCollector(null);
+    }
+  });
+
+  it("tags call records of imported functions with targetModule/targetExport", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-export-tag-"));
+    try {
+      const bPath = join(dir, "b.js");
+      const aPath = join(dir, "a.js");
+      writeFileSync(bPath, "export function triple(x) { return x * 3; }\n");
+      writeFileSync(
+        aPath,
+        'import { triple } from "./b.js";\nfunction localQuad(y) { return y * 4; }\nconst r1 = triple(4);\nconst r2 = localQuad(2);\n',
+      );
+
+      setModuleResolver((source) => {
+        if (source === "./b.js") {
+          return { ast: parse(readFileSync(bPath, "utf8")), filePath: bPath };
+        }
+        return null;
+      });
+      setCurrentFileDir(dir);
+
+      const records: CallRecord[] = [];
+      setCallCollector((r) => records.push(r));
+      try {
+        evaluateProgram(parse(readFileSync(aPath, "utf8")), createEnvironment());
+      } finally {
+        setCallCollector(null);
+        setModuleResolver(null);
+        setCurrentFileDir("");
+      }
+
+      const imported = records.find((r) => r.fnName === "triple");
+      expect(imported).toBeDefined();
+      expect(imported!.targetModule).toBe(bPath);
+      expect(imported!.targetModule).toContain("b.js");
+      expect(imported!.targetExport).toBe("triple");
+      expect(typeValueEquals(imported!.resultType, T.literal(12))).toBe(true);
+
+      const local = records.find((r) => r.fnName === "localQuad");
+      expect(local).toBeDefined();
+      expect(local!.targetModule).toBeUndefined();
+      expect(local!.targetExport).toBeUndefined();
+      expect(typeValueEquals(local!.resultType, T.literal(8))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("evaluates imported calls identically with no call collector installed (regression)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-export-tag-"));
+    try {
+      const bPath = join(dir, "b.js");
+      const aPath = join(dir, "a.js");
+      writeFileSync(bPath, "export function triple(x) { return x * 3; }\n");
+      writeFileSync(aPath, 'import { triple } from "./b.js";\nconst r1 = triple(4);\n');
+
+      setModuleResolver((source) => {
+        if (source === "./b.js") {
+          return { ast: parse(readFileSync(bPath, "utf8")), filePath: bPath };
+        }
+        return null;
+      });
+      setCurrentFileDir(dir);
+
+      try {
+        const env = createEnvironment();
+        evaluateProgram(parse(readFileSync(aPath, "utf8")), env);
+        expect(typeValueEquals(env.lookup("r1"), T.literal(12))).toBe(true);
+      } finally {
+        setModuleResolver(null);
+        setCurrentFileDir("");
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

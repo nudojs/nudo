@@ -273,7 +273,28 @@ export type CallRecord = {
   resultType: TypeValue;
   throws: TypeValue;
   callLoc?: { line: number; column: number };
+  targetModule?: string;
+  targetExport?: string;
 };
+
+// --- Cross-module call attribution ---
+// Module-exported function values get tagged with their (module, export)
+// origin when the module environment is first built (moduleCache fill). The
+// same object reference flows through import bindings to call sites, so
+// recordCall can look the tag up from the evaluated callee value and mark the
+// record as targeting another module. Non-function exports are not tagged.
+
+const _exportTags = new WeakMap<object, { module: string; export: string }>();
+
+function tagModuleExports(env: Environment, filePath: string): void {
+  const bindings = env.getOwnBindings();
+  for (const [k, v] of Object.entries(bindings)) {
+    if (!k.startsWith("__export_")) continue;
+    if (v.kind !== "function") continue;
+    const name = k === "__export_default" ? "default" : k.slice("__export_".length);
+    _exportTags.set(v, { module: filePath, export: name });
+  }
+}
 
 let _callCollector: ((record: CallRecord) => void) | null = null;
 
@@ -286,15 +307,22 @@ function recordCall(
   args: TypeValue[],
   result: { value: TypeValue; throws: TypeValue },
   loc: Node["loc"],
+  calleeVal?: TypeValue,
 ): void {
   if (!_callCollector) return;
-  _callCollector({
+  const record: CallRecord = {
     fnName,
     argTypes: args,
     resultType: result.value,
     throws: result.throws,
     callLoc: loc ? { line: loc.start.line, column: loc.start.column } : undefined,
-  });
+  };
+  const tag = calleeVal ? _exportTags.get(calleeVal) : undefined;
+  if (tag) {
+    record.targetModule = tag.module;
+    record.targetExport = tag.export;
+  }
+  _callCollector(record);
 }
 
 export type UnknownRecord = {
@@ -989,7 +1017,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       if (calleeVal.kind === "function") {
         const full = callFunctionFull(calleeVal, argVals as TypeValue[]);
         if (_callCollector && callee.type === "Identifier") {
-          recordCall(callee.name, argVals as TypeValue[], full, node.loc);
+          recordCall(callee.name, argVals as TypeValue[], full, node.loc, calleeVal);
         }
         if (full.value.kind === "never" && full.throws.kind !== "never") {
           const callLoc = node.loc ? {
@@ -1033,7 +1061,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       if (calleeVal.kind === "function") {
         const full = callFunctionFull(calleeVal, argVals as TypeValue[]);
         if (_callCollector && callee.type === "Identifier") {
-          recordCall(callee.name, argVals as TypeValue[], full, node.loc);
+          recordCall(callee.name, argVals as TypeValue[], full, node.loc, calleeVal);
         }
         if (full.value.kind === "never" && full.throws.kind !== "never") {
           const callLoc = node.loc ? {
@@ -2583,6 +2611,7 @@ function evaluateImportDeclaration(node: Node & { type: "ImportDeclaration" }, e
         currentFileDir = mockResolved.filePath.replace(/\/[^/]+$/, "");
         evaluateProgram(mockResolved.ast, mockEnv);
         currentFileDir = savedDir;
+        tagModuleExports(mockEnv, mockResolved.filePath);
       }
 
       if (mockModule.names) {
@@ -2597,6 +2626,7 @@ function evaluateImportDeclaration(node: Node & { type: "ImportDeclaration" }, e
             currentFileDir = originalResolved.filePath.replace(/\/[^/]+$/, "");
             evaluateProgram(originalResolved.ast, originalEnv);
             currentFileDir = savedDir;
+            tagModuleExports(originalEnv, originalResolved.filePath);
           }
         }
 
@@ -2698,6 +2728,7 @@ function evaluateImportDeclaration(node: Node & { type: "ImportDeclaration" }, e
     currentFileDir = resolved.filePath.replace(/\/[^/]+$/, "");
     evaluateProgram(resolved.ast, moduleEnv);
     currentFileDir = savedDir;
+    tagModuleExports(moduleEnv, resolved.filePath);
   }
 
   for (const spec of node.specifiers) {

@@ -40,6 +40,7 @@ import {
   resetMockModules,
   setCurrentSource,
   loadEnvs,
+  preloadPathEnvs,
   findProjectConfig,
   resolveNpmNudo,
 } from "@nudojs/cli/evaluator";
@@ -85,6 +86,8 @@ export type FunctionAnalysis = {
   assertionErrors?: string[];
   entryOnly?: boolean;
   skipped?: boolean;
+  /** absolute path of the module this function is imported from (externalFunctions only) */
+  fromModule?: string;
 };
 
 export type BindingInfo = {
@@ -104,6 +107,8 @@ export type AnalysisResult = {
   bindings: Map<string, BindingInfo>;
   nodeTypeMap: Map<Node, TypeValue>;
   caseHints: CaseHint[];
+  /** functions imported from other modules, synthesized from cross-file call sites observed while analyzing this file */
+  externalFunctions?: FunctionAnalysis[];
 };
 
 export type CompletionItem = {
@@ -435,6 +440,89 @@ function dedupeCallRecords(records: CallRecord[]): CallRecord[] {
   return out;
 }
 
+function locFromCallLoc(loc: { line: number; column: number } | undefined): SourceLocation {
+  const p = loc ?? { line: 0, column: 0 };
+  return { start: { line: p.line, column: p.column }, end: { line: p.line, column: p.column } };
+}
+
+/**
+ * Cross-file call-site aggregation: call records whose callee is a function
+ * exported by another module (tagged by the evaluator's export side table)
+ * are grouped by (targetModule, targetExport) and synthesized directly into
+ * FunctionAnalysis entries — no re-evaluation needed, each CallRecord already
+ * carries the resultType/throws computed when this file was evaluated.
+ *
+ * v1 limitation: only named-import direct calls are recorded by the
+ * evaluator; `import * as ns` member calls go through the method path and
+ * never reach this synthesis.
+ */
+function synthesizeExternalFunctions(records: CallRecord[], currentFile: string): FunctionAnalysis[] {
+  const groups = new Map<string, { module: string; exportName: string; records: CallRecord[] }>();
+  for (const rec of records) {
+    if (!rec.targetModule || !rec.targetExport) continue;
+    if (rec.targetModule === currentFile) continue;
+    const key = `${rec.targetModule}\0${rec.targetExport}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = { module: rec.targetModule, exportName: rec.targetExport, records: [] };
+      groups.set(key, group);
+    }
+    group.records.push(rec);
+  }
+
+  const out: FunctionAnalysis[] = [];
+  for (const { module, exportName, records } of groups.values()) {
+    const deduped = dedupeCallRecords(records);
+    const arity = Math.max(...deduped.map((r) => r.argTypes.length));
+    const analysis: FunctionAnalysis = {
+      name: exportName,
+      loc: locFromCallLoc(deduped[0].callLoc),
+      paramNames: Array.from({ length: arity }, (_, i) => `arg${i}`),
+      cases: [],
+      fromModule: module,
+    };
+
+    // Same capping as local synthesis: at most MAX_PRECISE_CALLSITE_CASES
+    // precise cases. The symbolic aggregate cannot re-evaluate the foreign
+    // function (its AST belongs to another file's analysis), so it unions the
+    // observed argument/result/throws types of the remaining records instead.
+    const precise = deduped.slice(0, MAX_PRECISE_CALLSITE_CASES);
+    for (const rec of precise) {
+      analysis.cases.push({
+        name: `call@L${rec.callLoc?.line ?? 0}`,
+        args: rec.argTypes,
+        result: rec.resultType,
+        throws: rec.throws,
+        source: "callsite",
+      });
+    }
+    const remaining = deduped.slice(MAX_PRECISE_CALLSITE_CASES);
+    if (remaining.length > 0) {
+      analysis.cases.push({
+        name: "call@symbolic",
+        args: Array.from({ length: arity }, (_, i) =>
+          widenType(simplifyUnion(remaining.map((rec) => rec.argTypes[i] ?? T.unknown))),
+        ),
+        result: collapseLiteralUnion(simplifyUnion(remaining.map((r) => r.resultType)), COLLAPSE_LITERAL_THRESHOLD),
+        throws: simplifyUnion(remaining.map((r) => r.throws)),
+        source: "callsite",
+        aggregatedFrom: remaining.length,
+      });
+    }
+
+    if (deduped.length > 1) {
+      analysis.combined = collapseLiteralUnion(
+        simplifyUnion(deduped.map((r) => r.resultType)),
+        COLLAPSE_LITERAL_THRESHOLD,
+      );
+    } else {
+      analysis.combined = deduped[0].resultType;
+    }
+    out.push(analysis);
+  }
+  return out;
+}
+
 function receiverTypeToDisplay(tv: TypeValue): string {
   switch (tv.kind) {
     case "literal": {
@@ -502,6 +590,37 @@ function unknownRecordsToDiagnostics(records: UnknownRecord[]): Diagnostic[] {
     }
   }
   return out;
+}
+
+function collectEnvNames(filePath: string, source: string, includeProject: boolean): string[] {
+  const ast = parse(source);
+  const fileDirectives = extractFileDirectives(ast);
+  const fileEnvNames = fileDirectives
+    .filter((d) => d.kind === "env")
+    .flatMap((d) => d.envs);
+  if (!includeProject) return fileEnvNames;
+  const projectConfig = findProjectConfig(dirname(filePath));
+  const projectEnvNames = projectConfig?.config.env ?? [];
+  return [...new Set([...projectEnvNames, ...fileEnvNames])];
+}
+
+/**
+ * Async entry to analyzeFile: preloads path-based env files
+ * (`/// @nudo:env ./nudo-harvest-node.ts`) via dynamic import — impossible
+ * synchronously in ESM — then runs the sync analysis, which picks the
+ * preloaded factories up from the env-loader cache. The sync analyzeFile
+ * signature is unchanged for existing consumers (LSP, MCP, vite-plugin).
+ */
+export async function analyzeFileAsync(
+  filePath: string,
+  source: string,
+  activeCases?: Map<string, number>,
+): Promise<AnalysisResult> {
+  const envNames = collectEnvNames(filePath, source, true);
+  if (envNames.length > 0) {
+    await preloadPathEnvs(envNames, dirname(filePath));
+  }
+  return analyzeFile(filePath, source, activeCases);
 }
 
 export function analyzeFile(filePath: string, source: string, activeCases?: Map<string, number>): AnalysisResult {
@@ -809,12 +928,15 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
   diagnostics.push(...unknownRecordsToDiagnostics(unknownRecords));
 
+  const externalFunctions = synthesizeExternalFunctions(callRecords, filePath);
+
   return {
     functions: functionResults,
     diagnostics,
     bindings,
     nodeTypeMap,
     caseHints,
+    ...(externalFunctions.length > 0 ? { externalFunctions } : {}),
   };
 }
 
@@ -897,6 +1019,21 @@ export function getCasesForFile(filePath: string, source: string): { functionNam
       .map((d, i) => ({ name: d.name, index: i }));
     return { functionName: fn.name, cases, loc: locFromNode(fn.node) };
   });
+}
+
+/** Async entry to getTypeAtPosition with path-env preloading (see analyzeFileAsync). */
+export async function getTypeAtPositionAsync(
+  filePath: string,
+  source: string,
+  line: number,
+  column: number,
+  activeCases?: Map<string, number>,
+): Promise<TypeValue | null> {
+  const envNames = collectEnvNames(filePath, source, false);
+  if (envNames.length > 0) {
+    await preloadPathEnvs(envNames, dirname(filePath));
+  }
+  return getTypeAtPosition(filePath, source, line, column, activeCases);
 }
 
 export function getTypeAtPosition(

@@ -1,0 +1,28 @@
+{
+  "name": "@nudojs/harvester",
+  "version": "0.1.0",
+  "description": "Harvests TypeScript .d.ts declarations into Nudo env definitions",
+  "type": "module",
+  "license": "MIT",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nudojs/nudo.git",
+    "directory": "packages/harvester"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts"
+  },
+  "dependencies": {
+    "@nudojs/core": "workspace:*",
+    "typescript": "^5.8.0"
+  }
+}

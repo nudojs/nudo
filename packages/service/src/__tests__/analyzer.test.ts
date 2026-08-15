@@ -266,6 +266,40 @@ function lonely(u) {
     expect(diag!.origin).toBeUndefined();
     expect(diag!.message).toBe("Cannot resolve 'toUpperCase' on unknown value");
   });
+
+  it("aggregates cross-file call sites of imported functions into externalFunctions", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-ext-"));
+    try {
+      const aSrc = `import { triple } from "./b.js";\nfunction caller(n) { return triple(n); }\nconst r = caller(4);\n`;
+      const aPath = resolve(dir, "a.js");
+      writeFileSync(aPath, aSrc);
+      writeFileSync(resolve(dir, "b.js"), `export function triple(x) { return x * 3; }\n`);
+
+      const result = analyzeFile(aPath, aSrc);
+
+      expect(result.externalFunctions).toBeDefined();
+      expect(result.externalFunctions).toHaveLength(1);
+      const triple = result.externalFunctions![0];
+      expect(triple.name).toBe("triple");
+      expect(triple.fromModule).toContain("b.js");
+      expect(triple.cases).toHaveLength(1);
+      expect(triple.cases[0].name).toMatch(/^call@L\d+$/);
+      expect(triple.cases[0].source).toBe("callsite");
+      expect(triple.cases[0].args.map(typeValueToString)).toEqual(["4"]);
+      expect(typeValueToString(triple.cases[0].result)).toBe("12");
+      expect(typeValueToString(triple.combined)).toBe("12");
+      // imported function must not leak into this file's local functions
+      expect(result.functions.map((f) => f.name)).toEqual(["caller"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves externalFunctions empty for files without imports", () => {
+    const source = `function id(x) { return x; }\nconst y = id(1);\n`;
+    const result = analyzeFile("/test/no-import.js", source);
+    expect(result.externalFunctions ?? []).toHaveLength(0);
+  });
 });
 
 describe("getTypeAtPosition", () => {

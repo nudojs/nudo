@@ -26,7 +26,7 @@ export {
 
 export { narrow } from "./narrowing.ts";
 
-export { loadEnvs, type LoadedEnv } from "./env-loader.ts";
+export { loadEnvs, loadEnvsAsync, preloadPathEnvs, type LoadedEnv } from "./env-loader.ts";
 
 export { findProjectConfig, type NudoConfig } from "./config.ts";
 

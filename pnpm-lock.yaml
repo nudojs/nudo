@@ -57,6 +57,9 @@ importers:
       '@nudojs/env-web':
         specifier: workspace:*
         version: link:../env-web
+      '@nudojs/harvester':
+        specifier: workspace:*
+        version: link:../harvester
       '@nudojs/parser':
         specifier: workspace:*
         version: link:../parser
@@ -89,6 +92,15 @@ importers:
       '@nudojs/env-es':
         specifier: workspace:*
         version: link:../env-es
+
+  packages/harvester:
+    dependencies:
+      '@nudojs/core':
+        specifier: workspace:*
+        version: link:../core
+      typescript:
+        specifier: ^5.8.0
+        version: 5.8.3
 
   packages/lsp:
     dependencies:
