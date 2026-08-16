@@ -142,7 +142,7 @@ export type SymbolTable = {
   references: ReferenceInfo[];
 };
 
-function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string } | null {
+function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string; json?: unknown } | null {
   const extensions = [".js", ".ts", ".mjs"];
 
   const nudoPath = resolveNpmNudo(source, fromDir);
@@ -155,6 +155,14 @@ function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeo
   for (const ext of ["", ...extensions]) {
     const candidate = basePath + ext;
     if (existsSync(candidate)) {
+      // .json 模块：require('../package.json') 等模式——按 JSON 求值而非 JS parse
+      if (candidate.endsWith(".json")) {
+        try {
+          return { ast: parse("module.exports = undefined;"), filePath: candidate, json: JSON.parse(readFileSync(candidate, "utf-8")) };
+        } catch {
+          return null;
+        }
+      }
       const src = readFileSync(candidate, "utf-8");
       return { ast: parse(src), filePath: candidate };
     }
@@ -682,10 +690,19 @@ function unknownRecordsToDiagnostics(records: UnknownRecord[]): Diagnostic[] {
 
     const receiver = r.receiverType;
     if (receiver && receiverIsConcrete(receiver)) {
+      // instance 类型的方法集是声明的近似（未列出 ≠ 运行时不存在），
+      // 只有基类型（number/string 等）上的方法缺失才是确定错误。
+      const isApprox = (() => {
+        const members =
+          receiver.kind === "union" ? receiver.members : [receiver];
+        return members.every(
+          (m) => m.kind === "instance" || m.kind === "function",
+        );
+      })();
       const kindLabel = r.kind === "method" ? "Method" : "Property";
       out.push({
         range,
-        severity: "error",
+        severity: isApprox ? "warning" : "error",
         message: `${kindLabel} '${r.name}' does not exist on type '${receiverTypeToDisplay(receiver)}'`,
         code: "nudo:no-method",
         ...(r.origin ? { origin: r.origin } : {}),

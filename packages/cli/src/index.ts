@@ -82,7 +82,7 @@ function createSinonTypeValue(sinonExpr: { type: string; returnValue?: TypeValue
   return fn;
 }
 
-function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string } | null {
+function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string; json?: unknown } | null {
   const extensions = [".js", ".ts", ".mjs"];
 
   const nudoPath = resolveNpmNudo(source, fromDir);
@@ -96,6 +96,14 @@ function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeo
   for (const ext of ["", ...extensions]) {
     const candidate = basePath + ext;
     if (existsSync(candidate)) {
+      // .json 模块：CJS require('../package.json') 等常见模式——按 JSON 求值
+      if (candidate.endsWith(".json")) {
+        try {
+          return { ast: parse("module.exports = undefined;"), filePath: candidate, json: JSON.parse(readFileSync(candidate, "utf-8")) };
+        } catch {
+          return null;
+        }
+      }
       const src = readFileSync(candidate, "utf-8");
       return { ast: parse(src), filePath: candidate };
     }
@@ -638,6 +646,6 @@ program
   });
 
 program.parseAsync(process.argv).catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : err);
+  console.error(err instanceof Error ? (process.env.NUDO_DEBUG ? err.stack : err.message) : err);
   process.exitCode = 1;
 });

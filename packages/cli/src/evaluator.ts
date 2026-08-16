@@ -230,11 +230,11 @@ export function resetMemo(): void {
   _activeCallKeys.length = 0;
 }
 
-export function setModuleResolver(resolver: ((source: string, fromDir: string) => { ast: Node; filePath: string } | null) | null): void {
+export function setModuleResolver(resolver: ((source: string, fromDir: string) => { ast: Node; filePath: string; json?: unknown } | null) | null): void {
   currentModuleResolver = resolver;
 }
 
-let currentModuleResolver: ((source: string, fromDir: string) => { ast: Node; filePath: string } | null) | null = null;
+let currentModuleResolver: ((source: string, fromDir: string) => { ast: Node; filePath: string; json?: unknown } | null) | null = null;
 let currentFileDir = "";
 
 let envModules: Record<string, Record<string, TypeValue>> = {};
@@ -1260,7 +1260,29 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             // `Object.prototype.toString.call(x)` brand-check idiom type as
             // string instead of erroring on `.call` of undefined.
             if (propName === "toString") return T.fnSig([], T.string);
-            return T.undefined;
+            // instance 的方法集是声明的近似：未列出的方法返回 unknown-result
+            // 函数值，让 `X.prototype.m.call(...)` 反射惯用法继续求值。
+            const knownInstanceMethods: Record<string, TypeValue> = {
+              values: T.fnSig([], T.array(T.unknown)),
+              keys: T.fnSig([], T.array(T.unknown)),
+              entries: T.fnSig([], T.array(T.tuple([T.unknown, T.unknown]))),
+              get: T.fnSig([T.unknown], T.unknown),
+              has: T.fnSig([T.unknown], T.boolean),
+              add: T.fnSig([T.unknown], T.unknown),
+              set: T.fnSig([T.unknown, T.unknown], T.unknown),
+              delete: T.fnSig([T.unknown], T.boolean),
+              forEach: T.fnSig([T.unknown], T.undefined),
+              call: T.fnSig([T.unknown], T.unknown),
+              apply: T.fnSig([T.unknown], T.unknown),
+              bind: T.fnSig([T.unknown], T.unknown),
+            };
+            // hasOwnProp：普通 [] 访问会命中 JS 原型链（valueOf/hasOwnProperty
+            // 等），把原生函数当 TypeValue 泄漏进类型系统
+            const knownFn = hasOwnProp(knownInstanceMethods, propName)
+              ? knownInstanceMethods[propName]
+              : undefined;
+            if (knownFn) return knownFn;
+            return T.fnSig([T.unknown], T.unknown);
           }
           if (propName === "length" && (obj.kind === "array" || obj.kind === "tuple")) {
             return obj.kind === "tuple" ? T.literal(obj.elements.length) : T.number;
@@ -1358,7 +1380,29 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             // `Object.prototype.toString.call(x)` brand-check idiom type as
             // string instead of erroring on `.call` of undefined.
             if (propName === "toString") return T.fnSig([], T.string);
-            return T.undefined;
+            // instance 的方法集是声明的近似：未列出的方法返回 unknown-result
+            // 函数值，让 `X.prototype.m.call(...)` 反射惯用法继续求值。
+            const knownInstanceMethods: Record<string, TypeValue> = {
+              values: T.fnSig([], T.array(T.unknown)),
+              keys: T.fnSig([], T.array(T.unknown)),
+              entries: T.fnSig([], T.array(T.tuple([T.unknown, T.unknown]))),
+              get: T.fnSig([T.unknown], T.unknown),
+              has: T.fnSig([T.unknown], T.boolean),
+              add: T.fnSig([T.unknown], T.unknown),
+              set: T.fnSig([T.unknown, T.unknown], T.unknown),
+              delete: T.fnSig([T.unknown], T.boolean),
+              forEach: T.fnSig([T.unknown], T.undefined),
+              call: T.fnSig([T.unknown], T.unknown),
+              apply: T.fnSig([T.unknown], T.unknown),
+              bind: T.fnSig([T.unknown], T.unknown),
+            };
+            // hasOwnProp：普通 [] 访问会命中 JS 原型链（valueOf/hasOwnProperty
+            // 等），把原生函数当 TypeValue 泄漏进类型系统
+            const knownFn = hasOwnProp(knownInstanceMethods, propName)
+              ? knownInstanceMethods[propName]
+              : undefined;
+            if (knownFn) return knownFn;
+            return T.fnSig([T.unknown], T.unknown);
           }
           if (propName === "length" && (obj.kind === "array" || obj.kind === "tuple")) {
             return obj.kind === "tuple" ? T.literal(obj.elements.length) : T.number;
@@ -2407,6 +2451,22 @@ function evaluateArrayMethod(
     return arr.kind === "tuple" ? T.literal(arr.elements.length) : T.number;
   }
 
+  if (method === "pop" || method === "shift") {
+    if (arr.kind === "tuple") {
+      // 抽象数组不模拟顺序语义：返回元素 union（空 tuple 理论返回 undefined，union 进去保持 sound）
+      if (arr.elements.length === 0) return T.undefined;
+      return T.union(...arr.elements);
+    }
+    return T.unknown;
+  }
+
+  if (method === "unshift") {
+    if (arr.kind === "tuple") {
+      return T.literal(arr.elements.length + (argVals as TypeValue[]).length);
+    }
+    return T.number;
+  }
+
   if (method === "indexOf" || method === "lastIndexOf") {
     return T.number;
   }
@@ -2845,8 +2905,22 @@ function commonJsExportsValue(moduleEnv: Environment): TypeValue {
   return T.unknown;
 }
 
-function evaluateRequireCall(node: Node & { type: "CallExpression" }, _env: Environment): EvalResult {
-  const arg = (node.arguments as Node[])[0];
+/** JSON 值 → TypeValue（字面量级精确：package.json 版本号等成为 string 字面量） */
+function jsonToTypeValue(v: unknown): TypeValue {
+  if (v === null) return T.literal(null);
+  if (typeof v === "string") return T.literal(v);
+  if (typeof v === "number") return T.literal(v);
+  if (typeof v === "boolean") return T.literal(v);
+  if (Array.isArray(v)) return T.tuple(v.map(jsonToTypeValue));
+  if (typeof v === "object") {
+    const props: Record<string, TypeValue> = {};
+    for (const [k, val] of Object.entries(v)) props[k] = jsonToTypeValue(val);
+    return T.object(props);
+  }
+  return T.unknown;
+}
+
+function evaluateRequireCall(node: Node & { type: "CallExpression" }, _env: Environment): EvalResult {  const arg = (node.arguments as Node[])[0];
   if (!arg || arg.type !== "StringLiteral") {
     recordUnknown({
       kind: "global",
@@ -2877,6 +2951,10 @@ function evaluateRequireCall(node: Node & { type: "CallExpression" }, _env: Envi
       reason: `cannot resolve module '${specifier}'`,
     });
     return T.unknown;
+  }
+  // .json 模块（如 require('../package.json')）：JSON 值直接映射为字面量类型
+  if ("json" in resolved && resolved.json !== undefined) {
+    return jsonToTypeValue(resolved.json);
   }
   return commonJsExportsValue(loadModuleEnv(resolved));
 }

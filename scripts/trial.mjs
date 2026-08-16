@@ -8,7 +8,7 @@ import { performance } from "node:perf_hooks";
 const dir = process.argv[2];
 const files = readdirSync(dir, { recursive: true })
   .map((f) => join(dir, f))
-  .filter((f) => f.endsWith(".js"));
+  .filter((f) => f.endsWith(".js") && !f.endsWith(".json"));
 
 const agg = {
   files: 0, functions: 0, cases: 0,
@@ -43,7 +43,14 @@ for (const file of files) {
       if (d.severity === "error") agg.errors.push(`${file.split("/").pop()}:${d.range?.start?.line ?? "?"} ${d.message} [${d.code}]`);
     }
   } catch (e) {
-    agg.crash.push(`${file}: ${(e.stderr || e.message).slice(0, 200)}`);
+    const err = e;
+    const msg = (err.stderr || err.message || String(err)).slice(0, 300);
+    // ENOBUFS/maxBuffer 不是分析 crash，是输出管道问题；timeout 需甄别
+    if (err.code === "ENOBUFS" || err.code === "ENOENT") {
+      agg.crash.push(`${file}: PIPE:${err.code}`);
+    } else {
+      agg.crash.push(`${file}: ${msg}`);
+    }
   }
 }
 
