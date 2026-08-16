@@ -69,7 +69,55 @@ const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue> | TypeVal
     keys: T.array(T.string),
     values: T.array(T.unknown),
     entries: T.array(T.tuple([T.string, T.unknown])),
-    assign: T.unknown,
+    assign: T.fnSig([T.unknown], T.unknown, T.never, (args) => {
+      // Object.assign(target, ...sources): later sources overwrite; a
+      // symbolic source keeps the symbolic unknown fallback.
+      const target = args[0];
+      if (target?.kind !== "object") return undefined;
+      const props: Record<string, TypeValue> = { ...target.properties };
+      for (const src of args.slice(1)) {
+        if (src?.kind !== "object") return undefined;
+        Object.assign(props, src.properties);
+      }
+      return T.object(props);
+    }),
+    // Prototype-reflection statics. getPrototypeOf maps receivers onto the
+    // cached prototype singletons so `getPrototypeOf(x) !== getPrototypeOf(y)`
+    // resolves literally; create/setPrototypeOf cover the clone-style
+    // prototype dance; getOwnPropertyDescriptor feeds descriptor.get/set
+    // branches with the property's value type.
+    getPrototypeOf: T.fnSig([T.unknown], T.unknown, T.never, (args) => protoOfValue(args[0])),
+    create: T.fnSig([T.unknown], T.object({}), T.never, () => T.object({})),
+    setPrototypeOf: T.fnSig([T.unknown, T.unknown], T.unknown, T.never, (args) => args[0]),
+    defineProperty: T.fnSig([T.unknown, T.unknown, T.unknown], T.unknown, T.never, (args) => args[0]),
+    getOwnPropertyDescriptor: T.fnSig([T.unknown, T.unknown], T.union(T.object({}), T.undefined), T.never, (args) => {
+      const obj = args[0];
+      const key = args[1];
+      if (obj?.kind !== "object" && obj?.kind !== "instance") return T.undefined;
+      if (!key) return T.undefined;
+      if (key.kind === "literal" && typeof key.value === "string") {
+        const prop = hasOwnProp(obj.properties, key.value) ? obj.properties[key.value] : undefined;
+        if (!prop) return T.undefined;
+        return descriptorOf(prop);
+      }
+      if (key.kind === "primitive" && key.type === "string") {
+        const props = Object.keys(obj.properties);
+        if (props.length === 0) return T.undefined;
+        return descriptorOf(simplifyUnion(props.map((k) => obj.properties[k])));
+      }
+      return T.undefined;
+    }),
+  },
+  Buffer: {
+    from: T.fnSig([T.unknown], T.instanceOf("Buffer")),
+    alloc: T.fnSig([T.number], T.instanceOf("Buffer")),
+    concat: T.fnSig([T.unknown], T.instanceOf("Buffer")),
+    byteLength: T.fnSig([T.unknown], T.number),
+    isEncoding: T.fnSig([T.unknown], T.boolean),
+    isBuffer: T.fnSig([T.unknown], T.boolean, T.never, (args) => {
+      const lit = builtinInstanceTest(args[0], "Buffer");
+      return lit === undefined ? undefined : T.literal(lit);
+    }),
   },
   Array: {
     isArray: T.boolean,
@@ -128,7 +176,7 @@ const BUILTIN_ERROR_CLASSES = new Set([
 const BUILTIN_PROTOTYPE_CLASSES = new Set([
   ...BUILTIN_ERROR_CLASSES,
   "Date", "Object", "Map", "Set", "Promise", "RegExp", "Array", "Function",
-  "String", "Number", "Boolean", "Symbol", "WeakMap", "WeakSet",
+  "String", "Number", "Boolean", "Symbol", "WeakMap", "WeakSet", "Buffer",
 ]);
 
 // Object.prototype members. Real property access reads through the
@@ -137,14 +185,339 @@ const BUILTIN_PROTOTYPE_CLASSES = new Set([
 // undefined) and `Object.prototype.hasOwnProperty` types as boolean.
 // Lookup must be own-property guarded: a plain `{}` record would otherwise
 // leak native JS functions (e.g. for "constructor") into the type system.
+//
+// toString/valueOf carry impls so the receiver (thisVal) shapes the result:
+// `Object.prototype.toString.call(x)` yields the brand literal
+// ('[object Map]', '[object Null]', ...) that Map-based type dispatch
+// (hoek internals.typeMap) keys on; valueOf returns its receiver.
 const OBJECT_PROTOTYPE_METHODS: Record<string, TypeValue> = {
   hasOwnProperty: T.fnSig([T.unknown], T.boolean),
   isPrototypeOf: T.fnSig([T.unknown], T.boolean),
   propertyIsEnumerable: T.fnSig([T.unknown], T.boolean),
-  toString: T.fnSig([], T.string),
+  toString: T.fnSig([], T.string, T.never, (_args, thisVal) => objectToStringBrand(thisVal)),
   toLocaleString: T.fnSig([], T.string),
-  valueOf: T.fnSig([], T.unknown),
+  valueOf: T.fnSig([], T.unknown, T.never, (_args, thisVal) => thisVal),
 };
+
+// Common prototype members approximated as unknown-result signatures
+// (mirrors the knownInstanceMethods fallback pattern). `X.prototype.m`
+// stays a callable function value instead of degrading to undefined.
+const BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS: Record<string, Record<string, TypeValue>> = {
+  Object: { ...OBJECT_PROTOTYPE_METHODS },
+  Array: {
+    push: T.fnSig([T.unknown], T.number),
+    pop: T.fnSig([], T.unknown),
+    shift: T.fnSig([], T.unknown),
+    unshift: T.fnSig([T.unknown], T.number),
+    slice: T.fnSig([T.number, T.number], T.array(T.unknown)),
+    splice: T.fnSig([T.number, T.number], T.array(T.unknown)),
+    concat: T.fnSig([T.unknown], T.array(T.unknown)),
+    join: T.fnSig([T.string], T.string),
+    indexOf: T.fnSig([T.unknown], T.number),
+    lastIndexOf: T.fnSig([T.unknown], T.number),
+    includes: T.fnSig([T.unknown], T.boolean),
+    map: T.fnSig([T.unknown], T.array(T.unknown)),
+    filter: T.fnSig([T.unknown], T.array(T.unknown)),
+    forEach: T.fnSig([T.unknown], T.undefined),
+    find: T.fnSig([T.unknown], T.unknown),
+    findIndex: T.fnSig([T.unknown], T.number),
+    some: T.fnSig([T.unknown], T.boolean),
+    every: T.fnSig([T.unknown], T.boolean),
+    reduce: T.fnSig([T.unknown, T.unknown], T.unknown),
+    sort: T.fnSig([T.unknown], T.array(T.unknown)),
+    reverse: T.fnSig([], T.array(T.unknown)),
+    toString: T.fnSig([], T.string),
+  },
+  Function: {
+    call: T.fnSig([T.unknown], T.unknown),
+    apply: T.fnSig([T.unknown, T.unknown], T.unknown),
+    bind: T.fnSig([T.unknown], T.unknown),
+    toString: T.fnSig([], T.string),
+  },
+  Map: {
+    get: T.fnSig([T.unknown], T.unknown),
+    set: T.fnSig([T.unknown, T.unknown], T.unknown),
+    has: T.fnSig([T.unknown], T.boolean),
+    delete: T.fnSig([T.unknown], T.boolean),
+    clear: T.fnSig([], T.undefined),
+    forEach: T.fnSig([T.unknown], T.undefined),
+    keys: T.fnSig([], T.array(T.unknown)),
+    values: T.fnSig([], T.array(T.unknown)),
+    entries: T.fnSig([], T.array(T.tuple([T.unknown, T.unknown]))),
+    toString: T.fnSig([], T.string),
+  },
+  Set: {
+    add: T.fnSig([T.unknown], T.unknown),
+    has: T.fnSig([T.unknown], T.boolean),
+    delete: T.fnSig([T.unknown], T.boolean),
+    clear: T.fnSig([], T.undefined),
+    forEach: T.fnSig([T.unknown], T.undefined),
+    keys: T.fnSig([], T.array(T.unknown)),
+    values: T.fnSig([], T.array(T.unknown)),
+    entries: T.fnSig([], T.array(T.tuple([T.unknown, T.unknown]))),
+    toString: T.fnSig([], T.string),
+  },
+  WeakMap: {
+    get: T.fnSig([T.unknown], T.unknown),
+    set: T.fnSig([T.unknown, T.unknown], T.unknown),
+    has: T.fnSig([T.unknown], T.boolean),
+    delete: T.fnSig([T.unknown], T.boolean),
+    toString: T.fnSig([], T.string),
+  },
+  WeakSet: {
+    add: T.fnSig([T.unknown], T.unknown),
+    has: T.fnSig([T.unknown], T.boolean),
+    delete: T.fnSig([T.unknown], T.boolean),
+    toString: T.fnSig([], T.string),
+  },
+  Promise: {
+    then: T.fnSig([T.unknown], T.promise(T.unknown)),
+    catch: T.fnSig([T.unknown], T.promise(T.unknown)),
+    finally: T.fnSig([T.unknown], T.promise(T.unknown)),
+    toString: T.fnSig([], T.string),
+  },
+  Date: {
+    getTime: T.fnSig([], T.number),
+    valueOf: T.fnSig([], T.number),
+    toISOString: T.fnSig([], T.string),
+    toJSON: T.fnSig([], T.string),
+    toLocaleString: T.fnSig([], T.string),
+    toString: T.fnSig([], T.string),
+  },
+  RegExp: {
+    test: T.fnSig([T.string], T.boolean),
+    exec: T.fnSig([T.string], T.union(T.object({}), T.null)),
+    toString: T.fnSig([], T.string),
+  },
+  String: {
+    charAt: T.fnSig([T.number], T.string),
+    charCodeAt: T.fnSig([T.number], T.number),
+    indexOf: T.fnSig([T.string], T.number),
+    lastIndexOf: T.fnSig([T.string], T.number),
+    includes: T.fnSig([T.string], T.boolean),
+    startsWith: T.fnSig([T.string], T.boolean),
+    endsWith: T.fnSig([T.string], T.boolean),
+    slice: T.fnSig([T.number, T.number], T.string),
+    substring: T.fnSig([T.number, T.number], T.string),
+    toUpperCase: T.fnSig([], T.string),
+    toLowerCase: T.fnSig([], T.string),
+    trim: T.fnSig([], T.string),
+    replace: T.fnSig([T.unknown, T.string], T.string),
+    split: T.fnSig([T.string], T.array(T.string)),
+    toString: T.fnSig([], T.string),
+    valueOf: T.fnSig([], T.string),
+  },
+  Number: {
+    toFixed: T.fnSig([T.number], T.string),
+    toPrecision: T.fnSig([T.number], T.string),
+    valueOf: T.fnSig([], T.number),
+    toString: T.fnSig([T.number], T.string),
+  },
+  Boolean: {
+    valueOf: T.fnSig([], T.boolean),
+    toString: T.fnSig([], T.string),
+  },
+  Symbol: {
+    toString: T.fnSig([], T.string),
+    valueOf: T.fnSig([], T.symbol),
+  },
+  Buffer: {
+    equals: T.fnSig([T.unknown], T.boolean),
+    compare: T.fnSig([T.unknown], T.number),
+    toString: T.fnSig([T.unknown], T.string),
+    toJSON: T.fnSig([], T.unknown),
+  },
+  Error: {
+    toString: T.fnSig([], T.string),
+  },
+};
+
+// Cached `X.prototype` singletons. hoek-style modules assign
+// `exports.array = Array.prototype` and later compare
+// `baseProto === Types.buffer`: strict-equality on instances only stays
+// precise when every evaluation of `X.prototype` yields the same TypeValue.
+const BUILTIN_PROTOTYPE_SINGLETONS = new Map<string, TypeValue>();
+
+function builtinPrototype(className: string): TypeValue {
+  let proto = BUILTIN_PROTOTYPE_SINGLETONS.get(className);
+  if (!proto) {
+    const methods = hasOwnProp(BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS, className)
+      ? BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS[className]
+      : BUILTIN_ERROR_CLASSES.has(className)
+        ? BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS.Error
+        : {};
+    proto = T.instanceOf(className, { ...methods });
+    (proto as any)._builtinProto = className;
+    BUILTIN_PROTOTYPE_SINGLETONS.set(className, proto);
+  }
+  return proto;
+}
+
+// `Object.prototype.toString` brand string ('[object Map]', '[object Null]',
+// ...). Returns undefined when the receiver has no representable brand, so
+// the fnSig falls back to its plain `string` return type.
+function objectToStringBrand(v: TypeValue | undefined): TypeValue | undefined {
+  if (!v) return undefined;
+  if (v.kind === "union") {
+    const parts = v.members.map((m) => objectToStringBrand(m));
+    if (parts.some((p) => p === undefined)) return undefined;
+    return simplifyUnion(parts as TypeValue[]);
+  }
+  let base: TypeValue = v;
+  while (base.kind === "refined") base = base.base;
+  switch (base.kind) {
+    case "object": return T.literal("[object Object]");
+    case "array":
+    case "tuple": return T.literal("[object Array]");
+    case "function": return T.literal("[object Function]");
+    case "promise": return T.literal("[object Promise]");
+    case "instance": return T.literal(`[object ${base.className}]`);
+    case "literal": {
+      if (base.value === null) return T.literal("[object Null]");
+      if (base.value === undefined) return T.literal("[object Undefined]");
+      const t = typeof base.value;
+      return T.literal(`[object ${t === "number" ? "Number" : t === "string" ? "String" : "Boolean"}]`);
+    }
+    case "primitive": {
+      const brands: Record<string, string> = {
+        number: "Number", string: "String", boolean: "Boolean", bigint: "BigInt", symbol: "Symbol",
+      };
+      return T.literal(`[object ${brands[base.type] ?? "Object"}]`);
+    }
+    default: return undefined;
+  }
+}
+
+// Object.getPrototypeOf: map a receiver onto its class's cached prototype
+// singleton (plain objects → Object.prototype, arrays → Array.prototype,
+// instances → their class's prototype). Unrepresentable receivers degrade
+// to unknown.
+function protoOfValue(v: TypeValue | undefined): TypeValue {
+  if (!v) return T.unknown;
+  if (v.kind === "union") return simplifyUnion(v.members.map((m) => protoOfValue(m)));
+  let base: TypeValue = v;
+  while (base.kind === "refined") base = base.base;
+  switch (base.kind) {
+    case "object": return builtinPrototype("Object");
+    case "array":
+    case "tuple": return builtinPrototype("Array");
+    case "function": return builtinPrototype("Function");
+    case "promise": return builtinPrototype("Promise");
+    case "instance": return builtinPrototype(base.className);
+    default: return T.unknown;
+  }
+}
+
+function descriptorOf(prop: TypeValue): TypeValue {
+  return T.object({
+    value: prop,
+    writable: T.boolean,
+    enumerable: T.boolean,
+    configurable: T.boolean,
+  });
+}
+
+// `x instanceof C` / `Buffer.isBuffer(x)` / `Array.isArray(x)` literal
+// answer for structurally-known receivers; undefined keeps the symbolic
+// fallback (boolean).
+function builtinInstanceTest(v: TypeValue | undefined, className: string): boolean | undefined {
+  if (!v) return undefined;
+  let base: TypeValue = v;
+  while (base.kind === "refined") base = base.base;
+  switch (base.kind) {
+    case "array":
+    case "tuple": return className === "Array" || className === "Object";
+    case "object": return className === "Object";
+    case "function": return className === "Function" || className === "Object";
+    case "promise": return className === "Promise" || className === "Object";
+    case "literal":
+    case "primitive": return false;
+    default: return undefined;
+  }
+}
+
+function arrayIsArrayLiteral(v: TypeValue): boolean | undefined {
+  let base: TypeValue = v;
+  while (base.kind === "refined") base = base.base;
+  switch (base.kind) {
+    case "array":
+    case "tuple": return true;
+    case "instance": return base.className === "Array";
+    case "object":
+    case "function":
+    case "promise":
+    case "literal":
+    case "primitive": return false;
+    default: return undefined;
+  }
+}
+
+// JavaScript truthiness decided statically. Object-ish kinds (object/array/
+// tuple/function/instance/promise) are always truthy; literals decide on
+// their value; never is unreachable (falsy); symbolic values are null.
+function definiteBoolean(tv: TypeValue): boolean | null {
+  if (tv.kind === "union") {
+    let allTrue = true;
+    let allFalse = true;
+    for (const m of tv.members) {
+      const b = definiteBoolean(m);
+      if (b === null) return null;
+      allTrue = allTrue && b === true;
+      allFalse = allFalse && b === false;
+    }
+    if (allTrue) return true;
+    if (allFalse) return false;
+    return null;
+  }
+  switch (tv.kind) {
+    case "literal": return !!tv.value;
+    case "object":
+    case "array":
+    case "tuple":
+    case "function":
+    case "instance":
+    case "promise": return true;
+    case "never": return false;
+    default: return null;
+  }
+}
+
+// Receiver-binding for thisVal-dependent Object.prototype methods
+// (toString/valueOf): `const v = obj.valueOf; v()` loses the member-access
+// receiver, so accesses off a concrete receiver return a copy whose impl
+// closes over it. An explicit `.call(x)`/`.apply(x)` thisVal still wins.
+function bindObjectProtoMethod(fn: TypeValue, receiver: TypeValue): TypeValue {
+  const sig = getFnSig(fn);
+  if (!sig?.impl) return fn;
+  return T.fnSig(sig.paramTypes, sig.returnType, sig.throwsType, (args, thisVal) =>
+    sig.impl!(args, thisVal ?? receiver));
+}
+
+// Strict equality over prototype singletons (and instances compared against
+// them): definite true/false only when every cross-pair agrees. null means
+// "not decidable here" — the generic boolean fallback applies.
+function builtinProtoIdentityEq(l: TypeValue, r: TypeValue): boolean | null {
+  const ls = l.kind === "union" ? l.members : [l];
+  const rs = r.kind === "union" ? r.members : [r];
+  let anyProto = false;
+  for (const m of ls.concat(rs)) {
+    if (m.kind !== "instance") return null;
+    if ((m as any)._builtinProto) anyProto = true;
+  }
+  if (!anyProto) return null;
+  let allEq = true;
+  let anyEq = false;
+  for (const lm of ls) {
+    for (const rm of rs) {
+      const eq = typeValueEquals(lm, rm);
+      allEq = allEq && eq;
+      anyEq = anyEq || eq;
+    }
+  }
+  if (allEq) return true;
+  if (!anyEq) return false;
+  return null;
+}
 
 type SourceRange = { start: { line: number; column: number }; end: { line: number; column: number } };
 
@@ -759,6 +1132,16 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       if (node.operator === "instanceof") {
         return evaluateInstanceof(leftVal, rightVal, node.right, env);
       }
+      if (node.operator === "===" || node.operator === "!==") {
+        // Prototype-singleton identity (`baseProto === Types.buffer`): the
+        // generic Op only literal-compares, so same-class instance pairs
+        // would collapse to boolean. Decide it when both sides are instances
+        // and at least one is a cached builtin prototype.
+        const identity = builtinProtoIdentityEq(leftVal, rightVal);
+        if (identity !== null) {
+          return T.literal(node.operator === "===" ? identity : !identity);
+        }
+      }
       return distributeBinaryOverUnion(leftVal, rightVal, (l, r) =>
         dispatchBinaryOp(node.operator, l, r),
       );
@@ -789,6 +1172,13 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           const rv = evaluate(node.right, env);
           return isReturn(rv) || isBranch(rv) || isThrow(rv) ? rv : rv;
         }
+        // Object-ish left operands are always truthy: `Buffer && f(x)` is f(x)
+        const leftTruthy = definiteBoolean(leftVal);
+        if (leftTruthy === true) {
+          const rv = evaluate(node.right, env);
+          return isReturn(rv) || isBranch(rv) || isThrow(rv) ? rv : rv;
+        }
+        if (leftTruthy === false) return leftVal;
         const rv = evaluate(node.right, env);
         const rightTV = isReturn(rv) || isBranch(rv) || isThrow(rv) ? T.unknown : rv;
         return simplifyUnion([leftVal, rightTV]);
@@ -797,6 +1187,12 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       if (node.operator === "||") {
         if (leftVal.kind === "literal" && leftVal.value) return leftVal;
         if (leftVal.kind === "literal" && !leftVal.value) {
+          const rv = evaluate(node.right, env);
+          return isReturn(rv) || isBranch(rv) || isThrow(rv) ? rv : rv;
+        }
+        const leftTruthy = definiteBoolean(leftVal);
+        if (leftTruthy === true) return leftVal;
+        if (leftTruthy === false) {
           const rv = evaluate(node.right, env);
           return isReturn(rv) || isBranch(rv) || isThrow(rv) ? rv : rv;
         }
@@ -840,6 +1236,13 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           ? evaluate(node.consequent, trueEnv)
           : evaluate(node.alternate, falseEnv);
       }
+      // Object-ish / otherwise-decidable tests pick their branch statically
+      const decided = definiteBoolean(testVal);
+      if (decided !== null) {
+        return decided
+          ? evaluate(node.consequent, trueEnv)
+          : evaluate(node.alternate, falseEnv);
+      }
 
       const cResult = evaluate(node.consequent, trueEnv);
       const aResult = evaluate(node.alternate, falseEnv);
@@ -869,6 +1272,17 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             start: { line: node.consequent.loc.start.line, column: node.consequent.loc.start.column },
             end: { line: node.consequent.loc.end.line, column: node.consequent.loc.end.column },
           });
+        }
+        return node.alternate
+          ? evaluate(node.alternate, falseEnv)
+          : T.undefined;
+      }
+      // Object-ish / otherwise-decidable tests pick their branch statically
+      // (e.g. `if (proto && proto.isImmutable)` once && resolves).
+      const decided = definiteBoolean(testVal);
+      if (decided !== null) {
+        if (decided) {
+          return evaluate(node.consequent, trueEnv);
         }
         return node.alternate
           ? evaluate(node.alternate, falseEnv)
@@ -1316,9 +1730,10 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
               return (builtin as Record<string, TypeValue>)[propName];
             }
           }
-          // `X.prototype` on a constructible built-in resolves to instances of X
+          // `X.prototype` on a constructible built-in resolves to the cached
+          // singleton instance of X (stable identity across evaluations)
           if (propName === "prototype" && builtinName && BUILTIN_PROTOTYPE_CLASSES.has(builtinName)) {
-            return T.instanceOf(builtinName);
+            return builtinPrototype(builtinName);
           }
           // Check for Map.size property
           if (obj.kind === "instance" && obj.className === "Map" && propName === "size") {
@@ -1335,7 +1750,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             const protoFn = hasOwnProp(OBJECT_PROTOTYPE_METHODS, propName)
               ? OBJECT_PROTOTYPE_METHODS[propName]
               : undefined;
-            if (protoFn) return protoFn;
+            if (protoFn) return bindObjectProtoMethod(protoFn, obj);
             return T.undefined;
           }
           if (obj.kind === "instance") {
@@ -1350,7 +1765,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             const protoFn = hasOwnProp(OBJECT_PROTOTYPE_METHODS, propName)
               ? OBJECT_PROTOTYPE_METHODS[propName]
               : undefined;
-            if (protoFn) return protoFn;
+            if (protoFn) return bindObjectProtoMethod(protoFn, obj);
             // instance 的方法集是声明的近似：未列出的方法返回 unknown-result
             // 函数值，让 `X.prototype.m.call(...)` 反射惯用法继续求值。
             const knownInstanceMethods: Record<string, TypeValue> = {
@@ -1450,10 +1865,11 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         const propName = node.property.name;
         let propMissed = false;
         const result = distributeOverUnion(objVal, (obj) => {
-          // `X.prototype` on a constructible built-in resolves to instances of X
+          // `X.prototype` on a constructible built-in resolves to the cached
+          // singleton instance of X (stable identity across evaluations)
           const optBuiltinName = (obj as any)._builtinName as string | undefined;
           if (propName === "prototype" && optBuiltinName && BUILTIN_PROTOTYPE_CLASSES.has(optBuiltinName)) {
-            return T.instanceOf(optBuiltinName);
+            return builtinPrototype(optBuiltinName);
           }
           if (obj.kind === "object") {
             const ownVal = hasOwnProp(obj.properties, propName) ? obj.properties[propName] : undefined;
@@ -1462,7 +1878,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             const protoFn = hasOwnProp(OBJECT_PROTOTYPE_METHODS, propName)
               ? OBJECT_PROTOTYPE_METHODS[propName]
               : undefined;
-            if (protoFn) return protoFn;
+            if (protoFn) return bindObjectProtoMethod(protoFn, obj);
             return T.undefined;
           }
           if (obj.kind === "instance") {
@@ -1477,7 +1893,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             const protoFn = hasOwnProp(OBJECT_PROTOTYPE_METHODS, propName)
               ? OBJECT_PROTOTYPE_METHODS[propName]
               : undefined;
-            if (protoFn) return protoFn;
+            if (protoFn) return bindObjectProtoMethod(protoFn, obj);
             // instance 的方法集是声明的近似：未列出的方法返回 unknown-result
             // 函数值，让 `X.prototype.m.call(...)` 反射惯用法继续求值。
             const knownInstanceMethods: Record<string, TypeValue> = {
@@ -1737,7 +2153,7 @@ function bindPattern(pattern: Node, value: TypeValue, env: Environment): void {
       const propVal = value.kind === "object"
         ? (hasOwnProp(value.properties, key)
           ? value.properties[key]
-          : (hasOwnProp(OBJECT_PROTOTYPE_METHODS, key) ? OBJECT_PROTOTYPE_METHODS[key] : T.undefined))
+          : (hasOwnProp(OBJECT_PROTOTYPE_METHODS, key) ? bindObjectProtoMethod(OBJECT_PROTOTYPE_METHODS[key], value) : T.undefined))
         : T.unknown;
       bindPattern(prop.value as Node, propVal, env);
     }
@@ -2114,7 +2530,13 @@ function evaluateMethodCall(
       return T.array(T.unknown);
     }
     if (methodName === "isArray") {
-      return T.boolean;
+      // Structurally-known receivers decide literally (arrays/tuples →
+      // true, plain objects/instances-of-other-classes → false); unknown
+      // receivers keep the symbolic boolean.
+      return distributeOverUnion((argVals as TypeValue[])[0] ?? T.undefined, (v) => {
+        const lit = arrayIsArrayLiteral(v);
+        return lit === undefined ? T.boolean : T.literal(lit);
+      });
     }
     return T.unknown;
   }
@@ -2388,6 +2810,9 @@ function evaluateStringMethodLiteral(
   };
 
   switch (method) {
+    // String.prototype.toString/valueOf return the receiver string itself
+    case "toString":
+    case "valueOf": return T.literal(str);
     case "toUpperCase": return T.literal(str.toUpperCase());
     case "toLowerCase": return T.literal(str.toLowerCase());
     case "trim": return T.literal(str.trim());
@@ -2499,6 +2924,9 @@ function evaluateStringMethodAbstract(
   _args: TypeValue[],
 ): TypeValue | null {
   switch (method) {
+    case "toString":
+    case "valueOf":
+      return T.string;
     case "toUpperCase":
     case "toLowerCase":
     case "trim":
@@ -3266,6 +3694,11 @@ function evaluateInstanceof(left: TypeValue, _right: TypeValue, rightNode: Node,
         isSubtypeOf(lv, T.instanceOf(className));
       return T.literal(matches);
     }
+    // Structurally-known receivers decide `x instanceof C` literally:
+    // plain objects are never Date/Buffer/..., arrays are Array/Object, ...
+    // (hoek getInternalProto's instanceof chain keys off this precision).
+    const structural = builtinInstanceTest(lv, className);
+    if (structural !== undefined) return T.literal(structural);
     return T.boolean;
   });
 }
@@ -3637,7 +4070,7 @@ function callFunctionUnchecked(
   // Check for function signature impl (used by @nudo:env / @nudo:mock-module)
   const sig = getFnSig(fn);
   if (sig) {
-    const implResult = sig.impl?.(args);
+    const implResult = sig.impl?.(args, thisVal);
     return { value: implResult ?? sig.returnType, throws: sig.throwsType };
   }
 

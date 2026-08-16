@@ -96,4 +96,26 @@ function fn() {
 `);
     expect(results[0].result).toBe("undefined");
   });
+
+  it("Set.has() decides literally for recorded values", () => {
+    const results = runTest(`
+// @nudo:case "has-literal" ()
+function fn() {
+  const s = new Set(['a', 'b']);
+  return [s.has('a'), s.has('z')];
+}
+`);
+    expect(results[0].result).toBe("[true, false]");
+  });
+
+  it("Set.has() decides prototype singletons by identity", () => {
+    const results = runTest(`
+// @nudo:case "has-proto" ()
+function fn() {
+  const protoHack = new Set([Map.prototype, Set.prototype]);
+  return protoHack.has(Object.prototype);
+}
+`);
+    expect(results[0].result).toBe("false");
+  });
 });

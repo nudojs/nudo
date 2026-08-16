@@ -127,4 +127,106 @@ function viaDestructure(obj) {
     console.log("destructured hasOwnProperty result:", destructured[0].result);
     expect(destructured[0].result).toBe("boolean");
   });
+
+  it("Object.prototype.toString.call(x) yields the receiver's brand literal", () => {
+    const results = runTest(`
+// @nudo:case "plain" ({a: 1})
+// @nudo:case "array" ([1, 2])
+// @nudo:case "fn" ((a) => a)
+function brand(x) {
+  return Object.prototype.toString.call(x);
+}
+`);
+    console.log("brand results:", results.map((r) => r.result));
+    expect(results[0].result).toBe('"[object Object]"');
+    expect(results[1].result).toBe('"[object Array]"');
+    expect(results[2].result).toBe('"[object Function]"');
+  });
+
+  it("Object.prototype.toString.call brands null/undefined and primitives", () => {
+    const results = runTest(`
+// @nudo:case "null" (null)
+// @nudo:case "undefined" (undefined)
+// @nudo:case "number" (T.number)
+function brand(x) {
+  return Object.prototype.toString.call(x);
+}
+`);
+    console.log("brand results:", results.map((r) => r.result));
+    expect(results[0].result).toBe('"[object Null]"');
+    expect(results[1].result).toBe('"[object Undefined]"');
+    expect(results[2].result).toBe('"[object Number]"');
+  });
+
+  it("Object.prototype.toString.call(new Map()) brands with the class name", () => {
+    const results = runTest(`
+// @nudo:case "map" ()
+function brandMap() {
+  return Object.prototype.toString.call(new Map());
+}
+`);
+    console.log("brand Map result:", results[0].result);
+    expect(results[0].result).toBe('"[object Map]"');
+  });
+
+  it("Object.getPrototypeOf maps receivers onto cached prototype singletons", () => {
+    const results = runTest(`
+// @nudo:case "plain" ({a: 1})
+// @nudo:case "array" ([1])
+function proto(x) {
+  return Object.getPrototypeOf(x);
+}
+`);
+    console.log("getPrototypeOf results:", results.map((r) => r.result.slice(0, 24)));
+    expect(results[0].result).toContain("Object {");
+    expect(results[1].result).toContain("Array {");
+  });
+
+  it("Object.getPrototypeOf identity compares equal to X.prototype", () => {
+    const results = runTest(`
+// @nudo:case "plain" ({a: 1})
+function protoEq(x) {
+  return Object.getPrototypeOf(x) === Object.prototype;
+}
+`);
+    expect(results[0].result).toBe("true");
+  });
+
+  it("Object.getOwnPropertyDescriptor returns a value-carrying descriptor", () => {
+    const results = runTest(`
+// @nudo:case "hit" ({a: 1})
+function desc(x) {
+  const d = Object.getOwnPropertyDescriptor(x, 'a');
+  return d ? d.value : 'missing';
+}
+`);
+    console.log("descriptor value:", results[0].result);
+    expect(results[0].result).toBe("1");
+  });
+
+  it("Object.getOwnPropertyDescriptor misses return undefined", () => {
+    const results = runTest(`
+// @nudo:case "miss" ({a: 1})
+function descMiss(x) {
+  return Object.getOwnPropertyDescriptor(x, 'b');
+}
+`);
+    console.log("descriptor miss:", results[0].result);
+    expect(results[0].result).toBe("undefined");
+  });
+
+  it("Buffer namespace resolves: from/prototype feed the clone-style proto chain", () => {
+    const results = runTest(`
+// @nudo:case "from" ({a: 1})
+function buf(x) {
+  const proto = Object.getPrototypeOf(x);
+  if (proto === Buffer.prototype) {
+    return Buffer.from(x);
+  }
+  return Object.create(proto);
+}
+`);
+    console.log("buffer chain result:", results[0].result);
+    expect(results[0].result).toBe("{}");
+  });
 });

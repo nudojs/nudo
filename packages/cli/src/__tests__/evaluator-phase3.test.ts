@@ -207,7 +207,15 @@ describe("instanceof", () => {
       const x = 42;
       x instanceof Error
     `);
-    expect(result).toBe(T.boolean);
+    // primitives can never be instanceof anything — decided statically
+    expect(typeValueEquals(result, T.literal(false))).toBe(true);
+    // unknown receivers keep the conservative boolean fallback
+    const fn = evaluateFunction(
+      parse("function f(x) { return x instanceof Error; }").program.body[0],
+      [T.unknown],
+      createEnvironment(),
+    );
+    expect(fn).toBe(T.boolean);
   });
 });
 

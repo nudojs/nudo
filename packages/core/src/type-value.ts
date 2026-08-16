@@ -5,7 +5,10 @@ import type { Environment } from "./environment.ts";
 
 export type LiteralValue = string | number | boolean | null | undefined;
 
-export type SigImpl = (args: TypeValue[]) => TypeValue | undefined;
+// `thisVal` is the bound receiver when the signature is invoked as a method
+// or through Function.prototype.call/apply (e.g. Object.prototype.toString
+// brand computation needs it); direct calls leave it undefined.
+export type SigImpl = (args: TypeValue[], thisVal?: TypeValue) => TypeValue | undefined;
 
 export type FunctionSignature = {
   paramTypes: TypeValue[];

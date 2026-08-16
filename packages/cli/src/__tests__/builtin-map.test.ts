@@ -74,4 +74,39 @@ function doubleAll(items, cb) {
 `);
     expect(results[0].result).toBe("[2, 4, 6]");
   });
+
+  it("Map.get() hits literal keys recorded at construction", () => {
+    const results = runTest(`
+// @nudo:case "lookup-table" ()
+function fn() {
+  const typeMap = new Map([['[object Map]', 1], ['[object Set]', 2]]);
+  return [typeMap.get('[object Set]'), typeMap.get('[object Object]')];
+}
+`);
+    // Precise hit returns the stored value; miss returns undefined
+    expect(results[0].result).toBe("[2, undefined]");
+  });
+
+  it("Map.get() tracks keys stored via set()", () => {
+    const results = runTest(`
+// @nudo:case "seen-cache" ()
+function fn() {
+  const seen = new Map();
+  seen.set('obj', 'clone');
+  return seen.get('obj');
+}
+`);
+    expect(results[0].result).toBe('"clone"');
+  });
+
+  it("Map.has() decides literally for recorded keys", () => {
+    const results = runTest(`
+// @nudo:case "has-literal" ()
+function fn() {
+  const m = new Map([['a', 1]]);
+  return m.has('a');
+}
+`);
+    expect(results[0].result).toBe("true");
+  });
 });

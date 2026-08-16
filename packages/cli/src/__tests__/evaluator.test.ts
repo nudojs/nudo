@@ -456,7 +456,7 @@ const boom = badNum(42);
     expect(env.lookup("u").kind).toBe("unknown");
   });
 
-  it("types Object.prototype.toString.call(x) as string and never leaks native JS members", () => {
+  it("types Object.prototype.toString.call(x) as a brand literal and never leaks native JS members", () => {
     const ast = parse(`
       const brand = Object.prototype.toString.call(5);
       const direct = Object.prototype.toString;
@@ -465,9 +465,9 @@ const boom = badNum(42);
     `);
     const env = createEnvironment();
     evaluateProgram(ast, env);
-    expect(typeValueToString(env.lookup("brand"))).toBe("string");
+    expect(typeValueToString(env.lookup("brand"))).toBe('"[object Number]"');
     expect(env.lookup("direct").kind).toBe("function");
-    expect(typeValueToString(env.lookup("plain"))).toBe("string");
+    expect(typeValueToString(env.lookup("plain"))).toBe('"[object Object]"');
     expect(env.lookup("mapStr").kind).toBe("function");
     // The bug this locks down: property records are plain objects, so bracket
     // access used to return the real native JS toString (a non-TypeValue).
@@ -654,7 +654,7 @@ const boom = badNum(42);
     expect(records.filter((r) => r.kind === "method" || r.kind === "property")).toEqual([]);
   });
 
-  it("types Object.prototype.toString.call(obj) as string without error-level unknowns", () => {
+  it("types Object.prototype.toString.call(obj) as brand literals without error-level unknowns", () => {
     const records: UnknownRecord[] = [];
     setUnknownCollector((r) => records.push(r));
     const env = createEnvironment();
@@ -667,8 +667,8 @@ const boom = badNum(42);
       setUnknownCollector(null);
     }
 
-    expect(typeValueEquals(env.lookup("s"), T.string)).toBe(true);
-    expect(typeValueEquals(env.lookup("u"), T.string)).toBe(true);
+    expect(typeValueEquals(env.lookup("s"), T.literal("[object Object]"))).toBe(true);
+    expect(typeValueEquals(env.lookup("u"), T.literal("[object Number]"))).toBe(true);
     expect(records.filter((r) => r.kind === "method" || r.kind === "property")).toEqual([]);
   });
 
@@ -744,5 +744,73 @@ const boom = badNum(42);
       const r = a.x;
     `), env);
     expect(typeValueEquals(env.lookup("r"), T.literal(42))).toBe(true);
+  });
+
+  it("caches X.prototype as an identity-stable singleton instance", () => {
+    const env = createEnvironment();
+    evaluateProgram(parse(`
+      const a = Array.prototype;
+      const b = Array.prototype;
+      const r1 = a === b;
+      const r2 = Array.prototype === Array.prototype;
+      const r3 = Object.prototype === Map.prototype;
+    `), env);
+    const proto = env.lookup("a");
+    expect(proto.kind).toBe("instance");
+    if (proto.kind === "instance") expect(proto.className).toBe("Array");
+    expect(typeValueEquals(env.lookup("r1"), T.literal(true))).toBe(true);
+    expect(typeValueEquals(env.lookup("r2"), T.literal(true))).toBe(true);
+    expect(typeValueEquals(env.lookup("r3"), T.literal(false))).toBe(true);
+  });
+
+  it("compares getPrototypeOf results against prototype singletons literally", () => {
+    const env = createEnvironment();
+    evaluateProgram(parse(`
+      const o = { n: 1 };
+      const same = Object.getPrototypeOf(o) === Object.prototype;
+      const diff = Object.getPrototypeOf(o) === Date.prototype;
+    `), env);
+    expect(typeValueEquals(env.lookup("same"), T.literal(true))).toBe(true);
+    expect(typeValueEquals(env.lookup("diff"), T.literal(false))).toBe(true);
+  });
+
+  it("Array.isArray decides literally for structurally-known receivers", () => {
+    const env = createEnvironment();
+    evaluateProgram(parse(`
+      const a = Array.isArray([1, 2]);
+      const b = Array.isArray({ x: 1 });
+      const c = Array.isArray(new Map());
+    `), env);
+    expect(typeValueEquals(env.lookup("a"), T.literal(true))).toBe(true);
+    expect(typeValueEquals(env.lookup("b"), T.literal(false))).toBe(true);
+    expect(typeValueEquals(env.lookup("c"), T.literal(false))).toBe(true);
+  });
+
+  it("instanceof decides literally for structurally-known receivers", () => {
+    const env = createEnvironment();
+    evaluateProgram(parse(`
+      const a = ({ x: 1 }) instanceof Date;
+      const b = [1] instanceof Array;
+      const c = [1] instanceof Object;
+      const d = ({ x: 1 }) instanceof Object;
+    `), env);
+    expect(typeValueEquals(env.lookup("a"), T.literal(false))).toBe(true);
+    expect(typeValueEquals(env.lookup("b"), T.literal(true))).toBe(true);
+    expect(typeValueEquals(env.lookup("c"), T.literal(true))).toBe(true);
+    expect(typeValueEquals(env.lookup("d"), T.literal(true))).toBe(true);
+  });
+
+  it("&& / || short-circuit on always-truthy object-ish operands", () => {
+    const env = createEnvironment();
+    evaluateProgram(parse(`
+      const bools = [true, false];
+      const r1 = bools && bools.length;
+      const r2 = null || 'fallback';
+      const r3 = bools || [];
+    `), env);
+    expect(typeValueEquals(env.lookup("r1"), T.literal(2))).toBe(true);
+    expect(typeValueEquals(env.lookup("r2"), T.literal("fallback"))).toBe(true);
+    // bools is a tuple (always truthy): || keeps the left side
+    expect(env.lookup("r3").kind).toBe("tuple");
   });
 });
