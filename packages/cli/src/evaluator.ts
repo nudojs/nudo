@@ -131,6 +131,21 @@ const BUILTIN_PROTOTYPE_CLASSES = new Set([
   "String", "Number", "Boolean", "Symbol", "WeakMap", "WeakSet",
 ]);
 
+// Object.prototype members. Real property access reads through the
+// prototype chain, so every object-typed receiver materializes these —
+// destructuring `const { hasOwnProperty } = obj` yields a function (not
+// undefined) and `Object.prototype.hasOwnProperty` types as boolean.
+// Lookup must be own-property guarded: a plain `{}` record would otherwise
+// leak native JS functions (e.g. for "constructor") into the type system.
+const OBJECT_PROTOTYPE_METHODS: Record<string, TypeValue> = {
+  hasOwnProperty: T.fnSig([T.unknown], T.boolean),
+  isPrototypeOf: T.fnSig([T.unknown], T.boolean),
+  propertyIsEnumerable: T.fnSig([T.unknown], T.boolean),
+  toString: T.fnSig([], T.string),
+  toLocaleString: T.fnSig([], T.string),
+  valueOf: T.fnSig([], T.unknown),
+};
+
 type SourceRange = { start: { line: number; column: number }; end: { line: number; column: number } };
 
 let _currentSource = "";
@@ -213,11 +228,18 @@ type EvalResult = TypeValue | ReturnSignal | BranchSignal | ThrowSignal;
 const MEMO_IN_PROGRESS = Symbol("MemoInProgress");
 const callMemo = new Map<string, TypeValue | typeof MEMO_IN_PROGRESS>();
 
-function buildMemoKey(fn: TypeValue & { kind: "function" }, args: TypeValue[]): string | null {
+function buildMemoKey(
+  fn: TypeValue & { kind: "function" },
+  args: TypeValue[],
+  thisVal?: TypeValue,
+): string | null {
   const fnName = (fn as any)._memoize as string | undefined;
   if (!fnName) return null;
   const argsKey = args.map(typeValueToString).join(",");
-  return `${fnName}(${argsKey})`;
+  // `this` participates in the key: obj1.f() and obj2.f() must not share a
+  // memo entry when f reads `this`.
+  const thisKey = thisVal ? `this:${typeValueToString(thisVal)};` : "";
+  return `${fnName}(${thisKey}${argsKey})`;
 }
 
 const moduleCache = new Map<string, Environment>();
@@ -432,10 +454,11 @@ function extractOrigin(
   return undefined;
 }
 
-/** Own-property check for TypeValue property records. Plain `{}` records
- * inherit Object.prototype, so bracket access would leak native members
- * (e.g. the real JS `toString`) into the type system as bogus values. */
-function hasOwnProp(props: Record<string, TypeValue>, name: string): boolean {
+/** Own-property check for plain record tables. Plain `{}` records inherit
+ * Object.prototype, so `in` / bracket access would leak native members
+ * (e.g. the real JS `hasOwnProperty`, `toString`) into the type system as
+ * bogus values. */
+function hasOwnProp(props: Record<string, unknown>, name: string): boolean {
   return Object.prototype.hasOwnProperty.call(props, name);
 }
 
@@ -616,8 +639,10 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
     case "Identifier": {
       if (node.name === "undefined") return T.undefined;
       // Check for built-in global objects (env-injected values take priority,
-      // e.g. @nudo:env es binds fnSig-backed globals with precise impls)
-      if (node.name in BUILTIN_STATIC_METHODS && !env.has(node.name)) {
+      // e.g. @nudo:env es binds fnSig-backed globals with precise impls).
+      // hasOwnProp guard: `in` would hit the JS prototype chain and leak
+      // native functions for names like `hasOwnProperty`.
+      if (hasOwnProp(BUILTIN_STATIC_METHODS, node.name) && !env.has(node.name)) {
         const builtin = BUILTIN_STATIC_METHODS[node.name];
         if (typeof builtin === "object" && builtin !== null && !("kind" in builtin)) {
           // It's a namespace object (like Date, Math, JSON)
@@ -652,11 +677,28 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         // "property does not exist on undefined" error.
         return T.unknown;
       }
+      // Bare `hasOwnProperty(...)`-style references resolve through the
+      // global object's prototype chain in real JS — Object.prototype
+      // members act as implicit globals (own-guarded against proto leak).
+      if (!env.has(node.name) && hasOwnProp(OBJECT_PROTOTYPE_METHODS, node.name)) {
+        return OBJECT_PROTOTYPE_METHODS[node.name];
+      }
       return env.lookup(node.name);
     }
 
-    case "ThisExpression":
-      return env.lookup("this");
+    case "ThisExpression": {
+      // Un-bound `this` (plain function called without a receiver, e.g. a
+      // callsite-synthesized case): the receiver is unknowable statically, so
+      // degrade to unknown — `this.x` then warns (unknown-recv) instead of
+      // erroring with "on type 'undefined'". Explicit bindings (constructors,
+      // obj.f() receivers, .call(thisArg)) take precedence unchanged.
+      const thisVal = env.lookup("this");
+      // T.undefined is `{ kind: "literal", value: undefined }`.
+      if (thisVal === undefined || (thisVal.kind === "literal" && thisVal.value === undefined)) {
+        return T.unknown;
+      }
+      return thisVal;
+    }
 
     case "TemplateLiteral": {
       if (node.expressions.length === 0 && node.quasis.length === 1) {
@@ -1121,8 +1163,11 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       const argVals = evaluateArgs(node.arguments as Node[], env);
       if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
 
+      const thisVal = (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression")
+        ? ((callee as any)._receiverVal as TypeValue | undefined)
+        : undefined;
       if (calleeVal.kind === "function") {
-        const full = callFunctionFull(calleeVal, argVals as TypeValue[]);
+        const full = callFunctionFull(calleeVal, argVals as TypeValue[], thisVal);
         if (_callCollector && callee.type === "Identifier") {
           recordCall(callee.name, argVals as TypeValue[], full, node.loc, calleeVal);
         } else if (_callCollector && (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") && callee.property.type === "Identifier") {
@@ -1142,7 +1187,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
       return distributeOverUnion(calleeVal, (fn) => {
         if (fn.kind !== "function") return T.unknown;
-        return callFunction(fn, argVals as TypeValue[]);
+        return callFunction(fn, argVals as TypeValue[], thisVal);
       });
     }
 
@@ -1169,8 +1214,11 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       const argVals = evaluateArgs(node.arguments as Node[], env);
       if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
 
+      const thisVal = (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression")
+        ? ((callee as any)._receiverVal as TypeValue | undefined)
+        : undefined;
       if (calleeVal.kind === "function") {
-        const full = callFunctionFull(calleeVal, argVals as TypeValue[]);
+        const full = callFunctionFull(calleeVal, argVals as TypeValue[], thisVal);
         if (_callCollector && callee.type === "Identifier") {
           recordCall(callee.name, argVals as TypeValue[], full, node.loc, calleeVal);
         } else if (_callCollector && (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") && callee.property.type === "Identifier") {
@@ -1190,13 +1238,16 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
       return distributeOverUnion(calleeVal, (fn) => {
         if (fn.kind !== "function") return T.unknown;
-        return callFunction(fn, argVals as TypeValue[]);
+        return callFunction(fn, argVals as TypeValue[], thisVal);
       });
     }
 
     case "MemberExpression": {
       const objVal = evaluate(node.object, env);
       if (isReturn(objVal) || isBranch(objVal) || isThrow(objVal)) return objVal;
+      // Stash the receiver so an enclosing CallExpression (`obj.f()`) can
+      // bind it as the callee's `this` without re-evaluating the object.
+      (node as any)._receiverVal = objVal;
 
       if (node.computed) {
         const propVal = evaluate(node.property, env);
@@ -1233,9 +1284,11 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         const result = distributeOverUnion(objVal, (obj) => {
           // Check for built-in static methods (e.g., Date.now, Math.floor)
           const builtinName = (obj as any)._builtinName as string | undefined;
-          if (builtinName && BUILTIN_STATIC_METHODS[builtinName]) {
+          if (builtinName && hasOwnProp(BUILTIN_STATIC_METHODS, builtinName)) {
             const builtin = BUILTIN_STATIC_METHODS[builtinName];
-            if (typeof builtin === "object" && propName in builtin) {
+            // hasOwnProp guard: `in` would leak native Object.prototype
+            // members (e.g. `JSON.toString` → the real JS function).
+            if (typeof builtin === "object" && hasOwnProp(builtin, propName)) {
               return (builtin as Record<string, TypeValue>)[propName];
             }
           }
@@ -1254,7 +1307,11 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           if (obj.kind === "object") {
             const ownVal = hasOwnProp(obj.properties, propName) ? obj.properties[propName] : undefined;
             if (ownVal) return ownVal;
-            if (propName === "toString") return T.fnSig([], T.string);
+            // Every object inherits Object.prototype members (see table note).
+            const protoFn = hasOwnProp(OBJECT_PROTOTYPE_METHODS, propName)
+              ? OBJECT_PROTOTYPE_METHODS[propName]
+              : undefined;
+            if (protoFn) return protoFn;
             return T.undefined;
           }
           if (obj.kind === "instance") {
@@ -1263,11 +1320,13 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             // JS `toString` function) into the type system.
             const own = hasOwnProp(obj.properties, propName) ? obj.properties[propName] : undefined;
             if (own) return own;
-            // Every object inherits Object.prototype.toString: () => string.
-            // Materializing it (instead of undefined) lets the common
-            // `Object.prototype.toString.call(x)` brand-check idiom type as
-            // string instead of erroring on `.call` of undefined.
-            if (propName === "toString") return T.fnSig([], T.string);
+            // Instances inherit Object.prototype members too: keeps
+            // `Object.prototype.hasOwnProperty` (and the toString brand-check
+            // idiom) typeable instead of degrading to undefined.
+            const protoFn = hasOwnProp(OBJECT_PROTOTYPE_METHODS, propName)
+              ? OBJECT_PROTOTYPE_METHODS[propName]
+              : undefined;
+            if (protoFn) return protoFn;
             // instance 的方法集是声明的近似：未列出的方法返回 unknown-result
             // 函数值，让 `X.prototype.m.call(...)` 反射惯用法继续求值。
             const knownInstanceMethods: Record<string, TypeValue> = {
@@ -1331,6 +1390,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       if (objVal.kind === "literal" && (objVal.value === null || objVal.value === undefined)) {
         return T.undefined;
       }
+      (node as any)._receiverVal = objVal;
 
       // Otherwise, evaluate like a normal member expression
       if (node.computed) {
@@ -1374,7 +1434,11 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           if (obj.kind === "object") {
             const ownVal = hasOwnProp(obj.properties, propName) ? obj.properties[propName] : undefined;
             if (ownVal) return ownVal;
-            if (propName === "toString") return T.fnSig([], T.string);
+            // Every object inherits Object.prototype members (see table note).
+            const protoFn = hasOwnProp(OBJECT_PROTOTYPE_METHODS, propName)
+              ? OBJECT_PROTOTYPE_METHODS[propName]
+              : undefined;
+            if (protoFn) return protoFn;
             return T.undefined;
           }
           if (obj.kind === "instance") {
@@ -1383,11 +1447,13 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             // Object.prototype members into the type system.
             const own = hasOwnProp(obj.properties, propName) ? obj.properties[propName] : undefined;
             if (own) return own;
-            // Every object inherits Object.prototype.toString: () => string.
-            // Materializing it (instead of undefined) lets the common
-            // `Object.prototype.toString.call(x)` brand-check idiom type as
-            // string instead of erroring on `.call` of undefined.
-            if (propName === "toString") return T.fnSig([], T.string);
+            // Instances inherit Object.prototype members too: keeps
+            // `Object.prototype.hasOwnProperty` (and the toString brand-check
+            // idiom) typeable instead of degrading to undefined.
+            const protoFn = hasOwnProp(OBJECT_PROTOTYPE_METHODS, propName)
+              ? OBJECT_PROTOTYPE_METHODS[propName]
+              : undefined;
+            if (protoFn) return protoFn;
             // instance 的方法集是声明的近似：未列出的方法返回 unknown-result
             // 函数值，让 `X.prototype.m.call(...)` 反射惯用法继续求值。
             const knownInstanceMethods: Record<string, TypeValue> = {
@@ -1641,8 +1707,13 @@ function bindPattern(pattern: Node, value: TypeValue, env: Environment): void {
           : null;
       if (!key) continue;
       restKeys.push(key);
+      // Own-property guard first (a plain record would leak native JS
+      // functions for names like "hasOwnProperty"), then Object.prototype
+      // fallback — real destructuring reads through the prototype chain.
       const propVal = value.kind === "object"
-        ? (value.properties[key] ?? T.undefined)
+        ? (hasOwnProp(value.properties, key)
+          ? value.properties[key]
+          : (hasOwnProp(OBJECT_PROTOTYPE_METHODS, key) ? OBJECT_PROTOTYPE_METHODS[key] : T.undefined))
         : T.unknown;
       bindPattern(prop.value as Node, propVal, env);
     }
@@ -1798,7 +1869,7 @@ function evaluateFunctionPrototypeMethod(
 ): TypeValue | null {
   if (methodName === "bind") return fnVal;
   if (methodName === "call") {
-    return callFunctionFull(fnVal, argVals.slice(1)).value;
+    return callFunctionFull(fnVal, argVals.slice(1), argVals[0]).value;
   }
   if (methodName === "apply") {
     const listArg = argVals[1];
@@ -1811,7 +1882,7 @@ function evaluateFunctionPrototypeMethod(
       const el = listArg?.kind === "array" ? listArg.element : T.unknown;
       spreadArgs = fnVal.params.map(() => el);
     }
-    return callFunctionFull(fnVal, spreadArgs).value;
+    return callFunctionFull(fnVal, spreadArgs, argVals[0]).value;
   }
   return null;
 }
@@ -1895,7 +1966,6 @@ function evaluateMethodCall(
 ): EvalResult | null {
   const objVal = evaluate(callee.object, env);
   if (isReturn(objVal) || isBranch(objVal) || isThrow(objVal)) return objVal;
-
   const methodName = !callee.computed && callee.property.type === "Identifier"
     ? callee.property.name
     : null;
@@ -3486,13 +3556,14 @@ function cycleArgKey(tv: TypeValue): string {
   return typeValueToString(tv);
 }
 
-function fnCallKey(fn: TypeValue & { kind: "function" }, args: TypeValue[]): string {
+function fnCallKey(fn: TypeValue & { kind: "function" }, args: TypeValue[], thisVal?: TypeValue): string {
   let id = _fnCallIds.get(fn);
   if (!id) {
     id = `fn#${++_fnCallIdSeq}`;
     _fnCallIds.set(fn, id);
   }
-  return `${id}(${args.map(cycleArgKey).join(",")})`;
+  const thisKey = thisVal ? `@${cycleArgKey(thisVal)}` : "";
+  return `${id}${thisKey}(${args.map(cycleArgKey).join(",")})`;
 }
 
 function callBudgetExhausted(fnName: string, loc: Node["loc"]): CallResult {
@@ -3507,8 +3578,12 @@ function callBudgetExhausted(fnName: string, loc: Node["loc"]): CallResult {
   return { value: T.unknown, throws: T.never };
 }
 
-function callFunctionFull(fn: TypeValue & { kind: "function" }, args: TypeValue[]): CallResult {
-  const callKey = fnCallKey(fn, args);
+function callFunctionFull(
+  fn: TypeValue & { kind: "function" },
+  args: TypeValue[],
+  thisVal?: TypeValue,
+): CallResult {
+  const callKey = fnCallKey(fn, args, thisVal);
   const fnName = (fn as any)._name ?? "<anonymous>";
   if (_activeCallKeys.includes(callKey) || _callDepth >= MAX_CALL_DEPTH || _totalCalls >= MAX_TOTAL_CALLS) {
     return callBudgetExhausted(fnName, fn.body?.loc);
@@ -3517,14 +3592,18 @@ function callFunctionFull(fn: TypeValue & { kind: "function" }, args: TypeValue[
   _callDepth++;
   _activeCallKeys.push(callKey);
   try {
-    return callFunctionUnchecked(fn, args);
+    return callFunctionUnchecked(fn, args, thisVal);
   } finally {
     _activeCallKeys.pop();
     _callDepth--;
   }
 }
 
-function callFunctionUnchecked(fn: TypeValue & { kind: "function" }, args: TypeValue[]): CallResult {
+function callFunctionUnchecked(
+  fn: TypeValue & { kind: "function" },
+  args: TypeValue[],
+  thisVal?: TypeValue,
+): CallResult {
   // Check for direct return value (used by sinon mocks)
   const directReturn = (fn as any)._directReturn as TypeValue | undefined;
   if (directReturn) {
@@ -3539,6 +3618,10 @@ function callFunctionUnchecked(fn: TypeValue & { kind: "function" }, args: TypeV
   }
 
   const callEnv = fn.closure.extend({});
+  // `obj.f()` binds the receiver as the callee's `this` before parameters.
+  // Arrow callees ignore it in real JS; their bodies still resolve `this`
+  // through the closure chain here — accepted approximation.
+  if (thisVal) callEnv.bind("this", thisVal);
   const paramPatterns = (fn as any)._paramPatterns as Node[] | undefined;
   const isAsync = !!(fn as any)._async;
   for (let i = 0; i < fn.params.length; i++) {
@@ -3602,8 +3685,12 @@ function callFunctionUnchecked(fn: TypeValue & { kind: "function" }, args: TypeV
   return { value: wrapped, throws: T.never };
 }
 
-function callFunction(fn: TypeValue & { kind: "function" }, args: TypeValue[]): TypeValue {
-  return callFunctionFull(fn, args).value;
+function callFunction(
+  fn: TypeValue & { kind: "function" },
+  args: TypeValue[],
+  thisVal?: TypeValue,
+): TypeValue {
+  return callFunctionFull(fn, args, thisVal).value;
 }
 
 export function evaluateFunction(

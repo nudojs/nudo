@@ -637,4 +637,62 @@ const boom = badNum(42);
     evaluateProgram(parse(source), env);
     expect(typeValueEquals(env.lookup("deep"), T.literal(10))).toBe(true);
   });
+
+  it("binds the receiver of obj.f() as the callee's this", () => {
+    const env = createEnvironment();
+    evaluateProgram(parse(`
+      const o = { n: 1 };
+      o.f = function () { return this.n; };
+      const r1 = o.f();
+      const o2 = { n: 2, f() { return this.n; } };
+      const r2 = o2.f();
+    `), env);
+    expect(typeValueEquals(env.lookup("r1"), T.literal(1))).toBe(true);
+    expect(typeValueEquals(env.lookup("r2"), T.literal(2))).toBe(true);
+  });
+
+  it("passes the thisArg of f.call(obj, ...) into the callee", () => {
+    const env = createEnvironment();
+    evaluateProgram(parse(`
+      function g() { return this.n; }
+      const r = g.call({ n: 5 });
+    `), env);
+    expect(typeValueEquals(env.lookup("r"), T.literal(5))).toBe(true);
+  });
+
+  it("degrades unbound this to unknown (not undefined) in receiver-less calls", () => {
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    const env = createEnvironment();
+    try {
+      // this-style function called without a receiver (as in a
+      // callsite-synthesized entry case): `this.x` must degrade to
+      // unknown-receiver records (warnings), never "on type 'undefined'".
+      evaluateProgram(parse(`
+        function push() {
+          this.push(this._stack.value);
+          return 1;
+        }
+        const r = push();
+      `), env);
+    } finally {
+      setUnknownCollector(null);
+    }
+    expect(typeValueEquals(env.lookup("r"), T.literal(1))).toBe(true);
+    const receiverKinds = records
+      .filter((r) => r.kind === "method" || r.kind === "property")
+      .map((r) => r.receiverType?.kind);
+    expect(receiverKinds.length).toBeGreaterThan(0);
+    expect(receiverKinds.every((k) => k === "unknown")).toBe(true);
+  });
+
+  it("keeps constructor this bindings intact for new expressions", () => {
+    const env = createEnvironment();
+    evaluateProgram(parse(`
+      class A { constructor() { this.x = 42; } }
+      const a = new A();
+      const r = a.x;
+    `), env);
+    expect(typeValueEquals(env.lookup("r"), T.literal(42))).toBe(true);
+  });
 });
