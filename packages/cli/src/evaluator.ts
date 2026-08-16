@@ -1125,6 +1125,10 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         const full = callFunctionFull(calleeVal, argVals as TypeValue[]);
         if (_callCollector && callee.type === "Identifier") {
           recordCall(callee.name, argVals as TypeValue[], full, node.loc, calleeVal);
+        } else if (_callCollector && (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") && callee.property.type === "Identifier") {
+          // 成员调用（ns.fn()/obj.fn()）：跨文件调用点发现的来源——
+          // 配合 _exportTags 还原 (module, export) 归属
+          recordCall(callee.property.name, argVals as TypeValue[], full, node.loc, calleeVal);
         }
         if (full.value.kind === "never" && full.throws.kind !== "never") {
           const callLoc = node.loc ? {
@@ -1169,6 +1173,10 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         const full = callFunctionFull(calleeVal, argVals as TypeValue[]);
         if (_callCollector && callee.type === "Identifier") {
           recordCall(callee.name, argVals as TypeValue[], full, node.loc, calleeVal);
+        } else if (_callCollector && (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") && callee.property.type === "Identifier") {
+          // 成员调用（ns.fn()/obj.fn()）：跨文件调用点发现的来源——
+          // 配合 _exportTags 还原 (module, export) 归属
+          recordCall(callee.property.name, argVals as TypeValue[], full, node.loc, calleeVal);
         }
         if (full.value.kind === "never" && full.throws.kind !== "never") {
           const callLoc = node.loc ? {
@@ -1841,8 +1849,36 @@ function evaluateMethodForMember(
     }
   }
 
-  // Array/tuple methods - need to pass original AST nodes
-  // Not handled here; fall through to the main evaluateMethodCall which has access to AST nodes
+  // Array/tuple methods（union 分布路径——主路径 evaluateArrayMethod 需要
+  // AST 节点，这里只补不需要回调 AST 的顺序方法；回调类 map/filter 等
+  // 返回 unknown 以示保守）
+  if (objVal.kind === "array" || objVal.kind === "tuple") {
+    if (methodName === "push") {
+      if (objVal.kind === "tuple") {
+        objVal.elements.push(...argVals);
+        return T.literal(objVal.elements.length);
+      }
+      return T.number;
+    }
+    if (methodName === "pop" || methodName === "shift") {
+      if (objVal.kind === "tuple") {
+        if (objVal.elements.length === 0) return T.undefined;
+        return T.union(...objVal.elements);
+      }
+      return T.unknown;
+    }
+    if (methodName === "unshift") {
+      if (objVal.kind === "tuple") return T.literal(objVal.elements.length + argVals.length);
+      return T.number;
+    }
+    if (methodName === "length") {
+      return objVal.kind === "tuple" ? T.literal(objVal.elements.length) : T.number;
+    }
+    if (methodName === "indexOf" || methodName === "lastIndexOf") return T.number;
+    if (methodName === "includes") return T.boolean;
+    // join/concat/slice/map/filter 等返回 unknown（回调形态在主路径处理）
+    return T.unknown;
+  }
 
   // String methods
   if (isStringLike(objVal)) {

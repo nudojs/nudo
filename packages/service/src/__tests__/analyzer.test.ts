@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { resolve } from "node:path";
 import { join } from "node:path";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { T, typeValueToString } from "@nudojs/core";
-import { analyzeFile, getTypeAtPosition, getCompletionsAtPosition, buildModuleGraph, computeDirtySet, topoSortDirty } from "../analyzer.ts";
+import { analyzeFile, collectCallRecords, getTypeAtPosition, getCompletionsAtPosition, buildModuleGraph, computeDirtySet, topoSortDirty } from "../analyzer.ts";
 import { generateDts } from "../dts-generator.ts";
 
 const FIXTURE_PATH = resolve(import.meta.dirname, "fixtures", "sample.js");
@@ -420,6 +420,65 @@ module.exports = internals.clone = function (obj) {
     expect(dts).toContain("export declare function declared");
     expect(dts).not.toContain("clone");
     expect(dts).not.toContain("module");
+  });
+
+  it("synthesizes cases from externally injected usage-site call records", () => {
+    const source = `
+function formatName(first, last) {
+  return first + " " + last;
+}
+function shout(msg) {
+  return msg.toUpperCase();
+}
+module.exports = { formatName, shout };
+`;
+    // 模拟 CLI --callsites 从使用现场（测试/上层应用）收集的记录：
+    // targetExport 命中导出名 formatName，fnName 形态也会被匹配
+    const external = [
+      {
+        fnName: "formatName",
+        argTypes: [T.literal("Ada"), T.literal("Lovelace")],
+        resultType: T.literal("Ada Lovelace"),
+        throws: T.never,
+        targetModule: "/test/lib/util.js",
+        targetExport: "formatName",
+      },
+    ];
+    const result = analyzeFile("/test/lib/util.js", source, undefined, external);
+    const formatName = result.functions.find((f) => f.name === "formatName")!;
+    expect(formatName).toBeDefined();
+    expect(formatName.entryOnly).toBeFalsy();
+    expect(formatName.cases).toHaveLength(1);
+    expect(formatName.cases[0].source).toBe("callsite");
+    expect(formatName.cases[0].args.map(typeValueToString)).toEqual(['"Ada"', '"Lovelace"']);
+    expect(typeValueToString(formatName.cases[0].result)).toBe('"Ada Lovelace"');
+
+    // 未被使用现场调用的 shout 保持 entry-only
+    const shout = result.functions.find((f) => f.name === "shout")!;
+    expect(shout.entryOnly).toBe(true);
+  });
+
+  it("collectCallRecords harvests real call shapes from usage-site files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-cs-"));
+    try {
+      const libPath = join(dir, "util.js");
+      writeFileSync(libPath, "function double(n) { return n * 2; }\nmodule.exports = { double };\n");
+      const testPath = join(dir, "test.js");
+      writeFileSync(testPath, "const { double } = require('./util.js');\nconst r = double(21);\n");
+      const records = collectCallRecords(testPath, readFileSync(testPath, "utf-8"));
+      const double = records.find((r) => r.targetExport === "double");
+      expect(double).toBeDefined();
+      expect(double!.argTypes.map(typeValueToString)).toEqual(["21"]);
+      expect(typeValueToString(double!.resultType)).toBe("42");
+
+      // 注入后 double 从 entry-only 升级为真实调用形态
+      const result = analyzeFile(libPath, readFileSync(libPath, "utf-8"), undefined, records);
+      const fn = result.functions.find((f) => f.name === "double")!;
+      expect(fn.entryOnly).toBeFalsy();
+      expect(typeValueToString(fn.combined!)).toBe("42");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

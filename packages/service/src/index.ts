@@ -15,6 +15,8 @@ export {
   type SymbolTable,
   analyzeFile,
   analyzeFileAsync,
+  collectCallRecords,
+  type CallRecord,
   getTypeAtPosition,
   getTypeAtPositionAsync,
   getCompletionsAtPosition,

@@ -19,6 +19,8 @@ import {
   buildModuleGraph,
   computeDirtySet,
   topoSortDirty,
+  collectCallRecords,
+  type CallRecord,
   type FunctionAnalysis,
 } from "@nudojs/service";
 import { harvestDts, emitEnvModule } from "@nudojs/harvester";
@@ -159,10 +161,10 @@ function typeValueToTSType(tv: TypeValue): string {
   }
 }
 
-async function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean } = {}): Promise<void> {
+async function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean; callsites?: CallRecord[] } = {}): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
-  const result = await analyzeFileAsync(filePath, source);
+  const result = await analyzeFileAsync(filePath, source, undefined, options.callsites);
 
   if (result.functions.length === 0 && !(result.externalFunctions?.length)) {
     console.log("No functions with @nudo:case directives found.");
@@ -271,10 +273,10 @@ async function runInfer(file: string, options: { dts?: boolean; showLoc?: boolea
   }
 }
 
-async function runInferJson(file: string): Promise<void> {
+async function runInferJson(file: string, externalRecords?: CallRecord[]): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
-  const result = await analyzeFileAsync(filePath, source);
+  const result = await analyzeFileAsync(filePath, source, undefined, externalRecords);
 
   const jsonOutput = {
     functions: result.functions.map((f) => ({
@@ -322,11 +324,31 @@ program
   .option("--dts", "Generate .d.ts file")
   .option("--loc", "Show source locations in output")
   .option("--json", "Output as JSON")
-  .action(async (file: string, opts: { dts?: boolean; loc?: boolean; json?: boolean }) => {
+  .option("--callsites <paths...>", "Usage-site files (tests/apps) to harvest real call shapes from; their calls to this file's exports become synthesized cases")
+  .action(async (file: string, opts: { dts?: boolean; loc?: boolean; json?: boolean; callsites?: string[] }) => {
+    let externalRecords: CallRecord[] | undefined;
+    if (opts.callsites?.length) {
+      externalRecords = [];
+      for (const site of opts.callsites) {
+        const sitePath = resolve(site);
+        if (!existsSync(sitePath)) {
+          console.error(`Callsite file not found: ${sitePath}`);
+          process.exitCode = 1;
+          continue;
+        }
+        const siteFiles = statSync(sitePath).isDirectory()
+          ? collectNudoFiles(sitePath)
+          : [sitePath];
+        for (const sf of siteFiles) {
+          externalRecords.push(...collectCallRecords(sf, readFileSync(sf, "utf-8")));
+        }
+      }
+      if (externalRecords.length === 0) externalRecords = undefined;
+    }
     if (opts.json) {
-      await runInferJson(file);
+      await runInferJson(file, externalRecords);
     } else {
-      await runInfer(file, { dts: opts.dts, showLoc: opts.loc });
+      await runInfer(file, { dts: opts.dts, showLoc: opts.loc, callsites: externalRecords });
     }
   });
 

@@ -163,6 +163,29 @@ function createCounter() {
 
 ## 三、类型系统限制
 
+### 3.0 构造函数 `this` 语义未实现
+
+**问题描述：**
+类/构造函数体内的 `this` 求值为 undefined，`this.push(...)` 等成员访问报
+no-method 误报。json-ext 等使用 class 模式的库（stringify-stream 继承
+Transform）受影响。
+
+**失败示例：**
+```javascript
+function Processor() {
+  this._stack = [];      // Property '_stack' does not exist on type 'undefined'
+  this.push(chunk);      // Method 'push' does not exist on type 'undefined'
+}
+```
+
+**分析：**
+调用记录器模式（调用点合成）覆盖了普通函数；构造函数需要 `new C()` 调用点
+把 `this` 绑定为 instance（fresh object），P7 未实现。实测影响：
+json-ext 注入试炼 41 error 全部来自此模式。
+
+**改进方向：**
+`new` 表达式求值时创建 fresh instance 绑定 `this`，方法调用点记录同样注入。
+
 ### 3.1 全局标识符未解析
 
 **问题描述：**

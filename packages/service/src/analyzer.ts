@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import type { Node } from "@babel/types";
 import traverse from "@babel/traverse";
@@ -142,7 +142,7 @@ export type SymbolTable = {
   references: ReferenceInfo[];
 };
 
-function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string; json?: unknown } | null {
+export function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string; json?: unknown } | null {
   const extensions = [".js", ".ts", ".mjs"];
 
   const nudoPath = resolveNpmNudo(source, fromDir);
@@ -154,18 +154,42 @@ function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeo
   const basePath = resolve(fromDir, source);
   for (const ext of ["", ...extensions]) {
     const candidate = basePath + ext;
-    if (existsSync(candidate)) {
-      // .json 模块：require('../package.json') 等模式——按 JSON 求值而非 JS parse
-      if (candidate.endsWith(".json")) {
+    if (!existsSync(candidate)) continue;
+    // 目录：按 package.json main / index.js 解析（require('..') 模式）
+    if (statSync(candidate).isDirectory()) {
+      let entry: string | null = null;
+      const pkgPath = resolve(candidate, "package.json");
+      if (existsSync(pkgPath)) {
         try {
-          return { ast: parse("module.exports = undefined;"), filePath: candidate, json: JSON.parse(readFileSync(candidate, "utf-8")) };
-        } catch {
-          return null;
+          const main = JSON.parse(readFileSync(pkgPath, "utf-8")).main;
+          if (typeof main === "string") {
+            for (const e of ["", ...extensions]) {
+              const p = resolve(candidate, main + e);
+              if (existsSync(p) && statSync(p).isFile()) { entry = p; break; }
+            }
+          }
+        } catch { /* 无效 package.json → fallback index */ }
+      }
+      if (!entry) {
+        for (const e of ["", ...extensions]) {
+          const p = resolve(candidate, "index" + e);
+          if (existsSync(p) && statSync(p).isFile()) { entry = p; break; }
         }
       }
-      const src = readFileSync(candidate, "utf-8");
-      return { ast: parse(src), filePath: candidate };
+      if (!entry) return null;
+      const src = readFileSync(entry, "utf-8");
+      return { ast: parse(src), filePath: entry };
     }
+    // .json 模块：require('../package.json') 等模式——按 JSON 求值而非 JS parse
+    if (candidate.endsWith(".json")) {
+      try {
+        return { ast: parse("module.exports = undefined;"), filePath: candidate, json: JSON.parse(readFileSync(candidate, "utf-8")) };
+      } catch {
+        return null;
+      }
+    }
+    const src = readFileSync(candidate, "utf-8");
+    return { ast: parse(src), filePath: candidate };
   }
   return null;
 }
@@ -692,11 +716,19 @@ function unknownRecordsToDiagnostics(records: UnknownRecord[]): Diagnostic[] {
     if (receiver && receiverIsConcrete(receiver)) {
       // instance 类型的方法集是声明的近似（未列出 ≠ 运行时不存在），
       // 只有基类型（number/string 等）上的方法缺失才是确定错误。
+      // union 混合（Set | [] | {}）同理：部分 member 可能有该方法，
+      // 缺失不确定 → warning。
       const isApprox = (() => {
         const members =
           receiver.kind === "union" ? receiver.members : [receiver];
-        return members.every(
-          (m) => m.kind === "instance" || m.kind === "function",
+        return members.some(
+          (m) =>
+            m.kind === "instance" ||
+            m.kind === "function" ||
+            m.kind === "tuple" ||
+            m.kind === "array" ||
+            m.kind === "object" ||
+            m.kind === "refined",
         );
       })();
       const kindLabel = r.kind === "method" ? "Method" : "Property";
@@ -743,15 +775,90 @@ export async function analyzeFileAsync(
   filePath: string,
   source: string,
   activeCases?: Map<string, number>,
+  externalCallRecords?: CallRecord[],
 ): Promise<AnalysisResult> {
   const envNames = collectEnvNames(filePath, source, true);
   if (envNames.length > 0) {
     await preloadPathEnvs(envNames, dirname(filePath));
   }
-  return analyzeFile(filePath, source, activeCases);
+  return analyzeFile(filePath, source, activeCases, externalCallRecords);
 }
 
-export function analyzeFile(filePath: string, source: string, activeCases?: Map<string, number>): AnalysisResult {
+/**
+ * 调用点发现（阶段一）：在"使用现场"文件（测试 / 上层应用）中求值
+ * 顶层代码，收集它对（外部模块导出的）函数的调用记录。每条记录带
+ * 真实的实参类型与结果类型——后续 analyzeFile 将其注入合成 case，
+ * 使被使用方从 entry-only（参数全 unknown）升级为真实调用形态。
+ *
+ * 只做求值与记录，不产出诊断；求值异常不抛出（使用现场文件可能
+ * 依赖未 mock 的全局，收集不到就收集不到，不能拖垮主分析）。
+ */
+export function collectCallRecords(filePath: string, source: string): CallRecord[] {
+  const records: CallRecord[] = [];
+  // 使用现场可能是老 CJS（八进制字面量等历史语法）——宽松恢复模式，
+  // 收集尽力而为；主分析的 parse 不受影响
+  const ast = parse(source, { errorRecovery: true });
+  resetMemo();
+  resetUnreachableRanges();
+  resetEnvModules();
+  resetMockModules();
+  setModuleResolver(resolveModule);
+  setCurrentFileDir(dirname(filePath));
+  setCurrentSource(source);
+  setCallCollector((record) => records.push(record));
+  try {
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+    // 测试框架语义近似：it/describe/test 的回调在顶层求值中不会执行，
+    // 但它们的函数体正是真实调用点所在。以 unknown 参数手动执行每个
+    // 回调体；describe 回调体内嵌的 it(...) 继续展开（测试常嵌套）。
+    const runCallbacks = (statements: Node[]): void => {
+      for (const stmt of statements) {
+        if (stmt.type !== "ExpressionStatement" || !("expression" in stmt)) continue;
+        const expr = (stmt as { expression: Node }).expression;
+        if (expr.type !== "CallExpression") continue;
+        const callee = (expr as Node & { callee: Node }).callee;
+        if (callee.type !== "MemberExpression" && callee.type !== "Identifier") continue;
+        const name =
+          callee.type === "Identifier"
+            ? callee.name
+            : callee.property.type === "Identifier"
+              ? callee.property.name
+              : null;
+        if (!name || !TEST_CALLBACK_NAMES.has(name)) continue;
+        const args = (expr as Node & { arguments: Node[] }).arguments;
+        const cb = args.find((a) => a.type === "ArrowFunctionExpression" || a.type === "FunctionExpression") as
+          | (Node & { body: Node })
+          | undefined;
+        if (!cb) continue;
+        try {
+          // 以 unknown 参数执行回调体（evaluate 只构造函数类型不执行）
+          const params = (cb as unknown as { params?: Node[] }).params ?? [];
+          evaluateFunction(cb, params.map(() => T.unknown), env);
+        } catch {
+          /* 单个回调失败不影响其余 */
+        }
+        // describe 回调体是语句列表——递归展开嵌套的 it/describe
+        if (name === "describe" && cb.body.type === "BlockStatement") {
+          runCallbacks((cb.body as unknown as { body: Node[] }).body);
+        }
+      }
+    };
+    runCallbacks(ast.program.body as unknown as Node[]);
+  } catch {
+    /* 收集尽力而为 */
+  } finally {
+    setCallCollector(null);
+    setModuleResolver(null);
+    setUnknownBuiltinHandler(null);
+  }
+  return records;
+}
+
+/** 测试框架的回调注册函数：回调体里是真实调用点 */
+const TEST_CALLBACK_NAMES = new Set(["it", "test", "describe"]);
+
+export function analyzeFile(filePath: string, source: string, activeCases?: Map<string, number>, externalCallRecords?: CallRecord[]): AnalysisResult {
   const ast = parse(source);
   const functions = extractDirectives(ast);
   const diagnostics: Diagnostic[] = [];
@@ -995,7 +1102,16 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   }
 
   for (const candidate of synthCandidates) {
-    const records = dedupeCallRecords(callRecords.filter((r) => r.fnName === candidate.name));
+    // 调用点来源有两路：本文件求值中观察到的调用，以及外部注入的
+    // （使用现场文件——如测试——对本文导出函数的真实调用，CLI 经
+    // --callsites 收集后传入）。注入记录按 targetExport（导出名）或
+    // fnName（调用处可见名）匹配本地函数。
+    const matching = (r: CallRecord) =>
+      r.fnName === candidate.name || r.targetExport === candidate.name;
+    const records = dedupeCallRecords([
+      ...callRecords.filter(matching),
+      ...(externalCallRecords ?? []).filter(matching),
+    ]);
     if (records.length > 0) {
       const precise = records.slice(0, MAX_PRECISE_CALLSITE_CASES);
       for (const rec of precise) {
@@ -1445,3 +1561,5 @@ function getCompletionsForType(tv: TypeValue): CompletionItem[] {
 
   return completions;
 }
+
+export type { CallRecord } from "@nudojs/cli/evaluator.ts";
