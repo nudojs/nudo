@@ -493,6 +493,31 @@ function bindObjectProtoMethod(fn: TypeValue, receiver: TypeValue): TypeValue {
     sig.impl!(args, thisVal ?? receiver));
 }
 
+/** `.valueOf` on receivers that don't go through the object/instance
+ * property branches: non-nullish literals and primitives return their
+ * receiver (JS box-unbox semantics), structured values (array/tuple/
+ * function) return themselves, and null/undefined literals produce a call
+ * that throws TypeError — exactly like real JS, so an enclosing try/catch
+ * binds the error instead of the access poisoning the result with unknown. */
+function valueOfBinding(receiver: TypeValue): TypeValue | undefined {
+  switch (receiver.kind) {
+    case "literal": {
+      const v = receiver.value;
+      if (v === null || v === undefined) {
+        return T.fnSig([], T.never, T.instanceOf("TypeError"));
+      }
+      return bindObjectProtoMethod(OBJECT_PROTOTYPE_METHODS["valueOf"], receiver);
+    }
+    case "primitive":
+    case "array":
+    case "tuple":
+    case "function":
+      return bindObjectProtoMethod(OBJECT_PROTOTYPE_METHODS["valueOf"], receiver);
+    default:
+      return undefined;
+  }
+}
+
 // Strict equality over prototype singletons (and instances compared against
 // them): definite true/false only when every cross-pair agrees. null means
 // "not decidable here" — the generic boolean fallback applies.
@@ -881,6 +906,212 @@ function distributeOverUnion(
   return fn(tv);
 }
 
+// --- Computed member access with a non-literal key (key-set evaluation) ---
+//
+// `obj[key]` where the key is a string/number type rather than a known
+// literal: the set of reachable values is exactly the object's own property
+// values (or the tuple's elements). When they are structurally uniform one
+// shared type answers every key; otherwise the union of all values does
+// (bounded, so pathological records cannot blow up the type graph).
+const MAX_KEYSET_PROPS = 16;
+const MAX_KEYSET_MEMBERS = 12;
+const MAX_KEYSET_TABLE_FNS = 8;
+
+/** Structural fingerprint for key-set uniformity. Mirrors the analyzer's
+ * typeStructureKey semantics (literal values included, so {a:1,b:2} is NOT
+ * uniform) but keeps function values identity-distinct: two different
+ * closures (a method table's entries) must never count as "uniform", or
+ * `Table[f]()` would silently pick one function's result. */
+const keySetObjIds = new WeakMap<object, number>();
+let keySetObjIdSeq = 0;
+
+function objectId(tv: object): number {
+  let id = keySetObjIds.get(tv);
+  if (id === undefined) {
+    id = ++keySetObjIdSeq;
+    keySetObjIds.set(tv, id);
+  }
+  return id;
+}
+
+const keySetKeyCache = new WeakMap<object, string>();
+const KEYSET_KEY_NODE_BUDGET = 64;
+
+function keySetStructureKeyUncached(tv: TypeValue, budget: { left: number }): string {
+  if (budget.left <= 0) return `oversized@${objectId(tv)}`;
+  budget.left--;
+  switch (tv.kind) {
+    case "literal":
+      return `lit(${typeof tv.value}:${String(tv.value)})`;
+    case "primitive":
+      return `prim(${tv.type})`;
+    case "array":
+      return `arr(${keySetStructureKeyUncached(tv.element, budget)})`;
+    case "tuple":
+      return `tup(${tv.elements.map((e) => keySetStructureKeyUncached(e, budget)).join(",")})`;
+    case "object":
+      return `obj(${Object.keys(tv.properties).sort().map((k) => `${k}:${keySetStructureKeyUncached(tv.properties[k], budget)}`).join(",")})`;
+    case "promise":
+      return `prom(${keySetStructureKeyUncached(tv.value, budget)})`;
+    case "instance":
+      return `inst(${tv.className})`;
+    case "refined":
+      return `ref(${keySetStructureKeyUncached(tv.base, budget)})`;
+    case "union":
+      return `uni(${tv.members.map((m) => keySetStructureKeyUncached(m, budget)).sort().join("|")})`;
+    case "function":
+      return `fn#${objectId(tv)}`;
+    default:
+      return tv.kind;
+  }
+}
+
+/** Structural fingerprint for key-set uniformity. Mirrors the analyzer's
+ * typeStructureKey semantics (literal values included, so {a:1,b:2} is NOT
+ * uniform) but keeps function values identity-distinct: two different
+ * closures (a method table's entries) must never count as "uniform", or
+ * `Table[f]()` would silently pick one function's result. Memoized per
+ * type value with a node budget — fixture-scale structures must not pay
+ * string building on every dynamic-key access. */
+function keySetStructureKey(tv: TypeValue): string {
+  const cached = keySetKeyCache.get(tv);
+  if (cached !== undefined) return cached;
+  const key = keySetStructureKeyUncached(tv, { left: KEYSET_KEY_NODE_BUDGET });
+  keySetKeyCache.set(tv, key);
+  return key;
+}
+
+function objectKeySetAccess(obj: TypeValue & { kind: "object" }): TypeValue {
+  const keys = Object.keys(obj.properties);
+  if (keys.length === 0) return T.undefined;
+  if (keys.length > MAX_KEYSET_PROPS) return T.unknown;
+  const values = keys.map((k) => obj.properties[k]);
+  if (values.every((v) => v.kind === "unknown")) return T.unknown;
+  const firstKey = keySetStructureKey(values[0]);
+  if (values.every((v) => keySetStructureKey(v) === firstKey)) {
+    return values[0];
+  }
+  // Method tables (`Strings[f]()`) union their member functions; calling a
+  // union of N functions runs N evaluations, so keep that budget tighter
+  // than the data-member cap.
+  if (values.every((v) => v.kind === "function") && values.length > MAX_KEYSET_TABLE_FNS) {
+    return T.unknown;
+  }
+  const union = simplifyUnion(values);
+  if (union.kind === "union" && union.members.length > MAX_KEYSET_MEMBERS) return T.unknown;
+  return union;
+}
+
+/** Does this key type admit key-set evaluation? Literal keys (and unions
+ * that collapse to literals) are handled precisely; everything else falls
+ * back to the property/element set. */
+function isDynamicStringKey(propVal: TypeValue): boolean {
+  if (propVal.kind === "unknown" || (propVal.kind === "primitive" && propVal.type === "string")) return true;
+  if (propVal.kind === "union") {
+    return propVal.members.some((m) => isDynamicStringKey(m) || (m.kind === "literal" && typeof m.value === "string"));
+  }
+  return false;
+}
+
+function isDynamicNumberKey(propVal: TypeValue): boolean {
+  if (propVal.kind === "unknown" || (propVal.kind === "primitive" && propVal.type === "number")) return true;
+  if (propVal.kind === "union") {
+    return propVal.members.some((m) => isDynamicNumberKey(m) || (m.kind === "literal" && typeof m.value === "number"));
+  }
+  return false;
+}
+
+function unionOfLiteralKind(tv: TypeValue, pred: (v: unknown) => boolean): tv is TypeValue & { kind: "union" } {
+  return tv.kind === "union" && tv.members.every((m) => m.kind === "literal" && pred(m.value));
+}
+
+/** Computed `obj[key]` on one union member of the receiver. Shared by
+ * MemberExpression / OptionalMemberExpression. `markMiss` records the
+ * unknown-property diagnostic for literal string keys that miss. */
+function computedMemberOnMember(
+  obj: TypeValue,
+  propVal: TypeValue,
+  markMiss: () => void,
+): TypeValue {
+  if (obj.kind === "object") {
+    if (propVal.kind === "literal" && typeof propVal.value === "string") {
+      return (hasOwnProp(obj.properties, propVal.value) ? obj.properties[propVal.value] : undefined) ?? T.undefined;
+    }
+    if (unionOfLiteralKind(propVal, (v) => typeof v === "string")) {
+      return simplifyUnion(
+        (propVal as TypeValue & { kind: "union" }).members.map((m) =>
+          (m as TypeValue & { kind: "literal" }).value as string,
+        ).map((k) => (hasOwnProp(obj.properties, k) ? obj.properties[k] : undefined) ?? T.undefined),
+      );
+    }
+    if (isDynamicStringKey(propVal)) {
+      return objectKeySetAccess(obj);
+    }
+    if (propVal.kind === "literal" && typeof propVal.value === "string") {
+      markMiss();
+    }
+    return T.unknown;
+  }
+  if (obj.kind === "array" || obj.kind === "tuple") {
+    if (propVal.kind === "literal" && typeof propVal.value === "number") {
+      if (obj.kind === "tuple") return obj.elements[propVal.value] ?? T.undefined;
+      return obj.element;
+    }
+    // A string-keyed read off an array/tuple hits no data property (real
+    // JS yields undefined, same as a missed key on an object) — returning
+    // unknown here would poison any union the read flows into.
+    if (propVal.kind === "literal" && typeof propVal.value === "string") {
+      return T.undefined;
+    }
+    if (unionOfLiteralKind(propVal, (v) => typeof v === "number")) {
+      const indices = (propVal as TypeValue & { kind: "union" }).members.map(
+        (m) => (m as TypeValue & { kind: "literal" }).value as number,
+      );
+      if (obj.kind === "tuple") {
+        return simplifyUnion(indices.map((i) => obj.elements[i] ?? T.undefined));
+      }
+      return obj.element;
+    }
+    if (isDynamicNumberKey(propVal)) {
+      // arr[anyNumber]: tuple → union of its elements, array → element type
+      if (obj.kind === "tuple") {
+        return obj.elements.length > 0 ? simplifyUnion(obj.elements) : T.undefined;
+      }
+      return obj.element;
+    }
+    return T.unknown;
+  }
+  if (obj.kind === "instance" && isDynamicStringKey(propVal)) {
+    // Known instances (Map/Set/Buffer singletons...) carry no string-keyed
+    // data properties; a dynamic key resolves to undefined rather than
+    // poisoning enclosing unions with unknown.
+    return T.undefined;
+  }
+  if (propVal.kind === "literal" && typeof propVal.value === "string") {
+    markMiss();
+  }
+  return T.unknown;
+}
+
+function evaluateComputedMemberAccess(objVal: TypeValue, propVal: TypeValue, node: Node): TypeValue {
+  let propMissed = false;
+  const result = distributeOverUnion(objVal, (obj) =>
+    computedMemberOnMember(obj, propVal, () => {
+      propMissed = true;
+    }),
+  );
+  if (propMissed && propVal.kind === "literal" && typeof propVal.value === "string") {
+    recordUnknown({
+      kind: "property",
+      name: propVal.value,
+      receiverType: objVal,
+      loc: node.loc,
+      reason: `no property '${propVal.value}' on ${objVal.kind}`,
+    });
+  }
+  return result;
+}
+
 const MAX_UNION_PRODUCT = 50;
 
 function distributeBinaryOverUnion(
@@ -1154,7 +1385,14 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         return distributeOverUnion(argVal, (v) => Ops.typeof_(v));
       }
       if (node.operator === "!") {
-        return distributeOverUnion(argVal, (v) => Ops.not(v));
+        return distributeOverUnion(argVal, (v) => {
+          // Object-ish receivers are statically truthy: `!ref` must resolve
+          // to literal false or enclosing `if (!ref || …)` guards explore
+          // both branches and the ref-reassigning branch poisons the loop.
+          const decided = definiteBoolean(v);
+          if (decided !== null) return T.literal(!decided);
+          return Ops.not(v);
+        });
       }
       if (node.operator === "-") {
         return distributeOverUnion(argVal, (v) => Ops.neg(v));
@@ -1690,36 +1928,19 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       if (node.computed) {
         const propVal = evaluate(node.property, env);
         if (isReturn(propVal) || isBranch(propVal) || isThrow(propVal)) return propVal;
-        let propMissed = false;
-        const result = distributeOverUnion(objVal, (obj) => {
-          if (obj.kind === "object" && propVal.kind === "literal" && typeof propVal.value === "string") {
-            return (hasOwnProp(obj.properties, propVal.value) ? obj.properties[propVal.value] : undefined) ?? T.undefined;
-          }
-          if ((obj.kind === "array" || obj.kind === "tuple") && propVal.kind === "literal" && typeof propVal.value === "number") {
-            if (obj.kind === "tuple") return obj.elements[propVal.value] ?? T.undefined;
-            return obj.element;
-          }
-          if (propVal.kind === "literal" && typeof propVal.value === "string") {
-            propMissed = true;
-          }
-          return T.unknown;
-        });
-        if (propMissed && propVal.kind === "literal" && typeof propVal.value === "string") {
-          recordUnknown({
-            kind: "property",
-            name: propVal.value,
-            receiverType: objVal,
-            loc: node.loc,
-            reason: `no property '${propVal.value}' on ${objVal.kind}`,
-          });
-        }
-        return result;
+        return evaluateComputedMemberAccess(objVal, propVal, node);
       }
 
       if (node.property.type === "Identifier") {
         const propName = node.property.name;
         let propMissed = false;
         const result = distributeOverUnion(objVal, (obj) => {
+          // `x.valueOf` off non-object receivers (literals, primitives,
+          // arrays, functions) — see valueOfBinding.
+          if (propName === "valueOf") {
+            const bound = valueOfBinding(obj);
+            if (bound !== undefined) return bound;
+          }
           // Check for built-in static methods (e.g., Date.now, Math.floor)
           const builtinName = (obj as any)._builtinName as string | undefined;
           if (builtinName && hasOwnProp(BUILTIN_STATIC_METHODS, builtinName)) {
@@ -1793,6 +2014,12 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           if (propName === "length" && (obj.kind === "array" || obj.kind === "tuple")) {
             return obj.kind === "tuple" ? T.literal(obj.elements.length) : T.number;
           }
+          if (obj.kind === "array" || obj.kind === "tuple") {
+            // Feature-detection probes (`if (value.toJSON) …`) read arrays
+            // too: a missed named property is undefined (like objects),
+            // never unknown — unknown here poisons guarded unions.
+            return T.undefined;
+          }
           if (propName === "length" && obj.kind === "literal" && typeof obj.value === "string") {
             return T.literal(obj.value.length);
           }
@@ -1835,36 +2062,19 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       if (node.computed) {
         const propVal = evaluate(node.property, env);
         if (isReturn(propVal) || isBranch(propVal) || isThrow(propVal)) return propVal;
-        let propMissed = false;
-        const result = distributeOverUnion(objVal, (obj) => {
-          if (obj.kind === "object" && propVal.kind === "literal" && typeof propVal.value === "string") {
-            return (hasOwnProp(obj.properties, propVal.value) ? obj.properties[propVal.value] : undefined) ?? T.undefined;
-          }
-          if ((obj.kind === "array" || obj.kind === "tuple") && propVal.kind === "literal" && typeof propVal.value === "number") {
-            if (obj.kind === "tuple") return obj.elements[propVal.value] ?? T.undefined;
-            return obj.element;
-          }
-          if (propVal.kind === "literal" && typeof propVal.value === "string") {
-            propMissed = true;
-          }
-          return T.unknown;
-        });
-        if (propMissed && propVal.kind === "literal" && typeof propVal.value === "string") {
-          recordUnknown({
-            kind: "property",
-            name: propVal.value,
-            receiverType: objVal,
-            loc: node.loc,
-            reason: `no property '${propVal.value}' on ${objVal.kind}`,
-          });
-        }
-        return result;
+        return evaluateComputedMemberAccess(objVal, propVal, node);
       }
 
       if (node.property.type === "Identifier") {
         const propName = node.property.name;
         let propMissed = false;
         const result = distributeOverUnion(objVal, (obj) => {
+          // `x.valueOf` off non-object receivers (literals, primitives,
+          // arrays, functions) — see valueOfBinding.
+          if (propName === "valueOf") {
+            const bound = valueOfBinding(obj);
+            if (bound !== undefined) return bound;
+          }
           // `X.prototype` on a constructible built-in resolves to the cached
           // singleton instance of X (stable identity across evaluations)
           const optBuiltinName = (obj as any)._builtinName as string | undefined;
@@ -1920,6 +2130,12 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           }
           if (propName === "length" && (obj.kind === "array" || obj.kind === "tuple")) {
             return obj.kind === "tuple" ? T.literal(obj.elements.length) : T.number;
+          }
+          if (obj.kind === "array" || obj.kind === "tuple") {
+            // Feature-detection probes (`if (value.toJSON) …`) read arrays
+            // too: a missed named property is undefined (like objects),
+            // never unknown — unknown here poisons guarded unions.
+            return T.undefined;
           }
           if (propName === "length" && obj.kind === "literal" && typeof obj.value === "string") {
             return T.literal(obj.value.length);
@@ -2306,10 +2522,16 @@ function evaluateFunctionPrototypeMethod(
   fnVal: TypeValue & { kind: "function" },
   methodName: string,
   argVals: TypeValue[],
-): TypeValue | null {
+): EvalResult | null {
   if (methodName === "bind") return fnVal;
   if (methodName === "call") {
-    return callFunctionFull(fnVal, argVals.slice(1), argVals[0]).value;
+    const full = callFunctionFull(fnVal, argVals.slice(1), argVals[0]);
+    // A definitely-throwing callee (e.g. `null.valueOf` binding) must raise
+    // a ThrowSignal, not degrade to never — enclosing try/catch depends on it.
+    if (full.value.kind === "never" && full.throws.kind !== "never") {
+      return makeThrow(full.throws, full.throwLoc);
+    }
+    return full.value;
   }
   if (methodName === "apply") {
     const listArg = argVals[1];
@@ -2322,7 +2544,11 @@ function evaluateFunctionPrototypeMethod(
       const el = listArg?.kind === "array" ? listArg.element : T.unknown;
       spreadArgs = fnVal.params.map(() => el);
     }
-    return callFunctionFull(fnVal, spreadArgs, argVals[0]).value;
+    const full = callFunctionFull(fnVal, spreadArgs, argVals[0]);
+    if (full.value.kind === "never" && full.throws.kind !== "never") {
+      return makeThrow(full.throws, full.throwLoc);
+    }
+    return full.value;
   }
   return null;
 }
@@ -2333,7 +2559,7 @@ function evaluateMethodForMember(
   argVals: TypeValue[],
   callee: Node & { type: "MemberExpression" },
   env: Environment,
-): TypeValue | null {
+): EvalResult | null {
   // Function.prototype.call/apply/bind on function-valued union members
   if (objVal.kind === "function") {
     const fnProto = evaluateFunctionPrototypeMethod(objVal, methodName, argVals);
@@ -2425,6 +2651,14 @@ function evaluateMethodCall(
         member.kind !== "refined" && member.kind !== "promise"
       ) {
         methodMissed = true;
+      }
+      // A throwing member contributes no value; return/branch signals
+      // contribute their carried value (the potential throw is dropped
+      // here; the single-callee path raises it properly).
+      if (memberResult !== null && typeof memberResult === "object") {
+        if (THROW_SIGNAL in memberResult) return T.never;
+        if (RETURN_SIGNAL in memberResult) return memberResult.value;
+        if (BRANCH_SIGNAL in memberResult) return memberResult.returnedValue;
       }
       return memberResult ?? T.unknown;
     });
@@ -3836,11 +4070,15 @@ function evaluateTryStatement(node: Node & { type: "TryStatement" }, env: Enviro
         ? tryResult
         : tryResult;
 
+  // The handler only runs when the try block actually threw along the
+  // evaluated paths. Evaluating it unconditionally unions the catch value
+  // into every try/catch (with `err` bound to unknown when nothing threw),
+  // which poisons guards like hoek's `try { return v.call(o) } catch …`.
   let catchResult: EvalResult | null = null;
-  if (node.handler) {
+  if (node.handler && thrownType !== null) {
     const catchEnv = env.fork();
     if (node.handler.param) {
-      bindPattern(node.handler.param, thrownType ?? T.unknown, catchEnv);
+      bindPattern(node.handler.param, thrownType, catchEnv);
     }
     catchResult = evaluateStatements(node.handler.body.body, catchEnv);
   }
@@ -3993,7 +4231,25 @@ const _activeCallKeys: string[] = [];
 const _fnCallIds = new WeakMap<object, string>();
 let _fnCallIdSeq = 0;
 
+// Memoized per type value: the same argument values are keyed on every
+// call of a loop (fixture-scale structures made this the dominant cost of
+// callsite harvesting). Stale entries after in-place property mutation can
+// only trigger earlier cycle-truncation (sound: result widens to unknown),
+// never a missed one that would over-run the depth budget.
+const cycleArgKeyCache = new WeakMap<object, string>();
+
 function cycleArgKey(tv: TypeValue): string {
+  if (tv.kind === "tuple" || tv.kind === "object" || tv.kind === "union") {
+    const cached = cycleArgKeyCache.get(tv);
+    if (cached !== undefined) return cached;
+    const key = cycleArgKeyUncached(tv);
+    cycleArgKeyCache.set(tv, key);
+    return key;
+  }
+  return cycleArgKeyUncached(tv);
+}
+
+function cycleArgKeyUncached(tv: TypeValue): string {
   if (tv.kind === "tuple") {
     if (tv.elements.length > CYCLE_TUPLE_CAP) {
       return `[${tv.elements.slice(0, CYCLE_TUPLE_CAP).map(cycleArgKey).join(",")},…widened]`;
@@ -4010,7 +4266,23 @@ function cycleArgKey(tv: TypeValue): string {
   if (tv.kind === "union") {
     return tv.members.map(cycleArgKey).join("|");
   }
-  return typeValueToString(tv);
+  // Cheap leaf tokens: full typeValueToString rendering of instances and
+  // functions (method tables!) dominates key-building on fixture-scale args.
+  // A coarser token can only merge distinct states into one cycle key —
+  // earlier truncation, which widens to unknown (sound).
+  if (tv.kind === "instance") {
+    const propNames = Object.keys(tv.properties).slice(0, CYCLE_PROP_CAP).join(",");
+    return `inst(${tv.className}{${propNames}})`;
+  }
+  if (tv.kind === "function") return `fn#${objectId(tv)}`;
+  if (tv.kind === "refined") return cycleArgKey(tv.base);
+  if (tv.kind === "promise") return `prom(${cycleArgKey(tv.value)})`;
+  if (tv.kind === "literal") {
+    const s = String(tv.value);
+    return `lit(${typeof tv.value}:${s.length > 24 ? s.slice(0, 24) + "…" : s})`;
+  }
+  if (tv.kind === "primitive") return `prim(${tv.type})`;
+  return tv.kind;
 }
 
 function fnCallKey(fn: TypeValue & { kind: "function" }, args: TypeValue[], thisVal?: TypeValue): string {
@@ -4179,6 +4451,19 @@ export function evaluateFunctionFull(
     try {
       const callEnv = env.fork();
       const isAsync = !!(actualNode as any).async;
+      // Named functions can reference themselves; a bare case-evaluation
+      // environment (analyzer's globalEnv normally has the binding, the
+      // directive harness does not) still needs the self-reference for
+      // recursion like `deepClone(obj[key])`.
+      const fnName = (actualNode as any).id?.name as string | undefined;
+      if (fnName) {
+        const paramNames = (actualNode.params as Node[]).map(describeParam);
+        const selfRef = T.fn(paramNames, actualNode.body, callEnv);
+        (selfRef as any)._paramPatterns = actualNode.params;
+        (selfRef as any)._name = fnName;
+        if (isAsync) (selfRef as any)._async = true;
+        callEnv.bind(fnName, selfRef);
+      }
       for (let i = 0; i < actualNode.params.length; i++) {
         bindPattern(actualNode.params[i], args[i] ?? T.undefined, callEnv);
       }

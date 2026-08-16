@@ -813,4 +813,34 @@ const boom = badNum(42);
     // bools is a tuple (always truthy): || keeps the left side
     expect(env.lookup("r3").kind).toBe("tuple");
   });
+
+  it("key-set access: uniform object values collapse to the shared type", () => {
+    // All property values share one structure — obj[key] answers with the
+    // common type no matter which string key arrives at runtime.
+    const results = inferFromSource(`
+/** @nudo:case "uniform" ({ a: T.number, b: T.number, c: T.number }, T.string) */
+function pick(obj, key) { return obj[key]; }
+`);
+    expect(typeValueEquals(results[0].cases[0].result, T.number)).toBe(true);
+  });
+
+  it("key-set access: heterogeneous object values union", () => {
+    const results = inferFromSource(`
+/** @nudo:case "mixed" ({ a: 1, b: "x" }, T.string) */
+function pick(obj, key) { return obj[key]; }
+`);
+    const str = typeValueToString(results[0].cases[0].result);
+    expect(str).toContain("1");
+    expect(str).toContain('"x"');
+  });
+
+  it("key-set access: dynamic tuple index unions the elements", () => {
+    const results = inferFromSource(`
+/** @nudo:case "index" (["a", "b"], T.number) */
+function at(path, i) { return path[i]; }
+`);
+    const str = typeValueToString(results[0].cases[0].result);
+    expect(str).toContain('"a"');
+    expect(str).toContain('"b"');
+  });
 });

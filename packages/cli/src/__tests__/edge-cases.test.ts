@@ -500,6 +500,53 @@ function create(a, b, c) {
       expect(results[0].result).toContain("b");
       expect(results[0].result).toContain("c");
     });
+
+    it("valueOf chain: object receiver without a custom valueOf returns itself", () => {
+      // hoek internals.valueOf pattern — the try/catch must not poison the
+      // passthrough with an unknown-typed catch binding.
+      const results = runTest(`
+// @nudo:case "value-of-obj" ({ a: { b: 5 } })
+function valueOf(obj) {
+  const objValueOf = obj.valueOf;
+  if (objValueOf === undefined) {
+    return obj;
+  }
+  try {
+    return objValueOf.call(obj);
+  } catch (err) {
+    return err;
+  }
+}
+`);
+      expect(results[0].result).toContain("a");
+      expect(results[0].result).toContain("b");
+    });
+
+    it("valueOf chain: primitive receivers unbox to their own value", () => {
+      const results = runTest(`
+// @nudo:case "value-of-literal" (5)
+function valueOfNumber(n) {
+  const v = n.valueOf;
+  return v.call(n);
+}
+`);
+      expect(results[0].result).toBe("5");
+    });
+
+    it("valueOf chain: null receiver throws into the catch as TypeError", () => {
+      const results = runTest(`
+// @nudo:case "value-of-null" (null)
+function valueOfNull(n) {
+  try {
+    const v = n.valueOf;
+    return v.call(n);
+  } catch (err) {
+    return err;
+  }
+}
+`);
+      expect(results[0].result).toContain("TypeError");
+    });
   });
 
   describe("Loop Edge Cases", () => {

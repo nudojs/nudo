@@ -354,5 +354,25 @@ function memoize(fn) {
       // Functions are displayed as arrow function syntax
       expect(results[0].result).toContain("=>");
     });
+
+    it("escape dispatch through a string-keyed method table", () => {
+      const results = runTest(`
+// @nudo:case "table-dispatch" (T.string)
+function escapeViaTable(char) {
+  const Strings = {
+    '<': () => 'LT',
+    '>': () => 'GT',
+    '&': () => 'AMP'
+  };
+  return Strings[char]();
+}
+`);
+      // Strings[char] unions the table's functions; calling the union runs
+      // each member, so the result is the union of their results.
+      const r = results[0].result;
+      expect(r).toContain("LT");
+      expect(r).toContain("GT");
+      expect(r).toContain("AMP");
+    });
   });
 });
