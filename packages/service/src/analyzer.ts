@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync, existsSync, statSync, realpathSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import type { Node } from "@babel/types";
 import traverse from "@babel/traverse";
@@ -525,6 +525,39 @@ function collectTopLevelFunctions(ast: Node): { name: string; node: Node; stmt: 
   return results;
 }
 
+/** The function value of the file's single `module.exports = <function>`
+ * top-level assignment, when there is exactly one. Assigning module.exports
+ * replaces the whole exports object, so such a file exports exactly that one
+ * function and usage-site records may reach it under any re-export name —
+ * matching by targetModule alone is then unambiguous. Returns null for
+ * multi-export shapes (no such assignment, several, or `module.exports =
+ * {...}`), where a name/alias match is still required so sibling functions
+ * don't get misattributed. */
+function findSingleModuleExportsFunction(ast: Node): Node | null {
+  if (ast.type !== "File") return null;
+  let found: Node | null = null;
+  for (const stmt of (ast as any).program.body) {
+    if (stmt.type !== "ExpressionStatement") continue;
+    const expr = (stmt as any).expression;
+    if (expr?.type !== "AssignmentExpression") continue;
+    const fn = deepestAssignValue(expr);
+    if (!isFnExprValue(fn)) continue;
+    let targetsModuleExports = false;
+    let cur: any = expr;
+    while (cur?.type === "AssignmentExpression") {
+      if (isModuleExportsTarget(cur.left)) {
+        targetsModuleExports = true;
+        break;
+      }
+      cur = cur.right;
+    }
+    if (!targetsModuleExports) continue;
+    if (found) return null; // a second `module.exports = fn` → ambiguous
+    found = fn;
+  }
+  return found;
+}
+
 function typeStructureKey(tv: TypeValue): string {
   switch (tv.kind) {
     case "literal":
@@ -565,12 +598,57 @@ function dedupeCallRecords(records: CallRecord[]): CallRecord[] {
   const seen = new Set<string>();
   const out: CallRecord[] = [];
   for (const rec of records) {
+    // 类型值是重共享的 DAG（同一 JSON fixture 字面量流入多个参数/记录），
+    // 下方树形 key 会随共享度指数膨胀。超大记录与 resultType=never 一样
+    // 没有逐调用信息量（其 widen 后的形态才有），在 key 计算前统一丢弃。
+    if (isOversizedRecord(rec)) continue;
     const key = rec.argTypes.map(typeStructureKey).join(",");
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(rec);
   }
   return out;
+}
+
+/** DAG node budget for a usable call record; tree-shaped renderings of a
+ * type (the dedup key, the synthesized case output) grow exponentially with
+ * substructure sharing, so records whose argument/result DAGs exceed the
+ * budget are dropped rather than blown up. */
+const MAX_RECORD_TYPE_NODES = 2000;
+
+/** Linear-in-DAG-size node count (a `seen` set makes shared subtrees count
+ * once, so this stays cheap where a naive tree walk is exponential). */
+function typeNodeCount(tv: TypeValue, seen: Set<object>): number {
+  if (tv === null || typeof tv !== "object") return 1;
+  if (seen.has(tv)) return 0;
+  seen.add(tv);
+  switch (tv.kind) {
+    case "array":
+      return 1 + typeNodeCount(tv.element, seen);
+    case "tuple":
+      return 1 + tv.elements.reduce((acc, e) => acc + typeNodeCount(e, seen), 0);
+    case "object": {
+      let n = 1;
+      for (const v of Object.values(tv.properties)) n += typeNodeCount(v, seen);
+      return n;
+    }
+    case "promise":
+      return 1 + typeNodeCount(tv.value, seen);
+    case "union":
+      return 1 + tv.members.reduce((acc, e) => acc + typeNodeCount(e, seen), 0);
+    case "refined":
+      return 1 + typeNodeCount(tv.base, seen);
+    default:
+      return 1;
+  }
+}
+
+function isOversizedRecord(rec: CallRecord): boolean {
+  const seen = new Set<object>();
+  for (const a of rec.argTypes) {
+    if (typeNodeCount(a, seen) > MAX_RECORD_TYPE_NODES) return true;
+  }
+  return typeNodeCount(rec.resultType, seen) > MAX_RECORD_TYPE_NODES;
 }
 
 function locFromCallLoc(loc: { line: number; column: number } | undefined): SourceLocation {
@@ -1101,17 +1179,62 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     synthCandidates.push({ name, node, analysis });
   }
 
+  // 模块路匹配的前置量：本文件绝对路径（realpath 对齐符号链接后再比，
+  // 双侧同一归一化函数，避免单侧 realpath 造成不一致），以及
+  // `module.exports = function` 单导出形态的目标函数。
+  const modulePathCache = new Map<string, string>();
+  const normalizeModulePath = (p: string): string => {
+    let n = modulePathCache.get(p);
+    if (n === undefined) {
+      try {
+        n = realpathSync(p);
+      } catch {
+        n = p;
+      }
+      modulePathCache.set(p, n);
+    }
+    return n;
+  };
+  const currentModulePath = normalizeModulePath(resolve(filePath));
+  const singleExportFn = findSingleModuleExportsFunction(ast);
+
   for (const candidate of synthCandidates) {
     // 调用点来源有两路：本文件求值中观察到的调用，以及外部注入的
     // （使用现场文件——如测试——对本文导出函数的真实调用，CLI 经
-    // --callsites 收集后传入）。注入记录按 targetExport（导出名）或
-    // fnName（调用处可见名）匹配本地函数。
-    const matching = (r: CallRecord) =>
-      r.fnName === candidate.name || r.targetExport === candidate.name;
-    const records = dedupeCallRecords([
-      ...callRecords.filter(matching),
-      ...(externalCallRecords ?? []).filter(matching),
-    ]);
+    // --callsites 收集后传入）。带 targetModule 的记录先判归属：只有
+    // 指向本文件的记录才允许参与匹配——导出名/别名离开模块单独无意义
+    // （单导出文件的 targetExport 全是 "default"，不判模块会跨文件误染，
+    // 如 clone.js 的记录命中 applyToDefaults.js 的 "default" candidate）。
+    // 归属本文件（或无模块信息的本地记录）后再走三路：
+    //  1. 名字路：fnName（调用处可见名）或 targetExport（定义处导出名）
+    //  2. 别名路：re-export 链上后来出现的导出名（evaluator 的
+    //     targetAliases，如 barrel / CJS 转发 shim 下的属性名）
+    //  3. 模块路：本文件以 `module.exports = function` 单导出时直接收
+    //     ——使用方可能以任意转发名调用它；多导出文件不走模块路，
+    //     避免同文件多函数误染。
+    const singleExportHit = singleExportFn !== null && candidate.node === singleExportFn;
+    const matching = (r: CallRecord) => {
+      const targetsThisFile =
+        r.targetModule === undefined || normalizeModulePath(r.targetModule) === currentModulePath;
+      if (!targetsThisFile) return false;
+      return (
+        r.fnName === candidate.name ||
+        r.targetExport === candidate.name ||
+        (r.targetAliases?.includes(candidate.name) ?? false) ||
+        (singleExportHit && r.targetModule !== undefined)
+      );
+    };
+    // resultType=never 且 throws=never 是求值中断的信号泄漏（如
+    // `new Promise(async …)` 高阶 async 中 await 切断求值），无信息量，
+    // 注入会产出误导 case；本地与注入记录一致跳过，全部被跳过的
+    // candidate 自然落入下方 entry@ 回退。resultType=never 但 throws≠never
+    // 是真实的抛出调用（argTypes + throws 都有信息），保留。
+    const records = dedupeCallRecords(
+      [
+        ...callRecords.filter(matching),
+        ...(externalCallRecords ?? []).filter(matching),
+      ].filter((r) => !(r.resultType.kind === "never" && r.throws.kind === "never")),
+    );
     if (records.length > 0) {
       const precise = records.slice(0, MAX_PRECISE_CALLSITE_CASES);
       for (const rec of precise) {

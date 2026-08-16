@@ -314,6 +314,10 @@ export type CallRecord = {
   callLoc?: { line: number; column: number };
   targetModule?: string;
   targetExport?: string;
+  /** export names the same function value was re-exported under after its
+   * defining module (barrel `index.js`, CJS forwarding shims); usage-site
+   * records stay name-matchable against them */
+  targetAliases?: string[];
 };
 
 // --- Cross-module call attribution ---
@@ -323,7 +327,26 @@ export type CallRecord = {
 // recordCall can look the tag up from the evaluated callee value and mark the
 // record as targeting another module. Non-function exports are not tagged.
 
-const _exportTags = new WeakMap<object, { module: string; export: string }>();
+const _exportTags = new WeakMap<object, { module: string; export: string; aliases?: string[] }>();
+
+/** Tag a function value with its exporting (module, export). A re-export
+ * chain — a barrel `index.js` doing `parseChunked: require('./parse-chunked')`,
+ * a CJS shim doing `module.exports = require('../../src/index.js')` — flows
+ * ONE function value through several module scopes, and each scope's tagging
+ * pass used to overwrite the tag with its own (module, export), so usage-site
+ * records ended up pointing at the last intermediary instead of the defining
+ * file. Now the first (definition-site) tag sticks; later export names
+ * accumulate as aliases. */
+function tagExport(v: TypeValue & { kind: "function" }, filePath: string, name: string): void {
+  const existing = _exportTags.get(v);
+  if (existing) {
+    if (existing.module === filePath && existing.export === name) return;
+    if (!existing.aliases) existing.aliases = [];
+    if (!existing.aliases.includes(name)) existing.aliases.push(name);
+    return;
+  }
+  _exportTags.set(v, { module: filePath, export: name });
+}
 
 function tagModuleExports(env: Environment, filePath: string): void {
   const bindings = env.getOwnBindings();
@@ -331,7 +354,7 @@ function tagModuleExports(env: Environment, filePath: string): void {
     if (!k.startsWith("__export_")) continue;
     if (v.kind !== "function") continue;
     const name = k === "__export_default" ? "default" : k.slice("__export_".length);
-    _exportTags.set(v, { module: filePath, export: name });
+    tagExport(v, filePath, name);
   }
 }
 
@@ -366,12 +389,12 @@ function tagCommonJsExports(env: Environment, filePath: string): void {
   const exp = moduleVal.properties["exports"];
   if (!exp) return;
   if (exp.kind === "function") {
-    _exportTags.set(exp, { module: filePath, export: "default" });
+    tagExport(exp, filePath, "default");
     return;
   }
   if (exp.kind === "object") {
     for (const [k, v] of Object.entries(exp.properties)) {
-      if (v.kind === "function") _exportTags.set(v, { module: filePath, export: k });
+      if (v.kind === "function") tagExport(v, filePath, k);
     }
   }
 }
@@ -401,6 +424,7 @@ function recordCall(
   if (tag) {
     record.targetModule = tag.module;
     record.targetExport = tag.export;
+    if (tag.aliases && tag.aliases.length > 0) record.targetAliases = [...tag.aliases];
   }
   _callCollector(record);
 }

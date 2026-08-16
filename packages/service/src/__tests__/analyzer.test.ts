@@ -480,6 +480,127 @@ module.exports = { formatName, shout };
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("matches injected records to anonymous module.exports single-export files via the module path", () => {
+    const source = `
+function helper(n) {
+  return n - 1;
+}
+module.exports = function (a, b) {
+  return a + b;
+};
+`;
+    // 使用方经转发 shim 以别的名字调用：fnName/targetExport/targetAliases
+    // 都对不上本地 candidate 名 "default"，仅模块路命中
+    const external = [
+      {
+        fnName: "renamed",
+        argTypes: [T.literal(1), T.literal(2)],
+        resultType: T.literal(3),
+        throws: T.never,
+        callLoc: { line: 3, column: 0 },
+        targetModule: "/test/anon-export.js",
+        targetExport: "renamed",
+        targetAliases: ["shorthand"],
+      },
+    ];
+    const result = analyzeFile("/test/anon-export.js", source, undefined, external);
+    const main = result.functions.find((f) => f.name === "default")!;
+    expect(main).toBeDefined();
+    expect(main.entryOnly).toBeFalsy();
+    expect(main.cases).toHaveLength(1);
+    expect(main.cases[0].source).toBe("callsite");
+    expect(main.cases[0].args.map(typeValueToString)).toEqual(["1", "2"]);
+    expect(typeValueToString(main.cases[0].result)).toBe("3");
+
+    // 同文件其他函数不经模块路误染：名字对不上 → 保持 entry-only
+    const helper = result.functions.find((f) => f.name === "helper")!;
+    expect(helper).toBeDefined();
+    expect(helper.entryOnly).toBe(true);
+  });
+
+  it("does not attribute module-targeted records to functions in multi-export files", () => {
+    const source = `
+function alpha(x) { return x; }
+function beta(x) { return x; }
+module.exports = { alpha, beta };
+`;
+    const external = [
+      {
+        fnName: "gamma",
+        argTypes: [T.literal(1)],
+        resultType: T.literal(1),
+        throws: T.never,
+        callLoc: { line: 4, column: 0 },
+        targetModule: "/test/multi-export.js",
+        targetExport: "gamma",
+      },
+    ];
+    const result = analyzeFile("/test/multi-export.js", source, undefined, external);
+    for (const name of ["alpha", "beta"]) {
+      const fn = result.functions.find((f) => f.name === name)!;
+      expect(fn).toBeDefined();
+      expect(fn.entryOnly).toBe(true);
+      expect(fn.cases[0].source).toBeUndefined();
+    }
+  });
+
+  it("skips resultType=never records without throws and falls back to entry-only synthesis", () => {
+    const source = `
+function parseChunked(emitter) {
+  return emitter;
+}
+`;
+    // 高阶 async（new Promise(async …)）求值中断的信号泄漏：resultType=never
+    // 且 throws=never，无任何信息 → 跳过
+    const external = [
+      {
+        fnName: "parseChunked",
+        argTypes: [T.object({})],
+        resultType: T.never,
+        throws: T.never,
+        callLoc: { line: 5, column: 0 },
+        targetModule: "/test/higher-order.js",
+        targetExport: "parseChunked",
+      },
+    ];
+    const result = analyzeFile("/test/higher-order.js", source, undefined, external);
+    const fn = result.functions.find((f) => f.name === "parseChunked")!;
+    expect(fn).toBeDefined();
+    expect(fn.entryOnly).toBe(true);
+    expect(fn.cases).toHaveLength(1);
+    expect(fn.cases[0].source).toBeUndefined();
+    expect(fn.cases[0].name).toMatch(/^entry@L\d+$/);
+  });
+
+  it("keeps throwing-call records whose resultType is never but throws carries the thrown type", () => {
+    const source = `
+function fail(msg) {
+  throw new Error(msg);
+}
+`;
+    // resultType=never 但 throws≠never：真实的抛出调用，argTypes/throws 均有信息
+    const external = [
+      {
+        fnName: "fail",
+        argTypes: [T.literal("boom")],
+        resultType: T.never,
+        throws: T.string,
+        callLoc: { line: 7, column: 0 },
+        targetModule: "/test/throwing.js",
+        targetExport: "fail",
+      },
+    ];
+    const result = analyzeFile("/test/throwing.js", source, undefined, external);
+    const fn = result.functions.find((f) => f.name === "fail")!;
+    expect(fn).toBeDefined();
+    expect(fn.entryOnly).toBeFalsy();
+    expect(fn.cases).toHaveLength(1);
+    expect(fn.cases[0].source).toBe("callsite");
+    expect(fn.cases[0].args.map(typeValueToString)).toEqual(['"boom"']);
+    expect(fn.cases[0].result).toEqual(T.never);
+    expect(fn.cases[0].throws).toEqual(T.string);
+  });
 });
 
 describe("getTypeAtPosition", () => {

@@ -527,6 +527,56 @@ const boom = badNum(42);
     }
   });
 
+  it("keeps definition-site attribution through re-export chains and accumulates export aliases", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-reexport-tag-"));
+    try {
+      const defPath = join(dir, "parse-chunked.js");
+      const indexPath = join(dir, "index.js");
+      const libPath = join(dir, "lib.js");
+      const testPath = join(dir, "test.js");
+      writeFileSync(defPath, "module.exports = function (x) { return x + 1; };\n");
+      // barrel：属性名转发（jsonext index.js 形态）
+      writeFileSync(indexPath, "module.exports = { parseChunked: require('./parse-chunked.js') };\n");
+      // CJS 转发 shim（test/helpers/lib.js 形态）
+      writeFileSync(libPath, "module.exports = require('./index.js');\n");
+      writeFileSync(testPath, "const { parseChunked } = require('./lib.js');\nconst r = parseChunked(4);\n");
+
+      const bySpec = new Map<string, string>([
+        ["./lib.js", libPath],
+        ["./index.js", indexPath],
+        ["./parse-chunked.js", defPath],
+      ]);
+      setModuleResolver((source) => {
+        const p = bySpec.get(source);
+        return p ? { ast: parse(readFileSync(p, "utf8")), filePath: p } : null;
+      });
+      setCurrentFileDir(dir);
+
+      const records: CallRecord[] = [];
+      setCallCollector((r) => records.push(r));
+      try {
+        evaluateProgram(parse(readFileSync(testPath, "utf8")), createEnvironment());
+      } finally {
+        setCallCollector(null);
+        setModuleResolver(null);
+        setCurrentFileDir("");
+      }
+
+      const rec = records.find((r) => r.fnName === "parseChunked");
+      expect(rec).toBeDefined();
+      // 归属仍是定义文件，而非中转的 index.js / lib.js
+      expect(rec!.targetModule).toBe(defPath);
+      expect(rec!.targetModule).not.toBe(indexPath);
+      expect(rec!.targetModule).not.toBe(libPath);
+      expect(rec!.targetExport).toBe("default");
+      // 中转出现的导出名进入 aliases（去重后）
+      expect(rec!.targetAliases).toContain("parseChunked");
+      expect(typeValueEquals(rec!.resultType, T.literal(5))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("evaluates imported calls identically with no call collector installed (regression)", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-export-tag-"));
     try {
