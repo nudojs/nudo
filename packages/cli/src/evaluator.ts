@@ -332,6 +332,42 @@ const BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS: Record<string, Record<string, Typ
   },
 };
 
+// Memoized namespace values for built-in classes. Reference-stable so
+// `'x'.constructor === String` compares identical objects (typeValueEquals
+// falls back to reference equality for object kinds).
+const _builtinClassValues = new Map<string, TypeValue>();
+function builtinClassValue(name: string): TypeValue {
+  let v = _builtinClassValues.get(name);
+  if (v === undefined) {
+    v = T.object({});
+    (v as any)._builtinName = name;
+    _builtinClassValues.set(name, v);
+  }
+  return v;
+}
+
+// Wrapper-prototype fallback for primitive receivers: real JS auto-boxes
+// member access on primitives ('x'.constructor === String), so a named
+// member hit on a string/number/boolean/symbol consults the wrapper's
+// prototype table (the same approximations `X.prototype` uses) plus the
+// wrapper's constructor before anything reports a missing property.
+// hasOwnProp-guarded like every other table lookup here.
+function wrapperPrototypeMember(obj: TypeValue, propName: string): TypeValue | undefined {
+  let className: string | undefined;
+  if (obj.kind === "primitive") {
+    className = obj.type === "bigint" ? undefined : obj.type[0].toUpperCase() + obj.type.slice(1);
+  } else if (obj.kind === "literal") {
+    if (typeof obj.value === "string") className = "String";
+    else if (typeof obj.value === "number") className = "Number";
+    else if (typeof obj.value === "boolean") className = "Boolean";
+  }
+  if (!className) return undefined;
+  if (propName === "constructor") return builtinClassValue(className);
+  const table = BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS[className];
+  if (table && hasOwnProp(table, propName)) return table[propName];
+  return undefined;
+}
+
 // Cached `X.prototype` singletons. hoek-style modules assign
 // `exports.array = Array.prototype` and later compare
 // `baseProto === Types.buffer`: strict-equality on instances only stays
@@ -811,6 +847,9 @@ function recordCall(
   calleeVal?: TypeValue,
 ): void {
   if (!_callCollector) return;
+  // Synthetic Promise resolve/reject collectors are internal plumbing, not
+  // user-code call sites — never feed them into the callsite collector.
+  if (calleeVal && _promiseCollectors.has(calleeVal as unknown as object)) return;
   const record: CallRecord = {
     fnName,
     argTypes: args,
@@ -1273,10 +1312,9 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       if (hasOwnProp(BUILTIN_STATIC_METHODS, node.name) && !env.has(node.name)) {
         const builtin = BUILTIN_STATIC_METHODS[node.name];
         if (typeof builtin === "object" && builtin !== null && !("kind" in builtin)) {
-          // It's a namespace object (like Date, Math, JSON)
-          const obj = T.object({});
-          (obj as any)._builtinName = node.name;
-          return obj;
+          // It's a namespace object (like Date, Math, JSON); memoized so
+          // `'x'.constructor === String` hits reference equality.
+          return builtinClassValue(node.name);
         }
         // It's a direct value (like parseInt, isNaN)
         return builtin as TypeValue;
@@ -1285,9 +1323,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       // Map, Set, ...) still resolve to a namespace object so `X.prototype`
       // can be typed as an instance.
       if (BUILTIN_PROTOTYPE_CLASSES.has(node.name) && !env.has(node.name)) {
-        const obj = T.object({});
-        (obj as any)._builtinName = node.name;
-        return obj;
+        return builtinClassValue(node.name);
       }
       // Check if it looks like a built-in but isn't covered
       if (node.name[0] === node.name[0].toUpperCase() && !env.has(node.name)) {
@@ -2026,6 +2062,24 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           if (propName === "length" && obj.kind === "primitive" && obj.type === "string") {
             return T.number;
           }
+          // Promise receivers carry Object.prototype members (valueOf
+          // returns the receiver itself) plus then/catch/finally — the
+          // same approximation the instance branch uses. Without this, a
+          // Promise-typed union member poisons `x.valueOf` to unknown.
+          if (obj.kind === "promise") {
+            const protoFn = hasOwnProp(OBJECT_PROTOTYPE_METHODS, propName)
+              ? OBJECT_PROTOTYPE_METHODS[propName]
+              : undefined;
+            if (protoFn) return bindObjectProtoMethod(protoFn, obj);
+            const promiseMethods = BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS.Promise;
+            if (promiseMethods && hasOwnProp(promiseMethods, propName)) {
+              return promiseMethods[propName];
+            }
+          }
+          // Primitive receivers auto-box through their wrapper prototype
+          // ('x'.constructor === String): consult it before reporting a miss.
+          const wrapper = wrapperPrototypeMember(obj, propName);
+          if (wrapper !== undefined) return wrapper;
           if (obj.kind === "refined") {
             const result = dispatchProperty(obj, propName);
             if (result !== undefined) return result;
@@ -2143,6 +2197,24 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           if (propName === "length" && obj.kind === "primitive" && obj.type === "string") {
             return T.number;
           }
+          // Promise receivers carry Object.prototype members (valueOf
+          // returns the receiver itself) plus then/catch/finally — the
+          // same approximation the instance branch uses. Without this, a
+          // Promise-typed union member poisons `x.valueOf` to unknown.
+          if (obj.kind === "promise") {
+            const protoFn = hasOwnProp(OBJECT_PROTOTYPE_METHODS, propName)
+              ? OBJECT_PROTOTYPE_METHODS[propName]
+              : undefined;
+            if (protoFn) return bindObjectProtoMethod(protoFn, obj);
+            const promiseMethods = BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS.Promise;
+            if (promiseMethods && hasOwnProp(promiseMethods, propName)) {
+              return promiseMethods[propName];
+            }
+          }
+          // Primitive receivers auto-box through their wrapper prototype
+          // ('x'.constructor === String): consult it before reporting a miss.
+          const wrapper = wrapperPrototypeMember(obj, propName);
+          if (wrapper !== undefined) return wrapper;
           if (obj.kind === "refined") {
             const result = dispatchProperty(obj, propName);
             if (result !== undefined) return result;
@@ -2568,6 +2640,10 @@ function evaluateMethodForMember(
 
   // Promise instance methods
   if (objVal.kind === "promise") {
+    if (methodName === "then") {
+      const chained = applyPromiseThenCallback(objVal, argVals);
+      if (chained !== null) return chained;
+    }
     const result = evaluatePromiseInstanceMethod(objVal, methodName, argVals);
     if (result !== null) return result;
   }
@@ -2806,6 +2882,10 @@ function evaluateMethodCall(
   if (objVal.kind === "promise") {
     const argVals = evaluateArgs(args, env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    if (methodName === "then") {
+      const chained = applyPromiseThenCallback(objVal, argVals as TypeValue[]);
+      if (chained !== null) return chained;
+    }
     const result = evaluatePromiseInstanceMethod(objVal, methodName, argVals as TypeValue[]);
     if (result !== null) return result;
   }
@@ -3937,6 +4017,150 @@ function evaluateInstanceof(left: TypeValue, _right: TypeValue, rightNode: Node,
   });
 }
 
+// --- new Promise(executor) ---
+
+// Budgets for the static resolve-site scan: resolve calls hiding inside
+// never-executed callbacks are invisible to the executor run, so the
+// executor AST is walked for them. Bounded to keep large executors from
+// ballooning analysis time.
+const PROMISE_SCAN_MAX_SITES = 16;
+const PROMISE_SCAN_MAX_NODES = 2000;
+
+// Synthetic resolve/reject collectors handed to executors (see
+// makePromiseCollector). Calls to them are internal plumbing; recordCall
+// consults this set to avoid emitting them as user call sites.
+const _promiseCollectors = new WeakSet<object>();
+
+function makePromiseCollector(sink: TypeValue[]): TypeValue {
+  const collector = T.fnSig([T.unknown], T.undefined, T.never, (args) => {
+    sink.push(args[0] ?? T.undefined);
+    return T.undefined;
+  });
+  _promiseCollectors.add(collector as unknown as object);
+  return collector;
+}
+
+// Resolve sites hiding in never-executed callbacks (`setTimeout(() =>
+// resolve(x), 1)`, `emitter.on('end', () => resolve(x))`) never fire during
+// the executor run; walk the executor subtree for `resolve(...)` calls —
+// matched by the executor's actual first-parameter name — and collect each
+// site's first argument node. Sites with spread/no arguments are skipped.
+function findResolveArgSites(root: Node, resolveName: string): Node[] {
+  const sites: Node[] = [];
+  let visited = 0;
+  const stack: Node[] = [root];
+  while (stack.length > 0 && sites.length < PROMISE_SCAN_MAX_SITES) {
+    const n = stack.pop()!;
+    if (++visited > PROMISE_SCAN_MAX_NODES) break;
+    if (n.type === "CallExpression" || n.type === "OptionalCallExpression") {
+      const c = (n as any).callee as Node | undefined;
+      if (c?.type === "Identifier" && c.name === resolveName) {
+        const first = (n as any).arguments?.[0] as Node | undefined;
+        if (first && first.type !== "SpreadElement") sites.push(first);
+      }
+    }
+    for (const key of Object.keys(n)) {
+      if (key === "loc" || key === "leadingComments" || key === "trailingComments" || key === "innerComments") continue;
+      const v = (n as any)[key];
+      if (Array.isArray(v)) {
+        for (const el of v) {
+          if (el && typeof el === "object" && typeof (el as any).type === "string") stack.push(el as Node);
+        }
+      } else if (v && typeof v === "object" && typeof v.type === "string") {
+        stack.push(v as Node);
+      }
+    }
+  }
+  return sites;
+}
+
+// Returns the promise's fulfillment type. The executor call environment is
+// built here (not buried in callFunctionUnchecked) so the static scan can
+// evaluate resolve-site arguments in the post-execution executor scope,
+// where executor locals and the closure chain (outer params, e.g. hoek's
+// wait(timeout, returnValue)) are both visible.
+function evaluatePromiseExecutor(executor: TypeValue & { kind: "function" }): TypeValue {
+  const resolveCollected: TypeValue[] = [];
+  // reject is collected too (complete executor semantics) but only resolve
+  // determines the fulfillment type.
+  const rejectCollected: TypeValue[] = [];
+  const callEnv = executor.closure.extend({});
+  bindFunctionParams(executor, [makePromiseCollector(resolveCollected), makePromiseCollector(rejectCollected)], callEnv);
+
+  // Execute the executor body synchronously; direct resolve/reject calls
+  // hit the collectors through normal parameter binding.
+  if (_callDepth < MAX_CALL_DEPTH && _totalCalls < MAX_TOTAL_CALLS) {
+    _callDepth++;
+    _totalCalls++;
+    const savedUnreachable = _unreachableRanges;
+    _unreachableRanges = [];
+    try {
+      evaluate(executor.body, callEnv);
+    } finally {
+      _unreachableRanges = savedUnreachable;
+      _callDepth--;
+    }
+  }
+
+  const firstPattern = ((executor as any)._paramPatterns as Node[] | undefined)?.[0];
+  if (firstPattern?.type === "Identifier") {
+    for (const argExpr of findResolveArgSites(executor.body, firstPattern.name)) {
+      const argVal = evaluate(argExpr, callEnv);
+      if (isReturn(argVal) || isBranch(argVal) || isThrow(argVal)) continue;
+      resolveCollected.push(argVal);
+    }
+  }
+
+  // No fulfillment value observed → never-resolving promise (hoek block()'s
+  // `new Promise(Ignore)`); T.union flattens/dedups the collected values.
+  return T.promise(T.union(...resolveCollected));
+}
+
+// .then(cb): run the callback on the resolved value through the main call
+// path so the callback's return type flows into the chained promise; a
+// callback returning a promise flattens (runtime then-semantics). Returns
+// null when not applicable (non-then method, non-callable handler).
+function applyPromiseThenCallback(
+  promiseValue: TypeValue & { kind: "promise" },
+  argVals: TypeValue[],
+): TypeValue | null {
+  const cb = argVals[0];
+  if (!cb || cb.kind !== "function") return null;
+  const result = callFunctionFull(cb, [promiseValue.value]).value;
+  return result.kind === "promise" ? result : T.promise(result);
+}
+
+// Bind call arguments to a function value's parameters (rest parameters
+// collect the remaining arguments into a tuple; patterns delegate to
+// bindPattern). Shared by the direct call path, class construction, and
+// the Promise executor run.
+function bindFunctionParams(
+  fn: TypeValue & { kind: "function" },
+  args: TypeValue[],
+  callEnv: Environment,
+): void {
+  const paramPatterns = (fn as any)._paramPatterns as Node[] | undefined;
+  for (let i = 0; i < fn.params.length; i++) {
+    const paramName = fn.params[i];
+    // Check if this is a rest parameter (starts with ...)
+    if (paramName.startsWith("...")) {
+      const restValue = T.tuple(args.slice(i));
+      if (paramPatterns && paramPatterns[i]) {
+        bindPattern(paramPatterns[i], restValue, callEnv);
+      } else {
+        callEnv.bind(paramName.slice(3), restValue); // Remove "..." prefix
+      }
+    } else {
+      const argVal = args[i] ?? T.undefined;
+      if (paramPatterns && paramPatterns[i]) {
+        bindPattern(paramPatterns[i], argVal, callEnv);
+      } else {
+        callEnv.bind(paramName, argVal);
+      }
+    }
+  }
+}
+
 function evaluateNewExpression(node: Node & { type: "NewExpression" }, env: Environment): EvalResult {
   const callee = node.callee as Node;
   if (callee.type === "Identifier" && BUILTIN_ERROR_CLASSES.has(callee.name) && !env.has(callee.name)) {
@@ -4005,6 +4229,21 @@ function evaluateNewExpression(node: Node & { type: "NewExpression" }, env: Envi
     return createWeakSetType();
   }
 
+  // Handle new Promise(executor): run the executor with resolve/reject
+  // collectors, then statically scan for resolve sites hiding inside
+  // never-executed callbacks (setTimeout / emitter.on) to recover the
+  // fulfillment type. Unknown/non-function executor still yields an honest
+  // Promise<unknown> instead of a bare unknown.
+  if (callee.type === "Identifier" && callee.name === "Promise" && !env.has("Promise")) {
+    const argVals = evaluateArgs(node.arguments as Node[], env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    const executor = (argVals as TypeValue[])[0];
+    if (executor && executor.kind === "function") {
+      return evaluatePromiseExecutor(executor);
+    }
+    return T.promise(T.unknown);
+  }
+
   // Handle new Intl.DateTimeFormat() and new Intl.NumberFormat()
   if (callee.type === "MemberExpression" && !callee.computed) {
     const obj = callee.object as Node;
@@ -4032,15 +4271,7 @@ function evaluateNewExpression(node: Node & { type: "NewExpression" }, env: Envi
       const constructEnv = calleeVal.closure.extend({});
       const thisObj = T.object(instanceProps);
       constructEnv.bind("this", thisObj);
-      const paramPatterns = (calleeVal as any)._paramPatterns as Node[] | undefined;
-      for (let i = 0; i < calleeVal.params.length; i++) {
-        const argVal = (argVals as TypeValue[])[i] ?? T.undefined;
-        if (paramPatterns?.[i]) {
-          bindPattern(paramPatterns[i], argVal, constructEnv);
-        } else {
-          constructEnv.bind(calleeVal.params[i], argVal);
-        }
-      }
+      bindFunctionParams(calleeVal, argVals as TypeValue[], constructEnv);
       const result = evaluate(calleeVal.body, constructEnv);
       if (isThrow(result)) return result;
       const finalThis = constructEnv.lookup("this");
@@ -4351,29 +4582,8 @@ function callFunctionUnchecked(
   // Arrow callees ignore it in real JS; their bodies still resolve `this`
   // through the closure chain here — accepted approximation.
   if (thisVal) callEnv.bind("this", thisVal);
-  const paramPatterns = (fn as any)._paramPatterns as Node[] | undefined;
   const isAsync = !!(fn as any)._async;
-  for (let i = 0; i < fn.params.length; i++) {
-    const paramName = fn.params[i];
-    // Check if this is a rest parameter (starts with ...)
-    if (paramName.startsWith("...")) {
-      // Collect all remaining arguments into a tuple
-      const restArgs = args.slice(i);
-      const restValue = T.tuple(restArgs);
-      if (paramPatterns && paramPatterns[i]) {
-        bindPattern(paramPatterns[i], restValue, callEnv);
-      } else {
-        callEnv.bind(paramName.slice(3), restValue); // Remove "..." prefix
-      }
-    } else {
-      const argVal = args[i] ?? T.undefined;
-      if (paramPatterns && paramPatterns[i]) {
-        bindPattern(paramPatterns[i], argVal, callEnv);
-      } else {
-        callEnv.bind(paramName, argVal);
-      }
-    }
-  }
+  bindFunctionParams(fn, args, callEnv);
 
   const savedUnreachable = _unreachableRanges;
   _unreachableRanges = [];

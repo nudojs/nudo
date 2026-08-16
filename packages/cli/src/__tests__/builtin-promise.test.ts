@@ -73,4 +73,78 @@ function fn() {
 `);
     expect(results[0].result).toContain("Promise");
   });
+
+  it("new Promise with resolve inside setTimeout callback should resolve via static site scan", () => {
+    const results = runTest(`
+// @nudo:case "ctor-async-site" ()
+function fn() {
+  return new Promise((resolve) => {
+    setTimeout(() => resolve('x'), 1);
+  });
+}
+`);
+    expect(results[0].result).toBe('Promise<"x">');
+  });
+
+  it("new Promise with direct synchronous resolve should return Promise<42>", () => {
+    const results = runTest(`
+// @nudo:case "ctor-sync" ()
+function fn() {
+  return new Promise((resolve) => resolve(42));
+}
+`);
+    expect(results[0].result).toBe("Promise<42>");
+  });
+
+  it("new Promise with never-resolving executor should return Promise<never>", () => {
+    const results = runTest(`
+// @nudo:case "ctor-never" ()
+function fn() {
+  return new Promise(() => {});
+}
+`);
+    expect(results[0].result).toBe("Promise<never>");
+  });
+
+  it("new Promise with non-function executor should return Promise<unknown>", () => {
+    const results = runTest(`
+// @nudo:case "ctor-nonfn" ()
+function fn(x) {
+  return new Promise(x);
+}
+`);
+    expect(results[0].result).toBe("Promise<unknown>");
+  });
+
+  it("new Promise should evaluate resolve argument in the executor closure scope", () => {
+    const results = runTest(`
+// @nudo:case "ctor-outer-value" (7)
+function fn(returnValue) {
+  return new Promise((resolve) => {
+    setTimeout(() => resolve(returnValue), 1);
+  });
+}
+`);
+    expect(results[0].result).toBe("Promise<7>");
+  });
+
+  it(".then(cb) end-to-end should propagate the callback's return type", () => {
+    const results = runTest(`
+// @nudo:case "then-chain" (7)
+function fn(v) {
+  return Promise.resolve(v).then(x => [x, x]);
+}
+`);
+    expect(results[0].result).toBe("Promise<[7, 7]>");
+  });
+
+  it("new Promise result should chain through .then", () => {
+    const results = runTest(`
+// @nudo:case "ctor-then" ()
+function fn() {
+  return new Promise((resolve) => resolve('done')).then(x => x);
+}
+`);
+    expect(results[0].result).toBe('Promise<"done">');
+  });
 });

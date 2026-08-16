@@ -44,6 +44,42 @@ export function evaluatePromiseStaticMethod(
       });
       return T.promise(simplifyUnion(elemTypes));
     }
+    if (args.length > 0 && args[0].kind === "array") {
+      const el = args[0].element;
+      return T.promise(el.kind === "promise" ? el.value : T.unknown);
+    }
+    return T.promise(T.unknown);
+  }
+
+  if (methodName === "allSettled") {
+    // Best effort: each slot settles to { status, value } — the fulfilled
+    // value is the element's promise payload (unknown for non-promises).
+    const settledOf = (e: TypeValue): TypeValue =>
+      T.object({
+        status: T.union(T.literal("fulfilled"), T.literal("rejected")),
+        value: e.kind === "promise" ? e.value : T.unknown,
+      });
+    if (args.length > 0 && args[0].kind === "tuple") {
+      return T.promise(T.tuple(args[0].elements.map(settledOf)));
+    }
+    if (args.length > 0 && args[0].kind === "array") {
+      return T.promise(T.array(settledOf(args[0].element)));
+    }
+    return T.promise(T.array(T.unknown));
+  }
+
+  if (methodName === "any") {
+    if (args.length > 0 && args[0].kind === "tuple") {
+      const elemTypes = args[0].elements.map((e: TypeValue) => {
+        if (e.kind === "promise") return e.value;
+        return T.unknown;
+      });
+      return T.promise(simplifyUnion(elemTypes));
+    }
+    if (args.length > 0 && args[0].kind === "array") {
+      const el = args[0].element;
+      return T.promise(el.kind === "promise" ? el.value : T.unknown);
+    }
     return T.promise(T.unknown);
   }
 
@@ -57,15 +93,9 @@ export function evaluatePromiseInstanceMethod(
 ): TypeValue | null {
   if (methodName === "then") {
     if (promiseValue.kind === "promise") {
-      const callbackFn = args[0];
-      if (callbackFn && callbackFn.kind === "function") {
-        // Call the callback with the resolved value
-        const result = callPromiseCallback(callbackFn, promiseValue.value);
-        // If result is already a promise, return it; otherwise wrap it
-        if (result.kind === "promise") return result;
-        return T.promise(result);
-      }
-      // If no valid callback, return Promise<unknown>
+      // A real function callback is executed by the evaluator's main call
+      // path (applyPromiseThenCallback) before reaching here; only
+      // non-callable handlers fall through to an unresolved value type.
       return T.promise(T.unknown);
     }
   }
@@ -83,15 +113,4 @@ export function evaluatePromiseInstanceMethod(
   }
 
   return null;
-}
-
-function callPromiseCallback(fn: TypeValue & { kind: "function" }, arg: TypeValue): TypeValue {
-  // Simple callback invocation - create a minimal environment
-  const callEnv = fn.closure.extend({});
-  if (fn.params.length > 0) {
-    callEnv.bind(fn.params[0], arg);
-  }
-  // For arrow functions with expression body, we can't easily evaluate
-  // Just return unknown for now - the actual evaluation happens in the main evaluator
-  return T.unknown;
 }
