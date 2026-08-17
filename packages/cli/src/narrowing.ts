@@ -19,6 +19,20 @@ export function narrow(
   test: Node,
   env: Environment,
 ): [trueEnv: Environment, falseEnv: Environment] {
+  // a || b：fallthrough（both-false）是链式交集 —— narrow(a) 的 false
+  // env 再 narrow(b) 的 false。这是 `if (typeof x !== 'object' || x === null)
+  // return x;` 守卫模式的关键：后续代码里 x 只剩 object 成员。true 侧
+  // 环境无法并集合并，保守退回未 narrow 的 env。
+  // a && b 对称：true 侧链式（both-true），false 侧保守。
+  if (test.type === "LogicalExpression" && (test.operator === "||" || test.operator === "&&")) {
+    const [trueOfLeft, falseOfLeft] = narrow(test.left, env);
+    const [, falseOfBoth] = narrow(test.right, falseOfLeft);
+    const [trueOfBoth] = narrow(test.right, trueOfLeft);
+    return test.operator === "||"
+      ? [env, falseOfBoth]
+      : [trueOfBoth, env];
+  }
+
   // typeof x === "string"
   if (
     test.type === "BinaryExpression" &&

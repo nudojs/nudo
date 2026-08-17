@@ -739,7 +739,9 @@ function synthesizeExternalFunctions(records: CallRecord[], currentFile: string)
       analysis.cases.push({
         name: "call@symbolic",
         args: Array.from({ length: arity }, (_, i) =>
-          widenType(simplifyUnion(remaining.map((rec) => rec.argTypes[i] ?? T.unknown))),
+          // 缺参按真实 JS 语义 widen 成 undefined 而非 unknown——可选参守卫
+          // （target || [] 等）对 unknown 全塌，对 undefined 正常走默认分支
+          widenType(simplifyUnion(remaining.map((rec) => rec.argTypes[i] ?? T.undefined))),
         ),
         result: collapseLiteralUnion(simplifyUnion(remaining.map((r) => r.resultType)), COLLAPSE_LITERAL_THRESHOLD),
         throws: simplifyUnion(remaining.map((r) => r.throws)),
@@ -1304,7 +1306,9 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         const fnNode = resolveFunctionNode(candidate.node);
         const paramCount = extractParamNames(fnNode).length;
         const widenedArgs = Array.from({ length: paramCount }, (_, i) =>
-          widenType(simplifyUnion(remaining.map((rec) => rec.argTypes[i] ?? T.unknown))),
+          // 缺参按真实 JS 语义 widen 成 undefined 而非 unknown——可选参守卫
+          // （target || [] 等）对 unknown 全塌，对 undefined 正常走默认分支
+          widenType(simplifyUnion(remaining.map((rec) => rec.argTypes[i] ?? T.undefined))),
         );
         const full = evaluateFunctionFull(fnNode, widenedArgs, globalEnv);
         candidate.analysis.cases.push({
@@ -1351,7 +1355,15 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   resetEnvModules();
   resetMockModules();
 
-  diagnostics.push(...unknownRecordsToDiagnostics(unknownRecords));
+  // usage-site 执行泄漏守卫：case 合成重求值会执行注入实参携带的外来
+  // 闭包体（测试回调），其内部错误记录的行号属于使用现场文件——不能
+  // 记在本文件名下（wait.js 曾背着 test/index.js:2407 的 no-method）。
+  const maxLine = source.split("\n").length;
+  diagnostics.push(
+    ...unknownRecordsToDiagnostics(
+      unknownRecords.filter((r) => (r.loc?.line ?? 0) <= maxLine),
+    ),
+  );
 
   const externalFunctions = synthesizeExternalFunctions(callRecords, filePath);
 

@@ -45,6 +45,20 @@ import { INTL_DATETIMEFORMAT_METHODS, INTL_NUMBERFORMAT_METHODS, createDateTimeF
 // Built-in JavaScript API type mappings
 // Namespace objects (e.g. Math.floor) and direct global values (e.g. parseInt)
 const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue> | TypeValue> = {
+  // Node CJS 库普遍依赖的 process 全局——缺它时 process.nextTick(cb) 走
+  // 未知全局 → undefined → no-method 假错（hoek wait 的 usage-site 执行）
+  process: {
+    nextTick: T.fn(["callback", "...args"], { type: "BlockStatement", body: [], directives: [] } as any, undefined as any),
+    env: T.object({}),
+    platform: T.string,
+    versions: T.object({}),
+    argv: T.array(T.string),
+    cwd: T.fn([], { type: "BlockStatement", body: [], directives: [] } as any, undefined as any),
+    exit: T.fn(["code"], { type: "BlockStatement", body: [], directives: [] } as any, undefined as any),
+    hrtime: T.fn(["time"], { type: "BlockStatement", body: [], directives: [] } as any, undefined as any),
+    stdout: T.instanceOf("Socket"),
+    stderr: T.instanceOf("Socket"),
+  },
   Date: {
     now: T.number,
     parse: T.number,
@@ -837,6 +851,34 @@ function isBranch(v: unknown): v is BranchSignal {
 
 function isThrow(v: unknown): v is ThrowSignal {
   return typeof v === "object" && v !== null && THROW_SIGNAL in v;
+}
+
+// --- break / continue ---
+// 循环控制语句此前完全未求值（evaluate 无 case，信号丢失后守卫内
+// `break` 之后的语句照常执行 —— reach.js 的 `if (!ref) { …; break }`
+// 因此在 undefined 上求 `ref[key]`，产生假 no-method error）。实现上
+// 借道 Throw 信号管线：break/continue 对象带 THROW_SYMBOL 标记，全部
+// 既有 isThrow 检查点（语句列表、二元短路、调用边界）原样传播它们，
+// 只有循环边界与 switch 吸收。真实 throw 与循环信号用 LOOP_SIGNAL_KIND
+// 区分：前者继续走抛出语义，后者终止/跳过当轮迭代。
+const LOOP_SIGNAL_KIND = Symbol("LoopSignalKind");
+
+type LoopSignal = ThrowSignal & {
+  readonly [LOOP_SIGNAL_KIND]: "break" | "continue";
+};
+
+function makeBreak(): LoopSignal {
+  return { [THROW_SIGNAL]: true, [LOOP_SIGNAL_KIND]: "break", thrown: T.never };
+}
+
+function makeContinue(): LoopSignal {
+  return { [THROW_SIGNAL]: true, [LOOP_SIGNAL_KIND]: "continue", thrown: T.never };
+}
+
+function loopSignalKind(v: unknown): "break" | "continue" | null {
+  if (typeof v !== "object" || v === null) return null;
+  const kind = (v as Record<symbol, unknown>)[LOOP_SIGNAL_KIND];
+  return kind === "break" || kind === "continue" ? kind : null;
 }
 
 type EvalResult = TypeValue | ReturnSignal | BranchSignal | ThrowSignal;
@@ -2609,6 +2651,12 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       return makeThrow(argVal, throwLoc);
     }
 
+    case "BreakStatement":
+      return makeBreak();
+
+    case "ContinueStatement":
+      return makeContinue();
+
     case "TryStatement": {
       return evaluateTryStatement(node, env);
     }
@@ -3351,6 +3399,25 @@ function evaluateMethodCall(
     return strResult;
   }
 
+  // Number receivers: toString/valueOf exist on every JS number. Without
+  // this, deepEqual-style `obj.toString()` comparators reaching a numeric
+  // union member record a false no-method error.
+  if (isNumberLike(objVal)) {
+    const argVals = evaluateArgs(args, env);
+    if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+    if (methodName === "toString") {
+      return objVal.kind === "literal" && typeof objVal.value === "number"
+        ? T.literal(String(objVal.value))
+        : T.string;
+    }
+    if (methodName === "valueOf") {
+      return objVal.kind === "literal" && typeof objVal.value === "number"
+        ? objVal
+        : T.number;
+    }
+    if (methodName === "toFixed" || methodName === "toPrecision") return T.string;
+  }
+
   if (objVal.kind === "refined") {
     const argVals = evaluateArgs(args, env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
@@ -3382,6 +3449,13 @@ function isStringLike(tv: TypeValue): boolean {
   if (tv.kind === "literal" && typeof tv.value === "string") return true;
   if (tv.kind === "primitive" && tv.type === "string") return true;
   if (tv.kind === "refined") return isStringLike(tv.base);
+  return false;
+}
+
+function isNumberLike(tv: TypeValue): boolean {
+  if (tv.kind === "literal" && typeof tv.value === "number") return true;
+  if (tv.kind === "primitive" && tv.type === "number") return true;
+  if (tv.kind === "refined") return isNumberLike(tv.base);
   return false;
 }
 
@@ -3830,6 +3904,32 @@ function evaluateForOf(
   iterable: TypeValue,
   env: Environment,
 ): EvalResult {
+  // A union iterable distributes: every member's elements flow through the
+  // body in sequence (concatenated), not just the first member's. Branch
+  // envs chain member-to-member exactly like element-to-element inside one
+  // tuple iteration, so side effects on shared values (array push) and
+  // outer-var reassignments accumulate across members. Non-iterable
+  // members (number, …) fall through their own recursion harmlessly.
+  if (iterable.kind === "union") {
+    const returnValues: TypeValue[] = [];
+    let currentEnv = env;
+    for (const member of iterable.members) {
+      const memberResult = evaluateForOf(node, member, currentEnv);
+      if (isReturn(memberResult)) {
+        returnValues.push(memberResult.value);
+        return makeReturn(simplifyUnion(returnValues));
+      }
+      if (isBranch(memberResult)) {
+        returnValues.push(memberResult.returnedValue);
+        currentEnv = memberResult.fallthroughEnv;
+      }
+    }
+    if (returnValues.length > 0) {
+      return makeBranch(simplifyUnion(returnValues), currentEnv);
+    }
+    return T.undefined;
+  }
+
   if (iterable.kind === "tuple") {
     const returnValues: TypeValue[] = [];
     let currentEnv = env;
@@ -3845,6 +3945,7 @@ function evaluateForOf(
         returnValues.push(result.returnedValue);
         currentEnv = result.fallthroughEnv;
       }
+      if (loopSignalKind(result) === "break") break;
     }
     if (returnValues.length > 0) {
       return makeBranch(simplifyUnion(returnValues), currentEnv);
@@ -3909,6 +4010,7 @@ function evaluateForIn(
           returnValues.push(result.returnedValue);
           currentEnv = result.fallthroughEnv;
         }
+        if (loopSignalKind(result) === "break") break;
       }
       if (returnValues.length > 0) {
         return makeBranch(simplifyUnion(returnValues), currentEnv);
@@ -3982,6 +4084,22 @@ function evaluateForStatement(
   const returnValues: TypeValue[] = [];
   let concreteCompleted = false;
 
+  // let/const 声明的循环变量每轮迭代获得新绑定（真实 JS 的 per-iteration
+  // scope）：body 内创建的闭包捕获当轮副本而非共享 cell，var 保持共享
+  // cell（闭包看到终值）。迭代结束后把副本值拷回 loopEnv，test/update/
+  // widening 依旧能看到 body 对循环变量的修改（`for (let i = 0; i < n;)
+  // { ...; i++ }` 这类无 update 子句的循环靠它推进）。
+  const perIteration =
+    node.init?.type === "VariableDeclaration" && node.init.kind !== "var";
+  const runBody = (scope: Environment): EvalResult => {
+    if (!perIteration) return evaluate(node.body, scope);
+    const iterEnv = scope.fork();
+    for (const name of varNames) iterEnv.bind(name, scope.lookup(name));
+    const result = evaluate(node.body, iterEnv);
+    for (const name of varNames) scope.update(name, iterEnv.lookup(name));
+    return result;
+  };
+
   for (let i = 0; i < _maxConcreteIter; i++) {
     if (node.test) {
       const testVal = evaluate(node.test, loopEnv);
@@ -3990,7 +4108,7 @@ function evaluateForStatement(
       if (testVal.kind !== "literal") break;
     }
 
-    const bodyResult = evaluate(node.body, loopEnv);
+    const bodyResult = runBody(loopEnv);
     if (isReturn(bodyResult)) {
       returnValues.push(bodyResult.value);
       concreteCompleted = true;
@@ -3998,6 +4116,12 @@ function evaluateForStatement(
     }
     if (isBranch(bodyResult)) {
       returnValues.push(bodyResult.returnedValue);
+    }
+    // break 终止迭代（变量按 break 时的值流出循环）；continue 落到
+    // update 子句 —— 与真实 JS for 的 continue 语义一致。
+    if (loopSignalKind(bodyResult) === "break") {
+      concreteCompleted = true;
+      break;
     }
 
     if (node.update) {
@@ -4011,7 +4135,7 @@ function evaluateForStatement(
     const prevSnap = snapshotVars(varNames, loopEnv);
 
     for (let i = 0; i < 10; i++) {
-      evaluate(node.body, loopEnv);
+      runBody(loopEnv);
       if (node.update) evaluate(node.update, loopEnv);
       widenVars(varNames, loopEnv);
       const currSnap = snapshotVars(varNames, loopEnv);
@@ -4050,6 +4174,7 @@ function evaluateWhileStatement(
     if (isBranch(bodyResult)) {
       returnValues.push(bodyResult.returnedValue);
     }
+    if (loopSignalKind(bodyResult) === "break") break;
   }
 
   if (returnValues.length > 0) {
@@ -4073,6 +4198,7 @@ function evaluateDoWhileStatement(
     if (isBranch(bodyResult)) {
       returnValues.push(bodyResult.returnedValue);
     }
+    if (loopSignalKind(bodyResult) === "break") break;
 
     const tv = evaluate(node.test, env);
     if (isReturn(tv) || isBranch(tv) || isThrow(tv)) return tv;
@@ -4789,7 +4915,11 @@ function evaluateSwitchStatement(node: Node & { type: "SwitchStatement" }, env: 
       }
       if (matched) {
         const result = evaluateStatements(caseNode.consequent, env);
-        if (isThrow(result)) return result;
+        if (isThrow(result)) {
+          // switch 是 break 的边界：吸收后正常落穿
+          if (loopSignalKind(result) === "break") break;
+          return result;
+        }
         if (isReturn(result)) {
           returnValues.push(result.value);
           break;
@@ -4829,6 +4959,7 @@ function evaluateSwitchStatement(node: Node & { type: "SwitchStatement" }, env: 
     }
 
     const result = evaluateStatements(caseNode.consequent, caseEnv);
+    if (loopSignalKind(result) === "break") break;
     if (isThrow(result)) continue;
     if (isReturn(result)) {
       returnValues.push(result.value);
