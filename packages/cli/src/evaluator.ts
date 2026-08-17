@@ -16,6 +16,7 @@ import {
   typeValueToString,
   isSubtypeOf,
   widenLiteral,
+  collapseLiteralUnion,
   createTemplate,
   subtractType,
   getFnSig,
@@ -5150,6 +5151,41 @@ const _activeCallKeys: string[] = [];
 const _fnCallIds = new WeakMap<object, string>();
 let _fnCallIdSeq = 0;
 
+// Observed return values per function value: completed (non-truncated)
+// calls accumulate their results so a budget-truncated re-entry — deep
+// recursion or the re-evaluation fan-out heterogeneous union arguments
+// trigger — degrades to "what this function has actually returned" instead
+// of poisoning the caller's union with unknown. Keyed on the fn value, so
+// entries die with it; no reset hook needed.
+const _fnResultObs = new WeakMap<object, TypeValue[]>();
+const FN_RESULT_OBS_CAP = 16;
+
+function recordFnResultObs(fn: TypeValue & { kind: "function" }, value: TypeValue): void {
+  // never (always throws) and unknown carry no shape information; recording
+  // unknown would just re-poison the fallback union.
+  if (value.kind === "never" || value.kind === "unknown") return;
+  let obs = _fnResultObs.get(fn);
+  if (!obs) {
+    obs = [];
+    _fnResultObs.set(fn, obs);
+  }
+  // Cap keeps the table bounded; dedupe keeps one dominant result from
+  // exhausting the cap before a second shape is ever seen.
+  if (obs.length >= FN_RESULT_OBS_CAP) return;
+  if (obs.some((o) => typeValueEquals(o, value))) return;
+  obs.push(value);
+}
+
+function observedResultFallback(fn: TypeValue & { kind: "function" }): TypeValue | undefined {
+  const obs = _fnResultObs.get(fn);
+  if (!obs || obs.length === 0) return undefined;
+  // Union of observed results; >4 same-base literal members collapse to
+  // the base type so long observation tails stay a primitive, not a
+  // sixteen-way literal union.
+  const union = collapseLiteralUnion(simplifyUnion(obs), 4);
+  return union.kind === "never" ? undefined : union;
+}
+
 // Memoized per type value: the same argument values are keyed on every
 // call of a loop (fixture-scale structures made this the dominant cost of
 // callsite harvesting). Stale entries after in-place property mutation can
@@ -5234,7 +5270,12 @@ function callFunctionFull(
   const callKey = fnCallKey(fn, args, thisVal);
   const fnName = (fn as any)._name ?? "<anonymous>";
   if (_activeCallKeys.includes(callKey) || _callDepth >= MAX_CALL_DEPTH || _totalCalls >= MAX_TOTAL_CALLS) {
-    return callBudgetExhausted(fnName, fn.body?.loc);
+    // Diagnostic unchanged (truncation stays visible); the value degrades to
+    // this function's observed results before unknown. The truncated call
+    // shape itself stays unmemoized — this is not its true result.
+    const exhausted = callBudgetExhausted(fnName, fn.body?.loc);
+    const observed = observedResultFallback(fn);
+    return observed !== undefined ? { value: observed, throws: exhausted.throws } : exhausted;
   }
   _totalCalls++;
   _callDepth++;
@@ -5242,7 +5283,9 @@ function callFunctionFull(
   const fnOrigin = _fnModuleTags.get(fn);
   _execOriginStack.push(fnOrigin ?? _execOriginStack[_execOriginStack.length - 1]);
   try {
-    return callFunctionUnchecked(fn, args, thisVal);
+    const result = callFunctionUnchecked(fn, args, thisVal);
+    recordFnResultObs(fn, result.value);
+    return result;
   } finally {
     _execOriginStack.pop();
     _activeCallKeys.pop();

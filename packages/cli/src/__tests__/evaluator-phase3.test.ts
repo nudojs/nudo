@@ -309,6 +309,51 @@ describe("recursion with memoization", () => {
     const result = env.lookup("result");
     expect(result.kind).toBe("unknown");
   });
+
+  it("budget-truncated recursion falls back to the function's observed results instead of unknown", () => {
+    // eq over chains deeper than MAX_CALL_DEPTH truncates mid-recursion.
+    // The first truncation has no observations and stays unknown; precise
+    // calls then accumulate true/false; a later truncation (fresh argument
+    // shapes, so no memo hit) degrades to the observed union.
+    const nest = (n: number, leaf: string): string => (n === 0 ? leaf : `{ x: ${nest(n - 1, leaf)} }`);
+    const ast = parse(`
+      function eq(a, b) {
+        if (a === b) return true;
+        if (typeof a !== "object") return false;
+        return eq(a.x, b.x);
+      }
+      const r1 = eq(${nest(70, "1")}, ${nest(70, "2")});
+      const t = eq(1, 1);
+      const f = eq(1, 2);
+      const r2 = eq(${nest(80, "3")}, ${nest(80, "4")});
+    `);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+    expect(env.lookup("r1").kind).toBe("unknown");
+    expect(typeValueToString(env.lookup("t"))).toBe("true");
+    expect(typeValueToString(env.lookup("f"))).toBe("false");
+    const r2 = env.lookup("r2");
+    expect(r2.kind).toBe("union");
+    if (r2.kind === "union") {
+      expect(r2.members).toHaveLength(2);
+      expect(typeValueToString(r2)).toBe("true | false");
+    }
+  });
+
+  it("budget-truncated recursion without observed results stays unknown", () => {
+    const nest = (n: number, leaf: string): string => (n === 0 ? leaf : `{ x: ${nest(n - 1, leaf)} }`);
+    const ast = parse(`
+      function eq(a, b) {
+        if (a === b) return true;
+        if (typeof a !== "object") return false;
+        return eq(a.x, b.x);
+      }
+      const r = eq(${nest(70, "5")}, ${nest(70, "6")});
+    `);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+    expect(env.lookup("r").kind).toBe("unknown");
+  });
 });
 
 describe("modules import/export", () => {
