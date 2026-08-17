@@ -1,5 +1,7 @@
 import { themes as prismThemes } from "prism-react-renderer";
 import type { Config } from "@docusaurus/types";
+import type { Configuration, Plugin } from "webpack";
+import { NormalModuleReplacementPlugin } from "webpack";
 import type * as Preset from "@docusaurus/preset-classic";
 
 const config: Config = {
@@ -40,6 +42,42 @@ const config: Config = {
         },
       } satisfies Preset.Options,
     ],
+  ],
+
+  // Playground 在浏览器里直接跑推断引擎（@nudojs/cli/evaluator）。
+  // evaluator-api 的 re-export 链会把 env-loader（node:fs/path/crypto/
+  // os/module/url）带进浏览器 bundle——浏览器里不可达（loadEnvs 只在
+  // Node CLI 用），alias 成空模块。
+  plugins: [
+    function nodeBuiltinsStub(): Plugin {
+      return {
+        name: "node-builtins-stub",
+        configureWebpack(): Configuration {
+          return {
+            resolve: {
+              // 浏览器里不可达的 Node 内建（env-loader 等只在 Node CLI
+              // 用，被 evaluator-api 的 re-export 链拖进 bundle）
+              fallback: {
+                fs: false,
+                path: false,
+                crypto: false,
+                os: false,
+                module: false,
+                url: false,
+              },
+            },
+            plugins: [
+              // node: scheme 的 request 在 alias/fallback 之前就被
+              // webpack 以 UnhandledSchemeError 拒绝——解析阶段把
+              // "node:fs" 改写成 "fs"，交给上面的 fallback 置空。
+              new NormalModuleReplacementPlugin(/^node:(fs|path|crypto|os|module|url)$/, (resource) => {
+                resource.request = resource.request.slice(5);
+              }),
+            ],
+          };
+        },
+      };
+    },
   ],
 
   themeConfig: {
