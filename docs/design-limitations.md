@@ -163,28 +163,14 @@ function createCounter() {
 
 ## 三、类型系统限制
 
-### 3.0 构造函数 `this` 语义未实现
+### 3.0 构造函数 `this` 语义（已解决）
 
-**问题描述：**
-类/构造函数体内的 `this` 求值为 undefined，`this.push(...)` 等成员访问报
-no-method 误报。json-ext 等使用 class 模式的库（stringify-stream 继承
-Transform）受影响。
-
-**失败示例：**
-```javascript
-function Processor() {
-  this._stack = [];      // Property '_stack' does not exist on type 'undefined'
-  this.push(chunk);      // Method 'push' does not exist on type 'undefined'
-}
-```
-
-**分析：**
-调用记录器模式（调用点合成）覆盖了普通函数；构造函数需要 `new C()` 调用点
-把 `this` 绑定为 instance（fresh object），P7 未实现。实测影响：
-json-ext 注入试炼 41 error 全部来自此模式。
-
-**改进方向：**
-`new` 表达式求值时创建 fresh instance 绑定 `this`，方法调用点记录同样注入。
+~~类/构造函数体内的 `this` 求值为 undefined，`this.push(...)` 报 no-method
+误报。~~ 已实现：`obj.f()` 调用把 receiver 作为 thisVal 注入（含
+`f.call(thisArg)`/`f.apply`）；`new C()` 创建 fresh instance 绑定 `this`；
+未绑定 this 兜底 T.unknown（this-风格函数降级 warning 而非 error）；
+`Object.prototype` 方法表 + 原始值自动装箱（`'x'.constructor`）。
+json-ext 试炼 41 error → 0。
 
 ### 3.1 全局标识符未解析
 
@@ -386,3 +372,20 @@ function nested() {
 - [ ] 闭包变量状态追踪
 - [ ] 嵌套异常路径分析
 - [ ] 泛型函数支持
+
+## 八、调用点发现的已知边界（P7 实测，2026-08）
+
+调用点注入（`infer --callsites`）在 hoek 94.3% / json-ext 91.8% 后的
+诚实天花板项：
+
+- **symbolic 回退 unknown**：`call@symbolic` 用 widen 后的实参求值，
+  含 unknown 分量时结果诚实回退 unknown（flatten 的 options=unknown
+  即此类）。需 reduce 累加器追踪 / 闭包状态追踪（阶段 3）才能突破。
+- **嵌套函数不归因**：函数内定义的函数（json-ext 的 `walk`）在函数
+  执行时创建，模块栈空、无定义位点 tag；其外部记录被归因门正确拒收
+  （靠本地求值的记录覆盖）。
+- **双入口包变体**：browser/node 双变体同签名函数，变体 A 的执行记录
+  不注入变体 B 的分析（归因门按文件判定——正确性优先）。
+- **无使用现场的函数**：entry@ 兜底（applyToDefaults.reachCopy 等
+  测试未直接触达的内部函数），属覆盖问题非推断问题。
+
