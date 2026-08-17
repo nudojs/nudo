@@ -621,7 +621,15 @@ function dedupeCallRecords(records: CallRecord[]): CallRecord[] {
     // 下方树形 key 会随共享度指数膨胀。超大记录与 resultType=never 一样
     // 没有逐调用信息量（其 widen 后的形态才有），在 key 计算前统一丢弃。
     if (isOversizedRecord(rec)) continue;
-    const key = rec.argTypes.map(typeStructureKey).join(",");
+    // key 必须含结果形态：同实参形状但不同结果（错误路径 never+throws vs
+    // 成功路径 Promise<...>）是不同的 case，只按实参去重会把成功记录吞进
+    // 首条错误记录里（parseChunked 的 Promise 记录曾被 L203 的 throw 吞掉）。
+    const key =
+      rec.argTypes.map(typeStructureKey).join(",") +
+      "=>" +
+      typeStructureKey(rec.resultType) +
+      "!" +
+      typeStructureKey(rec.throws);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(rec);
