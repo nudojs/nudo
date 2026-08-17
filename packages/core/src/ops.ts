@@ -11,6 +11,35 @@ function bothLiteral(
   return null;
 }
 
+function isNullishLiteral(tv: TypeValue): boolean {
+  return tv.kind === "literal" && (tv.value === null || tv.value === undefined);
+}
+
+/** The value can never be null/undefined: primitives, structured values
+ * (object/array/tuple/function/instance/promise) and non-nullish literals
+ * are all disjoint from null and undefined. Unions qualify only when every
+ * member does; refined values delegate to their base. */
+function definitelyNotNullish(tv: TypeValue): boolean {
+  switch (tv.kind) {
+    case "literal":
+      return tv.value !== null && tv.value !== undefined;
+    case "primitive":
+    case "object":
+    case "array":
+    case "tuple":
+    case "function":
+    case "instance":
+    case "promise":
+      return true;
+    case "refined":
+      return definitelyNotNullish(tv.base);
+    case "union":
+      return tv.members.every(definitelyNotNullish);
+    default:
+      return false;
+  }
+}
+
 export const Ops = {
   add(left: TypeValue, right: TypeValue): TypeValue {
     const lit = bothLiteral(left, right);
@@ -71,12 +100,24 @@ export const Ops = {
   strictEq(left: TypeValue, right: TypeValue): TypeValue {
     const lit = bothLiteral(left, right);
     if (lit) return T.literal(lit.lv === lit.rv);
+    // `x === undefined` / `x !== null` guards: a definitely-not-nullish side
+    // can never strictly equal a null/undefined literal, so the comparison
+    // resolves literally instead of degrading to boolean (which would make
+    // every enclosing `if` explore both branches).
+    if ((isNullishLiteral(right) && definitelyNotNullish(left)) ||
+        (isNullishLiteral(left) && definitelyNotNullish(right))) {
+      return T.literal(false);
+    }
     return T.boolean;
   },
 
   strictNeq(left: TypeValue, right: TypeValue): TypeValue {
     const lit = bothLiteral(left, right);
     if (lit) return T.literal(lit.lv !== lit.rv);
+    if ((isNullishLiteral(right) && definitelyNotNullish(left)) ||
+        (isNullishLiteral(left) && definitelyNotNullish(right))) {
+      return T.literal(true);
+    }
     return T.boolean;
   },
 

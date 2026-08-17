@@ -10,6 +10,13 @@ export default defineConfig({
         .pathname,
       "@nudojs/parser": new URL("./packages/parser/src", import.meta.url)
         .pathname,
+      "@nudojs/cli/evaluator": new URL(
+        "./packages/cli/src/evaluator-api.ts",
+        import.meta.url,
+      ).pathname,
+      "@nudojs/cli": new URL("./packages/cli/src", import.meta.url).pathname,
+      "@nudojs/service": new URL("./packages/service/src", import.meta.url)
+        .pathname,
     },
   },
 });

@@ -14,6 +14,7 @@ export {
   type EnvDirective,
   type MockModuleDirective,
   type FunctionWithDirectives,
+  type SinonExpression,
   extractDirectives,
   extractFileDirectives,
   extractInlineDirectives,

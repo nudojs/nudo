@@ -36,6 +36,7 @@ nudo infer <file> [options]
 |--------|-------------|
 | `--dts` | Generate a `.d.ts` declaration file next to the source file |
 | `--loc` | Show source locations (`file:line:column`) in the output |
+| `--json` | Output results as structured JSON |
 
 **Output format:**
 
@@ -72,6 +73,71 @@ Case "positive numbers": (5, 3) => 2
 ...
 
 Generated: math.d.ts
+```
+
+**JSON output (`--json`):**
+
+```bash
+nudo infer math.js --json
+```
+
+```json
+{
+  "functions": [
+    {
+      "name": "subtract",
+      "loc": { "start": { "line": 5, "column": 0 }, "end": { "line": 7, "column": 1 } },
+      "cases": [
+        { "name": "positive numbers", "args": ["5", "3"], "result": "2", "throws": null },
+        { "name": "symbolic", "args": ["number", "number"], "result": "number", "throws": null }
+      ]
+    }
+  ],
+  "diagnostics": []
+}
+```
+
+---
+
+### nudo generate
+
+Generate runtime validators from inferred types.
+
+```bash
+nudo generate <file> [options]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `<file>` | Path to a `.js` file (relative or absolute) |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--format <format>` | Output format: `zod`, `guard`, `dts`, `all` (default: `all`) |
+| `--output <dir>` | Output directory (default: `.`) |
+
+**Output formats:**
+
+- **`zod`** — Zod schema strings for each function case (input and output)
+- **`guard`** — Zero-dependency runtime type guard functions
+- **`dts`** — TypeScript declaration file with real parameter names and JSDoc
+- **`all`** — All of the above
+
+**Example:**
+
+```bash
+nudo generate src/utils.js --format zod
+```
+
+```
+// === parseUser Zod Schemas ===
+// Case "string-input":
+// Input: { arg0: z.string() }
+// Output: z.object({ name: z.string(), age: z.number() })
 ```
 
 ---

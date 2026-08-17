@@ -9,11 +9,14 @@
       "@nudojs/parser": ["packages/parser/src"],
       "@nudojs/parser/*": ["packages/parser/src/*"],
       "@nudojs/cli": ["packages/cli/src"],
+      "@nudojs/cli/evaluator": ["packages/cli/src/evaluator-api.ts"],
       "@nudojs/cli/*": ["packages/cli/src/*"],
       "@nudojs/service": ["packages/service/src"],
       "@nudojs/service/*": ["packages/service/src/*"],
       "@nudojs/lsp": ["packages/lsp/src"],
-      "@nudojs/lsp/*": ["packages/lsp/src/*"]
+      "@nudojs/lsp/*": ["packages/lsp/src/*"],
+      "@nudojs/mcp": ["packages/mcp/src"],
+      "@nudojs/mcp/*": ["packages/mcp/src/*"]
     }
   },
   "include": [
@@ -22,7 +25,9 @@
     "packages/cli/src",
     "packages/service/src",
     "packages/lsp/src",
-    "packages/vite-plugin/src"
+    "packages/vite-plugin/src",
+    "packages/mcp/src",
+    "packages/harvester/src"
   ],
   "exclude": [
     "**/__tests__",

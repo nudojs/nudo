@@ -8,7 +8,7 @@ import {
 } from "@nudojs/core";
 import type { TypeValue } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
-import { evaluate, evaluateFunction, evaluateFunctionFull, evaluateProgram, resetMemo, setModuleResolver, setCurrentFileDir } from "../evaluator.ts";
+import { evaluate, evaluateFunction, evaluateFunctionFull, evaluateProgram, resetMemo, setModuleResolver, setCurrentFileDir, setUnknownCollector, type UnknownRecord } from "../evaluator.ts";
 
 function evalCode(code: string): TypeValue {
   const ast = parse(code);
@@ -207,7 +207,15 @@ describe("instanceof", () => {
       const x = 42;
       x instanceof Error
     `);
-    expect(result).toBe(T.boolean);
+    // primitives can never be instanceof anything — decided statically
+    expect(typeValueEquals(result, T.literal(false))).toBe(true);
+    // unknown receivers keep the conservative boolean fallback
+    const fn = evaluateFunction(
+      parse("function f(x) { return x instanceof Error; }").program.body[0],
+      [T.unknown],
+      createEnvironment(),
+    );
+    expect(fn).toBe(T.boolean);
   });
 });
 
@@ -300,6 +308,51 @@ describe("recursion with memoization", () => {
     evaluate(callAst, env);
     const result = env.lookup("result");
     expect(result.kind).toBe("unknown");
+  });
+
+  it("budget-truncated recursion falls back to the function's observed results instead of unknown", () => {
+    // eq over chains deeper than MAX_CALL_DEPTH truncates mid-recursion.
+    // The first truncation has no observations and stays unknown; precise
+    // calls then accumulate true/false; a later truncation (fresh argument
+    // shapes, so no memo hit) degrades to the observed union.
+    const nest = (n: number, leaf: string): string => (n === 0 ? leaf : `{ x: ${nest(n - 1, leaf)} }`);
+    const ast = parse(`
+      function eq(a, b) {
+        if (a === b) return true;
+        if (typeof a !== "object") return false;
+        return eq(a.x, b.x);
+      }
+      const r1 = eq(${nest(70, "1")}, ${nest(70, "2")});
+      const t = eq(1, 1);
+      const f = eq(1, 2);
+      const r2 = eq(${nest(80, "3")}, ${nest(80, "4")});
+    `);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+    expect(env.lookup("r1").kind).toBe("unknown");
+    expect(typeValueToString(env.lookup("t"))).toBe("true");
+    expect(typeValueToString(env.lookup("f"))).toBe("false");
+    const r2 = env.lookup("r2");
+    expect(r2.kind).toBe("union");
+    if (r2.kind === "union") {
+      expect(r2.members).toHaveLength(2);
+      expect(typeValueToString(r2)).toBe("true | false");
+    }
+  });
+
+  it("budget-truncated recursion without observed results stays unknown", () => {
+    const nest = (n: number, leaf: string): string => (n === 0 ? leaf : `{ x: ${nest(n - 1, leaf)} }`);
+    const ast = parse(`
+      function eq(a, b) {
+        if (a === b) return true;
+        if (typeof a !== "object") return false;
+        return eq(a.x, b.x);
+      }
+      const r = eq(${nest(70, "5")}, ${nest(70, "6")});
+    `);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+    expect(env.lookup("r").kind).toBe("unknown");
   });
 });
 
@@ -435,6 +488,143 @@ describe("modules import/export", () => {
     expect(typeValueEquals(env.lookup("x2"), T.literal(1))).toBe(true);
 
     setModuleResolver(null);
+  });
+
+  it("resolves require() of a CJS module exporting an object", () => {
+    setModuleResolver((source) => {
+      if (source === "./b") {
+        return {
+          ast: parse(`function triple(x) { return x * 3; }\nmodule.exports = { triple };\n`),
+          filePath: "/fake/b.js",
+        };
+      }
+      return null;
+    });
+    setCurrentFileDir("/fake");
+
+    const ast = parse(`
+      const b = require("./b");
+      const r = b.triple(4);
+    `);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+
+    const b = env.lookup("b");
+    expect(b.kind).toBe("object");
+    if (b.kind === "object") {
+      expect(b.properties.triple.kind).toBe("function");
+    }
+    expect(typeValueEquals(env.lookup("r"), T.literal(12))).toBe(true);
+
+    setModuleResolver(null);
+  });
+
+  it("require() picks up a chained module.exports = internals.x = function assignment", () => {
+    setModuleResolver((source) => {
+      if (source === "./clone") {
+        return {
+          ast: parse(`
+            const internals = {};
+            module.exports = internals.clone = function (obj, options = {}) {
+              if (options.shallow) {
+                return obj;
+              }
+              return obj;
+            };
+          `),
+          filePath: "/fake/clone.js",
+        };
+      }
+      return null;
+    });
+    setCurrentFileDir("/fake");
+
+    const ast = parse(`
+      const Clone = require("./clone");
+      const r = Clone(5);
+    `);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+
+    expect(env.lookup("Clone").kind).toBe("function");
+    expect(typeValueEquals(env.lookup("r"), T.literal(5))).toBe(true);
+
+    setModuleResolver(null);
+  });
+
+  it("supports exports.name assignments", () => {
+    setModuleResolver((source) => {
+      if (source === "./b") {
+        return {
+          ast: parse(`exports.triple = function (x) { return x * 3; };\n`),
+          filePath: "/fake/b.js",
+        };
+      }
+      return null;
+    });
+    setCurrentFileDir("/fake");
+
+    const ast = parse(`
+      const b = require("./b");
+      const r = b.triple(2);
+    `);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+
+    expect(typeValueEquals(env.lookup("r"), T.literal(6))).toBe(true);
+
+    setModuleResolver(null);
+  });
+
+  it("require() of an ES module returns its exports as properties", () => {
+    setModuleResolver((source) => {
+      if (source === "./esm") {
+        return {
+          ast: parse(`export const n = 1;\nexport function f(x) { return x + 1; }\n`),
+          filePath: "/fake/esm.js",
+        };
+      }
+      return null;
+    });
+    setCurrentFileDir("/fake");
+
+    const ast = parse(`
+      const b = require("./esm");
+      const r = b.f(b.n);
+    `);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+
+    expect(typeValueEquals(env.lookup("r"), T.literal(2))).toBe(true);
+
+    setModuleResolver(null);
+  });
+
+  it("require() with a bare specifier returns unknown and records a warning", () => {
+    setCurrentFileDir("/fake");
+
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    const env = createEnvironment();
+    try {
+      const ast = parse(`const u = require("@hapi/hoek");\n`);
+      evaluateProgram(ast, env);
+    } finally {
+      setUnknownCollector(null);
+      setCurrentFileDir("");
+    }
+
+    expect(env.lookup("u").kind).toBe("unknown");
+    expect(records.some((r) => r.kind === "global" && r.name === `require('@hapi/hoek')`)).toBe(true);
+  });
+
+  it("pre-binds __dirname and __filename as strings", () => {
+    const ast = parse(`const d = __dirname;\nconst f = __filename;\n`);
+    const env = createEnvironment();
+    evaluateProgram(ast, env);
+
+    expect(typeValueEquals(env.lookup("d"), T.string)).toBe(true);
+    expect(typeValueEquals(env.lookup("f"), T.string)).toBe(true);
   });
 });
 

@@ -5,7 +5,10 @@ import type { Environment } from "./environment.ts";
 
 export type LiteralValue = string | number | boolean | null | undefined;
 
-export type SigImpl = (args: TypeValue[]) => TypeValue | undefined;
+// `thisVal` is the bound receiver when the signature is invoked as a method
+// or through Function.prototype.call/apply (e.g. Object.prototype.toString
+// brand computation needs it); direct calls leave it undefined.
+export type SigImpl = (args: TypeValue[], thisVal?: TypeValue) => TypeValue | undefined;
 
 export type FunctionSignature = {
   paramTypes: TypeValue[];
@@ -136,6 +139,24 @@ export function typeValueEquals(a: TypeValue, b: TypeValue): boolean {
 }
 
 export function simplifyUnion(members: TypeValue[]): TypeValue {
+  // Fast path: empty or single element
+  if (members.length === 0) return T.never;
+  if (members.length === 1) return members[0].kind === "never" ? T.never : members[0];
+
+  // Fast path: two non-union elements, check equality first
+  if (members.length === 2) {
+    const a = members[0];
+    const b = members[1];
+    // Only use fast path if neither is a union (need flattening)
+    if (a.kind !== "union" && b.kind !== "union") {
+      if (a.kind === "never") return b.kind === "never" ? T.never : b;
+      if (b.kind === "never") return a;
+      if (typeValueEquals(a, b)) return a;
+      if (a.kind === "unknown" || b.kind === "unknown") return T.unknown;
+      return { kind: "union", members: [a, b] };
+    }
+  }
+
   const flat: TypeValue[] = [];
   for (const m of members) {
     if (m.kind === "never") continue;
@@ -168,6 +189,20 @@ export function widenLiteral(tv: TypeValue): TypeValue {
   if (v === null) return T.null;
   if (v === undefined) return T.undefined;
   return T.unknown;
+}
+
+/**
+ * union 成员全部为同原语基底的字面量且数量 > maxLiterals 时塌缩为该基类型；
+ * 非 union、混合类型（含非字面量成员）、或数量不超限的原样返回。
+ */
+export function collapseLiteralUnion(tv: TypeValue, maxLiterals: number): TypeValue {
+  if (tv.kind !== "union") return tv;
+  if (tv.members.length <= maxLiterals) return tv;
+  // 保守：成员中含非字面量（如显式 T.number）时不塌缩
+  if (!tv.members.every((m) => m.kind === "literal")) return tv;
+  const first = widenLiteral(tv.members[0]);
+  if (!tv.members.every((m) => typeValueEquals(widenLiteral(m), first))) return tv;
+  return first;
 }
 
 export function isSubtypeOf(a: TypeValue, b: TypeValue): boolean {
@@ -308,6 +343,27 @@ export function mergeObjectProperties(
 }
 
 export function typeValueToString(tv: TypeValue): string {
+  // Self-referential structures (x.y = x surviving a clone) would recurse
+  // infinitely: a seen-set renders revisits as an ellipsis token.
+  return typeValueToStringInner(tv, new Set());
+}
+
+function typeValueToStringInner(tv: TypeValue, seen: Set<object>, depth = 0): string {
+  // Path-scoped seen-set: a node renders "…" only while its own expansion
+  // is on the stack (a true cycle); shared singletons (T.number in two
+  // slots) still render in full. A depth cap bounds fixture-scale DAGs
+  // whose repeated shared substructure would otherwise explode the string.
+  if (depth > 48) return "…";
+  const recur = (inner: TypeValue): string => {
+    if (inner && typeof inner === "object") {
+      if (seen.has(inner)) return "…";
+      seen.add(inner);
+      const out = typeValueToStringInner(inner, seen, depth + 1);
+      seen.delete(inner);
+      return out;
+    }
+    return typeValueToStringInner(inner, seen, depth + 1);
+  };
   switch (tv.kind) {
     case "literal": {
       const v = tv.value;
@@ -324,37 +380,37 @@ export function typeValueToString(tv: TypeValue): string {
       const entries = Object.entries(tv.properties);
       if (entries.length === 0) return "{}";
       const inner = entries
-        .map(([k, v]) => `${k}: ${typeValueToString(v)}`)
+        .map(([k, v]) => `${k}: ${recur(v)}`)
         .join(", ");
       return `{ ${inner} }`;
     }
     case "array":
-      return `${typeValueToString(tv.element)}[]`;
+      return `${recur(tv.element)}[]`;
     case "tuple": {
-      const inner = tv.elements.map(typeValueToString).join(", ");
+      const inner = tv.elements.map(recur).join(", ");
       return `[${inner}]`;
     }
     case "function": {
       const sig = getFnSig(tv);
       if (sig) {
-        const params = sig.paramTypes.map((p, i) => `${tv.params[i]}: ${typeValueToString(p)}`).join(", ");
-        return `(${params}) => ${typeValueToString(sig.returnType)}`;
+        const params = sig.paramTypes.map((p, i) => `${tv.params[i]}: ${recur(p)}`).join(", ");
+        return `(${params}) => ${recur(sig.returnType)}`;
       }
       const params = tv.params.join(", ");
       return `(${params}) => ...`;
     }
     case "promise":
-      return `Promise<${typeValueToString(tv.value)}>`;
+      return `Promise<${recur(tv.value)}>`;
     case "instance": {
       const entries = Object.entries(tv.properties);
       if (entries.length === 0) return tv.className;
       const inner = entries
-        .map(([k, v]) => `${k}: ${typeValueToString(v)}`)
+        .map(([k, v]) => `${k}: ${recur(v)}`)
         .join(", ");
       return `${tv.className} { ${inner} }`;
     }
     case "union": {
-      return tv.members.map(typeValueToString).join(" | ");
+      return tv.members.map(recur).join(" | ");
     }
     case "never":
       return "never";

@@ -66,6 +66,126 @@ describe("ForStatement", () => {
     `);
     expect(typeValueEquals(result, T.literal(2))).toBe(true);
   });
+
+  it("let loop variable gets a fresh binding per iteration for closures", () => {
+    // Real JS semantics: let creates a per-iteration scope, so each closure
+    // captures the value at its own iteration.
+    const result = evalCode(`
+      const fns = [];
+      for (let i = 0; i < 3; i++) {
+        fns.push(() => i);
+      }
+      [fns[0](), fns[1](), fns[2]()]
+    `);
+    expect(typeValueToString(result)).toBe("[0, 1, 2]");
+  });
+
+  it("var loop variable shares one binding across iterations for closures", () => {
+    // var keeps a single shared cell: every closure observes the final value.
+    const result = evalCode(`
+      const fns = [];
+      for (var i = 0; i < 3; i++) {
+        fns.push(() => i);
+      }
+      [fns[0](), fns[1](), fns[2]()]
+    `);
+    expect(typeValueToString(result)).toBe("[3, 3, 3]");
+  });
+
+  it("let loop closure sees body-side increments; loop still progresses", () => {
+    // Real JS: an assignment in the body targets the per-iteration binding
+    // the closure captured (node: fns[0]() === 1), unlike the update clause
+    // which runs outside it. No update clause here — the copy-back from the
+    // per-iteration binding must still drive the loop condition.
+    const result = evalCode(`
+      const fns = [];
+      let total = 0;
+      for (let i = 0; i < 3;) {
+        fns.push(() => i);
+        total = total + i;
+        i = i + 1;
+      }
+      [fns[0](), total]
+    `);
+    expect(typeValueToString(result)).toBe("[1, 3]");
+  });
+
+  it("for-of over a union of tuples iterates every member", () => {
+    const result = evalWith(`
+      function pick(c) {
+        if (c) { return [9]; }
+        return [10, [11, 12]];
+      }
+      function f(a, t) {
+        const r = t || [];
+        for (const e of a) {
+          if (Array.isArray(e)) { f(e, r) } else { r.push(e) }
+        }
+        return r;
+      }
+      f(pick(c))
+    `, { c: T.boolean });
+    // Both union members' elements flow through the body (concatenated),
+    // including the recursive flattening of the nested [11, 12] member.
+    // (typeValueEquals has no tuple branch — compare rendered form.)
+    expect(typeValueToString(result)).toBe("[9, 10, 11, 12]");
+  });
+
+  it("for-of over a union with non-iterable members skips them", () => {
+    const result = evalWith(`
+      function pick(c) {
+        if (c) { return [1, 2]; }
+        if (c === 2) { return 42; }
+        return "str";
+      }
+      function f(a, t) {
+        const r = t || [];
+        for (const e of a) {
+          if (Array.isArray(e)) { f(e, r) } else { r.push(e) }
+        }
+        return r;
+      }
+      f(pick(c))
+    `, { c: T.boolean });
+    // number/string members of the union contribute nothing; the tuple
+    // member's pushes still land on the shared accumulator.
+    expect(typeValueToString(result)).toBe("[1, 2]");
+  });
+
+  it("break terminates loop iteration and skips the rest of the body", () => {
+    // Guard-style break (reach.js pattern): the member access after break
+    // must not execute on the falsy receiver. Before break was implemented
+    // the loop kept evaluating the body and dereferenced the undefined ref.
+    const result = evalWith(`
+      function step(ref, key) {
+        let out = null;
+        for (const k of [key]) {
+          if (!ref) {
+            out = 'default';
+            break;
+          }
+          out = ref[k];
+        }
+        return out;
+      }
+      step(ref, 'a')
+    `, { ref: T.undefined });
+    expect(typeValueToString(result)).toBe('"default"');
+  });
+
+  it("break stops the loop and continue skips to the update clause", () => {
+    const result = evalCode(`
+      const collected = [];
+      for (let i = 0; i < 5; i++) {
+        if (i === 1) { continue; }
+        if (i === 3) { break; }
+        collected.push(i);
+      }
+      collected
+    `);
+    // continue skips push(1); break stops before 3 and 4
+    expect(typeValueToString(result)).toBe("[0, 2]");
+  });
 });
 
 describe("WhileStatement", () => {

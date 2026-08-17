@@ -5,6 +5,7 @@ export type Environment = {
   bind(name: string, value: TypeValue): Environment;
   update(name: string, value: TypeValue): boolean;
   extend(bindings: Record<string, TypeValue>): Environment;
+  fork(): Environment;
   has(name: string): boolean;
   snapshot(): Environment;
   getOwnBindings(): Record<string, TypeValue>;
@@ -44,6 +45,10 @@ export function createEnvironment(
         childMap.set(k, v);
       }
       return createEnvironment(env, childMap);
+    },
+
+    fork() {
+      return createEnvironment(env);
     },
 
     has(name) {

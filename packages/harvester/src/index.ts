@@ -1,0 +1,730 @@
+import { readFileSync } from "node:fs";
+import ts from "typescript";
+import { type TypeValue, typeValueEquals, getFnSig, T } from "@nudojs/core";
+
+/**
+ * The result of harvesting a set of `.d.ts` files: a Nudo env shaped exactly
+ * like `EnvDefinition` (`{ globals, modules }`), plus harvest statistics.
+ */
+export type HarvestedEnv = {
+  globals: Record<string, TypeValue>;
+  modules: Record<string, Record<string, TypeValue>>;
+  stats: { files: number; symbols: number; skipped: number };
+};
+
+type NamedTypeDecl = ts.InterfaceDeclaration | ts.ClassDeclaration;
+
+/**
+ * Runtime symbol collected in phase 1, materialized to a TypeValue in phase 2
+ * once the whole symbol table is populated (cross-file references resolve
+ * regardless of file order).
+ */
+type PendingSymbol =
+  | { t: "fn"; scope: Scope; name: string; decls: ts.FunctionDeclaration[] }
+  | { t: "var"; scope: Scope; name: string; typeNode?: ts.TypeNode }
+  /** class / value-position interface re-export; `lookup` is the symbol-table name when the exported name differs */
+  | { t: "value"; scope: Scope; name: string; lookup?: string }
+  | { t: "enum"; scope: Scope; name: string };
+
+interface HarvestContext {
+  globals: Record<string, TypeValue>;
+  modules: Record<string, Record<string, TypeValue>>;
+  /** simple name → interface/class declaration (first wins) */
+  interfaces: Map<string, NamedTypeDecl>;
+  /** dotted name ("NodeJS.Process") → declaration (first wins) */
+  qualifiedInterfaces: Map<string, NamedTypeDecl>;
+  /** simple name → type alias declaration (first wins) */
+  aliases: Map<string, ts.TypeAliasDeclaration>;
+  /** dotted name → type alias declaration (first wins) */
+  qualifiedAliases: Map<string, ts.TypeAliasDeclaration>;
+  /** simple name → class declaration (runtime values, for `export { X }` re-exports) */
+  classes: Map<string, ts.ClassDeclaration>;
+  instanceCache: Map<string, TypeValue>;
+  expanding: Set<string>;
+  /** [aliasModule, targetModule] pairs from `export * from` / `export = x` forms */
+  moduleAliases: Array<[alias: string, target: string]>;
+  /** `import x = require("mod")` bindings, per scope key */
+  importEquals: Map<string, Map<string, string>>;
+  declaredModules: Set<string>;
+  pending: PendingSymbol[];
+  symbols: number;
+  skipped: number;
+}
+
+interface Scope {
+  /** enclosing `declare module "..."` name, or undefined for global scope */
+  moduleName: string | undefined;
+  /** enclosing namespace chain, e.g. ["NodeJS"] */
+  ns: string[];
+}
+
+const MAX_ALIAS_DEPTH = 8;
+
+function scopeKey(scope: Scope): string {
+  return scope.moduleName ?? "\0global";
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export function harvestDts(files: string[]): HarvestedEnv {
+  const ctx: HarvestContext = {
+    globals: {},
+    modules: {},
+    interfaces: new Map(),
+    qualifiedInterfaces: new Map(),
+    aliases: new Map(),
+    qualifiedAliases: new Map(),
+    classes: new Map(),
+    instanceCache: new Map(),
+    expanding: new Set(),
+    moduleAliases: [],
+    importEquals: new Map(),
+    declaredModules: new Set(),
+    pending: [],
+    symbols: 0,
+    skipped: 0,
+  };
+
+  // Phase 1: collect declarations into the shared symbol table.
+  for (const file of files) {
+    const content = readFileSync(file, "utf8");
+    const sourceFile = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true);
+    collectStatements(ctx, sourceFile.statements, { moduleName: undefined, ns: [] });
+  }
+
+  // Phase 2: materialize TypeValues with the complete symbol table available.
+  materialize(ctx);
+
+  return {
+    globals: ctx.globals,
+    modules: ctx.modules,
+    stats: { files: files.length, symbols: ctx.symbols, skipped: ctx.skipped },
+  };
+}
+
+export function emitEnvModule(env: HarvestedEnv, pkgName: string): string {
+  // Module records can be shared (e.g. "fs" aliasing "node:fs"); emit those
+  // once as a const and reference it under every key.
+  const moduleEntries = Object.entries(env.modules);
+  const keysByRecord = new Map<Record<string, TypeValue>, string[]>();
+  for (const [moduleName, record] of moduleEntries) {
+    const keys = keysByRecord.get(record);
+    if (keys) keys.push(moduleName);
+    else keysByRecord.set(record, [moduleName]);
+  }
+  const constNameByRecord = new Map<Record<string, TypeValue>, string>();
+  const constLines: string[] = [];
+  let constIndex = 0;
+  for (const [record, keys] of keysByRecord) {
+    if (keys.length < 2) continue;
+    const constName = `mod${constIndex++}`;
+    constNameByRecord.set(record, constName);
+    constLines.push(`  const ${constName}: Record<string, TypeValue> = {`);
+    emitEntries(constLines, record, 2);
+    constLines.push(`  };`);
+    constLines.push("");
+  }
+
+  const lines: string[] = [];
+  lines.push("// Auto-generated by nudo harvest — DO NOT EDIT");
+  lines.push(`// Source package: ${pkgName}`);
+  if (constLines.length > 0) {
+    lines.push('import { type TypeValue, T } from "@nudojs/core";');
+  } else {
+    lines.push(`import { T } from "@nudojs/core";`);
+  }
+  lines.push("");
+  lines.push("export function defineEnv() {");
+  lines.push(...constLines);
+  lines.push("  return {");
+  lines.push("    globals: {");
+  emitEntries(lines, env.globals, 3);
+  lines.push("    },");
+  lines.push("    modules: {");
+  for (const [moduleName, record] of moduleEntries) {
+    const constName = constNameByRecord.get(record);
+    if (constName !== undefined) {
+      lines.push(`${indent(3)}${emitKey(moduleName)}: ${constName},`);
+      continue;
+    }
+    lines.push(`${indent(3)}${emitKey(moduleName)}: {`);
+    emitEntries(lines, record, 4);
+    lines.push(`${indent(3)}},`);
+  }
+  lines.push("    },");
+  lines.push("  };");
+  lines.push("}");
+  lines.push("");
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1: collect declarations
+// ---------------------------------------------------------------------------
+
+function recordFor(ctx: HarvestContext, scope: Scope): Record<string, TypeValue> {
+  if (scope.moduleName === undefined) return ctx.globals;
+  let rec = ctx.modules[scope.moduleName];
+  if (!rec) {
+    rec = {};
+    ctx.modules[scope.moduleName] = rec;
+  }
+  return rec;
+}
+
+function collectStatements(ctx: HarvestContext, statements: readonly ts.Statement[], scope: Scope): void {
+  for (const stmt of statements) {
+    collectStatement(ctx, stmt, scope);
+  }
+}
+
+function collectStatement(ctx: HarvestContext, stmt: ts.Statement, scope: Scope): void {
+  if (ts.isModuleDeclaration(stmt)) {
+    const body = stmt.body;
+    if (!body || !ts.isModuleBlock(body)) {
+      ctx.skipped++;
+      return;
+    }
+    if (ts.isStringLiteral(stmt.name)) {
+      // `declare module "node:fs" { ... }`
+      ctx.declaredModules.add(stmt.name.text);
+      collectStatements(ctx, body.statements, { moduleName: stmt.name.text, ns: [] });
+    } else if (stmt.name.text === "global") {
+      // `global { ... }` inside a module → globals
+      collectStatements(ctx, body.statements, { moduleName: undefined, ns: [] });
+    } else {
+      // `namespace X { ... }` → types registered with qualified names,
+      // runtime symbols flattened into the enclosing scope.
+      collectStatements(ctx, body.statements, { moduleName: scope.moduleName, ns: [...scope.ns, stmt.name.text] });
+    }
+    return;
+  }
+
+  if (ts.isFunctionDeclaration(stmt)) {
+    if (!stmt.name) {
+      ctx.skipped++;
+      return;
+    }
+    const name = stmt.name.text;
+    const existing = ctx.pending.find((p) => p.t === "fn" && p.name === name && scopeKey(p.scope) === scopeKey(scope));
+    if (existing && existing.t === "fn") {
+      existing.decls.push(stmt); // overload
+      return;
+    }
+    ctx.pending.push({ t: "fn", scope, name, decls: [stmt] });
+    ctx.symbols++;
+    return;
+  }
+
+  if (ts.isVariableStatement(stmt)) {
+    for (const decl of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name)) {
+        ctx.skipped++;
+        continue;
+      }
+      ctx.pending.push({ t: "var", scope, name: decl.name.text, typeNode: decl.type });
+      ctx.symbols++;
+    }
+    return;
+  }
+
+  if (ts.isInterfaceDeclaration(stmt)) {
+    registerTypeDecl(ctx, scope, stmt.name.text, stmt);
+    return;
+  }
+
+  if (ts.isTypeAliasDeclaration(stmt)) {
+    registerAlias(ctx, scope, stmt);
+    return;
+  }
+
+  if (ts.isClassDeclaration(stmt)) {
+    if (!stmt.name) {
+      ctx.skipped++;
+      return;
+    }
+    registerTypeDecl(ctx, scope, stmt.name.text, stmt);
+    if (!ctx.classes.has(stmt.name.text)) ctx.classes.set(stmt.name.text, stmt);
+    // A class is also a runtime value of its scope.
+    ctx.pending.push({ t: "value", scope, name: stmt.name.text });
+    ctx.symbols++;
+    return;
+  }
+
+  if (ts.isEnumDeclaration(stmt)) {
+    if (stmt.name) {
+      ctx.pending.push({ t: "enum", scope, name: stmt.name.text });
+      ctx.symbols++;
+    }
+    return;
+  }
+
+  if (ts.isImportDeclaration(stmt)) {
+    // Type-only imports; names resolve through the shared flat symbol table.
+    return;
+  }
+
+  if (ts.isImportEqualsDeclaration(stmt)) {
+    // `import path = require("node:path")` — record for `export = path` aliasing.
+    if (
+      ts.isIdentifier(stmt.name) &&
+      stmt.moduleReference &&
+      ts.isExternalModuleReference(stmt.moduleReference) &&
+      ts.isStringLiteral(stmt.moduleReference.expression)
+    ) {
+      const key = scopeKey(scope);
+      let bindings = ctx.importEquals.get(key);
+      if (!bindings) {
+        bindings = new Map();
+        ctx.importEquals.set(key, bindings);
+      }
+      bindings.set(stmt.name.text, stmt.moduleReference.expression.text);
+    }
+    return;
+  }
+
+  if (ts.isExportDeclaration(stmt)) {
+    const specifier = stmt.moduleSpecifier;
+    if (specifier && ts.isStringLiteral(specifier)) {
+      if (stmt.exportClause && ts.isNamespaceExport(stmt.exportClause)) {
+        // `export * as promises from "..."` — namespace re-export, v1 skip.
+        ctx.skipped++;
+        return;
+      }
+      if (!stmt.exportClause) {
+        // `export * from "node:fs"` — alias the module.
+        if (scope.moduleName !== undefined) {
+          ctx.moduleAliases.push([scope.moduleName, specifier.text]);
+        }
+        return;
+      }
+      // Named re-exports from another module — v1 skip.
+      ctx.skipped++;
+      return;
+    }
+    // `export { Buffer }` — re-export a local runtime value.
+    if (stmt.exportClause && ts.isNamedExports(stmt.exportClause)) {
+      for (const el of stmt.exportClause.elements) {
+        const localName = (el.propertyName ?? el.name).text;
+        const exportedName = el.name.text;
+        const isValue =
+          ctx.classes.has(localName) ||
+          (!el.isTypeOnly && (ctx.interfaces.has(localName) || ctx.qualifiedInterfaces.has(localName)));
+        if (isValue) {
+          ctx.pending.push({ t: "value", scope, name: exportedName, lookup: localName });
+          ctx.symbols++;
+        } else {
+          ctx.skipped++;
+        }
+      }
+      return;
+    }
+    ctx.skipped++;
+    return;
+  }
+
+  if (ts.isExportAssignment(stmt)) {
+    // `export = x` where x is `import x = require("mod")` → module alias.
+    if (stmt.expression && ts.isIdentifier(stmt.expression) && scope.moduleName !== undefined) {
+      const target = ctx.importEquals.get(scopeKey(scope))?.get(stmt.expression.text);
+      if (target !== undefined) {
+        ctx.moduleAliases.push([scope.moduleName, target]);
+        return;
+      }
+    }
+    ctx.skipped++;
+    return;
+  }
+
+  ctx.skipped++;
+}
+
+function registerTypeDecl(ctx: HarvestContext, scope: Scope, name: string, decl: NamedTypeDecl): void {
+  if (!ctx.interfaces.has(name)) ctx.interfaces.set(name, decl);
+  if (ts.isClassDeclaration(decl)) return; // classes register only their simple name
+  const qualified = [...scope.ns, name].join(".");
+  if (qualified !== name && !ctx.qualifiedInterfaces.has(qualified)) {
+    ctx.qualifiedInterfaces.set(qualified, decl);
+  }
+}
+
+function registerAlias(ctx: HarvestContext, scope: Scope, stmt: ts.TypeAliasDeclaration): void {
+  const name = stmt.name.text;
+  if (!ctx.aliases.has(name)) ctx.aliases.set(name, stmt);
+  const qualified = [...scope.ns, name].join(".");
+  if (qualified !== name && !ctx.qualifiedAliases.has(qualified)) {
+    ctx.qualifiedAliases.set(qualified, stmt);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: materialize TypeValues
+// ---------------------------------------------------------------------------
+
+function materialize(ctx: HarvestContext): void {
+  for (const p of ctx.pending) {
+    const rec = recordFor(ctx, p.scope);
+    if (p.t === "fn") {
+      if (rec[p.name] !== undefined) continue; // same name already handled (first wins)
+      const value = signatureToFnSig(ctx, p.decls[0]!); // first overload's parameter list
+      const sig = getFnSig(value);
+      if (sig) {
+        // Merge return types across overloads; drop unknown members when a
+        // known one exists so unresolved references don't erase information.
+        const returns: TypeValue[] = [];
+        for (const decl of p.decls) {
+          if (!decl.type) continue;
+          const ret = mapType(ctx, decl.type, 0);
+          if (ret.kind !== "unknown") returns.push(ret);
+        }
+        sig.returnType =
+          returns.length > 0
+            ? returns.reduce((acc, r) => (typeValueEquals(acc, r) ? acc : T.union(acc, r)))
+            : T.unknown;
+      }
+      rec[p.name] = value;
+      continue;
+    }
+    if (rec[p.name] !== undefined) continue;
+    switch (p.t) {
+      case "var": {
+        // 映射为 unknown 的声明零信息量，且会遮蔽 evaluator 内置
+        // （如 URL/AbortController 的 createXxxType 构造），跳过更优。
+        const mapped = p.typeNode ? mapType(ctx, p.typeNode, 0) : T.unknown;
+        if (mapped.kind === "unknown") {
+          ctx.skipped++;
+          break;
+        }
+        rec[p.name] = mapped;
+        break;
+      }
+      case "value": {
+        // class 作为运行时值 = 构造函数：new X() 走 fnSig → instance。
+        // 裸 instance 会被 new 的通用路径当作非函数 callee 退化为 unknown。
+        const cls = ctx.classes.get(p.lookup ?? p.name);
+        if (cls) {
+          const ctor = (cls.members as readonly ts.ClassElement[]).find(ts.isConstructorDeclaration);
+          const params: TypeValue[] = [];
+          if (ctor) {
+            for (const param of ctor.parameters) {
+              let type = param.type ? mapType(ctx, param.type, 0) : T.unknown;
+              if (param.questionToken) type = T.union(type, T.undefined);
+              params.push(type);
+            }
+          }
+          rec[p.name] = T.fnSig(params, instanceFor(ctx, p.lookup ?? p.name));
+        } else {
+          rec[p.name] = instanceFor(ctx, p.lookup ?? p.name);
+        }
+        break;
+      }
+      case "enum":
+        rec[p.name] = T.unknown;
+        break;
+    }
+  }
+
+  // Apply module aliases (`declare module "fs" { export * from "node:fs"; }`
+  // and the `export = path` form).
+  for (const [alias, target] of ctx.moduleAliases) {
+    if (ctx.modules[target] && !ctx.modules[alias]) {
+      ctx.modules[alias] = ctx.modules[target]!;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Type mapping
+// ---------------------------------------------------------------------------
+
+function typeNameString(name: ts.EntityName): string {
+  if (ts.isIdentifier(name)) return name.text;
+  return `${typeNameString(name.left)}.${name.right.text}`;
+}
+
+function memberName(node: { name?: ts.PropertyName }): string | undefined {
+  const n = node.name;
+  if (!n) return undefined;
+  if (ts.isIdentifier(n) || ts.isStringLiteral(n) || ts.isNumericLiteral(n)) return n.text;
+  return undefined; // computed / private names
+}
+
+function instanceFor(ctx: HarvestContext, key: string): TypeValue {
+  const cached = ctx.instanceCache.get(key);
+  if (cached !== undefined) return cached;
+  const decl = ctx.interfaces.get(key) ?? ctx.qualifiedInterfaces.get(key);
+  if (!decl) return T.unknown;
+  if (ctx.expanding.has(key)) {
+    // Recursion guard: reference by name without expanding members.
+    return T.instanceOf(decl.name?.text ?? key, {});
+  }
+  ctx.expanding.add(key);
+  const properties: Record<string, TypeValue> = {};
+  try {
+    const members = decl.members as readonly (ts.TypeElement | ts.ClassElement)[];
+    for (const member of members) {
+      const modifiers = (member as { modifiers?: readonly { kind: ts.SyntaxKind }[] }).modifiers;
+      if (modifiers?.some((mod) => mod.kind === ts.SyntaxKind.StaticKeyword)) continue;
+      if (ts.isPropertySignature(member) || ts.isPropertyDeclaration(member)) {
+        const name = memberName(member);
+        if (name === undefined) continue;
+        let type = member.type ? mapType(ctx, member.type, 0) : T.unknown;
+        if (member.questionToken) type = T.union(type, T.undefined);
+        properties[name] = type;
+      } else if (ts.isMethodSignature(member) || ts.isMethodDeclaration(member)) {
+        const name = memberName(member);
+        if (name === undefined || properties[name] !== undefined) continue; // first overload wins
+        properties[name] = signatureToFnSig(ctx, member);
+      } else if (ts.isGetAccessorDeclaration(member) || ts.isSetAccessorDeclaration(member)) {
+        const name = memberName(member);
+        if (name === undefined || properties[name] !== undefined || !member.type) continue;
+        properties[name] = mapType(ctx, member.type, 0);
+      }
+      // call / construct / index signatures are not representable — skipped.
+    }
+  } finally {
+    ctx.expanding.delete(key);
+  }
+  const value = T.instanceOf(decl.name?.text ?? key, properties);
+  ctx.instanceCache.set(key, value);
+  return value;
+}
+
+function signatureToFnSig(ctx: HarvestContext, sig: ts.SignatureDeclaration): TypeValue {
+  const paramTypes = sig.parameters.map((param) => {
+    let type: TypeValue;
+    if (param.dotDotDotToken) {
+      const inner = param.type && ts.isArrayTypeNode(param.type) ? param.type.elementType : param.type;
+      type = inner ? T.array(mapType(ctx, inner, 0)) : T.unknown;
+    } else {
+      type = param.type ? mapType(ctx, param.type, 0) : T.unknown;
+    }
+    if (param.questionToken && !param.dotDotDotToken) type = T.union(type, T.undefined);
+    return type;
+  });
+  const returnType = sig.type ? mapType(ctx, sig.type, 0) : T.unknown;
+  return T.fnSig(paramTypes, returnType);
+}
+
+function mapTypeMembers(
+  ctx: HarvestContext,
+  members: readonly ts.TypeElement[],
+  depth: number,
+): Record<string, TypeValue> {
+  const properties: Record<string, TypeValue> = {};
+  for (const member of members) {
+    if (ts.isPropertySignature(member)) {
+      const name = memberName(member);
+      if (name === undefined) continue;
+      let type = member.type ? mapType(ctx, member.type, depth) : T.unknown;
+      if (member.questionToken) type = T.union(type, T.undefined);
+      properties[name] = type;
+    } else if (ts.isMethodSignature(member)) {
+      const name = memberName(member);
+      if (name === undefined || properties[name] !== undefined) continue; // first overload wins
+      properties[name] = signatureToFnSig(ctx, member);
+    }
+    // index / call / construct signatures skipped
+  }
+  return properties;
+}
+
+function mapTypeRef(ctx: HarvestContext, node: ts.TypeReferenceNode, depth: number): TypeValue {
+  const name = typeNameString(node.typeName);
+  const args = node.typeArguments ?? [];
+  if ((name === "Array" || name === "ReadonlyArray") && args.length >= 1) {
+    return T.array(mapType(ctx, args[0], depth));
+  }
+  if (name === "Promise" && args.length >= 1) {
+    return T.promise(mapType(ctx, args[0], depth));
+  }
+  if (name === "Record") {
+    // Index-signature objects are approximated as an open object type.
+    return T.object({});
+  }
+  if (ctx.interfaces.has(name) || ctx.qualifiedInterfaces.has(name)) {
+    return instanceFor(ctx, name);
+  }
+  const alias = ctx.aliases.get(name) ?? ctx.qualifiedAliases.get(name);
+  if (alias) return mapType(ctx, alias.type, depth + 1);
+  return T.unknown;
+}
+
+function mapType(ctx: HarvestContext, node: ts.TypeNode | undefined, depth: number): TypeValue {
+  if (!node || depth > MAX_ALIAS_DEPTH) return T.unknown;
+
+  if (ts.isParenthesizedTypeNode(node)) return mapType(ctx, node.type, depth);
+  if (ts.isTypeReferenceNode(node)) return mapTypeRef(ctx, node, depth);
+
+  if (ts.isArrayTypeNode(node)) return T.array(mapType(ctx, node.elementType, depth));
+  if (ts.isTupleTypeNode(node)) {
+    for (const element of node.elements) {
+      const inner = ts.isNamedTupleMember(element) ? element.type : element;
+      return T.array(mapType(ctx, inner, depth)); // approximate by the first element
+    }
+    return T.unknown;
+  }
+
+  if (ts.isUnionTypeNode(node)) {
+    return T.union(...node.types.map((t) => mapType(ctx, t, depth)));
+  }
+
+  if (ts.isIntersectionTypeNode(node)) {
+    const members = node.types.map((t) => mapType(ctx, t, depth));
+    if (members.length > 0 && members.every((m) => m.kind === "object")) {
+      const properties: Record<string, TypeValue> = {};
+      for (const member of members) {
+        Object.assign(properties, (member as { properties: Record<string, TypeValue> }).properties);
+      }
+      return T.object(properties);
+    }
+    return members[0] ?? T.unknown;
+  }
+
+  if (ts.isLiteralTypeNode(node)) {
+    const lit = node.literal;
+    if (ts.isStringLiteral(lit)) return T.literal(lit.text);
+    if (ts.isNumericLiteral(lit)) return T.literal(Number(lit.text));
+    if (lit.kind === ts.SyntaxKind.TrueKeyword) return T.literal(true);
+    if (lit.kind === ts.SyntaxKind.FalseKeyword) return T.literal(false);
+    if (
+      ts.isPrefixUnaryExpression(lit) &&
+      lit.operator === ts.SyntaxKind.MinusToken &&
+      ts.isNumericLiteral(lit.operand)
+    ) {
+      return T.literal(-Number(lit.operand.text));
+    }
+    return T.unknown;
+  }
+
+  if (ts.isFunctionTypeNode(node)) return signatureToFnSig(ctx, node);
+
+  if (ts.isTypeLiteralNode(node)) {
+    // 带构造签名的对象字面量类型（如 @types/node 的 var URL: { new(...): URL; ... }）
+    // 是构造函数形状：new X() 需要 function callee + fnSig 返回实例。
+    const ctor = node.members.find(ts.isConstructSignatureDeclaration);
+    if (ctor) {
+      const params: TypeValue[] = [];
+      for (const param of ctor.parameters) {
+        let type = param.type ? mapType(ctx, param.type, depth) : T.unknown;
+        if (param.questionToken) type = T.union(type, T.undefined);
+        params.push(type);
+      }
+      return T.fnSig(params, ctor.type ? mapType(ctx, ctor.type, depth) : T.unknown);
+    }
+    return T.object(mapTypeMembers(ctx, node.members, depth));
+  }
+
+  if (ts.isTypeOperatorNode(node)) {
+    return node.operator === ts.SyntaxKind.ReadonlyKeyword ? mapType(ctx, node.type, depth) : T.unknown;
+  }
+
+  switch (node.kind) {
+    case ts.SyntaxKind.StringKeyword:
+      return T.string;
+    case ts.SyntaxKind.NumberKeyword:
+      return T.number;
+    case ts.SyntaxKind.BooleanKeyword:
+      return T.boolean;
+    case ts.SyntaxKind.BigIntKeyword:
+      return T.bigint;
+    case ts.SyntaxKind.SymbolKeyword:
+      return T.symbol;
+    case ts.SyntaxKind.AnyKeyword:
+    case ts.SyntaxKind.UnknownKeyword:
+    case ts.SyntaxKind.ObjectKeyword:
+      return T.unknown;
+    case ts.SyntaxKind.VoidKeyword:
+    case ts.SyntaxKind.UndefinedKeyword:
+      return T.undefined;
+    case ts.SyntaxKind.NeverKeyword:
+      return T.never;
+    case ts.SyntaxKind.NullKeyword:
+      return T.null;
+    default:
+      // typeof X, keyof, conditional / mapped / indexed / template-literal /
+      // import() types and everything else — conservative degradation.
+      return T.unknown;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Emission
+// ---------------------------------------------------------------------------
+
+function indent(level: number): string {
+  return "  ".repeat(level);
+}
+
+function emitKey(key: string): string {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? key : JSON.stringify(key);
+}
+
+function emitEntries(lines: string[], record: Record<string, TypeValue>, level: number): void {
+  for (const [key, value] of Object.entries(record)) {
+    lines.push(`${indent(level)}${emitKey(key)}: ${emitType(value, new Set())},`);
+  }
+}
+
+function emitType(tv: TypeValue, expanding: Set<string>): string {
+  switch (tv.kind) {
+    case "literal":
+      if (tv.value === null) return "T.null";
+      if (tv.value === undefined) return "T.undefined";
+      return `T.literal(${JSON.stringify(tv.value)})`;
+    case "primitive":
+      return `T.${tv.type}`;
+    case "unknown":
+      return "T.unknown";
+    case "never":
+      return "T.never";
+    case "array":
+      return `T.array(${emitType(tv.element, expanding)})`;
+    case "tuple":
+      return `T.tuple([${tv.elements.map((e) => emitType(e, expanding)).join(", ")}])`;
+    case "promise":
+      return `T.promise(${emitType(tv.value, expanding)})`;
+    case "object": {
+      const entries = Object.entries(tv.properties).map(
+        ([key, value]) => `${emitKey(key)}: ${emitType(value, expanding)}`,
+      );
+      return `T.object({ ${entries.join(", ")} })`;
+    }
+    case "instance": {
+      if (expanding.has(tv.className)) {
+        // Recursion guard on the emit side: truncate to a bare named instance.
+        return `T.instanceOf(${JSON.stringify(tv.className)}, {})`;
+      }
+      expanding.add(tv.className);
+      try {
+        const entries = Object.entries(tv.properties).map(
+          ([key, value]) => `${emitKey(key)}: ${emitType(value, expanding)}`,
+        );
+        return `T.instanceOf(${JSON.stringify(tv.className)}, { ${entries.join(", ")} })`;
+      } finally {
+        expanding.delete(tv.className);
+      }
+    }
+    case "union": {
+      if (tv.members.length === 0) return "T.never";
+      if (tv.members.length === 1) return emitType(tv.members[0]!, expanding);
+      return `T.union(${tv.members.map((m) => emitType(m, expanding)).join(", ")})`;
+    }
+    case "function": {
+      const sig = getFnSig(tv);
+      if (!sig) return "T.unknown";
+      const params = sig.paramTypes.map((p) => emitType(p, expanding)).join(", ");
+      const ret = emitType(sig.returnType, expanding);
+      if (sig.throwsType && sig.throwsType.kind !== "never") {
+        return `T.fnSig([${params}], ${ret}, ${emitType(sig.throwsType, expanding)})`;
+      }
+      return `T.fnSig([${params}], ${ret})`;
+    }
+    case "refined":
+      return emitType(tv.base, expanding);
+    default:
+      return "T.unknown";
+  }
+}

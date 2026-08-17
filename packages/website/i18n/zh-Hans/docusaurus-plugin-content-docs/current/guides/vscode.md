@@ -69,6 +69,48 @@ function upper(s) {
 
 右侧状态栏在扩展激活时显示 `Nudo`，悬停提示为 "Nudo Type Inference Engine"。
 
+### 跳转到定义
+
+跳转到函数、变量或类的定义。将光标放在标识符上并按 `F12`（或右键 -> Go to Definition）。
+
+```javascript
+function process(data) {
+  return transform(data);  // F12 on transform → jumps to its definition
+}
+```
+
+### 查找引用
+
+在当前文件中查找符号的所有使用。按 `Shift+F12`（或右键 -> Find All References）。
+
+### 重命名符号
+
+安全地重命名符号及其所有引用。按 `F2`（或右键 -> Rename Symbol）。Nudo 会验证新名称不会与现有符号冲突。
+
+### 签名帮助
+
+在函数调用的括号内输入时，Nudo 会显示参数提示。在输入 `(` 或 `,` 时自动激活。
+
+```javascript
+/**
+ * @nudo:case "test" (T.string, T.number)
+ */
+function createUser(name, age) { ... }
+
+createUser(  // ← signature help shows: (name: string, age: number)
+```
+
+### 代码操作 / 快速修复
+
+当 Nudo 报告诊断时，可使用快速修复建议。点击灯泡图标或按 `Cmd+.` / `Ctrl+.` 查看可用修复：
+
+- **移除不可达代码** ——针对 `return`/`throw` 之后的代码
+- **更新 @nudo:returns** ——当断言与推断类型不匹配时
+
+### 语义标记
+
+Nudo 根据推断类型提供语法高亮。函数、变量和死代码的高亮与标准语法着色不同。
+
 ### 命令："Nudo: Select Case"
 
 也可以调用命令面板（`Cmd+Shift+P` / `Ctrl+Shift+P`）并运行 **Nudo: Select Case**。该命令注册为 `nudo.selectCase`，供 CodeLens 用于切换函数的激活 case。
@@ -77,11 +119,17 @@ function upper(s) {
 
 ## 总结
 
-| Feature        | Description                                              |
-|----------------|----------------------------------------------------------|
-| Hover          | 通过 `getTypeAtPosition` 在光标处显示推断类型             |
-| Completions    | 在 `.` 后触发；属性和方法建议                            |
-| CodeLens       | `@nudo:case` 行上的 case 选择                            |
-| Inlay hints    | 内联类型注释                                             |
-| Status bar     | 激活时显示 "Nudo" 指示器                                 |
-| Command        | `nudo.selectCase` — 选择推断的激活 case                  |
+| 功能             | 描述                                                     |
+|-------------------|----------------------------------------------------------|
+| 悬停              | 通过 `getTypeAtPosition` 在光标处显示推断类型             |
+| 补全              | 在 `.` 后触发；属性和方法建议                            |
+| CodeLens          | `@nudo:case` 行上的 case 选择                            |
+| 内联提示          | 内联类型注释                                             |
+| 跳转到定义        | 跳转到符号定义（`F12`）                                  |
+| 查找引用          | 查找符号的所有使用（`Shift+F12`）                        |
+| 重命名符号        | 重命名符号及其所有引用（`F2`）                           |
+| 签名帮助          | 函数调用内的参数提示                                     |
+| 代码操作          | 诊断的快速修复                                           |
+| 语义标记          | 基于类型的语法高亮                                       |
+| 状态栏            | 激活时显示 "Nudo" 指示器                                 |
+| 命令              | `nudo.selectCase` — 选择推断的激活 case                  |

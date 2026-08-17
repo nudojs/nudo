@@ -47,6 +47,47 @@ describe("parseTypeValueExpr", () => {
     const expected = T.union(T.number, T.string);
     expect(typeValueEquals(result, expected)).toBe(true);
   });
+
+  it("parses arrow function literal with parenthesized params", () => {
+    const result = parseTypeValueExpr("(x) => x * 2");
+    expect(result.kind).toBe("function");
+    if (result.kind === "function") {
+      expect(result.params).toEqual(["x"]);
+      expect(result.body.type).toBe("BinaryExpression");
+      expect(result.closure).toBeDefined();
+      expect((result as any)._paramPatterns).toBeDefined();
+    }
+  });
+
+  it("parses arrow function literal without parens", () => {
+    const result = parseTypeValueExpr("x => x + 1");
+    expect(result.kind).toBe("function");
+    if (result.kind === "function") {
+      expect(result.params).toEqual(["x"]);
+    }
+  });
+
+  it("parses arrow function literal with multiple params", () => {
+    const result = parseTypeValueExpr("(a, b) => a + b");
+    expect(result.kind).toBe("function");
+    if (result.kind === "function") {
+      expect(result.params).toEqual(["a", "b"]);
+    }
+  });
+
+  it("parses function expression literal", () => {
+    const result = parseTypeValueExpr("function(x) { return x * 2; }");
+    expect(result.kind).toBe("function");
+    if (result.kind === "function") {
+      expect(result.params).toEqual(["x"]);
+      expect(result.body.type).toBe("BlockStatement");
+    }
+  });
+
+  it("does not treat strings containing => as functions", () => {
+    const result = parseTypeValueExpr('"a => b"');
+    expect(result.kind).toBe("literal");
+  });
 });
 
 describe("extractDirectives", () => {
@@ -125,5 +166,45 @@ function greet(a, b) { return a + b; }
     expect(results[0].directives[0].args).toHaveLength(2);
     expect(typeValueEquals(results[0].directives[0].args[0], T.literal("hello"))).toBe(true);
     expect(typeValueEquals(results[0].directives[0].args[1], T.literal("world"))).toBe(true);
+  });
+
+  it("extracts arrow function literal as case argument", () => {
+    const source = `
+/**
+ * @nudo:case "x" ([1, 2, 3], (a) => a * 2)
+ */
+function apply(items, cb) { return items; }
+`;
+    const ast = parse(source);
+    const results = extractDirectives(ast);
+    const d = results[0].directives[0];
+    expect(d.kind).toBe("case");
+    expect(d.args[0].kind).toBe("tuple");
+    expect(d.args[1].kind).toBe("function");
+    if (d.args[1].kind === "function") {
+      expect(d.args[1].params).toEqual(["a"]);
+      expect(d.args[1].body.type).toBe("BinaryExpression");
+    }
+  });
+
+  it("extracts arrow function inside nested object literal in case", () => {
+    const source = `
+/**
+ * @nudo:case "s" ({ fn: (a) => a })
+ */
+function use(opts) { return opts; }
+`;
+    const ast = parse(source);
+    const results = extractDirectives(ast);
+    const d = results[0].directives[0];
+    expect(d.kind).toBe("case");
+    expect(d.args[0].kind).toBe("object");
+    if (d.args[0].kind === "object") {
+      const fn = d.args[0].properties.fn;
+      expect(fn.kind).toBe("function");
+      if (fn.kind === "function") {
+        expect(fn.params).toEqual(["a"]);
+      }
+    }
   });
 });

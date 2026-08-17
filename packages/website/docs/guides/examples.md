@@ -272,7 +272,175 @@ The `Odd` type knows that `odd % 2` is always `1`. Operations without custom rul
 
 ---
 
-## 10. Web Environment — fetch, localStorage, URL
+## 10. Discriminated Union State Machine
+
+A state machine where each state has a different shape. Nudo narrows the union based on the discriminant field `status`.
+
+```javascript
+/**
+ * @nudo:case "idle" ({ status: "idle" })
+ * @nudo:case "loading" ({ status: "loading", requestId: "abc" })
+ * @nudo:case "success" ({ status: "success", data: { name: "test" } })
+ * @nudo:case "error" ({ status: "error", message: "fail" })
+ */
+function handleState(state) {
+  switch (state.status) {
+    case "idle": return "Waiting...";
+    case "loading": return `Loading ${state.requestId}...`;
+    case "success": return state.data.name;
+    case "error": return state.message;
+  }
+}
+```
+
+**Inferred output:**
+
+```
+=== handleState ===
+
+Case "idle": ({ status: "idle" }) => "Waiting..."
+Case "loading": ({ status: "loading", requestId: "abc" }) => string
+Case "success": ({ status: "success", data: { name: "test" } }) => "test"
+Case "error": ({ status: "error", message: "fail" }) => "fail"
+
+Combined: string
+```
+
+Nudo narrows `state` inside each `case` branch based on the discriminant. In the `"loading"` case, `state.requestId` is available as `"abc"` (literal); in the `"success"` case, `state.data.name` resolves to `"test"`.
+
+---
+
+## 11. Optional Chaining with Nullish Coalescing
+
+Safe property access through optional chaining and fallback with nullish coalescing. Nudo tracks which properties exist at each branch.
+
+```javascript
+/**
+ * @nudo:case "full" ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } })
+ * @nudo:case "partial" ({ user: { profile: { name: "Bob" } } })
+ * @nudo:case "empty" ({})
+ */
+function getTheme(config) {
+  return config.user?.profile?.settings?.theme ?? "light";
+}
+```
+
+**Inferred output:**
+
+```
+=== getTheme ===
+
+Case "full": ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } }) => "dark"
+Case "partial": ({ user: { profile: { name: "Bob" } } }) => "light"
+Case "empty": ({}) => "light"
+
+Combined: string
+```
+
+When the full path exists, Nudo returns the literal `"dark"`. When `settings` or `user` is missing, the `??` fallback produces `"light"`. The combined type is `string`.
+
+---
+
+## 12. API Response Validation
+
+Handling API responses with different status codes. Nudo narrows the response shape based on the status check.
+
+```javascript
+/**
+ * @nudo:case "success" ({ status: 200, data: { id: 1, name: "Alice", email: "alice@example.com" } })
+ * @nudo:case "not-found" ({ status: 404, error: "Not found" })
+ * @nudo:case "error" ({ status: 500, error: "Server error" })
+ */
+function parseResponse(response) {
+  if (response.status === 200) {
+    return { success: true, user: response.data };
+  }
+  return { success: false, error: response.error };
+}
+```
+
+**Inferred output:**
+
+```
+=== parseResponse ===
+
+Case "success": ({ status: 200, data: { id: 1, name: "Alice", email: "alice@example.com" } }) => { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } }
+Case "not-found": ({ status: 404, error: "Not found" }) => { success: false, error: "Not found" }
+Case "error": ({ status: 500, error: "Server error" }) => { success: false, error: "Server error" }
+
+Combined: { success: boolean, user: ... } | { success: boolean, error: string }
+```
+
+The `status === 200` check narrows the response: inside the `if` branch, `response.data` is available; outside it, `response.error` is known to exist.
+
+---
+
+## 13. Form Data Processing
+
+Type narrowing through sequential validation checks. Nudo tracks how each guard transforms the available types.
+
+```javascript
+/**
+ * @nudo:case "valid" ({ name: "Alice", age: "25", email: "alice@example.com" })
+ * @nudo:case "invalid-age" ({ name: "Bob", age: "abc", email: "bob@example.com" })
+ * @nudo:case "missing" ({ name: "Charlie" })
+ */
+function validateForm(data) {
+  const age = Number(data.age);
+  if (isNaN(age)) return { valid: false, error: "Invalid age" };
+  if (!data.email) return { valid: false, error: "Missing email" };
+  return { valid: true, name: data.name, age, email: data.email };
+}
+```
+
+**Inferred output:**
+
+```
+=== validateForm ===
+
+Case "valid": ({ name: "Alice", age: "25", email: "alice@example.com" }) => { valid: true, name: "Alice", age: 25, email: "alice@example.com" }
+Case "invalid-age": ({ name: "Bob", age: "abc", email: "bob@example.com" }) => { valid: false, error: "Invalid age" }
+Case "missing": ({ name: "Charlie" }) => { valid: false, error: "Missing email" }
+
+Combined: { valid: false, error: string } | { valid: true, name: string, age: number, email: string }
+```
+
+Nudo evaluates `Number("25")` to `25` (a literal) and `Number("abc")` to `NaN`. The `isNaN` guard filters out invalid ages, so the final return has `age` as `number` (not `NaN`). Missing `email` is caught by the falsy check.
+
+---
+
+## 14. Type Guard Function
+
+A function whose return type acts as a type guard. Nudo infers the boolean result for each input case.
+
+```javascript
+/**
+ * @nudo:case "string" ("hello")
+ * @nudo:case "number" (42)
+ * @nudo:case "object" ({ type: "user", name: "Alice" })
+ */
+function isString(value) {
+  return typeof value === "string";
+}
+```
+
+**Inferred output:**
+
+```
+=== isString ===
+
+Case "string": ("hello") => true
+Case "number": (42) => false
+Case "object": ({ type: "user", name: "Alice" }) => false
+
+Combined: boolean
+```
+
+Nudo evaluates `typeof` on each literal input at the type level. `"hello"` has `typeof "string"`, so the comparison yields `true`. Numbers and objects yield `false`. The combined type is `boolean`.
+
+---
+
+## 15. Web Environment — fetch, localStorage, URL
 
 Use `@nudo:env web` to get built-in type definitions for Web APIs. No manual mocking needed for standard browser globals.
 
@@ -312,7 +480,7 @@ function savePreference(key, value) {
 
 ---
 
-## 11. Node.js Environment — fs, path, crypto
+## 16. Node.js Environment — fs, path, crypto
 
 Use `@nudo:env node` to get built-in type definitions for Node.js globals and modules.
 

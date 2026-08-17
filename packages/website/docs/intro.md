@@ -61,3 +61,5 @@ Users can also define custom refined types with domain-specific operation rules 
 - **[Installation](/docs/getting-started/installation)** — Install the CLI, VS Code extension, and Vite plugin
 - **[Quick Start](/docs/getting-started/quick-start)** — Run `nudo infer` on your first file
 - **[Core Concepts](/docs/concepts/type-values)** — Type values, directives, and abstract interpretation
+- **[Call-Site Discovery](/docs/guides/callsite-discovery)** — Let Nudo mine your tests for real call shapes instead of writing cases by hand
+- **[Language Semantics](/docs/guides/semantics)** — The JavaScript behaviors Nudo models precisely, from `this` binding to promise resolution

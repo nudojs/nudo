@@ -1,0 +1,39 @@
+{
+  "name": "@nudojs/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Nudo type inference — enables AI agents to query inferred types, check diagnostics, and explore what-if scenarios",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "nudo",
+    "mcp",
+    "type-inference",
+    "ai",
+    "model-context-protocol"
+  ],
+  "main": "src/index.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nudojs/nudo.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://github.com/nudojs/nudo/tree/main/packages/mcp",
+  "bugs": "https://github.com/nudojs/nudo/issues",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@nudojs/service": "workspace:*",
+    "@nudojs/core": "workspace:*",
+    "zod": "^3.23.0"
+  }
+}

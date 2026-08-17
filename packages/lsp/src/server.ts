@@ -5,9 +5,6 @@ import {
   TextDocumentSyncKind,
   type InitializeParams,
   type InitializeResult,
-  type Diagnostic as LspDiagnostic,
-  DiagnosticSeverity,
-  DiagnosticTag,
   type CompletionItem as LspCompletionItem,
   CompletionItemKind,
   MarkupKind,
@@ -19,12 +16,21 @@ import {
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { typeValueToString } from "@nudojs/core";
 import {
-  analyzeFile,
   getTypeAtPosition,
   getCompletionsAtPosition,
   getCasesForFile,
-  type DiagnosticSeverity as JsDiagSeverity,
 } from "@nudojs/service";
+import { parse } from "@nudojs/parser";
+import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "./symbols.ts";
+import { TOKEN_TYPES, TOKEN_MODIFIERS } from "./semantic-tokens.ts";
+import {
+  analysisCache,
+  getCachedOrAnalyze,
+  hasNudoDirectives,
+  uriToFilePath,
+  validateText,
+  type ValidateTextDeps,
+} from "./validation.ts";
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
@@ -39,12 +45,6 @@ function getActiveCasesForUri(uri: string): Map<string, number> {
   return map;
 }
 
-const severityMap: Record<JsDiagSeverity, DiagnosticSeverity> = {
-  error: DiagnosticSeverity.Error,
-  warning: DiagnosticSeverity.Warning,
-  info: DiagnosticSeverity.Information,
-};
-
 connection.onInitialize((_params: InitializeParams): InitializeResult => ({
   capabilities: {
     textDocumentSync: TextDocumentSyncKind.Full,
@@ -57,6 +57,22 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => ({
       resolveProvider: false,
     },
     inlayHintProvider: true,
+    definitionProvider: true,
+    referencesProvider: true,
+    renameProvider: true,
+    codeActionProvider: {
+      codeActionKinds: ["quickfix"],
+    },
+    signatureHelpProvider: {
+      triggerCharacters: ["(", ","],
+    },
+    semanticTokensProvider: {
+      full: true,
+      legend: {
+        tokenTypes: [...TOKEN_TYPES],
+        tokenModifiers: [...TOKEN_MODIFIERS],
+      },
+    },
   },
 }));
 
@@ -72,7 +88,7 @@ documents.onDidChangeContent((change) => {
     uri,
     setTimeout(() => {
       debounceTimers.delete(uri);
-      validateDocument(change.document);
+      validateDocument(change.document, true).catch(() => {});
     }, 300),
   );
 });
@@ -82,51 +98,29 @@ documents.onDidClose((event) => {
   if (timer) clearTimeout(timer);
   debounceTimers.delete(event.document.uri);
   nudoFileCache.delete(event.document.uri);
+  analysisCache.delete(uriToFilePath(event.document.uri));
   connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
 });
 
-function validateDocument(document: TextDocument): void {
-  const uri = document.uri;
-  if (!isNudoFile(uri)) {
-    connection.sendDiagnostics({ uri, diagnostics: [] });
-    return;
-  }
+function validationDeps(): ValidateTextDeps {
+  return {
+    sendDiagnostics: (params) => connection.sendDiagnostics(params),
+    isNudoUri: (uri) => isNudoFile(uri),
+    getActiveCases: (uri) => getActiveCasesForUri(uri),
+    getOpenDocumentByPath: (filePath) =>
+      documents.all().find((doc) => uriToFilePath(doc.uri) === filePath),
+  };
+}
 
-  const filePath = uriToFilePath(uri);
-  const source = document.getText();
-  const cases = getActiveCasesForUri(uri);
-
-  try {
-    const result = analyzeFile(filePath, source, cases);
-    const diagnostics: LspDiagnostic[] = result.diagnostics.map((d) => {
-      const diag: LspDiagnostic = {
-        severity: severityMap[d.severity],
-        range: {
-          start: { line: d.range.start.line - 1, character: d.range.start.column },
-          end: { line: d.range.end.line - 1, character: d.range.end.column },
-        },
-        message: d.message,
-        source: "nudo",
-      };
-      if (d.tags?.includes("unnecessary")) {
-        diag.tags = [DiagnosticTag.Unnecessary];
-      }
-      return diag;
-    });
-    connection.sendDiagnostics({ uri, diagnostics });
-  } catch (err) {
-    connection.sendDiagnostics({
-      uri,
-      diagnostics: [
-        {
-          severity: DiagnosticSeverity.Error,
-          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-          message: `Analysis error: ${(err as Error).message}`,
-          source: "nudo",
-        },
-      ],
-    });
-  }
+function validateDocument(document: TextDocument, propagate = false): Promise<void> {
+  return validateText(
+    uriToFilePath(document.uri),
+    document.uri,
+    document.getText(),
+    document.version,
+    validationDeps(),
+    propagate,
+  );
 }
 
 connection.onHover((params) => {
@@ -232,7 +226,7 @@ connection.languages.inlayHint.on((params) => {
   const lines = source.split("\n");
 
   try {
-    const result = analyzeFile(filePath, source, cases);
+    const result = getCachedOrAnalyze(filePath, source, document.version, cases);
     const hints: InlayHint[] = [];
 
     for (const hint of result.caseHints) {
@@ -254,13 +248,237 @@ connection.languages.inlayHint.on((params) => {
   }
 });
 
-connection.onRequest("nudo/selectCase", (params: { uri: string; functionName: string; caseIndex: number }) => {
+connection.onDefinition((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return null;
+  if (!isNudoFile(params.textDocument.uri)) return null;
+
+  const source = document.getText();
+  const ast = parse(source);
+  const table = buildSymbolTable(ast, params.textDocument.uri);
+
+  const line = params.position.line + 1;
+  const column = params.position.character;
+  const identAtPos = findIdentifierAtPosition(ast, line, column);
+  if (!identAtPos) return null;
+
+  const def = findDefinition(table, identAtPos);
+  if (!def) return null;
+
+  return {
+    uri: params.textDocument.uri,
+    range: {
+      start: { line: def.loc.start.line - 1, character: def.loc.start.column },
+      end: { line: def.loc.end.line - 1, character: def.loc.end.column },
+    },
+  };
+});
+
+connection.onReferences((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return [];
+  if (!isNudoFile(params.textDocument.uri)) return [];
+
+  const source = document.getText();
+  const ast = parse(source);
+  const table = buildSymbolTable(ast, params.textDocument.uri);
+
+  const line = params.position.line + 1;
+  const column = params.position.character;
+  const identAtPos = findIdentifierAtPosition(ast, line, column);
+  if (!identAtPos) return [];
+
+  const refs = findReferences(table, identAtPos);
+  return refs.map((ref) => ({
+    uri: params.textDocument.uri,
+    range: {
+      start: { line: ref.loc.start.line - 1, character: ref.loc.start.column },
+      end: { line: ref.loc.end.line - 1, character: ref.loc.end.column },
+    },
+  }));
+});
+
+connection.onRenameRequest((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return null;
+  if (!isNudoFile(params.textDocument.uri)) return null;
+
+  const source = document.getText();
+  const ast = parse(source);
+  const table = buildSymbolTable(ast, params.textDocument.uri);
+
+  const line = params.position.line + 1;
+  const column = params.position.character;
+  const identAtPos = findIdentifierAtPosition(ast, line, column);
+  if (!identAtPos) return null;
+
+  const def = findDefinition(table, identAtPos);
+  const refs = findReferences(table, identAtPos);
+
+  const edits = [];
+
+  if (def) {
+    edits.push({
+      range: {
+        start: { line: def.loc.start.line - 1, character: def.loc.start.column },
+        end: { line: def.loc.end.line - 1, character: def.loc.end.column },
+      },
+      newText: params.newName,
+    });
+  }
+
+  for (const ref of refs) {
+    edits.push({
+      range: {
+        start: { line: ref.loc.start.line - 1, character: ref.loc.start.column },
+        end: { line: ref.loc.end.line - 1, character: ref.loc.end.column },
+      },
+      newText: params.newName,
+    });
+  }
+
+  return {
+    changes: {
+      [params.textDocument.uri]: edits,
+    },
+  };
+});
+
+connection.onCodeAction((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return [];
+  if (!isNudoFile(params.textDocument.uri)) return [];
+
+  const actions = [];
+
+  for (const diag of params.context.diagnostics) {
+    if (diag.code === "nudo-unreachable") {
+      actions.push({
+        title: "Remove unreachable code",
+        kind: "quickfix",
+        diagnostics: [diag],
+        edit: {
+          changes: {
+            [params.textDocument.uri]: [{
+              range: diag.range,
+              newText: "",
+            }],
+          },
+        },
+      });
+    }
+
+    if (diag.code === "nudo-assertion-failed") {
+      actions.push({
+        title: "Update @nudo:returns to match inferred type",
+        kind: "quickfix",
+        diagnostics: [diag],
+        isPreferred: false,
+      });
+    }
+  }
+
+  return actions;
+});
+
+connection.onSignatureHelp((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return null;
+  if (!isNudoFile(params.textDocument.uri)) return null;
+
+  const filePath = uriToFilePath(params.textDocument.uri);
+  const source = document.getText();
+  const line = params.position.line + 1;
+  const column = params.position.character;
+  const cases = getActiveCasesForUri(params.textDocument.uri);
+
+  try {
+    const ast = parse(source);
+    const callInfo = findEnclosingCall(ast, line, column);
+    if (!callInfo) return null;
+
+    const fnType = getTypeAtPosition(filePath, source, callInfo.calleeLine, callInfo.calleeCol, cases);
+    if (!fnType || fnType.kind !== "function") return null;
+
+    const paramLabels = fnType.params.map((p) => `${p}: unknown`);
+    const activeParam = callInfo.currentParamIndex;
+
+    return {
+      signatures: [{
+        label: `(${paramLabels.join(", ")}) => unknown`,
+        parameters: paramLabels.map((label) => ({ label })),
+        activeParameter: activeParam,
+      }],
+      activeSignature: 0,
+      activeParameter: activeParam,
+    };
+  } catch {
+    return null;
+  }
+});
+
+function findEnclosingCall(ast: any, line: number, column: number): { calleeLine: number; calleeCol: number; currentParamIndex: number } | null {
+  let result: any = null;
+
+  function visit(node: any): void {
+    if (!node || result) return;
+
+    if (node.type === "CallExpression") {
+      const loc = node.loc;
+      if (loc && loc.start.line <= line && loc.end.line >= line) {
+        const calleeLoc = node.callee.loc;
+        if (calleeLoc) {
+          let paramIndex = 0;
+          for (let i = 0; i < node.arguments.length; i++) {
+            const argLoc = node.arguments[i].loc;
+            if (argLoc) {
+              if (argLoc.start.line < line || (argLoc.start.line === line && argLoc.start.column <= column)) {
+                paramIndex = i + 1;
+              }
+            }
+          }
+          result = {
+            calleeLine: calleeLoc.start.line,
+            calleeCol: calleeLoc.start.column,
+            currentParamIndex: Math.min(paramIndex, node.arguments.length),
+          };
+        }
+      }
+    }
+
+    for (const key of Object.keys(node)) {
+      if (key === "type" || key === "loc" || key === "start" || key === "end") continue;
+      const child = node[key];
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          if (item && typeof item === "object" && item.type) visit(item);
+        }
+      } else if (child && typeof child === "object" && child.type) {
+        visit(child);
+      }
+    }
+  }
+
+  visit(ast);
+  return result;
+}
+
+connection.languages.semanticTokens.on((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return { data: [] };
+  if (!isNudoFile(params.textDocument.uri)) return { data: [] };
+
+  // For now, return empty tokens - can be enhanced later
+  return { data: [] };
+});
+
+connection.onRequest("nudo/selectCase", async (params: { uri: string; functionName: string; caseIndex: number }) => {
   const cases = getActiveCasesForUri(params.uri);
   cases.set(params.functionName, params.caseIndex);
 
   const document = documents.get(params.uri);
   if (document) {
-    validateDocument(document);
+    await validateDocument(document);
   }
 
   connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {});
@@ -288,14 +506,6 @@ function isNudoFile(uri: string): boolean {
   const result = hasNudoDirectives(doc.getText());
   nudoFileCache.set(uri, result);
   return result;
-}
-
-function hasNudoDirectives(source: string): boolean {
-  return /@nudo:(case|mock|pure|skip|sample|returns|env|mock-module|as|replace)\b/.test(source);
-}
-
-function uriToFilePath(uri: string): string {
-  return uri.startsWith("file://") ? decodeURIComponent(uri.slice(7)) : uri;
 }
 
 documents.listen(connection);

@@ -69,6 +69,48 @@ Inlay hints show type information inline. After each case result or in relevant 
 
 A status bar item on the right shows `Nudo` when the extension is active, with a tooltip: "Nudo Type Inference Engine".
 
+### Go-to-Definition
+
+Jump to the definition of a function, variable, or class. Place your cursor on an identifier and press `F12` (or right-click → Go to Definition).
+
+```javascript
+function process(data) {
+  return transform(data);  // F12 on transform → jumps to its definition
+}
+```
+
+### Find References
+
+Find all usages of a symbol across the current file. Press `Shift+F12` (or right-click → Find All References).
+
+### Rename Symbol
+
+Safely rename a symbol and all its references. Press `F2` (or right-click → Rename Symbol). Nudo validates that the new name doesn't conflict with existing symbols.
+
+### Signature Help
+
+When typing inside a function call's parentheses, Nudo shows parameter hints. This activates automatically when you type `(` or `,`.
+
+```javascript
+/**
+ * @nudo:case "test" (T.string, T.number)
+ */
+function createUser(name, age) { ... }
+
+createUser(  // ← signature help shows: (name: string, age: number)
+```
+
+### Code Actions / Quick Fixes
+
+When Nudo reports diagnostics, quick fix suggestions are available. Click the lightbulb icon or press `Cmd+.` / `Ctrl+.` to see available fixes:
+
+- **Remove unreachable code** — for code after `return`/`throw`
+- **Update @nudo:returns** — when assertion doesn't match inferred type
+
+### Semantic Tokens
+
+Nudo provides syntax highlighting based on inferred types. Functions, variables, and dead code are highlighted differently from standard syntax coloring.
+
 ### Command: "Nudo: Select Case"
 
 You can also invoke the command palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and run **Nudo: Select Case**. This command is registered as `nudo.selectCase` and is used by the CodeLens to switch the active case for a function.
@@ -77,11 +119,17 @@ You can also invoke the command palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and run
 
 ## Summary
 
-| Feature        | Description                                              |
-|----------------|----------------------------------------------------------|
-| Hover          | Shows inferred type at cursor via `getTypeAtPosition`    |
-| Completions    | Triggered on `.`; property/method suggestions            |
-| CodeLens       | Case selection on `@nudo:case` lines                     |
-| Inlay hints    | Inline type annotations                                  |
-| Status bar     | "Nudo" indicator when active                             |
-| Command        | `nudo.selectCase` — select active case for inference     |
+| Feature           | Description                                              |
+|-------------------|----------------------------------------------------------|
+| Hover             | Shows inferred type at cursor via `getTypeAtPosition`    |
+| Completions       | Triggered on `.`; property/method suggestions            |
+| CodeLens          | Case selection on `@nudo:case` lines                     |
+| Inlay hints       | Inline type annotations                                  |
+| Go-to-Definition  | Jump to symbol definition (`F12`)                        |
+| Find References   | Find all usages of a symbol (`Shift+F12`)                |
+| Rename Symbol     | Rename symbol and all references (`F2`)                  |
+| Signature Help    | Parameter hints inside function calls                    |
+| Code Actions      | Quick fixes for diagnostics                              |
+| Semantic Tokens   | Type-aware syntax highlighting                           |
+| Status bar        | "Nudo" indicator when active                             |
+| Command           | `nudo.selectCase` — select active case for inference     |

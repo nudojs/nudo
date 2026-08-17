@@ -26,6 +26,7 @@ nudo infer <file>
 |--------|-------------|
 | `--dts` | Generate a `.d.ts` declaration file next to the source file |
 | `--loc` | Show source locations (file:line:column) in the output |
+| `--callsites <paths...>` | Mine usage sites (tests, examples, apps) for real argument shapes and synthesize cases from them — see [Call-Site Discovery](/docs/guides/callsite-discovery) |
 
 ### Examples
 

@@ -13,6 +13,8 @@ Nudo is a type inference engine for JavaScript. Instead of a separate type syste
 - **File analysis** — `analyzeFile` returns diagnostics, function analyses, and case results
 - **IDE features** — `getTypeAtPosition`, `getCompletionsAtPosition`, `getCasesForFile`
 - **DTS generation** — `generateDts` and `typeValueToTSType` for producing `.d.ts` output
+- **Zod schema generation** — `typeValueToZodSchema` converts inferred types to Zod schema strings
+- **Guard generation** — `generateGuardFunction` produces zero-dependency runtime type guards
 
 ## Install
 

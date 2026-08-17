@@ -1,5 +1,6 @@
 import type { Node, Comment } from "@babel/types";
-import { type TypeValue, T } from "@nudojs/core";
+import { type TypeValue, type MockHelper, T, createEnvironment, stub, spy, mock } from "@nudojs/core";
+import { parse as babelParse } from "./parse.ts";
 
 export type CaseDirective = {
   kind: "case";
@@ -14,6 +15,16 @@ export type MockDirective = {
   name: string;
   expression?: string;
   fromPath?: string;
+  arrowFn?: { params: string[]; body: Node; paramPatterns: Node[] };
+  sinonExpr?: SinonExpression;
+  nudoMock?: MockHelper;
+};
+
+export type SinonExpression = {
+  type: "stub" | "spy" | "mock";
+  returnValue?: TypeValue;
+  resolvedValue?: TypeValue;
+  rejectedValue?: TypeValue;
 };
 
 export type PureDirective = {
@@ -138,6 +149,16 @@ export function parseTypeValueExpr(expr: string): TypeValue {
     return T.object({});
   }
 
+  // Function literals: (x) => expr, x => expr, (x, y) => expr, function(x) { ... }
+  if (findTopLevelArrow(s) !== -1 || /^function\s*[\w$]*\s*\(/.test(s)) {
+    const fnExpr = parseArrowFunctionExpr(s);
+    if (fnExpr) {
+      const fnType = T.fn(fnExpr.params, fnExpr.body, createEnvironment());
+      (fnType as any)._paramPatterns = fnExpr.paramPatterns;
+      return fnType;
+    }
+  }
+
   if (/^-?\d+(\.\d+)?$/.test(s)) return T.literal(Number(s));
 
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
@@ -210,6 +231,17 @@ function findTopLevelColon(s: string): number {
   return -1;
 }
 
+function findTopLevelArrow(s: string): number {
+  let depth = 0;
+  for (let i = 0; i < s.length - 1; i++) {
+    const ch = s[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (depth === 0 && ch === "=" && s[i + 1] === ">") return i;
+  }
+  return -1;
+}
+
 function extractBalancedParens(text: string, startIdx: number): string | null {
   if (text[startIdx] !== "(") return null;
   let depth = 0;
@@ -218,6 +250,252 @@ function extractBalancedParens(text: string, startIdx: number): string | null {
     if (text[i] === ")") depth--;
     if (depth === 0) return text.slice(startIdx + 1, i);
   }
+  return null;
+}
+
+function parseArrowFunctionExpr(expr: string): { params: string[]; body: Node; paramPatterns: Node[] } | null {
+  // Try to parse as an arrow function expression
+  try {
+    // Wrap in a variable declaration to make it a valid statement
+    const wrapped = `const __mock = ${expr};`;
+    const ast = babelParse(wrapped);
+
+    const decl = ast.program.body[0];
+    if (decl.type !== "VariableDeclaration") return null;
+
+    const init = decl.declarations[0]?.init;
+    if (!init || (init.type !== "ArrowFunctionExpression" && init.type !== "FunctionExpression")) {
+      return null;
+    }
+
+    const params: string[] = [];
+    const paramPatterns: Node[] = [];
+    for (let i = 0; i < init.params.length; i++) {
+      const param = init.params[i];
+      if (param.type === "Identifier") {
+        params.push(param.name);
+        paramPatterns.push(param);
+      } else if (param.type === "RestElement" && param.argument.type === "Identifier") {
+        // Handle rest parameters: (...args) => ...
+        params.push(`...${param.argument.name}`);
+        paramPatterns.push(param);
+      } else if (param.type === "ArrayPattern" || param.type === "ObjectPattern") {
+        // Handle destructuring patterns: ([a, b]) => ... or ({x, y}) => ...
+        params.push(`__destructured_${i}`);
+        paramPatterns.push(param);
+      }
+    }
+
+    return { params, body: init.body, paramPatterns };
+  } catch {
+    return null;
+  }
+}
+
+function parseSinonExpr(expr: string): SinonExpression | null {
+  const s = expr.trim();
+
+  // Match sinon.stub().returns(value)
+  const stubReturnsMatch = s.match(/^sinon\.stub\(\)\.returns\((.+)\)$/);
+  if (stubReturnsMatch) {
+    return {
+      type: "stub",
+      returnValue: parseTypeValueExpr(stubReturnsMatch[1].trim()),
+    };
+  }
+
+  // Match sinon.stub().resolves(value)
+  const stubResolvesMatch = s.match(/^sinon\.stub\(\)\.resolves\((.+)\)$/);
+  if (stubResolvesMatch) {
+    return {
+      type: "stub",
+      resolvedValue: parseTypeValueExpr(stubResolvesMatch[1].trim()),
+    };
+  }
+
+  // Match sinon.stub().rejects(value)
+  const stubRejectsMatch = s.match(/^sinon\.stub\(\)\.rejects\((.+)\)$/);
+  if (stubRejectsMatch) {
+    return {
+      type: "stub",
+      rejectedValue: parseTypeValueExpr(stubRejectsMatch[1].trim()),
+    };
+  }
+
+  // Match sinon.stub().onFirstCall().returns(value)
+  const onFirstCallReturnsMatch = s.match(/^sinon\.stub\(\)\.onFirstCall\(\)\.returns\((.+)\)$/);
+  if (onFirstCallReturnsMatch) {
+    return {
+      type: "stub",
+      returnValue: parseTypeValueExpr(onFirstCallReturnsMatch[1].trim()),
+    };
+  }
+
+  // Match sinon.stub().onSecondCall().returns(value)
+  const onSecondCallReturnsMatch = s.match(/^sinon\.stub\(\)\.onSecondCall\(\)\.returns\((.+)\)$/);
+  if (onSecondCallReturnsMatch) {
+    return {
+      type: "stub",
+      returnValue: parseTypeValueExpr(onSecondCallReturnsMatch[1].trim()),
+    };
+  }
+
+  // Match sinon.stub().onThirdCall().returns(value)
+  const onThirdCallReturnsMatch = s.match(/^sinon\.stub\(\)\.onThirdCall\(\)\.returns\((.+)\)$/);
+  if (onThirdCallReturnsMatch) {
+    return {
+      type: "stub",
+      returnValue: parseTypeValueExpr(onThirdCallReturnsMatch[1].trim()),
+    };
+  }
+
+  // Match sinon.stub().onCall(n).returns(value)
+  const onCallReturnsMatch = s.match(/^sinon\.stub\(\)\.onCall\(\d+\)\.returns\((.+)\)$/);
+  if (onCallReturnsMatch) {
+    return {
+      type: "stub",
+      returnValue: parseTypeValueExpr(onCallReturnsMatch[1].trim()),
+    };
+  }
+
+  // Match sinon.stub().withArgs(args).returns(value)
+  const withArgsReturnsMatch = s.match(/^sinon\.stub\(\)\.withArgs\(.+\)\.returns\((.+)\)$/);
+  if (withArgsReturnsMatch) {
+    return {
+      type: "stub",
+      returnValue: parseTypeValueExpr(withArgsReturnsMatch[1].trim()),
+    };
+  }
+
+  // Match sinon.stub().callsFake(fn)
+  const callsFakeMatch = s.match(/^sinon\.stub\(\)\.callsFake\((.+)\)$/);
+  if (callsFakeMatch) {
+    // For callsFake, we try to parse the function as an arrow function
+    const arrowFn = parseArrowFunctionExpr(callsFakeMatch[1].trim());
+    if (arrowFn) {
+      return {
+        type: "stub",
+        returnValue: T.fn(arrowFn.params, arrowFn.body, createEnvironment()),
+      };
+    }
+    return { type: "stub" };
+  }
+
+  // Match sinon.stub().returns(value).onFirstCall().returns(otherValue)
+  // This is a complex chain - we'll just use the first .returns() value
+  const complexChainMatch = s.match(/^sinon\.stub\(\)\.returns\((.+)\)\./);
+  if (complexChainMatch) {
+    return {
+      type: "stub",
+      returnValue: parseTypeValueExpr(complexChainMatch[1].trim()),
+    };
+  }
+
+  // Match sinon.stub() (no chaining)
+  if (s === "sinon.stub()") {
+    return { type: "stub" };
+  }
+
+  // Match sinon.spy()
+  if (s === "sinon.spy()") {
+    return { type: "spy" };
+  }
+
+  // Match sinon.mock()
+  if (s === "sinon.mock()") {
+    return { type: "mock" };
+  }
+
+  return null;
+}
+
+function parseNudoMockExpr(expr: string): MockHelper | null {
+  const s = expr.trim();
+
+  // Match stub().returns(value).onFirstCall()
+  const stubReturnsOnFirstMatch = s.match(/^stub\(\)\.returns\((.+)\)\.onFirstCall\(\)$/);
+  if (stubReturnsOnFirstMatch) {
+    const helper = stub.returns(parseTypeValueExpr(stubReturnsOnFirstMatch[1].trim()));
+    helper.onFirstCallValue = helper.returnValue;
+    return helper;
+  }
+
+  // Match stub().returns(value).onSecondCall()
+  const stubReturnsOnSecondMatch = s.match(/^stub\(\)\.returns\((.+)\)\.onSecondCall\(\)$/);
+  if (stubReturnsOnSecondMatch) {
+    return stub.returns(parseTypeValueExpr(stubReturnsOnSecondMatch[1].trim()));
+  }
+
+  // Match stub().returns(value).onCall(n)
+  const stubReturnsOnCallMatch = s.match(/^stub\(\)\.returns\((.+)\)\.onCall\(\d+\)$/);
+  if (stubReturnsOnCallMatch) {
+    return stub.returns(parseTypeValueExpr(stubReturnsOnCallMatch[1].trim()));
+  }
+
+  // Match stub().callsFake((args) => body)
+  const stubCallsFakeMatch = s.match(/^stub\(\)\.callsFake\((.+)\)$/);
+  if (stubCallsFakeMatch) {
+    const helper: MockHelper = { kind: "mock-helper" };
+    helper.callsFakeImpl = parseTypeValueExpr(stubCallsFakeMatch[1].trim());
+    return helper;
+  }
+
+  // Match stub().withArgs(args).returns(value)
+  const stubWithArgsMatch = s.match(/^stub\(\)\.withArgs\((.+)\)\.returns\((.+)\)$/);
+  if (stubWithArgsMatch) {
+    const retVal = parseTypeValueExpr(stubWithArgsMatch[2].trim());
+    const argsStr = stubWithArgsMatch[1].trim();
+    const args = splitTopLevelArgs(argsStr).map(parseTypeValueExpr);
+    const helper: MockHelper = { kind: "mock-helper", returnValue: retVal };
+    helper.withArgsCases = [{ args, returnValue: retVal }];
+    return helper;
+  }
+
+  // Match spy().returns(value)
+  const spyReturnsMatch = s.match(/^spy\(\)\.returns\((.+)\)$/);
+  if (spyReturnsMatch) {
+    return spy.returns(parseTypeValueExpr(spyReturnsMatch[1].trim()));
+  }
+
+  // Match stub().resolves(value).onFirstCall()
+  const stubResolvesOnFirstMatch = s.match(/^stub\(\)\.resolves\((.+)\)\.onFirstCall\(\)$/);
+  if (stubResolvesOnFirstMatch) {
+    return stub.resolves(parseTypeValueExpr(stubResolvesOnFirstMatch[1].trim()));
+  }
+
+  // Match stub().returns(value)
+  const stubReturnsMatch = s.match(/^stub\(\)\.returns\((.+)\)$/);
+  if (stubReturnsMatch) {
+    return stub.returns(parseTypeValueExpr(stubReturnsMatch[1].trim()));
+  }
+
+  // Match stub().resolves(value)
+  const stubResolvesMatch = s.match(/^stub\(\)\.resolves\((.+)\)$/);
+  if (stubResolvesMatch) {
+    return stub.resolves(parseTypeValueExpr(stubResolvesMatch[1].trim()));
+  }
+
+  // Match stub().rejects(value)
+  const stubRejectsMatch = s.match(/^stub\(\)\.rejects\((.+)\)$/);
+  if (stubRejectsMatch) {
+    return stub.rejects(parseTypeValueExpr(stubRejectsMatch[1].trim()));
+  }
+
+  // Match stub()
+  if (s === "stub()") {
+    return stub();
+  }
+
+  // Match spy()
+  if (s === "spy()") {
+    return spy();
+  }
+
+  // Match mock()
+  if (s === "mock()") {
+    return mock();
+  }
+
   return null;
 }
 
@@ -245,10 +523,19 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
         ([s, e]) => mockMatch!.index >= s && mockMatch!.index < e,
       );
       if (inFromRange) continue;
+
+      const expr = mockMatch[2].trim();
+      const arrowFn = parseArrowFunctionExpr(expr);
+      const sinonExpr = parseSinonExpr(expr);
+      const nudoMock = parseNudoMockExpr(expr);
+
       directives.push({
         kind: "mock",
         name: mockMatch[1],
-        expression: mockMatch[2].trim(),
+        expression: expr,
+        arrowFn: arrowFn ?? undefined,
+        sinonExpr: sinonExpr ?? undefined,
+        nudoMock: nudoMock ?? undefined,
       });
     }
 
@@ -308,6 +595,9 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
 
 function getFunctionName(node: Node): string {
   if (node.type === "FunctionDeclaration" && node.id) return node.id.name;
+  if (node.type === "ExportNamedDeclaration" && node.declaration?.type === "FunctionDeclaration" && node.declaration.id) {
+    return node.declaration.id.name;
+  }
   if (node.type === "ExportDefaultDeclaration" && node.declaration.type === "FunctionDeclaration" && node.declaration.id) {
     return node.declaration.id.name;
   }

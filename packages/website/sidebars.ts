@@ -22,7 +22,12 @@ const sidebars: SidebarsConfig = {
       label: "Guides",
       items: [
         "guides/cli",
+        "guides/callsite-discovery",
+        "guides/semantics",
         "guides/vscode",
+        "guides/control-flow-narrowing",
+        "guides/runtime-generation",
+        "guides/mcp-server",
         "guides/vite-plugin",
         "guides/examples",
       ],
@@ -35,6 +40,7 @@ const sidebars: SidebarsConfig = {
         "api/parser",
         "api/service",
         "api/cli-reference",
+        "api/mcp",
       ],
     },
     {
