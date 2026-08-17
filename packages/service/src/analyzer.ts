@@ -1240,16 +1240,29 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     //     ——使用方可能以任意转发名调用它；多导出文件不走模块路，
     //     避免同文件多函数误染。
     const singleExportHit = singleExportFn !== null && candidate.node === singleExportFn;
-    const matching = (r: CallRecord) => {
+    const nameRoutes = (r: CallRecord): boolean =>
+      r.fnName === candidate.name ||
+      r.targetExport === candidate.name ||
+      (r.targetAliases?.includes(candidate.name) ?? false) ||
+      (singleExportHit && (r.fnModule !== undefined || r.targetModule !== undefined));
+    // 本地记录：来自本文件求值。带 targetModule 的（本文件导出被调用）
+    // 判归属；无 tag 的内部调用按名字匹配（一直以来的行为）。
+    const matchingLocal = (r: CallRecord): boolean => {
       const targetsThisFile =
         r.targetModule === undefined || normalizeModulePath(r.targetModule) === currentModulePath;
       if (!targetsThisFile) return false;
-      return (
-        r.fnName === candidate.name ||
-        r.targetExport === candidate.name ||
-        (r.targetAliases?.includes(candidate.name) ?? false) ||
-        (singleExportHit && r.targetModule !== undefined)
-      );
+      return nameRoutes(r);
+    };
+    // 外部记录（使用现场收集）必须可归因到本文件：fnModule（定义位点——
+    // require 传递求值中库内部调用的记录）或 targetModule（导出 tag）。
+    // 无归因的记录是测试本地函数或裸内置名，按名字撞库属跨文件污染
+    // （实测：测试局部 compare() 撞 contain.js internals.compare）。
+    const matchingExternal = (r: CallRecord): boolean => {
+      const attributed =
+        (r.fnModule !== undefined && normalizeModulePath(r.fnModule) === currentModulePath) ||
+        (r.targetModule !== undefined && normalizeModulePath(r.targetModule) === currentModulePath);
+      if (!attributed) return false;
+      return nameRoutes(r);
     };
     // resultType=never 且 throws=never 是求值中断的信号泄漏（如
     // `new Promise(async …)` 高阶 async 中 await 切断求值），无信息量，
@@ -1258,8 +1271,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     // 是真实的抛出调用（argTypes + throws 都有信息），保留。
     const records = dedupeCallRecords(
       [
-        ...callRecords.filter(matching),
-        ...(externalCallRecords ?? []).filter(matching),
+        ...callRecords.filter(matchingLocal),
+        ...(externalCallRecords ?? []).filter(matchingExternal),
       ].filter((r) => !(r.resultType.kind === "never" && r.throws.kind === "never")),
     );
     if (records.length > 0) {

@@ -934,6 +934,12 @@ export type CallRecord = {
    * defining module (barrel `index.js`, CJS forwarding shims); usage-site
    * records stay name-matchable against them */
   targetAliases?: string[];
+  /** module whose evaluation created the function value (definition site).
+   * Usage-site collection transitively evaluates the library under require(),
+   * so records of the library's INTERNAL calls (no export tag) can still be
+   * attributed to the defining file — while test-local functions and builtin
+   * statics stay unattributed and cannot pollute same-name candidates. */
+  fnModule?: string;
 };
 
 // --- Cross-module call attribution ---
@@ -953,8 +959,21 @@ const _exportTags = new WeakMap<object, { module: string; export: string; aliase
  * records ended up pointing at the last intermediary instead of the defining
  * file. Now the first (definition-site) tag sticks; later export names
  * accumulate as aliases. */
-function tagExport(v: TypeValue & { kind: "function" }, filePath: string, name: string): void {
-  const existing = _exportTags.get(v);
+// --- Function definition-site tags ---
+// Which module's evaluation created a function value. Only AST function
+// nodes route through tagFnModule — lazily built builtin tables never enter
+// a module stack, so builtin statics stay unattributed.
+const _fnModuleTags = new WeakMap<object, string>();
+const _moduleEvalStack: string[] = [];
+
+function tagFnModule(v: TypeValue): void {
+  const top = _moduleEvalStack[_moduleEvalStack.length - 1];
+  if (top !== undefined && v.kind === "function") {
+    if (!_fnModuleTags.has(v)) _fnModuleTags.set(v, top);
+  }
+}
+
+function tagExport(v: TypeValue & { kind: "function" }, filePath: string, name: string): void {  const existing = _exportTags.get(v);
   if (existing) {
     if (existing.module === filePath && existing.export === name) return;
     if (!existing.aliases) existing.aliases = [];
@@ -1045,6 +1064,8 @@ function recordCall(
     record.targetExport = tag.export;
     if (tag.aliases && tag.aliases.length > 0) record.targetAliases = [...tag.aliases];
   }
+  const fnModule = calleeVal ? _fnModuleTags.get(calleeVal) : undefined;
+  if (fnModule) record.fnModule = fnModule;
   _callCollector(record);
 }
 
@@ -1960,6 +1981,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       (fnType as any)._paramPatterns = node.params;
       if (node.id) (fnType as any)._name = node.id.name;
       if (node.async) (fnType as any)._async = true;
+      tagFnModule(fnType);
       env.bind(node.id.name, fnType);
       return T.undefined;
     }
@@ -1972,6 +1994,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       (fnType as any)._paramPatterns = node.params;
       if ((node as any).id) (fnType as any)._name = (node as any).id.name;
       if (node.async) (fnType as any)._async = true;
+      tagFnModule(fnType);
       return fnType;
     }
 
@@ -4070,7 +4093,12 @@ function loadModuleEnv(resolved: { ast: Node; filePath: string }): Environment {
     moduleCache.set(resolved.filePath, moduleEnv);
     const savedDir = currentFileDir;
     currentFileDir = resolved.filePath.replace(/\/[^/]+$/, "");
-    evaluateProgram(resolved.ast, moduleEnv);
+    _moduleEvalStack.push(resolved.filePath);
+    try {
+      evaluateProgram(resolved.ast, moduleEnv);
+    } finally {
+      _moduleEvalStack.pop();
+    }
     currentFileDir = savedDir;
     tagModuleExports(moduleEnv, resolved.filePath);
     tagCommonJsExports(moduleEnv, resolved.filePath);
@@ -4319,6 +4347,7 @@ function evaluateClassDeclaration(node: Node & { type: "ClassDeclaration" }, env
     (fnType as any)._paramPatterns = member.params;
     (fnType as any)._name = `${className}.${methodName}`;
     if (member.async) (fnType as any)._async = true;
+    tagFnModule(fnType);
 
     if (member.kind === "constructor") {
       constructorFn = fnType;
@@ -4425,6 +4454,14 @@ function evaluatePromiseExecutor(executor: TypeValue & { kind: "function" }): Ty
   const callEnv = executor.closure.extend({});
   bindFunctionParams(executor, [makePromiseCollector(resolveCollected), makePromiseCollector(rejectCollected)], callEnv);
 
+  // try/finally 语义下 resolve 位点（位于 try 内）先于 finally 执行，但
+  // 这里是先执行完整个 body 再扫描——finally 的副作用（如 finally
+  // { parser = null }）会毒化扫描求值（parser.finish() 变 no-method on
+  // null）。快照执行前的绑定链；扫描时当前值被 null/undefined 化而快照
+  // 值非空的绑定回退快照值（finally-nullification 的签名）。循环累加
+  // （当前值更丰富）不受影响。
+  const preBodySnapshot = callEnv.snapshot();
+
   // Execute the executor body synchronously; direct resolve/reject calls
   // hit the collectors through normal parameter binding.
   if (_callDepth < MAX_CALL_DEPTH && _totalCalls < MAX_TOTAL_CALLS) {
@@ -4440,10 +4477,30 @@ function evaluatePromiseExecutor(executor: TypeValue & { kind: "function" }): Ty
     }
   }
 
+  const isNullish = (v: TypeValue): boolean =>
+    v.kind === "literal" && (v.value === null || v.value === undefined);
+  const scanEnv: Environment = {
+    lookup: (name: string) => {
+      const cur = callEnv.lookup(name);
+      if (isNullish(cur)) {
+        const snap = preBodySnapshot.lookup(name);
+        if (!isNullish(snap) && snap !== T.undefined) return snap;
+      }
+      return cur;
+    },
+    bind: (name, value) => callEnv.bind(name, value),
+    update: (name, value) => callEnv.update(name, value),
+    extend: (b) => callEnv.extend(b),
+    fork: () => callEnv.fork(),
+    has: (name) => callEnv.has(name),
+    snapshot: () => callEnv.snapshot(),
+    getOwnBindings: () => callEnv.getOwnBindings(),
+  };
+
   const firstPattern = ((executor as any)._paramPatterns as Node[] | undefined)?.[0];
   if (firstPattern?.type === "Identifier") {
     for (const argExpr of findResolveArgSites(executor.body, firstPattern.name)) {
-      const argVal = evaluate(argExpr, callEnv);
+      const argVal = evaluate(argExpr, scanEnv);
       if (isReturn(argVal) || isBranch(argVal) || isThrow(argVal)) continue;
       resolveCollected.push(argVal);
     }
