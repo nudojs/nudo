@@ -1981,6 +1981,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       (fnType as any)._paramPatterns = node.params;
       if (node.id) (fnType as any)._name = node.id.name;
       if (node.async) (fnType as any)._async = true;
+      (fnType as any)._hasArguments = true;
       tagFnModule(fnType);
       env.bind(node.id.name, fnType);
       return T.undefined;
@@ -1994,6 +1995,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       (fnType as any)._paramPatterns = node.params;
       if ((node as any).id) (fnType as any)._name = (node as any).id.name;
       if (node.async) (fnType as any)._async = true;
+      (fnType as any)._hasArguments = true;
       tagFnModule(fnType);
       return fnType;
     }
@@ -4553,6 +4555,12 @@ function bindFunctionParams(
         callEnv.bind(paramName, argVal);
       }
     }
+  }
+  // 非箭头函数的 arguments 对象：tuple(实参) —— length/索引/迭代/展开
+  // 经由既有 tuple 机制直接可用。箭头函数不绑（词法作用域回退外层，
+  // 真实 JS 语义）；_hasArguments 在函数值创建位点按节点类型标记。
+  if ((fn as any)._hasArguments) {
+    callEnv.bind("arguments", T.tuple(args));
   }
 }
 

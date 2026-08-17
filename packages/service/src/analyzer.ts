@@ -1276,7 +1276,20 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       ].filter((r) => !(r.resultType.kind === "never" && r.throws.kind === "never")),
     );
     if (records.length > 0) {
-      const precise = records.slice(0, MAX_PRECISE_CALLSITE_CASES);
+      // 案例选择偏好：结果有信息量的记录优先（精确/字面量/结构化），
+      // unknown 结果的排后——收集顺序里错误路径或 undefined 形态的测试
+      // 常排在前面，slice 截断会把 concrete-precise 记录挤掉（hoek clone
+      // 的 682 条记录曾由 3 条 undefined 形态占满前 3 席）。
+      const informativeness = (r: CallRecord): number => {
+        if (r.resultType.kind === "unknown") return 2;
+        if (r.resultType.kind === "never") return 1;
+        return 0;
+      };
+      const ordered = records
+        .map((r, i) => ({ r, i }))
+        .sort((a, b) => informativeness(a.r) - informativeness(b.r) || a.i - b.i)
+        .map(({ r }) => r);
+      const precise = ordered.slice(0, MAX_PRECISE_CALLSITE_CASES);
       for (const rec of precise) {
         candidate.analysis.cases.push({
           name: `call@L${rec.callLoc?.line ?? candidate.analysis.loc.start.line}`,
@@ -1286,7 +1299,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           source: "callsite",
         });
       }
-      const remaining = records.slice(MAX_PRECISE_CALLSITE_CASES);
+      const remaining = ordered.slice(MAX_PRECISE_CALLSITE_CASES);
       if (remaining.length > 0) {
         const fnNode = resolveFunctionNode(candidate.node);
         const paramCount = extractParamNames(fnNode).length;
