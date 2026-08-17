@@ -68,6 +68,35 @@ function toJson(obj) {
     expect(results[0].result).toBe("string");
   });
 
+  it("JSON.parse(literal string) decodes the literal's exact structure", () => {
+    const results = runTest(`
+// @nudo:case "fixture" ()
+function parseFixture() {
+  return JSON.parse('{"a":1,"b":[2,"x"]}');
+}
+// @nudo:case "scalars" ()
+function parseScalars() {
+  return JSON.parse('{"n":null,"t":true,"s":"x"}');
+}
+`);
+    console.log("JSON.parse literal results:", results.map((r) => r.result));
+    expect(results[0].result).toBe('{ a: 1, b: [2, "x"] }');
+    expect(results[1].result).toBe('{ n: null, t: true, s: "x" }');
+  });
+
+  it("JSON.parse degrades to unknown for non-literal, invalid, or reviver calls", () => {
+    const results = runTest(`
+// @nudo:case "invalid" ('not json')
+// @nudo:case "symbolic" (T.string)
+// @nudo:case "reviver" ('{"a":1}', T.unknown)
+function parseArg(text, rev) {
+  return JSON.parse(text, rev);
+}
+`);
+    console.log("JSON.parse degradation results:", results.map((r) => r.result));
+    expect(results.map((r) => r.result)).toEqual(["unknown", "unknown", "unknown"]);
+  });
+
   it("Object.keys() should return string[]", () => {
     const results = runTest(`
 // @nudo:case "keys" ({a: 1, b: 2})

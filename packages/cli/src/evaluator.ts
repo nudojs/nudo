@@ -76,7 +76,25 @@ const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue> | TypeVal
     pow: T.fn(["base", "exp"], { type: "BlockStatement", body: [] } as any, undefined as any),
   },
   JSON: {
-    parse: T.unknown,
+    // JSON.parse(literal-string): evaluate with the real JSON.parse and
+    // re-encode through jsonToTypeValue, so fixture-style calls
+    // (`JSON.parse('{"a":1}')`) keep literal-level precision instead of
+    // poisoning downstream clone/deepEqual args with unknown. Degrades to
+    // the unknown fallback when the argument is not a literal string or
+    // the text is not valid JSON. A reviver argument also degrades: it can
+    // replace every value (and the root) with an arbitrary one, so the
+    // parse structure is not a sound answer (hoek/json-ext never pass one).
+    parse: T.fnSig([T.string], T.unknown, T.never, (args) => {
+      const text = args[0];
+      if (text?.kind !== "literal" || typeof text.value !== "string") return undefined;
+      const reviver = args[1];
+      if (reviver && !(reviver.kind === "literal" && reviver.value === undefined)) return undefined;
+      try {
+        return jsonToTypeValue(JSON.parse(text.value));
+      } catch {
+        return undefined;
+      }
+    }),
     stringify: T.string,
   },
   Object: {
@@ -3137,9 +3155,16 @@ function evaluateMethodCall(
   if (callee.object.type === "Identifier" && callee.object.name === "JSON" && !env.has("JSON")) {
     const argVals = evaluateArgs(args, env);
     if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
-    // JSON.parse returns any
+    // JSON.parse: the table entry is a fnSig whose impl decodes literal
+    // string arguments precisely (jsonToTypeValue); non-literal / invalid /
+    // reviver-bearing calls fall back to its unknown return type.
     if (methodName === "parse") {
-      return T.unknown;
+      return callFunction(
+        (BUILTIN_STATIC_METHODS.JSON as Record<string, TypeValue>).parse as TypeValue & {
+          kind: "function";
+        },
+        argVals as TypeValue[],
+      );
     }
     // JSON.stringify returns string
     if (methodName === "stringify") {
@@ -4280,7 +4305,18 @@ function jsonToTypeValue(v: unknown): TypeValue {
   if (Array.isArray(v)) return T.tuple(v.map(jsonToTypeValue));
   if (typeof v === "object") {
     const props: Record<string, TypeValue> = {};
-    for (const [k, val] of Object.entries(v)) props[k] = jsonToTypeValue(val);
+    for (const [k, val] of Object.entries(v)) {
+      // Define-as-own: plain assignment would let a "__proto__" key trip
+      // the setter on the props record (dropping it and corrupting the
+      // record's prototype) — JSON.parse creates an own property, and
+      // hoek's prototype-poisoning fixtures exercise exactly that key.
+      Object.defineProperty(props, k, {
+        value: jsonToTypeValue(val),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
     return T.object(props);
   }
   return T.unknown;
