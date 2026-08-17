@@ -3773,6 +3773,31 @@ function evaluateObjectStaticMethod(
     }
     return null;
   }
+  if (obj.kind === "union") {
+    // union 分发：逐成员 keys/values/entries。成员多时逐成员 tuple 的
+    // union 会超预算——keys 恒为 string[]（sound 下界），values/entries
+    // 同理回退宽类型而非 unknown（hoek utils.keys 的 30+ 成员 union 曾
+    // 在无分支路径上退化）。
+    const per = obj.members.map((m) => evaluateObjectStaticMethod(method, m));
+    if (method === "keys" || method === "getOwnPropertyNames") {
+      const literals: TypeValue[] = [];
+      for (const r of per) {
+        if (r?.kind === "tuple") literals.push(...r.elements);
+        else return T.array(T.string);
+      }
+      if (literals.length > 64) return T.array(T.string);
+      return T.tuple(literals);
+    }
+    if (method === "values") {
+      const vals = per.filter((r) => r && r.kind !== "unknown").flatMap((r) => (r!.kind === "tuple" ? r.elements : [r!]));
+      if (per.some((r) => !r || r.kind === "unknown") || vals.length > 64) return T.array(T.unknown);
+      return T.tuple(vals);
+    }
+    if (method === "entries") {
+      return T.array(T.tuple([T.string, T.unknown]));
+    }
+    return null;
+  }
   if (obj.kind === "tuple") {
     if (method === "keys" || method === "getOwnPropertyNames") {
       return T.tuple(obj.elements.map((_, i) => T.literal(String(i))));
