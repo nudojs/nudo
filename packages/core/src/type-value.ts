@@ -343,6 +343,27 @@ export function mergeObjectProperties(
 }
 
 export function typeValueToString(tv: TypeValue): string {
+  // Self-referential structures (x.y = x surviving a clone) would recurse
+  // infinitely: a seen-set renders revisits as an ellipsis token.
+  return typeValueToStringInner(tv, new Set());
+}
+
+function typeValueToStringInner(tv: TypeValue, seen: Set<object>, depth = 0): string {
+  // Path-scoped seen-set: a node renders "…" only while its own expansion
+  // is on the stack (a true cycle); shared singletons (T.number in two
+  // slots) still render in full. A depth cap bounds fixture-scale DAGs
+  // whose repeated shared substructure would otherwise explode the string.
+  if (depth > 48) return "…";
+  const recur = (inner: TypeValue): string => {
+    if (inner && typeof inner === "object") {
+      if (seen.has(inner)) return "…";
+      seen.add(inner);
+      const out = typeValueToStringInner(inner, seen, depth + 1);
+      seen.delete(inner);
+      return out;
+    }
+    return typeValueToStringInner(inner, seen, depth + 1);
+  };
   switch (tv.kind) {
     case "literal": {
       const v = tv.value;
@@ -359,37 +380,37 @@ export function typeValueToString(tv: TypeValue): string {
       const entries = Object.entries(tv.properties);
       if (entries.length === 0) return "{}";
       const inner = entries
-        .map(([k, v]) => `${k}: ${typeValueToString(v)}`)
+        .map(([k, v]) => `${k}: ${recur(v)}`)
         .join(", ");
       return `{ ${inner} }`;
     }
     case "array":
-      return `${typeValueToString(tv.element)}[]`;
+      return `${recur(tv.element)}[]`;
     case "tuple": {
-      const inner = tv.elements.map(typeValueToString).join(", ");
+      const inner = tv.elements.map(recur).join(", ");
       return `[${inner}]`;
     }
     case "function": {
       const sig = getFnSig(tv);
       if (sig) {
-        const params = sig.paramTypes.map((p, i) => `${tv.params[i]}: ${typeValueToString(p)}`).join(", ");
-        return `(${params}) => ${typeValueToString(sig.returnType)}`;
+        const params = sig.paramTypes.map((p, i) => `${tv.params[i]}: ${recur(p)}`).join(", ");
+        return `(${params}) => ${recur(sig.returnType)}`;
       }
       const params = tv.params.join(", ");
       return `(${params}) => ...`;
     }
     case "promise":
-      return `Promise<${typeValueToString(tv.value)}>`;
+      return `Promise<${recur(tv.value)}>`;
     case "instance": {
       const entries = Object.entries(tv.properties);
       if (entries.length === 0) return tv.className;
       const inner = entries
-        .map(([k, v]) => `${k}: ${typeValueToString(v)}`)
+        .map(([k, v]) => `${k}: ${recur(v)}`)
         .join(", ");
       return `${tv.className} { ${inner} }`;
     }
     case "union": {
-      return tv.members.map(typeValueToString).join(" | ");
+      return tv.members.map(recur).join(" | ");
     }
     case "never":
       return "never";

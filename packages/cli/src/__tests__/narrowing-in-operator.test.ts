@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { T, typeValueToString, createEnvironment } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
 import { narrow } from "../narrowing.ts";
+import { evaluateProgram } from "../evaluator.ts";
 import type { ExpressionStatement } from "@babel/types";
 
 function getTestExpr(source: string) {
@@ -29,5 +30,27 @@ describe("narrow: in operator", () => {
     const [trueEnv, falseEnv] = narrow(expr, env);
     expect(typeValueToString(trueEnv.lookup("obj"))).toBe("{ foo: string }");
     expect(typeValueToString(falseEnv.lookup("obj"))).toBe("{ foo: string }");
+  });
+
+  it("evaluates Symbol.iterator in iterable receiver to true", () => {
+    const env = createEnvironment();
+    evaluateProgram(parse("const r = (Symbol.iterator in [1, 2]);").program, env);
+    expect(typeValueToString(env.lookup("r"))).toBe("true");
+  });
+
+  it("evaluates Symbol.iterator in plain object to false", () => {
+    const env = createEnvironment();
+    evaluateProgram(parse("const o = { a: 1 }; const r = (Symbol.iterator in o);").program, env);
+    expect(typeValueToString(env.lookup("r"))).toBe("false");
+  });
+
+  it("distributes Symbol.iterator in over unions", () => {
+    const env = createEnvironment();
+    evaluateProgram(
+      parse("const flag = JSON.parse('x'); const x = flag ? [1] : 5; const r = (Symbol.iterator in x);").program,
+      env,
+    );
+    expect(typeValueToString(env.lookup("x"))).toBe("[1] | 5");
+    expect(typeValueToString(env.lookup("r"))).toBe("true | false");
   });
 });

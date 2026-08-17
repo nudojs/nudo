@@ -109,4 +109,21 @@ function fn() {
 `);
     expect(results[0].result).toBe("true");
   });
+
+  it("for-of on a Map instance iterates [key, value] tuples", () => {
+    const results = runTest(`
+// @nudo:case "forof-entries" ()
+function fn() {
+  const m = new Map([['a', 1], ['b', 2]]);
+  const keys = [];
+  const values = [];
+  for (const [k, v] of m) {
+    keys.push(k);
+    values.push(v);
+  }
+  return [keys, values];
+}
+`);
+    expect(results[0].result).toBe('[["a", "b"], [1, 2]]');
+  });
 });

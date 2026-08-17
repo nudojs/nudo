@@ -559,27 +559,46 @@ function findSingleModuleExportsFunction(ast: Node): Node | null {
 }
 
 function typeStructureKey(tv: TypeValue): string {
+  // Self-referential structures (x.y = x surviving a clone) would recurse
+  // infinitely: a seen-set renders revisits as a cycle token.
+  return typeStructureKeyUncached(tv, new Set());
+}
+
+function typeStructureKeyUncached(tv: TypeValue, seen: Set<object>): string {
+  // Path-scoped seen-set (backtracked after each expansion): a node renders
+  // as a cycle token only while its own expansion is on the stack, so
+  // shared singletons keep their full key.
+  const enter = (inner: TypeValue): string => {
+    if (inner && typeof inner === "object") {
+      if (seen.has(inner)) return "«cycle»";
+      seen.add(inner);
+      const out = typeStructureKeyUncached(inner, seen);
+      seen.delete(inner);
+      return out;
+    }
+    return typeStructureKeyUncached(inner, seen);
+  };
   switch (tv.kind) {
     case "literal":
       return `lit(${typeof tv.value}:${String(tv.value)})`;
     case "primitive":
       return `prim(${tv.type})`;
     case "array":
-      return `arr(${typeStructureKey(tv.element)})`;
+      return `arr(${enter(tv.element)})`;
     case "tuple":
-      return `tup(${tv.elements.map(typeStructureKey).join(",")})`;
+      return `tup(${tv.elements.map(enter).join(",")})`;
     case "object":
-      return `obj(${Object.keys(tv.properties).sort().map((k) => `${k}:${typeStructureKey(tv.properties[k])}`).join(",")})`;
+      return `obj(${Object.keys(tv.properties).sort().map((k) => `${k}:${enter(tv.properties[k])}`).join(",")})`;
     case "function":
       return `fn(${tv.params.join(",")})`;
     case "promise":
-      return `prom(${typeStructureKey(tv.value)})`;
+      return `prom(${enter(tv.value)})`;
     case "instance":
       return `inst(${tv.className})`;
     case "refined":
-      return `ref(${typeStructureKey(tv.base)})`;
+      return `ref(${enter(tv.base)})`;
     case "union":
-      return `uni(${tv.members.map(typeStructureKey).sort().join("|")})`;
+      return `uni(${tv.members.map(enter).sort().join("|")})`;
     default:
       return tv.kind;
   }

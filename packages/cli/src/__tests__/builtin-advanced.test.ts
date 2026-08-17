@@ -112,14 +112,22 @@ function fn() {
     expect(results[0].result).toBe("boolean");
   });
 
-  it("Reflect.ownKeys(obj) should return string[]", () => {
+  it("Reflect.ownKeys(obj) should list known own keys, string[] otherwise", () => {
     const results = runTest(`
 // @nudo:case "ownKeys" ()
 function fn() {
   return Reflect.ownKeys({ a: 1, b: 2 });
 }
 `);
-    expect(results[0].result).toBe("string[]");
+    expect(results[0].result).toBe('["a", "b"]');
+
+    const symbolic = runTest(`
+// @nudo:case "ownKeys-symbolic" (obj)
+function fn(obj) {
+  return Reflect.ownKeys(obj);
+}
+`);
+    expect(symbolic[0].result).toBe("string[]");
   });
 
   it("Reflect.getPrototypeOf(obj) should return {} | null", () => {

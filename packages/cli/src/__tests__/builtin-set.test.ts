@@ -118,4 +118,46 @@ function fn() {
 `);
     expect(results[0].result).toBe("false");
   });
+
+  it("for-of on a Set instance iterates its recorded values", () => {
+    const results = runTest(`
+// @nudo:case "forof-values" ()
+function fn() {
+  const s = new Set([1, 2]);
+  const out = [];
+  for (const v of s) {
+    out.push(v);
+  }
+  return out;
+}
+`);
+    expect(results[0].result).toBe("[1, 2]");
+  });
+
+  it("Set.prototype.values.call(s) iterates like s.values()", () => {
+    const results = runTest(`
+// @nudo:case "proto-values-call" ()
+function fn() {
+  const s = new Set([1, 2]);
+  const out = [];
+  for (const v of Set.prototype.values.call(s)) {
+    out.push(v);
+  }
+  return out;
+}
+`);
+    expect(results[0].result).toBe("[1, 2]");
+  });
+
+  it("Set.delete() decides literally against recorded values and size stays number", () => {
+    const results = runTest(`
+// @nudo:case "delete-literal" ()
+function fn() {
+  const s = new Set([1, 2, 3]);
+  const hit = s.delete(2);
+  return [hit, s.size];
+}
+`);
+    expect(results[0].result).toBe("[true, number]");
+  });
 });

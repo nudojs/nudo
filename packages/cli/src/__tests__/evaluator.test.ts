@@ -200,6 +200,40 @@ describe("Evaluator: basic expressions", () => {
     expect(typeValueEquals(result, T.literal(10))).toBe(true);
   });
 
+  it("resolves Array.prototype.constructor === Array literally", () => {
+    const ast = parse(`
+      const proto = Object.getPrototypeOf([1]);
+      const ctor = proto.constructor;
+      ctor === Array;
+    `);
+    const env = createEnvironment();
+    const result = evaluateProgram(ast, env);
+    expect(typeValueEquals(result, T.literal(true))).toBe(true);
+  });
+
+  it("constructs through a reflected constructor: new (proto.constructor)(3) is unknown[]", () => {
+    const ast = parse(`
+      const proto = Object.getPrototypeOf([1]);
+      const C = proto.constructor;
+      const arr = new C(3);
+      arr;
+    `);
+    const env = createEnvironment();
+    const result = evaluateProgram(ast, env);
+    expect(typeValueToString(result)).toBe("unknown[]");
+  });
+
+  it("spreads a Set instance into an array literal element-wise", () => {
+    const ast = parse(`
+      const s = new Set([1, 2]);
+      const spread = [...s];
+      spread;
+    `);
+    const env = createEnvironment();
+    const result = evaluateProgram(ast, env);
+    expect(typeValueToString(result)).toBe("[1, 2]");
+  });
+
   it("evaluates logical operators", () => {
     const ast = parse("true && 42");
     const env = createEnvironment();

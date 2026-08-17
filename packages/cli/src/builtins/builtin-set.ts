@@ -27,40 +27,81 @@ export const SET_INSTANCE_METHODS: Record<string, (...args: TypeValue[]) => Type
         T: typeArgs.T.kind === "unknown" ? value : simplifyUnion([typeArgs.T, value]),
       };
       if (valueTrackable(value)) {
-        const values = ((set as any)._values as TypeValue[] | undefined) ?? ((set as any)._values = []);
-        if (!values.some((v) => typeValueEquals(v, value))) values.push(value);
+        // An exact list can start on the first trackable add (nothing
+        // untracked came before); once partial it stays partial.
+        if ((set as any)._values === undefined && (set as any)._valuesExact !== false) {
+          (set as any)._values = [];
+          (set as any)._valuesExact = true;
+        }
+        if ((set as any)._valuesExact) {
+          const values = (set as any)._values as TypeValue[];
+          if (!values.some((v) => typeValueEquals(v, value))) values.push(value);
+        }
+      } else {
+        (set as any)._valuesExact = false;
       }
     }
     return set ?? T.unknown;
   },
   has: (value: TypeValue, set?: TypeValue) => {
-    const values = (set as any)?._values as TypeValue[] | undefined;
+    const values = exactSetValues(set);
     if (values) {
       const looked = lookupValues(values, value);
       if (looked !== null) return T.literal(looked);
     }
     return T.boolean;
   },
-  delete: () => T.boolean,
-  clear: () => T.undefined,
+  delete: (value: TypeValue, set?: TypeValue) => {
+    const values = exactSetValues(set);
+    if (values && valueTrackable(value)) {
+      const idx = values.findIndex((v) => typeValueEquals(v, value));
+      if (idx >= 0) {
+        values.splice(idx, 1);
+        return T.literal(true);
+      }
+      return T.literal(false);
+    }
+    return T.boolean;
+  },
+  clear: (value?: TypeValue, set?: TypeValue) => {
+    // s.clear() arrives as clear(receiver): the set sits in the first
+    // param slot when the call has no arguments.
+    const target = set ?? value;
+    if (target && (target as any)._valuesExact) {
+      (target as any)._values = [];
+    }
+    return T.undefined;
+  },
   forEach: () => T.undefined,
-  values: (set?: TypeValue) => {
-    const typeArgs = (set as any)?._typeArgs;
-    if (typeArgs?.T) return T.array(typeArgs.T);
-    return T.array(T.unknown);
-  },
-  keys: (set?: TypeValue) => {
-    // For Set, keys() is the same as values()
-    const typeArgs = (set as any)?._typeArgs;
-    if (typeArgs?.T) return T.array(typeArgs.T);
-    return T.array(T.unknown);
-  },
+  values: (set?: TypeValue) => setValuesIterable(set),
+  // For Set, keys() is the same as values()
+  keys: (set?: TypeValue) => setValuesIterable(set),
   entries: (set?: TypeValue) => {
+    const values = exactSetValues(set);
+    if (values) return T.tuple(values.map((v) => T.tuple([v, v])));
     const typeArgs = (set as any)?._typeArgs;
     if (typeArgs?.T) return T.array(T.tuple([typeArgs.T, typeArgs.T]));
     return T.array(T.tuple([T.unknown, T.unknown]));
   },
 };
+
+// Exact membership side table: present only when every member seen so far
+// (construction elements + adds) was trackable. Partial tables must not
+// decide has()/delete()/iteration — an untracked member could be anything.
+export function exactSetValues(set: TypeValue | undefined): TypeValue[] | undefined {
+  if (!set || (set as any)._valuesExact !== true) return undefined;
+  return (set as any)._values as TypeValue[] | undefined;
+}
+
+// values()/keys() keep feeding `new Set(...)`-style consumers: a tuple of
+// the exact members when the side table is complete, else array<T>.
+export function setValuesIterable(set: TypeValue | undefined): TypeValue {
+  const values = exactSetValues(set);
+  if (values) return T.tuple([...values]);
+  const typeArgs = (set as any)?._typeArgs;
+  if (typeArgs?.T) return T.array(typeArgs.T);
+  return T.array(T.unknown);
+}
 
 export function createSetType(args?: TypeValue[]): TypeValue {
   const obj = T.instanceOf("Set", {});
@@ -70,9 +111,14 @@ export function createSetType(args?: TypeValue[]): TypeValue {
     if (arg.kind === "tuple" || arg.kind === "array") {
       const elements = arg.kind === "tuple" ? arg.elements : [arg.element];
       (obj as any)._typeArgs = { T: simplifyUnion(elements) };
-      const values = elements.filter(valueTrackable);
-      if (values.length > 0) {
-        (obj as any)._values = values;
+      // Only a fully trackable element list is exact: symbolic elements
+      // mean the recorded values are a subset of the real membership.
+      const exact = elements.every(valueTrackable);
+      if (exact && elements.length > 0) {
+        (obj as any)._values = elements;
+        (obj as any)._valuesExact = true;
+      } else if (!exact) {
+        (obj as any)._valuesExact = false;
       }
     }
   }

@@ -23,8 +23,8 @@ import {
 import { extractInlineDirectives, type InlineDirective } from "@nudojs/parser";
 import { narrow } from "./narrowing.ts";
 import { PROMISE_STATIC_METHODS, evaluatePromiseStaticMethod, evaluatePromiseInstanceMethod } from "./builtins/builtin-promise.ts";
-import { MAP_INSTANCE_METHODS, createMapType } from "./builtins/builtin-map.ts";
-import { SET_INSTANCE_METHODS, createSetType } from "./builtins/builtin-set.ts";
+import { MAP_INSTANCE_METHODS, createMapType, mapEntriesIterable, exactMapEntries } from "./builtins/builtin-map.ts";
+import { SET_INSTANCE_METHODS, createSetType, setValuesIterable, exactSetValues } from "./builtins/builtin-set.ts";
 import { REGEXP_INSTANCE_METHODS, createRegExpType } from "./builtins/builtin-regexp.ts";
 import { URL_INSTANCE_METHODS, URLSearchParams_INSTANCE_METHODS, createURLType, createURLSearchParamsType } from "./builtins/builtin-url.ts";
 import {
@@ -235,26 +235,30 @@ const BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS: Record<string, Record<string, Typ
     toString: T.fnSig([], T.string),
   },
   Map: {
-    get: T.fnSig([T.unknown], T.unknown),
-    set: T.fnSig([T.unknown, T.unknown], T.unknown),
-    has: T.fnSig([T.unknown], T.boolean),
-    delete: T.fnSig([T.unknown], T.boolean),
-    clear: T.fnSig([], T.undefined),
+    // Impl-routed: `Map.prototype.m.call(instance)` (and direct prototype
+    // calls) consult the receiver's exact entry side table, making the
+    // hoek deepEqual reflection idioms decide literally.
+    get: T.fnSig([T.unknown], T.unknown, T.never, (args, thisVal) => MAP_INSTANCE_METHODS.get(args[0] ?? T.unknown, thisVal ?? T.unknown)),
+    set: T.fnSig([T.unknown, T.unknown], T.unknown, T.never, (args, thisVal) => MAP_INSTANCE_METHODS.set(args[0] ?? T.unknown, args[1] ?? T.unknown, thisVal ?? T.unknown)),
+    has: T.fnSig([T.unknown], T.boolean, T.never, (args, thisVal) => MAP_INSTANCE_METHODS.has(args[0] ?? T.unknown, thisVal ?? T.unknown)),
+    delete: T.fnSig([T.unknown], T.boolean, T.never, (args, thisVal) => MAP_INSTANCE_METHODS.delete(args[0] ?? T.unknown, thisVal ?? T.unknown)),
+    clear: T.fnSig([], T.undefined, T.never, (args, thisVal) => MAP_INSTANCE_METHODS.clear(args[0] ?? T.unknown, thisVal ?? T.unknown)),
     forEach: T.fnSig([T.unknown], T.undefined),
-    keys: T.fnSig([], T.array(T.unknown)),
-    values: T.fnSig([], T.array(T.unknown)),
-    entries: T.fnSig([], T.array(T.tuple([T.unknown, T.unknown]))),
+    keys: T.fnSig([], T.array(T.unknown), T.never, (_args, thisVal) => MAP_INSTANCE_METHODS.keys(thisVal ?? T.unknown)),
+    values: T.fnSig([], T.array(T.unknown), T.never, (_args, thisVal) => MAP_INSTANCE_METHODS.values(thisVal ?? T.unknown)),
+    entries: T.fnSig([], T.array(T.tuple([T.unknown, T.unknown])), T.never, (_args, thisVal) => mapEntriesIterable(thisVal ?? T.unknown)),
     toString: T.fnSig([], T.string),
   },
   Set: {
-    add: T.fnSig([T.unknown], T.unknown),
-    has: T.fnSig([T.unknown], T.boolean),
-    delete: T.fnSig([T.unknown], T.boolean),
-    clear: T.fnSig([], T.undefined),
+    // Impl-routed like Map above (Set.prototype.values.call(s) ≡ s.values()).
+    add: T.fnSig([T.unknown], T.unknown, T.never, (args, thisVal) => SET_INSTANCE_METHODS.add(args[0] ?? T.unknown, thisVal ?? T.unknown)),
+    has: T.fnSig([T.unknown], T.boolean, T.never, (args, thisVal) => SET_INSTANCE_METHODS.has(args[0] ?? T.unknown, thisVal ?? T.unknown)),
+    delete: T.fnSig([T.unknown], T.boolean, T.never, (args, thisVal) => SET_INSTANCE_METHODS.delete(args[0] ?? T.unknown, thisVal ?? T.unknown)),
+    clear: T.fnSig([], T.undefined, T.never, (args, thisVal) => SET_INSTANCE_METHODS.clear(args[0] ?? T.unknown, thisVal ?? T.unknown)),
     forEach: T.fnSig([T.unknown], T.undefined),
-    keys: T.fnSig([], T.array(T.unknown)),
-    values: T.fnSig([], T.array(T.unknown)),
-    entries: T.fnSig([], T.array(T.tuple([T.unknown, T.unknown]))),
+    keys: T.fnSig([], T.array(T.unknown), T.never, (_args, thisVal) => SET_INSTANCE_METHODS.keys(thisVal ?? T.unknown)),
+    values: T.fnSig([], T.array(T.unknown), T.never, (_args, thisVal) => SET_INSTANCE_METHODS.values(thisVal ?? T.unknown)),
+    entries: T.fnSig([], T.array(T.tuple([T.unknown, T.unknown])), T.never, (_args, thisVal) => SET_INSTANCE_METHODS.entries(thisVal ?? T.unknown)),
     toString: T.fnSig([], T.string),
   },
   WeakMap: {
@@ -578,6 +582,184 @@ function builtinProtoIdentityEq(l: TypeValue, r: TypeValue): boolean | null {
   if (allEq) return true;
   if (!anyEq) return false;
   return null;
+}
+
+// Strict equality over builtin class namespaces (`x.constructor === Array`
+// where both sides are memoized builtinClassValue objects): definite
+// true/false by class name. null means "not decidable here" — the generic
+// boolean fallback applies.
+function builtinClassIdentityEq(l: TypeValue, r: TypeValue): boolean | null {
+  const ls = l.kind === "union" ? l.members : [l];
+  const rs = r.kind === "union" ? r.members : [r];
+  const nameOf = (v: TypeValue): string | null =>
+    v.kind === "object" && typeof (v as any)._builtinName === "string" ? (v as any)._builtinName : null;
+  const lNames = ls.map(nameOf);
+  const rNames = rs.map(nameOf);
+  if (!lNames.some(Boolean) && !rNames.some(Boolean)) return null;
+  if (lNames.some((n) => n === null) || rNames.some((n) => n === null)) return null;
+  let allEq = true;
+  let anyEq = false;
+  for (const ln of lNames) {
+    for (const rn of rNames) {
+      const eq = ln === rn;
+      allEq = allEq && eq;
+      anyEq = anyEq || eq;
+    }
+  }
+  if (allEq) return true;
+  if (!anyEq) return false;
+  return null;
+}
+
+// Well-known symbols (Symbol.iterator, Symbol.asyncIterator, ...) as
+// marked symbol primitives: plain T.symbol cannot name which symbol it
+// is, but `Symbol.iterator in x` keys on exactly that identity.
+const _wellKnownSymbols = new Map<string, TypeValue>();
+function wellKnownSymbol(name: string): TypeValue {
+  let v = _wellKnownSymbols.get(name);
+  if (v === undefined) {
+    v = { ...(T.symbol as unknown as object), _symbolName: name } as unknown as TypeValue;
+    _wellKnownSymbols.set(name, v);
+  }
+  return v;
+}
+
+function wellKnownSymbolName(v: TypeValue): string | undefined {
+  let base = v;
+  while (base.kind === "refined") base = base.base;
+  if (base.kind === "primitive" && base.type === "symbol") {
+    return (base as any)._symbolName as string | undefined;
+  }
+  return undefined;
+}
+
+// `Symbol.iterator in receiver` iterability by receiver kind: true/false
+// for statically-known receivers, undefined = uncertain (unknown class
+// instances could define the protocol themselves).
+function iteratorInReceiver(v: TypeValue): boolean | undefined {
+  switch (v.kind) {
+    case "array":
+    case "tuple":
+      return true;
+    case "instance":
+      if (v.className === "Set" || v.className === "Map" || v.className === "Buffer") return true;
+      if (BUILTIN_PROTOTYPE_CLASSES.has(v.className)) return false;
+      return undefined;
+    case "literal":
+      return typeof v.value === "string" ? true : false;
+    case "primitive":
+      return v.type === "string" ? true : false;
+    case "object":
+    case "promise":
+    case "function":
+      return false;
+    default:
+      return undefined;
+  }
+}
+
+// `key in obj` literal decisions for non-union operands:
+// - Well-known symbols decide iterability (Symbol.iterator on
+//   arrays/sets/maps/strings → true, plain values → false, unknown-class
+//   instances → boolean).
+// - String keys decide against the declared shape (own properties plus
+//   inherited Object.prototype/builtin-prototype members); a definite
+//   miss is false.
+// - Symbolic keys or uncertain receivers degrade to boolean; unknown
+//   receivers stay unknown.
+function evaluateInMember(key: TypeValue, container: TypeValue): TypeValue {
+  let k = key;
+  while (k.kind === "refined") k = k.base;
+  let c = container;
+  while (c.kind === "refined") c = c.base;
+
+  if (c.kind === "unknown") return T.unknown;
+
+  const symName = wellKnownSymbolName(k);
+  if (symName !== undefined) {
+    if (symName === "iterator") {
+      const iter = iteratorInReceiver(c);
+      return iter === undefined ? T.boolean : T.literal(iter);
+    }
+    // Other well-known symbols (asyncIterator, toStringTag, ...): none of
+    // the statically-known receivers carry them; unknown-class instances
+    // stay symbolic.
+    if (c.kind === "instance" && !BUILTIN_PROTOTYPE_CLASSES.has(c.className)) return T.boolean;
+    return T.literal(false);
+  }
+
+  const strKey = k.kind === "literal" && typeof k.value === "string" ? k.value : undefined;
+  if (strKey === undefined) {
+    // Symbolic key (string, or a symbol without a name): object-ish
+    // receivers still promise a definite boolean; primitives/nullish
+    // cannot hold any property.
+    switch (c.kind) {
+      case "object":
+      case "instance":
+      case "promise":
+      case "function":
+      case "array":
+      case "tuple":
+        return T.boolean;
+      case "literal":
+      case "primitive":
+        return T.literal(false);
+      default:
+        return T.unknown;
+    }
+  }
+
+  const isArrayIndex = (s: string) => /^\d+$/.test(s);
+  switch (c.kind) {
+    case "object":
+      return T.literal(hasOwnProp(c.properties, strKey) || hasOwnProp(OBJECT_PROTOTYPE_METHODS, strKey));
+    case "tuple":
+      if (strKey === "length") return T.literal(true);
+      if (isArrayIndex(strKey)) return T.literal(Number(strKey) < c.elements.length);
+      return T.literal(
+        hasOwnProp(OBJECT_PROTOTYPE_METHODS, strKey) ||
+        hasOwnProp(BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS.Array, strKey),
+      );
+    case "array":
+      return T.literal(
+        strKey === "length" ||
+        isArrayIndex(strKey) ||
+        hasOwnProp(OBJECT_PROTOTYPE_METHODS, strKey) ||
+        hasOwnProp(BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS.Array, strKey),
+      );
+    case "instance": {
+      if (hasOwnProp(c.properties, strKey)) return T.literal(true);
+      if (hasOwnProp(OBJECT_PROTOTYPE_METHODS, strKey)) return T.literal(true);
+      // hasOwnProp guard: plain [] access on the class key would leak
+      // native Object.prototype members.
+      const approx = hasOwnProp(BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS, c.className)
+        ? BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS[c.className]
+        : undefined;
+      if (approx && hasOwnProp(approx, strKey)) return T.literal(true);
+      if ((c.className === "Set" || c.className === "Map") && strKey === "size") return T.literal(true);
+      return T.literal(false);
+    }
+    case "function":
+      return T.literal(
+        strKey === "prototype" || strKey === "name" || strKey === "length" ||
+        strKey === "call" || strKey === "apply" || strKey === "bind" || strKey === "toString",
+      );
+    case "promise":
+      return T.literal(
+        strKey === "then" || strKey === "catch" || strKey === "finally" ||
+        hasOwnProp(OBJECT_PROTOTYPE_METHODS, strKey),
+      );
+    case "literal":
+      if (typeof c.value === "string") {
+        return T.literal(strKey === "length" || (isArrayIndex(strKey) && Number(strKey) < c.value.length));
+      }
+      return T.literal(false);
+    case "primitive":
+      if (c.type === "string") return T.literal(strKey === "length" || isArrayIndex(strKey));
+      return T.literal(false);
+    default:
+      return T.boolean;
+  }
 }
 
 type SourceRange = { start: { line: number; column: number }; end: { line: number; column: number } };
@@ -1399,6 +1581,12 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       if (node.operator === "instanceof") {
         return evaluateInstanceof(leftVal, rightVal, node.right, env);
       }
+      if (node.operator === "in") {
+        // Literal `key in obj` / `Symbol.iterator in x` decisions; unions
+        // on either side distribute (mixed literals collapse per
+        // simplifyUnion), unknown receivers stay unknown.
+        return distributeBinaryOverUnion(leftVal, rightVal, (l, r) => evaluateInMember(l, r));
+      }
       if (node.operator === "===" || node.operator === "!==") {
         // Prototype-singleton identity (`baseProto === Types.buffer`): the
         // generic Op only literal-compares, so same-class instance pairs
@@ -1407,6 +1595,12 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         const identity = builtinProtoIdentityEq(leftVal, rightVal);
         if (identity !== null) {
           return T.literal(node.operator === "===" ? identity : !identity);
+        }
+        // Class-namespace identity (`x.constructor === Array`): memoized
+        // builtinClassValue objects compare by class name.
+        const classIdentity = builtinClassIdentityEq(leftVal, rightVal);
+        if (classIdentity !== null) {
+          return T.literal(node.operator === "===" ? classIdentity : !classIdentity);
         }
       }
       return distributeBinaryOverUnion(leftVal, rightVal, (l, r) =>
@@ -1984,6 +2178,11 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             // hasOwnProp guard: `in` would leak native Object.prototype
             // members (e.g. `JSON.toString` → the real JS function).
             if (typeof builtin === "object" && hasOwnProp(builtin, propName)) {
+              // Well-known symbols get named copies so `Symbol.iterator
+              // in x` can decide iterability.
+              if (builtinName === "Symbol" && hasOwnProp(SYMBOL_STATIC_PROPS, propName)) {
+                return wellKnownSymbol(propName);
+              }
               return (builtin as Record<string, TypeValue>)[propName];
             }
           }
@@ -2023,6 +2222,11 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
               ? OBJECT_PROTOTYPE_METHODS[propName]
               : undefined;
             if (protoFn) return bindObjectProtoMethod(protoFn, obj);
+            // `x.constructor` resolves to the class namespace: instances
+            // and prototype singletons share the memoized builtinClassValue
+            // (Array.prototype.constructor === Array), so reflection like
+            // `new (Object.getPrototypeOf(x).constructor)(n)` keeps going.
+            if (propName === "constructor") return builtinClassValue(obj.className);
             // instance 的方法集是声明的近似：未列出的方法返回 unknown-result
             // 函数值，让 `X.prototype.m.call(...)` 反射惯用法继续求值。
             const knownInstanceMethods: Record<string, TypeValue> = {
@@ -2078,6 +2282,18 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           }
           // Primitive receivers auto-box through their wrapper prototype
           // ('x'.constructor === String): consult it before reporting a miss.
+          // A wrapper miss on a wrapper-able primitive (string/number/
+          // boolean/symbol) is definite absence — undefined, not unknown —
+          // so `if (value.toJSON)` feature probes resolve their false
+          // branch (mirrors the array treatment above).
+          if (
+            obj.kind === "primitive" ||
+            (obj.kind === "literal" &&
+              (typeof obj.value === "string" || typeof obj.value === "number" || typeof obj.value === "boolean"))
+          ) {
+            const wrapper = wrapperPrototypeMember(obj, propName);
+            return wrapper !== undefined ? wrapper : T.undefined;
+          }
           const wrapper = wrapperPrototypeMember(obj, propName);
           if (wrapper !== undefined) return wrapper;
           if (obj.kind === "refined") {
@@ -2158,6 +2374,11 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
               ? OBJECT_PROTOTYPE_METHODS[propName]
               : undefined;
             if (protoFn) return bindObjectProtoMethod(protoFn, obj);
+            // `x.constructor` resolves to the class namespace: instances
+            // and prototype singletons share the memoized builtinClassValue
+            // (Array.prototype.constructor === Array), so reflection like
+            // `new (Object.getPrototypeOf(x).constructor)(n)` keeps going.
+            if (propName === "constructor") return builtinClassValue(obj.className);
             // instance 的方法集是声明的近似：未列出的方法返回 unknown-result
             // 函数值，让 `X.prototype.m.call(...)` 反射惯用法继续求值。
             const knownInstanceMethods: Record<string, TypeValue> = {
@@ -2213,6 +2434,18 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           }
           // Primitive receivers auto-box through their wrapper prototype
           // ('x'.constructor === String): consult it before reporting a miss.
+          // A wrapper miss on a wrapper-able primitive (string/number/
+          // boolean/symbol) is definite absence — undefined, not unknown —
+          // so `if (value.toJSON)` feature probes resolve their false
+          // branch (mirrors the array treatment above).
+          if (
+            obj.kind === "primitive" ||
+            (obj.kind === "literal" &&
+              (typeof obj.value === "string" || typeof obj.value === "number" || typeof obj.value === "boolean"))
+          ) {
+            const wrapper = wrapperPrototypeMember(obj, propName);
+            return wrapper !== undefined ? wrapper : T.undefined;
+          }
           const wrapper = wrapperPrototypeMember(obj, propName);
           if (wrapper !== undefined) return wrapper;
           if (obj.kind === "refined") {
@@ -2317,7 +2550,20 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           } else if (spreadVal.kind === "array") {
             return T.array(simplifyUnion([...elements, spreadVal.element]));
           } else {
-            elements.push(T.unknown);
+            // Set/Map instances spread through their exact side tables
+            // (`[...new Set([1,2])]` → [1, 2]) or their element typeArgs.
+            const iterable = iterableSpreadValue(spreadVal);
+            if (iterable) {
+              if (iterable.kind === "tuple") {
+                elements.push(...iterable.elements);
+              } else if (iterable.kind === "array") {
+                return T.array(simplifyUnion([...elements, iterable.element]));
+              } else {
+                elements.push(T.unknown);
+              }
+            } else {
+              elements.push(T.unknown);
+            }
           }
           continue;
         }
@@ -2484,7 +2730,20 @@ function evaluateArgs(args: Node[], env: Environment): TypeValue[] | ReturnSigna
       } else if (spreadVal.kind === "array") {
         result.push(spreadVal.element);
       } else {
-        result.push(T.unknown);
+        // Set/Map instances spread through their exact side tables or
+        // their element typeArgs (one element, like the array case).
+        const iterable = iterableSpreadValue(spreadVal);
+        if (iterable) {
+          if (iterable.kind === "tuple") {
+            result.push(...iterable.elements);
+          } else if (iterable.kind === "array") {
+            result.push(iterable.element);
+          } else {
+            result.push(T.unknown);
+          }
+        } else {
+          result.push(T.unknown);
+        }
       }
       continue;
     }
@@ -3276,6 +3535,33 @@ function evaluateObjectStaticMethod(
   method: string,
   obj: TypeValue,
 ): TypeValue | null {
+  // Shape-aware receivers list their declared own-property names:
+  // instances carry their properties record (usually empty for fresh
+  // collections), tuples their indices. Key loops (`for (const key of
+  // Object.keys(x))`) then iterate concrete keys instead of symbolic
+  // strings.
+  if (obj.kind === "instance") {
+    if (method === "keys" || method === "getOwnPropertyNames") {
+      return T.tuple(Object.keys(obj.properties).map((k) => T.literal(k)));
+    }
+    if (method === "values") return T.tuple(Object.values(obj.properties));
+    if (method === "entries") {
+      return T.tuple(
+        Object.keys(obj.properties).map((k) => T.tuple([T.literal(k), obj.properties[k]])),
+      );
+    }
+    return null;
+  }
+  if (obj.kind === "tuple") {
+    if (method === "keys" || method === "getOwnPropertyNames") {
+      return T.tuple(obj.elements.map((_, i) => T.literal(String(i))));
+    }
+    if (method === "values") return T.tuple([...obj.elements]);
+    if (method === "entries") {
+      return T.tuple(obj.elements.map((el, i) => T.tuple([T.literal(String(i)), el])));
+    }
+    return null;
+  }
   if (obj.kind !== "object") {
     if (method === "keys") return T.array(T.string);
     if (method === "values") return T.array(T.unknown);
@@ -3296,6 +3582,9 @@ function evaluateObjectStaticMethod(
     return T.tuple(
       keys.map((k) => T.tuple([T.literal(k), obj.properties[k]])),
     );
+  }
+  if (method === "getOwnPropertyNames") {
+    return T.tuple(keys.map((k) => T.literal(k)));
   }
   return null;
 }
@@ -3486,6 +3775,31 @@ function evaluateArrayMethod(
   return null;
 }
 
+// Iterable spread of Set/Map instances: exact side tables spread as
+// tuples ([...new Set([1,2])] → [1, 2]; Maps as [k, v] pairs), otherwise
+// the element typeArgs approximate like an array of that element type.
+// Oversized side tables degrade to the array approximation.
+const MAX_ITERABLE_SPREAD = 1000;
+function iterableSpreadValue(v: TypeValue): TypeValue | undefined {
+  if (v.kind === "instance" && v.className === "Set") {
+    const values = exactSetValues(v);
+    if (values) {
+      return values.length <= MAX_ITERABLE_SPREAD ? T.tuple([...values]) : setValuesIterable(v);
+    }
+    const t = (v as any)._typeArgs?.T;
+    return t && t.kind !== "unknown" ? T.array(t) : undefined;
+  }
+  if (v.kind === "instance" && v.className === "Map") {
+    const entries = exactMapEntries(v);
+    if (entries && entries.length > MAX_ITERABLE_SPREAD) {
+      const ta = (v as any)._typeArgs ?? {};
+      return T.array(T.tuple([ta.K ?? T.unknown, ta.V ?? T.unknown]));
+    }
+    return mapEntriesIterable(v);
+  }
+  return undefined;
+}
+
 function evaluateForOf(
   node: Node & { type: "ForOfStatement" },
   iterable: TypeValue,
@@ -3518,6 +3832,30 @@ function evaluateForOf(
     bindForLoopVar(node.left, iterable.element, loopEnv);
     const result = evaluate(node.body, loopEnv);
     if (isReturn(result)) return makeBranch(result.value, env);
+    return T.undefined;
+  }
+
+  // Set instances iterate their exact value side table (`new Set([1,2])`
+  // yields 1 then 2); no/partial table keeps the body unexecuted.
+  if (iterable.kind === "instance" && iterable.className === "Set") {
+    const values = exactSetValues(iterable);
+    if (values && values.length > 0) {
+      return evaluateForOf(node, T.tuple([...values]), env);
+    }
+    return T.undefined;
+  }
+
+  // Map instances iterate their exact entry side table as [key, value]
+  // tuples (`for (const [k, v] of map)`); same no/partial-table rule.
+  if (iterable.kind === "instance" && iterable.className === "Map") {
+    const entries = exactMapEntries(iterable);
+    if (entries && entries.length > 0) {
+      return evaluateForOf(
+        node,
+        T.tuple(entries.map((e) => T.tuple([e.key, e.value]))),
+        env,
+      );
+    }
     return T.undefined;
   }
 
@@ -4260,6 +4598,28 @@ function evaluateNewExpression(node: Node & { type: "NewExpression" }, env: Envi
 
   const calleeVal = evaluate(callee, env);
   if (isReturn(calleeVal) || isBranch(calleeVal) || isThrow(calleeVal)) return calleeVal;
+
+  // Reflection constructors: `new (X.prototype)()` (hoek clone's
+  // `new Types.set()`) builds a fresh instance of the prototype's class;
+  // collection classes get their side-table-carrying factories.
+  const protoClassName = calleeVal.kind === "instance" ? (calleeVal as any)._builtinProto as string | undefined : undefined;
+  if (protoClassName) {
+    if (protoClassName === "Set") return createSetType();
+    if (protoClassName === "Map") return createMapType();
+    if (protoClassName === "Array") return T.array(T.unknown);
+    return T.instanceOf(protoClassName);
+  }
+
+  // Class-namespace constructors (`new (x.constructor)(n)` where the
+  // constructor is a memoized builtinClassValue): Array approximates to
+  // unknown[], Object to a plain object, everything else to its class
+  // instance.
+  const classNamespace = calleeVal.kind === "object" ? (calleeVal as any)._builtinName as string | undefined : undefined;
+  if (classNamespace) {
+    if (classNamespace === "Array") return T.array(T.unknown);
+    if (classNamespace === "Object") return T.object({});
+    return T.instanceOf(classNamespace);
+  }
 
   if (calleeVal.kind === "function") {
     const argVals = evaluateArgs(node.arguments as Node[], env);
