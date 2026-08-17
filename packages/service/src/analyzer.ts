@@ -20,6 +20,9 @@ import {
   evaluate,
   evaluateFunction,
   evaluateFunctionFull,
+  memberMayExistOn,
+  setUsageSiteTag,
+  USAGE_SITE_MODULE,
   evaluateProgram,
   setModuleResolver,
   setCurrentFileDir,
@@ -835,7 +838,10 @@ function unknownRecordsToDiagnostics(records: UnknownRecord[]): Diagnostic[] {
             m.kind === "tuple" ||
             m.kind === "array" ||
             m.kind === "object" ||
-            m.kind === "refined",
+            m.kind === "refined" ||
+            // wrapper/instance 近似表上可能持有该成员（'x'.charCodeAt 于
+            // number|string：string 侧存在，number 侧缺失 → 不确定 → warning）
+            memberMayExistOn(m, r.name),
         );
       })();
       const kindLabel = r.kind === "method" ? "Method" : "Property";
@@ -966,6 +972,11 @@ export function collectCallRecords(filePath: string, source: string): CallRecord
 const TEST_CALLBACK_NAMES = new Set(["it", "test", "describe"]);
 
 export function analyzeFile(filePath: string, source: string, activeCases?: Map<string, number>, externalCallRecords?: CallRecord[]): AnalysisResult {
+  // 外部实参里的闭包在使用现场文件定义——先打 usage-site 标记再进入任何
+  // 求值（case 合成重求值会执行它们，泄漏的错误记录靠此标记丢弃）。
+  for (const rec of externalCallRecords ?? []) {
+    for (const a of rec.argTypes) setUsageSiteTag(a);
+  }
   const ast = parse(source);
   const functions = extractDirectives(ast);
   const diagnostics: Diagnostic[] = [];
@@ -1301,7 +1312,13 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           source: "callsite",
         });
       }
-      const remaining = ordered.slice(MAX_PRECISE_CALLSITE_CASES);
+      // symbolic 聚合只用全已知实参的记录：含 unknown 分量的记录不可重求值
+      // （unknown 吸收整个 union，一条循环引用 fixture 的记录就能毒化全部
+      // 剩余聚合——clone 704 条中的 53 条 unknown 实参曾拖垮其余 651 条）。
+      // 排除不声明覆盖，sound；全部不可求值时不产 symbolic case（诚实）。
+      const remaining = ordered
+        .slice(MAX_PRECISE_CALLSITE_CASES)
+        .filter((rec) => !rec.argTypes.some((a) => a.kind === "unknown"));
       if (remaining.length > 0) {
         const fnNode = resolveFunctionNode(candidate.node);
         const paramCount = extractParamNames(fnNode).length;
@@ -1355,13 +1372,17 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   resetEnvModules();
   resetMockModules();
 
-  // usage-site 执行泄漏守卫：case 合成重求值会执行注入实参携带的外来
-  // 闭包体（测试回调），其内部错误记录的行号属于使用现场文件——不能
-  // 记在本文件名下（wait.js 曾背着 test/index.js:2407 的 no-method）。
+  // usage-site 执行泄漏守卫：case 合成重求值会执行注入实参携带的使用现场
+  // 闭包体（测试回调），其内部错误记录属于使用现场文件——不能记在本文件
+  // 名下（wait.js 曾背着 test/index.js:2407 的 no-method；json-ext 的
+  // slices.map 行号落在本文件行数内骗过纯行数守卫）。标记在 analyzeFile
+  // 入口处打；行数上限保留兜底（防无标记路径）。
   const maxLine = source.split("\n").length;
   diagnostics.push(
     ...unknownRecordsToDiagnostics(
-      unknownRecords.filter((r) => (r.loc?.line ?? 0) <= maxLine),
+      unknownRecords.filter(
+        (r) => (r.loc?.line ?? 0) <= maxLine && r.originModule !== USAGE_SITE_MODULE,
+      ),
     ),
   );
 

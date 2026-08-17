@@ -22,6 +22,9 @@ export {
   setMockModules,
   resetMockModules,
   setCurrentSource,
+  memberMayExistOn,
+  setUsageSiteTag,
+  USAGE_SITE_MODULE,
 } from "./evaluator.ts";
 
 export { narrow } from "./narrowing.ts";

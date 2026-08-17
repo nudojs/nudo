@@ -258,4 +258,51 @@ function buf(x) {
     console.log("buffer chain result:", results[0].result);
     expect(results[0].result).toBe("{}");
   });
+
+  it("String.fromCharCode/fromCodePoint with all-literal codes return exact string literals", () => {
+    const results = runTest(`
+// @nudo:case "sep" ()
+function lineSep() {
+  return String.fromCharCode(0x2028);
+}
+// @nudo:case "multi" ()
+function pair() {
+  return String.fromCharCode(72, 105);
+}
+// @nudo:case "point" ()
+function fromPoint() {
+  return String.fromCodePoint(65);
+}
+// @nudo:case "empty" ()
+function none() {
+  return String.fromCharCode();
+}
+`);
+    console.log("String static literal results:", results.map((r) => r.result));
+    expect(results.map((r) => r.result)).toEqual([
+      JSON.stringify(String.fromCharCode(0x2028)),
+      '"Hi"',
+      '"A"',
+      '""',
+    ]);
+  });
+
+  it("String.fromCharCode/fromCodePoint degrade to string for non-literal args", () => {
+    const results = runTest(`
+// @nudo:case "symbolic" (T.number)
+function sym(code) {
+  return String.fromCharCode(code);
+}
+// @nudo:case "mixed" (65, T.number)
+function mixed(a, b) {
+  return String.fromCharCode(a, b);
+}
+// @nudo:case "pointSym" (T.number)
+function pointSym(code) {
+  return String.fromCodePoint(code);
+}
+`);
+    console.log("String static degradation results:", results.map((r) => r.result));
+    expect(results.map((r) => r.result)).toEqual(["string", "string", "string"]);
+  });
 });

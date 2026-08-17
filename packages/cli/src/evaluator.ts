@@ -162,7 +162,25 @@ const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue> | TypeVal
     parseFloat: T.number,
   },
   String: {
-    fromCharCode: T.string,
+    // fromCharCode/fromCodePoint over all-number-literal args evaluate
+    // with the real String static (hoek's escaper builds its 0x2028
+    // separator literal this way before handing it to escapeJson); any
+    // non-literal arg keeps only the string return type (the result is
+    // always a string, just not a knowable one). fromCodePoint also
+    // falls back on out-of-range literals (real RangeError → string).
+    fromCharCode: T.fnSig([T.number], T.string, T.never, (args) => {
+      const codes = literalCodeUnits(args);
+      return codes === null ? T.string : T.literal(String.fromCharCode(...codes));
+    }),
+    fromCodePoint: T.fnSig([T.number], T.string, T.never, (args) => {
+      const codes = literalCodeUnits(args);
+      if (codes === null) return T.string;
+      try {
+        return T.literal(String.fromCodePoint(...codes));
+      } catch {
+        return undefined;
+      }
+    }),
   },
   Promise: PROMISE_STATIC_METHODS,
   Symbol: { ...SYMBOL_STATIC_METHODS, ...SYMBOL_STATIC_PROPS },
@@ -176,6 +194,19 @@ const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue> | TypeVal
   isNaN: T.boolean,
   isFinite: T.boolean,
 };
+
+/** Harvest String.fromCharCode/fromCodePoint arguments: a list of number
+ * literals ready for real evaluation, or null when any argument is
+ * non-literal (symbolic → the caller keeps its plain string fallback).
+ * An empty argument list yields [] (both statics return ""). */
+function literalCodeUnits(args: TypeValue[]): number[] | null {
+  const codes: number[] = [];
+  for (const a of args) {
+    if (a?.kind !== "literal" || typeof a.value !== "number") return null;
+    codes.push(a.value);
+  }
+  return codes;
+}
 
 const BUILTIN_INSTANCE_METHODS: Record<string, Record<string, (...args: TypeValue[]) => TypeValue>> = {
   Date: {
@@ -388,8 +419,28 @@ function builtinClassValue(name: string): TypeValue {
 // prototype table (the same approximations `X.prototype` uses) plus the
 // wrapper's constructor before anything reports a missing property.
 // hasOwnProp-guarded like every other table lookup here.
-function wrapperPrototypeMember(obj: TypeValue, propName: string): TypeValue | undefined {
-  let className: string | undefined;
+/** 值上命名成员是否可能存在（union 部分成员持有的 no-method 降 warning
+ * 用）：primitive/literal 走 wrapper 原型近似表（'x'.charCodeAt），
+ * instance 走近似方法表。诊断侧据此区分"部分成员可能有"与"确定没有"。 */
+export function memberMayExistOn(tv: TypeValue, propName: string): boolean {
+  if (tv.kind === "primitive" || tv.kind === "literal") {
+    return wrapperPrototypeMember(tv, propName) !== undefined;
+  }
+  if (tv.kind === "instance") {
+    const className = tv.className;
+    const table = hasOwnProp(BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS, className)
+      ? BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS[className]
+      : BUILTIN_ERROR_CLASSES.has(className)
+        ? BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS.Error
+        : undefined;
+    if (table && hasOwnProp(table, propName)) return true;
+    // instance 的方法集是近似（未列出 ≠ 不存在）
+    return true;
+  }
+  return false;
+}
+
+function wrapperPrototypeMember(obj: TypeValue, propName: string): TypeValue | undefined {  let className: string | undefined;
   if (obj.kind === "primitive") {
     className = obj.type === "bigint" ? undefined : obj.type[0].toUpperCase() + obj.type.slice(1);
   } else if (obj.kind === "literal") {
@@ -1033,6 +1084,46 @@ function tagFnModule(v: TypeValue): void {
   }
 }
 
+// 执行来源栈：当前正在执行的函数体来自哪个模块（fnModule tag；未 tag 的
+// 函数继承栈顶——本地函数无 tag 时代码在本文件内执行）。recordUnknown 据此
+// 给记录标 originModule，分析侧丢弃使用现场闭包体的泄漏错误。
+const _execOriginStack: (string | undefined)[] = [];
+
+/** usage-site 执行标记：外部调用记录的实参里携带的闭包（测试回调等）在
+ * case 合成重求值时被执行，其内部错误属于使用现场文件，与本文件分析无关。
+ * 分析侧在注入前对全部外部实参调用本函数；执行来源栈读到该标记时
+ * recordUnknown.originModule 记为标记值，分析侧据此丢弃。不按模块路径
+ * 比较——跨文件依赖（本文件 require 链上加载的模块）的执行记录是合法
+ * 的可达分析，不能误伤。 */
+export const USAGE_SITE_MODULE = "__usage_site__";
+
+export function setUsageSiteTag(tv: TypeValue, _seen: Set<object> = new Set()): void {
+  if (!tv || typeof tv !== "object" || _seen.has(tv)) return;
+  _seen.add(tv);
+  switch (tv.kind) {
+    case "function":
+      _fnModuleTags.set(tv, USAGE_SITE_MODULE);
+      return;
+    case "array":
+      return setUsageSiteTag(tv.element, _seen);
+    case "tuple":
+      for (const e of tv.elements) setUsageSiteTag(e, _seen);
+      return;
+    case "object":
+      for (const v of Object.values(tv.properties)) setUsageSiteTag(v, _seen);
+      return;
+    case "promise":
+      return setUsageSiteTag(tv.value, _seen);
+    case "union":
+      for (const m of tv.members) setUsageSiteTag(m, _seen);
+      return;
+    case "refined":
+      return setUsageSiteTag(tv.base, _seen);
+    default:
+      return;
+  }
+}
+
 function tagExport(v: TypeValue & { kind: "function" }, filePath: string, name: string): void {  const existing = _exportTags.get(v);
   if (existing) {
     if (existing.module === filePath && existing.export === name) return;
@@ -1136,6 +1227,10 @@ export type UnknownRecord = {
   loc?: { line: number; column: number };
   reason?: string;
   origin?: { line: number; column: number };
+  /** 定义当前正在执行的函数的模块（执行来源栈顶）。case 合成重求值会执行
+   * 注入实参携带的使用现场闭包体，其内部错误记录属于使用现场文件——
+   * 分析侧据此丢弃（行数守卫会被同行号假阳性骗过）。 */
+  originModule?: string;
 };
 
 let _unknownCollector: ((record: UnknownRecord) => void) | null = null;
@@ -1194,6 +1289,7 @@ function recordUnknown(r: Omit<UnknownRecord, "loc"> & { loc?: Node["loc"] }): v
   _unknownCollector({
     ...r,
     origin,
+    originModule: _execOriginStack.length > 0 ? _execOriginStack[_execOriginStack.length - 1] : undefined,
     loc: r.loc ? { line: r.loc.start.line, column: r.loc.start.column } : undefined,
   });
 }
@@ -5143,9 +5239,12 @@ function callFunctionFull(
   _totalCalls++;
   _callDepth++;
   _activeCallKeys.push(callKey);
+  const fnOrigin = _fnModuleTags.get(fn);
+  _execOriginStack.push(fnOrigin ?? _execOriginStack[_execOriginStack.length - 1]);
   try {
     return callFunctionUnchecked(fn, args, thisVal);
   } finally {
+    _execOriginStack.pop();
     _activeCallKeys.pop();
     _callDepth--;
   }
