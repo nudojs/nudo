@@ -22,6 +22,8 @@ const sidebars: SidebarsConfig = {
       label: "Guides",
       items: [
         "guides/cli",
+        "guides/callsite-discovery",
+        "guides/semantics",
         "guides/vscode",
         "guides/control-flow-narrowing",
         "guides/runtime-generation",
