@@ -375,17 +375,24 @@ function nested() {
 
 ## 八、调用点发现的已知边界（P7 实测，2026-08）
 
-调用点注入（`infer --callsites`）在 hoek 94.3% / json-ext 91.8% 后的
-诚实天花板项：
+调用点注入（`infer --callsites`）在 hoek 98.6% / json-ext 91.8% 后的
+诚实天花板项（阶段 3 循环/闭包语义波已落地：for-of union 分发、
+break/continue 信号、let 每轮绑定、Promise resolve 静态位点扫描、
+递归截断观测回退、usage-site 执行泄漏标记）：
 
-- **symbolic 回退 unknown**：`call@symbolic` 用 widen 后的实参求值，
-  含 unknown 分量时结果诚实回退 unknown（flatten 的 options=unknown
-  即此类）。需 reduce 累加器追踪 / 闭包状态追踪（阶段 3）才能突破。
+- **symbolic 剩余 unknown 叶子**：flatten/keys/escape 等已在循环语义波
+  与收集侧精度波修复；isDeepEqual 的 symbolic 仍有零散 unknown 叶子
+  （异构 union 下的对象除法/toString 形态），顶层同构探针全通过，
+  需现场插桩定位，收益 1 case。
+- **运行时机制驱动的内部函数**：json-ext stringify-stream 的
+  push/processObjectEntry/processArrayItem 由 Node Transform 流机器
+  （native 内部）回调，测试只触达工厂函数——无调用记录可收集，
+  entry@ 是诚实结果。需流语义模拟才能突破，超出静态求值范围。
+- **无使用现场的函数**：entry@ 兜底（applyToDefaults.reachCopy 等
+  测试未直接触达的内部函数），属覆盖问题非推断问题。
 - **嵌套函数不归因**：函数内定义的函数（json-ext 的 `walk`）在函数
   执行时创建，模块栈空、无定义位点 tag；其外部记录被归因门正确拒收
   （靠本地求值的记录覆盖）。
 - **双入口包变体**：browser/node 双变体同签名函数，变体 A 的执行记录
   不注入变体 B 的分析（归因门按文件判定——正确性优先）。
-- **无使用现场的函数**：entry@ 兜底（applyToDefaults.reachCopy 等
-  测试未直接触达的内部函数），属覆盖问题非推断问题。
 
