@@ -107,6 +107,9 @@ importers:
       '@nudojs/core':
         specifier: workspace:*
         version: link:../core
+      '@nudojs/parser':
+        specifier: workspace:*
+        version: link:../parser
       '@nudojs/service':
         specifier: workspace:*
         version: link:../service

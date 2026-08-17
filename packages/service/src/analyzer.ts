@@ -1771,4 +1771,4 @@ function getCompletionsForType(tv: TypeValue): CompletionItem[] {
   return completions;
 }
 
-export type { CallRecord } from "@nudojs/cli/evaluator.ts";
+export type { CallRecord } from "@nudojs/cli/evaluator";
