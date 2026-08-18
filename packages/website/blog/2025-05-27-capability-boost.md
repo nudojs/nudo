@@ -276,6 +276,10 @@ If you are using the VS Code extension, the editor experience now feels like wor
 
 ## AI Agent Integration
 
+:::note Update
+The standalone MCP server described below was later retired. Agent integration now lives in `@nudojs/lsp` — the same five capabilities are exposed as `workspace/executeCommand` commands (`nudo.whatIf` and friends) on the language server. See the [Agent Integration Guide](https://nudojs.github.io/nudo/docs/guides/mcp-server).
+:::
+
 This is the feature we are most excited about. Nudo now ships an MCP (Model Context Protocol) server that exposes five tools to AI assistants. This means an AI agent can query Nudo's type inference engine in real time while reading or writing code.
 
 ### The Five Tools

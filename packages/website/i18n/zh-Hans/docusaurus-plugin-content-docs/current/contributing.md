@@ -40,12 +40,9 @@ pnpm run build
 | `@nudojs/parser` | Babel 解析、指令提取、`parseTypeValueExpr` |
 | `@nudojs/cli` | 求值器、`nudo infer` / `nudo watch` |
 | `@nudojs/service` | 高层 API：`analyzeFile`、`getTypeAtPosition`、`getCompletionsAtPosition` |
-| `@nudojs/lsp` | Language Server Protocol 实现 |
+| `@nudojs/lsp` | Language Server Protocol 实现，含面向 AI agent 的 executeCommand/自定义请求（见 [Agent 集成指南](./guides/mcp-server.md)） |
 | `@nudojs/harvester` | 把 `@types/*.d.ts` 声明转换为 Nudo env 文件（`nudo harvest` 的底层引擎） |
-| `@nudojs/mcp` | 面向 AI 代理暴露推断工具的 MCP 服务器 |
-| `@nudojs/env-es` | 内置 ES 标准全局 API 类型定义（`/// @nudo:env es`） |
-| `@nudojs/env-node` | 内置 Node.js API 类型定义（`/// @nudo:env node`） |
-| `@nudojs/env-web` | 内置 Web 平台 API 类型定义（`/// @nudo:env web`） |
+| `@nudojs/env` | 内置环境类型定义（`/// @nudo:env es\|web\|node`，子路径导出 `/es` `/web` `/node`） |
 | `vite-plugin-nudo` | 开发阶段的类型推断 Vite 插件 |
 | `nudo-vscode` | VS Code / Cursor 扩展 |
 | `website` | Docusaurus 文档站点 |

@@ -95,8 +95,7 @@ This is a monorepo managed with [pnpm workspaces](https://pnpm.io/workspaces).
 | [`@nudojs/parser`](./packages/parser) | Babel-based parser and directive extraction |
 | [`@nudojs/cli`](./packages/cli) | CLI tool and evaluator API |
 | [`@nudojs/service`](./packages/service) | Shared inference service for IDE integrations |
-| [`@nudojs/lsp`](./packages/lsp) | Language Server Protocol server |
-| [`@nudojs/mcp`](./packages/mcp) | Model Context Protocol server for AI agent integration |
+| [`@nudojs/lsp`](./packages/lsp) | Language Server Protocol server, with AI-agent `executeCommand` support |
 | [`vite-plugin-nudo`](./packages/vite-plugin) | Vite plugin for build-time inference |
 | [`nudo-vscode`](./packages/vscode) | VS Code / Cursor extension |
 | [`website`](./packages/website) | Documentation site (Docusaurus) |
@@ -109,7 +108,6 @@ core
      └─ cli
          └─ service
              ├─ lsp
-             ├─ mcp
              └─ vite-plugin
 ```
 

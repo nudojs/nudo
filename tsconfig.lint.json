@@ -15,8 +15,8 @@
       "@nudojs/service/*": ["packages/service/src/*"],
       "@nudojs/lsp": ["packages/lsp/src"],
       "@nudojs/lsp/*": ["packages/lsp/src/*"],
-      "@nudojs/mcp": ["packages/mcp/src"],
-      "@nudojs/mcp/*": ["packages/mcp/src/*"]
+      "@nudojs/env": ["packages/env/src"],
+      "@nudojs/env/*": ["packages/env/src/*"]
     }
   },
   "include": [
@@ -26,7 +26,7 @@
     "packages/service/src",
     "packages/lsp/src",
     "packages/vite-plugin/src",
-    "packages/mcp/src",
+    "packages/env/src",
     "packages/harvester/src"
   ],
   "exclude": [

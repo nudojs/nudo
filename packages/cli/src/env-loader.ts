@@ -5,9 +5,9 @@ import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { type TypeValue, type Environment } from "@nudojs/core";
-import { defineEnv as defineEsEnv } from "@nudojs/env-es";
-import { defineEnv as defineWebEnv } from "@nudojs/env-web";
-import { defineEnv as defineNodeEnv } from "@nudojs/env-node";
+import { defineEnv as defineEsEnv } from "@nudojs/env/es";
+import { defineEnv as defineWebEnv } from "@nudojs/env/web";
+import { defineEnv as defineNodeEnv } from "@nudojs/env/node";
 
 type EnvDefinition = {
   globals: Record<string, TypeValue>;

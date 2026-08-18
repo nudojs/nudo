@@ -2,264 +2,161 @@
 sidebar_position: 6
 ---
 
-# MCP 服务器（AI 代理集成）
+# Agent 集成指南
 
-`@nudojs/mcp` 包提供了一个 [Model Context Protocol](https://modelcontextprotocol.io/)（MCP）服务器，让 AI 编码代理——如 Claude Code、Cursor 和其他兼容 MCP 的工具——能够直接与 Nudo 的类型推断引擎交互。代理无需猜测 JavaScript 函数会产生什么类型，而是可以询问 Nudo 并获得由抽象解释推导出的精确答案。
+AI 编码代理——Claude Code、Cursor、Copilot、Zed 等——通过 Nudo 的**语言服务器** [`@nudojs/lsp`](../api/lsp.md) 访问推断能力。驱动 VS Code 扩展的同一个服务器，同时通过标准的 `workspace/executeCommand` 调用暴露五个 agent 命令，外加拉取式诊断。不需要安装或维持独立的 MCP 服务器进程：一个服务器同时服务编辑器*和* agent。
 
-## 什么是 MCP
-
-Model Context Protocol 是一个开放标准，让 AI 助手能够通过统一接口连接外部工具和数据源。MCP 服务器暴露一组**工具**（AI 可调用的函数）和可选的**资源**（AI 可读取的数据）。Claude Code、Cursor 等客户端会自动发现并调用这些工具。
-
-对 Nudo 而言，这意味着 AI 代理可以：
-
-- 探索类型如何在函数中流动，而无需运行它
-- 在编码工作流中检查文件的类型错误
-- 查询函数的 `@nudo:` 用例覆盖情况
-- 追踪每个用例的输入如何映射到输出
-
-这将类型推断从人工驱动的过程转变为 AI 代理可以使用的推理工具。
+完整的命令参考（参数、返回形状、类型表达式语法）见 [Agent API](../api/agent.md) 页面。面向 agent 的现成 skill 文件发布在 [`packages/lsp/agent-skill/SKILL.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/agent-skill/SKILL.md)。
 
 ## 安装
 
 ```bash
-pnpm add @nudojs/mcp
+npm i -g @nudojs/lsp
 ```
 
-或全局安装：
+服务器通过 stdio 讲 LSP。用 Node 启动（类型剥离需要 Node ≥ 22.18；更老的 Node 用 `tsx`）：
 
 ```bash
-pnpm add -g @nudojs/mcp
+node "$(npm root -g)/@nudojs/lsp/src/server.ts"
+# 或在项目本地安装、任意 Node 版本：
+npx tsx node_modules/@nudojs/lsp/src/server.ts
 ```
 
-## 配置
+## 三种接入方式
 
-### Claude Code
+### 方式一：LSP→MCP 桥
 
-将 MCP 服务器添加到 Claude Code 配置中。运行以下命令：
+如果你的 agent 只讲 MCP，运行一个通用桥，把 Nudo 注册为 `.js` 文件的语言服务器。三个桥均可直接使用：
 
-```bash
-claude mcp add nudo -- npx @nudojs/mcp
-```
-
-或手动添加到项目根目录的 `.mcp.json`：
+**[cclsp](https://github.com/ktnyt/cclsp)** —— 在项目旁配置 `cclsp.json`：
 
 ```json
 {
-  "mcpServers": {
-    "nudo": {
-      "command": "npx",
-      "args": ["@nudojs/mcp"]
-    }
-  }
+  "extensions": ["js", "mjs", "cjs"],
+  "command": ["npx", "tsx", "node_modules/@nudojs/lsp/src/server.ts"],
+  "rootDir": "."
 }
 ```
 
-### Cursor
+然后把桥加入 MCP 客户端：
 
-在 Cursor 中，打开 Settings > MCP > Add new MCP server 并配置：
+```bash
+claude mcp add cclsp -- npx cclsp@latest --env CCLSP_CONFIG_PATH=/abs/path/to/cclsp.json
+```
 
-- **Name**: nudo
-- **Type**: command
-- **Command**: `npx @nudojs/mcp`
+**[mcpls](https://github.com/bug-ops/mcpls)** —— 配置 `mcpls.toml`：
 
-### 其他 MCP 客户端
+```toml
+[[lsp_servers]]
+language_id = "javascript"
+command = "node"
+args = ["node_modules/@nudojs/lsp/src/server.ts"]
+file_patterns = ["**/*.js", "**/*.mjs"]
+```
 
-任何支持 MCP 标准的客户端都可以连接到服务器。服务器通过 stdio 通信，除启动命令外不需要额外配置。
+**[agent-lsp](https://github.com/blackwell-systems/agent-lsp)** —— 运行 `agent-lsp init`；它会自动探测 `PATH` 上的语言服务器并替你写好 MCP 客户端配置，把多个服务器编排成 agent 原生的工作流。
 
----
+:::note
+各桥转发的能力不同。标准 LSP 功能（hover、诊断、定义跳转）总会透传；如果某个桥没有把 `workspace/executeCommand` 转发到 Nudo 的五个命令，请改用方式二。
+:::
 
-## 可用工具
+### 方式二：原生 LSP 客户端
 
-Nudo MCP 服务器暴露五个工具。每个工具接受 JSON 参数并返回文本输出。
+任何 LSP 客户端库（`vscode-languageserver-protocol`、各类语言的原生 LSP 客户端、手写 stdio 客户端）都可以。启动服务器、`initialize`，然后调用 `workspace/executeCommand`——线上消息就是普通 JSON-RPC，可以逐字发送：
 
-下面的示例共用一个文件 `src/config.js`：
+```jsonc
+// 1. 握手
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":"file:///home/you/project","capabilities":{}}}
+{"jsonrpc":"2.0","method":"initialized","params":{}}
+
+// 2. 提一个 what-if 问题
+{"jsonrpc":"2.0","id":2,"method":"workspace/executeCommand","params":{
+  "command": "nudo.whatIf",
+  "arguments": [{ "file": "src/app.js", "bindings": [{ "name": "x", "type": "string" }], "target": "y" }]
+}}
+```
+
+`file` 参数接受 `file://` URI 或裸路径。未在编辑器中打开的文件直接从磁盘读取——不需要 `didOpen`。
+
+### 方式三：VS Code / Cursor 扩展
+
+安装 `nudo-vscode` 扩展后，本指南的一切都已接好：扩展会启动 `@nudojs/lsp`，编辑器内的 agent 通过同一服务器获得悬停类型、诊断和用例切换 CodeLens。
+
+## 五个命令
+
+每个示例都是完整的 `workspace/executeCommand` 载荷——复制、改路径、直接发送。共用示例文件 `src/app.js`：
 
 ```js
-const config = { retries: 3, label: "fast" };
-
-// @nudo:case "greeting" ("Ada")
-// @nudo:case "anonymous" ("")
-function greet(name) {
-  return "Hello, " + name;
+function normalize(x) {
+  const trimmed = x.trim();
+  return Number(trimmed);
 }
 ```
 
-### `nudo-what-if`
-
-设置类型假设并在其他位置观察推断类型。这是 AI 驱动类型探索的主要工具——它让代理可以问"如果 X 具有 Y 类型，Z 会是什么？"而无需修改任何源代码。
-
-**参数**
-
-| 参数 | 类型 | 必需 | 描述 |
-|-----------|------|----------|-------------|
-| `file` | `string` | 是 | JavaScript 文件路径 |
-| `bindings` | `Array<{ name: string, type: string }>` | 是 | 要应用的类型假设。`name` 是变量名；`type` 是类型表达式，如 `number` 或 `string \| null` |
-| `target` | `string` | 是 | 要获取类型的变量或表达式 |
-
-**示例场景**
-
-代理准备在其他地方使用 `config` 对象，想先确认它的推断形状：
+**`nudo.whatIf`** —— 假设 `x` 是 string，询问 `trimmed` 变成什么：
 
 ```json
-{
-  "file": "src/config.js",
-  "bindings": [
-    { "name": "config", "type": "{ retries: number, label: string }" }
-  ],
-  "target": "config"
-}
+{ "command": "nudo.whatIf", "arguments": [{
+    "file": "src/app.js",
+    "bindings": [{ "name": "x", "type": "string" }],
+    "target": "trimmed"
+}] }
 ```
 
-**输出**
-
-```
-Type of "config": { retries: 3, label: "fast" }
+```text
+Type of "trimmed": string
 ```
 
-响应始终为 `Type of "<target>": <type>` 的形式。如果 target 不是文件中的已知绑定，类型报告为 `unknown`。注意：当前实现返回的类型来自对文件本身的分析——`bindings` 假设不会覆盖它。
-
----
-
-### `nudo-check`
-
-使用 Nudo 的推断引擎检查 JavaScript 文件的类型错误。只返回 error 级别的诊断——目前来自失败的 `@nudo:` 断言，例如与推断返回类型不符的 `@nudo:returns` 声明。
-
-**参数**
-
-| 参数 | 类型 | 必需 | 描述 |
-|-----------|------|----------|-------------|
-| `file` | `string` | 是 | 要检查的 JavaScript 文件路径 |
-
-**示例场景**
-
-编辑文件后，让代理验证没有类型问题：
+**`nudo.trace`** —— 列出每个用例的输入和输出：
 
 ```json
-{ "file": "src/config.js" }
+{ "command": "nudo.trace", "arguments": [{ "file": "src/app.js", "functionName": "normalize" }] }
 ```
 
-**输出**
-
-```
-No type errors found
-```
-
-存在错误时，每条错误独占一行，格式为 `Line N: message`。给定下面这个 `@nudo:returns` 断言与推断结果矛盾的文件：
-
-```js
-// @nudo:case "double it" (5)
-// @nudo:returns (T.string)
-function double(x) {
-  return x * 2;
-}
-```
-
-响应为：
-
-```
-Line 3: @nudo:returns assertion failed for case "double it": expected string, got 10. Update the @nudo:returns directive to match the inferred type, or fix the function implementation
-```
-
----
-
-### `nudo-type-at`
-
-获取文件中特定位置的推断类型。当代理需要了解某个变量或表达式在特定行列的类型时非常有用。
-
-**参数**
-
-| 参数 | 类型 | 必需 | 描述 |
-|-----------|------|----------|-------------|
-| `file` | `string` | 是 | JavaScript 文件路径 |
-| `line` | `number` | 是 | 行号（从 1 开始） |
-| `column` | `number` | 是 | 列号（从 0 开始） |
-
-**示例场景**
-
-代理想获取 `src/config.js` 中 `config` 变量的类型。变量名从第 1 行第 6 列开始：
+**`nudo.suggestCase`** —— 检查 `@nudo:case` 覆盖情况：
 
 ```json
-{ "file": "src/config.js", "line": 1, "column": 6 }
+{ "command": "nudo.suggestCase", "arguments": [{ "file": "src/app.js", "functionName": "normalize" }] }
 ```
 
-**输出**
-
-```
-{ retries: 3, label: "fast" }
-```
-
-响应为该位置的推断类型；该位置没有类型信息时为 `unknown`。
-
----
-
-### `nudo-suggest-case`
-
-根据函数的参数类型建议 `@nudo:case` 指令。
-
-**参数**
-
-| 参数 | 类型 | 必需 | 描述 |
-|-----------|------|----------|-------------|
-| `file` | `string` | 是 | JavaScript 文件路径 |
-| `functionName` | `string` | 是 | 函数名 |
-
-**示例场景**
-
-代理正在为 `src/config.js` 编写文档，想检查 `greet` 的 `@nudo:case` 覆盖情况：
+**`nudo.selectCase`** —— 把函数固定到一个用例（悬停与诊断随之切换，直到再次切换）：
 
 ```json
-{ "file": "src/config.js", "functionName": "greet" }
+{ "command": "nudo.selectCase", "arguments": [{ "file": "src/app.js", "functionName": "normalize", "caseIndex": 0 }] }
 ```
 
-**输出**
-
-```
-Function "greet" already has 2 case(s)
-```
-
-由于全程序推断会为没有指令的函数合成用例，已存在的函数通常报告其当前用例数。其他可能的响应：函数名不存在时为 `Function "<functionName>" not found`；完全没有用例的函数则返回一行 `Suggested: /** @nudo:case */`，后跟 `function <functionName>(...) { ... }`。
-
----
-
-### `nudo-trace`
-
-追踪类型在函数中从输入到输出的转换——每个用例一行，显示参数类型和结果类型。
-
-**参数**
-
-| 参数 | 类型 | 必需 | 描述 |
-|-----------|------|----------|-------------|
-| `file` | `string` | 是 | JavaScript 文件路径 |
-| `functionName` | `string` | 是 | 要追踪的函数 |
-
-**示例场景**
-
-代理需要理解 `greet` 如何转换其输入：
+**`nudo.getActiveCases`** —— 读取每个函数的活动用例：
 
 ```json
-{ "file": "src/config.js", "functionName": "greet" }
+{ "command": "nudo.getActiveCases", "arguments": [{ "file": "src/app.js" }] }
 ```
 
-**输出**
+`whatIf`、`trace`、`suggestCase` 返回 `{ content: [{ type: "text", text }] }`——MCP 风格文本内容；`selectCase` 返回 `{ success: true }`；`getActiveCases` 返回 `Record<string, number>`。
 
+## 拉取诊断
+
+旧 `nudo-check` 工具由标准的 LSP 拉取请求取代：
+
+```json
+{"jsonrpc":"2.0","id":3,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":"file:///home/you/project/src/app.js"}}}
 ```
-Input: ("Ada") => Output: "Hello, Ada"
-Input: ("") => Output: "Hello, "
-```
 
-每行的格式为 `Input: (<参数类型>) => Output: <结果类型>`。函数不存在时响应为 `Function "<functionName>" not found`；没有用例时响应为 `No cases found for "<functionName>"`。
+error 级条目（失败的 `@nudo:returns` 断言、不可达代码等）在 `items` 中返回，`source: "nudo"`。如果你的客户端偏好推送，`textDocument/publishDiagnostics` 也会发出。
 
----
+## 从 MCP 服务器迁移
 
-## 为什么这对 AI 很重要
+独立的 `@nudojs/mcp` 包已退役——其能力已并入 `@nudojs/lsp`。迁移步骤：
 
-传统的 AI 辅助编码依赖于需要类型注解的静态分析工具，或者通过执行代码来观察行为。Nudo 的 MCP 服务器提供了第三条路径：**按需获取由抽象解释推导的类型信息**。
+1. **移除 MCP 注册** —— 从 `.mcp.json` / 客户端 MCP 配置中删除 `nudo` 条目；已安装的话执行 `npm rm @nudojs/mcp`。
+2. **安装并连接语言服务器** —— 按[安装](#安装)一节和上面三种方式之一操作。
+3. **重新映射旧工具：**
 
-当 AI 代理遇到不熟悉的 JavaScript 代码时，它可以：
+| 旧 MCP 工具 | 新等价物 |
+|--------------|----------------|
+| `nudo-what-if` | `nudo.whatIf`——且 `bindings` 现在会真正生效（旧服务器忽略它们） |
+| `nudo-check` | `textDocument/diagnostic` 拉取请求 |
+| `nudo-type-at` | 指定 `target`（`bindings` 留空）的 `nudo.whatIf`，或 LSP hover |
+| `nudo-suggest-case` | `nudo.suggestCase` |
+| `nudo-trace` | `nudo.trace` |
 
-1. **查询推断类型**——使用 `nudo-what-if` 和 `nudo-type-at` 获取绑定或源代码位置的精确推断类型，无需编写或运行任何代码。
-2. **理解函数行为**——使用 `nudo-trace` 查看每个用例的参数类型如何映射到结果类型。
-3. **验证变更**——使用 `nudo-check` 在提交前捕获 error 级诊断，例如失败的 `@nudo:returns` 断言。
-4. **检查用例覆盖**——使用 `nudo-suggest-case` 查看函数当前有多少用例，在覆盖不足处补充指令。
-
-这与事后运行 linter 或类型检查器有本质区别。代理可以交互式地查询类型系统，在单个对话轮次中形成和测试关于代码行为的假设。结果是更准确的代码变更，以及代理与开发者之间更少的来回交互。
+需要注意一个行为升级：`nudo.whatIf` 的回答会反映假设的 `bindings`——旧服务器返回的是文件自身的分析结果并静默丢弃假设。依赖旧行为的提示词或流水线需要相应调整。

@@ -1,17 +1,18 @@
 {
-  "name": "@nudojs/env-es",
+  "name": "@nudojs/env",
   "version": "0.1.0",
-  "description": "ES standard global API type definitions for the Nudo inference engine",
+  "description": "ES standard, Web platform, and Node.js API type definitions for the Nudo inference engine",
   "type": "module",
   "license": "MIT",
-  "main": "src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    "./es": "./src/es.ts",
+    "./web": "./src/web.ts",
+    "./node": "./src/node.ts"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nudojs/nudo.git",
-    "directory": "packages/env-es"
+    "directory": "packages/env"
   },
   "publishConfig": {
     "access": "public",
@@ -22,6 +23,6 @@
     "@nudojs/core": "workspace:*"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts"
+    "build": "tsup src/es.ts src/web.ts src/node.ts --format esm --dts"
   }
 }

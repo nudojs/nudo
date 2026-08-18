@@ -44,7 +44,7 @@ const features = [
     titleDefault: "AI Agent Integration",
     descId: "homepage.feature.aiDesc",
     descDefault:
-      "MCP server lets AI coding agents explore types interactively. What-if analysis, type tracing, and diagnostics — giving AI the type context it needs to write correct JavaScript.",
+      "The Nudo language server gives AI coding agents direct access to type inference — what-if analysis, type tracing, and diagnostics over LSP or any LSP→MCP bridge, giving AI the type context it needs to write correct JavaScript.",
   },
   {
     icon: "🔧",

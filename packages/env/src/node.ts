@@ -1,5 +1,5 @@
 import { type TypeValue, type SigImpl, T } from "@nudojs/core";
-import { type EnvDefinition, defineEnv as defineEsEnv } from "@nudojs/env-es";
+import { type EnvDefinition, defineEnv as defineEsEnv } from "./es.ts";
 import nodePath from "node:path";
 
 export type { EnvDefinition };

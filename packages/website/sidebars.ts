@@ -40,7 +40,7 @@ const sidebars: SidebarsConfig = {
         "api/parser",
         "api/service",
         "api/cli-reference",
-        "api/mcp",
+        "api/agent",
         "api/lsp",
         "api/harvester",
       ],

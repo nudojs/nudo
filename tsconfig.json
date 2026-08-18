@@ -7,7 +7,10 @@
       "@nudojs/parser": ["packages/parser/src"],
       "@nudojs/cli": ["packages/cli/src"],
       "@nudojs/cli/evaluator": ["packages/cli/src/evaluator-api.ts"],
-      "@nudojs/service": ["packages/service/src"]
+      "@nudojs/service": ["packages/service/src"],
+      "@nudojs/env/es": ["packages/env/src/es.ts"],
+      "@nudojs/env/web": ["packages/env/src/web.ts"],
+      "@nudojs/env/node": ["packages/env/src/node.ts"]
     }
   },
   "references": [

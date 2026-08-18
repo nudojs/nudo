@@ -17,6 +17,12 @@ export default defineConfig({
       "@nudojs/cli": new URL("./packages/cli/src", import.meta.url).pathname,
       "@nudojs/service": new URL("./packages/service/src", import.meta.url)
         .pathname,
+      "@nudojs/env/es": new URL("./packages/env/src/es.ts", import.meta.url)
+        .pathname,
+      "@nudojs/env/web": new URL("./packages/env/src/web.ts", import.meta.url)
+        .pathname,
+      "@nudojs/env/node": new URL("./packages/env/src/node.ts", import.meta.url)
+        .pathname,
     },
   },
 });

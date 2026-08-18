@@ -79,7 +79,7 @@ const severityMap: Record<JsDiagSeverity, DiagnosticSeverity> = {
   info: DiagnosticSeverity.Information,
 };
 
-function toLspDiagnostic(d: JsDiagnostic, uri: string): LspDiagnostic {
+export function toLspDiagnostic(d: JsDiagnostic, uri: string): LspDiagnostic {
   const diag: LspDiagnostic = {
     severity: severityMap[d.severity],
     range: {

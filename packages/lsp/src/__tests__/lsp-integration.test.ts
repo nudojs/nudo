@@ -12,6 +12,7 @@ import {
   typeValueToZodSchema,
   generateGuardFunction,
 } from "@nudojs/service";
+import { T } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
 import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "../symbols.ts";
 import {
@@ -23,6 +24,17 @@ import {
   validateText,
   type ValidateTextDeps,
 } from "../validation.ts";
+import {
+  injectBindings,
+  normalizeFilePath,
+  parseTypeExpr,
+  readSource,
+  suggestCase,
+  trace,
+  typeExprToDirective,
+  whatIf,
+  type AgentToolDeps,
+} from "../agent-tools.ts";
 
 const filePath = "/test/lsp-integration.js";
 const testCode = `
@@ -386,5 +398,172 @@ describe("LSP Integration - Narrowing Features", () => {
     const errorCase = handleResponseFn!.cases.find(c => c.name === "error");
     expect(successCase).toBeDefined();
     expect(errorCase).toBeDefined();
+  });
+});
+
+describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
+  const whatIfSrc = "const x = 1;\nconst y = x + 1;\n";
+  const srcDeps = (src: string): AgentToolDeps => ({ readFile: () => src });
+
+  describe("parseTypeExpr (ported from MCP)", () => {
+    it("maps primitive names to T singletons", () => {
+      expect(parseTypeExpr("number")).toEqual(T.number);
+      expect(parseTypeExpr("string")).toEqual(T.string);
+      expect(parseTypeExpr("boolean")).toEqual(T.boolean);
+      expect(parseTypeExpr("bigint")).toEqual(T.bigint);
+      expect(parseTypeExpr("symbol")).toEqual(T.symbol);
+      expect(parseTypeExpr("null")).toEqual(T.null);
+      expect(parseTypeExpr("undefined")).toEqual(T.undefined);
+    });
+
+    it("builds unions from `|` expressions", () => {
+      const u = parseTypeExpr("string | null");
+      expect(u.kind).toBe("union");
+      if (u.kind === "union") {
+        expect(u.members).toHaveLength(2);
+        expect(u.members[0]).toEqual(T.string);
+        expect(u.members[1]).toEqual(T.null);
+      }
+    });
+
+    it("falls back to unknown for unrecognized names", () => {
+      expect(parseTypeExpr("Date")).toEqual(T.unknown);
+    });
+  });
+
+  describe("typeExprToDirective / injectBindings", () => {
+    it("translates agent type expressions to @nudo:as directive syntax", () => {
+      expect(typeExprToDirective("string")).toBe("T.string");
+      expect(typeExprToDirective("string | null")).toBe("T.union(T.string, null)");
+      expect(typeExprToDirective("T.object({ port: T.number })")).toBe("T.object({ port: T.number })");
+      expect(typeExprToDirective("Date")).toBe("T.unknown");
+    });
+
+    it("inserts an @nudo:as line above the declaring statement", () => {
+      const { source, applied, unapplied } = injectBindings(whatIfSrc, [
+        { name: "x", type: "string | null" },
+      ]);
+      expect(applied).toEqual(["x: string | null"]);
+      expect(unapplied).toEqual([]);
+      expect(source).toBe("// @nudo:as T.union(T.string, null)\nconst x = 1;\nconst y = x + 1;\n");
+    });
+
+    it("reports bindings with no matching top-level declaration as unapplied", () => {
+      const { source, applied, unapplied } = injectBindings(whatIfSrc, [
+        { name: "nope", type: "string" },
+      ]);
+      expect(applied).toEqual([]);
+      expect(unapplied).toEqual(["nope"]);
+      expect(source).toBe(whatIfSrc);
+    });
+  });
+
+  describe("whatIf binding injection", () => {
+    it("bindings change the inferred target type (default vs assumed)", () => {
+      const base = whatIf({ file: "/test/what-if.js", bindings: [], target: "y" }, srcDeps(whatIfSrc));
+      const assumed = whatIf(
+        { file: "/test/what-if.js", bindings: [{ name: "x", type: "string" }], target: "y" },
+        srcDeps(whatIfSrc),
+      );
+
+      // without assumptions x=1 folds to a literal and y = 2
+      expect(base.content[0].text).toContain('Type of "y": 2');
+      // with x:string the + operator widens y to string — the assumption really flowed
+      expect(assumed.content[0].text).toContain('Type of "y": string');
+      expect(assumed.content[0].text).not.toBe(base.content[0].text);
+      expect(assumed.content[0].text).toContain("Bindings applied: x: string");
+    });
+
+    it("union bindings surface as union types", () => {
+      const res = whatIf(
+        { file: "/test/what-if.js", bindings: [{ name: "x", type: "string | null" }], target: "x" },
+        srcDeps(whatIfSrc),
+      );
+      expect(res.content[0].text).toContain("string | null");
+    });
+
+    it("reports unknown targets", () => {
+      const res = whatIf(
+        { file: "/test/what-if.js", bindings: [{ name: "x", type: "string" }], target: "missing" },
+        srcDeps(whatIfSrc),
+      );
+      expect(res.content[0].text).toContain('Type of "missing": unknown');
+      // x was still applied — only the target lookup missed
+      expect(res.content[0].text).toContain("Bindings applied: x: string");
+      expect(res.content[0].text).not.toContain("Bindings not applied");
+    });
+  });
+
+  describe("open-document priority and disk fallback", () => {
+    it("open buffer text wins over disk; disk is read when not open", () => {
+      const openSrc = "const x = 7;\nconst y = x * 2;\n";
+      const deps: AgentToolDeps = {
+        getOpenText: (p) => (p === "/test/open-doc.js" ? { text: openSrc } : undefined),
+        readFile: (p) => {
+          if (p !== "/test/open-doc.js") throw new Error("unexpected read of " + p);
+          return whatIfSrc;
+        },
+      };
+      const fromBuffer = whatIf({ file: "/test/open-doc.js", bindings: [], target: "y" }, deps);
+      expect(fromBuffer.content[0].text).toContain('Type of "y": 14');
+    });
+
+    it("whatIf / suggestCase / trace read unopened files from disk (os.tmpdir)", () => {
+      const dir = mkdtempSync(join(tmpdir(), "nudo-agent-disk-"));
+      try {
+        const plainPath = join(dir, "plain.js");
+        const casedPath = join(dir, "cased.js");
+        writeFileSync(plainPath, whatIfSrc);
+        writeFileSync(casedPath, '// @nudo:case "one" (1)\nfunction inc(n) { return n + 1; }\n// @nudo:skip\nfunction bare(a) { return a; }\n');
+
+        // no didOpen anywhere: default deps fall back to readFileSync
+        const base = whatIf({ file: plainPath, bindings: [], target: "y" });
+        expect(base.content[0].text).toContain('Type of "y": 2');
+
+        // file:// URI form normalizes to the same path
+        const viaUri = whatIf(
+          { file: `file://${plainPath}`, bindings: [{ name: "x", type: "string" }], target: "y" },
+        );
+        expect(viaUri.content[0].text).toContain('Type of "y": string');
+
+        // normalizeFilePath decodes and resolves both forms identically
+        expect(normalizeFilePath(`file://${plainPath}`)).toBe(normalizeFilePath(plainPath));
+
+        const tr = trace({ file: casedPath, functionName: "inc" });
+        expect(tr.content[0].text).toContain("Input: (1)");
+        expect(tr.content[0].text).toContain("Output: 2");
+
+        const withCases = suggestCase({ file: casedPath, functionName: "inc" });
+        expect(withCases.content[0].text).toContain("already has 1 case(s)");
+
+        // full-program inference synthesizes cases for plain functions;
+        // only skipped ones stay at zero cases
+        const withoutCases = suggestCase({ file: casedPath, functionName: "bare" });
+        expect(withoutCases.content[0].text).toContain("Suggested: /** @nudo:case */");
+
+        const missing = trace({ file: casedPath, functionName: "nope" });
+        expect(missing.content[0].text).toContain('Function "nope" not found');
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("readSource prefers open documents and defaults to disk for the rest", () => {
+      const dir = mkdtempSync(join(tmpdir(), "nudo-agent-read-"));
+      try {
+        const p = join(dir, "on-disk.js");
+        writeFileSync(p, "// disk\n");
+        expect(readSource(p)).toBe("// disk\n");
+        expect(readSource("/test/only-open.js", { getOpenText: () => ({ text: "// buffer\n" }) })).toBe("// buffer\n");
+        expect(readSource(p, { getOpenText: () => undefined })).toBe("// disk\n");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("returns an Error text result for unreadable files instead of throwing", () => {
+      const res = whatIf({ file: join(tmpdir(), "nudo-agent-missing-file.js"), bindings: [], target: "y" });
+      expect(res.content[0].text).toMatch(/^Error: /);
+    });
   });
 });

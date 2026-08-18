@@ -27,10 +27,27 @@ import {
   analysisCache,
   getCachedOrAnalyze,
   hasNudoDirectives,
+  toLspDiagnostic,
   uriToFilePath,
   validateText,
   type ValidateTextDeps,
 } from "./validation.ts";
+import {
+  normalizeFilePath,
+  suggestCase,
+  trace,
+  whatIf,
+  type AgentToolDeps,
+  type AgentToolResult,
+} from "./agent-tools.ts";
+
+const NUDO_COMMANDS = [
+  "nudo.whatIf",
+  "nudo.suggestCase",
+  "nudo.trace",
+  "nudo.selectCase",
+  "nudo.getActiveCases",
+] as const;
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
@@ -72,6 +89,13 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => ({
         tokenTypes: [...TOKEN_TYPES],
         tokenModifiers: [...TOKEN_MODIFIERS],
       },
+    },
+    executeCommandProvider: {
+      commands: [...NUDO_COMMANDS],
+    },
+    diagnosticProvider: {
+      interFileDependencies: false,
+      workspaceDiagnostics: false,
     },
   },
 }));
@@ -472,11 +496,20 @@ connection.languages.semanticTokens.on((params) => {
   return { data: [] };
 });
 
-connection.onRequest("nudo/selectCase", async (params: { uri: string; functionName: string; caseIndex: number }) => {
-  const cases = getActiveCasesForUri(params.uri);
+/** Resolve a `uri`- or `file`-identified target to the uri key used by activeCases/documents. */
+function uriForFileOrUri(params: { uri?: string; file?: string }): string {
+  if (params.uri) return params.uri;
+  const filePath = normalizeFilePath(params.file ?? "");
+  const doc = documents.all().find((d) => uriToFilePath(d.uri) === filePath);
+  return doc ? doc.uri : `file://${filePath}`;
+}
+
+async function handleSelectCase(params: { uri?: string; file?: string; functionName: string; caseIndex: number }) {
+  const uri = uriForFileOrUri(params);
+  const cases = getActiveCasesForUri(uri);
   cases.set(params.functionName, params.caseIndex);
 
-  const document = documents.get(params.uri);
+  const document = documents.get(uri);
   if (document) {
     await validateDocument(document);
   }
@@ -484,15 +517,77 @@ connection.onRequest("nudo/selectCase", async (params: { uri: string; functionNa
   connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {});
 
   return { success: true };
-});
+}
 
-connection.onRequest("nudo/getActiveCases", (params: { uri: string }) => {
-  const cases = getActiveCasesForUri(params.uri);
+function handleGetActiveCases(params: { uri?: string; file?: string }) {
+  const cases = getActiveCasesForUri(uriForFileOrUri(params));
   const result: Record<string, number> = {};
   for (const [fn, idx] of cases) {
     result[fn] = idx;
   }
   return result;
+}
+
+const agentToolDeps: AgentToolDeps = {
+  getOpenText: (filePath) => {
+    const doc = documents.all().find((d) => uriToFilePath(d.uri) === filePath);
+    return doc ? { text: doc.getText() } : undefined;
+  },
+};
+
+/**
+ * One dispatch table shared by the executeCommand commands (`nudo.*`) and the
+ * custom request aliases (`nudo/…`) — both channels run the same handlers.
+ */
+function dispatchNudoCommand(command: string, arg: Record<string, unknown>) {
+  switch (command) {
+    case "nudo.whatIf":
+      return whatIf(arg as Parameters<typeof whatIf>[0], agentToolDeps);
+    case "nudo.suggestCase":
+      return suggestCase(arg as Parameters<typeof suggestCase>[0], agentToolDeps);
+    case "nudo.trace":
+      return trace(arg as Parameters<typeof trace>[0], agentToolDeps);
+    case "nudo.selectCase":
+      return handleSelectCase(arg as Parameters<typeof handleSelectCase>[0]);
+    case "nudo.getActiveCases":
+      return handleGetActiveCases(arg as Parameters<typeof handleGetActiveCases>[0]);
+    default:
+      return null;
+  }
+}
+
+connection.onExecuteCommand((params) =>
+  dispatchNudoCommand(params.command, (params.arguments?.[0] as Record<string, unknown>) ?? {}),
+);
+
+connection.onRequest("nudo/selectCase", handleSelectCase);
+
+connection.onRequest("nudo/getActiveCases", handleGetActiveCases);
+
+/** Request aliases share the command handlers; the pinned return type keeps onRequest overload inference happy. */
+function dispatchAgentRequest(command: string, params: Record<string, unknown>): AgentToolResult {
+  return dispatchNudoCommand(command, params) as AgentToolResult;
+}
+
+connection.onRequest("nudo/whatIf", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.whatIf", params));
+connection.onRequest("nudo/suggestCase", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.suggestCase", params));
+connection.onRequest("nudo/trace", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.trace", params));
+
+connection.languages.diagnostics.on((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return { kind: "full", items: [] };
+  if (!isNudoFile(params.textDocument.uri)) return { kind: "full", items: [] };
+
+  try {
+    const filePath = uriToFilePath(document.uri);
+    const result = getCachedOrAnalyze(filePath, document.getText(), document.version, getActiveCasesForUri(document.uri));
+    return {
+      kind: "full",
+      items: result.diagnostics.map((d) => toLspDiagnostic(d, document.uri)),
+    };
+  } catch {
+    return { kind: "full", items: [] };
+  }
 });
 
 const nudoFileCache = new Map<string, boolean>();

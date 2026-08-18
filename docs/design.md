@@ -1335,7 +1335,7 @@ type EnvDefinition = {
   modules?: Record<string, Record<string, TypeValue>>;
 };
 
-// 示例：env-es 的部分定义
+// 示例：@nudojs/env/es 的部分定义
 export function defineEnv(T): EnvDefinition {
   return {
     globals: {
@@ -1366,7 +1366,7 @@ export function defineEnv(T): EnvDefinition {
   };
 }
 
-// 示例：env-node 的部分定义
+// 示例：@nudojs/env/node 的部分定义
 export function defineEnv(T): EnvDefinition {
   return {
     globals: {
@@ -1415,13 +1415,13 @@ export function defineEnv(T): EnvDefinition {
 
 #### 9.3.5 包结构
 
-环境定义分为三个包，作为 `@nudojs/cli` 和 `@nudojs/service` 的依赖内置，用户无需安装：
+环境定义集中在单一包 `@nudojs/env`（子路径导出 `@nudojs/env/es`、`@nudojs/env/web`、`@nudojs/env/node`），作为 `@nudojs/cli` 和 `@nudojs/service` 的依赖内置，用户无需安装：
 
-| 包 | 内容 | 依赖 |
+| 子路径 | 内容 | 依赖 |
 |---|---|---|
-| `@nudojs/env-es` | ES 标准全局 API | `@nudojs/core` |
-| `@nudojs/env-web` | Web 平台 API | `@nudojs/env-es` |
-| `@nudojs/env-node` | Node.js API | `@nudojs/env-es` |
+| `@nudojs/env/es` | ES 标准全局 API | `@nudojs/core` |
+| `@nudojs/env/web` | Web 平台 API | `@nudojs/env/es`（同包 `./es.ts`） |
+| `@nudojs/env/node` | Node.js API | `@nudojs/env/es`（同包 `./es.ts`） |
 
 `web` 和 `node` 环境隐含加载 `es`，用户无需显式声明。
 
@@ -1633,9 +1633,7 @@ resolveModule(source, fromDir):
 **范围：**
 - `T.fnSig` 声明式函数签名
 - `@nudo:env` 文件级指令解析与环境加载
-- `@nudojs/env-es` 包（ES 标准 API）
-- `@nudojs/env-web` 包（Web 平台 API）
-- `@nudojs/env-node` 包（Node.js API）
+- `@nudojs/env` 包（子路径 `es` / `web` / `node` 三套环境 API）
 - `@nudo:mock-module` 模块级 mock 指令
 - 项目级配置（`package.json` 的 `"nudo"` 字段）
 - `package.json` exports 中的 `"nudo"` 导出条件

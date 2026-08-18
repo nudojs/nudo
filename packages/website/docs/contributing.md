@@ -40,12 +40,9 @@ The monorepo uses pnpm workspaces. Key packages:
 | `@nudojs/parser` | Babel parse, directive extraction, `parseTypeValueExpr` |
 | `@nudojs/cli` | Evaluator, `nudo infer` / `nudo watch` |
 | `@nudojs/service` | High-level API: `analyzeFile`, `getTypeAtPosition`, `getCompletionsAtPosition` |
-| `@nudojs/lsp` | Language Server Protocol implementation |
+| `@nudojs/lsp` | Language Server Protocol implementation, including AI-agent `executeCommand`/custom requests (see the [Agent guide](./guides/mcp-server.md)) |
 | `@nudojs/harvester` | Converts `@types/*.d.ts` declarations into Nudo env files (powers `nudo harvest`) |
-| `@nudojs/mcp` | MCP server exposing inference tools to AI agents |
-| `@nudojs/env-es` | Built-in ES standard global API type definitions (`/// @nudo:env es`) |
-| `@nudojs/env-node` | Built-in Node.js API type definitions (`/// @nudo:env node`) |
-| `@nudojs/env-web` | Built-in Web platform API type definitions (`/// @nudo:env web`) |
+| `@nudojs/env` | Built-in environment type definitions (`/// @nudo:env es\|web\|node`, subpath exports `/es` `/web` `/node`) |
 | `vite-plugin-nudo` | Vite plugin for type inference during dev |
 | `nudo-vscode` | VS Code / Cursor extension |
 | `website` | Docusaurus documentation site |
