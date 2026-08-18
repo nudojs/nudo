@@ -16,6 +16,15 @@ npx @nudojs/cli infer ./src/utils.js
 
 ## Commands
 
+| Command | Purpose |
+|---------|---------|
+| [`nudo infer`](#nudo-infer) | Infer types from a single JavaScript file |
+| [`nudo check`](#nudo-check) | Check a single file for type errors (error-level diagnostics exit `1`) |
+| [`nudo doctor`](#nudo-doctor) | Health-check files: call-site solidification drift, analysis errors, uncovered functions |
+| [`nudo generate`](#nudo-generate) | Generate runtime validators from inferred types |
+| [`nudo watch`](#nudo-watch) | Watch a file or directory and re-run inference on changes |
+| [`nudo harvest`](#nudo-harvest) | Convert `@types/<pkg>` declarations into a Nudo env file |
+
 ### nudo infer
 
 Infer types from a single JavaScript file.
@@ -188,6 +197,123 @@ nudo check src/broken.js
 
 ---
 
+### nudo doctor
+
+Health-check JavaScript files: call-site solidification drift (with `--callsites`), analysis errors, and functions without cases. Exits with code `1` when any file has drift or errors — uncovered functions are informational only and never change the exit code.
+
+```bash
+nudo doctor [paths...] [options]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `[paths...]` | File(s) or directory(s) to check. Directories are scanned recursively for `.js` files (excluding `node_modules`); defaults to the current directory |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--callsites <paths...>` | Usage-site files or directories (tests/apps). With it, doctor re-runs the same re-solidify chain as `infer --emit-cases=update` for every file and reports drift when the generated `call@` directives would change — see [Health Checks and CI Drift Gating](/docs/guides/cli#health-checks-and-ci-drift-gating) |
+| `--json` | Output the report as structured JSON |
+
+**What is checked:**
+
+- **Drift** — with `--callsites`: the generated `call@` directives no longer match what the usage sites would produce today (same chain as `infer --emit-cases=update`, judged per file)
+- **Errors** — analysis failures, including missing files and syntax errors
+- **Entry-only count / uncovered functions** — informational: how many functions have no call evidence; `uncovered` (zero cases) is currently always empty in practice — every non-skipped function gets at least an `entry@L` fallback case — and never affects the exit code
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| `0` | No drift and no errors — uncovered functions alone still exit `0` |
+| `1` | Any file has drift or an error |
+
+**Examples:**
+
+Healthy (exit code `0`):
+
+```bash
+nudo doctor lib.js --callsites test.js
+```
+
+```
+lib.js
+  · 3 function(s), 1 entry-only
+
+Summary: 1 file(s) · 0 drift · 0 error(s) · 0 uncovered function(s)
+Result: OK (uncovered function(s) are informational only)
+```
+
+Drift — the frozen `call@` directives are stale (exit code `1`); the refresh command is printed ready to copy:
+
+```bash
+nudo doctor lib.js --callsites test.js
+```
+
+```
+lib.js
+  · 3 function(s), 1 entry-only
+  ✗ drift: 5 directive(s) changed (+3 new, -2 removed) — refresh with: nudo infer lib.js --callsites test.js --emit-cases=update
+
+Summary: 1 file(s) · 1 drift · 0 error(s) · 0 uncovered function(s)
+Result: FAIL (drift or errors found)
+```
+
+Analysis errors fail the run the same way (exit code `1`):
+
+```
+missing.js
+  ✗ error: File not found: <path>
+```
+
+```
+broken.js
+  ✗ error: Unexpected token (1:18)
+```
+
+In CI, gate a whole source tree on drift in one command:
+
+```bash
+nudo doctor src/ --callsites tests/
+```
+
+**JSON output (`--json`):**
+
+```json
+{
+  "ok": false,
+  "files": [
+    {
+      "file": "lib.js",
+      "functions": 3,
+      "entryOnly": 1,
+      "uncovered": [],
+      "drift": {
+        "added": 3,
+        "removed": 2
+      }
+    }
+  ],
+  "summary": {
+    "files": 1,
+    "drift": 1,
+    "errors": 0,
+    "uncovered": 0
+  }
+}
+```
+
+Field notes:
+
+- `ok` — matches the exit code: `false` exactly when any file drifted or errored.
+- `files[]` — one entry per file: `file`, `functions`, `entryOnly`, `uncovered`; `drift: { added, removed }` appears only on drifting files, `error` only on failed ones.
+- `summary` — totals: `files`, `drift`, `errors`, `uncovered`.
+
+---
+
 ### nudo generate
 
 Generate runtime validators from inferred types. Output is printed to stdout.
@@ -322,6 +448,7 @@ Usage — add this directive at the top of your JS file:
 | `0` | Success |
 | `1` | Fatal error — missing file, parse failure, or a directory passed to `infer` (`EISDIR`) |
 | `1` | `nudo check` found at least one error-level diagnostic (warnings alone exit `0`) |
+| `1` | `nudo doctor` found drift or analysis errors — uncovered functions alone exit `0` |
 | `1` | `--emit-cases` misuse — combined with `--json`, an invalid mode value, or `--exit-on-diff` without `--dry-run`; also `--exit-on-diff` when the `--dry-run` diff is non-empty |
 
 Note: diagnostics printed by `infer` — including `[error]`-severity ones such as a failed `@nudo:returns` assertion — do **not** change `infer`'s exit code; `infer` still exits `0`. Use `nudo check` to gate CI on diagnostics.

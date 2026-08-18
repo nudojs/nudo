@@ -22,6 +22,7 @@ export {
   getCompletionsAtPosition,
   getCasesForFile,
   buildModuleGraph,
+  type ModuleGraphCache,
   computeDirtySet,
   topoSortDirty,
 } from "./analyzer.ts";

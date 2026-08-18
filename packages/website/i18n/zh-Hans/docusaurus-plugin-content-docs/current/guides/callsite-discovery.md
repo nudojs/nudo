@@ -136,6 +136,8 @@ nudo infer lib/ --callsites test/ --emit-cases=update  # update：重新同步�
 
 端到端工作流示例（引导与漂移检测）见 [CLI 使用指南 —— 固化 case 指令](/docs/guides/cli#固化-case-指令)；基于这些函数的编程接口见 [service API —— 用例固化](/docs/api/service#用例固化)。
 
+要主动检测这种漂移——在 CI 中或发版前——运行 [`nudo doctor`](/docs/guides/cli#健康检查与-ci-漂移门禁)：它对你的文件重跑同一条重新固化链路，任一生成指令会变化即以退出码 `1` 结束。
+
 ## 编程接口
 
 service 包把两个阶段都暴露了出来：

@@ -294,6 +294,8 @@ Emitted cases → lib.js (3 directive(s) across 2 function(s))
 
 `update` 同样幂等——再跑一遍输出 `No changes.`
 
+要在不阅读 diff 的情况下检查整个项目的过期指令，参见[健康检查与 CI 漂移门禁](#健康检查与-ci-漂移门禁)——`nudo doctor` 一次运行即可报告多文件的漂移。
+
 #### 固化会动哪些内容
 
 固化绝不触碰手写内容；它只管理自己的 `call@` 指令：
@@ -431,6 +433,61 @@ nudo watch . --dts
 - **文件监听**：监听单个文件时，Nudo 监听该文件所在目录，追踪文件变更后重新分析。
 - **防抖**：文件变更会防抖（200ms），避免在快速编辑时重复执行。
 - **增量重分析**：每次变更只重新分析变更文件及其依赖方（`Incremental: re-analyzed N, skipped M (…ms)`），并以源码位置形式重新打印结果。
+
+---
+
+## 健康检查与 CI 漂移门禁
+
+[`nudo doctor`](/docs/api/cli-reference#nudo-doctor) 一条命令复查整个项目：分析报错，以及——搭配 `--callsites`——[`--emit-cases`](#固化-case-指令) 固化的 `call@` 指令是否仍与使用处如今会产出的调用形状一致。漂移或报错以退出码 `1` 结束，因此 `doctor` 可以作为固化漂移的 CI 门禁。
+
+典型生命周期：
+
+1. **固化一次**——从使用处引导指令（参见[固化 case 指令](#固化-case-指令)）：
+
+   ```bash
+   nudo infer lib.js --callsites test.js --emit-cases
+   ```
+
+2. **使用处演进**——测试的调用形状变了，固化的指令随之过期。
+
+3. **`doctor` 报告漂移**：
+
+   ```bash
+   nudo doctor lib.js --callsites test.js
+   ```
+
+   ```
+   lib.js
+     · 3 function(s), 1 entry-only
+     ✗ drift: 5 directive(s) changed (+3 new, -2 removed) — refresh with: nudo infer lib.js --callsites test.js --emit-cases=update
+
+   Summary: 1 file(s) · 1 drift · 0 error(s) · 0 uncovered function(s)
+   Result: FAIL (drift or errors found)
+   ```
+
+4. **按提示刷新**——命令可原样复制：
+
+   ```bash
+   nudo infer lib.js --callsites test.js --emit-cases=update
+   ```
+
+5. **复检**——再次运行 `doctor`，恢复绿色：
+
+   ```
+   lib.js
+     · 3 function(s), 1 entry-only
+
+   Summary: 1 file(s) · 0 drift · 0 error(s) · 0 uncovered function(s)
+   Result: OK (uncovered function(s) are informational only)
+   ```
+
+CI 中一行命令即可让整个源码树对照测试套件做检查——任一漂移即构建失败：
+
+```bash
+nudo doctor src/ --callsites tests/
+```
+
+退出码：漂移或分析报错 → `1`；uncovered 函数仅为信息级，绝不会导致失败。全部选项与 `--json` 输出参见 [`nudo doctor` 参考](/docs/api/cli-reference#nudo-doctor)。
 
 ---
 

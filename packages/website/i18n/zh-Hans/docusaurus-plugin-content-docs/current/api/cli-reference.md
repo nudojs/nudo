@@ -16,6 +16,15 @@ npx @nudojs/cli infer ./src/utils.js
 
 ## 命令
 
+| 命令 | 用途 |
+|---------|---------|
+| [`nudo infer`](#nudo-infer) | 从单个 JavaScript 文件推断类型 |
+| [`nudo check`](#nudo-check) | 检查单个文件的类型错误（error 级诊断以退出码 `1` 结束） |
+| [`nudo doctor`](#nudo-doctor) | 健康检查：调用点固化漂移、分析报错、无用例函数 |
+| [`nudo generate`](#nudo-generate) | 从推断类型生成运行时验证器 |
+| [`nudo watch`](#nudo-watch) | 监视文件或目录，变更时重新运行推断 |
+| [`nudo harvest`](#nudo-harvest) | 把 `@types/<pkg>` 声明转成 Nudo env 文件 |
+
 ### nudo infer
 
 从单个 JavaScript 文件推断类型。
@@ -188,6 +197,123 @@ nudo check src/broken.js
 
 ---
 
+### nudo doctor
+
+对 JavaScript 文件做健康检查：调用点固化漂移（`--callsites`）、分析报错、无用例函数。任一文件漂移或报错即以退出码 `1` 结束——uncovered 函数仅为信息级，绝不影响退出码。
+
+```bash
+nudo doctor [paths...] [options]
+```
+
+**参数：**
+
+| 参数 | 描述 |
+|----------|-------------|
+| `[paths...]` | 要检查的文件或目录。目录递归收集 `.js` 文件（排除 `node_modules`）；缺省为当前目录 |
+
+**选项：**
+
+| 选项 | 描述 |
+|--------|-------------|
+| `--callsites <paths...>` | 使用处文件或目录（测试/应用）。指定后，doctor 对每个文件重跑与 `infer --emit-cases=update` 相同的重新固化链路，生成的 `call@` 指令会变化时报告漂移——参见[健康检查与 CI 漂移门禁](/docs/guides/cli#健康检查与-ci-漂移门禁) |
+| `--json` | 以结构化 JSON 输出报告 |
+
+**检查项：**
+
+- **漂移（drift）** ——搭配 `--callsites`：已生成的 `call@` 指令不再匹配使用处如今会产出的结果（与 `infer --emit-cases=update` 同一链路，逐文件判定）
+- **报错（error）** ——分析失败，含文件缺失与语法错误
+- **entry-only 计数 / uncovered 函数** ——信息级：有多少函数没有调用证据；`uncovered`（零用例）目前实际上恒为空——非 skipped 函数至少有 `entry@L` 回退用例——且绝不影响退出码
+
+**退出码：**
+
+| 码值 | 含义 |
+|------|---------|
+| `0` | 无漂移、无报错——仅有 uncovered 函数仍以 `0` 退出 |
+| `1` | 任一文件有漂移或报错 |
+
+**示例：**
+
+健康（退出码 `0`）：
+
+```bash
+nudo doctor lib.js --callsites test.js
+```
+
+```
+lib.js
+  · 3 function(s), 1 entry-only
+
+Summary: 1 file(s) · 0 drift · 0 error(s) · 0 uncovered function(s)
+Result: OK (uncovered function(s) are informational only)
+```
+
+漂移——固化的 `call@` 指令已过期（退出码 `1`）；刷新命令直接打印、可原样复制：
+
+```bash
+nudo doctor lib.js --callsites test.js
+```
+
+```
+lib.js
+  · 3 function(s), 1 entry-only
+  ✗ drift: 5 directive(s) changed (+3 new, -2 removed) — refresh with: nudo infer lib.js --callsites test.js --emit-cases=update
+
+Summary: 1 file(s) · 1 drift · 0 error(s) · 0 uncovered function(s)
+Result: FAIL (drift or errors found)
+```
+
+分析报错同样导致失败（退出码 `1`）：
+
+```
+missing.js
+  ✗ error: File not found: <path>
+```
+
+```
+broken.js
+  ✗ error: Unexpected token (1:18)
+```
+
+CI 中一条命令即可对整个源码树做漂移门禁：
+
+```bash
+nudo doctor src/ --callsites tests/
+```
+
+**JSON 输出（`--json`）：**
+
+```json
+{
+  "ok": false,
+  "files": [
+    {
+      "file": "lib.js",
+      "functions": 3,
+      "entryOnly": 1,
+      "uncovered": [],
+      "drift": {
+        "added": 3,
+        "removed": 2
+      }
+    }
+  ],
+  "summary": {
+    "files": 1,
+    "drift": 1,
+    "errors": 0,
+    "uncovered": 0
+  }
+}
+```
+
+字段说明：
+
+- `ok` ——与退出码一致：任一文件漂移或报错即为 `false`。
+- `files[]` ——每文件一条：`file`、`functions`、`entryOnly`、`uncovered`；`drift: { added, removed }` 仅出现在漂移文件上，`error` 仅出现在失败文件上。
+- `summary` ——总计：`files`、`drift`、`errors`、`uncovered`。
+
+---
+
 ### nudo generate
 
 从推断类型生成运行时验证器。输出打印到 stdout。
@@ -322,6 +448,7 @@ Usage — add this directive at the top of your JS file:
 | `0` | 成功 |
 | `1` | 致命错误——文件缺失、解析失败，或给 `infer` 传了目录（`EISDIR`） |
 | `1` | `nudo check` 发现至少一条 error 级诊断（仅有 warning 时退出码为 `0`） |
+| `1` | `nudo doctor` 发现漂移或分析报错——仅有 uncovered 函数时退出码为 `0` |
 | `1` | `--emit-cases` 用法错误——与 `--json` 组合、mode 值非法、或 `--exit-on-diff` 未搭配 `--dry-run`；以及 `--exit-on-diff` 在 `--dry-run` diff 非空时触发 |
 
 注意：`infer` 打印的诊断——包括 `[error]` 级的 `@nudo:returns` 断言失败——**不会**改变 `infer` 的退出码，`infer` 仍以 `0` 退出。要在 CI 中按诊断做门禁，请使用 `nudo check`。

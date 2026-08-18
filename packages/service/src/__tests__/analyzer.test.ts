@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { resolve } from "node:path";
 import { join } from "node:path";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, chmodSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { T, typeValueToString } from "@nudojs/core";
-import { analyzeFile, collectCallRecords, getTypeAtPosition, getCompletionsAtPosition, buildModuleGraph, computeDirtySet, topoSortDirty } from "../analyzer.ts";
+import { analyzeFile, collectCallRecords, getTypeAtPosition, getCompletionsAtPosition, buildModuleGraph, type ModuleGraphCache, computeDirtySet, topoSortDirty } from "../analyzer.ts";
 import { generateDts } from "../dts-generator.ts";
 
 const FIXTURE_PATH = resolve(import.meta.dirname, "fixtures", "sample.js");
@@ -710,6 +710,99 @@ describe("buildModuleGraph / computeDirtySet / topoSortDirty", () => {
       const dirty = computeDirtySet(dependents, b);
       const ordered = topoSortDirty(imports, dirty);
       expect(ordered.indexOf(b)).toBeLessThan(ordered.indexOf(a));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// 来源：LSP 隔离控制工程化——buildModuleGraph mtime 边缓存
+describe("buildModuleGraph mtime 边缓存", () => {
+  const tmpWrite = (dir: string, name: string, content: string) => {
+    const path = resolve(dir, name);
+    writeFileSync(path, content);
+    return path;
+  };
+
+  it("同输入带/不带 cache 结果一致（含二次全命中）", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-cache-"));
+    try {
+      const a = tmpWrite(dir, "a.js", `import { b } from "./b.js";\n`);
+      const b = tmpWrite(dir, "b.js", `import { c } from "./c.js";\n`);
+      const c = tmpWrite(dir, "c.js", `export const c = 1;\n`);
+      const plain = buildModuleGraph([a, b, c]);
+      const cache: ModuleGraphCache = new Map();
+      const once = buildModuleGraph([a, b, c], cache);
+      const twice = buildModuleGraph([a, b, c], cache); // 第二次全命中
+      const normalize = (g: { imports: Map<string, Set<string>>; dependents: Map<string, Set<string>> }) =>
+        JSON.stringify({
+          imports: [...g.imports].map(([k, v]) => [k, [...v].sort()]),
+          dependents: [...g.dependents].map(([k, v]) => [k, [...v].sort()]),
+        });
+      expect(normalize(once)).toBe(normalize(plain));
+      expect(normalize(twice)).toBe(normalize(plain));
+      expect(cache.size).toBe(3); // 三个文件均回填缓存
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("内容变化（size 改变）后失效重读并回填", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-cache-"));
+    try {
+      const a = tmpWrite(dir, "a.js", `import { b } from "./b.js";\n`);
+      const b = tmpWrite(dir, "b.js", `export const b = 1;\n`);
+      const d = tmpWrite(dir, "d.js", `export const d = 1;\n`);
+      const cache: ModuleGraphCache = new Map();
+      const before = buildModuleGraph([a, b, d], cache);
+      expect(before.imports.get(a)).toEqual(new Set([b]));
+      // 改为同时导入 b、d：size 变化必然导致缓存失效
+      writeFileSync(a, `import { b } from "./b.js";\nimport { d } from "./d.js";\n`);
+      const after = buildModuleGraph([a, b, d], cache);
+      expect(after.imports.get(a)).toEqual(new Set([b, d]));
+      expect(new Set(cache.get(a)!.edges)).toEqual(new Set([b, d]));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("仅 mtime 变化（size 不变）后失效重读", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-cache-"));
+    try {
+      const a = tmpWrite(dir, "a.js", `import { v } from "./b.js";\n`);
+      const b = tmpWrite(dir, "b.js", `export const v = 1;\n`);
+      const c = tmpWrite(dir, "c.js", `export const v = 2;\n`);
+      const cache: ModuleGraphCache = new Map();
+      expect(buildModuleGraph([a, b, c], cache).imports.get(a)).toEqual(new Set([b]));
+      // 同尺寸内容换成导入 c，再用 utimesSync 显式把 mtime 拉开 10s（size 维度保持一致）
+      writeFileSync(a, `import { v } from "./c.js";\n`);
+      const forced = new Date(cache.get(a)!.mtimeMs + 10_000);
+      utimesSync(a, forced, forced);
+      const after = buildModuleGraph([a, b, c], cache);
+      expect(after.imports.get(a)).toEqual(new Set([c]));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("命中时不读盘：文件不可读仍能从 cache 得出正确边", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-cache-"));
+    try {
+      const a = tmpWrite(dir, "a.js", `import { b } from "./b.js";\n`);
+      const b = tmpWrite(dir, "b.js", `export const b = 1;\n`);
+      const cache: ModuleGraphCache = new Map();
+      buildModuleGraph([a, b], cache);
+      chmodSync(a, 0o000); // chmod 不改 mtime → 必命中；statSync 仍可用，readFileSync 将 EACCES
+      try {
+        const hit = buildModuleGraph([a, b], cache);
+        expect(hit.imports.get(a)).toEqual(new Set([b]));
+        expect(hit.dependents.get(b)).toEqual(new Set([a]));
+        // 对照：不带 cache 必须读盘，EACCES 下抽不出任何边——证明上面的边确实来自缓存
+        const miss = buildModuleGraph([a, b]);
+        expect(miss.imports.get(a)).toEqual(new Set());
+      } finally {
+        chmodSync(a, 0o644);
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

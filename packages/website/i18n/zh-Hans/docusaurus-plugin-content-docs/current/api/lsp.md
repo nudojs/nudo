@@ -108,7 +108,10 @@ uriToFilePath(uri: string): string
 |--------|------|---------|
 | `analysisCache` | `Map<string, { version: number; result: AnalysisResult }>` | 每文件分析结果，按文件路径键控，版本来自 `TextDocument.version` |
 | `knownFiles` | `Set<string>` | 本会话中成功分析过的所有文件 —— 脏传播的节点集 |
-| `clearValidationState()` | `() => void` | 测试钩子 —— 同时重置两者 |
+| `moduleGraphCache` | `Map<string, { mtimeMs: number; size: number; edges: string[] }>` | 会话级模块图边缓存，与 `buildModuleGraph` 共享 —— 见[内存与隔离模型](#内存与隔离模型) |
+| `forgetValidatedFile(filePath)` | `(filePath: string) => void` | 磁盘上被删除文件的 `knownFiles` 与 `analysisCache` 登记项一并移除 |
+| `evictModuleGraphCacheEntries(uris)` | `(uris: string[]) => void` | 移除被删除文件的 `moduleGraphCache` 条目（接收 uri，按文件路径逐出） |
+| `clearValidationState()` | `() => void` | 测试钩子 —— 重置以上全部 |
 
 ## symbols.ts
 
@@ -148,7 +151,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 | 签名帮助（触发 `(`、`,`） | `onSignatureHelp` | 定位包裹的调用、对被调函数求类型、高亮当前参数 |
 | 语义 token（full） | `languages.semanticTokens.on` | 声明了图例；当前不产出 token |
 
-文本同步方式为 `Full`。内容变更防抖 300 ms 后才以 `propagate = true` 触发 `validateText`（这是唯一的传播入口）；关闭文档会取消其计时器、丢弃缓存条目并清除诊断。
+文本同步方式为 `Full`。打开文档会立即验证，内容变更则防抖 300 ms —— 两条路径都以 `propagate = true` 触发 `validateText`（仅有的传播入口）；关闭文档会取消其计时器、丢弃缓存条目并清除诊断。被监视文件的删除事件在带外处理，且会话常驻的全部状态都是有界的 —— 见[内存与隔离模型](#内存与隔离模型)。
 
 ### 自定义请求
 
@@ -156,6 +159,50 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 |---------|--------|---------|
 | `nudo/selectCase` | `{ uri: string; functionName: string; caseIndex: number }` | 以新的激活用例重验文档、请求 CodeLens 刷新，返回 `{ success: true }` |
 | `nudo/getActiveCases` | `{ uri: string }` | `Record<string, number>` —— 每个函数的激活用例索引 |
+
+## 内存与隔离模型
+
+这个服务器的设计目标是与 `tsserver` **并排**运行，而不是取而代之 —— 本节的一切都由这个约束塑形。Nudo 的正确性单元是单个文件，因此会话只持有有界的、字符串级的状态：任何 AST 和源码文本都不会在请求之间留存。
+
+### 常驻状态
+
+服务器在整个会话期间持有的全部状态：
+
+| 状态 | 结构 | 上界 | 逐出时机 |
+|-------|-----------|-------|----------|
+| `documents` | 打开的文档（`TextDocuments`） | 每个打开的编辑器文档一条 | 关闭即移除 |
+| `analysisCache` | `Map<filePath, { version, result }>` | 每个分析过的文件一条带版本条目 | 对应文档关闭，或文件被从磁盘删除（`forgetValidatedFile`） |
+| `knownFiles` | `Set<filePath>` | 本会话分析过的每个文件一条路径字符串 | 文件被从磁盘删除（`forgetValidatedFile`） |
+| `activeCases` | `Map<uri, Map<函数名, index>>` | 用例选择，按 uri 与函数名键控 | 关闭/重开之间保留（选择不丢失）；文件被从磁盘删除时丢弃 |
+| `nudoFileCache` | `Map<uri, boolean>` —— Nudo 文件检测记忆 | 每个打开的文档一个布尔值 | 其 uri 每次打开/变更/关闭/删除时失效 |
+| `moduleGraphCache` | `Map<filePath, { mtimeMs, size, edges }>` | 进入过 import 图的每个文件一条；edges 为路径字符串 | `mtimeMs`+`size` 不一致时重读磁盘并回填；删除时逐出 |
+| `debounceTimers` | `Map<uri, timer>` | 每个被编辑的文档一个待触发计时器 | 300 ms 后触发，或关闭时取消 |
+
+每一条都是路径、函数名、小整数或布尔值 —— 字符串级簿记，绝不是解析后的表示。`AnalysisResult` 对象只存在于 `analysisCache` 内，随其条目一起离开。
+
+### 打开即验
+
+`documents.onDidOpen` 会立即以 `propagate = true` 触发验证 —— 与编辑防抖路径同语义，包含对打开依赖项的一次脏传播。新打开的文件立刻就能看到诊断，而不是等到首次编辑或客户端拉取。（`didOpen` 不会触发 `onDidChangeContent`，因此打开路径必须显式验证一次。）
+
+### stale-on-closed 契约
+
+已关闭 —— 或从未打开过 —— 的依赖方，其已发布诊断**有意保持陈旧**：服务器绝不重新分析一个无法从打开缓冲区读取内容的文件。重新打开该文件会重新验证并消除陈旧。
+
+删除是唯一被显式处理的带外事件。`workspace/didChangeWatchedFiles` 中类型为 `Deleted`、且**不在**打开集内的变更，会丢弃该文件的全部会话登记项：`forgetValidatedFile` 清掉 `knownFiles` 与 `analysisCache`，`activeCases` 和 `nudoFileCache` 丢弃该 uri，`moduleGraphCache` 条目被逐出，并推送空诊断列表。处于打开状态的文件会被跳过 —— 其内容归编辑流负责，编辑器自己会通过 `didOpen`/`didChange` 挽救被外部删除的缓冲区。
+
+### 模块图边缓存
+
+脏传播需要 `knownFiles` 上的 import 图，而重建它过去意味着重读并重解析每个已知文件。`buildModuleGraph`（来自 `@nudojs/service`）现在接收会话级的 `moduleGraphCache`：每个条目以纯字符串存储文件的 `mtimeMs`、`size` 与已抽取的 import 边。只做 `stat` 元数据比对 —— `mtimeMs` **和** `size` 均严格相等即命中，复用缓存的边；未命中则从磁盘重读该文件并回填条目。因此未变文件在每次传播中只花一次 `stat`：零磁盘读取、零解析。包内测试用 `chmod 000` 把依赖文件变为不可读来钉死这一行为 —— 传播仍能从缓存的边算出正确的脏集合。
+
+单条结果的工作量同样有封顶：单个 `AnalysisResult` 对每个函数的合成精确 case 数设上限（`MAX_PRECISE_CALLSITE_CASES = 3`），其余调用记录折叠为一个符号聚合，不会无限增长。
+
+### 求值守卫
+
+验证与 CLI 共享同一个求值器，那里的模块加载带有守卫，病态的 import 会降级为诊断而不是挂死：import 环产生 `nudo:module-cycle` 警告并给出完整环链（环内绑定解析为其部分求值的类型 —— 求值不会中断）；深于 16 层的加载链产生 `nudo:module-depth` 警告并把尾部截断为 `unknown` 桩；缺失的 `import`/`require`/`@nudo:mock-module` 目标以 `nudo:module-missing` 错误暴露，并列出解析过的候选路径。
+
+### `interFileDependencies: false`
+
+`initialize` 声明 `diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false }`：每个文件的诊断对该文件独立正确，显式的 `@nudo:case` 指令就是契约面 —— 写进文件的用例*就是*它的接口。这是与 `tsserver` 的结构性差异：tsserver 的全 `Program` 常驻是结构化类型所迫 —— 任何跨文件形状都可能改变任何决策，因此一切都必须保持加载且最新。Nudo 用单文件正确性换取有界内存 —— 这正是两台服务器能在同一编辑器里并排运行的原因。Nudo 不以替代 `tsserver` 为目标。
 
 ## 与 VS Code 扩展的关系
 

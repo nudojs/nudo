@@ -207,8 +207,14 @@ function resolveImportPath(specifier: string, fromDir: string): string | null {
   return null;
 }
 
+/** mtime 边缓存：key 为文件路径，edges 为已抽取的相对 import 边（与 buildModuleGraph 返回语义一致）。 */
+export type ModuleGraphCache = Map<string, { mtimeMs: number; size: number; edges: string[] }>;
+
 /** Statically extract each file's relative import edges (extension resolution identical to CLI resolveModule: ''/'.js'/'.ts'/'.mjs'; bare npm specifiers skipped). */
-export function buildModuleGraph(files: string[]): {
+export function buildModuleGraph(
+  files: string[],
+  cache?: ModuleGraphCache,
+): {
   imports: Map<string, Set<string>>;
   dependents: Map<string, Set<string>>;
 } {
@@ -223,21 +229,47 @@ export function buildModuleGraph(files: string[]): {
   for (const file of files) {
     if (!imports.has(file)) imports.set(file, new Set());
     if (!dependents.has(file)) dependents.set(file, new Set());
-    let ast: ReturnType<typeof parse>;
-    try {
-      ast = parse(readFileSync(file, "utf-8"));
-    } catch {
-      continue;
+    let edges: string[];
+    if (cache) {
+      // stat 仅取元数据不读内容；mtimeMs+size 均一致视为命中，复用边并跳过磁盘读取与解析
+      let stat: ReturnType<typeof statSync> | null = null;
+      try {
+        stat = statSync(file);
+      } catch {
+        /* stat 失败（文件被删等）按未命中处理，走直读兜底 */
+      }
+      const cached = stat ? cache.get(file) : undefined;
+      if (stat && cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+        edges = cached.edges;
+      } else {
+        edges = extractImportEdges(file);
+        if (stat) cache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, edges });
+      }
+    } else {
+      edges = extractImportEdges(file);
     }
-    for (const stmt of ast.program.body) {
-      if (stmt.type !== "ImportDeclaration") continue;
-      const specifier = stmt.source.value;
-      if (!specifier.startsWith(".") && !specifier.startsWith("/")) continue;
-      const resolved = resolveImportPath(specifier, dirname(file));
-      if (resolved) edge(file, resolved);
-    }
+    for (const to of edges) edge(file, to);
   }
   return { imports, dependents };
+}
+
+/** 磁盘直读并解析单个文件，抽取其相对 import 边（读取/解析失败返回空数组）。 */
+function extractImportEdges(file: string): string[] {
+  const edges: string[] = [];
+  let ast: ReturnType<typeof parse>;
+  try {
+    ast = parse(readFileSync(file, "utf-8"));
+  } catch {
+    return edges;
+  }
+  for (const stmt of ast.program.body) {
+    if (stmt.type !== "ImportDeclaration") continue;
+    const specifier = stmt.source.value;
+    if (!specifier.startsWith(".") && !specifier.startsWith("/")) continue;
+    const resolved = resolveImportPath(specifier, dirname(file));
+    if (resolved) edges.push(resolved);
+  }
+  return edges;
 }
 
 /** changed plus its transitive dependents (reverse-edge BFS); cycle-safe via visited. */
@@ -810,6 +842,35 @@ function unknownRecordsToDiagnostics(records: UnknownRecord[]): Diagnostic[] {
           severity: "warning",
           message: `Recursive evaluation of '${r.name.slice("recursion:".length)}' was truncated (depth/size budget); result widened to unknown`,
           code: "nudo:recursion-truncated",
+        });
+        continue;
+      }
+      // 模块加载守卫记录（evaluator.ts loadModuleEnv / mock-module 路径）：
+      // reason 自带环链 / 链深 / 完整候选路径，直接作为诊断文案。
+      if (r.name.startsWith("module-cycle:")) {
+        out.push({
+          range,
+          severity: "warning",
+          message: r.reason ?? "Circular module load detected",
+          code: "nudo:module-cycle",
+        });
+        continue;
+      }
+      if (r.name.startsWith("module-depth:")) {
+        out.push({
+          range,
+          severity: "warning",
+          message: r.reason ?? "Module load chain too deep",
+          code: "nudo:module-depth",
+        });
+        continue;
+      }
+      if (r.name.startsWith("module-missing:")) {
+        out.push({
+          range,
+          severity: "error",
+          message: r.reason ?? "Module file not found",
+          code: "nudo:module-missing",
         });
         continue;
       }

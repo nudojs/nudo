@@ -108,7 +108,10 @@ Strips a `file://` prefix (and decodes percent escapes); non-`file://` URIs are 
 |--------|------|---------|
 | `analysisCache` | `Map<string, { version: number; result: AnalysisResult }>` | Per-file analysis results, keyed by file path, versioned from `TextDocument.version` |
 | `knownFiles` | `Set<string>` | Every file analyzed successfully in this session — the node set for dirty propagation |
-| `clearValidationState()` | `() => void` | Test hook — resets both |
+| `moduleGraphCache` | `Map<string, { mtimeMs: number; size: number; edges: string[] }>` | Session-level module-graph edge cache shared with `buildModuleGraph` — see [Memory and Isolation Model](#memory-and-isolation-model) |
+| `forgetValidatedFile(filePath)` | `(filePath: string) => void` | Drops the `knownFiles` and `analysisCache` records for a file deleted on disk |
+| `evictModuleGraphCacheEntries(uris)` | `(uris: string[]) => void` | Drops `moduleGraphCache` entries for deleted files (takes uris, evicts by file path) |
+| `clearValidationState()` | `() => void` | Test hook — resets all of the above |
 
 ## symbols.ts
 
@@ -148,7 +151,7 @@ What `src/server.ts` actually registers (`connection.onInitialize`):
 | Signature help (triggers `(`, `,`) | `onSignatureHelp` | Locates the enclosing call, types the callee, highlights the active parameter |
 | Semantic tokens (full) | `languages.semanticTokens.on` | Declared legend; currently emits no tokens |
 
-Text synchronization is `Full`. Content changes are debounced 300 ms before triggering `validateText` with `propagate = true` (the only propagation entry point); closing a document cancels its timer, drops its cache entry, and clears its diagnostics.
+Text synchronization is `Full`. Opening a document validates it immediately, and content changes are debounced 300 ms — both paths trigger `validateText` with `propagate = true` (the only propagation entry points); closing a document cancels its timer, drops its cache entry, and clears its diagnostics. Watched-file deletions are handled out-of-band, and everything the session keeps in memory is bounded — see [Memory and Isolation Model](#memory-and-isolation-model).
 
 ### Custom requests
 
@@ -156,6 +159,50 @@ Text synchronization is `Full`. Content changes are debounced 300 ms before trig
 |---------|--------|---------|
 | `nudo/selectCase` | `{ uri: string; functionName: string; caseIndex: number }` | Revalidates the document with the new active case, requests a CodeLens refresh, returns `{ success: true }` |
 | `nudo/getActiveCases` | `{ uri: string }` | `Record<string, number>` — active case index per function |
+
+## Memory and Isolation Model
+
+The server is built to run **next to** `tsserver`, not instead of it — and that constraint shapes everything in this section. Nudo's unit of correctness is the single file, so the session keeps only bounded, string-level state: no AST and no source text survives between requests.
+
+### Resident state
+
+Everything the server holds for the lifetime of a session:
+
+| State | Structure | Bound | Eviction |
+|-------|-----------|-------|----------|
+| `documents` | open documents (`TextDocuments`) | one entry per open editor document | removed on close |
+| `analysisCache` | `Map<filePath, { version, result }>` | one versioned entry per analyzed file | its document closes, or the file is deleted on disk (`forgetValidatedFile`) |
+| `knownFiles` | `Set<filePath>` | one path string per file analyzed this session | file deleted on disk (`forgetValidatedFile`) |
+| `activeCases` | `Map<uri, Map<functionName, index>>` | case selections, keyed by uri and function name | survives close/reopen so a selection is not lost; dropped when the file is deleted on disk |
+| `nudoFileCache` | `Map<uri, boolean>` — Nudo-file detection memo | one boolean per open document | invalidated on every open/change/close/delete of its uri |
+| `moduleGraphCache` | `Map<filePath, { mtimeMs, size, edges }>` | one entry per file that ever entered the import graph; edges are path strings | `mtimeMs`+`size` mismatch re-reads from disk and backfills; deletion evicts |
+| `debounceTimers` | `Map<uri, timer>` | one pending timer per edited document | fires after 300 ms or is cancelled on close |
+
+Every entry is a path, a function name, a small integer, or a boolean — string-level bookkeeping, never parsed representation. `AnalysisResult` objects exist only inside `analysisCache` and leave with their entry.
+
+### Validate on open
+
+`documents.onDidOpen` triggers validation immediately with `propagate = true` — the same semantics as the debounced edit path, including one round of dirty propagation to open dependents. A newly opened file shows its diagnostics right away instead of waiting for the first edit or a client pull. (`didOpen` does not fire `onDidChangeContent`, so the open path must validate explicitly.)
+
+### The stale-on-closed contract
+
+Dependents that are closed — or were never opened — keep their last published diagnostics **stale on purpose**: the server never re-analyzes a file it cannot read from an open buffer. Reopening the file revalidates it and clears the staleness.
+
+Deletion is the one out-of-band event handled explicitly. A `workspace/didChangeWatchedFiles` change of type `Deleted`, for a file **not** in the open set, drops every session record for it: `forgetValidatedFile` clears `knownFiles` and `analysisCache`, `activeCases` and `nudoFileCache` drop the uri, the `moduleGraphCache` entry is evicted, and an empty diagnostic list is pushed. Files that *are* open are skipped — their content is owned by the edit stream, and the editor itself rescues an externally deleted buffer via `didOpen`/`didChange`.
+
+### Module-graph edge cache
+
+Dirty propagation needs the import graph over `knownFiles`, and rebuilding it used to mean re-reading and re-parsing every known file. `buildModuleGraph` (from `@nudojs/service`) now takes the session-level `moduleGraphCache`: each entry stores a file's `mtimeMs`, `size`, and extracted import edges as plain strings. A `stat`-only metadata check — `mtimeMs` **and** `size` exactly equal — is a hit and reuses the cached edges; a miss re-reads the file from disk and backfills the entry. Unchanged files therefore cost one `stat` per propagation: zero disk reads, zero parsing. The package tests pin this by making a dependency unreadable (`chmod 000`) — propagation still computes the correct dirty set from cached edges.
+
+Per-result work is bounded as well: a single `AnalysisResult` caps synthesized precise cases per function (`MAX_PRECISE_CALLSITE_CASES = 3`), folding the remaining call records into a symbolic aggregate instead of growing without limit.
+
+### Evaluation guards
+
+Validation shares the evaluator with the CLI, and module loading there is guarded so pathological imports degrade to diagnostics instead of hangs: an import cycle produces a `nudo:module-cycle` warning naming the full cycle chain (bindings inside the cycle resolve to their partially evaluated types — evaluation is not aborted); a load chain deeper than 16 modules produces a `nudo:module-depth` warning and truncates the tail to `unknown` stubs; a missing `import`/`require`/`@nudo:mock-module` target surfaces as a `nudo:module-missing` error listing the resolved candidate paths.
+
+### `interFileDependencies: false`
+
+`initialize` declares `diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false }`: each file's diagnostics are correct for that file alone, and the explicit `@nudo:case` directives are the contract surface — the cases written into the file *are* its interface. This is the structural difference from `tsserver`, whose whole-`Program` residency is forced by structural typing: any cross-file shape can change any decision, so everything must stay loaded and current. Nudo trades that for single-file correctness with bounded memory — which is precisely what lets both servers run side by side in the same editor. Nudo does not aim to replace `tsserver`.
 
 ## Relation to the VS Code Extension
 

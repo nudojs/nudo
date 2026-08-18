@@ -117,6 +117,16 @@ You can also invoke the command palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and run
 
 ---
 
+## Resource Usage
+
+The Nudo language server is designed to stay small next to your other tooling:
+
+- **Bounded memory.** Between requests the server keeps only lightweight bookkeeping — file paths, function names, and small per-file records — and drops a file's analysis as soon as you close it. It never keeps parsed syntax trees in memory, and it is built to run alongside TypeScript's own language features rather than replace them.
+- **Diagnostics on open.** Opening a file analyzes it immediately; you don't need to edit it first to see Nudo's diagnostics.
+- **Stale diagnostics clear on reopen.** A file you have *closed* is not re-analyzed when something it depends on changes — its diagnostics stay where they were until you open it again, at which point they are refreshed. Files deleted from disk have their diagnostics cleared automatically.
+
+---
+
 ## Summary
 
 | Feature           | Description                                              |

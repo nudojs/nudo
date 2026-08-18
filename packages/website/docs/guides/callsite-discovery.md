@@ -136,6 +136,8 @@ Emission never touches hand-written work; it only manages its own `call@` direct
 
 End-to-end workflow examples (bootstrap and drift detection) are in the [CLI guide — Persisting cases as directives](/docs/guides/cli#persisting-cases-as-directives); the programmatic flow over these functions is documented under [service API — Case Emission](/docs/api/service#case-emission).
 
+To detect this drift proactively — in CI or before a release — run [`nudo doctor`](/docs/guides/cli#health-checks-and-ci-drift-gating): it re-runs the same re-solidify chain across your files and exits `1` as soon as any generated directives would change.
+
 ## Programmatic API
 
 The service package exposes both phases:

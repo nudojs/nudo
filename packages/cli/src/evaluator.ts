@@ -972,9 +972,17 @@ function buildMemoKey(
 
 const moduleCache = new Map<string, Environment>();
 
+/** 模块加载链（import / require / @nudo:mock-module mock 文件）深度上限。
+ *  超限即截断为空环境并记录诊断——防御病态嵌套链，以及解析器返回未归一化
+ *  路径时（同一逻辑文件每次都是「新」路径、缓存永不命中）的真栈溢出。 */
+const MAX_MODULE_LOAD_DEPTH = 16;
+
 export function resetMemo(): void {
   callMemo.clear();
   moduleCache.clear();
+  // 加载栈由 try/finally 保证配平，这里清空是双保险：任何中途逃逸的帧
+  // 都会让后续分析把正常文件误判为环。
+  _moduleEvalStack.length = 0;
   _callDepth = 0;
   _totalCalls = 0;
   _activeCallKeys.length = 0;
@@ -4359,11 +4367,61 @@ function evaluateDoWhileStatement(
   return T.undefined;
 }
 
+/** 诊断用的模块短名：UnknownRecord.name 会决定诊断 range 的列宽
+ *  （analyzer 按 name.length 折叠 end 列），完整路径会把列号撑爆。 */
+function moduleLabel(pathOrSpecifier: string): string {
+  const base = pathOrSpecifier.replace(/^.*\//, "");
+  return base || pathOrSpecifier;
+}
+
+/** 相对说明符的完整候选路径（evaluator 不引 node:path，手工拼接并归一化
+ *  "./" 与 ".." 段，保证诊断里是干净的绝对路径）。 */
+function attemptedFullPath(fromDir: string, specifier: string): string {
+  if (specifier.startsWith("/")) return specifier;
+  const base = specifier.startsWith("./") ? specifier.slice(2) : specifier;
+  const joined = fromDir ? `${fromDir.replace(/\/+$/, "")}/${base}` : base;
+  const segments: string[] = [];
+  for (const seg of joined.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") segments.pop();
+    else segments.push(seg);
+  }
+  return (joined.startsWith("/") ? "/" : "") + segments.join("/");
+}
+
 /** Load (or fetch from cache) the environment for a resolved module file.
- * Shared by ESM import and CJS require — one loading path, one cache. */
-function loadModuleEnv(resolved: { ast: Node; filePath: string }): Environment {
+ * Shared by ESM import and CJS require — one loading path, one cache.
+ * loc 为触发本次加载的 import/require 结点，用于守卫诊断定位。 */
+function loadModuleEnv(resolved: { ast: Node; filePath: string }, loc?: Node["loc"]): Environment {
+  // 循环加载守卫——必须先于缓存查询：进行中的文件在求值前就已预置进
+  // moduleCache，缓存命中分支区分不了「已加载完成」与「环形依赖回到自身」。
+  // 命中环时返回进行中的部分环境（ESM 环形依赖语义，类型不炸），同时记录
+  // 指明环链的诊断（a -> b -> a）。
+  const cycleIndex = _moduleEvalStack.indexOf(resolved.filePath);
+  if (cycleIndex !== -1) {
+    const chain = [..._moduleEvalStack.slice(cycleIndex), resolved.filePath];
+    recordUnknown({
+      kind: "global",
+      name: `module-cycle:${moduleLabel(resolved.filePath)}`,
+      loc,
+      reason: `Circular module load: ${chain.join(" -> ")} (bindings inside the cycle resolve to their partially evaluated types)`,
+    });
+    return moduleCache.get(resolved.filePath) ?? freshStubModuleEnv(resolved);
+  }
   let moduleEnv = moduleCache.get(resolved.filePath);
   if (!moduleEnv) {
+    // 深度上限：每个真正新载入的文件占一帧，超过 MAX_MODULE_LOAD_DEPTH
+    // 即截断为空环境（导出全为 unknown），报错指明链深与完整链。
+    if (_moduleEvalStack.length >= MAX_MODULE_LOAD_DEPTH) {
+      const chain = [..._moduleEvalStack, resolved.filePath];
+      recordUnknown({
+        kind: "global",
+        name: `module-depth:${moduleLabel(resolved.filePath)}`,
+        loc,
+        reason: `Module load chain too deep (depth ${chain.length} > ${MAX_MODULE_LOAD_DEPTH} max): ${chain.join(" -> ")} (loading truncated, deeper modules typed as unknown)`,
+      });
+      return freshStubModuleEnv(resolved);
+    }
     moduleEnv = createEnvironment();
     moduleCache.set(resolved.filePath, moduleEnv);
     const savedDir = currentFileDir;
@@ -4379,6 +4437,13 @@ function loadModuleEnv(resolved: { ast: Node; filePath: string }): Environment {
     tagCommonJsExports(moduleEnv, resolved.filePath);
   }
   return moduleEnv;
+}
+
+/** 截断/环回退用的空环境：入缓存保证后续请求拿到同一份「全 unknown」结果。 */
+function freshStubModuleEnv(resolved: { ast: Node; filePath: string }): Environment {
+  const stub = createEnvironment();
+  moduleCache.set(resolved.filePath, stub);
+  return stub;
 }
 
 /** Build an exports namespace object from a module's `__export_` bindings
@@ -4468,11 +4533,13 @@ function evaluateRequireCall(node: Node & { type: "CallExpression" }, _env: Envi
   if (!currentModuleResolver) return T.unknown;
   const resolved = currentModuleResolver(specifier, currentFileDir);
   if (!resolved) {
+    // 缺失文件：报错带完整候选路径（module-missing 前缀走 analyzer 专属
+    // 文案通道，reason 不会被通用 unknown-global 文案吞掉）。
     recordUnknown({
       kind: "global",
-      name: `require('${specifier}')`,
+      name: `module-missing:require('${specifier}')`,
       loc: node.loc,
-      reason: `cannot resolve module '${specifier}'`,
+      reason: `Cannot resolve require('${specifier}'): no file at ${attemptedFullPath(currentFileDir, specifier)} (with or without .js/.ts/.mjs extension)`,
     });
     return T.unknown;
   }
@@ -4480,7 +4547,7 @@ function evaluateRequireCall(node: Node & { type: "CallExpression" }, _env: Envi
   if ("json" in resolved && resolved.json !== undefined) {
     return jsonToTypeValue(resolved.json);
   }
-  return commonJsExportsValue(loadModuleEnv(resolved));
+  return commonJsExportsValue(loadModuleEnv(resolved, node.loc));
 }
 
 function evaluateImportDeclaration(node: Node & { type: "ImportDeclaration" }, env: Environment): EvalResult {
@@ -4490,13 +4557,13 @@ function evaluateImportDeclaration(node: Node & { type: "ImportDeclaration" }, e
   if (mockModule && currentModuleResolver) {
     const mockResolved = currentModuleResolver(mockModule.fromPath, currentFileDir);
     if (mockResolved) {
-      const mockEnv = loadModuleEnv(mockResolved);
+      const mockEnv = loadModuleEnv(mockResolved, node.loc);
 
       if (mockModule.names) {
         const originalResolved = currentModuleResolver(source, currentFileDir);
         let originalEnv: Environment | undefined;
         if (originalResolved) {
-          originalEnv = loadModuleEnv(originalResolved);
+          originalEnv = loadModuleEnv(originalResolved, node.loc);
         }
 
         for (const spec of node.specifiers) {
@@ -4563,6 +4630,14 @@ function evaluateImportDeclaration(node: Node & { type: "ImportDeclaration" }, e
       }
       return T.undefined;
     }
+    // mock 文件本身解析失败：此前静默回落到原模块（mock 被无声忽略）。
+    // 现在记录带完整候选路径的诊断后仍回落，分析不中断。
+    recordUnknown({
+      kind: "global",
+      name: `module-missing:${moduleLabel(mockModule.fromPath)}`,
+      loc: node.loc,
+      reason: `@nudo:mock-module target for "${source}" not found: no file at ${attemptedFullPath(currentFileDir, mockModule.fromPath)} (with or without .js/.ts/.mjs extension); falling back to the original module`,
+    });
   }
 
   const envModule = envModules[source];
@@ -4587,9 +4662,22 @@ function evaluateImportDeclaration(node: Node & { type: "ImportDeclaration" }, e
   if (!currentModuleResolver) return T.undefined;
 
   const resolved = currentModuleResolver(source, currentFileDir);
-  if (!resolved) return T.undefined;
+  if (!resolved) {
+    // 相对/绝对说明符解析失败：此前完全静默（绑定凭空缺失，只剩下游
+    // 「unknown global」噪音）。缺失文件报错带完整候选路径；裸说明符
+    // （npm 包）保持静默，与 require() 的 bare 分支口径一致。
+    if (source.startsWith(".") || source.startsWith("/")) {
+      recordUnknown({
+        kind: "global",
+        name: `module-missing:${moduleLabel(source)}`,
+        loc: node.loc,
+        reason: `Cannot resolve import '${source}': no file at ${attemptedFullPath(currentFileDir, source)} (with or without .js/.ts/.mjs extension)`,
+      });
+    }
+    return T.undefined;
+  }
 
-  const moduleEnv = loadModuleEnv(resolved);
+  const moduleEnv = loadModuleEnv(resolved, node.loc);
 
   for (const spec of node.specifiers) {
     if (spec.type === "ImportDefaultSpecifier") {

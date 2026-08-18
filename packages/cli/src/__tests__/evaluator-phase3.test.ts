@@ -8,7 +8,7 @@ import {
 } from "@nudojs/core";
 import type { TypeValue } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
-import { evaluate, evaluateFunction, evaluateFunctionFull, evaluateProgram, resetMemo, setModuleResolver, setCurrentFileDir, setUnknownCollector, type UnknownRecord } from "../evaluator.ts";
+import { evaluate, evaluateFunction, evaluateFunctionFull, evaluateProgram, resetMemo, setModuleResolver, setCurrentFileDir, setUnknownCollector, setMockModules, resetMockModules, type UnknownRecord } from "../evaluator.ts";
 
 function evalCode(code: string): TypeValue {
   const ast = parse(code);
@@ -616,6 +616,167 @@ describe("modules import/export", () => {
 
     expect(env.lookup("u").kind).toBe("unknown");
     expect(records.some((r) => r.kind === "global" && r.name === `require('@hapi/hoek')`)).toBe(true);
+  });
+
+  // --- 模块加载边界守卫（环 / 深度 / 缺失），来源：evaluator.ts loadModuleEnv 加固 ---
+
+  it("reports a circular import chain a -> b -> a and keeps partial-binding semantics", () => {
+    const aAst = parse(`import { bVal } from "./b.js";\nexport const aVal = 1;\nexport const mixed = bVal;\n`);
+    const bAst = parse(`import { aVal } from "./a.js";\nexport const bVal = aVal;\n`);
+    const files: Record<string, { ast: ReturnType<typeof parse>; filePath: string }> = {
+      "./a.js": { ast: aAst, filePath: "/fake/a.js" },
+      "./b.js": { ast: bAst, filePath: "/fake/b.js" },
+    };
+    setModuleResolver((source) => files[source] ?? null);
+    setCurrentFileDir("/fake");
+
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    const env = createEnvironment();
+    evaluateProgram(parse(`import { aVal, mixed } from "./a.js";\n`), env);
+
+    const cycle = records.find((r) => r.kind === "global" && r.name.startsWith("module-cycle:"));
+    expect(cycle).toBeDefined();
+    expect(cycle?.name).toBe("module-cycle:a.js");
+    expect(cycle?.reason).toBe("Circular module load: /fake/a.js -> /fake/b.js -> /fake/a.js (bindings inside the cycle resolve to their partially evaluated types)");
+    // 环内 aVal 在 b 求值时尚未执行 → unknown；环后补齐的导出照常可得
+    expect(typeValueEquals(env.lookup("aVal"), T.literal(1))).toBe(true);
+    expect(env.lookup("mixed").kind).toBe("unknown");
+
+    setUnknownCollector(null);
+    setModuleResolver(null);
+    setCurrentFileDir("");
+  });
+
+  it("reports a mock-module cycle when the mock file re-imports the mocked module", () => {
+    const mockAst = parse(`import { helper } from "calc";\nexport const value = helper;\nexport const own = 2;\n`);
+    setMockModules(new Map([["calc", { fromPath: "./mockCalc.js" }]]));
+    setModuleResolver((source) => {
+      if (source === "./mockCalc.js") return { ast: mockAst, filePath: "/fake/mockCalc.js" };
+      return null;
+    });
+    setCurrentFileDir("/fake");
+
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    const env = createEnvironment();
+    evaluateProgram(parse(`import { value, own } from "calc";\nconst sum = own + 40;\n`), env);
+
+    const cycle = records.find((r) => r.kind === "global" && r.name.startsWith("module-cycle:"));
+    expect(cycle).toBeDefined();
+    expect(cycle?.reason).toBe("Circular module load: /fake/mockCalc.js -> /fake/mockCalc.js (bindings inside the cycle resolve to their partially evaluated types)");
+    // 环截断后 mock 文件其余导出照常求值，分析不中断
+    expect(env.lookup("value").kind).toBe("unknown");
+    expect(typeValueEquals(env.lookup("sum"), T.literal(42))).toBe(true);
+
+    setUnknownCollector(null);
+    setModuleResolver(null);
+    setCurrentFileDir("");
+    resetMockModules();
+  });
+
+  it("truncates module chains deeper than the depth limit and reports the chain", () => {
+    // f1 -> f2 -> ... -> f20：第 17 层（f17）触发深度上限（MAX_MODULE_LOAD_DEPTH = 16）
+    const files: Record<string, { ast: ReturnType<typeof parse>; filePath: string }> = {};
+    for (let i = 1; i <= 20; i++) {
+      const body = i < 20
+        ? `import { value as inner } from "./f${i + 1}.js";\nexport const value = inner;\n`
+        : `export const value = 20;\n`;
+      files[`./f${i}.js`] = { ast: parse(body), filePath: `/fake/f${i}.js` };
+    }
+    setModuleResolver((source) => files[source] ?? null);
+    setCurrentFileDir("/fake");
+
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    const env = createEnvironment();
+    evaluateProgram(parse(`import { value } from "./f1.js";\n`), env);
+
+    const depth = records.find((r) => r.kind === "global" && r.name.startsWith("module-depth:"));
+    expect(depth).toBeDefined();
+    expect(depth?.name).toBe("module-depth:f17.js");
+    expect(depth?.reason).toContain("depth 17 > 16 max");
+    const expectedChain = Array.from({ length: 17 }, (_, k) => `/fake/f${k + 1}.js`).join(" -> ");
+    expect(depth?.reason).toContain(expectedChain);
+    // 截断为 unknown，而非栈溢出崩溃
+    expect(env.lookup("value").kind).toBe("unknown");
+
+    setUnknownCollector(null);
+    setModuleResolver(null);
+    setCurrentFileDir("");
+  });
+
+  it("reports a missing @nudo:mock-module target with its full path and falls back to the original", () => {
+    setMockModules(new Map([["b", { fromPath: "./nope.js" }]]));
+    setModuleResolver((source) => {
+      if (source === "b") return { ast: parse(`export const x = 41;\n`), filePath: "/fake/b.js" };
+      return null; // "./nope.js" 不存在
+    });
+    setCurrentFileDir("/fake");
+
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    const env = createEnvironment();
+    evaluateProgram(parse(`import { x } from "b";\nconst y = x + 1;\n`), env);
+
+    const missing = records.find((r) => r.kind === "global" && r.name.startsWith("module-missing:"));
+    expect(missing).toBeDefined();
+    expect(missing?.name).toBe("module-missing:nope.js");
+    expect(missing?.reason).toContain('@nudo:mock-module target for "b" not found');
+    expect(missing?.reason).toContain("/fake/nope.js");
+    // 回落到原模块，mock 缺失不中断分析
+    expect(typeValueEquals(env.lookup("y"), T.literal(42))).toBe(true);
+
+    setUnknownCollector(null);
+    setModuleResolver(null);
+    setCurrentFileDir("");
+    resetMockModules();
+  });
+
+  it("reports an unresolvable relative import with the attempted full path", () => {
+    setModuleResolver(() => null);
+    setCurrentFileDir("/fake");
+
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    const env = createEnvironment();
+    evaluateProgram(parse(`import { x } from "./gone.js";\nconst y = 1;\n`), env);
+
+    const missing = records.find((r) => r.kind === "global" && r.name.startsWith("module-missing:"));
+    expect(missing).toBeDefined();
+    expect(missing?.reason).toContain("Cannot resolve import './gone.js'");
+    expect(missing?.reason).toContain("/fake/gone.js");
+    expect(typeValueEquals(env.lookup("y"), T.literal(1))).toBe(true);
+
+    setUnknownCollector(null);
+    setModuleResolver(null);
+    setCurrentFileDir("");
+  });
+
+  it("loads nested mock-module dependencies without triggering guard diagnostics", () => {
+    const helperAst = parse(`export const h = 2;\n`);
+    const mockAst = parse(`import { h } from "./helper.js";\nexport const answer = h * 21;\n`);
+    const files: Record<string, { ast: ReturnType<typeof parse>; filePath: string }> = {
+      "./helper.js": { ast: helperAst, filePath: "/fake/helper.js" },
+      "./mockCalc.js": { ast: mockAst, filePath: "/fake/mockCalc.js" },
+    };
+    setMockModules(new Map([["calc", { fromPath: "./mockCalc.js" }]]));
+    setModuleResolver((source) => files[source] ?? null);
+    setCurrentFileDir("/fake");
+
+    const records: UnknownRecord[] = [];
+    setUnknownCollector((r) => records.push(r));
+    const env = createEnvironment();
+    evaluateProgram(parse(`import { answer } from "calc";\nconst life = answer;\n`), env);
+
+    // 正常嵌套 mock：不产生任何守卫诊断
+    expect(records.filter((r) => r.name.startsWith("module-"))).toHaveLength(0);
+    expect(typeValueEquals(env.lookup("life"), T.literal(42))).toBe(true);
+
+    setUnknownCollector(null);
+    setModuleResolver(null);
+    setCurrentFileDir("");
+    resetMockModules();
   });
 
   it("pre-binds __dirname and __filename as strings", () => {

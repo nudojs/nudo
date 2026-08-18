@@ -25,6 +25,7 @@ import {
   unifiedDiff,
   type CallRecord,
   type FunctionAnalysis,
+  type AnalysisResult,
   type EmitResult,
 } from "@nudojs/service";
 import { harvestDts, emitEnvModule } from "@nudojs/harvester";
@@ -168,6 +169,46 @@ function typeValueToTSType(tv: TypeValue): string {
 /** `--emit-cases` 的编排选项：mode 决定 add/update 两条固化路径 */
 type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOnDiff: boolean };
 
+/**
+ * update 固化路径的编排：剥离旧生成指令（call@ 前缀）→ 以剥离后的源码
+ * 重新分析（合成 case 反映当前真实调用形状）→ 重新插入生成指令。
+ * infer --emit-cases=update 与 doctor 的 drift 判定共用此链路。
+ * 注意是否有变化必须比较 emitOut.source 与原始 source（EmitResult.changed
+ * 以 stripped 基准恒真）；removed 供指令数统计。
+ */
+async function reemitUpdate(
+  filePath: string,
+  source: string,
+  callsites?: CallRecord[],
+): Promise<{ result: AnalysisResult; emitOut: EmitResult; removed: string[] }> {
+  const stripped = stripGeneratedCaseDirectives(source);
+  const result = await analyzeFileAsync(filePath, stripped.source, undefined, callsites);
+  const emitOut = insertGeneratedCaseDirectives(stripped.source, result);
+  return { result, emitOut, removed: stripped.removed };
+}
+
+/**
+ * --callsites 公共采集：路径可为文件或目录（目录递归收 .js），逐文件
+ * collectCallRecords 汇总为外部调用记录。找不到的路径报错并置退出码 1
+ * （不中断其余路径）；一条都收不到时返回 undefined（与未传等价）。
+ */
+function collectExternalRecords(sites: string[]): CallRecord[] | undefined {
+  const records: CallRecord[] = [];
+  for (const site of sites) {
+    const sitePath = resolve(site);
+    if (!existsSync(sitePath)) {
+      console.error(`Callsite file not found: ${sitePath}`);
+      process.exitCode = 1;
+      continue;
+    }
+    const siteFiles = statSync(sitePath).isDirectory() ? collectNudoFiles(sitePath) : [sitePath];
+    for (const sf of siteFiles) {
+      records.push(...collectCallRecords(sf, readFileSync(sf, "utf-8")));
+    }
+  }
+  return records.length > 0 ? records : undefined;
+}
+
 async function runInfer(
   file: string,
   options: { dts?: boolean; showLoc?: boolean; callsites?: CallRecord[]; emit?: EmitCasesOptions } = {},
@@ -181,9 +222,9 @@ async function runInfer(
   let emitOut: EmitResult | undefined;
   if (options.emit) {
     if (options.emit.mode === "update") {
-      const stripped = stripGeneratedCaseDirectives(source);
-      result = await analyzeFileAsync(filePath, stripped.source, undefined, options.callsites);
-      emitOut = insertGeneratedCaseDirectives(stripped.source, result);
+      const re = await reemitUpdate(filePath, source, options.callsites);
+      result = re.result;
+      emitOut = re.emitOut;
     } else {
       emitOut = insertGeneratedCaseDirectives(source, result);
     }
@@ -420,22 +461,7 @@ program
       }
     let externalRecords: CallRecord[] | undefined;
     if (opts.callsites?.length) {
-      externalRecords = [];
-      for (const site of opts.callsites) {
-        const sitePath = resolve(site);
-        if (!existsSync(sitePath)) {
-          console.error(`Callsite file not found: ${sitePath}`);
-          process.exitCode = 1;
-          continue;
-        }
-        const siteFiles = statSync(sitePath).isDirectory()
-          ? collectNudoFiles(sitePath)
-          : [sitePath];
-        for (const sf of siteFiles) {
-          externalRecords.push(...collectCallRecords(sf, readFileSync(sf, "utf-8")));
-        }
-      }
-      if (externalRecords.length === 0) externalRecords = undefined;
+      externalRecords = collectExternalRecords(opts.callsites);
     }
     if (opts.json) {
       await runInferJson(file, externalRecords);
@@ -473,6 +499,152 @@ program
   .argument("<file>", "Path to the JS file")
   .action(async (file: string) => {
     await runCheck(file);
+  });
+
+// ---------------------------------------------------------------------------
+// doctor — 项目健康检查：uncovered 函数 / 调用点固化漂移 / 分析报错
+// ---------------------------------------------------------------------------
+
+/** doctor 单文件体检结果：uncovered 为信息级，drift/error 决定退出码 */
+type DoctorReport = {
+  file: string;
+  functions: number;
+  entryOnly: number;
+  uncovered: string[];
+  drift?: { added: number; removed: number };
+  error?: string;
+};
+
+/** 展示路径：cwd 内取相对路径，cwd 外（如 /tmp fixture）直接用绝对路径，避免 ../ 链 */
+const displayPath = (p: string): string => {
+  const rel = relative(process.cwd(), p);
+  return rel === "" || rel.startsWith("..") ? p : rel;
+};
+
+/**
+ * 单文件体检。三项检查：
+ *  a) uncovered —— 零 case 且非 skipped/entryOnly 的函数（信息级，不影响退出码）；
+ *  b) drift —— 给了调用记录时按 infer --emit-cases=update 的 dry-run 编排
+ *     （剥离 → 重析 → 重插）重算固化结果，最终源码与原源码不一致即漂移，
+ *     指令数按 removed/新增 written 计；
+ *  c) 报错 —— 读取/分析抛异常即记（含 update dry-run 阶段）。
+ */
+async function doctorFile(filePath: string, records?: CallRecord[]): Promise<DoctorReport> {
+  const report: DoctorReport = { file: displayPath(filePath), functions: 0, entryOnly: 0, uncovered: [] };
+  let source: string;
+  try {
+    source = readFileSync(filePath, "utf-8");
+  } catch (err) {
+    report.error = (err as Error).message;
+    return report;
+  }
+  try {
+    const result = await analyzeFileAsync(filePath, source, undefined, records);
+    report.functions = result.functions.length;
+    report.entryOnly = result.functions.filter((fn) => fn.entryOnly).length;
+    report.uncovered = result.functions
+      .filter((fn) => fn.cases.length === 0 && !fn.skipped && !fn.entryOnly)
+      .map((fn) => fn.name);
+    if (records) {
+      const { emitOut, removed } = await reemitUpdate(filePath, source, records);
+      if (emitOut.source !== source) {
+        report.drift = {
+          added: emitOut.written.reduce((n, w) => n + w.cases.length, 0),
+          removed: removed.length,
+        };
+      }
+    }
+  } catch (err) {
+    report.error = (err as Error).message;
+  }
+  return report;
+}
+
+async function runDoctor(paths: string[], opts: { callsites?: string[]; json?: boolean }): Promise<void> {
+  const targetPaths = paths.length > 0 ? paths : ["."];
+  const externalRecords = opts.callsites?.length ? collectExternalRecords(opts.callsites) : undefined;
+
+  // 目标展开：文件直接体检，目录递归收 .js（与 --callsites 同一规则）；
+  // 不存在的路径直接记为报错
+  const files: string[] = [];
+  const reports: DoctorReport[] = [];
+  for (const p of targetPaths) {
+    const abs = resolve(p);
+    if (!existsSync(abs)) {
+      reports.push({ file: displayPath(abs), functions: 0, entryOnly: 0, uncovered: [], error: `File not found: ${abs}` });
+      continue;
+    }
+    files.push(...(statSync(abs).isDirectory() ? collectNudoFiles(abs) : [abs]));
+  }
+  for (const filePath of files) {
+    reports.push(await doctorFile(filePath, externalRecords));
+  }
+
+  const driftCount = reports.filter((r) => r.drift).length;
+  const errorCount = reports.filter((r) => r.error).length;
+  const uncoveredTotal = reports.reduce((n, r) => n + r.uncovered.length, 0);
+  const failed = driftCount > 0 || errorCount > 0;
+
+  if (opts.json) {
+    console.log(
+      JSON.stringify(
+        {
+          // ok 与退出码一致：drift/报错 → false；uncovered 仅为信息级不影响
+          ok: !failed,
+          files: reports.map((r) => ({
+            file: r.file,
+            functions: r.functions,
+            entryOnly: r.entryOnly,
+            uncovered: r.uncovered,
+            ...(r.drift ? { drift: r.drift } : {}),
+            ...(r.error ? { error: r.error } : {}),
+          })),
+          summary: { files: reports.length, drift: driftCount, errors: errorCount, uncovered: uncoveredTotal },
+        },
+        null,
+        2,
+      ),
+    );
+  } else {
+    if (reports.length === 0) {
+      console.log("No files to check.");
+      return;
+    }
+    for (const r of reports) {
+      console.log(`${r.file}`);
+      if (r.error) {
+        console.log(`  ✗ error: ${r.error}`);
+        continue;
+      }
+      const entryInfo = r.entryOnly > 0 ? `, ${r.entryOnly} entry-only` : "";
+      console.log(`  · ${r.functions} function(s)${entryInfo}`);
+      if (r.uncovered.length > 0) {
+        console.log(`  ⚠ uncovered (no cases): ${r.uncovered.join(", ")}`);
+      }
+      if (r.drift) {
+        const refresh = `nudo infer ${r.file} --callsites ${(opts.callsites ?? []).join(" ")} --emit-cases=update`;
+        console.log(
+          `  ✗ drift: ${r.drift.added + r.drift.removed} directive(s) changed (+${r.drift.added} new, -${r.drift.removed} removed) — refresh with: ${refresh.trim()}`,
+        );
+      }
+    }
+    console.log(
+      `\nSummary: ${reports.length} file(s) · ${driftCount} drift · ${errorCount} error(s) · ${uncoveredTotal} uncovered function(s)`,
+    );
+    console.log(failed ? "Result: FAIL (drift or errors found)" : "Result: OK (uncovered function(s) are informational only)");
+  }
+
+  if (failed) process.exitCode = 1;
+}
+
+program
+  .command("doctor")
+  .description("Health-check JS files: functions without cases, call-site solidification drift (--callsites), analysis errors — exits 1 on drift/errors")
+  .argument("[paths...]", "File(s) or directory(s) to check (default: current directory)")
+  .option("--callsites <paths...>", "Usage-site files (tests/apps): re-solidify per current call shapes and report drift when directives would change")
+  .option("--json", "Output as JSON")
+  .action(async (paths: string[], opts: { callsites?: string[]; json?: boolean }) => {
+    await runDoctor(paths, opts);
   });
 
 program

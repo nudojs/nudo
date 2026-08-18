@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -18,9 +18,12 @@ import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosit
 import {
   analysisCache,
   clearValidationState,
+  evictModuleGraphCacheEntries,
+  forgetValidatedFile,
   getCachedOrAnalyze,
   hasNudoDirectives,
   knownFiles,
+  moduleGraphCache,
   validateText,
   type ValidateTextDeps,
 } from "../validation.ts";
@@ -264,6 +267,226 @@ function foo(x) {
         expect(knownFiles.has(aPath)).toBe(true);
         expect(knownFiles.has(bPath)).toBe(true);
         expect(analysisCache.get(aPath)?.result.diagnostics.some((d) => d.code === "nudo:no-method")).toBe(true);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("opening a never-validated file pushes diagnostics immediately (onDidOpen path)", async () => {
+      // server.ts 的 onDidOpen → validateDocument(doc, /* propagate */ true) → validateText；
+      // didOpen 不经过 onDidChangeContent，打开路径必须主动调一次验证才有即时诊断。
+      clearValidationState();
+      const src = "function badNum(n) { return n.toUpperCase(); }\nconst boom = badNum(42);\n";
+      const sent = new Map<string, any[]>();
+      expect(analysisCache.has("/test/open-fresh.js")).toBe(false); // 之前从未验证过
+
+      await validateText("/test/open-fresh.js", "file:///test/open-fresh.js", src, 1, {
+        sendDiagnostics: (p) => sent.set(p.uri, p.diagnostics),
+      }, true);
+
+      const diags = sent.get("file:///test/open-fresh.js") ?? [];
+      expect(diags.some((d) => d.code === "nudo:no-method")).toBe(true);
+      expect(analysisCache.get("/test/open-fresh.js")?.version).toBe(1);
+      expect(knownFiles.has("/test/open-fresh.js")).toBe(true);
+    });
+
+    it("opening a non-nudo file publishes empty diagnostics and stays out of session state", async () => {
+      // 打开入口对非 nudo 文件的门控：清空诊断且不进 knownFiles/analysisCache
+      clearValidationState();
+      const sent = new Map<string, any[]>();
+      await validateText("/test/open-plain.js", "file:///test/open-plain.js", "function id(x) { return x; }\n", 1, {
+        sendDiagnostics: (p) => sent.set(p.uri, p.diagnostics),
+        isNudoUri: () => false,
+      }, true);
+
+      expect(sent.get("file:///test/open-plain.js")).toEqual([]);
+      expect(knownFiles.has("/test/open-plain.js")).toBe(false);
+      expect(analysisCache.has("/test/open-plain.js")).toBe(false);
+    });
+
+    it("an externally deleted closed file is dropped from knownFiles (watched-files cleanup)", async () => {
+      // server.ts 的 DidChangeWatchedFiles(Deleted 且不在打开集) handler 对每个被删
+      // uri 调 forgetValidatedFile；这里验证该清理单元确实移除会话登记项。
+      clearValidationState();
+      const src = '// @nudo:case "n" (1)\nfunction f(x) { return x; }\n';
+      await validateText("/test/gone.js", "file:///test/gone.js", src, 1, {
+        sendDiagnostics: () => {},
+      });
+      expect(knownFiles.has("/test/gone.js")).toBe(true);
+      expect(analysisCache.has("/test/gone.js")).toBe(true);
+
+      forgetValidatedFile("/test/gone.js");
+
+      expect(knownFiles.has("/test/gone.js")).toBe(false);
+      expect(analysisCache.has("/test/gone.js")).toBe(false);
+    });
+
+    it("second propagation hits the module-graph edge cache — an unreadable dependency still yields the correct dirty set", async () => {
+      // 缓存命中的可观测证明：首验后把「携带依赖边的文件」a chmod 成不可读。
+      // 若脏传播重读 a，extractImportEdges 会因 EACCES 静默返回空边，dependents(b)
+      // 丢失 a→b，打开中的 a 就不会被重验；只有命中缓存（仅 stat 比对、跳过重读）
+      // 时 dirty 集才仍包含 a。
+      clearValidationState();
+      const dir = mkdtempSync(join(tmpdir(), "nudo-lsp-mgc-hit-"));
+      try {
+        const aPath = resolve(dir, "a.js");
+        const bPath = resolve(dir, "b.js");
+        const uriOf = (p: string) => `file://${p}`;
+        const aSrc = [
+          'import { g } from "./b.js";',
+          "function useG() { return g(42); }",
+          "useG();",
+          "",
+        ].join("\n");
+        const bV1 = "export function g(x) { return x; }\n";
+        const bV2 = "export function g(x) { return x.toUpperCase(); }\n";
+        writeFileSync(aPath, aSrc);
+        writeFileSync(bPath, bV1);
+
+        let bText = bV1;
+        const openDocs = new Map<string, { uri: string; version: number; getText(): string }>([
+          [aPath, { uri: uriOf(aPath), version: 1, getText: () => aSrc }],
+          [bPath, { uri: uriOf(bPath), version: 1, getText: () => bText }],
+        ]);
+        const sent = new Map<string, any[]>();
+        const deps: ValidateTextDeps = {
+          sendDiagnostics: (p) => sent.set(p.uri, p.diagnostics),
+          getActiveCases: () => new Map(),
+          getOpenDocumentByPath: (p) => openDocs.get(p),
+        };
+
+        // 首验：b、a 依次入会话；a 的传播首次构建模块图并回填边缓存
+        await validateText(bPath, uriOf(bPath), bV1, 1, deps);
+        await validateText(aPath, uriOf(aPath), aSrc, 1, deps, true);
+        expect(moduleGraphCache.has(aPath)).toBe(true);
+        expect(moduleGraphCache.has(bPath)).toBe(true);
+        expect(new Set(moduleGraphCache.get(aPath)!.edges)).toEqual(new Set([bPath]));
+        expect((sent.get(uriOf(aPath)) ?? []).some((d) => d.code === "nudo:no-method")).toBe(false);
+
+        // 依赖边携带者变磁盘不可读（chmod 不改 mtime/size → 缓存条目仍命中），b 内容换版
+        chmodSync(aPath, 0o000);
+        bText = bV2;
+        writeFileSync(bPath, bV2);
+        await validateText(bPath, uriOf(bPath), bText, 2, deps, true);
+
+        // dirty 集仍含 a：传播用缓存边算出 dependents(b)={a}，a 用打开缓冲重验并抓到 g(42)
+        const refreshed = sent.get(uriOf(aPath)) ?? [];
+        const noMethod = refreshed.find((d) => d.code === "nudo:no-method");
+        expect(noMethod).toBeDefined();
+        expect(noMethod.message).toContain("toUpperCase");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("mtime/size change invalidates the cached edges — propagation follows the rewired import", async () => {
+      clearValidationState();
+      const dir = mkdtempSync(join(tmpdir(), "nudo-lsp-mgc-inval-"));
+      try {
+        const aPath = resolve(dir, "a.js");
+        const bPath = resolve(dir, "b.js");
+        const cPath = resolve(dir, "c.js");
+        const uriOf = (p: string) => `file://${p}`;
+        const aV1 = [
+          'import { g } from "./b.js";',
+          "function useG() { return g(42); }",
+          "useG();",
+          "",
+        ].join("\n");
+        // 改依赖目标 b→c：注释行保证 size 变化，mtime/size 任一不同即缓存失效重读
+        const aV2 = [
+          "// rewired: b → c",
+          'import { h } from "./c.js";',
+          "function useH() { return h(42); }",
+          "useH();",
+          "",
+        ].join("\n");
+        const bV1 = "export function g(x) { return x; }\n";
+        const bV2 = "export function g(x) { return x.toUpperCase(); }\n";
+        const cV1 = "export function h(x) { return x; }\n";
+        const cV2 = "export function h(x) { return x.toUpperCase(); }\n";
+        writeFileSync(aPath, aV1);
+        writeFileSync(bPath, bV1);
+        writeFileSync(cPath, cV1);
+
+        let aText = aV1;
+        let cText = cV1;
+        const openDocs = new Map<string, { uri: string; version: number; getText(): string }>([
+          [aPath, { uri: uriOf(aPath), version: 1, getText: () => aText }],
+          [cPath, { uri: uriOf(cPath), version: 1, getText: () => cText }],
+        ]);
+        const publishes = new Map<string, number>();
+        const sent = new Map<string, any[]>();
+        const deps: ValidateTextDeps = {
+          sendDiagnostics: (p) => {
+            publishes.set(p.uri, (publishes.get(p.uri) ?? 0) + 1);
+            sent.set(p.uri, p.diagnostics);
+          },
+          getActiveCases: () => new Map(),
+          getOpenDocumentByPath: (p) => openDocs.get(p),
+        };
+
+        // 首轮：c、b、a 入会话，a 的传播回填边缓存 a→[b]
+        await validateText(cPath, uriOf(cPath), cV1, 1, deps);
+        await validateText(bPath, uriOf(bPath), bV1, 1, deps);
+        await validateText(aPath, uriOf(aPath), aV1, 1, deps, true);
+        expect(new Set(moduleGraphCache.get(aPath)!.edges)).toEqual(new Set([bPath]));
+
+        // 磁盘 + 缓冲同步改写 a（size 变化）→ 失效重读，缓存边集换成 a→[c]
+        aText = aV2;
+        writeFileSync(aPath, aV2);
+        await validateText(aPath, uriOf(aPath), aV2, 2, deps, true);
+        expect(new Set(moduleGraphCache.get(aPath)!.edges)).toEqual(new Set([cPath]));
+
+        const aPublishesBefore = publishes.get(uriOf(aPath)) ?? 0;
+
+        // 旧依赖 b 变化：a 已不在 b 的 dependents 里，不应再触发 a 的重验发布
+        writeFileSync(bPath, bV2);
+        await validateText(bPath, uriOf(bPath), bV2, 2, deps, true);
+        expect(publishes.get(uriOf(aPath)) ?? 0).toBe(aPublishesBefore);
+
+        // 新依赖 c 变化：传播沿新边 a→c 重验 a，抓到 h(42) 的 no-method
+        cText = cV2;
+        writeFileSync(cPath, cV2);
+        await validateText(cPath, uriOf(cPath), cText, 2, deps, true);
+        expect(publishes.get(uriOf(aPath)) ?? 0).toBe(aPublishesBefore + 1);
+        const noMethod = (sent.get(uriOf(aPath)) ?? []).find((d) => d.code === "nudo:no-method");
+        expect(noMethod).toBeDefined();
+        expect(noMethod.message).toContain("toUpperCase");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("watched-files cleanup evicts the module-graph cache entry (registerWatchedFilesListener chain)", async () => {
+      // server.ts 在 vitest 下不可 import，链路两段各自落在可测面：handler 对每个
+      // gone uri 调 forgetValidatedFile，并把 uri 列表广播给 server.ts 模块级注册的
+      // evictModuleGraphCacheEntries。这里用同一导出面模拟整条清理链。
+      clearValidationState();
+      const dir = mkdtempSync(join(tmpdir(), "nudo-lsp-mgc-evict-"));
+      try {
+        const aPath = resolve(dir, "a.js");
+        const src = "function id(x) { return x; }\n";
+        writeFileSync(aPath, src);
+        // propagate=true 才会构建模块图回填缓存，故必须提供 getOpenDocumentByPath
+        await validateText(aPath, `file://${aPath}`, src, 1, {
+          sendDiagnostics: () => {},
+          getOpenDocumentByPath: () => undefined,
+        }, true);
+        expect(knownFiles.has(aPath)).toBe(true);
+        expect(analysisCache.has(aPath)).toBe(true);
+        expect(moduleGraphCache.has(aPath)).toBe(true);
+
+        // watched-files Deleted 且不在打开集：登记项 + 边缓存条目一并逐出
+        forgetValidatedFile(aPath);
+        evictModuleGraphCacheEntries([`file://${aPath}`]);
+
+        expect(knownFiles.has(aPath)).toBe(false);
+        expect(analysisCache.has(aPath)).toBe(false);
+        expect(moduleGraphCache.has(aPath)).toBe(false);
+
+        // 未知条目/纯路径形式：no-op 不抛错
+        expect(() => evictModuleGraphCacheEntries(["file:///nope/missing.js", "/nope/raw-path.js"])).not.toThrow();
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }

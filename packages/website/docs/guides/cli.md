@@ -294,6 +294,8 @@ Emitted cases → lib.js (3 directive(s) across 2 function(s))
 
 `update` is idempotent too — a second run prints `No changes.`
 
+To check a whole project for stale directives without reading diffs, see [Health Checks and CI Drift Gating](#health-checks-and-ci-drift-gating) — `nudo doctor` reports drift across many files in one run.
+
 #### What emission touches
 
 Emission never touches hand-written work; it only manages its own `call@` directives:
@@ -431,6 +433,61 @@ nudo watch . --dts
 - **File watching**: When watching a single file, Nudo watches the file's directory and re-analyzes on changes to tracked files.
 - **Debouncing**: File changes are debounced (200ms) to avoid redundant runs on rapid edits.
 - **Incremental re-analysis**: On each change, only the changed files and their dependents are re-analyzed (`Incremental: re-analyzed N, skipped M (…ms)`), and results are reprinted with source locations.
+
+---
+
+## Health Checks and CI Drift Gating
+
+[`nudo doctor`](/docs/api/cli-reference#nudo-doctor) re-checks a whole project in one command: analysis errors, and — with `--callsites` — whether the `call@` directives frozen by [`--emit-cases`](#persisting-cases-as-directives) still match what the usage sites would produce today. Drift or errors exit with code `1`, which makes `doctor` a CI gate for solidification drift.
+
+The typical lifecycle:
+
+1. **Solidify once** — bootstrap the directives from the usage sites (see [Persisting cases as directives](#persisting-cases-as-directives)):
+
+   ```bash
+   nudo infer lib.js --callsites test.js --emit-cases
+   ```
+
+2. **The usage sites evolve** — tests change their call shapes, and the frozen directives go stale.
+
+3. **`doctor` reports the drift**:
+
+   ```bash
+   nudo doctor lib.js --callsites test.js
+   ```
+
+   ```
+   lib.js
+     · 3 function(s), 1 entry-only
+     ✗ drift: 5 directive(s) changed (+3 new, -2 removed) — refresh with: nudo infer lib.js --callsites test.js --emit-cases=update
+
+   Summary: 1 file(s) · 1 drift · 0 error(s) · 0 uncovered function(s)
+   Result: FAIL (drift or errors found)
+   ```
+
+4. **Refresh with the printed command** — copy it as-is:
+
+   ```bash
+   nudo infer lib.js --callsites test.js --emit-cases=update
+   ```
+
+5. **Re-check** — a second `doctor` run is green again:
+
+   ```
+   lib.js
+     · 3 function(s), 1 entry-only
+
+   Summary: 1 file(s) · 0 drift · 0 error(s) · 0 uncovered function(s)
+   Result: OK (uncovered function(s) are informational only)
+   ```
+
+In CI, check an entire source tree against the test suite in one line — any drift fails the build:
+
+```bash
+nudo doctor src/ --callsites tests/
+```
+
+Exit codes: drift or analysis errors → `1`; uncovered functions are informational only and never fail the run. See the [`nudo doctor` reference](/docs/api/cli-reference#nudo-doctor) for all options and the `--json` output.
 
 ---
 

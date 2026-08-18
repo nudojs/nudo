@@ -10,6 +10,8 @@ import {
   MarkupKind,
   type CodeLens,
   CodeLensRefreshRequest,
+  FileChangeType,
+  type FileEvent,
   type InlayHint,
   InlayHintKind,
 } from "vscode-languageserver/node";
@@ -25,6 +27,8 @@ import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosit
 import { TOKEN_TYPES, TOKEN_MODIFIERS } from "./semantic-tokens.ts";
 import {
   analysisCache,
+  evictModuleGraphCacheEntries,
+  forgetValidatedFile,
   getCachedOrAnalyze,
   hasNudoDirectives,
   toLspDiagnostic,
@@ -102,6 +106,14 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => ({
 
 let debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+// 打开即验证：didOpen 不会触发 onDidChangeContent，若不在此主动验证，
+// 新打开的文件要等到首次编辑（300ms 防抖后）或客户端 pull 诊断才有结果。
+// propagate=true 与编辑防抖路径同语义（含对打开依赖项的一次脏传播）。
+documents.onDidOpen((event) => {
+  nudoFileCache.delete(event.document.uri);
+  validateDocument(event.document, true).catch(() => {});
+});
+
 documents.onDidChangeContent((change) => {
   const uri = change.document.uri;
   nudoFileCache.delete(uri);
@@ -125,6 +137,59 @@ documents.onDidClose((event) => {
   analysisCache.delete(uriToFilePath(event.document.uri));
   connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
 });
+
+/**
+ * watched-files 删除事件监听器：接收「被删除且不在打开集」的 uri 列表。
+ * 缓存逐出等后续逻辑通过 registerWatchedFilesListener 挂到这里。
+ */
+export const watchedFilesListeners: Array<(uris: string[]) => void> = [];
+
+/** 注册 watched-files 监听器，返回注销函数。 */
+export function registerWatchedFilesListener(listener: (uris: string[]) => void): () => void {
+  watchedFilesListeners.push(listener);
+  return () => {
+    const idx = watchedFilesListeners.indexOf(listener);
+    if (idx >= 0) watchedFilesListeners.splice(idx, 1);
+  };
+}
+
+/**
+ * watched-files 事件核心：对 Deleted 且不在打开集的文件清理会话登记项
+ * （knownFiles/analysisCache 走 forgetValidatedFile，activeCases/nudoFileCache 按 uri），
+ * 清空其已发布诊断，并把被清理的 uri 列表广播给监听器。
+ * 打开中的文件跳过——其内容由编辑流负责，外部删除会被编辑器以 didOpen/didChange 覆盖。
+ */
+function handleWatchedFilesChanges(changes: readonly FileEvent[], isOpen: (uri: string) => boolean): string[] {
+  const gone: string[] = [];
+  for (const change of changes) {
+    if (change.type !== FileChangeType.Deleted) continue;
+    if (isOpen(change.uri)) continue;
+    gone.push(change.uri);
+    forgetValidatedFile(uriToFilePath(change.uri));
+    activeCases.delete(change.uri);
+    nudoFileCache.delete(change.uri);
+    connection.sendDiagnostics({ uri: change.uri, diagnostics: [] });
+  }
+  if (gone.length > 0) {
+    // 拷贝后再遍历：监听器内注销自身不应影响本轮广播
+    for (const listener of [...watchedFilesListeners]) {
+      try {
+        listener(gone);
+      } catch {
+        // 单个监听器异常不阻断其余监听器的缓存逐出
+      }
+    }
+  }
+  return gone;
+}
+
+connection.onDidChangeWatchedFiles((event) =>
+  handleWatchedFilesChanges(event.changes, (uri) => documents.get(uri) !== undefined),
+);
+
+// 模块图边缓存逐出：收到被清理 uri 时逐出 moduleGraphCache 对应 filePath 的条目。
+// 会话级常驻注册，无需持有注销函数。
+registerWatchedFilesListener(evictModuleGraphCacheEntries);
 
 function validationDeps(): ValidateTextDeps {
   return {

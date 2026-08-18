@@ -12,6 +12,7 @@ import {
   type AnalysisResult,
   type Diagnostic as JsDiagnostic,
   type DiagnosticSeverity as JsDiagSeverity,
+  type ModuleGraphCache,
 } from "@nudojs/service";
 import {
   DiagnosticSeverity,
@@ -25,10 +26,40 @@ export const analysisCache = new Map<string, { version: number; result: Analysis
 /** Every file analyzed successfully in this session (import-graph nodes for dirty propagation). */
 export const knownFiles = new Set<string>();
 
+/**
+ * 模块图边缓存（会话级常驻）：key 为文件路径，value 为 mtimeMs+size+已抽取的 import 边。
+ * validateText 的脏传播把整个 knownFiles 喂给 buildModuleGraph——命中条目只做 stat
+ * 比对、跳过磁盘重读与重解析，使「编辑防抖→脏传播」不再每次全量重读会话摸过的
+ * 所有文件。条目仅是路径+边集字符串数组，内存随会话文件数线性有界；
+ * watched-files 删除事件经 evictModuleGraphCacheEntries 逐出对应条目。
+ */
+export const moduleGraphCache: ModuleGraphCache = new Map();
+
 /** Test hook — resets module-level session state. */
 export function clearValidationState(): void {
   analysisCache.clear();
   knownFiles.clear();
+  moduleGraphCache.clear();
+}
+
+/**
+ * watched-files Deleted 清理：从会话登记中移除一个文件（knownFiles + analysisCache）。
+ * server.ts 的 DidChangeWatchedFiles handler 对「被删除且不在打开集」的文件逐个调用；
+ * 仅关闭（文件仍在磁盘上）不走这里，关闭文件仍可作为依赖图节点参与脏传播。
+ */
+export function forgetValidatedFile(filePath: string): void {
+  knownFiles.delete(filePath);
+  analysisCache.delete(filePath);
+}
+
+/**
+ * watched-files 删除事件的模块图边缓存逐出：server.ts 通过 registerWatchedFilesListener
+ * 把「被删除且不在打开集」的 uri 列表广播到这里（uri→filePath 复用 uriToFilePath）。
+ * 已删除文件的条目只剩内存驻留价值——同名重建文件若 mtime/size 恰好撞上旧值，
+ * 会复用陈旧边集得出错误 dirty 集，因此删除时立即逐出。
+ */
+export function evictModuleGraphCacheEntries(uris: string[]): void {
+  for (const uri of uris) moduleGraphCache.delete(uriToFilePath(uri));
 }
 
 export function hasNudoDirectives(source: string): boolean {
@@ -152,7 +183,8 @@ export async function validateText(
 
   let dependents: Map<string, Set<string>>;
   try {
-    ({ dependents } = buildModuleGraph([...knownFiles]));
+    // 传入会话级 moduleGraphCache：未变文件仅 stat 比对即复用边集，跳过重读重解析
+    ({ dependents } = buildModuleGraph([...knownFiles], moduleGraphCache));
   } catch {
     return;
   }
