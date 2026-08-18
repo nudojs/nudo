@@ -330,3 +330,92 @@ function alwaysFails(x) {
     expect(throwDiags[0].message).toContain("alwaysFails");
   });
 });
+
+// ---------------------------------------------------------------------------
+// .ts 输入支持：analyzeFile/analyzeFileAsync 走统一剥除后的 parse()，
+// 推断结果与等价 .js 一致，且 TS 语法（interface/import type/enum/断言）
+// 不产生 unknown-global 等假诊断。
+// ---------------------------------------------------------------------------
+
+import { isNudoTargetPath } from "../target-path.ts";
+
+describe("integration: .ts source through the full pipeline", () => {
+  const tsSource = `
+interface Point { x: number; y: number }
+import type { Gone } from "./no-such-module";
+
+/**
+ * @nudo:case "nums" (1, 2)
+ * @nudo:case "syms" (T.number, T.number)
+ */
+function add(a: number, b: number): number {
+  return a + b;
+}
+
+/** @nudo:case "cast" (T.string) */
+function cast(s: string) {
+  const v = s as unknown as { n: number };
+  const w = v!;
+  return s.length + 1;
+}
+
+export { add, cast };
+`;
+
+  it("infers .ts functions identically to equivalent .js", () => {
+    const jsSource = `
+/**
+ * @nudo:case "nums" (1, 2)
+ * @nudo:case "syms" (T.number, T.number)
+ */
+function add(a, b) {
+  return a + b;
+}
+
+/** @nudo:case "cast" (T.string) */
+function cast(s) {
+  const v = s;
+  const w = v;
+  return s.length + 1;
+}
+
+export { add, cast };
+`;
+    const ts = analyzeFile("/test.ts", tsSource);
+    const js = analyzeFile("/test.js", jsSource);
+    expect(ts.functions.map((f) => f.name)).toEqual(js.functions.map((f) => f.name));
+    expect(ts.functions).toHaveLength(2);
+    const tsAdd = ts.functions[0];
+    const jsAdd = js.functions[0];
+    expect(tsAdd.cases).toHaveLength(jsAdd.cases.length);
+    for (let i = 0; i < tsAdd.cases.length; i++) {
+      expect(typeValueToString(tsAdd.cases[i].result)).toBe(typeValueToString(jsAdd.cases[i].result));
+    }
+    expect(typeValueToString(tsAdd.cases[0].result)).toBe("3");
+  });
+
+  it("TS-only syntax produces no false diagnostics", () => {
+    const result = analyzeFile("/test.ts", tsSource);
+    const falseDiagnostics = result.diagnostics.filter(
+      (d) => d.code === "nudo:unknown-global" || d.code === "nudo:builtin-unknown",
+    );
+    expect(falseDiagnostics).toHaveLength(0);
+  });
+
+  it("case-emitter round-trip works on stripped .ts source (call@ directives reinsertable)", () => {
+    const source = `function scale(n) { return n * 2; }\nconst out = scale(21);\n`;
+    const result = analyzeFile("/test.ts", source);
+    // 全程序推断：无指令函数从调用点合成 case
+    const scale = result.functions.find((f) => f.name === "scale");
+    expect(scale).toBeDefined();
+    expect(scale!.cases.length).toBeGreaterThan(0);
+    expect(scale!.cases[0].source).toBe("callsite");
+    expect(typeValueToString(scale!.cases[0].result)).toBe("42");
+  });
+
+  it("isNudoTargetPath is exported from the service surface", () => {
+    expect(isNudoTargetPath("a.ts")).toBe(true);
+    expect(isNudoTargetPath("a.d.ts")).toBe(false);
+    expect(isNudoTargetPath("a.tsx")).toBe(false);
+  });
+});

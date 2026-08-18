@@ -5,7 +5,7 @@ slug: /intro
 
 # 简介
 
-**Nudo** 是一个面向 JavaScript 的类型推断引擎，采用**抽象解释**（abstract interpretation）—— 用符号化的「类型值」代替具体值来执行你的代码，从而推导出类型。无需 TypeScript、无需 `.d.ts` 文件、无需构建步骤。只需带注释的 JavaScript 和基于运行时的类型推断。
+**Nudo** 是一个面向 JavaScript 的类型推断引擎，采用**抽象解释**（abstract interpretation）—— 用符号化的「类型值」代替具体值来执行你的代码，从而推导出类型。无需类型标注、无需构建步骤，只需纯 JavaScript 和基于运行时的类型推断。也接受 TypeScript 源码：类型标注会被剥除，代码按纯 JS 语义推断。
 
 ## 工作原理
 
@@ -16,7 +16,7 @@ slug: /intro
 | TypeScript | Nudo |
 |------------|------|
 | 事先声明类型，编译器检查使用情况 | 编写普通 JavaScript，引擎通过执行来推断类型 |
-| 需要 `.ts` 文件或 JSDoc 注解 | 在 `.js` 文件中使用 `@nudo:case` 等注释指令 |
+| 需要 `.ts` 文件或 JSDoc 注解 | 可选的 `@nudo:case` 等注释指令——`.js` 或 `.ts` 文件皆可 |
 | 类型描述意图 | 类型从实际行为推导而来 |
 
 **示例：带分支逻辑的函数**

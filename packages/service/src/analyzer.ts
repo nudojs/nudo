@@ -13,6 +13,7 @@ import {
   isSubtypeOf,
   type Environment,
   mockHelperToTypeValue,
+  getFnSig,
 } from "@nudojs/core";
 import { parse, extractDirectives, extractFileDirectives, parseTypeValueExpr } from "@nudojs/parser";
 import type { FunctionWithDirectives, SinonExpression } from "@nudojs/parser";
@@ -1771,6 +1772,133 @@ function getVariableCompletions(filePath: string, source: string): CompletionIte
   return completions;
 }
 
+/**
+ * 内置成员的真实签名：把「<类>.prototype.<成员>」交给 evaluator 微求值。
+ * 这是唯一真值来源（与诊断/求值同表——BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS），
+ * 不在补全侧另建平行类型系统。evaluate 直接返回 TypeValue（或 return/throw
+ * 控制标记，此处到不了）；无 kind 的结果一律视为不可用返回 null 由调用方回退。
+ * 微求值受 evaluator 全局态（当前 env、resolver）影响，仅用于补全展示。
+ */
+function builtinMemberType(memberExpr: string): TypeValue | null {
+  try {
+    const result: unknown = evaluate(parse(`${memberExpr};`), createEnvironment());
+    if (!result || typeof result !== "object" || !("kind" in result)) return null;
+    return result as TypeValue;
+  } catch {
+    return null;
+  }
+}
+
+const ARRAY_METHOD_MEMBERS = [
+  "map", "filter", "reduce", "find", "findIndex", "some", "every", "forEach",
+  "flatMap", "includes", "indexOf", "lastIndexOf", "join", "slice", "splice",
+  "concat", "push", "pop", "shift", "unshift", "sort", "reverse", "toString",
+] as const;
+
+const PROMISE_METHOD_MEMBERS = ["then", "catch", "finally"] as const;
+
+// 与 evaluator 的 String wrapper 原型表（BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS.String）
+// 精确一致：表外的原生方法（replaceAll/repeat/padStart…）未建模，微求值拿
+// undefined，列出只会得到回退文案，故不列。
+const STRING_METHOD_MEMBERS = [
+  "toUpperCase", "toLowerCase", "trim", "split", "slice", "substring",
+  "includes", "indexOf", "lastIndexOf", "startsWith", "endsWith", "charAt",
+  "charCodeAt", "replace", "toString", "valueOf",
+] as const;
+
+/**
+ * 成员 detail 的展示形态：内置方法优先取 evaluator 的真实 fnSig
+ * （typeValueToString 渲染为 `(a: string) => boolean` 形式）；无签名
+ * （未建模或求值异常）时退回 `成员名(…)@<类>` 概要。取舍：不伪造平行签名，
+ * 缺席就明示缺席——detail 永远可解释、与求值结果一致。
+ */
+function describeMember(label: string, tv: TypeValue | null, fallbackClass: string): string {
+  if (tv) {
+    const sig = getFnSig(tv);
+    if (sig) {
+      const paramNames = tv.kind === "function" ? tv.params : [];
+      const params = sig.paramTypes.map((p, i) => `${paramNames[i] ?? `arg${i}`}: ${typeValueToString(p)}`).join(", ");
+      return `(${params}) => ${typeValueToString(sig.returnType)}`;
+    }
+    if (tv.kind !== "function") return typeValueToString(tv);
+  }
+  return `${label}(…)@${fallbackClass}`;
+}
+
+function getArrayCompletions(tv: TypeValue): CompletionItem[] {
+  const completions: CompletionItem[] = [];
+  for (const m of ARRAY_METHOD_MEMBERS) {
+    const detail = describeMember(m, builtinMemberType(`Array.prototype.${m}`), "Array");
+    completions.push({ label: m, kind: "method", detail });
+  }
+  completions.push({
+    label: "length",
+    kind: "property",
+    // tuple 长度是精确字面量；array 是 number（保持原展示语义）
+    detail: tv.kind === "tuple" ? `${tv.elements.length}` : "number",
+  });
+  return completions;
+}
+
+function getPromiseCompletions(): CompletionItem[] {
+  return PROMISE_METHOD_MEMBERS.map((m) => ({
+    label: m,
+    kind: "method" as const,
+    detail: describeMember(m, builtinMemberType(`Promise.prototype.${m}`), "Promise"),
+  }));
+}
+
+function getStringCompletions(): CompletionItem[] {
+  const completions: CompletionItem[] = [];
+  for (const m of STRING_METHOD_MEMBERS) {
+    completions.push({
+      label: m,
+      kind: "method",
+      detail: describeMember(m, builtinMemberType(`"s".${m}`), "String"),
+    });
+  }
+  completions.push({ label: "length", kind: "property", detail: "number" });
+  return completions;
+}
+
+/**
+ * union 接收者：各成员补全取交集（对成员全部「可能存在」的公共键），
+ * detail 为各成员该键类型字符串的并集渲染。键序取首个含该键的成员序，
+ * 稳定且与成员书写顺序一致。无公共键返回空——打点补全只展示确定可用
+ * 的成员，不做「部分成员才有」的投机提示。
+ */
+function getUnionCompletions(tv: TypeValue & { kind: "union" }): CompletionItem[] {
+  const members = tv.members;
+  if (members.length === 0) return [];
+
+  const labelsByMember = members.map((m) => getCompletionsForType(m));
+  // 首个非空成员集的键序作基准；对空集成员（无任何已知成员，如 unknown）
+  // 视为「任何键都可能存在」——跳过其过滤而非让交集归零
+  const baseIdx = labelsByMember.findIndex((labels) => labels.length > 0);
+  if (baseIdx === -1) return [];
+
+  const common: CompletionItem[] = [];
+  for (const base of labelsByMember[baseIdx]) {
+    let allPresent = true;
+    const memberTypes: string[] = [base.detail ?? base.label];
+    for (let i = 0; i < members.length; i++) {
+      if (i === baseIdx) continue;
+      const labels = labelsByMember[i];
+      if (labels.length === 0) continue; // 该成员无已知成员集 → 不约束交集
+      const hit = labels.find((l) => l.label === base.label);
+      if (!hit) {
+        allPresent = false;
+        break;
+      }
+      memberTypes.push(hit.detail ?? hit.label);
+    }
+    if (allPresent) {
+      common.push({ ...base, detail: memberTypes.join(" | ") });
+    }
+  }
+  return common;
+}
+
 function getCompletionsForType(tv: TypeValue): CompletionItem[] {
   const completions: CompletionItem[] = [];
 
@@ -1796,43 +1924,20 @@ function getCompletionsForType(tv: TypeValue): CompletionItem[] {
     return completions;
   }
 
+  if (tv.kind === "union") {
+    return getUnionCompletions(tv);
+  }
+
   if (tv.kind === "array" || tv.kind === "tuple") {
-    const arrayMethods = [
-      { label: "map", detail: "map(callback)" },
-      { label: "filter", detail: "filter(callback)" },
-      { label: "reduce", detail: "reduce(callback, init)" },
-      { label: "find", detail: "find(callback)" },
-      { label: "some", detail: "some(callback)" },
-      { label: "every", detail: "every(callback)" },
-      { label: "forEach", detail: "forEach(callback)" },
-      { label: "flatMap", detail: "flatMap(callback)" },
-      { label: "includes", detail: "includes(value)" },
-      { label: "indexOf", detail: "indexOf(value)" },
-      { label: "join", detail: "join(separator)" },
-      { label: "slice", detail: "slice(start, end)" },
-      { label: "concat", detail: "concat(other)" },
-      { label: "push", detail: "push(value)" },
-      { label: "length", detail: tv.kind === "tuple" ? `${tv.elements.length}` : "number" },
-    ];
-    for (const m of arrayMethods) {
-      completions.push({ label: m.label, kind: "method", detail: m.detail });
-    }
-    return completions;
+    return getArrayCompletions(tv);
   }
 
   if (tv.kind === "promise") {
-    completions.push({ label: "then", kind: "method", detail: "then(callback)" });
-    completions.push({ label: "catch", kind: "method", detail: "catch(callback)" });
-    completions.push({ label: "finally", kind: "method", detail: "finally(callback)" });
-    return completions;
+    return getPromiseCompletions();
   }
 
   if (tv.kind === "primitive" && tv.type === "string") {
-    const stringMethods = ["toUpperCase", "toLowerCase", "trim", "split", "slice", "includes", "indexOf", "replace", "startsWith", "endsWith", "charAt", "length"];
-    for (const m of stringMethods) {
-      completions.push({ label: m, kind: "method", detail: `string.${m}` });
-    }
-    return completions;
+    return getStringCompletions();
   }
 
   return completions;

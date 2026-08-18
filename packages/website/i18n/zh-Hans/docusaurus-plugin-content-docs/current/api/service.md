@@ -125,6 +125,26 @@ getCasesForFile(filePath: string, source: string): {
 
 ---
 
+## isNudoTargetPath
+
+```typescript
+isNudoTargetPath(path: string): boolean
+```
+
+CLI 收集器、监视模式与 LSP `isNudoFile` 判定共享的扩展名门：`.js`/`.mjs`/`.ts`（大小写不敏感）为推断目标；`.d.ts`、`.tsx` 及其余扩展名不是。
+
+---
+
+## buildSemanticTokens
+
+```typescript
+buildSemanticTokens(filePath: string, source: string): number[]
+```
+
+从分析结果产出 LSP 编码的语义 token（五元组：deltaLine/deltaStartChar/length/tokenType/tokenModifiers）——函数绑定标为 `function`，其余绑定标为 `variable`，参数标为 `parameter`。LSP 服务器的 semanticTokens handler 直接消费它；配套图例从同一模块导出。
+
+---
+
 ## buildModuleGraph
 
 ```typescript

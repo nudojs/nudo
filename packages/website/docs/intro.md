@@ -5,7 +5,7 @@ slug: /intro
 
 # Introduction
 
-**Nudo** is a type inference engine for JavaScript that uses **abstract interpretation** — executing your code with symbolic "type values" instead of concrete values to derive types. No TypeScript, no `.d.ts` files, no build step. Just annotated JavaScript and runtime-based type inference.
+**Nudo** is a type inference engine for JavaScript that uses **abstract interpretation** — executing your code with symbolic "type values" instead of concrete values to derive types. No annotations required, no build step. Just plain JavaScript and runtime-based type inference. TypeScript sources are also accepted: type annotations are stripped and the code is inferred with plain JS semantics.
 
 ## How It Works
 
@@ -16,7 +16,7 @@ Instead of static analysis or type annotations, Nudo actually *executes* your fu
 | TypeScript | Nudo |
 |------------|------|
 | Declare types up front; compiler checks usage | Write plain JavaScript; engine infers types by executing it |
-| Requires `.ts` files or JSDoc annotations | Uses comment directives like `@nudo:case` in `.js` files |
+| Requires `.ts` files or JSDoc annotations | Optional comment directives like `@nudo:case` — in `.js` or `.ts` files |
 | Types describe intent | Types are derived from actual behavior |
 
 **Example: a function with branching logic**

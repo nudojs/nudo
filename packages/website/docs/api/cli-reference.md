@@ -37,7 +37,7 @@ nudo infer <file> [options]
 
 | Argument | Description |
 |----------|-------------|
-| `<file>` | Path to a `.js` file (relative or absolute). Directories are rejected with an `EISDIR` error — use `nudo watch` for directories. |
+| `<file>` | Path to a `.js`, `.mjs`, or `.ts` file (relative or absolute). Directories are also accepted — recursively scanned for inference targets (`.js`/`.mjs`/`.ts`, excluding `.d.ts`). TypeScript type annotations are stripped at the parser layer and the file is inferred with JS semantics. |
 
 **Options:**
 

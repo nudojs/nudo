@@ -1,4 +1,5 @@
 export { parse } from "./parse.ts";
+export { stripTypes } from "./strip-types.ts";
 export {
   type Directive,
   type FileDirective,

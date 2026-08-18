@@ -132,7 +132,7 @@ findIdentifierAtPosition(ast: Node, line: number, column: number): string | null
 encodeSemanticTokens(tokens: SemanticToken[]): number[];
 ```
 
-Delta-encodes `{ line, char, length, typeIndex, modifierBitmask }` tokens into the flat `number[]` the LSP expects. `TOKEN_TYPES` (`function`, `variable`, `parameter`, `property`, `type`, `keyword`, `string`, `number`, `comment`, `decorator`) and `TOKEN_MODIFIERS` (`declaration`, `readonly`, `deprecated`, `unreachable`) form the server's declared legend. The server's semanticTokens handler currently returns an empty token set — the legend and encoder are in place for richer highlighting later.
+Delta-encodes `{ line, char, length, typeIndex, modifierBitmask }` tokens into the flat `number[]` the LSP expects. `TOKEN_TYPES` (`function`, `variable`, `parameter`, `property`, `type`, `keyword`, `string`, `number`, `comment`, `decorator`, `method`) and `TOKEN_MODIFIERS` (`declaration`, `readonly`, `deprecated`, `unreachable`) form the server's declared legend. The server's semanticTokens handler colors declarations from the analysis result — function bindings get the `function` type, other bindings `variable`, parameters `parameter` — via `buildSemanticTokens` from `@nudojs/service`.
 
 ## Server Capabilities
 
@@ -149,7 +149,7 @@ What `src/server.ts` actually registers (`connection.onInitialize`):
 | Rename | `onRenameRequest` | Workspace edit over the definition plus all references |
 | Code actions (`quickfix`) | `onCodeAction` | *Remove unreachable code* for `nudo-unreachable`; *Update @nudo:returns to match inferred type* for `nudo-assertion-failed` |
 | Signature help (triggers `(`, `,`) | `onSignatureHelp` | Locates the enclosing call, types the callee, highlights the active parameter |
-| Semantic tokens (full) | `languages.semanticTokens.on` | Declared legend; currently emits no tokens |
+| Semantic tokens (full) | `languages.semanticTokens.on` | Inference-driven highlighting: `function`/`variable`/`parameter` tokens from the analysis result (`buildSemanticTokens`) |
 
 Text synchronization is `Full`. Opening a document validates it immediately, and content changes are debounced 300 ms — both paths trigger `validateText` with `propagate = true` (the only propagation entry points); closing a document cancels its timer, drops its cache entry, and clears its diagnostics. Watched-file deletions are handled out-of-band, and everything the session keeps in memory is bounded — see [Memory and Isolation Model](#memory-and-isolation-model).
 

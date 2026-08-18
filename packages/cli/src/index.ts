@@ -22,6 +22,7 @@ import {
   stripGeneratedCaseDirectives,
   insertGeneratedCaseDirectives,
   unifiedDiff,
+  isNudoTargetPath,
   type CallRecord,
   type CaseResult,
   type FunctionAnalysis,
@@ -266,7 +267,7 @@ async function runInfer(
   }
 
   if (options.dts && dtsLines.length > 0) {
-    const dtsPath = filePath.replace(/\.js$/, ".d.ts");
+    const dtsPath = filePath.replace(/\.[cm]?js$|\.ts$/, ".d.ts");
     const dtsContent = dtsLines.join("\n") + "\n";
     writeFileSync(dtsPath, dtsContent, "utf-8");
     console.log(`Generated: ${relative(process.cwd(), dtsPath)}`);
@@ -362,8 +363,8 @@ async function runInferJson(file: string, externalRecords?: CallRecord[]): Promi
 
 program
   .command("infer")
-  .description("Infer types from a JS file — functions with @nudo:case directives use them; all other functions are inferred from call sites (whole-program analysis)")
-  .argument("<file>", "Path to the JS file")
+  .description("Infer types from a JS/TS file (or a directory of them) — functions with @nudo:case directives use them; all other functions are inferred from call sites (whole-program analysis)")
+  .argument("<file>", "Path to the JS/TS file (or directory)")
   .option("--dts", "Generate .d.ts file")
   .option("--loc", "Show source locations in output")
   .option("--json", "Output as JSON")
@@ -411,6 +412,29 @@ program
     if (opts.callsites?.length) {
       externalRecords = collectExternalRecords(opts.callsites);
     }
+      // 目录模式：与 watch/doctor 的 collectNudoFiles 同一收集规则
+      // （.js/.mjs/.ts，排除 .d.ts/.tsx）
+      const target = resolve(file);
+      if (existsSync(target) && statSync(target).isDirectory()) {
+        const files = collectNudoFiles(target);
+        if (files.length === 0) {
+          console.log("No nudo files found in directory.");
+          return;
+        }
+        if (opts.json) {
+          console.error("--json requires a single file, not a directory");
+          process.exitCode = 1;
+          return;
+        }
+        for (const f of files) {
+          try {
+            await runInfer(f, { dts: opts.dts, showLoc: opts.loc, callsites: externalRecords, emit });
+          } catch (err) {
+            console.error(`Error analyzing ${relative(process.cwd(), f)}:`, (err as Error).message);
+          }
+        }
+        return;
+      }
     if (opts.json) {
       await runInferJson(file, externalRecords);
     } else {
@@ -670,7 +694,7 @@ program
     watch(watchTarget, { recursive: isDir }, (_event, filename) => {
       if (!filename) return;
       const fullPath = isDir ? join(watchTarget, filename) : resolved;
-      if (!fullPath.endsWith(".js")) return;
+      if (!isNudoTargetPath(fullPath)) return; // .js/.mjs/.ts（排除 .d.ts/.tsx）
       if (!existsSync(fullPath)) return; // deleted
 
       pendingChanged.add(fullPath);
@@ -690,8 +714,9 @@ function collectNudoFiles(dir: string): string[] {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory() && entry.name !== "node_modules") {
       results.push(...collectNudoFiles(fullPath));
-    } else if (entry.isFile() && entry.name.endsWith(".js")) {
-      // 全程序推断：无指令的纯 JS 文件也能推导类型，无需 @nudo: 过滤
+    } else if (entry.isFile() && isNudoTargetPath(fullPath)) {
+      // 全程序推断：无指令的纯 JS/TS 文件也能推导类型；.d.ts（类型声明）与
+      // .tsx（JSX）不是推断目标，由 isNudoTargetPath 排除
       results.push(fullPath);
     }
   }

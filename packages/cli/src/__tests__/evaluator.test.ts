@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { T, typeValueEquals, typeValueToString, createEnvironment } from "@nudojs/core";
@@ -939,5 +939,165 @@ function hof(xs, fn) {
 `);
     // 已知设计限制：回调无任何类型信息时不伪造类型
     expect(typeValueToString(results[0].cases[0].result)).toBe("[unknown, unknown, unknown]");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// .ts 输入支持：parse() 统一剥除 TS-only 语法后走既有求值链，
+// 推断结果与等价 .js 版本一致；CLI 收集/输出路径按 isNudoTargetPath 放开 .ts。
+// ---------------------------------------------------------------------------
+
+import { execFileSync } from "node:child_process";
+import { isNudoTargetPath } from "@nudojs/service";
+
+describe(".ts input: strip-then-infer matches equivalent JS", () => {
+  const tsSource = `
+interface User { name: string; age: number }
+type Alias = { tag: "x" };
+import type { Missing } from "./no-such-types";
+
+/** @nudo:case "ints" (T.number, T.number) */
+function add(a: number, b: number): number {
+  return a + b;
+}
+
+/** @nudo:case "cast" (T.number) */
+function cast(x: number) {
+  const y = x as string;
+  const z = y!.length;
+  const c = { a: 1 } as const;
+  return z + c.a;
+}
+
+/** @nudo:case "generic" (T.string) */
+function generic<T extends string>(v: T): T {
+  return v satisfies T;
+}
+
+/** @nudo:case "iface" (T.string) */
+function makeUser(name: string): User {
+  return { name, age: 1 } as User;
+}
+
+enum Color { Red = 1 }
+
+export { add, cast, generic, makeUser };
+`;
+
+  const jsSource = `
+/** @nudo:case "ints" (T.number, T.number) */
+function add(a, b) {
+  return a + b;
+}
+
+/** @nudo:case "cast" (T.number) */
+function cast(x) {
+  const y = x;
+  const z = y.length;
+  const c = { a: 1 };
+  return z + c.a;
+}
+
+/** @nudo:case "generic" (T.string) */
+function generic(v) {
+  return v;
+}
+
+/** @nudo:case "iface" (T.string) */
+function makeUser(name) {
+  return { name, age: 1 };
+}
+
+export { add, cast, generic, makeUser };
+`;
+
+  it("infers every .ts function identically to the equivalent .js", () => {
+    const tsResults = inferFromSource(tsSource);
+    const jsResults = inferFromSource(jsSource);
+    expect(tsResults.map((r) => r.name)).toEqual(jsResults.map((r) => r.name));
+    for (let i = 0; i < tsResults.length; i++) {
+      expect(tsResults[i].name).toBe(jsResults[i].name);
+      expect(tsResults[i].cases).toHaveLength(jsResults[i].cases.length);
+      for (let c = 0; c < tsResults[i].cases.length; c++) {
+        expect(typeValueToString(tsResults[i].cases[c].result)).toBe(
+          typeValueToString(jsResults[i].cases[c].result),
+        );
+      }
+    }
+    // 抽查具体值：as/非空/as const/泛型标注全部剥除后求值正确
+    const byName = new Map(tsResults.map((r) => [r.name, r]));
+    expect(typeValueToString(byName.get("add")!.cases[0].result)).toBe("number");
+    expect(typeValueToString(byName.get("cast")!.cases[0].result)).toBe("NaN");
+    expect(typeValueToString(byName.get("generic")!.cases[0].result)).toBe("string");
+    expect(typeValueToString(byName.get("makeUser")!.cases[0].result)).toBe("{ name: string, age: 1 }");
+  });
+
+  it("evaluateFunctionFull resolves a generic call site foo<string>(1) after stripping type args", () => {
+    const ast = parse(`
+function id(v) { return v; }
+// @nudo:case "go" (1)
+function go(n) { return id<string>(n).length; }
+`);
+    const functions = extractDirectives(ast);
+    const go = functions.find((f) => f.name === "go")!;
+    const d = go.directives[0] as any;
+    const result = evaluateFunction(go.node, d.args, createEnvironment());
+    expect(typeValueToString(result)).toBe("unknown"); // string.length 场景下 TS 类型实参只剥除不消费
+  });
+});
+
+describe("isNudoTargetPath", () => {
+  it("accepts .js/.mjs/.ts, rejects .d.ts/.tsx and others", () => {
+    expect(isNudoTargetPath("/a/b.js")).toBe(true);
+    expect(isNudoTargetPath("/a/b.mjs")).toBe(true);
+    expect(isNudoTargetPath("/a/b.ts")).toBe(true);
+    expect(isNudoTargetPath("/a/B.TS")).toBe(true); // 大小写不敏感
+    expect(isNudoTargetPath("/a/b.d.ts")).toBe(false);
+    expect(isNudoTargetPath("/a/b.D.TS")).toBe(false);
+    expect(isNudoTargetPath("/a/b.tsx")).toBe(false);
+    expect(isNudoTargetPath("/a/b.jsx")).toBe(false);
+    expect(isNudoTargetPath("/a/b.cjs")).toBe(false);
+    expect(isNudoTargetPath("/a/b.mts")).toBe(false);
+    expect(isNudoTargetPath("/a/b.json")).toBe(false);
+    expect(isNudoTargetPath("/a/b")).toBe(false);
+  });
+});
+
+describe("CLI directory mode & --dts for .ts (subprocess)", () => {
+  const tsx = join("node_modules", ".bin", "tsx");
+  const cliEntry = join("packages", "cli", "src", "index.ts");
+  const runCli = (args: string[]): string =>
+    execFileSync(tsx, [cliEntry, ...args], { encoding: "utf-8", cwd: process.cwd() });
+
+  it("directory infer collects .js and .ts but skips .d.ts", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-ts-dir-"));
+    try {
+      writeFileSync(join(dir, "a.js"), '/** @nudo:case "a" (T.number) */\nfunction fa(x) { return x * 2; }\n');
+      writeFileSync(join(dir, "b.ts"), '/** @nudo:case "b" (T.string) */\nfunction fb(s: string): string { return s + "!"; }\n');
+      writeFileSync(join(dir, "c.d.ts"), 'declare module "x" { const y: string; }\n');
+      const out = runCli(["infer", dir]);
+      expect(out).toContain("=== fa ===");
+      expect(out).toContain("=== fb ===");
+      expect(out).not.toContain("c.d.ts");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("infer x.ts --dts generates x.d.ts (not x.ts.d.ts)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-ts-dts-"));
+    try {
+      const src = join(dir, "mod.ts");
+      writeFileSync(src, '/** @nudo:case "a" (T.number) */\nexport function f(x: number): number { return x + 1; }\n');
+      const out = runCli(["infer", src, "--dts"]);
+      expect(out).toContain("Generated:");
+      const generated = join(dir, "mod.d.ts");
+      const wrongPath = join(dir, "mod.ts.d.ts");
+      expect(existsSync(generated)).toBe(true);
+      expect(existsSync(wrongPath)).toBe(false);
+      expect(readFileSync(generated, "utf-8")).toContain("export declare function f");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

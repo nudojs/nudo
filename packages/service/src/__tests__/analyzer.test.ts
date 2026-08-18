@@ -647,6 +647,69 @@ describe("getCompletionsAtPosition", () => {
     expect(names).toContain("reduce");
     expect(names).toContain("length");
   });
+
+  // 来源：IDE 深度批次——union 接收者的 dot 补全不再返回空
+  it("completes only members common to every union member, with per-member type detail", () => {
+    const source = [
+      `const a = { x: 1, m() { return 1; } };`,
+      `const b = { x: 2 };`,
+      `const u = Math.random() > 0.5 ? a : b;`,
+      `u.x;`,
+    ].join("\n");
+    const completions = getCompletionsAtPosition("/test/union.js", source, 4, 2);
+    const names = completions.map((c) => c.label);
+    expect(names).toContain("x");
+    // m 只存在于一个成员：非公共成员不得出现在补全里
+    expect(names).not.toContain("m");
+    // detail 是各成员上该成员类型的并集渲染
+    const x = completions.find((c) => c.label === "x");
+    expect(x?.kind).toBe("property");
+    expect(x?.detail).toBe("1 | 2");
+  });
+
+  it("returns empty completions for a union with no common members", () => {
+    const source = [
+      `const c1 = { p: 1 };`,
+      `const c2 = { q: 2 };`,
+      `const u = Math.random() > 0.5 ? c1 : c2;`,
+      `u.a;`,
+    ].join("\n");
+    const completions = getCompletionsAtPosition("/test/union-empty.js", source, 4, 2);
+    expect(completions).toEqual([]);
+  });
+
+  // 来源：IDE 深度批次——内置方法 detail 不再硬编码，取 evaluator 真实 fnSig
+  it("derives array method detail from the evaluator instead of hardcoding", () => {
+    const source = `const arr = [1, 2, 3];\narr.map;\n`;
+    const completions = getCompletionsAtPosition("/test/arr-sig.js", source, 2, 4);
+    // Array.prototype.map 的近似签名：(_arg0: unknown) => unknown[]
+    expect(completions.find((c) => c.label === "map")?.detail).toBe("(_arg0: unknown) => unknown[]");
+    expect(completions.find((c) => c.label === "join")?.detail).toBe("(_arg0: string) => string");
+    // 字面量 [1,2,3] 求值为 tuple：length 是精确字面量
+    expect(completions.find((c) => c.label === "length")?.detail).toBe("3");
+    // 抽象 array（filter 结果）的 length 回到 number
+    const widened = getCompletionsAtPosition(
+      "/test/arr-wide.js",
+      `const arr = [1, "a"].filter(() => Math.random() > 0.5);\narr.m;\n`,
+      2,
+      4,
+    );
+    expect(widened.find((c) => c.label === "length")?.detail).toBe("number");
+  });
+
+  it("derives tuple length and string/promise method detail from the evaluator", () => {
+    const tuple = getCompletionsAtPosition("/test/tuple.js", `const pair = [1, "a"];\npair.x;\n`, 2, 5);
+    expect(tuple.find((c) => c.label === "length")?.detail).toBe("2");
+
+    // [1,2].join("-") 推断出 primitive string（字面量接收者不走 string 分支）
+    const str = getCompletionsAtPosition("/test/str.js", `const s = [1, 2].join("-");\ns.to;\n`, 2, 2);
+    expect(str.find((c) => c.label === "toUpperCase")?.detail).toBe("() => string");
+    expect(str.find((c) => c.label === "slice")?.detail).toBe("(_arg0: number, _arg1: number) => string");
+
+    const promise = getCompletionsAtPosition("/test/promise.js", `const p = Promise.resolve(1);\np.then;\n`, 2, 2);
+    expect(promise.find((c) => c.label === "then")?.detail).toBe("(_arg0: unknown) => Promise<unknown>");
+    expect(promise.map((c) => c.label).sort()).toEqual(["catch", "finally", "then"]);
+  });
 });
 
 describe("buildModuleGraph / computeDirtySet / topoSortDirty", () => {

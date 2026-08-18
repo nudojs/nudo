@@ -125,6 +125,26 @@ Lists all functions with `@nudo:case` directives and their case names/indices. U
 
 ---
 
+## isNudoTargetPath
+
+```typescript
+isNudoTargetPath(path: string): boolean
+```
+
+Extension gate shared by the CLI collector, watch mode, and the LSP `isNudoFile` check: `.js`/`.mjs`/`.ts` (case-insensitive) are inference targets; `.d.ts`, `.tsx`, and everything else are not.
+
+---
+
+## buildSemanticTokens
+
+```typescript
+buildSemanticTokens(filePath: string, source: string): number[]
+```
+
+Produces LSP-encoded semantic tokens (5-tuples: deltaLine/deltaStartChar/length/tokenType/tokenModifiers) from the analysis result — function bindings typed as `function`, other bindings as `variable`, parameters as `parameter`. The LSP server's semanticTokens handler consumes this directly; the matching legend is exported from the same module.
+
+---
+
 ## buildModuleGraph
 
 ```typescript

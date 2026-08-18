@@ -32,7 +32,7 @@ If your agent only speaks MCP, run a generic bridge and register Nudo as the lan
 
 ```json
 {
-  "extensions": ["js", "mjs", "cjs"],
+  "extensions": ["js", "mjs", "ts"],
   "command": ["npx", "tsx", "node_modules/@nudojs/lsp/src/server.ts"],
   "rootDir": "."
 }
@@ -51,7 +51,7 @@ claude mcp add cclsp -- npx cclsp@latest --env CCLSP_CONFIG_PATH=/abs/path/to/cc
 language_id = "javascript"
 command = "node"
 args = ["node_modules/@nudojs/lsp/src/server.ts"]
-file_patterns = ["**/*.js", "**/*.mjs"]
+file_patterns = ["**/*.js", "**/*.mjs", "**/*.ts"]
 ```
 
 **[agent-lsp](https://github.com/blackwell-systems/agent-lsp)** — run `agent-lsp init`; it detects language servers on `PATH` and writes the MCP client configs for you, orchestrating them into agent-native workflows.

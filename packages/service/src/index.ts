@@ -27,6 +27,16 @@ export {
   topoSortDirty,
 } from "./analyzer.ts";
 
+export { isNudoTargetPath } from "./target-path.ts";
+
+export {
+  buildSemanticTokens,
+  encodeSemanticTokens,
+  SEMANTIC_TOKEN_TYPES,
+  SEMANTIC_TOKEN_MODIFIERS,
+  type SemanticToken,
+} from "./semantic-tokens.ts";
+
 export {
   typeValueToTSType,
   generateDts,

@@ -11,6 +11,8 @@ import {
   generateDts,
   typeValueToZodSchema,
   generateGuardFunction,
+  buildSemanticTokens,
+  SEMANTIC_TOKEN_TYPES,
 } from "@nudojs/service";
 import { T } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
@@ -818,5 +820,108 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
     // 零 case（skip）：占位符不变
     const zero = suggestCase({ file: "/test/synth.js", functionName: "bare" }, deps);
     expect(zero.content[0].text).toContain("Suggested: /** @nudo:case */");
+  });
+});
+
+// 来源：IDE 深度批次——service 层 semantic tokens 提取（server.ts 只接线，
+// 此处直接测 buildSemanticTokens，不 import server.ts）
+describe("LSP Integration - Semantic Tokens", () => {
+  const tokenSrc = [
+    "const answer = 42;",                      // L1: answer → variable
+    "const double = (n) => n * 2;",            // L2: double → function（推断）, n → parameter
+    "function add(a, b) { return a + b; }",    // L3: add → function, a/b → parameter
+    'const config = { host: "x", run() {} };', // L4: config → variable, host → property, run → method
+    "answer + double(1) + add(1, config.host);", // L5: 纯使用位，不上色
+  ].join("\n");
+
+  type Decoded = { line: number; char: number; length: number; typeIndex: number; modifiers: number };
+
+  const decode = (data: number[]): Decoded[] => {
+    expect(data.length % 5).toBe(0);
+    const out: Decoded[] = [];
+    let line = 0;
+    let char = 0;
+    for (let i = 0; i < data.length; i += 5) {
+      const [deltaLine, deltaChar, length, typeIndex, modifiers] = data.slice(i, i + 5);
+      line += deltaLine;
+      char = deltaLine === 0 ? char + deltaChar : deltaChar;
+      out.push({ line, char, length, typeIndex, modifiers });
+    }
+    return out;
+  };
+
+  it("emits LSP five-tuples for top-level const/function/params/object keys", () => {
+    const data = buildSemanticTokens("/test/sem-tok.js", tokenSrc);
+
+    // LSP 相对编码契约：首个 token deltaLine=0；数据是五元组扁平数组
+    expect(data[0]).toBe(0);
+
+    const tokens = decode(data);
+
+    // 单调不减（按 line、再按 char 排序）
+    for (let i = 1; i < tokens.length; i++) {
+      const prev = tokens[i - 1];
+      const cur = tokens[i];
+      expect(cur.line).toBeGreaterThan(prev.line - 1);
+      if (cur.line === prev.line) expect(cur.char).toBeGreaterThan(prev.char);
+    }
+
+    const find = (line: number, char: number) => tokens.find((t) => t.line === line && t.char === char);
+
+    // 顶层 const：数值绑定 → variable；函数绑定（箭头）→ function
+    const answer = find(0, 6);
+    expect(answer).toMatchObject({
+      length: "answer".length,
+      typeIndex: SEMANTIC_TOKEN_TYPES.indexOf("variable"),
+      modifiers: 1, // declaration
+    });
+    const double = find(1, 6);
+    expect(double).toMatchObject({
+      length: "double".length,
+      typeIndex: SEMANTIC_TOKEN_TYPES.indexOf("function"),
+    });
+
+    // 函数声明名 + 参数
+    expect(find(2, 9)).toMatchObject({ length: 3, typeIndex: SEMANTIC_TOKEN_TYPES.indexOf("function") });
+    expect(find(2, 13)).toMatchObject({ length: 1, typeIndex: SEMANTIC_TOKEN_TYPES.indexOf("parameter") });
+    expect(find(2, 16)).toMatchObject({ length: 1, typeIndex: SEMANTIC_TOKEN_TYPES.indexOf("parameter") });
+    // 箭头函数参数
+    expect(find(1, 16)).toMatchObject({ length: 1, typeIndex: SEMANTIC_TOKEN_TYPES.indexOf("parameter") });
+
+    // 对象键：数据属性 → property；方法/函数值键 → method
+    expect(find(3, 17)).toMatchObject({ length: 4, typeIndex: SEMANTIC_TOKEN_TYPES.indexOf("property") });
+    expect(find(3, 28)).toMatchObject({ length: 3, typeIndex: SEMANTIC_TOKEN_TYPES.indexOf("method") });
+
+    // length 与标识符长度一致（全量断言，逐 token）
+    const idents: [number, number, string][] = [
+      [0, 6, "answer"], [1, 6, "double"], [1, 16, "n"],
+      [2, 9, "add"], [2, 13, "a"], [2, 16, "b"],
+      [3, 6, "config"], [3, 17, "host"], [3, 28, "run"],
+    ];
+    for (const [line, char, name] of idents) {
+      expect(find(line, char)?.length).toBe(name.length);
+    }
+
+    // 纯使用位不上色：L5 的 answer/double/config.host 引用无 token
+    expect(tokens.filter((t) => t.line === 4)).toEqual([]);
+    // 声明位恰 9 个 token，无多余（AST 其他标识符均未上色）
+    expect(tokens).toHaveLength(9);
+  });
+
+  it("colors a top-level const arrow binding as function via inference", () => {
+    // 推断驱动的证据：同样叫 double，绑定非函数时必须是 variable
+    const data = buildSemanticTokens("/test/sem-tok-var.js", "const double = 42;\ndouble;\n");
+    const tokens = decode(data);
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0]).toMatchObject({
+      line: 0,
+      char: 6,
+      length: 6,
+      typeIndex: SEMANTIC_TOKEN_TYPES.indexOf("variable"),
+    });
+  });
+
+  it("returns empty tokens for unparseable source", () => {
+    expect(buildSemanticTokens("/test/broken.js", "const (")).toEqual([]);
   });
 });

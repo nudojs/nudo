@@ -21,6 +21,8 @@ import {
   getTypeAtPosition,
   getCompletionsAtPosition,
   getCasesForFile,
+  buildSemanticTokens,
+  isNudoTargetPath,
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
 import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "./symbols.ts";
@@ -557,8 +559,12 @@ connection.languages.semanticTokens.on((params) => {
   if (!document) return { data: [] };
   if (!isNudoFile(params.textDocument.uri)) return { data: [] };
 
-  // For now, return empty tokens - can be enhanced later
-  return { data: [] };
+  try {
+    const filePath = uriToFilePath(document.uri);
+    return { data: buildSemanticTokens(filePath, document.getText()) };
+  } catch {
+    return { data: [] };
+  }
 });
 
 /** Resolve a `uri`- or `file`-identified target to the uri key used by activeCases/documents. */
@@ -658,7 +664,9 @@ connection.languages.diagnostics.on((params) => {
 const nudoFileCache = new Map<string, boolean>();
 
 function isNudoFile(uri: string): boolean {
-  if (!uri.endsWith(".js") && !uri.endsWith(".ts") && !uri.endsWith(".mjs")) return false;
+  // 推断目标判定收敛到 service 层（TaskA 提供）：.js/.mjs/.ts 为目标，
+  // .d.ts（类型声明，harvester 输入）与 .tsx/.jsx 等一律排除
+  if (!isNudoTargetPath(uriToFilePath(uri))) return false;
   const cached = nudoFileCache.get(uri);
   if (cached !== undefined) return cached;
   const doc = documents.get(uri);

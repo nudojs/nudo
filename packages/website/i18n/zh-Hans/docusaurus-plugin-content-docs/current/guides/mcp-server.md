@@ -51,7 +51,7 @@ claude mcp add cclsp -- npx cclsp@latest --env CCLSP_CONFIG_PATH=/abs/path/to/cc
 language_id = "javascript"
 command = "node"
 args = ["node_modules/@nudojs/lsp/src/server.ts"]
-file_patterns = ["**/*.js", "**/*.mjs"]
+file_patterns = ["**/*.js", "**/*.mjs", "**/*.ts"]
 ```
 
 **[agent-lsp](https://github.com/blackwell-systems/agent-lsp)** —— 运行 `agent-lsp init`；它会自动探测 `PATH` 上的语言服务器并替你写好 MCP 客户端配置，把多个服务器编排成 agent 原生的工作流。

@@ -132,7 +132,7 @@ findIdentifierAtPosition(ast: Node, line: number, column: number): string | null
 encodeSemanticTokens(tokens: SemanticToken[]): number[];
 ```
 
-把 `{ line, char, length, typeIndex, modifierBitmask }` token 增量编码为 LSP 期望的扁平 `number[]`。`TOKEN_TYPES`（`function`、`variable`、`parameter`、`property`、`type`、`keyword`、`string`、`number`、`comment`、`decorator`）与 `TOKEN_MODIFIERS`（`declaration`、`readonly`、`deprecated`、`unreachable`）构成服务器声明的图例。服务器的 semanticTokens handler 目前返回空 token 集 —— 图例和编码器已就位，供后续更丰富的着色使用。
+把 `{ line, char, length, typeIndex, modifierBitmask }` token 增量编码为 LSP 期望的扁平 `number[]`。`TOKEN_TYPES`（`function`、`variable`、`parameter`、`property`、`type`、`keyword`、`string`、`number`、`comment`、`decorator`、`method`）与 `TOKEN_MODIFIERS`（`declaration`、`readonly`、`deprecated`、`unreachable`）构成服务器声明的图例。服务器的 semanticTokens handler 基于 `@nudojs/service` 的 `buildSemanticTokens` 对分析结果着色——函数绑定标为 `function`，其余绑定标为 `variable`，参数标为 `parameter`。
 
 ## 服务器能力
 
@@ -149,7 +149,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 | 重命名 | `onRenameRequest` | 对定义及全部引用生成 workspace edit |
 | 代码操作（`quickfix`） | `onCodeAction` | `nudo-unreachable` 对应 *Remove unreachable code*；`nudo-assertion-failed` 对应 *Update @nudo:returns to match inferred type* |
 | 签名帮助（触发 `(`、`,`） | `onSignatureHelp` | 定位包裹的调用、对被调函数求类型、高亮当前参数 |
-| 语义 token（full） | `languages.semanticTokens.on` | 声明了图例；当前不产出 token |
+| 语义 token（full） | `languages.semanticTokens.on` | 推断驱动的着色：来自分析结果的 `function`/`variable`/`parameter` token（`buildSemanticTokens`） |
 
 文本同步方式为 `Full`。打开文档会立即验证，内容变更则防抖 300 ms —— 两条路径都以 `propagate = true` 触发 `validateText`（仅有的传播入口）；关闭文档会取消其计时器、丢弃缓存条目并清除诊断。被监视文件的删除事件在带外处理，且会话常驻的全部状态都是有界的 —— 见[内存与隔离模型](#内存与隔离模型)。
 

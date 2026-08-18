@@ -435,9 +435,9 @@ Usage — add this directive at the top of your JS file:
 
 ## 文件模式
 
-- **输入：** 仅 `.js` 文件（通过 Babel 解析）
+- **输入：** `.js`、`.mjs`、`.ts` 文件（通过 Babel 解析；TypeScript 类型标注在 parser 层剥除，按 JS 语义推断）；也接受目录——递归收集推断目标文件（`.js`/`.mjs`/`.ts`，排除 `.d.ts`）
 - **指令是可选的：** 不含任何 `@nudo:*` 指令的文件也会被分析——其函数类型来自观察到的调用点，没有调用时产出 `entry@L` 回退用例（`unknown` 参数）
-- **监视模式：** 目录递归扫描所有 `.js` 文件，排除 `node_modules`
+- **监视模式：** 目录递归扫描推断目标文件（`.js`/`.mjs`/`.ts`），排除 `node_modules` 与 `.d.ts`
 
 ---
 
