@@ -30,6 +30,7 @@ export {
 export {
   typeValueToTSType,
   generateDts,
+  generateFunctionDtsLines,
 } from "./dts-generator.ts";
 
 export { typeValueToZodSchema } from "./schema-generator.ts";

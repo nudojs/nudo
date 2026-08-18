@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parse, extractDirectives, type CaseDirective, parseTypeValueExpr } from "@nudojs/parser";
+import { parse, extractDirectives, type CaseDirective, type MockDirective, parseTypeValueExpr } from "@nudojs/parser";
 import { typeValueToString, createEnvironment, T, mockHelperToTypeValue } from "@nudojs/core";
 import { evaluateFunctionFull } from "../evaluator.js";
 
@@ -179,5 +179,67 @@ function fn() {
 }
 `);
     expect(results[0].result).toContain("status: 200");
+  });
+});
+
+describe("callsFake execution semantics (unified stub/sinon paths)", () => {
+  it("stub().callsFake lifts the fake onto arrowFn (same binding as plain arrow mocks)", () => {
+    const ast = parse(`
+// @nudo:mock transform = stub().callsFake((x) => ({ v: x }))
+function applyTransform(x) {
+  return transform(x);
+}
+`);
+    const directives = extractDirectives(ast);
+    const mockDir = directives[0].directives.find((d): d is MockDirective => d.kind === "mock")!;
+    // 与 @nudo:mock f = (x) => ... 相同的 arrowFn 形态：T.fn + _paramPatterns + 全局 env
+    expect(mockDir.arrowFn).toBeDefined();
+    expect(mockDir.arrowFn!.params).toEqual(["x"]);
+  });
+
+  it("stub().callsFake((x) => ({ v: x })) direct call with 21 yields { v: 21 }", () => {
+    const results = runNudoTest(`
+// @nudo:mock transform = stub().callsFake((x) => ({ v: x }))
+// @nudo:case "direct" (21)
+function applyTransform(x) {
+  return transform(x);
+}
+`);
+    expect(results[0].result).toBe("{ v: 21 }");
+  });
+
+  it("sinon.stub().callsFake((x) => ({ v: x })) direct call with 21 yields { v: 21 }", () => {
+    const results = runNudoTest(`
+// @nudo:mock transform = sinon.stub().callsFake((x) => ({ v: x }))
+// @nudo:case "direct" (21)
+function applyTransform(x) {
+  return transform(x);
+}
+`);
+    expect(results[0].result).toBe("{ v: 21 }");
+  });
+
+  it("callsFake propagates precisely through arr.map(transform) HOF", () => {
+    const results = runNudoTest(`
+// @nudo:mock transform = stub().callsFake((x) => ({ v: x }))
+// @nudo:case "hof" ([1, 2, 3])
+function mapAll(arr) {
+  return arr.map(transform);
+}
+`);
+    expect(results[0].result).toBe("[{ v: 1 }, { v: 2 }, { v: 3 }]");
+  });
+
+  it("withArgs(...).returns(...) mixed chain: matched args win, unmatched use default stub behavior", () => {
+    const results = runNudoTest(`
+// @nudo:mock handler = stub().withArgs(21).returns("hit")
+// @nudo:case "match" (21)
+// @nudo:case "miss" (22)
+function call(x) {
+  return handler(x);
+}
+`);
+    expect(results[0].result).toBe('"hit"');
+    expect(results[1].result).toBe("unknown");
   });
 });

@@ -43,10 +43,10 @@ Case "positive numbers": (5, 3) => 2
 Case "negative result": (1, 10) => -9
 Case "symbolic": (number, number) => number
 
-Combined: 2 | -9 | number
+Combined: number
 ```
 
-Nudo 对该函数执行了三次——两次使用具体输入，一次使用符号化的 `T.number` 作为两个参数。`Combined` 是所有用例结果的联合：具体用例贡献其字面量结果（`2`、`-9`），符号化用例贡献 `number`。
+Nudo 对该函数执行了三次——两次使用具体输入，一次使用符号化的 `T.number` 作为两个参数。`Combined` 是所有用例结果的联合，并按吸收律化简：符号化用例已贡献 `number`，因此字面量结果 `2`、`-9` 被吸收——`2 | -9 | number` 坍缩为 `number`。不含基类型成员的纯字面量联合会保留每个字面量。
 
 ## 选项
 
@@ -62,12 +62,17 @@ Nudo 对该函数执行了三次——两次使用具体输入，一次使用符
   Generated: math.d.ts
   ```
 
-  生成的 `math.d.ts` 中每个用例对应一条声明：
+  生成的 `math.d.ts` 中每个函数对应一条拓宽后的单一签名，具体用例保留在 JSDoc 中：
 
   ```typescript
-  export declare function subtract(arg0: 5, arg1: 3): 2;
-  export declare function subtract(arg0: 1, arg1: 10): -9;
-  export declare function subtract(arg0: number, arg1: number): number;
+  /**
+   * Case: positive numbers (5, 3) => 2
+   * Case: negative result (1, 10) => -9
+   * @param a - number
+   * @param b - number
+   * @returns number
+   */
+  export declare function subtract(a: number, b: number): number;
   ```
 
 - **`--loc`** — 在输出中显示源码位置：
@@ -83,7 +88,7 @@ Nudo 对该函数执行了三次——两次使用具体输入，一次使用符
   Case "negative result": (1, 10) => -9
   Case "symbolic": (number, number) => number
 
-  Combined: 2 | -9 | number
+  Combined: number
   ```
 
 ## 监听模式
@@ -141,6 +146,6 @@ Case "entry@L1": (unknown, unknown) => `${unknown}: ${unknown}`
 
 1. **解析** — Nudo 解析文件，找到带有 `@nudo:case` 指令的 `subtract` 函数。
 2. **执行** — 对每个 case，它使用抽象解释运行函数体：像 `a - b` 这样的操作数会用类型值而非具体数字进行计算。
-3. **合并** — 有多个 case 时，Nudo 将推断出的返回类型合并为联合类型：`2 | -9 | number`。具体用例的字面量结果原样保留，与符号化用例的 `number` 取并集。
+3. **合并** — 有多个 case 时，Nudo 将推断出的返回类型合并为联合类型，再按吸收律化简：字面量 `2`、`-9` 被符号化用例贡献的 `number` 吸收，得到 `number`。不含基类型成员的纯字面量联合会保留每个字面量。
 
 想进一步了解类型值、指令和抽象解释，请参阅 [核心概念](/docs/concepts/type-values)。

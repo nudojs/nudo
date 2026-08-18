@@ -446,7 +446,9 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
     const retVal = parseTypeValueExpr(stubWithArgsMatch[2].trim());
     const argsStr = stubWithArgsMatch[1].trim();
     const args = splitTopLevelArgs(argsStr).map(parseTypeValueExpr);
-    const helper: MockHelper = { kind: "mock-helper", returnValue: retVal };
+    // 返回值只挂在 withArgs 分支上（sinon 语义：实参匹配才返回），不设全局
+    // returnValue —— 否则未命中调用会错误复用链返回值
+    const helper: MockHelper = { kind: "mock-helper" };
     helper.withArgsCases = [{ args, returnValue: retVal }];
     return helper;
   }
@@ -496,6 +498,13 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
     return mock();
   }
 
+  // sinon 前缀链统一为同一 MockHelper 形态：strip 前缀后复用裸 stub 解析，
+  // 使下游（applyMocks → mockHelperToTypeValue）两条路径消费一致。
+  // 解析不出的 sinon 链仍回落 sinonExpr 路径（parseSinonExpr 自己的分支）。
+  if (s.startsWith("sinon.")) {
+    return parseNudoMockExpr(s.slice("sinon.".length));
+  }
+
   return null;
 }
 
@@ -525,9 +534,19 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
       if (inFromRange) continue;
 
       const expr = mockMatch[2].trim();
-      const arrowFn = parseArrowFunctionExpr(expr);
+      let arrowFn = parseArrowFunctionExpr(expr);
       const sinonExpr = parseSinonExpr(expr);
       const nudoMock = parseNudoMockExpr(expr);
+
+      // callsFake 统一：sinon.stub().callsFake(fn) / stub().callsFake(fn) 都把
+      // fn 提升到 arrowFn 字段——与 @nudo:mock f = (x) => ... 走完全同一绑定机制
+      // （applyMocks 的 T.fn + _paramPatterns + 全局 env 闭包），调用时以实参求值
+      if (!arrowFn) {
+        const callsFakeChain = expr.match(/^(?:sinon\.)?stub\(\)\.callsFake\((.+)\)$/);
+        if (callsFakeChain) {
+          arrowFn = parseArrowFunctionExpr(callsFakeChain[1].trim());
+        }
+      }
 
       directives.push({
         kind: "mock",

@@ -57,7 +57,7 @@ nudo infer <file> [options]
 - Each case: `Case "name": (arg1, arg2, ...) => result`
 - Functions without `@nudo:case` directives still get cases: synthesized `call@L` cases from observed calls, or an `entry@L` case with `unknown` parameters plus a `# no call sites found` note when nothing calls them
 - Optional `throws type` when the case may throw
-- If multiple cases: combined type printed as `Combined: type` — literal members are preserved (e.g. `2 | -9 | number`)
+- If multiple cases: combined type printed as `Combined: type`, simplified by absorption — a literal whose base type is already in the union is absorbed (e.g. `2 | -9 | number` collapses to `number`); pure-literal unions keep all members
 - Diagnostics, if any, are printed in a trailing `Diagnostics:` section as `[severity] path:line:column message (code)`
 - With `--dts`: writes `<basename>.d.ts` in the same directory and prints `Generated: <basename>.d.ts`
 - With `--emit-cases`: a trailing emission summary — `Emitted cases → <file> (N directive(s) across M function(s))` after writing to disk, `Would emit cases → <file> (dry run)` followed by a unified diff with `--dry-run`, or `No changes.` when the source is already in sync — each followed by per-function lines: `fn: case names` for written functions, `fn: reason` for skipped ones (e.g. `already-generated`)
@@ -75,7 +75,7 @@ Case "positive numbers": (5, 3) => 2
 Case "negative result": (1, 10) => -9
 Case "symbolic": (number, number) => number
 
-Combined: 2 | -9 | number
+Combined: number
 ```
 
 ```bash
@@ -89,7 +89,7 @@ Case "positive numbers": (5, 3) => 2
 Case "negative result": (1, 10) => -9
 Case "symbolic": (number, number) => number
 
-Combined: 2 | -9 | number
+Combined: number
 
 Generated: math.d.ts
 ```
@@ -339,7 +339,7 @@ nudo generate <file> [options]
 
 - **`zod`** — Zod schema strings (as comments) for each function case (input and output); input parameters are named `arg0`, `arg1`, …
 - **`guard`** — zero-dependency runtime type guard functions, one per case, named `is<Function><Case>Output`
-- **`dts`** — TypeScript declarations; parameters are named `arg0`, `arg1`, … (real parameter names are not preserved) and there is no JSDoc
+- **`dts`** — TypeScript declarations; one widened signature per function with real parameter names, with each case's precise result preserved in JSDoc (same output as `nudo infer --dts`)
 - **`all`** — all of the above
 
 **Example:**

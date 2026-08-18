@@ -168,8 +168,20 @@ function getMax() {
   return Number.MAX_SAFE_INTEGER;
 }
 `);
-      // Design limitation: Number.MAX_SAFE_INTEGER not resolved
-      expect(results[0].result).toBe("undefined");
+      // Design limitation: Number.MAX_SAFE_INTEGER not resolved → 已修复：
+      // BUILTIN_STATIC_METHODS.Number 补常量接线，现在解析为 number
+      expect(results[0].result).toBe("number");
+    });
+
+    it("min safe integer", () => {
+      const results = runTest(`
+// @nudo:case "min-int" ()
+function getMin() {
+  return Number.MIN_SAFE_INTEGER;
+}
+`);
+      // Number.MIN_SAFE_INTEGER 常量接线修复后解析为 number
+      expect(results[0].result).toBe("number");
     });
 
     it("infinity", () => {
@@ -179,8 +191,10 @@ function getInf() {
   return Infinity;
 }
 `);
-      // Unresolved built-in globals propagate unknown (not undefined)
-      expect(results[0].result).toBe("unknown");
+      // Unresolved built-in globals propagate unknown (not undefined) → 已修复：
+      // Infinity 进入 BUILTIN_STATIC_METHODS，解析为 number（不再触发
+      // nudo:unknown-global / nudo:builtin-unknown）
+      expect(results[0].result).toBe("number");
     });
 
     it("negative infinity", () => {
@@ -190,7 +204,7 @@ function getNegInf() {
   return -Infinity;
 }
 `);
-      // Unary - on undefined returns number
+      // Unary - on undefined returns number → 已修复：- 现在作用于 number
       expect(results[0].result).toBe("number");
     });
 
@@ -201,8 +215,32 @@ function getNaN() {
   return NaN;
 }
 `);
-      // Unresolved built-in globals propagate unknown (not undefined)
-      expect(results[0].result).toBe("unknown");
+      // Unresolved built-in globals propagate unknown (not undefined) → 已修复：
+      // NaN 进入 BUILTIN_STATIC_METHODS，解析为 number
+      expect(results[0].result).toBe("number");
+    });
+
+    it("Math.PI / Math.E", () => {
+      const results = runTest(`
+// @nudo:case "math-pi" ()
+// @nudo:case "math-e" ()
+function constants() {
+  return [Math.PI, Math.E];
+}
+`);
+      // Math 常量接线修复：解析为 number（数组字面量求值为 tuple）
+      expect(results[0].result).toBe("[number, number]");
+    });
+
+    it("Number.MAX_VALUE / Number.EPSILON", () => {
+      const results = runTest(`
+// @nudo:case "num-consts" ()
+function constants() {
+  return [Number.MAX_VALUE, Number.EPSILON];
+}
+`);
+      // Number 常量接线修复：解析为 number（数组字面量求值为 tuple）
+      expect(results[0].result).toBe("[number, number]");
     });
 
     it("empty array index", () => {
@@ -315,8 +353,65 @@ function compare(a, b) {
   return a == b;
 }
 `);
-      // Design limitation: == not implemented (returns unknown)
-      expect(results[0].result).toBe("unknown");
+      // Design limitation: == not implemented (returns unknown) → 已修复：
+      // 字面量操作数按 JS 宽松相等语义求值，1 == "1" 得 true
+      expect(results[0].result).toBe("true");
+    });
+
+    it("loose equality on literals", () => {
+      const results = runTest(`
+// @nudo:case "num-eq" (5, 3)
+// @nudo:case "str-num-eq" ("5", 5)
+// @nudo:case "bool-eq" (false, 0)
+// @nudo:case "null-undef-eq" (null, undefined)
+function compare(a, b) {
+  return a == b;
+}
+`);
+      // 宽松相等字面量求值：ToNumber 强转（"5"==5 → true、false==0 → true、
+      // null==undefined → true）
+      expect(results[0].result).toBe("false");
+      expect(results[1].result).toBe("true");
+      expect(results[2].result).toBe("true");
+      expect(results[3].result).toBe("true");
+    });
+
+    it("loose inequality on literals", () => {
+      const results = runTest(`
+// @nudo:case "num-neq" (5, 3)
+// @nudo:case "str-num-neq" ("5", 5)
+function compare(a, b) {
+  return a != b;
+}
+`);
+      expect(results[0].result).toBe("true");
+      expect(results[1].result).toBe("false");
+    });
+
+    it("loose equality on non-literals degrades to boolean", () => {
+      const results = runTest(`
+// @nudo:case "sym-eq" (T.string)
+// @nudo:case "sym-neq" (T.number)
+function compare(a, b) {
+  return a == b;
+}
+`);
+      // 非字面量操作数：静态无法定值，退化为 boolean
+      expect(results[0].result).toBe("boolean");
+      expect(results[1].result).toBe("boolean");
+    });
+
+    it("loose equality NaN never equals itself", () => {
+      const results = runTest(`
+// @nudo:case "nan-eq" ()
+function compare() {
+  return 0 / 0 == 0 / 0;
+}
+`);
+      // case 参数无法表达 NaN 字面量（parseTypeValueExpr 落到 T.unknown），
+      // 用 0/0（Ops.div 产出 T.literal(NaN)）触发：JS 宽松相等 NaN == NaN
+      // 得 false
+      expect(results[0].result).toBe("false");
     });
 
     it("strict inequality", () => {

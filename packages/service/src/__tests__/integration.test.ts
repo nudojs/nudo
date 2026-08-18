@@ -201,9 +201,11 @@ function add(a, b) {
     expect(typeValueToTSType(fn.cases[0].result)).toBe("3");
     expect(typeValueToTSType(fn.cases[1].result)).toBe("number");
 
+    // 行为已修复：多 case 不再逐 case 生成字面量重载（`): 3;` 拦截合法调用），
+    // 改为单一 widen 主签名 + JSDoc 保留字面量精度
     const dts = generateDts(result);
-    expect(dts).toContain("): 3;");
-    expect(dts).toContain("): number;");
+    expect(dts).toContain("export declare function add(a: number, b: number): number;");
+    expect(dts).toContain("Case: concrete (1, 2) => 3");
   });
 });
 

@@ -68,7 +68,8 @@ describe("analyzeFile", () => {
     const result = analyzeFile("/test/sample.js", SAMPLE_SOURCE);
     const addFn = result.functions[0];
     expect(addFn.combined).toBeDefined();
-    expect(typeValueToString(addFn.combined!)).toBe("3 | number");
+    // 行为已修复：吸收律生效，字面量 3 被共存的 number 吸收（原期望 "3 | number"）
+    expect(typeValueToString(addFn.combined!)).toBe("number");
   });
 
   it("reports throws as diagnostics", () => {
@@ -190,7 +191,8 @@ function lonely(x) {
     expect(addFn!.cases[0].source).toBeUndefined();
     expect(addFn!.entryOnly).toBeUndefined();
     expect(typeValueToString(addFn!.cases[0].result)).toBe("3");
-    expect(typeValueToString(addFn!.combined!)).toBe("3 | number");
+    // 行为已修复：吸收律生效，combined 的字面量 3 被共存的 number 吸收（原期望 "3 | number"）
+    expect(typeValueToString(addFn!.combined!)).toBe("number");
     expect(addFn!.skipped).toBeUndefined();
   });
 

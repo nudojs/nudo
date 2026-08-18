@@ -154,10 +154,10 @@ Guard 函数执行一系列 `typeof` 检查，没有 schema 解释开销。在�
 
 ## TypeScript 声明
 
-使用 `--format dts` 时，Nudo 会为每个 case 打印一行 `export declare`。有两点需要了解：
+使用 `--format dts` 时，Nudo 为每个函数打印一条拓宽后的单一签名——与 `nudo infer <file> --dts` 输出一致。有三点需要了解：
 
-- 参数名是按位置的（`arg0`、`arg1`、……），不是源码中的真实参数名。
-- 嵌套对象的成员保留真实名称，字面量值以字面量类型出现。
+- 参数名来自源码（如 `user`）；只有声明节点无法恢复名称时才回退为按位置的 `arg0`、`arg1`。
+- 参数位置（逆变位）会被拓宽：字面量参数坍缩为基类型（`"hello"` → `string`、`[1, 2, 3]` → `number[]`），调用方可以传入任意兼容值。返回类型保留推断精度，包括嵌套字面量。
 
 ```bash
 nudo generate src/api/users.js --format dts
@@ -167,10 +167,15 @@ nudo generate src/api/users.js --format dts
 
 ```ts
 // === createUser TypeScript Declarations ===
-export declare function createUser(arg0: { name: string; age: number }): { id: 123; name: string; age: number };
+/**
+ * Case: input ({ name: "Alice"; age: 30 }) => { id: 123; name: "Alice"; age: 30 }
+ * @param user - { name: string; age: number }
+ * @returns { id: 123; name: "Alice"; age: 30 }
+ */
+export declare function createUser(user: { name: string; age: number }): { id: 123; name: "Alice"; age: 30 };
 ```
 
-当存在多个 `@nudo:case` 指令时，每个 case 打印一条声明，形成重载：
+存在多个 `@nudo:case` 指令时签名仍然是单一的——参数跨 case 取联合并拓宽，每个 case 的精确结果保留在 JSDoc 中：
 
 ```js
 // @nudo:case "string input" ("hello")
@@ -186,8 +191,13 @@ nudo generate src/api/format.js --format dts
 
 ```ts
 // === formatValue TypeScript Declarations ===
-export declare function formatValue(arg0: "hello"): "hello";
-export declare function formatValue(arg0: 42): "42";
+/**
+ * Case: string input ("hello") => "hello"
+ * Case: number input (42) => "42"
+ * @param value - string | number
+ * @returns string
+ */
+export declare function formatValue(value: string | number): string;
 ```
 
 如果想把 `.d.ts` 文件直接写到源码旁边而不是打印，可使用 `nudo infer <file> --dts`。
@@ -290,7 +300,12 @@ export function iscreateProductInputOutput(data) {
 }
 
 // === createProduct TypeScript Declarations ===
-export declare function createProduct(arg0: { name: string; price: number; tags: string[] }): { id: 456; name: string; price: number; tags: string[] };
+/**
+ * Case: input ({ name: "Widget"; price: 9.99; tags: ["a"] }) => { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
+ * @param product - { name: string; price: number; tags: string[] }
+ * @returns { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
+ */
+export declare function createProduct(product: { name: string; price: number; tags: string[] }): { id: 456; name: "Widget"; price: 9.99; tags: ["a"] };
 ```
 
 **3. 把需要的部分粘贴进你的应用：**
@@ -331,7 +346,12 @@ if (!result.success) {
 
 ```ts
 // src/api/products.d.ts -- 粘贴自上面的 stdout
-export declare function createProduct(arg0: { name: string; price: number; tags: string[] }): { id: 456; name: string; price: number; tags: string[] };
+/**
+ * Case: input ({ name: "Widget"; price: 9.99; tags: ["a"] }) => { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
+ * @param product - { name: string; price: number; tags: string[] }
+ * @returns { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
+ */
+export declare function createProduct(product: { name: string; price: number; tags: string[] }): { id: 456; name: "Widget"; price: 9.99; tags: ["a"] };
 ```
 
 ```ts
@@ -339,7 +359,7 @@ export declare function createProduct(arg0: { name: string; price: number; tags:
 import { createProduct } from "./api/products.js";
 
 const product = createProduct({ name: "Widget", price: 9.99, tags: ["sale"] });
-//    ^? { id: 456; name: string; price: number; tags: string[] }
+//    ^? { id: 456; name: "Widget"; price: 9.99; tags: ["sale"] }
 ```
 
 每个函数只需一行指令，这个工作流就能在 JavaScript/TypeScript 边界上提供完整的运行时安全和编辑器支持。

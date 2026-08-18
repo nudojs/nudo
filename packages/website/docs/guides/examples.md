@@ -32,10 +32,10 @@ Case "positive numbers": (5, 3) => 2
 Case "negative result": (1, 10) => -9
 Case "symbolic": (number, number) => number
 
-Combined: 2 | -9 | number
+Combined: number
 ```
 
-Concrete cases keep their literal results (`2`, `-9`), and the symbolic case `(T.number, T.number)` produces `number`. The combined type is the union of all case results.
+Concrete cases keep their literal results (`2`, `-9`), and the symbolic case `(T.number, T.number)` produces `number`. The combined type is the union of all case results, simplified by absorption — the literals are absorbed by the base type `number`, yielding `number`.
 
 ---
 

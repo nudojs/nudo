@@ -57,7 +57,7 @@ nudo infer <file> [options]
 - 每个用例：`Case "name": (arg1, arg2, ...) => result`
 - 没有 `@nudo:case` 指令的函数同样会有用例：观察到的调用合成为 `call@L` 用例；没有调用时产出带 `unknown` 参数的 `entry@L` 用例并附 `# no call sites found` 注释
 - 用例可能抛出时显示 `throws type`
-- 多个用例时：组合类型显示为 `Combined: type`——字面量成员会保留（如 `2 | -9 | number`）
+- 多个用例时：组合类型显示为 `Combined: type`，并按吸收律化简——基类型已在联合中的字面量会被吸收（如 `2 | -9 | number` 坍缩为 `number`）；纯字面量联合保留全部成员
 - 有诊断时，末尾输出 `Diagnostics:` 区块，条目格式为 `[severity] 路径:行:列 消息 (错误码)`
 - 使用 `--dts`：在同一目录写入 `<basename>.d.ts` 并打印 `Generated: <basename>.d.ts`
 - 使用 `--emit-cases`：末尾输出固化摘要——写盘后为 `Emitted cases → <file> (N directive(s) across M function(s))`；搭配 `--dry-run` 为 `Would emit cases → <file> (dry run)` 并附 unified diff；源码已同步时为 `No changes.`。摘要后跟逐函数行：写入的函数为 `fn: 用例名列表`，跳过的为 `fn: 原因`（如 `already-generated`）
@@ -75,7 +75,7 @@ Case "positive numbers": (5, 3) => 2
 Case "negative result": (1, 10) => -9
 Case "symbolic": (number, number) => number
 
-Combined: 2 | -9 | number
+Combined: number
 ```
 
 ```bash
@@ -89,7 +89,7 @@ Case "positive numbers": (5, 3) => 2
 Case "negative result": (1, 10) => -9
 Case "symbolic": (number, number) => number
 
-Combined: 2 | -9 | number
+Combined: number
 
 Generated: math.d.ts
 ```
@@ -339,7 +339,7 @@ nudo generate <file> [options]
 
 - **`zod`** ——每个函数用例的 Zod schema 字符串（注释形式，含输入和输出）；输入参数命名为 `arg0`、`arg1`、…
 - **`guard`** ——零依赖的运行时类型守卫函数，每个用例一个，命名为 `is<函数名><用例名>Output`
-- **`dts`** ——TypeScript 声明；参数命名为 `arg0`、`arg1`、…（不保留真实参数名），无 JSDoc
+- **`dts`** ——TypeScript 声明；每个函数一条拓宽后的单一签名，使用真实参数名，每个 case 的精确结果保留在 JSDoc 中（与 `nudo infer --dts` 输出一致）
 - **`all`** ——以上所有格式
 
 **示例：**

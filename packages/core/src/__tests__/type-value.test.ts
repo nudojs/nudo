@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   T,
+  type LiteralValue,
   typeValueEquals,
   simplifyUnion,
   widenLiteral,
@@ -11,6 +12,7 @@ import {
   subtractType,
   getPrimitiveTypeOf,
 } from "../type-value.ts";
+import { createTemplate } from "../refinements/template.ts";
 
 describe("T factory", () => {
   it("creates literal type values", () => {
@@ -144,12 +146,14 @@ describe("widenLiteral", () => {
     expect(collapseLiteralUnion(u, 4)).toBe(u);
   });
 
-  it("returns mixed union unchanged (number literal + T.number + string literal)", () => {
+  it("mixed union: number literals absorbed by T.number, string literal kept (行为已修复：吸收律)", () => {
     const u = {
       kind: "union",
       members: [T.literal(1), T.number, T.literal("x"), T.literal(2), T.literal(3)],
     } as const;
-    expect(collapseLiteralUnion(u, 4)).toBe(u);
+    // 原断言期望原样返回 u；现 collapseLiteralUnion 复用 simplifyUnion 的吸收律，
+    // 数字字面量 1/2/3 被共存的 T.number 吸收，仅剩 ["x", number]（数量 ≤ 阈值不再坍缩）
+    expect(collapseLiteralUnion(u, 4)).toEqual(T.union(T.number, T.literal("x")));
   });
 
   it("returns non-union unchanged (single literal / T.number)", () => {
@@ -248,5 +252,67 @@ describe("getPrimitiveTypeOf", () => {
   it("returns object for object/array/tuple", () => {
     expect(getPrimitiveTypeOf(T.object({}))).toBe("object");
     expect(getPrimitiveTypeOf(T.array(T.number))).toBe("object");
+  });
+});
+
+describe("union absorption law (3 | number → number)", () => {
+  it("absorbs number literal into number", () => {
+    expect(T.union(T.literal(3), T.number)).toBe(T.number);
+    expect(T.union(T.number, T.literal(3))).toBe(T.number);
+  });
+
+  it("absorbs string literal into string", () => {
+    expect(T.union(T.literal("a"), T.string)).toBe(T.string);
+    expect(T.union(T.string, T.literal("a"))).toBe(T.string);
+  });
+
+  it("absorbs boolean literal into boolean", () => {
+    expect(T.union(T.literal(true), T.boolean)).toBe(T.boolean);
+    expect(T.union(T.boolean, T.literal(false))).toBe(T.boolean);
+  });
+
+  it("absorbs bigint literal into bigint", () => {
+    // LiteralValue 类型暂不含 bigint，运行时以 cast 构造
+    expect(T.union(T.literal(10n as unknown as LiteralValue), T.bigint)).toBe(T.bigint);
+  });
+
+  it("absorbs template literal into string", () => {
+    const tmpl = createTemplate([T.literal("x"), T.string]);
+    expect(T.union(tmpl, T.string)).toBe(T.string);
+  });
+
+  it("absorbs only matching base across mixed members (order-stable)", () => {
+    // 1 被 number 吸收，"a" 无 string 在场而保留
+    const u = T.union(T.literal(1), T.number, T.literal("a"));
+    expect(u.kind).toBe("union");
+    if (u.kind === "union") {
+      expect(u.members).toHaveLength(2);
+      expect(typeValueEquals(u.members[0], T.number)).toBe(true);
+      expect(typeValueEquals(u.members[1], T.literal("a"))).toBe(true);
+    }
+  });
+
+  it("keeps different-base literal union (1 | \"a\")", () => {
+    const u = T.union(T.literal(1), T.literal("a"));
+    expect(u.kind).toBe("union");
+    if (u.kind === "union") {
+      expect(u.members).toHaveLength(2);
+    }
+  });
+
+  it("keeps pure literal unions (\"a\" | \"b\", 2 | -9)", () => {
+    expect(typeValueToString(T.union(T.literal("a"), T.literal("b")))).toBe('"a" | "b"');
+    expect(typeValueToString(T.union(T.literal(2), T.literal(-9)))).toBe("2 | -9");
+  });
+
+  it("keeps undefined/null literal unions untouched", () => {
+    expect(typeValueToString(T.union(T.undefined, T.string))).toBe("undefined | string");
+    expect(typeValueToString(T.union(T.null, T.literal(1)))).toBe("null | 1");
+  });
+
+  it("keeps pure primitive unions untouched (number | string | boolean)", () => {
+    expect(typeValueToString(T.union(T.number, T.string, T.boolean))).toBe(
+      "number | string | boolean",
+    );
   });
 });

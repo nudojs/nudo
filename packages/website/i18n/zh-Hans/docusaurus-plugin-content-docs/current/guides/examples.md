@@ -32,10 +32,10 @@ Case "positive numbers": (5, 3) => 2
 Case "negative result": (1, 10) => -9
 Case "symbolic": (number, number) => number
 
-Combined: 2 | -9 | number
+Combined: number
 ```
 
-具体 case 保留字面量结果（`2`、`-9`），符号 case `(T.number, T.number)` 产生 `number`。合并类型是所有 case 结果的并集。
+具体 case 保留其字面量结果（`2`、`-9`），符号 case `(T.number, T.number)` 产生 `number`。合并类型是所有 case 结果的并集，并按吸收律化简——字面量被基类型 `number` 吸收，得到 `number`。
 
 ---
 

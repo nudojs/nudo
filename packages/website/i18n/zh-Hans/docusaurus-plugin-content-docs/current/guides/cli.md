@@ -64,10 +64,10 @@ Case "positive numbers": (5, 3) => 2
 Case "negative result": (1, 10) => -9
 Case "symbolic": (number, number) => number
 
-Combined: 2 | -9 | number
+Combined: number
 ```
 
-组合类型会保留字面量成员（`2 | -9 | number`），调用方能看到各用例产出的具体结果。
+组合类型按吸收律化简：符号化用例已贡献 `number`，字面量结果 `2 | -9` 被吸收。不含基类型成员的纯字面量联合会保留每个字面量。
 
 生成 TypeScript 声明文件：
 
@@ -92,7 +92,7 @@ Case "positive numbers": (5, 3) => 2
 Case "negative result": (1, 10) => -9
 Case "symbolic": (number, number) => number
 
-Combined: 2 | -9 | number
+Combined: number
 ```
 
 ### 无指令的函数

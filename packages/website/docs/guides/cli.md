@@ -64,10 +64,10 @@ Case "positive numbers": (5, 3) => 2
 Case "negative result": (1, 10) => -9
 Case "symbolic": (number, number) => number
 
-Combined: 2 | -9 | number
+Combined: number
 ```
 
-The combined type keeps literal members (`2 | -9 | number`), so callers see exactly which concrete results the cases produced.
+The combined type is simplified by absorption: since the symbolic case already contributes `number`, the literal results `2 | -9` are absorbed into it. Pure-literal unions without a base-type member keep every literal.
 
 Generate TypeScript declaration file:
 
@@ -92,7 +92,7 @@ Case "positive numbers": (5, 3) => 2
 Case "negative result": (1, 10) => -9
 Case "symbolic": (number, number) => number
 
-Combined: 2 | -9 | number
+Combined: number
 ```
 
 ### Functions without directives

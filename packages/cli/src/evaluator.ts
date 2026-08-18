@@ -75,6 +75,16 @@ const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue> | TypeVal
     min: T.fn(["...args"], { type: "BlockStatement", body: [] } as any, undefined as any),
     sqrt: T.fn(["x"], { type: "BlockStatement", body: [] } as any, undefined as any),
     pow: T.fn(["base", "exp"], { type: "BlockStatement", body: [] } as any, undefined as any),
+    // Math 常量与 @nudo:env es 的 Math 定义对齐（env 绑定优先）；无 env
+    // 指令时也在此解析，避免 Math.PI 走 unknown-property。
+    PI: T.number,
+    E: T.number,
+    LN2: T.number,
+    LN10: T.number,
+    LOG2E: T.number,
+    LOG10E: T.number,
+    SQRT2: T.number,
+    SQRT1_2: T.number,
   },
   JSON: {
     // JSON.parse(literal-string): evaluate with the real JSON.parse and
@@ -161,6 +171,16 @@ const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue> | TypeVal
     isFinite: T.boolean,
     parseInt: T.number,
     parseFloat: T.number,
+    // Number 常量与 @nudo:env es 的 Number 定义对齐（env 绑定优先）；
+    // 均为 number（case 序列化器对非有限数返回 null，不产出字面量值）。
+    MAX_SAFE_INTEGER: T.number,
+    MIN_SAFE_INTEGER: T.number,
+    MAX_VALUE: T.number,
+    MIN_VALUE: T.number,
+    POSITIVE_INFINITY: T.number,
+    NEGATIVE_INFINITY: T.number,
+    NaN: T.number,
+    EPSILON: T.number,
   },
   String: {
     // fromCharCode/fromCodePoint over all-number-literal args evaluate
@@ -194,6 +214,11 @@ const BUILTIN_STATIC_METHODS: Record<string, Record<string, TypeValue> | TypeVal
   parseFloat: T.number,
   isNaN: T.boolean,
   isFinite: T.boolean,
+  // 全局数值常量：与 @nudo:env es 的 globals 对齐（env 绑定优先）。无 env
+  // 指令时在此解析为 number——否则 Infinity/NaN 命中大写开头的未知全局
+  // 检测，触发 nudo:unknown-global 与 nudo:builtin-unknown 诊断。
+  Infinity: T.number,
+  NaN: T.number,
 };
 
 /** Harvest String.fromCharCode/fromCodePoint arguments: a list of number
@@ -207,6 +232,28 @@ function literalCodeUnits(args: TypeValue[]): number[] | null {
     codes.push(a.value);
   }
   return codes;
+}
+
+/** `==`/`!=` 静态求值可用的字面量值：number/string/boolean/null/undefined
+ * 这五种原始值走 JS 宽松相等的 ToNumber 强转路径，可直接用宿主 `==`
+ * 求值（与规范一致）；bigint/symbol 无该路径，hit=false 交给调用方退化
+ * 为 T.boolean。undefined 不能作哨兵值（它本身就是合法字面量值）。 */
+function looseLiteralValue(
+  tv: TypeValue,
+): { hit: boolean; v: number | string | boolean | null | undefined } {
+  if (tv.kind === "literal") {
+    const v = tv.value;
+    if (
+      typeof v === "number" ||
+      typeof v === "string" ||
+      typeof v === "boolean" ||
+      v === null ||
+      v === undefined
+    ) {
+      return { hit: true, v };
+    }
+  }
+  return { hit: false, v: undefined };
 }
 
 const BUILTIN_INSTANCE_METHODS: Record<string, Record<string, (...args: TypeValue[]) => TypeValue>> = {
@@ -1789,6 +1836,21 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           return T.literal(node.operator === "===" ? classIdentity : !classIdentity);
         }
       }
+      // `==`/`!=`：core 的 binaryOpMap 未收录这两个运算符（applyBinaryOp
+      // 会回落 unknown），在同一分派点补上——两操作数均为原始字面量
+      // （number/string/boolean/null/undefined）时按 JS 宽松相等语义
+      // （ToNumber 强转，如 "5" == 5 → true、null == undefined → true、
+      // NaN == NaN → false）直接求值出 boolean 字面量；任一操作数非字面量
+      // 时退化为 T.boolean。
+      if (node.operator === "==" || node.operator === "!=") {
+        const eq = node.operator === "==";
+        return distributeBinaryOverUnion(leftVal, rightVal, (l, r) => {
+          const lv = looseLiteralValue(l);
+          const rv = looseLiteralValue(r);
+          if (lv.hit && rv.hit) return T.literal(eq ? lv.v == rv.v : lv.v != rv.v);
+          return T.boolean;
+        });
+      }
       return distributeBinaryOverUnion(leftVal, rightVal, (l, r) =>
         dispatchBinaryOp(node.operator, l, r),
       );
@@ -3117,35 +3179,11 @@ function evaluateMethodForMember(
     }
   }
 
-  // Array/tuple methods（union 分布路径——主路径 evaluateArrayMethod 需要
-  // AST 节点，这里只补不需要回调 AST 的顺序方法；回调类 map/filter 等
-  // 返回 unknown 以示保守）
+  // Array/tuple methods（union 分布路径）：与主路径共用 evaluateArrayMethodValues
+  // ——实参在此已是 TypeValue，回调类 map/filter/reduce 等同样从函数值签名
+  // 求值（mock 箭头 / 具名函数 / 内联箭头一致），不再保守降级 unknown。
   if (objVal.kind === "array" || objVal.kind === "tuple") {
-    if (methodName === "push") {
-      if (objVal.kind === "tuple") {
-        objVal.elements.push(...argVals);
-        return T.literal(objVal.elements.length);
-      }
-      return T.number;
-    }
-    if (methodName === "pop" || methodName === "shift") {
-      if (objVal.kind === "tuple") {
-        if (objVal.elements.length === 0) return T.undefined;
-        return T.union(...objVal.elements);
-      }
-      return T.unknown;
-    }
-    if (methodName === "unshift") {
-      if (objVal.kind === "tuple") return T.literal(objVal.elements.length + argVals.length);
-      return T.number;
-    }
-    if (methodName === "length") {
-      return objVal.kind === "tuple" ? T.literal(objVal.elements.length) : T.number;
-    }
-    if (methodName === "indexOf" || methodName === "lastIndexOf") return T.number;
-    if (methodName === "includes") return T.boolean;
-    // join/concat/slice/map/filter 等返回 unknown（回调形态在主路径处理）
-    return T.unknown;
+    return evaluateArrayMethodValues(objVal, methodName, argVals);
   }
 
   // String methods
@@ -3851,12 +3889,23 @@ function evaluateArrayMethod(
 ): EvalResult | null {
   const argVals = evaluateArgs(args, env);
   if (isReturn(argVals) || isBranch(argVals) || isThrow(argVals)) return argVals;
+  return evaluateArrayMethodValues(arr, method, argVals as TypeValue[]);
+}
 
-  const callbackFn = (argVals as TypeValue[])[0];
+/** Array/tuple 方法求值主体：实参已经是 TypeValue（AST 路径与 union 分布
+ *  路径共用）。回调类方法（map/filter/reduce/...）拿到 kind "function" 的
+ *  实参时经 callFunction 从其签名/闭包求值——mock 箭头、具名函数与内联
+ *  箭头在此走同一机制。 */
+function evaluateArrayMethodValues(
+  arr: TypeValue & { kind: "array" | "tuple" },
+  method: string,
+  argVals: TypeValue[],
+): EvalResult | null {
+  const callbackFn = argVals[0];
 
   if (method === "push") {
     if (arr.kind === "tuple") {
-      arr.elements.push(...(argVals as TypeValue[]));
+      arr.elements.push(...argVals);
       return T.literal(arr.elements.length);
     }
     return T.number;
@@ -3877,7 +3926,7 @@ function evaluateArrayMethod(
 
   if (method === "unshift") {
     if (arr.kind === "tuple") {
-      return T.literal(arr.elements.length + (argVals as TypeValue[]).length);
+      return T.literal(arr.elements.length + argVals.length);
     }
     return T.number;
   }
@@ -3887,8 +3936,8 @@ function evaluateArrayMethod(
   }
 
   if (method === "includes") {
-    if (arr.kind === "tuple" && (argVals as TypeValue[])[0]?.kind === "literal") {
-      const searchVal = (argVals as TypeValue[])[0];
+    if (arr.kind === "tuple" && argVals[0]?.kind === "literal") {
+      const searchVal = argVals[0];
       const found = arr.elements.some((e) => typeValueEquals(e, searchVal));
       return T.literal(found);
     }
@@ -3902,7 +3951,7 @@ function evaluateArrayMethod(
   if (method === "concat") {
     if (arr.kind === "tuple") {
       const otherElements: TypeValue[] = [];
-      for (const a of argVals as TypeValue[]) {
+      for (const a of argVals) {
         if (a.kind === "tuple") otherElements.push(...a.elements);
         else if (a.kind === "array") return T.array(simplifyUnion([...arr.elements, a.element]));
         else otherElements.push(a);
@@ -3914,8 +3963,8 @@ function evaluateArrayMethod(
 
   if (method === "slice") {
     if (arr.kind === "tuple") {
-      const start = (argVals as TypeValue[])[0];
-      const end = (argVals as TypeValue[])[1];
+      const start = argVals[0];
+      const end = argVals[1];
       const startIdx = start?.kind === "literal" && typeof start.value === "number" ? start.value : 0;
       const endIdx = end?.kind === "literal" && typeof end.value === "number" ? end.value : arr.elements.length;
       return T.tuple(arr.elements.slice(startIdx, endIdx));
@@ -3923,12 +3972,23 @@ function evaluateArrayMethod(
     return T.array(arr.element);
   }
 
+  // 回调实参是「函数 union」（cond ? f : g 透传给 HOF）：对每个成员签名
+  // 分别求值再 union 结果——与非函数守卫（unknown 回调）不同，这里每个
+  // 成员都有完整的 TypeValue 信息，不该整体降级。
+  if (callbackFn && callbackFn.kind === "union" && callbackFn.members.length > 0 &&
+      callbackFn.members.every((m) => m.kind === "function")) {
+    return distributeOverUnion(callbackFn, (member) => {
+      const r = evaluateArrayMethodValues(arr, method, [member, ...argVals.slice(1)]);
+      return r === null ? T.unknown : (r as TypeValue);
+    });
+  }
+
   if (!callbackFn || callbackFn.kind !== "function") {
     if (method === "map") return arr.kind === "tuple" ? T.tuple(arr.elements.map(() => T.unknown)) : T.array(T.unknown);
     if (method === "filter") return arr.kind === "tuple" ? T.array(simplifyUnion(arr.elements)) : arr;
     if (method === "find") return arr.kind === "tuple" ? simplifyUnion([...arr.elements, T.undefined]) : simplifyUnion([arr.element, T.undefined]);
     if (method === "some" || method === "every") return T.boolean;
-    if (method === "reduce") return (argVals as TypeValue[])[1] ?? T.unknown;
+    if (method === "reduce") return argVals[1] ?? T.unknown;
     if (method === "forEach") return T.undefined;
     if (method === "flatMap") return T.array(T.unknown);
     return null;
@@ -3961,7 +4021,7 @@ function evaluateArrayMethod(
   }
 
   if (method === "reduce") {
-    const init = (argVals as TypeValue[])[1];
+    const init = argVals[1];
     if (arr.kind === "tuple") {
       let acc = init ?? arr.elements[0] ?? T.unknown;
       const startIdx = init ? 0 : 1;

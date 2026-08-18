@@ -226,6 +226,68 @@ function foo(x) { return Math.floor(x); }
     });
   });
 
+  describe("Global numeric constants", () => {
+    it("Infinity / -Infinity / NaN resolve to number", () => {
+      const results = infer(`
+// @nudo:case "constants" ()
+function foo() {
+  return [Infinity, -Infinity, NaN];
+}
+`);
+      // 修复前：Infinity/NaN 走未知全局（unknown）且触发 nudo:unknown-global；
+      // 现在通过 BUILTIN_STATIC_METHODS 接线解析为 number。
+      // 常量显示 number 即可——case 序列化器对非有限数返回 null，不产
+      // 字面量值。数组字面量求值为 tuple。
+      expect(results[0].result).toBe("[number, number, number]");
+    });
+
+    it("Number static constants resolve to number", () => {
+      const results = infer(`
+// @nudo:case "num-consts" ()
+function foo() {
+  return [Number.MAX_SAFE_INTEGER, Number.MIN_SAFE_INTEGER, Number.MAX_VALUE, Number.EPSILON];
+}
+`);
+      // 修复前：Number.MAX_SAFE_INTEGER 报 unknown-property 且值为 undefined
+      expect(results[0].result).toBe("[number, number, number, number]");
+    });
+
+    it("Math.PI / Math.E resolve to number", () => {
+      const results = infer(`
+// @nudo:case "math-consts" ()
+function foo() { return Math.PI + Math.E; }
+`);
+      // 修复前：Math.PI 走 unknown-property（undefined）
+      expect(results[0].result).toBe("number");
+    });
+  });
+
+  describe("Loose equality", () => {
+    it("literal == evaluates via JS coercion", () => {
+      const results = infer(`
+// @nudo:case "num" ()
+// @nudo:case "str-num" ()
+function foo() {
+  return [5 == 3, "5" == 5];
+}
+`);
+      // 修复前：== 未实现（unknown）；现在两字面量操作数按 JS 宽松相
+      // 等求值：5 == 3 → false，"5" == 5 → true
+      expect(results[0].result).toBe("[false, true]");
+    });
+
+    it("non-literal == degrades to boolean", () => {
+      const results = infer(`
+// @nudo:case "sym" (T.string)
+function foo(x) {
+  return x == "5";
+}
+`);
+      // 任一操作数非字面量：退化为 boolean
+      expect(results[0].result).toBe("boolean");
+    });
+  });
+
   describe("Integration with narrowing", () => {
     it("String() after typeof check", () => {
       const results = infer(`

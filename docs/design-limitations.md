@@ -172,60 +172,15 @@ function createCounter() {
 `Object.prototype` 方法表 + 原始值自动装箱（`'x'.constructor`）。
 json-ext 试炼 41 error → 0。
 
-### 3.1 全局标识符未解析
+### 3.1 全局标识符未解析（已解决）
 
-**问题描述：**
-JavaScript 内置全局标识符（`Infinity`、`NaN`、`undefined`）和静态属性（`Number.MAX_SAFE_INTEGER`）未解析。
-
-**失败示例：**
-```javascript
-function getInf() { return Infinity; }      // 返回 undefined
-function getNaN() { return NaN; }           // 返回 undefined
-function getMax() { return Number.MAX_SAFE_INTEGER; } // 返回 undefined
-```
-
-**根本原因：**
-- Nudo 只追踪局部变量绑定
-- 全局标识符不在 Environment 中
-- `Number.MAX_SAFE_INTEGER` 是 MemberExpression，需要特殊处理
-
-**影响范围：**
-- 所有使用全局常量的代码
-- `Math.PI`、`Number.MAX_VALUE` 等静态属性
-
-**可能的解决方案：**
-1. **预置全局环境**：在 Environment 初始化时绑定全局常量
-2. **内置对象支持**：为 `Number`、`Math`、`JSON` 等内置对象添加特殊处理
-
-**难度：** 低
+~~JavaScript 内置全局标识符（`Infinity`、`NaN`、`undefined`）和静态属性（`Number.MAX_SAFE_INTEGER`）未解析。~~ 已实现：`BUILTIN_STATIC_METHODS` 预置全部数值常量——顶层 `Infinity`/`NaN`、`Math.PI`/`Math.E` 等 8 个、`Number.MAX_SAFE_INTEGER`/`EPSILON` 等 10 个，均解析为 `number` 且不再触发 `unknown-global`/`builtin-unknown` 诊断；`@nudo:env` 指令存在时 `loadEnvs` 绑定仍优先。测试：`edge-cases.test.ts`、`builtin-functions.test.ts`。
 
 ---
 
-### 3.2 `==` 宽松相等未实现
+### 3.2 `==` 宽松相等未实现（已解决）
 
-**问题描述：**
-`==` 运算符返回 `unknown`，只有 `===` 和 `!==` 正确实现。
-
-**失败示例：**
-```javascript
-function compare(a, b) {
-  return a == b;  // 返回 unknown
-}
-```
-
-**根本原因：**
-- `dispatchBinaryOp` 中 `==` 和 `!=` 未实现
-- 宽松相等涉及类型强制转换，规则复杂
-
-**影响范围：**
-- 使用 `==` 的代码
-- 与 `null` 的比较（`val == null` 常见模式）
-
-**可能的解决方案：**
-1. **简单实现**：`==` 返回 `T.boolean`（不精确但安全）
-2. **完整实现**：实现 ECMAScript 的 Abstract Equality Comparison 算法
-
-**难度：** 低-中
+~~`==` 运算符返回 `unknown`，只有 `===` 和 `!==` 正确实现。~~ 已实现（介于原方案 1、2 之间）：两操作数均为原始字面量（number/string/boolean/null/undefined）时按 ECMAScript 宽松相等语义求值（ToNumber 强转、`NaN != NaN`、`"5" == 5` 为 `true`）出 `boolean` 字面量；任一操作数非字面量时安全回落 `T.boolean`。测试：`edge-cases.test.ts`。
 
 ---
 
@@ -312,11 +267,11 @@ function nested() {
 
 ### P0 - 高影响，可实现
 
-| 限制 | 影响 | 方案 |
+| 限制 | 影响 | 状态 |
 |------|------|------|
-| 全局标识符未解析 | 常见代码模式 | 预置全局环境 |
-| `==` 宽松相等 | 常见语法 | 简单实现返回 boolean |
-| Map 字面量 key 追踪 | 精度提升 | 字面量 key 特殊处理 |
+| 全局标识符未解析 | 常见代码模式 | ✅ 已解决（见 3.1） |
+| `==` 宽松相等 | 常见语法 | ✅ 已解决（见 3.2） |
+| Map 字面量 key 追踪 | 精度提升 | ✅ 已解决（`m.set("k", v)` 后 `m.get("k")` 精确到值类型） |
 
 ### P1 - 高影响，复杂
 
@@ -359,12 +314,12 @@ function nested() {
 ## 七、改进路线图
 
 ### 阶段 1：快速胜利（1-2 周）
-- [ ] 预置全局环境（`Infinity`、`NaN`、`undefined`）
-- [ ] 实现 `Number`、`Math`、`JSON` 等内置对象的静态属性
-- [ ] 简单实现 `==` / `!=` 返回 `T.boolean`
+- [x] 预置全局环境（`Infinity`、`NaN`、`undefined`）
+- [x] 实现 `Number`、`Math`、`JSON` 等内置对象的静态属性
+- [x] 简单实现 `==` / `!=` 返回 `T.boolean`
 
 ### 阶段 2：精度提升（2-4 周）
-- [ ] Map 字面量 key 追踪
+- [x] Map 字面量 key 追踪
 - [ ] 高阶函数调用点推断
 - [ ] 数组 `reduce` 累加器追踪
 

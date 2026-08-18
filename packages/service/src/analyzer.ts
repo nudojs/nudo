@@ -1108,6 +1108,14 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
   setProvenanceTracking(true);
 
+  // @nudo:mock 绑定必须先于全程序求值：顶层调用点（如 mockHof([1,2,3])）
+  // 在 evaluateProgram 中执行并由 callCollector 记录 call@ case 的
+  // resultType——mock 晚于此绑定会让「mock 函数值作为回调实参」在该路径
+  // 整体降级 unknown（@nudo:case 求值发生在下方循环内，此前不受影响）。
+  for (const fn of functions) {
+    applyMocks(fn.directives, globalEnv, filePath, diagnostics);
+  }
+
   evaluateProgram(ast, globalEnv);
 
   const unreachableRanges = getUnreachableRanges();
@@ -1127,8 +1135,6 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   const synthCandidates: { name: string; node: Node; analysis: FunctionAnalysis }[] = [];
 
   for (const fn of functions) {
-    applyMocks(fn.directives, globalEnv, filePath, diagnostics);
-
     const isPure = fn.directives.some((d) => d.kind === "pure");
     const skipDirective = fn.directives.find((d) => d.kind === "skip");
     const returnsDirective = fn.directives.find((d) => d.kind === "returns");

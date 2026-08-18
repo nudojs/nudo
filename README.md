@@ -96,6 +96,8 @@ This is a monorepo managed with [pnpm workspaces](https://pnpm.io/workspaces).
 | [`@nudojs/cli`](./packages/cli) | CLI tool and evaluator API |
 | [`@nudojs/service`](./packages/service) | Shared inference service for IDE integrations |
 | [`@nudojs/lsp`](./packages/lsp) | Language Server Protocol server, with AI-agent `executeCommand` support |
+| [`@nudojs/env`](./packages/env) | Built-in API environments (ES globals, Node, Web) loaded by `@nudo:env` |
+| [`@nudojs/harvester`](./packages/harvester) | Harvests `.d.ts` declarations into Nudo env modules |
 | [`vite-plugin-nudo`](./packages/vite-plugin) | Vite plugin for build-time inference |
 | [`nudo-vscode`](./packages/vscode) | VS Code / Cursor extension |
 | [`website`](./packages/website) | Documentation site (Docusaurus) |

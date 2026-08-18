@@ -16,6 +16,9 @@ function runNudoTest(source: string): { name: string; caseName: string; result: 
           const fnType = T.fn(d.arrowFn.params, d.arrowFn.body, env);
           (fnType as any)._paramPatterns = d.arrowFn.paramPatterns;
           env.bind(d.name, fnType);
+        } else if (d.nudoMock) {
+          const typeVal = mockHelperToTypeValue(d.nudoMock, env);
+          env.bind(d.name, typeVal);
         } else if (d.expression) {
           env.bind(d.name, parseTypeValueExpr(d.expression));
         }
@@ -108,6 +111,64 @@ function testFn() {
       const caseDir = fn.directives.find((d): d is CaseDirective => d.kind === "case")!;
       const result = evaluateFunctionFull(fn.node, caseDir.args, env);
       expect(typeValueToString(result.value)).toBe("number");
+    });
+  });
+
+  describe("stub().callsFake executes the fake with actual args (sinon semantics)", () => {
+    it("mockHelperToTypeValue binds the fake function itself, not a direct return of it", () => {
+      const env = createEnvironment();
+      const fake = parseTypeValueExpr("(x) => ({ v: x })");
+      expect(fake.kind).toBe("function");
+      const typeVal = mockHelperToTypeValue(stub.callsFake(fake), env);
+      // 调用语义 = 以实参执行 fake：直接绑定 fake 本身（同 @nudo:mock 箭头机制），
+      // 而非把 fake 函数值当 _directReturn 传播
+      expect(typeVal).toBe(fake);
+    });
+
+    it("stub().callsFake((x) => ({ v: x })) called with 21 yields { v: 21 }", () => {
+      const results = runNudoTest(`
+// @nudo:mock transform = stub().callsFake((x) => ({ v: x }))
+// @nudo:case "direct" (21)
+function applyTransform(x) {
+  return transform(x);
+}
+`);
+      expect(results[0].result).toBe("{ v: 21 }");
+    });
+
+    it("sinon.stub().callsFake((x) => ({ v: x })) called with 21 yields { v: 21 }", () => {
+      const results = runNudoTest(`
+// @nudo:mock transform = sinon.stub().callsFake((x) => ({ v: x }))
+// @nudo:case "direct" (21)
+function applyTransform(x) {
+  return transform(x);
+}
+`);
+      expect(results[0].result).toBe("{ v: 21 }");
+    });
+
+    it("callsFake propagates precisely through arr.map(transform) HOF", () => {
+      const results = runNudoTest(`
+// @nudo:mock transform = stub().callsFake((x) => ({ v: x }))
+// @nudo:case "hof" ([1, 2, 3])
+function mapAll(arr) {
+  return arr.map(transform);
+}
+`);
+      expect(results[0].result).toBe("[{ v: 1 }, { v: 2 }, { v: 3 }]");
+    });
+
+    it("withArgs(...).returns(...) matched args take priority; unmatched fall back to stub default", () => {
+      const results = runNudoTest(`
+// @nudo:mock handler = stub().withArgs(21).returns("hit")
+// @nudo:case "match" (21)
+// @nudo:case "miss" (22)
+function call(x) {
+  return handler(x);
+}
+`);
+      expect(results[0].result).toBe('"hit"');
+      expect(results[1].result).toBe("unknown");
     });
   });
 });

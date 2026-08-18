@@ -54,10 +54,10 @@ function getLength(maybeBox) {
 Case "object present": ({ length: number }) => number
 Case "null": (null) => 0
 
-Combined: number | 0
+Combined: number
 ```
 
-对象存在时，`maybeBox?.length` 解析为 `number`，`?? 0` 回退不会触发。传入 `null` 时，链路短路为 `undefined`，于是 `?? 0` 产生字面量 `0`。`Combined:` 行对所有 case 的结果取并集，并保留字面量成员。
+对象存在时，`maybeBox?.length` 解析为 `number`，`?? 0` 回退不会触发。传入 `null` 时，链路短路为 `undefined`，于是 `?? 0` 产生字面量 `0`。`Combined:` 行对所有 case 的结果取并集，再按吸收律化简——字面量 `0` 被另一 case 贡献的基类型 `number` 吸收。
 
 注意 `?.` 只在接收方是**具体的**空值时短路，它本身不会收窄联合类型的接收方：若输入为 `T.union(T.object({ length: T.number }), T.null)`，访问 `maybeBox?.length` 仍会报告 `Property 'length' does not exist on type '{ length: number } | null' (nudo:no-method)`——应先用真值守卫，再做访问。
 

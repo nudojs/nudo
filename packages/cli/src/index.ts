@@ -5,8 +5,6 @@ import {
   T,
   typeValueToString,
   createEnvironment,
-  isTemplate,
-  getTemplateParts,
   mockHelperToTypeValue,
 } from "@nudojs/core";
 import type { TypeValue } from "@nudojs/core";
@@ -15,6 +13,7 @@ import { evaluateFunctionFull, evaluateProgram, setModuleResolver, setCurrentFil
 import {
   typeValueToZodSchema,
   generateGuardFunction,
+  generateFunctionDtsLines,
   analyzeFileAsync,
   buildModuleGraph,
   computeDirtySet,
@@ -24,6 +23,7 @@ import {
   insertGeneratedCaseDirectives,
   unifiedDiff,
   type CallRecord,
+  type CaseResult,
   type FunctionAnalysis,
   type AnalysisResult,
   type EmitResult,
@@ -118,54 +118,6 @@ function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeo
   return null;
 }
 
-function typeValueToTSType(tv: TypeValue): string {
-  switch (tv.kind) {
-    case "literal": {
-      const v = tv.value;
-      if (v === null) return "null";
-      if (v === undefined) return "undefined";
-      if (typeof v === "string") return JSON.stringify(v);
-      return String(v);
-    }
-    case "primitive":
-      return tv.type;
-    case "refined": {
-      if (isTemplate(tv)) {
-        const parts = getTemplateParts(tv)!;
-        const inner = parts
-          .map((p) => (p.kind === "literal" && typeof p.value === "string" ? p.value : `\${${typeValueToTSType(p)}}`))
-          .join("");
-        return `\`${inner}\``;
-      }
-      return typeValueToTSType(tv.base);
-    }
-    case "object": {
-      const entries = Object.entries(tv.properties);
-      if (entries.length === 0) return "{}";
-      const inner = entries.map(([k, v]) => `${k}: ${typeValueToTSType(v)}`).join("; ");
-      return `{ ${inner} }`;
-    }
-    case "array": {
-      const el = typeValueToTSType(tv.element);
-      return tv.element.kind === "union" ? `(${el})[]` : `${el}[]`;
-    }
-    case "tuple":
-      return `[${tv.elements.map(typeValueToTSType).join(", ")}]`;
-    case "function":
-      return `(${tv.params.map((p) => `${p}: unknown`).join(", ")}) => unknown`;
-    case "promise":
-      return `Promise<${typeValueToTSType(tv.value)}>`;
-    case "instance":
-      return tv.className;
-    case "union":
-      return tv.members.map(typeValueToTSType).join(" | ");
-    case "never":
-      return "never";
-    case "unknown":
-      return "unknown";
-  }
-}
-
 /** `--emit-cases` 的编排选项：mode 决定 add/update 两条固化路径 */
 type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOnDiff: boolean };
 
@@ -243,12 +195,15 @@ async function runInfer(
     const header = options.showLoc ? `=== ${fn.name} (${locStr}) ===` : `=== ${fn.name} ===`;
     console.log(`${header}\n`);
 
+    // .d.ts 与 service 级 generateDts 共用同一实现（单一 widen 主签名 +
+    // JSDoc case 说明；真实参数名；noDeclaration 函数排除），两条路径行为一致
+    if (options.dts) {
+      dtsLines.push(...generateFunctionDtsLines(fn));
+    }
+
     if (fn.skipped) {
       if (fn.combined) {
         console.log(`Skipped (declared): ${typeValueToString(fn.combined)}`);
-        if (options.dts) {
-          dtsLines.push(`export declare function ${fn.name}(...args: unknown[]): ${typeValueToTSType(fn.combined)};`);
-        }
       } else {
         console.log("Skipped (no return type declared)");
       }
@@ -274,13 +229,6 @@ async function runInfer(
     if (fn.assertionErrors && fn.assertionErrors.length > 0) {
       for (const err of fn.assertionErrors) {
         console.log(`\n⚠ ${err}`);
-      }
-    }
-
-    if (options.dts) {
-      for (const c of fn.cases) {
-        const params = c.args.map((a, i) => `arg${i}: ${typeValueToTSType(a)}`).join(", ");
-        dtsLines.push(`export declare function ${fn.name}(${params}): ${typeValueToTSType(c.result)};`);
       }
     }
 
@@ -750,6 +698,43 @@ function collectNudoFiles(dir: string): string[] {
   return results;
 }
 
+// ---------------------------------------------------------------------------
+// generate 命令的 FunctionAnalysis 组装件：dts 分支复用 service 的
+// generateFunctionDtsLines（与 infer --dts / service generateDts 同一实现），
+// loc 与参数名提取与 analyzer 的 locFromNode/extractParamNames 保持同构，
+// 保证两条路径对同一文件输出一致
+// ---------------------------------------------------------------------------
+
+type DirectiveFnNode = ReturnType<typeof extractDirectives>[number]["node"];
+
+function nodeLoc(node: DirectiveFnNode): FunctionAnalysis["loc"] {
+  return {
+    start: { line: node.loc?.start.line ?? 1, column: node.loc?.start.column ?? 0 },
+    end: { line: node.loc?.end.line ?? 1, column: node.loc?.end.column ?? 0 },
+  };
+}
+
+function fnParamNames(node: DirectiveFnNode): string[] {
+  const fn = node.type === "ExportDefaultDeclaration" ? node.declaration : node;
+  const paramListOf = (params: readonly any[]): string[] =>
+    params.map((p: any) => {
+      if (p.type === "Identifier") return p.name;
+      if (p.type === "AssignmentPattern" && p.left.type === "Identifier") return p.left.name;
+      if (p.type === "RestElement" && p.argument.type === "Identifier") return `...${p.argument.name}`;
+      return "_";
+    });
+  if (fn.type === "FunctionDeclaration" || fn.type === "FunctionExpression" || fn.type === "ArrowFunctionExpression") {
+    return paramListOf(fn.params);
+  }
+  if (fn.type === "VariableDeclaration") {
+    const init = fn.declarations[0].init;
+    if (init?.type === "FunctionExpression" || init?.type === "ArrowFunctionExpression") {
+      return paramListOf(init.params);
+    }
+  }
+  return [];
+}
+
 program
   .command("generate")
   .description("Generate runtime validators from inferred types")
@@ -780,12 +765,14 @@ program
       const caseDirectives = fn.directives.filter((d) => d.kind === "case");
       if (caseDirectives.length === 0) continue;
 
-      const caseResults = caseDirectives.map((directive) => {
+      const caseResults: CaseResult[] = caseDirectives.map((directive) => {
         const fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
         return {
           name: directive.name,
           args: directive.args,
           result: fullResult.value,
+          throws: fullResult.throws,
+          source: "directive",
         };
       });
 
@@ -812,10 +799,17 @@ program
 
       if (options.format === "dts" || options.format === "all") {
         console.log(`\n// === ${baseName} TypeScript Declarations ===`);
-        for (const c of caseResults) {
-          const params = c.args.map((a, i) => `arg${i}: ${typeValueToTSType(a)}`).join(", ");
-          const ret = typeValueToTSType(c.result);
-          console.log(`export declare function ${baseName}(${params}): ${ret};`);
+        // 与 infer --dts / service 级 generateDts 共用 generateFunctionDtsLines：
+        // 单一 widen 主签名 + JSDoc 保留 case 精度 + 真实参数名（取自解析产物）。
+        // 旧的逐 case `argN: 字面量` 签名会拦截合法调用（tsc TS2769）
+        const analysis: FunctionAnalysis = {
+          name: baseName,
+          loc: nodeLoc(fn.node),
+          paramNames: fnParamNames(fn.node),
+          cases: caseResults,
+        };
+        for (const line of generateFunctionDtsLines(analysis)) {
+          console.log(line);
         }
       }
     }

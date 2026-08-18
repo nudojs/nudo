@@ -140,7 +140,8 @@ function safe(x) {
     const results = inferFromSource(source);
     const c = results[0].cases[2];
     const str = typeValueToString(c.result);
-    expect(str === "0 | number" || str === "number | 0").toBe(true);
+    // 行为已修复：吸收律生效，字面量 0 被共存的 number 吸收（原期望 "0 | number"）
+    expect(str).toBe("number");
   });
 });
 
@@ -876,5 +877,67 @@ function at(path, i) { return path[i]; }
     const str = typeValueToString(results[0].cases[0].result);
     expect(str).toContain('"a"');
     expect(str).toContain('"b"');
+  });
+});
+
+describe("Function-valued callback args through builtin array HOFs", () => {
+  it("union receiver map: each array member flows through the named callback", () => {
+    const results = inferFromSource(`
+// @nudo:case "go" ()
+function f() {
+  const xs = Math.random() > 0.5 ? [1, 2] : [3, 4, 5];
+  function double(x) { return x * 2; }
+  return xs.map(double);
+}
+`);
+    expect(typeValueToString(results[0].cases[0].result)).toBe("[2, 4] | [6, 8, 10]");
+  });
+
+  it("union receiver filter/reduce/some/every/forEach with named callbacks", () => {
+    const results = inferFromSource(`
+// @nudo:case "go" ()
+function f() {
+  const xs = Math.random() > 0.5 ? [1, 2] : [3, 4, 5];
+  function big(x) { return x > 2; }
+  function add(a, b) { return a + b; }
+  const kept = xs.filter(big);
+  const total = xs.reduce(add, 0);
+  const any = xs.some(big);
+  const all = xs.every(big);
+  xs.forEach(big);
+  return [kept, total, any, all];
+}
+`);
+    const str = typeValueToString(results[0].cases[0].result);
+    // filter 不丢元素类型（[] 与 3|4|5 数组）、reduce 按成员累计（3 | 12）、
+    // some/every 保持布尔语义
+    expect(str).toContain("3");
+    expect(str).toContain("12");
+    expect(str).toContain("false");
+    expect(str).toContain("true");
+  });
+
+  it("union-of-functions callback distributes over each signature", () => {
+    const results = inferFromSource(`
+// @nudo:case "go" ()
+function f() {
+  function double(x) { return x * 2; }
+  function triple(x) { return x * 3; }
+  const fn = Math.random() > 0.5 ? double : triple;
+  return [1, 2].map(fn);
+}
+`);
+    expect(typeValueToString(results[0].cases[0].result)).toBe("[2, 4] | [3, 6]");
+  });
+
+  it("unknown callback (no signature info) stays unknown by design", () => {
+    const results = inferFromSource(`
+// @nudo:case "xs" ([1, 2, 3])
+function hof(xs, fn) {
+  return xs.map(fn);
+}
+`);
+    // 已知设计限制：回调无任何类型信息时不伪造类型
+    expect(typeValueToString(results[0].cases[0].result)).toBe("[unknown, unknown, unknown]");
   });
 });

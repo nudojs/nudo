@@ -160,9 +160,7 @@ export function createTemplate(parts: TypeValue[]): TypeValue {
   return T.refine(T.string, createTemplateRefinement(normalized));
 }
 
-export function isTemplate(tv: TypeValue): boolean {
-  return tv.kind === "refined" && Array.isArray(tv.refinement.meta.parts);
-}
+export { isTemplate } from "./template-predicates.ts";
 
 export function getTemplateParts(tv: TypeValue): TypeValue[] | undefined {
   if (tv.kind === "refined" && Array.isArray(tv.refinement.meta.parts)) {

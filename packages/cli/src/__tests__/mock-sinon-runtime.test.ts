@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parse, extractDirectives, type CaseDirective, type MockDirective, parseTypeValueExpr } from "@nudojs/parser";
-import { typeValueToString, createEnvironment, T } from "@nudojs/core";
+import { typeValueToString, createEnvironment, T, mockHelperToTypeValue } from "@nudojs/core";
 import { evaluateFunctionFull } from "../evaluator.js";
 
 function createSinonMock(sinonExpr: any, env: any): any {
@@ -32,6 +32,9 @@ function inferWithSinonMocks(source: string): { name: string; caseName: string; 
           const fnType = T.fn(d.arrowFn.params, d.arrowFn.body, env);
           (fnType as any)._paramPatterns = d.arrowFn.paramPatterns;
           env.bind(d.name, fnType);
+        } else if (d.nudoMock) {
+          const typeVal = mockHelperToTypeValue(d.nudoMock, env);
+          env.bind(d.name, typeVal);
         } else if (d.sinonExpr) {
           const mockFn = createSinonMock(d.sinonExpr, env);
           env.bind(d.name, mockFn);
@@ -115,5 +118,51 @@ async function getData(url) {
 `);
     console.log("sinon.stub().resolves() result:", results[0].result);
     expect(results[0].result).toBeDefined();
+  });
+
+  it("sinon.stub().callsFake() - executes the fake with actual args", () => {
+    const results = inferWithSinonMocks(`
+// @nudo:mock transform = sinon.stub().callsFake((x) => ({ v: x }))
+// @nudo:case "direct" (21)
+function applyTransform(x) {
+  return transform(x);
+}
+`);
+    expect(results[0].result).toBe("{ v: 21 }");
+  });
+
+  it("stub().callsFake() (bare form) - same execution semantics as sinon prefix", () => {
+    const results = inferWithSinonMocks(`
+// @nudo:mock transform = stub().callsFake((x) => ({ v: x }))
+// @nudo:case "direct" (21)
+function applyTransform(x) {
+  return transform(x);
+}
+`);
+    expect(results[0].result).toBe("{ v: 21 }");
+  });
+
+  it("sinon.stub().callsFake() value propagates precisely through arr.map HOF", () => {
+    const results = inferWithSinonMocks(`
+// @nudo:mock transform = sinon.stub().callsFake((x) => ({ v: x }))
+// @nudo:case "hof" ([1, 2, 3])
+function mapAll(arr) {
+  return arr.map(transform);
+}
+`);
+    expect(results[0].result).toBe("[{ v: 1 }, { v: 2 }, { v: 3 }]");
+  });
+
+  it("sinon.stub().withArgs().returns() - matched args use the chain return, unmatched fall back", () => {
+    const results = inferWithSinonMocks(`
+// @nudo:mock handler = sinon.stub().withArgs(21).returns("hit")
+// @nudo:case "match" (21)
+// @nudo:case "miss" (22)
+function call(x) {
+  return handler(x);
+}
+`);
+    expect(results[0].result).toBe('"hit"');
+    expect(results[1].result).toBe("unknown");
   });
 });

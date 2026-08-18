@@ -54,10 +54,10 @@ function getLength(maybeBox) {
 Case "object present": ({ length: number }) => number
 Case "null": (null) => 0
 
-Combined: number | 0
+Combined: number
 ```
 
-With the object present, `maybeBox?.length` resolves to `number` and the `?? 0` fallback never fires. With `null`, the chain short-circuits to `undefined`, so `?? 0` produces the literal `0`. The `Combined:` line unions all case results, keeping literal members.
+With the object present, `maybeBox?.length` resolves to `number` and the `?? 0` fallback never fires. With `null`, the chain short-circuits to `undefined`, so `?? 0` produces the literal `0`. The `Combined:` line unions all case results and then simplifies by absorption — the literal `0` is absorbed by the base type `number` from the other case.
 
 Note that `?.` short-circuits on a *concrete* nullish receiver. It does not by itself narrow a union-typed receiver: on an input of `T.union(T.object({ length: T.number }), T.null)`, the access `maybeBox?.length` still reports `Property 'length' does not exist on type '{ length: number } | null' (nudo:no-method)` -- use a truthiness guard first, then access.
 

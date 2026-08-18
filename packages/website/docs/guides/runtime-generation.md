@@ -154,10 +154,10 @@ Guard functions execute a sequence of `typeof` checks with no schema interpretat
 
 ## TypeScript Declarations
 
-With `--format dts`, Nudo prints one `export declare` line per case. Two things to know:
+With `--format dts`, Nudo prints one widened signature per function — the same output as `nudo infer <file> --dts`. Three things to know:
 
-- Parameter names are positional (`arg0`, `arg1`, ...), not the names from your source.
-- Nested object members keep their real names, and literal values appear as literal types.
+- Parameter names come from your source (e.g. `user`); positional `arg0`, `arg1` fallbacks only appear when the declaration node has no recoverable name.
+- Parameter positions (contravariant) are widened: literal parameters collapse to their base types (`"hello"` → `string`, `[1, 2, 3]` → `number[]`), so callers can pass any compatible value. Return types keep their inferred precision, including nested literals.
 
 ```bash
 nudo generate src/api/users.js --format dts
@@ -167,10 +167,15 @@ Output (stdout):
 
 ```ts
 // === createUser TypeScript Declarations ===
-export declare function createUser(arg0: { name: string; age: number }): { id: 123; name: string; age: number };
+/**
+ * Case: input ({ name: "Alice"; age: 30 }) => { id: 123; name: "Alice"; age: 30 }
+ * @param user - { name: string; age: number }
+ * @returns { id: 123; name: "Alice"; age: 30 }
+ */
+export declare function createUser(user: { name: string; age: number }): { id: 123; name: "Alice"; age: 30 };
 ```
 
-When multiple `@nudo:case` directives are present, one declaration per case is printed, giving you overloads:
+With multiple `@nudo:case` directives, the signature is still single — parameters union and widen across cases, and each case's precise result is preserved in the JSDoc:
 
 ```js
 // @nudo:case "string input" ("hello")
@@ -186,8 +191,13 @@ nudo generate src/api/format.js --format dts
 
 ```ts
 // === formatValue TypeScript Declarations ===
-export declare function formatValue(arg0: "hello"): "hello";
-export declare function formatValue(arg0: 42): "42";
+/**
+ * Case: string input ("hello") => "hello"
+ * Case: number input (42) => "42"
+ * @param value - string | number
+ * @returns string
+ */
+export declare function formatValue(value: string | number): string;
 ```
 
 To write a `.d.ts` file next to the source instead of printing it, use `nudo infer <file> --dts`.
@@ -290,7 +300,12 @@ export function iscreateProductInputOutput(data) {
 }
 
 // === createProduct TypeScript Declarations ===
-export declare function createProduct(arg0: { name: string; price: number; tags: string[] }): { id: 456; name: string; price: number; tags: string[] };
+/**
+ * Case: input ({ name: "Widget"; price: 9.99; tags: ["a"] }) => { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
+ * @param product - { name: string; price: number; tags: string[] }
+ * @returns { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
+ */
+export declare function createProduct(product: { name: string; price: number; tags: string[] }): { id: 456; name: "Widget"; price: 9.99; tags: ["a"] };
 ```
 
 **3. Paste the pieces you need into your application:**
@@ -331,7 +346,12 @@ Paste the declaration line into a `.d.ts` next to your source:
 
 ```ts
 // src/api/products.d.ts -- pasted from the stdout above
-export declare function createProduct(arg0: { name: string; price: number; tags: string[] }): { id: 456; name: string; price: number; tags: string[] };
+/**
+ * Case: input ({ name: "Widget"; price: 9.99; tags: ["a"] }) => { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
+ * @param product - { name: string; price: number; tags: string[] }
+ * @returns { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
+ */
+export declare function createProduct(product: { name: string; price: number; tags: string[] }): { id: 456; name: "Widget"; price: 9.99; tags: ["a"] };
 ```
 
 ```ts
@@ -339,7 +359,7 @@ export declare function createProduct(arg0: { name: string; price: number; tags:
 import { createProduct } from "./api/products.js";
 
 const product = createProduct({ name: "Widget", price: 9.99, tags: ["sale"] });
-//    ^? { id: 456; name: string; price: number; tags: string[] }
+//    ^? { id: 456; name: "Widget"; price: 9.99; tags: ["sale"] }
 ```
 
 With a single directive line per function, this workflow provides full runtime safety and editor support across the JavaScript/TypeScript boundary.

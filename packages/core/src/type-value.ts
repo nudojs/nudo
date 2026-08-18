@@ -1,5 +1,8 @@
 import type { Node } from "@babel/types";
 import type { Environment } from "./environment.ts";
+// 注意：isTemplate 必须来自 template-predicates.ts（只含 `import type` 反向边）
+// 而非 template.ts——后者运行时依赖本模块（T、typeValueToString），会构成环。
+import { isTemplate } from "./refinements/template-predicates.ts";
 
 // --- TypeValue discriminated union ---
 
@@ -153,6 +156,11 @@ export function simplifyUnion(members: TypeValue[]): TypeValue {
       if (b.kind === "never") return a;
       if (typeValueEquals(a, b)) return a;
       if (a.kind === "unknown" || b.kind === "unknown") return T.unknown;
+      // 吸收律：字面量被共存的 widening 基类型吸收（3 | number → number）
+      const aBase = absorbablePrimitiveBase(a);
+      if (aBase !== undefined && typeValueEquals(aBase, b)) return b;
+      const bBase = absorbablePrimitiveBase(b);
+      if (bBase !== undefined && typeValueEquals(bBase, a)) return a;
       return { kind: "union", members: [a, b] };
     }
   }
@@ -174,10 +182,38 @@ export function simplifyUnion(members: TypeValue[]): TypeValue {
     }
   }
 
-  if (deduped.length === 0) return T.never;
-  if (deduped.length === 1) return deduped[0];
-  if (deduped.some((m) => m.kind === "unknown")) return T.unknown;
-  return { kind: "union", members: deduped };
+  // 吸收律：成员中存在某字面量/模板字面量的 widening 基类型（非字面量
+  // number/string/boolean/bigint）时，删去该字面量成员（3 | number → number、
+  // "a" | string → string）。不同基底（1 | "a"）、纯字面量联合（"a" | "b"）、
+  // null/undefined 字面量不受影响；filter 保序，成员顺序稳定。
+  const primitives = deduped.filter((m) => m.kind === "primitive");
+  const absorbed =
+    primitives.length > 0
+      ? deduped.filter((m) => {
+          const base = absorbablePrimitiveBase(m);
+          return base === undefined || !primitives.some((p) => typeValueEquals(p, base));
+        })
+      : deduped;
+
+  if (absorbed.length === 0) return T.never;
+  if (absorbed.length === 1) return absorbed[0];
+  if (absorbed.some((m) => m.kind === "unknown")) return T.unknown;
+  return { kind: "union", members: absorbed };
+}
+
+/**
+ * 吸收律辅助：返回 tv 可被吸收进的原语基类型（number/string/boolean/bigint）。
+ * 仅数字/字符串/布尔/bigint 字面量与模板字面量（refined over T.string）有值；
+ * null/undefined 字面量 widen 后仍是字面量、基类型原语与其余类型不参与吸收
+ * （基类型自身不能被自己吸收，否则纯原语联合 number | string 会被误删）。
+ */
+function absorbablePrimitiveBase(tv: TypeValue): TypeValue | undefined {
+  if (tv.kind === "literal") {
+    const widened = widenLiteral(tv);
+    return widened.kind === "primitive" ? widened : undefined;
+  }
+  if (isTemplate(tv)) return T.string;
+  return undefined;
 }
 
 export function widenLiteral(tv: TypeValue): TypeValue {
@@ -186,6 +222,8 @@ export function widenLiteral(tv: TypeValue): TypeValue {
   if (typeof v === "number") return T.number;
   if (typeof v === "string") return T.string;
   if (typeof v === "boolean") return T.boolean;
+  // LiteralValue 目前不含 bigint，但吸收律要求 bigint 字面量（若出现）能 widen 到 T.bigint
+  if (typeof v === "bigint") return T.bigint;
   if (v === null) return T.null;
   if (v === undefined) return T.undefined;
   return T.unknown;
@@ -193,15 +231,22 @@ export function widenLiteral(tv: TypeValue): TypeValue {
 
 /**
  * union 成员全部为同原语基底的字面量且数量 > maxLiterals 时塌缩为该基类型；
- * 非 union、混合类型（含非字面量成员）、或数量不超限的原样返回。
+ * 非 union、混合类型、或数量不超限的原样返回。
+ *
+ * 复用 simplifyUnion（内含吸收律与去重）：先让「基类型已在场」的字面量被吸收
+ * （3 | number → number），再对剩余的纯字面量联合做阈值坍缩（1|2|…|20 → number）。
+ * 两步不冲突也不重复：吸收只删基类型已在场的字面量，阈值坍缩只处理无基类型
+ * 在场的纯字面量联合。
  */
 export function collapseLiteralUnion(tv: TypeValue, maxLiterals: number): TypeValue {
   if (tv.kind !== "union") return tv;
   if (tv.members.length <= maxLiterals) return tv;
-  // 保守：成员中含非字面量（如显式 T.number）时不塌缩
-  if (!tv.members.every((m) => m.kind === "literal")) return tv;
-  const first = widenLiteral(tv.members[0]);
-  if (!tv.members.every((m) => typeValueEquals(widenLiteral(m), first))) return tv;
+  const simplified = simplifyUnion(tv.members);
+  if (simplified.kind !== "union") return simplified;
+  // 保守：成员中含非字面量（如显式 T.number 未吸收掉的异构成员）时不塌缩
+  if (!simplified.members.every((m) => m.kind === "literal")) return simplified;
+  const first = widenLiteral(simplified.members[0]);
+  if (!simplified.members.every((m) => typeValueEquals(widenLiteral(m), first))) return simplified;
   return first;
 }
 

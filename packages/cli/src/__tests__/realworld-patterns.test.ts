@@ -376,3 +376,55 @@ function escapeViaTable(char) {
     });
   });
 });
+
+describe("Named Function Callbacks through builtin HOFs", () => {
+  it("arr.map(double) with a named function declaration yields precise literals", () => {
+    const results = runTest(`
+// @nudo:case "xs" ([1, 2, 3])
+function doubleAll(xs) {
+  function double(x) { return x * 2; }
+  return xs.map(double);
+}
+`);
+    // 具名函数回调从其 TypeValue 闭包求值，而非降级 unknown
+    expect(results[0].result).toBe("[2, 4, 6]");
+  });
+
+  it("arr.reduce(sum, 0) with a named reducer yields number", () => {
+    const results = runTest(`
+// @nudo:case "xs" ([1, 2, 3])
+function sumAll(xs) {
+  function sum(a, b) { return a + b; }
+  return xs.reduce(sum, 0);
+}
+`);
+    expect(results[0].result).toBe("6");
+  });
+
+  it("arr.filter(big) with a named predicate keeps the element type", () => {
+    const results = runTest(`
+// @nudo:case "xs" ([1, 2, 3, 4])
+function keepBig(xs) {
+  function big(x) { return x > 2; }
+  return xs.filter(big);
+}
+`);
+    // 过滤结果元素类型不丢失：保留 3、4 字面量成员
+    expect(results[0].result).toContain("3");
+    expect(results[0].result).toContain("4");
+    expect(results[0].result).toContain("[");
+  });
+
+  it("named callbacks over a union receiver distribute per member", () => {
+    const results = runTest(`
+// @nudo:case "go" ()
+function pickThenMap() {
+  const xs = Math.random() > 0.5 ? [1, 2] : [3, 4, 5];
+  function double(x) { return x * 2; }
+  return xs.map(double);
+}
+`);
+    // union 接收者：每个数组成员分别经回调求值后 union
+    expect(results[0].result).toBe("[2, 4] | [6, 8, 10]");
+  });
+});

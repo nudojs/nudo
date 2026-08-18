@@ -43,10 +43,10 @@ Case "positive numbers": (5, 3) => 2
 Case "negative result": (1, 10) => -9
 Case "symbolic": (number, number) => number
 
-Combined: 2 | -9 | number
+Combined: number
 ```
 
-Nudo executed the function three times — twice with concrete inputs, once with symbolic `T.number` for both arguments. `Combined` is the union of all case results: the concrete cases contribute their literal results (`2`, `-9`), and the symbolic case contributes `number`.
+Nudo executed the function three times — twice with concrete inputs, once with symbolic `T.number` for both arguments. `Combined` is the union of all case results, simplified by absorption: the symbolic case already contributes `number`, so the literal results `2` and `-9` are absorbed — `2 | -9 | number` collapses to `number`. Pure-literal unions without a base-type member keep every literal.
 
 ## Options
 
@@ -62,12 +62,17 @@ Nudo executed the function three times — twice with concrete inputs, once with
   Generated: math.d.ts
   ```
 
-  The generated `math.d.ts` contains one declaration per case:
+  The generated `math.d.ts` contains a single widened signature per function, with the concrete cases preserved in the JSDoc:
 
   ```typescript
-  export declare function subtract(arg0: 5, arg1: 3): 2;
-  export declare function subtract(arg0: 1, arg1: 10): -9;
-  export declare function subtract(arg0: number, arg1: number): number;
+  /**
+   * Case: positive numbers (5, 3) => 2
+   * Case: negative result (1, 10) => -9
+   * @param a - number
+   * @param b - number
+   * @returns number
+   */
+  export declare function subtract(a: number, b: number): number;
   ```
 
 - **`--loc`** — Show source locations in the output:
@@ -83,7 +88,7 @@ Nudo executed the function three times — twice with concrete inputs, once with
   Case "negative result": (1, 10) => -9
   Case "symbolic": (number, number) => number
 
-  Combined: 2 | -9 | number
+  Combined: number
   ```
 
 ## Watch mode
@@ -141,6 +146,6 @@ To upgrade directive-free code to real call shapes, harvest cases from your test
 
 1. **Parse** — Nudo parsed the file and found the `subtract` function with `@nudo:case` directives.
 2. **Execute** — For each case, it ran the function body using abstract interpretation: operands like `a - b` were evaluated with type values instead of concrete numbers.
-3. **Combine** — With multiple cases, Nudo merged the inferred return types into a union: `2 | -9 | number`. Literal results from concrete cases are kept as-is and unioned with the symbolic case's `number`.
+3. **Combine** — With multiple cases, Nudo merged the inferred return types into a union, then simplified it by absorption: the literals `2` and `-9` are absorbed by the `number` contributed by the symbolic case, yielding `number`. Pure-literal unions without a base-type member keep every literal.
 
 For deeper detail on type values, directives, and abstract interpretation, see [Core Concepts](/docs/concepts/type-values).
