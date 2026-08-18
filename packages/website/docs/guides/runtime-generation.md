@@ -12,6 +12,8 @@ JS code → Nudo infers types → Generate validators → Runtime validation
 
 This means you write plain JavaScript, let Nudo figure out the types, and then produce fully typed runtime checks -- no hand-written validators, no duplicate type definitions.
 
+All generated output is printed to stdout. Pipe or paste it into your project's files wherever they belong.
+
 ## The `nudo generate` Command
 
 ```bash
@@ -21,90 +23,90 @@ nudo generate <file> [options]
 | Option | Description |
 |---|---|
 | `--format <format>` | Output format: `zod`, `guard`, `dts`, `all` (default: `all`) |
-| `--output <dir>` | Output directory (default: `.`) |
+| `--output <dir>` | Declared but **not implemented yet** -- output always goes to stdout. Redirect with your shell instead. |
 
-Running `nudo generate` reads the inferred types from a source file and emits validators in one or more formats.
+Running `nudo generate` reads the inferred types from a source file and prints validators in the requested format.
 
 ### Basic Usage
 
 ```bash
-# Generate all formats
+# Print all formats (zod, guard, dts)
 nudo generate src/api/users.js
 
-# Generate only Zod schemas
+# Print only Zod schemas
 nudo generate src/api/users.js --format zod
 
-# Output to a specific directory
-nudo generate src/api/users.js --output generated/
+# Capture stdout into a file yourself
+nudo generate src/api/users.js --format zod > users.schema.txt
 ```
 
-## Zod Schema Generation
+## Example Source
 
-With `--format zod`, Nudo produces [Zod](https://zod.dev) schema strings derived from inferred types. This is useful when you want to integrate with the broader Zod ecosystem.
-
-### Example
-
-Given this source file:
+All examples on this page use the file below. Note the real directive syntax: `@nudo:case "<name>" (<type expression>)` -- the case name is quoted and the type expression is wrapped in parentheses, using `T.*` constructors.
 
 ```js
 // src/api/users.js
 
-/**
- * @nudo:case { name: string, age: number }
- * @nudo:returns { id: number, name: string, age: number }
- */
+// @nudo:case "input" (T.object({ name: T.string, age: T.number }))
 function createUser(input) {
-  return { id: Date.now(), name: input.name, age: input.age };
+  return { id: 123, name: input.name, age: input.age };
 }
 ```
 
-Running:
+## Zod Schema Generation
+
+With `--format zod`, Nudo prints [Zod](https://zod.dev) schema expressions for each case's input and output types. The schemas are emitted as comments -- copy the expressions out of them and assemble your own schema module.
 
 ```bash
-nudo generate src/api/users.js --format zod --output generated/
+nudo generate src/api/users.js --format zod
 ```
 
-Produces:
+Output (stdout):
 
-```ts
-// generated/users.zod.ts
+```js
+// === createUser Zod Schemas ===
+// Case "input":
+// Input: { arg0: z.object({ name: z.string(), age: z.number() }) }
+// Output: z.object({ id: z.literal(123), name: z.string(), age: z.number() })
+```
+
+Note `z.literal(123)`: literal values in the source (`id: 123`) are inferred as literal types, so the output schema pins the exact value.
+
+### Assembling a Schema Module
+
+Paste the printed expressions into a module and export them:
+
+```js
+// src/api/users.schema.js -- assembled from the output above
 import { z } from "zod";
 
-export const CreateUserInput = z.object({
-  name: z.string(),
-  age: z.number(),
-});
-
-export const CreateUserOutput = z.object({
-  id: z.number(),
-  name: z.string(),
-  age: z.number(),
-});
+export const createUserInput = z.object({ name: z.string(), age: z.number() });
+export const createUserOutput = z.object({ id: z.literal(123), name: z.string(), age: z.number() });
 ```
 
 ### Integration with Frameworks
 
-**React Hook Form** -- use the generated schema as a form resolver:
+**React Hook Form** -- use the assembled schema as a form resolver:
 
 ```js
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CreateUserInput } from "./generated/users.zod";
+import { createUserInput } from "./api/users.schema.js";
 
 const { register, handleSubmit } = useForm({
-  resolver: zodResolver(CreateUserInput),
+  resolver: zodResolver(createUserInput),
 });
 ```
 
 **tRPC** -- use the schema for input/output validation in procedures:
 
 ```js
-import { CreateUserInput, CreateUserOutput } from "./generated/users.zod";
+import { createUserInput, createUserOutput } from "./api/users.schema.js";
 
 const appRouter = router({
   createUser: publicProcedure
-    .input(CreateUserInput)
-    .output(CreateUserOutput)
+    .input(createUserInput)
+    .output(createUserOutput)
     .mutation(({ input }) => createUser(input)),
 });
 ```
@@ -112,11 +114,11 @@ const appRouter = router({
 **Next.js API Routes** -- validate request bodies:
 
 ```js
-import { CreateUserInput } from "./generated/users.zod";
+import { createUserInput } from "./api/users.schema.js";
 
 export async function POST(request) {
   const body = await request.json();
-  const parsed = CreateUserInput.safeParse(body);
+  const parsed = createUserInput.safeParse(body);
   if (!parsed.success) {
     return Response.json({ errors: parsed.error.issues }, { status: 400 });
   }
@@ -127,43 +129,24 @@ export async function POST(request) {
 
 ## Native Guard Generation
 
-With `--format guard`, Nudo generates zero-dependency runtime type guard functions. These are plain JavaScript functions with no external imports, making them ideal for libraries, edge functions, or any context where bundle size matters.
+With `--format guard`, Nudo prints zero-dependency runtime type guard functions. These are plain JavaScript functions with no external imports, making them ideal for libraries, edge functions, or any context where bundle size matters.
 
-### Example
+Guards are named `is` + function name + case name + `Output` (one guard per case, validating the case's output type):
 
 ```bash
-nudo generate src/api/users.js --format guard --output generated/
+nudo generate src/api/users.js --format guard
 ```
 
-Produces:
+Output (stdout):
 
-```ts
-// generated/users.guard.ts
-
-export function isCreateUserInput(data: unknown): data is {
-  name: string;
-  age: number;
-} {
-  if (typeof data !== "object" || data === null) return false;
-  const obj = data as Record<string, unknown>;
-  if (typeof obj.name !== "string") return false;
-  if (typeof obj.age !== "number") return false;
-  return true;
-}
-
-export function isCreateUserOutput(data: unknown): data is {
-  id: number;
-  name: string;
-  age: number;
-} {
-  if (typeof data !== "object" || data === null) return false;
-  const obj = data as Record<string, unknown>;
-  if (typeof obj.id !== "number") return false;
-  if (typeof obj.name !== "string") return false;
-  if (typeof obj.age !== "number") return false;
-  return true;
+```js
+// === createUser Type Guards ===
+export function iscreateUserInputOutput(data) {
+  return typeof data === 'object' && data !== null && data.id === 123 && typeof data.name === 'string' && typeof data.age === 'number';
 }
 ```
+
+Save the printed function into a module (for example `src/api/users.guard.js`) and import it.
 
 ### Performance Advantage
 
@@ -171,44 +154,43 @@ Guard functions execute a sequence of `typeof` checks with no schema interpretat
 
 ## TypeScript Declarations
 
-With `--format dts`, Nudo generates `.d.ts` files with real parameter names extracted from the source, JSDoc comments with `@param` and `@returns` tags, and multiple overloads when multiple `@nudo:case` directives are present.
+With `--format dts`, Nudo prints one `export declare` line per case. Two things to know:
 
-### Example
+- Parameter names are positional (`arg0`, `arg1`, ...), not the names from your source.
+- Nested object members keep their real names, and literal values appear as literal types.
 
 ```bash
-nudo generate src/api/users.js --format dts --output generated/
+nudo generate src/api/users.js --format dts
 ```
 
-Produces:
+Output (stdout):
 
 ```ts
-// generated/users.d.ts
-
-/**
- * Creates a new user record.
- *
- * @param input - The user data to create.
- * @param input.name - The user's display name.
- * @param input.age - The user's age in years.
- * @returns The newly created user with an assigned id.
- */
-export function createUser(input: {
-  name: string;
-  age: number;
-}): {
-  id: number;
-  name: string;
-  age: number;
-};
+// === createUser TypeScript Declarations ===
+export declare function createUser(arg0: { name: string; age: number }): { id: 123; name: string; age: number };
 ```
 
-When multiple `@nudo:case` directives are present, the generated declaration includes overloads:
+When multiple `@nudo:case` directives are present, one declaration per case is printed, giving you overloads:
+
+```js
+// @nudo:case "string input" ("hello")
+// @nudo:case "number input" (42)
+function formatValue(value) {
+  return String(value);
+}
+```
+
+```bash
+nudo generate src/api/format.js --format dts
+```
 
 ```ts
-export function formatValue(value: string): string;
-export function formatValue(value: number): string;
-export function formatValue(value: boolean): string;
+// === formatValue TypeScript Declarations ===
+export declare function formatValue(arg0: "hello"): "hello";
+export declare function formatValue(arg0: 42): "42";
 ```
+
+To write a `.d.ts` file next to the source instead of printing it, use `nudo infer <file> --dts`.
 
 ## JSON Output
 
@@ -222,40 +204,47 @@ Output structure:
 
 ```json
 {
-  "functions": {
-    "createUser": {
+  "functions": [
+    {
+      "name": "createUser",
+      "loc": { "start": { "line": 4, "column": 0 }, "end": { "line": 6, "column": 1 } },
       "cases": [
         {
-          "params": [
-            {
-              "name": "input",
-              "type": "{ name: string; age: number }"
-            }
-          ],
-          "return": "{ id: number; name: string; age: number }"
+          "name": "input",
+          "args": ["{ name: string, age: number }"],
+          "result": "{ id: 123, name: string, age: number }",
+          "throws": null,
+          "source": null
         }
-      ]
+      ],
+      "entryOnly": false
     }
-  },
+  ],
   "diagnostics": []
 }
 ```
 
+Each entry in `functions` contains:
+
+- `name` and `loc` -- the function name and its source location.
+- `cases` -- one entry per case. `args` lists the argument types, `result` is the return type, `throws` is the thrown type or `null`. `source` is `null` for `@nudo:case` directives, or `"callsite"` for cases synthesized from whole-program call-site discovery.
+- `entryOnly` -- `true` when the function had no call sites anywhere in the program.
+
 ### CI/CD Integration
 
-Use JSON output in pipelines to enforce type contracts:
+Use JSON output in pipelines to enforce type contracts. `infer` takes file paths, not directories:
 
 ```bash
 # Fail if any diagnostics are reported
-nudo infer src/ --json | jq '.diagnostics | length == 0'
+nudo infer src/api/users.js --json | jq '.diagnostics | length == 0'
 ```
 
-Generate validators as part of your build:
+Print validators as part of your build and capture stdout into your project:
 
 ```json
 {
   "scripts": {
-    "generate": "nudo generate src/api/ --format all --output generated/",
+    "generate": "nudo generate src/api/users.js --format zod > src/api/users.schema.txt",
     "build": "npm run generate && tsc && vite build"
   }
 }
@@ -265,18 +254,15 @@ Generate validators as part of your build:
 
 Here is an end-to-end example from source code to runtime validation.
 
-**1. Write plain JavaScript with Nudo directives:**
+**1. Write plain JavaScript with a Nudo directive:**
 
 ```js
 // src/api/products.js
 
-/**
- * @nudo:case { name: string, price: number, tags: string[] }
- * @nudo:returns { id: number, name: string, price: number, tags: string[] }
- */
+// @nudo:case "input" (T.object({ name: T.string, price: T.number, tags: T.array(T.string) }))
 function createProduct(input) {
   return {
-    id: Date.now(),
+    id: 456,
     name: input.name,
     price: input.price,
     tags: input.tags,
@@ -284,25 +270,56 @@ function createProduct(input) {
 }
 ```
 
-**2. Generate all validator formats:**
+**2. Print all validator formats:**
 
 ```bash
-nudo generate src/api/products.js --format all --output src/generated/
+nudo generate src/api/products.js --format all
 ```
 
-**3. Use the generated validators in your application:**
+Output (stdout):
+
+```
+// === createProduct Zod Schemas ===
+// Case "input":
+// Input: { arg0: z.object({ name: z.string(), price: z.number(), tags: z.array(z.string()) }) }
+// Output: z.object({ id: z.literal(456), name: z.string(), price: z.number(), tags: z.array(z.string()) })
+
+// === createProduct Type Guards ===
+export function iscreateProductInputOutput(data) {
+  return typeof data === 'object' && data !== null && data.id === 456 && typeof data.name === 'string' && typeof data.price === 'number' && Array.isArray(data.tags) && data.tags.every(item => typeof item === 'string');
+}
+
+// === createProduct TypeScript Declarations ===
+export declare function createProduct(arg0: { name: string; price: number; tags: string[] }): { id: 456; name: string; price: number; tags: string[] };
+```
+
+**3. Paste the pieces you need into your application:**
 
 ```js
-import { isCreateProductInput } from "./generated/products.guard";
-import { CreateProductInput } from "./generated/products.zod";
+// src/api/products.guard.js -- pasted from the stdout above
+export function iscreateProductInputOutput(data) {
+  return typeof data === 'object' && data !== null && data.id === 456 && typeof data.name === 'string' && typeof data.price === 'number' && Array.isArray(data.tags) && data.tags.every(item => typeof item === 'string');
+}
+```
+
+```js
+// src/api/products.schema.js -- assembled from the Zod lines above
+import { z } from "zod";
+
+export const createProductInput = z.object({ name: z.string(), price: z.number(), tags: z.array(z.string()) });
+```
+
+```js
+import { iscreateProductInputOutput } from "./api/products.guard.js";
+import { createProductInput } from "./api/products.schema.js";
 
 // Fast guard check (zero dependencies)
-if (!isCreateProductInput(body)) {
+if (!iscreateProductInputOutput(body)) {
   throw new ValidationError("Invalid product data");
 }
 
 // Or use Zod for detailed error messages
-const result = CreateProductInput.safeParse(body);
+const result = createProductInput.safeParse(body);
 if (!result.success) {
   return Response.json({ errors: result.error.issues }, { status: 400 });
 }
@@ -310,12 +327,19 @@ if (!result.success) {
 
 **4. Use the declarations for type safety in consuming TypeScript code:**
 
-```ts
-// Consumer code sees full types without any manual annotations
-import { createProduct } from "./api/products";
+Paste the declaration line into a `.d.ts` next to your source:
 
-const product = createProduct({ name: "Widget", price: 9.99, tags: ["sale"] });
-//    ^? { id: number; name: string; price: number; tags: string[] }
+```ts
+// src/api/products.d.ts -- pasted from the stdout above
+export declare function createProduct(arg0: { name: string; price: number; tags: string[] }): { id: 456; name: string; price: number; tags: string[] };
 ```
 
-This workflow keeps your source code annotation-free while providing full runtime safety and editor support across the boundary.
+```ts
+// Consumer code sees full types without any manual annotations
+import { createProduct } from "./api/products.js";
+
+const product = createProduct({ name: "Widget", price: 9.99, tags: ["sale"] });
+//    ^? { id: 456; name: string; price: number; tags: string[] }
+```
+
+With a single directive line per function, this workflow provides full runtime safety and editor support across the JavaScript/TypeScript boundary.

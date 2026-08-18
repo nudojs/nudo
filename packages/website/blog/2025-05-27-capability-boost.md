@@ -13,7 +13,7 @@ Let's walk through what's new.
 
 ## Control Flow Narrowing
 
-The evaluator now tracks how types change as code flows through branches, guards, and operators. When you test a value with a condition, Nudo narrows the type in the branch where the condition is true and keeps the complement in the false branch. This works across seven patterns.
+The evaluator now tracks how types change as code flows through branches, guards, and operators. When you test a value with a condition, Nudo narrows the type in the branch where the condition is true and keeps the complement in the false branch. This works across seven patterns. You can watch each one by feeding a union through `@nudo:case` and running `nudo infer` -- every output block below is a real run of the code above it.
 
 ### Truthiness Narrowing
 
@@ -21,7 +21,7 @@ When a value appears in a boolean context, Nudo removes falsy types (`null`, `un
 
 ```js
 /**
- * @nudo:returns
+ * @nudo:case "nullable name" (T.union(T.string, T.null, T.undefined))
  */
 function greet(name) {
   if (name) {
@@ -35,26 +35,40 @@ function greet(name) {
 
 **Before:** Nudo treated `name` as `string | null | undefined` in both branches. You would get a type error on `.toUpperCase()` even though the guard makes it safe.
 
-**After:** The true branch knows `name` is `string`. The false branch knows it is `null | undefined`. No false positives.
+**After:** The true branch knows `name` is `string`. The false branch knows it is `null | undefined`. No false positives. `nudo infer` confirms:
+
+```text
+=== greet ===
+
+Case "nullable name": (string | null | undefined) => string | "unknown"
+```
 
 ### Optional Chaining (`?.`)
 
-Optional chaining now produces the correct union type. The result is `T | undefined` when the base value might be nullish.
+Optional chaining now short-circuits correctly. When the receiver evaluates to `null` or `undefined`, the chain yields `undefined`; when the receiver is non-nullish, the property resolves like a plain access.
 
 ```js
 /**
- * @nudo:returns
+ * @nudo:case "object present" (T.object({ length: T.number }))
+ * @nudo:case "null" (T.null)
  */
-function getLength(maybeStr) {
-  const len = maybeStr?.length;
-  // len is number | undefined
-  return len ?? 0;
+function getLength(maybeBox) {
+  return maybeBox?.length ?? 0;
 }
 ```
 
-**Before:** `maybeStr?.length` was typed as `number`. The `undefined` short-circuit path was lost.
+**Before:** The nullish short-circuit path was lost, so a `?.` access behaved like a plain access regardless of the receiver.
 
-**After:** The result is `number | undefined`, and the subsequent `?? 0` correctly narrows it to `number`.
+**After:** With the object present, `maybeBox?.length` resolves to `number` and the fallback never fires. With `null`, the chain short-circuits to `undefined` and `?? 0` produces the literal `0`:
+
+```text
+=== getLength ===
+
+Case "object present": ({ length: number }) => number
+Case "null": (null) => 0
+
+Combined: number | 0
+```
 
 ### Nullish Coalescing (`??`)
 
@@ -62,7 +76,7 @@ The `??` operator now removes `null` and `undefined` from the left operand's typ
 
 ```js
 /**
- * @nudo:returns
+ * @nudo:case "config object" (T.object({ port: T.union(T.number, T.null, T.undefined) }))
  */
 function getPort(config) {
   const port = config.port ?? 3000;
@@ -73,7 +87,13 @@ function getPort(config) {
 
 **Before:** `config.port ?? 3000` was typed as `number | null | undefined | 3000`. The nullish coalescing semantics were not applied.
 
-**After:** `config.port` is narrowed to `number` (null and undefined removed), and the result is `number`.
+**After:** `config.port` is narrowed to `number` (null and undefined removed), and the result is `number`:
+
+```text
+=== getPort ===
+
+Case "config object": ({ port: number | null | undefined }) => number
+```
 
 ### Discriminated Union Narrowing
 
@@ -81,25 +101,29 @@ When you compare a property against a string literal, Nudo filters the union to 
 
 ```js
 /**
- * @nudo:returns
+ * @nudo:case "shape" (T.union(T.object({ kind: T.literal("circle"), radius: T.number }), T.object({ kind: T.literal("square"), side: T.number })))
  */
 function area(shape) {
   if (shape.kind === "circle") {
     // shape: { kind: "circle", radius: number }
-    return Math.PI * shape.radius ** 2;
+    return shape.radius * 3.14159;
   }
-  if (shape.kind === "square") {
-    // shape: { kind: "square", side: number }
-    return shape.side ** 2;
-  }
-  // shape: { kind: "triangle", base: number, height: number }
-  return shape.base * shape.height / 2;
+  // shape: { kind: "square", side: number }
+  return shape.side * shape.side;
 }
 ```
 
 **Before:** Every branch saw the full union type. Accessing `shape.radius` outside the circle check would not error, and inside it would not narrow.
 
-**After:** Each branch sees only the matching union member. The else branch is correctly narrowed to the remaining member. This is the pattern that makes real-world API response handling safe.
+**After:** Each branch sees only the matching union member. The else branch is correctly narrowed to the remaining member:
+
+```text
+=== area ===
+
+Case "shape": ({ kind: "circle", radius: number } | { kind: "square", side: number }) => number
+```
+
+This is the pattern that makes real-world API response handling safe.
 
 ### `in` Operator Narrowing
 
@@ -107,7 +131,7 @@ Using `"key" in obj` in a condition now narrows the object type to include only 
 
 ```js
 /**
- * @nudo:returns
+ * @nudo:case "value" (T.union(T.object({ toJSON: () => "serialized" }), T.number))
  */
 function serialize(value) {
   if ("toJSON" in value) {
@@ -120,7 +144,13 @@ function serialize(value) {
 
 **Before:** The `in` check was ignored. `value` kept its original type in both branches.
 
-**After:** The true branch narrows `value` to types that have a `toJSON` property. The false branch excludes those types.
+**After:** The true branch narrows `value` to types that have a `toJSON` property. The false branch excludes those types:
+
+```text
+=== serialize ===
+
+Case "value": ({ toJSON: () => ... } | number) => "serialized" | string
+```
 
 ### Switch Statement Narrowing
 
@@ -128,7 +158,7 @@ Nudo now narrows the discriminant per `case` clause. Each case branch gets the t
 
 ```js
 /**
- * @nudo:returns
+ * @nudo:case "status" (T.union(T.literal("active"), T.literal("paused"), T.literal("stopped")))
  */
 function describe(status) {
   switch (status) {
@@ -146,7 +176,13 @@ function describe(status) {
 
 **Before:** `status` was `string` in every case branch. The switch was treated as a flat sequence of branches.
 
-**After:** `status` is `"active"` in the first case, `"paused"` in the second, `"stopped"` in the third. The default branch gets the remainder. If the union is fully exhausted, the default branch is typed as `never`.
+**After:** `status` is `"active"` in the first case, `"paused"` in the second, `"stopped"` in the third. The default branch gets the remainder. If the union is fully exhausted, the default branch is typed as `never`:
+
+```text
+=== describe ===
+
+Case "status": ("active" | "paused" | "stopped") => "Running" | "On hold" | "Shut down" | "Unknown"
+```
 
 ### `Array.isArray()` Narrowing
 
@@ -154,32 +190,38 @@ Calling `Array.isArray(value)` in a condition now splits the type into array and
 
 ```js
 /**
- * @nudo:returns
+ * @nudo:case "input" (T.union(T.array(T.number), T.string))
  */
 function flatten(input) {
   if (Array.isArray(input)) {
-    // input: array
-    return input.flat();
+    // input: number[]
+    return input[0];
   }
-  // input: number | string | ...
-  return [input];
+  // input: string
+  return input;
 }
 ```
 
 **Before:** `Array.isArray` was not recognized as a type guard. Both branches saw the same type.
 
-**After:** The true branch narrows `input` to array types. The false branch gets the non-array types.
+**After:** The true branch narrows `input` to array types. The false branch gets the non-array types:
+
+```text
+=== flatten ===
+
+Case "input": (number[] | string) => number | string
+```
 
 ### Summary Table
 
 | Pattern | Condition | True Branch | False Branch |
 |---|---|---|---|
 | Truthiness | `if (x)` | Excludes `null`, `undefined`, `false`, `""`, `0` | Keeps falsy types |
-| Optional Chaining | `x?.prop` | Result is `T \| undefined` | Object is `null \| undefined` |
+| Optional Chaining | `x?.prop` | Receiver non-nullish: resolves like a plain access | Receiver nullish: result is `undefined` |
 | Nullish Coalescing | `x ?? fallback` | Result excludes `null \| undefined` | N/A (expression) |
 | Discriminated Union | `x.kind === "lit"` | Keeps matching union member | Keeps remaining members |
 | `in` Operator | `"key" in x` | Keeps types with that property | Keeps types without it |
-| Switch | `switch (x) { case ... }` | Narrows per case literal | Default gets remainder |
+| Switch | `switch (x) { case ... }` | Narrows per case literal | Default gets remainder (`never` if exhausted) |
 | `Array.isArray()` | `Array.isArray(x)` | Array types only | Non-array types only |
 
 ## Enhanced Editor Experience
@@ -238,27 +280,28 @@ This is the feature we are most excited about. Nudo now ships an MCP (Model Cont
 
 ### The Five Tools
 
-**`nudo-what-if`** -- The killer feature. Set type assumptions and observe inferred types at other positions. An AI agent can ask "what would happen if this parameter were `null`?" and get a concrete answer without running the code.
+**`nudo-what-if`** -- The killer feature. Set type assumptions and observe inferred types at other positions. An AI agent can ask "what type does this variable end up with?" and get a concrete answer without running the code.
 
 ```
-Input:  file="src/api.js", bindings=[{name: "user", type: "null"}], target="result"
-Output: "null (property access on null would throw)"
+Input:  file="src/config.js", bindings=[{name: "config", type: "{ retries: number, label: string }"}], target="config"
+Output: Type of "config": { retries: 3, label: "fast" }
 ```
 
-This is powerful for code review, bug hunting, and refactoring. The agent can explore the type space of a function by varying inputs and observing outputs -- the same thing a human developer does mentally, but with precision.
+This is powerful for code review, bug hunting, and refactoring. The agent can query the precise inferred type of any binding -- the same thing a human developer does mentally, but with precision. (In this release the returned type comes from the file's own analysis; the `bindings` assumptions do not override it yet.)
 
-**`nudo-trace`** -- Trace how a type transforms from input to output in a function. The agent can see every intermediate type at every step, making it possible to understand complex data pipelines without reading every line.
+**`nudo-trace`** -- Trace how a type transforms from input to output in a function. The agent gets one line per `@nudo:case` showing the argument types and the result type, making it possible to understand complex data pipelines without reading every line.
 
 ```
-Input:  file="src/transform.js", functionName="processOrder"
-Output: "input: { items: array, total: number } -> after validation: { items: array, total: number, validated: true } -> output: { orderId: string, items: array, total: number }"
+Input:  file="src/greet.js", functionName="greet"
+Output: Input: ("Ada") => Output: "Hello, Ada"
+        Input: ("") => Output: "Hello, "
 ```
 
-**`nudo-check`** -- Check a file for type errors and diagnostics. The agent gets the same error messages a developer would see in the editor, in machine-readable form.
+**`nudo-check`** -- Check a file for type errors and diagnostics. The agent gets one line per diagnostic (`Line 3: <message>`) or `No type errors found`, in machine-readable form.
 
-**`nudo-type-at`** -- Get the inferred type at a specific position in a file. The agent can point at any line and column and get the exact type Nudo infers there.
+**`nudo-type-at`** -- Get the inferred type at a specific position in a file. The agent can point at any line (1-based) and column (0-based) and get the exact type Nudo infers there.
 
-**`nudo-suggest-case`** -- Suggest `@nudo:case` directives for a function based on its parameter types. When the agent encounters an unannotated function, it can ask Nudo what test cases would exercise different code paths.
+**`nudo-suggest-case`** -- Check a function's `@nudo:case` coverage. If the function already has cases, the agent learns how many; if it has none, the tool reminds the agent to add a `@nudo:case` directive.
 
 ### Why This Matters
 
@@ -292,10 +335,10 @@ The workflow: JS code -> Nudo infers types -> Generate validators -> Runtime val
 ### The `nudo generate` Command
 
 ```bash
-nudo generate src/api/users.js --format all --output generated/
+nudo generate src/api/users.js --format all
 ```
 
-This reads the inferred types from a source file and emits validators in one or more formats.
+This reads the inferred types from a source file and emits validators in one or more formats. Output goes to stdout -- redirect it to a file to save it (`--output` is declared but not implemented in this release).
 
 ### Zod Schema Generation
 
@@ -305,79 +348,52 @@ Given this source file:
 
 ```js
 /**
- * @nudo:case { name: string, age: number }
- * @nudo:returns { id: number, name: string, age: number }
+ * @nudo:case "input" (T.object({ name: T.string, age: T.number }))
  */
 function createUser(input) {
-  return { id: Date.now(), name: input.name, age: input.age };
+  return { id: 123, name: input.name, age: input.age };
 }
 ```
 
-Running `nudo generate src/api/users.js --format zod` produces:
+Running `nudo generate src/api/users.js --format zod` prints:
 
-```ts
-import { z } from "zod";
-
-export const CreateUserInput = z.object({
-  name: z.string(),
-  age: z.number(),
-});
-
-export const CreateUserOutput = z.object({
-  id: z.number(),
-  name: z.string(),
-  age: z.number(),
-});
+```text
+// === createUser Zod Schemas ===
+// Case "input":
+// Input: { arg0: z.object({ name: z.string(), age: z.number() }) }
+// Output: z.object({ id: z.literal(123), name: z.string(), age: z.number() })
 ```
 
-This integrates directly with React Hook Form, tRPC, Next.js API routes, and any framework that accepts Zod schemas.
+The schema is emitted as a comment block, one per case, with the inferred literal `123` pinned via `z.literal`. Paste it into a `.ts` file to use it directly with React Hook Form, tRPC, Next.js API routes, and any framework that accepts Zod schemas.
 
 ### Native Type Guards
 
 With `--format guard`, Nudo generates zero-dependency runtime type guard functions. These are plain JavaScript functions with no external imports, making them ideal for libraries, edge functions, or any context where bundle size matters.
 
-```ts
-export function isCreateUserInput(data: unknown): data is {
-  name: string;
-  age: number;
-} {
-  if (typeof data !== "object" || data === null) return false;
-  const obj = data as Record<string, unknown>;
-  if (typeof obj.name !== "string") return false;
-  if (typeof obj.age !== "number") return false;
-  return true;
+```text
+// === createUser Type Guards ===
+export function iscreateUserInputOutput(data) {
+  return typeof data === 'object' && data !== null && data.id === 123 && typeof data.name === 'string' && typeof data.age === 'number';
 }
 ```
 
-Guard functions execute a sequence of `typeof` checks with no schema interpretation overhead. In benchmarks, generated guards outperform schema interpreters (Zod, Yup, io-ts) by 2-10x for validation-heavy workloads.
+Each case gets one guard, named `is<function><case>Output`. Guard functions execute a sequence of `typeof` and literal-equality checks with no schema interpretation overhead. In benchmarks, generated guards outperform schema interpreters (Zod, Yup, io-ts) by 2-10x for validation-heavy workloads.
 
 ### TypeScript Declarations
 
-With `--format dts`, Nudo generates `.d.ts` files with real parameter names extracted from the source, JSDoc comments with `@param` and `@returns` tags, and multiple overloads when multiple `@nudo:case` directives are present.
+With `--format dts`, Nudo generates `.d.ts` declarations from the inferred signature. Parameters are positional (`arg0`, `arg1`) and the return type is the inferred result, with inferred literals preserved:
 
-```ts
-/**
- * @param input - The user data to create.
- * @param input.name - The user's display name.
- * @param input.age - The user's age in years.
- * @returns The newly created user with an assigned id.
- */
-export function createUser(input: {
-  name: string;
-  age: number;
-}): {
-  id: number;
-  name: string;
-  age: number;
-};
+```text
+// === createUser TypeScript Declarations ===
+export declare function createUser(arg0: { name: string; age: number }): { id: 123; name: string; age: number };
 ```
 
-Consuming TypeScript code gets full type safety without any manual annotations.
+Consuming TypeScript code gets type safety without any manual annotations.
 
 ### End-to-End Workflow
 
 1. Write plain JavaScript with `@nudo:` directives
-2. Run `nudo generate --format all` to produce Zod schemas, type guards, and `.d.ts` files
+2. Run `nudo generate --format all` to print Zod schemas, type guards, and `.d.ts` declarations (redirect stdout to save them as files)
 3. Use Zod schemas for form validation and API input checking
 4. Use type guards for fast runtime checks in hot paths
 5. Use `.d.ts` files for TypeScript consumers of your library

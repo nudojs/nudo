@@ -41,6 +41,11 @@ pnpm run build
 | `@nudojs/cli` | 求值器、`nudo infer` / `nudo watch` |
 | `@nudojs/service` | 高层 API：`analyzeFile`、`getTypeAtPosition`、`getCompletionsAtPosition` |
 | `@nudojs/lsp` | Language Server Protocol 实现 |
+| `@nudojs/harvester` | 把 `@types/*.d.ts` 声明转换为 Nudo env 文件（`nudo harvest` 的底层引擎） |
+| `@nudojs/mcp` | 面向 AI 代理暴露推断工具的 MCP 服务器 |
+| `@nudojs/env-es` | 内置 ES 标准全局 API 类型定义（`/// @nudo:env es`） |
+| `@nudojs/env-node` | 内置 Node.js API 类型定义（`/// @nudo:env node`） |
+| `@nudojs/env-web` | 内置 Web 平台 API 类型定义（`/// @nudo:env web`） |
 | `vite-plugin-nudo` | 开发阶段的类型推断 Vite 插件 |
 | `nudo-vscode` | VS Code / Cursor 扩展 |
 | `website` | Docusaurus 文档站点 |
@@ -132,6 +137,7 @@ pnpm exec nudo infer path/to/file.js
 - 为新行为添加或更新测试。
 - 提交前运行 `pnpm run build` 和 `pnpm run test`。
 - 添加指令或公开 API 时更新文档（如 `docs/concepts/directives.md`、API 参考）。
+- **文档防漂移规则**：修改 CLI 命令/选项、导出 API 或指令语法时，必须在同一个 PR 中同步更新 `packages/website` 下的文档 —— 英文源（`docs/`）与中文镜像（`i18n/zh-Hans/docusaurus-plugin-content-docs/current/`）都要改。
 
 ---
 

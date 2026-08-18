@@ -43,10 +43,10 @@ Case "positive numbers": (5, 3) => 2
 Case "negative result": (1, 10) => -9
 Case "symbolic": (number, number) => number
 
-Combined: number
+Combined: 2 | -9 | number
 ```
 
-Nudo 对该函数执行了三次——两次使用具体输入，一次使用符号化的 `T.number` 作为两个参数。它推断出 `subtract` 始终返回 `number`，并将结果合并。
+Nudo 对该函数执行了三次——两次使用具体输入，一次使用符号化的 `T.number` 作为两个参数。`Combined` 是所有用例结果的联合：具体用例贡献其字面量结果（`2`、`-9`），符号化用例贡献 `number`。
 
 ## 选项
 
@@ -56,10 +56,34 @@ Nudo 对该函数执行了三次——两次使用具体输入，一次使用符
   npx nudo infer math.js --dts
   ```
 
+  在上面的标准输出之后，CLI 会打印：
+
+  ```text
+  Generated: math.d.ts
+  ```
+
+  生成的 `math.d.ts` 中每个用例对应一条声明：
+
+  ```typescript
+  export declare function subtract(arg0: 5, arg1: 3): 2;
+  export declare function subtract(arg0: 1, arg1: 10): -9;
+  export declare function subtract(arg0: number, arg1: number): number;
+  ```
+
 - **`--loc`** — 在输出中显示源码位置：
 
   ```bash
   npx nudo infer math.js --loc
+  ```
+
+  ```text
+  === subtract (math.js:6:0) ===
+
+  Case "positive numbers": (5, 3) => 2
+  Case "negative result": (1, 10) => -9
+  Case "symbolic": (number, number) => number
+
+  Combined: 2 | -9 | number
   ```
 
 ## 监听模式
@@ -76,10 +100,47 @@ npx nudo watch .
 npx nudo watch . --dts
 ```
 
+watch 会递归扫描目录下的所有 `.js` 文件（排除 `node_modules`）——包括没有指令的文件。
+
+## 没有指令的函数
+
+没有 `@nudo:case` 指令的函数同样不会被跳过。CLI 会做全程序推断：在被分析代码某处被调用的函数，会从调用点合成一个用例，携带调用点实际观测到的实参类型。
+
+创建 `utils.js`——全程没有任何 `@nudo:` 指令：
+
+```javascript
+function formatPrice(cents) {
+  return "$" + (cents / 100).toFixed(2);
+}
+
+console.log(formatPrice(1999));
+```
+
+```bash
+npx nudo infer utils.js
+```
+
+```text
+=== formatPrice ===
+
+Case "call@L5": (1999) => `$${string}`
+```
+
+用例以调用所在行命名为 `call@L5`——`console.log(formatPrice(1999))` 位于 `utils.js` 的第 5 行。没有被任何已分析代码调用的函数仍会得到一个 `entry@L` 用例以保证签名被输出，参数默认为 `unknown`：
+
+```text
+=== addPrefix ===
+
+Case "entry@L1": (unknown, unknown) => `${unknown}: ${unknown}`
+# no call sites found; parameters default to unknown
+```
+
+要让没有指令的代码获得真实调用形态，可用 `--callsites` 从测试中收集用例——参见[调用点发现指南](/docs/guides/callsite-discovery)。
+
 ## 发生了什么？
 
 1. **解析** — Nudo 解析文件，找到带有 `@nudo:case` 指令的 `subtract` 函数。
 2. **执行** — 对每个 case，它使用抽象解释运行函数体：像 `a - b` 这样的操作数会用类型值而非具体数字进行计算。
-3. **合并** — 有多个 case 时，Nudo 将推断出的返回类型合并为联合类型（若一致则为单一类型）。
+3. **合并** — 有多个 case 时，Nudo 将推断出的返回类型合并为联合类型：`2 | -9 | number`。具体用例的字面量结果原样保留，与符号化用例的 `number` 取并集。
 
 想进一步了解类型值、指令和抽象解释，请参阅 [核心概念](/docs/concepts/type-values)。

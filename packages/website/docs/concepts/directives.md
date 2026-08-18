@@ -81,41 +81,140 @@ function len(s) {
 
 ## @nudo:mock — Mock External Dependencies
 
-Replace external dependencies with type-value–aware mocks during evaluation. Use this for `fetch`, file system APIs, or other code Nudo cannot execute directly.
+Replace external dependencies with mocks during evaluation. Use this for `fetch`, file system APIs, or other code Nudo cannot execute directly.
 
 ### Syntax
 
-**Inline expression:**
+Five forms are supported. **Every inline expression must fit on a single line** — see the warnings below.
+
+**1. Single-line arrow function.** The body is plain JavaScript; the parameters receive type values:
 
 ```text
-@nudo:mock name = expression
+@nudo:mock name = (arg) => body
 ```
 
-**From module:**
+**2. Mock helpers** — `stub()`, `spy()`, `mock()`, chainable with `.returns(...)`, `.resolves(...)`, `.rejects(...)`, `.withArgs(...)`, `.callsFake(...)`:
+
+```text
+@nudo:mock name = stub().returns(value)
+```
+
+**3. Sinon-style equivalents** — `sinon.stub()` / `sinon.spy()` with the same chains:
+
+```text
+@nudo:mock name = sinon.stub().returns(value)
+```
+
+**4. Type value expression:**
+
+```text
+@nudo:mock name = T.number
+```
+
+**5. From module** — the module must define a binding with the same name as the mock:
 
 ```text
 @nudo:mock name from "path"
 ```
 
 - **name** — The identifier to mock (e.g. `fetch`, `fs`).
-- **expression** — A JavaScript expression that returns a type value or a function that accepts type values.
 - **path** — Path to a module that provides the mock.
+
+**Warning: the expression must be a single line.** The parser only reads up to the end of the line, so a multi-line expression is truncated at its first line and reported as `nudo:mock-invalid`. The following does **not** work:
+
+```text
+@nudo:mock fetch = (url) => T.promise(T.object({
+  ok: T.boolean,
+  json: T.fn({ params: [], returns: T.object({ ... }) })
+}))
+```
+
+The real diagnostics for the truncated line:
+
+```text
+[warning] example.js:0:0 Mock expression "(url) => T.promise(T.object({" could not be parsed as a known pattern (nudo:mock-invalid)
+[warning] example.js:10:9 Cannot resolve 'json' on unknown value (nudo:unknown-recv)
+```
+
+**Warning: no `T.*` inside an arrow-function body.** `T` exists only in directive expressions (case arguments, `= T.string`, ...). Inside a mock body write plain JavaScript — plain objects and closures — or use `stub().returns(...)` / `stub().resolves(...)` helpers instead.
 
 ### Examples
 
+Mock `fetch` with an arrow function. The body is plain JavaScript on one line:
+
 ```javascript
 /**
- * @nudo:mock fetch = (url) => T.promise(T.object({
- *   ok: T.boolean,
- *   json: T.fn({ params: [], returns: T.object({ id: T.number, name: T.string }) })
- * }))
- * @nudo:case "user" (T.number)
+ * @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1, name: "Alice" }) })
+ * @nudo:case "user" (1)
  */
 async function fetchUser(id) {
   const res = await fetch(`/api/users/${id}`);
   return res.json();
 }
 ```
+
+**Inferred output:**
+
+```
+=== fetchUser ===
+
+Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
+```
+
+The same result with a mock helper — `stub().resolves(value)` makes every call return `Promise<value>`:
+
+```javascript
+/**
+ * @nudo:mock fetch = stub().resolves({ ok: true, json: () => ({ id: 1, name: "Alice" }) })
+ * @nudo:case "user" (1)
+ */
+async function fetchUser(id) {
+  const res = await fetch(`/api/users/${id}`);
+  return res.json();
+}
+```
+
+This also infers `Promise<{ id: 1, name: "Alice" }>`. A synchronous helper:
+
+```javascript
+/**
+ * @nudo:mock getPort = stub().returns(8080)
+ * @nudo:case "default" ()
+ */
+function readPort() {
+  return getPort();
+}
+```
+
+**Inferred output:**
+
+```
+=== readPort ===
+
+Case "default": () => 8080
+```
+
+A type value expression binds the name to a type value directly:
+
+```javascript
+/**
+ * @nudo:mock retries = T.number
+ * @nudo:case "plan" ()
+ */
+function plan() {
+  return retries + 1;
+}
+```
+
+**Inferred output:**
+
+```
+=== plan ===
+
+Case "plan": () => number
+```
+
+From a module — the module must define a binding with the mocked name:
 
 ```javascript
 /**
@@ -125,6 +224,19 @@ async function fetchUser(id) {
 function readConfig(path) {
   return fs.readFileSync(path, "utf-8");
 }
+```
+
+```javascript
+// mocks/fs.js
+const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
+```
+
+**Inferred output:**
+
+```
+=== readConfig ===
+
+Case "read": (string) => "{ \"port\": 3000 }"
 ```
 
 ---
@@ -155,7 +267,7 @@ function add(a, b) {
 
 ## @nudo:skip — Skip Evaluation
 
-Skip abstract interpretation. The engine does not evaluate the function body and instead uses existing type information (e.g. TypeScript/JSDoc annotations or `@nudo:returns`).
+Skip abstract interpretation. The engine does not evaluate the function body. Without a return type expression, the function is reported as `Skipped (no return type declared)`; add a type value expression after the directive to declare one.
 
 ### Syntax
 
@@ -164,7 +276,7 @@ Skip abstract interpretation. The engine does not evaluate the function body and
 @nudo:skip returnsExpr
 ```
 
-- **returnsExpr** (optional) — A type value expression for the return type when no annotations are available.
+- **returnsExpr** (optional) — A type value expression used as the return type.
 
 ### Examples
 
@@ -178,14 +290,30 @@ function heavyComputation(data) {
 }
 ```
 
+**Inferred output:**
+
+```
+=== heavyComputation ===
+
+Skipped (no return type declared)
+```
+
 ```javascript
 /**
  * @nudo:skip T.number
  */
 function unannotatedHeavy(x) {
-  // No TypeScript annotation; explicit return type
+  // Explicit return type via the directive
   return expensiveOp(x);
 }
+```
+
+**Inferred output:**
+
+```
+=== unannotatedHeavy ===
+
+Skipped (declared): number
 ```
 
 ---

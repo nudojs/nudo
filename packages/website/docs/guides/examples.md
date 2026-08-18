@@ -32,10 +32,10 @@ Case "positive numbers": (5, 3) => 2
 Case "negative result": (1, 10) => -9
 Case "symbolic": (number, number) => number
 
-Combined: number
+Combined: 2 | -9 | number
 ```
 
-The symbolic case `(T.number, T.number)` produces `number`. With one case, that is the result; with multiple matching cases, Nudo reports the combined type.
+Concrete cases keep their literal results (`2`, `-9`), and the symbolic case `(T.number, T.number)` produces `number`. The combined type is the union of all case results.
 
 ---
 
@@ -58,13 +58,13 @@ function greet({ name, age }) {
 ```
 === greet ===
 
-Case "concrete": ({ name: "Alice", age: 30 }) => string
-Case "symbolic": ({ name: string, age: number }) => string
+Case "concrete": ({ name: "Alice", age: 30 }) => "Hello, Alice! You are 30 years old."
+Case "symbolic": ({ name: string, age: number }) => `Hello, ${string}! You are ${number} years old.`
 
-Combined: string
+Combined: "Hello, Alice! You are 30 years old." | `Hello, ${string}! You are ${number} years old.`
 ```
 
-Nudo narrows `name` and `age` from the object shape in each case, so the return type is inferred as `string`.
+Nudo narrows `name` and `age` from the object shape in each case. Template results are not flattened to `string`: the concrete case yields the fully evaluated literal, and the symbolic case keeps a template type with the interpolated parameter types.
 
 ---
 
@@ -87,40 +87,40 @@ function doubleAll(arr) {
 ```
 === doubleAll ===
 
-Case "concrete": ([1, 2, 3]) => number[]
+Case "concrete": ([1, 2, 3]) => [2, 4, 6]
 Case "symbolic": (number[]) => number[]
 
-Combined: number[]
+Combined: [2, 4, 6] | number[]
 ```
 
-Input `number[]` yields output `number[]`. Use `T.array(T.number)` for symbolic array inputs.
+Nudo tracks element types through `map`. The concrete input `[1, 2, 3]` is evaluated element by element to `[2, 4, 6]`, while the symbolic input `T.array(T.number)` yields `number[]`.
 
 ---
 
 ## 4. Async Function with Mocked fetch
 
-Async functions and external APIs. Use `@nudo:mock` to replace `fetch` (or other globals) with a type-value mock.
+Async functions and external APIs. Use `@nudo:mock` to replace `fetch` (or other globals) with a mock whose body is plain JavaScript, written on a single line.
 
 ```javascript
 /**
- * @nudo:mock fetch = (url) => T.promise(T.object({
- *   ok: T.boolean,
- *   json: T.fn({ params: [], returns: T.promise(T.object({ id: T.number, name: T.string })) })
- * }))
- * @nudo:case "test" ("https://api.example.com/user")
+ * @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1, name: "Alice" }) })
+ * @nudo:case "user" (1)
  */
-async function fetchUser(url) {
-  const res = await fetch(url);
-  const data = await res.json();
-  return data;
+async function fetchUser(id) {
+  const res = await fetch(`/api/users/${id}`);
+  return res.json();
 }
 ```
 
 **Inferred output:**
 
-With the mock in place, Nudo infers that `fetchUser` returns `Promise<{ id: number; name: string }>`.
+```
+=== fetchUser ===
 
-`@nudo:mock` replaces `fetch` during abstract interpretation so Nudo can model the response shape without real network calls.
+Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
+```
+
+With the mock in place, Nudo infers that `fetchUser` returns `Promise<{ id: 1, name: "Alice" }>` without real network calls. Two rules for inline mocks: the expression **must fit on one line** (multi-line expressions are truncated and reported as `nudo:mock-invalid`), and `T.*` constructors are **not available inside the mock body** — write plain JavaScript values and closures. For a resolved promise, the helper form `@nudo:mock fetch = stub().resolves({ ok: true, json: () => ({ id: 1, name: "Alice" }) })` infers the same result.
 
 ---
 
@@ -147,12 +147,16 @@ function safeSqrt(x) {
 === safeSqrt ===
 
 Case "valid": (10) => number
-Case "negative": (-1) => never throws RangeError
+Case "negative": (-1) => never throws RangeError { message: "negative input" }
 
 Combined: number
+
+Diagnostics:
+
+  [info] safeSqrt.js:6:13 Code after return/throw statement is unreachable (nudo-unreachable)
 ```
 
-Nudo models control flow: the `valid` case returns `number`, the `negative` case throws `RangeError` and never returns. The combined value type is `number`; Nudo also tracks that the function may throw.
+Nudo models control flow: the `valid` case returns `number`, the `negative` case throws `RangeError` and never returns — its result is `never` with the thrown value tracked alongside. The combined value type is `number`. When Nudo finds issues it appends a `Diagnostics:` section to the output; here an `[info]` note about the statement after the `throw`.
 
 ---
 
@@ -237,38 +241,36 @@ function sumTo(n) {
 Case "concrete": (5) => 10
 Case "symbolic": (number) => number
 
-Combined: number
+Combined: 10 | number
 ```
 
-With concrete input `5`, Nudo evaluates the loop and produces the exact result `10`. With abstract input `T.number`, it widens to `number` after fixed-point iteration.
+With concrete input `5`, Nudo evaluates the loop and produces the exact result `10`. With abstract input `T.number`, it widens to `number` after fixed-point iteration, and the combined type keeps both.
 
 ---
 
-## 9. User-Defined Refined Types
+## 9. Refined Types — Range Narrowing
 
-Users can create custom type constraints with `T.refine`, attaching domain-specific operation rules.
+Refined types attach constraints to a base type. You get them built-in: comparison guards refine `number` into a range that keeps its constraint in the inferred output.
 
 ```javascript
-const Odd = T.refine(T.number, {
-  name: "odd",
-  check: (v) => Number.isInteger(v) && v % 2 !== 0,
-  ops: {
-    "%"(self, other) {
-      if (other.kind === "literal" && other.value === 2) return T.literal(1);
-      return undefined;
-    },
-  },
-});
-
 /**
- * @nudo:case "test" (Odd)
+ * @nudo:case "symbolic" (T.number)
  */
-function checkOdd(x) {
-  return x % 2;  // → 1 (custom op rule)
+function pickAdult(age) {
+  if (age >= 18) return age;
+  return -1;
 }
 ```
 
-The `Odd` type knows that `odd % 2` is always `1`. Operations without custom rules (like `+`) fall back to `T.number`'s default behavior.
+**Inferred output:**
+
+```
+=== pickAdult ===
+
+Case "symbolic": (number) => number (>= 18) | -1
+```
+
+Inside the `if (age >= 18)` branch, `age` is no longer plain `number` — it carries the `>= 18` constraint, and the inferred result shows `number (>= 18)`. Operations on a refined type without a matching rule fall back to its base type. Template strings (`` `https://api.example.com${string}` `` in example 6) are refined types too — they carry their known prefix and suffix as the constraint.
 
 ---
 
@@ -299,14 +301,14 @@ function handleState(state) {
 === handleState ===
 
 Case "idle": ({ status: "idle" }) => "Waiting..."
-Case "loading": ({ status: "loading", requestId: "abc" }) => string
+Case "loading": ({ status: "loading", requestId: "abc" }) => "Loading abc..."
 Case "success": ({ status: "success", data: { name: "test" } }) => "test"
 Case "error": ({ status: "error", message: "fail" }) => "fail"
 
-Combined: string
+Combined: "Waiting..." | "Loading abc..." | "test" | "fail"
 ```
 
-Nudo narrows `state` inside each `case` branch based on the discriminant. In the `"loading"` case, `state.requestId` is available as `"abc"` (literal); in the `"success"` case, `state.data.name` resolves to `"test"`.
+Nudo narrows `state` inside each `case` branch based on the discriminant. In the `"loading"` case, `state.requestId` is available as `"abc"` (literal) and the template is fully evaluated to `"Loading abc..."`; in the `"success"` case, `state.data.name` resolves to `"test"`. The combined type keeps every literal result.
 
 ---
 
@@ -334,10 +336,10 @@ Case "full": ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } 
 Case "partial": ({ user: { profile: { name: "Bob" } } }) => "light"
 Case "empty": ({}) => "light"
 
-Combined: string
+Combined: "dark" | "light"
 ```
 
-When the full path exists, Nudo returns the literal `"dark"`. When `settings` or `user` is missing, the `??` fallback produces `"light"`. The combined type is `string`.
+When the full path exists, Nudo returns the literal `"dark"`. When `settings` or `user` is missing, the `??` fallback produces `"light"`. The combined type is the union of the literal results.
 
 ---
 
@@ -368,16 +370,20 @@ Case "success": ({ status: 200, data: { id: 1, name: "Alice", email: "alice@exam
 Case "not-found": ({ status: 404, error: "Not found" }) => { success: false, error: "Not found" }
 Case "error": ({ status: 500, error: "Server error" }) => { success: false, error: "Server error" }
 
-Combined: { success: boolean, user: ... } | { success: boolean, error: string }
+Combined: { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } } | { success: false, error: "Not found" } | { success: false, error: "Server error" }
+
+Diagnostics:
+
+  [info] parseResponse.js:10:2 Code after return/throw statement is unreachable (nudo-unreachable)
 ```
 
-The `status === 200` check narrows the response: inside the `if` branch, `response.data` is available; outside it, `response.error` is known to exist.
+The `status === 200` check narrows the response: inside the `if` branch, `response.data` is available; outside it, `response.error` is known to exist. Each case returns a fully concrete object, and the combined type is the union of all three shapes.
 
 ---
 
 ## 13. Form Data Processing
 
-Type narrowing through sequential validation checks. Nudo tracks how each guard transforms the available types.
+Sequential validation checks with multiple `return` branches. Nudo evaluates the conversions precisely and reports each branch's result as a union.
 
 ```javascript
 /**
@@ -398,14 +404,18 @@ function validateForm(data) {
 ```
 === validateForm ===
 
-Case "valid": ({ name: "Alice", age: "25", email: "alice@example.com" }) => { valid: true, name: "Alice", age: 25, email: "alice@example.com" }
-Case "invalid-age": ({ name: "Bob", age: "abc", email: "bob@example.com" }) => { valid: false, error: "Invalid age" }
-Case "missing": ({ name: "Charlie" }) => { valid: false, error: "Missing email" }
+Case "valid": ({ name: "Alice", age: "25", email: "alice@example.com" }) => { valid: false, error: "Invalid age" } | { valid: true, name: "Alice", age: 25, email: "alice@example.com" }
+Case "invalid-age": ({ name: "Bob", age: "abc", email: "bob@example.com" }) => { valid: false, error: "Invalid age" } | { valid: true, name: "Bob", age: NaN, email: "bob@example.com" }
+Case "missing": ({ name: "Charlie" }) => { valid: false, error: "Invalid age" } | { valid: false, error: "Missing email" }
 
-Combined: { valid: false, error: string } | { valid: true, name: string, age: number, email: string }
+Combined: { valid: false, error: "Invalid age" } | { valid: true, name: "Alice", age: 25, email: "alice@example.com" } | { valid: false, error: "Invalid age" } | { valid: true, name: "Bob", age: NaN, email: "bob@example.com" } | { valid: false, error: "Invalid age" } | { valid: false, error: "Missing email" }
+
+Diagnostics:
+
+  [info] validateForm.js:9:19 Code after return/throw statement is unreachable (nudo-unreachable)
 ```
 
-Nudo evaluates `Number("25")` to `25` (a literal) and `Number("abc")` to `NaN`. The `isNaN` guard filters out invalid ages, so the final return has `age` as `number` (not `NaN`). Missing `email` is caught by the falsy check.
+The `Number(...)` conversions are evaluated precisely — `Number("25")` produces the literal `25`, and `Number("abc")` produces `NaN`. Guards like `isNaN(age)` are not used to narrow control flow, so each case's result is the union of all `return` branches; you can still read the exact branch values from that union.
 
 ---
 
@@ -433,10 +443,10 @@ Case "string": ("hello") => true
 Case "number": (42) => false
 Case "object": ({ type: "user", name: "Alice" }) => false
 
-Combined: boolean
+Combined: true | false
 ```
 
-Nudo evaluates `typeof` on each literal input at the type level. `"hello"` has `typeof "string"`, so the comparison yields `true`. Numbers and objects yield `false`. The combined type is `boolean`.
+Nudo evaluates `typeof` on each literal input at the type level. `"hello"` has `typeof "string"`, so the comparison yields `true`. Numbers and objects yield `false`. The combined type is the union `true | false`.
 
 ---
 
@@ -462,7 +472,16 @@ async function fetchUser(id) {
 
 **Inferred output:**
 
-Nudo knows `fetch` returns `Promise<Response>`, `res.ok` is `boolean`, `res.status` is `number`, and `res.json()` returns `Promise<unknown>`. The function may throw `Error`.
+```
+=== fetchUser ===
+
+Case "get user": (1) => Promise<unknown>
+Case "symbolic": (number) => Promise<unknown>
+
+Combined: Promise<unknown>
+```
+
+With the built-in web environment, no mock is needed: `fetch` is typed from the environment, and `res.json()` returns `Promise<unknown>`, so `fetchUser` infers `Promise<unknown>`. To get a precise response shape, combine `@nudo:env web` with an `@nudo:mock fetch = ...` override (example 4).
 
 ```javascript
 /// @nudo:env web
@@ -503,7 +522,13 @@ function loadConfig(dir) {
 
 **Inferred output:**
 
-Nudo infers `unknown | null` — `JSON.parse` returns `unknown`, and the early return produces `null`. It also tracks that `JSON.parse` may throw `SyntaxError`.
+```
+=== loadConfig ===
+
+Case "test": (string) => unknown
+```
+
+`JSON.parse` returns `unknown` (the early `return null` collapses into it). `@nudo:env node` types `readFileSync`, `existsSync`, and `join`, so no mocks are needed.
 
 ```javascript
 /// @nudo:env node
@@ -520,7 +545,7 @@ function hashContent(data) {
 }
 ```
 
-**Inferred output:** `string | Buffer` — from the `digest` return type.
+**Inferred output:** `string | Buffer` — from the `digest` return type. The CLI output expands `Buffer` to its full method shape (`Buffer { toString: (_arg0: string) => string, … }`).
 
 ---
 

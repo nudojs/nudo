@@ -38,7 +38,7 @@ npx nudo infer path/to/file.js
 也可以通过命令行安装：
 
 ```bash
-code --install-extension nudojs.nudo-vscode
+code --install-extension wmzy.nudo-vscode
 ```
 
 ## Vite 插件

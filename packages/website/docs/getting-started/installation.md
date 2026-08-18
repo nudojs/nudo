@@ -38,7 +38,7 @@ Install the **nudo-vscode** extension for inline type hints and diagnostics:
 You can also install from the command line:
 
 ```bash
-code --install-extension nudojs.nudo-vscode
+code --install-extension wmzy.nudo-vscode
 ```
 
 ## Vite Plugin

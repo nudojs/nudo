@@ -12,6 +12,8 @@ JS code → Nudo infers types → Generate validators → Runtime validation
 
 这意味着你编写纯 JavaScript，让 Nudo 推断类型，然后生成完整的运行时类型检查——无需手写验证器，无需重复的类型定义。
 
+所有生成结果都打印到 stdout。用管道或粘贴的方式放进项目里合适的文件即可。
+
 ## `nudo generate` 命令
 
 ```bash
@@ -21,90 +23,90 @@ nudo generate <file> [options]
 | 选项 | 描述 |
 |---|---|
 | `--format <format>` | 输出格式：`zod`、`guard`、`dts`、`all`（默认：`all`） |
-| `--output <dir>` | 输出目录（默认：`.`） |
+| `--output <dir>` | 已声明但**尚未实现**——输出始终走 stdout，请改用 shell 重定向。 |
 
-运行 `nudo generate` 会读取源文件的推断类型，并以一种或多种格式输出验证器。
+运行 `nudo generate` 会读取源文件的推断类型，并以指定格式打印验证器。
 
 ### 基本用法
 
 ```bash
-# 生成所有格式
+# 打印所有格式（zod、guard、dts）
 nudo generate src/api/users.js
 
-# 仅生成 Zod schema
+# 仅打印 Zod schema
 nudo generate src/api/users.js --format zod
 
-# 输出到指定目录
-nudo generate src/api/users.js --output generated/
+# 自行把 stdout 捕获到文件
+nudo generate src/api/users.js --format zod > users.schema.txt
 ```
 
-## Zod Schema 生成
+## 示例源码
 
-使用 `--format zod` 时，Nudo 会从推断类型生成 [Zod](https://zod.dev) schema 字符串。当你想与更广泛的 Zod 生态系统集成时非常有用。
-
-### 示例
-
-给定以下源文件：
+本页所有示例都使用下面的文件。注意真实的指令语法：`@nudo:case "<名字>" (<类型表达式>)`——case 名字必须带引号，类型表达式必须包在括号里，并使用 `T.*` 构造器。
 
 ```js
 // src/api/users.js
 
-/**
- * @nudo:case { name: string, age: number }
- * @nudo:returns { id: number, name: string, age: number }
- */
+// @nudo:case "input" (T.object({ name: T.string, age: T.number }))
 function createUser(input) {
-  return { id: Date.now(), name: input.name, age: input.age };
+  return { id: 123, name: input.name, age: input.age };
 }
 ```
 
-运行：
+## Zod Schema 生成
+
+使用 `--format zod` 时，Nudo 会为每个 case 的输入和输出类型打印 [Zod](https://zod.dev) schema 表达式。schema 以注释形式输出——把其中的表达式复制出来，组装成你自己的 schema 模块。
 
 ```bash
-nudo generate src/api/users.js --format zod --output generated/
+nudo generate src/api/users.js --format zod
 ```
 
-生成：
+输出（stdout）：
 
-```ts
-// generated/users.zod.ts
+```js
+// === createUser Zod Schemas ===
+// Case "input":
+// Input: { arg0: z.object({ name: z.string(), age: z.number() }) }
+// Output: z.object({ id: z.literal(123), name: z.string(), age: z.number() })
+```
+
+注意 `z.literal(123)`：源码中的字面量值（`id: 123`）会被推断为字面量类型，因此输出的 schema 会钉住精确值。
+
+### 组装 Schema 模块
+
+把打印出的表达式粘贴到模块中并导出：
+
+```js
+// src/api/users.schema.js -- 由上面的输出来组装
 import { z } from "zod";
 
-export const CreateUserInput = z.object({
-  name: z.string(),
-  age: z.number(),
-});
-
-export const CreateUserOutput = z.object({
-  id: z.number(),
-  name: z.string(),
-  age: z.number(),
-});
+export const createUserInput = z.object({ name: z.string(), age: z.number() });
+export const createUserOutput = z.object({ id: z.literal(123), name: z.string(), age: z.number() });
 ```
 
 ### 与框架集成
 
-**React Hook Form** ——将生成的 schema 用作表单解析器：
+**React Hook Form** ——将组装好的 schema 用作表单解析器：
 
 ```js
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CreateUserInput } from "./generated/users.zod";
+import { createUserInput } from "./api/users.schema.js";
 
 const { register, handleSubmit } = useForm({
-  resolver: zodResolver(CreateUserInput),
+  resolver: zodResolver(createUserInput),
 });
 ```
 
 **tRPC** ——在过程中使用 schema 进行输入/输出验证：
 
 ```js
-import { CreateUserInput, CreateUserOutput } from "./generated/users.zod";
+import { createUserInput, createUserOutput } from "./api/users.schema.js";
 
 const appRouter = router({
   createUser: publicProcedure
-    .input(CreateUserInput)
-    .output(CreateUserOutput)
+    .input(createUserInput)
+    .output(createUserOutput)
     .mutation(({ input }) => createUser(input)),
 });
 ```
@@ -112,11 +114,11 @@ const appRouter = router({
 **Next.js API Routes** ——验证请求体：
 
 ```js
-import { CreateUserInput } from "./generated/users.zod";
+import { createUserInput } from "./api/users.schema.js";
 
 export async function POST(request) {
   const body = await request.json();
-  const parsed = CreateUserInput.safeParse(body);
+  const parsed = createUserInput.safeParse(body);
   if (!parsed.success) {
     return Response.json({ errors: parsed.error.issues }, { status: 400 });
   }
@@ -127,43 +129,24 @@ export async function POST(request) {
 
 ## 原生 Guard 生成
 
-使用 `--format guard` 时，Nudo 会生成零依赖的运行时类型守卫函数。这些是纯 JavaScript 函数，没有外部导入，非常适合库、边缘函数或任何关注包体积的场景。
+使用 `--format guard` 时，Nudo 会打印零依赖的运行时类型守卫函数。这些是纯 JavaScript 函数，没有外部导入，非常适合库、边缘函数或任何关注包体积的场景。
 
-### 示例
+Guard 的命名为 `is` + 函数名 + case 名 + `Output`（每个 case 一个 guard，校验该 case 的输出类型）：
 
 ```bash
-nudo generate src/api/users.js --format guard --output generated/
+nudo generate src/api/users.js --format guard
 ```
 
-生成：
+输出（stdout）：
 
-```ts
-// generated/users.guard.ts
-
-export function isCreateUserInput(data: unknown): data is {
-  name: string;
-  age: number;
-} {
-  if (typeof data !== "object" || data === null) return false;
-  const obj = data as Record<string, unknown>;
-  if (typeof obj.name !== "string") return false;
-  if (typeof obj.age !== "number") return false;
-  return true;
-}
-
-export function isCreateUserOutput(data: unknown): data is {
-  id: number;
-  name: string;
-  age: number;
-} {
-  if (typeof data !== "object" || data === null) return false;
-  const obj = data as Record<string, unknown>;
-  if (typeof obj.id !== "number") return false;
-  if (typeof obj.name !== "string") return false;
-  if (typeof obj.age !== "number") return false;
-  return true;
+```js
+// === createUser Type Guards ===
+export function iscreateUserInputOutput(data) {
+  return typeof data === 'object' && data !== null && data.id === 123 && typeof data.name === 'string' && typeof data.age === 'number';
 }
 ```
+
+把打印出的函数保存到模块中（例如 `src/api/users.guard.js`）并导入使用。
 
 ### 性能优势
 
@@ -171,44 +154,43 @@ Guard 函数执行一系列 `typeof` 检查，没有 schema 解释开销。在�
 
 ## TypeScript 声明
 
-使用 `--format dts` 时，Nudo 会生成 `.d.ts` 文件，包含从源码提取的真实参数名、带 `@param` 和 `@returns` 标签的 JSDoc 注释，以及在存在多个 `@nudo:case` 指令时生成多个重载。
+使用 `--format dts` 时，Nudo 会为每个 case 打印一行 `export declare`。有两点需要了解：
 
-### 示例
+- 参数名是按位置的（`arg0`、`arg1`、……），不是源码中的真实参数名。
+- 嵌套对象的成员保留真实名称，字面量值以字面量类型出现。
 
 ```bash
-nudo generate src/api/users.js --format dts --output generated/
+nudo generate src/api/users.js --format dts
 ```
 
-生成：
+输出（stdout）：
 
 ```ts
-// generated/users.d.ts
-
-/**
- * Creates a new user record.
- *
- * @param input - The user data to create.
- * @param input.name - The user's display name.
- * @param input.age - The user's age in years.
- * @returns The newly created user with an assigned id.
- */
-export function createUser(input: {
-  name: string;
-  age: number;
-}): {
-  id: number;
-  name: string;
-  age: number;
-};
+// === createUser TypeScript Declarations ===
+export declare function createUser(arg0: { name: string; age: number }): { id: 123; name: string; age: number };
 ```
 
-当存在多个 `@nudo:case` 指令时，生成的声明包含重载：
+当存在多个 `@nudo:case` 指令时，每个 case 打印一条声明，形成重载：
+
+```js
+// @nudo:case "string input" ("hello")
+// @nudo:case "number input" (42)
+function formatValue(value) {
+  return String(value);
+}
+```
+
+```bash
+nudo generate src/api/format.js --format dts
+```
 
 ```ts
-export function formatValue(value: string): string;
-export function formatValue(value: number): string;
-export function formatValue(value: boolean): string;
+// === formatValue TypeScript Declarations ===
+export declare function formatValue(arg0: "hello"): "hello";
+export declare function formatValue(arg0: 42): "42";
 ```
+
+如果想把 `.d.ts` 文件直接写到源码旁边而不是打印，可使用 `nudo infer <file> --dts`。
 
 ## JSON 输出
 
@@ -222,40 +204,47 @@ nudo infer src/api/users.js --json
 
 ```json
 {
-  "functions": {
-    "createUser": {
+  "functions": [
+    {
+      "name": "createUser",
+      "loc": { "start": { "line": 4, "column": 0 }, "end": { "line": 6, "column": 1 } },
       "cases": [
         {
-          "params": [
-            {
-              "name": "input",
-              "type": "{ name: string; age: number }"
-            }
-          ],
-          "return": "{ id: number; name: string; age: number }"
+          "name": "input",
+          "args": ["{ name: string, age: number }"],
+          "result": "{ id: 123, name: string, age: number }",
+          "throws": null,
+          "source": null
         }
-      ]
+      ],
+      "entryOnly": false
     }
-  },
+  ],
   "diagnostics": []
 }
 ```
 
+`functions` 中的每个条目包含：
+
+- `name` 与 `loc`——函数名及其源码位置。
+- `cases`——每个 case 一条。`args` 列出参数类型，`result` 是返回类型，`throws` 是抛出类型或 `null`。`source` 对 `@nudo:case` 指令为 `null`，对由全程序调用点发现合成的 case 为 `"callsite"`。
+- `entryOnly`——当函数在整个程序中没有调用点时为 `true`。
+
 ### CI/CD 集成
 
-在管道中使用 JSON 输出来强制类型契约：
+在管道中使用 JSON 输出来强制类型契约。`infer` 接受文件路径，不接受目录：
 
 ```bash
 # 如果报告了任何诊断则失败
-nudo infer src/ --json | jq '.diagnostics | length == 0'
+nudo infer src/api/users.js --json | jq '.diagnostics | length == 0'
 ```
 
-在构建中生成验证器：
+在构建中打印验证器，并把 stdout 捕获进项目：
 
 ```json
 {
   "scripts": {
-    "generate": "nudo generate src/api/ --format all --output generated/",
+    "generate": "nudo generate src/api/users.js --format zod > src/api/users.schema.txt",
     "build": "npm run generate && tsc && vite build"
   }
 }
@@ -265,18 +254,15 @@ nudo infer src/ --json | jq '.diagnostics | length == 0'
 
 以下是从源代码到运行时验证的端到端示例。
 
-**1. 编写带 Nudo 指令的纯 JavaScript：**
+**1. 编写带一条 Nudo 指令的纯 JavaScript：**
 
 ```js
 // src/api/products.js
 
-/**
- * @nudo:case { name: string, price: number, tags: string[] }
- * @nudo:returns { id: number, name: string, price: number, tags: string[] }
- */
+// @nudo:case "input" (T.object({ name: T.string, price: T.number, tags: T.array(T.string) }))
 function createProduct(input) {
   return {
-    id: Date.now(),
+    id: 456,
     name: input.name,
     price: input.price,
     tags: input.tags,
@@ -284,25 +270,56 @@ function createProduct(input) {
 }
 ```
 
-**2. 生成所有验证器格式：**
+**2. 打印所有验证器格式：**
 
 ```bash
-nudo generate src/api/products.js --format all --output src/generated/
+nudo generate src/api/products.js --format all
 ```
 
-**3. 在应用中使用生成的验证器：**
+输出（stdout）：
+
+```
+// === createProduct Zod Schemas ===
+// Case "input":
+// Input: { arg0: z.object({ name: z.string(), price: z.number(), tags: z.array(z.string()) }) }
+// Output: z.object({ id: z.literal(456), name: z.string(), price: z.number(), tags: z.array(z.string()) })
+
+// === createProduct Type Guards ===
+export function iscreateProductInputOutput(data) {
+  return typeof data === 'object' && data !== null && data.id === 456 && typeof data.name === 'string' && typeof data.price === 'number' && Array.isArray(data.tags) && data.tags.every(item => typeof item === 'string');
+}
+
+// === createProduct TypeScript Declarations ===
+export declare function createProduct(arg0: { name: string; price: number; tags: string[] }): { id: 456; name: string; price: number; tags: string[] };
+```
+
+**3. 把需要的部分粘贴进你的应用：**
 
 ```js
-import { isCreateProductInput } from "./generated/products.guard";
-import { CreateProductInput } from "./generated/products.zod";
+// src/api/products.guard.js -- 粘贴自上面的 stdout
+export function iscreateProductInputOutput(data) {
+  return typeof data === 'object' && data !== null && data.id === 456 && typeof data.name === 'string' && typeof data.price === 'number' && Array.isArray(data.tags) && data.tags.every(item => typeof item === 'string');
+}
+```
+
+```js
+// src/api/products.schema.js -- 由上面的 Zod 行组装
+import { z } from "zod";
+
+export const createProductInput = z.object({ name: z.string(), price: z.number(), tags: z.array(z.string()) });
+```
+
+```js
+import { iscreateProductInputOutput } from "./api/products.guard.js";
+import { createProductInput } from "./api/products.schema.js";
 
 // 快速 guard 检查（零依赖）
-if (!isCreateProductInput(body)) {
+if (!iscreateProductInputOutput(body)) {
   throw new ValidationError("Invalid product data");
 }
 
 // 或使用 Zod 获取详细错误信息
-const result = CreateProductInput.safeParse(body);
+const result = createProductInput.safeParse(body);
 if (!result.success) {
   return Response.json({ errors: result.error.issues }, { status: 400 });
 }
@@ -310,12 +327,19 @@ if (!result.success) {
 
 **4. 在消费端 TypeScript 代码中使用声明实现类型安全：**
 
-```ts
-// 消费端代码无需任何手动注解即可看到完整类型
-import { createProduct } from "./api/products";
+把声明行粘贴到源码旁的 `.d.ts` 中：
 
-const product = createProduct({ name: "Widget", price: 9.99, tags: ["sale"] });
-//    ^? { id: number; name: string; price: number; tags: string[] }
+```ts
+// src/api/products.d.ts -- 粘贴自上面的 stdout
+export declare function createProduct(arg0: { name: string; price: number; tags: string[] }): { id: 456; name: string; price: number; tags: string[] };
 ```
 
-这个工作流让你的源代码保持无注解状态，同时在边界上提供完整的运行时安全和编辑器支持。
+```ts
+// 消费端代码无需任何手动注解即可看到完整类型
+import { createProduct } from "./api/products.js";
+
+const product = createProduct({ name: "Widget", price: 9.99, tags: ["sale"] });
+//    ^? { id: 456; name: string; price: number; tags: string[] }
+```
+
+每个函数只需一行指令，这个工作流就能在 JavaScript/TypeScript 边界上提供完整的运行时安全和编辑器支持。

@@ -15,7 +15,7 @@ sidebar_position: 2
 或从命令行安装：
 
 ```bash
-code --install-extension nudojs.nudo-vscode
+code --install-extension wmzy.nudo-vscode
 ```
 
 ## 激活

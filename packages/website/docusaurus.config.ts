@@ -49,6 +49,16 @@ const config: Config = {
   // os/module/url）带进浏览器 bundle——浏览器里不可达（loadEnvs 只在
   // Node CLI 用），alias 成空模块。
   plugins: [
+    // 离线全文搜索（中英分词，无 Algolia 外部依赖）
+    [
+      "@easyops-cn/docusaurus-search-local",
+      {
+        hashed: true,
+        indexDocs: true,
+        indexBlog: true,
+        language: ["en", "zh"],
+      },
+    ],
     function nodeBuiltinsStub(): Plugin {
       return {
         name: "node-builtins-stub",

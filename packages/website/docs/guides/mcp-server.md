@@ -14,8 +14,8 @@ For Nudo, this means an AI agent can:
 
 - Explore how types flow through a function without running it
 - Check files for type errors as part of a coding workflow
-- Suggest and validate `@nudo:` directives
-- Trace the full type transformation path from input to output
+- Query `@nudo:` case coverage for a function
+- Trace how each case's inputs map to outputs
 
 This turns type inference from a manual, human-driven process into something an AI agent can use as a reasoning tool.
 
@@ -70,58 +70,59 @@ Any client that supports the MCP standard can connect to the server. The server 
 
 ## Available Tools
 
-The Nudo MCP server exposes five tools. Each tool accepts JSON parameters and returns structured text output.
+The Nudo MCP server exposes five tools. Each tool accepts JSON parameters and returns text output.
+
+The examples below share one file, `src/config.js`:
+
+```js
+const config = { retries: 3, label: "fast" };
+
+// @nudo:case "greeting" ("Ada")
+// @nudo:case "anonymous" ("")
+function greet(name) {
+  return "Hello, " + name;
+}
+```
 
 ### `nudo-what-if`
 
-Set type assumptions for function parameters and observe the inferred return type. This is the primary tool for AI-driven type exploration -- it lets an agent ask "what would the type be if these inputs had these types?" without modifying any source code.
+Set type assumptions and observe inferred types at other positions. This is the primary tool for AI-driven type exploration -- it lets an agent ask "what if X has type Y, what would Z be?" without modifying any source code.
 
 **Parameters**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `file` | `string` | Yes | Path to the JavaScript file |
-| `function` | `string` | Yes | Name of the function to analyze |
-| `assumptions` | `Record<string, string>` | Yes | Map of parameter names to type assumptions |
+| `bindings` | `Array<{ name: string, type: string }>` | Yes | Type assumptions to apply. `name` is a variable name; `type` is a type expression such as `number` or `string \| null` |
+| `target` | `string` | Yes | Variable or expression to get the type of |
 
 **Example scenario**
 
-You are reviewing a utility function and want to know what happens when one argument is `null`:
+An agent is about to use the `config` object elsewhere and wants to confirm its inferred shape first:
 
-```
-Tool: nudo-what-if
+```json
 {
-  "file": "src/utils.js",
-  "function": "formatUser",
-  "assumptions": {
-    "user": "null",
-    "fallback": "\"anonymous\""
-  }
+  "file": "src/config.js",
+  "bindings": [
+    { "name": "config", "type": "{ retries: number, label: string }" }
+  ],
+  "target": "config"
 }
 ```
 
 **Output**
 
 ```
-Assumptions:
-  user: null
-  fallback: "anonymous"
-
-Inferred return type: "anonymous"
-
-Type flow:
-  user → null
-  user.name → never (access on null)
-  user?.name ?? fallback → "anonymous"
+Type of "config": { retries: 3, label: "fast" }
 ```
 
-The agent can use this to reason about null safety, default values, and edge cases without executing the code.
+The response always has the form `Type of "<target>": <type>`. If the target is not a known binding in the file, the type is reported as `unknown`. Note that in the current implementation the returned type comes from the file's own analysis -- the `bindings` assumptions do not override it.
 
 ---
 
 ### `nudo-check`
 
-Check a JavaScript file for type errors using Nudo's inference engine. Returns a list of diagnostics similar to what the CLI produces, but in a structured format suitable for programmatic consumption.
+Check a JavaScript file for type errors using Nudo's inference engine. Only diagnostics with error severity are returned -- currently these come from failed `@nudo:` assertions, such as an `@nudo:returns` declaration that does not match the inferred return type.
 
 **Parameters**
 
@@ -133,32 +134,37 @@ Check a JavaScript file for type errors using Nudo's inference engine. Returns a
 
 After editing a file, ask the agent to verify there are no type issues:
 
-```
-Tool: nudo-check
-{
-  "file": "src/parser.js"
-}
+```json
+{ "file": "src/config.js" }
 ```
 
 **Output**
 
 ```
-src/parser.js: no errors found.
+No type errors found
 ```
 
-Or if there are issues:
+When errors exist, each one is reported on its own line in the form `Line N: message`. Given this file, where the `@nudo:returns` assertion contradicts the inferred result:
+
+```js
+// @nudo:case "double it" (5)
+// @nudo:returns (T.string)
+function double(x) {
+  return x * 2;
+}
+```
+
+the response is:
 
 ```
-src/parser.js:
-  12:5 - Cannot access property "length" on type number
-  24:10 - Type "hello" is not assignable to parameter of type number
+Line 3: @nudo:returns assertion failed for case "double it": expected string, got 10. Update the @nudo:returns directive to match the inferred type, or fix the function implementation
 ```
 
 ---
 
 ### `nudo-type-at`
 
-Get the inferred type at a specific position in a file. Useful when an agent needs to understand what type a variable, expression, or return value has at a particular line and column.
+Get the inferred type at a specific position in a file. Useful when an agent needs to understand what type a variable or expression has at a particular line and column.
 
 **Parameters**
 
@@ -166,122 +172,94 @@ Get the inferred type at a specific position in a file. Useful when an agent nee
 |-----------|------|----------|-------------|
 | `file` | `string` | Yes | Path to the JavaScript file |
 | `line` | `number` | Yes | Line number (1-based) |
-| `column` | `number` | Yes | Column number (1-based) |
+| `column` | `number` | Yes | Column number (0-based) |
 
 **Example scenario**
 
-An agent is trying to understand what type `result` holds after a series of operations:
+An agent wants the type of the `config` variable in `src/config.js`. The variable name starts on line 1 at column 6:
 
-```
-Tool: nudo-type-at
-{
-  "file": "src/transform.js",
-  "line": 18,
-  "column": 12
-}
+```json
+{ "file": "src/config.js", "line": 1, "column": 6 }
 ```
 
 **Output**
 
 ```
-Position: src/transform.js:18:12
-Expression: result
-Inferred type: string | number
+{ retries: 3, label: "fast" }
 ```
+
+The response is the inferred type at that position, or `unknown` when no type information is available there.
 
 ---
 
 ### `nudo-suggest-case`
 
-Analyze a function and suggest `@nudo:case` directives that would exercise its different code paths. This helps an agent generate meaningful test inputs for type inference.
+Suggest `@nudo:case` directives for a function based on its parameter types.
 
 **Parameters**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `file` | `string` | Yes | Path to the JavaScript file |
-| `function` | `string` | Yes | Name of the function to analyze |
+| `functionName` | `string` | Yes | Name of the function |
 
 **Example scenario**
 
-An agent is helping write documentation or tests and needs to know what kinds of inputs a function handles:
+An agent is documenting `src/config.js` and wants to check `@nudo:case` coverage for `greet`:
 
-```
-Tool: nudo-suggest-case
-{
-  "file": "src/validators.js",
-  "function": "validateEmail"
-}
+```json
+{ "file": "src/config.js", "functionName": "greet" }
 ```
 
 **Output**
 
 ```
-Suggested cases for validateEmail:
-
-  @nudo:case "valid email" ("user@example.com")
-  @nudo:case "empty string" ("")
-  @nudo:case "missing @" ("userexample.com")
-  @nudo:case "null input" (null)
-  @nudo:case "undefined input" (undefined)
-
-Each case exercises a distinct code path through the function.
+Function "greet" already has 2 case(s)
 ```
 
-The agent can then add these directives to the file and run inference to verify the function's behavior across all paths.
+Because whole-program inference synthesizes cases even for functions without directives, an existing function typically reports its current case count. Other possible responses are `Function "<functionName>" not found` when the name does not exist in the file, and -- for a function with no cases at all -- a `Suggested: /** @nudo:case */` line followed by `function <functionName>(...) { ... }`.
 
 ---
 
 ### `nudo-trace`
 
-Trace how types transform from input to output through a function. Shows each intermediate step of the type computation, making it possible to follow the full data flow.
+Trace how a type transforms from input to output in a function -- one line per case, showing the argument types and the result type.
 
 **Parameters**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `file` | `string` | Yes | Path to the JavaScript file |
-| `function` | `string` | Yes | Name of the function to trace |
+| `functionName` | `string` | Yes | Function to trace |
 
 **Example scenario**
 
-An agent needs to understand a complex transformation pipeline:
+An agent needs to understand how `greet` transforms its input:
 
-```
-Tool: nudo-trace
-{
-  "file": "src/transform.js",
-  "function": "processData"
-}
+```json
+{ "file": "src/config.js", "functionName": "greet" }
 ```
 
 **Output**
 
 ```
-Trace for processData:
-
-  input: { raw: string, count: number }
-  raw.split(",") -> string[]
-  .map(s => s.trim()) -> string[]
-  .filter(Boolean) -> string[]
-  .slice(0, count) -> string[]
-
-  Return type: string[]
+Input: ("Ada") => Output: "Hello, Ada"
+Input: ("") => Output: "Hello, "
 ```
 
-This gives the agent a step-by-step view of how types change at each operation, which is valuable for debugging type mismatches and understanding unfamiliar code.
+Each line has the form `Input: (<argument types>) => Output: <result type>`. If the function does not exist, the response is `Function "<functionName>" not found`; if it has no cases, the response is `No cases found for "<functionName>"`.
 
 ---
 
 ## Why This Matters for AI
 
-Traditional AI-assisted coding relies on static analysis tools that require type annotations or on executing code to observe behavior. Nudo's MCP server offers a third path: **what-if analysis through abstract interpretation**.
+Traditional AI-assisted coding relies on static analysis tools that require type annotations or on executing code to observe behavior. Nudo's MCP server offers a third path: **type information from abstract interpretation, on demand**.
 
 When an AI agent encounters unfamiliar JavaScript code, it can:
 
-1. **Explore type flow** -- Use `nudo-what-if` to test different input types and see how they propagate, without writing or running any code.
-2. **Understand boundaries** -- Use `nudo-trace` to see exactly where a type narrows, widens, or transforms through a function.
-3. **Validate changes** -- Use `nudo-check` to verify that an edit does not introduce type errors before committing it.
-4. **Generate test cases** -- Use `nudo-suggest-case` to discover the interesting input scenarios a function should handle.
+1. **Query inferred types** -- Use `nudo-what-if` and `nudo-type-at` to get the precise inferred type of a binding or a source position, without writing or running any code.
+2. **Understand function behavior** -- Use `nudo-trace` to see how each case's argument types map to result types.
+3. **Validate changes** -- Use `nudo-check` to catch error-level diagnostics, such as failed `@nudo:returns` assertions, before committing an edit.
+4. **Check case coverage** -- Use `nudo-suggest-case` to see how many cases a function currently has, and add directives where coverage is thin.
 
 This is fundamentally different from running a linter or type checker after the fact. The agent can interrogate the type system interactively, forming and testing hypotheses about code behavior in a single conversation turn. The result is more accurate code changes with fewer back-and-forth cycles between the agent and the developer.

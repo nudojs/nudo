@@ -81,41 +81,140 @@ function len(s) {
 
 ## @nudo:mock — Mock 外部依赖
 
-在求值期间将外部依赖替换为类型值感知的 mock 实现。适用于 `fetch`、文件系统 API 或其他 Nudo 无法直接执行的代码。
+在求值期间将外部依赖替换为 mock 实现。适用于 `fetch`、文件系统 API 或其他 Nudo 无法直接执行的代码。
 
 ### 语法
 
-**内联表达式：**
+支持五种形式。**所有内联表达式必须写在单行内**——见下方警告。
+
+**1. 单行箭头函数。** body 是普通 JavaScript；参数接收类型值：
 
 ```text
-@nudo:mock name = expression
+@nudo:mock name = (arg) => body
 ```
 
-**从模块导入：**
+**2. Mock helper** — `stub()`、`spy()`、`mock()`，可链式调用 `.returns(...)`、`.resolves(...)`、`.rejects(...)`、`.withArgs(...)`、`.callsFake(...)`：
+
+```text
+@nudo:mock name = stub().returns(value)
+```
+
+**3. sinon 风格等价物** — `sinon.stub()` / `sinon.spy()`，支持相同链式调用：
+
+```text
+@nudo:mock name = sinon.stub().returns(value)
+```
+
+**4. 类型值表达式：**
+
+```text
+@nudo:mock name = T.number
+```
+
+**5. 从模块导入** — 模块中必须定义与 mock 同名的绑定：
 
 ```text
 @nudo:mock name from "path"
 ```
 
 - **name** — 要 mock 的标识符（如 `fetch`、`fs`）。
-- **expression** — 返回类型值或接受类型值的函数的 JavaScript 表达式。
 - **path** — 提供 mock 的模块路径。
+
+**警告：表达式必须单行。** 解析器只读取到行尾，多行表达式会在第一行被截断并报 `nudo:mock-invalid`。以下写法**不**可用：
+
+```text
+@nudo:mock fetch = (url) => T.promise(T.object({
+  ok: T.boolean,
+  json: T.fn({ params: [], returns: T.object({ ... }) })
+}))
+```
+
+截断行的真实诊断：
+
+```text
+[warning] example.js:0:0 Mock expression "(url) => T.promise(T.object({" could not be parsed as a known pattern (nudo:mock-invalid)
+[warning] example.js:10:9 Cannot resolve 'json' on unknown value (nudo:unknown-recv)
+```
+
+**警告：箭头函数 body 内不可用 `T.*`。** `T` 只存在于指令表达式中（case 参数、`= T.string` 等）。mock body 内只能写普通 JavaScript——普通对象和闭包——或改用 `stub().returns(...)` / `stub().resolves(...)` helper。
 
 ### 示例
 
+用箭头函数 mock `fetch`。body 是单行普通 JavaScript：
+
 ```javascript
 /**
- * @nudo:mock fetch = (url) => T.promise(T.object({
- *   ok: T.boolean,
- *   json: T.fn({ params: [], returns: T.object({ id: T.number, name: T.string }) })
- * }))
- * @nudo:case "user" (T.number)
+ * @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1, name: "Alice" }) })
+ * @nudo:case "user" (1)
  */
 async function fetchUser(id) {
   const res = await fetch(`/api/users/${id}`);
   return res.json();
 }
 ```
+
+**推断输出：**
+
+```
+=== fetchUser ===
+
+Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
+```
+
+用 mock helper 达到同样效果——`stub().resolves(value)` 让每次调用都返回 `Promise<value>`：
+
+```javascript
+/**
+ * @nudo:mock fetch = stub().resolves({ ok: true, json: () => ({ id: 1, name: "Alice" }) })
+ * @nudo:case "user" (1)
+ */
+async function fetchUser(id) {
+  const res = await fetch(`/api/users/${id}`);
+  return res.json();
+}
+```
+
+同样推断为 `Promise<{ id: 1, name: "Alice" }>`。同步 helper：
+
+```javascript
+/**
+ * @nudo:mock getPort = stub().returns(8080)
+ * @nudo:case "default" ()
+ */
+function readPort() {
+  return getPort();
+}
+```
+
+**推断输出：**
+
+```
+=== readPort ===
+
+Case "default": () => 8080
+```
+
+类型值表达式直接把名称绑定到类型值：
+
+```javascript
+/**
+ * @nudo:mock retries = T.number
+ * @nudo:case "plan" ()
+ */
+function plan() {
+  return retries + 1;
+}
+```
+
+**推断输出：**
+
+```
+=== plan ===
+
+Case "plan": () => number
+```
+
+从模块导入——模块中必须定义与 mock 同名的绑定：
 
 ```javascript
 /**
@@ -125,6 +224,19 @@ async function fetchUser(id) {
 function readConfig(path) {
   return fs.readFileSync(path, "utf-8");
 }
+```
+
+```javascript
+// mocks/fs.js
+const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
+```
+
+**推断输出：**
+
+```
+=== readConfig ===
+
+Case "read": (string) => "{ \"port\": 3000 }"
 ```
 
 ---
@@ -155,7 +267,7 @@ function add(a, b) {
 
 ## @nudo:skip — 跳过求值
 
-跳过抽象解释。引擎不求值函数体，而是使用已有的类型信息（如 TypeScript/JSDoc 注解或 `@nudo:returns`）。
+跳过抽象解释。引擎不求值函数体。没有返回类型表达式时，函数报告为 `Skipped (no return type declared)`；在指令后添加类型值表达式即可声明返回类型。
 
 ### 语法
 
@@ -164,7 +276,7 @@ function add(a, b) {
 @nudo:skip returnsExpr
 ```
 
-- **returnsExpr**（可选）— 当没有注解可用时，用于指定返回类型的类型值表达式。
+- **returnsExpr**（可选）— 用作返回类型的类型值表达式。
 
 ### 示例
 
@@ -178,14 +290,30 @@ function heavyComputation(data) {
 }
 ```
 
+**推断输出：**
+
+```
+=== heavyComputation ===
+
+Skipped (no return type declared)
+```
+
 ```javascript
 /**
  * @nudo:skip T.number
  */
 function unannotatedHeavy(x) {
-  // 没有 TypeScript 注解；显式指定返回类型
+  // 通过指令显式指定返回类型
   return expensiveOp(x);
 }
+```
+
+**推断输出：**
+
+```
+=== unannotatedHeavy ===
+
+Skipped (declared): number
 ```
 
 ---

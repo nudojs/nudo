@@ -14,8 +14,8 @@ Model Context Protocol 是一个开放标准，让 AI 助手能够通过统一�
 
 - 探索类型如何在函数中流动，而无需运行它
 - 在编码工作流中检查文件的类型错误
-- 建议和验证 `@nudo:` 指令
-- 追踪从输入到输出的完整类型转换路径
+- 查询函数的 `@nudo:` 用例覆盖情况
+- 追踪每个用例的输入如何映射到输出
 
 这将类型推断从人工驱动的过程转变为 AI 代理可以使用的推理工具。
 
@@ -70,58 +70,59 @@ claude mcp add nudo -- npx @nudojs/mcp
 
 ## 可用工具
 
-Nudo MCP 服务器暴露五个工具。每个工具接受 JSON 参数并返回结构化文本输出。
+Nudo MCP 服务器暴露五个工具。每个工具接受 JSON 参数并返回文本输出。
+
+下面的示例共用一个文件 `src/config.js`：
+
+```js
+const config = { retries: 3, label: "fast" };
+
+// @nudo:case "greeting" ("Ada")
+// @nudo:case "anonymous" ("")
+function greet(name) {
+  return "Hello, " + name;
+}
+```
 
 ### `nudo-what-if`
 
-为函数参数设置类型假设，观察推断的返回类型。这是 AI 驱动类型探索的主要工具——它让代理可以问"如果这些输入具有这些类型，结果会是什么？"而无需修改任何源代码。
+设置类型假设并在其他位置观察推断类型。这是 AI 驱动类型探索的主要工具——它让代理可以问"如果 X 具有 Y 类型，Z 会是什么？"而无需修改任何源代码。
 
 **参数**
 
 | 参数 | 类型 | 必需 | 描述 |
 |-----------|------|----------|-------------|
 | `file` | `string` | 是 | JavaScript 文件路径 |
-| `function` | `string` | 是 | 要分析的函数名 |
-| `assumptions` | `Record<string, string>` | 是 | 参数名到类型假设的映射 |
+| `bindings` | `Array<{ name: string, type: string }>` | 是 | 要应用的类型假设。`name` 是变量名；`type` 是类型表达式，如 `number` 或 `string \| null` |
+| `target` | `string` | 是 | 要获取类型的变量或表达式 |
 
 **示例场景**
 
-你正在审查一个工具函数，想知道当一个参数为 `null` 时会发生什么：
+代理准备在其他地方使用 `config` 对象，想先确认它的推断形状：
 
-```
-Tool: nudo-what-if
+```json
 {
-  "file": "src/utils.js",
-  "function": "formatUser",
-  "assumptions": {
-    "user": "null",
-    "fallback": "\"anonymous\""
-  }
+  "file": "src/config.js",
+  "bindings": [
+    { "name": "config", "type": "{ retries: number, label: string }" }
+  ],
+  "target": "config"
 }
 ```
 
 **输出**
 
 ```
-Assumptions:
-  user: null
-  fallback: "anonymous"
-
-Inferred return type: "anonymous"
-
-Type flow:
-  user → null
-  user.name → never (access on null)
-  user?.name ?? fallback → "anonymous"
+Type of "config": { retries: 3, label: "fast" }
 ```
 
-代理可以利用这个结果来推理空值安全、默认值和边界情况，而无需执行代码。
+响应始终为 `Type of "<target>": <type>` 的形式。如果 target 不是文件中的已知绑定，类型报告为 `unknown`。注意：当前实现返回的类型来自对文件本身的分析——`bindings` 假设不会覆盖它。
 
 ---
 
 ### `nudo-check`
 
-使用 Nudo 的推断引擎检查 JavaScript 文件的类型错误。返回类似于 CLI 产出的诊断列表，但采用适合程序化消费的结构化格式。
+使用 Nudo 的推断引擎检查 JavaScript 文件的类型错误。只返回 error 级别的诊断——目前来自失败的 `@nudo:` 断言，例如与推断返回类型不符的 `@nudo:returns` 声明。
 
 **参数**
 
@@ -133,32 +134,37 @@ Type flow:
 
 编辑文件后，让代理验证没有类型问题：
 
-```
-Tool: nudo-check
-{
-  "file": "src/parser.js"
-}
+```json
+{ "file": "src/config.js" }
 ```
 
 **输出**
 
 ```
-src/parser.js: no errors found.
+No type errors found
 ```
 
-或存在问题时：
+存在错误时，每条错误独占一行，格式为 `Line N: message`。给定下面这个 `@nudo:returns` 断言与推断结果矛盾的文件：
+
+```js
+// @nudo:case "double it" (5)
+// @nudo:returns (T.string)
+function double(x) {
+  return x * 2;
+}
+```
+
+响应为：
 
 ```
-src/parser.js:
-  12:5 - Cannot access property "length" on type number
-  24:10 - Type "hello" is not assignable to parameter of type number
+Line 3: @nudo:returns assertion failed for case "double it": expected string, got 10. Update the @nudo:returns directive to match the inferred type, or fix the function implementation
 ```
 
 ---
 
 ### `nudo-type-at`
 
-获取文件中特定位置的推断类型。当代理需要了解某个变量、表达式或返回值在特定行列的类型时非常有用。
+获取文件中特定位置的推断类型。当代理需要了解某个变量或表达式在特定行列的类型时非常有用。
 
 **参数**
 
@@ -166,122 +172,94 @@ src/parser.js:
 |-----------|------|----------|-------------|
 | `file` | `string` | 是 | JavaScript 文件路径 |
 | `line` | `number` | 是 | 行号（从 1 开始） |
-| `column` | `number` | 是 | 列号（从 1 开始） |
+| `column` | `number` | 是 | 列号（从 0 开始） |
 
 **示例场景**
 
-代理试图了解经过一系列操作后 `result` 持有什么类型：
+代理想获取 `src/config.js` 中 `config` 变量的类型。变量名从第 1 行第 6 列开始：
 
-```
-Tool: nudo-type-at
-{
-  "file": "src/transform.js",
-  "line": 18,
-  "column": 12
-}
+```json
+{ "file": "src/config.js", "line": 1, "column": 6 }
 ```
 
 **输出**
 
 ```
-Position: src/transform.js:18:12
-Expression: result
-Inferred type: string | number
+{ retries: 3, label: "fast" }
 ```
+
+响应为该位置的推断类型；该位置没有类型信息时为 `unknown`。
 
 ---
 
 ### `nudo-suggest-case`
 
-分析函数并建议能够覆盖其不同代码路径的 `@nudo:case` 指令。这有助于代理为类型推断生成有意义的测试输入。
+根据函数的参数类型建议 `@nudo:case` 指令。
 
 **参数**
 
 | 参数 | 类型 | 必需 | 描述 |
 |-----------|------|----------|-------------|
 | `file` | `string` | 是 | JavaScript 文件路径 |
-| `function` | `string` | 是 | 要分析的函数名 |
+| `functionName` | `string` | 是 | 函数名 |
 
 **示例场景**
 
-代理正在帮助编写文档或测试，需要知道函数处理哪些类型的输入：
+代理正在为 `src/config.js` 编写文档，想检查 `greet` 的 `@nudo:case` 覆盖情况：
 
-```
-Tool: nudo-suggest-case
-{
-  "file": "src/validators.js",
-  "function": "validateEmail"
-}
+```json
+{ "file": "src/config.js", "functionName": "greet" }
 ```
 
 **输出**
 
 ```
-Suggested cases for validateEmail:
-
-  @nudo:case "valid email" ("user@example.com")
-  @nudo:case "empty string" ("")
-  @nudo:case "missing @" ("userexample.com")
-  @nudo:case "null input" (null)
-  @nudo:case "undefined input" (undefined)
-
-Each case exercises a distinct code path through the function.
+Function "greet" already has 2 case(s)
 ```
 
-代理随后可以将这些指令添加到文件中并运行推断，以验证函数在所有路径上的行为。
+由于全程序推断会为没有指令的函数合成用例，已存在的函数通常报告其当前用例数。其他可能的响应：函数名不存在时为 `Function "<functionName>" not found`；完全没有用例的函数则返回一行 `Suggested: /** @nudo:case */`，后跟 `function <functionName>(...) { ... }`。
 
 ---
 
 ### `nudo-trace`
 
-追踪类型在函数中从输入到输出的转换过程。显示类型计算的每个中间步骤，使完整数据流可追踪。
+追踪类型在函数中从输入到输出的转换——每个用例一行，显示参数类型和结果类型。
 
 **参数**
 
 | 参数 | 类型 | 必需 | 描述 |
 |-----------|------|----------|-------------|
 | `file` | `string` | 是 | JavaScript 文件路径 |
-| `function` | `string` | 是 | 要追踪的函数名 |
+| `functionName` | `string` | 是 | 要追踪的函数 |
 
 **示例场景**
 
-代理需要理解一个复杂的转换管道：
+代理需要理解 `greet` 如何转换其输入：
 
-```
-Tool: nudo-trace
-{
-  "file": "src/transform.js",
-  "function": "processData"
-}
+```json
+{ "file": "src/config.js", "functionName": "greet" }
 ```
 
 **输出**
 
 ```
-Trace for processData:
-
-  input: { raw: string, count: number }
-  raw.split(",") -> string[]
-  .map(s => s.trim()) -> string[]
-  .filter(Boolean) -> string[]
-  .slice(0, count) -> string[]
-
-  Return type: string[]
+Input: ("Ada") => Output: "Hello, Ada"
+Input: ("") => Output: "Hello, "
 ```
 
-这为代理提供了类型在每个操作处如何变化的逐步视图，对于调试类型不匹配和理解不熟悉的代码非常有价值。
+每行的格式为 `Input: (<参数类型>) => Output: <结果类型>`。函数不存在时响应为 `Function "<functionName>" not found`；没有用例时响应为 `No cases found for "<functionName>"`。
 
 ---
 
 ## 为什么这对 AI 很重要
 
-传统的 AI 辅助编码依赖于需要类型注解的静态分析工具，或者通过执行代码来观察行为。Nudo 的 MCP 服务器提供了第三条路径：**通过抽象解释的假设分析**。
+传统的 AI 辅助编码依赖于需要类型注解的静态分析工具，或者通过执行代码来观察行为。Nudo 的 MCP 服务器提供了第三条路径：**按需获取由抽象解释推导的类型信息**。
 
 当 AI 代理遇到不熟悉的 JavaScript 代码时，它可以：
 
-1. **探索类型流** ——使用 `nudo-what-if` 测试不同的输入类型并观察它们如何传播，无需编写或运行任何代码。
-2. **理解边界**——使用 `nudo-trace` 查看类型在函数中确切的收窄、拓宽或转换位置。
-3. **验证变更**——使用 `nudo-check` 在提交前验证编辑是否引入了类型错误。
-4. **生成测试用例**——使用 `nudo-suggest-case` 发现函数应处理的有趣输入场景。
+1. **查询推断类型**——使用 `nudo-what-if` 和 `nudo-type-at` 获取绑定或源代码位置的精确推断类型，无需编写或运行任何代码。
+2. **理解函数行为**——使用 `nudo-trace` 查看每个用例的参数类型如何映射到结果类型。
+3. **验证变更**——使用 `nudo-check` 在提交前捕获 error 级诊断，例如失败的 `@nudo:returns` 断言。
+4. **检查用例覆盖**——使用 `nudo-suggest-case` 查看函数当前有多少用例，在覆盖不足处补充指令。
 
 这与事后运行 linter 或类型检查器有本质区别。代理可以交互式地查询类型系统，在单个对话轮次中形成和测试关于代码行为的假设。结果是更准确的代码变更，以及代理与开发者之间更少的来回交互。

@@ -41,6 +41,11 @@ The monorepo uses pnpm workspaces. Key packages:
 | `@nudojs/cli` | Evaluator, `nudo infer` / `nudo watch` |
 | `@nudojs/service` | High-level API: `analyzeFile`, `getTypeAtPosition`, `getCompletionsAtPosition` |
 | `@nudojs/lsp` | Language Server Protocol implementation |
+| `@nudojs/harvester` | Converts `@types/*.d.ts` declarations into Nudo env files (powers `nudo harvest`) |
+| `@nudojs/mcp` | MCP server exposing inference tools to AI agents |
+| `@nudojs/env-es` | Built-in ES standard global API type definitions (`/// @nudo:env es`) |
+| `@nudojs/env-node` | Built-in Node.js API type definitions (`/// @nudo:env node`) |
+| `@nudojs/env-web` | Built-in Web platform API type definitions (`/// @nudo:env web`) |
 | `vite-plugin-nudo` | Vite plugin for type inference during dev |
 | `nudo-vscode` | VS Code / Cursor extension |
 | `website` | Docusaurus documentation site |
@@ -132,6 +137,7 @@ pnpm exec nudo infer path/to/file.js
 - Add or update tests for new behavior.
 - Run `pnpm run build` and `pnpm run test` before submitting.
 - Update docs (e.g. `docs/concepts/directives.md`, API reference) when adding directives or public APIs.
+- **Docs drift rule**: when changing CLI commands/options, exported APIs, or directive syntax, update the documentation under `packages/website` in the same PR — both the English sources (`docs/`) and the Chinese mirrors (`i18n/zh-Hans/docusaurus-plugin-content-docs/current/`).
 
 ---
 
