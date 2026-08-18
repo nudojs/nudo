@@ -11,7 +11,7 @@ sidebar_position: 5
 | 命令 | 自定义请求别名 | 用途 |
 |---------|---------------------|---------|
 | `nudo.whatIf` | `nudo/whatIf` | 对绑定应用类型假设，读取目标的推断类型 |
-| `nudo.suggestCase` | `nudo/suggestCase` | 检查函数的 `@nudo:case` 覆盖情况 |
+| `nudo.suggestCase` | `nudo/suggestCase` | 检查函数的 `@nudo:case` 覆盖情况；用例全为合成时返回可直接粘贴的指令 |
 | `nudo.trace` | `nudo/trace` | 列出函数每个用例的参数类型 → 结果类型 |
 | `nudo.selectCase` | `nudo/selectCase` | 切换用于悬停/诊断的活动用例 |
 | `nudo.getActiveCases` | `nudo/getActiveCases` | 读取文件中每个函数的活动用例索引 |
@@ -70,7 +70,22 @@ Type of "y": number
 | `file` | `string` | JavaScript 文件的 `file://` URI 或路径 |
 | `functionName` | `string` | 函数名 |
 
-**返回：** `{ content: [{ type: "text", text }] }`，内容为以下三者之一：`Function "<functionName>" not found`、`Function "<functionName>" already has N case(s)`，或一行 `Suggested: /** @nudo:case */` 后跟 `function <functionName>(...) { ... }`。由于全程序推断会从调用点合成用例，已存在的函数通常报告其当前用例数。
+**返回：** `{ content: [{ type: "text", text }] }`，内容为以下四种之一：
+
+- `Function "<functionName>" not found` —— 文件中没有该函数。
+- 一行 `Suggested: /** @nudo:case */` 后跟 `function <functionName>(...) { ... }` —— 函数完全没有用例（只有被推断跳过的函数才会零用例）。
+- `Function "<functionName>" already has N case(s)` —— 函数已有手写（或 entry-only）的 `@nudo:case` 用例，保持不动。
+- 全部用例都由调用点合成 —— 返回可直接粘贴到函数声明上方的指令文本，例如：
+
+```text
+Function "add" has 2 synthesized case(s); suggested directives:
+/**
+ * @nudo:case "call@L2" (1, 2)
+ * @nudo:case "call@L3" ("x", "y")
+*/
+```
+
+实参无法序列化为指令的用例（函数、Promise、实例等）会被丢弃，并在末尾追加一行 `(M case(s) skipped: not serializable as directives)`；若全部用例都不可序列化，则改回 `Function "<functionName>" already has N case(s) (none serializable as directives)`。
 
 ## nudo.trace
 

@@ -33,3 +33,13 @@ export {
 
 export { typeValueToZodSchema } from "./schema-generator.ts";
 export { generateGuardFunction } from "./guard-generator.ts";
+
+export {
+  serializeCaseArg,
+  buildCaseDirective,
+  stripGeneratedCaseDirectives,
+  insertGeneratedCaseDirectives,
+  unifiedDiff,
+  type EmitSkipReason,
+  type EmitResult,
+} from "./case-emitter.ts";

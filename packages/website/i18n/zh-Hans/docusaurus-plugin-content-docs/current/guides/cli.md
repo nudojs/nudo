@@ -30,6 +30,9 @@ nudo infer <file>
 | `--loc` | 在输出中显示源码位置（file:line:column） |
 | `--json` | 以结构化 JSON 输出结果（示例见 [CLI 参考](/docs/api/cli-reference#nudo-infer)） |
 | `--callsites <paths...>` | 从使用处文件（测试、示例、应用）挖掘真实参数形状并合成用例——参见[调用点发现](/docs/guides/callsite-discovery) |
+| `--emit-cases [mode]` | 把合成的用例写回源文件，成为 `@nudo:case` 指令——参见[固化 case 指令](#固化-case-指令) |
+| `--dry-run` | 搭配 `--emit-cases`：打印 unified diff 而不写盘 |
+| `--exit-on-diff` | 搭配 `--dry-run`：diff 非空时以退出码 `1` 结束 |
 
 ### 示例
 
@@ -140,6 +143,173 @@ Combined: 5 | "23"
 ```
 
 要从独立的使用处文件（测试、示例、应用）挖掘参数形状，请用 `--callsites` 传入——参见[调用点发现](/docs/guides/callsite-discovery)。
+
+### 固化 case 指令
+
+合成的 `call@L` 用例只存在于当次分析运行中——不带 `--callsites` 再跑一次 `nudo infer lib.js`，它们就没了。`--emit-cases` 把它们固化进源文件，成为真正的 `@nudo:case` 指令，文件因此自包含：后续运行（以及其他工具——`check`、`watch`、`.d.ts` 生成）无需重新求值使用处文件即可看到同样的形状，且采集到的形状像手写指令一样可评审、可进版本库。
+
+#### 引导：采集一次，写回
+
+给定一个库和一个调用它的测试：
+
+```js
+// lib.js
+function add(a, b) { return a + b; }
+function greet(name) { return "hi " + name; }
+console.log(add(1, 2));
+add("x", "y");
+module.exports = { add, greet };
+```
+
+```js
+// test.js
+const { greet } = require("./lib.js");
+greet("ada");
+greet("bob");
+```
+
+以测试作为使用处运行推断，并把合成的用例写回：
+
+```bash
+nudo infer lib.js --callsites test.js --emit-cases
+```
+
+```
+=== add ===
+
+Case "call@L3": (1, 2) => 3
+Case "call@L4": ("x", "y") => "xy"
+
+Combined: 3 | "xy"
+
+=== greet ===
+
+Case "call@L2": ("ada") => "hi ada"
+Case "call@L3": ("bob") => "hi bob"
+
+Combined: "hi ada" | "hi bob"
+
+Emitted cases → lib.js (4 directive(s) across 2 function(s))
+  add: call@L3, call@L4
+  greet: call@L2, call@L3
+
+```
+
+`lib.js` 从此携带这些指令（插入在每个函数声明上方的 JSDoc 块中）：
+
+```js
+/**
+ * @nudo:case "call@L3" (1, 2)
+ * @nudo:case "call@L4" ("x", "y")
+ */
+function add(a, b) { return a + b; }
+/**
+ * @nudo:case "call@L2" ("ada")
+ * @nudo:case "call@L3" ("bob")
+ */
+function greet(name) { return "hi " + name; }
+console.log(add(1, 2));
+add("x", "y");
+module.exports = { add, greet };
+```
+
+再跑一遍同一命令是幂等的——末尾摘要变为：
+
+```
+No changes.
+  add: already-generated
+  greet: already-generated
+```
+
+#### 漂移检测：`update` 模式
+
+使用处会演进，由它们固化的指令也会过期。`=update` 全量重新同步已生成的指令：先从源码剥离所有 `call@` 指令，在剥离后的源码上重新分析，再回写刷新后的指令集——使用处的增加、修改*和删除*都会体现出来。假设测试漂移成了另一个调用：
+
+```js
+// test.js —— 使用处漂移
+const { greet } = require("./lib.js");
+greet(42);
+```
+
+把 `update` 与 `--dry-run`、`--exit-on-diff` 组合，即可用作 CI 门禁：
+
+```bash
+nudo infer lib.js --callsites test.js --emit-cases=update --dry-run --exit-on-diff
+```
+
+```
+=== add ===
+
+Case "call@L3": (1, 2) => 3
+Case "call@L4": ("x", "y") => "xy"
+
+Combined: 3 | "xy"
+
+=== greet ===
+
+Case "call@L2": (42) => "hi 42"
+
+Would emit cases → lib.js (dry run)
+  add: call@L3, call@L4
+  greet: call@L2
+
+--- a/lib.js
++++ b/lib.js
+@@ -4,8 +4,7 @@
+  */
+ function add(a, b) { return a + b; }
+ /**
+- * @nudo:case "call@L2" ("ada")
+- * @nudo:case "call@L3" ("bob")
++ * @nudo:case "call@L2" (42)
+  */
+ function greet(name) { return "hi " + name; }
+ console.log(add(1, 2));
+
+```
+
+diff 非空，命令以退出码 `1` 结束。去掉 `--dry-run`（和 `--exit-on-diff`）即可写盘：
+
+```bash
+nudo infer lib.js --callsites test.js --emit-cases=update
+```
+
+```
+=== add ===
+
+Case "call@L3": (1, 2) => 3
+Case "call@L4": ("x", "y") => "xy"
+
+Combined: 3 | "xy"
+
+=== greet ===
+
+Case "call@L2": (42) => "hi 42"
+
+Emitted cases → lib.js (3 directive(s) across 2 function(s))
+  add: call@L3, call@L4
+  greet: call@L2
+
+```
+
+`update` 同样幂等——再跑一遍输出 `No changes.`
+
+#### 固化会动哪些内容
+
+固化绝不触碰手写内容；它只管理自己的 `call@` 指令：
+
+| 函数已有用例状态 | `--emit-cases`（add） | `--emit-cases=update` |
+|------------------|------------------------|------------------------|
+| 手写 `@nudo:case`（名字不以 `call@` 开头） | 一律不动 | 一律不动 |
+| 已有生成指令（`call@` 前缀） | 不动——报告 `already-generated` | 全量重新同步：按当前调用证据增/改/删（只剩空 JSDoc 块时整块删除） |
+| 零指令，但有调用证据 | 写入指令 | 写入指令 |
+| 完全没有调用点（entry-only） | 不写入——报告 `entry-only` | 不写入——报告 `entry-only` |
+
+- `call@` 是生成指令的保留名前缀——手写但以 `call@` 命名的 case 会被当作生成物。
+- 实参形状无法表达为指令文本的用例（函数、Promise、类实例、`bigint`、`symbol` 值）会被跳过并报告 `no-serializable-cases`；函数其余可序列化的用例仍会写入。
+- `--emit-cases` 不能与 `--json` 组合；`--exit-on-diff` 必须搭配 `--dry-run`——两种违规都打印错误并以退出码 `1` 结束。
+
+同一策略从采集侧的表述见[调用点发现 — 持久化采集结果](/docs/guides/callsite-discovery#持久化采集结果)；编程接口见 [service API —— 用例固化](/docs/api/service#用例固化)。
 
 ---
 

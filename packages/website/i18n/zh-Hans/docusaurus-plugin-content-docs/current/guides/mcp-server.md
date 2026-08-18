@@ -119,6 +119,18 @@ Type of "trimmed": string
 { "command": "nudo.suggestCase", "arguments": [{ "file": "src/app.js", "functionName": "normalize" }] }
 ```
 
+当函数的用例全部由调用点合成时，返回可直接粘贴到函数声明上方的指令文本——例如以 `(1, 2)` 和 `("x", "y")` 调用过的 `add(a, b)`：
+
+```text
+Function "add" has 2 synthesized case(s); suggested directives:
+/**
+ * @nudo:case "call@L2" (1, 2)
+ * @nudo:case "call@L3" ("x", "y")
+*/
+```
+
+已有手写用例的函数则返回 `Function "<name>" already has N case(s)`；其余返回情形见 [Agent API](../api/agent.md#nudosuggestcase) 页面。
+
 **`nudo.selectCase`** —— 把函数固定到一个用例（悬停与诊断随之切换，直到再次切换）：
 
 ```json

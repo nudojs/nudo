@@ -11,7 +11,7 @@ Reference for the agent-facing surface of `@nudojs/lsp`. All five agent commands
 | Command | Custom request alias | Purpose |
 |---------|---------------------|---------|
 | `nudo.whatIf` | `nudo/whatIf` | Apply type assumptions to bindings and read the inferred type of a target |
-| `nudo.suggestCase` | `nudo/suggestCase` | Check `@nudo:case` coverage for a function |
+| `nudo.suggestCase` | `nudo/suggestCase` | Check `@nudo:case` coverage; when every case is synthesized, return paste-ready directives |
 | `nudo.trace` | `nudo/trace` | List each case's argument types → result type for a function |
 | `nudo.selectCase` | `nudo/selectCase` | Switch the active case used for hover/diagnostics |
 | `nudo.getActiveCases` | `nudo/getActiveCases` | Read the active case index of every function in a file |
@@ -70,7 +70,22 @@ Suggest `@nudo:case` directives for a function based on its parameter types.
 | `file` | `string` | `file://` URI or path to the JavaScript file |
 | `functionName` | `string` | Name of the function |
 
-**Returns:** `{ content: [{ type: "text", text }] }` with one of: `Function "<functionName>" not found`, `Function "<functionName>" already has N case(s)`, or `Suggested: /** @nudo:case */` followed by `function <functionName>(...) { ... }`. Because whole-program inference synthesizes cases from call sites, existing functions typically report their current case count.
+**Returns:** `{ content: [{ type: "text", text }] }` with one of four outcomes:
+
+- `Function "<functionName>" not found` — the file has no such function.
+- `Suggested: /** @nudo:case */` followed by `function <functionName>(...) { ... }` — the function has no cases at all (only functions skipped by inference end up with zero cases).
+- `Function "<functionName>" already has N case(s)` — the function has handwritten (or entry-only) `@nudo:case` cases; they are left untouched.
+- Every case was synthesized from call sites — the reply is directive text that can be pasted into the source directly above the function, e.g.:
+
+```text
+Function "add" has 2 synthesized case(s); suggested directives:
+/**
+ * @nudo:case "call@L2" (1, 2)
+ * @nudo:case "call@L3" ("x", "y")
+*/
+```
+
+Cases whose arguments cannot be serialized as directives (functions, Promises, instances, …) are dropped and reported in a trailing `(M case(s) skipped: not serializable as directives)` line; if none of the cases is serializable, the reply falls back to `Function "<functionName>" already has N case(s) (none serializable as directives)`.
 
 ## nudo.trace
 

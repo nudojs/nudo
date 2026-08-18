@@ -38,6 +38,9 @@ nudo infer <file> [options]
 | `--loc` | 在输出中显示源码位置（`file:line:column`） |
 | `--json` | 以结构化 JSON 输出结果 |
 | `--callsites <paths...>` | 使用处文件或目录（测试/应用），从中挖掘真实调用形状；它们对本文件导出的调用会合成为 `call@L` 用例——参见[调用点发现](/docs/guides/callsite-discovery) |
+| `--emit-cases [mode]` | 把合成的调用点用例写回被分析文件，成为 `@nudo:case` 指令（保留名前缀 `call@`）。省略值即 `add`（只补尚无用例指令的函数）；传 `=update` 则全量重新同步已生成的指令——参见[固化 case 指令](/docs/guides/cli#固化-case-指令) |
+| `--dry-run` | 搭配 `--emit-cases`：打印 unified diff 而不写盘 |
+| `--exit-on-diff` | 搭配 `--dry-run`：diff 非空时以退出码 `1` 结束——可作使用处漂移的 CI 门禁 |
 
 **输出格式：**
 
@@ -48,6 +51,7 @@ nudo infer <file> [options]
 - 多个用例时：组合类型显示为 `Combined: type`——字面量成员会保留（如 `2 | -9 | number`）
 - 有诊断时，末尾输出 `Diagnostics:` 区块，条目格式为 `[severity] 路径:行:列 消息 (错误码)`
 - 使用 `--dts`：在同一目录写入 `<basename>.d.ts` 并打印 `Generated: <basename>.d.ts`
+- 使用 `--emit-cases`：末尾输出固化摘要——写盘后为 `Emitted cases → <file> (N directive(s) across M function(s))`；搭配 `--dry-run` 为 `Would emit cases → <file> (dry run)` 并附 unified diff；源码已同步时为 `No changes.`。摘要后跟逐函数行：写入的函数为 `fn: 用例名列表`，跳过的为 `fn: 原因`（如 `already-generated`）
 
 **示例：**
 
@@ -318,5 +322,6 @@ Usage — add this directive at the top of your JS file:
 | `0` | 成功 |
 | `1` | 致命错误——文件缺失、解析失败，或给 `infer` 传了目录（`EISDIR`） |
 | `1` | `nudo check` 发现至少一条 error 级诊断（仅有 warning 时退出码为 `0`） |
+| `1` | `--emit-cases` 用法错误——与 `--json` 组合、mode 值非法、或 `--exit-on-diff` 未搭配 `--dry-run`；以及 `--exit-on-diff` 在 `--dry-run` diff 非空时触发 |
 
 注意：`infer` 打印的诊断——包括 `[error]` 级的 `@nudo:returns` 断言失败——**不会**改变 `infer` 的退出码，`infer` 仍以 `0` 退出。要在 CI 中按诊断做门禁，请使用 `nudo check`。

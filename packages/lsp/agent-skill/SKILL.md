@@ -35,7 +35,7 @@ All commands are available as `workspace/executeCommand` (dot form) and as custo
 |---|---|---|
 | `nudo.whatIf` (`nudo/whatIf`) | `{ "file": "src/app.js", "bindings": [{ "name": "x", "type": "string" }], "target": "y" }` | Text: the inferred type of `target` **under the assumed bindings** — e.g. `Type of "y": string \| number` |
 | `nudo.trace` (`nudo/trace`) | `{ "file": "src/app.js", "functionName": "parse" }` | Text: one line per case, e.g. `Input: (T.string) => Output: number` |
-| `nudo.suggestCase` (`nudo/suggestCase`) | `{ "file": "src/app.js", "functionName": "parse" }` | Text: current case count, e.g. `Function "parse" already has 3 case(s)`, or a suggested `@nudo:case` directive |
+| `nudo.suggestCase` (`nudo/suggestCase`) | `{ "file": "src/app.js", "functionName": "parse" }` | Text: paste-ready `@nudo:case` directives when every case is call-site synthesized, e.g. `Function "parse" has 2 synthesized case(s); suggested directives:`; otherwise the current case count, e.g. `Function "parse" already has 3 case(s)`, or a suggested `@nudo:case` directive |
 | `nudo.selectCase` (`nudo/selectCase`) | `{ "file": "src/app.js", "functionName": "parse", "caseIndex": 1 }` | `{ "success": true }` — switches the active case (affects hover/diagnostics until changed back) |
 | `nudo.getActiveCases` (`nudo/getActiveCases`) | `{ "file": "src/app.js" }` | `{ "parse": 1, "greet": 0 }` — active case index per function |
 
@@ -80,4 +80,4 @@ Assume `x` is a string, ask what `y` is:
 
 - **Unopened files use disk state.** If the file is not open in a connected editor, analysis runs on the on-disk content; edits the user has not saved are invisible.
 - Commands that report types reflect Nudo's inference, which follows runtime semantics (e.g. `Number("")` is `0`, not an error) — trust them over guesswork, but remember they describe the current code, not the user's intent.
-- Whole-program inference means every function with inferable call sites already has cases; `suggestCase` reporting `already has N case(s)` is normal, not an error.
+- Whole-program inference means every function with inferable call sites already has cases. When all of them are call-site synthesized, `suggestCase` returns ready-to-paste `@nudo:case` directive text (paste it above the function); `already has N case(s)` (handwritten or entry-only cases) is the normal report for the rest, not an error.

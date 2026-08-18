@@ -220,6 +220,98 @@ generateGuardFunction("isUser", T.object({ name: T.string }))
 
 ---
 
+## 用例固化
+
+用例固化（case emission）这组函数把合成的 `call@L` 用例写回源码文本。CLI 的 `--emit-cases` 只是对它们的薄封装——工作流与合并策略见 [CLI 使用指南 —— 固化 case 指令](/docs/guides/cli#固化-case-指令)。
+
+### serializeCaseArg
+
+```typescript
+serializeCaseArg(tv: TypeValue): string | null
+```
+
+把单个 TypeValue 序列化为指令文法（`parseTypeValueExpr`）能原样读回的表达式文本。指令表达不了的形状返回 `null`：函数、promise、实例与 refined 值，`bigint`/`symbol` 原始类型，以及含结构字符或控制字符的字符串/对象键。
+
+**示例：**
+```typescript
+serializeCaseArg(T.number)           // → "T.number"
+serializeCaseArg(T.array(T.string))  // → "T.array(T.string)"
+```
+
+### buildCaseDirective
+
+```typescript
+buildCaseDirective(name: string, args: TypeValue[]): string | null
+```
+
+组装单行指令 ` * @nudo:case "name" (a, b)`（带前导 ` *`，无尾换行），可直接拼进 JSDoc 块。任一实参序列化失败、或名字含双引号/换行时整体返回 `null`。
+
+**示例：**
+```typescript
+buildCaseDirective("call@L2", [T.string])
+// → ' * @nudo:case "call@L2" (T.string)'
+```
+
+### stripGeneratedCaseDirectives
+
+```typescript
+stripGeneratedCaseDirectives(source: string): { source: string; removed: string[] }
+```
+
+从源码删除所有生成的 `@nudo:case` 指令行（名字以保留前缀 `call@` 开头）；若所属 JSDoc 块因此再无其他指令或文字，则连同块首 `/**` 与块尾 `*/` 行整块删除。绝不触碰非 case 指令与普通注释。`removed` 按出现顺序返回被删的用例名。这是 `update` 模式的前半步——注意手写但以 `call@…` 命名的用例同样会被删除，因为该前缀是保留的。
+
+### insertGeneratedCaseDirectives
+
+```typescript
+insertGeneratedCaseDirectives(source: string, analysis: AnalysisResult): EmitResult
+```
+
+把分析结果中的合成用例（`source === "callsite"`）固化进 `source`：指令插入在每个函数声明行的正上方——已有 JSDoc 块则插到 `/**` 行后，无块则新建。含手写用例或已有 `call@` 指令的函数会被跳过（见 [`EmitResult`](#emitresult)），entry-only 函数同样跳过；序列化失败的用例按函数逐条报告。返回改写后的源码及写入/跳过报告。
+
+### unifiedDiff
+
+```typescript
+unifiedDiff(a: string, b: string, path: string): string
+```
+
+行级 unified diff（`--- a/path` 头、`@@` hunk、3 行上下文），零第三方依赖；文本相同时返回 `""`。`--dry-run` 用它预览固化结果。
+
+### EmitResult
+
+```typescript
+type EmitSkipReason =
+  | "hand-written"            // 函数含非 call@ 命名的用例指令
+  | "already-generated"       // 函数已有 call@ 指令（add 模式不碰）
+  | "entry-only"              // 未找到调用点——没有可固化的内容
+  | "no-serializable-cases"   // 没有任何用例能表达为指令文本
+  | "no-declaration"          // CJS 绑定/赋值函数，无稳定声明
+  | "skipped";                // 函数本身被分析器跳过
+
+type EmitResult = {
+  source: string;             // 改写后的源码（无变化时与输入相同）
+  changed: boolean;           // 是否写入了任何函数
+  written: Array<{ fn: string; cases: string[] }>;
+  skipped: Array<{ fn: string; reason: EmitSkipReason; detail?: string }>;
+};
+```
+
+最小化的 `add` / `update` 流程：
+
+```typescript
+import { analyzeFileAsync, insertGeneratedCaseDirectives, stripGeneratedCaseDirectives } from "@nudojs/service";
+
+// add：把合成用例按原样插入源码
+const result = await analyzeFileAsync(filePath, source, undefined, records);
+const emitted = insertGeneratedCaseDirectives(source, result);
+
+// update：先剥离旧的生成指令，重新分析，再插入
+const stripped = stripGeneratedCaseDirectives(source);
+const reanalyzed = await analyzeFileAsync(filePath, stripped.source, undefined, records);
+const synced = insertGeneratedCaseDirectives(stripped.source, reanalyzed);
+```
+
+---
+
 ## 结果类型
 
 ### AnalysisResult

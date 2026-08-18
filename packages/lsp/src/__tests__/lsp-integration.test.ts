@@ -566,4 +566,34 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
       expect(res.content[0].text).toMatch(/^Error: /);
     });
   });
+
+  it("suggestCase emits pasteable directives for synthesized cases; hand-written and zero-case stay as-is", () => {
+    // 同文件内调用产生合成 case：add 两条 call@L* 记录 → 直接可粘贴的指令文本
+    const synthSrc = [
+      "function add(a, b) { return a + b; }",
+      "const r1 = add(1, 2);",
+      "const r2 = add(\"x\", \"y\");",
+      "// @nudo:case \"manual\" (5)",
+      "function inc(n) { return n + 1; }",
+      "// @nudo:skip",
+      "function bare(a) { return a; }",
+    ].join("\n");
+    const deps = srcDeps(synthSrc);
+
+    const synthesized = suggestCase({ file: "/test/synth.js", functionName: "add" }, deps);
+    const text = synthesized.content[0].text;
+    expect(text).toContain('Function "add" has 2 synthesized case(s); suggested directives:');
+    expect(text).toContain("/**");
+    expect(text).toContain(' * @nudo:case "call@L2" (1, 2)');
+    expect(text).toContain(' * @nudo:case "call@L3" ("x", "y")');
+    expect(text).toContain("*/");
+
+    // 手写 case：source 未标记（非 callsite），报 already has N case(s) 原样
+    const handWritten = suggestCase({ file: "/test/synth.js", functionName: "inc" }, deps);
+    expect(handWritten.content[0].text).toBe('Function "inc" already has 1 case(s)');
+
+    // 零 case（skip）：占位符不变
+    const zero = suggestCase({ file: "/test/synth.js", functionName: "bare" }, deps);
+    expect(zero.content[0].text).toContain("Suggested: /** @nudo:case */");
+  });
 });

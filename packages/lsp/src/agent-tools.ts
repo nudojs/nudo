@@ -14,7 +14,7 @@
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { analyzeFile } from "@nudojs/service";
+import { analyzeFile, buildCaseDirective } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
 import { T, typeValueToString } from "@nudojs/core";
 import type { TypeValue } from "@nudojs/core";
@@ -265,6 +265,29 @@ export function suggestCase(params: FunctionToolParams, deps: AgentToolDeps = {}
     }
 
     if (fn.cases.length > 0) {
+      // 手写指令 case 的 source 未标记，合成 case 才带 "callsite"；
+      // 全部为合成 case 时可产出直接粘贴回源码的指令文本
+      if (fn.cases.every((c) => c.source === "callsite")) {
+        const directives = fn.cases
+          .map((c) => buildCaseDirective(c.name, c.args))
+          .filter((d): d is string => d !== null);
+        if (directives.length > 0) {
+          const skipped = fn.cases.length - directives.length;
+          const lines = [
+            `Function "${params.functionName}" has ${fn.cases.length} synthesized case(s); suggested directives:`,
+            "/**",
+            ...directives,
+            "*/",
+          ];
+          if (skipped > 0) {
+            lines.push(`(${skipped} case(s) skipped: not serializable as directives)`);
+          }
+          return textResult(lines.join("\n"));
+        }
+        return textResult(
+          `Function "${params.functionName}" already has ${fn.cases.length} case(s) (none serializable as directives)`,
+        );
+      }
       return textResult(`Function "${params.functionName}" already has ${fn.cases.length} case(s)`);
     }
 

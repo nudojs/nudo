@@ -119,6 +119,18 @@ Type of "trimmed": string
 { "command": "nudo.suggestCase", "arguments": [{ "file": "src/app.js", "functionName": "normalize" }] }
 ```
 
+When every case of the function was synthesized from call sites, the reply is directive text that can be pasted straight into the source above the function — e.g. for `add(a, b)` called with `(1, 2)` and `("x", "y")`:
+
+```text
+Function "add" has 2 synthesized case(s); suggested directives:
+/**
+ * @nudo:case "call@L2" (1, 2)
+ * @nudo:case "call@L3" ("x", "y")
+*/
+```
+
+Functions with handwritten cases instead get `Function "<name>" already has N case(s)`; the remaining outcomes are listed on the [Agent API](../api/agent.md#nudosuggestcase) page.
+
 **`nudo.selectCase`** — pin a function to one case (drives hover and diagnostics until switched back):
 
 ```json

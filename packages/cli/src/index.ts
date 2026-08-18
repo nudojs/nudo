@@ -20,8 +20,12 @@ import {
   computeDirtySet,
   topoSortDirty,
   collectCallRecords,
+  stripGeneratedCaseDirectives,
+  insertGeneratedCaseDirectives,
+  unifiedDiff,
   type CallRecord,
   type FunctionAnalysis,
+  type EmitResult,
 } from "@nudojs/service";
 import { harvestDts, emitEnvModule } from "@nudojs/harvester";
 import { resolveNpmNudo } from "./resolve-npm.ts";
@@ -161,10 +165,29 @@ function typeValueToTSType(tv: TypeValue): string {
   }
 }
 
-async function runInfer(file: string, options: { dts?: boolean; showLoc?: boolean; callsites?: CallRecord[] } = {}): Promise<void> {
+/** `--emit-cases` 的编排选项：mode 决定 add/update 两条固化路径 */
+type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOnDiff: boolean };
+
+async function runInfer(
+  file: string,
+  options: { dts?: boolean; showLoc?: boolean; callsites?: CallRecord[]; emit?: EmitCasesOptions } = {},
+): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
-  const result = await analyzeFileAsync(filePath, source, undefined, options.callsites);
+  let result = await analyzeFileAsync(filePath, source, undefined, options.callsites);
+
+  // 调用点固化：add 直接把已算好的合成 case 插回源码；update 先剥离旧生成指令，
+  // 在剥离后的源码上重算分析再插入，后续打印/摘要都基于重算结果（反映刚固化的形状）
+  let emitOut: EmitResult | undefined;
+  if (options.emit) {
+    if (options.emit.mode === "update") {
+      const stripped = stripGeneratedCaseDirectives(source);
+      result = await analyzeFileAsync(filePath, stripped.source, undefined, options.callsites);
+      emitOut = insertGeneratedCaseDirectives(stripped.source, result);
+    } else {
+      emitOut = insertGeneratedCaseDirectives(source, result);
+    }
+  }
 
   if (result.functions.length === 0 && !(result.externalFunctions?.length)) {
     console.log("No functions with @nudo:case directives found.");
@@ -271,6 +294,37 @@ async function runInfer(file: string, options: { dts?: boolean; showLoc?: boolea
     }
     console.log();
   }
+
+  // 调用点固化收尾：摘要 / diff / 写盘。是否"有变化"以最终源码与原源码比对为准
+  // （update 会先剥离再插回，剥离后重写的相同指令不构成变化）
+  if (options.emit && emitOut) {
+    const relPath = relative(process.cwd(), filePath) || filePath;
+    const skippedLines = emitOut.skipped.map((s) => `  ${s.fn}: ${s.reason}${s.detail ? ` (${s.detail})` : ""}`);
+
+    if (emitOut.source === source) {
+      console.log("No changes.");
+      for (const line of skippedLines) console.log(line);
+      return;
+    }
+
+    if (options.emit.dryRun) {
+      console.log(`Would emit cases → ${relPath} (dry run)`);
+      for (const w of emitOut.written) console.log(`  ${w.fn}: ${w.cases.join(", ")}`);
+      for (const line of skippedLines) console.log(line);
+      console.log();
+      process.stdout.write(unifiedDiff(source, emitOut.source, relPath));
+      if (options.emit.exitOnDiff) process.exitCode = 1;
+      return;
+    }
+
+    writeFileSync(filePath, emitOut.source, "utf-8");
+    const directiveCount = emitOut.written.reduce((n, w) => n + w.cases.length, 0);
+    console.log(
+      `Emitted cases → ${relPath} (${directiveCount} directive(s) across ${emitOut.written.length} function(s))`,
+    );
+    for (const w of emitOut.written) console.log(`  ${w.fn}: ${w.cases.join(", ")}`);
+    for (const line of skippedLines) console.log(line);
+  }
 }
 
 async function runInferJson(file: string, externalRecords?: CallRecord[]): Promise<void> {
@@ -325,7 +379,45 @@ program
   .option("--loc", "Show source locations in output")
   .option("--json", "Output as JSON")
   .option("--callsites <paths...>", "Usage-site files (tests/apps) to harvest real call shapes from; their calls to this file's exports become synthesized cases")
-  .action(async (file: string, opts: { dts?: boolean; loc?: boolean; json?: boolean; callsites?: string[] }) => {
+  .option("--emit-cases [mode]", "Write synthesized call-site cases back into the source as @nudo:case directives (call@ prefix); mode: update (default: add)")
+  .option("--dry-run", "With --emit-cases: print a unified diff instead of writing to disk")
+  .option("--exit-on-diff", "With --dry-run: exit with code 1 when the diff is non-empty")
+  .action(
+    async (
+      file: string,
+      opts: {
+        dts?: boolean;
+        loc?: boolean;
+        json?: boolean;
+        callsites?: string[];
+        emitCases?: boolean | string;
+        dryRun?: boolean;
+        exitOnDiff?: boolean;
+      },
+    ) => {
+      // --emit-cases 只允许省略（=add）或 =update 两种形态
+      let emit: EmitCasesOptions | undefined;
+      if (opts.emitCases !== undefined) {
+        let mode: "add" | "update";
+        if (opts.emitCases === true) mode = "add";
+        else if (opts.emitCases === "update") mode = "update";
+        else {
+          console.error(`Invalid --emit-cases value: ${opts.emitCases} (expected: =update, or omit the value for add)`);
+          process.exitCode = 1;
+          return;
+        }
+        if (opts.json) {
+          console.error("--emit-cases cannot be combined with --json");
+          process.exitCode = 1;
+          return;
+        }
+        emit = { mode, dryRun: opts.dryRun === true, exitOnDiff: opts.exitOnDiff === true };
+      }
+      if (opts.exitOnDiff && !opts.dryRun) {
+        console.error("--exit-on-diff requires --dry-run");
+        process.exitCode = 1;
+        return;
+      }
     let externalRecords: CallRecord[] | undefined;
     if (opts.callsites?.length) {
       externalRecords = [];
@@ -348,7 +440,7 @@ program
     if (opts.json) {
       await runInferJson(file, externalRecords);
     } else {
-      await runInfer(file, { dts: opts.dts, showLoc: opts.loc, callsites: externalRecords });
+      await runInfer(file, { dts: opts.dts, showLoc: opts.loc, callsites: externalRecords, emit });
     }
   });
 

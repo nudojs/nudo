@@ -30,6 +30,9 @@ nudo infer <file>
 | `--loc` | Show source locations (file:line:column) in the output |
 | `--json` | Output results as structured JSON (see the [JSON example](/docs/api/cli-reference#nudo-infer)) |
 | `--callsites <paths...>` | Mine usage sites (tests, examples, apps) for real argument shapes and synthesize cases from them — see [Call-Site Discovery](/docs/guides/callsite-discovery) |
+| `--emit-cases [mode]` | Write the synthesized cases back into the source file as `@nudo:case` directives — see [Persisting cases as directives](#persisting-cases-as-directives) |
+| `--dry-run` | With `--emit-cases`: print a unified diff instead of writing to disk |
+| `--exit-on-diff` | With `--dry-run`: exit with code `1` when the diff is non-empty |
 
 ### Examples
 
@@ -140,6 +143,173 @@ Combined: 5 | "23"
 ```
 
 To harvest argument shapes from separate usage-site files (tests, examples, apps), pass them with `--callsites` — see [Call-Site Discovery](/docs/guides/callsite-discovery).
+
+### Persisting cases as directives
+
+Synthesized `call@L` cases live only inside the analysis run — run `nudo infer lib.js` again without `--callsites` and they are gone. `--emit-cases` freezes them into the source file as real `@nudo:case` directives, which makes the file self-contained: later runs (and other tools — `check`, `watch`, `.d.ts` generation) see the same shapes without re-evaluating the usage sites, and the harvested shapes become reviewable, version-controlled input just like hand-written directives.
+
+#### Bootstrap: harvest once, write back
+
+Given a library and a test that exercises it:
+
+```js
+// lib.js
+function add(a, b) { return a + b; }
+function greet(name) { return "hi " + name; }
+console.log(add(1, 2));
+add("x", "y");
+module.exports = { add, greet };
+```
+
+```js
+// test.js
+const { greet } = require("./lib.js");
+greet("ada");
+greet("bob");
+```
+
+Run inference with the usage site and write the synthesized cases back:
+
+```bash
+nudo infer lib.js --callsites test.js --emit-cases
+```
+
+```
+=== add ===
+
+Case "call@L3": (1, 2) => 3
+Case "call@L4": ("x", "y") => "xy"
+
+Combined: 3 | "xy"
+
+=== greet ===
+
+Case "call@L2": ("ada") => "hi ada"
+Case "call@L3": ("bob") => "hi bob"
+
+Combined: "hi ada" | "hi bob"
+
+Emitted cases → lib.js (4 directive(s) across 2 function(s))
+  add: call@L3, call@L4
+  greet: call@L2, call@L3
+
+```
+
+`lib.js` now carries the directives (inserted into a JSDoc block above each function declaration):
+
+```js
+/**
+ * @nudo:case "call@L3" (1, 2)
+ * @nudo:case "call@L4" ("x", "y")
+ */
+function add(a, b) { return a + b; }
+/**
+ * @nudo:case "call@L2" ("ada")
+ * @nudo:case "call@L3" ("bob")
+ */
+function greet(name) { return "hi " + name; }
+console.log(add(1, 2));
+add("x", "y");
+module.exports = { add, greet };
+```
+
+Running the same command again is idempotent — the summary at the end becomes:
+
+```
+No changes.
+  add: already-generated
+  greet: already-generated
+```
+
+#### Drift detection: `update` mode
+
+Usage sites evolve, and directives frozen from them can go stale. `=update` re-synchronizes previously generated directives: it strips all `call@` directives from the source, re-analyzes the stripped source, and writes the refreshed set back — so additions, changes, *and* deletions at the usage sites are reflected. Say the test drifted to a single different call:
+
+```js
+// test.js — usage drifted
+const { greet } = require("./lib.js");
+greet(42);
+```
+
+Combine `update` with `--dry-run` and `--exit-on-diff` to turn this into a CI gate:
+
+```bash
+nudo infer lib.js --callsites test.js --emit-cases=update --dry-run --exit-on-diff
+```
+
+```
+=== add ===
+
+Case "call@L3": (1, 2) => 3
+Case "call@L4": ("x", "y") => "xy"
+
+Combined: 3 | "xy"
+
+=== greet ===
+
+Case "call@L2": (42) => "hi 42"
+
+Would emit cases → lib.js (dry run)
+  add: call@L3, call@L4
+  greet: call@L2
+
+--- a/lib.js
++++ b/lib.js
+@@ -4,8 +4,7 @@
+  */
+ function add(a, b) { return a + b; }
+ /**
+- * @nudo:case "call@L2" ("ada")
+- * @nudo:case "call@L3" ("bob")
++ * @nudo:case "call@L2" (42)
+  */
+ function greet(name) { return "hi " + name; }
+ console.log(add(1, 2));
+
+```
+
+The diff is non-empty, so the command exits with code `1`. Drop `--dry-run` (and `--exit-on-diff`) to apply it:
+
+```bash
+nudo infer lib.js --callsites test.js --emit-cases=update
+```
+
+```
+=== add ===
+
+Case "call@L3": (1, 2) => 3
+Case "call@L4": ("x", "y") => "xy"
+
+Combined: 3 | "xy"
+
+=== greet ===
+
+Case "call@L2": (42) => "hi 42"
+
+Emitted cases → lib.js (3 directive(s) across 2 function(s))
+  add: call@L3, call@L4
+  greet: call@L2
+
+```
+
+`update` is idempotent too — a second run prints `No changes.`
+
+#### What emission touches
+
+Emission never touches hand-written work; it only manages its own `call@` directives:
+
+| Function's existing cases | `--emit-cases` (add) | `--emit-cases=update` |
+|---------------------------|----------------------|------------------------|
+| Hand-written `@nudo:case` (name not starting with `call@`) | never touched | never touched |
+| Generated `call@` directives | not touched — reported `already-generated` | fully re-synchronized: added, changed, or deleted to match current call evidence (JSDoc blocks left empty are removed) |
+| No directives, but call evidence exists | directives written | directives written |
+| No call sites at all (entry-only) | not written — reported `entry-only` | not written — reported `entry-only` |
+
+- `call@` is the reserved name prefix for generated directives — a hand-written case named `call@…` is treated as generated.
+- Cases whose arguments cannot be expressed as directive text (functions, Promises, class instances, `bigint`, `symbol` values) are skipped and reported as `no-serializable-cases`; the function's remaining serializable cases are still written.
+- `--emit-cases` cannot be combined with `--json`; `--exit-on-diff` requires `--dry-run` — both violations print an error and exit with code `1`.
+
+See [Call-Site Discovery — Persisting harvested results](/docs/guides/callsite-discovery#persisting-harvested-results) for the same policy from the harvesting side, and the [service API — Case Emission](/docs/api/service#case-emission) for the programmatic flow.
 
 ---
 

@@ -220,6 +220,98 @@ generateGuardFunction("isUser", T.object({ name: T.string }))
 
 ---
 
+## Case Emission
+
+The case-emitter functions freeze synthesized `call@L` cases into source text. The CLI's `--emit-cases` is a thin orchestration over them — see the [CLI guide — Persisting cases as directives](/docs/guides/cli#persisting-cases-as-directives) for the workflows and merge policy.
+
+### serializeCaseArg
+
+```typescript
+serializeCaseArg(tv: TypeValue): string | null
+```
+
+Serializes a single TypeValue into expression text that the directive grammar (`parseTypeValueExpr`) can read back. Returns `null` for shapes directives cannot express: function, promise, instance, and refined values, `bigint`/`symbol` primitives, and strings/object keys containing structural characters or control characters.
+
+**Example:**
+```typescript
+serializeCaseArg(T.number)     // → "T.number"
+serializeCaseArg(T.array(T.string)) // → "T.array(T.string)"
+```
+
+### buildCaseDirective
+
+```typescript
+buildCaseDirective(name: string, args: TypeValue[]): string | null
+```
+
+Assembles one single-line directive ` * @nudo:case "name" (a, b)` (leading ` *`, no trailing newline) ready to be spliced into a JSDoc block. Returns `null` when any argument fails serialization or the name contains a quote or newline.
+
+**Example:**
+```typescript
+buildCaseDirective("call@L2", [T.string])
+// → ' * @nudo:case "call@L2" (T.string)'
+```
+
+### stripGeneratedCaseDirectives
+
+```typescript
+stripGeneratedCaseDirectives(source: string): { source: string; removed: string[] }
+```
+
+Removes every generated `@nudo:case` directive line (name starting with the reserved `call@` prefix); a JSDoc block left with no other directives or text is removed together with its `/**` and `*/` lines. Non-case directives and plain comments are never touched. `removed` lists the deleted case names in order. This is the first half of `update` mode — note that hand-written cases named `call@…` are stripped too, since the prefix is reserved.
+
+### insertGeneratedCaseDirectives
+
+```typescript
+insertGeneratedCaseDirectives(source: string, analysis: AnalysisResult): EmitResult
+```
+
+Freezes the analysis's synthesized cases (`source === "callsite"`) into `source`: directives are inserted directly above each function declaration — into an existing JSDoc block after its `/**` line, or into a newly created block. Functions with hand-written cases or existing `call@` directives are skipped (see [`EmitResult`](#emitresult)), as are entry-only functions; cases that fail serialization are reported per function. Returns the rewritten source alongside the written/skipped report.
+
+### unifiedDiff
+
+```typescript
+unifiedDiff(a: string, b: string, path: string): string
+```
+
+Line-level unified diff (`--- a/path` header, `@@` hunks, 3 context lines) with no third-party dependency; returns `""` when the texts are identical. Used by `--dry-run` to preview emission.
+
+### EmitResult
+
+```typescript
+type EmitSkipReason =
+  | "hand-written"            // function has non-call@ case directives
+  | "already-generated"       // function already has call@ directives (add mode leaves them)
+  | "entry-only"              // no call sites found — nothing worth freezing
+  | "no-serializable-cases"   // no case could be expressed as directive text
+  | "no-declaration"          // CJS binding/assignment function, no stable declaration
+  | "skipped";                // function skipped by the analyzer itself
+
+type EmitResult = {
+  source: string;             // rewritten source (identical to input when nothing changed)
+  changed: boolean;           // whether any function was written
+  written: Array<{ fn: string; cases: string[] }>;
+  skipped: Array<{ fn: string; reason: EmitSkipReason; detail?: string }>;
+};
+```
+
+Minimal `add` / `update` flows:
+
+```typescript
+import { analyzeFileAsync, insertGeneratedCaseDirectives, stripGeneratedCaseDirectives } from "@nudojs/service";
+
+// add: insert the synthesized cases into the source as-is
+const result = await analyzeFileAsync(filePath, source, undefined, records);
+const emitted = insertGeneratedCaseDirectives(source, result);
+
+// update: strip old generated directives first, re-analyze, then insert
+const stripped = stripGeneratedCaseDirectives(source);
+const reanalyzed = await analyzeFileAsync(filePath, stripped.source, undefined, records);
+const synced = insertGeneratedCaseDirectives(stripped.source, reanalyzed);
+```
+
+---
+
 ## Result Types
 
 ### AnalysisResult

@@ -38,6 +38,9 @@ nudo infer <file> [options]
 | `--loc` | Show source locations (`file:line:column`) in the output |
 | `--json` | Output results as structured JSON |
 | `--callsites <paths...>` | Usage-site files or directories (tests/apps) to harvest real call shapes from; their calls to this file's exports become synthesized `call@L` cases — see [Call-Site Discovery](/docs/guides/callsite-discovery) |
+| `--emit-cases [mode]` | Write the synthesized call-site cases back into the analyzed file as `@nudo:case` directives (reserved `call@` name prefix). Omit the value for `add` (only fills in functions that have no case directives yet) or pass `=update` to re-synchronize previously generated directives — see [Persisting cases as directives](/docs/guides/cli#persisting-cases-as-directives) |
+| `--dry-run` | With `--emit-cases`: print a unified diff instead of writing to disk |
+| `--exit-on-diff` | With `--dry-run`: exit with code `1` when the diff is non-empty — a CI gate for usage-site drift |
 
 **Output format:**
 
@@ -48,6 +51,7 @@ nudo infer <file> [options]
 - If multiple cases: combined type printed as `Combined: type` — literal members are preserved (e.g. `2 | -9 | number`)
 - Diagnostics, if any, are printed in a trailing `Diagnostics:` section as `[severity] path:line:column message (code)`
 - With `--dts`: writes `<basename>.d.ts` in the same directory and prints `Generated: <basename>.d.ts`
+- With `--emit-cases`: a trailing emission summary — `Emitted cases → <file> (N directive(s) across M function(s))` after writing to disk, `Would emit cases → <file> (dry run)` followed by a unified diff with `--dry-run`, or `No changes.` when the source is already in sync — each followed by per-function lines: `fn: case names` for written functions, `fn: reason` for skipped ones (e.g. `already-generated`)
 
 **Example:**
 
@@ -318,5 +322,6 @@ Usage — add this directive at the top of your JS file:
 | `0` | Success |
 | `1` | Fatal error — missing file, parse failure, or a directory passed to `infer` (`EISDIR`) |
 | `1` | `nudo check` found at least one error-level diagnostic (warnings alone exit `0`) |
+| `1` | `--emit-cases` misuse — combined with `--json`, an invalid mode value, or `--exit-on-diff` without `--dry-run`; also `--exit-on-diff` when the `--dry-run` diff is non-empty |
 
 Note: diagnostics printed by `infer` — including `[error]`-severity ones such as a failed `@nudo:returns` assertion — do **not** change `infer`'s exit code; `infer` still exits `0`. Use `nudo check` to gate CI on diagnostics.
