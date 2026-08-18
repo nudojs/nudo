@@ -1,5 +1,13 @@
 # website
 
+## 0.1.1
+
+### Patch Changes
+
+- Updated dependencies [0fd0718]
+  - @nudojs/cli@0.2.1
+  - @nudojs/service@0.2.1
+
 ## 0.1.0
 
 ### Minor Changes

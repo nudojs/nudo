@@ -1,6 +1,6 @@
 {
   "name": "@nudojs/cli",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "CLI and evaluator API for the Nudo type inference engine",
   "type": "module",
   "license": "MIT",
