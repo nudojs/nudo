@@ -1,5 +1,6 @@
 ---
 sidebar_position: 100
+description: Set up the Nudo monorepo and contribute — project structure, development workflow, operator semantics, directives, and docs.
 ---
 
 # Contributing

@@ -1,10 +1,11 @@
 ---
 sidebar_position: 5
+description: 了解 Nudo 如何在分支中收窄类型——真值、判别联合、in 检查、switch 与 Array.isArray()，以及 `?.` 与 `??` 的求值期语义。
 ---
 
 # 控制流收窄
 
-Nudo 会追踪类型如何在分支、守卫和运算符的代码流中变化。当你使用条件测试一个值时，Nudo 会在条件为真的分支中收窄类型，并在假分支中保留互补类型。本指南涵盖 Nudo 支持的所有收窄模式。
+Nudo 会追踪类型如何在分支、守卫和运算符的代码流中变化。当你使用条件测试一个值时，Nudo 会在条件为真的分支中收窄类型，并在假分支中保留互补类型。下面各节涵盖 Nudo 支持的所有分支收窄模式；最后一节介绍 `?.` 与 `??`——它们是求值期行为，并非收窄。
 
 收窄效果通过 case 输入来观察：用 `@nudo:case` 给函数传入联合类型，再运行 `nudo infer`。输出中的每一行 `Case ... => ...` 都是该输入对应的结果类型——被收窄排除的分支不会出现在结果 union 之外。下文每个输出块都是紧邻代码的真实 `nudo infer` 运行结果。
 
@@ -33,55 +34,6 @@ Case "nullable name": (string | null | undefined) => string | "unknown"
 ```
 
 真分支得到 `string`（来自 `name.toUpperCase()`），假分支贡献字面量 `"unknown"`，结果保留两个成员。这次干净运行本身就是收窄的证据——如果没有守卫，同样的调用会报告 `Method 'toUpperCase' does not exist on type 'string | null | undefined' (nudo:no-method)`。
-
-## 可选链（`?.`）
-
-当 `x?.prop` 的接收方求值为 `null` 或 `undefined` 时，链路短路，结果为 `undefined`。当接收方非空时，链路像普通访问一样解析属性。用两个 case 驱动可以同时展示这两条路径：
-
-```js
-/**
- * @nudo:case "object present" (T.object({ length: T.number }))
- * @nudo:case "null" (T.null)
- */
-function getLength(maybeBox) {
-  return maybeBox?.length ?? 0;
-}
-```
-
-```text
-=== getLength ===
-
-Case "object present": ({ length: number }) => number
-Case "null": (null) => 0
-
-Combined: number
-```
-
-对象存在时，`maybeBox?.length` 解析为 `number`，`?? 0` 回退不会触发。传入 `null` 时，链路短路为 `undefined`，于是 `?? 0` 产生字面量 `0`。`Combined:` 行对所有 case 的结果取并集，再按吸收律化简——字面量 `0` 被另一 case 贡献的基类型 `number` 吸收。
-
-注意 `?.` 只在接收方是**具体的**空值时短路，它本身不会收窄联合类型的接收方：若输入为 `T.union(T.object({ length: T.number }), T.null)`，访问 `maybeBox?.length` 仍会报告 `Property 'length' does not exist on type '{ length: number } | null' (nudo:no-method)`——应先用真值守卫，再做访问。
-
-## 空值合并（`??`）
-
-空值合并运算符会从左操作数的类型中移除 `null` 和 `undefined`。结果是非空的左操作数类型或右操作数的类型。
-
-```js
-/**
- * @nudo:case "config object" (T.object({ port: T.union(T.number, T.null, T.undefined) }))
- */
-function getPort(config) {
-  const port = config.port ?? 3000;
-  return port;
-}
-```
-
-```text
-=== getPort ===
-
-Case "config object": ({ port: number | null | undefined }) => number
-```
-
-`config.port` 到达时是 `number | null | undefined`，但 `?? 3000` 回退吸收了空值成员，因此 `port` 是 `number`。
 
 ## 可辨识联合收窄
 
@@ -221,14 +173,67 @@ Case "input": (number[] | string) => number | string
 
 真分支中 `input` 是 `number[]`，因此 `input[0]` 得到 `number`；假分支中 `input` 是 `string`。
 
+## 安全访问与缺省（`?.` 与 `??`）
+
+可选链与空值合并不是分支收窄——它们在表达式求值期处理，不经过驱动上述模式的 `narrow()` 机制。`?.` 在接收方是**具体的** `null`/`undefined` 时短路为 `undefined`；`??` 从左操作数的类型中减去 `null` 和 `undefined`，若减完为空则回退到右侧。
+
+### 可选链（`?.`）
+
+当 `x?.prop` 的接收方求值为 `null` 或 `undefined` 时，链路短路，结果为 `undefined`。当接收方非空时，链路像普通访问一样解析属性。用两个 case 驱动可以同时展示这两条路径：
+
+```js
+/**
+ * @nudo:case "object present" (T.object({ length: T.number }))
+ * @nudo:case "null" (T.null)
+ */
+function getLength(maybeBox) {
+  return maybeBox?.length ?? 0;
+}
+```
+
+```text
+=== getLength ===
+
+Case "object present": ({ length: number }) => number
+Case "null": (null) => 0
+
+Combined: number
+```
+
+对象存在时，`maybeBox?.length` 解析为 `number`，`?? 0` 回退不会触发。传入 `null` 时，链路短路为 `undefined`，于是 `?? 0` 产生字面量 `0`。`Combined:` 行对所有 case 的结果取并集，再按吸收律化简——字面量 `0` 被另一 case 贡献的基类型 `number` 吸收。
+
+注意 `?.` 只在接收方是**具体的**空值时短路，它本身不会收窄联合类型的接收方：若输入为 `T.union(T.object({ length: T.number }), T.null)`，访问 `maybeBox?.length` 仍会报告 `Property 'length' does not exist on type '{ length: number } | null' (nudo:no-method)`——应先用真值守卫，再做访问。
+
+### 空值合并（`??`）
+
+空值合并运算符会从左操作数的类型中移除 `null` 和 `undefined`。结果是非空的左操作数类型或右操作数的类型。
+
+```js
+/**
+ * @nudo:case "config object" (T.object({ port: T.union(T.number, T.null, T.undefined) }))
+ */
+function getPort(config) {
+  const port = config.port ?? 3000;
+  return port;
+}
+```
+
+```text
+=== getPort ===
+
+Case "config object": ({ port: number | null | undefined }) => number
+```
+
+`config.port` 到达时是 `number | null | undefined`，但 `?? 3000` 回退吸收了空值成员，因此 `port` 是 `number`。
+
 ## 总结
 
 | 模式 | 条件 | 真分支 | 假分支 |
 |---|---|---|---|
 | 真值收窄 | `if (x)` | 排除 `null`、`undefined`、`false`、`""`、`0` | 保留假值类型 |
-| 可选链 | `x?.prop` | 接收方非空：像普通访问一样解析 | 接收方为空：结果为 `undefined` |
-| 空值合并 | `x ?? fallback` | 结果排除 `null \| undefined` | 不适用（表达式） |
 | 可辨识联合 | `x.kind === "lit"` | 保留匹配的联合成员 | 保留其余成员 |
 | `in` 运算符 | `"key" in x` | 保留拥有该属性的类型 | 保留没有该属性的类型 |
 | Switch | `switch (x) { case ... }` | 按 case 字面量收窄 | default 获取剩余类型（穷尽时为 `never`） |
 | `Array.isArray()` | `Array.isArray(x)` | 仅数组类型 | 仅非数组类型 |
+
+`?.` 与 `??` 有意不在这张表中：它们是求值期的短路与缺省行为（见上文*安全访问与缺省*），不是分支收窄。

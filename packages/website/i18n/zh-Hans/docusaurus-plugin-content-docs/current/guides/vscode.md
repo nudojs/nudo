@@ -1,5 +1,6 @@
 ---
 sidebar_position: 2
+description: "安装 nudo-vscode 扩展：悬停类型、补全、用例切换 CodeLens、内联提示，以及由 Nudo 语言服务器驱动的诊断。"
 ---
 
 # VS Code 扩展
@@ -22,7 +23,7 @@ code --install-extension wmzy.nudo-vscode
 
 打开 JavaScript 文件时扩展会激活。它使用 `@nudojs/lsp` 包运行 Language Server Protocol（LSP）服务器，提供所有编辑器功能。
 
-**文件检测**：扩展会分析包含 Nudo 指令（`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:returns`）的 `.js`、`.ts` 和 `.mjs` 文件。不含这些指令的文件不会参与分析。
+**文件检测**：语言服务器会分析包含 Nudo 指令的 `.js`、`.ts` 和 `.mjs` 文件——`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:returns`、`@nudo:env`、`@nudo:mock-module`、`@nudo:as`、`@nudo:replace`。每个指令的完整语法见[指令参考](../concepts/directives.md)。不含这些指令的文件不会参与分析。
 
 ## 功能
 

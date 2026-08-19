@@ -1,5 +1,6 @@
 ---
 sidebar_position: 1
+description: "Type values — the symbolic sets-of-values abstraction: the TypeValue hierarchy, the full T factory table, and the four design principles."
 ---
 
 # Type Values
@@ -10,7 +11,7 @@ Type values are the foundational abstraction in Nudo. They are **symbolic repres
 
 Nudo's type system is built around a discriminated union of type value kinds:
 
-```
+```text
 TypeValue
 ├── Literal<V>      — single concrete value: 1, "hello", true, null, undefined
 ├── Primitive<T>    — all possible values of a primitive: number, string, boolean, bigint, symbol
@@ -18,7 +19,9 @@ TypeValue
 ├── ObjectType      — object with known property types
 ├── ArrayType       — array with element type
 ├── TupleType       — fixed-length array
-├── FunctionType    — function with params, body, closure
+├── FunctionType    — function with params, body, closure (or a signature-only T.fnSig value)
+├── PromiseType     — Promise wrapping a TypeValue
+├── InstanceType    — class instance (e.g. Error) with optional properties
 ├── UnionType       — union of type values
 ├── NeverType       — empty set (unreachable)
 └── UnknownType     — universal set (any value)
@@ -72,7 +75,23 @@ T.tuple([T.literal(1), T.string, T.boolean])
 
 ### FunctionType
 
-Represents a function with its parameter names, body AST, and closure (environment). This is used internally when functions are first-class values.
+Represents a function with its parameter names, body AST, and closure (environment). This is used internally when functions are first-class values. `T.fnSig(paramTypes, returnType)` creates a signature-only variant — used by env files and harvested declarations — that carries `{ paramTypes, returnType, throwsType, impl }` instead of a body (see the [core API](../api/core.md)).
+
+### PromiseType
+
+Represents a `Promise` wrapping another type value — what `async` functions return and `.then` callbacks receive.
+
+```javascript
+T.promise(T.number)   // Promise<number>
+```
+
+### InstanceType
+
+Represents an instance of a named class, with optional known properties.
+
+```javascript
+T.instanceOf("Error", { message: T.string })
+```
 
 ### UnionType
 
@@ -138,8 +157,11 @@ In directives and when defining type values in code, you use the `T` factory:
 | `T.object({ key: TypeValue })` | Object with known property types |
 | `T.array(element)` | Array with element type |
 | `T.tuple([...])` | Fixed-length array |
+| `T.promise(value)` | Promise wrapping a type value |
+| `T.instanceOf(className, properties?)` | Class instance with optional known properties |
 | `T.union(...)` | Union of type values |
 | `T.fn(params, body, closure)` | Function type (used internally) |
+| `T.fnSig(paramTypes, returnType, throwsType?, impl?)` | Signature-only function type (env files, harvested declarations) |
 | `T.refine(base, refinement)` | Refined subset of base type with custom rules |
 
 ### Examples in Directives

@@ -1,5 +1,6 @@
 ---
 sidebar_position: 2
+description: "几分钟上手：给 JavaScript 文件添加 @nudo:case 指令并运行 npx nudo infer。"
 ---
 
 # 快速开始
@@ -36,7 +37,7 @@ npx nudo infer math.js
 
 ## 3. 输出
 
-```
+```text
 === subtract ===
 
 Case "positive numbers": (5, 3) => 2
@@ -105,7 +106,7 @@ npx nudo watch .
 npx nudo watch . --dts
 ```
 
-watch 会递归扫描目录下的所有 `.js` 文件（排除 `node_modules`）——包括没有指令的文件。
+watch 会递归扫描目录下的所有 `.js`、`.mjs`、`.ts` 文件（排除 `node_modules`）——包括没有指令的文件。
 
 ## 没有指令的函数
 
@@ -140,7 +141,7 @@ Case "entry@L1": (unknown, unknown) => `${unknown}: ${unknown}`
 # no call sites found; parameters default to unknown
 ```
 
-要让没有指令的代码获得真实调用形态，可用 `--callsites` 从测试中收集用例——参见[调用点发现指南](/docs/guides/callsite-discovery)。
+要让没有指令的代码获得真实调用形态，可用 `--callsites` 从测试中收集用例——参见[调用点发现指南](../guides/callsite-discovery.md)。
 
 ## 发生了什么？
 
@@ -148,4 +149,4 @@ Case "entry@L1": (unknown, unknown) => `${unknown}: ${unknown}`
 2. **执行** — 对每个 case，它使用抽象解释运行函数体：像 `a - b` 这样的操作数会用类型值而非具体数字进行计算。
 3. **合并** — 有多个 case 时，Nudo 将推断出的返回类型合并为联合类型，再按吸收律化简：字面量 `2`、`-9` 被符号化用例贡献的 `number` 吸收，得到 `number`。不含基类型成员的纯字面量联合会保留每个字面量。
 
-想进一步了解类型值、指令和抽象解释，请参阅 [核心概念](/docs/concepts/type-values)。
+想进一步了解类型值、指令和抽象解释，请参阅 [核心概念](../concepts/type-values.md)。

@@ -1,12 +1,13 @@
 ---
 sidebar_position: 7
+description: Generate Zod schemas, zero-dependency type guards, and TypeScript declarations from Nudo's inferred types with `nudo generate`.
 ---
 
 # Runtime Type Generation
 
 Nudo's type inference doesn't stop at static analysis. You can generate runtime validators directly from inferred types, creating a seamless bridge between development-time inference and production-time validation.
 
-```
+```text
 JS code → Nudo infers types → Generate validators → Runtime validation
 ```
 
@@ -156,7 +157,7 @@ Guard functions execute a sequence of `typeof` checks with no schema interpretat
 
 With `--format dts`, Nudo prints one widened signature per function — the same output as `nudo infer <file> --dts`. Three things to know:
 
-- Parameter names come from your source (e.g. `user`); positional `arg0`, `arg1` fallbacks only appear when the declaration node has no recoverable name.
+- Parameter names come from your source (e.g. `input`); positional `arg0`, `arg1` fallbacks only appear when the declaration node has no recoverable name.
 - Parameter positions (contravariant) are widened: literal parameters collapse to their base types (`"hello"` → `string`, `[1, 2, 3]` → `number[]`), so callers can pass any compatible value. Return types keep their inferred precision, including nested literals.
 
 ```bash
@@ -168,11 +169,10 @@ Output (stdout):
 ```ts
 // === createUser TypeScript Declarations ===
 /**
- * Case: input ({ name: "Alice"; age: 30 }) => { id: 123; name: "Alice"; age: 30 }
- * @param user - { name: string; age: number }
- * @returns { id: 123; name: "Alice"; age: 30 }
+ * @param input - { name: string; age: number }
+ * @returns { id: 123; name: string; age: number }
  */
-export declare function createUser(user: { name: string; age: number }): { id: 123; name: "Alice"; age: 30 };
+export declare function createUser(input: { name: string; age: number }): { id: 123; name: string; age: number };
 ```
 
 With multiple `@nudo:case` directives, the signature is still single — parameters union and widen across cases, and each case's precise result is preserved in the JSDoc:
@@ -217,11 +217,22 @@ Output structure:
   "functions": [
     {
       "name": "createUser",
-      "loc": { "start": { "line": 4, "column": 0 }, "end": { "line": 6, "column": 1 } },
+      "loc": {
+        "start": {
+          "line": 4,
+          "column": 0
+        },
+        "end": {
+          "line": 6,
+          "column": 1
+        }
+      },
       "cases": [
         {
           "name": "input",
-          "args": ["{ name: string, age: number }"],
+          "args": [
+            "{ name: string, age: number }"
+          ],
           "result": "{ id: 123, name: string, age: number }",
           "throws": null,
           "source": null
@@ -288,7 +299,7 @@ nudo generate src/api/products.js --format all
 
 Output (stdout):
 
-```
+```text
 // === createProduct Zod Schemas ===
 // Case "input":
 // Input: { arg0: z.object({ name: z.string(), price: z.number(), tags: z.array(z.string()) }) }
@@ -301,11 +312,10 @@ export function iscreateProductInputOutput(data) {
 
 // === createProduct TypeScript Declarations ===
 /**
- * Case: input ({ name: "Widget"; price: 9.99; tags: ["a"] }) => { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
- * @param product - { name: string; price: number; tags: string[] }
- * @returns { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
+ * @param input - { name: string; price: number; tags: string[] }
+ * @returns { id: 456; name: string; price: number; tags: string[] }
  */
-export declare function createProduct(product: { name: string; price: number; tags: string[] }): { id: 456; name: "Widget"; price: 9.99; tags: ["a"] };
+export declare function createProduct(input: { name: string; price: number; tags: string[] }): { id: 456; name: string; price: number; tags: string[] };
 ```
 
 **3. Paste the pieces you need into your application:**
@@ -347,11 +357,10 @@ Paste the declaration line into a `.d.ts` next to your source:
 ```ts
 // src/api/products.d.ts -- pasted from the stdout above
 /**
- * Case: input ({ name: "Widget"; price: 9.99; tags: ["a"] }) => { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
- * @param product - { name: string; price: number; tags: string[] }
- * @returns { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
+ * @param input - { name: string; price: number; tags: string[] }
+ * @returns { id: 456; name: string; price: number; tags: string[] }
  */
-export declare function createProduct(product: { name: string; price: number; tags: string[] }): { id: 456; name: "Widget"; price: 9.99; tags: ["a"] };
+export declare function createProduct(input: { name: string; price: number; tags: string[] }): { id: 456; name: string; price: number; tags: string[] };
 ```
 
 ```ts
@@ -359,7 +368,7 @@ export declare function createProduct(product: { name: string; price: number; ta
 import { createProduct } from "./api/products.js";
 
 const product = createProduct({ name: "Widget", price: 9.99, tags: ["sale"] });
-//    ^? { id: 456; name: "Widget"; price: 9.99; tags: ["sale"] }
+//    ^? { id: 456; name: string; price: number; tags: string[] }
 ```
 
 With a single directive line per function, this workflow provides full runtime safety and editor support across the JavaScript/TypeScript boundary.

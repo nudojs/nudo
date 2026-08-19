@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import nudoPlugin from "../index.ts";
+import nudoPlugin, { type NudoPluginOptions } from "../index.ts";
 
 describe("vite-plugin-nudo", () => {
   it("creates a plugin with correct name", () => {
@@ -77,5 +77,80 @@ function identity(x) {
 `;
     plugin.transform.call(ctx, source, "/test/fail.js");
     expect(errorFn).toHaveBeenCalled();
+  });
+});
+
+describe("vite-plugin-nudo glob matching", () => {
+  // This source reliably produces an error diagnostic (see the failOnError test
+  // above), so `warn` being called proves the file was matched and analyzed.
+  const directiveSource = `
+/**
+ * @nudo:case "test" (T.number)
+ * @nudo:returns (T.string)
+ */
+function identity(x) {
+  return x;
+}
+`;
+
+  function wasAnalyzed(id: string, options: NudoPluginOptions = {}): boolean {
+    const plugin = nudoPlugin(options);
+    const warnFn = vi.fn();
+    const ctx = { warn: warnFn, error: vi.fn() };
+    const result = plugin.transform.call(ctx, directiveSource, id);
+    return result === null && warnFn.mock.calls.length > 0;
+  }
+
+  it("matches **/*.js at any depth by default", () => {
+    expect(wasAnalyzed("/file.js")).toBe(true);
+    expect(wasAnalyzed("/project/src/nested/mod.js")).toBe(true);
+  });
+
+  it("does not match other extensions with the default **/*.js include", () => {
+    expect(wasAnalyzed("/test/file.mjs")).toBe(false);
+    expect(wasAnalyzed("/test/file.ts")).toBe(false);
+    expect(wasAnalyzed("/test/file.cjs")).toBe(false);
+  });
+
+  it("supports **/*.mjs include patterns", () => {
+    const options = { include: ["**/*.mjs"] };
+    expect(wasAnalyzed("/test/file.mjs", options)).toBe(true);
+    expect(wasAnalyzed("/project/src/deep/file.mjs", options)).toBe(true);
+    expect(wasAnalyzed("/test/file.js", options)).toBe(false);
+  });
+
+  it("supports **/*.ts include patterns", () => {
+    const options = { include: ["**/*.ts"] };
+    expect(wasAnalyzed("/src/util.ts", options)).toBe(true);
+    expect(wasAnalyzed("/src/util.js", options)).toBe(false);
+    expect(wasAnalyzed("/src/component.tsx", options)).toBe(false);
+  });
+
+  it("excludes **/node_modules/** at any depth by default", () => {
+    expect(wasAnalyzed("/project/node_modules/pkg/index.js")).toBe(false);
+    expect(wasAnalyzed("/project/packages/a/node_modules/dep/lib.js")).toBe(false);
+  });
+
+  it("excludes **/<dir>/** directory segments without false positives", () => {
+    const options = { include: ["**/*.js"], exclude: ["**/fixtures/**"] };
+    expect(wasAnalyzed("/test/fixtures/case.js", options)).toBe(false);
+    expect(wasAnalyzed("/test/case.js", options)).toBe(true);
+    // "my-fixtures" is not the "fixtures" segment, so it must stay included.
+    expect(wasAnalyzed("/test/my-fixtures/case.js", options)).toBe(true);
+  });
+
+  it("gives exclude precedence over include", () => {
+    const options = { include: ["**/*.js"], exclude: ["**/vendor/**"] };
+    expect(wasAnalyzed("/src/vendor/lib.js", options)).toBe(false);
+    expect(wasAnalyzed("/src/lib.js", options)).toBe(true);
+  });
+
+  it("falls back to literal substring matching for wildcard-free patterns", () => {
+    const options = { include: ["generated"] };
+    expect(wasAnalyzed("/src/generated/helpers.js", options)).toBe(true);
+    expect(wasAnalyzed("/src/helpers.js", options)).toBe(false);
+
+    const excluded = { include: ["**/*.js"], exclude: ["snapshots"] };
+    expect(wasAnalyzed("/src/snapshots/old.js", excluded)).toBe(false);
   });
 });

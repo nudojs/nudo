@@ -1,10 +1,11 @@
 ---
 sidebar_position: 4
+description: "Reference every nudo CLI command — infer, check, doctor, generate, watch, harvest — with arguments, options, output formats, and exit codes."
 ---
 
 # CLI Reference
 
-The `nudo` CLI runs type inference on JavaScript files. Install globally or run via `npx`:
+The `nudo` CLI runs type inference on `.js`, `.mjs`, and `.ts` files. Install globally or run via `npx`:
 
 ```bash
 pnpm add -g @nudojs/cli
@@ -18,7 +19,7 @@ npx @nudojs/cli infer ./src/utils.js
 
 | Command | Purpose |
 |---------|---------|
-| [`nudo infer`](#nudo-infer) | Infer types from a single JavaScript file |
+| [`nudo infer`](#nudo-infer) | Infer types from files or directories |
 | [`nudo check`](#nudo-check) | Check a single file for type errors (error-level diagnostics exit `1`) |
 | [`nudo doctor`](#nudo-doctor) | Health-check files: call-site solidification drift, analysis errors, uncovered functions |
 | [`nudo generate`](#nudo-generate) | Generate runtime validators from inferred types |
@@ -27,7 +28,7 @@ npx @nudojs/cli infer ./src/utils.js
 
 ### nudo infer
 
-Infer types from a single JavaScript file.
+Infer types from a single file or from every inference target under a directory.
 
 ```bash
 nudo infer <file> [options]
@@ -37,7 +38,7 @@ nudo infer <file> [options]
 
 | Argument | Description |
 |----------|-------------|
-| `<file>` | Path to a `.js`, `.mjs`, or `.ts` file (relative or absolute). Directories are also accepted — recursively scanned for inference targets (`.js`/`.mjs`/`.ts`, excluding `.d.ts`). TypeScript type annotations are stripped at the parser layer and the file is inferred with JS semantics. |
+| `<file>` | Path to a `.js`, `.mjs`, or `.ts` file (relative or absolute). Directories are also accepted — recursively scanned for inference targets (`.js`/`.mjs`/`.ts`, excluding `.d.ts` and `.tsx`). TypeScript type annotations are stripped at the parser layer and the file is inferred with JS semantics. |
 
 **Options:**
 
@@ -45,9 +46,9 @@ nudo infer <file> [options]
 |--------|-------------|
 | `--dts` | Generate a `.d.ts` declaration file next to the source file |
 | `--loc` | Show source locations (`file:line:column`) in the output |
-| `--json` | Output results as structured JSON |
-| `--callsites <paths...>` | Usage-site files or directories (tests/apps) to harvest real call shapes from; their calls to this file's exports become synthesized `call@L` cases — see [Call-Site Discovery](/docs/guides/callsite-discovery) |
-| `--emit-cases [mode]` | Write the synthesized call-site cases back into the analyzed file as `@nudo:case` directives (reserved `call@` name prefix). Omit the value for `add` (only fills in functions that have no case directives yet) or pass `=update` to re-synchronize previously generated directives — see [Persisting cases as directives](/docs/guides/cli#persisting-cases-as-directives) |
+| `--json` | Output results as structured JSON — requires a single file; a directory target is an error |
+| `--callsites <paths...>` | Usage-site files or directories (tests/apps) to harvest real call shapes from; their calls to this file's exports become synthesized `call@L` cases — see [Call-Site Discovery](../guides/callsite-discovery.md) |
+| `--emit-cases [mode]` | Write the synthesized call-site cases back into the analyzed file as `@nudo:case` directives (reserved `call@` name prefix). Omit the value for `add` (only fills in functions that have no case directives yet) or pass `=update` to re-synchronize previously generated directives — see [Persisting cases as directives](../guides/cli.md#persisting-cases-as-directives) |
 | `--dry-run` | With `--emit-cases`: print a unified diff instead of writing to disk |
 | `--exit-on-diff` | With `--dry-run`: exit with code `1` when the diff is non-empty — a CI gate for usage-site drift |
 
@@ -68,7 +69,7 @@ nudo infer <file> [options]
 nudo infer math.js
 ```
 
-```
+```text
 === subtract ===
 
 Case "positive numbers": (5, 3) => 2
@@ -82,7 +83,7 @@ Combined: number
 nudo infer math.js --dts --loc
 ```
 
-```
+```text
 === subtract (math.js:6:0) ===
 
 Case "positive numbers": (5, 3) => 2
@@ -156,7 +157,7 @@ nudo infer math.js --json
 
 Field notes:
 
-- `source` — where the case came from: `null` for hand-written `@nudo:case` directives and `entry@L` fallbacks; `"callsite"` for cases synthesized from recorded call sites (`call@L…`).
+- `source` — where the case came from: `null` for hand-written `@nudo:case` directives and `entry@L` fallbacks; `"callsite"` for cases synthesized from recorded call sites (`call@L…`); `"directive"` for case results produced by [`nudo generate`](#nudo-generate), which re-evaluates each case directive and tags the result as directive-derived.
 - `entryOnly` — `true` when the function received no call-site records, so its signature comes from an `entry@L` fallback case with `unknown` parameters.
 - `diagnostics` — the same diagnostics shown in the text output's `Diagnostics:` section (with `range`, `severity`, `message`, and `code`).
 
@@ -164,7 +165,7 @@ Field notes:
 
 ### nudo check
 
-Check a single JavaScript file for type errors. Prints one line per diagnostic in the form `[severity] path:line:column message (code)` and exits with code `1` when any error-level diagnostic is found — warnings alone exit `0`.
+Check a single file for type errors. Prints one line per diagnostic in the form `[severity] path:line:column message (code)` and exits with code `1` when any error-level diagnostic is found — warnings alone exit `0`.
 
 ```bash
 nudo check <file>
@@ -174,7 +175,7 @@ nudo check <file>
 
 | Argument | Description |
 |----------|-------------|
-| `<file>` | Path to a `.js` file (relative or absolute) |
+| `<file>` | Path to a `.js`, `.mjs`, or `.ts` file (relative or absolute) |
 
 **Example:**
 
@@ -182,7 +183,7 @@ nudo check <file>
 nudo check src/broken.js
 ```
 
-```
+```text
 [warning] src/broken.js:2:9 Cannot resolve 'name' on unknown value (nudo:unknown-recv)
 [warning] src/broken.js:2:9 Cannot resolve 'toUpperCase' on unknown value (nudo:unknown-recv)
 ```
@@ -191,7 +192,7 @@ nudo check src/broken.js
 - When the origin of a bad value is known, a hint line follows: `→ value originates at line:column`.
 - A failed `@nudo:returns` assertion is error-level, so `check` exits `1`:
 
-```
+```text
 [error] src/assert.js:5:0 @nudo:returns assertion failed for case "sample": expected string, got 10. Update the @nudo:returns directive to match the inferred type, or fix the function implementation (nudo-assertion-failed)
 ```
 
@@ -199,7 +200,7 @@ nudo check src/broken.js
 
 ### nudo doctor
 
-Health-check JavaScript files: call-site solidification drift (with `--callsites`), analysis errors, and functions without cases. Exits with code `1` when any file has drift or errors — uncovered functions are informational only and never change the exit code.
+Health-check source files: call-site solidification drift (with `--callsites`), analysis errors, and functions without cases. Exits with code `1` when any file has drift or errors — uncovered functions are informational only and never change the exit code.
 
 ```bash
 nudo doctor [paths...] [options]
@@ -209,13 +210,13 @@ nudo doctor [paths...] [options]
 
 | Argument | Description |
 |----------|-------------|
-| `[paths...]` | File(s) or directory(s) to check. Directories are scanned recursively for `.js` files (excluding `node_modules`); defaults to the current directory |
+| `[paths...]` | File(s) or directory(s) to check. Directories are scanned recursively for inference targets (`.js`/`.mjs`/`.ts`, excluding `node_modules`); defaults to the current directory |
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
-| `--callsites <paths...>` | Usage-site files or directories (tests/apps). With it, doctor re-runs the same re-solidify chain as `infer --emit-cases=update` for every file and reports drift when the generated `call@` directives would change — see [Health Checks and CI Drift Gating](/docs/guides/cli#health-checks-and-ci-drift-gating) |
+| `--callsites <paths...>` | Usage-site files or directories (tests/apps). With it, doctor re-runs the same re-solidify chain as `infer --emit-cases=update` for every file and reports drift when the generated `call@` directives would change — see [Health Checks and CI Drift Gating](../guides/cli.md#health-checks-and-ci-drift-gating) |
 | `--json` | Output the report as structured JSON |
 
 **What is checked:**
@@ -239,7 +240,7 @@ Healthy (exit code `0`):
 nudo doctor lib.js --callsites test.js
 ```
 
-```
+```text
 lib.js
   · 3 function(s), 1 entry-only
 
@@ -253,7 +254,7 @@ Drift — the frozen `call@` directives are stale (exit code `1`); the refresh c
 nudo doctor lib.js --callsites test.js
 ```
 
-```
+```text
 lib.js
   · 3 function(s), 1 entry-only
   ✗ drift: 5 directive(s) changed (+3 new, -2 removed) — refresh with: nudo infer lib.js --callsites test.js --emit-cases=update
@@ -264,12 +265,12 @@ Result: FAIL (drift or errors found)
 
 Analysis errors fail the run the same way (exit code `1`):
 
-```
+```text
 missing.js
   ✗ error: File not found: <path>
 ```
 
-```
+```text
 broken.js
   ✗ error: Unexpected token (1:18)
 ```
@@ -326,7 +327,7 @@ nudo generate <file> [options]
 
 | Argument | Description |
 |----------|-------------|
-| `<file>` | Path to a `.js` file (relative or absolute) |
+| `<file>` | Path to a `.js`, `.mjs`, or `.ts` file (relative or absolute) |
 
 **Options:**
 
@@ -348,7 +349,7 @@ nudo generate <file> [options]
 nudo generate src/user.js --format zod
 ```
 
-```
+```text
 // === createUser Zod Schemas ===
 // Case "input":
 // Input: { arg0: z.object({ name: z.string(), age: z.number() }) }
@@ -380,7 +381,7 @@ nudo watch <path> [options]
 **Behavior:**
 
 - **File:** watches the file's directory and re-analyzes tracked files on change
-- **Directory:** recursively watches **all** `.js` files, excluding `node_modules` — files without Nudo directives are analyzed too (whole-program inference: call sites across watched files synthesize `call@L` cases; uncalled functions get `entry@L` cases)
+- **Directory:** recursively watches all inference targets (`.js`/`.mjs`/`.ts`, excluding `node_modules`) — files without Nudo directives are analyzed too (whole-program inference: call sites across watched files synthesize `call@L` cases; uncalled functions get `entry@L` cases)
 - **Debouncing:** 200ms debounce to batch rapid edits
 - **Incremental:** only changed files and their dependents are re-analyzed; each run prints `Incremental: re-analyzed N, skipped M (…ms)`
 - Output is cleared and reprinted on each run
@@ -421,7 +422,7 @@ pnpm add -D @types/node
 nudo harvest node
 ```
 
-```
+```text
 Harvested @types/node → nudo-harvest-node.ts
   files:    80
   symbols:  1671
@@ -435,9 +436,9 @@ Usage — add this directive at the top of your JS file:
 
 ## File Patterns
 
-- **Input:** `.js` files only (parsed via Babel)
+- **Input:** `.js`, `.mjs`, and `.ts` files (parsed via Babel; TypeScript type annotations are stripped at the parser layer and the file is inferred with JS semantics). Directories are accepted wherever a target path is — they are recursively scanned for inference targets (`.js`/`.mjs`/`.ts`, excluding `.d.ts` and `.tsx`)
 - **Directives are optional:** files without any `@nudo:*` directive are analyzed too — their functions get types from observed call sites, with `entry@L` fallback cases (`unknown` parameters) when nothing calls them
-- **Watch mode:** directories are scanned recursively for all `.js` files, excluding `node_modules`
+- **Watch mode:** directories are scanned recursively for inference targets, excluding `node_modules`
 
 ---
 
@@ -446,9 +447,10 @@ Usage — add this directive at the top of your JS file:
 | Code | Meaning |
 |------|---------|
 | `0` | Success |
-| `1` | Fatal error — missing file, parse failure, or a directory passed to `infer` (`EISDIR`) |
+| `1` | Fatal error — missing input or callsite file, parse failure, or `--json` combined with a directory target |
 | `1` | `nudo check` found at least one error-level diagnostic (warnings alone exit `0`) |
 | `1` | `nudo doctor` found drift or analysis errors — uncovered functions alone exit `0` |
+| `1` | `nudo harvest` — `@types/<pkg>` not installed, or no `.d.ts` files found in it |
 | `1` | `--emit-cases` misuse — combined with `--json`, an invalid mode value, or `--exit-on-diff` without `--dry-run`; also `--exit-on-diff` when the `--dry-run` diff is non-empty |
 
 Note: diagnostics printed by `infer` — including `[error]`-severity ones such as a failed `@nudo:returns` assertion — do **not** change `infer`'s exit code; `infer` still exits `0`. Use `nudo check` to gate CI on diagnostics.

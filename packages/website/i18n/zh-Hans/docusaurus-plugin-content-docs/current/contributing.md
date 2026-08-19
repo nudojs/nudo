@@ -1,5 +1,6 @@
 ---
 sidebar_position: 100
+description: 搭建 Nudo monorepo 开发环境并参与贡献——项目结构、开发流程、运算符语义、指令与文档。
 ---
 
 # 贡献指南
@@ -130,7 +131,7 @@ pnpm exec nudo infer path/to/file.js
 
 ## PR 规范
 
-- 保持 PR 聚焦； prefer 多个小 PR 而非一个大 PR。
+- 保持 PR 聚焦；宁可多个小 PR，也不要一个大 PR。
 - 为新行为添加或更新测试。
 - 提交前运行 `pnpm run build` 和 `pnpm run test`。
 - 添加指令或公开 API 时更新文档（如 `docs/concepts/directives.md`、API 参考）。
@@ -141,7 +142,7 @@ pnpm exec nudo infer path/to/file.js
 ## 代码风格
 
 - **TypeScript**：strict 模式，ES modules。
-- **类型**：prefer `type` 而非 `interface` 和 `enum`。
+- **类型**：优先使用 `type`，而非 `interface` 和 `enum`。
 - **结构**：避免 class/OOP；使用普通函数和对象。
-- **可变性**：尽量减少 `let`；prefer `const` 和纯函数。
+- **可变性**：尽量减少 `let`；优先使用 `const` 和纯函数。
 - **控制流**：减少条件分支；使用 early return 和小函数。

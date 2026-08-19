@@ -1,5 +1,6 @@
 ---
 sidebar_position: 1
+description: "Nudo by design: abstract interpretation with symbolic type values, the directive system, and what executing code computes that a separate type language cannot."
 ---
 
 # Design Document
@@ -37,7 +38,7 @@ These two representations describe **the same logic** yet live in two disconnect
 
 Nudo neither statically analyzes code like TypeScript nor runs code with concrete values like tests. Instead, it **executes code with symbolic "type values"**—special objects representing sets of possible values. Execution itself produces types.
 
-```
+```text
 Traditional:   Source code  →  Static analysis  →  Types
 Nudo:          Source code  +  Type values  →  Execution  →  Types
 ```
@@ -62,7 +63,7 @@ When Nudo executes `transform(T.string)`, the engine propagates `T.string` throu
 
 ### 2.1 Type Value Hierarchy
 
-```
+```text
 TypeValue
 ├── Literal<V>          — Single concrete value: 1, "hello", true, null, undefined
 ├── Primitive<T>        — All values of a primitive: number, string, boolean, bigint, symbol
@@ -164,7 +165,7 @@ For **refined types**, the engine uses a dispatch fallback chain: it first tries
 
 ### 3.1 Architecture Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │                   Nudo Engine                       │
 │                                                     │
@@ -200,25 +201,25 @@ For **refined types**, the engine uses a dispatch fallback chain: it first tries
 The evaluator is an AST walker. For each node type, there is a corresponding rule:
 
 **Literals:**
-```
+```text
 eval(NumericLiteral 42)  →  T.literal(42)
 eval(StringLiteral "hi") →  T.literal("hi")
 eval(NullLiteral)       →  T.null
 ```
 
 **Variables:**
-```
+```text
 eval(Identifier "x")  →  env.lookup("x")
 ```
 
 **Binary expressions:**
-```
+```text
 eval(BinaryExpression { left, op, right })  →  Ops[op](eval(left), eval(right))
 ```
 
 **Conditional (if-else):** The engine may **evaluate both branches** with narrowed type values and merge:
 
-```
+```text
 eval(IfStatement { test, consequent, alternate }) →
   condition = eval(test)
   if condition === T.literal(true)  → eval(consequent)
@@ -290,9 +291,15 @@ Directives are structured comments that guide the engine. They use the `@nudo:` 
 | `@nudo:case` | Provide named execution cases (concrete or symbolic inputs) |
 | `@nudo:mock` | Mock external dependencies with type-value implementations |
 | `@nudo:pure` | Mark function as pure for memoization |
-| `@nudo:skip` | Skip evaluation; use type annotations or `@nudo:returns` |
+| `@nudo:skip` | Skip evaluation; an optional type expression declares the return type (e.g. `@nudo:skip T.number`) |
 | `@nudo:sample` | Number of loop iterations before fixed-point |
 | `@nudo:returns` | Assert expected return type |
+| `@nudo:env` | Declare runtime environment APIs (file-level `///` comment) |
+| `@nudo:mock-module` | Replace imported modules with mock files (file-level `///` comment) |
+| `@nudo:as` | Override the next statement's value type (line comment `//`) |
+| `@nudo:replace` | Replace a sub-expression's type in the next statement (line comment `//`) |
+
+Full syntax and constraints for every directive: see the [Directives reference](../concepts/directives.md).
 
 ---
 

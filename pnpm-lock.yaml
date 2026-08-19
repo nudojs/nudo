@@ -60,6 +60,9 @@ importers:
       '@nudojs/service':
         specifier: workspace:*
         version: link:../service
+      commander:
+        specifier: ^13.0.0
+        version: 13.1.0
 
   packages/core: {}
 

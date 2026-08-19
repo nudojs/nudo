@@ -1,14 +1,17 @@
 ---
 sidebar_position: 4
+description: 按主题浏览 Nudo 推断的实用示例——函数与对象、字符串、循环与范围、联合类型、校验函数与运行时环境。
 ---
 
 # 示例
 
-本指南展示 Nudo 类型推断的实用示例。每个示例包含带指令的输入代码和推断出的类型。
+本指南展示 Nudo 类型推断的实用示例，按主题分组。每个示例包含带指令的输入代码和推断出的类型。
 
 ---
 
-## 1. 带字面量与符号 case 的基本函数
+## 基础推断
+
+### 1. 带字面量与符号 case 的基本函数
 
 一个函数具有多个 case：具体值和符号类型值。Nudo 会合并结果。
 
@@ -25,7 +28,7 @@ function subtract(a, b) {
 
 **推断输出：**
 
-```
+```text
 === subtract ===
 
 Case "positive numbers": (5, 3) => 2
@@ -39,7 +42,7 @@ Combined: number
 
 ---
 
-## 2. 带类型收窄的对象操作
+### 2. 带类型收窄的对象操作
 
 解构和属性访问。Nudo 通过对象形状推断类型。
 
@@ -55,7 +58,7 @@ function greet({ name, age }) {
 
 **推断输出：**
 
-```
+```text
 === greet ===
 
 Case "concrete": ({ name: "Alice", age: 30 }) => "Hello, Alice! You are 30 years old."
@@ -68,7 +71,7 @@ Nudo 从每个 case 的对象形状收窄 `name` 和 `age`。模板结果不会�
 
 ---
 
-## 3. 使用 map 的数组处理
+### 3. 使用 map 的数组处理
 
 数组和高阶函数。Nudo 通过 `map` 和 `filter` 跟踪元素类型。
 
@@ -84,7 +87,7 @@ function doubleAll(arr) {
 
 **推断输出：**
 
-```
+```text
 === doubleAll ===
 
 Case "concrete": ([1, 2, 3]) => [2, 4, 6]
@@ -97,7 +100,9 @@ Nudo 通过 `map` 跟踪元素类型。具体输入 `[1, 2, 3]` 被逐元素求�
 
 ---
 
-## 4. 带 mock fetch 的异步函数
+## 异步调用与错误
+
+### 4. 带 mock fetch 的异步函数
 
 异步函数和外部 API。使用 `@nudo:mock` 将 `fetch`（或其他全局对象）替换为 body 为普通 JavaScript 的 mock，且必须写在单行内。
 
@@ -114,7 +119,7 @@ async function fetchUser(id) {
 
 **推断输出：**
 
-```
+```text
 === fetchUser ===
 
 Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
@@ -124,7 +129,7 @@ mock 就位后，Nudo 推断 `fetchUser` 返回 `Promise<{ id: 1, name: "Alice" 
 
 ---
 
-## 5. 带 throws 追踪的错误处理
+### 5. 带 throws 追踪的错误处理
 
 会抛出的函数。Nudo 同时追踪正常返回类型和抛出类型。
 
@@ -143,7 +148,7 @@ function safeSqrt(x) {
 
 **推断输出：**
 
-```
+```text
 === safeSqrt ===
 
 Case "valid": (10) => number
@@ -160,7 +165,9 @@ Nudo 建模控制流：`valid` case 返回 `number`，`negative` case 抛出 `Ra
 
 ---
 
-## 6. 模板字符串 — Nudo vs TypeScript
+## 字符串与模板
+
+### 6. 模板字符串 — Nudo vs TypeScript
 
 Nudo 在字符串拼接中保留结构信息，实现 TypeScript 无法达到的精确推断。
 
@@ -193,7 +200,7 @@ Nudo 知道结果一定是 `true`，因为模板的前缀以 `"https://"` 开头
 
 ---
 
-## 7. 精确的字符串方法
+### 7. 精确的字符串方法
 
 Nudo 在编译时对字面量执行字符串方法，产生精确结果。
 
@@ -215,7 +222,9 @@ function stringDemo() {
 
 ---
 
-## 8. 循环求值
+## 循环与范围
+
+### 8. 循环求值
 
 Nudo 可以对具体边界的循环进行求值，在类型层面计算精确结果——这是 TypeScript 完全无法做到的。
 
@@ -235,20 +244,20 @@ function sumTo(n) {
 
 **推断输出：**
 
-```
+```text
 === sumTo ===
 
 Case "concrete": (5) => 10
 Case "symbolic": (number) => number
 
-Combined: 10 | number
+Combined: number
 ```
 
-输入具体值 `5` 时，Nudo 执行循环并产生精确结果 `10`。输入抽象值 `T.number` 时，通过不动点迭代拓宽为 `number`，合并类型保留两者。
+输入具体值 `5` 时，Nudo 执行循环并产生精确结果 `10`。输入抽象值 `T.number` 时，通过不动点迭代拓宽为 `number`。合并类型按吸收律化简——字面量 `10` 被符号 case 贡献的基类型 `number` 吸收。
 
 ---
 
-## 9. 精化类型 — 范围收窄
+### 9. 精化类型 — 范围收窄
 
 精化类型（refined type）在基础类型上附加约束。它们是内置能力：比较守卫会把 `number` 精化为带约束的范围，并保留在推断输出中。
 
@@ -264,7 +273,7 @@ function pickAdult(age) {
 
 **推断输出：**
 
-```
+```text
 === pickAdult ===
 
 Case "symbolic": (number) => number (>= 18) | -1
@@ -274,7 +283,9 @@ Case "symbolic": (number) => number (>= 18) | -1
 
 ---
 
-## 10. 判别联合状态机
+## 联合类型与安全访问
+
+### 10. 判别联合状态机
 
 每个状态形状不同的状态机。Nudo 根据判别字段 `status` 收窄联合类型。
 
@@ -297,7 +308,7 @@ function handleState(state) {
 
 **推断输出：**
 
-```
+```text
 === handleState ===
 
 Case "idle": ({ status: "idle" }) => "Waiting..."
@@ -312,7 +323,7 @@ Nudo 根据判别字段在每个 `case` 分支内收窄 `state`。`"loading"` ca
 
 ---
 
-## 11. 可选链与空值合并
+### 11. 可选链与空值合并
 
 通过可选链进行安全属性访问，用空值合并提供回退。Nudo 追踪每个分支中哪些属性存在。
 
@@ -329,7 +340,7 @@ function getTheme(config) {
 
 **推断输出：**
 
-```
+```text
 === getTheme ===
 
 Case "full": ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } }) => "dark"
@@ -343,7 +354,7 @@ Combined: "dark" | "light"
 
 ---
 
-## 12. API 响应校验
+### 12. API 响应校验
 
 处理不同状态码的 API 响应。Nudo 根据状态检查收窄响应形状。
 
@@ -363,7 +374,7 @@ function parseResponse(response) {
 
 **推断输出：**
 
-```
+```text
 === parseResponse ===
 
 Case "success": ({ status: 200, data: { id: 1, name: "Alice", email: "alice@example.com" } }) => { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } }
@@ -381,7 +392,9 @@ Diagnostics:
 
 ---
 
-## 13. 表单数据处理
+## 校验函数
+
+### 13. 表单数据处理
 
 带多个 `return` 分支的顺序校验检查。Nudo 精确求值转换操作，并将各分支结果报告为并集。
 
@@ -401,7 +414,7 @@ function validateForm(data) {
 
 **推断输出：**
 
-```
+```text
 === validateForm ===
 
 Case "valid": ({ name: "Alice", age: "25", email: "alice@example.com" }) => { valid: false, error: "Invalid age" } | { valid: true, name: "Alice", age: 25, email: "alice@example.com" }
@@ -419,7 +432,7 @@ Diagnostics:
 
 ---
 
-## 14. 类型守卫函数
+### 14. 类型守卫函数
 
 返回类型充当类型守卫的函数。Nudo 为每个输入 case 推断布尔结果。
 
@@ -436,7 +449,7 @@ function isString(value) {
 
 **推断输出：**
 
-```
+```text
 === isString ===
 
 Case "string": ("hello") => true
@@ -450,7 +463,9 @@ Nudo 在类型层面对每个字面量输入求值 `typeof`。`"hello"` 的 `typ
 
 ---
 
-## 15. Web 环境 — fetch、localStorage、URL
+## 运行时环境
+
+### 15. Web 环境 — fetch、localStorage、URL
 
 使用 `@nudo:env web` 获取 Web API 的内置类型定义。标准浏览器全局对象无需手动 mock。
 
@@ -472,7 +487,7 @@ async function fetchUser(id) {
 
 **推断输出：**
 
-```
+```text
 === fetchUser ===
 
 Case "get user": (1) => Promise<unknown>
@@ -499,7 +514,7 @@ function savePreference(key, value) {
 
 ---
 
-## 16. Node.js 环境 — fs、path、crypto
+### 16. Node.js 环境 — fs、path、crypto
 
 使用 `@nudo:env node` 获取 Node.js 全局对象和模块的内置类型定义。
 
@@ -522,7 +537,7 @@ function loadConfig(dir) {
 
 **推断输出：**
 
-```
+```text
 === loadConfig ===
 
 Case "test": (string) => unknown
@@ -562,4 +577,4 @@ function hashContent(data) {
 | `@nudo:env`     | 声明运行时环境（web、node、es）              |
 | `@nudo:mock-module` | 替换导入的模块为 mock 文件              |
 
-关于类型值（`T.number`、`T.object` 等）和抽象解释的更多内容，请参阅 [Type Values](/docs/concepts/type-values) 和 [Abstract Interpretation](/docs/concepts/abstract-interpretation)。
+关于类型值（`T.number`、`T.object` 等）和抽象解释的更多内容，请参阅 [Type Values](../concepts/type-values.md) 和 [Abstract Interpretation](../concepts/abstract-interpretation.md)。

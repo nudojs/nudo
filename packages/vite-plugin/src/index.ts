@@ -9,24 +9,67 @@ export type NudoPluginOptions = {
 const DEFAULT_INCLUDE = ["**/*.js"];
 const DEFAULT_EXCLUDE = ["**/node_modules/**"];
 
-function matchesPatterns(id: string, include: string[], exclude: string[]): boolean {
-  const isExcluded = exclude.some((p) => minimatch(id, p));
-  if (isExcluded) return false;
-  return include.some((p) => minimatch(id, p));
+type Matcher = (id: string) => boolean;
+
+const REGEX_SPECIALS = /[\\^$.|?*+(){}\[\]]/;
+
+function escapeRegExpChar(ch: string): string {
+  return REGEX_SPECIALS.test(ch) ? `\\${ch}` : ch;
 }
 
-function minimatch(str: string, pattern: string): boolean {
-  if (pattern === "**/*.js") return str.endsWith(".js");
-  if (pattern === "**/node_modules/**") return str.includes("/node_modules/");
-  if (pattern.startsWith("**/")) {
-    return str.endsWith(pattern.slice(3)) || str.includes(pattern.slice(2));
+/** Translate one path segment (`**` segments are handled by the caller). */
+function segmentToRegExpSource(segment: string): string {
+  let source = "";
+  for (const ch of segment) {
+    if (ch === "*") source += "[^/]*";
+    else if (ch === "?") source += "[^/]";
+    else source += escapeRegExpChar(ch);
   }
-  return str.includes(pattern);
+  return source;
+}
+
+// Compile a glob pattern into an anchored RegExp. Supported syntax:
+// - a `**` segment: zero or more path segments, e.g. `**` + `/*.mjs` or `**` + `/node_modules/**`
+// - `*` / `?` inside a segment, never crossing `/`
+// - all other characters matched literally (regex specials are escaped)
+// Patterns without wildcards are treated as literal substrings by the caller.
+function patternToRegExp(pattern: string): RegExp {
+  const segments = pattern.split("/");
+  let source = "";
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    const isLast = i === segments.length - 1;
+    if (segment === "**") {
+      if (isLast) {
+        source = source.endsWith("/")
+          ? `${source.slice(0, -1)}(?:/.*)?`
+          : `${source}.*`;
+      } else {
+        source += "(?:.*/)?";
+      }
+    } else {
+      source += segmentToRegExpSource(segment);
+      if (!isLast) source += "/";
+    }
+  }
+  return new RegExp(`^${source}$`);
+}
+
+function compilePattern(pattern: string): Matcher {
+  if (!/[*?]/.test(pattern)) return (id) => id.includes(pattern);
+  const regExp = patternToRegExp(pattern);
+  return (id) => regExp.test(id);
+}
+
+/** Compile a pattern list into a matcher that is true when any pattern matches. */
+function compileAnyMatcher(patterns: string[]): Matcher {
+  const matchers = patterns.map(compilePattern);
+  return (id) => matchers.some((match) => match(id));
 }
 
 export default function nudoPlugin(options: NudoPluginOptions = {}): any {
-  const include = options.include ?? DEFAULT_INCLUDE;
-  const exclude = options.exclude ?? DEFAULT_EXCLUDE;
+  const includeMatch = compileAnyMatcher(options.include ?? DEFAULT_INCLUDE);
+  const excludeMatch = compileAnyMatcher(options.exclude ?? DEFAULT_EXCLUDE);
   const failOnError = options.failOnError ?? false;
 
   const analysisCache = new Map<string, AnalysisResult>();
@@ -39,7 +82,8 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): any {
     },
 
     transform(code: string, id: string) {
-      if (!matchesPatterns(id, include, exclude)) return null;
+      if (excludeMatch(id)) return null;
+      if (!includeMatch(id)) return null;
       if (!/@nudo:(case|mock|pure|skip|sample|returns|env|mock-module|as|replace)\b/.test(code)) return null;
 
       try {

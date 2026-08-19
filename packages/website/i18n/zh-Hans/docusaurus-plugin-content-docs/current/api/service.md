@@ -1,5 +1,6 @@
 ---
 sidebar_position: 3
+description: "@nudojs/service API —— analyzeFile/analyzeFileAsync、调用记录采集、模块图与脏集合、语义 token、.d.ts/zod/守卫生成、用例固化。"
 ---
 
 # @nudojs/service
@@ -19,7 +20,7 @@ analyzeFile(
 
 对文件运行类型推断。使用 `filePath` 进行模块解析和诊断。`activeCases` 将函数名映射到用例索引，用于诊断（如 IDE 中当前“激活”的用例）。
 
-`externalCallRecords` 接收由 [`collectCallRecords`](#collectcallrecords) 从使用现场文件（测试、示例、上层应用）收集的调用记录。能解析到本文件所定义函数的记录会被匹配并注入为合成的 `call@L` 用例——参见[调用点发现指南](/docs/guides/callsite-discovery)。
+`externalCallRecords` 接收由 [`collectCallRecords`](#collectcallrecords) 从使用现场文件（测试、示例、上层应用）收集的调用记录。能解析到本文件所定义函数的记录会被匹配并注入为合成的 `call@L` 用例——参见[调用点发现指南](../guides/callsite-discovery.md)。
 
 没有 `@nudo:case` 指令的函数也不会被跳过：全程序推断会为每个观测到的调用点合成一个 `call@L` 用例；找不到调用点时合成参数为 `T.unknown` 的 `entry@L` 用例（并在 [`FunctionAnalysis`](#functionanalysis) 上标记 `entryOnly`）。
 
@@ -52,7 +53,7 @@ collectCallRecords(filePath: string, source: string): CallRecord[]
 
 调用点发现的第一阶段：求值使用现场文件的顶层代码，记录其中每一次调用及其在调用点实际观测到的实参类型与结果类型。测试框架的回调（`it`、`test`、`describe`）会以 `unknown` 参数被手动执行，从而捕获测试体内的调用点——测试框架本身从不运行。该阶段不产出诊断、也不会抛出异常：使用现场文件可能依赖未 mock 的全局，收集尽力而为。
 
-将返回的记录作为 `externalCallRecords` 传给 `analyzeFile`/`analyzeFileAsync`，即可注入为 `call@L` 用例。两阶段流程见[调用点发现 — 编程 API](/docs/guides/callsite-discovery#编程接口)。
+将返回的记录作为 `externalCallRecords` 传给 `analyzeFile`/`analyzeFileAsync`，即可注入为 `call@L` 用例。两阶段流程见[调用点发现 — 编程 API](../guides/callsite-discovery.md#编程接口)。
 
 **返回：** `CallRecord[]`（见 [`CallRecord`](#callrecord)）
 
@@ -141,20 +142,45 @@ CLI 收集器、监视模式与 LSP `isNudoFile` 判定共享的扩展名门：`
 buildSemanticTokens(filePath: string, source: string): number[]
 ```
 
-从分析结果产出 LSP 编码的语义 token（五元组：deltaLine/deltaStartChar/length/tokenType/tokenModifiers）——函数绑定标为 `function`，其余绑定标为 `variable`，参数标为 `parameter`。LSP 服务器的 semanticTokens handler 直接消费它；配套图例从同一模块导出。
+从分析结果产出 LSP 编码的语义 token（五元组：deltaLine/deltaStartChar/length/tokenType/tokenModifiers）——函数绑定标为 `function`，其余绑定标为 `variable`，参数标为 `parameter`。LSP 服务器的 semanticTokens handler 直接消费它。
+
+配套的图例与编码器从同一模块导出，LSP 包再原样再导出（`TOKEN_TYPES`/`TOKEN_MODIFIERS`），因此 tokenType 索引不可能与提取器漂移：
+
+```typescript
+SEMANTIC_TOKEN_TYPES: readonly string[]    // ["function", "variable", "parameter", "property",
+                                           //  "type", "keyword", "string", "number", "comment",
+                                           //  "decorator", "method"]
+SEMANTIC_TOKEN_MODIFIERS: readonly string[] // ["declaration", "readonly", "deprecated", "unreachable"]
+
+type SemanticToken = {
+  line: number; char: number; length: number;
+  typeIndex: number; modifierBitmask: number;
+};
+
+encodeSemanticTokens(tokens: SemanticToken[]): number[];
+```
+
+`encodeSemanticTokens` 把 `{ line, char, … }` token 增量编码为 LSP 期望的扁平 `number[]`——`buildSemanticTokens` 已经返回编码后的输出，只有自己构造 token 时才需要它。
 
 ---
 
 ## buildModuleGraph
 
 ```typescript
-buildModuleGraph(files: string[]): {
+buildModuleGraph(
+  files: string[],
+  cache?: ModuleGraphCache,
+): {
   imports: Map<string, Set<string>>;    // 文件 → 它导入的文件
   dependents: Map<string, Set<string>>; // 文件 → 导入它的文件
 }
+
+type ModuleGraphCache = Map<string, { mtimeMs: number; size: number; edges: string[] }>;
 ```
 
 静态抽取每个文件的相对导入边——增量分析的基础构件。扩展名解析规则与模块解析一致（`''`、`.js`、`.ts`、`.mjs`）；裸 npm 说明符会被跳过。CLI 的 watch 模式和 LSP 的脏传播都用它在各自已知文件集上建图。
+
+传入 `cache` 可跨重建保留每文件的导入边（LSP 会话以 `moduleGraphCache` 导出一份）：文件 `mtimeMs` **和** `size` 均未变时命中——只做一次 `stat`，零磁盘读取、零解析；未命中则重读文件并回填条目。
 
 ---
 
@@ -208,6 +234,16 @@ generateDts(result: AnalysisResult): string
 
 ---
 
+## generateFunctionDtsLines
+
+```typescript
+generateFunctionDtsLines(fn: FunctionAnalysis): string[]
+```
+
+[`generateDts`](#generatedts) 的按函数切片——JSDoc 加一行 `export declare function`。CLI 的 `infer --dts` / `watch --dts` 与 `generateDts` 共用本函数，两条路径的声明输出字节级一致。无用例的函数不产出（或仅 `combined` 已知时产出一行 rest-args 的 `(...args: unknown[])` 声明）；`noDeclaration` 函数（CJS `exports.X = fn`）不产出，只留在 infer/JSON 输出中。
+
+---
+
 ## typeValueToZodSchema
 
 ```typescript
@@ -242,7 +278,7 @@ generateGuardFunction("isUser", T.object({ name: T.string }))
 
 ## 用例固化
 
-用例固化（case emission）这组函数把合成的 `call@L` 用例写回源码文本。CLI 的 `--emit-cases` 只是对它们的薄封装——工作流与合并策略见 [CLI 使用指南 —— 固化 case 指令](/docs/guides/cli#固化-case-指令)。
+用例固化（case emission）这组函数把合成的 `call@L` 用例写回源码文本。CLI 的 `--emit-cases` 只是对它们的薄封装——工作流与合并策略见 [CLI 使用指南 —— 固化 case 指令](../guides/cli.md#固化-case-指令)。
 
 ### serializeCaseArg
 
@@ -378,7 +414,9 @@ type CaseResult = {
   result: TypeValue;
   throws: TypeValue;
   throwLoc?: SourceLocation;
-  source?: "directive" | "callsite"; // 手写 @nudo:case 或合成 call@L
+  source?: "directive" | "callsite"; // "callsite" = 由观测到的调用点合成；
+                                     // 手写用例与 entry@ 回退不设置该字段
+                                     //（CLI generate 路径会把指令求值的用例标为 "directive"）
   aggregatedFrom?: number;           // 折叠进符号化用例的额外调用点数
 }
 ```
@@ -401,7 +439,7 @@ type CallRecord = {
 }
 ```
 
-`targetModule`/`targetExport`/`fnModule` 字段驱动归属守卫：一条记录只会匹配其模块真正指向的文件，因此测试文件里的同名辅助函数不会把记录涂抹到无关文件上。参见[调用点发现 — 安全设计](/docs/guides/callsite-discovery#安全性设计)。
+`targetModule`/`targetExport`/`fnModule` 字段驱动归属守卫：一条记录只会匹配其模块真正指向的文件，因此测试文件里的同名辅助函数不会把记录涂抹到无关文件上。参见[调用点发现 — 安全设计](../guides/callsite-discovery.md#安全性设计)。
 
 ### CaseInfo
 

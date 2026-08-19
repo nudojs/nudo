@@ -1,5 +1,6 @@
 ---
 sidebar_position: 3
+description: "@nudojs/service API — analyzeFile/analyzeFileAsync, call-record collection, module graph and dirty set, semantic tokens, d.ts/zod/guard generation, case emission."
 ---
 
 # @nudojs/service
@@ -19,7 +20,7 @@ analyzeFile(
 
 Runs type inference on a file. Uses `filePath` for module resolution and diagnostics. `activeCases` maps function name → case index for diagnostics (e.g. which case is “active” in the IDE).
 
-`externalCallRecords` accepts call records harvested by [`collectCallRecords`](#collectcallrecords) from usage-site files (tests, examples, upstream apps). Records that resolve to functions defined in this file are matched and injected as synthesized `call@L` cases — see the [Call-Site Discovery guide](/docs/guides/callsite-discovery).
+`externalCallRecords` accepts call records harvested by [`collectCallRecords`](#collectcallrecords) from usage-site files (tests, examples, upstream apps). Records that resolve to functions defined in this file are matched and injected as synthesized `call@L` cases — see the [Call-Site Discovery guide](../guides/callsite-discovery.md).
 
 Functions without `@nudo:case` directives are not skipped: whole-program inference synthesizes a `call@L` case for each observed call site, or an `entry@L` case with `T.unknown` parameters when no call site is found (marked `entryOnly` on the [`FunctionAnalysis`](#functionanalysis)).
 
@@ -52,7 +53,7 @@ collectCallRecords(filePath: string, source: string): CallRecord[]
 
 Phase 1 of call-site discovery: evaluates a usage-site file's top-level code and records every call it makes, with the real argument and result types observed at each call site. Test-framework callbacks (`it`, `test`, `describe`) are invoked with `unknown` parameters so call sites inside test bodies are captured — the test framework itself never runs. The pass produces no diagnostics and never throws: usage-site files may depend on unmocked globals, so collection is best-effort.
 
-Pass the returned records to `analyzeFile`/`analyzeFileAsync` as `externalCallRecords` to have them injected as `call@L` cases. See [Call-Site Discovery — Programmatic API](/docs/guides/callsite-discovery#programmatic-api) for the two-phase flow.
+Pass the returned records to `analyzeFile`/`analyzeFileAsync` as `externalCallRecords` to have them injected as `call@L` cases. See [Call-Site Discovery — Programmatic API](../guides/callsite-discovery.md#programmatic-api) for the two-phase flow.
 
 **Returns:** `CallRecord[]` (see [`CallRecord`](#callrecord))
 
@@ -141,20 +142,45 @@ Extension gate shared by the CLI collector, watch mode, and the LSP `isNudoFile`
 buildSemanticTokens(filePath: string, source: string): number[]
 ```
 
-Produces LSP-encoded semantic tokens (5-tuples: deltaLine/deltaStartChar/length/tokenType/tokenModifiers) from the analysis result — function bindings typed as `function`, other bindings as `variable`, parameters as `parameter`. The LSP server's semanticTokens handler consumes this directly; the matching legend is exported from the same module.
+Produces LSP-encoded semantic tokens (5-tuples: deltaLine/deltaStartChar/length/tokenType/tokenModifiers) from the analysis result — function bindings typed as `function`, other bindings as `variable`, parameters as `parameter`. The LSP server's semanticTokens handler consumes this directly.
+
+The matching legend and encoder are exported from the same module, and the LSP package re-exports them (`TOKEN_TYPES`/`TOKEN_MODIFIERS`) so the token-type indices can never drift from the extractor:
+
+```typescript
+SEMANTIC_TOKEN_TYPES: readonly string[]    // ["function", "variable", "parameter", "property",
+                                           //  "type", "keyword", "string", "number", "comment",
+                                           //  "decorator", "method"]
+SEMANTIC_TOKEN_MODIFIERS: readonly string[] // ["declaration", "readonly", "deprecated", "unreachable"]
+
+type SemanticToken = {
+  line: number; char: number; length: number;
+  typeIndex: number; modifierBitmask: number;
+};
+
+encodeSemanticTokens(tokens: SemanticToken[]): number[];
+```
+
+`encodeSemanticTokens` delta-encodes `{ line, char, … }` tokens into the flat `number[]` the LSP expects — `buildSemanticTokens` already returns encoded output, so you only need it when building tokens yourself.
 
 ---
 
 ## buildModuleGraph
 
 ```typescript
-buildModuleGraph(files: string[]): {
+buildModuleGraph(
+  files: string[],
+  cache?: ModuleGraphCache,
+): {
   imports: Map<string, Set<string>>;    // file → files it imports
   dependents: Map<string, Set<string>>; // file → files importing it
 }
+
+type ModuleGraphCache = Map<string, { mtimeMs: number; size: number; edges: string[] }>;
 ```
 
 Statically extracts each file's relative import edges — the building block for incremental analysis. Extension resolution matches module resolution (`''`, `.js`, `.ts`, `.mjs`); bare npm specifiers are skipped. Both the CLI's watch mode and the LSP's dirty propagation build a graph over their known files this way.
+
+Pass a `cache` to keep per-file edges across rebuilds (the LSP session exports one as `moduleGraphCache`): an entry is reused when the file's `mtimeMs` **and** `size` are unchanged — a `stat`-only hit with zero disk reads and zero parsing; a miss re-reads the file and backfills the entry.
 
 ---
 
@@ -208,6 +234,16 @@ Generates TypeScript declaration content (`.d.ts`) from an analysis result. Prod
 
 ---
 
+## generateFunctionDtsLines
+
+```typescript
+generateFunctionDtsLines(fn: FunctionAnalysis): string[]
+```
+
+Per-function slice of [`generateDts`](#generatedts) — JSDoc plus one `export declare function` line. The CLI's `infer --dts` / `watch --dts` share this exact function with `generateDts`, so both paths emit byte-identical declarations. Functions without cases emit nothing (or a rest-args `(...args: unknown[])` line when only `combined` is known); `noDeclaration` functions (CJS `exports.X = fn`) emit nothing and stay in infer/JSON output only.
+
+---
+
 ## typeValueToZodSchema
 
 ```typescript
@@ -242,7 +278,7 @@ generateGuardFunction("isUser", T.object({ name: T.string }))
 
 ## Case Emission
 
-The case-emitter functions freeze synthesized `call@L` cases into source text. The CLI's `--emit-cases` is a thin orchestration over them — see the [CLI guide — Persisting cases as directives](/docs/guides/cli#persisting-cases-as-directives) for the workflows and merge policy.
+The case-emitter functions freeze synthesized `call@L` cases into source text. The CLI's `--emit-cases` is a thin orchestration over them — see the [CLI guide — Persisting cases as directives](../guides/cli.md#persisting-cases-as-directives) for the workflows and merge policy.
 
 ### serializeCaseArg
 
@@ -380,7 +416,9 @@ type CaseResult = {
   result: TypeValue;
   throws: TypeValue;
   throwLoc?: SourceLocation;
-  source?: "directive" | "callsite"; // hand-written @nudo:case or synthesized call@L
+  source?: "directive" | "callsite"; // "callsite" = synthesized from an observed call site;
+                                     // hand-written cases and entry@ fallbacks leave it unset
+                                     // (the CLI generate path tags directive-evaluated cases "directive")
   aggregatedFrom?: number;           // additional call sites folded into a symbolic case
 }
 ```
@@ -403,7 +441,7 @@ type CallRecord = {
 }
 ```
 
-The `targetModule`/`targetExport`/`fnModule` fields drive the attribution gate: a record only matches files its module actually points at, so same-named helpers in test files cannot smear their records across unrelated files. See [Call-Site Discovery — Safety Design](/docs/guides/callsite-discovery#safety-design).
+The `targetModule`/`targetExport`/`fnModule` fields drive the attribution gate: a record only matches files its module actually points at, so same-named helpers in test files cannot smear their records across unrelated files. See [Call-Site Discovery — Safety Design](../guides/callsite-discovery.md#safety-design).
 
 ### CaseInfo
 

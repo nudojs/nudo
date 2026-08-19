@@ -1,5 +1,6 @@
 ---
 sidebar_position: 7
+description: "@nudojs/harvester API — harvestDts and emitEnvModule: convert @types .d.ts declarations into Nudo env definitions with T.* constructors."
 ---
 
 # @nudojs/harvester

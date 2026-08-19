@@ -1,14 +1,17 @@
 ---
 sidebar_position: 4
+description: Browse practical Nudo inference examples grouped by theme — functions and objects, strings, loops and ranges, unions, validation, and runtime environments.
 ---
 
 # Examples
 
-This guide shows practical examples of Nudo type inference. Each example includes the input code with directives and the inferred types.
+This guide shows practical examples of Nudo type inference, grouped by theme. Each example includes the input code with directives and the inferred types.
 
 ---
 
-## 1. Basic Function with Literal and Symbolic Cases
+## Basic Inference
+
+### 1. Basic Function with Literal and Symbolic Cases
 
 A function with multiple cases: concrete values and symbolic type values. Nudo combines the results.
 
@@ -25,7 +28,7 @@ function subtract(a, b) {
 
 **Inferred output:**
 
-```
+```text
 === subtract ===
 
 Case "positive numbers": (5, 3) => 2
@@ -39,7 +42,7 @@ Concrete cases keep their literal results (`2`, `-9`), and the symbolic case `(T
 
 ---
 
-## 2. Object Manipulation with Type Narrowing
+### 2. Object Manipulation with Type Narrowing
 
 Destructuring and property access. Nudo infers types through object shapes.
 
@@ -55,7 +58,7 @@ function greet({ name, age }) {
 
 **Inferred output:**
 
-```
+```text
 === greet ===
 
 Case "concrete": ({ name: "Alice", age: 30 }) => "Hello, Alice! You are 30 years old."
@@ -68,7 +71,7 @@ Nudo narrows `name` and `age` from the object shape in each case. Template resul
 
 ---
 
-## 3. Array Processing with map/filter
+### 3. Array Processing with map/filter
 
 Arrays and higher-order functions. Nudo tracks element types through `map` and `filter`.
 
@@ -84,7 +87,7 @@ function doubleAll(arr) {
 
 **Inferred output:**
 
-```
+```text
 === doubleAll ===
 
 Case "concrete": ([1, 2, 3]) => [2, 4, 6]
@@ -97,7 +100,9 @@ Nudo tracks element types through `map`. The concrete input `[1, 2, 3]` is evalu
 
 ---
 
-## 4. Async Function with Mocked fetch
+## Async Calls and Errors
+
+### 4. Async Function with Mocked fetch
 
 Async functions and external APIs. Use `@nudo:mock` to replace `fetch` (or other globals) with a mock whose body is plain JavaScript, written on a single line.
 
@@ -114,7 +119,7 @@ async function fetchUser(id) {
 
 **Inferred output:**
 
-```
+```text
 === fetchUser ===
 
 Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
@@ -124,7 +129,7 @@ With the mock in place, Nudo infers that `fetchUser` returns `Promise<{ id: 1, n
 
 ---
 
-## 5. Error Handling with Throws Tracking
+### 5. Error Handling with Throws Tracking
 
 Functions that throw. Nudo tracks both the normal return type and the thrown type.
 
@@ -143,7 +148,7 @@ function safeSqrt(x) {
 
 **Inferred output:**
 
-```
+```text
 === safeSqrt ===
 
 Case "valid": (10) => number
@@ -160,7 +165,9 @@ Nudo models control flow: the `valid` case returns `number`, the `negative` case
 
 ---
 
-## 6. Template Strings — Nudo vs TypeScript
+## Strings and Templates
+
+### 6. Template Strings — Nudo vs TypeScript
 
 Nudo preserves string structure through concatenation, enabling precise inference that TypeScript cannot achieve.
 
@@ -193,7 +200,7 @@ Nudo knows the result is always `true` because the template's prefix starts with
 
 ---
 
-## 7. Precise String Methods
+### 7. Precise String Methods
 
 Nudo evaluates string methods on literals at compile time, producing exact results.
 
@@ -215,7 +222,9 @@ Every result is a precise literal type. TypeScript can only infer `string`, `str
 
 ---
 
-## 8. Loop Evaluation
+## Loops and Ranges
+
+### 8. Loop Evaluation
 
 Nudo can evaluate loops with concrete bounds, computing exact results at type level — something TypeScript cannot do at all.
 
@@ -235,20 +244,20 @@ function sumTo(n) {
 
 **Inferred output:**
 
-```
+```text
 === sumTo ===
 
 Case "concrete": (5) => 10
 Case "symbolic": (number) => number
 
-Combined: 10 | number
+Combined: number
 ```
 
-With concrete input `5`, Nudo evaluates the loop and produces the exact result `10`. With abstract input `T.number`, it widens to `number` after fixed-point iteration, and the combined type keeps both.
+With concrete input `5`, Nudo evaluates the loop and produces the exact result `10`. With abstract input `T.number`, it widens to `number` after fixed-point iteration. The combined type simplifies by absorption — the literal `10` is absorbed by the base type `number` from the symbolic case.
 
 ---
 
-## 9. Refined Types — Range Narrowing
+### 9. Refined Types — Range Narrowing
 
 Refined types attach constraints to a base type. You get them built-in: comparison guards refine `number` into a range that keeps its constraint in the inferred output.
 
@@ -264,7 +273,7 @@ function pickAdult(age) {
 
 **Inferred output:**
 
-```
+```text
 === pickAdult ===
 
 Case "symbolic": (number) => number (>= 18) | -1
@@ -274,7 +283,9 @@ Inside the `if (age >= 18)` branch, `age` is no longer plain `number` — it car
 
 ---
 
-## 10. Discriminated Union State Machine
+## Unions and Safe Access
+
+### 10. Discriminated Union State Machine
 
 A state machine where each state has a different shape. Nudo narrows the union based on the discriminant field `status`.
 
@@ -297,7 +308,7 @@ function handleState(state) {
 
 **Inferred output:**
 
-```
+```text
 === handleState ===
 
 Case "idle": ({ status: "idle" }) => "Waiting..."
@@ -312,7 +323,7 @@ Nudo narrows `state` inside each `case` branch based on the discriminant. In the
 
 ---
 
-## 11. Optional Chaining with Nullish Coalescing
+### 11. Optional Chaining with Nullish Coalescing
 
 Safe property access through optional chaining and fallback with nullish coalescing. Nudo tracks which properties exist at each branch.
 
@@ -329,7 +340,7 @@ function getTheme(config) {
 
 **Inferred output:**
 
-```
+```text
 === getTheme ===
 
 Case "full": ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } }) => "dark"
@@ -343,7 +354,7 @@ When the full path exists, Nudo returns the literal `"dark"`. When `settings` or
 
 ---
 
-## 12. API Response Validation
+### 12. API Response Validation
 
 Handling API responses with different status codes. Nudo narrows the response shape based on the status check.
 
@@ -363,7 +374,7 @@ function parseResponse(response) {
 
 **Inferred output:**
 
-```
+```text
 === parseResponse ===
 
 Case "success": ({ status: 200, data: { id: 1, name: "Alice", email: "alice@example.com" } }) => { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } }
@@ -381,7 +392,9 @@ The `status === 200` check narrows the response: inside the `if` branch, `respon
 
 ---
 
-## 13. Form Data Processing
+## Validation Functions
+
+### 13. Form Data Processing
 
 Sequential validation checks with multiple `return` branches. Nudo evaluates the conversions precisely and reports each branch's result as a union.
 
@@ -401,7 +414,7 @@ function validateForm(data) {
 
 **Inferred output:**
 
-```
+```text
 === validateForm ===
 
 Case "valid": ({ name: "Alice", age: "25", email: "alice@example.com" }) => { valid: false, error: "Invalid age" } | { valid: true, name: "Alice", age: 25, email: "alice@example.com" }
@@ -419,7 +432,7 @@ The `Number(...)` conversions are evaluated precisely — `Number("25")` produce
 
 ---
 
-## 14. Type Guard Function
+### 14. Type Guard Function
 
 A function whose return type acts as a type guard. Nudo infers the boolean result for each input case.
 
@@ -436,7 +449,7 @@ function isString(value) {
 
 **Inferred output:**
 
-```
+```text
 === isString ===
 
 Case "string": ("hello") => true
@@ -450,7 +463,9 @@ Nudo evaluates `typeof` on each literal input at the type level. `"hello"` has `
 
 ---
 
-## 15. Web Environment — fetch, localStorage, URL
+## Runtime Environments
+
+### 15. Web Environment — fetch, localStorage, URL
 
 Use `@nudo:env web` to get built-in type definitions for Web APIs. No manual mocking needed for standard browser globals.
 
@@ -472,7 +487,7 @@ async function fetchUser(id) {
 
 **Inferred output:**
 
-```
+```text
 === fetchUser ===
 
 Case "get user": (1) => Promise<unknown>
@@ -499,7 +514,7 @@ function savePreference(key, value) {
 
 ---
 
-## 16. Node.js Environment — fs, path, crypto
+### 16. Node.js Environment — fs, path, crypto
 
 Use `@nudo:env node` to get built-in type definitions for Node.js globals and modules.
 
@@ -522,7 +537,7 @@ function loadConfig(dir) {
 
 **Inferred output:**
 
-```
+```text
 === loadConfig ===
 
 Case "test": (string) => unknown
@@ -562,4 +577,4 @@ function hashContent(data) {
 | `@nudo:env`     | Declare runtime environment (web, node, es)  |
 | `@nudo:mock-module` | Replace imported modules with mock files |
 
-For more on type values (`T.number`, `T.object`, etc.) and abstract interpretation, see [Type Values](/docs/concepts/type-values) and [Abstract Interpretation](/docs/concepts/abstract-interpretation).
+For more on type values (`T.number`, `T.object`, etc.) and abstract interpretation, see [Type Values](../concepts/type-values.md) and [Abstract Interpretation](../concepts/abstract-interpretation.md).

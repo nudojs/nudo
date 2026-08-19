@@ -1,5 +1,6 @@
 ---
 sidebar_position: 6
+description: "Connect AI coding agents to Nudo's language server: LSP→MCP bridges, native LSP clients, the five agent commands, and pull diagnostics."
 ---
 
 # Agent Integration Guide
@@ -84,7 +85,7 @@ Install the `nudo-vscode` extension and everything in this guide is already wire
 
 ## The five commands
 
-Each example is a complete `workspace/executeCommand` payload — copy, adjust the paths, and send. Shared sample file `src/app.js`:
+Each example is a complete `workspace/executeCommand` payload — copy, adjust the paths, and send. The commands share the sample file `src/app.js` below (the what-if example brings its own `src/config.js`):
 
 ```js
 function normalize(x) {
@@ -93,19 +94,27 @@ function normalize(x) {
 }
 ```
 
-**`nudo.whatIf`** — assume `x` is a string, ask what `trimmed` becomes:
+**`nudo.whatIf`** — hypothesize a type for one top-level binding and observe what another becomes. The bindings are injected as `@nudo:as` assumptions before analysis, so the answer reflects them. Sample `src/config.js`:
+
+```js
+const raw = loadRaw();
+const size = raw.length;
+```
 
 ```json
 { "command": "nudo.whatIf", "arguments": [{
-    "file": "src/app.js",
-    "bindings": [{ "name": "x", "type": "string" }],
-    "target": "trimmed"
+    "file": "src/config.js",
+    "bindings": [{ "name": "raw", "type": "string" }],
+    "target": "size"
 }] }
 ```
 
 ```text
-Type of "trimmed": string
+Type of "size": number
+Bindings applied: raw: string
 ```
+
+Without the assumption, `raw` is `unknown` and so is `size`. Bindings name **top-level declarations** — a binding with no matching declaration (a function parameter, a local) is reported back as `Bindings not applied (no top-level declaration found): …` and the answer uses the file's own types.
 
 **`nudo.trace`** — list every case's inputs and outputs:
 

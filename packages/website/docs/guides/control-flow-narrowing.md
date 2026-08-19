@@ -1,10 +1,11 @@
 ---
 sidebar_position: 5
+description: See how Nudo narrows types through branches — truthiness, discriminated unions, `in` checks, switch, and `Array.isArray()` — plus the evaluation-time semantics of `?.` and `??`.
 ---
 
 # Control Flow Narrowing
 
-Nudo tracks how types change as code flows through branches, guards, and operators. When you test a value with a condition, Nudo narrows the type in the branch where the condition is true and keeps the complement in the false branch. This guide covers every narrowing pattern Nudo supports.
+Nudo tracks how types change as code flows through branches, guards, and operators. When you test a value with a condition, Nudo narrows the type in the branch where the condition is true and keeps the complement in the false branch. The sections below cover every branch-narrowing pattern Nudo supports; the closing section covers `?.` and `??`, which are evaluation-time behaviors rather than narrowing.
 
 Narrowing is observed through case inputs: give the function a union via `@nudo:case` and run `nudo infer`. Each `Case ... => ...` line in the output reports the result type for that input -- branches eliminated by narrowing never contribute to the result union. Every output block below is a real `nudo infer` run of the code above it.
 
@@ -33,55 +34,6 @@ Case "nullable name": (string | null | undefined) => string | "unknown"
 ```
 
 The true branch yields `string` (from `name.toUpperCase()`), the false branch contributes the literal `"unknown"`, and the result keeps both members. The clean run is itself evidence of narrowing -- without the guard, the same call reports `Method 'toUpperCase' does not exist on type 'string | null | undefined' (nudo:no-method)`.
-
-## Optional Chaining (`?.`)
-
-When the receiver of `x?.prop` evaluates to `null` or `undefined`, the chain short-circuits and the result is `undefined`. When the receiver is non-nullish, the chain resolves the property like a plain access. Driving this with two cases shows both paths:
-
-```js
-/**
- * @nudo:case "object present" (T.object({ length: T.number }))
- * @nudo:case "null" (T.null)
- */
-function getLength(maybeBox) {
-  return maybeBox?.length ?? 0;
-}
-```
-
-```text
-=== getLength ===
-
-Case "object present": ({ length: number }) => number
-Case "null": (null) => 0
-
-Combined: number
-```
-
-With the object present, `maybeBox?.length` resolves to `number` and the `?? 0` fallback never fires. With `null`, the chain short-circuits to `undefined`, so `?? 0` produces the literal `0`. The `Combined:` line unions all case results and then simplifies by absorption — the literal `0` is absorbed by the base type `number` from the other case.
-
-Note that `?.` short-circuits on a *concrete* nullish receiver. It does not by itself narrow a union-typed receiver: on an input of `T.union(T.object({ length: T.number }), T.null)`, the access `maybeBox?.length` still reports `Property 'length' does not exist on type '{ length: number } | null' (nudo:no-method)` -- use a truthiness guard first, then access.
-
-## Nullish Coalescing (`??`)
-
-The nullish coalescing operator removes `null` and `undefined` from the left operand's type. The result is the non-nullable left type or the right operand's type.
-
-```js
-/**
- * @nudo:case "config object" (T.object({ port: T.union(T.number, T.null, T.undefined) }))
- */
-function getPort(config) {
-  const port = config.port ?? 3000;
-  return port;
-}
-```
-
-```text
-=== getPort ===
-
-Case "config object": ({ port: number | null | undefined }) => number
-```
-
-`config.port` arrives as `number | null | undefined`, but the `?? 3000` fallback absorbs the nullish members, so `port` is `number`.
 
 ## Discriminated Union Narrowing
 
@@ -221,14 +173,67 @@ Case "input": (number[] | string) => number | string
 
 In the true branch `input` is `number[]`, so `input[0]` yields `number`; in the false branch `input` is `string`.
 
+## Safe Access and Defaulting (`?.` and `??`)
+
+Optional chaining and nullish coalescing are not branch narrowing — they are handled during expression evaluation, without the `narrow()` machinery that powers the patterns above. `?.` short-circuits to `undefined` when the receiver is a *concrete* `null`/`undefined`; `??` subtracts `null` and `undefined` from its left operand's type and falls back to the right side when nothing remains.
+
+### Optional Chaining (`?.`)
+
+When the receiver of `x?.prop` evaluates to `null` or `undefined`, the chain short-circuits and the result is `undefined`. When the receiver is non-nullish, the chain resolves the property like a plain access. Driving this with two cases shows both paths:
+
+```js
+/**
+ * @nudo:case "object present" (T.object({ length: T.number }))
+ * @nudo:case "null" (T.null)
+ */
+function getLength(maybeBox) {
+  return maybeBox?.length ?? 0;
+}
+```
+
+```text
+=== getLength ===
+
+Case "object present": ({ length: number }) => number
+Case "null": (null) => 0
+
+Combined: number
+```
+
+With the object present, `maybeBox?.length` resolves to `number` and the `?? 0` fallback never fires. With `null`, the chain short-circuits to `undefined`, so `?? 0` produces the literal `0`. The `Combined:` line unions all case results and then simplifies by absorption — the literal `0` is absorbed by the base type `number` from the other case.
+
+Note that `?.` short-circuits on a *concrete* nullish receiver. It does not by itself narrow a union-typed receiver: on an input of `T.union(T.object({ length: T.number }), T.null)`, the access `maybeBox?.length` still reports `Property 'length' does not exist on type '{ length: number } | null' (nudo:no-method)` -- use a truthiness guard first, then access.
+
+### Nullish Coalescing (`??`)
+
+The nullish coalescing operator removes `null` and `undefined` from the left operand's type. The result is the non-nullable left type or the right operand's type.
+
+```js
+/**
+ * @nudo:case "config object" (T.object({ port: T.union(T.number, T.null, T.undefined) }))
+ */
+function getPort(config) {
+  const port = config.port ?? 3000;
+  return port;
+}
+```
+
+```text
+=== getPort ===
+
+Case "config object": ({ port: number | null | undefined }) => number
+```
+
+`config.port` arrives as `number | null | undefined`, but the `?? 3000` fallback absorbs the nullish members, so `port` is `number`.
+
 ## Summary
 
 | Pattern | Condition | True Branch | False Branch |
 |---|---|---|---|
 | Truthiness | `if (x)` | Excludes `null`, `undefined`, `false`, `""`, `0` | Keeps falsy types |
-| Optional Chaining | `x?.prop` | Receiver non-nullish: resolves like a plain access | Receiver nullish: result is `undefined` |
-| Nullish Coalescing | `x ?? fallback` | Result excludes `null \| undefined` | N/A (expression) |
 | Discriminated Union | `x.kind === "lit"` | Keeps matching union member | Keeps remaining members |
 | `in` Operator | `"key" in x` | Keeps types with that property | Keeps types without it |
 | Switch | `switch (x) { case ... }` | Narrows per case literal | Default gets remainder (`never` if exhausted) |
 | `Array.isArray()` | `Array.isArray(x)` | Array types only | Non-array types only |
+
+`?.` and `??` are absent from this table on purpose: they are evaluation-time short-circuiting and defaulting (see *Safe Access and Defaulting* above), not branch narrowing.

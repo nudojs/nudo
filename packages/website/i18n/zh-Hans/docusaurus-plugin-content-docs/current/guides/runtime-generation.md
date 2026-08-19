@@ -1,12 +1,13 @@
 ---
 sidebar_position: 7
+description: 用 `nudo generate` 从 Nudo 推断的类型生成 Zod schema、零依赖类型守卫与 TypeScript 声明，全部输出到 stdout。
 ---
 
 # 运行时类型生成
 
 Nudo 的类型推断不仅止于静态分析。你可以直接从推断的类型生成运行时验证器，在开发时推断和生产时验证之间建立无缝桥梁。
 
-```
+```text
 JS code → Nudo infers types → Generate validators → Runtime validation
 ```
 
@@ -156,7 +157,7 @@ Guard 函数执行一系列 `typeof` 检查，没有 schema 解释开销。在�
 
 使用 `--format dts` 时，Nudo 为每个函数打印一条拓宽后的单一签名——与 `nudo infer <file> --dts` 输出一致。有三点需要了解：
 
-- 参数名来自源码（如 `user`）；只有声明节点无法恢复名称时才回退为按位置的 `arg0`、`arg1`。
+- 参数名来自源码（如 `input`）；只有声明节点无法恢复名称时才回退为按位置的 `arg0`、`arg1`。
 - 参数位置（逆变位）会被拓宽：字面量参数坍缩为基类型（`"hello"` → `string`、`[1, 2, 3]` → `number[]`），调用方可以传入任意兼容值。返回类型保留推断精度，包括嵌套字面量。
 
 ```bash
@@ -168,11 +169,10 @@ nudo generate src/api/users.js --format dts
 ```ts
 // === createUser TypeScript Declarations ===
 /**
- * Case: input ({ name: "Alice"; age: 30 }) => { id: 123; name: "Alice"; age: 30 }
- * @param user - { name: string; age: number }
- * @returns { id: 123; name: "Alice"; age: 30 }
+ * @param input - { name: string; age: number }
+ * @returns { id: 123; name: string; age: number }
  */
-export declare function createUser(user: { name: string; age: number }): { id: 123; name: "Alice"; age: 30 };
+export declare function createUser(input: { name: string; age: number }): { id: 123; name: string; age: number };
 ```
 
 存在多个 `@nudo:case` 指令时签名仍然是单一的——参数跨 case 取联合并拓宽，每个 case 的精确结果保留在 JSDoc 中：
@@ -217,11 +217,22 @@ nudo infer src/api/users.js --json
   "functions": [
     {
       "name": "createUser",
-      "loc": { "start": { "line": 4, "column": 0 }, "end": { "line": 6, "column": 1 } },
+      "loc": {
+        "start": {
+          "line": 4,
+          "column": 0
+        },
+        "end": {
+          "line": 6,
+          "column": 1
+        }
+      },
       "cases": [
         {
           "name": "input",
-          "args": ["{ name: string, age: number }"],
+          "args": [
+            "{ name: string, age: number }"
+          ],
           "result": "{ id: 123, name: string, age: number }",
           "throws": null,
           "source": null
@@ -288,7 +299,7 @@ nudo generate src/api/products.js --format all
 
 输出（stdout）：
 
-```
+```text
 // === createProduct Zod Schemas ===
 // Case "input":
 // Input: { arg0: z.object({ name: z.string(), price: z.number(), tags: z.array(z.string()) }) }
@@ -301,11 +312,10 @@ export function iscreateProductInputOutput(data) {
 
 // === createProduct TypeScript Declarations ===
 /**
- * Case: input ({ name: "Widget"; price: 9.99; tags: ["a"] }) => { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
- * @param product - { name: string; price: number; tags: string[] }
- * @returns { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
+ * @param input - { name: string; price: number; tags: string[] }
+ * @returns { id: 456; name: string; price: number; tags: string[] }
  */
-export declare function createProduct(product: { name: string; price: number; tags: string[] }): { id: 456; name: "Widget"; price: 9.99; tags: ["a"] };
+export declare function createProduct(input: { name: string; price: number; tags: string[] }): { id: 456; name: string; price: number; tags: string[] };
 ```
 
 **3. 把需要的部分粘贴进你的应用：**
@@ -347,11 +357,10 @@ if (!result.success) {
 ```ts
 // src/api/products.d.ts -- 粘贴自上面的 stdout
 /**
- * Case: input ({ name: "Widget"; price: 9.99; tags: ["a"] }) => { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
- * @param product - { name: string; price: number; tags: string[] }
- * @returns { id: 456; name: "Widget"; price: 9.99; tags: ["a"] }
+ * @param input - { name: string; price: number; tags: string[] }
+ * @returns { id: 456; name: string; price: number; tags: string[] }
  */
-export declare function createProduct(product: { name: string; price: number; tags: string[] }): { id: 456; name: "Widget"; price: 9.99; tags: ["a"] };
+export declare function createProduct(input: { name: string; price: number; tags: string[] }): { id: 456; name: string; price: number; tags: string[] };
 ```
 
 ```ts
@@ -359,7 +368,7 @@ export declare function createProduct(product: { name: string; price: number; ta
 import { createProduct } from "./api/products.js";
 
 const product = createProduct({ name: "Widget", price: 9.99, tags: ["sale"] });
-//    ^? { id: 456; name: "Widget"; price: 9.99; tags: ["sale"] }
+//    ^? { id: 456; name: string; price: number; tags: string[] }
 ```
 
 每个函数只需一行指令，这个工作流就能在 JavaScript/TypeScript 边界上提供完整的运行时安全和编辑器支持。

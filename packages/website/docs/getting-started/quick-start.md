@@ -1,5 +1,6 @@
 ---
 sidebar_position: 2
+description: "Infer your first types in minutes: add @nudo:case directives to a JavaScript file and run npx nudo infer."
 ---
 
 # Quick Start
@@ -36,7 +37,7 @@ npx nudo infer math.js
 
 ## 3. Output
 
-```
+```text
 === subtract ===
 
 Case "positive numbers": (5, 3) => 2
@@ -105,7 +106,7 @@ Use `--dts` to generate `.d.ts` files on each change:
 npx nudo watch . --dts
 ```
 
-Watch recursively scans every `.js` file under the directory (excluding `node_modules`) — including files without directives.
+Watch recursively scans every `.js`, `.mjs`, and `.ts` file under the directory (excluding `node_modules`) — including files without directives.
 
 ## Functions without directives
 
@@ -140,7 +141,7 @@ Case "entry@L1": (unknown, unknown) => `${unknown}: ${unknown}`
 # no call sites found; parameters default to unknown
 ```
 
-To upgrade directive-free code to real call shapes, harvest cases from your tests with `--callsites` — see the [Call-Site Discovery guide](/docs/guides/callsite-discovery).
+To upgrade directive-free code to real call shapes, harvest cases from your tests with `--callsites` — see the [Call-Site Discovery guide](../guides/callsite-discovery.md).
 
 ## What happened?
 
@@ -148,4 +149,4 @@ To upgrade directive-free code to real call shapes, harvest cases from your test
 2. **Execute** — For each case, it ran the function body using abstract interpretation: operands like `a - b` were evaluated with type values instead of concrete numbers.
 3. **Combine** — With multiple cases, Nudo merged the inferred return types into a union, then simplified it by absorption: the literals `2` and `-9` are absorbed by the `number` contributed by the symbolic case, yielding `number`. Pure-literal unions without a base-type member keep every literal.
 
-For deeper detail on type values, directives, and abstract interpretation, see [Core Concepts](/docs/concepts/type-values).
+For deeper detail on type values, directives, and abstract interpretation, see [Core Concepts](../concepts/type-values.md).

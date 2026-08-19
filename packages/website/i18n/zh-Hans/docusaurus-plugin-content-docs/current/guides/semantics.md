@@ -1,10 +1,11 @@
 ---
 sidebar_position: 9
+description: 了解 Nudo 求值器精确建模的 JavaScript 语义——this 绑定、宽松相等折叠、可迭代性判定、Promise 解析与递归预算。
 ---
 
 # 语言语义
 
-Nudo 通过用符号值*执行*你的代码来推断类型，因此推断的质量就等于求值器 JavaScript 语义的质量。本指南列出 Nudo 精确建模的语言行为——每一项都是过去会退化成 `unknown`、如今能推断出具体结果的构造。这些能力也正是[调用点发现](/docs/guides/callsite-discovery)得以生效的基础：采集到的调用形状，只有在求值器真正跟得动它们时才有价值。
+Nudo 通过用符号值*执行*你的代码来推断类型，因此推断的质量就等于求值器 JavaScript 语义的质量。本指南列出 Nudo 精确建模的语言行为——每一项都是过去会退化成 `unknown`、如今能推断出具体结果的构造。这些能力也正是[调用点发现](./callsite-discovery.md)得以生效的基础：采集到的调用形状，只有在求值器真正跟得动它们时才有价值。
 
 ## `this` 绑定
 
@@ -12,7 +13,7 @@ Nudo 通过用符号值*执行*你的代码来推断类型，因此推断的质�
 
 ```js
 function area() {
-  return this.radius ** 2;
+  return this.radius * this.radius;
 }
 
 area.call({ radius: 3 });      // → 9
@@ -22,12 +23,14 @@ circle.area();                 // → 25
 
 `obj.f()` 会把 `this` 绑定到 `obj` 的推断类型；`f.call(thisArg)` 与 `f.apply(thisArg, args)` 以相同的方式绑定显式接收者。
 
+一个注意事项：指数运算符**未被建模**。`this.radius ** 2` 会求值为 `unknown`——请改写为 `this.radius * this.radius`。
+
 ## 原始值自动装箱与 `Object.prototype`
 
 对原始值的属性访问会经过它的包装对象，而每个对象都携带 `Object.prototype` 的方法表。
 
 ```js
-"nudo".constructor;                 // → String constructor, not unknown
+"nudo".constructor;                 // → String constructor (renders as {})
 ({}).hasOwnProperty("key");         // → boolean
 config.hasOwnProperty("port");      // → resolves for any object shape
 ```
@@ -88,10 +91,10 @@ for (const x of [1, 2, 3, 4]) {
     break;
   }
 }
-found;                          // → 3
+found;                          // → number (>= 3)
 ```
 
-`continue` 切断当前迭代路径而不污染累加器；`break` 保留来自退出那一轮迭代的精确值。
+`continue` 切断当前迭代路径而不污染累加器；`break` 保留来自退出那一轮迭代的精确值。`found` 不是裸字面量 `3`，而是精化类型 `number (>= 3)`——退出值连同它的比较约束一起保留。
 
 ## 每轮迭代的 `let` 绑定
 
@@ -145,7 +148,7 @@ function walk(n) {
 }
 
 walk(5);                        // → 15 (fully evaluated)
-walk(10_000);                   // → number (budget hit; union of observed returns)
+walk(10_000);                   // → number | string (budget hit; union of observed returns)
 ```
 
 ## `Object.keys` 的联合类型分发
@@ -153,11 +156,25 @@ walk(10_000);                   // → number (budget hit; union of observed ret
 当接收者是多个对象形状的联合时，`Object.keys` 会对每个成员分别求键，再把键集合合并。
 
 ```js
-function firstKey(shape) {
+function keysOf(shape) {
   // shape: { port: number } | { host: string }
-  return Object.keys(shape)[0];
+  return Object.keys(shape);
 }
-// → "port" | "host"
+// → ["port", "host"]
+```
+
+对这个元组做索引是按位置进行的，而不是分发的：`Object.keys(shape)[0]` 得到 `"port"`——分发后元组的第一个键——而不是并集 `"port" | "host"`。
+
+## 宽松相等（`==` / `!=`）
+
+具体字面量之间的比较会在求值期按 JavaScript 的强制转换规则折叠。
+
+```js
+1 == "1";              // → true
+"a" != "b";            // → true
+0 == false;            // → true
+null == undefined;     // → true
+1 != "1";              // → false
 ```
 
 ## 总结
@@ -165,13 +182,14 @@ function firstKey(shape) {
 | 能力 | 示例 | 结果 |
 |---|---|---|
 | `this` 绑定 | `circle.area()` | 接收者形状流入函数体 |
-| 自动装箱 | `"nudo".constructor` | 包装对象的标记，而非 `unknown` |
+| 自动装箱 | `"nudo".constructor` | 解析到包装对象构造器，而非 `unknown` |
+| 宽松相等 | `1 == "1"` | 按强制转换规则折叠出字面量 `true` / `false` |
 | 可迭代性检查 | `Symbol.iterator in x` | 字面量 `true` / `false` |
 | 集合迭代 | `for (const [k, v] of map.entries())` | 精确的元素类型 |
 | Promise 解析 | `new Promise((res) => setTimeout(() => res("done")))` | `Promise<"done">` |
-| 循环跳转 | `break` / `continue` | 保留退出迭代的那个状态 |
+| 循环跳转 | `break` / `continue` | 保留退出值，如 `number (>= 3)` |
 | 每轮迭代的 `let` | `fns[i]()` 捕获当轮的 `i` | `0`、`2` —— 而非最终值 |
 | `arguments` | `arguments.length` | 实际参数组成的元组 |
 | 字面量内建函数 | `JSON.parse('{"port": 3000}')` | `{ port: 3000 }` |
 | 递归预算 | `walk(10_000)` | 观察到的并集，而非 `unknown` |
-| `Object.keys` | 联合类型接收者 | 键字面量的并集 |
+| `Object.keys` | 联合类型接收者 | 键集合并：`["port", "host"]` |

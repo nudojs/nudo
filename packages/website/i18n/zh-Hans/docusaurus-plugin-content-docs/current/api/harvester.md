@@ -1,5 +1,6 @@
 ---
 sidebar_position: 7
+description: "@nudojs/harvester API —— harvestDts 与 emitEnvModule：把 @types 的 .d.ts 声明转换为用 T.* 构造器重建类型的 Nudo env 定义。"
 ---
 
 # @nudojs/harvester

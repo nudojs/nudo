@@ -1,5 +1,6 @@
 ---
 sidebar_position: 1
+description: Install the Nudo CLI, VS Code extension, and Vite plugin via npm, pnpm, or yarn — requires Node.js 18+.
 ---
 
 # Installation

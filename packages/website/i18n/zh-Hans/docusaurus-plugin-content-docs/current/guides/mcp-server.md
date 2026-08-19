@@ -1,5 +1,6 @@
 ---
 sidebar_position: 6
+description: "将 AI 编码代理接入 Nudo 语言服务器：LSP→MCP 桥、原生 LSP 客户端、五个 agent 命令与拉取式诊断。"
 ---
 
 # Agent 集成指南
@@ -32,7 +33,7 @@ npx tsx node_modules/@nudojs/lsp/src/server.ts
 
 ```json
 {
-  "extensions": ["js", "mjs", "cjs"],
+  "extensions": ["js", "mjs", "ts"],
   "command": ["npx", "tsx", "node_modules/@nudojs/lsp/src/server.ts"],
   "rootDir": "."
 }
@@ -84,7 +85,7 @@ file_patterns = ["**/*.js", "**/*.mjs", "**/*.ts"]
 
 ## 五个命令
 
-每个示例都是完整的 `workspace/executeCommand` 载荷——复制、改路径、直接发送。共用示例文件 `src/app.js`：
+每个示例都是完整的 `workspace/executeCommand` 载荷——复制、改路径、直接发送。以下命令共用示例文件 `src/app.js`（what-if 示例自带 `src/config.js`）：
 
 ```js
 function normalize(x) {
@@ -93,19 +94,27 @@ function normalize(x) {
 }
 ```
 
-**`nudo.whatIf`** —— 假设 `x` 是 string，询问 `trimmed` 变成什么：
+**`nudo.whatIf`** ——为某个顶层绑定假设一个类型，观察另一个绑定变成什么。`bindings` 会以 `@nudo:as` 假设的形式在分析前注入，因此回答会反映它们。示例文件 `src/config.js`：
+
+```js
+const raw = loadRaw();
+const size = raw.length;
+```
 
 ```json
 { "command": "nudo.whatIf", "arguments": [{
-    "file": "src/app.js",
-    "bindings": [{ "name": "x", "type": "string" }],
-    "target": "trimmed"
+    "file": "src/config.js",
+    "bindings": [{ "name": "raw", "type": "string" }],
+    "target": "size"
 }] }
 ```
 
 ```text
-Type of "trimmed": string
+Type of "size": number
+Bindings applied: raw: string
 ```
+
+不做假设时，`raw` 是 `unknown`，`size` 也随之是 `unknown`。`bindings` 只匹配**顶层声明**——找不到对应声明（函数参数、局部变量）的绑定会以 `Bindings not applied (no top-level declaration found): …` 回报，回答使用文件自身的类型。
 
 **`nudo.trace`** —— 列出每个用例的输入和输出：
 

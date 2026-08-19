@@ -20,6 +20,10 @@
   "bin": {
     "nudo": "src/index.ts"
   },
+  "files": [
+    "src",
+    "!src/__tests__"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nudojs/nudo.git",
@@ -33,6 +37,7 @@
     "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
+    "commander": "^13.0.0",
     "@nudojs/core": "workspace:*",
     "@nudojs/parser": "workspace:*",
     "@nudojs/service": "workspace:*",
@@ -40,6 +45,6 @@
     "@nudojs/harvester": "workspace:*"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/evaluator-api.ts --format esm --dts"
+    "build": "tsup"
   }
 }

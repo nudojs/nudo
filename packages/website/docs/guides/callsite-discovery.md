@@ -1,5 +1,6 @@
 ---
 sidebar_position: 8
+description: "Harvest real argument shapes from your tests and apps with --callsites, synthesize call@L cases from them, and persist them as directives."
 ---
 
 # Call-Site Discovery
@@ -40,21 +41,19 @@ nudo infer lib/ --callsites test/
 
 Output:
 
-```
+```text
 === slugify ===
 
-Case "call@5": ("Hello World") => "hello-world"
-
-Combined: string
+Case "call@L4": ("Hello World") => string
 ```
 
-The case was not written by anyone — it was harvested from line 5 of the test file, which is why it is named `call@5`. Every recorded call site becomes one synthesized case; multiple call sites to the same function union into the combined type, exactly like hand-written `@nudo:case` directives do.
+The case was not written by anyone — it was harvested from line 4 of the test file, which is why it is named `call@L4`. Every recorded call site becomes one synthesized case; multiple call sites to the same function union into the combined type, exactly like hand-written `@nudo:case` directives do.
 
 ### Options
 
 | Argument | Description |
 |----------|-------------|
-| `<target>` | File or directory to analyze. Directories are scanned recursively. |
+| `<target>` | File or directory to analyze — `.js`, `.mjs`, or `.ts`; directories are scanned recursively for inference targets |
 | `--callsites <paths...>` | One or more usage-site files or directories (tests, examples, apps). Directories are scanned recursively. |
 | `--emit-cases [mode]` | Write the harvested cases back into the analyzed file as `@nudo:case` directives (`add` fills in functions without case directives; `=update` re-synchronizes generated ones) — see [Persisting harvested results](#persisting-harvested-results) |
 
@@ -134,9 +133,9 @@ Emission never touches hand-written work; it only manages its own `call@` direct
 - **Serializable shapes only.** Directive text can express primitives (`T.number`/`T.string`/`T.boolean`/`T.unknown`/`T.never`), literals, plain objects, arrays, tuples, and unions. Cases whose arguments contain functions, Promises, class instances, `bigint`, or `symbol` values cannot be frozen — they are skipped and reported as `no-serializable-cases` (the function's remaining serializable cases are still written).
 - **`call@` is a reserved prefix.** Any `@nudo:case` whose name starts with `call@` is treated as generated: `update` may rewrite or delete it. Don't name hand-written cases `call@…`.
 
-End-to-end workflow examples (bootstrap and drift detection) are in the [CLI guide — Persisting cases as directives](/docs/guides/cli#persisting-cases-as-directives); the programmatic flow over these functions is documented under [service API — Case Emission](/docs/api/service#case-emission).
+End-to-end workflow examples (bootstrap and drift detection) are in the [CLI guide — Persisting cases as directives](./cli.md#persisting-cases-as-directives); the programmatic flow over these functions is documented under [service API — Case Emission](../api/service.md#case-emission).
 
-To detect this drift proactively — in CI or before a release — run [`nudo doctor`](/docs/guides/cli#health-checks-and-ci-drift-gating): it re-runs the same re-solidify chain across your files and exits `1` as soon as any generated directives would change.
+To detect this drift proactively — in CI or before a release — run [`nudo doctor`](./cli.md#health-checks-and-ci-drift-gating): it re-runs the same re-solidify chain across your files and exits `1` as soon as any generated directives would change.
 
 ## Programmatic API
 
@@ -157,9 +156,9 @@ const result = analyzeFile(filePath, source, activeCases, records);
 | `collectCallRecords(filePath, source)` | Runs phase 1 on a usage-site file and returns its call records. |
 | `analyzeFile(filePath, source, activeCases?, externalCallRecords?)` | `analyzeFile` accepts harvested records as its fourth parameter; they are matched and injected as `call@L` cases. |
 
-See the [service API reference](/docs/api/service) for the full `AnalysisResult` shape.
+See the [service API reference](../api/service.md) for the full `AnalysisResult` shape.
 
 ## Next Steps
 
-- **[Language Semantics](/docs/guides/semantics)** — what the evaluator can do with the shapes call-site discovery hands it: `this` binding, promises, iterables, and more.
-- **[CLI Usage](/docs/guides/cli)** — all `nudo infer` and `nudo watch` options.
+- **[Language Semantics](./semantics.md)** — what the evaluator can do with the shapes call-site discovery hands it: `this` binding, promises, iterables, and more.
+- **[CLI Usage](./cli.md)** — all `nudo infer` and `nudo watch` options.

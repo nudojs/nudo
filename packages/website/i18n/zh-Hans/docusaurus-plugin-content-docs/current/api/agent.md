@@ -1,5 +1,6 @@
 ---
 sidebar_position: 5
+description: "Agent API —— 语言服务器内的五个 nudo.* 命令：whatIf 类型假设、suggestCase 指令建议、trace、selectCase、getActiveCases。"
 ---
 
 # Agent API
@@ -35,28 +36,34 @@ sidebar_position: 5
 | 名称 | 类型 | 描述 |
 |------|------|-------------|
 | `file` | `string` | JavaScript 文件的 `file://` URI 或路径 |
-| `bindings` | `Array<{ name: string, type: string }>` | 要应用的类型假设。`name` 是变量名；`type` 是类型表达式，如 `number` 或 `string \| null` |
-| `target` | `string` | 要获取类型的变量或表达式 |
+| `bindings` | `Array<{ name: string, type: string }>` | 要应用的类型假设。`name` 必须是**顶层声明**（顶层 `const`/`let`/`var`、函数或类）——函数参数与局部变量没有可匹配的声明，会被回报为未应用。`type` 是类型表达式，如 `number` 或 `string \| null` |
+| `target` | `string` | 要获取类型的顶层变量 |
 
-**返回：** `{ content: [{ type: "text", text }] }`，其中 `text` 为 `Type of "<target>": <type>`——目标**在假设绑定之下**的推断类型；不是已知绑定时为 `unknown`。
+**返回：** `{ content: [{ type: "text", text }] }`，其中 `text` 为 `Type of "<target>": <type>`——目标**在假设绑定之下**的推断类型；不是已知绑定时为 `unknown`。末尾的说明行回报哪些绑定生效了：`Bindings applied: …`；对没有顶层声明的名字则有 `Bindings not applied (no top-level declaration found): …`（此时答案使用文件自身的类型）。
 
-**示例**——给定 `const y = Number(x.trim())`，假设 `x` 是 `string`，询问 `y` 变成什么：
+**示例**——`src/config.js` 中有 `const size = raw.length`，`raw` 来自一个未知加载函数；假设 `raw` 是 `string`，询问 `size` 变成什么：
 
-```json
+```javascript
+const raw = loadRaw();
+const size = raw.length;
+```
+
+```javascripton
 {
   "command": "nudo.whatIf",
   "arguments": [
     {
-      "file": "src/app.js",
-      "bindings": [{ "name": "x", "type": "string" }],
-      "target": "y"
+      "file": "src/config.js",
+      "bindings": [{ "name": "raw", "type": "string" }],
+      "target": "size"
     }
   ]
 }
 ```
 
 ```text
-Type of "y": number
+Type of "size": number
+Bindings applied: raw: string
 ```
 
 ## nudo.suggestCase
@@ -136,6 +143,8 @@ Function "add" has 2 synthesized case(s); suggested directives:
 | `null` \| `undefined` | 对应的单例类型 |
 | `bigint` \| `symbol` | 其余基本类型 |
 | `string \| null` | 联合——“string 或 null” |
+
+已是 `T.*` 语法的形式与结构化表达式（对象/数组字面量、`=>` 函数）原样透传给指令文法（`parseTypeValueExpr`）；其他名字一律变为 `T.unknown`。
 
 ## 诊断
 

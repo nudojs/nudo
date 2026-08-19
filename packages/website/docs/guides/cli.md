@@ -1,10 +1,11 @@
 ---
 sidebar_position: 1
+description: "Drive Nudo from the terminal: infer types from files or directories, persist call-site cases as directives, and gate CI on drift."
 ---
 
 # CLI Usage
 
-The `nudo` CLI is the primary way to run type inference on JavaScript files. Install it globally or via `npx`:
+The `nudo` CLI is the primary way to run type inference on `.js`, `.mjs`, and `.ts` files. Install it globally or via `npx`:
 
 ```bash
 npm install -g @nudojs/cli
@@ -14,13 +15,47 @@ pnpm add -g @nudojs/cli
 
 ## `nudo infer`
 
-Infer types from a single JavaScript file. Functions with `@nudo:case` directives use them; every other function is still analyzed (whole-program inference) — observed calls become synthesized `call@L` cases, and functions with no call evidence get an `entry@L` case whose parameters default to `unknown`.
+Infer types from a single file — or from every inference target under a directory. Functions with `@nudo:case` directives use them; every other function is still analyzed (whole-program inference) — observed calls become synthesized `call@L` cases, and functions with no call evidence get an `entry@L` case whose parameters default to `unknown`.
 
 ```bash
-nudo infer <file>
+nudo infer <file-or-directory>
 ```
 
-`<file>` must be a single `.js` file — passing a directory fails with `EISDIR`. Use [`nudo watch`](#nudo-watch) for directories or a shell loop for many files.
+The target may be a `.js`, `.mjs`, or `.ts` file (TypeScript type annotations are stripped at the parser layer; the file is inferred with JS semantics) or a directory — directories are scanned recursively for inference targets (`.js`/`.mjs`/`.ts`, excluding `.d.ts`), and each file is analyzed in its own run. `--json` requires a single-file target.
+
+Given `lib/`:
+
+```js
+// lib/slug.js
+export function slugify(title) {
+  return title.toLowerCase().replace(/ /g, "-");
+}
+console.log(slugify("Hello World"));
+```
+
+```ts
+// lib/note.ts
+export function note(text) {
+  return "note: " + text;
+}
+```
+
+```bash
+nudo infer lib/
+```
+
+Output — one section per function, files in scan order:
+
+```text
+=== note ===
+
+Case "entry@L1": (unknown) => `note: ${unknown}`
+# no call sites found; parameters default to unknown
+
+=== slugify ===
+
+Case "call@L4": ("Hello World") => string
+```
 
 ### Options
 
@@ -28,8 +63,8 @@ nudo infer <file>
 |--------|-------------|
 | `--dts` | Generate a `.d.ts` declaration file next to the source file |
 | `--loc` | Show source locations (file:line:column) in the output |
-| `--json` | Output results as structured JSON (see the [JSON example](/docs/api/cli-reference#nudo-infer)) |
-| `--callsites <paths...>` | Mine usage sites (tests, examples, apps) for real argument shapes and synthesize cases from them — see [Call-Site Discovery](/docs/guides/callsite-discovery) |
+| `--json` | Output results as structured JSON — requires a single file (see the [JSON example](../api/cli-reference.md#nudo-infer)) |
+| `--callsites <paths...>` | Mine usage sites (tests, examples, apps) for real argument shapes and synthesize cases from them — see [Call-Site Discovery](./callsite-discovery.md) |
 | `--emit-cases [mode]` | Write the synthesized cases back into the source file as `@nudo:case` directives — see [Persisting cases as directives](#persisting-cases-as-directives) |
 | `--dry-run` | With `--emit-cases`: print a unified diff instead of writing to disk |
 | `--exit-on-diff` | With `--dry-run`: exit with code `1` when the diff is non-empty |
@@ -57,7 +92,7 @@ nudo infer math.js
 
 Output:
 
-```
+```text
 === subtract ===
 
 Case "positive numbers": (5, 3) => 2
@@ -85,7 +120,7 @@ nudo infer src/math.js --loc
 
 Output includes location information:
 
-```
+```text
 === subtract (src/math.js:6:0) ===
 
 Case "positive numbers": (5, 3) => 2
@@ -110,7 +145,7 @@ export function add(a, b) {
 nudo infer src/plain.js
 ```
 
-```
+```text
 === add ===
 
 Case "entry@L1": (unknown, unknown) => number | string
@@ -131,7 +166,7 @@ console.log(add("2", "3"));
 nudo infer src/main.js
 ```
 
-```
+```text
 --- src/plain.js (imported) ---
 
 === add ===
@@ -142,7 +177,7 @@ Case "call@L4": ("2", "3") => "23"
 Combined: 5 | "23"
 ```
 
-To harvest argument shapes from separate usage-site files (tests, examples, apps), pass them with `--callsites` — see [Call-Site Discovery](/docs/guides/callsite-discovery).
+To harvest argument shapes from separate usage-site files (tests, examples, apps), pass them with `--callsites` — see [Call-Site Discovery](./callsite-discovery.md).
 
 ### Persisting cases as directives
 
@@ -174,7 +209,7 @@ Run inference with the usage site and write the synthesized cases back:
 nudo infer lib.js --callsites test.js --emit-cases
 ```
 
-```
+```text
 === add ===
 
 Case "call@L3": (1, 2) => 3
@@ -215,7 +250,7 @@ module.exports = { add, greet };
 
 Running the same command again is idempotent — the summary at the end becomes:
 
-```
+```text
 No changes.
   add: already-generated
   greet: already-generated
@@ -237,7 +272,7 @@ Combine `update` with `--dry-run` and `--exit-on-diff` to turn this into a CI ga
 nudo infer lib.js --callsites test.js --emit-cases=update --dry-run --exit-on-diff
 ```
 
-```
+```text
 === add ===
 
 Case "call@L3": (1, 2) => 3
@@ -274,7 +309,7 @@ The diff is non-empty, so the command exits with code `1`. Drop `--dry-run` (and
 nudo infer lib.js --callsites test.js --emit-cases=update
 ```
 
-```
+```text
 === add ===
 
 Case "call@L3": (1, 2) => 3
@@ -298,147 +333,63 @@ To check a whole project for stale directives without reading diffs, see [Health
 
 #### What emission touches
 
-Emission never touches hand-written work; it only manages its own `call@` directives:
-
-| Function's existing cases | `--emit-cases` (add) | `--emit-cases=update` |
-|---------------------------|----------------------|------------------------|
-| Hand-written `@nudo:case` (name not starting with `call@`) | never touched | never touched |
-| Generated `call@` directives | not touched — reported `already-generated` | fully re-synchronized: added, changed, or deleted to match current call evidence (JSDoc blocks left empty are removed) |
-| No directives, but call evidence exists | directives written | directives written |
-| No call sites at all (entry-only) | not written — reported `entry-only` | not written — reported `entry-only` |
-
-- `call@` is the reserved name prefix for generated directives — a hand-written case named `call@…` is treated as generated.
-- Cases whose arguments cannot be expressed as directive text (functions, Promises, class instances, `bigint`, `symbol` values) are skipped and reported as `no-serializable-cases`; the function's remaining serializable cases are still written.
-- `--emit-cases` cannot be combined with `--json`; `--exit-on-diff` requires `--dry-run` — both violations print an error and exit with code `1`.
-
-See [Call-Site Discovery — Persisting harvested results](/docs/guides/callsite-discovery#persisting-harvested-results) for the same policy from the harvesting side, and the [service API — Case Emission](/docs/api/service#case-emission) for the programmatic flow.
+Emission never touches hand-written work — it only manages its own `call@` directives: hand-written cases are never modified, functions that already carry generated directives are reported `already-generated` (in `add` mode) or fully re-synchronized (in `update` mode), entry-only functions are never written, and non-serializable cases are skipped. The complete merge-policy table is documented in [Call-Site Discovery — Merge policy](./callsite-discovery.md#merge-policy); the programmatic flow is documented under [service API — Case Emission](../api/service.md#case-emission).
 
 ---
 
 ## `nudo check`
 
-Check a single JavaScript file for type errors and print one line per diagnostic, in the form `[severity] path:line:column message (error-code)`. `check` exits with code `1` when any error-level diagnostic is found — warnings alone keep the exit code at `0` — which makes it suitable for CI.
-
-```bash
-nudo check <file>
-```
-
-### Example
+Check a single file for type errors. `check` prints one line per diagnostic in the form `[severity] path:line:column message (error-code)` and exits with code `1` when any error-level diagnostic is found — warnings alone keep the exit code at `0`, which makes it suitable for CI.
 
 ```bash
 nudo check src/broken.js
 ```
 
-```
+```text
 [warning] src/broken.js:2:9 Cannot resolve 'name' on unknown value (nudo:unknown-recv)
 [warning] src/broken.js:2:9 Cannot resolve 'toUpperCase' on unknown value (nudo:unknown-recv)
 ```
 
-A file with no diagnostics prints:
-
-```
-No issues found.
-```
-
-A failed `@nudo:returns` assertion is error-level and makes `check` exit with `1`:
-
-```bash
-nudo check src/assert.js
-```
-
-```
-[error] src/assert.js:5:0 @nudo:returns assertion failed for case "sample": expected string, got 10. Update the @nudo:returns directive to match the inferred type, or fix the function implementation (nudo-assertion-failed)
-```
+Hint lines, error-level assertions, and the exit-code rules are covered in the [`nudo check` reference](../api/cli-reference.md#nudo-check).
 
 ---
 
 ## `nudo harvest`
 
-Convert installed `@types/<pkg>` TypeScript declarations into a Nudo env file — TypeScript source that rebuilds those types with `T.*` constructors. The `@types` package must be installed first.
-
-```bash
-nudo harvest <pkg> [--out <file>]
-```
-
-### Options
-
-| Option | Description |
-|--------|-------------|
-| `--out <file>` | Output `.ts` env file (default: `./nudo-harvest-<pkg>.ts`) |
-
-### Example
+Convert installed `@types/<pkg>` TypeScript declarations into a Nudo env file — TypeScript source that rebuilds those types with `T.*` constructors. The `@types` package must be installed first:
 
 ```bash
 pnpm add -D @types/node
 nudo harvest node
 ```
 
-Output:
-
-```
-Harvested @types/node → nudo-harvest-node.ts
-  files:    80
-  symbols:  1671
-  skipped:  148
-
-Usage — add this directive at the top of your JS file:
-  /// @nudo:env nudo-harvest-node.ts
-```
-
-The generated file starts with `// Auto-generated by nudo harvest — DO NOT EDIT` and exports a `defineEnv()` function built from `T.fnSig(...)`, `T.union(...)`, `T.instanceOf(...)` constructors. Reference it from the files that need those ambient types:
+Reference the generated `nudo-harvest-node.ts` from the files that need those ambient types:
 
 ```js
 /// @nudo:env nudo-harvest-node.ts
 ```
 
+Options (`--out`) and the output format are documented in the [`nudo harvest` reference](../api/cli-reference.md#nudo-harvest).
+
 ---
 
 ## `nudo watch`
 
-Watch a file or directory for changes and re-run inference on change.
+Watch a file or directory and re-run inference on change:
 
 ```bash
-nudo watch <path>
+nudo watch .            # current directory
+nudo watch src/math.js  # a single file
+nudo watch . --dts      # with .d.ts generation
 ```
 
-### Options
-
-| Option | Description |
-|--------|-------------|
-| `--dts` | Generate `.d.ts` files on each run |
-
-### Examples
-
-Watch current directory:
-
-```bash
-nudo watch .
-```
-
-Watch a specific file:
-
-```bash
-nudo watch src/math.js
-```
-
-Watch with `.d.ts` generation:
-
-```bash
-nudo watch . --dts
-```
-
-### Watch Mode Behavior
-
-- **Whole-program scanning**: When watching a directory, Nudo recursively scans **all** `.js` files, excluding `node_modules`. Files without Nudo directives are analyzed too — types for their functions are derived from call sites across the watched files.
-- **File watching**: When watching a single file, Nudo watches the file's directory and re-analyzes on changes to tracked files.
-- **Debouncing**: File changes are debounced (200ms) to avoid redundant runs on rapid edits.
-- **Incremental re-analysis**: On each change, only the changed files and their dependents are re-analyzed (`Incremental: re-analyzed N, skipped M (…ms)`), and results are reprinted with source locations.
+Directories are scanned recursively for inference targets (`.js`/`.mjs`/`.ts`, excluding `node_modules`); changes are debounced (200ms), and each run re-analyzes only the changed files and their dependents. The full behavior is documented in the [`nudo watch` reference](../api/cli-reference.md#nudo-watch).
 
 ---
 
 ## Health Checks and CI Drift Gating
 
-[`nudo doctor`](/docs/api/cli-reference#nudo-doctor) re-checks a whole project in one command: analysis errors, and — with `--callsites` — whether the `call@` directives frozen by [`--emit-cases`](#persisting-cases-as-directives) still match what the usage sites would produce today. Drift or errors exit with code `1`, which makes `doctor` a CI gate for solidification drift.
+[`nudo doctor`](../api/cli-reference.md#nudo-doctor) re-checks a whole project in one command: analysis errors, and — with `--callsites` — whether the `call@` directives frozen by [`--emit-cases`](#persisting-cases-as-directives) still match what the usage sites would produce today. Drift or errors exit with code `1`, which makes `doctor` a CI gate for solidification drift.
 
 The typical lifecycle:
 
@@ -456,7 +407,7 @@ The typical lifecycle:
    nudo doctor lib.js --callsites test.js
    ```
 
-   ```
+   ```text
    lib.js
      · 3 function(s), 1 entry-only
      ✗ drift: 5 directive(s) changed (+3 new, -2 removed) — refresh with: nudo infer lib.js --callsites test.js --emit-cases=update
@@ -471,15 +422,7 @@ The typical lifecycle:
    nudo infer lib.js --callsites test.js --emit-cases=update
    ```
 
-5. **Re-check** — a second `doctor` run is green again:
-
-   ```
-   lib.js
-     · 3 function(s), 1 entry-only
-
-   Summary: 1 file(s) · 0 drift · 0 error(s) · 0 uncovered function(s)
-   Result: OK (uncovered function(s) are informational only)
-   ```
+5. **Re-check** — a second `doctor` run is green again: `Result: OK (uncovered function(s) are informational only)`.
 
 In CI, check an entire source tree against the test suite in one line — any drift fails the build:
 
@@ -487,7 +430,7 @@ In CI, check an entire source tree against the test suite in one line — any dr
 nudo doctor src/ --callsites tests/
 ```
 
-Exit codes: drift or analysis errors → `1`; uncovered functions are informational only and never fail the run. See the [`nudo doctor` reference](/docs/api/cli-reference#nudo-doctor) for all options and the `--json` output.
+Exit codes: drift or analysis errors → `1`; uncovered functions are informational only and never fail the run. See the [`nudo doctor` reference](../api/cli-reference.md#nudo-doctor) for all options and the `--json` output.
 
 ---
 
@@ -495,13 +438,14 @@ Exit codes: drift or analysis errors → `1`; uncovered functions are informatio
 
 1. **Develop with watch mode**: Run `nudo watch . --dts` in a terminal while editing. Each save triggers re-inference and `.d.ts` generation.
 
-2. **CI / pre-commit**: `nudo check` exits with code `1` on error-level diagnostics, so it can gate CI. `infer` takes a single file — loop over your sources:
+2. **CI / pre-commit**: `nudo check` exits with code `1` on error-level diagnostics, so it can gate CI. `check` takes a single file — loop over your sources:
 
    ```bash
-   find src -name "*.js" -not -path "*/node_modules/*" -print0 |
+   find src \( -name "*.js" -o -name "*.mjs" -o -name "*.ts" \) \
+     -not -name "*.d.ts" -not -path "*/node_modules/*" -print0 |
      xargs -0 -n1 nudo check
    ```
 
-3. **Generate declarations**: Use `nudo infer main.js --dts` to produce `.d.ts` for consumers expecting TypeScript definitions.
+3. **Generate declarations**: Use `nudo infer src/ --dts` (or a single file) to produce `.d.ts` for consumers expecting TypeScript definitions.
 
 4. **Reuse ambient types**: Run `nudo harvest <pkg>` once per `@types` package and reference the generated env file with `/// @nudo:env ./nudo-harvest-<pkg>.ts` in the files that need it.

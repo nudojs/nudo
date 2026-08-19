@@ -1,5 +1,6 @@
 ---
 sidebar_position: 6
+description: "@nudojs/lsp API —— 基于 @nudojs/service 的语言服务器：验证管线与缓存、符号、语义 token、agent 工具、服务器能力。"
 ---
 
 # @nudojs/lsp
@@ -16,7 +17,8 @@ Nudo 语言服务器协议（LSP）包的 API 参考。`@nudojs/lsp` 把[服务�
 |--------|---------|
 | `src/validation.ts` | 诊断管线、分析缓存、脏传播、Nudo 文件检测 |
 | `src/symbols.ts` | 符号表构建与定义/引用查找，支撑导航类 handler |
-| `src/semantic-tokens.ts` | 语义 token 图例与增量编码器 |
+| `src/semantic-tokens.ts` | 语义 token 图例与增量编码器（从 `@nudojs/service` 再导出） |
+| `src/agent-tools.ts` | agent 命令实现（`nudo.whatIf`/`suggestCase`/`trace`）——见 [Agent API](./agent.md) 页 |
 
 `server.ts` 把这些函数接到 `connection` / `documents` 上；测试则把它们接到伪造实现上。
 
@@ -93,6 +95,14 @@ hasNudoDirectives(source: string): boolean
 ```
 
 源码包含任一 Nudo 指令时返回 `true`：`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:returns`、`@nudo:env`、`@nudo:mock-module`、`@nudo:as`、`@nudo:replace`。服务器将它（加上 `.js` / `.ts` / `.mjs` 扩展名检查）用作 `isNudoFile` 门控 —— 下文的每个功能 handler 对未通过门控的文件都是空操作。
+
+### toLspDiagnostic
+
+```typescript
+toLspDiagnostic(d: Diagnostic, uri: string): LspDiagnostic
+```
+
+把一条 `@nudojs/service` 诊断映射为 LSP 形状：severity `error`→1/`warning`→2/`info`→3，1 基位置转 0 基，`source: "nudo"`、`tags: ["unnecessary"]`，并把 `origin` 映射为 `relatedInformation` 条目（`"value originates here"`）。导出它以便测试与其他客户端复用完全相同的映射。
 
 ### uriToFilePath
 

@@ -1,5 +1,6 @@
 ---
 sidebar_position: 1
+description: "Nudo 设计内幕：符号类型值的抽象解释、指令系统，以及直接执行代码才能算出的类型能力。"
 ---
 
 # 设计文档
@@ -37,7 +38,7 @@ type Transform<T> =
 
 Nudo 既不像 TypeScript 那样静态分析代码，也不像测试那样用具体值运行代码，而是**用符号化的「类型值」来执行代码**——这些特殊对象代表一组可能的值。执行过程本身就产生了类型。
 
-```
+```text
 传统方式：   源代码  →  静态分析  →  类型
 Nudo：       源代码  +  类型值     →  执行  →  类型
 ```
@@ -62,7 +63,7 @@ Nudo：       源代码  +  类型值     →  执行  →  类型
 
 ### 2.1 类型值层级
 
-```
+```text
 TypeValue
 ├── Literal<V>          — 单个具体值：1, "hello", true, null, undefined
 ├── Primitive<T>        — 某基本类型的所有可能值：number, string, boolean, bigint, symbol
@@ -164,7 +165,7 @@ Ops.add(a, b)
 
 ### 3.1 架构概览
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │                   Nudo Engine                       │
 │                                                     │
@@ -200,25 +201,25 @@ Ops.add(a, b)
 求值器是一个 AST 遍历器。对每种节点类型有对应规则：
 
 **字面量：**
-```
+```text
 eval(NumericLiteral 42)  →  T.literal(42)
 eval(StringLiteral "hi") →  T.literal("hi")
 eval(NullLiteral)       →  T.null
 ```
 
 **变量：**
-```
+```text
 eval(Identifier "x")  →  env.lookup("x")
 ```
 
 **二元表达式：**
-```
+```text
 eval(BinaryExpression { left, op, right })  →  Ops[op](eval(left), eval(right))
 ```
 
 **条件语句（if-else）：** 引擎可能**同时求值两个分支**，各自使用窄化后的类型值，再合并：
 
-```
+```text
 eval(IfStatement { test, consequent, alternate }) →
   condition = eval(test)
   if condition === T.literal(true)  → eval(consequent)
@@ -290,9 +291,15 @@ Nudo 将异常作为函数类型的一等部分追踪。每个函数不仅有 `r
 | `@nudo:case` | 提供具名执行用例（具体或符号化输入） |
 | `@nudo:mock` | 用类型值实现 mock 外部依赖 |
 | `@nudo:pure` | 标记函数为纯函数，启用记忆化 |
-| `@nudo:skip` | 跳过求值；使用类型注解或 `@nudo:returns` |
+| `@nudo:skip` | 跳过求值；可选的类型表达式直接声明返回类型（如 `@nudo:skip T.number`） |
 | `@nudo:sample` | 不动点之前的循环迭代次数 |
 | `@nudo:returns` | 断言预期返回类型 |
+| `@nudo:env` | 声明运行时环境 API（文件级 `///` 注释） |
+| `@nudo:mock-module` | 用 mock 文件替换导入的模块（文件级 `///` 注释） |
+| `@nudo:as` | 覆盖下一条语句的值类型（行注释 `//`） |
+| `@nudo:replace` | 替换下一条语句中子表达式的类型（行注释 `//`） |
+
+每个指令的完整语法与约束见[指令参考](../concepts/directives.md)。
 
 ---
 

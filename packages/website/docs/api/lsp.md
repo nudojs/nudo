@@ -1,5 +1,6 @@
 ---
 sidebar_position: 6
+description: "@nudojs/lsp API — the language server over @nudojs/service: validation pipeline and caches, symbols, semantic tokens, agent tools, capabilities."
 ---
 
 # @nudojs/lsp
@@ -16,7 +17,8 @@ The testable programmatic API lives in three sibling source modules, deliberatel
 |--------|---------|
 | `src/validation.ts` | Diagnostics pipeline, analysis cache, dirty propagation, Nudo-file detection |
 | `src/symbols.ts` | Symbol table construction, definition/reference lookup for navigation handlers |
-| `src/semantic-tokens.ts` | Semantic-token legend and delta encoder |
+| `src/semantic-tokens.ts` | Semantic-token legend and delta encoder (re-exported from `@nudojs/service`) |
+| `src/agent-tools.ts` | Agent command implementations (`nudo.whatIf`/`suggestCase`/`trace`) — see the [Agent API](./agent.md) page |
 
 `server.ts` wires those functions to `connection` / `documents`; tests wire them to fakes.
 
@@ -93,6 +95,14 @@ hasNudoDirectives(source: string): boolean
 ```
 
 Returns `true` when the source contains any Nudo directive: `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:returns`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, or `@nudo:replace`. The server uses it (plus a `.js` / `.ts` / `.mjs` extension check) as the `isNudoFile` gate — every feature handler below is a no-op for files that fail it.
+
+### toLspDiagnostic
+
+```typescript
+toLspDiagnostic(d: Diagnostic, uri: string): LspDiagnostic
+```
+
+Maps one `@nudojs/service` diagnostic to the LSP shape: severity `error`→1/`warning`→2/`info`→3, 1-based positions converted to 0-based, `source: "nudo"`, `tags: ["unnecessary"]`, and `origin` mapped to a `relatedInformation` entry (`"value originates here"`). Exported so tests and alternative clients can reuse the exact mapping.
 
 ### uriToFilePath
 

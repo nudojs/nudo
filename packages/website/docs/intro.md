@@ -1,6 +1,7 @@
 ---
 sidebar_position: 1
 slug: /intro
+description: Discover Nudo, a type inference engine that derives JavaScript types by executing code with symbolic type values — no annotations required.
 ---
 
 # Introduction
@@ -54,12 +55,12 @@ for (let i = 0; i < 5; i++) sum += i;
 // sum → 10 (TS: number)
 ```
 
-Users can also define custom refined types with domain-specific operation rules via `T.refine`. See [Examples](/docs/guides/examples) for more.
+Users can also define custom refined types with domain-specific operation rules via `T.refine`. See [Examples](./guides/examples.md) for more.
 
 ## What's Next
 
-- **[Installation](/docs/getting-started/installation)** — Install the CLI, VS Code extension, and Vite plugin
-- **[Quick Start](/docs/getting-started/quick-start)** — Run `nudo infer` on your first file
-- **[Core Concepts](/docs/concepts/type-values)** — Type values, directives, and abstract interpretation
-- **[Call-Site Discovery](/docs/guides/callsite-discovery)** — Let Nudo mine your tests for real call shapes instead of writing cases by hand
-- **[Language Semantics](/docs/guides/semantics)** — The JavaScript behaviors Nudo models precisely, from `this` binding to promise resolution
+- **[Installation](./getting-started/installation.md)** — Install the CLI, VS Code extension, and Vite plugin
+- **[Quick Start](./getting-started/quick-start.md)** — Run `nudo infer` on your first file
+- **[Core Concepts](./concepts/type-values.md)** — Type values, directives, and abstract interpretation
+- **[Call-Site Discovery](./guides/callsite-discovery.md)** — Let Nudo mine your tests for real call shapes instead of writing cases by hand
+- **[Language Semantics](./guides/semantics.md)** — The JavaScript behaviors Nudo models precisely, from `this` binding to promise resolution

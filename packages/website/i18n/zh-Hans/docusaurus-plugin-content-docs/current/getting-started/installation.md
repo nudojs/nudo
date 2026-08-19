@@ -1,5 +1,6 @@
 ---
 sidebar_position: 1
+description: 安装 Nudo 的 CLI、VS Code 扩展与 Vite 插件，支持 npm、pnpm、yarn，需 Node.js 18 及以上。
 ---
 
 # 安装

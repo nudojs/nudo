@@ -1,6 +1,7 @@
 ---
 sidebar_position: 1
 slug: /intro
+description: 了解 Nudo——用符号化类型值执行 JavaScript 代码来推导类型的类型推断引擎，无需类型标注。
 ---
 
 # 简介
@@ -54,10 +55,12 @@ for (let i = 0; i < 5; i++) sum += i;
 // sum → 10（TS: number）
 ```
 
-用户还可以通过 `T.refine` 定义自定义精化类型，附加领域特定的运算规则。详见[示例](/docs/guides/examples)。
+用户还可以通过 `T.refine` 定义自定义精化类型，附加领域特定的运算规则。详见[示例](./guides/examples.md)。
 
 ## 下一步
 
-- **[安装](/docs/getting-started/installation)** — 安装 CLI、VS Code 扩展和 Vite 插件
-- **[快速开始](/docs/getting-started/quick-start)** — 在第一个文件上运行 `nudo infer`
-- **[核心概念](/docs/concepts/type-values)** — 类型值、指令与抽象解释
+- **[安装](./getting-started/installation.md)** — 安装 CLI、VS Code 扩展和 Vite 插件
+- **[快速开始](./getting-started/quick-start.md)** — 在第一个文件上运行 `nudo infer`
+- **[核心概念](./concepts/type-values.md)** — 类型值、指令与抽象解释
+- **[调用点发现](./guides/callsite-discovery.md)** — 让 Nudo 从你的测试中挖掘真实调用形状，无需手写 case
+- **[语言语义](./guides/semantics.md)** — Nudo 精确建模的 JavaScript 行为，从 `this` 绑定到 Promise 解析

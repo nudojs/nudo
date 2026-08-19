@@ -1,5 +1,6 @@
 ---
 sidebar_position: 8
+description: "用 --callsites 从测试与应用中采集真实实参形状，合成 call@L 用例并固化为指令。"
 ---
 
 # 调用点发现
@@ -40,21 +41,19 @@ nudo infer lib/ --callsites test/
 
 输出：
 
-```
+```text
 === slugify ===
 
-Case "call@5": ("Hello World") => "hello-world"
-
-Combined: string
+Case "call@L4": ("Hello World") => string
 ```
 
-这个 case 不是任何人写的——它采集自测试文件的第 5 行，因此被命名为 `call@5`。每个被记录的调用点都会成为一个合成的 case；对同一函数的多个调用点会合并为联合类型（combined type），与手写 `@nudo:case` 指令的行为完全一致。
+这个 case 不是任何人写的——它采集自测试文件的第 4 行，因此被命名为 `call@L4`。每个被记录的调用点都会成为一个合成的 case；对同一函数的多个调用点会合并为联合类型（combined type），与手写 `@nudo:case` 指令的行为完全一致。
 
 ### 选项
 
 | 参数 | 描述 |
 |----------|-------------|
-| `<target>` | 要分析的文件或目录。目录会递归扫描。 |
+| `<target>` | 要分析的文件或目录——`.js`、`.mjs` 或 `.ts`；目录会递归收集推断目标文件 |
 | `--callsites <paths...>` | 一个或多个使用方文件或目录（测试、示例、应用）。目录会递归扫描。 |
 | `--emit-cases [mode]` | 把采集到的用例写回被分析文件，成为 `@nudo:case` 指令（`add` 只补没有用例指令的函数；`=update` 重新同步已生成的指令）——参见[持久化采集结果](#持久化采集结果) |
 
@@ -134,9 +133,9 @@ nudo infer lib/ --callsites test/ --emit-cases=update  # update：重新同步�
 - **只支持可序列化的形状。** 指令文本能表达原始类型（`T.number`/`T.string`/`T.boolean`/`T.unknown`/`T.never`）、字面量、普通对象、数组、元组与联合。实参含函数、Promise、类实例、`bigint` 或 `symbol` 值的用例无法固化——会被跳过并报告 `no-serializable-cases`（函数其余可序列化的用例仍会写入）。
 - **`call@` 是保留前缀。** 名字以 `call@` 开头的 `@nudo:case` 一律视为生成物：`update` 可能改写或删除它。不要把手写用例命名为 `call@…`。
 
-端到端工作流示例（引导与漂移检测）见 [CLI 使用指南 —— 固化 case 指令](/docs/guides/cli#固化-case-指令)；基于这些函数的编程接口见 [service API —— 用例固化](/docs/api/service#用例固化)。
+端到端工作流示例（引导与漂移检测）见 [CLI 使用指南 —— 固化 case 指令](./cli.md#固化-case-指令)；基于这些函数的编程接口见 [service API —— 用例固化](../api/service.md#用例固化)。
 
-要主动检测这种漂移——在 CI 中或发版前——运行 [`nudo doctor`](/docs/guides/cli#健康检查与-ci-漂移门禁)：它对你的文件重跑同一条重新固化链路，任一生成指令会变化即以退出码 `1` 结束。
+要主动检测这种漂移——在 CI 中或发版前——运行 [`nudo doctor`](./cli.md#健康检查与-ci-漂移门禁)：它对你的文件重跑同一条重新固化链路，任一生成指令会变化即以退出码 `1` 结束。
 
 ## 编程接口
 
@@ -157,9 +156,9 @@ const result = analyzeFile(filePath, source, activeCases, records);
 | `collectCallRecords(filePath, source)` | 对一个使用方文件运行阶段 1，返回其调用记录。 |
 | `analyzeFile(filePath, source, activeCases?, externalCallRecords?)` | `analyzeFile` 接受采集到的记录作为第四个参数；这些记录会被匹配并作为 `call@L` case 注入。 |
 
-完整的 `AnalysisResult` 结构请参阅 [service API 参考](/docs/api/service)。
+完整的 `AnalysisResult` 结构请参阅 [service API 参考](../api/service.md)。
 
 ## 下一步
 
-- **[语言语义](/docs/guides/semantics)** —— 求值器能对调用点发现交给它的形状做些什么：`this` 绑定、Promise、可迭代对象等。
-- **[CLI 使用指南](/docs/guides/cli)** —— 所有 `nudo infer` 与 `nudo watch` 选项。
+- **[语言语义](./semantics.md)** —— 求值器能对调用点发现交给它的形状做些什么：`this` 绑定、Promise、可迭代对象等。
+- **[CLI 使用指南](./cli.md)** —— 所有 `nudo infer` 与 `nudo watch` 选项。

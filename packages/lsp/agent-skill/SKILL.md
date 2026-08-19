@@ -33,7 +33,7 @@ All commands are available as `workspace/executeCommand` (dot form) and as custo
 
 | Command (request alias) | Arguments (JSON) | Returns |
 |---|---|---|
-| `nudo.whatIf` (`nudo/whatIf`) | `{ "file": "src/app.js", "bindings": [{ "name": "x", "type": "string" }], "target": "y" }` | Text: the inferred type of `target` **under the assumed bindings** — e.g. `Type of "y": string \| number` |
+| `nudo.whatIf` (`nudo/whatIf`) | `{ "file": "src/config.js", "bindings": [{ "name": "raw", "type": "string" }], "target": "size" }` | Text: the inferred type of `target` **under the assumed bindings** — e.g. `Type of "size": number`; bindings match top-level declarations only |
 | `nudo.trace` (`nudo/trace`) | `{ "file": "src/app.js", "functionName": "parse" }` | Text: one line per case, e.g. `Input: (T.string) => Output: number` |
 | `nudo.suggestCase` (`nudo/suggestCase`) | `{ "file": "src/app.js", "functionName": "parse" }` | Text: paste-ready `@nudo:case` directives when every case is call-site synthesized, e.g. `Function "parse" has 2 synthesized case(s); suggested directives:`; otherwise the current case count, e.g. `Function "parse" already has 3 case(s)`, or a suggested `@nudo:case` directive |
 | `nudo.selectCase` (`nudo/selectCase`) | `{ "file": "src/app.js", "functionName": "parse", "caseIndex": 1 }` | `{ "success": true }` — switches the active case (affects hover/diagnostics until changed back) |
@@ -43,31 +43,30 @@ Diagnostics (failed `@nudo:returns` assertions, unreachable code, …) are avail
 
 ## What-if workflow
 
-The signature move: hypothesize a type for one binding, observe what another binding becomes — without editing any source.
+The signature move: hypothesize a type for a top-level binding, observe what another binding becomes — without editing any source.
 
 ```js
-// src/app.js
-function normalize(x) {
-  const trimmed = x.trim();
-  const y = Number(trimmed);
-  return y;
-}
+// src/config.js
+const raw = readInput();
+const size = raw.length;
 ```
 
-Assume `x` is a string, ask what `y` is:
+Assume `raw` is a string, ask what `size` is:
 
 ```json
 {
   "command": "nudo.whatIf",
   "arguments": [{
-    "file": "src/app.js",
-    "bindings": [{ "name": "x", "type": "string" }],
-    "target": "y"
+    "file": "src/config.js",
+    "bindings": [{ "name": "raw", "type": "string" }],
+    "target": "size"
   }]
 }
 ```
 
-→ `Type of "y": number`. Then flip the hypothesis (`"type": "string | null"`) and re-ask to see how the code's guard branches change the result. Use this to preview refactors, validate an API's return type before calling it, or check that a fix actually narrows a type.
+→ `Type of "size": number`. Then flip the hypothesis (`"type": "string | null"`) and re-ask: the same `size` now reports `unknown`, because the null arm can propagate through `.length`. Use this to preview refactors, validate an API's return type before calling it, or compare how alternative type assumptions ripple through downstream code.
+
+Bindings only match **top-level declarations** (`const`/`let`/`var`/`function`) in the file. A function parameter name does not resolve — you get `Type of "...": unknown` plus `Bindings not applied (no top-level declaration found): x` in the reply.
 
 ## Type expression syntax
 

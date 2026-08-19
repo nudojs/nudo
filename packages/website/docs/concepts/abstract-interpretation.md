@@ -1,5 +1,6 @@
 ---
 sidebar_position: 2
+description: Learn how Nudo executes code with symbolic type values — the abstract interpretation model behind its evaluation engine, narrowing, and merging.
 ---
 
 # Abstract Interpretation
@@ -20,7 +21,7 @@ When Nudo executes `transform(T.string)`, the engine propagates `T.string` throu
 
 ## Evaluation Engine Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │                   Nudo Engine                        │
 │                                                     │
@@ -59,7 +60,7 @@ The evaluator is an AST walker. For each AST node type, there is a corresponding
 
 ### Literals
 
-```
+```text
 eval(NumericLiteral { value: 42 })   →  T.literal(42)
 eval(StringLiteral { value: "hi" })  →  T.literal("hi")
 eval(BooleanLiteral { value: true }) →  T.literal(true)
@@ -68,19 +69,19 @@ eval(NullLiteral)                    →  T.null
 
 ### Variables
 
-```
+```text
 eval(Identifier { name: "x" })  →  env.lookup("x")
 ```
 
 ### Binary Expressions
 
-```
+```text
 eval(BinaryExpression { left, op, right })  →  Ops[op](eval(left), eval(right))
 ```
 
 ### Assignment
 
-```
+```text
 eval(AssignmentExpression { left: "x", right: expr })
   →  env.bind("x", eval(expr))
 ```
@@ -89,7 +90,7 @@ eval(AssignmentExpression { left: "x", right: expr })
 
 This is where the engine differs fundamentally from a normal interpreter. Instead of choosing one branch, it may **evaluate both branches** with narrowed type values:
 
-```
+```text
 eval(IfStatement { test, consequent, alternate }) →
   condition = eval(test)
 
@@ -106,14 +107,14 @@ eval(IfStatement { test, consequent, alternate }) →
 
 ### Function Declaration
 
-```
+```text
 eval(FunctionDeclaration { id: "foo", params, body })
   →  env.bind("foo", TypeValueFunction { params, body, closure: env })
 ```
 
 ### Function Call
 
-```
+```text
 eval(CallExpression { callee: "foo", args })
   →  fn = env.lookup("foo")
      argValues = args.map(eval)

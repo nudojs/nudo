@@ -1,5 +1,6 @@
 ---
 sidebar_position: 3
+description: "Syntax reference for all ten @nudo: directives — case, mock, pure, skip, sample, returns, env, mock-module, as, replace — with constraints and examples."
 ---
 
 # Directives
@@ -155,7 +156,7 @@ async function fetchUser(id) {
 
 **Inferred output:**
 
-```
+```text
 === fetchUser ===
 
 Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
@@ -188,7 +189,7 @@ function readPort() {
 
 **Inferred output:**
 
-```
+```text
 === readPort ===
 
 Case "default": () => 8080
@@ -208,7 +209,7 @@ function plan() {
 
 **Inferred output:**
 
-```
+```text
 === plan ===
 
 Case "plan": () => number
@@ -233,7 +234,7 @@ const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
 
 **Inferred output:**
 
-```
+```text
 === readConfig ===
 
 Case "read": (string) => "{ \"port\": 3000 }"
@@ -292,7 +293,7 @@ function heavyComputation(data) {
 
 **Inferred output:**
 
-```
+```text
 === heavyComputation ===
 
 Skipped (no return type declared)
@@ -310,7 +311,7 @@ function unannotatedHeavy(x) {
 
 **Inferred output:**
 
-```
+```text
 === unannotatedHeavy ===
 
 Skipped (declared): number
@@ -397,6 +398,7 @@ Declare which runtime environment APIs are available in the file. This is a **fi
 
 - **names** — Comma-separated environment names. Built-in environments: `es`, `web`, `node`.
 - `web` and `node` automatically include `es`.
+- Instead of a built-in name, you can point at a TypeScript file: `/// @nudo:env ./nudo-env.ts`. The file must export a `defineEnv()` function returning `{ globals, modules? }` type definitions (the same shape Nudo's built-in environments use).
 
 ### Supported Environments
 

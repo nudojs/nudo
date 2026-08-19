@@ -1,5 +1,6 @@
 ---
 sidebar_position: 2
+description: 解释 Nudo 如何用符号化类型值执行代码——求值引擎、窄化与合并背后的抽象解释模型。
 ---
 
 # 抽象解释
@@ -20,7 +21,7 @@ sidebar_position: 2
 
 ## 求值引擎架构
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │                   Nudo Engine                        │
 │                                                     │
@@ -59,7 +60,7 @@ sidebar_position: 2
 
 ### 字面量
 
-```
+```text
 eval(NumericLiteral { value: 42 })   →  T.literal(42)
 eval(StringLiteral { value: "hi" })  →  T.literal("hi")
 eval(BooleanLiteral { value: true }) →  T.literal(true)
@@ -68,19 +69,19 @@ eval(NullLiteral)                    →  T.null
 
 ### 变量
 
-```
+```text
 eval(Identifier { name: "x" })  →  env.lookup("x")
 ```
 
 ### 二元表达式
 
-```
+```text
 eval(BinaryExpression { left, op, right })  →  Ops[op](eval(left), eval(right))
 ```
 
 ### 赋值
 
-```
+```text
 eval(AssignmentExpression { left: "x", right: expr })
   →  env.bind("x", eval(expr))
 ```
@@ -89,7 +90,7 @@ eval(AssignmentExpression { left: "x", right: expr })
 
 这是引擎与普通解释器根本不同的地方。它不会选择单一分支，而可能**同时求值两个分支**，并使用窄化后的类型值：
 
-```
+```text
 eval(IfStatement { test, consequent, alternate }) →
   condition = eval(test)
 
@@ -106,14 +107,14 @@ eval(IfStatement { test, consequent, alternate }) →
 
 ### 函数声明
 
-```
+```text
 eval(FunctionDeclaration { id: "foo", params, body })
   →  env.bind("foo", TypeValueFunction { params, body, closure: env })
 ```
 
 ### 函数调用
 
-```
+```text
 eval(CallExpression { callee: "foo", args })
   →  fn = env.lookup("foo")
      argValues = args.map(eval)
@@ -135,8 +136,13 @@ eval(CallExpression { callee: "foo", args })
 | `x === undefined` | `x ∩ T.undefined` | `x - T.undefined` |
 | `x === <literal>` | `x ∩ T.literal(v)` | `x - T.literal(v)` |
 | `Array.isArray(x)` | `x ∩ T.array(T.unknown)` | `x - T.array(T.unknown)` |
-| `x`（真值检查） | `x - T.null - T.undefined - T.literal(0) - T.literal("") - T.literal(false)` | complement |
+| `x`（真值检查） | `x - T.null - T.undefined - T.literal(0) - T.literal("") - T.literal(false)` | 补集 |
 | `x instanceof C` | `x ∩ T.instanceOf(C)` | `x - T.instanceOf(C)` |
+| `"key" in x` | 含有 `key` 属性的联合成员 | 不含 `key` 属性的联合成员 |
+| `x?.prop` | 正常成员访问（nullish 时短路为 `undefined`） | — |
+| `a ?? b` | 移除 null/undefined 后的 `a` | — |
+| `switch(x) { case v: ... }` | 每个 case 对应 `x ∩ T.literal(v)` | 所有 case 之外的剩余部分 |
+| `x.kind === "a"`（可辨识联合） | `kind` 匹配该字面量的联合成员 | `kind` 不同的联合成员 |
 
 其中 `∩` 为类型交集，`-` 为类型减法。
 
@@ -166,8 +172,8 @@ map(T.array(T.number), (x) => x + 1)
 
 ### 递归（记忆化 + 拓宽）
 
-1. 首次以给定类型值 signature 调用：记录并开始求值。
-2. 若再次遇到相同 signature（递归调用）：返回占位符（`T.unknown`）。
+1. 首次以给定类型值签名调用：记录并开始求值。
+2. 若再次遇到相同签名（递归调用）：返回占位符（`T.unknown`）。
 3. 首次求值完成后，用已知返回类型重新求值。
 4. 重复直到返回类型达到不动点。
 

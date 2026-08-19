@@ -1,10 +1,11 @@
 ---
 sidebar_position: 9
+description: Learn the JavaScript semantics Nudo's evaluator models precisely — this binding, loose-equality folding, iterables, promises, and recursion budgets.
 ---
 
 # Language Semantics
 
-Nudo infers types by *executing* your code with symbolic values, so the quality of inference is exactly the quality of the evaluator's JavaScript semantics. This guide lists the language behaviors Nudo models precisely — each one is a construct that previously degraded to `unknown` and now infers a concrete result. These capabilities are also what make [call-site discovery](/docs/guides/callsite-discovery) effective: harvested call shapes only pay off if the evaluator can actually follow them.
+Nudo infers types by *executing* your code with symbolic values, so the quality of inference is exactly the quality of the evaluator's JavaScript semantics. This guide lists the language behaviors Nudo models precisely — each one is a construct that previously degraded to `unknown` and now infers a concrete result. These capabilities are also what make [call-site discovery](./callsite-discovery.md) effective: harvested call shapes only pay off if the evaluator can actually follow them.
 
 ## `this` Binding
 
@@ -12,7 +13,7 @@ Method calls pass the receiver, so instance shapes flow into the body.
 
 ```js
 function area() {
-  return this.radius ** 2;
+  return this.radius * this.radius;
 }
 
 area.call({ radius: 3 });      // → 9
@@ -22,12 +23,14 @@ circle.area();                 // → 25
 
 `obj.f()` binds `this` to the inferred type of `obj`; `f.call(thisArg)` and `f.apply(thisArg, args)` bind the explicit receiver the same way.
 
+One caveat: the exponentiation operator is **not** modeled. `this.radius ** 2` evaluates to `unknown` — write `this.radius * this.radius` instead.
+
 ## Primitive Autoboxing and `Object.prototype`
 
 Property access on a primitive goes through its wrapper, and every object carries the `Object.prototype` method table.
 
 ```js
-"nudo".constructor;                 // → String constructor, not unknown
+"nudo".constructor;                 // → String constructor (renders as {})
 ({}).hasOwnProperty("key");         // → boolean
 config.hasOwnProperty("port");      // → resolves for any object shape
 ```
@@ -88,10 +91,10 @@ for (const x of [1, 2, 3, 4]) {
     break;
   }
 }
-found;                          // → 3
+found;                          // → number (>= 3)
 ```
 
-`continue` cuts the current iteration path without polluting accumulators; `break` keeps the precise values from the iteration that exited.
+`continue` cuts the current iteration path without polluting accumulators; `break` keeps the precise values from the iteration that exited. `found` is not the bare literal `3` but the refined `number (>= 3)` — the exit value with its comparison constraint still attached.
 
 ## Per-Iteration `let` Bindings
 
@@ -145,7 +148,7 @@ function walk(n) {
 }
 
 walk(5);                        // → 15 (fully evaluated)
-walk(10_000);                   // → number (budget hit; union of observed returns)
+walk(10_000);                   // → number | string (budget hit; union of observed returns)
 ```
 
 ## `Object.keys` Union Distribution
@@ -153,11 +156,25 @@ walk(10_000);                   // → number (budget hit; union of observed ret
 When the receiver is a union of object shapes, `Object.keys` distributes over each member and unions the key sets.
 
 ```js
-function firstKey(shape) {
+function keysOf(shape) {
   // shape: { port: number } | { host: string }
-  return Object.keys(shape)[0];
+  return Object.keys(shape);
 }
-// → "port" | "host"
+// → ["port", "host"]
+```
+
+Indexing that tuple is positional, not distributed: `Object.keys(shape)[0]` yields `"port"` — the first key of the distributed tuple — rather than the union `"port" | "host"`.
+
+## Loose Equality (`==` / `!=`)
+
+Comparisons between concrete literals fold at evaluation time using JavaScript's coercion rules.
+
+```js
+1 == "1";              // → true
+"a" != "b";            // → true
+0 == false;            // → true
+null == undefined;     // → true
+1 != "1";              // → false
 ```
 
 ## Summary
@@ -165,13 +182,14 @@ function firstKey(shape) {
 | Capability | Example | Result |
 |---|---|---|
 | `this` binding | `circle.area()` | Receiver shape flows into the body |
-| Autoboxing | `"nudo".constructor` | Wrapper brand, not `unknown` |
+| Autoboxing | `"nudo".constructor` | Wrapper constructor, not `unknown` |
+| Loose equality | `1 == "1"` | Coerced literal `true` / `false` |
 | Iterability check | `Symbol.iterator in x` | Literal `true` / `false` |
 | Collection iteration | `for (const [k, v] of map.entries())` | Precise element types |
 | Promise resolution | `new Promise((res) => setTimeout(() => res("done")))` | `Promise<"done">` |
-| Loop jumps | `break` / `continue` | Exiting iteration state preserved |
+| Loop jumps | `break` / `continue` | Exit value kept, e.g. `number (>= 3)` |
 | Per-iteration `let` | `fns[i]()` captures round's `i` | `0`, `2` — not final value |
 | `arguments` | `arguments.length` | Tuple of actual args |
 | Literal built-ins | `JSON.parse('{"port": 3000}')` | `{ port: 3000 }` |
 | Recursion budget | `walk(10_000)` | Observed union, not `unknown` |
-| `Object.keys` | Union receiver | Union of key literals |
+| `Object.keys` | Union receiver | Key sets unioned: `["port", "host"]` |

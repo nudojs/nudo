@@ -1,5 +1,6 @@
 ---
 sidebar_position: 3
+description: "全部 10 个 @nudo: 指令（case、mock、pure、skip、sample、returns、env、mock-module、as、replace）的语法、约束与示例完整参考。"
 ---
 
 # 指令系统
@@ -155,7 +156,7 @@ async function fetchUser(id) {
 
 **推断输出：**
 
-```
+```text
 === fetchUser ===
 
 Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
@@ -188,7 +189,7 @@ function readPort() {
 
 **推断输出：**
 
-```
+```text
 === readPort ===
 
 Case "default": () => 8080
@@ -208,7 +209,7 @@ function plan() {
 
 **推断输出：**
 
-```
+```text
 === plan ===
 
 Case "plan": () => number
@@ -233,7 +234,7 @@ const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
 
 **推断输出：**
 
-```
+```text
 === readConfig ===
 
 Case "read": (string) => "{ \"port\": 3000 }"
@@ -292,7 +293,7 @@ function heavyComputation(data) {
 
 **推断输出：**
 
-```
+```text
 === heavyComputation ===
 
 Skipped (no return type declared)
@@ -310,7 +311,7 @@ function unannotatedHeavy(x) {
 
 **推断输出：**
 
-```
+```text
 === unannotatedHeavy ===
 
 Skipped (declared): number
@@ -397,6 +398,7 @@ function process(x) {
 
 - **names** — 逗号分隔的环境名称。内置环境：`es`、`web`、`node`。
 - `web` 和 `node` 自动包含 `es`。
+- 除内置名称外，还可以指向一个 TypeScript 文件：`/// @nudo:env ./nudo-env.ts`。该文件必须导出 `defineEnv()` 函数，返回 `{ globals, modules? }` 类型定义（与 Nudo 内置环境相同的形状）。
 
 ### 支持的环境
 

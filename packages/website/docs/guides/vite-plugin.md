@@ -1,5 +1,6 @@
 ---
 sidebar_position: 3
+description: "Analyze @nudo: type-inference directives during Vite builds with vite-plugin-nudo: configurable include/exclude globs, build warnings, and failOnError."
 ---
 
 # Vite Plugin
@@ -57,10 +58,12 @@ export default defineConfig({
 });
 ```
 
+Glob patterns support any file extension (`**/*.js`, `**/*.mjs`, `**/*.ts`, …), directory-segment patterns (`**/node_modules/**`, `**/dist/**`), and wildcard-free patterns, which are matched as literal substrings of the file path.
+
 ## Behavior
 
-- **File matching**: The plugin processes files that match `include` and do not match `exclude`. The default `**/*.js` includes all JavaScript files.
-- **Directive check**: Files without Nudo directives (`@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:returns`) are skipped. No analysis is run for them.
+- **File matching**: The plugin processes files that match `include` and do not match `exclude`; `exclude` always wins. The default `include` of `["**/*.js"]` covers all JavaScript files at any depth, and any other extension can be opted in (e.g. `**/*.mjs`, `**/*.ts`).
+- **Directive check**: Files without Nudo directives (`@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:returns`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, `@nudo:replace`) are skipped. No analysis is run for them.
 - **Analysis**: For matching files with directives, the plugin uses `analyzeFile` from `@nudojs/service` to run type inference.
 - **Caching**: Analysis results are cached per file. The cache is cleared at `buildStart`.
 - **Diagnostics**: Errors and warnings from analysis are emitted as Vite warnings (or errors when `failOnError` is `true`). At build end, a summary is logged: `[nudo] Analysis complete: X error(s), Y warning(s)`.

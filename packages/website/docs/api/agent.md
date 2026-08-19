@@ -1,5 +1,6 @@
 ---
 sidebar_position: 5
+description: "Agent API — the five nudo.* commands in the language server: whatIf type assumptions, suggestCase directives, trace, selectCase, getActiveCases."
 ---
 
 # Agent API
@@ -35,28 +36,34 @@ Set type assumptions and observe the inferred type at another position — the p
 | Name | Type | Description |
 |------|------|-------------|
 | `file` | `string` | `file://` URI or path to the JavaScript file |
-| `bindings` | `Array<{ name: string, type: string }>` | Type assumptions to apply. `name` is a variable name; `type` is a type expression such as `number` or `string \| null` |
-| `target` | `string` | Variable or expression to get the type of |
+| `bindings` | `Array<{ name: string, type: string }>` | Type assumptions to apply. `name` must be a **top-level declaration** (a top-level `const`/`let`/`var`, function, or class) — function parameters and locals have no matching declaration and are reported back as not applied. `type` is a type expression such as `number` or `string \| null` |
+| `target` | `string` | Top-level variable to get the type of |
 
-**Returns:** `{ content: [{ type: "text", text }] }` where `text` is `Type of "<target>": <type>` — the inferred type of the target **under the assumed bindings**, or `unknown` if it is not a known binding.
+**Returns:** `{ content: [{ type: "text", text }] }` where `text` is `Type of "<target>": <type>` — the inferred type of the target **under the assumed bindings**, or `unknown` if it is not a known binding. Trailing note lines report which bindings took effect: `Bindings applied: …` and, for names with no top-level declaration, `Bindings not applied (no top-level declaration found): …` (the answer then uses the file's own types).
 
-**Example** — given `const y = Number(x.trim())`, assume `x` is `string` and ask what `y` becomes:
+**Example** — given `src/config.js` with `const size = raw.length` where `raw` comes from an unknown loader, assume `raw` is `string` and ask what `size` becomes:
 
-```json
+```javascript
+const raw = loadRaw();
+const size = raw.length;
+```
+
+```javascripton
 {
   "command": "nudo.whatIf",
   "arguments": [
     {
-      "file": "src/app.js",
-      "bindings": [{ "name": "x", "type": "string" }],
-      "target": "y"
+      "file": "src/config.js",
+      "bindings": [{ "name": "raw", "type": "string" }],
+      "target": "size"
     }
   ]
 }
 ```
 
 ```text
-Type of "y": number
+Type of "size": number
+Bindings applied: raw: string
 ```
 
 ## nudo.suggestCase
@@ -136,6 +143,8 @@ The `type` field of `nudo.whatIf` bindings accepts a primitive or a `|`-separate
 | `null` \| `undefined` | The corresponding singleton |
 | `bigint` \| `symbol` | The remaining primitives |
 | `string \| null` | Union — "string or null" |
+
+Forms already in `T.*` syntax and structural expressions (object/array literals, `=>` functions) pass through to the directive grammar (`parseTypeValueExpr`); any other name becomes `T.unknown`.
 
 ## Diagnostics
 

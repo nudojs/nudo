@@ -1,5 +1,6 @@
 ---
 sidebar_position: 2
+description: "Install the nudo-vscode extension for hover types, completions, case-switching CodeLens, inlay hints, and diagnostics powered by Nudo's language server."
 ---
 
 # VS Code Extension
@@ -22,7 +23,7 @@ code --install-extension wmzy.nudo-vscode
 
 The extension activates when you open JavaScript files. It uses the `@nudojs/lsp` package to run a Language Server Protocol (LSP) server that provides all editor features.
 
-**File detection**: The extension analyzes `.js`, `.ts`, and `.mjs` files that contain Nudo directives (`@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:returns`). Files without these directives are not analyzed.
+**File detection**: The language server analyzes `.js`, `.ts`, and `.mjs` files that contain Nudo directives — `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:returns`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, and `@nudo:replace`. The full syntax for every directive is covered in the [Directives reference](../concepts/directives.md). Files without these directives are not analyzed.
 
 ## Features
 

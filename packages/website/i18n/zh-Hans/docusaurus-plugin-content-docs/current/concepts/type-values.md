@@ -1,5 +1,6 @@
 ---
 sidebar_position: 1
+description: "类型值 —— 「可能值集合」的符号化抽象：TypeValue 层级结构、完整的 T 工厂表与四条设计原则。"
 ---
 
 # 类型值
@@ -10,7 +11,7 @@ sidebar_position: 1
 
 Nudo 的类型系统围绕类型值种类的 discriminated union 构建：
 
-```
+```text
 TypeValue
 ├── Literal<V>      — 单一具体值: 1, "hello", true, null, undefined
 ├── Primitive<T>    — 基本类型的所有可能值: number, string, boolean, bigint, symbol
@@ -18,7 +19,9 @@ TypeValue
 ├── ObjectType      — 具有已知属性类型的对象
 ├── ArrayType       — 具有元素类型的数组
 ├── TupleType       — 固定长度数组
-├── FunctionType    — 具有参数、函数体和闭包的函数
+├── FunctionType    — 具有参数、函数体和闭包的函数（或仅签名的 T.fnSig 值）
+├── PromiseType     — 包装 TypeValue 的 Promise
+├── InstanceType    — 类实例（如 Error），可选属性
 ├── UnionType       — 类型值的联合
 ├── NeverType       — 空集（不可达）
 └── UnknownType     — 全集（任意值）
@@ -72,7 +75,23 @@ T.tuple([T.literal(1), T.string, T.boolean])
 
 ### FunctionType
 
-表示具有参数名、函数体 AST 和闭包（环境）的函数。当函数作为一等公民时在内部使用。
+表示具有参数名、函数体 AST 和闭包（环境）的函数。当函数作为一等公民时在内部使用。`T.fnSig(paramTypes, returnType)` 创建仅签名的变体——env 文件与收割声明使用——它携带 `{ paramTypes, returnType, throwsType, impl }` 而非函数体（见 [core API](../api/core.md)）。
+
+### PromiseType
+
+表示包装另一个类型值的 `Promise`——`async` 函数的返回值、`.then` 回调接收的值。
+
+```javascript
+T.promise(T.number)   // Promise<number>
+```
+
+### InstanceType
+
+表示具名类的实例，可选携带已知属性。
+
+```javascript
+T.instanceOf("Error", { message: T.string })
+```
 
 ### UnionType
 
@@ -138,8 +157,11 @@ T.refine(T.number, {
 | `T.object({ key: TypeValue })` | 具有已知属性类型的对象 |
 | `T.array(element)` | 具有元素类型的数组 |
 | `T.tuple([...])` | 固定长度数组 |
+| `T.promise(value)` | 包装类型值的 Promise |
+| `T.instanceOf(className, properties?)` | 类实例，可选携带已知属性 |
 | `T.union(...)` | 类型值的联合 |
 | `T.fn(params, body, closure)` | 函数类型（内部使用） |
+| `T.fnSig(paramTypes, returnType, throwsType?, impl?)` | 仅签名的函数类型（env 文件、收割声明） |
 | `T.refine(base, refinement)` | 基础类型的精化子集，携带自定义规则 |
 
 ### 指令中的示例
