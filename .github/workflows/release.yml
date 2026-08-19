@@ -14,7 +14,6 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    environment: NPM_TOKEN
     permissions:
       id-token: write
       contents: write
