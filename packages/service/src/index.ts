@@ -32,8 +32,16 @@ export { isNudoTargetPath } from "./target-path.ts";
 export {
   collectStaticImports,
   analyzeExportsFromSource,
+  collectDependencySpecs,
   type ModuleExports,
 } from "./static-imports.ts";
+export {
+  harvestPackage,
+  formatHarvestSummary,
+  lookupHarvested,
+  resolvePackageRoot,
+  type PackageHarvest,
+} from "./harvest-package.ts";
 
 export {
   buildSemanticTokens,

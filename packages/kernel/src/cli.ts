@@ -25,8 +25,8 @@ import {
   v,
   pTrue,
   generalizeFromAst,
-  checkCall,
-  formatDiagnostics,
+  checkSource,
+  formatCheckReport,
   type Abs,
   type Phi,
 } from "./index.ts";
@@ -193,14 +193,9 @@ function main(): void {
   console.log("");
 
   if (check) {
-    const allDiags = [];
-    for (const name of fns) {
-      const args = buildArgs(name, source, phi, assumeIds);
-      const diags = checkCall(source, name, args, phi);
-      allDiags.push(...diags);
-    }
-    console.log(formatDiagnostics(allDiags));
-    if (allDiags.some((d) => d.severity === "error")) process.exitCode = 1;
+    const report = checkSource(file ?? "<source>", source, phi);
+    console.log(formatCheckReport(report));
+    if (!report.ok) process.exitCode = 1;
     return;
   }
 

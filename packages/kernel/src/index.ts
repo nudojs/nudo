@@ -13,5 +13,6 @@ export * from "./generalize.ts";
 export * from "./diagnostics.ts";
 export * from "./template.ts";
 export * from "./language.ts";
+export * from "./check.ts";
 // modules/fs/path 属于 host（service/cli），不进 kernel
 export * from "./bridge.ts";
