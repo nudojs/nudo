@@ -39,6 +39,7 @@
   "dependencies": {
     "commander": "^13.0.0",
     "@nudojs/core": "workspace:*",
+    "@nudojs/kernel": "workspace:*",
     "@nudojs/parser": "workspace:*",
     "@nudojs/service": "workspace:*",
     "@nudojs/env": "workspace:*",

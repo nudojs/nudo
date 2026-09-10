@@ -6,6 +6,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      "@nudojs/kernel": new URL("./packages/kernel/src", import.meta.url)
+        .pathname,
       "@nudojs/core": new URL("./packages/core/src", import.meta.url)
         .pathname,
       "@nudojs/parser": new URL("./packages/parser/src", import.meta.url)

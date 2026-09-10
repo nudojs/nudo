@@ -25,9 +25,28 @@ export {
   type ModuleGraphCache,
   computeDirtySet,
   topoSortDirty,
+  setKernelModule,
 } from "./analyzer.ts";
 
 export { isNudoTargetPath } from "./target-path.ts";
+export {
+  collectStaticImports,
+  analyzeExportsFromSource,
+  collectDependencySpecs,
+  type ModuleExports,
+} from "./static-imports.ts";
+export {
+  harvestPackage,
+  formatHarvestSummary,
+  lookupHarvested,
+  resolvePackageRoot,
+  type PackageHarvest,
+} from "./harvest-package.ts";
+export {
+  harvestNodeTypes,
+  summarizeNodeEnv,
+  type NodeEnvResult,
+} from "./harvest-node.ts";
 
 export {
   buildSemanticTokens,
