@@ -47,13 +47,15 @@ import { spread, joinAbs } from "./objects.ts";
 import {
   defineClass,
   getClass,
+  classFromMethods,
   instantiateClass,
   instanceOf,
   projectBrand,
-  shapeFromMethods,
+  lookupMethod,
   awaitAbs,
   coerceAsyncReturn,
   wrapPromise,
+  type MethodDef,
 } from "./language.ts";
 
 // --- 环境 ---
@@ -61,7 +63,9 @@ import {
 export type AstEnv = {
   vars: Map<string, Abs>;
   /** 用户函数：name → { params, body } */
-  fns: Map<string, { params: string[]; body: Node; async?: boolean }>;
+  fns: Map<string, { params: string[]; body: Node; async?: boolean; kind?: string }>;
+  /** class 表（旁路，withVar 必须保留） */
+  classes?: Map<string, unknown>;
 };
 
 export function emptyEnv(): AstEnv {
@@ -71,7 +75,7 @@ export function emptyEnv(): AstEnv {
 export function withVar(env: AstEnv, name: string, value: Abs): AstEnv {
   const vars = new Map(env.vars);
   vars.set(name, value);
-  return { vars, fns: env.fns };
+  return { vars, fns: env.fns, classes: env.classes };
 }
 
 export function withFns(
@@ -81,7 +85,7 @@ export function withFns(
 ): AstEnv {
   const fns = new Map(env.fns);
   fns.set(name, fn);
-  return { vars: env.vars, fns };
+  return { vars: env.vars, fns, classes: env.classes };
 }
 
 export type EvalOptions = {
@@ -117,10 +121,13 @@ export function evalSource(
   const env = emptyEnv();
   let phi = opts.phi ?? pTrue;
 
-  // 第一遍：注册函数声明
+  // 第一遍：注册函数与 class（class 必须在调用前登记 methods）
   for (const stmt of file.program.body) {
     if (stmt.type === "FunctionDeclaration" && stmt.id) {
       registerFunction(env, stmt);
+    }
+    if (stmt.type === "ClassDeclaration") {
+      registerClassDecl(env, stmt);
     }
     if (stmt.type === "VariableDeclaration") {
       // const add = (a,b) => a+b
@@ -143,6 +150,55 @@ export function evalSource(
 
   const value = callFunction(env, entry.fn, entry.args, phi, opts.budget);
   return { value, phi, env };
+}
+
+/** 注册 ClassDeclaration 到 env.classes 与 env.vars */
+function registerClassDecl(env: AstEnv, node: Node): void {
+  const cls = node as {
+    id?: { name: string };
+    superClass?: Node;
+    body: {
+      body: Array<{
+        type: string;
+        key?: Node;
+        params?: Node[];
+        body?: Node;
+        kind?: string;
+        async?: boolean;
+      }>;
+    };
+  };
+  const name = cls.id?.name ?? "AnonymousClass";
+  const methods: MethodDef[] = cls.body.body
+    .filter((m) => m.type === "ClassMethod" || m.type === "ObjectMethod")
+    .map((m) => ({
+      name:
+        m.key?.type === "Identifier"
+          ? (m.key as Identifier).name
+          : m.key?.type === "StringLiteral"
+            ? (m.key as StringLiteral).value
+            : "method",
+      params: (m.params ?? []).map(paramName),
+      body: m.body as Node,
+      kind: m.kind,
+      async: m.async === true,
+    }));
+  let superName: string | undefined;
+  let superShape: Abs | undefined;
+  if (cls.superClass?.type === "Identifier") {
+    superName = (cls.superClass as Identifier).name;
+    const sd = getClass(env, superName);
+    if (sd) superShape = sd.instanceShape;
+  }
+  const def = classFromMethods(name, methods, superName, superShape);
+  defineClass(env, def);
+  const classVal = abs(
+    { k: "brand", name, shape: def.instanceShape },
+    undefined,
+    undefined,
+    "exact",
+  );
+  env.vars.set(name, classVal);
 }
 
 function paramName(p: Node): string {
@@ -184,6 +240,41 @@ export function callFunction(
   return result.value;
 }
 
+/**
+ * 在 this=receiver 下求值方法体。
+ * constructor 无显式 return 时返回更新后的 this（字段写入已并入 env）。
+ */
+export function evalMethodBody(
+  method: { params: string[]; body: Node; async?: boolean; kind?: string },
+  args: Abs[],
+  thisVal: Abs,
+  env: AstEnv,
+  phi: Phi = pTrue,
+  budget: LeakBudget = defaultLeakBudget,
+): Abs {
+  const local = emptyEnv();
+  local.fns = env.fns;
+  const cls = (env as AstEnv & { classes?: Map<string, unknown> }).classes;
+  if (cls) (local as AstEnv & { classes?: Map<string, unknown> }).classes = cls;
+  local.vars.set("this", thisVal);
+  method.params.forEach((p, i) => {
+    local.vars.set(p, args[i] ?? unknown);
+  });
+
+  const result = evalNode(method.body, local, phi, budget);
+  let value = result.value;
+
+  // 从求值后的 env 取 this（AssignmentExpression 用 withVar 换 env）
+  const thisAfter = result.env.vars.get("this") ?? local.vars.get("this");
+  if (method.kind === "constructor") {
+    if (thisAfter) value = thisAfter;
+  } else if (thisAfter && thisAfter !== thisVal && value.kind === "unknown") {
+    value = thisAfter;
+  }
+  if (method.async) return coerceAsyncReturn(value);
+  return value;
+}
+
 // --- 节点求值 ---
 
 export function evalNode(
@@ -223,53 +314,71 @@ export function evalNode(
       );
     }
     case "ClassDeclaration": {
-      const cls = node as {
-        id?: { name: string };
-        superClass?: Node;
-        body: { body: Array<{ type: string; key?: Node; params?: Node[]; body?: Node; kind?: string }> };
-      };
-      const name = cls.id?.name ?? "AnonymousClass";
-      const methods = cls.body.body
-        .filter((m) => m.type === "ClassMethod" || m.type === "ObjectMethod")
-        .map((m) => ({
-          name:
-            m.key?.type === "Identifier"
-              ? (m.key as Identifier).name
-              : m.key?.type === "StringLiteral"
-                ? (m.key as StringLiteral).value
-                : "method",
-          params: (m.params ?? []).map(paramName),
-          body: m.body,
-          kind: m.kind,
-        }));
-      let superShape: Abs | undefined;
-      let superName: string | undefined;
-      if (cls.superClass?.type === "Identifier") {
-        superName = (cls.superClass as Identifier).name;
-        const sd = getClass(env, superName);
-        if (sd) superShape = sd.instanceShape;
+      registerClassDecl(env, node);
+      const name = (node as { id?: { name: string } }).id?.name;
+      if (name) {
+        return { value: env.vars.get(name) ?? unknown, phi, env };
       }
-      const instanceShape = shapeFromMethods(methods, superShape);
-      defineClass(env, name, {
-        instanceShape,
-        ctorParams: methods.find((m) => m.kind === "constructor")?.params ?? [],
-        superClass: superName,
-      });
-      // 绑定类名：new C() 用
-      const classVal = abs(
-        { k: "brand", name, shape: instanceShape },
-        undefined,
-        undefined,
-        "exact",
-      );
-      return { value: classVal, phi, env: withVar(env, name, classVal) };
+      return ok(unknown, phi, env);
     }
     case "NewExpression": {
       const ne = node as { callee: Node; arguments: Node[] };
       if (ne.callee.type !== "Identifier") return ok(unknown, phi, env);
       const className = (ne.callee as Identifier).name;
       const args = ne.arguments.map((a) => evalNode(a, env, phi, budget).value);
-      return ok(instantiateClass(env, className, args), phi, env);
+      const inst = instantiateClass(env, className, args, (ctor, cargs, thisVal, e) =>
+        evalMethodBody(ctor, cargs, thisVal, e, phi, budget),
+      );
+      return ok(inst, phi, env);
+    }
+    case "AssignmentExpression": {
+      const ae = node as {
+        operator: string;
+        left: Node;
+        right: Node;
+      };
+      if (ae.operator !== "=") return ok(unknown, phi, env);
+      const rhs = evalNode(ae.right, env, phi, budget).value;
+      // this.field = v → 更新 env 中的 this
+      if (
+        ae.left.type === "MemberExpression" &&
+        (ae.left as { object: Node }).object.type === "ThisExpression"
+      ) {
+        const prop = (ae.left as { property: Node; computed?: boolean }).property;
+        const key =
+          !ae.left.computed && prop.type === "Identifier"
+            ? (prop as Identifier).name
+            : prop.type === "StringLiteral"
+              ? (prop as StringLiteral).value
+              : undefined;
+        if (key) {
+          const thisVal = env.vars.get("this");
+          if (thisVal && thisVal.shape.k === "brand") {
+            const slots: Record<string, { value: Abs }> = {};
+            const inner = thisVal.shape.shape;
+            if (inner.shape.k === "obj") {
+              Object.assign(slots, inner.shape.slots);
+            }
+            slots[key] = { value: rhs };
+            const updated = abs(
+              {
+                k: "brand",
+                name: thisVal.shape.name,
+                shape: abs({ k: "obj", slots }, undefined, undefined, "exact"),
+              },
+              undefined,
+              undefined,
+              thisVal.conf,
+            );
+            return { value: rhs, phi, env: withVar(env, "this", updated) };
+          }
+        }
+      }
+      // 普通标识符赋值
+      if (ae.left.type === "Identifier") {
+        return { value: rhs, phi, env: withVar(env, (ae.left as Identifier).name, rhs) };
+      }
+      return ok(rhs, phi, env);
     }
     case "AwaitExpression": {
       const ae = node as { argument: Node };
@@ -451,7 +560,7 @@ function evalBinary(
     case "instanceof": {
       if (node.right.type !== "Identifier") return ok(unknown, phi, env);
       const className = (node.right as Identifier).name;
-      return ok(instanceOf(l, className), phi, env);
+      return ok(instanceOf(l, className, env), phi, env);
     }
     default:
       return ok(unknown, phi, env);
@@ -477,16 +586,13 @@ function evalCall(
       );
 
       if (obj.shape.k === "brand") {
-        // brand 方法投影
-        if (method === "map" || method === "reduce" || method === "filter") {
-          // brand 不是数组；走 unknown
-        } else {
-          // 尝试 obj 上的方法
-          const slotVal = projectBrand(obj, method);
-          if (slotVal.shape.k === "fn") {
-            // 简化：方法调用返回 unknown（Phase：可 eval body with this）
-            return ok(unknown, phi, env);
-          }
+        // brand 方法：在 this=receiver 下求值方法体（含继承链）
+        const mdef = lookupMethod(env, obj, method);
+        if (mdef && mdef.kind !== "constructor") {
+          const margs = rawArgs.map((a) => evalNode(a, env, phi, budget).value);
+          const ret = evalMethodBody(mdef, margs, obj, env, phi, budget);
+          if (mdef.async) return ok(coerceAsyncReturn(ret), phi, env);
+          return ok(ret, phi, env);
         }
       }
 
