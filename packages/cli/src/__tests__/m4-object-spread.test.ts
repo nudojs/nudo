@@ -1,0 +1,70 @@
+import { describe, it, expect, afterEach } from "vitest";
+import { createEnvironment, typeValueToString, T } from "@nudojs/core";
+import { parse } from "@nudojs/parser";
+import { evaluateFunctionFull, resetMemo } from "../evaluator.ts";
+import { setKernelDomains, resetPhi } from "../kernel-router.ts";
+
+function runFn(src: string, args: any[], kernel: "off" | "object" | "all") {
+  setKernelDomains(
+    kernel === "off" ? "off" : kernel === "object" ? ["object"] : ["arith", "object", "hof"],
+  );
+  resetPhi();
+  resetMemo();
+  const ast = parse(src);
+  const fnNode = (ast.program.body as any[]).find(
+    (s) => s.type === "FunctionDeclaration",
+  );
+  return evaluateFunctionFull(fnNode, args, createEnvironment()).value;
+}
+
+describe("M4 object spread kernel routing", () => {
+  afterEach(() => {
+    setKernelDomains("off");
+    resetPhi();
+  });
+
+  it("spread keeps literal fields: defaults ⊕ {port:3000}", () => {
+    const src = `
+      function createConfig(options) {
+        return {
+          host: "localhost",
+          port: 8080,
+          debug: false,
+          ...options,
+        };
+      }
+    `;
+    const over = T.object({ port: T.literal(3000), debug: T.literal(true) });
+    const off = runFn(src, [over], "off");
+    const on = runFn(src, [over], "object");
+
+    expect(off.kind).toBe("object");
+    expect(on.kind).toBe("object");
+    if (on.kind !== "object" || off.kind !== "object") return;
+    // 字面量保留
+    expect(typeValueToString(on.properties.host!)).toBe('"localhost"');
+    expect(typeValueToString(on.properties.port!)).toBe("3000");
+    expect(typeValueToString(on.properties.debug!)).toBe("true");
+    // 与旧路径 parity
+    expect(typeValueToString(on)).toBe(typeValueToString(off));
+  });
+
+  it("empty spread keeps all defaults", () => {
+    const src = `
+      function c(options) {
+        return { a: 1, b: "x", ...options };
+      }
+    `;
+    const on = runFn(src, [T.object({})], "object");
+    expect(on.kind).toBe("object");
+    if (on.kind !== "object") return;
+    expect(typeValueToString(on.properties.a!)).toBe("1");
+    expect(typeValueToString(on.properties.b!)).toBe('"x"');
+  });
+
+  it("object without spread unchanged", () => {
+    const src = `function f() { return { x: 1, y: 2 }; }`;
+    const on = runFn(src, [], "object");
+    expect(typeValueToString(on)).toBe('{ x: 1, y: 2 }');
+  });
+});

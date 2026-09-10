@@ -4,6 +4,7 @@
     "baseUrl": ".",
     "paths": {
       "@nudojs/core": ["packages/core/src"],
+      "@nudojs/kernel": ["packages/kernel/src"],
       "@nudojs/parser": ["packages/parser/src"],
       "@nudojs/cli": ["packages/cli/src"],
       "@nudojs/cli/evaluator": ["packages/cli/src/evaluator-api.ts"],

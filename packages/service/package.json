@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@nudojs/core": "workspace:*",
+    "@nudojs/kernel": "workspace:*",
     "@nudojs/parser": "workspace:*",
     "@nudojs/cli": "workspace:*",
     "@babel/traverse": "^7.29.0",

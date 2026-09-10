@@ -166,6 +166,18 @@ async function runInfer(
   file: string,
   options: { dts?: boolean; showLoc?: boolean; callsites?: CallRecord[]; emit?: EmitCasesOptions } = {},
 ): Promise<void> {
+  // M3：预注入 kernel 供 analyzer 生成内涵摘要（NUDO_KERNEL 开启时）
+  const kernelEnv = process.env.NUDO_KERNEL;
+  if (kernelEnv && kernelEnv !== "0" && kernelEnv !== "off") {
+    try {
+      const kernel = await import("@nudojs/kernel");
+      const { setKernelModule } = await import("@nudojs/service");
+      setKernelModule(kernel);
+    } catch {
+      // kernel 不可用则跳过
+    }
+  }
+
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
   let result = await analyzeFileAsync(filePath, source, undefined, options.callsites);
@@ -217,6 +229,16 @@ async function runInfer(
       let line = `Case "${c.name}": (${argsStr}) => ${typeValueToString(c.result)}`;
       if (c.throws.kind !== "never") line += ` throws ${typeValueToString(c.throws)}`;
       console.log(line);
+      // M3：内涵摘要（term/pred/conf）
+      if (c.intension?.display) {
+        console.log(`    intension: ${c.intension.display}`);
+      } else if (c.intension?.term || c.intension?.pred) {
+        const parts: string[] = [];
+        if (c.intension.term) parts.push(`term=${c.intension.term}`);
+        if (c.intension.pred) parts.push(`pred: ${c.intension.pred}`);
+        if (c.intension.conf) parts.push(`#${c.intension.conf}`);
+        console.log(`    ${parts.join("  ")}`);
+      }
     }
 
     if (fn.entryOnly) {
@@ -464,6 +486,73 @@ async function runCheck(file: string): Promise<void> {
     process.exitCode = 1;
   }
 }
+
+program
+  .command("types")
+  .description("Type-as-computation view: show term + constraints inferred by the kernel (not just extensional shape)")
+  .argument("<file>", "Path to the JS file")
+  .option("--fn <name>", "Only analyze this function")
+  .option("--assume <pred...>", "Assume constraints, e.g. x>0 y>=1")
+  .option("--generalize", "Show polymorphic signatures via symbolic execution")
+  .action(
+    async (
+      file: string,
+      opts: { fn?: string; assume?: string[]; generalize?: boolean },
+    ) => {
+      const { readFileSync } = await import("node:fs");
+      const { basename } = await import("node:path");
+      const kernel = await import("@nudojs/kernel");
+
+      const source = readFileSync(file, "utf8");
+      let phi = kernel.pTrue;
+      const assumeIds = new Set<string>();
+      for (const a of opts.assume ?? []) {
+        const m = /^([A-Za-z_$][\w$]*)\s*(>=|>)\s*(-?\d+(?:\.\d+)?)$/.exec(a.trim());
+        if (!m) {
+          console.error(`无法解析 --assume: ${a}（支持 x>0 / x>=1）`);
+          continue;
+        }
+        const id = m[1]!;
+        const n = Number(m[3]);
+        phi = kernel.gtNum(kernel.v(id), n);
+        assumeIds.add(id);
+      }
+
+      // 列出函数
+      const list = opts.fn ? [opts.fn] : kernel.listFunctionNames(source);
+      if (list.length === 0) {
+        console.error("未找到函数");
+        process.exitCode = 1;
+        return;
+      }
+
+      console.log(`nudo types  ${basename(file)}`);
+      if (assumeIds.size > 0) {
+        console.log(`assume: ${[...assumeIds].map((id) => `${id} > 0`).join(", ")}`);
+      }
+      if (opts.generalize) {
+        console.log("mode: generalize (symbolic α)\n");
+      } else {
+        console.log("");
+      }
+
+      for (const name of list) {
+        if (opts.generalize) {
+          const g = kernel.generalizeFromAst(name, source);
+          if (!g) continue;
+          console.log(g.display);
+          console.log("");
+          continue;
+        }
+
+        const args = kernel.buildArgsFromAssume(source, name, assumeIds);
+        const result = kernel.analyzeFn(source, name, args, phi);
+        const label = `${name}(${args.map((a) => kernel.formatShape(a)).join(", ")})`;
+        console.log(kernel.formatAbsMultiline(result, label));
+        console.log("");
+      }
+    },
+  );
 
 program
   .command("check")
