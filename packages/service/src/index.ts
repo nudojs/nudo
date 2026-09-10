@@ -42,6 +42,11 @@ export {
   resolvePackageRoot,
   type PackageHarvest,
 } from "./harvest-package.ts";
+export {
+  harvestNodeTypes,
+  summarizeNodeEnv,
+  type NodeEnvResult,
+} from "./harvest-node.ts";
 
 export {
   buildSemanticTokens,
