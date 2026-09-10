@@ -252,13 +252,23 @@ function extractParamReqsFromSource(
           right?.type === "NumericLiteral" &&
           typeof right.value === "number"
         ) {
-          const idx = paramIndex.get(left.name)!;
-          const t = { op: "var" as const, id: left.name };
-          const b = { op: "lit" as const, value: right.value };
-          if (op === ">") out.push([idx, { op: "gt", a: t, b }]);
-          else if (op === ">=") out.push([idx, { op: "ge", a: t, b }]);
-          // `if (param < n)` 多为 clamp/回退守卫，不当作调用前置；
-          // 仅把 `>`/`>=` 视为「成功路径需要的下界」。
+          // 仅 `if (param > n) return param` 视为成功路径下界；
+          // `if (id > 9999) return 9999` 是 clamp，不是调用前置。
+          const consequent = obj.consequent as Record<string, unknown>;
+          const isReturnParam =
+            consequent?.type === "ReturnStatement" &&
+            (consequent.argument as { type?: string; name?: string })?.type ===
+              "Identifier" &&
+            (consequent.argument as { name?: string }).name === left.name;
+          if (!isReturnParam) {
+            // skip
+          } else {
+            const idx = paramIndex.get(left.name)!;
+            const t = { op: "var" as const, id: left.name };
+            const b = { op: "lit" as const, value: right.value };
+            if (op === ">") out.push([idx, { op: "gt", a: t, b }]);
+            else if (op === ">=") out.push([idx, { op: "ge", a: t, b }]);
+          }
         }
       }
     }
