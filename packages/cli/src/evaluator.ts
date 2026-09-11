@@ -23,13 +23,17 @@ import {
 import { extractInlineDirectives, type InlineDirective } from "@nudojs/parser";
 import { narrow } from "./narrowing.ts";
 import {
-  tryAbsBinary,
   tryAbsObjectSpread,
+  tryAbsUnary,
   pushPhi,
   popPhi,
   currentPhi,
   resetPhi,
 } from "./abs-route.ts";
+import {
+  evalBinaryValue,
+  distributeBinaryOverUnion,
+} from "./eval-binary.ts";
 import { phiFromTest, combinePhi } from "./phi-from-test.ts";
 import { tagParamArg } from "./term-registry.ts";
 import { PROMISE_STATIC_METHODS, evaluatePromiseStaticMethod, evaluatePromiseInstanceMethod } from "./builtins/builtin-promise.ts";
@@ -247,24 +251,6 @@ function literalCodeUnits(args: TypeValue[]): number[] | null {
  * 这五种原始值走 JS 宽松相等的 ToNumber 强转路径，可直接用宿主 `==`
  * 求值（与规范一致）；bigint/symbol 无该路径，hit=false 交给调用方退化
  * 为 T.boolean。undefined 不能作哨兵值（它本身就是合法字面量值）。 */
-function looseLiteralValue(
-  tv: TypeValue,
-): { hit: boolean; v: number | string | boolean | null | undefined } {
-  if (tv.kind === "literal") {
-    const v = tv.value;
-    if (
-      typeof v === "number" ||
-      typeof v === "string" ||
-      typeof v === "boolean" ||
-      v === null ||
-      v === undefined
-    ) {
-      return { hit: true, v };
-    }
-  }
-  return { hit: false, v: undefined };
-}
-
 const BUILTIN_INSTANCE_METHODS: Record<string, Record<string, (...args: TypeValue[]) => TypeValue>> = {
   Date: {
     getTime: () => T.number,
@@ -1582,31 +1568,6 @@ function evaluateComputedMemberAccess(objVal: TypeValue, propVal: TypeValue, nod
   return result;
 }
 
-const MAX_UNION_PRODUCT = 50;
-
-function distributeBinaryOverUnion(
-  left: TypeValue,
-  right: TypeValue,
-  fn: (l: TypeValue, r: TypeValue) => TypeValue,
-): TypeValue {
-  if (left.kind === "union" && right.kind === "union") {
-    // Cap combinatorial blowup
-    if (left.members.length * right.members.length > MAX_UNION_PRODUCT) {
-      return T.unknown;
-    }
-    return simplifyUnion(
-      left.members.flatMap((l) => right.members.map((r) => fn(l, r))),
-    );
-  }
-  if (left.kind === "union") {
-    return simplifyUnion(left.members.map((l) => fn(l, right)));
-  }
-  if (right.kind === "union") {
-    return simplifyUnion(right.members.map((r) => fn(left, r)));
-  }
-  return fn(left, right);
-}
-
 let _unreachableRanges: SourceRange[] = [];
 
 function collectUnreachable(stmts: readonly Node[], fromIndex: number): void {
@@ -1831,78 +1792,38 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         return evaluateInstanceof(leftVal, rightVal, node.right, env);
       }
       if (node.operator === "in") {
-        // Literal `key in obj` / `Symbol.iterator in x` decisions; unions
-        // on either side distribute (mixed literals collapse per
-        // simplifyUnion), unknown receivers stay unknown.
         return distributeBinaryOverUnion(leftVal, rightVal, (l, r) => evaluateInMember(l, r));
       }
       if (node.operator === "===" || node.operator === "!==") {
-        // Prototype-singleton identity (`baseProto === Types.buffer`): the
-        // generic Op only literal-compares, so same-class instance pairs
-        // would collapse to boolean. Decide it when both sides are instances
-        // and at least one is a cached builtin prototype.
         const identity = builtinProtoIdentityEq(leftVal, rightVal);
         if (identity !== null) {
           return T.literal(node.operator === "===" ? identity : !identity);
         }
-        // Class-namespace identity (`x.constructor === Array`): memoized
-        // builtinClassValue objects compare by class name.
         const classIdentity = builtinClassIdentityEq(leftVal, rightVal);
         if (classIdentity !== null) {
           return T.literal(node.operator === "===" ? classIdentity : !classIdentity);
         }
       }
-      // `==`/`!=`：core 的 binaryOpMap 未收录这两个运算符（applyBinaryOp
-      // 会回落 unknown），在同一分派点补上——两操作数均为原始字面量
-      // （number/string/boolean/null/undefined）时按 JS 宽松相等语义
-      // （ToNumber 强转，如 "5" == 5 → true、null == undefined → true、
-      // NaN == NaN → false）直接求值出 boolean 字面量；任一操作数非字面量
-      // 时退化为 T.boolean。
-      if (node.operator === "==" || node.operator === "!=") {
-        const eq = node.operator === "==";
-        return distributeBinaryOverUnion(leftVal, rightVal, (l, r) => {
-          const lv = looseLiteralValue(l);
-          const rv = looseLiteralValue(r);
-          if (lv.hit && rv.hit) return T.literal(eq ? lv.v == rv.v : lv.v != rv.v);
-          return T.boolean;
-        });
-      }
 
-      // 代数算术/比较路由；union / 非数串操作数回退外延 Ops
-      if (
-        leftVal.kind !== "union" &&
-        rightVal.kind !== "union" &&
-        (node.operator === "+" || node.operator === "-" || node.operator === "*" ||
-          node.operator === "<" || node.operator === "<=" ||
-          node.operator === ">" || node.operator === ">=")
-      ) {
-        const absResult = tryAbsBinary(node.operator, leftVal, rightVal);
-        if (absResult !== undefined) return absResult;
-      }
-
-      return distributeBinaryOverUnion(leftVal, rightVal, (l, r) =>
-        dispatchBinaryOp(node.operator, l, r),
-      );
+      // 统一二元：代数优先 → 宽松相等 → 外延 Ops
+      const bin = evalBinaryValue(node.operator, leftVal, rightVal);
+      if (bin !== undefined) return bin;
+      return T.unknown;
     }
 
     case "UnaryExpression": {
       const argVal = evaluate(node.argument, env);
       if (isReturn(argVal) || isBranch(argVal) || isThrow(argVal)) return argVal;
-      if (node.operator === "typeof") {
-        return distributeOverUnion(argVal, (v) => Ops.typeof_(v));
-      }
+      // 一元语言表面经代数（typeof / ! / -）
+      const unary = tryAbsUnary(node.operator, argVal);
+      if (unary !== undefined) return unary;
       if (node.operator === "!") {
+        // 代数未接住：对象恒真等 host 知识
         return distributeOverUnion(argVal, (v) => {
-          // Object-ish receivers are statically truthy: `!ref` must resolve
-          // to literal false or enclosing `if (!ref || …)` guards explore
-          // both branches and the ref-reassigning branch poisons the loop.
           const decided = definiteBoolean(v);
           if (decided !== null) return T.literal(!decided);
           return Ops.not(v);
         });
-      }
-      if (node.operator === "-") {
-        return distributeOverUnion(argVal, (v) => Ops.neg(v));
       }
       return T.unknown;
     }
@@ -2178,7 +2099,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           if (leftVal && leftVal.kind !== "unknown") {
             // Extract the binary operator (e.g., "+=" -> "+")
             const binaryOp = node.operator.slice(0, -1);
-            val = dispatchBinaryOp(binaryOp, leftVal, rightVal);
+            val = evalBinaryValue(binaryOp, leftVal, rightVal) ?? T.unknown;
           }
         }
 

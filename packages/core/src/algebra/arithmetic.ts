@@ -324,6 +324,78 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
+/**
+ * 除法：字面量折叠；除以正/负常数时按单调性推界。
+ * 除以 0：JS 语义为 ±Infinity / NaN，shape 仍 number（不报违例）。
+ */
+export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
+  const va = litValue(a);
+  const vb = litValue(b);
+  if (typeof va === "number" && typeof vb === "number") {
+    if (vb === 0) {
+      // JS：0/0=NaN，n/0=±Infinity —— 保留字面量语义
+      return numLit(va / vb);
+    }
+    return numLit(va / vb);
+  }
+  if (isNumericLike(a) && isNumericLike(b) && a.term && b.term) {
+    const term = simplifyTerm(app("/", [a.term, b.term]));
+    if (b.term.op === "lit" && typeof b.term.value === "number" && b.term.value !== 0) {
+      const k = b.term.value;
+      const ab = numericBounds(a, phi);
+      const facts: Pred[] = [];
+      if (ab?.lo !== undefined) {
+        const lo = ab.lo.value / k;
+        if (k > 0) facts.push(ab.lo.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
+        else facts.push(ab.lo.strict ? lt(term, lit(lo)) : le(term, lit(lo)));
+      }
+      if (ab?.hi !== undefined) {
+        const hi = ab.hi.value / k;
+        if (k > 0) facts.push(ab.hi.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
+        else facts.push(ab.hi.strict ? gt(term, lit(hi)) : ge(term, lit(hi)));
+      }
+      return abs(
+        num().shape,
+        term,
+        facts.length ? and(...facts) : undefined,
+        term.op === "lit" ? "exact" : confJoin(confJoin(a.conf, b.conf), "path"),
+      );
+    }
+    return abs(num().shape, term, undefined, confJoin(confJoin(a.conf, b.conf), "path"));
+  }
+  return abs({ k: "unknown" }, undefined, undefined, "partial");
+}
+
+/**
+ * 取模：字面量折叠；`x % k`（k>0 字面量）结果界在 (−|k|, |k|)。
+ * 整数模可收紧到 [0, k)，此处先做保守实数界。
+ */
+export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
+  const va = litValue(a);
+  const vb = litValue(b);
+  if (typeof va === "number" && typeof vb === "number") {
+    if (vb === 0) {
+      return abs(num().shape, undefined, undefined, "path");
+    }
+    return numLit(va % vb);
+  }
+  if (isNumericLike(a) && isNumericLike(b) && a.term && b.term) {
+    const term = simplifyTerm(app("%", [a.term, b.term]));
+    if (b.term.op === "lit" && typeof b.term.value === "number" && b.term.value !== 0) {
+      const k = Math.abs(b.term.value);
+      // 余数始终落在 (−k, k)
+      return abs(
+        num().shape,
+        term,
+        and(gt(term, lit(-k)), lt(term, lit(k))),
+        confJoin(confJoin(a.conf, b.conf), "path"),
+      );
+    }
+    return abs(num().shape, term, undefined, confJoin(confJoin(a.conf, b.conf), "path"));
+  }
+  return abs({ k: "unknown" }, undefined, undefined, "partial");
+}
+
 /** 比较：返回 boolean Abs；若双字面量则 exact */
 export function cmp(
   op: "lt" | "le" | "gt" | "ge" | "eq" | "ne",
@@ -392,6 +464,19 @@ function compareLits(
   if (op === "eq") return a === b;
   if (op === "ne") return a !== b;
   if (typeof a === "number" && typeof b === "number") {
+    switch (op) {
+      case "lt":
+        return a < b;
+      case "le":
+        return a <= b;
+      case "gt":
+        return a > b;
+      case "ge":
+        return a >= b;
+    }
+  }
+  // 字符串字面量比较（JS 词法序）
+  if (typeof a === "string" && typeof b === "string") {
     switch (op) {
       case "lt":
         return a < b;

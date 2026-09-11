@@ -38,6 +38,9 @@ function listTopFunctions(source: string): string[] {
     if (stmt.type === "ExportNamedDeclaration" && stmt.declaration) {
       decl = stmt.declaration;
     }
+    if (stmt.type === "ExportDefaultDeclaration" && stmt.declaration) {
+      decl = stmt.declaration;
+    }
     if (decl.type === "FunctionDeclaration" && decl.id) names.push(decl.id.name);
     if (decl.type === "VariableDeclaration") {
       for (const d of decl.declarations) {
@@ -217,7 +220,7 @@ function scanLiteralCalls(
   return out;
 }
 
-/** 从函数体抽 if (param > n) 形态的前置约束 */
+/** 从函数体抽 if (param ≷ n) return param 形态的前置约束（含 && 双侧） */
 function extractParamReqsFromSource(
   source: string,
   fnName: string,
@@ -228,40 +231,51 @@ function extractParamReqsFromSource(
   const file = parse(source);
   const out: Array<[number, import("./pred.ts").Pred]> = [];
 
+  const pushCmp = (
+    test: Record<string, unknown>,
+    consequent: Record<string, unknown> | undefined,
+  ): void => {
+    if (test?.type !== "BinaryExpression") return;
+    const left = test.left as { type?: string; name?: string };
+    const right = test.right as { type?: string; value?: number };
+    const op = test.operator as string;
+    if (
+      left?.type !== "Identifier" ||
+      !left.name ||
+      !paramIndex.has(left.name) ||
+      right?.type !== "NumericLiteral" ||
+      typeof right.value !== "number"
+    ) {
+      return;
+    }
+    // 仅 `if (param ≷ n) return param` 视为成功路径前置；
+    // `if (id > 9999) return 9999` 是 clamp，不是调用前置。
+    const isReturnParam =
+      consequent?.type === "ReturnStatement" &&
+      (consequent.argument as { type?: string; name?: string })?.type ===
+        "Identifier" &&
+      (consequent.argument as { name?: string }).name === left.name;
+    if (!isReturnParam) return;
+    const idx = paramIndex.get(left.name)!;
+    const t = { op: "var" as const, id: left.name };
+    const b = { op: "lit" as const, value: right.value };
+    if (op === ">") out.push([idx, { op: "gt", a: t, b }]);
+    else if (op === ">=") out.push([idx, { op: "ge", a: t, b }]);
+    else if (op === "<") out.push([idx, { op: "lt", a: t, b }]);
+    else if (op === "<=") out.push([idx, { op: "le", a: t, b }]);
+  };
+
   const visit = (n: unknown): void => {
     if (!n || typeof n !== "object") return;
     const obj = n as Record<string, unknown> & { type?: string };
     if (obj.type === "IfStatement") {
       const test = obj.test as Record<string, unknown>;
-      if (test?.type === "BinaryExpression") {
-        const left = test.left as { type?: string; name?: string };
-        const right = test.right as { type?: string; value?: number };
-        const op = test.operator as string;
-        if (
-          left?.type === "Identifier" &&
-          left.name &&
-          paramIndex.has(left.name) &&
-          right?.type === "NumericLiteral" &&
-          typeof right.value === "number"
-        ) {
-          // 仅 `if (param > n) return param` 视为成功路径下界；
-          // `if (id > 9999) return 9999` 是 clamp，不是调用前置。
-          const consequent = obj.consequent as Record<string, unknown>;
-          const isReturnParam =
-            consequent?.type === "ReturnStatement" &&
-            (consequent.argument as { type?: string; name?: string })?.type ===
-              "Identifier" &&
-            (consequent.argument as { name?: string }).name === left.name;
-          if (!isReturnParam) {
-            // skip
-          } else {
-            const idx = paramIndex.get(left.name)!;
-            const t = { op: "var" as const, id: left.name };
-            const b = { op: "lit" as const, value: right.value };
-            if (op === ">") out.push([idx, { op: "gt", a: t, b }]);
-            else if (op === ">=") out.push([idx, { op: "ge", a: t, b }]);
-          }
-        }
+      const consequent = obj.consequent as Record<string, unknown> | undefined;
+      pushCmp(test, consequent);
+      // `if (a > 0 && a <= 100) return a`
+      if (test?.type === "LogicalExpression" && test.operator === "&&") {
+        pushCmp(test.left as Record<string, unknown>, consequent);
+        pushCmp(test.right as Record<string, unknown>, consequent);
       }
     }
     for (const key of Object.keys(obj)) {

@@ -57,8 +57,15 @@ export function formatShape(a: Abs): string {
       return `${formatShape(s.element)}[]`;
     case "tuple":
       return `[${s.elements.map(formatShape).join(", ")}]`;
-    case "fn":
-      return `(${s.params.join(", ")}) => ?`;
+    case "fn": {
+      const ret =
+        s.returnType !== undefined ? formatShape(s.returnType) : "?";
+      return `(${s.params.join(", ")}) => ${ret}`;
+    }
+    case "brand":
+      return `${s.name}`;
+    case "eff":
+      return `${s.eff}<${formatShape(s.inner)}>`;
     case "sum":
       return s.members.map(formatShape).join(" | ");
     default:

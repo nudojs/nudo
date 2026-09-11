@@ -19,6 +19,7 @@ import { TextDocument } from "vscode-languageserver-textdocument";
 import { typeValueToString } from "@nudojs/core";
 import {
   getTypeAtPosition,
+  getHoverAtPosition,
   getCompletionsAtPosition,
   getCasesForFile,
   buildSemanticTokens,
@@ -226,13 +227,22 @@ connection.onHover((params) => {
   const cases = getActiveCasesForUri(params.textDocument.uri);
 
   try {
-    const tv = getTypeAtPosition(filePath, source, line, column, cases);
-    if (!tv) return null;
+    const hover = getHoverAtPosition(filePath, source, line, column, cases);
+    if (!hover) return null;
 
+    const lines: string[] = [];
+    if (hover.intension) {
+      lines.push("```nudo", hover.intension, "```");
+      if (hover.typeText && hover.typeText !== hover.intension) {
+        lines.push("```nudo", `ext: ${hover.typeText}`, "```");
+      }
+    } else {
+      lines.push("```nudo", hover.typeText, "```");
+    }
     return {
       contents: {
         kind: MarkupKind.Markdown,
-        value: `\`\`\`nudo\n${typeValueToString(tv)}\n\`\`\``,
+        value: lines.join("\n"),
       },
     };
   } catch {

@@ -3,6 +3,7 @@ export * from "./pred.ts";
 export * from "./phi.ts";
 export * from "./abs.ts";
 export * from "./arithmetic.ts";
+export * from "./surface.ts";
 export * from "./leak.ts";
 export * from "./objects.ts";
 // eval.ts 仅服务示例/差分；joinAbs 以 objects 为准

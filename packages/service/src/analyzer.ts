@@ -1635,6 +1635,84 @@ export function getTypeAtPosition(
   return findBestTypeAtPosition(nodeTypeMap, globalEnv, ast, line, column);
 }
 
+export type HoverInfo = {
+  /** 外延 TypeValue 展示 */
+  typeText: string;
+  /** 内涵签名（代数 generalize），有则展示 */
+  intension?: string;
+};
+
+/**
+ * LSP hover：外延 TypeValue + 函数内涵（intension）。
+ * 光标落在函数名/声明上时附加 `scale: (A1+1)` 一类内涵。
+ */
+export function getHoverAtPosition(
+  filePath: string,
+  source: string,
+  line: number,
+  column: number,
+  activeCases?: Map<string, number>,
+): HoverInfo | null {
+  const tv = getTypeAtPosition(filePath, source, line, column, activeCases);
+  const info: HoverInfo | null = tv ? { typeText: typeValueToString(tv) } : null;
+
+  const fnName = findFunctionNameAtPosition(source, line, column);
+  if (fnName) {
+    try {
+      const g = generalizeFromAst(fnName, source);
+      if (g) {
+        const intension = g.display;
+        if (info) info.intension = intension;
+        else return { typeText: intension, intension };
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return info;
+}
+
+/** 光标处标识符是否是顶层/导出函数名 */
+function findFunctionNameAtPosition(
+  source: string,
+  line: number,
+  column: number,
+): string | undefined {
+  try {
+    const ast = parse(source);
+    let found: string | undefined;
+    traverse(ast, {
+      Identifier(path) {
+        const loc = path.node.loc;
+        if (!loc) return;
+        if (loc.start.line !== line) return;
+        if (column < loc.start.column || column > loc.end.column) return;
+        // 仅函数声明 id / 调用 callee 的裸标识符
+        const parent = path.parent;
+        if (
+          parent.type === "FunctionDeclaration" &&
+          parent.id === path.node
+        ) {
+          found = path.node.name;
+        } else if (
+          parent.type === "CallExpression" &&
+          parent.callee === path.node
+        ) {
+          found = path.node.name;
+        } else if (
+          parent.type === "VariableDeclarator" &&
+          parent.id === path.node
+        ) {
+          found = path.node.name;
+        }
+      },
+    });
+    return found;
+  } catch {
+    return undefined;
+  }
+}
+
 function findEnclosingFunction(
   functions: FunctionWithDirectives[],
   line: number,

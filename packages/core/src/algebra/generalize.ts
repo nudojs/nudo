@@ -40,9 +40,12 @@ function extractFn(
   const env = emptyEnv();
 
   for (const stmt of file.program.body) {
-    // export function / export const = fn
+    // export function / export const = fn / export default function
     let decl: Node = stmt;
     if (stmt.type === "ExportNamedDeclaration" && stmt.declaration) {
+      decl = stmt.declaration;
+    }
+    if (stmt.type === "ExportDefaultDeclaration" && stmt.declaration) {
       decl = stmt.declaration;
     }
     if (decl.type === "FunctionDeclaration" && decl.id) {

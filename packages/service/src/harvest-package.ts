@@ -3,8 +3,8 @@
  * 代数不碰 fs；这里只做「找到 dts 路径」这一层宿主职责。
  */
 
-import { existsSync, readdirSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
+import { join, resolve, basename } from "node:path";
 import { harvestDts, type HarvestedEnv } from "@nudojs/harvester";
 import { typeValueToString, type TypeValue } from "@nudojs/core";
 
@@ -30,11 +30,28 @@ export function resolvePackageRoot(
   return undefined;
 }
 
-/** 递归收集包内 .d.ts（限制数量防爆炸） */
+const SKIP_DIRS = new Set(["node_modules", "test", "tests", "docs", "doc", "examples", "__tests__"]);
+/** 单文件上限：巨型 lib.d.ts 级别拖垮 harvest */
+const MAX_DTS_BYTES = 1_500_000;
+
+/** 优先入口：index.d.ts / pkg 名 / lib 入口 */
+function dtsPriority(p: string, root: string): number {
+  const base = basename(p);
+  const rel = p.slice(root.length);
+  if (base === "index.d.ts") return 0;
+  if (base === "index.d.mts") return 1;
+  if (rel.includes("/types/") && base === "index.d.ts") return 2;
+  if (base.endsWith(".d.ts") && !base.includes(".")) return 3; // foo.d.ts
+  return 10;
+}
+
+/**
+ * 递归收集包内 .d.ts（限制数量 + 跳过超大文件 + 入口优先）。
+ */
 export function collectDtsFiles(root: string, maxFiles = 8): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
-    if (out.length >= maxFiles) return;
+    if (out.length >= maxFiles * 3) return; // 多收一点再排序截断
     let entries: string[];
     try {
       entries = readdirSync(dir);
@@ -42,8 +59,8 @@ export function collectDtsFiles(root: string, maxFiles = 8): string[] {
       return;
     }
     for (const name of entries) {
-      if (out.length >= maxFiles) return;
-      if (name === "node_modules" || name === "test" || name === "tests") continue;
+      if (out.length >= maxFiles * 3) return;
+      if (SKIP_DIRS.has(name)) continue;
       const p = join(dir, name);
       let st;
       try {
@@ -52,11 +69,39 @@ export function collectDtsFiles(root: string, maxFiles = 8): string[] {
         continue;
       }
       if (st.isDirectory()) walk(p);
-      else if (name.endsWith(".d.ts") && !name.endsWith(".d.ts.map")) out.push(p);
+      else if (name.endsWith(".d.ts") && !name.endsWith(".d.ts.map")) {
+        if (st.size > MAX_DTS_BYTES) continue;
+        out.push(p);
+      }
     }
   };
   walk(root);
-  return out;
+  out.sort((a, b) => dtsPriority(a, root) - dtsPriority(b, root) || a.length - b.length);
+  return out.slice(0, maxFiles);
+}
+
+/** package.json types/typings 入口（若存在且合理大小） */
+function entryDtsFromPackageJson(root: string): string | undefined {
+  const pj = join(root, "package.json");
+  if (!existsSync(pj)) return undefined;
+  try {
+    const raw = JSON.parse(readFileSync(pj, "utf8")) as {
+      types?: string;
+      typings?: string;
+      exports?: Record<string, unknown>;
+    };
+    const entry = raw.types ?? raw.typings;
+    if (typeof entry === "string" && entry.endsWith(".d.ts")) {
+      const p = resolve(root, entry);
+      if (existsSync(p)) {
+        const st = statSync(p);
+        if (st.size <= MAX_DTS_BYTES) return p;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return undefined;
 }
 
 export type PackageHarvest = {
@@ -70,10 +115,15 @@ export type PackageHarvest = {
 export function harvestPackage(
   pkg: string,
   fromDir?: string,
+  maxFiles = 8,
 ): PackageHarvest | { error: string } {
   const root = resolvePackageRoot(pkg, fromDir);
   if (!root) return { error: `package not found: ${pkg}` };
-  const dtsFiles = collectDtsFiles(root);
+  const entry = entryDtsFromPackageJson(root);
+  const collected = collectDtsFiles(root, maxFiles);
+  const dtsFiles = entry && !collected.includes(entry)
+    ? [entry, ...collected.filter((f) => f !== entry)].slice(0, maxFiles)
+    : collected;
   if (dtsFiles.length === 0) {
     return { error: `no .d.ts under ${root}` };
   }

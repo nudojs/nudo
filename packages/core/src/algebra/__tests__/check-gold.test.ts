@@ -95,6 +95,147 @@ export function main() { return new Counter(1).get(); }
 `,
     expectOk: true,
   },
+  // --- 真阳性：必须报 ---
+  {
+    name: "zero violates x>0",
+    source: `
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+needsPositive(0);
+`,
+    expectOk: false,
+    expectCode: "nudo:constraint-violated",
+  },
+  {
+    name: "unary negative call",
+    source: `
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+needsPositive(-3);
+`,
+    expectOk: false,
+    expectCode: "nudo:constraint-violated",
+  },
+  {
+    name: "x>=1 rejects 0",
+    source: `
+function idx(i) {
+  if (i >= 1) return i;
+  return 1;
+}
+idx(0);
+`,
+    expectOk: false,
+    expectCode: "nudo:constraint-violated",
+  },
+  {
+    name: "upper bound x<10 rejects 10",
+    source: `
+function small(n) {
+  if (n < 10) return n;
+  return 9;
+}
+small(10);
+`,
+    expectOk: false,
+    expectCode: "nudo:constraint-violated",
+  },
+  // --- 真阴性：不得误报（clamp / 无前置） ---
+  {
+    name: "clamp negative input is not violation",
+    source: `
+function clamp(n, lo, hi) {
+  if (n < lo) return lo;
+  if (n > hi) return hi;
+  return n;
+}
+clamp(-5, 0, 100);
+`,
+    expectOk: true,
+  },
+  {
+    name: "no guard no constraint",
+    source: `
+function double(n) { return n * 2; }
+double(-1);
+`,
+    expectOk: true,
+  },
+  {
+    name: "equality guard is not numeric precondition",
+    source: `
+function onlyZero(x) {
+  if (x === 0) return 0;
+  return 1;
+}
+onlyZero(5);
+`,
+    expectOk: true,
+  },
+  {
+    name: "min boundary valid",
+    source: `
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+needsPositive(1);
+`,
+    expectOk: true,
+  },
+  // --- 结构 ---
+  {
+    name: "arrow function constraint",
+    source: `
+const needsPositive = (x) => {
+  if (x > 0) return x;
+  return 0;
+};
+needsPositive(-2);
+`,
+    expectOk: false,
+    expectCode: "nudo:constraint-violated",
+  },
+  {
+    name: "export default function",
+    source: `
+export default function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+needsPositive(-1);
+`,
+    expectOk: false,
+    expectCode: "nudo:constraint-violated",
+  },
+  {
+    name: "both bounds mid valid",
+    source: `
+function pct(n) {
+  if (n >= 0 && n <= 100) return n;
+  return 0;
+}
+pct(50);
+`,
+    expectOk: true,
+  },
+  {
+    name: "both bounds high invalid",
+    source: `
+function pct(n) {
+  if (n >= 0 && n <= 100) return n;
+  return 0;
+}
+pct(150);
+`,
+    // 目前 extractParamReqs 可能只取到一侧；若未报则记为 known gap
+    expectOk: false,
+    expectCode: "nudo:constraint-violated",
+  },
 ];
 
 describe("nudo check gold standards", () => {

@@ -19,6 +19,8 @@ export {
   type CallRecord,
   getTypeAtPosition,
   getTypeAtPositionAsync,
+  getHoverAtPosition,
+  type HoverInfo,
   getCompletionsAtPosition,
   getCasesForFile,
   buildModuleGraph,

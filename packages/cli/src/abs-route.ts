@@ -1,19 +1,25 @@
 /**
  * TypeValue IR ⇄ Abs 代数的路由。
  *
- * 唯一计算路径：算术 / 比较 / 对象 spread 先走 Abs；代数未覆盖的语言表面
- * （除法、%、===、无结构字符串、union 分发）才回落外延 Ops。
- * TypeValue 是评估 IR，不是平行类型系统。
+ * 唯一计算路径：算术/比较/相等/一元语言表面先走 Abs；
+ * 仅 refined 宿主扩展（/ % 自定义 ops、方法表）与代数无法建模的操作数才回落。
  */
 
 import type { TypeValue } from "@nudojs/core";
 import {
   typeValueToAbs,
   absToTypeValue,
+  simplifyUnion,
   add as kAdd,
   sub as kSub,
   mul as kMul,
+  div as kDiv,
+  mod as kMod,
   cmp as kCmp,
+  typeofAbs as kTypeof,
+  negAbs as kNeg,
+  notAbs as kNot,
+  strictEqAbs as kStrictEq,
   type Abs,
   type Pred,
   pTrue,
@@ -25,6 +31,7 @@ import {
   spread as kSpread,
   joinAbs as kJoinAbs,
   abs as makeAbs,
+  boolLit,
   currentPhi,
   pushPhi,
   popPhi,
@@ -36,8 +43,10 @@ import { getTerm, getPred } from "./term-registry.ts";
 
 export { currentPhi, pushPhi, popPhi, resetPhi, withPhiConstraint, describePhi };
 
-const ARITH_OPS = new Set(["+", "-", "*"]);
+const ARITH_OPS = new Set(["+", "-", "*", "/", "%"]);
 const CMP_OPS = new Set(["<", "<=", ">", ">="]);
+const EQ_OPS = new Set(["===", "!=="]);
+const UNARY_OPS = new Set(["typeof", "!", "-"]);
 
 function isNumericOperand(tv: TypeValue): boolean {
   if (!tv) return false;
@@ -52,6 +61,30 @@ function isStringOperand(tv: TypeValue): boolean {
   if (tv.kind === "literal") return typeof tv.value === "string";
   if (tv.kind === "primitive") return tv.type === "string";
   if (tv.kind === "refined") return isStringOperand(tv.base);
+  return false;
+}
+
+/** 比较：数值或字符串字面量 */
+function isComparableOperand(tv: TypeValue): boolean {
+  if (tv.kind === "literal") {
+    return typeof tv.value === "number" || typeof tv.value === "string";
+  }
+  if (tv.kind === "primitive") return tv.type === "number" || tv.type === "string";
+  if (tv.kind === "refined") return isComparableOperand(tv.base);
+  return false;
+}
+
+/**
+ * 宿主 refinement 自定义了该运算 → 让位。
+ * 仅限代数未覆盖的运算（/ %）：template 的 + 等仍走代数（concatString）。
+ */
+function hasCustomRefinementOp(tv: TypeValue, op: string): boolean {
+  if (op !== "/" && op !== "%") return false;
+  let cur: TypeValue | undefined = tv;
+  while (cur && cur.kind === "refined") {
+    if (cur.refinement.ops?.[op]) return true;
+    cur = cur.base;
+  }
   return false;
 }
 
@@ -96,33 +129,69 @@ function toAbsWithTerms(tv: TypeValue): Abs {
 }
 
 /**
- * 代数计算二元算术/比较。
- * undefined = 不可处理（union、非数/串操作数）→ 外延路径兜底。
+ * 代数计算二元算术/比较/相等。
+ * - union：逐成员代数后 simplifyUnion（约束不丢）
+ * - undefined = 不可处理 → 调用方走 refined 扩展 / 形状兜底
  */
 export function tryAbsBinary(
   op: string,
   left: TypeValue,
   right: TypeValue,
 ): TypeValue | undefined {
-  if (!ARITH_OPS.has(op) && !CMP_OPS.has(op)) return undefined;
+  if (!ARITH_OPS.has(op) && !CMP_OPS.has(op) && !EQ_OPS.has(op)) return undefined;
+
+  if (left.kind === "union" || right.kind === "union") {
+    const ls = left.kind === "union" ? left.members : [left];
+    const rs = right.kind === "union" ? right.members : [right];
+    const results: TypeValue[] = [];
+    for (const l of ls) {
+      for (const r of rs) {
+        const one = tryAbsBinary(op, l, r);
+        if (one === undefined) return undefined;
+        results.push(one);
+      }
+    }
+    return simplifyUnion(results);
+  }
+
+  if (hasCustomRefinementOp(left, op) || hasCustomRefinementOp(right, op)) {
+    return undefined;
+  }
 
   if (op === "+") {
     if (!canAdd(left, right)) return undefined;
-  } else if (op === "-" || op === "*") {
+  } else if (op === "-" || op === "*" || op === "/" || op === "%") {
     if (!isNumericOperand(left) || !isNumericOperand(right)) return undefined;
+  } else if (op === "===" || op === "!==") {
+    // 任意操作数：先 strictEqAbs（字面量 / nullish / 同 var）
   } else {
-    if (!isNumericOperand(left) || !isNumericOperand(right)) return undefined;
+    // 比较：数值或字符串
+    if (!isComparableOperand(left) || !isComparableOperand(right)) return undefined;
   }
 
   try {
     const la = toAbsWithTerms(left);
     const ra = toAbsWithTerms(right);
     const phi = currentPhi();
-    let result: Abs;
 
+    if (op === "===" || op === "!==") {
+      const eq = kStrictEq(la, ra);
+      if (eq !== undefined) {
+        return absToTypeValue(op === "===" ? boolLit(eq) : boolLit(!eq));
+      }
+      // 无法判定：数值同型走 cmp 挂 pred；否则交还调用方
+      if (isNumericOperand(left) && isNumericOperand(right)) {
+        return absToTypeValue(kCmp(op === "===" ? "eq" : "ne", la, ra, phi));
+      }
+      return undefined;
+    }
+
+    let result: Abs;
     if (op === "+") result = kAdd(la, ra, phi);
     else if (op === "-") result = kSub(la, ra, phi);
     else if (op === "*") result = kMul(la, ra, phi);
+    else if (op === "/") result = kDiv(la, ra, phi);
+    else if (op === "%") result = kMod(la, ra, phi);
     else if (op === "<") result = kCmp("lt", la, ra, phi);
     else if (op === "<=") result = kCmp("le", la, ra, phi);
     else if (op === ">") result = kCmp("gt", la, ra, phi);
@@ -130,6 +199,38 @@ export function tryAbsBinary(
     else return undefined;
 
     return absToTypeValue(result);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 一元语言表面经代数：typeof / ! / -。
+ * 返回 undefined 表示调用方自行处理（union 分发等）。
+ */
+export function tryAbsUnary(
+  op: string,
+  operand: TypeValue,
+): TypeValue | undefined {
+  if (!UNARY_OPS.has(op)) return undefined;
+  if (operand.kind === "union") {
+    const outs: TypeValue[] = [];
+    for (const m of operand.members) {
+      const one = tryAbsUnary(op, m);
+      if (one === undefined) return undefined;
+      outs.push(one);
+    }
+    return simplifyUnion(outs);
+  }
+  try {
+    const a = toAbsWithTerms(operand);
+    if (op === "typeof") return absToTypeValue(kTypeof(a));
+    if (op === "!") return absToTypeValue(kNot(a));
+    if (op === "-") {
+      if (!isNumericOperand(operand) && operand.kind !== "unknown") return undefined;
+      return absToTypeValue(kNeg(a, currentPhi()));
+    }
+    return undefined;
   } catch {
     return undefined;
   }

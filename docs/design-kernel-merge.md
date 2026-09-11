@@ -30,14 +30,17 @@ parser ──▶ core
 
 | 运算 | 路径 |
 |---|---|
-| `+ - *` 数值/字符串 | 代数 `add/sub/mul`（单调性、约束传播） |
-| `< <= > >=` | 代数 `cmp`（Φ 蕴含 + 数值界判定） |
+| `+ - * / %` 数值/字符串 | 代数 `add/sub/mul/div/mod` |
+| `< <= > >=` 数值/字符串字面量 | 代数 `cmp` |
+| `=== !==`（含 nullish） | 代数 `strictEqAbs` / `cmp` |
+| `typeof` / `!` / 一元 `-` | 代数 `surface.ts`（`tryAbsUnary`） |
 | 对象 spread / join | 代数 `spread` / `joinAbs` |
-| range narrow | `createRange` + term 身份 → Pred 编码进 Abs |
-| `/ % === == typeof` 等 | 外延 `Ops`（IR 上的语言表面，不是类型运算真理） |
-| union 分发 | evaluator 在 Ops 侧做；代数侧由 sum shape 承担 |
+| range narrow | Pred 编码进 Abs |
+| union | 逐成员代数 |
+| refined 方法/属性 | `dispatchMethod/Property`（宿主扩展） |
+| 混合 `+` / 无法判定的比较 | 残差 `Ops`（IR 兜底，不传播约束） |
 
-路由：`packages/cli/src/abs-route.ts`（`tryAbsBinary` / `tryAbsObjectSpread`）。
+路由：`abs-route.ts` + `eval-binary.ts`。
 
 ## 约束如何传播
 
