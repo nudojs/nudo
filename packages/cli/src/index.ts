@@ -466,15 +466,18 @@ async function runCheck(file: string): Promise<void> {
     try {
       const base = dirname(resolve(fromFile));
       let p = resolve(base, spec);
-      if (!p.endsWith(".js") && existsSync(`${p}.js`)) p = `${p}.js`;
-      if (!existsSync(p)) return undefined;
-      const st = statSync(p);
-      if (st.isDirectory()) {
-        const idx = join(p, "index.js");
-        if (!existsSync(idx)) return undefined;
-        return readFileSync(idx, "utf-8");
+      const tryPaths = [
+        p,
+        `${p}.js`,
+        `${p}.mjs`,
+        join(p, "index.js"),
+        join(p, "index.mjs"),
+      ];
+      for (const cand of tryPaths) {
+        if (!existsSync(cand) || statSync(cand).isDirectory()) continue;
+        return readFileSync(cand, "utf-8");
       }
-      return readFileSync(p, "utf-8");
+      return undefined;
     } catch {
       return undefined;
     }

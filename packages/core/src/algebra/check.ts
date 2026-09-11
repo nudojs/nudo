@@ -242,6 +242,38 @@ function collectCallResolvers(
   const visit = (n: unknown): void => {
     if (!n || typeof n !== "object") return;
     const obj = n as Record<string, unknown> & { type?: string };
+
+    // ESM：import { fn } / import { fn as x } / import * as ns from '...'
+    if (obj.type === "ImportDeclaration") {
+      const spec = obj.source as { type?: string; value?: unknown } | undefined;
+      if (spec?.type === "StringLiteral" && typeof spec.value === "string") {
+        const modSrc = loadSpec(String(spec.value));
+        if (modSrc) {
+          for (const sp of (obj.specifiers as Array<Record<string, unknown>> | undefined) ?? []) {
+            if (sp.type === "ImportSpecifier") {
+              const imported = sp.imported as { type?: string; name?: string; value?: unknown } | undefined;
+              const local = sp.local as { type?: string; name?: string } | undefined;
+              const exportName =
+                imported?.type === "Identifier"
+                  ? imported.name
+                  : imported?.type === "StringLiteral"
+                    ? String(imported.value)
+                    : undefined;
+              if (exportName && local?.name) {
+                externalFn.set(local.name, { source: modSrc, fnName: exportName });
+              }
+            } else if (sp.type === "ImportNamespaceSpecifier") {
+              const local = sp.local as { type?: string; name?: string } | undefined;
+              if (local?.name) {
+                externalMember.set(`${local.name}.__module__`, { source: modSrc, fnName: "" });
+              }
+            }
+            // ImportDefaultSpecifier：默认导出名不定，暂不绑定
+          }
+        }
+      }
+    }
+
     if (obj.type === "VariableDeclaration") {
       for (const d of (obj.declarations as Array<Record<string, unknown>> | undefined) ?? []) {
         const id = d.id as { type?: string; name?: string; properties?: Array<Record<string, unknown>> };

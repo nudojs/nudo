@@ -485,6 +485,70 @@ module.exports.needsPositive = needsPositive;
     },
     expect: "violation",
   },
+  {
+    id: "esm-import-named-violates",
+    source: `
+import { needsPositive } from "./v.js";
+needsPositive(-1);
+`,
+    modules: {
+      "./v.js": `
+export function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+`,
+    },
+    expect: "violation",
+  },
+  {
+    id: "esm-import-alias-violates",
+    source: `
+import { needsPositive as np } from "./v.js";
+np(0);
+`,
+    modules: {
+      "./v.js": `
+export function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+`,
+    },
+    expect: "violation",
+  },
+  {
+    id: "esm-namespace-member-violates",
+    source: `
+import * as v from "./v.js";
+v.needsPositive(-2);
+`,
+    modules: {
+      "./v.js": `
+export function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+`,
+    },
+    expect: "violation",
+  },
+  {
+    id: "esm-import-ok",
+    source: `
+import { needsPositive } from "./v.js";
+needsPositive(10);
+`,
+    modules: {
+      "./v.js": `
+export function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+`,
+    },
+    expect: "ok",
+  },
 ];
 
 function run(g: Gold): CheckReport {
@@ -553,6 +617,25 @@ describe("check require cross-file gold", () => {
       const r = checkSource(`req-${g.id}.js`, g.source, pTrue, {
         loadModule: (spec) => g.modules[spec],
         fromFile: `req-${g.id}.js`,
+      });
+      if (g.expect === "violation") {
+        expect(
+          r.issues.some((i) => i.code === "nudo:constraint-violated"),
+          r.issues.map((i) => i.message).join("; ") || "ok",
+        ).toBe(true);
+      } else {
+        expect(r.ok, r.issues.map((i) => i.message).join("; ")).toBe(true);
+      }
+    });
+  }
+});
+
+describe("check ESM import gold", () => {
+  for (const g of REQUIRE_GOLD.filter((x) => x.id.startsWith("esm-"))) {
+    it(`${g.id} → ${g.expect}`, () => {
+      const r = checkSource(`esm-${g.id}.js`, g.source, pTrue, {
+        loadModule: (spec) => g.modules[spec],
+        fromFile: `esm-${g.id}.js`,
       });
       if (g.expect === "violation") {
         expect(
