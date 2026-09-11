@@ -108,6 +108,38 @@ export type EvalOptions = {
   budget?: LeakBudget;
 };
 
+/** Abs 域调用记录（自包含程序可不经 TypeValue evaluator） */
+export type AbsCallRecord = {
+  fnName: string;
+  args: Abs[];
+  result: Abs;
+  callLoc?: { line: number; column: number };
+  threw?: boolean;
+};
+
+let absCallCollector: ((r: AbsCallRecord) => void) | null = null;
+
+export function setAbsCallCollector(
+  collector: ((r: AbsCallRecord) => void) | null,
+): void {
+  absCallCollector = collector;
+}
+
+function recordAbsCall(
+  fnName: string,
+  args: Abs[],
+  result: Abs,
+  callLoc?: { line: number; column: number },
+  threw?: boolean,
+): void {
+  if (!absCallCollector) return;
+  try {
+    absCallCollector({ fnName, args, result, callLoc, threw });
+  } catch {
+    // collector 不得打断求值
+  }
+}
+
 export type EvalResult = {
   value: Abs;
   phi: Phi;
@@ -878,10 +910,22 @@ function evalCall(
   // 变量上的 Abs 一等函数
   const bound = env.vars.get(name);
   if (bound && getFnImpl(bound)) {
-    return ok(applyAbsFn(bound, args, env, phi, budget), phi, env);
+    const v = applyAbsFn(bound, args, env, phi, budget);
+    const loc0 = node.loc;
+    recordAbsCall(name, args, v, loc0 ? { line: loc0.start.line, column: loc0.start.column } : undefined);
+    return ok(v, phi, env);
   }
 
   const value = callFunction(env, name, args, phi, budget);
+  if (env.fns.has(name)) {
+    const loc = node.loc;
+    recordAbsCall(
+      name,
+      args,
+      value,
+      loc ? { line: loc.start.line, column: loc.start.column } : undefined,
+    );
+  }
   return ok(value, phi, env);
 }
 

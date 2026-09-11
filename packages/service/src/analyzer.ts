@@ -18,6 +18,9 @@ import {
   termToString,
   predToString,
   analyzeFn,
+  evalProgramAbs,
+  setAbsCallCollector,
+  type AbsCallRecord,
   typeValueToAbs,
   absToTypeValue,
   type Abs,
@@ -1134,7 +1137,24 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     applyMocks(fn.directives, globalEnv, filePath, diagnostics);
   }
 
+  // @nudo:mock 影响求值语义，Abs 路径未接入 mock 绑定——此类文件保留 TypeValue 调用记录
+  const hasFnMocks = functions.some((f) =>
+    f.directives.some((d) => d.kind === "mock"),
+  );
+  const selfContained =
+    isSelfContainedSource(source, envNames, mocks.size > 0) && !hasFnMocks;
+  let absCallRecords: CallRecord[] = [];
+  if (selfContained) {
+    absCallRecords = collectAbsCallRecords(source);
+  }
+
   evaluateProgram(ast, globalEnv);
+
+  // 自包含文件：Abs 调用记录是唯一真理源（类型即计算）
+  if (selfContained && absCallRecords.length > 0) {
+    callRecords.length = 0;
+    callRecords.push(...absCallRecords);
+  }
 
   const unreachableRanges = getUnreachableRanges();
   for (const ur of unreachableRanges) {
@@ -2087,6 +2107,39 @@ function absIsBetter(absTv: TypeValue, prev: TypeValue): boolean {
   if (absTv.kind === "refined" && prev.kind === "primitive") return true;
   return false;
 }
+function isSelfContainedSource(
+  source: string,
+  envNames: string[],
+  hasMocks: boolean,
+): boolean {
+  if (envNames.length > 0 || hasMocks) return false;
+  return !/\brequire\s*\(|\bimport\s*[{'"*]/.test(source);
+}
+
+/**
+ * 自包含源码：用 Abs 程序级求值收集调用记录（类型即计算），
+ * 投影为 CallRecord 供 call@ 合成。TypeValue evaluator 仍跑一遍
+ * 以填充 bindings / nodeTypeMap（LSP/hover 消费）。
+ */
+function collectAbsCallRecords(source: string): CallRecord[] {
+  const absCalls: AbsCallRecord[] = [];
+  setAbsCallCollector((r) => absCalls.push(r));
+  try {
+    evalProgramAbs(source);
+  } catch {
+    // 自包含求值失败：交还 TypeValue 路径
+  } finally {
+    setAbsCallCollector(null);
+  }
+  return absCalls.map((r): CallRecord => ({
+    fnName: r.fnName,
+    argTypes: r.args.map((a) => absToTypeValue(a)),
+    resultType: r.threw ? T.never : absToTypeValue(r.result),
+    throws: r.threw ? absToTypeValue(r.result) : T.never,
+    callLoc: r.callLoc,
+  }));
+}
+
 function tryEvalAbs(
   source: string,
   fnName: string,
