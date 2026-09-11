@@ -1,7 +1,7 @@
 # nudo check 在 CI 中的用法
 
 > 产品能力与边界见 [nudo-check.md](./nudo-check.md)。
-> 门禁语义：对 JS 源码做约束蕴含检查；有 `error` 则退出码 1。
+> 门禁语义：对 JS 源码做精化蕴含检查（`@nudo:refine`）；有 `error` 则退出码 1。
 > 类型代数在 `@nudojs/core`，无独立 kernel 包。
 >
 > **报告是 Nudo 原生格式**（Abs 优先），不是 tsc 诊断换皮：
@@ -28,9 +28,10 @@ issues
 
 ## 真实包精度
 
-- 扫描脚本：`npx tsx scripts/scan-real-packages.ts [pkg...]` → `docs/check-real-packages.md`
-- CI 精度门禁：`check-real-commander.test.ts`（commander 上零 `constraint-violated`）
+- 金标：`check-real-packages.test.ts`（commander / debug / escape-string-regexp / is-plain-obj 零误报）
 - 人工 recall 金标：`check-recall-gold.test.ts`（recall=precision=1）
+- shape 精化：`check-shape-gold.test.ts`
+- case ⊆ refine：`check-case-consistency.test.ts`
 
 ## 金标 recall（CI 门禁）
 
