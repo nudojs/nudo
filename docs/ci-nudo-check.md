@@ -1,5 +1,6 @@
 # nudo check 在 CI 中的用法
 
+> 产品能力与边界见 [nudo-check.md](./nudo-check.md)。
 > 门禁语义：对 JS 源码做约束蕴含检查；有 `error` 则退出码 1。
 > 类型代数在 `@nudojs/core`，无独立 kernel 包。
 >

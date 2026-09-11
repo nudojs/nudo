@@ -55,6 +55,8 @@ for (let i = 0; i < 5; i++) sum += i;
 // sum → 10 (TS: number)
 ```
 
+The same algebra powers **[`nudo check`](./guides/check.md)** — a constraint gate that reports `actual ⊭ expected` on call sites violating program-derived preconditions (`x > 0`). TypeScript `.d.ts` emit is an ecosystem compatibility channel, not the primary type model.
+
 Users can also define custom refined types with domain-specific operation rules via `T.refine`. See [Examples](./guides/examples.md) for more.
 
 ## What's Next
@@ -63,4 +65,5 @@ Users can also define custom refined types with domain-specific operation rules 
 - **[Quick Start](./getting-started/quick-start.md)** — Run `nudo infer` on your first file
 - **[Core Concepts](./concepts/type-values.md)** — Type values, directives, and abstract interpretation
 - **[Call-Site Discovery](./guides/callsite-discovery.md)** — Let Nudo mine your tests for real call shapes instead of writing cases by hand
+- **[nudo check](./guides/check.md)** — Constraint gate on Abs (type-as-computation)
 - **[Language Semantics](./guides/semantics.md)** — The JavaScript behaviors Nudo models precisely, from `this` binding to promise resolution
