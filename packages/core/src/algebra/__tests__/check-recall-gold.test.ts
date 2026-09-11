@@ -292,6 +292,35 @@ needsPositive(-3);
 `,
     expect: "violation",
   },
+  // --- 扫描边界：当前只查 name(literal) 直接调用 ---
+  {
+    id: "member-call-out-of-scope",
+    origin: "obj.method(-1)",
+    source: `
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+const api = { needsPositive };
+api.needsPositive(-1);
+`,
+    expect: "ok",
+    note: "成员调用暂不扫描；扩扫描后改标 violation",
+  },
+  {
+    id: "aliased-fn-out-of-scope",
+    origin: "const f = fn; f(-1)",
+    source: `
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+const f = needsPositive;
+f(-1);
+`,
+    expect: "ok",
+    note: "别名调用暂不扫描",
+  },
 ];
 
 function run(g: Gold): CheckReport {
