@@ -82,4 +82,6 @@ clamp(-5, 0, 10);  // OK
 
 LSP publishes **`nudo-check` diagnostics first** (Abs violations with `actual` / `expected`), then evaluator diagnostics (`source: nudo`). Hover and inlay hints read lossless Abs — not a lossy TypeValue bridge.
 
+Agents use the same gate via **`nudo.check`** (CheckJson v1) — see [Agent API](../api/agent.md#nudocheck).
+
 See also: monorepo `docs/nudo-check.md` and `docs/ci-nudo-check.md`.

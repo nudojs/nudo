@@ -1,11 +1,20 @@
 ---
 sidebar_position: 6
-description: "Connect AI coding agents to Nudo's language server: LSP→MCP bridges, native LSP clients, the five agent commands, and pull diagnostics."
+description: "Connect AI coding agents to Nudo's language server: LSP→MCP bridges, native LSP clients, agent commands (check/infer/hover/whatIf/…), and pull diagnostics."
 ---
 
 # Agent Integration Guide
 
-AI coding agents — Claude Code, Cursor, Copilot, Zed, and friends — access Nudo through its **language server**, [`@nudojs/lsp`](../api/lsp.md). The same server that powers the VS Code extension also exposes five agent commands over standard `workspace/executeCommand` calls, plus pull diagnostics. There is no separate MCP server process to install or keep alive: one server serves the editor *and* the agent.
+AI coding agents — Claude Code, Cursor, Copilot, Zed, and friends — access Nudo through its **language server**, [`@nudojs/lsp`](../api/lsp.md). The same server that powers the VS Code extension also exposes agent commands over standard `workspace/executeCommand` calls, plus pull diagnostics. There is no separate MCP server process to install or keep alive: one server serves the editor *and* the agent.
+
+Abs-first tools for agents:
+
+| Command | Returns |
+|---------|---------|
+| `nudo.check` | **CheckJson v1** — signatures + `actual ⊭ expected` |
+| `nudo.infer` | **InferJson v1** — cases with lossless `intension.abs` |
+| `nudo.hover` | Lossless Abs at a position (+ optional inlays) |
+| `nudo.whatIf` / `suggestCase` / `trace` | Exploration and case coverage |
 
 Full command reference (parameters, return shapes, type-expression syntax): the [Agent API](../api/agent.md) page. A ready-made skill file for agents is published at [`packages/lsp/agent-skill/SKILL.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/agent-skill/SKILL.md).
 
@@ -83,9 +92,31 @@ The `file` argument accepts a `file://` URI or a bare path. Files that are not o
 
 Install the `nudo-vscode` extension and everything in this guide is already wired: the extension launches `@nudojs/lsp`, and in-editor agents get hover types, diagnostics, and case-switching CodeLens through the same server.
 
-## The five commands
+## Agent commands
 
 Each example is a complete `workspace/executeCommand` payload — copy, adjust the paths, and send. The commands share the sample file `src/app.js` below (the what-if example brings its own `src/config.js`):
+
+### Abs-first (recommended for agents)
+
+**`nudo.check`** — constraint gate, CheckJson v1:
+
+```json
+{ "command": "nudo.check", "arguments": [{ "file": "src/validators.js", "format": "json" }] }
+```
+
+**`nudo.infer`** — InferJson v1 (optional `functions` filter):
+
+```json
+{ "command": "nudo.infer", "arguments": [{ "file": "src/app.js", "functions": ["normalize"], "format": "json" }] }
+```
+
+**`nudo.hover`** — lossless Abs at a position:
+
+```json
+{ "command": "nudo.hover", "arguments": [{ "file": "src/app.js", "line": 1, "column": 9, "includeInlays": true }] }
+```
+
+### Exploration and cases
 
 ```js
 function normalize(x) {
