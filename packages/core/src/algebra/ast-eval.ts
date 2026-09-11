@@ -250,6 +250,9 @@ export function callFunction(
   });
 
   const result = evalNode(fn.body, local, phi, budget);
+  if (result.threw) {
+    return abs({ k: "never" }, undefined, undefined, "exact");
+  }
   if (fn.async) return coerceAsyncReturn(result.value);
   return result.value;
 }

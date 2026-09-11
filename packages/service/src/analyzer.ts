@@ -1389,13 +1389,20 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         .map(({ r }) => r);
       const precise = ordered.slice(0, MAX_PRECISE_CALLSITE_CASES);
       for (const rec of precise) {
-        candidate.analysis.cases.push({
+        // Abs 原生重求值：实参已知且原结果非 never 时优先（保留约束）
+        const absResult =
+          rec.resultType.kind === "never" || rec.argTypes.length === 0
+            ? undefined
+            : tryEvalAbs(source, candidate.name, rec.argTypes);
+        const caseResult: CaseResult = {
           name: `call@L${rec.callLoc?.line ?? candidate.analysis.loc.start.line}`,
           args: rec.argTypes,
-          result: rec.resultType,
+          result: absResult ?? rec.resultType,
           throws: rec.throws,
           source: "callsite",
-        });
+        };
+        if (absResult) tryAttachIntension(caseResult, source, candidate.name);
+        candidate.analysis.cases.push(caseResult);
       }
       // symbolic 聚合只用全已知实参的记录：含 unknown 分量的记录不可重求值
       // （unknown 吸收整个 union，一条循环引用 fixture 的记录就能毒化全部
@@ -1412,8 +1419,11 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           // （target || [] 等）对 unknown 全塌，对 undefined 正常走默认分支
           widenType(simplifyUnion(remaining.map((rec) => rec.argTypes[i] ?? T.undefined))),
         );
-        const full = evaluateFunctionFull(fnNode, widenedArgs, globalEnv);
-        candidate.analysis.cases.push({
+        const absSym = tryEvalAbs(source, candidate.name, widenedArgs);
+        const full = absSym
+          ? { value: absSym, throws: T.never as TypeValue, throwLoc: undefined }
+          : evaluateFunctionFull(fnNode, widenedArgs, globalEnv);
+        const symCase: CaseResult = {
           name: "call@symbolic",
           args: widenedArgs,
           result: full.value,
@@ -1421,7 +1431,9 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           throwLoc: full.throwLoc,
           source: "callsite",
           aggregatedFrom: remaining.length,
-        });
+        };
+        if (absSym) tryAttachIntension(symCase, source, candidate.name);
+        candidate.analysis.cases.push(symCase);
       }
       // Combined covers every observed call site (not just the retained
       // cases), so a large set of same-base literal results collapses to
@@ -2047,6 +2059,28 @@ function getCompletionsForType(tv: TypeValue): CompletionItem[] {
 }
 
 /**
+ * Abs 原生重求值：给定源码与 TypeValue 实参，走 analyzeFn。
+ * 自包含源码返回投影后的 TypeValue；host 依赖或全 unknown 时 undefined。
+ */
+function tryEvalAbs(
+  source: string,
+  fnName: string,
+  args: TypeValue[],
+): TypeValue | undefined {
+  if (/\brequire\s*\(|\bimport\s*[{'"*]/.test(source)) return undefined;
+  try {
+    const absArgs: Abs[] = args.map((a) => typeValueToAbs(a));
+    const result = analyzeFn(source, fnName, absArgs);
+    if (result.shape.k === "unknown" && !result.term) {
+      return undefined;
+    }
+    return absToTypeValue(result);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * entry@ 的 Abs 原生路径：自包含源码用 ast-eval（类型即计算），
  * TypeValue 只在出口投影。含 import/require 或求值失败时返回 undefined。
  */
@@ -2055,19 +2089,7 @@ function tryEvalEntryAbs(
   fnName: string,
   args: TypeValue[],
 ): TypeValue | undefined {
-  // host 依赖：builtin/module 走 TypeValue evaluator
-  if (/\brequire\s*\(|\bimport\s*[{'"*]/.test(source)) return undefined;
-  try {
-    const absArgs: Abs[] = args.map((a) => typeValueToAbs(a));
-    const result = analyzeFn(source, fnName, absArgs);
-    if (result.shape.k === "unknown" && !result.term) {
-      // 完全未知：可能缺 host，交还 evaluator
-      return undefined;
-    }
-    return absToTypeValue(result);
-  } catch {
-    return undefined;
-  }
+  return tryEvalAbs(source, fnName, args);
 }
 
 /**
