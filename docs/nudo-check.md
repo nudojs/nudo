@@ -62,15 +62,35 @@ issues
 
 ## 什么是前置，什么不是
 
+前置 **只来自声明**，唯一形态 `@nudo:requires <param> <constraint>`：
+
 ```js
-// ✓ 成功路径前置：调用方必须满足
-function needsPositive(x) {
-  if (x > 0) return x;
+/// @nudo:import { delay, percent } from "./delay.nudo.js"
+
+/**
+ * @nudo:requires ms delay
+ */
+function setDelay(ms) {
+  if (ms > 0) return ms;
   return 0;
 }
-needsPositive(-1);  // error
 
+setDelay(0);        // error: 0 ⊭ delay
+setDelay(100);      // ok
+```
+
+约束模板在 `*.nudo.js`（参数无关，`number()` 链式）：
+
+```js
+export const delay = number().gt(0);
+export const percent = number().ge(0).le(100);
+```
+
+```js
 // ✓ 双侧边界
+/**
+ * @nudo:requires n percent
+ */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
   return 0;
@@ -87,21 +107,16 @@ readXY({ x: 1 });   // error: missing slot y（nudo:arg-structure）
 const o = { x: 1 };
 readXY(o);          // error（标识符绑定表）
 
-// ✗ clamp 回退守卫：不是调用前置
+// ✗ if 分支不是契约；无 requires 则不检查
 function clamp(n, lo, hi) {
-  if (n < lo) return lo;   // 越界是合法输入
+  if (n < lo) return lo;
   if (n > hi) return hi;
   return n;
 }
 clamp(-5, 0, 10);   // ok
-
-// ✗ 有守卫的转发：不传播目标前置
-function safeWrap(n) {
-  if (n > 0) return needsPositive(n);
-  return 0;
-}
-safeWrap(-1);       // ok
 ```
+
+示例目录：`docs/examples/constraints/`
 
 ## 金标与精度（CI）
 
