@@ -518,11 +518,15 @@ export function evalNode(
         m.property.type === "Identifier" &&
         (m.property as Identifier).name === "length"
       ) {
-        if (obj.shape.k === "arr" || obj.shape.k === "tuple") {
-          return ok(numLit(obj.shape.k === "tuple" ? obj.shape.elements.length : 0), phi, env);
+        if (obj.shape.k === "tuple") {
+          return ok(numLit(obj.shape.elements.length), phi, env);
+        }
+        if (obj.shape.k === "arr") {
+          return ok(abs({ k: "prim", type: "number" }, undefined, undefined, "path"), phi, env);
         }
         if (isStrPrim(obj)) {
-          // 字符串长度未知 → number
+          const lv = litValue(obj);
+          if (typeof lv === "string") return ok(numLit(lv.length), phi, env);
           return ok(abs({ k: "prim", type: "number" }, undefined, undefined, "partial"), phi, env);
         }
       }
@@ -678,6 +682,82 @@ function evalCall(
           const ret = evalMethodBody(mdef, margs, obj, env, phi, budget);
           if (mdef.async) return ok(coerceAsyncReturn(ret), phi, env);
           return ok(ret, phi, env);
+        }
+      }
+
+      // 字符串方法（字面量可折叠）
+      if (isStrPrim(obj) || obj.term?.op === "lit") {
+        const sv = litValue(obj);
+        const arg0 = rawArgs[0] ? evalNode(rawArgs[0], env, phi, budget).value : undefined;
+        const a0 = arg0 ? litValue(arg0) : undefined;
+        if (typeof sv === "string") {
+          switch (method) {
+            case "startsWith":
+              if (typeof a0 === "string") return ok(boolLit(sv.startsWith(a0)), phi, env);
+              break;
+            case "endsWith":
+              if (typeof a0 === "string") return ok(boolLit(sv.endsWith(a0)), phi, env);
+              break;
+            case "includes":
+              if (typeof a0 === "string") return ok(boolLit(sv.includes(a0)), phi, env);
+              break;
+            case "charAt":
+              if (typeof a0 === "number") return ok(strLit(sv.charAt(a0)), phi, env);
+              break;
+            case "slice": {
+              const a1 = rawArgs[1] ? litValue(evalNode(rawArgs[1], env, phi, budget).value) : undefined;
+              return ok(strLit(sv.slice(a0 as number | undefined, a1 as number | undefined)), phi, env);
+            }
+            case "toUpperCase":
+              return ok(strLit(sv.toUpperCase()), phi, env);
+            case "toLowerCase":
+              return ok(strLit(sv.toLowerCase()), phi, env);
+            case "trim":
+              return ok(strLit(sv.trim()), phi, env);
+            case "toString":
+            case "valueOf":
+              return ok(strLit(sv), phi, env);
+            case "concat": {
+              const rest = rawArgs.map((a) => litValue(evalNode(a, env, phi, budget).value));
+              return ok(strLit(sv + rest.map((x) => String(x)).join("")), phi, env);
+            }
+          }
+        }
+        // 抽象 string 上的谓词方法 → boolean
+        if (
+          method === "startsWith" || method === "endsWith" || method === "includes"
+        ) {
+          return ok(abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial"), phi, env);
+        }
+        if (method === "toUpperCase" || method === "toLowerCase" || method === "trim" || method === "slice") {
+          return ok(abs({ k: "prim", type: "string" }, undefined, undefined, "path"), phi, env);
+        }
+        if (method === "charAt") {
+          return ok(abs({ k: "prim", type: "string" }, undefined, undefined, "path"), phi, env);
+        }
+      }
+
+      // 数组 join / at / includes
+      if (obj.shape.k === "arr" || obj.shape.k === "tuple") {
+        if (method === "join") {
+          return ok(abs({ k: "prim", type: "string" }, undefined, undefined, "path"), phi, env);
+        }
+        if (method === "includes") {
+          return ok(abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial"), phi, env);
+        }
+        if (method === "at" || method === "pop" || method === "shift") {
+          if (obj.shape.k === "tuple" && obj.shape.elements.length > 0) {
+            const idx =
+              method === "at"
+                ? Number(litValue(evalNode(rawArgs[0] ?? { type: "NumericLiteral", value: 0 } as Node, env, phi, budget).value) ?? 0)
+                : 0;
+            const els = obj.shape.elements;
+            const pick = method === "pop" || method === "shift" ? els[0] : els[Math.max(0, Math.min(els.length - 1, idx))];
+            return ok(pick ?? unknown, phi, env);
+          }
+          if (obj.shape.k === "arr") {
+            return ok((obj.shape as { element: Abs }).element, phi, env);
+          }
         }
       }
 

@@ -118,4 +118,17 @@ describe("abs-native ast-eval", () => {
     const r = analyzeFn(src, "f", []);
     expect(show(r)).toBe("1");
   });
+
+  it("string methods fold", () => {
+    expect(show(analyzeFn(`function f(){ return "abc".startsWith("a"); }`, "f", []))).toBe("true");
+    expect(show(analyzeFn(`function f(){ return "abc".toUpperCase(); }`, "f", []))).toBe('"ABC"');
+    expect(show(analyzeFn(`function f(){ return "hello".length; }`, "f", []))).toBe("5");
+  });
+
+  it("array join returns string", () => {
+    const r = analyzeFn(`function f(xs){ return xs.join(","); }`, "f", [
+      abs({ k: "arr", element: abs({ k: "prim", type: "string" }, undefined, undefined, "exact") }, undefined, undefined, "exact"),
+    ]);
+    expect(r.shape).toEqual({ k: "prim", type: "string" });
+  });
 });
