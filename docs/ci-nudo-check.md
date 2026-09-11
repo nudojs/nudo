@@ -25,6 +25,19 @@ issues
       → 改用满足 x > 0 的值，或放宽 x 的前置
 ```
 
+## 金标 recall（CI 门禁）
+
+人工标注集：`packages/core/src/algebra/__tests__/check-recall-gold.test.ts`
+
+| 指标 | 要求 |
+|---|---|
+| recall = TP/(TP+FN) | **1.0**（漏报 = 门禁失效） |
+| precision = TP/(TP+FP) | **1.0**（误报 = 噪音） |
+
+覆盖：延时 >0、百分比 0–100、端口、索引、clamp 真阴性、上界、箭头/export default、无前置不误报。
+
+**当前扫描范围**：`name(literalArgs)` 直接调用。成员调用 / 别名调用标为 TN（边界），扩扫描时改标 violation。
+
 ## 本地
 
 ```bash
