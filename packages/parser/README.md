@@ -11,7 +11,7 @@ Nudo is a type inference engine for JavaScript. Instead of a separate type syste
 `@nudojs/parser` handles source code parsing and Nudo directive extraction:
 
 - **Parsing** — wraps Babel parser for JavaScript/TypeScript source files
-- **Directives** — extracts `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, and `@nudo:returns` directives from comments
+- **Directives** — extracts `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, and `@nudo:refine` directives from comments
 - **Type expressions** — parses inline type value expressions used in directives
 
 ## Install

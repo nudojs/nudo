@@ -190,10 +190,12 @@ nudo check src/broken.js
 
 - A file with no diagnostics prints `No issues found.` and exits `0`.
 - When the origin of a bad value is known, a hint line follows: `→ value originates at line:column`.
-- A failed `@nudo:returns` assertion is error-level, so `check` exits `1`:
+- A refinement violation is error-level, so `check` exits `1`:
 
 ```text
-[error] src/assert.js:5:0 @nudo:returns assertion failed for case "sample": expected string, got 10. Update the @nudo:returns directive to match the inferred type, or fix the function implementation (nudo-assertion-failed)
+[error] src/set.js:12:0 setDelay[ms]: 实参 ⊭ 前置  (nudo:constraint-violated)
+    actual:   0  #exact
+    expected: ms > 0
 ```
 
 ---
@@ -453,4 +455,4 @@ Usage — add this directive at the top of your JS file:
 | `1` | `nudo harvest` — `@types/<pkg>` not installed, or no `.d.ts` files found in it |
 | `1` | `--emit-cases` misuse — combined with `--json`, an invalid mode value, or `--exit-on-diff` without `--dry-run`; also `--exit-on-diff` when the `--dry-run` diff is non-empty |
 
-Note: diagnostics printed by `infer` — including `[error]`-severity ones such as a failed `@nudo:returns` assertion — do **not** change `infer`'s exit code; `infer` still exits `0`. Use `nudo check` to gate CI on diagnostics.
+Note: diagnostics printed by `infer` — including `[error]`-severity ones such as a failed `@nudo:refine` assertion — do **not** change `infer`'s exit code; `infer` still exits `0`. Use `nudo check` to gate CI on diagnostics.

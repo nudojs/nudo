@@ -35,7 +35,6 @@ export type InferJsonFunction = {
   noDeclaration?: boolean;
   cases: InferJsonCase[];
   combined?: string;
-  assertionErrors?: string[];
 };
 
 export type InferJson = {
@@ -96,9 +95,6 @@ function mapFunction(f: FunctionAnalysis): InferJsonFunction {
   };
   if (f.noDeclaration) out.noDeclaration = true;
   if (f.combined) out.combined = typeValueToString(f.combined);
-  if (f.assertionErrors && f.assertionErrors.length > 0) {
-    out.assertionErrors = [...f.assertionErrors];
-  }
   return out;
 }
 

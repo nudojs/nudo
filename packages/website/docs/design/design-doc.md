@@ -293,7 +293,7 @@ Directives are structured comments that guide the engine. They use the `@nudo:` 
 | `@nudo:pure` | Mark function as pure for memoization |
 | `@nudo:skip` | Skip evaluation; an optional type expression declares the return type (e.g. `@nudo:skip T.number`) |
 | `@nudo:sample` | Number of loop iterations before fixed-point |
-| `@nudo:returns` | Assert expected return type |
+| `@nudo:refine` | Refinement contract: `@nudo:refine param name` / `@nudo:refine return name` (Pred enters Abs) |
 | `@nudo:env` | Declare runtime environment APIs (file-level `///` comment) |
 | `@nudo:mock-module` | Replace imported modules with mock files (file-level `///` comment) |
 | `@nudo:as` | Override the next statement's value type (line comment `//`) |

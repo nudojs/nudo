@@ -55,7 +55,7 @@ for (let i = 0; i < 5; i++) sum += i;
 // sum → 10 (TS: number)
 ```
 
-The same algebra powers **[`nudo check`](./guides/check.md)** — a constraint gate that reports `actual ⊭ expected` on call sites violating program-derived preconditions (`x > 0`). TypeScript `.d.ts` emit is an ecosystem compatibility channel, not the primary type model.
+The same algebra powers **[`nudo check`](./guides/check.md)** — a refinement gate. Declared `@nudo:refine` contracts enter Abs as Preds and participate in arithmetic (`x>0` ⇒ `x+1>1`). Reports use `actual ⊭ expected`, not TypeScript diagnostic prose. TypeScript `.d.ts` emit is an ecosystem compatibility channel, not the primary type model.
 
 Users can also define custom refined types with domain-specific operation rules via `T.refine`. See [Examples](./guides/examples.md) for more.
 

@@ -190,10 +190,12 @@ nudo check src/broken.js
 
 - 无诊断的文件输出 `No issues found.`，退出码 `0`。
 - 已知坏值来源时，会附提示行：`→ value originates at 行:列`。
-- `@nudo:returns` 断言失败属于 error 级，`check` 以 `1` 退出：
+- 精化违例属于 error 级，`check` 以 `1` 退出：
 
 ```text
-[error] src/assert.js:5:0 @nudo:returns assertion failed for case "sample": expected string, got 10. Update the @nudo:returns directive to match the inferred type, or fix the function implementation (nudo-assertion-failed)
+[error] src/set.js:12:0 setDelay[ms]: 实参 ⊭ 前置  (nudo:constraint-violated)
+    actual:   0  #exact
+    expected: ms > 0
 ```
 
 ---
@@ -453,4 +455,4 @@ Usage — add this directive at the top of your JS file:
 | `1` | `nudo harvest` ——`@types/<pkg>` 未安装，或其中找不到 `.d.ts` 文件 |
 | `1` | `--emit-cases` 用法错误——与 `--json` 组合、mode 值非法、或 `--exit-on-diff` 未搭配 `--dry-run`；以及 `--exit-on-diff` 在 `--dry-run` diff 非空时触发 |
 
-注意：`infer` 打印的诊断——包括 `[error]` 级的 `@nudo:returns` 断言失败——**不会**改变 `infer` 的退出码，`infer` 仍以 `0` 退出。要在 CI 中按诊断做门禁，请使用 `nudo check`。
+注意：`infer` 打印的诊断——包括 `[error]` 级的 `@nudo:refine` 断言失败——**不会**改变 `infer` 的退出码，`infer` 仍以 `0` 退出。要在 CI 中按诊断做门禁，请使用 `nudo check`。

@@ -57,10 +57,13 @@ for (let i = 0; i < 5; i++) sum += i;
 
 用户还可以通过 `T.refine` 定义自定义精化类型，附加领域特定的运算规则。详见[示例](./guides/examples.md)。
 
+同一套代数也支撑 **[`nudo check`](./guides/check.md)** —— 精化门禁。声明的 `@nudo:refine` 契约以 Pred 进入 Abs，并参与算术（`x>0` ⇒ `x+1>1`）。报告使用 `actual ⊭ expected`，不是 TypeScript 诊断文案。TypeScript `.d.ts` 输出只是生态兼容通道，不是主类型模型。
+
 ## 下一步
 
 - **[安装](./getting-started/installation.md)** — 安装 CLI、VS Code 扩展和 Vite 插件
 - **[快速开始](./getting-started/quick-start.md)** — 在第一个文件上运行 `nudo infer`
 - **[核心概念](./concepts/type-values.md)** — 类型值、指令与抽象解释
 - **[调用点发现](./guides/callsite-discovery.md)** — 让 Nudo 从你的测试中挖掘真实调用形状，无需手写 case
+- **[nudo check](./guides/check.md)** — Abs 上的精化门禁
 - **[语言语义](./guides/semantics.md)** — Nudo 精确建模的 JavaScript 行为，从 `this` 绑定到 Promise 解析

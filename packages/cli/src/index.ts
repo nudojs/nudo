@@ -240,12 +240,6 @@ async function runInfer(
       console.log(`\nCombined: ${typeValueToString(fn.combined)}`);
     }
 
-    if (fn.assertionErrors && fn.assertionErrors.length > 0) {
-      for (const err of fn.assertionErrors) {
-        console.log(`\n⚠ ${err}`);
-      }
-    }
-
     console.log();
   }
 

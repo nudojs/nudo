@@ -148,7 +148,7 @@ Function "add" has 2 synthesized case(s); suggested directives:
 
 ## 诊断
 
-类型错误（失败的 `@nudo:returns` 断言、不可达代码等）通过 LSP 诊断在两个方向可用：
+类型错误（失败的 `@nudo:refine` 断言、不可达代码等）通过 LSP 诊断在两个方向可用：
 
 - **推送**：每次分析后的 `textDocument/publishDiagnostics`
 - **拉取**：按需的 `textDocument/diagnostic`

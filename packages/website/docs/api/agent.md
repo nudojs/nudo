@@ -217,7 +217,7 @@ Forms already in `T.*` syntax and structural expressions (object/array literals,
 
 ## Diagnostics
 
-Type errors (failed `@nudo:returns` assertions, unreachable code, …) are available as LSP diagnostics in both directions:
+Type errors (failed `@nudo:refine` assertions, unreachable code, …) are available as LSP diagnostics in both directions:
 
 - **Push**: `textDocument/publishDiagnostics` after each analysis
 - **Pull**: `textDocument/diagnostic` on demand

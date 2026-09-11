@@ -349,38 +349,61 @@ function sum(arr) {
 
 ---
 
-## @nudo:returns — Assert Expected Return Type
+## @nudo:refine — Refinement Contract
 
-Assert that the inferred return type matches a given type or predicate. Useful for tests and documentation.
+Attach a refinement from a `*.nudo.js` template to a parameter or the return value. The constraint enters Abs as a Pred and **participates in algebra** (`x>0` ⇒ `x+1>1`) — it is not just a call-site gate.
 
 ### Syntax
 
 ```text
-@nudo:returns (typeValueExpr)
+@nudo:refine <param> <constraint>
+@nudo:refine return <constraint>
 ```
 
-- **typeValueExpr** — A type value expression. The engine checks that the inferred return type equals or is a subtype of this type.
+- **param** — Parameter name, or the literal `return` for the postcondition
+- **constraint** — Name exported from a `*.nudo.js` module, imported via `/// @nudo:import`
+
+Templates are parameter-agnostic (`number().gt(0)`, `shape({...})`). Binding happens at the refine site.
 
 ### Examples
 
 ```javascript
+/// @nudo:import { positive, delay } from "./shapes.nudo.js"
+
 /**
- * @nudo:case "numbers" (T.number, T.number)
- * @nudo:returns (T.number)
+ * @nudo:refine x positive
+ * @nudo:refine return positive
  */
-function add(a, b) {
-  return a + b;
+function inc(x) {
+  return x + 1;
 }
+
+/**
+ * @nudo:refine ms delay
+ */
+function setDelay(ms) {
+  if (ms > 0) return ms;
+  return 0;
+}
+
+setDelay(0);   // error: 0 ⊭ delay
+setDelay(100); // ok
 ```
 
+Object shapes without `interface`:
+
 ```javascript
+// shapes.nudo.js
+export const user = shape({
+  id: number().gt(0),
+  name: string(),
+});
+
 /**
- * @nudo:case "union" (T.union(T.string, T.number))
- * @nudo:returns (T.union(T.number, T.string))
+ * @nudo:refine u user
  */
-function process(x) {
-  if (typeof x === "string") return x.length;
-  return x;
+function register(u) {
+  return `${u.id}:${u.name}`;
 }
 ```
 
@@ -591,7 +614,7 @@ const result = a + b;
 | `@nudo:pure` | (no args) | Mark function as pure for memoization |
 | `@nudo:skip` | `[returnsExpr]` | Skip evaluation, use existing type info |
 | `@nudo:sample` | `N` | Control loop sampling before fixed-point |
-| `@nudo:returns` | `(typeValueExpr)` | Assert expected return type |
+| `@nudo:refine` | `param constraint` / `return constraint` | Refinement contract (enters Abs as Pred) |
 | `@nudo:env` | `name1, name2` (file-level `///`) | Declare runtime environment APIs |
 | `@nudo:mock-module` | `"module" from "path"` (file-level `///`) | Replace imported modules with mocks |
 | `@nudo:as` | `typeValueExpr` (line comment `//`) | Override next statement's value type |

@@ -23,7 +23,7 @@ code --install-extension wmzy.nudo-vscode
 
 The extension activates when you open JavaScript files. It uses the `@nudojs/lsp` package to run a Language Server Protocol (LSP) server that provides all editor features.
 
-**File detection**: The language server analyzes `.js`, `.ts`, and `.mjs` files that contain Nudo directives — `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:returns`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, and `@nudo:replace`. The full syntax for every directive is covered in the [Directives reference](../concepts/directives.md). Files without these directives are not analyzed.
+**File detection**: The language server analyzes `.js`, `.ts`, and `.mjs` files that contain Nudo directives — `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:refine`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, and `@nudo:replace`. The full syntax for every directive is covered in the [Directives reference](../concepts/directives.md). Files without these directives are not analyzed.
 
 ## Features
 
@@ -106,7 +106,7 @@ createUser(  // ← signature help shows: (name: string, age: number)
 When Nudo reports diagnostics, quick fix suggestions are available. Click the lightbulb icon or press `Cmd+.` / `Ctrl+.` to see available fixes:
 
 - **Remove unreachable code** — for code after `return`/`throw`
-- **Update @nudo:returns** — when assertion doesn't match inferred type
+- **Update @nudo:refine** — when assertion doesn't match inferred type
 
 ### Semantic Tokens
 

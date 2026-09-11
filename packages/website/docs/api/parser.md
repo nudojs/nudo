@@ -39,7 +39,7 @@ What it removes or unwraps: type assertions (`as`, `satisfies`, `<T>x`, `x!`) ar
 
 Directives are extracted from comments using the `@nudo:` namespace. Function-level directives come from leading **block** comments of top-level statements; file-level and inline directives come from **line** comments (see [`extractFileDirectives`](#extractfiledirectives) / [`extractInlineDirectives`](#extractinlinedirectives)).
 
-The `Directive` union covers the six function-level kinds:
+The `Directive` union covers the five function-level kinds:
 
 ```typescript
 type Directive =
@@ -47,8 +47,7 @@ type Directive =
   | MockDirective
   | PureDirective
   | SkipDirective
-  | SampleDirective
-  | ReturnsDirective;
+  | SampleDirective;
 ```
 
 ### CaseDirective
@@ -123,17 +122,6 @@ type SampleDirective = {
 ```
 
 Number of loop iterations to evaluate before fixed-point analysis.
-
-### ReturnsDirective
-
-```typescript
-type ReturnsDirective = {
-  kind: "returns";
-  expected: TypeValue;
-}
-```
-
-Asserts that inferred return type is a subtype of `expected`.
 
 ### FileDirective
 
@@ -243,7 +231,7 @@ const y = f(x);
 parseTypeValueExpr(expr: string): TypeValue
 ```
 
-Parses a string expression into a TypeValue. Used for directive arguments (e.g. `@nudo:case` args, `@nudo:returns` expected type).
+Parses a string expression into a TypeValue. Used for directive arguments (e.g. `@nudo:case` args, `@nudo:as`/`@nudo:replace` type expressions).
 
 **Supported forms:**
 - Primitives: `T.number`, `T.string`, `T.boolean`, `T.unknown`, `T.never`, `T.null`, `T.undefined`

@@ -116,7 +116,6 @@ export type FunctionAnalysis = {
   paramNames: string[];
   cases: CaseResult[];
   combined?: TypeValue;
-  assertionErrors?: string[];
   entryOnly?: boolean;
   skipped?: boolean;
   /**

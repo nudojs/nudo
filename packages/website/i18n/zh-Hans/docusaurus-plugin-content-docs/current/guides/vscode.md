@@ -23,7 +23,7 @@ code --install-extension wmzy.nudo-vscode
 
 打开 JavaScript 文件时扩展会激活。它使用 `@nudojs/lsp` 包运行 Language Server Protocol（LSP）服务器，提供所有编辑器功能。
 
-**文件检测**：语言服务器会分析包含 Nudo 指令的 `.js`、`.ts` 和 `.mjs` 文件——`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:returns`、`@nudo:env`、`@nudo:mock-module`、`@nudo:as`、`@nudo:replace`。每个指令的完整语法见[指令参考](../concepts/directives.md)。不含这些指令的文件不会参与分析。
+**文件检测**：语言服务器会分析包含 Nudo 指令的 `.js`、`.ts` 和 `.mjs` 文件——`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:refine`、`@nudo:env`、`@nudo:mock-module`、`@nudo:as`、`@nudo:replace`。每个指令的完整语法见[指令参考](../concepts/directives.md)。不含这些指令的文件不会参与分析。
 
 ## 功能
 
@@ -106,7 +106,7 @@ createUser(  // ← signature help shows: (name: string, age: number)
 当 Nudo 报告诊断时，可使用快速修复建议。点击灯泡图标或按 `Cmd+.` / `Ctrl+.` 查看可用修复：
 
 - **移除不可达代码** ——针对 `return`/`throw` 之后的代码
-- **更新 @nudo:returns** ——当断言与推断类型不匹配时
+- **更新 @nudo:refine** ——当断言与推断类型不匹配时
 
 ### 语义标记
 

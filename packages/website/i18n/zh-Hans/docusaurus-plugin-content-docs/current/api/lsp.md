@@ -94,7 +94,7 @@ getCachedOrAnalyze(
 hasNudoDirectives(source: string): boolean
 ```
 
-源码包含任一 Nudo 指令时返回 `true`：`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:returns`、`@nudo:env`、`@nudo:mock-module`、`@nudo:as`、`@nudo:replace`。服务器将它（加上 `.js` / `.ts` / `.mjs` 扩展名检查）用作 `isNudoFile` 门控 —— 下文的每个功能 handler 对未通过门控的文件都是空操作。
+源码包含任一 Nudo 指令时返回 `true`：`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:refine`、`@nudo:env`、`@nudo:mock-module`、`@nudo:as`、`@nudo:replace`。服务器将它（加上 `.js` / `.ts` / `.mjs` 扩展名检查）用作 `isNudoFile` 门控 —— 下文的每个功能 handler 对未通过门控的文件都是空操作。
 
 ### toLspDiagnostic
 
@@ -157,7 +157,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 | 定义 | `onDefinition` | `buildSymbolTable` + `findDefinition` |
 | 引用 | `onReferences` | `buildSymbolTable` + `findReferences` |
 | 重命名 | `onRenameRequest` | 对定义及全部引用生成 workspace edit |
-| 代码操作（`quickfix`） | `onCodeAction` | `nudo-unreachable` 对应 *Remove unreachable code*；`nudo-assertion-failed` 对应 *Update @nudo:returns to match inferred type* |
+| 代码操作（`quickfix`） | `onCodeAction` | `nudo-unreachable` 对应 *Remove unreachable code* |
 | 签名帮助（触发 `(`、`,`） | `onSignatureHelp` | 定位包裹的调用、对被调函数求类型、高亮当前参数 |
 | 语义 token（full） | `languages.semanticTokens.on` | 推断驱动的着色：来自分析结果的 `function`/`variable`/`parameter` token（`buildSemanticTokens`） |
 

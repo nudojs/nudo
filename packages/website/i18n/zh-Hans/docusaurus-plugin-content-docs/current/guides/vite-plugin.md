@@ -63,7 +63,7 @@ glob 模式支持任意扩展名（`**/*.js`、`**/*.mjs`、`**/*.ts` 等）、�
 ## 行为
 
 - **文件匹配**：插件会处理匹配 `include` 且不匹配 `exclude` 的文件，`exclude` 总是优先。默认 `include` 为 `["**/*.js"]`，覆盖任意深度的所有 JavaScript 文件，也可以显式加入其他扩展名（如 `**/*.mjs`、`**/*.ts`）。
-- **指令检查**：不含 Nudo 指令（`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:returns`、`@nudo:env`、`@nudo:mock-module`、`@nudo:as`、`@nudo:replace`）的文件会被跳过，不进行分析。
+- **指令检查**：不含 Nudo 指令（`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:refine`、`@nudo:env`、`@nudo:mock-module`、`@nudo:as`、`@nudo:replace`）的文件会被跳过，不进行分析。
 - **分析**：对于匹配且有指令的文件，插件使用 `@nudojs/service` 的 `analyzeFile` 运行类型推断。
 - **缓存**：分析结果按文件缓存。缓存在 `buildStart` 时清除。
 - **诊断**：分析产生的错误和警告会作为 Vite 警告发出（当 `failOnError` 为 `true` 时为错误）。构建结束时，会输出摘要：`[nudo] Analysis complete: X error(s), Y warning(s)`。

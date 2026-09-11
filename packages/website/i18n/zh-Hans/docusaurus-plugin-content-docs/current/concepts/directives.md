@@ -349,38 +349,61 @@ function sum(arr) {
 
 ---
 
-## @nudo:returns — 断言预期返回类型
+## @nudo:refine — 精化契约
 
-断言推断的返回类型匹配给定的类型或谓词。适用于测试和文档化。
+把 `*.nudo.js` 模板里的精化挂到参数或返回值。约束以 Pred 进入 Abs，**参与代数**（`x>0` ⇒ `x+1>1`），不只是调用点挡板。
 
 ### 语法
 
 ```text
-@nudo:returns (typeValueExpr)
+@nudo:refine <param> <constraint>
+@nudo:refine return <constraint>
 ```
 
-- **typeValueExpr** — 类型值表达式。引擎检查推断的返回类型是否等于或是此类型的子类型。
+- **param** — 参数名，或字面量 `return` 表示后置
+- **constraint** — 来自 `*.nudo.js` 的导出名，经 `/// @nudo:import` 引入
+
+模板参数无关（`number().gt(0)`、`shape({...})`）。绑定发生在 refine 站点。
 
 ### 示例
 
 ```javascript
+/// @nudo:import { positive, delay } from "./shapes.nudo.js"
+
 /**
- * @nudo:case "numbers" (T.number, T.number)
- * @nudo:returns (T.number)
+ * @nudo:refine x positive
+ * @nudo:refine return positive
  */
-function add(a, b) {
-  return a + b;
+function inc(x) {
+  return x + 1;
 }
+
+/**
+ * @nudo:refine ms delay
+ */
+function setDelay(ms) {
+  if (ms > 0) return ms;
+  return 0;
+}
+
+setDelay(0);   // error: 0 ⊭ delay
+setDelay(100); // ok
 ```
 
+无需 `interface` 的 object 形状：
+
 ```javascript
+// shapes.nudo.js
+export const user = shape({
+  id: number().gt(0),
+  name: string(),
+});
+
 /**
- * @nudo:case "union" (T.union(T.string, T.number))
- * @nudo:returns (T.union(T.number, T.string))
+ * @nudo:refine u user
  */
-function process(x) {
-  if (typeof x === "string") return x.length;
-  return x;
+function register(u) {
+  return `${u.id}:${u.name}`;
 }
 ```
 
@@ -591,7 +614,7 @@ const result = a + b;
 | `@nudo:pure` | （无参数） | 标记纯函数以启用记忆化 |
 | `@nudo:skip` | `[returnsExpr]` | 跳过求值，使用已有类型信息 |
 | `@nudo:sample` | `N` | 控制不动点之前的循环采样次数 |
-| `@nudo:returns` | `(typeValueExpr)` | 断言预期返回类型 |
+| `@nudo:refine` | `param constraint` / `return constraint` | 精化契约（Pred 进入 Abs） |
 | `@nudo:env` | `name1, name2`（文件级 `///`） | 声明运行时环境 API |
 | `@nudo:mock-module` | `"module" from "path"`（文件级 `///`） | 替换导入的模块为 mock |
 | `@nudo:as` | `typeValueExpr`（行注释 `//`） | 覆盖下一条语句的值类型 |

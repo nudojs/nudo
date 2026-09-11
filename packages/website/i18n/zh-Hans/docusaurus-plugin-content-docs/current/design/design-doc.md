@@ -293,7 +293,7 @@ Nudo 将异常作为函数类型的一等部分追踪。每个函数不仅有 `r
 | `@nudo:pure` | 标记函数为纯函数，启用记忆化 |
 | `@nudo:skip` | 跳过求值；可选的类型表达式直接声明返回类型（如 `@nudo:skip T.number`） |
 | `@nudo:sample` | 不动点之前的循环迭代次数 |
-| `@nudo:returns` | 断言预期返回类型 |
+| `@nudo:refine` | 精化契约：`@nudo:refine param name` / `@nudo:refine return name`（Pred 进入 Abs） |
 | `@nudo:env` | 声明运行时环境 API（文件级 `///` 注释） |
 | `@nudo:mock-module` | 用 mock 文件替换导入的模块（文件级 `///` 注释） |
 | `@nudo:as` | 覆盖下一条语句的值类型（行注释 `//`） |
