@@ -164,7 +164,82 @@ function absUnknown(): Abs {
   return { shape: { k: "unknown" }, conf: "partial" };
 }
 
-/** 找 `name(literalArgs)` 形态，检查约束 */
+/** 扫描前收集：别名 `const f = fn` 与对象属性 `const api = { fn }` / `{ k: fn }` */
+type CallResolve = {
+  /** 本地名 → 真实函数名 */
+  aliasToFn: Map<string, string>;
+  /** 对象名.属性名 → 真实函数名 */
+  memberToFn: Map<string, string>;
+};
+
+function collectCallResolvers(source: string, knownFns: string[]): CallResolve {
+  const aliasToFn = new Map<string, string>();
+  const memberToFn = new Map<string, string>();
+  const file = parse(source);
+
+  const visit = (n: unknown): void => {
+    if (!n || typeof n !== "object") return;
+    const obj = n as Record<string, unknown> & { type?: string };
+    if (obj.type === "VariableDeclaration") {
+      for (const d of (obj.declarations as Array<Record<string, unknown>> | undefined) ?? []) {
+        const id = d.id as { type?: string; name?: string };
+        const init = d.init as Record<string, unknown> | null | undefined;
+        if (id?.type !== "Identifier" || !id.name || !init) continue;
+        // const f = needsPositive
+        if (init.type === "Identifier" && typeof init.name === "string" && knownFns.includes(init.name)) {
+          aliasToFn.set(id.name, init.name);
+        }
+        // const api = { needsPositive } / { needsPositive: needsPositive } / { key: fn }
+        if (init.type === "ObjectExpression") {
+          for (const p of (init.properties as Array<Record<string, unknown>> | undefined) ?? []) {
+            if (p.type !== "ObjectProperty") continue;
+            const key = p.key as { type?: string; name?: string; value?: unknown };
+            const value = p.value as { type?: string; name?: string } | undefined;
+            if (value?.type === "Identifier" && value.name && knownFns.includes(value.name)) {
+              const propKey =
+                key?.type === "Identifier" ? key.name : key?.type === "StringLiteral" ? String(key.value) : undefined;
+              if (propKey) memberToFn.set(`${id.name}.${propKey}`, value.name);
+            }
+          }
+        }
+      }
+    }
+    for (const key of Object.keys(obj)) {
+      if (key === "loc" || key === "start" || key === "end") continue;
+      const val = obj[key];
+      if (Array.isArray(val)) val.forEach(visit);
+      else if (val && typeof val === "object") visit(val);
+    }
+  };
+  visit(file);
+  return { aliasToFn, memberToFn };
+}
+
+/** 解析 callee → 真实函数名（直接 / 别名 / 对象属性） */
+function resolveCalleeFn(
+  callee: Record<string, unknown>,
+  resolve: CallResolve,
+): string | undefined {
+  if (callee.type === "Identifier" && typeof callee.name === "string") {
+    return resolve.aliasToFn.get(callee.name) ?? callee.name;
+  }
+  if (callee.type === "MemberExpression") {
+    const obj = callee.object as { type?: string; name?: string } | undefined;
+    const prop = callee.property as { type?: string; name?: string } | undefined;
+    if (
+      !callee.computed &&
+      obj?.type === "Identifier" &&
+      obj.name &&
+      prop?.type === "Identifier" &&
+      prop.name
+    ) {
+      return resolve.memberToFn.get(`${obj.name}.${prop.name}`);
+    }
+  }
+  return undefined;
+}
+
+/** 找 `name(literalArgs)` / `alias(lit)` / `obj.fn(lit)`，检查约束 */
 function scanLiteralCalls(
   source: string,
   knownFns: string[],
@@ -172,6 +247,69 @@ function scanLiteralCalls(
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
   const file = parse(source);
+  const resolve = collectCallResolvers(source, knownFns);
+
+  const checkOneCall = (
+    fnName: string,
+    args: Array<Record<string, unknown>>,
+    loc?: { start: { line: number; column: number } },
+  ): void => {
+    if (!knownFns.includes(fnName)) return;
+    const absArgs: Abs[] = [];
+    let allLit = true;
+    for (const a of args ?? []) {
+      if (a.type === "NumericLiteral" && typeof a.value === "number") {
+        absArgs.push(numLit(a.value));
+      } else if (
+        a.type === "UnaryExpression" &&
+        (a as { operator?: string }).operator === "-" &&
+        (a as { argument?: Record<string, unknown> }).argument?.type === "NumericLiteral"
+      ) {
+        const num = (a as { argument: { value: number } }).argument;
+        absArgs.push(numLit(-num.value));
+      } else {
+        allLit = false;
+        absArgs.push(absUnknown());
+      }
+    }
+    if (!allLit || absArgs.length === 0) return;
+    const reqs = extractParamReqsFromSource(source, fnName);
+    const g = generalizeFromAst(fnName, source);
+    const paramNames = g?.params ?? [];
+    for (const [idx, pred] of reqs) {
+      const arg = absArgs[idx];
+      if (!arg) continue;
+      const lv = litValue(arg);
+      if (
+        lv !== undefined &&
+        (pred.op === "gt" || pred.op === "ge" || pred.op === "lt" || pred.op === "le") &&
+        pred.b.op === "lit" &&
+        typeof pred.b.value === "number"
+      ) {
+        const n = pred.b.value;
+        let ok = true;
+        if (pred.op === "gt") ok = (lv as number) > n;
+        if (pred.op === "ge") ok = (lv as number) >= n;
+        if (pred.op === "lt") ok = (lv as number) < n;
+        if (pred.op === "le") ok = (lv as number) <= n;
+        if (!ok) {
+          const paramName = paramNames[idx] ?? `arg${idx}`;
+          out.push({
+            severity: "error",
+            code: "nudo:constraint-violated",
+            message: `${fnName}[${paramName}]: 实参 ⊭ 前置`,
+            actual: formatAbs(arg),
+            expected: predToString(pred),
+            suggestion: `改用满足 ${predToString(pred)} 的值，或放宽 ${paramName} 的前置`,
+            fn: fnName,
+            line: loc?.start.line,
+            column: loc?.start.column,
+          });
+        }
+      }
+    }
+  };
+
   const visit = (n: unknown): void => {
     if (!n || typeof n !== "object") return;
     const obj = n as Record<string, unknown> & {
@@ -179,70 +317,11 @@ function scanLiteralCalls(
       loc?: { start: { line: number; column: number } };
     };
     if (obj.type === "CallExpression") {
-      const callee = obj.callee as { type?: string; name?: string };
+      const callee = obj.callee as Record<string, unknown>;
       const args = obj.arguments as Array<Record<string, unknown>>;
-      if (
-        callee?.type === "Identifier" &&
-        callee.name &&
-        knownFns.includes(callee.name)
-      ) {
-        const absArgs: Abs[] = [];
-        let allLit = true;
-        for (const a of args ?? []) {
-          if (a.type === "NumericLiteral" && typeof a.value === "number") {
-            absArgs.push(numLit(a.value));
-          } else if (
-            a.type === "UnaryExpression" &&
-            (a as { operator?: string }).operator === "-" &&
-            (a as { argument?: Record<string, unknown> }).argument?.type === "NumericLiteral"
-          ) {
-            const num = (a as { argument: { value: number } }).argument;
-            absArgs.push(numLit(-num.value));
-          } else {
-            allLit = false;
-            absArgs.push(absUnknown());
-          }
-        }
-        if (allLit && absArgs.length > 0) {
-          const reqs = extractParamReqsFromSource(source, callee.name);
-          const g = generalizeFromAst(callee.name, source);
-          const paramNames = g?.params ?? [];
-          for (const [idx, pred] of reqs) {
-            const arg = absArgs[idx];
-            if (!arg) continue;
-            const lv = litValue(arg);
-            if (
-              lv !== undefined &&
-              (pred.op === "gt" ||
-                pred.op === "ge" ||
-                pred.op === "lt" ||
-                pred.op === "le") &&
-              pred.b.op === "lit" &&
-              typeof pred.b.value === "number"
-            ) {
-              const n = pred.b.value;
-              let ok = true;
-              if (pred.op === "gt") ok = (lv as number) > n;
-              if (pred.op === "ge") ok = (lv as number) >= n;
-              if (pred.op === "lt") ok = (lv as number) < n;
-              if (pred.op === "le") ok = (lv as number) <= n;
-              if (!ok) {
-                const paramName = paramNames[idx] ?? `arg${idx}`;
-                out.push({
-                  severity: "error",
-                  code: "nudo:constraint-violated",
-                  message: `${callee.name}[${paramName}]: 实参 ⊭ 前置`,
-                  actual: formatAbs(arg),
-                  expected: predToString(pred),
-                  suggestion: `改用满足 ${predToString(pred)} 的值，或放宽 ${paramName} 的前置`,
-                  fn: callee.name,
-                  line: obj.loc?.start.line,
-                  column: obj.loc?.start.column,
-                });
-              }
-            }
-          }
-        }
+      const fnName = resolveCalleeFn(callee, resolve);
+      if (fnName) {
+        checkOneCall(fnName, args ?? [], obj.loc);
       }
     }
     for (const key of Object.keys(obj)) {

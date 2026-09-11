@@ -292,9 +292,9 @@ needsPositive(-3);
 `,
     expect: "violation",
   },
-  // --- 扫描边界：当前只查 name(literal) 直接调用 ---
+  // --- 扫描边界已扩展：别名与对象属性调用 ---
   {
-    id: "member-call-out-of-scope",
+    id: "member-call-violates",
     origin: "obj.method(-1)",
     source: `
 function needsPositive(x) {
@@ -304,11 +304,24 @@ function needsPositive(x) {
 const api = { needsPositive };
 api.needsPositive(-1);
 `,
-    expect: "ok",
-    note: "成员调用暂不扫描；扩扫描后改标 violation",
+    expect: "violation",
+    note: "对象属性简写调用",
   },
   {
-    id: "aliased-fn-out-of-scope",
+    id: "member-renamed-key-violates",
+    origin: "{ key: fn }",
+    source: `
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+const api = { check: needsPositive };
+api.check(-1);
+`,
+    expect: "violation",
+  },
+  {
+    id: "aliased-fn-violates",
     origin: "const f = fn; f(-1)",
     source: `
 function needsPositive(x) {
@@ -318,8 +331,33 @@ function needsPositive(x) {
 const f = needsPositive;
 f(-1);
 `,
+    expect: "violation",
+  },
+  {
+    id: "aliased-fn-valid-ok",
+    origin: "const f = fn; f(5)",
+    source: `
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+const f = needsPositive;
+f(5);
+`,
     expect: "ok",
-    note: "别名调用暂不扫描",
+  },
+  {
+    id: "member-valid-ok",
+    origin: "obj.method(5)",
+    source: `
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+const api = { needsPositive };
+api.needsPositive(5);
+`,
+    expect: "ok",
   },
 ];
 

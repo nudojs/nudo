@@ -36,7 +36,10 @@ issues
 
 覆盖：延时 >0、百分比 0–100、端口、索引、clamp 真阴性、上界、箭头/export default、无前置不误报。
 
-**当前扫描范围**：`name(literalArgs)` 直接调用。成员调用 / 别名调用标为 TN（边界），扩扫描时改标 violation。
+**当前扫描范围**：
+- `fn(literalArgs)` 直接调用
+- 别名：`const f = fn; f(lit)`
+- 对象属性：`const api = { fn }` / `{ key: fn }` → `api.fn(lit)` / `api.key(lit)`
 
 ## 本地
 
