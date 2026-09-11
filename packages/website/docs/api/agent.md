@@ -43,7 +43,13 @@ Constraint gate on **Abs** (type-as-computation). Same contract as CLI `nudo che
 | `source` | `string?` | Pre-read source (bypasses disk/editor) |
 | `format` | `"text" \| "json"` | `"json"` → CheckJson only; default human summary + JSON |
 
-**Returns (CheckJson v1):** `{ version: 1, file, ok, summary, signatures[], issues[] }` where each issue may carry `actual` / `expected` for constraint violations.
+**Returns (CheckJson v1):** `{ version: 1, file, ok, summary, signatures[], issues[] }` where each issue may carry `actual` / `expected`. Issue codes:
+
+| Code | Meaning |
+|------|---------|
+| `nudo:constraint-violated` | Call argument ⊭ precondition |
+| `nudo:assign-mismatch` | Assignment ⊭ previous binding shape |
+| `nudo:arg-structure` | Argument structure ⊭ slots accessed in the body |
 
 ```javascripton
 {

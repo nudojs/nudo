@@ -19,6 +19,12 @@ npx tsx packages/cli/src/index.ts check path/to/file.js
 
 ## 报告格式（非 TS 换皮）
 
+| code | 含义 |
+|---|---|
+| `nudo:constraint-violated` | 调用实参 ⊭ 前置 |
+| `nudo:assign-mismatch` | 赋值 ⊭ 原有形状（leqAbs） |
+| `nudo:arg-structure` | 实参结构 ⊭ body 访问的 slot |
+
 ```
 nudo check  src/validators.js
 FAILED
