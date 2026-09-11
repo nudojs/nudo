@@ -75,6 +75,10 @@ pct(150);           // error
 let a = { x: 1 };
 a = { y: 2 };       // error: missing slot x（nudo:assign-mismatch）
 
+// ✓ 传参结构：body 访问 p.x / p.y → 实参须齐
+function readXY(p) { return p.x + p.y; }
+readXY({ x: 1 });   // error: missing slot y（nudo:arg-structure）
+
 // ✗ clamp 回退守卫：不是调用前置
 function clamp(n, lo, hi) {
   if (n < lo) return lo;   // 越界是合法输入

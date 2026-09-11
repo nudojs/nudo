@@ -9,17 +9,24 @@
 
 import { parseSource as parse } from "./parse-source.ts";
 import type { Node } from "@babel/types";
-import { analyzeFn, evalProgramAbs, setAbsAssignCollector, type AbsAssignRecord } from "./ast-eval.ts";
+import {
+  analyzeFn,
+  evalProgramAbs,
+  evalNode,
+  emptyEnv,
+  defaultLeakBudget,
+  setAbsAssignCollector,
+  type AbsAssignRecord,
+} from "./ast-eval.ts";
 import { leqAbs } from "./leq.ts";
-import { formatAbs } from "./format.ts";
 import { generalizeFromAst } from "./generalize.ts";
-import { numLit, unknown } from "./abs.ts";
+import { numLit, unknown, abs as makeAbs } from "./abs.ts";
 import type { Abs, Confidence } from "./abs.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { pTrue, predToString } from "./pred.ts";
 import { termToString } from "./term.ts";
 import { litValue } from "./abs.ts";
-import { formatAbsMultiline, formatShape } from "./format.ts";
+import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
 import { checkCall, type Diagnostic } from "./diagnostics.ts";
 
 /** 无损函数签名（类型即计算） */
@@ -219,6 +226,53 @@ function scanStructuralAssign(source: string): CheckIssue[] {
     }
   }
   return out;
+}
+
+/** 从函数体抽参数必填 slot：`function f(p){ return p.x + p.y }` → {p: {x,y}} */
+function collectParamStructReqs(
+  source: string,
+  fnName: string,
+): Map<string, Set<string>> {
+  const reqs = new Map<string, Set<string>>();
+  const g = generalizeFromAst(fnName, source);
+  if (!g) return reqs;
+  const params = new Set(g.params);
+  const file = parse(source);
+
+  const visit = (n: unknown): void => {
+    if (!n || typeof n !== "object") return;
+    const obj = n as Record<string, unknown> & { type?: string };
+    if (obj.type === "MemberExpression" && !obj.computed) {
+      const o = obj.object as { type?: string; name?: string } | undefined;
+      const p = obj.property as { type?: string; name?: string } | undefined;
+      if (o?.type === "Identifier" && o.name && params.has(o.name) && p?.type === "Identifier" && p.name) {
+        let set = reqs.get(o.name);
+        if (!set) {
+          set = new Set();
+          reqs.set(o.name, set);
+        }
+        set.add(p.name);
+      }
+    }
+    for (const key of Object.keys(obj)) {
+      if (key === "loc" || key === "start" || key === "end") continue;
+      const val = obj[key];
+      if (Array.isArray(val)) val.forEach(visit);
+      else if (val && typeof val === "object") visit(val);
+    }
+  };
+  visit(file);
+  return reqs;
+}
+
+/** 静态求值字面量实参节点 → Abs */
+function evalArgAbs(node: Record<string, unknown>): Abs | undefined {
+  try {
+    const env = emptyEnv();
+    return evalNode(node as Node, env, pTrue, defaultLeakBudget).value;
+  } catch {
+    return undefined;
+  }
 }
 
 /** 扫描前收集：别名 / 对象属性 / require 导入 */
@@ -685,6 +739,10 @@ function scanLiteralCalls(
     loc?: { start: { line: number; column: number } },
   ): void => {
     if (!knownFns.includes(fnName)) return;
+
+    // 传参结构：实参字面量 Abs ≤ 形参必填 slot
+    checkArgStructures(fnName, source, args, loc);
+
     const { absArgs, allLit } = parseLitArgs(args);
     if (!allLit || absArgs.length === 0) return;
 
@@ -721,6 +779,7 @@ function scanLiteralCalls(
     displayName: string,
     loc?: { start: { line: number; column: number } },
   ): void => {
+    checkArgStructures(ext.fnName, ext.source, args, loc, displayName);
     const { absArgs, allLit } = parseLitArgs(args);
     if (!allLit || absArgs.length === 0) return;
     let reqs: Array<[number, Pred]> = [];
@@ -733,6 +792,57 @@ function scanLiteralCalls(
       return;
     }
     checkReqs(displayName, reqs, paramNames, absArgs, (i) => i, loc);
+  };
+
+  /**
+   * 实参结构 ≤ 形参必填 slot（从 `p.foo` 访问推出）。
+   * ObjectExpression / ArrayExpression 字面量可静态求 Abs。
+   */
+  const checkArgStructures = (
+    fnName: string,
+    fnSource: string,
+    args: Array<Record<string, unknown>>,
+    loc?: { start: { line: number; column: number } },
+    displayName?: string,
+  ): void => {
+    let structReqs: Map<string, Set<string>>;
+    let paramNames: string[];
+    try {
+      structReqs = collectParamStructReqs(fnSource, fnName);
+      const g = generalizeFromAst(fnName, fnSource);
+      paramNames = g?.params ?? [];
+    } catch {
+      return;
+    }
+    if (structReqs.size === 0) return;
+    for (let i = 0; i < args.length; i++) {
+      const pname = paramNames[i];
+      if (!pname) continue;
+      const keys = structReqs.get(pname);
+      if (!keys || keys.size === 0) continue;
+      const argNode = args[i];
+      if (!argNode) continue;
+      const absArg = evalArgAbs(argNode);
+      if (!absArg || absArg.shape.k === "unknown") continue;
+      const slots: Record<string, { value: Abs }> = {};
+      for (const k of keys) slots[k] = { value: absUnknown() };
+      const target = makeAbs({ k: "obj", slots }, undefined, undefined, "exact");
+      const leq = leqAbs(absArg, target);
+      if (!leq.ok) {
+        const name = displayName ?? fnName;
+        out.push({
+          severity: "error",
+          code: "nudo:arg-structure",
+          message: `${name}[${pname}]: 实参结构 ⊭ 形参`,
+          actual: formatAbs(absArg),
+          expected: formatAbs(target),
+          suggestion: leq.reason ?? `补全 ${pname} 上被访问的字段`,
+          fn: name,
+          line: loc?.start.line,
+          column: loc?.start.column,
+        });
+      }
+    }
   };
 
   const visit = (n: unknown): void => {

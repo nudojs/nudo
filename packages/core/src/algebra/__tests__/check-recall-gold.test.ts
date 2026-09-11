@@ -442,6 +442,41 @@ n = "str";
 `,
     expect: "violation",
   },
+  // --- 传参结构 ---
+  {
+    id: "arg-structure-ok",
+    origin: "传参结构",
+    source: `
+function readX(p) {
+  return p.x;
+}
+readX({ x: 1 });
+`,
+    expect: "ok",
+  },
+  {
+    id: "arg-missing-slot-violates",
+    origin: "传参结构",
+    source: `
+function readXY(p) {
+  return p.x + p.y;
+}
+readXY({ x: 1 });
+`,
+    expect: "violation",
+    note: "缺 y",
+  },
+  {
+    id: "arg-extra-slot-ok",
+    origin: "传参结构",
+    source: `
+function readX(p) {
+  return p.x;
+}
+readX({ x: 1, z: 2 });
+`,
+    expect: "ok",
+  },
 ];
 
 /** require 金标：用 loadModule 喂外部源码 */
@@ -676,7 +711,9 @@ describe("check gold recall (human-labeled)", () => {
           r.issues.some(
             (i) =>
               i.severity === "error" &&
-              (i.code === "nudo:constraint-violated" || i.code === "nudo:assign-mismatch"),
+              (i.code === "nudo:constraint-violated" ||
+                i.code === "nudo:assign-mismatch" ||
+                i.code === "nudo:arg-structure"),
           ),
           `expected violation, got: ${r.issues.map((i) => `${i.code} ${i.message}`).join("; ") || "ok"}`,
         ).toBe(true);
