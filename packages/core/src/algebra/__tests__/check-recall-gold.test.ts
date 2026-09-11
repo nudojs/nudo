@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkSource, type CheckReport } from "../index.ts";
+import { checkSource, pTrue, type CheckReport } from "../index.ts";
 
 /**
  * 金标 recall：真实 JS 库常见模式的人工标注。
@@ -406,6 +406,87 @@ api.needsPositive(5);
   },
 ];
 
+/** require 金标：用 loadModule 喂外部源码 */
+type RequireGold = {
+  id: string;
+  /** 入口文件源码 */
+  source: string;
+  /** spec → 模块源码 */
+  modules: Record<string, string>;
+  expect: Expect;
+};
+
+const REQUIRE_GOLD: RequireGold[] = [
+  {
+    id: "require-destructure-violates",
+    source: `
+const { needsPositive } = require("./v.js");
+needsPositive(-1);
+`,
+    modules: {
+      "./v.js": `
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+module.exports = { needsPositive };
+`,
+    },
+    expect: "violation",
+  },
+  {
+    id: "require-destructure-ok",
+    source: `
+const { needsPositive } = require("./v.js");
+needsPositive(5);
+`,
+    modules: {
+      "./v.js": `
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+module.exports = { needsPositive };
+`,
+    },
+    expect: "ok",
+  },
+  {
+    id: "require-member-violates",
+    source: `
+const v = require("./v.js");
+v.needsPositive(0);
+`,
+    modules: {
+      "./v.js": `
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+module.exports = { needsPositive };
+`,
+    },
+    expect: "violation",
+  },
+  {
+    id: "require-named-prop-violates",
+    source: `
+const needsPositive = require("./v.js").needsPositive;
+needsPositive(-3);
+`,
+    modules: {
+      "./v.js": `
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+module.exports.needsPositive = needsPositive;
+`,
+    },
+    expect: "violation",
+  },
+];
+
 function run(g: Gold): CheckReport {
   return checkSource(`gold-${g.id}.js`, g.source);
 }
@@ -464,4 +545,23 @@ describe("check gold recall (human-labeled)", () => {
     expect(prec, `precision < 1: ${detail}`).toBe(1);
     expect(TP).toBeGreaterThan(5);
   });
+});
+
+describe("check require cross-file gold", () => {
+  for (const g of REQUIRE_GOLD) {
+    it(`${g.id} → ${g.expect}`, () => {
+      const r = checkSource(`req-${g.id}.js`, g.source, pTrue, {
+        loadModule: (spec) => g.modules[spec],
+        fromFile: `req-${g.id}.js`,
+      });
+      if (g.expect === "violation") {
+        expect(
+          r.issues.some((i) => i.code === "nudo:constraint-violated"),
+          r.issues.map((i) => i.message).join("; ") || "ok",
+        ).toBe(true);
+      } else {
+        expect(r.ok, r.issues.map((i) => i.message).join("; ")).toBe(true);
+      }
+    });
+  }
 });

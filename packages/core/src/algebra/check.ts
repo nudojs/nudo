@@ -58,6 +58,14 @@ export type CheckReport = {
   };
 };
 
+/**
+ * check 选项：core 不碰 fs；host 用 loadModule 喂 require 目标源码。
+ */
+export type CheckOptions = {
+  /** 相对/绝对 require 说明符 → 模块源码；undefined = 解析失败 */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
+};
+
 function listTopFunctions(source: string): string[] {
   const file = parse(source);
   const names: string[] = [];
@@ -96,6 +104,7 @@ export function checkSource(
   filePath: string,
   source: string,
   phi: Phi = pTrue,
+  opts: CheckOptions = {},
 ): CheckReport {
   const issues: CheckIssue[] = [];
   const signatures: NudoSig[] = [];
@@ -144,7 +153,10 @@ export function checkSource(
     }
   }
 
-  const callIssues = scanLiteralCalls(source, names, phi);
+  const callIssues = scanLiteralCalls(source, names, phi, {
+    loadModule: opts.loadModule,
+    fromFile: filePath,
+  });
   issues.push(...callIssues);
 
   const errors = issues.filter((i) => i.severity === "error").length;
@@ -164,32 +176,112 @@ function absUnknown(): Abs {
   return { shape: { k: "unknown" }, conf: "partial" };
 }
 
-/** 扫描前收集：别名 `const f = fn` 与对象属性 `const api = { fn }` / `{ k: fn }` */
+/** 扫描前收集：别名 / 对象属性 / require 导入 */
 type CallResolve = {
-  /** 本地名 → 真实函数名 */
+  /** 本地名 → 真实函数名（同文件） */
   aliasToFn: Map<string, string>;
-  /** 对象名.属性名 → 真实函数名 */
+  /** 对象名.属性名 → 真实函数名（同文件） */
   memberToFn: Map<string, string>;
+  /** 本地名 → 外部模块函数（源码 + 导出名） */
+  externalFn: Map<string, { source: string; fnName: string }>;
+  /** 对象名.属性名 → 外部模块函数 */
+  externalMember: Map<string, { source: string; fnName: string }>;
 };
 
-function collectCallResolvers(source: string, knownFns: string[]): CallResolve {
+function requireSpecOf(init: Record<string, unknown>): string | undefined {
+  // require('./x')
+  if (init.type === "CallExpression") {
+    const callee = init.callee as { type?: string; name?: string } | undefined;
+    const args = init.arguments as Array<{ type?: string; value?: unknown }> | undefined;
+    if (
+      callee?.type === "Identifier" &&
+      callee.name === "require" &&
+      args?.[0]?.type === "StringLiteral"
+    ) {
+      return String(args[0].value);
+    }
+  }
+  // require('./x').fn
+  if (init.type === "MemberExpression") {
+    const obj = init.object as Record<string, unknown> | undefined;
+    if (obj) return requireSpecOf(obj);
+  }
+  return undefined;
+}
+
+function requireExportName(init: Record<string, unknown>): string | undefined {
+  // require('./x').fn
+  if (init.type === "MemberExpression" && !init.computed) {
+    const prop = init.property as { type?: string; name?: string } | undefined;
+    if (prop?.type === "Identifier") return prop.name;
+  }
+  return undefined;
+}
+
+function collectCallResolvers(
+  source: string,
+  knownFns: string[],
+  opts?: { loadModule?: (spec: string, fromFile: string) => string | undefined; fromFile?: string },
+): CallResolve {
   const aliasToFn = new Map<string, string>();
   const memberToFn = new Map<string, string>();
+  const externalFn = new Map<string, { source: string; fnName: string }>();
+  const externalMember = new Map<string, { source: string; fnName: string }>();
   const file = parse(source);
+  const load = opts?.loadModule;
+  const fromFile = opts?.fromFile ?? "";
+  const modCache = new Map<string, string | undefined>();
+  const loadSpec = (spec: string): string | undefined => {
+    if (!load) return undefined;
+    if (!modCache.has(spec)) modCache.set(spec, load(spec, fromFile));
+    return modCache.get(spec);
+  };
 
   const visit = (n: unknown): void => {
     if (!n || typeof n !== "object") return;
     const obj = n as Record<string, unknown> & { type?: string };
     if (obj.type === "VariableDeclaration") {
       for (const d of (obj.declarations as Array<Record<string, unknown>> | undefined) ?? []) {
-        const id = d.id as { type?: string; name?: string };
+        const id = d.id as { type?: string; name?: string; properties?: Array<Record<string, unknown>> };
         const init = d.init as Record<string, unknown> | null | undefined;
-        if (id?.type !== "Identifier" || !id.name || !init) continue;
+        if (!id || !init) continue;
+
+        // require 导入
+        const spec = requireSpecOf(init);
+        if (spec) {
+          const modSrc = loadSpec(spec);
+          // const { fn } = require(...)
+          if (id.type === "ObjectPattern" && modSrc) {
+            for (const p of id.properties ?? []) {
+              const key = p.key as { type?: string; name?: string; value?: unknown } | undefined;
+              const val = p.value as { type?: string; name?: string } | undefined;
+              const exported =
+                key?.type === "Identifier" ? key.name : key?.type === "StringLiteral" ? String(key.value) : undefined;
+              const local = val?.type === "Identifier" ? val.name : exported;
+              if (exported && local) {
+                externalFn.set(local, { source: modSrc, fnName: exported });
+              }
+            }
+          }
+          // const m = require(...) → m.fn
+          if (id.type === "Identifier" && id.name && modSrc) {
+            const exportName = requireExportName(init);
+            if (exportName) {
+              externalFn.set(id.name, { source: modSrc, fnName: exportName });
+            } else {
+              // 整模块：属性解析延迟到 member 调用时用 mod 源码
+              // 记为 pending module object
+              externalMember.set(`${id.name}.__module__`, { source: modSrc, fnName: "" });
+            }
+          }
+        }
+
+        if (id.type !== "Identifier" || !id.name) continue;
         // const f = needsPositive
         if (init.type === "Identifier" && typeof init.name === "string" && knownFns.includes(init.name)) {
           aliasToFn.set(id.name, init.name);
         }
-        // const api = { needsPositive } / { needsPositive: needsPositive } / { key: fn }
+        // const api = { needsPositive }
         if (init.type === "ObjectExpression") {
           for (const p of (init.properties as Array<Record<string, unknown>> | undefined) ?? []) {
             if (p.type !== "ObjectProperty") continue;
@@ -212,16 +304,22 @@ function collectCallResolvers(source: string, knownFns: string[]): CallResolve {
     }
   };
   visit(file);
-  return { aliasToFn, memberToFn };
+  return { aliasToFn, memberToFn, externalFn, externalMember };
 }
 
-/** 解析 callee → 真实函数名（直接 / 别名 / 对象属性） */
+/** 解析 callee → 同文件名或外部模块描述 */
 function resolveCalleeFn(
   callee: Record<string, unknown>,
   resolve: CallResolve,
-): string | undefined {
+  knownFns: string[],
+): string | { external: { source: string; fnName: string } } | undefined {
   if (callee.type === "Identifier" && typeof callee.name === "string") {
-    return resolve.aliasToFn.get(callee.name) ?? callee.name;
+    const ext = resolve.externalFn.get(callee.name);
+    if (ext) return { external: ext };
+    const aliased = resolve.aliasToFn.get(callee.name);
+    if (aliased) return aliased;
+    if (knownFns.includes(callee.name)) return callee.name;
+    return undefined;
   }
   if (callee.type === "MemberExpression") {
     const obj = callee.object as { type?: string; name?: string } | undefined;
@@ -233,7 +331,16 @@ function resolveCalleeFn(
       prop?.type === "Identifier" &&
       prop.name
     ) {
-      return resolve.memberToFn.get(`${obj.name}.${prop.name}`);
+      const key = `${obj.name}.${prop.name}`;
+      const extM = resolve.externalMember.get(key);
+      if (extM) return { external: extM };
+      // m = require(...)；调用 m.fn
+      const mod = resolve.externalMember.get(`${obj.name}.__module__`);
+      if (mod?.source) {
+        return { external: { source: mod.source, fnName: prop.name } };
+      }
+      const local = resolve.memberToFn.get(key);
+      if (local) return local;
     }
   }
   return undefined;
@@ -277,8 +384,9 @@ function collectForwarders(
     }
     if (!call) return;
 
-    const target = resolveCalleeFn(call.callee as Record<string, unknown>, resolve);
-    if (!target || !knownFns.includes(target) || target === name) return;
+    const resolved = resolveCalleeFn(call.callee as Record<string, unknown>, resolve, knownFns);
+    if (!resolved || typeof resolved !== "string") return;
+    if (!knownFns.includes(resolved) || resolved === name) return;
 
     const args = (call.arguments as Array<Record<string, unknown>> | undefined) ?? [];
     if (args.length === 0) return;
@@ -290,7 +398,7 @@ function collectForwarders(
       if (idx < 0) return;
       map.push(idx);
     }
-    forwards.set(name, { target, map });
+    forwards.set(name, { target: resolved, map });
   };
 
   const visit = (n: unknown): void => {
@@ -333,15 +441,16 @@ function collectForwarders(
   return forwards;
 }
 
-/** 找 `name(literalArgs)` / `alias(lit)` / `obj.fn(lit)`，检查约束 */
+/** 找 `name(literalArgs)` / `alias(lit)` / `obj.fn(lit)` / require 导入，检查约束 */
 function scanLiteralCalls(
   source: string,
   knownFns: string[],
   phi: Phi,
+  opts?: { loadModule?: (spec: string, fromFile: string) => string | undefined; fromFile?: string },
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
   const file = parse(source);
-  const resolve = collectCallResolvers(source, knownFns);
+  const resolve = collectCallResolvers(source, knownFns, opts);
   const forwards = collectForwarders(source, knownFns, resolve);
 
   const checkReqs = (
@@ -389,12 +498,9 @@ function scanLiteralCalls(
     }
   };
 
-  const checkOneCall = (
-    fnName: string,
+  const parseLitArgs = (
     args: Array<Record<string, unknown>>,
-    loc?: { start: { line: number; column: number } },
-  ): void => {
-    if (!knownFns.includes(fnName)) return;
+  ): { absArgs: Abs[]; allLit: boolean } => {
     const absArgs: Abs[] = [];
     let allLit = true;
     for (const a of args ?? []) {
@@ -412,22 +518,29 @@ function scanLiteralCalls(
         absArgs.push(absUnknown());
       }
     }
+    return { absArgs, allLit };
+  };
+
+  const checkOneCall = (
+    fnName: string,
+    args: Array<Record<string, unknown>>,
+    loc?: { start: { line: number; column: number } },
+  ): void => {
+    if (!knownFns.includes(fnName)) return;
+    const { absArgs, allLit } = parseLitArgs(args);
     if (!allLit || absArgs.length === 0) return;
 
-    // 自身前置
     const ownReqs = extractParamReqsFromSource(source, fnName);
     const g = generalizeFromAst(fnName, source);
     const paramNames = g?.params ?? [];
     checkReqs(fnName, ownReqs, paramNames, absArgs, (i) => i, loc);
 
-    // 转发目标的前置（wrapper(a) → target(a)）
     const fwd = forwards.get(fnName);
     if (fwd) {
       const tReqs = extractParamReqsFromSource(source, fwd.target);
       if (tReqs.length > 0) {
         const tg = generalizeFromAst(fwd.target, source);
         const tParams = tg?.params ?? [];
-        // map[targetArgIdx] = wrapperArgIdx
         const wrapperArgOfTarget = new Map<number, number>();
         fwd.map.forEach((wrapperIdx, targetIdx) => {
           wrapperArgOfTarget.set(targetIdx, wrapperIdx);
@@ -444,6 +557,26 @@ function scanLiteralCalls(
     }
   };
 
+  const checkExternalCall = (
+    ext: { source: string; fnName: string },
+    args: Array<Record<string, unknown>>,
+    displayName: string,
+    loc?: { start: { line: number; column: number } },
+  ): void => {
+    const { absArgs, allLit } = parseLitArgs(args);
+    if (!allLit || absArgs.length === 0) return;
+    let reqs: Array<[number, Pred]> = [];
+    let paramNames: string[] = [];
+    try {
+      reqs = extractParamReqsFromSource(ext.source, ext.fnName);
+      const g = generalizeFromAst(ext.fnName, ext.source);
+      paramNames = g?.params ?? [];
+    } catch {
+      return;
+    }
+    checkReqs(displayName, reqs, paramNames, absArgs, (i) => i, loc);
+  };
+
   const visit = (n: unknown): void => {
     if (!n || typeof n !== "object") return;
     const obj = n as Record<string, unknown> & {
@@ -452,10 +585,13 @@ function scanLiteralCalls(
     };
     if (obj.type === "CallExpression") {
       const callee = obj.callee as Record<string, unknown>;
-      const args = obj.arguments as Array<Record<string, unknown>>;
-      const fnName = resolveCalleeFn(callee, resolve);
-      if (fnName) {
-        checkOneCall(fnName, args ?? [], obj.loc);
+      const args = (obj.arguments as Array<Record<string, unknown>>) ?? [];
+      const resolved = resolveCalleeFn(callee, resolve, knownFns);
+      if (typeof resolved === "string") {
+        checkOneCall(resolved, args, obj.loc);
+      } else if (resolved?.external) {
+        const name = resolved.external.fnName || "require()";
+        checkExternalCall(resolved.external, args, name, obj.loc);
       }
     }
     for (const key of Object.keys(obj)) {

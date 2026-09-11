@@ -48,6 +48,10 @@ issues
 - 对象属性：`const api = { fn }` / `{ key: fn }` → `api.fn(lit)`
 - 无条件转发：`function w(a){ return target(a); }` → `w(lit)` 用 target 前置
 - 有守卫的转发（clamp）不传播
+- **跨文件 require**（CLI check 已解析相对路径）：
+  - `const { fn } = require('./m.js'); fn(lit)`
+  - `const m = require('./m.js'); m.fn(lit)`
+  - `const fn = require('./m.js').fn; fn(lit)`
 
 ## 本地
 

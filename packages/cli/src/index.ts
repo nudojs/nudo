@@ -460,8 +460,29 @@ async function runCheck(file: string): Promise<void> {
   const source = readFileSync(filePath, "utf-8");
 
   // 代数门禁：约束蕴含（类型即计算）
-  const { checkSource, formatCheckReport } = await import("@nudojs/core");
-  const algebraReport = checkSource(filePath, source);
+  const { checkSource, formatCheckReport, pTrue } = await import("@nudojs/core");
+  const loadModule = (spec: string, fromFile: string): string | undefined => {
+    if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
+    try {
+      const base = dirname(resolve(fromFile));
+      let p = resolve(base, spec);
+      if (!p.endsWith(".js") && existsSync(`${p}.js`)) p = `${p}.js`;
+      if (!existsSync(p)) return undefined;
+      const st = statSync(p);
+      if (st.isDirectory()) {
+        const idx = join(p, "index.js");
+        if (!existsSync(idx)) return undefined;
+        return readFileSync(idx, "utf-8");
+      }
+      return readFileSync(p, "utf-8");
+    } catch {
+      return undefined;
+    }
+  };
+  const algebraReport = checkSource(filePath, source, pTrue, {
+    loadModule,
+    fromFile: filePath,
+  });
   console.log(formatCheckReport(algebraReport, { verbose: true }));
 
   // 外延评估器诊断：null/结构等语言表面
