@@ -84,7 +84,7 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): any {
     transform(code: string, id: string) {
       if (excludeMatch(id)) return null;
       if (!includeMatch(id)) return null;
-      if (!/@nudo:(case|mock|pure|skip|sample|returns|env|mock-module|as|replace)\b/.test(code)) return null;
+      if (!/@nudo:(case|mock|pure|skip|sample|env|mock-module|as|replace)\b/.test(code)) return null;
 
       try {
         const result = analyzeFile(id, code);

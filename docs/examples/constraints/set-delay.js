@@ -1,11 +1,11 @@
-// 唯一 requires 形态：@nudo:requires <param> <constraint>
-// 约束必须来自 .nudo.js 模板，不在 requires 里写 x > 0
+// 唯一 refine 形态：@nudo:refine <param> <constraint>
+// 约束必须来自 .nudo.js 模板，不在 refine 里写 x > 0
 // 运行：npx tsx packages/cli/src/index.ts check docs/examples/constraints/set-delay.js
 
 /// @nudo:import { delay, percent, positive } from "./delay.nudo.js"
 
 /**
- * @nudo:requires ms delay
+ * @nudo:refine ms delay
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -13,7 +13,7 @@ function setDelay(ms) {
 }
 
 /**
- * @nudo:requires n percent
+ * @nudo:refine n percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
@@ -21,7 +21,7 @@ function pct(n) {
 }
 
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   return x;

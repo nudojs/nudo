@@ -66,10 +66,10 @@ function safeSqrt(x) {
     const warnFn = vi.fn();
     const ctx = { warn: warnFn, error: errorFn };
 
+    // case 期望返回类型与推断不符 → error 级诊断
     const source = `
 /**
- * @nudo:case "test" (T.number)
- * @nudo:returns (T.string)
+ * @nudo:case "test" (1) => T.string
  */
 function identity(x) {
   return x;
@@ -81,14 +81,15 @@ function identity(x) {
 });
 
 describe("vite-plugin-nudo glob matching", () => {
-  // This source reliably produces an error diagnostic (see the failOnError test
-  // above), so `warn` being called proves the file was matched and analyzed.
+  // 稳定产出 warning（throw 路径），用来证明文件被分析过
   const directiveSource = `
 /**
- * @nudo:case "test" (T.number)
- * @nudo:returns (T.string)
+ * @nudo:case "negative" (-1)
  */
-function identity(x) {
+function safeSqrt(x) {
+  if (x < 0) {
+    throw new RangeError("negative input");
+  }
   return x;
 }
 `;

@@ -1,6 +1,6 @@
 /**
  * shape 约束金标：契约规范 object 形状，无需 interface/type。
- * 唯一 requires 形态：@nudo:requires <param> <shapeName>
+ * 唯一 requires 形态：@nudo:refine <param> <shapeName>
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
@@ -66,7 +66,7 @@ describe("check: object literal ⊭ shape", () => {
   it("ok: valid object", () => {
     const r = issuesOf(`
 /**
- * @nudo:requires u userShape
+ * @nudo:refine u userShape
  */
 function register(u) {
   return u.name;
@@ -80,7 +80,7 @@ register({ id: 1, name: "a" });
   it("error: field bound violated (id > 0)", () => {
     const r = issuesOf(`
 /**
- * @nudo:requires u userShape
+ * @nudo:refine u userShape
  */
 function register(u) {
   return u.name;
@@ -98,7 +98,7 @@ register({ id: -1, name: "a" });
     // body 不访问 name，仅契约声明要求该字段
     const r = issuesOf(`
 /**
- * @nudo:requires u userShape
+ * @nudo:refine u userShape
  */
 function register(u) {
   return u.id;
@@ -115,7 +115,7 @@ register({ id: 1 });
   it("error: field prim mismatch (name is number)", () => {
     const r = issuesOf(`
 /**
- * @nudo:requires u userShape
+ * @nudo:refine u userShape
  */
 function register(u) {
   return u.name;
@@ -131,7 +131,7 @@ register({ id: 1, name: 2 });
   it("ok: optional field omitted", () => {
     const r = issuesOf(`
 /**
- * @nudo:requires c configShape
+ * @nudo:refine c configShape
  */
 function setup(c) {
   return c.retries;
@@ -144,7 +144,7 @@ setup({ retries: 3 });
   it("error: optional field present but wrong type", () => {
     const r = issuesOf(`
 /**
- * @nudo:requires c configShape
+ * @nudo:refine c configShape
  */
 function setup(c) {
   return c.retries;
@@ -164,7 +164,7 @@ setup({ retries: 3, label: 9 });
   it("error: numeric upper bound on shape field", () => {
     const r = issuesOf(`
 /**
- * @nudo:requires c configShape
+ * @nudo:refine c configShape
  */
 function setup(c) {
   return c.retries;
@@ -180,7 +180,7 @@ setup({ retries: 99 });
   it("ok: unknown identifier arg (no false positive)", () => {
     const r = issuesOf(`
 /**
- * @nudo:requires u userShape
+ * @nudo:refine u userShape
  */
 function register(u) {
   return u.name;

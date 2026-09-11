@@ -153,7 +153,7 @@ export function checkSource(
       conf: g.symbolic.conf,
     });
 
-    // 后置：@nudo:return <constraint> —— 推断返回值 ⊭ 契约
+    // 后置：@nudo:refine return <constraint> —— 推断返回值 ⊭ 契约
     {
       const ret = extractReturnFromSource(source, name, {
         loadModule: opts.loadModule,
@@ -195,7 +195,7 @@ export function checkSource(
   });
   issues.push(...callIssues);
 
-  // case 是见证：@nudo:case 实参 ⊄ requires → inconsistency
+  // case 是见证：@nudo:case 实参 ⊄ refine → inconsistency
   issues.push(
     ...scanCaseInconsistency(source, names, {
       loadModule: opts.loadModule,
@@ -224,7 +224,7 @@ function absUnknown(): Abs {
 }
 
 /**
- * 后置契约：推断返回 Abs ⊭ @nudo:return 声明。
+ * 后置契约：推断返回 Abs ⊭ @nudo:refine return 声明。
  * 只在有确定信息时报（字面量界 / prim 类型 / shape 缺字段）。
  */
 function checkReturnConstraint(
@@ -242,7 +242,7 @@ function checkReturnConstraint(
     out.push({
       severity: "error",
       code: "nudo:constraint-violated",
-      message: `${fnName}: 返回值 ⊭ @nudo:return ${cName}`,
+      message: `${fnName}: 返回值 ⊭ @nudo:refine return ${cName}`,
       actual,
       expected,
       suggestion,
@@ -391,7 +391,7 @@ function scanStructuralAssign(source: string): CheckIssue[] {
 }
 
 /**
- * case 是契约的见证：`@nudo:case` 实参 ⊄ requires → nudo:case-inconsistency。
+ * case 是契约的见证：`@nudo:case` 实参 ⊄ refine → nudo:case-inconsistency。
  * 只检查字面量实参（数字/字符串/布尔/null）；非字面量跳过，不猜。
  */
 function scanCaseInconsistency(
@@ -502,7 +502,7 @@ function scanCaseInconsistency(
               message: `${fnName} case "${caseName}": 见证 ⊭ 契约`,
               actual: formatAbs(arg),
               expected: predToString(p),
-              suggestion: `改 case 实参，或放宽 ${paramName} 的 requires`,
+              suggestion: `改 case 实参，或放宽 ${paramName} 的 refine`,
               fn: fnName,
               line,
             });
@@ -1203,7 +1203,7 @@ function scanLiteralCalls(
     }
   };
 
-  /** 对带 shape 的 requires 做 object 字段检查 */
+  /** 对带 shape 的 refine 做 object 字段检查 */
   const checkShapeReqs = (
     displayName: string,
     reqs: Array<[number, RequiresEntry]>,

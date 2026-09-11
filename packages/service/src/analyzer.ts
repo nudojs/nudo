@@ -1101,7 +1101,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       code: "nudo:builtin-unknown",
       suggestions: [
         `Use @nudo:mock to define the type: @nudo:mock ${name} = stub().returns(...)`,
-        `Or use @nudo:returns to declare the expected return type`,
+        `Or use @nudo:refine return <constraint> to declare the return contract`,
       ],
     });
   });
@@ -1181,7 +1181,6 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   for (const fn of functions) {
     const isPure = fn.directives.some((d) => d.kind === "pure");
     const skipDirective = fn.directives.find((d) => d.kind === "skip");
-    const returnsDirective = fn.directives.find((d) => d.kind === "returns");
 
     const fnLoc = locFromNode(fn.node);
     const paramNames = extractParamNames(fn.node);
@@ -1265,7 +1264,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           diagnostics.push({
             range: throwRange,
             severity: "warning",
-            message: `Function "${fn.name}" case "${directive.name}" may throw: ${typeValueToString(fullResult.throws)}. Consider adding a try-catch block or using @nudo:returns to declare expected behavior`,
+            message: `Function "${fn.name}" case "${directive.name}" may throw: ${typeValueToString(fullResult.throws)}. Consider adding a try-catch block or using @nudo:refine return <constraint>`,
             code: "nudo-may-throw",
           });
         }
@@ -1287,28 +1286,6 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       analysis.combined = collapseLiteralUnion(simplifyUnion(analysis.cases.map((c) => c.result)), COLLAPSE_LITERAL_THRESHOLD);
     } else if (analysis.cases.length === 1) {
       analysis.combined = analysis.cases[0].result;
-    }
-
-    if (returnsDirective && returnsDirective.kind === "returns") {
-      analysis.assertionErrors = [];
-      for (const directive of caseDirectives) {
-        const result = evaluateFunction(fn.node, directive.args, globalEnv);
-        const matches = isSubtypeOf(result, returnsDirective.expected);
-        if (!matches) {
-          const msg = `@nudo:returns assertion failed for case "${directive.name}": expected ${typeValueToString(returnsDirective.expected)}, got ${typeValueToString(result)}. Update the @nudo:returns directive to match the inferred type, or fix the function implementation`;
-          analysis.assertionErrors.push(msg);
-          diagnostics.push({
-            range: fnLoc,
-            severity: "error",
-            message: msg,
-            code: "nudo-assertion-failed",
-            suggestions: [
-              "Update @nudo:returns to match the inferred type",
-              "Fix the function to return the expected type",
-            ],
-          });
-        }
-      }
     }
 
     functionResults.push(analysis);

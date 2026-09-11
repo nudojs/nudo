@@ -4,7 +4,7 @@
 /// @nudo:import { delay } from "../../constraints/delay.nudo.js"
 
 /**
- * @nudo:requires ms delay
+ * @nudo:refine ms delay
  */
 function setDelay(ms) {
   if (ms > 0) return ms;

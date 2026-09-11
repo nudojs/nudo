@@ -19,7 +19,7 @@ const golds: Gold[] = [
     name: "valid positive call",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -33,7 +33,7 @@ const r = needsPositive(5);
     name: "negative call violates x>0",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -107,7 +107,7 @@ export function main() { return new Counter(1).get(); }
     name: "zero violates x>0",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -122,7 +122,7 @@ needsPositive(0);
     name: "unary negative call",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -137,7 +137,7 @@ needsPositive(-3);
     name: "x>=1 rejects 0",
     source: `
 /**
- * @nudo:requires i atLeast1
+ * @nudo:refine i atLeast1
  */
 function idx(i) {
   if (i >= 1) return i;
@@ -152,7 +152,7 @@ idx(0);
     name: "upper bound x<10 rejects 10",
     source: `
 /**
- * @nudo:requires n small
+ * @nudo:refine n small
  */
 function small(n) {
   if (n < 10) return n;
@@ -211,7 +211,7 @@ needsPositive(1);
     name: "arrow function constraint",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 const needsPositive = (x) => {
   if (x > 0) return x;
@@ -226,7 +226,7 @@ needsPositive(-2);
     name: "export default function",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 export default function needsPositive(x) {
   if (x > 0) return x;
@@ -241,7 +241,7 @@ needsPositive(-1);
     name: "both bounds mid valid",
     source: `
 /**
- * @nudo:requires n percent
+ * @nudo:refine n percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
@@ -255,7 +255,7 @@ pct(50);
     name: "both bounds high invalid",
     source: `
 /**
- * @nudo:requires n percent
+ * @nudo:refine n percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;

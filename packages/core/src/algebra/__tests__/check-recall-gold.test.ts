@@ -33,7 +33,7 @@ const GOLD: Gold[] = [
     origin: "ms / setTimeout delay",
     source: `
 /**
- * @nudo:requires ms positive
+ * @nudo:refine ms positive
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -49,7 +49,7 @@ setDelay(100);
     origin: "ms / setTimeout delay",
     source: `
 /**
- * @nudo:requires ms positive
+ * @nudo:refine ms positive
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -65,7 +65,7 @@ setDelay(0);
     origin: "ms / setTimeout delay",
     source: `
 /**
- * @nudo:requires ms positive
+ * @nudo:refine ms positive
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -81,7 +81,7 @@ setDelay(-50);
     origin: "progress / opacity",
     source: `
 /**
- * @nudo:requires n percent
+ * @nudo:refine n percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
@@ -96,7 +96,7 @@ pct(50);
     origin: "progress / opacity",
     source: `
 /**
- * @nudo:requires n percent
+ * @nudo:refine n percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
@@ -112,7 +112,7 @@ pct(150);
     origin: "progress / opacity",
     source: `
 /**
- * @nudo:requires n percent
+ * @nudo:refine n percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
@@ -129,7 +129,7 @@ pct(-1);
     origin: "net / listen port",
     source: `
 /**
- * @nudo:requires port atLeast1 && port <= 65535
+ * @nudo:refine port atLeast1 && port <= 65535
  */
 function listen(port) {
   if (port >= 1 && port <= 65535) return port;
@@ -144,7 +144,7 @@ listen(8080);
     origin: "net / listen port",
     source: `
 /**
- * @nudo:requires port atLeast1 && port <= 65535
+ * @nudo:refine port atLeast1 && port <= 65535
  */
 function listen(port) {
   if (port >= 1 && port <= 65535) return port;
@@ -159,7 +159,7 @@ listen(0);
     origin: "array index",
     source: `
 /**
- * @nudo:requires i nonNeg
+ * @nudo:refine i nonNeg
  */
 function at(i) {
   if (i >= 0) return i;
@@ -174,7 +174,7 @@ at(3);
     origin: "array index",
     source: `
 /**
- * @nudo:requires i nonNeg
+ * @nudo:refine i nonNeg
  */
 function at(i) {
   if (i >= 0) return i;
@@ -218,7 +218,7 @@ clamp(99, 0, 10);
     origin: "buffer / pageSize",
     source: `
 /**
- * @nudo:requires n max100
+ * @nudo:refine n max100
  */
 function pageSize(n) {
   if (n <= 100) return n;
@@ -233,7 +233,7 @@ pageSize(20);
     origin: "buffer / pageSize",
     source: `
 /**
- * @nudo:requires n max100
+ * @nudo:refine n max100
  */
 function pageSize(n) {
   if (n <= 100) return n;
@@ -249,7 +249,7 @@ pageSize(1000);
     origin: "模块导出箭头",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 const needsPositive = (x) => {
   if (x > 0) return x;
@@ -264,7 +264,7 @@ needsPositive(-2);
     origin: "export default",
     source: `
 export default /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -311,7 +311,7 @@ onlyZero(5);
     origin: "内部转发",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -330,7 +330,7 @@ wrapper(3);
     origin: "内部转发",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -349,7 +349,7 @@ wrapper(-1);
     origin: "箭头转发",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -365,7 +365,7 @@ wrap(0);
     origin: "带守卫的转发",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -385,7 +385,7 @@ safeWrap(-1);
     origin: "内部转发",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -401,7 +401,7 @@ needsPositive(-3);
     origin: "obj.method(-1)",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -418,7 +418,7 @@ api.needsPositive(-1);
     origin: "{ key: fn }",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -434,7 +434,7 @@ api.check(-1);
     origin: "const f = fn; f(-1)",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -450,7 +450,7 @@ f(-1);
     origin: "const f = fn; f(5)",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -466,7 +466,7 @@ f(5);
     origin: "obj.method(5)",
     source: `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -597,7 +597,7 @@ needsPositive(-1);
       "./v.js": `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -618,7 +618,7 @@ needsPositive(5);
       "./v.js": `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -639,7 +639,7 @@ v.needsPositive(0);
       "./v.js": `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -660,7 +660,7 @@ needsPositive(-3);
       "./v.js": `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -681,7 +681,7 @@ needsPositive(-1);
       "./v.js": `
 export /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -701,7 +701,7 @@ np(0);
       "./v.js": `
 export /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -721,7 +721,7 @@ v.needsPositive(-2);
       "./v.js": `
 export /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -741,7 +741,7 @@ needsPositive(10);
       "./v.js": `
 export /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -764,7 +764,7 @@ main();
       "./v.js": `
 export /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -787,7 +787,7 @@ main();
       "./v.js": `
 export /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -808,7 +808,7 @@ needsPositive(-1);
       "./v.js": `
 export /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;

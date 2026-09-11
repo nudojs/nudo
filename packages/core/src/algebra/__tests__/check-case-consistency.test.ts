@@ -14,7 +14,7 @@ describe("case vs requires", () => {
   it("ok: case 实参满足契约", () => {
     const r = issuesOf(`
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  * @nudo:case "ok" (5)
  */
 function needsPositive(x) {
@@ -27,7 +27,7 @@ function needsPositive(x) {
   it("error: case 实参 ⊭ requires", () => {
     const r = issuesOf(`
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  * @nudo:case "neg" (-1)
  */
 function needsPositive(x) {
@@ -44,7 +44,7 @@ function needsPositive(x) {
   it("error: percent 上界违例", () => {
     const r = issuesOf(`
 /**
- * @nudo:requires n percent
+ * @nudo:refine n percent
  * @nudo:case "big" (150)
  */
 function pct(n) {

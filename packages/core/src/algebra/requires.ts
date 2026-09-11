@@ -1,14 +1,17 @@
 /**
- * 契约解析：唯一形态
+ * 精化契约解析：唯一形态
  *
- *   @nudo:requires <param> <constraint>   前置（调用点）
- *   @nudo:return <constraint>             后置（推断返回值）
+ *   @nudo:refine <param> <constraint>    参数精化（挂入口 Abs，参与运算）
+ *   @nudo:refine return <constraint>     返回精化（推断返回值 ⊭ 时红）
+ *
+ * 不叫 requires：那只是「校验挡板」。
+ * refine 表示约束是类型的一部分——Abs = shape × term × **pred** × conf，
+ * pred 会流入代数（x>0 ⇒ x+1>1），不只是调用点挡一下。
  *
  * constraint 来自 *.nudo.js 导出的模板（number().gt(0) 等），
  * 由 /// @nudo:import { delay } from "./delay.nudo.js" 引入。
- *
- * 不支持在 requires 里写 `x > 0`（绑死参数名）。
- * 不用 JSDoc 的 @param/@return：那是类型注解；这里是契约门禁。
+ * 不支持写 `x > 0`（绑死参数名）。
+ * 不用 JSDoc @param/@return：那是类型注解语法。
  */
 
 import type { Pred } from "./pred.ts";
@@ -41,7 +44,7 @@ export function extractNudoImports(source: string): NamedImport[] {
     out.push({ names, spec: m[2]! });
   }
   // 兼容 namespace（仍支持）
-  const ns = /@nudo:import\s+\*\s+as\s+(\w+)\s+from\s+["']([^"']+)["']/g;
+  const ns = /@nudo:import\s+\*\s+as\s+(\w+)\s+from\s*["']([^"']+)["']/g;
   while ((m = ns.exec(source))) {
     out.push({ names: [`*${m[1]}`], spec: m[2]! });
   }
@@ -94,8 +97,8 @@ function collectConstraints(
   return map;
 }
 
-/** 从源码抽函数上的 @nudo:requires 行 */
-function extractRequiresLines(source: string, fnName: string): string[] {
+/** 从源码抽函数上的 @nudo:refine 行 */
+function extractRefineLines(source: string, fnName: string): string[] {
   const fnRe = new RegExp(
     `(?:export\\s+default\\s+)?(?:function\\s+${fnName}\\b|const\\s+${fnName}\\s*=)`,
   );
@@ -108,7 +111,7 @@ function extractRequiresLines(source: string, fnName: string): string[] {
     const line = lines[i]!.trim();
     if (line === "" || line === "*/") continue;
     if (line.startsWith("*") || line.startsWith("/*") || line.startsWith("//")) {
-      const rm = line.match(/@nudo:requires\s+(.+)$/);
+      const rm = line.match(/@nudo:refine\s+(.+)$/);
       if (rm) reqs.unshift(rm[1]!.trim().replace(/\*\/$/, "").trim());
       continue;
     }
@@ -135,13 +138,14 @@ export function extractRequiresFromSource(
 ): RequiresEntry[] {
   const constraints = collectConstraints(source, opts);
   const out: RequiresEntry[] = [];
-  for (const line of extractRequiresLines(source, fnName)) {
-    // 支持 `ms delay && n percent` 或逗号
+  for (const line of extractRefineLines(source, fnName)) {
     const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);
     for (const part of parts) {
       const m = part.match(/^(\w+)\s+(\w+)$/);
       if (!m) continue;
       const [, param, cName] = m;
+      // return 是后置目标，不进参数精化
+      if (param === "return") continue;
       const c = constraints.get(cName!);
       if (!c) continue;
       out.push({
@@ -154,7 +158,7 @@ export function extractRequiresFromSource(
   return out;
 }
 
-/** 把 requires 映射到参数下标 */
+/** 把 refine 参数映射到下标 */
 export function requiresToIndexed(
   source: string,
   fnName: string,
@@ -170,7 +174,7 @@ export function requiresToIndexed(
   return out;
 }
 
-/** requires → 带约束模板的下标表（shape 检查用） */
+/** refine 参数 → 带约束模板的下标表（shape 检查用） */
 export function requiresToIndexedFull(
   source: string,
   fnName: string,
@@ -186,31 +190,8 @@ export function requiresToIndexedFull(
   return out;
 }
 
-/** 从源码抽函数上的 @nudo:return 行 */
-function extractReturnLines(source: string, fnName: string): string[] {
-  const fnRe = new RegExp(
-    `(?:export\\s+default\\s+)?(?:function\\s+${fnName}\\b|const\\s+${fnName}\\s*=)`,
-  );
-  const m = source.match(fnRe);
-  if (!m || m.index === undefined) return [];
-  const before = source.slice(0, m.index);
-  const lines = before.split("\n");
-  const rets: string[] = [];
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!.trim();
-    if (line === "" || line === "*/") continue;
-    if (line.startsWith("*") || line.startsWith("/*") || line.startsWith("//")) {
-      const rm = line.match(/@nudo:return\s+(\w+)\s*$/);
-      if (rm) rets.unshift(rm[1]!.trim());
-      continue;
-    }
-    break;
-  }
-  return rets;
-}
-
 /**
- * 解析 `@nudo:return positive` → 后置契约。
+ * 解析 `@nudo:refine return positive` → 返回精化。
  * 返回 undefined = 无声明（不猜后置）。
  */
 export function extractReturnFromSource(
@@ -218,11 +199,17 @@ export function extractReturnFromSource(
   fnName: string,
   opts: RequiresResolveOpts = {},
 ): { name: string; constraint: NudoConstraint } | undefined {
-  const lines = extractReturnLines(source, fnName);
-  if (lines.length === 0) return undefined;
   const constraints = collectConstraints(source, opts);
-  const cName = lines[lines.length - 1]!;
-  const c = constraints.get(cName);
-  if (!c) return undefined;
-  return { name: cName, constraint: c };
+  for (const line of extractRefineLines(source, fnName)) {
+    const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);
+    for (const part of parts) {
+      const m = part.match(/^return\s+(\w+)$/);
+      if (!m) continue;
+      const cName = m[1]!;
+      const c = constraints.get(cName);
+      if (!c) continue;
+      return { name: cName, constraint: c };
+    }
+  }
+  return undefined;
 }

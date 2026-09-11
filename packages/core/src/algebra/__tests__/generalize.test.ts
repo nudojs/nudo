@@ -85,11 +85,11 @@ describe("generalize", () => {
     expect(g.display).toContain("A1");
   });
 
-  it("attaches @nudo:requires to entry param Abs", () => {
+  it("attaches @nudo:refine to entry param Abs", () => {
     const src = `
 /// @nudo:import { positive } from "./x.nudo.js"
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function scale(x) { return x + 1; }
 function bare(x) { return x + 1; }

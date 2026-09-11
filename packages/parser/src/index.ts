@@ -11,7 +11,6 @@ export {
   type PureDirective,
   type SkipDirective,
   type SampleDirective,
-  type ReturnsDirective,
   type EnvDirective,
   type MockModuleDirective,
   type FunctionWithDirectives,

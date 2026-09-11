@@ -2,7 +2,7 @@
 
 | 场景 | Nudo | tsc --strict |
 |------|------|----------------|
-| **约束** `setDelay(0)` | **报** `constraint-violated`（`@nudo:requires ms delay`） | 不报（`number` 合法） |
+| **约束** `setDelay(0)` | **报** `constraint-violated`（`@nudo:refine ms delay`） | 不报（`number` 合法） |
 | **结构缺属性** `greet({id})` | **报** `arg-structure`（body 访问推出，无需 interface） | 报（需 `interface User`） |
 | **excess property** | ok（宽度子类型） | **报**（对象字面量） |
 | **赋值缺字段** | **报** `assign-mismatch` | 报（inferred 形状） |

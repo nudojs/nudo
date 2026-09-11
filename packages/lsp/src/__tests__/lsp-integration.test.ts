@@ -81,7 +81,6 @@ function first(arr) {
 }
 
 /**
- * @nudo:returns (T.string)
  * @nudo:case "num" (42)
  */
 function alwaysString(x) {
@@ -110,13 +109,6 @@ describe("LSP Integration - Full Pipeline", () => {
         expect(hint.line).toBeGreaterThan(0);
         expect(hint.label).toBeTruthy();
       }
-    });
-
-    it("generates diagnostics for assertion failures", () => {
-      const result = analyzeFile(filePath, testCode);
-      const assertionDiags = result.diagnostics.filter(d => d.code === "nudo-assertion-failed");
-      expect(assertionDiags.length).toBeGreaterThan(0);
-      expect(assertionDiags[0].message).toContain("inferred");
     });
   });
 

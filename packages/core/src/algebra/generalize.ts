@@ -35,7 +35,7 @@ export type PolyFn = {
   instantiate: (args: Abs[], phi?: Phi) => Abs;
   symbolic: Abs;
   display: string;
-  /** 入口契约（@nudo:requires），供签名/inlay 展示 */
+  /** 入口契约（@nudo:refine），供签名/inlay 展示 */
   entryReqs?: Array<{ param: string; pred: import("./pred.ts").Pred }>;
 };
 
@@ -98,7 +98,7 @@ export function generalizeFromAst(
   opts: {
     budget?: LeakBudget;
     label?: string;
-    /** 传入则把 @nudo:requires 挂到入口 param Abs */
+    /** 传入则把 @nudo:refine 挂到入口 param Abs */
     requires?: RequiresResolveOpts;
   } = {},
 ): PolyFn | undefined {

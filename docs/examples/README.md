@@ -4,7 +4,7 @@
 
 | 目录 | 场景 |
 |------|------|
-| [`constraints/`](./constraints/) | `@nudo:requires` × Pred：契约、`*.nudo.js` 模块、与代数融合 |
+| [`constraints/`](./constraints/) | `@nudo:refine` × Pred：契约、`*.nudo.js` 模块、与代数融合 |
 | [`structure/`](./structure/) | Abs `leq`：赋值 / 传参结构 |
 | [`vs-ts/`](./vs-ts/) | 与 TypeScript 同逻辑对照 |
 | [`mini-repo/`](./mini-repo/) | 多文件集成（ESM + class + async） |
@@ -20,8 +20,8 @@
 demo.js            绑定发生在 requires
   /// @nudo:import { delay, user } from "./delay.nudo.js"
   /**
-   * @nudo:requires ms delay
-   * @nudo:requires u user
+   * @nudo:refine ms delay
+   * @nudo:refine u user
    */
   function setDelay(ms) { ... }
   function register(u) { ... }
@@ -29,7 +29,7 @@ demo.js            绑定发生在 requires
 
 - `if` 分支 **不是** 契约  
 - 契约只来自 **声明**（`.nudo.js` 导出的模板）  
-- requires 形态唯一：`@nudo:requires <param> <constraint>`  
+- requires 形态唯一：`@nudo:refine <param> <constraint>`  
 - **object 形状用 `shape({...})`，无需 interface / type**  
 - 同一 Pred 喂 check 与代数  
 

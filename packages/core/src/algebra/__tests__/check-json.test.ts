@@ -5,7 +5,7 @@ import { withStdImport, stdOpts } from "./nudo-constraints.ts";
 describe("CheckJson contract v1", () => {
   const src = `
 /**
- * @nudo:requires x positive
+ * @nudo:refine x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;

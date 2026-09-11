@@ -24,7 +24,7 @@ npx tsx packages/cli/src/index.ts check path/to/file.js
 | `nudo:constraint-violated` | 调用实参 ⊭ 前置（标量界 / **shape 字段**） |
 | `nudo:assign-mismatch` | 赋值 ⊭ 原有形状（leqAbs） |
 | `nudo:arg-structure` | 实参结构 ⊭ body 访问的 slot |
-| `nudo:case-inconsistency` | **`@nudo:case` 见证 ⊭ requires 契约** |
+| `nudo:case-inconsistency` | **`@nudo:case` 见证 ⊭ refine 契约** |
 
 ```
 nudo check  src/validators.js
@@ -61,18 +61,19 @@ issues
 | 动态 import | `const { fn } = await import('./m')` |
 | barrel 一跳 | `export { fn } from './v.js'` 跟到定义 |
 
-## 什么是前置，什么不是
+## 什么是精化，什么不是
 
-前置 **只来自声明**，唯一形态 `@nudo:requires <param> <constraint>`；  
-后置用 `@nudo:return <constraint>`（推断返回值 ⊭ 声明时红）。
+精化 **只来自声明**，唯一形态 `@nudo:refine <param> <constraint>`；  
+返回精化用 `@nudo:refine return <constraint>`。
 
-不用 JSDoc `@param`/`@return`：那是类型注解；这里是契约门禁。
+不用 JSDoc `@param`/`@return`：那是类型注解。  
+不叫 requires：那只是「校验挡板」；refine 表示 Pred 进入 Abs，参与代数（x>0 ⇒ x+1>1）。
 
 ```js
 /// @nudo:import { delay, percent } from "./delay.nudo.js"
 
 /**
- * @nudo:requires ms delay
+ * @nudo:refine ms delay
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -95,7 +96,7 @@ export const user = shape({
 /// @nudo:import { user } from "./shapes.nudo.js"
 
 /**
- * @nudo:requires u user
+ * @nudo:refine u user
  */
 function register(u) {
   return `${u.id}:${u.name}`;
@@ -117,7 +118,7 @@ export const percent = number().ge(0).le(100);
 ```js
 // ✓ 双侧边界
 /**
- * @nudo:requires n percent
+ * @nudo:refine n percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
@@ -135,7 +136,7 @@ readXY({ x: 1 });   // error: missing slot y（nudo:arg-structure）
 const o = { x: 1 };
 readXY(o);          // error（标识符绑定表）
 
-// ✗ if 分支不是契约；无 requires 则不检查
+// ✗ if 分支不是精化；无 refine 则不检查
 function clamp(n, lo, hi) {
   if (n < lo) return lo;
   if (n > hi) return hi;

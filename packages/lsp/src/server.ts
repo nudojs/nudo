@@ -506,15 +506,6 @@ connection.onCodeAction((params) => {
         },
       });
     }
-
-    if (diag.code === "nudo-assertion-failed") {
-      actions.push({
-        title: "Update @nudo:returns to match inferred type",
-        kind: "quickfix",
-        diagnostics: [diag],
-        isPreferred: false,
-      });
-    }
   }
 
   return actions;

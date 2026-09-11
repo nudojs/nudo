@@ -73,21 +73,3 @@ describe("@nudo:sample directive", () => {
     }
   });
 });
-
-describe("@nudo:returns directive", () => {
-  it("parses @nudo:returns with type", () => {
-    const fns = getDirectives(`
-      /**
-       * @nudo:returns (T.number)
-       * @nudo:case "test" (1, 2)
-       */
-      function add(a, b) { return a + b; }
-    `);
-    expect(fns.length).toBe(1);
-    const returns = fns[0].directives.find((d) => d.kind === "returns");
-    expect(returns).toBeDefined();
-    if (returns && returns.kind === "returns") {
-      expect(returns.expected).toEqual(T.number);
-    }
-  });
-});
