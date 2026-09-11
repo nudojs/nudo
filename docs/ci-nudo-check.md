@@ -48,13 +48,15 @@ issues
 - 对象属性：`const api = { fn }` / `{ key: fn }` → `api.fn(lit)`
 - 无条件转发：`function w(a){ return target(a); }` → `w(lit)` 用 target 前置
 - 有守卫的转发（clamp）不传播
-- **跨文件 require / ESM import**（CLI check 已解析相对路径）：
+- **跨文件 require / ESM import / 动态 import**（CLI check 已解析相对路径）：
   - `const { fn } = require('./m.js'); fn(lit)`
   - `const m = require('./m.js'); m.fn(lit)`
-  - `const fn = require('./m.js').fn; fn(lit)`
   - `import { fn } from './m.js'; fn(lit)`
   - `import { fn as x } from './m.js'; x(lit)`
   - `import * as ns from './m.js'; ns.fn(lit)`
+  - `const { fn } = await import('./m.js'); fn(lit)`
+  - `const ns = await import('./m.js'); ns.fn(lit)`
+- **re-export 一跳**：`export { fn } from './v.js'` 的 barrel 会跟到定义文件取前置
 
 ## 本地
 

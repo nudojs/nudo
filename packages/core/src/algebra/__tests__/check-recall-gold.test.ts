@@ -549,6 +549,62 @@ export function needsPositive(x) {
     },
     expect: "ok",
   },
+  {
+    id: "dynamic-import-destructure-violates",
+    source: `
+async function main() {
+  const { needsPositive } = await import("./v.js");
+  needsPositive(-1);
+}
+main();
+`,
+    modules: {
+      "./v.js": `
+export function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+`,
+    },
+    expect: "violation",
+  },
+  {
+    id: "dynamic-import-ns-member-violates",
+    source: `
+async function main() {
+  const v = await import("./v.js");
+  v.needsPositive(0);
+}
+main();
+`,
+    modules: {
+      "./v.js": `
+export function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+`,
+    },
+    expect: "violation",
+  },
+  {
+    id: "reexport-hop-violates",
+    source: `
+import { needsPositive } from "./barrel.js";
+needsPositive(-1);
+`,
+    modules: {
+      "./barrel.js": `export { needsPositive } from "./v.js";\n`,
+      "./v.js": `
+export function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+`,
+    },
+    expect: "violation",
+    note: "barrel 只 re-export，约束在 v.js",
+  },
 ];
 
 function run(g: Gold): CheckReport {

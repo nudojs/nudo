@@ -220,6 +220,64 @@ function requireExportName(init: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
+/** `await import('./m')` / `import('./m')` → spec */
+function dynamicImportSpec(node: Record<string, unknown>): string | undefined {
+  let n: Record<string, unknown> | undefined = node;
+  if (n?.type === "AwaitExpression") {
+    n = n.argument as Record<string, unknown> | undefined;
+  }
+  if (n?.type !== "CallExpression") return undefined;
+  const callee = n.callee as { type?: string } | undefined;
+  // Babel: dynamic import callee.type === "Import"
+  if (callee?.type !== "Import") return undefined;
+  const args = n.arguments as Array<{ type?: string; value?: unknown }> | undefined;
+  if (args?.[0]?.type === "StringLiteral") return String(args[0].value);
+  return undefined;
+}
+
+/**
+ * 模块源码里找不到 fnName 时，沿 `export { fn } from './other'` / `export * from` 一跳跟进。
+ * 返回定义了该函数的源码。
+ */
+function resolveExportSource(
+  modSrc: string,
+  fnName: string,
+  loadSpec: (spec: string) => string | undefined,
+  depth = 0,
+): string {
+  if (depth > 3) return modSrc;
+  try {
+    if (listTopFunctions(modSrc).includes(fnName)) return modSrc;
+  } catch {
+    return modSrc;
+  }
+  const file = parse(modSrc);
+  let nextSpec: string | undefined;
+  for (const stmt of file.program.body) {
+    if (stmt.type !== "ExportNamedDeclaration" && stmt.type !== "ExportAllDeclaration") continue;
+    const src = (stmt as { source?: { type?: string; value?: unknown } }).source;
+    if (src?.type !== "StringLiteral" || typeof src.value !== "string") continue;
+    if (stmt.type === "ExportAllDeclaration") {
+      nextSpec = String(src.value);
+      break;
+    }
+    const clause = (stmt as { specifiers?: Array<Record<string, unknown>> }).specifiers ?? [];
+    for (const sp of clause) {
+      if (sp.type !== "ExportSpecifier") continue;
+      const local = sp.local as { type?: string; name?: string } | undefined;
+      if (local?.type === "Identifier" && local.name === fnName) {
+        nextSpec = String(src.value);
+        break;
+      }
+    }
+    if (nextSpec) break;
+  }
+  if (!nextSpec) return modSrc;
+  const next = loadSpec(nextSpec);
+  if (!next) return modSrc;
+  return resolveExportSource(next, fnName, loadSpec, depth + 1);
+}
+
 function collectCallResolvers(
   source: string,
   knownFns: string[],
@@ -237,6 +295,12 @@ function collectCallResolvers(
     if (!load) return undefined;
     if (!modCache.has(spec)) modCache.set(spec, load(spec, fromFile));
     return modCache.get(spec);
+  };
+  const bindExternal = (local: string, modSrc: string, fnName: string): void => {
+    externalFn.set(local, {
+      source: resolveExportSource(modSrc, fnName, loadSpec),
+      fnName,
+    });
   };
 
   const visit = (n: unknown): void => {
@@ -260,7 +324,7 @@ function collectCallResolvers(
                     ? String(imported.value)
                     : undefined;
               if (exportName && local?.name) {
-                externalFn.set(local.name, { source: modSrc, fnName: exportName });
+                bindExternal(local.name, modSrc, exportName);
               }
             } else if (sp.type === "ImportNamespaceSpecifier") {
               const local = sp.local as { type?: string; name?: string } | undefined;
@@ -280,6 +344,25 @@ function collectCallResolvers(
         const init = d.init as Record<string, unknown> | null | undefined;
         if (!id || !init) continue;
 
+        // 动态 import：const m = await import('./x') / const { fn } = await import('./x')
+        const dynSpec = dynamicImportSpec(init);
+        if (dynSpec) {
+          const modSrc = loadSpec(dynSpec);
+          if (modSrc && id.type === "ObjectPattern") {
+            for (const p of id.properties ?? []) {
+              const key = p.key as { type?: string; name?: string; value?: unknown } | undefined;
+              const val = p.value as { type?: string; name?: string } | undefined;
+              const exported =
+                key?.type === "Identifier" ? key.name : key?.type === "StringLiteral" ? String(key.value) : undefined;
+              const local = val?.type === "Identifier" ? val.name : exported;
+              if (exported && local) bindExternal(local, modSrc, exported);
+            }
+          }
+          if (modSrc && id.type === "Identifier" && id.name) {
+            externalMember.set(`${id.name}.__module__`, { source: modSrc, fnName: "" });
+          }
+        }
+
         // require 导入
         const spec = requireSpecOf(init);
         if (spec) {
@@ -293,7 +376,7 @@ function collectCallResolvers(
                 key?.type === "Identifier" ? key.name : key?.type === "StringLiteral" ? String(key.value) : undefined;
               const local = val?.type === "Identifier" ? val.name : exported;
               if (exported && local) {
-                externalFn.set(local, { source: modSrc, fnName: exported });
+                bindExternal(local, modSrc, exported);
               }
             }
           }
@@ -301,10 +384,8 @@ function collectCallResolvers(
           if (id.type === "Identifier" && id.name && modSrc) {
             const exportName = requireExportName(init);
             if (exportName) {
-              externalFn.set(id.name, { source: modSrc, fnName: exportName });
+              bindExternal(id.name, modSrc, exportName);
             } else {
-              // 整模块：属性解析延迟到 member 调用时用 mod 源码
-              // 记为 pending module object
               externalMember.set(`${id.name}.__module__`, { source: modSrc, fnName: "" });
             }
           }
