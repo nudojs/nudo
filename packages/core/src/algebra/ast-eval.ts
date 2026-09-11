@@ -641,7 +641,10 @@ export function evalNode(
       if (els.length === 0) {
         return ok(abs({ k: "arr", element: unknown }, undefined, undefined, "exact"), phi, env);
       }
-      // 小数组 → tuple 形态用 obj 模拟（Phase A 用 sum of elements as arr with join elem）
+      // 小数组字面量 → tuple（保逐元素精确，map/reduce 可展开）
+      if (els.length <= 8) {
+        return ok(abs({ k: "tuple", elements: els }, undefined, undefined, "exact"), phi, env);
+      }
       const elem = els.reduce((x, y) => joinAbs(x, y));
       return ok(abs({ k: "arr", element: elem }, undefined, undefined, "path"), phi, env);
     }
@@ -847,12 +850,21 @@ function evalCall(
 
       if (method === "map" && rawArgs.length >= 1) {
         const fnNode = rawArgs[0]!;
+        // tuple：逐元素 map，保精确
+        if (obj.shape.k === "tuple") {
+          const mapped = obj.shape.elements.map((el) =>
+            applyUnaryCallback(fnNode, el, env, phi, budget),
+          );
+          return ok(
+            abs({ k: "tuple", elements: mapped }, undefined, undefined, confJoin(obj.conf, "path")),
+            phi,
+            env,
+          );
+        }
         const elem =
           obj.shape.k === "arr"
             ? (obj.shape as { element: Abs }).element
-            : obj.shape.k === "tuple"
-              ? (obj.shape as { elements: Abs[] }).elements.reduce((x, y) => joinAbs(x, y), unknown)
-              : unknown;
+            : unknown;
         const out = applyUnaryCallback(fnNode, elem, env, phi, budget);
         return ok(
           abs({ k: "arr", element: out }, undefined, undefined, confJoin(obj.conf, out.conf)),
@@ -863,15 +875,18 @@ function evalCall(
 
       if (method === "reduce" && rawArgs.length >= 2) {
         const fnNode = rawArgs[0]!;
-        const init = evalNode(rawArgs[1]!, env, phi, budget).value;
+        let acc = evalNode(rawArgs[1]!, env, phi, budget).value;
+        if (obj.shape.k === "tuple") {
+          for (const el of obj.shape.elements) {
+            acc = applyBinaryCallback(fnNode, acc, el, env, phi, budget);
+          }
+          return ok(acc, phi, env);
+        }
         const item =
           obj.shape.k === "arr"
             ? (obj.shape as { element: Abs }).element
-            : obj.shape.k === "tuple"
-              ? (obj.shape as { elements: Abs[] }).elements.reduce((x, y) => joinAbs(x, y), unknown)
-              : unknown;
+            : unknown;
         // 不动点
-        let acc = init;
         for (let i = 0; i < 6; i++) {
           const next = applyBinaryCallback(fnNode, acc, item, env, phi, budget);
           if (absIdentical(acc, next)) {
@@ -883,7 +898,27 @@ function evalCall(
       }
 
       if (method === "filter" && rawArgs.length >= 1) {
-        // filter 保持元素类型
+        const fnNode = rawArgs[0]!;
+        if (obj.shape.k === "tuple") {
+          const kept: Abs[] = [];
+          for (const el of obj.shape.elements) {
+            const p = applyUnaryCallback(fnNode, el, env, phi, budget);
+            const lv = litValue(p);
+            if (lv === false) continue;
+            kept.push(el);
+          }
+          if (kept.length === 0) {
+            return ok(abs({ k: "arr", element: unknown }, undefined, undefined, "path"), phi, env);
+          }
+          if (kept.length === 1) return ok(kept[0]!, phi, env);
+          // 多元素：tuple（保精确）或 join 成 arr
+          return ok(
+            abs({ k: "tuple", elements: kept }, undefined, undefined, confJoin(obj.conf, "path")),
+            phi,
+            env,
+          );
+        }
+        // arr：filter 保持元素类型
         return ok(obj, phi, env);
       }
     }
@@ -952,7 +987,7 @@ function applyAbsFn(
   return result.value;
 }
 
-/** 把 (x) => body 用给定实参求值一次 */
+/** 把 (x) => body 或命名函数用给定实参求值一次 */
 function applyUnaryCallback(
   fnNode: Node,
   arg: Abs,
@@ -960,6 +995,17 @@ function applyUnaryCallback(
   phi: Phi,
   budget: LeakBudget,
 ): Abs {
+  if (fnNode.type === "Identifier") {
+    const name = (fnNode as Identifier).name;
+    const bound = env.vars.get(name);
+    if (bound && getFnImpl(bound)) {
+      return applyAbsFn(bound, [arg], env, phi, budget);
+    }
+    if (env.fns.has(name)) {
+      return callFunction(env, name, [arg], phi, budget);
+    }
+    return unknown;
+  }
   const { params, body } = extractCallback(fnNode);
   if (!params || !body) return unknown;
   let local: AstEnv = { vars: new Map(env.vars), fns: env.fns };
@@ -975,6 +1021,17 @@ function applyBinaryCallback(
   phi: Phi,
   budget: LeakBudget,
 ): Abs {
+  if (fnNode.type === "Identifier") {
+    const name = (fnNode as Identifier).name;
+    const bound = env.vars.get(name);
+    if (bound && getFnImpl(bound)) {
+      return applyAbsFn(bound, [a, b], env, phi, budget);
+    }
+    if (env.fns.has(name)) {
+      return callFunction(env, name, [a, b], phi, budget);
+    }
+    return unknown;
+  }
   const { params, body } = extractCallback(fnNode);
   if (!params || params.length < 2 || !body) return unknown;
   let local: AstEnv = { vars: new Map(env.vars), fns: env.fns };
@@ -1276,13 +1333,28 @@ export function analyzeFn(
 /**
  * 程序级 Abs 求值：注册全部顶层函数/class，再顺序执行语句。
  * 返回最终 env（vars 含导出绑定）。TypeValue 仅在调用方 bridge 时出现。
+ *
+ * seedVars / seedFns：host 注入（@nudo:mock 等）在求值前绑定。
  */
 export function evalProgramAbs(
   source: string,
-  opts: EvalOptions = {},
+  opts: EvalOptions & {
+    seedVars?: Record<string, Abs>;
+    seedFns?: Record<string, { params: string[]; body: Node; async?: boolean }>;
+  } = {},
 ): { env: AstEnv; last: Abs; phi: Phi } {
   const file = parseSource(source);
   const env = emptyEnv();
+  if (opts.seedVars) {
+    for (const [k, v] of Object.entries(opts.seedVars)) {
+      env.vars.set(k, v);
+    }
+  }
+  if (opts.seedFns) {
+    for (const [k, fn] of Object.entries(opts.seedFns)) {
+      env.fns.set(k, fn);
+    }
+  }
   let phi = opts.phi ?? pTrue;
   let last: Abs = unknown;
   const budget = opts.budget ?? defaultLeakBudget;

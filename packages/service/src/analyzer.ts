@@ -58,6 +58,7 @@ import {
   findProjectConfig,
   resolveNpmNudo,
 } from "@nudojs/cli/evaluator";
+import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
 
 export type SourceLocation = {
   start: { line: number; column: number };
@@ -1137,15 +1138,12 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     applyMocks(fn.directives, globalEnv, filePath, diagnostics);
   }
 
-  // @nudo:mock 影响求值语义，Abs 路径未接入 mock 绑定——此类文件保留 TypeValue 调用记录
-  const hasFnMocks = functions.some((f) =>
-    f.directives.some((d) => d.kind === "mock"),
-  );
-  const selfContained =
-    isSelfContainedSource(source, envNames, mocks.size > 0) && !hasFnMocks;
+  // @nudo:mock 已编译为 Abs seed；import/env 才强制 TypeValue 路径
+  const selfContained = isSelfContainedSource(source, envNames, mocks.size > 0);
   let absCallRecords: CallRecord[] = [];
   if (selfContained) {
-    absCallRecords = collectAbsCallRecords(source);
+    const seeds = mockDirectivesToAbsSeeds(functions);
+    absCallRecords = collectAbsCallRecords(source, seeds);
   }
 
   evaluateProgram(ast, globalEnv);
@@ -2121,11 +2119,14 @@ function isSelfContainedSource(
  * 投影为 CallRecord 供 call@ 合成。TypeValue evaluator 仍跑一遍
  * 以填充 bindings / nodeTypeMap（LSP/hover 消费）。
  */
-function collectAbsCallRecords(source: string): CallRecord[] {
+function collectAbsCallRecords(
+  source: string,
+  seeds?: { seedVars?: Record<string, Abs>; seedFns?: Record<string, { params: string[]; body: Node; async?: boolean }> },
+): CallRecord[] {
   const absCalls: AbsCallRecord[] = [];
   setAbsCallCollector((r) => absCalls.push(r));
   try {
-    evalProgramAbs(source);
+    evalProgramAbs(source, seeds ?? {});
   } catch {
     // 自包含求值失败：交还 TypeValue 路径
   } finally {
