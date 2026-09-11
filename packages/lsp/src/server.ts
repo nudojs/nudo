@@ -47,6 +47,7 @@ import {
   whatIf,
   checkTool,
   hoverTool,
+  inferTool,
   type AgentToolDeps,
   type AgentToolResult,
 } from "./agent-tools.ts";
@@ -57,6 +58,7 @@ const NUDO_COMMANDS = [
   "nudo.trace",
   "nudo.check",
   "nudo.hover",
+  "nudo.infer",
   "nudo.selectCase",
   "nudo.getActiveCases",
 ] as const;
@@ -664,6 +666,8 @@ function dispatchNudoCommand(command: string, arg: Record<string, unknown>) {
       return checkTool(arg as Parameters<typeof checkTool>[0], agentToolDeps);
     case "nudo.hover":
       return hoverTool(arg as Parameters<typeof hoverTool>[0], agentToolDeps);
+    case "nudo.infer":
+      return inferTool(arg as Parameters<typeof inferTool>[0], agentToolDeps);
     case "nudo.selectCase":
       return handleSelectCase(arg as Parameters<typeof handleSelectCase>[0]);
     case "nudo.getActiveCases":
@@ -691,6 +695,7 @@ connection.onRequest("nudo/suggestCase", (params: Record<string, unknown>) => di
 connection.onRequest("nudo/trace", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.trace", params));
 connection.onRequest("nudo/check", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.check", params));
 connection.onRequest("nudo/hover", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.hover", params));
+connection.onRequest("nudo/infer", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.infer", params));
 
 connection.languages.diagnostics.on((params) => {
   const document = documents.get(params.textDocument.uri);

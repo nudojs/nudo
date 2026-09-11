@@ -148,9 +148,11 @@ npx tsx packages/cli/src/index.ts check file.js --json
 | LSP command | `nudo.check`（`{ file, source?, format? }`） |
 | LSP request | `nudo/check` |
 | Hover Abs | `nudo.hover` / `nudo/hover`（`{ file, line, column, includeInlays? }`） |
+| Infer Abs | `nudo.infer` / `nudo/infer`（`{ file, source?, format?, functions? }`）→ InferJson v1 |
 
-`format: "json"` 只返回 CheckJson；缺省为人类摘要 + JSON。  
-`nudo.hover` 返回无损 `abs` / `absMultiline` / `intension`，`ext` 仅作对照。
+`format: "json"` 只返回 CheckJson / InferJson；缺省为人类摘要 + JSON。  
+`nudo.hover` 返回无损 `abs` / `absMultiline` / `intension`，`ext` 仅作对照。  
+`nudo.infer` 与 CLI `infer --json` 同构；`functions: ["scale"]` 可过滤。
 
 ## 实现入口
 

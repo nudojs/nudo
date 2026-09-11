@@ -14,7 +14,13 @@
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { analyzeFile, buildCaseDirective, getHoverAtPosition, collectAbsInlays } from "@nudojs/service";
+import {
+  analyzeFile,
+  buildCaseDirective,
+  getHoverAtPosition,
+  collectAbsInlays,
+  serializeInferJson,
+} from "@nudojs/service";
 import { parse } from "@nudojs/parser";
 import { T, typeValueToString, checkSource, serializeCheckJson, pTrue } from "@nudojs/core";
 import type { TypeValue, CheckJson } from "@nudojs/core";
@@ -285,6 +291,64 @@ export function hoverTool(
       payload.inlays = collectAbsInlays(source);
     }
     return textResult(JSON.stringify(payload, null, 2));
+  } catch (err) {
+    return analysisError(err);
+  }
+}
+
+export type InferToolParams = {
+  file: string;
+  source?: string;
+  /** "json" → InferJson only；缺省摘要 + JSON */
+  format?: "text" | "json";
+  /** 只返回这些函数名（可选过滤） */
+  functions?: string[];
+};
+
+/**
+ * Agent infer：InferJson v1 契约（与 CLI infer --json 同构）。
+ * intension 携带无损 Abs；args/result 为 TypeValue 投影。
+ */
+export function inferTool(
+  params: InferToolParams,
+  deps: AgentToolDeps = {},
+): AgentToolResult {
+  try {
+    const filePath = normalizeFilePath(params.file);
+    const source = params.source ?? readSource(filePath, deps);
+    const result = analyzeFile(filePath, source);
+    let json = serializeInferJson(result, filePath);
+    if (params.functions && params.functions.length > 0) {
+      const keep = new Set(params.functions);
+      json = {
+        ...json,
+        functions: json.functions.filter((f) => keep.has(f.name)),
+        summary: {
+          ...json.summary,
+          functions: json.functions.filter((f) => keep.has(f.name)).length,
+        },
+      };
+    }
+    if (params.format === "json") {
+      return textResult(JSON.stringify(json, null, 2));
+    }
+    const lines: string[] = [
+      `nudo infer  ${json.file}`,
+      `${json.summary.functions} fn · ${json.summary.cases} case · ${json.summary.diagnostics} diag`,
+    ];
+    for (const f of json.functions) {
+      lines.push("");
+      lines.push(`${f.name}${f.entryOnly ? "  [entry-only]" : ""}`);
+      for (const c of f.cases) {
+        const args = c.args.join(", ");
+        lines.push(`  ${c.name}: (${args}) => ${c.result}`);
+        if (c.intension?.abs) lines.push(`    abs: ${c.intension.abs}`);
+        else if (c.intension?.display) lines.push(`    intension: ${c.intension.display}`);
+      }
+    }
+    lines.push("");
+    lines.push(JSON.stringify(json, null, 2));
+    return textResult(lines.join("\n"));
   } catch (err) {
     return analysisError(err);
   }
