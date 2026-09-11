@@ -261,7 +261,7 @@ function resolveExportSource(
       nextSpec = String(src.value);
       break;
     }
-    const clause = (stmt as { specifiers?: Array<Record<string, unknown>> }).specifiers ?? [];
+    const clause = ((stmt as { specifiers?: unknown[] }).specifiers ?? []) as Array<Record<string, unknown>>;
     for (const sp of clause) {
       if (sp.type !== "ExportSpecifier") continue;
       const local = sp.local as { type?: string; name?: string } | undefined;
