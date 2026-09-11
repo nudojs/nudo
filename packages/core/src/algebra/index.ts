@@ -9,6 +9,7 @@ export * from "./builtins.ts";
 export * from "./methods.ts";
 export * from "./leak.ts";
 export * from "./objects.ts";
+export * from "./leq.ts";
 // eval.ts 仅服务示例/差分；joinAbs 以 objects 为准
 export {
   evalExpr,

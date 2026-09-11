@@ -159,6 +159,7 @@ npx tsx packages/cli/src/index.ts check file.js --json
 | 层 | 位置 |
 |---|---|
 | 门禁核心 | `packages/core/src/algebra/check.ts` |
+| 结构可赋值 | `packages/core/src/algebra/leq.ts`（`leqAbs`） |
 | 金标 | `packages/core/src/algebra/__tests__/check-recall-gold.test.ts` |
 | CI 用法 | `docs/ci-nudo-check.md` |
 | CLI | `nudo check` |
