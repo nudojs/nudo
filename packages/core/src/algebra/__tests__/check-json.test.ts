@@ -3,6 +3,9 @@ import { checkSource, serializeCheckJson, pTrue } from "../index.ts";
 
 describe("CheckJson contract v1", () => {
   const src = `
+/**
+ * @nudo:requires x > 0
+ */
 function needsPositive(x) {
   if (x > 0) return x;
   return 0;

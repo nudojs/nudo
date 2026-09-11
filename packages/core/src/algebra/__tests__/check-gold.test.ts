@@ -17,6 +17,9 @@ const golds: Gold[] = [
   {
     name: "valid positive call",
     source: `
+/**
+ * @nudo:requires x > 0
+ */
 function needsPositive(x) {
   if (x > 0) return x;
   return 0;
@@ -28,6 +31,9 @@ const r = needsPositive(5);
   {
     name: "negative call violates x>0",
     source: `
+/**
+ * @nudo:requires x > 0
+ */
 function needsPositive(x) {
   if (x > 0) return x;
   return 0;
@@ -99,6 +105,9 @@ export function main() { return new Counter(1).get(); }
   {
     name: "zero violates x>0",
     source: `
+/**
+ * @nudo:requires x > 0
+ */
 function needsPositive(x) {
   if (x > 0) return x;
   return 0;
@@ -111,6 +120,9 @@ needsPositive(0);
   {
     name: "unary negative call",
     source: `
+/**
+ * @nudo:requires x > 0
+ */
 function needsPositive(x) {
   if (x > 0) return x;
   return 0;
@@ -123,6 +135,9 @@ needsPositive(-3);
   {
     name: "x>=1 rejects 0",
     source: `
+/**
+ * @nudo:requires i >= 1
+ */
 function idx(i) {
   if (i >= 1) return i;
   return 1;
@@ -135,6 +150,9 @@ idx(0);
   {
     name: "upper bound x<10 rejects 10",
     source: `
+/**
+ * @nudo:requires n < 10
+ */
 function small(n) {
   if (n < 10) return n;
   return 9;
@@ -191,6 +209,9 @@ needsPositive(1);
   {
     name: "arrow function constraint",
     source: `
+/**
+ * @nudo:requires x > 0
+ */
 const needsPositive = (x) => {
   if (x > 0) return x;
   return 0;
@@ -203,6 +224,9 @@ needsPositive(-2);
   {
     name: "export default function",
     source: `
+/**
+ * @nudo:requires x > 0
+ */
 export default function needsPositive(x) {
   if (x > 0) return x;
   return 0;
@@ -215,6 +239,9 @@ needsPositive(-1);
   {
     name: "both bounds mid valid",
     source: `
+/**
+ * @nudo:requires n >= 0 && n <= 100
+ */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
   return 0;
@@ -226,13 +253,15 @@ pct(50);
   {
     name: "both bounds high invalid",
     source: `
+/**
+ * @nudo:requires n >= 0 && n <= 100
+ */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
   return 0;
 }
 pct(150);
 `,
-    // 目前 extractParamReqs 可能只取到一侧；若未报则记为 known gap
     expectOk: false,
     expectCode: "nudo:constraint-violated",
   },

@@ -30,8 +30,11 @@ describe("mini-repo check gold", () => {
   });
 
   it("inline violating snippet still caught (TP recall)", () => {
-    // isPositive 是谓词（无 if-return-param 前置）；真正门禁用 needsPositive
+    // isPositive 是谓词（无 if-return-param 前置）；真正门禁用 requires
     const src = `
+/**
+ * @nudo:requires x > 0
+ */
 function needsPositive(x) {
   if (x > 0) return x;
   return 0;

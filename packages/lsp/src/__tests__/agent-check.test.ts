@@ -3,6 +3,9 @@ import { checkTool } from "../agent-tools.ts";
 
 describe("nudo.check agent tool", () => {
   const src = `
+/**
+ * @nudo:requires x > 0
+ */
 function needsPositive(x) {
   if (x > 0) return x;
   return 0;

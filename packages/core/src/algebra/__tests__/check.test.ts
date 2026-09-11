@@ -3,8 +3,11 @@ import { checkSource, formatCheckReport } from "../index.ts";
 
 describe("nudo check gate", () => {
   it("literal call violating constraint is error", () => {
-    // needsPositive 要求 x>0；调用 -1 应报错
+    // @nudo:requires 声明契约；调用 -1 应报错
     const src = `
+/**
+ * @nudo:requires x > 0
+ */
 function needsPositive(x) {
   if (x > 0) return x;
   return 0;
@@ -20,6 +23,9 @@ const r = needsPositive(-1);
 
   it("valid literal call is ok", () => {
     const src = `
+/**
+ * @nudo:requires x > 0
+ */
 function needsPositive(x) {
   if (x > 0) return x;
   return 0;
@@ -42,7 +48,15 @@ function scale(x) { return add(x, 1); }
   });
 
   it("formatCheckReport is Nudo-native (signatures + issues)", () => {
-    const bad = checkSource("t.js", `function f(x){ if (x>0) return x; return 0; }\nf(-1);\n`);
+    const bad = checkSource(
+      "t.js",
+      `/**
+ * @nudo:requires x > 0
+ */
+function f(x){ if (x>0) return x; return 0; }
+f(-1);
+`,
+    );
     const text = formatCheckReport(bad);
     expect(text).toContain("FAILED");
     expect(text).toContain("signatures");

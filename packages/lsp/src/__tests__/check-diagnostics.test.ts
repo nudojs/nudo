@@ -4,6 +4,9 @@ import { clearValidationState, checkToLspDiagnostics, validateText } from "../va
 describe("Abs check as LSP diagnostics", () => {
   it("maps constraint violations to nudo-check diagnostics", () => {
     const src = `
+/**
+ * @nudo:requires x > 0
+ */
 function needsPositive(x) {
   if (x > 0) return x;
   return 0;
@@ -22,6 +25,9 @@ needsPositive(-1);
   it("validateText publishes check diags first", async () => {
     clearValidationState();
     const src = `
+/**
+ * @nudo:requires x > 0
+ */
 function needsPositive(x) {
   if (x > 0) return x;
   return 0;

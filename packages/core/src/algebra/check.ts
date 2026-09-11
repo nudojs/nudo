@@ -19,6 +19,7 @@ import {
 } from "./ast-eval.ts";
 import { defaultLeakBudget } from "./leak.ts";
 import { leqAbs } from "./leq.ts";
+import { requiresToIndexed, compileRequiresExpr } from "./requires.ts";
 import { generalizeFromAst } from "./generalize.ts";
 import { numLit, unknown, abs as makeAbs } from "./abs.ts";
 import type { Abs, Confidence } from "./abs.ts";
@@ -765,14 +766,14 @@ function scanLiteralCalls(
     const { absArgs, allLit } = parseLitArgs(args);
     if (!allLit || absArgs.length === 0) return;
 
-    const ownReqs = extractParamReqsFromSource(source, fnName);
+    const ownReqs = extractParamReqs(source, fnName);
     const g = generalizeFromAst(fnName, source);
     const paramNames = g?.params ?? [];
     checkReqs(fnName, ownReqs, paramNames, absArgs, (i) => i, loc);
 
     const fwd = forwards.get(fnName);
     if (fwd) {
-      const tReqs = extractParamReqsFromSource(source, fwd.target);
+      const tReqs = extractParamReqs(source, fwd.target);
       if (tReqs.length > 0) {
         const tg = generalizeFromAst(fwd.target, source);
         const tParams = tg?.params ?? [];
@@ -804,7 +805,7 @@ function scanLiteralCalls(
     let reqs: Array<[number, Pred]> = [];
     let paramNames: string[] = [];
     try {
-      reqs = extractParamReqsFromSource(ext.source, ext.fnName);
+      reqs = extractParamReqs(ext.source, ext.fnName);
       const g = generalizeFromAst(ext.fnName, ext.source);
       paramNames = g?.params ?? [];
     } catch {
@@ -890,6 +891,22 @@ function scanLiteralCalls(
   };
   visit(file);
   return out;
+}
+
+/**
+ * 前置约束来源优先级：
+ * 1. 显式 `@nudo:requires`（声明式契约）
+ * 2. 无声明时不从 if 猜前置（避免把分支当契约）
+ */
+function extractParamReqs(
+  source: string,
+  fnName: string,
+): Array<[number, Pred]> {
+  const g = generalizeFromAst(fnName, source);
+  const paramNames = g?.params ?? [];
+  const declared = requiresToIndexed(source, fnName, paramNames);
+  if (declared.length > 0) return declared;
+  return [];
 }
 
 /** 从函数体抽 if (param ≷ n) return param 形态的前置约束（含 && 双侧） */

@@ -29,6 +29,7 @@ export * from "./diagnostics.ts";
 export * from "./template.ts";
 export * from "./language.ts";
 export * from "./check.ts";
+export * from "./requires.ts";
 export * from "./inlay.ts";
 // modules/fs/path 属于 host（service/cli），不进代数
 export * from "./bridge.ts";
