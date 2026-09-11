@@ -250,7 +250,7 @@ describe("nudo check gold standards", () => {
         ).toBe(true);
       }
       // 每个 case 至少能列出函数或明确无函数
-      expect(Array.isArray(report.functions)).toBe(true);
+      expect(Array.isArray(report.signatures)).toBe(true);
     });
   }
 });

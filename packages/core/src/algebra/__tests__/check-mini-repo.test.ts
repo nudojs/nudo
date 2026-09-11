@@ -15,8 +15,8 @@ describe("mini-repo check gold", () => {
   it("validators.js: no false positives", () => {
     const r = checkSource("validators.js", mini("validators.js"));
     expect(r.ok, r.issues.map((i) => i.message).join("; ")).toBe(true);
-    expect(r.functions.map((f) => f.name)).toContain("isPositive");
-    expect(r.functions.map((f) => f.name)).toContain("clamp");
+    expect(r.signatures.map((f) => f.name)).toContain("isPositive");
+    expect(r.signatures.map((f) => f.name)).toContain("clamp");
   });
 
   it("store.js: class methods listed", () => {

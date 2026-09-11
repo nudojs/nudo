@@ -28,7 +28,7 @@ const r = needsPositive(5);
 `;
     const report = checkSource("t.js", src);
     expect(report.ok).toBe(true);
-    expect(report.functions.some((f) => f.name === "needsPositive")).toBe(true);
+    expect(report.signatures.some((f) => f.name === "needsPositive")).toBe(true);
   });
 
   it("reports intensional signatures", () => {
@@ -37,12 +37,16 @@ function add(a, b) { return a + b; }
 function scale(x) { return add(x, 1); }
 `;
     const report = checkSource("t.js", src);
-    const scale = report.functions.find((f) => f.name === "scale");
+    const scale = report.signatures.find((f) => f.name === "scale");
     expect(scale!.display).toContain("A1");
   });
 
-  it("formatCheckReport includes OK/FAILED", () => {
+  it("formatCheckReport is Nudo-native (signatures + issues)", () => {
     const bad = checkSource("t.js", `function f(x){ if (x>0) return x; return 0; }\nf(-1);\n`);
-    expect(formatCheckReport(bad)).toContain("FAILED");
+    const text = formatCheckReport(bad);
+    expect(text).toContain("FAILED");
+    expect(text).toContain("signatures");
+    expect(text).toContain("actual:");
+    expect(text).toContain("expected:");
   });
 });

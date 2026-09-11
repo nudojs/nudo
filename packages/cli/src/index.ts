@@ -462,7 +462,7 @@ async function runCheck(file: string): Promise<void> {
   // 代数门禁：约束蕴含（类型即计算）
   const { checkSource, formatCheckReport } = await import("@nudojs/core");
   const algebraReport = checkSource(filePath, source);
-  console.log(formatCheckReport(algebraReport));
+  console.log(formatCheckReport(algebraReport, { verbose: true }));
 
   // 外延评估器诊断：null/结构等语言表面
   const result = await analyzeFileAsync(filePath, source);

@@ -1,25 +1,46 @@
 /**
  * nudo check 门禁：对源码跑代数分析，产出 error/warning。
- * 与 infer 的区别：check 关心「违例」，不是「展示签名」。
+ *
+ * 报告是 **Nudo 原生格式**（Abs 优先），不是 TS 诊断的换皮：
+ * - 签名表给出无损 Abs（shape/term/pred/conf）
+ * - 违例写清 actual ⊭ expected（实参 Abs vs 前置 Pred）
+ * - dts/TS 兼容不是本报告的职责
  */
 
 import { parseSource as parse } from "./parse-source.ts";
 import type { Node } from "@babel/types";
 import { analyzeFn } from "./ast-eval.ts";
 import { generalizeFromAst } from "./generalize.ts";
-import { numLit, numVar, unknown } from "./abs.ts";
-import type { Abs } from "./abs.ts";
-import type { Phi } from "./pred.ts";
-import { pTrue, predToString, gtNum } from "./pred.ts";
-import { termToString, v } from "./term.ts";
+import { numLit, unknown } from "./abs.ts";
+import type { Abs, Confidence } from "./abs.ts";
+import type { Phi, Pred } from "./pred.ts";
+import { pTrue, predToString } from "./pred.ts";
+import { termToString } from "./term.ts";
 import { litValue } from "./abs.ts";
-import { formatShape } from "./format.ts";
+import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
 import { checkCall, type Diagnostic } from "./diagnostics.ts";
+
+/** 无损函数签名（类型即计算） */
+export type NudoSig = {
+  name: string;
+  params: string[];
+  /** 符号 Abs 本体 */
+  abs: Abs;
+  /** formatAbs 单行 */
+  display: string;
+  /** formatAbsMultiline */
+  detail: string;
+  conf: Confidence;
+};
 
 export type CheckIssue = Diagnostic & {
   fn?: string;
   line?: number;
   column?: number;
+  /** 实参 / 实际值的 Abs 展示 */
+  actual?: string;
+  /** 期望约束（Pred 或 Abs 展示） */
+  expected?: string;
 };
 
 export type CheckReport = {
@@ -27,7 +48,14 @@ export type CheckReport = {
   issues: CheckIssue[];
   /** 有 error 则 CI 应失败 */
   ok: boolean;
-  functions: Array<{ name: string; display: string; conf: string }>;
+  /** Abs 优先的签名表（替代 TS 式 display-only） */
+  signatures: NudoSig[];
+  summary: {
+    errors: number;
+    warnings: number;
+    infos: number;
+    functions: number;
+  };
 };
 
 function listTopFunctions(source: string): string[] {
@@ -70,7 +98,7 @@ export function checkSource(
   phi: Phi = pTrue,
 ): CheckReport {
   const issues: CheckIssue[] = [];
-  const functions: CheckReport["functions"] = [];
+  const signatures: NudoSig[] = [];
   const names = listTopFunctions(source);
 
   for (const name of names) {
@@ -79,29 +107,30 @@ export function checkSource(
       issues.push({
         severity: "warning",
         code: "nudo:no-signature",
-        message: `无法为 ${name} 推导内涵签名`,
+        message: `${name}: 无法归纳符号 Abs`,
+        suggestion: "补 @nudo:case 或让函数体可代数求值",
         fn: name,
       });
       continue;
     }
-    functions.push({
+    signatures.push({
       name,
-      display: g.display,
+      params: g.params,
+      abs: g.symbolic,
+      display: formatAbs(g.symbolic),
+      detail: formatAbsMultiline(g.symbolic, name),
       conf: g.symbolic.conf,
     });
 
-    // 用 unknown 实参求值，看是否 opaque
-    const entryArgs = g.params.map(
-      (): Abs => absUnknown(),
-    );
+    const entryArgs = g.params.map((): Abs => absUnknown());
     try {
       const r = analyzeFn(source, name, entryArgs, phi);
       if (r.conf === "opaque") {
         issues.push({
           severity: "info",
           code: "nudo:opaque-result",
-          message: `${name}(...) 结果 opaque（路径未覆盖或 native）`,
-          suggestion: "补充 @nudo:case 或调用点",
+          message: `${name}(...): conf=opaque（路径未覆盖或 native）`,
+          suggestion: "补 @nudo:case 或调用点",
           fn: name,
         });
       }
@@ -109,21 +138,25 @@ export function checkSource(
       issues.push({
         severity: "error",
         code: "nudo:eval-error",
-        message: `${name} 求值失败: ${(e as Error).message}`,
+        message: `${name}: 求值失败 — ${(e as Error).message}`,
         fn: name,
       });
     }
   }
 
-  // 扫描源码中的字面量调用，用 checkCall 做约束违例
   const callIssues = scanLiteralCalls(source, names, phi);
   issues.push(...callIssues);
+
+  const errors = issues.filter((i) => i.severity === "error").length;
+  const warnings = issues.filter((i) => i.severity === "warning").length;
+  const infos = issues.filter((i) => i.severity === "info").length;
 
   return {
     file: filePath,
     issues,
-    ok: !issues.some((i) => i.severity === "error"),
-    functions,
+    ok: errors === 0,
+    signatures,
+    summary: { errors, warnings, infos, functions: signatures.length },
   };
 }
 
@@ -194,11 +227,14 @@ function scanLiteralCalls(
               if (pred.op === "lt") ok = (lv as number) < n;
               if (pred.op === "le") ok = (lv as number) <= n;
               if (!ok) {
+                const paramName = paramNames[idx] ?? `arg${idx}`;
                 out.push({
                   severity: "error",
                   code: "nudo:constraint-violated",
-                  message: `${callee.name}[${idx}]: 实参 ${JSON.stringify(lv)} 不满足 ${predToString(pred)}`,
-                  suggestion: `改用满足约束的值，或调整 ${paramNames[idx] ?? "参数"} 的前置条件`,
+                  message: `${callee.name}[${paramName}]: 实参 ⊭ 前置`,
+                  actual: formatAbs(arg),
+                  expected: predToString(pred),
+                  suggestion: `改用满足 ${predToString(pred)} 的值，或放宽 ${paramName} 的前置`,
                   fn: callee.name,
                   line: obj.loc?.start.line,
                   column: obj.loc?.start.column,
@@ -289,19 +325,43 @@ function extractParamReqsFromSource(
   return out;
 }
 
-export function formatCheckReport(r: CheckReport): string {
+/**
+ * Nudo 原生报告：Abs 签名表 + actual ⊭ expected。
+ * 不是 tsc 输出的换皮。
+ */
+export function formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = {}): string {
   const lines: string[] = [];
   lines.push(`nudo check  ${r.file}`);
   lines.push(r.ok ? "OK" : "FAILED");
-  for (const fn of r.functions) {
-    lines.push(`  ${fn.display}  #${fn.conf}`);
+  lines.push(
+    `  ${r.summary.errors} error · ${r.summary.warnings} warning · ${r.summary.infos} info · ${r.summary.functions} fn`,
+  );
+
+  if (r.signatures.length > 0) {
+    lines.push("");
+    lines.push("signatures");
+    for (const s of r.signatures) {
+      lines.push(`  ${s.name}(${s.params.join(", ")})  ${s.display}`);
+      if (opts.verbose) {
+        for (const ln of s.detail.split("\n").slice(1)) {
+          lines.push(`  ${ln}`);
+        }
+      }
+    }
   }
+
   if (r.issues.length === 0) {
-    lines.push("  (no issues)");
+    lines.push("");
+    lines.push("(no issues)");
   } else {
+    lines.push("");
+    lines.push("issues");
     for (const i of r.issues) {
-      const loc = i.line != null ? `:${i.line}` : "";
-      lines.push(`  [${i.severity}]${loc} ${i.message} (${i.code})`);
+      const loc = i.line != null ? `L${i.line}` : "";
+      const head = [i.severity.toUpperCase(), loc, i.fn].filter(Boolean).join(" ");
+      lines.push(`  [${head}] ${i.message}  (${i.code})`);
+      if (i.actual) lines.push(`      actual:   ${i.actual}`);
+      if (i.expected) lines.push(`      expected: ${i.expected}`);
       if (i.suggestion) lines.push(`      → ${i.suggestion}`);
     }
   }
