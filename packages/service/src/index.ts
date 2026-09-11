@@ -31,6 +31,13 @@ export {
 
 export { collectAbsInlays, type AbsInlay } from "@nudojs/core";
 
+export {
+  serializeInferJson,
+  type InferJson,
+  type InferJsonCase,
+  type InferJsonFunction,
+} from "./infer-json.ts";
+
 export { isNudoTargetPath } from "./target-path.ts";
 export {
   collectStaticImports,

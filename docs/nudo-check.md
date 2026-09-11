@@ -160,3 +160,43 @@ npx tsx packages/cli/src/index.ts check file.js --json
 | 金标 | `packages/core/src/algebra/__tests__/check-recall-gold.test.ts` |
 | CI 用法 | `docs/ci-nudo-check.md` |
 | CLI | `nudo check` |
+
+## `nudo infer --json` 契约（v1）
+
+```bash
+npx tsx packages/cli/src/index.ts infer file.js --json
+```
+
+```jsonc
+{
+  "version": 1,
+  "file": "…",
+  "summary": { "functions": 1, "externalFunctions": 0, "cases": 1, "diagnostics": 0 },
+  "functions": [{
+    "name": "scale",
+    "loc": { "start": {…}, "end": {…} },
+    "entryOnly": true,
+    "cases": [{
+      "name": "entry@L1",
+      "args": ["unknown"],
+      "result": "number | string",
+      "throws": null,
+      "source": null,
+      "intension": {
+        "display": "scale: <A1>(x: A1) => number = (A1 + 1)",
+        "abs": "number  = (A1 + 1)  #path",
+        "absMultiline": "…",
+        "term": "(A1 + 1)",
+        "conf": "path"
+      }
+    }]
+  }],
+  "diagnostics": []
+}
+```
+
+- `version: 1` — 字段只增不改语义  
+- **ext**：`args` / `result` 为 TypeValue 字符串（有损兼容）  
+- **intension**：无损 Abs（`abs` / `term` / `pred` / `conf`）  
+- 契约测试：`packages/service/src/__tests__/infer-json.test.ts`  
+- 实现：`packages/service/src/infer-json.ts`（`serializeInferJson`）

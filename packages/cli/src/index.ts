@@ -334,44 +334,8 @@ async function runInferJson(file: string, externalRecords?: CallRecord[]): Promi
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
   const result = await analyzeFileAsync(filePath, source, undefined, externalRecords);
-
-  const jsonOutput = {
-    functions: result.functions.map((f) => ({
-      name: f.name,
-      loc: f.loc,
-      cases: f.cases.map((c) => ({
-        name: c.name,
-        args: c.args.map(typeValueToString),
-        result: typeValueToString(c.result),
-        throws: c.throws.kind !== "never" ? typeValueToString(c.throws) : null,
-        source: c.source ?? null,
-      })),
-      entryOnly: f.entryOnly ?? false,
-      assertionErrors: f.assertionErrors,
-    })),
-    externalFunctions: result.externalFunctions?.map((f) => ({
-      name: f.name,
-      fromModule: f.fromModule,
-      cases: f.cases.map((c) => ({
-        name: c.name,
-        args: c.args.map(typeValueToString),
-        result: typeValueToString(c.result),
-        throws: c.throws.kind !== "never" ? typeValueToString(c.throws) : null,
-        source: c.source ?? null,
-      })),
-    })),
-    diagnostics: result.diagnostics.map((d) => ({
-      range: d.range,
-      severity: d.severity,
-      message: d.message,
-      code: d.code,
-      suggestions: d.suggestions,
-      tags: d.tags,
-      origin: d.origin,
-    })),
-  };
-
-  console.log(JSON.stringify(jsonOutput, null, 2));
+  const { serializeInferJson } = await import("@nudojs/service");
+  console.log(JSON.stringify(serializeInferJson(result, filePath), null, 2));
 }
 
 program
