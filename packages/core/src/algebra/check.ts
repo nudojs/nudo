@@ -64,6 +64,8 @@ export type CheckReport = {
 export type CheckOptions = {
   /** 相对/绝对 require 说明符 → 模块源码；undefined = 解析失败 */
   loadModule?: (spec: string, fromFile: string) => string | undefined;
+  /** 当前文件路径（供 loadModule 解析相对 spec） */
+  fromFile?: string;
 };
 
 function listTopFunctions(source: string): string[] {
