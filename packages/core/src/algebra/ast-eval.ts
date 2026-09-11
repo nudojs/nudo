@@ -140,6 +140,24 @@ function recordAbsCall(
   }
 }
 
+/** 节点 → Abs（LSP hover/inlay 的无损表，不经 TypeValue） */
+let absNodeCollector: ((node: Node, value: Abs) => void) | null = null;
+
+export function setAbsNodeCollector(
+  collector: ((node: Node, value: Abs) => void) | null,
+): void {
+  absNodeCollector = collector;
+}
+
+function recordAbsNode(node: Node, value: Abs): void {
+  if (!absNodeCollector || !value) return;
+  try {
+    absNodeCollector(node, value);
+  } catch {
+    // ignore
+  }
+}
+
 export type EvalResult = {
   value: Abs;
   phi: Phi;
@@ -333,7 +351,19 @@ export function evalMethodBody(
 
 // --- 节点求值 ---
 
+/** 对外入口：求值并记入节点表（Map<Node, Abs> 由 collector 消费） */
 export function evalNode(
+  node: Node,
+  env: AstEnv,
+  phi: Phi,
+  budget: LeakBudget,
+): EvalResult {
+  const r = evalNodeInner(node, env, phi, budget);
+  recordAbsNode(node, r.value);
+  return r;
+}
+
+function evalNodeInner(
   node: Node,
   env: AstEnv,
   phi: Phi,
@@ -1418,4 +1448,57 @@ export function evalProgramAbs(
   }
 
   return { env: local, last, phi };
+}
+
+/**
+ * 收集整文件的节点 → Abs 表（LSP 无损信息源）。
+ * 自包含源码上一次 evalProgramAbs 即可；失败返回空表。
+ */
+export function collectAbsNodeTypes(
+  source: string,
+  opts: EvalOptions & {
+    seedVars?: Record<string, Abs>;
+    seedFns?: Record<string, { params: string[]; body: Node; async?: boolean }>;
+  } = {},
+): Map<Node, Abs> {
+  const map = new Map<Node, Abs>();
+  setAbsNodeCollector((node, value) => {
+    map.set(node, value);
+  });
+  try {
+    evalProgramAbs(source, opts);
+  } catch {
+    // ignore
+  } finally {
+    setAbsNodeCollector(null);
+  }
+  return map;
+}
+
+/** 按 loc 找最紧的节点 Abs（hover 用） */
+export function findAbsAtPosition(
+  nodeTypes: Map<Node, Abs>,
+  line: number,
+  column: number,
+): Abs | undefined {
+  let best: Abs | undefined;
+  let bestSize = Infinity;
+  for (const [node, absVal] of nodeTypes) {
+    const loc = node.loc;
+    if (!loc) continue;
+    if (loc.start.line !== line && loc.end.line !== line) continue;
+    // 1-based line, 0-based column（与 Babel loc 一致；调用方注意）
+    const inRange =
+      (loc.start.line === line && column >= loc.start.column && column <= loc.end.column) ||
+      (loc.end.line === line && column >= loc.start.column && column <= loc.end.column) ||
+      (loc.start.line < line && loc.end.line > line);
+    if (!inRange) continue;
+    const size =
+      (loc.end.line - loc.start.line) * 10000 + (loc.end.column - loc.start.column);
+    if (size < bestSize) {
+      bestSize = size;
+      best = absVal;
+    }
+  }
+  return best;
 }

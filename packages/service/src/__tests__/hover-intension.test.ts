@@ -16,11 +16,19 @@ describe("getHoverAtPosition lossless Abs", () => {
 
   it("hover on binding shows Abs from evalProgramAbs", () => {
     const source = `const x = 1 + 2;\n`;
-    // line 1, column on `x` in declaration (const x = ...)
     const hover = getHoverAtPosition("/t/h3.js", source, 1, 7);
     if (hover?.abs) {
       expect(hover.abs).toContain("3");
     }
+  });
+
+  it("hover on expression uses Abs node table (lossless)", () => {
+    const source = `const n = 1 + 2;\n`;
+    // column of `2` is 14 (0-based)
+    const hover = getHoverAtPosition("/t/h4.js", source, 1, 14);
+    expect(hover).not.toBeNull();
+    expect(hover!.abs).toBeDefined();
+    expect(hover!.abs).toContain("2");
   });
 
   it("hover on non-function still returns type", () => {

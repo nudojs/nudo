@@ -21,6 +21,8 @@ import {
   evalProgramAbs,
   setAbsCallCollector,
   type AbsCallRecord,
+  collectAbsNodeTypes,
+  findAbsAtPosition,
   typeValueToAbs,
   absToTypeValue,
   formatAbs,
@@ -1701,7 +1703,7 @@ export type HoverInfo = {
 
 /**
  * LSP hover：优先无损 Abs（类型即计算本体），TypeValue 仅作外延对照。
- * 不经 bridge 丢 term/pred。
+ * 节点表也是 Abs（collectAbsNodeTypes），不经 bridge。
  */
 export function getHoverAtPosition(
   filePath: string,
@@ -1736,7 +1738,7 @@ export function getHoverAtPosition(
     }
   }
 
-  // 标识符绑定：自包含源码上直接读 Abs env（无损）
+  // 标识符绑定优先（比粗粒度节点表更准）
   const ident = findIdentNameAtPosition(source, line, column);
   if (ident && !fnName) {
     try {
@@ -1749,14 +1751,37 @@ export function getHoverAtPosition(
           if (info) {
             info.abs = absLine;
             info.absMultiline = absMulti;
-          } else {
-            return { typeText: absLine, abs: absLine, absMultiline: absMulti };
+            return info;
           }
+          return { typeText: absLine, abs: absLine, absMultiline: absMulti };
         }
       }
     } catch {
       // ignore
     }
+  }
+
+  // 任意表达式：Abs 节点表（无损）
+  try {
+    if (!/\brequire\s*\(|\bimport\s*[{'"*]/.test(source)) {
+      const seeds = mockDirectivesToAbsSeeds(
+        extractDirectives(parse(source)),
+      );
+      const nodeTypes = collectAbsNodeTypes(source, seeds);
+      const absAt = findAbsAtPosition(nodeTypes, line, column);
+      if (absAt) {
+        const absLine = formatAbs(absAt);
+        const absMulti = formatAbsMultiline(absAt, undefined);
+        if (info) {
+          info.abs = absLine;
+          info.absMultiline = absMulti;
+        } else {
+          return { typeText: absLine, abs: absLine, absMultiline: absMulti };
+        }
+      }
+    }
+  } catch {
+    // ignore
   }
 
   return info;
@@ -1801,7 +1826,7 @@ function findFunctionNameAtPosition(
         if (!loc) return;
         if (loc.start.line !== line) return;
         if (column < loc.start.column || column > loc.end.column) return;
-        // 仅函数声明 id / 调用 callee 的裸标识符
+        // 仅函数声明 id / 调用 callee；const x = 1 的 id 归绑定路径
         const parent = path.parent;
         if (
           parent.type === "FunctionDeclaration" &&
@@ -1811,11 +1836,6 @@ function findFunctionNameAtPosition(
         } else if (
           parent.type === "CallExpression" &&
           parent.callee === path.node
-        ) {
-          found = path.node.name;
-        } else if (
-          parent.type === "VariableDeclarator" &&
-          parent.id === path.node
         ) {
           found = path.node.name;
         }
