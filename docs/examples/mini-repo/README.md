@@ -1,6 +1,6 @@
 # mini-repo — 多文件集成
 
-风格化小库：ESM 跨文件 + class + async + HOF + 约束算术。
+风格化小库：ESM 跨文件 + class + async + HOF。
 
 | 文件 | 内容 |
 |------|------|

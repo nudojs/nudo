@@ -1,14 +1,14 @@
-# nudo check — 约束门禁
+# nudo check — 精化门禁
 
-> **类型即计算**：检查的是 Abs 上的约束蕴含，不是 TS 式「类型是否匹配」。
-> dts 是 TS 生态兼容添头；本门禁与报告格式是 Nudo 原生的。
+> **类型即计算**：检查的是 Abs 上的 Pred 蕴含，不是 TS 式「类型是否匹配」。
+> 精化会进入 Abs 并参与代数；dts 只是 TS 生态兼容侧信道。
 
 ## 它是什么
 
 对 JS 源码做代数分析：
 
 1. 每个顶层函数归纳**符号 Abs**（shape × term × pred × conf）
-2. 扫描字面量调用点，检查实参是否满足前置 Pred
+2. 扫描调用点 / 返回值，检查是否满足 `@nudo:refine` 声明
 3. 输出 **Nudo 原生报告**：`signatures` + `actual ⊭ expected`
 
 ```bash
@@ -21,10 +21,10 @@ npx tsx packages/cli/src/index.ts check path/to/file.js
 
 | code | 含义 |
 |---|---|
-| `nudo:constraint-violated` | 调用实参 ⊭ 前置（标量界 / **shape 字段**） |
+| `nudo:constraint-violated` | 调用/返回 ⊭ refine（标量界 / **shape 字段**） |
 | `nudo:assign-mismatch` | 赋值 ⊭ 原有形状（leqAbs） |
 | `nudo:arg-structure` | 实参结构 ⊭ body 访问的 slot |
-| `nudo:case-inconsistency` | **`@nudo:case` 见证 ⊭ refine 契约** |
+| `nudo:case-inconsistency` | **`@nudo:case` 见证 ⊭ refine** |
 
 ```
 nudo check  src/validators.js
