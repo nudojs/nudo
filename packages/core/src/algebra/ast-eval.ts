@@ -53,6 +53,14 @@ import { spread, joinAbs } from "./objects.ts";
 import { absFunction, attachFnImpl, getFnImpl } from "./abs-fn.ts";
 import { concatString, isTemplateLike } from "./template.ts";
 import {
+  evalMathMethod,
+  evalObjectMethod,
+  evalJsonMethod,
+  evalNumberStatic,
+  evalGlobalFn,
+  evalArrayStatic,
+} from "./builtins.ts";
+import {
   defineClass,
   getClass,
   classFromMethods,
@@ -667,7 +675,7 @@ function evalCall(
 ): EvalResult {
   const callee = node.callee;
 
-  // 方法调用：arr.map(fn) / arr.reduce(fn, init)
+  // 方法调用：arr.map(fn) / Math.floor / Object.keys …
   if (callee.type === "MemberExpression") {
     const m = callee as { object: Node; property: Node; computed?: boolean };
     if (!m.computed && m.property.type === "Identifier") {
@@ -676,6 +684,19 @@ function evalCall(
       const rawArgs = node.arguments.filter(
         (a): a is Exclude<typeof a, { type: "SpreadElement" }> => a.type !== "SpreadElement",
       );
+
+      // 全局命名空间 builtin（Math/Object/JSON/Number/Array）
+      if (m.object.type === "Identifier") {
+        const ns = (m.object as Identifier).name;
+        const margs = rawArgs.map((a) => evalNode(a, env, phi, budget).value);
+        let r: Abs | undefined;
+        if (ns === "Math") r = evalMathMethod(method, margs);
+        else if (ns === "Object") r = evalObjectMethod(method, margs);
+        else if (ns === "JSON") r = evalJsonMethod(method, margs);
+        else if (ns === "Number") r = evalNumberStatic(method, margs);
+        else if (ns === "Array") r = evalArrayStatic(method, margs);
+        if (r) return ok(r, phi, env);
+      }
 
       if (obj.shape.k === "brand") {
         // brand 方法：在 this=receiver 下求值方法体（含继承链）
@@ -821,6 +842,10 @@ function evalCall(
   const args = node.arguments.map((a) =>
     a.type === "SpreadElement" ? unknown : evalNode(a as Node, env, phi, budget).value,
   );
+
+  // 全局函数 builtin
+  const g = evalGlobalFn(name, args);
+  if (g) return ok(g, phi, env);
 
   // 变量上的 Abs 一等函数
   const bound = env.vars.get(name);

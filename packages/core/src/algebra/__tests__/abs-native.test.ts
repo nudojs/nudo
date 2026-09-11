@@ -131,4 +131,18 @@ describe("abs-native ast-eval", () => {
     ]);
     expect(r.shape).toEqual({ k: "prim", type: "string" });
   });
+
+  it("Math and global builtins on Abs", () => {
+    expect(show(analyzeFn(`function f(){ return Math.floor(3.7); }`, "f", []))).toBe("3");
+    expect(show(analyzeFn(`function f(){ return Math.max(1, 5); }`, "f", []))).toBe("5");
+    expect(show(analyzeFn(`function f(){ return Array.isArray([]); }`, "f", []))).toBe("true");
+    expect(show(analyzeFn(`function f(){ return parseInt("42"); }`, "f", []))).toBe("42");
+    expect(show(analyzeFn(`function f(){ return Number.isInteger(3); }`, "f", []))).toBe("true");
+  });
+
+  it("Object.keys of object shape", () => {
+    const src = `function f(){ return Object.keys({ a: 1, b: "x" }); }`;
+    const r = analyzeFn(src, "f", []);
+    expect(r.shape.k === "tuple" || r.shape.k === "arr").toBe(true);
+  });
 });
