@@ -55,9 +55,9 @@ for (let i = 0; i < 5; i++) sum += i;
 // sum → 10（TS: number）
 ```
 
-用户还可以通过 `T.refine` 定义自定义精化类型，附加领域特定的运算规则。详见[示例](./guides/examples.md)。
-
 同一套代数也支撑 **[`nudo check`](./guides/check.md)** —— 精化门禁。声明的 `@nudo:refine` 契约以 Pred 进入 Abs，并参与算术（`x>0` ⇒ `x+1>1`）。报告使用 `actual ⊭ expected`，不是 TypeScript 诊断文案。TypeScript `.d.ts` 输出只是生态兼容通道，不是主类型模型。
+
+契约写在 `*.nudo.js` 模板里（`number().gt(0)`、`shape({...})`）—— **不需要 `interface` / `type` 语法**。见[指令参考](./concepts/directives.md)。
 
 ## 下一步
 

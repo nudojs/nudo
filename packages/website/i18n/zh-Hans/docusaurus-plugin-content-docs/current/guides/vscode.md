@@ -106,7 +106,6 @@ createUser(  // ← signature help shows: (name: string, age: number)
 当 Nudo 报告诊断时，可使用快速修复建议。点击灯泡图标或按 `Cmd+.` / `Ctrl+.` 查看可用修复：
 
 - **移除不可达代码** ——针对 `return`/`throw` 之后的代码
-- **更新 @nudo:refine** ——当断言与推断类型不匹配时
 
 ### 语义标记
 

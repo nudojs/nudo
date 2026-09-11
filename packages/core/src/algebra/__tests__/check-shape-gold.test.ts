@@ -200,4 +200,104 @@ open({ id: -1 });
 `);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
+
+  it("ok: nested shape + array fields", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:refine o orderShape
+ */
+function place(o) {
+  return o.user.id;
+}
+place({ user: { id: 1, name: "a" }, tags: ["x"] });
+`);
+    expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
+  });
+
+  it("error: nested shape field bound", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:refine o orderShape
+ */
+function place(o) {
+  return o.user.id;
+}
+place({ user: { id: -1, name: "a" }, tags: ["x"] });
+`);
+    expect(r.ok).toBe(false);
+    expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
+  });
+
+  it("error: array element min length", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:refine o orderShape
+ */
+function place(o) {
+  return o.tags;
+}
+place({ user: { id: 1, name: "a" }, tags: [""] });
+`);
+    expect(r.ok).toBe(false);
+    expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
+  });
+
+  it("ok: int refine", () => {
+    const ok = issuesOf(`
+/**
+ * @nudo:refine n intId
+ */
+function take(n) { return n; }
+take(3);
+`);
+    expect(ok.issues.filter((i) => i.severity === "error")).toEqual([]);
+  });
+
+  it("error: int refine rejects non-integer", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:refine n intId
+ */
+function take(n) { return n; }
+take(1.5);
+`);
+    expect(r.ok).toBe(false);
+    expect(r.issues.some((i) => i.expected?.includes("int"))).toBe(true);
+  });
+
+  it("error: array refine rejects non-array", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:refine xs positives
+ */
+function take(xs) { return xs; }
+take(1);
+`);
+    expect(r.ok).toBe(false);
+    expect(r.issues.some((i) => i.expected?.includes("array"))).toBe(true);
+  });
+
+  it("error: array element bound", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:refine xs positives
+ */
+function take(xs) { return xs; }
+take([-1]);
+`);
+    expect(r.ok).toBe(false);
+    expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
+  });
+
+  it("error: string min length", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:refine s shortName
+ */
+function take(s) { return s; }
+take("");
+`);
+    expect(r.ok).toBe(false);
+    expect(r.issues.some((i) => i.expected?.includes("length"))).toBe(true);
+  });
 });

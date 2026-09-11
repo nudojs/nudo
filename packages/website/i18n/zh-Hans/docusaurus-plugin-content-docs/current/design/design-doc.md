@@ -363,22 +363,28 @@ for (let i = 0; i < 5; i++) sum += i;
 // Nudo: sum → 10 | TS: number
 ```
 
-### 6.8 用户可扩展的类型精化
+### 6.8 声明式精化（无需类型语法）
 
-用户可通过 `T.refine` 定义自定义精化类型，附加领域特定的运算规则：
+用户侧契约用 `@nudo:refine` 和 `*.nudo.js` 模板声明——不是 `interface` / `type`，也不在源码里写 `T.refine`：
 
 ```javascript
-const Odd = T.refine(T.number, {
-  name: "odd",
-  check: (v) => Number.isInteger(v) && v % 2 !== 0,
-  ops: { "%"(self, other) {
-    if (other.kind === "literal" && other.value === 2) return T.literal(1);
-    return undefined; // 回退到 T.number 行为
-  }},
-});
-// Odd % 2 → 1（自定义规则）
-// Odd + 1 → number（回退到基础类型）
+// shapes.nudo.js
+export const positive = number().gt(0);
+export const user = shape({ id: number().gt(0), name: string() });
+
+// app.js
+/// @nudo:import { positive, user } from "./shapes.nudo.js"
+
+/**
+ * @nudo:refine x positive
+ * @nudo:refine return positive
+ */
+function inc(x) {
+  return x + 1;
+}
 ```
+
+Pred 进入 Abs 并参与代数（`x>0` ⇒ `x+1>1`）。`T.refine` 是这些模板 lowering 到的 TypeValue-IR 原语，不是源码级 API。
 
 ---
 
@@ -433,7 +439,7 @@ function calc(a, b) {
 - `RefinedType` 类型种类及 `Refinement` 接口（name、meta、check、ops、methods、properties）。
 - 内置模板字符串精化（parts、拼接、startsWith/endsWith/includes、length）。
 - 内置数值区间精化（min、max、integer、比较运算符）。
-- 用户自定义精化类型 `T.refine`。
+- 通过 `@nudo:refine` 模板的用户可扩展精化（`T.refine` 是 IR 原语）。
 - 分派回退链：refined → base → primitive。
 
 ### 阶段 6：求值器完善（已完成）

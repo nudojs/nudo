@@ -150,3 +150,55 @@ To upgrade directive-free code to real call shapes, harvest cases from your test
 3. **Combine** — With multiple cases, Nudo merged the inferred return types into a union, then simplified it by absorption: the literals `2` and `-9` are absorbed by the `number` contributed by the symbolic case, yielding `number`. Pure-literal unions without a base-type member keep every literal.
 
 For deeper detail on type values, directives, and abstract interpretation, see [Core Concepts](../concepts/type-values.md).
+
+## Refinement contracts (no type syntax)
+
+Beyond inference, declare **refinements** that enter Abs and participate in algebra. No `interface` / `type` — contracts live in `*.nudo.js` templates.
+
+Create `shapes.nudo.js`:
+
+```javascript
+import { number, string, shape } from "@nudojs/core";
+
+export const positive = number().gt(0);
+export const user = shape({
+  id: number().gt(0),
+  name: string(),
+});
+```
+
+Create `app.js`:
+
+```javascript
+/// @nudo:import { positive, user } from "./shapes.nudo.js"
+
+/**
+ * @nudo:refine x positive
+ * @nudo:refine return positive
+ */
+function inc(x) {
+  return x + 1;
+}
+
+/**
+ * @nudo:refine u user
+ */
+function register(u) {
+  return `${u.id}:${u.name}`;
+}
+
+inc(1);                              // ok
+// inc(0);                          // error: 0 ⊭ x > 0
+register({ id: 1, name: "ada" });    // ok
+// register({ id: -1, name: "a" }); // error: u.id ⊭ > 0
+```
+
+Gate with:
+
+```bash
+npx nudo check app.js
+```
+
+Reports use `actual ⊭ expected`. Refinements also flow into inference: `inc` with `@nudo:refine x positive` infers `number = (x + 1) where (x + 1) > 1`.
+
+See [nudo check](../guides/check.md) and [Directives](../concepts/directives.md#nudorefine--refinement-contract).

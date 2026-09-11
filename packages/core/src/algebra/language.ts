@@ -86,14 +86,39 @@ export function instantiateClass(
     "path",
   );
 
-  // 跑 constructor：this 上赋值会更新 instance 字段
-  const ctor = def.methods.get("constructor");
+  // constructor：自身优先；没有则沿继承链找父类构造
+  const chain = getClassChain(env, className);
+  let ctor: MethodDef | undefined;
+  let ctorClass: ClassDef | undefined;
+  for (const cls of chain) {
+    const m = cls.methods.get("constructor");
+    if (m) {
+      ctor = m;
+      ctorClass = cls;
+      break;
+    }
+  }
   if (ctor && evalBody) {
-    const fields = evalBody(ctor, args, instance, env);
+    // 绑定 super → 父类（ctor 所在类的 superClass）
+    const parentName = ctorClass?.superClass;
+    const localEnv = parentName
+      ? withSuperBinding(env, className, parentName)
+      : env;
+    const fields = evalBody(ctor, args, instance, localEnv);
     instance = mergeInstanceFields(instance, fields, className);
   }
 
   return instance;
+}
+
+/** 在 env 上绑定 super 类名，供 super.method() 派发 */
+function withSuperBinding(env: AstEnv, className: string, superName: string): AstEnv {
+  return { ...env, currentOwner: className };
+}
+
+/** 读取当前 this 所属类的父类名 */
+export function superNameOf(env: AstEnv, className: string): string | undefined {
+  return getClass(env, className)?.superClass;
 }
 
 /** constructor 副作用后的字段并入 brand.shape */
@@ -174,6 +199,39 @@ export function lookupMethod(
   for (const cls of chain) {
     const m = cls.methods.get(methodName);
     if (m) return m;
+  }
+  return undefined;
+}
+
+/** 沿继承链查找方法，返回定义与所在类名 */
+export function lookupMethodWithOwner(
+  env: AstEnv,
+  receiver: Abs,
+  methodName: string,
+): { def: MethodDef; owner: string } | undefined {
+  if (receiver.shape.k !== "brand") return undefined;
+  const chain = getClassChain(env, receiver.shape.name);
+  for (const cls of chain) {
+    const m = cls.methods.get(methodName);
+    if (m) return { def: m, owner: cls.name };
+  }
+  return undefined;
+}
+
+/** super.method()：从父类开始找（跳过当前类） */
+export function lookupSuperMethod(
+  env: AstEnv,
+  receiver: Abs,
+  fromClass: string,
+  methodName: string,
+): { def: MethodDef; owner: string } | undefined {
+  if (receiver.shape.k !== "brand") return undefined;
+  const parent = superNameOf(env, fromClass) ?? getClass(env, fromClass)?.superClass;
+  if (!parent) return undefined;
+  const chain = getClassChain(env, parent);
+  for (const cls of chain) {
+    const m = cls.methods.get(methodName);
+    if (m) return { def: m, owner: cls.name };
   }
   return undefined;
 }

@@ -77,4 +77,54 @@ function main() {
     const r = analyzeFn(src, "main", []);
     expect(litValue(r)).toBe(true);
   });
+
+  it("super.method() dispatches to parent", () => {
+    const src = `
+class Base {
+  hello() { return "hi"; }
+}
+class Child extends Base {
+  hello() { return super.hello() + "!"; }
+}
+function main() {
+  return new Child().hello();
+}
+`;
+    const r = analyzeFn(src, "main", []);
+    expect(litValue(r)).toBe("hi!");
+    expect(r.conf).toBe("exact");
+  });
+
+  it("inherited constructor writes this fields", () => {
+    const src = `
+class Base {
+  constructor(n) { this.n = n; }
+}
+class Child extends Base {
+  double() { return this.n * 2; }
+}
+function main() {
+  return new Child(4).double();
+}
+`;
+    const r = analyzeFn(src, "main", []);
+    expect(litValue(r)).toBe(8);
+  });
+
+  it("super in multi-level chain", () => {
+    const src = `
+class A { m() { return 1; } }
+class B extends A {
+  m() { return super.m() + 1; }
+}
+class C extends B {
+  m() { return super.m() + 1; }
+}
+function main() {
+  return new C().m();
+}
+`;
+    const r = analyzeFn(src, "main", []);
+    expect(litValue(r)).toBe(3);
+  });
 });

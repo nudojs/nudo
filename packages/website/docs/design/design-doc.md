@@ -363,22 +363,28 @@ for (let i = 0; i < 5; i++) sum += i;
 // Nudo: sum → 10 | TS: number
 ```
 
-### 6.8 User-Extensible Type Refinements
+### 6.8 Declared Refinements (no type syntax)
 
-Users can define custom refined types with domain-specific operation rules via `T.refine`:
+User-facing contracts are declared with `@nudo:refine` and `*.nudo.js` templates — not `interface` / `type`, and not `T.refine` in source:
 
 ```javascript
-const Odd = T.refine(T.number, {
-  name: "odd",
-  check: (v) => Number.isInteger(v) && v % 2 !== 0,
-  ops: { "%"(self, other) {
-    if (other.kind === "literal" && other.value === 2) return T.literal(1);
-    return undefined; // fall back to T.number behavior
-  }},
-});
-// Odd % 2 → 1 (custom rule)
-// Odd + 1 → number (falls back to base)
+// shapes.nudo.js
+export const positive = number().gt(0);
+export const user = shape({ id: number().gt(0), name: string() });
+
+// app.js
+/// @nudo:import { positive, user } from "./shapes.nudo.js"
+
+/**
+ * @nudo:refine x positive
+ * @nudo:refine return positive
+ */
+function inc(x) {
+  return x + 1;
+}
 ```
+
+The Pred enters Abs and participates in algebra (`x>0` ⇒ `x+1>1`). `T.refine` is the TypeValue-IR primitive these templates lower to — not the source-level API.
 
 ---
 
@@ -433,7 +439,7 @@ function calc(a, b) {
 - `RefinedType` kind with `Refinement` interface (name, meta, check, ops, methods, properties).
 - Built-in template string refinement (parts, concatenation, startsWith/endsWith/includes, length).
 - Built-in numeric range refinement (min, max, integer, comparison operators).
-- User-defined refined types via `T.refine`.
+- User-extensible refinements via `@nudo:refine` templates (`T.refine` is the IR primitive).
 - Dispatch fallback chain: refined → base → primitive.
 
 ### Phase 6: Evaluator Completion (done)

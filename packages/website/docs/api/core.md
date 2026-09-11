@@ -83,7 +83,7 @@ T.fnSig([T.array(T.string)], T.string)
 
 ### Refinement Type
 
-`T.refine` creates a refined type — a subset of a base type with optional custom operation rules:
+`T.refine` is the **TypeValue-IR primitive** for refined subsets (template strings, numeric ranges). Source-level contracts use `@nudo:refine` + `*.nudo.js` templates instead — see [Directives](../concepts/directives.md#nudorefine--refinement-contract).
 
 ```typescript
 type Refinement = {

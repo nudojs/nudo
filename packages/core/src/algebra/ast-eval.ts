@@ -62,11 +62,15 @@ import { callAbsMethod, getAbsProperty } from "./methods.ts";
 import {
   defineClass,
   getClass,
+  getClassChain,
   classFromMethods,
   instantiateClass,
   instanceOf,
   projectBrand,
   lookupMethod,
+  lookupMethodWithOwner,
+  lookupSuperMethod,
+  superNameOf,
   awaitAbs,
   coerceAsyncReturn,
   wrapPromise,
@@ -81,6 +85,8 @@ export type AstEnv = {
   fns: Map<string, { params: string[]; body: Node; async?: boolean; kind?: string }>;
   /** class 表（旁路，withVar 必须保留） */
   classes?: Map<string, unknown>;
+  /** 当前正在求值的方法所属类名（super.x() 从它的父类派发） */
+  currentOwner?: string;
 };
 
 export function emptyEnv(): AstEnv {
@@ -362,11 +368,15 @@ export function evalMethodBody(
   env: AstEnv,
   phi: Phi = pTrue,
   budget: LeakBudget = defaultLeakBudget,
+  /** 方法定义所在类名（用于 super 派发） */
+  ownerClass?: string,
 ): Abs {
   const local = emptyEnv();
   local.fns = env.fns;
   const cls = (env as AstEnv & { classes?: Map<string, unknown> }).classes;
   if (cls) (local as AstEnv & { classes?: Map<string, unknown> }).classes = cls;
+  // super.x() 从当前方法所属类的父类派发
+  if (ownerClass) local.currentOwner = ownerClass;
   local.vars.set("this", thisVal);
   method.params.forEach((p, i) => {
     local.vars.set(p, args[i] ?? unknown);
@@ -790,6 +800,34 @@ function evalCall(
     const m = callee as { object: Node; property: Node; computed?: boolean };
     if (!m.computed && m.property.type === "Identifier") {
       const method = (m.property as Identifier).name;
+
+      // super.method() → 从当前方法所属类的父类派发
+      if (m.object.type === "Super") {
+        const thisVal = env.vars.get("this");
+        const sArgs = node.arguments.filter(
+          (a): a is Exclude<typeof a, { type: "SpreadElement" }> => a.type !== "SpreadElement",
+        );
+        if (thisVal && thisVal.shape.k === "brand") {
+          const fromClass = env.currentOwner ?? thisVal.shape.name;
+          const found = lookupSuperMethod(env, thisVal, fromClass, method);
+          if (found && found.def.kind !== "constructor") {
+            const margs = sArgs.map((a) => evalNode(a, env, phi, budget).value);
+            const ret = evalMethodBody(
+              found.def,
+              margs,
+              thisVal,
+              env,
+              phi,
+              budget,
+              found.owner,
+            );
+            if (found.def.async) return ok(coerceAsyncReturn(ret), phi, env);
+            return ok(ret, phi, env);
+          }
+        }
+        return ok(unknown, phi, env);
+      }
+
       const obj = evalNode(m.object, env, phi, budget).value;
       const rawArgs = node.arguments.filter(
         (a): a is Exclude<typeof a, { type: "SpreadElement" }> => a.type !== "SpreadElement",
@@ -818,11 +856,19 @@ function evalCall(
           if (bi) return ok(bi, phi, env);
         }
         // brand 方法：在 this=receiver 下求值方法体（含继承链）
-        const mdef = lookupMethod(env, obj, method);
-        if (mdef && mdef.kind !== "constructor") {
+        const foundM = lookupMethodWithOwner(env, obj, method);
+        if (foundM && foundM.def.kind !== "constructor") {
           const margs = rawArgs.map((a) => evalNode(a, env, phi, budget).value);
-          const ret = evalMethodBody(mdef, margs, obj, env, phi, budget);
-          if (mdef.async) return ok(coerceAsyncReturn(ret), phi, env);
+          const ret = evalMethodBody(
+            foundM.def,
+            margs,
+            obj,
+            env,
+            phi,
+            budget,
+            foundM.owner,
+          );
+          if (foundM.def.async) return ok(coerceAsyncReturn(ret), phi, env);
           return ok(ret, phi, env);
         }
       }

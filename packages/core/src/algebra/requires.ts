@@ -25,6 +25,7 @@ import {
   string as stringC,
   boolean as booleanC,
   shape,
+  array,
 } from "./constraint.ts";
 
 /** `/// @nudo:import { delay, percent } from "./delay.nudo.js"` */
@@ -62,8 +63,8 @@ export function execNudoModule(src: string): Record<string, unknown> {
   body = body.replace(/^\s*import\s*\{[^}]*\}\s*from\s*["'][^"']+["'];?\s*$/gm, "");
   body = body.replace(/^\s*import\s+\*\s+as\s+\w+\s+from\s*["'][^"']+["'];?\s*$/gm, "");
   body += `\nreturn { ${names.join(", ")} };`;
-  const fn = new Function("number", "string", "boolean", "shape", body);
-  return fn(number, stringC, booleanC, shape) as Record<string, unknown>;
+  const fn = new Function("number", "string", "boolean", "shape", "array", body);
+  return fn(number, stringC, booleanC, shape, array) as Record<string, unknown>;
 }
 
 export type RequiresResolveOpts = {

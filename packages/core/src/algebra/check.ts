@@ -1037,6 +1037,8 @@ function scanLiteralCalls(
       if (!arg) continue;
       const lv = litValue(arg);
       if (lv === undefined) continue;
+      const isStr = arg.shape.k === "prim" && (arg.shape as { type: string }).type === "string";
+      const strLen = typeof lv === "string" ? lv.length : undefined;
       for (const p of flattenPred(pred)) {
         if (
           (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") &&
@@ -1044,6 +1046,32 @@ function scanLiteralCalls(
           typeof p.b.value === "number"
         ) {
           const n = p.b.value;
+          const opSym = { gt: ">", ge: "≥", lt: "<", le: "≤" }[p.op];
+          // length(t) 形式（string().min/max）
+          if (p.a.op === "app" && p.a.fn === "length" && strLen !== undefined) {
+            let ok = true;
+            if (p.op === "gt") ok = strLen > n;
+            if (p.op === "ge") ok = strLen >= n;
+            if (p.op === "lt") ok = strLen < n;
+            if (p.op === "le") ok = strLen <= n;
+            if (!ok) {
+              const paramName = paramNames[idx] ?? `arg${idx}`;
+              out.push({
+                severity: "error",
+                code: "nudo:constraint-violated",
+                message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+                actual: formatAbs(arg),
+                expected: `length(${paramName}) ${opSym} ${n}`,
+                suggestion: `改用满足长度 ${opSym} ${n} 的值，或放宽 ${paramName} 的前置`,
+                fn: displayName,
+                line: loc?.start.line,
+                column: loc?.start.column,
+              });
+            }
+            continue;
+          }
+          // 普通数值界
+          if (isStr || typeof lv !== "number") continue;
           let ok = true;
           if (p.op === "gt") ok = (lv as number) > n;
           if (p.op === "ge") ok = (lv as number) >= n;
@@ -1132,7 +1160,7 @@ function scanLiteralCalls(
     }
   };
 
-  /** 单字段：prim 类型 + 数值界 + 嵌套 shape */
+  /** 单字段：prim 类型 + 数值界 + 嵌套 shape + array 元素 + int + 长度 */
   const checkFieldConstraint = (
     displayName: string,
     paramName: string,
@@ -1162,14 +1190,59 @@ function scanLiteralCalls(
       }
     }
 
+    // int：字面量必须是整数
+    if (constraint.int) {
+      const iv = litValue(fieldAbs);
+      if (typeof iv === "number" && !Number.isInteger(iv)) {
+        out.push({
+          severity: "error",
+          code: "nudo:constraint-violated",
+          message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+          actual: formatAbs(fieldAbs),
+          expected: `${fieldPath} is int`,
+          suggestion: `把 ${fieldPath} 改成整数`,
+          fn: displayName,
+          line: loc?.start.line,
+          column: loc?.start.column,
+        });
+      }
+    }
+
     // 嵌套 shape
     if (constraint.fields) {
       checkShapeAgainstAbs(displayName, paramName, constraint, fieldAbs, fieldPath, loc);
     }
 
-    // 数值界：把 SELF 替换为 fieldAbs 的字面量
+    // array 元素：逐元素检查
+    if (constraint.element) {
+      if (fieldAbs.shape.k === "arr") {
+        checkFieldConstraint(
+          displayName,
+          paramName,
+          constraint.element,
+          (fieldAbs.shape as { element: Abs }).element,
+          `${fieldPath}[]`,
+          loc,
+        );
+      } else if (fieldAbs.shape.k === "tuple") {
+        const els = (fieldAbs.shape as { elements: Abs[] }).elements;
+        els.forEach((el, i) => {
+          checkFieldConstraint(
+            displayName,
+            paramName,
+            constraint.element!,
+            el,
+            `${fieldPath}[${i}]`,
+            loc,
+          );
+        });
+      }
+    }
+
+    // 数值界 + 长度界（preds 里可能含 length(t) 比较）
     const lv = litValue(fieldAbs);
-    if (lv === undefined || typeof lv !== "number") return;
+    const sv = typeof lv === "string" ? lv.length : undefined;
+    const isStr = fieldAbs.shape.k === "prim" && (fieldAbs.shape as { type: string }).type === "string";
     for (const p of constraint.preds) {
       const flat = p.op === "and" ? p.args : [p];
       for (const atom of flat) {
@@ -1179,13 +1252,38 @@ function scanLiteralCalls(
           typeof atom.b.value === "number"
         ) {
           const n = atom.b.value;
+          const opSym = { gt: ">", ge: "≥", lt: "<", le: "≤" }[atom.op];
+          // length(t) 形式
+          if (atom.a.op === "app" && atom.a.fn === "length") {
+            if (sv === undefined) continue;
+            let ok = true;
+            if (atom.op === "gt") ok = sv > n;
+            if (atom.op === "ge") ok = sv >= n;
+            if (atom.op === "lt") ok = sv < n;
+            if (atom.op === "le") ok = sv <= n;
+            if (!ok) {
+              out.push({
+                severity: "error",
+                code: "nudo:constraint-violated",
+                message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+                actual: formatAbs(fieldAbs),
+                expected: `length(${fieldPath}) ${opSym} ${n}`,
+                suggestion: `改用满足长度 ${opSym} ${n} 的 ${fieldPath}`,
+                fn: displayName,
+                line: loc?.start.line,
+                column: loc?.start.column,
+              });
+            }
+            continue;
+          }
+          // 普通数值界
+          if (lv === undefined || typeof lv !== "number" || isStr) continue;
           let ok = true;
           if (atom.op === "gt") ok = lv > n;
           if (atom.op === "ge") ok = lv >= n;
           if (atom.op === "lt") ok = lv < n;
           if (atom.op === "le") ok = lv <= n;
           if (!ok) {
-            const opSym = { gt: ">", ge: "≥", lt: "<", le: "≤" }[atom.op];
             out.push({
               severity: "error",
               code: "nudo:constraint-violated",
@@ -1203,7 +1301,7 @@ function scanLiteralCalls(
     }
   };
 
-  /** 对带 shape 的 refine 做 object 字段检查 */
+  /** 对带 shape / array / int 的 refine 做结构检查 */
   const checkShapeReqs = (
     displayName: string,
     reqs: Array<[number, RequiresEntry]>,
@@ -1213,13 +1311,71 @@ function scanLiteralCalls(
     loc?: { start: { line: number; column: number } },
   ): void => {
     for (const [idx, entry] of reqs) {
-      if (!entry.constraint.fields) continue;
+      const c = entry.constraint;
+      if (!c.fields && !c.element && !c.int) continue;
       const argIdx = argIndexOf(idx);
       if (argIdx === undefined) continue;
       const arg = absArgs[argIdx];
       if (!arg) continue;
       const paramName = entry.param || paramNames[idx] || `arg${idx}`;
-      checkShapeAgainstAbs(displayName, paramName, entry.constraint, arg, paramName, loc);
+      // shape 字段
+      if (c.fields) {
+        checkShapeAgainstAbs(displayName, paramName, c, arg, paramName, loc);
+      }
+      // 顶层 array 元素
+      if (c.element) {
+        if (arg.shape.k === "arr") {
+          checkFieldConstraint(
+            displayName,
+            paramName,
+            c.element,
+            (arg.shape as { element: Abs }).element,
+            `${paramName}[]`,
+            loc,
+          );
+        } else if (arg.shape.k === "tuple") {
+          const els = (arg.shape as { elements: Abs[] }).elements;
+          els.forEach((el, i) => {
+            checkFieldConstraint(
+              displayName,
+              paramName,
+              c.element!,
+              el,
+              `${paramName}[${i}]`,
+              loc,
+            );
+          });
+        } else if (arg.shape.k !== "unknown" && arg.shape.k !== "any") {
+          out.push({
+            severity: "error",
+            code: "nudo:constraint-violated",
+            message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+            actual: formatAbs(arg),
+            expected: `array at ${paramName}`,
+            suggestion: `改用满足 array 约束的值`,
+            fn: displayName,
+            line: loc?.start.line,
+            column: loc?.start.column,
+          });
+        }
+      }
+      // 顶层 int
+      if (c.int) {
+        const iv = litValue(arg);
+        if (typeof iv === "number" && !Number.isInteger(iv)) {
+          out.push({
+            severity: "error",
+            code: "nudo:constraint-violated",
+            message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+            actual: formatAbs(arg),
+            expected: `${paramName} is int`,
+            suggestion: `改用整数`,
+            fn: displayName,
+            line: loc?.start.line,
+            column: loc?.start.column,
+          });
+        }
+      }
     }
   };
 
@@ -1244,6 +1400,17 @@ function scanLiteralCalls(
         const abs = evalArgAbs(a, (n) => varAbs.get(n));
         absArgs.push(abs ?? absUnknown());
         if (abs && abs.shape.k === "obj") hasInfo = true;
+      } else if (a.type === "ArrayExpression") {
+        const abs = evalArgAbs(a, (n) => varAbs.get(n));
+        absArgs.push(abs ?? absUnknown());
+        if (abs && (abs.shape.k === "arr" || abs.shape.k === "tuple")) hasInfo = true;
+      } else if (a.type === "StringLiteral" && typeof a.value === "string") {
+        absArgs.push({
+          shape: { k: "prim", type: "string" },
+          term: { op: "lit", value: a.value },
+          conf: "exact",
+        });
+        hasInfo = true;
       } else if (a.type === "Identifier" && typeof a.name === "string") {
         const abs = varAbs.get(a.name);
         absArgs.push(abs ?? absUnknown());
@@ -1376,8 +1543,18 @@ function scanLiteralCalls(
       if (!argNode) continue;
       const absArg = evalArgAbs(argNode, (n) => varAbs.get(n));
       if (!absArg || absArg.shape.k === "unknown") continue;
+      // 数组/元组天然有 length；string 也有 length
+      const isLeny =
+        absArg.shape.k === "arr" ||
+        absArg.shape.k === "tuple" ||
+        (absArg.shape.k === "prim" &&
+          (absArg.shape as { type: string }).type === "string");
+      const needKeys = isLeny
+        ? [...keys].filter((k) => k !== "length")
+        : [...keys];
+      if (needKeys.length === 0) continue;
       const slots: Record<string, { value: Abs }> = {};
-      for (const k of keys) slots[k] = { value: absUnknown() };
+      for (const k of needKeys) slots[k] = { value: absUnknown() };
       const target = makeAbs({ k: "obj", slots }, undefined, undefined, "exact");
       const leq = leqAbs(absArg, target);
       if (!leq.ok) {

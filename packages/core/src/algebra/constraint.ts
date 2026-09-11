@@ -2,6 +2,9 @@
  * 约束模板构建器（参数无关）。
  *
  *   number().gt(0)                    → 占位项 self 上的 Pred
+ *   number().int().ge(0)              → 整数 + 下界
+ *   string().min(1)                   → 非空串（长度）
+ *   array(number().gt(0))             → 元素约束
  *   shape({ id: number().gt(0) })     → object 形状约束
  *   instantiate("ms")                 → Pred ms > 0 / u.id > 0 ∧ …
  *
@@ -27,6 +30,11 @@ export function getTerm(obj: Term, key: string): Term {
   return termApp("get", [obj, lit(key)]);
 }
 
+/** 长度项：length(u) */
+export function lenTerm(t: Term): Term {
+  return termApp("length", [t]);
+}
+
 export type NudoField = {
   constraint: NudoConstraint;
   optional?: boolean;
@@ -38,6 +46,10 @@ export type NudoConstraint = {
   readonly preds: Pred[];
   /** object 形状：字段名 → 嵌套约束 */
   readonly fields?: Record<string, NudoField>;
+  /** array 元素约束 */
+  readonly element?: NudoConstraint;
+  /** 整数（number 链式 .int()） */
+  readonly int?: boolean;
   /** 该约束整体可选（shape 字段用；不用 optional 以免与链式方法撞名） */
   readonly isOptional?: boolean;
 };
@@ -60,6 +72,14 @@ export type ConstraintBuilder = NudoConstraint & {
   ge(n: number): ConstraintBuilder;
   lt(n: number): ConstraintBuilder;
   le(n: number): ConstraintBuilder;
+  /** number：要求整数 */
+  int(): ConstraintBuilder;
+  /** string：长度下界 */
+  min(n: number): ConstraintBuilder;
+  /** string：长度上界 */
+  max(n: number): ConstraintBuilder;
+  /** string：精确长度 */
+  length(n: number): ConstraintBuilder;
   /** 字段可选（仅在 shape 内有意义） */
   optional(): ConstraintBuilder;
 };
@@ -67,24 +87,39 @@ export type ConstraintBuilder = NudoConstraint & {
 function makeBuilder(
   prim: PrimName | undefined,
   preds: Pred[],
-  fields?: Record<string, NudoField>,
-  optional?: boolean,
+  extra?: {
+    fields?: Record<string, NudoField>;
+    element?: NudoConstraint;
+    int?: boolean;
+    optional?: boolean;
+  },
 ): ConstraintBuilder {
+  const fields = extra?.fields;
+  const element = extra?.element;
+  const isInt = extra?.int;
+  const optional = extra?.optional;
   const base: NudoConstraint = {
     __nudoConstraint: true,
     ...(prim ? { prim } : {}),
     preds: [...preds],
     ...(fields ? { fields } : {}),
+    ...(element ? { element } : {}),
+    ...(isInt ? { int: true } : {}),
     ...(optional ? { isOptional: true } : {}),
   };
   const add = (p: Pred): ConstraintBuilder =>
-    makeBuilder(prim, [...preds, p], fields, optional);
+    makeBuilder(prim, [...preds, p], extra);
   return Object.assign(Object.create(null), base, {
     gt: (n: number) => add(gt(selfTerm(), lit(n))),
     ge: (n: number) => add(ge(selfTerm(), lit(n))),
     lt: (n: number) => add(lt(selfTerm(), lit(n))),
     le: (n: number) => add(le(selfTerm(), lit(n))),
-    optional: () => makeBuilder(prim, preds, fields, true),
+    int: () => makeBuilder(prim ?? "number", preds, { ...extra, int: true }),
+    min: (n: number) => add(ge(lenTerm(selfTerm()), lit(n))),
+    max: (n: number) => add(le(lenTerm(selfTerm()), lit(n))),
+    length: (n: number) =>
+      add(and(ge(lenTerm(selfTerm()), lit(n)), le(lenTerm(selfTerm()), lit(n)))),
+    optional: () => makeBuilder(prim, preds, { ...extra, optional: true }),
   }) as ConstraintBuilder;
 }
 
@@ -99,6 +134,12 @@ export function string(): ConstraintBuilder {
 
 export function boolean(): ConstraintBuilder {
   return makeBuilder("boolean", []);
+}
+
+/** array(item) —— 数组，元素满足 item */
+export function array(item: NudoConstraint | ConstraintBuilder): ConstraintBuilder {
+  if (!isConstraint(item)) return makeBuilder(undefined, []);
+  return makeBuilder(undefined, [], { element: item });
 }
 
 /**
@@ -117,7 +158,7 @@ export function shape(
       ...(v.isOptional ? { optional: true } : {}),
     };
   }
-  return makeBuilder(undefined, [], mapped, false);
+  return makeBuilder(undefined, [], { fields: mapped });
 }
 
 function substTerm(t: Term, paramName: string): Term {

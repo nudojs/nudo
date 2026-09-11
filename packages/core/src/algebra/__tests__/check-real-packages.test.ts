@@ -119,4 +119,28 @@ describe("real package precision", () => {
     expect(scanned).toBeGreaterThan(0);
     expect(violations, violations.join("\n")).toEqual([]);
   });
+
+  it("yocto-queue (class): no false-positive errors", () => {
+    const { scanned, violations } = scanPackage("yocto-queue");
+    expect(scanned).toBeGreaterThan(0);
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
+
+  it("p-limit: no false-positive errors", () => {
+    const { scanned, violations } = scanPackage("p-limit");
+    expect(scanned).toBeGreaterThan(0);
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
+
+  it("kleur: no false-positive errors", () => {
+    const { scanned, violations } = scanPackage("kleur");
+    expect(scanned).toBeGreaterThan(0);
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
+
+  it("eventemitter3: no false-positive errors", () => {
+    const { scanned, violations } = scanPackage("eventemitter3");
+    expect(scanned).toBeGreaterThan(0);
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
 });
