@@ -29,9 +29,10 @@ add(1, 3);     // ok → 4 #exact
 scale(100);    // ok
 scale(-1);     // error: -1 ⊭ positive
 
-// infer 期望：
-//   add    → (A1 + A2)
-//   scale  → (A1 + 1)  where A1+1 > 1
-//   twice  → ((A1 + 1) + 1)
+// infer 期望（无契约时 shape 是 JS + 的并集，不是 number 也不是 unknown）：
+//   add    → number | string = (A1 + A2)
+//   scale  → 有 requires x>0 时：number = (x + 1)  where (x+1)>1
+//   twice  → 有 requires x>0 时：number = ((x + 1) + 1)
+// 无 requires 的 score(x){return x+1}：score("x") 合法，返回 "x1"
 
 module.exports = { add, scale, twice };

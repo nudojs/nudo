@@ -8,18 +8,21 @@
 @nudo:requires <param> <constraint>
 ```
 
-- `<constraint>` 必须是 `.nudo.js` 导出的模板（如 `delay`）  
+- `<constraint>` 必须是 `.nudo.js` 导出的模板（如 `delay`、`user`）  
 - **不在** requires 里写 `x > 0`（那是绑死参数名的旧写法）  
-- 模板本身参数无关：`number().gt(0)`  
+- 模板本身参数无关：`number().gt(0)`、`shape({ id: number().gt(0) })`  
+- **不需要 interface / type 语法**——契约用可执行的 JS 表达式声明
 
 | 文件 | 场景 |
 |------|------|
-| [`delay.nudo.js`](./delay.nudo.js) | 通用约束模板 `number().gt(0)` |
-| [`set-delay.js`](./set-delay.js) | **主形态**：`@nudo:requires ms delay` |
+| [`delay.nudo.js`](./delay.nudo.js) | 标量模板 `number().gt(0)` |
+| [`shapes.nudo.js`](./shapes.nudo.js) | **object 形状**：`shape({ id, name })` |
+| [`set-delay.js`](./set-delay.js) | 标量主形态：`@nudo:requires ms delay` |
+| [`register.js`](./register.js) | **形状主形态**：`@nudo:requires u user` |
 | [`add-pred.js`](./add-pred.js) | Pred 流入代数：`add(x,1)` → `(x+1)>1` |
 | [`declared-vs-if.js`](./declared-vs-if.js) | if 分支 ≠ 契约（clamp vs setDelay） |
 
-## 主形态
+## 标量契约
 
 ```js
 // delay.nudo.js
@@ -34,9 +37,44 @@ export const delay = number().gt(0);
 function setDelay(ms) { ... }
 ```
 
+## Object 形状契约（无需 interface）
+
+```js
+// shapes.nudo.js
+export const user = shape({
+  id: number().gt(0),
+  name: string(),
+});
+
+// register.js
+/// @nudo:import { user } from "./shapes.nudo.js"
+
+/**
+ * @nudo:requires u user
+ */
+function register(u) {
+  return `${u.id}:${u.name}`;
+}
+
+register({ id: 1, name: "ada" });  // ok
+register({ id: -1, name: "ada" }); // error: u.id ⊭ > 0
+register({ id: 1 });               // error: missing name
+register({ id: 1, name: 2 });      // error: name ⊭ string
+```
+
+可选字段：
+
+```js
+export const config = shape({
+  retries: number().ge(0).le(5),
+  label: string().optional(),
+});
+```
+
 - 约束模板 **参数无关**（占位 `self`）  
-- `ms delay` = 把 `delay` 实例化到参数 `ms`  
-- 同一 `delay` 可被任意文件、任意参数复用  
+- `u user` = 把 `user` 实例化到参数 `u`  
+- 同一 `user` 可被任意文件、任意参数复用  
+- 形状检查是声明式门禁，不是类型系统完备检查
 
 ## 与 @nudo:case
 
@@ -47,5 +85,6 @@ function setDelay(ms) { ... }
 
 ```bash
 npx tsx packages/cli/src/index.ts check docs/examples/constraints/set-delay.js
+npx tsx packages/cli/src/index.ts check docs/examples/constraints/register.js
 npx tsx packages/cli/src/index.ts infer docs/examples/constraints/add-pred.js
 ```

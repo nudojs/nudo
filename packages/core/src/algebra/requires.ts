@@ -19,6 +19,7 @@ import {
   number,
   string as stringC,
   boolean as booleanC,
+  shape,
 } from "./constraint.ts";
 
 /** `/// @nudo:import { delay, percent } from "./delay.nudo.js"` */
@@ -56,8 +57,8 @@ export function execNudoModule(src: string): Record<string, unknown> {
   body = body.replace(/^\s*import\s*\{[^}]*\}\s*from\s*["'][^"']+["'];?\s*$/gm, "");
   body = body.replace(/^\s*import\s+\*\s+as\s+\w+\s+from\s*["'][^"']+["'];?\s*$/gm, "");
   body += `\nreturn { ${names.join(", ")} };`;
-  const fn = new Function("number", "string", "boolean", body);
-  return fn(number, stringC, booleanC) as Record<string, unknown>;
+  const fn = new Function("number", "string", "boolean", "shape", body);
+  return fn(number, stringC, booleanC, shape) as Record<string, unknown>;
 }
 
 export type RequiresResolveOpts = {
@@ -117,14 +118,21 @@ function extractRequiresLines(source: string, fnName: string): string[] {
 /**
  * 解析 `ms delay` / `n percent` → [param, Pred]
  * 多条用 && 或换行连接。
+ * 同时保留原始 NudoConstraint（shape 字段检查用）。
  */
+export type RequiresEntry = {
+  param: string;
+  pred: Pred;
+  constraint: NudoConstraint;
+};
+
 export function extractRequiresFromSource(
   source: string,
   fnName: string,
   opts: RequiresResolveOpts = {},
-): Array<{ param: string; pred: Pred }> {
+): RequiresEntry[] {
   const constraints = collectConstraints(source, opts);
-  const out: Array<{ param: string; pred: Pred }> = [];
+  const out: RequiresEntry[] = [];
   for (const line of extractRequiresLines(source, fnName)) {
     // 支持 `ms delay && n percent` 或逗号
     const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);
@@ -134,7 +142,11 @@ export function extractRequiresFromSource(
       const [, param, cName] = m;
       const c = constraints.get(cName!);
       if (!c) continue;
-      out.push({ param: param!, pred: instantiateConstraint(c, param!) });
+      out.push({
+        param: param!,
+        pred: instantiateConstraint(c, param!),
+        constraint: c,
+      });
     }
   }
   return out;
@@ -152,6 +164,22 @@ export function requiresToIndexed(
   for (const item of raw) {
     const idx = paramNames.indexOf(item.param);
     if (idx >= 0) out.push([idx, item.pred]);
+  }
+  return out;
+}
+
+/** requires → 带约束模板的下标表（shape 检查用） */
+export function requiresToIndexedFull(
+  source: string,
+  fnName: string,
+  paramNames: string[],
+  opts: RequiresResolveOpts = {},
+): Array<[number, RequiresEntry]> {
+  const raw = extractRequiresFromSource(source, fnName, opts);
+  const out: Array<[number, RequiresEntry]> = [];
+  for (const item of raw) {
+    const idx = paramNames.indexOf(item.param);
+    if (idx >= 0) out.push([idx, item]);
   }
   return out;
 }

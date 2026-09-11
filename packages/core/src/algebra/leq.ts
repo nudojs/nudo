@@ -54,8 +54,10 @@ function leqWithPred(
 
   // never ≤ 任意
   if (src.shape.k === "never") return ok();
-  // 任意 ≤ unknown
-  if (tgt.shape.k === "unknown") return ok();
+  // 任意 ≤ any / unknown（目标放宽）
+  if (tgt.shape.k === "any" || tgt.shape.k === "unknown") return ok();
+  // any ≤ 任意（源是任意值，目标收窄时不在此判定失败——由 pred/slot 再卡）
+  if (src.shape.k === "any") return ok();
 
   // 字面量：先按 lit 值裁定，再走 shape
   const sv = litValue(src);

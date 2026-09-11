@@ -16,6 +16,12 @@ export type Confidence = "exact" | "path" | "widened" | "mock" | "partial" | "op
 
 export type Shape =
   | { k: "never" }
+  /**
+   * any：JS 里可以是任意值（无约束参数）。
+   * 运算按真实 JS 语义取并集，不是「分析失败」。
+   */
+  | { k: "any" }
+  /** unknown：分析拿不到信息（求值失败/泄漏），不是「任意值」 */
   | { k: "unknown" }
   | { k: "prim"; type: PrimName }
   | {
@@ -41,7 +47,15 @@ export type Abs = {
 // --- 工厂 ---
 
 export const never: Abs = { shape: { k: "never" }, conf: "exact" };
+/** 任意 JS 值（无约束参数；可参与运算，结果取并集） */
+export const anyValue: Abs = { shape: { k: "any" }, conf: "path" };
+/** 分析无信息 */
 export const unknown: Abs = { shape: { k: "unknown" }, conf: "partial" };
+
+/** 带 term 的 any（generalize type-var） */
+export function anyVar(id: string, conf: Confidence = "path"): Abs {
+  return { shape: { k: "any" }, term: { op: "var", id }, conf };
+}
 
 export function num(): Abs {
   return { shape: { k: "prim", type: "number" }, conf: "exact" };
@@ -118,6 +132,8 @@ export function shapeToString(s: Shape): string {
   switch (s.k) {
     case "never":
       return "never";
+    case "any":
+      return "any";
     case "unknown":
       return "unknown";
     case "prim":

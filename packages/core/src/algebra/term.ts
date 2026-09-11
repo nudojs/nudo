@@ -34,6 +34,14 @@ export function termToString(t: Term): string {
     return typeof t.value === "string" ? JSON.stringify(t.value) : String(t.value);
   }
   if (t.op === "var") return t.id;
+  // 字段访问：get(u, "id") → u.id
+  if (t.op === "app" && t.fn === "get" && t.args.length === 2) {
+    const obj = termToString(t.args[0]!);
+    const key = t.args[1]!;
+    if (key.op === "lit" && typeof key.value === "string") {
+      return `${obj}.${key.value}`;
+    }
+  }
   if (t.fn === "+" && t.args.length === 2) {
     return `(${termToString(t.args[0]!)} + ${termToString(t.args[1]!)})`;
   }

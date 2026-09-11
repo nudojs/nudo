@@ -20,9 +20,10 @@ import {
 import { defaultLeakBudget } from "./leak.ts";
 import { leqAbs } from "./leq.ts";
 import {
-  requiresToIndexed,
-  type RequiresResolveOpts,
+  requiresToIndexedFull,
+  type RequiresEntry,
 } from "./requires.ts";
+import type { NudoConstraint, NudoField } from "./constraint.ts";
 import { generalizeFromAst } from "./generalize.ts";
 import { numLit, unknown, abs as makeAbs } from "./abs.ts";
 import type { Abs, Confidence } from "./abs.ts";
@@ -738,14 +739,170 @@ function scanLiteralCalls(
     }
   };
 
-  const parseLitArgs = (
+  /**
+   * shape 约束：实参 object Abs 的每个字段 ⊭ 嵌套约束。
+   * 缺字段 / 类型不符 / 数值界违例 → nudo:constraint-violated。
+   */
+  const checkShapeAgainstAbs = (
+    displayName: string,
+    paramName: string,
+    constraint: NudoConstraint,
+    absArg: Abs,
+    path: string,
+    loc?: { start: { line: number; column: number } },
+  ): void => {
+    if (!constraint.fields) return;
+    // unknown 实参：无信息，不猜
+    if (absArg.shape.k === "unknown" && !absArg.term) return;
+
+    const slots =
+      absArg.shape.k === "obj"
+        ? (absArg.shape as { slots: Record<string, { value: Abs; optional?: boolean }> }).slots
+        : undefined;
+
+    if (!slots) {
+      // 有形状信息但不是 object
+      if (absArg.shape.k !== "unknown" && absArg.shape.k !== "never") {
+        out.push({
+          severity: "error",
+          code: "nudo:constraint-violated",
+          message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+          actual: formatAbs(absArg),
+          expected: `object shape at ${path}`,
+          suggestion: `改用满足 ${path} 形状约束的 object`,
+          fn: displayName,
+          line: loc?.start.line,
+          column: loc?.start.column,
+        });
+      }
+      return;
+    }
+
+    for (const [key, field] of Object.entries(constraint.fields) as Array<
+      [string, NudoField]
+    >) {
+      const slot = slots[key];
+      const fieldPath = path === paramName ? `${paramName}.${key}` : `${path}.${key}`;
+      if (!slot) {
+        if (!field.optional && !field.constraint.isOptional) {
+          out.push({
+            severity: "error",
+            code: "nudo:constraint-violated",
+            message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+            actual: formatAbs(absArg),
+            expected: `missing field ${fieldPath}`,
+            suggestion: `补全字段 ${fieldPath}`,
+            fn: displayName,
+            line: loc?.start.line,
+            column: loc?.start.column,
+          });
+        }
+        continue;
+      }
+      checkFieldConstraint(displayName, paramName, field.constraint, slot.value, fieldPath, loc);
+    }
+  };
+
+  /** 单字段：prim 类型 + 数值界 + 嵌套 shape */
+  const checkFieldConstraint = (
+    displayName: string,
+    paramName: string,
+    constraint: NudoConstraint,
+    fieldAbs: Abs,
+    fieldPath: string,
+    loc?: { start: { line: number; column: number } },
+  ): void => {
+    if (fieldAbs.shape.k === "unknown" && !fieldAbs.term) return;
+
+    // prim 类型
+    if (constraint.prim && fieldAbs.shape.k === "prim") {
+      const actualPrim = (fieldAbs.shape as { type: string }).type;
+      if (actualPrim !== constraint.prim) {
+        out.push({
+          severity: "error",
+          code: "nudo:constraint-violated",
+          message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+          actual: formatAbs(fieldAbs),
+          expected: `typeof ${fieldPath} = "${constraint.prim}"`,
+          suggestion: `把 ${fieldPath} 改成 ${constraint.prim}`,
+          fn: displayName,
+          line: loc?.start.line,
+          column: loc?.start.column,
+        });
+        return;
+      }
+    }
+
+    // 嵌套 shape
+    if (constraint.fields) {
+      checkShapeAgainstAbs(displayName, paramName, constraint, fieldAbs, fieldPath, loc);
+    }
+
+    // 数值界：把 SELF 替换为 fieldAbs 的字面量
+    const lv = litValue(fieldAbs);
+    if (lv === undefined || typeof lv !== "number") return;
+    for (const p of constraint.preds) {
+      const flat = p.op === "and" ? p.args : [p];
+      for (const atom of flat) {
+        if (
+          (atom.op === "gt" || atom.op === "ge" || atom.op === "lt" || atom.op === "le") &&
+          atom.b.op === "lit" &&
+          typeof atom.b.value === "number"
+        ) {
+          const n = atom.b.value;
+          let ok = true;
+          if (atom.op === "gt") ok = lv > n;
+          if (atom.op === "ge") ok = lv >= n;
+          if (atom.op === "lt") ok = lv < n;
+          if (atom.op === "le") ok = lv <= n;
+          if (!ok) {
+            const opSym = { gt: ">", ge: "≥", lt: "<", le: "≤" }[atom.op];
+            out.push({
+              severity: "error",
+              code: "nudo:constraint-violated",
+              message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+              actual: formatAbs(fieldAbs),
+              expected: `${fieldPath} ${opSym} ${n}`,
+              suggestion: `改用满足 ${fieldPath} ${opSym} ${n} 的值，或放宽 ${paramName} 的前置`,
+              fn: displayName,
+              line: loc?.start.line,
+              column: loc?.start.column,
+            });
+          }
+        }
+      }
+    }
+  };
+
+  /** 对带 shape 的 requires 做 object 字段检查 */
+  const checkShapeReqs = (
+    displayName: string,
+    reqs: Array<[number, RequiresEntry]>,
+    paramNames: string[],
+    absArgs: Abs[],
+    argIndexOf: (reqIdx: number) => number | undefined,
+    loc?: { start: { line: number; column: number } },
+  ): void => {
+    for (const [idx, entry] of reqs) {
+      if (!entry.constraint.fields) continue;
+      const argIdx = argIndexOf(idx);
+      if (argIdx === undefined) continue;
+      const arg = absArgs[argIdx];
+      if (!arg) continue;
+      const paramName = entry.param || paramNames[idx] || `arg${idx}`;
+      checkShapeAgainstAbs(displayName, paramName, entry.constraint, arg, paramName, loc);
+    }
+  };
+
+  const parseCallArgs = (
     args: Array<Record<string, unknown>>,
-  ): { absArgs: Abs[]; allLit: boolean } => {
+  ): { absArgs: Abs[]; hasInfo: boolean } => {
     const absArgs: Abs[] = [];
-    let allLit = true;
+    let hasInfo = false;
     for (const a of args ?? []) {
       if (a.type === "NumericLiteral" && typeof a.value === "number") {
         absArgs.push(numLit(a.value));
+        hasInfo = true;
       } else if (
         a.type === "UnaryExpression" &&
         (a as { operator?: string }).operator === "-" &&
@@ -753,12 +910,20 @@ function scanLiteralCalls(
       ) {
         const num = (a as { argument: { value: number } }).argument;
         absArgs.push(numLit(-num.value));
+        hasInfo = true;
+      } else if (a.type === "ObjectExpression") {
+        const abs = evalArgAbs(a, (n) => varAbs.get(n));
+        absArgs.push(abs ?? absUnknown());
+        if (abs && abs.shape.k === "obj") hasInfo = true;
+      } else if (a.type === "Identifier" && typeof a.name === "string") {
+        const abs = varAbs.get(a.name);
+        absArgs.push(abs ?? absUnknown());
+        if (abs && abs.shape.k !== "unknown") hasInfo = true;
       } else {
-        allLit = false;
         absArgs.push(absUnknown());
       }
     }
-    return { absArgs, allLit };
+    return { absArgs, hasInfo };
   };
 
   const checkOneCall = (
@@ -771,36 +936,44 @@ function scanLiteralCalls(
     // 传参结构：实参字面量 Abs ≤ 形参必填 slot
     checkArgStructures(fnName, source, args, loc);
 
-    const { absArgs, allLit } = parseLitArgs(args);
-    if (!allLit || absArgs.length === 0) return;
+    const { absArgs, hasInfo } = parseCallArgs(args);
+    if (!hasInfo || absArgs.length === 0) return;
 
-    const ownReqs = extractParamReqs(source, fnName, {
-      loadModule: opts?.loadModule,
-      fromFile: opts?.fromFile ?? "",
-    });
     const g = generalizeFromAst(fnName, source);
     const paramNames = g?.params ?? [];
-    checkReqs(fnName, ownReqs, paramNames, absArgs, (i) => i, loc);
+    const optsR = {
+      loadModule: opts?.loadModule,
+      fromFile: opts?.fromFile ?? "",
+    };
+    const ownFull = requiresToIndexedFull(source, fnName, paramNames, optsR);
+    checkShapeReqs(fnName, ownFull, paramNames, absArgs, (i) => i, loc);
+    checkReqs(
+      fnName,
+      ownFull.map(([i, e]) => [i, e.pred] as [number, Pred]),
+      paramNames,
+      absArgs,
+      (i) => i,
+      loc,
+    );
 
     const fwd = forwards.get(fnName);
     if (fwd) {
-      const tReqs = extractParamReqs(source, fwd.target, {
-        loadModule: opts?.loadModule,
-        fromFile: opts?.fromFile ?? "",
-      });
-      if (tReqs.length > 0) {
-        const tg = generalizeFromAst(fwd.target, source);
-        const tParams = tg?.params ?? [];
+      const tg = generalizeFromAst(fwd.target, source);
+      const tParams = tg?.params ?? [];
+      const tFull = requiresToIndexedFull(source, fwd.target, tParams, optsR);
+      if (tFull.length > 0) {
         const wrapperArgOfTarget = new Map<number, number>();
         fwd.map.forEach((wrapperIdx, targetIdx) => {
           wrapperArgOfTarget.set(targetIdx, wrapperIdx);
         });
+        const mapArg = (targetIdx: number) => wrapperArgOfTarget.get(targetIdx);
+        checkShapeReqs(`${fnName}→${fwd.target}`, tFull, tParams, absArgs, mapArg, loc);
         checkReqs(
           `${fnName}→${fwd.target}`,
-          tReqs,
+          tFull.map(([i, e]) => [i, e.pred] as [number, Pred]),
           tParams,
           absArgs,
-          (targetIdx) => wrapperArgOfTarget.get(targetIdx),
+          mapArg,
           loc,
         );
       }
@@ -814,21 +987,29 @@ function scanLiteralCalls(
     loc?: { start: { line: number; column: number } },
   ): void => {
     checkArgStructures(ext.fnName, ext.source, args, loc, displayName);
-    const { absArgs, allLit } = parseLitArgs(args);
-    if (!allLit || absArgs.length === 0) return;
-    let reqs: Array<[number, Pred]> = [];
+    const { absArgs, hasInfo } = parseCallArgs(args);
+    if (!hasInfo || absArgs.length === 0) return;
+    let full: Array<[number, RequiresEntry]> = [];
     let paramNames: string[] = [];
     try {
-      reqs = extractParamReqs(ext.source, ext.fnName, {
+      const g = generalizeFromAst(ext.fnName, ext.source);
+      paramNames = g?.params ?? [];
+      full = requiresToIndexedFull(ext.source, ext.fnName, paramNames, {
         loadModule: opts?.loadModule,
         fromFile: opts?.fromFile ?? "",
       });
-      const g = generalizeFromAst(ext.fnName, ext.source);
-      paramNames = g?.params ?? [];
     } catch {
       return;
     }
-    checkReqs(displayName, reqs, paramNames, absArgs, (i) => i, loc);
+    checkShapeReqs(displayName, full, paramNames, absArgs, (i) => i, loc);
+    checkReqs(
+      displayName,
+      full.map(([i, e]) => [i, e.pred] as [number, Pred]),
+      paramNames,
+      absArgs,
+      (i) => i,
+      loc,
+    );
   };
 
   /**
@@ -897,90 +1078,6 @@ function scanLiteralCalls(
       } else if (resolved?.external) {
         const name = resolved.external.fnName || "require()";
         checkExternalCall(resolved.external, args, name, obj.loc);
-      }
-    }
-    for (const key of Object.keys(obj)) {
-      if (key === "loc" || key === "start" || key === "end") continue;
-      const val = obj[key];
-      if (Array.isArray(val)) val.forEach(visit);
-      else if (val && typeof val === "object") visit(val);
-    }
-  };
-  visit(file);
-  return out;
-}
-
-/**
- * 前置约束来源优先级：
- * 1. 显式 `@nudo:requires`（内联 Pred 或 `V.binding`）
- * 2. 无声明时不从 if 猜前置
- */
-function extractParamReqs(
-  source: string,
-  fnName: string,
-  opts: RequiresResolveOpts = {},
-): Array<[number, Pred]> {
-  const g = generalizeFromAst(fnName, source);
-  const paramNames = g?.params ?? [];
-  return requiresToIndexed(source, fnName, paramNames, opts);
-}
-
-/** 从函数体抽 if (param ≷ n) return param 形态的前置约束（含 && 双侧） */
-function extractParamReqsFromSource(
-  source: string,
-  fnName: string,
-): Array<[number, import("./pred.ts").Pred]> {
-  const g = generalizeFromAst(fnName, source);
-  if (!g) return [];
-  const paramIndex = new Map(g.params.map((p, i) => [p, i]));
-  const file = parse(source);
-  const out: Array<[number, import("./pred.ts").Pred]> = [];
-
-  const pushCmp = (
-    test: Record<string, unknown>,
-    consequent: Record<string, unknown> | undefined,
-  ): void => {
-    if (test?.type !== "BinaryExpression") return;
-    const left = test.left as { type?: string; name?: string };
-    const right = test.right as { type?: string; value?: number };
-    const op = test.operator as string;
-    if (
-      left?.type !== "Identifier" ||
-      !left.name ||
-      !paramIndex.has(left.name) ||
-      right?.type !== "NumericLiteral" ||
-      typeof right.value !== "number"
-    ) {
-      return;
-    }
-    // 仅 `if (param ≷ n) return param` 视为成功路径前置；
-    // `if (id > 9999) return 9999` 是 clamp，不是调用前置。
-    const isReturnParam =
-      consequent?.type === "ReturnStatement" &&
-      (consequent.argument as { type?: string; name?: string })?.type ===
-        "Identifier" &&
-      (consequent.argument as { name?: string }).name === left.name;
-    if (!isReturnParam) return;
-    const idx = paramIndex.get(left.name)!;
-    const t = { op: "var" as const, id: left.name };
-    const b = { op: "lit" as const, value: right.value };
-    if (op === ">") out.push([idx, { op: "gt", a: t, b }]);
-    else if (op === ">=") out.push([idx, { op: "ge", a: t, b }]);
-    else if (op === "<") out.push([idx, { op: "lt", a: t, b }]);
-    else if (op === "<=") out.push([idx, { op: "le", a: t, b }]);
-  };
-
-  const visit = (n: unknown): void => {
-    if (!n || typeof n !== "object") return;
-    const obj = n as Record<string, unknown> & { type?: string };
-    if (obj.type === "IfStatement") {
-      const test = obj.test as Record<string, unknown>;
-      const consequent = obj.consequent as Record<string, unknown> | undefined;
-      pushCmp(test, consequent);
-      // `if (a > 0 && a <= 100) return a`
-      if (test?.type === "LogicalExpression" && test.operator === "&&") {
-        pushCmp(test.left as Record<string, unknown>, consequent);
-        pushCmp(test.right as Record<string, unknown>, consequent);
       }
     }
     for (const key of Object.keys(obj)) {

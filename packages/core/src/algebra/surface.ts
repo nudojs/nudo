@@ -27,7 +27,8 @@ export function typeofAbs(a: Abs): Abs {
   if (a.term?.op === "lit" && a.term.value === undefined) {
     return strLit("undefined");
   }
-  if (a.shape.k === "unknown") {
+  if (a.shape.k === "any" || a.shape.k === "unknown") {
+    // any/unknown：typeof 只能确定是 string，具体名未知
     return abs({ k: "prim", type: "string" }, undefined, undefined, "partial");
   }
   if (a.shape.k === "sum") {
@@ -42,6 +43,8 @@ function typeofName(s: Shape): string {
   switch (s.k) {
     case "never":
       return "undefined";
+    case "any":
+      return "unknown";
     case "unknown":
       return "unknown";
     case "prim":

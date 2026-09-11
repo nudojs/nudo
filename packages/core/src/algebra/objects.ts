@@ -165,6 +165,7 @@ function shapeKey(a: Abs): string {
   const s = a.shape;
   if (s.k === "prim") return `prim:${s.type}`;
   if (s.k === "never") return "never";
+  if (s.k === "any") return "any";
   if (s.k === "unknown") return "unknown";
   if (s.k === "obj") return `obj:${Object.keys(s.slots).sort().join(",")}`;
   if (s.k === "fn") return `fn:${s.params.length}`;

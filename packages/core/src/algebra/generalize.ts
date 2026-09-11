@@ -98,7 +98,8 @@ export function generalizeFromAst(
 
   const typeParams: TypeParam[] = params.map((p, i) => ({
     id: `${label}${i + 1}`,
-    value: abs({ k: "unknown" }, termVar(`${label}${i + 1}`), pTrue, "path"),
+    // 无约束参数 = any（任意 JS 值），不是 unknown（分析无信息）
+    value: abs({ k: "any" }, termVar(`${label}${i + 1}`), pTrue, "path"),
   }));
 
   const run = (args: Abs[], phi: Phi = pTrue): Abs => {

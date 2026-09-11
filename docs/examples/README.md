@@ -15,25 +15,32 @@
 ```
 *.nudo.js          通用约束模板（不绑参数名）
   export const delay = number().gt(0);
+  export const user  = shape({ id: number().gt(0), name: string() });
 
 demo.js            绑定发生在 requires
-  /// @nudo:import { delay } from "./delay.nudo.js"
+  /// @nudo:import { delay, user } from "./delay.nudo.js"
   /**
    * @nudo:requires ms delay
+   * @nudo:requires u user
    */
   function setDelay(ms) { ... }
+  function register(u) { ... }
 ```
 
 - `if` 分支 **不是** 契约  
 - 契约只来自 **声明**（`.nudo.js` 导出的模板）  
 - requires 形态唯一：`@nudo:requires <param> <constraint>`  
+- **object 形状用 `shape({...})`，无需 interface / type**  
 - 同一 Pred 喂 check 与代数  
 
 ## 怎么跑
 
 ```bash
-# 约束门禁
+# 约束门禁（标量）
 npx tsx packages/cli/src/index.ts check docs/examples/constraints/set-delay.js
+
+# 约束门禁（object 形状）
+npx tsx packages/cli/src/index.ts check docs/examples/constraints/register.js
 
 # 推断（无损 Abs）
 npx tsx packages/cli/src/index.ts infer docs/examples/constraints/add-pred.js

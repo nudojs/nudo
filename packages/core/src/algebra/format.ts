@@ -39,6 +39,8 @@ export function formatShape(a: Abs): string {
   switch (s.k) {
     case "never":
       return "never";
+    case "any":
+      return "any";
     case "unknown":
       return "unknown";
     case "prim": {

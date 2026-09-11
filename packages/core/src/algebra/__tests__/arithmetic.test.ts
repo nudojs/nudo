@@ -36,6 +36,24 @@ describe("term simplify", () => {
 });
 
 describe("add monotonicity", () => {
+  it("unconstrained any + 1: number|string 并集，term kept（real JS）", () => {
+    // 无契约时 x 是 any；score('x') 合法，+ 可能是拼接也可能是加法
+    const anyA = {
+      shape: { k: "any" as const },
+      term: v("A1"),
+      conf: "path" as const,
+    };
+    const r = add(anyA, numLit(1));
+    expect(r.shape.k).toBe("sum");
+    if (r.shape.k === "sum") {
+      const kinds = r.shape.members.map((m) =>
+        m.shape.k === "prim" ? (m.shape as { type: string }).type : m.shape.k,
+      );
+      expect(kinds.sort()).toEqual(["number", "string"]);
+    }
+    expect(termToString(r.term!)).toBe("(A1 + 1)");
+  });
+
   it("x>0 + 1 ⇒ term>1", () => {
     const phi = gtNum(v("x"), 0);
     const r = add(numVar("x", gtNum(v("x"), 0)), numLit(1), phi);

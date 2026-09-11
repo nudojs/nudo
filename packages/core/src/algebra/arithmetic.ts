@@ -35,10 +35,14 @@ import {
 import { concatString, isTemplateLike } from "./template.ts";
 
 /**
- * 抽象加法：eval(a + b)
+ * 抽象加法：eval(a + b) —— 跟真实 JS，不无根据地假定 number。
  * 1. 双方字面量 → 直接求值
- * 2. 数值 + 数值 → 构造 term，并用单调性推 pred
- * 3. 含 string → string 拼接，丢数值约束
+ * 2. 双方 number prim → term + 单调性 pred，shape=number
+ * 3. 含 string/template → 拼接
+ * 4. any / type-var 参与 → 按 JS + 的可能结果取并集：number | string
+ *    （bool/null 走 ToNumber→number；object 默认 ToPrimitive→string；
+ *      bigint/symbol 边角不在默认并集里，由调用点实例化再收窄）
+ *    无契约的 score(x){return x+1}：score("x") 合法，不得钉成 number。
  */
 export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   // 字面量快速路径
@@ -53,8 +57,13 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     }
   }
 
-  // 数值符号（含 generalize 的 type-var：unknown 但带 term）
-  if (isNumericLike(a) && isNumericLike(b)) {
+  // 字符串拼接（含 template parts）—— JS + 优先走 string
+  if (isStrPrim(a) || isStrPrim(b) || isTemplateLike(a) || isTemplateLike(b)) {
+    return concatString(a, b);
+  }
+
+  // 双方 number prim：数值加法 + 约束传播
+  if (isNumPrim(a) && isNumPrim(b)) {
     if (!a.term || !b.term) {
       return abs(num().shape, undefined, undefined, confJoin(a.conf, "widened"));
     }
@@ -65,12 +74,61 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     return abs({ k: "prim", type: "number" }, term, pred, conf);
   }
 
-  // 字符串拼接（含 template parts）
-  if (isStrPrim(a) || isStrPrim(b) || isTemplateLike(a) || isTemplateLike(b)) {
-    return concatString(a, b);
+  // any / type-var：JS + 的并集，不是 unknown，也不是 number
+  if (isAnyLike(a) || isAnyLike(b)) {
+    const term =
+      a.term && b.term ? simplifyTerm(app("+", [a.term, b.term])) : undefined;
+    return abs(
+      { k: "sum", members: [num(), str()] },
+      term,
+      undefined,
+      "partial",
+    );
+  }
+
+  // sum 分发：对每个成员做 +，再 join（(x+1)+1 在 any 上仍是 number|string）
+  if (a.shape.k === "sum" || b.shape.k === "sum") {
+    const parts: Abs[] = [];
+    const as = a.shape.k === "sum" ? a.shape.members : [a];
+    const bs = b.shape.k === "sum" ? b.shape.members : [b];
+    for (const x of as) {
+      for (const y of bs) {
+        const r = add(x, y, phi);
+        if (r.shape.k === "never") continue;
+        if (r.shape.k === "sum") parts.push(...r.shape.members);
+        else parts.push(r);
+      }
+    }
+    const uniq = dedupAbsMembers(parts);
+    const term =
+      a.term && b.term ? simplifyTerm(app("+", [a.term, b.term])) : undefined;
+    if (uniq.length === 0) {
+      return abs({ k: "unknown" }, term, undefined, "partial");
+    }
+    if (uniq.length === 1) {
+      return abs(uniq[0]!.shape, term, uniq[0]!.pred, confJoin(a.conf, b.conf));
+    }
+    return abs({ k: "sum", members: uniq }, term, undefined, "partial");
   }
 
   return abs({ k: "unknown" }, undefined, undefined, "partial");
+}
+
+function dedupAbsMembers(ms: Abs[]): Abs[] {
+  const seen = new Set<string>();
+  const out: Abs[] = [];
+  for (const m of ms) {
+    const key =
+      m.shape.k === "prim"
+        ? `prim:${m.shape.type}`
+        : m.shape.k === "sum"
+          ? `sum:${m.shape.members.length}`
+          : m.shape.k;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(m);
+  }
+  return out;
 }
 
 function strLitResult(s: string): Abs {
@@ -86,14 +144,19 @@ function normalizeNegZero(n: number): number {
   return n === 0 ? 0 : n;
 }
 
-/**
- * 可参与数值运算：number prim，或 generalize 的 type-var（unknown + term）。
- * 类型即计算：α+1 的 shape 是 number，因为 + 是数值运算。
- */
-function isNumericLike(a: Abs): boolean {
-  if (isNumPrim(a)) return true;
+/** any 或 generalize type-var（any/unknown + term） */
+function isAnyLike(a: Abs): boolean {
+  if (a.shape.k === "any") return true;
   if (a.shape.k === "unknown" && a.term) return true;
   return false;
+}
+
+/**
+ * 可参与数值运算（- * / %）：number prim。
+ * any 不算数——那会把 score("x") 误判成 number 路径。
+ */
+function isNumericLike(a: Abs): boolean {
+  return isNumPrim(a);
 }
 
 /**

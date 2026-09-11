@@ -21,7 +21,7 @@ npx tsx packages/cli/src/index.ts check path/to/file.js
 
 | code | 含义 |
 |---|---|
-| `nudo:constraint-violated` | 调用实参 ⊭ 前置 |
+| `nudo:constraint-violated` | 调用实参 ⊭ 前置（标量界 / **shape 字段**） |
 | `nudo:assign-mismatch` | 赋值 ⊭ 原有形状（leqAbs） |
 | `nudo:arg-structure` | 实参结构 ⊭ body 访问的 slot |
 
@@ -77,6 +77,30 @@ function setDelay(ms) {
 
 setDelay(0);        // error: 0 ⊭ delay
 setDelay(100);      // ok
+```
+
+### Object 形状契约（无需 interface）
+
+```js
+// shapes.nudo.js
+export const user = shape({
+  id: number().gt(0),
+  name: string(),
+});
+
+/// @nudo:import { user } from "./shapes.nudo.js"
+
+/**
+ * @nudo:requires u user
+ */
+function register(u) {
+  return `${u.id}:${u.name}`;
+}
+
+register({ id: -1, name: "a" }); // error: u.id ⊭ > 0
+register({ id: 1 });             // error: missing u.name
+register({ id: 1, name: 2 });    // error: u.name ⊭ string
+register({ id: 1, name: "ada" }); // ok
 ```
 
 约束模板在 `*.nudo.js`（参数无关，`number()` 链式）：
@@ -217,11 +241,11 @@ npx tsx packages/cli/src/index.ts infer file.js --json
       "throws": null,
       "source": null,
       "intension": {
-        "display": "scale: <A1>(x: A1) => number = (A1 + 1)",
-        "abs": "number  = (A1 + 1)  #path",
+        "display": "scale: <A1>(x: A1) => number | string = (A1 + 1)",
+        "abs": "number | string  = (A1 + 1)  #partial",
         "absMultiline": "…",
         "term": "(A1 + 1)",
-        "conf": "path"
+        "conf": "partial"
       }
     }]
   }],
