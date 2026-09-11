@@ -111,6 +111,35 @@ npx tsx scripts/scan-real-packages.ts commander
 
 **建议**：TS 大仓继续 tsc；纯 JS / 渐进迁移 / Agent 流水线用 `nudo check` 作约束门禁。dts 生成可选，用于生态兼容。
 
+## `--json` 契约（v1）
+
+```bash
+npx tsx packages/cli/src/index.ts check file.js --json
+```
+
+```jsonc
+{
+  "version": 1,
+  "file": "…",
+  "ok": false,
+  "summary": { "errors": 1, "warnings": 0, "infos": 0, "functions": 1 },
+  "signatures": [
+    { "name": "needsPositive", "params": ["x"], "display": "…",
+      "detail": "…", "conf": "path", "abs": "number  = x  where x > 0  #path" }
+  ],
+  "issues": [
+    { "severity": "error", "code": "nudo:constraint-violated",
+      "message": "…", "fn": "needsPositive", "line": 6,
+      "actual": "-1  #exact", "expected": "x > 0", "suggestion": "…" }
+  ]
+}
+```
+
+- `version: 1` — 字段只增不改语义  
+- `ok` — 有 error 则 false；CLI 退出码对齐  
+- Abs 以 **formatAbs 字符串**给出，不序列化内部 shape 图  
+- 契约测试：`check-json.test.ts`
+
 ## 实现入口
 
 | 层 | 位置 |

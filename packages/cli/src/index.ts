@@ -455,12 +455,12 @@ program
     }
   });
 
-async function runCheck(file: string): Promise<void> {
+async function runCheck(file: string, opts: { json?: boolean } = {}): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
 
   // 代数门禁：约束蕴含（类型即计算）
-  const { checkSource, formatCheckReport, pTrue } = await import("@nudojs/core");
+  const { checkSource, formatCheckReport, serializeCheckJson, pTrue } = await import("@nudojs/core");
   const loadModule = (spec: string, fromFile: string): string | undefined => {
     if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
     try {
@@ -486,6 +486,14 @@ async function runCheck(file: string): Promise<void> {
     loadModule,
     fromFile: filePath,
   });
+
+  if (opts.json) {
+    // 稳定契约：只输出 check JSON，不混 evaluator 文本
+    console.log(JSON.stringify(serializeCheckJson(algebraReport), null, 2));
+    if (!algebraReport.ok) process.exitCode = 1;
+    return;
+  }
+
   console.log(formatCheckReport(algebraReport, { verbose: true }));
 
   // 外延评估器诊断：null/结构等语言表面
@@ -575,8 +583,9 @@ program
   .command("check")
   .description("Check a JS file for type errors — exits with code 1 when errors are found")
   .argument("<file>", "Path to the JS file")
-  .action(async (file: string) => {
-    await runCheck(file);
+  .option("--json", "Emit stable CheckJson (CI / Agent contract)")
+  .action(async (file: string, opts: { json?: boolean }) => {
+    await runCheck(file, opts);
   });
 
 // ---------------------------------------------------------------------------

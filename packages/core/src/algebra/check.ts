@@ -790,6 +790,64 @@ function extractParamReqsFromSource(
 }
 
 /**
+ * `nudo check --json` 稳定契约（供 CI / Agent）。
+ * 字段只增不改语义；Abs 以 formatAbs 字符串给出，不序列化内部 shape 图。
+ */
+export type CheckJson = {
+  version: 1;
+  file: string;
+  ok: boolean;
+  summary: CheckReport["summary"];
+  signatures: Array<{
+    name: string;
+    params: string[];
+    display: string;
+    detail: string;
+    conf: string;
+    abs: string;
+  }>;
+  issues: Array<{
+    severity: string;
+    code: string;
+    message: string;
+    fn?: string;
+    line?: number;
+    column?: number;
+    actual?: string;
+    expected?: string;
+    suggestion?: string;
+  }>;
+};
+
+export function serializeCheckJson(r: CheckReport): CheckJson {
+  return {
+    version: 1,
+    file: r.file,
+    ok: r.ok,
+    summary: { ...r.summary },
+    signatures: r.signatures.map((s) => ({
+      name: s.name,
+      params: [...s.params],
+      display: s.display,
+      detail: s.detail,
+      conf: s.conf,
+      abs: formatAbs(s.abs),
+    })),
+    issues: r.issues.map((i) => ({
+      severity: i.severity,
+      code: i.code,
+      message: i.message,
+      ...(i.fn !== undefined ? { fn: i.fn } : {}),
+      ...(i.line !== undefined ? { line: i.line } : {}),
+      ...(i.column !== undefined ? { column: i.column } : {}),
+      ...(i.actual !== undefined ? { actual: i.actual } : {}),
+      ...(i.expected !== undefined ? { expected: i.expected } : {}),
+      ...(i.suggestion !== undefined ? { suggestion: i.suggestion } : {}),
+    })),
+  };
+}
+
+/**
  * Nudo 原生报告：Abs 签名表 + actual ⊭ expected。
  * 不是 tsc 输出的换皮。
  */
