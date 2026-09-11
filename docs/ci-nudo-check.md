@@ -25,6 +25,12 @@ issues
       → 改用满足 x > 0 的值，或放宽 x 的前置
 ```
 
+## 真实包精度
+
+- 扫描脚本：`npx tsx scripts/scan-real-packages.ts [pkg...]` → `docs/check-real-packages.md`
+- CI 精度门禁：`check-real-commander.test.ts`（commander 上零 `constraint-violated`）
+- 人工 recall 金标：`check-recall-gold.test.ts`（recall=precision=1）
+
 ## 金标 recall（CI 门禁）
 
 人工标注集：`packages/core/src/algebra/__tests__/check-recall-gold.test.ts`
