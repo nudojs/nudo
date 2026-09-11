@@ -1389,11 +1389,12 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         .map(({ r }) => r);
       const precise = ordered.slice(0, MAX_PRECISE_CALLSITE_CASES);
       for (const rec of precise) {
-        // Abs 原生重求值：实参已知且原结果非 never 时优先（保留约束）
-        const absResult =
-          rec.resultType.kind === "never" || rec.argTypes.length === 0
-            ? undefined
-            : tryEvalAbs(source, candidate.name, rec.argTypes);
+        // Abs 重求值仅在更有信息量时覆盖（不破坏 mock/callsite 精确结构）
+        let absResult: TypeValue | undefined;
+        if (rec.resultType.kind !== "never" && rec.argTypes.length > 0) {
+          const a = tryEvalAbs(source, candidate.name, rec.argTypes);
+          if (a && absIsBetter(a, rec.resultType)) absResult = a;
+        }
         const caseResult: CaseResult = {
           name: `call@L${rec.callLoc?.line ?? candidate.analysis.loc.start.line}`,
           args: rec.argTypes,
@@ -1419,20 +1420,23 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           // （target || [] 等）对 unknown 全塌，对 undefined 正常走默认分支
           widenType(simplifyUnion(remaining.map((rec) => rec.argTypes[i] ?? T.undefined))),
         );
-        const absSym = tryEvalAbs(source, candidate.name, widenedArgs);
-        const full = absSym
-          ? { value: absSym, throws: T.never as TypeValue, throwLoc: undefined }
-          : evaluateFunctionFull(fnNode, widenedArgs, globalEnv);
+        const absSymRaw = tryEvalAbs(source, candidate.name, widenedArgs);
+        const absSym = absSymRaw && absIsBetter(absSymRaw, /* 无先验：仅 unknown 时 */ { kind: "unknown" })
+          ? absSymRaw
+          : undefined;
+        // symbolic：TypeValue evaluator 先跑，Abs 仅在结果 unknown 时补
+        const full = evaluateFunctionFull(fnNode, widenedArgs, globalEnv);
+        const symResult = full.value.kind === "unknown" && absSym ? absSym : full.value;
         const symCase: CaseResult = {
           name: "call@symbolic",
           args: widenedArgs,
-          result: full.value,
+          result: symResult,
           throws: full.throws,
           throwLoc: full.throwLoc,
           source: "callsite",
           aggregatedFrom: remaining.length,
         };
-        if (absSym) tryAttachIntension(symCase, source, candidate.name);
+        if (symResult !== full.value) tryAttachIntension(symCase, source, candidate.name);
         candidate.analysis.cases.push(symCase);
       }
       // Combined covers every observed call site (not just the retained
@@ -2059,9 +2063,30 @@ function getCompletionsForType(tv: TypeValue): CompletionItem[] {
 }
 
 /**
- * Abs 原生重求值：给定源码与 TypeValue 实参，走 analyzeFn。
- * 自包含源码返回投影后的 TypeValue；host 依赖或全 unknown 时 undefined。
+ * Abs 是否比 TypeValue 求值结果更有信息量。
+ * 仅在 TypeValue 侧 unknown / 裸 number 且 Abs 带约束时替换，
+ * 避免用 Abs 的粗结果盖掉 mock/callsite 已精确投影的结构。
  */
+function absIsBetter(absTv: TypeValue, prev: TypeValue): boolean {
+  if (prev.kind === "unknown") return absTv.kind !== "unknown";
+  if (absTv.kind === "unknown" || absTv.kind === "never") return false;
+  // 保留结构化结果（object/array/tuple/union/literal）
+  if (
+    prev.kind === "literal" ||
+    prev.kind === "object" ||
+    prev.kind === "array" ||
+    prev.kind === "tuple" ||
+    prev.kind === "union" ||
+    prev.kind === "function" ||
+    prev.kind === "instance" ||
+    prev.kind === "promise"
+  ) {
+    return false;
+  }
+  // Abs refined vs 裸 primitive：约束更有信息
+  if (absTv.kind === "refined" && prev.kind === "primitive") return true;
+  return false;
+}
 function tryEvalAbs(
   source: string,
   fnName: string,
