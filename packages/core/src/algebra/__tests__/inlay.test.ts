@@ -24,6 +24,7 @@ function needsPositive(x) {
     const inlays = collectAbsInlays(src);
     const ret = inlays.find((i) => i.kind === "type");
     expect(ret).toBeDefined();
-    expect(ret!.label).toContain("x + 1");
+    // generalize 后是符号项 A1
+    expect(ret!.label).toContain("A1 + 1");
   });
 });
