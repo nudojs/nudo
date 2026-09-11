@@ -35,6 +35,7 @@ import {
   forgetValidatedFile,
   getCachedOrAnalyze,
   hasNudoDirectives,
+  lspLoadModule,
   toLspDiagnostic,
   uriToFilePath,
   validateText,
@@ -360,7 +361,10 @@ connection.languages.inlayHint.on((params) => {
 
     // Abs inlay：参数约束 + 返回 term/pred（类型即计算，无损）
     try {
-      for (const abs of collectAbsInlays(source)) {
+      for (const abs of collectAbsInlays(source, {
+        loadModule: lspLoadModule,
+        fromFile: filePath,
+      })) {
         const lineIdx = abs.line - 1;
         if (lineIdx < 0 || lineIdx >= lines.length) continue;
         hints.push({

@@ -128,22 +128,34 @@ function paramPreds(
 
 /**
  * 收集源码中函数签名的 Abs inlay：
- * - 参数后：前置约束（`x > 0`）
+ * - 参数后：前置约束（声明 requires 优先；否则从 if 推）
  * - `)` 后：返回 shape + term（类型即计算）
  */
-export function collectAbsInlays(source: string): AbsInlay[] {
+export function collectAbsInlays(
+  source: string,
+  requiresOpts?: { loadModule?: (spec: string, fromFile: string) => string | undefined; fromFile?: string },
+): AbsInlay[] {
   const inlays: AbsInlay[] = [];
   for (const { name, node } of listFunctions(source)) {
     let g: ReturnType<typeof generalizeFromAst>;
     try {
-      g = generalizeFromAst(name, source);
+      g = generalizeFromAst(name, source, requiresOpts ? { requires: requiresOpts } : {});
     } catch {
       continue;
     }
     if (!g) continue;
 
     const params = g.params;
-    const predsByName = paramPreds(source, name, params);
+    // 声明契约优先；if 推断作补充
+    const predsByName = new Map<string, Pred[]>();
+    if (g.entryReqs) {
+      for (const r of g.entryReqs) {
+        predsByName.set(r.param, [r.pred]);
+      }
+    }
+    for (const [k, v] of paramPreds(source, name, params)) {
+      if (!predsByName.has(k)) predsByName.set(k, v);
+    }
 
     const fnNode = node as any;
     const paramList: any[] = fnNode.params ?? [];

@@ -3,6 +3,8 @@ import {
   add,
   sub,
   mul,
+  div,
+  mod,
   cmp,
   numLit,
   numVar,
@@ -52,6 +54,25 @@ describe("add monotonicity", () => {
       expect(kinds.sort()).toEqual(["number", "string"]);
     }
     expect(termToString(r.term!)).toBe("(A1 + 1)");
+  });
+
+  it("unconstrained any - * / % → number (JS ToNumber)", () => {
+    const anyA = {
+      shape: { k: "any" as const },
+      term: v("A1"),
+      conf: "path" as const,
+    };
+    const one = numLit(1);
+    for (const [name, r] of [
+      ["sub", sub(anyA, one)],
+      ["mul", mul(anyA, one)],
+      ["div", div(anyA, one)],
+      ["mod", mod(anyA, one)],
+    ] as const) {
+      expect(r.shape, name).toEqual({ k: "prim", type: "number" });
+      expect(r.term, name).toBeDefined();
+    }
+    expect(termToString(sub(anyA, one).term!)).toBe("(A1 - 1)");
   });
 
   it("x>0 + 1 ⇒ term>1", () => {

@@ -488,11 +488,12 @@ program
       file: string,
       opts: { fn?: string; assume?: string[]; generalize?: boolean },
     ) => {
-      const { readFileSync } = await import("node:fs");
-      const { basename } = await import("node:path");
+      const { readFileSync, existsSync, statSync } = await import("node:fs");
+      const { basename, dirname, resolve: resolvePath } = await import("node:path");
       const algebra = await import("@nudojs/core");
 
-      const source = readFileSync(file, "utf8");
+      const filePath = resolvePath(file);
+      const source = readFileSync(filePath, "utf8");
       let phi = algebra.pTrue;
       const assumeIds = new Set<string>();
       for (const a of opts.assume ?? []) {
@@ -515,7 +516,23 @@ program
         return;
       }
 
-      console.log(`nudo types  ${basename(file)}`);
+      const loadModule = (spec: string, fromFile: string): string | undefined => {
+        if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
+        try {
+          const base = dirname(resolvePath(fromFile));
+          const p = resolvePath(base, spec);
+          for (const cand of [p, `${p}.js`, `${p}.mjs`]) {
+            if (existsSync(cand) && !statSync(cand).isDirectory()) {
+              return readFileSync(cand, "utf-8");
+            }
+          }
+          return undefined;
+        } catch {
+          return undefined;
+        }
+      };
+
+      console.log(`nudo types  ${basename(filePath)}`);
       if (assumeIds.size > 0) {
         console.log(`assume: ${[...assumeIds].map((id) => `${id} > 0`).join(", ")}`);
       }
@@ -527,7 +544,9 @@ program
 
       for (const name of list) {
         if (opts.generalize) {
-          const g = algebra.generalizeFromAst(name, source);
+          const g = algebra.generalizeFromAst(name, source, {
+            requires: { loadModule, fromFile: filePath },
+          });
           if (!g) continue;
           console.log(g.display);
           console.log("");

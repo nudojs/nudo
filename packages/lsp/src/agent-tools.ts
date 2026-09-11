@@ -268,6 +268,8 @@ export type HoverToolParams = {
   source?: string;
   /** true 时同时返回该文件全部 Abs inlay */
   includeInlays?: boolean;
+  /** 可选：*.nudo.js 加载（契约进 inlay） */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
 };
 
 /**
@@ -293,7 +295,10 @@ export function hoverTool(
       ext: hover?.typeText ?? null,
     };
     if (params.includeInlays) {
-      payload.inlays = collectAbsInlays(source);
+      payload.inlays = collectAbsInlays(source, {
+        loadModule: params.loadModule,
+        fromFile: filePath,
+      });
     }
     return textResult(JSON.stringify(payload, null, 2));
   } catch (err) {

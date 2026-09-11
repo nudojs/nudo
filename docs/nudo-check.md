@@ -24,6 +24,7 @@ npx tsx packages/cli/src/index.ts check path/to/file.js
 | `nudo:constraint-violated` | 调用实参 ⊭ 前置（标量界 / **shape 字段**） |
 | `nudo:assign-mismatch` | 赋值 ⊭ 原有形状（leqAbs） |
 | `nudo:arg-structure` | 实参结构 ⊭ body 访问的 slot |
+| `nudo:case-inconsistency` | **`@nudo:case` 见证 ⊭ requires 契约** |
 
 ```
 nudo check  src/validators.js

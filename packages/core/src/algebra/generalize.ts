@@ -17,6 +17,11 @@ import type { AstEnv } from "./ast-eval.ts";
 import { evalNode, emptyEnv } from "./ast-eval.ts";
 import { defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { formatShape } from "./format.ts";
+import {
+  extractRequiresFromSource,
+  type RequiresResolveOpts,
+} from "./requires.ts";
+import { constraintToEntryAbs } from "./constraint.ts";
 
 export type TypeParam = {
   id: string;
@@ -30,6 +35,8 @@ export type PolyFn = {
   instantiate: (args: Abs[], phi?: Phi) => Abs;
   symbolic: Abs;
   display: string;
+  /** 入口契约（@nudo:requires），供签名/inlay 展示 */
+  entryReqs?: Array<{ param: string; pred: import("./pred.ts").Pred }>;
 };
 
 function extractFn(
@@ -88,7 +95,12 @@ function extractFn(
 export function generalizeFromAst(
   fnName: string,
   source: string,
-  opts: { budget?: LeakBudget; label?: string } = {},
+  opts: {
+    budget?: LeakBudget;
+    label?: string;
+    /** 传入则把 @nudo:requires 挂到入口 param Abs */
+    requires?: RequiresResolveOpts;
+  } = {},
 ): PolyFn | undefined {
   const extracted = extractFn(source, fnName);
   if (!extracted) return undefined;
@@ -102,6 +114,28 @@ export function generalizeFromAst(
     value: abs({ k: "any" }, termVar(`${label}${i + 1}`), pTrue, "path"),
   }));
 
+  let entryReqs: Array<{ param: string; pred: import("./pred.ts").Pred }> | undefined;
+  if (opts.requires) {
+    try {
+      const reqs = extractRequiresFromSource(source, fnName, opts.requires);
+      if (reqs.length > 0) {
+        entryReqs = reqs.map((r) => ({ param: r.param, pred: r.pred }));
+        for (const r of reqs) {
+          const idx = params.indexOf(r.param);
+          if (idx >= 0) {
+            // 契约挂入口：term 用真实参数名，pred 一并带上
+            typeParams[idx] = {
+              id: typeParams[idx]!.id,
+              value: constraintToEntryAbs(r.constraint, r.param),
+            };
+          }
+        }
+      }
+    } catch {
+      // requires 解析失败时退回 any
+    }
+  }
+
   const run = (args: Abs[], phi: Phi = pTrue): Abs => {
     const local: AstEnv = { vars: new Map(env.vars), fns: env.fns };
     params.forEach((p, i) => {
@@ -112,7 +146,12 @@ export function generalizeFromAst(
 
   const symbolic = run(
     typeParams.map((t) => t.value),
-    pTrue,
+    // 入口契约进 Φ，让 body 内的单调性可传播
+    entryReqs && entryReqs.length > 0
+      ? entryReqs.length === 1
+        ? entryReqs[0]!.pred
+        : { op: "and", args: entryReqs.map((r) => r.pred) }
+      : pTrue,
   );
 
   return {
@@ -121,7 +160,8 @@ export function generalizeFromAst(
     typeParams,
     symbolic,
     instantiate: (args, phi) => run(args, phi ?? pTrue),
-    display: formatPoly(fnName, params, typeParams, symbolic),
+    display: formatPoly(fnName, params, typeParams, symbolic, entryReqs),
+    ...(entryReqs ? { entryReqs } : {}),
   };
 }
 
@@ -130,10 +170,18 @@ function formatPoly(
   params: string[],
   typeParams: TypeParam[],
   symbolic: Abs,
+  entryReqs?: Array<{ param: string; pred: import("./pred.ts").Pred }>,
 ): string {
-  const tp = typeParams.map((t) => t.id).join(", ");
+  const reqByParam = new Map((entryReqs ?? []).map((r) => [r.param, r.pred]));
   const ps = params
-    .map((p, i) => `${p}: ${typeParams[i]?.id ?? "unknown"}`)
+    .map((p, i) => {
+      const id = typeParams[i]?.id ?? "unknown";
+      const pred = reqByParam.get(p);
+      if (pred && pred.op !== "true") {
+        return `${p}: ${id} where ${predToString(pred)}`;
+      }
+      return `${p}: ${id}`;
+    })
     .join(", ");
   const ret = formatShape(symbolic);
   const termPart =
@@ -144,7 +192,7 @@ function formatPoly(
     symbolic.pred && symbolic.pred.op !== "true"
       ? `  where ${predToString(symbolic.pred)}`
       : "";
-  return `${name}: <${tp}>(${ps}) => ${ret}${termPart}${predPart}`;
+  return `${name}: (${ps}) => ${ret}${termPart}${predPart}`;
 }
 
 export function generalizeAll(

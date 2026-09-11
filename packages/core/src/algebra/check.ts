@@ -127,7 +127,12 @@ export function checkSource(
   const names = listTopFunctions(source);
 
   for (const name of names) {
-    const g = generalizeFromAst(name, source);
+    const g = generalizeFromAst(name, source, {
+      requires: {
+        loadModule: opts.loadModule,
+        fromFile: opts.fromFile ?? filePath,
+      },
+    });
     if (!g) {
       issues.push({
         severity: "warning",
@@ -147,7 +152,8 @@ export function checkSource(
       conf: g.symbolic.conf,
     });
 
-    const entryArgs = g.params.map((): Abs => absUnknown());
+    // 入口用契约 Abs（不是 unknown），让 opaque 判定与 body 求值一致
+    const entryArgs = g.typeParams.map((t) => t.value);
     try {
       const r = analyzeFn(source, name, entryArgs, phi);
       if (r.conf === "opaque") {
@@ -174,6 +180,14 @@ export function checkSource(
     fromFile: filePath,
   });
   issues.push(...callIssues);
+
+  // case 是见证：@nudo:case 实参 ⊄ requires → inconsistency
+  issues.push(
+    ...scanCaseInconsistency(source, names, {
+      loadModule: opts.loadModule,
+      fromFile: filePath,
+    }),
+  );
 
   // 结构可赋值：赋值语句 prev ⊇ next（Abs leq）
   issues.push(...scanStructuralAssign(source));
@@ -230,6 +244,178 @@ function scanStructuralAssign(source: string): CheckIssue[] {
       });
     }
   }
+  return out;
+}
+
+/**
+ * case 是契约的见证：`@nudo:case` 实参 ⊄ requires → nudo:case-inconsistency。
+ * 只检查字面量实参（数字/字符串/布尔/null）；非字面量跳过，不猜。
+ */
+function scanCaseInconsistency(
+  source: string,
+  knownFns: string[],
+  opts: { loadModule?: (spec: string, fromFile: string) => string | undefined; fromFile?: string },
+): CheckIssue[] {
+  const out: CheckIssue[] = [];
+  const file = parse(source);
+
+  /** 解析 case 实参列表里的简单字面量 */
+  const parseLitArg = (s: string): Abs | undefined => {
+    const t = s.trim();
+    if (t === "") return undefined;
+    if (t === "true") return { shape: { k: "prim", type: "boolean" }, term: { op: "lit", value: true }, conf: "exact" };
+    if (t === "false") return { shape: { k: "prim", type: "boolean" }, term: { op: "lit", value: false }, conf: "exact" };
+    if (t === "null") return { shape: { k: "unknown" }, term: { op: "lit", value: null }, conf: "exact" };
+    if (t === "undefined") return { shape: { k: "unknown" }, term: { op: "lit", value: undefined }, conf: "exact" };
+    if (/^-?\d+(\.\d+)?$/.test(t)) return numLit(Number(t));
+    const str = t.match(/^(['"])([\s\S]*)\1$/);
+    if (str) {
+      return {
+        shape: { k: "prim", type: "string" },
+        term: { op: "lit", value: str[2]! },
+        conf: "exact",
+      };
+    }
+    return undefined;
+  };
+
+  /** 从 `@nudo:case "name" (a, b)` 抽实参原文 */
+  const parseCaseArgs = (raw: string): string[] | undefined => {
+    const m = raw.match(/@nudo:case\s+"[^"]+"\s*\(([\s\S]*)\)/);
+    if (!m) return undefined;
+    const inner = m[1]!.trim();
+    if (inner === "") return [];
+    // 顶层逗号切分（不处理嵌套对象/数组——那些不是字面量见证）
+    const parts: string[] = [];
+    let depth = 0;
+    let cur = "";
+    let quote: string | null = null;
+    for (let i = 0; i < inner.length; i++) {
+      const ch = inner[i]!;
+      if (quote) {
+        cur += ch;
+        if (ch === quote && inner[i - 1] !== "\\") quote = null;
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        quote = ch;
+        cur += ch;
+        continue;
+      }
+      if (ch === "(" || ch === "[" || ch === "{") depth++;
+      if (ch === ")" || ch === "]" || ch === "}") depth--;
+      if (ch === "," && depth === 0) {
+        parts.push(cur);
+        cur = "";
+        continue;
+      }
+      cur += ch;
+    }
+    if (cur.trim()) parts.push(cur);
+    return parts;
+  };
+
+  const checkCaseAgainstReqs = (
+    fnName: string,
+    caseName: string,
+    args: string[],
+    line: number | undefined,
+  ): void => {
+    const g = generalizeFromAst(fnName, source);
+    if (!g) return;
+    const paramNames = g.params;
+    const reqs = requiresToIndexedFull(source, fnName, paramNames, {
+      loadModule: opts.loadModule,
+      fromFile: opts.fromFile ?? "",
+    });
+    if (reqs.length === 0) return;
+
+    const absArgs = args.map((a) => parseLitArg(a) ?? absUnknown());
+    // 标量界
+    for (const [idx, entry] of reqs) {
+      if (entry.constraint.fields) continue;
+      const arg = absArgs[idx];
+      if (!arg) continue;
+      const lv = litValue(arg);
+      if (lv === undefined || typeof lv !== "number") continue;
+      const flatten = (p: Pred): Pred[] => (p.op === "and" ? p.args.flatMap(flatten) : p.op === "true" ? [] : [p]);
+      for (const p of flatten(entry.pred)) {
+        if (
+          (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") &&
+          p.b.op === "lit" &&
+          typeof p.b.value === "number"
+        ) {
+          const n = p.b.value;
+          let ok = true;
+          if (p.op === "gt") ok = lv > n;
+          if (p.op === "ge") ok = lv >= n;
+          if (p.op === "lt") ok = lv < n;
+          if (p.op === "le") ok = lv <= n;
+          if (!ok) {
+            const paramName = entry.param || paramNames[idx] || `arg${idx}`;
+            out.push({
+              severity: "error",
+              code: "nudo:case-inconsistency",
+              message: `${fnName} case "${caseName}": 见证 ⊭ 契约`,
+              actual: formatAbs(arg),
+              expected: predToString(p),
+              suggestion: `改 case 实参，或放宽 ${paramName} 的 requires`,
+              fn: fnName,
+              line,
+            });
+          }
+        }
+      }
+    }
+  };
+
+  const visit = (n: unknown): void => {
+    if (!n || typeof n !== "object") return;
+    const obj = n as Record<string, unknown> & {
+      type?: string;
+      leadingComments?: Array<{ value: string; loc?: { start: { line: number } } }>;
+      loc?: { start: { line: number } };
+    };
+    // 顶层函数声明上的 leading comments
+    let decl: Record<string, unknown> | undefined = obj;
+    if (obj.type === "ExportNamedDeclaration" || obj.type === "ExportDefaultDeclaration") {
+      decl = obj.declaration as Record<string, unknown> | undefined;
+    }
+    if (
+      decl &&
+      (decl.type === "FunctionDeclaration" ||
+        (decl.type === "VariableDeclaration" &&
+          ((decl as { declarations?: Array<Record<string, unknown>> }).declarations ?? [])[0]?.init &&
+          ["ArrowFunctionExpression", "FunctionExpression"].includes(
+            String(
+              ((decl as { declarations: Array<Record<string, unknown>> }).declarations[0]!.init as { type?: string })
+                .type,
+            ),
+          )))
+    ) {
+      const id =
+        decl.type === "FunctionDeclaration"
+          ? (decl.id as { name?: string } | undefined)?.name
+          : ((decl as { declarations: Array<{ id?: { name?: string } }> }).declarations[0]?.id as
+              | { name?: string }
+              | undefined)?.name;
+      if (id && knownFns.includes(id)) {
+        for (const c of obj.leadingComments ?? []) {
+          const caseArgs = parseCaseArgs(c.value);
+          if (!caseArgs) continue;
+          const caseName = /@nudo:case\s+"([^"]+)"/.exec(c.value)?.[1] ?? "?";
+          checkCaseAgainstReqs(id, caseName, caseArgs, c.loc?.start.line);
+        }
+      }
+    }
+    for (const key of Object.keys(obj)) {
+      if (key === "loc" || key === "start" || key === "end" || key === "leadingComments") continue;
+      const val = obj[key];
+      if (Array.isArray(val)) val.forEach(visit);
+      else if (val && typeof val === "object") visit(val);
+    }
+  };
+  visit(file);
   return out;
 }
 
@@ -939,7 +1125,12 @@ function scanLiteralCalls(
     const { absArgs, hasInfo } = parseCallArgs(args);
     if (!hasInfo || absArgs.length === 0) return;
 
-    const g = generalizeFromAst(fnName, source);
+    const g = generalizeFromAst(fnName, source, {
+      requires: {
+        loadModule: opts?.loadModule,
+        fromFile: opts?.fromFile ?? "",
+      },
+    });
     const paramNames = g?.params ?? [];
     const optsR = {
       loadModule: opts?.loadModule,

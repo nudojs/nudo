@@ -152,6 +152,25 @@ function isAnyLike(a: Abs): boolean {
 }
 
 /**
+ * 减乘除模在 any 上走 JS ToNumber：结果恒为 number（可能 NaN）。
+ * 与 + 不同——+ 可能拼接；减乘除模不会。
+ */
+function toNumberResult(
+  a: Abs,
+  b: Abs,
+  op: "-" | "*" | "/" | "%",
+): Abs {
+  const term =
+    a.term && b.term ? simplifyTerm(app(op, [a.term, b.term])) : undefined;
+  return abs(
+    { k: "prim", type: "number" },
+    term,
+    undefined,
+    term ? confJoin(confJoin(a.conf, b.conf), "partial") : "partial",
+  );
+}
+
+/**
  * 可参与数值运算（- * / %）：number prim。
  * any 不算数——那会把 score("x") 误判成 number 路径。
  */
@@ -319,6 +338,10 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
         : confJoin(confJoin(a.conf, b.conf), facts.length ? "path" : "path");
     return abs({ k: "prim", type: "number" }, term, facts.length ? and(...facts) : undefined, conf);
   }
+  // any：JS ToNumber → number（可能 NaN）
+  if (isAnyLike(a) || isAnyLike(b)) {
+    return toNumberResult(a, b, "-");
+  }
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
@@ -384,6 +407,9 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
       term.op === "lit" ? "exact" : confJoin(confJoin(a.conf, b.conf), "path"),
     );
   }
+  if (isAnyLike(a) || isAnyLike(b)) {
+    return toNumberResult(a, b, "*");
+  }
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
@@ -426,6 +452,9 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     }
     return abs(num().shape, term, undefined, confJoin(confJoin(a.conf, b.conf), "path"));
   }
+  if (isAnyLike(a) || isAnyLike(b)) {
+    return toNumberResult(a, b, "/");
+  }
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
@@ -455,6 +484,9 @@ export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
       );
     }
     return abs(num().shape, term, undefined, confJoin(confJoin(a.conf, b.conf), "path"));
+  }
+  if (isAnyLike(a) || isAnyLike(b)) {
+    return toNumberResult(a, b, "%");
   }
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }

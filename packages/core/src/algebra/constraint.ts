@@ -12,6 +12,8 @@
 import type { Pred, PrimName } from "./pred.ts";
 import { and, gt, ge, lt, le, ptypeof } from "./pred.ts";
 import { v as termVar, lit, app as termApp, type Term } from "./term.ts";
+import type { Abs } from "./abs.ts";
+import { abs } from "./abs.ts";
 
 /** 模板占位项；instantiate 时换成真实参数名 */
 export const SELF = "__nudo_self__";
@@ -208,4 +210,54 @@ function instantiateOnTerm(c: NudoConstraint, t: Term): Pred {
   const preds = c.preds.map(subst);
   if (c.prim && c.preds.length === 0) return ptypeof(t, c.prim);
   return preds.length === 0 ? { op: "true" } : preds.length === 1 ? preds[0]! : and(...preds);
+}
+
+/**
+ * 契约 → 函数入口 param Abs（infer/hover 用）。
+ * 标量：prim + pred；shape：obj slots 递归。
+ */
+export function constraintToEntryAbs(
+  c: NudoConstraint,
+  paramName: string,
+): Abs {
+  const t = termVar(paramName);
+  if (c.fields) {
+    const slots: Record<string, { value: Abs; optional?: boolean }> = {};
+    for (const [key, field] of Object.entries(c.fields)) {
+      const fieldTerm = getTerm(t, key);
+      slots[key] = {
+        value: constraintOnTermAbs(field.constraint, fieldTerm),
+        ...(field.optional || field.constraint.isOptional
+          ? { optional: true }
+          : {}),
+      };
+    }
+    return abs({ k: "obj", slots }, t, undefined, "path");
+  }
+  return constraintOnTermAbs(c, t);
+}
+
+function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
+  if (c.fields) {
+    const slots: Record<string, { value: Abs; optional?: boolean }> = {};
+    for (const [key, field] of Object.entries(c.fields)) {
+      slots[key] = {
+        value: constraintOnTermAbs(field.constraint, getTerm(t, key)),
+        ...(field.optional || field.constraint.isOptional
+          ? { optional: true }
+          : {}),
+      };
+    }
+    return abs({ k: "obj", slots }, t, undefined, "path");
+  }
+  const pred = instantiateOnTerm(c, t);
+  const predOut = pred.op === "true" ? undefined : pred;
+  if (c.prim) {
+    return abs({ k: "prim", type: c.prim }, t, predOut, "path");
+  }
+  // 有界但无 prim：按 number 处理（number().gt(0) 已带 prim）
+  if (c.preds.length > 0) {
+    return abs({ k: "prim", type: "number" }, t, predOut, "path");
+  }
+  return abs({ k: "any" }, t, undefined, "path");
 }

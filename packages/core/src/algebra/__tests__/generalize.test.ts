@@ -84,4 +84,30 @@ describe("generalize", () => {
     expect(g.display).toContain("scale");
     expect(g.display).toContain("A1");
   });
+
+  it("attaches @nudo:requires to entry param Abs", () => {
+    const src = `
+/// @nudo:import { positive } from "./x.nudo.js"
+/**
+ * @nudo:requires x positive
+ */
+function scale(x) { return x + 1; }
+function bare(x) { return x + 1; }
+`;
+    const loadModule = () => `export const positive = number().gt(0);`;
+    const g = generalizeFromAst("scale", src, {
+      requires: { loadModule, fromFile: "/t/a.js" },
+    });
+    expect(g).toBeDefined();
+    expect(g!.typeParams[0]!.value.shape).toEqual({ k: "prim", type: "number" });
+    expect(g!.entryReqs?.[0]?.param).toBe("x");
+    expect(g!.display).toContain("x > 0");
+    expect(formatAbs(g!.symbolic)).toContain("number");
+
+    const b = generalizeFromAst("bare", src, {
+      requires: { loadModule, fromFile: "/t/a.js" },
+    });
+    expect(b!.typeParams[0]!.value.shape.k).toBe("any");
+    expect(b!.display).toContain("number | string");
+  });
 });

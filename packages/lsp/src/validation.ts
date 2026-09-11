@@ -144,7 +144,7 @@ export function toLspDiagnostic(d: JsDiagnostic, uri: string): LspDiagnostic {
 }
 
 /** CLI 与 LSP 共用的相对 require 解析 */
-function lspLoadModule(spec: string, fromFile: string): string | undefined {
+export function lspLoadModule(spec: string, fromFile: string): string | undefined {
   if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
   try {
     const base = dirname(resolvePath(fromFile));
