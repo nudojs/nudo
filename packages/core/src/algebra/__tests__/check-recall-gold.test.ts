@@ -404,6 +404,44 @@ api.needsPositive(5);
 `,
     expect: "ok",
   },
+  // --- 结构可赋值 ---
+  {
+    id: "assign-compatible-ok",
+    origin: "结构赋值",
+    source: `
+let a = { x: 1 };
+a = { x: 2 };
+`,
+    expect: "ok",
+  },
+  {
+    id: "assign-missing-slot-violates",
+    origin: "结构赋值",
+    source: `
+let a = { x: 1 };
+a = { y: 2 };
+`,
+    expect: "violation",
+    note: "缺 x；多 y 允许（宽度）",
+  },
+  {
+    id: "assign-wider-ok",
+    origin: "结构赋值",
+    source: `
+let a = { x: 1 };
+a = { x: 2, z: "s" };
+`,
+    expect: "ok",
+  },
+  {
+    id: "assign-prim-mismatch-violates",
+    origin: "结构赋值",
+    source: `
+let n = 1;
+n = "str";
+`,
+    expect: "violation",
+  },
 ];
 
 /** require 金标：用 loadModule 喂外部源码 */
@@ -635,8 +673,12 @@ describe("check gold recall (human-labeled)", () => {
       }
       if (g.expect === "violation") {
         expect(
-          r.issues.some((i) => i.code === "nudo:constraint-violated"),
-          `expected violation, got: ${r.issues.map((i) => i.message).join("; ") || "ok"}`,
+          r.issues.some(
+            (i) =>
+              i.severity === "error" &&
+              (i.code === "nudo:constraint-violated" || i.code === "nudo:assign-mismatch"),
+          ),
+          `expected violation, got: ${r.issues.map((i) => `${i.code} ${i.message}`).join("; ") || "ok"}`,
         ).toBe(true);
         expect(r.ok).toBe(false);
       } else {

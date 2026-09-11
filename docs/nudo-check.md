@@ -71,6 +71,10 @@ function pct(n) {
 }
 pct(150);           // error
 
+// ✓ 结构可赋值（Abs leq）
+let a = { x: 1 };
+a = { y: 2 };       // error: missing slot x（nudo:assign-mismatch）
+
 // ✗ clamp 回退守卫：不是调用前置
 function clamp(n, lo, hi) {
   if (n < lo) return lo;   // 越界是合法输入

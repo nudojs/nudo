@@ -158,6 +158,43 @@ function recordAbsNode(node: Node, value: Abs): void {
   }
 }
 
+/** 赋值记录：结构可赋值检查用 */
+export type AbsAssignRecord = {
+  name: string;
+  prev?: Abs;
+  next: Abs;
+  line?: number;
+  column?: number;
+};
+
+let absAssignCollector: ((r: AbsAssignRecord) => void) | null = null;
+
+export function setAbsAssignCollector(
+  collector: ((r: AbsAssignRecord) => void) | null,
+): void {
+  absAssignCollector = collector;
+}
+
+function recordAbsAssign(
+  name: string,
+  prev: Abs | undefined,
+  next: Abs,
+  loc?: { start: { line: number; column: number } },
+): void {
+  if (!absAssignCollector) return;
+  try {
+    absAssignCollector({
+      name,
+      prev,
+      next,
+      line: loc?.start.line,
+      column: loc?.start.column,
+    });
+  } catch {
+    // ignore
+  }
+}
+
 export type EvalResult = {
   value: Abs;
   phi: Phi;
@@ -467,7 +504,11 @@ function evalNodeInner(
       }
       // 普通标识符赋值
       if (ae.left.type === "Identifier") {
-        return { value: rhs, phi, env: withVar(env, (ae.left as Identifier).name, rhs) };
+        const name = (ae.left as Identifier).name;
+        const prev = env.vars.get(name);
+        const loc = (node as { loc?: { start: { line: number; column: number } } }).loc;
+        recordAbsAssign(name, prev, rhs, loc);
+        return { value: rhs, phi, env: withVar(env, name, rhs) };
       }
       return ok(rhs, phi, env);
     }

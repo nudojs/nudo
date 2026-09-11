@@ -9,7 +9,9 @@
 
 import { parseSource as parse } from "./parse-source.ts";
 import type { Node } from "@babel/types";
-import { analyzeFn } from "./ast-eval.ts";
+import { analyzeFn, evalProgramAbs, setAbsAssignCollector, type AbsAssignRecord } from "./ast-eval.ts";
+import { leqAbs } from "./leq.ts";
+import { formatAbs } from "./format.ts";
 import { generalizeFromAst } from "./generalize.ts";
 import { numLit, unknown } from "./abs.ts";
 import type { Abs, Confidence } from "./abs.ts";
@@ -17,7 +19,7 @@ import type { Phi, Pred } from "./pred.ts";
 import { pTrue, predToString } from "./pred.ts";
 import { termToString } from "./term.ts";
 import { litValue } from "./abs.ts";
-import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
+import { formatAbsMultiline, formatShape } from "./format.ts";
 import { checkCall, type Diagnostic } from "./diagnostics.ts";
 
 /** 无损函数签名（类型即计算） */
@@ -161,6 +163,9 @@ export function checkSource(
   });
   issues.push(...callIssues);
 
+  // 结构可赋值：赋值语句 prev ⊇ next（Abs leq）
+  issues.push(...scanStructuralAssign(source));
+
   const errors = issues.filter((i) => i.severity === "error").length;
   const warnings = issues.filter((i) => i.severity === "warning").length;
   const infos = issues.filter((i) => i.severity === "info").length;
@@ -176,6 +181,44 @@ export function checkSource(
 
 function absUnknown(): Abs {
   return { shape: { k: "unknown" }, conf: "partial" };
+}
+
+/**
+ * 结构可赋值：`let a = {x:1}; a = {y:2}` 应报 missing slot x。
+ * 顺序 Abs 求值 + leqAbs；仅检查有 prev 绑定的标识符赋值。
+ */
+function scanStructuralAssign(source: string): CheckIssue[] {
+  const out: CheckIssue[] = [];
+  const records: AbsAssignRecord[] = [];
+  setAbsAssignCollector((r) => records.push(r));
+  try {
+    evalProgramAbs(source);
+  } catch {
+    return out;
+  } finally {
+    setAbsAssignCollector(null);
+  }
+  for (const r of records) {
+    if (!r.prev) continue;
+    // 跳过 unknown / never 源（无信息）
+    if (r.next.shape.k === "unknown" && !r.next.term) continue;
+    if (r.prev.shape.k === "unknown" && !r.prev.term) continue;
+    const leq = leqAbs(r.next, r.prev);
+    if (!leq.ok) {
+      out.push({
+        severity: "error",
+        code: "nudo:assign-mismatch",
+        message: `${r.name}: 赋值 ⊭ 原有形状`,
+        actual: formatAbs(r.next),
+        expected: formatAbs(r.prev),
+        suggestion: leq.reason ?? "改用兼容的值，或放宽绑定类型",
+        fn: r.name,
+        line: r.line,
+        column: r.column,
+      });
+    }
+  }
+  return out;
 }
 
 /** 扫描前收集：别名 / 对象属性 / require 导入 */
