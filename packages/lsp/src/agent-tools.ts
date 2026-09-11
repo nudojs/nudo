@@ -16,8 +16,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { analyzeFile, buildCaseDirective } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
-import { T, typeValueToString } from "@nudojs/core";
-import type { TypeValue } from "@nudojs/core";
+import { T, typeValueToString, checkSource, serializeCheckJson, pTrue } from "@nudojs/core";
+import type { TypeValue, CheckJson } from "@nudojs/core";
 
 export type TypeBinding = { name: string; type: string };
 
@@ -205,6 +205,47 @@ export function readSource(filePath: string, deps: AgentToolDeps = {}): string {
 
 function analysisError(err: unknown): AgentToolResult {
   return textResult(`Error: ${(err as Error).message}`);
+}
+
+export type CheckToolParams = {
+  file: string;
+  source?: string;
+  /** "json" → CheckJson only；缺省人类可读摘要 + JSON */
+  format?: "text" | "json";
+};
+
+/**
+ * Agent 门禁工具：返回 CheckJson v1 契约（与 CLI --json 同构）。
+ */
+export function checkTool(
+  params: CheckToolParams,
+  deps: AgentToolDeps = {},
+): AgentToolResult {
+  try {
+    const filePath = normalizeFilePath(params.file);
+    const source = params.source ?? readSource(filePath, deps);
+    const report = checkSource(filePath, source, pTrue);
+    const json = serializeCheckJson(report);
+    if (params.format === "json") {
+      return textResult(JSON.stringify(json, null, 2));
+    }
+    const lines: string[] = [
+      json.ok ? "nudo check OK" : "nudo check FAILED",
+      `${json.summary.errors} error · ${json.summary.warnings} warning · ${json.summary.functions} fn`,
+    ];
+    for (const i of json.issues) {
+      if (i.severity === "info") continue;
+      const loc = i.line != null ? ` L${i.line}` : "";
+      lines.push(`[${i.severity}]${loc} ${i.message}`);
+      if (i.actual) lines.push(`  actual:   ${i.actual}`);
+      if (i.expected) lines.push(`  expected: ${i.expected}`);
+    }
+    lines.push("");
+    lines.push(JSON.stringify(json, null, 2));
+    return textResult(lines.join("\n"));
+  } catch (err) {
+    return analysisError(err);
+  }
 }
 
 export type WhatIfParams = {
