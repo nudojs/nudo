@@ -75,9 +75,11 @@ pct(150);           // error
 let a = { x: 1 };
 a = { y: 2 };       // error: missing slot x（nudo:assign-mismatch）
 
-// ✓ 传参结构：body 访问 p.x / p.y → 实参须齐
+// ✓ 传参结构：body 访问 p.x / p.y → 实参须齐（字面量或标识符）
 function readXY(p) { return p.x + p.y; }
 readXY({ x: 1 });   // error: missing slot y（nudo:arg-structure）
+const o = { x: 1 };
+readXY(o);          // error（标识符绑定表）
 
 // ✗ clamp 回退守卫：不是调用前置
 function clamp(n, lo, hi) {
