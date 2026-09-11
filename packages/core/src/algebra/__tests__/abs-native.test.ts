@@ -1,0 +1,67 @@
+import { describe, it, expect } from "vitest";
+import { analyzeFn, evalSource } from "../ast-eval.ts";
+import { abs, num, numLit, unknown } from "../abs.ts";
+import { v, lit } from "../term.ts";
+import { gt, pTrue } from "../pred.ts";
+import { typeValueToString } from "../../type-value.ts";
+import { absToTypeValue } from "../bridge.ts";
+import { formatAbs } from "../format.ts";
+
+function show(a: ReturnType<typeof analyzeFn>): string {
+  return typeValueToString(absToTypeValue(a));
+}
+
+describe("abs-native ast-eval", () => {
+  it("literal arith", () => {
+    const r = analyzeFn(`function f(){ return 1+2*3; }`, "f", []);
+    expect(show(r)).toBe("7");
+  });
+
+  it("param + 1 with constraint via phi in source", () => {
+    const src = `
+      function f(x) {
+        if (x > 0) return x + 1;
+        return 0;
+      }
+    `;
+    const r = analyzeFn(src, "f", [abs(num().shape, v("x"), gt(v("x"), lit(0)), "path")]);
+    // x>0 时 x+1 应带约束
+    expect(r.shape.k === "prim" || r.shape.k === "sum").toBe(true);
+  });
+
+  it("logical && short-circuit", () => {
+    const r = analyzeFn(`function f(){ return false && 1; }`, "f", []);
+    expect(show(r)).toBe("false");
+  });
+
+  it("typeof", () => {
+    const r = analyzeFn(`function f(){ return typeof 1; }`, "f", []);
+    expect(show(r)).toBe('"number"');
+  });
+
+  it("template literal", () => {
+    const r = analyzeFn(`function f(x){ return \`n=\${x}\`; }`, "f", [numLit(3)]);
+    expect(show(r)).toBe('"n=3"');
+  });
+
+  it("first-class arrow", () => {
+    const src = `
+      function f() {
+        const add = (a, b) => a + b;
+        return add(2, 3);
+      }
+    `;
+    const r = analyzeFn(src, "f", []);
+    expect(show(r)).toBe("5");
+  });
+
+  it("div and mod", () => {
+    expect(show(analyzeFn(`function f(){ return 10/2; }`, "f", []))).toBe("5");
+    expect(show(analyzeFn(`function f(){ return 10%3; }`, "f", []))).toBe("1");
+  });
+
+  it("nullish === decided", () => {
+    const r = analyzeFn(`function f(x){ return x === null; }`, "f", [numLit(1)]);
+    expect(show(r)).toBe("false");
+  });
+});

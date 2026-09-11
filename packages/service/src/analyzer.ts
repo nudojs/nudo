@@ -17,6 +17,10 @@ import {
   generalizeFromAst,
   termToString,
   predToString,
+  analyzeFn,
+  typeValueToAbs,
+  absToTypeValue,
+  type Abs,
 } from "@nudojs/core";
 import { parse, extractDirectives, extractFileDirectives, parseTypeValueExpr } from "@nudojs/parser";
 import type { FunctionWithDirectives, SinonExpression } from "@nudojs/parser";
@@ -1431,7 +1435,12 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
     const fnNode = resolveFunctionNode(candidate.node);
     const args = extractParamNames(fnNode).map(() => T.unknown);
-    const full = evaluateFunctionFull(fnNode, args, globalEnv);
+    // Abs 原生求值（类型即计算）：自包含源码走 ast-eval；
+    // 含 host 依赖时回落 TypeValue evaluator（builtin/module 适配层）。
+    const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, args);
+    const full = absEntry
+      ? { value: absEntry, throws: T.never as TypeValue, throwLoc: undefined }
+      : evaluateFunctionFull(fnNode, args, globalEnv);
     const caseResult: CaseResult = {
       name: `entry@L${candidate.analysis.loc.start.line}`,
       args,
@@ -2035,6 +2044,30 @@ function getCompletionsForType(tv: TypeValue): CompletionItem[] {
   }
 
   return completions;
+}
+
+/**
+ * entry@ 的 Abs 原生路径：自包含源码用 ast-eval（类型即计算），
+ * TypeValue 只在出口投影。含 import/require 或求值失败时返回 undefined。
+ */
+function tryEvalEntryAbs(
+  source: string,
+  fnName: string,
+  args: TypeValue[],
+): TypeValue | undefined {
+  // host 依赖：builtin/module 走 TypeValue evaluator
+  if (/\brequire\s*\(|\bimport\s*[{'"*]/.test(source)) return undefined;
+  try {
+    const absArgs: Abs[] = args.map((a) => typeValueToAbs(a));
+    const result = analyzeFn(source, fnName, absArgs);
+    if (result.shape.k === "unknown" && !result.term) {
+      // 完全未知：可能缺 host，交还 evaluator
+      return undefined;
+    }
+    return absToTypeValue(result);
+  } catch {
+    return undefined;
+  }
 }
 
 /**

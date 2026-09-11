@@ -41,9 +41,12 @@ import {
   isNumPrim,
   isStrPrim,
 } from "./abs.ts";
-import { add, sub, mul, cmp, trueConstraint, falseConstraint } from "./arithmetic.ts";
+import { add, sub, mul, div, mod, cmp, trueConstraint, falseConstraint } from "./arithmetic.ts";
+import { typeofAbs, negAbs, notAbs, strictEqAbs } from "./surface.ts";
 import { leakIfNeeded, defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { spread, joinAbs } from "./objects.ts";
+import { absFunction, attachFnImpl, getFnImpl } from "./abs-fn.ts";
+import { concatString, isTemplateLike } from "./template.ts";
 import {
   defineClass,
   getClass,
@@ -290,8 +293,15 @@ export function evalNode(
       return ok(strLit((node as StringLiteral).value), phi, env);
     case "BooleanLiteral":
       return ok(boolLit((node as BooleanLiteral).value), phi, env);
-    case "Identifier":
-      return ok(env.vars.get((node as Identifier).name) ?? unknown, phi, env);
+    case "NullLiteral":
+      return ok(abs({ k: "unknown" }, lit(null), pTrue, "exact"), phi, env);
+    case "Identifier": {
+      const id = node as Identifier;
+      if (id.name === "undefined") {
+        return ok(abs({ k: "unknown" }, lit(undefined), pTrue, "exact"), phi, env);
+      }
+      return ok(env.vars.get(id.name) ?? unknown, phi, env);
+    }
     case "BinaryExpression":
       return evalBinary(node as BinaryExpression, env, phi, budget);
     case "CallExpression":
@@ -300,18 +310,13 @@ export function evalNode(
     case "FunctionExpression": {
       const fn = node as ArrowFunctionExpression;
       const params = fn.params.map(paramName);
-      if (fn.async) {
-        return ok(
-          abs({ k: "fn", params, name: undefined }, undefined, undefined, "exact"),
-          phi,
-          env,
-        );
-      }
-      return ok(
-        abs({ k: "fn", params }, undefined, undefined, "exact"),
-        phi,
+      const impl = {
+        params,
+        body: fn.body,
+        async: fn.async === true,
         env,
-      );
+      };
+      return ok(absFunction(params, impl), phi, env);
     }
     case "ClassDeclaration": {
       registerClassDecl(env, node);
@@ -403,19 +408,56 @@ export function evalNode(
       return evalVarDecl(node as VariableDeclaration, env, phi, budget);
     case "UnaryExpression": {
       const u = node as { operator: string; argument: Node };
-      if (u.operator === "-") {
-        const a = evalNode(u.argument, env, phi, budget);
-        const zero = numLit(0);
-        return ok(leakIfNeeded(sub(zero, a.value, phi), budget, "neg"), phi, env);
-      }
-      if (u.operator === "!") {
-        const a = evalNode(u.argument, env, phi, budget);
-        const lv = litValue(a.value);
-        if (lv === true) return ok(boolLit(false), phi, env);
-        if (lv === false) return ok(boolLit(true), phi, env);
+      const a = evalNode(u.argument, env, phi, budget).value;
+      if (u.operator === "-") return ok(negAbs(a, phi), phi, env);
+      if (u.operator === "!") return ok(notAbs(a), phi, env);
+      if (u.operator === "typeof") return ok(typeofAbs(a), phi, env);
+      if (u.operator === "+") {
+        const lv = litValue(a);
+        if (typeof lv === "number") return ok(numLit(lv), phi, env);
         return ok(unknown, phi, env);
       }
       return ok(unknown, phi, env);
+    }
+    case "LogicalExpression": {
+      const le = node as { operator: string; left: Node; right: Node };
+      const l = evalNode(le.left, env, phi, budget);
+      const lv = litValue(l.value);
+      const falsy = lv === false || lv === null || lv === undefined;
+      const truthy = lv !== undefined && !falsy;
+      if (le.operator === "&&") {
+        if (falsy) return ok(l.value, phi, env);
+        if (truthy) return evalNode(le.right, env, phi, budget);
+        const r = evalNode(le.right, env, phi, budget);
+        return ok(joinAbs(l.value, r.value), phi, env);
+      }
+      if (le.operator === "||") {
+        if (truthy) return ok(l.value, phi, env);
+        if (falsy) return evalNode(le.right, env, phi, budget);
+        const r = evalNode(le.right, env, phi, budget);
+        return ok(joinAbs(l.value, r.value), phi, env);
+      }
+      return ok(unknown, phi, env);
+    }
+    case "TemplateLiteral": {
+      const tl = node as {
+        quasis: Array<{ value: { cooked?: string | null; raw: string } }>;
+        expressions: Node[];
+      };
+      const parts: Abs[] = [];
+      for (let i = 0; i < tl.quasis.length; i++) {
+        const cooked = tl.quasis[i]!.value.cooked ?? tl.quasis[i]!.value.raw;
+        if (cooked) parts.push(strLit(cooked));
+        if (i < tl.expressions.length) {
+          parts.push(evalNode(tl.expressions[i]!, env, phi, budget).value);
+        }
+      }
+      if (parts.length === 0) return ok(strLit(""), phi, env);
+      let acc = parts[0]!;
+      for (let i = 1; i < parts.length; i++) {
+        acc = concatString(acc, parts[i]!);
+      }
+      return ok(acc, phi, env);
     }
     case "MemberExpression": {
       const m = node as { object: Node; property: Node; computed?: boolean };
@@ -544,19 +586,20 @@ function evalBinary(
       return ok(cmp("gt", l, r, phi), phi, env);
     case ">=":
       return ok(cmp("ge", l, r, phi), phi, env);
-    case "===":
+    case "===": {
+      const eq = strictEqAbs(l, r);
+      if (eq !== undefined) return ok(boolLit(eq), phi, env);
       return ok(cmp("eq", l, r, phi), phi, env);
-    case "!==":
-      return ok(cmp("ne", l, r, phi), phi, env);
-    case "/": {
-      // 字面量除法
-      const a = litValue(l);
-      const b = litValue(r);
-      if (typeof a === "number" && typeof b === "number" && b !== 0) {
-        return ok(numLit(a / b), phi, env);
-      }
-      return ok(unknown, phi, env);
     }
+    case "!==": {
+      const eq = strictEqAbs(l, r);
+      if (eq !== undefined) return ok(boolLit(!eq), phi, env);
+      return ok(cmp("ne", l, r, phi), phi, env);
+    }
+    case "/":
+      return ok(leakIfNeeded(div(l, r, phi), budget, "div"), phi, env);
+    case "%":
+      return ok(leakIfNeeded(mod(l, r, phi), budget, "mod"), phi, env);
     case "instanceof": {
       if (node.right.type !== "Identifier") return ok(unknown, phi, env);
       const className = (node.right as Identifier).name;
@@ -641,14 +684,50 @@ function evalCall(
     return ok(unknown, phi, env);
   }
 
-  if (callee.type !== "Identifier") return ok(unknown, phi, env);
-  const name = callee.name;
+  if (callee.type !== "Identifier") {
+    const args = node.arguments.map((a) =>
+      a.type === "SpreadElement" ? unknown : evalNode(a as Node, env, phi, budget).value,
+    );
+    const calleeVal = evalNode(callee, env, phi, budget).value;
+    return ok(applyAbsFn(calleeVal, args, env, phi, budget), phi, env);
+  }
+
+  const name = (callee as Identifier).name;
   const args = node.arguments.map((a) =>
     a.type === "SpreadElement" ? unknown : evalNode(a as Node, env, phi, budget).value,
   );
 
+  // 变量上的 Abs 一等函数
+  const bound = env.vars.get(name);
+  if (bound && getFnImpl(bound)) {
+    return ok(applyAbsFn(bound, args, env, phi, budget), phi, env);
+  }
+
   const value = callFunction(env, name, args, phi, budget);
   return ok(value, phi, env);
+}
+
+/** 应用 Abs 一等函数（有 impl 时） */
+function applyAbsFn(
+  fnVal: Abs,
+  args: Abs[],
+  env: AstEnv,
+  phi: Phi,
+  budget: LeakBudget,
+): Abs {
+  const impl = getFnImpl(fnVal);
+  if (!impl) return unknown;
+  const base = impl.env ?? env;
+  let local: AstEnv = { vars: new Map(base.vars), fns: base.fns };
+  if ((base as { classes?: unknown }).classes) {
+    (local as { classes?: unknown }).classes = (base as { classes?: unknown }).classes;
+  }
+  impl.params.forEach((p, i) => {
+    local.vars.set(p, args[i] ?? unknown);
+  });
+  const result = evalNode(impl.body, local, phi, budget);
+  if (impl.async) return coerceAsyncReturn(result.value);
+  return result.value;
 }
 
 /** 把 (x) => body 用给定实参求值一次 */
