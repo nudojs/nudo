@@ -6,7 +6,7 @@
  * - 调用点实例化把 α 换成具体 Abs 后再求值
  */
 
-import { parse as babelParse } from "@nudojs/parser";
+import { parseSource as babelParse } from "./parse-source.ts";
 import type { Node } from "@babel/types";
 import { v as termVar, termToString } from "./term.ts";
 import type { Phi } from "./pred.ts";

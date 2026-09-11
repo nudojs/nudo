@@ -1,5 +1,5 @@
 /**
- * Template string 拼接（kernel 侧）。
+ * Template string 拼接（代数侧）。
  * 表示：prim(string) + refinement.meta.templateParts = Abs[]
  * 与 core 的 createTemplate 对齐，使 `"x" + string + "!"` 得到 template refined。
  */
@@ -39,7 +39,7 @@ function isTemplateAbs(a: Abs): boolean {
 /** 从 Abs 提取 template parts（已是 template 则展开，否则 [self]） */
 export function templatePartsOf(a: Abs): Abs[] {
   if (isTemplateAbs(a)) {
-    const meta = (a.pred as { meta: TemplateMeta }).meta;
+    const meta = (a.pred as unknown as { meta: TemplateMeta }).meta;
     return meta.templateParts;
   }
   return [a];

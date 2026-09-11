@@ -369,6 +369,10 @@ export function cmp(
                 : { op: "eq", a: a.term, b: b.term };
     if (implies(phi, neg)) return boolLit(false);
 
+    // 数值界判定：range pred / Φ 中的 min·max 足以决定字面比较
+    const decided = decideByBounds(op, a, b, phi);
+    if (decided !== undefined) return boolLit(decided);
+
     return {
       shape: { k: "prim", type: "boolean" },
       term: undefined,
@@ -398,6 +402,51 @@ function compareLits(
       case "ge":
         return a >= b;
     }
+  }
+  return undefined;
+}
+
+/**
+ * 用数值界判定比较（range Pred / Φ）。
+ * 仅当界足以推出结果时返回 true/false，否则 undefined。
+ */
+function decideByBounds(
+  op: "lt" | "le" | "gt" | "ge" | "eq" | "ne",
+  a: Abs,
+  b: Abs,
+  phi: Phi,
+): boolean | undefined {
+  if (op === "eq" || op === "ne") return undefined;
+  const aB = numericBounds(a, phi);
+  const bB = numericBounds(b, phi);
+  if (!aB && !bB) return undefined;
+
+  // 一侧/两侧字面量界已含在 numericBounds；用 lo/hi 推
+  const aLo = aB?.lo;
+  const aHi = aB?.hi;
+  const bLo = bB?.lo;
+  const bHi = bB?.hi;
+
+  // a < b：a.hi < b.lo ⇒ true；a.lo ≥ b.hi ⇒ false
+  if (op === "lt") {
+    if (aHi && bLo && aHi.value < bLo.value) return true;
+    if (aLo && bHi && aLo.value >= bHi.value) return false;
+    return undefined;
+  }
+  if (op === "le") {
+    if (aHi && bLo && aHi.value < bLo.value) return true;
+    if (aLo && bHi && aLo.value > bHi.value) return false;
+    return undefined;
+  }
+  if (op === "gt") {
+    if (aLo && bHi && aLo.value > bHi.value) return true;
+    if (aHi && bLo && aHi.value <= bLo.value) return false;
+    return undefined;
+  }
+  if (op === "ge") {
+    if (aLo && bHi && aLo.value >= bHi.value) return true;
+    if (aHi && bLo && aHi.value < bLo.value) return false;
+    return undefined;
   }
   return undefined;
 }

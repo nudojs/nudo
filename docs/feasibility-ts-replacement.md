@@ -103,7 +103,7 @@ p instanceof Point  →  true / false  #exact（brand 名）
 
 5. CJS `require` 静态解析  
 6. harvest `.d.ts` → env  
-7. intension 进默认 `infer` / LSP hover（现需 `setKernelModule`）  
+7. intension 进默认 `infer` / LSP hover（已默认，见 `CaseResult.intension`）  
 8. 方法/品牌在 `formatShape` 的展示（当前 brand/eff 显示 `·`）
 
 ### P2 — 规模
@@ -137,7 +137,7 @@ Week 3–4   拿 json-ext / lodash.isEqual 级库出第二份报告（指标：u
 - 扫描脚本：`scripts/scan-mini-repo.ts`（**host 脚本**，不在 `packages/*/src`）  
 - 静态 import：`packages/service/src/static-imports.ts`（host）  
 - 运行：`npx tsx scripts/scan-mini-repo.ts`  
-- 语言测试：`packages/kernel/src/__tests__/language.test.ts`
+- 语言测试：`packages/core/src/algebra/__tests__/language.test.ts`
 
 ### 分层（架构纠偏）
 

@@ -1,3 +1,8 @@
+/**
+ * 外延运算表：在 TypeValue IR 上补代数未覆盖的语言表面
+ * （除法、取模、相等、typeof、无结构字符串拼接等）。
+ * 算术/比较优先走 algebra（Abs + Φ），不要把这里当类型系统。
+ */
 import { type TypeValue, T, isSubtypeOf, getRefinedBase } from "./type-value.ts";
 import { concatTemplates, isTemplate } from "./refinements/template.ts";
 

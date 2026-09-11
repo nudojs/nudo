@@ -3,7 +3,7 @@
  * Phase A/B 边界：支持表达式、函数声明/箭头、return、if、const/let、块作用域。
  */
 
-import { parse } from "@nudojs/parser";
+import { parseSource as parse } from "./parse-source.ts";
 import type {
   Node,
   Expression,
@@ -268,7 +268,7 @@ export function evalMethodBody(
   const thisAfter = result.env.vars.get("this") ?? local.vars.get("this");
   if (method.kind === "constructor") {
     if (thisAfter) value = thisAfter;
-  } else if (thisAfter && thisAfter !== thisVal && value.kind === "unknown") {
+  } else if (thisAfter && thisAfter !== thisVal && value.shape.k === "unknown") {
     value = thisAfter;
   }
   if (method.async) return coerceAsyncReturn(value);

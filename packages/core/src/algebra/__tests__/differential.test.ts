@@ -11,9 +11,9 @@ import {
 } from "../index.ts";
 
 /**
- * 差分回归：同一段 JS，kernel 抽象求值 vs Node 真实执行。
- * 规则：若 kernel 给出 exact 字面量，必须等于真实结果。
- * 若 kernel 给出 prim(number)，真实结果必须是 number。
+ * 差分回归：同一段 JS，代数抽象求值 vs Node 真实执行。
+ * 规则：若代数给出 exact 字面量，必须等于真实结果。
+ * 若代数给出 prim(number)，真实结果必须是 number。
  */
 
 function runNode(code: string): unknown {
@@ -28,12 +28,12 @@ function runNode(code: string): unknown {
   }
 }
 
-function kernelAndNode(
+function absAndNode(
   src: string,
   fnName: string,
   args: Array<number | string | boolean>,
   callExpr: string,
-): { kernel: ReturnType<typeof litValue>; shape: string; node: unknown } {
+): { abs: ReturnType<typeof litValue>; shape: string; node: unknown } {
   const absArgs = args.map((a) => numLit(a as number));
   // string/bool 简化：测试里主要用 number
   const result = analyzeFn(src, fnName, absArgs);
@@ -41,21 +41,21 @@ function kernelAndNode(
 ${src}
 console.log(JSON.stringify(${callExpr}));
 `);
-  return { kernel: litValue(result), shape: formatShape(result), node };
+  return { abs: litValue(result), shape: formatShape(result), node };
 }
 
-describe("differential: kernel vs Node", () => {
+describe("differential: algebra vs Node", () => {
   it("add(1,3) → 4 both sides", () => {
     const src = `function add(a,b){ return a+b; }`;
-    const r = kernelAndNode(src, "add", [1, 3], "add(1,3)");
-    expect(r.kernel).toBe(4);
+    const r = absAndNode(src, "add", [1, 3], "add(1,3)");
+    expect(r.abs).toBe(4);
     expect(r.node).toBe(4);
   });
 
   it("scale(5)=x+1 → 6", () => {
     const src = `function scale(x){ return x+1; }`;
-    const r = kernelAndNode(src, "scale", [5], "scale(5)");
-    expect(r.kernel).toBe(6);
+    const r = absAndNode(src, "scale", [5], "scale(5)");
+    expect(r.abs).toBe(6);
     expect(r.node).toBe(6);
   });
 
@@ -64,23 +64,23 @@ describe("differential: kernel vs Node", () => {
 function add(a,b){ return a+b; }
 function twice(x){ return add(add(x,1),1); }
 `;
-    const r = kernelAndNode(src, "twice", [2], "twice(2)");
-    // kernel: ((2+1)+1)=4
-    expect(r.kernel).toBe(4);
+    const r = absAndNode(src, "twice", [2], "twice(2)");
+    // algebra: ((2+1)+1)=4
+    expect(r.abs).toBe(4);
     expect(r.node).toBe(4);
   });
 
   it("mul precedence 1+2*3 → 7", () => {
     const src = `function f(){ return 1+2*3; }`;
-    const r = kernelAndNode(src, "f", [], "f()");
-    expect(r.kernel).toBe(7);
+    const r = absAndNode(src, "f", [], "f()");
+    expect(r.abs).toBe(7);
     expect(r.node).toBe(7);
   });
 
   it("negate(5) → -5", () => {
     const src = `function negate(x){ return x * -1; }`;
-    const r = kernelAndNode(src, "negate", [5], "negate(5)");
-    expect(r.kernel).toBe(-5);
+    const r = absAndNode(src, "negate", [5], "negate(5)");
+    expect(r.abs).toBe(-5);
     expect(r.node).toBe(-5);
   });
 
@@ -91,8 +91,8 @@ function addOneIfPositive(x){
   return 0;
 }
 `;
-    const r = kernelAndNode(src, "addOneIfPositive", [3], "addOneIfPositive(3)");
-    expect(r.kernel).toBe(4);
+    const r = absAndNode(src, "addOneIfPositive", [3], "addOneIfPositive(3)");
+    expect(r.abs).toBe(4);
     expect(r.node).toBe(4);
   });
 
@@ -103,8 +103,8 @@ function addOneIfPositive(x){
   return 0;
 }
 `;
-    const r = kernelAndNode(src, "addOneIfPositive", [-2], "addOneIfPositive(-2)");
-    expect(r.kernel).toBe(0);
+    const r = absAndNode(src, "addOneIfPositive", [-2], "addOneIfPositive(-2)");
+    expect(r.abs).toBe(0);
     expect(r.node).toBe(0);
   });
 
@@ -114,7 +114,7 @@ function createConfig(options){
   return { host: "localhost", port: 8080, debug: false, ...options };
 }
 `;
-    // kernel 用对象实参 —— 这里直接测字面量路径
+    // 代数用对象实参 —— 这里直接测字面量路径
     const node = runNode(`
 ${src}
 console.log(JSON.stringify(createConfig({ port: 3000 })));

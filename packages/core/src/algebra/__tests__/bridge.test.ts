@@ -15,7 +15,7 @@ import {
   strLit,
   boolLit,
 } from "../index.ts";
-import { typeValueToString, T } from "@nudojs/core";
+import { typeValueToString, T } from "../../type-value.ts";
 
 describe("bridge Abs → TypeValue", () => {
   it("literal 4 → literal 4 #exact", () => {

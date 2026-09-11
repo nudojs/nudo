@@ -1,12 +1,13 @@
 # nudo check 在 CI 中的用法
 
 > 门禁语义：对 JS 源码做约束蕴含检查；有 `error` 则退出码 1。
+> 类型代数在 `@nudojs/core`，无独立 kernel 包。
 
 ## 本地
 
 ```bash
-# 需要 kernel 默认路径（已默认开启 arith/hof/object）
-npx tsx packages/kernel/src/cli.ts path/to/file.js --check
+# 单文件
+npx tsx packages/cli/src/index.ts check path/to/file.js
 
 # 或扫描脚本（多文件/包）
 npx tsx scripts/scan-npm-package.ts commander
@@ -36,7 +37,7 @@ jobs:
           set -e
           for f in $(find src -name '*.js' -not -path '*/node_modules/*' | head -50); do
             echo "==> $f"
-            npx tsx packages/kernel/src/cli.ts "$f" --check
+            npx tsx packages/cli/src/index.ts check "$f"
           done
 ```
 

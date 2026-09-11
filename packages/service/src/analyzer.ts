@@ -14,6 +14,9 @@ import {
   type Environment,
   mockHelperToTypeValue,
   getFnSig,
+  generalizeFromAst,
+  termToString,
+  predToString,
 } from "@nudojs/core";
 import { parse, extractDirectives, extractFileDirectives, parseTypeValueExpr } from "@nudojs/parser";
 import type { FunctionWithDirectives, SinonExpression } from "@nudojs/parser";
@@ -80,8 +83,8 @@ export type CaseResult = {
   /** number of additional call sites folded into a symbolic case */
   aggregatedFrom?: number;
   /**
-   * 内涵摘要（kernel generalize）：term/pred/conf。
-   * 仅在 entry@ 且 NUDO_KERNEL 开启时填充；外延 TypeValue 不变。
+   * 内涵摘要（代数 generalize）：term/pred/conf。
+   * 仅在 entry@ 填充；外延 TypeValue 不变。
    */
   intension?: {
     display?: string;
@@ -1436,7 +1439,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       throws: full.throws,
       throwLoc: full.throwLoc,
     };
-    // M3：kernel generalize 内涵摘要（opt-in）
+    // 内涵摘要：代数 generalize（term/pred/conf）；失败静默，不改外延 TypeValue
     tryAttachIntension(caseResult, source, candidate.analysis.name);
     candidate.analysis.cases.push(caseResult);
     candidate.analysis.entryOnly = true;
@@ -1957,8 +1960,7 @@ function getCompletionsForType(tv: TypeValue): CompletionItem[] {
 }
 
 /**
- * M3：entry@ 时尝试 kernel generalize，附加内涵摘要。
- * 默认关闭；NUDO_KERNEL=generalize|all|arith|hof 时启用。
+ * entry@ 附加内涵摘要（代数 generalize）。
  * 失败静默——不改变外延 TypeValue。
  */
 function tryAttachIntension(
@@ -1966,52 +1968,24 @@ function tryAttachIntension(
   source: string,
   fnName: string,
 ): void {
-  const raw = process.env.NUDO_KERNEL;
-  if (!raw || raw === "0" || raw === "off") return;
-
   try {
-    // 动态 import 避免未安装 kernel 时拖垮 analyzer
-    // 同步路径：用已解析的模块（vitest/tsx 下可用）
-    // 这里用 require 风格会被 ESM 拒绝；改为顶层 import 更干净。
-    // 为保持可选依赖，使用全局缓存的尝试。
-    const kernel = loadKernel();
-    if (!kernel) return;
-    const g = kernel.generalizeFromAst(fnName, source);
+    const g = generalizeFromAst(fnName, source);
     if (!g) return;
     const sym = g.symbolic;
     const intension: NonNullable<CaseResult["intension"]> = {
       display: g.display,
     };
     if (sym.term && sym.term.op !== "lit") {
-      intension.term = kernel.termToString(sym.term);
+      intension.term = termToString(sym.term);
     }
     if (sym.pred && sym.pred.op !== "true") {
-      intension.pred = kernel.predToString(sym.pred);
+      intension.pred = predToString(sym.pred);
     }
     intension.conf = sym.conf;
     caseResult.intension = intension;
   } catch {
     // ignore
   }
-}
-
-let kernelMod: typeof import("@nudojs/kernel") | null | undefined;
-function loadKernel(): typeof import("@nudojs/kernel") | null {
-  if (kernelMod !== undefined) return kernelMod;
-  try {
-    // 同步 import 在 ESM analyzer 中不可用；由调用方在测试/CLI 预加载
-    // 这里通过 globalThis 注入或返回 null
-    kernelMod = (globalThis as any).__nudoKernel ?? null;
-  } catch {
-    kernelMod = null;
-  }
-  return kernelMod;
-}
-
-/** CLI/测试可预注入 kernel，避免 service 硬依赖 ESM 动态 import */
-export function setKernelModule(mod: typeof import("@nudojs/kernel") | null): void {
-  kernelMod = mod;
-  (globalThis as any).__nudoKernel = mod;
 }
 
 export type { CallRecord } from "@nudojs/cli/evaluator";

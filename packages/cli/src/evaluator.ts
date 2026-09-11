@@ -3,7 +3,6 @@ import {
   type TypeValue,
   T,
   simplifyUnion,
-  applyBinaryOp,
   dispatchBinaryOp,
   dispatchMethod,
   dispatchProperty,
@@ -24,14 +23,13 @@ import {
 import { extractInlineDirectives, type InlineDirective } from "@nudojs/parser";
 import { narrow } from "./narrowing.ts";
 import {
-  tryKernelBinary,
-  tryKernelObjectSpread,
-  kernelEnabled,
+  tryAbsBinary,
+  tryAbsObjectSpread,
   pushPhi,
   popPhi,
   currentPhi,
   resetPhi,
-} from "./kernel-router.ts";
+} from "./abs-route.ts";
 import { phiFromTest, combinePhi } from "./phi-from-test.ts";
 import { tagParamArg } from "./term-registry.ts";
 import { PROMISE_STATIC_METHODS, evaluatePromiseStaticMethod, evaluatePromiseInstanceMethod } from "./builtins/builtin-promise.ts";
@@ -1870,8 +1868,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         });
       }
 
-      // Kernel 算术/比较路由（NUDO_KERNEL=arith 或 all）
-      // 仅数值操作数；失败回退旧路径
+      // 代数算术/比较路由；union / 非数串操作数回退外延 Ops
       if (
         leftVal.kind !== "union" &&
         rightVal.kind !== "union" &&
@@ -1879,8 +1876,8 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           node.operator === "<" || node.operator === "<=" ||
           node.operator === ">" || node.operator === ">=")
       ) {
-        const kernelResult = tryKernelBinary(node.operator, leftVal, rightVal);
-        if (kernelResult !== undefined) return kernelResult;
+        const absResult = tryAbsBinary(node.operator, leftVal, rightVal);
+        if (absResult !== undefined) return absResult;
       }
 
       return distributeBinaryOverUnion(leftVal, rightVal, (l, r) =>
@@ -2099,14 +2096,14 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       }
 
       if (aThrows) {
-        const cVal = cReturns ? consequentResult.value
-          : cBranches ? consequentResult.returnedValue
+        const cVal = cReturns ? (consequentResult as ReturnSignal).value
+          : cBranches ? (consequentResult as BranchSignal).returnedValue
           : consequentResult as TypeValue;
         return makeBranch(cVal, trueEnv);
       }
 
-      const cVal = cReturns ? consequentResult.value
-        : cBranches ? consequentResult.returnedValue
+      const cVal = cReturns ? (consequentResult as ReturnSignal).value
+        : cBranches ? (consequentResult as BranchSignal).returnedValue
         : consequentResult as TypeValue;
       const aVal = aReturns ? (alternateResult as ReturnSignal).value
         : aBranches ? (alternateResult as BranchSignal).returnedValue
@@ -2827,11 +2824,11 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         } else if (prop.type === "SpreadElement") {
           const spreadVal = evaluate(prop.argument, env);
           if (isReturn(spreadVal) || isBranch(spreadVal) || isThrow(spreadVal)) return spreadVal;
-          // M4：kernel spread（保留字面量/term）；失败回退 Object.assign
-          const kernelSpread = tryKernelObjectSpread(T.object(props), spreadVal);
-          if (kernelSpread !== undefined && kernelSpread.kind === "object") {
+          // M4：代数 spread（保留字面量/term）；失败回退 Object.assign
+          const absSpread = tryAbsObjectSpread(T.object(props), spreadVal);
+          if (absSpread !== undefined && absSpread.kind === "object") {
             // 合并到 props 继续处理后续属性
-            for (const [k, v] of Object.entries(kernelSpread.properties)) {
+            for (const [k, v] of Object.entries(absSpread.properties)) {
               props[k] = v;
             }
             continue;
@@ -4071,9 +4068,8 @@ function evaluateArrayMethodValues(
 
   const fn = callbackFn as TypeValue & { kind: "function" };
 
-  // Kernel HOF：给回调元素挂 term 身份，使 Φ 中的约束可传播到 map/reduce 体
+  // HOF：给回调元素挂 term 身份，使 Φ 中的约束可传播到 map/reduce 体
   const tagEl = (el: TypeValue, name: string): TypeValue => {
-    if (!(kernelEnabled("hof") || kernelEnabled("arith"))) return el;
     const tagged = tagParamArg(el, name);
     copyOrigin(el, tagged);
     return tagged;
@@ -4124,7 +4120,7 @@ function evaluateArrayMethodValues(
       }
       return acc;
     }
-    // 抽象数组：不动点迭代（kernel 纪律）。unknown 不 join 进 acc。
+    // 抽象数组：不动点迭代（代数纪律）。unknown 不 join 进 acc。
     const acc0 = init ?? arr.element;
     let acc = acc0;
     for (let i = 0; i < 6; i++) {
@@ -5083,7 +5079,7 @@ function bindFunctionParams(
       }
     } else {
       let argVal = args[i] ?? T.undefined;
-      if (kernelEnabled("arith")) {
+      {
         const tagged = tagParamArg(argVal, paramName);
         copyOrigin(argVal, tagged);
         argVal = tagged;
@@ -5691,7 +5687,7 @@ export function evaluateFunctionFull(
       for (let i = 0; i < actualNode.params.length; i++) {
         const pname = describeParam(actualNode.params[i]!);
         let argVal = args[i] ?? T.undefined;
-        if (kernelEnabled("arith")) {
+        {
           const tagged = tagParamArg(argVal, pname);
           copyOrigin(argVal, tagged);
           argVal = tagged;

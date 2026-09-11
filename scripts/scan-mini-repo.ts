@@ -12,7 +12,7 @@ import {
   formatAbs,
   formatShape,
   predToString,
-} from "../packages/kernel/src/index.ts";
+} from "../packages/core/src/index.ts";
 import { collectStaticImports } from "../packages/service/src/static-imports.ts";
 import { resolve } from "node:path";
 

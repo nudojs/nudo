@@ -10,7 +10,7 @@ import {
   formatHarvestSummary,
   resolvePackageRoot,
 } from "../packages/service/src/harvest-package.ts";
-import { checkSource, formatCheckReport } from "../packages/kernel/src/index.ts";
+import { checkSource, formatCheckReport } from "../packages/core/src/index.ts";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 

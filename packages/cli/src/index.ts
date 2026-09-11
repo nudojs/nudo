@@ -166,18 +166,6 @@ async function runInfer(
   file: string,
   options: { dts?: boolean; showLoc?: boolean; callsites?: CallRecord[]; emit?: EmitCasesOptions } = {},
 ): Promise<void> {
-  // M3：预注入 kernel 供 analyzer 生成内涵摘要（NUDO_KERNEL 开启时）
-  const kernelEnv = process.env.NUDO_KERNEL;
-  if (kernelEnv && kernelEnv !== "0" && kernelEnv !== "off") {
-    try {
-      const kernel = await import("@nudojs/kernel");
-      const { setKernelModule } = await import("@nudojs/service");
-      setKernelModule(kernel);
-    } catch {
-      // kernel 不可用则跳过
-    }
-  }
-
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
   let result = await analyzeFileAsync(filePath, source, undefined, options.callsites);
@@ -467,13 +455,14 @@ program
 async function runCheck(file: string): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
+
+  // 代数门禁：约束蕴含（类型即计算）
+  const { checkSource, formatCheckReport } = await import("@nudojs/core");
+  const algebraReport = checkSource(filePath, source);
+  console.log(formatCheckReport(algebraReport));
+
+  // 外延评估器诊断：null/结构等语言表面
   const result = await analyzeFileAsync(filePath, source);
-
-  if (result.diagnostics.length === 0) {
-    console.log("No issues found.");
-    return;
-  }
-
   for (const d of result.diagnostics) {
     const loc = `${relative(process.cwd(), filePath)}:${d.range.start.line}:${d.range.start.column}`;
     console.log(`[${d.severity}] ${loc} ${d.message}${d.code ? ` (${d.code})` : ""}`);
@@ -482,14 +471,15 @@ async function runCheck(file: string): Promise<void> {
     }
   }
 
-  if (result.diagnostics.some((d) => d.severity === "error")) {
+  const evalError = result.diagnostics.some((d) => d.severity === "error");
+  if (!algebraReport.ok || evalError) {
     process.exitCode = 1;
   }
 }
 
 program
   .command("types")
-  .description("Type-as-computation view: show term + constraints inferred by the kernel (not just extensional shape)")
+  .description("Type-as-computation view: show term + constraints from the algebra (not just extensional shape)")
   .argument("<file>", "Path to the JS file")
   .option("--fn <name>", "Only analyze this function")
   .option("--assume <pred...>", "Assume constraints, e.g. x>0 y>=1")
@@ -501,10 +491,10 @@ program
     ) => {
       const { readFileSync } = await import("node:fs");
       const { basename } = await import("node:path");
-      const kernel = await import("@nudojs/kernel");
+      const algebra = await import("@nudojs/core");
 
       const source = readFileSync(file, "utf8");
-      let phi = kernel.pTrue;
+      let phi = algebra.pTrue;
       const assumeIds = new Set<string>();
       for (const a of opts.assume ?? []) {
         const m = /^([A-Za-z_$][\w$]*)\s*(>=|>)\s*(-?\d+(?:\.\d+)?)$/.exec(a.trim());
@@ -514,12 +504,12 @@ program
         }
         const id = m[1]!;
         const n = Number(m[3]);
-        phi = kernel.gtNum(kernel.v(id), n);
+        phi = algebra.gtNum(algebra.v(id), n);
         assumeIds.add(id);
       }
 
       // 列出函数
-      const list = opts.fn ? [opts.fn] : kernel.listFunctionNames(source);
+      const list = opts.fn ? [opts.fn] : algebra.listFunctionNames(source);
       if (list.length === 0) {
         console.error("未找到函数");
         process.exitCode = 1;
@@ -538,17 +528,17 @@ program
 
       for (const name of list) {
         if (opts.generalize) {
-          const g = kernel.generalizeFromAst(name, source);
+          const g = algebra.generalizeFromAst(name, source);
           if (!g) continue;
           console.log(g.display);
           console.log("");
           continue;
         }
 
-        const args = kernel.buildArgsFromAssume(source, name, assumeIds);
-        const result = kernel.analyzeFn(source, name, args, phi);
-        const label = `${name}(${args.map((a) => kernel.formatShape(a)).join(", ")})`;
-        console.log(kernel.formatAbsMultiline(result, label));
+        const args = algebra.buildArgsFromAssume(source, name, assumeIds);
+        const result = algebra.analyzeFn(source, name, args, phi);
+        const label = `${name}(${args.map((a) => algebra.formatShape(a)).join(", ")})`;
+        console.log(algebra.formatAbsMultiline(result, label));
         console.log("");
       }
     },

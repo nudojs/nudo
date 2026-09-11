@@ -1,11 +1,11 @@
 /**
- * 从 Babel 测试表达式提取 kernel Φ 约束。
+ * 从 Babel 测试表达式提取代数 Φ 约束。
  * 仅处理 `x > n` / `x >= n` / `x < n` / `x <= n` 的 Identifier 形式。
  */
 
 import type { Node } from "@babel/types";
-import type { Phi } from "@nudojs/kernel";
-import { pTrue, and as phiAnd, gt, ge, lt, le, v as termVar, lit } from "@nudojs/kernel";
+import type { Phi } from "@nudojs/core";
+import { pTrue, and as phiAnd, gt, ge, lt, le, v as termVar, lit } from "@nudojs/core";
 
 export function phiFromTest(test: Node): { whenTrue: Phi; whenFalse: Phi } {
   if (test.type !== "BinaryExpression") {

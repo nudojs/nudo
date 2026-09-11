@@ -1,28 +1,20 @@
 /**
- * nudo check 门禁：对源码跑 kernel 分析，产出 error/warning。
+ * nudo check 门禁：对源码跑代数分析，产出 error/warning。
  * 与 infer 的区别：check 关心「违例」，不是「展示签名」。
  */
 
-import { parse } from "@nudojs/parser";
+import { parseSource as parse } from "./parse-source.ts";
 import type { Node } from "@babel/types";
-import {
-  analyzeFn,
-  generalizeFromAst,
-  numLit,
-  numVar,
-  unknown,
-  gtNum,
-  v,
-  type Abs,
-  type Phi,
-  pTrue,
-  formatShape,
-  termToString,
-  predToString,
-  litValue,
-  checkCall,
-  type Diagnostic,
-} from "@nudojs/kernel";
+import { analyzeFn } from "./ast-eval.ts";
+import { generalizeFromAst } from "./generalize.ts";
+import { numLit, numVar, unknown } from "./abs.ts";
+import type { Abs } from "./abs.ts";
+import type { Phi } from "./pred.ts";
+import { pTrue, predToString, gtNum } from "./pred.ts";
+import { termToString, v } from "./term.ts";
+import { litValue } from "./abs.ts";
+import { formatShape } from "./format.ts";
+import { checkCall, type Diagnostic } from "./diagnostics.ts";
 
 export type CheckIssue = Diagnostic & {
   fn?: string;
@@ -288,7 +280,7 @@ export function formatCheckReport(r: CheckReport): string {
   lines.push(`nudo check  ${r.file}`);
   lines.push(r.ok ? "OK" : "FAILED");
   for (const fn of r.functions) {
-    lines.push(`  ${fn.name}: ${fn.display}  #${fn.conf}`);
+    lines.push(`  ${fn.display}  #${fn.conf}`);
   }
   if (r.issues.length === 0) {
     lines.push("  (no issues)");

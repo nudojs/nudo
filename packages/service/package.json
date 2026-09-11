@@ -27,7 +27,6 @@
   },
   "dependencies": {
     "@nudojs/core": "workspace:*",
-    "@nudojs/kernel": "workspace:*",
     "@nudojs/parser": "workspace:*",
     "@nudojs/cli": "workspace:*",
     "@nudojs/harvester": "workspace:*",

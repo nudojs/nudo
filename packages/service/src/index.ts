@@ -25,7 +25,6 @@ export {
   type ModuleGraphCache,
   computeDirtySet,
   topoSortDirty,
-  setKernelModule,
 } from "./analyzer.ts";
 
 export { isNudoTargetPath } from "./target-path.ts";

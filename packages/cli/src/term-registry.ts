@@ -9,9 +9,9 @@
 
 import type { TypeValue } from "@nudojs/core";
 import { T } from "@nudojs/core";
-import type { Term } from "@nudojs/kernel";
-import { v as termVar, lit } from "@nudojs/kernel";
-import type { Pred } from "@nudojs/kernel";
+import type { Term } from "@nudojs/core";
+import { v as termVar, lit } from "@nudojs/core";
+import type { Pred } from "@nudojs/core";
 
 const termByTv = new WeakMap<object, Term>();
 const predByTv = new WeakMap<object, Pred>();

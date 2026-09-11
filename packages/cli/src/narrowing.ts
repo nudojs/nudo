@@ -9,7 +9,9 @@ import {
   typeValueEquals,
   isSubtypeOf,
   createRange,
+  v as termVar,
 } from "@nudojs/core";
+import { attachTerm } from "./term-registry.ts";
 
 /**
  * Given a test expression and the current environment, produce two
@@ -451,6 +453,11 @@ function narrowByComparison(
     : op === ">" ? createRange({ max: value })
     : op === "<=" ? createRange({ min: value + 1 })
     : createRange({ min: value });
+
+  // 保留项身份：range 界经 toAbsWithTerms 编码为 Pred，代数继续传播
+  const term = termVar(varName);
+  attachTerm(trueRange, term);
+  attachTerm(falseRange, term);
 
   trueEnv.bind(varName, trueRange);
   falseEnv.bind(varName, falseRange);

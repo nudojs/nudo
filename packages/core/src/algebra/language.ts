@@ -39,7 +39,7 @@ export function defineClass(env: AstEnv, def: ClassDef): void {
 }
 
 export function getClass(env: AstEnv, name: string): ClassDef | undefined {
-  return (env as EnvWithClasses).classes?.get(name);
+  return (env as EnvWithClasses).classes?.get(name) as ClassDef | undefined;
 }
 
 /** 沿继承链找类 */

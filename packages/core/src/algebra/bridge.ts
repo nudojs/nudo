@@ -4,11 +4,12 @@
  * 纪律：
  * - absToTypeValue 有损：丢 term/pred 时 conf 降为 widened，禁止假装 exact
  * - typeValueToAbs 尽量恢复 term=lit
- * - 下游（dts/lsp/service）继续吃 TypeValue；kernel 运算吃 Abs
+ * - 下游（dts/lsp/service）吃 TypeValue；代数运算吃 Abs
  */
 
-import type { TypeValue, LiteralValue as CoreLit } from "@nudojs/core";
-import { T, typeValueToString, createTemplate, getTemplateParts } from "@nudojs/core";
+import type { TypeValue, LiteralValue as CoreLit } from "../type-value.ts";
+import { T, typeValueToString } from "../type-value.ts";
+import { createTemplate, getTemplateParts } from "../refinements/template.ts";
 
 import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, confJoin, litValue } from "./abs.ts";
@@ -155,6 +156,8 @@ function brandProps(shape: Abs): Record<string, TypeValue> {
  * 返回 undefined 表示无法编码。
  */
 function tryEncodeRefined(base: TypeValue, a: Abs): TypeValue | undefined {
+  // 比较结果等 boolean 上的 pred 是路径事实，不是数值 refine
+  if (base.kind !== "primitive" || base.type !== "number") return undefined;
   const p = a.pred;
   if (!p) return undefined;
   // 仅处理原子比较，且右侧字面量
@@ -178,8 +181,9 @@ function tryEncodeRefined(base: TypeValue, a: Abs): TypeValue | undefined {
           return value <= n;
       }
     };
+    const opSym = op === "gt" ? ">" : op === "ge" ? ">=" : op === "lt" ? "<" : "<=";
     return T.refine(base, {
-      name: `num:${op}${n}`,
+      name: `number (${opSym} ${n})`,
       meta: { op, n, pred: predToString(p) },
       check,
     });
@@ -188,7 +192,7 @@ function tryEncodeRefined(base: TypeValue, a: Abs): TypeValue | undefined {
 }
 
 /**
- * TypeValue → Abs（给 kernel 运算）。
+ * TypeValue → Abs（给代数运算）。
  */
 export function typeValueToAbs(tv: TypeValue): Abs {
   if (!tv) return abs({ k: "unknown" }, undefined, undefined, "partial");

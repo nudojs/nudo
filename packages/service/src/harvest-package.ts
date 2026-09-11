@@ -1,6 +1,6 @@
 /**
  * Host：从 npm 包 / @types 收集 .d.ts → harvestDts。
- * kernel 不碰 fs；这里只做「找到 dts 路径」这一层宿主职责。
+ * 代数不碰 fs；这里只做「找到 dts 路径」这一层宿主职责。
  */
 
 import { existsSync, readdirSync, statSync } from "node:fs";

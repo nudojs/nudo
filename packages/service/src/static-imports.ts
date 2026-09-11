@@ -1,9 +1,9 @@
 /**
- * Host 侧多文件解析（非 kernel）。
+ * Host 侧多文件解析（非代数层）。
  *
  * 分层：
- *   kernel  = 纯抽象解释：吃 AST / source string，不碰 fs/path
- *   host    = 读文件、解析相对 import/require、把 source 喂给 kernel
+ *   algebra = 纯抽象解释：吃 AST / source string，不碰 fs/path
+ *   host   = 读文件、解析相对 import/require、把 source 喂给代数
  *   Node/打包器 = 真正的模块加载与执行
  *
  * 引擎不做 bundler；这里只为「跨文件类型事实」做最薄的静态扫描。
@@ -13,7 +13,7 @@ import { parse } from "@nudojs/parser";
 import type { File, Node } from "@babel/types";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
-import { generalizeFromAst, type PolyFn } from "@nudojs/kernel";
+import { generalizeFromAst, type PolyFn } from "@nudojs/core";
 
 export type ModuleExports = {
   path: string;

@@ -84,6 +84,6 @@ npx tsx scripts/scan-npm-package.ts commander
 
 - CJS：`packages/service/src/static-imports.ts`  
 - harvest：`packages/service/src/harvest-package.ts`  
-- check：`packages/kernel/src/check.ts`  
+- check：`packages/core/src/algebra/check.ts`  
 - 扫描：`scripts/scan-npm-package.ts [pkg]`  
 - 测试：958 green

@@ -592,7 +592,7 @@ function len(x) {
 
 ## 6. 实施阶段
 
-### Phase A — 项与约束内核 ✅（`packages/kernel`）
+### Phase A — 项与约束内核 ✅（`@nudojs/core/src/algebra`）
 1. ✅ `Term` / `Pred` / `Abs` 数据结构
 2. ✅ 算术单调性核（+ − * 比较，负数翻转）+ 化简
 3. ✅ `body` 抽象求值时 term 保留；守卫写入 `Φ`；return 信号
@@ -618,7 +618,7 @@ function len(x) {
 | 检查 | 结果 |
 |---|---|
 | vitest | **74 passed** |
-| tsc -p packages/kernel | **clean** |
+| tsc -p tsconfig.lint.json | **clean** |
 | nudo types sample --assume 'x>0' | term+pred 正确 |
 | nudo types sample --generalize | ∀α 签名正确 |
 | kernel --check | 置信度诊断输出 |
