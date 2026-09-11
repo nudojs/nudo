@@ -9,7 +9,7 @@ import { checkSource } from "../index.ts";
  * 包不存在时跳过（非 monorepo 环境）。
  */
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../");
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
 const commanderLib = join(root, "node_modules/commander/lib");
 
 describe("real package precision (commander)", () => {
