@@ -2,16 +2,18 @@
 
 前置约束 **只来自声明**，不从 if 猜测。
 
-**唯一 requires 形态**：
+**唯一契约形态**：
 
 ```js
-@nudo:requires <param> <constraint>
+@nudo:requires <param> <constraint>   // 前置：调用点
+@nudo:return <constraint>             // 后置：推断返回值
 ```
 
 - `<constraint>` 必须是 `.nudo.js` 导出的模板（如 `delay`、`user`）  
 - **不在** requires 里写 `x > 0`（那是绑死参数名的旧写法）  
 - 模板本身参数无关：`number().gt(0)`、`shape({ id: number().gt(0) })`  
-- **不需要 interface / type 语法**——契约用可执行的 JS 表达式声明
+- **不需要 interface / type 语法**——契约用可执行的 JS 表达式声明  
+- **不用 JSDoc 的 `@param`/`@return`**：那是类型注解；这里是契约门禁（前置/后置）
 
 | 文件 | 场景 |
 |------|------|
@@ -19,6 +21,7 @@
 | [`shapes.nudo.js`](./shapes.nudo.js) | **object 形状**：`shape({ id, name })` |
 | [`set-delay.js`](./set-delay.js) | 标量主形态：`@nudo:requires ms delay` |
 | [`register.js`](./register.js) | **形状主形态**：`@nudo:requires u user` |
+| [`return-contract.js`](./return-contract.js) | **后置**：`@nudo:return positive` |
 | [`add-pred.js`](./add-pred.js) | Pred 流入代数：`add(x,1)` → `(x+1)>1` |
 | [`declared-vs-if.js`](./declared-vs-if.js) | if 分支 ≠ 契约（clamp vs setDelay） |
 
@@ -69,6 +72,25 @@ export const config = shape({
   retries: number().ge(0).le(5),
   label: string().optional(),
 });
+```
+
+## 返回值契约
+
+```js
+/**
+ * @nudo:requires x positive
+ * @nudo:return positive
+ */
+function inc(x) {
+  return x + 1;
+}
+
+/**
+ * @nudo:return positive
+ */
+function bad() {
+  return 0;  // error: 返回值 ⊭ @nudo:return positive
+}
 ```
 
 - 约束模板 **参数无关**（占位 `self`）  

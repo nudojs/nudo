@@ -63,7 +63,10 @@ issues
 
 ## 什么是前置，什么不是
 
-前置 **只来自声明**，唯一形态 `@nudo:requires <param> <constraint>`：
+前置 **只来自声明**，唯一形态 `@nudo:requires <param> <constraint>`；  
+后置用 `@nudo:return <constraint>`（推断返回值 ⊭ 声明时红）。
+
+不用 JSDoc `@param`/`@return`：那是类型注解；这里是契约门禁。
 
 ```js
 /// @nudo:import { delay, percent } from "./delay.nudo.js"

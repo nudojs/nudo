@@ -21,6 +21,7 @@ import { defaultLeakBudget } from "./leak.ts";
 import { leqAbs } from "./leq.ts";
 import {
   requiresToIndexedFull,
+  extractReturnFromSource,
   type RequiresEntry,
 } from "./requires.ts";
 import type { NudoConstraint, NudoField } from "./constraint.ts";
@@ -152,6 +153,19 @@ export function checkSource(
       conf: g.symbolic.conf,
     });
 
+    // 后置：@nudo:return <constraint> —— 推断返回值 ⊭ 契约
+    {
+      const ret = extractReturnFromSource(source, name, {
+        loadModule: opts.loadModule,
+        fromFile: opts.fromFile ?? filePath,
+      });
+      if (ret) {
+        issues.push(
+          ...checkReturnConstraint(name, ret.name, ret.constraint, g.symbolic),
+        );
+      }
+    }
+
     // 入口用契约 Abs（不是 unknown），让 opaque 判定与 body 求值一致
     const entryArgs = g.typeParams.map((t) => t.value);
     try {
@@ -207,6 +221,135 @@ export function checkSource(
 
 function absUnknown(): Abs {
   return { shape: { k: "unknown" }, conf: "partial" };
+}
+
+/**
+ * 后置契约：推断返回 Abs ⊭ @nudo:return 声明。
+ * 只在有确定信息时报（字面量界 / prim 类型 / shape 缺字段）。
+ */
+function checkReturnConstraint(
+  fnName: string,
+  cName: string,
+  constraint: NudoConstraint,
+  ret: Abs,
+): CheckIssue[] {
+  const out: CheckIssue[] = [];
+  // 无信息不猜
+  if (ret.shape.k === "unknown" && !ret.term) return out;
+  if (ret.shape.k === "any") return out;
+
+  const push = (actual: string, expected: string, suggestion: string): void => {
+    out.push({
+      severity: "error",
+      code: "nudo:constraint-violated",
+      message: `${fnName}: 返回值 ⊭ @nudo:return ${cName}`,
+      actual,
+      expected,
+      suggestion,
+      fn: fnName,
+    });
+  };
+
+  // shape 后置
+  if (constraint.fields) {
+    const slots =
+      ret.shape.k === "obj"
+        ? (ret.shape as { slots: Record<string, { value: Abs; optional?: boolean }> }).slots
+        : undefined;
+    if (!slots) {
+      if (ret.shape.k !== "never") {
+        push(formatAbs(ret), `object shape (${cName})`, `返回满足 ${cName} 形状的 object`);
+      }
+      return out;
+    }
+    for (const [key, field] of Object.entries(constraint.fields) as Array<
+      [string, NudoField]
+    >) {
+      const slot = slots[key];
+      if (!slot) {
+        if (!field.optional && !field.constraint.isOptional) {
+          push(formatAbs(ret), `missing field ${key}`, `返回值补全字段 ${key}`);
+        }
+        continue;
+      }
+      // 字段 prim
+      if (field.constraint.prim && slot.value.shape.k === "prim") {
+        const actualPrim = (slot.value.shape as { type: string }).type;
+        if (actualPrim !== field.constraint.prim) {
+          push(
+            formatAbs(slot.value),
+            `typeof ${key} = "${field.constraint.prim}"`,
+            `把返回值的 ${key} 改成 ${field.constraint.prim}`,
+          );
+          continue;
+        }
+      }
+      // 字段数值界
+      const lv = litValue(slot.value);
+      if (lv !== undefined && typeof lv === "number") {
+        for (const p of field.constraint.preds) {
+          const flat = p.op === "and" ? p.args : [p];
+          for (const atom of flat) {
+            if (
+              (atom.op === "gt" || atom.op === "ge" || atom.op === "lt" || atom.op === "le") &&
+              atom.b.op === "lit" &&
+              typeof atom.b.value === "number"
+            ) {
+              const n = atom.b.value;
+              let ok = true;
+              if (atom.op === "gt") ok = lv > n;
+              if (atom.op === "ge") ok = lv >= n;
+              if (atom.op === "lt") ok = lv < n;
+              if (atom.op === "le") ok = lv <= n;
+              if (!ok) {
+                const opSym = { gt: ">", ge: "≥", lt: "<", le: "≤" }[atom.op];
+                push(
+                  formatAbs(slot.value),
+                  `${key} ${opSym} ${n}`,
+                  `返回值的 ${key} 应满足 ${key} ${opSym} ${n}`,
+                );
+              }
+            }
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  // 标量后置
+  if (constraint.prim && ret.shape.k === "prim") {
+    const actualPrim = (ret.shape as { type: string }).type;
+    if (actualPrim !== constraint.prim) {
+      push(formatAbs(ret), `typeof return = "${constraint.prim}"`, `返回 ${constraint.prim}`);
+      return out;
+    }
+  }
+  const lv = litValue(ret);
+  if (lv !== undefined && typeof lv === "number") {
+    for (const p of constraint.preds) {
+      const flat = p.op === "and" ? p.args : [p];
+      for (const atom of flat) {
+        if (
+          (atom.op === "gt" || atom.op === "ge" || atom.op === "lt" || atom.op === "le") &&
+          atom.b.op === "lit" &&
+          typeof atom.b.value === "number"
+        ) {
+          const n = atom.b.value;
+          let ok = true;
+          if (atom.op === "gt") ok = lv > n;
+          if (atom.op === "ge") ok = lv >= n;
+          if (atom.op === "lt") ok = lv < n;
+          if (atom.op === "le") ok = lv <= n;
+          if (!ok) {
+            const opSym = { gt: ">", ge: "≥", lt: "<", le: "≤" }[atom.op];
+            push(formatAbs(ret), `return ${opSym} ${n}`, `返回满足 ${opSym} ${n} 的值`);
+          }
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /**

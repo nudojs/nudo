@@ -1,12 +1,14 @@
 /**
- * requires 解析：唯一形态
+ * 契约解析：唯一形态
  *
- *   @nudo:requires <param> <constraint>
+ *   @nudo:requires <param> <constraint>   前置（调用点）
+ *   @nudo:return <constraint>             后置（推断返回值）
  *
  * constraint 来自 *.nudo.js 导出的模板（number().gt(0) 等），
  * 由 /// @nudo:import { delay } from "./delay.nudo.js" 引入。
  *
  * 不支持在 requires 里写 `x > 0`（绑死参数名）。
+ * 不用 JSDoc 的 @param/@return：那是类型注解；这里是契约门禁。
  */
 
 import type { Pred } from "./pred.ts";
@@ -182,4 +184,45 @@ export function requiresToIndexedFull(
     if (idx >= 0) out.push([idx, item]);
   }
   return out;
+}
+
+/** 从源码抽函数上的 @nudo:return 行 */
+function extractReturnLines(source: string, fnName: string): string[] {
+  const fnRe = new RegExp(
+    `(?:export\\s+default\\s+)?(?:function\\s+${fnName}\\b|const\\s+${fnName}\\s*=)`,
+  );
+  const m = source.match(fnRe);
+  if (!m || m.index === undefined) return [];
+  const before = source.slice(0, m.index);
+  const lines = before.split("\n");
+  const rets: string[] = [];
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!.trim();
+    if (line === "" || line === "*/") continue;
+    if (line.startsWith("*") || line.startsWith("/*") || line.startsWith("//")) {
+      const rm = line.match(/@nudo:return\s+(\w+)\s*$/);
+      if (rm) rets.unshift(rm[1]!.trim());
+      continue;
+    }
+    break;
+  }
+  return rets;
+}
+
+/**
+ * 解析 `@nudo:return positive` → 后置契约。
+ * 返回 undefined = 无声明（不猜后置）。
+ */
+export function extractReturnFromSource(
+  source: string,
+  fnName: string,
+  opts: RequiresResolveOpts = {},
+): { name: string; constraint: NudoConstraint } | undefined {
+  const lines = extractReturnLines(source, fnName);
+  if (lines.length === 0) return undefined;
+  const constraints = collectConstraints(source, opts);
+  const cName = lines[lines.length - 1]!;
+  const c = constraints.get(cName);
+  if (!c) return undefined;
+  return { name: cName, constraint: c };
 }
