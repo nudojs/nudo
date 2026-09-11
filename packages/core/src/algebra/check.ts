@@ -14,10 +14,10 @@ import {
   evalProgramAbs,
   evalNode,
   emptyEnv,
-  defaultLeakBudget,
   setAbsAssignCollector,
   type AbsAssignRecord,
 } from "./ast-eval.ts";
+import { defaultLeakBudget } from "./leak.ts";
 import { leqAbs } from "./leq.ts";
 import { generalizeFromAst } from "./generalize.ts";
 import { numLit, unknown, abs as makeAbs } from "./abs.ts";
@@ -269,7 +269,7 @@ function collectParamStructReqs(
 function evalArgAbs(node: Record<string, unknown>): Abs | undefined {
   try {
     const env = emptyEnv();
-    return evalNode(node as Node, env, pTrue, defaultLeakBudget).value;
+    return evalNode(node as unknown as Node, env, pTrue, defaultLeakBudget).value;
   } catch {
     return undefined;
   }
