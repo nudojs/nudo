@@ -217,7 +217,7 @@ async function runInfer(
       let line = `Case "${c.name}": (${argsStr}) => ${typeValueToString(c.result)}`;
       if (c.throws.kind !== "never") line += ` throws ${typeValueToString(c.throws)}`;
       console.log(line);
-      // M3：内涵摘要（term/pred/conf）
+      // M3：内涵摘要（term/pred/conf）+ 无损 Abs
       if (c.intension?.display) {
         console.log(`    intension: ${c.intension.display}`);
       } else if (c.intension?.term || c.intension?.pred) {
@@ -226,6 +226,9 @@ async function runInfer(
         if (c.intension.pred) parts.push(`pred: ${c.intension.pred}`);
         if (c.intension.conf) parts.push(`#${c.intension.conf}`);
         console.log(`    ${parts.join("  ")}`);
+      }
+      if (c.intension?.abs) {
+        console.log(`    abs: ${c.intension.abs}`);
       }
     }
 

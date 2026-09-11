@@ -93,14 +93,18 @@ export type CaseResult = {
   /** number of additional call sites folded into a symbolic case */
   aggregatedFrom?: number;
   /**
-   * 内涵摘要（代数 generalize）：term/pred/conf。
-   * 仅在 entry@ 填充；外延 TypeValue 不变。
+   * 内涵摘要（代数 generalize）：无损 Abs + term/pred/conf。
+   * 仅在 entry@ / call@（Abs 路径）填充；外延 TypeValue 不变。
    */
   intension?: {
     display?: string;
     term?: string;
     pred?: string;
     conf?: string;
+    /** 无损 Abs 单行（formatAbs） */
+    abs?: string;
+    /** 无损 Abs 多行（formatAbsMultiline） */
+    absMultiline?: string;
   };
 };
 
@@ -1410,10 +1414,14 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       const precise = ordered.slice(0, MAX_PRECISE_CALLSITE_CASES);
       for (const rec of precise) {
         // Abs 重求值仅在更有信息量时覆盖（不破坏 mock/callsite 精确结构）
+        let absRaw: Abs | undefined;
         let absResult: TypeValue | undefined;
         if (rec.resultType.kind !== "never" && rec.argTypes.length > 0) {
-          const a = tryEvalAbs(source, candidate.name, rec.argTypes);
-          if (a && absIsBetter(a, rec.resultType)) absResult = a;
+          absRaw = tryEvalAbsRaw(source, candidate.name, rec.argTypes);
+          if (absRaw) {
+            const projected = absToTypeValue(absRaw);
+            if (absIsBetter(projected, rec.resultType)) absResult = projected;
+          }
         }
         const caseResult: CaseResult = {
           name: `call@L${rec.callLoc?.line ?? candidate.analysis.loc.start.line}`,
@@ -1422,7 +1430,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           throws: rec.throws,
           source: "callsite",
         };
-        if (absResult) tryAttachIntension(caseResult, source, candidate.name);
+        if (absRaw) attachAbsToIntension(caseResult, absRaw, candidate.name);
         candidate.analysis.cases.push(caseResult);
       }
       // symbolic 聚合只用全已知实参的记录：含 unknown 分量的记录不可重求值
@@ -2209,6 +2217,16 @@ function tryEvalAbs(
   fnName: string,
   args: TypeValue[],
 ): TypeValue | undefined {
+  const raw = tryEvalAbsRaw(source, fnName, args);
+  return raw ? absToTypeValue(raw) : undefined;
+}
+
+/** Abs 原生重求值（无损）；undefined = 无法处理 */
+function tryEvalAbsRaw(
+  source: string,
+  fnName: string,
+  args: TypeValue[],
+): Abs | undefined {
   if (/\brequire\s*\(|\bimport\s*[{'"*]/.test(source)) return undefined;
   try {
     const absArgs: Abs[] = args.map((a) => typeValueToAbs(a));
@@ -2216,7 +2234,7 @@ function tryEvalAbs(
     if (result.shape.k === "unknown" && !result.term) {
       return undefined;
     }
-    return absToTypeValue(result);
+    return result;
   } catch {
     return undefined;
   }
@@ -2235,7 +2253,7 @@ function tryEvalEntryAbs(
 }
 
 /**
- * entry@ 附加内涵摘要（代数 generalize）。
+ * entry@ 附加内涵摘要（代数 generalize + 无损 Abs）。
  * 失败静默——不改变外延 TypeValue。
  */
 function tryAttachIntension(
@@ -2249,6 +2267,8 @@ function tryAttachIntension(
     const sym = g.symbolic;
     const intension: NonNullable<CaseResult["intension"]> = {
       display: g.display,
+      abs: formatAbs(sym),
+      absMultiline: formatAbsMultiline(sym, fnName),
     };
     if (sym.term && sym.term.op !== "lit") {
       intension.term = termToString(sym.term);
@@ -2261,6 +2281,21 @@ function tryAttachIntension(
   } catch {
     // ignore
   }
+}
+
+/** 把一次 Abs 求值结果挂到 case 的 intension（无损） */
+function attachAbsToIntension(
+  caseResult: CaseResult,
+  absVal: Abs,
+  label?: string,
+): void {
+  const prev = caseResult.intension ?? {};
+  caseResult.intension = {
+    ...prev,
+    abs: formatAbs(absVal),
+    absMultiline: formatAbsMultiline(absVal, label ?? caseResult.name),
+    conf: absVal.conf,
+  };
 }
 
 export type { CallRecord } from "@nudojs/cli/evaluator";
