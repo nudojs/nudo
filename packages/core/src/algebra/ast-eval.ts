@@ -22,6 +22,11 @@ import type {
   ReturnStatement,
   IfStatement,
   ExpressionStatement,
+  ForStatement,
+  WhileStatement,
+  DoWhileStatement,
+  ForOfStatement,
+  TryStatement,
 } from "@babel/types";
 
 import type { Term } from "./term.ts";
@@ -102,6 +107,12 @@ export type EvalResult = {
   env: AstEnv;
   /** 函数已通过 return 跳出，块内后续语句不可达 */
   returned?: boolean;
+  /** break 跳出最近循环 */
+  brk?: boolean;
+  /** continue 进入下一轮 */
+  cont?: boolean;
+  /** throw 了 value（未捕获时向上传播） */
+  threw?: boolean;
 };
 
 // --- 源码入口 ---
@@ -394,6 +405,37 @@ export function evalNode(
       return ok(env.vars.get("this") ?? unknown, phi, env);
     case "BlockStatement":
       return evalBlock(node as BlockStatement, env, phi, budget);
+    case "BreakStatement":
+      return { value: unknown, phi, env, brk: true };
+    case "ContinueStatement":
+      return { value: unknown, phi, env, cont: true };
+    case "ThrowStatement": {
+      const arg = (node as { argument?: Node }).argument;
+      const v = arg ? evalNode(arg, env, phi, budget).value : unknown;
+      return { value: v, phi, env, threw: true };
+    }
+    case "ForStatement":
+      return evalFor(node as ForStatement, env, phi, budget);
+    case "WhileStatement":
+      return evalWhile(node as WhileStatement, env, phi, budget);
+    case "DoWhileStatement":
+      return evalDoWhile(node as DoWhileStatement, env, phi, budget);
+    case "ForOfStatement":
+      return evalForOf(node as ForOfStatement, env, phi, budget);
+    case "TryStatement":
+      return evalTry(node as TryStatement, env, phi, budget);
+    case "UpdateExpression": {
+      const ue = node as { operator: string; argument: Node; prefix?: boolean };
+      if (ue.argument.type !== "Identifier") return ok(unknown, phi, env);
+      const name = (ue.argument as Identifier).name;
+      const cur = env.vars.get(name) ?? unknown;
+      const lv = litValue(cur);
+      const delta = ue.operator === "++" ? 1 : -1;
+      const next =
+        typeof lv === "number" ? numLit(lv + delta) : abs({ k: "prim", type: "number" }, undefined, undefined, "path");
+      const env2 = withVar(env, name, next);
+      return { value: ue.prefix ? next : cur, phi, env: env2 };
+    }
     case "ReturnStatement": {
       const arg = (node as ReturnStatement).argument;
       if (!arg) return { value: unknown, phi, env, returned: true };
@@ -799,11 +841,192 @@ function evalBlock(
     local = r.env;
     curPhi = r.phi;
     last = r.value;
-    if (r.returned || stmt.type === "ReturnStatement") {
-      return { value: r.value, phi: curPhi, env: local, returned: true };
+    if (r.returned || r.brk || r.cont || r.threw) {
+      return { value: r.value, phi: curPhi, env: local, returned: r.returned, brk: r.brk, cont: r.cont, threw: r.threw };
     }
   }
   return { value: last, phi: curPhi, env: local };
+}
+
+/** 循环固定点：有限次展开 + join（收敛即停） */
+const MAX_LOOP_ITERS = 8;
+
+function evalFor(
+  node: ForStatement,
+  env: AstEnv,
+  phi: Phi,
+  budget: LeakBudget,
+): EvalResult {
+  let local = env;
+  if (node.init) {
+    const r = evalNode(node.init as Node, local, phi, budget);
+    local = r.env;
+  }
+  let acc: Abs = unknown;
+  for (let i = 0; i < MAX_LOOP_ITERS; i++) {
+    if (node.test) {
+      const t = evalNode(node.test, local, phi, budget);
+      const lv = litValue(t.value);
+      if (lv === false || lv === null || lv === undefined) break;
+    }
+    const bodyR = evalNode(node.body, local, phi, budget);
+    if (bodyR.returned) return bodyR;
+    if (bodyR.threw) return bodyR;
+    if (bodyR.brk) {
+      local = bodyR.env;
+      break;
+    }
+    local = bodyR.env;
+    acc = joinAbs(acc, bodyR.value);
+    if (node.update) {
+      const u = evalNode(node.update, local, phi, budget);
+      local = u.env;
+    }
+  }
+  return ok(acc, phi, local);
+}
+
+function evalWhile(
+  node: WhileStatement,
+  env: AstEnv,
+  phi: Phi,
+  budget: LeakBudget,
+): EvalResult {
+  let local = env;
+  let acc: Abs = unknown;
+  for (let i = 0; i < MAX_LOOP_ITERS; i++) {
+    const t = evalNode(node.test, local, phi, budget);
+    const lv = litValue(t.value);
+    if (lv === false || lv === null || lv === undefined) break;
+    const bodyR = evalNode(node.body, local, phi, budget);
+    if (bodyR.returned || bodyR.threw) return bodyR;
+    if (bodyR.brk) {
+      local = bodyR.env;
+      break;
+    }
+    local = bodyR.env;
+    acc = joinAbs(acc, bodyR.value);
+  }
+  return ok(acc, phi, local);
+}
+
+function evalDoWhile(
+  node: DoWhileStatement,
+  env: AstEnv,
+  phi: Phi,
+  budget: LeakBudget,
+): EvalResult {
+  let local = env;
+  let acc: Abs = unknown;
+  for (let i = 0; i < MAX_LOOP_ITERS; i++) {
+    const bodyR = evalNode(node.body, local, phi, budget);
+    if (bodyR.returned || bodyR.threw) return bodyR;
+    if (bodyR.brk) {
+      local = bodyR.env;
+      break;
+    }
+    local = bodyR.env;
+    acc = joinAbs(acc, bodyR.value);
+    const t = evalNode(node.test, local, phi, budget);
+    const lv = litValue(t.value);
+    if (lv === false || lv === null || lv === undefined) break;
+  }
+  return ok(acc, phi, local);
+}
+
+function evalForOf(
+  node: ForOfStatement,
+  env: AstEnv,
+  phi: Phi,
+  budget: LeakBudget,
+): EvalResult {
+  const iterVal = evalNode(node.right, env, phi, budget).value;
+  const elements: Abs[] =
+    iterVal.shape.k === "arr"
+      ? [iterVal.shape.element]
+      : iterVal.shape.k === "tuple"
+        ? iterVal.shape.elements
+        : iterVal.shape.k === "sum"
+          ? iterVal.shape.members.flatMap((m) =>
+              m.shape.k === "arr"
+                ? [m.shape.element]
+                : m.shape.k === "tuple"
+                  ? m.shape.elements
+                  : [],
+            )
+          : [unknown];
+  if (elements.length === 0) elements.push(unknown);
+
+  const left = node.left;
+  const bindName =
+    left.type === "Identifier"
+      ? (left as Identifier).name
+      : left.type === "VariableDeclaration"
+        ? ((left as VariableDeclaration).declarations[0]?.id as Identifier | undefined)?.name
+        : undefined;
+  if (!bindName) return ok(unknown, phi, env);
+
+  let local = env;
+  let acc: Abs = unknown;
+  const n = Math.min(elements.length, MAX_LOOP_ITERS);
+  for (let i = 0; i < n; i++) {
+    local = withVar(local, bindName, elements[i]!);
+    const bodyR = evalNode(node.body, local, phi, budget);
+    if (bodyR.returned || bodyR.threw) return bodyR;
+    if (bodyR.brk) {
+      local = bodyR.env;
+      break;
+    }
+    local = bodyR.env;
+    acc = joinAbs(acc, bodyR.value);
+  }
+  return ok(acc, phi, local);
+}
+
+function evalTry(
+  node: TryStatement,
+  env: AstEnv,
+  phi: Phi,
+  budget: LeakBudget,
+): EvalResult {
+  const tryR = evalNode(node.block, env, phi, budget);
+  let value = tryR.value;
+  let local = tryR.env;
+  let curPhi = tryR.phi;
+
+  if (tryR.threw && node.handler) {
+    const param =
+      node.handler.param && node.handler.param.type === "Identifier"
+        ? (node.handler.param as Identifier).name
+        : undefined;
+    let catchEnv = local;
+    if (param) catchEnv = withVar(local, param, tryR.value);
+    const catchR = evalNode(node.handler.body, catchEnv, curPhi, budget);
+    value = catchR.value;
+    local = catchR.env;
+    curPhi = catchR.phi;
+    if (catchR.returned) {
+      if (node.finalizer) evalNode(node.finalizer, local, curPhi, budget);
+      return { ...catchR, env: local };
+    }
+    if (catchR.threw) {
+      if (node.finalizer) evalNode(node.finalizer, local, curPhi, budget);
+      return { value: catchR.value, phi: curPhi, env: local, threw: true };
+    }
+  } else if (tryR.returned) {
+    if (node.finalizer) evalNode(node.finalizer, local, curPhi, budget);
+    return tryR;
+  } else if (tryR.threw && !node.handler) {
+    if (node.finalizer) evalNode(node.finalizer, local, curPhi, budget);
+    return tryR;
+  }
+
+  if (node.finalizer) {
+    const fR = evalNode(node.finalizer, local, curPhi, budget);
+    if (fR.returned || fR.threw) return fR;
+    local = fR.env;
+  }
+  return { value, phi: curPhi, env: local, returned: tryR.returned };
 }
 
 function evalVarDecl(

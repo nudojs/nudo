@@ -64,4 +64,58 @@ describe("abs-native ast-eval", () => {
     const r = analyzeFn(`function f(x){ return x === null; }`, "f", [numLit(1)]);
     expect(show(r)).toBe("false");
   });
+
+  it("for loop runs with update", () => {
+    const src = `
+      function f() {
+        let s = 0;
+        for (let i = 0; i < 3; i++) s = s + i;
+        return s;
+      }
+    `;
+    const r = analyzeFn(src, "f", []);
+    expect(r.shape.k === "prim" || r.shape.k === "unknown").toBe(true);
+  });
+
+  it("for-of over tuple", () => {
+    const src = `
+      function f(xs) {
+        let s = 0;
+        for (const x of xs) s = s + x;
+        return s;
+      }
+    `;
+    const tup = abs({ k: "tuple", elements: [numLit(1), numLit(2)] }, undefined, undefined, "exact");
+    const r = analyzeFn(src, "f", [tup]);
+    expect(r.shape.k === "prim" || r.shape.k === "unknown").toBe(true);
+  });
+
+  it("while with break", () => {
+    const src = `
+      function f() {
+        let i = 0;
+        while (true) {
+          i = i + 1;
+          if (i > 2) break;
+        }
+        return i;
+      }
+    `;
+    const r = analyzeFn(src, "f", []);
+    expect(r.shape.k === "prim" || r.shape.k === "unknown").toBe(true);
+  });
+
+  it("try/catch binds thrown value", () => {
+    const src = `
+      function f() {
+        try {
+          throw 1;
+        } catch (e) {
+          return e;
+        }
+      }
+    `;
+    const r = analyzeFn(src, "f", []);
+    expect(show(r)).toBe("1");
+  });
 });
