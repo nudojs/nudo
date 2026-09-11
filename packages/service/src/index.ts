@@ -29,6 +29,8 @@ export {
   topoSortDirty,
 } from "./analyzer.ts";
 
+export { collectAbsInlays, type AbsInlay } from "@nudojs/core";
+
 export { isNudoTargetPath } from "./target-path.ts";
 export {
   collectStaticImports,

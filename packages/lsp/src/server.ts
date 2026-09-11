@@ -24,6 +24,7 @@ import {
   getCasesForFile,
   buildSemanticTokens,
   isNudoTargetPath,
+  collectAbsInlays,
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
 import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "./symbols.ts";
@@ -349,6 +350,25 @@ connection.languages.inlayHint.on((params) => {
         kind: InlayHintKind.Type,
         paddingLeft: true,
       });
+    }
+
+    // Abs inlay：参数约束 + 返回 term/pred（类型即计算，无损）
+    try {
+      for (const abs of collectAbsInlays(source)) {
+        const lineIdx = abs.line - 1;
+        if (lineIdx < 0 || lineIdx >= lines.length) continue;
+        hints.push({
+          position: { line: lineIdx, character: abs.character },
+          label: abs.label,
+          kind:
+            abs.kind === "parameter"
+              ? InlayHintKind.Parameter
+              : InlayHintKind.Type,
+          paddingLeft: true,
+        });
+      }
+    } catch {
+      // Abs inlay 失败不影响 caseHints
     }
 
     return hints;
