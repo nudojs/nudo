@@ -60,6 +60,7 @@ import {
   evalGlobalFn,
   evalArrayStatic,
 } from "./builtins.ts";
+import { callAbsMethod, getAbsProperty } from "./methods.ts";
 import {
   defineClass,
   getClass,
@@ -529,6 +530,8 @@ export function evalNode(
         m.property.type === "Identifier" &&
         (m.property as Identifier).name === "length"
       ) {
+        const viaProp = getAbsProperty(obj, "length");
+        if (viaProp) return ok(viaProp, phi, env);
         if (obj.shape.k === "tuple") {
           return ok(numLit(obj.shape.elements.length), phi, env);
         }
@@ -696,6 +699,13 @@ function evalCall(
         else if (ns === "Number") r = evalNumberStatic(method, margs);
         else if (ns === "Array") r = evalArrayStatic(method, margs);
         if (r) return ok(r, phi, env);
+      }
+
+      // Abs 方法表（template startsWith 等）
+      {
+        const margs = rawArgs.map((a) => evalNode(a, env, phi, budget).value);
+        const viaTable = callAbsMethod(obj, method, margs);
+        if (viaTable) return ok(viaTable, phi, env);
       }
 
       if (obj.shape.k === "brand") {
