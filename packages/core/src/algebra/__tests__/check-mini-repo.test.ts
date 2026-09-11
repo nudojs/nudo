@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkSource } from "../index.ts";
+import { checkSource, pTrue } from "../index.ts";
+import { withStdImport, stdOpts } from "./nudo-constraints.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../");
 const mini = (f: string) => readFileSync(resolve(root, "docs/examples/mini-repo", f), "utf8");
@@ -33,7 +34,7 @@ describe("mini-repo check gold", () => {
     // isPositive 是谓词（无 if-return-param 前置）；真正门禁用 requires
     const src = `
 /**
- * @nudo:requires x > 0
+ * @nudo:requires x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -41,7 +42,7 @@ function needsPositive(x) {
 }
 needsPositive(-1);
 `;
-    const r = checkSource("tp.js", src);
+    const r = checkSource("tp.js", withStdImport(src), pTrue, stdOpts);
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
   });

@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { checkSource, serializeCheckJson, pTrue } from "../index.ts";
+import { withStdImport, stdOpts } from "./nudo-constraints.ts";
 
 describe("CheckJson contract v1", () => {
   const src = `
 /**
- * @nudo:requires x > 0
+ * @nudo:requires x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -14,7 +15,7 @@ needsPositive(-1);
 `;
 
   it("has stable top-level fields", () => {
-    const j = serializeCheckJson(checkSource("c.js", src, pTrue));
+    const j = serializeCheckJson(checkSource("c.js", withStdImport(src), pTrue, stdOpts));
     expect(j.version).toBe(1);
     expect(j.file).toBe("c.js");
     expect(j.ok).toBe(false);
@@ -29,7 +30,7 @@ needsPositive(-1);
   });
 
   it("signatures carry abs display + detail", () => {
-    const j = serializeCheckJson(checkSource("c.js", src, pTrue));
+    const j = serializeCheckJson(checkSource("c.js", withStdImport(src), pTrue, stdOpts));
     const sig = j.signatures.find((s) => s.name === "needsPositive");
     expect(sig).toBeDefined();
     expect(sig!.params).toEqual(["x"]);
@@ -38,7 +39,7 @@ needsPositive(-1);
   });
 
   it("issues carry actual/expected for violations", () => {
-    const j = serializeCheckJson(checkSource("c.js", src, pTrue));
+    const j = serializeCheckJson(checkSource("c.js", withStdImport(src), pTrue, stdOpts));
     const err = j.issues.find((i) => i.code === "nudo:constraint-violated");
     expect(err).toBeDefined();
     expect(err!.actual).toBeDefined();
@@ -48,7 +49,7 @@ needsPositive(-1);
 
   it("ok file has ok:true and empty error issues", () => {
     const j = serializeCheckJson(
-      checkSource("ok.js", `function f(x){ return x+1; }\nf(1);\n`, pTrue),
+      checkSource("ok.js", `function f(x){ return x+1; }\nf(1);\n`, pTrue, stdOpts),
     );
     expect(j.ok).toBe(true);
     expect(j.issues.filter((i) => i.severity === "error")).toEqual([]);

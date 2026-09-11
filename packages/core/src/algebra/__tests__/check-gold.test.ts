@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { checkSource } from "../index.ts";
+import { checkSource, pTrue } from "../index.ts";
+import { withStdImport, stdOpts } from "./nudo-constraints.ts";
 
 /**
  * nudo check 金标：多形态 JS 片段上的门禁行为。
@@ -18,7 +19,7 @@ const golds: Gold[] = [
     name: "valid positive call",
     source: `
 /**
- * @nudo:requires x > 0
+ * @nudo:requires x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -32,7 +33,7 @@ const r = needsPositive(5);
     name: "negative call violates x>0",
     source: `
 /**
- * @nudo:requires x > 0
+ * @nudo:requires x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -106,7 +107,7 @@ export function main() { return new Counter(1).get(); }
     name: "zero violates x>0",
     source: `
 /**
- * @nudo:requires x > 0
+ * @nudo:requires x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -121,7 +122,7 @@ needsPositive(0);
     name: "unary negative call",
     source: `
 /**
- * @nudo:requires x > 0
+ * @nudo:requires x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -136,7 +137,7 @@ needsPositive(-3);
     name: "x>=1 rejects 0",
     source: `
 /**
- * @nudo:requires i >= 1
+ * @nudo:requires i atLeast1
  */
 function idx(i) {
   if (i >= 1) return i;
@@ -151,7 +152,7 @@ idx(0);
     name: "upper bound x<10 rejects 10",
     source: `
 /**
- * @nudo:requires n < 10
+ * @nudo:requires n small
  */
 function small(n) {
   if (n < 10) return n;
@@ -210,7 +211,7 @@ needsPositive(1);
     name: "arrow function constraint",
     source: `
 /**
- * @nudo:requires x > 0
+ * @nudo:requires x positive
  */
 const needsPositive = (x) => {
   if (x > 0) return x;
@@ -225,7 +226,7 @@ needsPositive(-2);
     name: "export default function",
     source: `
 /**
- * @nudo:requires x > 0
+ * @nudo:requires x positive
  */
 export default function needsPositive(x) {
   if (x > 0) return x;
@@ -240,7 +241,7 @@ needsPositive(-1);
     name: "both bounds mid valid",
     source: `
 /**
- * @nudo:requires n >= 0 && n <= 100
+ * @nudo:requires n percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
@@ -254,7 +255,7 @@ pct(50);
     name: "both bounds high invalid",
     source: `
 /**
- * @nudo:requires n >= 0 && n <= 100
+ * @nudo:requires n percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
@@ -270,7 +271,7 @@ pct(150);
 describe("nudo check gold standards", () => {
   for (const g of golds) {
     it(g.name, () => {
-      const report = checkSource("gold.js", g.source);
+      const report = checkSource("gold.js", withStdImport(g.source), pTrue, stdOpts);
       expect(report.ok, formatIssues(report)).toBe(g.expectOk);
       if (g.expectCode) {
         expect(

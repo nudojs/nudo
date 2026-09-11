@@ -1,58 +1,79 @@
 import { describe, it, expect } from "vitest";
 import {
-  compileRequiresExpr,
+  number,
+  instantiateConstraint,
+  isNudoConstraint,
+} from "../constraint.ts";
+import {
+  execNudoModule,
   extractNudoImports,
-  parseInterfaceConstraints,
+  extractRequiresFromSource,
   requiresToIndexed,
 } from "../requires.ts";
 import { checkSource, pTrue } from "../index.ts";
+import { predToString } from "../pred.ts";
 
 const intf = `
-export const delay = "ms > 0";
-export const percent = { pred: "n >= 0" };
+export const delay = number().gt(0);
+export const percent = number().ge(0).le(100);
 `;
 
 const loadModule = (spec: string): string | undefined => {
-  if (spec.includes("interface")) return intf;
+  if (spec.includes("nudo")) return intf;
   return undefined;
 };
 
-describe("@nudo:import + interface constraints", () => {
-  it("parses imports and interface exports", () => {
-    const src = `/// @nudo:import * as V from "./interface.nudo.js"\n`;
-    expect(extractNudoImports(src)).toEqual([
-      { ns: "V", spec: "./interface.nudo.js" },
-    ]);
-    const map = parseInterfaceConstraints(intf);
-    expect(map.get("delay")).toBe("ms > 0");
-    expect(map.get("percent")).toBe("n >= 0");
+describe("@nudo:requires <param> <constraint>", () => {
+  it("number().gt(0) instantiates to param > 0", () => {
+    const c = number().gt(0);
+    expect(isNudoConstraint(c)).toBe(true);
+    expect(predToString(instantiateConstraint(c, "ms"))).toBe("ms > 0");
   });
 
-  it("resolves V.delay to Pred on param ms", () => {
+  it("chains bounds", () => {
+    const c = number().ge(0).le(100);
+    expect(predToString(instantiateConstraint(c, "n"))).toContain("0");
+    expect(predToString(instantiateConstraint(c, "n"))).toContain("100");
+  });
+
+  it("executes .nudo.js module", () => {
+    const exp = execNudoModule(intf);
+    expect(Object.keys(exp).sort()).toEqual(["delay", "percent"]);
+    expect(isNudoConstraint(exp.delay)).toBe(true);
+  });
+
+  it("parses named @nudo:import", () => {
+    const src = `/// @nudo:import { delay, percent } from "./x.nudo.js"\n`;
+    expect(extractNudoImports(src)).toEqual([
+      { names: ["delay", "percent"], spec: "./x.nudo.js" },
+    ]);
+  });
+
+  it("resolves ms delay to Pred", () => {
     const src = `
-/// @nudo:import * as V from "./interface.nudo.js"
+/// @nudo:import { delay } from "./x.nudo.js"
 /**
- * @nudo:requires V.delay
+ * @nudo:requires ms delay
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
   return 0;
 }
 `;
-    const reqs = requiresToIndexed(src, "setDelay", ["ms"], {
+    const reqs = extractRequiresFromSource(src, "setDelay", {
       loadModule,
       fromFile: "/t/demo.js",
     });
     expect(reqs.length).toBe(1);
-    expect(reqs[0]![0]).toBe(0);
-    expect(reqs[0]![1].op).toBe("gt");
+    expect(reqs[0]!.param).toBe("ms");
+    expect(predToString(reqs[0]!.pred)).toBe("ms > 0");
   });
 
-  it("check catches violation from interface binding", () => {
+  it("check catches violation from template", () => {
     const src = `
-/// @nudo:import * as V from "./interface.nudo.js"
+/// @nudo:import { delay } from "./x.nudo.js"
 /**
- * @nudo:requires V.delay
+ * @nudo:requires ms delay
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -65,27 +86,24 @@ setDelay(0);
       fromFile: "/t/demo.js",
     });
     expect(r.ok).toBe(false);
-    expect(
-      r.issues.some((i) => i.code === "nudo:constraint-violated"),
-    ).toBe(true);
+    expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
   });
 
-  it("mixes interface binding with inline && fragment", () => {
+  it("requiresToIndexed maps param names", () => {
     const src = `
-/// @nudo:import * as V from "./interface.nudo.js"
+/// @nudo:import { delay, percent } from "./x.nudo.js"
 /**
- * @nudo:requires V.percent && n <= 100
+ * @nudo:requires ms delay
+ * @nudo:requires n percent
  */
-function pct(n) {
-  if (n >= 0 && n <= 100) return n;
-  return 0;
+function f(ms, n) {
+  return ms + n;
 }
-pct(150);
 `;
-    const r = checkSource("/t/pct.js", src, pTrue, {
+    const idx = requiresToIndexed(src, "f", ["ms", "n"], {
       loadModule,
-      fromFile: "/t/pct.js",
+      fromFile: "/t/f.js",
     });
-    expect(r.ok).toBe(false);
+    expect(idx.length).toBe(2);
   });
 });

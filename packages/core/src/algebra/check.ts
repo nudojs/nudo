@@ -21,7 +21,6 @@ import { defaultLeakBudget } from "./leak.ts";
 import { leqAbs } from "./leq.ts";
 import {
   requiresToIndexed,
-  compileRequiresExpr,
   type RequiresResolveOpts,
 } from "./requires.ts";
 import { generalizeFromAst } from "./generalize.ts";
@@ -689,6 +688,9 @@ function scanLiteralCalls(
   const forwards = collectForwarders(source, knownFns, resolve);
   const varAbs = snapshotVarAbs(source);
 
+  const flattenPred = (p: Pred): Pred[] =>
+    p.op === "and" ? p.args.flatMap(flattenPred) : p.op === "true" ? [] : [p];
+
   const checkReqs = (
     displayName: string,
     reqs: Array<[number, import("./pred.ts").Pred]>,
@@ -704,31 +706,33 @@ function scanLiteralCalls(
       const arg = absArgs[argIdx];
       if (!arg) continue;
       const lv = litValue(arg);
-      if (
-        lv !== undefined &&
-        (pred.op === "gt" || pred.op === "ge" || pred.op === "lt" || pred.op === "le") &&
-        pred.b.op === "lit" &&
-        typeof pred.b.value === "number"
-      ) {
-        const n = pred.b.value;
-        let ok = true;
-        if (pred.op === "gt") ok = (lv as number) > n;
-        if (pred.op === "ge") ok = (lv as number) >= n;
-        if (pred.op === "lt") ok = (lv as number) < n;
-        if (pred.op === "le") ok = (lv as number) <= n;
-        if (!ok) {
-          const paramName = paramNames[idx] ?? `arg${idx}`;
-          out.push({
-            severity: "error",
-            code: "nudo:constraint-violated",
-            message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
-            actual: formatAbs(arg),
-            expected: predToString(pred),
-            suggestion: `改用满足 ${predToString(pred)} 的值，或放宽 ${paramName} 的前置`,
-            fn: displayName,
-            line: loc?.start.line,
-            column: loc?.start.column,
-          });
+      if (lv === undefined) continue;
+      for (const p of flattenPred(pred)) {
+        if (
+          (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") &&
+          p.b.op === "lit" &&
+          typeof p.b.value === "number"
+        ) {
+          const n = p.b.value;
+          let ok = true;
+          if (p.op === "gt") ok = (lv as number) > n;
+          if (p.op === "ge") ok = (lv as number) >= n;
+          if (p.op === "lt") ok = (lv as number) < n;
+          if (p.op === "le") ok = (lv as number) <= n;
+          if (!ok) {
+            const paramName = paramNames[idx] ?? `arg${idx}`;
+            out.push({
+              severity: "error",
+              code: "nudo:constraint-violated",
+              message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+              actual: formatAbs(arg),
+              expected: predToString(p),
+              suggestion: `改用满足 ${predToString(p)} 的值，或放宽 ${paramName} 的前置`,
+              fn: displayName,
+              line: loc?.start.line,
+              column: loc?.start.column,
+            });
+          }
         }
       }
     }
@@ -815,7 +819,10 @@ function scanLiteralCalls(
     let reqs: Array<[number, Pred]> = [];
     let paramNames: string[] = [];
     try {
-      reqs = extractParamReqs(ext.source, ext.fnName);
+      reqs = extractParamReqs(ext.source, ext.fnName, {
+        loadModule: opts?.loadModule,
+        fromFile: opts?.fromFile ?? "",
+      });
       const g = generalizeFromAst(ext.fnName, ext.source);
       paramNames = g?.params ?? [];
     } catch {

@@ -163,10 +163,14 @@ function lspLoadModule(spec: string, fromFile: string): string | undefined {
 /**
  * Abs check → LSP diagnostics（主通道：约束蕴含，非 TS assignability）。
  */
-export function checkToLspDiagnostics(filePath: string, source: string): LspDiagnostic[] {
+export function checkToLspDiagnostics(
+  filePath: string,
+  source: string,
+  loadModule?: (spec: string, fromFile: string) => string | undefined,
+): LspDiagnostic[] {
   try {
     const report = checkSource(filePath, source, pTrue, {
-      loadModule: lspLoadModule,
+      loadModule: loadModule ?? lspLoadModule,
       fromFile: filePath,
     });
     return report.issues

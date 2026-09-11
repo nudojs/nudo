@@ -218,6 +218,8 @@ export type CheckToolParams = {
   source?: string;
   /** "json" → CheckJson only；缺省人类可读摘要 + JSON */
   format?: "text" | "json";
+  /** 解析 @nudo:import 的相对 .nudo.js（测试可注入） */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
 };
 
 /**
@@ -230,7 +232,10 @@ export function checkTool(
   try {
     const filePath = normalizeFilePath(params.file);
     const source = params.source ?? readSource(filePath, deps);
-    const report = checkSource(filePath, source, pTrue);
+    const report = checkSource(filePath, source, pTrue, {
+      loadModule: params.loadModule,
+      fromFile: filePath,
+    });
     const json = serializeCheckJson(report);
     if (params.format === "json") {
       return textResult(JSON.stringify(json, null, 2));
