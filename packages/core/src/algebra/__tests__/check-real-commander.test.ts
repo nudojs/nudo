@@ -5,17 +5,23 @@ import { fileURLToPath } from "node:url";
 import { checkSource } from "../index.ts";
 
 /**
- * 真实包精度门禁：commander（devDep）上不得出现 constraint-violated 误报。
+ * 真实包精度门禁：commander（devDep）上不得出现任何 error 级误报。
  * 包不存在时跳过（非 monorepo 环境）。
  */
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
 const commanderLib = join(root, "node_modules/commander/lib");
 
+const ERROR_CODES = [
+  "nudo:constraint-violated",
+  "nudo:assign-mismatch",
+  "nudo:arg-structure",
+] as const;
+
 describe("real package precision (commander)", () => {
   const hasPkg = existsSync(commanderLib);
 
-  it.runIf(hasPkg)("no false-positive constraint violations", () => {
+  it.runIf(hasPkg)("no false-positive errors (constraint / assign / arg-structure)", () => {
     const files = readdirSync(commanderLib).filter((f) => f.endsWith(".js"));
     expect(files.length).toBeGreaterThan(0);
 
@@ -26,8 +32,8 @@ describe("real package precision (commander)", () => {
       const r = checkSource(`commander/${f}`, source);
       scanned++;
       for (const i of r.issues) {
-        if (i.code === "nudo:constraint-violated") {
-          violations.push(`commander/${f}:${i.line ?? "?"} ${i.message}`);
+        if (i.severity === "error" && (ERROR_CODES as readonly string[]).includes(i.code)) {
+          violations.push(`commander/${f}:${i.line ?? "?"} [${i.code}] ${i.message}`);
         }
       }
     }

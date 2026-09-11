@@ -1,6 +1,16 @@
 # nudo check 真实包扫描报告
 
-生成：2026-09-11
+生成：2026-09-11（结构违例 code 扩展后）
+
+| code | commander 上误报 |
+|---|---|
+| `nudo:constraint-violated` | **0** |
+| `nudo:assign-mismatch` | **0** |
+| `nudo:arg-structure` | **0** |
+
+CI 门禁：`check-real-commander.test.ts` 对三种 error code 一并锁零。
+
+以下为首次扫描（仅 constraint 时代）的文件级摘要，供对照：
 
 ## commander
 
@@ -15,6 +25,7 @@
 | `node_modules/commander/lib/suggestSimilar.js` | 2 | 0 | 0 | ✓ |
 
 **零 error**（在已扫描文件上）
+
 ---
 
 **合计**：7 文件 · 8 函数 · 0 error · 0 warning
