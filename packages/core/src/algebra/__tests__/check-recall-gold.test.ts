@@ -477,6 +477,30 @@ readX({ x: 1, z: 2 });
 `,
     expect: "ok",
   },
+  {
+    id: "arg-ident-missing-slot-violates",
+    origin: "传参结构·标识符",
+    source: `
+function readXY(p) {
+  return p.x + p.y;
+}
+const o = { x: 1 };
+readXY(o);
+`,
+    expect: "violation",
+  },
+  {
+    id: "arg-ident-ok",
+    origin: "传参结构·标识符",
+    source: `
+function readX(p) {
+  return p.x;
+}
+const o = { x: 1 };
+readX(o);
+`,
+    expect: "ok",
+  },
 ];
 
 /** require 金标：用 loadModule 喂外部源码 */

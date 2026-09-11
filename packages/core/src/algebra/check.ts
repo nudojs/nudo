@@ -265,14 +265,32 @@ function collectParamStructReqs(
   return reqs;
 }
 
-/** 静态求值字面量实参节点 → Abs */
-function evalArgAbs(node: Record<string, unknown>): Abs | undefined {
+/** 静态求值实参节点 → Abs（标识符走绑定表） */
+function evalArgAbs(
+  node: Record<string, unknown>,
+  lookupVar?: (name: string) => Abs | undefined,
+): Abs | undefined {
+  if (node.type === "Identifier" && typeof node.name === "string" && lookupVar) {
+    return lookupVar(node.name);
+  }
   try {
     const env = emptyEnv();
     return evalNode(node as unknown as Node, env, pTrue, defaultLeakBudget).value;
   } catch {
     return undefined;
   }
+}
+
+/** 整文件顺序求值后的绑定表（标识符实参用） */
+function snapshotVarAbs(source: string): Map<string, Abs> {
+  const map = new Map<string, Abs>();
+  try {
+    const { env } = evalProgramAbs(source);
+    for (const [k, v] of env.vars) map.set(k, v);
+  } catch {
+    // ignore
+  }
+  return map;
 }
 
 /** 扫描前收集：别名 / 对象属性 / require 导入 */
@@ -664,6 +682,7 @@ function scanLiteralCalls(
   const file = parse(source);
   const resolve = collectCallResolvers(source, knownFns, opts);
   const forwards = collectForwarders(source, knownFns, resolve);
+  const varAbs = snapshotVarAbs(source);
 
   const checkReqs = (
     displayName: string,
@@ -796,7 +815,7 @@ function scanLiteralCalls(
 
   /**
    * 实参结构 ≤ 形参必填 slot（从 `p.foo` 访问推出）。
-   * ObjectExpression / ArrayExpression 字面量可静态求 Abs。
+   * 字面量节点静态求 Abs；标识符用文件绑定表。
    */
   const checkArgStructures = (
     fnName: string,
@@ -822,7 +841,7 @@ function scanLiteralCalls(
       if (!keys || keys.size === 0) continue;
       const argNode = args[i];
       if (!argNode) continue;
-      const absArg = evalArgAbs(argNode);
+      const absArg = evalArgAbs(argNode, (n) => varAbs.get(n));
       if (!absArg || absArg.shape.k === "unknown") continue;
       const slots: Record<string, { value: Abs }> = {};
       for (const k of keys) slots[k] = { value: absUnknown() };
