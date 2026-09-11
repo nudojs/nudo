@@ -64,7 +64,14 @@ importers:
         specifier: ^13.0.0
         version: 13.1.0
 
-  packages/core: {}
+  packages/core:
+    dependencies:
+      '@babel/parser':
+        specifier: ^7.29.0
+        version: 7.29.0
+      '@babel/types':
+        specifier: ^7.29.0
+        version: 7.29.0
 
   packages/env:
     dependencies:
@@ -119,6 +126,9 @@ importers:
       '@nudojs/core':
         specifier: workspace:*
         version: link:../core
+      '@nudojs/harvester':
+        specifier: workspace:*
+        version: link:../harvester
       '@nudojs/parser':
         specifier: workspace:*
         version: link:../parser
@@ -150,9 +160,6 @@ importers:
       '@docusaurus/preset-classic':
         specifier: ^3.7.0
         version: 3.9.2(@algolia/client-search@5.49.0)(@mdx-js/react@3.1.1(@types/react@19.2.14)(react@18.3.1))(@types/react@19.2.14)(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(search-insights@2.17.3)(typescript@5.8.3)
-      '@easyops-cn/docusaurus-search-local':
-        specifier: ^0.55.3
-        version: 0.55.3(@docusaurus/theme-common@3.9.2(@docusaurus/plugin-content-docs@3.9.2(@mdx-js/react@3.1.1(@types/react@19.2.14)(react@18.3.1))(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.8.3))(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(@mdx-js/react@3.1.1(@types/react@19.2.14)(react@18.3.1))(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
       '@mdx-js/react':
         specifier: ^3.0.0
         version: 3.1.1(@types/react@19.2.14)(react@18.3.1)
@@ -193,6 +200,9 @@ importers:
       '@docusaurus/types':
         specifier: ^3.7.0
         version: 3.9.2(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@easyops-cn/docusaurus-search-local':
+        specifier: ^0.55.3
+        version: 0.55.3(@docusaurus/theme-common@3.9.2(@docusaurus/plugin-content-docs@3.9.2(@mdx-js/react@3.1.1(@types/react@19.2.14)(react@18.3.1))(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.8.3))(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(@mdx-js/react@3.1.1(@types/react@19.2.14)(react@18.3.1))(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
       typescript:
         specifier: ~5.8.0
         version: 5.8.3
