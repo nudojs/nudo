@@ -78,4 +78,8 @@ clamp(-5, 0, 10);  // OK
 | Human-labeled recall | `check-recall-gold.test.ts` | recall = precision = **1.0** |
 | Real-package precision | `check-real-commander.test.ts` | zero false `constraint-violated` on commander |
 
+## Editor integration
+
+LSP publishes **`nudo-check` diagnostics first** (Abs violations with `actual` / `expected`), then evaluator diagnostics (`source: nudo`). Hover and inlay hints read lossless Abs — not a lossy TypeValue bridge.
+
 See also: monorepo `docs/nudo-check.md` and `docs/ci-nudo-check.md`.
