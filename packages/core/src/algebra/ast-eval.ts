@@ -53,12 +53,10 @@ import { spread, joinAbs } from "./objects.ts";
 import { absFunction, attachFnImpl, getFnImpl } from "./abs-fn.ts";
 import { concatString, isTemplateLike } from "./template.ts";
 import {
-  evalMathMethod,
-  evalObjectMethod,
-  evalJsonMethod,
-  evalNumberStatic,
   evalGlobalFn,
-  evalArrayStatic,
+  evalNamespaceCall,
+  evalBuiltinNew,
+  evalBuiltinInstanceMethod,
 } from "./builtins.ts";
 import { callAbsMethod, getAbsProperty } from "./methods.ts";
 import {
@@ -354,6 +352,9 @@ export function evalNode(
       if (ne.callee.type !== "Identifier") return ok(unknown, phi, env);
       const className = (ne.callee as Identifier).name;
       const args = ne.arguments.map((a) => evalNode(a, env, phi, budget).value);
+      // 内置构造
+      const builtin = evalBuiltinNew(className, args);
+      if (builtin) return ok(builtin, phi, env);
       const inst = instantiateClass(env, className, args, (ctor, cargs, thisVal, e) =>
         evalMethodBody(ctor, cargs, thisVal, e, phi, budget),
       );
@@ -688,16 +689,11 @@ function evalCall(
         (a): a is Exclude<typeof a, { type: "SpreadElement" }> => a.type !== "SpreadElement",
       );
 
-      // 全局命名空间 builtin（Math/Object/JSON/Number/Array）
+      // 全局命名空间 builtin（Math/Object/JSON/Number/Array/Date/Promise）
       if (m.object.type === "Identifier") {
         const ns = (m.object as Identifier).name;
         const margs = rawArgs.map((a) => evalNode(a, env, phi, budget).value);
-        let r: Abs | undefined;
-        if (ns === "Math") r = evalMathMethod(method, margs);
-        else if (ns === "Object") r = evalObjectMethod(method, margs);
-        else if (ns === "JSON") r = evalJsonMethod(method, margs);
-        else if (ns === "Number") r = evalNumberStatic(method, margs);
-        else if (ns === "Array") r = evalArrayStatic(method, margs);
+        const r = evalNamespaceCall(ns, method, margs);
         if (r) return ok(r, phi, env);
       }
 
@@ -709,6 +705,12 @@ function evalCall(
       }
 
       if (obj.shape.k === "brand") {
+        // 内置 brand 实例方法（Date/RegExp/Map/Set）
+        {
+          const margs = rawArgs.map((a) => evalNode(a, env, phi, budget).value);
+          const bi = evalBuiltinInstanceMethod(obj.shape.name, method, obj, margs);
+          if (bi) return ok(bi, phi, env);
+        }
         // brand 方法：在 this=receiver 下求值方法体（含继承链）
         const mdef = lookupMethod(env, obj, method);
         if (mdef && mdef.kind !== "constructor") {
@@ -716,6 +718,22 @@ function evalCall(
           const ret = evalMethodBody(mdef, margs, obj, env, phi, budget);
           if (mdef.async) return ok(coerceAsyncReturn(ret), phi, env);
           return ok(ret, phi, env);
+        }
+      }
+
+      // Promise：then/catch/finally → promise
+      if (obj.shape.k === "eff" && obj.shape.eff === "promise") {
+        if (method === "then" || method === "catch" || method === "finally") {
+          const fnNode = rawArgs[0];
+          if (fnNode && method === "then") {
+            const inner = applyUnaryCallback(fnNode, obj.shape.inner, env, phi, budget);
+            return ok(
+              abs({ k: "eff", eff: "promise", inner }, undefined, undefined, confJoin(obj.conf, inner.conf)),
+              phi,
+              env,
+            );
+          }
+          return ok(obj, phi, env);
         }
       }
 
@@ -1209,4 +1227,79 @@ export function analyzeFn(
   budget?: LeakBudget,
 ): Abs {
   return evalSource(source, { fn: fnName, args }, { phi, budget }).value;
+}
+
+/**
+ * 程序级 Abs 求值：注册全部顶层函数/class，再顺序执行语句。
+ * 返回最终 env（vars 含导出绑定）。TypeValue 仅在调用方 bridge 时出现。
+ */
+export function evalProgramAbs(
+  source: string,
+  opts: EvalOptions = {},
+): { env: AstEnv; last: Abs; phi: Phi } {
+  const file = parseSource(source);
+  const env = emptyEnv();
+  let phi = opts.phi ?? pTrue;
+  let last: Abs = unknown;
+  const budget = opts.budget ?? defaultLeakBudget;
+
+  // 第一遍：函数与 class
+  for (const stmt of file.program.body) {
+    if (stmt.type === "FunctionDeclaration" && stmt.id) {
+      registerFunction(env, stmt);
+    }
+    if (stmt.type === "ClassDeclaration") {
+      registerClassDecl(env, stmt);
+    }
+    if (stmt.type === "ExportNamedDeclaration" && stmt.declaration) {
+      const d = stmt.declaration;
+      if (d.type === "FunctionDeclaration" && d.id) registerFunction(env, d);
+      if (d.type === "ClassDeclaration") registerClassDecl(env, d);
+    }
+    if (stmt.type === "VariableDeclaration") {
+      for (const d of stmt.declarations) {
+        if (
+          d.id.type === "Identifier" &&
+          (d.init?.type === "ArrowFunctionExpression" ||
+            d.init?.type === "FunctionExpression")
+        ) {
+          const init = d.init as ArrowFunctionExpression;
+          env.fns.set(d.id.name, {
+            params: init.params.map(paramName),
+            body: init.body,
+            async: init.async === true,
+          });
+        }
+      }
+    }
+  }
+
+  // 第二遍：执行顶层语句（跳过已注册的声明）
+  let local: AstEnv = env;
+  for (const stmt of file.program.body) {
+    if (stmt.type === "FunctionDeclaration" || stmt.type === "ClassDeclaration") continue;
+    if (
+      stmt.type === "ExportNamedDeclaration" ||
+      stmt.type === "ExportDefaultDeclaration"
+    ) {
+      const decl = (stmt as { declaration?: Node }).declaration;
+      if (decl && (decl.type === "FunctionDeclaration" || decl.type === "ClassDeclaration")) {
+        continue;
+      }
+      if (decl) {
+        const r = evalNode(decl, local, phi, budget);
+        local = r.env;
+        last = r.value;
+        phi = r.phi;
+      }
+      continue;
+    }
+    const r = evalNode(stmt, local, phi, budget);
+    local = r.env;
+    last = r.value;
+    phi = r.phi;
+    if (r.returned || r.threw) break;
+  }
+
+  return { env: local, last, phi };
 }

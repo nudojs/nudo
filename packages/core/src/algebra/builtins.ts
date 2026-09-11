@@ -192,3 +192,182 @@ export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
       return undefined;
   }
 }
+
+/** new Date() / Date.now / date.getTime */
+export function evalDateCtor(args: Abs[]): Abs {
+  return abs(
+    { k: "brand", name: "Date", shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") },
+    undefined,
+    undefined,
+    "path",
+  );
+}
+
+export function evalDateStatic(name: string, _args: Abs[]): Abs | undefined {
+  if (name === "now") return numLit(Date.now());
+  return undefined;
+}
+
+export function evalDateMethod(name: string, _recv: Abs, _args: Abs[]): Abs | undefined {
+  switch (name) {
+    case "getTime":
+    case "valueOf":
+      return numPrim("path");
+    case "toISOString":
+    case "toString":
+      return strPrim("path");
+    default:
+      return undefined;
+  }
+}
+
+/** new RegExp / regexp.test / exec */
+export function evalRegExpCtor(_args: Abs[]): Abs {
+  return abs(
+    { k: "brand", name: "RegExp", shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") },
+    undefined,
+    undefined,
+    "path",
+  );
+}
+
+export function evalRegExpMethod(name: string, _recv: Abs, _args: Abs[]): Abs | undefined {
+  switch (name) {
+    case "test":
+      return boolPrim();
+    case "exec":
+      return unknown;
+    default:
+      return undefined;
+  }
+}
+
+/** Promise：new Promise / Promise.resolve / reject / all */
+export function evalPromiseCtor(_args: Abs[]): Abs {
+  return abs(
+    { k: "eff", eff: "promise", inner: unknown },
+    undefined,
+    undefined,
+    "partial",
+  );
+}
+
+export function evalPromiseStatic(name: string, args: Abs[]): Abs | undefined {
+  switch (name) {
+    case "resolve": {
+      const inner = args[0] ?? unknown;
+      // Promise.resolve(thenable) 展开
+      if (inner.shape.k === "eff" && inner.shape.eff === "promise") return inner;
+      return abs({ k: "eff", eff: "promise", inner }, undefined, undefined, "path");
+    }
+    case "reject":
+      return abs({ k: "eff", eff: "promise", inner: unknown }, undefined, undefined, "partial");
+    case "all": {
+      const a0 = args[0];
+      if (a0?.shape.k === "arr" && a0.shape.element.shape.k === "eff") {
+        return abs(
+          { k: "eff", eff: "promise", inner: abs({ k: "arr", element: a0.shape.element.shape.inner }, undefined, undefined, "path") },
+          undefined,
+          undefined,
+          "path",
+        );
+      }
+      return abs({ k: "eff", eff: "promise", inner: abs({ k: "arr", element: unknown }, undefined, undefined, "partial") }, undefined, undefined, "partial");
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** 命名空间分派入口 */
+export function evalNamespaceCall(
+  ns: string,
+  method: string,
+  args: Abs[],
+): Abs | undefined {
+  switch (ns) {
+    case "Math":
+      return evalMathMethod(method, args);
+    case "Object":
+      return evalObjectMethod(method, args);
+    case "JSON":
+      return evalJsonMethod(method, args);
+    case "Number":
+      return evalNumberStatic(method, args);
+    case "Array":
+      return evalArrayStatic(method, args);
+    case "Date":
+      return evalDateStatic(method, args);
+    case "Promise":
+      return evalPromiseStatic(method, args);
+    default:
+      return undefined;
+  }
+}
+
+/** new X(...) */
+export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined {
+  switch (className) {
+    case "Date":
+      return evalDateCtor(args);
+    case "RegExp":
+      return evalRegExpCtor(args);
+    case "Promise":
+      return evalPromiseCtor(args);
+    case "Map":
+      return abs(
+        { k: "brand", name: "Map", shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") },
+        undefined,
+        undefined,
+        "path",
+      );
+    case "Set":
+      return abs(
+        { k: "brand", name: "Set", shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") },
+        undefined,
+        undefined,
+        "path",
+      );
+    default:
+      return undefined;
+  }
+}
+
+/** brand 实例方法（Date/RegExp/Map/Set） */
+export function evalBuiltinInstanceMethod(
+  brandName: string,
+  method: string,
+  recv: Abs,
+  args: Abs[],
+): Abs | undefined {
+  if (brandName === "Date") return evalDateMethod(method, recv, args);
+  if (brandName === "RegExp") return evalRegExpMethod(method, recv, args);
+  if (brandName === "Map") {
+    switch (method) {
+      case "get":
+        return unknown;
+      case "has":
+        return boolPrim();
+      case "set":
+        return recv;
+      case "size":
+        return numPrim("path");
+      default:
+        return undefined;
+    }
+  }
+  if (brandName === "Set") {
+    switch (method) {
+      case "has":
+        return boolPrim();
+      case "add":
+        return recv;
+      case "size":
+        return numPrim("path");
+      default:
+        return undefined;
+    }
+  }
+  return undefined;
+}
+

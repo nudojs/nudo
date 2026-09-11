@@ -145,4 +145,32 @@ describe("abs-native ast-eval", () => {
     const r = analyzeFn(src, "f", []);
     expect(r.shape.k === "tuple" || r.shape.k === "arr").toBe(true);
   });
+
+  it("Promise.resolve and then", () => {
+    const src = `
+      function f() {
+        return Promise.resolve(1).then((x) => x + 1);
+      }
+    `;
+    const r = analyzeFn(src, "f", []);
+    expect(r.shape.k).toBe("eff");
+  });
+
+  it("Date.now and RegExp.test", () => {
+    const n = analyzeFn(`function f(){ return Date.now(); }`, "f", []);
+    expect(n.shape.k === "prim" && (n.shape as { type: string }).type === "number").toBe(true);
+    const t = analyzeFn(`function f(){ return /a/.test("a"); }`, "f", []);
+    // 字面正则：.test 可能走 member 路径；至少 boolean 或 unknown
+    expect(t.shape.k === "prim" || t.shape.k === "unknown").toBe(true);
+  });
+
+  it("evalProgramAbs executes top-level", async () => {
+    const { evalProgramAbs } = await import("../ast-eval.ts");
+    const { env, last } = evalProgramAbs(`
+      const x = 1 + 2;
+      function inc(n) { return n + 1; }
+    `);
+    expect(env.vars.get("x")).toBeDefined();
+    expect(env.fns.has("inc")).toBe(true);
+  });
 });
