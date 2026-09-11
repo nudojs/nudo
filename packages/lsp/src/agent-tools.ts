@@ -14,7 +14,7 @@
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { analyzeFile, buildCaseDirective } from "@nudojs/service";
+import { analyzeFile, buildCaseDirective, getHoverAtPosition, collectAbsInlays } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
 import { T, typeValueToString, checkSource, serializeCheckJson, pTrue } from "@nudojs/core";
 import type { TypeValue, CheckJson } from "@nudojs/core";
@@ -243,6 +243,48 @@ export function checkTool(
     lines.push("");
     lines.push(JSON.stringify(json, null, 2));
     return textResult(lines.join("\n"));
+  } catch (err) {
+    return analysisError(err);
+  }
+}
+
+export type HoverToolParams = {
+  file: string;
+  /** 1-based 行 */
+  line: number;
+  /** 0-based 列 */
+  column: number;
+  source?: string;
+  /** true 时同时返回该文件全部 Abs inlay */
+  includeInlays?: boolean;
+};
+
+/**
+ * Agent hover：无损 Abs（不经 TypeValue bridge）。
+ * 与 LSP hover 同一信息源。
+ */
+export function hoverTool(
+  params: HoverToolParams,
+  deps: AgentToolDeps = {},
+): AgentToolResult {
+  try {
+    const filePath = normalizeFilePath(params.file);
+    const source = params.source ?? readSource(filePath, deps);
+    const hover = getHoverAtPosition(filePath, source, params.line, params.column);
+    const payload: Record<string, unknown> = {
+      file: filePath,
+      line: params.line,
+      column: params.column,
+      abs: hover?.abs ?? null,
+      absMultiline: hover?.absMultiline ?? null,
+      intension: hover?.intension ?? null,
+      /** 有损外延，仅对照 */
+      ext: hover?.typeText ?? null,
+    };
+    if (params.includeInlays) {
+      payload.inlays = collectAbsInlays(source);
+    }
+    return textResult(JSON.stringify(payload, null, 2));
   } catch (err) {
     return analysisError(err);
   }

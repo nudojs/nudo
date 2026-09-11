@@ -140,6 +140,18 @@ npx tsx packages/cli/src/index.ts check file.js --json
 - Abs 以 **formatAbs 字符串**给出，不序列化内部 shape 图  
 - 契约测试：`check-json.test.ts`
 
+### Agent / LSP
+
+| 通道 | 入口 |
+|---|---|
+| CLI | `nudo check file.js --json` |
+| LSP command | `nudo.check`（`{ file, source?, format? }`） |
+| LSP request | `nudo/check` |
+| Hover Abs | `nudo.hover` / `nudo/hover`（`{ file, line, column, includeInlays? }`） |
+
+`format: "json"` 只返回 CheckJson；缺省为人类摘要 + JSON。  
+`nudo.hover` 返回无损 `abs` / `absMultiline` / `intension`，`ext` 仅作对照。
+
 ## 实现入口
 
 | 层 | 位置 |
