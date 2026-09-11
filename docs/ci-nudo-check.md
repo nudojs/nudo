@@ -39,7 +39,9 @@ issues
 **当前扫描范围**：
 - `fn(literalArgs)` 直接调用
 - 别名：`const f = fn; f(lit)`
-- 对象属性：`const api = { fn }` / `{ key: fn }` → `api.fn(lit)` / `api.key(lit)`
+- 对象属性：`const api = { fn }` / `{ key: fn }` → `api.fn(lit)`
+- 无条件转发：`function w(a){ return target(a); }` → `w(lit)` 用 target 前置
+- 有守卫的转发（clamp）不传播
 
 ## 本地
 

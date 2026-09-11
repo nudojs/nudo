@@ -239,6 +239,100 @@ function resolveCalleeFn(
   return undefined;
 }
 
+/**
+ * 无条件转发：`function w(a,b){ return target(a,b); }`
+ * 或箭头 `const w = (a) => target(a)`。
+ * map[i] = wrapper 第 i 参 → target 的第几参。
+ */
+type Forward = { target: string; map: number[] };
+
+function collectForwarders(
+  source: string,
+  knownFns: string[],
+  resolve: CallResolve,
+): Map<string, Forward> {
+  const forwards = new Map<string, Forward>();
+  const file = parse(source);
+
+  const tryFn = (
+    name: string,
+    params: Array<{ type?: string; name?: string }>,
+    body: Record<string, unknown> | undefined,
+  ): void => {
+    if (!name || !params.length) return;
+    const paramNames = params.map((p) => (p?.type === "Identifier" ? p.name : undefined));
+    if (paramNames.some((n) => !n)) return;
+
+    // body: BlockStatement 仅一条 ReturnStatement(CallExpression)
+    //      或箭头表达式体 CallExpression
+    let call: Record<string, unknown> | undefined;
+    if (body?.type === "BlockStatement") {
+      const stmts = (body.body as Array<Record<string, unknown>> | undefined) ?? [];
+      if (stmts.length !== 1 || stmts[0]!.type !== "ReturnStatement") return;
+      const arg = stmts[0]!.argument as Record<string, unknown> | undefined;
+      if (arg?.type !== "CallExpression") return;
+      call = arg;
+    } else if (body?.type === "CallExpression") {
+      call = body;
+    }
+    if (!call) return;
+
+    const target = resolveCalleeFn(call.callee as Record<string, unknown>, resolve);
+    if (!target || !knownFns.includes(target) || target === name) return;
+
+    const args = (call.arguments as Array<Record<string, unknown>> | undefined) ?? [];
+    if (args.length === 0) return;
+    // 每个实参必须是 wrapper 自己的参数标识符
+    const map: number[] = [];
+    for (const a of args) {
+      if (a.type !== "Identifier" || typeof a.name !== "string") return;
+      const idx = paramNames.indexOf(a.name);
+      if (idx < 0) return;
+      map.push(idx);
+    }
+    forwards.set(name, { target, map });
+  };
+
+  const visit = (n: unknown): void => {
+    if (!n || typeof n !== "object") return;
+    const obj = n as Record<string, unknown> & { type?: string };
+    if (obj.type === "FunctionDeclaration") {
+      const id = obj.id as { name?: string } | undefined;
+      tryFn(
+        id?.name ?? "",
+        (obj.params as Array<{ type?: string; name?: string }>) ?? [],
+        obj.body as Record<string, unknown>,
+      );
+    }
+    if (obj.type === "VariableDeclaration") {
+      for (const d of (obj.declarations as Array<Record<string, unknown>> | undefined) ?? []) {
+        const id = d.id as { type?: string; name?: string };
+        const init = d.init as Record<string, unknown> | null | undefined;
+        if (
+          id?.type === "Identifier" &&
+          id.name &&
+          init &&
+          (init.type === "ArrowFunctionExpression" || init.type === "FunctionExpression")
+        ) {
+          tryFn(
+            id.name,
+            (init.params as Array<{ type?: string; name?: string }>) ?? [],
+            init.body as Record<string, unknown>,
+          );
+        }
+      }
+    }
+    for (const key of Object.keys(obj)) {
+      if (key === "loc" || key === "start" || key === "end") continue;
+      const val = obj[key];
+      if (Array.isArray(val)) val.forEach(visit);
+      else if (val && typeof val === "object") visit(val);
+    }
+  };
+  visit(file);
+  return forwards;
+}
+
 /** 找 `name(literalArgs)` / `alias(lit)` / `obj.fn(lit)`，检查约束 */
 function scanLiteralCalls(
   source: string,
@@ -248,6 +342,52 @@ function scanLiteralCalls(
   const out: CheckIssue[] = [];
   const file = parse(source);
   const resolve = collectCallResolvers(source, knownFns);
+  const forwards = collectForwarders(source, knownFns, resolve);
+
+  const checkReqs = (
+    displayName: string,
+    reqs: Array<[number, import("./pred.ts").Pred]>,
+    paramNames: string[],
+    absArgs: Abs[],
+    /** target 参下标 → 实参下标；缺省恒等 */
+    argIndexOf: (reqIdx: number) => number | undefined,
+    loc?: { start: { line: number; column: number } },
+  ): void => {
+    for (const [idx, pred] of reqs) {
+      const argIdx = argIndexOf(idx);
+      if (argIdx === undefined) continue;
+      const arg = absArgs[argIdx];
+      if (!arg) continue;
+      const lv = litValue(arg);
+      if (
+        lv !== undefined &&
+        (pred.op === "gt" || pred.op === "ge" || pred.op === "lt" || pred.op === "le") &&
+        pred.b.op === "lit" &&
+        typeof pred.b.value === "number"
+      ) {
+        const n = pred.b.value;
+        let ok = true;
+        if (pred.op === "gt") ok = (lv as number) > n;
+        if (pred.op === "ge") ok = (lv as number) >= n;
+        if (pred.op === "lt") ok = (lv as number) < n;
+        if (pred.op === "le") ok = (lv as number) <= n;
+        if (!ok) {
+          const paramName = paramNames[idx] ?? `arg${idx}`;
+          out.push({
+            severity: "error",
+            code: "nudo:constraint-violated",
+            message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+            actual: formatAbs(arg),
+            expected: predToString(pred),
+            suggestion: `改用满足 ${predToString(pred)} 的值，或放宽 ${paramName} 的前置`,
+            fn: displayName,
+            line: loc?.start.line,
+            column: loc?.start.column,
+          });
+        }
+      }
+    }
+  };
 
   const checkOneCall = (
     fnName: string,
@@ -273,39 +413,33 @@ function scanLiteralCalls(
       }
     }
     if (!allLit || absArgs.length === 0) return;
-    const reqs = extractParamReqsFromSource(source, fnName);
+
+    // 自身前置
+    const ownReqs = extractParamReqsFromSource(source, fnName);
     const g = generalizeFromAst(fnName, source);
     const paramNames = g?.params ?? [];
-    for (const [idx, pred] of reqs) {
-      const arg = absArgs[idx];
-      if (!arg) continue;
-      const lv = litValue(arg);
-      if (
-        lv !== undefined &&
-        (pred.op === "gt" || pred.op === "ge" || pred.op === "lt" || pred.op === "le") &&
-        pred.b.op === "lit" &&
-        typeof pred.b.value === "number"
-      ) {
-        const n = pred.b.value;
-        let ok = true;
-        if (pred.op === "gt") ok = (lv as number) > n;
-        if (pred.op === "ge") ok = (lv as number) >= n;
-        if (pred.op === "lt") ok = (lv as number) < n;
-        if (pred.op === "le") ok = (lv as number) <= n;
-        if (!ok) {
-          const paramName = paramNames[idx] ?? `arg${idx}`;
-          out.push({
-            severity: "error",
-            code: "nudo:constraint-violated",
-            message: `${fnName}[${paramName}]: 实参 ⊭ 前置`,
-            actual: formatAbs(arg),
-            expected: predToString(pred),
-            suggestion: `改用满足 ${predToString(pred)} 的值，或放宽 ${paramName} 的前置`,
-            fn: fnName,
-            line: loc?.start.line,
-            column: loc?.start.column,
-          });
-        }
+    checkReqs(fnName, ownReqs, paramNames, absArgs, (i) => i, loc);
+
+    // 转发目标的前置（wrapper(a) → target(a)）
+    const fwd = forwards.get(fnName);
+    if (fwd) {
+      const tReqs = extractParamReqsFromSource(source, fwd.target);
+      if (tReqs.length > 0) {
+        const tg = generalizeFromAst(fwd.target, source);
+        const tParams = tg?.params ?? [];
+        // map[targetArgIdx] = wrapperArgIdx
+        const wrapperArgOfTarget = new Map<number, number>();
+        fwd.map.forEach((wrapperIdx, targetIdx) => {
+          wrapperArgOfTarget.set(targetIdx, wrapperIdx);
+        });
+        checkReqs(
+          `${fnName}→${fwd.target}`,
+          tReqs,
+          tParams,
+          absArgs,
+          (targetIdx) => wrapperArgOfTarget.get(targetIdx),
+          loc,
+        );
       }
     }
   };

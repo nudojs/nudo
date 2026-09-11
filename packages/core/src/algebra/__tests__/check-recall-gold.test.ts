@@ -262,7 +262,7 @@ onlyZero(5);
 `,
     expect: "ok",
   },
-  // --- 调用链：把合法值传下去 ---
+  // --- 调用链：wrapper 无条件转发 ---
   {
     id: "chained-valid-ok",
     origin: "内部转发",
@@ -276,9 +276,54 @@ function wrapper(n) {
 }
 wrapper(3);
 `,
-    // wrapper 无字面量实参约束；wrapper(3) 不直接打 needsPositive
     expect: "ok",
-    note: "当前门禁只查字面量调用点；间接调用记为 ok",
+    note: "合法值经转发仍合法",
+  },
+  {
+    id: "wrapper-forward-violates",
+    origin: "内部转发",
+    source: `
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+function wrapper(n) {
+  return needsPositive(n);
+}
+wrapper(-1);
+`,
+    expect: "violation",
+    note: "无条件转发：wrapper 的实参须满足 target 前置",
+  },
+  {
+    id: "arrow-wrapper-forward-violates",
+    origin: "箭头转发",
+    source: `
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+const wrap = (n) => needsPositive(n);
+wrap(0);
+`,
+    expect: "violation",
+  },
+  {
+    id: "conditional-wrapper-not-forward",
+    origin: "带守卫的转发",
+    source: `
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+function safeWrap(n) {
+  if (n > 0) return needsPositive(n);
+  return 0;
+}
+safeWrap(-1);
+`,
+    expect: "ok",
+    note: "有守卫，不是无条件转发——clamp 语义",
   },
   {
     id: "direct-invalid-in-chain",
