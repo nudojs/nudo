@@ -23,6 +23,8 @@ import {
   type AbsCallRecord,
   typeValueToAbs,
   absToTypeValue,
+  formatAbs,
+  formatAbsMultiline,
   type Abs,
 } from "@nudojs/core";
 import { parse, extractDirectives, extractFileDirectives, parseTypeValueExpr } from "@nudojs/parser";
@@ -1679,15 +1681,19 @@ export function getTypeAtPosition(
 }
 
 export type HoverInfo = {
-  /** 外延 TypeValue 展示 */
+  /** 外延 TypeValue 展示（bridge 有损，仅兜底） */
   typeText: string;
-  /** 内涵签名（代数 generalize），有则展示 */
+  /** 内涵签名（代数 generalize） */
   intension?: string;
+  /** 无损 Abs 单行展示（shape / term / pred / conf） */
+  abs?: string;
+  /** 无损 Abs 多行展示 */
+  absMultiline?: string;
 };
 
 /**
- * LSP hover：外延 TypeValue + 函数内涵（intension）。
- * 光标落在函数名/声明上时附加 `scale: (A1+1)` 一类内涵。
+ * LSP hover：优先无损 Abs（类型即计算本体），TypeValue 仅作外延对照。
+ * 不经 bridge 丢 term/pred。
  */
 export function getHoverAtPosition(
   filePath: string,
@@ -1704,15 +1710,72 @@ export function getHoverAtPosition(
     try {
       const g = generalizeFromAst(fnName, source);
       if (g) {
-        const intension = g.display;
-        if (info) info.intension = intension;
-        else return { typeText: intension, intension };
+        if (info) {
+          info.intension = g.display;
+          info.abs = formatAbs(g.symbolic);
+          info.absMultiline = formatAbsMultiline(g.symbolic, fnName);
+        } else {
+          return {
+            typeText: g.display,
+            intension: g.display,
+            abs: formatAbs(g.symbolic),
+            absMultiline: formatAbsMultiline(g.symbolic, fnName),
+          };
+        }
       }
     } catch {
       // ignore
     }
   }
+
+  // 标识符绑定：自包含源码上直接读 Abs env（无损）
+  const ident = findIdentNameAtPosition(source, line, column);
+  if (ident && !fnName) {
+    try {
+      if (!/\brequire\s*\(|\bimport\s*[{'"*]/.test(source)) {
+        const { env } = evalProgramAbs(source);
+        const bound = env.vars.get(ident);
+        if (bound) {
+          const absLine = formatAbs(bound);
+          const absMulti = formatAbsMultiline(bound, ident);
+          if (info) {
+            info.abs = absLine;
+            info.absMultiline = absMulti;
+          } else {
+            return { typeText: absLine, abs: absLine, absMultiline: absMulti };
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   return info;
+}
+
+/** 光标处任意标识符（绑定 hover） */
+function findIdentNameAtPosition(
+  source: string,
+  line: number,
+  column: number,
+): string | undefined {
+  try {
+    const ast = parse(source);
+    let found: string | undefined;
+    traverse(ast, {
+      Identifier(path) {
+        const loc = path.node.loc;
+        if (!loc) return;
+        if (loc.start.line !== line) return;
+        if (column < loc.start.column || column > loc.end.column) return;
+        found = path.node.name;
+      },
+    });
+    return found;
+  } catch {
+    return undefined;
+  }
 }
 
 /** 光标处标识符是否是顶层/导出函数名 */

@@ -231,12 +231,20 @@ connection.onHover((params) => {
     if (!hover) return null;
 
     const lines: string[] = [];
-    if (hover.intension) {
+    // 无损 Abs 优先（类型即计算本体）
+    if (hover.absMultiline) {
+      lines.push("```nudo", hover.absMultiline, "```");
+    } else if (hover.abs) {
+      lines.push("```nudo", hover.abs, "```");
+    }
+    if (hover.intension && hover.intension !== hover.abs) {
       lines.push("```nudo", hover.intension, "```");
-      if (hover.typeText && hover.typeText !== hover.intension) {
-        lines.push("```nudo", `ext: ${hover.typeText}`, "```");
-      }
-    } else {
+    }
+    // 外延 TypeValue 仅作对照，且与内涵不同时才显示
+    if (hover.typeText && hover.typeText !== hover.intension && hover.typeText !== hover.abs) {
+      lines.push("```nudo", `ext: ${hover.typeText}`, "```");
+    }
+    if (lines.length === 0) {
       lines.push("```nudo", hover.typeText, "```");
     }
     return {
