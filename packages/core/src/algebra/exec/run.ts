@@ -76,22 +76,58 @@ function rewriteUserImports(js: string): string {
   );
 }
 
-/** 分析模式：只丢掉**顶层（零缩进）**效应性语句；函数体保持不动 */
+/** 分析模式：strip 顶层危险副作用与未知全局调用；保留本地函数调用（诊断依赖） */
 function stripEffectfulTopLevel(js: string): string {
+  // 本文件内可解析的绑定名（函数/类/const/let/var/import）
+  const declared = new Set<string>();
+  for (const m of js.matchAll(/^(?:export\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/gm)) {
+    declared.add(m[1]!);
+  }
+  for (const m of js.matchAll(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)/gm)) {
+    declared.add(m[1]!);
+  }
+  for (const m of js.matchAll(/^import\s*\{([^}]+)\}\s*from/gm)) {
+    for (const part of m[1]!.split(",")) {
+      const local = part.split(/\s+as\s+/).pop()?.trim();
+      if (local) declared.add(local);
+    }
+  }
+  for (const m of js.matchAll(/^import\s+\*\s+as\s+([A-Za-z_$][\w$]*)/gm)) {
+    declared.add(m[1]!);
+  }
+  for (const m of js.matchAll(/^import\s+([A-Za-z_$][\w$]*)\s*,/gm)) {
+    declared.add(m[1]!);
+  }
+
   const lines = js.split("\n");
   const out: string[] = [];
   let i = 0;
   while (i < lines.length) {
     const line = lines[i]!;
-    // 仅处理顶层：行首无缩进
     const isTop = /^\S/.test(line) && line.trim().length > 0;
     const t = line.trim();
     if (isTop) {
-      // 顶层调用 / fetch / console
+      // 顶层危险全局：fetch / 定时器 / console
+      if (/^(console\.|fetch\s*\(|setTimeout\s*\(|setInterval\s*\()/.test(t)) {
+        while (i < lines.length && !lines[i]!.trim().endsWith(";") && !lines[i]!.trim().endsWith("}")) i++;
+        i++;
+        continue;
+      }
+      // 顶层调用：$callNamed("localFn", …) 仅当 localFn 已声明时保留
+      //（诊断需要执行本地顶层调用）；未知全局 strip
+      const namedCall = t.match(/^\$callNamed\(\s*"([^"]+)"/);
+      if (namedCall && !declared.has(namedCall[1]!)) {
+        while (i < lines.length && !lines[i]!.trim().endsWith(";") && !lines[i]!.trim().endsWith("}")) i++;
+        i++;
+        continue;
+      }
+      // 其它未知全局调用（未走 $callNamed 的）
+      const callMatch = t.match(/^([A-Za-z_$][\w$]*)\s*\(/);
       if (
-        /^(console\.|fetch\s*\(|setTimeout\s*\(|setInterval\s*\()/.test(t) ||
-        (/^[A-Za-z_$][\w$]*\s*\(/.test(t) &&
-          !/^(const|let|var|function|export|import|return|if|for|while|switch|try|throw)\b/.test(t))
+        callMatch &&
+        !callMatch[1]!.startsWith("$") &&
+        !declared.has(callMatch[1]!) &&
+        !/^(const|let|var|function|export|import|return|if|for|while|switch|try|throw|class)\b/.test(t)
       ) {
         while (i < lines.length && !lines[i]!.trim().endsWith(";") && !lines[i]!.trim().endsWith("}")) i++;
         i++;

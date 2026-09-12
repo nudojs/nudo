@@ -626,8 +626,9 @@ function len(x) {
 | for / while | 有界 `$for`/`$while`；transpile while 用 `$whileSeq`（预算） |
 | service Abs 路径 | 相对 import + 裸包 harvest + require + @nudo:env（含路径型） |
 | TypeValue 兜底 | 弱结果、B 失败；method-missing 已 B 化并按名去重；provenance B 有调用点 origin；**named/default/ns 相对 import + re-export（`export {x} from` / `export * from`）+ class/async default 均走 B Abs 模块图** |
-| **method-missing / unknown-recv 双报** | B `$invoke`/`$get` 为权威：prim→no-method，unknown→unknown-recv；TypeValue 同名过滤。实参字面量 provenance 走 argLocs WeakMap |
-| **module-load / recursion / unknown-global 双报** | B `evalAbsModuleGraph.issues` 报 cycle/depth/missing；Abs 截断 → `truncatedFns`；静态 `builtin-unknown` 压同名 `unknown-global` |
+| **method-missing / unknown-recv 双报** | B 成员分派（`$invoke`/`$get` + **ast-eval** 跨文件函数体）为权威；TypeValue 同类 method/property 在 B hosted 时整类让位。实参 provenance argLocs |
+| **module-load / recursion / unknown-global 双报** | B `evalAbsModuleGraph.issues`；Abs 截断；静态 builtin-unknown |
+| **analyze 模式 strip** | 只 strip 危险全局 + 未声明的 `$callNamed`；本地 `useG()` 保留（跨文件 method-missing 依赖） |
 | emit 往返 tsc / harvest 自动化 | ✅ `emit-tsc-roundtrip` + 分析路径 auto-harvest |
 | guard denotational | ✅ `denoteGuard`；`nudo guard` 优先 Abs 路径 |
 

@@ -59,6 +59,7 @@ import {
   evalBuiltinInstanceMethod,
 } from "./builtins.ts";
 import { callAbsMethod, getAbsProperty } from "./methods.ts";
+import { noteMemberDispatchMiss, noteUnknownMemberMissing } from "./exec/member-diag.ts";
 import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
 import {
   defineClass,
@@ -775,6 +776,13 @@ function evalNodeInner(
           if (slot) return ok(slot.value, phi, env);
         }
       }
+      // unknown 上的裸属性 → unknown-recv（$get 同口径；obj open 不记）
+      if (!m.computed && m.property.type === "Identifier") {
+        const loc = node.loc
+          ? ([node.loc.start.line, node.loc.start.column] as [number, number])
+          : undefined;
+        noteUnknownMemberMissing(obj, (m.property as Identifier).name, "property", loc);
+      }
       return ok(unknown, phi, env);
     }
     case "ObjectExpression": {
@@ -991,8 +999,8 @@ function evalCall(
         }
       }
 
-      // 字符串方法（字面量可折叠）
-      if (isStrPrim(obj) || obj.term?.op === "lit") {
+      // 字符串方法（字面量可折叠）——仅 string prim / string 字面量，勿把 number lit 误判
+      if (isStrPrim(obj) || (obj.term?.op === "lit" && typeof litValue(obj) === "string")) {
         const sv = litValue(obj);
         const arg0 = rawArgs[0] ? evalNode(rawArgs[0], env, phi, budget).value : undefined;
         const a0 = arg0 ? litValue(arg0) : undefined;
@@ -1139,6 +1147,13 @@ function evalCall(
         }
         // arr：filter 保持元素类型
         return ok(obj, phi, env);
+      }
+      // 分派失败：prim/unknown 上记 method-missing（跨文件 import 函数体走此路径）
+      {
+        const loc = node.loc
+          ? ([node.loc.start.line, node.loc.start.column] as [number, number])
+          : undefined;
+        noteMemberDispatchMiss(obj, method, "method", loc);
       }
     }
     return ok(unknown, phi, env);

@@ -182,20 +182,20 @@ export function tryRunBPath(
   if (bRunCache.has(key)) return bRunCache.get(key) ?? undefined;
   let out: BPathRunResult | null = null;
   try {
-    const { modules: graphMods, issues } = evalAbsModuleGraph(source, filePath);
-    const envMods = collectEnvModules(opts.envNames ?? []);
-    const modules = { ...envMods, ...graphMods };
-    const { targets, values, asTargets, asValues } = collectBPathReplacements(source);
-    const envGlobals = {
-      ...collectEnvGlobals(opts.envNames ?? []),
-      ...(opts.mocks ?? {}),
-    };
     const memberDiags: BMemberDiag[] = [];
     const truncated = new Set<string>();
+    // collector 先于模块图：import 函数体在 evalProgramAbs 内的 method-missing 也要收
     setMemberDiagCollector((d) => memberDiags.push(d));
-    // Abs 模块图 / 后续 ast-eval 的递归截断
     setAbsTruncationCollector((label) => truncated.add(label));
     try {
+      const { modules: graphMods, issues } = evalAbsModuleGraph(source, filePath);
+      const envMods = collectEnvModules(opts.envNames ?? []);
+      const modules = { ...envMods, ...graphMods };
+      const { targets, values, asTargets, asValues } = collectBPathReplacements(source);
+      const envGlobals = {
+        ...collectEnvGlobals(opts.envNames ?? []),
+        ...(opts.mocks ?? {}),
+      };
       const exports = runTranspiled(source, {
         modules: modules as never,
         maxLoopIters: opts.maxLoopIters,

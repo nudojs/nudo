@@ -65,7 +65,7 @@ import {
 import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
 import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph, evalProgramAbsWithModules } from "./abs-modules-graph.ts";
-import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable } from "./bpath-run.ts";
+import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, clearBPathCache } from "./bpath-run.ts";
 import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
 import { setAbsTruncationCollector } from "@nudojs/core";
 
@@ -1091,6 +1091,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   setModuleResolver(resolveModule);
   setCurrentFileDir(dirname(filePath));
   setCurrentSource(source);
+  // B 路径缓存只按本文件 source 键控；依赖文件变更（LSP 脏传播）后必须重跑
+  clearBPathCache();
 
   const fileDirectives = extractFileDirectives(ast);
   const fileEnvNames = fileDirectives
@@ -1152,8 +1154,12 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
   /** B 路径已报告的 method/property 名（避免 TypeValue 双报） */
   const bMemberDiagNames = new Set<string>();
+  const bMemberDiagSeen = new Set<string>();
   const pushBMemberDiag = (d: { kind: string; name: string; receiver: string; line?: number; column?: number; origin?: { line: number; column: number } }, fallbackLine: number) => {
     bMemberDiagNames.add(d.name);
+    const key = `${d.kind}:${d.name}:${d.receiver}:${d.line ?? fallbackLine}:${d.column ?? 0}`;
+    if (bMemberDiagSeen.has(key)) return;
+    bMemberDiagSeen.add(key);
     // unknown 接收者 → unknown-recv（与 TypeValue 口径一致，warning）
     if (d.receiver === "unknown") {
       diagnostics.push({
@@ -1204,6 +1210,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   const bTruncatedFns = new Set<string>();
   /** B 静态 builtin-unknown 名（压 TypeValue unknown-global 叠报） */
   const bBuiltinUnknownNames = new Set<string>();
+  /** B 成功跑通本文件 → TypeValue method/property 诊断整类让位 */
+  let bHostedEval = false;
 
   const pushBModuleIssues = (
     issues: Array<{ kind: "cycle" | "depth" | "missing"; label: string; reason: string }> | undefined,
@@ -1242,6 +1250,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       mocks: seeds.seedVars,
     });
     if (bRun) {
+      bHostedEval = true;
       if (bRun.memberDiags?.length) {
         for (const d of bRun.memberDiags) {
           pushBMemberDiag(d, 1);
@@ -1785,9 +1794,12 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       unknownRecords.filter((r) => {
         if ((r.loc?.line ?? 0) > maxLine) return false;
         if (r.originModule === USAGE_SITE_MODULE) return false;
-        // B 执行期已报的 method/property / unknown-recv 名不再由 TypeValue 叠报。
-        // 不整类压制：跨文件 Abs 求值（import 函数体）尚未全部走 B invoke，
-        // 真缺失仍需 TypeValue 报出。
+        // B 成功宿主本文件：TypeValue method/property 整类让位
+        //（transpile + ast-eval 成员分派均记 memberDiags）
+        if (bHostedEval && (r.kind === "method" || r.kind === "property")) {
+          return false;
+        }
+        // B 执行期已报的名（B 未 hosted 时兜底去重）
         if ((r.kind === "method" || r.kind === "property") && bMemberDiagNames.has(r.name)) {
           return false;
         }
