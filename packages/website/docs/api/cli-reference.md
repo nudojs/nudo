@@ -364,7 +364,7 @@ nudo generate <file> [options]
 | Option | Description |
 |--------|-------------|
 | `--format <format>` | Output format: `zod`, `guard`, `dts`, `all` (default: `all`) |
-| `--output <dir>` | Declared but currently not implemented — output always goes to stdout, this option has no effect |
+| `--output <dir>` | Write validator files to this directory (`<name>.nudo.zod.ts`, `<name>.nudo.guard.ts`, `<name>.d.ts`). Omit to print to stdout |
 
 **Output formats:**
 

@@ -603,7 +603,7 @@ function len(x) {
 1. ✅ `Slot.optional/index`、sum-of-products、函数重载并骨架
 2. ✅ 对象 spread；`collapseToOptional` 显式损失
 3. ✅ HOF map/reduce/filter 在 AST 上的内涵求值
-4. ✅ `nudo-types` CLI（`--assume x>0` / `--generalize`）
+4. ✅ `nudo types` CLI（`--assume x>0` / `--generalize`）
 5. ✅ generalize 真·多态签名（符号 α 执行）
 6. ⬜ emit 外延投影 + 往返 tsc
 
@@ -623,26 +623,26 @@ function len(x) {
 | ImportDefaultSpecifier | 默认导出契约跨文件暂不绑定 |
 | emit 往返 tsc / harvest 自动化 | Phase B.6 / C.2 未做 |
 
-### 验证状态（2026-09）
+### 验证状态（2026-09 收口后）
 
 | 检查 | 结果 |
 |---|---|
-| vitest | **74 passed** |
+| vitest | **1481+ passed**（全 monorepo） |
 | tsc -p tsconfig.lint.json | **clean** |
 | nudo types sample --assume 'x>0' | term+pred 正确 |
 | nudo types sample --generalize | ∀α 签名正确 |
-| kernel --check | 置信度诊断输出 |
+| nudo check | 约束蕴含诊断 + 金标 recall/precision=1.0 |
 | differential vs Node | exact 一致 |
 
 ### 已验证输出
 
 ```
-# nudo-types sample.js --assume 'x>0'
+# nudo types sample.js --assume 'x>0'
 scale(number)     term=(x+1)       pred: (x+1)>1       #path
 twice(number)     term=((x+1)+1)   pred: >2            #path
 negate(number)    term=(x*-1)      pred: (x*-1)<0      #path
 
-# nudo-types sample.js --generalize
+# nudo types sample.js --generalize
 # 无契约参数 = any；+ 按真实 JS 取并集 number|string
 # 有 assumes/requires 才走数值路径（number + pred）
 add:    <A1, A2>(a: A1, b: A2) => number | string = (A1 + A2)

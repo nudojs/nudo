@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, watch, readdirSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, existsSync, watch, readdirSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname, relative, join, basename } from "node:path";
 import { Command } from "commander";
 import {
@@ -881,8 +881,8 @@ program
   .description("Generate runtime validators from inferred types")
   .argument("<file>", "JavaScript file to analyze")
   .option("--format <format>", "Output format: zod, guard, dts, all", "all")
-  .option("--output <dir>", "Output directory", ".")
-  .action((file: string, options: { format: string; output: string }) => {
+  .option("--output <dir>", "Write validator files to this directory (omit for stdout)")
+  .action((file: string, options: { format: string; output?: string }) => {
     const filePath = resolve(file);
     const source = readFileSync(filePath, "utf-8");
     const ast = parse(source);
@@ -899,6 +899,10 @@ program
 
     const globalEnv = createEnvironment();
     evaluateProgram(ast, globalEnv);
+
+    const zodChunks: string[] = [];
+    const guardChunks: string[] = [];
+    const dtsChunks: string[] = [];
 
     for (const fn of functions) {
       applyMocks(fn.directives, globalEnv, filePath);
@@ -920,42 +924,74 @@ program
       const baseName = fn.name;
 
       if (options.format === "zod" || options.format === "all") {
-        console.log(`\n// === ${baseName} Zod Schemas ===`);
+        const lines: string[] = [`\n// === ${baseName} Zod Schemas ===`];
         for (const c of caseResults) {
           const inputSchemas = c.args.map((a, i) => `arg${i}: ${typeValueToZodSchema(a)}`).join(", ");
           const outputSchema = typeValueToZodSchema(c.result);
-          console.log(`// Case "${c.name}":`);
-          console.log(`// Input: { ${inputSchemas} }`);
-          console.log(`// Output: ${outputSchema}`);
+          lines.push(`// Case "${c.name}":`);
+          lines.push(`// Input: { ${inputSchemas} }`);
+          lines.push(`// Output: ${outputSchema}`);
         }
+        zodChunks.push(lines.join("\n"));
       }
 
       if (options.format === "guard" || options.format === "all") {
-        console.log(`\n// === ${baseName} Type Guards ===`);
+        const lines: string[] = [`\n// === ${baseName} Type Guards ===`];
         for (const c of caseResults) {
-          const guard = generateGuardFunction(`is${baseName}${c.name.charAt(0).toUpperCase() + c.name.slice(1)}Output`, c.result);
-          console.log(guard);
+          lines.push(
+            generateGuardFunction(
+              `is${baseName}${c.name.charAt(0).toUpperCase() + c.name.slice(1)}Output`,
+              c.result,
+            ),
+          );
         }
+        guardChunks.push(lines.join("\n"));
       }
 
       if (options.format === "dts" || options.format === "all") {
-        console.log(`\n// === ${baseName} TypeScript Declarations ===`);
         // 与 infer --dts / service 级 generateDts 共用 generateFunctionDtsLines：
         // 单一 widen 主签名 + JSDoc 保留 case 精度 + 真实参数名（取自解析产物）。
-        // 旧的逐 case `argN: 字面量` 签名会拦截合法调用（tsc TS2769）
         const analysis: FunctionAnalysis = {
           name: baseName,
           loc: nodeLoc(fn.node),
           paramNames: fnParamNames(fn.node),
           cases: caseResults,
         };
-        for (const line of generateFunctionDtsLines(analysis)) {
-          console.log(line);
-        }
+        dtsChunks.push(generateFunctionDtsLines(analysis).join("\n"));
       }
     }
 
     setModuleResolver(null);
+
+    const stem = basename(filePath).replace(/\.[cm]?[jt]s$/, "");
+    if (options.output) {
+      const outDir = resolve(options.output);
+      mkdirSync(outDir, { recursive: true });
+      const written: string[] = [];
+      if (zodChunks.length > 0) {
+        const p = join(outDir, `${stem}.nudo.zod.ts`);
+        writeFileSync(p, zodChunks.join("\n") + "\n", "utf-8");
+        written.push(p);
+      }
+      if (guardChunks.length > 0) {
+        const p = join(outDir, `${stem}.nudo.guard.ts`);
+        writeFileSync(p, guardChunks.join("\n") + "\n", "utf-8");
+        written.push(p);
+      }
+      if (dtsChunks.length > 0) {
+        const p = join(outDir, `${stem}.d.ts`);
+        writeFileSync(p, dtsChunks.join("\n") + "\n", "utf-8");
+        written.push(p);
+      }
+      for (const p of written) {
+        console.log(`wrote ${relative(process.cwd(), p)}`);
+      }
+      return;
+    }
+
+    for (const chunk of [...zodChunks, ...guardChunks, ...dtsChunks]) {
+      console.log(chunk);
+    }
   });
 
 // ---------------------------------------------------------------------------

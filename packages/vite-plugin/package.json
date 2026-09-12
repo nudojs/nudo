@@ -25,6 +25,7 @@
     "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
+    "@nudojs/core": "workspace:*",
     "@nudojs/service": "workspace:*"
   },
   "peerDependencies": {

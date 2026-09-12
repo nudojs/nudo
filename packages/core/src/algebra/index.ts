@@ -10,7 +10,6 @@ export * from "./methods.ts";
 export * from "./leak.ts";
 export * from "./objects.ts";
 export * from "./leq.ts";
-// eval.ts（Phase A 极简表达式）仅服务 example0 测试，不导出；真实路径是 ast-eval.ts
 export * from "./ast-eval.ts";
 export * from "./format.ts";
 export * from "./generalize.ts";

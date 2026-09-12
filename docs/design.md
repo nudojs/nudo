@@ -1593,32 +1593,35 @@ resolveModule(source, fromDir):
 - [x] Vite 插件
 - [x] VS Code / Cursor 扩展
 
+#### 阶段 5：精化类型值与运算精度提升 ✓
+
+- [x] `refined` kind 和 `Refinement` 数据结构
+- [x] `T.refine(base, refinement)` API（IR 原语；源码契约用 `@nudo:refine`）
+- [x] 运算分派回退链（refined → base → 原始类型）
+- [x] 内置模板字符串精化类型（template）：`Literal + T.string` → template
+- [x] 内置数值区间精化类型（range）：窄化产生区间
+- [x] 字符串方法的精化推理：`startsWith`、`endsWith`、`includes`、`length`
+- [x] 数值区间的比较运算推理
+- [x] 精化类型的子类型判断（`check` 函数）
+- [x] 精化类型的序列化（`toString`、`toTSType`）
+
+#### 阶段 6：求值器补全（部分完成）
+
+- [x] 正则表达式（基础）
+- [x] `@nudo:sample` 指令的求值器集成
+- [x] for / while 循环的采样 + 拓宽（非 `T.undefined`）
+- [x] `String.prototype` 方法的类型值语义
+
+#### 阶段 8：运行时环境与模块 Mock ✓
+
+- [x] `T.fnSig` 声明式函数签名
+- [x] `@nudo:env` 文件级指令解析与环境加载
+- [x] `@nudojs/env` 包（子路径 `es` / `web` / `node` 三套环境 API）
+- [x] `@nudo:mock-module` 模块级 mock 指令
+- [x] 项目级配置（`package.json` 的 `"nudo"` 字段）
+- [x] `package.json` exports 中的 `"nudo"` 导出条件
+
 ### 待实现
-
-#### 阶段 5：精化类型值与运算精度提升
-
-**目标：** 在 `Literal × Abstract` 运算中保留更多类型信息，支持用户自定义类型值。
-
-**范围：**
-- 实现 `refined` kind 和 `Refinement` 数据结构
-- 实现 `T.refine(base, refinement)` API
-- 实现运算分派回退链（refined → base → 原始类型）
-- 内置模板字符串精化类型（template）：`Literal + T.string` → template
-- 内置数值区间精化类型（range）：窄化产生区间
-- 字符串方法的精化推理：`startsWith`、`endsWith`、`includes`、`length`
-- 数值区间的比较运算推理
-- 精化类型的子类型判断（`check` 函数）
-- 精化类型的序列化（`toString`、`toTSType`）
-
-#### 阶段 6：求值器补全
-
-**目标：** 补全求值器中尚未实现的语言特性。
-
-**范围：**
-- 正则表达式（基础）
-- `@nudo:sample` 指令的求值器集成（当前仅解析，未用于循环展开）
-- for / while 循环的不动点迭代（当前返回 `T.undefined`）
-- `String.prototype` 方法的类型值语义
 
 #### 阶段 7：工具链完善
 
@@ -1628,18 +1631,8 @@ resolveModule(source, fromDir):
 - Source map 支持，用于错误报告定位
 - 增量求值（文件修改后只重新求值受影响的函数）
 - esbuild / webpack 插件
-
-#### 阶段 8：运行时环境与模块 Mock
-
-**目标：** 提供开箱即用的运行时环境 API 支持，以及灵活的模块 mock 机制。详见第 9 节。
-
-**范围：**
-- `T.fnSig` 声明式函数签名
-- `@nudo:env` 文件级指令解析与环境加载
-- `@nudojs/env` 包（子路径 `es` / `web` / `node` 三套环境 API）
-- `@nudo:mock-module` 模块级 mock 指令
-- 项目级配置（`package.json` 的 `"nudo"` 字段）
-- `package.json` exports 中的 `"nudo"` 导出条件
+- harvest 自动化（手动 `nudo harvest` 已通）
+- emit 外延投影往返 tsc
 
 ### 技术选型
 

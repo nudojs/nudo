@@ -135,6 +135,9 @@ importers:
 
   packages/vite-plugin:
     dependencies:
+      '@nudojs/core':
+        specifier: workspace:*
+        version: link:../core
       '@nudojs/service':
         specifier: workspace:*
         version: link:../service

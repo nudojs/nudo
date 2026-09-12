@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import nudoPlugin, { type NudoPluginOptions } from "../index.ts";
 
 describe("vite-plugin-nudo", () => {
@@ -11,6 +14,40 @@ describe("vite-plugin-nudo", () => {
     const plugin = nudoPlugin();
     const result = plugin.transform.call({}, "const x = 1;", "/test/file.js");
     expect(result).toBeNull();
+  });
+
+  it("analyzes files that only declare @nudo:refine (gate aligned with LSP)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-vite-"));
+    try {
+      writeFileSync(
+        join(dir, "shapes.nudo.js"),
+        `export const positive = number().gt(0);\n`,
+        "utf-8",
+      );
+      const source = `/// @nudo:import { positive } from "./shapes.nudo.js"
+
+/**
+ * @nudo:refine x positive
+ */
+function needsPositive(x) {
+  return x;
+}
+const r = needsPositive(-1);
+`;
+      const filePath = join(dir, "refine-only.js");
+      writeFileSync(filePath, source, "utf-8");
+
+      const plugin = nudoPlugin();
+      const warnFn = vi.fn();
+      const ctx = { warn: warnFn, error: vi.fn() };
+      const result = plugin.transform.call(ctx, source, filePath);
+      expect(result).toBeNull();
+      expect(warnFn).toHaveBeenCalled();
+      const msgs = warnFn.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(msgs).toContain("constraint-violated");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("returns null for node_modules files", () => {

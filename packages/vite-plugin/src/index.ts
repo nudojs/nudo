@@ -1,10 +1,62 @@
-import { analyzeFile, type AnalysisResult } from "@nudojs/service";
+import { existsSync, statSync, readFileSync } from "node:fs";
+import { dirname, resolve, join } from "node:path";
+import { analyzeFile, type AnalysisResult, type Diagnostic } from "@nudojs/service";
+import { checkSource, pTrue } from "@nudojs/core";
 
 export type NudoPluginOptions = {
   include?: string[];
   exclude?: string[];
   failOnError?: boolean;
 };
+
+/** 与 LSP hasNudoDirectives 对齐：含 refine/import，避免漏掉契约文件 */
+const NUDO_DIRECTIVE_RE =
+  /@nudo:(case|mock|pure|skip|sample|refine|import|env|mock-module|as|replace)\b/;
+
+function loadModule(spec: string, fromFile: string): string | undefined {
+  if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
+  try {
+    const base = dirname(resolve(fromFile));
+    const p = resolve(base, spec);
+    for (const cand of [p, `${p}.js`, `${p}.mjs`, join(p, "index.js"), join(p, "index.mjs")]) {
+      if (existsSync(cand) && !statSync(cand).isDirectory()) {
+        return readFileSync(cand, "utf-8");
+      }
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Abs check issues → service Diagnostic（与 evaluator 诊断同管道进 vite warn/error） */
+function checkIssuesToDiagnostics(id: string, code: string): Diagnostic[] {
+  try {
+    const report = checkSource(id, code, pTrue, { loadModule, fromFile: id });
+    return report.issues
+      .filter((i) => i.severity === "error" || i.severity === "warning")
+      .map((i) => {
+        const line = i.line ?? 1;
+        const column = i.column ?? 0;
+        const parts = [i.message];
+        if (i.actual) parts.push(`actual: ${i.actual}`);
+        if (i.expected) parts.push(`expected: ${i.expected}`);
+        if (i.suggestion) parts.push(i.suggestion);
+        if (i.code) parts.push(`(${i.code})`);
+        return {
+          severity: i.severity === "error" ? ("error" as const) : ("warning" as const),
+          message: parts.join(" · "),
+          code: i.code,
+          range: {
+            start: { line, column },
+            end: { line, column: column + 1 },
+          },
+        };
+      });
+  } catch {
+    return [];
+  }
+}
 
 const DEFAULT_INCLUDE = ["**/*.js"];
 const DEFAULT_EXCLUDE = ["**/node_modules/**"];
@@ -84,13 +136,15 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): any {
     transform(code: string, id: string) {
       if (excludeMatch(id)) return null;
       if (!includeMatch(id)) return null;
-      if (!/@nudo:(case|mock|pure|skip|sample|env|mock-module|as|replace)\b/.test(code)) return null;
+      if (!NUDO_DIRECTIVE_RE.test(code)) return null;
 
       try {
         const result = analyzeFile(id, code);
-        analysisCache.set(id, result);
+        const checkDiags = checkIssuesToDiagnostics(id, code);
+        const merged = { ...result, diagnostics: [...result.diagnostics, ...checkDiags] };
+        analysisCache.set(id, merged);
 
-        for (const diag of result.diagnostics) {
+        for (const diag of merged.diagnostics) {
           const loc = `${id}:${diag.range.start.line}:${diag.range.start.column}`;
           const msg = `[nudo] ${loc} ${diag.severity}: ${diag.message}`;
 

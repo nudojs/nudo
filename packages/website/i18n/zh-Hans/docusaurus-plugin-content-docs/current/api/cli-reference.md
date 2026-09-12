@@ -364,7 +364,7 @@ nudo generate <file> [options]
 | 选项 | 描述 |
 |--------|-------------|
 | `--format <format>` | 输出格式：`zod`、`guard`、`dts`、`all`（默认：`all`） |
-| `--output <dir>` | 已声明但**当前未实现**——输出总是打到 stdout，该选项无效果 |
+| `--output <dir>` | 把校验器文件写入该目录（`<name>.nudo.zod.ts`、`<name>.nudo.guard.ts`、`<name>.d.ts`）。省略则打印到 stdout |
 
 **输出格式：**
 

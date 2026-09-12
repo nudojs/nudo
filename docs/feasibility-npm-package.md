@@ -32,13 +32,13 @@ npx tsx scripts/scan-npm-package.ts commander
 | harvest 包内 `.d.ts` | ✅ | 11 symbols |
 | 内涵签名 | ✅ | 8 poly |
 | `nudo check` 门禁 | ✅ | 字面量违例 → FAILED / exit 1 |
-| this / class / async | ✅（前一轮） | kernel language |
+| this / class / async | ✅（前一轮） | algebra language |
 
 ---
 
 ## 3. 与 TS 对照（commander 级包）
 
-| 能力 | `tsc` | Nudo kernel 路径 |
+| 能力 | `tsc` | Nudo Abs 路径 |
 |---|---|---|
 | 读 `.d.ts` 做依赖类型 | ✅ | harvest 骨架 ✅ |
 | 本包 JS 内涵签名 | 需 checkJs | **默认可推** |
