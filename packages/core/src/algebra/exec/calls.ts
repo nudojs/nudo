@@ -34,9 +34,12 @@ export type BMemberDiag = {
   receiver: string;
   line?: number;
   column?: number;
+  /** 调用点来源（provenance）：最近一次 $callNamed loc */
+  origin?: { line: number; column: number };
 };
 
 let memberDiagCollector: ((d: BMemberDiag) => void) | null = null;
+const callLocStack: Array<{ line: number; column: number }> = [];
 
 export function setMemberDiagCollector(
   c: ((d: BMemberDiag) => void) | null,
@@ -46,8 +49,9 @@ export function setMemberDiagCollector(
 
 export function recordMemberDiag(d: BMemberDiag): void {
   if (!memberDiagCollector) return;
+  const origin = callLocStack[callLocStack.length - 1];
   try {
-    memberDiagCollector(d);
+    memberDiagCollector(origin ? { ...d, origin } : d);
   } catch {
     /* ignore */
   }
@@ -109,6 +113,7 @@ export function $callNamed(
 ): Abs {
   let result: Abs = unknown;
   let threw = false;
+  if (loc) callLocStack.push({ line: loc[0], column: loc[1] });
   try {
     if (typeof fn === "function") {
       result = (fn as (...a: Abs[]) => Abs)(...args);
@@ -117,9 +122,9 @@ export function $callNamed(
     }
   } catch (e) {
     threw = true;
-    // NudoThrow 等：result 用 unknown，throws 由 callTranspiledExportFull 处理
     throw e;
   } finally {
+    if (loc) callLocStack.pop();
     if (bCallCollector) {
       try {
         bCallCollector({

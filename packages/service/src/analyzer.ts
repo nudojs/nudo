@@ -1149,6 +1149,28 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
   setProvenanceTracking(true);
 
+  /** B 路径已报告的 method/property 名（避免 TypeValue 双报） */
+  const bMemberDiagNames = new Set<string>();
+  const pushBMemberDiag = (d: { kind: string; name: string; receiver: string; line?: number; column?: number; origin?: { line: number; column: number } }, fallbackLine: number) => {
+    bMemberDiagNames.add(d.name);
+    diagnostics.push({
+      range: {
+        start: { line: d.line ?? fallbackLine, column: d.column ?? 0 },
+        end: { line: d.line ?? fallbackLine, column: (d.column ?? 0) + d.name.length },
+      },
+      severity:
+        d.receiver === "number" || d.receiver === "boolean" || d.receiver === "bigint" || d.receiver === "symbol"
+          ? "error"
+          : "warning",
+      message:
+        d.kind === "method"
+          ? `Method '${d.name}' does not exist on type '${d.receiver}'`
+          : `Property '${d.name}' does not exist on type '${d.receiver}'`,
+      code: "nudo:no-method",
+      ...(d.origin ? { origin: d.origin } : {}),
+    });
+  };
+
   // @nudo:mock 绑定必须先于全程序求值：顶层调用点（如 mockHof([1,2,3])）
   // 在 evaluateProgram 中执行并由 callCollector 记录 call@ case 的
   // resultType——mock 晚于此绑定会让「mock 函数值作为回调实参」在该路径
@@ -1319,20 +1341,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           fullResult = { value: caseValue, throws: caseThrows };
           // B 执行期 method-missing 诊断
           for (const d of bFull.memberDiags ?? []) {
-            diagnostics.push({
-              range: {
-                start: { line: d.line ?? fnLoc.start.line, column: d.column ?? 0 },
-                end: { line: d.line ?? fnLoc.start.line, column: (d.column ?? 0) + d.name.length },
-              },
-              severity: d.receiver === "number" || d.receiver === "boolean" || d.receiver === "bigint" || d.receiver === "symbol"
-                ? "error"
-                : "warning",
-              message:
-                d.kind === "method"
-                  ? `Method '${d.name}' does not exist on type '${d.receiver}'`
-                  : `Property '${d.name}' does not exist on type '${d.receiver}'`,
-              code: "nudo:no-method",
-            });
+            pushBMemberDiag(d, fnLoc.start.line);
           }
           if (bFull.calls?.length) {
             const impMap = buildAbsImportLocalMap(source, filePath);
@@ -1693,7 +1702,11 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   diagnostics.push(
     ...unknownRecordsToDiagnostics(
       unknownRecords.filter(
-        (r) => (r.loc?.line ?? 0) <= maxLine && r.originModule !== USAGE_SITE_MODULE,
+        (r) =>
+          (r.loc?.line ?? 0) <= maxLine &&
+          r.originModule !== USAGE_SITE_MODULE &&
+          // B 已报过的 method/property 名不再双报
+          !(bMemberDiagNames.has(r.name) && (r.kind === "method" || r.kind === "property")),
       ),
     ),
   );
