@@ -59,14 +59,37 @@ function lookupExport(env: AstEnv, name: string): Abs | undefined {
 
 /**
  * 从已求值 env + AST 收集 ESM 导出。
- * 支持：export function/const、export { a, b as c }、export default（具名）。
+ * 支持：export function/const、export { a, b as c }、export default（具名）、
+ * 以及带 source 的 re-export（`export { a } from "mod"` / `export * from "mod"`——
+ * 需 host 传入已求值 modules）。
  */
-export function collectAbsExports(file: File, env: AstEnv): AbsModuleExports {
+export function collectAbsExports(
+  file: File,
+  env: AstEnv,
+  modules?: Record<string, AbsModuleExports>,
+): AbsModuleExports {
   const named: Record<string, Abs> = {};
   let defaultExport: Abs | undefined;
 
   for (const stmt of file.program.body) {
     if (stmt.type === "ExportNamedDeclaration") {
+      // re-export：`export { a, b as c } from "mod"`
+      if (stmt.source && modules) {
+        const mod = modules[stmt.source.value];
+        if (mod) {
+          for (const spec of stmt.specifiers) {
+            if (spec.type !== "ExportSpecifier") continue;
+            const local = spec.local.name;
+            const exported =
+              spec.exported.type === "Identifier" ? spec.exported.name : String(spec.exported);
+            const v = local === "default" ? mod.default : mod.named[local];
+            if (v === undefined) continue;
+            if (exported === "default") defaultExport = v;
+            else named[exported] = v;
+          }
+        }
+        continue;
+      }
       const decl = stmt.declaration;
       if (decl) {
         if (decl.type === "FunctionDeclaration" && decl.id) {
@@ -91,6 +114,12 @@ export function collectAbsExports(file: File, env: AstEnv): AbsModuleExports {
           spec.exported.type === "Identifier" ? spec.exported.name : String(spec.exported);
         const v = lookupExport(env, local);
         if (v) named[exported] = v;
+      }
+    } else if (stmt.type === "ExportAllDeclaration" && stmt.source && modules) {
+      // export * from "mod"：并入 named（不含 default，与 ESM 一致）
+      const mod = modules[stmt.source.value];
+      if (mod?.named) {
+        for (const [k, v] of Object.entries(mod.named)) named[k] = v;
       }
     } else if (stmt.type === "ExportDefaultDeclaration") {
       const d = stmt.declaration;

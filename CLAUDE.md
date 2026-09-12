@@ -53,7 +53,7 @@ core → parser → cli → service → lsp
 
 **Evaluator** (`cli/src/evaluator.ts`): TypeValue AST abstract interpreter (fallback). Arithmetic/compare/unary/spread route to Abs first via `abs-route.ts` / `eval-binary.ts`; residual Ops catch mixed/unknown cases. Primary analysis path for capable files is B-path transpile/exec (`core/src/algebra/exec`). Control-flow signals (`ReturnSignal`, `BranchSignal`, `ThrowSignal`) use Symbol keys. Narrowing is in `cli/src/narrowing.ts`.
 
-**Service** (`service`): `analyzer.ts` orchestrates parse → directives → evaluate → diagnostics. Capable sources use **B path** (`core/algebra/exec`: transpile → `new Function` with Abs values) as primary case/entry/call@ evaluation; TypeValue evaluator is fallback + diagnostics host. Modules via `evalAbsModuleGraph` (relative import, require, harvest, @nudo:env). `dts-generator.ts` projects TypeValue to TypeScript declarations.
+**Service** (`service`): `analyzer.ts` orchestrates parse → directives → evaluate → diagnostics. Capable sources use **B path** (`core/algebra/exec`: transpile → `new Function` with Abs values) as primary case/entry/call@ evaluation; TypeValue evaluator is fallback + diagnostics host (method-missing 按名去重，B 为权威）。Modules via `evalAbsModuleGraph`（相对 import 的 named/default/namespace、re-export/`export *`、require、harvest、@nudo:env）。`dts-generator.ts` projects TypeValue to TypeScript declarations.
 
 **Check product**: `nudo check` is the CI gate — Pred implication on Abs, Nudo-native reports (`actual ⊭ expected`). Gold gates: recall=precision=1.0 and real-package zero-FP tests in `core/src/algebra/__tests__/`.
 

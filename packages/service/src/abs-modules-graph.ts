@@ -57,7 +57,11 @@ function importSpecs(source: string): string[] {
     const file = parse(source);
     const out: string[] = [];
     for (const stmt of file.program.body) {
-      if (stmt.type === "ImportDeclaration" || stmt.type === "ExportNamedDeclaration") {
+      if (
+        stmt.type === "ImportDeclaration" ||
+        stmt.type === "ExportNamedDeclaration" ||
+        stmt.type === "ExportAllDeclaration"
+      ) {
         const src = (stmt as { source?: { value: string } }).source;
         if (src && typeof src.value === "string") {
           out.push(src.value);
@@ -167,7 +171,7 @@ export function evalAbsModuleGraph(
     try {
       const file = parse(source);
       const { env } = evalProgramAbs(source, { file, modules });
-      const exports = collectAbsExports(file, env);
+      const exports = collectAbsExports(file, env, modules);
       cache.set(absPath, exports);
       return exports;
     } catch {
