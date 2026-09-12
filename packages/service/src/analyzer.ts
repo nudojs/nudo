@@ -1339,7 +1339,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           caseThrows =
             bFull.throws.shape.k !== "never" ? absToTypeValue(bFull.throws) : T.never;
           fullResult = { value: caseValue, throws: caseThrows };
-          // B 执行期 method-missing 诊断
+          // B 执行期 method-missing 诊断（唯一权威来源；TypeValue 按名去重）
           for (const d of bFull.memberDiags ?? []) {
             pushBMemberDiag(d, fnLoc.start.line);
           }
@@ -1701,13 +1701,17 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   const maxLine = source.split("\n").length;
   diagnostics.push(
     ...unknownRecordsToDiagnostics(
-      unknownRecords.filter(
-        (r) =>
-          (r.loc?.line ?? 0) <= maxLine &&
-          r.originModule !== USAGE_SITE_MODULE &&
-          // B 已报过的 method/property 名不再双报
-          !(bMemberDiagNames.has(r.name) && (r.kind === "method" || r.kind === "property")),
-      ),
+      unknownRecords.filter((r) => {
+        if ((r.loc?.line ?? 0) > maxLine) return false;
+        if (r.originModule === USAGE_SITE_MODULE) return false;
+        // B 执行期已报的 method/property 名不再由 TypeValue 叠报。
+        // 不按行区间整类压制：顶层调用只被 evaluateProgram 执行时，
+        // 真缺失仍需 TypeValue 报出（B analyze 模式会 strip 零缩进副作用）。
+        if ((r.kind === "method" || r.kind === "property") && bMemberDiagNames.has(r.name)) {
+          return false;
+        }
+        return true;
+      }),
     ),
   );
 
