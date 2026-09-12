@@ -1293,8 +1293,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       let caseUnreachable: SourceLocation[] = [];
 
       const bCapable = isBPathCapable(source, envNames);
-      // 无 env 时 B 可作主路径；有 env 时 TypeValue fnSig impl 更精确，B 只作润色
-      const bPrimary = bCapable && envNames.length === 0;
+      // env fnSig impl 已在 B 注入中保留，B 可作主路径
+      const bPrimary = bCapable;
       if (bCapable && filePath) {
         const bFull = tryBPathCallFull(
           source,

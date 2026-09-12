@@ -20,8 +20,9 @@ import {
 import { parse, extractInlineDirectives } from "@nudojs/parser";
 import { loadEnvs } from "@nudojs/cli/evaluator";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
+import { envValueToAbs } from "./env-to-abs.ts";
 
-/** @nudo:env → Abs 全局表 */
+/** @nudo:env → Abs 全局表（保留 fnSig impl） */
 export function collectEnvGlobals(envNames: string[]): Record<string, Abs> {
   if (envNames.length === 0) return {};
   const env = createEnvironment();
@@ -32,7 +33,7 @@ export function collectEnvGlobals(envNames: string[]): Record<string, Abs> {
   }
   const out: Record<string, Abs> = {};
   for (const [k, v] of Object.entries(env.getOwnBindings())) {
-    out[k] = typeValueToAbs(v);
+    out[k] = envValueToAbs(v);
   }
   return out;
 }

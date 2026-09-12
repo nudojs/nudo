@@ -85,6 +85,8 @@ export {
   collectEnvGlobals,
   type BPathRunResult,
 } from "./bpath-run.ts";
+export { envValueToAbs } from "./env-to-abs.ts";
+
 export {
   collectBPathDiagnostics,
   type BPathDiagnostics,

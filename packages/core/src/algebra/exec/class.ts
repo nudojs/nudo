@@ -88,9 +88,13 @@ function findCtor(
   return undefined;
 }
 
-/** new C(...) → 空 brand 实例 + ctor 写字段（自身 ctor 优先） */
+/** new C(...) → 空 brand 实例 + ctor 写字段；非类构造走 impl/$call */
 export function $new(cls: Abs, args: Abs[]): Abs {
   const spec = specOf(cls);
+  if (!spec) {
+    // env 构造器（URL 等）：fn impl / absFunction
+    return $call(cls, args);
+  }
   const className = spec?.name ?? (cls.shape.k === "brand" ? cls.shape.name : "Anonymous");
   let thisVal = abs(
     { k: "brand", name: className, shape: objOf({}) },
