@@ -670,7 +670,7 @@ function add(a, b) {
 
 ### 5.4 `@nudo:skip` — 跳过求值
 
-指示引擎跳过函数体的求值，直接使用已有的类型信息（TypeScript 注解或 `@nudo:returns` 指定的类型）。
+指示引擎跳过函数体的求值，直接使用已有的类型信息（TypeScript 注解或 `@nudo:skip` 后的类型表达式）。
 
 ```javascript
 /**
@@ -695,18 +695,21 @@ for (let i = 0; i < arr.length; i++) {
 }
 ```
 
-### 5.6 `@nudo:returns` — 断言预期类型
+### 5.6 `@nudo:refine` — 精化契约
 
-验证指令。求值完成后，引擎检查推导出的类型是否满足谓词。
+声明参数/返回约束。约束来自 `*.nudo.js` 模板，经 `/// @nudo:import` 引入；Pred 进入 Abs 并参与代数，不只是调用点挡板。
 
 ```javascript
+/// @nudo:import { positive } from "./shapes.nudo.js"
+
 /**
- * @nudo:returns (type) => type.isSubtypeOf(T.union(T.number, T.string))
+ * @nudo:refine x positive
+ * @nudo:refine return positive
  */
-function process(x) { /* ... */ }
+function inc(x) { return x + 1; }
 ```
 
-这对于测试引擎本身以及文档化类型契约都很有用。
+历史指令 `@nudo:returns` 已由 `@nudo:refine return <constraint>` 取代。
 
 ---
 

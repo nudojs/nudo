@@ -72,6 +72,9 @@ function absFromSinon(sinonExpr: {
       ),
     );
   }
+  if (sinonExpr.rejectedValue) {
+    return constantMockFn(makeAbs({ k: "never" }, undefined, undefined, "exact"));
+  }
   if (sinonExpr.returnValue) {
     return constantMockFn(typeValueToAbs(sinonExpr.returnValue));
   }

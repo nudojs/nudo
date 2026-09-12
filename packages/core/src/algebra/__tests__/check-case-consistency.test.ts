@@ -1,5 +1,5 @@
 /**
- * case ⊄ requires → nudo:case-inconsistency
+ * case ⊄ refine → nudo:case-inconsistency
  * case 是契约的见证，不是另一套前置来源。
  */
 import { describe, it, expect } from "vitest";
@@ -10,7 +10,7 @@ function issuesOf(src: string) {
   return checkSource("/t/case.js", withStdImport(src), pTrue, stdOpts);
 }
 
-describe("case vs requires", () => {
+describe("case vs refine", () => {
   it("ok: case 实参满足契约", () => {
     const r = issuesOf(`
 /**
@@ -24,7 +24,7 @@ function needsPositive(x) {
     expect(r.issues.filter((i) => i.code === "nudo:case-inconsistency")).toEqual([]);
   });
 
-  it("error: case 实参 ⊭ requires", () => {
+  it("error: case 实参 ⊭ refine", () => {
     const r = issuesOf(`
 /**
  * @nudo:refine x positive
@@ -55,7 +55,7 @@ function pct(n) {
     expect(r.issues.some((i) => i.code === "nudo:case-inconsistency")).toBe(true);
   });
 
-  it("ok: 无 requires 的 case 不报", () => {
+  it("ok: 无 refine 的 case 不报", () => {
     const r = issuesOf(`
 /**
  * @nudo:case "any" (-1)

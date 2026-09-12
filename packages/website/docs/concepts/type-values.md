@@ -5,7 +5,9 @@ description: "Type values — the symbolic sets-of-values abstraction: the TypeV
 
 # Type Values
 
-Type values are the foundational abstraction in Nudo. They are **symbolic representations of sets of possible JavaScript values** — instead of holding a single concrete value like `42` or `"hello"`, a type value represents *all* values that share certain characteristics (e.g., "any number" or "the literal 1"). When Nudo executes your code, it uses type values instead of concrete values, and the result of execution is itself a type value — the inferred type.
+Type values are the **evaluation IR** in Nudo. They are symbolic representations of sets of possible JavaScript values — instead of holding a single concrete value like `42` or `"hello"`, a type value represents *all* values that share certain characteristics (e.g., "any number" or "the literal 1").
+
+The **type system itself is Abs** (`shape × term × pred × conf`) — computable values whose constraints participate in algebra. TypeValue is what the TypeValue evaluator, environment bindings, dts emit, and LSP extensional views consume; Abs ⇄ TypeValue goes through a lossy bridge. When Nudo executes your code, it uses type values (and Abs) instead of concrete values, and the result of execution is itself a type value — the inferred type.
 
 ## TypeValue Hierarchy
 

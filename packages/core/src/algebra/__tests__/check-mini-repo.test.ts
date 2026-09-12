@@ -31,7 +31,7 @@ describe("mini-repo check gold", () => {
   });
 
   it("inline violating snippet still caught (TP recall)", () => {
-    // isPositive 是谓词（无 if-return-param 前置）；真正门禁用 requires
+    // isPositive 是谓词（无 if-return-param 前置）；真正门禁用 refine
     const src = `
 /**
  * @nudo:refine x positive

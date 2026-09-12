@@ -7,9 +7,9 @@ import {
 import {
   execNudoModule,
   extractNudoImports,
-  extractRequiresFromSource,
-  requiresToIndexed,
-} from "../requires.ts";
+  extractRefinesFromSource,
+  refineToIndexedFull,
+} from "../refine.ts";
 import { checkSource, pTrue } from "../index.ts";
 import { predToString } from "../pred.ts";
 
@@ -60,7 +60,7 @@ function setDelay(ms) {
   return 0;
 }
 `;
-    const reqs = extractRequiresFromSource(src, "setDelay", {
+    const reqs = extractRefinesFromSource(src, "setDelay", {
       loadModule,
       fromFile: "/t/demo.js",
     });
@@ -89,7 +89,7 @@ setDelay(0);
     expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
   });
 
-  it("requiresToIndexed maps param names", () => {
+  it("refineToIndexedFull maps param names", () => {
     const src = `
 /// @nudo:import { delay, percent } from "./x.nudo.js"
 /**
@@ -100,7 +100,7 @@ function f(ms, n) {
   return ms + n;
 }
 `;
-    const idx = requiresToIndexed(src, "f", ["ms", "n"], {
+    const idx = refineToIndexedFull(src, "f", ["ms", "n"], {
       loadModule,
       fromFile: "/t/f.js",
     });

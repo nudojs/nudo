@@ -18,9 +18,9 @@ import { evalNode, emptyEnv } from "./ast-eval.ts";
 import { defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { formatShape } from "./format.ts";
 import {
-  extractRequiresFromSource,
-  type RequiresResolveOpts,
-} from "./requires.ts";
+  extractRefinesFromSource,
+  type RefineResolveOpts,
+} from "./refine.ts";
 import { constraintToEntryAbs } from "./constraint.ts";
 
 export type TypeParam = {
@@ -99,7 +99,7 @@ export function generalizeFromAst(
     budget?: LeakBudget;
     label?: string;
     /** 传入则把 @nudo:refine 挂到入口 param Abs */
-    requires?: RequiresResolveOpts;
+    refine?: RefineResolveOpts;
   } = {},
 ): PolyFn | undefined {
   const extracted = extractFn(source, fnName);
@@ -115,9 +115,9 @@ export function generalizeFromAst(
   }));
 
   let entryReqs: Array<{ param: string; pred: import("./pred.ts").Pred }> | undefined;
-  if (opts.requires) {
+  if (opts.refine) {
     try {
-      const reqs = extractRequiresFromSource(source, fnName, opts.requires);
+      const reqs = extractRefinesFromSource(source, fnName, opts.refine);
       if (reqs.length > 0) {
         entryReqs = reqs.map((r) => ({ param: r.param, pred: r.pred }));
         for (const r of reqs) {
@@ -132,7 +132,7 @@ export function generalizeFromAst(
         }
       }
     } catch {
-      // requires 解析失败时退回 any
+      // refine 解析失败时退回 any
     }
   }
 

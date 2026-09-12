@@ -92,6 +92,8 @@ export type CaseResult = {
   throws: TypeValue;
   throwLoc?: SourceLocation;
   source?: "directive" | "callsite";
+  /** `@nudo:case "name" (…) => expected` — presence means the case is a test assertion */
+  expected?: TypeValue;
   /** number of additional call sites folded into a symbolic case */
   aggregatedFrom?: number;
   /**
@@ -1145,8 +1147,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     applyMocks(fn.directives, globalEnv, filePath, diagnostics);
   }
 
-  // @nudo:mock 已编译为 Abs seed；import/env 才强制 TypeValue 路径
-  const selfContained = isSelfContainedSource(source, envNames, mocks.size > 0);
+  // @nudo:mock 已编译为 Abs seed 注入；仅 import/env 强制 TypeValue 路径
+  const selfContained = isSelfContainedSource(source, envNames);
   let absCallRecords: CallRecord[] = [];
   if (selfContained) {
     const seeds = mockDirectivesToAbsSeeds(functions);
@@ -1227,6 +1229,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         result: fullResult.value,
         throws: fullResult.throws,
         throwLoc: fullResult.throwLoc,
+        expected: directive.expected,
+        source: "directive",
       });
 
       if (directive.commentLine) {
@@ -1248,6 +1252,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
               range: { start: { line: directive.commentLine, column: 0 }, end: { line: directive.commentLine, column: 999 } },
               severity: "error",
               message: `Case "${directive.name}": expected ${typeValueToString(directive.expected)}, got ${typeValueToString(fullResult.value)}. The inferred return type does not match the expected type declared in the @nudo:case directive`,
+              code: "nudo:case-expected",
             });
           }
         }
@@ -2172,12 +2177,12 @@ function absIsBetter(absTv: TypeValue, prev: TypeValue): boolean {
   if (absTv.kind === "refined" && prev.kind === "primitive") return true;
   return false;
 }
-function isSelfContainedSource(
-  source: string,
-  envNames: string[],
-  hasMocks: boolean,
-): boolean {
-  if (envNames.length > 0 || hasMocks) return false;
+/**
+ * 自包含 = 无 import/require、无 @nudo:env。
+ * @nudo:mock 不阻断 Abs：已编译为 seedVars/seedFns 注入 evalProgramAbs。
+ */
+function isSelfContainedSource(source: string, envNames: string[]): boolean {
+  if (envNames.length > 0) return false;
   return !/\brequire\s*\(|\bimport\s*[{'"*]/.test(source);
 }
 

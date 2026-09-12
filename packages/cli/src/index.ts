@@ -31,6 +31,7 @@ import {
 } from "@nudojs/service";
 import { harvestDts, emitEnvModule } from "@nudojs/harvester";
 import { resolveNpmNudo } from "./resolve-npm.ts";
+import { buildTestReport, formatTestReport } from "./run-test.ts";
 
 const program = new Command();
 
@@ -539,7 +540,7 @@ program
       for (const name of list) {
         if (opts.generalize) {
           const g = algebra.generalizeFromAst(name, source, {
-            requires: { loadModule, fromFile: filePath },
+            refine: { loadModule, fromFile: filePath },
           });
           if (!g) continue;
           console.log(g.display);
@@ -563,6 +564,29 @@ program
   .option("--json", "Emit stable CheckJson (CI / Agent contract)")
   .action(async (file: string, opts: { json?: boolean }) => {
     await runCheck(file, opts);
+  });
+
+program
+  .command("test")
+  .description("Run @nudo:case directives as assertions (case-as-test); exit 1 on failure")
+  .argument("<file>", "Path to the JS file")
+  .action(async (file: string) => {
+    const filePath = resolve(file);
+    if (!existsSync(filePath)) {
+      console.error(`File not found: ${filePath}`);
+      process.exitCode = 1;
+      return;
+    }
+    const source = readFileSync(filePath, "utf-8");
+    try {
+      const result = await analyzeFileAsync(filePath, source);
+      const report = buildTestReport(filePath, result);
+      console.log(formatTestReport(report));
+      if (report.failed > 0) process.exitCode = 1;
+    } catch (err) {
+      console.error(`nudo test failed to analyze ${filePath}: ${(err as Error).message}`);
+      process.exitCode = 1;
+    }
   });
 
 // ---------------------------------------------------------------------------

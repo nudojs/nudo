@@ -608,10 +608,20 @@ function len(x) {
 6. ⬜ emit 外延投影 + 往返 tsc
 
 ### Phase C — 产品替换面 🚧
-1. 🚧 约束诊断：`checkArg` / `checkCall` / CLI `--check`
-2. ⬜ harvest 自动化
+1. ✅ 约束诊断：`nudo check` / CheckJson v1 / LSP 主通道
+2. ⬜ harvest 自动化（手动 `nudo harvest` 已通）
 3. ✅ 与真实 Node 执行差分回归（8 用例，exact 对齐）
 4. ✅ 挂到主 CLI：`nudo types --assume/--generalize` 已通
+5. ✅ `nudo test`（`@nudo:case` 即断言）
+
+### 已知边界（2026-09 收口后）
+
+| 边界 | 说明 |
+|---|---|
+| service Abs 路径 | 仅自包含源码（无 import/require/env）；`@nudo:mock` 走 Abs seed |
+| `@nudo:import * as ns` | 语法可解析，模板展开暂不支持 |
+| ImportDefaultSpecifier | 默认导出契约跨文件暂不绑定 |
+| emit 往返 tsc / harvest 自动化 | Phase B.6 / C.2 未做 |
 
 ### 验证状态（2026-09）
 

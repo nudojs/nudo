@@ -20,10 +20,10 @@ import {
 import { defaultLeakBudget } from "./leak.ts";
 import { leqAbs } from "./leq.ts";
 import {
-  requiresToIndexedFull,
-  extractReturnFromSource,
-  type RequiresEntry,
-} from "./requires.ts";
+  refineToIndexedFull,
+  extractRefineReturnFromSource,
+  type RefineEntry,
+} from "./refine.ts";
 import type { NudoConstraint, NudoField } from "./constraint.ts";
 import { generalizeFromAst } from "./generalize.ts";
 import { numLit, unknown, abs as makeAbs } from "./abs.ts";
@@ -129,7 +129,7 @@ export function checkSource(
 
   for (const name of names) {
     const g = generalizeFromAst(name, source, {
-      requires: {
+      refine: {
         loadModule: opts.loadModule,
         fromFile: opts.fromFile ?? filePath,
       },
@@ -155,7 +155,7 @@ export function checkSource(
 
     // 后置：@nudo:refine return <constraint> —— 推断返回值 ⊭ 契约
     {
-      const ret = extractReturnFromSource(source, name, {
+      const ret = extractRefineReturnFromSource(source, name, {
         loadModule: opts.loadModule,
         fromFile: opts.fromFile ?? filePath,
       });
@@ -467,7 +467,7 @@ function scanCaseInconsistency(
     const g = generalizeFromAst(fnName, source);
     if (!g) return;
     const paramNames = g.params;
-    const reqs = requiresToIndexedFull(source, fnName, paramNames, {
+    const reqs = refineToIndexedFull(source, fnName, paramNames, {
       loadModule: opts.loadModule,
       fromFile: opts.fromFile ?? "",
     });
@@ -1304,7 +1304,7 @@ function scanLiteralCalls(
   /** 对带 shape / array / int 的 refine 做结构检查 */
   const checkShapeReqs = (
     displayName: string,
-    reqs: Array<[number, RequiresEntry]>,
+    reqs: Array<[number, RefineEntry]>,
     paramNames: string[],
     absArgs: Abs[],
     argIndexOf: (reqIdx: number) => number | undefined,
@@ -1436,7 +1436,7 @@ function scanLiteralCalls(
     if (!hasInfo || absArgs.length === 0) return;
 
     const g = generalizeFromAst(fnName, source, {
-      requires: {
+      refine: {
         loadModule: opts?.loadModule,
         fromFile: opts?.fromFile ?? "",
       },
@@ -1446,7 +1446,7 @@ function scanLiteralCalls(
       loadModule: opts?.loadModule,
       fromFile: opts?.fromFile ?? "",
     };
-    const ownFull = requiresToIndexedFull(source, fnName, paramNames, optsR);
+    const ownFull = refineToIndexedFull(source, fnName, paramNames, optsR);
     checkShapeReqs(fnName, ownFull, paramNames, absArgs, (i) => i, loc);
     checkReqs(
       fnName,
@@ -1461,7 +1461,7 @@ function scanLiteralCalls(
     if (fwd) {
       const tg = generalizeFromAst(fwd.target, source);
       const tParams = tg?.params ?? [];
-      const tFull = requiresToIndexedFull(source, fwd.target, tParams, optsR);
+      const tFull = refineToIndexedFull(source, fwd.target, tParams, optsR);
       if (tFull.length > 0) {
         const wrapperArgOfTarget = new Map<number, number>();
         fwd.map.forEach((wrapperIdx, targetIdx) => {
@@ -1490,12 +1490,12 @@ function scanLiteralCalls(
     checkArgStructures(ext.fnName, ext.source, args, loc, displayName);
     const { absArgs, hasInfo } = parseCallArgs(args);
     if (!hasInfo || absArgs.length === 0) return;
-    let full: Array<[number, RequiresEntry]> = [];
+    let full: Array<[number, RefineEntry]> = [];
     let paramNames: string[] = [];
     try {
       const g = generalizeFromAst(ext.fnName, ext.source);
       paramNames = g?.params ?? [];
-      full = requiresToIndexedFull(ext.source, ext.fnName, paramNames, {
+      full = refineToIndexedFull(ext.source, ext.fnName, paramNames, {
         loadModule: opts?.loadModule,
         fromFile: opts?.fromFile ?? "",
       });

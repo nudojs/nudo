@@ -1,6 +1,6 @@
 /**
  * shape 约束金标：契约规范 object 形状，无需 interface/type。
- * 唯一 requires 形态：@nudo:refine <param> <shapeName>
+ * 唯一 refine 形态：@nudo:refine <param> <shapeName>
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
@@ -12,7 +12,7 @@ import {
   instantiateConstraint,
 } from "../constraint.ts";
 import { predToString } from "../pred.ts";
-import { execNudoModule } from "../requires.ts";
+import { execNudoModule } from "../refine.ts";
 import { withStdImport, stdOpts } from "./nudo-constraints.ts";
 
 function issuesOf(src: string) {
@@ -191,7 +191,7 @@ register(payload);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
 
-  it("ok: no requires → no shape gate", () => {
+  it("ok: no refine → no shape gate", () => {
     const r = issuesOf(`
 function open(u) {
   return u;

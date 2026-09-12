@@ -1,5 +1,5 @@
 import type { TypeValue } from "@nudojs/core";
-import { T, isTemplate, getTemplateParts, simplifyUnion, typeValueEquals } from "@nudojs/core";
+import { T, isTemplate, getTemplateParts, simplifyUnion, typeValueEquals, getFnSig } from "@nudojs/core";
 import type { AnalysisResult, FunctionAnalysis } from "./analyzer.ts";
 
 export function typeValueToTSType(tv: TypeValue): string {
@@ -42,8 +42,8 @@ export function typeValueToTSType(tv: TypeValue): string {
       const params = tv.params
         .map((p) => `${p}: unknown`)
         .join(", ");
-      const returnType = (tv as any)._returnType;
-      const retStr = returnType ? typeValueToTSType(returnType) : "unknown";
+      const sig = getFnSig(tv);
+      const retStr = sig?.returnType ? typeValueToTSType(sig.returnType) : "unknown";
       return `(${params}) => ${retStr}`;
     }
     case "promise":
