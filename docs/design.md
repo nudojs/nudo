@@ -1632,7 +1632,7 @@ resolveModule(source, fromDir):
 - 增量求值（文件修改后只重新求值受影响的函数）
 - esbuild / webpack 插件
 - harvest 自动化（手动 `nudo harvest` 已通）
-- emit 外延投影往返 tsc（`nudo emit` 命令已通；往返 tsc 未做）
+- emit 外延投影往返 tsc（`nudo emit` + 往返门禁测试已通）
 
 ### 技术选型
 

@@ -365,10 +365,29 @@ async function runCheck(file: string, opts: { json?: boolean } = {}): Promise<vo
   }
 }
 
+/** 单文件或目录 → 推断目标列表（目录递归，跳过 node_modules） */
+function resolveTargets(path: string): string[] {
+  const resolved = resolve(path);
+  if (!existsSync(resolved)) {
+    console.error(`Not found: ${resolved}`);
+    process.exitCode = 1;
+    return [];
+  }
+  if (statSync(resolved).isDirectory()) {
+    const files = collectNudoFiles(resolved);
+    if (files.length === 0) {
+      console.error(`No nudo files found in directory: ${resolved}`);
+      process.exitCode = 1;
+    }
+    return files;
+  }
+  return [resolved];
+}
+
 program
   .command("types")
   .description("Type-as-computation view: show term + constraints from the algebra (not just extensional shape)")
-  .argument("<file>", "Path to the JS file")
+  .argument("<file>", "Path to the JS/TS file or a directory of them")
   .option("--fn <name>", "Only analyze this function")
   .option("--assume <pred...>", "Assume constraints, e.g. x>0 y>=1")
   .option("--generalize", "Show polymorphic signatures via symbolic execution")
@@ -377,95 +396,113 @@ program
       file: string,
       opts: { fn?: string; assume?: string[]; generalize?: boolean },
     ) => {
-      const { readFileSync, existsSync, statSync } = await import("node:fs");
-      const { basename, dirname, resolve: resolvePath } = await import("node:path");
-      const algebra = await import("@nudojs/core");
-
-      const filePath = resolvePath(file);
-      const source = readFileSync(filePath, "utf8");
-      let phi = algebra.pTrue;
-      const assumeIds = new Set<string>();
-      for (const a of opts.assume ?? []) {
-        const m = /^([A-Za-z_$][\w$]*)\s*(>=|>)\s*(-?\d+(?:\.\d+)?)$/.exec(a.trim());
-        if (!m) {
-          console.error(`无法解析 --assume: ${a}（支持 x>0 / x>=1）`);
-          continue;
-        }
-        const id = m[1]!;
-        const n = Number(m[3]);
-        phi = algebra.gtNum(algebra.v(id), n);
-        assumeIds.add(id);
-      }
-
-      // 列出函数
-      const list = opts.fn ? [opts.fn] : algebra.listFunctionNames(source);
-      if (list.length === 0) {
-        console.error("未找到函数");
-        process.exitCode = 1;
-        return;
-      }
-
-      const { defaultLoadModule: loadModule } = await import("@nudojs/service");
-
-      console.log(`nudo types  ${basename(filePath)}`);
-      if (assumeIds.size > 0) {
-        console.log(`assume: ${[...assumeIds].map((id) => `${id} > 0`).join(", ")}`);
-      }
-      if (opts.generalize) {
-        console.log("mode: generalize (symbolic α)\n");
-      } else {
-        console.log("");
-      }
-
-      for (const name of list) {
-        if (opts.generalize) {
-          const g = algebra.generalizeFromAst(name, source, {
-            refine: { loadModule, fromFile: filePath },
-          });
-          if (!g) continue;
-          console.log(g.display);
-          console.log("");
-          continue;
-        }
-
-        const args = algebra.buildArgsFromAssume(source, name, assumeIds);
-        const result = algebra.analyzeFn(source, name, args, phi);
-        const label = `${name}(${args.map((a) => algebra.formatShape(a)).join(", ")})`;
-        console.log(algebra.formatAbsMultiline(result, label));
-        console.log("");
+      const targets = resolveTargets(file);
+      if (targets.length === 0) return;
+      for (const t of targets) {
+        await runTypes(t, opts);
+        if (targets.length > 1) console.log("");
       }
     },
   );
 
+async function runTypes(
+  filePath: string,
+  opts: { fn?: string; assume?: string[]; generalize?: boolean },
+): Promise<void> {
+  const { readFileSync } = await import("node:fs");
+  const { basename } = await import("node:path");
+  const algebra = await import("@nudojs/core");
+
+  const source = readFileSync(filePath, "utf8");
+  let phi = algebra.pTrue;
+  const assumeIds = new Set<string>();
+  for (const a of opts.assume ?? []) {
+    const m = /^([A-Za-z_$][\w$]*)\s*(>=|>)\s*(-?\d+(?:\.\d+)?)$/.exec(a.trim());
+    if (!m) {
+      console.error(`无法解析 --assume: ${a}（支持 x>0 / x>=1）`);
+      continue;
+    }
+    const id = m[1]!;
+    const n = Number(m[3]);
+    phi = algebra.gtNum(algebra.v(id), n);
+    assumeIds.add(id);
+  }
+
+  // 列出函数
+  const list = opts.fn ? [opts.fn] : algebra.listFunctionNames(source);
+  if (list.length === 0) {
+    console.error(`未找到函数: ${basename(filePath)}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const { defaultLoadModule: loadModule } = await import("@nudojs/service");
+
+  console.log(`nudo types  ${basename(filePath)}`);
+  if (assumeIds.size > 0) {
+    console.log(`assume: ${[...assumeIds].map((id) => `${id} > 0`).join(", ")}`);
+  }
+  if (opts.generalize) {
+    console.log("mode: generalize (symbolic α)\n");
+  } else {
+    console.log("");
+  }
+
+  for (const name of list) {
+    if (opts.generalize) {
+      const g = algebra.generalizeFromAst(name, source, {
+        refine: { loadModule, fromFile: filePath },
+      });
+      if (!g) continue;
+      console.log(g.display);
+      console.log("");
+      continue;
+    }
+
+    const args = algebra.buildArgsFromAssume(source, name, assumeIds);
+    const result = algebra.analyzeFn(source, name, args, phi);
+    const label = `${name}(${args.map((a) => algebra.formatShape(a)).join(", ")})`;
+    console.log(algebra.formatAbsMultiline(result, label));
+    console.log("");
+  }
+}
+
 program
   .command("check")
-  .description("Check a JS file for type errors — exits with code 1 when errors are found")
-  .argument("<file>", "Path to the JS file")
-  .option("--json", "Emit stable CheckJson (CI / Agent contract)")
+  .description("Check a JS/TS file (or directory) for type errors — exits with code 1 when errors are found")
+  .argument("<file>", "Path to the JS/TS file or a directory of them")
+  .option("--json", "Emit stable CheckJson (CI / Agent contract; single file only)")
   .action(async (file: string, opts: { json?: boolean }) => {
-    await runCheck(file, opts);
+    const targets = resolveTargets(file);
+    if (targets.length === 0) return;
+    if (opts.json && targets.length > 1) {
+      console.error("--json requires a single file, not a directory");
+      process.exitCode = 1;
+      return;
+    }
+    for (const t of targets) {
+      await runCheck(t, opts);
+    }
   });
 
 program
   .command("test")
   .description("Run @nudo:case directives as assertions (case-as-test); exit 1 on failure")
-  .argument("<file>", "Path to the JS file")
+  .argument("<file>", "Path to the JS/TS file or a directory of them")
   .action(async (file: string) => {
-    const filePath = resolve(file);
-    if (!existsSync(filePath)) {
-      console.error(`File not found: ${filePath}`);
-      process.exitCode = 1;
-      return;
-    }
-    const source = readFileSync(filePath, "utf-8");
-    try {
-      const result = await analyzeFileAsync(filePath, source);
-      const report = buildTestReport(filePath, result);
-      console.log(formatTestReport(report));
-      if (report.failed > 0) process.exitCode = 1;
-    } catch (err) {
-      console.error(`nudo test failed to analyze ${filePath}: ${(err as Error).message}`);
-      process.exitCode = 1;
+    const targets = resolveTargets(file);
+    if (targets.length === 0) return;
+    for (const filePath of targets) {
+      const source = readFileSync(filePath, "utf-8");
+      try {
+        const result = await analyzeFileAsync(filePath, source);
+        const report = buildTestReport(filePath, result);
+        console.log(formatTestReport(report));
+        if (report.failed > 0) process.exitCode = 1;
+      } catch (err) {
+        console.error(`nudo test failed to analyze ${filePath}: ${(err as Error).message}`);
+        process.exitCode = 1;
+      }
     }
   });
 

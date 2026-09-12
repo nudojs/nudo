@@ -20,7 +20,7 @@ npx @nudojs/cli infer ./src/utils.js
 | 命令 | 用途 |
 |---------|---------|
 | [`nudo infer`](#nudo-infer) | 从文件或目录推断类型 |
-| [`nudo check`](#nudo-check) | 检查单个文件的类型错误（error 级诊断以退出码 `1` 结束） |
+| [`nudo check`](#nudo-check) | 检查文件或目录的类型错误（error 级诊断以退出码 `1` 结束） |
 | [`nudo types`](#nudo-types) | 类型即计算视图：展示 Abs 的 term + 约束 |
 | [`nudo test`](#nudo-test) | 把 `@nudo:case` 当断言跑（失败退出码 `1`） |
 | [`nudo doctor`](#nudo-doctor) | 健康检查：调用点固化漂移、分析报错、无用例函数 |
@@ -169,10 +169,11 @@ nudo infer math.js --json
 
 ### nudo check
 
-检查单个文件的类型错误。每条诊断输出一行，格式为 `[severity] 路径:行:列 消息 (错误码)`；存在 error 级诊断时以退出码 `1` 结束——仅有 warning 时退出码为 `0`。
+检查文件或目录的类型错误。每条诊断输出一行，格式为 `[severity] 路径:行:列 消息 (错误码)`；存在 error 级诊断时以退出码 `1` 结束——仅有 warning 时退出码为 `0`。
 
 ```bash
 nudo check <file>
+nudo check <directory>
 ```
 
 **参数：**
@@ -180,6 +181,7 @@ nudo check <file>
 | 参数 | 描述 |
 |----------|-------------|
 | `<file>` | `.js`、`.mjs` 或 `.ts` 文件路径（相对或绝对） |
+| `<directory>` | 递归检查目录下全部推断目标（`--json` 仅支持单文件） |
 
 **示例：**
 
@@ -206,10 +208,11 @@ nudo check src/broken.js
 
 ### nudo types
 
-类型即计算视图：展示 Abs 代数中的 term + 约束（不只是外延 TypeValue 形状）。
+类型即计算视图：展示 Abs 代数中的 term + 约束（不只是外延 TypeValue 形状）。支持单文件或目录（递归）。
 
 ```bash
 nudo types <file> [--fn <name>] [--assume <pred...>] [--generalize]
+nudo types <directory> [--assume <pred...>] [--generalize]
 ```
 
 | 选项 | 说明 |
@@ -222,10 +225,11 @@ nudo types <file> [--fn <name>] [--assume <pred...>] [--generalize]
 
 ### nudo test
 
-把 `@nudo:case` 当断言执行。带 `=> expected` 的 case 用子类型语义校验；失败退出码 `1`。无期望的 case 报告为 `unchecked`。
+把 `@nudo:case` 当断言执行。带 `=> expected` 的 case 用子类型语义校验；失败退出码 `1`。无期望的 case 报告为 `unchecked`。支持文件或目录。
 
 ```bash
 nudo test <file>
+nudo test <directory>
 ```
 
 ---

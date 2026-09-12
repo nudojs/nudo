@@ -20,7 +20,7 @@ npx @nudojs/cli infer ./src/utils.js
 | Command | Purpose |
 |---------|---------|
 | [`nudo infer`](#nudo-infer) | Infer types from files or directories |
-| [`nudo check`](#nudo-check) | Check a single file for type errors (error-level diagnostics exit `1`) |
+| [`nudo check`](#nudo-check) | Check a file or directory for type errors (error-level diagnostics exit `1`) |
 | [`nudo types`](#nudo-types) | Type-as-computation view: term + constraints from Abs algebra |
 | [`nudo test`](#nudo-test) | Run `@nudo:case` directives as assertions (exit `1` on failure) |
 | [`nudo doctor`](#nudo-doctor) | Health-check files: call-site solidification drift, analysis errors, uncovered functions |
@@ -169,10 +169,11 @@ Field notes:
 
 ### nudo check
 
-Check a single file for type errors. Prints one line per diagnostic in the form `[severity] path:line:column message (code)` and exits with code `1` when any error-level diagnostic is found — warnings alone exit `0`.
+Check a file or directory for type errors. Prints one line per diagnostic in the form `[severity] path:line:column message (code)` and exits with code `1` when any error-level diagnostic is found — warnings alone exit `0`.
 
 ```bash
 nudo check <file>
+nudo check <directory>
 ```
 
 **Arguments:**
@@ -180,6 +181,7 @@ nudo check <file>
 | Argument | Description |
 |----------|-------------|
 | `<file>` | Path to a `.js`, `.mjs`, or `.ts` file (relative or absolute) |
+| `<directory>` | Recursively check every inference target under the directory (`--json` requires a single file) |
 
 **Example:**
 
@@ -206,10 +208,11 @@ nudo check src/broken.js
 
 ### nudo types
 
-Type-as-computation view: show term + constraints from Abs algebra (not just extensional TypeValue shape).
+Type-as-computation view: show term + constraints from Abs algebra (not just extensional TypeValue shape). Accepts a single file or a directory (recursively).
 
 ```bash
 nudo types <file> [--fn <name>] [--assume <pred...>] [--generalize]
+nudo types <directory> [--assume <pred...>] [--generalize]
 ```
 
 | Option | Description |
@@ -222,10 +225,11 @@ nudo types <file> [--fn <name>] [--assume <pred...>] [--generalize]
 
 ### nudo test
 
-Run `@nudo:case` directives as assertions. Cases with `=> expected` are checked with subtype semantics; failures exit `1`. Cases without an expected type are reported as `unchecked`.
+Run `@nudo:case` directives as assertions. Cases with `=> expected` are checked with subtype semantics; failures exit `1`. Cases without an expected type are reported as `unchecked`. Accepts a file or directory.
 
 ```bash
 nudo test <file>
+nudo test <directory>
 ```
 
 ---

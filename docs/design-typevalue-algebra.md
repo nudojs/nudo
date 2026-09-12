@@ -123,7 +123,8 @@ nudo guard <file>     # 边界运行时校验（= generate --format guard）
 nudo generate <file>  # zod | guard | dts 组合输出
 ```
 
-已知未做：目录参数 `src/`、emit 往返 tsc、guard 的 denotational `denote(abs)`。
+已知未做：guard 的 denotational `denote(abs)`、harvest 自动化。
+`check` / `types` / `test` / `emit` / `guard` 均支持目录参数（递归收集推断目标）。
 
 ---
 
@@ -608,7 +609,7 @@ function len(x) {
 3. ✅ HOF map/reduce/filter 在 AST 上的内涵求值
 4. ✅ `nudo types` CLI（`--assume x>0` / `--generalize`）
 5. ✅ generalize 真·多态签名（符号 α 执行）
-6. ⬜ emit 外延投影 + 往返 tsc（`nudo emit` 命令已通；往返 tsc 未做）
+6. ✅ emit 外延投影 + `nudo emit`；tsc 往返门禁（`emit-tsc-roundtrip.test.ts`）
 
 ### Phase C — 产品替换面 🚧
 1. ✅ 约束诊断：`nudo check` / CheckJson v1 / LSP 主通道
