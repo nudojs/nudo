@@ -64,6 +64,7 @@ export {
 export {
   evalAbsModuleGraph,
   evalProgramAbsWithModules,
+  collectAbsBindingsFromGraph,
   defaultAbsLoadModule,
   type AbsModuleGraphResult,
   type AbsGraphOptions,

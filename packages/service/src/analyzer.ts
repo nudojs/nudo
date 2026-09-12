@@ -64,7 +64,7 @@ import {
 } from "@nudojs/cli/evaluator";
 import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
 import { autoHarvestModules } from "./harvest-auto.ts";
-import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
+import { evalAbsModuleGraph, collectAbsBindingsFromGraph, evalProgramAbsWithModules } from "./abs-modules-graph.ts";
 import { tryBPathCall, tryBPathCallFull, isBPathCapable } from "./bpath-run.ts";
 import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
 
@@ -1216,6 +1216,26 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
   collectBindings(ast, globalEnv, bindings);
 
+  // B 路径可分析：用 Abs 模块图补全/覆盖绑定（含相对 import）
+  if (isBPathCapable(source, envNames)) {
+    try {
+      const seeds = mockDirectivesToAbsSeeds(functions);
+      const absBinds = collectAbsBindingsFromGraph(source, filePath, {
+        seedVars: seeds.seedVars,
+        seedFns: seeds.seedFns as never,
+      });
+      for (const [name, absVal] of absBinds) {
+        const prev = bindings.get(name);
+        bindings.set(name, {
+          type: absToTypeValue(absVal),
+          loc: prev?.loc,
+        });
+      }
+    } catch {
+      /* keep TypeValue bindings */
+    }
+  }
+
   const synthCandidates: { name: string; node: Node; analysis: FunctionAnalysis }[] = [];
 
   for (const fn of functions) {
@@ -1797,12 +1817,17 @@ export function getHoverAtPosition(
   const ident = findIdentNameAtPosition(source, line, column, file);
   if (ident && !fnName) {
     try {
-      if (!/\brequire\s*\(|\bimport\s*[{'"*]/.test(source)) {
-        const { env } = evalProgramAbs(source, file ? { file } : {});
-        const bound = env.vars.get(ident);
-        if (bound) {
-          const absLine = formatAbs(bound);
-          const absMulti = formatAbsMultiline(bound, ident);
+      // 经模块图（相对 + 裸包）求 Abs 绑定
+      if (isBPathCapable(source, []) || !/\brequire\s*\(/.test(source)) {
+        const seeds = mockDirectivesToAbsSeeds(extractDirectives(file ?? parse(source)));
+        const absBinds = collectAbsBindingsFromGraph(source, filePath, {
+          seedVars: seeds.seedVars,
+          seedFns: seeds.seedFns as never,
+        });
+        const absBound = absBinds.get(ident);
+        if (absBound) {
+          const absLine = formatAbs(absBound);
+          const absMulti = formatAbsMultiline(absBound, ident);
           if (info) {
             info.abs = absLine;
             info.absMultiline = absMulti;
@@ -1818,12 +1843,14 @@ export function getHoverAtPosition(
 
   // 任意表达式：Abs 节点表（无损）
   try {
-    if (!/\brequire\s*\(|\bimport\s*[{'"*]/.test(source)) {
+    if (isBPathCapable(source, []) || !/\brequire\s*\(|\bimport\s*[{'"*]/.test(source)) {
       const seeds = mockDirectivesToAbsSeeds(
         extractDirectives(file ?? parse(source)),
       );
+      const { modules } = evalAbsModuleGraph(source, filePath);
       const nodeTypes = collectAbsNodeTypes(source, {
         ...seeds,
+        modules,
         ...(file ? { file } : {}),
       });
       const absAt = findAbsAtPosition(nodeTypes, line, column);

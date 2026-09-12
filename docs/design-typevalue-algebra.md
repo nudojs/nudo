@@ -622,7 +622,7 @@ function len(x) {
 
 | 边界 | 说明 |
 |---|---|
-| **B 路径（进行中）** | analyze 模式隔离顶层副作用；throws；**unreachable + builtin-unknown 静态收集**（capable 文件接管） |
+| **B 路径（进行中）** | analyze 隔离顶层副作用；throws；unreachable/builtin；**bindings/hover 经模块图 Abs** |
 | for / while | 有界 `$for`/`$while`（状态线程 + 不动点）；transpile while 用 `$whileSeq`（预算） |
 | service Abs 路径 | 自包含 + 相对 import + **裸包 harvest**；call@ 记录经模块图打 targetModule；require / `@nudo:env` 仍 TypeValue |
 | `@nudo:import * as ns` | 语法可解析，模板展开暂不支持 |

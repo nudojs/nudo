@@ -9,6 +9,7 @@ import { parse } from "@nudojs/parser";
 import {
   evalProgramAbs,
   collectAbsExports,
+  absFunction,
   type Abs,
   type AbsModuleExports,
   type AstEnv,
@@ -171,4 +172,33 @@ export function evalProgramAbsWithModules(
     seedVars: opts.seedVars,
     seedFns: opts.seedFns,
   });
+}
+
+/**
+ * 收集顶层绑定名 → Abs（含相对 import / 裸包 harvest 注入）。
+ * 供 bindings / hover 从 Abs 投影，不必走 TypeValue evaluator。
+ */
+export function collectAbsBindingsFromGraph(
+  source: string,
+  filePath: string,
+  opts: AbsGraphOptions = {},
+): Map<string, Abs> {
+  const out = new Map<string, Abs>();
+  try {
+    const { env } = evalProgramAbsWithModules(source, filePath, opts);
+    for (const [k, v] of env.vars) {
+      out.set(k, v);
+    }
+    for (const [name, impl] of env.fns) {
+      if (!out.has(name)) {
+        out.set(
+          name,
+          absFunction(impl.params, { body: impl.body, async: impl.async, env }),
+        );
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return out;
 }
