@@ -349,7 +349,7 @@ function sum(arr) {
 
 ---
 
-## @nudo:refine — 精化契约
+## @nudo:refine — 精化契约 {#nudorefine--refinement-contract}
 
 把 `*.nudo.js` 模板里的精化挂到参数或返回值。约束以 Pred 进入 Abs，**参与代数**（`x>0` ⇒ `x+1>1`），不只是调用点挡板。
 

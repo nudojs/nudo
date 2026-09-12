@@ -151,7 +151,7 @@ clamp(-5, 0, 10);   // ok
 
 | 门禁 | 文件 | 要求 |
 |---|---|---|
-| **人工 recall** | `check-recall-gold.test.ts` | recall = precision = **1.0**（45 条） |
+| **人工 recall** | `check-recall-gold.test.ts` | recall = precision = **1.0**（57 条） |
 | **真实包精度** | `check-real-commander.test.ts` | commander 上 **零** `constraint-violated` 误报 |
 
 ```bash

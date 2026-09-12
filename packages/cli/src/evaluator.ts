@@ -24,6 +24,7 @@ import { extractInlineDirectives, type InlineDirective } from "@nudojs/parser";
 import { narrow } from "./narrowing.ts";
 import {
   tryAbsObjectSpread,
+  tryAbsJoinObjects,
   tryAbsUnary,
   pushPhi,
   popPhi,
@@ -646,6 +647,18 @@ function definiteBoolean(tv: TypeValue): boolean | null {
     case "never": return false;
     default: return null;
   }
+}
+
+/**
+ * 分支合并：双对象先走 Abs join（sum-of-products / 槽位合并），
+ * 失败或非对象再 simplifyUnion。保证 join 代数接到 evaluator 主路径。
+ */
+function joinOrUnion(a: TypeValue, b: TypeValue): TypeValue {
+  if (a.kind === "object" && b.kind === "object") {
+    const joined = tryAbsJoinObjects(a, b);
+    if (joined) return joined;
+  }
+  return simplifyUnion([a, b]);
 }
 
 // Receiver-binding for thisVal-dependent Object.prototype methods
@@ -1914,7 +1927,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       const aResult = evaluate(node.alternate, falseEnv);
       const cVal = isReturn(cResult) ? cResult.value : isBranch(cResult) ? cResult.returnedValue : isThrow(cResult) ? T.never : cResult;
       const aVal = isReturn(aResult) ? aResult.value : isBranch(aResult) ? aResult.returnedValue : isThrow(aResult) ? T.never : aResult;
-      return simplifyUnion([cVal, aVal]);
+      return joinOrUnion(cVal, aVal);
     }
 
     case "IfStatement": {
@@ -2031,7 +2044,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         : alternateResult as TypeValue | null;
 
       if (cReturns && aReturns) {
-        return makeReturn(simplifyUnion([cVal, aVal!]));
+        return makeReturn(joinOrUnion(cVal, aVal!));
       }
 
       if (cReturns && !node.alternate) {
@@ -2040,7 +2053,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
       if (cReturns && node.alternate) {
         if (aReturns) {
-          return makeReturn(simplifyUnion([cVal, aVal!]));
+          return makeReturn(joinOrUnion(cVal, aVal!));
         }
         return makeBranch(cVal, falseEnv);
       }

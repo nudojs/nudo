@@ -349,7 +349,7 @@ function sum(arr) {
 
 ---
 
-## @nudo:refine — Refinement Contract
+## @nudo:refine — Refinement Contract {#nudorefine--refinement-contract}
 
 Attach a refinement from a `*.nudo.js` template to a parameter or the return value. The constraint enters Abs as a Pred and **participates in algebra** (`x>0` ⇒ `x+1>1`) — it is not just a call-site gate.
 

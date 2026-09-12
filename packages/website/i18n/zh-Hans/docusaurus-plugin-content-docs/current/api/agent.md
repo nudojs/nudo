@@ -1,31 +1,100 @@
 ---
 sidebar_position: 5
-description: "Agent API —— 语言服务器内的五个 nudo.* 命令：whatIf 类型假设、suggestCase 指令建议、trace、selectCase、getActiveCases。"
+description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs 门禁）、infer、hover、whatIf、suggestCase、trace、selectCase、getActiveCases。"
 ---
 
 # Agent API
 
-`@nudojs/lsp` 面向 agent 的 API 参考。全部五个 agent 命令都内置于 Nudo 语言服务器，通过标准的 `workspace/executeCommand` 调用或自定义 LSP 请求访问——不需要安装独立的服务器进程或协议。连接方式（LSP→MCP 桥、原生 LSP 客户端、VS Code）见 [Agent 集成指南](../guides/mcp-server.md)。
+`@nudojs/lsp` 面向 agent 的 API 参考。全部 agent 命令都内置于 Nudo 语言服务器，通过标准的 `workspace/executeCommand` 调用或自定义 LSP 请求访问——不需要安装独立的服务器进程或协议。连接方式（LSP→MCP 桥、原生 LSP 客户端、VS Code）见 [Agent 集成指南](../guides/mcp-server.md)。
 
 ## 命令
 
 | 命令 | 自定义请求别名 | 用途 |
 |---------|---------------------|---------|
+| `nudo.check` | `nudo/check` | 约束门禁 —— **CheckJson v1**（Abs 签名 + actual ⊭ expected） |
+| `nudo.infer` | `nudo/infer` | 全文件推断 —— **InferJson v1**（intension 携带无损 Abs） |
+| `nudo.hover` | `nudo/hover` | 源码位置上的无损 Abs（可选 inlay） |
 | `nudo.whatIf` | `nudo/whatIf` | 对绑定应用类型假设，读取目标的推断类型 |
 | `nudo.suggestCase` | `nudo/suggestCase` | 检查函数的 `@nudo:case` 覆盖情况；用例全为合成时返回可直接粘贴的指令 |
 | `nudo.trace` | `nudo/trace` | 列出函数每个用例的参数类型 → 结果类型 |
 | `nudo.selectCase` | `nudo/selectCase` | 切换用于悬停/诊断的活动用例 |
 | `nudo.getActiveCases` | `nudo/getActiveCases` | 读取文件中每个函数的活动用例索引 |
 
-`nudo.whatIf`、`nudo.suggestCase` 和 `nudo.trace` 返回 MCP 风格的文本内容——`{ content: [{ type: "text", text }] }`——结果可以直接进入 agent 工具链。`nudo.selectCase` 返回 `{ success: true }`；`nudo.getActiveCases` 返回 `Record<string, number>`。
+`nudo.check` / `nudo.infer` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` 返回 MCP 风格的文本内容——`{ content: [{ type: "text", text }] }`。`nudo.selectCase` 返回 `{ success: true }`；`nudo.getActiveCases` 返回 `Record<string, number>`。
 
 ## 约定
 
 - **`file` 参数**——每个命令都接收字符串 `file`，接受 `file://` URI 或裸路径。未在编辑器中打开的文件从磁盘读取。
 - **编辑器风格请求**——`nudo/selectCase` 与 `nudo/getActiveCases` 请求额外接受编辑器风格的 `{ uri, ... }` 参数（VS Code 扩展的 CodeLens 使用）。Agent 应始终使用 `file`。
 - **类型表达式**——见下方[类型表达式](#类型表达式)。
+- **Abs 优先**——`check` / `infer` / `hover` 暴露无损代数（Abs）。TypeValue 字符串是兼容用的外延投影，不是类型模型本身。
 
 ---
+
+## nudo.check
+
+在 **Abs**（类型即计算）上的约束门禁。契约与 CLI `nudo check --json` 一致。见 [nudo check](../guides/check.md)。
+
+**参数：**
+
+| 名称 | 类型 | 描述 |
+|------|------|-------------|
+| `file` | `string` | `file://` URI 或路径 |
+| `source` | `string?` | 预读源码（绕过磁盘/编辑器） |
+| `format` | `"text" \| "json"` | `"json"` → 只返回 CheckJson；默认人类摘要 + JSON |
+
+**返回（CheckJson v1）：** `{ version: 1, file, ok, summary, signatures[], issues[] }`，issue 可携带 `actual` / `expected`。Issue code：
+
+| Code | 含义 |
+|------|---------|
+| `nudo:constraint-violated` | 调用实参 ⊭ 前置条件 |
+| `nudo:assign-mismatch` | 赋值 ⊭ 既有绑定形状 |
+| `nudo:arg-structure` | 实参结构 ⊭ 函数体访问的槽位 |
+
+```javascripton
+{
+  "command": "nudo.check",
+  "arguments": [{ "file": "src/validators.js", "format": "json" }]
+}
+```
+
+## nudo.infer
+
+全文件推断 —— 契约与 CLI `nudo infer --json` 一致。
+
+**参数：**
+
+| 名称 | 类型 | 描述 |
+|------|------|-------------|
+| `file` | `string` | 路径或 URI |
+| `source` | `string?` | 预读源码 |
+| `format` | `"text" \| "json"` | `"json"` → 只返回 InferJson |
+| `functions` | `string[]?` | 过滤到这些函数名 |
+
+**返回（InferJson v1）：** `cases[].intension` 携带 `abs` / `term` / `pred` / `conf`（无损）；`args` / `result` 是 TypeValue 字符串（外延）。
+
+```javascripton
+{
+  "command": "nudo.infer",
+  "arguments": [{ "file": "src/app.js", "functions": ["scale"], "format": "json" }]
+}
+```
+
+## nudo.hover
+
+位置上的无损 Abs —— 与编辑器 hover 同源，不是 TypeValue 桥。
+
+**参数：**
+
+| 名称 | 类型 | 描述 |
+|------|------|-------------|
+| `file` | `string` | 路径或 URI |
+| `line` | `number` | **1-based** 行号 |
+| `column` | `number` | **0-based** 列号 |
+| `source` | `string?` | 预读源码 |
+| `includeInlays` | `boolean?` | 同时返回该文件全部 Abs inlay |
+
+**返回 JSON：** `{ file, line, column, abs, absMultiline, intension, ext, inlays? }` —— `abs` 无损；`ext` 仅作对照用的 TypeValue 投影。
 
 ## nudo.whatIf
 

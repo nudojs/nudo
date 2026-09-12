@@ -86,3 +86,5 @@ export {
   type EmitSkipReason,
   type EmitResult,
 } from "./case-emitter.ts";
+
+export { mockDirectivesToAbsSeeds, type AbsMockSeeds } from "./mock-abs.ts";

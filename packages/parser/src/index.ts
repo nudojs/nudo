@@ -1,5 +1,6 @@
 export { parse } from "./parse.ts";
-export { stripTypes } from "./strip-types.ts";
+// stripTypes 单源在 core（parser 依赖 core，避免双份拷贝漂移）
+export { stripTypes } from "@nudojs/core";
 export {
   type Directive,
   type FileDirective,

@@ -1,15 +1,9 @@
 import { readFileSync, existsSync, watch, readdirSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname, relative, join, basename } from "node:path";
 import { Command } from "commander";
-import {
-  T,
-  typeValueToString,
-  createEnvironment,
-  mockHelperToTypeValue,
-} from "@nudojs/core";
-import type { TypeValue } from "@nudojs/core";
-import { parse, extractDirectives, parseTypeValueExpr } from "@nudojs/parser";
-import { evaluateFunctionFull, evaluateProgram, setModuleResolver, setCurrentFileDir, resetMemo } from "./evaluator.ts";
+import { typeValueToString } from "@nudojs/core";
+import { extractDirectives } from "@nudojs/parser";
+import { resetMemo } from "./evaluator.ts";
 import {
   typeValueToZodSchema,
   generateGuardFunction,
@@ -31,7 +25,6 @@ import {
   type EmitResult,
 } from "@nudojs/service";
 import { harvestDts, emitEnvModule } from "@nudojs/harvester";
-import { resolveNpmNudo } from "./resolve-npm.ts";
 import { buildTestReport, formatTestReport } from "./run-test.ts";
 
 const program = new Command();
@@ -40,86 +33,6 @@ program
   .name("nudo")
   .description("Nudo type inference engine")
   .version("0.0.1");
-
-function applyMocks(
-  directives: ReturnType<typeof extractDirectives>[number]["directives"],
-  env: ReturnType<typeof createEnvironment>,
-  filePath: string,
-): void {
-  for (const d of directives) {
-    if (d.kind !== "mock") continue;
-    if (d.arrowFn) {
-      // Create a function TypeValue from the parsed arrow function
-      const fnType = T.fn(d.arrowFn.params, d.arrowFn.body, env);
-      (fnType as any)._paramPatterns = d.arrowFn.paramPatterns;
-      env.bind(d.name, fnType);
-    } else if (d.nudoMock) {
-      // Handle Nudo mock helpers (stub, spy, mock)
-      const typeVal = mockHelperToTypeValue(d.nudoMock, env);
-      env.bind(d.name, typeVal);
-    } else if (d.sinonExpr) {
-      // Handle sinon expressions
-      const sinonType = createSinonTypeValue(d.sinonExpr);
-      env.bind(d.name, sinonType);
-    } else if (d.expression) {
-      env.bind(d.name, parseTypeValueExpr(d.expression));
-    } else if (d.fromPath) {
-      const mockPath = resolve(dirname(filePath), d.fromPath);
-      const mockSource = readFileSync(mockPath, "utf-8");
-      const mockAst = parse(mockSource);
-      const mockEnv = createEnvironment();
-      evaluateProgram(mockAst, mockEnv);
-      const mockVal = mockEnv.lookup(d.name);
-      env.bind(d.name, mockVal);
-    }
-  }
-}
-
-function createSinonTypeValue(sinonExpr: { type: string; returnValue?: TypeValue; resolvedValue?: TypeValue; rejectedValue?: TypeValue }): TypeValue {
-  const body = { type: "BlockStatement", body: [] } as any;
-  const fn = T.fn(["...args"], body, createEnvironment());
-
-  if (sinonExpr.returnValue) {
-    (fn as any)._directReturn = sinonExpr.returnValue;
-  } else if (sinonExpr.resolvedValue) {
-    (fn as any)._directReturn = T.promise(sinonExpr.resolvedValue);
-  } else if (sinonExpr.rejectedValue) {
-    (fn as any)._directReturn = T.never;
-  } else {
-    (fn as any)._directReturn = T.unknown;
-  }
-
-  return fn;
-}
-
-function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string; json?: unknown } | null {
-  const extensions = [".js", ".ts", ".mjs"];
-
-  const nudoPath = resolveNpmNudo(source, fromDir);
-  if (nudoPath) {
-    const src = readFileSync(nudoPath, "utf-8");
-    return { ast: parse(src), filePath: nudoPath };
-  }
-
-  const basePath = resolve(fromDir, source);
-
-  for (const ext of ["", ...extensions]) {
-    const candidate = basePath + ext;
-    if (existsSync(candidate)) {
-      // .json 模块：CJS require('../package.json') 等常见模式——按 JSON 求值
-      if (candidate.endsWith(".json")) {
-        try {
-          return { ast: parse("module.exports = undefined;"), filePath: candidate, json: JSON.parse(readFileSync(candidate, "utf-8")) };
-        } catch {
-          return null;
-        }
-      }
-      const src = readFileSync(candidate, "utf-8");
-      return { ast: parse(src), filePath: candidate };
-    }
-  }
-  return null;
-}
 
 /** `--emit-cases` 的编排选项：mode 决定 add/update 两条固化路径 */
 type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOnDiff: boolean };
@@ -843,6 +756,94 @@ function fnParamNames(node: DirectiveFnNode): string[] {
   return [];
 }
 
+/** generate/emit/guard 共用管道：analyzeFileAsync → zod/guard/dts 片段 */
+async function runGenerate(
+  file: string,
+  format: "zod" | "guard" | "dts" | "all",
+  output?: string,
+): Promise<void> {
+  const filePath = resolve(file);
+  const source = readFileSync(filePath, "utf-8");
+  // 与 infer/check 同一分析管道（Abs 优先 + refine + env preload）
+  const result = await analyzeFileAsync(filePath, source);
+  const functions = result.functions.filter(
+    (f) => f.cases.some((c) => c.source === "directive"),
+  );
+
+  if (functions.length === 0) {
+    console.log("No functions with @nudo:case directives found.");
+    return;
+  }
+
+  const zodChunks: string[] = [];
+  const guardChunks: string[] = [];
+  const dtsChunks: string[] = [];
+
+  for (const fn of functions) {
+    const caseResults: CaseResult[] = fn.cases.filter((c) => c.source === "directive");
+    const baseName = fn.name;
+
+    if (format === "zod" || format === "all") {
+      const lines: string[] = [`\n// === ${baseName} Zod Schemas ===`];
+      for (const c of caseResults) {
+        const inputSchemas = c.args.map((a, i) => `arg${i}: ${typeValueToZodSchema(a)}`).join(", ");
+        const outputSchema = typeValueToZodSchema(c.result);
+        lines.push(`// Case "${c.name}":`);
+        lines.push(`// Input: { ${inputSchemas} }`);
+        lines.push(`// Output: ${outputSchema}`);
+      }
+      zodChunks.push(lines.join("\n"));
+    }
+
+    if (format === "guard" || format === "all") {
+      const lines: string[] = [`\n// === ${baseName} Type Guards ===`];
+      for (const c of caseResults) {
+        lines.push(
+          generateGuardFunction(
+            `is${baseName}${c.name.charAt(0).toUpperCase() + c.name.slice(1)}Output`,
+            c.result,
+          ),
+        );
+      }
+      guardChunks.push(lines.join("\n"));
+    }
+
+    if (format === "dts" || format === "all") {
+      dtsChunks.push(generateFunctionDtsLines(fn).join("\n"));
+    }
+  }
+
+  const stem = basename(filePath).replace(/\.[cm]?[jt]s$/, "");
+  if (output) {
+    const outDir = resolve(output);
+    mkdirSync(outDir, { recursive: true });
+    const written: string[] = [];
+    if (zodChunks.length > 0) {
+      const p = join(outDir, `${stem}.nudo.zod.ts`);
+      writeFileSync(p, zodChunks.join("\n") + "\n", "utf-8");
+      written.push(p);
+    }
+    if (guardChunks.length > 0) {
+      const p = join(outDir, `${stem}.nudo.guard.ts`);
+      writeFileSync(p, guardChunks.join("\n") + "\n", "utf-8");
+      written.push(p);
+    }
+    if (dtsChunks.length > 0) {
+      const p = join(outDir, `${stem}.d.ts`);
+      writeFileSync(p, dtsChunks.join("\n") + "\n", "utf-8");
+      written.push(p);
+    }
+    for (const p of written) {
+      console.log(`wrote ${relative(process.cwd(), p)}`);
+    }
+    return;
+  }
+
+  for (const chunk of [...zodChunks, ...guardChunks, ...dtsChunks]) {
+    console.log(chunk);
+  }
+}
+
 program
   .command("generate")
   .description("Generate runtime validators from inferred types")
@@ -856,86 +857,27 @@ program
       process.exitCode = 1;
       return;
     }
-    const filePath = resolve(file);
-    const source = readFileSync(filePath, "utf-8");
-    // 与 infer/check 同一分析管道（Abs 优先 + refine + env preload）
-    const result = await analyzeFileAsync(filePath, source);
-    const functions = result.functions.filter(
-      (f) => f.cases.some((c) => c.source === "directive"),
-    );
+    await runGenerate(file, format as "zod" | "guard" | "dts" | "all", options.output);
+  });
 
-    if (functions.length === 0) {
-      console.log("No functions with @nudo:case directives found.");
-      return;
-    }
+/** 设计命令面 `nudo emit`：为 npm 生态导出 .d.ts（= generate --format dts） */
+program
+  .command("emit")
+  .description("Emit TypeScript .d.ts declarations from inferred types (npm compatibility exit)")
+  .argument("<file>", "JavaScript file to analyze")
+  .option("--output <dir>", "Write <stem>.d.ts to this directory (omit for stdout)")
+  .action(async (file: string, options: { output?: string }) => {
+    await runGenerate(file, "dts", options.output);
+  });
 
-    const zodChunks: string[] = [];
-    const guardChunks: string[] = [];
-    const dtsChunks: string[] = [];
-
-    for (const fn of functions) {
-      const caseResults: CaseResult[] = fn.cases.filter((c) => c.source === "directive");
-      const baseName = fn.name;
-
-      if (format === "zod" || format === "all") {
-        const lines: string[] = [`\n// === ${baseName} Zod Schemas ===`];
-        for (const c of caseResults) {
-          const inputSchemas = c.args.map((a, i) => `arg${i}: ${typeValueToZodSchema(a)}`).join(", ");
-          const outputSchema = typeValueToZodSchema(c.result);
-          lines.push(`// Case "${c.name}":`);
-          lines.push(`// Input: { ${inputSchemas} }`);
-          lines.push(`// Output: ${outputSchema}`);
-        }
-        zodChunks.push(lines.join("\n"));
-      }
-
-      if (format === "guard" || format === "all") {
-        const lines: string[] = [`\n// === ${baseName} Type Guards ===`];
-        for (const c of caseResults) {
-          lines.push(
-            generateGuardFunction(
-              `is${baseName}${c.name.charAt(0).toUpperCase() + c.name.slice(1)}Output`,
-              c.result,
-            ),
-          );
-        }
-        guardChunks.push(lines.join("\n"));
-      }
-
-      if (format === "dts" || format === "all") {
-        dtsChunks.push(generateFunctionDtsLines(fn).join("\n"));
-      }
-    }
-
-    const stem = basename(filePath).replace(/\.[cm]?[jt]s$/, "");
-    if (options.output) {
-      const outDir = resolve(options.output);
-      mkdirSync(outDir, { recursive: true });
-      const written: string[] = [];
-      if (zodChunks.length > 0) {
-        const p = join(outDir, `${stem}.nudo.zod.ts`);
-        writeFileSync(p, zodChunks.join("\n") + "\n", "utf-8");
-        written.push(p);
-      }
-      if (guardChunks.length > 0) {
-        const p = join(outDir, `${stem}.nudo.guard.ts`);
-        writeFileSync(p, guardChunks.join("\n") + "\n", "utf-8");
-        written.push(p);
-      }
-      if (dtsChunks.length > 0) {
-        const p = join(outDir, `${stem}.d.ts`);
-        writeFileSync(p, dtsChunks.join("\n") + "\n", "utf-8");
-        written.push(p);
-      }
-      for (const p of written) {
-        console.log(`wrote ${relative(process.cwd(), p)}`);
-      }
-      return;
-    }
-
-    for (const chunk of [...zodChunks, ...guardChunks, ...dtsChunks]) {
-      console.log(chunk);
-    }
+/** 设计命令面 `nudo guard`：边界运行时校验（= generate --format guard） */
+program
+  .command("guard")
+  .description("Generate runtime type-guard functions from inferred result types")
+  .argument("<file>", "JavaScript file to analyze")
+  .option("--output <dir>", "Write <stem>.nudo.guard.ts to this directory (omit for stdout)")
+  .action(async (file: string, options: { output?: string }) => {
+    await runGenerate(file, "guard", options.output);
   });
 
 // ---------------------------------------------------------------------------

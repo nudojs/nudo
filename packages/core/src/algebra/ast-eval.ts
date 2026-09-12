@@ -290,10 +290,7 @@ export type EvalResult = {
 };
 
 // --- 源码入口 ---
-
-export function parseSource(source: string): File {
-  return parse(source);
-}
+// parseSource 唯一实现在 ./parse-source.ts；此处经 `parse` 别名使用，不再重复导出。
 
 /**
  * 分析一段 JS 源码。
@@ -306,7 +303,7 @@ export function evalSource(
   opts: EvalOptions = {},
 ): EvalResult {
   resetAbsCallBudget();
-  const file = opts.file ?? parseSource(source);
+  const file = opts.file ?? parse(source);
   const env = emptyEnv();
   let phi = opts.phi ?? pTrue;
 
@@ -1561,7 +1558,7 @@ export function evalProgramAbs(
   } = {},
 ): { env: AstEnv; last: Abs; phi: Phi } {
   resetAbsCallBudget();
-  const file = opts.file ?? parseSource(source);
+  const file = opts.file ?? parse(source);
   const env = emptyEnv();
   if (opts.seedVars) {
     for (const [k, v] of Object.entries(opts.seedVars)) {

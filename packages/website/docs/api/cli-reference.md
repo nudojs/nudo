@@ -1,6 +1,6 @@
 ---
 sidebar_position: 4
-description: "Reference every nudo CLI command — infer, check, doctor, generate, watch, harvest — with arguments, options, output formats, and exit codes."
+description: "Reference every nudo CLI command — infer, check, types, test, doctor, generate, emit, guard, watch, harvest — with arguments, options, output formats, and exit codes."
 ---
 
 # CLI Reference
@@ -25,6 +25,8 @@ npx @nudojs/cli infer ./src/utils.js
 | [`nudo test`](#nudo-test) | Run `@nudo:case` directives as assertions (exit `1` on failure) |
 | [`nudo doctor`](#nudo-doctor) | Health-check files: call-site solidification drift, analysis errors, uncovered functions |
 | [`nudo generate`](#nudo-generate) | Generate runtime validators from inferred types |
+| [`nudo emit`](#nudo-emit) | Emit `.d.ts` declarations (npm compatibility exit) |
+| [`nudo guard`](#nudo-guard) | Generate runtime type-guard functions |
 | [`nudo watch`](#nudo-watch) | Watch a file or directory and re-run inference on changes |
 | [`nudo harvest`](#nudo-harvest) | Convert `@types/<pkg>` declarations into a Nudo env file |
 
@@ -385,6 +387,56 @@ nudo generate src/user.js --format zod
 // Input: { arg0: z.object({ name: z.string(), age: z.number() }) }
 // Output: z.object({ id: z.literal(123), name: z.string(), age: z.number() })
 ```
+
+---
+
+### nudo emit
+
+Emit TypeScript `.d.ts` declarations for the npm compatibility exit. Equivalent to `nudo generate --format dts`.
+
+```bash
+nudo emit <file> [options]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `<file>` | Path to a `.js`, `.mjs`, or `.ts` file |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--output <dir>` | Write `<name>.d.ts` to this directory. Omit to print to stdout |
+
+**Example:**
+
+```bash
+nudo emit src/user.js --output dist/types
+```
+
+---
+
+### nudo guard
+
+Generate runtime type-guard functions from inferred result types. Equivalent to `nudo generate --format guard`.
+
+```bash
+nudo guard <file> [options]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `<file>` | Path to a `.js`, `.mjs`, or `.ts` file |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--output <dir>` | Write `<name>.nudo.guard.ts` to this directory. Omit to print to stdout |
 
 ---
 

@@ -112,15 +112,18 @@ denote                   // 具体化：v 是否落在抽象值指称内
 | `any` 逃生舱 | 显式 `unknown` + 置信度 |
 | 双语言同步 | 单语言：JS + 可计算类型值 |
 
-命令面（终态）：
+命令面：
 
 ```bash
-nudo check src/    # 替代 tsc --noEmit：约束蕴含 + 结构
-nudo types src/    # 展示推断签名、项与约束、置信度
-nudo test src/     # @nudo:case 即测试
-nudo emit src/     # 为 npm 生态导出 .d.ts（有损兼容出口）
-nudo guard src/    # 边界运行时校验（denote）
+nudo check <file>     # 替代 tsc --noEmit：约束蕴含 + 结构（Abs 门禁）
+nudo types <file>     # 展示推断签名、项与约束、置信度
+nudo test <file>      # @nudo:case 即测试
+nudo emit <file>      # 为 npm 生态导出 .d.ts（= generate --format dts）
+nudo guard <file>     # 边界运行时校验（= generate --format guard）
+nudo generate <file>  # zod | guard | dts 组合输出
 ```
+
+已知未做：目录参数 `src/`、emit 往返 tsc、guard 的 denotational `denote(abs)`。
 
 ---
 
@@ -605,7 +608,7 @@ function len(x) {
 3. ✅ HOF map/reduce/filter 在 AST 上的内涵求值
 4. ✅ `nudo types` CLI（`--assume x>0` / `--generalize`）
 5. ✅ generalize 真·多态签名（符号 α 执行）
-6. ⬜ emit 外延投影 + 往返 tsc
+6. ⬜ emit 外延投影 + 往返 tsc（`nudo emit` 命令已通；往返 tsc 未做）
 
 ### Phase C — 产品替换面 🚧
 1. ✅ 约束诊断：`nudo check` / CheckJson v1 / LSP 主通道
@@ -613,6 +616,7 @@ function len(x) {
 3. ✅ 与真实 Node 执行差分回归（8 用例，exact 对齐）
 4. ✅ 挂到主 CLI：`nudo types --assume/--generalize` 已通
 5. ✅ `nudo test`（`@nudo:case` 即断言）
+6. ✅ `nudo emit` / `nudo guard` 命令面（= generate --format dts/guard）
 
 ### 已知边界（2026-09 收口后）
 
@@ -622,12 +626,13 @@ function len(x) {
 | `@nudo:import * as ns` | 语法可解析，模板展开暂不支持 |
 | ImportDefaultSpecifier | 默认导出契约跨文件暂不绑定 |
 | emit 往返 tsc / harvest 自动化 | Phase B.6 / C.2 未做 |
+| guard denotational | `nudo guard` 走 TypeValue 投影，非 `denote(abs)` |
 
 ### 验证状态（2026-09 收口后）
 
 | 检查 | 结果 |
 |---|---|
-| vitest | **1481+ passed**（全 monorepo） |
+| vitest | **1504+ passed**（全 monorepo） |
 | tsc -p tsconfig.lint.json | **clean** |
 | nudo types sample --assume 'x>0' | term+pred 正确 |
 | nudo types sample --generalize | ∀α 签名正确 |

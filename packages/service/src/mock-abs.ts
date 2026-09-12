@@ -12,15 +12,27 @@ import {
   emptyEnv,
   typeValueToAbs,
   abs as makeAbs,
+  confJoin,
   unknown as absUnknown,
   litValue,
 } from "@nudojs/core";
 
-/** 用常量 Abs 造 mock 函数：调用即返回该值 */
+/**
+ * mock 依赖结果 conf 不得高于 mock。
+ * 必须保留同一对象身份：absFunction 的 impl 挂在 WeakMap 上，
+ * makeAbs 新建对象会丢掉 body/apply。
+ */
+function markMockConf(a: Abs): Abs {
+  a.conf = confJoin(a.conf, "mock");
+  return a;
+}
+
+/** 用常量 Abs 造 mock 函数：调用即返回该值（结果 conf 标 mock） */
 function constantMockFn(result: Abs): Abs {
+  const marked = markMockConf(result);
   const mockEnv = emptyEnv();
   const retName = "__nudo_mock_ret";
-  mockEnv.vars.set(retName, result);
+  mockEnv.vars.set(retName, marked);
   const body = {
     type: "BlockStatement",
     body: [
@@ -30,7 +42,7 @@ function constantMockFn(result: Abs): Abs {
       },
     ],
   } as unknown as Node;
-  return absFunction(["...args"], { body, env: mockEnv });
+  return markMockConf(absFunction(["...args"], { body, env: mockEnv }));
 }
 
 /**
@@ -68,13 +80,14 @@ function dispatchMockFn(defaultReturn: Abs, cases?: { args: TypeValue[]; returnV
   if (!cases?.length) return constantMockFn(defaultReturn);
   const caseAbs = cases.map((c) => ({
     declared: c.args,
-    result: typeValueToAbs(c.returnValue),
+    result: markMockConf(typeValueToAbs(c.returnValue)),
   }));
   const dummyBody = {
     type: "BlockStatement",
     body: [{ type: "ReturnStatement", argument: null }],
   } as unknown as Node;
-  return absFunction(["...args"], {
+  const markedDefault = markMockConf(defaultReturn);
+  return markMockConf(absFunction(["...args"], {
     body: dummyBody,
     env: emptyEnv(),
     apply: (args: Abs[]): Abs => {
@@ -83,9 +96,9 @@ function dispatchMockFn(defaultReturn: Abs, cases?: { args: TypeValue[]; returnV
           return c.result;
         }
       }
-      return defaultReturn;
+      return markedDefault;
     },
-  });
+  }));
 }
 
 function absFromMockHelper(h: MockHelper): Abs {
@@ -162,9 +175,9 @@ export function mockDirectivesToAbsSeeds(
           async: false,
         };
       } else if (d.nudoMock) {
-        seedVars[d.name] = absFromMockHelper(d.nudoMock);
+        seedVars[d.name] = markMockConf(absFromMockHelper(d.nudoMock));
       } else if (d.sinonExpr) {
-        seedVars[d.name] = absFromSinon(d.sinonExpr);
+        seedVars[d.name] = markMockConf(absFromSinon(d.sinonExpr));
       }
     }
   }

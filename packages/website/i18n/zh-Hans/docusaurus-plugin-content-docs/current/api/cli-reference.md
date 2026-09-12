@@ -1,6 +1,6 @@
 ---
 sidebar_position: 4
-description: "查阅 nudo CLI 全部命令——infer、check、doctor、generate、watch、harvest——的参数、选项、输出格式与退出码。"
+description: "查阅 nudo CLI 全部命令——infer、check、types、test、doctor、generate、emit、guard、watch、harvest——的参数、选项、输出格式与退出码。"
 ---
 
 # CLI 参考
@@ -25,6 +25,8 @@ npx @nudojs/cli infer ./src/utils.js
 | [`nudo test`](#nudo-test) | 把 `@nudo:case` 当断言跑（失败退出码 `1`） |
 | [`nudo doctor`](#nudo-doctor) | 健康检查：调用点固化漂移、分析报错、无用例函数 |
 | [`nudo generate`](#nudo-generate) | 从推断类型生成运行时验证器 |
+| [`nudo emit`](#nudo-emit) | 导出 `.d.ts` 声明（npm 兼容出口） |
+| [`nudo guard`](#nudo-guard) | 生成运行时类型守卫函数 |
 | [`nudo watch`](#nudo-watch) | 监视文件或目录，变更时重新运行推断 |
 | [`nudo harvest`](#nudo-harvest) | 把 `@types/<pkg>` 声明转成 Nudo env 文件 |
 
@@ -385,6 +387,56 @@ nudo generate src/user.js --format zod
 // Input: { arg0: z.object({ name: z.string(), age: z.number() }) }
 // Output: z.object({ id: z.literal(123), name: z.string(), age: z.number() })
 ```
+
+---
+
+### nudo emit
+
+导出 TypeScript `.d.ts` 声明（npm 兼容出口）。等价于 `nudo generate --format dts`。
+
+```bash
+nudo emit <file> [options]
+```
+
+**参数：**
+
+| 参数 | 描述 |
+|----------|-------------|
+| `<file>` | `.js`、`.mjs` 或 `.ts` 文件路径 |
+
+**选项：**
+
+| 选项 | 描述 |
+|--------|-------------|
+| `--output <dir>` | 把 `<name>.d.ts` 写入该目录。省略则打印到 stdout |
+
+**示例：**
+
+```bash
+nudo emit src/user.js --output dist/types
+```
+
+---
+
+### nudo guard
+
+从推断结果类型生成运行时类型守卫。等价于 `nudo generate --format guard`。
+
+```bash
+nudo guard <file> [options]
+```
+
+**参数：**
+
+| 参数 | 描述 |
+|----------|-------------|
+| `<file>` | `.js`、`.mjs` 或 `.ts` 文件路径 |
+
+**选项：**
+
+| 选项 | 描述 |
+|--------|-------------|
+| `--output <dir>` | 把 `<name>.nudo.guard.ts` 写入该目录。省略则打印到 stdout |
 
 ---
 
