@@ -79,7 +79,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -336,6 +336,67 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     }
     case "BlockStatement":
       return stmt.body.map((s) => transpileStatement(s, depth, opts)).join("\n");
+    case "SwitchStatement": {
+      // switch (d) { case 1: … case 2: … default: … } → $switch
+      const disc = transpileExpression(stmt.discriminant as Expression, opts);
+      // 合并 fall-through：无语句的 case 与下一有语句 case 同体
+      type Arm = { tests: string[]; stmts: Statement[]; isDefault: boolean };
+      const arms: Arm[] = [];
+      for (const c of stmt.cases) {
+        const testSrc = c.test
+          ? transpileExpression(c.test as Expression, opts)
+          : null;
+        if (testSrc === null) {
+          arms.push({ tests: [], stmts: c.consequent, isDefault: true });
+        } else if (
+          arms.length > 0 &&
+          !arms[arms.length - 1]!.isDefault &&
+          arms[arms.length - 1]!.stmts.length === 0
+        ) {
+          // fall-through：把 test 并入空臂，并填入本 case 的语句
+          const last = arms[arms.length - 1]!;
+          last.tests.push(testSrc);
+          last.stmts = c.consequent;
+        } else {
+          arms.push({ tests: [testSrc], stmts: c.consequent, isDefault: false });
+        }
+      }
+      // 再合并：连续 case 测试共享同一语句列表（case 2: case 3: body）
+      const merged: Arm[] = [];
+      for (const arm of arms) {
+        if (
+          merged.length > 0 &&
+          merged[merged.length - 1]!.stmts === arm.stmts &&
+          !arm.isDefault
+        ) {
+          merged[merged.length - 1]!.tests.push(...arm.tests);
+        } else {
+          merged.push({ ...arm, tests: [...arm.tests] });
+        }
+      }
+      const caseLines: string[] = [];
+      let defaultSrc: string | null = null;
+      for (const arm of merged) {
+        const body =
+          arm.stmts.map((s) => transpileStatement(s, depth + 2, opts)).join("\n") ||
+          `${indent(depth + 2)}return $lit(undefined);`;
+        const thunk = `() => {\n${body}\n${indent(depth + 1)}}`;
+        if (arm.isDefault) {
+          defaultSrc = thunk;
+        } else {
+          // 多 test 共享体：任一命中（具体值）；抽象时 $switch 会跑全部 case 体并 join
+          for (const t of arm.tests) {
+            caseLines.push(`{ test: ${t}, run: ${thunk} },`);
+          }
+        }
+      }
+      const dflt = defaultSrc ? `, ${defaultSrc}` : "";
+      return [
+        `${pad}return $switch(${disc}, [`,
+        ...caseLines.map((l) => indent(depth + 1) + l),
+        `${indent(depth + 1)}]${dflt});`,
+      ].join("\n");
+    }
     case "TryStatement": {
       const tryBody =
         stmt.block.type === "BlockStatement"

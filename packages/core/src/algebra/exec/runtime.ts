@@ -495,3 +495,25 @@ export function $asyncReturn(v: Abs): Abs {
   if (v.shape.k === "eff") return v;
   return wrapPromiseAbs(v);
 }
+
+/**
+ * switch：具体 disc 选中匹配 case；抽象 disc 并所有分支。
+ */
+export function $switch(
+  disc: Abs,
+  cases: Array<{ test: Abs; run: () => Abs }>,
+  dflt?: () => Abs,
+): Abs {
+  const dv = litValue(disc);
+  if (dv !== undefined) {
+    for (const c of cases) {
+      const tv = litValue(c.test);
+      if (tv !== undefined && Object.is(tv, dv)) return c.run();
+    }
+    return dflt ? dflt() : undef();
+  }
+  const parts = cases.map((c) => c.run());
+  if (dflt) parts.push(dflt());
+  if (parts.length === 0) return undef();
+  return parts.reduce((a, b) => joinAbs(a, b));
+}
