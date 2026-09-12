@@ -83,6 +83,7 @@ export {
   clearBPathCache,
   collectBPathReplacements,
   collectEnvGlobals,
+  collectEnvModules,
   type BPathRunResult,
 } from "./bpath-run.ts";
 export { envValueToAbs } from "./env-to-abs.ts";

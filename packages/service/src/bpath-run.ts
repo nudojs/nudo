@@ -40,6 +40,27 @@ export function collectEnvGlobals(envNames: string[]): Record<string, Abs> {
   return out;
 }
 
+/** @nudo:env modules（path / node:path / fs…）→ AbsModuleExports */
+export function collectEnvModules(envNames: string[]): Record<string, AbsModuleExports> {
+  if (envNames.length === 0) return {};
+  const env = createEnvironment();
+  let mods: Record<string, Record<string, import("@nudojs/core").TypeValue>> = {};
+  try {
+    mods = loadEnvs(envNames, env).modules;
+  } catch {
+    return {};
+  }
+  const out: Record<string, AbsModuleExports> = {};
+  for (const [spec, exports] of Object.entries(mods)) {
+    const named: Record<string, Abs> = {};
+    for (const [k, v] of Object.entries(exports)) {
+      named[k] = envValueToAbs(v);
+    }
+    out[spec] = { named };
+  }
+  return out;
+}
+
 /** 收集 @nudo:replace + @nudo:as → transpile 注入表 */
 export function collectBPathReplacements(source: string): {
   targets: Array<{
@@ -153,7 +174,9 @@ export function tryRunBPath(
   if (bRunCache.has(key)) return bRunCache.get(key) ?? undefined;
   let out: BPathRunResult | null = null;
   try {
-    const { modules } = evalAbsModuleGraph(source, filePath);
+    const { modules: graphMods } = evalAbsModuleGraph(source, filePath);
+    const envMods = collectEnvModules(opts.envNames ?? []);
+    const modules = { ...envMods, ...graphMods };
     const { targets, values, asTargets, asValues } = collectBPathReplacements(source);
     const envGlobals = collectEnvGlobals(opts.envNames ?? []);
     const memberDiags: BMemberDiag[] = [];

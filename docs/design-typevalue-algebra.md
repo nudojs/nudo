@@ -625,7 +625,7 @@ function len(x) {
 | **B 路径（主路径）** | capable 文件 case / entry@ / call@symbolic 主求值；语言面基本齐 |
 | for / while | 有界 `$for`/`$while`；transpile while 用 `$whileSeq`（预算） |
 | service Abs 路径 | 相对 import + 裸包 harvest + require + @nudo:env（含路径型） |
-| TypeValue 兜底 | 弱结果、B 失败、ns import、默认导出跨文件；**provenance**；evaluateProgram 仍为部分诊断宿主（B 已有 method-missing） |
+| TypeValue 兜底 | 弱结果、B 失败、ns import、默认导出跨文件；**provenance**；evaluateProgram 仍跑（method-missing B 已有，可能双报） |
 | emit 往返 tsc / harvest 自动化 | ✅ `emit-tsc-roundtrip` + 分析路径 auto-harvest |
 | guard denotational | ✅ `denoteGuard`；`nudo guard` 优先 Abs 路径 |
 
