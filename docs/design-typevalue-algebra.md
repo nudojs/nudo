@@ -628,7 +628,10 @@ function len(x) {
 | TypeValue 兜底 | 弱结果、B 失败；method-missing 已 B 化并按名去重；provenance B 有调用点 origin；**named/default/ns 相对 import + re-export（`export {x} from` / `export * from`）+ class/async default 均走 B Abs 模块图** |
 | **method-missing / unknown-recv 双报** | B 成员分派（`$invoke`/`$get` + **ast-eval** 跨文件函数体）为权威；TypeValue 同类 method/property 在 B hosted 时整类让位。实参 provenance argLocs |
 | **module-load / recursion / unknown-global 双报** | B `evalAbsModuleGraph.issues`；Abs 截断；静态 builtin-unknown |
-| **analyze 模式 strip** | 只 strip 危险全局 + 未声明的 `$callNamed`；本地 `useG()` 保留（跨文件 method-missing 依赖） |
+| **evaluateProgram** | **B hosted 时跳过**。诊断/call@/nodeTypeMap/env 全 B；TypeValue 仅 `!bHostedEval` 时跑 |
+| **class 桥接** | Abs-eval `registerClassDecl` → `class-registry` → B `$new`/ctor |
+| **箭头函数** | transpile `ArrowFunctionExpression`/`FunctionExpression`（原先未覆盖） |
+| **arr 方法** | B `$invoke` map/reduce/filter/join；JS 回调与 Abs 回调都可 |
 | emit 往返 tsc / harvest 自动化 | ✅ `emit-tsc-roundtrip` + 分析路径 auto-harvest |
 | guard denotational | ✅ `denoteGuard`；`nudo guard` 优先 Abs 路径 |
 
