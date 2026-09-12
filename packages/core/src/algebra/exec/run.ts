@@ -163,11 +163,19 @@ function bindImport(
 ): unknown {
   const mod = modules?.[spec] as AbsModuleExports | undefined;
   if (!mod) return undefined;
+  const absCallable = (v: Abs): unknown => {
+    // fn Abs → JS 可调用；class/其它 Abs 原样（供 $new / $get）
+    if (v && typeof v === "object" && "shape" in v) {
+      if ((v as Abs).shape.k === "fn") return (...args: Abs[]) => $call(v, args);
+      return v;
+    }
+    return v;
+  };
   if (name === "default") {
     const d = (mod as AbsModuleExports).default;
     if (d === undefined) return undefined;
     if (typeof d === "function") return d;
-    return (...args: Abs[]) => $call(d as Abs, args);
+    return absCallable(d as Abs);
   }
   const named = (mod as AbsModuleExports).named;
   const v = named?.[name];
@@ -177,8 +185,7 @@ function bindImport(
     return undefined;
   }
   if (typeof v === "function") return v;
-  const absFn = v as Abs;
-  return (...args: Abs[]) => $call(absFn, args);
+  return absCallable(v as Abs);
 }
 
 /** `import * as ns`：整命名空间（named + default 槽）→ Abs 对象 */

@@ -1271,9 +1271,10 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     }
   }
 
-  // TypeValue evaluateProgram 仍跑：provenance / unknown-recv 等诊断依赖它。
-  // B 已报的 module-* / recursion:* / method 名在下方过滤。
-  // bindings / nodeTypeMap 在 capable 时由 Abs 覆盖（见下）。
+  // TypeValue evaluateProgram 仍跑：env / TypeValue fallback / nodeTypeMap。
+  // B hosted 时 method/property 诊断整类让位。跳过它还需：
+  // imported class default 等弱结果的 fallback、bindings 完整投影、
+  // getTypeAtPosition 的 evaluateFunctionFull 路径。
   evaluateProgram(ast, globalEnv);
 
   // Abs 调用记录是唯一真理源（类型即计算）；失败/空则保留 TypeValue 记录
