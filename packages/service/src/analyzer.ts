@@ -1153,19 +1153,19 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     applyMocks(fn.directives, globalEnv, filePath, diagnostics);
   }
 
-  // @nudo:mock 已编译为 Abs seed 注入；仅 import/env 强制 TypeValue 路径
+  // @nudo:mock 已编译为 Abs seed 注入；env/require 强制 TypeValue 路径
   const selfContained = isSelfContainedSource(source, envNames);
   const canAbsModules = absModulesOk(source, envNames);
   let absCallRecords: CallRecord[] = [];
-  if (selfContained) {
+  if (selfContained || canAbsModules) {
     const seeds = mockDirectivesToAbsSeeds(functions);
-    absCallRecords = collectAbsCallRecords(source, seeds);
+    absCallRecords = collectAbsCallRecords(source, seeds, filePath);
   }
 
   evaluateProgram(ast, globalEnv);
 
-  // 自包含文件：Abs 调用记录是唯一真理源（类型即计算）
-  if (selfContained && absCallRecords.length > 0) {
+  // Abs 调用记录是唯一真理源（类型即计算）；失败/空则保留 TypeValue 记录
+  if ((selfContained || canAbsModules) && absCallRecords.length > 0) {
     callRecords.length = 0;
     callRecords.push(...absCallRecords);
   }
@@ -2229,30 +2229,101 @@ function absModulesOk(source: string, envNames: string[]): boolean {
 }
 
 /**
- * 自包含源码：用 Abs 程序级求值收集调用记录（类型即计算），
- * 投影为 CallRecord 供 call@ 合成。TypeValue evaluator 仍跑一遍
- * 以填充 bindings / nodeTypeMap（LSP/hover 消费）。
+ * Abs 程序级求值收集调用记录（类型即计算）。
+ * filePath 存在时经模块图注入相对 import / 裸包 harvest；
+ * import 局部名 → targetModule/targetExport（供 externalFunctions）。
  */
 function collectAbsCallRecords(
   source: string,
-  seeds?: { seedVars?: Record<string, Abs>; seedFns?: Record<string, { params: string[]; body: Node; async?: boolean }> },
+  seeds?: {
+    seedVars?: Record<string, Abs>;
+    seedFns?: Record<string, { params: string[]; body: Node; async?: boolean }>;
+  },
+  filePath?: string,
 ): CallRecord[] {
   const absCalls: AbsCallRecord[] = [];
+  let modules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined;
+  let importLocals = new Map<string, { modulePath: string; exportName: string }>();
+  if (filePath && absModulesOk(source, [])) {
+    try {
+      const graph = evalAbsModuleGraph(source, filePath, {
+        seedVars: seeds?.seedVars,
+        seedFns: seeds?.seedFns,
+      });
+      modules = graph.modules;
+      importLocals = buildAbsImportLocalMap(source, filePath);
+    } catch {
+      modules = undefined;
+      importLocals = new Map();
+    }
+  }
   setAbsCallCollector((r) => absCalls.push(r));
   try {
-    evalProgramAbs(source, seeds ?? {});
+    evalProgramAbs(source, { ...seeds, modules });
   } catch {
-    // 自包含求值失败：交还 TypeValue 路径
+    // Abs 求值失败：交还 TypeValue 路径
   } finally {
     setAbsCallCollector(null);
   }
-  return absCalls.map((r): CallRecord => ({
-    fnName: r.fnName,
-    argTypes: r.args.map((a) => absToTypeValue(a)),
-    resultType: r.threw ? T.never : absToTypeValue(r.result),
-    throws: r.threw ? absToTypeValue(r.result) : T.never,
-    callLoc: r.callLoc,
-  }));
+  return absCalls.map((r): CallRecord => {
+    const rec: CallRecord = {
+      fnName: r.fnName,
+      argTypes: r.args.map((a) => absToTypeValue(a)),
+      resultType: r.threw ? T.never : absToTypeValue(r.result),
+      throws: r.threw ? absToTypeValue(r.result) : T.never,
+      callLoc: r.callLoc,
+    };
+    const imp = importLocals.get(r.fnName);
+    if (imp) {
+      rec.targetModule = imp.modulePath;
+      rec.targetExport = imp.exportName;
+    }
+    return rec;
+  });
+}
+
+/** 入口 import 局部绑定 → 解析后的模块路径 + 导出名 */
+function buildAbsImportLocalMap(
+  source: string,
+  fromFile: string,
+): Map<string, { modulePath: string; exportName: string }> {
+  const out = new Map<string, { modulePath: string; exportName: string }>();
+  try {
+    const file = parse(source);
+    for (const stmt of file.program.body) {
+      if (stmt.type !== "ImportDeclaration") continue;
+      const spec = stmt.source.value;
+      let modulePath: string | null = null;
+      if (spec.startsWith(".") || spec.startsWith("/")) {
+        modulePath = resolveImportAbs(spec, fromFile);
+      } else if (!spec.startsWith("node:")) {
+        // 裸包：用说明符本身作 module 标（externalFunctions 可显示）
+        modulePath = spec;
+      }
+      if (!modulePath) continue;
+      for (const s of stmt.specifiers) {
+        if (s.type === "ImportSpecifier") {
+          const imported =
+            s.imported.type === "Identifier" ? s.imported.name : String(s.imported);
+          out.set(s.local.name, { modulePath, exportName: imported });
+        } else if (s.type === "ImportDefaultSpecifier") {
+          out.set(s.local.name, { modulePath, exportName: "default" });
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return out;
+}
+
+function resolveImportAbs(spec: string, fromFile: string): string | null {
+  const base = dirname(resolve(fromFile));
+  const p = resolve(base, spec);
+  for (const cand of [p, `${p}.js`, `${p}.mjs`, `${p}.ts`, resolve(p, "index.js")]) {
+    if (existsSync(cand) && !statSync(cand).isDirectory()) return cand;
+  }
+  return null;
 }
 
 function tryEvalAbs(

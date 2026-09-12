@@ -624,7 +624,7 @@ function len(x) {
 |---|---|
 | **B 路径（进行中）** | `core/algebra/exec`：transpile → `$add/$fork/$for`；相对 import 经 `evalAbsModuleGraph` 注入 Abs 导出 |
 | for 循环 | 惰性 `$forIter` + **有界** `$for`（默认 8；字面量不动点 / 预算耗尽 join） |
-| service Abs 路径 | 自包含 + 相对 import + **裸包 harvest**（`harvest-to-abs`）；require / `@nudo:env` 仍 TypeValue |
+| service Abs 路径 | 自包含 + 相对 import + **裸包 harvest**；call@ 记录经模块图打 targetModule；require / `@nudo:env` 仍 TypeValue |
 | `@nudo:import * as ns` | 语法可解析，模板展开暂不支持 |
 | ImportDefaultSpecifier | 默认导出契约跨文件暂不绑定 |
 | emit 往返 tsc / harvest 自动化 | ✅ `emit-tsc-roundtrip` + 分析路径 auto-harvest |
