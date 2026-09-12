@@ -47,8 +47,6 @@ export type Abs = {
 // --- 工厂 ---
 
 export const never: Abs = { shape: { k: "never" }, conf: "exact" };
-/** 任意 JS 值（无约束参数；可参与运算，结果取并集） */
-export const anyValue: Abs = { shape: { k: "any" }, conf: "path" };
 /** 分析无信息 */
 export const unknown: Abs = { shape: { k: "unknown" }, conf: "partial" };
 

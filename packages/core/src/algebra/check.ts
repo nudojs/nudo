@@ -15,6 +15,8 @@ import {
   evalNode,
   emptyEnv,
   setAbsAssignCollector,
+  setAbsTruncationCollector,
+  resetAbsCallBudget,
   type AbsAssignRecord,
 } from "./ast-eval.ts";
 import { defaultLeakBudget } from "./leak.ts";
@@ -127,6 +129,27 @@ export function checkSource(
   const signatures: NudoSig[] = [];
   const names = listTopFunctions(source);
 
+  // 递归截断：与 TypeValue 的 nudo:recursion-truncated 对齐
+  const truncated = new Set<string>();
+  resetAbsCallBudget();
+  setAbsTruncationCollector((label) => truncated.add(label));
+  try {
+    return checkSourceInner(filePath, source, phi, opts, issues, signatures, names, truncated);
+  } finally {
+    setAbsTruncationCollector(null);
+  }
+}
+
+function checkSourceInner(
+  filePath: string,
+  source: string,
+  phi: Phi,
+  opts: CheckOptions,
+  issues: CheckIssue[],
+  signatures: NudoSig[],
+  names: string[],
+  truncated: Set<string>,
+): CheckReport {
   for (const name of names) {
     const g = generalizeFromAst(name, source, {
       refine: {
@@ -170,7 +193,7 @@ export function checkSource(
     const entryArgs = g.typeParams.map((t) => t.value);
     try {
       const r = analyzeFn(source, name, entryArgs, phi);
-      if (r.conf === "opaque") {
+      if (r.conf === "opaque" && !truncated.has(name)) {
         issues.push({
           severity: "info",
           code: "nudo:opaque-result",
@@ -187,6 +210,16 @@ export function checkSource(
         fn: name,
       });
     }
+  }
+
+  for (const label of truncated) {
+    issues.push({
+      severity: "warning",
+      code: "nudo:recursion-truncated",
+      message: `Recursive evaluation of '${label}' was truncated (depth/size budget); result widened to unknown`,
+      suggestion: "收窄递归基例或改用显式 @nudo:refine return 契约",
+      fn: label,
+    });
   }
 
   const callIssues = scanLiteralCalls(source, names, phi, {

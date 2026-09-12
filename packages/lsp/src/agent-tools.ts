@@ -24,6 +24,7 @@ import {
 import { parse } from "@nudojs/parser";
 import { T, typeValueToString, checkSource, serializeCheckJson, pTrue } from "@nudojs/core";
 import type { TypeValue, CheckJson } from "@nudojs/core";
+import { lspLoadModule } from "./validation.ts";
 
 export type TypeBinding = { name: string; type: string };
 
@@ -233,7 +234,7 @@ export function checkTool(
     const filePath = normalizeFilePath(params.file);
     const source = params.source ?? readSource(filePath, deps);
     const report = checkSource(filePath, source, pTrue, {
-      loadModule: params.loadModule,
+      loadModule: params.loadModule ?? lspLoadModule,
       fromFile: filePath,
     });
     const json = serializeCheckJson(report);
@@ -296,7 +297,7 @@ export function hoverTool(
     };
     if (params.includeInlays) {
       payload.inlays = collectAbsInlays(source, {
-        loadModule: params.loadModule,
+        loadModule: params.loadModule ?? lspLoadModule,
         fromFile: filePath,
       });
     }
@@ -330,14 +331,17 @@ export function inferTool(
     let json = serializeInferJson(result, filePath);
     if (params.functions && params.functions.length > 0) {
       const keep = new Set(params.functions);
-      json = {
-        ...json,
-        functions: json.functions.filter((f) => keep.has(f.name)),
-        summary: {
-          ...json.summary,
-          functions: json.functions.filter((f) => keep.has(f.name)).length,
-        },
+      const filtered = json.functions.filter((f) => keep.has(f.name));
+      let cases = 0;
+      for (const f of filtered) {
+        cases += (f as { cases?: unknown[] }).cases?.length ?? 0;
+      }
+      const summary = {
+        ...json.summary,
+        functions: filtered.length,
+        cases,
       };
+      json = { ...json, functions: filtered, summary } as typeof json;
     }
     if (params.format === "json") {
       return textResult(JSON.stringify(json, null, 2));

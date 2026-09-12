@@ -1223,20 +1223,33 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       const fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
       const caseUnreachable = [...getUnreachableRanges()];
 
-      analysis.cases.push({
+      // 自包含源码：手写 case 与 call@ 同等接受 Abs 润色（单轨）
+      let caseValue = fullResult.value;
+      let caseAbs: Abs | undefined;
+      if (selfContained && fullResult.value.kind !== "never") {
+        caseAbs = tryEvalAbsRaw(source, fn.name, directive.args);
+        if (caseAbs) {
+          const projected = absToTypeValue(caseAbs);
+          if (absIsBetter(projected, fullResult.value)) caseValue = projected;
+        }
+      }
+
+      const caseEntry: CaseResult = {
         name: directive.name,
         args: directive.args,
-        result: fullResult.value,
+        result: caseValue,
         throws: fullResult.throws,
         throwLoc: fullResult.throwLoc,
         expected: directive.expected,
         source: "directive",
-      });
+      };
+      if (caseAbs) attachAbsToIntension(caseEntry, caseAbs, fn.name);
+      analysis.cases.push(caseEntry);
 
       if (directive.commentLine) {
         const hasThrow = fullResult.throws.kind !== "never";
-        const resultStr = fullResult.value.kind !== "never"
-          ? typeValueToString(fullResult.value)
+        const resultStr = caseValue.kind !== "never"
+          ? typeValueToString(caseValue)
           : "";
         const throwStr = hasThrow
           ? `throws ${typeValueToString(fullResult.throws)}`
@@ -1246,12 +1259,12 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
         let ok = true;
         if (directive.expected) {
-          ok = isSubtypeOf(fullResult.value, directive.expected);
+          ok = isSubtypeOf(caseValue, directive.expected);
           if (!ok) {
             diagnostics.push({
               range: { start: { line: directive.commentLine, column: 0 }, end: { line: directive.commentLine, column: 999 } },
               severity: "error",
-              message: `Case "${directive.name}": expected ${typeValueToString(directive.expected)}, got ${typeValueToString(fullResult.value)}. The inferred return type does not match the expected type declared in the @nudo:case directive`,
+              message: `Case "${directive.name}": expected ${typeValueToString(directive.expected)}, got ${typeValueToString(caseValue)}. The inferred return type does not match the expected type declared in the @nudo:case directive`,
               code: "nudo:case-expected",
             });
           }

@@ -249,38 +249,3 @@ export function joinAbs(a: Abs, b: Abs): Abs {
   if (a.shape.k === "fn" && b.shape.k === "fn") return joinFunctions(a, b);
   return joinValues(a, b);
 }
-
-/**
- * 重载分派：对 sum-of-fns 按参数 leq 匹配。
- * Phase A：仅按 name 与参数个数粗匹配；精确 leq 留给 service 层。
- */
-export type OverloadDef = {
-  params: Abs[];
-  returns: Abs;
-};
-
-export function applyOverloads(
-  overloads: OverloadDef[],
-  args: Abs[],
-): { matched: OverloadDef[] } {
-  const matched = overloads.filter((o) => {
-    if (o.params.length !== args.length) return false;
-    // 粗匹配：参数 shape kind 相容即算命中；精确 leq 后续
-    return o.params.every((p, i) => argCompatible(args[i]!, p));
-  });
-  return { matched };
-}
-
-function argCompatible(arg: Abs, param: Abs): boolean {
-  if (param.shape.k === "unknown") return true;
-  if (arg.shape.k === "unknown") return true;
-  if (arg.shape.k === "never") return false;
-  if (param.shape.k === "prim" && arg.shape.k === "prim") {
-    return param.shape.type === arg.shape.type;
-  }
-  if (param.shape.k === "obj" && arg.shape.k === "obj") return true;
-  if (param.shape.k === "sum") {
-    return param.shape.members.some((m) => argCompatible(arg, m));
-  }
-  return arg.shape.k === param.shape.k;
-}

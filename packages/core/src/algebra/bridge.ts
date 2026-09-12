@@ -16,7 +16,7 @@ import { abs, confJoin, litValue } from "./abs.ts";
 import type { Term } from "./term.ts";
 import { lit, v as termVar, termToString } from "./term.ts";
 import type { Pred } from "./pred.ts";
-import { pTrue, predToString } from "./pred.ts";
+import { pTrue, predToString, gt, ge, lt, le } from "./pred.ts";
 import { isTemplateLike, templatePartsOf, createTemplateAbs } from "./template.ts";
 
 /** TypeValue 上的置信度旁路（零侵入 core） */
@@ -44,6 +44,10 @@ export function absToTypeValue(a: Abs): TypeValue {
       result = T.never;
       break;
     case "unknown":
+      result = T.unknown;
+      break;
+    case "any":
+      // any ≠ unknown：任意 JS 值，不是分析失败。conf 保留（通常 path）
       result = T.unknown;
       break;
     case "prim": {
@@ -111,11 +115,6 @@ export function absToTypeValue(a: Abs): TypeValue {
     default:
       result = T.unknown;
       conf = confJoin(conf, "partial");
-  }
-
-  // 非 lit term 且不是 obj/arr 这类已投影结构：标记损失
-  if (a.term && a.term.op !== "lit" && a.shape.k === "prim") {
-    // 上面已处理
   }
 
   setTvConfidence(result, conf);
@@ -193,24 +192,34 @@ function tryEncodeRefined(base: TypeValue, a: Abs): TypeValue | undefined {
 
 /**
  * TypeValue → Abs（给代数运算）。
+ * 置信度：优先读 abs→tv 时挂上的 conf 旁路，避免 #widened 回升 #exact。
  */
 export function typeValueToAbs(tv: TypeValue): Abs {
   if (!tv) return abs({ k: "unknown" }, undefined, undefined, "partial");
 
+  /** abs→tv 时挂的 conf；无则用 fallback */
+  const confOr = (fallback: Confidence): Confidence => getTvConfidence(tv) ?? fallback;
+
   switch (tv.kind) {
     case "never":
-      return abs({ k: "never" }, undefined, undefined, "exact");
+      return abs({ k: "never" }, undefined, undefined, confOr("exact"));
     case "unknown":
-      return abs({ k: "unknown" }, undefined, undefined, "partial");
+      // TypeValue 无 any kind：unknown+path 约定为「任意值」投影
+      return abs(
+        { k: "unknown" },
+        undefined,
+        undefined,
+        confOr("partial"),
+      );
     case "literal":
       return abs(
         shapeOfLit(tv.value),
         lit(tv.value),
         pTrue,
-        "exact",
+        confOr("exact"),
       );
     case "primitive":
-      return abs({ k: "prim", type: tv.type }, undefined, undefined, "exact");
+      return abs({ k: "prim", type: tv.type }, undefined, undefined, confOr("exact"));
     case "refined": {
       // template refined → 恢复 parts，便于链式拼接
       const tplParts = getTemplateParts(tv);
@@ -218,51 +227,57 @@ export function typeValueToAbs(tv: TypeValue): Abs {
         return createTemplateAbs(tplParts.map(typeValueToAbs));
       }
       const base = typeValueToAbs(tv.base);
-      return abs(base.shape, base.term, base.pred, confJoin(base.conf, "path"));
+      const decoded = tryDecodeRefinedPred(tv, base.term);
+      return abs(
+        base.shape,
+        base.term ?? (decoded ? termVar("_r") : undefined),
+        decoded ?? base.pred,
+        confOr(confJoin(base.conf, "path")),
+      );
     }
     case "object": {
       const slots: Record<string, { value: Abs }> = {};
       for (const [k, v] of Object.entries(tv.properties)) {
         slots[k] = { value: typeValueToAbs(v) };
       }
-      return abs({ k: "obj", slots }, undefined, undefined, "exact");
+      return abs({ k: "obj", slots }, undefined, undefined, confOr("exact"));
     }
     case "array":
       return abs(
         { k: "arr", element: typeValueToAbs(tv.element) },
         undefined,
         undefined,
-        "exact",
+        confOr("exact"),
       );
     case "tuple":
       return abs(
         { k: "tuple", elements: tv.elements.map(typeValueToAbs) },
         undefined,
         undefined,
-        "exact",
+        confOr("exact"),
       );
     case "function": {
       const params = tv.params ?? [];
-      return abs({ k: "fn", params }, undefined, undefined, "exact");
+      return abs({ k: "fn", params }, undefined, undefined, confOr("exact"));
     }
     case "promise":
       return abs(
         { k: "eff", eff: "promise", inner: typeValueToAbs(tv.value) },
         undefined,
         undefined,
-        "exact",
+        confOr("exact"),
       );
     case "instance": {
       const slots: Record<string, { value: Abs }> = {};
       for (const [k, v] of Object.entries(tv.properties ?? {})) {
         slots[k] = { value: typeValueToAbs(v) };
       }
-      const inner = abs({ k: "obj", slots }, undefined, undefined, "exact");
+      const inner = abs({ k: "obj", slots }, undefined, undefined, confOr("exact"));
       return abs(
         { k: "brand", name: tv.className, shape: inner },
         undefined,
         undefined,
-        "exact",
+        confOr("exact"),
       );
     }
     case "union":
@@ -270,10 +285,32 @@ export function typeValueToAbs(tv: TypeValue): Abs {
         { k: "sum", members: tv.members.map(typeValueToAbs) },
         undefined,
         undefined,
-        getTvConfidence(tv) ?? "path",
+        confOr("path"),
       );
     default:
-      return abs({ k: "unknown" }, undefined, undefined, "partial");
+      return abs({ k: "unknown" }, undefined, undefined, confOr("partial"));
+  }
+}
+
+/** 从 refined.meta 反 encode 数值比较 pred（tryEncodeRefined 的逆） */
+function tryDecodeRefinedPred(tv: TypeValue, term: Term | undefined): Pred | undefined {
+  if (tv.kind !== "refined") return undefined;
+  const meta = tv.refinement.meta as { op?: unknown; n?: unknown };
+  const op = meta?.op;
+  const n = meta?.n;
+  if (typeof n !== "number") return undefined;
+  if (op !== "gt" && op !== "ge" && op !== "lt" && op !== "le") return undefined;
+  const t = term ?? termVar("_r");
+  const b = lit(n);
+  switch (op) {
+    case "gt":
+      return gt(t, b);
+    case "ge":
+      return ge(t, b);
+    case "lt":
+      return lt(t, b);
+    case "le":
+      return le(t, b);
   }
 }
 

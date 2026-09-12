@@ -23,6 +23,7 @@ import {
   insertGeneratedCaseDirectives,
   unifiedDiff,
   isNudoTargetPath,
+  collectDtsFromEntry,
   type CallRecord,
   type CaseResult,
   type FunctionAnalysis,
@@ -882,48 +883,35 @@ program
   .argument("<file>", "JavaScript file to analyze")
   .option("--format <format>", "Output format: zod, guard, dts, all", "all")
   .option("--output <dir>", "Write validator files to this directory (omit for stdout)")
-  .action((file: string, options: { format: string; output?: string }) => {
+  .action(async (file: string, options: { format: string; output?: string }) => {
+    const format = options.format;
+    if (!["zod", "guard", "dts", "all"].includes(format)) {
+      console.error(`Unknown --format ${format}; expected zod | guard | dts | all`);
+      process.exitCode = 1;
+      return;
+    }
     const filePath = resolve(file);
     const source = readFileSync(filePath, "utf-8");
-    const ast = parse(source);
-    const functions = extractDirectives(ast);
+    // 与 infer/check 同一分析管道（Abs 优先 + refine + env preload）
+    const result = await analyzeFileAsync(filePath, source);
+    const functions = result.functions.filter(
+      (f) => f.cases.some((c) => c.source === "directive"),
+    );
 
     if (functions.length === 0) {
       console.log("No functions with @nudo:case directives found.");
       return;
     }
 
-    resetMemo();
-    setModuleResolver(resolveModule);
-    setCurrentFileDir(dirname(filePath));
-
-    const globalEnv = createEnvironment();
-    evaluateProgram(ast, globalEnv);
-
     const zodChunks: string[] = [];
     const guardChunks: string[] = [];
     const dtsChunks: string[] = [];
 
     for (const fn of functions) {
-      applyMocks(fn.directives, globalEnv, filePath);
-
-      const caseDirectives = fn.directives.filter((d) => d.kind === "case");
-      if (caseDirectives.length === 0) continue;
-
-      const caseResults: CaseResult[] = caseDirectives.map((directive) => {
-        const fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
-        return {
-          name: directive.name,
-          args: directive.args,
-          result: fullResult.value,
-          throws: fullResult.throws,
-          source: "directive",
-        };
-      });
-
+      const caseResults: CaseResult[] = fn.cases.filter((c) => c.source === "directive");
       const baseName = fn.name;
 
-      if (options.format === "zod" || options.format === "all") {
+      if (format === "zod" || format === "all") {
         const lines: string[] = [`\n// === ${baseName} Zod Schemas ===`];
         for (const c of caseResults) {
           const inputSchemas = c.args.map((a, i) => `arg${i}: ${typeValueToZodSchema(a)}`).join(", ");
@@ -935,7 +923,7 @@ program
         zodChunks.push(lines.join("\n"));
       }
 
-      if (options.format === "guard" || options.format === "all") {
+      if (format === "guard" || format === "all") {
         const lines: string[] = [`\n// === ${baseName} Type Guards ===`];
         for (const c of caseResults) {
           lines.push(
@@ -948,20 +936,10 @@ program
         guardChunks.push(lines.join("\n"));
       }
 
-      if (options.format === "dts" || options.format === "all") {
-        // 与 infer --dts / service 级 generateDts 共用 generateFunctionDtsLines：
-        // 单一 widen 主签名 + JSDoc 保留 case 精度 + 真实参数名（取自解析产物）。
-        const analysis: FunctionAnalysis = {
-          name: baseName,
-          loc: nodeLoc(fn.node),
-          paramNames: fnParamNames(fn.node),
-          cases: caseResults,
-        };
-        dtsChunks.push(generateFunctionDtsLines(analysis).join("\n"));
+      if (format === "dts" || format === "all") {
+        dtsChunks.push(generateFunctionDtsLines(fn).join("\n"));
       }
     }
-
-    setModuleResolver(null);
 
     const stem = basename(filePath).replace(/\.[cm]?[jt]s$/, "");
     if (options.output) {
@@ -1000,46 +978,6 @@ program
 
 const HARVEST_MAX_FILES = 200;
 
-const REFERENCE_PATH_REGEX = /<reference\s+path=["']([^"']+)["']\s*\/>/g;
-const RELATIVE_FROM_REGEX = /\bfrom\s+["'](\.[^"']+)["']/g;
-
-function collectDtsFiles(entry: string): string[] {
-  const files: string[] = [];
-  const seen = new Set<string>();
-  const queue: string[] = [entry];
-
-  while (queue.length > 0 && files.length < HARVEST_MAX_FILES) {
-    const current = queue.shift()!;
-    if (seen.has(current) || !existsSync(current)) continue;
-    seen.add(current);
-    if (!current.endsWith(".d.ts")) continue;
-    files.push(current);
-
-    let text: string;
-    try {
-      text = readFileSync(current, "utf-8");
-    } catch {
-      continue;
-    }
-
-    const dir = dirname(current);
-    for (const match of text.matchAll(REFERENCE_PATH_REGEX)) {
-      queue.push(resolve(dir, match[1]));
-    }
-    for (const match of text.matchAll(RELATIVE_FROM_REGEX)) {
-      const base = resolve(dir, match[1]);
-      for (const candidate of [`${base}.d.ts`, join(base, "index.d.ts")]) {
-        if (existsSync(candidate)) {
-          queue.push(candidate);
-          break;
-        }
-      }
-    }
-  }
-
-  return files;
-}
-
 function runHarvest(pkg: string, outOpt?: string): void {
   const typesDir = resolve(process.cwd(), "node_modules", "@types", pkg);
   if (!existsSync(typesDir)) {
@@ -1069,7 +1007,8 @@ function runHarvest(pkg: string, outOpt?: string): void {
     return;
   }
 
-  const files = collectDtsFiles(entry);
+  // 单一收集实现（service）：入口 BFS + reference/相对 import 图
+  const files = collectDtsFromEntry(entry, HARVEST_MAX_FILES);
   if (files.length === 0) {
     console.error(`Error: no .d.ts files collected from ${relative(process.cwd(), entry)}.`);
     process.exitCode = 1;

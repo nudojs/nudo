@@ -13,6 +13,7 @@ import {
   typeValueToAbs,
   abs as makeAbs,
   unknown as absUnknown,
+  litValue,
 } from "@nudojs/core";
 
 /** 用常量 Abs 造 mock 函数：调用即返回该值 */
@@ -32,28 +33,87 @@ function constantMockFn(result: Abs): Abs {
   return absFunction(["...args"], { body, env: mockEnv });
 }
 
+/**
+ * withArgs 实参匹配（与 mock-helpers.mockArgMatches 同语义）：
+ * - 字面量声明要求实参同值字面量
+ * - primitive 声明接受同源字面量
+ */
+function absArgMatches(declared: TypeValue, actual: Abs | undefined): boolean {
+  if (!actual) return false;
+  const declaredAbs = typeValueToAbs(declared);
+  // 同 shape + 同字面量
+  const av = litValue(actual);
+  const dv = litValue(declaredAbs);
+  if (dv !== undefined) {
+    return av !== undefined && Object.is(av, dv);
+  }
+  // declared 是 primitive（如 T.number）：接受同源字面量或同 prim
+  if (declared.kind === "primitive") {
+    if (actual.shape.k === "prim") return actual.shape.type === declared.type;
+    if (av !== undefined) {
+      const t = typeof av;
+      return (
+        (declared.type === "number" && t === "number") ||
+        (declared.type === "string" && t === "string") ||
+        (declared.type === "boolean" && t === "boolean") ||
+        (declared.type === "bigint" && t === "bigint")
+      );
+    }
+  }
+  // unknown 声明不视为可证明匹配
+  return false;
+}
+
+function dispatchMockFn(defaultReturn: Abs, cases?: { args: TypeValue[]; returnValue: TypeValue }[]): Abs {
+  if (!cases?.length) return constantMockFn(defaultReturn);
+  const caseAbs = cases.map((c) => ({
+    declared: c.args,
+    result: typeValueToAbs(c.returnValue),
+  }));
+  const dummyBody = {
+    type: "BlockStatement",
+    body: [{ type: "ReturnStatement", argument: null }],
+  } as unknown as Node;
+  return absFunction(["...args"], {
+    body: dummyBody,
+    env: emptyEnv(),
+    apply: (args: Abs[]): Abs => {
+      for (const c of caseAbs) {
+        if (c.declared.every((d, i) => absArgMatches(d, args[i]))) {
+          return c.result;
+        }
+      }
+      return defaultReturn;
+    },
+  });
+}
+
 function absFromMockHelper(h: MockHelper): Abs {
   if (h.callsFakeImpl && h.callsFakeImpl.kind === "function") {
     const fn = h.callsFakeImpl;
     return absFunction(fn.params, { body: fn.body, async: false });
   }
+
+  let defaultReturn: Abs;
   if (h.resolvedValue) {
-    return constantMockFn(
-      makeAbs(
-        { k: "eff", eff: "promise", inner: typeValueToAbs(h.resolvedValue) },
-        undefined,
-        undefined,
-        "path",
-      ),
+    defaultReturn = makeAbs(
+      { k: "eff", eff: "promise", inner: typeValueToAbs(h.resolvedValue) },
+      undefined,
+      undefined,
+      "path",
     );
+  } else if (h.rejectedValue) {
+    defaultReturn = makeAbs({ k: "never" }, undefined, undefined, "exact");
+  } else if (h.returnValue) {
+    defaultReturn = typeValueToAbs(h.returnValue);
+  } else if (h.onFirstCallValue) {
+    // 与 TypeValue 路径一致：无 returnValue 时 onFirstCall 作默认返回
+    defaultReturn = typeValueToAbs(h.onFirstCallValue);
+  } else {
+    defaultReturn = absUnknown;
   }
-  if (h.rejectedValue) {
-    return constantMockFn(makeAbs({ k: "never" }, undefined, undefined, "exact"));
-  }
-  if (h.returnValue) {
-    return constantMockFn(typeValueToAbs(h.returnValue));
-  }
-  return constantMockFn(absUnknown);
+
+  return dispatchMockFn(defaultReturn, h.withArgsCases);
 }
 
 function absFromSinon(sinonExpr: {

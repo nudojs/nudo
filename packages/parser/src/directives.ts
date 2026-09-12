@@ -447,6 +447,21 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
     return helper;
   }
 
+  // Match stub().onFirstCall().returns(value) —— 链在 returns 上取值
+  const stubOnFirstReturnsMatch = s.match(/^stub\(\)\.onFirstCall\(\)\.returns\((.+)\)$/);
+  if (stubOnFirstReturnsMatch) {
+    return stub.returns(parseTypeValueExpr(stubOnFirstReturnsMatch[1].trim()));
+  }
+
+  // Match stub().onFirstCall(value) —— 无 returnValue 时 TypeValue/Abs 均作默认返回
+  // [^()]* 避免把 onFirstCall().returns(...) 的尾链吞进实参
+  const stubOnFirstValueMatch = s.match(/^stub\(\)\.onFirstCall\(([^()]*)\)$/);
+  if (stubOnFirstValueMatch && stubOnFirstValueMatch[1].trim() !== "") {
+    const helper: MockHelper = { kind: "mock-helper" };
+    helper.onFirstCallValue = parseTypeValueExpr(stubOnFirstValueMatch[1].trim());
+    return helper;
+  }
+
   // Match spy().returns(value)
   const spyReturnsMatch = s.match(/^spy\(\)\.returns\((.+)\)$/);
   if (spyReturnsMatch) {
