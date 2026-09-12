@@ -622,7 +622,7 @@ function len(x) {
 
 | 边界 | 说明 |
 |---|---|
-| **B 路径（进行中）** | class/this/super 继承、async/await、解构默认值已迁；require / `@nudo:env` 仍 TypeValue |
+| **B 路径（进行中）** | class/super/async/rest/解构默认值；case 结果 B 润色；call@ 仍靠 TypeValue 求值器采集 |
 | for / while | 有界 `$for`/`$while`（状态线程 + 不动点）；transpile while 用 `$whileSeq`（预算） |
 | service Abs 路径 | 自包含 + 相对 import + **裸包 harvest**；call@ 记录经模块图打 targetModule；require / `@nudo:env` 仍 TypeValue |
 | `@nudo:import * as ns` | 语法可解析，模板展开暂不支持 |

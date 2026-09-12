@@ -97,24 +97,41 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     }
     case "FunctionDeclaration": {
       if (!stmt.id) return `${pad}// <anonymous fn skipped>`;
-      const params = stmt.params
-        .map((p) => (p.type === "Identifier" ? p.name : "_"))
-        .join(", ");
+      const paramParts = stmt.params.map((p) => {
+        if (p.type === "Identifier") return { kind: "id" as const, name: p.name };
+        if (p.type === "RestElement" && p.argument.type === "Identifier") {
+          return { kind: "rest" as const, name: p.argument.name };
+        }
+        return { kind: "id" as const, name: "_" };
+      });
+      const named = paramParts.filter((p) => p.kind === "id" && p.name !== "_").map((p) => p.name);
+      const rest = paramParts.find((p) => p.kind === "rest");
+      const paramsSig = rest ? [...named, `...${rest.name}`] : named;
+      const params = paramsSig.join(", ");
       const bodyStmts =
         stmt.body.type === "BlockStatement"
           ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, opts)).join("\n")
           : `${indent(depth + 2)}return ${transpileExpression(stmt.body as unknown as Expression, opts)};`;
+      // rest 由调用方以数组尾参传入（run 调用约定：最后一项为 rest 元组）
+      const restBind = rest
+        ? `${indent(depth + 1)}const ${rest.name} = arguments.length > ${named.length} ? $arr(Array.from(arguments).slice(${named.length})) : $arr([]);\n`
+        : "";
       if (stmt.async) {
-        // async function → $async(() => { body })
         return [
-          `${pad}export function ${stmt.id.name}(${params}) {`,
+          `${pad}export function ${stmt.id.name}(${named.join(", ")}) {`,
+          restBind,
           `${indent(depth + 1)}return $async(() => {`,
           bodyStmts,
           `${indent(depth + 1)}});`,
           `${pad}}`,
         ].join("\n");
       }
-      return `${pad}export function ${stmt.id.name}(${params}) {\n${bodyStmts}\n${pad}}`;
+      return [
+        `${pad}export function ${stmt.id.name}(${named.join(", ")}) {`,
+        restBind,
+        bodyStmts,
+        `${pad}}`,
+      ].join("\n");
     }
     case "ReturnStatement": {
       if (!stmt.argument) return `${pad}return $lit(undefined);`;

@@ -1279,15 +1279,15 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     for (let ci = 0; ci < caseDirectives.length; ci++) {
       const directive = caseDirectives[ci];
       resetUnreachableRanges();
-      // TypeValue 求值始终跑：throws / unreachable / builtin 诊断依赖它。
-      // B 路径（tryEvalAbsRaw → runTranspiled）只作结果润色，不短路诊断。
+      // TypeValue 求值始终跑：call@ 合成与部分诊断依赖 callCollector。
+      // B 路径可覆盖 case 结果与 throws（analyze 模式，无顶层副作用）。
       const fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
       const caseUnreachable = [...getUnreachableRanges()];
 
       let caseValue = fullResult.value;
       let caseAbs: Abs | undefined;
       let caseThrows: TypeValue | undefined;
-      if ((selfContained || canAbsModules) && fullResult.value.kind !== "never") {
+      if ((selfContained || canAbsModules || isBPathCapable(source, envNames)) && fullResult.value.kind !== "never") {
         const bFull = filePath
           ? tryBPathCallFull(source, filePath, fn.name, directive.args.map((a) => typeValueToAbs(a)))
           : undefined;
@@ -1307,11 +1307,14 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         }
       }
 
+      const tv = caseValue;
+      const throwsTv = caseThrows ?? fullResult.throws;
+
       const caseEntry: CaseResult = {
         name: directive.name,
         args: directive.args,
-        result: caseValue,
-        throws: caseThrows ?? fullResult.throws,
+        result: tv,
+        throws: throwsTv,
         throwLoc: fullResult.throwLoc,
         expected: directive.expected,
         source: "directive",
@@ -1320,20 +1323,20 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       analysis.cases.push(caseEntry);
 
       if (directive.commentLine) {
-        const hasThrow = fullResult.throws.kind !== "never";
-        const resultStr = caseValue.kind !== "never" ? typeValueToString(caseValue) : "";
-        const throwStr = hasThrow ? `throws ${typeValueToString(fullResult.throws)}` : "";
+        const hasThrow = throwsTv.kind !== "never";
+        const resultStr = tv.kind !== "never" ? typeValueToString(tv) : "";
+        const throwStr = hasThrow ? `throws ${typeValueToString(throwsTv)}` : "";
         const label = [resultStr, throwStr].filter(Boolean).join(" ");
         const hintLabel = `=> ${label}`;
 
         let ok = true;
         if (directive.expected) {
-          ok = isSubtypeOf(caseValue, directive.expected);
+          ok = isSubtypeOf(tv, directive.expected);
           if (!ok) {
             diagnostics.push({
               range: { start: { line: directive.commentLine, column: 0 }, end: { line: directive.commentLine, column: 999 } },
               severity: "error",
-              message: `Case "${directive.name}": expected ${typeValueToString(directive.expected)}, got ${typeValueToString(caseValue)}. The inferred return type does not match the expected type declared in the @nudo:case directive`,
+              message: `Case "${directive.name}": expected ${typeValueToString(directive.expected)}, got ${typeValueToString(tv)}. The inferred return type does not match the expected type declared in the @nudo:case directive`,
               code: "nudo:case-expected",
             });
           }
@@ -1345,12 +1348,12 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       const isActive = ci === Math.min(activeCaseIdx, caseDirectives.length - 1);
 
       if (isActive) {
-        if (fullResult.throws.kind !== "never") {
-          const throwRange = fullResult.throwLoc ?? fnLoc;
+        if (throwsTv.kind !== "never") {
+          const throwRange = fullResult?.throwLoc ?? fnLoc;
           diagnostics.push({
             range: throwRange,
             severity: "warning",
-            message: `Function "${fn.name}" case "${directive.name}" may throw: ${typeValueToString(fullResult.throws)}. Consider adding a try-catch block or using @nudo:refine return <constraint>`,
+            message: `Function "${fn.name}" case "${directive.name}" may throw: ${typeValueToString(throwsTv)}. Consider adding a try-catch block or using @nudo:refine return <constraint>`,
             code: "nudo-may-throw",
           });
         }
