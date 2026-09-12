@@ -10,9 +10,11 @@ import {
   callTranspiledExport,
   callTranspiledExportFull,
   setBCallCollector,
+  setMemberDiagCollector,
   typeValueToAbs,
   createEnvironment,
   type BCallRecord,
+  type BMemberDiag,
   type TranspiledCallResult,
   type Abs,
   type AbsModuleExports,
@@ -126,6 +128,8 @@ export function isBPathCapable(source: string, envNames: string[] = []): boolean
 export type BPathRunResult = {
   exports: Record<string, unknown>;
   modules: Record<string, AbsModuleExports>;
+  /** 顶层执行期 method-missing */
+  memberDiags?: BMemberDiag[];
 };
 
 const bRunCache = new Map<string, BPathRunResult | null>();
@@ -152,17 +156,23 @@ export function tryRunBPath(
     const { modules } = evalAbsModuleGraph(source, filePath);
     const { targets, values, asTargets, asValues } = collectBPathReplacements(source);
     const envGlobals = collectEnvGlobals(opts.envNames ?? []);
-    const exports = runTranspiled(source, {
-      modules: modules as never,
-      maxLoopIters: opts.maxLoopIters,
-      mode: opts.mode ?? "analyze",
-      replacementTargets: targets.length ? targets : undefined,
-      replacements: targets.length ? values : undefined,
-      asOverrideTargets: asTargets.length ? asTargets : undefined,
-      asOverrides: asTargets.length ? asValues : undefined,
-      envGlobals: Object.keys(envGlobals).length ? envGlobals : undefined,
-    });
-    out = { exports, modules };
+    const memberDiags: BMemberDiag[] = [];
+    setMemberDiagCollector((d) => memberDiags.push(d));
+    try {
+      const exports = runTranspiled(source, {
+        modules: modules as never,
+        maxLoopIters: opts.maxLoopIters,
+        mode: opts.mode ?? "analyze",
+        replacementTargets: targets.length ? targets : undefined,
+        replacements: targets.length ? values : undefined,
+        asOverrideTargets: asTargets.length ? asTargets : undefined,
+        asOverrides: asTargets.length ? asValues : undefined,
+        envGlobals: Object.keys(envGlobals).length ? envGlobals : undefined,
+      });
+      out = { exports, modules, memberDiags: memberDiags.length ? memberDiags : undefined };
+    } finally {
+      setMemberDiagCollector(null);
+    }
   } catch {
     out = null;
   }
@@ -176,20 +186,30 @@ export function tryBPathCallFull(
   filePath: string,
   fnName: string,
   args: Abs[],
-  opts: { collectCalls?: boolean; envNames?: string[] } = {},
-): (TranspiledCallResult & { calls?: BCallRecord[] }) | undefined {
+  opts: { collectCalls?: boolean; collectMemberDiags?: boolean; envNames?: string[] } = {},
+): (TranspiledCallResult & { calls?: BCallRecord[]; memberDiags?: BMemberDiag[] }) | undefined {
   const run = tryRunBPath(source, filePath, { envNames: opts.envNames });
   if (!run) return undefined;
   if (!(fnName in run.exports)) return undefined;
   const collected: BCallRecord[] = [];
+  const memberDiags: BMemberDiag[] = [];
   if (opts.collectCalls) {
     setBCallCollector((r) => collected.push(r));
   }
+  if (opts.collectMemberDiags ?? true) {
+    setMemberDiagCollector((d) => memberDiags.push(d));
+  }
   try {
     const full = callTranspiledExportFull(run.exports, fnName, args);
-    return opts.collectCalls ? { ...full, calls: collected } : full;
+    const all = [...(run.memberDiags ?? []), ...memberDiags];
+    return {
+      ...full,
+      calls: opts.collectCalls ? collected : undefined,
+      memberDiags: all.length ? all : undefined,
+    };
   } finally {
     if (opts.collectCalls) setBCallCollector(null);
+    setMemberDiagCollector(null);
   }
 }
 

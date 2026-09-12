@@ -8,6 +8,8 @@ import { abs, unknown, confJoin, litValue } from "../abs.ts";
 import { objOf } from "../objects.ts";
 import { $get, $set } from "./runtime.ts";
 import { $call } from "./call.ts";
+import { getFnImpl } from "../abs-fn.ts";
+import { notePrimMemberMissing } from "./calls.ts";
 
 export type BClassSpec = {
   name: string;
@@ -135,7 +137,12 @@ export function $super(thisVal: Abs, childName: string, args: Abs[]): Abs {
 }
 
 /** 实例方法调用：沿继承链；类 Abs 上回落 staticMethods；obj 上回落属性函数 */
-export function $invoke(thisVal: Abs, method: string, args: Abs[]): Abs {
+export function $invoke(
+  thisVal: Abs,
+  method: string,
+  args: Abs[],
+  loc?: [number, number],
+): Abs {
   const brandName = thisVal.shape.k === "brand" ? thisVal.shape.name : undefined;
   if (brandName) {
     const m = findMethod(brandName, method);
@@ -146,9 +153,14 @@ export function $invoke(thisVal: Abs, method: string, args: Abs[]): Abs {
   }
   // 属性上的可调用值（require namespace / 对象方法）
   const prop = $get(thisVal, method);
-  if (prop && typeof prop === "object" && "shape" in (prop as object)) {
+  const impl = prop && typeof prop === "object" && "shape" in (prop as object)
+    ? getFnImpl(prop as Abs)
+    : undefined;
+  if (impl) {
     return $call(prop as Abs, args);
   }
+  // prim 接收者上的未知方法 → no-method
+  notePrimMemberMissing(thisVal, method, "method", loc);
   return unknown;
 }
 

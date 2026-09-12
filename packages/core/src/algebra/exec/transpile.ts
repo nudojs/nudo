@@ -893,16 +893,17 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         !callee.computed &&
         callee.property.type === "Identifier"
       ) {
-        // Class.staticMethod → $staticInvoke（callee.object 是类标识符且有 staticMethods）
         const recv = transpileExpression(callee.object as Expression, opts);
         const args = expr.arguments
           .map((a) => (a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts)))
           .join(", ");
         const name = JSON.stringify(callee.property.name);
         const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
+        const loc = expr.loc;
+        const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
         return opt
           ? `$optionalInvoke(${recv}, ${name}, [${args}])`
-          : `$invoke(${recv}, ${name}, [${args}])`;
+          : `$invoke(${recv}, ${name}, [${args}]${locArg})`;
       }
       // require("spec") → __nudoRequire("spec")
       if (

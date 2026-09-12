@@ -1317,6 +1317,23 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           caseThrows =
             bFull.throws.shape.k !== "never" ? absToTypeValue(bFull.throws) : T.never;
           fullResult = { value: caseValue, throws: caseThrows };
+          // B 执行期 method-missing 诊断
+          for (const d of bFull.memberDiags ?? []) {
+            diagnostics.push({
+              range: {
+                start: { line: d.line ?? fnLoc.start.line, column: d.column ?? 0 },
+                end: { line: d.line ?? fnLoc.start.line, column: (d.column ?? 0) + d.name.length },
+              },
+              severity: d.receiver === "number" || d.receiver === "boolean" || d.receiver === "bigint" || d.receiver === "symbol"
+                ? "error"
+                : "warning",
+              message:
+                d.kind === "method"
+                  ? `Method '${d.name}' does not exist on type '${d.receiver}'`
+                  : `Property '${d.name}' does not exist on type '${d.receiver}'`,
+              code: "nudo:no-method",
+            });
+          }
           if (bFull.calls?.length) {
             const impMap = buildAbsImportLocalMap(source, filePath);
             for (const c of bFull.calls) {

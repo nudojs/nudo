@@ -86,6 +86,7 @@ export {
   type BPathRunResult,
 } from "./bpath-run.ts";
 export { envValueToAbs } from "./env-to-abs.ts";
+export type { BMemberDiag } from "@nudojs/core";
 
 export {
   collectBPathDiagnostics,

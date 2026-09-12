@@ -27,6 +27,76 @@ export function getBCallCollector(): ((r: BCallRecord) => void) | null {
   return bCallCollector;
 }
 
+export type BMemberDiag = {
+  kind: "method" | "property";
+  name: string;
+  /** 接收者 prim 类型名 */
+  receiver: string;
+  line?: number;
+  column?: number;
+};
+
+let memberDiagCollector: ((d: BMemberDiag) => void) | null = null;
+
+export function setMemberDiagCollector(
+  c: ((d: BMemberDiag) => void) | null,
+): void {
+  memberDiagCollector = c;
+}
+
+export function recordMemberDiag(d: BMemberDiag): void {
+  if (!memberDiagCollector) return;
+  try {
+    memberDiagCollector(d);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** string 上仍可能存在的方法（与 TypeValue completions 对齐） */
+const STRING_METHODS = new Set([
+  "toUpperCase", "toLowerCase", "trim", "split", "slice", "substring",
+  "includes", "indexOf", "lastIndexOf", "startsWith", "endsWith", "charAt",
+  "charCodeAt", "replace", "toString", "valueOf", "repeat", "padStart",
+  "padEnd", "replaceAll", "concat", "match", "search", "at",
+]);
+
+/**
+ * prim 接收者上的未知成员 → 诊断。
+ * 返回 true 表示确定缺失（number 上任意方法；string 上表外方法）。
+ */
+export function notePrimMemberMissing(
+  recv: Abs | undefined,
+  name: string,
+  kind: "method" | "property",
+  loc?: [number, number],
+): boolean {
+  const shape = recv?.shape;
+  if (!shape || shape.k !== "prim") return false;
+  const t = shape.type;
+  if (t === "number" || t === "boolean" || t === "bigint" || t === "symbol") {
+    recordMemberDiag({
+      kind,
+      name,
+      receiver: t,
+      line: loc?.[0],
+      column: loc?.[1],
+    });
+    return true;
+  }
+  if (t === "string" && kind === "method" && !STRING_METHODS.has(name)) {
+    recordMemberDiag({
+      kind,
+      name,
+      receiver: t,
+      line: loc?.[0],
+      column: loc?.[1],
+    });
+    return true;
+  }
+  return false;
+}
+
 /**
  * 按名调用并记录。
  * loc: [line, column]（1-based line，0-based column，与 Babel 一致）
