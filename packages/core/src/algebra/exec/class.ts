@@ -6,7 +6,7 @@
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue } from "../abs.ts";
 import { objOf } from "../objects.ts";
-import { $get } from "./runtime.ts";
+import { $get, $set } from "./runtime.ts";
 
 export type BClassSpec = {
   name: string;
@@ -14,12 +14,16 @@ export type BClassSpec = {
   superName?: string;
   ctor?: (thisVal: Abs, ...args: Abs[]) => Abs;
   methods?: Record<string, (thisVal: Abs, ...args: Abs[]) => Abs>;
+  /** 静态方法（不绑 this） */
+  staticMethods?: Record<string, (...args: Abs[]) => Abs>;
+  /** 静态字段初值（也写在 class Abs slots 上） */
+  statics?: Record<string, Abs>;
 };
 
 const classRegistry = new Map<string, BClassSpec>();
 const classImpl = new WeakMap<object, BClassSpec>();
 
-/** 定义类 → 可 new 的 Abs（brand 标记） */
+/** 定义类 → 可 new 的 Abs（brand 标记；静态字段挂在 slots） */
 export function $class(
   name: string,
   spec: Omit<BClassSpec, "name"> & { extends?: string },
@@ -29,10 +33,16 @@ export function $class(
     superName: spec.extends,
     ctor: spec.ctor,
     methods: spec.methods,
+    staticMethods: spec.staticMethods,
+    statics: spec.statics,
   };
   classRegistry.set(name, full);
+  const slots: Record<string, { value: Abs }> = {};
+  if (spec.statics) {
+    for (const [k, v] of Object.entries(spec.statics)) slots[k] = { value: v };
+  }
   const val = abs(
-    { k: "brand", name, shape: objOf({}) },
+    { k: "brand", name, shape: objOf(slots) },
     undefined,
     undefined,
     "exact",
@@ -119,13 +129,17 @@ export function $super(thisVal: Abs, childName: string, args: Abs[]): Abs {
   return after ?? thisVal;
 }
 
-/** 实例方法调用：沿继承链 */
+/** 实例方法调用：沿继承链；类 Abs 上回落 staticMethods */
 export function $invoke(thisVal: Abs, method: string, args: Abs[]): Abs {
   const brandName = thisVal.shape.k === "brand" ? thisVal.shape.name : undefined;
   if (!brandName) return unknown;
   const m = findMethod(brandName, method);
-  if (!m) return unknown;
-  return m(thisVal, ...args);
+  if (m) return m(thisVal, ...args);
+  // 类构造值上的静态方法
+  const spec = classRegistry.get(brandName);
+  const sm = spec?.staticMethods?.[method];
+  if (sm) return sm(...args);
+  return unknown;
 }
 
 /** super.method()：从父类起找（跳过自身覆盖） */
@@ -215,4 +229,21 @@ export function $optionalInvoke(thisVal: Abs, method: string, args: Abs[]): Abs 
     );
   }
   return $invoke(thisVal, method, args);
+}
+
+/** 静态方法：cls.staticMethod(args) */
+export function $staticInvoke(cls: Abs, method: string, args: Abs[]): Abs {
+  const spec = specOf(cls);
+  const m = spec?.staticMethods?.[method];
+  if (!m) return unknown;
+  return m(...args);
+}
+
+/** 计算属性写：o[kAbs] = v */
+export function $setKey(o: Abs, key: Abs, value: Abs): Abs {
+  const k = litValue(key);
+  if (typeof k === "string" || typeof k === "number") {
+    return $set(o, String(k), value);
+  }
+  return $set(o, "?", value);
 }
