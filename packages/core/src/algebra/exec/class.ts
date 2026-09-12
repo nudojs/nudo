@@ -91,7 +91,13 @@ function findCtor(
 }
 
 /** new C(...) → 空 brand 实例 + ctor 写字段；非类构造走 impl/$call */
-export function $new(cls: Abs, args: Abs[]): Abs {
+export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Abs {
+  // JS 内建构造器（Error/Date/URL…）：直接 brand，避免 $call 对非 Abs 炸掉
+  if (typeof cls === "function") {
+    const name = cls.name || "Object";
+    const shape = objOf({});
+    return abs({ k: "brand", name, shape }, undefined, undefined, "path");
+  }
   const spec = specOf(cls);
   if (!spec) {
     // env 构造器（URL 等）：fn impl / absFunction

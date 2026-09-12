@@ -144,10 +144,10 @@ function normalizeNegZero(n: number): number {
   return n === 0 ? 0 : n;
 }
 
-/** any 或 generalize type-var（any/unknown + term） */
+/** any / unknown（含无 term 的裸 unknown）：JS ToNumber 语义用于 - * / % */
 function isAnyLike(a: Abs): boolean {
   if (a.shape.k === "any") return true;
-  if (a.shape.k === "unknown" && a.term) return true;
+  if (a.shape.k === "unknown") return true;
   return false;
 }
 

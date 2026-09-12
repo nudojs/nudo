@@ -156,6 +156,8 @@ export type BPathRunResult = {
   moduleIssues?: import("./abs-modules-graph.ts").AbsModuleLoadIssue[];
   /** Abs 求值递归截断的函数标签 */
   truncatedFns?: string[];
+  /** 顶层 $callNamed 调用点（call@ 合成；不经 TypeValue collector） */
+  calls?: BCallRecord[];
 };
 
 const bRunCache = new Map<string, BPathRunResult | null>();
@@ -184,9 +186,11 @@ export function tryRunBPath(
   try {
     const memberDiags: BMemberDiag[] = [];
     const truncated = new Set<string>();
+    const topCalls: BCallRecord[] = [];
     // collector 先于模块图：import 函数体在 evalProgramAbs 内的 method-missing 也要收
     setMemberDiagCollector((d) => memberDiags.push(d));
     setAbsTruncationCollector((label) => truncated.add(label));
+    setBCallCollector((r) => topCalls.push(r));
     try {
       const { modules: graphMods, issues } = evalAbsModuleGraph(source, filePath);
       const envMods = collectEnvModules(opts.envNames ?? []);
@@ -212,10 +216,12 @@ export function tryRunBPath(
         memberDiags: memberDiags.length ? memberDiags : undefined,
         moduleIssues: issues.length ? issues : undefined,
         truncatedFns: truncated.size ? [...truncated] : undefined,
+        calls: topCalls.length ? topCalls : undefined,
       };
     } finally {
       setMemberDiagCollector(null);
       setAbsTruncationCollector(null);
+      setBCallCollector(null);
     }
   } catch {
     out = null;
@@ -245,7 +251,7 @@ export function tryBPathCallFull(
   const run = tryRunBPath(source, filePath, { envNames: opts.envNames, mocks: opts.mocks });
   if (!run) return undefined;
   if (!(fnName in run.exports)) return undefined;
-  const collected: BCallRecord[] = [];
+  const collected: BCallRecord[] = [...(run.calls ?? [])];
   const memberDiags: BMemberDiag[] = [];
   if (opts.collectCalls) {
     setBCallCollector((r) => collected.push(r));
@@ -258,7 +264,7 @@ export function tryBPathCallFull(
     const all = [...(run.memberDiags ?? []), ...memberDiags];
     return {
       ...full,
-      calls: opts.collectCalls ? collected : undefined,
+      calls: opts.collectCalls || run.calls?.length ? collected : undefined,
       memberDiags: all.length ? all : undefined,
       moduleIssues: run.moduleIssues,
       truncatedFns: run.truncatedFns,

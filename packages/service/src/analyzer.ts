@@ -1236,6 +1236,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
   const seeds = mockDirectivesToAbsSeeds(functions);
   let absCallRecords: CallRecord[] = [];
+  /** B 顶层 $callNamed 记录（call@ 合成；TypeValue skip 后的主源） */
+  let bTopCallRecords: CallRecord[] = [];
   // B 模块图：cycle/depth/missing + 顶层 memberDiags（注入 @nudo:mock，
   // 避免缩进 const 调到真 fetch；$callNamed 实参 loc 提供参数级 provenance）
   if (bCapable && filePath) {
@@ -1259,6 +1261,34 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       if (bRun.truncatedFns) {
         for (const fn of bRun.truncatedFns) bTruncatedFns.add(fn);
       }
+      if (bRun.calls?.length) {
+        const impMap = buildAbsImportLocalMap(source, filePath);
+        for (const c of bRun.calls) {
+          const safeAbs = (a: Abs | undefined): TypeValue => {
+            if (!a || typeof a !== "object" || !("shape" in a) || !a.shape) {
+              return T.unknown;
+            }
+            try {
+              return absToTypeValue(a);
+            } catch {
+              return T.unknown;
+            }
+          };
+          const rec: CallRecord = {
+            fnName: c.fnName,
+            argTypes: c.args.map(safeAbs),
+            resultType: c.threw ? T.never : safeAbs(c.result),
+            throws: c.threw ? safeAbs(c.result) : T.never,
+            callLoc: c.callLoc,
+          };
+          const imp = impMap.get(c.fnName);
+          if (imp) {
+            rec.targetModule = imp.modulePath;
+            rec.targetExport = imp.exportName;
+          }
+          bTopCallRecords.push(rec);
+        }
+      }
     }
   }
   if (selfContained || canAbsModules) {
@@ -1271,19 +1301,17 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     }
   }
 
-  // TypeValue evaluateProgram 仍跑：env / TypeValue fallback / nodeTypeMap。
+  // TypeValue evaluateProgram 仍跑：env / fallback / nodeTypeMap。
   // B hosted 时 method/property 诊断整类让位。
-  // skip 前置（本轮试过，回退）：
-  // - unknown 算术未 widen 成 number（lonely entry@）
-  // - throw 路径 B 未记入 throws
-  // - call@ 顶层采集依赖 TypeValue collector
-  // - imported class default 经 analyzeFile 仍弱
   evaluateProgram(ast, globalEnv);
 
-  // Abs 调用记录是唯一真理源（类型即计算）；失败/空则保留 TypeValue 记录
+  // Abs / B 顶层调用记录优先；再空才保留 TypeValue
   if ((selfContained || canAbsModules) && absCallRecords.length > 0) {
     callRecords.length = 0;
     callRecords.push(...absCallRecords);
+  } else if (bTopCallRecords.length > 0) {
+    callRecords.length = 0;
+    callRecords.push(...bTopCallRecords);
   }
 
   const unreachableRanges = bCapable ? [] : getUnreachableRanges();
