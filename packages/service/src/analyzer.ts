@@ -1293,22 +1293,23 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       let caseUnreachable: SourceLocation[] = [];
 
       const bCapable = isBPathCapable(source, envNames);
+      // 无 env 时 B 可作主路径；有 env 时 TypeValue fnSig impl 更精确，B 只作润色
+      const bPrimary = bCapable && envNames.length === 0;
       if (bCapable && filePath) {
         const bFull = tryBPathCallFull(
           source,
           filePath,
           fn.name,
           directive.args.map((a) => typeValueToAbs(a)),
-          { collectCalls: true },
+          { collectCalls: true, envNames },
         );
-        // 仅当 B 结果有信息量时才作主路径；unknown 无 term 或 undefined 字面量落 TypeValue
         const res = bFull?.result;
         const weakUnknown =
           !!res &&
           res.shape.k === "unknown" &&
           (!res.term || (res.term.op === "lit" && res.term.value === undefined));
         const bOk = !!res && !weakUnknown && res.conf !== "opaque";
-        if (bOk && bFull) {
+        if (bOk && bFull && bPrimary) {
           caseAbs = bFull.result;
           caseValue = absToTypeValue(bFull.result);
           caseThrows =
@@ -2337,10 +2338,10 @@ function isSelfContainedSource(source: string, envNames: string[]): boolean {
   return !/\brequire\s*\(|\bimport\s*[{'"*]/.test(source);
 }
 
-/** Abs 模块图可处理：无 env；相对 import + 裸包 + require 均可 */
+/** Abs 模块图可处理：无 env 或仅内置 env；相对 import + 裸包 + require 均可 */
 function absModulesOk(source: string, envNames: string[]): boolean {
-  if (envNames.length > 0) return false;
-  return true;
+  // 路径型 env 需 async preload，暂不走 Abs 模块图
+  return envNames.every((n) => n === "es" || n === "web" || n === "node");
 }
 
 /**

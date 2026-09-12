@@ -11,13 +11,31 @@ import {
   callTranspiledExportFull,
   setBCallCollector,
   typeValueToAbs,
+  createEnvironment,
   type BCallRecord,
   type TranspiledCallResult,
   type Abs,
   type AbsModuleExports,
 } from "@nudojs/core";
 import { parse, extractInlineDirectives } from "@nudojs/parser";
+import { loadEnvs } from "@nudojs/cli/evaluator";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
+
+/** @nudo:env → Abs 全局表 */
+export function collectEnvGlobals(envNames: string[]): Record<string, Abs> {
+  if (envNames.length === 0) return {};
+  const env = createEnvironment();
+  try {
+    loadEnvs(envNames, env);
+  } catch {
+    return {};
+  }
+  const out: Record<string, Abs> = {};
+  for (const [k, v] of Object.entries(env.getOwnBindings())) {
+    out[k] = typeValueToAbs(v);
+  }
+  return out;
+}
 
 /** 收集 @nudo:replace + @nudo:as → transpile 注入表 */
 export function collectBPathReplacements(source: string): {
@@ -96,9 +114,12 @@ export function collectBPathReplacements(source: string): {
   return { targets, values, asTargets, asValues };
 }
 
-/** 可走 transpile+exec：无 @nudo:env；require 经模块图/harvest 注入 */
+/** 可走 transpile+exec：内置 es/web/node env；相对/裸包/require 经模块图 */
 export function isBPathCapable(source: string, envNames: string[] = []): boolean {
-  if (envNames.length > 0) return false;
+  // 仅内置环境；路径型 @nudo:env ./file.ts 需 async preload，暂不走 B
+  for (const n of envNames) {
+    if (n !== "es" && n !== "web" && n !== "node") return false;
+  }
   // 顶层 this. 仍不支持（方法内 this 由 transpile 处理）
   if (/(^|[^.\w$])this\s*\./.test(source) && !/\bclass\s+/.test(source)) return false;
   return true;
@@ -119,15 +140,20 @@ export function clearBPathCache(): void {
 export function tryRunBPath(
   source: string,
   filePath: string,
-  opts: { maxLoopIters?: number; mode?: "exec" | "analyze" } = {},
+  opts: {
+    maxLoopIters?: number;
+    mode?: "exec" | "analyze";
+    envNames?: string[];
+  } = {},
 ): BPathRunResult | undefined {
-  if (!isBPathCapable(source)) return undefined;
-  const key = `${filePath}::${source.length}::${source.slice(0, 200)}::${opts.mode ?? "analyze"}`;
+  if (!isBPathCapable(source, opts.envNames ?? [])) return undefined;
+  const key = `${filePath}::${source.length}::${source.slice(0, 200)}::${opts.mode ?? "analyze"}::${(opts.envNames ?? []).join(",")}`;
   if (bRunCache.has(key)) return bRunCache.get(key) ?? undefined;
   let out: BPathRunResult | null = null;
   try {
     const { modules } = evalAbsModuleGraph(source, filePath);
     const { targets, values, asTargets, asValues } = collectBPathReplacements(source);
+    const envGlobals = collectEnvGlobals(opts.envNames ?? []);
     const exports = runTranspiled(source, {
       modules: modules as never,
       maxLoopIters: opts.maxLoopIters,
@@ -136,6 +162,7 @@ export function tryRunBPath(
       replacements: targets.length ? values : undefined,
       asOverrideTargets: asTargets.length ? asTargets : undefined,
       asOverrides: asTargets.length ? asValues : undefined,
+      envGlobals: Object.keys(envGlobals).length ? envGlobals : undefined,
     });
     out = { exports, modules };
   } catch {
@@ -151,9 +178,9 @@ export function tryBPathCallFull(
   filePath: string,
   fnName: string,
   args: Abs[],
-  opts: { collectCalls?: boolean } = {},
+  opts: { collectCalls?: boolean; envNames?: string[] } = {},
 ): (TranspiledCallResult & { calls?: BCallRecord[] }) | undefined {
-  const run = tryRunBPath(source, filePath);
+  const run = tryRunBPath(source, filePath, { envNames: opts.envNames });
   if (!run) return undefined;
   if (!(fnName in run.exports)) return undefined;
   const collected: BCallRecord[] = [];
@@ -174,8 +201,9 @@ export function tryBPathCall(
   filePath: string,
   fnName: string,
   args: Abs[],
+  opts: { envNames?: string[] } = {},
 ): Abs | undefined {
-  const full = tryBPathCallFull(source, filePath, fnName, args);
+  const full = tryBPathCallFull(source, filePath, fnName, args, opts);
   if (!full) return undefined;
   const r = full.result;
   if (!r) return undefined;

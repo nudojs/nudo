@@ -82,6 +82,7 @@ export {
   tryBPathCallFull,
   clearBPathCache,
   collectBPathReplacements,
+  collectEnvGlobals,
   type BPathRunResult,
 } from "./bpath-run.ts";
 export {

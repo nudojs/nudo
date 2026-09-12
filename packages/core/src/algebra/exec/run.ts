@@ -39,6 +39,8 @@ export type RunTranspiledOptions = {
   asOverrides?: Record<string, Abs>;
   /** @nudo:as 语句范围表 */
   asOverrideTargets?: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
+  /** @nudo:env 全局 Abs（JSON/Math/console…）→ 作用域绑定 */
+  envGlobals?: Record<string, Abs>;
 };
 
 const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
@@ -182,7 +184,14 @@ export function runTranspiled(
   js = js.replace(/^export const /gm, "const ");
 
   const names = [...new Set([...exportFns, ...exportConsts])];
-  const argNames = [...runtimeArgNames(), "__nudoModules", "__nudoBindImport", "__nudoReplaces", "__nudoRequire"];
+  const argNames = [
+    ...runtimeArgNames(),
+    "__nudoModules",
+    "__nudoBindImport",
+    "__nudoReplaces",
+    "__nudoRequire",
+    "__nudoEnv",
+  ];
   const args = argNames.map((n) => {
     if (n === "__nudoModules") return modules;
     if (n === "__nudoBindImport") {
@@ -192,8 +201,17 @@ export function runTranspiled(
     if (n === "__nudoRequire") {
       return (spec: string) => requireFromModules(modules, spec);
     }
+    if (n === "__nudoEnv") return opts.envGlobals ?? {};
     return rtAll[n];
   });
+
+  // @nudo:env 全局绑定
+  if (opts.envGlobals && Object.keys(opts.envGlobals).length > 0) {
+    const envBinds = Object.keys(opts.envGlobals)
+      .map((k) => `const ${k} = __nudoEnv[${JSON.stringify(k)}];`)
+      .join("\n");
+    js = `${envBinds}\n${js}`;
+  }
 
   const ret = names.length > 0 ? `return { ${names.join(", ")} };` : "return {};";
   const fn = new Function(...argNames, `${js}\n${ret}`);
