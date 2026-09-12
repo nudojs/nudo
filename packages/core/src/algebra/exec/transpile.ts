@@ -914,14 +914,24 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         const spec = (expr.arguments[0] as { value: string }).value;
         return `__nudoRequire(${JSON.stringify(spec)})`;
       }
-      // 标识符调用 → $callNamed（可采集 call@）
+      // 标识符调用 → $callNamed（可采集 call@ + 实参 provenance）
       if (callee.type === "Identifier" && callee.name !== "undefined") {
-        const args = expr.arguments
-          .map((a) => (a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts)))
-          .join(", ");
+        const argSrcs: string[] = [];
+        const argLocSrcs: string[] = [];
+        for (const a of expr.arguments) {
+          if (a.type === "SpreadElement") {
+            argSrcs.push("$lit(undefined)");
+            argLocSrcs.push("null");
+          } else {
+            argSrcs.push(transpileExpression(a as Expression, opts));
+            const al = (a as { loc?: { start: { line: number; column: number } } }).loc;
+            argLocSrcs.push(al ? `[${al.start.line}, ${al.start.column}]` : "null");
+          }
+        }
         const loc = expr.loc;
         const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
-        return `$callNamed(${JSON.stringify(callee.name)}, ${callee.name}, [${args}]${locArg})`;
+        const argLocArg = loc ? `, [${argLocSrcs.join(", ")}]` : "";
+        return `$callNamed(${JSON.stringify(callee.name)}, ${callee.name}, [${argSrcs.join(", ")}]${locArg}${argLocArg})`;
       }
       const args = expr.arguments
         .map((a) =>

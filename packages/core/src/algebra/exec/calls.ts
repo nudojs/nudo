@@ -34,12 +34,24 @@ export type BMemberDiag = {
   receiver: string;
   line?: number;
   column?: number;
-  /** 调用点来源（provenance）：最近一次 $callNamed loc */
+  /** 调用点来源（provenance）：实参字面量 loc 优先，否则最近 $callNamed loc */
   origin?: { line: number; column: number };
 };
 
 let memberDiagCollector: ((d: BMemberDiag) => void) | null = null;
 const callLocStack: Array<{ line: number; column: number }> = [];
+/** 实参 Abs → 字面量源位置（$callNamed 按 argLocs 打标） */
+const absOrigins = new WeakMap<object, { line: number; column: number }>();
+
+/** 给实参 Abs 打 provenance（调用点参数字面量） */
+export function tagAbsOrigin(a: Abs, loc: { line: number; column: number }): void {
+  if (a && typeof a === "object") absOrigins.set(a, loc);
+}
+
+export function getAbsOrigin(a: Abs | undefined): { line: number; column: number } | undefined {
+  if (!a || typeof a !== "object") return undefined;
+  return absOrigins.get(a);
+}
 
 export function setMemberDiagCollector(
   c: ((d: BMemberDiag) => void) | null,
@@ -49,7 +61,8 @@ export function setMemberDiagCollector(
 
 export function recordMemberDiag(d: BMemberDiag): void {
   if (!memberDiagCollector) return;
-  const origin = callLocStack[callLocStack.length - 1];
+  // 参数字面量 origin 优先；否则最近调用点
+  const origin = d.origin ?? callLocStack[callLocStack.length - 1];
   try {
     memberDiagCollector(origin ? { ...d, origin } : d);
   } catch {
@@ -78,6 +91,10 @@ export function notePrimMemberMissing(
   const shape = recv?.shape;
   if (!shape || shape.k !== "prim") return false;
   const t = shape.type;
+  const argOrigin = getAbsOrigin(recv);
+  const origin = argOrigin
+    ? { line: argOrigin.line, column: argOrigin.column }
+    : undefined;
   if (t === "number" || t === "boolean" || t === "bigint" || t === "symbol") {
     recordMemberDiag({
       kind,
@@ -85,6 +102,7 @@ export function notePrimMemberMissing(
       receiver: t,
       line: loc?.[0],
       column: loc?.[1],
+      ...(origin ? { origin } : {}),
     });
     return true;
   }
@@ -95,6 +113,7 @@ export function notePrimMemberMissing(
       receiver: t,
       line: loc?.[0],
       column: loc?.[1],
+      ...(origin ? { origin } : {}),
     });
     return true;
   }
@@ -104,15 +123,23 @@ export function notePrimMemberMissing(
 /**
  * 按名调用并记录。
  * loc: [line, column]（1-based line，0-based column，与 Babel 一致）
+ * argLocs: 与 args 对齐的实参字面量源位置（provenance；无 loc 用 null）
  */
 export function $callNamed(
   name: string,
   fn: unknown,
   args: Abs[],
   loc?: [number, number],
+  argLocs?: Array<[number, number] | null | undefined>,
 ): Abs {
   let result: Abs = unknown;
   let threw = false;
+  if (argLocs) {
+    for (let i = 0; i < args.length; i++) {
+      const al = argLocs[i];
+      if (al) tagAbsOrigin(args[i]!, { line: al[0], column: al[1] });
+    }
+  }
   if (loc) callLocStack.push({ line: loc[0], column: loc[1] });
   try {
     if (typeof fn === "function") {

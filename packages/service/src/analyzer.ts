@@ -65,7 +65,7 @@ import {
 import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
 import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph, evalProgramAbsWithModules } from "./abs-modules-graph.ts";
-import { tryBPathCall, tryBPathCallFull, isBPathCapable } from "./bpath-run.ts";
+import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable } from "./bpath-run.ts";
 import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
 import { setAbsTruncationCollector } from "@nudojs/core";
 
@@ -1188,6 +1188,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   /** B 已上报的模块加载问题种类 + 递归截断函数名（压 TypeValue 叠报） */
   const bModuleIssueKinds = new Set<"cycle" | "depth" | "missing">();
   const bTruncatedFns = new Set<string>();
+  /** B 静态 builtin-unknown 名（压 TypeValue unknown-global 叠报） */
+  const bBuiltinUnknownNames = new Set<string>();
 
   const pushBModuleIssues = (
     issues: Array<{ kind: "cycle" | "depth" | "missing"; label: string; reason: string }> | undefined,
@@ -1210,8 +1212,10 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     }
   };
 
+  const seeds = mockDirectivesToAbsSeeds(functions);
   let absCallRecords: CallRecord[] = [];
-  // B 模块图：cycle/depth/missing（不执行入口顶层，避免未注入 mock 的副作用）
+  // B 模块图：cycle/depth/missing + 顶层 memberDiags（注入 @nudo:mock，
+  // 避免缩进 const 调到真 fetch；$callNamed 实参 loc 提供参数级 provenance）
   if (bCapable && filePath) {
     try {
       const g = evalAbsModuleGraph(source, filePath);
@@ -1219,9 +1223,20 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     } catch {
       /* 模块图失败交还 TypeValue */
     }
+    const bRun = tryRunBPath(source, filePath, {
+      envNames,
+      mocks: seeds.seedVars,
+    });
+    if (bRun?.memberDiags?.length) {
+      for (const d of bRun.memberDiags) {
+        pushBMemberDiag(d, 1);
+      }
+    }
+    if (bRun?.truncatedFns) {
+      for (const fn of bRun.truncatedFns) bTruncatedFns.add(fn);
+    }
   }
   if (selfContained || canAbsModules) {
-    const seeds = mockDirectivesToAbsSeeds(functions);
     // Abs 程序求值的递归截断（call@ 记录路径）
     setAbsTruncationCollector((label) => bTruncatedFns.add(label));
     try {
@@ -1257,6 +1272,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       });
     }
     for (const b of bDiag.builtinUnknown) {
+      bBuiltinUnknownNames.add(b.name);
       diagnostics.push({
         range: b.range,
         severity: "warning",
@@ -1368,7 +1384,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           filePath,
           fn.name,
           directive.args.map((a) => typeValueToAbs(a)),
-          { collectCalls: true, envNames },
+          { collectCalls: true, envNames, mocks: seeds.seedVars },
         );
         const res = bFull?.result;
         const weakUnknown =
@@ -1412,7 +1428,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         caseUnreachable = [...getUnreachableRanges()];
         caseValue = fullResult.value;
         if ((selfContained || canAbsModules) && fullResult.value.kind !== "never") {
-          caseAbs = tryEvalAbsRaw(source, fn.name, directive.args, filePath);
+          caseAbs = tryEvalAbsRaw(source, fn.name, directive.args, filePath, seeds.seedVars);
           if (caseAbs) {
             const projected = absToTypeValue(caseAbs);
             if (absIsBetter(projected, fullResult.value)) caseValue = projected;
@@ -1601,7 +1617,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         let absRaw: Abs | undefined;
         let absResult: TypeValue | undefined;
         if (rec.resultType.kind !== "never" && rec.argTypes.length > 0) {
-          absRaw = tryEvalAbsRaw(source, candidate.name, rec.argTypes, filePath);
+          absRaw = tryEvalAbsRaw(source, candidate.name, rec.argTypes, filePath, seeds.seedVars);
           if (absRaw) {
             const projected = absToTypeValue(absRaw);
             if (absIsBetter(projected, rec.resultType)) absResult = projected;
@@ -1632,7 +1648,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           // （target || [] 等）对 unknown 全塌，对 undefined 正常走默认分支
           widenType(simplifyUnion(remaining.map((rec) => rec.argTypes[i] ?? T.undefined))),
         );
-        const absSymRaw = tryEvalAbs(source, candidate.name, widenedArgs);
+        const absSymRaw = tryEvalAbs(source, candidate.name, widenedArgs, filePath, seeds.seedVars);
         const absSym = absSymRaw && absIsBetter(absSymRaw, /* 无先验：仅 unknown 时 */ { kind: "unknown" })
           ? absSymRaw
           : undefined;
@@ -1647,7 +1663,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
             filePath,
             candidate.name,
             widenedArgs.map((a) => typeValueToAbs(a)),
-            { envNames },
+            { envNames, mocks: seeds.seedVars },
           );
           if (bSym && !(bSym.shape.k === "unknown" && !bSym.term)) {
             symAbs = bSym;
@@ -1696,7 +1712,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         filePath,
         candidate.analysis.name,
         args.map((a) => typeValueToAbs(a)),
-        { envNames },
+        { envNames, mocks: seeds.seedVars },
       );
       if (bEntry && !(bEntry.shape.k === "unknown" && !bEntry.term)) {
         entryAbs = bEntry;
@@ -1704,7 +1720,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       }
     }
     if (!entryValue) {
-      const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, args);
+      const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, args, filePath, seeds.seedVars);
       const full = absEntry
         ? { value: absEntry, throws: T.never as TypeValue, throwLoc: undefined }
         : evaluateFunctionFull(fnNode, args, globalEnv);
@@ -1765,6 +1781,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
               return false;
             }
           }
+          // B 静态 builtin-unknown 已报的裸标识符：不再 unknown-global 叠报
+          if (bBuiltinUnknownNames.has(r.name)) return false;
         }
         return true;
       }),
@@ -2644,8 +2662,10 @@ function tryEvalAbs(
   source: string,
   fnName: string,
   args: TypeValue[],
+  filePath?: string,
+  mocks?: Record<string, Abs>,
 ): TypeValue | undefined {
-  const raw = tryEvalAbsRaw(source, fnName, args);
+  const raw = tryEvalAbsRaw(source, fnName, args, filePath, mocks);
   return raw ? absToTypeValue(raw) : undefined;
 }
 
@@ -2655,15 +2675,16 @@ function tryEvalAbsRaw(
   fnName: string,
   args: TypeValue[],
   filePath?: string,
+  mocks?: Record<string, Abs>,
 ): Abs | undefined {
   // require / env 不走 Abs
   if (/\brequire\s*\(/.test(source)) return undefined;
   try {
     const absArgs: Abs[] = args.map((a) => typeValueToAbs(a));
 
-    // B 路径：transpile → Node new Function（进程内）
+    // B 路径：transpile → Node new Function（进程内）；注入 @nudo:mock
     if (filePath) {
-      const viaB = tryBPathCall(source, filePath, fnName, absArgs);
+      const viaB = tryBPathCall(source, filePath, fnName, absArgs, { mocks });
       if (viaB) return viaB;
     }
 
@@ -2689,8 +2710,10 @@ function tryEvalEntryAbs(
   source: string,
   fnName: string,
   args: TypeValue[],
+  filePath?: string,
+  mocks?: Record<string, Abs>,
 ): TypeValue | undefined {
-  return tryEvalAbs(source, fnName, args);
+  return tryEvalAbs(source, fnName, args, filePath, mocks);
 }
 
 /**

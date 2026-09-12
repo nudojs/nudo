@@ -172,10 +172,13 @@ export function tryRunBPath(
     maxLoopIters?: number;
     mode?: "exec" | "analyze";
     envNames?: string[];
+    /** @nudo:mock → Abs，注入为全局绑定（防止顶层调用真 fetch 等） */
+    mocks?: Record<string, Abs>;
   } = {},
 ): BPathRunResult | undefined {
   if (!isBPathCapable(source, opts.envNames ?? [])) return undefined;
-  const key = `${filePath}::${source.length}::${source.slice(0, 200)}::${opts.mode ?? "analyze"}::${(opts.envNames ?? []).join(",")}`;
+  const mockKeys = Object.keys(opts.mocks ?? {}).sort().join(",");
+  const key = `${filePath}::${source.length}::${source.slice(0, 200)}::${opts.mode ?? "analyze"}::${(opts.envNames ?? []).join(",")}::m=${mockKeys}`;
   if (bRunCache.has(key)) return bRunCache.get(key) ?? undefined;
   let out: BPathRunResult | null = null;
   try {
@@ -183,7 +186,10 @@ export function tryRunBPath(
     const envMods = collectEnvModules(opts.envNames ?? []);
     const modules = { ...envMods, ...graphMods };
     const { targets, values, asTargets, asValues } = collectBPathReplacements(source);
-    const envGlobals = collectEnvGlobals(opts.envNames ?? []);
+    const envGlobals = {
+      ...collectEnvGlobals(opts.envNames ?? []),
+      ...(opts.mocks ?? {}),
+    };
     const memberDiags: BMemberDiag[] = [];
     const truncated = new Set<string>();
     setMemberDiagCollector((d) => memberDiags.push(d));
@@ -224,14 +230,19 @@ export function tryBPathCallFull(
   filePath: string,
   fnName: string,
   args: Abs[],
-  opts: { collectCalls?: boolean; collectMemberDiags?: boolean; envNames?: string[] } = {},
+  opts: {
+    collectCalls?: boolean;
+    collectMemberDiags?: boolean;
+    envNames?: string[];
+    mocks?: Record<string, Abs>;
+  } = {},
 ): (TranspiledCallResult & {
   calls?: BCallRecord[];
   memberDiags?: BMemberDiag[];
   moduleIssues?: import("./abs-modules-graph.ts").AbsModuleLoadIssue[];
   truncatedFns?: string[];
 }) | undefined {
-  const run = tryRunBPath(source, filePath, { envNames: opts.envNames });
+  const run = tryRunBPath(source, filePath, { envNames: opts.envNames, mocks: opts.mocks });
   if (!run) return undefined;
   if (!(fnName in run.exports)) return undefined;
   const collected: BCallRecord[] = [];
@@ -264,7 +275,7 @@ export function tryBPathCall(
   filePath: string,
   fnName: string,
   args: Abs[],
-  opts: { envNames?: string[] } = {},
+  opts: { envNames?: string[]; mocks?: Record<string, Abs> } = {},
 ): Abs | undefined {
   const full = tryBPathCallFull(source, filePath, fnName, args, opts);
   if (!full) return undefined;
