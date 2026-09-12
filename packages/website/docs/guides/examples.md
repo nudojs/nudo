@@ -573,7 +573,7 @@ function hashContent(data) {
 | `@nudo:pure`    | Mark pure functions for caching              |
 | `@nudo:skip`    | Skip evaluation; use declared return type    |
 | `@nudo:sample`  | Control loop sampling count                  |
-| `@nudo:returns` | Assert expected return type                  |
+| `@nudo:refine`  | Refinement contract (param / return)         |
 | `@nudo:env`     | Declare runtime environment (web, node, es)  |
 | `@nudo:mock-module` | Replace imported modules with mock files |
 

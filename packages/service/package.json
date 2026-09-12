@@ -29,6 +29,7 @@
     "@nudojs/core": "workspace:*",
     "@nudojs/parser": "workspace:*",
     "@nudojs/cli": "workspace:*",
+    "@nudojs/harvester": "workspace:*",
     "@babel/traverse": "^7.29.0",
     "@babel/types": "^7.29.0"
   },

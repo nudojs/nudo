@@ -4,7 +4,7 @@ import type { Environment } from "./environment.ts";
 // 而非 template.ts——后者运行时依赖本模块（T、typeValueToString），会构成环。
 import { isTemplate } from "./refinements/template-predicates.ts";
 
-// --- TypeValue discriminated union ---
+// --- 评估 IR：不是类型系统本体，是 Abs 的外延投影格式 ---
 
 export type LiteralValue = string | number | boolean | null | undefined;
 

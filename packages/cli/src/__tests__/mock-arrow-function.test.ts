@@ -162,8 +162,8 @@ const c = innerReduce([1, 2, 3]);
     const filter = result.functions.find((f) => f.name === "innerFilter");
     const reduce = result.functions.find((f) => f.name === "innerReduce");
     expect(typeValueToString(map!.cases[0].result)).toBe("[{ ok: true, v: 1 }, { ok: true, v: 2 }]");
-    // filter 不丢元素类型
-    expect(typeValueToString(filter!.cases[0].result)).toBe("2 | 3[]");
+    // Abs 路径：filter 保 tuple 精确（优于旧 IR 的 2|3[] 展示）
+    expect(typeValueToString(filter!.cases[0].result)).toBe("[2, 3]");
     expect(typeValueToString(reduce!.cases[0].result)).toBe("6");
   });
 });

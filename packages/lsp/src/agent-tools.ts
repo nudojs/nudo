@@ -14,10 +14,17 @@
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { analyzeFile, buildCaseDirective } from "@nudojs/service";
+import {
+  analyzeFile,
+  buildCaseDirective,
+  getHoverAtPosition,
+  collectAbsInlays,
+  serializeInferJson,
+} from "@nudojs/service";
 import { parse } from "@nudojs/parser";
-import { T, typeValueToString } from "@nudojs/core";
-import type { TypeValue } from "@nudojs/core";
+import { T, typeValueToString, checkSource, serializeCheckJson, pTrue } from "@nudojs/core";
+import type { TypeValue, CheckJson } from "@nudojs/core";
+import { lspLoadModule } from "./validation.ts";
 
 export type TypeBinding = { name: string; type: string };
 
@@ -205,6 +212,160 @@ export function readSource(filePath: string, deps: AgentToolDeps = {}): string {
 
 function analysisError(err: unknown): AgentToolResult {
   return textResult(`Error: ${(err as Error).message}`);
+}
+
+export type CheckToolParams = {
+  file: string;
+  source?: string;
+  /** "json" → CheckJson only；缺省人类可读摘要 + JSON */
+  format?: "text" | "json";
+  /** 解析 @nudo:import 的相对 .nudo.js（测试可注入） */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
+};
+
+/**
+ * Agent 门禁工具：返回 CheckJson v1 契约（与 CLI --json 同构）。
+ */
+export function checkTool(
+  params: CheckToolParams,
+  deps: AgentToolDeps = {},
+): AgentToolResult {
+  try {
+    const filePath = normalizeFilePath(params.file);
+    const source = params.source ?? readSource(filePath, deps);
+    const report = checkSource(filePath, source, pTrue, {
+      loadModule: params.loadModule ?? lspLoadModule,
+      fromFile: filePath,
+    });
+    const json = serializeCheckJson(report);
+    if (params.format === "json") {
+      return textResult(JSON.stringify(json, null, 2));
+    }
+    const lines: string[] = [
+      json.ok ? "nudo check OK" : "nudo check FAILED",
+      `${json.summary.errors} error · ${json.summary.warnings} warning · ${json.summary.functions} fn`,
+    ];
+    for (const i of json.issues) {
+      if (i.severity === "info") continue;
+      const loc = i.line != null ? ` L${i.line}` : "";
+      lines.push(`[${i.severity}]${loc} ${i.message}`);
+      if (i.actual) lines.push(`  actual:   ${i.actual}`);
+      if (i.expected) lines.push(`  expected: ${i.expected}`);
+    }
+    lines.push("");
+    lines.push(JSON.stringify(json, null, 2));
+    return textResult(lines.join("\n"));
+  } catch (err) {
+    return analysisError(err);
+  }
+}
+
+export type HoverToolParams = {
+  file: string;
+  /** 1-based 行 */
+  line: number;
+  /** 0-based 列 */
+  column: number;
+  source?: string;
+  /** true 时同时返回该文件全部 Abs inlay */
+  includeInlays?: boolean;
+  /** 可选：*.nudo.js 加载（契约进 inlay） */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
+};
+
+/**
+ * Agent hover：无损 Abs（不经 TypeValue bridge）。
+ * 与 LSP hover 同一信息源。
+ */
+export function hoverTool(
+  params: HoverToolParams,
+  deps: AgentToolDeps = {},
+): AgentToolResult {
+  try {
+    const filePath = normalizeFilePath(params.file);
+    const source = params.source ?? readSource(filePath, deps);
+    const hover = getHoverAtPosition(filePath, source, params.line, params.column);
+    const payload: Record<string, unknown> = {
+      file: filePath,
+      line: params.line,
+      column: params.column,
+      abs: hover?.abs ?? null,
+      absMultiline: hover?.absMultiline ?? null,
+      intension: hover?.intension ?? null,
+      /** 有损外延，仅对照 */
+      ext: hover?.typeText ?? null,
+    };
+    if (params.includeInlays) {
+      payload.inlays = collectAbsInlays(source, {
+        loadModule: params.loadModule ?? lspLoadModule,
+        fromFile: filePath,
+      });
+    }
+    return textResult(JSON.stringify(payload, null, 2));
+  } catch (err) {
+    return analysisError(err);
+  }
+}
+
+export type InferToolParams = {
+  file: string;
+  source?: string;
+  /** "json" → InferJson only；缺省摘要 + JSON */
+  format?: "text" | "json";
+  /** 只返回这些函数名（可选过滤） */
+  functions?: string[];
+};
+
+/**
+ * Agent infer：InferJson v1 契约（与 CLI infer --json 同构）。
+ * intension 携带无损 Abs；args/result 为 TypeValue 投影。
+ */
+export function inferTool(
+  params: InferToolParams,
+  deps: AgentToolDeps = {},
+): AgentToolResult {
+  try {
+    const filePath = normalizeFilePath(params.file);
+    const source = params.source ?? readSource(filePath, deps);
+    const result = analyzeFile(filePath, source);
+    let json = serializeInferJson(result, filePath);
+    if (params.functions && params.functions.length > 0) {
+      const keep = new Set(params.functions);
+      const filtered = json.functions.filter((f) => keep.has(f.name));
+      let cases = 0;
+      for (const f of filtered) {
+        cases += (f as { cases?: unknown[] }).cases?.length ?? 0;
+      }
+      const summary = {
+        ...json.summary,
+        functions: filtered.length,
+        cases,
+      };
+      json = { ...json, functions: filtered, summary } as typeof json;
+    }
+    if (params.format === "json") {
+      return textResult(JSON.stringify(json, null, 2));
+    }
+    const lines: string[] = [
+      `nudo infer  ${json.file}`,
+      `${json.summary.functions} fn · ${json.summary.cases} case · ${json.summary.diagnostics} diag`,
+    ];
+    for (const f of json.functions) {
+      lines.push("");
+      lines.push(`${f.name}${f.entryOnly ? "  [entry-only]" : ""}`);
+      for (const c of f.cases) {
+        const args = c.args.join(", ");
+        lines.push(`  ${c.name}: (${args}) => ${c.result}`);
+        if (c.intension?.abs) lines.push(`    abs: ${c.intension.abs}`);
+        else if (c.intension?.display) lines.push(`    intension: ${c.intension.display}`);
+      }
+    }
+    lines.push("");
+    lines.push(JSON.stringify(json, null, 2));
+    return textResult(lines.join("\n"));
+  } catch (err) {
+    return analysisError(err);
+  }
 }
 
 export type WhatIfParams = {

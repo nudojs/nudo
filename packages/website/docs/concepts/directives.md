@@ -1,6 +1,6 @@
 ---
 sidebar_position: 3
-description: "Syntax reference for all ten @nudo: directives — case, mock, pure, skip, sample, returns, env, mock-module, as, replace — with constraints and examples."
+description: "Syntax reference for all @nudo: directives — case, mock, pure, skip, sample, refine, import, env, mock-module, as, replace — with constraints and examples."
 ---
 
 # Directives
@@ -349,38 +349,90 @@ function sum(arr) {
 
 ---
 
-## @nudo:returns — Assert Expected Return Type
+## @nudo:refine — Refinement Contract {#nudorefine--refinement-contract}
 
-Assert that the inferred return type matches a given type or predicate. Useful for tests and documentation.
+Attach a refinement from a `*.nudo.js` template to a parameter or the return value. The constraint enters Abs as a Pred and **participates in algebra** (`x>0` ⇒ `x+1>1`) — it is not just a call-site gate.
 
 ### Syntax
 
 ```text
-@nudo:returns (typeValueExpr)
+@nudo:refine <param> <constraint>
+@nudo:refine return <constraint>
 ```
 
-- **typeValueExpr** — A type value expression. The engine checks that the inferred return type equals or is a subtype of this type.
+- **param** — Parameter name, or the literal `return` for the postcondition
+- **constraint** — Name exported from a `*.nudo.js` module, imported via `/// @nudo:import`
+
+Templates are parameter-agnostic (`number().gt(0)`, `shape({...})`). Binding happens at the refine site.
 
 ### Examples
 
 ```javascript
+/// @nudo:import { positive, delay } from "./shapes.nudo.js"
+
 /**
- * @nudo:case "numbers" (T.number, T.number)
- * @nudo:returns (T.number)
+ * @nudo:refine x positive
+ * @nudo:refine return positive
  */
-function add(a, b) {
-  return a + b;
+function inc(x) {
+  return x + 1;
+}
+
+/**
+ * @nudo:refine ms delay
+ */
+function setDelay(ms) {
+  if (ms > 0) return ms;
+  return 0;
+}
+
+setDelay(0);   // error: 0 ⊭ delay
+setDelay(100); // ok
+```
+
+Object shapes without `interface`:
+
+```javascript
+// shapes.nudo.js
+export const user = shape({
+  id: number().gt(0),
+  name: string(),
+});
+
+/**
+ * @nudo:refine u user
+ */
+function register(u) {
+  return `${u.id}:${u.name}`;
 }
 ```
 
+---
+
+## @nudo:import — Constraint Templates
+
+Import constraint templates from a `*.nudo.js` module for use with `@nudo:refine`. This is a **file-level** directive using triple-slash comments.
+
+### Syntax
+
+```text
+/// @nudo:import { name1, name2 } from "./shapes.nudo.js"
+/// @nudo:import * as ns from "./shapes.nudo.js"
+```
+
+- **named** — bind exported template names used by `@nudo:refine`
+- **namespace** — parsed; template expansion via `ns.foo` is not yet supported
+
+### Example
+
 ```javascript
+/// @nudo:import { positive } from "./shapes.nudo.js"
+
 /**
- * @nudo:case "union" (T.union(T.string, T.number))
- * @nudo:returns (T.union(T.number, T.string))
+ * @nudo:refine x positive
  */
-function process(x) {
-  if (typeof x === "string") return x.length;
-  return x;
+function inc(x) {
+  return x + 1;
 }
 ```
 
@@ -591,7 +643,8 @@ const result = a + b;
 | `@nudo:pure` | (no args) | Mark function as pure for memoization |
 | `@nudo:skip` | `[returnsExpr]` | Skip evaluation, use existing type info |
 | `@nudo:sample` | `N` | Control loop sampling before fixed-point |
-| `@nudo:returns` | `(typeValueExpr)` | Assert expected return type |
+| `@nudo:refine` | `param constraint` / `return constraint` | Refinement contract (enters Abs as Pred) |
+| `@nudo:import` | `{ name } from "spec"` (file-level `///`) | Import `*.nudo.js` constraint templates for `@nudo:refine` |
 | `@nudo:env` | `name1, name2` (file-level `///`) | Declare runtime environment APIs |
 | `@nudo:mock-module` | `"module" from "path"` (file-level `///`) | Replace imported modules with mocks |
 | `@nudo:as` | `typeValueExpr` (line comment `//`) | Override next statement's value type |

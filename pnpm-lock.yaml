@@ -24,12 +24,21 @@ importers:
       '@types/babel__traverse':
         specifier: ^7.20.0
         version: 7.28.0
+      '@types/lodash':
+        specifier: ^4.17.25
+        version: 4.17.25
       '@types/node':
         specifier: ^25.3.0
         version: 25.3.0
       commander:
         specifier: ^13.0.0
         version: 13.1.0
+      lodash:
+        specifier: ^4.18.1
+        version: 4.18.1
+      ms:
+        specifier: ^2.1.3
+        version: 2.1.3
       tsup:
         specifier: ^8.0.0
         version: 8.5.0(jiti@1.21.7)(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)
@@ -64,7 +73,14 @@ importers:
         specifier: ^13.0.0
         version: 13.1.0
 
-  packages/core: {}
+  packages/core:
+    dependencies:
+      '@babel/parser':
+        specifier: ^7.29.0
+        version: 7.29.0
+      '@babel/types':
+        specifier: ^7.29.0
+        version: 7.29.0
 
   packages/env:
     dependencies:
@@ -119,12 +135,18 @@ importers:
       '@nudojs/core':
         specifier: workspace:*
         version: link:../core
+      '@nudojs/harvester':
+        specifier: workspace:*
+        version: link:../harvester
       '@nudojs/parser':
         specifier: workspace:*
         version: link:../parser
 
   packages/vite-plugin:
     dependencies:
+      '@nudojs/core':
+        specifier: workspace:*
+        version: link:../core
       '@nudojs/service':
         specifier: workspace:*
         version: link:../service
@@ -150,9 +172,6 @@ importers:
       '@docusaurus/preset-classic':
         specifier: ^3.7.0
         version: 3.9.2(@algolia/client-search@5.49.0)(@mdx-js/react@3.1.1(@types/react@19.2.14)(react@18.3.1))(@types/react@19.2.14)(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(search-insights@2.17.3)(typescript@5.8.3)
-      '@easyops-cn/docusaurus-search-local':
-        specifier: ^0.55.3
-        version: 0.55.3(@docusaurus/theme-common@3.9.2(@docusaurus/plugin-content-docs@3.9.2(@mdx-js/react@3.1.1(@types/react@19.2.14)(react@18.3.1))(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.8.3))(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(@mdx-js/react@3.1.1(@types/react@19.2.14)(react@18.3.1))(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
       '@mdx-js/react':
         specifier: ^3.0.0
         version: 3.1.1(@types/react@19.2.14)(react@18.3.1)
@@ -193,6 +212,9 @@ importers:
       '@docusaurus/types':
         specifier: ^3.7.0
         version: 3.9.2(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@easyops-cn/docusaurus-search-local':
+        specifier: ^0.55.3
+        version: 0.55.3(@docusaurus/theme-common@3.9.2(@docusaurus/plugin-content-docs@3.9.2(@mdx-js/react@3.1.1(@types/react@19.2.14)(react@18.3.1))(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.8.3))(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(@mdx-js/react@3.1.1(@types/react@19.2.14)(react@18.3.1))(esbuild@0.25.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
       typescript:
         specifier: ~5.8.0
         version: 5.8.3
@@ -2421,6 +2443,9 @@ packages:
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
+  '@types/lodash@4.17.25':
+    resolution: {integrity: sha512-+K1NIO8I+F9/wNulfVvu23QYd0Pe9/OCqRrim4NoYIf1VoEDL90Ve4ClzpyqBLc7NpGGWRvYNCKZ1BE/Jpf8dQ==}
+
   '@types/mdast@4.0.4':
     resolution: {integrity: sha512-kGaNbPh1k7AFzgpud/gMdvIm5xuECykRR+JnWKQno9TAXVa6WIVCGTPvYGekIDL4uwCZQSYbUxNBSb1aUo79oA==}
 
@@ -4281,6 +4306,9 @@ packages:
 
   lodash@4.17.23:
     resolution: {integrity: sha512-LgVTMpQtIopCi79SJeDiP0TfWi5CNEc/L/aRdTh3yIvmZXTnheWpKjSZhnvMl8iXbC1tFg9gdHHDMLoV7CnG+w==}
+
+  lodash@4.18.1:
+    resolution: {integrity: sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==}
 
   longest-streak@3.1.0:
     resolution: {integrity: sha512-9Ri+o0JYgehTaVBBDoMqIl8GXtbWg711O3srftcHhZ0dqnETqLaoIK0x17fUw9rFSlK/0NlsKe0Ahhyl5pXE2g==}
@@ -9551,6 +9579,8 @@ snapshots:
 
   '@types/json-schema@7.0.15': {}
 
+  '@types/lodash@4.17.25': {}
+
   '@types/mdast@4.0.4':
     dependencies:
       '@types/unist': 3.0.3
@@ -11607,6 +11637,8 @@ snapshots:
   lodash.uniq@4.5.0: {}
 
   lodash@4.17.23: {}
+
+  lodash@4.18.1: {}
 
   longest-streak@3.1.0: {}
 

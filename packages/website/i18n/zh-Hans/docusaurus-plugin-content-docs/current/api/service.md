@@ -394,7 +394,6 @@ type FunctionAnalysis = {
   paramNames: string[];        // AST 中的实际参数名
   cases: CaseResult[];
   combined?: TypeValue;        // 用例结果的联合
-  assertionErrors?: string[]; // @nudo:returns 失败
   entryOnly?: boolean;         // 合成的 entry@L 用例，未找到调用点
   skipped?: boolean;
   /** CJS 风格绑定/赋值函数（exports.X = fn）没有声明级稳定的
@@ -473,7 +472,7 @@ type Diagnostic = {
   severity: DiagnosticSeverity;   // "error" | "warning" | "info"
   message: string;
   tags?: DiagnosticTag[];         // 如 ["unnecessary"]
-  code?: string;                  // 如 "nudo:unknown-recv"、"nudo:mock-invalid"、"nudo-unreachable"、"nudo-assertion-failed"
+  code?: string;                  // 如 "nudo:unknown-recv"、"nudo:mock-invalid"、"nudo-unreachable"
   suggestions?: string[];
   data?: unknown;                 // 用于代码操作的额外上下文
   /** 接收者值的来源（流入该错误的调用点实参） */

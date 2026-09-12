@@ -83,7 +83,7 @@ T.fnSig([T.array(T.string)], T.string)
 
 ### 精化类型
 
-`T.refine` 创建精化类型——基础类型的子集，可选自定义运算规则：
+`T.refine` 是精化子集的 **TypeValue-IR 原语**（模板字符串、数值区间使用）。源码级契约请用 `@nudo:refine` + `*.nudo.js` 模板——见[指令参考](../concepts/directives.md)。
 
 ```typescript
 type Refinement = {

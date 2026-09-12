@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import nudoPlugin, { type NudoPluginOptions } from "../index.ts";
 
 describe("vite-plugin-nudo", () => {
@@ -7,19 +10,53 @@ describe("vite-plugin-nudo", () => {
     expect(plugin.name).toBe("vite-plugin-nudo");
   });
 
-  it("returns null for files without @nudo: directives", () => {
+  it("returns null for files without @nudo: directives", async () => {
     const plugin = nudoPlugin();
-    const result = plugin.transform.call({}, "const x = 1;", "/test/file.js");
+    const result = await plugin.transform.call({}, "const x = 1;", "/test/file.js");
     expect(result).toBeNull();
   });
 
-  it("returns null for node_modules files", () => {
+  it("analyzes files that only declare @nudo:refine (gate aligned with LSP)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-vite-"));
+    try {
+      writeFileSync(
+        join(dir, "shapes.nudo.js"),
+        `export const positive = number().gt(0);\n`,
+        "utf-8",
+      );
+      const source = `/// @nudo:import { positive } from "./shapes.nudo.js"
+
+/**
+ * @nudo:refine x positive
+ */
+function needsPositive(x) {
+  return x;
+}
+const r = needsPositive(-1);
+`;
+      const filePath = join(dir, "refine-only.js");
+      writeFileSync(filePath, source, "utf-8");
+
+      const plugin = nudoPlugin();
+      const warnFn = vi.fn();
+      const ctx = { warn: warnFn, error: vi.fn() };
+      const result = await plugin.transform.call(ctx, source, filePath);
+      expect(result).toBeNull();
+      expect(warnFn).toHaveBeenCalled();
+      const msgs = warnFn.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(msgs).toContain("constraint-violated");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns null for node_modules files", async () => {
     const plugin = nudoPlugin();
-    const result = plugin.transform.call({}, "const x = 1;", "/node_modules/pkg/file.js");
+    const result = await plugin.transform.call({}, "const x = 1;", "/node_modules/pkg/file.js");
     expect(result).toBeNull();
   });
 
-  it("analyzes files with @nudo: directives and reports warnings", () => {
+  it("analyzes files with @nudo: directives and reports warnings", async () => {
     const plugin = nudoPlugin();
     const warnFn = vi.fn();
     const ctx = { warn: warnFn, error: vi.fn() };
@@ -35,14 +72,14 @@ function safeSqrt(x) {
   return x;
 }
 `;
-    const result = plugin.transform.call(ctx, source, "/test/throws.js");
+    const result = await plugin.transform.call(ctx, source, "/test/throws.js");
     expect(result).toBeNull();
     expect(warnFn).toHaveBeenCalled();
   });
 
-  it("respects custom include patterns", () => {
+  it("respects custom include patterns", async () => {
     const plugin = nudoPlugin({ include: ["**/*.typed.js"] });
-    const result = plugin.transform.call({}, "const x = 1;", "/test/file.js");
+    const result = await plugin.transform.call({}, "const x = 1;", "/test/file.js");
     expect(result).toBeNull();
   });
 
@@ -60,97 +97,99 @@ function safeSqrt(x) {
     consoleSpy.mockRestore();
   });
 
-  it("errors when failOnError is true and diagnostics have errors", () => {
+  it("errors when failOnError is true and diagnostics have errors", async () => {
     const plugin = nudoPlugin({ failOnError: true });
     const errorFn = vi.fn();
     const warnFn = vi.fn();
     const ctx = { warn: warnFn, error: errorFn };
 
+    // case 期望返回类型与推断不符 → error 级诊断
     const source = `
 /**
- * @nudo:case "test" (T.number)
- * @nudo:returns (T.string)
+ * @nudo:case "test" (1) => T.string
  */
 function identity(x) {
   return x;
 }
 `;
-    plugin.transform.call(ctx, source, "/test/fail.js");
+    await plugin.transform.call(ctx, source, "/test/fail.js");
     expect(errorFn).toHaveBeenCalled();
   });
 });
 
 describe("vite-plugin-nudo glob matching", () => {
-  // This source reliably produces an error diagnostic (see the failOnError test
-  // above), so `warn` being called proves the file was matched and analyzed.
+  // 稳定产出 warning（throw 路径），用来证明文件被分析过
   const directiveSource = `
 /**
- * @nudo:case "test" (T.number)
- * @nudo:returns (T.string)
+ * @nudo:case "negative" (-1)
  */
-function identity(x) {
+function safeSqrt(x) {
+  if (x < 0) {
+    throw new RangeError("negative input");
+  }
   return x;
 }
 `;
 
-  function wasAnalyzed(id: string, options: NudoPluginOptions = {}): boolean {
+  async function wasAnalyzed(id: string, options: NudoPluginOptions = {}): Promise<boolean> {
     const plugin = nudoPlugin(options);
     const warnFn = vi.fn();
     const ctx = { warn: warnFn, error: vi.fn() };
-    const result = plugin.transform.call(ctx, directiveSource, id);
+    const result = await plugin.transform.call(ctx, directiveSource, id);
     return result === null && warnFn.mock.calls.length > 0;
   }
 
-  it("matches **/*.js at any depth by default", () => {
-    expect(wasAnalyzed("/file.js")).toBe(true);
-    expect(wasAnalyzed("/project/src/nested/mod.js")).toBe(true);
+  it("matches **/*.js at any depth by default", async () => {
+    expect(await wasAnalyzed("/file.js")).toBe(true);
+    expect(await wasAnalyzed("/project/src/nested/mod.js")).toBe(true);
   });
 
-  it("does not match other extensions with the default **/*.js include", () => {
-    expect(wasAnalyzed("/test/file.mjs")).toBe(false);
-    expect(wasAnalyzed("/test/file.ts")).toBe(false);
-    expect(wasAnalyzed("/test/file.cjs")).toBe(false);
+  it("default include covers js/mjs/ts but not cjs", async () => {
+    expect(await wasAnalyzed("/test/file.mjs")).toBe(true);
+    expect(await wasAnalyzed("/test/file.ts")).toBe(true);
+    expect(await wasAnalyzed("/test/file.cjs")).toBe(false);
+    expect(await wasAnalyzed("/test/file.d.ts")).toBe(false);
   });
 
-  it("supports **/*.mjs include patterns", () => {
+  it("supports **/*.mjs include patterns", async () => {
     const options = { include: ["**/*.mjs"] };
-    expect(wasAnalyzed("/test/file.mjs", options)).toBe(true);
-    expect(wasAnalyzed("/project/src/deep/file.mjs", options)).toBe(true);
-    expect(wasAnalyzed("/test/file.js", options)).toBe(false);
+    expect(await wasAnalyzed("/test/file.mjs", options)).toBe(true);
+    expect(await wasAnalyzed("/project/src/deep/file.mjs", options)).toBe(true);
+    expect(await wasAnalyzed("/test/file.js", options)).toBe(false);
   });
 
-  it("supports **/*.ts include patterns", () => {
+  it("supports **/*.ts include patterns", async () => {
     const options = { include: ["**/*.ts"] };
-    expect(wasAnalyzed("/src/util.ts", options)).toBe(true);
-    expect(wasAnalyzed("/src/util.js", options)).toBe(false);
-    expect(wasAnalyzed("/src/component.tsx", options)).toBe(false);
+    expect(await wasAnalyzed("/src/util.ts", options)).toBe(true);
+    expect(await wasAnalyzed("/src/util.js", options)).toBe(false);
+    expect(await wasAnalyzed("/src/component.tsx", options)).toBe(false);
   });
 
-  it("excludes **/node_modules/** at any depth by default", () => {
-    expect(wasAnalyzed("/project/node_modules/pkg/index.js")).toBe(false);
-    expect(wasAnalyzed("/project/packages/a/node_modules/dep/lib.js")).toBe(false);
+  it("excludes **/node_modules/** at any depth by default", async () => {
+    expect(await wasAnalyzed("/project/node_modules/pkg/index.js")).toBe(false);
+    expect(await wasAnalyzed("/project/packages/a/node_modules/dep/lib.js")).toBe(false);
   });
 
-  it("excludes **/<dir>/** directory segments without false positives", () => {
+  it("excludes **/<dir>/** directory segments without false positives", async () => {
     const options = { include: ["**/*.js"], exclude: ["**/fixtures/**"] };
-    expect(wasAnalyzed("/test/fixtures/case.js", options)).toBe(false);
-    expect(wasAnalyzed("/test/case.js", options)).toBe(true);
+    expect(await wasAnalyzed("/test/fixtures/case.js", options)).toBe(false);
+    expect(await wasAnalyzed("/test/case.js", options)).toBe(true);
     // "my-fixtures" is not the "fixtures" segment, so it must stay included.
-    expect(wasAnalyzed("/test/my-fixtures/case.js", options)).toBe(true);
+    expect(await wasAnalyzed("/test/my-fixtures/case.js", options)).toBe(true);
   });
 
-  it("gives exclude precedence over include", () => {
+  it("gives exclude precedence over include", async () => {
     const options = { include: ["**/*.js"], exclude: ["**/vendor/**"] };
-    expect(wasAnalyzed("/src/vendor/lib.js", options)).toBe(false);
-    expect(wasAnalyzed("/src/lib.js", options)).toBe(true);
+    expect(await wasAnalyzed("/src/vendor/lib.js", options)).toBe(false);
+    expect(await wasAnalyzed("/src/lib.js", options)).toBe(true);
   });
 
-  it("falls back to literal substring matching for wildcard-free patterns", () => {
+  it("falls back to literal substring matching for wildcard-free patterns", async () => {
     const options = { include: ["generated"] };
-    expect(wasAnalyzed("/src/generated/helpers.js", options)).toBe(true);
-    expect(wasAnalyzed("/src/helpers.js", options)).toBe(false);
+    expect(await wasAnalyzed("/src/generated/helpers.js", options)).toBe(true);
+    expect(await wasAnalyzed("/src/helpers.js", options)).toBe(false);
 
     const excluded = { include: ["**/*.js"], exclude: ["snapshots"] };
-    expect(wasAnalyzed("/src/snapshots/old.js", excluded)).toBe(false);
+    expect(await wasAnalyzed("/src/snapshots/old.js", excluded)).toBe(false);
   });
 });

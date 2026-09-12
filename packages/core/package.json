@@ -1,7 +1,7 @@
 {
   "name": "@nudojs/core",
   "version": "0.2.0",
-  "description": "Core type value primitives and type system for the Nudo inference engine",
+  "description": "Nudo type system: type-as-computation (Abs) with TypeValue evaluation IR",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -13,7 +13,8 @@
   ],
   "main": "src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./exec": "./src/algebra/exec/index.ts"
   },
   "repository": {
     "type": "git",
@@ -29,5 +30,9 @@
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.29.0",
+    "@babel/types": "^7.29.0"
   }
 }

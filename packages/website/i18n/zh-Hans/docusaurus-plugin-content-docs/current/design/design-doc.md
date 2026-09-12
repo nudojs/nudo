@@ -1,11 +1,11 @@
 ---
 sidebar_position: 1
-description: "Nudo 设计内幕：符号类型值的抽象解释、指令系统，以及直接执行代码才能算出的类型能力。"
+description: "Nudo 设计内幕：Abs = shape × term × pred × conf 作为类型系统，TypeValue 作为评估 IR，指令系统与抽象解释。"
 ---
 
 # 设计文档
 
-> **Nudo** — 面向 JavaScript 的类型推断引擎，通过对符号化的类型值执行代码来推导精确类型（抽象解释）。
+> **Nudo** — 面向 JavaScript 的类型推断引擎。类型系统是 **Abs**（`shape × term × pred × conf`）——类型是可计算值，携带约束并参与代数。**TypeValue** 是评估 IR（环境绑定、dts/LSP/序列化），不是平行类型系统；Abs ⇄ TypeValue 经有损 bridge。
 
 ---
 
@@ -36,48 +36,59 @@ type Transform<T> =
 
 **如果值级代码本身就是类型级计算呢？**
 
-Nudo 既不像 TypeScript 那样静态分析代码，也不像测试那样用具体值运行代码，而是**用符号化的「类型值」来执行代码**——这些特殊对象代表一组可能的值。执行过程本身就产生了类型。
+Nudo 既不像 TypeScript 那样静态分析代码，也不像测试那样用具体值运行代码，而是**用抽象值（Abs）执行代码**——类型携带 shape、符号项与约束。执行本身产生类型；约束随运算传播（`x>0` ⇒ `x+1>1`）。
 
 ```text
 传统方式：   源代码  →  静态分析  →  类型
-Nudo：       源代码  +  类型值     →  执行  →  类型
+Nudo：       源代码  +  Abs     →  执行  →  类型 + 约束
 ```
 
-这不是「通过样例归纳类型」（从有限样本进行归纳推理）。这是**抽象解释（Abstract Interpretation）**——编程语言理论中一种成熟的技术——以「运行代码」这一熟悉的心智模型呈现。
+这不是「通过样例归纳类型」。这是**抽象解释（Abstract Interpretation）**——以「运行代码」这一熟悉心智模型呈现。
 
 ### 1.3 关键区分：具体执行 vs 符号执行
 
 | 方式 | 输入 | 输出 | 完备性 |
 |----------|-------|--------|--------------|
 | 单元测试 | 具体值（`1`、`"hello"`） | 具体结果 | 仅覆盖测试用例 |
-| Nudo | 类型值（`T.number`、`T.string`） | 类型值 | 覆盖类型集合中的所有值 |
+| Nudo | Abs（shape × term × pred） | Abs（展示时投影为 TypeValue） | 覆盖抽象集合中的所有值 |
 | TypeScript | AST（不执行） | 类型 | 覆盖所有语法路径 |
-
-当 Nudo 执行 `transform(T.string)` 时，引擎将 `T.string` 在函数体中传播。在 `typeof x === "string"` 处，引擎知道该分支会被进入。在 `x.toUpperCase()` 处，引擎知道结果是 `T.string`。结果不是一个具体值——而是一个**类型**。
 
 ---
 
-## 2. 类型值体系
+## 2. 类型系统：Abs 与 TypeValue IR
 
-**类型值（Type Value）** 是基础抽象。一个类型值代表一组可能的 JavaScript 值，并知道如何参与 JS 运算。
+### 2.1 Abs —— 类型系统本体
 
-### 2.1 类型值层级
+**Abs** 是唯一类型系统：`shape × term × pred × conf`。
+
+| 分量 | 含义 |
+|-----------|---------|
+| **shape** | 结构种类：`any` / `unknown` / `prim` / `obj` / `arr` / `tuple` / `fn` / `brand` / `eff` / `sum` / `never` |
+| **term** | 值的符号身份：字面量、变量或应用（`x+1`） |
+| **pred** | 相对 term 的约束：`x>0`、合取等 |
+| **conf** | 置信度：`exact` / `path` / `widened` / `partial` / `opaque` |
+
+`any` 表示「任意 JS 值」（无约束参数）；`unknown` 表示「分析拿不到信息」。二者不同。
+
+Abs 上的运算是代数的：单调算术、比较、`leq` 可赋值、谓词蕴含。`nudo check` 是这套代数上的 CI 门禁（金标 recall = precision = 1.0）。
+
+### 2.2 TypeValue —— 评估 IR（不是第二套类型系统）
+
+TypeValue 供环境绑定、dts、LSP hover 外延侧与序列化消费。它是 Abs 的**投影**（`bridge.ts` 的 `absToTypeValue` / `typeValueToAbs`）。bridge 有损：非字面量 term 与无法 encode 的 pred 会丢；丢信息时不得假装 `exact`。
 
 ```text
 TypeValue
-├── Literal<V>          — 单个具体值：1, "hello", true, null, undefined
-├── Primitive<T>        — 某基本类型的所有可能值：number, string, boolean, bigint, symbol
-├── RefinedType         — 基础类型的精化子集，携带元数据和自定义运算规则
-├── ObjectType          — 具有已知属性类型的对象：{ id: number, name: Literal<"Alice"> }
-├── ArrayType           — 具有元素类型的数组：Array<number>
-├── TupleType           — 固定长度数组：[Literal<1>, Primitive<string>]
-├── FunctionType        — 具有 params、body、closure 的函数
-├── UnionType           — 类型值的联合：Literal<1> | Literal<2> | Primitive<string>
-├── NeverType           — 空集（不可达）
-└── UnknownType         — 全集（任意值）
+├── Literal<V>          — 单个具体值
+├── Primitive<T>        — 某基本类型的所有可能值
+├── RefinedType         — 基础类型的精化子集（IR 原语；源码契约用 @nudo:refine）
+├── ObjectType          — 具有已知属性类型的对象
+├── ArrayType / TupleType
+├── FunctionType
+├── UnionType
+├── NeverType / UnknownType
 ```
 
-### 2.2 设计原则
+### 2.3 设计原则
 
 **原则 1：字面量保留。** 当所有输入都是字面量时，结果也应该是字面量。
 
@@ -166,35 +177,28 @@ Ops.add(a, b)
 ### 3.1 架构概览
 
 ```text
-┌─────────────────────────────────────────────────────┐
-│                   Nudo Engine                       │
-│                                                     │
-│  ┌───────────┐   ┌────────────┐   ┌──────────────┐ │
-│  │  Parser   │──▶│ Directive  │──▶│  Evaluator   │ │
-│  │ (Babel)   │   │ Extractor  │   │ (AST Walker)  │ │
-│  └───────────┘   └────────────┘   └──────┬───────┘ │
-│                                          │         │
-│                  ┌───────────────────────┐│         │
-│                  │    Ops (Operator &    ││         │
-│                  │  Built-in Semantics) │◀         │
-│                  └───────────────────────┘          │
-│                                                     │
-│  ┌──────────────┐  ┌─────────────┐  ┌───────────┐  │
-│  │ Environment  │  │   Branch    │  │   Type    │  │
-│  │   (Scope)    │  │  Executor   │  │  Emitter  │  │
-│  └──────────────┘  └─────────────┘  └───────────┘  │
-└─────────────────────────────────────────────────────┘
+parser ──▶ core
+            ├── algebra/     ← 类型本体（Abs / Term / Pred / Φ / check）
+            ├── type-value   ← 评估 IR
+            ├── ops          ← 代数未覆盖的语言表面
+            └── bridge       ← Abs ⇄ TypeValue（有损）
+                 │
+                 ▼
+            cli/evaluator    ← AST 抽象解释；算术先走 Abs
+                 │
+                 ▼
+            service / lsp / vite / dts
 ```
 
 | 组件 | 职责 |
 |-----------|-----------|
 | **Parser** | 将 JS/TS 源码解析为 AST（Babel） |
-| **Directive Extractor** | 从注释中提取 `@nudo:*` 指令 |
-| **Evaluator** | 遍历 AST，用类型值对每个节点求值 |
-| **Ops** | 定义运算符和内置方法的类型值语义 |
-| **Environment** | 变量绑定（名称 → TypeValue） |
-| **Branch Executor** | 在条件处分叉、窄化、求值、合并 |
-| **Type Emitter** | 将最终 TypeValue 序列化（如转 TypeScript） |
+| **Directive Extractor** | 提取 `@nudo:*`；refine/import 在 core 解析 |
+| **algebra (Abs)** | 类型即计算：eval / check / leq / generalize |
+| **Evaluator（TypeValue 路径）** | import/env/复杂 mock 文件的回落 AST walker |
+| **Ops** | 代数未覆盖的运算符残差语义 |
+| **bridge** | Abs → TypeValue（dts/LSP/序列化） |
+| **Environment** | 变量绑定（名称 → TypeValue 或 Abs seed） |
 
 ### 3.2 求值规则
 
@@ -293,7 +297,7 @@ Nudo 将异常作为函数类型的一等部分追踪。每个函数不仅有 `r
 | `@nudo:pure` | 标记函数为纯函数，启用记忆化 |
 | `@nudo:skip` | 跳过求值；可选的类型表达式直接声明返回类型（如 `@nudo:skip T.number`） |
 | `@nudo:sample` | 不动点之前的循环迭代次数 |
-| `@nudo:returns` | 断言预期返回类型 |
+| `@nudo:refine` | 精化契约：`@nudo:refine param name` / `@nudo:refine return name`（Pred 进入 Abs） |
 | `@nudo:env` | 声明运行时环境 API（文件级 `///` 注释） |
 | `@nudo:mock-module` | 用 mock 文件替换导入的模块（文件级 `///` 注释） |
 | `@nudo:as` | 覆盖下一条语句的值类型（行注释 `//`） |
@@ -363,22 +367,28 @@ for (let i = 0; i < 5; i++) sum += i;
 // Nudo: sum → 10 | TS: number
 ```
 
-### 6.8 用户可扩展的类型精化
+### 6.8 声明式精化（无需类型语法）
 
-用户可通过 `T.refine` 定义自定义精化类型，附加领域特定的运算规则：
+用户侧契约用 `@nudo:refine` 和 `*.nudo.js` 模板声明——不是 `interface` / `type`，也不在源码里写 `T.refine`：
 
 ```javascript
-const Odd = T.refine(T.number, {
-  name: "odd",
-  check: (v) => Number.isInteger(v) && v % 2 !== 0,
-  ops: { "%"(self, other) {
-    if (other.kind === "literal" && other.value === 2) return T.literal(1);
-    return undefined; // 回退到 T.number 行为
-  }},
-});
-// Odd % 2 → 1（自定义规则）
-// Odd + 1 → number（回退到基础类型）
+// shapes.nudo.js
+export const positive = number().gt(0);
+export const user = shape({ id: number().gt(0), name: string() });
+
+// app.js
+/// @nudo:import { positive, user } from "./shapes.nudo.js"
+
+/**
+ * @nudo:refine x positive
+ * @nudo:refine return positive
+ */
+function inc(x) {
+  return x + 1;
+}
 ```
+
+Pred 进入 Abs 并参与代数（`x>0` ⇒ `x+1>1`）。`T.refine` 是这些模板 lowering 到的 TypeValue-IR 原语，不是源码级 API。
 
 ---
 
@@ -417,30 +427,18 @@ function calc(a, b) {
 
 ## 8. 实现路线图
 
-### 阶段 1：最小可行求值器（已完成）
-- Babel 解析、TypeValue 核心、基本 Ops、求值器、窄化、`@nudo:case`、CLI。
+### 已完成
+- **求值器 MVP** — Babel、TypeValue IR、ops、窄化、`@nudo:case`、CLI `infer`。
+- **对象/数组** — 对象、数组、元组、Array 方法、`@nudo:mock`。
+- **高级语言特性** — 闭包、递归预算、async/Promise、try-catch、类。
+- **工具链** — LSP、watch、`.d.ts`、Vite 插件、VS Code 扩展。
+- **精化 IR** — 模板/区间精化；源码契约 `@nudo:refine`。
+- **Abs 代数（单轨）** — Term/Pred/Abs、算术核、`leqAbs`、generalize、`nudo check` / `nudo types` / `nudo test`、CheckJson、金标（recall = precision = 1.0）。
+- **调用预算** — depth/cycle/total 守卫，递归 check 不再栈溢出。
 
-### 阶段 2：对象与数组（已完成）
-- ObjectType、ArrayType、TupleType、属性访问、`Array.prototype` 方法、`@nudo:mock`。
-
-### 阶段 3：高级特性（已完成）
-- 闭包、递归、async/Promise、try-catch、instanceof、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`。
-
-### 阶段 4：工具链（已完成）
-- LSP、watch 模式、`.d.ts` 导出、Vite 插件、VS Code 扩展。
-
-### 阶段 5：精化类型值（已完成）
-- `RefinedType` 类型种类及 `Refinement` 接口（name、meta、check、ops、methods、properties）。
-- 内置模板字符串精化（parts、拼接、startsWith/endsWith/includes、length）。
-- 内置数值区间精化（min、max、integer、比较运算符）。
-- 用户自定义精化类型 `T.refine`。
-- 分派回退链：refined → base → primitive。
-
-### 阶段 6：求值器完善（已完成）
-- 完整字符串方法语义（20+ 方法，字面量与抽象）。
-- 循环求值与不动点迭代（for、while、do-while）。
-- `@nudo:sample` 指令控制循环采样次数。
-- 比较窄化到区间类型。
+### 待做
+- emit 经 tsc 往返；harvest 自动化
+- esbuild / webpack 插件；错误定位 source map
 
 ---
 

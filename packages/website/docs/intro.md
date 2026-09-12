@@ -55,7 +55,9 @@ for (let i = 0; i < 5; i++) sum += i;
 // sum → 10 (TS: number)
 ```
 
-Users can also define custom refined types with domain-specific operation rules via `T.refine`. See [Examples](./guides/examples.md) for more.
+The same algebra powers **[`nudo check`](./guides/check.md)** — a refinement gate. Declared `@nudo:refine` contracts enter Abs as Preds and participate in arithmetic (`x>0` ⇒ `x+1>1`). Reports use `actual ⊭ expected`, not TypeScript diagnostic prose. TypeScript `.d.ts` emit is an ecosystem compatibility channel, not the primary type model.
+
+Contracts live in `*.nudo.js` templates (`number().gt(0)`, `shape({...})`) — no `interface` / `type` syntax. See [Directives](./concepts/directives.md#nudorefine--refinement-contract).
 
 ## What's Next
 
@@ -63,4 +65,5 @@ Users can also define custom refined types with domain-specific operation rules 
 - **[Quick Start](./getting-started/quick-start.md)** — Run `nudo infer` on your first file
 - **[Core Concepts](./concepts/type-values.md)** — Type values, directives, and abstract interpretation
 - **[Call-Site Discovery](./guides/callsite-discovery.md)** — Let Nudo mine your tests for real call shapes instead of writing cases by hand
+- **[nudo check](./guides/check.md)** — Refinement gate on Abs (type-as-computation)
 - **[Language Semantics](./guides/semantics.md)** — The JavaScript behaviors Nudo models precisely, from `this` binding to promise resolution

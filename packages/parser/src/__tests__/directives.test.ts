@@ -215,7 +215,7 @@ function use(opts) { return opts; }
 // 结构等价。
 // ---------------------------------------------------------------------------
 
-import { stripTypes } from "../strip-types.ts";
+import { stripTypes } from "@nudojs/core";
 
 const META_KEYS = new Set([
   "loc", "start", "end", "range",

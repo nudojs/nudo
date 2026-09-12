@@ -1,18 +1,13 @@
-import { readFileSync, existsSync, watch, readdirSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, existsSync, watch, readdirSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname, relative, join, basename } from "node:path";
 import { Command } from "commander";
-import {
-  T,
-  typeValueToString,
-  createEnvironment,
-  mockHelperToTypeValue,
-} from "@nudojs/core";
-import type { TypeValue } from "@nudojs/core";
-import { parse, extractDirectives, parseTypeValueExpr } from "@nudojs/parser";
-import { evaluateFunctionFull, evaluateProgram, setModuleResolver, setCurrentFileDir, resetMemo } from "./evaluator.ts";
+import { typeValueToString } from "@nudojs/core";
+import { extractDirectives } from "@nudojs/parser";
+import { resetMemo } from "./evaluator.ts";
 import {
   typeValueToZodSchema,
   generateGuardFunction,
+  generateGuardFunctionFromAbs,
   generateFunctionDtsLines,
   analyzeFileAsync,
   buildModuleGraph,
@@ -23,6 +18,7 @@ import {
   insertGeneratedCaseDirectives,
   unifiedDiff,
   isNudoTargetPath,
+  collectDtsFromEntry,
   type CallRecord,
   type CaseResult,
   type FunctionAnalysis,
@@ -30,7 +26,7 @@ import {
   type EmitResult,
 } from "@nudojs/service";
 import { harvestDts, emitEnvModule } from "@nudojs/harvester";
-import { resolveNpmNudo } from "./resolve-npm.ts";
+import { buildTestReport, formatTestReport } from "./run-test.ts";
 
 const program = new Command();
 
@@ -38,86 +34,6 @@ program
   .name("nudo")
   .description("Nudo type inference engine")
   .version("0.0.1");
-
-function applyMocks(
-  directives: ReturnType<typeof extractDirectives>[number]["directives"],
-  env: ReturnType<typeof createEnvironment>,
-  filePath: string,
-): void {
-  for (const d of directives) {
-    if (d.kind !== "mock") continue;
-    if (d.arrowFn) {
-      // Create a function TypeValue from the parsed arrow function
-      const fnType = T.fn(d.arrowFn.params, d.arrowFn.body, env);
-      (fnType as any)._paramPatterns = d.arrowFn.paramPatterns;
-      env.bind(d.name, fnType);
-    } else if (d.nudoMock) {
-      // Handle Nudo mock helpers (stub, spy, mock)
-      const typeVal = mockHelperToTypeValue(d.nudoMock, env);
-      env.bind(d.name, typeVal);
-    } else if (d.sinonExpr) {
-      // Handle sinon expressions
-      const sinonType = createSinonTypeValue(d.sinonExpr);
-      env.bind(d.name, sinonType);
-    } else if (d.expression) {
-      env.bind(d.name, parseTypeValueExpr(d.expression));
-    } else if (d.fromPath) {
-      const mockPath = resolve(dirname(filePath), d.fromPath);
-      const mockSource = readFileSync(mockPath, "utf-8");
-      const mockAst = parse(mockSource);
-      const mockEnv = createEnvironment();
-      evaluateProgram(mockAst, mockEnv);
-      const mockVal = mockEnv.lookup(d.name);
-      env.bind(d.name, mockVal);
-    }
-  }
-}
-
-function createSinonTypeValue(sinonExpr: { type: string; returnValue?: TypeValue; resolvedValue?: TypeValue; rejectedValue?: TypeValue }): TypeValue {
-  const body = { type: "BlockStatement", body: [] } as any;
-  const fn = T.fn(["...args"], body, createEnvironment());
-
-  if (sinonExpr.returnValue) {
-    (fn as any)._directReturn = sinonExpr.returnValue;
-  } else if (sinonExpr.resolvedValue) {
-    (fn as any)._directReturn = T.promise(sinonExpr.resolvedValue);
-  } else if (sinonExpr.rejectedValue) {
-    (fn as any)._directReturn = T.never;
-  } else {
-    (fn as any)._directReturn = T.unknown;
-  }
-
-  return fn;
-}
-
-function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string; json?: unknown } | null {
-  const extensions = [".js", ".ts", ".mjs"];
-
-  const nudoPath = resolveNpmNudo(source, fromDir);
-  if (nudoPath) {
-    const src = readFileSync(nudoPath, "utf-8");
-    return { ast: parse(src), filePath: nudoPath };
-  }
-
-  const basePath = resolve(fromDir, source);
-
-  for (const ext of ["", ...extensions]) {
-    const candidate = basePath + ext;
-    if (existsSync(candidate)) {
-      // .json 模块：CJS require('../package.json') 等常见模式——按 JSON 求值
-      if (candidate.endsWith(".json")) {
-        try {
-          return { ast: parse("module.exports = undefined;"), filePath: candidate, json: JSON.parse(readFileSync(candidate, "utf-8")) };
-        } catch {
-          return null;
-        }
-      }
-      const src = readFileSync(candidate, "utf-8");
-      return { ast: parse(src), filePath: candidate };
-    }
-  }
-  return null;
-}
 
 /** `--emit-cases` 的编排选项：mode 决定 add/update 两条固化路径 */
 type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOnDiff: boolean };
@@ -217,6 +133,19 @@ async function runInfer(
       let line = `Case "${c.name}": (${argsStr}) => ${typeValueToString(c.result)}`;
       if (c.throws.kind !== "never") line += ` throws ${typeValueToString(c.throws)}`;
       console.log(line);
+      // M3：内涵摘要（term/pred/conf）+ 无损 Abs
+      if (c.intension?.display) {
+        console.log(`    intension: ${c.intension.display}`);
+      } else if (c.intension?.term || c.intension?.pred) {
+        const parts: string[] = [];
+        if (c.intension.term) parts.push(`term=${c.intension.term}`);
+        if (c.intension.pred) parts.push(`pred: ${c.intension.pred}`);
+        if (c.intension.conf) parts.push(`#${c.intension.conf}`);
+        console.log(`    ${parts.join("  ")}`);
+      }
+      if (c.intension?.abs) {
+        console.log(`    abs: ${c.intension.abs}`);
+      }
     }
 
     if (fn.entryOnly) {
@@ -225,12 +154,6 @@ async function runInfer(
 
     if (fn.cases.length > 1 && fn.combined) {
       console.log(`\nCombined: ${typeValueToString(fn.combined)}`);
-    }
-
-    if (fn.assertionErrors && fn.assertionErrors.length > 0) {
-      for (const err of fn.assertionErrors) {
-        console.log(`\n⚠ ${err}`);
-      }
     }
 
     console.log();
@@ -321,44 +244,8 @@ async function runInferJson(file: string, externalRecords?: CallRecord[]): Promi
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
   const result = await analyzeFileAsync(filePath, source, undefined, externalRecords);
-
-  const jsonOutput = {
-    functions: result.functions.map((f) => ({
-      name: f.name,
-      loc: f.loc,
-      cases: f.cases.map((c) => ({
-        name: c.name,
-        args: c.args.map(typeValueToString),
-        result: typeValueToString(c.result),
-        throws: c.throws.kind !== "never" ? typeValueToString(c.throws) : null,
-        source: c.source ?? null,
-      })),
-      entryOnly: f.entryOnly ?? false,
-      assertionErrors: f.assertionErrors,
-    })),
-    externalFunctions: result.externalFunctions?.map((f) => ({
-      name: f.name,
-      fromModule: f.fromModule,
-      cases: f.cases.map((c) => ({
-        name: c.name,
-        args: c.args.map(typeValueToString),
-        result: typeValueToString(c.result),
-        throws: c.throws.kind !== "never" ? typeValueToString(c.throws) : null,
-        source: c.source ?? null,
-      })),
-    })),
-    diagnostics: result.diagnostics.map((d) => ({
-      range: d.range,
-      severity: d.severity,
-      message: d.message,
-      code: d.code,
-      suggestions: d.suggestions,
-      tags: d.tags,
-      origin: d.origin,
-    })),
-  };
-
-  console.log(JSON.stringify(jsonOutput, null, 2));
+  const { serializeInferJson } = await import("@nudojs/service");
+  console.log(JSON.stringify(serializeInferJson(result, filePath), null, 2));
 }
 
 program
@@ -442,16 +329,29 @@ program
     }
   });
 
-async function runCheck(file: string): Promise<void> {
+async function runCheck(file: string, opts: { json?: boolean } = {}): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
-  const result = await analyzeFileAsync(filePath, source);
 
-  if (result.diagnostics.length === 0) {
-    console.log("No issues found.");
+  // 代数门禁：约束蕴含（类型即计算）
+  const { checkSource, formatCheckReport, serializeCheckJson, pTrue } = await import("@nudojs/core");
+  const { defaultLoadModule: loadModule } = await import("@nudojs/service");
+  const algebraReport = checkSource(filePath, source, pTrue, {
+    loadModule,
+    fromFile: filePath,
+  });
+
+  if (opts.json) {
+    // 稳定契约：只输出 check JSON，不混 evaluator 文本
+    console.log(JSON.stringify(serializeCheckJson(algebraReport), null, 2));
+    if (!algebraReport.ok) process.exitCode = 1;
     return;
   }
 
+  console.log(formatCheckReport(algebraReport, { verbose: true }));
+
+  // 外延评估器诊断：null/结构等语言表面
+  const result = await analyzeFileAsync(filePath, source);
   for (const d of result.diagnostics) {
     const loc = `${relative(process.cwd(), filePath)}:${d.range.start.line}:${d.range.start.column}`;
     console.log(`[${d.severity}] ${loc} ${d.message}${d.code ? ` (${d.code})` : ""}`);
@@ -460,17 +360,151 @@ async function runCheck(file: string): Promise<void> {
     }
   }
 
-  if (result.diagnostics.some((d) => d.severity === "error")) {
+  const evalError = result.diagnostics.some((d) => d.severity === "error");
+  if (!algebraReport.ok || evalError) {
     process.exitCode = 1;
+  }
+}
+
+/** 单文件或目录 → 推断目标列表（目录递归，跳过 node_modules） */
+function resolveTargets(path: string): string[] {
+  const resolved = resolve(path);
+  if (!existsSync(resolved)) {
+    console.error(`Not found: ${resolved}`);
+    process.exitCode = 1;
+    return [];
+  }
+  if (statSync(resolved).isDirectory()) {
+    const files = collectNudoFiles(resolved);
+    if (files.length === 0) {
+      console.error(`No nudo files found in directory: ${resolved}`);
+      process.exitCode = 1;
+    }
+    return files;
+  }
+  return [resolved];
+}
+
+program
+  .command("types")
+  .description("Type-as-computation view: show term + constraints from the algebra (not just extensional shape)")
+  .argument("<file>", "Path to the JS/TS file or a directory of them")
+  .option("--fn <name>", "Only analyze this function")
+  .option("--assume <pred...>", "Assume constraints, e.g. x>0 y>=1")
+  .option("--generalize", "Show polymorphic signatures via symbolic execution")
+  .action(
+    async (
+      file: string,
+      opts: { fn?: string; assume?: string[]; generalize?: boolean },
+    ) => {
+      const targets = resolveTargets(file);
+      if (targets.length === 0) return;
+      for (const t of targets) {
+        await runTypes(t, opts);
+        if (targets.length > 1) console.log("");
+      }
+    },
+  );
+
+async function runTypes(
+  filePath: string,
+  opts: { fn?: string; assume?: string[]; generalize?: boolean },
+): Promise<void> {
+  const { readFileSync } = await import("node:fs");
+  const { basename } = await import("node:path");
+  const algebra = await import("@nudojs/core");
+
+  const source = readFileSync(filePath, "utf8");
+  let phi = algebra.pTrue;
+  const assumeIds = new Set<string>();
+  for (const a of opts.assume ?? []) {
+    const m = /^([A-Za-z_$][\w$]*)\s*(>=|>)\s*(-?\d+(?:\.\d+)?)$/.exec(a.trim());
+    if (!m) {
+      console.error(`无法解析 --assume: ${a}（支持 x>0 / x>=1）`);
+      continue;
+    }
+    const id = m[1]!;
+    const n = Number(m[3]);
+    phi = algebra.gtNum(algebra.v(id), n);
+    assumeIds.add(id);
+  }
+
+  // 列出函数
+  const list = opts.fn ? [opts.fn] : algebra.listFunctionNames(source);
+  if (list.length === 0) {
+    console.error(`未找到函数: ${basename(filePath)}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const { defaultLoadModule: loadModule } = await import("@nudojs/service");
+
+  console.log(`nudo types  ${basename(filePath)}`);
+  if (assumeIds.size > 0) {
+    console.log(`assume: ${[...assumeIds].map((id) => `${id} > 0`).join(", ")}`);
+  }
+  if (opts.generalize) {
+    console.log("mode: generalize (symbolic α)\n");
+  } else {
+    console.log("");
+  }
+
+  for (const name of list) {
+    if (opts.generalize) {
+      const g = algebra.generalizeFromAst(name, source, {
+        refine: { loadModule, fromFile: filePath },
+      });
+      if (!g) continue;
+      console.log(g.display);
+      console.log("");
+      continue;
+    }
+
+    const args = algebra.buildArgsFromAssume(source, name, assumeIds);
+    const result = algebra.analyzeFn(source, name, args, phi);
+    const label = `${name}(${args.map((a) => algebra.formatShape(a)).join(", ")})`;
+    console.log(algebra.formatAbsMultiline(result, label));
+    console.log("");
   }
 }
 
 program
   .command("check")
-  .description("Check a JS file for type errors — exits with code 1 when errors are found")
-  .argument("<file>", "Path to the JS file")
+  .description("Check a JS/TS file (or directory) for type errors — exits with code 1 when errors are found")
+  .argument("<file>", "Path to the JS/TS file or a directory of them")
+  .option("--json", "Emit stable CheckJson (CI / Agent contract; single file only)")
+  .action(async (file: string, opts: { json?: boolean }) => {
+    const targets = resolveTargets(file);
+    if (targets.length === 0) return;
+    if (opts.json && targets.length > 1) {
+      console.error("--json requires a single file, not a directory");
+      process.exitCode = 1;
+      return;
+    }
+    for (const t of targets) {
+      await runCheck(t, opts);
+    }
+  });
+
+program
+  .command("test")
+  .description("Run @nudo:case directives as assertions (case-as-test); exit 1 on failure")
+  .argument("<file>", "Path to the JS/TS file or a directory of them")
   .action(async (file: string) => {
-    await runCheck(file);
+    const targets = resolveTargets(file);
+    if (targets.length === 0) return;
+    for (const filePath of targets) {
+      const source = readFileSync(filePath, "utf-8");
+      try {
+        const result = await analyzeFileAsync(filePath, source);
+        const report = buildTestReport(filePath, result);
+        console.log(formatTestReport(report));
+        if (report.failed > 0) process.exitCode = 1;
+      } catch (err) {
+        console.error(`nudo test failed to analyze ${filePath}: ${(err as Error).message}`);
+        process.exitCode = 1;
+      }
+    }
   });
 
 // ---------------------------------------------------------------------------
@@ -760,86 +794,129 @@ function fnParamNames(node: DirectiveFnNode): string[] {
   return [];
 }
 
+/** generate/emit/guard 共用管道：analyzeFileAsync → zod/guard/dts 片段 */
+async function runGenerate(
+  file: string,
+  format: "zod" | "guard" | "dts" | "all",
+  output?: string,
+): Promise<void> {
+  const filePath = resolve(file);
+  const source = readFileSync(filePath, "utf-8");
+  // 与 infer/check 同一分析管道（Abs 优先 + refine + env preload）
+  const result = await analyzeFileAsync(filePath, source);
+  const functions = result.functions.filter(
+    (f) => f.cases.some((c) => c.source === "directive"),
+  );
+
+  if (functions.length === 0) {
+    console.log("No functions with @nudo:case directives found.");
+    return;
+  }
+
+  const zodChunks: string[] = [];
+  const guardChunks: string[] = [];
+  const dtsChunks: string[] = [];
+
+  for (const fn of functions) {
+    const caseResults: CaseResult[] = fn.cases.filter((c) => c.source === "directive");
+    const baseName = fn.name;
+
+    if (format === "zod" || format === "all") {
+      const lines: string[] = [`\n// === ${baseName} Zod Schemas ===`];
+      for (const c of caseResults) {
+        const inputSchemas = c.args.map((a, i) => `arg${i}: ${typeValueToZodSchema(a)}`).join(", ");
+        const outputSchema = typeValueToZodSchema(c.result);
+        lines.push(`// Case "${c.name}":`);
+        lines.push(`// Input: { ${inputSchemas} }`);
+        lines.push(`// Output: ${outputSchema}`);
+      }
+      zodChunks.push(lines.join("\n"));
+    }
+
+    if (format === "guard" || format === "all") {
+      const lines: string[] = [`\n// === ${baseName} Type Guards ===`];
+      for (const c of caseResults) {
+        const guardName = `is${baseName}${c.name.charAt(0).toUpperCase() + c.name.slice(1)}Output`;
+        // Abs 路径优先：denote 保留 pred；否则回退 TypeValue 投影
+        if (c.abs) {
+          lines.push(generateGuardFunctionFromAbs(guardName, c.abs));
+        } else {
+          lines.push(generateGuardFunction(guardName, c.result));
+        }
+      }
+      guardChunks.push(lines.join("\n"));
+    }
+
+    if (format === "dts" || format === "all") {
+      dtsChunks.push(generateFunctionDtsLines(fn).join("\n"));
+    }
+  }
+
+  const stem = basename(filePath).replace(/\.[cm]?[jt]s$/, "");
+  if (output) {
+    const outDir = resolve(output);
+    mkdirSync(outDir, { recursive: true });
+    const written: string[] = [];
+    if (zodChunks.length > 0) {
+      const p = join(outDir, `${stem}.nudo.zod.ts`);
+      writeFileSync(p, zodChunks.join("\n") + "\n", "utf-8");
+      written.push(p);
+    }
+    if (guardChunks.length > 0) {
+      const p = join(outDir, `${stem}.nudo.guard.ts`);
+      writeFileSync(p, guardChunks.join("\n") + "\n", "utf-8");
+      written.push(p);
+    }
+    if (dtsChunks.length > 0) {
+      const p = join(outDir, `${stem}.d.ts`);
+      writeFileSync(p, dtsChunks.join("\n") + "\n", "utf-8");
+      written.push(p);
+    }
+    for (const p of written) {
+      console.log(`wrote ${relative(process.cwd(), p)}`);
+    }
+    return;
+  }
+
+  for (const chunk of [...zodChunks, ...guardChunks, ...dtsChunks]) {
+    console.log(chunk);
+  }
+}
+
 program
   .command("generate")
   .description("Generate runtime validators from inferred types")
   .argument("<file>", "JavaScript file to analyze")
   .option("--format <format>", "Output format: zod, guard, dts, all", "all")
-  .option("--output <dir>", "Output directory", ".")
-  .action((file: string, options: { format: string; output: string }) => {
-    const filePath = resolve(file);
-    const source = readFileSync(filePath, "utf-8");
-    const ast = parse(source);
-    const functions = extractDirectives(ast);
-
-    if (functions.length === 0) {
-      console.log("No functions with @nudo:case directives found.");
+  .option("--output <dir>", "Write validator files to this directory (omit for stdout)")
+  .action(async (file: string, options: { format: string; output?: string }) => {
+    const format = options.format;
+    if (!["zod", "guard", "dts", "all"].includes(format)) {
+      console.error(`Unknown --format ${format}; expected zod | guard | dts | all`);
+      process.exitCode = 1;
       return;
     }
+    await runGenerate(file, format as "zod" | "guard" | "dts" | "all", options.output);
+  });
 
-    resetMemo();
-    setModuleResolver(resolveModule);
-    setCurrentFileDir(dirname(filePath));
+/** 设计命令面 `nudo emit`：为 npm 生态导出 .d.ts（= generate --format dts） */
+program
+  .command("emit")
+  .description("Emit TypeScript .d.ts declarations from inferred types (npm compatibility exit)")
+  .argument("<file>", "JavaScript file to analyze")
+  .option("--output <dir>", "Write <stem>.d.ts to this directory (omit for stdout)")
+  .action(async (file: string, options: { output?: string }) => {
+    await runGenerate(file, "dts", options.output);
+  });
 
-    const globalEnv = createEnvironment();
-    evaluateProgram(ast, globalEnv);
-
-    for (const fn of functions) {
-      applyMocks(fn.directives, globalEnv, filePath);
-
-      const caseDirectives = fn.directives.filter((d) => d.kind === "case");
-      if (caseDirectives.length === 0) continue;
-
-      const caseResults: CaseResult[] = caseDirectives.map((directive) => {
-        const fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
-        return {
-          name: directive.name,
-          args: directive.args,
-          result: fullResult.value,
-          throws: fullResult.throws,
-          source: "directive",
-        };
-      });
-
-      const baseName = fn.name;
-
-      if (options.format === "zod" || options.format === "all") {
-        console.log(`\n// === ${baseName} Zod Schemas ===`);
-        for (const c of caseResults) {
-          const inputSchemas = c.args.map((a, i) => `arg${i}: ${typeValueToZodSchema(a)}`).join(", ");
-          const outputSchema = typeValueToZodSchema(c.result);
-          console.log(`// Case "${c.name}":`);
-          console.log(`// Input: { ${inputSchemas} }`);
-          console.log(`// Output: ${outputSchema}`);
-        }
-      }
-
-      if (options.format === "guard" || options.format === "all") {
-        console.log(`\n// === ${baseName} Type Guards ===`);
-        for (const c of caseResults) {
-          const guard = generateGuardFunction(`is${baseName}${c.name.charAt(0).toUpperCase() + c.name.slice(1)}Output`, c.result);
-          console.log(guard);
-        }
-      }
-
-      if (options.format === "dts" || options.format === "all") {
-        console.log(`\n// === ${baseName} TypeScript Declarations ===`);
-        // 与 infer --dts / service 级 generateDts 共用 generateFunctionDtsLines：
-        // 单一 widen 主签名 + JSDoc 保留 case 精度 + 真实参数名（取自解析产物）。
-        // 旧的逐 case `argN: 字面量` 签名会拦截合法调用（tsc TS2769）
-        const analysis: FunctionAnalysis = {
-          name: baseName,
-          loc: nodeLoc(fn.node),
-          paramNames: fnParamNames(fn.node),
-          cases: caseResults,
-        };
-        for (const line of generateFunctionDtsLines(analysis)) {
-          console.log(line);
-        }
-      }
-    }
-
-    setModuleResolver(null);
+/** 设计命令面 `nudo guard`：边界运行时校验（= generate --format guard） */
+program
+  .command("guard")
+  .description("Generate runtime type-guard functions from inferred result types")
+  .argument("<file>", "JavaScript file to analyze")
+  .option("--output <dir>", "Write <stem>.nudo.guard.ts to this directory (omit for stdout)")
+  .action(async (file: string, options: { output?: string }) => {
+    await runGenerate(file, "guard", options.output);
   });
 
 // ---------------------------------------------------------------------------
@@ -847,46 +924,6 @@ program
 // ---------------------------------------------------------------------------
 
 const HARVEST_MAX_FILES = 200;
-
-const REFERENCE_PATH_REGEX = /<reference\s+path=["']([^"']+)["']\s*\/>/g;
-const RELATIVE_FROM_REGEX = /\bfrom\s+["'](\.[^"']+)["']/g;
-
-function collectDtsFiles(entry: string): string[] {
-  const files: string[] = [];
-  const seen = new Set<string>();
-  const queue: string[] = [entry];
-
-  while (queue.length > 0 && files.length < HARVEST_MAX_FILES) {
-    const current = queue.shift()!;
-    if (seen.has(current) || !existsSync(current)) continue;
-    seen.add(current);
-    if (!current.endsWith(".d.ts")) continue;
-    files.push(current);
-
-    let text: string;
-    try {
-      text = readFileSync(current, "utf-8");
-    } catch {
-      continue;
-    }
-
-    const dir = dirname(current);
-    for (const match of text.matchAll(REFERENCE_PATH_REGEX)) {
-      queue.push(resolve(dir, match[1]));
-    }
-    for (const match of text.matchAll(RELATIVE_FROM_REGEX)) {
-      const base = resolve(dir, match[1]);
-      for (const candidate of [`${base}.d.ts`, join(base, "index.d.ts")]) {
-        if (existsSync(candidate)) {
-          queue.push(candidate);
-          break;
-        }
-      }
-    }
-  }
-
-  return files;
-}
 
 function runHarvest(pkg: string, outOpt?: string): void {
   const typesDir = resolve(process.cwd(), "node_modules", "@types", pkg);
@@ -917,7 +954,8 @@ function runHarvest(pkg: string, outOpt?: string): void {
     return;
   }
 
-  const files = collectDtsFiles(entry);
+  // 单一收集实现（service）：入口 BFS + reference/相对 import 图
+  const files = collectDtsFromEntry(entry, HARVEST_MAX_FILES);
   if (files.length === 0) {
     console.error(`Error: no .d.ts files collected from ${relative(process.cwd(), entry)}.`);
     process.exitCode = 1;
@@ -944,9 +982,54 @@ function runHarvest(pkg: string, outOpt?: string): void {
 program
   .command("harvest")
   .description("Convert @types/<pkg> .d.ts declarations into a Nudo env file (TS source using T.* constructors)")
-  .argument("<pkg>", "Package name under @types (e.g. node)")
+  .argument("[pkg]", "Package name under @types (e.g. node)")
   .option("--out <file>", "Output .ts env file (default: ./nudo-harvest-<pkg>.ts)")
-  .action((pkg: string, opts: { out?: string }) => {
+  .option("--auto [dir]", "Scan directory (default .) for bare imports and report auto-harvestable @types packages")
+  .action(async (pkg: string | undefined, opts: { out?: string; auto?: boolean | string }) => {
+    if (opts.auto !== undefined) {
+      const dir = resolve(typeof opts.auto === "string" ? opts.auto : ".");
+      const files = existsSync(dir) && statSync(dir).isDirectory()
+        ? collectNudoFiles(dir)
+        : existsSync(dir)
+          ? [dir]
+          : [];
+      if (files.length === 0) {
+        console.error(`No inference targets under ${dir}`);
+        process.exitCode = 1;
+        return;
+      }
+      const { collectBarePackages, harvestPackageCached, formatHarvestSummary } = await import("@nudojs/service");
+      const seen = new Set<string>();
+      const report: string[] = [];
+      for (const f of files) {
+        let src: string;
+        try {
+          src = readFileSync(f, "utf-8");
+        } catch {
+          continue;
+        }
+        for (const p of collectBarePackages(src)) {
+          if (seen.has(p)) continue;
+          seen.add(p);
+          const h = harvestPackageCached(p, dirname(f));
+          if (h) report.push(formatHarvestSummary(h));
+          else report.push(`${p}: no .d.ts / @types (skipped)`);
+        }
+      }
+      if (report.length === 0) {
+        console.log("No bare imports found (or nothing to harvest).");
+        return;
+      }
+      console.log(`auto harvest candidates under ${relative(process.cwd(), dir) || "."}:\n`);
+      for (const line of report) console.log(line);
+      console.log(`\nAnalysis injects these automatically; use \`nudo harvest <pkg>\` to write a persistent env file.`);
+      return;
+    }
+    if (!pkg) {
+      console.error("Error: <pkg> is required (or use --auto).");
+      process.exitCode = 1;
+      return;
+    }
     runHarvest(pkg, opts.out);
   });
 

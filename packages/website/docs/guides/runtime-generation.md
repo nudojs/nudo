@@ -13,7 +13,7 @@ JS code → Nudo infers types → Generate validators → Runtime validation
 
 This means you write plain JavaScript, let Nudo figure out the types, and then produce fully typed runtime checks -- no hand-written validators, no duplicate type definitions.
 
-All generated output is printed to stdout. Pipe or paste it into your project's files wherever they belong.
+All generated output is printed to stdout by default. Pass `--output <dir>` to write files instead.
 
 ## The `nudo generate` Command
 
@@ -24,7 +24,7 @@ nudo generate <file> [options]
 | Option | Description |
 |---|---|
 | `--format <format>` | Output format: `zod`, `guard`, `dts`, `all` (default: `all`) |
-| `--output <dir>` | Declared but **not implemented yet** -- output always goes to stdout. Redirect with your shell instead. |
+| `--output <dir>` | Write validator files to this directory (`<name>.nudo.zod.ts`, `<name>.nudo.guard.ts`, `<name>.d.ts`). Omit for stdout. |
 
 Running `nudo generate` reads the inferred types from a source file and prints validators in the requested format.
 

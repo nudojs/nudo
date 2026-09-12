@@ -143,6 +143,58 @@ Case "entry@L1": (unknown, unknown) => `${unknown}: ${unknown}`
 
 要让没有指令的代码获得真实调用形态，可用 `--callsites` 从测试中收集用例——参见[调用点发现指南](../guides/callsite-discovery.md)。
 
+## 精化契约（无需类型语法）
+
+除了推断，还可以声明进入 Abs、参与代数的**精化**。不需要 `interface` / `type` —— 契约写在 `*.nudo.js` 模板里。
+
+创建 `shapes.nudo.js`：
+
+```javascript
+import { number, string, shape } from "@nudojs/core";
+
+export const positive = number().gt(0);
+export const user = shape({
+  id: number().gt(0),
+  name: string(),
+});
+```
+
+创建 `app.js`：
+
+```javascript
+/// @nudo:import { positive, user } from "./shapes.nudo.js"
+
+/**
+ * @nudo:refine x positive
+ * @nudo:refine return positive
+ */
+function inc(x) {
+  return x + 1;
+}
+
+/**
+ * @nudo:refine u user
+ */
+function register(u) {
+  return `${u.id}:${u.name}`;
+}
+
+inc(1);                              // ok
+// inc(0);                          // error: 0 ⊭ x > 0
+register({ id: 1, name: "ada" });    // ok
+// register({ id: -1, name: "a" }); // error: u.id ⊭ > 0
+```
+
+门禁：
+
+```bash
+npx nudo check app.js
+```
+
+报告使用 `actual ⊭ expected`。精化也会流入推断：带 `@nudo:refine x positive` 的 `inc` 会推断出 `number = (x + 1) where (x + 1) > 1`。
+
+详见 [nudo check](../guides/check.md) 与[指令参考](../concepts/directives.md)。
+
 ## 发生了什么？
 
 1. **解析** — Nudo 解析文件，找到带有 `@nudo:case` 指令的 `subtract` 函数。

@@ -1,3 +1,12 @@
+/**
+ * @nudojs/core — 唯一类型系统。
+ *
+ * 内涵（algebra）：Abs = shape × term × pred × conf，类型即计算。
+ * 外延（TypeValue）：评估 IR——环境绑定、dts/lsp/序列化消费的投影格式，
+ * 不是平行类型系统。Abs ⇄ TypeValue 经 bridge 有损投影。
+ */
+
+// --- 评估 IR（TypeValue）---
 export {
   type TypeValue,
   type LiteralValue,
@@ -21,6 +30,7 @@ export {
   getFnSig,
 } from "./type-value.ts";
 
+/** 外延二元/一元运算：代数未覆盖的语言表面（/ % === typeof 等） */
 export { Ops, applyBinaryOp, dispatchBinaryOp, dispatchMethod, dispatchProperty } from "./ops.ts";
 
 export {
@@ -51,3 +61,9 @@ export {
   mock,
   mockHelperToTypeValue,
 } from "./mock-helpers.ts";
+
+export { stripTypes } from "./strip-types.ts";
+export { parseSource } from "./algebra/parse-source.ts";
+
+// --- 内涵：类型即计算 ---
+export * from "./algebra/index.ts";

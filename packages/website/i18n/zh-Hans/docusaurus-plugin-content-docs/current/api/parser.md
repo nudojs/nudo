@@ -39,7 +39,7 @@ stripTypes<T extends Node>(ast: T): T
 
 指令从注释中提取，使用 `@nudo:` 命名空间。函数级指令来自顶层语句的前导**块**注释；文件级与行内指令来自**行**注释（见 [`extractFileDirectives`](#extractfiledirectives) / [`extractInlineDirectives`](#extractinlinedirectives)）。
 
-`Directive` 联合类型涵盖六种函数级指令：
+`Directive` 联合类型涵盖五种函数级指令：
 
 ```typescript
 type Directive =
@@ -47,8 +47,7 @@ type Directive =
   | MockDirective
   | PureDirective
   | SkipDirective
-  | SampleDirective
-  | ReturnsDirective;
+  | SampleDirective;
 ```
 
 ### CaseDirective
@@ -123,17 +122,6 @@ type SampleDirective = {
 ```
 
 在不动点分析之前要执行的循环迭代次数。
-
-### ReturnsDirective
-
-```typescript
-type ReturnsDirective = {
-  kind: "returns";
-  expected: TypeValue;
-}
-```
-
-断言推断的返回类型是 `expected` 的子类型。
 
 ### FileDirective
 
@@ -243,7 +231,7 @@ const y = f(x);
 parseTypeValueExpr(expr: string): TypeValue
 ```
 
-将字符串表达式解析为 TypeValue。用于指令参数（如 `@nudo:case` 的 args、`@nudo:returns` 的 expected 类型）。
+将字符串表达式解析为 TypeValue。用于指令参数（如 `@nudo:case` 的 args、`@nudo:as`/`@nudo:replace` 的类型表达式）。
 
 **支持形式：**
 - 基本类型：`T.number`、`T.string`、`T.boolean`、`T.unknown`、`T.never`、`T.null`、`T.undefined`

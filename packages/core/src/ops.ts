@@ -1,4 +1,13 @@
-import { type TypeValue, T, isSubtypeOf, getRefinedBase } from "./type-value.ts";
+/**
+ * 残差 IR 兜底（不是类型运算真理源）。
+ *
+ * 真理在 algebra：算术/比较/相等/typeof/!/−/字符串词法序/nullish 均走 Abs。
+ * 这里只保留：
+ * - add：代数拒绝时的混合 `+`
+ * - 比较/相等：代数无法判定时的保守 boolean / 字面量折叠
+ * - dispatchMethod/Property：宿主 refined 扩展（startsWith、length…）
+ */
+import { type TypeValue, T, isSubtypeOf } from "./type-value.ts";
 import { concatTemplates, isTemplate } from "./refinements/template.ts";
 
 function bothLiteral(
@@ -15,10 +24,6 @@ function isNullishLiteral(tv: TypeValue): boolean {
   return tv.kind === "literal" && (tv.value === null || tv.value === undefined);
 }
 
-/** The value can never be null/undefined: primitives, structured values
- * (object/array/tuple/function/instance/promise) and non-nullish literals
- * are all disjoint from null and undefined. Unions qualify only when every
- * member does; refined values delegate to their base. */
 function definitelyNotNullish(tv: TypeValue): boolean {
   switch (tv.kind) {
     case "literal":
@@ -46,7 +51,6 @@ export const Ops = {
     if (lit) {
       return T.literal((lit.lv as any) + (lit.rv as any));
     }
-
     const leftIsString = isSubtypeOf(left, T.string) || isTemplate(left);
     const rightIsString = isSubtypeOf(right, T.string) || isTemplate(right);
     if (leftIsString || rightIsString) {
@@ -65,45 +69,9 @@ export const Ops = {
     return T.union(T.number, T.string);
   },
 
-  sub(left: TypeValue, right: TypeValue): TypeValue {
-    const lit = bothLiteral(left, right);
-    if (lit && typeof lit.lv === "number" && typeof lit.rv === "number") {
-      return T.literal(lit.lv - lit.rv);
-    }
-    return T.number;
-  },
-
-  mul(left: TypeValue, right: TypeValue): TypeValue {
-    const lit = bothLiteral(left, right);
-    if (lit && typeof lit.lv === "number" && typeof lit.rv === "number") {
-      return T.literal(lit.lv * lit.rv);
-    }
-    return T.number;
-  },
-
-  div(left: TypeValue, right: TypeValue): TypeValue {
-    const lit = bothLiteral(left, right);
-    if (lit && typeof lit.lv === "number" && typeof lit.rv === "number") {
-      return T.literal(lit.lv / lit.rv);
-    }
-    return T.number;
-  },
-
-  mod(left: TypeValue, right: TypeValue): TypeValue {
-    const lit = bothLiteral(left, right);
-    if (lit && typeof lit.lv === "number" && typeof lit.rv === "number") {
-      return T.literal(lit.lv % lit.rv);
-    }
-    return T.number;
-  },
-
   strictEq(left: TypeValue, right: TypeValue): TypeValue {
     const lit = bothLiteral(left, right);
     if (lit) return T.literal(lit.lv === lit.rv);
-    // `x === undefined` / `x !== null` guards: a definitely-not-nullish side
-    // can never strictly equal a null/undefined literal, so the comparison
-    // resolves literally instead of degrading to boolean (which would make
-    // every enclosing `if` explore both branches).
     if ((isNullishLiteral(right) && definitelyNotNullish(left)) ||
         (isNullishLiteral(left) && definitelyNotNullish(right))) {
       return T.literal(false);
@@ -145,42 +113,14 @@ export const Ops = {
     return T.boolean;
   },
 
-  typeof_(operand: TypeValue): TypeValue {
-    if (operand.kind === "literal") {
-      const v = operand.value;
-      if (v === null) return T.literal("object");
-      return T.literal(typeof v);
-    }
-    if (operand.kind === "primitive") return T.literal(operand.type);
-    if (operand.kind === "refined") return Ops.typeof_(getRefinedBase(operand));
-    if (operand.kind === "object") return T.literal("object");
-    if (operand.kind === "array" || operand.kind === "tuple")
-      return T.literal("object");
-    if (operand.kind === "function") return T.literal("function");
-    if (operand.kind === "promise") return T.literal("object");
-    if (operand.kind === "instance") return T.literal("object");
-    return T.string;
-  },
-
   not(operand: TypeValue): TypeValue {
     if (operand.kind === "literal") return T.literal(!operand.value);
     return T.boolean;
-  },
-
-  neg(operand: TypeValue): TypeValue {
-    if (operand.kind === "literal" && typeof operand.value === "number") {
-      return T.literal(-operand.value);
-    }
-    return T.number;
   },
 } as const;
 
 const binaryOpMap: Record<string, (l: TypeValue, r: TypeValue) => TypeValue> = {
   "+": Ops.add,
-  "-": Ops.sub,
-  "*": Ops.mul,
-  "/": Ops.div,
-  "%": Ops.mod,
   "===": Ops.strictEq,
   "!==": Ops.strictNeq,
   ">": Ops.gt,

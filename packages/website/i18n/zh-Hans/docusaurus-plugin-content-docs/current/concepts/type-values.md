@@ -5,7 +5,9 @@ description: "类型值 —— 「可能值集合」的符号化抽象：TypeVal
 
 # 类型值
 
-类型值是 Nudo 中的基础抽象。它们是**可能 JavaScript 值集合的符号化表示**——不是持有单个具体值（如 `42` 或 `"hello"`），而是表示具有某类特征的所有值（例如「任意数字」或「字面量 1」）。当 Nudo 执行你的代码时，它使用类型值而非具体值，执行结果本身也是类型值——即推断出的类型。
+类型值是 Nudo 的**评估 IR**。它们是可能 JavaScript 值集合的符号化表示——不是持有单个具体值（如 `42` 或 `"hello"`），而是表示具有某类特征的所有值（例如「任意数字」或「字面量 1」）。
+
+**类型系统本体是 Abs**（`shape × term × pred × conf`）——可求值的抽象值，约束参与代数。TypeValue 供 TypeValue 求值器、环境绑定、dts 输出与 LSP 外延视图消费；Abs ⇄ TypeValue 经有损 bridge。当 Nudo 执行你的代码时，它使用类型值（与 Abs）而非具体值，执行结果本身也是类型值——即推断出的类型。
 
 ## TypeValue 层级结构
 
@@ -112,7 +114,7 @@ T.union(T.string, T.number)
 
 ### RefinedType
 
-表示**基础类型的子集**，携带元数据和可选的自定义运算规则。精化类型是模板字符串、数值区间和用户自定义类型约束背后的统一机制。
+表示**基础类型的子集**，携带元数据和可选的自定义运算规则。精化类型是模板字符串、数值区间背后的 TypeValue-IR 机制。
 
 ```javascript
 // 内置：模板字符串（字符串拼接时自动创建）
@@ -120,21 +122,11 @@ T.literal("0x") + T.string   // → refined(T.string, template { parts: ["0x", T
 
 // 内置：数值区间（窄化时创建）
 // if (x >= 0) → x 被窄化为 refined(T.number, range { min: 0 })
-
-// 用户自定义：
-T.refine(T.number, {
-  name: "odd",
-  check: (v) => Number.isInteger(v) && v % 2 !== 0,
-  ops: {
-    "%"(self, other) {
-      if (other.kind === "literal" && other.value === 2) return T.literal(1);
-      return undefined; // 回退到基础类型行为
-    },
-  },
-})
 ```
 
 精化类型始终是其基础类型的子类型。当运算未被精化类型的自定义规则处理（或返回 `undefined`）时，引擎回退到基础类型的行为，逐层递归直到原始类型。
+
+**用户侧契约不写 `T.refine`。** 用 `@nudo:refine` 和 `*.nudo.js` 模板（`number().gt(0)`、`shape({...})`）—— 见[指令参考](./directives.md)。`T.refine` 是这些模板 lowering 到的 IR 原语。
 
 ---
 
@@ -162,7 +154,7 @@ T.refine(T.number, {
 | `T.union(...)` | 类型值的联合 |
 | `T.fn(params, body, closure)` | 函数类型（内部使用） |
 | `T.fnSig(paramTypes, returnType, throwsType?, impl?)` | 仅签名的函数类型（env 文件、收割声明） |
-| `T.refine(base, refinement)` | 基础类型的精化子集，携带自定义规则 |
+| `T.refine(base, refinement)` | 精化子集的 IR 原语（模板/区间使用；源码里请用 `@nudo:refine`） |
 
 ### 指令中的示例
 

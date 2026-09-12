@@ -94,7 +94,7 @@ Synchronous, cache-aware analysis for high-frequency handlers (hover, completion
 hasNudoDirectives(source: string): boolean
 ```
 
-Returns `true` when the source contains any Nudo directive: `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:returns`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, or `@nudo:replace`. The server uses it (plus a `.js` / `.ts` / `.mjs` extension check) as the `isNudoFile` gate — every feature handler below is a no-op for files that fail it.
+Returns `true` when the source contains any Nudo directive: `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:refine`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, or `@nudo:replace`. The server uses it (plus a `.js` / `.ts` / `.mjs` extension check) as the `isNudoFile` gate — every feature handler below is a no-op for files that fail it.
 
 ### toLspDiagnostic
 
@@ -157,7 +157,7 @@ What `src/server.ts` actually registers (`connection.onInitialize`):
 | Definition | `onDefinition` | `buildSymbolTable` + `findDefinition` |
 | References | `onReferences` | `buildSymbolTable` + `findReferences` |
 | Rename | `onRenameRequest` | Workspace edit over the definition plus all references |
-| Code actions (`quickfix`) | `onCodeAction` | *Remove unreachable code* for `nudo-unreachable`; *Update @nudo:returns to match inferred type* for `nudo-assertion-failed` |
+| Code actions (`quickfix`) | `onCodeAction` | *Remove unreachable code* for `nudo-unreachable` |
 | Signature help (triggers `(`, `,`) | `onSignatureHelp` | Locates the enclosing call, types the callee, highlights the active parameter |
 | Semantic tokens (full) | `languages.semanticTokens.on` | Inference-driven highlighting: `function`/`variable`/`parameter` tokens from the analysis result (`buildSemanticTokens`) |
 

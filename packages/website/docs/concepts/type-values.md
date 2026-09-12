@@ -5,7 +5,9 @@ description: "Type values — the symbolic sets-of-values abstraction: the TypeV
 
 # Type Values
 
-Type values are the foundational abstraction in Nudo. They are **symbolic representations of sets of possible JavaScript values** — instead of holding a single concrete value like `42` or `"hello"`, a type value represents *all* values that share certain characteristics (e.g., "any number" or "the literal 1"). When Nudo executes your code, it uses type values instead of concrete values, and the result of execution is itself a type value — the inferred type.
+Type values are the **evaluation IR** in Nudo. They are symbolic representations of sets of possible JavaScript values — instead of holding a single concrete value like `42` or `"hello"`, a type value represents *all* values that share certain characteristics (e.g., "any number" or "the literal 1").
+
+The **type system itself is Abs** (`shape × term × pred × conf`) — computable values whose constraints participate in algebra. TypeValue is what the TypeValue evaluator, environment bindings, dts emit, and LSP extensional views consume; Abs ⇄ TypeValue goes through a lossy bridge. When Nudo executes your code, it uses type values (and Abs) instead of concrete values, and the result of execution is itself a type value — the inferred type.
 
 ## TypeValue Hierarchy
 
@@ -112,7 +114,7 @@ The universal set. Represents "any value" when the type cannot be determined.
 
 ### RefinedType
 
-Represents a **subset of a base type** with attached metadata and optional custom operation rules. Refined types are the unified mechanism behind template strings, numeric ranges, and user-defined type constraints.
+Represents a **subset of a base type** with attached metadata and optional custom operation rules. Refined types are the TypeValue-IR mechanism behind template strings and numeric ranges.
 
 ```javascript
 // Built-in: template string (created automatically by string concatenation)
@@ -120,21 +122,11 @@ T.literal("0x") + T.string   // → refined(T.string, template { parts: ["0x", T
 
 // Built-in: numeric range (created by narrowing)
 // if (x >= 0) → x is refined(T.number, range { min: 0 })
-
-// User-defined:
-T.refine(T.number, {
-  name: "odd",
-  check: (v) => Number.isInteger(v) && v % 2 !== 0,
-  ops: {
-    "%"(self, other) {
-      if (other.kind === "literal" && other.value === 2) return T.literal(1);
-      return undefined; // fall back to base type behavior
-    },
-  },
-})
 ```
 
 A refined type is always a subtype of its base. When an operation is not handled by the refinement's custom rules (or returns `undefined`), the engine falls back to the base type's behavior, recursively until a primitive type is reached.
+
+**User-facing contracts do not use `T.refine`.** Declare them with `@nudo:refine` and `*.nudo.js` templates (`number().gt(0)`, `shape({...})`) — see [Directives](./directives.md#nudorefine--refinement-contract). `T.refine` is the IR primitive those templates lower to.
 
 ---
 
@@ -162,7 +154,7 @@ In directives and when defining type values in code, you use the `T` factory:
 | `T.union(...)` | Union of type values |
 | `T.fn(params, body, closure)` | Function type (used internally) |
 | `T.fnSig(paramTypes, returnType, throwsType?, impl?)` | Signature-only function type (env files, harvested declarations) |
-| `T.refine(base, refinement)` | Refined subset of base type with custom rules |
+| `T.refine(base, refinement)` | IR primitive for refined subsets (used by templates/ranges; prefer `@nudo:refine` in source) |
 
 ### Examples in Directives
 

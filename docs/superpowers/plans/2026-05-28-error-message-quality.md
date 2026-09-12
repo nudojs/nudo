@@ -1,5 +1,7 @@
 # Error Message Quality Implementation Plan
 
+> **Superseded / historical.** References the retired `@nudo:returns` directive. Current contract syntax is `@nudo:refine` — see `docs/nudo-check.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add structured error codes and actionable suggestions to Nudo diagnostics so AI agents can programmatically identify and fix type errors.

@@ -41,11 +41,6 @@ export type SampleDirective = {
   count: number;
 };
 
-export type ReturnsDirective = {
-  kind: "returns";
-  expected: TypeValue;
-};
-
 export type EnvDirective = {
   kind: "env";
   envs: string[];
@@ -73,7 +68,7 @@ export type InlineDirective = AsDirective | ReplaceDirective;
 
 export type FileDirective = EnvDirective | MockModuleDirective;
 
-export type Directive = CaseDirective | MockDirective | PureDirective | SkipDirective | SampleDirective | ReturnsDirective;
+export type Directive = CaseDirective | MockDirective | PureDirective | SkipDirective | SampleDirective;
 
 export type FunctionWithDirectives = {
   node: Node;
@@ -87,7 +82,6 @@ const MOCK_FROM_REGEX = /@nudo:mock\s+(\w+)\s+from\s+"([^"]+)"/g;
 const PURE_REGEX = /@nudo:pure\b/g;
 const SKIP_REGEX = /@nudo:skip(?:\s+(.+))?/g;
 const SAMPLE_REGEX = /@nudo:sample\s+(\d+)/g;
-const RETURNS_REGEX = /@nudo:returns\s*\(/g;
 
 export function parseTypeValueExpr(expr: string): TypeValue {
   const s = expr.trim();
@@ -453,6 +447,21 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
     return helper;
   }
 
+  // Match stub().onFirstCall().returns(value) —— 链在 returns 上取值
+  const stubOnFirstReturnsMatch = s.match(/^stub\(\)\.onFirstCall\(\)\.returns\((.+)\)$/);
+  if (stubOnFirstReturnsMatch) {
+    return stub.returns(parseTypeValueExpr(stubOnFirstReturnsMatch[1].trim()));
+  }
+
+  // Match stub().onFirstCall(value) —— 无 returnValue 时 TypeValue/Abs 均作默认返回
+  // [^()]* 避免把 onFirstCall().returns(...) 的尾链吞进实参
+  const stubOnFirstValueMatch = s.match(/^stub\(\)\.onFirstCall\(([^()]*)\)$/);
+  if (stubOnFirstValueMatch && stubOnFirstValueMatch[1].trim() !== "") {
+    const helper: MockHelper = { kind: "mock-helper" };
+    helper.onFirstCallValue = parseTypeValueExpr(stubOnFirstValueMatch[1].trim());
+    return helper;
+  }
+
   // Match spy().returns(value)
   const spyReturnsMatch = s.match(/^spy\(\)\.returns\((.+)\)$/);
   if (spyReturnsMatch) {
@@ -598,15 +607,6 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
     let sampleMatch: RegExpExecArray | null;
     while ((sampleMatch = SAMPLE_REGEX.exec(text)) !== null) {
       directives.push({ kind: "sample", count: Number(sampleMatch[1]) });
-    }
-
-    RETURNS_REGEX.lastIndex = 0;
-    let returnsMatch: RegExpExecArray | null;
-    while ((returnsMatch = RETURNS_REGEX.exec(text)) !== null) {
-      const parenStart = returnsMatch.index + returnsMatch[0].length - 1;
-      const argsStr = extractBalancedParens(text, parenStart);
-      if (argsStr === null) continue;
-      directives.push({ kind: "returns", expected: parseTypeValueExpr(argsStr) });
     }
   }
   return directives;

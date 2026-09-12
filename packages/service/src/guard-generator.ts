@@ -1,7 +1,14 @@
-import type { TypeValue } from "@nudojs/core";
+import type { TypeValue, Abs } from "@nudojs/core";
+import { denoteGuard } from "@nudojs/core";
 
 export function generateGuardFunction(name: string, tv: TypeValue): string {
   const body = generateGuardBody(tv, "data");
+  return `export function ${name}(data) {\n  return ${body};\n}`;
+}
+
+/** Abs 指称守卫（设计 §2.7）：比 TypeValue 投影多保留 pred */
+export function generateGuardFunctionFromAbs(name: string, abs: Abs): string {
+  const body = denoteGuard(abs, "data");
   return `export function ${name}(data) {\n  return ${body};\n}`;
 }
 

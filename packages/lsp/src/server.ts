@@ -19,10 +19,12 @@ import { TextDocument } from "vscode-languageserver-textdocument";
 import { typeValueToString } from "@nudojs/core";
 import {
   getTypeAtPosition,
+  getHoverAtPosition,
   getCompletionsAtPosition,
   getCasesForFile,
   buildSemanticTokens,
   isNudoTargetPath,
+  collectAbsInlays,
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
 import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "./symbols.ts";
@@ -33,6 +35,7 @@ import {
   forgetValidatedFile,
   getCachedOrAnalyze,
   hasNudoDirectives,
+  lspLoadModule,
   toLspDiagnostic,
   uriToFilePath,
   validateText,
@@ -43,6 +46,9 @@ import {
   suggestCase,
   trace,
   whatIf,
+  checkTool,
+  hoverTool,
+  inferTool,
   type AgentToolDeps,
   type AgentToolResult,
 } from "./agent-tools.ts";
@@ -51,6 +57,9 @@ const NUDO_COMMANDS = [
   "nudo.whatIf",
   "nudo.suggestCase",
   "nudo.trace",
+  "nudo.check",
+  "nudo.hover",
+  "nudo.infer",
   "nudo.selectCase",
   "nudo.getActiveCases",
 ] as const;
@@ -226,13 +235,30 @@ connection.onHover((params) => {
   const cases = getActiveCasesForUri(params.textDocument.uri);
 
   try {
-    const tv = getTypeAtPosition(filePath, source, line, column, cases);
-    if (!tv) return null;
+    const hover = getHoverAtPosition(filePath, source, line, column, cases);
+    if (!hover) return null;
 
+    const lines: string[] = [];
+    // 无损 Abs 优先（类型即计算本体）
+    if (hover.absMultiline) {
+      lines.push("```nudo", hover.absMultiline, "```");
+    } else if (hover.abs) {
+      lines.push("```nudo", hover.abs, "```");
+    }
+    if (hover.intension && hover.intension !== hover.abs) {
+      lines.push("```nudo", hover.intension, "```");
+    }
+    // 外延 TypeValue 仅作对照，且与内涵不同时才显示
+    if (hover.typeText && hover.typeText !== hover.intension && hover.typeText !== hover.abs) {
+      lines.push("```nudo", `ext: ${hover.typeText}`, "```");
+    }
+    if (lines.length === 0) {
+      lines.push("```nudo", hover.typeText, "```");
+    }
     return {
       contents: {
         kind: MarkupKind.Markdown,
-        value: `\`\`\`nudo\n${typeValueToString(tv)}\n\`\`\``,
+        value: lines.join("\n"),
       },
     };
   } catch {
@@ -331,6 +357,28 @@ connection.languages.inlayHint.on((params) => {
         kind: InlayHintKind.Type,
         paddingLeft: true,
       });
+    }
+
+    // Abs inlay：参数约束 + 返回 term/pred（类型即计算，无损）
+    try {
+      for (const abs of collectAbsInlays(source, {
+        loadModule: lspLoadModule,
+        fromFile: filePath,
+      })) {
+        const lineIdx = abs.line - 1;
+        if (lineIdx < 0 || lineIdx >= lines.length) continue;
+        hints.push({
+          position: { line: lineIdx, character: abs.character },
+          label: abs.label,
+          kind:
+            abs.kind === "parameter"
+              ? InlayHintKind.Parameter
+              : InlayHintKind.Type,
+          paddingLeft: true,
+        });
+      }
+    } catch {
+      // Abs inlay 失败不影响 caseHints
     }
 
     return hints;
@@ -456,15 +504,6 @@ connection.onCodeAction((params) => {
             }],
           },
         },
-      });
-    }
-
-    if (diag.code === "nudo-assertion-failed") {
-      actions.push({
-        title: "Update @nudo:returns to match inferred type",
-        kind: "quickfix",
-        diagnostics: [diag],
-        isPreferred: false,
       });
     }
   }
@@ -618,6 +657,12 @@ function dispatchNudoCommand(command: string, arg: Record<string, unknown>) {
       return suggestCase(arg as Parameters<typeof suggestCase>[0], agentToolDeps);
     case "nudo.trace":
       return trace(arg as Parameters<typeof trace>[0], agentToolDeps);
+    case "nudo.check":
+      return checkTool(arg as Parameters<typeof checkTool>[0], agentToolDeps);
+    case "nudo.hover":
+      return hoverTool(arg as Parameters<typeof hoverTool>[0], agentToolDeps);
+    case "nudo.infer":
+      return inferTool(arg as Parameters<typeof inferTool>[0], agentToolDeps);
     case "nudo.selectCase":
       return handleSelectCase(arg as Parameters<typeof handleSelectCase>[0]);
     case "nudo.getActiveCases":
@@ -643,6 +688,9 @@ function dispatchAgentRequest(command: string, params: Record<string, unknown>):
 connection.onRequest("nudo/whatIf", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.whatIf", params));
 connection.onRequest("nudo/suggestCase", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.suggestCase", params));
 connection.onRequest("nudo/trace", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.trace", params));
+connection.onRequest("nudo/check", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.check", params));
+connection.onRequest("nudo/hover", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.hover", params));
+connection.onRequest("nudo/infer", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.infer", params));
 
 connection.languages.diagnostics.on((params) => {
   const document = documents.get(params.textDocument.uri);

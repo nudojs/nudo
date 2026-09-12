@@ -1,11 +1,11 @@
 ---
 sidebar_position: 1
-description: "Nudo by design: abstract interpretation with symbolic type values, the directive system, and what executing code computes that a separate type language cannot."
+description: "Nudo by design: Abs = shape × term × pred × conf as the type system, TypeValue as evaluation IR, directives, and what executing code computes that a separate type language cannot."
 ---
 
 # Design Document
 
-> **Nudo** — A type inference engine for JavaScript that derives precise types by executing code with symbolic type values (abstract interpretation).
+> **Nudo** — A type inference engine for JavaScript. The type system is **Abs** (`shape × term × pred × conf`); types are computable values with constraints that participate in algebra. **TypeValue** is the evaluation IR (env bindings, dts/LSP/serialization), not a parallel type system. Abs ⇄ TypeValue goes through a lossy bridge.
 
 ---
 
@@ -36,11 +36,11 @@ These two representations describe **the same logic** yet live in two disconnect
 
 **What if the value-level code were the type-level computation itself?**
 
-Nudo neither statically analyzes code like TypeScript nor runs code with concrete values like tests. Instead, it **executes code with symbolic "type values"**—special objects representing sets of possible values. Execution itself produces types.
+Nudo neither statically analyzes code like TypeScript nor runs code with concrete values like tests. Instead, it **executes code with abstract values (Abs)**—types that carry shape, a symbolic term, and constraints. Execution itself produces types; constraints propagate through arithmetic (`x>0` ⇒ `x+1>1`).
 
 ```text
 Traditional:   Source code  →  Static analysis  →  Types
-Nudo:          Source code  +  Type values  →  Execution  →  Types
+Nudo:          Source code  +  Abs  →  Execution  →  Types + constraints
 ```
 
 This is not "induction from samples" (inferring from finite examples). It is **Abstract Interpretation**—a well-established technique from programming language theory—presented in the familiar mental model of "running code."
@@ -50,34 +50,47 @@ This is not "induction from samples" (inferring from finite examples). It is **A
 | Approach | Input | Output | Completeness |
 |----------|-------|--------|--------------|
 | Unit tests | Concrete values (`1`, `"hello"`) | Concrete result | Only test cases |
-| Nudo | Type values (`T.number`, `T.string`) | Type values | All values in the type set |
+| Nudo | Abs (`shape × term × pred`) | Abs (projected to TypeValue for display) | All values in the abstract set |
 | TypeScript | AST (no execution) | Types | All syntactic paths |
 
-When Nudo executes `transform(T.string)`, the engine propagates `T.string` through the function body. At `typeof x === "string"`, the engine knows that branch is taken. At `x.toUpperCase()`, the engine knows the result is `T.string`. The result is not a concrete value—it is a **type**.
+When Nudo executes `transform` on abstract string input, the engine propagates that Abs through the body. At `typeof x === "string"`, the engine knows that branch is taken. At `x.toUpperCase()`, the result stays string-shaped. The result is not a concrete value—it is an **Abs**.
 
 ---
 
-## 2. Type Value System
+## 2. Type System: Abs and TypeValue IR
 
-**Type Values** are the foundational abstraction. A type value represents a set of possible JavaScript values and knows how to participate in JS operations.
+### 2.1 Abs — the type system
 
-### 2.1 Type Value Hierarchy
+**Abs** is the only type system: `shape × term × pred × conf`.
+
+| Component | Meaning |
+|-----------|---------|
+| **shape** | Structural kind: `any` / `unknown` / `prim` / `obj` / `arr` / `tuple` / `fn` / `brand` / `eff` / `sum` / `never` |
+| **term** | Symbolic identity of the value: literal, variable, or application (`x+1`) |
+| **pred** | Constraint relative to the term: `x>0`, conjunctions, … |
+| **conf** | Confidence: `exact` / `path` / `widened` / `partial` / `opaque` |
+
+`any` means "any JS value" (unconstrained parameter). `unknown` means "analysis has no information." They are not the same.
+
+Operations on Abs are algebraic: monotonic arithmetic, comparison, `leq` assignability, predicate implication. `nudo check` is the CI gate over this algebra (recall = precision = 1.0 on gold).
+
+### 2.2 TypeValue — evaluation IR (not a second type system)
+
+TypeValue is what env bindings, dts, LSP hover extensional side, and serialization consume. It is a **projection** of Abs (`absToTypeValue` / `typeValueToAbs` in `bridge.ts`). The bridge is lossy: non-literal terms and non-encodable preds drop, and confidence must not pretend `exact` when information was lost.
 
 ```text
 TypeValue
 ├── Literal<V>          — Single concrete value: 1, "hello", true, null, undefined
 ├── Primitive<T>        — All values of a primitive: number, string, boolean, bigint, symbol
-├── RefinedType         — Subset of a base type with metadata and custom operation rules
-├── ObjectType          — Object with known property types: { id: number, name: Literal<"Alice"> }
-├── ArrayType           — Array with element type: Array<number>
-├── TupleType           — Fixed-length array: [Literal<1>, Primitive<string>]
-├── FunctionType        — Function with params, body, closure
-├── UnionType           — Union of type values: Literal<1> | Literal<2> | Primitive<string>
-├── NeverType           — Empty set (unreachable)
-└── UnknownType         — Universal set (any value)
+├── RefinedType         — Subset of a base type (IR primitive; source contracts use @nudo:refine)
+├── ObjectType          — Object with known property types
+├── ArrayType / TupleType
+├── FunctionType
+├── UnionType
+├── NeverType / UnknownType
 ```
 
-### 2.2 Design Principles
+### 2.3 Design Principles
 
 **Principle 1: Literal preservation.** When all inputs are literals, the result should be a literal.
 
@@ -114,10 +127,10 @@ if (typeof x === "string") {
 }
 ```
 
-### 2.3 Type Value API
+### 2.4 TypeValue IR API
 
 ```typescript
-// --- Construction ---
+// --- Construction (IR / tests / env modules) ---
 T.literal(value)              // Literal type value
 T.number                      // Abstract number
 T.string                      // Abstract string
@@ -132,15 +145,17 @@ T.array(TypeValue)            // Array type
 T.tuple([TypeValue, ...])     // Tuple type
 T.union(TypeValue, ...)       // Union type
 T.fn(params, body, closure)  // Function type
-T.refine(base, refinement)   // Refined subset of base type with custom rules
+T.refine(base, refinement)   // IR primitive for refined subsets (templates/ranges)
 
 // --- Introspection ---
 typeValue.kind                // "literal" | "primitive" | "refined" | "object" | "array" | ...
 typeValueToString(tv)         // Human-readable: "number", "1 | 2", "string | number"
-isSubtypeOf(a, b)             // Subtype check
+isSubtypeOf(a, b)             // Subtype check (extensional; algebra uses leqAbs)
 ```
 
-### 2.4 Operator Semantics on Type Values
+Source-level contracts use `@nudo:refine` + `*.nudo.js` templates, not `T.refine` in user code.
+
+### 2.5 Operator Semantics (Abs first, Ops residual)
 
 Because JavaScript does not support operator overloading, the engine **interprets the AST** and dispatches through a semantic layer:
 
@@ -166,35 +181,28 @@ For **refined types**, the engine uses a dispatch fallback chain: it first tries
 ### 3.1 Architecture Overview
 
 ```text
-┌─────────────────────────────────────────────────────┐
-│                   Nudo Engine                       │
-│                                                     │
-│  ┌───────────┐   ┌────────────┐   ┌──────────────┐ │
-│  │  Parser   │──▶│ Directive  │──▶│  Evaluator   │ │
-│  │ (Babel)   │   │ Extractor  │   │ (AST Walker)  │ │
-│  └───────────┘   └────────────┘   └──────┬───────┘ │
-│                                          │         │
-│                  ┌───────────────────────┐│         │
-│                  │    Ops (Operator &    ││         │
-│                  │  Built-in Semantics) │◀         │
-│                  └───────────────────────┘          │
-│                                                     │
-│  ┌──────────────┐  ┌─────────────┐  ┌───────────┐  │
-│  │ Environment  │  │   Branch    │  │   Type    │  │
-│  │   (Scope)    │  │  Executor   │  │  Emitter  │  │
-│  └──────────────┘  └─────────────┘  └───────────┘  │
-└─────────────────────────────────────────────────────┘
+parser ──▶ core
+            ├── algebra/     ← type system (Abs / Term / Pred / Φ / check)
+            ├── type-value   ← evaluation IR
+            ├── ops          ← language surface not yet algebraic
+            └── bridge       ← Abs ⇄ TypeValue (lossy)
+                 │
+                 ▼
+            cli/evaluator    ← AST abstract interpretation; arithmetic first via Abs
+                 │
+                 ▼
+            service / lsp / vite / dts
 ```
 
 | Component | Responsibility |
 |-----------|----------------|
 | **Parser** | Parse JS/TS source into AST (Babel) |
-| **Directive Extractor** | Extract `@nudo:*` directives from comments |
-| **Evaluator** | Traverse AST, evaluate each node with type values |
-| **Ops** | Define type-value semantics for operators and built-ins |
-| **Environment** | Variable bindings (name → TypeValue) |
-| **Branch Executor** | Fork on conditions, narrow, evaluate, merge |
-| **Type Emitter** | Serialize final TypeValue (e.g. to TypeScript) |
+| **Directive Extractor** | Extract `@nudo:*` from comments; refine/import parsed in core |
+| **algebra (Abs)** | Types as computation: eval, check, leq, generalize |
+| **Evaluator (TypeValue path)** | Fallback AST walker for imports/env/mock-heavy files |
+| **Ops** | Residual semantics when algebra does not cover an operator |
+| **bridge** | Abs → TypeValue for dts/LSP/serialization |
+| **Environment** | Variable bindings (name → TypeValue or Abs seed) |
 
 ### 3.2 Evaluation Rules
 
@@ -293,7 +301,7 @@ Directives are structured comments that guide the engine. They use the `@nudo:` 
 | `@nudo:pure` | Mark function as pure for memoization |
 | `@nudo:skip` | Skip evaluation; an optional type expression declares the return type (e.g. `@nudo:skip T.number`) |
 | `@nudo:sample` | Number of loop iterations before fixed-point |
-| `@nudo:returns` | Assert expected return type |
+| `@nudo:refine` | Refinement contract: `@nudo:refine param name` / `@nudo:refine return name` (Pred enters Abs) |
 | `@nudo:env` | Declare runtime environment APIs (file-level `///` comment) |
 | `@nudo:mock-module` | Replace imported modules with mock files (file-level `///` comment) |
 | `@nudo:as` | Override the next statement's value type (line comment `//`) |
@@ -363,22 +371,28 @@ for (let i = 0; i < 5; i++) sum += i;
 // Nudo: sum → 10 | TS: number
 ```
 
-### 6.8 User-Extensible Type Refinements
+### 6.8 Declared Refinements (no type syntax)
 
-Users can define custom refined types with domain-specific operation rules via `T.refine`:
+User-facing contracts are declared with `@nudo:refine` and `*.nudo.js` templates — not `interface` / `type`, and not `T.refine` in source:
 
 ```javascript
-const Odd = T.refine(T.number, {
-  name: "odd",
-  check: (v) => Number.isInteger(v) && v % 2 !== 0,
-  ops: { "%"(self, other) {
-    if (other.kind === "literal" && other.value === 2) return T.literal(1);
-    return undefined; // fall back to T.number behavior
-  }},
-});
-// Odd % 2 → 1 (custom rule)
-// Odd + 1 → number (falls back to base)
+// shapes.nudo.js
+export const positive = number().gt(0);
+export const user = shape({ id: number().gt(0), name: string() });
+
+// app.js
+/// @nudo:import { positive, user } from "./shapes.nudo.js"
+
+/**
+ * @nudo:refine x positive
+ * @nudo:refine return positive
+ */
+function inc(x) {
+  return x + 1;
+}
 ```
+
+The Pred enters Abs and participates in algebra (`x>0` ⇒ `x+1>1`). `T.refine` is the TypeValue-IR primitive these templates lower to — not the source-level API.
 
 ---
 
@@ -417,30 +431,18 @@ function calc(a, b) {
 
 ## 8. Implementation Roadmap
 
-### Phase 1: Minimal Viable Evaluator (done)
-- Babel parser, TypeValue core, basic ops, evaluator, narrowing, `@nudo:case`, CLI.
+### Done
+- **Evaluator MVP** — Babel, TypeValue IR, ops, narrowing, `@nudo:case`, CLI `infer`.
+- **Objects/arrays** — objects, arrays, tuples, Array methods, `@nudo:mock`.
+- **Advanced language** — closures, recursion budget, async/Promise, try-catch, classes.
+- **Tooling** — LSP, watch, `.d.ts`, Vite plugin, VS Code extension.
+- **Refined IR** — template/range refinements; source contracts via `@nudo:refine`.
+- **Abs algebra (single-track)** — Term/Pred/Abs, arithmetic kernel, `leqAbs`, generalize, `nudo check` / `nudo types` / `nudo test`, CheckJson, gold gates (recall = precision = 1.0).
+- **Call budget** — depth/cycle/total guards so recursive check never stack-overflows.
 
-### Phase 2: Objects and Arrays (done)
-- ObjectType, ArrayType, TupleType, property access, `Array.prototype` methods, `@nudo:mock`.
-
-### Phase 3: Advanced Features (done)
-- Closures, recursion, async/Promise, try-catch, instanceof, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`.
-
-### Phase 4: Tooling (done)
-- LSP, watch mode, `.d.ts` export, Vite plugin, VS Code extension.
-
-### Phase 5: Refined TypeValues (done)
-- `RefinedType` kind with `Refinement` interface (name, meta, check, ops, methods, properties).
-- Built-in template string refinement (parts, concatenation, startsWith/endsWith/includes, length).
-- Built-in numeric range refinement (min, max, integer, comparison operators).
-- User-defined refined types via `T.refine`.
-- Dispatch fallback chain: refined → base → primitive.
-
-### Phase 6: Evaluator Completion (done)
-- Full string method semantics (20+ methods, literal and abstract).
-- Loop evaluation with fixed-point iteration (for, while, do-while).
-- `@nudo:sample` directive for loop sampling control.
-- Comparison narrowing to range types.
+### Open
+- emit round-trip through tsc; harvest automation
+- esbuild / webpack plugins; source maps for error locations
 
 ---
 

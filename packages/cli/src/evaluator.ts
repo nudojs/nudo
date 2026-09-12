@@ -3,7 +3,6 @@ import {
   type TypeValue,
   T,
   simplifyUnion,
-  applyBinaryOp,
   dispatchBinaryOp,
   dispatchMethod,
   dispatchProperty,
@@ -23,6 +22,21 @@ import {
 } from "@nudojs/core";
 import { extractInlineDirectives, type InlineDirective } from "@nudojs/parser";
 import { narrow } from "./narrowing.ts";
+import {
+  tryAbsObjectSpread,
+  tryAbsJoinObjects,
+  tryAbsUnary,
+  pushPhi,
+  popPhi,
+  currentPhi,
+  resetPhi,
+} from "./abs-route.ts";
+import {
+  evalBinaryValue,
+  distributeBinaryOverUnion,
+} from "./eval-binary.ts";
+import { phiFromTest, combinePhi } from "./phi-from-test.ts";
+import { tagParamArg } from "./term-registry.ts";
 import { PROMISE_STATIC_METHODS, evaluatePromiseStaticMethod, evaluatePromiseInstanceMethod } from "./builtins/builtin-promise.ts";
 import { MAP_INSTANCE_METHODS, createMapType, mapEntriesIterable, exactMapEntries } from "./builtins/builtin-map.ts";
 import { SET_INSTANCE_METHODS, createSetType, setValuesIterable, exactSetValues } from "./builtins/builtin-set.ts";
@@ -238,24 +252,6 @@ function literalCodeUnits(args: TypeValue[]): number[] | null {
  * 这五种原始值走 JS 宽松相等的 ToNumber 强转路径，可直接用宿主 `==`
  * 求值（与规范一致）；bigint/symbol 无该路径，hit=false 交给调用方退化
  * 为 T.boolean。undefined 不能作哨兵值（它本身就是合法字面量值）。 */
-function looseLiteralValue(
-  tv: TypeValue,
-): { hit: boolean; v: number | string | boolean | null | undefined } {
-  if (tv.kind === "literal") {
-    const v = tv.value;
-    if (
-      typeof v === "number" ||
-      typeof v === "string" ||
-      typeof v === "boolean" ||
-      v === null ||
-      v === undefined
-    ) {
-      return { hit: true, v };
-    }
-  }
-  return { hit: false, v: undefined };
-}
-
 const BUILTIN_INSTANCE_METHODS: Record<string, Record<string, (...args: TypeValue[]) => TypeValue>> = {
   Date: {
     getTime: () => T.number,
@@ -651,6 +647,18 @@ function definiteBoolean(tv: TypeValue): boolean | null {
     case "never": return false;
     default: return null;
   }
+}
+
+/**
+ * 分支合并：双对象先走 Abs join（sum-of-products / 槽位合并），
+ * 失败或非对象再 simplifyUnion。保证 join 代数接到 evaluator 主路径。
+ */
+function joinOrUnion(a: TypeValue, b: TypeValue): TypeValue {
+  if (a.kind === "object" && b.kind === "object") {
+    const joined = tryAbsJoinObjects(a, b);
+    if (joined) return joined;
+  }
+  return simplifyUnion([a, b]);
 }
 
 // Receiver-binding for thisVal-dependent Object.prototype methods
@@ -1309,6 +1317,13 @@ export function setProvenanceTracking(enabled: boolean): void {
   _provenanceEnabled = enabled;
 }
 
+/** 克隆 TypeValue 后拷贝 provenance（tagParamArg 会 clone，丢 origin 会导致 M5 回归） */
+function copyOrigin(from: TypeValue, to: TypeValue): void {
+  if (!_provenanceEnabled || !from || !to) return;
+  const o = _originMap.get(from);
+  if (o) _originMap.set(to, o);
+}
+
 function extractOrigin(
   tv: TypeValue | undefined,
 ): { line: number; column: number } | undefined {
@@ -1566,31 +1581,6 @@ function evaluateComputedMemberAccess(objVal: TypeValue, propVal: TypeValue, nod
   return result;
 }
 
-const MAX_UNION_PRODUCT = 50;
-
-function distributeBinaryOverUnion(
-  left: TypeValue,
-  right: TypeValue,
-  fn: (l: TypeValue, r: TypeValue) => TypeValue,
-): TypeValue {
-  if (left.kind === "union" && right.kind === "union") {
-    // Cap combinatorial blowup
-    if (left.members.length * right.members.length > MAX_UNION_PRODUCT) {
-      return T.unknown;
-    }
-    return simplifyUnion(
-      left.members.flatMap((l) => right.members.map((r) => fn(l, r))),
-    );
-  }
-  if (left.kind === "union") {
-    return simplifyUnion(left.members.map((l) => fn(l, right)));
-  }
-  if (right.kind === "union") {
-    return simplifyUnion(right.members.map((r) => fn(left, r)));
-  }
-  return fn(left, right);
-}
-
 let _unreachableRanges: SourceRange[] = [];
 
 function collectUnreachable(stmts: readonly Node[], fromIndex: number): void {
@@ -1815,65 +1805,38 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         return evaluateInstanceof(leftVal, rightVal, node.right, env);
       }
       if (node.operator === "in") {
-        // Literal `key in obj` / `Symbol.iterator in x` decisions; unions
-        // on either side distribute (mixed literals collapse per
-        // simplifyUnion), unknown receivers stay unknown.
         return distributeBinaryOverUnion(leftVal, rightVal, (l, r) => evaluateInMember(l, r));
       }
       if (node.operator === "===" || node.operator === "!==") {
-        // Prototype-singleton identity (`baseProto === Types.buffer`): the
-        // generic Op only literal-compares, so same-class instance pairs
-        // would collapse to boolean. Decide it when both sides are instances
-        // and at least one is a cached builtin prototype.
         const identity = builtinProtoIdentityEq(leftVal, rightVal);
         if (identity !== null) {
           return T.literal(node.operator === "===" ? identity : !identity);
         }
-        // Class-namespace identity (`x.constructor === Array`): memoized
-        // builtinClassValue objects compare by class name.
         const classIdentity = builtinClassIdentityEq(leftVal, rightVal);
         if (classIdentity !== null) {
           return T.literal(node.operator === "===" ? classIdentity : !classIdentity);
         }
       }
-      // `==`/`!=`：core 的 binaryOpMap 未收录这两个运算符（applyBinaryOp
-      // 会回落 unknown），在同一分派点补上——两操作数均为原始字面量
-      // （number/string/boolean/null/undefined）时按 JS 宽松相等语义
-      // （ToNumber 强转，如 "5" == 5 → true、null == undefined → true、
-      // NaN == NaN → false）直接求值出 boolean 字面量；任一操作数非字面量
-      // 时退化为 T.boolean。
-      if (node.operator === "==" || node.operator === "!=") {
-        const eq = node.operator === "==";
-        return distributeBinaryOverUnion(leftVal, rightVal, (l, r) => {
-          const lv = looseLiteralValue(l);
-          const rv = looseLiteralValue(r);
-          if (lv.hit && rv.hit) return T.literal(eq ? lv.v == rv.v : lv.v != rv.v);
-          return T.boolean;
-        });
-      }
-      return distributeBinaryOverUnion(leftVal, rightVal, (l, r) =>
-        dispatchBinaryOp(node.operator, l, r),
-      );
+
+      // 统一二元：代数优先 → 宽松相等 → 外延 Ops
+      const bin = evalBinaryValue(node.operator, leftVal, rightVal);
+      if (bin !== undefined) return bin;
+      return T.unknown;
     }
 
     case "UnaryExpression": {
       const argVal = evaluate(node.argument, env);
       if (isReturn(argVal) || isBranch(argVal) || isThrow(argVal)) return argVal;
-      if (node.operator === "typeof") {
-        return distributeOverUnion(argVal, (v) => Ops.typeof_(v));
-      }
+      // 一元语言表面经代数（typeof / ! / -）
+      const unary = tryAbsUnary(node.operator, argVal);
+      if (unary !== undefined) return unary;
       if (node.operator === "!") {
+        // 代数未接住：对象恒真等 host 知识
         return distributeOverUnion(argVal, (v) => {
-          // Object-ish receivers are statically truthy: `!ref` must resolve
-          // to literal false or enclosing `if (!ref || …)` guards explore
-          // both branches and the ref-reassigning branch poisons the loop.
           const decided = definiteBoolean(v);
           if (decided !== null) return T.literal(!decided);
           return Ops.not(v);
         });
-      }
-      if (node.operator === "-") {
-        return distributeOverUnion(argVal, (v) => Ops.neg(v));
       }
       return T.unknown;
     }
@@ -1964,7 +1927,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       const aResult = evaluate(node.alternate, falseEnv);
       const cVal = isReturn(cResult) ? cResult.value : isBranch(cResult) ? cResult.returnedValue : isThrow(cResult) ? T.never : cResult;
       const aVal = isReturn(aResult) ? aResult.value : isBranch(aResult) ? aResult.returnedValue : isThrow(aResult) ? T.never : aResult;
-      return simplifyUnion([cVal, aVal]);
+      return joinOrUnion(cVal, aVal);
     }
 
     case "IfStatement": {
@@ -1972,6 +1935,9 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       const [trueEnv, falseEnv] = narrow(test, env);
       const testVal = evaluate(test, env);
       if (isReturn(testVal) || isBranch(testVal) || isThrow(testVal)) return testVal;
+
+      // Kernel Φ：从测试表达式提取约束，真/假分支分别合取
+      const phis = phiFromTest(test);
 
       if (testVal.kind === "literal") {
         if (testVal.value) {
@@ -1981,7 +1947,12 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
               end: { line: node.alternate.loc.end.line, column: node.alternate.loc.end.column },
             });
           }
-          return evaluate(node.consequent, trueEnv);
+          pushPhi(combinePhi(currentPhi(), phis.whenTrue));
+          try {
+            return evaluate(node.consequent, trueEnv);
+          } finally {
+            popPhi();
+          }
         }
         if (node.consequent.loc) {
           _unreachableRanges.push({
@@ -1989,26 +1960,52 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
             end: { line: node.consequent.loc.end.line, column: node.consequent.loc.end.column },
           });
         }
-        return node.alternate
-          ? evaluate(node.alternate, falseEnv)
-          : T.undefined;
+        if (!node.alternate) return T.undefined;
+        pushPhi(combinePhi(currentPhi(), phis.whenFalse));
+        try {
+          return evaluate(node.alternate, falseEnv);
+        } finally {
+          popPhi();
+        }
       }
       // Object-ish / otherwise-decidable tests pick their branch statically
       // (e.g. `if (proto && proto.isImmutable)` once && resolves).
       const decided = definiteBoolean(testVal);
       if (decided !== null) {
         if (decided) {
-          return evaluate(node.consequent, trueEnv);
+          pushPhi(combinePhi(currentPhi(), phis.whenTrue));
+          try {
+            return evaluate(node.consequent, trueEnv);
+          } finally {
+            popPhi();
+          }
         }
-        return node.alternate
-          ? evaluate(node.alternate, falseEnv)
-          : T.undefined;
+        if (!node.alternate) return T.undefined;
+        pushPhi(combinePhi(currentPhi(), phis.whenFalse));
+        try {
+          return evaluate(node.alternate, falseEnv);
+        } finally {
+          popPhi();
+        }
       }
 
-      const consequentResult = evaluate(node.consequent, trueEnv);
-      const alternateResult = node.alternate
-        ? evaluate(node.alternate, falseEnv)
-        : null;
+      // 两边都探索：分别用各自 Φ
+      pushPhi(combinePhi(currentPhi(), phis.whenTrue));
+      let consequentResult: EvalResult;
+      try {
+        consequentResult = evaluate(node.consequent, trueEnv);
+      } finally {
+        popPhi();
+      }
+      pushPhi(combinePhi(currentPhi(), phis.whenFalse));
+      let alternateResult: EvalResult | null = null;
+      try {
+        alternateResult = node.alternate
+          ? evaluate(node.alternate, falseEnv)
+          : null;
+      } finally {
+        popPhi();
+      }
 
       const cReturns = isReturn(consequentResult);
       const cBranches = isBranch(consequentResult);
@@ -2033,21 +2030,21 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
       }
 
       if (aThrows) {
-        const cVal = cReturns ? consequentResult.value
-          : cBranches ? consequentResult.returnedValue
+        const cVal = cReturns ? (consequentResult as ReturnSignal).value
+          : cBranches ? (consequentResult as BranchSignal).returnedValue
           : consequentResult as TypeValue;
         return makeBranch(cVal, trueEnv);
       }
 
-      const cVal = cReturns ? consequentResult.value
-        : cBranches ? consequentResult.returnedValue
+      const cVal = cReturns ? (consequentResult as ReturnSignal).value
+        : cBranches ? (consequentResult as BranchSignal).returnedValue
         : consequentResult as TypeValue;
       const aVal = aReturns ? (alternateResult as ReturnSignal).value
         : aBranches ? (alternateResult as BranchSignal).returnedValue
         : alternateResult as TypeValue | null;
 
       if (cReturns && aReturns) {
-        return makeReturn(simplifyUnion([cVal, aVal!]));
+        return makeReturn(joinOrUnion(cVal, aVal!));
       }
 
       if (cReturns && !node.alternate) {
@@ -2056,7 +2053,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
       if (cReturns && node.alternate) {
         if (aReturns) {
-          return makeReturn(simplifyUnion([cVal, aVal!]));
+          return makeReturn(joinOrUnion(cVal, aVal!));
         }
         return makeBranch(cVal, falseEnv);
       }
@@ -2115,7 +2112,7 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
           if (leftVal && leftVal.kind !== "unknown") {
             // Extract the binary operator (e.g., "+=" -> "+")
             const binaryOp = node.operator.slice(0, -1);
-            val = dispatchBinaryOp(binaryOp, leftVal, rightVal);
+            val = evalBinaryValue(binaryOp, leftVal, rightVal) ?? T.unknown;
           }
         }
 
@@ -2761,6 +2758,15 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
         } else if (prop.type === "SpreadElement") {
           const spreadVal = evaluate(prop.argument, env);
           if (isReturn(spreadVal) || isBranch(spreadVal) || isThrow(spreadVal)) return spreadVal;
+          // M4：代数 spread（保留字面量/term）；失败回退 Object.assign
+          const absSpread = tryAbsObjectSpread(T.object(props), spreadVal);
+          if (absSpread !== undefined && absSpread.kind === "object") {
+            // 合并到 props 继续处理后续属性
+            for (const [k, v] of Object.entries(absSpread.properties)) {
+              props[k] = v;
+            }
+            continue;
+          }
           if (spreadVal.kind === "object") {
             Object.assign(props, spreadVal.properties);
           } else if (spreadVal.kind === "union") {
@@ -3996,23 +4002,36 @@ function evaluateArrayMethodValues(
 
   const fn = callbackFn as TypeValue & { kind: "function" };
 
+  // HOF：给回调元素挂 term 身份，使 Φ 中的约束可传播到 map/reduce 体
+  const tagEl = (el: TypeValue, name: string): TypeValue => {
+    const tagged = tagParamArg(el, name);
+    copyOrigin(el, tagged);
+    return tagged;
+  };
+
   if (method === "map") {
     if (arr.kind === "tuple") {
       const mapped = arr.elements.map((el, i) =>
-        callFunction(fn, [el, T.literal(i), arr]),
+        callFunction(fn, [tagEl(el, fn.params[0] ?? "item"), T.literal(i), arr]),
       );
       return T.tuple(mapped);
     }
-    return T.array(callFunction(fn, [arr.element, T.number, arr]));
+    return T.array(
+      callFunction(fn, [tagEl(arr.element, fn.params[0] ?? "item"), T.number, arr]),
+    );
   }
 
   if (method === "filter") {
     if (arr.kind === "tuple") {
       const kept: TypeValue[] = [];
       for (let i = 0; i < arr.elements.length; i++) {
-        const result = callFunction(fn, [arr.elements[i], T.literal(i), arr]);
+        const result = callFunction(fn, [
+          tagEl(arr.elements[i]!, fn.params[0] ?? "item"),
+          T.literal(i),
+          arr,
+        ]);
         if (result.kind === "literal" && !result.value) continue;
-        kept.push(arr.elements[i]);
+        kept.push(arr.elements[i]!);
       }
       if (kept.length === 0) return T.tuple([]);
       return T.array(simplifyUnion(kept));
@@ -4026,17 +4045,30 @@ function evaluateArrayMethodValues(
       let acc = init ?? arr.elements[0] ?? T.unknown;
       const startIdx = init ? 0 : 1;
       for (let i = startIdx; i < arr.elements.length; i++) {
-        acc = callFunction(fn, [acc, arr.elements[i], T.literal(i), arr]);
+        acc = callFunction(fn, [
+          acc,
+          tagEl(arr.elements[i]!, fn.params[1] ?? "item"),
+          T.literal(i),
+          arr,
+        ]);
       }
       return acc;
     }
-    // For arrays, we can't iterate all elements, but we can call the function
-    // with the accumulator and element type to infer the result type
-    const acc = init ?? arr.element;
-    const result = callFunction(fn, [acc, arr.element, T.number, arr]);
-    // If the result is the same type as the accumulator, it's likely correct
-    // (e.g., number + number = number)
-    return result;
+    // 抽象数组：不动点迭代（代数纪律）。unknown 不 join 进 acc。
+    const acc0 = init ?? arr.element;
+    let acc = acc0;
+    for (let i = 0; i < 6; i++) {
+      const next = callFunction(fn, [
+        acc,
+        tagEl(arr.element, fn.params[1] ?? "item"),
+        T.number,
+        arr,
+      ]);
+      if (typeValueEquals(acc, next)) return next;
+      if (next.kind === "unknown") return acc;
+      acc = simplifyUnion([acc, next]);
+    }
+    return acc;
   }
 
   if (method === "find") {
@@ -4980,7 +5012,12 @@ function bindFunctionParams(
         callEnv.bind(paramName.slice(3), restValue); // Remove "..." prefix
       }
     } else {
-      const argVal = args[i] ?? T.undefined;
+      let argVal = args[i] ?? T.undefined;
+      {
+        const tagged = tagParamArg(argVal, paramName);
+        copyOrigin(argVal, tagged);
+        argVal = tagged;
+      }
       if (paramPatterns && paramPatterns[i]) {
         bindPattern(paramPatterns[i], argVal, callEnv);
       } else {
@@ -5582,7 +5619,14 @@ export function evaluateFunctionFull(
         callEnv.bind(fnName, selfRef);
       }
       for (let i = 0; i < actualNode.params.length; i++) {
-        bindPattern(actualNode.params[i], args[i] ?? T.undefined, callEnv);
+        const pname = describeParam(actualNode.params[i]!);
+        let argVal = args[i] ?? T.undefined;
+        {
+          const tagged = tagParamArg(argVal, pname);
+          copyOrigin(argVal, tagged);
+          argVal = tagged;
+        }
+        bindPattern(actualNode.params[i]!, argVal, callEnv);
       }
       const result = evaluate(actualNode.body, callEnv);
       if (isThrow(result)) return { value: T.never, throws: result.thrown, throwLoc: result.loc };
@@ -5603,6 +5647,7 @@ export function evaluateFunctionFull(
 
 export function evaluateProgram(node: Node, env: Environment): TypeValue {
   bindCommonJsGlobals(env);
+  resetPhi();
   const result = evaluate(node, env);
   if (isReturn(result)) return result.value;
   if (isBranch(result)) return result.returnedValue;

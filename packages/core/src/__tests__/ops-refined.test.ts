@@ -38,8 +38,10 @@ describe("dispatchBinaryOp", () => {
           },
         },
       });
+      // Ops.mod 已删：dispatchBinaryOp 的 % 最终落到 unknown；
+      // evaluator 侧由 evalBinaryValue 的 numberish 兜底补 number。
       const result = dispatchBinaryOp("%", odd, T.literal(3));
-      expect(result.kind).toBe("primitive");
+      expect(result.kind).toBe("unknown");
     });
   });
 

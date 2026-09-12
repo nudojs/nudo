@@ -39,7 +39,7 @@ All commands are available as `workspace/executeCommand` (dot form) and as custo
 | `nudo.selectCase` (`nudo/selectCase`) | `{ "file": "src/app.js", "functionName": "parse", "caseIndex": 1 }` | `{ "success": true }` — switches the active case (affects hover/diagnostics until changed back) |
 | `nudo.getActiveCases` (`nudo/getActiveCases`) | `{ "file": "src/app.js" }` | `{ "parse": 1, "greet": 0 }` — active case index per function |
 
-Diagnostics (failed `@nudo:returns` assertions, unreachable code, …) are available as LSP diagnostics — push (`textDocument/publishDiagnostics`) and pull (`textDocument/diagnostic`).
+Diagnostics (failed `@nudo:refine` assertions, unreachable code, …) are available as LSP diagnostics — push (`textDocument/publishDiagnostics`) and pull (`textDocument/diagnostic`).
 
 ## What-if workflow
 

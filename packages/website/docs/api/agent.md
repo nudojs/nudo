@@ -1,31 +1,100 @@
 ---
 sidebar_position: 5
-description: "Agent API — the five nudo.* commands in the language server: whatIf type assumptions, suggestCase directives, trace, selectCase, getActiveCases."
+description: "Agent API — nudo.* commands: check (Abs gate), infer, hover, whatIf, suggestCase, trace, selectCase, getActiveCases."
 ---
 
 # Agent API
 
-Reference for the agent-facing surface of `@nudojs/lsp`. All five agent commands live inside the Nudo language server and are reached through standard `workspace/executeCommand` calls or custom LSP requests — there is no separate server process or protocol to install. For connection setup (LSP→MCP bridges, native LSP clients, VS Code), see the [Agent Integration Guide](../guides/mcp-server.md).
+Reference for the agent-facing surface of `@nudojs/lsp`. All agent commands live inside the Nudo language server and are reached through standard `workspace/executeCommand` calls or custom LSP requests — there is no separate server process or protocol to install. For connection setup (LSP→MCP bridges, native LSP clients, VS Code), see the [Agent Integration Guide](../guides/mcp-server.md).
 
 ## Commands
 
 | Command | Custom request alias | Purpose |
 |---------|---------------------|---------|
+| `nudo.check` | `nudo/check` | Constraint gate — **CheckJson v1** (Abs signatures + actual ⊭ expected) |
+| `nudo.infer` | `nudo/infer` | Whole-file inference — **InferJson v1** (intension carries lossless Abs) |
+| `nudo.hover` | `nudo/hover` | Lossless Abs at a source position (+ optional inlays) |
 | `nudo.whatIf` | `nudo/whatIf` | Apply type assumptions to bindings and read the inferred type of a target |
 | `nudo.suggestCase` | `nudo/suggestCase` | Check `@nudo:case` coverage; when every case is synthesized, return paste-ready directives |
 | `nudo.trace` | `nudo/trace` | List each case's argument types → result type for a function |
 | `nudo.selectCase` | `nudo/selectCase` | Switch the active case used for hover/diagnostics |
 | `nudo.getActiveCases` | `nudo/getActiveCases` | Read the active case index of every function in a file |
 
-`nudo.whatIf`, `nudo.suggestCase`, and `nudo.trace` return MCP-style text content — `{ content: [{ type: "text", text }] }` — so results drop straight into agent tooling. `nudo.selectCase` returns `{ success: true }`; `nudo.getActiveCases` returns `Record<string, number>`.
+`nudo.check` / `nudo.infer` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` return MCP-style text content — `{ content: [{ type: "text", text }] }`. `nudo.selectCase` returns `{ success: true }`; `nudo.getActiveCases` returns `Record<string, number>`.
 
 ## Conventions
 
 - **`file` parameter** — every command takes a `file` string, accepting either a `file://` URI or a bare path. Files that are not open in an editor are read from disk.
 - **Editor-style requests** — the `nudo/selectCase` and `nudo/getActiveCases` requests additionally accept editor-style `{ uri, ... }` params (this is what the VS Code extension's CodeLens uses). Agents should always use `file`.
 - **Type expressions** — see [Type expressions](#type-expressions) below.
+- **Abs-first** — `check` / `infer` / `hover` expose the lossless algebra (Abs). TypeValue strings are extensional projections for compatibility, not the type model.
 
 ---
+
+## nudo.check
+
+Constraint gate on **Abs** (type-as-computation). Same contract as CLI `nudo check --json`. See [nudo check](../guides/check.md).
+
+**Arguments:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `file` | `string` | `file://` URI or path |
+| `source` | `string?` | Pre-read source (bypasses disk/editor) |
+| `format` | `"text" \| "json"` | `"json"` → CheckJson only; default human summary + JSON |
+
+**Returns (CheckJson v1):** `{ version: 1, file, ok, summary, signatures[], issues[] }` where each issue may carry `actual` / `expected`. Issue codes:
+
+| Code | Meaning |
+|------|---------|
+| `nudo:constraint-violated` | Call argument ⊭ precondition |
+| `nudo:assign-mismatch` | Assignment ⊭ previous binding shape |
+| `nudo:arg-structure` | Argument structure ⊭ slots accessed in the body |
+
+```javascripton
+{
+  "command": "nudo.check",
+  "arguments": [{ "file": "src/validators.js", "format": "json" }]
+}
+```
+
+## nudo.infer
+
+Whole-file inference — same contract as CLI `nudo infer --json`.
+
+**Arguments:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `file` | `string` | Path or URI |
+| `source` | `string?` | Pre-read source |
+| `format` | `"text" \| "json"` | `"json"` → InferJson only |
+| `functions` | `string[]?` | Filter to these function names |
+
+**Returns (InferJson v1):** `cases[].intension` carries `abs` / `term` / `pred` / `conf` (lossless); `args` / `result` are TypeValue strings (extensional).
+
+```javascripton
+{
+  "command": "nudo.infer",
+  "arguments": [{ "file": "src/app.js", "functions": ["scale"], "format": "json" }]
+}
+```
+
+## nudo.hover
+
+Lossless Abs at a position — same source as editor hover, not a TypeValue bridge.
+
+**Arguments:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `file` | `string` | Path or URI |
+| `line` | `number` | **1-based** line |
+| `column` | `number` | **0-based** column |
+| `source` | `string?` | Pre-read source |
+| `includeInlays` | `boolean?` | Also return all Abs inlays for the file |
+
+**Returns JSON:** `{ file, line, column, abs, absMultiline, intension, ext, inlays? }` — `abs` is lossless; `ext` is the TypeValue projection for comparison only.
 
 ## nudo.whatIf
 
@@ -148,7 +217,7 @@ Forms already in `T.*` syntax and structural expressions (object/array literals,
 
 ## Diagnostics
 
-Type errors (failed `@nudo:returns` assertions, unreachable code, …) are available as LSP diagnostics in both directions:
+Type errors (failed `@nudo:refine` assertions, unreachable code, …) are available as LSP diagnostics in both directions:
 
 - **Push**: `textDocument/publishDiagnostics` after each analysis
 - **Pull**: `textDocument/diagnostic` on demand
@@ -162,8 +231,8 @@ The standalone `@nudojs/mcp` package is retired; its tools map onto the commands
 | Old MCP tool | Replacement |
 |--------------|-------------|
 | `nudo-what-if` | `nudo.whatIf` — `bindings` are now actually applied (previously ignored) |
-| `nudo-check` | Pull diagnostics via `textDocument/diagnostic` |
-| `nudo-type-at` | `nudo.whatIf` with empty `bindings` and `target` set, or LSP hover |
+| `nudo-check` | `nudo.check` (CheckJson v1) or pull diagnostics via `textDocument/diagnostic` |
+| `nudo-type-at` | `nudo.hover` (lossless Abs), or `nudo.whatIf` with empty `bindings` and `target` set |
 | `nudo-suggest-case` | `nudo.suggestCase` |
 | `nudo-trace` | `nudo.trace` |
 

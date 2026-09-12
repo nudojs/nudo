@@ -1,6 +1,6 @@
 ---
 sidebar_position: 7
-description: 用 `nudo generate` 从 Nudo 推断的类型生成 Zod schema、零依赖类型守卫与 TypeScript 声明，全部输出到 stdout。
+description: 用 `nudo generate` 从 Nudo 推断的类型生成 Zod schema、零依赖类型守卫与 TypeScript 声明，可写入文件或输出到 stdout。
 ---
 
 # 运行时类型生成
@@ -13,7 +13,7 @@ JS code → Nudo infers types → Generate validators → Runtime validation
 
 这意味着你编写纯 JavaScript，让 Nudo 推断类型，然后生成完整的运行时类型检查——无需手写验证器，无需重复的类型定义。
 
-所有生成结果都打印到 stdout。用管道或粘贴的方式放进项目里合适的文件即可。
+所有生成结果默认打印到 stdout。可传 `--output <dir>` 写入文件。
 
 ## `nudo generate` 命令
 
@@ -24,7 +24,7 @@ nudo generate <file> [options]
 | 选项 | 描述 |
 |---|---|
 | `--format <format>` | 输出格式：`zod`、`guard`、`dts`、`all`（默认：`all`） |
-| `--output <dir>` | 已声明但**尚未实现**——输出始终走 stdout，请改用 shell 重定向。 |
+| `--output <dir>` | 把校验器文件写入该目录（`<name>.nudo.zod.ts`、`<name>.nudo.guard.ts`、`<name>.d.ts`）。省略则打印到 stdout。 |
 
 运行 `nudo generate` 会读取源文件的推断类型，并以指定格式打印验证器。
 

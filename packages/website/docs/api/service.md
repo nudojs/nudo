@@ -394,7 +394,6 @@ type FunctionAnalysis = {
   paramNames: string[];        // actual parameter names from AST
   cases: CaseResult[];
   combined?: TypeValue;        // union of case results
-  assertionErrors?: string[]; // @nudo:returns failures
   entryOnly?: boolean;         // synthesized entry@L case, no call sites found
   skipped?: boolean;
   /** CJS-style binding/assignment functions (exports.X = fn) have no
@@ -475,7 +474,7 @@ type Diagnostic = {
   severity: DiagnosticSeverity;   // "error" | "warning" | "info"
   message: string;
   tags?: DiagnosticTag[];         // e.g. ["unnecessary"]
-  code?: string;                  // e.g. "nudo:unknown-recv", "nudo:mock-invalid", "nudo-unreachable", "nudo-assertion-failed"
+  code?: string;                  // e.g. "nudo:unknown-recv", "nudo:mock-invalid", "nudo-unreachable"
   suggestions?: string[];
   data?: unknown;                 // additional context for code actions
   /** provenance of the receiver value (callsite argument that flowed into the error) */

@@ -1,6 +1,6 @@
 import { parse as babelParse } from "@babel/parser";
 import type { File } from "@babel/types";
-import { stripTypes } from "./strip-types.ts";
+import { stripTypes } from "@nudojs/core";
 
 export function parse(source: string, opts?: { errorRecovery?: boolean }): File {
   const ast = babelParse(source, {

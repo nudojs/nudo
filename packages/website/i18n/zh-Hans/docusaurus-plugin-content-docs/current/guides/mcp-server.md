@@ -162,7 +162,7 @@ Function "add" has 2 synthesized case(s); suggested directives:
 {"jsonrpc":"2.0","id":3,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":"file:///home/you/project/src/app.js"}}}
 ```
 
-error 级条目（失败的 `@nudo:returns` 断言、不可达代码等）在 `items` 中返回，`source: "nudo"`。如果你的客户端偏好推送，`textDocument/publishDiagnostics` 也会发出。
+error 级条目（失败的 `@nudo:refine` 断言、不可达代码等）在 `items` 中返回，`source: "nudo"`。如果你的客户端偏好推送，`textDocument/publishDiagnostics` 也会发出。
 
 ## 从 MCP 服务器迁移
 

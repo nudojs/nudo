@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import ts from "typescript";
 import { type TypeValue, typeValueEquals, getFnSig, T } from "@nudojs/core";
 
@@ -68,7 +68,12 @@ function scopeKey(scope: Scope): string {
 // Public API
 // ---------------------------------------------------------------------------
 
-export function harvestDts(files: string[]): HarvestedEnv {
+export function harvestDts(
+  files: string[],
+  opts?: { maxFileBytes?: number; maxMs?: number },
+): HarvestedEnv {
+  const maxBytes = opts?.maxFileBytes ?? 1_500_000;
+  const deadline = opts?.maxMs !== undefined ? Date.now() + opts.maxMs : undefined;
   const ctx: HarvestContext = {
     globals: {},
     modules: {},
@@ -88,10 +93,27 @@ export function harvestDts(files: string[]): HarvestedEnv {
   };
 
   // Phase 1: collect declarations into the shared symbol table.
+  let parsed = 0;
   for (const file of files) {
-    const content = readFileSync(file, "utf8");
+    if (deadline !== undefined && Date.now() > deadline) {
+      ctx.skipped += files.length - parsed;
+      break;
+    }
+    let content: string;
+    try {
+      const st = statSync(file);
+      if (st.size > maxBytes) {
+        ctx.skipped++;
+        continue;
+      }
+      content = readFileSync(file, "utf8");
+    } catch {
+      ctx.skipped++;
+      continue;
+    }
     const sourceFile = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true);
     collectStatements(ctx, sourceFile.statements, { moduleName: undefined, ns: [] });
+    parsed++;
   }
 
   // Phase 2: materialize TypeValues with the complete symbol table available.
@@ -100,7 +122,7 @@ export function harvestDts(files: string[]): HarvestedEnv {
   return {
     globals: ctx.globals,
     modules: ctx.modules,
-    stats: { files: files.length, symbols: ctx.symbols, skipped: ctx.skipped },
+    stats: { files: parsed, symbols: ctx.symbols, skipped: ctx.skipped },
   };
 }
 

@@ -120,11 +120,15 @@ Nudo uses structured JSDoc comments to guide inference:
 | Directive | Purpose |
 |---|---|
 | `@nudo:case` | Define named execution cases with concrete or symbolic arguments |
+| `@nudo:refine` | Attach a refinement contract (`@nudo:refine x positive` / `@nudo:refine return delay`) |
 | `@nudo:mock` | Provide mock implementations for external dependencies |
 | `@nudo:pure` | Mark functions as pure for memoized evaluation |
 | `@nudo:skip` | Skip inference and use manually declared types |
 | `@nudo:sample` | Control loop iteration sampling |
-| `@nudo:returns` | Assert expected return types |
+
+Refinements live in `*.nudo.js` templates (`number().gt(0)`, `shape({...})`) and enter Abs as Preds — they participate in arithmetic, not just call-site gates.
+
+See [`docs/examples/`](./docs/examples/) for runnable examples.
 
 ## How It Works
 

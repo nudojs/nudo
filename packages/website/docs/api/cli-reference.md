@@ -1,6 +1,6 @@
 ---
 sidebar_position: 4
-description: "Reference every nudo CLI command — infer, check, doctor, generate, watch, harvest — with arguments, options, output formats, and exit codes."
+description: "Reference every nudo CLI command — infer, check, types, test, doctor, generate, emit, guard, watch, harvest — with arguments, options, output formats, and exit codes."
 ---
 
 # CLI Reference
@@ -20,11 +20,15 @@ npx @nudojs/cli infer ./src/utils.js
 | Command | Purpose |
 |---------|---------|
 | [`nudo infer`](#nudo-infer) | Infer types from files or directories |
-| [`nudo check`](#nudo-check) | Check a single file for type errors (error-level diagnostics exit `1`) |
+| [`nudo check`](#nudo-check) | Check a file or directory for type errors (error-level diagnostics exit `1`) |
+| [`nudo types`](#nudo-types) | Type-as-computation view: term + constraints from Abs algebra |
+| [`nudo test`](#nudo-test) | Run `@nudo:case` directives as assertions (exit `1` on failure) |
 | [`nudo doctor`](#nudo-doctor) | Health-check files: call-site solidification drift, analysis errors, uncovered functions |
 | [`nudo generate`](#nudo-generate) | Generate runtime validators from inferred types |
+| [`nudo emit`](#nudo-emit) | Emit `.d.ts` declarations (npm compatibility exit) |
+| [`nudo guard`](#nudo-guard) | Generate runtime type-guard functions |
 | [`nudo watch`](#nudo-watch) | Watch a file or directory and re-run inference on changes |
-| [`nudo harvest`](#nudo-harvest) | Convert `@types/<pkg>` declarations into a Nudo env file |
+| [`nudo harvest`](#nudo-harvest) | Convert `@types/<pkg>` declarations into a Nudo env file; `--auto` reports analysis-path auto-harvest |
 
 ### nudo infer
 
@@ -165,10 +169,11 @@ Field notes:
 
 ### nudo check
 
-Check a single file for type errors. Prints one line per diagnostic in the form `[severity] path:line:column message (code)` and exits with code `1` when any error-level diagnostic is found — warnings alone exit `0`.
+Check a file or directory for type errors. Prints one line per diagnostic in the form `[severity] path:line:column message (code)` and exits with code `1` when any error-level diagnostic is found — warnings alone exit `0`.
 
 ```bash
 nudo check <file>
+nudo check <directory>
 ```
 
 **Arguments:**
@@ -176,6 +181,7 @@ nudo check <file>
 | Argument | Description |
 |----------|-------------|
 | `<file>` | Path to a `.js`, `.mjs`, or `.ts` file (relative or absolute) |
+| `<directory>` | Recursively check every inference target under the directory (`--json` requires a single file) |
 
 **Example:**
 
@@ -190,10 +196,40 @@ nudo check src/broken.js
 
 - A file with no diagnostics prints `No issues found.` and exits `0`.
 - When the origin of a bad value is known, a hint line follows: `→ value originates at line:column`.
-- A failed `@nudo:returns` assertion is error-level, so `check` exits `1`:
+- A refinement violation is error-level, so `check` exits `1`:
 
 ```text
-[error] src/assert.js:5:0 @nudo:returns assertion failed for case "sample": expected string, got 10. Update the @nudo:returns directive to match the inferred type, or fix the function implementation (nudo-assertion-failed)
+[error] src/set.js:12:0 setDelay[ms]: 实参 ⊭ 前置  (nudo:constraint-violated)
+    actual:   0  #exact
+    expected: ms > 0
+```
+
+---
+
+### nudo types
+
+Type-as-computation view: show term + constraints from Abs algebra (not just extensional TypeValue shape). Accepts a single file or a directory (recursively).
+
+```bash
+nudo types <file> [--fn <name>] [--assume <pred...>] [--generalize]
+nudo types <directory> [--assume <pred...>] [--generalize]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--fn <name>` | Only analyze this function |
+| `--assume <pred...>` | Assume constraints, e.g. `x>0 y>=1` |
+| `--generalize` | Show polymorphic signatures via symbolic execution |
+
+---
+
+### nudo test
+
+Run `@nudo:case` directives as assertions. Cases with `=> expected` are checked with subtype semantics; failures exit `1`. Cases without an expected type are reported as `unchecked`. Accepts a file or directory.
+
+```bash
+nudo test <file>
+nudo test <directory>
 ```
 
 ---
@@ -334,7 +370,7 @@ nudo generate <file> [options]
 | Option | Description |
 |--------|-------------|
 | `--format <format>` | Output format: `zod`, `guard`, `dts`, `all` (default: `all`) |
-| `--output <dir>` | Declared but currently not implemented — output always goes to stdout, this option has no effect |
+| `--output <dir>` | Write validator files to this directory (`<name>.nudo.zod.ts`, `<name>.nudo.guard.ts`, `<name>.d.ts`). Omit to print to stdout |
 
 **Output formats:**
 
@@ -355,6 +391,56 @@ nudo generate src/user.js --format zod
 // Input: { arg0: z.object({ name: z.string(), age: z.number() }) }
 // Output: z.object({ id: z.literal(123), name: z.string(), age: z.number() })
 ```
+
+---
+
+### nudo emit
+
+Emit TypeScript `.d.ts` declarations for the npm compatibility exit. Equivalent to `nudo generate --format dts`.
+
+```bash
+nudo emit <file> [options]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `<file>` | Path to a `.js`, `.mjs`, or `.ts` file |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--output <dir>` | Write `<name>.d.ts` to this directory. Omit to print to stdout |
+
+**Example:**
+
+```bash
+nudo emit src/user.js --output dist/types
+```
+
+---
+
+### nudo guard
+
+Generate runtime type-guard functions from inferred result types. Prefer the Abs path (`denoteGuard`: shape + decidable numeric preds) when the case has a lossless Abs result; fall back to TypeValue projection otherwise. Equivalent to `nudo generate --format guard`.
+
+```bash
+nudo guard <file> [options]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `<file>` | Path to a `.js`, `.mjs`, or `.ts` file |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--output <dir>` | Write `<name>.nudo.guard.ts` to this directory. Omit to print to stdout |
 
 ---
 
@@ -453,4 +539,4 @@ Usage — add this directive at the top of your JS file:
 | `1` | `nudo harvest` — `@types/<pkg>` not installed, or no `.d.ts` files found in it |
 | `1` | `--emit-cases` misuse — combined with `--json`, an invalid mode value, or `--exit-on-diff` without `--dry-run`; also `--exit-on-diff` when the `--dry-run` diff is non-empty |
 
-Note: diagnostics printed by `infer` — including `[error]`-severity ones such as a failed `@nudo:returns` assertion — do **not** change `infer`'s exit code; `infer` still exits `0`. Use `nudo check` to gate CI on diagnostics.
+Note: diagnostics printed by `infer` — including `[error]`-severity ones such as a failed `@nudo:refine` assertion — do **not** change `infer`'s exit code; `infer` still exits `0`. Use `nudo check` to gate CI on diagnostics.

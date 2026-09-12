@@ -573,7 +573,7 @@ function hashContent(data) {
 | `@nudo:pure`    | 标记纯函数以便缓存                           |
 | `@nudo:skip`    | 跳过求值；使用声明的返回类型                 |
 | `@nudo:sample`  | 控制循环采样次数                             |
-| `@nudo:returns` | 断言期望的返回类型                           |
+| `@nudo:refine`  | 精化契约（参数 / 返回）                      |
 | `@nudo:env`     | 声明运行时环境（web、node、es）              |
 | `@nudo:mock-module` | 替换导入的模块为 mock 文件              |
 

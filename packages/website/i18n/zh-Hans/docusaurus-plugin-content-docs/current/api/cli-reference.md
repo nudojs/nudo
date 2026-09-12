@@ -1,6 +1,6 @@
 ---
 sidebar_position: 4
-description: "查阅 nudo CLI 全部命令——infer、check、doctor、generate、watch、harvest——的参数、选项、输出格式与退出码。"
+description: "查阅 nudo CLI 全部命令——infer、check、types、test、doctor、generate、emit、guard、watch、harvest——的参数、选项、输出格式与退出码。"
 ---
 
 # CLI 参考
@@ -20,9 +20,13 @@ npx @nudojs/cli infer ./src/utils.js
 | 命令 | 用途 |
 |---------|---------|
 | [`nudo infer`](#nudo-infer) | 从文件或目录推断类型 |
-| [`nudo check`](#nudo-check) | 检查单个文件的类型错误（error 级诊断以退出码 `1` 结束） |
+| [`nudo check`](#nudo-check) | 检查文件或目录的类型错误（error 级诊断以退出码 `1` 结束） |
+| [`nudo types`](#nudo-types) | 类型即计算视图：展示 Abs 的 term + 约束 |
+| [`nudo test`](#nudo-test) | 把 `@nudo:case` 当断言跑（失败退出码 `1`） |
 | [`nudo doctor`](#nudo-doctor) | 健康检查：调用点固化漂移、分析报错、无用例函数 |
 | [`nudo generate`](#nudo-generate) | 从推断类型生成运行时验证器 |
+| [`nudo emit`](#nudo-emit) | 导出 `.d.ts` 声明（npm 兼容出口） |
+| [`nudo guard`](#nudo-guard) | 生成运行时类型守卫函数 |
 | [`nudo watch`](#nudo-watch) | 监视文件或目录，变更时重新运行推断 |
 | [`nudo harvest`](#nudo-harvest) | 把 `@types/<pkg>` 声明转成 Nudo env 文件 |
 
@@ -165,10 +169,11 @@ nudo infer math.js --json
 
 ### nudo check
 
-检查单个文件的类型错误。每条诊断输出一行，格式为 `[severity] 路径:行:列 消息 (错误码)`；存在 error 级诊断时以退出码 `1` 结束——仅有 warning 时退出码为 `0`。
+检查文件或目录的类型错误。每条诊断输出一行，格式为 `[severity] 路径:行:列 消息 (错误码)`；存在 error 级诊断时以退出码 `1` 结束——仅有 warning 时退出码为 `0`。
 
 ```bash
 nudo check <file>
+nudo check <directory>
 ```
 
 **参数：**
@@ -176,6 +181,7 @@ nudo check <file>
 | 参数 | 描述 |
 |----------|-------------|
 | `<file>` | `.js`、`.mjs` 或 `.ts` 文件路径（相对或绝对） |
+| `<directory>` | 递归检查目录下全部推断目标（`--json` 仅支持单文件） |
 
 **示例：**
 
@@ -190,10 +196,40 @@ nudo check src/broken.js
 
 - 无诊断的文件输出 `No issues found.`，退出码 `0`。
 - 已知坏值来源时，会附提示行：`→ value originates at 行:列`。
-- `@nudo:returns` 断言失败属于 error 级，`check` 以 `1` 退出：
+- 精化违例属于 error 级，`check` 以 `1` 退出：
 
 ```text
-[error] src/assert.js:5:0 @nudo:returns assertion failed for case "sample": expected string, got 10. Update the @nudo:returns directive to match the inferred type, or fix the function implementation (nudo-assertion-failed)
+[error] src/set.js:12:0 setDelay[ms]: 实参 ⊭ 前置  (nudo:constraint-violated)
+    actual:   0  #exact
+    expected: ms > 0
+```
+
+---
+
+### nudo types
+
+类型即计算视图：展示 Abs 代数中的 term + 约束（不只是外延 TypeValue 形状）。支持单文件或目录（递归）。
+
+```bash
+nudo types <file> [--fn <name>] [--assume <pred...>] [--generalize]
+nudo types <directory> [--assume <pred...>] [--generalize]
+```
+
+| 选项 | 说明 |
+|------|------|
+| `--fn <name>` | 只分析该函数 |
+| `--assume <pred...>` | 假设约束，如 `x>0 y>=1` |
+| `--generalize` | 符号执行展示多态签名 |
+
+---
+
+### nudo test
+
+把 `@nudo:case` 当断言执行。带 `=> expected` 的 case 用子类型语义校验；失败退出码 `1`。无期望的 case 报告为 `unchecked`。支持文件或目录。
+
+```bash
+nudo test <file>
+nudo test <directory>
 ```
 
 ---
@@ -334,7 +370,7 @@ nudo generate <file> [options]
 | 选项 | 描述 |
 |--------|-------------|
 | `--format <format>` | 输出格式：`zod`、`guard`、`dts`、`all`（默认：`all`） |
-| `--output <dir>` | 已声明但**当前未实现**——输出总是打到 stdout，该选项无效果 |
+| `--output <dir>` | 把校验器文件写入该目录（`<name>.nudo.zod.ts`、`<name>.nudo.guard.ts`、`<name>.d.ts`）。省略则打印到 stdout |
 
 **输出格式：**
 
@@ -355,6 +391,56 @@ nudo generate src/user.js --format zod
 // Input: { arg0: z.object({ name: z.string(), age: z.number() }) }
 // Output: z.object({ id: z.literal(123), name: z.string(), age: z.number() })
 ```
+
+---
+
+### nudo emit
+
+导出 TypeScript `.d.ts` 声明（npm 兼容出口）。等价于 `nudo generate --format dts`。
+
+```bash
+nudo emit <file> [options]
+```
+
+**参数：**
+
+| 参数 | 描述 |
+|----------|-------------|
+| `<file>` | `.js`、`.mjs` 或 `.ts` 文件路径 |
+
+**选项：**
+
+| 选项 | 描述 |
+|--------|-------------|
+| `--output <dir>` | 把 `<name>.d.ts` 写入该目录。省略则打印到 stdout |
+
+**示例：**
+
+```bash
+nudo emit src/user.js --output dist/types
+```
+
+---
+
+### nudo guard
+
+从推断结果类型生成运行时类型守卫。有无损 Abs 结果时优先走 Abs 路径（`denoteGuard`：shape + 可判定数值 pred），否则回退 TypeValue 投影。等价于 `nudo generate --format guard`。
+
+```bash
+nudo guard <file> [options]
+```
+
+**参数：**
+
+| 参数 | 描述 |
+|----------|-------------|
+| `<file>` | `.js`、`.mjs` 或 `.ts` 文件路径 |
+
+**选项：**
+
+| 选项 | 描述 |
+|--------|-------------|
+| `--output <dir>` | 把 `<name>.nudo.guard.ts` 写入该目录。省略则打印到 stdout |
 
 ---
 
@@ -453,4 +539,4 @@ Usage — add this directive at the top of your JS file:
 | `1` | `nudo harvest` ——`@types/<pkg>` 未安装，或其中找不到 `.d.ts` 文件 |
 | `1` | `--emit-cases` 用法错误——与 `--json` 组合、mode 值非法、或 `--exit-on-diff` 未搭配 `--dry-run`；以及 `--exit-on-diff` 在 `--dry-run` diff 非空时触发 |
 
-注意：`infer` 打印的诊断——包括 `[error]` 级的 `@nudo:returns` 断言失败——**不会**改变 `infer` 的退出码，`infer` 仍以 `0` 退出。要在 CI 中按诊断做门禁，请使用 `nudo check`。
+注意：`infer` 打印的诊断——包括 `[error]` 级的 `@nudo:refine` 断言失败——**不会**改变 `infer` 的退出码，`infer` 仍以 `0` 退出。要在 CI 中按诊断做门禁，请使用 `nudo check`。

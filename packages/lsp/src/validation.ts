@@ -4,16 +4,20 @@
  * connection. server.ts wires these functions to `connection` / `documents`;
  * tests wire them to fakes.
  */
+import { readFileSync, existsSync, statSync } from "node:fs";
+import { dirname, resolve as resolvePath, join } from "node:path";
 import {
   analyzeFile,
   analyzeFileAsync,
   buildModuleGraph,
   computeDirtySet,
+  defaultLoadModule,
   type AnalysisResult,
   type Diagnostic as JsDiagnostic,
   type DiagnosticSeverity as JsDiagSeverity,
   type ModuleGraphCache,
 } from "@nudojs/service";
+import { checkSource, pTrue } from "@nudojs/core";
 import {
   DiagnosticSeverity,
   DiagnosticTag,
@@ -63,7 +67,7 @@ export function evictModuleGraphCacheEntries(uris: string[]): void {
 }
 
 export function hasNudoDirectives(source: string): boolean {
-  return /@nudo:(case|mock|pure|skip|sample|returns|env|mock-module|as|replace)\b/.test(source);
+  return /@nudo:(case|mock|pure|skip|sample|refine|import|env|mock-module|as|replace)\b/.test(source);
 }
 
 export function uriToFilePath(uri: string): string {
@@ -140,6 +144,60 @@ export function toLspDiagnostic(d: JsDiagnostic, uri: string): LspDiagnostic {
   return diag;
 }
 
+/** CLI 与 LSP 共用的相对 require 解析（service defaultLoadModule） */
+export function lspLoadModule(spec: string, fromFile: string): string | undefined {
+  return defaultLoadModule(spec, fromFile);
+}
+
+/**
+ * Abs check → LSP diagnostics（主通道：约束蕴含，非 TS assignability）。
+ */
+export function checkToLspDiagnostics(
+  filePath: string,
+  source: string,
+  loadModule?: (spec: string, fromFile: string) => string | undefined,
+): LspDiagnostic[] {
+  try {
+    const report = checkSource(filePath, source, pTrue, {
+      loadModule: loadModule ?? lspLoadModule,
+      fromFile: filePath,
+    });
+    return report.issues
+      .filter((i) => i.severity === "error" || i.severity === "warning")
+      .map((i) => {
+        const line = (i.line ?? 1) - 1;
+        const col = i.column ?? 0;
+        const parts = [i.message];
+        if (i.actual) parts.push(`actual: ${i.actual}`);
+        if (i.expected) parts.push(`expected: ${i.expected}`);
+        if (i.suggestion) parts.push(i.suggestion);
+        return {
+          severity:
+            i.severity === "error"
+              ? DiagnosticSeverity.Error
+              : i.severity === "warning"
+                ? DiagnosticSeverity.Warning
+                : DiagnosticSeverity.Information,
+          range: {
+            start: { line, character: col },
+            end: { line, character: col + 1 },
+          },
+          message: parts.join(" · "),
+          source: "nudo-check",
+          code: i.code,
+          data: {
+            actual: i.actual,
+            expected: i.expected,
+            fn: i.fn,
+            suggestions: i.suggestion ? [i.suggestion] : [],
+          },
+        } satisfies LspDiagnostic;
+      });
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Analyze one document (async so path-based `@nudo:env` files preload),
  * publish diagnostics, refresh the analysis cache, and — when `propagate` —
@@ -177,7 +235,11 @@ export async function validateText(
 
   analysisCache.set(filePath, { version, result });
   knownFiles.add(filePath);
-  deps.sendDiagnostics({ uri, diagnostics: result.diagnostics.map((d) => toLspDiagnostic(d, uri)) });
+
+  // Abs check 主通道 + evaluator 诊断
+  const checkDiags = checkToLspDiagnostics(filePath, text);
+  const evalDiags = result.diagnostics.map((d) => toLspDiagnostic(d, uri));
+  deps.sendDiagnostics({ uri, diagnostics: [...checkDiags, ...evalDiags] });
 
   if (!propagate || !deps.getOpenDocumentByPath) return;
 

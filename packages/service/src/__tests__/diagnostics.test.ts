@@ -30,36 +30,6 @@ function fn(x) {
     expect(unreachable!.suggestions!.length).toBeGreaterThan(0);
   });
 
-  it("should include code for assertion-failed diagnostics", () => {
-    const source = `
-/** @nudo:case "test" (1)
- *  @nudo:returns (T.string)
- */
-function fn(x) {
-  return x;
-}
-`;
-    const result = analyzeFile("test.js", source);
-    const assertion = result.diagnostics.find(d => d.message.includes("assertion"));
-    expect(assertion).toBeDefined();
-    expect(assertion!.code).toBe("nudo-assertion-failed");
-  });
-
-  it("should include suggestions for assertion-failed diagnostics", () => {
-    const source = `
-/** @nudo:case "test" (1)
- *  @nudo:returns (T.string)
- */
-function fn(x) {
-  return x;
-}
-`;
-    const result = analyzeFile("test.js", source);
-    const assertion = result.diagnostics.find(d => d.message.includes("assertion"));
-    expect(assertion!.suggestions).toBeDefined();
-    expect(assertion!.suggestions!.length).toBeGreaterThan(0);
-  });
-
   it("should generate nudo:builtin-unknown for uncovered APIs", () => {
     const source = `
 // @nudo:case "test" ()
