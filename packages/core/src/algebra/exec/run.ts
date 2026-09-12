@@ -29,7 +29,16 @@ export type RunTranspiledOptions = {
   /** @nudo:replace 注入值：varName → Abs */
   replacements?: Record<string, Abs>;
   /** @nudo:replace 匹配表：传给 transpile */
-  replacementTargets?: Array<{ target: string; varName: string }>;
+  replacementTargets?: Array<{
+    target: string;
+    varName: string;
+    stmtStart?: number;
+    stmtEnd?: number;
+  }>;
+  /** @nudo:as 注入值：varName → Abs */
+  asOverrides?: Record<string, Abs>;
+  /** @nudo:as 语句范围表 */
+  asOverrideTargets?: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
 };
 
 const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
@@ -130,6 +139,7 @@ export function runTranspiled(
     maxLoopIters: opts.maxLoopIters,
     source,
     replacements: opts.replacementTargets,
+    asOverrides: opts.asOverrideTargets,
   });
   js = js.replace(RUNTIME_IMPORT_RE, "");
   js = rewriteUserImports(js, modules);
@@ -137,11 +147,13 @@ export function runTranspiled(
     js = stripEffectfulTopLevel(js);
   }
 
-  // @nudo:replace 绑定
+  // @nudo:replace / @nudo:as 绑定
   const reps = opts.replacements ?? {};
-  const repNames = Object.keys(reps);
-  if (repNames.length > 0) {
-    const binds = repNames
+  const asVals = opts.asOverrides ?? {};
+  const allInject = { ...reps, ...asVals };
+  const injectNames = Object.keys(allInject);
+  if (injectNames.length > 0) {
+    const binds = injectNames
       .map((n) => `const ${n} = __nudoReplaces[${JSON.stringify(n)}];`)
       .join("\n");
     js = `${binds}\n${js}`;
@@ -159,7 +171,7 @@ export function runTranspiled(
     if (n === "__nudoBindImport") {
       return (spec: string, name: string) => bindImport(modules, spec, name);
     }
-    if (n === "__nudoReplaces") return reps;
+    if (n === "__nudoReplaces") return allInject;
     return rtAll[n];
   });
 

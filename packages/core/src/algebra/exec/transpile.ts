@@ -25,7 +25,18 @@ export type TranspileOptions = {
     stmtStart?: number;
     stmtEnd?: number;
   }>;
+  /** @nudo:as：覆盖紧随语句的 init / return */
+  asOverrides?: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
 };
+
+function matchAsOverride(stmt: Node, opts: TranspileOptions): string | null {
+  if (!opts.asOverrides?.length || !stmt.loc) return null;
+  const line = stmt.loc.start.line;
+  for (const a of opts.asOverrides) {
+    if (line >= a.stmtStart && line <= a.stmtEnd) return a.varName;
+  }
+  return null;
+}
 
 function normWs(s: string): string {
   return s.replace(/\s+/g, "");
@@ -238,6 +249,8 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       ].join("\n");
     }
     case "ReturnStatement": {
+      const asVar = matchAsOverride(stmt as Node, opts);
+      if (asVar) return `${pad}return ${asVar};`;
       if (!stmt.argument) return `${pad}return $lit(undefined);`;
       return `${pad}return ${transpileExpression(stmt.argument, opts)};`;
     }
@@ -249,11 +262,17 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       return `${pad}${transpileExpression(stmt.expression, opts)};`;
     case "VariableDeclaration": {
       const kw = stmt.kind === "const" ? "const" : "let";
+      const asVar = matchAsOverride(stmt as Node, opts);
       const lines: string[] = [];
       let tmpSeq = 0;
       for (const d of stmt.declarations) {
         if (d.id.type === "Identifier") {
-          const init = d.init ? transpileExpression(d.init, opts) : "$lit(undefined)";
+          // @nudo:as：覆盖整个声明语句的 init
+          const init = asVar
+            ? asVar
+            : d.init
+              ? transpileExpression(d.init, opts)
+              : "$lit(undefined)";
           lines.push(`${pad}${kw} ${d.id.name} = ${init};`);
           continue;
         }

@@ -19,7 +19,7 @@ import {
 import { parse, extractInlineDirectives } from "@nudojs/parser";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
 
-/** 收集 @nudo:replace → transpile 注入表（仅紧随语句范围内生效） */
+/** 收集 @nudo:replace + @nudo:as → transpile 注入表 */
 export function collectBPathReplacements(source: string): {
   targets: Array<{
     target: string;
@@ -28,6 +28,8 @@ export function collectBPathReplacements(source: string): {
     stmtEnd?: number;
   }>;
   values: Record<string, Abs>;
+  asTargets: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
+  asValues: Record<string, Abs>;
 } {
   const targets: Array<{
     target: string;
@@ -36,6 +38,8 @@ export function collectBPathReplacements(source: string): {
     stmtEnd?: number;
   }> = [];
   const values: Record<string, Abs> = {};
+  const asTargets: Array<{ varName: string; stmtStart: number; stmtEnd: number }> = [];
+  const asValues: Record<string, Abs> = {};
   let i = 0;
   try {
     const file = parse(source);
@@ -54,6 +58,14 @@ export function collectBPathReplacements(source: string): {
               stmtEnd: loc?.end.line,
             });
             values[varName] = typeValueToAbs(d.typeExpr);
+          } else if (d.kind === "as" && loc) {
+            const varName = `__as${i++}`;
+            asTargets.push({
+              varName,
+              stmtStart: loc.start.line,
+              stmtEnd: loc.end.line,
+            });
+            asValues[varName] = typeValueToAbs(d.typeExpr);
           }
         }
         const s = stmt as {
@@ -81,7 +93,7 @@ export function collectBPathReplacements(source: string): {
   } catch {
     /* ignore */
   }
-  return { targets, values };
+  return { targets, values, asTargets, asValues };
 }
 
 /** 可走 transpile+exec：无 require/@nudo:env；replace/as 已支持 */
@@ -116,13 +128,15 @@ export function tryRunBPath(
   let out: BPathRunResult | null = null;
   try {
     const { modules } = evalAbsModuleGraph(source, filePath);
-    const { targets, values } = collectBPathReplacements(source);
+    const { targets, values, asTargets, asValues } = collectBPathReplacements(source);
     const exports = runTranspiled(source, {
       modules: modules as never,
       maxLoopIters: opts.maxLoopIters,
       mode: opts.mode ?? "analyze",
       replacementTargets: targets.length ? targets : undefined,
       replacements: targets.length ? values : undefined,
+      asOverrideTargets: asTargets.length ? asTargets : undefined,
+      asOverrides: asTargets.length ? asValues : undefined,
     });
     out = { exports, modules };
   } catch {
