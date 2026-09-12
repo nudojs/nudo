@@ -7,7 +7,7 @@ import type { Abs } from "../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, unknown } from "../abs.ts";
 import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs } from "../surface.ts";
-import { joinAbs, objOf, isObj, type ObjShape } from "../objects.ts";
+import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape } from "../objects.ts";
 import { leqAbs } from "../leq.ts";
 import type { Phi } from "../pred.ts";
 import { pTrue } from "../pred.ts";
@@ -263,6 +263,76 @@ export function $obj(slots: Record<string, Abs>): Abs {
   const s: Record<string, { value: Abs }> = {};
   for (const [k, v] of Object.entries(slots)) s[k] = { value: v };
   return objOf(s);
+}
+
+/** 对象展开 { ...a, b } */
+export function $spread(a: Abs, b: Abs): Abs {
+  return spreadObj(a, b);
+}
+
+/** 数组连接 [...a, ...b] / [...a, x] */
+export function $concat(a: Abs, b: Abs): Abs {
+  if (a.shape.k === "tuple" && b.shape.k === "tuple") {
+    return abs(
+      { k: "tuple", elements: [...a.shape.elements, ...b.shape.elements] },
+      undefined,
+      undefined,
+      confJoin(a.conf, b.conf),
+    );
+  }
+  if (a.shape.k === "tuple" && b.shape.k !== "tuple") {
+    // [...a, x]：x 作单元素
+    return abs(
+      { k: "tuple", elements: [...a.shape.elements, b] },
+      undefined,
+      undefined,
+      confJoin(a.conf, b.conf),
+    );
+  }
+  if (a.shape.k !== "tuple" && b.shape.k === "tuple") {
+    return abs(
+      { k: "tuple", elements: [a, ...b.shape.elements] },
+      undefined,
+      undefined,
+      confJoin(a.conf, b.conf),
+    );
+  }
+  // 抽象数组：元素类型 join
+  const ea = a.shape.k === "arr" ? a.shape.element : a;
+  const eb = b.shape.k === "arr" ? b.shape.element : b;
+  return abs({ k: "arr", element: joinAbs(ea, eb) }, undefined, undefined, "path");
+}
+
+/** 元素列表（tuple 展开；arr 抽象） */
+export function $elems(a: Abs): Abs[] {
+  if (a.shape.k === "tuple") return [...a.shape.elements];
+  if (a.shape.k === "arr") return [a.shape.element];
+  return [unknown];
+}
+
+/**
+ * for-of：对 iterable 每个元素跑 body；有界展开。
+ * body(item, i) 可返回 void；状态由外部 JS 变量承接。
+ */
+export function $forOf(
+  iterable: Abs,
+  body: (item: Abs, index: Abs) => void,
+  maxIters: number = DEFAULT_MAX_LOOP_ITERS,
+): void {
+  const items = $elems(iterable);
+  const n = Math.min(items.length || maxIters, maxIters);
+  for (let i = 0; i < n; i++) {
+    const item =
+      items.length > 0
+        ? items[Math.min(i, items.length - 1)]!
+        : unknown;
+    body(item, abs(
+      { k: "prim", type: "number" },
+      { op: "lit", value: i },
+      pTrue,
+      "exact",
+    ));
+  }
 }
 
 /** 成员读：obj.slots[key]；缺失 → undefined 字面量；brand 解包内层 */

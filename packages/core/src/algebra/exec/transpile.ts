@@ -40,7 +40,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -289,6 +289,49 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     }
     case "BlockStatement":
       return stmt.body.map((s) => transpileStatement(s, depth, opts)).join("\n");
+    case "ForOfStatement": {
+      const iter = transpileExpression(stmt.right as Expression, opts);
+      // for (const x of xs) / for (const [a,b] of xs)
+      let bindName = "_item";
+      if (stmt.left.type === "VariableDeclaration") {
+        const decl = stmt.left.declarations[0];
+        if (decl?.id.type === "Identifier") bindName = decl.id.name;
+        else if (decl?.id.type === "ObjectPattern" || decl?.id.type === "ArrayPattern") {
+          // 解构绑定：用临时 _item 再 destructure
+          bindName = `_of${stmt.loc?.start.line ?? 0}`;
+        }
+      } else if (stmt.left.type === "Identifier") {
+        bindName = stmt.left.name;
+      }
+      const bodyLines: string[] = [];
+      if (
+        stmt.left.type === "VariableDeclaration" &&
+        stmt.left.declarations[0] &&
+        (stmt.left.declarations[0].id.type === "ObjectPattern" ||
+          stmt.left.declarations[0].id.type === "ArrayPattern")
+      ) {
+        emitDestructure(
+          stmt.left.declarations[0].id as Node,
+          bindName,
+          "const",
+          indent(depth + 2),
+          opts,
+          bodyLines,
+          { n: 0 },
+        );
+      }
+      const bodyStmts =
+        stmt.body.type === "BlockStatement"
+          ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, opts)).join("\n")
+          : transpileStatement(stmt.body, depth + 2, opts);
+      const max = opts.maxLoopIters ?? 8;
+      return [
+        `${pad}$forOf(${iter}, (${bindName}, _i) => {`,
+        ...bodyLines,
+        bodyStmts,
+        `${pad}}, ${max});`,
+      ].join("\n");
+    }
     case "WhileStatement": {
       const test = transpileExpression(stmt.test, opts);
       const body =
@@ -498,8 +541,22 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     case "SequenceExpression":
       return expr.expressions.map((e) => transpileExpression(e, opts)).join(", ");
     case "ObjectExpression": {
-      const parts: string[] = [];
+      // 支持 { ...a, b: 1 } → $spread($spread(a, $obj({b:1})), ...)
+      let acc: string | null = null;
+      const props: string[] = [];
+      const flushProps = () => {
+        if (props.length === 0) return;
+        const obj = `$obj({ ${props.join(", ")} })`;
+        acc = acc === null ? obj : `$spread(${acc}, ${obj})`;
+        props.length = 0;
+      };
       for (const prop of expr.properties) {
+        if (prop.type === "SpreadElement") {
+          flushProps();
+          const arg = transpileExpression(prop.argument as Expression, opts);
+          acc = acc === null ? arg : `$spread(${acc}, ${arg})`;
+          continue;
+        }
         if (prop.type !== "ObjectProperty") continue;
         const key =
           prop.key.type === "Identifier"
@@ -510,9 +567,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         if (key === null) continue;
         if (prop.computed) continue;
         const valSrc = transpileExpression(prop.value as Expression, opts);
-        parts.push(`${key}: ${valSrc}`);
+        props.push(`${key}: ${valSrc}`);
       }
-      return `$obj({ ${parts.join(", ")} })`;
+      flushProps();
+      return acc ?? `$obj({})`;
     }
     case "MemberExpression":
     case "OptionalMemberExpression": {
@@ -548,12 +606,19 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return optional ? `$optionalGet(${recv}, ${key})` : `$get(${recv}, ${key})`;
     }
     case "ArrayExpression": {
-      const items = expr.elements.map((el) => {
-        if (!el) return "$lit(undefined)";
-        if (el.type === "SpreadElement") return `/* spread */ $lit(undefined)`;
-        return transpileExpression(el, opts);
-      });
-      return `$arr([${items.join(", ")}])`;
+      // [...a, b] → $concat
+      let acc: string | null = null;
+      for (const el of expr.elements) {
+        if (!el) continue;
+        let piece: string;
+        if (el.type === "SpreadElement") {
+          piece = transpileExpression(el.argument as Expression, opts);
+        } else {
+          piece = `$arr([${transpileExpression(el, opts)}])`;
+        }
+        acc = acc === null ? piece : `$concat(${acc}, ${piece})`;
+      }
+      return acc ?? `$arr([])`;
     }
     case "AssignmentExpression": {
       // obj.field = v → $set；标识符赋值保持 JS 绑定（值是 Abs）
