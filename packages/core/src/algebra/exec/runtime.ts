@@ -448,6 +448,20 @@ export function isNudoThrow(e: unknown): e is NudoThrow {
   return e instanceof NudoThrow;
 }
 
+/** catch 参数：从 NudoThrow 取出 Abs，否则 unknown */
+export function $catchVal(e: unknown): Abs {
+  if (isNudoThrow(e)) return e.absValue;
+  if (e instanceof Error) {
+    return abs(
+      { k: "brand", name: e.name || "Error", shape: objOf({}) },
+      undefined,
+      undefined,
+      "path",
+    );
+  }
+  return unknown;
+}
+
 // --- async / await ---
 
 function wrapPromiseAbs(inner: Abs): Abs {

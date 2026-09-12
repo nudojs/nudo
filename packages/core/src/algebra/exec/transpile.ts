@@ -40,7 +40,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -289,6 +289,38 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     }
     case "BlockStatement":
       return stmt.body.map((s) => transpileStatement(s, depth, opts)).join("\n");
+    case "TryStatement": {
+      const tryBody =
+        stmt.block.type === "BlockStatement"
+          ? stmt.block.body.map((s) => transpileStatement(s, depth + 1, opts)).join("\n")
+          : transpileStatement(stmt.block, depth + 1, opts);
+      const lines = [`${pad}try {`, tryBody, `${pad}}`];
+      if (stmt.handler) {
+        const param =
+          stmt.handler.param?.type === "Identifier" ? stmt.handler.param.name : "e";
+        const catchTmp = `__nudoE_${stmt.loc?.start.line ?? 0}`;
+        const catchBody =
+          stmt.handler.body.type === "BlockStatement"
+            ? stmt.handler.body.body
+                .map((s) => transpileStatement(s, depth + 1, opts))
+                .join("\n")
+            : transpileStatement(stmt.handler.body, depth + 1, opts);
+        lines.push(`${pad}catch (${catchTmp}) {`);
+        lines.push(`${indent(depth + 1)}const ${param} = $catchVal(${catchTmp});`);
+        lines.push(catchBody);
+        lines.push(`${pad}}`);
+      }
+      if (stmt.finalizer) {
+        const finBody =
+          stmt.finalizer.type === "BlockStatement"
+            ? stmt.finalizer.body.map((s) => transpileStatement(s, depth + 1, opts)).join("\n")
+            : transpileStatement(stmt.finalizer, depth + 1, opts);
+        lines.push(`${pad}finally {`);
+        lines.push(finBody);
+        lines.push(`${pad}}`);
+      }
+      return lines.join("\n");
+    }
     case "ForOfStatement": {
       const iter = transpileExpression(stmt.right as Expression, opts);
       // for (const x of xs) / for (const [a,b] of xs)
