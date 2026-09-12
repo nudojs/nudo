@@ -36,7 +36,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -118,6 +118,21 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     }
     case "BlockStatement":
       return stmt.body.map((s) => transpileStatement(s, depth, opts)).join("\n");
+    case "WhileStatement": {
+      const test = transpileExpression(stmt.test, opts);
+      const body =
+        stmt.body.type === "BlockStatement"
+          ? stmt.body.body.map((s) => transpileStatement(s, depth + 1, opts)).join("\n")
+          : transpileStatement(stmt.body, depth + 1, opts);
+      const max = opts.maxLoopIters ?? 8;
+      // 顺序形态：body 内对 JS let 赋值即状态；抽象条件靠预算
+      return [
+        `${pad}// while → $whileSeq (bounded, max=${max})`,
+        `${pad}$whileSeq(() => ${test}, () => {`,
+        body,
+        `${pad}}, ${max});`,
+      ].join("\n");
+    }
     default:
       return `${pad}/* skip ${stmt.type} */`;
   }
@@ -178,6 +193,54 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     }
     case "SequenceExpression":
       return expr.expressions.map((e) => transpileExpression(e, opts)).join(", ");
+    case "ObjectExpression": {
+      const parts: string[] = [];
+      for (const prop of expr.properties) {
+        if (prop.type !== "ObjectProperty") continue;
+        const key =
+          prop.key.type === "Identifier"
+            ? JSON.stringify(prop.key.name)
+            : prop.key.type === "StringLiteral"
+              ? JSON.stringify(prop.key.value)
+              : null;
+        if (key === null) continue;
+        if (prop.computed) continue;
+        const valSrc = transpileExpression(prop.value as Expression, opts);
+        parts.push(`${key}: ${valSrc}`);
+      }
+      return `$obj({ ${parts.join(", ")} })`;
+    }
+    case "MemberExpression": {
+      if (expr.computed) {
+        // o[k] 仅支持字面量 key 的 MVP
+        const key = expr.property;
+        if (key.type === "StringLiteral" || key.type === "NumericLiteral") {
+          return `$get(${transpileExpression(expr.object as Expression, opts)}, ${JSON.stringify(String(key.value))})`;
+        }
+        return `/* computed member */ $lit(undefined)`;
+      }
+      if (expr.property.type !== "Identifier") {
+        return `/* member */ $lit(undefined)`;
+      }
+      return `$get(${transpileExpression(expr.object as Expression, opts)}, ${JSON.stringify(expr.property.name)})`;
+    }
+    case "AssignmentExpression": {
+      // obj.field = v → $set；标识符赋值保持 JS 绑定（值是 Abs）
+      if (expr.operator !== "=") return `/* assign ${expr.operator} */ $lit(undefined)`;
+      const right = transpileExpression(expr.right, opts);
+      if (
+        expr.left.type === "MemberExpression" &&
+        !expr.left.computed &&
+        expr.left.property.type === "Identifier"
+      ) {
+        const obj = transpileExpression(expr.left.object as Expression, opts);
+        return `$set(${obj}, ${JSON.stringify(expr.left.property.name)}, ${right})`;
+      }
+      if (expr.left.type === "Identifier") {
+        return `${expr.left.name} = ${right}`;
+      }
+      return `/* assign */ $lit(undefined)`;
+    }
     case "CallExpression": {
       const callee = expr.callee;
       const args = expr.arguments

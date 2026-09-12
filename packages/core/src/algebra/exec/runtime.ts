@@ -4,10 +4,10 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { abs, bool, boolLit, litValue, unknown } from "../abs.ts";
+import { abs, bool, boolLit, confJoin, litValue, unknown } from "../abs.ts";
 import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs } from "../surface.ts";
-import { joinAbs } from "../objects.ts";
+import { joinAbs, objOf, isObj, type ObjShape } from "../objects.ts";
 import { leqAbs } from "../leq.ts";
 import type { Phi } from "../pred.ts";
 import { pTrue } from "../pred.ts";
@@ -198,4 +198,96 @@ export function $for(
   }
 
   return exitJoin ? joinAbs(exitJoin, state) : state;
+}
+
+// --- 对象 / 成员 / while ---
+
+/** 对象字面量 → Abs obj */
+export function $obj(slots: Record<string, Abs>): Abs {
+  const s: Record<string, { value: Abs }> = {};
+  for (const [k, v] of Object.entries(slots)) s[k] = { value: v };
+  return objOf(s);
+}
+
+/** 成员读：obj.slots[key]；缺失 → undefined 字面量 */
+export function $get(o: Abs, key: string): Abs {
+  if (isObj(o)) {
+    const slot = (o.shape as ObjShape).slots[key];
+    if (slot) return slot.value;
+    if ((o.shape as ObjShape).open) return unknown;
+    return undef();
+  }
+  if (o.shape.k === "sum") {
+    // 逐成员投影再并
+    const parts = o.shape.members.map((m) => $get(m, key));
+    return parts.reduce((a, b) => joinAbs(a, b));
+  }
+  return unknown;
+}
+
+/** 成员写：返回新 obj（不可变更新） */
+export function $set(o: Abs, key: string, value: Abs): Abs {
+  if (!isObj(o)) return $obj({ [key]: value });
+  const shape = o.shape as ObjShape;
+  const slots = { ...shape.slots, [key]: { value } };
+  const next = objOf(slots, {
+    index: shape.index,
+    open: shape.open,
+  });
+  next.conf = confJoin(o.conf, value.conf);
+  return next;
+}
+
+/**
+ * 有界 while：state 线程穿 test/step（与 $for 同折叠语义）。
+ * 抽象条件无法诚实终止——必须 maxIters。
+ */
+export function $while(
+  init: Abs,
+  test: (s: Abs) => Abs,
+  step: (s: Abs) => Abs,
+  maxIters: number = DEFAULT_MAX_LOOP_ITERS,
+): Abs {
+  let state = init;
+  let exitJoin: Abs | undefined;
+
+  for (let i = 0; i < maxIters; i++) {
+    const t = test(state);
+    if (isDefinitelyFalse(t)) {
+      return exitJoin ? joinAbs(exitJoin, state) : state;
+    }
+    if (!isDefinitelyTrue(t)) {
+      exitJoin = exitJoin ? joinAbs(exitJoin, state) : state;
+    }
+    const next = step(state);
+    if (i > 0) {
+      const nv = litValue(next);
+      const sv = litValue(state);
+      const stuck =
+        (nv !== undefined && sv !== undefined && nv === sv) ||
+        (nv === undefined && sv === undefined && leqAbs(next, state).ok);
+      if (stuck) {
+        return exitJoin ? joinAbs(exitJoin, next) : next;
+      }
+    }
+    state = next;
+  }
+  return exitJoin ? joinAbs(exitJoin, state) : state;
+}
+
+/**
+ * 顺序 while（具体/可变闭包）：body 内对 JS 变量赋值。
+ * 适合 transpile `let i; while (…) { i = … }`；抽象条件仍靠预算截断，
+ * 不保证 exit-join 健全——健全路径用 $while/$for + 状态对象。
+ */
+export function $whileSeq(
+  test: () => Abs,
+  body: () => void,
+  maxIters: number = DEFAULT_MAX_LOOP_ITERS,
+): void {
+  for (let i = 0; i < maxIters; i++) {
+    const t = test();
+    if (isDefinitelyFalse(t)) return;
+    body();
+  }
 }

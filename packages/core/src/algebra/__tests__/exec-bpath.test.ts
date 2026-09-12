@@ -6,9 +6,15 @@ import {
   $fork,
   $for,
   $forIter,
+  $obj,
+  $get,
+  $set,
+  $while,
+  $whileSeq,
   num,
   numVar,
   litValue,
+  absToString,
   transpile,
 } from "@nudojs/core";
 
@@ -90,6 +96,52 @@ describe("B-path $for (bounded)", () => {
   });
 });
 
+describe("B-path objects", () => {
+  it("$get reads slots; miss is undefined", () => {
+    const o = $obj({ id: $lit(1), name: $lit("Ada") });
+    expect(litValue($get(o, "id"))).toBe(1);
+    expect(litValue($get(o, "name"))).toBe("Ada");
+    expect(litValue($get(o, "missing"))).toBeUndefined();
+    expect(absToString($get(o, "missing"))).toContain("undefined");
+  });
+
+  it("$set returns new object with updated slot", () => {
+    const o = $obj({ id: $lit(1) });
+    const o2 = $set(o, "id", $lit(2));
+    expect(litValue($get(o, "id"))).toBe(1);
+    expect(litValue($get(o2, "id"))).toBe(2);
+  });
+});
+
+describe("B-path $while", () => {
+  it("concrete countdown", () => {
+    const r = $while(
+      $obj({ i: $lit(3), acc: $lit(0) }),
+      (s) => $lt($lit(0), $get(s, "i")),
+      (s) => $set($set(s, "acc", $add($get(s, "acc"), $get(s, "i"))), "i", $lit(0)),
+      8,
+    );
+    // i>0 false immediately after first step sets i=0... actually first test 0<3 true
+    // step: acc=0+3=3, i=0 → next test 0<0 false → exit  {i:0, acc:3}
+    expect(litValue($get(r, "acc"))).toBe(3);
+  });
+
+  it("$whileSeq runs body while test true", () => {
+    let i = $lit(0);
+    const hits: number[] = [];
+    $whileSeq(
+      () => $lt(i, $lit(3)),
+      () => {
+        hits.push(litValue(i) as number);
+        i = $add(i, $lit(1));
+      },
+      8,
+    );
+    expect(hits).toEqual([0, 1, 2]);
+    expect(litValue(i)).toBe(3);
+  });
+});
+
 describe("B-path transpile", () => {
   it("rewrites + to $add", () => {
     const out = transpile(`function add(a, b) { return a + b; }`, {
@@ -113,5 +165,29 @@ describe("B-path transpile", () => {
       { runtimeImport: "@nudojs/core/exec", maxLoopIters: 4 },
     );
     expect(out).toContain("$for(");
+  });
+
+  it("rewrites object literal and member access", () => {
+    const out = transpile(
+      `function make() { const o = { id: 1, name: "x" }; return o.id; }`,
+      { runtimeImport: "@nudojs/core/exec" },
+    );
+    expect(out).toContain("$obj(");
+    expect(out).toContain('$get(o, "id")');
+  });
+
+  it("rewrites while to $whileSeq", () => {
+    const out = transpile(
+      `function f(n) { let i = 0; while (i < n) { i = i + 1; } return i; }`,
+      { runtimeImport: "@nudojs/core/exec", maxLoopIters: 5 },
+    );
+    expect(out).toContain("$whileSeq(");
+  });
+
+  it("rewrites obj.field = v to $set", () => {
+    const out = transpile(`function f() { const o = { a: 1 }; o.a = 2; return o; }`, {
+      runtimeImport: "@nudojs/core/exec",
+    });
+    expect(out).toContain("$set(");
   });
 });
