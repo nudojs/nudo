@@ -4,7 +4,7 @@
  * 值类型是 Abs；副作用与模块仍由 host mock/注入。
  */
 
-import type { File, Expression, Statement } from "@babel/types";
+import type { File, Expression, Statement, Node } from "@babel/types";
 import { parseSource } from "../parse-source.ts";
 
 export type TranspileOptions = {
@@ -40,7 +40,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -58,6 +58,82 @@ function stmtReturns(stmt: Statement): boolean {
   if (stmt.type === "ReturnStatement" || stmt.type === "ThrowStatement") return true;
   if (stmt.type === "BlockStatement") return stmt.body.some(stmtReturns);
   return false;
+}
+
+/** 递归解构：把 pattern 绑到 fromSrc（已是 Abs 表达式字符串） */
+function emitDestructure(
+  pattern: Node,
+  fromSrc: string,
+  kw: string,
+  pad: string,
+  opts: TranspileOptions,
+  out: string[],
+  tmpSeq: { n: number },
+): void {
+  if (pattern.type === "Identifier") {
+    out.push(`${pad}${kw} ${pattern.name} = ${fromSrc};`);
+    return;
+  }
+  if (pattern.type === "ObjectPattern") {
+    for (const prop of pattern.properties) {
+      if (prop.type !== "ObjectProperty") continue;
+      if (prop.key.type !== "Identifier" && prop.key.type !== "StringLiteral") continue;
+      const key =
+        prop.key.type === "Identifier" ? prop.key.name : String(prop.key.value);
+      const keyLit = JSON.stringify(key);
+      if (prop.value.type === "AssignmentPattern") {
+        const def = transpileExpression(prop.value.right as Expression, opts);
+        const left = prop.value.left;
+        if (left.type === "Identifier") {
+          out.push(
+            `${pad}${kw} ${left.name} = $orDefault($get(${fromSrc}, ${keyLit}), () => ${def});`,
+          );
+        } else {
+          // 嵌套 + 默认：const { a: { b } = {} } = o
+          const t = `_n${tmpSeq.n++}`;
+          out.push(`${pad}const ${t} = $orDefault($get(${fromSrc}, ${keyLit}), () => ${def});`);
+          emitDestructure(left, t, kw, pad, opts, out, tmpSeq);
+        }
+        continue;
+      }
+      if (prop.value.type === "ObjectPattern" || prop.value.type === "ArrayPattern") {
+        const t = `_n${tmpSeq.n++}`;
+        out.push(`${pad}const ${t} = $get(${fromSrc}, ${keyLit});`);
+        emitDestructure(prop.value, t, kw, pad, opts, out, tmpSeq);
+        continue;
+      }
+      if (prop.value.type === "Identifier") {
+        out.push(`${pad}${kw} ${prop.value.name} = $get(${fromSrc}, ${keyLit});`);
+      }
+    }
+    return;
+  }
+  if (pattern.type === "ArrayPattern") {
+    pattern.elements.forEach((el, i) => {
+      if (!el) return;
+      if (el.type === "AssignmentPattern") {
+        const def = transpileExpression(el.right as Expression, opts);
+        const idx = `$idx(${fromSrc}, $lit(${i}))`;
+        if (el.left.type === "Identifier") {
+          out.push(`${pad}${kw} ${el.left.name} = $orDefault(${idx}, () => ${def});`);
+        } else {
+          const t = `_n${tmpSeq.n++}`;
+          out.push(`${pad}const ${t} = $orDefault(${idx}, () => ${def});`);
+          emitDestructure(el.left, t, kw, pad, opts, out, tmpSeq);
+        }
+        return;
+      }
+      if (el.type === "ObjectPattern" || el.type === "ArrayPattern") {
+        const t = `_n${tmpSeq.n++}`;
+        out.push(`${pad}const ${t} = $idx(${fromSrc}, $lit(${i}));`);
+        emitDestructure(el, t, kw, pad, opts, out, tmpSeq);
+        return;
+      }
+      if (el.type === "Identifier") {
+        out.push(`${pad}${kw} ${el.name} = $idx(${fromSrc}, $lit(${i}));`);
+      }
+    });
+  }
 }
 
 function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptions): string {
@@ -161,41 +237,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         const initSrc = transpileExpression(d.init, opts);
         const tmp = `_d${tmpSeq++}_${stmt.loc?.start.line ?? 0}`;
         lines.push(`${pad}const ${tmp} = ${initSrc};`);
-        if (d.id.type === "ObjectPattern") {
-          for (const prop of d.id.properties) {
-            if (prop.type !== "ObjectProperty") continue;
-            if (prop.key.type !== "Identifier" && prop.key.type !== "StringLiteral") continue;
-            const key =
-              prop.key.type === "Identifier" ? prop.key.name : prop.key.value;
-            // const { a = d } = o  →  prop.value is AssignmentPattern
-            if (prop.value.type === "AssignmentPattern") {
-              const left = prop.value.left;
-              if (left.type !== "Identifier") continue;
-              const def = transpileExpression(prop.value.right as Expression, opts);
-              lines.push(
-                `${pad}${kw} ${left.name} = $orDefault($get(${tmp}, ${JSON.stringify(key)}), () => ${def});`,
-              );
-              continue;
-            }
-            if (prop.value.type !== "Identifier") continue;
-            lines.push(`${pad}${kw} ${prop.value.name} = $get(${tmp}, ${JSON.stringify(key)});`);
-          }
-        } else if (d.id.type === "ArrayPattern") {
-          d.id.elements.forEach((el, i) => {
-            if (!el) return;
-            if (el.type === "AssignmentPattern") {
-              // const [x = 1] = arr
-              if (el.left.type !== "Identifier") return;
-              const def = transpileExpression(el.right as Expression, opts);
-              lines.push(
-                `${pad}${kw} ${el.left.name} = $orDefault($idx(${tmp}, $lit(${i})), () => ${def});`,
-              );
-              return;
-            }
-            if (el.type !== "Identifier") return;
-            lines.push(`${pad}${kw} ${el.name} = $idx(${tmp}, $lit(${i}));`);
-          });
-        }
+        emitDestructure(d.id as Node, tmp, kw, pad, opts, lines, { n: 0 });
       }
       return lines.join("\n");
     }
@@ -382,6 +424,11 @@ function extractForInitName(init: Statement | Expression | null | undefined): st
 }
 
 export function transpileExpression(expr: Expression, opts: TranspileOptions = {}): string {
+  // ChainExpression 不在 Expression 联合里，先剥一层
+  const anyExpr = expr as unknown as { type: string; expression?: Expression };
+  if (anyExpr.type === "ChainExpression" && anyExpr.expression) {
+    return transpileExpression(anyExpr.expression, opts);
+  }
   switch (expr.type) {
     case "NumericLiteral":
     case "StringLiteral":
@@ -467,19 +514,24 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       }
       return `$obj({ ${parts.join(", ")} })`;
     }
-    case "MemberExpression": {
+    case "MemberExpression":
+    case "OptionalMemberExpression": {
+      const optional = (expr as { optional?: boolean }).optional === true;
       if (expr.computed) {
         const obj = transpileExpression(expr.object as Expression, opts);
         const key = expr.property;
         if (key.type === "StringLiteral") {
-          return `$get(${obj}, ${JSON.stringify(key.value)})`;
+          return optional
+            ? `$optionalGet(${obj}, ${JSON.stringify(key.value)})`
+            : `$get(${obj}, ${JSON.stringify(key.value)})`;
         }
         if (key.type === "NumericLiteral") {
-          return `$idx(${obj}, $lit(${key.value}))`;
+          return optional
+            ? `$optionalGet(${obj}, ${JSON.stringify(String(key.value))})`
+            : `$idx(${obj}, $lit(${key.value}))`;
         }
         if (isExpression(key)) {
           const k = transpileExpression(key, opts);
-          // 动态下标：数值走 $idx
           return `$idx(${obj}, ${k})`;
         }
         return `/* computed member */ $lit(undefined)`;
@@ -491,7 +543,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (expr.property.name === "length") {
         return `$len(${transpileExpression(expr.object as Expression, opts)})`;
       }
-      return `$get(${transpileExpression(expr.object as Expression, opts)}, ${JSON.stringify(expr.property.name)})`;
+      const recv = transpileExpression(expr.object as Expression, opts);
+      const key = JSON.stringify(expr.property.name);
+      return optional ? `$optionalGet(${recv}, ${key})` : `$get(${recv}, ${key})`;
     }
     case "ArrayExpression": {
       const items = expr.elements.map((el) => {
@@ -538,7 +592,15 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       }
       return `/* assign */ $lit(undefined)`;
     }
-    case "CallExpression": {
+    case "CallExpression":
+    case "OptionalCallExpression": {
+      const exprAny = expr as {
+        type: string;
+        callee: Node;
+        arguments: unknown[];
+        optional?: boolean;
+      };
+      const optionalCall = exprAny.type === "OptionalCallExpression" || exprAny.optional === true;
       const callee = expr.callee;
       // super() → __this = $super(__this, Child, [...])
       if (callee.type === "Super" && opts.thisParam && opts.className) {
@@ -547,7 +609,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           .join(", ");
         return `${opts.thisParam} = $super(${opts.thisParam}, ${JSON.stringify(opts.className)}, [${args}])`;
       }
-      // super.method(args) → $invokeSuper(__this, Child, "method", [...])
+      // super.method(args) → $invokeSuper(...)
       if (
         callee.type === "MemberExpression" &&
         !callee.computed &&
@@ -561,9 +623,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           .join(", ");
         return `$invokeSuper(${opts.thisParam}, ${JSON.stringify(opts.className)}, ${JSON.stringify(callee.property.name)}, [${args}])`;
       }
-      // obj.method(args) → $invoke
+      // obj.method(args) / obj?.method(args) → $invoke / $optionalInvoke
       if (
-        callee.type === "MemberExpression" &&
+        (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") &&
         !callee.computed &&
         callee.property.type === "Identifier"
       ) {
@@ -571,7 +633,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         const args = expr.arguments
           .map((a) => (a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts)))
           .join(", ");
-        return `$invoke(${recv}, ${JSON.stringify(callee.property.name)}, [${args}])`;
+        const name = JSON.stringify(callee.property.name);
+        const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
+        return opt
+          ? `$optionalInvoke(${recv}, ${name}, [${args}])`
+          : `$invoke(${recv}, ${name}, [${args}])`;
       }
       // 标识符调用 → $callNamed（可采集 call@）
       if (callee.type === "Identifier" && callee.name !== "undefined") {

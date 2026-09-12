@@ -6,6 +6,7 @@
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue } from "../abs.ts";
 import { objOf } from "../objects.ts";
+import { $get } from "./runtime.ts";
 
 export type BClassSpec = {
   name: string;
@@ -181,4 +182,37 @@ export function $orDefault(v: Abs, dflt: () => Abs): Abs {
   }
   if (v.term?.op === "lit" && v.term.value === undefined) return dflt();
   return v;
+}
+
+function isNullishAbs(v: Abs): boolean {
+  // 仅明确 null/undefined 字面量；对象等无 term 不算 nullish
+  if (!v || v.term?.op !== "lit") return false;
+  const lv = v.term.value;
+  return lv === null || lv === undefined;
+}
+
+/** 可选链 a?.b：nullish 短路为 undefined 字面量 */
+export function $optionalGet(o: Abs, key: string): Abs {
+  if (isNullishAbs(o)) {
+    return abs(
+      { k: "unknown" },
+      { op: "lit", value: undefined as never },
+      undefined,
+      "exact",
+    );
+  }
+  return $get(o, key);
+}
+
+/** 可选链 a?.m()：nullish 短路为 undefined */
+export function $optionalInvoke(thisVal: Abs, method: string, args: Abs[]): Abs {
+  if (isNullishAbs(thisVal)) {
+    return abs(
+      { k: "unknown" },
+      { op: "lit", value: undefined as never },
+      undefined,
+      "exact",
+    );
+  }
+  return $invoke(thisVal, method, args);
 }
