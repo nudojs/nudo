@@ -114,6 +114,88 @@ export type EvalOptions = {
   budget?: LeakBudget;
 };
 
+// --- 调用预算（与 TypeValue evaluator 对齐）---
+// 抽象求值对递归做展开而非不动点：参数类型每层变形（fac(n-1)）时
+// cycle key 不重复，必须靠深度/总调用数封顶。超限结果 conf=opaque。
+
+export const MAX_CALL_DEPTH = 64;
+export const MAX_TOTAL_CALLS = 200_000;
+
+let _absCallDepth = 0;
+let _absTotalCalls = 0;
+let _activeCallKeys: string[] = [];
+const _fnCallIds = new WeakMap<object, string>();
+let _fnCallIdSeq = 0;
+
+function stableCallId(obj: object): string {
+  let id = _fnCallIds.get(obj);
+  if (id === undefined) {
+    id = `#${++_fnCallIdSeq}`;
+    _fnCallIds.set(obj, id);
+  }
+  return id;
+}
+
+/** 宿主入口（evalProgramAbs / analyzeFn / check）前重置 */
+export function resetAbsCallBudget(): void {
+  _absCallDepth = 0;
+  _absTotalCalls = 0;
+  _activeCallKeys = [];
+}
+
+/** 截断结果：分析无信息，conf=opaque（不是 any） */
+function truncatedAbs(): Abs {
+  return abs({ k: "unknown" }, undefined, undefined, "opaque");
+}
+
+/** 调用指纹：命名函数用 name+arg shapes；一等函数用对象身份 */
+function callBudgetKey(kind: string, id: string, args: Abs[]): string {
+  const parts = args.map((a) => {
+    const t = a.term ? termToString(a.term) : "";
+    return `${a.shape.k}:${t}`;
+  });
+  return `${kind}|${id}|${parts.join(",")}`;
+}
+
+let absTruncCollector: ((fnLabel: string) => void) | null = null;
+
+/** 记录被截断的递归（service 可映射为 nudo:recursion-truncated） */
+export function setAbsTruncationCollector(
+  collector: ((fnLabel: string) => void) | null,
+): void {
+  absTruncCollector = collector;
+}
+
+function noteTruncation(label: string): void {
+  if (!absTruncCollector) return;
+  try {
+    absTruncCollector(label);
+  } catch {
+    // collector 不得打断求值
+  }
+}
+
+/** 进入调用：超限/cycle 则不执行 body，返回 opaque */
+function enterCall(key: string, label: string): boolean {
+  if (
+    _activeCallKeys.includes(key) ||
+    _absCallDepth >= MAX_CALL_DEPTH ||
+    _absTotalCalls >= MAX_TOTAL_CALLS
+  ) {
+    noteTruncation(label);
+    return false;
+  }
+  _activeCallKeys.push(key);
+  _absCallDepth++;
+  _absTotalCalls++;
+  return true;
+}
+
+function exitCall(): void {
+  _absCallDepth--;
+  _activeCallKeys.pop();
+}
+
 /** Abs 域调用记录（自包含程序可不经 TypeValue evaluator） */
 export type AbsCallRecord = {
   fnName: string;
@@ -231,6 +313,7 @@ export function evalSource(
   entry: { fn: string; args: Abs[] },
   opts: EvalOptions = {},
 ): EvalResult {
+  resetAbsCallBudget();
   const file = parseSource(source);
   const env = emptyEnv();
   let phi = opts.phi ?? pTrue;
@@ -339,22 +422,28 @@ export function callFunction(
   const fn = env.fns.get(name);
   if (!fn) return unknown;
 
-  // 继承程序级 vars（含 @nudo:mock seed）；与 applyAbsFn 一致拷贝，避免写穿外层
-  let local: AstEnv = { vars: new Map(env.vars), fns: env.fns };
-  // classes 随 env 传递
-  const cls = (env as AstEnv & { classes?: Map<string, unknown> }).classes;
-  if (cls) (local as AstEnv & { classes?: Map<string, unknown> }).classes = cls;
+  const key = callBudgetKey("fn", name, args);
+  if (!enterCall(key, name)) return truncatedAbs();
+  try {
+    // 继承程序级 vars（含 @nudo:mock seed）；与 applyAbsFn 一致拷贝，避免写穿外层
+    let local: AstEnv = { vars: new Map(env.vars), fns: env.fns };
+    // classes 随 env 传递
+    const cls = (env as AstEnv & { classes?: Map<string, unknown> }).classes;
+    if (cls) (local as AstEnv & { classes?: Map<string, unknown> }).classes = cls;
 
-  fn.params.forEach((p, i) => {
-    local.vars.set(p, args[i] ?? unknown);
-  });
+    fn.params.forEach((p, i) => {
+      local.vars.set(p, args[i] ?? unknown);
+    });
 
-  const result = evalNode(fn.body, local, phi, budget);
-  if (result.threw) {
-    return abs({ k: "never" }, undefined, undefined, "exact");
+    const result = evalNode(fn.body, local, phi, budget);
+    if (result.threw) {
+      return abs({ k: "never" }, undefined, undefined, "exact");
+    }
+    if (fn.async) return coerceAsyncReturn(result.value);
+    return result.value;
+  } finally {
+    exitCall();
   }
-  if (fn.async) return coerceAsyncReturn(result.value);
-  return result.value;
 }
 
 /**
@@ -371,29 +460,36 @@ export function evalMethodBody(
   /** 方法定义所在类名（用于 super 派发） */
   ownerClass?: string,
 ): Abs {
-  const local = emptyEnv();
-  local.fns = env.fns;
-  const cls = (env as AstEnv & { classes?: Map<string, unknown> }).classes;
-  if (cls) (local as AstEnv & { classes?: Map<string, unknown> }).classes = cls;
-  // super.x() 从当前方法所属类的父类派发
-  if (ownerClass) local.currentOwner = ownerClass;
-  local.vars.set("this", thisVal);
-  method.params.forEach((p, i) => {
-    local.vars.set(p, args[i] ?? unknown);
-  });
+  const methodId = `${ownerClass ?? ""}.${method.kind ?? "method"}:${stableCallId(method.body as unknown as object)}`;
+  const key = callBudgetKey("method", methodId, [thisVal, ...args]);
+  if (!enterCall(key, ownerClass ?? "method")) return truncatedAbs();
+  try {
+    const local = emptyEnv();
+    local.fns = env.fns;
+    const cls = (env as AstEnv & { classes?: Map<string, unknown> }).classes;
+    if (cls) (local as AstEnv & { classes?: Map<string, unknown> }).classes = cls;
+    // super.x() 从当前方法所属类的父类派发
+    if (ownerClass) local.currentOwner = ownerClass;
+    local.vars.set("this", thisVal);
+    method.params.forEach((p, i) => {
+      local.vars.set(p, args[i] ?? unknown);
+    });
 
-  const result = evalNode(method.body, local, phi, budget);
-  let value = result.value;
+    const result = evalNode(method.body, local, phi, budget);
+    let value = result.value;
 
-  // 从求值后的 env 取 this（AssignmentExpression 用 withVar 换 env）
-  const thisAfter = result.env.vars.get("this") ?? local.vars.get("this");
-  if (method.kind === "constructor") {
-    if (thisAfter) value = thisAfter;
-  } else if (thisAfter && thisAfter !== thisVal && value.shape.k === "unknown") {
-    value = thisAfter;
+    // 从求值后的 env 取 this（AssignmentExpression 用 withVar 换 env）
+    const thisAfter = result.env.vars.get("this") ?? local.vars.get("this");
+    if (method.kind === "constructor") {
+      if (thisAfter) value = thisAfter;
+    } else if (thisAfter && thisAfter !== thisVal && value.shape.k === "unknown") {
+      value = thisAfter;
+    }
+    if (method.async) return coerceAsyncReturn(value);
+    return value;
+  } finally {
+    exitCall();
   }
-  if (method.async) return coerceAsyncReturn(value);
-  return value;
 }
 
 // --- 节点求值 ---
@@ -1091,17 +1187,28 @@ function applyAbsFn(
 ): Abs {
   const impl = getFnImpl(fnVal);
   if (!impl) return unknown;
-  const base = impl.env ?? env;
-  let local: AstEnv = { vars: new Map(base.vars), fns: base.fns };
-  if ((base as { classes?: unknown }).classes) {
-    (local as { classes?: unknown }).classes = (base as { classes?: unknown }).classes;
+  // WeakMap 旁路：impl.body 对象作稳定身份
+  const implId = stableCallId(impl.body as unknown as object);
+  const key = callBudgetKey("absfn", implId, args);
+  const label = (fnVal.shape as { name?: string }).name ?? "anonymous";
+  if (!enterCall(key, label)) return truncatedAbs();
+  try {
+    // mock withArgs 等：有 apply 钩子时按实参派发，不经 body
+    if (impl.apply) return impl.apply(args);
+    const base = impl.env ?? env;
+    let local: AstEnv = { vars: new Map(base.vars), fns: base.fns };
+    if ((base as { classes?: unknown }).classes) {
+      (local as { classes?: unknown }).classes = (base as { classes?: unknown }).classes;
+    }
+    impl.params.forEach((p, i) => {
+      local.vars.set(p, args[i] ?? unknown);
+    });
+    const result = evalNode(impl.body, local, phi, budget);
+    if (impl.async) return coerceAsyncReturn(result.value);
+    return result.value;
+  } finally {
+    exitCall();
   }
-  impl.params.forEach((p, i) => {
-    local.vars.set(p, args[i] ?? unknown);
-  });
-  const result = evalNode(impl.body, local, phi, budget);
-  if (impl.async) return coerceAsyncReturn(result.value);
-  return result.value;
 }
 
 /** 把 (x) => body 或命名函数用给定实参求值一次 */
@@ -1460,6 +1567,7 @@ export function evalProgramAbs(
     seedFns?: Record<string, { params: string[]; body: Node; async?: boolean }>;
   } = {},
 ): { env: AstEnv; last: Abs; phi: Phi } {
+  resetAbsCallBudget();
   const file = parseSource(source);
   const env = emptyEnv();
   if (opts.seedVars) {

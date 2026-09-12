@@ -59,4 +59,53 @@ describe("Abs vs TypeValue service differential", () => {
     expect(typeValueToString(call!.result)).not.toBe("unknown");
     expect(typeValueToString(call!.result)).toBe('"ok"');
   });
+
+  it("mock withArgs dispatches on Abs path (literal hit)", () => {
+    const source = `
+      // @nudo:mock id = stub().withArgs(21).returns("hit")
+      function run() { return id(21); }
+      const r = run();
+    `;
+    const result = analyzeFile("/t/diff-withargs.js", source);
+    const run = result.functions.find((f) => f.name === "run");
+    const call = run!.cases.find((c) => c.source === "callsite");
+    expect(typeValueToString(call!.result)).toBe('"hit"');
+  });
+
+  it("mock withArgs miss falls back to unknown", () => {
+    const source = `
+      // @nudo:mock id = stub().withArgs(21).returns("hit")
+      function run() { return id(99); }
+      const r = run();
+    `;
+    const result = analyzeFile("/t/diff-withargs-miss.js", source);
+    const run = result.functions.find((f) => f.name === "run");
+    const call = run!.cases.find((c) => c.source === "callsite");
+    expect(typeValueToString(call!.result)).toBe("unknown");
+  });
+
+  it("mock onFirstCall without returns is default value", () => {
+    const source = `
+      // @nudo:mock getPort = stub().onFirstCall(8080)
+      function run() { return getPort(); }
+      const r = run();
+    `;
+    const result = analyzeFile("/t/diff-onfirst.js", source);
+    const run = result.functions.find((f) => f.name === "run");
+    const call = run!.cases.find((c) => c.source === "callsite");
+    expect(typeValueToString(call!.result)).toBe("8080");
+  });
+
+  it("mock sinon.stub().onFirstCall().returns() matches Abs path", () => {
+    const source = `
+      // @nudo:mock fetch = sinon.stub().onFirstCall().returns({ data: "first" })
+      function run() { return fetch(); }
+      const r = run();
+    `;
+    const result = analyzeFile("/t/diff-onfirst-sinon.js", source);
+    const run = result.functions.find((f) => f.name === "run");
+    const call = run!.cases.find((c) => c.source === "callsite");
+    expect(typeValueToString(call!.result)).not.toBe("unknown");
+    expect(typeValueToString(call!.result)).toContain("first");
+  });
 });

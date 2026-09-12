@@ -14,6 +14,8 @@ export type AbsFnImpl = {
   /** 声明时捕获的环境（闭包） */
   env?: AstEnv;
   kind?: string;
+  /** 调用时直接派发（mock withArgs 等），优先于 body */
+  apply?: (args: Abs[]) => Abs;
 };
 
 const implByAbs = new WeakMap<object, AbsFnImpl>();
@@ -28,7 +30,10 @@ export function getFnImpl(a: Abs): AbsFnImpl | undefined {
 }
 
 /** 造一个带实现的 Abs 函数值 */
-export function absFunction(params: string[], impl: Omit<AbsFnImpl, "params">): Abs {
+export function absFunction(
+  params: string[],
+  impl: Omit<AbsFnImpl, "params">,
+): Abs {
   const a: Abs = {
     shape: { k: "fn", params },
     conf: "exact",

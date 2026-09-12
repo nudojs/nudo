@@ -104,3 +104,57 @@ describe("bridgeIsLossy", () => {
     expect(bridgeIsLossy(r).lossy).toBe(true);
   });
 });
+
+describe("bridge any / conf / refined reverse (rewrite closeout)", () => {
+  it("Abs any projects as unknown but keeps path conf (not partial)", () => {
+    const a: import("../abs.ts").Abs = { shape: { k: "any" }, conf: "path" };
+    const tv = absToTypeValue(a);
+    expect(tv.kind).toBe("unknown");
+    expect(getTvConfidence(tv)).toBe("path");
+  });
+
+  it("Abs analysis-fail unknown keeps partial conf", () => {
+    const a: import("../abs.ts").Abs = { shape: { k: "unknown" }, conf: "partial" };
+    const tv = absToTypeValue(a);
+    expect(tv.kind).toBe("unknown");
+    expect(getTvConfidence(tv)).toBe("partial");
+  });
+
+  it("widened TypeValue does not round-trip as exact", () => {
+    const src = `
+      function scale(x) { return x + 1; }
+    `;
+    const r = analyzeFn(src, "scale", [numVar("x")]);
+    const tv = absToTypeValue(r);
+    const back = typeValueToAbs(tv);
+    expect(back.conf === "exact").toBe(false);
+  });
+
+  it("refined numeric pred reverse-encodes into Abs pred", () => {
+    const a = numVar("x", gtNum(v("x"), 0));
+    const tv = absToTypeValue(a);
+    expect(tv.kind).toBe("refined");
+    const back = typeValueToAbs(tv);
+    expect(back.shape.k).toBe("prim");
+    expect(back.pred).toBeDefined();
+    expect(back.pred!.op).toBe("gt");
+    // pred 右端恢复为字面量 0
+    if (back.pred!.op === "gt") {
+      expect(back.pred!.b.op).toBe("lit");
+      if (back.pred!.b.op === "lit") expect(back.pred!.b.value).toBe(0);
+    }
+  });
+
+  it("refined le reverse-encodes", () => {
+    const a: import("../abs.ts").Abs = {
+      shape: { k: "prim", type: "number" },
+      term: v("n"),
+      pred: { op: "le", a: v("n"), b: { op: "lit", value: 10 } },
+      conf: "path",
+    };
+    const tv = absToTypeValue(a);
+    expect(tv.kind).toBe("refined");
+    const back = typeValueToAbs(tv);
+    expect(back.pred?.op).toBe("le");
+  });
+});

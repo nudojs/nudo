@@ -31,8 +31,13 @@ function resolveRelative(fromFile: string, spec: string): string | undefined {
     base + ".js",
     base + ".cjs",
     base + ".mjs",
+    base + ".ts",
+    base + ".mts",
+    base + ".cts",
     join(base, "index.js"),
     join(base, "index.cjs"),
+    join(base, "index.mjs"),
+    join(base, "index.ts"),
   ]) {
     if (existsSync(cand)) return cand;
   }
