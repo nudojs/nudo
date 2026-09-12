@@ -1272,9 +1272,12 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   }
 
   // TypeValue evaluateProgram 仍跑：env / TypeValue fallback / nodeTypeMap。
-  // B hosted 时 method/property 诊断整类让位。跳过它还需：
-  // imported class default 等弱结果的 fallback、bindings 完整投影、
-  // getTypeAtPosition 的 evaluateFunctionFull 路径。
+  // B hosted 时 method/property 诊断整类让位。
+  // skip 前置（本轮试过，回退）：
+  // - unknown 算术未 widen 成 number（lonely entry@）
+  // - throw 路径 B 未记入 throws
+  // - call@ 顶层采集依赖 TypeValue collector
+  // - imported class default 经 analyzeFile 仍弱
   evaluateProgram(ast, globalEnv);
 
   // Abs 调用记录是唯一真理源（类型即计算）；失败/空则保留 TypeValue 记录
@@ -1474,6 +1477,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         expected: directive.expected,
         source: "directive",
       };
+      tryAttachIntension(caseEntry, source, fn.name);
       if (caseAbs) attachAbsToIntension(caseEntry, caseAbs, fn.name);
       analysis.cases.push(caseEntry);
 
@@ -1656,6 +1660,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           throws: rec.throws,
           source: "callsite",
         };
+        tryAttachIntension(caseResult, source, candidate.name);
         if (absRaw) attachAbsToIntension(caseResult, absRaw, candidate.name);
         candidate.analysis.cases.push(caseResult);
       }
@@ -1711,8 +1716,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           source: "callsite",
           aggregatedFrom: remaining.length,
         };
+        tryAttachIntension(symCase, source, candidate.name);
         if (symAbs) attachAbsToIntension(symCase, symAbs, candidate.name);
-        else if (symValue !== undefined) tryAttachIntension(symCase, source, candidate.name);
         candidate.analysis.cases.push(symCase);
       }
       // Combined covers every observed call site (not just the retained
@@ -1767,8 +1772,9 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       throws: entryThrows,
       throwLoc: entryLoc,
     };
+    // display 来自 generalize；attachAbs 补无损 abs 字段（后写覆盖 abs/conf）
+    tryAttachIntension(caseResult, source, candidate.analysis.name);
     if (entryAbs) attachAbsToIntension(caseResult, entryAbs, candidate.analysis.name);
-    else tryAttachIntension(caseResult, source, candidate.analysis.name);
     candidate.analysis.cases.push(caseResult);
     candidate.analysis.entryOnly = true;
     candidate.analysis.combined = collapseLiteralUnion(entryValue, COLLAPSE_LITERAL_THRESHOLD);
