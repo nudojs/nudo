@@ -1241,13 +1241,15 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       envNames,
       mocks: seeds.seedVars,
     });
-    if (bRun?.memberDiags?.length) {
-      for (const d of bRun.memberDiags) {
-        pushBMemberDiag(d, 1);
+    if (bRun) {
+      if (bRun.memberDiags?.length) {
+        for (const d of bRun.memberDiags) {
+          pushBMemberDiag(d, 1);
+        }
       }
-    }
-    if (bRun?.truncatedFns) {
-      for (const fn of bRun.truncatedFns) bTruncatedFns.add(fn);
+      if (bRun.truncatedFns) {
+        for (const fn of bRun.truncatedFns) bTruncatedFns.add(fn);
+      }
     }
   }
   if (selfContained || canAbsModules) {
@@ -1721,13 +1723,19 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     let entryLoc: SourceLocation | undefined;
     let entryAbs: Abs | undefined;
     if (isBPathCapable(source, envNames) && filePath) {
-      const bEntry = tryBPathCall(
+      const bEntryFull = tryBPathCallFull(
         source,
         filePath,
         candidate.analysis.name,
         args.map((a) => typeValueToAbs(a)),
-        { envNames, mocks: seeds.seedVars },
+        { envNames, mocks: seeds.seedVars, collectMemberDiags: true },
       );
+      if (bEntryFull?.memberDiags?.length) {
+        for (const d of bEntryFull.memberDiags) {
+          pushBMemberDiag(d, candidate.analysis.loc.start.line);
+        }
+      }
+      const bEntry = bEntryFull?.result;
       if (bEntry && !(bEntry.shape.k === "unknown" && !bEntry.term)) {
         entryAbs = bEntry;
         entryValue = absToTypeValue(bEntry);
@@ -1777,9 +1785,9 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       unknownRecords.filter((r) => {
         if ((r.loc?.line ?? 0) > maxLine) return false;
         if (r.originModule === USAGE_SITE_MODULE) return false;
-        // B 执行期已报的 method/property 名不再由 TypeValue 叠报。
-        // 不按行区间整类压制：顶层调用只被 evaluateProgram 执行时，
-        // 真缺失仍需 TypeValue 报出（B analyze 模式会 strip 零缩进副作用）。
+        // B 执行期已报的 method/property / unknown-recv 名不再由 TypeValue 叠报。
+        // 不整类压制：跨文件 Abs 求值（import 函数体）尚未全部走 B invoke，
+        // 真缺失仍需 TypeValue 报出。
         if ((r.kind === "method" || r.kind === "property") && bMemberDiagNames.has(r.name)) {
           return false;
         }
