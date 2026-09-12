@@ -1160,12 +1160,15 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   // @nudo:mock 已编译为 Abs seed 注入；env/require 强制 TypeValue 路径
   const selfContained = isSelfContainedSource(source, envNames);
   const canAbsModules = absModulesOk(source, envNames);
+  const bCapable = isBPathCapable(source, envNames);
   let absCallRecords: CallRecord[] = [];
   if (selfContained || canAbsModules) {
     const seeds = mockDirectivesToAbsSeeds(functions);
     absCallRecords = collectAbsCallRecords(source, seeds, filePath);
   }
 
+  // TypeValue evaluateProgram 仍跑：方法缺失 / provenance 等诊断依赖它。
+  // bindings / nodeTypeMap 在 capable 时由 Abs 覆盖（见下）。
   evaluateProgram(ast, globalEnv);
 
   // Abs 调用记录是唯一真理源（类型即计算）；失败/空则保留 TypeValue 记录
@@ -1174,8 +1177,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     callRecords.push(...absCallRecords);
   }
 
-  const unreachableRanges = getUnreachableRanges();
-  const bCapable = isBPathCapable(source, envNames);
+  const unreachableRanges = bCapable ? [] : getUnreachableRanges();
   if (bCapable) {
     // B 路径静态诊断接管 unreachable + builtin-unknown
     const bDiag = collectBPathDiagnostics(source);
