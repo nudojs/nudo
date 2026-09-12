@@ -13,6 +13,8 @@ export type TranspileOptions = {
   maxLoopIters?: number;
   /** 方法体内 this 的绑定名（transpile class 时注入） */
   thisParam?: string;
+  /** 当前类名（super 派发用） */
+  className?: string;
 };
 
 const BIN_OPS: Record<string, string> = {
@@ -38,7 +40,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $async, $await, $asyncReturn } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -148,12 +150,32 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
             if (prop.key.type !== "Identifier" && prop.key.type !== "StringLiteral") continue;
             const key =
               prop.key.type === "Identifier" ? prop.key.name : prop.key.value;
+            // const { a = d } = o  →  prop.value is AssignmentPattern
+            if (prop.value.type === "AssignmentPattern") {
+              const left = prop.value.left;
+              if (left.type !== "Identifier") continue;
+              const def = transpileExpression(prop.value.right as Expression, opts);
+              lines.push(
+                `${pad}${kw} ${left.name} = $orDefault($get(${tmp}, ${JSON.stringify(key)}), () => ${def});`,
+              );
+              continue;
+            }
             if (prop.value.type !== "Identifier") continue;
             lines.push(`${pad}${kw} ${prop.value.name} = $get(${tmp}, ${JSON.stringify(key)});`);
           }
         } else if (d.id.type === "ArrayPattern") {
           d.id.elements.forEach((el, i) => {
-            if (!el || el.type !== "Identifier") return;
+            if (!el) return;
+            if (el.type === "AssignmentPattern") {
+              // const [x = 1] = arr
+              if (el.left.type !== "Identifier") return;
+              const def = transpileExpression(el.right as Expression, opts);
+              lines.push(
+                `${pad}${kw} ${el.left.name} = $orDefault($idx(${tmp}, $lit(${i})), () => ${def});`,
+              );
+              return;
+            }
+            if (el.type !== "Identifier") return;
             lines.push(`${pad}${kw} ${el.name} = $idx(${tmp}, $lit(${i}));`);
           });
         }
@@ -231,14 +253,20 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
   }
 }
 
-/** class C { ctor, methods } → $class(...) */
+/** class C extends P { ctor, methods } → $class(...) */
 function transpileClass(
-  stmt: { id?: { name: string } | null; body: { body: unknown[] }; superClass?: unknown },
+  stmt: {
+    id?: { name: string } | null;
+    body: { body: unknown[] };
+    superClass?: { type: string; name?: string } | null;
+  },
   depth: number,
   opts: TranspileOptions,
 ): string {
   const pad = indent(depth);
   const name = stmt.id?.name ?? "AnonymousClass";
+  const superName =
+    stmt.superClass?.type === "Identifier" ? stmt.superClass.name : undefined;
   const methods = stmt.body.body as Array<{
     type: string;
     key?: { type: string; name?: string; value?: unknown };
@@ -257,27 +285,34 @@ function transpileClass(
       return id?.type === "Identifier" && id.name ? id.name : "_";
     });
 
+  const methodOpts: TranspileOptions = {
+    ...opts,
+    thisParam: "__this",
+    className: name,
+  };
+
   for (const m of methods) {
     if (m.type !== "ClassMethod" && m.type !== "ObjectMethod") continue;
     const mname =
       m.key?.type === "Identifier" ? m.key.name : m.key?.type === "StringLiteral" ? String(m.key.value) : "method";
     const params = paramsOf(m);
+    const paramList = params.filter((p) => p !== "_").join(", ");
     const bodyStmts =
       m.body?.type === "BlockStatement"
         ? (m.body.body as Statement[])
-            .map((s) => transpileStatement(s, depth + 3, { ...opts, thisParam: "__this" }))
+            .map((s) => transpileStatement(s, depth + 3, methodOpts))
             .join("\n")
         : "";
     if (m.kind === "constructor" || mname === "constructor") {
       ctorParts.push(
-        `${indent(depth + 2)}ctor: (__this, ${params.filter((p) => p !== "_").join(", ")}) => {`,
+        `${indent(depth + 2)}ctor: (__this, ${paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}return __this;`,
         `${indent(depth + 2)}},`,
       );
     } else if (m.async) {
       methodParts.push(
-        `${indent(depth + 3)}${mname}: (__this, ${params.filter((p) => p !== "_").join(", ")}) => {`,
+        `${indent(depth + 3)}${mname}: (__this, ${paramList}) => {`,
         `${indent(depth + 4)}return $async(() => {`,
         bodyStmts,
         `${indent(depth + 4)}});`,
@@ -285,7 +320,7 @@ function transpileClass(
       );
     } else {
       methodParts.push(
-        `${indent(depth + 3)}${mname}: (__this, ${params.filter((p) => p !== "_").join(", ")}) => {`,
+        `${indent(depth + 3)}${mname}: (__this, ${paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}},`,
       );
@@ -293,6 +328,9 @@ function transpileClass(
   }
 
   const specLines: string[] = [];
+  if (superName) {
+    specLines.push(`${indent(depth + 2)}extends: ${JSON.stringify(superName)},`);
+  }
   if (ctorParts.length) {
     specLines.push(...ctorParts);
   }
@@ -339,6 +377,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return expr.name;
     case "ThisExpression":
       return opts.thisParam ?? "$lit(undefined)";
+    case "Super":
+      return `/* super */`;
     case "NewExpression": {
       const callee = expr.callee;
       const cname =
@@ -467,7 +507,28 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     }
     case "CallExpression": {
       const callee = expr.callee;
-      // obj.method(args) / this.method(args) → $invoke
+      // super() → __this = $super(__this, Child, [...])
+      if (callee.type === "Super" && opts.thisParam && opts.className) {
+        const args = expr.arguments
+          .map((a) => (a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts)))
+          .join(", ");
+        return `${opts.thisParam} = $super(${opts.thisParam}, ${JSON.stringify(opts.className)}, [${args}])`;
+      }
+      // super.method(args) → $invokeSuper(__this, Child, "method", [...])
+      if (
+        callee.type === "MemberExpression" &&
+        !callee.computed &&
+        callee.object.type === "Super" &&
+        callee.property.type === "Identifier" &&
+        opts.thisParam &&
+        opts.className
+      ) {
+        const args = expr.arguments
+          .map((a) => (a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts)))
+          .join(", ");
+        return `$invokeSuper(${opts.thisParam}, ${JSON.stringify(opts.className)}, ${JSON.stringify(callee.property.name)}, [${args}])`;
+      }
+      // obj.method(args) → $invoke
       if (
         callee.type === "MemberExpression" &&
         !callee.computed &&
