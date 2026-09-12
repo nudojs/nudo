@@ -68,6 +68,7 @@ export {
   defaultAbsLoadModule,
   type AbsModuleGraphResult,
   type AbsGraphOptions,
+  type AbsModuleLoadIssue,
 } from "./abs-modules-graph.ts";
 export {
   harvestToAbsModules,

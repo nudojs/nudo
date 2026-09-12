@@ -11,6 +11,7 @@ import {
   callTranspiledExportFull,
   setBCallCollector,
   setMemberDiagCollector,
+  setAbsTruncationCollector,
   typeValueToAbs,
   createEnvironment,
   type BCallRecord,
@@ -151,6 +152,10 @@ export type BPathRunResult = {
   modules: Record<string, AbsModuleExports>;
   /** 顶层执行期 method-missing */
   memberDiags?: BMemberDiag[];
+  /** 模块图 cycle/depth/missing（B 权威） */
+  moduleIssues?: import("./abs-modules-graph.ts").AbsModuleLoadIssue[];
+  /** Abs 求值递归截断的函数标签 */
+  truncatedFns?: string[];
 };
 
 const bRunCache = new Map<string, BPathRunResult | null>();
@@ -174,13 +179,16 @@ export function tryRunBPath(
   if (bRunCache.has(key)) return bRunCache.get(key) ?? undefined;
   let out: BPathRunResult | null = null;
   try {
-    const { modules: graphMods } = evalAbsModuleGraph(source, filePath);
+    const { modules: graphMods, issues } = evalAbsModuleGraph(source, filePath);
     const envMods = collectEnvModules(opts.envNames ?? []);
     const modules = { ...envMods, ...graphMods };
     const { targets, values, asTargets, asValues } = collectBPathReplacements(source);
     const envGlobals = collectEnvGlobals(opts.envNames ?? []);
     const memberDiags: BMemberDiag[] = [];
+    const truncated = new Set<string>();
     setMemberDiagCollector((d) => memberDiags.push(d));
+    // Abs 模块图 / 后续 ast-eval 的递归截断
+    setAbsTruncationCollector((label) => truncated.add(label));
     try {
       const exports = runTranspiled(source, {
         modules: modules as never,
@@ -192,9 +200,16 @@ export function tryRunBPath(
         asOverrides: asTargets.length ? asValues : undefined,
         envGlobals: Object.keys(envGlobals).length ? envGlobals : undefined,
       });
-      out = { exports, modules, memberDiags: memberDiags.length ? memberDiags : undefined };
+      out = {
+        exports,
+        modules,
+        memberDiags: memberDiags.length ? memberDiags : undefined,
+        moduleIssues: issues.length ? issues : undefined,
+        truncatedFns: truncated.size ? [...truncated] : undefined,
+      };
     } finally {
       setMemberDiagCollector(null);
+      setAbsTruncationCollector(null);
     }
   } catch {
     out = null;
@@ -210,7 +225,12 @@ export function tryBPathCallFull(
   fnName: string,
   args: Abs[],
   opts: { collectCalls?: boolean; collectMemberDiags?: boolean; envNames?: string[] } = {},
-): (TranspiledCallResult & { calls?: BCallRecord[]; memberDiags?: BMemberDiag[] }) | undefined {
+): (TranspiledCallResult & {
+  calls?: BCallRecord[];
+  memberDiags?: BMemberDiag[];
+  moduleIssues?: import("./abs-modules-graph.ts").AbsModuleLoadIssue[];
+  truncatedFns?: string[];
+}) | undefined {
   const run = tryRunBPath(source, filePath, { envNames: opts.envNames });
   if (!run) return undefined;
   if (!(fnName in run.exports)) return undefined;
@@ -229,6 +249,8 @@ export function tryBPathCallFull(
       ...full,
       calls: opts.collectCalls ? collected : undefined,
       memberDiags: all.length ? all : undefined,
+      moduleIssues: run.moduleIssues,
+      truncatedFns: run.truncatedFns,
     };
   } finally {
     if (opts.collectCalls) setBCallCollector(null);

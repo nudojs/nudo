@@ -38,10 +38,14 @@ export function defaultAbsLoadModule(spec: string, fromFile: string): string | u
   }
 }
 
+function relCandidates(spec: string, fromFile: string): string[] {
+  const p = resolve(dirname(resolve(fromFile)), spec);
+  return [p, `${p}.js`, `${p}.mjs`, `${p}.ts`, resolve(p, "index.js")];
+}
+
 function resolveRel(spec: string, fromFile: string): string | null {
   if (!spec.startsWith(".") && !spec.startsWith("/")) return null;
-  const p = resolve(dirname(resolve(fromFile)), spec);
-  for (const cand of [p, `${p}.js`, `${p}.mjs`, `${p}.ts`, resolve(p, "index.js")]) {
+  for (const cand of relCandidates(spec, fromFile)) {
     try {
       readFileSync(cand, "utf-8");
       return cand;
@@ -112,29 +116,47 @@ function buildModulesForFile(
   evalDep: (path: string, src: string, depth: number) => AbsModuleExports,
   depth: number,
   maxDepth: number,
+  onMissing: (spec: string, fromFile: string, tried: string[]) => void,
 ): Record<string, AbsModuleExports> {
   const modules: Record<string, AbsModuleExports> = {};
   for (const spec of importSpecs(source)) {
     if (spec.startsWith(".") || spec.startsWith("/")) {
       const childPath = resolveRel(spec, fromFile);
-      if (!childPath) continue;
+      if (!childPath) {
+        onMissing(spec, fromFile, relCandidates(spec, fromFile));
+        continue;
+      }
       const childSrc = load(spec, fromFile);
-      if (childSrc === undefined) continue;
+      if (childSrc === undefined) {
+        onMissing(spec, fromFile, [childPath]);
+        continue;
+      }
       modules[spec] = evalDep(childPath, childSrc, depth + 1);
     } else if (!spec.startsWith("node:")) {
       const bare = bareSpecToAbsModules(spec, fromFile);
       if (bare) modules[spec] = bare;
+      // 裸包 harvest 失败 ≠ 文件缺失（可能是未覆盖的包形态），不报 missing
     }
   }
   void maxDepth;
   return modules;
 }
 
+/** 模块加载守卫：与 TypeValue loadModuleEnv 口径对齐，供 analyzer 映射诊断 */
+export type AbsModuleLoadIssue = {
+  kind: "cycle" | "depth" | "missing";
+  /** 诊断定位用标签（文件 basename 或 require/import 说明符） */
+  label: string;
+  reason: string;
+};
+
 export type AbsModuleGraphResult = {
   /** 入口 import 说明符 → 依赖导出表 */
   modules: Record<string, AbsModuleExports>;
   /** 绝对路径 → 导出表（含依赖；循环时占位为空） */
   byPath: Map<string, AbsModuleExports>;
+  /** cycle / depth / missing（B 路径权威，避免 TypeValue 叠报） */
+  issues: AbsModuleLoadIssue[];
 };
 
 export type AbsGraphOptions = {
@@ -144,9 +166,15 @@ export type AbsGraphOptions = {
   maxDepth?: number;
 };
 
+function moduleLabel(p: string): string {
+  const parts = p.split(/[/\\]/);
+  return parts[parts.length - 1] || p;
+}
+
 /**
  * 递归求值相对依赖 + 裸包 harvest，产出入口可用的 modules 表。
- * 循环依赖：先放空表再回填（与 TypeValue 路径 partial 口径一致）。
+ * 循环依赖：先放空表再回填（与 TypeValue 路径 partial 口径一致），
+ * 并记录 cycle/depth/missing 供诊断。
  */
 export function evalAbsModuleGraph(
   entrySource: string,
@@ -156,17 +184,58 @@ export function evalAbsModuleGraph(
   const load = opts.loadModule ?? defaultAbsLoadModule;
   const maxDepth = opts.maxDepth ?? 16;
   const cache = new Map<string, AbsModuleExports>();
+  const loading: string[] = [];
+  const issues: AbsModuleLoadIssue[] = [];
+  const seenIssue = new Set<string>();
+
+  const pushIssue = (kind: AbsModuleLoadIssue["kind"], label: string, reason: string) => {
+    const key = `${kind}:${label}`;
+    if (seenIssue.has(key)) return;
+    seenIssue.add(key);
+    issues.push({ kind, label, reason });
+  };
 
   function evalDep(absPath: string, source: string, depth: number): AbsModuleExports {
+    const cycleIndex = loading.indexOf(absPath);
+    if (cycleIndex !== -1) {
+      const chain = [...loading.slice(cycleIndex), absPath];
+      pushIssue(
+        "cycle",
+        moduleLabel(absPath),
+        `Circular module load: ${chain.join(" -> ")} (bindings inside the cycle resolve to their partially evaluated types)`,
+      );
+      return cache.get(absPath) ?? { named: {} };
+    }
     if (cache.has(absPath)) return cache.get(absPath)!;
     if (depth > maxDepth) {
+      const chain = [...loading, absPath];
+      pushIssue(
+        "depth",
+        moduleLabel(absPath),
+        `Module load chain too deep (depth ${chain.length} > ${maxDepth} max): ${chain.join(" -> ")} (loading truncated, deeper modules typed as unknown)`,
+      );
       const empty: AbsModuleExports = { named: {} };
       cache.set(absPath, empty);
       return empty;
     }
     cache.set(absPath, { named: {} });
+    loading.push(absPath);
 
-    const modules = buildModulesForFile(source, absPath, load, evalDep, depth, maxDepth);
+    const modules = buildModulesForFile(
+      source,
+      absPath,
+      load,
+      evalDep,
+      depth,
+      maxDepth,
+      (spec, fromFile, tried) => {
+        pushIssue(
+          "missing",
+          spec,
+          `Module file not found for '${spec}' (from ${moduleLabel(fromFile)}); tried: ${tried.join(", ")}`,
+        );
+      },
+    );
 
     try {
       const file = parse(source);
@@ -178,6 +247,8 @@ export function evalAbsModuleGraph(
       const empty: AbsModuleExports = { named: {} };
       cache.set(absPath, empty);
       return empty;
+    } finally {
+      loading.pop();
     }
   }
 
@@ -188,9 +259,16 @@ export function evalAbsModuleGraph(
     evalDep,
     0,
     maxDepth,
+    (spec, fromFile, tried) => {
+      pushIssue(
+        "missing",
+        spec,
+        `Module file not found for '${spec}' (from ${moduleLabel(fromFile)}); tried: ${tried.join(", ")}`,
+      );
+    },
   );
 
-  return { modules, byPath: cache };
+  return { modules, byPath: cache, issues };
 }
 
 /** 便捷：入口求值 + 依赖 Abs 注入 */

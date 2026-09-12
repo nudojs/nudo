@@ -67,6 +67,7 @@ import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph, evalProgramAbsWithModules } from "./abs-modules-graph.ts";
 import { tryBPathCall, tryBPathCallFull, isBPathCapable } from "./bpath-run.ts";
 import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
+import { setAbsTruncationCollector } from "@nudojs/core";
 
 export type SourceLocation = {
   start: { line: number; column: number };
@@ -1183,13 +1184,55 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   const selfContained = isSelfContainedSource(source, envNames);
   const canAbsModules = absModulesOk(source, envNames);
   const bCapable = isBPathCapable(source, envNames);
+
+  /** B 已上报的模块加载问题种类 + 递归截断函数名（压 TypeValue 叠报） */
+  const bModuleIssueKinds = new Set<"cycle" | "depth" | "missing">();
+  const bTruncatedFns = new Set<string>();
+
+  const pushBModuleIssues = (
+    issues: Array<{ kind: "cycle" | "depth" | "missing"; label: string; reason: string }> | undefined,
+  ) => {
+    if (!issues) return;
+    for (const iss of issues) {
+      bModuleIssueKinds.add(iss.kind);
+      const code =
+        iss.kind === "cycle"
+          ? "nudo:module-cycle"
+          : iss.kind === "depth"
+            ? "nudo:module-depth"
+            : "nudo:module-missing";
+      diagnostics.push({
+        range: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
+        severity: iss.kind === "missing" ? "error" : "warning",
+        message: iss.reason,
+        code,
+      });
+    }
+  };
+
   let absCallRecords: CallRecord[] = [];
+  // B 模块图：cycle/depth/missing（不执行入口顶层，避免未注入 mock 的副作用）
+  if (bCapable && filePath) {
+    try {
+      const g = evalAbsModuleGraph(source, filePath);
+      pushBModuleIssues(g.issues);
+    } catch {
+      /* 模块图失败交还 TypeValue */
+    }
+  }
   if (selfContained || canAbsModules) {
     const seeds = mockDirectivesToAbsSeeds(functions);
-    absCallRecords = collectAbsCallRecords(source, seeds, filePath);
+    // Abs 程序求值的递归截断（call@ 记录路径）
+    setAbsTruncationCollector((label) => bTruncatedFns.add(label));
+    try {
+      absCallRecords = collectAbsCallRecords(source, seeds, filePath);
+    } finally {
+      setAbsTruncationCollector(null);
+    }
   }
 
-  // TypeValue evaluateProgram 仍跑：方法缺失 / provenance 等诊断依赖它。
+  // TypeValue evaluateProgram 仍跑：provenance / unknown-recv 等诊断依赖它。
+  // B 已报的 module-* / recursion:* / method 名在下方过滤。
   // bindings / nodeTypeMap 在 capable 时由 Abs 覆盖（见下）。
   evaluateProgram(ast, globalEnv);
 
@@ -1709,6 +1752,19 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         // 真缺失仍需 TypeValue 报出（B analyze 模式会 strip 零缩进副作用）。
         if ((r.kind === "method" || r.kind === "property") && bMemberDiagNames.has(r.name)) {
           return false;
+        }
+        // B 模块图已报的 cycle/depth/missing：TypeValue loadModuleEnv 不再叠报
+        if (r.kind === "global") {
+          if (r.name.startsWith("module-cycle:") && bModuleIssueKinds.has("cycle")) return false;
+          if (r.name.startsWith("module-depth:") && bModuleIssueKinds.has("depth")) return false;
+          if (r.name.startsWith("module-missing:") && bModuleIssueKinds.has("missing")) return false;
+          // Abs 调用预算已截断的递归：不再由 TypeValue 记 recursion:*
+          if (r.name.startsWith("recursion:")) {
+            const fn = r.name.slice("recursion:".length);
+            if (bTruncatedFns.has(fn) || bTruncatedFns.has(fn.split(".").pop() ?? fn)) {
+              return false;
+            }
+          }
         }
         return true;
       }),
