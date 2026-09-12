@@ -377,3 +377,37 @@ export function $throw(v: Abs): never {
 export function isNudoThrow(e: unknown): e is NudoThrow {
   return e instanceof NudoThrow;
 }
+
+// --- async / await ---
+
+function wrapPromiseAbs(inner: Abs): Abs {
+  return abs(
+    { k: "eff", eff: "promise", inner },
+    undefined,
+    undefined,
+    confJoin(inner.conf, "path"),
+  );
+}
+
+function awaitAbsVal(v: Abs): Abs {
+  if (v.shape.k === "eff" && v.shape.eff === "promise") return v.shape.inner;
+  return v;
+}
+
+/**
+ * async 函数体包进 thunk，返回值经 wrapPromise。
+ */
+export function $async(thunk: () => Abs): Abs {
+  return wrapPromiseAbs(thunk());
+}
+
+/** await → 解包 eff("promise") */
+export function $await(v: Abs): Abs {
+  return awaitAbsVal(v);
+}
+
+/** async 直接 return 的 coerce */
+export function $asyncReturn(v: Abs): Abs {
+  if (v.shape.k === "eff") return v;
+  return wrapPromiseAbs(v);
+}

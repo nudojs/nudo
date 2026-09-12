@@ -38,7 +38,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $async, $await, $asyncReturn } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -98,11 +98,21 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const params = stmt.params
         .map((p) => (p.type === "Identifier" ? p.name : "_"))
         .join(", ");
-      const body =
+      const bodyStmts =
         stmt.body.type === "BlockStatement"
-          ? stmt.body.body.map((s) => transpileStatement(s, depth + 1, opts)).join("\n")
-          : `${indent(depth + 1)}return ${transpileExpression(stmt.body as unknown as Expression, opts)};`;
-      return `${pad}export function ${stmt.id.name}(${params}) {\n${body}\n${pad}}`;
+          ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, opts)).join("\n")
+          : `${indent(depth + 2)}return ${transpileExpression(stmt.body as unknown as Expression, opts)};`;
+      if (stmt.async) {
+        // async function → $async(() => { body })
+        return [
+          `${pad}export function ${stmt.id.name}(${params}) {`,
+          `${indent(depth + 1)}return $async(() => {`,
+          bodyStmts,
+          `${indent(depth + 1)}});`,
+          `${pad}}`,
+        ].join("\n");
+      }
+      return `${pad}export function ${stmt.id.name}(${params}) {\n${bodyStmts}\n${pad}}`;
     }
     case "ReturnStatement": {
       if (!stmt.argument) return `${pad}return $lit(undefined);`;
@@ -235,6 +245,7 @@ function transpileClass(
     params?: unknown[];
     body?: { type: string; body?: unknown[] };
     kind?: string;
+    async?: boolean;
   }>;
 
   const ctorParts: string[] = [];
@@ -263,6 +274,14 @@ function transpileClass(
         bodyStmts,
         `${indent(depth + 3)}return __this;`,
         `${indent(depth + 2)}},`,
+      );
+    } else if (m.async) {
+      methodParts.push(
+        `${indent(depth + 3)}${mname}: (__this, ${params.filter((p) => p !== "_").join(", ")}) => {`,
+        `${indent(depth + 4)}return $async(() => {`,
+        bodyStmts,
+        `${indent(depth + 4)}});`,
+        `${indent(depth + 3)}},`,
       );
     } else {
       methodParts.push(
@@ -351,6 +370,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (expr.operator === "typeof") return `$typeof(${arg})`;
       if (expr.operator === "+") return arg;
       return `/* unary ${expr.operator} */ $lit(undefined)`;
+    }
+    case "AwaitExpression": {
+      const arg = transpileExpression(expr.argument as Expression, opts);
+      return `$await(${arg})`;
     }
     case "SequenceExpression":
       return expr.expressions.map((e) => transpileExpression(e, opts)).join(", ");

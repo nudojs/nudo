@@ -15,12 +15,10 @@ import {
 } from "@nudojs/core";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
 
-/** 可走 transpile+exec 子集：无 async/await/this. 顶层 require/@nudo:env；class 已支持 */
+/** 可走 transpile+exec：无 require/@nudo:env；class/async 已支持 */
 export function isBPathCapable(source: string, envNames: string[] = []): boolean {
   if (envNames.length > 0) return false;
   if (/\brequire\s*\(/.test(source)) return false;
-  if (/\basync\s+function\b|\basync\s*\(/.test(source)) return false;
-  if (/\bawait\s+/.test(source)) return false;
   // 顶层 this. 仍不支持（方法内 this 由 transpile 处理）
   if (/(^|[^.\w$])this\s*\./.test(source) && !/\bclass\s+/.test(source)) return false;
   return true;
