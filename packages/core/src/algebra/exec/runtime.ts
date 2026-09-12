@@ -265,8 +265,9 @@ export function $obj(slots: Record<string, Abs>): Abs {
   return objOf(s);
 }
 
-/** 成员读：obj.slots[key]；缺失 → undefined 字面量 */
+/** 成员读：obj.slots[key]；缺失 → undefined 字面量；brand 解包内层 */
 export function $get(o: Abs, key: string): Abs {
+  if (o.shape.k === "brand") return $get(o.shape.shape, key);
   if (isObj(o)) {
     const slot = (o.shape as ObjShape).slots[key];
     if (slot) return slot.value;
@@ -280,8 +281,17 @@ export function $get(o: Abs, key: string): Abs {
   return unknown;
 }
 
-/** 成员写：返回新 obj（不可变更新） */
+/** 成员写：返回新 obj/brand（不可变更新） */
 export function $set(o: Abs, key: string, value: Abs): Abs {
+  if (o.shape.k === "brand") {
+    const inner = $set(o.shape.shape, key, value);
+    return abs(
+      { k: "brand", name: o.shape.name, shape: inner },
+      o.term,
+      o.pred,
+      confJoin(o.conf, value.conf),
+    );
+  }
   if (!isObj(o)) return $obj({ [key]: value });
   const shape = o.shape as ObjShape;
   const slots = { ...shape.slots, [key]: { value } };

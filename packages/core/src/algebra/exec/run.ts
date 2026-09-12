@@ -9,12 +9,15 @@
  */
 
 import * as runtime from "./runtime.ts";
+import * as classRt from "./class.ts";
 import type { Abs } from "../abs.ts";
 import { never, unknown } from "../abs.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
 import { transpile } from "./transpile.ts";
 import { $call } from "./call.ts";
 import { isNudoThrow } from "./runtime.ts";
+
+const rtAll = { ...runtime, ...classRt } as Record<string, unknown>;
 
 export type RunTranspiledOptions = {
   /** 说明符 → 依赖导出（host 模块图或 runTranspiled 产物） */
@@ -87,7 +90,7 @@ function stripEffectfulTopLevel(js: string): string {
 }
 
 function runtimeArgNames(): string[] {
-  return Object.keys(runtime).filter((k) => k.startsWith("$"));
+  return Object.keys(rtAll).filter((k) => k.startsWith("$"));
 }
 
 function bindImport(
@@ -139,7 +142,7 @@ export function runTranspiled(
     if (n === "__nudoBindImport") {
       return (spec: string, name: string) => bindImport(modules, spec, name);
     }
-    return (runtime as Record<string, unknown>)[n];
+    return rtAll[n];
   });
 
   const ret = names.length > 0 ? `return { ${names.join(", ")} };` : "return {};";

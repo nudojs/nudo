@@ -11,6 +11,8 @@ export type TranspileOptions = {
   /** 运行时 import 说明符 */
   runtimeImport?: string;
   maxLoopIters?: number;
+  /** 方法体内 this 的绑定名（transpile class 时注入） */
+  thisParam?: string;
 };
 
 const BIN_OPS: Record<string, string> = {
@@ -36,7 +38,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -211,9 +213,79 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         `${pad}}, ${max});`,
       ].join("\n");
     }
+    case "ClassDeclaration": {
+      return transpileClass(stmt, depth, opts);
+    }
     default:
       return `${pad}/* skip ${stmt.type} */`;
   }
+}
+
+/** class C { ctor, methods } → $class(...) */
+function transpileClass(
+  stmt: { id?: { name: string } | null; body: { body: unknown[] }; superClass?: unknown },
+  depth: number,
+  opts: TranspileOptions,
+): string {
+  const pad = indent(depth);
+  const name = stmt.id?.name ?? "AnonymousClass";
+  const methods = stmt.body.body as Array<{
+    type: string;
+    key?: { type: string; name?: string; value?: unknown };
+    params?: unknown[];
+    body?: { type: string; body?: unknown[] };
+    kind?: string;
+  }>;
+
+  const ctorParts: string[] = [];
+  const methodParts: string[] = [];
+
+  const paramsOf = (m: { params?: unknown[] }): string[] =>
+    (m.params ?? []).map((p) => {
+      const id = p as { type?: string; name?: string };
+      return id?.type === "Identifier" && id.name ? id.name : "_";
+    });
+
+  for (const m of methods) {
+    if (m.type !== "ClassMethod" && m.type !== "ObjectMethod") continue;
+    const mname =
+      m.key?.type === "Identifier" ? m.key.name : m.key?.type === "StringLiteral" ? String(m.key.value) : "method";
+    const params = paramsOf(m);
+    const bodyStmts =
+      m.body?.type === "BlockStatement"
+        ? (m.body.body as Statement[])
+            .map((s) => transpileStatement(s, depth + 3, { ...opts, thisParam: "__this" }))
+            .join("\n")
+        : "";
+    if (m.kind === "constructor" || mname === "constructor") {
+      ctorParts.push(
+        `${indent(depth + 2)}ctor: (__this, ${params.filter((p) => p !== "_").join(", ")}) => {`,
+        bodyStmts,
+        `${indent(depth + 3)}return __this;`,
+        `${indent(depth + 2)}},`,
+      );
+    } else {
+      methodParts.push(
+        `${indent(depth + 3)}${mname}: (__this, ${params.filter((p) => p !== "_").join(", ")}) => {`,
+        bodyStmts,
+        `${indent(depth + 3)}},`,
+      );
+    }
+  }
+
+  const specLines: string[] = [];
+  if (ctorParts.length) {
+    specLines.push(...ctorParts);
+  }
+  if (methodParts.length) {
+    specLines.push(`${indent(depth + 2)}methods: {`, ...methodParts, `${indent(depth + 2)}},`);
+  }
+
+  return [
+    `${pad}const ${name} = $class(${JSON.stringify(name)}, {`,
+    ...specLines,
+    `${pad}});`,
+  ].join("\n");
 }
 
 function transpileBlockAsThunk(stmt: Statement, depth: number, opts: TranspileOptions): string {
@@ -246,6 +318,17 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     case "Identifier":
       if (expr.name === "undefined") return "$lit(undefined)";
       return expr.name;
+    case "ThisExpression":
+      return opts.thisParam ?? "$lit(undefined)";
+    case "NewExpression": {
+      const callee = expr.callee;
+      const cname =
+        callee.type === "Identifier" ? callee.name : isExpression(callee) ? transpileExpression(callee, opts) : "$lit(undefined)";
+      const args = expr.arguments
+        .map((a) => (a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts)))
+        .join(", ");
+      return `$new(${cname}, [${args}])`;
+    }
     case "LogicalExpression": {
       const op = expr.operator;
       const l = transpileExpression(expr.left, opts);
@@ -327,6 +410,15 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (expr.operator !== "=") return `/* assign ${expr.operator} */ $lit(undefined)`;
       const right = transpileExpression(expr.right, opts);
       if (expr.left.type === "MemberExpression") {
+        // this.x = v → __this = $set(__this, "x", v)
+        if (
+          !expr.left.computed &&
+          expr.left.object.type === "ThisExpression" &&
+          expr.left.property.type === "Identifier" &&
+          opts.thisParam
+        ) {
+          return `${opts.thisParam} = $set(${opts.thisParam}, ${JSON.stringify(expr.left.property.name)}, ${right})`;
+        }
         if (!expr.left.computed && expr.left.property.type === "Identifier") {
           const obj = transpileExpression(expr.left.object as Expression, opts);
           return `$set(${obj}, ${JSON.stringify(expr.left.property.name)}, ${right})`;
@@ -352,6 +444,18 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     }
     case "CallExpression": {
       const callee = expr.callee;
+      // obj.method(args) / this.method(args) → $invoke
+      if (
+        callee.type === "MemberExpression" &&
+        !callee.computed &&
+        callee.property.type === "Identifier"
+      ) {
+        const recv = transpileExpression(callee.object as Expression, opts);
+        const args = expr.arguments
+          .map((a) => (a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts)))
+          .join(", ");
+        return `$invoke(${recv}, ${JSON.stringify(callee.property.name)}, [${args}])`;
+      }
       const args = expr.arguments
         .map((a) =>
           a.type === "SpreadElement" ? `/* spread */` : transpileExpression(a as Expression, opts),
