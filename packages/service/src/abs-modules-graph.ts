@@ -1,6 +1,6 @@
 /**
- * Host：相对 import 图 → Abs 导出表 → 注入入口。
- * 读 fs / 解析路径在这里；core 只收 modules 表。
+ * Host：import 图（相对 + 裸包 harvest）→ Abs 导出表 → 注入入口。
+ * 读 fs / 解析路径 / harvest 在这里；core 只收 modules 表。
  */
 
 import { readFileSync } from "node:fs";
@@ -15,6 +15,7 @@ import {
   type Phi,
 } from "@nudojs/core";
 import type { Node } from "@babel/types";
+import { bareSpecToAbsModules } from "./harvest-to-abs.ts";
 
 export type AbsLoadModule = (spec: string, fromFile: string) => string | undefined;
 
@@ -50,14 +51,14 @@ function resolveRel(spec: string, fromFile: string): string | null {
   return null;
 }
 
-function relativeImportSpecs(source: string): string[] {
+function importSpecs(source: string): string[] {
   try {
     const file = parse(source);
     const out: string[] = [];
     for (const stmt of file.program.body) {
       if (stmt.type === "ImportDeclaration" || stmt.type === "ExportNamedDeclaration") {
         const src = (stmt as { source?: { value: string } }).source;
-        if (src && typeof src.value === "string" && src.value.startsWith(".")) {
+        if (src && typeof src.value === "string") {
           out.push(src.value);
         }
       }
@@ -66,6 +67,32 @@ function relativeImportSpecs(source: string): string[] {
   } catch {
     return [];
   }
+}
+
+/** 把当前文件的全部 import（相对 + 裸包）编成 modules 表 */
+function buildModulesForFile(
+  source: string,
+  fromFile: string,
+  load: AbsLoadModule,
+  evalDep: (path: string, src: string, depth: number) => AbsModuleExports,
+  depth: number,
+  maxDepth: number,
+): Record<string, AbsModuleExports> {
+  const modules: Record<string, AbsModuleExports> = {};
+  for (const spec of importSpecs(source)) {
+    if (spec.startsWith(".") || spec.startsWith("/")) {
+      const childPath = resolveRel(spec, fromFile);
+      if (!childPath) continue;
+      const childSrc = load(spec, fromFile);
+      if (childSrc === undefined) continue;
+      modules[spec] = evalDep(childPath, childSrc, depth + 1);
+    } else if (!spec.startsWith("node:")) {
+      const bare = bareSpecToAbsModules(spec, fromFile);
+      if (bare) modules[spec] = bare;
+    }
+  }
+  void maxDepth;
+  return modules;
 }
 
 export type AbsModuleGraphResult = {
@@ -83,7 +110,7 @@ export type AbsGraphOptions = {
 };
 
 /**
- * 递归求值相对依赖，产出入口可用的 modules 表。
+ * 递归求值相对依赖 + 裸包 harvest，产出入口可用的 modules 表。
  * 循环依赖：先放空表再回填（与 TypeValue 路径 partial 口径一致）。
  */
 export function evalAbsModuleGraph(
@@ -102,17 +129,9 @@ export function evalAbsModuleGraph(
       cache.set(absPath, empty);
       return empty;
     }
-    // 循环占位
     cache.set(absPath, { named: {} });
 
-    const modules: Record<string, AbsModuleExports> = {};
-    for (const spec of relativeImportSpecs(source)) {
-      const childPath = resolveRel(spec, absPath);
-      if (!childPath) continue;
-      const childSrc = load(spec, absPath);
-      if (childSrc === undefined) continue;
-      modules[spec] = evalDep(childPath, childSrc, depth + 1);
-    }
+    const modules = buildModulesForFile(source, absPath, load, evalDep, depth, maxDepth);
 
     try {
       const file = parse(source);
@@ -127,14 +146,14 @@ export function evalAbsModuleGraph(
     }
   }
 
-  const modules: Record<string, AbsModuleExports> = {};
-  for (const spec of relativeImportSpecs(entrySource)) {
-    const childPath = resolveRel(spec, entryFile);
-    if (!childPath) continue;
-    const childSrc = load(spec, entryFile);
-    if (childSrc === undefined) continue;
-    modules[spec] = evalDep(childPath, childSrc, 1);
-  }
+  const modules = buildModulesForFile(
+    entrySource,
+    entryFile,
+    load,
+    evalDep,
+    0,
+    maxDepth,
+  );
 
   return { modules, byPath: cache };
 }

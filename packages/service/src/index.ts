@@ -69,6 +69,12 @@ export {
   type AbsGraphOptions,
 } from "./abs-modules-graph.ts";
 export {
+  harvestToAbsModules,
+  packageHarvestToAbsModules,
+  bareSpecToAbsModules,
+  harvestedValueToAbs,
+} from "./harvest-to-abs.ts";
+export {
   harvestNodeTypes,
   summarizeNodeEnv,
   type NodeEnvResult,

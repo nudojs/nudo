@@ -2221,12 +2221,10 @@ function isSelfContainedSource(source: string, envNames: string[]): boolean {
   return !/\brequire\s*\(|\bimport\s*[{'"*]/.test(source);
 }
 
-/** Abs 模块图可处理：无 env/require/裸包，允许相对 import */
+/** Abs 模块图可处理：无 env/require；相对 import + 裸包（harvest）均可 */
 function absModulesOk(source: string, envNames: string[]): boolean {
   if (envNames.length > 0) return false;
   if (/\brequire\s*\(/.test(source)) return false;
-  // 裸说明符（非相对/绝对）→ 需要 TypeValue/harvest 路径
-  if (/\bimport\s+[^;\n]*from\s*['"]([^./'\"][^'"]*)['"]/.test(source)) return false;
   return true;
 }
 
