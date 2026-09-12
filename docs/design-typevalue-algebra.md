@@ -123,9 +123,7 @@ nudo guard <file>     # 边界运行时校验（= generate --format guard）
 nudo generate <file>  # zod | guard | dts 组合输出
 ```
 
-已知未做：harvest 自动化。
-`check` / `types` / `test` / `emit` / `guard` 均支持目录参数（递归收集推断目标）。
-`nudo guard` 走 `denoteGuard(abs)`（shape + 可判定 pred）。
+已知未做：无（Phase A–C 核心命令面与自动化已收口；service Abs 路径仍限自包含源码）。
 
 ---
 
@@ -614,7 +612,7 @@ function len(x) {
 
 ### Phase C — 产品替换面 🚧
 1. ✅ 约束诊断：`nudo check` / CheckJson v1 / LSP 主通道
-2. ⬜ harvest 自动化（手动 `nudo harvest` 已通）
+2. ✅ harvest 自动化：分析路径按需注入 @types（`nudo harvest --auto` 报告）
 3. ✅ 与真实 Node 执行差分回归（8 用例，exact 对齐）
 4. ✅ 挂到主 CLI：`nudo types --assume/--generalize` 已通
 5. ✅ `nudo test`（`@nudo:case` 即断言）
@@ -627,7 +625,7 @@ function len(x) {
 | service Abs 路径 | 仅自包含源码（无 import/require/env）；`@nudo:mock` 走 Abs seed |
 | `@nudo:import * as ns` | 语法可解析，模板展开暂不支持 |
 | ImportDefaultSpecifier | 默认导出契约跨文件暂不绑定 |
-| emit 往返 tsc / harvest 自动化 | Phase B.6 / C.2 未做 |
+| emit 往返 tsc / harvest 自动化 | ✅ `emit-tsc-roundtrip` + 分析路径 auto-harvest |
 | guard denotational | ✅ `denoteGuard`（Abs shape + 可判定 pred）；`nudo guard` 优先 Abs 路径 |
 
 ### 验证状态（2026-09 收口后）

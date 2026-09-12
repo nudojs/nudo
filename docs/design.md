@@ -1631,7 +1631,7 @@ resolveModule(source, fromDir):
 - Source map 支持，用于错误报告定位
 - 增量求值（文件修改后只重新求值受影响的函数）
 - esbuild / webpack 插件
-- harvest 自动化（手动 `nudo harvest` 已通）
+- harvest 自动化（分析路径按需注入 @types；`nudo harvest --auto` 报告）
 - emit 外延投影往返 tsc（`nudo emit` + 往返门禁测试已通）
 
 ### 技术选型

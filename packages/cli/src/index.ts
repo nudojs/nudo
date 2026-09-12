@@ -982,9 +982,54 @@ function runHarvest(pkg: string, outOpt?: string): void {
 program
   .command("harvest")
   .description("Convert @types/<pkg> .d.ts declarations into a Nudo env file (TS source using T.* constructors)")
-  .argument("<pkg>", "Package name under @types (e.g. node)")
+  .argument("[pkg]", "Package name under @types (e.g. node)")
   .option("--out <file>", "Output .ts env file (default: ./nudo-harvest-<pkg>.ts)")
-  .action((pkg: string, opts: { out?: string }) => {
+  .option("--auto [dir]", "Scan directory (default .) for bare imports and report auto-harvestable @types packages")
+  .action(async (pkg: string | undefined, opts: { out?: string; auto?: boolean | string }) => {
+    if (opts.auto !== undefined) {
+      const dir = resolve(typeof opts.auto === "string" ? opts.auto : ".");
+      const files = existsSync(dir) && statSync(dir).isDirectory()
+        ? collectNudoFiles(dir)
+        : existsSync(dir)
+          ? [dir]
+          : [];
+      if (files.length === 0) {
+        console.error(`No inference targets under ${dir}`);
+        process.exitCode = 1;
+        return;
+      }
+      const { collectBarePackages, harvestPackageCached, formatHarvestSummary } = await import("@nudojs/service");
+      const seen = new Set<string>();
+      const report: string[] = [];
+      for (const f of files) {
+        let src: string;
+        try {
+          src = readFileSync(f, "utf-8");
+        } catch {
+          continue;
+        }
+        for (const p of collectBarePackages(src)) {
+          if (seen.has(p)) continue;
+          seen.add(p);
+          const h = harvestPackageCached(p, dirname(f));
+          if (h) report.push(formatHarvestSummary(h));
+          else report.push(`${p}: no .d.ts / @types (skipped)`);
+        }
+      }
+      if (report.length === 0) {
+        console.log("No bare imports found (or nothing to harvest).");
+        return;
+      }
+      console.log(`auto harvest candidates under ${relative(process.cwd(), dir) || "."}:\n`);
+      for (const line of report) console.log(line);
+      console.log(`\nAnalysis injects these automatically; use \`nudo harvest <pkg>\` to write a persistent env file.`);
+      return;
+    }
+    if (!pkg) {
+      console.error("Error: <pkg> is required (or use --auto).");
+      process.exitCode = 1;
+      return;
+    }
     runHarvest(pkg, opts.out);
   });
 

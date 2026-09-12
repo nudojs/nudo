@@ -14,15 +14,13 @@ export function resolvePackageRoot(
   fromDir: string = process.cwd(),
 ): string | undefined {
   let dir = resolve(fromDir);
-  const candidates = [
-    join(dir, "node_modules", pkg),
-    join(dir, "node_modules", "@types", pkg.replace(/^@/, "").replace(/\//g, "__")),
-  ];
-  // 向上找 node_modules
+  const bare = pkg.replace(/^@/, "").replace(/\//g, "__");
+  // 向上找 node_modules；每层重算候选（@types 优先：lodash 等包本体无 index.d.ts）
   for (let i = 0; i < 8; i++) {
-    for (const c of candidates) {
-      if (existsSync(c)) return c;
-    }
+    const typesPath = join(dir, "node_modules", "@types", bare);
+    if (existsSync(typesPath)) return typesPath;
+    const pkgPath = join(dir, "node_modules", pkg);
+    if (existsSync(pkgPath)) return pkgPath;
     const parent = resolve(dir, "..");
     if (parent === dir) break;
     dir = parent;

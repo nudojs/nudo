@@ -28,7 +28,7 @@ npx @nudojs/cli infer ./src/utils.js
 | [`nudo emit`](#nudo-emit) | Emit `.d.ts` declarations (npm compatibility exit) |
 | [`nudo guard`](#nudo-guard) | Generate runtime type-guard functions |
 | [`nudo watch`](#nudo-watch) | Watch a file or directory and re-run inference on changes |
-| [`nudo harvest`](#nudo-harvest) | Convert `@types/<pkg>` declarations into a Nudo env file |
+| [`nudo harvest`](#nudo-harvest) | Convert `@types/<pkg>` declarations into a Nudo env file; `--auto` reports analysis-path auto-harvest |
 
 ### nudo infer
 

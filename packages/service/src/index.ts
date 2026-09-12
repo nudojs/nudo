@@ -55,6 +55,13 @@ export {
   type PackageHarvest,
 } from "./harvest-package.ts";
 export {
+  barePackageName,
+  collectBarePackages,
+  autoHarvestModules,
+  harvestPackageCached,
+  clearHarvestCache,
+} from "./harvest-auto.ts";
+export {
   harvestNodeTypes,
   summarizeNodeEnv,
   type NodeEnvResult,

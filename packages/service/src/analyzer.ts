@@ -63,6 +63,7 @@ import {
   resolveNpmNudo,
 } from "@nudojs/cli/evaluator";
 import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
+import { autoHarvestModules } from "./harvest-auto.ts";
 
 export type SourceLocation = {
   start: { line: number; column: number };
@@ -1111,9 +1112,11 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
   const globalEnv = createEnvironment();
 
-  if (envNames.length > 0) {
-    const loaded = loadEnvs(envNames, globalEnv);
-    setEnvModules(loaded.modules);
+  {
+    const loaded = envNames.length > 0 ? loadEnvs(envNames, globalEnv) : { modules: {} };
+    const auto = autoHarvestModules(source, dirname(filePath));
+    const modules = { ...loaded.modules, ...auto };
+    if (Object.keys(modules).length > 0) setEnvModules(modules);
   }
 
   const mocks = new Map<string, { fromPath: string; names?: string[] }>();
@@ -1650,9 +1653,11 @@ export function getTypeAtPosition(
 
   const globalEnv = createEnvironment();
 
-  if (envNames.length > 0) {
-    const loaded = loadEnvs(envNames, globalEnv);
-    setEnvModules(loaded.modules);
+  {
+    const loaded = envNames.length > 0 ? loadEnvs(envNames, globalEnv) : { modules: {} };
+    const auto = autoHarvestModules(source, dirname(filePath));
+    const modules = { ...loaded.modules, ...auto };
+    if (Object.keys(modules).length > 0) setEnvModules(modules);
   }
 
   evaluateProgram(ast, globalEnv);
