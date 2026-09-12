@@ -94,8 +94,8 @@ export function collectAbsExports(file: File, env: AstEnv): AbsModuleExports {
       }
     } else if (stmt.type === "ExportDefaultDeclaration") {
       const d = stmt.declaration;
-      if (d.type === "FunctionDeclaration" && d.id) {
-        defaultExport = lookupExport(env, d.id.name);
+      if (d.type === "FunctionDeclaration") {
+        defaultExport = lookupExport(env, d.id ? d.id.name : "default");
       } else if (d.type === "ClassDeclaration" && d.id) {
         defaultExport = lookupExport(env, d.id.name);
       } else if (d.type === "Identifier") {

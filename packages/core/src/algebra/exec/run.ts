@@ -46,7 +46,18 @@ export type RunTranspiledOptions = {
 const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
 
 /** 相对 import → 从注入 modules 取绑定（Abs fn 包成 JS 可调用） */
-function rewriteUserImports(js: string, modules: RunTranspiledOptions["modules"]): string {
+function rewriteUserImports(js: string): string {
+  // namespace：transpile 会写成 `import { * as ns } from "…"`
+  js = js.replace(
+    /^import\s*\{\s*\*\s+as\s+([A-Za-z_$][\w$]*)\s*\}\s*from\s*["']([^"']+)["'];\s*$/gm,
+    (_all, local: string, spec: string) =>
+      `const ${local} = __nudoBindNamespace(${JSON.stringify(spec)});`,
+  );
+  // 无绑定副作用 import → 仅触发模块求值
+  js = js.replace(
+    /^import\s*["']([^"']+)["'];\s*$/gm,
+    (_all, spec: string) => `void __nudoBindNamespace(${JSON.stringify(spec)});`,
+  );
   return js.replace(
     /^import\s*\{([^}]+)\}\s*from\s*["']([^"']+)["'];\s*$/gm,
     (_all, names: string, spec: string) => {
@@ -116,6 +127,12 @@ function bindImport(
 ): unknown {
   const mod = modules?.[spec] as AbsModuleExports | undefined;
   if (!mod) return undefined;
+  if (name === "default") {
+    const d = (mod as AbsModuleExports).default;
+    if (d === undefined) return undefined;
+    if (typeof d === "function") return d;
+    return (...args: Abs[]) => $call(d as Abs, args);
+  }
   const named = (mod as AbsModuleExports).named;
   const v = named?.[name];
   if (v === undefined) {
@@ -126,6 +143,20 @@ function bindImport(
   if (typeof v === "function") return v;
   const absFn = v as Abs;
   return (...args: Abs[]) => $call(absFn, args);
+}
+
+/** `import * as ns`：整命名空间（named + default 槽）→ Abs 对象 */
+function bindNamespace(modules: RunTranspiledOptions["modules"], spec: string): Abs {
+  const mod = modules?.[spec] as AbsModuleExports | undefined;
+  if (!mod) return unknown;
+  if (mod.named) {
+    const { $obj } = rtAll as { $obj: (s: Record<string, Abs>) => Abs };
+    const slots: Record<string, Abs> = {};
+    for (const [k, v] of Object.entries(mod.named)) slots[k] = v;
+    if (mod.default) slots["default"] = mod.default;
+    return $obj(slots);
+  }
+  return unknown;
 }
 
 /** CJS require：modules[spec] → 可 $get 的 namespace Abs */
@@ -161,7 +192,7 @@ export function runTranspiled(
     asOverrides: opts.asOverrideTargets,
   });
   js = js.replace(RUNTIME_IMPORT_RE, "");
-  js = rewriteUserImports(js, modules);
+  js = rewriteUserImports(js);
   if (opts.mode === "analyze") {
     js = stripEffectfulTopLevel(js);
   }
@@ -188,6 +219,7 @@ export function runTranspiled(
     ...runtimeArgNames(),
     "__nudoModules",
     "__nudoBindImport",
+    "__nudoBindNamespace",
     "__nudoReplaces",
     "__nudoRequire",
     "__nudoEnv",
@@ -196,6 +228,9 @@ export function runTranspiled(
     if (n === "__nudoModules") return modules;
     if (n === "__nudoBindImport") {
       return (spec: string, name: string) => bindImport(modules, spec, name);
+    }
+    if (n === "__nudoBindNamespace") {
+      return (spec: string) => bindNamespace(modules, spec);
     }
     if (n === "__nudoReplaces") return allInject;
     if (n === "__nudoRequire") {

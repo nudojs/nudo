@@ -1613,6 +1613,20 @@ export function evalProgramAbs(
       if (d.type === "FunctionDeclaration" && d.id) registerFunction(env, d);
       if (d.type === "ClassDeclaration") registerClassDecl(env, d);
     }
+    if (stmt.type === "ExportDefaultDeclaration" && stmt.declaration) {
+      const d = stmt.declaration;
+      if (d.type === "FunctionDeclaration") {
+        if (d.id) registerFunction(env, d);
+        else {
+          env.fns.set("default", {
+            params: d.params.map(paramName),
+            body: d.body,
+            async: d.async === true,
+          });
+        }
+      }
+      if (d.type === "ClassDeclaration") registerClassDecl(env, d);
+    }
     if (stmt.type === "VariableDeclaration") {
       for (const d of stmt.declarations) {
         if (
