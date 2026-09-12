@@ -51,9 +51,9 @@ core → parser → cli → service → lsp
 
 **Parser** (`parser`): Uses `@babel/parser` with TypeScript+JSX plugins. Extracts function/file directives: `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, `@nudo:replace`. File-level `@nudo:import` and function-level `@nudo:refine` are parsed in **core** (`algebra/refine.ts`), not the parser package.
 
-**Evaluator** (`cli/src/evaluator.ts`): TypeValue AST abstract interpreter. Arithmetic/compare/unary/spread route to Abs first via `abs-route.ts` / `eval-binary.ts`; residual Ops catch mixed/unknown cases. Control-flow signals (`ReturnSignal`, `BranchSignal`, `ThrowSignal`) use Symbol keys. Narrowing is in `cli/src/narrowing.ts`.
+**Evaluator** (`cli/src/evaluator.ts`): TypeValue AST abstract interpreter (fallback). Arithmetic/compare/unary/spread route to Abs first via `abs-route.ts` / `eval-binary.ts`; residual Ops catch mixed/unknown cases. Primary analysis path for capable files is B-path transpile/exec (`core/src/algebra/exec`). Control-flow signals (`ReturnSignal`, `BranchSignal`, `ThrowSignal`) use Symbol keys. Narrowing is in `cli/src/narrowing.ts`.
 
-**Service** (`service`): `analyzer.ts` orchestrates parse → directives → evaluate → diagnostics. Self-contained sources (no import/require/env) also run `evalProgramAbs` so `call@`/hover prefer lossless Abs. `dts-generator.ts` projects TypeValue to TypeScript declarations.
+**Service** (`service`): `analyzer.ts` orchestrates parse → directives → evaluate → diagnostics. Capable sources use **B path** (`core/algebra/exec`: transpile → `new Function` with Abs values) as primary case/entry/call@ evaluation; TypeValue evaluator is fallback + diagnostics host. Modules via `evalAbsModuleGraph` (relative import, require, harvest, @nudo:env). `dts-generator.ts` projects TypeValue to TypeScript declarations.
 
 **Check product**: `nudo check` is the CI gate — Pred implication on Abs, Nudo-native reports (`actual ⊭ expected`). Gold gates: recall=precision=1.0 and real-package zero-FP tests in `core/src/algebra/__tests__/`.
 

@@ -1565,19 +1565,41 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         const absSym = absSymRaw && absIsBetter(absSymRaw, /* 无先验：仅 unknown 时 */ { kind: "unknown" })
           ? absSymRaw
           : undefined;
-        // symbolic：TypeValue evaluator 先跑，Abs 仅在结果 unknown 时补
-        const full = evaluateFunctionFull(fnNode, widenedArgs, globalEnv);
-        const symResult = full.value.kind === "unknown" && absSym ? absSym : full.value;
+        // B 路径优先（capable）；否则 TypeValue，Abs 仅在 unknown 时补
+        let symValue: TypeValue | undefined;
+        let symThrows: TypeValue = T.never as TypeValue;
+        let symLoc: SourceLocation | undefined;
+        let symAbs: Abs | undefined;
+        if (isBPathCapable(source, envNames) && filePath) {
+          const bSym = tryBPathCall(
+            source,
+            filePath,
+            candidate.name,
+            widenedArgs.map((a) => typeValueToAbs(a)),
+            { envNames },
+          );
+          if (bSym && !(bSym.shape.k === "unknown" && !bSym.term)) {
+            symAbs = bSym;
+            symValue = absToTypeValue(bSym);
+          }
+        }
+        if (!symAbs) {
+          const full = evaluateFunctionFull(fnNode, widenedArgs, globalEnv);
+          symValue = full.value.kind === "unknown" && absSym ? absSym : full.value;
+          symThrows = full.throws;
+          symLoc = full.throwLoc;
+        }
         const symCase: CaseResult = {
           name: "call@symbolic",
           args: widenedArgs,
-          result: symResult,
-          throws: full.throws,
-          throwLoc: full.throwLoc,
+          result: symValue ?? T.unknown,
+          throws: symThrows,
+          throwLoc: symLoc,
           source: "callsite",
           aggregatedFrom: remaining.length,
         };
-        if (symResult !== full.value) tryAttachIntension(symCase, source, candidate.name);
+        if (symAbs) attachAbsToIntension(symCase, symAbs, candidate.name);
+        else if (symValue !== undefined) tryAttachIntension(symCase, source, candidate.name);
         candidate.analysis.cases.push(symCase);
       }
       // Combined covers every observed call site (not just the retained
@@ -1592,24 +1614,45 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
     const fnNode = resolveFunctionNode(candidate.node);
     const args = extractParamNames(fnNode).map(() => T.unknown);
-    // Abs 原生求值（类型即计算）：自包含源码走 ast-eval；
-    // 含 host 依赖时回落 TypeValue evaluator（builtin/module 适配层）。
-    const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, args);
-    const full = absEntry
-      ? { value: absEntry, throws: T.never as TypeValue, throwLoc: undefined }
-      : evaluateFunctionFull(fnNode, args, globalEnv);
+    // B 路径主求值（capable）；失败再 Abs ast-eval / TypeValue
+    let entryValue: TypeValue | undefined;
+    let entryThrows: TypeValue = T.never as TypeValue;
+    let entryLoc: SourceLocation | undefined;
+    let entryAbs: Abs | undefined;
+    if (isBPathCapable(source, envNames) && filePath) {
+      const bEntry = tryBPathCall(
+        source,
+        filePath,
+        candidate.analysis.name,
+        args.map((a) => typeValueToAbs(a)),
+        { envNames },
+      );
+      if (bEntry && !(bEntry.shape.k === "unknown" && !bEntry.term)) {
+        entryAbs = bEntry;
+        entryValue = absToTypeValue(bEntry);
+      }
+    }
+    if (!entryValue) {
+      const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, args);
+      const full = absEntry
+        ? { value: absEntry, throws: T.never as TypeValue, throwLoc: undefined }
+        : evaluateFunctionFull(fnNode, args, globalEnv);
+      entryValue = full.value;
+      entryThrows = full.throws;
+      entryLoc = full.throwLoc;
+    }
     const caseResult: CaseResult = {
       name: `entry@L${candidate.analysis.loc.start.line}`,
       args,
-      result: full.value,
-      throws: full.throws,
-      throwLoc: full.throwLoc,
+      result: entryValue,
+      throws: entryThrows,
+      throwLoc: entryLoc,
     };
-    // 内涵摘要：代数 generalize（term/pred/conf）；失败静默，不改外延 TypeValue
-    tryAttachIntension(caseResult, source, candidate.analysis.name);
+    if (entryAbs) attachAbsToIntension(caseResult, entryAbs, candidate.analysis.name);
+    else tryAttachIntension(caseResult, source, candidate.analysis.name);
     candidate.analysis.cases.push(caseResult);
     candidate.analysis.entryOnly = true;
-    candidate.analysis.combined = collapseLiteralUnion(full.value, COLLAPSE_LITERAL_THRESHOLD);
+    candidate.analysis.combined = collapseLiteralUnion(entryValue, COLLAPSE_LITERAL_THRESHOLD);
   }
 
   buildNodeTypeMap(ast, globalEnv, nodeTypeMap);

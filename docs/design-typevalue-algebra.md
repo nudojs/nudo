@@ -622,22 +622,20 @@ function len(x) {
 
 | 边界 | 说明 |
 |---|---|
-| **B 路径（进行中）** | 生成器 yield 收成 tuple；路径型 env；require/import/harvest；语言面基本齐 |
-| for / while | 有界 `$for`/`$while`（状态线程 + 不动点）；transpile while 用 `$whileSeq`（预算） |
-| service Abs 路径 | 自包含 + 相对 import + **裸包 harvest**；call@ 记录经模块图打 targetModule；require / `@nudo:env` 仍 TypeValue |
-| `@nudo:import * as ns` | 语法可解析，模板展开暂不支持 |
-| ImportDefaultSpecifier | 默认导出契约跨文件暂不绑定 |
+| **B 路径（主路径）** | capable 文件 case / entry@ / call@symbolic 主求值；语言面基本齐 |
+| for / while | 有界 `$for`/`$while`；transpile while 用 `$whileSeq`（预算） |
+| service Abs 路径 | 相对 import + 裸包 harvest + require + @nudo:env（含路径型） |
+| TypeValue 兜底 | 弱结果、B 失败、@nudo:import * as ns、ImportDefault 跨文件 |
 | emit 往返 tsc / harvest 自动化 | ✅ `emit-tsc-roundtrip` + 分析路径 auto-harvest |
-| guard denotational | ✅ `denoteGuard`（Abs shape + 可判定 pred）；`nudo guard` 优先 Abs 路径 |
+| guard denotational | ✅ `denoteGuard`；`nudo guard` 优先 Abs 路径 |
 
 ### 验证状态（2026-09 收口后）
 
 | 检查 | 结果 |
 |---|---|
-| vitest | **1504+ passed**（全 monorepo） |
+| vitest | **1629+ passed**（全 monorepo） |
 | tsc -p tsconfig.lint.json | **clean** |
 | nudo types sample --assume 'x>0' | term+pred 正确 |
-| nudo types sample --generalize | ∀α 签名正确 |
 | nudo check | 约束蕴含诊断 + 金标 recall/precision=1.0 |
 | differential vs Node | exact 一致 |
 
