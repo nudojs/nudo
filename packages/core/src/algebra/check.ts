@@ -238,6 +238,7 @@ function checkSourceInner(
     ...scanCaseInconsistency(source, names, {
       loadModule: opts.loadModule,
       fromFile: filePath,
+      file,
     }),
   );
 
@@ -435,10 +436,14 @@ function scanStructuralAssign(source: string, file?: ReturnType<typeof parse>): 
 function scanCaseInconsistency(
   source: string,
   knownFns: string[],
-  opts: { loadModule?: (spec: string, fromFile: string) => string | undefined; fromFile?: string },
+  opts: {
+    loadModule?: (spec: string, fromFile: string) => string | undefined;
+    fromFile?: string;
+    file?: ReturnType<typeof parse>;
+  },
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
-  const file = parse(source);
+  const file = opts.file ?? parse(source);
 
   /** 解析 case 实参列表里的简单字面量 */
   const parseLitArg = (s: string): Abs | undefined => {
@@ -502,7 +507,7 @@ function scanCaseInconsistency(
     args: string[],
     line: number | undefined,
   ): void => {
-    const g = generalizeFromAst(fnName, source);
+    const g = generalizeFromAst(fnName, source, file ? { file } : {});
     if (!g) return;
     const paramNames = g.params;
     const reqs = refineToIndexedFull(source, fnName, paramNames, {
@@ -604,12 +609,13 @@ function scanCaseInconsistency(
 function collectParamStructReqs(
   source: string,
   fnName: string,
+  fileAst?: ReturnType<typeof parse>,
 ): Map<string, Set<string>> {
   const reqs = new Map<string, Set<string>>();
-  const g = generalizeFromAst(fnName, source);
+  const g = generalizeFromAst(fnName, source, fileAst ? { file: fileAst } : {});
   if (!g) return reqs;
   const params = new Set(g.params);
-  const file = parse(source);
+  const file = fileAst ?? parse(source);
 
   const visit = (n: unknown): void => {
     if (!n || typeof n !== "object") return;
@@ -768,13 +774,17 @@ function resolveExportSource(
 function collectCallResolvers(
   source: string,
   knownFns: string[],
-  opts?: { loadModule?: (spec: string, fromFile: string) => string | undefined; fromFile?: string },
+  opts?: {
+    loadModule?: (spec: string, fromFile: string) => string | undefined;
+    fromFile?: string;
+    file?: ReturnType<typeof parse>;
+  },
 ): CallResolve {
   const aliasToFn = new Map<string, string>();
   const memberToFn = new Map<string, string>();
   const externalFn = new Map<string, { source: string; fnName: string }>();
   const externalMember = new Map<string, { source: string; fnName: string }>();
-  const file = parse(source);
+  const file = opts?.file ?? parse(source);
   const load = opts?.loadModule;
   const fromFile = opts?.fromFile ?? "";
   const modCache = new Map<string, string | undefined>();
@@ -959,9 +969,10 @@ function collectForwarders(
   source: string,
   knownFns: string[],
   resolve: CallResolve,
+  fileAst?: ReturnType<typeof parse>,
 ): Map<string, Forward> {
   const forwards = new Map<string, Forward>();
-  const file = parse(source);
+  const file = fileAst ?? parse(source);
 
   const tryFn = (
     name: string,
@@ -1057,7 +1068,7 @@ function scanLiteralCalls(
   const out: CheckIssue[] = [];
   const file = opts?.file ?? parse(source);
   const resolve = collectCallResolvers(source, knownFns, opts);
-  const forwards = collectForwarders(source, knownFns, resolve);
+  const forwards = collectForwarders(source, knownFns, resolve, file);
   const varAbs = snapshotVarAbs(source, file);
 
   const flattenPred = (p: Pred): Pred[] =>
@@ -1478,6 +1489,7 @@ function scanLiteralCalls(
     if (!hasInfo || absArgs.length === 0) return;
 
     const g = generalizeFromAst(fnName, source, {
+      file,
       refine: {
         loadModule: opts?.loadModule,
         fromFile: opts?.fromFile ?? "",
@@ -1501,7 +1513,7 @@ function scanLiteralCalls(
 
     const fwd = forwards.get(fnName);
     if (fwd) {
-      const tg = generalizeFromAst(fwd.target, source);
+      const tg = generalizeFromAst(fwd.target, source, file ? { file } : {});
       const tParams = tg?.params ?? [];
       const tFull = refineToIndexedFull(source, fwd.target, tParams, optsR);
       if (tFull.length > 0) {
@@ -1569,8 +1581,14 @@ function scanLiteralCalls(
     let structReqs: Map<string, Set<string>>;
     let paramNames: string[];
     try {
-      structReqs = collectParamStructReqs(fnSource, fnName);
-      const g = generalizeFromAst(fnName, fnSource);
+      // 同文件调用复用预解析 AST；跨文件源码各自 parse
+      const sameFile = fnSource === source;
+      structReqs = collectParamStructReqs(fnSource, fnName, sameFile ? file : undefined);
+      const g = generalizeFromAst(
+        fnName,
+        fnSource,
+        sameFile && file ? { file } : {},
+      );
       paramNames = g?.params ?? [];
     } catch {
       return;
