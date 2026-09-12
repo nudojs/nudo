@@ -67,7 +67,7 @@ export function execNudoModule(src: string): Record<string, unknown> {
   return fn(number, stringC, booleanC, shape, array) as Record<string, unknown>;
 }
 
-export type RequiresResolveOpts = {
+export type RefineResolveOpts = {
   loadModule?: (spec: string, fromFile: string) => string | undefined;
   fromFile?: string;
 };
@@ -75,7 +75,7 @@ export type RequiresResolveOpts = {
 /** 从导入收集 name → NudoConstraint */
 function collectConstraints(
   source: string,
-  opts: RequiresResolveOpts,
+  opts: RefineResolveOpts,
 ): Map<string, NudoConstraint> {
   const map = new Map<string, NudoConstraint>();
   const imports = extractNudoImports(source);
@@ -126,19 +126,19 @@ function extractRefineLines(source: string, fnName: string): string[] {
  * 多条用 && 或换行连接。
  * 同时保留原始 NudoConstraint（shape 字段检查用）。
  */
-export type RequiresEntry = {
+export type RefineEntry = {
   param: string;
   pred: Pred;
   constraint: NudoConstraint;
 };
 
-export function extractRequiresFromSource(
+export function extractRefinesFromSource(
   source: string,
   fnName: string,
-  opts: RequiresResolveOpts = {},
-): RequiresEntry[] {
+  opts: RefineResolveOpts = {},
+): RefineEntry[] {
   const constraints = collectConstraints(source, opts);
-  const out: RequiresEntry[] = [];
+  const out: RefineEntry[] = [];
   for (const line of extractRefineLines(source, fnName)) {
     const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);
     for (const part of parts) {
@@ -159,31 +159,15 @@ export function extractRequiresFromSource(
   return out;
 }
 
-/** 把 refine 参数映射到下标 */
-export function requiresToIndexed(
-  source: string,
-  fnName: string,
-  paramNames: string[],
-  opts: RequiresResolveOpts = {},
-): Array<[number, Pred]> {
-  const raw = extractRequiresFromSource(source, fnName, opts);
-  const out: Array<[number, Pred]> = [];
-  for (const item of raw) {
-    const idx = paramNames.indexOf(item.param);
-    if (idx >= 0) out.push([idx, item.pred]);
-  }
-  return out;
-}
-
 /** refine 参数 → 带约束模板的下标表（shape 检查用） */
-export function requiresToIndexedFull(
+export function refineToIndexedFull(
   source: string,
   fnName: string,
   paramNames: string[],
-  opts: RequiresResolveOpts = {},
-): Array<[number, RequiresEntry]> {
-  const raw = extractRequiresFromSource(source, fnName, opts);
-  const out: Array<[number, RequiresEntry]> = [];
+  opts: RefineResolveOpts = {},
+): Array<[number, RefineEntry]> {
+  const raw = extractRefinesFromSource(source, fnName, opts);
+  const out: Array<[number, RefineEntry]> = [];
   for (const item of raw) {
     const idx = paramNames.indexOf(item.param);
     if (idx >= 0) out.push([idx, item]);
@@ -195,10 +179,10 @@ export function requiresToIndexedFull(
  * 解析 `@nudo:refine return positive` → 返回精化。
  * 返回 undefined = 无声明（不猜后置）。
  */
-export function extractReturnFromSource(
+export function extractRefineReturnFromSource(
   source: string,
   fnName: string,
-  opts: RequiresResolveOpts = {},
+  opts: RefineResolveOpts = {},
 ): { name: string; constraint: NudoConstraint } | undefined {
   const constraints = collectConstraints(source, opts);
   for (const line of extractRefineLines(source, fnName)) {

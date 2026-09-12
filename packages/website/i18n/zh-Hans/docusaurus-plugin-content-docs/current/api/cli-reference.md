@@ -21,6 +21,8 @@ npx @nudojs/cli infer ./src/utils.js
 |---------|---------|
 | [`nudo infer`](#nudo-infer) | 从文件或目录推断类型 |
 | [`nudo check`](#nudo-check) | 检查单个文件的类型错误（error 级诊断以退出码 `1` 结束） |
+| [`nudo types`](#nudo-types) | 类型即计算视图：展示 Abs 的 term + 约束 |
+| [`nudo test`](#nudo-test) | 把 `@nudo:case` 当断言跑（失败退出码 `1`） |
 | [`nudo doctor`](#nudo-doctor) | 健康检查：调用点固化漂移、分析报错、无用例函数 |
 | [`nudo generate`](#nudo-generate) | 从推断类型生成运行时验证器 |
 | [`nudo watch`](#nudo-watch) | 监视文件或目录，变更时重新运行推断 |
@@ -196,6 +198,32 @@ nudo check src/broken.js
 [error] src/set.js:12:0 setDelay[ms]: 实参 ⊭ 前置  (nudo:constraint-violated)
     actual:   0  #exact
     expected: ms > 0
+```
+
+---
+
+### nudo types
+
+类型即计算视图：展示 Abs 代数中的 term + 约束（不只是外延 TypeValue 形状）。
+
+```bash
+nudo types <file> [--fn <name>] [--assume <pred...>] [--generalize]
+```
+
+| 选项 | 说明 |
+|------|------|
+| `--fn <name>` | 只分析该函数 |
+| `--assume <pred...>` | 假设约束，如 `x>0 y>=1` |
+| `--generalize` | 符号执行展示多态签名 |
+
+---
+
+### nudo test
+
+把 `@nudo:case` 当断言执行。带 `=> expected` 的 case 用子类型语义校验；失败退出码 `1`。无期望的 case 报告为 `unchecked`。
+
+```bash
+nudo test <file>
 ```
 
 ---

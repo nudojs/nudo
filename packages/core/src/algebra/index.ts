@@ -10,18 +10,7 @@ export * from "./methods.ts";
 export * from "./leak.ts";
 export * from "./objects.ts";
 export * from "./leq.ts";
-// eval.ts 仅服务示例/差分；joinAbs 以 objects 为准
-export {
-  evalExpr,
-  evalIf as evalIfExpr,
-  defineFn,
-  applyNamed,
-  applyFn,
-  callAdd,
-  envOf,
-  type Expr,
-  type Env,
-} from "./eval.ts";
+// eval.ts（Phase A 极简表达式）仅服务 example0 测试，不导出；真实路径是 ast-eval.ts
 export * from "./ast-eval.ts";
 export * from "./format.ts";
 export * from "./generalize.ts";
@@ -29,7 +18,7 @@ export * from "./diagnostics.ts";
 export * from "./template.ts";
 export * from "./language.ts";
 export * from "./check.ts";
-export * from "./requires.ts";
+export * from "./refine.ts";
 export * from "./constraint.ts";
 export * from "./inlay.ts";
 // modules/fs/path 属于 host（service/cli），不进代数

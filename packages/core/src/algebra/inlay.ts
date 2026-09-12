@@ -128,18 +128,18 @@ function paramPreds(
 
 /**
  * 收集源码中函数签名的 Abs inlay：
- * - 参数后：前置约束（声明 requires 优先；否则从 if 推）
+ * - 参数后：前置约束（声明 refine 优先；否则从 if 推）
  * - `)` 后：返回 shape + term（类型即计算）
  */
 export function collectAbsInlays(
   source: string,
-  requiresOpts?: { loadModule?: (spec: string, fromFile: string) => string | undefined; fromFile?: string },
+  refineOpts?: { loadModule?: (spec: string, fromFile: string) => string | undefined; fromFile?: string },
 ): AbsInlay[] {
   const inlays: AbsInlay[] = [];
   for (const { name, node } of listFunctions(source)) {
     let g: ReturnType<typeof generalizeFromAst>;
     try {
-      g = generalizeFromAst(name, source, requiresOpts ? { requires: requiresOpts } : {});
+      g = generalizeFromAst(name, source, refineOpts ? { refine: refineOpts } : {});
     } catch {
       continue;
     }

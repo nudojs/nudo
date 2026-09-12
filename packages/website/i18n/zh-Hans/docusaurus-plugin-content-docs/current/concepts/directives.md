@@ -1,6 +1,6 @@
 ---
 sidebar_position: 3
-description: "全部 10 个 @nudo: 指令（case、mock、pure、skip、sample、returns、env、mock-module、as、replace）的语法、约束与示例完整参考。"
+description: "全部 @nudo: 指令（case、mock、pure、skip、sample、refine、import、env、mock-module、as、replace）的语法、约束与示例完整参考。"
 ---
 
 # 指令系统
@@ -409,6 +409,35 @@ function register(u) {
 
 ---
 
+## @nudo:import — 约束模板引入
+
+为 `@nudo:refine` 从 `*.nudo.js` 模块引入约束模板。**文件级**指令，三斜线注释。
+
+### 语法
+
+```text
+/// @nudo:import { name1, name2 } from "./shapes.nudo.js"
+/// @nudo:import * as ns from "./shapes.nudo.js"
+```
+
+- **具名** — 绑定 `@nudo:refine` 使用的导出模板名
+- **命名空间** — 可解析；经 `ns.foo` 展开模板暂不支持
+
+### 示例
+
+```javascript
+/// @nudo:import { positive } from "./shapes.nudo.js"
+
+/**
+ * @nudo:refine x positive
+ */
+function inc(x) {
+  return x + 1;
+}
+```
+
+---
+
 ## @nudo:env — 运行时环境
 
 声明文件中可用的运行时环境 API。这是一个**文件级**指令，使用三斜线注释放在文件顶部。Nudo 内置了常见环境的类型定义，无需手动为标准 API 编写 mock。
@@ -615,6 +644,7 @@ const result = a + b;
 | `@nudo:skip` | `[returnsExpr]` | 跳过求值，使用已有类型信息 |
 | `@nudo:sample` | `N` | 控制不动点之前的循环采样次数 |
 | `@nudo:refine` | `param constraint` / `return constraint` | 精化契约（Pred 进入 Abs） |
+| `@nudo:import` | `{ name } from "spec"`（文件级 `///`） | 为 `@nudo:refine` 引入 `*.nudo.js` 约束模板 |
 | `@nudo:env` | `name1, name2`（文件级 `///`） | 声明运行时环境 API |
 | `@nudo:mock-module` | `"module" from "path"`（文件级 `///`） | 替换导入的模块为 mock |
 | `@nudo:as` | `typeValueExpr`（行注释 `//`） | 覆盖下一条语句的值类型 |

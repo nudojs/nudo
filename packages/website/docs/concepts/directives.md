@@ -1,6 +1,6 @@
 ---
 sidebar_position: 3
-description: "Syntax reference for all ten @nudo: directives — case, mock, pure, skip, sample, returns, env, mock-module, as, replace — with constraints and examples."
+description: "Syntax reference for all @nudo: directives — case, mock, pure, skip, sample, refine, import, env, mock-module, as, replace — with constraints and examples."
 ---
 
 # Directives
@@ -409,6 +409,35 @@ function register(u) {
 
 ---
 
+## @nudo:import — Constraint Templates
+
+Import constraint templates from a `*.nudo.js` module for use with `@nudo:refine`. This is a **file-level** directive using triple-slash comments.
+
+### Syntax
+
+```text
+/// @nudo:import { name1, name2 } from "./shapes.nudo.js"
+/// @nudo:import * as ns from "./shapes.nudo.js"
+```
+
+- **named** — bind exported template names used by `@nudo:refine`
+- **namespace** — parsed; template expansion via `ns.foo` is not yet supported
+
+### Example
+
+```javascript
+/// @nudo:import { positive } from "./shapes.nudo.js"
+
+/**
+ * @nudo:refine x positive
+ */
+function inc(x) {
+  return x + 1;
+}
+```
+
+---
+
 ## @nudo:env — Runtime Environment
 
 Declare which runtime environment APIs are available in the file. This is a **file-level** directive using triple-slash comments at the top of the file. Nudo provides built-in type definitions for common environments so you don't need to write manual mocks for standard APIs.
@@ -615,6 +644,7 @@ const result = a + b;
 | `@nudo:skip` | `[returnsExpr]` | Skip evaluation, use existing type info |
 | `@nudo:sample` | `N` | Control loop sampling before fixed-point |
 | `@nudo:refine` | `param constraint` / `return constraint` | Refinement contract (enters Abs as Pred) |
+| `@nudo:import` | `{ name } from "spec"` (file-level `///`) | Import `*.nudo.js` constraint templates for `@nudo:refine` |
 | `@nudo:env` | `name1, name2` (file-level `///`) | Declare runtime environment APIs |
 | `@nudo:mock-module` | `"module" from "path"` (file-level `///`) | Replace imported modules with mocks |
 | `@nudo:as` | `typeValueExpr` (line comment `//`) | Override next statement's value type |

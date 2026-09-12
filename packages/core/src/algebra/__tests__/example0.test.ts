@@ -1,12 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   add,
-  callAdd,
   cmp,
-  defineFn,
-  evalExpr,
-  evalIf,
-  envOf,
   numLit,
   numVar,
   strLit,
@@ -17,9 +12,16 @@ import {
   predToString,
   absToString,
   litValue,
-  type Expr,
   type Abs,
 } from "../index.ts";
+import {
+  callAdd,
+  defineFn,
+  evalExpr,
+  evalIf,
+  envOf,
+  type Expr,
+} from "../eval.ts";
 
 /**
  * 示例 0 金标：类型即计算

@@ -188,7 +188,7 @@ function lonely(x) {
     const addFn = result.functions.find((f) => f.name === "add");
     expect(addFn!.cases).toHaveLength(2);
     expect(addFn!.cases[0].name).toBe("concrete");
-    expect(addFn!.cases[0].source).toBeUndefined();
+    expect(addFn!.cases[0].source).toBe("directive");
     expect(addFn!.entryOnly).toBeUndefined();
     expect(typeValueToString(addFn!.cases[0].result)).toBe("3");
     // 行为已修复：吸收律生效，combined 的字面量 3 被共存的 number 吸收（原期望 "3 | number"）

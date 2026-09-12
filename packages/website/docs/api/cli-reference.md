@@ -21,6 +21,8 @@ npx @nudojs/cli infer ./src/utils.js
 |---------|---------|
 | [`nudo infer`](#nudo-infer) | Infer types from files or directories |
 | [`nudo check`](#nudo-check) | Check a single file for type errors (error-level diagnostics exit `1`) |
+| [`nudo types`](#nudo-types) | Type-as-computation view: term + constraints from Abs algebra |
+| [`nudo test`](#nudo-test) | Run `@nudo:case` directives as assertions (exit `1` on failure) |
 | [`nudo doctor`](#nudo-doctor) | Health-check files: call-site solidification drift, analysis errors, uncovered functions |
 | [`nudo generate`](#nudo-generate) | Generate runtime validators from inferred types |
 | [`nudo watch`](#nudo-watch) | Watch a file or directory and re-run inference on changes |
@@ -196,6 +198,32 @@ nudo check src/broken.js
 [error] src/set.js:12:0 setDelay[ms]: 实参 ⊭ 前置  (nudo:constraint-violated)
     actual:   0  #exact
     expected: ms > 0
+```
+
+---
+
+### nudo types
+
+Type-as-computation view: show term + constraints from Abs algebra (not just extensional TypeValue shape).
+
+```bash
+nudo types <file> [--fn <name>] [--assume <pred...>] [--generalize]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--fn <name>` | Only analyze this function |
+| `--assume <pred...>` | Assume constraints, e.g. `x>0 y>=1` |
+| `--generalize` | Show polymorphic signatures via symbolic execution |
+
+---
+
+### nudo test
+
+Run `@nudo:case` directives as assertions. Cases with `=> expected` are checked with subtype semantics; failures exit `1`. Cases without an expected type are reported as `unchecked`.
+
+```bash
+nudo test <file>
 ```
 
 ---

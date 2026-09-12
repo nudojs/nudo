@@ -339,8 +339,8 @@ export function callFunction(
   const fn = env.fns.get(name);
   if (!fn) return unknown;
 
-  let local = emptyEnv();
-  local.fns = env.fns;
+  // 继承程序级 vars（含 @nudo:mock seed）；与 applyAbsFn 一致拷贝，避免写穿外层
+  let local: AstEnv = { vars: new Map(env.vars), fns: env.fns };
   // classes 随 env 传递
   const cls = (env as AstEnv & { classes?: Map<string, unknown> }).classes;
   if (cls) (local as AstEnv & { classes?: Map<string, unknown> }).classes = cls;

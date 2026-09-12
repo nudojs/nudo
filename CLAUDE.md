@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Nudo
 
-Nudo is a type inference engine for JavaScript powered by abstract interpretation. It executes code with symbolic type values (`T.number`, `T.string`, etc.) instead of concrete values, deriving types from runtime semantics without TypeScript annotations. Users annotate JS files with `@nudo:` directives in JSDoc comments.
+Nudo is a type inference engine for JavaScript powered by abstract interpretation. The **type system is Abs** (`shape × term × pred × conf`) — types are computable values with constraints that participate in algebra (`x>0` ⇒ `x+1>1`). **TypeValue is the evaluation IR** (environment bindings, dts/LSP/serialization), not a parallel type system; Abs ⇄ TypeValue goes through a lossy bridge.
+
+Users annotate JS with `@nudo:` directives. Source-level contracts use `@nudo:refine` + `*.nudo.js` templates (not `T.refine` in source).
 
 ## Development Commands
 
@@ -17,7 +19,7 @@ pnpm run lint         # Type-check all packages (tsc --noEmit -p tsconfig.lint.j
 pnpm run infer <file> # Run inference on a JS file
 ```
 
-Run a single test file: `pnpm vitest run packages/core/src/__tests__/type-value.test.ts`
+Run a single test file: `pnpm vitest run packages/core/src/algebra/__tests__/check-gold.test.ts`
 
 ## Monorepo Structure
 
@@ -30,24 +32,30 @@ core → parser → cli → service → lsp
 
 | Package | Purpose |
 |---|---|
-| `packages/core` | TypeValue discriminated union, `T` factory, ops, environment, refinements |
-| `packages/parser` | Babel-based parser, `@nudo:` directive extraction from JSDoc |
-| `packages/cli` | Evaluator (abstract interpreter), CLI (`nudo infer`, `nudo watch`) |
-| `packages/service` | Analyzer orchestration, dts-generator for IDE integrations |
-| `packages/lsp` | LSP server (diagnostics, completions, code lens, inlay hints) |
+| `packages/core` | **Type system**: algebra/Abs (term, pred, check, leq, ast-eval), TypeValue IR, `T` factory, ops residual, environment, refinements |
+| `packages/parser` | Babel-based parser; extracts function-scoped `@nudo:` directives from JSDoc |
+| `packages/cli` | TypeValue evaluator (abstract interpreter) + CLI (`infer`, `check`, `types`, `watch`, `generate`, `harvest`, `test`) |
+| `packages/service` | Analyzer orchestration, Abs program path for self-contained sources, dts-generator, harvest, infer-json |
+| `packages/lsp` | LSP server (check diagnostics, completions, code lens, inlay hints, agent tools) |
+| `packages/env` | ES / Web / Node API type definitions (`@nudojs/env`) |
+| `packages/harvester` | Harvest `@types` → env modules |
 | `packages/vite-plugin` | Vite plugin for build-time inference |
 | `packages/vscode` | VS Code extension (private, launches LSP server) |
 | `packages/website` | Docusaurus docs site (private) |
 
 ## Architecture
 
-**Type system core** (`core`): `TypeValue` is a discriminated union with kinds: `literal`, `primitive`, `refined`, `object`, `array`, `tuple`, `function`, `promise`, `instance`, `union`, `never`, `unknown`. The `T` factory provides constructors. `Environment` is an immutable scoped binding system. `Ops` dispatches binary/unary operations through refinements.
+**Type system core** (`core/src/algebra`): Abs = shape × term × pred × conf. Term is abstract value identity (lit/var/app); Pred is constraint relative to term; conf is exact/path/widened/partial/opaque. Primary entrypoints: `checkSource` (refinement gate), `evalProgramAbs` / `analyzeFn` (native Abs evaluation), `leqAbs` (structural assignability), `generalizeFromAst` (symbolic α). See `docs/design-kernel-merge.md`.
 
-**Parser** (`parser`): Uses `@babel/parser` with TypeScript+JSX plugins. Extracts `@nudo:` directives: `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:returns`.
+**TypeValue IR** (`core/src/type-value.ts`): discriminated union (`literal`/`primitive`/`refined`/`object`/`array`/`tuple`/`function`/`promise`/`instance`/`union`/`never`/`unknown`). Used by TypeValue evaluator, env bindings, dts, LSP hover extensional side. Residual ops live in `core/src/ops.ts`.
 
-**Evaluator** (`cli/src/evaluator.ts`): Walks Babel AST with a large `switch` on `node.type`. Uses signal types (`ReturnSignal`, `BranchSignal`, `ThrowSignal`) with Symbol keys for control flow. Supports loops with widening for convergence, try/catch, destructuring, async/await. `@nudo:pure` functions are memoized. Narrowing logic is in `cli/src/narrowing.ts`.
+**Parser** (`parser`): Uses `@babel/parser` with TypeScript+JSX plugins. Extracts function/file directives: `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, `@nudo:replace`. File-level `@nudo:import` and function-level `@nudo:refine` are parsed in **core** (`algebra/refine.ts`), not the parser package.
 
-**Service** (`service`): `analyzer.ts` orchestrates parse → extract directives → evaluate → collect diagnostics. `dts-generator.ts` converts TypeValue to TypeScript declaration strings.
+**Evaluator** (`cli/src/evaluator.ts`): TypeValue AST abstract interpreter. Arithmetic/compare/unary/spread route to Abs first via `abs-route.ts` / `eval-binary.ts`; residual Ops catch mixed/unknown cases. Control-flow signals (`ReturnSignal`, `BranchSignal`, `ThrowSignal`) use Symbol keys. Narrowing is in `cli/src/narrowing.ts`.
+
+**Service** (`service`): `analyzer.ts` orchestrates parse → directives → evaluate → diagnostics. Self-contained sources (no import/require/env) also run `evalProgramAbs` so `call@`/hover prefer lossless Abs. `dts-generator.ts` projects TypeValue to TypeScript declarations.
+
+**Check product**: `nudo check` is the CI gate — Pred implication on Abs, Nudo-native reports (`actual ⊭ expected`). Gold gates: recall=precision=1.0 and real-package zero-FP tests in `core/src/algebra/__tests__/`.
 
 ## Code Conventions
 
