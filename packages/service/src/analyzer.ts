@@ -2337,10 +2337,9 @@ function isSelfContainedSource(source: string, envNames: string[]): boolean {
   return !/\brequire\s*\(|\bimport\s*[{'"*]/.test(source);
 }
 
-/** Abs 模块图可处理：无 env/require；相对 import + 裸包（harvest）均可 */
+/** Abs 模块图可处理：无 env；相对 import + 裸包 + require 均可 */
 function absModulesOk(source: string, envNames: string[]): boolean {
   if (envNames.length > 0) return false;
-  if (/\brequire\s*\(/.test(source)) return false;
   return true;
 }
 

@@ -888,6 +888,15 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           ? `$optionalInvoke(${recv}, ${name}, [${args}])`
           : `$invoke(${recv}, ${name}, [${args}])`;
       }
+      // require("spec") → __nudoRequire("spec")
+      if (
+        callee.type === "Identifier" &&
+        callee.name === "require" &&
+        expr.arguments[0]?.type === "StringLiteral"
+      ) {
+        const spec = (expr.arguments[0] as { value: string }).value;
+        return `__nudoRequire(${JSON.stringify(spec)})`;
+      }
       // 标识符调用 → $callNamed（可采集 call@）
       if (callee.type === "Identifier" && callee.name !== "undefined") {
         const args = expr.arguments

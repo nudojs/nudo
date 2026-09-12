@@ -7,6 +7,7 @@ import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue } from "../abs.ts";
 import { objOf } from "../objects.ts";
 import { $get, $set } from "./runtime.ts";
+import { $call } from "./call.ts";
 
 export type BClassSpec = {
   name: string;
@@ -129,16 +130,21 @@ export function $super(thisVal: Abs, childName: string, args: Abs[]): Abs {
   return after ?? thisVal;
 }
 
-/** 实例方法调用：沿继承链；类 Abs 上回落 staticMethods */
+/** 实例方法调用：沿继承链；类 Abs 上回落 staticMethods；obj 上回落属性函数 */
 export function $invoke(thisVal: Abs, method: string, args: Abs[]): Abs {
   const brandName = thisVal.shape.k === "brand" ? thisVal.shape.name : undefined;
-  if (!brandName) return unknown;
-  const m = findMethod(brandName, method);
-  if (m) return m(thisVal, ...args);
-  // 类构造值上的静态方法
-  const spec = classRegistry.get(brandName);
-  const sm = spec?.staticMethods?.[method];
-  if (sm) return sm(...args);
+  if (brandName) {
+    const m = findMethod(brandName, method);
+    if (m) return m(thisVal, ...args);
+    const spec = classRegistry.get(brandName);
+    const sm = spec?.staticMethods?.[method];
+    if (sm) return sm(...args);
+  }
+  // 属性上的可调用值（require namespace / 对象方法）
+  const prop = $get(thisVal, method);
+  if (prop && typeof prop === "object" && "shape" in (prop as object)) {
+    return $call(prop as Abs, args);
+  }
   return unknown;
 }
 

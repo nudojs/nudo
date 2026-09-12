@@ -96,10 +96,9 @@ export function collectBPathReplacements(source: string): {
   return { targets, values, asTargets, asValues };
 }
 
-/** 可走 transpile+exec：无 require/@nudo:env；replace/as 已支持 */
+/** 可走 transpile+exec：无 @nudo:env；require 经模块图/harvest 注入 */
 export function isBPathCapable(source: string, envNames: string[] = []): boolean {
   if (envNames.length > 0) return false;
-  if (/\brequire\s*\(/.test(source)) return false;
   // 顶层 this. 仍不支持（方法内 this 由 transpile 处理）
   if (/(^|[^.\w$])this\s*\./.test(source) && !/\bclass\s+/.test(source)) return false;
   return true;

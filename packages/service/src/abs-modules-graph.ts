@@ -63,11 +63,41 @@ function importSpecs(source: string): string[] {
           out.push(src.value);
         }
       }
+      // require("...") / require('...')
+      collectRequireSpecs(stmt as never, out);
     }
     return out;
   } catch {
     return [];
   }
+}
+
+function collectRequireSpecs(node: unknown, out: string[]): void {
+  const visit = (n: unknown) => {
+    if (!n || typeof n !== "object") return;
+    const o = n as {
+      type?: string;
+      callee?: { type?: string; name?: string };
+      arguments?: Array<{ type?: string; value?: unknown }>;
+      [k: string]: unknown;
+    };
+    if (
+      o.type === "CallExpression" &&
+      o.callee?.type === "Identifier" &&
+      o.callee.name === "require" &&
+      o.arguments?.[0]?.type === "StringLiteral"
+    ) {
+      const spec = o.arguments[0].value;
+      if (typeof spec === "string") out.push(spec);
+    }
+    for (const key of Object.keys(o)) {
+      if (key === "loc" || key === "start" || key === "end") continue;
+      const v = o[key];
+      if (Array.isArray(v)) v.forEach(visit);
+      else if (v && typeof v === "object") visit(v);
+    }
+  };
+  visit(node);
 }
 
 /** 把当前文件的全部 import（相对 + 裸包）编成 modules 表 */

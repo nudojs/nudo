@@ -48,8 +48,8 @@ export function restLen(a, ...rest) {
 });
 
 describe("B-primary capable files", () => {
-  it("isBPathCapable still true for simple functions", () => {
+  it("isBPathCapable allows require now", () => {
     expect(isBPathCapable("function f(x) { return x + 1; }")).toBe(true);
-    expect(isBPathCapable("const x = require('y');")).toBe(false);
+    expect(isBPathCapable("const x = require('y');")).toBe(true);
   });
 });

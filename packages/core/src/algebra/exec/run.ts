@@ -126,6 +126,23 @@ function bindImport(
   return (...args: Abs[]) => $call(absFn, args);
 }
 
+/** CJS require：modules[spec] → 可 $get 的 namespace Abs */
+function requireFromModules(
+  modules: RunTranspiledOptions["modules"],
+  spec: string,
+): unknown {
+  const mod = modules?.[spec] as AbsModuleExports | undefined;
+  if (!mod) return unknown;
+  if (mod.named) {
+    const { $obj } = rtAll as { $obj: (s: Record<string, Abs>) => Abs };
+    const slots: Record<string, Abs> = {};
+    for (const [k, v] of Object.entries(mod.named)) slots[k] = v;
+    if (mod.default) slots["default"] = mod.default;
+    return $obj(slots);
+  }
+  return mod;
+}
+
 /**
  * 执行一段 B 路径程序，返回顶层 `export function` / `export const`。
  */
@@ -165,13 +182,16 @@ export function runTranspiled(
   js = js.replace(/^export const /gm, "const ");
 
   const names = [...new Set([...exportFns, ...exportConsts])];
-  const argNames = [...runtimeArgNames(), "__nudoModules", "__nudoBindImport", "__nudoReplaces"];
+  const argNames = [...runtimeArgNames(), "__nudoModules", "__nudoBindImport", "__nudoReplaces", "__nudoRequire"];
   const args = argNames.map((n) => {
     if (n === "__nudoModules") return modules;
     if (n === "__nudoBindImport") {
       return (spec: string, name: string) => bindImport(modules, spec, name);
     }
     if (n === "__nudoReplaces") return allInject;
+    if (n === "__nudoRequire") {
+      return (spec: string) => requireFromModules(modules, spec);
+    }
     return rtAll[n];
   });
 

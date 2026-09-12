@@ -64,11 +64,11 @@ export function run(n) { return triple(n); }
     expect(c!.intension?.abs ?? c!.intension?.display).toBeTruthy();
   });
 
-  it("isBPathCapable allows class and async; rejects require", () => {
+  it("isBPathCapable allows class, async, and require; rejects env", () => {
     expect(isBPathCapable("function f() { return 1; }")).toBe(true);
     expect(isBPathCapable("class A { constructor() { this.x = 1; } }")).toBe(true);
     expect(isBPathCapable("async function f() { return 1; }")).toBe(true);
-    expect(isBPathCapable("const x = require('fs');")).toBe(false);
+    expect(isBPathCapable("const x = require('lodash');")).toBe(true);
   });
 });
 
