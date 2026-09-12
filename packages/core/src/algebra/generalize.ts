@@ -42,8 +42,9 @@ export type PolyFn = {
 function extractFn(
   source: string,
   fnName: string,
+  fileAst?: ReturnType<typeof babelParse>,
 ): { params: string[]; body: Node; env: AstEnv } | undefined {
-  const file = babelParse(source);
+  const file = fileAst ?? babelParse(source);
   const env = emptyEnv();
 
   for (const stmt of file.program.body) {
@@ -100,9 +101,11 @@ export function generalizeFromAst(
     label?: string;
     /** 传入则把 @nudo:refine 挂到入口 param Abs */
     refine?: RefineResolveOpts;
+    /** 预解析 AST，避免 check 批量场景重复 parse */
+    file?: ReturnType<typeof babelParse>;
   } = {},
 ): PolyFn | undefined {
-  const extracted = extractFn(source, fnName);
+  const extracted = extractFn(source, fnName, opts.file);
   if (!extracted) return undefined;
   const { params, body, env } = extracted;
   const budget = opts.budget ?? defaultLeakBudget;

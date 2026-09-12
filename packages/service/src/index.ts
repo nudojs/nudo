@@ -39,6 +39,7 @@ export {
 } from "./infer-json.ts";
 
 export { isNudoTargetPath } from "./target-path.ts";
+export { defaultLoadModule, type LoadModule } from "./load-module.ts";
 export {
   collectStaticImports,
   analyzeExportsFromSource,

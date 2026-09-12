@@ -85,10 +85,10 @@ export type CheckOptions = {
   fromFile?: string;
 };
 
-function listTopFunctions(source: string): string[] {
-  const file = parse(source);
+function listTopFunctions(source: string, file?: ReturnType<typeof parse>): string[] {
+  const f = file ?? parse(source);
   const names: string[] = [];
-  for (const stmt of file.program.body) {
+  for (const stmt of f.program.body) {
     let decl: Node = stmt;
     if (stmt.type === "ExportNamedDeclaration" && stmt.declaration) {
       decl = stmt.declaration;
@@ -127,14 +127,16 @@ export function checkSource(
 ): CheckReport {
   const issues: CheckIssue[] = [];
   const signatures: NudoSig[] = [];
-  const names = listTopFunctions(source);
+  // 单次 parse：listTopFunctions / generalize / analyzeFn / scan 共用
+  const file = parse(source);
+  const names = listTopFunctions(source, file);
 
   // 递归截断：与 TypeValue 的 nudo:recursion-truncated 对齐
   const truncated = new Set<string>();
   resetAbsCallBudget();
   setAbsTruncationCollector((label) => truncated.add(label));
   try {
-    return checkSourceInner(filePath, source, phi, opts, issues, signatures, names, truncated);
+    return checkSourceInner(filePath, source, file, phi, opts, issues, signatures, names, truncated);
   } finally {
     setAbsTruncationCollector(null);
   }
@@ -143,6 +145,7 @@ export function checkSource(
 function checkSourceInner(
   filePath: string,
   source: string,
+  file: ReturnType<typeof parse>,
   phi: Phi,
   opts: CheckOptions,
   issues: CheckIssue[],
@@ -152,6 +155,7 @@ function checkSourceInner(
 ): CheckReport {
   for (const name of names) {
     const g = generalizeFromAst(name, source, {
+      file,
       refine: {
         loadModule: opts.loadModule,
         fromFile: opts.fromFile ?? filePath,
@@ -192,7 +196,7 @@ function checkSourceInner(
     // 入口用契约 Abs（不是 unknown），让 opaque 判定与 body 求值一致
     const entryArgs = g.typeParams.map((t) => t.value);
     try {
-      const r = analyzeFn(source, name, entryArgs, phi);
+      const r = analyzeFn(source, name, entryArgs, phi, undefined, file);
       if (r.conf === "opaque" && !truncated.has(name)) {
         issues.push({
           severity: "info",
@@ -225,6 +229,7 @@ function checkSourceInner(
   const callIssues = scanLiteralCalls(source, names, phi, {
     loadModule: opts.loadModule,
     fromFile: filePath,
+    file,
   });
   issues.push(...callIssues);
 
@@ -237,7 +242,7 @@ function checkSourceInner(
   );
 
   // 结构可赋值：赋值语句 prev ⊇ next（Abs leq）
-  issues.push(...scanStructuralAssign(source));
+  issues.push(...scanStructuralAssign(source, file));
 
   const errors = issues.filter((i) => i.severity === "error").length;
   const warnings = issues.filter((i) => i.severity === "warning").length;
@@ -389,12 +394,12 @@ function checkReturnConstraint(
  * 结构可赋值：`let a = {x:1}; a = {y:2}` 应报 missing slot x。
  * 顺序 Abs 求值 + leqAbs；仅检查有 prev 绑定的标识符赋值。
  */
-function scanStructuralAssign(source: string): CheckIssue[] {
+function scanStructuralAssign(source: string, file?: ReturnType<typeof parse>): CheckIssue[] {
   const out: CheckIssue[] = [];
   const records: AbsAssignRecord[] = [];
   setAbsAssignCollector((r) => records.push(r));
   try {
-    evalProgramAbs(source);
+    evalProgramAbs(source, file ? { file } : {});
   } catch {
     return out;
   } finally {
@@ -649,10 +654,10 @@ function evalArgAbs(
 }
 
 /** 整文件顺序求值后的绑定表（标识符实参用） */
-function snapshotVarAbs(source: string): Map<string, Abs> {
+function snapshotVarAbs(source: string, file?: ReturnType<typeof parse>): Map<string, Abs> {
   const map = new Map<string, Abs>();
   try {
-    const { env } = evalProgramAbs(source);
+    const { env } = evalProgramAbs(source, file ? { file } : {});
     for (const [k, v] of env.vars) map.set(k, v);
   } catch {
     // ignore
@@ -1043,13 +1048,17 @@ function scanLiteralCalls(
   source: string,
   knownFns: string[],
   phi: Phi,
-  opts?: { loadModule?: (spec: string, fromFile: string) => string | undefined; fromFile?: string },
+  opts?: {
+    loadModule?: (spec: string, fromFile: string) => string | undefined;
+    fromFile?: string;
+    file?: ReturnType<typeof parse>;
+  },
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
-  const file = parse(source);
+  const file = opts?.file ?? parse(source);
   const resolve = collectCallResolvers(source, knownFns, opts);
   const forwards = collectForwarders(source, knownFns, resolve);
-  const varAbs = snapshotVarAbs(source);
+  const varAbs = snapshotVarAbs(source, file);
 
   const flattenPred = (p: Pred): Pred[] =>
     p.op === "and" ? p.args.flatMap(flattenPred) : p.op === "true" ? [] : [p];

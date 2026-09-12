@@ -13,6 +13,7 @@ import type { Abs, Shape } from "./abs.ts";
 import { litValue } from "./abs.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { pTrue, implies } from "./pred.ts";
+import { termEquals } from "./term.ts";
 import type { AstEnv } from "./ast-eval.ts";
 import { getClassChain } from "./language.ts";
 
@@ -136,7 +137,8 @@ function sameTermSide(
   a: { a: { op: string }; b: { op: string } },
   b: { a: { op: string }; b: { op: string } },
 ): boolean {
-  return a.a.op === b.a.op && JSON.stringify(a.a) === JSON.stringify(b.a);
+  // termEquals 走结构比较，避免 sum×sum 场景 JSON.stringify 爆炸
+  return a.a.op === b.a.op && termEquals(a.a as never, b.a as never);
 }
 
 function litGE(

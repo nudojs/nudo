@@ -102,6 +102,8 @@ export function withVar(env: AstEnv, name: string, value: Abs): AstEnv {
 export type EvalOptions = {
   phi?: Phi;
   budget?: LeakBudget;
+  /** 预解析 AST（check 等批量场景避免重复 parse） */
+  file?: File;
 };
 
 // --- 调用预算（与 TypeValue evaluator 对齐）---
@@ -304,7 +306,7 @@ export function evalSource(
   opts: EvalOptions = {},
 ): EvalResult {
   resetAbsCallBudget();
-  const file = parseSource(source);
+  const file = opts.file ?? parseSource(source);
   const env = emptyEnv();
   let phi = opts.phi ?? pTrue;
 
@@ -1540,8 +1542,9 @@ export function analyzeFn(
   args: Abs[],
   phi: Phi = pTrue,
   budget?: LeakBudget,
+  file?: File,
 ): Abs {
-  return evalSource(source, { fn: fnName, args }, { phi, budget }).value;
+  return evalSource(source, { fn: fnName, args }, { phi, budget, file }).value;
 }
 
 /**
@@ -1558,7 +1561,7 @@ export function evalProgramAbs(
   } = {},
 ): { env: AstEnv; last: Abs; phi: Phi } {
   resetAbsCallBudget();
-  const file = parseSource(source);
+  const file = opts.file ?? parseSource(source);
   const env = emptyEnv();
   if (opts.seedVars) {
     for (const [k, v] of Object.entries(opts.seedVars)) {

@@ -421,27 +421,7 @@ async function runCheck(file: string, opts: { json?: boolean } = {}): Promise<vo
 
   // 代数门禁：约束蕴含（类型即计算）
   const { checkSource, formatCheckReport, serializeCheckJson, pTrue } = await import("@nudojs/core");
-  const loadModule = (spec: string, fromFile: string): string | undefined => {
-    if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
-    try {
-      const base = dirname(resolve(fromFile));
-      let p = resolve(base, spec);
-      const tryPaths = [
-        p,
-        `${p}.js`,
-        `${p}.mjs`,
-        join(p, "index.js"),
-        join(p, "index.mjs"),
-      ];
-      for (const cand of tryPaths) {
-        if (!existsSync(cand) || statSync(cand).isDirectory()) continue;
-        return readFileSync(cand, "utf-8");
-      }
-      return undefined;
-    } catch {
-      return undefined;
-    }
-  };
+  const { defaultLoadModule: loadModule } = await import("@nudojs/service");
   const algebraReport = checkSource(filePath, source, pTrue, {
     loadModule,
     fromFile: filePath,
@@ -512,21 +492,7 @@ program
         return;
       }
 
-      const loadModule = (spec: string, fromFile: string): string | undefined => {
-        if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
-        try {
-          const base = dirname(resolvePath(fromFile));
-          const p = resolvePath(base, spec);
-          for (const cand of [p, `${p}.js`, `${p}.mjs`]) {
-            if (existsSync(cand) && !statSync(cand).isDirectory()) {
-              return readFileSync(cand, "utf-8");
-            }
-          }
-          return undefined;
-        } catch {
-          return undefined;
-        }
-      };
+      const { defaultLoadModule: loadModule } = await import("@nudojs/service");
 
       console.log(`nudo types  ${basename(filePath)}`);
       if (assumeIds.size > 0) {

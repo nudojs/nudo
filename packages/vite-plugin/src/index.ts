@@ -1,6 +1,4 @@
-import { existsSync, statSync, readFileSync } from "node:fs";
-import { dirname, resolve, join } from "node:path";
-import { analyzeFileAsync, type AnalysisResult, type Diagnostic } from "@nudojs/service";
+import { analyzeFileAsync, defaultLoadModule as loadModule, type AnalysisResult, type Diagnostic } from "@nudojs/service";
 import { checkSource, pTrue } from "@nudojs/core";
 
 export type NudoPluginOptions = {
@@ -12,23 +10,6 @@ export type NudoPluginOptions = {
 /** 与 LSP hasNudoDirectives 对齐：含 refine/import，避免漏掉契约文件 */
 const NUDO_DIRECTIVE_RE =
   /@nudo:(case|mock|pure|skip|sample|refine|import|env|mock-module|as|replace)\b/;
-
-/** 与 LSP lspLoadModule 同扩展名表 */
-function loadModule(spec: string, fromFile: string): string | undefined {
-  if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
-  try {
-    const base = dirname(resolve(fromFile));
-    const p = resolve(base, spec);
-    for (const cand of [p, `${p}.js`, `${p}.mjs`, `${p}.ts`, join(p, "index.js"), join(p, "index.mjs")]) {
-      if (existsSync(cand) && !statSync(cand).isDirectory()) {
-        return readFileSync(cand, "utf-8");
-      }
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 /** Abs check issues → service Diagnostic（与 evaluator 诊断同管道进 vite warn/error） */
 function checkIssuesToDiagnostics(id: string, code: string): Diagnostic[] {

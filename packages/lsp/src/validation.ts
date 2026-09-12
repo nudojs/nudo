@@ -11,6 +11,7 @@ import {
   analyzeFileAsync,
   buildModuleGraph,
   computeDirtySet,
+  defaultLoadModule,
   type AnalysisResult,
   type Diagnostic as JsDiagnostic,
   type DiagnosticSeverity as JsDiagSeverity,
@@ -143,21 +144,9 @@ export function toLspDiagnostic(d: JsDiagnostic, uri: string): LspDiagnostic {
   return diag;
 }
 
-/** CLI 与 LSP 共用的相对 require 解析 */
+/** CLI 与 LSP 共用的相对 require 解析（service defaultLoadModule） */
 export function lspLoadModule(spec: string, fromFile: string): string | undefined {
-  if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
-  try {
-    const base = dirname(resolvePath(fromFile));
-    const p = resolvePath(base, spec);
-    for (const cand of [p, `${p}.js`, `${p}.mjs`, join(p, "index.js"), join(p, "index.mjs")]) {
-      if (existsSync(cand) && !statSync(cand).isDirectory()) {
-        return readFileSync(cand, "utf-8");
-      }
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
+  return defaultLoadModule(spec, fromFile);
 }
 
 /**

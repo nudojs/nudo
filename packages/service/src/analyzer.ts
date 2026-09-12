@@ -1708,11 +1708,18 @@ export function getHoverAtPosition(
 ): HoverInfo | null {
   const tv = getTypeAtPosition(filePath, source, line, column, activeCases);
   const info: HoverInfo | null = tv ? { typeText: typeValueToString(tv) } : null;
+  // 单次 parse 供 generalize / evalProgramAbs / nodeTypes / ident 复用
+  let file: ReturnType<typeof parse> | undefined;
+  try {
+    file = parse(source);
+  } catch {
+    file = undefined;
+  }
 
-  const fnName = findFunctionNameAtPosition(source, line, column);
+  const fnName = findFunctionNameAtPosition(source, line, column, file);
   if (fnName) {
     try {
-      const g = generalizeFromAst(fnName, source);
+      const g = generalizeFromAst(fnName, source, file ? { file } : {});
       if (g) {
         if (info) {
           info.intension = g.display;
@@ -1733,11 +1740,11 @@ export function getHoverAtPosition(
   }
 
   // 标识符绑定优先（比粗粒度节点表更准）
-  const ident = findIdentNameAtPosition(source, line, column);
+  const ident = findIdentNameAtPosition(source, line, column, file);
   if (ident && !fnName) {
     try {
       if (!/\brequire\s*\(|\bimport\s*[{'"*]/.test(source)) {
-        const { env } = evalProgramAbs(source);
+        const { env } = evalProgramAbs(source, file ? { file } : {});
         const bound = env.vars.get(ident);
         if (bound) {
           const absLine = formatAbs(bound);
@@ -1759,9 +1766,12 @@ export function getHoverAtPosition(
   try {
     if (!/\brequire\s*\(|\bimport\s*[{'"*]/.test(source)) {
       const seeds = mockDirectivesToAbsSeeds(
-        extractDirectives(parse(source)),
+        extractDirectives(file ?? parse(source)),
       );
-      const nodeTypes = collectAbsNodeTypes(source, seeds);
+      const nodeTypes = collectAbsNodeTypes(source, {
+        ...seeds,
+        ...(file ? { file } : {}),
+      });
       const absAt = findAbsAtPosition(nodeTypes, line, column);
       if (absAt) {
         const absLine = formatAbs(absAt);
@@ -1786,9 +1796,10 @@ function findIdentNameAtPosition(
   source: string,
   line: number,
   column: number,
+  fileAst?: ReturnType<typeof parse>,
 ): string | undefined {
   try {
-    const ast = parse(source);
+    const ast = fileAst ?? parse(source);
     let found: string | undefined;
     traverse(ast, {
       Identifier(path) {
@@ -1810,9 +1821,10 @@ function findFunctionNameAtPosition(
   source: string,
   line: number,
   column: number,
+  fileAst?: ReturnType<typeof parse>,
 ): string | undefined {
   try {
-    const ast = parse(source);
+    const ast = fileAst ?? parse(source);
     let found: string | undefined;
     traverse(ast, {
       Identifier(path) {
