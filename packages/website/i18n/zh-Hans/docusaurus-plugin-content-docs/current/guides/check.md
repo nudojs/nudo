@@ -106,4 +106,10 @@ LSP **优先发布 `nudo-check` 诊断**（带 `actual` / `expected` 的 Abs 违
 
 Agent 通过 **`nudo.check`**（CheckJson v1）使用同一门禁——见 [Agent API](../api/agent.md#nudocheck)。
 
+## Service Abs 路径边界
+
+`nudo check`（及 `checkSource`）始终在 Abs 上分析，含跨文件 require/import 转发。
+
+**service 求值路径**（`call@` 合成、hover 内涵、entry 重求值）仅对**自包含**源码优先 Abs：无 `import`/`require`、无 `@nudo:env`。`@nudo:mock` **不会**禁用 Abs——mock 会编译为 Abs seed。含 import 的文件在这些视图上回落 TypeValue 求值器；契约违例仍由 `nudo check` 捕获。
+
 另见 monorepo `docs/nudo-check.md` 与 `docs/ci-nudo-check.md`。
