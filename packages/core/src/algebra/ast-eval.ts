@@ -1,6 +1,6 @@
 /**
  * Babel AST 抽象求值：把「类型即计算」接到真实 JS 源码。
- * Phase A/B 边界：支持表达式、函数声明/箭头、return、if、const/let、块作用域。
+ * 支持表达式、函数声明/箭头、return、if、const/let、块作用域、类、循环。
  */
 
 import { parseSource as parse } from "./parse-source.ts";
@@ -97,16 +97,6 @@ export function withVar(env: AstEnv, name: string, value: Abs): AstEnv {
   const vars = new Map(env.vars);
   vars.set(name, value);
   return { vars, fns: env.fns, classes: env.classes };
-}
-
-export function withFns(
-  env: AstEnv,
-  name: string,
-  fn: { params: string[]; body: Node; async?: boolean },
-): AstEnv {
-  const fns = new Map(env.fns);
-  fns.set(name, fn);
-  return { vars: env.vars, fns, classes: env.classes };
 }
 
 export type EvalOptions = {

@@ -47,6 +47,7 @@ export {
 } from "./static-imports.ts";
 export {
   harvestPackage,
+  collectDtsFromEntry,
   formatHarvestSummary,
   lookupHarvested,
   resolvePackageRoot,

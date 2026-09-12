@@ -4,7 +4,7 @@
  */
 
 import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
-import { join, resolve, basename } from "node:path";
+import { join, resolve, dirname, basename } from "node:path";
 import { harvestDts, type HarvestedEnv } from "@nudojs/harvester";
 import { typeValueToString, type TypeValue } from "@nudojs/core";
 
@@ -111,6 +111,49 @@ export type PackageHarvest = {
   env: HarvestedEnv;
 };
 
+/**
+ * 从入口 .d.ts 沿 reference path / 相对 import 做 BFS 收集。
+ * 适合 @types 包（三斜线引用图）；比整树 walk 更贴声明入口。
+ */
+export function collectDtsFromEntry(entry: string, maxFiles = 200): string[] {
+  const files: string[] = [];
+  const seen = new Set<string>();
+  const queue = [entry];
+  const REFERENCE_PATH_REGEX = /<reference\s+path=["']([^"']+)["']\s*\/>/g;
+  const RELATIVE_FROM_REGEX = /\bfrom\s+["'](\.[^"']+)["']/g;
+
+  while (queue.length > 0 && files.length < maxFiles) {
+    const current = queue.shift()!;
+    if (seen.has(current) || !existsSync(current)) continue;
+    seen.add(current);
+    if (!current.endsWith(".d.ts")) continue;
+    files.push(current);
+
+    let text: string;
+    try {
+      text = readFileSync(current, "utf-8");
+    } catch {
+      continue;
+    }
+
+    const dir = dirname(current);
+    for (const match of text.matchAll(REFERENCE_PATH_REGEX)) {
+      queue.push(resolve(dir, match[1]!));
+    }
+    for (const match of text.matchAll(RELATIVE_FROM_REGEX)) {
+      const base = resolve(dir, match[1]!);
+      for (const candidate of [`${base}.d.ts`, join(base, "index.d.ts")]) {
+        if (existsSync(candidate)) {
+          queue.push(candidate);
+          break;
+        }
+      }
+    }
+  }
+
+  return files;
+}
+
 /** harvest 一个 npm 包（或 @types 包） */
 export function harvestPackage(
   pkg: string,
@@ -119,11 +162,16 @@ export function harvestPackage(
 ): PackageHarvest | { error: string } {
   const root = resolvePackageRoot(pkg, fromDir);
   if (!root) return { error: `package not found: ${pkg}` };
-  const entry = entryDtsFromPackageJson(root);
-  const collected = collectDtsFiles(root, maxFiles);
-  const dtsFiles = entry && !collected.includes(entry)
-    ? [entry, ...collected.filter((f) => f !== entry)].slice(0, maxFiles)
-    : collected;
+  const entry = entryDtsFromPackageJson(root) ?? join(root, "index.d.ts");
+  // 入口 BFS 优先（@types 引用图）；退化为整树 walk
+  let dtsFiles = existsSync(entry) ? collectDtsFromEntry(entry, maxFiles) : [];
+  if (dtsFiles.length === 0) {
+    const collected = collectDtsFiles(root, maxFiles);
+    dtsFiles =
+      entry && existsSync(entry) && !collected.includes(entry)
+        ? [entry, ...collected.filter((f) => f !== entry)].slice(0, maxFiles)
+        : collected;
+  }
   if (dtsFiles.length === 0) {
     return { error: `no .d.ts under ${root}` };
   }

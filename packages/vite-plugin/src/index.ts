@@ -1,6 +1,6 @@
 import { existsSync, statSync, readFileSync } from "node:fs";
 import { dirname, resolve, join } from "node:path";
-import { analyzeFile, type AnalysisResult, type Diagnostic } from "@nudojs/service";
+import { analyzeFileAsync, type AnalysisResult, type Diagnostic } from "@nudojs/service";
 import { checkSource, pTrue } from "@nudojs/core";
 
 export type NudoPluginOptions = {
@@ -13,12 +13,13 @@ export type NudoPluginOptions = {
 const NUDO_DIRECTIVE_RE =
   /@nudo:(case|mock|pure|skip|sample|refine|import|env|mock-module|as|replace)\b/;
 
+/** 与 LSP lspLoadModule 同扩展名表 */
 function loadModule(spec: string, fromFile: string): string | undefined {
   if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
   try {
     const base = dirname(resolve(fromFile));
     const p = resolve(base, spec);
-    for (const cand of [p, `${p}.js`, `${p}.mjs`, join(p, "index.js"), join(p, "index.mjs")]) {
+    for (const cand of [p, `${p}.js`, `${p}.mjs`, `${p}.ts`, join(p, "index.js"), join(p, "index.mjs")]) {
       if (existsSync(cand) && !statSync(cand).isDirectory()) {
         return readFileSync(cand, "utf-8");
       }
@@ -58,8 +59,8 @@ function checkIssuesToDiagnostics(id: string, code: string): Diagnostic[] {
   }
 }
 
-const DEFAULT_INCLUDE = ["**/*.js"];
-const DEFAULT_EXCLUDE = ["**/node_modules/**"];
+const DEFAULT_INCLUDE = ["**/*.js", "**/*.mjs", "**/*.ts", "**/*.mts"];
+const DEFAULT_EXCLUDE = ["**/node_modules/**", "**/*.d.ts"];
 
 type Matcher = (id: string) => boolean;
 
@@ -133,13 +134,14 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): any {
       analysisCache.clear();
     },
 
-    transform(code: string, id: string) {
+    async transform(code: string, id: string) {
       if (excludeMatch(id)) return null;
       if (!includeMatch(id)) return null;
       if (!NUDO_DIRECTIVE_RE.test(code)) return null;
 
       try {
-        const result = analyzeFile(id, code);
+        // async 以便 path 型 @nudo:env 预加载（与 LSP analyzeFileAsync 对齐）
+        const result = await analyzeFileAsync(id, code);
         const checkDiags = checkIssuesToDiagnostics(id, code);
         const merged = { ...result, diagnostics: [...result.diagnostics, ...checkDiags] };
         analysisCache.set(id, merged);

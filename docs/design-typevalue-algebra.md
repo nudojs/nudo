@@ -644,7 +644,7 @@ negate(number)    term=(x*-1)      pred: (x*-1)<0      #path
 
 # nudo types sample.js --generalize
 # 无契约参数 = any；+ 按真实 JS 取并集 number|string
-# 有 assumes/requires 才走数值路径（number + pred）
+# 有 assumes/refine 才走数值路径（number + pred）
 add:    <A1, A2>(a: A1, b: A2) => number | string = (A1 + A2)
 scale:  <A1>(x: A1) => number | string = (A1 + 1)
 twice:  <A1>(x: A1) => number | string = ((A1 + 1) + 1)
