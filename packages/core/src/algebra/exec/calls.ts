@@ -121,6 +121,30 @@ export function notePrimMemberMissing(
 }
 
 /**
+ * unknown 接收者上的成员访问 → unknown-recv（与 TypeValue 口径对齐：
+ * object/instance/refined/promise 静默；其余记一条）。
+ */
+export function noteUnknownMemberMissing(
+  recv: Abs | undefined,
+  name: string,
+  kind: "method" | "property",
+  loc?: [number, number],
+): boolean {
+  const k = recv?.shape?.k;
+  if (k !== "unknown") return false;
+  const origin = getAbsOrigin(recv);
+  recordMemberDiag({
+    kind,
+    name,
+    receiver: "unknown",
+    line: loc?.[0],
+    column: loc?.[1],
+    ...(origin ? { origin: { line: origin.line, column: origin.column } } : {}),
+  });
+  return true;
+}
+
+/**
  * 按名调用并记录。
  * loc: [line, column]（1-based line，0-based column，与 Babel 一致）
  * argLocs: 与 args 对齐的实参字面量源位置（provenance；无 loc 用 null）

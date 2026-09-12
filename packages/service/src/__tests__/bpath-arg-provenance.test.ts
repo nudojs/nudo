@@ -71,4 +71,34 @@ const boom = f();
     expect(builtins.some((d) => d.message.includes("WeakRef"))).toBe(true);
     expect(globals.filter((d) => d.message.includes("WeakRef"))).toHaveLength(0);
   });
+
+  it("B reports unknown-recv for method on unknown param (no TypeValue double)", () => {
+    const src = `function lonely(u) {
+  return u.toUpperCase();
+}
+`;
+    const r = analyze(src);
+    const unknownRecv = r.diagnostics.filter(
+      (d) => d.code === "nudo:unknown-recv" && d.message.includes("toUpperCase"),
+    );
+    expect(unknownRecv.length).toBe(1);
+    expect(unknownRecv[0]!.severity).toBe("warning");
+    // B 已报则不应再有 no-method 同名
+    expect(
+      r.diagnostics.filter((d) => d.code === "nudo:no-method" && d.message.includes("toUpperCase")),
+    ).toHaveLength(0);
+  });
+
+  it("B reports unknown-recv for property on unknown", () => {
+    const src = `function lonely(u) {
+  return u.foo;
+}
+`;
+    const r = analyze(src);
+    const diags = r.diagnostics.filter(
+      (d) => (d.code === "nudo:unknown-recv" || d.code === "nudo:no-method") && d.message.includes("foo"),
+    );
+    expect(diags.length).toBeGreaterThanOrEqual(1);
+    expect(diags.some((d) => d.code === "nudo:unknown-recv")).toBe(true);
+  });
 });

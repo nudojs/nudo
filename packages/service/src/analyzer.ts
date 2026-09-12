@@ -1154,6 +1154,20 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   const bMemberDiagNames = new Set<string>();
   const pushBMemberDiag = (d: { kind: string; name: string; receiver: string; line?: number; column?: number; origin?: { line: number; column: number } }, fallbackLine: number) => {
     bMemberDiagNames.add(d.name);
+    // unknown 接收者 → unknown-recv（与 TypeValue 口径一致，warning）
+    if (d.receiver === "unknown") {
+      diagnostics.push({
+        range: {
+          start: { line: d.line ?? fallbackLine, column: d.column ?? 0 },
+          end: { line: d.line ?? fallbackLine, column: (d.column ?? 0) + d.name.length },
+        },
+        severity: "warning",
+        message: `Cannot resolve '${d.name}' on unknown value`,
+        code: "nudo:unknown-recv",
+        ...(d.origin ? { origin: d.origin } : {}),
+      });
+      return;
+    }
     diagnostics.push({
       range: {
         start: { line: d.line ?? fallbackLine, column: d.column ?? 0 },

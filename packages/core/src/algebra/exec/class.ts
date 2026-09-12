@@ -9,7 +9,7 @@ import { objOf } from "../objects.ts";
 import { $get, $set } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl } from "../abs-fn.ts";
-import { notePrimMemberMissing } from "./calls.ts";
+import { notePrimMemberMissing, noteUnknownMemberMissing } from "./calls.ts";
 
 export type BClassSpec = {
   name: string;
@@ -151,16 +151,17 @@ export function $invoke(
     const sm = spec?.staticMethods?.[method];
     if (sm) return sm(...args);
   }
-  // 属性上的可调用值（require namespace / 对象方法）
-  const prop = $get(thisVal, method);
+  // 属性上的可调用值（require namespace / 对象方法）；method 诊断由下方统一报
+  const prop = $get(thisVal, method, { silent: true });
   const impl = prop && typeof prop === "object" && "shape" in (prop as object)
     ? getFnImpl(prop as Abs)
     : undefined;
   if (impl) {
     return $call(prop as Abs, args);
   }
-  // prim 接收者上的未知方法 → no-method
-  notePrimMemberMissing(thisVal, method, "method", loc);
+  // prim 接收者上的未知方法 → no-method；unknown → unknown-recv
+  if (notePrimMemberMissing(thisVal, method, "method", loc)) return unknown;
+  noteUnknownMemberMissing(thisVal, method, "method", loc);
   return unknown;
 }
 

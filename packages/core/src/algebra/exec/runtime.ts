@@ -11,6 +11,7 @@ import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape } from "../ob
 import { leqAbs } from "../leq.ts";
 import type { Phi } from "../pred.ts";
 import { pTrue } from "../pred.ts";
+import { noteUnknownMemberMissing } from "./calls.ts";
 
 /** 当前路径前提 Φ（transpile 后的 fork 会压栈） */
 let phi: Phi = pTrue;
@@ -336,8 +337,12 @@ export function $forOf(
 }
 
 /** 成员读：obj.slots[key]；缺失 → undefined 字面量；brand 解包内层 */
-export function $get(o: Abs, key: string): Abs {
-  if (o.shape.k === "brand") return $get(o.shape.shape, key);
+export function $get(
+  o: Abs,
+  key: string,
+  opts?: { /** 调用方已负责诊断（如 $invoke） */ silent?: boolean },
+): Abs {
+  if (o.shape.k === "brand") return $get(o.shape.shape, key, opts);
   if (isObj(o)) {
     const slot = (o.shape as ObjShape).slots[key];
     if (slot) return slot.value;
@@ -345,8 +350,12 @@ export function $get(o: Abs, key: string): Abs {
     return undef();
   }
   if (o.shape.k === "sum") {
-    const parts = o.shape.members.map((m) => $get(m, key));
+    const parts = o.shape.members.map((m) => $get(m, key, opts));
     return parts.reduce((a, b) => joinAbs(a, b));
+  }
+  if (!opts?.silent) {
+    // 裸属性访问落在 unknown 上 → unknown-recv（$invoke 自己报 method）
+    noteUnknownMemberMissing(o, key, "property");
   }
   return unknown;
 }

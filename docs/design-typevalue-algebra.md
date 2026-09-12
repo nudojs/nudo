@@ -626,7 +626,7 @@ function len(x) {
 | for / while | 有界 `$for`/`$while`；transpile while 用 `$whileSeq`（预算） |
 | service Abs 路径 | 相对 import + 裸包 harvest + require + @nudo:env（含路径型） |
 | TypeValue 兜底 | 弱结果、B 失败；method-missing 已 B 化并按名去重；provenance B 有调用点 origin；**named/default/ns 相对 import + re-export（`export {x} from` / `export * from`）+ class/async default 均走 B Abs 模块图** |
-| **method-missing 双报** | B 执行期 `memberDiags` 为权威（含 **实参字面量 provenance**：`$callNamed` argLocs → WeakMap）；TypeValue 同名 method/property 被过滤。`@nudo:mock` 注入 B `envGlobals`，顶层 `const r = run()` 可安全执行 |
+| **method-missing / unknown-recv 双报** | B `$invoke`/`$get` 为权威：prim→no-method，unknown→unknown-recv；TypeValue 同名过滤。实参字面量 provenance 走 argLocs WeakMap |
 | **module-load / recursion / unknown-global 双报** | B `evalAbsModuleGraph.issues` 报 cycle/depth/missing；Abs 截断 → `truncatedFns`；静态 `builtin-unknown` 压同名 `unknown-global` |
 | emit 往返 tsc / harvest 自动化 | ✅ `emit-tsc-roundtrip` + 分析路径 auto-harvest |
 | guard denotational | ✅ `denoteGuard`；`nudo guard` 优先 Abs 路径 |
@@ -635,7 +635,7 @@ function len(x) {
 
 | 检查 | 结果 |
 |---|---|
-| vitest | **1651 passed**（全 monorepo） |
+| vitest | **1653 passed**（全 monorepo） |
 | tsc -p tsconfig.lint.json | **clean** |
 | nudo types sample --assume 'x>0' | term+pred 正确 |
 | nudo check | 约束蕴含诊断 + 金标 recall/precision=1.0 |
