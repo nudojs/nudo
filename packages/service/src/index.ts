@@ -78,6 +78,7 @@ export {
   isBPathCapable,
   tryRunBPath,
   tryBPathCall,
+  tryBPathCallFull,
   clearBPathCache,
   type BPathRunResult,
 } from "./bpath-run.ts";

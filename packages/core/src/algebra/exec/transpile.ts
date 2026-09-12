@@ -36,7 +36,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -49,9 +49,9 @@ function indent(n: number): string {
   return "  ".repeat(n);
 }
 
-/** 语句或块内是否出现 return（决定 if 是否提升为 return $fork） */
+/** 语句或块内是否出现 return/throw（决定 if 是否提升为 return $fork） */
 function stmtReturns(stmt: Statement): boolean {
-  if (stmt.type === "ReturnStatement") return true;
+  if (stmt.type === "ReturnStatement" || stmt.type === "ThrowStatement") return true;
   if (stmt.type === "BlockStatement") return stmt.body.some(stmtReturns);
   return false;
 }
@@ -106,6 +106,10 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       if (!stmt.argument) return `${pad}return $lit(undefined);`;
       return `${pad}return ${transpileExpression(stmt.argument, opts)};`;
     }
+    case "ThrowStatement": {
+      const arg = stmt.argument ? transpileExpression(stmt.argument, opts) : "$lit(undefined)";
+      return `${pad}$throw(${arg});`;
+    }
     case "ExpressionStatement":
       return `${pad}${transpileExpression(stmt.expression, opts)};`;
     case "VariableDeclaration": {
@@ -148,8 +152,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const test = transpileExpression(stmt.test, opts);
       const cons = transpileBlockAsThunk(stmt.consequent, depth, opts);
       const alt = stmt.alternate ? transpileBlockAsThunk(stmt.alternate, depth, opts) : "undefined";
-      // 仅当两分支都 return 时，$fork 才是函数返回值；
-      // 单侧 return 不能提升为 return $fork（会吞掉后续语句）
+      // 两分支都以 return/throw 退出时，$fork 即函数返回值
       if (
         stmtReturns(stmt.consequent) &&
         stmt.alternate !== undefined &&

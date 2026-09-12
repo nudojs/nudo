@@ -1,15 +1,15 @@
 /**
  * B 路径能力判定 + 进程内 transpile 执行（service 入口）。
  *
- * 约束：runTranspiled 会执行模块顶层（副作用可能触发）。
- * analyzeFile 不得用 B 路径短路 evaluateFunctionFull——
- * throws / unreachable / builtin-unknown 诊断依赖 TypeValue 路径。
- * B 路径用于 case 结果润色（tryEvalAbsRaw 优先）与 call@ Abs 记录。
+ * 分析默认 mode="analyze"：不执行顶层副作用，只保留函数定义。
+ * throws 经 callTranspiledExportFull 捕获 $throw。
  */
 
 import {
   runTranspiled,
   callTranspiledExport,
+  callTranspiledExportFull,
+  type TranspiledCallResult,
   type Abs,
   type AbsModuleExports,
 } from "@nudojs/core";
@@ -31,24 +31,20 @@ export type BPathRunResult = {
   modules: Record<string, AbsModuleExports>;
 };
 
-/** 同文件多次 case/call 共享一次 transpile */
 const bRunCache = new Map<string, BPathRunResult | null>();
 
 export function clearBPathCache(): void {
   bRunCache.clear();
 }
 
-/**
- * 模块图 + runTranspiled：返回可调用导出。
- * 失败返回 undefined（调用方回退 ast-eval / TypeValue）。
- */
+/** 模块图 + runTranspiled（默认 analyze 模式） */
 export function tryRunBPath(
   source: string,
   filePath: string,
-  opts: { maxLoopIters?: number } = {},
+  opts: { maxLoopIters?: number; mode?: "exec" | "analyze" } = {},
 ): BPathRunResult | undefined {
   if (!isBPathCapable(source)) return undefined;
-  const key = `${filePath}::${source.length}::${source.slice(0, 200)}`;
+  const key = `${filePath}::${source.length}::${source.slice(0, 200)}::${opts.mode ?? "analyze"}`;
   if (bRunCache.has(key)) return bRunCache.get(key) ?? undefined;
   let out: BPathRunResult | null = null;
   try {
@@ -56,6 +52,7 @@ export function tryRunBPath(
     const exports = runTranspiled(source, {
       modules: modules as never,
       maxLoopIters: opts.maxLoopIters,
+      mode: opts.mode ?? "analyze",
     });
     out = { exports, modules };
   } catch {
@@ -65,18 +62,35 @@ export function tryRunBPath(
   return out ?? undefined;
 }
 
-/** B 路径求值具名导出函数 */
+/** B 路径求值具名导出（结果 + throws） */
+export function tryBPathCallFull(
+  source: string,
+  filePath: string,
+  fnName: string,
+  args: Abs[],
+): TranspiledCallResult | undefined {
+  const run = tryRunBPath(source, filePath);
+  if (!run) return undefined;
+  if (!(fnName in run.exports)) return undefined;
+  return callTranspiledExportFull(run.exports, fnName, args);
+}
+
+/** B 路径求值具名导出（仅成功结果） */
 export function tryBPathCall(
   source: string,
   filePath: string,
   fnName: string,
   args: Abs[],
 ): Abs | undefined {
-  const run = tryRunBPath(source, filePath);
-  if (!run) return undefined;
-  if (!(fnName in run.exports)) return undefined;
-  const r = callTranspiledExport(run.exports, fnName, args);
+  const full = tryBPathCallFull(source, filePath, fnName, args);
+  if (!full) return undefined;
+  const r = full.result;
   if (!r) return undefined;
+  if (r.shape.k === "never" && full.throws.shape.k !== "never") {
+    return undefined;
+  }
   if (r.shape.k === "unknown" && !r.term) return undefined;
   return r;
 }
+
+export { callTranspiledExport, callTranspiledExportFull };

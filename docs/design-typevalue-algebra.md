@@ -622,7 +622,7 @@ function len(x) {
 
 | 边界 | 说明 |
 |---|---|
-| **B 路径（进行中）** | transpile → 进程内 `new Function`；case 润色 / call@ 优先 B；**不短路** TypeValue 诊断（throws/unreachable/builtin） |
+| **B 路径（进行中）** | analyze 模式跳过顶层副作用；`$throw`→throws；case 润色优先 B；TypeValue 仍管 unreachable/builtin 诊断 |
 | for / while | 有界 `$for`/`$while`（状态线程 + 不动点）；transpile while 用 `$whileSeq`（预算） |
 | service Abs 路径 | 自包含 + 相对 import + **裸包 harvest**；call@ 记录经模块图打 targetModule；require / `@nudo:env` 仍 TypeValue |
 | `@nudo:import * as ns` | 语法可解析，模板展开暂不支持 |

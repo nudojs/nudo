@@ -65,7 +65,7 @@ import {
 import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
 import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
-import { tryBPathCall } from "./bpath-run.ts";
+import { tryBPathCall, tryBPathCallFull } from "./bpath-run.ts";
 
 export type SourceLocation = {
   start: { line: number; column: number };
@@ -1235,11 +1235,24 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
       let caseValue = fullResult.value;
       let caseAbs: Abs | undefined;
+      let caseThrows: TypeValue | undefined;
       if ((selfContained || canAbsModules) && fullResult.value.kind !== "never") {
-        caseAbs = tryEvalAbsRaw(source, fn.name, directive.args, filePath);
-        if (caseAbs) {
-          const projected = absToTypeValue(caseAbs);
+        const bFull = filePath
+          ? tryBPathCallFull(source, filePath, fn.name, directive.args.map((a) => typeValueToAbs(a)))
+          : undefined;
+        if (bFull?.result && !(bFull.result.shape.k === "unknown" && !bFull.result.term)) {
+          caseAbs = bFull.result;
+          const projected = absToTypeValue(bFull.result);
           if (absIsBetter(projected, fullResult.value)) caseValue = projected;
+          if (bFull.throws.shape.k !== "never") {
+            caseThrows = absToTypeValue(bFull.throws);
+          }
+        } else {
+          caseAbs = tryEvalAbsRaw(source, fn.name, directive.args, filePath);
+          if (caseAbs) {
+            const projected = absToTypeValue(caseAbs);
+            if (absIsBetter(projected, fullResult.value)) caseValue = projected;
+          }
         }
       }
 
@@ -1247,7 +1260,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         name: directive.name,
         args: directive.args,
         result: caseValue,
-        throws: fullResult.throws,
+        throws: caseThrows ?? fullResult.throws,
         throwLoc: fullResult.throwLoc,
         expected: directive.expected,
         source: "directive",
