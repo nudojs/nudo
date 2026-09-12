@@ -622,7 +622,9 @@ function len(x) {
 
 | 边界 | 说明 |
 |---|---|
-| service Abs 路径 | 仅自包含源码（无 import/require/env）；`@nudo:mock` 走 Abs seed |
+| **B 路径（进行中）** | `core/algebra/exec`：transpile → `$add/$fork/$for`，值=Abs；TypeValue 双路径待消 |
+| for 循环 | 惰性 `$forIter` + **有界** `$for`（默认 8；字面量不动点 / 预算耗尽 join） |
+| service Abs 路径 | 仍仅自包含源码（模块图未接到 exec）；`@nudo:mock` 走 Abs seed |
 | `@nudo:import * as ns` | 语法可解析，模板展开暂不支持 |
 | ImportDefaultSpecifier | 默认导出契约跨文件暂不绑定 |
 | emit 往返 tsc / harvest 自动化 | ✅ `emit-tsc-roundtrip` + 分析路径 auto-harvest |

@@ -1,0 +1,201 @@
+/**
+ * B 路径运行时：transpile 后的程序在 Node 上执行时，值就是 Abs。
+ * 与 AST 解释器语义同构；TypeValue 不再是求值载体。
+ */
+
+import type { Abs } from "../abs.ts";
+import { abs, bool, boolLit, litValue, unknown } from "../abs.ts";
+import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
+import { typeofAbs, negAbs, notAbs, strictEqAbs } from "../surface.ts";
+import { joinAbs } from "../objects.ts";
+import { leqAbs } from "../leq.ts";
+import type { Phi } from "../pred.ts";
+import { pTrue } from "../pred.ts";
+
+/** 当前路径前提 Φ（transpile 后的 fork 会压栈） */
+let phi: Phi = pTrue;
+
+export function currentExecPhi(): Phi {
+  return phi;
+}
+
+export function withExecPhi<T>(p: Phi, body: () => T): T {
+  const prev = phi;
+  phi = p;
+  try {
+    return body();
+  } finally {
+    phi = prev;
+  }
+}
+
+// --- 运算符重载面（transpile 目标）---
+
+export function $add(a: Abs, b: Abs): Abs {
+  return add(a, b, phi);
+}
+export function $sub(a: Abs, b: Abs): Abs {
+  return sub(a, b, phi);
+}
+export function $mul(a: Abs, b: Abs): Abs {
+  return mul(a, b, phi);
+}
+export function $div(a: Abs, b: Abs): Abs {
+  return div(a, b, phi);
+}
+export function $mod(a: Abs, b: Abs): Abs {
+  return mod(a, b, phi);
+}
+export function $neg(a: Abs): Abs {
+  return negAbs(a);
+}
+export function $typeof(a: Abs): Abs {
+  return typeofAbs(a);
+}
+export function $not(a: Abs): Abs {
+  return notAbs(a);
+}
+export function $eq(a: Abs, b: Abs): Abs {
+  const r = strictEqAbs(a, b);
+  return r === undefined ? bool() : boolLit(r);
+}
+export function $ne(a: Abs, b: Abs): Abs {
+  const r = strictEqAbs(a, b);
+  return r === undefined ? bool() : boolLit(!r);
+}
+export function $lt(a: Abs, b: Abs): Abs {
+  return cmp("lt", a, b, phi);
+}
+export function $le(a: Abs, b: Abs): Abs {
+  return cmp("le", a, b, phi);
+}
+export function $gt(a: Abs, b: Abs): Abs {
+  return cmp("gt", a, b, phi);
+}
+export function $ge(a: Abs, b: Abs): Abs {
+  return cmp("ge", a, b, phi);
+}
+export function $join(a: Abs, b: Abs): Abs {
+  return joinAbs(a, b);
+}
+
+/** 字面量 → Abs（transpile 侧数字/字符串/布尔/null/undefined） */
+export function $lit(v: unknown): Abs {
+  if (v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object)) {
+    return v as Abs;
+  }
+  return litAbsFromJs(v);
+}
+
+function litAbsFromJs(v: unknown): Abs {
+  if (v === null || v === undefined) {
+    return abs({ k: "unknown" }, { op: "lit", value: v as never }, pTrue, "exact");
+  }
+  const t = typeof v;
+  if (t === "number" || t === "string" || t === "boolean" || t === "bigint") {
+    return abs(
+      { k: "prim", type: t as "number" | "string" | "boolean" | "bigint" },
+      { op: "lit", value: v as never },
+      pTrue,
+      "exact",
+    );
+  }
+  return unknown;
+}
+
+export function isDefinitelyTrue(a: Abs): boolean {
+  return litValue(a) === true;
+}
+
+export function isDefinitelyFalse(a: Abs): boolean {
+  const lv = litValue(a);
+  if (lv === false) return true;
+  if (a.shape.k === "never") return true;
+  return false;
+}
+
+function undef(): Abs {
+  return abs({ k: "unknown" }, { op: "lit", value: undefined as never }, pTrue, "exact");
+}
+
+/**
+ * if：两侧都探索（抽象条件），具体条件短路。
+ */
+export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs {
+  if (isDefinitelyTrue(test)) return consequent();
+  if (isDefinitelyFalse(test)) return alternate ? alternate() : undef();
+
+  const a = consequent();
+  const b = alternate ? alternate() : undef();
+  return joinAbs(a, b);
+}
+
+export const DEFAULT_MAX_LOOP_ITERS = 8;
+
+/**
+ * for 的惰性展开：生成器只负责「按上限吐状态」。
+ * 抽象条件无法诚实终止——消费者必须自带 maxIters。
+ */
+export function* $forIter(
+  init: Abs,
+  test: (s: Abs) => Abs,
+  step: (s: Abs) => Abs,
+  body: (s: Abs) => Abs,
+  maxIters: number = DEFAULT_MAX_LOOP_ITERS,
+): Generator<{ state: Abs; test: Abs; afterBody: Abs }, void, void> {
+  let s = init;
+  for (let i = 0; i < maxIters; i++) {
+    const t = test(s);
+    if (isDefinitelyFalse(t)) {
+      yield { state: s, test: t, afterBody: s };
+      return;
+    }
+    const afterBody = body(s);
+    yield { state: s, test: t, afterBody };
+    s = step(afterBody);
+  }
+}
+
+/**
+ * 有界 for：unroll ≤ maxIters，每步「可能退出」的态 join；
+ * 相邻态 leq 视为不动点提前停。
+ */
+export function $for(
+  init: Abs,
+  test: (s: Abs) => Abs,
+  step: (s: Abs) => Abs,
+  body: (s: Abs) => Abs,
+  maxIters: number = DEFAULT_MAX_LOOP_ITERS,
+): Abs {
+  let state = init;
+  let exitJoin: Abs | undefined;
+
+  for (let i = 0; i < maxIters; i++) {
+    const t = test(state);
+    if (isDefinitelyFalse(t)) {
+      return exitJoin ? joinAbs(exitJoin, state) : state;
+    }
+
+    if (!isDefinitelyTrue(t)) {
+      exitJoin = exitJoin ? joinAbs(exitJoin, state) : state;
+    }
+
+    const afterBody = body(state);
+    const next = step(afterBody);
+
+    // 不动点：字面量不变，或两侧皆非字面量且 next ≤ state
+    if (i > 0) {
+      const nv = litValue(next);
+      const sv = litValue(state);
+      const stuck =
+        (nv !== undefined && sv !== undefined && nv === sv) ||
+        (nv === undefined && sv === undefined && leqAbs(next, state).ok);
+      if (stuck) {
+        return exitJoin ? joinAbs(exitJoin, next) : next;
+      }
+    }
+    state = next;
+  }
+
+  return exitJoin ? joinAbs(exitJoin, state) : state;
+}
