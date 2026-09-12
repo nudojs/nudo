@@ -1279,30 +1279,43 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     for (let ci = 0; ci < caseDirectives.length; ci++) {
       const directive = caseDirectives[ci];
       resetUnreachableRanges();
-      // TypeValue 求值始终跑：call@ 合成与部分诊断依赖 callCollector。
-      // B 路径可覆盖 case 结果与 throws（analyze 模式，无顶层副作用）。
-      const fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
-      const caseUnreachable = [...getUnreachableRanges()];
 
-      let caseValue = fullResult.value;
+      // B 路径主求值（capable）：analyze 模式 + $callNamed 采集。
+      // 成功则跳过 evaluateFunctionFull；失败再落 TypeValue。
+      let caseValue: TypeValue | undefined;
       let caseAbs: Abs | undefined;
       let caseThrows: TypeValue | undefined;
-      if ((selfContained || canAbsModules || isBPathCapable(source, envNames)) && fullResult.value.kind !== "never") {
-        const bFull = filePath
-          ? tryBPathCallFull(source, filePath, fn.name, directive.args.map((a) => typeValueToAbs(a)), {
-              collectCalls: true,
-            })
-          : undefined;
-        if (bFull?.result && !(bFull.result.shape.k === "unknown" && !bFull.result.term)) {
+      let fullResult: {
+        value: TypeValue;
+        throws: TypeValue;
+        throwLoc?: SourceLocation;
+      } | null = null;
+      let caseUnreachable: SourceLocation[] = [];
+
+      const bCapable = isBPathCapable(source, envNames);
+      if (bCapable && filePath) {
+        const bFull = tryBPathCallFull(
+          source,
+          filePath,
+          fn.name,
+          directive.args.map((a) => typeValueToAbs(a)),
+          { collectCalls: true },
+        );
+        // 仅当 B 结果有信息量时才作主路径；unknown 无 term 或 undefined 字面量落 TypeValue
+        const res = bFull?.result;
+        const weakUnknown =
+          !!res &&
+          res.shape.k === "unknown" &&
+          (!res.term || (res.term.op === "lit" && res.term.value === undefined));
+        const bOk = !!res && !weakUnknown && res.conf !== "opaque";
+        if (bOk && bFull) {
           caseAbs = bFull.result;
-          const projected = absToTypeValue(bFull.result);
-          if (absIsBetter(projected, fullResult.value)) caseValue = projected;
-          if (bFull.throws.shape.k !== "never") {
-            caseThrows = absToTypeValue(bFull.throws);
-          }
-          // B 路径调用点 → call@ 合成
+          caseValue = absToTypeValue(bFull.result);
+          caseThrows =
+            bFull.throws.shape.k !== "never" ? absToTypeValue(bFull.throws) : T.never;
+          fullResult = { value: caseValue, throws: caseThrows };
           if (bFull.calls?.length) {
-            const impMap = filePath ? buildAbsImportLocalMap(source, filePath) : new Map();
+            const impMap = buildAbsImportLocalMap(source, filePath);
             for (const c of bFull.calls) {
               const rec: CallRecord = {
                 fnName: c.fnName,
@@ -1319,7 +1332,14 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
               callRecords.push(rec);
             }
           }
-        } else {
+        }
+      }
+
+      if (!fullResult) {
+        fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
+        caseUnreachable = [...getUnreachableRanges()];
+        caseValue = fullResult.value;
+        if ((selfContained || canAbsModules) && fullResult.value.kind !== "never") {
           caseAbs = tryEvalAbsRaw(source, fn.name, directive.args, filePath);
           if (caseAbs) {
             const projected = absToTypeValue(caseAbs);
@@ -1328,7 +1348,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         }
       }
 
-      const tv = caseValue;
+      const tv = caseValue!;
       const throwsTv = caseThrows ?? fullResult.throws;
 
       const caseEntry: CaseResult = {

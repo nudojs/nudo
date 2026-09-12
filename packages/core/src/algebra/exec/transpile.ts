@@ -432,6 +432,22 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       const arg = transpileExpression(expr.argument as Expression, opts);
       return `$await(${arg})`;
     }
+    case "TemplateLiteral": {
+      const quasis = expr.quasis;
+      const exprs = expr.expressions;
+      // `a${b}c` → $add($add($lit("a"), b), $lit("c"))
+      let acc: string | null = null;
+      for (let i = 0; i < quasis.length; i++) {
+        const cooked = quasis[i]!.value.cooked ?? quasis[i]!.value.raw;
+        const piece = `$lit(${JSON.stringify(cooked)})`;
+        acc = acc === null ? piece : `$add(${acc}, ${piece})`;
+        if (i < exprs.length) {
+          const e = transpileExpression(exprs[i] as Expression, opts);
+          acc = `$add(${acc}, ${e})`;
+        }
+      }
+      return acc ?? `$lit("")`;
+    }
     case "SequenceExpression":
       return expr.expressions.map((e) => transpileExpression(e, opts)).join(", ");
     case "ObjectExpression": {
