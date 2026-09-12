@@ -36,7 +36,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -49,9 +49,29 @@ function indent(n: number): string {
   return "  ".repeat(n);
 }
 
+/** 语句或块内是否出现 return（决定 if 是否提升为 return $fork） */
+function stmtReturns(stmt: Statement): boolean {
+  if (stmt.type === "ReturnStatement") return true;
+  if (stmt.type === "BlockStatement") return stmt.body.some(stmtReturns);
+  return false;
+}
+
 function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptions): string {
   const pad = indent(depth);
   switch (stmt.type) {
+    case "ExportNamedDeclaration": {
+      const decl = stmt.declaration;
+      if (!decl) return `${pad}/* export specifiers skipped */`;
+      return transpileStatement(decl as Statement, depth, opts);
+    }
+    case "ExportDefaultDeclaration": {
+      const d = stmt.declaration;
+      if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
+        const inner = transpileStatement(d as Statement, depth, opts);
+        return inner.replace(/^(\s*)export function /, "$1export default function ");
+      }
+      return `${pad}export default ${transpileExpression(d as Expression, opts)};`;
+    }
     case "FunctionDeclaration": {
       if (!stmt.id) return `${pad}// <anonymous fn skipped>`;
       const params = stmt.params
@@ -71,18 +91,54 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       return `${pad}${transpileExpression(stmt.expression, opts)};`;
     case "VariableDeclaration": {
       const kw = stmt.kind === "const" ? "const" : "let";
-      return stmt.declarations
-        .map((d) => {
-          if (d.id.type !== "Identifier") return `${pad}// destructure not in MVP`;
+      const lines: string[] = [];
+      let tmpSeq = 0;
+      for (const d of stmt.declarations) {
+        if (d.id.type === "Identifier") {
           const init = d.init ? transpileExpression(d.init, opts) : "$lit(undefined)";
-          return `${pad}${kw} ${d.id.name} = ${init};`;
-        })
-        .join("\n");
+          lines.push(`${pad}${kw} ${d.id.name} = ${init};`);
+          continue;
+        }
+        // 解构：先绑定 init 到临时，再逐项 $get / $idx
+        if (!d.init) {
+          lines.push(`${pad}// destructure without init`);
+          continue;
+        }
+        const initSrc = transpileExpression(d.init, opts);
+        const tmp = `_d${tmpSeq++}_${stmt.loc?.start.line ?? 0}`;
+        lines.push(`${pad}const ${tmp} = ${initSrc};`);
+        if (d.id.type === "ObjectPattern") {
+          for (const prop of d.id.properties) {
+            if (prop.type !== "ObjectProperty") continue;
+            if (prop.key.type !== "Identifier" && prop.key.type !== "StringLiteral") continue;
+            const key =
+              prop.key.type === "Identifier" ? prop.key.name : prop.key.value;
+            if (prop.value.type !== "Identifier") continue;
+            lines.push(`${pad}${kw} ${prop.value.name} = $get(${tmp}, ${JSON.stringify(key)});`);
+          }
+        } else if (d.id.type === "ArrayPattern") {
+          d.id.elements.forEach((el, i) => {
+            if (!el || el.type !== "Identifier") return;
+            lines.push(`${pad}${kw} ${el.name} = $idx(${tmp}, $lit(${i}));`);
+          });
+        }
+      }
+      return lines.join("\n");
     }
     case "IfStatement": {
       const test = transpileExpression(stmt.test, opts);
       const cons = transpileBlockAsThunk(stmt.consequent, depth, opts);
       const alt = stmt.alternate ? transpileBlockAsThunk(stmt.alternate, depth, opts) : "undefined";
+      // 仅当两分支都 return 时，$fork 才是函数返回值；
+      // 单侧 return 不能提升为 return $fork（会吞掉后续语句）
+      if (
+        stmtReturns(stmt.consequent) &&
+        stmt.alternate !== undefined &&
+        stmt.alternate !== null &&
+        stmtReturns(stmt.alternate)
+      ) {
+        return `${pad}return $fork(${test}, ${cons}, ${alt});`;
+      }
       return `${pad}$fork(${test}, ${cons}, ${alt});`;
     }
     case "ForStatement": {
@@ -212,29 +268,60 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     }
     case "MemberExpression": {
       if (expr.computed) {
-        // o[k] 仅支持字面量 key 的 MVP
+        const obj = transpileExpression(expr.object as Expression, opts);
         const key = expr.property;
-        if (key.type === "StringLiteral" || key.type === "NumericLiteral") {
-          return `$get(${transpileExpression(expr.object as Expression, opts)}, ${JSON.stringify(String(key.value))})`;
+        if (key.type === "StringLiteral") {
+          return `$get(${obj}, ${JSON.stringify(key.value)})`;
+        }
+        if (key.type === "NumericLiteral") {
+          return `$idx(${obj}, $lit(${key.value}))`;
+        }
+        if (isExpression(key)) {
+          const k = transpileExpression(key, opts);
+          // 动态下标：数值走 $idx
+          return `$idx(${obj}, ${k})`;
         }
         return `/* computed member */ $lit(undefined)`;
       }
       if (expr.property.type !== "Identifier") {
         return `/* member */ $lit(undefined)`;
       }
+      // o.length
+      if (expr.property.name === "length") {
+        return `$len(${transpileExpression(expr.object as Expression, opts)})`;
+      }
       return `$get(${transpileExpression(expr.object as Expression, opts)}, ${JSON.stringify(expr.property.name)})`;
+    }
+    case "ArrayExpression": {
+      const items = expr.elements.map((el) => {
+        if (!el) return "$lit(undefined)";
+        if (el.type === "SpreadElement") return `/* spread */ $lit(undefined)`;
+        return transpileExpression(el, opts);
+      });
+      return `$arr([${items.join(", ")}])`;
     }
     case "AssignmentExpression": {
       // obj.field = v → $set；标识符赋值保持 JS 绑定（值是 Abs）
       if (expr.operator !== "=") return `/* assign ${expr.operator} */ $lit(undefined)`;
       const right = transpileExpression(expr.right, opts);
-      if (
-        expr.left.type === "MemberExpression" &&
-        !expr.left.computed &&
-        expr.left.property.type === "Identifier"
-      ) {
-        const obj = transpileExpression(expr.left.object as Expression, opts);
-        return `$set(${obj}, ${JSON.stringify(expr.left.property.name)}, ${right})`;
+      if (expr.left.type === "MemberExpression") {
+        if (!expr.left.computed && expr.left.property.type === "Identifier") {
+          const obj = transpileExpression(expr.left.object as Expression, opts);
+          return `$set(${obj}, ${JSON.stringify(expr.left.property.name)}, ${right})`;
+        }
+        if (expr.left.computed) {
+          const obj = transpileExpression(expr.left.object as Expression, opts);
+          const k = expr.left.property;
+          if (k.type === "NumericLiteral") {
+            return `$idxSet(${obj}, $lit(${k.value}), ${right})`;
+          }
+          if (k.type === "StringLiteral") {
+            return `$set(${obj}, ${JSON.stringify(k.value)}, ${right})`;
+          }
+          if (isExpression(k)) {
+            return `$idxSet(${obj}, ${transpileExpression(k, opts)}, ${right})`;
+          }
+        }
       }
       if (expr.left.type === "Identifier") {
         return `${expr.left.name} = ${right}`;

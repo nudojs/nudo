@@ -200,7 +200,63 @@ export function $for(
   return exitJoin ? joinAbs(exitJoin, state) : state;
 }
 
-// --- 对象 / 成员 / while ---
+// --- 数组 ---
+
+/** 数组字面量 → Abs tuple（长度已知） */
+export function $arr(items: Abs[]): Abs {
+  return abs({ k: "tuple", elements: items }, undefined, undefined, "exact");
+}
+
+/** 下标读 a[i]；字面量 i 走 tuple 精确投影，否则并所有元素 */
+export function $idx(a: Abs, i: Abs): Abs {
+  const iv = litValue(i);
+  if (a.shape.k === "tuple") {
+    const els = a.shape.elements;
+    if (typeof iv === "number" && Number.isInteger(iv)) {
+      if (iv >= 0 && iv < els.length) return els[iv]!;
+      return undef();
+    }
+    if (els.length === 0) return undef();
+    return els.reduce((x, y) => joinAbs(x, y));
+  }
+  if (a.shape.k === "arr") return a.shape.element;
+  if (a.shape.k === "sum") {
+    return a.shape.members.map((m) => $idx(m, i)).reduce((x, y) => joinAbs(x, y));
+  }
+  return unknown;
+}
+
+/** 下标写 a[i]=v → 新 tuple */
+export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
+  const iv = litValue(i);
+  if (a.shape.k === "tuple" && typeof iv === "number" && Number.isInteger(iv)) {
+    const els = [...a.shape.elements];
+    if (iv >= 0 && iv < els.length) {
+      els[iv] = value;
+      const next = abs({ k: "tuple", elements: els }, undefined, undefined, a.conf);
+      return next;
+    }
+  }
+  return a;
+}
+
+/** 数组长度 */
+export function $len(a: Abs): Abs {
+  if (a.shape.k === "tuple") {
+    return abs(
+      { k: "prim", type: "number" },
+      { op: "lit", value: a.shape.elements.length },
+      pTrue,
+      "exact",
+    );
+  }
+  if (a.shape.k === "arr") {
+    return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
+  }
+  return unknown;
+}
+
+// --- 对象 / 成员 ---
 
 /** 对象字面量 → Abs obj */
 export function $obj(slots: Record<string, Abs>): Abs {
@@ -218,7 +274,6 @@ export function $get(o: Abs, key: string): Abs {
     return undef();
   }
   if (o.shape.k === "sum") {
-    // 逐成员投影再并
     const parts = o.shape.members.map((m) => $get(m, key));
     return parts.reduce((a, b) => joinAbs(a, b));
   }
