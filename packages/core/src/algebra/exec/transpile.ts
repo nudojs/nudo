@@ -40,7 +40,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -556,6 +556,15 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           .map((a) => (a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts)))
           .join(", ");
         return `$invoke(${recv}, ${JSON.stringify(callee.property.name)}, [${args}])`;
+      }
+      // 标识符调用 → $callNamed（可采集 call@）
+      if (callee.type === "Identifier" && callee.name !== "undefined") {
+        const args = expr.arguments
+          .map((a) => (a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts)))
+          .join(", ");
+        const loc = expr.loc;
+        const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
+        return `$callNamed(${JSON.stringify(callee.name)}, ${callee.name}, [${args}]${locArg})`;
       }
       const args = expr.arguments
         .map((a) =>

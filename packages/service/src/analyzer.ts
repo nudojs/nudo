@@ -1289,7 +1289,9 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       let caseThrows: TypeValue | undefined;
       if ((selfContained || canAbsModules || isBPathCapable(source, envNames)) && fullResult.value.kind !== "never") {
         const bFull = filePath
-          ? tryBPathCallFull(source, filePath, fn.name, directive.args.map((a) => typeValueToAbs(a)))
+          ? tryBPathCallFull(source, filePath, fn.name, directive.args.map((a) => typeValueToAbs(a)), {
+              collectCalls: true,
+            })
           : undefined;
         if (bFull?.result && !(bFull.result.shape.k === "unknown" && !bFull.result.term)) {
           caseAbs = bFull.result;
@@ -1297,6 +1299,25 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           if (absIsBetter(projected, fullResult.value)) caseValue = projected;
           if (bFull.throws.shape.k !== "never") {
             caseThrows = absToTypeValue(bFull.throws);
+          }
+          // B 路径调用点 → call@ 合成
+          if (bFull.calls?.length) {
+            const impMap = filePath ? buildAbsImportLocalMap(source, filePath) : new Map();
+            for (const c of bFull.calls) {
+              const rec: CallRecord = {
+                fnName: c.fnName,
+                argTypes: c.args.map((a) => absToTypeValue(a)),
+                resultType: c.threw ? T.never : absToTypeValue(c.result),
+                throws: c.threw ? absToTypeValue(c.result) : T.never,
+                callLoc: c.callLoc,
+              };
+              const imp = impMap.get(c.fnName);
+              if (imp) {
+                rec.targetModule = imp.modulePath;
+                rec.targetExport = imp.exportName;
+              }
+              callRecords.push(rec);
+            }
           }
         } else {
           caseAbs = tryEvalAbsRaw(source, fn.name, directive.args, filePath);

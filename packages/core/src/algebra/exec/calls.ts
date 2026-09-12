@@ -1,0 +1,68 @@
+/**
+ * B 路径调用点记录：transpile 把 `f(args)` 改成 $callNamed，
+ * 分析时可收集 call@ 所需的 AbsCallRecord。
+ */
+
+import type { Abs } from "../abs.ts";
+import { unknown } from "../abs.ts";
+import { $call } from "./call.ts";
+
+export type BCallRecord = {
+  fnName: string;
+  args: Abs[];
+  result: Abs;
+  callLoc?: { line: number; column: number };
+  threw?: boolean;
+};
+
+let bCallCollector: ((r: BCallRecord) => void) | null = null;
+
+export function setBCallCollector(
+  collector: ((r: BCallRecord) => void) | null,
+): void {
+  bCallCollector = collector;
+}
+
+export function getBCallCollector(): ((r: BCallRecord) => void) | null {
+  return bCallCollector;
+}
+
+/**
+ * 按名调用并记录。
+ * loc: [line, column]（1-based line，0-based column，与 Babel 一致）
+ */
+export function $callNamed(
+  name: string,
+  fn: unknown,
+  args: Abs[],
+  loc?: [number, number],
+): Abs {
+  let result: Abs = unknown;
+  let threw = false;
+  try {
+    if (typeof fn === "function") {
+      result = (fn as (...a: Abs[]) => Abs)(...args);
+    } else if (fn && typeof fn === "object" && "shape" in (fn as object)) {
+      result = $call(fn as Abs, args);
+    }
+  } catch (e) {
+    threw = true;
+    // NudoThrow 等：result 用 unknown，throws 由 callTranspiledExportFull 处理
+    throw e;
+  } finally {
+    if (bCallCollector) {
+      try {
+        bCallCollector({
+          fnName: name,
+          args,
+          result: threw ? unknown : result,
+          callLoc: loc ? { line: loc[0], column: loc[1] } : undefined,
+          threw,
+        });
+      } catch {
+        /* collector 不得打断 */
+      }
+    }
+  }
+  return result;
+}

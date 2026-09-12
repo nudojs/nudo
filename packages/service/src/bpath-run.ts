@@ -9,6 +9,8 @@ import {
   runTranspiled,
   callTranspiledExport,
   callTranspiledExportFull,
+  setBCallCollector,
+  type BCallRecord,
   type TranspiledCallResult,
   type Abs,
   type AbsModuleExports,
@@ -60,17 +62,27 @@ export function tryRunBPath(
   return out ?? undefined;
 }
 
-/** B 路径求值具名导出（结果 + throws） */
+/** B 路径求值具名导出（结果 + throws）；opts.collectCalls 时附带调用点记录 */
 export function tryBPathCallFull(
   source: string,
   filePath: string,
   fnName: string,
   args: Abs[],
-): TranspiledCallResult | undefined {
+  opts: { collectCalls?: boolean } = {},
+): (TranspiledCallResult & { calls?: BCallRecord[] }) | undefined {
   const run = tryRunBPath(source, filePath);
   if (!run) return undefined;
   if (!(fnName in run.exports)) return undefined;
-  return callTranspiledExportFull(run.exports, fnName, args);
+  const collected: BCallRecord[] = [];
+  if (opts.collectCalls) {
+    setBCallCollector((r) => collected.push(r));
+  }
+  try {
+    const full = callTranspiledExportFull(run.exports, fnName, args);
+    return opts.collectCalls ? { ...full, calls: collected } : full;
+  } finally {
+    if (opts.collectCalls) setBCallCollector(null);
+  }
 }
 
 /** B 路径求值具名导出（仅成功结果） */
