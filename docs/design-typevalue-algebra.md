@@ -123,8 +123,9 @@ nudo guard <file>     # 边界运行时校验（= generate --format guard）
 nudo generate <file>  # zod | guard | dts 组合输出
 ```
 
-已知未做：guard 的 denotational `denote(abs)`、harvest 自动化。
+已知未做：harvest 自动化。
 `check` / `types` / `test` / `emit` / `guard` 均支持目录参数（递归收集推断目标）。
+`nudo guard` 走 `denoteGuard(abs)`（shape + 可判定 pred）。
 
 ---
 
@@ -617,7 +618,7 @@ function len(x) {
 3. ✅ 与真实 Node 执行差分回归（8 用例，exact 对齐）
 4. ✅ 挂到主 CLI：`nudo types --assume/--generalize` 已通
 5. ✅ `nudo test`（`@nudo:case` 即断言）
-6. ✅ `nudo emit` / `nudo guard` 命令面（= generate --format dts/guard）
+6. ✅ `nudo emit` / `nudo guard` 命令面；guard 走 `denoteGuard(abs)`
 
 ### 已知边界（2026-09 收口后）
 
@@ -627,7 +628,7 @@ function len(x) {
 | `@nudo:import * as ns` | 语法可解析，模板展开暂不支持 |
 | ImportDefaultSpecifier | 默认导出契约跨文件暂不绑定 |
 | emit 往返 tsc / harvest 自动化 | Phase B.6 / C.2 未做 |
-| guard denotational | `nudo guard` 走 TypeValue 投影，非 `denote(abs)` |
+| guard denotational | ✅ `denoteGuard`（Abs shape + 可判定 pred）；`nudo guard` 优先 Abs 路径 |
 
 ### 验证状态（2026-09 收口后）
 

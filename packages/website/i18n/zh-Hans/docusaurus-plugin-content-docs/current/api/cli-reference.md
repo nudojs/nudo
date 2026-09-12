@@ -424,7 +424,7 @@ nudo emit src/user.js --output dist/types
 
 ### nudo guard
 
-从推断结果类型生成运行时类型守卫。等价于 `nudo generate --format guard`。
+从推断结果类型生成运行时类型守卫。有无损 Abs 结果时优先走 Abs 路径（`denoteGuard`：shape + 可判定数值 pred），否则回退 TypeValue 投影。等价于 `nudo generate --format guard`。
 
 ```bash
 nudo guard <file> [options]

@@ -20,6 +20,7 @@ export * from "./check.ts";
 export * from "./refine.ts";
 export * from "./constraint.ts";
 export * from "./inlay.ts";
+export * from "./denote.ts";
 // modules/fs/path 属于 host（service/cli），不进代数
 export * from "./bridge.ts";
 

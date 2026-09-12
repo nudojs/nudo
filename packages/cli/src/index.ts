@@ -7,6 +7,7 @@ import { resetMemo } from "./evaluator.ts";
 import {
   typeValueToZodSchema,
   generateGuardFunction,
+  generateGuardFunctionFromAbs,
   generateFunctionDtsLines,
   analyzeFileAsync,
   buildModuleGraph,
@@ -835,12 +836,13 @@ async function runGenerate(
     if (format === "guard" || format === "all") {
       const lines: string[] = [`\n// === ${baseName} Type Guards ===`];
       for (const c of caseResults) {
-        lines.push(
-          generateGuardFunction(
-            `is${baseName}${c.name.charAt(0).toUpperCase() + c.name.slice(1)}Output`,
-            c.result,
-          ),
-        );
+        const guardName = `is${baseName}${c.name.charAt(0).toUpperCase() + c.name.slice(1)}Output`;
+        // Abs 路径优先：denote 保留 pred；否则回退 TypeValue 投影
+        if (c.abs) {
+          lines.push(generateGuardFunctionFromAbs(guardName, c.abs));
+        } else {
+          lines.push(generateGuardFunction(guardName, c.result));
+        }
       }
       guardChunks.push(lines.join("\n"));
     }

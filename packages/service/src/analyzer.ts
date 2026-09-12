@@ -110,6 +110,8 @@ export type CaseResult = {
     /** 无损 Abs 多行（formatAbsMultiline） */
     absMultiline?: string;
   };
+  /** 无损 Abs（denote/守卫用）；仅 Abs 路径 case 填充 */
+  abs?: Abs;
 };
 
 export type FunctionAnalysis = {
@@ -2316,6 +2318,7 @@ function attachAbsToIntension(
   label?: string,
 ): void {
   const prev = caseResult.intension ?? {};
+  caseResult.abs = absVal;
   caseResult.intension = {
     ...prev,
     abs: formatAbs(absVal),

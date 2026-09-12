@@ -424,7 +424,7 @@ nudo emit src/user.js --output dist/types
 
 ### nudo guard
 
-Generate runtime type-guard functions from inferred result types. Equivalent to `nudo generate --format guard`.
+Generate runtime type-guard functions from inferred result types. Prefer the Abs path (`denoteGuard`: shape + decidable numeric preds) when the case has a lossless Abs result; fall back to TypeValue projection otherwise. Equivalent to `nudo generate --format guard`.
 
 ```bash
 nudo guard <file> [options]

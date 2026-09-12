@@ -75,7 +75,7 @@ export {
 } from "./dts-generator.ts";
 
 export { typeValueToZodSchema } from "./schema-generator.ts";
-export { generateGuardFunction } from "./guard-generator.ts";
+export { generateGuardFunction, generateGuardFunctionFromAbs } from "./guard-generator.ts";
 
 export {
   serializeCaseArg,
