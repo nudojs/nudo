@@ -11,11 +11,9 @@ afterAll(() => {
 });
 
 describe("B-path @nudo:env", () => {
-  it("isBPathCapable allows builtin es/web/node", () => {
+  it("isBPathCapable allows builtin and path env", () => {
     expect(isBPathCapable("function f() { return 1; }", ["es"])).toBe(true);
-    expect(isBPathCapable("function f() { return 1; }", ["web"])).toBe(true);
-    expect(isBPathCapable("function f() { return 1; }", ["node"])).toBe(true);
-    expect(isBPathCapable("function f() { return 1; }", ["./custom.ts"])).toBe(false);
+    expect(isBPathCapable("function f() { return 1; }", ["./custom.ts"])).toBe(true);
   });
 
   it("JSON.parse via @nudo:env es", () => {

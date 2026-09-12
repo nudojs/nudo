@@ -115,12 +115,9 @@ export function collectBPathReplacements(source: string): {
   return { targets, values, asTargets, asValues };
 }
 
-/** 可走 transpile+exec：内置 es/web/node env；相对/裸包/require 经模块图 */
+/** 可走 transpile+exec：env 经 loadEnvs（内置 + 已 preload 的路径型） */
 export function isBPathCapable(source: string, envNames: string[] = []): boolean {
-  // 仅内置环境；路径型 @nudo:env ./file.ts 需 async preload，暂不走 B
-  for (const n of envNames) {
-    if (n !== "es" && n !== "web" && n !== "node") return false;
-  }
+  void envNames;
   // 顶层 this. 仍不支持（方法内 this 由 transpile 处理）
   if (/(^|[^.\w$])this\s*\./.test(source) && !/\bclass\s+/.test(source)) return false;
   return true;

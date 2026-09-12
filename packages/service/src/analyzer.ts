@@ -2338,10 +2338,11 @@ function isSelfContainedSource(source: string, envNames: string[]): boolean {
   return !/\brequire\s*\(|\bimport\s*[{'"*]/.test(source);
 }
 
-/** Abs 模块图可处理：无 env 或仅内置 env；相对 import + 裸包 + require 均可 */
+/** Abs 模块图可处理：env 由 loadEnvs 处理（内置 + 预加载路径型） */
 function absModulesOk(source: string, envNames: string[]): boolean {
-  // 路径型 env 需 async preload，暂不走 Abs 模块图
-  return envNames.every((n) => n === "es" || n === "web" || n === "node");
+  void source;
+  void envNames;
+  return true;
 }
 
 /**
