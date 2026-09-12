@@ -75,6 +75,12 @@ export {
   harvestedValueToAbs,
 } from "./harvest-to-abs.ts";
 export {
+  isBPathCapable,
+  tryRunBPath,
+  tryBPathCall,
+  type BPathRunResult,
+} from "./bpath-run.ts";
+export {
   harvestNodeTypes,
   summarizeNodeEnv,
   type NodeEnvResult,

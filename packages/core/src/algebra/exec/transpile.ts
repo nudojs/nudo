@@ -36,7 +36,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -63,6 +63,25 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const decl = stmt.declaration;
       if (!decl) return `${pad}/* export specifiers skipped */`;
       return transpileStatement(decl as Statement, depth, opts);
+    }
+    case "ImportDeclaration": {
+      // 保留 import；run.ts 会改写为 __nudoBindImport
+      const specs = stmt.specifiers
+        .map((s) => {
+          if (s.type === "ImportSpecifier") {
+            const imported =
+              s.imported.type === "Identifier" ? s.imported.name : String(s.imported);
+            return imported === s.local.name ? imported : `${imported} as ${s.local.name}`;
+          }
+          if (s.type === "ImportDefaultSpecifier") return `default as ${s.local.name}`;
+          if (s.type === "ImportNamespaceSpecifier") return `* as ${s.local.name}`;
+          return "";
+        })
+        .filter(Boolean);
+      if (specs.length === 0) {
+        return `${pad}import ${JSON.stringify(stmt.source.value)};`;
+      }
+      return `${pad}import { ${specs.join(", ")} } from ${JSON.stringify(stmt.source.value)};`;
     }
     case "ExportDefaultDeclaration": {
       const d = stmt.declaration;

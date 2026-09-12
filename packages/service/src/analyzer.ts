@@ -65,6 +65,7 @@ import {
 import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
 import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
+import { tryBPathCall } from "./bpath-run.ts";
 
 export type SourceLocation = {
   start: { line: number; column: number };
@@ -2335,17 +2336,24 @@ function tryEvalAbs(
   return raw ? absToTypeValue(raw) : undefined;
 }
 
-/** Abs 原生重求值（无损）；相对 import 经模块图注入；undefined = 无法处理 */
+/** Abs 原生重求值（无损）；B 路径 transpile+exec 优先，失败回退 ast-eval */
 function tryEvalAbsRaw(
   source: string,
   fnName: string,
   args: TypeValue[],
   filePath?: string,
 ): Abs | undefined {
-  // require / 裸 npm 仍不走 Abs（模块图只处理相对 import）
+  // require / env 不走 Abs
   if (/\brequire\s*\(/.test(source)) return undefined;
   try {
     const absArgs: Abs[] = args.map((a) => typeValueToAbs(a));
+
+    // B 路径：transpile → Node new Function（进程内）
+    if (filePath) {
+      const viaB = tryBPathCall(source, filePath, fnName, absArgs);
+      if (viaB) return viaB;
+    }
+
     let modules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined;
     if (filePath && /\bimport\s*[{'"*]/.test(source)) {
       modules = evalAbsModuleGraph(source, filePath).modules;
