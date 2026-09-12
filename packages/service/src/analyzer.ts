@@ -1228,10 +1228,11 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     for (let ci = 0; ci < caseDirectives.length; ci++) {
       const directive = caseDirectives[ci];
       resetUnreachableRanges();
+      // TypeValue 求值始终跑：throws / unreachable / builtin 诊断依赖它。
+      // B 路径（tryEvalAbsRaw → runTranspiled）只作结果润色，不短路诊断。
       const fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
       const caseUnreachable = [...getUnreachableRanges()];
 
-      // 自包含或仅相对 import：手写 case 接受 Abs 润色（模块图注入依赖）
       let caseValue = fullResult.value;
       let caseAbs: Abs | undefined;
       if ((selfContained || canAbsModules) && fullResult.value.kind !== "never") {
@@ -1256,12 +1257,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
       if (directive.commentLine) {
         const hasThrow = fullResult.throws.kind !== "never";
-        const resultStr = caseValue.kind !== "never"
-          ? typeValueToString(caseValue)
-          : "";
-        const throwStr = hasThrow
-          ? `throws ${typeValueToString(fullResult.throws)}`
-          : "";
+        const resultStr = caseValue.kind !== "never" ? typeValueToString(caseValue) : "";
+        const throwStr = hasThrow ? `throws ${typeValueToString(fullResult.throws)}` : "";
         const label = [resultStr, throwStr].filter(Boolean).join(" ");
         const hintLabel = `=> ${label}`;
 

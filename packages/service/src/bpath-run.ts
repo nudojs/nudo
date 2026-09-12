@@ -1,5 +1,10 @@
 /**
  * B 路径能力判定 + 进程内 transpile 执行（service 入口）。
+ *
+ * 约束：runTranspiled 会执行模块顶层（副作用可能触发）。
+ * analyzeFile 不得用 B 路径短路 evaluateFunctionFull——
+ * throws / unreachable / builtin-unknown 诊断依赖 TypeValue 路径。
+ * B 路径用于 case 结果润色（tryEvalAbsRaw 优先）与 call@ Abs 记录。
  */
 
 import {
@@ -26,6 +31,13 @@ export type BPathRunResult = {
   modules: Record<string, AbsModuleExports>;
 };
 
+/** 同文件多次 case/call 共享一次 transpile */
+const bRunCache = new Map<string, BPathRunResult | null>();
+
+export function clearBPathCache(): void {
+  bRunCache.clear();
+}
+
 /**
  * 模块图 + runTranspiled：返回可调用导出。
  * 失败返回 undefined（调用方回退 ast-eval / TypeValue）。
@@ -36,16 +48,21 @@ export function tryRunBPath(
   opts: { maxLoopIters?: number } = {},
 ): BPathRunResult | undefined {
   if (!isBPathCapable(source)) return undefined;
+  const key = `${filePath}::${source.length}::${source.slice(0, 200)}`;
+  if (bRunCache.has(key)) return bRunCache.get(key) ?? undefined;
+  let out: BPathRunResult | null = null;
   try {
     const { modules } = evalAbsModuleGraph(source, filePath);
     const exports = runTranspiled(source, {
       modules: modules as never,
       maxLoopIters: opts.maxLoopIters,
     });
-    return { exports, modules };
+    out = { exports, modules };
   } catch {
-    return undefined;
+    out = null;
   }
+  bRunCache.set(key, out);
+  return out ?? undefined;
 }
 
 /** B 路径求值具名导出函数 */
@@ -60,7 +77,6 @@ export function tryBPathCall(
   if (!(fnName in run.exports)) return undefined;
   const r = callTranspiledExport(run.exports, fnName, args);
   if (!r) return undefined;
-  // 与 tryEvalAbsRaw 一致：unknown 无 term 视为失败
   if (r.shape.k === "unknown" && !r.term) return undefined;
   return r;
 }
