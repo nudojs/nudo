@@ -79,7 +79,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -227,10 +227,20 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         stmt.body.type === "BlockStatement"
           ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, opts)).join("\n")
           : `${indent(depth + 2)}return ${transpileExpression(stmt.body as unknown as Expression, opts)};`;
-      // rest 由调用方以数组尾参传入（run 调用约定：最后一项为 rest 元组）
       const restBind = rest
         ? `${indent(depth + 1)}const ${rest.name} = arguments.length > ${named.length} ? $arr(Array.from(arguments).slice(${named.length})) : $arr([]);\n`
         : "";
+      // function* → $gen 收集 yield
+      if (stmt.generator) {
+        return [
+          `${pad}export function ${stmt.id.name}(${named.join(", ")}) {`,
+          restBind,
+          `${indent(depth + 1)}return $gen(() => {`,
+          bodyStmts,
+          `${indent(depth + 1)}});`,
+          `${pad}}`,
+        ].join("\n");
+      }
       if (stmt.async) {
         return [
           `${pad}export function ${stmt.id.name}(${named.join(", ")}) {`,
@@ -696,6 +706,12 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     case "AwaitExpression": {
       const arg = transpileExpression(expr.argument as Expression, opts);
       return `$await(${arg})`;
+    }
+    case "YieldExpression": {
+      const arg = expr.argument
+        ? transpileExpression(expr.argument as Expression, opts)
+        : "$lit(undefined)";
+      return `$yield(${arg})`;
     }
     case "TemplateLiteral": {
       const quasis = expr.quasis;

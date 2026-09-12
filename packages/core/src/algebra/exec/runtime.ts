@@ -496,6 +496,29 @@ export function $asyncReturn(v: Abs): Abs {
   return wrapPromiseAbs(v);
 }
 
+// --- 生成器 ---
+
+let yieldStack: Abs[][] = [];
+
+/** function* 体：收集所有 yield 值为 tuple Abs */
+export function $gen(body: () => void): Abs {
+  const ys: Abs[] = [];
+  yieldStack.push(ys);
+  try {
+    body();
+  } finally {
+    yieldStack.pop();
+  }
+  return $arr(ys);
+}
+
+/** yield v：压入当前生成器收集器；表达式值用 unknown */
+export function $yield(v: Abs): Abs {
+  const top = yieldStack[yieldStack.length - 1];
+  if (top) top.push(v);
+  return unknown;
+}
+
 /**
  * switch：具体 disc 选中匹配 case；抽象 disc 并所有分支。
  */
