@@ -59,6 +59,7 @@ import {
   evalBuiltinInstanceMethod,
 } from "./builtins.ts";
 import { callAbsMethod, getAbsProperty } from "./methods.ts";
+import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
 import {
   defineClass,
   getClass,
@@ -104,6 +105,8 @@ export type EvalOptions = {
   budget?: LeakBudget;
   /** 预解析 AST（check 等批量场景避免重复 parse） */
   file?: File;
+  /** host 已求值的相对依赖导出表 */
+  modules?: Record<string, AbsModuleExports>;
 };
 
 // --- 调用预算（与 TypeValue evaluator 对齐）---
@@ -307,13 +310,27 @@ export function evalSource(
   const env = emptyEnv();
   let phi = opts.phi ?? pTrue;
 
+  if (opts.modules) {
+    for (const stmt of file.program.body) {
+      if (stmt.type === "ImportDeclaration") {
+        bindImports(stmt, env, opts.modules);
+      }
+    }
+  }
+
   // 第一遍：注册函数与 class（class 必须在调用前登记 methods）
   for (const stmt of file.program.body) {
+    if (stmt.type === "ImportDeclaration") continue;
     if (stmt.type === "FunctionDeclaration" && stmt.id) {
       registerFunction(env, stmt);
     }
     if (stmt.type === "ClassDeclaration") {
       registerClassDecl(env, stmt);
+    }
+    if (stmt.type === "ExportNamedDeclaration" && stmt.declaration) {
+      const d = stmt.declaration;
+      if (d.type === "FunctionDeclaration" && d.id) registerFunction(env, d);
+      if (d.type === "ClassDeclaration") registerClassDecl(env, d);
     }
     if (stmt.type === "VariableDeclaration") {
       // const add = (a,b) => a+b
@@ -1540,8 +1557,9 @@ export function analyzeFn(
   phi: Phi = pTrue,
   budget?: LeakBudget,
   file?: File,
+  modules?: Record<string, AbsModuleExports>,
 ): Abs {
-  return evalSource(source, { fn: fnName, args }, { phi, budget, file }).value;
+  return evalSource(source, { fn: fnName, args }, { phi, budget, file, modules }).value;
 }
 
 /**
@@ -1549,12 +1567,14 @@ export function analyzeFn(
  * 返回最终 env（vars 含导出绑定）。TypeValue 仅在调用方 bridge 时出现。
  *
  * seedVars / seedFns：host 注入（@nudo:mock 等）在求值前绑定。
+ * modules：host 已求值的依赖导出表（specifier → AbsModuleExports）。
  */
 export function evalProgramAbs(
   source: string,
   opts: EvalOptions & {
     seedVars?: Record<string, Abs>;
     seedFns?: Record<string, { params: string[]; body: Node; async?: boolean }>;
+    modules?: Record<string, AbsModuleExports>;
   } = {},
 ): { env: AstEnv; last: Abs; phi: Phi } {
   resetAbsCallBudget();
@@ -1568,6 +1588,12 @@ export function evalProgramAbs(
   if (opts.seedFns) {
     for (const [k, fn] of Object.entries(opts.seedFns)) {
       env.fns.set(k, fn);
+    }
+  }
+  // import 先绑定（ESM 提升）
+  for (const stmt of file.program.body) {
+    if (stmt.type === "ImportDeclaration" && opts.modules) {
+      bindImports(stmt, env, opts.modules);
     }
   }
   let phi = opts.phi ?? pTrue;
@@ -1608,6 +1634,7 @@ export function evalProgramAbs(
   // 第二遍：执行顶层语句（跳过已注册的声明）
   let local: AstEnv = env;
   for (const stmt of file.program.body) {
+    if (stmt.type === "ImportDeclaration") continue;
     if (stmt.type === "FunctionDeclaration" || stmt.type === "ClassDeclaration") continue;
     if (
       stmt.type === "ExportNamedDeclaration" ||

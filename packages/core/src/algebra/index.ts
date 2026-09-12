@@ -21,6 +21,7 @@ export * from "./refine.ts";
 export * from "./constraint.ts";
 export * from "./inlay.ts";
 export * from "./denote.ts";
+export * from "./abs-modules.ts";
 export * from "./exec/index.ts";
 // modules/fs/path 属于 host（service/cli），不进代数
 export * from "./bridge.ts";

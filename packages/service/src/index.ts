@@ -62,6 +62,13 @@ export {
   clearHarvestCache,
 } from "./harvest-auto.ts";
 export {
+  evalAbsModuleGraph,
+  evalProgramAbsWithModules,
+  defaultAbsLoadModule,
+  type AbsModuleGraphResult,
+  type AbsGraphOptions,
+} from "./abs-modules-graph.ts";
+export {
   harvestNodeTypes,
   summarizeNodeEnv,
   type NodeEnvResult,

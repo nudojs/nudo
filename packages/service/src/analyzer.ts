@@ -64,6 +64,7 @@ import {
 } from "@nudojs/cli/evaluator";
 import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
 import { autoHarvestModules } from "./harvest-auto.ts";
+import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
 
 export type SourceLocation = {
   start: { line: number; column: number };
@@ -1154,6 +1155,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 
   // @nudo:mock 已编译为 Abs seed 注入；仅 import/env 强制 TypeValue 路径
   const selfContained = isSelfContainedSource(source, envNames);
+  const canAbsModules = absModulesOk(source, envNames);
   let absCallRecords: CallRecord[] = [];
   if (selfContained) {
     const seeds = mockDirectivesToAbsSeeds(functions);
@@ -1228,11 +1230,11 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       const fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
       const caseUnreachable = [...getUnreachableRanges()];
 
-      // 自包含源码：手写 case 与 call@ 同等接受 Abs 润色（单轨）
+      // 自包含或仅相对 import：手写 case 接受 Abs 润色（模块图注入依赖）
       let caseValue = fullResult.value;
       let caseAbs: Abs | undefined;
-      if (selfContained && fullResult.value.kind !== "never") {
-        caseAbs = tryEvalAbsRaw(source, fn.name, directive.args);
+      if ((selfContained || canAbsModules) && fullResult.value.kind !== "never") {
+        caseAbs = tryEvalAbsRaw(source, fn.name, directive.args, filePath);
         if (caseAbs) {
           const projected = absToTypeValue(caseAbs);
           if (absIsBetter(projected, fullResult.value)) caseValue = projected;
@@ -1418,7 +1420,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         let absRaw: Abs | undefined;
         let absResult: TypeValue | undefined;
         if (rec.resultType.kind !== "never" && rec.argTypes.length > 0) {
-          absRaw = tryEvalAbsRaw(source, candidate.name, rec.argTypes);
+          absRaw = tryEvalAbsRaw(source, candidate.name, rec.argTypes, filePath);
           if (absRaw) {
             const projected = absToTypeValue(absRaw);
             if (absIsBetter(projected, rec.resultType)) absResult = projected;
@@ -2212,10 +2214,20 @@ function absIsBetter(absTv: TypeValue, prev: TypeValue): boolean {
 /**
  * 自包含 = 无 import/require、无 @nudo:env。
  * @nudo:mock 不阻断 Abs：已编译为 seedVars/seedFns 注入 evalProgramAbs。
+ * 相对 import 经 Abs 模块图注入后，也不再阻断 Abs 路径。
  */
 function isSelfContainedSource(source: string, envNames: string[]): boolean {
   if (envNames.length > 0) return false;
   return !/\brequire\s*\(|\bimport\s*[{'"*]/.test(source);
+}
+
+/** Abs 模块图可处理：无 env/require/裸包，允许相对 import */
+function absModulesOk(source: string, envNames: string[]): boolean {
+  if (envNames.length > 0) return false;
+  if (/\brequire\s*\(/.test(source)) return false;
+  // 裸说明符（非相对/绝对）→ 需要 TypeValue/harvest 路径
+  if (/\bimport\s+[^;\n]*from\s*['"]([^./'\"][^'"]*)['"]/.test(source)) return false;
+  return true;
 }
 
 /**
@@ -2254,16 +2266,22 @@ function tryEvalAbs(
   return raw ? absToTypeValue(raw) : undefined;
 }
 
-/** Abs 原生重求值（无损）；undefined = 无法处理 */
+/** Abs 原生重求值（无损）；相对 import 经模块图注入；undefined = 无法处理 */
 function tryEvalAbsRaw(
   source: string,
   fnName: string,
   args: TypeValue[],
+  filePath?: string,
 ): Abs | undefined {
-  if (/\brequire\s*\(|\bimport\s*[{'"*]/.test(source)) return undefined;
+  // require / 裸 npm 仍不走 Abs（模块图只处理相对 import）
+  if (/\brequire\s*\(/.test(source)) return undefined;
   try {
     const absArgs: Abs[] = args.map((a) => typeValueToAbs(a));
-    const result = analyzeFn(source, fnName, absArgs);
+    let modules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined;
+    if (filePath && /\bimport\s*[{'"*]/.test(source)) {
+      modules = evalAbsModuleGraph(source, filePath).modules;
+    }
+    const result = analyzeFn(source, fnName, absArgs, undefined, undefined, undefined, modules);
     if (result.shape.k === "unknown" && !result.term) {
       return undefined;
     }
