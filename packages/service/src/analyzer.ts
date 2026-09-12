@@ -1301,9 +1301,37 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     }
   }
 
-  // TypeValue evaluateProgram 仍跑：env / fallback / nodeTypeMap。
-  // B hosted 时 method/property 诊断整类让位。
-  evaluateProgram(ast, globalEnv);
+  // B hosted：跳过 TypeValue evaluateProgram。
+  if (bHostedEval) {
+    try {
+      const absBinds = collectAbsBindingsFromGraph(source, filePath, {
+        seedVars: seeds.seedVars,
+        seedFns: seeds.seedFns as never,
+      });
+      for (const [name, absVal] of absBinds) {
+        if (absVal?.shape?.k === "fn") continue;
+        if (!globalEnv.has(name)) {
+          globalEnv.bind(name, absToTypeValue(absVal));
+        }
+      }
+      const absMods = evalAbsModuleGraph(source, filePath, {
+        seedVars: seeds.seedVars,
+        seedFns: seeds.seedFns as never,
+      });
+      const absNodes = collectAbsNodeTypes(source, {
+        seedVars: seeds.seedVars,
+        seedFns: seeds.seedFns as never,
+        modules: absMods.modules,
+      });
+      for (const [node, absVal] of absNodes) {
+        nodeTypeMap.set(node, absToTypeValue(absVal));
+      }
+    } catch {
+      /* Abs 补齐失败仍以 B 诊断为准 */
+    }
+  } else {
+    evaluateProgram(ast, globalEnv);
+  }
 
   // Abs / B 顶层调用记录优先；再空才保留 TypeValue
   if ((selfContained || canAbsModules) && absCallRecords.length > 0) {
@@ -1448,7 +1476,7 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           !!res &&
           res.shape.k === "unknown" &&
           (!res.term || (res.term.op === "lit" && res.term.value === undefined));
-        const bOk = !!res && !weakUnknown && res.conf !== "opaque";
+        const bOk = !!res && (bHostedEval || (!weakUnknown && res.conf !== "opaque"));
         if (bOk && bFull && bPrimary) {
           caseAbs = bFull.result;
           caseValue = absToTypeValue(bFull.result);
@@ -1461,12 +1489,22 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           }
           if (bFull.calls?.length) {
             const impMap = buildAbsImportLocalMap(source, filePath);
+            const safeAbs = (a: Abs | undefined): TypeValue => {
+              if (!a || typeof a !== "object" || !("shape" in a) || !a.shape) {
+                return T.unknown;
+              }
+              try {
+                return absToTypeValue(a);
+              } catch {
+                return T.unknown;
+              }
+            };
             for (const c of bFull.calls) {
               const rec: CallRecord = {
                 fnName: c.fnName,
-                argTypes: c.args.map((a) => absToTypeValue(a)),
-                resultType: c.threw ? T.never : absToTypeValue(c.result),
-                throws: c.threw ? absToTypeValue(c.result) : T.never,
+                argTypes: c.args.map(safeAbs),
+                resultType: c.threw ? T.never : safeAbs(c.result),
+                throws: c.threw ? safeAbs(c.result) : T.never,
                 callLoc: c.callLoc,
               };
               const imp = impMap.get(c.fnName);
@@ -1481,14 +1519,19 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       }
 
       if (!fullResult) {
-        fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
-        caseUnreachable = [...getUnreachableRanges()];
-        caseValue = fullResult.value;
-        if ((selfContained || canAbsModules) && fullResult.value.kind !== "never") {
-          caseAbs = tryEvalAbsRaw(source, fn.name, directive.args, filePath, seeds.seedVars);
-          if (caseAbs) {
-            const projected = absToTypeValue(caseAbs);
-            if (absIsBetter(projected, fullResult.value)) caseValue = projected;
+        if (bHostedEval) {
+          fullResult = { value: T.unknown, throws: T.never };
+          caseValue = T.unknown;
+        } else {
+          fullResult = evaluateFunctionFull(fn.node, directive.args, globalEnv);
+          caseUnreachable = [...getUnreachableRanges()];
+          caseValue = fullResult.value;
+          if ((selfContained || canAbsModules) && fullResult.value.kind !== "never") {
+            caseAbs = tryEvalAbsRaw(source, fn.name, directive.args, filePath, seeds.seedVars);
+            if (caseAbs) {
+              const projected = absToTypeValue(caseAbs);
+              if (absIsBetter(projected, fullResult.value)) caseValue = projected;
+            }
           }
         }
       }
@@ -1724,12 +1767,12 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
             widenedArgs.map((a) => typeValueToAbs(a)),
             { envNames, mocks: seeds.seedVars },
           );
-          if (bSym && !(bSym.shape.k === "unknown" && !bSym.term)) {
+          if (bSym && (bHostedEval || !(bSym.shape.k === "unknown" && !bSym.term))) {
             symAbs = bSym;
             symValue = absToTypeValue(bSym);
           }
         }
-        if (!symAbs) {
+        if (!symAbs && !bHostedEval) {
           const full = evaluateFunctionFull(fnNode, widenedArgs, globalEnv);
           symValue = full.value.kind === "unknown" && absSym ? absSym : full.value;
           symThrows = full.throws;
@@ -1779,19 +1822,24 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
         }
       }
       const bEntry = bEntryFull?.result;
-      if (bEntry && !(bEntry.shape.k === "unknown" && !bEntry.term)) {
+      if (bEntry && (bHostedEval || !(bEntry.shape.k === "unknown" && !bEntry.term))) {
         entryAbs = bEntry;
         entryValue = absToTypeValue(bEntry);
       }
     }
     if (!entryValue) {
-      const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, args, filePath, seeds.seedVars);
-      const full = absEntry
-        ? { value: absEntry, throws: T.never as TypeValue, throwLoc: undefined }
-        : evaluateFunctionFull(fnNode, args, globalEnv);
-      entryValue = full.value;
-      entryThrows = full.throws;
-      entryLoc = full.throwLoc;
+      if (bHostedEval) {
+        entryValue = T.unknown;
+        entryThrows = T.never as TypeValue;
+      } else {
+        const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, args, filePath, seeds.seedVars);
+        const full = absEntry
+          ? { value: absEntry, throws: T.never as TypeValue, throwLoc: undefined }
+          : evaluateFunctionFull(fnNode, args, globalEnv);
+        entryValue = full.value;
+        entryThrows = full.throws;
+        entryLoc = full.throwLoc;
+      }
     }
     const caseResult: CaseResult = {
       name: `entry@L${candidate.analysis.loc.start.line}`,
@@ -1808,7 +1856,9 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     candidate.analysis.combined = collapseLiteralUnion(entryValue, COLLAPSE_LITERAL_THRESHOLD);
   }
 
-  buildNodeTypeMap(ast, globalEnv, nodeTypeMap);
+  if (!bHostedEval) {
+    buildNodeTypeMap(ast, globalEnv, nodeTypeMap);
+  }
 
   setUnknownBuiltinHandler(null);
   setCallCollector(null);

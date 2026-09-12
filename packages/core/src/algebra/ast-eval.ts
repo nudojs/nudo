@@ -60,6 +60,7 @@ import {
 } from "./builtins.ts";
 import { callAbsMethod, getAbsProperty } from "./methods.ts";
 import { noteMemberDispatchMiss, noteUnknownMemberMissing } from "./exec/member-diag.ts";
+import { registerBClass } from "./exec/class-registry.ts";
 import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
 import {
   defineClass,
@@ -396,6 +397,23 @@ function registerClassDecl(env: AstEnv, node: Node): void {
   }
   const def = classFromMethods(name, methods, superName, superShape);
   defineClass(env, def);
+  // 桥接进 B classRegistry：import 后的 `new C(...)` 走 $new 能找到 ctor
+  {
+    const callM = (m: MethodDef) => (thisVal: Abs, ...args: Abs[]) =>
+      evalMethodBody(m, args, thisVal, env, pTrue, defaultLeakBudget, name);
+    const ctorDef = def.methods.get("constructor");
+    const methodImpls: Record<string, (thisVal: Abs, ...args: Abs[]) => Abs> = {};
+    for (const [mn, md] of def.methods) {
+      if (mn === "constructor") continue;
+      methodImpls[mn] = callM(md);
+    }
+    registerBClass({
+      name,
+      superName,
+      ctor: ctorDef ? callM(ctorDef) : undefined,
+      methods: methodImpls,
+    });
+  }
   const classVal = abs(
     { k: "brand", name, shape: def.instanceShape },
     undefined,

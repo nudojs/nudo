@@ -10,20 +10,15 @@ import { $get, $set } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl } from "../abs-fn.ts";
 import { notePrimMemberMissing, noteUnknownMemberMissing } from "./calls.ts";
+import {
+  registerBClass,
+  getBClass,
+  type BClassSpec,
+} from "./class-registry.ts";
 
-export type BClassSpec = {
-  name: string;
-  /** 父类名（继承链查找） */
-  superName?: string;
-  ctor?: (thisVal: Abs, ...args: Abs[]) => Abs;
-  methods?: Record<string, (thisVal: Abs, ...args: Abs[]) => Abs>;
-  /** 静态方法（不绑 this） */
-  staticMethods?: Record<string, (...args: Abs[]) => Abs>;
-  /** 静态字段初值（也写在 class Abs slots 上） */
-  statics?: Record<string, Abs>;
-};
+export type { BClassSpec } from "./class-registry.ts";
+export { registerBClass, getBClass, clearBClasses } from "./class-registry.ts";
 
-const classRegistry = new Map<string, BClassSpec>();
 const classImpl = new WeakMap<object, BClassSpec>();
 
 /** 定义类 → 可 new 的 Abs（brand 标记；静态字段挂在 slots） */
@@ -39,7 +34,7 @@ export function $class(
     staticMethods: spec.staticMethods,
     statics: spec.statics,
   };
-  classRegistry.set(name, full);
+  registerBClass(full);
   const slots: Record<string, { value: Abs }> = {};
   if (spec.statics) {
     for (const [k, v] of Object.entries(spec.statics)) slots[k] = { value: v };
@@ -56,7 +51,7 @@ export function $class(
 
 function specOf(cls: Abs): BClassSpec | undefined {
   if (classImpl.has(cls as object)) return classImpl.get(cls as object);
-  if (cls.shape.k === "brand") return classRegistry.get(cls.shape.name);
+  if (cls.shape.k === "brand") return getBClass(cls.shape.name);
   return undefined;
 }
 
@@ -69,7 +64,7 @@ function findMethod(
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    const spec = classRegistry.get(cur);
+    const spec = getBClass(cur);
     if (spec?.methods?.[method]) return spec.methods[method];
     cur = spec?.superName;
   }
@@ -83,7 +78,7 @@ function findCtor(
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    const spec = classRegistry.get(cur);
+    const spec = getBClass(cur);
     if (spec?.ctor) return { ctor: spec.ctor, className: cur };
     cur = spec?.superName;
   }
@@ -124,7 +119,7 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
  * transpile: super(a,b) → __this = $super(__this, "Child", [a,b])
  */
 export function $super(thisVal: Abs, childName: string, args: Abs[]): Abs {
-  const child = classRegistry.get(childName);
+  const child = getBClass(childName);
   const parentName = child?.superName;
   if (!parentName) return thisVal;
   const found = findCtor(parentName);
@@ -153,9 +148,14 @@ export function $invoke(
   if (brandName) {
     const m = findMethod(brandName, method);
     if (m) return m(thisVal, ...args);
-    const spec = classRegistry.get(brandName);
+    const spec = getBClass(brandName);
     const sm = spec?.staticMethods?.[method];
     if (sm) return sm(...args);
+  }
+  // 数组/元组方法（与 ast-eval 口径对齐）
+  if (thisVal.shape.k === "arr" || thisVal.shape.k === "tuple") {
+    const arrR = invokeArrMethod(thisVal, method, args);
+    if (arrR !== undefined) return arrR;
   }
   // 属性上的可调用值（require namespace / 对象方法）；method 诊断由下方统一报
   const prop = $get(thisVal, method, { silent: true });
@@ -171,6 +171,57 @@ export function $invoke(
   return unknown;
 }
 
+/** arr/tuple 上的 map/reduce/filter/join/includes */
+function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined {
+  const shape = arr.shape as
+    | { k: "arr"; element: Abs }
+    | { k: "tuple"; elements: Abs[] };
+  const callFn = (fn: unknown, ...fnArgs: Abs[]): Abs => {
+    if (typeof fn === "function") {
+      const r = (fn as (...a: Abs[]) => unknown)(...fnArgs);
+      if (r && typeof r === "object" && "shape" in (r as object)) return r as Abs;
+      return unknown;
+    }
+    if (fn && typeof fn === "object" && "shape" in (fn as object)) {
+      return $call(fn as Abs, fnArgs);
+    }
+    return unknown;
+  };
+  if (method === "map" && args[0]) {
+    if (shape.k === "tuple") {
+      const mapped = shape.elements.map((el) => callFn(args[0], el));
+      return abs({ k: "tuple", elements: mapped }, undefined, undefined, "path");
+    }
+    const out = callFn(args[0], shape.element);
+    return abs({ k: "arr", element: out }, undefined, undefined, "path");
+  }
+  if (method === "reduce" && args.length >= 1) {
+    const fn = args[0]!;
+    let acc = args[1] ?? unknown;
+    const list = shape.k === "tuple" ? shape.elements : [shape.element];
+    for (const el of list) {
+      acc = callFn(fn, acc, el);
+    }
+    return acc;
+  }
+  if (method === "filter" && args[0]) {
+    return arr;
+  }
+  if (method === "join") {
+    return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+  }
+  if (method === "includes") {
+    return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
+  }
+  if (method === "at" || method === "pop" || method === "shift") {
+    if (shape.k === "tuple" && shape.elements.length > 0) {
+      return shape.elements[0] ?? unknown;
+    }
+    if (shape.k === "arr") return shape.element;
+  }
+  return undefined;
+}
+
 /** super.method()：从父类起找（跳过自身覆盖） */
 export function $invokeSuper(
   thisVal: Abs,
@@ -178,7 +229,7 @@ export function $invokeSuper(
   method: string,
   args: Abs[],
 ): Abs {
-  const child = classRegistry.get(childName);
+  const child = getBClass(childName);
   const parentName = child?.superName;
   if (!parentName) return unknown;
   const m = findMethod(parentName, method);

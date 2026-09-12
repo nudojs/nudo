@@ -338,6 +338,9 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
         : confJoin(confJoin(a.conf, b.conf), facts.length ? "path" : "path");
     return abs({ k: "prim", type: "number" }, term, facts.length ? and(...facts) : undefined, conf);
   }
+  if (isNumericLike(a) && isNumericLike(b)) {
+    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
+  }
   // any：JS ToNumber → number（可能 NaN）
   if (isAnyLike(a) || isAnyLike(b)) {
     return toNumberResult(a, b, "-");
@@ -407,6 +410,10 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
       term.op === "lit" ? "exact" : confJoin(confJoin(a.conf, b.conf), "path"),
     );
   }
+  // number prim（无 term）× number prim → number（与 TypeValue 对齐）
+  if (isNumericLike(a) && isNumericLike(b)) {
+    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
+  }
   if (isAnyLike(a) || isAnyLike(b)) {
     return toNumberResult(a, b, "*");
   }
@@ -452,6 +459,9 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     }
     return abs(num().shape, term, undefined, confJoin(confJoin(a.conf, b.conf), "path"));
   }
+  if (isNumericLike(a) && isNumericLike(b)) {
+    return abs(num().shape, undefined, undefined, "partial");
+  }
   if (isAnyLike(a) || isAnyLike(b)) {
     return toNumberResult(a, b, "/");
   }
@@ -484,6 +494,9 @@ export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
       );
     }
     return abs(num().shape, term, undefined, confJoin(confJoin(a.conf, b.conf), "path"));
+  }
+  if (isNumericLike(a) && isNumericLike(b)) {
+    return abs(num().shape, undefined, undefined, "partial");
   }
   if (isAnyLike(a) || isAnyLike(b)) {
     return toNumberResult(a, b, "%");

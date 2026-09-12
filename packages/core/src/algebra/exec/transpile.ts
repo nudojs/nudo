@@ -946,6 +946,31 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             : "/* callee */";
       return `${c}(${args})`;
     }
+    case "ArrowFunctionExpression":
+    case "FunctionExpression": {
+      const fn = expr as {
+        params: Node[];
+        body: Node;
+        async?: boolean;
+      };
+      const paramParts = fn.params.map((p) => {
+        if (p.type === "Identifier") return (p as { name: string }).name;
+        if (p.type === "RestElement" && (p as { argument?: Node }).argument?.type === "Identifier") {
+          return `...${(p as { argument: { name: string } }).argument.name}`;
+        }
+        return "_p";
+      });
+      // 与函数声明同构：JS 箭头，参数即 Abs
+      if (fn.body.type === "BlockStatement") {
+        const inner = (fn.body as { body: Statement[] }).body
+          .map((s) => transpileStatement(s, 1, opts))
+          .join("\n");
+        const kw = fn.async ? "async " : "";
+        return `${kw}(${paramParts.join(", ")}) => {\n${inner}\n}`;
+      }
+      const kw = fn.async ? "async " : "";
+      return `${kw}(${paramParts.join(", ")}) => ${transpileExpression(fn.body as Expression, opts)}`;
+    }
     default:
       return `/* ${expr.type} */ $lit(undefined)`;
   }
