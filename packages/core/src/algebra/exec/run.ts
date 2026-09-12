@@ -26,6 +26,10 @@ export type RunTranspiledOptions = {
   maxLoopIters?: number;
   /** analyze = 跳过效应性顶层语句 */
   mode?: "exec" | "analyze";
+  /** @nudo:replace 注入值：varName → Abs */
+  replacements?: Record<string, Abs>;
+  /** @nudo:replace 匹配表：传给 transpile */
+  replacementTargets?: Array<{ target: string; varName: string }>;
 };
 
 const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
@@ -124,11 +128,23 @@ export function runTranspiled(
   let js = transpile(source, {
     runtimeImport: "@nudojs/core/exec",
     maxLoopIters: opts.maxLoopIters,
+    source,
+    replacements: opts.replacementTargets,
   });
   js = js.replace(RUNTIME_IMPORT_RE, "");
   js = rewriteUserImports(js, modules);
   if (opts.mode === "analyze") {
     js = stripEffectfulTopLevel(js);
+  }
+
+  // @nudo:replace 绑定
+  const reps = opts.replacements ?? {};
+  const repNames = Object.keys(reps);
+  if (repNames.length > 0) {
+    const binds = repNames
+      .map((n) => `const ${n} = __nudoReplaces[${JSON.stringify(n)}];`)
+      .join("\n");
+    js = `${binds}\n${js}`;
   }
 
   const exportFns = [...js.matchAll(/^export function (\w+)/gm)].map((m) => m[1]!);
@@ -137,12 +153,13 @@ export function runTranspiled(
   js = js.replace(/^export const /gm, "const ");
 
   const names = [...new Set([...exportFns, ...exportConsts])];
-  const argNames = [...runtimeArgNames(), "__nudoModules", "__nudoBindImport"];
+  const argNames = [...runtimeArgNames(), "__nudoModules", "__nudoBindImport", "__nudoReplaces"];
   const args = argNames.map((n) => {
     if (n === "__nudoModules") return modules;
     if (n === "__nudoBindImport") {
       return (spec: string, name: string) => bindImport(modules, spec, name);
     }
+    if (n === "__nudoReplaces") return reps;
     return rtAll[n];
   });
 

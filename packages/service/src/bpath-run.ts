@@ -10,19 +10,84 @@ import {
   callTranspiledExport,
   callTranspiledExportFull,
   setBCallCollector,
+  typeValueToAbs,
   type BCallRecord,
   type TranspiledCallResult,
   type Abs,
   type AbsModuleExports,
 } from "@nudojs/core";
+import { parse, extractInlineDirectives } from "@nudojs/parser";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
 
-/** 可走 transpile+exec：无 require/@nudo:env/inline replace；class/async 已支持 */
+/** 收集 @nudo:replace → transpile 注入表（仅紧随语句范围内生效） */
+export function collectBPathReplacements(source: string): {
+  targets: Array<{
+    target: string;
+    varName: string;
+    stmtStart?: number;
+    stmtEnd?: number;
+  }>;
+  values: Record<string, Abs>;
+} {
+  const targets: Array<{
+    target: string;
+    varName: string;
+    stmtStart?: number;
+    stmtEnd?: number;
+  }> = [];
+  const values: Record<string, Abs> = {};
+  let i = 0;
+  try {
+    const file = parse(source);
+    const visitStmts = (stmts: unknown[]) => {
+      for (const stmt of stmts) {
+        if (!stmt || typeof stmt !== "object") continue;
+        const loc = (stmt as { loc?: { start: { line: number }; end: { line: number } } }).loc;
+        const dirs = extractInlineDirectives(stmt as never);
+        for (const d of dirs) {
+          if (d.kind === "replace") {
+            const varName = `__rep${i++}`;
+            targets.push({
+              target: d.targetSource,
+              varName,
+              stmtStart: loc?.start.line,
+              stmtEnd: loc?.end.line,
+            });
+            values[varName] = typeValueToAbs(d.typeExpr);
+          }
+        }
+        const s = stmt as {
+          type?: string;
+          body?: unknown;
+          block?: unknown;
+          consequent?: unknown;
+          alternate?: unknown;
+          declaration?: unknown;
+        };
+        if (s.type === "BlockStatement" && Array.isArray(s.body)) visitStmts(s.body);
+        if (s.type === "FunctionDeclaration" || s.type === "FunctionExpression") {
+          if (s.body) visitStmts([s.body]);
+        }
+        if (s.type === "ExportNamedDeclaration" && s.declaration) {
+          visitStmts([s.declaration]);
+        }
+        if (s.type === "IfStatement") {
+          if (s.consequent) visitStmts([s.consequent]);
+          if (s.alternate) visitStmts([s.alternate]);
+        }
+      }
+    };
+    visitStmts(file.program.body);
+  } catch {
+    /* ignore */
+  }
+  return { targets, values };
+}
+
+/** 可走 transpile+exec：无 require/@nudo:env；replace/as 已支持 */
 export function isBPathCapable(source: string, envNames: string[] = []): boolean {
   if (envNames.length > 0) return false;
   if (/\brequire\s*\(/.test(source)) return false;
-  // 内联 replace/as 仅 TypeValue evaluator 实现
-  if (/@nudo:(replace|as)\b/.test(source)) return false;
   // 顶层 this. 仍不支持（方法内 this 由 transpile 处理）
   if (/(^|[^.\w$])this\s*\./.test(source) && !/\bclass\s+/.test(source)) return false;
   return true;
@@ -51,10 +116,13 @@ export function tryRunBPath(
   let out: BPathRunResult | null = null;
   try {
     const { modules } = evalAbsModuleGraph(source, filePath);
+    const { targets, values } = collectBPathReplacements(source);
     const exports = runTranspiled(source, {
       modules: modules as never,
       maxLoopIters: opts.maxLoopIters,
       mode: opts.mode ?? "analyze",
+      replacementTargets: targets.length ? targets : undefined,
+      replacements: targets.length ? values : undefined,
     });
     out = { exports, modules };
   } catch {

@@ -15,7 +15,35 @@ export type TranspileOptions = {
   thisParam?: string;
   /** 当前类名（super 派发用） */
   className?: string;
+  /** 原始源码（@nudo:replace 按节点文本匹配） */
+  source?: string;
+  /** 替换表：归一化目标文本 → 注入变量名；可选语句范围 */
+  replacements?: Array<{
+    target: string;
+    varName: string;
+    /** 仅该语句范围内生效（1-based 行） */
+    stmtStart?: number;
+    stmtEnd?: number;
+  }>;
 };
+
+function normWs(s: string): string {
+  return s.replace(/\s+/g, "");
+}
+
+function matchReplacement(node: Node, opts: TranspileOptions): string | null {
+  if (!opts.source || !opts.replacements?.length) return null;
+  if (node.start == null || node.end == null || !node.loc) return null;
+  const src = opts.source.slice(node.start, node.end);
+  const n = normWs(src);
+  const line = node.loc.start.line;
+  for (const r of opts.replacements) {
+    if (r.stmtStart != null && line < r.stmtStart) continue;
+    if (r.stmtEnd != null && line > r.stmtEnd) continue;
+    if (normWs(r.target) === n) return r.varName;
+  }
+  return null;
+}
 
 const BIN_OPS: Record<string, string> = {
   "+": "$add",
@@ -33,7 +61,7 @@ const BIN_OPS: Record<string, string> = {
 
 export function transpileSource(source: string, opts: TranspileOptions = {}): string {
   const file = parseSource(source);
-  return transpileFile(file, opts);
+  return transpileFile(file, { ...opts, source: opts.source ?? source });
 }
 
 export function transpileFile(file: File, opts: TranspileOptions = {}): string {
@@ -499,6 +527,9 @@ function extractForInitName(init: Statement | Expression | null | undefined): st
 }
 
 export function transpileExpression(expr: Expression, opts: TranspileOptions = {}): string {
+  // @nudo:replace：节点源码文本匹配则换成注入变量
+  const rep = matchReplacement(expr as Node, opts);
+  if (rep) return rep;
   // ChainExpression 不在 Expression 联合里，先剥一层
   const anyExpr = expr as unknown as { type: string; expression?: Expression };
   if (anyExpr.type === "ChainExpression" && anyExpr.expression) {
