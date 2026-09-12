@@ -83,6 +83,12 @@ export {
   type BPathRunResult,
 } from "./bpath-run.ts";
 export {
+  collectBPathDiagnostics,
+  type BPathDiagnostics,
+  type BPathUnreachable,
+  type BPathBuiltinUnknown,
+} from "./bpath-diagnostics.ts";
+export {
   harvestNodeTypes,
   summarizeNodeEnv,
   type NodeEnvResult,

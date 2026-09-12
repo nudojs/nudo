@@ -65,7 +65,8 @@ import {
 import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
 import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
-import { tryBPathCall, tryBPathCallFull } from "./bpath-run.ts";
+import { tryBPathCall, tryBPathCallFull, isBPathCapable } from "./bpath-run.ts";
+import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
 
 export type SourceLocation = {
   start: { line: number; column: number };
@@ -1100,6 +1101,8 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   const envNames = [...new Set([...projectEnvNames, ...fileEnvNames])];
 
   setUnknownBuiltinHandler((name, loc) => {
+    // B 路径可分析时由静态收集器接管，避免双报
+    if (isBPathCapable(source, envNames)) return;
     diagnostics.push({
       range: loc ? { start: loc.start, end: loc.end } : { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
       severity: "warning",
@@ -1172,15 +1175,43 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   }
 
   const unreachableRanges = getUnreachableRanges();
-  for (const ur of unreachableRanges) {
-    diagnostics.push({
-      range: ur,
-      severity: "info",
-      message: "Code after return/throw statement is unreachable",
-      tags: ["unnecessary"],
-      code: "nudo-unreachable",
-      suggestions: ["Remove the unreachable code after the return/throw statement"],
-    });
+  const bCapable = isBPathCapable(source, envNames);
+  if (bCapable) {
+    // B 路径静态诊断接管 unreachable + builtin-unknown
+    const bDiag = collectBPathDiagnostics(source);
+    for (const ur of bDiag.unreachable) {
+      diagnostics.push({
+        range: ur.range,
+        severity: "info",
+        message: "Code after return/throw statement is unreachable",
+        tags: ["unnecessary"],
+        code: "nudo-unreachable",
+        suggestions: ["Remove the unreachable code after the return/throw statement"],
+      });
+    }
+    for (const b of bDiag.builtinUnknown) {
+      diagnostics.push({
+        range: b.range,
+        severity: "warning",
+        message: `Built-in API "${b.name}" is not covered by Nudo's type inference`,
+        code: "nudo:builtin-unknown",
+        suggestions: [
+          `Use @nudo:mock to define the type: @nudo:mock ${b.name} = stub().returns(...)`,
+          `Or use @nudo:refine return <constraint> to declare the return contract`,
+        ],
+      });
+    }
+  } else {
+    for (const ur of unreachableRanges) {
+      diagnostics.push({
+        range: ur,
+        severity: "info",
+        message: "Code after return/throw statement is unreachable",
+        tags: ["unnecessary"],
+        code: "nudo-unreachable",
+        suggestions: ["Remove the unreachable code after the return/throw statement"],
+      });
+    }
   }
 
   collectBindings(ast, globalEnv, bindings);
@@ -1304,15 +1335,18 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
           });
         }
 
-        for (const ur of caseUnreachable) {
-          diagnostics.push({
-            range: ur,
-            severity: "info",
-            message: "Code after return/throw statement is unreachable",
-            tags: ["unnecessary"],
-            code: "nudo-unreachable",
-            suggestions: ["Remove the unreachable code after the return/throw statement"],
-          });
+        // B 路径可分析时文件级静态收集已报 unreachable，跳过 case 级
+        if (!isBPathCapable(source, envNames)) {
+          for (const ur of caseUnreachable) {
+            diagnostics.push({
+              range: ur,
+              severity: "info",
+              message: "Code after return/throw statement is unreachable",
+              tags: ["unnecessary"],
+              code: "nudo-unreachable",
+              suggestions: ["Remove the unreachable code after the return/throw statement"],
+            });
+          }
         }
       }
     }
