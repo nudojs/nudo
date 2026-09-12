@@ -1795,16 +1795,43 @@ export function getTypeAtPosition(
   activeCases?: Map<string, number>,
 ): TypeValue | null {
   const ast = parse(source);
+  const fileDirectives = extractFileDirectives(ast);
+  const envNames = fileDirectives
+    .filter((d) => d.kind === "env")
+    .flatMap((d) => d.envs);
+
+  // B 路径 capable：节点表来自 evalProgramAbs（模块图注入），不跑 TypeValue evaluateProgram
+  if (isBPathCapable(source, envNames)) {
+    try {
+      const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast));
+      const { modules } = evalAbsModuleGraph(source, filePath);
+      const absNodes = collectAbsNodeTypes(source, {
+        ...seeds,
+        modules,
+        file: ast as never,
+      });
+      const absAt = findAbsAtPosition(absNodes, line, column);
+      if (absAt) return absToTypeValue(absAt);
+      // 标识符绑定兜底
+      const ident = findIdentNameAtPosition(source, line, column, ast);
+      if (ident) {
+        const binds = collectAbsBindingsFromGraph(source, filePath, {
+          seedVars: seeds.seedVars,
+          seedFns: seeds.seedFns as never,
+        });
+        const bound = binds.get(ident);
+        if (bound) return absToTypeValue(bound);
+      }
+    } catch {
+      /* fall through to TypeValue */
+    }
+  }
+
   resetMemo();
   resetEnvModules();
   setModuleResolver(resolveModule);
   setCurrentFileDir(dirname(filePath));
   setCurrentSource(source);
-
-  const fileDirectives = extractFileDirectives(ast);
-  const envNames = fileDirectives
-    .filter((d) => d.kind === "env")
-    .flatMap((d) => d.envs);
 
   const globalEnv = createEnvironment();
 
@@ -1868,15 +1895,50 @@ export function getHoverAtPosition(
   column: number,
   activeCases?: Map<string, number>,
 ): HoverInfo | null {
-  const tv = getTypeAtPosition(filePath, source, line, column, activeCases);
-  const info: HoverInfo | null = tv ? { typeText: typeValueToString(tv) } : null;
-  // 单次 parse 供 generalize / evalProgramAbs / nodeTypes / ident 复用
   let file: ReturnType<typeof parse> | undefined;
   try {
     file = parse(source);
   } catch {
     file = undefined;
   }
+  const envNames = collectEnvNames(filePath, source, false);
+
+  // B 路径：优先 Abs 节点表 / 标识符绑定，不经 TypeValue evaluateProgram
+  if (isBPathCapable(source, envNames)) {
+    try {
+      const seeds = mockDirectivesToAbsSeeds(extractDirectives(file ?? parse(source)));
+      const { modules } = evalAbsModuleGraph(source, filePath);
+      const absNodes = collectAbsNodeTypes(source, {
+        ...seeds,
+        modules,
+        ...(file ? { file: file as never } : {}),
+      });
+      const absAt = findAbsAtPosition(absNodes, line, column);
+      const ident = findIdentNameAtPosition(source, line, column, file);
+      if (ident && !findFunctionNameAtPosition(source, line, column, file)) {
+        const binds = collectAbsBindingsFromGraph(source, filePath, {
+          seedVars: seeds.seedVars,
+          seedFns: seeds.seedFns as never,
+        });
+        const bound = binds.get(ident);
+        if (bound) {
+          const absLine = formatAbs(bound);
+          const absMulti = formatAbsMultiline(bound, ident);
+          return { typeText: absLine, abs: absLine, absMultiline: absMulti };
+        }
+      }
+      if (absAt) {
+        const absLine = formatAbs(absAt);
+        const absMulti = formatAbsMultiline(absAt, undefined);
+        return { typeText: absLine, abs: absLine, absMultiline: absMulti };
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  const tv = getTypeAtPosition(filePath, source, line, column, activeCases);
+  const info: HoverInfo | null = tv ? { typeText: typeValueToString(tv) } : null;
 
   const fnName = findFunctionNameAtPosition(source, line, column, file);
   if (fnName) {
