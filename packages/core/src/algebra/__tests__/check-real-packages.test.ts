@@ -143,4 +143,23 @@ describe("real package precision", () => {
     expect(scanned).toBeGreaterThan(0);
     expect(violations, violations.join("\n")).toEqual([]);
   });
+
+  it.runIf(existsSync(join(root, "node_modules/ms")))(
+    "ms: no false-positive errors",
+    () => {
+      const { scanned, violations } = scanPackage("ms");
+      expect(scanned).toBeGreaterThan(0);
+      expect(violations, violations.join("\n")).toEqual([]);
+    },
+  );
+
+  it.runIf(existsSync(join(root, "node_modules/lodash")))(
+    "lodash: no false-positive errors",
+    () => {
+      const { scanned, violations } = scanPackage("lodash");
+      // lodash 体积大：至少扫到一批入口文件
+      expect(scanned).toBeGreaterThan(5);
+      expect(violations, violations.join("\n").slice(0, 2000)).toEqual([]);
+    },
+  );
 });

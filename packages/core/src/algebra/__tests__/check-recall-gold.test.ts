@@ -574,6 +574,102 @@ readX(o);
 `,
     expect: "ok",
   },
+  // --- 递归：门禁必须可完成，截断只 warning ---
+  {
+    id: "recursion-fac-ok",
+    origin: "递归·阶乘",
+    source: `
+function fac(n) {
+  if (n <= 1) return 1;
+  return n * fac(n - 1);
+}
+const x = fac(5);
+`,
+    expect: "ok",
+    note: "递归截断记 warning，不得 error；check 不得栈溢出",
+  },
+  {
+    id: "recursion-mutual-ok",
+    origin: "递归·互递归",
+    source: `
+function isEven(n) {
+  if (n === 0) return true;
+  return isOdd(n - 1);
+}
+function isOdd(n) {
+  if (n === 0) return false;
+  return isEven(n - 1);
+}
+const e = isEven(4);
+`,
+    expect: "ok",
+  },
+  {
+    id: "recursion-with-refine-ok",
+    origin: "递归·有 return 契约",
+    source: `
+/**
+ * @nudo:refine return positive
+ */
+function sumTo(n) {
+  if (n <= 1) return 1;
+  return n + sumTo(n - 1);
+}
+const s = sumTo(10);
+`,
+    expect: "ok",
+    note: "截断后 conf 降级，不得把 opaque 误报成 constraint-violated",
+  },
+  // --- any：任意值 ≠ 分析失败 ---
+  {
+    id: "any-param-call-ok",
+    origin: "any·无契约参数",
+    source: `
+function id(x) {
+  return x;
+}
+id(1);
+id("a");
+`,
+    expect: "ok",
+  },
+  {
+    id: "any-assign-to-number-ok",
+    origin: "any·源侧放行",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needsPos(n) {
+  if (n > 0) return n;
+  return 0;
+}
+function wrap(v) {
+  return needsPos(v);
+}
+`,
+    expect: "ok",
+    note: "any ≤ 任意目标：wrap 的 v 为 any，不构成 error（文档化语义）",
+  },
+  {
+    id: "literal-still-violates-through-wrapper",
+    origin: "any·不吞字面量违例",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needsPos(n) {
+  if (n > 0) return n;
+  return 0;
+}
+function wrap(v) {
+  return needsPos(v);
+}
+wrap(0);
+`,
+    expect: "violation",
+    note: "经 wrapper 的字面量 0 仍须报 constraint-violated",
+  },
 ];
 
 /** require 金标：用 loadModule 喂外部源码 */
