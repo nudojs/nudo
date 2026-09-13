@@ -10,9 +10,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# lint / build / test 相互独立：测试走 vitest 的 src 别名，不依赖 tsup 产物。
+# 三个 job 并行，任一失败即红。
 jobs:
-  ci:
-    name: Lint, Build & Test
+  lint:
+    name: Lint (tsc x2)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -36,8 +38,46 @@ jobs:
       - name: Lint tests
         run: npm run lint:tests
 
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Build
         run: pnpm -r --filter '!website' run build
+
+  test:
+    name: Test & Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Test
         run: npm run test:coverage

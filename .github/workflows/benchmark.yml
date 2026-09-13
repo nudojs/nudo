@@ -28,10 +28,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # 软性观测：只产出结果，不设性能/准确率门禁。
-      # runner 本身崩溃（引擎回归）才失败。
+      # 跑分 + 硬门禁：exact/unknown/error 回退或 >1.5x 性能回退即失败。
+      # runner 本身崩溃（引擎回归）同样失败；有意变更走 pnpm run benchmark:baseline。
       - name: Run benchmark
         run: npm run benchmark
+
+      - name: Gate against baseline
+        run: npm run benchmark:gate
 
       - name: Upload results
         if: always()

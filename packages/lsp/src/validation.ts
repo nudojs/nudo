@@ -12,6 +12,8 @@ import {
   buildModuleGraph,
   computeDirtySet,
   defaultLoadModule,
+  clearAbsModuleCache,
+  evictAbsModuleCacheFiles,
   type AnalysisResult,
   type Diagnostic as JsDiagnostic,
   type DiagnosticSeverity as JsDiagSeverity,
@@ -44,6 +46,7 @@ export function clearValidationState(): void {
   analysisCache.clear();
   knownFiles.clear();
   moduleGraphCache.clear();
+  clearAbsModuleCache();
 }
 
 /**
@@ -61,9 +64,13 @@ export function forgetValidatedFile(filePath: string): void {
  * 把「被删除且不在打开集」的 uri 列表广播到这里（uri→filePath 复用 uriToFilePath）。
  * 已删除文件的条目只剩内存驻留价值——同名重建文件若 mtime/size 恰好撞上旧值，
  * 会复用陈旧边集得出错误 dirty 集，因此删除时立即逐出。
+ * Abs 依赖模块导出缓存（abs-modules-graph）同口径逐出：虽然 stat 失效自愈，
+ * 但删除文件的内存驻留条目应随会话清理释放。
  */
 export function evictModuleGraphCacheEntries(uris: string[]): void {
-  for (const uri of uris) moduleGraphCache.delete(uriToFilePath(uri));
+  const paths = uris.map(uriToFilePath);
+  for (const p of paths) moduleGraphCache.delete(p);
+  evictAbsModuleCacheFiles(paths);
 }
 
 export function hasNudoDirectives(source: string): boolean {

@@ -61,6 +61,7 @@ import {
   preloadPathEnvs,
   findProjectConfig,
   resolveNpmNudo,
+  BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS,
 } from "@nudojs/cli/evaluator";
 import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
 import { autoHarvestModules } from "./harvest-auto.ts";
@@ -2483,22 +2484,16 @@ function builtinMemberType(memberExpr: string): TypeValue | null {
   }
 }
 
-const ARRAY_METHOD_MEMBERS = [
-  "map", "filter", "reduce", "find", "findIndex", "some", "every", "forEach",
-  "flatMap", "includes", "indexOf", "lastIndexOf", "join", "slice", "splice",
-  "concat", "push", "pop", "shift", "unshift", "sort", "reverse", "toString",
-] as const;
-
-const PROMISE_METHOD_MEMBERS = ["then", "catch", "finally"] as const;
-
-// 与 evaluator 的 String wrapper 原型表（BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS.String）
-// 精确一致：表外的原生方法（replaceAll/repeat/padStart…）未建模，微求值拿
-// undefined，列出只会得到回退文案，故不列。
-const STRING_METHOD_MEMBERS = [
-  "toUpperCase", "toLowerCase", "trim", "split", "slice", "substring",
-  "includes", "indexOf", "lastIndexOf", "startsWith", "endsWith", "charAt",
-  "charCodeAt", "replace", "toString", "valueOf",
-] as const;
+/**
+ * 内置成员补全的唯一真值来源：求值器原型近似表
+ * （BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS）。表内新增建模的方法
+ * （如 flatMap）自动进入补全，不再手工同步平行名单；表外方法未建模，
+ * 微求值拿 undefined、列出只会得到回退文案，故不派生。
+ */
+function builtinProtoMembers(className: string): string[] {
+  const table = BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS[className];
+  return table ? Object.keys(table) : [];
+}
 
 /**
  * 成员 detail 的展示形态：内置方法优先取 evaluator 的真实 fnSig
@@ -2521,7 +2516,7 @@ function describeMember(label: string, tv: TypeValue | null, fallbackClass: stri
 
 function getArrayCompletions(tv: TypeValue): CompletionItem[] {
   const completions: CompletionItem[] = [];
-  for (const m of ARRAY_METHOD_MEMBERS) {
+  for (const m of builtinProtoMembers("Array")) {
     const detail = describeMember(m, builtinMemberType(`Array.prototype.${m}`), "Array");
     completions.push({ label: m, kind: "method", detail });
   }
@@ -2535,7 +2530,7 @@ function getArrayCompletions(tv: TypeValue): CompletionItem[] {
 }
 
 function getPromiseCompletions(): CompletionItem[] {
-  return PROMISE_METHOD_MEMBERS.map((m) => ({
+  return builtinProtoMembers("Promise").map((m) => ({
     label: m,
     kind: "method" as const,
     detail: describeMember(m, builtinMemberType(`Promise.prototype.${m}`), "Promise"),
@@ -2544,7 +2539,7 @@ function getPromiseCompletions(): CompletionItem[] {
 
 function getStringCompletions(): CompletionItem[] {
   const completions: CompletionItem[] = [];
-  for (const m of STRING_METHOD_MEMBERS) {
+  for (const m of builtinProtoMembers("String")) {
     completions.push({
       label: m,
       kind: "method",

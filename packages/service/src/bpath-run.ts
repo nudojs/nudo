@@ -180,7 +180,9 @@ export function tryRunBPath(
 ): BPathRunResult | undefined {
   if (!isBPathCapable(source, opts.envNames ?? [])) return undefined;
   const mockKeys = Object.keys(opts.mocks ?? {}).sort().join(",");
-  const key = `${filePath}::${source.length}::${source.slice(0, 200)}::${opts.mode ?? "analyze"}::${(opts.envNames ?? []).join(",")}::m=${mockKeys}`;
+  // 全量 source 进键：同路径、同前缀、同长度的不同源码不得复用同一条缓存
+  // （前缀截断键会静默返回陈旧结果——错诊断且无任何报错信号）。
+  const key = `${filePath}::${source}::${opts.mode ?? "analyze"}::${(opts.envNames ?? []).join(",")}::m=${mockKeys}`;
   if (bRunCache.has(key)) return bRunCache.get(key) ?? undefined;
   let out: BPathRunResult | null = null;
   try {

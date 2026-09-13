@@ -16,6 +16,8 @@
     "docs:dev": "pnpm --filter website run start",
     "docs:build": "pnpm --filter website run build",
     "benchmark": "node benchmark/src/runner.js",
+    "benchmark:gate": "node benchmark/src/gate.js",
+    "benchmark:baseline": "node benchmark/src/baseline.js",
     "benchmark:ts": "node benchmark/src/typescript-runner.js",
     "benchmark:compare": "node benchmark/src/compare.js"
   },

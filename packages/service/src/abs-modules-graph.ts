@@ -3,7 +3,7 @@
  * 读 fs / 解析路径 / harvest 在这里；core 只收 modules 表。
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parse } from "@nudojs/parser";
 import {
@@ -113,7 +113,7 @@ function buildModulesForFile(
   source: string,
   fromFile: string,
   load: AbsLoadModule,
-  evalDep: (path: string, src: string, depth: number) => AbsModuleExports,
+  evalDep: (absPath: string, spec: string, fromFile: string, depth: number) => AbsModuleExports,
   depth: number,
   maxDepth: number,
   onMissing: (spec: string, fromFile: string, tried: string[]) => void,
@@ -126,12 +126,7 @@ function buildModulesForFile(
         onMissing(spec, fromFile, relCandidates(spec, fromFile));
         continue;
       }
-      const childSrc = load(spec, fromFile);
-      if (childSrc === undefined) {
-        onMissing(spec, fromFile, [childPath]);
-        continue;
-      }
-      modules[spec] = evalDep(childPath, childSrc, depth + 1);
+      modules[spec] = evalDep(childPath, spec, fromFile, depth + 1);
     } else if (!spec.startsWith("node:")) {
       const bare = bareSpecToAbsModules(spec, fromFile);
       if (bare) modules[spec] = bare;
@@ -166,6 +161,37 @@ export type AbsGraphOptions = {
   maxDepth?: number;
 };
 
+/** 会话级依赖模块缓存条目：stat 指纹 + 导出 + 子树装载 issue。 */
+export type AbsModuleCacheEntry = {
+  mtimeMs: number;
+  size: number;
+  exports: AbsModuleExports;
+  /** 该模块子树首次求值时记录的 cycle/depth/missing；命中时重放。 */
+  issues: AbsModuleLoadIssue[];
+};
+
+/**
+ * 跨入口复用的依赖模块缓存（LSP 脏传播重验 N 个入口、共享同一依赖树时，
+ * 避免每个入口重复 parse + 抽象求值全部依赖）。键为解析后的绝对路径，
+ * 命中条件 mtimeMs+size 严格相等（与 ModuleGraphCache 边缓存同口径）；
+ * 内容变更由指纹自然失效，删除经 evictAbsModuleCacheFiles / clearAbsModuleCache 逐出
+ * （删除即使不逐出也自愈：stat 抛错走 miss）。
+ *
+ * 命中时重放子树首次求值的 cycle/depth/missing issue，保持「每个入口文件
+ * 都报告其依赖树装载问题」的诊断口径；method-missing / recursion-truncated
+ * 等执行期诊断不随缓存重放——它们属于触发执行的调用方文件，且依赖文件
+ * 自身被验证时会独立产出。
+ */
+const absModuleCache = new Map<string, AbsModuleCacheEntry>();
+
+export function clearAbsModuleCache(): void {
+  absModuleCache.clear();
+}
+
+export function evictAbsModuleCacheFiles(paths: string[]): void {
+  for (const p of paths) absModuleCache.delete(p);
+}
+
 function moduleLabel(p: string): string {
   const parts = p.split(/[/\\]/);
   return parts[parts.length - 1] || p;
@@ -195,7 +221,7 @@ export function evalAbsModuleGraph(
     issues.push({ kind, label, reason });
   };
 
-  function evalDep(absPath: string, source: string, depth: number): AbsModuleExports {
+  function evalDep(absPath: string, spec: string, fromFile: string, depth: number): AbsModuleExports {
     const cycleIndex = loading.indexOf(absPath);
     if (cycleIndex !== -1) {
       const chain = [...loading.slice(cycleIndex), absPath];
@@ -206,6 +232,23 @@ export function evalAbsModuleGraph(
       );
       return cache.get(absPath) ?? { named: {} };
     }
+
+    // 会话缓存命中（指纹严格相等）：跳过重读重解析；byPath 也回填完整导出。
+    const shared = absModuleCache.get(absPath);
+    if (shared) {
+      try {
+        const st = statSync(absPath);
+        if (st.mtimeMs === shared.mtimeMs && st.size === shared.size) {
+          for (const iss of shared.issues) pushIssue(iss.kind, iss.label, iss.reason);
+          cache.set(absPath, shared.exports);
+          return shared.exports;
+        }
+      } catch {
+        /* 文件已删除 → 指纹失效，走 miss 重新装载 */
+      }
+      absModuleCache.delete(absPath);
+    }
+
     if (cache.has(absPath)) return cache.get(absPath)!;
     if (depth > maxDepth) {
       const chain = [...loading, absPath];
@@ -221,6 +264,21 @@ export function evalAbsModuleGraph(
     cache.set(absPath, { named: {} });
     loading.push(absPath);
 
+    const source = load(spec, fromFile);
+    if (source === undefined) {
+      pushIssue(
+        "missing",
+        spec,
+        `Module file not found for '${spec}' (from ${moduleLabel(fromFile)}); tried: ${absPath}`,
+      );
+      const empty: AbsModuleExports = { named: {} };
+      cache.set(absPath, empty);
+      loading.pop();
+      return empty;
+    }
+
+    // 子树 issue 切片起点：本模块自身（含其依赖）产生的装载问题。
+    const issueStart = issues.length;
     const modules = buildModulesForFile(
       source,
       absPath,
@@ -236,20 +294,33 @@ export function evalAbsModuleGraph(
         );
       },
     );
-
+    let exports: AbsModuleExports;
     try {
       const file = parse(source);
       const { env } = evalProgramAbs(source, { file, modules });
-      const exports = collectAbsExports(file, env, modules);
-      cache.set(absPath, exports);
-      return exports;
+      exports = collectAbsExports(file, env, modules);
     } catch {
-      const empty: AbsModuleExports = { named: {} };
-      cache.set(absPath, empty);
-      return empty;
+      exports = { named: {} };
     } finally {
       loading.pop();
     }
+    cache.set(absPath, exports);
+
+    let fingerprint: { mtimeMs: number; size: number } | undefined;
+    try {
+      const st = statSync(absPath);
+      fingerprint = { mtimeMs: st.mtimeMs, size: st.size };
+    } catch {
+      /* 无指纹（如自定义 loader 的虚拟文件）→ 不入会话缓存 */
+    }
+    if (fingerprint) {
+      absModuleCache.set(absPath, {
+        ...fingerprint,
+        exports,
+        issues: issues.slice(issueStart),
+      });
+    }
+    return exports;
   }
 
   const modules = buildModulesForFile(

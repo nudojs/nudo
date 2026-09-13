@@ -66,9 +66,12 @@ export {
   evalProgramAbsWithModules,
   collectAbsBindingsFromGraph,
   defaultAbsLoadModule,
+  clearAbsModuleCache,
+  evictAbsModuleCacheFiles,
   type AbsModuleGraphResult,
   type AbsGraphOptions,
   type AbsModuleLoadIssue,
+  type AbsModuleCacheEntry,
 } from "./abs-modules-graph.ts";
 export {
   harvestToAbsModules,

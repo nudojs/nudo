@@ -29,6 +29,9 @@ export {
 
 export { narrow } from "./narrowing.ts";
 
+// 补全成员派生的唯一真值（service/analyzer 经 @nudojs/cli/evaluator 取用）
+export { BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS } from "./builtins/builtin-prototype.ts";
+
 export { loadEnvs, loadEnvsAsync, preloadPathEnvs, type LoadedEnv } from "./env-loader.ts";
 
 export { findProjectConfig, type NudoConfig } from "./config.ts";

@@ -159,9 +159,10 @@ async function runBenchmark() {
     };
   }
 
-  // Save results
+  // Save results (timestamped + stable latest for baseline/gate consumers)
   const outputFile = `${RESULTS_DIR}/benchmark-${Date.now()}.json`;
   writeFileSync(outputFile, JSON.stringify({ summary, results }, null, 2));
+  writeFileSync(`${RESULTS_DIR}/latest.json`, JSON.stringify({ summary, results }, null, 2));
 
   // Print summary
   console.log("\n" + "=".repeat(50));

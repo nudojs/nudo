@@ -1,0 +1,133 @@
+{
+  "updatedAt": "2026-09-13T01:54:18.083Z",
+  "totalCases": 24,
+  "results": {
+    "exactMatches": 7,
+    "partialMatches": 1,
+    "unknownCount": 9,
+    "errorCount": 0
+  },
+  "averageTimeMs": 1135.7,
+  "cases": [
+    {
+      "id": "basic-01",
+      "name": "String concatenation",
+      "comparison": "exact"
+    },
+    {
+      "id": "basic-02",
+      "name": "Array literal",
+      "comparison": "exact"
+    },
+    {
+      "id": "basic-03",
+      "name": "Object literal",
+      "comparison": "exact"
+    },
+    {
+      "id": "flow-01",
+      "name": "Conditional return",
+      "comparison": "mismatch"
+    },
+    {
+      "id": "flow-02",
+      "name": "Loop accumulation",
+      "comparison": "mismatch"
+    },
+    {
+      "id": "flow-03",
+      "name": "Switch statement",
+      "comparison": "exact"
+    },
+    {
+      "id": "array-01",
+      "name": "Array.map",
+      "comparison": "exact"
+    },
+    {
+      "id": "array-02",
+      "name": "Array.filter",
+      "comparison": "partial"
+    },
+    {
+      "id": "array-03",
+      "name": "Array.reduce",
+      "comparison": "unknown"
+    },
+    {
+      "id": "array-04",
+      "name": "Array chaining",
+      "comparison": "mismatch"
+    },
+    {
+      "id": "obj-01",
+      "name": "Object spread",
+      "comparison": "unknown"
+    },
+    {
+      "id": "obj-02",
+      "name": "Destructuring",
+      "comparison": "unknown"
+    },
+    {
+      "id": "obj-03",
+      "name": "Nested access",
+      "comparison": "exact"
+    },
+    {
+      "id": "async-01",
+      "name": "Promise.resolve",
+      "comparison": "unknown"
+    },
+    {
+      "id": "async-02",
+      "name": "Promise.all",
+      "comparison": "unknown"
+    },
+    {
+      "id": "async-03",
+      "name": "Try/catch",
+      "comparison": "exact"
+    },
+    {
+      "id": "map-01",
+      "name": "Map operations",
+      "comparison": "mismatch"
+    },
+    {
+      "id": "set-01",
+      "name": "Set operations",
+      "comparison": "unknown"
+    },
+    {
+      "id": "complex-01",
+      "name": "Data transformation pipeline",
+      "comparison": "unknown"
+    },
+    {
+      "id": "complex-02",
+      "name": "Error handling with retries",
+      "comparison": "mismatch"
+    },
+    {
+      "id": "complex-03",
+      "name": "Generic data processor",
+      "comparison": "unknown"
+    },
+    {
+      "id": "real-01",
+      "name": "API response handler",
+      "comparison": "unknown"
+    },
+    {
+      "id": "real-02",
+      "name": "Configuration validator",
+      "comparison": "mismatch"
+    },
+    {
+      "id": "real-03",
+      "name": "Event emitter pattern",
+      "comparison": "mismatch"
+    }
+  ]
+}

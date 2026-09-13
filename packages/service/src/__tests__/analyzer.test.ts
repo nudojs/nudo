@@ -712,7 +712,8 @@ describe("getCompletionsAtPosition", () => {
 
     const promise = getCompletionsAtPosition("/test/promise.js", `const p = Promise.resolve(1);\np.then;\n`, 2, 2);
     expect(promise.find((c) => c.label === "then")?.detail).toBe("(_arg0: unknown) => Promise<unknown>");
-    expect(promise.map((c) => c.label).sort()).toEqual(["catch", "finally", "then"]);
+    // 派生自求值器原型近似表：含建模过的 Object.prototype 继承方法 toString
+    expect(promise.map((c) => c.label).sort()).toEqual(["catch", "finally", "then", "toString"]);
   });
 });
 
