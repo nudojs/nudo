@@ -9,8 +9,14 @@
 | `user-service.js` | import、async、HOF |
 
 ```bash
-pnpm run verify:examples   # 验证本目录命令（见 ../README.md 命令矩阵，两个都 exit 0）
+pnpm run verify:examples   # 验证本目录命令（见 ../README.md 命令矩阵，四个都 exit 0）
 ```
+
+两个支持文件在矩阵里也有独立 infer 行：`validators.js` 的 entry@ 签名展示从
+body 推断出的前置（`isPositive: (n: A1) => boolean  where A1 > 0`）；
+`store.js` 只含 class——class 方法不单独产生 infer case（infer 报告
+`No functions with @nudo:case directives found.`），其形状经 user-service.js
+的 import 图进入 `createService()  { store: MemoryStore, … }`。
 
 infer 亮点（每行都是逐调用点/逐 case 真值）：
 

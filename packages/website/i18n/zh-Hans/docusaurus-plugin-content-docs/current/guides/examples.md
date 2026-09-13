@@ -157,7 +157,7 @@ Case "negative": (-1) => never throws RangeError
 Combined: 5
 ```
 
-Nudo 建模控制流：`valid` case 返回 `5`，`negative` case 抛出 `RangeError` 且永不返回——其结果为 `never`，同时追踪抛出的值。合并后的值类型为 `5`。当某个 case 可能抛出时，活动 case 的诊断还会报告 `nudo-may-throw`。
+Nudo 建模控制流：`valid` case 返回 `5`，`negative` case 抛出 `RangeError` 且永不返回——其结果为 `never`，同时追踪抛出的值。合并后的值类型为 `5`。像这样静态可判定的 throw 不会产生额外诊断——`never throws RangeError` 就是全部信息。只有**条件性** throw（抛出分支由 unknown 条件守卫，如示例 15）才会为对应 case 追加报告 `nudo-may-throw`。
 
 ---
 
@@ -349,7 +349,7 @@ function getPort(config) {
 getPort({ port: 8080 });   // → number
 ```
 
-深层 `?.` 链目前不会保留回退字面量——请用 `nudo infer` 验证你自己的链式写法。
+深层 `?.` 链目前给不出精确的**报告结果**：短路调用上回退字面量存活在内部 Abs 里（`abs: unknown | "light"  #exact`），但 case 结果退化为 `unknown` 并被 `Combined:` 吸收。请用 `nudo infer` 验证你自己的链式写法。
 
 ---
 
@@ -568,17 +568,14 @@ Diagnostics:
 
 ---
 
-## 所用指令小结
+## 本指南用到的指令
 
-| 指令            | 用途                                         |
-|-----------------|----------------------------------------------|
-| `@nudo:case`    | 提供具体或符号化的输入样本                   |
-| `@nudo:mock`    | 用类型值 mock 替换全局对象/模块              |
-| `@nudo:pure`    | 标记纯函数以便缓存                           |
-| `@nudo:skip`    | 跳过求值；使用声明的返回类型                 |
-| `@nudo:sample`  | 控制循环采样次数                             |
-| `@nudo:refine`  | 精化契约（参数 / 返回）                      |
-| `@nudo:env`     | 声明运行时环境（web、node、es）              |
-| `@nudo:mock-module` | 替换导入的模块为 mock 文件              |
+| 指令           | 出现于 | 用途                                       |
+|----------------|--------|--------------------------------------------|
+| `@nudo:case`   | 1、3、4、5、6、10、14、15、16 | 提供具体或符号化的输入样本 |
+| `@nudo:mock`   | 4 | 用单行纯 JS mock 替换全局对象              |
+| `@nudo:env`    | 15、16 | 加载内置环境类型（web / node）             |
+
+完整指令集——`@nudo:refine` 契约、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:mock-module` 等——见 [指令](../concepts/directives.md)。
 
 关于类型值（`T.number`、`T.object` 等）和抽象解释的更多内容，请参阅 [Type Values](../concepts/type-values.md) 和 [Abstract Interpretation](../concepts/abstract-interpretation.md)。

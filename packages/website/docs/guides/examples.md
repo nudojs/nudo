@@ -157,7 +157,7 @@ Case "negative": (-1) => never throws RangeError
 Combined: 5
 ```
 
-Nudo models control flow: the `valid` case returns `5`, the `negative` case throws `RangeError` and never returns — its result is `never` with the thrown value tracked alongside. The combined value type is `5`. The diagnostic for the active case also reports `nudo-may-throw` when a case can throw.
+Nudo models control flow: the `valid` case returns `5`, the `negative` case throws `RangeError` and never returns — its result is `never` with the thrown value tracked alongside. The combined value type is `5`. A statically decided throw like this one emits no extra diagnostic — `never throws RangeError` is the whole story. A **conditional** throw (the throwing branch guarded by an unknown condition, as in example 15) additionally reports `nudo-may-throw` for that case.
 
 ---
 
@@ -349,7 +349,7 @@ function getPort(config) {
 getPort({ port: 8080 });   // → number
 ```
 
-Deep `?.` chains currently do not preserve the fallback literal — verify your own chains with `nudo infer`.
+Deep `?.` chains currently do not yield a precise reported result: on the short-circuit call the fallback literal survives in the internal Abs (`abs: unknown | "light"  #exact`) but the case result degrades to `unknown` and `Combined:` absorbs it. Verify your own chains with `nudo infer`.
 
 ---
 
@@ -568,17 +568,14 @@ Diagnostics:
 
 ---
 
-## Summary of Directives Used
+## Directives Used in This Guide
 
-| Directive       | Purpose                                      |
-|-----------------|----------------------------------------------|
-| `@nudo:case`    | Provide concrete or symbolic input samples   |
-| `@nudo:mock`    | Replace globals/modules with type-value mocks|
-| `@nudo:pure`    | Mark pure functions for caching              |
-| `@nudo:skip`    | Skip evaluation; use declared return type    |
-| `@nudo:sample`  | Control loop sampling count                  |
-| `@nudo:refine`  | Refinement contract (param / return)         |
-| `@nudo:env`     | Declare runtime environment (web, node, es)  |
-| `@nudo:mock-module` | Replace imported modules with mock files |
+| Directive    | Used in | Purpose |
+|--------------|---------|---------|
+| `@nudo:case` | 1, 3, 4, 5, 6, 10, 14, 15, 16 | Provide concrete or symbolic input samples |
+| `@nudo:mock` | 4 | Replace globals with a single-line plain-JS mock |
+| `@nudo:env`  | 15, 16 | Load built-in environment typings (web / node) |
+
+The full directive set — `@nudo:refine` contracts, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:mock-module`, and more — is documented in [Directives](../concepts/directives.md).
 
 For more on type values (`T.number`, `T.object`, etc.) and abstract interpretation, see [Type Values](../concepts/type-values.md) and [Abstract Interpretation](../concepts/abstract-interpretation.md).

@@ -54,6 +54,10 @@ function score(x) { return x + 1; }
 
 - **命令与退出码**：只改矩阵——门禁脚本从本表解析命令 × 退出码，新增 /
   删除示例或改期望退出码 = 改这一张表，脚本自动跟随。
+- **文件双向校验**：脚本交叉校验矩阵 ↔ 磁盘——每行命令的目标文件必须存在
+  （负例行路径打错会以 exit 1 静默通过，此校验拦住）；`docs/examples` 下每个
+  可运行的 `.js` / `.ts` 文件必须出现在至少一行矩阵（`*.nudo.js` 模板除外，
+  它们经 `@nudo:import` 引入）。新增示例文件 = 加一行矩阵，否则 CI 红。
 - **输出承诺**：示例文件头注释与子目录 README 声称的输出行由脚本逐条钉住
   （固定串匹配，脚本 pins 段）。引擎精度变化导致输出漂移时 CI 会红——
   需同步更新示例文件注释/README 与脚本 pins。
@@ -86,5 +90,7 @@ function score(x) { return x + 1; }
 | `pnpm run infer docs/examples/algebra/sample.js` | **0** | 无调用点 → `entry@` 回退 |
 | `pnpm run check docs/examples/mini-repo/user-service.js` | **0** | 多文件集成（check） |
 | `pnpm run infer docs/examples/mini-repo/user-service.js` | **0** | 多文件集成（infer） |
+| `pnpm run infer docs/examples/mini-repo/validators.js` | **0** | 支持文件独立 infer：entry@ 前置推断 |
+| `pnpm run infer docs/examples/mini-repo/store.js` | **0** | class 方法不单独 infer |
 
 > 负例文件（constraints / structure / vs-ts 的 check）**故意 exit 非 0**——报错行就是它们演示的内容。

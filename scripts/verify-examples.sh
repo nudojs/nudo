@@ -7,7 +7,11 @@
 # parses it, so adding/removing an example or changing a promised exit code
 # means editing the matrix only. Every matrix row must parse — a row that
 # silently fails to parse would silently drop coverage — so the parsed row
-# count is cross-checked against the matrix.
+# count is cross-checked against the matrix. Two disk cross-checks close
+# the remaining blind spots: every row's target file must exist (a typo'd
+# path on a negative-example row would otherwise pass as exit 1), and
+# every runnable *.js/*.ts under docs/examples must be covered by at least
+# one row (*.nudo.js templates excepted — imported via @nudo:import).
 #
 # Output pins (below) mirror the promises in the example files' header
 # comments and the per-directory READMEs: fixed strings that MUST appear in
@@ -90,6 +94,21 @@ while read -r code cmd; do
   [ -n "$cmd" ] || continue
   parsed=$((parsed + 1))
   expect "$code" "$cmd"
+  # every row's target file must exist — a typo'd path on a negative-example
+  # row (expected exit 1) would otherwise pass silently.
+  case "$cmd" in
+    *' docs/examples/'*) ;;
+    *)
+      fail=$((fail + 1))
+      printf 'FAIL  matrix row has no docs/examples target: %s\n' "$cmd"
+      continue
+      ;;
+  esac
+  path=${cmd##* }
+  if [ ! -f "$path" ]; then
+    fail=$((fail + 1))
+    printf 'FAIL  matrix target missing: %s (from: %s)\n' "$path" "$cmd"
+  fi
 done < <(sed -n 's/^| `\([^`]*\)` | \*\*\([0-9]*\)\*\*.*$/\2 \1/p' "$matrix")
 
 if [ "$parsed" -ne "$rows" ]; then
@@ -97,6 +116,21 @@ if [ "$parsed" -ne "$rows" ]; then
   printf 'FAIL  matrix parse: %s/%s command rows parsed from %s\n' \
     "$parsed" "$rows" "$matrix"
 fi
+
+# every runnable example file must be covered by at least one matrix row —
+# a file added without a row would silently skip the gate. *.nudo.js
+# templates are imported via @nudo:import, not standalone targets.
+covered=$(sed -n 's/^| `\([^`]*\)` | \*\*\([0-9]*\)\*\*.*$/\1/p' "$matrix" \
+  | awk '{ print $NF }')
+while read -r f; do
+  case "$f" in
+    *.nudo.js) continue ;;
+  esac
+  if ! grep -qxF -- "$f" <<<"$covered"; then
+    fail=$((fail + 1))
+    printf 'FAIL  matrix coverage: %s has no command row in %s\n' "$f" "$matrix"
+  fi
+done < <(find docs/examples -type f \( -name '*.js' -o -name '*.ts' \) | sort)
 
 # --- output pins (mirror the example files' documented output claims) ---------
 
@@ -169,6 +203,15 @@ pin 'pnpm run check docs/examples/mini-repo/user-service.js' \
 pin 'pnpm run infer docs/examples/mini-repo/user-service.js' \
   'Case "ages": ([10, 20, 30]) => 60' \
   '(7) => Promise<{ id: 7, name: "u7" }>' '(4) => 5' '(7, 1, 9999) => 7'
+# support files are matrix rows too: validators.js shows body-inferred
+# preconditions at entry; store.js documents that class methods don't
+# produce standalone infer cases.
+pin 'pnpm run infer docs/examples/mini-repo/validators.js' \
+  'Case "entry@L1": (unknown) => boolean' \
+  'isPositive: (n: A1) => boolean  where A1 > 0' \
+  'clamp: (n: A1, lo: A2, hi: A3) => any = A1'
+pin 'pnpm run infer docs/examples/mini-repo/store.js' \
+  'No functions with @nudo:case directives found.'
 
 printf -- '--------------------------------------------------------------\n'
 printf 'examples verified: %s checks passed, %s failed\n' "$pass" "$fail"
