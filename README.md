@@ -44,19 +44,13 @@ Output:
 === subtract ===
 
 Case "positive numbers": (5, 3) => 2
-    intension: subtract: (a: A1, b: A2) => number = (A1 - A2)
-    abs: 2  #exact
 Case "negative result": (1, 10) => -9
-    intension: subtract: (a: A1, b: A2) => number = (A1 - A2)
-    abs: -9  #exact
 Case "symbolic": (number, number) => number
-    intension: subtract: (a: A1, b: A2) => number = (A1 - A2)
-    abs: number  #partial
 
 Combined: number
 ```
 
-Each case reports its **intension** (the function's algebraic signature: term + constraint) and its **abs** (the extensional result for that case); `Combined` is the union of all cases.
+Output blocks show the **case headers and `Combined:` lines** — the per-call-site ground truth. A full run also prints `intension:` / `abs:` lines per case; those re-evaluate the function with `unknown` parameters (a generalized signature), and for multi-branch functions they show only the fallback path — which is why they are omitted here.
 
 ### Whole-program inference (no directives needed)
 
@@ -76,16 +70,14 @@ nudo infer plain.js
 === double ===
 
 Case "call@L3": (5) => 10
-    intension: double: (x: A1) => number = (A1 * 2)
-    abs: 10  #exact
 
 === helper ===
 
 Case "entry@L2": (unknown) => unknown
-    intension: helper: (x: A1) => string
-    abs: unknown  #partial
 # no call sites found; parameters default to unknown
 ```
+
+Even with no call sites, the generalized signature is still computed (`helper: (x: A1) => string`).
 
 Callbacks passed at call sites propagate precisely (polyvariant evaluation):
 
@@ -101,11 +93,7 @@ processItems(["a"], (s) => s.toUpperCase());
 === processItems ===
 
 Case "call@L4": ([1, 2, 3], (x) => ...) => [2, 4, 6]
-    intension: processItems: (items: A1, cb: A2) => unknown[]
-    abs: [unknown, unknown, unknown]  #path
 Case "call@L5": (["a"], (s) => ...) => ["A"]
-    intension: processItems: (items: A1, cb: A2) => unknown[]
-    abs: [unknown]  #path
 
 Combined: [2, 4, 6] | ["A"]
 ```

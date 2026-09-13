@@ -1,15 +1,16 @@
 ---
 sidebar_position: 1
-description: 安装 Nudo 的 CLI、VS Code 扩展与 Vite 插件，支持 npm、pnpm、yarn，需 Node.js 18 及以上。
+description: 安装 Nudo 的 CLI、VS Code 扩展与 Vite 插件，支持 npm、pnpm、yarn——发布版 CLI 需要 Node.js 22.18+ LTS 或 23.6+。
 ---
 
 # 安装
 
-可通过 npm、pnpm 或 yarn 安装 Nudo 工具。需要 Node.js 18 及以上版本。
+可通过 npm、pnpm 或 yarn 安装 Nudo 工具。
 
 ## 前置要求
 
-- **Node.js 18+**
+- **运行发布版 CLI**：Node.js >= 23.6（或 >= 22.18 LTS）——包以 `.ts` 源码发布，依赖原生类型剥离运行
+- **开发本仓库**：Node.js >= 18
 
 ## CLI
 
@@ -61,4 +62,4 @@ export default defineConfig({
 });
 ```
 
-该插件会分析带有 `@nudo:` 指令的文件，并在构建过程中报告类型信息。
+该插件会在构建过程中分析带有 `@nudo:` 指令的文件，并将 Nudo 诊断——求值器问题加精化门禁违例（`nudo:constraint-violated`、`nudo:assign-mismatch`、`nudo:arg-structure`）——报告为构建警告；设置 `failOnError` 后变为构建错误。参见 [Vite 插件指南](../guides/vite-plugin.md)。
