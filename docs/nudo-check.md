@@ -166,7 +166,7 @@ npx tsx scripts/scan-real-packages.ts commander
 
 | | `tsc --noEmit` | `nudo check` |
 |---|---|---|
-| 赋值/结构 | 完备 | 不做 |
+| 赋值/结构 | 完备（显式注解下） | 部分：推断 Abs 上的 leq（`nudo:assign-mismatch` / `nudo:arg-structure`），宽度子类型无 excess 检查 |
 | 约束（`x>0`）+ 字面量调用 | 做不到 | **做** |
 | 报告形态 | TS 诊断 | Abs / actual ⊭ expected |
 | 零注解 JS | 需 checkJs | 默认 |

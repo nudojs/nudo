@@ -96,7 +96,7 @@ Case "symbolic": (number[]) => number[]
 Combined: [2, 4, 6] | number[]
 ```
 
-Nudo tracks element types through `map`. The concrete input `[1, 2, 3]` is evaluated element by element to `[2, 4, 6]`, while the symbolic input `T.array(T.number)` yields `number[]`.
+Nudo tracks element types through `map`. The concrete input `[1, 2, 3]` is evaluated element by element to `[2, 4, 6]`, while the symbolic input `T.array(T.number)` yields `number[]`. Repo example (CI-pinned): [`docs/examples/algebra/b-hof-map.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/b-hof-map.js).
 
 ---
 
@@ -125,7 +125,7 @@ async function fetchUser(id) {
 Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
 ```
 
-With the mock in place, Nudo infers that `fetchUser` returns `Promise<{ id: 1, name: "Alice" }>` without real network calls. Two rules for inline mocks: the expression **must fit on one line** (multi-line expressions are truncated and reported as `nudo:mock-invalid`), and `T.*` constructors are **not available inside the mock body** — write plain JavaScript values and closures. The `stub().resolves(...)` helper is only equivalent for plain data: it keeps literal slots (`stub().resolves({ ok: true, id: 1 })` → `Promise<{ ok: true, id: 1 }>`), but closure slots in the resolved value are **not bridged** — `json` arrives body-less (`json: () => ?`), so `res.json()` evaluates to `unknown` and this example degrades to `Promise<unknown>`. When the mock result gets called, use the arrow-function form above.
+With the mock in place, Nudo infers that `fetchUser` returns `Promise<{ id: 1, name: "Alice" }>` without real network calls. Two rules for inline mocks: the expression **must fit on one line** (multi-line expressions are truncated and reported as `nudo:mock-invalid`), and `T.*` constructors are **not available inside the mock body** — write plain JavaScript values and closures. The `stub().resolves(...)` helper is only equivalent for plain data: it keeps literal slots (`stub().resolves({ ok: true, id: 1 })` → `Promise<{ ok: true, id: 1 }>`), but closure slots in the resolved value are **not bridged** — `json` arrives body-less (`json: () => ?`), so `res.json()` evaluates to `unknown` and this example degrades to `Promise<unknown>`. When the mock result gets called, use the arrow-function form above. Repo example (CI-pinned): [`docs/examples/algebra/f-async-eff.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/f-async-eff.js) — `@nudo:mock` is required there, not optional: without it, the B path executes the real `fetch` and crashes with `ERR_INVALID_URL`.
 
 ---
 
@@ -272,7 +272,7 @@ Case "call@L6": (12) => -1
 Combined: 25 | -1
 ```
 
-`pickAdult(25)` takes the `age >= 18` branch and returns `25`; `pickAdult(12)` falls through to `-1`. The combined type keeps both literal results. (For an abstract `T.number` argument the guard cannot fork, and only the fallback `-1` is reported.)
+`pickAdult(25)` takes the `age >= 18` branch and returns `25`; `pickAdult(12)` falls through to `-1`. The combined type keeps both literal results. (For an abstract `T.number` argument the guard cannot fork, and only the fallback `-1` is reported.) Repo example (CI-pinned): [`docs/examples/algebra/g-narrow-subtract.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/g-narrow-subtract.js).
 
 ---
 

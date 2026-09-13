@@ -192,6 +192,10 @@ pin 'pnpm run infer docs/examples/algebra/f-async-eff.js' \
   '(42) => Promise<unknown>' 'abs: promise<{ id: 1, name: "ada" }>  #path'
 pin 'pnpm run infer docs/examples/algebra/g-narrow-subtract.js' \
   '("abc") => 3' '([1, 2]) => 2' '(5) => -1' 'Combined: 3 | 2 | -1'
+pin 'pnpm run infer docs/examples/algebra/h-array-boundary.js' \
+  'Case "reduce": ([1, 2, 3, 4, 5]) => 15' 'abs: 15  #exact' \
+  'Case "forEach": ([1, 2, 3, 4, 5]) => 0' 'abs: 0  #exact' \
+  'Case "some": ([1, 2, 3, 4, 5]) => unknown' 'abs: unknown  #partial'
 pin 'pnpm run infer docs/examples/algebra/sample.js' \
   'Case "entry@' '# no call sites found; parameters default to unknown' \
   '{ host: "localhost", port: 8080, debug: false }'

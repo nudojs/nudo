@@ -87,6 +87,7 @@ function score(x) { return x + 1; }
 | `pnpm run infer docs/examples/algebra/e-index-proj.js` | **0** | 索引投影 |
 | `pnpm run infer docs/examples/algebra/f-async-eff.js` | **0** | async × `@nudo:mock` |
 | `pnpm run infer docs/examples/algebra/g-narrow-subtract.js` | **0** | 守卫窄化 |
+| `pnpm run infer docs/examples/algebra/h-array-boundary.js` | **0** | 数组方法精度边界（reduce 精确 / forEach、some 未建模） |
 | `pnpm run infer docs/examples/algebra/sample.js` | **0** | 无调用点 → `entry@` 回退 |
 | `pnpm run check docs/examples/mini-repo/user-service.js` | **0** | 多文件集成（check） |
 | `pnpm run infer docs/examples/mini-repo/user-service.js` | **0** | 多文件集成（infer） |

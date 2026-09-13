@@ -13,6 +13,7 @@
 | [`e-index-proj.js`](./e-index-proj.js) | 索引投影：字面量 key 精确取槽（`1` / `"x"` / `"/usr/bin"`）；动态 key 吸收为 `unknown`（`pickDynamic` 的 `@nudo:case "dynamic key" ({ a: 1, b: "x" }, T.string)` → `unknown #partial`） |
 | [`f-async-eff.js`](./f-async-eff.js) | async / Promise eff × `@nudo:mock` 替换内置 fetch（mock 必填：无 mock 时 B 路径泄漏真实 fetch，`ERR_INVALID_URL` 崩溃） |
 | [`g-narrow-subtract.js`](./g-narrow-subtract.js) | 守卫窄化：调用点逐位收窄（`3 \| 2 \| -1`） |
+| [`h-array-boundary.js`](./h-array-boundary.js) | 数组方法精度边界：`reduce` 精确（`15`）；`forEach` 副作用写回、`some`/`every` 未建模（`0` / `unknown`） |
 | [`sample.js`](./sample.js) | 最小合集：无调用点 → 全部 `entry@` 回退签名（参数 `unknown`） |
 
 运行命令与期望退出码见 [../README.md](./README.md) 的命令矩阵；`pnpm run verify:examples` 一次验证全部。

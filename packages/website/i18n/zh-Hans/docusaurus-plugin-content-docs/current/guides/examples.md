@@ -96,7 +96,7 @@ Case "symbolic": (number[]) => number[]
 Combined: [2, 4, 6] | number[]
 ```
 
-Nudo 通过 `map` 跟踪元素类型。具体输入 `[1, 2, 3]` 被逐元素求值为 `[2, 4, 6]`，符号输入 `T.array(T.number)` 产生 `number[]`。
+Nudo 通过 `map` 跟踪元素类型。具体输入 `[1, 2, 3]` 被逐元素求值为 `[2, 4, 6]`，符号输入 `T.array(T.number)` 产生 `number[]`。仓库示例（CI 钉住）：[`docs/examples/algebra/b-hof-map.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/b-hof-map.js)。
 
 ---
 
@@ -125,7 +125,7 @@ async function fetchUser(id) {
 Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
 ```
 
-mock 就位后，Nudo 推断 `fetchUser` 返回 `Promise<{ id: 1, name: "Alice" }>`，无需真实网络请求。内联 mock 有两条硬性规则：表达式**必须单行**（多行会被截断并报 `nudo:mock-invalid`）；mock body 内**不可用 `T.*`**——只能写普通 JavaScript 值和闭包。`stub().resolves(...)` helper 只在纯数据上等价：字面量槽位保留（`stub().resolves({ ok: true, id: 1 })` → `Promise<{ ok: true, id: 1 }>`），但 resolved 值里的**闭包槽位不被桥接**——`json` 到达时无 body（`json: () => ?`），于是 `res.json()` 求值为 `unknown`，本示例退化为 `Promise<unknown>`。mock 结果要被调用时，用上面的箭头函数形态。
+mock 就位后，Nudo 推断 `fetchUser` 返回 `Promise<{ id: 1, name: "Alice" }>`，无需真实网络请求。内联 mock 有两条硬性规则：表达式**必须单行**（多行会被截断并报 `nudo:mock-invalid`）；mock body 内**不可用 `T.*`**——只能写普通 JavaScript 值和闭包。`stub().resolves(...)` helper 只在纯数据上等价：字面量槽位保留（`stub().resolves({ ok: true, id: 1 })` → `Promise<{ ok: true, id: 1 }>`），但 resolved 值里的**闭包槽位不被桥接**——`json` 到达时无 body（`json: () => ?`），于是 `res.json()` 求值为 `unknown`，本示例退化为 `Promise<unknown>`。mock 结果要被调用时，用上面的箭头函数形态。仓库示例（CI 钉住）：[`docs/examples/algebra/f-async-eff.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/f-async-eff.js)——其中 `@nudo:mock` 是**必填**而非可选：没有它，B 路径会执行真实 `fetch` 并以 `ERR_INVALID_URL` 崩溃。
 
 ---
 
@@ -272,7 +272,7 @@ Case "call@L6": (12) => -1
 Combined: 25 | -1
 ```
 
-`pickAdult(25)` 走 `age >= 18` 分支返回 `25`；`pickAdult(12)` 落到回退分支返回 `-1`。合并类型保留两个字面量结果。（对抽象 `T.number` 实参，守卫无法分叉，只会报告回退结果 `-1`。）
+`pickAdult(25)` 走 `age >= 18` 分支返回 `25`；`pickAdult(12)` 落到回退分支返回 `-1`。合并类型保留两个字面量结果。（对抽象 `T.number` 实参，守卫无法分叉，只会报告回退结果 `-1`。）仓库示例（CI 钉住）：[`docs/examples/algebra/g-narrow-subtract.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/g-narrow-subtract.js)。
 
 ---
 

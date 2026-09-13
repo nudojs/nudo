@@ -54,6 +54,10 @@ function someBig(arr) {
 - `filter` + `map` + `reduce` 链式调用：每级保留字面量精度
 - `arr.map(cb)` 回调传播：调用点逐位实例化（`[2,4,6]`）
 
+已建模 / 未建模的边界已固化进示例门禁：
+[`docs/examples/algebra/h-array-boundary.js`](examples/algebra/h-array-boundary.js)
+（CI 钉住：`reduce` → `15 #exact`、`forEach` 副作用 → `0`、`some` → `unknown`）。
+
 **可能的解决方案（剩余部分）：**
 1. **副作用建模**：把回调执行的环境写回绑定表
 2. **集合谓词**：`some`/`every` 按元素分发求值

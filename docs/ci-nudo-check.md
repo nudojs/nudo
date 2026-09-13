@@ -102,7 +102,7 @@ jobs:
 
 | | `tsc --noEmit` | `nudo check` |
 |---|---|---|
-| 赋值/结构检查 | 完备 | 不做 |
+| 赋值/结构检查 | 完备 | 部分：Abs leq（`nudo:assign-mismatch` / `nudo:arg-structure`，宽度子类型无 excess 检查） |
 | 约束（`x>0`）+ 字面量调用 | 做不到 | **做** |
 | 零注解 JS | 需 checkJs | 默认 |
 | 建议 | 大 TS 仓仍用 tsc | JS 仓 / 存量代码 / Agent 流水线 |

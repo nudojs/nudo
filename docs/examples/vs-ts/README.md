@@ -28,7 +28,15 @@ pnpm run verify:examples   # 验证两侧命令与期望退出码（见 ../READM
 - **tsc**：完备结构 + 生态；大 TS 仓继续用  
 - **dts**：兼容投影，不是主类型模型  
 
-## 行数对照（真实小服务）
+## 样板对照（本目录真实文件）
 
-同一业务逻辑：Nudo 侧 0 行 interface/type/mock 样板；TS 侧需类型定义与 DI 接口。  
-价值不在「少打字」，而在 **不用维护第二份真相**。
+同一逻辑在两侧文件里的样板差异，逐文件可查：
+
+- `structure/tsc.ts` 需要 `interface User`（类型定义）+ 参数/返回注解才能报
+  「缺 name」；`structure/nudo.js` 同逻辑**零注解**——形状从 body 访问
+  （`user.id` / `user.name`）推出，缺字段实参由 `nudo:arg-structure` 拦截。
+- `constraints/tsc.ts` 的 `setDelay(ms: number)` 拦不住 `setDelay(0)`——
+  tsc 查不到 `ms > 0`；`constraints/nudo.js` 用 `@nudo:refine ms delay`
+  （模板一行 `number().gt(0)`）在调用点报 `actual: 0 #exact ⊭ ms > 0`。
+
+价值不在「少打字」，而在 **不用维护第二份真相**（契约只写一次，参与代数）。
