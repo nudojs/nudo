@@ -1,6 +1,6 @@
 ---
 sidebar_position: 9
-description: Learn the JavaScript semantics Nudo's evaluator models precisely today — this binding, string methods, for-of, break, Object.keys, recursion — and the constructs that still degrade to unknown.
+description: Learn the JavaScript semantics Nudo's evaluator models precisely today — string methods, for-of, break, Object.keys, recursion — and the constructs that still degrade to unknown.
 ---
 
 # Language Semantics
@@ -8,26 +8,6 @@ description: Learn the JavaScript semantics Nudo's evaluator models precisely to
 Nudo infers types by *executing* your code with symbolic values, so the quality of inference is exactly the quality of the evaluator's JavaScript semantics. This guide lists the language behaviors the evaluator models precisely on the call-site path — every output block below is a real `nudo infer` run of the code above it — followed by the constructs that still degrade to `unknown` and should be verified before you rely on them. Precise semantics are also what make [call-site discovery](./callsite-discovery.md) effective: harvested call shapes only pay off if the evaluator can actually follow them.
 
 ## Modeled Precisely
-
-### `this` Binding in Method Calls
-
-Method calls pass the receiver, so instance shapes flow into the body.
-
-```js
-function area() {
-  return this.radius * this.radius;
-}
-const circle = { radius: 5, area };
-circle.area();
-```
-
-```text
-=== area ===
-
-Case "call@L5": () => 25
-```
-
-`obj.f()` binds `this` to the inferred type of `obj`, and `this.radius` resolves inside the body. Explicit receiver binding is not recorded yet: `area.call({ radius: 3 })` produces no `call@` case (only the `entry@` fallback).
 
 ### String Methods on Literals
 
@@ -164,6 +144,7 @@ These constructs currently evaluate to `unknown` (often with a `nudo:unknown-rec
 
 | Construct | Behavior today | Modeled alternative |
 |---|---|---|
+| `this` in method calls | `circle.area()` with `return this.radius` is not collected as a call site (member callees produce no `call@` case) and `this.radius` evaluates to `unknown` (`nudo:unknown-recv`) — on both the call-site and `@nudo:case` paths | plain parameters: `function area(circle) { return circle.radius * circle.radius; }` |
 | `==` / `!=` literal folding | `1 == "1"` → `unknown` | `===` comparisons on literals |
 | Primitive autoboxing | `"nudo".constructor` → `unknown` | `.length`, string methods above |
 | `Object.prototype` methods | `({}).hasOwnProperty("key")` → `unknown` | `Object.keys(...)` / shape checks |
@@ -181,7 +162,6 @@ These constructs currently evaluate to `unknown` (often with a `nudo:unknown-rec
 
 | Capability | Example | Result |
 |---|---|---|
-| `this` binding | `circle.area()` | Receiver shape flows into the body |
 | String methods | `"hello".toUpperCase()` | `"HELLO"` |
 | Concrete-bound loops | `sumTo(5)` | `10` |
 | `break` | loop exit value | `3` |

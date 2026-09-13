@@ -1,6 +1,6 @@
 ---
 sidebar_position: 9
-description: 了解 Nudo 求值器目前精确建模的 JavaScript 语义——this 绑定、字符串方法、for-of、break、Object.keys、递归——以及仍会退化为 unknown 的构造。
+description: 了解 Nudo 求值器目前精确建模的 JavaScript 语义——字符串方法、for-of、break、Object.keys、递归——以及仍会退化为 unknown 的构造。
 ---
 
 # 语言语义
@@ -8,26 +8,6 @@ description: 了解 Nudo 求值器目前精确建模的 JavaScript 语义——t
 Nudo 通过*执行*你的代码来推断类型，所以推断质量正好等于求值器 JavaScript 语义的质量。本指南列出求值器在调用点路径上精确建模的语言行为——下方所有输出块都是对上面代码真实运行 `nudo infer` 的结果——随后列出仍会退化为 `unknown`、依赖前需要验证的构造。精确语义也是[调用点发现](./callsite-discovery.md)生效的前提：采集到的调用形态只有求值器真的能跟下去才值钱。
 
 ## 已精确建模
-
-### 方法调用中的 `this` 绑定
-
-方法调用传入接收者，因此实例形状流入函数体。
-
-```js
-function area() {
-  return this.radius * this.radius;
-}
-const circle = { radius: 5, area };
-circle.area();
-```
-
-```text
-=== area ===
-
-Case "call@L5": () => 25
-```
-
-`obj.f()` 把 `this` 绑定到 `obj` 的推断类型，`this.radius` 在函数体内解析。显式接收者绑定尚未记录：`area.call({ radius: 3 })` 不产生 `call@` case（只有 `entry@` 回退）。
 
 ### 字面量上的字符串方法
 
@@ -164,6 +144,7 @@ Combined: 0 | 1 | 3
 
 | 构造 | 当前行为 | 已建模替代 |
 |---|---|---|
+| 方法调用中的 `this` | `return this.radius` 的 `circle.area()` 不会被记录为调用点（成员被调者不产生 `call@` case），`this.radius` 求值为 `unknown`（`nudo:unknown-recv`）——调用点与 `@nudo:case` 两条路径皆是 | 普通参数：`function area(circle) { return circle.radius * circle.radius; }` |
 | `==` / `!=` 字面量折叠 | `1 == "1"` → `unknown` | 字面量上的 `===` 比较 |
 | 原始值自动装箱 | `"nudo".constructor` → `unknown` | `.length`、上文的字符串方法 |
 | `Object.prototype` 方法 | `({}).hasOwnProperty("key")` → `unknown` | `Object.keys(...)` / 形状检查 |
@@ -181,7 +162,6 @@ Combined: 0 | 1 | 3
 
 | 能力 | 示例 | 结果 |
 |---|---|---|
-| `this` 绑定 | `circle.area()` | 接收者形状流入函数体 |
 | 字符串方法 | `"hello".toUpperCase()` | `"HELLO"` |
 | 具体边界循环 | `sumTo(5)` | `10` |
 | `break` | 循环跳出值 | `3` |
