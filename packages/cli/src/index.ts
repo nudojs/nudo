@@ -329,11 +329,15 @@ program
     }
   });
 
+/**
+ * 严格 Abs-only：只跑 checkSource 代数门禁。
+ * 不再叠加 analyzeFileAsync 外延诊断——语言表面问题由 Abs/B-path 诊断吸收，
+ * 避免双路径语义分叉。
+ */
 async function runCheck(file: string, opts: { json?: boolean } = {}): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
 
-  // 代数门禁：约束蕴含（类型即计算）
   const { checkSource, formatCheckReport, serializeCheckJson, pTrue } = await import("@nudojs/core");
   const { defaultLoadModule: loadModule } = await import("@nudojs/service");
   const algebraReport = checkSource(filePath, source, pTrue, {
@@ -342,26 +346,13 @@ async function runCheck(file: string, opts: { json?: boolean } = {}): Promise<vo
   });
 
   if (opts.json) {
-    // 稳定契约：只输出 check JSON，不混 evaluator 文本
+    // 稳定契约：只输出 check JSON
     console.log(JSON.stringify(serializeCheckJson(algebraReport), null, 2));
-    if (!algebraReport.ok) process.exitCode = 1;
-    return;
+  } else {
+    console.log(formatCheckReport(algebraReport, { verbose: true }));
   }
 
-  console.log(formatCheckReport(algebraReport, { verbose: true }));
-
-  // 外延评估器诊断：null/结构等语言表面
-  const result = await analyzeFileAsync(filePath, source);
-  for (const d of result.diagnostics) {
-    const loc = `${relative(process.cwd(), filePath)}:${d.range.start.line}:${d.range.start.column}`;
-    console.log(`[${d.severity}] ${loc} ${d.message}${d.code ? ` (${d.code})` : ""}`);
-    if (d.origin) {
-      console.log(`    → value originates at ${d.origin.line}:${d.origin.column}`);
-    }
-  }
-
-  const evalError = result.diagnostics.some((d) => d.severity === "error");
-  if (!algebraReport.ok || evalError) {
+  if (!algebraReport.ok) {
     process.exitCode = 1;
   }
 }

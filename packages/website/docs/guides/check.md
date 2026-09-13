@@ -108,7 +108,7 @@ Agents use the same gate via **`nudo.check`** (CheckJson v1) — see [Agent API]
 
 ## Service Abs path boundary
 
-`nudo check` (and `checkSource`) always analyzes on Abs, including cross-file require/import forwarding.
+`nudo check` (and `checkSource`) always analyzes on Abs, including cross-file require/import forwarding. The CLI is **strictly Abs-only** — it does not also run the TypeValue evaluator for extra diagnostics.
 
 The **service evaluation path** (`call@` synthesis, hover intension, entry re-eval) prefers Abs only for **self-contained** sources: no `import`/`require`, no `@nudo:env`. `@nudo:mock` does **not** disable Abs — mocks compile to Abs seeds. Files with imports fall back to the TypeValue evaluator for those views; contract violations are still caught by `nudo check`.
 

@@ -23,6 +23,54 @@ import {
 } from "./refine.ts";
 import { constraintToEntryAbs } from "./constraint.ts";
 
+/** 进程内 L0：同 (source, fn, refine, budget, label) 的 generalize 结果 */
+const generalizeMemo = new Map<string, PolyFn | undefined>();
+const loadModuleIds = new WeakMap<object, number>();
+let nextLoadModuleId = 1;
+
+export function resetGeneralizeMemo(): void {
+  generalizeMemo.clear();
+}
+
+function hashSource(s: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+
+function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefined): number {
+  if (!fn) return 0;
+  let id = loadModuleIds.get(fn);
+  if (id === undefined) {
+    id = nextLoadModuleId++;
+    loadModuleIds.set(fn, id);
+  }
+  return id;
+}
+
+function generalizeMemoKey(
+  fnName: string,
+  source: string,
+  opts: {
+    budget?: LeakBudget;
+    label?: string;
+    refine?: RefineResolveOpts;
+  },
+): string {
+  const r = opts.refine;
+  const budget = opts.budget ?? defaultLeakBudget;
+  return [
+    hashSource(source),
+    fnName,
+    opts.label ?? "A",
+    r ? `${loadModuleId(r.loadModule)}:${r.fromFile ?? ""}` : "-",
+    `${budget.maxDepth}/${budget.maxNodes}`,
+  ].join("|");
+}
+
 export type TypeParam = {
   id: string;
   value: Abs;
@@ -102,6 +150,25 @@ export function generalizeFromAst(
     /** 传入则把 @nudo:refine 挂到入口 param Abs */
     refine?: RefineResolveOpts;
     /** 预解析 AST，避免 check 批量场景重复 parse */
+    file?: ReturnType<typeof babelParse>;
+  } = {},
+): PolyFn | undefined {
+  const key = generalizeMemoKey(fnName, source, opts);
+  if (generalizeMemo.has(key)) {
+    return generalizeMemo.get(key);
+  }
+  const result = generalizeFromAstUncached(fnName, source, opts);
+  generalizeMemo.set(key, result);
+  return result;
+}
+
+function generalizeFromAstUncached(
+  fnName: string,
+  source: string,
+  opts: {
+    budget?: LeakBudget;
+    label?: string;
+    refine?: RefineResolveOpts;
     file?: ReturnType<typeof babelParse>;
   } = {},
 ): PolyFn | undefined {

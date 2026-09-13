@@ -5,7 +5,7 @@
 
 ## 它是什么
 
-对 JS 源码做代数分析：
+对 JS 源码做代数分析（**严格 Abs-only**：CLI 不再叠加 TypeValue 外延诊断）：
 
 1. 每个顶层函数归纳**符号 Abs**（shape × term × pred × conf）
 2. 扫描调用点 / 返回值，检查是否满足 `@nudo:refine` 声明
