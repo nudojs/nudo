@@ -14,6 +14,9 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    # npm Trusted Publishing is bound to this GitHub environment name; the
+    # OIDC token must carry the same environment claim or publish 404s.
+    environment: NPM_TOKEN
     permissions:
       id-token: write
       contents: write
@@ -57,7 +60,13 @@ jobs:
 
       - name: Publish to npm
         if: steps.changesets.outputs.hasChangesets == 'false'
-        run: npx @changesets/cli publish
+        run: |
+          # setup-node writes _authToken=${NODE_AUTH_TOKEN} into .npmrc, which
+          # blocks npm's OIDC trusted-publisher exchange when no real token exists.
+          if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
+            sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
+          fi
+          npx @changesets/cli publish
         env:
           NPM_CONFIG_PROVENANCE: true
 
