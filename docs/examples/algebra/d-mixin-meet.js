@@ -29,4 +29,4 @@ svc.fetch(1);
 svc.log("hi");
 svc.time("t", () => 1);
 
-module.exports = { withLogging, withTiming, Service, Svc };
+export { withLogging, withTiming, Service, Svc };

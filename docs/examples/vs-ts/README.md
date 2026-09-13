@@ -17,11 +17,11 @@ Nudo 不是「另一个类型系统」，是 **少写一门类型系统**：零�
 
 ```bash
 # 精化
-npx tsx packages/cli/src/index.ts check docs/examples/vs-ts/constraints/nudo.js
+pnpm run check docs/examples/vs-ts/constraints/nudo.js
 npx tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts
 
 # 结构
-npx tsx packages/cli/src/index.ts check docs/examples/vs-ts/structure/nudo.js
+pnpm run check docs/examples/vs-ts/structure/nudo.js
 npx tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts
 ```
 

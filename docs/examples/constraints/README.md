@@ -96,8 +96,9 @@ function bad() {
 | 违例 | 调用/返回 ⊭ refine | case ⊄ D → `nudo:case-inconsistency` |
 
 ```bash
-npx tsx packages/cli/src/index.ts check docs/examples/constraints/set-delay.js
-npx tsx packages/cli/src/index.ts check docs/examples/constraints/register.js
-npx tsx packages/cli/src/index.ts check docs/examples/constraints/return-contract.js
-npx tsx packages/cli/src/index.ts infer docs/examples/constraints/add-pred.js
+pnpm run check docs/examples/constraints/set-delay.js
+pnpm run check docs/examples/constraints/register.js
+pnpm run check docs/examples/constraints/return-contract.js
+pnpm run check docs/examples/constraints/declared-vs-if.js
+pnpm run infer docs/examples/constraints/add-pred.js
 ```

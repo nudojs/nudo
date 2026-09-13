@@ -11,4 +11,4 @@ pick({ a: 1, b: "x" }, "b");
 // 概念上的 env：{ [k: string]: string }
 // pick(env, "PATH") → string
 
-module.exports = { pick };
+export { pick };

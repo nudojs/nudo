@@ -12,4 +12,4 @@ function map(arr, fn) {
 map([1, 2, 3], (x) => x * 2);
 map(["a", "b"], (s) => s.toUpperCase());
 
-module.exports = { map };
+export { map };

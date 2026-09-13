@@ -159,6 +159,20 @@ export type AbsMockSeeds = {
   seedFns: Record<string, { params: string[]; body: Node; async?: boolean }>;
 };
 
+/**
+ * B 路径注入用：seedVars + seedFns 统一为 Abs 函数绑定。
+ * arrowFn mock 落在 seedFns（AST body，供 ast-eval），B 路径的
+ * envGlobals 注入只吃 Abs——不合并会把 mock 丢掉，函数体内的调用
+ * 会落到真实原生函数（如 fetch 拿 Abs 当 URL，直接崩）。
+ */
+export function mockSeedsToAbsMocks(seeds: AbsMockSeeds): Record<string, Abs> {
+  const out: Record<string, Abs> = { ...seeds.seedVars };
+  for (const [name, fn] of Object.entries(seeds.seedFns)) {
+    out[name] = absFunction(fn.params, { body: fn.body, async: fn.async ?? false });
+  }
+  return out;
+}
+
 /** 从函数上的 @nudo:mock 指令收集 Abs seed */
 export function mockDirectivesToAbsSeeds(
   functions: Array<{ directives: FunctionWithDirectives["directives"] }>,

@@ -1,5 +1,11 @@
 // 示例 F：异步效应链
-// 考察：eff("promise") 的引入/消除；throws；mock/harvest 置信度
+// 考察：eff("promise") 的引入/消除；@nudo:mock 替换内置 API（fetch 无真实 I/O）
+//
+// loadUser(42) → eff(promise, body)  #exact
+// @nudo:mock 与推断：fetch 返回 { ok: true, json: fn }，res.ok=true 使
+// throw 分支不可达；res.json() 走 mock 闭包 → Promise<{ id: 1, name: "ada" }>
+
+// @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1, name: "ada" }) })
 
 async function loadUser(id) {
   const res = await fetch(`/users/${id}`);
@@ -7,7 +13,6 @@ async function loadUser(id) {
   return res.json();
 }
 
-// loadUser(42) → eff(promise, body) throws Error
-// 若 json 仅 harvest 为 unknown → confidence #partial/#mock
+loadUser(42);
 
-module.exports = { loadUser };
+export { loadUser };

@@ -52,6 +52,17 @@ function f() {
     expect(d.builtinUnknown.map((b) => b.name)).toContain("someNativeApi");
   });
 
+  it("extraKnown (@nudo:mock / @nudo:env covered) globals are not flagged", () => {
+    const src = `
+function f() {
+  return someNativeApi(1);
+}
+`;
+    expect(collectBPathDiagnostics(src, ["someNativeApi"]).builtinUnknown).toHaveLength(0);
+    // 无覆盖时仍报
+    expect(collectBPathDiagnostics(src).builtinUnknown.map((b) => b.name)).toContain("someNativeApi");
+  });
+
   it("does not flag locals, imports, or known globals", () => {
     const src = `
 import { helper } from "./h.js";

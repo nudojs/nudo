@@ -1,6 +1,6 @@
 // 唯一 refine 形态：@nudo:refine <param> <constraint>
 // 约束必须来自 .nudo.js 模板，不在 refine 里写 x > 0
-// 运行：npx tsx packages/cli/src/index.ts check docs/examples/constraints/set-delay.js
+// 运行：pnpm run check docs/examples/constraints/set-delay.js
 
 /// @nudo:import { delay, percent, positive } from "./delay.nudo.js"
 
@@ -34,4 +34,4 @@ pct(50);            // ok
 needsPositive(5);   // ok
 needsPositive(0);   // error: 0 ⊭ positive
 
-module.exports = { setDelay, pct, needsPositive };
+export { setDelay, pct, needsPositive };

@@ -8,6 +8,6 @@
 | [`arg-structure.js`](./arg-structure.js) | `nudo:arg-structure` |
 
 ```bash
-npx tsx packages/cli/src/index.ts check docs/examples/structure/assign.js
-npx tsx packages/cli/src/index.ts check docs/examples/structure/arg-structure.js
+pnpm run check docs/examples/structure/assign.js
+pnpm run check docs/examples/structure/arg-structure.js
 ```

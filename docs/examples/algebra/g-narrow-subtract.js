@@ -10,4 +10,4 @@ function len(x) {
 // len(T.union(T.string, T.number, T.array(T.number)))
 // → number #path  （lit(-1) 被 number 吸收）
 
-module.exports = { len };
+export { len };

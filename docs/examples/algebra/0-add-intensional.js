@@ -23,4 +23,4 @@ function twice(x) {
   return add(c, 1);    // (x+1)+1, >2
 }
 
-module.exports = { add, scale, twice };
+export { add, scale, twice };

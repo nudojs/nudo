@@ -79,7 +79,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -960,16 +960,23 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         }
         return "_p";
       });
-      // 与函数声明同构：JS 箭头，参数即 Abs
+      // 一等 fn Abs：参数名进 shape（bridge/dts 可展示）；
+      // 异步 body 包 $async 保持 eff(promise) 语义（裸 JS async 会泄漏 Promise）。
+      const nameList = `[${paramParts.map((p) => JSON.stringify(p.startsWith("...") ? p.slice(3) : p)).join(", ")}]`;
       if (fn.body.type === "BlockStatement") {
         const inner = (fn.body as { body: Statement[] }).body
           .map((s) => transpileStatement(s, 1, opts))
           .join("\n");
-        const kw = fn.async ? "async " : "";
-        return `${kw}(${paramParts.join(", ")}) => {\n${inner}\n}`;
+        if (fn.async) {
+          return `$fnVal(${nameList}, (${paramParts.join(", ")}) => $async(() => {\n${inner}\n}))`;
+        }
+        return `$fnVal(${nameList}, (${paramParts.join(", ")}) => {\n${inner}\n})`;
       }
-      const kw = fn.async ? "async " : "";
-      return `${kw}(${paramParts.join(", ")}) => ${transpileExpression(fn.body as Expression, opts)}`;
+      const bodySrc = transpileExpression(fn.body as Expression, opts);
+      if (fn.async) {
+        return `$fnVal(${nameList}, (${paramParts.join(", ")}) => $async(() => ${bodySrc}))`;
+      }
+      return `$fnVal(${nameList}, (${paramParts.join(", ")}) => ${bodySrc})`;
     }
     default:
       return `/* ${expr.type} */ $lit(undefined)`;

@@ -49,18 +49,18 @@ function score(x) { return x + 1; }
 
 ```bash
 # 精化门禁（标量）
-npx tsx packages/cli/src/index.ts check docs/examples/constraints/set-delay.js
+pnpm run check docs/examples/constraints/set-delay.js
 
 # 精化门禁（object 形状）
-npx tsx packages/cli/src/index.ts check docs/examples/constraints/register.js
+pnpm run check docs/examples/constraints/register.js
 
 # 返回精化
-npx tsx packages/cli/src/index.ts check docs/examples/constraints/return-contract.js
+pnpm run check docs/examples/constraints/return-contract.js
 
 # 推断（无损 Abs）
-npx tsx packages/cli/src/index.ts infer docs/examples/constraints/add-pred.js
+pnpm run infer docs/examples/constraints/add-pred.js
 
 # 与 tsc 对照
-npx tsx packages/cli/src/index.ts check docs/examples/vs-ts/constraints/nudo.js
+pnpm run check docs/examples/vs-ts/constraints/nudo.js
 npx tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts
 ```

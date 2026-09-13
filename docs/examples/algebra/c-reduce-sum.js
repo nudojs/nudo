@@ -8,4 +8,4 @@ function sum(numbers) {
 sum([1, 2, 3, 4, 5]);
 // 符号：sum(T.array(T.number)) → number #path
 
-module.exports = { sum };
+export { sum };

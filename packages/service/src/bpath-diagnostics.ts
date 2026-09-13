@@ -189,10 +189,11 @@ function isFreeUnknown(
   name: string,
   declared: Set<string>,
   seen: Set<string>,
+  known: Set<string>,
 ): boolean {
   return (
     !declared.has(name) &&
-    !KNOWN_GLOBALS.has(name) &&
+    !known.has(name) &&
     !name.startsWith("$") &&
     !seen.has(name)
   );
@@ -203,6 +204,7 @@ function walkBuiltinUnknown(
   declared: Set<string>,
   out: BPathBuiltinUnknown[],
   seen: Set<string>,
+  known: Set<string>,
   parentKey?: string,
 ): void {
   const n = node as {
@@ -212,7 +214,7 @@ function walkBuiltinUnknown(
     [k: string]: unknown;
   };
   const flag = (idNode: Node, name: string) => {
-    if (!isFreeUnknown(name, declared, seen)) return;
+    if (!isFreeUnknown(name, declared, seen, known)) return;
     const range = locOf(idNode) ?? locOf(node);
     if (range) {
       out.push({ name, range });
@@ -238,15 +240,22 @@ function walkBuiltinUnknown(
     if (key === "loc" || key === "start" || key === "end") continue;
     const v = n[key];
     if (Array.isArray(v)) {
-      v.forEach((x) => walkBuiltinUnknown(x as Node, declared, out, seen, key));
+      v.forEach((x) => walkBuiltinUnknown(x as Node, declared, out, seen, known, key));
     } else if (v && typeof v === "object" && "type" in (v as object)) {
-      walkBuiltinUnknown(v as Node, declared, out, seen, key);
+      walkBuiltinUnknown(v as Node, declared, out, seen, known, key);
     }
   }
 }
 
-/** 静态收集 B 路径诊断 */
-export function collectBPathDiagnostics(source: string): BPathDiagnostics {
+/**
+ * 静态收集 B 路径诊断。
+ * extraKnown：@nudo:mock / @nudo:env 已覆盖的全局名（B 注入后不再是裸原生
+ * 调用，不得误报 builtin-unknown——收集器只吃 AST，看不到指令）。
+ */
+export function collectBPathDiagnostics(
+  source: string,
+  extraKnown?: Iterable<string>,
+): BPathDiagnostics {
   let file: File;
   try {
     file = parseSource(source);
@@ -259,8 +268,12 @@ export function collectBPathDiagnostics(source: string): BPathDiagnostics {
   walkUnreachable(root as Node, unreachable);
 
   const declared = collectDeclared(file);
+  const known = new Set(KNOWN_GLOBALS);
+  if (extraKnown) {
+    for (const n of extraKnown) known.add(n);
+  }
   const builtinUnknown: BPathBuiltinUnknown[] = [];
-  walkBuiltinUnknown(file, declared, builtinUnknown, new Set());
+  walkBuiltinUnknown(file, declared, builtinUnknown, new Set(), known);
 
   return { unreachable, builtinUnknown };
 }

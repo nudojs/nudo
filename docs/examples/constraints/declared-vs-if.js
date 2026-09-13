@@ -1,7 +1,7 @@
 // if 分支 ≠ 契约
 // 无 refine：越界输入合法；有 refine：才检查
 // 形态：@nudo:refine <param> <constraint>
-// 运行：npx tsx packages/cli/src/index.ts check docs/examples/constraints/declared-vs-if.js
+// 运行：pnpm run check docs/examples/constraints/declared-vs-if.js
 
 /// @nudo:import { delay } from "./delay.nudo.js"
 
@@ -25,4 +25,4 @@ function setDelay(ms) {
 setDelay(0);        // error: 0 ⊭ delay
 setDelay(100);      // ok
 
-module.exports = { clamp, setDelay };
+export { clamp, setDelay };

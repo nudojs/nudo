@@ -1,6 +1,6 @@
 // object 形状契约：无需 interface / type
 // number() / string() / shape() 在 .nudo.js 里声明；业务文件只写 @nudo:refine
-// 运行：npx tsx packages/cli/src/index.ts check docs/examples/constraints/register.js
+// 运行：pnpm run check docs/examples/constraints/register.js
 
 /// @nudo:import { user, config } from "./shapes.nudo.js"
 
@@ -26,4 +26,4 @@ register({ id: 1, name: "ada" });     // ok
 setup({ retries: 3 });                // ok（label 可选）
 // setup({ retries: 99 });            // error: retries ⊭ ≤ 5
 
-module.exports = { register, setup };
+export { register, setup };
