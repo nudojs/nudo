@@ -8,10 +8,11 @@
 
 import { parseSource as babelParse } from "./parse-source.ts";
 import type { Node } from "@babel/types";
+import type { Term } from "./term.ts";
 import { v as termVar, termToString } from "./term.ts";
-import type { Phi } from "./pred.ts";
+import type { Phi, Pred } from "./pred.ts";
 import { pTrue, predToString } from "./pred.ts";
-import type { Abs } from "./abs.ts";
+import type { Abs, Shape } from "./abs.ts";
 import { abs, unknown } from "./abs.ts";
 import type { AstEnv } from "./ast-eval.ts";
 import { evalNode, emptyEnv } from "./ast-eval.ts";
@@ -69,6 +70,112 @@ function generalizeMemoKey(
     r ? `${loadModuleId(r.loadModule)}:${r.fromFile ?? ""}` : "-",
     `${budget.maxDepth}/${budget.maxNodes}`,
   ].join("|");
+}
+
+/** L1 只缓存完整可复用结果；截断/失败产生的 partial|opaque 不进缓存 */
+function isCacheableAbs(a: Abs): boolean {
+  return (
+    a.conf === "exact" ||
+    a.conf === "path" ||
+    a.conf === "widened" ||
+    a.conf === "mock"
+  );
+}
+
+function termKey(t: Term): string {
+  switch (t.op) {
+    case "lit":
+      return `L:${typeof t.value}:${String(t.value)}`;
+    case "var":
+      return `V:${t.id}`;
+    case "app":
+      return `A:${t.fn}(${t.args.map(termKey).join(",")})`;
+  }
+}
+
+function predKey(p: Pred): string {
+  switch (p.op) {
+    case "true":
+      return "T";
+    case "false":
+      return "F";
+    case "eq":
+    case "ne":
+    case "lt":
+    case "le":
+    case "gt":
+    case "ge":
+      return `${p.op}(${termKey(p.a)},${termKey(p.b)})`;
+    case "and":
+    case "or":
+      return `${p.op}(${p.args.map(predKey).join(",")})`;
+    case "not":
+      return `not(${predKey(p.arg)})`;
+    case "typeof":
+      return `typeof(${termKey(p.t)},${p.type})`;
+  }
+}
+
+/** 结构键：shape + term + pred；不含 conf（置信度不参与语义输入） */
+function shapeKey(s: Shape, seen: Set<object>): string {
+  switch (s.k) {
+    case "never":
+    case "any":
+    case "unknown":
+      return s.k;
+    case "prim":
+      return `p:${s.type}`;
+    case "brand":
+      return `b:${s.name}(${absKeyInner(s.shape, seen)})`;
+    case "eff":
+      return `e:${s.eff}<${absKeyInner(s.inner, seen)}>`;
+    case "arr":
+      return `arr(${absKeyInner(s.element, seen)})`;
+    case "tuple": {
+      const els = s.elements.map((e) => absKeyInner(e, seen)).join(",");
+      const rest = s.rest ? `...${absKeyInner(s.rest, seen)}` : "";
+      return `tup[${els}${rest}]`;
+    }
+    case "fn": {
+      const pts = (s.paramTypes ?? []).map((t) => absKeyInner(t, seen)).join(",");
+      const ret = s.returnType ? absKeyInner(s.returnType, seen) : "?";
+      const name = s.name ? `#${s.name}` : "";
+      return `fn${name}(${s.params.join(",")}|${pts})=>${ret}`;
+    }
+    case "sum":
+      return `sum(${s.members.map((m) => absKeyInner(m, seen)).join("|")})`;
+    case "obj": {
+      const slots = Object.keys(s.slots)
+        .sort()
+        .map((k) => {
+          const slot = s.slots[k]!;
+          const flags = (slot.optional ? "?" : "") + (slot.readonly ? "r" : "");
+          return `${k}${flags}:${absKeyInner(slot.value, seen)}`;
+        })
+        .join(",");
+      const idx = s.index
+        ? `idx(${absKeyInner(s.index.key, seen)}→${absKeyInner(s.index.value, seen)})`
+        : "";
+      const open = s.open ? "open" : "";
+      return `obj{${slots}}${idx}${open}`;
+    }
+  }
+}
+
+function absKeyInner(a: Abs, seen: Set<object>): string {
+  if (seen.has(a)) return "cycle";
+  seen.add(a);
+  const t = a.term ? `=${termKey(a.term)}` : "";
+  const p = a.pred ? `@${predKey(a.pred)}` : "";
+  return `${shapeKey(a.shape, seen)}${t}${p}`;
+}
+
+function absStructKey(a: Abs): string {
+  return absKeyInner(a, new Set());
+}
+
+function instantiateMemoKey(args: Abs[], phi: Phi): string {
+  return `${args.map(absStructKey).join(";")}#${predKey(phi)}`;
 }
 
 export type TypeParam = {
@@ -206,12 +313,24 @@ function generalizeFromAstUncached(
     }
   }
 
+  // L1：同一 PolyFn 上按 (args Abs 结构, Φ) 缓存实例化结果。
+  // 随 L0 的 PolyFn 共享；resetGeneralizeMemo 一并丢弃。
+  const instMemo = new Map<string, Abs>();
+
   const run = (args: Abs[], phi: Phi = pTrue): Abs => {
+    const key = instantiateMemoKey(args, phi);
+    const hit = instMemo.get(key);
+    if (hit !== undefined) return hit;
     const local: AstEnv = { vars: new Map(env.vars), fns: env.fns };
     params.forEach((p, i) => {
       local.vars.set(p, args[i] ?? unknown);
     });
-    return evalNode(body, local, phi, budget).value;
+    const result = evalNode(body, local, phi, budget).value;
+    // 截断/失败结果不缓存，避免固化过宽或不稳定结论
+    if (isCacheableAbs(result)) {
+      instMemo.set(key, result);
+    }
+    return result;
   };
 
   const symbolic = run(
