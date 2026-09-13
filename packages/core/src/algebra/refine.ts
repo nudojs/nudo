@@ -72,6 +72,30 @@ export type RefineResolveOpts = {
   fromFile?: string;
 };
 
+/** *.nudo.js 构建器执行结果（同内容只 new Function 一次） */
+const nudoModuleExecCache = new Map<string, Record<string, unknown>>();
+const MAX_NUDO_MODULE_EXEC = 64;
+
+function execNudoModuleCached(src: string): Record<string, unknown> {
+  const hit = nudoModuleExecCache.get(src);
+  if (hit !== undefined) {
+    nudoModuleExecCache.delete(src);
+    nudoModuleExecCache.set(src, hit);
+    return hit;
+  }
+  const out = execNudoModule(src);
+  if (nudoModuleExecCache.size >= MAX_NUDO_MODULE_EXEC) {
+    const oldest = nudoModuleExecCache.keys().next().value;
+    if (oldest !== undefined) nudoModuleExecCache.delete(oldest);
+  }
+  nudoModuleExecCache.set(src, out);
+  return out;
+}
+
+export function resetNudoModuleExecCache(): void {
+  nudoModuleExecCache.clear();
+}
+
 /** 从导入收集 name → NudoConstraint */
 function collectConstraints(
   source: string,
@@ -85,7 +109,7 @@ function collectConstraints(
     if (!src) continue;
     let exports: Record<string, unknown>;
     try {
-      exports = execNudoModule(src);
+      exports = execNudoModuleCached(src);
     } catch {
       continue;
     }
@@ -137,6 +161,8 @@ export function extractRefinesFromSource(
   fnName: string,
   opts: RefineResolveOpts = {},
 ): RefineEntry[] {
+  // 快路径：整文件无 @nudo:refine 时免 regex 扫全文（after-edit 批量 check）
+  if (!source.includes("@nudo:refine")) return [];
   const constraints = collectConstraints(source, opts);
   const out: RefineEntry[] = [];
   for (const line of extractRefineLines(source, fnName)) {
@@ -184,6 +210,7 @@ export function extractRefineReturnFromSource(
   fnName: string,
   opts: RefineResolveOpts = {},
 ): { name: string; constraint: NudoConstraint } | undefined {
+  if (!source.includes("@nudo:refine")) return undefined;
   const constraints = collectConstraints(source, opts);
   for (const line of extractRefineLines(source, fnName)) {
     const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);

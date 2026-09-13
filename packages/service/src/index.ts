@@ -85,11 +85,18 @@ export {
   tryBPathCall,
   tryBPathCallFull,
   clearBPathCache,
+  evictBPathCacheForFiles,
   collectBPathReplacements,
   collectEnvGlobals,
   collectEnvModules,
   type BPathRunResult,
 } from "./bpath-run.ts";
+export {
+  clearAnalysisFileCache,
+  getAnalysisFileCacheSize,
+  evictAnalysisFileCacheForFiles,
+} from "./analysis-file-cache.ts";
+export { clearFnAnalysisCache } from "./fn-analysis-cache.ts";
 export { envValueToAbs } from "./env-to-abs.ts";
 export type { BMemberDiag } from "@nudojs/core";
 

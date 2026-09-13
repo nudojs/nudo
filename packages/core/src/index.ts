@@ -63,7 +63,11 @@ export {
 } from "./mock-helpers.ts";
 
 export { stripTypes } from "./strip-types.ts";
-export { parseSource } from "./algebra/parse-source.ts";
+export {
+  parseSource,
+  resetParseSourceCache,
+  getParseSourceCacheSize,
+} from "./algebra/parse-source.ts";
 
 // --- 内涵：类型即计算 ---
 export * from "./algebra/index.ts";

@@ -20,6 +20,8 @@ import {
   analyzeFn,
   evalProgramAbs,
   setAbsCallCollector,
+  setAbsNodeCollector,
+  absFunction,
   type AbsCallRecord,
   collectAbsNodeTypes,
   findAbsAtPosition,
@@ -28,6 +30,8 @@ import {
   formatAbs,
   formatAbsMultiline,
   type Abs,
+  stableAnalyzeKeySource,
+  fnFingerprints,
 } from "@nudojs/core";
 import { parse, extractDirectives, extractFileDirectives, parseTypeValueExpr } from "@nudojs/parser";
 import type { FunctionWithDirectives, SinonExpression } from "@nudojs/parser";
@@ -66,9 +70,20 @@ import {
 import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
 import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph, evalProgramAbsWithModules } from "./abs-modules-graph.ts";
-import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, clearBPathCache } from "./bpath-run.ts";
+import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable } from "./bpath-run.ts";
 import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
 import { setAbsTruncationCollector } from "@nudojs/core";
+import {
+  analysisCacheGet,
+  analysisCacheSet,
+} from "./analysis-file-cache.ts";
+import {
+  fnAnalysisCacheGet,
+  fnAnalysisCacheSet,
+  caseDirectiveKey,
+  type CachedFnAnalysis,
+} from "./fn-analysis-cache.ts";
+export { clearFnAnalysisCache } from "./fn-analysis-cache.ts";
 
 export type SourceLocation = {
   start: { line: number; column: number };
@@ -1071,7 +1086,85 @@ export function collectCallRecords(filePath: string, source: string): CallRecord
 /** 测试框架的回调注册函数：回调体里是真实调用点 */
 const TEST_CALLBACK_NAMES = new Set(["it", "test", "describe"]);
 
+// --- 整文件 AnalysisResult memo（warm analyzeFile / LSP 重复文档） ---
+
+const externalRecordIds = new WeakMap<object, number>();
+let nextExternalRecordId = 1;
+
+function analysisFileCacheKey(
+  filePath: string,
+  source: string,
+  activeCases?: Map<string, number>,
+  externalCallRecords?: CallRecord[],
+): { filePath: string; source: string; auxKey: string } {
+  let cases = "-";
+  if (activeCases && activeCases.size > 0) {
+    cases = [...activeCases.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+      .map(([k, v]) => `${k}=${v}`)
+      .join(",");
+  }
+  let ext = "-";
+  if (externalCallRecords && externalCallRecords.length > 0) {
+    let id = externalRecordIds.get(externalCallRecords);
+    if (id === undefined) {
+      id = nextExternalRecordId++;
+      externalRecordIds.set(externalCallRecords, id);
+    }
+    ext = `n${externalCallRecords.length}#id${id}`;
+  }
+  return {
+    filePath,
+    // 尾部无 @nudo 注释/空行不进键：comment-only 编辑命中 AnalysisResult
+    source: stableAnalyzeKeySource(source),
+    auxKey: `${cases}\0${ext}`,
+  };
+}
+
+function cloneAnalysisResult(r: AnalysisResult): AnalysisResult {
+  return {
+    functions: r.functions.map((f) => ({ ...f })),
+    diagnostics: r.diagnostics.map((d) => ({ ...d })),
+    bindings: new Map(r.bindings),
+    // Node 键与 AST LRU 共享身份；Map 浅拷贝即可
+    nodeTypeMap: new Map(r.nodeTypeMap),
+    caseHints: r.caseHints.map((h) => ({ ...h })),
+    ...(r.externalFunctions ? { externalFunctions: r.externalFunctions.map((f) => ({ ...f })) } : {}),
+  };
+}
+
+// --- 函数级 FunctionAnalysis 缓存（body-edit：只重算脏函数及其调用者） ---
+
+function cloneFunctionAnalysis(a: FunctionAnalysis): FunctionAnalysis {
+  return {
+    ...a,
+    paramNames: [...a.paramNames],
+    cases: a.cases.map((c) => ({
+      ...c,
+      args: [...c.args],
+      ...(c.intension ? { intension: { ...c.intension } } : {}),
+    })),
+    loc: { start: { ...a.loc.start }, end: { ...a.loc.end } },
+  };
+}
+
+/**
+ * 整文件分析。同 (path, source, cases, external) 命中 memo → O(1)。
+ * 不再每次 clearBPathCache：B 路径按本文件 source 键控；
+ * 依赖变更由 LSP `evictBPathCacheForFiles` / `evictAnalysisFileCacheForFiles` 定向逐出。
+ */
 export function analyzeFile(filePath: string, source: string, activeCases?: Map<string, number>, externalCallRecords?: CallRecord[]): AnalysisResult {
+  const k = analysisFileCacheKey(filePath, source, activeCases, externalCallRecords);
+  const hit = analysisCacheGet<AnalysisResult>(k.filePath, k.source, k.auxKey);
+  if (hit !== undefined) {
+    return cloneAnalysisResult(hit);
+  }
+  const result = analyzeFileUncached(filePath, source, activeCases, externalCallRecords);
+  analysisCacheSet(k.filePath, k.source, k.auxKey, result);
+  return cloneAnalysisResult(result);
+}
+
+function analyzeFileUncached(filePath: string, source: string, activeCases?: Map<string, number>, externalCallRecords?: CallRecord[]): AnalysisResult {
   // 外部实参里的闭包在使用现场文件定义——先打 usage-site 标记再进入任何
   // 求值（case 合成重求值会执行它们，泄漏的错误记录靠此标记丢弃）。
   for (const rec of externalCallRecords ?? []) {
@@ -1092,8 +1185,6 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   setModuleResolver(resolveModule);
   setCurrentFileDir(dirname(filePath));
   setCurrentSource(source);
-  // B 路径缓存只按本文件 source 键控；依赖文件变更（LSP 脏传播）后必须重跑
-  clearBPathCache();
 
   const fileDirectives = extractFileDirectives(ast);
   const fileEnvNames = fileDirectives
@@ -1239,11 +1330,20 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   let absCallRecords: CallRecord[] = [];
   /** B 顶层 $callNamed 记录（call@ 合成；TypeValue skip 后的主源） */
   let bTopCallRecords: CallRecord[] = [];
+  /** 一次模块图 + 一次 evalProgramAbs 的共享产物（避免 B 路径 4+ 次重求值） */
+  let absGraphModules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined;
+  let absBindsShared: Map<string, Abs> | undefined;
+  let absNodesShared: Map<Node, Abs> | undefined;
+
   // B 模块图：cycle/depth/missing + 顶层 memberDiags（注入 @nudo:mock，
   // 避免缩进 const 调到真 fetch；$callNamed 实参 loc 提供参数级 provenance）
   if (bCapable && filePath) {
     try {
-      const g = evalAbsModuleGraph(source, filePath);
+      const g = evalAbsModuleGraph(source, filePath, {
+        seedVars: seeds.seedVars,
+        seedFns: seeds.seedFns as never,
+      });
+      absGraphModules = g.modules;
       pushBModuleIssues(g.issues);
     } catch {
       /* 模块图失败交还 TypeValue */
@@ -1293,38 +1393,28 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     }
   }
   if (selfContained || canAbsModules) {
-    // Abs 程序求值的递归截断（call@ 记录路径）
+    // Abs 程序求值的递归截断（call@ 记录路径）；modules 已预计算时不再重跑模块图
     setAbsTruncationCollector((label) => bTruncatedFns.add(label));
     try {
-      absCallRecords = collectAbsCallRecords(source, seeds, filePath);
+      absCallRecords = collectAbsCallRecords(source, seeds, filePath, absGraphModules);
     } finally {
       setAbsTruncationCollector(null);
     }
   }
 
-  // B hosted：跳过 TypeValue evaluateProgram。
+  // B hosted：跳过 TypeValue evaluateProgram。一次 eval 同时产出 bindings + nodeTypes。
   if (bHostedEval) {
     try {
-      const absBinds = collectAbsBindingsFromGraph(source, filePath, {
-        seedVars: seeds.seedVars,
-        seedFns: seeds.seedFns as never,
-      });
-      for (const [name, absVal] of absBinds) {
+      const collected = collectAbsBindsAndNodes(source, seeds, absGraphModules);
+      absBindsShared = collected.binds;
+      absNodesShared = collected.nodes;
+      for (const [name, absVal] of absBindsShared) {
         if (absVal?.shape?.k === "fn") continue;
         if (!globalEnv.has(name)) {
           globalEnv.bind(name, absToTypeValue(absVal));
         }
       }
-      const absMods = evalAbsModuleGraph(source, filePath, {
-        seedVars: seeds.seedVars,
-        seedFns: seeds.seedFns as never,
-      });
-      const absNodes = collectAbsNodeTypes(source, {
-        seedVars: seeds.seedVars,
-        seedFns: seeds.seedFns as never,
-        modules: absMods.modules,
-      });
-      for (const [node, absVal] of absNodes) {
+      for (const [node, absVal] of absNodesShared) {
         nodeTypeMap.set(node, absToTypeValue(absVal));
       }
     } catch {
@@ -1388,11 +1478,12 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   // B 路径可分析：用 Abs 模块图补全/覆盖绑定（含相对 import）
   if (isBPathCapable(source, envNames)) {
     try {
-      const seeds = mockDirectivesToAbsSeeds(functions);
-      const absBinds = collectAbsBindingsFromGraph(source, filePath, {
-        seedVars: seeds.seedVars,
-        seedFns: seeds.seedFns as never,
-      });
+      const absBinds =
+        absBindsShared ??
+        collectAbsBindingsFromGraph(source, filePath, {
+          seedVars: seeds.seedVars,
+          seedFns: seeds.seedFns as never,
+        });
       for (const [name, absVal] of absBinds) {
         const prev = bindings.get(name);
         bindings.set(name, {
@@ -1406,6 +1497,18 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
   }
 
   const synthCandidates: { name: string; node: Node; analysis: FunctionAnalysis }[] = [];
+
+  // 函数级指纹：body-edit 时未引用的兄弟函数可命中缓存
+  let fnFpMap: Map<string, { own: string; deps: string }> | undefined;
+  try {
+    fnFpMap = fnFingerprints(source, ast as never);
+  } catch {
+    fnFpMap = undefined;
+  }
+  const envKeyFn = envNames.join(",");
+  const mockKeyFn = Object.keys(seeds.seedVars ?? {})
+    .sort()
+    .join(",");
 
   for (const fn of functions) {
     const isPure = fn.directives.some((d) => d.kind === "pure");
@@ -1424,6 +1527,37 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       continue;
     }
 
+    const caseDirectives = fn.directives.filter((d) => d.kind === "case");
+    const activeCaseIdx = activeCases?.get(fn.name) ?? 0;
+
+    const fp = fnFpMap?.get(fn.name);
+    const fnCacheKey =
+      fp && caseDirectives.length > 0
+        ? [
+            filePath,
+            fp.own,
+            fp.deps,
+            String(activeCaseIdx),
+            caseDirectiveKey(caseDirectives, typeValueToString),
+            envKeyFn,
+            mockKeyFn,
+          ].join("\0")
+        : undefined;
+    const dLen0 = diagnostics.length;
+    const hLen0 = caseHints.length;
+    const cLen0 = callRecords.length;
+
+    if (fnCacheKey) {
+      const hitFn = fnAnalysisCacheGet(fnCacheKey);
+      if (hitFn) {
+        functionResults.push(cloneFunctionAnalysis(hitFn.analysis as FunctionAnalysis));
+        diagnostics.push(...(hitFn.diagnostics as Diagnostic[]));
+        caseHints.push(...(hitFn.caseHints as CaseHint[]));
+        callRecords.push(...(hitFn.callRecords as CallRecord[]));
+        continue;
+      }
+    }
+
     if (isPure) {
       const fnVal = globalEnv.has(fn.name) ? globalEnv.lookup(fn.name) : null;
       if (fnVal && fnVal.kind === "function") {
@@ -1437,9 +1571,6 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
     } else {
       setSampleCount(3);
     }
-
-    const caseDirectives = fn.directives.filter((d) => d.kind === "case");
-    const activeCaseIdx = activeCases?.get(fn.name) ?? 0;
 
     if (caseDirectives.length === 0) {
       synthCandidates.push({ name: fn.name, node: fn.node, analysis });
@@ -1609,6 +1740,15 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
       analysis.combined = collapseLiteralUnion(simplifyUnion(analysis.cases.map((c) => c.result)), COLLAPSE_LITERAL_THRESHOLD);
     } else if (analysis.cases.length === 1) {
       analysis.combined = analysis.cases[0].result;
+    }
+
+    if (fnCacheKey) {
+      fnAnalysisCacheSet(fnCacheKey, {
+        analysis: cloneFunctionAnalysis(analysis),
+        diagnostics: diagnostics.slice(dLen0),
+        caseHints: caseHints.slice(hLen0),
+        callRecords: callRecords.slice(cLen0),
+      });
     }
 
     functionResults.push(analysis);
@@ -2686,20 +2826,27 @@ function collectAbsCallRecords(
     seedFns?: Record<string, { params: string[]; body: Node; async?: boolean }>;
   },
   filePath?: string,
+  precomputedModules?: Record<string, import("@nudojs/core").AbsModuleExports>,
 ): CallRecord[] {
   const absCalls: AbsCallRecord[] = [];
-  let modules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined;
+  let modules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined =
+    precomputedModules;
   let importLocals = new Map<string, { modulePath: string; exportName: string }>();
   if (filePath && absModulesOk(source, [])) {
+    if (!modules) {
+      try {
+        const graph = evalAbsModuleGraph(source, filePath, {
+          seedVars: seeds?.seedVars,
+          seedFns: seeds?.seedFns,
+        });
+        modules = graph.modules;
+      } catch {
+        modules = undefined;
+      }
+    }
     try {
-      const graph = evalAbsModuleGraph(source, filePath, {
-        seedVars: seeds?.seedVars,
-        seedFns: seeds?.seedFns,
-      });
-      modules = graph.modules;
       importLocals = buildAbsImportLocalMap(source, filePath);
     } catch {
-      modules = undefined;
       importLocals = new Map();
     }
   }
@@ -2726,6 +2873,45 @@ function collectAbsCallRecords(
     }
     return rec;
   });
+}
+
+/**
+ * 一次 evalProgramAbs 同时收集顶层绑定 + 节点 Abs（B-hosted 补齐 hover/bindings）。
+ * modules 可预计算，避免再跑一遍模块图。
+ */
+function collectAbsBindsAndNodes(
+  source: string,
+  seeds?: {
+    seedVars?: Record<string, Abs>;
+    seedFns?: Record<string, { params: string[]; body: Node; async?: boolean }>;
+  },
+  modules?: Record<string, import("@nudojs/core").AbsModuleExports>,
+): { binds: Map<string, Abs>; nodes: Map<Node, Abs> } {
+  const binds = new Map<string, Abs>();
+  const nodes = new Map<Node, Abs>();
+  setAbsNodeCollector((node, value) => {
+    nodes.set(node, value);
+  });
+  try {
+    const { env } = evalProgramAbs(source, {
+      ...seeds,
+      modules,
+    });
+    for (const [k, v] of env.vars) binds.set(k, v);
+    for (const [name, impl] of env.fns) {
+      if (!binds.has(name)) {
+        binds.set(
+          name,
+          absFunction(impl.params, { body: impl.body, async: impl.async, env }),
+        );
+      }
+    }
+  } catch {
+    /* ignore */
+  } finally {
+    setAbsNodeCollector(null);
+  }
+  return { binds, nodes };
 }
 
 /** 入口 import 局部绑定 → 解析后的模块路径 + 导出名 */

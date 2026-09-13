@@ -345,6 +345,53 @@ async function measureScaling() {
   return { by_fn_count: rows, by_callsites: csRows };
 }
 
+async function measureCheckWarm(files: Record<string, string>) {
+  const { checkSource, pTrue, resetCheckSourceMemo } = await import(
+    "../../packages/core/src/index.ts"
+  );
+  const { defaultLoadModule } = await import("../../packages/service/src/load-module.ts");
+  const path = files.w3_nudo_50!;
+  const source = readFileSync(path, "utf-8");
+  const opts = { loadModule: defaultLoadModule, fromFile: path };
+
+  resetCheckSourceMemo();
+  const t0 = performance.now();
+  checkSource(path, source, pTrue, opts);
+  const cold = performance.now() - t0;
+
+  const samples: number[] = [];
+  for (let i = 0; i < 20; i++) {
+    const t = performance.now();
+    checkSource(path, source, pTrue, opts);
+    samples.push(performance.now() - t);
+  }
+
+  const cmdPath = join(ROOT, "node_modules/commander/lib/command.js");
+  let commander: Record<string, unknown> | undefined;
+  try {
+    const cmdSrc = readFileSync(cmdPath, "utf-8");
+    resetCheckSourceMemo();
+    const tc = performance.now();
+    checkSource(cmdPath, cmdSrc, pTrue, { loadModule: defaultLoadModule, fromFile: cmdPath });
+    const cmdCold = performance.now() - tc;
+    const cmdWarm: number[] = [];
+    for (let i = 0; i < 20; i++) {
+      const t = performance.now();
+      checkSource(cmdPath, cmdSrc, pTrue, { loadModule: defaultLoadModule, fromFile: cmdPath });
+      cmdWarm.push(performance.now() - t);
+    }
+    commander = { cold_ms: +cmdCold.toFixed(1), warm: stats(cmdWarm) };
+  } catch {
+    /* commander not installed */
+  }
+
+  return {
+    w3_50_cold_ms: +cold.toFixed(1),
+    w3_50_warm: stats(samples),
+    ...(commander ? { commander } : {}),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -382,6 +429,9 @@ async function main() {
   // --- warm in-process ---
   console.log("[warm nudo]");
   report["nudo_warm"] = await measureNudoWarm(files);
+
+  console.log("[warm checkSource]");
+  report["nudo_check_warm"] = await measureCheckWarm(files);
 
   // --- tsc ---
   console.log("[tsc cli]");
@@ -434,6 +484,17 @@ function printSummary(r: Record<string, any>) {
   console.log("\n— Nudo warm (in-process analyzeFile) —");
   for (const [k, v] of Object.entries(r.nudo_warm)) {
     console.log(" ", k.padEnd(22), fmt(v as any));
+  }
+
+  console.log("\n— checkSource warm (whole-file memo) —");
+  const cw = r.nudo_check_warm;
+  if (cw) {
+    console.log("  w3x50 cold           ", cw.w3_50_cold_ms, "ms");
+    console.log("  w3x50 warm           ", fmt(cw.w3_50_warm));
+    if (cw.commander) {
+      console.log("  commander cold       ", cw.commander.cold_ms, "ms");
+      console.log("  commander warm       ", fmt(cw.commander.warm));
+    }
   }
 
   console.log("\n— tsc CLI --noEmit (fresh process each rep; dominated by compiler load) —");

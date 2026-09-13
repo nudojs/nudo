@@ -24,10 +24,13 @@ import { leqAbs } from "./leq.ts";
 import {
   refineToIndexedFull,
   extractRefineReturnFromSource,
+  extractNudoImports,
   type RefineEntry,
 } from "./refine.ts";
 import type { NudoConstraint, NudoField } from "./constraint.ts";
 import { generalizeFromAst } from "./generalize.ts";
+import { canSkipLiteralCallScan } from "./fn-fp.ts";
+import { stableAnalyzeKeySource } from "./stable-source-key.ts";
 import { numLit, unknown, abs as makeAbs } from "./abs.ts";
 import type { Abs } from "./abs.ts";
 import type { Phi, Pred } from "./pred.ts";
@@ -37,6 +40,177 @@ import { litValue } from "./abs.ts";
 import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
 import { checkCall } from "./diagnostics.ts";
 import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
+
+// --- 整文件 CheckReport memo（LSP/CI 重复 check → O(1)） ---
+
+const checkReportMemo = new Map<string, CheckReport>();
+const checkKeyDeps = new Map<string, string[]>();
+const checkDepIndex = new Map<string, Set<string>>();
+const loadModuleIds = new WeakMap<object, number>();
+let nextLoadModuleId = 1;
+const MAX_CHECK_MEMO = 256;
+
+export function resetCheckSourceMemo(): void {
+  checkReportMemo.clear();
+  checkKeyDeps.clear();
+  checkDepIndex.clear();
+  lastHashSource = undefined;
+  lastHashOut = undefined;
+}
+
+export function getCheckSourceMemoSize(): number {
+  return checkReportMemo.size;
+}
+
+function normPath(p: string): string {
+  return p.replace(/\\/g, "/");
+}
+
+/** 与 generalize.resolveDepPath 同构：core 不引 path */
+function resolveDepPath(fromFile: string, spec: string): string {
+  const s = normPath(spec);
+  if (!s.startsWith(".")) return s;
+  const from = normPath(fromFile);
+  const i = from.lastIndexOf("/");
+  const base = i >= 0 ? from.slice(0, i) : "";
+  const parts = base ? base.split("/") : [];
+  for (const seg of s.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") parts.pop();
+    else parts.push(seg);
+  }
+  return parts.join("/");
+}
+
+let lastHashSource: string | undefined;
+let lastHashOut: string | undefined;
+
+function hashSource(s: string): string {
+  if (s === lastHashSource && lastHashOut !== undefined) return lastHashOut;
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  lastHashSource = s;
+  lastHashOut = (h >>> 0).toString(36);
+  return lastHashOut;
+}
+
+function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefined): number {
+  if (!fn) return 0;
+  let id = loadModuleIds.get(fn);
+  if (id === undefined) {
+    id = nextLoadModuleId++;
+    loadModuleIds.set(fn, id);
+  }
+  return id;
+}
+
+function checkDepsFingerprint(
+  source: string,
+  opts: CheckOptions,
+): { fp: string; paths: string[] } {
+  if (!opts.loadModule || !opts.fromFile) return { fp: "-", paths: [] };
+  const imports = extractNudoImports(source);
+  if (imports.length === 0) return { fp: "-", paths: [] };
+  const parts: string[] = [];
+  const paths: string[] = [];
+  for (const imp of imports) {
+    const src = opts.loadModule(imp.spec, opts.fromFile);
+    parts.push(`${imp.spec}=${src === undefined ? "miss" : hashSource(src)}`);
+    paths.push(resolveDepPath(opts.fromFile, imp.spec));
+  }
+  return { fp: parts.join(","), paths };
+}
+
+function unindexCheckKey(key: string): void {
+  const deps = checkKeyDeps.get(key);
+  if (!deps) return;
+  for (const p of deps) {
+    const set = checkDepIndex.get(p);
+    if (!set) continue;
+    set.delete(key);
+    if (set.size === 0) checkDepIndex.delete(p);
+  }
+  checkKeyDeps.delete(key);
+}
+
+/** `*.nudo.js` 变更后定向逐出依赖它的整文件 check 缓存 */
+export function evictCheckSourceMemoForPaths(paths: string[]): number {
+  let n = 0;
+  for (const raw of paths) {
+    const p = normPath(raw);
+    const keys = checkDepIndex.get(p);
+    if (!keys) continue;
+    for (const key of [...keys]) {
+      checkReportMemo.delete(key);
+      unindexCheckKey(key);
+      n++;
+    }
+  }
+  return n;
+}
+
+function cloneCheckReport(r: CheckReport): CheckReport {
+  return {
+    file: r.file,
+    issues: r.issues.map((i) => ({ ...i })),
+    ok: r.ok,
+    signatures: r.signatures.map((s) => ({
+      ...s,
+      params: [...s.params],
+    })),
+    summary: { ...r.summary },
+  };
+}
+
+function checkMemoKey(
+  filePath: string,
+  source: string,
+  opts: CheckOptions,
+): { key: string; depPaths: string[] } {
+  const deps = checkDepsFingerprint(source, opts);
+  return {
+    key: [
+      hashSource(source),
+      filePath,
+      `${loadModuleId(opts.loadModule)}:${opts.fromFile ?? ""}`,
+      deps.fp,
+    ].join("|"),
+    depPaths: deps.paths,
+  };
+}
+
+function checkMemoGet(key: string): CheckReport | null {
+  if (!checkReportMemo.has(key)) return null;
+  const v = checkReportMemo.get(key)!;
+  checkReportMemo.delete(key);
+  checkReportMemo.set(key, v);
+  return v;
+}
+
+function checkMemoSet(key: string, value: CheckReport, depPaths: string[]): void {
+  if (checkReportMemo.size >= MAX_CHECK_MEMO) {
+    const oldest = checkReportMemo.keys().next().value;
+    if (oldest !== undefined) {
+      checkReportMemo.delete(oldest);
+      unindexCheckKey(oldest);
+    }
+  }
+  checkReportMemo.set(key, value);
+  if (depPaths.length > 0) {
+    checkKeyDeps.set(key, depPaths);
+    for (const p of depPaths) {
+      let set = checkDepIndex.get(p);
+      if (!set) {
+        set = new Set();
+        checkDepIndex.set(p, set);
+      }
+      set.add(key);
+    }
+  }
+}
 
 /**
  * check 选项：core 不碰 fs；host 用 loadModule 喂 require 目标源码。
@@ -81,6 +255,8 @@ function listTopFunctions(source: string, file?: ReturnType<typeof parse>): stri
  * - 每个顶层函数 generalize；无法得到任何签名 → warning
  * - 若 source 中有字面量调用 `f(负数)` 且 f 有 `>0` 约束 → error
  * - entry 结果 partial/opaque → info
+ *
+ * 默认 Φ（pTrue）走整文件 memo：同 source + deps + loadModule 身份 → O(1)。
  */
 export function checkSource(
   filePath: string,
@@ -88,6 +264,19 @@ export function checkSource(
   phi: Phi = pTrue,
   opts: CheckOptions = {},
 ): CheckReport {
+  const useMemo = phi.op === "true";
+  let memoKey: string | undefined;
+  let depPaths: string[] = [];
+  if (useMemo) {
+    // 尾部无 @nudo 的注释/空行不进键：comment-only 编辑复用 CheckReport
+    const stable = stableAnalyzeKeySource(source);
+    const k = checkMemoKey(filePath, stable, opts);
+    memoKey = k.key;
+    depPaths = k.depPaths;
+    const hit = checkMemoGet(memoKey);
+    if (hit) return cloneCheckReport(hit);
+  }
+
   const issues: CheckIssue[] = [];
   const signatures: NudoSig[] = [];
   // 单次 parse：listTopFunctions / generalize / analyzeFn / scan 共用
@@ -99,7 +288,9 @@ export function checkSource(
   resetAbsCallBudget();
   setAbsTruncationCollector((label) => truncated.add(label));
   try {
-    return checkSourceInner(filePath, source, file, phi, opts, issues, signatures, names, truncated);
+    const report = checkSourceInner(filePath, source, file, phi, opts, issues, signatures, names, truncated);
+    if (memoKey) checkMemoSet(memoKey, report, depPaths);
+    return cloneCheckReport(report);
   } finally {
     setAbsTruncationCollector(null);
   }
@@ -116,6 +307,8 @@ function checkSourceInner(
   names: string[],
   truncated: Set<string>,
 ): CheckReport {
+  // 整文件一次判定，避免 per-function includes 全文扫
+  const hasRefineDirective = source.includes("@nudo:refine");
   for (const name of names) {
     const g = generalizeFromAst(name, source, {
       file,
@@ -134,17 +327,19 @@ function checkSourceInner(
       });
       continue;
     }
+    // L0 命中时 symbolic 是稳定对象：格式化结果可 WeakMap 复用
+    const fmt = formatSigCached(g.symbolic, name);
     signatures.push({
       name,
       params: g.params,
       abs: g.symbolic,
-      display: formatAbs(g.symbolic),
-      detail: formatAbsMultiline(g.symbolic, name),
+      display: fmt.display,
+      detail: fmt.detail,
       conf: g.symbolic.conf,
     });
 
     // 后置：@nudo:refine return <constraint> —— 推断返回值 ⊭ 契约
-    {
+    if (hasRefineDirective) {
       const ret = extractRefineReturnFromSource(source, name, {
         loadModule: opts.loadModule,
         fromFile: opts.fromFile ?? filePath,
@@ -156,26 +351,29 @@ function checkSourceInner(
       }
     }
 
-    // 入口用契约 Abs（不是 unknown），让 opaque 判定与 body 求值一致
-    const entryArgs = g.typeParams.map((t) => t.value);
-    try {
-      const r = analyzeFn(source, name, entryArgs, phi, undefined, file);
-      if (r.conf === "opaque" && !truncated.has(name)) {
+    // generalize 已用同一入口实参求过 body；conf 确信时跳过重复 analyzeFn
+    // （after-edit 下 L0 命中 → 这里是 O(1)，否则 400 函数会白跑 400 次）
+    if (g.symbolic.conf === "opaque" || g.symbolic.conf === "partial") {
+      const entryArgs = g.typeParams.map((t) => t.value);
+      try {
+        const r = analyzeFn(source, name, entryArgs, phi, undefined, file);
+        if (r.conf === "opaque" && !truncated.has(name)) {
+          issues.push({
+            severity: "info",
+            code: "nudo:opaque-result",
+            message: `${name}(...): conf=opaque（路径未覆盖或 native）`,
+            suggestion: "补 @nudo:case 或调用点",
+            fn: name,
+          });
+        }
+      } catch (e) {
         issues.push({
-          severity: "info",
-          code: "nudo:opaque-result",
-          message: `${name}(...): conf=opaque（路径未覆盖或 native）`,
-          suggestion: "补 @nudo:case 或调用点",
+          severity: "error",
+          code: "nudo:eval-error",
+          message: `${name}: 求值失败 — ${(e as Error).message}`,
           fn: name,
         });
       }
-    } catch (e) {
-      issues.push({
-        severity: "error",
-        code: "nudo:eval-error",
-        message: `${name}: 求值失败 — ${(e as Error).message}`,
-        fn: name,
-      });
     }
   }
 
@@ -189,11 +387,27 @@ function checkSourceInner(
     });
   }
 
-  const callIssues = scanLiteralCalls(source, names, phi, {
-    loadModule: opts.loadModule,
-    fromFile: filePath,
-    file,
-  });
+  // 一次 evalProgramAbs：结构赋值记录 + 顶层绑定表（scanLiteralCalls 实参解析用）
+  const records: AbsAssignRecord[] = [];
+  const varAbs = new Map<string, Abs>();
+  setAbsAssignCollector((r) => records.push(r));
+  try {
+    const { env } = evalProgramAbs(source, { file });
+    for (const [k, v] of env.vars) varAbs.set(k, v);
+  } catch {
+    /* 求值失败：无赋值记录、无绑定表 */
+  } finally {
+    setAbsAssignCollector(null);
+  }
+
+  const callIssues = canSkipLiteralCallScan(source, file)
+    ? []
+    : scanLiteralCalls(source, names, phi, {
+        loadModule: opts.loadModule,
+        fromFile: filePath,
+        file,
+        varAbs,
+      });
   issues.push(...callIssues);
 
   // case 是见证：@nudo:case 实参 ⊄ refine → inconsistency
@@ -206,7 +420,7 @@ function checkSourceInner(
   );
 
   // 结构可赋值：赋值语句 prev ⊇ next（Abs leq）
-  issues.push(...scanStructuralAssign(source, file));
+  issues.push(...structuralAssignIssues(records));
 
   const errors = issues.filter((i) => i.severity === "error").length;
   const warnings = issues.filter((i) => i.severity === "warning").length;
@@ -223,6 +437,20 @@ function checkSourceInner(
 
 function absUnknown(): Abs {
   return { shape: { k: "unknown" }, conf: "partial" };
+}
+
+/** L0 命中的 symbolic 对象稳定：display/detail 按 Abs 身份缓存 */
+const sigFormatCache = new WeakMap<Abs, { display: string; detail: string }>();
+
+function formatSigCached(absVal: Abs, name: string): { display: string; detail: string } {
+  const hit = sigFormatCache.get(absVal);
+  if (hit) return hit;
+  const out = {
+    display: formatAbs(absVal),
+    detail: formatAbsMultiline(absVal, name),
+  };
+  sigFormatCache.set(absVal, out);
+  return out;
 }
 
 /**
@@ -356,19 +584,10 @@ function checkReturnConstraint(
 
 /**
  * 结构可赋值：`let a = {x:1}; a = {y:2}` 应报 missing slot x。
- * 顺序 Abs 求值 + leqAbs；仅检查有 prev 绑定的标识符赋值。
+ * 输入为 evalProgramAbs 收集的赋值记录（与 scanLiteralCalls 共享一次求值）。
  */
-function scanStructuralAssign(source: string, file?: ReturnType<typeof parse>): CheckIssue[] {
+function structuralAssignIssues(records: AbsAssignRecord[]): CheckIssue[] {
   const out: CheckIssue[] = [];
-  const records: AbsAssignRecord[] = [];
-  setAbsAssignCollector((r) => records.push(r));
-  try {
-    evalProgramAbs(source, file ? { file } : {});
-  } catch {
-    return out;
-  } finally {
-    setAbsAssignCollector(null);
-  }
   for (const r of records) {
     if (!r.prev) continue;
     // 跳过 unknown / never 源（无信息）
@@ -406,6 +625,9 @@ function scanCaseInconsistency(
   },
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
+  // 快路径：无 case 指令则免整树 walk；无 refine 时 case 不可能 ⊄ 契约
+  if (!source.includes("@nudo:case")) return out;
+  if (!source.includes("@nudo:refine")) return out;
   const file = opts.file ?? parse(source);
 
   /** 解析 case 实参列表里的简单字面量 */
@@ -622,18 +844,6 @@ function evalArgAbs(
   }
 }
 
-/** 整文件顺序求值后的绑定表（标识符实参用） */
-function snapshotVarAbs(source: string, file?: ReturnType<typeof parse>): Map<string, Abs> {
-  const map = new Map<string, Abs>();
-  try {
-    const { env } = evalProgramAbs(source, file ? { file } : {});
-    for (const [k, v] of env.vars) map.set(k, v);
-  } catch {
-    // ignore
-  }
-  return map;
-}
-
 /** 扫描前收集：别名 / 对象属性 / require 导入 */
 type CallResolve = {
   /** 本地名 → 真实函数名（同文件） */
@@ -734,6 +944,48 @@ function resolveExportSource(
   return resolveExportSource(next, fnName, loadSpec, depth + 1);
 }
 
+/** 只递归可能含 Import/VariableDeclaration 的语句容器（resolvers/forwarders 用） */
+const STMT_CONTAINER = new Set([
+  "File",
+  "Program",
+  "BlockStatement",
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunctionExpression",
+  "IfStatement",
+  "ForStatement",
+  "ForInStatement",
+  "ForOfStatement",
+  "WhileStatement",
+  "DoWhileStatement",
+  "SwitchStatement",
+  "SwitchCase",
+  "TryStatement",
+  "CatchClause",
+  "LabeledStatement",
+  "ExportNamedDeclaration",
+  "ExportDefaultDeclaration",
+  "ExportAllDeclaration",
+  "ClassDeclaration",
+  "ClassBody",
+  "ClassMethod",
+  "StaticBlock",
+  "ObjectMethod",
+]);
+
+function walkStatements(n: unknown, onStmt: (obj: Record<string, unknown> & { type?: string }) => void): void {
+  if (!n || typeof n !== "object") return;
+  const obj = n as Record<string, unknown> & { type?: string };
+  if (typeof obj.type === "string") onStmt(obj);
+  if (!STMT_CONTAINER.has(String(obj.type))) return;
+  for (const key of Object.keys(obj)) {
+    if (key === "loc" || key === "start" || key === "end" || key === "leadingComments") continue;
+    const val = obj[key];
+    if (Array.isArray(val)) val.forEach((x) => walkStatements(x, onStmt));
+    else if (val && typeof val === "object") walkStatements(val, onStmt);
+  }
+}
+
 function collectCallResolvers(
   source: string,
   knownFns: string[],
@@ -743,6 +995,7 @@ function collectCallResolvers(
     file?: ReturnType<typeof parse>;
   },
 ): CallResolve {
+  const knownSet = new Set(knownFns);
   const aliasToFn = new Map<string, string>();
   const memberToFn = new Map<string, string>();
   const externalFn = new Map<string, { source: string; fnName: string }>();
@@ -853,7 +1106,7 @@ function collectCallResolvers(
 
         if (id.type !== "Identifier" || !id.name) continue;
         // const f = needsPositive
-        if (init.type === "Identifier" && typeof init.name === "string" && knownFns.includes(init.name)) {
+        if (init.type === "Identifier" && typeof init.name === "string" && knownSet.has(init.name)) {
           aliasToFn.set(id.name, init.name);
         }
         // const api = { needsPositive }
@@ -862,7 +1115,7 @@ function collectCallResolvers(
             if (p.type !== "ObjectProperty") continue;
             const key = p.key as { type?: string; name?: string; value?: unknown };
             const value = p.value as { type?: string; name?: string } | undefined;
-            if (value?.type === "Identifier" && value.name && knownFns.includes(value.name)) {
+            if (value?.type === "Identifier" && value.name && knownSet.has(value.name)) {
               const propKey =
                 key?.type === "Identifier" ? key.name : key?.type === "StringLiteral" ? String(key.value) : undefined;
               if (propKey) memberToFn.set(`${id.name}.${propKey}`, value.name);
@@ -871,14 +1124,9 @@ function collectCallResolvers(
         }
       }
     }
-    for (const key of Object.keys(obj)) {
-      if (key === "loc" || key === "start" || key === "end") continue;
-      const val = obj[key];
-      if (Array.isArray(val)) val.forEach(visit);
-      else if (val && typeof val === "object") visit(val);
-    }
   };
-  visit(file);
+  // 语句容器 walk：不进表达式树，O(语句) 而非 O(全部节点)
+  walkStatements(file, visit);
   return { aliasToFn, memberToFn, externalFn, externalMember };
 }
 
@@ -886,14 +1134,14 @@ function collectCallResolvers(
 function resolveCalleeFn(
   callee: Record<string, unknown>,
   resolve: CallResolve,
-  knownFns: string[],
+  knownFns: Set<string>,
 ): string | { external: { source: string; fnName: string } } | undefined {
   if (callee.type === "Identifier" && typeof callee.name === "string") {
     const ext = resolve.externalFn.get(callee.name);
     if (ext) return { external: ext };
     const aliased = resolve.aliasToFn.get(callee.name);
     if (aliased) return aliased;
-    if (knownFns.includes(callee.name)) return callee.name;
+    if (knownFns.has(callee.name)) return callee.name;
     return undefined;
   }
   if (callee.type === "MemberExpression") {
@@ -930,7 +1178,7 @@ type Forward = { target: string; map: number[] };
 
 function collectForwarders(
   source: string,
-  knownFns: string[],
+  knownFns: Set<string>,
   resolve: CallResolve,
   fileAst?: ReturnType<typeof parse>,
 ): Map<string, Forward> {
@@ -962,7 +1210,7 @@ function collectForwarders(
 
     const resolved = resolveCalleeFn(call.callee as Record<string, unknown>, resolve, knownFns);
     if (!resolved || typeof resolved !== "string") return;
-    if (!knownFns.includes(resolved) || resolved === name) return;
+    if (!knownFns.has(resolved) || resolved === name) return;
 
     const args = (call.arguments as Array<Record<string, unknown>> | undefined) ?? [];
     if (args.length === 0) return;
@@ -977,9 +1225,7 @@ function collectForwarders(
     forwards.set(name, { target: resolved, map });
   };
 
-  const visit = (n: unknown): void => {
-    if (!n || typeof n !== "object") return;
-    const obj = n as Record<string, unknown> & { type?: string };
+  walkStatements(file, (obj) => {
     if (obj.type === "FunctionDeclaration") {
       const id = obj.id as { name?: string } | undefined;
       tryFn(
@@ -1006,14 +1252,7 @@ function collectForwarders(
         }
       }
     }
-    for (const key of Object.keys(obj)) {
-      if (key === "loc" || key === "start" || key === "end") continue;
-      const val = obj[key];
-      if (Array.isArray(val)) val.forEach(visit);
-      else if (val && typeof val === "object") visit(val);
-    }
-  };
-  visit(file);
+  });
   return forwards;
 }
 
@@ -1026,13 +1265,16 @@ function scanLiteralCalls(
     loadModule?: (spec: string, fromFile: string) => string | undefined;
     fromFile?: string;
     file?: ReturnType<typeof parse>;
+    /** 顶层绑定表（与结构赋值共享的 evalProgramAbs 结果） */
+    varAbs?: Map<string, Abs>;
   },
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
   const file = opts?.file ?? parse(source);
+  const knownSet = new Set(knownFns);
   const resolve = collectCallResolvers(source, knownFns, opts);
-  const forwards = collectForwarders(source, knownFns, resolve, file);
-  const varAbs = snapshotVarAbs(source, file);
+  const forwards = collectForwarders(source, knownSet, resolve, file);
+  const varAbs = opts?.varAbs ?? new Map<string, Abs>();
 
   const flattenPred = (p: Pred): Pred[] =>
     p.op === "and" ? p.args.flatMap(flattenPred) : p.op === "true" ? [] : [p];
@@ -1606,7 +1848,7 @@ function scanLiteralCalls(
     if (obj.type === "CallExpression") {
       const callee = obj.callee as Record<string, unknown>;
       const args = (obj.arguments as Array<Record<string, unknown>>) ?? [];
-      const resolved = resolveCalleeFn(callee, resolve, knownFns);
+      const resolved = resolveCalleeFn(callee, resolve, knownSet);
       if (typeof resolved === "string") {
         checkOneCall(resolved, args, obj.loc);
       } else if (resolved?.external) {

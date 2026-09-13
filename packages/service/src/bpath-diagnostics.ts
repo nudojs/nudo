@@ -238,7 +238,11 @@ function walkBuiltinUnknown(
     if (key === "loc" || key === "start" || key === "end") continue;
     const v = n[key];
     if (Array.isArray(v)) {
-      v.forEach((x) => walkBuiltinUnknown(x as Node, declared, out, seen, key));
+      v.forEach((x) => {
+        if (x && typeof x === "object" && "type" in (x as object)) {
+          walkBuiltinUnknown(x as Node, declared, out, seen, key);
+        }
+      });
     } else if (v && typeof v === "object" && "type" in (v as object)) {
       walkBuiltinUnknown(v as Node, declared, out, seen, key);
     }

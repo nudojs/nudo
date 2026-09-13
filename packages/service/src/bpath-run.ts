@@ -19,11 +19,14 @@ import {
   type TranspiledCallResult,
   type Abs,
   type AbsModuleExports,
+  stableAnalyzeKeySource,
 } from "@nudojs/core";
 import { parse, extractInlineDirectives } from "@nudojs/parser";
 import { loadEnvs } from "@nudojs/cli/evaluator";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
 import { envValueToAbs } from "./env-to-abs.ts";
+import { clearAnalysisFileCache } from "./analysis-file-cache.ts";
+import { clearFnAnalysisCache } from "./fn-analysis-cache.ts";
 
 /** @nudo:env → Abs 全局表（保留 fnSig impl） */
 export function collectEnvGlobals(envNames: string[]): Record<string, Abs> {
@@ -160,10 +163,46 @@ export type BPathRunResult = {
   calls?: BCallRecord[];
 };
 
-const bRunCache = new Map<string, BPathRunResult | null>();
+/** 按入口文件键控：同文件同源 O(1) 身份比较（case 循环 400 次不再重哈希） */
+type BCacheEntry = {
+  stableSource: string;
+  mode: string;
+  envKey: string;
+  mockKey: string;
+  value: BPathRunResult | null;
+};
+const bRunByFile = new Map<string, BCacheEntry>();
+const MAX_B_RUN_CACHE = 32;
 
 export function clearBPathCache(): void {
-  bRunCache.clear();
+  bRunByFile.clear();
+  // 测试/宿主习惯：清 B-path 时一并丢掉整文件/函数级分析缓存
+  clearAnalysisFileCache();
+  clearFnAnalysisCache();
+}
+
+/** 依赖文件变更后：逐出以这些文件为入口的 B-path 缓存 */
+export function evictBPathCacheForFiles(files: string[]): number {
+  let n = 0;
+  for (const f of files) {
+    if (bRunByFile.delete(f)) n++;
+  }
+  return n;
+}
+
+function bPathCacheSet(
+  filePath: string,
+  stableSource: string,
+  mode: string,
+  envKey: string,
+  mockKey: string,
+  value: BPathRunResult | null,
+): void {
+  if (bRunByFile.size >= MAX_B_RUN_CACHE && !bRunByFile.has(filePath)) {
+    const oldest = bRunByFile.keys().next().value;
+    if (oldest !== undefined) bRunByFile.delete(oldest);
+  }
+  bRunByFile.set(filePath, { stableSource, mode, envKey, mockKey, value });
 }
 
 /** 模块图 + runTranspiled（默认 analyze 模式） */
@@ -179,11 +218,25 @@ export function tryRunBPath(
   } = {},
 ): BPathRunResult | undefined {
   if (!isBPathCapable(source, opts.envNames ?? [])) return undefined;
-  const mockKeys = Object.keys(opts.mocks ?? {}).sort().join(",");
-  // 全量 source 进键：同路径、同前缀、同长度的不同源码不得复用同一条缓存
-  // （前缀截断键会静默返回陈旧结果——错诊断且无任何报错信号）。
-  const key = `${filePath}::${source}::${opts.mode ?? "analyze"}::${(opts.envNames ?? []).join(",")}::m=${mockKeys}`;
-  if (bRunCache.has(key)) return bRunCache.get(key) ?? undefined;
+  const mode = opts.mode ?? "analyze";
+  const envKey = (opts.envNames ?? []).join(",");
+  const mockKey = Object.keys(opts.mocks ?? {}).sort().join(",");
+  // 尾部无 @nudo 注释不参与：comment-only 编辑命中 B-path。
+  // 同 source 引用时 stable 快路径返回原串 → 下方 === 为 O(1)。
+  const stable = stableAnalyzeKeySource(source);
+  const cached = bRunByFile.get(filePath);
+  if (
+    cached &&
+    cached.stableSource === stable &&
+    cached.mode === mode &&
+    cached.envKey === envKey &&
+    cached.mockKey === mockKey
+  ) {
+    // LRU：命中移到队尾
+    bRunByFile.delete(filePath);
+    bRunByFile.set(filePath, cached);
+    return cached.value ?? undefined;
+  }
   let out: BPathRunResult | null = null;
   try {
     const memberDiags: BMemberDiag[] = [];
@@ -228,7 +281,7 @@ export function tryRunBPath(
   } catch {
     out = null;
   }
-  bRunCache.set(key, out);
+  bPathCacheSet(filePath, stable, mode, envKey, mockKey, out);
   return out ?? undefined;
 }
 

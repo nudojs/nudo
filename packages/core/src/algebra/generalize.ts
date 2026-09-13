@@ -24,6 +24,7 @@ import {
   type RefineResolveOpts,
 } from "./refine.ts";
 import { constraintToEntryAbs } from "./constraint.ts";
+import { generalizeSourceKeyPart, resetFnFpCache } from "./fn-fp.ts";
 
 /** 进程内 L0：同 (source, fn, refine 指纹, budget, label) 的 generalize 结果 */
 const generalizeMemo = new Map<string, PolyFn | undefined>();
@@ -41,6 +42,9 @@ export function resetGeneralizeMemo(): void {
   generalizeMemo.clear();
   memoKeyDeps.clear();
   memoDepIndex.clear();
+  resetFnFpCache();
+  lastHashSource = undefined;
+  lastHashOut = undefined;
 }
 
 export function getGeneralizeMemoSize(): number {
@@ -98,13 +102,19 @@ export function evictGeneralizeMemoForPaths(paths: string[]): number {
   return n;
 }
 
+let lastHashSource: string | undefined;
+let lastHashOut: string | undefined;
+
 function hashSource(s: string): string {
+  if (s === lastHashSource && lastHashOut !== undefined) return lastHashOut;
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  return (h >>> 0).toString(36);
+  lastHashSource = s;
+  lastHashOut = (h >>> 0).toString(36);
+  return lastHashOut;
 }
 
 function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefined): number {
@@ -143,13 +153,16 @@ function generalizeMemoKey(
     budget?: LeakBudget;
     label?: string;
     refine?: RefineResolveOpts;
+    file?: ReturnType<typeof babelParse>;
   },
 ): { key: string; depPaths: string[] } {
   const r = opts.refine;
   const budget = opts.budget ?? defaultLeakBudget;
   const deps = r ? refineDepsFingerprint(source, r) : { fp: "-", paths: [] };
+  // AST 可用时用 per-function 指纹：改未引用的兄弟函数不 invalidate 本函数
+  const srcPart = generalizeSourceKeyPart(source, fnName, opts.file);
   const key = [
-    hashSource(source),
+    srcPart,
     fnName,
     opts.label ?? "A",
     r ? `${loadModuleId(r.loadModule)}:${r.fromFile ?? ""}` : "-",
