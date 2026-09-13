@@ -500,7 +500,7 @@ export type PolyFn = {
   entryReqs?: Array<{ param: string; pred: import("./pred.ts").Pred }>;
 };
 
-function extractFn(
+export function extractFn(
   source: string,
   fnName: string,
   fileAst?: ReturnType<typeof babelParse>,

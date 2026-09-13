@@ -70,4 +70,21 @@ function load() { return fetch(); }
     expect(seeds.seedVars.fetch).toBeDefined();
     expect(seeds.seedVars.fetch!.conf).toBe("mock");
   });
+
+  it("type-value expression mock seeds a var for the B path", () => {
+    // 回归：`= T.number` 只进 TypeValue env，B 路径注入拿不到 → 被当
+    // unknown 全局（nudo:builtin-unknown）。seed 后两路径口径一致。
+    const src = `
+/**
+ * @nudo:mock retries = T.number
+ */
+function plan() { return retries + 1; }
+`;
+    const file = parse(src);
+    const fns = extractDirectives(file);
+    const seeds = mockDirectivesToAbsSeeds(fns);
+    expect(seeds.seedVars.retries).toBeDefined();
+    expect(seeds.seedVars.retries!.shape.k).toBe("prim");
+    expect((seeds.seedVars.retries!.shape as { type?: string }).type).toBe("number");
+  });
 });

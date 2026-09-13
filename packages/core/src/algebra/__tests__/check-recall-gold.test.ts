@@ -551,6 +551,22 @@ readX({ x: 1, z: 2 });
     expect: "ok",
   },
   {
+    id: "arg-same-name-params-isolated",
+    origin: "传参结构·同名参数隔离",
+    source: `
+function readXY(p) {
+  return p.x + p.y;
+}
+function readX(p) {
+  return p.x;
+}
+readXY({ x: 1, y: 2 });
+readX({ x: 1, z: 9 });
+`,
+    expect: "ok",
+    note: "同名参数在兄弟函数里的访问不得互相污染（曾把 readXY 的 y 漏进 readX 的必填 slot）",
+  },
+  {
     id: "arg-ident-missing-slot-violates",
     origin: "传参结构·标识符",
     source: `

@@ -27,7 +27,7 @@ import {
   type RefineEntry,
 } from "./refine.ts";
 import type { NudoConstraint, NudoField } from "./constraint.ts";
-import { generalizeFromAst } from "./generalize.ts";
+import { extractFn, generalizeFromAst } from "./generalize.ts";
 import { canSkipLiteralCallScan } from "./fn-fp.ts";
 import { stableAnalyzeKeySource } from "./stable-source-key.ts";
 import { hashSource, resetHashSourceCache } from "./hash-source.ts";
@@ -796,10 +796,12 @@ function collectParamStructReqs(
   fileAst?: ReturnType<typeof parse>,
 ): Map<string, Set<string>> {
   const reqs = new Map<string, Set<string>>();
-  const g = generalizeFromAst(fnName, source, fileAst ? { file: fileAst } : {});
-  if (!g) return reqs;
-  const params = new Set(g.params);
-  const file = fileAst ?? parse(source);
+  // 只走目标函数自身的 body：走整个文件会把同名参数在兄弟函数里的
+  // 访问（p.y）漏进本函数的必填 slot（p.x），造成跨函数污染。
+  const extracted = extractFn(source, fnName, fileAst);
+  if (!extracted) return reqs;
+  const params = new Set(extracted.params);
+  const body = extracted.body;
 
   const visit = (n: unknown): void => {
     if (!n || typeof n !== "object") return;
@@ -823,7 +825,7 @@ function collectParamStructReqs(
       else if (val && typeof val === "object") visit(val);
     }
   };
-  visit(file);
+  visit(body);
   return reqs;
 }
 
