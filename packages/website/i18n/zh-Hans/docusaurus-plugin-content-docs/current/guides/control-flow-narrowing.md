@@ -1,6 +1,6 @@
 ---
 sidebar_position: 5
-description: 了解 Nudo 如何按调用点收窄类型——比较守卫、判别对象形状、typeof、Array.isArray 与 switch——以及 truthiness、in 与 ?./?? 的当前局限。
+description: 了解 Nudo 如何按调用点收窄类型——比较守卫、判别对象形状、typeof、Array.isArray 与 switch——以及 truthiness、三元条件、in 与 ?./?? 的当前局限。
 ---
 
 # 控制流收窄
@@ -127,6 +127,7 @@ Combined: "Waiting..." | "Loading abc..." | "test" | "fail"
 | 模式 | 当前行为 |
 |---|---|
 | 真值判断 `if (x)` | 只有布尔字面量分叉——`if (x)` 实参为 `true` 时走真分支。数字或字符串实参恒走 false 分支：`truthy(42)` 里 `if (x) return "yes"; return "no"` 报告 `"no"`。 |
+| 三元条件 | `flag ? "a" : "b"` 不分叉——即使布尔字面量（`pick(true)`）或可折叠比较（`x === 5`）在调用点与指令两条路径上都求值为 `unknown`。改用 `if` 守卫。 |
 | 符号输入 | `@nudo:case` 里的 `T.union(...)` 实参不会分叉条件——只有具体调用点才收窄。 |
 | `in` 运算符 | `if ("toJSON" in value)` 对对象实参收窄，但方法结果会拓宽（得到 `string` 而不是闭包的 `"serialized"`）；非对象实参还会报告 `nudo:no-method`。 |
 | `?.` / `??` | 已知属性上的浅层 `config.port ?? 3000` 得到 `number`；深层链与短路成员退化为 `unknown`。 |
@@ -142,5 +143,6 @@ Combined: "Waiting..." | "Loading abc..." | "test" | "fail"
 | `Array.isArray()` | 是 | `Array.isArray(x)` → `2` |
 | `switch` | 是（含指令输入） | 逐子句字面量 |
 | 真值判断 | 否 | 恒走 false 分支 |
+| 三元条件 | 否 | 恒 `unknown` |
 | `in` | 部分 | 分叉，成员结果拓宽 |
 | `?.` / `??` | 部分 | 仅浅层 `??` |

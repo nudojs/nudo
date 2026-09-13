@@ -57,7 +57,9 @@ function score(x) { return x + 1; }
 - **文件双向校验**：脚本交叉校验矩阵 ↔ 磁盘——每行命令的目标文件必须存在
   （负例行路径打错会以 exit 1 静默通过，此校验拦住）；`docs/examples` 下每个
   可运行的 `.js` / `.ts` 文件必须出现在至少一行矩阵（`*.nudo.js` 模板除外，
-  它们经 `@nudo:import` 引入）。新增示例文件 = 加一行矩阵，否则 CI 红。
+  它们经 `@nudo:import` 引入）。目标文件取命令里 `docs/examples/` 之后的
+  第一个空白分隔 token，CLI 选项（如 `--assume "x>0"`）跟在它后面。
+  新增示例文件 = 加一行矩阵，否则 CI 红。
 - **输出承诺**：示例文件头注释与子目录 README 声称的输出行由脚本逐条钉住
   （固定串匹配，脚本 pins 段）。引擎精度变化导致输出漂移时 CI 会红——
   需同步更新示例文件注释/README 与脚本 pins。
@@ -80,6 +82,7 @@ function score(x) { return x + 1; }
 | `npx tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts` | **2** | tsc 报 3 处（缺 name / excess / 缺 port） |
 | `pnpm run check docs/examples/algebra/0-add-intensional.js` | **0** | 内包式 Abs 签名（term/pred/conf，#path） |
 | `pnpm run infer docs/examples/algebra/0-add-intensional.js` | **0** | 字面量 `#exact` |
+| `npx tsx packages/cli/src/index.ts types docs/examples/algebra/0-add-intensional.js --assume "x>0"` | **0** | 代数视图（term/pred/conf，`--assume`） |
 | `pnpm run infer docs/examples/algebra/a-spread-optional.js` | **0** | spread 配置对象 |
 | `pnpm run infer docs/examples/algebra/b-hof-map.js` | **0** | HOF 回调传播 |
 | `pnpm run infer docs/examples/algebra/c-reduce-sum.js` | **0** | reduce 不动点 |

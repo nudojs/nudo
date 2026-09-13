@@ -641,25 +641,50 @@ function len(x) {
 |---|---|
 | vitest | **1653 passed**（全 monorepo） |
 | tsc -p tsconfig.lint.json | **clean** |
-| nudo types sample --assume 'x>0' | term+pred 正确 |
+| `nudo types docs/examples/algebra/0-add-intensional.js --assume 'x>0'` | term+pred 正确（CI 钉住，见下） |
 | nudo check | 约束蕴含诊断 + 金标 recall/precision=1.0 |
 | differential vs Node | exact 一致 |
 
-### 已验证输出
+### 已验证输出（2026-09，现行 `nudo types` 格式）
+
+输出示例已固化进门禁：`docs/examples/algebra/0-add-intensional.js` 是矩阵里
+`check` / `infer` / `types` 三行命令的目标（pins 见 `scripts/verify-examples.sh`）。
+`types --assume` 实测：
 
 ```
-# nudo types sample.js --assume 'x>0'
-scale(number)     term=(x+1)       pred: (x+1)>1       #path
-twice(number)     term=((x+1)+1)   pred: >2            #path
-negate(number)    term=(x*-1)      pred: (x*-1)<0      #path
+$ npx tsx packages/cli/src/index.ts types docs/examples/algebra/0-add-intensional.js --assume 'x>0'
+nudo types  0-add-intensional.js
+assume: x > 0
 
-# nudo types sample.js --generalize
-# 无契约参数 = any；+ 按真实 JS 取并集 number|string
-# 有 assumes/refine 才走数值路径（number + pred）
-add:    <A1, A2>(a: A1, b: A2) => number | string = (A1 + A2)
-scale:  <A1>(x: A1) => number | string = (A1 + 1)
-twice:  <A1>(x: A1) => number | string = ((A1 + 1) + 1)
-negate: <A1>(x: A1) => unknown = (A1 * -1)
+add(unknown, unknown)
+  number | string
+  conf: partial
+
+scale(number)
+  number
+  term: (x + 1)
+  pred: (x + 1) > 1
+  conf: path
+
+twice(number)
+  number
+  term: ((x + 1) + 1)
+  pred: ((x + 1) + 1) > 2
+  conf: path
+```
+
+`--generalize`（符号 α，带 `@nudo:refine` 的形参显示前置）实测：
+
+```
+$ npx tsx packages/cli/src/index.ts types docs/examples/algebra/0-add-intensional.js --generalize
+nudo types  0-add-intensional.js
+mode: generalize (symbolic α)
+
+add: (a: A1, b: A2) => number | string = (A1 + A2)
+
+scale: (x: A1 where x > 0) => number = (x + 1)  where (x + 1) > 1
+
+twice: (x: A1 where x > 0) => number = ((x + 1) + 1)  where ((x + 1) + 1) > 2
 ```
 
 ---

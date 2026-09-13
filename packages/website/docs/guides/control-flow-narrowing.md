@@ -1,6 +1,6 @@
 ---
 sidebar_position: 5
-description: See how Nudo narrows types per call site — equality guards, discriminated object shapes, typeof, Array.isArray, and switch — plus the current limits of truthiness, in, and ?./??.
+description: See how Nudo narrows types per call site — equality guards, discriminated object shapes, typeof, Array.isArray, and switch — plus the current limits of truthiness, ternary conditions, in, and ?./??.
 ---
 
 # Control Flow Narrowing
@@ -127,6 +127,7 @@ These patterns currently do **not** fork on the call-site path — each one degr
 | Pattern | Current behavior |
 |---|---|
 | Truthiness `if (x)` | Only boolean literals fork — `if (x)` with `true` reports the true branch. A number or string argument always takes the false branch: `truthy(42)` with `if (x) return "yes"; return "no"` reports `"no"`. |
+| Ternary conditions | `flag ? "a" : "b"` never forks — even literal booleans (`pick(true)`) and foldable comparisons (`x === 5`) evaluate to `unknown` on both the call-site and directive paths. Use `if` guards instead. |
 | Symbolic inputs | `@nudo:case` with `T.union(...)` arguments do not fork conditions — only concrete call sites narrow. |
 | `in` operator | `if ("toJSON" in value)` narrows for object arguments, but method results widen (`string` instead of the closure's `"serialized"`); non-object arguments also report `nudo:no-method`. |
 | `?.` / `??` | Shallow `config.port ?? 3000` with a known property yields `number`; deep chains and short-circuiting members degrade to `unknown`. |
@@ -142,5 +143,6 @@ These patterns currently do **not** fork on the call-site path — each one degr
 | `Array.isArray()` | Yes | `Array.isArray(x)` → `2` |
 | `switch` | Yes (including directive inputs) | per-clause literals |
 | Truthiness | No | false branch always wins |
+| Ternary conditions | No | always `unknown` |
 | `in` | Partial | forks, member results widen |
 | `?.` / `??` | Partial | shallow `??` only |

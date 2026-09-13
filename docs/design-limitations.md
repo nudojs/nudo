@@ -239,23 +239,38 @@ TypeValue 求值器路径（`evaluateFunctionFull`，测试 harness / `nudo test
 
 ---
 
-### 3.3 `typeof` 返回值为字面量
+### 3.3 三元条件表达式不分叉（2026-09 实测）
 
-**问题描述：**
-`typeof x === "number"` 正确返回 `true`/`false`，但 `typeof x` 本身返回字面量字符串而非类型。
+**当前行为：** `cond ? a : b` 的条件在两条路径（指令 case / 调用点）上都不
+求值分叉——即使实参是布尔字面量或可判定的比较，整个三元表达式恒为
+`unknown`（指令路径与调用点路径一致）。
 
-**当前行为：**
 ```javascript
-function check(x) {
-  return typeof x;  // 当 x 是 number 时返回 "number"（字面量）
+function pick(flag) {
+  return flag ? "a" : "b";
 }
+pick(true);
+pick(false);
+// Case "call@…": (true) => unknown     ← 布尔字面量也不分叉
+
+function eq5(x) {
+  return x === 5 ? "five" : "other";
+}
+eq5(5);
+// Case "call@…": (5) => unknown        ← === 比较在三元里不折叠
 ```
 
-**分析：**
-- 这其实是**正确行为**——Nudo 能精确推断 `typeof` 的结果
-- 但可能导致某些比较场景的精度问题
+**对照（已建模的相邻形态）：** 同一测试放进 `if` 守卫就按调用点精确分叉——
+`if (typeof x === "number") return "num"; return "not-num"` 在 `kind(5)` /
+`kind("s")` 上得到 `"num"` / `"not-num"`（见网站
+`guides/control-flow-narrowing.md` 与 `guides/semantics.md`）。与 3.2 的
+宽松相等同属「条件不折叠」家族——一个不折叠运算符，一个不折叠三元条件。
 
-**难度：** 无需修改
+**影响范围：** 所有用三元做返回值选择的函数（`flag ? A : B` 是 JS 常态）。
+
+**可能的解决方案：** 三元条件接入与 `if` 相同的测试提取（`phiFromTest`）路径。
+
+**难度：** 低（if 侧测试提取已存在）
 
 ---
 
@@ -395,6 +410,7 @@ class Circle { /* 同上 */ }
 |------|------|------|
 | 闭包变量追踪 | 状态管理模式 | 闭包环境扩展 |
 | 嵌套 try-catch 精度 | 错误处理 | 异常分析 |
+| 三元条件不分叉 | 返回值选择模式 | 复用 if 侧测试提取（见 3.3） |
 
 ### P3 - 低影响 / 设计选择
 
@@ -402,7 +418,6 @@ class Circle { /* 同上 */ }
 |------|------|------|
 | Set 去重语义 | 信息丢失 | 可接受 |
 | 循环细化类型 | 精度 | 可接受 |
-| typeof 返回字面量 | 无 | 正确行为 |
 
 ---
 

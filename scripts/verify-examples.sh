@@ -94,8 +94,10 @@ while read -r code cmd; do
   [ -n "$cmd" ] || continue
   parsed=$((parsed + 1))
   expect "$code" "$cmd"
-  # every row's target file must exist — a typo'd path on a negative-example
-  # row (expected exit 1) would otherwise pass silently.
+  # the row's target file is the first whitespace-delimited token after
+  # docs/examples/ (trailing CLI options like --assume are allowed after it)
+  # and must exist — a typo'd path on a negative-example row (expected
+  # exit 1) would otherwise pass silently.
   case "$cmd" in
     *' docs/examples/'*) ;;
     *)
@@ -104,7 +106,12 @@ while read -r code cmd; do
       continue
       ;;
   esac
-  path=${cmd##* }
+  path=$(printf '%s' "$cmd" | sed -n 's|.*docs/examples/\([^ ]*\).*|docs/examples/\1|p')
+  if [ -z "$path" ]; then
+    fail=$((fail + 1))
+    printf 'FAIL  matrix target not extractable: %s\n' "$cmd"
+    continue
+  fi
   if [ ! -f "$path" ]; then
     fail=$((fail + 1))
     printf 'FAIL  matrix target missing: %s (from: %s)\n' "$path" "$cmd"
@@ -121,7 +128,7 @@ fi
 # a file added without a row would silently skip the gate. *.nudo.js
 # templates are imported via @nudo:import, not standalone targets.
 covered=$(sed -n 's/^| `\([^`]*\)` | \*\*\([0-9]*\)\*\*.*$/\1/p' "$matrix" \
-  | awk '{ print $NF }')
+  | sed -n 's|.*docs/examples/\([^ ]*\).*|docs/examples/\1|p')
 while read -r f; do
   case "$f" in
     *.nudo.js) continue ;;
@@ -170,6 +177,11 @@ pin 'pnpm run check docs/examples/algebra/0-add-intensional.js' \
   'twice(x)  number  = ((x + 1) + 1)  where ((x + 1) + 1) > 2  #path'
 pin 'pnpm run infer docs/examples/algebra/0-add-intensional.js' \
   '(1, 3) => 4' 'abs: 4  #exact' '(number, 1) => number' 'abs: number  #widened'
+pin 'npx tsx packages/cli/src/index.ts types docs/examples/algebra/0-add-intensional.js --assume "x>0"' \
+  'nudo types' 'assume: x > 0' \
+  'add(unknown, unknown)' 'number | string' 'conf: partial' \
+  'scale(number)' 'term: (x + 1)' 'pred: (x + 1) > 1' \
+  'term: ((x + 1) + 1)' 'pred: ((x + 1) + 1) > 2' 'conf: path'
 pin 'pnpm run infer docs/examples/algebra/a-spread-optional.js' \
   '({ port: 3000, debug: true }) => { host: "localhost", port: 3000, debug: true }' \
   '({}) => { host: "localhost", port: 8080, debug: false }' \
