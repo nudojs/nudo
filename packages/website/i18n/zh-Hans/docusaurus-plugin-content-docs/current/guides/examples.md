@@ -108,7 +108,7 @@ Case "call@L6": ({ PATH: "/usr/bin", HOME: "/root" }, "PATH") => "/usr/bin"
 Combined: 1 | "/usr/bin"
 ```
 
-符号 key（`T.string`）无法选定槽位，退化为 `unknown`——仓库示例（CI 钉住）：[`docs/examples/algebra/e-index-proj.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/e-index-proj.js)。spread meet 与 `--dts` 投影（单一拓宽签名、字面量并返回）分别钉在 [`docs/examples/algebra/d-mixin-meet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/d-mixin-meet.js) 与 [`docs/examples/algebra/a-spread-optional.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/a-spread-optional.js)。
+符号 key（`T.string`）无法选定槽位，退化为 `unknown`——仓库示例（CI 钉住）：[`docs/examples/algebra/e-index-proj.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/e-index-proj.js)。spread meet 钉在 [`docs/examples/algebra/d-mixin-meet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/d-mixin-meet.js)；`--dts` 投影（单一拓宽签名、字面量并返回）由[示例矩阵](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md)的 `a-spread-optional.js --dts` 行钉住——生成的 `a-spread-optional.d.ts` 即真值输出。
 
 ---
 

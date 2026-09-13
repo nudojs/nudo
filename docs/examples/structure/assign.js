@@ -3,13 +3,13 @@
 
 let config = { host: "localhost", port: 8080 };
 
-config = { host: "x", port: 1 };     // ok（宽度允许多余 key）
+config = { host: "x", port: 1 };     // ok（同形状重赋值）
 config = { host: "y" };              // error: assign-mismatch（缺 port）
 
 let n = 1;
 // n = "str";                         // error: prim number ⊭ string
 
 let a = { x: 1 };
-a = { x: 2, z: "s" };                // ok
+a = { x: 2, z: "s" };                // ok（宽度允许多余 key）
 
 export { config, n, a };

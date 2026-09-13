@@ -15,8 +15,10 @@
 #
 # Output pins (below) mirror the promises in the example files' header
 # comments and the per-directory READMEs: fixed strings that MUST appear in
-# the full command output. When engine precision changes an output, update
-# the example file AND its pins, or CI goes red.
+# the full command output (`pin` / `pin_empty`) or in a generated artifact
+# (`pin_file`, e.g. the .d.ts written by `infer --dts`). When engine
+# precision changes an output, update the example file AND its pins, or CI
+# goes red.
 #
 # Run from anywhere:  pnpm run verify:examples
 set -u
@@ -83,6 +85,28 @@ pin_empty() {
     pass=$((pass + 1))
     printf 'OK    [pin] %s (no output)\n' "$cmd"
   fi
+}
+
+# pin_file <file> <fixed-string>... — every string must appear in a
+# generated artifact (e.g. the .d.ts written by `infer --dts`), not in
+# the command's stdout.
+pin_file() {
+  f=$1
+  shift
+  if [ ! -f "$f" ]; then
+    fail=$((fail + 1))
+    printf 'FAIL  [pin] missing file: %s\n' "$f"
+    return
+  fi
+  for s in "$@"; do
+    if grep -qF -- "$s" "$f"; then
+      pass=$((pass + 1))
+      printf 'OK    [pin] %s\n' "$s"
+    else
+      fail=$((fail + 1))
+      printf 'FAIL  [pin] %s (not in file: %s)\n' "$s" "$f"
+    fi
+  done
 }
 
 # --- command matrix (parsed from docs/examples/README.md) ---------------------
@@ -161,17 +185,24 @@ pin 'pnpm run check docs/examples/constraints/add-pred.js' \
 pin 'pnpm run infer docs/examples/constraints/add-pred.js' \
   '(1, 3) => 4' '(100, 1) => 101' '(-1) => 0' 'Combined: 101 | 0'
 
-# structure/ — pin the shape-mismatch reports.
+# structure/ — pin the shape-mismatch reports. The error-count lines
+# lock the width-subtyping positives: the passing excess-slot calls in
+# these files must stay errors-free (a new false positive changes the
+# count and goes red).
 pin 'pnpm run check docs/examples/structure/assign.js' \
+  '1 error · 0 warning' \
   'config: 赋值 ⊭ 原有形状' 'missing slot port'
 pin 'pnpm run check docs/examples/structure/arg-structure.js' \
+  '2 error · 0 warning' \
   'readXY[p]: 实参结构 ⊭ 形参' 'missing slot y'
 
 # vs-ts/ — nudo side pins its diagnostics; tsc side pins its own.
 pin 'pnpm run check docs/examples/vs-ts/constraints/nudo.js' \
+  '2 error · 0 warning' \
   'setDelay[ms]: 实参 ⊭ 前置' 'actual:   -50  #exact'
 pin_empty 'npx tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts'
 pin 'pnpm run check docs/examples/vs-ts/structure/nudo.js' \
+  '2 error · 0 warning' \
   'greet[user]: 实参结构 ⊭ 形参' 'missing slot name' \
   'config: 赋值 ⊭ 原有形状'
 pin 'npx tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts' \
@@ -193,6 +224,14 @@ pin 'pnpm run infer docs/examples/algebra/a-spread-optional.js' \
   '({ port: 3000, debug: true }) => { host: "localhost", port: 3000, debug: true }' \
   '({}) => { host: "localhost", port: 8080, debug: false }' \
   '({ host: "api.example.com" }) => { host: "api.example.com", port: 8080, debug: false }'
+pin 'pnpm run infer docs/examples/algebra/a-spread-optional.js --dts' \
+  'Generated: docs/examples/algebra/a-spread-optional.d.ts'
+# the signature itself lives in the generated artifact, not stdout:
+# one widened parameter union, literal-union return, JSDoc case rows.
+pin_file docs/examples/algebra/a-spread-optional.d.ts \
+  'createConfig(options: { port: number; debug: boolean } | {} | { host: string })' \
+  ': { host: "localhost"; port: 3000; debug: true } | { host: "localhost"; port: 8080; debug: false } | { host: "api.example.com"; port: 8080; debug: false }' \
+  'Case: call@L24'
 pin 'pnpm run infer docs/examples/algebra/b-hof-map.js' \
   '([1, 2, 3], (x) => ...) => [2, 4, 6]' \
   '(["a", "b"], (s) => ...) => ["A", "B"]'

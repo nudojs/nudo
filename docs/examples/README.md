@@ -45,7 +45,8 @@ function score(x) { return x + 1; }
   第一个空白分隔 token，CLI 选项（如 `--assume "x>0"`）跟在它后面。
   新增示例文件 = 加一行矩阵，否则 CI 红。
 - **输出承诺**：示例文件头注释与子目录 README 声称的输出行由脚本逐条钉住
-  （固定串匹配，脚本 pins 段）。引擎精度变化导致输出漂移时 CI 会红——
+  （固定串匹配，脚本 pins 段——命令 stdout 用 `pin`，生成的产物文件如
+  `--dts` 的 `.d.ts` 用 `pin_file`）。引擎精度变化导致输出漂移时 CI 会红——
   需同步更新示例文件注释/README 与脚本 pins。
 
 每个子目录 README 与示例文件头注释里的单行命令只是就近提示。
@@ -68,6 +69,7 @@ function score(x) { return x + 1; }
 | `pnpm run infer docs/examples/algebra/0-add-intensional.js` | **0** | 字面量 `#exact` |
 | `pnpm run types docs/examples/algebra/0-add-intensional.js --assume "x>0"` | **0** | 代数视图（term/pred/conf，`--assume`） |
 | `pnpm run infer docs/examples/algebra/a-spread-optional.js` | **0** | spread 配置对象 |
+| `pnpm run infer docs/examples/algebra/a-spread-optional.js --dts` | **0** | `--dts` 投影：单一拓宽签名 + 字面量并返回（`Generated:` 行与签名钉住） |
 | `pnpm run infer docs/examples/algebra/b-hof-map.js` | **0** | HOF 回调传播 |
 | `pnpm run infer docs/examples/algebra/c-reduce-sum.js` | **0** | reduce 不动点 |
 | `pnpm run infer docs/examples/algebra/d-mixin-meet.js` | **0** | spread 形状 meet |

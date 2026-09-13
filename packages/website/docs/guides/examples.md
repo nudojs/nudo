@@ -108,7 +108,7 @@ Case "call@L6": ({ PATH: "/usr/bin", HOME: "/root" }, "PATH") => "/usr/bin"
 Combined: 1 | "/usr/bin"
 ```
 
-A symbolic (`T.string`) key cannot select a slot and degrades to `unknown` — repo example (CI-pinned): [`docs/examples/algebra/e-index-proj.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/e-index-proj.js). Spread meet and the `--dts` projection (one widened signature, literal-union return) are pinned in [`docs/examples/algebra/d-mixin-meet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/d-mixin-meet.js) and [`docs/examples/algebra/a-spread-optional.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/a-spread-optional.js).
+A symbolic (`T.string`) key cannot select a slot and degrades to `unknown` — repo example (CI-pinned): [`docs/examples/algebra/e-index-proj.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/e-index-proj.js). Spread meet is pinned in [`docs/examples/algebra/d-mixin-meet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/d-mixin-meet.js); the `--dts` projection (one widened signature, literal-union return) is pinned by the `a-spread-optional.js --dts` row of the [examples matrix](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md) — the generated `a-spread-optional.d.ts` is the ground-truth output.
 
 ---
 
