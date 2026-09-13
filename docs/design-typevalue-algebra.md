@@ -639,7 +639,7 @@ function len(x) {
 
 | 检查 | 结果 |
 |---|---|
-| vitest | **1653 passed**（全 monorepo） |
+| vitest | **1750 passed**（全 monorepo，2026-09-14 实测） |
 | tsc -p tsconfig.lint.json | **clean** |
 | `nudo types docs/examples/algebra/0-add-intensional.js --assume 'x>0'` | term+pred 正确（CI 钉住，见下） |
 | nudo check | 约束蕴含诊断 + 金标 recall/precision=1.0 |

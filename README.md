@@ -151,6 +151,13 @@ Nudo uses structured JSDoc comments to guide inference:
 | `@nudo:pure` | Mark functions as pure for memoized evaluation |
 | `@nudo:skip` | Skip inference and use manually declared types |
 | `@nudo:sample` | Control loop iteration sampling |
+| `@nudo:import` | Import constraint templates from `*.nudo.js` (`/// @nudo:import { positive } from "./shapes.nudo.js"`) |
+| `@nudo:env` | Declare runtime environment APIs (`/// @nudo:env web` — built-in `es` / `web` / `node`) |
+| `@nudo:mock-module` | Replace a whole imported module with mocks (`/// @nudo:mock-module "pkg" from "./mock.js"`) |
+| `@nudo:as` | Override the next statement's inferred type (`// @nudo:as T.object({ port: T.number })`) |
+| `@nudo:replace` | Replace a sub-expression's type in the next statement (`// @nudo:replace JSON.parse(x) T.object(...)`) |
+
+Full directive reference: [Core Concepts → Directives](https://nudojs.github.io/nudo/docs/concepts/directives).
 
 Refinements live in `*.nudo.js` templates (`number().gt(0)`, `shape({...})`) and enter Abs as Preds — they participate in arithmetic, not just call-site gates.
 

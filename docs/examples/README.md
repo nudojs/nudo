@@ -53,7 +53,7 @@ function score(x) { return x + 1; }
 | 命令 | 退出码 | 说明 |
 |------|--------|------|
 | `pnpm run check docs/examples/constraints/set-delay.js` | **1** | 负例：`setDelay[ms]: 实参 ⊭ 前置` / `needsPositive[x]: 实参 ⊭ 前置` |
-| `pnpm run check docs/examples/constraints/register.js` | **0** | 正例：object 形状精化 |
+| `pnpm run check docs/examples/constraints/register.js` | **0** | 正例：user / config 形状精化（签名钉住） |
 | `pnpm run check docs/examples/constraints/return-contract.js` | **1** | 负例：`bad: 返回值 ⊭ @nudo:refine return positive` |
 | `pnpm run check docs/examples/constraints/declared-vs-if.js` | **1** | 负例：if ≠ 精化 |
 | `pnpm run check docs/examples/constraints/add-pred.js` | **1** | 负例：`scale[x]: 实参 ⊭ 前置`（`actual: -1 #exact`） |

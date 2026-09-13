@@ -66,8 +66,8 @@ issues
 # 单文件
 pnpm run check path/to/file.js
 
-# 或扫描脚本（多文件/包）
-npx tsx scripts/scan-npm-package.ts commander
+# 真实包精度扫描（多文件/包，生成 docs/check-real-packages.md）
+npx tsx scripts/scan-real-packages.ts commander
 ```
 
 ## GitHub Actions 示例

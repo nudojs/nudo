@@ -142,7 +142,8 @@ done < <(find docs/examples -type f \( -name '*.js' -o -name '*.ts' \) | sort)
 
 # --- output pins (mirror the example files' documented output claims) ---------
 
-# constraints/ — negative examples pin their diagnostic lines.
+# constraints/ — negative examples pin their diagnostic lines; register.js
+# (positive) pins its signatures so shape-refine drift also goes red.
 pin 'pnpm run check docs/examples/constraints/set-delay.js' \
   'setDelay[ms]: 实参 ⊭ 前置' 'expected: ms > 0' \
   'needsPositive[x]: 实参 ⊭ 前置' 'expected: x > 0'
@@ -150,6 +151,11 @@ pin 'pnpm run check docs/examples/constraints/return-contract.js' \
   'bad: 返回值 ⊭ @nudo:refine return positive' 'expected: return > 0'
 pin 'pnpm run check docs/examples/constraints/declared-vs-if.js' \
   'setDelay[ms]: 实参 ⊭ 前置'
+pin 'pnpm run check docs/examples/constraints/register.js' \
+  '0 error · 0 warning' \
+  'register(u)  string  #path' \
+  'setup(c)  number  = c.retries  where c.retries ≥ 0 ∧ c.retries ≤ 5  #path' \
+  'pred: c.retries ≥ 0 ∧ c.retries ≤ 5'
 pin 'pnpm run check docs/examples/constraints/add-pred.js' \
   'scale[x]: 实参 ⊭ 前置' 'actual:   -1  #exact'
 pin 'pnpm run infer docs/examples/constraints/add-pred.js' \
@@ -211,6 +217,7 @@ pin 'pnpm run infer docs/examples/algebra/h-array-boundary.js' \
   'Case "some": ([1, 2, 3, 4, 5]) => unknown' 'abs: unknown  #partial'
 pin 'pnpm run infer docs/examples/algebra/sample.js' \
   'Case "entry@' '# no call sites found; parameters default to unknown' \
+  'add: (a: A1, b: A2) => number | string = (A1 + A2)' \
   '{ host: "localhost", port: 8080, debug: false }'
 
 # mini-repo/ — pin the cross-file integration claims.

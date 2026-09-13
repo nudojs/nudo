@@ -86,4 +86,4 @@ npx tsx scripts/scan-npm-package.ts commander
 - harvest：`packages/service/src/harvest-package.ts`  
 - check：`packages/core/src/algebra/check.ts`  
 - 扫描：`scripts/scan-npm-package.ts [pkg]`  
-- 测试：958 green
+- 测试：全绿（`pnpm run test`，数量随提交增长，不在此钉死）
