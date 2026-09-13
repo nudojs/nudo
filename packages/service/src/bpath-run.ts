@@ -342,7 +342,16 @@ export function tryRunBPath(
   return out ?? undefined;
 }
 
-/** B 路径求值具名导出（结果 + throws）；opts.collectCalls 时附带调用点记录 */
+/**
+ * B 路径求值具名导出（结果 + throws）；opts.collectCalls 时附带调用点记录。
+ *
+ * `calls` 只含**本次具名调用期间**（callTranspiledExportFull 内）发生的
+ * 调用点——不含模块级顶层调用（run.calls）。模块级记录由主分析流程
+ * 另行收集（analyzer 的 bTopCallRecords / absCallRecords）；在此重复返回
+ * 会把 B 路径结果（常为 unknown）当第二组记录推给 analyzer，dedupe 因
+ * 结果形态不同而保留，污染被调函数的 case 列表（多余 call@L 重复 +
+ * call@symbolic 聚合 case，见 analyzer directive-case 分支）。
+ */
 export function tryBPathCallFull(
   source: string,
   filePath: string,
@@ -363,7 +372,7 @@ export function tryBPathCallFull(
   const run = tryRunBPath(source, filePath, { envNames: opts.envNames, mocks: opts.mocks });
   if (!run) return undefined;
   if (!(fnName in run.exports)) return undefined;
-  const collected: BCallRecord[] = [...(run.calls ?? [])];
+  const collected: BCallRecord[] = [];
   const memberDiags: BMemberDiag[] = [];
   if (opts.collectCalls) {
     setBCallCollector((r) => collected.push(r));
@@ -376,7 +385,7 @@ export function tryBPathCallFull(
     const all = [...(run.memberDiags ?? []), ...memberDiags];
     return {
       ...full,
-      calls: opts.collectCalls || run.calls?.length ? collected : undefined,
+      calls: opts.collectCalls ? collected : undefined,
       memberDiags: all.length ? all : undefined,
       moduleIssues: run.moduleIssues,
       truncatedFns: run.truncatedFns,

@@ -163,6 +163,10 @@ More calls than the precise-case cap aggregate into a `call@symbolic` case with 
 
 `===` comparisons, `typeof`, `Array.isArray`, and `switch` narrow per concrete call site — see [Control Flow Narrowing](./control-flow-narrowing.md) for the verified patterns.
 
+### Don't Assemble This Page Into One File
+
+Each snippet above is a real `nudo infer` run of a **standalone** file. Combining certain snippets into one file crashes `nudo infer`: a `class` declaration together with a top-level `Object.keys(…)` call — or together with a top-level recursive call (the `compute`, `keysOf`, and `walk` snippets) — dies with a bare `Maximum call stack size exceeded` (exit `1`, no file/line diagnostic). `nudo check` on the same file does not crash. Keep those three snippets in separate files for now; see the monorepo `docs/design-limitations.md` §4.3 for the minimal reproductions.
+
 ## Not Modeled Yet
 
 These constructs currently evaluate to `unknown` (often with a `nudo:unknown-recv` or `nudo:builtin-unknown` diagnostic). Prefer the modeled alternatives listed beside each one.

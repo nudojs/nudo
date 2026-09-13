@@ -8,7 +8,8 @@
 //   Combined: 1 | "x" | "/usr/bin"
 //
 // 边界：动态 key（符号 string）无法决定槽位 → 吸收为 unknown
-//   pick(obj, T.string) → unknown  #partial（intension: (A1, A2) => unknown）
+//   pickDynamic({ a: 1, b: "x" }, T.string) → unknown  #partial
+// 用 @nudo:case 指令 case 演示：case 实参里的符号 key 不落入任何字面量槽
 
 function pick(obj, key) {
   return obj[key];
@@ -20,4 +21,11 @@ pick({ a: 1, b: "x" }, "b");
 const env = { PATH: "/usr/bin", HOME: "/root" };
 pick(env, "PATH");
 
-export { pick };
+/**
+ * @nudo:case "dynamic key" ({ a: 1, b: "x" }, T.string)
+ */
+function pickDynamic(obj, key) {
+  return obj[key];
+}
+
+export { pick, pickDynamic };

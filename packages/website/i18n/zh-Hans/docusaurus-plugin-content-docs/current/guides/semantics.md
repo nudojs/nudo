@@ -163,6 +163,10 @@ Combined: 0 | 1 | 3
 
 `===` 比较、`typeof`、`Array.isArray` 与 `switch` 按具体调用点收窄——已验证模式见[控制流收窄](./control-flow-narrowing.md)。
 
+### 别把本页拼进同一个文件
+
+上方每个代码块都是对**独立**文件真实运行 `nudo infer` 的结果。把某些代码块拼进同一个文件会让 `nudo infer` 崩溃：`class` 声明与顶层 `Object.keys(…)` 调用共存——或与顶层递归调用共存（即 `compute`、`keysOf`、`walk` 三个代码块）——会以裸 `Maximum call stack size exceeded` 崩溃（exit `1`，无文件/行号诊断）。`nudo check` 对同一文件不崩。目前请把这三个代码块分开放进不同文件；最小复现见 monorepo `docs/design-limitations.md` §4.3。
+
 ## 尚未建模
 
 以下构造目前求值为 `unknown`（通常伴随 `nudo:unknown-recv` 或 `nudo:builtin-unknown` 诊断）。请优先使用旁边列出的已建模替代方案。

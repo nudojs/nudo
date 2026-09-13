@@ -123,7 +123,7 @@ async function fetchUser(id) {
 Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
 ```
 
-With the mock in place, Nudo infers that `fetchUser` returns `Promise<{ id: 1, name: "Alice" }>` without real network calls. Two rules for inline mocks: the expression **must fit on one line** (multi-line expressions are truncated and reported as `nudo:mock-invalid`), and `T.*` constructors are **not available inside the mock body** — write plain JavaScript values and closures. For a resolved promise, the helper form `@nudo:mock fetch = stub().resolves({ ok: true, json: () => ({ id: 1, name: "Alice" }) })` infers the same result.
+With the mock in place, Nudo infers that `fetchUser` returns `Promise<{ id: 1, name: "Alice" }>` without real network calls. Two rules for inline mocks: the expression **must fit on one line** (multi-line expressions are truncated and reported as `nudo:mock-invalid`), and `T.*` constructors are **not available inside the mock body** — write plain JavaScript values and closures. The `stub().resolves(...)` helper is only equivalent for plain data: it keeps literal slots (`stub().resolves({ ok: true, id: 1 })` → `Promise<{ ok: true, id: 1 }>`), but closure slots in the resolved value are **not bridged** — `json` arrives body-less (`json: () => ?`), so `res.json()` evaluates to `unknown` and this example degrades to `Promise<unknown>`. When the mock result gets called, use the arrow-function form above.
 
 ---
 

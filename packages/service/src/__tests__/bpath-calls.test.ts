@@ -52,4 +52,30 @@ function caller(y) {
       expect(typeValueToString(hit.result)).toBe("10");
     }
   });
+
+  it("directive case on one fn does not re-collect module-level calls into others", () => {
+    // 回归：tryBPathCallFull 曾把 run.calls（模块级顶层调用）一并返回，
+    // directive-case 分支把这些重复记录推回 callRecords——B 路径结果
+    // （map 返回 [unknown, ...]）与 Abs 精确结果键不同，dedupe 无法合并，
+    // 被调函数因此多出重复 call@L case 与一个 call@symbolic 聚合 case，
+    // Combined 也被 unknown 形态污染。
+    const source = [
+      "function map2(arr, fn) { return arr.map(fn); }",
+      "map2([1, 2, 3], (x) => x * 2);",
+      "map2(['a', 'b'], (s) => s.toUpperCase());",
+      "",
+      "/**",
+      ' * @nudo:case "unrelated" (T.number)',
+      " */",
+      "function unrelated(x) { return x + 1; }",
+    ].join("\n");
+    const result = analyzeFile("/test/bcall-pollute.js", source);
+    const map2 = result.functions.find((f) => f.name === "map2");
+    expect(map2).toBeDefined();
+    const names = map2!.cases.map((c) => c.name);
+    expect(names).toEqual(["call@L2", "call@L3"]);
+    const results = map2!.cases.map((c) => typeValueToString(c.result));
+    expect(results).toEqual(["[2, 4, 6]", '["A", "B"]']);
+    expect(typeValueToString(map2!.combined!)).toBe('[2, 4, 6] | ["A", "B"]');
+  });
 });

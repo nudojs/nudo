@@ -177,7 +177,7 @@ async function fetchUser(id) {
 Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
 ```
 
-The same result with a mock helper — `stub().resolves(value)` makes every call return `Promise<value>`:
+A mock helper for resolved promises — `stub().resolves(value)` makes every call return `Promise<value>`:
 
 ```javascript
 /**
@@ -190,7 +190,7 @@ async function fetchUser(id) {
 }
 ```
 
-This also infers `Promise<{ id: 1, name: "Alice" }>`. A synchronous helper:
+**Not the same result here:** the resolved object's closure slots are not bridged — `json` arrives body-less (`json: () => ?`), so `res.json()` evaluates to `unknown` and this example infers `Promise<unknown>` (abs `promise<unknown> #partial`), not the arrow mock's `Promise<{ id: 1, name: "Alice" }>`. `resolves` keeps full precision for plain data (`stub().resolves({ ok: true, id: 1 })` → `Promise<{ ok: true, id: 1 }>`); when the mock result gets called, use the arrow-function form. A synchronous helper:
 
 ```javascript
 /**

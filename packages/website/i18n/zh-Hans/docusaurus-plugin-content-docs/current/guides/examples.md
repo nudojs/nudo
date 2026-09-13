@@ -123,7 +123,7 @@ async function fetchUser(id) {
 Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
 ```
 
-mock 就位后，Nudo 推断 `fetchUser` 返回 `Promise<{ id: 1, name: "Alice" }>`，无需真实网络请求。内联 mock 有两条硬性规则：表达式**必须单行**（多行会被截断并报 `nudo:mock-invalid`）；mock body 内**不可用 `T.*`**——只能写普通 JavaScript 值和闭包。要 mock 已决议的 Promise，可用 helper 形式 `@nudo:mock fetch = stub().resolves({ ok: true, json: () => ({ id: 1, name: "Alice" }) })`，推断结果相同。
+mock 就位后，Nudo 推断 `fetchUser` 返回 `Promise<{ id: 1, name: "Alice" }>`，无需真实网络请求。内联 mock 有两条硬性规则：表达式**必须单行**（多行会被截断并报 `nudo:mock-invalid`）；mock body 内**不可用 `T.*`**——只能写普通 JavaScript 值和闭包。`stub().resolves(...)` helper 只在纯数据上等价：字面量槽位保留（`stub().resolves({ ok: true, id: 1 })` → `Promise<{ ok: true, id: 1 }>`），但 resolved 值里的**闭包槽位不被桥接**——`json` 到达时无 body（`json: () => ?`），于是 `res.json()` 求值为 `unknown`，本示例退化为 `Promise<unknown>`。mock 结果要被调用时，用上面的箭头函数形态。
 
 ---
 
