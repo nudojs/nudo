@@ -24,7 +24,6 @@ import { leqAbs } from "./leq.ts";
 import {
   refineToIndexedFull,
   extractRefineReturnFromSource,
-  extractNudoImports,
   type RefineEntry,
 } from "./refine.ts";
 import type { NudoConstraint, NudoField } from "./constraint.ts";
@@ -32,6 +31,12 @@ import { generalizeFromAst } from "./generalize.ts";
 import { canSkipLiteralCallScan } from "./fn-fp.ts";
 import { stableAnalyzeKeySource } from "./stable-source-key.ts";
 import { hashSource, resetHashSourceCache } from "./hash-source.ts";
+import {
+  extractAllLoadSpecs,
+  loadModuleDepsFingerprint,
+  normPath,
+  type LoadDepsFingerprint,
+} from "./load-deps-fp.ts";
 import { numLit, unknown, abs as makeAbs } from "./abs.ts";
 import type { Abs } from "./abs.ts";
 import type { Phi, Pred } from "./pred.ts";
@@ -62,26 +67,6 @@ export function getCheckSourceMemoSize(): number {
   return checkReportMemo.size;
 }
 
-function normPath(p: string): string {
-  return p.replace(/\\/g, "/");
-}
-
-/** 与 generalize.resolveDepPath 同构：core 不引 path */
-function resolveDepPath(fromFile: string, spec: string): string {
-  const s = normPath(spec);
-  if (!s.startsWith(".")) return s;
-  const from = normPath(fromFile);
-  const i = from.lastIndexOf("/");
-  const base = i >= 0 ? from.slice(0, i) : "";
-  const parts = base ? base.split("/") : [];
-  for (const seg of s.split("/")) {
-    if (seg === "" || seg === ".") continue;
-    if (seg === "..") parts.pop();
-    else parts.push(seg);
-  }
-  return parts.join("/");
-}
-
 function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefined): number {
   if (!fn) return 0;
   let id = loadModuleIds.get(fn);
@@ -92,66 +77,14 @@ function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefine
   return id;
 }
 
-/**
- * All string module specs that check/scan may resolve through loadModule:
- * `@nudo:import`, ESM `from "..."`, `require("...")`, dynamic `import("...")`.
- * Regex over-approximates (may hit comments) — extra dep fingerprint is safe
- * (more misses, never a stale hit).
- */
-export function extractAllLoadSpecs(source: string): string[] {
-  const specs = new Set<string>();
-  for (const imp of extractNudoImports(source)) specs.add(imp.spec);
-  const patterns = [
-    /\bfrom\s*['"]([^'"]+)['"]/g,
-    /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-  ];
-  for (const re of patterns) {
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(source))) specs.add(m[1]!);
-  }
-  return [...specs];
-}
-
-/**
- * Fingerprint every loadModule-reachable dep (not only `*.nudo.js`), including
- * one hop of transitive specs from each dep source. Parent source alone is not
- * a sound memo key when scanLiteralCalls / refine resolution reads sibling
- * modules through loadModule (and those modules read further deps).
- */
-const MAX_CHECK_DEP_NODES = 64;
-
 function checkDepsFingerprint(
   source: string,
   opts: CheckOptions,
-): { fp: string; paths: string[] } {
-  if (!opts.loadModule || !opts.fromFile) return { fp: "-", paths: [] };
-  const load = opts.loadModule;
-  const fromFile = opts.fromFile;
-  const parts: string[] = [];
-  const paths: string[] = [];
-  const seen = new Set<string>();
-  const queue: Array<{ spec: string; from: string }> = extractAllLoadSpecs(source).map(
-    (spec) => ({ spec, from: fromFile }),
-  );
-  let n = 0;
-  while (queue.length > 0 && n < MAX_CHECK_DEP_NODES) {
-    const cur = queue.shift()!;
-    const path = resolveDepPath(cur.from, cur.spec);
-    if (seen.has(path)) continue;
-    seen.add(path);
-    n++;
-    const src = load(cur.spec, cur.from);
-    parts.push(`${path}=${src === undefined ? "miss" : hashSource(src)}`);
-    paths.push(path);
-    if (src === undefined) continue;
-    for (const next of extractAllLoadSpecs(src)) {
-      const nextPath = resolveDepPath(path, next);
-      if (!seen.has(nextPath)) queue.push({ spec: next, from: path });
-    }
+): LoadDepsFingerprint {
+  if (!opts.loadModule || !opts.fromFile) {
+    return { fp: "-", paths: [], truncated: false };
   }
-  parts.sort();
-  return { fp: parts.join(","), paths };
+  return loadModuleDepsFingerprint(source, opts.loadModule, opts.fromFile);
 }
 
 function unindexCheckKey(key: string): void {
@@ -199,20 +132,16 @@ function checkMemoKey(
   filePath: string,
   source: string,
   identityOpts: CheckOptions,
-  loadOpts: CheckOptions,
-): { key: string; depPaths: string[] } {
-  // loadOpts may be a per-call I/O wrapper; identity must stay the caller's raw fn
-  // or every checkSource allocates a new loadModuleId and memo never hits.
-  const deps = checkDepsFingerprint(source, loadOpts);
-  return {
-    key: [
-      hashSource(source),
-      filePath,
-      `${loadModuleId(identityOpts.loadModule)}:${identityOpts.fromFile ?? ""}`,
-      deps.fp,
-    ].join("|"),
-    depPaths: deps.paths,
-  };
+  deps: LoadDepsFingerprint,
+): string {
+  // identity must stay the caller's raw loadModule or every checkSource
+  // allocates a new loadModuleId and memo never hits.
+  return [
+    hashSource(source),
+    filePath,
+    `${loadModuleId(identityOpts.loadModule)}:${identityOpts.fromFile ?? ""}`,
+    deps.fp,
+  ].join("|");
 }
 
 function checkMemoGet(key: string): CheckReport | null {
@@ -317,13 +246,14 @@ export function checkSource(
 
   const useMemo = phi.op === "true";
   let memoKey: string | undefined;
-  let depPaths: string[] = [];
-  if (useMemo) {
-    // 尾部无 @nudo 的注释/空行不进键：comment-only 编辑复用 CheckReport
-    const stable = stableAnalyzeKeySource(source);
-    const k = checkMemoKey(filePath, stable, opts, callOpts);
-    memoKey = k.key;
-    depPaths = k.depPaths;
+  // 尾部无 @nudo 的注释/空行不进键：comment-only 编辑复用 CheckReport
+  const stable = stableAnalyzeKeySource(source);
+  // 一次指纹：check 整文件 memo + 所有 generalize L0 共用（避免 per-fn 重读 dep）
+  const depsFp = checkDepsFingerprint(stable, callOpts);
+  // 截断指纹不可信：fail-open，整文件与 L0 都不 memo
+  const allowMemo = useMemo && !depsFp.truncated;
+  if (allowMemo) {
+    memoKey = checkMemoKey(filePath, stable, opts, depsFp);
     const hit = checkMemoGet(memoKey);
     if (hit) return cloneCheckReport(hit);
   }
@@ -350,8 +280,9 @@ export function checkSource(
       names,
       truncated,
       opts,
+      depsFp,
     );
-    if (memoKey) checkMemoSet(memoKey, report, depPaths);
+    if (memoKey) checkMemoSet(memoKey, report, depsFp.paths);
     return cloneCheckReport(report);
   } finally {
     setAbsTruncationCollector(null);
@@ -369,6 +300,7 @@ function checkSourceInner(
   names: string[],
   truncated: Set<string>,
   identityOpts: CheckOptions = opts,
+  depsFp?: LoadDepsFingerprint,
 ): CheckReport {
   // 整文件一次判定，避免 per-function includes 全文扫
   const hasRefineDirective = source.includes("@nudo:refine");
@@ -382,6 +314,7 @@ function checkSourceInner(
         loadModule: refineLoad,
         fromFile: refineFrom,
       },
+      depsFp,
     });
     if (!g) {
       issues.push({

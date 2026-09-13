@@ -20,6 +20,7 @@ export * from "./parse-source.ts";
 export * from "./hash-source.ts";
 export * from "./stable-source-key.ts";
 export * from "./fn-fp.ts";
+export * from "./load-deps-fp.ts";
 export * from "./check.ts";
 export * from "./check-report.ts";
 export * from "./refine.ts";

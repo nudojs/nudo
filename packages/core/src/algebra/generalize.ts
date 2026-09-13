@@ -20,12 +20,16 @@ import { defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { formatShape } from "./format.ts";
 import {
   extractRefinesFromSource,
-  extractNudoImports,
   type RefineResolveOpts,
 } from "./refine.ts";
 import { constraintToEntryAbs } from "./constraint.ts";
 import { generalizeSourceKeyPart, resetFnFpCache } from "./fn-fp.ts";
-import { hashSource, resetHashSourceCache } from "./hash-source.ts";
+import { resetHashSourceCache } from "./hash-source.ts";
+import {
+  loadModuleDepsFingerprint,
+  normPath,
+  type LoadDepsFingerprint,
+} from "./load-deps-fp.ts";
 
 /** 进程内 L0：同 (source, fn, refine 指纹, budget, label) 的 generalize 结果 */
 const generalizeMemo = new Map<string, PolyFn | undefined>();
@@ -49,26 +53,6 @@ export function resetGeneralizeMemo(): void {
 
 export function getGeneralizeMemoSize(): number {
   return generalizeMemo.size;
-}
-
-function normPath(p: string): string {
-  return p.replace(/\\/g, "/");
-}
-
-/** core 不引 path：相对 spec 用纯字符串拼接（与 LSP resolve 对齐时双方 norm） */
-function resolveDepPath(fromFile: string, spec: string): string {
-  const s = normPath(spec);
-  if (!s.startsWith(".")) return s;
-  const from = normPath(fromFile);
-  const i = from.lastIndexOf("/");
-  const base = i >= 0 ? from.slice(0, i) : "";
-  const parts = base ? base.split("/") : [];
-  for (const seg of s.split("/")) {
-    if (seg === "" || seg === ".") continue;
-    if (seg === "..") parts.pop();
-    else parts.push(seg);
-  }
-  return parts.join("/");
 }
 
 function unindexMemoKey(key: string): void {
@@ -112,23 +96,17 @@ function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefine
   return id;
 }
 
-type DepFingerprint = { fp: string; paths: string[] };
+type DepFingerprint = { fp: string; paths: string[]; truncated: boolean };
 
 /**
- * L3：`@nudo:import` 的 *.nudo.js 内容指纹 + 解析后的依赖路径（反向索引用）。
+ * L3：loadModule 可达依赖内容指纹（与 check 整文件 memo 同一套 specs/传递规则）。
+ * 仅 @nudo:import 不够——body 求值会经 loadModule 读普通 require/from。
  */
 function refineDepsFingerprint(source: string, refine?: RefineResolveOpts): DepFingerprint {
-  if (!refine?.loadModule || !refine.fromFile) return { fp: "-", paths: [] };
-  const imports = extractNudoImports(source);
-  if (imports.length === 0) return { fp: "-", paths: [] };
-  const parts: string[] = [];
-  const paths: string[] = [];
-  for (const imp of imports) {
-    const src = refine.loadModule(imp.spec, refine.fromFile);
-    parts.push(`${imp.spec}=${src === undefined ? "miss" : hashSource(src)}`);
-    paths.push(resolveDepPath(refine.fromFile, imp.spec));
+  if (!refine?.loadModule || !refine.fromFile) {
+    return { fp: "-", paths: [], truncated: false };
   }
-  return { fp: parts.join(","), paths };
+  return loadModuleDepsFingerprint(source, refine.loadModule, refine.fromFile);
 }
 
 function generalizeMemoKey(
@@ -139,11 +117,15 @@ function generalizeMemoKey(
     label?: string;
     refine?: RefineResolveOpts;
     file?: ReturnType<typeof babelParse>;
+    /** checkSource 预计算：整文件一次指纹，所有 fn 的 L0 共用 */
+    depsFp?: LoadDepsFingerprint;
   },
-): { key: string; depPaths: string[] } {
+): { key: string; depPaths: string[]; truncated: boolean } {
   const r = opts.refine;
   const budget = opts.budget ?? defaultLeakBudget;
-  const deps = r ? refineDepsFingerprint(source, r) : { fp: "-", paths: [] };
+  const deps =
+    opts.depsFp ??
+    (r ? refineDepsFingerprint(source, r) : { fp: "-", paths: [], truncated: false });
   // AST 可用时用 per-function 指纹：改未引用的兄弟函数不 invalidate 本函数
   const srcPart = generalizeSourceKeyPart(source, fnName, opts.file);
   const key = [
@@ -154,7 +136,7 @@ function generalizeMemoKey(
     deps.fp,
     `${budget.maxDepth}/${budget.maxNodes}`,
   ].join("|");
-  return { key, depPaths: deps.paths };
+  return { key, depPaths: deps.paths, truncated: deps.truncated };
 }
 
 function generalizeMemoGet(key: string): PolyFn | undefined | null {
@@ -582,15 +564,22 @@ export function generalizeFromAst(
     refine?: RefineResolveOpts;
     /** 预解析 AST，避免 check 批量场景重复 parse */
     file?: ReturnType<typeof babelParse>;
+    /** 预计算 load-deps 指纹（checkSource 整文件一次，避免 per-fn 重读） */
+    depsFp?: LoadDepsFingerprint;
   } = {},
 ): PolyFn | undefined {
-  const { key, depPaths } = generalizeMemoKey(fnName, source, opts);
-  const cached = generalizeMemoGet(key);
-  if (cached !== null) {
-    return cached;
+  const { key, depPaths, truncated } = generalizeMemoKey(fnName, source, opts);
+  // 截断指纹不可信：不读也不写 L0
+  if (!truncated) {
+    const cached = generalizeMemoGet(key);
+    if (cached !== null) {
+      return cached;
+    }
   }
   const result = generalizeFromAstUncached(fnName, source, opts);
-  generalizeMemoSet(key, result, depPaths);
+  if (!truncated) {
+    generalizeMemoSet(key, result, depPaths);
+  }
   return result;
 }
 
