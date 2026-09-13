@@ -4,38 +4,39 @@
  * - own: function declaration slice (incl. leading comments / refine)
  * - deps: transitively referenced sibling own hashes + non-fn top-level context
  * - context change (import/class/const...) -> all miss (conservative)
+ *
+ * Multi-declarator `const a = fn, b = fn` yields one fingerprint per function;
+ * each own-slice is its own declarator (first also carries statement leading comments).
  */
 import type { Node, File } from "@babel/types";
+import { hashSource } from "./hash-source.ts";
 
 export type FnFp = { own: string; deps: string; nRefs: number };
 
 const fnFpCache = new Map<string, Map<string, FnFp>>();
 const MAX_FN_FP_CACHE = 48;
-
-let lastHashSource: string | undefined;
-let lastHashOut: string | undefined;
-
-function hashSource(s: string): string {
-  if (s === lastHashSource && lastHashOut !== undefined) return lastHashOut;
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  lastHashSource = s;
-  lastHashOut = (h >>> 0).toString(36);
-  return lastHashOut;
-}
+/** Cap on cached whole-source keys so large monorepo sessions stay bounded. */
+const MAX_FN_FP_SOURCE_CHARS = 1_500_000;
 
 export function resetFnFpCache(): void {
   fnFpCache.clear();
-  lastHashSource = undefined;
-  lastHashOut = undefined;
 }
 
-function getFnNameAndBody(decl: Node): { name: string; body: Node } | undefined {
+type FnDeclInfo = {
+  name: string;
+  body: Node;
+  /** Function/arrow node (own-slice end). */
+  fnNode: Node;
+  /** Declarator start when from a VariableDeclaration; else undefined. */
+  declaratorStart?: number;
+};
+
+/** Every top-level function binding in a declaration node (not just the first). */
+export function getFnNameAndBodies(decl: Node): FnDeclInfo[] {
+  const out: FnDeclInfo[] = [];
   if (decl.type === "FunctionDeclaration" && decl.id) {
-    return { name: decl.id.name, body: decl.body };
+    out.push({ name: decl.id.name, body: decl.body, fnNode: decl });
+    return out;
   }
   if (decl.type === "VariableDeclaration") {
     for (const d of decl.declarations) {
@@ -44,11 +45,16 @@ function getFnNameAndBody(decl: Node): { name: string; body: Node } | undefined 
         d.init &&
         (d.init.type === "ArrowFunctionExpression" || d.init.type === "FunctionExpression")
       ) {
-        return { name: d.id.name, body: d.init.body };
+        out.push({
+          name: d.id.name,
+          body: d.init.body,
+          fnNode: d.init,
+          declaratorStart: d.start ?? undefined,
+        });
       }
     }
   }
-  return undefined;
+  return out;
 }
 
 function leadingSliceStart(stmt: Node, decl: Node): number {
@@ -109,15 +115,22 @@ function computeFnFingerprints(source: string, file: File): Map<string, FnFp> {
     } else if (stmt.type === "ExportDefaultDeclaration" && stmt.declaration) {
       decl = stmt.declaration;
     }
-    const fnInfo = getFnNameAndBody(decl);
-    if (fnInfo) {
-      const start = leadingSliceStart(stmt, decl);
-      const end = decl.end ?? stmt.end ?? start;
-      top.push({
-        name: fnInfo.name,
-        slice: source.slice(start, Math.max(end, start)),
-        body: fnInfo.body,
-      });
+    const fnInfos = getFnNameAndBodies(decl);
+    if (fnInfos.length > 0) {
+      const lead = leadingSliceStart(stmt, decl);
+      for (let i = 0; i < fnInfos.length; i++) {
+        const info = fnInfos[i]!;
+        // First declarator carries statement leading comments; later ones start
+        // at their own declarator so sibling edits do not dirty this own-hash.
+        const sliceStart =
+          i === 0 ? lead : (info.declaratorStart ?? info.fnNode.start ?? lead);
+        const end = info.fnNode.end ?? info.declaratorStart ?? decl.end ?? stmt.end ?? sliceStart;
+        top.push({
+          name: info.name,
+          slice: source.slice(sliceStart, Math.max(end, sliceStart)),
+          body: info.body,
+        });
+      }
     } else if (typeof stmt.start === "number" && typeof stmt.end === "number") {
       contextParts.push(source.slice(stmt.start, stmt.end));
     } else {
@@ -163,6 +176,9 @@ function computeFnFingerprints(source: string, file: File): Map<string, FnFp> {
 
 /** source -> (fnName -> own/deps); LRU */
 export function fnFingerprints(source: string, file: File): Map<string, FnFp> {
+  if (source.length > MAX_FN_FP_SOURCE_CHARS) {
+    return computeFnFingerprints(source, file);
+  }
   const hit = fnFpCache.get(source);
   if (hit !== undefined) {
     fnFpCache.delete(source);

@@ -17,6 +17,7 @@ export * from "./diagnostics.ts";
 export * from "./template.ts";
 export * from "./language.ts";
 export * from "./parse-source.ts";
+export * from "./hash-source.ts";
 export * from "./stable-source-key.ts";
 export * from "./fn-fp.ts";
 export * from "./check.ts";

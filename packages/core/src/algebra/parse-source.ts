@@ -11,6 +11,8 @@ import { stripTypes } from "../strip-types.ts";
 
 /** 会话内 AST 缓存上限（大文件 File 较重，LRU 控内存） */
 const MAX_AST_CACHE = 48;
+/** Skip caching sources whose text alone would dominate session memory. */
+const MAX_AST_SOURCE_CHARS = 2_000_000;
 const astCache = new Map<string, File>();
 
 export function resetParseSourceCache(): void {
@@ -37,6 +39,9 @@ export function parseSource(
 ): File {
   // errorRecovery 是兜底路径，不进缓存（可能产出不完整 AST）
   if (opts?.errorRecovery === true) {
+    return parseUncached(source, opts);
+  }
+  if (source.length > MAX_AST_SOURCE_CHARS) {
     return parseUncached(source, opts);
   }
   const hit = astCache.get(source);

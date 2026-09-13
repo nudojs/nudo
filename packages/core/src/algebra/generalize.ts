@@ -25,6 +25,7 @@ import {
 } from "./refine.ts";
 import { constraintToEntryAbs } from "./constraint.ts";
 import { generalizeSourceKeyPart, resetFnFpCache } from "./fn-fp.ts";
+import { hashSource, resetHashSourceCache } from "./hash-source.ts";
 
 /** 进程内 L0：同 (source, fn, refine 指纹, budget, label) 的 generalize 结果 */
 const generalizeMemo = new Map<string, PolyFn | undefined>();
@@ -43,8 +44,7 @@ export function resetGeneralizeMemo(): void {
   memoKeyDeps.clear();
   memoDepIndex.clear();
   resetFnFpCache();
-  lastHashSource = undefined;
-  lastHashOut = undefined;
+  resetHashSourceCache();
 }
 
 export function getGeneralizeMemoSize(): number {
@@ -100,21 +100,6 @@ export function evictGeneralizeMemoForPaths(paths: string[]): number {
     }
   }
   return n;
-}
-
-let lastHashSource: string | undefined;
-let lastHashOut: string | undefined;
-
-function hashSource(s: string): string {
-  if (s === lastHashSource && lastHashOut !== undefined) return lastHashOut;
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  lastHashSource = s;
-  lastHashOut = (h >>> 0).toString(36);
-  return lastHashOut;
 }
 
 function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefined): number {
