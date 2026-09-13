@@ -1,239 +1,146 @@
 ---
 sidebar_position: 5
-description: See how Nudo narrows types through branches — truthiness, discriminated unions, `in` checks, switch, and `Array.isArray()` — plus the evaluation-time semantics of `?.` and `??`.
+description: See how Nudo narrows types per call site — equality guards, discriminated object shapes, typeof, Array.isArray, and switch — plus the current limits of truthiness, in, and ?./??.
 ---
 
 # Control Flow Narrowing
 
-Nudo tracks how types change as code flows through branches, guards, and operators. When you test a value with a condition, Nudo narrows the type in the branch where the condition is true and keeps the complement in the false branch. The sections below cover every branch-narrowing pattern Nudo supports; the closing section covers `?.` and `??`, which are evaluation-time behaviors rather than narrowing.
+Nudo narrows types when it can decide a condition for the **concrete argument of a call site**. Each `Case "call@L…" => …` line in the output reports the result of one call, evaluated with that call's exact argument — branches eliminated by narrowing never contribute to that case's result, and `Combined:` is the union of all per-call results.
 
-Narrowing is observed through case inputs: give the function a union via `@nudo:case` and run `nudo infer`. Each `Case ... => ...` line in the output reports the result type for that input -- branches eliminated by narrowing never contribute to the result union. Every output block below is a real `nudo infer` run of the code above it.
+Narrowing is currently precise on the **call-site path** (functions called at the top level, reported as `call@` cases). The same guards inside `@nudo:case` directive evaluation degrade to `unknown` — this guide therefore demonstrates every pattern with call sites. Every output block below is a real `nudo infer` run of the code above it.
 
-## Truthiness Narrowing
+## Comparison Guards
 
-When a value appears in a boolean context (e.g., `if (x)`), Nudo removes types that are falsy -- `null`, `undefined`, `false`, `""`, and `0` -- from the true branch. The false branch retains those falsy types and removes the truthy ones.
+A comparison against a literal narrows the argument per call: each concrete call takes only the branch that matches.
 
 ```js
-/**
- * @nudo:case "nullable name" (T.union(T.string, T.null, T.undefined))
- */
-function greet(name) {
-  if (name) {
-    // name narrowed to string (null and undefined removed)
-    return name.toUpperCase();
-  }
-  // name is null | undefined here
-  return "unknown";
+function pickAdult(age) {
+  if (age >= 18) return age;
+  return -1;
 }
+pickAdult(25);
+pickAdult(12);
 ```
 
 ```text
-=== greet ===
+=== pickAdult ===
 
-Case "nullable name": (string | null | undefined) => string | "unknown"
+Case "call@L5": (25) => 25
+Case "call@L6": (12) => -1
+
+Combined: 25 | -1
 ```
 
-The true branch yields `string` (from `name.toUpperCase()`), the false branch contributes the literal `"unknown"`, and the result keeps both members. The clean run is itself evidence of narrowing -- without the guard, the same call reports `Method 'toUpperCase' does not exist on type 'string | null | undefined' (nudo:no-method)`.
+`pickAdult(25)` satisfies `age >= 18` and returns `25`; `pickAdult(12)` falls through to `-1`. The combined type keeps both literal results.
 
-## Discriminated Union Narrowing
+## Discriminated Object Shapes
 
-When you compare a property against a string literal (e.g., `obj.kind === "circle"`), Nudo filters the union to keep only the members whose discriminating property matches. The false branch keeps the remaining members.
+When you compare a property against a string literal (`shape.kind === "circle"`), the branch for a matching call sees the object shape of that call's argument.
 
 ```js
-/**
- * @nudo:case "shape" (T.union(T.object({ kind: T.literal("circle"), radius: T.number }), T.object({ kind: T.literal("square"), side: T.number })))
- */
 function area(shape) {
   if (shape.kind === "circle") {
-    // shape narrowed to { kind: "circle", radius: number }
     return shape.radius * 3.14159;
   }
-  // shape narrowed to { kind: "square", side: number }
   return shape.side * shape.side;
 }
+area({ kind: "circle", radius: 2 });
+area({ kind: "square", side: 3 });
 ```
 
 ```text
 === area ===
 
-Case "shape": ({ kind: "circle", radius: number } | { kind: "square", side: number }) => number
+Case "call@L7": ({ kind: "circle", radius: 2 }) => 6.28318
+Case "call@L8": ({ kind: "square", side: 3 }) => 9
+
+Combined: 6.28318 | 9
 ```
 
-Inside the `if`, `shape.radius` type-checks because the union has been filtered down to the circle member; after it, `shape.side` type-checks against the square member. Both branches return `number`, so the result is `number`.
+The circle call takes the `if` branch and computes `6.28318`; the square call falls through to `side * side` and yields `9`.
 
-## `in` Operator Narrowing
+## `typeof` and `Array.isArray()` Guards
 
-Using `"key" in obj` in a condition narrows the object type to include only members that have that property. The false branch excludes those members.
+Both guards fork per concrete call, and the narrowed value keeps its precise behavior in the matching branch.
 
 ```js
-/**
- * @nudo:case "value" (T.union(T.object({ toJSON: () => "serialized" }), T.number))
- */
-function serialize(value) {
-  if ("toJSON" in value) {
-    // value narrowed to { toJSON: () => "serialized" }
-    return value.toJSON();
-  }
-  // value narrowed to number
-  return String(value);
+function len(x) {
+  if (typeof x === "string") return x.length;
+  if (Array.isArray(x)) return x.length;
+  return -1;
 }
+len("abc");
+len([1, 2]);
+len(5);
 ```
 
 ```text
-=== serialize ===
+=== len ===
 
-Case "value": ({ toJSON: () => ... } | number) => "serialized" | string
+Case "call@L7": ("abc") => 3
+Case "call@L8": ([1, 2]) => 2
+Case "call@L9": (5) => -1
+
+Combined: 3 | 2 | -1
 ```
 
-The true branch calls the `toJSON` method on the narrowed object member and yields `"serialized"`; the false branch receives `number` and `String(value)` yields `string`. The result union keeps both.
+The string call reaches `x.length` on a narrowed string (`3`), the array call on a narrowed array (`2`), and the number call falls through both guards to `-1`. Note the narrowed branch keeps the value itself: `input[0]` on a narrowed array is not modeled yet (`unknown`), while `.length` is.
 
-## Switch Statement Narrowing
+## Switch Statements
 
-Nudo narrows the discriminant per `case` clause. Each case branch gets the type that matches that literal value. A `default` branch captures all remaining types.
+A `switch` on a discriminant narrows per `case` clause — including for `@nudo:case` directive inputs.
 
 ```js
 /**
- * @nudo:case "status" (T.union(T.literal("active"), T.literal("paused"), T.literal("stopped")))
+ * @nudo:case "idle" ({ status: "idle" })
+ * @nudo:case "loading" ({ status: "loading", requestId: "abc" })
+ * @nudo:case "success" ({ status: "success", data: { name: "test" } })
+ * @nudo:case "error" ({ status: "error", message: "fail" })
  */
-function describe(status) {
-  switch (status) {
-    case "active":
-      // status: "active"
-      return "Running";
-    case "paused":
-      // status: "paused"
-      return "On hold";
-    case "stopped":
-      // status: "stopped"
-      return "Shut down";
-    default:
-      return "Unknown";
-  }
-}
-```
-
-```text
-=== describe ===
-
-Case "status": ("active" | "paused" | "stopped") => "Running" | "On hold" | "Shut down" | "Unknown"
-```
-
-Each branch contributes its own return literal to the result. You can watch the discriminant itself narrow by returning it from every branch:
-
-```js
-/**
- * @nudo:case "status" (T.union(T.literal("active"), T.literal("paused"), T.literal("stopped")))
- */
-function label(status) {
-  switch (status) {
-    case "active":
-      return status; // "active"
-    case "paused":
-      return status; // "paused"
-    case "stopped":
-      return status; // "stopped"
-    default:
-      // the union is exhausted -- status is never here
-      return status;
+function handleState(state) {
+  switch (state.status) {
+    case "idle": return "Waiting...";
+    case "loading": return `Loading ${state.requestId}...`;
+    case "success": return state.data.name;
+    case "error": return state.message;
   }
 }
 ```
 
 ```text
-=== label ===
+=== handleState ===
 
-Case "status": ("active" | "paused" | "stopped") => "active" | "paused" | "stopped"
+Case "idle": ({ status: "idle" }) => "Waiting..."
+Case "loading": ({ status: "loading", requestId: "abc" }) => "Loading abc..."
+Case "success": ({ status: "success", data: { name: "test" } }) => "test"
+Case "error": ({ status: "error", message: "fail" }) => "fail"
+
+Combined: "Waiting..." | "Loading abc..." | "test" | "fail"
 ```
 
-The three case branches return their own narrowed literal, and the `default` branch adds nothing: the union was already exhausted, so `status` there is `never`.
+Each clause receives its matching object shape, so `state.requestId` and `state.data.name` resolve inside their branches.
 
-## `Array.isArray()` Narrowing
+## Not Narrowed Yet
 
-Calling `Array.isArray(value)` in a condition splits the type into array and non-array branches.
+These patterns currently do **not** fork on the call-site path — each one degrades to a single branch or to `unknown`, so guard against them explicitly or verify with `nudo infer` before relying on them:
 
-```js
-/**
- * @nudo:case "input" (T.union(T.array(T.number), T.string))
- */
-function flatten(input) {
-  if (Array.isArray(input)) {
-    // input narrowed to number[]
-    return input[0];
-  }
-  // input narrowed to string
-  return input;
-}
-```
-
-```text
-=== flatten ===
-
-Case "input": (number[] | string) => number | string
-```
-
-In the true branch `input` is `number[]`, so `input[0]` yields `number`; in the false branch `input` is `string`.
-
-## Safe Access and Defaulting (`?.` and `??`)
-
-Optional chaining and nullish coalescing are not branch narrowing — they are handled during expression evaluation, without the `narrow()` machinery that powers the patterns above. `?.` short-circuits to `undefined` when the receiver is a *concrete* `null`/`undefined`; `??` subtracts `null` and `undefined` from its left operand's type and falls back to the right side when nothing remains.
-
-### Optional Chaining (`?.`)
-
-When the receiver of `x?.prop` evaluates to `null` or `undefined`, the chain short-circuits and the result is `undefined`. When the receiver is non-nullish, the chain resolves the property like a plain access. Driving this with two cases shows both paths:
-
-```js
-/**
- * @nudo:case "object present" (T.object({ length: T.number }))
- * @nudo:case "null" (T.null)
- */
-function getLength(maybeBox) {
-  return maybeBox?.length ?? 0;
-}
-```
-
-```text
-=== getLength ===
-
-Case "object present": ({ length: number }) => number
-Case "null": (null) => 0
-
-Combined: number
-```
-
-With the object present, `maybeBox?.length` resolves to `number` and the `?? 0` fallback never fires. With `null`, the chain short-circuits to `undefined`, so `?? 0` produces the literal `0`. The `Combined:` line unions all case results and then simplifies by absorption — the literal `0` is absorbed by the base type `number` from the other case.
-
-Note that `?.` short-circuits on a *concrete* nullish receiver. It does not by itself narrow a union-typed receiver: on an input of `T.union(T.object({ length: T.number }), T.null)`, the access `maybeBox?.length` still reports `Property 'length' does not exist on type '{ length: number } | null' (nudo:no-method)` -- use a truthiness guard first, then access.
-
-### Nullish Coalescing (`??`)
-
-The nullish coalescing operator removes `null` and `undefined` from the left operand's type. The result is the non-nullable left type or the right operand's type.
-
-```js
-/**
- * @nudo:case "config object" (T.object({ port: T.union(T.number, T.null, T.undefined) }))
- */
-function getPort(config) {
-  const port = config.port ?? 3000;
-  return port;
-}
-```
-
-```text
-=== getPort ===
-
-Case "config object": ({ port: number | null | undefined }) => number
-```
-
-`config.port` arrives as `number | null | undefined`, but the `?? 3000` fallback absorbs the nullish members, so `port` is `number`.
+| Pattern | Current behavior |
+|---|---|
+| Truthiness `if (x)` | Only boolean literals fork — `if (x)` with `true` reports the true branch. A number or string argument always takes the false branch: `truthy(42)` with `if (x) return "yes"; return "no"` reports `"no"`. |
+| Symbolic inputs | `@nudo:case` with `T.union(...)` arguments do not fork conditions — only concrete call sites narrow. |
+| `in` operator | `if ("toJSON" in value)` narrows for object arguments, but method results widen (`string` instead of the closure's `"serialized"`); non-object arguments also report `nudo:no-method`. |
+| `?.` / `??` | Shallow `config.port ?? 3000` with a known property yields `number`; deep chains and short-circuiting members degrade to `unknown`. |
+| Array indexing | `input[0]` on a narrowed array is `unknown` — use `.length` or element-level operations. |
 
 ## Summary
 
-| Pattern | Condition | True Branch | False Branch |
-|---|---|---|---|
-| Truthiness | `if (x)` | Excludes `null`, `undefined`, `false`, `""`, `0` | Keeps falsy types |
-| Discriminated Union | `x.kind === "lit"` | Keeps matching union member | Keeps remaining members |
-| `in` Operator | `"key" in x` | Keeps types with that property | Keeps types without it |
-| Switch | `switch (x) { case ... }` | Narrows per case literal | Default gets remainder (`never` if exhausted) |
-| `Array.isArray()` | `Array.isArray(x)` | Array types only | Non-array types only |
-
-`?.` and `??` are absent from this table on purpose: they are evaluation-time short-circuiting and defaulting (see *Safe Access and Defaulting* above), not branch narrowing.
+| Pattern | Narrows per call site | Example |
+|---|---|---|
+| Comparison guard | Yes | `if (age >= 18)` → `25` / `-1` |
+| Discriminated object | Yes | `if (shape.kind === "circle")` → `6.28318` / `9` |
+| `typeof` | Yes | `typeof x === "string"` → `3` |
+| `Array.isArray()` | Yes | `Array.isArray(x)` → `2` |
+| `switch` | Yes (including directive inputs) | per-clause literals |
+| Truthiness | No | false branch always wins |
+| `in` | Partial | forks, member results widen |
+| `?.` / `??` | Partial | shallow `??` only |

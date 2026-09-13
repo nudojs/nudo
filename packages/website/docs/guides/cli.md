@@ -49,13 +49,15 @@ Output — one section per function, files in scan order:
 ```text
 === note ===
 
-Case "entry@L1": (unknown) => `note: ${unknown}`
+Case "entry@L1": (unknown) => unknown
 # no call sites found; parameters default to unknown
 
 === slugify ===
 
-Case "call@L4": ("Hello World") => string
+Case "call@L4": ("Hello World") => unknown
 ```
+
+`slugify` gets a `call@L4` case from the top-level call, but `toLowerCase().replace(...)` on the concrete input is not modeled yet, so the result is `unknown`. When one analyzed file imports a function from another, the imported function's cases appear in an `--- <path> (imported) ---` section instead.
 
 ### Options
 

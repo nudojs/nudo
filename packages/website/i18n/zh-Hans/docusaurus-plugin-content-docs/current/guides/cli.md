@@ -49,13 +49,15 @@ nudo infer lib/
 ```text
 === note ===
 
-Case "entry@L1": (unknown) => `note: ${unknown}`
+Case "entry@L1": (unknown) => unknown
 # no call sites found; parameters default to unknown
 
 === slugify ===
 
-Case "call@L4": ("Hello World") => string
+Case "call@L4": ("Hello World") => unknown
 ```
+
+`slugify` 从顶层调用得到 `call@L4` 用例，但具体输入上的 `toLowerCase().replace(...)` 尚未建模，因此结果为 `unknown`。当一个被分析文件从另一个文件导入函数时，被导入函数的用例会出现在 `--- <路径> (imported) ---` 区块中。
 
 ### 选项
 

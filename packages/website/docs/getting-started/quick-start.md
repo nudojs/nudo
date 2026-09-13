@@ -129,15 +129,15 @@ npx nudo infer utils.js
 ```text
 === formatPrice ===
 
-Case "call@L5": (1999) => `$${string}`
+Case "call@L5": (1999) => unknown
 ```
 
-The case is named `call@L5` after the line of the call — `console.log(formatPrice(1999))` sits on line 5 of `utils.js`. A function that no analyzed code calls still gets an `entry@L` case so its signature is emitted, with parameters defaulting to `unknown`:
+The case is named `call@L5` after the line of the call — `console.log(formatPrice(1999))` sits on line 5 of `utils.js`. The division `cents / 100` yields `number` and `toFixed` is not modeled yet, so the result is `unknown`. A function that no analyzed code calls still gets an `entry@L` case so its signature is emitted, with parameters defaulting to `unknown`:
 
 ```text
 === addPrefix ===
 
-Case "entry@L1": (unknown, unknown) => `${unknown}: ${unknown}`
+Case "entry@L1": (unknown, unknown) => unknown
 # no call sites found; parameters default to unknown
 ```
 
