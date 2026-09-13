@@ -2,12 +2,14 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   generalizeFromAst,
   resetGeneralizeMemo,
+  getGeneralizeMemoSize,
   formatAbs,
   checkSource,
   pTrue,
   numLit,
   numVar,
   gtNum,
+  and,
   v,
   litValue,
   strLit,
@@ -179,5 +181,79 @@ function pair(a, b) {
     const r2 = g2.instantiate([numLit(5)]);
     expect(litValue(r2)).toBe(6);
     expect(r2).not.toBe(r1);
+  });
+});
+
+describe("L2 α-equivalence + pred canonicalization", () => {
+  const SRC_ID = `
+function id(x) {
+  return x;
+}
+function inc(x) {
+  return x + 1;
+}
+`;
+
+  it("hits across renamed free vars and rewrites result vars", () => {
+    const g = generalizeFromAst("inc", SRC_ID)!;
+    const r1 = g.instantiate([numVar("x", gtNum(v("x"), 0))], gtNum(v("x"), 0));
+    const r2 = g.instantiate([numVar("y", gtNum(v("y"), 0))], gtNum(v("y"), 0));
+    expect(termToString(r1.term!)).toBe("(x + 1)");
+    expect(termToString(r2.term!)).toBe("(y + 1)");
+    // 不是同一对象（α 改写后的新 Abs），但结构同构
+    expect(r2).not.toBe(r1);
+    expect(formatAbs(r2).replace(/y/g, "x")).toBe(formatAbs(r1).replace(/x/g, "x"));
+  });
+
+  it("and-order does not cause miss", () => {
+    const g = generalizeFromAst("id", SRC_ID)!;
+    const ax = numVar("x", and(gtNum(v("x"), 0), gtNum(v("x"), 1)));
+    const phiA = and(gtNum(v("x"), 0), gtNum(v("x"), 1));
+    const phiB = and(gtNum(v("x"), 1), gtNum(v("x"), 0));
+    const r1 = g.instantiate([ax], phiA);
+    const r2 = g.instantiate([ax], phiB);
+    expect(formatAbs(r1)).toBe(formatAbs(r2));
+  });
+});
+
+describe("L3 deps fingerprint + LRU", () => {
+  const SRC_REFINE = `
+/// @nudo:import { positive } from "./shapes.nudo.js"
+
+/**
+ * @nudo:refine x positive
+ */
+function needsPositive(x) {
+  return x;
+}
+`;
+
+  it("misses L0 when imported nudo module content changes", () => {
+    let dep = "export const positive = number().gt(0);\n";
+    const loadModule = (spec: string) => (spec.includes("shapes") ? dep : undefined);
+    const refine = { loadModule, fromFile: "/proj/a.js" };
+    const g1 = generalizeFromAst("needsPositive", SRC_REFINE, { refine });
+    expect(g1).toBeDefined();
+    dep = "export const positive = number().gt(10);\n";
+    const g2 = generalizeFromAst("needsPositive", SRC_REFINE, { refine });
+    expect(g2).toBeDefined();
+    expect(g2).not.toBe(g1);
+  });
+
+  it("hits L0 when dep is unchanged", () => {
+    const loadModule = () => "export const positive = number().gt(0);\n";
+    const refine = { loadModule, fromFile: "/proj/a.js" };
+    const g1 = generalizeFromAst("needsPositive", SRC_REFINE, { refine });
+    const g2 = generalizeFromAst("needsPositive", SRC_REFINE, { refine });
+    expect(g2).toBe(g1);
+  });
+
+  it("tracks memo size and can reset", () => {
+    resetGeneralizeMemo();
+    expect(getGeneralizeMemoSize()).toBe(0);
+    generalizeFromAst("add", SRC);
+    expect(getGeneralizeMemoSize()).toBeGreaterThan(0);
+    resetGeneralizeMemo();
+    expect(getGeneralizeMemoSize()).toBe(0);
   });
 });

@@ -19,7 +19,7 @@ import {
   type DiagnosticSeverity as JsDiagSeverity,
   type ModuleGraphCache,
 } from "@nudojs/service";
-import { checkSource, pTrue } from "@nudojs/core";
+import { checkSource, pTrue, resetGeneralizeMemo } from "@nudojs/core";
 import {
   DiagnosticSeverity,
   DiagnosticTag,
@@ -47,6 +47,7 @@ export function clearValidationState(): void {
   knownFiles.clear();
   moduleGraphCache.clear();
   clearAbsModuleCache();
+  resetGeneralizeMemo();
 }
 
 /**
