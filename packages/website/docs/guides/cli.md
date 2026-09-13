@@ -49,13 +49,15 @@ Output — one section per function, files in scan order:
 ```text
 === note ===
 
-Case "entry@L1": (unknown) => `note: ${unknown}`
+Case "entry@L1": (unknown) => unknown
 # no call sites found; parameters default to unknown
 
 === slugify ===
 
-Case "call@L4": ("Hello World") => string
+Case "call@L4": ("Hello World") => unknown
 ```
+
+`slugify` gets a `call@L4` case from the top-level call, but `toLowerCase().replace(...)` on the concrete input is not modeled yet, so the result is `unknown`. When one analyzed file imports a function from another, the imported function's cases appear in an `--- <path> (imported) ---` section instead.
 
 ### Options
 
@@ -438,7 +440,13 @@ Exit codes: drift or analysis errors → `1`; uncovered functions are informatio
 
 1. **Develop with watch mode**: Run `nudo watch . --dts` in a terminal while editing. Each save triggers re-inference and `.d.ts` generation.
 
-2. **CI / pre-commit**: `nudo check` exits with code `1` on error-level diagnostics, so it can gate CI. `check` takes a single file — loop over your sources:
+2. **CI / pre-commit**: `nudo check` exits with code `1` on error-level diagnostics, so it can gate CI. Pass a directory to check every inference target under it in one run (`nudo check` scans directories recursively, excluding `node_modules`):
+
+   ```bash
+   nudo check src/
+   ```
+
+   To exclude specific paths (e.g. generated files), loop over the exact files you want gated instead:
 
    ```bash
    find src \( -name "*.js" -o -name "*.mjs" -o -name "*.ts" \) \

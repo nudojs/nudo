@@ -1,5 +1,5 @@
 // 赋值结构：Abs leq
-// 运行：npx tsx packages/cli/src/index.ts check docs/examples/structure/assign.js
+// 运行：pnpm run check docs/examples/structure/assign.js
 
 let config = { host: "localhost", port: 8080 };
 
@@ -12,4 +12,4 @@ let n = 1;
 let a = { x: 1 };
 a = { x: 2, z: "s" };                // ok
 
-module.exports = { config, n, a };
+export { config, n, a };

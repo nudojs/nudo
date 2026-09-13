@@ -49,13 +49,15 @@ nudo infer lib/
 ```text
 === note ===
 
-Case "entry@L1": (unknown) => `note: ${unknown}`
+Case "entry@L1": (unknown) => unknown
 # no call sites found; parameters default to unknown
 
 === slugify ===
 
-Case "call@L4": ("Hello World") => string
+Case "call@L4": ("Hello World") => unknown
 ```
+
+`slugify` 从顶层调用得到 `call@L4` 用例，但具体输入上的 `toLowerCase().replace(...)` 尚未建模，因此结果为 `unknown`。当一个被分析文件从另一个文件导入函数时，被导入函数的用例会出现在 `--- <路径> (imported) ---` 区块中。
 
 ### 选项
 
@@ -438,7 +440,13 @@ nudo doctor src/ --callsites tests/
 
 1. **使用监听模式开发**：编辑时在终端运行 `nudo watch . --dts`。每次保存都会触发重新推断和 `.d.ts` 生成。
 
-2. **CI / 提交前检查**：`nudo check` 在存在 error 级诊断时以退出码 `1` 结束，可用于 CI 门禁。`check` 只接受单个文件——遍历源码文件：
+2. **CI / 提交前检查**：`nudo check` 在存在 error 级诊断时以退出码 `1` 结束，可用于 CI 门禁。传目录即可一次检查其下全部推断目标（`nudo check` 递归扫描目录并跳过 `node_modules`）：
+
+   ```bash
+   nudo check src/
+   ```
+
+   需要排除特定路径（如生成文件）时，再显式遍历要门禁的文件：
 
    ```bash
    find src \( -name "*.js" -o -name "*.mjs" -o -name "*.ts" \) \

@@ -1,6 +1,6 @@
 // 返回值契约：@nudo:refine return <constraint>
 // 与 @nudo:refine（前置）对偶；契约仍来自 .nudo.js 模板
-// 运行：npx tsx packages/cli/src/index.ts check docs/examples/constraints/return-contract.js
+// 运行：pnpm run check docs/examples/constraints/return-contract.js
 
 /// @nudo:import { positive, percent } from "./delay.nudo.js"
 
@@ -31,4 +31,4 @@ inc(1);     // ok
 // inc(-1); // error: 前置
 pct(50);    // ok
 
-module.exports = { inc, pct, bad };
+export { inc, pct, bad };

@@ -70,6 +70,30 @@ export function run(n) { return triple(n); }
     expect(isBPathCapable("async function f() { return 1; }")).toBe(true);
     expect(isBPathCapable("const x = require('lodash');")).toBe(true);
   });
+
+  it("object slots holding functions become first-class Abs fns (no raw JS leak)", () => {
+    // 回归：transpile 把函数表达式编译成真实 JS 函数；流进对象槽后
+    // 下游 absToTypeValue 读 .shape 曾裸崩（Cannot read properties of undefined (reading 'k')）
+    const dir = mkdtempSync(join(tmpdir(), "nudo-bpath-fnslot-"));
+    dirs.push(dir);
+    const p = join(dir, "main.js");
+    const src = `
+function helper(a, b) { return a; }
+export function make() {
+  const f = (x) => x + 1;
+  return { load: f, arrow: (y) => y, ref: helper };
+}
+`;
+    writeFileSync(p, src, "utf-8");
+    const r = tryBPathCall(src, p, "make", []);
+    expect(r).toBeDefined();
+    expect(r!.shape.k).toBe("obj");
+    const slots = (r!.shape as { slots: Record<string, { value: { shape: { k: string; params?: string[] } } }> }).slots;
+    expect(slots.load.value.shape.k).toBe("fn");
+    expect(slots.arrow.value.shape.params).toEqual(["y"]);
+    // 声明函数引用无参数名可恢复 → argN 回退（与 analyzer extractParamNames 口径一致）
+    expect(slots.ref.value.shape.params).toEqual(["arg0", "arg1"]);
+  });
 });
 
 describe("transpile import emission", () => {

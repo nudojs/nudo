@@ -1,8 +1,8 @@
 // Pred 如何流入代数（add × refine）
 // 形态：@nudo:refine <param> <constraint>
 // 运行：
-//   npx tsx packages/cli/src/index.ts check docs/examples/constraints/add-pred.js
-//   npx tsx packages/cli/src/index.ts infer docs/examples/constraints/add-pred.js
+//   pnpm run check docs/examples/constraints/add-pred.js
+//   pnpm run infer docs/examples/constraints/add-pred.js
 
 /// @nudo:import { positive } from "./delay.nudo.js"
 
@@ -35,4 +35,4 @@ scale(-1);     // error: -1 ⊭ positive
 //   twice  → 有 refine x>0 时：number = ((x + 1) + 1)
 // 无 refine 的 score(x){return x+1}：score("x") 合法，返回 "x1"
 
-module.exports = { add, scale, twice };
+export { add, scale, twice };

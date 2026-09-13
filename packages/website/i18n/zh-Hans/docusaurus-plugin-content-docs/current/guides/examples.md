@@ -7,6 +7,8 @@ description: 按主题浏览 Nudo 推断的实用示例——函数与对象、�
 
 本指南展示 Nudo 类型推断的实用示例，按主题分组。每个示例包含带指令的输入代码和推断出的类型。
 
+下方所有输出块都是对上面代码真实运行 `nudo infer` 的结果。输出块只展示 **case 头与 `Combined:` 行**——它们是逐调用点的真实精度。完整输出里的 `intension:` / `abs:` 行是用 `unknown` 形参重估的泛化签名，对多分支函数只会显示回退路径的结果；分支级精度请以 case 头与 `Combined:` 为准。当调用点路径更精确时示例使用调用点（`call@L…`）形态，否则使用 `@nudo:case` 指令。
+
 ---
 
 ## 基础推断
@@ -44,16 +46,13 @@ Combined: number
 
 ### 2. 带类型收窄的对象操作
 
-解构和属性访问。Nudo 通过对象形状推断类型。
+属性访问。Nudo 通过对象形状推断类型，字符串拼接保留字面量结构。
 
 ```javascript
-/**
- * @nudo:case "concrete" ({ name: "Alice", age: 30 })
- * @nudo:case "symbolic" (T.object({ name: T.string, age: T.number }))
- */
-function greet({ name, age }) {
-  return `Hello, ${name}! You are ${age} years old.`;
+function greet(user) {
+  return user.name + " is " + user.age;
 }
+greet({ name: "Alice", age: 30 });
 ```
 
 **推断输出：**
@@ -61,13 +60,12 @@ function greet({ name, age }) {
 ```text
 === greet ===
 
-Case "concrete": ({ name: "Alice", age: 30 }) => "Hello, Alice! You are 30 years old."
-Case "symbolic": ({ name: string, age: number }) => `Hello, ${string}! You are ${number} years old.`
-
-Combined: "Hello, Alice! You are 30 years old." | `Hello, ${string}! You are ${number} years old.`
+Case "call@L4": ({ name: "Alice", age: 30 }) => "Alice is 30"
 ```
 
-Nudo 从每个 case 的对象形状收窄 `name` 和 `age`。模板结果不会被拍平为 `string`：具体 case 得到完整求值的字面量，符号 case 保留带插值参数类型的模板类型。
+Nudo 用具体形状求值该调用：`user.name` 与 `user.age` 解析为字面量值，`+` 拼接产生精确结果 `"Alice is 30"`——而不是被拍平的 `string`。
+
+目前参数解构会退化为 `unknown`（同样的函数体写成 `function greet({ name, age })` 会返回 `unknown`），因此要获得形状级精度，属性访问是可靠写法。
 
 ---
 
@@ -138,30 +136,26 @@ mock 就位后，Nudo 推断 `fetchUser` 返回 `Promise<{ id: 1, name: "Alice" 
  * @nudo:case "valid" (10)
  * @nudo:case "negative" (-1)
  */
-function safeSqrt(x) {
+function half(x) {
   if (x < 0) {
     throw new RangeError("negative input");
   }
-  return Math.sqrt(x);
+  return x / 2;
 }
 ```
 
 **推断输出：**
 
 ```text
-=== safeSqrt ===
+=== half ===
 
-Case "valid": (10) => number
-Case "negative": (-1) => never throws RangeError { message: "negative input" }
+Case "valid": (10) => 5
+Case "negative": (-1) => never throws RangeError
 
-Combined: number
-
-Diagnostics:
-
-  [info] safeSqrt.js:6:13 Code after return/throw statement is unreachable (nudo-unreachable)
+Combined: 5
 ```
 
-Nudo 建模控制流：`valid` case 返回 `number`，`negative` case 抛出 `RangeError` 且永不返回——其结果为 `never`，同时追踪抛出的值。合并后的值类型为 `number`。当 Nudo 发现问题时会在输出末尾附加 `Diagnostics:` 段；这里是一条关于 `throw` 之后语句的 `[info]` 提示。
+Nudo 建模控制流：`valid` case 返回 `5`，`negative` case 抛出 `RangeError` 且永不返回——其结果为 `never`，同时追踪抛出的值。合并后的值类型为 `5`。当某个 case 可能抛出时，活动 case 的诊断还会报告 `nudo-may-throw`。
 
 ---
 
@@ -187,38 +181,39 @@ function makeApiUrl(path) {
 这意味着 Nudo 可以对结果进行推理：
 
 ```javascript
-/**
- * @nudo:case "symbolic" (T.string)
- */
-function isApiUrl(path) {
-  const url = "https://api.example.com" + path;
-  return url.startsWith("https://");  // → true（从模板前缀推导）
+function buildApiUrl(host, path) {
+  return "https://" + host + path;
 }
+buildApiUrl("api.example.com", "/users");   // → "https://api.example.com/users"
 ```
 
-Nudo 知道结果一定是 `true`，因为模板的前缀以 `"https://"` 开头。TypeScript 只能推断为 `boolean`。
+字面量前缀与具体调用实参折叠为精确的 URL。对结果模板类型调用方法（如 `url.startsWith("https://")`）目前会求值为 `unknown`，因此优先使用拼接结构而不是方法推理。
 
 ---
 
 ### 7. 精确的字符串方法
 
-Nudo 在编译时对字面量执行字符串方法，产生精确结果。
+Nudo 在编译时对部分字符串方法做字面量求值，产生精确结果。
 
 ```javascript
-/**
- * @nudo:case "test" ()
- */
 function stringDemo() {
   const upper = "hello".toUpperCase();    // → "HELLO"（TS: string）
-  const parts = "a,b,c".split(",");       // → ["a", "b", "c"]（TS: string[]）
-  const idx = "hello".indexOf("l");       // → 2（TS: number）
   const sliced = "hello".slice(1, 3);     // → "el"（TS: string）
   const len = "hello".length;             // → 5（TS: number）
-  return { upper, parts, idx, sliced, len };
+  return { upper, sliced, len };
 }
+stringDemo();
 ```
 
-每个结果都是精确的字面量类型。TypeScript 对这些操作只能推断出 `string`、`string[]` 或 `number`。
+**推断输出：**
+
+```text
+=== stringDemo ===
+
+Case "call@L7": () => { upper: "HELLO", sliced: "el", len: 5 }
+```
+
+`toUpperCase`、`slice` 和 `.length` 在调用点折叠为精确字面量，TypeScript 对这些操作只能推断出 `string` 或 `number`。并非所有方法都已建模——`"a,b,c".split(",")` 与 `"hello".indexOf("l")` 目前会求值为 `unknown`，依赖具体方法前请先跑 `nudo infer` 确认。
 
 ---
 
@@ -229,10 +224,6 @@ function stringDemo() {
 Nudo 可以对具体边界的循环进行求值，在类型层面计算精确结果——这是 TypeScript 完全无法做到的。
 
 ```javascript
-/**
- * @nudo:case "concrete" (5)
- * @nudo:case "symbolic" (T.number)
- */
 function sumTo(n) {
   let sum = 0;
   for (let i = 0; i < n; i++) {
@@ -240,6 +231,7 @@ function sumTo(n) {
   }
   return sum;
 }
+sumTo(5);
 ```
 
 **推断输出：**
@@ -247,28 +239,24 @@ function sumTo(n) {
 ```text
 === sumTo ===
 
-Case "concrete": (5) => 10
-Case "symbolic": (number) => number
-
-Combined: number
+Case "call@L8": (5) => 10
 ```
 
-输入具体值 `5` 时，Nudo 执行循环并产生精确结果 `10`。输入抽象值 `T.number` 时，通过不动点迭代拓宽为 `number`。合并类型按吸收律化简——字面量 `10` 被符号 case 贡献的基类型 `number` 吸收。
+输入具体值 `5` 时，Nudo 执行循环并产生精确结果 `10`。输入抽象边界（`T.number`）时循环条件无法判定，结果会拓宽为 `number | string`——即累加器未知时 `+` 的真实 JS 语义。
 
 ---
 
-### 9. 精化类型 — 范围收窄
+### 9. 范围收窄
 
-精化类型（refined type）在基础类型上附加约束。它们是内置能力：比较守卫会把 `number` 精化为带约束的范围，并保留在推断输出中。
+比较守卫按调用点收窄输入：每个具体调用只执行与其实参匹配的分支。
 
 ```javascript
-/**
- * @nudo:case "symbolic" (T.number)
- */
 function pickAdult(age) {
   if (age >= 18) return age;
   return -1;
 }
+pickAdult(25);
+pickAdult(12);
 ```
 
 **推断输出：**
@@ -276,10 +264,13 @@ function pickAdult(age) {
 ```text
 === pickAdult ===
 
-Case "symbolic": (number) => number (>= 18) | -1
+Case "call@L5": (25) => 25
+Case "call@L6": (12) => -1
+
+Combined: 25 | -1
 ```
 
-在 `if (age >= 18)` 分支内，`age` 不再是普通的 `number`——它携带 `>= 18` 约束，推断结果显示为 `number (>= 18)`。没有匹配规则的运算会回退到精化类型的基础类型。模板字符串（示例 6 中的 `` `https://api.example.com${string}` ``）也是精化类型——它把已知前缀和后缀作为约束携带。
+`pickAdult(25)` 走 `age >= 18` 分支返回 `25`；`pickAdult(12)` 落到回退分支返回 `-1`。合并类型保留两个字面量结果。（对抽象 `T.number` 实参，守卫无法分叉，只会报告回退结果 `-1`。）
 
 ---
 
@@ -325,17 +316,14 @@ Nudo 根据判别字段在每个 `case` 分支内收窄 `state`。`"loading"` ca
 
 ### 11. 可选链与空值合并
 
-通过可选链进行安全属性访问，用空值合并提供回退。Nudo 追踪每个分支中哪些属性存在。
+可选链与空值合并是求值期运算符。它们目前的精度有限，因此值得精确了解它们实际产生什么。
 
 ```javascript
-/**
- * @nudo:case "full" ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } })
- * @nudo:case "partial" ({ user: { profile: { name: "Bob" } } })
- * @nudo:case "empty" ({})
- */
 function getTheme(config) {
   return config.user?.profile?.settings?.theme ?? "light";
 }
+getTheme({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } });
+getTheme({ user: { profile: { name: "Bob" } } });
 ```
 
 **推断输出：**
@@ -343,33 +331,37 @@ function getTheme(config) {
 ```text
 === getTheme ===
 
-Case "full": ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } }) => "dark"
-Case "partial": ({ user: { profile: { name: "Bob" } } }) => "light"
-Case "empty": ({}) => "light"
-
-Combined: "dark" | "light"
+Case "call@L4": ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } }) => string
+Case "call@L5": ({ user: { profile: { name: "Bob" } } }) => unknown
 ```
 
-完整路径存在时，Nudo 返回字面量 `"dark"`。`settings` 或 `user` 缺失时，`??` 回退产生 `"light"`。合并类型是字面量结果的并集。
+完整路径存在时链式解析成功，`?? "light"` 得到 `string`；链式短路时结果退化为 `unknown`。已知属性上的浅层 `??` 更精确：
+
+```javascript
+function getPort(config) {
+  const port = config.port ?? 3000;
+  return port;
+}
+getPort({ port: 8080 });   // → number
+```
+
+深层 `?.` 链目前不会保留回退字面量——请用 `nudo infer` 验证你自己的链式写法。
 
 ---
 
 ### 12. API 响应校验
 
-处理不同状态码的 API 响应。Nudo 根据状态检查收窄响应形状。
+处理不同状态码的 API 响应。Nudo 在每个调用点根据状态检查收窄响应形状。
 
 ```javascript
-/**
- * @nudo:case "success" ({ status: 200, data: { id: 1, name: "Alice", email: "alice@example.com" } })
- * @nudo:case "not-found" ({ status: 404, error: "Not found" })
- * @nudo:case "error" ({ status: 500, error: "Server error" })
- */
 function parseResponse(response) {
   if (response.status === 200) {
     return { success: true, user: response.data };
   }
   return { success: false, error: response.error };
 }
+parseResponse({ status: 200, data: { id: 1, name: "Alice", email: "alice@example.com" } });
+parseResponse({ status: 404, error: "Not found" });
 ```
 
 **推断输出：**
@@ -377,18 +369,13 @@ function parseResponse(response) {
 ```text
 === parseResponse ===
 
-Case "success": ({ status: 200, data: { id: 1, name: "Alice", email: "alice@example.com" } }) => { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } }
-Case "not-found": ({ status: 404, error: "Not found" }) => { success: false, error: "Not found" }
-Case "error": ({ status: 500, error: "Server error" }) => { success: false, error: "Server error" }
+Case "call@L7": ({ status: 200, data: { id: 1, name: "Alice", email: "alice@example.com" } }) => { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } }
+Case "call@L8": ({ status: 404, error: "Not found" }) => { success: false, error: "Not found" }
 
-Combined: { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } } | { success: false, error: "Not found" } | { success: false, error: "Server error" }
-
-Diagnostics:
-
-  [info] parseResponse.js:10:2 Code after return/throw statement is unreachable (nudo-unreachable)
+Combined: { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } } | { success: false, error: "Not found" }
 ```
 
-`status === 200` 检查收窄响应：`if` 分支内 `response.data` 可用；分支外 `response.error` 已知存在。每个 case 返回完全具体的对象，合并类型是三个形状的并集。
+`status === 200` 检查按调用点收窄：success 调用走 `if` 分支，`response.data` 完整可用；404 调用落到错误分支。合并类型是两个具体形状的并集。
 
 ---
 
@@ -396,20 +383,18 @@ Diagnostics:
 
 ### 13. 表单数据处理
 
-带多个 `return` 分支的顺序校验检查。Nudo 精确求值转换操作，并将各分支结果报告为并集。
+带多个 `return` 分支的顺序校验检查。Nudo 在每个调用点精确求值转换操作，并报告与具体输入匹配的分支。
 
 ```javascript
-/**
- * @nudo:case "valid" ({ name: "Alice", age: "25", email: "alice@example.com" })
- * @nudo:case "invalid-age" ({ name: "Bob", age: "abc", email: "bob@example.com" })
- * @nudo:case "missing" ({ name: "Charlie" })
- */
 function validateForm(data) {
   const age = Number(data.age);
   if (isNaN(age)) return { valid: false, error: "Invalid age" };
   if (!data.email) return { valid: false, error: "Missing email" };
   return { valid: true, name: data.name, age, email: data.email };
 }
+validateForm({ name: "Alice", age: "25", email: "alice@example.com" });
+validateForm({ name: "Bob", age: "abc", email: "bob@example.com" });
+validateForm({ name: "Charlie" });
 ```
 
 **推断输出：**
@@ -417,18 +402,14 @@ function validateForm(data) {
 ```text
 === validateForm ===
 
-Case "valid": ({ name: "Alice", age: "25", email: "alice@example.com" }) => { valid: false, error: "Invalid age" } | { valid: true, name: "Alice", age: 25, email: "alice@example.com" }
-Case "invalid-age": ({ name: "Bob", age: "abc", email: "bob@example.com" }) => { valid: false, error: "Invalid age" } | { valid: true, name: "Bob", age: NaN, email: "bob@example.com" }
-Case "missing": ({ name: "Charlie" }) => { valid: false, error: "Invalid age" } | { valid: false, error: "Missing email" }
+Case "call@L7": ({ name: "Alice", age: "25", email: "alice@example.com" }) => { valid: true, name: "Alice", age: 25, email: "alice@example.com" }
+Case "call@L8": ({ name: "Bob", age: "abc", email: "bob@example.com" }) => { valid: false, error: "Invalid age" }
+Case "call@L9": ({ name: "Charlie" }) => { valid: true, name: "Charlie", age: number, email: unknown }
 
-Combined: { valid: false, error: "Invalid age" } | { valid: true, name: "Alice", age: 25, email: "alice@example.com" } | { valid: false, error: "Invalid age" } | { valid: true, name: "Bob", age: NaN, email: "bob@example.com" } | { valid: false, error: "Invalid age" } | { valid: false, error: "Missing email" }
-
-Diagnostics:
-
-  [info] validateForm.js:9:19 Code after return/throw statement is unreachable (nudo-unreachable)
+Combined: { valid: true, name: "Alice", age: 25, email: "alice@example.com" } | { valid: false, error: "Invalid age" } | { valid: true, name: "Charlie", age: number, email: unknown }
 ```
 
-`Number(...)` 转换被精确求值——`Number("25")` 产生字面量 `25`，`Number("abc")` 产生 `NaN`。`isNaN(age)` 这类守卫不参与控制流收窄，因此每个 case 的结果是所有 `return` 分支的并集；你仍可以从并集中读出每个分支的精确值。
+转换被精确求值：`Number("25")` 折叠为 `25`，合法路径胜出；`Number("abc")` 折叠为 `NaN`，`isNaN` 守卫返回 `"Invalid age"` 错误。缺失属性是已知局限：`missing` 输入上的 `data.email` 解析为 `unknown`（而不是 `undefined`），因此 `!data.email` 不是确定的 `true`，报告的是回退分支而不是 `"Missing email"`。
 
 ---
 
@@ -467,7 +448,7 @@ Nudo 在类型层面对每个字面量输入求值 `typeof`。`"hello"` 的 `typ
 
 ### 15. Web 环境 — fetch、localStorage、URL
 
-使用 `@nudo:env web` 获取 Web API 的内置类型定义。标准浏览器全局对象无需手动 mock。
+用 `@nudo:env web` 加载 Web 全局对象的内置类型定义。对网络代码而言环境类型目前仍很浅，要获得精确响应形状仍需 `@nudo:mock` 覆盖。
 
 ```javascript
 /// @nudo:env web
@@ -490,27 +471,33 @@ async function fetchUser(id) {
 ```text
 === fetchUser ===
 
-Case "get user": (1) => Promise<unknown>
-Case "symbolic": (number) => Promise<unknown>
+Case "get user": (1) => never throws unknown
+Case "symbolic": (number) => never throws unknown
 
-Combined: Promise<unknown>
+Combined: never
+
+Diagnostics:
+
+  [warning] env.js:7:0 Cannot resolve 'ok' on unknown value (nudo:unknown-recv)
+  [warning] env.js:7:0 Cannot resolve 'status' on unknown value (nudo:unknown-recv)
+  [warning] env.js:7:0 Function "fetchUser" case "get user" may throw: unknown. Consider adding a try-catch block or using @nudo:refine return <constraint> (nudo-may-throw)
 ```
 
-有了内置 Web 环境，无需 mock：`fetch` 的类型来自环境定义，`res.json()` 返回 `Promise<unknown>`，因此 `fetchUser` 推断为 `Promise<unknown>`。要得到精确的响应形状，可将 `@nudo:env web` 与 `@nudo:mock fetch = ...` 覆盖结合使用（见示例 4）。
+`fetch` 由环境绑定，但其响应类型是 `unknown`——成员访问报告 `nudo:unknown-recv`，两个 case 都以 `never throws unknown` 告终。要获得精确响应形状，请使用 `@nudo:mock fetch = ...` 覆盖且**不要**同时写 `@nudo:env web`（示例 4 推断出 `Promise<{ id: 1, name: "Alice" }>`）；两者组合目前会把 mock 退化为 `unknown`。
+
+非网络全局对象表现相同：
 
 ```javascript
 /// @nudo:env web
 
-/**
- * @nudo:case "save" ("theme", "dark")
- */
 function savePreference(key, value) {
   localStorage.setItem(key, value);
   return localStorage.getItem(key);
 }
+savePreference("theme", "dark");
 ```
 
-**推断输出：** `string | null` — Nudo 知道 `localStorage.getItem` 返回 `string | null`。
+**推断输出：** `unknown`——`localStorage` 作为带类型的全局对象存在，但其方法目前返回 `unknown` 而非 `string | null`。
 
 ---
 
@@ -560,7 +547,20 @@ function hashContent(data) {
 }
 ```
 
-**推断输出：** `string | Buffer` — 来自 `digest` 的返回类型。CLI 输出中 `Buffer` 会展开为完整的方法形状（`Buffer { toString: (_arg0: string) => string, … }`）。
+**推断输出：**
+
+```text
+=== hashContent ===
+
+Case "hash": ("hello world") => unknown
+
+Diagnostics:
+
+  [warning] env.js:10:2 Cannot resolve 'update' on unknown value (nudo:unknown-recv)
+  [warning] env.js:11:9 Cannot resolve 'digest' on unknown value (nudo:unknown-recv)
+```
+
+`node:crypto` 尚未建模：`createHash` 解析为 `unknown`，方法调用报告 `nudo:unknown-recv`。node 环境中可靠的部分是上面的 fs/path 示例。
 
 ---
 

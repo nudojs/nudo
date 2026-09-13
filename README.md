@@ -41,35 +41,61 @@ nudo infer math.js
 Output:
 
 ```
-subtract:
-  Case "positive numbers": (5, 3) => 2
-  Case "negative result": (1, 10) => -9
-  Case "symbolic": (T.number, T.number) => T.number
-  Combined: (number, number) => number
+=== subtract ===
+
+Case "positive numbers": (5, 3) => 2
+Case "negative result": (1, 10) => -9
+Case "symbolic": (number, number) => number
+
+Combined: number
 ```
+
+Output blocks show the **case headers and `Combined:` lines** — the per-call-site ground truth. A full run also prints `intension:` / `abs:` lines per case; those re-evaluate the function with `unknown` parameters (a generalized signature), and for multi-branch functions they show only the fallback path — which is why they are omitted here.
 
 ### Whole-program inference (no directives needed)
 
-Functions without `@nudo:case` directives are inferred from their call sites — every call with inferable arguments becomes a synthetic case:
+Functions without `@nudo:case` directives are inferred from their call sites — every call with inferable arguments becomes a synthetic case (`call@<line>`). Functions with no call sites get an `entry@` case with unknown parameters.
+
+```javascript
+function double(x) { return x * 2; }
+function helper(x) { return String(x); }
+double(5);
+```
 
 ```bash
 nudo infer plain.js
 ```
 
 ```
-double:
-  Case "call@L12": (5) => 10        # synthesized from call site double(5)
+=== double ===
 
-helper:
-  Case "entry@L7": (unknown) => string
-  # no call sites found; parameters default to unknown
+Case "call@L3": (5) => 10
+
+=== helper ===
+
+Case "entry@L2": (unknown) => unknown
+# no call sites found; parameters default to unknown
 ```
+
+Even with no call sites, the generalized signature is still computed (`helper: (x: A1) => string`).
 
 Callbacks passed at call sites propagate precisely (polyvariant evaluation):
 
+```javascript
+function processItems(items, cb) {
+  return items.map(cb);
+}
+processItems([1, 2, 3], (x) => x * 2);
+processItems(["a"], (s) => s.toUpperCase());
 ```
-processItems:
-  Case "call@L20": ([1, 2, 3], (x) => ...) => [2, 4, 6]
+
+```
+=== processItems ===
+
+Case "call@L4": ([1, 2, 3], (x) => ...) => [2, 4, 6]
+Case "call@L5": (["a"], (s) => ...) => ["A"]
+
+Combined: [2, 4, 6] | ["A"]
 ```
 
 Generate TypeScript declarations:
@@ -139,26 +165,29 @@ See [`docs/examples/`](./docs/examples/) for runnable examples.
 
 ### Type Values
 
-Nudo represents JavaScript values as symbolic types:
+Nudo represents JavaScript values as symbolic types (`TypeValue` kinds):
 
-| Type Value | Represents |
+| Kind | Represents |
 |---|---|
-| `Literal<V>` | Exactly one concrete value (`42`, `"hello"`, `true`) |
-| `Primitive<T>` | All values of a primitive type (`T.number`, `T.string`) |
-| `ObjectType` | Object with known property types |
-| `ArrayType` | Array with a common element type |
-| `TupleType` | Fixed-length array with per-index types |
-| `FunctionType` | Function with parameters, body, and closure |
-| `UnionType` | One of several possible types |
-| `NeverType` | Unreachable / impossible |
-| `UnknownType` | Any value (type unknown) |
+| `literal` | Exactly one concrete value (`42`, `"hello"`, `true`) |
+| `primitive` | All values of a primitive type (`T.number`, `T.string`, …) |
+| `refined` | Primitive plus a constraint (`x > 0`) that participates in algebra |
+| `object` | Object with known property types |
+| `array` | Array with a common element type |
+| `tuple` | Fixed-length array with per-index types |
+| `function` | Function with parameters, body, and closure |
+| `promise` | Promise effect over a body type |
+| `instance` | Class instance with its property shapes |
+| `union` | One of several possible types |
+| `never` | Unreachable / impossible |
+| `unknown` | Any value (type unknown) |
 
 ## Development
 
 ### Prerequisites
 
-- Node.js >= 18
-- pnpm >= 9
+- To **run the published CLI** (`npm install -g @nudojs/cli`): Node.js >= 23.6（或 22.18 LTS）— packages ship as source `.ts` and run via native type stripping
+- To **develop this repo**: Node.js >= 18 and pnpm 9.1.0 (pinned in `packageManager`)
 
 ### Setup
 

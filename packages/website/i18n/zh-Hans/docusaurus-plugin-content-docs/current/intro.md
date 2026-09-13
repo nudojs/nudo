@@ -47,7 +47,8 @@ Nudo 可以推断出 TypeScript 类型系统无法表达的类型：
 
 // 字符串方法对字面量计算精确结果
 "hello".toUpperCase()          // → "HELLO"（TS: string）
-"a,b,c".split(",")            // → ["a", "b", "c"]（TS: string[]）
+"hello".slice(1, 3)           // → "el"（TS: string）
+// 尚未建模："a,b,c".split(",") → unknown
 
 // 循环在类型层面求值
 let sum = 0;

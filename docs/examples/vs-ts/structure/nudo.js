@@ -1,5 +1,5 @@
 // 结构场景 — Nudo 侧
-// 运行：npx tsx packages/cli/src/index.ts check docs/examples/vs-ts/structure/nudo.js
+// 运行：pnpm run check docs/examples/vs-ts/structure/nudo.js
 
 function greet(user) {
   return "hi " + user.id + " " + user.name;
@@ -13,4 +13,4 @@ greet({ id: 1, name: "a", extra: 1 }); // ok（宽度允许）
 
 config = { host: "x" };              // nudo: assign-mismatch（缺 port）
 
-module.exports = { greet, config };
+export { greet, config };

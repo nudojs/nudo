@@ -5,6 +5,7 @@
 
 import type { Abs } from "../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, unknown } from "../abs.ts";
+import { absFunction } from "../abs-fn.ts";
 import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs } from "../surface.ts";
 import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape } from "../objects.ts";
@@ -77,7 +78,35 @@ export function $ge(a: Abs, b: Abs): Abs {
   return cmp("ge", a, b, phi);
 }
 export function $join(a: Abs, b: Abs): Abs {
-  return joinAbs(a, b);
+  return joinAbs(asAbsVal(a), asAbsVal(b));
+}
+
+/** apply 型 impl 的占位 body（AbsFnImpl.body 必需；$call 走 apply 不经 body） */
+const noBody = { type: "BlockStatement", body: [], directives: [] } as never;
+
+/**
+ * transpile 泄漏的 JS 函数值 → 一等 fn Abs。
+ * B 路径把函数声明/表达式编译成真实 JS 函数；它们流进对象槽、
+ * 元组、join 等 Abs 结构时不能裸存——下游（bridge/leq/join）读 `.shape`。
+ * 参数名无法从运行时函数恢复（用 fn.length → argN，与 analyzer 的
+ * extractParamNames 回退口径一致）；带真实参数名走 $fnVal（transpile 侧）。
+ */
+export function asAbsVal(v: unknown): Abs {
+  if (v && typeof v === "object" && "shape" in (v as object)) return v as Abs;
+  if (typeof v === "function") {
+    const n = Math.max(0, v.length);
+    const params = Array.from({ length: n }, (_, i) => `arg${i}`);
+    return absFunction(params, {
+      body: noBody,
+      apply: (args) => (v as (...a: Abs[]) => Abs)(...args),
+    });
+  }
+  return $lit(v as never);
+}
+
+/** 函数表达式 → 一等 fn Abs（transpile 侧带真实参数名；异步 body 包 $async） */
+export function $fnVal(params: string[], impl: (...args: Abs[]) => Abs): Abs {
+  return absFunction(params, { body: noBody, apply: (args) => impl(...args) });
 }
 
 /** 字面量 → Abs（transpile 侧数字/字符串/布尔/null/undefined） */
@@ -123,11 +152,11 @@ function undef(): Abs {
  * if：两侧都探索（抽象条件），具体条件短路。
  */
 export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs {
-  if (isDefinitelyTrue(test)) return consequent();
-  if (isDefinitelyFalse(test)) return alternate ? alternate() : undef();
+  if (isDefinitelyTrue(test)) return asAbsVal(consequent());
+  if (isDefinitelyFalse(test)) return alternate ? asAbsVal(alternate()) : undef();
 
-  const a = consequent();
-  const b = alternate ? alternate() : undef();
+  const a = asAbsVal(consequent());
+  const b = alternate ? asAbsVal(alternate()) : undef();
   return joinAbs(a, b);
 }
 
@@ -205,7 +234,7 @@ export function $for(
 
 /** 数组字面量 → Abs tuple（长度已知） */
 export function $arr(items: Abs[]): Abs {
-  return abs({ k: "tuple", elements: items }, undefined, undefined, "exact");
+  return abs({ k: "tuple", elements: items.map(asAbsVal) }, undefined, undefined, "exact");
 }
 
 /** 下标读 a[i]；字面量 i 走 tuple 精确投影，否则并所有元素 */
@@ -233,7 +262,7 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
   if (a.shape.k === "tuple" && typeof iv === "number" && Number.isInteger(iv)) {
     const els = [...a.shape.elements];
     if (iv >= 0 && iv < els.length) {
-      els[iv] = value;
+      els[iv] = asAbsVal(value);
       const next = abs({ k: "tuple", elements: els }, undefined, undefined, a.conf);
       return next;
     }
@@ -262,17 +291,19 @@ export function $len(a: Abs): Abs {
 /** 对象字面量 → Abs obj */
 export function $obj(slots: Record<string, Abs>): Abs {
   const s: Record<string, { value: Abs }> = {};
-  for (const [k, v] of Object.entries(slots)) s[k] = { value: v };
+  for (const [k, v] of Object.entries(slots)) s[k] = { value: asAbsVal(v) };
   return objOf(s);
 }
 
 /** 对象展开 { ...a, b } */
 export function $spread(a: Abs, b: Abs): Abs {
-  return spreadObj(a, b);
+  return spreadObj(asAbsVal(a), asAbsVal(b));
 }
 
 /** 数组连接 [...a, ...b] / [...a, x] */
 export function $concat(a: Abs, b: Abs): Abs {
+  a = asAbsVal(a);
+  b = asAbsVal(b);
   if (a.shape.k === "tuple" && b.shape.k === "tuple") {
     return abs(
       { k: "tuple", elements: [...a.shape.elements, ...b.shape.elements] },
@@ -373,7 +404,7 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
   }
   if (!isObj(o)) return $obj({ [key]: value });
   const shape = o.shape as ObjShape;
-  const slots = { ...shape.slots, [key]: { value } };
+  const slots = { ...shape.slots, [key]: { value: asAbsVal(value) } };
   const next = objOf(slots, {
     index: shape.index,
     open: shape.open,
@@ -474,6 +505,7 @@ export function $catchVal(e: unknown): Abs {
 // --- async / await ---
 
 function wrapPromiseAbs(inner: Abs): Abs {
+  inner = asAbsVal(inner);
   return abs(
     { k: "eff", eff: "promise", inner },
     undefined,
@@ -540,12 +572,12 @@ export function $switch(
   if (dv !== undefined) {
     for (const c of cases) {
       const tv = litValue(c.test);
-      if (tv !== undefined && Object.is(tv, dv)) return c.run();
+      if (tv !== undefined && Object.is(tv, dv)) return asAbsVal(c.run());
     }
-    return dflt ? dflt() : undef();
+    return dflt ? asAbsVal(dflt()) : undef();
   }
-  const parts = cases.map((c) => c.run());
-  if (dflt) parts.push(dflt());
+  const parts = cases.map((c) => asAbsVal(c.run()));
+  if (dflt) parts.push(asAbsVal(dflt()));
   if (parts.length === 0) return undef();
   return parts.reduce((a, b) => joinAbs(a, b));
 }

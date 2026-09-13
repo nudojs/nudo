@@ -6,49 +6,73 @@
 
 ## 一、集合类型推断限制
 
-### 1.1 数组无法迭代元素
+### 1.1 数组方法精度不齐：reduce 已精确，forEach 副作用 / some / every 仍 unknown
 
-**问题描述：**
-Nudo 将数组视为抽象的整体，无法逐个访问元素。当数组参与 `reduce`、`forEach` 等需要逐元素操作的方法时，返回值无法精确推断。
+**当前行为（2026-09 实测）：**
+`reduce` 已在两条路径上精确：字面量数组逐元素累加、符号数组走累加器不动点；
+`filter → map → reduce` 链式调用不再逐级丢信息。仍未建模的是 `forEach` 的副作用
+写回、`some`/`every` 的返回值。
 
-**失败示例：**
+**实测示例：**
 ```javascript
-// @nudo:case "reduce" ([1, 2, 3, 4, 5])
+/**
+ * @nudo:case "reduce" ([1, 2, 3, 4, 5])
+ */
 function sum(arr) {
   return arr.reduce((a, b) => a + b, 0);
 }
-// 期望: 15
-// 实际: unknown
+// Case "reduce": ([1, 2, 3, 4, 5]) => 15  #exact
 ```
 
-**根本原因：**
-- 抽象解释中数组是 `T.array(elementType)`，不存储具体元素
-- `reduce` 的累加逻辑依赖遍历每个元素，但抽象解释无法展开循环
-- `filter` + `map` + `reduce` 链式调用时，每一步都丢失信息
+```javascript
+/**
+ * @nudo:case "t" ([1, 2, 3, 4, 5])
+ */
+function forEachSum(arr) {
+  let s = 0;
+  arr.forEach((x) => { s = s + x; });
+  return s;
+}
+// Case "t": ([1, 2, 3, 4, 5]) => 0 —— forEach 回调副作用不写回（s 恒 0）
 
-**影响范围：**
-- `Array.reduce()` / `Array.reduceRight()`
-- `Array.forEach()` 的副作用推断
+/**
+ * @nudo:case "t" ([1, 2, 3, 4, 5])
+ */
+function someBig(arr) {
+  return arr.some((x) => x > 3);
+}
+// Case "t": ([1, 2, 3, 4, 5]) => unknown —— some/every 未建模
+```
+
+**影响范围（剩余）：**
+- `Array.forEach()` 的副作用推断（回调内的赋值/写回不传播）
 - `Array.some()` / `Array.every()` 的返回值
-- 任何依赖数组元素遍历的链式调用
+- 回调形态的集合迭代（手写 for-of / for-i 循环里 `fn(item)` 的返回值不进 push）
 
-**可能的解决方案：**
-1. **有限展开**：对小数组（元素数 ≤ N）展开为元组处理
-2. **累加器追踪**：在 `reduce` 中维护累加器的类型状态
-3. **符号执行**：用符号值代表数组元素，跟踪符号变换
+**已解决部分：**
+- `Array.reduce()`：字面量路径逐元素求值；符号路径 `acc ⊔ (acc+A)` 收敛（`#widened`）
+- `filter` + `map` + `reduce` 链式调用：每级保留字面量精度
+- `arr.map(cb)` 回调传播：调用点逐位实例化（`[2,4,6]`）
 
-**难度：** 高
+**可能的解决方案（剩余部分）：**
+1. **副作用建模**：把回调执行的环境写回绑定表
+2. **集合谓词**：`some`/`every` 按元素分发求值
+
+**难度：** 中（reduce 部分已实现）
 
 ---
 
 ### 1.2 Map 不跟踪 key-value 映射关系
 
 **问题描述：**
-`Map.get(key)` 返回所有可能 value 类型的联合，而非特定 key 对应的 value。
+`Map.get(key)` 无法回查字面量 key 的精确映射；即使 `m.set("k", v)` 字面量成对出现，
+`m.get("k")` 目前仍求值为 `unknown`（指令路径与调用点路径一致）。
 
 **失败示例：**
 ```javascript
-// @nudo:case "map-get" ()
+/**
+ * @nudo:case "map-get" ()
+ */
 function test() {
   const map = new Map();
   map.set("a", { id: "a", name: "Alice" });
@@ -56,13 +80,13 @@ function test() {
   return map.get("a");
 }
 // 期望: { id: "a", name: "Alice" }
-// 实际: { id: "a", name: "Alice" } | { id: "b", name: "Bob" } | undefined
+// 实际: unknown
 ```
 
 **根本原因：**
-- Map 的 `_typeArgs` 只记录 `K` 和 `V` 的整体类型
-- 不维护 `key → value` 的具体映射关系
-- `get()` 返回 `V | undefined`，即所有 value 类型的联合
+- Map 只记录 `K` / `V` 的整体类型，不维护 `key → value` 的具体映射
+- `get()` 无字面量回查表，字面量 key 直接吸收为 `unknown`
+- `Map`/`Set` 的 for-of 迭代同样未建模（元素求值为 `unknown`）
 
 **影响范围：**
 - `Map.get()` 返回值精度
@@ -71,7 +95,7 @@ function test() {
 
 **可能的解决方案：**
 1. **字面量 key 追踪**：当 key 是字符串/数字字面量时，维护精确映射
-2. **Record 类型**：对字面量 key 的 Map 降级为对象类型处理
+2. **Record 类型**：对字面量 key 的 Map 降级为对象类型处理（对象字面量的索引投影已精确，见 `docs/examples/algebra/e-index-proj.js`）
 
 **难度：** 中
 
@@ -80,23 +104,25 @@ function test() {
 ### 1.3 Set 操作返回值精度
 
 **问题描述：**
-`Array.from(Set)` 返回元素类型的联合数组，无法去重具体值。
+`Array.from(Set)` 当前求值为 `unknown`（Set 的迭代器未建模），无法得到元素联合数组。
 
 **当前行为：**
 ```javascript
-// @nudo:case "set-dedup" ([1, 2, 2, 3, 3, 3])
+/**
+ * @nudo:case "set-dedup" ([1, 2, 2, 3, 3, 3])
+ */
 function unique(arr) {
   return Array.from(new Set(arr));
 }
-// 期望: [1, 2, 3]
-// 实际: (1 | 2 | 3)[]
+// 期望: [1, 2, 3]（或 (1 | 2 | 3)[]）
+// 实际: unknown
 ```
 
 **分析：**
-- 这其实是**正确行为**——Set 不保证顺序，返回数组而非元组是合理的
-- 但丢失了"去重"的语义信息
+- Set 不保证顺序，返回数组而非元组是合理形态
+- 但当前连元素联合都拿不到——`Set` 构造/迭代整体未建模，直接 `unknown`
 
-**难度：** 低（当前行为可接受）
+**难度：** 低（先建模 Set 元素类型，再考虑去重语义）
 
 ---
 
@@ -109,12 +135,22 @@ function unique(arr) {
 
 **失败示例：**
 ```javascript
-// @nudo:case "higher-order" ([1, 2, 3])
+/**
+ * @nudo:case "higher-order" ([1, 2, 3])
+ */
 function processItems(items, transform, filter) {
   return items.filter(filter).map(transform);
 }
-// transform 和 filter 的参数类型为 unknown
+// Case "higher-order": ([1, 2, 3]) => unknown
+//   [warning] Cannot resolve 'map' on unknown value (nudo:unknown-recv)
+// transform 和 filter 的参数类型为 unknown，且 filter(filter) 结果 unknown，
+// 后续 .map 链直接断掉
 ```
+
+**边界（已精确的相邻形态）：**
+- 调用点**内联箭头回调**（`items.map((x) => x * 2)` 字面量传入）逐位实例化
+  —— 见 `docs/examples/algebra/b-hof-map.js`（`[2,4,6]` / `["A","B"]`）
+- 缺口在于「具名函数参数当回调用」：回调参数类型未知，且首级方法返回 unknown 后链式断裂
 
 **根本原因：**
 - 函数参数在调用时才绑定类型
@@ -142,7 +178,9 @@ function processItems(items, transform, filter) {
 
 **当前行为：**
 ```javascript
-// @nudo:case "closure" ()
+/**
+ * @nudo:case "closure" ()
+ */
 function createCounter() {
   let count = 0;
   return {
@@ -150,12 +188,13 @@ function createCounter() {
     getCount() { return count; }
   };
 }
-// 返回对象的方法类型正确，但闭包变量 count 的追踪有限
+// Case "closure": () => {} —— 返回对象形状为空：方法槽未写入形状，
+// 更不用说闭包变量 count 的状态追踪
 ```
 
 **分析：**
-- 对象方法的返回值可以正确推断
-- 但闭包变量的多次修改后的状态追踪不完整
+- 返回对象的**方法槽**当前丢失（形状为空 `{ }`）
+- 闭包变量的多次修改后的状态追踪也不完整
 
 **难度：** 中
 
@@ -163,14 +202,18 @@ function createCounter() {
 
 ## 三、类型系统限制
 
-### 3.0 构造函数 `this` 语义（已解决）
+### 3.0 构造函数 `this` 语义（已解决·TypeValue 路径）
 
 ~~类/构造函数体内的 `this` 求值为 undefined，`this.push(...)` 报 no-method
-误报。~~ 已实现：`obj.f()` 调用把 receiver 作为 thisVal 注入（含
-`f.call(thisArg)`/`f.apply`）；`new C()` 创建 fresh instance 绑定 `this`；
+误报。~~ TypeValue 求值器路径已实现：`obj.f()` 调用把 receiver 作为 thisVal
+注入（含 `f.call(thisArg)`/`f.apply`）；`new C()` 创建 fresh instance 绑定 `this`；
 未绑定 this 兜底 T.unknown（this-风格函数降级 warning 而非 error）；
-`Object.prototype` 方法表 + 原始值自动装箱（`'x'.constructor`）。
-json-ext 试炼 41 error → 0。
+`Object.prototype` 方法表 + 原始值自动装箱。json-ext 试炼 41 error → 0。
+
+CLI 主路径（B-hosted）的可见行为（2026-09 实测）：
+- `obj.f()` receiver 注入已生效（`circle.area()` → `25`）
+- `f.call(thisArg)` / `f.apply` **不产生 call@ 记录**（仅 entry@ 兜底）
+- 原始值自动装箱未建模：`"nudo".constructor` → `unknown`（见 semantics.md）
 
 ### 3.1 全局标识符未解析（已解决）
 
@@ -178,9 +221,16 @@ json-ext 试炼 41 error → 0。
 
 ---
 
-### 3.2 `==` 宽松相等未实现（已解决）
+### 3.2 `==` 宽松相等未实现（CLI 主路径）
 
-~~`==` 运算符返回 `unknown`，只有 `===` 和 `!==` 正确实现。~~ 已实现（介于原方案 1、2 之间）：两操作数均为原始字面量（number/string/boolean/null/undefined）时按 ECMAScript 宽松相等语义求值（ToNumber 强转、`NaN != NaN`、`"5" == 5` 为 `true`）出 `boolean` 字面量；任一操作数非字面量时安全回落 `T.boolean`。测试：`edge-cases.test.ts`。
+**当前行为（2026-09 实测）：** `nudo infer` / `nudo check` 主路径（B-hosted）下
+`==` / `!=` 不折叠——即使两操作数均为字面量（`5 == 5`、`"5" == 5`、`null == undefined`）
+也恒为 `unknown`，指令 case 与调用点 case 一致。
+
+TypeValue 求值器路径（`evaluateFunctionFull`，测试 harness / `nudo test` 内部）
+已实现字面量折叠（ToNumber 强转、`NaN != NaN`、`"5" == 5 为 true`，非字面量回落
+`T.boolean`，测试：`edge-cases.test.ts`）——两路径精度不对称，文档示例与
+`packages/website/docs/guides/semantics.md` 的「Not Modeled Yet」表按 CLI 可见行为记录。
 
 ---
 
@@ -206,30 +256,38 @@ function check(x) {
 
 ## 四、控制流推断限制
 
-### 4.1 循环后的类型收窄
+### 4.1 循环中的条件返回
 
 **问题描述：**
-循环中的条件返回后，循环外的变量类型无法精确收窄。
+循环中的条件返回精度依赖求值路径：调用点路径逐元素分叉、精确命中；
+指令 case 路径（`@nudo:case`）退化为 `unknown`。
 
-**失败示例：**
+**失败示例（指令路径）：**
 ```javascript
-// @nudo:case "break-loop" ([1, 2, 3, 4, 5])
+/**
+ * @nudo:case "break-loop" ([1, 2, 3, 4, 5])
+ */
 function findFirst(arr) {
   for (const item of arr) {
     if (item > 3) return item;
   }
   return undefined;
 }
-// 返回: number (>= 4) | undefined
-// 期望: 4 | undefined（如果能精确推断）
+// Case "break-loop": ([1, 2, 3, 4, 5]) => unknown
+```
+
+**对照（调用点路径）：**
+```javascript
+function findFirst(arr) { /* 同上 */ }
+findFirst([1, 2, 3, 4, 5]);
+// Case "call@L7": ([1, 2, 3, 4, 5]) => 4
 ```
 
 **分析：**
-- 返回 `number (>= 4)` 是**正确的细化类型**
-- 无法精确到 `4` 是因为抽象解释不跟踪具体值
-- 这是设计选择，不是 bug
+- 调用点路径已精确（for-of 逐元素 + 条件返回命中 `4`）
+- 指令 case 路径的 for-of 条件返回仍 unknown（两路径精度不对称）
 
-**难度：** 设计层面
+**难度：** 低（指令路径接入 for-of 元素分发即可）
 
 ---
 
@@ -270,15 +328,16 @@ function nested() {
 | 限制 | 影响 | 状态 |
 |------|------|------|
 | 全局标识符未解析 | 常见代码模式 | ✅ 已解决（见 3.1） |
-| `==` 宽松相等 | 常见语法 | ✅ 已解决（见 3.2） |
-| Map 字面量 key 追踪 | 精度提升 | ✅ 已解决（`m.set("k", v)` 后 `m.get("k")` 精确到值类型） |
+| `this` 绑定语义 | 方法调用 | ✅ 已解决（见 3.0） |
+| 数组 `reduce` 累加 | 链式调用 | ✅ 已解决（见 1.1） |
 
 ### P1 - 高影响，复杂
 
 | 限制 | 影响 | 方案 |
 |------|------|------|
 | 高阶函数参数推断 | 大量代码模式 | 调用点推断 / 泛型 |
-| 数组 reduce 累加 | 链式调用 | 累加器追踪 |
+| Map 字面量 key 追踪 | 查找表模式 | 字面量 key 精确映射（见 1.2） |
+| 数组 forEach 副作用 / some / every | 常见代码模式 | 副作用建模 / 元素分发（见 1.1） |
 
 ### P2 - 中等影响
 
@@ -319,9 +378,9 @@ function nested() {
 - [x] 简单实现 `==` / `!=` 返回 `T.boolean`
 
 ### 阶段 2：精度提升（2-4 周）
-- [x] Map 字面量 key 追踪
+- [x] 数组 `reduce` 累加器追踪（字面量逐元素 + 符号不动点，见 1.1）
+- [ ] Map 字面量 key 追踪（`m.get("k")` 仍 unknown，见 1.2）
 - [ ] 高阶函数调用点推断
-- [ ] 数组 `reduce` 累加器追踪
 
 ### 阶段 3：深度改进（1-2 月）
 - [ ] 闭包变量状态追踪

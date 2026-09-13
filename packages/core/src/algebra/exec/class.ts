@@ -6,7 +6,7 @@
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue } from "../abs.ts";
 import { objOf } from "../objects.ts";
-import { $get, $set } from "./runtime.ts";
+import { $get, $set, asAbsVal } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl } from "../abs-fn.ts";
 import { notePrimMemberMissing, noteUnknownMemberMissing } from "./calls.ts";
@@ -37,7 +37,7 @@ export function $class(
   registerBClass(full);
   const slots: Record<string, { value: Abs }> = {};
   if (spec.statics) {
-    for (const [k, v] of Object.entries(spec.statics)) slots[k] = { value: v };
+    for (const [k, v] of Object.entries(spec.statics)) slots[k] = { value: asAbsVal(v) };
   }
   const val = abs(
     { k: "brand", name, shape: objOf(slots) },
@@ -252,7 +252,7 @@ export function $thisSet(thisVal: Abs, key: string, value: Abs): Abs {
   if (thisVal.shape.k === "brand") {
     const inner = thisVal.shape.shape;
     const slots = inner.shape.k === "obj" ? { ...inner.shape.slots } : {};
-    slots[key] = { value };
+    slots[key] = { value: asAbsVal(value) };
     return abs(
       {
         k: "brand",
@@ -271,10 +271,10 @@ export function $thisSet(thisVal: Abs, key: string, value: Abs): Abs {
 export function $orDefault(v: Abs, dflt: () => Abs): Abs {
   if (litValue(v) === undefined && v.shape.k !== "never") {
     // 明确 undefined 字面量 → 默认值；unknown 保守保留
-    if (v.term?.op === "lit" && v.term.value === undefined) return dflt();
-    if (v.shape.k === "unknown" && v.term?.op === "lit") return dflt();
+    if (v.term?.op === "lit" && v.term.value === undefined) return asAbsVal(dflt());
+    if (v.shape.k === "unknown" && v.term?.op === "lit") return asAbsVal(dflt());
   }
-  if (v.term?.op === "lit" && v.term.value === undefined) return dflt();
+  if (v.term?.op === "lit" && v.term.value === undefined) return asAbsVal(dflt());
   return v;
 }
 

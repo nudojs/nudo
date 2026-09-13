@@ -37,8 +37,8 @@ export default defineConfig({
 
 | Option        | Type       | Default                 | Description                                                                 |
 |---------------|------------|-------------------------|-----------------------------------------------------------------------------|
-| `include`     | `string[]` | `["**/*.js"]`           | 要分析的文件 glob 模式                                                      |
-| `exclude`     | `string[]` | `["**/node_modules/**"]`| 要跳过的文件 glob 模式                                                      |
+| `include`     | `string[]` | `["**/*.js", "**/*.mjs", "**/*.ts", "**/*.mts"]` | 要分析的文件 glob 模式                                                      |
+| `exclude`     | `string[]` | `["**/node_modules/**", "**/*.d.ts"]` | 要跳过的文件 glob 模式                                                      |
 | `failOnError` | `boolean`  | `false`                 | 设为 `true` 时，Nudo 类型错误会变为构建错误                                 |
 
 ### 带选项的示例
@@ -62,9 +62,10 @@ glob 模式支持任意扩展名（`**/*.js`、`**/*.mjs`、`**/*.ts` 等）、�
 
 ## 行为
 
-- **文件匹配**：插件会处理匹配 `include` 且不匹配 `exclude` 的文件，`exclude` 总是优先。默认 `include` 为 `["**/*.js"]`，覆盖任意深度的所有 JavaScript 文件，也可以显式加入其他扩展名（如 `**/*.mjs`、`**/*.ts`）。
-- **指令检查**：不含 Nudo 指令（`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:refine`、`@nudo:env`、`@nudo:mock-module`、`@nudo:as`、`@nudo:replace`）的文件会被跳过，不进行分析。
-- **分析**：对于匹配且有指令的文件，插件使用 `@nudojs/service` 的 `analyzeFile` 运行类型推断。
+- **文件匹配**：插件会处理匹配 `include` 且不匹配 `exclude` 的文件，`exclude` 总是优先。默认 `include` 为 `["**/*.js", "**/*.mjs", "**/*.ts", "**/*.mts"]`，已覆盖任意深度的 JavaScript 与 TypeScript 文件，其他扩展名需显式追加（默认 `exclude` 跳过 `node_modules` 与 `.d.ts` 文件）。
+- **指令检查**：不含 Nudo 指令（`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:refine`、`@nudo:import`、`@nudo:env`、`@nudo:mock-module`、`@nudo:as`、`@nudo:replace`）的文件会被跳过，不进行分析。
+- **分析**：对于匹配且有指令的文件，插件使用 `@nudojs/service` 的 `analyzeFileAsync` 运行类型推断。
+- **精化门禁**：匹配的文件同时会经过 Abs 精化门禁（`@nudojs/core` 的 `checkSource`）：`nudo:constraint-violated`、`nudo:assign-mismatch`、`nudo:arg-structure` 问题会并入同一条诊断管线，与求值器诊断一起报告。
 - **缓存**：分析结果按文件缓存。缓存在 `buildStart` 时清除。
 - **诊断**：分析产生的错误和警告会作为 Vite 警告发出（当 `failOnError` 为 `true` 时为错误）。构建结束时，会输出摘要：`[nudo] Analysis complete: X error(s), Y warning(s)`。
 

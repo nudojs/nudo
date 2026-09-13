@@ -1,13 +1,15 @@
 ---
 sidebar_position: 9
-description: Learn the JavaScript semantics Nudo's evaluator models precisely — this binding, loose-equality folding, iterables, promises, and recursion budgets.
+description: Learn the JavaScript semantics Nudo's evaluator models precisely today — this binding, string methods, for-of, break, Object.keys, recursion — and the constructs that still degrade to unknown.
 ---
 
 # Language Semantics
 
-Nudo infers types by *executing* your code with symbolic values, so the quality of inference is exactly the quality of the evaluator's JavaScript semantics. This guide lists the language behaviors Nudo models precisely — each one is a construct that previously degraded to `unknown` and now infers a concrete result. These capabilities are also what make [call-site discovery](./callsite-discovery.md) effective: harvested call shapes only pay off if the evaluator can actually follow them.
+Nudo infers types by *executing* your code with symbolic values, so the quality of inference is exactly the quality of the evaluator's JavaScript semantics. This guide lists the language behaviors the evaluator models precisely on the call-site path — every output block below is a real `nudo infer` run of the code above it — followed by the constructs that still degrade to `unknown` and should be verified before you rely on them. Precise semantics are also what make [call-site discovery](./callsite-discovery.md) effective: harvested call shapes only pay off if the evaluator can actually follow them.
 
-## `this` Binding
+## Modeled Precisely
+
+### `this` Binding in Method Calls
 
 Method calls pass the receiver, so instance shapes flow into the body.
 
@@ -15,131 +17,119 @@ Method calls pass the receiver, so instance shapes flow into the body.
 function area() {
   return this.radius * this.radius;
 }
-
-area.call({ radius: 3 });      // → 9
 const circle = { radius: 5, area };
-circle.area();                 // → 25
+circle.area();
 ```
 
-`obj.f()` binds `this` to the inferred type of `obj`; `f.call(thisArg)` and `f.apply(thisArg, args)` bind the explicit receiver the same way.
+```text
+=== area ===
 
-One caveat: the exponentiation operator is **not** modeled. `this.radius ** 2` evaluates to `unknown` — write `this.radius * this.radius` instead.
-
-## Primitive Autoboxing and `Object.prototype`
-
-Property access on a primitive goes through its wrapper, and every object carries the `Object.prototype` method table.
-
-```js
-"nudo".constructor;                 // → String constructor (renders as {})
-({}).hasOwnProperty("key");         // → boolean
-config.hasOwnProperty("port");      // → resolves for any object shape
+Case "call@L5": () => 25
 ```
 
-`hasOwnProperty`, `toString`, `valueOf` and friends resolve on arbitrary object shapes instead of widening the result to `unknown`.
+`obj.f()` binds `this` to the inferred type of `obj`, and `this.radius` resolves inside the body. Explicit receiver binding is not recorded yet: `area.call({ radius: 3 })` produces no `call@` case (only the `entry@` fallback).
 
-## `Symbol.iterator in x`
+### String Methods on Literals
 
-The `in` operator decides iterability at the literal level, so it can drive narrowing.
+String methods on literal receivers fold at evaluation time.
 
 ```js
-Symbol.iterator in [1, 2, 3];   // → true
-Symbol.iterator in "nudo";      // → true
-Symbol.iterator in 42;          // → false
+function upper() { return "hello".toUpperCase(); }
+upper();                              // → "HELLO"
+
+function slen() { return "hello".length; }
+slen();                               // → 5
+
+function sli() { return "hello".slice(1, 3); }
+sli();                                // → "el"
 ```
 
-Inside `if (Symbol.iterator in x)`, the true branch keeps only the iterable members of a union.
+```text
+=== upper ===
 
-## `for...of` over `Set` and `Map`
-
-Iterating built-in collections yields precisely typed elements — including destructured entries.
-
-```js
-const tags = new Set(["a", "b"]);
-for (const t of tags) {
-  t;                            // → "a" | "b"
-}
-
-const scores = new Map([["ok", 1], ["warn", 2]]);
-for (const [status, code] of scores.entries()) {
-  status;                       // → "ok" | "warn"
-  code;                         // → 1 | 2
-}
+Case "call@L2": () => "HELLO"
 ```
 
-## Promise Resolution
+`toUpperCase`, `toLowerCase`, `slice`, and `.length` produce exact literals. `split` and `indexOf` are not modeled yet and yield `unknown`.
 
-The `new Promise` executor runs under evaluation, and resolve sites are also found by a static scan of nested closures — so a `resolve(value)` buried in a `setTimeout` callback still fixes the resolved type.
+### Loops with Concrete Bounds
 
-```js
-const p = new Promise((resolve) => {
-  setTimeout(() => resolve("done"), 10);
-});
-// p → Promise<"done">
-```
-
-Chaining `.finally(...)` takes a snapshot instead of poisoning the type: the promise stays `Promise<"done">` rather than widening to `unknown`.
-
-## `break` and `continue`
-
-Loop jumps are signals, not control-flow dead ends — the exiting iteration's state is preserved.
+A `for` loop with a concrete bound evaluates to its exact result.
 
 ```js
-let found;
-for (const x of [1, 2, 3, 4]) {
-  if (x > 2) {
-    found = x;
-    break;
+function sumTo(n) {
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    sum = sum + i;
   }
+  return sum;
 }
-found;                          // → number (>= 3)
+sumTo(5);
 ```
 
-`continue` cuts the current iteration path without polluting accumulators; `break` keeps the precise values from the iteration that exited. `found` is not the bare literal `3` but the refined `number (>= 3)` — the exit value with its comparison constraint still attached.
+```text
+=== sumTo ===
 
-## Per-Iteration `let` Bindings
+Case "call@L8": (5) => 10
+```
 
-Every round of a `for (let ...)` loop gets a fresh binding, and closures capture that round's copy — matching real JavaScript semantics.
+`for...of` over a concrete array evaluates the same way:
 
 ```js
-const fns = [];
-for (let i = 0; i < 3; i++) {
-  fns.push(() => i);
+function sumArr(arr) {
+  let s = 0;
+  for (const x of arr) {
+    s = s + x;
+  }
+  return s;
 }
-
-fns[0]();                       // → 0
-fns[2]();                       // → 2
+sumArr([1, 2, 3]);                    // → 6
 ```
 
-The engine does not collapse all closures to the final value of `i`.
+### `break` Keeps the Exiting Value
 
-## `arguments` as a Tuple
-
-Inside a call, `arguments` is a tuple of the actual argument values.
+Loop jumps are signals: the value bound in the exiting iteration is preserved.
 
 ```js
-function logAll() {
-  return arguments.length;
+function findBig() {
+  let found;
+  for (const x of [1, 2, 3, 4]) {
+    if (x > 2) {
+      found = x;
+      break;
+    }
+  }
+  return found;
 }
-
-logAll("a", "b", "c");          // → 3
+findBig();
 ```
 
-`arguments.length`, indexing (`arguments[0]`), and spread all see the concrete argument types of the recorded call.
+```text
+=== findBig ===
 
-## Literal Evaluation of Built-ins
+Case "call@L11": () => 3
+```
 
-Calls with literal arguments evaluate exactly instead of returning a generic type.
+The result is the literal `3` — the value bound when the loop broke.
+
+### `Object.keys` on a Concrete Shape
+
+`Object.keys` on a concrete object returns the exact key tuple.
 
 ```js
-JSON.parse('{"port": 3000}');       // → { port: 3000 }
-String.fromCharCode(72, 105);       // → "Hi"
+function keysOf() { return Object.keys({ port: 3000, host: "x" }); }
+keysOf();
 ```
 
-Parsed JSON keeps its structure with literal member types; character codes join into an exact string.
+```text
+=== keysOf ===
 
-## Recursion Budget
+Case "call@L2": () => ["port", "host"]
+```
 
-Deep recursion truncates at a budget and falls back to the union of returns observed so far — a graceful degradation instead of `unknown`.
+### Recursion Unrolls per Call Site
+
+A recursive function is evaluated per observed call: each top-level call is fully unrolled and reported as its own `call@` case with the exact result.
 
 ```js
 function walk(n) {
@@ -147,49 +137,54 @@ function walk(n) {
   return n + walk(n - 1);
 }
 
-walk(5);                        // → 15 (fully evaluated)
-walk(10_000);                   // → number | string (budget hit; union of observed returns)
+walk(0);
+walk(1);
+walk(2);
 ```
 
-## `Object.keys` Union Distribution
+```text
+=== walk ===
 
-When the receiver is a union of object shapes, `Object.keys` distributes over each member and unions the key sets.
+Case "call@L6": (0) => 0
+Case "call@L7": (1) => 1
+Case "call@L8": (2) => 3
 
-```js
-function keysOf(shape) {
-  // shape: { port: number } | { host: string }
-  return Object.keys(shape);
-}
-// → ["port", "host"]
+Combined: 0 | 1 | 3
 ```
 
-Indexing that tuple is positional, not distributed: `Object.keys(shape)[0]` yields `"port"` — the first key of the distributed tuple — rather than the union `"port" | "host"`.
+More calls than the precise-case cap aggregate into a `call@symbolic` case with widened arguments instead.
 
-## Loose Equality (`==` / `!=`)
+### Narrowing Guards
 
-Comparisons between concrete literals fold at evaluation time using JavaScript's coercion rules.
+`===` comparisons, `typeof`, `Array.isArray`, and `switch` narrow per concrete call site — see [Control Flow Narrowing](./control-flow-narrowing.md) for the verified patterns.
 
-```js
-1 == "1";              // → true
-"a" != "b";            // → true
-0 == false;            // → true
-null == undefined;     // → true
-1 != "1";              // → false
-```
+## Not Modeled Yet
+
+These constructs currently evaluate to `unknown` (often with a `nudo:unknown-recv` or `nudo:builtin-unknown` diagnostic). Prefer the modeled alternatives listed beside each one.
+
+| Construct | Behavior today | Modeled alternative |
+|---|---|---|
+| `==` / `!=` literal folding | `1 == "1"` → `unknown` | `===` comparisons on literals |
+| Primitive autoboxing | `"nudo".constructor` → `unknown` | `.length`, string methods above |
+| `Object.prototype` methods | `({}).hasOwnProperty("key")` → `unknown` | `Object.keys(...)` / shape checks |
+| `Symbol.iterator in x` | → `unknown` | `Array.isArray(x)` |
+| `for...of` over `Set` / `Map` | elements → `unknown` | arrays / `.map` callbacks |
+| Promise executor | `new Promise((r) => r("done"))` → `Promise<unknown>` | `@nudo:mock` + `async` functions |
+| Per-iteration `let` closures | `fns[i]()` → `unknown` | direct iteration results |
+| `arguments` | → `unknown` (`nudo:builtin-unknown`) | named parameters |
+| `JSON.parse` | `JSON.parse('{"port": 3000}')` → `unknown` | object literals |
+| `String.fromCharCode` | → `unknown` | string literals |
+| Exponentiation `**` | → `unknown` | `x * x` |
+| `Math.*` in `@nudo:case` evaluation | `Math.sqrt(9)` → `unknown` | call sites (`sqrtOf(9)` → `3`) |
 
 ## Summary
 
 | Capability | Example | Result |
 |---|---|---|
 | `this` binding | `circle.area()` | Receiver shape flows into the body |
-| Autoboxing | `"nudo".constructor` | Wrapper constructor, not `unknown` |
-| Loose equality | `1 == "1"` | Coerced literal `true` / `false` |
-| Iterability check | `Symbol.iterator in x` | Literal `true` / `false` |
-| Collection iteration | `for (const [k, v] of map.entries())` | Precise element types |
-| Promise resolution | `new Promise((res) => setTimeout(() => res("done")))` | `Promise<"done">` |
-| Loop jumps | `break` / `continue` | Exit value kept, e.g. `number (>= 3)` |
-| Per-iteration `let` | `fns[i]()` captures round's `i` | `0`, `2` — not final value |
-| `arguments` | `arguments.length` | Tuple of actual args |
-| Literal built-ins | `JSON.parse('{"port": 3000}')` | `{ port: 3000 }` |
-| Recursion budget | `walk(10_000)` | Observed union, not `unknown` |
-| `Object.keys` | Union receiver | Key sets unioned: `["port", "host"]` |
+| String methods | `"hello".toUpperCase()` | `"HELLO"` |
+| Concrete-bound loops | `sumTo(5)` | `10` |
+| `break` | loop exit value | `3` |
+| `Object.keys` | concrete shape | `["port", "host"]` |
+| Recursion | `walk(2)` | `3` |
+| Narrowing | `typeof` / `===` / `Array.isArray` / `switch` | per-call-site precision |

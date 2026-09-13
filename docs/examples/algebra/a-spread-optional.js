@@ -25,4 +25,4 @@ createConfig({ port: 3000, debug: true });
 createConfig({});
 createConfig({ host: "api.example.com" });
 
-module.exports = { createConfig };
+export { createConfig };

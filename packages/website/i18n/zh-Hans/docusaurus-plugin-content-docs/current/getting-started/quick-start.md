@@ -129,15 +129,15 @@ npx nudo infer utils.js
 ```text
 === formatPrice ===
 
-Case "call@L5": (1999) => `$${string}`
+Case "call@L5": (1999) => unknown
 ```
 
-用例以调用所在行命名为 `call@L5`——`console.log(formatPrice(1999))` 位于 `utils.js` 的第 5 行。没有被任何已分析代码调用的函数仍会得到一个 `entry@L` 用例以保证签名被输出，参数默认为 `unknown`：
+用例以调用所在行命名为 `call@L5`——`console.log(formatPrice(1999))` 位于 `utils.js` 的第 5 行。除法 `cents / 100` 得到 `number`，而 `toFixed` 尚未建模，因此结果为 `unknown`。没有被任何已分析代码调用的函数仍会得到一个 `entry@L` 用例以保证签名被输出，参数默认为 `unknown`：
 
 ```text
 === addPrefix ===
 
-Case "entry@L1": (unknown, unknown) => `${unknown}: ${unknown}`
+Case "entry@L1": (unknown, unknown) => unknown
 # no call sites found; parameters default to unknown
 ```
 

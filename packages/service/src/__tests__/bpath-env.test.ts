@@ -52,4 +52,29 @@ function addOne(n) {
     expect(fn).toBeDefined();
     expect(typeValueToString(fn!.cases[0].result)).toBe("6");
   });
+
+  it("arrowFn @nudo:mock injects into B-path (no real fetch call)", () => {
+    clearBPathCache();
+    const dir = mkdtempSync(join(tmpdir(), "nudo-mock-b-"));
+    dirs.push(dir);
+    // 回归：arrowFn mock 落在 seedFns，此前 B 路径注入只吃 seedVars——
+    // 函数体内的 fetch 调用落到真实原生 fetch，拿 Abs 当 URL 直接崩
+    const source = `// @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1, name: "ada" }) })
+async function loadUser(id) {
+  const res = await fetch("/users/" + id);
+  return res.json();
+}
+loadUser(42);
+`;
+    const p = join(dir, "main.js");
+    writeFileSync(p, source, "utf-8");
+    const result = analyzeFile(p, source);
+    const fn = result.functions.find((f) => f.name === "loadUser");
+    expect(fn).toBeDefined();
+    const call = fn!.cases.find((c) => c.name.startsWith("call@"));
+    expect(call).toBeDefined();
+    expect(call!.intension?.abs).toContain("ada");
+    // mock 覆盖后 fetch 不再是 builtin-unknown
+    expect(result.diagnostics.some((d) => d.code === "nudo:builtin-unknown")).toBe(false);
+  });
 });

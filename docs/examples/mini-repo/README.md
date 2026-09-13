@@ -9,6 +9,7 @@
 | `user-service.js` | import、async、HOF |
 
 ```bash
-npx tsx packages/cli/src/index.ts check docs/examples/mini-repo/user-service.js
-npx tsx packages/cli/src/index.ts infer docs/examples/mini-repo/user-service.js
+# 正例：两个命令都 exit 0
+pnpm run check docs/examples/mini-repo/user-service.js
+pnpm run infer docs/examples/mini-repo/user-service.js
 ```

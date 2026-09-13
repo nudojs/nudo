@@ -67,10 +67,10 @@ import {
   resolveNpmNudo,
   BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS,
 } from "@nudojs/cli/evaluator";
-import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
+import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
 import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph, evalProgramAbsWithModules } from "./abs-modules-graph.ts";
-import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, mockSeedFingerprint } from "./bpath-run.ts";
+import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, mockSeedFingerprint, collectEnvGlobals } from "./bpath-run.ts";
 import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
 import { setAbsTruncationCollector } from "@nudojs/core";
 import {
@@ -1386,7 +1386,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
     }
     const bRun = tryRunBPath(source, filePath, {
       envNames,
-      mocks: seeds.seedVars,
+      mocks: mockSeedsToAbsMocks(seeds),
     });
     if (bRun) {
       bHostedEval = true;
@@ -1472,7 +1472,12 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
   const unreachableRanges = bCapable ? [] : getUnreachableRanges();
   if (bCapable) {
     // B 路径静态诊断接管 unreachable + builtin-unknown
-    const bDiag = collectBPathDiagnostics(source);
+    // env/mock 已覆盖的全局不在 builtin-unknown 之列（B 注入后不再是裸原生调用）
+    const bKnownGlobals = new Set<string>([
+      ...Object.keys(collectEnvGlobals(envNames)),
+      ...Object.keys(mockSeedsToAbsMocks(seeds)),
+    ]);
+    const bDiag = collectBPathDiagnostics(source, bKnownGlobals);
     for (const ur of bDiag.unreachable) {
       diagnostics.push({
         range: ur.range,
@@ -1663,7 +1668,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
           filePath,
           fn.name,
           directive.args.map((a) => typeValueToAbs(a)),
-          { collectCalls: true, envNames, mocks: seeds.seedVars },
+          { collectCalls: true, envNames, mocks: mockSeedsToAbsMocks(seeds) },
         );
         const res = bFull?.result;
         const weakUnknown =
@@ -1721,7 +1726,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
           caseUnreachable = [...getUnreachableRanges()];
           caseValue = fullResult.value;
           if ((selfContained || canAbsModules) && fullResult.value.kind !== "never") {
-            caseAbs = tryEvalAbsRaw(source, fn.name, directive.args, filePath, seeds.seedVars);
+            caseAbs = tryEvalAbsRaw(source, fn.name, directive.args, filePath, mockSeedsToAbsMocks(seeds));
             if (caseAbs) {
               const projected = absToTypeValue(caseAbs);
               if (absIsBetter(projected, fullResult.value)) caseValue = projected;
@@ -1921,7 +1926,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
         let absRaw: Abs | undefined;
         let absResult: TypeValue | undefined;
         if (rec.resultType.kind !== "never" && rec.argTypes.length > 0) {
-          absRaw = tryEvalAbsRaw(source, candidate.name, rec.argTypes, filePath, seeds.seedVars);
+          absRaw = tryEvalAbsRaw(source, candidate.name, rec.argTypes, filePath, mockSeedsToAbsMocks(seeds));
           if (absRaw) {
             const projected = absToTypeValue(absRaw);
             if (absIsBetter(projected, rec.resultType)) absResult = projected;
@@ -1953,7 +1958,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
           // （target || [] 等）对 unknown 全塌，对 undefined 正常走默认分支
           widenType(simplifyUnion(remaining.map((rec) => rec.argTypes[i] ?? T.undefined))),
         );
-        const absSymRaw = tryEvalAbs(source, candidate.name, widenedArgs, filePath, seeds.seedVars);
+        const absSymRaw = tryEvalAbs(source, candidate.name, widenedArgs, filePath, mockSeedsToAbsMocks(seeds));
         const absSym = absSymRaw && absIsBetter(absSymRaw, /* 无先验：仅 unknown 时 */ { kind: "unknown" })
           ? absSymRaw
           : undefined;
@@ -1968,7 +1973,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
             filePath,
             candidate.name,
             widenedArgs.map((a) => typeValueToAbs(a)),
-            { envNames, mocks: seeds.seedVars },
+            { envNames, mocks: mockSeedsToAbsMocks(seeds) },
           );
           if (bSym && (bHostedEval || !(bSym.shape.k === "unknown" && !bSym.term))) {
             symAbs = bSym;
@@ -2017,7 +2022,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
         filePath,
         candidate.analysis.name,
         args.map((a) => typeValueToAbs(a)),
-        { envNames, mocks: seeds.seedVars, collectMemberDiags: true },
+        { envNames, mocks: mockSeedsToAbsMocks(seeds), collectMemberDiags: true },
       );
       if (bEntryFull?.memberDiags?.length) {
         for (const d of bEntryFull.memberDiags) {

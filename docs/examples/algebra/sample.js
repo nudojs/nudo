@@ -23,4 +23,4 @@ function createConfig(options) {
   };
 }
 
-module.exports = { add, scale, twice, negate, createConfig };
+export { add, scale, twice, negate, createConfig };

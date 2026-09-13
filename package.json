@@ -13,6 +13,7 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "infer": "tsx packages/cli/src/index.ts infer",
+    "check": "tsx packages/cli/src/index.ts check",
     "docs:dev": "pnpm --filter website run start",
     "docs:build": "pnpm --filter website run build",
     "benchmark": "node benchmark/src/runner.js",

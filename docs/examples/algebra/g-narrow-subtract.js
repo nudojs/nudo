@@ -1,5 +1,6 @@
-// 示例 G：守卫窄化（meet / subtract）
-// 考察：typeof / Array.isArray 分支环境；结果 join 吸收
+// 示例 G：守卫窄化（typeof / Array.isArray）
+// 考察：分支条件按调用点逐位收窄——字符串 → x.length、数组 → x.length、
+// 其余 → -1；Combined 保留字面量并（3 | 2 | -1）
 
 function len(x) {
   if (typeof x === "string") return x.length;
@@ -7,7 +8,8 @@ function len(x) {
   return -1;
 }
 
-// len(T.union(T.string, T.number, T.array(T.number)))
-// → number #path  （lit(-1) 被 number 吸收）
+len("abc");   // 3
+len([1, 2]);  // 2
+len(5);       // -1
 
-module.exports = { len };
+export { len };

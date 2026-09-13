@@ -1,145 +1,135 @@
 ---
 sidebar_position: 9
-description: 了解 Nudo 求值器精确建模的 JavaScript 语义——this 绑定、宽松相等折叠、可迭代性判定、Promise 解析与递归预算。
+description: 了解 Nudo 求值器目前精确建模的 JavaScript 语义——this 绑定、字符串方法、for-of、break、Object.keys、递归——以及仍会退化为 unknown 的构造。
 ---
 
 # 语言语义
 
-Nudo 通过用符号值*执行*你的代码来推断类型，因此推断的质量就等于求值器 JavaScript 语义的质量。本指南列出 Nudo 精确建模的语言行为——每一项都是过去会退化成 `unknown`、如今能推断出具体结果的构造。这些能力也正是[调用点发现](./callsite-discovery.md)得以生效的基础：采集到的调用形状，只有在求值器真正跟得动它们时才有价值。
+Nudo 通过*执行*你的代码来推断类型，所以推断质量正好等于求值器 JavaScript 语义的质量。本指南列出求值器在调用点路径上精确建模的语言行为——下方所有输出块都是对上面代码真实运行 `nudo infer` 的结果——随后列出仍会退化为 `unknown`、依赖前需要验证的构造。精确语义也是[调用点发现](./callsite-discovery.md)生效的前提：采集到的调用形态只有求值器真的能跟下去才值钱。
 
-## `this` 绑定
+## 已精确建模
 
-方法调用会传递接收者，因此实例形状能流入函数体。
+### 方法调用中的 `this` 绑定
+
+方法调用传入接收者，因此实例形状流入函数体。
 
 ```js
 function area() {
   return this.radius * this.radius;
 }
-
-area.call({ radius: 3 });      // → 9
 const circle = { radius: 5, area };
-circle.area();                 // → 25
+circle.area();
 ```
 
-`obj.f()` 会把 `this` 绑定到 `obj` 的推断类型；`f.call(thisArg)` 与 `f.apply(thisArg, args)` 以相同的方式绑定显式接收者。
+```text
+=== area ===
 
-一个注意事项：指数运算符**未被建模**。`this.radius ** 2` 会求值为 `unknown`——请改写为 `this.radius * this.radius`。
-
-## 原始值自动装箱与 `Object.prototype`
-
-对原始值的属性访问会经过它的包装对象，而每个对象都携带 `Object.prototype` 的方法表。
-
-```js
-"nudo".constructor;                 // → String constructor (renders as {})
-({}).hasOwnProperty("key");         // → boolean
-config.hasOwnProperty("port");      // → resolves for any object shape
+Case "call@L5": () => 25
 ```
 
-`hasOwnProperty`、`toString`、`valueOf` 及其同伴可以在任意对象形状上解析，而不是把结果放宽为 `unknown`。
+`obj.f()` 把 `this` 绑定到 `obj` 的推断类型，`this.radius` 在函数体内解析。显式接收者绑定尚未记录：`area.call({ radius: 3 })` 不产生 `call@` case（只有 `entry@` 回退）。
 
-## `Symbol.iterator in x`
+### 字面量上的字符串方法
 
-`in` 运算符在字面量层面判定可迭代性，因此可以驱动收窄。
+字面量接收者上的字符串方法在求值期折叠。
 
 ```js
-Symbol.iterator in [1, 2, 3];   // → true
-Symbol.iterator in "nudo";      // → true
-Symbol.iterator in 42;          // → false
+function upper() { return "hello".toUpperCase(); }
+upper();                              // → "HELLO"
+
+function slen() { return "hello".length; }
+slen();                               // → 5
+
+function sli() { return "hello".slice(1, 3); }
+sli();                                // → "el"
 ```
 
-在 `if (Symbol.iterator in x)` 内部，真分支只保留联合类型中的可迭代成员。
+```text
+=== upper ===
 
-## 对 `Set` 与 `Map` 的 `for...of`
-
-迭代内建集合会产出类型精确的元素——包括解构出来的条目。
-
-```js
-const tags = new Set(["a", "b"]);
-for (const t of tags) {
-  t;                            // → "a" | "b"
-}
-
-const scores = new Map([["ok", 1], ["warn", 2]]);
-for (const [status, code] of scores.entries()) {
-  status;                       // → "ok" | "warn"
-  code;                         // → 1 | 2
-}
+Case "call@L2": () => "HELLO"
 ```
 
-## Promise 解析
+`toUpperCase`、`toLowerCase`、`slice` 与 `.length` 产生精确字面量。`split` 与 `indexOf` 尚未建模，结果为 `unknown`。
 
-`new Promise` 的执行器在求值之下运行，而 resolve 的位置还会通过对嵌套闭包的静态扫描找到——因此埋在 `setTimeout` 回调里的 `resolve(value)` 依然能确定已解析的类型。
+### 具体边界的循环
 
-```js
-const p = new Promise((resolve) => {
-  setTimeout(() => resolve("done"), 10);
-});
-// p → Promise<"done">
-```
-
-链式调用 `.finally(...)` 时会拍下快照而不是污染类型：promise 保持 `Promise<"done">`，不会放宽为 `unknown`。
-
-## `break` 与 `continue`
-
-循环跳转是信号，而不是控制流的死胡同——退出迭代的那个状态会被保留。
+具体边界的 `for` 循环求值出精确结果。
 
 ```js
-let found;
-for (const x of [1, 2, 3, 4]) {
-  if (x > 2) {
-    found = x;
-    break;
+function sumTo(n) {
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    sum = sum + i;
   }
+  return sum;
 }
-found;                          // → number (>= 3)
+sumTo(5);
 ```
 
-`continue` 切断当前迭代路径而不污染累加器；`break` 保留来自退出那一轮迭代的精确值。`found` 不是裸字面量 `3`，而是精化类型 `number (>= 3)`——退出值连同它的比较约束一起保留。
+```text
+=== sumTo ===
 
-## 每轮迭代的 `let` 绑定
+Case "call@L8": (5) => 10
+```
 
-`for (let ...)` 循环的每一轮都会得到一个全新的绑定，闭包捕获的是那一轮的副本——与真实的 JavaScript 语义一致。
+具体数组上的 `for...of` 同样精确：
 
 ```js
-const fns = [];
-for (let i = 0; i < 3; i++) {
-  fns.push(() => i);
+function sumArr(arr) {
+  let s = 0;
+  for (const x of arr) {
+    s = s + x;
+  }
+  return s;
 }
-
-fns[0]();                       // → 0
-fns[2]();                       // → 2
+sumArr([1, 2, 3]);                    // → 6
 ```
 
-引擎不会把所有闭包都折叠成 `i` 的最终值。
+### `break` 保留跳出值
 
-## 作为元组的 `arguments`
-
-在一次调用内部，`arguments` 是实际参数值组成的元组。
+循环跳转是信号：跳出迭代中绑定的值被保留。
 
 ```js
-function logAll() {
-  return arguments.length;
+function findBig() {
+  let found;
+  for (const x of [1, 2, 3, 4]) {
+    if (x > 2) {
+      found = x;
+      break;
+    }
+  }
+  return found;
 }
-
-logAll("a", "b", "c");          // → 3
+findBig();
 ```
 
-`arguments.length`、索引（`arguments[0]`）与展开看到的都是被记录调用的具体参数类型。
+```text
+=== findBig ===
 
-## 内建函数的字面量求值
+Case "call@L11": () => 3
+```
 
-以字面量为参数的调用会精确求值，而不是返回一个泛化类型。
+结果是字面量 `3`——循环跳出时绑定的值。
+
+### 具体形状上的 `Object.keys`
+
+具体对象上的 `Object.keys` 返回精确的键元组。
 
 ```js
-JSON.parse('{"port": 3000}');       // → { port: 3000 }
-String.fromCharCode(72, 105);       // → "Hi"
+function keysOf() { return Object.keys({ port: 3000, host: "x" }); }
+keysOf();
 ```
 
-解析出的 JSON 保留其结构与字面量成员类型；字符码拼接成精确的字符串。
+```text
+=== keysOf ===
 
-## 递归预算
+Case "call@L2": () => ["port", "host"]
+```
 
-深度递归会在预算处截断，并回退到目前已观察到的返回值并集——是优雅降级，而不是 `unknown`。
+### 递归按调用点展开
+
+递归函数按观测到的调用求值：每个顶层调用被完整展开，作为独立的 `call@` case 报告精确结果。
 
 ```js
 function walk(n) {
@@ -147,49 +137,54 @@ function walk(n) {
   return n + walk(n - 1);
 }
 
-walk(5);                        // → 15 (fully evaluated)
-walk(10_000);                   // → number | string (budget hit; union of observed returns)
+walk(0);
+walk(1);
+walk(2);
 ```
 
-## `Object.keys` 的联合类型分发
+```text
+=== walk ===
 
-当接收者是多个对象形状的联合时，`Object.keys` 会对每个成员分别求键，再把键集合合并。
+Case "call@L6": (0) => 0
+Case "call@L7": (1) => 1
+Case "call@L8": (2) => 3
 
-```js
-function keysOf(shape) {
-  // shape: { port: number } | { host: string }
-  return Object.keys(shape);
-}
-// → ["port", "host"]
+Combined: 0 | 1 | 3
 ```
 
-对这个元组做索引是按位置进行的，而不是分发的：`Object.keys(shape)[0]` 得到 `"port"`——分发后元组的第一个键——而不是并集 `"port" | "host"`。
+超过精确 case 上限的更多调用会聚合为一个实参拓宽的 `call@symbolic` case。
 
-## 宽松相等（`==` / `!=`）
+### 收窄守卫
 
-具体字面量之间的比较会在求值期按 JavaScript 的强制转换规则折叠。
+`===` 比较、`typeof`、`Array.isArray` 与 `switch` 按具体调用点收窄——已验证模式见[控制流收窄](./control-flow-narrowing.md)。
 
-```js
-1 == "1";              // → true
-"a" != "b";            // → true
-0 == false;            // → true
-null == undefined;     // → true
-1 != "1";              // → false
-```
+## 尚未建模
 
-## 总结
+以下构造目前求值为 `unknown`（通常伴随 `nudo:unknown-recv` 或 `nudo:builtin-unknown` 诊断）。请优先使用旁边列出的已建模替代方案。
+
+| 构造 | 当前行为 | 已建模替代 |
+|---|---|---|
+| `==` / `!=` 字面量折叠 | `1 == "1"` → `unknown` | 字面量上的 `===` 比较 |
+| 原始值自动装箱 | `"nudo".constructor` → `unknown` | `.length`、上文的字符串方法 |
+| `Object.prototype` 方法 | `({}).hasOwnProperty("key")` → `unknown` | `Object.keys(...)` / 形状检查 |
+| `Symbol.iterator in x` | → `unknown` | `Array.isArray(x)` |
+| `Set` / `Map` 上的 `for...of` | 元素 → `unknown` | 数组 / `.map` 回调 |
+| Promise 执行器 | `new Promise((r) => r("done"))` → `Promise<unknown>` | `@nudo:mock` + `async` 函数 |
+| 每迭代 `let` 闭包 | `fns[i]()` → `unknown` | 直接使用迭代结果 |
+| `arguments` | → `unknown`（`nudo:builtin-unknown`） | 具名参数 |
+| `JSON.parse` | `JSON.parse('{"port": 3000}')` → `unknown` | 对象字面量 |
+| `String.fromCharCode` | → `unknown` | 字符串字面量 |
+| 指数运算符 `**` | → `unknown` | `x * x` |
+| `@nudo:case` 求值中的 `Math.*` | `Math.sqrt(9)` → `unknown` | 调用点（`sqrtOf(9)` → `3`） |
+
+## 小结
 
 | 能力 | 示例 | 结果 |
 |---|---|---|
 | `this` 绑定 | `circle.area()` | 接收者形状流入函数体 |
-| 自动装箱 | `"nudo".constructor` | 解析到包装对象构造器，而非 `unknown` |
-| 宽松相等 | `1 == "1"` | 按强制转换规则折叠出字面量 `true` / `false` |
-| 可迭代性检查 | `Symbol.iterator in x` | 字面量 `true` / `false` |
-| 集合迭代 | `for (const [k, v] of map.entries())` | 精确的元素类型 |
-| Promise 解析 | `new Promise((res) => setTimeout(() => res("done")))` | `Promise<"done">` |
-| 循环跳转 | `break` / `continue` | 保留退出值，如 `number (>= 3)` |
-| 每轮迭代的 `let` | `fns[i]()` 捕获当轮的 `i` | `0`、`2` —— 而非最终值 |
-| `arguments` | `arguments.length` | 实际参数组成的元组 |
-| 字面量内建函数 | `JSON.parse('{"port": 3000}')` | `{ port: 3000 }` |
-| 递归预算 | `walk(10_000)` | 观察到的并集，而非 `unknown` |
-| `Object.keys` | 联合类型接收者 | 键集合并：`["port", "host"]` |
+| 字符串方法 | `"hello".toUpperCase()` | `"HELLO"` |
+| 具体边界循环 | `sumTo(5)` | `10` |
+| `break` | 循环跳出值 | `3` |
+| `Object.keys` | 具体形状 | `["port", "host"]` |
+| 递归 | `walk(2)` | `3` |
+| 收窄 | `typeof` / `===` / `Array.isArray` / `switch` | 逐调用点精度 |
