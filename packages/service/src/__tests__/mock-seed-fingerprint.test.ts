@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { numLit, unknown } from "@nudojs/core";
+import { parseTypeValueExpr } from "@nudojs/parser";
 import { mockSeedFingerprint } from "../bpath-run.ts";
+import { mockDirectivesToAbsSeeds } from "../mock-abs.ts";
 
 describe("mockSeedFingerprint", () => {
   it("misses when mock values change under the same names", () => {
@@ -18,5 +20,45 @@ describe("mockSeedFingerprint", () => {
   it("empty and missing mocks share the dash key", () => {
     expect(mockSeedFingerprint(undefined)).toBe("-");
     expect(mockSeedFingerprint({})).toBe("-");
+  });
+
+  it("misses when real sinon.stub().returns value changes", () => {
+    const seeds1 = mockDirectivesToAbsSeeds([
+      {
+        directives: [
+          {
+            kind: "mock",
+            name: "fetch",
+            sinonExpr: { type: "sinon.stub", returnValue: parseTypeValueExpr("1") },
+          } as never,
+        ],
+      },
+    ]);
+    const seeds2 = mockDirectivesToAbsSeeds([
+      {
+        directives: [
+          {
+            kind: "mock",
+            name: "fetch",
+            sinonExpr: { type: "sinon.stub", returnValue: parseTypeValueExpr("2") },
+          } as never,
+        ],
+      },
+    ]);
+    const a = mockSeedFingerprint(seeds1.seedVars, seeds1.seedFns);
+    const b = mockSeedFingerprint(seeds2.seedVars, seeds2.seedFns);
+    expect(a).not.toBe(b);
+  });
+
+  it("includes seedFns in the fingerprint", () => {
+    const a = mockSeedFingerprint(
+      {},
+      { load: { params: ["x"], body: { type: "Identifier", name: "x" } as never } },
+    );
+    const b = mockSeedFingerprint(
+      {},
+      { load: { params: ["y"], body: { type: "Identifier", name: "y" } as never } },
+    );
+    expect(a).not.toBe(b);
   });
 });

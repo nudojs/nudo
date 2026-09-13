@@ -1150,10 +1150,38 @@ function cloneFunctionAnalysis(a: FunctionAnalysis): FunctionAnalysis {
   };
 }
 
+function shiftSourceLoc(loc: SourceLocation, lineDelta: number): SourceLocation {
+  return {
+    start: { line: loc.start.line + lineDelta, column: loc.start.column },
+    end: { line: loc.end.line + lineDelta, column: loc.end.column },
+  };
+}
+
+function shiftDiagnosticLines(d: Diagnostic, lineDelta: number): Diagnostic {
+  if (lineDelta === 0) return { ...d };
+  const out: Diagnostic = { ...d, range: shiftSourceLoc(d.range, lineDelta) };
+  if (d.origin) {
+    out.origin = { line: d.origin.line + lineDelta, column: d.origin.column };
+  }
+  return out;
+}
+
+function shiftCallRecordLines(r: CallRecord, lineDelta: number): CallRecord {
+  if (lineDelta === 0 || !r.callLoc) return { ...r };
+  return {
+    ...r,
+    callLoc: { line: r.callLoc.line + lineDelta, column: r.callLoc.column },
+  };
+}
+
 /**
  * 整文件分析。同 (path, source, cases, external) 命中 memo → O(1)。
- * 不再每次 clearBPathCache：B 路径按本文件 source 键控；
- * 依赖变更由 LSP `evictBPathCacheForFiles` / `evictAnalysisFileCacheForFiles` 定向逐出。
+ * 不再每次 clearBPathCache：B 路径按本文件 source 键控。
+ *
+ * 宿主契约：入口 source 未变但依赖模块内容变了时，必须调用
+ * `evictBPathCacheForFiles` / `evictAnalysisFileCacheForFiles` /
+ * `evictFnAnalysisCacheForFiles`（LSP 已接好）。非 LSP 宿主
+ * （CLI watch / vite-plugin）在 dep 变更时应 `clearBPathCache()` 或上述逐出。
  */
 export function analyzeFile(filePath: string, source: string, activeCases?: Map<string, number>, externalCallRecords?: CallRecord[]): AnalysisResult {
   const k = analysisFileCacheKey(filePath, source, activeCases, externalCallRecords);
@@ -1508,7 +1536,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
     fnFpMap = undefined;
   }
   const envKeyFn = envNames.join(",");
-  const mockKeyFn = mockSeedFingerprint(seeds.seedVars);
+  const mockKeyFn = mockSeedFingerprint(seeds.seedVars, seeds.seedFns);
 
   for (const fn of functions) {
     const isPure = fn.directives.some((d) => d.kind === "pure");
@@ -1550,10 +1578,32 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
     if (fnCacheKey) {
       const hitFn = fnAnalysisCacheGet(fnCacheKey);
       if (hitFn) {
-        functionResults.push(cloneFunctionAnalysis(hitFn.analysis as FunctionAnalysis));
-        diagnostics.push(...(hitFn.diagnostics as Diagnostic[]));
-        caseHints.push(...(hitFn.caseHints as CaseHint[]));
-        callRecords.push(...(hitFn.callRecords as CallRecord[]));
+        const cached = cloneFunctionAnalysis(hitFn.analysis as FunctionAnalysis);
+        // own-hash is position-free: sibling inserts shift lines. Rewrite loc
+        // onto the current AST and shift any cached line-relative fields.
+        const lineDelta = fnLoc.start.line - cached.loc.start.line;
+        cached.loc = fnLoc;
+        if (lineDelta !== 0) {
+          for (const c of cached.cases) {
+            if (c.throwLoc) c.throwLoc = shiftSourceLoc(c.throwLoc, lineDelta);
+          }
+        }
+        if (lineDelta === 0) {
+          diagnostics.push(...(hitFn.diagnostics as Diagnostic[]));
+          caseHints.push(...(hitFn.caseHints as CaseHint[]));
+          callRecords.push(...(hitFn.callRecords as CallRecord[]));
+        } else {
+          for (const d of hitFn.diagnostics as Diagnostic[]) {
+            diagnostics.push(shiftDiagnosticLines(d, lineDelta));
+          }
+          for (const h of hitFn.caseHints as CaseHint[]) {
+            caseHints.push({ ...h, line: h.line + lineDelta });
+          }
+          for (const r of hitFn.callRecords as CallRecord[]) {
+            callRecords.push(shiftCallRecordLines(r, lineDelta));
+          }
+        }
+        functionResults.push(cached);
         continue;
       }
     }

@@ -114,25 +114,41 @@ export function extractAllLoadSpecs(source: string): string[] {
 }
 
 /**
- * Fingerprint every loadModule-reachable dep (not only `*.nudo.js`).
- * Parent source alone is not a sound memo key when scanLiteralCalls /
- * refine resolution reads sibling modules through loadModule.
+ * Fingerprint every loadModule-reachable dep (not only `*.nudo.js`), including
+ * one hop of transitive specs from each dep source. Parent source alone is not
+ * a sound memo key when scanLiteralCalls / refine resolution reads sibling
+ * modules through loadModule (and those modules read further deps).
  */
+const MAX_CHECK_DEP_NODES = 64;
+
 function checkDepsFingerprint(
   source: string,
   opts: CheckOptions,
 ): { fp: string; paths: string[] } {
   if (!opts.loadModule || !opts.fromFile) return { fp: "-", paths: [] };
-  const specs = extractAllLoadSpecs(source);
-  if (specs.length === 0) return { fp: "-", paths: [] };
   const load = opts.loadModule;
   const fromFile = opts.fromFile;
   const parts: string[] = [];
   const paths: string[] = [];
-  for (const spec of specs) {
-    const src = load(spec, fromFile);
-    parts.push(`${spec}=${src === undefined ? "miss" : hashSource(src)}`);
-    paths.push(resolveDepPath(fromFile, spec));
+  const seen = new Set<string>();
+  const queue: Array<{ spec: string; from: string }> = extractAllLoadSpecs(source).map(
+    (spec) => ({ spec, from: fromFile }),
+  );
+  let n = 0;
+  while (queue.length > 0 && n < MAX_CHECK_DEP_NODES) {
+    const cur = queue.shift()!;
+    const path = resolveDepPath(cur.from, cur.spec);
+    if (seen.has(path)) continue;
+    seen.add(path);
+    n++;
+    const src = load(cur.spec, cur.from);
+    parts.push(`${path}=${src === undefined ? "miss" : hashSource(src)}`);
+    paths.push(path);
+    if (src === undefined) continue;
+    for (const next of extractAllLoadSpecs(src)) {
+      const nextPath = resolveDepPath(path, next);
+      if (!seen.has(nextPath)) queue.push({ spec: next, from: path });
+    }
   }
   parts.sort();
   return { fp: parts.join(","), paths };
@@ -182,14 +198,17 @@ function cloneCheckReport(r: CheckReport): CheckReport {
 function checkMemoKey(
   filePath: string,
   source: string,
-  opts: CheckOptions,
+  identityOpts: CheckOptions,
+  loadOpts: CheckOptions,
 ): { key: string; depPaths: string[] } {
-  const deps = checkDepsFingerprint(source, opts);
+  // loadOpts may be a per-call I/O wrapper; identity must stay the caller's raw fn
+  // or every checkSource allocates a new loadModuleId and memo never hits.
+  const deps = checkDepsFingerprint(source, loadOpts);
   return {
     key: [
       hashSource(source),
       filePath,
-      `${loadModuleId(opts.loadModule)}:${opts.fromFile ?? ""}`,
+      `${loadModuleId(identityOpts.loadModule)}:${identityOpts.fromFile ?? ""}`,
       deps.fp,
     ].join("|"),
     depPaths: deps.paths,
@@ -279,18 +298,19 @@ export function checkSource(
   opts: CheckOptions = {},
 ): CheckReport {
   // Per-call loadModule cache: dep fingerprint + scan/refine share one read.
-  let loadCache: Map<string, string | undefined> | undefined;
+  // Identity for memo keys stays on the caller's raw loadModule — a fresh
+  // wrapper each call would make loadModuleId() unique and defeat the memo.
   let callOpts = opts;
   if (opts.loadModule && opts.fromFile) {
-    loadCache = new Map();
+    const loadCache = new Map<string, string | undefined>();
     const raw = opts.loadModule;
     const fromFile = opts.fromFile;
     callOpts = {
       ...opts,
       loadModule: (spec, from) => {
         const k = `${from}\0${spec}`;
-        if (!loadCache!.has(k)) loadCache!.set(k, raw(spec, from));
-        return loadCache!.get(k);
+        if (!loadCache.has(k)) loadCache.set(k, raw(spec, from));
+        return loadCache.get(k);
       },
     };
   }
@@ -301,7 +321,7 @@ export function checkSource(
   if (useMemo) {
     // 尾部无 @nudo 的注释/空行不进键：comment-only 编辑复用 CheckReport
     const stable = stableAnalyzeKeySource(source);
-    const k = checkMemoKey(filePath, stable, callOpts);
+    const k = checkMemoKey(filePath, stable, opts, callOpts);
     memoKey = k.key;
     depPaths = k.depPaths;
     const hit = checkMemoGet(memoKey);
@@ -319,7 +339,18 @@ export function checkSource(
   resetAbsCallBudget();
   setAbsTruncationCollector((label) => truncated.add(label));
   try {
-    const report = checkSourceInner(filePath, source, file, phi, callOpts, issues, signatures, names, truncated);
+    const report = checkSourceInner(
+      filePath,
+      source,
+      file,
+      phi,
+      callOpts,
+      issues,
+      signatures,
+      names,
+      truncated,
+      opts,
+    );
     if (memoKey) checkMemoSet(memoKey, report, depPaths);
     return cloneCheckReport(report);
   } finally {
@@ -337,15 +368,19 @@ function checkSourceInner(
   signatures: NudoSig[],
   names: string[],
   truncated: Set<string>,
+  identityOpts: CheckOptions = opts,
 ): CheckReport {
   // 整文件一次判定，避免 per-function includes 全文扫
   const hasRefineDirective = source.includes("@nudo:refine");
+  // generalize L0 用调用方原始 loadModule 身份；opts 可能是 per-call I/O wrapper
+  const refineLoad = identityOpts.loadModule ?? opts.loadModule;
+  const refineFrom = identityOpts.fromFile ?? opts.fromFile ?? filePath;
   for (const name of names) {
     const g = generalizeFromAst(name, source, {
       file,
       refine: {
-        loadModule: opts.loadModule,
-        fromFile: opts.fromFile ?? filePath,
+        loadModule: refineLoad,
+        fromFile: refineFrom,
       },
     });
     if (!g) {
@@ -372,8 +407,8 @@ function checkSourceInner(
     // 后置：@nudo:refine return <constraint> —— 推断返回值 ⊭ 契约
     if (hasRefineDirective) {
       const ret = extractRefineReturnFromSource(source, name, {
-        loadModule: opts.loadModule,
-        fromFile: opts.fromFile ?? filePath,
+        loadModule: refineLoad,
+        fromFile: refineFrom,
       });
       if (ret) {
         issues.push(

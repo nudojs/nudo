@@ -16,6 +16,12 @@ export type AbsFnImpl = {
   kind?: string;
   /** 调用时直接派发（mock withArgs 等），优先于 body */
   apply?: (args: Abs[]) => Abs;
+  /**
+   * Optional content key for cache fingerprints. formatAbs cannot see
+   * WeakMap-side mock semantics (returns/withArgs/callsFake), so hosts that
+   * build mocks should stamp a stable fingerprint here.
+   */
+  fingerprint?: string;
 };
 
 const implByAbs = new WeakMap<object, AbsFnImpl>();

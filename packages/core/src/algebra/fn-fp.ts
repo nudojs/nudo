@@ -25,10 +25,12 @@ export function resetFnFpCache(): void {
 type FnDeclInfo = {
   name: string;
   body: Node;
-  /** Function/arrow node (own-slice end). */
+  /** Function/arrow node (own-slice end; also scanned for sibling refs incl. defaults). */
   fnNode: Node;
   /** Declarator start when from a VariableDeclaration; else undefined. */
   declaratorStart?: number;
+  /** First leading-comment start on this declarator (multi-decl refine/@nudo). */
+  declaratorLeadStart?: number;
 };
 
 /** Every top-level function binding in a declaration node (not just the first). */
@@ -45,11 +47,14 @@ export function getFnNameAndBodies(decl: Node): FnDeclInfo[] {
         d.init &&
         (d.init.type === "ArrowFunctionExpression" || d.init.type === "FunctionExpression")
       ) {
+        const comments = (d as { leadingComments?: Array<{ start?: number }> }).leadingComments;
+        const first = comments?.[0];
         out.push({
           name: d.id.name,
           body: d.init.body,
           fnNode: d.init,
           declaratorStart: d.start ?? undefined,
+          declaratorLeadStart: typeof first?.start === "number" ? first.start : undefined,
         });
       }
     }
@@ -105,7 +110,7 @@ function collectSiblingRefs(node: unknown, known: Set<string>, out: Set<string>)
 }
 
 function computeFnFingerprints(source: string, file: File): Map<string, FnFp> {
-  const top: Array<{ name: string; slice: string; body: Node }> = [];
+  const top: Array<{ name: string; slice: string; fnNode: Node }> = [];
   const contextParts: string[] = [];
 
   for (const stmt of file.program.body) {
@@ -121,14 +126,19 @@ function computeFnFingerprints(source: string, file: File): Map<string, FnFp> {
       for (let i = 0; i < fnInfos.length; i++) {
         const info = fnInfos[i]!;
         // First declarator carries statement leading comments; later ones start
-        // at their own declarator so sibling edits do not dirty this own-hash.
+        // at their own leading comments so sibling edits do not dirty this own-hash.
         const sliceStart =
-          i === 0 ? lead : (info.declaratorStart ?? info.fnNode.start ?? lead);
+          i === 0
+            ? lead
+            : (info.declaratorLeadStart ??
+              info.declaratorStart ??
+              info.fnNode.start ??
+              lead);
         const end = info.fnNode.end ?? info.declaratorStart ?? decl.end ?? stmt.end ?? sliceStart;
         top.push({
           name: info.name,
           slice: source.slice(sliceStart, Math.max(end, sliceStart)),
-          body: info.body,
+          fnNode: info.fnNode,
         });
       }
     } else if (typeof stmt.start === "number" && typeof stmt.end === "number") {
@@ -146,7 +156,8 @@ function computeFnFingerprints(source: string, file: File): Map<string, FnFp> {
   const edges = new Map<string, Set<string>>();
   for (const t of top) {
     const refs = new Set<string>();
-    collectSiblingRefs(t.body, names, refs);
+    // Whole fn node (params defaults + body), not body alone
+    collectSiblingRefs(t.fnNode, names, refs);
     edges.set(t.name, refs);
   }
 
@@ -206,23 +217,60 @@ export function generalizeSourceKeyPart(
   return `u:${hashSource(source)}`;
 }
 
+/** Any CallExpression / NewExpression / dynamic import in the AST. */
+function hasAnyCallLike(node: unknown, depth = 0): boolean {
+  if (!node || typeof node !== "object" || depth > 80) return false;
+  const obj = node as Record<string, unknown> & { type?: string };
+  if (
+    obj.type === "CallExpression" ||
+    obj.type === "NewExpression" ||
+    obj.type === "OptionalCallExpression" ||
+    obj.type === "ImportExpression"
+  ) {
+    return true;
+  }
+  for (const key of Object.keys(obj)) {
+    if (
+      key === "loc" ||
+      key === "start" ||
+      key === "end" ||
+      key === "leadingComments" ||
+      key === "trailingComments" ||
+      key === "innerComments"
+    ) {
+      continue;
+    }
+    const v = obj[key];
+    if (Array.isArray(v)) {
+      for (const x of v) if (hasAnyCallLike(x, depth + 1)) return true;
+    } else if (v && typeof v === "object") {
+      if (hasAnyCallLike(v, depth + 1)) return true;
+    }
+  }
+  return false;
+}
+
+function hasModuleSyntax(file: File): boolean {
+  for (const stmt of file.program.body) {
+    if (stmt.type === "ImportDeclaration") return true;
+    if (stmt.type === "ExportAllDeclaration") return true;
+    if (stmt.type === "ExportNamedDeclaration" && stmt.source) return true;
+  }
+  return false;
+}
+
 /**
- * 无 refine、无模块语法、无兄弟调用、无顶层调用 → scanLiteralCalls 可整段跳过。
- * 保守：import/require 字面出现即不 skip。
+ * 无 refine、无模块语法、无兄弟调用、无任何调用表达式 → scanLiteralCalls 可整段跳过。
+ * 必须保守：`const x = f(-1)` / `if (f(-1))` / `require("x")` 都含 CallExpression，
+ * 只认顶层 ExpressionStatement 会漏报约束违规。
  */
 export function canSkipLiteralCallScan(source: string, file: File): boolean {
   if (source.includes("@nudo:refine")) return false;
-  if (source.includes("import ") || source.includes("require(") || source.includes("import(")) {
-    return false;
-  }
+  if (hasModuleSyntax(file)) return false;
+  if (hasAnyCallLike(file)) return false;
   const fps = fnFingerprints(source, file);
   for (const fp of fps.values()) {
     if (fp.nRefs > 0) return false;
-  }
-  for (const stmt of file.program.body) {
-    if (stmt.type === "ExpressionStatement" && stmt.expression.type === "CallExpression") {
-      return false;
-    }
   }
   return true;
 }

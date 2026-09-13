@@ -15,6 +15,9 @@ import {
   confJoin,
   unknown as absUnknown,
   litValue,
+  formatAbs,
+  getFnImpl,
+  typeValueToString,
 } from "@nudojs/core";
 
 /**
@@ -24,6 +27,47 @@ import {
  */
 function markMockConf(a: Abs): Abs {
   a.conf = confJoin(a.conf, "mock");
+  return a;
+}
+
+/** Structural content key for mock body AST (callsFake etc.). */
+function astContentKey(n: unknown, depth = 0): string {
+  if (n == null || depth > 24) return "";
+  if (typeof n !== "object") return String(n);
+  if (Array.isArray(n)) return n.map((x) => astContentKey(x, depth + 1)).join(",");
+  const obj = n as Record<string, unknown>;
+  const type = typeof obj.type === "string" ? obj.type : "";
+  const parts: string[] = [type];
+  for (const key of ["name", "value", "raw", "operator", "computed"]) {
+    const v = obj[key];
+    if (v !== undefined && (typeof v !== "object" || v === null)) parts.push(`${key}=${String(v)}`);
+  }
+  for (const key of Object.keys(obj)) {
+    if (
+      key === "loc" ||
+      key === "start" ||
+      key === "end" ||
+      key === "leadingComments" ||
+      key === "trailingComments" ||
+      key === "innerComments" ||
+      key === "type" ||
+      key === "name" ||
+      key === "value" ||
+      key === "raw" ||
+      key === "operator" ||
+      key === "computed"
+    ) {
+      continue;
+    }
+    const v = obj[key];
+    if (v && typeof v === "object") parts.push(`${key}:{${astContentKey(v, depth + 1)}}`);
+  }
+  return parts.join("|");
+}
+
+function stampFingerprint(a: Abs, fp: string): Abs {
+  const impl = getFnImpl(a);
+  if (impl) impl.fingerprint = fp;
   return a;
 }
 
@@ -42,7 +86,16 @@ function constantMockFn(result: Abs): Abs {
       },
     ],
   } as unknown as Node;
-  return markMockConf(absFunction(["...args"], { body, env: mockEnv }));
+  let retKey: string;
+  try {
+    retKey = formatAbs(marked);
+  } catch {
+    retKey = "?";
+  }
+  return stampFingerprint(
+    markMockConf(absFunction(["...args"], { body, env: mockEnv })),
+    `ret=${retKey}`,
+  );
 }
 
 /**
@@ -87,24 +140,45 @@ function dispatchMockFn(defaultReturn: Abs, cases?: { args: TypeValue[]; returnV
     body: [{ type: "ReturnStatement", argument: null }],
   } as unknown as Node;
   const markedDefault = markMockConf(defaultReturn);
-  return markMockConf(absFunction(["...args"], {
-    body: dummyBody,
-    env: emptyEnv(),
-    apply: (args: Abs[]): Abs => {
-      for (const c of caseAbs) {
-        if (c.declared.every((d, i) => absArgMatches(d, args[i]))) {
-          return c.result;
-        }
-      }
-      return markedDefault;
-    },
-  }));
+  let defaultKey: string;
+  try {
+    defaultKey = formatAbs(markedDefault);
+  } catch {
+    defaultKey = "?";
+  }
+  const caseKey = cases
+    .map(
+      (c) =>
+        `${c.args.map((a) => typeValueToString(a)).join(",")}->${typeValueToString(c.returnValue)}`,
+    )
+    .join("|");
+  return stampFingerprint(
+    markMockConf(
+      absFunction(["...args"], {
+        body: dummyBody,
+        env: emptyEnv(),
+        apply: (args: Abs[]): Abs => {
+          for (const c of caseAbs) {
+            if (c.declared.every((d, i) => absArgMatches(d, args[i]))) {
+              return c.result;
+            }
+          }
+          return markedDefault;
+        },
+      }),
+    ),
+    `dispatch=default=${defaultKey};cases=${caseKey}`,
+  );
 }
 
 function absFromMockHelper(h: MockHelper): Abs {
   if (h.callsFakeImpl && h.callsFakeImpl.kind === "function") {
     const fn = h.callsFakeImpl;
-    return absFunction(fn.params, { body: fn.body, async: false });
+    const body = fn.body as Node;
+    return stampFingerprint(
+      absFunction(fn.params, { body, async: false }),
+      `fake=${fn.params.join(",")}:${astContentKey(body)}`,
+    );
   }
 
   let defaultReturn: Abs;
@@ -156,7 +230,7 @@ function absFromSinon(sinonExpr: {
 
 export type AbsMockSeeds = {
   seedVars: Record<string, Abs>;
-  seedFns: Record<string, { params: string[]; body: Node; async?: boolean }>;
+  seedFns: Record<string, { params: string[]; body: Node; async?: boolean; fingerprint?: string }>;
 };
 
 /** 从函数上的 @nudo:mock 指令收集 Abs seed */
@@ -169,10 +243,12 @@ export function mockDirectivesToAbsSeeds(
     for (const d of fn.directives) {
       if (d.kind !== "mock") continue;
       if (d.arrowFn) {
+        const body = d.arrowFn.body as Node;
         seedFns[d.name] = {
           params: d.arrowFn.params,
-          body: d.arrowFn.body as Node,
+          body,
           async: false,
+          fingerprint: `fake=${d.arrowFn.params.join(",")}:${astContentKey(body)}`,
         };
       } else if (d.nudoMock) {
         seedVars[d.name] = markMockConf(absFromMockHelper(d.nudoMock));

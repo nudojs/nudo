@@ -104,4 +104,42 @@ function f(x) { return x + 1; }
     generalizeFromAst("alpha", BASE, { file });
     expect(getGeneralizeMemoSize()).toBe(n);
   });
+
+  it("default-param sibling reference dirties caller L0", () => {
+    const src1 = `
+function helper() { return 1; }
+function f(a = helper()) { return a; }
+`;
+    const src2 = `
+function helper() { return 2; }
+function f(a = helper()) { return a; }
+`;
+    const g1 = generalizeFromAst("f", src1, { file: parseSource(src1) });
+    const g2 = generalizeFromAst("f", src2, { file: parseSource(src2) });
+    expect(g1).toBeDefined();
+    expect(g2).toBeDefined();
+    expect(g2).not.toBe(g1);
+  });
+
+  it("multi-declarator leading refine comment is part of own slice", () => {
+    const src1 = `
+const f = (x) => x,
+  /**
+   * @nudo:case "c" (1)
+   */
+  g = (y) => y + 1;
+`;
+    const src2 = `
+const f = (x) => x,
+  /**
+   * @nudo:case "c" (2)
+   */
+  g = (y) => y + 1;
+`;
+    const g1 = generalizeFromAst("g", src1, { file: parseSource(src1) });
+    const g2 = generalizeFromAst("g", src2, { file: parseSource(src2) });
+    expect(g1).toBeDefined();
+    expect(g2).toBeDefined();
+    expect(g2).not.toBe(g1);
+  });
 });

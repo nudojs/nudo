@@ -7,6 +7,7 @@ import {
   resetGeneralizeMemo,
   pTrue,
 } from "../index.ts";
+import { STD_NUDO_SRC, withStdImport } from "./nudo-constraints.ts";
 
 const SRC = `
 function add(a, b) {
@@ -115,5 +116,89 @@ function needsPositive(x) {
     const b = checkSource("/t/a.js", SRC, pTrue, {});
     expect(b.issues.some((i) => i.message === "mutated")).toBe(false);
     expect(b.signatures.length).toBeGreaterThan(0);
+  });
+
+  it("same loadModule identity hits memo (wrapper must not defeat key)", () => {
+    const loadModule = () => undefined;
+    const opts = { loadModule, fromFile: "/t/a.js" };
+    checkSource("/t/a.js", SRC, pTrue, opts);
+    const size1 = getCheckSourceMemoSize();
+    checkSource("/t/a.js", SRC, pTrue, opts);
+    checkSource("/t/a.js", SRC, pTrue, opts);
+    expect(size1).toBe(1);
+    expect(getCheckSourceMemoSize()).toBe(1);
+  });
+
+  it("hits when only trailing non-nudo comments change even with loadModule", () => {
+    const loadModule = () => undefined;
+    const opts = { loadModule, fromFile: "/t/a.js" };
+    checkSource("/t/a.js", SRC, pTrue, opts);
+    checkSource("/t/a.js", SRC + "\n// touch\n", pTrue, opts);
+    expect(getCheckSourceMemoSize()).toBe(1);
+  });
+
+  it("reports constraint violation for const-assigned literal call", () => {
+    const loadModule = (spec: string) =>
+      spec.includes("std") ? STD_NUDO_SRC : undefined;
+    const src = `${withStdImport(`
+/**
+ * @nudo:refine x positive
+ */
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+const bad = needsPositive(-1);
+`)}`;
+    const r = checkSource("/t/scan.js", src, pTrue, { loadModule, fromFile: "/t/scan.js" });
+    expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
+  });
+
+  it("reports constraint violation for if-condition literal call", () => {
+    const loadModule = (spec: string) =>
+      spec.includes("std") ? STD_NUDO_SRC : undefined;
+    const src = `${withStdImport(`
+/**
+ * @nudo:refine x positive
+ */
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+if (needsPositive(-1)) {}
+`)}`;
+    const r = checkSource("/t/scan-if.js", src, pTrue, { loadModule, fromFile: "/t/scan-if.js" });
+    expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
+  });
+
+  it("fingerprints transitive require deps (grandchild change misses)", () => {
+    const files: Record<string, string> = {
+      "/t/w.js": "module.exports = { n: 1 };\n",
+      "/t/v.js": 'const w = require("./w.js");\nmodule.exports = { fromW: w.n };\n',
+    };
+    const loadModule = (spec: string, fromFile: string) => {
+      if (spec === "./w.js") return files["/t/w.js"];
+      if (spec === "./v.js") return files["/t/v.js"];
+      if (spec === "./w.js" && fromFile.endsWith("v.js")) return files["/t/w.js"];
+      return undefined;
+    };
+    // resolve relative to the dep file when nested
+    const load = (spec: string, fromFile: string) => {
+      if (fromFile === "/t/a.js" && spec === "./v.js") return files["/t/v.js"];
+      if (fromFile === "/t/v.js" && spec === "./w.js") return files["/t/w.js"];
+      return loadModule(spec, fromFile);
+    };
+    const opts = { loadModule: load, fromFile: "/t/a.js" };
+    const src = `
+const v = require("./v.js");
+function id(x) { return x; }
+id(v.fromW);
+`;
+    checkSource("/t/a.js", src, pTrue, opts);
+    expect(getCheckSourceMemoSize()).toBe(1);
+    // grandchild content change, parent + child sources unchanged
+    files["/t/w.js"] = "module.exports = { n: 2 };\n";
+    checkSource("/t/a.js", src, pTrue, opts);
+    expect(getCheckSourceMemoSize()).toBe(2);
   });
 });

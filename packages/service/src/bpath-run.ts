@@ -22,6 +22,7 @@ import {
   stableAnalyzeKeySource,
   formatAbs,
   hashSource,
+  getFnImpl,
 } from "@nudojs/core";
 import { parse, extractInlineDirectives } from "@nudojs/parser";
 import { loadEnvs } from "@nudojs/cli/evaluator";
@@ -30,21 +31,57 @@ import { envValueToAbs } from "./env-to-abs.ts";
 import { clearAnalysisFileCache } from "./analysis-file-cache.ts";
 import { clearFnAnalysisCache } from "./fn-analysis-cache.ts";
 
+/** Content part for one Abs mock seed. */
+function absSeedPart(a: Abs): string {
+  const impl = getFnImpl(a);
+  if (impl?.fingerprint) return impl.fingerprint;
+  if (a.shape.k === "fn") {
+    const ret = impl?.env?.vars?.get("__nudo_mock_ret");
+    if (ret) {
+      try {
+        return `ret=${formatAbs(ret)}`;
+      } catch {
+        return "ret=?";
+      }
+    }
+    if (impl?.apply) return "apply";
+  }
+  try {
+    return formatAbs(a);
+  } catch {
+    return "?";
+  }
+}
+
+function seedFnPart(name: string, fn: { params: string[]; body: unknown; fingerprint?: string }): string {
+  if (fn.fingerprint) return `${name}:${fn.fingerprint}`;
+  const body = fn.body as { start?: number; end?: number; type?: string } | undefined;
+  const bodyKey =
+    body && typeof body.start === "number" && typeof body.end === "number"
+      ? `${body.start}:${body.end}:${body.type ?? ""}`
+      : String(body?.type ?? "?");
+  return `${name}(${fn.params.join(",")})@${bodyKey}`;
+}
+
 /**
  * Cache key for @nudo:mock seeds: name list alone is not enough — same names
- * with different Abs values must miss.
+ * with different Abs values must miss. Uses AbsFnImpl.fingerprint when the
+ * mock pipeline stamped one (formatAbs cannot see WeakMap-side returns/withArgs).
  */
-export function mockSeedFingerprint(mocks?: Record<string, Abs>): string {
-  if (!mocks) return "-";
-  const names = Object.keys(mocks).sort();
-  if (names.length === 0) return "-";
-  const parts = names.map((n) => {
-    try {
-      return `${n}=${formatAbs(mocks[n]!)}`;
-    } catch {
-      return `${n}=?`;
-    }
-  });
+export function mockSeedFingerprint(
+  mocks?: Record<string, Abs>,
+  seedFns?: Record<string, { params: string[]; body: unknown; fingerprint?: string }>,
+): string {
+  const parts: string[] = [];
+  if (mocks) {
+    const names = Object.keys(mocks).sort();
+    for (const n of names) parts.push(`${n}=${absSeedPart(mocks[n]!)}`);
+  }
+  if (seedFns) {
+    const names = Object.keys(seedFns).sort();
+    for (const n of names) parts.push(`fn:${seedFnPart(n, seedFns[n]!)}`);
+  }
+  if (parts.length === 0) return "-";
   return hashSource(parts.join(";"));
 }
 

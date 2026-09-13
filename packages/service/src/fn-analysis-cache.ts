@@ -76,11 +76,29 @@ export function fnAnalysisCacheGet(key: string): CachedFnAnalysis | undefined {
 }
 
 export function fnAnalysisCacheSet(key: string, value: CachedFnAnalysis): void {
-  if (fnAnalysisCache.size >= MAX_FN_ANALYSIS_CACHE) {
+  // Only evict when inserting a new key; overwrite of an existing key keeps LRU size
+  if (fnAnalysisCache.size >= MAX_FN_ANALYSIS_CACHE && !fnAnalysisCache.has(key)) {
     const oldest = fnAnalysisCache.keys().next().value;
     if (oldest !== undefined) fnAnalysisCache.delete(oldest);
   }
   fnAnalysisCache.set(key, value);
+}
+
+/**
+ * Dependency content changed: drop every per-fn entry for these entry files.
+ * Keys are `filePath\0...`, so a prefix scan is sound and cheap at LRU size.
+ */
+export function evictFnAnalysisCacheForFiles(files: string[]): number {
+  if (files.length === 0 || fnAnalysisCache.size === 0) return 0;
+  const prefixes = files.map((f) => `${f}\0`);
+  let n = 0;
+  for (const key of [...fnAnalysisCache.keys()]) {
+    if (prefixes.some((p) => key.startsWith(p))) {
+      fnAnalysisCache.delete(key);
+      n++;
+    }
+  }
+  return n;
 }
 
 export function caseDirectiveKey(

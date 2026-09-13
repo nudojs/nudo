@@ -13,9 +13,11 @@ import {
   computeDirtySet,
   defaultLoadModule,
   clearAbsModuleCache,
+  clearBPathCache,
   evictAbsModuleCacheFiles,
   evictBPathCacheForFiles,
   evictAnalysisFileCacheForFiles,
+  evictFnAnalysisCacheForFiles,
   type AnalysisResult,
   type Diagnostic as JsDiagnostic,
   type DiagnosticSeverity as JsDiagSeverity,
@@ -94,9 +96,10 @@ export async function handleNudoDepFileChanged(
   const parents = nudoDepParents.get(p);
   if (!parents || parents.size === 0) return;
   const parentList = [...parents];
-  // 父文件源码未变但依赖内容变了：整文件 check / B-path / AnalysisResult 都可能陈旧
+  // 父文件源码未变但依赖内容变了：整文件 check / B-path / AnalysisResult / fn-cache 都可能陈旧
   evictBPathCacheForFiles(parentList);
   evictAnalysisFileCacheForFiles(parentList);
+  evictFnAnalysisCacheForFiles(parentList);
   for (const parent of parentList) {
     const doc = deps.getOpenDocumentByPath?.(parent);
     if (!doc) continue;
@@ -118,6 +121,7 @@ export function clearValidationState(): void {
   moduleGraphCache.clear();
   nudoDepParents.clear();
   clearAbsModuleCache();
+  clearBPathCache(); // cascades analysis-file + fn-analysis caches
   resetGeneralizeMemo();
   resetCheckSourceMemo();
 }
@@ -339,9 +343,10 @@ export async function validateText(
     if (dirtyPath === filePath) continue;
     const doc = deps.getOpenDocumentByPath(dirtyPath);
     if (!doc) continue;
-    // 依赖内容变了但父文件源码未变：整文件 AnalysisResult / B-path 键不含 dep 指纹
+    // 依赖内容变了但父文件源码未变：整文件 AnalysisResult / B-path / fn-cache 键不含 dep 指纹
     evictBPathCacheForFiles([dirtyPath]);
     evictAnalysisFileCacheForFiles([dirtyPath]);
+    evictFnAnalysisCacheForFiles([dirtyPath]);
     await validateText(dirtyPath, doc.uri, doc.getText(), doc.version, deps, false);
   }
 }
