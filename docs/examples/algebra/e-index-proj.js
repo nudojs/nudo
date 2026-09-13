@@ -1,5 +1,14 @@
-// 示例 E：索引签名与动态 key
-// 考察：已知槽位字面量 key 精确投影；index 槽；动态 key 吸收
+// 示例 E：索引投影
+// 考察：对象形状 + 字面量 key → 按槽位精确投影；形状来自字面量即精确，
+// 与对象是否扮演 "env" 角色无关
+//
+//   pick({ a: 1, b: "x" }, "a")  → 1          #exact
+//   pick({ a: 1, b: "x" }, "b")  → "x"        #exact
+//   pick(env, "PATH")            → "/usr/bin" #exact
+//   Combined: 1 | "x" | "/usr/bin"
+//
+// 边界：动态 key（符号 string）无法决定槽位 → 吸收为 unknown
+//   pick(obj, T.string) → unknown  #partial（intension: (A1, A2) => unknown）
 
 function pick(obj, key) {
   return obj[key];
@@ -8,7 +17,7 @@ function pick(obj, key) {
 pick({ a: 1, b: "x" }, "a");
 pick({ a: 1, b: "x" }, "b");
 
-// 概念上的 env：{ [k: string]: string }
-// pick(env, "PATH") → string
+const env = { PATH: "/usr/bin", HOME: "/root" };
+pick(env, "PATH");
 
 export { pick };

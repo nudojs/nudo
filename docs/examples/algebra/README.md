@@ -5,14 +5,14 @@
 
 | 文件 | 考察点 | 命令 |
 |------|--------|------|
-| [`0-add-intensional.js`](./0-add-intensional.js) | add 的类型是函数本身，不是 `(number,number)=>number` | `pnpm run infer docs/examples/algebra/0-add-intensional.js` |
+| [`0-add-intensional.js`](./0-add-intensional.js) | 类型即计算：infer 看字面量 `#exact`，check 看内包式签名（term/pred 参与代数，`(x+1)>1`） | `pnpm run infer docs/examples/algebra/0-add-intensional.js` / `pnpm run check docs/examples/algebra/0-add-intensional.js` |
 | [`a-spread-optional.js`](./a-spread-optional.js) | 多态 call-site 保留字面量；函数 join 是重载并 | `pnpm run infer docs/examples/algebra/a-spread-optional.js` |
 | [`b-hof-map.js`](./b-hof-map.js) | HOF：回调经 `.map` 传播，调用点逐位实例化（`[2,4,6]` / `["A","B"]`） | `pnpm run infer docs/examples/algebra/b-hof-map.js` |
-| [`c-reduce-sum.js`](./c-reduce-sum.js) | reduce 累加器不动点 | `pnpm run infer docs/examples/algebra/c-reduce-sum.js` |
+| [`c-reduce-sum.js`](./c-reduce-sum.js) | reduce 符号累加器不动点：`number[]` → `number`（`#widened`） | `pnpm run infer docs/examples/algebra/c-reduce-sum.js` |
 | [`d-mixin-meet.js`](./d-mixin-meet.js) | spread 形状 meet：右值覆盖同槽，其余并集，调用点保留字面量 | `pnpm run infer docs/examples/algebra/d-mixin-meet.js` |
-| [`e-index-proj.js`](./e-index-proj.js) | 索引投影 | `pnpm run infer docs/examples/algebra/e-index-proj.js` |
+| [`e-index-proj.js`](./e-index-proj.js) | 索引投影：字面量 key 精确取槽（`1` / `"x"` / `"/usr/bin"`）；动态 key 吸收为 `unknown` | `pnpm run infer docs/examples/algebra/e-index-proj.js` |
 | [`f-async-eff.js`](./f-async-eff.js) | async / Promise eff × `@nudo:mock` 替换内置 fetch | `pnpm run infer docs/examples/algebra/f-async-eff.js` |
 | [`g-narrow-subtract.js`](./g-narrow-subtract.js) | 守卫窄化：调用点逐位收窄（`3 \| 2 \| -1`） | `pnpm run infer docs/examples/algebra/g-narrow-subtract.js` |
-| [`sample.js`](./sample.js) | 综合：以上片段合集 | `pnpm run infer docs/examples/algebra/sample.js` |
+| [`sample.js`](./sample.js) | 最小合集：无调用点 → 全部 `entry@` 回退签名（参数 `unknown`） | `pnpm run infer docs/examples/algebra/sample.js` |
 
 无契约时 `+` 跟真实 JS：`number | string`；有 `@nudo:refine` 才走数值路径。

@@ -47,7 +47,8 @@ Nudo can infer types that TypeScript's type system cannot express:
 
 // String methods compute precise results on literals
 "hello".toUpperCase()          // → "HELLO" (TS: string)
-"a,b,c".split(",")            // → ["a", "b", "c"] (TS: string[])
+"hello".slice(1, 3)           // → "el" (TS: string)
+// not modeled yet: "a,b,c".split(",") → unknown
 
 // Loops evaluate at type level
 let sum = 0;
