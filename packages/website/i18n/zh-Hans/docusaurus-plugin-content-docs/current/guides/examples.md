@@ -65,7 +65,7 @@ Case "call@L4": ({ name: "Alice", age: 30 }) => "Alice is 30"
 
 Nudo 用具体形状求值该调用：`user.name` 与 `user.age` 解析为字面量值，`+` 拼接产生精确结果 `"Alice is 30"`——而不是被拍平的 `string`。
 
-目前参数解构会退化为 `unknown`（同样的函数体写成 `function greet({ name, age })` 会返回 `unknown`），因此要获得形状级精度，属性访问是可靠写法。
+目前参数解构不会拆开实参形状——同样的函数体与调用写成 `function greet({ name, age })` 会返回 `number | string`（解构出的字段以 `unknown` 到达，`+` 因而拓宽为其普通 JS 语义的结果），因此要获得形状级精度，属性访问是可靠写法。
 
 ---
 

@@ -389,6 +389,20 @@ Directories are scanned recursively for inference targets (`.js`/`.mjs`/`.ts`, e
 
 ---
 
+## Runtime validator generation
+
+`nudo generate` turns inferred types into runtime artifacts — Zod schemas, type-guard functions, and `.d.ts` declarations — from the same `@nudo:case` evidence:
+
+```bash
+nudo generate src/user.js               # zod + guard + dts to stdout
+nudo generate src/user.js --format zod  # zod only
+nudo generate src/user.js --output dist # writes dist/user.nudo.zod.ts, user.nudo.guard.ts, user.d.ts
+```
+
+`nudo emit` is the `.d.ts`-only alias (`generate --format dts`) and `nudo guard` the guard-only alias (`--format guard`); guards prefer the lossless Abs path (shape + decidable numeric preds) and fall back to the TypeValue projection. Options and output formats: [`nudo generate` reference](../api/cli-reference.md#nudo-generate).
+
+---
+
 ## Health Checks and CI Drift Gating
 
 [`nudo doctor`](../api/cli-reference.md#nudo-doctor) re-checks a whole project in one command: analysis errors, and — with `--callsites` — whether the `call@` directives frozen by [`--emit-cases`](#persisting-cases-as-directives) still match what the usage sites would produce today. Drift or errors exit with code `1`, which makes `doctor` a CI gate for solidification drift.

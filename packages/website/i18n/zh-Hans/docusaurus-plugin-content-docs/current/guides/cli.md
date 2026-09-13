@@ -389,6 +389,20 @@ nudo watch . --dts      # 同时生成 .d.ts
 
 ---
 
+## 运行时校验器生成
+
+`nudo generate` 把推断出的类型转成运行时产物——Zod schema、类型守卫函数与 `.d.ts` 声明——依据同一份 `@nudo:case` 证据：
+
+```bash
+nudo generate src/user.js               # zod + guard + dts 输出到 stdout
+nudo generate src/user.js --format zod  # 只要 zod
+nudo generate src/user.js --output dist # 写出 dist/user.nudo.zod.ts、user.nudo.guard.ts、user.d.ts
+```
+
+`nudo emit` 是仅 `.d.ts` 的别名（`generate --format dts`），`nudo guard` 是仅守卫函数的别名（`--format guard`）；守卫优先走无损 Abs 路径（形状 + 可判定的数值 Pred），失败时回退到 TypeValue 投影。选项与输出格式参见 [`nudo generate` 参考](../api/cli-reference.md#nudo-generate)。
+
+---
+
 ## 健康检查与 CI 漂移门禁
 
 [`nudo doctor`](../api/cli-reference.md#nudo-doctor) 一条命令复查整个项目：分析报错，以及——搭配 `--callsites`——[`--emit-cases`](#固化-case-指令) 固化的 `call@` 指令是否仍与使用处如今会产出的调用形状一致。漂移或报错以退出码 `1` 结束，因此 `doctor` 可以作为固化漂移的 CI 门禁。

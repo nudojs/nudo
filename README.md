@@ -159,13 +159,26 @@ See [`docs/examples/`](./docs/examples/) for runnable examples.
 ## How It Works
 
 1. **Parse** — Babel parses your `.js` file and extracts `@nudo:` directives
-2. **Execute** — The evaluator runs each `@nudo:case` with abstract interpretation, tracking type values through all code paths
+2. **Execute** — The evaluator runs each function with abstract interpretation, tracking **Abs values** through all code paths (capable files are transpiled and executed directly with Abs values; the TypeValue evaluator is the fallback)
 3. **Combine** — Results from multiple cases are merged into a unified type via union simplification
 4. **Emit** — Inferred types are displayed or written as `.d.ts` declarations
 
-### Type Values
+### Abs — the type system
 
-Nudo represents JavaScript values as symbolic types (`TypeValue` kinds):
+Nudo's type system is **Abs** (`shape × term × pred × conf`): types are computable values whose constraints participate in algebra. `nudo check` prints the lossless signature:
+
+```
+scale(x)  number  = (x + 1)  where (x + 1) > 1  #path
+    term: (x + 1)       -- the abstract value (lit / var / app)
+    pred: (x + 1) > 1   -- constraints relative to the term
+    conf: path          -- exact / path / widened / partial / opaque
+```
+
+With `@nudo:refine x positive`, `scale` gets the term `(x + 1)` **and** the derived predicate `(x + 1) > 1` — `x > 0` propagates through `x + 1`, not just through call-site gates. Assignability is structural (`leqAbs`); `nudo check` reports implication failures (`actual ⊭ expected`).
+
+### Type Values — the evaluation IR
+
+TypeValue is the **evaluation IR** (environment bindings, `.d.ts` projection, LSP extensional views) — not a parallel type system; Abs ⇄ TypeValue goes through a lossy bridge. Its kinds:
 
 | Kind | Represents |
 |---|---|

@@ -65,7 +65,7 @@ Case "call@L4": ({ name: "Alice", age: 30 }) => "Alice is 30"
 
 Nudo evaluates the call with the concrete shape: `user.name` and `user.age` resolve to their literal values, and `+` concatenation produces the exact result `"Alice is 30"` — not a flattened `string`.
 
-Currently parameter destructuring degrades to `unknown` (`function greet({ name, age })` with the same body returns `unknown`), so property access is the reliable way to get shape-based precision.
+Currently parameter destructuring does not unpack the argument shape — `function greet({ name, age })` with the same body and call returns `number | string` (the destructured fields arrive as `unknown`, so `+` widens to its plain-JS result), so property access is the reliable way to get shape-based precision.
 
 ---
 

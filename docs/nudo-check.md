@@ -152,7 +152,9 @@ clamp(-5, 0, 10);   // ok
 | 门禁 | 文件 | 要求 |
 |---|---|---|
 | **人工 recall** | `check-recall-gold.test.ts` | recall = precision = **1.0**（45 条人工标注 + 11 条 require/ESM 跨文件） |
-| **真实包精度** | `check-real-commander.test.ts` / `check-real-packages.test.ts` | commander 上 **零** error 级误报（`constraint-violated` / `assign-mismatch` / `arg-structure` 三类） |
+| **shape 精化** | `check-shape-gold.test.ts` | 字段 / 可选 / 边界 |
+| **case ⊆ refine** | `check-case-consistency.test.ts` | 见证 ⊆ 定义域 |
+| **真实包精度** | `check-real-commander.test.ts` / `check-real-packages.test.ts` | 10 个真实包上**零** error 级误报（`constraint-violated` / `assign-mismatch` / `arg-structure` 三类）：commander / escape-string-regexp / is-plain-obj / debug / yocto-queue / p-limit / kleur / eventemitter3 / ms / lodash |
 
 ```bash
 # 真实包扫描报告
