@@ -30,7 +30,7 @@ sli();                                // → "el"
 Case "call@L2": () => "HELLO"
 ```
 
-`toUpperCase`, `toLowerCase`, `slice`, and `.length` produce exact literals. `split` and `indexOf` are not modeled yet and yield `unknown`.
+`toUpperCase`, `toLowerCase`, `slice`, and `.length` produce exact literals. Prefix/suffix/membership checks — `startsWith`, `endsWith`, `includes` — fold to a definite boolean on literal receivers. `split` and `indexOf` are not modeled yet and yield `unknown`.
 
 ### Loops with Concrete Bounds
 

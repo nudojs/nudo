@@ -189,7 +189,24 @@ function buildApiUrl(host, path) {
 buildApiUrl("api.example.com", "/users");   // → "https://api.example.com/users"
 ```
 
-The literal prefix and the concrete call argument fold into the exact URL. Method calls on the resulting template type (for example `url.startsWith("https://")`) currently evaluate to `unknown`, so prefer concatenation structure over method reasoning.
+The literal prefix and the concrete call argument fold into the exact URL. Prefix/suffix/membership checks fold on literal receivers at the call site too:
+
+```javascript
+function checkUrl(url) {
+  return url.startsWith("https://");
+}
+checkUrl("https://api.example.com/users");
+```
+
+**Inferred output:**
+
+```text
+=== checkUrl ===
+
+Case "call@L4": ("https://api.example.com/users") => true
+```
+
+`startsWith`, `endsWith`, and `includes` fold to a definite boolean on literal receivers at the call site (under an `@nudo:case` directive the same body generalizes to `unknown`). Not every method is modeled — `"a,b,c".split(",")` and `"hello".indexOf("l")` evaluate to `unknown` on both paths (see example 7).
 
 ---
 

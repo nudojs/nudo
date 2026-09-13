@@ -126,12 +126,13 @@ fi
 
 # every runnable example file must be covered by at least one matrix row —
 # a file added without a row would silently skip the gate. *.nudo.js
-# templates are imported via @nudo:import, not standalone targets.
+# templates are imported via @nudo:import, not standalone targets; *.d.ts
+# files are generated declarations (nudo infer --dts), not runnable examples.
 covered=$(sed -n 's/^| `\([^`]*\)` | \*\*\([0-9]*\)\*\*.*$/\1/p' "$matrix" \
   | sed -n 's|.*docs/examples/\([^ ]*\).*|docs/examples/\1|p')
 while read -r f; do
   case "$f" in
-    *.nudo.js) continue ;;
+    *.nudo.js | *.d.ts) continue ;;
   esac
   if ! grep -qxF -- "$f" <<<"$covered"; then
     fail=$((fail + 1))
@@ -218,7 +219,8 @@ pin 'pnpm run check docs/examples/mini-repo/user-service.js' \
   'createService()  { store: MemoryStore, load: (id) => ? }  #exact'
 pin 'pnpm run infer docs/examples/mini-repo/user-service.js' \
   'Case "ages": ([10, 20, 30]) => 60' \
-  '(7) => Promise<{ id: 7, name: "u7" }>' '(4) => 5' '(7, 1, 9999) => 7'
+  '(7) => Promise<{ id: 7, name: "u7" }>' '(4) => 5' \
+  '(7, 1, 9999) => 7' '(5, 1, 9999) => 5' 'Combined: 7 | 5'
 # support files are matrix rows too: validators.js shows body-inferred
 # preconditions at entry; store.js documents that class methods don't
 # produce standalone infer cases.

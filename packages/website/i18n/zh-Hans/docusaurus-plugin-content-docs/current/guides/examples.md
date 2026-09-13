@@ -189,7 +189,24 @@ function buildApiUrl(host, path) {
 buildApiUrl("api.example.com", "/users");   // → "https://api.example.com/users"
 ```
 
-字面量前缀与具体调用实参折叠为精确的 URL。对结果模板类型调用方法（如 `url.startsWith("https://")`）目前会求值为 `unknown`，因此优先使用拼接结构而不是方法推理。
+字面量前缀与具体调用实参折叠为精确的 URL。前缀/后缀/包含检查在调用点对字面量接收者同样折叠：
+
+```javascript
+function checkUrl(url) {
+  return url.startsWith("https://");
+}
+checkUrl("https://api.example.com/users");
+```
+
+**推断输出：**
+
+```text
+=== checkUrl ===
+
+Case "call@L4": ("https://api.example.com/users") => true
+```
+
+`startsWith`、`endsWith` 与 `includes` 在调用点对字面量接收者折叠为确定的布尔值（同一函数体在 `@nudo:case` 指令下会泛化为 `unknown`）。并非所有方法都已建模——`"a,b,c".split(",")` 与 `"hello".indexOf("l")` 在两条路径上都会求值为 `unknown`（见示例 7）。
 
 ---
 

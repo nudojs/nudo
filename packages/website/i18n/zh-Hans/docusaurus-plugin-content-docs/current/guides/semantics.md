@@ -30,7 +30,7 @@ sli();                                // → "el"
 Case "call@L2": () => "HELLO"
 ```
 
-`toUpperCase`、`toLowerCase`、`slice` 与 `.length` 产生精确字面量。`split` 与 `indexOf` 尚未建模，结果为 `unknown`。
+`toUpperCase`、`toLowerCase`、`slice` 与 `.length` 产生精确字面量。前缀/后缀/包含检查——`startsWith`、`endsWith`、`includes`——对字面量接收者折叠为确定的布尔值。`split` 与 `indexOf` 尚未建模，结果为 `unknown`。
 
 ### 具体边界的循环
 
