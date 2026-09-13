@@ -1,5 +1,11 @@
 # nudo-vscode
 
+## 0.3.0
+
+### Minor Changes
+
+- Ship the B-path engine line with the monorepo 0.3 packages (`@nudojs/*` 0.3 / `@nudojs/lsp` 0.4): faster incremental analysis, Abs module graph, and LSP hover via Abs node tables.
+
 ## 0.2.0
 
 ### Minor Changes
