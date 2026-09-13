@@ -440,7 +440,13 @@ Exit codes: drift or analysis errors → `1`; uncovered functions are informatio
 
 1. **Develop with watch mode**: Run `nudo watch . --dts` in a terminal while editing. Each save triggers re-inference and `.d.ts` generation.
 
-2. **CI / pre-commit**: `nudo check` exits with code `1` on error-level diagnostics, so it can gate CI. `check` takes a single file — loop over your sources:
+2. **CI / pre-commit**: `nudo check` exits with code `1` on error-level diagnostics, so it can gate CI. Pass a directory to check every inference target under it in one run (`nudo check` scans directories recursively, excluding `node_modules`):
+
+   ```bash
+   nudo check src/
+   ```
+
+   To exclude specific paths (e.g. generated files), loop over the exact files you want gated instead:
 
    ```bash
    find src \( -name "*.js" -o -name "*.mjs" -o -name "*.ts" \) \

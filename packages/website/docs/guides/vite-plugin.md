@@ -37,8 +37,8 @@ export default defineConfig({
 
 | Option        | Type       | Default                 | Description                                                                 |
 |---------------|------------|-------------------------|-----------------------------------------------------------------------------|
-| `include`     | `string[]` | `["**/*.js"]`           | Glob patterns for files to analyze                                          |
-| `exclude`     | `string[]` | `["**/node_modules/**"]`| Glob patterns for files to skip                                             |
+| `include`     | `string[]` | `["**/*.js", "**/*.mjs", "**/*.ts", "**/*.mts"]` | Glob patterns for files to analyze                                          |
+| `exclude`     | `string[]` | `["**/node_modules/**", "**/*.d.ts"]` | Glob patterns for files to skip                                             |
 | `failOnError` | `boolean`  | `false`                 | When `true`, Nudo type errors become build errors                           |
 
 ### Example with Options
@@ -62,7 +62,7 @@ Glob patterns support any file extension (`**/*.js`, `**/*.mjs`, `**/*.ts`, …)
 
 ## Behavior
 
-- **File matching**: The plugin processes files that match `include` and do not match `exclude`; `exclude` always wins. The default `include` of `["**/*.js"]` covers all JavaScript files at any depth, and any other extension can be opted in (e.g. `**/*.mjs`, `**/*.ts`).
+- **File matching**: The plugin processes files that match `include` and do not match `exclude`; `exclude` always wins. The default `include` of `["**/*.js", "**/*.mjs", "**/*.ts", "**/*.mts"]` already covers JavaScript and TypeScript files at any depth; other extensions can be added explicitly (the default `exclude` skips `node_modules` and `.d.ts` files).
 - **Directive check**: Files without Nudo directives (`@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:refine`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, `@nudo:replace`) are skipped. No analysis is run for them.
 - **Analysis**: For matching files with directives, the plugin uses `analyzeFile` from `@nudojs/service` to run type inference.
 - **Caching**: Analysis results are cached per file. The cache is cleared at `buildStart`.
