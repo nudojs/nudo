@@ -1,5 +1,21 @@
 # @nudojs/parser
 
+## 0.3.0
+
+### Minor Changes
+
+- 5786fa5: Improve `@nudo:mock` parsing for sinon-style stubs and share parse/strip with core.
+
+  - Support `stub().onFirstCall()`, `stub().callsFake(fn)`, and `sinon.`-prefixed chains as the same MockHelper shape TypeValue/Abs already consume.
+  - Drop the unused `ReturnsDirective` / `@nudo:returns` directive type (contracts use `@nudo:refine`).
+  - `parse()` now strips types unconditionally via core `parseSource` (shared AST cache).
+
+### Patch Changes
+
+- Updated dependencies [5786fa5]
+- Updated dependencies [5786fa5]
+  - @nudojs/core@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes
