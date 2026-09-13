@@ -98,7 +98,7 @@ issues
 | 人工标注 recall | `check-recall-gold.test.ts` | recall = precision = **1.0** |
 | shape 精化 | `check-shape-gold.test.ts` | 字段 / optional / 数值界 |
 | case vs refine | `check-case-consistency.test.ts` | 见证 ⊆ D |
-| 真实包精度 | `check-real-packages.test.ts` | commander / debug 等零误报 |
+| 真实包精度 | `check-real-packages.test.ts` | commander / escape-string-regexp / is-plain-obj / debug / yocto-queue / p-limit / kleur / eventemitter3 / ms / lodash 零误报 |
 
 ## 编辑器集成
 
@@ -110,6 +110,6 @@ Agent 通过 **`nudo.check`**（CheckJson v1）使用同一门禁——见 [Agen
 
 `nudo check`（及 `checkSource`）始终在 Abs 上分析，含跨文件 require/import 转发。
 
-**service 求值路径**（`call@` 合成、hover 内涵、entry 重求值）仅对**自包含**源码优先 Abs：无 `import`/`require`、无 `@nudo:env`。`@nudo:mock` **不会**禁用 Abs——mock 会编译为 Abs seed。含 import 的文件在这些视图上回落 TypeValue 求值器；契约违例仍由 `nudo check` 捕获。
+**service 求值路径**（`infer` 用例输出、`call@` 合成、JSON `intension`）对被分析文件**自身定义**的函数始终走 Abs——即使该文件有 import。本地函数的每个 case 都带 `intension:` / `abs:` 行（见 `docs/examples/mini-repo/user-service.js`：带 import 的文件，其 `fetchUser(7)` case 报告 `abs: promise<{ id: 7, name: "u7" }>  #path`）。来自**导入模块**的函数（`externalFunctions`、`--- path (imported) ---` 区块）只带调用证据——case 头，无 `intension`。`@nudo:mock` **不会**禁用 Abs——mock 会编译为 Abs seed。契约违例始终由 `nudo check` 捕获。
 
 另见 monorepo `docs/nudo-check.md` 与 `docs/ci-nudo-check.md`。

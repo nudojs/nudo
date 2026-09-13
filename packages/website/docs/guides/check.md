@@ -98,7 +98,7 @@ Signatures carry the **lossless Abs** (`shape`, `term`, `pred`, `conf`). Optiona
 | Human-labeled recall | `check-recall-gold.test.ts` | recall = precision = **1.0** |
 | Shape refinements | `check-shape-gold.test.ts` | field / optional / bounds |
 | Case vs refine | `check-case-consistency.test.ts` | witness ⊆ D |
-| Real-package precision | `check-real-packages.test.ts` | zero false errors on commander / debug / … |
+| Real-package precision | `check-real-packages.test.ts` | zero false errors on commander / escape-string-regexp / is-plain-obj / debug / yocto-queue / p-limit / kleur / eventemitter3 / ms / lodash |
 
 ## Editor integration
 
@@ -110,6 +110,6 @@ Agents use the same gate via **`nudo.check`** (CheckJson v1) — see [Agent API]
 
 `nudo check` (and `checkSource`) always analyzes on Abs, including cross-file require/import forwarding. The CLI is **strictly Abs-only** — it does not also run the TypeValue evaluator for extra diagnostics.
 
-The **service evaluation path** (`call@` synthesis, hover intension, entry re-eval) prefers Abs only for **self-contained** sources: no `import`/`require`, no `@nudo:env`. `@nudo:mock` does **not** disable Abs — mocks compile to Abs seeds. Files with imports fall back to the TypeValue evaluator for those views; contract violations are still caught by `nudo check`.
+The **service evaluation path** (`infer` case output, `call@` synthesis, JSON `intension`) runs Abs for the analyzed file's own functions even when the file has imports — every local function's case carries `intension:` / `abs:` lines (see `docs/examples/mini-repo/user-service.js`: a file with imports whose `fetchUser(7)` case reports `abs: promise<{ id: 7, name: "u7" }>  #path`). Cases of functions from **imported modules** (`externalFunctions`, the `--- path (imported) ---` sections) carry call evidence only — case headers without `intension`. `@nudo:mock` does **not** disable Abs — mocks compile to Abs seeds. Contract violations are always caught by `nudo check`.
 
 See also: monorepo `docs/nudo-check.md` and `docs/ci-nudo-check.md`.

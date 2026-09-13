@@ -211,7 +211,8 @@ function createCounter() {
 `Object.prototype` 方法表 + 原始值自动装箱。json-ext 试炼 41 error → 0。
 
 CLI 主路径（B-hosted）的可见行为（2026-09 实测）：
-- `obj.f()` receiver 注入已生效（`circle.area()` → `25`）
+- `obj.f()` receiver 注入已生效：函数体内的成员调用在**调用点与指令两条路径**都精确（`compute(5)` 内 `circle.area()` → `25 #exact`）
+- **顶层裸成员调用**（`circle.area()` 作语句）不被采集为调用点（无 `call@` case）——采集缺口，非求值缺口（见 semantics.md「Method Calls and this」）
 - `f.call(thisArg)` / `f.apply` **不产生 call@ 记录**（仅 entry@ 兜底）
 - 原始值自动装箱未建模：`"nudo".constructor` → `unknown`（见 semantics.md）
 

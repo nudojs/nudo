@@ -17,16 +17,16 @@ nudo infer lib/ --callsites test/
 
 ```js
 // lib/slugify.js
-module.exports = function slugify(title) {
+export function slugify(title) {
   return title.toLowerCase().replace(/ /g, "-");
-};
+}
 ```
 
 ……以及一个调用它的测试：
 
 ```js
 // test/slugify.test.js
-const slugify = require("../lib/slugify");
+import { slugify } from "../lib/slugify.js";
 
 it("slugifies titles", () => {
   expect(slugify("Hello World")).toBe("hello-world");

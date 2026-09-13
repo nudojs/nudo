@@ -28,7 +28,7 @@ issues
 
 ## 真实包精度
 
-- 金标：`check-real-packages.test.ts`（commander / debug / escape-string-regexp / is-plain-obj 零误报）
+- 金标：`check-real-packages.test.ts`（commander / escape-string-regexp / is-plain-obj / debug / yocto-queue / p-limit / kleur / eventemitter3 / ms / lodash 零误报）+ `check-real-commander.test.ts`（commander 三类 error code 锁零）
 - 人工 recall 金标：`check-recall-gold.test.ts`（recall=precision=1）
 - shape 精化：`check-shape-gold.test.ts`
 - case ⊆ refine：`check-case-consistency.test.ts`

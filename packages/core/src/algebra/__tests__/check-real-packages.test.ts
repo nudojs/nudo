@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
-import { join, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, dirname } from "node:path";
 import { createRequire } from "node:module";
 import { checkSource } from "../index.ts";
 
@@ -10,8 +9,22 @@ import { checkSource } from "../index.ts";
  * 包不存在时跳过（非 monorepo / 未装依赖）。
  */
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
 const require = createRequire(import.meta.url);
+
+/** 包可被 Node 解析即认为安装（不依赖特定 node_modules 布局）。 */
+function canResolve(pkgName: string): boolean {
+  try {
+    require.resolve(`${pkgName}/package.json`);
+    return true;
+  } catch {
+    try {
+      require.resolve(pkgName);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
 
 const ERROR_CODES = [
   "nudo:constraint-violated",
@@ -93,7 +106,7 @@ function scanPackage(pkgName: string): { scanned: number; violations: string[] }
 }
 
 describe("real package precision", () => {
-  it.runIf(existsSync(join(root, "node_modules/commander/lib")))(
+  it.runIf(canResolve("commander"))(
     "commander: no false-positive errors",
     () => {
       const { scanned, violations } = scanPackage("commander");
@@ -144,7 +157,7 @@ describe("real package precision", () => {
     expect(violations, violations.join("\n")).toEqual([]);
   });
 
-  it.runIf(existsSync(join(root, "node_modules/ms")))(
+  it.runIf(canResolve("ms"))(
     "ms: no false-positive errors",
     () => {
       const { scanned, violations } = scanPackage("ms");
@@ -153,7 +166,7 @@ describe("real package precision", () => {
     },
   );
 
-  it.runIf(existsSync(join(root, "node_modules/lodash")))(
+  it.runIf(canResolve("lodash"))(
     "lodash: no false-positive errors",
     () => {
       const { scanned, violations } = scanPackage("lodash");

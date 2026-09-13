@@ -17,16 +17,16 @@ Given a small library:
 
 ```js
 // lib/slugify.js
-module.exports = function slugify(title) {
+export function slugify(title) {
   return title.toLowerCase().replace(/ /g, "-");
-};
+}
 ```
 
 ...and a test that exercises it:
 
 ```js
 // test/slugify.test.js
-const slugify = require("../lib/slugify");
+import { slugify } from "../lib/slugify.js";
 
 it("slugifies titles", () => {
   expect(slugify("Hello World")).toBe("hello-world");

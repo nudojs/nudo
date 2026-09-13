@@ -81,6 +81,10 @@ importers:
       '@babel/types':
         specifier: ^7.29.0
         version: 7.29.0
+    devDependencies:
+      commander:
+        specifier: ^13.0.0
+        version: 13.1.0
 
   packages/env:
     dependencies:

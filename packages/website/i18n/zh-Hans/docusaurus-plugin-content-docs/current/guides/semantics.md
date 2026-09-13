@@ -107,6 +107,31 @@ keysOf();
 Case "call@L2": () => ["port", "host"]
 ```
 
+### 方法调用与 `this`
+
+在函数体内进行的方法调用会把 `this` 绑定到 receiver——调用点与 `@nudo:case` 两条路径皆然。
+
+```js
+class Circle {
+  constructor(r) { this.radius = r; }
+  area() { return this.radius * this.radius; }
+}
+
+function compute(r) {
+  const circle = new Circle(r);
+  return circle.area();
+}
+compute(5);
+```
+
+```text
+=== compute ===
+
+Case "call@L11": (5) => 25
+```
+
+指令路径求值结果相同（对 `compute` 写 `@nudo:case "member" ()` → `() => 25`）。剩下的缺口在调用点**采集**而非求值：顶层裸成员调用（`circle.area()` 作语句）不产生 `call@` case——成员被调者不会被采集为调用点。把成员调用包进函数里即可看到。
+
 ### 递归按调用点展开
 
 递归函数按观测到的调用求值：每个顶层调用被完整展开，作为独立的 `call@` case 报告精确结果。
@@ -144,7 +169,6 @@ Combined: 0 | 1 | 3
 
 | 构造 | 当前行为 | 已建模替代 |
 |---|---|---|
-| 方法调用中的 `this` | `return this.radius` 的 `circle.area()` 不会被记录为调用点（成员被调者不产生 `call@` case），`this.radius` 求值为 `unknown`（`nudo:unknown-recv`）——调用点与 `@nudo:case` 两条路径皆是 | 普通参数：`function area(circle) { return circle.radius * circle.radius; }` |
 | `==` / `!=` 字面量折叠 | `1 == "1"` → `unknown` | 字面量上的 `===` 比较 |
 | 原始值自动装箱 | `"nudo".constructor` → `unknown` | `.length`、上文的字符串方法 |
 | `Object.prototype` 方法 | `({}).hasOwnProperty("key")` → `unknown` | `Object.keys(...)` / 形状检查 |

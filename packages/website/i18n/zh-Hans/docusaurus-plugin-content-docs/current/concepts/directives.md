@@ -23,6 +23,19 @@ function myFunction(a, b) {
 
 多个指令可以出现在同一个注释块中。解析器会在引擎运行前提取它们。
 
+函数级指令（`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`）也接受紧贴函数上方的单行 `// @nudo:…` 注释：
+
+```javascript
+// @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) })
+// @nudo:case "user" (1)
+async function fetchUser(id) {
+  const res = await fetch(`/api/users/${id}`);
+  return res.json();
+}
+```
+
+两种形态解析完全一致——尤其是 mock 表达式的单行规则对两者都适用（见 [@nudo:mock](#nudo--mock-external-dependencies)）。当 `//` 前缀的指令可能被误读为被注释掉的代码时，优先使用块注释形态。
+
 ---
 
 ## @nudo:case — 具名执行用例
@@ -80,7 +93,7 @@ function len(s) {
 
 ---
 
-## @nudo:mock — Mock 外部依赖
+## @nudo:mock — Mock 外部依赖 {#nudo--mock-external-dependencies}
 
 在求值期间将外部依赖替换为 mock 实现。适用于 `fetch`、文件系统 API 或其他 Nudo 无法直接执行的代码。
 

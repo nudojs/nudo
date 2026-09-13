@@ -107,6 +107,31 @@ keysOf();
 Case "call@L2": () => ["port", "host"]
 ```
 
+### Method Calls and `this`
+
+Method calls made inside an analyzed function bind `this` to the receiver — on both the call-site and `@nudo:case` paths.
+
+```js
+class Circle {
+  constructor(r) { this.radius = r; }
+  area() { return this.radius * this.radius; }
+}
+
+function compute(r) {
+  const circle = new Circle(r);
+  return circle.area();
+}
+compute(5);
+```
+
+```text
+=== compute ===
+
+Case "call@L11": (5) => 25
+```
+
+The directive path evaluates the same way (`@nudo:case "member" ()` on `compute` → `() => 25`). The remaining gap is call-site *collection*, not evaluation: a bare top-level member call (`circle.area()` as a statement) produces no `call@` case — member callees are not collected as call sites. Wrap the member call in a function to see it.
+
 ### Recursion Unrolls per Call Site
 
 A recursive function is evaluated per observed call: each top-level call is fully unrolled and reported as its own `call@` case with the exact result.
@@ -144,7 +169,6 @@ These constructs currently evaluate to `unknown` (often with a `nudo:unknown-rec
 
 | Construct | Behavior today | Modeled alternative |
 |---|---|---|
-| `this` in method calls | `circle.area()` with `return this.radius` is not collected as a call site (member callees produce no `call@` case) and `this.radius` evaluates to `unknown` (`nudo:unknown-recv`) — on both the call-site and `@nudo:case` paths | plain parameters: `function area(circle) { return circle.radius * circle.radius; }` |
 | `==` / `!=` literal folding | `1 == "1"` → `unknown` | `===` comparisons on literals |
 | Primitive autoboxing | `"nudo".constructor` → `unknown` | `.length`, string methods above |
 | `Object.prototype` methods | `({}).hasOwnProperty("key")` → `unknown` | `Object.keys(...)` / shape checks |

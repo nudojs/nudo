@@ -1,16 +1,44 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
-import { join, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, dirname } from "node:path";
+import { createRequire } from "node:module";
 import { checkSource } from "../index.ts";
 
 /**
  * 真实包精度门禁：commander（devDep）上不得出现任何 error 级误报。
  * 包不存在时跳过（非 monorepo 环境）。
+ *
+ * commander 声明为本包的 devDependency（pnpm isolated layout 下它链接在
+ * packages/core/node_modules，而不是仓库根的 node_modules——历史上按根路径
+ * existsSync 探测会让门禁静默 skip）。用 createRequire 按 Node 解析规则
+ * 定位。
  */
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
-const commanderLib = join(root, "node_modules/commander/lib");
+const require = createRequire(import.meta.url);
+
+function resolveCommanderLib(): string | undefined {
+  for (const attempt of [
+    () => join(dirname(require.resolve("commander/package.json")), "lib"),
+    () => {
+      // 主入口可能在 lib/ 或 src/；向上找到含 package.json 的目录
+      let p = require.resolve("commander");
+      for (let i = 0; i < 4; i++) {
+        const parent = dirname(p);
+        if (existsSync(join(parent, "package.json"))) return join(parent, "lib");
+        p = parent;
+      }
+      return undefined;
+    },
+  ]) {
+    try {
+      const lib = attempt();
+      if (lib && existsSync(lib)) return lib;
+    } catch {
+      // next
+    }
+  }
+  return undefined;
+}
 
 const ERROR_CODES = [
   "nudo:constraint-violated",
@@ -19,9 +47,11 @@ const ERROR_CODES = [
 ] as const;
 
 describe("real package precision (commander)", () => {
-  const hasPkg = existsSync(commanderLib);
+  const commanderLib = resolveCommanderLib();
+  const hasPkg = !!commanderLib;
 
   it.runIf(hasPkg)("no false-positive errors (constraint / assign / arg-structure)", () => {
+    if (!commanderLib) return; // 已被 runIf 门禁；仅满足 TS 收窄
     const files = readdirSync(commanderLib).filter((f) => f.endsWith(".js"));
     expect(files.length).toBeGreaterThan(0);
 
