@@ -214,6 +214,14 @@ nudo infer src/api/users.js --json
 
 ```json
 {
+  "version": 1,
+  "file": "src/api/users.js",
+  "summary": {
+    "functions": 1,
+    "externalFunctions": 0,
+    "cases": 1,
+    "diagnostics": 0
+  },
   "functions": [
     {
       "name": "createUser",
@@ -227,6 +235,7 @@ nudo infer src/api/users.js --json
           "column": 1
         }
       },
+      "entryOnly": false,
       "cases": [
         {
           "name": "input",
@@ -235,10 +244,16 @@ nudo infer src/api/users.js --json
           ],
           "result": "{ id: 123, name: string, age: number }",
           "throws": null,
-          "source": null
+          "source": "directive",
+          "intension": {
+            "display": "createUser: (input: A1) => { id: 123, name: unknown, age: unknown }",
+            "abs": "{ id: 123, name: string, age: number }  #exact",
+            "absMultiline": "createUser\n  { id: 123, name: string, age: number }\n  conf: exact",
+            "conf": "exact"
+          }
         }
       ],
-      "entryOnly": false
+      "combined": "{ id: 123, name: string, age: number }"
     }
   ],
   "diagnostics": []
@@ -248,7 +263,8 @@ nudo infer src/api/users.js --json
 `functions` 中的每个条目包含：
 
 - `name` 与 `loc`——函数名及其源码位置。
-- `cases`——每个 case 一条。`args` 列出参数类型，`result` 是返回类型，`throws` 是抛出类型或 `null`。`source` 对 `@nudo:case` 指令为 `null`，对由全程序调用点发现合成的 case 为 `"callsite"`。
+- `cases`——每个 case 一条。`args` 列出参数类型，`result` 是返回类型，`throws` 是抛出类型或 `null`。`source` 对 `@nudo:case` 指令为 `"directive"`，对由全程序调用点发现合成的 case 为 `"callsite"`，对没有调用点的 `entry@L` 兜底 case 为 `null`。每个 case 还携带一个 `intension` 对象，内含无损 Abs 签名。
+- `combined`——所有 case 结果的并集，经吸收律化简。
 - `entryOnly`——当函数在整个程序中没有调用点时为 `true`。
 
 ### CI/CD 集成

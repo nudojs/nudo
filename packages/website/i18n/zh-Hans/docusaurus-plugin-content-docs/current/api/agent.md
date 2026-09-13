@@ -51,7 +51,7 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 | `nudo:assign-mismatch` | 赋值 ⊭ 既有绑定形状 |
 | `nudo:arg-structure` | 实参结构 ⊭ 函数体访问的槽位 |
 
-```javascripton
+```json
 {
   "command": "nudo.check",
   "arguments": [{ "file": "src/validators.js", "format": "json" }]
@@ -73,7 +73,7 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 
 **返回（InferJson v1）：** `cases[].intension` 携带 `abs` / `term` / `pred` / `conf`（无损）；`args` / `result` 是 TypeValue 字符串（外延）。
 
-```javascripton
+```json
 {
   "command": "nudo.infer",
   "arguments": [{ "file": "src/app.js", "functions": ["scale"], "format": "json" }]
@@ -117,7 +117,7 @@ const raw = loadRaw();
 const size = raw.length;
 ```
 
-```javascripton
+```json
 {
   "command": "nudo.whatIf",
   "arguments": [

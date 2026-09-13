@@ -51,7 +51,7 @@ Constraint gate on **Abs** (type-as-computation). Same contract as CLI `nudo che
 | `nudo:assign-mismatch` | Assignment ⊭ previous binding shape |
 | `nudo:arg-structure` | Argument structure ⊭ slots accessed in the body |
 
-```javascripton
+```json
 {
   "command": "nudo.check",
   "arguments": [{ "file": "src/validators.js", "format": "json" }]
@@ -73,7 +73,7 @@ Whole-file inference — same contract as CLI `nudo infer --json`.
 
 **Returns (InferJson v1):** `cases[].intension` carries `abs` / `term` / `pred` / `conf` (lossless); `args` / `result` are TypeValue strings (extensional).
 
-```javascripton
+```json
 {
   "command": "nudo.infer",
   "arguments": [{ "file": "src/app.js", "functions": ["scale"], "format": "json" }]
@@ -117,7 +117,7 @@ const raw = loadRaw();
 const size = raw.length;
 ```
 
-```javascripton
+```json
 {
   "command": "nudo.whatIf",
   "arguments": [

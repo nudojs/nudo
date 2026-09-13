@@ -322,6 +322,50 @@ function nested() {
 
 ---
 
+### 4.3 `infer` 崩溃：class 声明 × 顶层调用点（2026-09 实测）
+
+**症状：** 文件同时包含 class 声明与特定形态的顶层调用点时，`nudo infer`
+以裸 `Maximum call stack size exceeded` 崩溃（exit 1，无文件/行号诊断）。
+与声明顺序无关，class 不必被实例化；`nudo check` 对同一文件**不**崩溃
+（递归调用只报 `nudo:recursion-truncated` 警告）。
+
+**最小复现（任一触发即可）：**
+
+```javascript
+// 触发形态 A：顶层调用 Object.keys(具体形状)
+function keysOf() { return Object.keys({ port: 3000, host: "x" }); }
+keysOf();
+
+class Circle {
+  constructor(r) { this.radius = r; }
+  area() { return this.radius * this.radius; }
+}
+```
+
+```javascript
+// 触发形态 B：顶层调用递归函数
+function walk(n) {
+  if (n <= 0) return 0;
+  return n + walk(n - 1);
+}
+walk(2);
+
+class Circle { /* 同上 */ }
+```
+
+**对照（不崩）：** 上述函数各自单独成文件均正常（`keysOf()` →
+`["port", "host"]`、`walk(2)` → `3`）；class 与 `upper()`/`sumTo(5)`/
+`sumArr([1,2,3])`/`findBig()`/`compute(5)` 组合也不崩。当前触发面为
+`Object.keys` 调用点求值与递归调用点求值两类（B 路径托管下的调用点
+采集/求值链与 class registry 交互），其余构造未穷举。
+
+**影响：** 真实项目里 class 与 Object.keys/递归并存极常见；`infer` 目录
+扫描一旦命中即整体失败。
+
+**难度：** 待定位（需在 B 路径调用点采集链上做栈深度探查）。
+
+---
+
 ## 五、优先级排序
 
 ### P0 - 高影响，可实现
@@ -331,6 +375,7 @@ function nested() {
 | 全局标识符未解析 | 常见代码模式 | ✅ 已解决（见 3.1） |
 | `this` 绑定语义 | 方法调用 | ✅ 已解决（见 3.0） |
 | 数组 `reduce` 累加 | 链式调用 | ✅ 已解决（见 1.1） |
+| `infer` class × 顶层调用点裸栈溢出 | 崩溃：目录扫描整体失败 | ⬜ 未修复（见 4.3） |
 
 ### P1 - 高影响，复杂
 

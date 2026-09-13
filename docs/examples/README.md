@@ -68,5 +68,6 @@ pnpm run check docs/examples/vs-ts/constraints/nudo.js
 npx tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts
 ```
 
-> 负例文件（set-delay / return-contract / declared-vs-if / structure/* / vs-ts/*）
-> 的 `check` **故意 exit 1**——报错行就是它们演示的内容。
+> 负例文件（set-delay / return-contract / declared-vs-if / add-pred / structure/* / vs-ts/*）
+> 的 `check` **故意 exit 1**——报错行就是它们演示的内容
+> （add-pred 的 `scale(-1)` ⊭ positive；它同时是 infer 正例，见 constraints/README）。
