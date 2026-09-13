@@ -102,6 +102,18 @@ function collectSiblingRefs(node: unknown, known: Set<string>, out: Set<string>)
     ) {
       continue;
     }
+    // Binding name, not a use: `function id() {}` / `class id {}` must not
+    // count as a sibling ref (would make nRefs≥1 for every named decl and
+    // permanently disable canSkipLiteralCallScan).
+    if (
+      key === "id" &&
+      (obj.type === "FunctionDeclaration" ||
+        obj.type === "FunctionExpression" ||
+        obj.type === "ClassDeclaration" ||
+        obj.type === "ClassExpression")
+    ) {
+      continue;
+    }
     const v = obj[key];
     if (Array.isArray(v)) {
       for (const x of v) collectSiblingRefs(x, known, out);
@@ -221,7 +233,11 @@ export function generalizeSourceKeyPart(
 
 /** Any CallExpression / NewExpression / dynamic import in the AST. */
 function hasAnyCallLike(node: unknown, depth = 0): boolean {
-  if (!node || typeof node !== "object" || depth > 80) return false;
+  if (!node || typeof node !== "object") return false;
+  // Depth cap: unexplored subtree must be treated as "may contain a call"
+  // (return true). Returning false would let canSkipLiteralCallScan skip
+  // scanLiteralCalls and miss constraint violations in deep expressions.
+  if (depth > 80) return true;
   const obj = node as Record<string, unknown> & { type?: string };
   if (
     obj.type === "CallExpression" ||

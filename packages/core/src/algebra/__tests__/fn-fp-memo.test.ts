@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
+  canSkipLiteralCallScan,
   generalizeFromAst,
   resetGeneralizeMemo,
   getGeneralizeMemoSize,
@@ -141,5 +142,25 @@ const f = (x) => x,
     expect(g1).toBeDefined();
     expect(g2).toBeDefined();
     expect(g2).not.toBe(g1);
+  });
+});
+
+describe("canSkipLiteralCallScan depth cap", () => {
+  it("does not skip when a call sits below the walk depth cap", () => {
+    // 90 nested arrays push the CallExpression past hasAnyCallLike's depth>80
+    // cut-off. Unexplored subtrees must be treated as "may contain a call".
+    let nest = "f(-1)";
+    for (let i = 0; i < 90; i++) nest = `[${nest}]`;
+    const src = `const x = ${nest};\n`;
+    const file = parseSource(src);
+    expect(canSkipLiteralCallScan(src, file)).toBe(false);
+  });
+
+  it("still skips shallow call-free sources", () => {
+    const src = `function id(x) { return x + 1; }\nconst y = id(2);\n`;
+    // id(2) is a CallExpression — must NOT skip
+    expect(canSkipLiteralCallScan(src, parseSource(src))).toBe(false);
+    const pure = `const y = 1 + 2;\nfunction id(x) { return x + 1; }\n`;
+    expect(canSkipLiteralCallScan(pure, parseSource(pure))).toBe(true);
   });
 });

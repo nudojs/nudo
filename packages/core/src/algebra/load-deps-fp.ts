@@ -1,7 +1,8 @@
 /**
  * loadModule 可达依赖的内容指纹（check 整文件 memo + generalize L0 共用）。
- * 覆盖 @nudo:import / ESM from / require / dynamic import，含一层传递依赖。
- * 截断时 truncated=true——调用方必须 fail-open（不得写入/读取 memo）。
+ * 覆盖 @nudo:import / ESM from / require / dynamic import；对每条 spec 做
+ * 传递 BFS（seen 防环），直到节点上限。截断时 truncated=true——调用方必须
+ * fail-open（不得写入/读取 memo）。
  */
 import { extractNudoImports } from "./refine.ts";
 import { hashSource } from "./hash-source.ts";
