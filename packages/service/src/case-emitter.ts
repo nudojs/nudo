@@ -84,6 +84,8 @@ export function serializeCaseArg(tv: TypeValue): string | null {
       if (typeof v === "boolean") return v ? "true" : "false";
       if (v === null) return "null";
       if (v === undefined) return "undefined";
+      // bigint 字面量不可固化：文法无 bigint 字面量支持，序列化会退化成字符串
+      if (typeof v === "bigint") return null;
       return serializeStringLiteral(v);
     }
     case "union": {

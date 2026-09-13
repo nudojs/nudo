@@ -6,7 +6,7 @@ import { isTemplate } from "./refinements/template-predicates.ts";
 
 // --- 评估 IR：不是类型系统本体，是 Abs 的外延投影格式 ---
 
-export type LiteralValue = string | number | boolean | null | undefined;
+export type LiteralValue = string | number | boolean | bigint | null | undefined;
 
 // `thisVal` is the bound receiver when the signature is invoked as a method
 // or through Function.prototype.call/apply (e.g. Object.prototype.toString
@@ -222,7 +222,7 @@ export function widenLiteral(tv: TypeValue): TypeValue {
   if (typeof v === "number") return T.number;
   if (typeof v === "string") return T.string;
   if (typeof v === "boolean") return T.boolean;
-  // LiteralValue 目前不含 bigint，但吸收律要求 bigint 字面量（若出现）能 widen 到 T.bigint
+  // 吸收律要求 bigint 字面量能 widen 到 T.bigint
   if (typeof v === "bigint") return T.bigint;
   if (v === null) return T.null;
   if (v === undefined) return T.undefined;

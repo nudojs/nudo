@@ -289,8 +289,12 @@ function lonely(u) {
       expect(triple.cases[0].name).toMatch(/^call@L\d+$/);
       expect(triple.cases[0].source).toBe("callsite");
       expect(triple.cases[0].args.map(typeValueToString)).toEqual(["4"]);
-      expect(typeValueToString(triple.cases[0].result)).toBe("12");
-      expect(typeValueToString(triple.combined)).toBe("12");
+      const caseResult = triple.cases[0].result;
+      if (caseResult === undefined) throw new Error("expected case result");
+      expect(typeValueToString(caseResult)).toBe("12");
+      const combined = triple.combined;
+      if (combined === undefined) throw new Error("expected combined result");
+      expect(typeValueToString(combined)).toBe("12");
       // imported function must not leak into this file's local functions
       expect(result.functions.map((f) => f.name)).toEqual(["caller"]);
     } finally {

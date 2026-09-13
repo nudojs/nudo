@@ -17,7 +17,7 @@ function runTest(source: string): { name: string; caseName: string; result: stri
           (fnType as any)._paramPatterns = d.arrowFn.paramPatterns;
           env.bind(d.name, fnType);
         } else if (d.sinonExpr) {
-          const body = { type: "BlockStatement", body: [] };
+          const body = parse("{}").program.body[0];
           const mockFn = T.fn(["...args"], body, env);
           if (d.sinonExpr.returnValue) {
             (mockFn as any)._directReturn = d.sinonExpr.returnValue;

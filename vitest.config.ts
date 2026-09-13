@@ -3,6 +3,12 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["packages/*/src/**/*.test.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["json"],
+      include: ["packages/*/src/**/*.ts"],
+      exclude: ["**/__tests__/**", "**/*.test.ts"],
+    },
   },
   resolve: {
     alias: {

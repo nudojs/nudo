@@ -98,9 +98,7 @@ describe("emitEnvModule", () => {
   });
 
   it("emitted module evaluates and defines the env", { timeout: 120_000 }, async () => {
-    const mod = (await import("./generated-env.tmp.ts")) as {
-      defineEnv: () => { globals: Record<string, unknown>; modules: Record<string, Record<string, unknown>> };
-    };
+    const mod = await import("./generated-env.tmp.ts");
     const evaluated = mod.defineEnv();
     expect(evaluated.modules.fs).toBeDefined();
     expect(evaluated.modules["node:fs"].readFileSync).toBeDefined();

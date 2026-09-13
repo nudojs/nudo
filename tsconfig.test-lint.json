@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.lint.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true
+  },
+  "include": [
+    "packages/*/src/**/*.test.ts",
+    "packages/harvester/src/__tests__/generated-env.d.ts"
+  ],
+  "exclude": []
+}

@@ -7,7 +7,7 @@ describe("Abs node type map", () => {
     const source = `const x = 1 + 2;\nconst y = x * 3;\n`;
     const map = collectAbsNodeTypes(source);
     expect(map.size).toBeGreaterThan(0);
-    const values = [...map.values()].map(formatAbs);
+    const values = [...map.values()].map((a) => formatAbs(a));
     expect(values.some((s) => s.includes("3"))).toBe(true);
   });
 

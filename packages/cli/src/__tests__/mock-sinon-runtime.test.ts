@@ -4,7 +4,7 @@ import { typeValueToString, createEnvironment, T, mockHelperToTypeValue } from "
 import { evaluateFunctionFull } from "../evaluator.js";
 
 function createSinonMock(sinonExpr: any, env: any): any {
-  const body = { type: "BlockStatement", body: [] };
+  const body = parse("{}").program.body[0];
   const fn = T.fn(["...args"], body, env);
 
   if (sinonExpr.returnValue) {

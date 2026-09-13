@@ -212,6 +212,15 @@ export function typeValueToAbs(tv: TypeValue): Abs {
         confOr("partial"),
       );
     case "literal":
+      if (typeof tv.value === "bigint") {
+        // Abs term 不建模 bigint 字面量：只保留 prim 形状，放弃 literal identity
+        return abs(
+          { k: "prim", type: "bigint" },
+          undefined,
+          undefined,
+          confOr("exact"),
+        );
+      }
       return abs(
         shapeOfLit(tv.value),
         lit(tv.value),

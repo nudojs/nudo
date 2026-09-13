@@ -286,6 +286,7 @@ describe("recursion with memoization", () => {
         parse(`factorial(5)`).program.body[0],
         env,
       );
+      if (!("kind" in result)) throw new Error("expected TypeValue result");
       expect(result.kind).toBe("literal");
     }
   });

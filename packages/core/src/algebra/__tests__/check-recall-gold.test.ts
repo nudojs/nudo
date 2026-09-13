@@ -680,6 +680,8 @@ type RequireGold = {
   /** spec → 模块源码 */
   modules: Record<string, string>;
   expect: Expect;
+  /** 人工备注：case 语义或预期依据 */
+  note?: string;
 };
 
 const REQUIRE_GOLD: RequireGold[] = [

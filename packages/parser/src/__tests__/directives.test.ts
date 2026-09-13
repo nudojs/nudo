@@ -109,12 +109,15 @@ function calc(a, b) {
 
     const d0 = results[0].directives[0];
     expect(d0.kind).toBe("case");
+    if (d0.kind !== "case") throw new Error("expected case directive");
     expect(d0.name).toBe("concrete");
     expect(d0.args).toHaveLength(2);
     expect(typeValueEquals(d0.args[0], T.literal(1))).toBe(true);
     expect(typeValueEquals(d0.args[1], T.literal(2))).toBe(true);
 
     const d1 = results[0].directives[1];
+    expect(d1.kind).toBe("case");
+    if (d1.kind !== "case") throw new Error("expected case directive");
     expect(d1.name).toBe("symbolic");
     expect(typeValueEquals(d1.args[0], T.number)).toBe(true);
     expect(typeValueEquals(d1.args[1], T.number)).toBe(true);
@@ -163,9 +166,11 @@ function greet(a, b) { return a + b; }
 `;
     const ast = parse(source);
     const results = extractDirectives(ast);
-    expect(results[0].directives[0].args).toHaveLength(2);
-    expect(typeValueEquals(results[0].directives[0].args[0], T.literal("hello"))).toBe(true);
-    expect(typeValueEquals(results[0].directives[0].args[1], T.literal("world"))).toBe(true);
+    const d = results[0].directives[0];
+    if (d.kind !== "case") throw new Error("expected case directive");
+    expect(d.args).toHaveLength(2);
+    expect(typeValueEquals(d.args[0], T.literal("hello"))).toBe(true);
+    expect(typeValueEquals(d.args[1], T.literal("world"))).toBe(true);
   });
 
   it("extracts arrow function literal as case argument", () => {
@@ -179,6 +184,7 @@ function apply(items, cb) { return items; }
     const results = extractDirectives(ast);
     const d = results[0].directives[0];
     expect(d.kind).toBe("case");
+    if (d.kind !== "case") throw new Error("expected case directive");
     expect(d.args[0].kind).toBe("tuple");
     expect(d.args[1].kind).toBe("function");
     if (d.args[1].kind === "function") {
@@ -198,6 +204,7 @@ function use(opts) { return opts; }
     const results = extractDirectives(ast);
     const d = results[0].directives[0];
     expect(d.kind).toBe("case");
+    if (d.kind !== "case") throw new Error("expected case directive");
     expect(d.args[0].kind).toBe("object");
     if (d.args[0].kind === "object") {
       const fn = d.args[0].properties.fn;

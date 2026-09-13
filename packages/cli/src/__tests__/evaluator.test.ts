@@ -12,10 +12,11 @@ function inferFromSource(source: string) {
   const env = createEnvironment();
   return functions.map((fn) => ({
     name: fn.name,
-    cases: fn.directives.map((d) => ({
-      caseName: d.name,
-      result: evaluateFunction(fn.node, d.args, env),
-    })),
+    cases: fn.directives.flatMap((d) =>
+      d.kind === "case"
+        ? [{ caseName: d.name, result: evaluateFunction(fn.node, d.args, env) }]
+        : [],
+    ),
   }));
 }
 

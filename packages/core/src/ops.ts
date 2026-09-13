@@ -7,13 +7,13 @@
  * - 比较/相等：代数无法判定时的保守 boolean / 字面量折叠
  * - dispatchMethod/Property：宿主 refined 扩展（startsWith、length…）
  */
-import { type TypeValue, T, isSubtypeOf } from "./type-value.ts";
+import { type TypeValue, type LiteralValue, T, isSubtypeOf } from "./type-value.ts";
 import { concatTemplates, isTemplate } from "./refinements/template.ts";
 
 function bothLiteral(
   l: TypeValue,
   r: TypeValue,
-): { lv: string | number | boolean | null | undefined; rv: string | number | boolean | null | undefined } | null {
+): { lv: LiteralValue; rv: LiteralValue } | null {
   if (l.kind === "literal" && r.kind === "literal") {
     return { lv: l.value, rv: r.value };
   }

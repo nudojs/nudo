@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 dist
+coverage
 *.tsbuildinfo
 dist-ssr
 *.local
@@ -28,6 +29,8 @@ packages/*/out/*
 *.sw?
 
 *.vsix
+
+benchmark/results
 
 .wrangler/
 

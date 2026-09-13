@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   T,
   type LiteralValue,
+  type TypeValue,
   typeValueEquals,
   simplifyUnion,
   widenLiteral,
@@ -139,18 +140,18 @@ describe("widenLiteral", () => {
   });
 
   it("returns union unchanged when member count equals maxLiterals", () => {
-    const u = {
+    const u: TypeValue = {
       kind: "union",
       members: [T.literal(1), T.literal(2), T.literal(3), T.literal(4)],
-    } as const;
+    };
     expect(collapseLiteralUnion(u, 4)).toBe(u);
   });
 
   it("mixed union: number literals absorbed by T.number, string literal kept (行为已修复：吸收律)", () => {
-    const u = {
+    const u: TypeValue = {
       kind: "union",
       members: [T.literal(1), T.number, T.literal("x"), T.literal(2), T.literal(3)],
-    } as const;
+    };
     // 原断言期望原样返回 u；现 collapseLiteralUnion 复用 simplifyUnion 的吸收律，
     // 数字字面量 1/2/3 被共存的 T.number 吸收，仅剩 ["x", number]（数量 ≤ 阈值不再坍缩）
     expect(collapseLiteralUnion(u, 4)).toEqual(T.union(T.number, T.literal("x")));

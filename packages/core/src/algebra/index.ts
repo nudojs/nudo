@@ -17,6 +17,7 @@ export * from "./diagnostics.ts";
 export * from "./template.ts";
 export * from "./language.ts";
 export * from "./check.ts";
+export * from "./check-report.ts";
 export * from "./refine.ts";
 export * from "./constraint.ts";
 export * from "./inlay.ts";
