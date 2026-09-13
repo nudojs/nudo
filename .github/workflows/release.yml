@@ -21,6 +21,10 @@ jobs:
     outputs:
       published: ${{ steps.changesets.outputs.hasChangesets == 'false' }}
       publishedPackages: ${{ steps.changesets.outputs.publishedPackages }}
+    env:
+      # secrets cannot appear in step `if`; expose at job level for gating.
+      VSCODE_MARKETPLACE_TOKEN: ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
+      OVSX_MARKETPLACE_TOKEN: ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,11 +75,11 @@ jobs:
           npx @vscode/vsce package --no-dependencies -o ../../dist/nudo-vscode.vsix
 
       - name: Publish to VSCode Marketplace
-        if: steps.changesets.outputs.hasChangesets == 'false' && secrets.VSCODE_MARKETPLACE_TOKEN != ''
+        if: steps.changesets.outputs.hasChangesets == 'false' && env.VSCODE_MARKETPLACE_TOKEN != ''
         run: npx @vscode/vsce publish --packagePath dist/nudo-vscode.vsix -p ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
 
       - name: Publish to Open VSX
-        if: steps.changesets.outputs.hasChangesets == 'false' && secrets.OVSX_MARKETPLACE_TOKEN != ''
+        if: steps.changesets.outputs.hasChangesets == 'false' && env.OVSX_MARKETPLACE_TOKEN != ''
         run: npx ovsx publish dist/nudo-vscode.vsix -p ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
 
       - name: Create GitHub Release
