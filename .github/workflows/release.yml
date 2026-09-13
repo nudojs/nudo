@@ -85,10 +85,13 @@ jobs:
 
       - name: Publish to VSCode Marketplace
         if: steps.changesets.outputs.hasChangesets == 'false' && env.VSCODE_MARKETPLACE_TOKEN != ''
+        # Marketplace PATs expire; do not block Open VSX / GitHub Release.
+        continue-on-error: true
         run: npx @vscode/vsce publish --packagePath dist/nudo-vscode.vsix -p ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
 
       - name: Publish to Open VSX
         if: steps.changesets.outputs.hasChangesets == 'false' && env.OVSX_MARKETPLACE_TOKEN != ''
+        continue-on-error: true
         run: npx ovsx publish dist/nudo-vscode.vsix -p ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
 
       - name: Create GitHub Release
