@@ -23,6 +23,19 @@ function myFunction(a, b) {
 
 Multiple directives can appear in the same comment block. The parser extracts them before the engine runs.
 
+Function-scoped directives (`@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`) are also accepted in single-line `// @nudo:…` comments placed directly above the function:
+
+```javascript
+// @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) })
+// @nudo:case "user" (1)
+async function fetchUser(id) {
+  const res = await fetch(`/api/users/${id}`);
+  return res.json();
+}
+```
+
+Both forms are parsed identically — in particular, the single-line rule for mock expressions applies to both (see [@nudo:mock](#nudo--mock-external-dependencies)). Prefer the block form when a `//`-prefixed directive could read as commented-out code.
+
 ---
 
 ## @nudo:case — Named Execution Cases
@@ -138,6 +151,8 @@ The real diagnostics for the truncated line:
 ```
 
 **Warning: no `T.*` inside an arrow-function body.** `T` exists only in directive expressions (case arguments, `= T.string`, ...). Inside a mock body write plain JavaScript — plain objects and closures — or use `stub().returns(...)` / `stub().resolves(...)` helpers instead.
+
+**Warning: an unmocked global is executed for real on the B path.** For B-hosted files (the default for sources without top-level `this.`), the transpiled code calls the actual Node runtime global when no mock binds the name. A built-in like `fetch` therefore receives an abstract value as its URL and crashes the run (`ERR_INVALID_URL`, exit `1`) instead of evaluating to `unknown`. Mock any global your analyzed code calls: `@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ ... }) })`.
 
 ### Examples
 

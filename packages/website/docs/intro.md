@@ -67,4 +67,4 @@ Contracts live in `*.nudo.js` templates (`number().gt(0)`, `shape({...})`) — n
 - **[Core Concepts](./concepts/type-values.md)** — Type values, directives, and abstract interpretation
 - **[Call-Site Discovery](./guides/callsite-discovery.md)** — Let Nudo mine your tests for real call shapes instead of writing cases by hand
 - **[nudo check](./guides/check.md)** — Refinement gate on Abs (type-as-computation)
-- **[Language Semantics](./guides/semantics.md)** — The JavaScript behaviors Nudo models precisely, from `this` binding to promise resolution
+- **[Language Semantics](./guides/semantics.md)** — The JavaScript behaviors Nudo models precisely — literal string methods, concrete-bound loops, recursion, and narrowing — plus the constructs that still degrade to `unknown`

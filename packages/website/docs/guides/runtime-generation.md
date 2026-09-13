@@ -143,7 +143,7 @@ Output (stdout):
 ```js
 // === createUser Type Guards ===
 export function iscreateUserInputOutput(data) {
-  return typeof data === 'object' && data !== null && data.id === 123 && typeof data.name === 'string' && typeof data.age === 'number';
+  return typeof data === "object" && data !== null && data.id === 123 && typeof data.name === "string" && typeof data.age === "number";
 }
 ```
 
@@ -181,7 +181,7 @@ With multiple `@nudo:case` directives, the signature is still single — paramet
 // @nudo:case "string input" ("hello")
 // @nudo:case "number input" (42)
 function formatValue(value) {
-  return String(value);
+  return `${value}`;
 }
 ```
 
@@ -214,6 +214,14 @@ Output structure:
 
 ```json
 {
+  "version": 1,
+  "file": "src/api/users.js",
+  "summary": {
+    "functions": 1,
+    "externalFunctions": 0,
+    "cases": 1,
+    "diagnostics": 0
+  },
   "functions": [
     {
       "name": "createUser",
@@ -227,6 +235,7 @@ Output structure:
           "column": 1
         }
       },
+      "entryOnly": false,
       "cases": [
         {
           "name": "input",
@@ -235,10 +244,16 @@ Output structure:
           ],
           "result": "{ id: 123, name: string, age: number }",
           "throws": null,
-          "source": null
+          "source": "directive",
+          "intension": {
+            "display": "createUser: (input: A1) => { id: 123, name: unknown, age: unknown }",
+            "abs": "{ id: 123, name: string, age: number }  #exact",
+            "absMultiline": "createUser\n  { id: 123, name: string, age: number }\n  conf: exact",
+            "conf": "exact"
+          }
         }
       ],
-      "entryOnly": false
+      "combined": "{ id: 123, name: string, age: number }"
     }
   ],
   "diagnostics": []
@@ -248,8 +263,11 @@ Output structure:
 Each entry in `functions` contains:
 
 - `name` and `loc` -- the function name and its source location.
-- `cases` -- one entry per case. `args` lists the argument types, `result` is the return type, `throws` is the thrown type or `null`. `source` is `null` for `@nudo:case` directives, or `"callsite"` for cases synthesized from whole-program call-site discovery.
+- `cases` -- one entry per case. `args` lists the argument types, `result` is the return type, `throws` is the thrown type or `null`. `source` is `"directive"` for `@nudo:case` directives, `"callsite"` for cases synthesized from whole-program call-site discovery, or `null` for `entry@L` fallback cases (no call sites found). Each case also carries an `intension` object with the lossless Abs signature.
+- `combined` -- the union of all case results, simplified by absorption.
 - `entryOnly` -- `true` when the function had no call sites anywhere in the program.
+
+The full field reference is in [CLI Reference — nudo infer](../api/cli-reference.md#nudo-infer).
 
 ### CI/CD Integration
 
@@ -307,7 +325,7 @@ Output (stdout):
 
 // === createProduct Type Guards ===
 export function iscreateProductInputOutput(data) {
-  return typeof data === 'object' && data !== null && data.id === 456 && typeof data.name === 'string' && typeof data.price === 'number' && Array.isArray(data.tags) && data.tags.every(item => typeof item === 'string');
+  return typeof data === "object" && data !== null && data.id === 456 && typeof data.name === "string" && typeof data.price === "number" && Array.isArray(data.tags) && data.tags.every((item) => typeof item === "string");
 }
 
 // === createProduct TypeScript Declarations ===
@@ -323,7 +341,7 @@ export declare function createProduct(input: { name: string; price: number; tags
 ```js
 // src/api/products.guard.js -- pasted from the stdout above
 export function iscreateProductInputOutput(data) {
-  return typeof data === 'object' && data !== null && data.id === 456 && typeof data.name === 'string' && typeof data.price === 'number' && Array.isArray(data.tags) && data.tags.every(item => typeof item === 'string');
+  return typeof data === "object" && data !== null && data.id === 456 && typeof data.name === "string" && typeof data.price === "number" && Array.isArray(data.tags) && data.tags.every((item) => typeof item === "string");
 }
 ```
 

@@ -160,5 +160,5 @@ See the [service API reference](../api/service.md) for the full `AnalysisResult`
 
 ## Next Steps
 
-- **[Language Semantics](./semantics.md)** — what the evaluator can do with the shapes call-site discovery hands it: `this` binding, promises, iterables, and more.
+- **[Language Semantics](./semantics.md)** — what the evaluator can do with the shapes call-site discovery hands it: literal string methods, concrete-bound loops, recursion, and narrowing guards (plus the constructs that still degrade to `unknown`).
 - **[CLI Usage](./cli.md)** — all `nudo infer` and `nudo watch` options.

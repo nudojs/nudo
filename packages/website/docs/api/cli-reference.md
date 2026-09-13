@@ -107,6 +107,14 @@ nudo infer math.js --json
 
 ```json
 {
+  "version": 1,
+  "file": "math.js",
+  "summary": {
+    "functions": 1,
+    "externalFunctions": 0,
+    "cases": 3,
+    "diagnostics": 0
+  },
   "functions": [
     {
       "name": "subtract",
@@ -120,6 +128,7 @@ nudo infer math.js --json
           "column": 1
         }
       },
+      "entryOnly": false,
       "cases": [
         {
           "name": "positive numbers",
@@ -129,7 +138,14 @@ nudo infer math.js --json
           ],
           "result": "2",
           "throws": null,
-          "source": null
+          "source": "directive",
+          "intension": {
+            "display": "subtract: (a: A1, b: A2) => number = (A1 - A2)",
+            "abs": "2  #exact",
+            "absMultiline": "subtract\n  2\n  conf: exact",
+            "term": "(A1 - A2)",
+            "conf": "exact"
+          }
         },
         {
           "name": "negative result",
@@ -139,7 +155,14 @@ nudo infer math.js --json
           ],
           "result": "-9",
           "throws": null,
-          "source": null
+          "source": "directive",
+          "intension": {
+            "display": "subtract: (a: A1, b: A2) => number = (A1 - A2)",
+            "abs": "-9  #exact",
+            "absMultiline": "subtract\n  -9\n  conf: exact",
+            "term": "(A1 - A2)",
+            "conf": "exact"
+          }
         },
         {
           "name": "symbolic",
@@ -149,10 +172,17 @@ nudo infer math.js --json
           ],
           "result": "number",
           "throws": null,
-          "source": null
+          "source": "directive",
+          "intension": {
+            "display": "subtract: (a: A1, b: A2) => number = (A1 - A2)",
+            "abs": "number  #partial",
+            "absMultiline": "subtract\n  number\n  conf: partial",
+            "term": "(A1 - A2)",
+            "conf": "partial"
+          }
         }
       ],
-      "entryOnly": false
+      "combined": "number"
     }
   ],
   "diagnostics": []
@@ -161,7 +191,10 @@ nudo infer math.js --json
 
 Field notes:
 
-- `source` — where the case came from: `null` for hand-written `@nudo:case` directives and `entry@L` fallbacks; `"callsite"` for cases synthesized from recorded call sites (`call@L…`); `"directive"` for case results produced by [`nudo generate`](#nudo-generate), which re-evaluates each case directive and tags the result as directive-derived.
+- `version` / `file` / `summary` — schema version (`1`), the analyzed file path, and totals (`functions`, `externalFunctions`, `cases`, `diagnostics`).
+- `cases[].source` — where the case came from: `"directive"` for cases evaluated from `@nudo:case` directives (hand-written or written back by [`nudo generate`](#nudo-generate), both re-evaluate the directive); `"callsite"` for cases synthesized from recorded call sites (`call@L…`); `null` for `entry@L` fallback cases with `unknown` parameters.
+- `cases[].intension` — the lossless Abs signature of the case (re-evaluated with `unknown` parameters): `display`, `abs`, `absMultiline`, `term`, and `conf`; present when the Abs path produced it.
+- `combined` — the union of all case results, simplified by absorption.
 - `entryOnly` — `true` when the function received no call-site records, so its signature comes from an `entry@L` fallback case with `unknown` parameters.
 - `diagnostics` — the same diagnostics shown in the text output's `Diagnostics:` section (with `range`, `severity`, `message`, and `code`).
 
