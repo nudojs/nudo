@@ -12,7 +12,7 @@
 3. 输出 **Nudo 原生报告**：`signatures` + `actual ⊭ expected`
 
 ```bash
-npx tsx packages/cli/src/index.ts check path/to/file.js
+pnpm run check path/to/file.js
 ```
 
 退出码：有 `error` → `1`（CI 可直接当门禁）。
@@ -176,7 +176,7 @@ npx tsx scripts/scan-real-packages.ts commander
 ## `--json` 契约（v1）
 
 ```bash
-npx tsx packages/cli/src/index.ts check file.js --json
+pnpm run check file.js --json
 ```
 
 ```jsonc
@@ -229,7 +229,7 @@ npx tsx packages/cli/src/index.ts check file.js --json
 ## `nudo infer --json` 契约（v1）
 
 ```bash
-npx tsx packages/cli/src/index.ts infer file.js --json
+pnpm run infer file.js --json
 ```
 
 ```jsonc

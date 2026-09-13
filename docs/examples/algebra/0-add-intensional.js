@@ -3,7 +3,7 @@
 // 运行（仓库根）：
 //   pnpm run infer docs/examples/algebra/0-add-intensional.js   # 外延视图：字面量 #exact
 //   pnpm run check docs/examples/algebra/0-add-intensional.js   # 内包式 Abs：term/pred 签名 #path
-//   npx tsx packages/cli/src/index.ts types docs/examples/algebra/0-add-intensional.js --assume "x>0"  # 代数视图（term/pred/conf）
+//   pnpm run types docs/examples/algebra/0-add-intensional.js --assume "x>0"  # 代数视图（term/pred/conf）
 //
 // infer 输出（TypeValue 桥有损，只看调用点真值）：
 //   add(1, 3)        → 4         #exact

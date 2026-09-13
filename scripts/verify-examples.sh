@@ -178,7 +178,7 @@ pin 'pnpm run check docs/examples/algebra/0-add-intensional.js' \
   'twice(x)  number  = ((x + 1) + 1)  where ((x + 1) + 1) > 2  #path'
 pin 'pnpm run infer docs/examples/algebra/0-add-intensional.js' \
   '(1, 3) => 4' 'abs: 4  #exact' '(number, 1) => number' 'abs: number  #widened'
-pin 'npx tsx packages/cli/src/index.ts types docs/examples/algebra/0-add-intensional.js --assume "x>0"' \
+pin 'pnpm run types docs/examples/algebra/0-add-intensional.js --assume "x>0"' \
   'nudo types' 'assume: x > 0' \
   'add(unknown, unknown)' 'number | string' 'conf: partial' \
   'scale(number)' 'term: (x + 1)' 'pred: (x + 1) > 1' \

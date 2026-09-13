@@ -64,7 +64,7 @@ issues
 
 ```bash
 # 单文件
-npx tsx packages/cli/src/index.ts check path/to/file.js
+pnpm run check path/to/file.js
 
 # 或扫描脚本（多文件/包）
 npx tsx scripts/scan-npm-package.ts commander
@@ -94,7 +94,7 @@ jobs:
           set -e
           for f in $(find src -name '*.js' -not -path '*/node_modules/*' | head -50); do
             echo "==> $f"
-            npx tsx packages/cli/src/index.ts check "$f"
+            pnpm run check "$f"
           done
 ```
 

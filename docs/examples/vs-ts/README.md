@@ -4,10 +4,10 @@ Nudo 不是「另一个类型系统」，是 **少写一门类型系统**：零�
 
 | 场景 | Nudo | tsc --strict |
 |------|------|----------------|
-| **精化** `setDelay(0)` | **报** `constraint-violated`（`@nudo:refine ms delay`） | 不报（`number` 合法） |
-| **结构缺属性** `greet({id})` | **报** `arg-structure`（body 访问推出，无需 interface） | 报（需 `interface User`） |
+| **精化** `setDelay(0)` | **报** `nudo:constraint-violated`（`@nudo:refine ms delay`） | 不报（`number` 合法） |
+| **结构缺属性** `greet({id})` | **报** `nudo:arg-structure`（body 访问推出，无需 interface） | 报（需 `interface User`） |
 | **excess property** | ok（宽度子类型） | **报**（对象字面量） |
-| **赋值缺字段** | **报** `assign-mismatch` | 报（inferred 形状） |
+| **赋值缺字段** | **报** `nudo:assign-mismatch` | 报（inferred 形状） |
 | 零注解 JS | 默认 | 需 checkJs 或迁 TS |
 | 无契约 `x+1` | `number \| string`（真实 JS） | 常被钉成 `number` |
 | 报告 | Abs：`actual ⊭ expected` | TS 诊断文案 |

@@ -652,7 +652,7 @@ function len(x) {
 `types --assume` 实测：
 
 ```
-$ npx tsx packages/cli/src/index.ts types docs/examples/algebra/0-add-intensional.js --assume 'x>0'
+$ pnpm run types docs/examples/algebra/0-add-intensional.js --assume 'x>0'
 nudo types  0-add-intensional.js
 assume: x > 0
 
@@ -676,7 +676,7 @@ twice(number)
 `--generalize`（符号 α，带 `@nudo:refine` 的形参显示前置）实测：
 
 ```
-$ npx tsx packages/cli/src/index.ts types docs/examples/algebra/0-add-intensional.js --generalize
+$ pnpm run types docs/examples/algebra/0-add-intensional.js --generalize
 nudo types  0-add-intensional.js
 mode: generalize (symbolic α)
 

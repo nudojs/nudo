@@ -14,28 +14,11 @@
 
 ## 精化模型
 
-契约不是类型注解，是 **进入 Abs 的 Pred**，会参与代数运算。
+契约不是类型注解，是 **进入 Abs 的 Pred**，会参与代数运算（`x>0` ⇒ `x+1>1`）。
 
-```
-*.nudo.js                 参数无关的精化模板
-  export const delay = number().gt(0);
-  export const user  = shape({ id: number().gt(0), name: string() });
-
-demo.js                   绑定发生在 refine
-  /// @nudo:import { delay, user } from "./delay.nudo.js"
-  /**
-   * @nudo:refine ms delay
-   * @nudo:refine u user
-   * @nudo:refine return delay
-   */
-  function setDelay(ms) { ... }
-```
-
-- `if` 分支 **不是** 精化  
-- 精化只来自 **声明**（`.nudo.js` 导出的模板）  
-- 唯一形态：`@nudo:refine <param|return> <constraint>`  
-- **object 形状用 `shape({...})`，无需 interface / type**  
-- 同一 Pred 喂 check 与代数（`x>0` ⇒ `x+1>1`）
+- 精化只来自 **声明**（`.nudo.js` 导出的模板），`if` 分支不是精化
+- 唯一形态：`@nudo:refine <param|return> <constraint>`；object 形状用 `shape({...})`，无需 interface / type
+- 模板写法、返回精化、与 `@nudo:case` 的对照见 [`constraints/README.md`](./constraints/README.md)（本目录教程）
 
 ## 无契约时跟真实 JS
 
@@ -69,21 +52,21 @@ function score(x) { return x + 1; }
 
 | 命令 | 退出码 | 说明 |
 |------|--------|------|
-| `pnpm run check docs/examples/constraints/set-delay.js` | **1** | 负例：`0 ⊭ delay` / `0 ⊭ positive` |
+| `pnpm run check docs/examples/constraints/set-delay.js` | **1** | 负例：`setDelay[ms]: 实参 ⊭ 前置` / `needsPositive[x]: 实参 ⊭ 前置` |
 | `pnpm run check docs/examples/constraints/register.js` | **0** | 正例：object 形状精化 |
-| `pnpm run check docs/examples/constraints/return-contract.js` | **1** | 负例：`bad()` 返回 `0 ⊭ positive` |
+| `pnpm run check docs/examples/constraints/return-contract.js` | **1** | 负例：`bad: 返回值 ⊭ @nudo:refine return positive` |
 | `pnpm run check docs/examples/constraints/declared-vs-if.js` | **1** | 负例：if ≠ 精化 |
-| `pnpm run check docs/examples/constraints/add-pred.js` | **1** | 负例：`scale(-1) ⊭ positive` |
+| `pnpm run check docs/examples/constraints/add-pred.js` | **1** | 负例：`scale[x]: 实参 ⊭ 前置`（`actual: -1 #exact`） |
 | `pnpm run infer docs/examples/constraints/add-pred.js` | **0** | Pred 流入代数（infer 正例） |
-| `pnpm run check docs/examples/structure/assign.js` | **1** | 负例：`assign-mismatch`（缺 port） |
-| `pnpm run check docs/examples/structure/arg-structure.js` | **1** | 负例：`arg-structure`（缺 slot） |
+| `pnpm run check docs/examples/structure/assign.js` | **1** | 负例：`config: 赋值 ⊭ 原有形状`（缺 port） |
+| `pnpm run check docs/examples/structure/arg-structure.js` | **1** | 负例：`readXY[p]: 实参结构 ⊭ 形参`（缺 slot y） |
 | `pnpm run check docs/examples/vs-ts/constraints/nudo.js` | **1** | nudo 报，对照 tsc 不报 |
 | `npx tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts` | **0** | tsc 侧对照（不报） |
 | `pnpm run check docs/examples/vs-ts/structure/nudo.js` | **1** | nudo 报（结构缺字段 / 赋值） |
 | `npx tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts` | **2** | tsc 报 3 处（缺 name / excess / 缺 port） |
 | `pnpm run check docs/examples/algebra/0-add-intensional.js` | **0** | 内包式 Abs 签名（term/pred/conf，#path） |
 | `pnpm run infer docs/examples/algebra/0-add-intensional.js` | **0** | 字面量 `#exact` |
-| `npx tsx packages/cli/src/index.ts types docs/examples/algebra/0-add-intensional.js --assume "x>0"` | **0** | 代数视图（term/pred/conf，`--assume`） |
+| `pnpm run types docs/examples/algebra/0-add-intensional.js --assume "x>0"` | **0** | 代数视图（term/pred/conf，`--assume`） |
 | `pnpm run infer docs/examples/algebra/a-spread-optional.js` | **0** | spread 配置对象 |
 | `pnpm run infer docs/examples/algebra/b-hof-map.js` | **0** | HOF 回调传播 |
 | `pnpm run infer docs/examples/algebra/c-reduce-sum.js` | **0** | reduce 不动点 |
