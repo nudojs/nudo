@@ -31,6 +31,7 @@ import type { NudoConstraint, NudoField } from "./constraint.ts";
 import { generalizeFromAst } from "./generalize.ts";
 import { canSkipLiteralCallScan } from "./fn-fp.ts";
 import { stableAnalyzeKeySource } from "./stable-source-key.ts";
+import { hashSource, resetHashSourceCache } from "./hash-source.ts";
 import { numLit, unknown, abs as makeAbs } from "./abs.ts";
 import type { Abs } from "./abs.ts";
 import type { Phi, Pred } from "./pred.ts";
@@ -54,8 +55,7 @@ export function resetCheckSourceMemo(): void {
   checkReportMemo.clear();
   checkKeyDeps.clear();
   checkDepIndex.clear();
-  lastHashSource = undefined;
-  lastHashOut = undefined;
+  resetHashSourceCache();
 }
 
 export function getCheckSourceMemoSize(): number {
@@ -82,21 +82,6 @@ function resolveDepPath(fromFile: string, spec: string): string {
   return parts.join("/");
 }
 
-let lastHashSource: string | undefined;
-let lastHashOut: string | undefined;
-
-function hashSource(s: string): string {
-  if (s === lastHashSource && lastHashOut !== undefined) return lastHashOut;
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  lastHashSource = s;
-  lastHashOut = (h >>> 0).toString(36);
-  return lastHashOut;
-}
-
 function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefined): number {
   if (!fn) return 0;
   let id = loadModuleIds.get(fn);
@@ -107,20 +92,49 @@ function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefine
   return id;
 }
 
+/**
+ * All string module specs that check/scan may resolve through loadModule:
+ * `@nudo:import`, ESM `from "..."`, `require("...")`, dynamic `import("...")`.
+ * Regex over-approximates (may hit comments) — extra dep fingerprint is safe
+ * (more misses, never a stale hit).
+ */
+export function extractAllLoadSpecs(source: string): string[] {
+  const specs = new Set<string>();
+  for (const imp of extractNudoImports(source)) specs.add(imp.spec);
+  const patterns = [
+    /\bfrom\s*['"]([^'"]+)['"]/g,
+    /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+  ];
+  for (const re of patterns) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(source))) specs.add(m[1]!);
+  }
+  return [...specs];
+}
+
+/**
+ * Fingerprint every loadModule-reachable dep (not only `*.nudo.js`).
+ * Parent source alone is not a sound memo key when scanLiteralCalls /
+ * refine resolution reads sibling modules through loadModule.
+ */
 function checkDepsFingerprint(
   source: string,
   opts: CheckOptions,
 ): { fp: string; paths: string[] } {
   if (!opts.loadModule || !opts.fromFile) return { fp: "-", paths: [] };
-  const imports = extractNudoImports(source);
-  if (imports.length === 0) return { fp: "-", paths: [] };
+  const specs = extractAllLoadSpecs(source);
+  if (specs.length === 0) return { fp: "-", paths: [] };
+  const load = opts.loadModule;
+  const fromFile = opts.fromFile;
   const parts: string[] = [];
   const paths: string[] = [];
-  for (const imp of imports) {
-    const src = opts.loadModule(imp.spec, opts.fromFile);
-    parts.push(`${imp.spec}=${src === undefined ? "miss" : hashSource(src)}`);
-    paths.push(resolveDepPath(opts.fromFile, imp.spec));
+  for (const spec of specs) {
+    const src = load(spec, fromFile);
+    parts.push(`${spec}=${src === undefined ? "miss" : hashSource(src)}`);
+    paths.push(resolveDepPath(fromFile, spec));
   }
+  parts.sort();
   return { fp: parts.join(","), paths };
 }
 
@@ -264,13 +278,30 @@ export function checkSource(
   phi: Phi = pTrue,
   opts: CheckOptions = {},
 ): CheckReport {
+  // Per-call loadModule cache: dep fingerprint + scan/refine share one read.
+  let loadCache: Map<string, string | undefined> | undefined;
+  let callOpts = opts;
+  if (opts.loadModule && opts.fromFile) {
+    loadCache = new Map();
+    const raw = opts.loadModule;
+    const fromFile = opts.fromFile;
+    callOpts = {
+      ...opts,
+      loadModule: (spec, from) => {
+        const k = `${from}\0${spec}`;
+        if (!loadCache!.has(k)) loadCache!.set(k, raw(spec, from));
+        return loadCache!.get(k);
+      },
+    };
+  }
+
   const useMemo = phi.op === "true";
   let memoKey: string | undefined;
   let depPaths: string[] = [];
   if (useMemo) {
     // 尾部无 @nudo 的注释/空行不进键：comment-only 编辑复用 CheckReport
     const stable = stableAnalyzeKeySource(source);
-    const k = checkMemoKey(filePath, stable, opts);
+    const k = checkMemoKey(filePath, stable, callOpts);
     memoKey = k.key;
     depPaths = k.depPaths;
     const hit = checkMemoGet(memoKey);
@@ -288,7 +319,7 @@ export function checkSource(
   resetAbsCallBudget();
   setAbsTruncationCollector((label) => truncated.add(label));
   try {
-    const report = checkSourceInner(filePath, source, file, phi, opts, issues, signatures, names, truncated);
+    const report = checkSourceInner(filePath, source, file, phi, callOpts, issues, signatures, names, truncated);
     if (memoKey) checkMemoSet(memoKey, report, depPaths);
     return cloneCheckReport(report);
   } finally {

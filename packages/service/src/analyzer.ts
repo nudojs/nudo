@@ -70,7 +70,7 @@ import {
 import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
 import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph, evalProgramAbsWithModules } from "./abs-modules-graph.ts";
-import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable } from "./bpath-run.ts";
+import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, mockSeedFingerprint } from "./bpath-run.ts";
 import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
 import { setAbsTruncationCollector } from "@nudojs/core";
 import {
@@ -1123,13 +1123,15 @@ function analysisFileCacheKey(
 
 function cloneAnalysisResult(r: AnalysisResult): AnalysisResult {
   return {
-    functions: r.functions.map((f) => ({ ...f })),
+    functions: r.functions.map(cloneFunctionAnalysis),
     diagnostics: r.diagnostics.map((d) => ({ ...d })),
     bindings: new Map(r.bindings),
     // Node 键与 AST LRU 共享身份；Map 浅拷贝即可
     nodeTypeMap: new Map(r.nodeTypeMap),
     caseHints: r.caseHints.map((h) => ({ ...h })),
-    ...(r.externalFunctions ? { externalFunctions: r.externalFunctions.map((f) => ({ ...f })) } : {}),
+    ...(r.externalFunctions
+      ? { externalFunctions: r.externalFunctions.map(cloneFunctionAnalysis) }
+      : {}),
   };
 }
 
@@ -1506,9 +1508,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
     fnFpMap = undefined;
   }
   const envKeyFn = envNames.join(",");
-  const mockKeyFn = Object.keys(seeds.seedVars ?? {})
-    .sort()
-    .join(",");
+  const mockKeyFn = mockSeedFingerprint(seeds.seedVars);
 
   for (const fn of functions) {
     const isPure = fn.directives.some((d) => d.kind === "pure");

@@ -20,6 +20,8 @@ import {
   type Abs,
   type AbsModuleExports,
   stableAnalyzeKeySource,
+  formatAbs,
+  hashSource,
 } from "@nudojs/core";
 import { parse, extractInlineDirectives } from "@nudojs/parser";
 import { loadEnvs } from "@nudojs/cli/evaluator";
@@ -27,6 +29,24 @@ import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
 import { envValueToAbs } from "./env-to-abs.ts";
 import { clearAnalysisFileCache } from "./analysis-file-cache.ts";
 import { clearFnAnalysisCache } from "./fn-analysis-cache.ts";
+
+/**
+ * Cache key for @nudo:mock seeds: name list alone is not enough — same names
+ * with different Abs values must miss.
+ */
+export function mockSeedFingerprint(mocks?: Record<string, Abs>): string {
+  if (!mocks) return "-";
+  const names = Object.keys(mocks).sort();
+  if (names.length === 0) return "-";
+  const parts = names.map((n) => {
+    try {
+      return `${n}=${formatAbs(mocks[n]!)}`;
+    } catch {
+      return `${n}=?`;
+    }
+  });
+  return hashSource(parts.join(";"));
+}
 
 /** @nudo:env → Abs 全局表（保留 fnSig impl） */
 export function collectEnvGlobals(envNames: string[]): Record<string, Abs> {
@@ -220,7 +240,7 @@ export function tryRunBPath(
   if (!isBPathCapable(source, opts.envNames ?? [])) return undefined;
   const mode = opts.mode ?? "analyze";
   const envKey = (opts.envNames ?? []).join(",");
-  const mockKey = Object.keys(opts.mocks ?? {}).sort().join(",");
+  const mockKey = mockSeedFingerprint(opts.mocks);
   // 尾部无 @nudo 注释不参与：comment-only 编辑命中 B-path。
   // 同 source 引用时 stable 快路径返回原串 → 下方 === 为 O(1)。
   const stable = stableAnalyzeKeySource(source);
