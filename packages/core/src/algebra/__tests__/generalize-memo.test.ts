@@ -3,6 +3,7 @@ import {
   generalizeFromAst,
   resetGeneralizeMemo,
   getGeneralizeMemoSize,
+  evictGeneralizeMemoForPaths,
   formatAbs,
   checkSource,
   pTrue,
@@ -255,5 +256,30 @@ function needsPositive(x) {
     expect(getGeneralizeMemoSize()).toBeGreaterThan(0);
     resetGeneralizeMemo();
     expect(getGeneralizeMemoSize()).toBe(0);
+  });
+
+  it("evictGeneralizeMemoForPaths drops only dependents of that dep", () => {
+    resetGeneralizeMemo();
+    const loadModule = () => "export const positive = number().gt(0);\n";
+    const refine = { loadModule, fromFile: "/proj/a.js" };
+    const g1 = generalizeFromAst("needsPositive", SRC_REFINE, { refine });
+    const gOther = generalizeFromAst("add", SRC);
+    const sizeAfter = getGeneralizeMemoSize();
+    const n = evictGeneralizeMemoForPaths(["/proj/shapes.nudo.js"]);
+    expect(n).toBeGreaterThan(0);
+    expect(getGeneralizeMemoSize()).toBeLessThan(sizeAfter);
+    // 无关函数仍在
+    expect(generalizeFromAst("add", SRC)).toBe(gOther);
+    // 依赖被逐出 → 重新 generalize 得到新 PolyFn
+    const g2 = generalizeFromAst("needsPositive", SRC_REFINE, { refine });
+    expect(g2).not.toBe(g1);
+    expect(g2).toBeDefined();
+  });
+
+  it("evict is a no-op for unknown paths", () => {
+    resetGeneralizeMemo();
+    generalizeFromAst("add", SRC);
+    expect(evictGeneralizeMemoForPaths(["/nope/missing.nudo.js"])).toBe(0);
+    expect(getGeneralizeMemoSize()).toBeGreaterThan(0);
   });
 });

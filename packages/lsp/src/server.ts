@@ -34,6 +34,7 @@ import {
   evictModuleGraphCacheEntries,
   forgetValidatedFile,
   getCachedOrAnalyze,
+  handleNudoDepFileChanged,
   hasNudoDirectives,
   lspLoadModule,
   toLspDiagnostic,
@@ -170,16 +171,29 @@ export function registerWatchedFilesListener(listener: (uris: string[]) => void)
  * 清空其已发布诊断，并把被清理的 uri 列表广播给监听器。
  * 打开中的文件跳过——其内容由编辑流负责，外部删除会被编辑器以 didOpen/didChange 覆盖。
  */
+function isNudoDepPath(filePath: string): boolean {
+  return /\.nudo\.(js|mjs|ts)$/.test(filePath);
+}
+
 function handleWatchedFilesChanges(changes: readonly FileEvent[], isOpen: (uri: string) => boolean): string[] {
   const gone: string[] = [];
+  const nudoTouched: string[] = [];
   for (const change of changes) {
-    if (change.type !== FileChangeType.Deleted) continue;
-    if (isOpen(change.uri)) continue;
-    gone.push(change.uri);
-    forgetValidatedFile(uriToFilePath(change.uri));
-    activeCases.delete(change.uri);
-    nudoFileCache.delete(change.uri);
-    connection.sendDiagnostics({ uri: change.uri, diagnostics: [] });
+    const filePath = uriToFilePath(change.uri);
+    if (change.type === FileChangeType.Deleted) {
+      if (isOpen(change.uri)) continue;
+      gone.push(change.uri);
+      forgetValidatedFile(filePath);
+      activeCases.delete(change.uri);
+      nudoFileCache.delete(change.uri);
+      connection.sendDiagnostics({ uri: change.uri, diagnostics: [] });
+      if (isNudoDepPath(filePath)) nudoTouched.push(filePath);
+      continue;
+    }
+    // Create/Change：契约模板变更 → 定向逐出 L0 + 重检打开中的父文件
+    if (isNudoDepPath(filePath)) {
+      nudoTouched.push(filePath);
+    }
   }
   if (gone.length > 0) {
     // 拷贝后再遍历：监听器内注销自身不应影响本轮广播
@@ -189,6 +203,12 @@ function handleWatchedFilesChanges(changes: readonly FileEvent[], isOpen: (uri: 
       } catch {
         // 单个监听器异常不阻断其余监听器的缓存逐出
       }
+    }
+  }
+  if (nudoTouched.length > 0) {
+    const deps = validationDeps();
+    for (const p of nudoTouched) {
+      void handleNudoDepFileChanged(p, deps).catch(() => {});
     }
   }
   return gone;

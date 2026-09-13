@@ -19,7 +19,13 @@ import {
   type DiagnosticSeverity as JsDiagSeverity,
   type ModuleGraphCache,
 } from "@nudojs/service";
-import { checkSource, pTrue, resetGeneralizeMemo } from "@nudojs/core";
+import {
+  checkSource,
+  pTrue,
+  resetGeneralizeMemo,
+  evictGeneralizeMemoForPaths,
+  extractNudoImports,
+} from "@nudojs/core";
 import {
   DiagnosticSeverity,
   DiagnosticTag,
@@ -41,11 +47,67 @@ export const knownFiles = new Set<string>();
  */
 export const moduleGraphCache: ModuleGraphCache = new Map();
 
+/**
+ * `*.nudo.js` → 父分析文件（含 `@nudo:import` 的 .js/.ts）。
+ * 供 watched-files 变更时定向重检打开中的父缓冲。
+ */
+export const nudoDepParents = new Map<string, Set<string>>();
+
+function normPath(p: string): string {
+  return p.replace(/\\/g, "/");
+}
+
+/** 每次 validate 后刷新：parent 的全部 @nudo:import 边 */
+export function registerNudoImportDeps(filePath: string, source: string): void {
+  const parent = normPath(resolvePath(filePath));
+  for (const set of nudoDepParents.values()) {
+    set.delete(parent);
+  }
+  const imports = extractNudoImports(source);
+  for (const imp of imports) {
+    if (!imp.spec.startsWith(".") && !imp.spec.startsWith("/")) continue;
+    const dep = normPath(resolvePath(dirname(filePath), imp.spec));
+    let set = nudoDepParents.get(dep);
+    if (!set) {
+      set = new Set();
+      nudoDepParents.set(dep, set);
+    }
+    set.add(parent);
+  }
+}
+
+/**
+ * `*.nudo.js` 创建/变更：定向逐出 L0 memo 中依赖该文件的条目，
+ * 并重检打开中的父文件（propagate=false，不级联）。
+ */
+export async function handleNudoDepFileChanged(
+  nudoPath: string,
+  deps: ValidateTextDeps,
+): Promise<void> {
+  const p = normPath(resolvePath(nudoPath));
+  evictGeneralizeMemoForPaths([p]);
+  const parents = nudoDepParents.get(p);
+  if (!parents || parents.size === 0) return;
+  for (const parent of [...parents]) {
+    const doc = deps.getOpenDocumentByPath?.(parent);
+    if (!doc) continue;
+    await validateText(
+      parent,
+      doc.uri,
+      doc.getText(),
+      doc.version,
+      deps,
+      false,
+    );
+  }
+}
+
 /** Test hook — resets module-level session state. */
 export function clearValidationState(): void {
   analysisCache.clear();
   knownFiles.clear();
   moduleGraphCache.clear();
+  nudoDepParents.clear();
   clearAbsModuleCache();
   resetGeneralizeMemo();
 }
@@ -56,8 +118,12 @@ export function clearValidationState(): void {
  * 仅关闭（文件仍在磁盘上）不走这里，关闭文件仍可作为依赖图节点参与脏传播。
  */
 export function forgetValidatedFile(filePath: string): void {
+  const parent = normPath(resolvePath(filePath));
   knownFiles.delete(filePath);
   analysisCache.delete(filePath);
+  for (const set of nudoDepParents.values()) {
+    set.delete(parent);
+  }
 }
 
 /**
@@ -243,6 +309,7 @@ export async function validateText(
 
   analysisCache.set(filePath, { version, result });
   knownFiles.add(filePath);
+  registerNudoImportDeps(filePath, text);
 
   // Abs check 主通道 + evaluator 诊断
   const checkDiags = checkToLspDiagnostics(filePath, text);

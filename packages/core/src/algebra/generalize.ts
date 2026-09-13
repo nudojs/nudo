@@ -27,6 +27,10 @@ import { constraintToEntryAbs } from "./constraint.ts";
 
 /** 进程内 L0：同 (source, fn, refine 指纹, budget, label) 的 generalize 结果 */
 const generalizeMemo = new Map<string, PolyFn | undefined>();
+/** key → 依赖的规范化路径（供定向逐出） */
+const memoKeyDeps = new Map<string, string[]>();
+/** 依赖路径 → keys */
+const memoDepIndex = new Map<string, Set<string>>();
 const loadModuleIds = new WeakMap<object, number>();
 let nextLoadModuleId = 1;
 
@@ -35,10 +39,63 @@ const MAX_GENERALIZE_MEMO = 1024;
 
 export function resetGeneralizeMemo(): void {
   generalizeMemo.clear();
+  memoKeyDeps.clear();
+  memoDepIndex.clear();
 }
 
 export function getGeneralizeMemoSize(): number {
   return generalizeMemo.size;
+}
+
+function normPath(p: string): string {
+  return p.replace(/\\/g, "/");
+}
+
+/** core 不引 path：相对 spec 用纯字符串拼接（与 LSP resolve 对齐时双方 norm） */
+function resolveDepPath(fromFile: string, spec: string): string {
+  const s = normPath(spec);
+  if (!s.startsWith(".")) return s;
+  const from = normPath(fromFile);
+  const i = from.lastIndexOf("/");
+  const base = i >= 0 ? from.slice(0, i) : "";
+  const parts = base ? base.split("/") : [];
+  for (const seg of s.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") parts.pop();
+    else parts.push(seg);
+  }
+  return parts.join("/");
+}
+
+function unindexMemoKey(key: string): void {
+  const deps = memoKeyDeps.get(key);
+  if (!deps) return;
+  for (const p of deps) {
+    const set = memoDepIndex.get(p);
+    if (!set) continue;
+    set.delete(key);
+    if (set.size === 0) memoDepIndex.delete(p);
+  }
+  memoKeyDeps.delete(key);
+}
+
+/**
+ * LSP/宿主：`*.nudo.js` 变更后按路径定向逐出依赖它的 L0 条目。
+ * 返回删除的条目数。路径需与 generalize 时 resolveDepPath 形态一致（建议先 norm）。
+ */
+export function evictGeneralizeMemoForPaths(paths: string[]): number {
+  let n = 0;
+  for (const raw of paths) {
+    const p = normPath(raw);
+    const keys = memoDepIndex.get(p);
+    if (!keys) continue;
+    for (const key of [...keys]) {
+      generalizeMemo.delete(key);
+      unindexMemoKey(key);
+      n++;
+    }
+  }
+  return n;
 }
 
 function hashSource(s: string): string {
@@ -60,20 +117,23 @@ function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefine
   return id;
 }
 
+type DepFingerprint = { fp: string; paths: string[] };
+
 /**
- * L3：`@nudo:import` 的 *.nudo.js 内容指纹。
- * 依赖变了但本文件 source 未变时，避免复用陈旧 PolyFn。
+ * L3：`@nudo:import` 的 *.nudo.js 内容指纹 + 解析后的依赖路径（反向索引用）。
  */
-function refineDepsFingerprint(source: string, refine?: RefineResolveOpts): string {
-  if (!refine?.loadModule || !refine.fromFile) return "-";
+function refineDepsFingerprint(source: string, refine?: RefineResolveOpts): DepFingerprint {
+  if (!refine?.loadModule || !refine.fromFile) return { fp: "-", paths: [] };
   const imports = extractNudoImports(source);
-  if (imports.length === 0) return "-";
+  if (imports.length === 0) return { fp: "-", paths: [] };
   const parts: string[] = [];
+  const paths: string[] = [];
   for (const imp of imports) {
     const src = refine.loadModule(imp.spec, refine.fromFile);
     parts.push(`${imp.spec}=${src === undefined ? "miss" : hashSource(src)}`);
+    paths.push(resolveDepPath(refine.fromFile, imp.spec));
   }
-  return parts.join(",");
+  return { fp: parts.join(","), paths };
 }
 
 function generalizeMemoKey(
@@ -84,17 +144,19 @@ function generalizeMemoKey(
     label?: string;
     refine?: RefineResolveOpts;
   },
-): string {
+): { key: string; depPaths: string[] } {
   const r = opts.refine;
   const budget = opts.budget ?? defaultLeakBudget;
-  return [
+  const deps = r ? refineDepsFingerprint(source, r) : { fp: "-", paths: [] };
+  const key = [
     hashSource(source),
     fnName,
     opts.label ?? "A",
     r ? `${loadModuleId(r.loadModule)}:${r.fromFile ?? ""}` : "-",
-    r ? refineDepsFingerprint(source, r) : "-",
+    deps.fp,
     `${budget.maxDepth}/${budget.maxNodes}`,
   ].join("|");
+  return { key, depPaths: deps.paths };
 }
 
 function generalizeMemoGet(key: string): PolyFn | undefined | null {
@@ -106,12 +168,30 @@ function generalizeMemoGet(key: string): PolyFn | undefined | null {
   return v;
 }
 
-function generalizeMemoSet(key: string, value: PolyFn | undefined): void {
+function generalizeMemoSet(
+  key: string,
+  value: PolyFn | undefined,
+  depPaths: string[],
+): void {
   if (generalizeMemo.size >= MAX_GENERALIZE_MEMO) {
     const oldest = generalizeMemo.keys().next().value;
-    if (oldest !== undefined) generalizeMemo.delete(oldest);
+    if (oldest !== undefined) {
+      generalizeMemo.delete(oldest);
+      unindexMemoKey(oldest);
+    }
   }
   generalizeMemo.set(key, value);
+  if (depPaths.length > 0) {
+    memoKeyDeps.set(key, depPaths);
+    for (const p of depPaths) {
+      let set = memoDepIndex.get(p);
+      if (!set) {
+        set = new Set();
+        memoDepIndex.set(p, set);
+      }
+      set.add(key);
+    }
+  }
 }
 
 /** L1/L2 只缓存完整可复用结果；截断/失败产生的 partial|opaque 不进缓存 */
@@ -506,13 +586,13 @@ export function generalizeFromAst(
     file?: ReturnType<typeof babelParse>;
   } = {},
 ): PolyFn | undefined {
-  const key = generalizeMemoKey(fnName, source, opts);
+  const { key, depPaths } = generalizeMemoKey(fnName, source, opts);
   const cached = generalizeMemoGet(key);
   if (cached !== null) {
     return cached;
   }
   const result = generalizeFromAstUncached(fnName, source, opts);
-  generalizeMemoSet(key, result);
+  generalizeMemoSet(key, result, depPaths);
   return result;
 }
 
