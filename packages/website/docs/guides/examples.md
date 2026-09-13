@@ -69,6 +69,47 @@ Nudo evaluates the call with the concrete shape: `user.name` and `user.age` reso
 
 Currently parameter destructuring does not unpack the argument shape — `function greet({ name, age })` with the same body and call returns `number | string` (the destructured fields arrive as `unknown`, so `+` widens to its plain-JS result), so property access is the reliable way to get shape-based precision.
 
+Shape merging through spread is the workhorse for config objects — right-side slots override same-named left-side slots, the remaining slots union, and each call site keeps its literals:
+
+```js
+function mixin(base, ext) {
+  return { ...base, ...ext };
+}
+mixin({ host: "localhost", port: 8080 }, { port: 3000, debug: true });
+mixin({ id: 1 }, { name: "ada" });
+```
+
+```text
+=== mixin ===
+
+Case "call@L4": ({ host: "localhost", port: 8080 }, { port: 3000, debug: true }) => { host: "localhost", port: 3000, debug: true }
+Case "call@L5": ({ id: 1 }, { name: "ada" }) => { id: 1, name: "ada" }
+
+Combined: { host: "localhost", port: 3000, debug: true } | { id: 1, name: "ada" }
+```
+
+Index projection with a literal key resolves the exact slot — and stays precise for objects playing an "env" role:
+
+```js
+function pick(obj, key) {
+  return obj[key];
+}
+pick({ a: 1, b: "x" }, "a");
+const env = { PATH: "/usr/bin", HOME: "/root" };
+pick(env, "PATH");
+```
+
+```text
+=== pick ===
+
+Case "call@L4": ({ a: 1, b: "x" }, "a") => 1
+Case "call@L6": ({ PATH: "/usr/bin", HOME: "/root" }, "PATH") => "/usr/bin"
+
+Combined: 1 | "/usr/bin"
+```
+
+A symbolic (`T.string`) key cannot select a slot and degrades to `unknown` — repo example (CI-pinned): [`docs/examples/algebra/e-index-proj.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/e-index-proj.js). Spread meet and the `--dts` projection (one widened signature, literal-union return) are pinned in [`docs/examples/algebra/d-mixin-meet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/d-mixin-meet.js) and [`docs/examples/algebra/a-spread-optional.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/a-spread-optional.js).
+
 ---
 
 ### 3. Array Processing with map/filter
@@ -97,6 +138,45 @@ Combined: [2, 4, 6] | number[]
 ```
 
 Nudo tracks element types through `map`. The concrete input `[1, 2, 3]` is evaluated element by element to `[2, 4, 6]`, while the symbolic input `T.array(T.number)` yields `number[]`. Repo example (CI-pinned): [`docs/examples/algebra/b-hof-map.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/b-hof-map.js).
+
+`reduce` is just as precise — a literal array folds element by element through the accumulator, and a symbolic array converges through the accumulator fixpoint (`acc ⊔ (acc + A)`):
+
+```javascript
+/**
+ * @nudo:case "literal" ([1, 2, 3, 4, 5])
+ * @nudo:case "symbolic" (T.array(T.number))
+ */
+function sum(numbers) {
+  return numbers.reduce((acc, n) => acc + n, 0);
+}
+```
+
+```text
+=== sum ===
+
+Case "literal": ([1, 2, 3, 4, 5]) => 15
+Case "symbolic": (number[]) => number
+
+Combined: number
+```
+
+Array-method support is not uniform — check this boundary before relying on a method. `forEach` callback side effects are **not** written back (an accumulator closed over by the callback stays at its initial value), and `some` / `every` return `unknown`:
+
+```js
+function forEachSum(arr) {
+  let s = 0;
+  arr.forEach((x) => { s = s + x; });
+  return s;
+}
+forEachSum([1, 2, 3, 4, 5]);    // → 0 — the s = s + x write never lands
+
+function someBig(arr) {
+  return arr.some((x) => x > 3);
+}
+someBig([1, 2, 3, 4, 5]);       // → unknown
+```
+
+Use `map` / `reduce` (and `filter → map → reduce` chains, which keep literal precision per level) instead. Repo examples (CI-pinned): [`docs/examples/algebra/c-reduce-sum.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/c-reduce-sum.js), [`docs/examples/algebra/h-array-boundary.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/h-array-boundary.js).
 
 ---
 

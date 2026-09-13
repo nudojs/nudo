@@ -356,6 +356,39 @@ nudo check src/broken.js
 
 ---
 
+## `nudo types`
+
+类型即计算视图：展示每个函数在 Abs 代数上的**内涵**——形状、`term`、`pred` 与置信度——而不是 `infer` 汇报的外延 TypeValue 形状。精化参与代数运算，所以声明的前置条件会出现在推断出的 term 内部：
+
+```bash
+nudo types docs/examples/algebra/0-add-intensional.js --assume "x>0"
+```
+
+```text
+nudo types  0-add-intensional.js
+assume: x > 0
+
+add(unknown, unknown)
+  number | string
+  conf: partial
+
+scale(number)
+  number
+  term: (x + 1)
+  pred: (x + 1) > 1
+  conf: path
+
+twice(number)
+  number
+  term: ((x + 1) + 1)
+  pred: ((x + 1) + 1) > 2
+  conf: path
+```
+
+`scale` 的签名是 `number`，`term: (x + 1)`、`pred: (x + 1) > 1`——`@nudo:refine x positive` 的前置条件（`x > 0`）参与了运算并推出更强的后置。`add` 没有约束，其 `number | string` 结果为 `conf: partial`。选项（`--fn`、`--assume`、`--generalize`）见 [`nudo types` 参考](../api/cli-reference.md#nudo-types)；这个文件的同一命令已被 CI 钉在[示例矩阵](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md)里。
+
+---
+
 ## `nudo harvest`
 
 把已安装的 `@types/<pkg>` TypeScript 声明转成 Nudo env 文件——用 `T.*` 构造器重建这些类型的 TypeScript 源码。`@types` 包必须先安装：
@@ -471,3 +504,5 @@ nudo doctor src/ --callsites tests/
 3. **生成声明文件**：使用 `nudo infer src/ --dts`（或单个文件）为需要 TypeScript 定义的使用方生成 `.d.ts`。
 
 4. **复用环境类型**：每个 `@types` 包运行一次 `nudo harvest <pkg>`，在需要它的文件里用 `/// @nudo:env ./nudo-harvest-<pkg>.ts` 引用生成的 env 文件。
+
+5. **查看代数视图**：精化签名表现异常时，读它的内涵——`nudo types src/math.js --assume "x>0"` 展示推断类型背后的 `term` / `pred` / `conf`（见 [`nudo types`](#nudo-types)）。

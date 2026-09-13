@@ -356,6 +356,39 @@ Hint lines, error-level assertions, and the exit-code rules are covered in the [
 
 ---
 
+## `nudo types`
+
+The type-as-computation view: each function's **intension** from Abs algebra — shape, `term`, `pred`, and confidence — instead of the extensional TypeValue shape that `infer` reports. Refinements participate in algebra, so a declared precondition shows up inside the inferred term:
+
+```bash
+nudo types docs/examples/algebra/0-add-intensional.js --assume "x>0"
+```
+
+```text
+nudo types  0-add-intensional.js
+assume: x > 0
+
+add(unknown, unknown)
+  number | string
+  conf: partial
+
+scale(number)
+  number
+  term: (x + 1)
+  pred: (x + 1) > 1
+  conf: path
+
+twice(number)
+  number
+  term: ((x + 1) + 1)
+  pred: ((x + 1) + 1) > 2
+  conf: path
+```
+
+`scale`'s signature is `number` with `term: (x + 1)` and `pred: (x + 1) > 1` — the `@nudo:refine x positive` precondition (`x > 0`) was applied to the computation and produced the stronger postcondition. `add` carries no constraint, so its `number | string` result is `conf: partial`. Options (`--fn`, `--assume`, `--generalize`) are documented in the [`nudo types` reference](../api/cli-reference.md#nudo-types); the CI-pinned run of this exact file is in the [example matrix](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md).
+
+---
+
 ## `nudo harvest`
 
 Convert installed `@types/<pkg>` TypeScript declarations into a Nudo env file — TypeScript source that rebuilds those types with `T.*` constructors. The `@types` package must be installed first:
@@ -471,3 +504,5 @@ Exit codes: drift or analysis errors → `1`; uncovered functions are informatio
 3. **Generate declarations**: Use `nudo infer src/ --dts` (or a single file) to produce `.d.ts` for consumers expecting TypeScript definitions.
 
 4. **Reuse ambient types**: Run `nudo harvest <pkg>` once per `@types` package and reference the generated env file with `/// @nudo:env ./nudo-harvest-<pkg>.ts` in the files that need it.
+
+5. **Inspect the algebra view**: When a refined signature behaves unexpectedly, read its intension — `nudo types src/math.js --assume "x>0"` shows the `term` / `pred` / `conf` behind the inferred type (see [`nudo types`](#nudo-types)).

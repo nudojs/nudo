@@ -69,6 +69,47 @@ Nudo 用具体形状求值该调用：`user.name` 与 `user.age` 解析为字面
 
 目前参数解构不会拆开实参形状——同样的函数体与调用写成 `function greet({ name, age })` 会返回 `number | string`（解构出的字段以 `unknown` 到达，`+` 因而拓宽为其普通 JS 语义的结果），因此要获得形状级精度，属性访问是可靠写法。
 
+spread 形状合并是配置对象的主力工具——右侧槽位覆盖同名左侧槽位，其余槽位取并集，每个调用点保留自己的字面量：
+
+```js
+function mixin(base, ext) {
+  return { ...base, ...ext };
+}
+mixin({ host: "localhost", port: 8080 }, { port: 3000, debug: true });
+mixin({ id: 1 }, { name: "ada" });
+```
+
+```text
+=== mixin ===
+
+Case "call@L4": ({ host: "localhost", port: 8080 }, { port: 3000, debug: true }) => { host: "localhost", port: 3000, debug: true }
+Case "call@L5": ({ id: 1 }, { name: "ada" }) => { id: 1, name: "ada" }
+
+Combined: { host: "localhost", port: 3000, debug: true } | { id: 1, name: "ada" }
+```
+
+字面量 key 的索引投影会精确取出对应槽位——对扮演 "env" 角色的对象同样精确：
+
+```js
+function pick(obj, key) {
+  return obj[key];
+}
+pick({ a: 1, b: "x" }, "a");
+const env = { PATH: "/usr/bin", HOME: "/root" };
+pick(env, "PATH");
+```
+
+```text
+=== pick ===
+
+Case "call@L4": ({ a: 1, b: "x" }, "a") => 1
+Case "call@L6": ({ PATH: "/usr/bin", HOME: "/root" }, "PATH") => "/usr/bin"
+
+Combined: 1 | "/usr/bin"
+```
+
+符号 key（`T.string`）无法选定槽位，退化为 `unknown`——仓库示例（CI 钉住）：[`docs/examples/algebra/e-index-proj.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/e-index-proj.js)。spread meet 与 `--dts` 投影（单一拓宽签名、字面量并返回）分别钉在 [`docs/examples/algebra/d-mixin-meet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/d-mixin-meet.js) 与 [`docs/examples/algebra/a-spread-optional.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/a-spread-optional.js)。
+
 ---
 
 ### 3. 使用 map 的数组处理
@@ -97,6 +138,45 @@ Combined: [2, 4, 6] | number[]
 ```
 
 Nudo 通过 `map` 跟踪元素类型。具体输入 `[1, 2, 3]` 被逐元素求值为 `[2, 4, 6]`，符号输入 `T.array(T.number)` 产生 `number[]`。仓库示例（CI 钉住）：[`docs/examples/algebra/b-hof-map.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/b-hof-map.js)。
+
+`reduce` 同样精确——字面量数组经累加器逐元素折叠，符号数组经累加器不动点（`acc ⊔ (acc + A)`）收敛：
+
+```javascript
+/**
+ * @nudo:case "literal" ([1, 2, 3, 4, 5])
+ * @nudo:case "symbolic" (T.array(T.number))
+ */
+function sum(numbers) {
+  return numbers.reduce((acc, n) => acc + n, 0);
+}
+```
+
+```text
+=== sum ===
+
+Case "literal": ([1, 2, 3, 4, 5]) => 15
+Case "symbolic": (number[]) => number
+
+Combined: number
+```
+
+数组方法支持并不均匀——依赖某个方法前先查这条边界。`forEach` 回调的副作用**不会写回**（被回调闭包捕获的累加器停留在初值），`some` / `every` 返回 `unknown`：
+
+```js
+function forEachSum(arr) {
+  let s = 0;
+  arr.forEach((x) => { s = s + x; });
+  return s;
+}
+forEachSum([1, 2, 3, 4, 5]);    // → 0 —— s = s + x 的写回从未落地
+
+function someBig(arr) {
+  return arr.some((x) => x > 3);
+}
+someBig([1, 2, 3, 4, 5]);       // → unknown
+```
+
+请改用 `map` / `reduce`（以及 `filter → map → reduce` 链，逐级保留字面量精度）。仓库示例（CI 钉住）：[`docs/examples/algebra/c-reduce-sum.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/c-reduce-sum.js)、[`docs/examples/algebra/h-array-boundary.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/h-array-boundary.js)。
 
 ---
 
