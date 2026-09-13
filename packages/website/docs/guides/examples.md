@@ -9,6 +9,8 @@ This guide shows practical examples of Nudo type inference, grouped by theme. Ea
 
 Every output block below is a real `nudo infer` run of the code above it. Output blocks show the **case headers and `Combined:` lines** — the per-call-site ground truth. The `intension:` / `abs:` lines of a full run re-evaluate the function with `unknown` parameters (a generalized signature), which for multi-branch functions shows only the fallback path; read the case headers and `Combined:` for branch-by-branch precision. Functions here use call sites (`call@L…`) when the call-site path is the precise one, and `@nudo:case` directives when they are.
 
+> The repo's CI-verified example suite lives in [`docs/examples/`](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md): every command and promised exit code there is checked by `pnpm run verify:examples`, with per-example output pins mirroring the documented output lines. This guide browses the same engine by theme; the repo suite is the ground-truth gate.
+
 ---
 
 ## Basic Inference

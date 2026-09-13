@@ -9,6 +9,8 @@ description: 按主题浏览 Nudo 推断的实用示例——函数与对象、�
 
 下方所有输出块都是对上面代码真实运行 `nudo infer` 的结果。输出块只展示 **case 头与 `Combined:` 行**——它们是逐调用点的真实精度。完整输出里的 `intension:` / `abs:` 行是用 `unknown` 形参重估的泛化签名，对多分支函数只会显示回退路径的结果；分支级精度请以 case 头与 `Combined:` 为准。当调用点路径更精确时示例使用调用点（`call@L…`）形态，否则使用 `@nudo:case` 指令。
 
+> 仓库内 CI 自验证的示例套件在 [`docs/examples/`](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md)：其中每条命令与承诺的退出码都由 `pnpm run verify:examples` 校验，并有逐示例的输出钉对照文档声称的输出行。本指南按主题浏览同一引擎；仓库套件是真值门禁。
+
 ---
 
 ## 基础推断
