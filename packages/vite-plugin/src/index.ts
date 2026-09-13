@@ -1,4 +1,10 @@
-import { analyzeFileAsync, defaultLoadModule as loadModule, type AnalysisResult, type Diagnostic } from "@nudojs/service";
+import {
+  analyzeFileAsync,
+  defaultLoadModule as loadModule,
+  clearAnalysisSessionCaches,
+  type AnalysisResult,
+  type Diagnostic,
+} from "@nudojs/service";
 import { checkSource, pTrue } from "@nudojs/core";
 
 export type NudoPluginOptions = {
@@ -113,6 +119,14 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): any {
 
     buildStart() {
       analysisCache.clear();
+      // 全新构建：丢掉上一轮会话 memo，避免跨 build 陈旧命中
+      clearAnalysisSessionCaches();
+    },
+
+    /** 任一文件变更后，未改 source 的 importer 再 transform 时可能命中陈旧会话缓存 */
+    watchChange() {
+      analysisCache.clear();
+      clearAnalysisSessionCaches();
     },
 
     async transform(code: string, id: string) {

@@ -9,10 +9,14 @@ import { parse as babelParse } from "@babel/parser";
 import type { File } from "@babel/types";
 import { stripTypes } from "../strip-types.ts";
 
-/** 会话内 AST 缓存上限（大文件 File 较重，LRU 控内存） */
-const MAX_AST_CACHE = 48;
+/**
+ * 会话内 AST 缓存上限。key 是完整 source——碰撞安全（SameValueZero），
+ * 但每个条目都钉住一份源码文本，故 cap 必须远小于「随便缓存」：
+ * 16 × 1MB ≈ 16MB 源码 key 上界（File 本体另计）。
+ */
+const MAX_AST_CACHE = 16;
 /** Skip caching sources whose text alone would dominate session memory. */
-const MAX_AST_SOURCE_CHARS = 2_000_000;
+const MAX_AST_SOURCE_CHARS = 1_000_000;
 const astCache = new Map<string, File>();
 
 export function resetParseSourceCache(): void {

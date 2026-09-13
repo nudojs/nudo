@@ -34,9 +34,9 @@ describe("parseSource AST LRU", () => {
   });
 
   it("LRU evicts oldest beyond cap", () => {
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 20; i++) {
       parseSource(`${SRC}// ${i}\n`);
     }
-    expect(getParseSourceCacheSize()).toBeLessThanOrEqual(48);
+    expect(getParseSourceCacheSize()).toBeLessThanOrEqual(16);
   });
 });

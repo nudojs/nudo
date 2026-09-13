@@ -169,6 +169,12 @@ export type AnalysisResult = {
   functions: FunctionAnalysis[];
   diagnostics: Diagnostic[];
   bindings: Map<string, BindingInfo>;
+  /**
+   * Node identity is from the analysis-time parse. A later re-parse of the
+   * same source returns a *different* File (new Nodes) if the AST LRU evicted
+   * the original — lookups must use the File that produced this result, not a
+   * freshly parsed one. getTypeAtPosition rebuilds its own map and is unaffected.
+   */
   nodeTypeMap: Map<Node, TypeValue>;
   caseHints: CaseHint[];
   /** functions imported from other modules, synthesized from cross-file call sites observed while analyzing this file */
@@ -1558,6 +1564,12 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
     const caseDirectives = fn.directives.filter((d) => d.kind === "case");
     const activeCaseIdx = activeCases?.get(fn.name) ?? 0;
 
+    // Per-fn cache is intentionally case-scoped: synthesized cases (no
+    // @nudo:case) are built from whole-file call records observed while
+    // evaluating *other* functions — own/deps fingerprints cannot see those
+    // call sites, so caching a synthesis result under own/deps would be
+    // unsound (sibling body-edit that changes a call to this fn would miss
+    // the fingerprint). Case-directive results are self-contained.
     const fp = fnFpMap?.get(fn.name);
     const fnCacheKey =
       fp && caseDirectives.length > 0

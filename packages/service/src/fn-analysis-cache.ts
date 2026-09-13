@@ -28,7 +28,9 @@ export type CachedCaseHint = {
 };
 
 export type CachedCallRecord = {
-  // opaque; cloned shallowly
+  // opaque; cloned shallowly. Position fields that need lineDelta shift
+  // (currently only callLoc) are listed on CallRecord in evaluator.ts —
+  // keep shiftCallRecordLines in sync when adding any.
   [k: string]: unknown;
 };
 

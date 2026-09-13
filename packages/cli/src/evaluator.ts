@@ -620,6 +620,9 @@ export type CallRecord = {
   argTypes: TypeValue[];
   resultType: TypeValue;
   throws: TypeValue;
+  /** Line-relative. Per-fn cache replay shifts this by lineDelta — if you
+   *  add another position field (callee loc, arg loc), extend
+   *  shiftCallRecordLines in analyzer.ts in the same change. */
   callLoc?: { line: number; column: number };
   targetModule?: string;
   targetExport?: string;

@@ -13,10 +13,12 @@ import { hashSource } from "./hash-source.ts";
 
 export type FnFp = { own: string; deps: string; nRefs: number };
 
+/** source → per-fn fingerprints. Key is full source (collision-safe); cap keeps
+ *  retained text bounded: 24 × 1MB ≈ 24MB worst-case key strings. */
 const fnFpCache = new Map<string, Map<string, FnFp>>();
-const MAX_FN_FP_CACHE = 48;
+const MAX_FN_FP_CACHE = 24;
 /** Cap on cached whole-source keys so large monorepo sessions stay bounded. */
-const MAX_FN_FP_SOURCE_CHARS = 1_500_000;
+const MAX_FN_FP_SOURCE_CHARS = 1_000_000;
 
 export function resetFnFpCache(): void {
   fnFpCache.clear();

@@ -12,8 +12,7 @@ import {
   buildModuleGraph,
   computeDirtySet,
   defaultLoadModule,
-  clearAbsModuleCache,
-  clearBPathCache,
+  clearAnalysisSessionCaches,
   evictAbsModuleCacheFiles,
   evictBPathCacheForFiles,
   evictAnalysisFileCacheForFiles,
@@ -26,10 +25,8 @@ import {
 import {
   checkSource,
   pTrue,
-  resetGeneralizeMemo,
   evictGeneralizeMemoForPaths,
   evictCheckSourceMemoForPaths,
-  resetCheckSourceMemo,
   extractNudoImports,
 } from "@nudojs/core";
 import {
@@ -120,10 +117,9 @@ export function clearValidationState(): void {
   knownFiles.clear();
   moduleGraphCache.clear();
   nudoDepParents.clear();
-  clearAbsModuleCache();
-  clearBPathCache(); // cascades analysis-file + fn-analysis caches
-  resetGeneralizeMemo();
-  resetCheckSourceMemo();
+  // service+core 会话 memo 全清（B-path / analysis-file / fn-analysis /
+  // abs-module / generalize L0 / check 整文件 / nudo-module exec）
+  clearAnalysisSessionCaches();
 }
 
 /**

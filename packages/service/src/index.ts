@@ -100,6 +100,11 @@ export {
   clearFnAnalysisCache,
   evictFnAnalysisCacheForFiles,
 } from "./fn-analysis-cache.ts";
+export {
+  evictAnalysisCachesForFiles,
+  clearAnalysisSessionCaches,
+  resetAllAnalysisCaches,
+} from "./session-cache.ts";
 export { envValueToAbs } from "./env-to-abs.ts";
 export type { BMemberDiag } from "@nudojs/core";
 
