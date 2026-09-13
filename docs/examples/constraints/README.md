@@ -96,9 +96,9 @@ function bad() {
 | 违例 | 调用/返回 ⊭ refine | case ⊄ D → `nudo:case-inconsistency` |
 
 ```bash
-pnpm run check docs/examples/constraints/set-delay.js
-pnpm run check docs/examples/constraints/register.js
-pnpm run check docs/examples/constraints/return-contract.js
-pnpm run check docs/examples/constraints/declared-vs-if.js
-pnpm run infer docs/examples/constraints/add-pred.js
+pnpm run check docs/examples/constraints/set-delay.js       # 负例：exit 1 预期（0 ⊭ delay / 0 ⊭ positive）
+pnpm run check docs/examples/constraints/register.js        # 正例：exit 0
+pnpm run check docs/examples/constraints/return-contract.js # 负例：exit 1 预期（bad() 返回 0 ⊭ positive）
+pnpm run check docs/examples/constraints/declared-vs-if.js  # 负例：exit 1 预期（setDelay(0) ⊭ delay）
+pnpm run infer docs/examples/constraints/add-pred.js        # exit 0
 ```

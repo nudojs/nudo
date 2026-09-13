@@ -1,32 +1,12 @@
-// 示例 D：mixin / 交叉（meet）
-// 考察：装饰器式组合在 brand shape 上做槽位 meet
+// 示例 D：spread / 槽位 meet
+// 考察：两个对象形状的合并（meet）：右值覆盖同槽，其余槽位并集；
+// 调用点保留字面量（exact），Combined 保留全部成员
 
-function withLogging(Base) {
-  return class extends Base {
-    log(msg) {
-      console.log(msg);
-    }
-  };
+function mixin(base, ext) {
+  return { ...base, ...ext };
 }
 
-function withTiming(Base) {
-  return class extends Base {
-    time(label, fn) {
-      return fn();
-    }
-  };
-}
+mixin({ host: "localhost", port: 8080 }, { port: 3000, debug: true });
+mixin({ id: 1 }, { name: "ada" });
 
-class Service {
-  fetch(id) {
-    return { id, ok: true };
-  }
-}
-
-const Svc = withTiming(withLogging(Service));
-const svc = new Svc();
-svc.fetch(1);
-svc.log("hi");
-svc.time("t", () => 1);
-
-export { withLogging, withTiming, Service, Svc };
+export { mixin };

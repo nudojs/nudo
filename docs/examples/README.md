@@ -48,19 +48,22 @@ function score(x) { return x + 1; }
 ## 怎么跑
 
 ```bash
-# 精化门禁（标量）
+# 精化门禁（标量）—— 负例文件：exit 1 是预期（演示 0 ⊭ delay / 0 ⊭ positive）
 pnpm run check docs/examples/constraints/set-delay.js
 
-# 精化门禁（object 形状）
+# 精化门禁（object 形状）—— 正例：exit 0
 pnpm run check docs/examples/constraints/register.js
 
-# 返回精化
+# 返回精化 —— 负例（bad() 返回 0 ⊭ positive）：exit 1 是预期
 pnpm run check docs/examples/constraints/return-contract.js
 
-# 推断（无损 Abs）
+# 推断（无损 Abs）—— exit 0
 pnpm run infer docs/examples/constraints/add-pred.js
 
-# 与 tsc 对照
+# 与 tsc 对照 —— nudo 报（exit 1 预期），tsc 不报（exit 0）
 pnpm run check docs/examples/vs-ts/constraints/nudo.js
 npx tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts
 ```
+
+> 负例文件（set-delay / return-contract / declared-vs-if / structure/* / vs-ts/*）
+> 的 `check` **故意 exit 1**——报错行就是它们演示的内容。

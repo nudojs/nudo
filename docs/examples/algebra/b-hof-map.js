@@ -1,12 +1,8 @@
 // 示例 B：高阶函数自动多态
-// 考察：generalize → ∀A B. (A[], A→B) → B[]；调用点实例化
+// 考察：回调经内置 .map 传播；调用点逐位实例化 → [2, 4, 6] / ["A", "B"]
 
 function map(arr, fn) {
-  const out = [];
-  for (const item of arr) {
-    out.push(fn(item));
-  }
-  return out;
+  return arr.map(fn);
 }
 
 map([1, 2, 3], (x) => x * 2);

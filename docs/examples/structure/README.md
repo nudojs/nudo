@@ -8,6 +8,7 @@
 | [`arg-structure.js`](./arg-structure.js) | `nudo:arg-structure` |
 
 ```bash
+# 两个都是负例文件：exit 1 是预期（报错行即演示内容）
 pnpm run check docs/examples/structure/assign.js
 pnpm run check docs/examples/structure/arg-structure.js
 ```
