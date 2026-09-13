@@ -333,9 +333,11 @@ getTheme({ user: { profile: { name: "Bob" } } });
 
 Case "call@L4": ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } }) => string
 Case "call@L5": ({ user: { profile: { name: "Bob" } } }) => unknown
+
+Combined: unknown
 ```
 
-完整路径存在时链式解析成功，`?? "light"` 得到 `string`；链式短路时结果退化为 `unknown`。已知属性上的浅层 `??` 更精确：
+完整路径存在时链式解析成功，`?? "light"` 得到 `string`；链式短路时结果退化为 `unknown`。组合类型是 `unknown`——基类型 `unknown` 成员吸收了 `string`。已知属性上的浅层 `??` 更精确：
 
 ```javascript
 function getPort(config) {

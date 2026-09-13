@@ -47,27 +47,36 @@ function score(x) { return x + 1; }
 
 ## 怎么跑
 
-```bash
-# 精化门禁（标量）—— 负例文件：exit 1 是预期（演示 0 ⊭ delay / 0 ⊭ positive）
-pnpm run check docs/examples/constraints/set-delay.js
+所有示例命令与期望退出码的**唯一真值**在下面这张矩阵；一条命令验证全部：
+`pnpm run verify:examples`（CI 门禁，见 `scripts/verify-examples.sh`）。
+每个子目录 README 与示例文件头注释里的单行命令只是就近提示，改示例时以
+本矩阵为准（改期望退出码 = 同时更新脚本，否则 CI 会红）。
 
-# 精化门禁（object 形状）—— 正例：exit 0
-pnpm run check docs/examples/constraints/register.js
+| 命令 | 退出码 | 说明 |
+|------|--------|------|
+| `pnpm run check docs/examples/constraints/set-delay.js` | **1** | 负例：`0 ⊭ delay` / `0 ⊭ positive` |
+| `pnpm run check docs/examples/constraints/register.js` | **0** | 正例：object 形状精化 |
+| `pnpm run check docs/examples/constraints/return-contract.js` | **1** | 负例：`bad()` 返回 `0 ⊭ positive` |
+| `pnpm run check docs/examples/constraints/declared-vs-if.js` | **1** | 负例：if ≠ 精化 |
+| `pnpm run check docs/examples/constraints/add-pred.js` | **1** | 负例：`scale(-1) ⊭ positive` |
+| `pnpm run infer docs/examples/constraints/add-pred.js` | **0** | Pred 流入代数（infer 正例） |
+| `pnpm run check docs/examples/structure/assign.js` | **1** | 负例：`assign-mismatch`（缺 port） |
+| `pnpm run check docs/examples/structure/arg-structure.js` | **1** | 负例：`arg-structure`（缺 slot） |
+| `pnpm run check docs/examples/vs-ts/constraints/nudo.js` | **1** | nudo 报，对照 tsc 不报 |
+| `npx tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts` | **0** | tsc 侧对照（不报） |
+| `pnpm run check docs/examples/vs-ts/structure/nudo.js` | **1** | nudo 报（结构缺字段 / 赋值） |
+| `npx tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts` | **2** | tsc 报 3 处（缺 name / excess / 缺 port） |
+| `pnpm run check docs/examples/algebra/0-add-intensional.js` | **0** | 内包式 Abs 签名（term/pred/conf，#path） |
+| `pnpm run infer docs/examples/algebra/0-add-intensional.js` | **0** | 字面量 `#exact` |
+| `pnpm run infer docs/examples/algebra/a-spread-optional.js` | **0** | spread 配置对象 |
+| `pnpm run infer docs/examples/algebra/b-hof-map.js` | **0** | HOF 回调传播 |
+| `pnpm run infer docs/examples/algebra/c-reduce-sum.js` | **0** | reduce 不动点 |
+| `pnpm run infer docs/examples/algebra/d-mixin-meet.js` | **0** | spread 形状 meet |
+| `pnpm run infer docs/examples/algebra/e-index-proj.js` | **0** | 索引投影 |
+| `pnpm run infer docs/examples/algebra/f-async-eff.js` | **0** | async × `@nudo:mock` |
+| `pnpm run infer docs/examples/algebra/g-narrow-subtract.js` | **0** | 守卫窄化 |
+| `pnpm run infer docs/examples/algebra/sample.js` | **0** | 无调用点 → `entry@` 回退 |
+| `pnpm run check docs/examples/mini-repo/user-service.js` | **0** | 多文件集成（check） |
+| `pnpm run infer docs/examples/mini-repo/user-service.js` | **0** | 多文件集成（infer） |
 
-# 返回精化 —— 负例（bad() 返回 0 ⊭ positive）：exit 1 是预期
-pnpm run check docs/examples/constraints/return-contract.js
-
-# 推断（无损 Abs）—— exit 0
-pnpm run infer docs/examples/constraints/add-pred.js
-
-# 内包式 Abs 签名（term/pred/conf，#path）—— exit 0
-pnpm run check docs/examples/algebra/0-add-intensional.js
-
-# 与 tsc 对照 —— nudo 报（exit 1 预期），tsc 不报（exit 0）
-pnpm run check docs/examples/vs-ts/constraints/nudo.js
-npx tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts
-```
-
-> 负例文件（set-delay / return-contract / declared-vs-if / add-pred / structure/* / vs-ts/*）
-> 的 `check` **故意 exit 1**——报错行就是它们演示的内容
-> （add-pred 的 `scale(-1)` ⊭ positive；它同时是 infer 正例，见 constraints/README）。
+> 负例文件（constraints / structure / vs-ts 的 check）**故意 exit 非 0**——报错行就是它们演示的内容。

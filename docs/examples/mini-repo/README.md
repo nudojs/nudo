@@ -9,9 +9,7 @@
 | `user-service.js` | import、async、HOF |
 
 ```bash
-# 正例：两个命令都 exit 0（infer 输出含调用点 case，无警告）
-pnpm run check docs/examples/mini-repo/user-service.js
-pnpm run infer docs/examples/mini-repo/user-service.js
+pnpm run verify:examples   # 验证本目录命令（见 ../README.md 命令矩阵，两个都 exit 0）
 ```
 
 infer 亮点（每行都是逐调用点/逐 case 真值）：

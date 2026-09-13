@@ -16,13 +16,7 @@ Nudo 不是「另一个类型系统」，是 **少写一门类型系统**：零�
 ## 怎么跑
 
 ```bash
-# 精化 —— nudo 报（exit 1 预期），tsc 不报（exit 0）
-pnpm run check docs/examples/vs-ts/constraints/nudo.js
-npx tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts
-
-# 结构 —— nudo 报（exit 1 预期），tsc 报 3 处（exit 2）
-pnpm run check docs/examples/vs-ts/structure/nudo.js
-npx tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts
+pnpm run verify:examples   # 验证两侧命令与期望退出码（见 ../README.md 命令矩阵）
 ```
 
 > 两侧的退出码非 0 都是预期：这些文件故意放错误调用，

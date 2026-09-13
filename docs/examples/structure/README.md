@@ -7,8 +7,5 @@
 | [`assign.js`](./assign.js) | `nudo:assign-mismatch` |
 | [`arg-structure.js`](./arg-structure.js) | `nudo:arg-structure` |
 
-```bash
-# 两个都是负例文件：exit 1 是预期（报错行即演示内容）
-pnpm run check docs/examples/structure/assign.js
-pnpm run check docs/examples/structure/arg-structure.js
-```
+两个都是负例文件：`check` **故意 exit 1**（报错行即演示内容）。  
+运行命令与期望退出码见 [../README.md](./README.md) 的命令矩阵；`pnpm run verify:examples` 一次验证全部。

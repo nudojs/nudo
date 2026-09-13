@@ -14,7 +14,7 @@ concurrency:
 # 三个 job 并行，任一失败即红。
 jobs:
   lint:
-    name: Lint (tsc x2)
+    name: Lint (tsc x2) & docs examples
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -37,6 +37,9 @@ jobs:
 
       - name: Lint tests
         run: npm run lint:tests
+
+      - name: Verify docs examples
+        run: pnpm run verify:examples
 
   build:
     name: Build

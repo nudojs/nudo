@@ -333,9 +333,11 @@ getTheme({ user: { profile: { name: "Bob" } } });
 
 Case "call@L4": ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } }) => string
 Case "call@L5": ({ user: { profile: { name: "Bob" } } }) => unknown
+
+Combined: unknown
 ```
 
-When the full path exists, the chain resolves and `?? "light"` yields `string`; when the chain short-circuits, the result degrades to `unknown`. A shallow `??` on a known property is more precise:
+When the full path exists, the chain resolves and `?? "light"` yields `string`; when the chain short-circuits, the result degrades to `unknown`. The combined type is `unknown` — the base `unknown` member absorbs `string`. A shallow `??` on a known property is more precise:
 
 ```javascript
 function getPort(config) {
