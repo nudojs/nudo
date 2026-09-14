@@ -84,6 +84,7 @@ jobs:
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: |
           mkdir -p dist
+          pnpm --filter nudo-vscode run build
           cd packages/vscode
           npx @vscode/vsce package --no-dependencies -o ../../dist/nudo-vscode.vsix
 
