@@ -6,12 +6,12 @@
 
 ## 一、集合类型推断限制
 
-### 1.1 数组方法精度不齐：reduce 已精确，forEach 副作用 / some / every 仍 unknown
+### 1.1 数组方法精度：reduce / forEach / some 已精确；动态 key 仍 unknown
 
 **当前行为（2026-09 实测）：**
 `reduce` 已在两条路径上精确：字面量数组逐元素累加、符号数组走累加器不动点；
-`filter → map → reduce` 链式调用不再逐级丢信息。仍未建模的是 `forEach` 的副作用
-写回、`some`/`every` 的返回值。
+`filter → map → reduce` 链式调用不再逐级丢信息。`forEach` 回调副作用写回、
+`some`/`every` 返回 boolean 也已建模。
 
 **实测示例：**
 ```javascript
@@ -33,7 +33,7 @@ function forEachSum(arr) {
   arr.forEach((x) => { s = s + x; });
   return s;
 }
-// Case "t": ([1, 2, 3, 4, 5]) => 0 —— forEach 回调副作用不写回（s 恒 0）
+// Case "t": ([1, 2, 3, 4, 5]) => 15 —— forEach 回调副作用写回 s
 
 /**
  * @nudo:case "t" ([1, 2, 3, 4, 5])
@@ -41,28 +41,28 @@ function forEachSum(arr) {
 function someBig(arr) {
   return arr.some((x) => x > 3);
 }
-// Case "t": ([1, 2, 3, 4, 5]) => unknown —— some/every 未建模
+// Case "t": ([1, 2, 3, 4, 5]) => boolean
 ```
 
 **影响范围（剩余）：**
-- `Array.forEach()` 的副作用推断（回调内的赋值/写回不传播）
-- `Array.some()` / `Array.every()` 的返回值
+- 动态 key 索引投影（`obj[unknownKey]` → `unknown`）
 - 回调形态的集合迭代（手写 for-of / for-i 循环里 `fn(item)` 的返回值不进 push）
 
 **已解决部分：**
 - `Array.reduce()`：字面量路径逐元素求值；符号路径 `acc ⊔ (acc+A)` 收敛（`#widened`）
 - `filter` + `map` + `reduce` 链式调用：每级保留字面量精度
 - `arr.map(cb)` 回调传播：调用点逐位实例化（`[2,4,6]`）
+- `forEach` 副作用写回、`some`/`every` → boolean
 
 已建模 / 未建模的边界已固化进示例门禁：
 [`docs/examples/algebra/h-array-boundary.js`](examples/algebra/h-array-boundary.js)
-（CI 钉住：`reduce` → `15 #exact`、`forEach` 副作用 → `0`、`some` → `unknown`）。
+（CI 钉住：`reduce` → `15 #exact`、`forEach` 副作用 → `15`、`some` → `boolean`）。
 
 **可能的解决方案（剩余部分）：**
-1. **副作用建模**：把回调执行的环境写回绑定表
-2. **集合谓词**：`some`/`every` 按元素分发求值
+1. **动态 key 收窄**：字面量 key 分支 + 符号 key 的 slot 并集
+2. **手写循环**：for-of / for-i 的元素分发（与 forEach 同轨）
 
-**难度：** 中（reduce 部分已实现）
+**难度：** 中（reduce / forEach / some 已实现）
 
 ---
 
@@ -402,7 +402,7 @@ class Circle { /* 同上 */ }
 |------|------|------|
 | 高阶函数参数推断 | 大量代码模式 | 关系型 Abs（见 `design-hof-relations.md`）+ 调用点推断 |
 | Map 字面量 key 追踪 | 查找表模式 | 字面量 key 精确映射（见 1.2） |
-| 数组 forEach 副作用 / some / every | 常见代码模式 | 副作用建模 / 元素分发（见 1.1） |
+| 数组动态 key 投影 / 手写循环 fn(item) | 常见代码模式 | key 分发 / 元素分发（见 1.1） |
 
 ### P2 - 中等影响
 

@@ -200,12 +200,12 @@ pin 'pnpm run check docs/examples/structure/arg-structure.js' \
 pin 'pnpm run check docs/examples/vs-ts/constraints/nudo.js' \
   '2 error · 0 warning' \
   'setDelay[ms]: 实参 ⊭ 前置' 'actual:   -50  #exact'
-pin_empty 'npx tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts'
+pin_empty 'pnpm exec tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts'
 pin 'pnpm run check docs/examples/vs-ts/structure/nudo.js' \
   '2 error · 0 warning' \
   'greet[user]: 实参结构 ⊭ 形参' 'missing slot name' \
   'config: 赋值 ⊭ 原有形状'
-pin 'npx tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts' \
+pin 'pnpm exec tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts' \
   'error TS2345' 'error TS2353' 'error TS2741'
 
 # algebra/ — pins mirror each file's header-comment promises.
@@ -252,8 +252,8 @@ pin 'pnpm run infer docs/examples/algebra/g-narrow-subtract.js' \
   '("abc") => 3' '([1, 2]) => 2' '(5) => -1' 'Combined: 3 | 2 | -1'
 pin 'pnpm run infer docs/examples/algebra/h-array-boundary.js' \
   'Case "reduce": ([1, 2, 3, 4, 5]) => 15' 'abs: 15  #exact' \
-  'Case "forEach": ([1, 2, 3, 4, 5]) => 0' 'abs: 0  #exact' \
-  'Case "some": ([1, 2, 3, 4, 5]) => unknown' 'abs: unknown  #partial'
+  'Case "forEach": ([1, 2, 3, 4, 5]) => 15' 'abs: 15  #exact' \
+  'Case "some": ([1, 2, 3, 4, 5]) => boolean' 'abs: boolean  #exact'
 pin 'pnpm run infer docs/examples/algebra/sample.js' \
   'Case "entry@' '# no call sites found; parameters default to unknown' \
   'add: (a: A1, b: A2) => number | string = (A1 + A2)' \
@@ -273,7 +273,7 @@ pin 'pnpm run infer docs/examples/mini-repo/user-service.js' \
 pin 'pnpm run infer docs/examples/mini-repo/validators.js' \
   'Case "entry@L1": (unknown) => boolean' \
   'isPositive: (n: A1) => boolean  where A1 > 0' \
-  'clamp: (n: A1, lo: A2, hi: A3) => any = A1'
+  'clamp: (n: A1, lo: A2, hi: A3) => A2 = A2'
 pin 'pnpm run infer docs/examples/mini-repo/store.js' \
   'No functions with @nudo:case directives found.'
 

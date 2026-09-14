@@ -60,11 +60,12 @@ if (current.totalCases !== baseline.totalCases) {
     problems.push(`error 回退：${baseline.results.errorCount} → ${current.error}`);
   }
 
-  const order = ["exact", "partial", "unknown", "error"];
+  // exact < partial < unknown < mismatch < error（越靠右越差）
+  const order = ["exact", "partial", "unknown", "mismatch", "error"];
   const byId = new Map(results.map((r) => [r.id, r]));
   for (const b of baseline.cases) {
     const c = byId.get(b.id);
-    // 回退 = 当前比基线更差（order 下标更大）；partial→unknown 才是回退
+    // 回退 = 当前比基线更差（order 下标更大）；unknown→partial / mismatch→exact 是改进
     if (c && order.indexOf(c.comparison) > order.indexOf(b.comparison)) {
       problems.push(`case 回退 ${b.id} (${b.name}): ${b.comparison} → ${c.comparison}`);
     }

@@ -1,5 +1,5 @@
 // 约束场景 — tsc 侧
-// 运行：npx tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts
+// 运行：pnpm exec tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts
 //
 // tsc 只能查 number，查不到 ms > 0。
 
