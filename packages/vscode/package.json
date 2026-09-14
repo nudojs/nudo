@@ -35,7 +35,7 @@
     "@types/vscode": "^1.85.0"
   },
   "scripts": {
-    "build": "tsup src/extension.ts --format cjs --outDir out --external vscode",
+    "build": "tsup src/extension.ts --format cjs --outDir out --external vscode && node ./scripts/bundle-server.mjs",
     "package": "npx @vscode/vsce package --no-dependencies"
   }
 }

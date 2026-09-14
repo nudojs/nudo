@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import {
   createConnection,
   TextDocuments,
@@ -69,6 +70,16 @@ const NUDO_COMMANDS = [
   "nudo.selectCase",
   "nudo.getActiveCases",
 ] as const;
+
+// Default to stdio when the host did not pick a transport (Zed, MCP bridges,
+// `nudo-lsp` with no args). VS Code passes --node-ipc via vscode-languageclient.
+if (
+  !process.argv.some(
+    (a) => a === "--stdio" || a === "--node-ipc" || a.startsWith("--socket="),
+  )
+) {
+  process.argv.push("--stdio");
+}
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);

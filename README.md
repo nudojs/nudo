@@ -126,6 +126,7 @@ This is a monorepo managed with [pnpm workspaces](https://pnpm.io/workspaces).
 | [`@nudojs/harvester`](./packages/harvester) | Harvests `.d.ts` declarations into Nudo env modules |
 | [`vite-plugin-nudo`](./packages/vite-plugin) | Vite plugin for build-time inference |
 | [`nudo-vscode`](./packages/vscode) | VS Code / Cursor extension |
+| [nudo-zed](https://github.com/nudojs/nudo-zed) | Zed extension (standalone repo; secondary language server) |
 | [`website`](./packages/website) | Documentation site (Docusaurus) |
 
 ### Dependency Graph

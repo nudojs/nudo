@@ -18,6 +18,7 @@ dist-ssr
 .vscode/*
 packages/*/.vscode/*
 packages/*/out/*
+packages/vscode/server/
 !packages/*/.vscode/launch.json
 !packages/*/.vscode/tasks.json
 .idea

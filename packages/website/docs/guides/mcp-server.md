@@ -24,12 +24,12 @@ Full command reference (parameters, return shapes, type-expression syntax): the 
 npm i -g @nudojs/lsp
 ```
 
-The server speaks LSP over stdio. Launch it with Node (type stripping requires Node ≥ 22.18; on older Node use `tsx`):
+The package ships a compiled `dist/server.js` and a `nudo-lsp` bin (shebang). The server speaks LSP over stdio:
 
 ```bash
-node "$(npm root -g)/@nudojs/lsp/src/server.ts"
-# or from a project-local install, on any Node:
-npx tsx node_modules/@nudojs/lsp/src/server.ts
+nudo-lsp
+# or, without a global bin:
+node node_modules/@nudojs/lsp/dist/server.js
 ```
 
 ## Three ways to connect
@@ -43,7 +43,7 @@ If your agent only speaks MCP, run a generic bridge and register Nudo as the lan
 ```json
 {
   "extensions": ["js", "mjs", "ts"],
-  "command": ["npx", "tsx", "node_modules/@nudojs/lsp/src/server.ts"],
+  "command": ["node", "node_modules/@nudojs/lsp/dist/server.js"],
   "rootDir": "."
 }
 ```
@@ -60,7 +60,7 @@ claude mcp add cclsp -- npx cclsp@latest --env CCLSP_CONFIG_PATH=/abs/path/to/cc
 [[lsp_servers]]
 language_id = "javascript"
 command = "node"
-args = ["node_modules/@nudojs/lsp/src/server.ts"]
+args = ["node_modules/@nudojs/lsp/dist/server.js"]
 file_patterns = ["**/*.js", "**/*.mjs", "**/*.ts"]
 ```
 

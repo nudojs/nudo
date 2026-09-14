@@ -18,14 +18,15 @@ npm i @nudojs/lsp          # project-local; or: npm i -g @nudojs/lsp
 The server speaks LSP over stdio:
 
 ```bash
-node node_modules/@nudojs/lsp/src/server.ts   # Node >= 22.18; on older Node: npx tsx <path>
+nudo-lsp                                    # after npm i -g @nudojs/lsp
+node node_modules/@nudojs/lsp/dist/server.js
 ```
 
 Three ways to connect (details in the [Agent Integration Guide](https://nudojs.github.io/nudo/docs/guides/mcp-server)):
 
 1. **Generic LSP→MCP bridge** (cclsp, mcpls, agent-lsp) — registers Nudo as the language server for `.js` files; verify the bridge passes through `workspace/executeCommand`.
 2. **Native LSP client** — spawn the server over stdio, `initialize`, then call `workspace/executeCommand` (or the custom request aliases below).
-3. **VS Code / Cursor** — the `nudo-vscode` extension launches the server automatically.
+3. **VS Code / Cursor / Zed** — `nudo-vscode` or the Zed extension launches the server automatically.
 
 ## Command cheat sheet
 

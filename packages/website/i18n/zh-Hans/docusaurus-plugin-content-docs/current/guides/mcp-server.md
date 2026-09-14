@@ -24,12 +24,12 @@ AI 编码代理——Claude Code、Cursor、Copilot、Zed 等——通过 Nudo �
 npm i -g @nudojs/lsp
 ```
 
-服务器通过 stdio 讲 LSP。用 Node 启动（类型剥离需要 Node ≥ 22.18；更老的 Node 用 `tsx`）：
+包内发布编译后的 `dist/server.js` 与带 shebang 的 `nudo-lsp` bin。服务器通过 stdio 讲 LSP：
 
 ```bash
-node "$(npm root -g)/@nudojs/lsp/src/server.ts"
-# 或在项目本地安装、任意 Node 版本：
-npx tsx node_modules/@nudojs/lsp/src/server.ts
+nudo-lsp
+# 或没有全局 bin 时：
+node node_modules/@nudojs/lsp/dist/server.js
 ```
 
 ## 三种接入方式
@@ -43,7 +43,7 @@ npx tsx node_modules/@nudojs/lsp/src/server.ts
 ```json
 {
   "extensions": ["js", "mjs", "ts"],
-  "command": ["npx", "tsx", "node_modules/@nudojs/lsp/src/server.ts"],
+  "command": ["node", "node_modules/@nudojs/lsp/dist/server.js"],
   "rootDir": "."
 }
 ```
@@ -60,7 +60,7 @@ claude mcp add cclsp -- npx cclsp@latest --env CCLSP_CONFIG_PATH=/abs/path/to/cc
 [[lsp_servers]]
 language_id = "javascript"
 command = "node"
-args = ["node_modules/@nudojs/lsp/src/server.ts"]
+args = ["node_modules/@nudojs/lsp/dist/server.js"]
 file_patterns = ["**/*.js", "**/*.mjs", "**/*.ts"]
 ```
 

@@ -30,22 +30,18 @@ const activeCaseDecorationType = window.createTextEditorDecorationType({
 const activeCaseState = new Map<string, Map<string, { caseIndex: number; caseName: string }>>();
 
 export function activate(context: ExtensionContext): void {
-  const serverModule = context.asAbsolutePath(
-    path.join("..", "lsp", "src", "server.ts"),
-  );
-
-  const debugOptions = { execArgv: ["--nolazy", "--inspect=6009"] };
+  // Bundled by scripts/bundle-server.mjs from @nudojs/lsp dist (self-contained vsix).
+  const serverModule = context.asAbsolutePath(path.join("server", "server.js"));
 
   const serverOptions: ServerOptions = {
     run: {
       module: serverModule,
       transport: TransportKind.ipc,
-      options: { execArgv: ["--import", "tsx"] },
     },
     debug: {
       module: serverModule,
       transport: TransportKind.ipc,
-      options: { ...debugOptions, execArgv: [...debugOptions.execArgv, "--import", "tsx"] },
+      options: { execArgv: ["--nolazy", "--inspect=6009"] },
     },
   };
 

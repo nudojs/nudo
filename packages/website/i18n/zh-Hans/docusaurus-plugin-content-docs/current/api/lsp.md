@@ -5,11 +5,11 @@ description: "@nudojs/lsp API —— 基于 @nudojs/service 的语言服务器�
 
 # @nudojs/lsp
 
-Nudo 语言服务器协议（LSP）包的 API 参考。`@nudojs/lsp` 把[服务层](./service.md)封装为编辑器可消费的语言服务器：诊断、悬停类型、补全、用例切换 CodeLens、内联提示和符号导航。[nudo-vscode 扩展](../guides/vscode.md)通过 IPC 启动这个服务器，驱动其全部编辑器功能。
+Nudo 语言服务器协议（LSP）包的 API 参考。`@nudojs/lsp` 把[服务层](./service.md)封装为编辑器可消费的语言服务器：诊断、悬停类型、补全、用例切换 CodeLens、内联提示和符号导航。[nudo-vscode 扩展](../guides/vscode.md)通过 IPC 启动这个服务器；[Zed 扩展](../guides/zed.md)通过 stdio 启动同一服务器。
 
 ## 包结构
 
-包的入口点（`main`）是 `src/server.ts` —— **导入它就会启动服务器**：它以模块副作用调用 `createConnection(ProposedFeatures.all)` 和 `connection.listen()`，通过 stdio/IPC 讲 LSP。不存在 `createServer()` 之类的工厂函数。
+包的入口点（`main`）是 `dist/server.js`（由 `src/server.ts` 构建）。**导入它就会启动服务器**：它以模块副作用调用 `createConnection(ProposedFeatures.all)` 和 `connection.listen()`，通过 stdio/IPC 讲 LSP。不存在 `createServer()` 之类的工厂函数。包还提供带 shebang 的 `nudo-lsp` bin（指向 `dist/server.js`），供以裸命令拉起服务器的编辑器使用——[Zed 扩展](../guides/zed.md)与 agent 桥接走这条路径。
 
 可测试的编程式 API 位于三个同级源码模块中，它们特意从 `server.ts` 抽出，从而无需真实 LSP 连接即可直接驱动：
 
@@ -73,7 +73,7 @@ await validateText("/src/app.js", "file:///src/app.js", source, 1, {
 });
 ```
 
-该包没有声明 `exports` 映射且直接发布 TypeScript 源码，因此这些模块按路径导入（`@nudojs/lsp/src/validation.ts`、`src/symbols.ts`、`src/semantic-tokens.ts`），并需要 `tsx` 这类感知 TS 的加载器 —— 与 VS Code 扩展运行服务器本体所用的是同一个加载器。
+发布包只含编译后的 `dist/`（`files: ["dist"]`），带 `exports` 映射与 `nudo-lsp` bin——请 import 入口或直接跑 bin，不要从 npm 包按路径 import `src/*`。上表中的同级模块（`src/validation.ts`、`src/symbols.ts`、`src/semantic-tokens.ts`、`src/agent-tools.ts`）是 monorepo 内的可测面：在仓库里通过 `tsx` 这类 TS 加载器（或 workspace path alias）直接驱动。
 
 ### getCachedOrAnalyze
 
@@ -146,7 +146,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 
 ## 服务器能力
 
-`src/server.ts` 实际注册的内容（`connection.onInitialize`）：
+服务器在 `connection.onInitialize` 中注册的内容（源码 `src/server.ts`）：
 
 | 能力 | Handler | 行为 |
 |------------|---------|----------|
@@ -214,6 +214,6 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 
 `initialize` 声明 `diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false }`：每个文件的诊断对该文件独立正确，显式的 `@nudo:case` 指令就是契约面 —— 写进文件的用例*就是*它的接口。这是与 `tsserver` 的结构性差异：tsserver 的全 `Program` 常驻是结构化类型所迫 —— 任何跨文件形状都可能改变任何决策，因此一切都必须保持加载且最新。Nudo 用单文件正确性换取有界内存 —— 这正是两台服务器能在同一编辑器里并排运行的原因。Nudo 不以替代 `tsserver` 为目标。
 
-## 与 VS Code 扩展的关系
+## 与编辑器扩展的关系
 
-`nudo-vscode` 扩展没有重新实现这些内容：它把 `@nudojs/lsp` 的 `src/server.ts` 作为子进程启动（通过 `tsx`、走 IPC 传输），并把自定义的 `nudo.selectCase` 命令转发给服务器。编辑器侧视角的功能介绍见 [VS Code 指南](../guides/vscode.md)。
+`nudo-vscode` 扩展没有重新实现这些内容：它把 `@nudojs/lsp` 编译后的 `dist/server.js` 打进扩展（`server/server.js`），作为子进程经 IPC 启动，并把自定义的 `nudo.selectCase` 命令转发给服务器。[Zed 扩展](../guides/zed.md)通过 stdio 启动同一服务器（`nudo-lsp` / `node dist/server.js`）。编辑器侧视角见 [VS Code 指南](../guides/vscode.md)与 [Zed 指南](../guides/zed.md)。

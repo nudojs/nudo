@@ -25,6 +25,7 @@ const sidebars: SidebarsConfig = {
         "guides/callsite-discovery",
         "guides/semantics",
         "guides/vscode",
+        "guides/zed",
         "guides/control-flow-narrowing",
         "guides/runtime-generation",
         "guides/mcp-server",

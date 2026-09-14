@@ -13,6 +13,9 @@
   ],
   "main": "./dist/server.js",
   "types": "./dist/server.d.ts",
+  "bin": {
+    "nudo-lsp": "./dist/server.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/server.d.ts",
@@ -42,7 +45,7 @@
     "vscode-languageserver-textdocument": "^1.0.0"
   },
   "scripts": {
-    "build": "tsup src/server.ts --format esm --dts",
-    "prepublishOnly": "tsup src/server.ts --format esm --dts"
+    "build": "tsup",
+    "prepublishOnly": "tsup"
   }
 }

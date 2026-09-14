@@ -1,5 +1,9 @@
 # nudo-vscode
 
+## Unreleased
+
+- Launch the bundled `server/server.js` (compiled `@nudojs/lsp` dist) over IPC instead of `tsx` + `packages/lsp/src/server.ts`. The vsix is self-contained — no monorepo sibling path or tsx loader required at runtime.
+
 ## 0.3.0
 
 ### Minor Changes

@@ -5,11 +5,11 @@ description: "@nudojs/lsp API — the language server over @nudojs/service: vali
 
 # @nudojs/lsp
 
-API reference for the Nudo Language Server Protocol package. `@nudojs/lsp` wraps the [service layer](./service.md) into a language server that editors can consume: diagnostics, hover types, completions, case-switching CodeLens, inlay hints, and symbol navigation. The [nudo-vscode extension](../guides/vscode.md) launches this server over IPC to power all of its editor features.
+API reference for the Nudo Language Server Protocol package. `@nudojs/lsp` wraps the [service layer](./service.md) into a language server that editors can consume: diagnostics, hover types, completions, case-switching CodeLens, inlay hints, and symbol navigation. The [nudo-vscode extension](../guides/vscode.md) launches this server over IPC; the [Zed extension](../guides/zed.md) launches the same server over stdio.
 
 ## Package Layout
 
-The package entry point (`main`) is `src/server.ts` — **importing it starts the server**: it calls `createConnection(ProposedFeatures.all)` and `connection.listen()` as a module side effect, speaking LSP over stdio/IPC. There is no `createServer()`-style factory.
+The package entry point (`main`) is `dist/server.js` (built from `src/server.ts`). **Importing it starts the server**: it calls `createConnection(ProposedFeatures.all)` and `connection.listen()` as a module side effect, speaking LSP over stdio/IPC. There is no `createServer()`-style factory. The package also exposes a `nudo-lsp` bin (`dist/server.js` with a shebang) for editors that launch a bare command — the [Zed extension](../guides/zed.md) and agent bridges use this path.
 
 The testable programmatic API lives in three sibling source modules, deliberately extracted from `server.ts` so they can be exercised without a live LSP connection:
 
@@ -73,7 +73,7 @@ await validateText("/src/app.js", "file:///src/app.js", source, 1, {
 });
 ```
 
-The package declares no `exports` map and ships its TypeScript sources, so the modules import by path (`@nudojs/lsp/src/validation.ts`, `src/symbols.ts`, `src/semantic-tokens.ts`) through a TS-aware loader such as `tsx` — the same loader the VS Code extension uses to run the server itself.
+The published package ships only compiled `dist/` (`files: ["dist"]`) with an `exports` map and the `nudo-lsp` bin — import the entry or run the bin; do not import `src/*` paths from npm. The sibling modules above (`src/validation.ts`, `src/symbols.ts`, `src/semantic-tokens.ts`, `src/agent-tools.ts`) are the monorepo test surface: exercise them there through a TS-aware loader such as `tsx` (or the workspace path aliases).
 
 ### getCachedOrAnalyze
 
@@ -146,7 +146,7 @@ Delta-encodes `{ line, char, length, typeIndex, modifierBitmask }` tokens into t
 
 ## Server Capabilities
 
-What `src/server.ts` actually registers (`connection.onInitialize`):
+What the server registers on `connection.onInitialize` (`src/server.ts`):
 
 | Capability | Handler | Behavior |
 |------------|---------|----------|
@@ -214,6 +214,6 @@ Validation shares the evaluator with the CLI, and module loading there is guarde
 
 `initialize` declares `diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false }`: each file's diagnostics are correct for that file alone, and the explicit `@nudo:case` directives are the contract surface — the cases written into the file *are* its interface. This is the structural difference from `tsserver`, whose whole-`Program` residency is forced by structural typing: any cross-file shape can change any decision, so everything must stay loaded and current. Nudo trades that for single-file correctness with bounded memory — which is precisely what lets both servers run side by side in the same editor. Nudo does not aim to replace `tsserver`.
 
-## Relation to the VS Code Extension
+## Relation to Editor Extensions
 
-The `nudo-vscode` extension does not reimplement any of this: it launches `@nudojs/lsp`'s `src/server.ts` as a child process (via `tsx`, over IPC transport) and forwards the custom `nudo.selectCase` command to the server. See the [VS Code guide](../guides/vscode.md) for the editor-side view of these features.
+The `nudo-vscode` extension does not reimplement any of this: it bundles `@nudojs/lsp`'s compiled `dist/server.js` into the extension as `server/server.js` and launches that child process over IPC, then forwards the custom `nudo.selectCase` command to the server. The [Zed extension](../guides/zed.md) launches the same server over stdio (`nudo-lsp` / `node dist/server.js`). See the [VS Code guide](../guides/vscode.md) and [Zed guide](../guides/zed.md) for the editor-side view of these features.
