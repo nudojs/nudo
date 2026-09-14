@@ -5,10 +5,22 @@
   "type": "module",
   "license": "MIT",
   "exports": {
-    "./es": "./src/es.ts",
-    "./web": "./src/web.ts",
-    "./node": "./src/node.ts"
+    "./es": {
+      "types": "./dist/es.d.ts",
+      "default": "./dist/es.js"
+    },
+    "./web": {
+      "types": "./dist/web.d.ts",
+      "default": "./dist/web.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
+    }
   },
+  "files": [
+    "dist"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nudojs/nudo.git",
@@ -23,6 +35,7 @@
     "@nudojs/core": "workspace:*"
   },
   "scripts": {
-    "build": "tsup src/es.ts src/web.ts src/node.ts --format esm --dts"
+    "build": "tsup src/es.ts src/web.ts src/node.ts --format esm --dts",
+    "prepublishOnly": "tsup src/es.ts src/web.ts src/node.ts --format esm --dts"
   }
 }

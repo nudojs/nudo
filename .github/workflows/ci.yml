@@ -61,7 +61,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: pnpm -r --filter '!website' run build
+        run: npm run build
 
   test:
     name: Test & Coverage

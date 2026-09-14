@@ -4,10 +4,17 @@
   "description": "Harvests TypeScript .d.ts declarations into Nudo env definitions",
   "type": "module",
   "license": "MIT",
-  "main": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
+  "files": [
+    "dist"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nudojs/nudo.git",
@@ -19,7 +26,8 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts"
+    "build": "tsup src/index.ts --format esm --dts",
+    "prepublishOnly": "tsup src/index.ts --format esm --dts"
   },
   "dependencies": {
     "@nudojs/core": "workspace:*",

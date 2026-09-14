@@ -12,7 +12,17 @@
     "dts-generation",
     "analysis"
   ],
-  "main": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nudojs/nudo.git",
@@ -34,6 +44,7 @@
     "@babel/types": "^7.29.0"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts"
+    "build": "tsup src/index.ts --format esm --dts",
+    "prepublishOnly": "tsup src/index.ts --format esm --dts"
   }
 }

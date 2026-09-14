@@ -1,5 +1,7 @@
+#!/usr/bin/env node
 import { readFileSync, existsSync, watch, readdirSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname, relative, join, basename } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { typeValueToString } from "@nudojs/core";
 import { extractDirectives } from "@nudojs/parser";
@@ -31,10 +33,17 @@ import { buildTestReport, formatTestReport } from "./run-test.ts";
 
 const program = new Command();
 
+/** 与 package.json 同步：src 用 tsx 跑、dist 作为 bin 时路径都是 ../package.json */
+function readPackageVersion(): string {
+  const pkgPath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version?: string };
+  return pkg.version ?? "0.0.0";
+}
+
 program
   .name("nudo")
   .description("Nudo type inference engine")
-  .version("0.0.1");
+  .version(readPackageVersion());
 
 /** `--emit-cases` 的编排选项：mode 决定 add/update 两条固化路径 */
 type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOnDiff: boolean };
@@ -462,14 +471,17 @@ async function runTypes(
 
 program
   .command("check")
-  .description("Check a JS/TS file (or directory) for type errors — exits with code 1 when errors are found")
-  .argument("<file>", "Path to the JS/TS file or a directory of them")
+  .description("Check JS/TS file(s) or directory(s) for type errors — exits with code 1 when errors are found")
+  .argument("<paths...>", "File(s) or directory(s) to check")
   .option("--json", "Emit stable CheckJson (CI / Agent contract; single file only)")
-  .action(async (file: string, opts: { json?: boolean }) => {
-    const targets = resolveTargets(file);
+  .action(async (paths: string[], opts: { json?: boolean }) => {
+    const targets: string[] = [];
+    for (const p of paths) {
+      targets.push(...resolveTargets(p));
+    }
     if (targets.length === 0) return;
     if (opts.json && targets.length > 1) {
-      console.error("--json requires a single file, not a directory");
+      console.error("--json requires a single file, not multiple targets");
       process.exitCode = 1;
       return;
     }

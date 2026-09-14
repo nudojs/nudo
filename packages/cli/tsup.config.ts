@@ -7,6 +7,7 @@ import { defineConfig } from "tsup";
  * real `require` via `createRequire` makes `__require` delegate to Node's
  * CJS loader for builtins. Banner is prepended to every JS chunk, before
  * esbuild's prelude, so module-scope shims resolve before first use.
+ * Shebang is preserved from src/index.ts (first line) for the `nudo` bin.
  */
 export default defineConfig({
   entry: ["src/index.ts", "src/evaluator-api.ts"],
@@ -14,6 +15,6 @@ export default defineConfig({
   dts: true,
   clean: true,
   banner: {
-    js: 'import { createRequire } from "module";\nconst require = createRequire(import.meta.url);',
+    js: 'import { createRequire as __nudoCreateRequire } from "module";\nconst require = __nudoCreateRequire(import.meta.url);',
   },
 });

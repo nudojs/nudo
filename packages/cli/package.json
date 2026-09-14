@@ -12,17 +12,23 @@
     "dts",
     "abstract-interpretation"
   ],
-  "main": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./evaluator": "./src/evaluator-api.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./evaluator": {
+      "types": "./dist/evaluator-api.d.ts",
+      "default": "./dist/evaluator-api.js"
+    }
   },
   "bin": {
-    "nudo": "src/index.ts"
+    "nudo": "./dist/index.js"
   },
   "files": [
-    "src",
-    "!src/__tests__"
+    "dist"
   ],
   "repository": {
     "type": "git",
@@ -45,6 +51,8 @@
     "@nudojs/harvester": "workspace:*"
   },
   "scripts": {
-    "build": "tsup"
+    "build": "tsup",
+    "build:lib": "tsup src/evaluator-api.ts --format esm --dts",
+    "prepublishOnly": "tsup"
   }
 }

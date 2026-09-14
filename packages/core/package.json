@@ -11,11 +11,21 @@
     "abstract-interpretation",
     "type-system"
   ],
-  "main": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./exec": "./src/algebra/exec/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./exec": {
+      "types": "./dist/exec.d.ts",
+      "default": "./dist/exec.js"
+    }
   },
+  "files": [
+    "dist"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nudojs/nudo.git",
@@ -29,7 +39,8 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts"
+    "build": "tsup",
+    "prepublishOnly": "tsup"
   },
   "dependencies": {
     "@babel/parser": "^7.29.0",

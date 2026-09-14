@@ -11,7 +11,17 @@
     "lsp",
     "language-server"
   ],
-  "main": "src/server.ts",
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nudojs/nudo.git",
@@ -32,6 +42,7 @@
     "vscode-languageserver-textdocument": "^1.0.0"
   },
   "scripts": {
-    "build": "tsup src/server.ts --format esm --dts"
+    "build": "tsup src/server.ts --format esm --dts",
+    "prepublishOnly": "tsup src/server.ts --format esm --dts"
   }
 }
