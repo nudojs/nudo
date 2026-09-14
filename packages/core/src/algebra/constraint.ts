@@ -291,6 +291,11 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
     }
     return abs({ k: "obj", slots }, t, undefined, "path");
   }
+  // array(item) → arr(element)；元素项独立，不继承外层 term
+  if (c.element) {
+    const elem = constraintOnTermAbs(c.element, termVar("x[]"));
+    return abs({ k: "arr", element: elem }, t, undefined, "path");
+  }
   const pred = instantiateOnTerm(c, t);
   const predOut = pred.op === "true" ? undefined : pred;
   if (c.prim) {

@@ -13,7 +13,9 @@ export const atLeast1 = number().ge(1);
 export const max100 = number().le(100);
 export const intId = number().int().gt(0);
 export const shortName = string().min(1).max(20);
+export const nonEmpty = string();
 export const positives = array(number().gt(0));
+export const findings = array(shape({ severity: string() }));
 export const userShape = shape({
   id: number().gt(0),
   name: string(),
@@ -31,7 +33,7 @@ export const orderShape = shape({
 /** 给无 import 的测试源补上标准 import 行 */
 export function withStdImport(source: string): string {
   if (source.includes("@nudo:import")) return source;
-  return `/// @nudo:import { positive, delay, nonNeg, percent, port, small, atLeast1, max100, intId, shortName, positives, userShape, configShape, orderShape } from "./std.nudo.js"\n${source}`;
+  return `/// @nudo:import { positive, delay, nonNeg, percent, port, small, atLeast1, max100, intId, shortName, nonEmpty, positives, findings, userShape, configShape, orderShape } from "./std.nudo.js"\n${source}`;
 }
 
 /** checkSource 用的 loadModule */

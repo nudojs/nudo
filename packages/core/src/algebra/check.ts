@@ -820,13 +820,26 @@ function collectParamStructReqs(
   const params = new Set(extracted.params);
   const body = extracted.body;
 
-  const visit = (n: unknown): void => {
+  /** 方法名（数组/字符串内置）——`p.some` / `p.replace` 不是数据字段 */
+  const BUILTIN_METHODS = new Set([
+    "map", "filter", "reduce", "flatMap", "forEach", "some", "every", "find",
+    "findIndex", "includes", "indexOf", "lastIndexOf", "join", "slice", "splice",
+    "push", "pop", "shift", "unshift", "sort", "reverse", "concat", "at",
+    "replace", "replaceAll", "split", "trim", "toLowerCase", "toUpperCase",
+    "startsWith", "endsWith", "charAt", "charCodeAt", "padStart", "padEnd",
+    "repeat", "toString", "valueOf", "substring", "match", "search",
+    "hasOwnProperty", "keys", "values", "entries", "then", "catch", "finally",
+  ]);
+
+  const visit = (n: unknown, isMethodCallee = false): void => {
     if (!n || typeof n !== "object") return;
     const obj = n as Record<string, unknown> & { type?: string };
-    if (obj.type === "MemberExpression" && !obj.computed) {
+    if (obj.type === "MemberExpression" && !obj.computed && !isMethodCallee) {
       const o = obj.object as { type?: string; name?: string } | undefined;
       const p = obj.property as { type?: string; name?: string } | undefined;
       if (o?.type === "Identifier" && o.name && params.has(o.name) && p?.type === "Identifier" && p.name) {
+        // 方法调用（p.some()）或内置方法名 → 不是必填数据字段
+        if (BUILTIN_METHODS.has(p.name)) return;
         let set = reqs.get(o.name);
         if (!set) {
           set = new Set();
@@ -835,18 +848,29 @@ function collectParamStructReqs(
         set.add(p.name);
       }
     }
+    if (obj.type === "CallExpression") {
+      // callee 上的 p.method 是方法调用，不进必填 slot
+      visit(obj.callee, true);
+      for (const key of Object.keys(obj)) {
+        if (key === "loc" || key === "start" || key === "end" || key === "callee") continue;
+        const val = obj[key];
+        if (Array.isArray(val)) val.forEach((v) => visit(v, false));
+        else if (val && typeof val === "object") visit(val, false);
+      }
+      return;
+    }
     for (const key of Object.keys(obj)) {
       if (key === "loc" || key === "start" || key === "end") continue;
       const val = obj[key];
-      if (Array.isArray(val)) val.forEach(visit);
-      else if (val && typeof val === "object") visit(val);
+      if (Array.isArray(val)) val.forEach((v) => visit(v, isMethodCallee));
+      else if (val && typeof val === "object") visit(val, isMethodCallee);
     }
   };
   visit(body);
   return reqs;
 }
 
-/** 静态求值实参节点 → Abs（标识符走绑定表） */
+/** 静态求值实参节点 → Abs（标识符走绑定表；对象/数组字面量内的标识符也走绑定表） */
 function evalArgAbs(
   node: Record<string, unknown>,
   lookupVar?: (name: string) => Abs | undefined,
@@ -856,6 +880,18 @@ function evalArgAbs(
   }
   try {
     const env = emptyEnv();
+    // 把文件级绑定表灌进 env，使 `{...base}` / `[x]` 等复合实参能解析标识符
+    if (lookupVar) {
+      // lookupVar 只支持按名查；用 Proxy 包一层 vars 不可行——改为在
+      // evalNode 前手工预绑定已知名。scanLiteralCalls 的 varAbs 通常很小。
+      // 这里通过包装 env.vars 的 get 实现按需注入。
+      const rawGet = env.vars.get.bind(env.vars);
+      env.vars.get = ((name: string) => {
+        const hit = rawGet(name);
+        if (hit !== undefined) return hit;
+        return lookupVar(name);
+      }) as typeof env.vars.get;
+    }
     return evalNode(node as unknown as Node, env, pTrue, defaultLeakBudget).value;
   } catch {
     return undefined;
@@ -1312,10 +1348,40 @@ function scanLiteralCalls(
       const arg = absArgs[argIdx];
       if (!arg) continue;
       const lv = litValue(arg);
-      if (lv === undefined) continue;
       const isStr = arg.shape.k === "prim" && (arg.shape as { type: string }).type === "string";
       const strLen = typeof lv === "string" ? lv.length : undefined;
+      const paramName = paramNames[idx] ?? `arg${idx}`;
       for (const p of flattenPred(pred)) {
+        // typeof 约束（string() / number() / boolean() 裸 prim）
+        // 只检查挂在参数自身上的 typeof；字段访问（u.name）交给 shape 路径
+        if (p.op === "typeof") {
+          if (p.t.op !== "var") continue;
+          const expected = p.type;
+          const actualPrim =
+            arg.shape.k === "prim"
+              ? (arg.shape as { type: string }).type
+              : arg.shape.k === "obj" || arg.shape.k === "arr" || arg.shape.k === "tuple"
+                ? "object"
+                : arg.shape.k === "fn"
+                  ? "function"
+                  : undefined;
+          // 只在有确定 prim 信息且不匹配时拦截；unknown/any 不猜
+          if (actualPrim !== undefined && actualPrim !== expected) {
+            out.push({
+              severity: "error",
+              code: "nudo:constraint-violated",
+              message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+              actual: formatAbs(arg),
+              expected: `typeof ${paramName} = "${expected}"`,
+              suggestion: `改用 ${expected} 类型的值，或放宽 ${paramName} 的 refine`,
+              fn: displayName,
+              line: loc?.start.line,
+              column: loc?.start.column,
+            });
+          }
+          continue;
+        }
+        if (lv === undefined) continue;
         if (
           (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") &&
           p.b.op === "lit" &&
@@ -1577,7 +1643,7 @@ function scanLiteralCalls(
     }
   };
 
-  /** 对带 shape / array / int 的 refine 做结构检查 */
+  /** 对带 shape / array / int / prim 的 refine 做结构检查 */
   const checkShapeReqs = (
     displayName: string,
     reqs: Array<[number, RefineEntry]>,
@@ -1588,12 +1654,13 @@ function scanLiteralCalls(
   ): void => {
     for (const [idx, entry] of reqs) {
       const c = entry.constraint;
-      if (!c.fields && !c.element && !c.int) continue;
+      if (!c.fields && !c.element && !c.int && !c.prim) continue;
       const argIdx = argIndexOf(idx);
       if (argIdx === undefined) continue;
       const arg = absArgs[argIdx];
       if (!arg) continue;
       const paramName = entry.param || paramNames[idx] || `arg${idx}`;
+      // 裸 prim 已由 checkReqs 的 typeof pred 覆盖；此处只处理 shape/array/int
       // shape 字段
       if (c.fields) {
         checkShapeAgainstAbs(displayName, paramName, c, arg, paramName, loc);
@@ -1873,9 +1940,24 @@ function scanLiteralCalls(
       );
     }
     if (structReqs.size === 0) return;
+    // refine 契约优先：有 @nudo:refine 的形参不再用 body 方法访问推形状
+    let refinedParams: Set<string> | undefined;
+    try {
+      const sameFile = fnSource === source;
+      const reqs = refineToIndexedFull(fnSource, fnName, paramNames, {
+        loadModule: opts?.loadModule,
+        fromFile: opts?.fromFile ?? "",
+      });
+      if (reqs.length > 0) {
+        refinedParams = new Set(reqs.map(([, e]) => e.param));
+      }
+    } catch {
+      /* refine 解析失败时退回 body 结构推断 */
+    }
     for (let i = 0; i < args.length; i++) {
       const pname = paramNames[i];
       if (!pname) continue;
+      if (refinedParams?.has(pname)) continue;
       const keys = structReqs.get(pname);
       if (!keys || keys.size === 0) continue;
       const argNode = args[i];
