@@ -87,10 +87,9 @@ describe("P2: refine contract wins, no re-promotion", () => {
     expect(g).toBeDefined();
     if (!g) return;
     const items = g.entryShapes?.get("items");
-    // refine 若产生形状则 source=refine；不得再 promote 同一形参
-    if (items) {
-      expect(items.source).toBe("refine");
-    }
+    // refine 契约必须落 entryShapes（source=refine），不得被 promote 覆盖
+    expect(items).toBeDefined();
+    expect(items!.source).toBe("refine");
     // 回调形参仍靠挂载点③提升
     expect(g.fnRels?.has("transform")).toBe(true);
     expect(g.fnRels?.get("transform")!.source).toBe("promote");

@@ -215,7 +215,9 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     }
     const out = callFn(args[0], shape.element);
     const el = mapElementFallback(asAbs(args[0]), shape.element, out);
-    const conf = el === out ? "path" : "partial";
+    // 与 ast-eval map 同轨：fallback 强制 partial，否则 confJoin(arr, out)
+    const conf =
+      el === out ? confJoin(arr.conf, out.conf) : "partial";
     return abs({ k: "arr", element: el }, undefined, undefined, conf);
   }
   if (method === "reduce" && args.length >= 1) {

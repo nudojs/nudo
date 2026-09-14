@@ -2339,6 +2339,25 @@ export function getHoverAtPosition(
     file = undefined;
   }
   const envNames = collectEnvNames(filePath, source, false);
+  const fnName = findFunctionNameAtPosition(source, line, column, file);
+
+  // 函数名位置：intension 必须走 generalize / formatPoly（HOF fnRels 在这里）。
+  // 禁止用 B-path 的 arity-only fn Abs 冒充权威关系源（design-hof-relations §7）。
+  if (fnName) {
+    try {
+      const g = generalizeFromAst(fnName, source, file ? { file } : {});
+      if (g) {
+        return {
+          typeText: g.display,
+          intension: g.display,
+          abs: formatAbs(g.symbolic),
+          absMultiline: formatAbsMultiline(g.symbolic, fnName),
+        };
+      }
+    } catch {
+      // fall through to B-path / TypeValue
+    }
+  }
 
   // B 路径：优先 Abs 节点表 / 标识符绑定，不经 TypeValue evaluateProgram
   if (isBPathCapable(source, envNames)) {
@@ -2352,7 +2371,7 @@ export function getHoverAtPosition(
       });
       const absAt = findAbsAtPosition(absNodes, line, column);
       const ident = findIdentNameAtPosition(source, line, column, file);
-      if (ident && !findFunctionNameAtPosition(source, line, column, file)) {
+      if (ident && !fnName) {
         const binds = collectAbsBindingsFromGraph(source, filePath, {
           seedVars: seeds.seedVars,
           seedFns: seeds.seedFns as never,
@@ -2376,29 +2395,6 @@ export function getHoverAtPosition(
 
   const tv = getTypeAtPosition(filePath, source, line, column, activeCases);
   const info: HoverInfo | null = tv ? { typeText: typeValueToString(tv) } : null;
-
-  const fnName = findFunctionNameAtPosition(source, line, column, file);
-  if (fnName) {
-    try {
-      const g = generalizeFromAst(fnName, source, file ? { file } : {});
-      if (g) {
-        if (info) {
-          info.intension = g.display;
-          info.abs = formatAbs(g.symbolic);
-          info.absMultiline = formatAbsMultiline(g.symbolic, fnName);
-        } else {
-          return {
-            typeText: g.display,
-            intension: g.display,
-            abs: formatAbs(g.symbolic),
-            absMultiline: formatAbsMultiline(g.symbolic, fnName),
-          };
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }
 
   // 标识符绑定优先（比粗粒度节点表更准）
   const ident = findIdentNameAtPosition(source, line, column, file);

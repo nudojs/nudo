@@ -700,12 +700,14 @@ function generalizeFromAstUncached(
     hofCollector,
   );
 
-  // 截断 / 不可缓存 → 三者置 undefined（不写部分关系）
+  // opaque = call-budget 截断/泄漏 → 不写关系；
+  // partial 是 for-of/join 等诚实降级，提升过程完整，仍可沉淀快照。
+  // （不得用 isCacheableAbs 当「run 成功」代理——它拒 partial，会误丢 applyEach 型关系。）
   let fnRels: Map<string, { abs: Abs; source: RelSource }> | undefined;
   let entryShapes: Map<string, { abs: Abs; source: RelSource }> | undefined;
   let hofSites: HofSite[] | undefined;
 
-  if (isCacheableAbs(symbolic)) {
+  if (symbolic.conf !== "opaque") {
     // refine 契约 entryShapes 优先；fn 形状同时进 fnRels（source=refine，供 P4 error）
     if (refineEntryShapes.size > 0) {
       entryShapes = new Map(refineEntryShapes);
@@ -726,7 +728,11 @@ function generalizeFromAstUncached(
       entryShapes.set(param, { abs: snapshotAbs(rec.abs), source: rec.source });
     }
     if (hofCollector.sites.length > 0) {
-      hofSites = hofCollector.sites.map((s) => ({ ...s }));
+      hofSites = hofCollector.sites.map((s) => ({
+        ...s,
+        argTerms: [...s.argTerms],
+        result: snapshotAbs(s.result),
+      }));
     }
   }
 

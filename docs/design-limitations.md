@@ -445,7 +445,7 @@ class Circle { /* 同上 */ }
 ### 阶段 2：精度提升（2-4 周）
 - [x] 数组 `reduce` 累加器追踪（字面量逐元素 + 符号不动点，见 1.1）
 - [ ] Map 字面量 key 追踪（`m.get("k")` 仍 unknown，见 1.2）
-- [ ] 高阶函数：关系型 Abs + 调用点推断（`design-hof-relations.md`）
+- [ ] 高阶函数：关系型 Abs（P1 消费 + P2 归纳 + P4 检查已落地；P5 dts 投影待做；见 `design-hof-relations.md`）
 
 ### 阶段 3：深度改进（1-2 月）
 - [ ] 闭包变量状态追踪

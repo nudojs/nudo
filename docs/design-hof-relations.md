@@ -537,14 +537,18 @@ type HofCollectCtx = {
 
 **截断 / 失败时的快照丢弃（阻塞）：**
 
-symbolic 跑若出现 call-budget 截断、`isCacheableAbs(result) === false`、或 collector
-安装后 eval 抛出被吞掉的路径，**不得**把半截 `fnRels` / `entryShapes` / `hofSites`
-挂到 PolyFn。规则：
+symbolic 跑若出现 call-budget 截断（`conf === "opaque"`）、或 collector 安装后 eval
+中途失败，**不得**把半截 `fnRels` / `entryShapes` / `hofSites` 挂到 PolyFn。
+**注意：`partial` 不是截断**——for-of / join 会诚实产出 partial，提升过程仍完整，
+此时必须保留关系。规则：
 
 ```text
-run 正常结束 且 isCacheableAbs(symbolic)  →  从 env 拷贝快照到 PolyFn
-否则                                      →  三者置 undefined（不写部分关系）
+symbolic.conf === "opaque"  →  三者置 undefined（截断，不写半截关系）
+否则（含 exact/path/widened/mock/partial）→  从 env 拷贝快照到 PolyFn
 ```
+
+**禁止**用 `isCacheableAbs` 当「run 成功」代理：它拒 partial，会误丢
+`applyEach` 型 for-of 归纳出的关系。
 
 L0 本就不缓存不可缓存的 PolyFn；本条管的是「PolyFn 对象仍被返回 / 被 check 半路读到」
 时不得带残缺关系。
@@ -606,6 +610,7 @@ P2 最大的实现风险是「只挂在 map 分支」。提升 hook **仅允许*
 | **方法派发 miss** | `ast-eval` 方法查找、`exec/class.invokeArrMethod` 入口 | receiver 是形参 Identifier，shape 为 `any`/未知，方法名为 filter/map/reduce/flatMap |
 | **CallExpression callee** | `evalNode` CallExpression 路径（Identifier ∈ paramNames） | 直接调用 `p(x)` / `p(a,b)` |
 | **HOF 回调实参** | `applyCallbackAbs`（或 map/filter/reduce/flatMap 调用它之前） | 回调是 Identifier ∈ `paramNames`，尚未有 fn 形状 |
+| **for-of 迭代对象** | `evalForOf` 入口 | `for (const x of items)`，`items` ∈ paramNames 且仍 any/unknown → `arr(自身 var)`（`applyEach` 型；不依赖方法名） |
 
 **为何必须有第三挂载点：** 主路径 `items.filter(filter).map(transform)` 的求值顺序是——
 
@@ -621,7 +626,7 @@ P2 最大的实现风险是「只挂在 map 分支」。提升 hook **仅允许*
 1. hook 发生在 **fallback 放弃前**（方法 miss 返回 unknown 之前 / `applyCallbackAbs` F 之前），拿到新形状后**继续正常分支**，不 return、不二次重跑；写入按 §5.2.0b 替换 map 项。
 2. `filter`/`reduce`/`flatMap` 的 miss 与 `map` **同级**，不得只处理 map；挂载点③ 对四者同样生效。
 3. 非内建 HOF（`withRetry` 的 `p()`、`applyEach` 的 `fn(x)`）只靠 CallExpression 挂载点，**不依赖**方法名。
-4. for-of 元素提升可后置，但 `p()` 直接调用是 P2 必须覆盖的形状（§11.1.D）。
+4. for-of 迭代对象提升与 `p()` 直接调用同属 P2 必覆盖（§11.1.D `applyEach`）；`items` 提升走 for-of 挂载点，`fn` 提升走 CallExpression。
 5. 提升 **只写** `env.vars[param]`（见下方载体纪律），**禁止** `attachFnImpl`（§3.3 写入载体分工）；否则 E 路径死代码。
 
 #### 5.2.0b 提升写入载体：替换 map 项，禁止 mutate 共享 Abs
@@ -743,7 +748,7 @@ Collection 也有同名方法。纪律：
   `arr(β)`；但 fnRels/entryShapes/hofSites 只在 symbolic **一次正常跑**沉淀（§5.1）。
 - 提升只作用于 shape 为 `any`/未知的形参；调用点已绑定的**具体** `arr`/`fn` 不改写
   （arrival-first 表的「已有 → 拒绝新观测」覆盖此情形）。
-- for-of 元素提升可后置到 P2 后半；`p()` 直接调用不可后置（见 §5.2.0）。
+- for-of 迭代对象提升与 `p()` 直接调用均已覆盖（见 §5.2.0；`applyEach` 正例）。
 - **分支合流**：见 §5.2.3 —— arrival-first；已有形状不被后来的冲突观测改写。
 - **形参别名**：本地 `const p = filter` 后 `items.map(p)` **不提升**（`p ∉ paramNames`）；见 §1.3。
 
@@ -830,6 +835,11 @@ processItems(xs, notAFunction, g)
 违反豁免 → 金标 / commander 零误报门禁必然回归。豁免规则与 P4 同合入、同测试。
 P2 落地 `fnRels` 时必须带 `source` 字段，否则 P4 此条无法实现——不是 P4 再补。
 
+**P4 error 分支现状（诚实边界）：** constraint 语言目前**无法**表达 fn 形状的
+`@nudo:refine`，因此 `source === "refine"` → **error** 路径暂不可经 `checkSource`
+触发；已合入的可测行为只有 promote → **warning**。refine 能表达 fn 后再补
+error 单测；在此之前 release note **不得**声称「refine 违约会 error」。
+
 ### 6.4 报告字段
 
 `--json` 的 `signatures[].abs` 自动带上关系（formatAbs 输出）。  
@@ -860,6 +870,9 @@ Agent `nudo.infer` / `nudo.hover`：在 `intension` 已有无损 Abs 时 **无�
 | CLI `formatPoly` / `nudo types` | `PolyFn.display` / `entryShapes`+`fnRels`（§5.3） |
 | LSP hover 的 **intension 侧** | 同上（Abs / formatPoly），**不读** TypeValue 的 fn 形状 |
 | LSP hover 的 **TypeValue 侧** | P5 之前仍是 arity-only 投影——**不得**当作权威关系源 |
+
+实现：`getHoverAtPosition` 在**函数名位置**优先 `generalizeFromAst` → `g.display`
+作 intension，再落 B-path / TypeValue。避免 B-path 的 arity-only fn Abs 早退。
 
 若 hover 在 P2 仍读 TypeValue，会出现「CLI 显示 `fn(A1)=>B1`、LSP 显示 `(x)=>?`」的不一致。
 P2 退出标准含：LSP 关系相关展示走 intension，或明确标记 extensional 侧尚未投影。
@@ -1087,8 +1100,8 @@ function scaleFirst(transform) {
 | 提升误挂 impl 导致 E 路径死代码 | 提升只写 shape 槽，禁止 `attachFnImpl`；`relationFn` 才走 impl.relation（§3.3 写入载体分工） |
 | 提升 mutate 共享 Abs（typeParams 别名） | 替换 `env.vars` 项、新对象；禁止原地改 shape（§5.2.0b） |
 | `relationFn` 只写 impl、format 读不到 | 双写 shape + impl.relation；P1a format 断言（§3.3 / §8.2） |
-| 半截 fnRels 落上 PolyFn | 截断/不可缓存 → 快照置空（§5.1） |
-| `conf=path` 的 symbolic 结果被 `isCacheableAbs` 判不可缓存 → 整份 fnRels 丢弃 | P2 实现前**先确认** path 在 `isCacheableAbs` 白名单；若不在，扩白名单或在提升完成后再判——禁止静默丢关系（§5.1） |
+| 半截 fnRels 落上 PolyFn | `conf === "opaque"` → 快照置空（§5.1） |
+| 用 `isCacheableAbs` 当 run 成功代理 → partial（for-of/join）误丢 fnRels | 门禁改为 `conf !== "opaque"` 才沉淀；partial 保留提升（§5.1） |
 | filter 后被当 bug 加 pred 传播 | 能力上限写死：element pred 不增强；改动须重开设计（§4.2 filterArr） |
 | fnRels / env / shape 三处漂移 | 快照语义 + RelSource；禁止第二套类型（§5.1） |
 | P4 无法区分 promote/refine | `RelSource` 在 P2 一并落地，禁止 shape 反推（§3.2 / §6.3） |

@@ -133,6 +133,21 @@ describe("P1a: substAbs term discipline", () => {
     if (out.shape.k !== "arr") return;
     expect(out.shape.element.shape).toEqual({ k: "prim", type: "number" });
   });
+
+  it("substitutes both sides of a shared (DAG) node", () => {
+    // 同一 Abs 对象被引用两次：第二次不得因「访问过」而跳过替换
+    const inner = abs({ k: "arr", element: anyVar("A1") }, undefined, undefined, "path");
+    const shared = abs({ k: "tuple", elements: [inner, inner] }, undefined, undefined, "path");
+    const out = substAbs(shared, new Map<string, Abs>([["A1", num()]]));
+    expect(out.shape.k).toBe("tuple");
+    if (out.shape.k !== "tuple") return;
+    for (const el of out.shape.elements) {
+      expect(el.shape.k).toBe("arr");
+      if (el.shape.k === "arr") {
+        expect(el.shape.element.shape).toEqual({ k: "prim", type: "number" });
+      }
+    }
+  });
 });
 
 describe("P1a: substAbs pred three rules", () => {

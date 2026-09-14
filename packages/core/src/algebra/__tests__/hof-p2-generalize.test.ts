@@ -211,12 +211,38 @@ describe("P2: generalize use-driven promotion", () => {
     const g = generalizeFromAst("processItems", src);
     const snap = g?.entryShapes?.get("items")?.abs;
     expect(snap).toBeDefined();
+    const itemsIdx = g!.params.indexOf("items");
+    const tp = g!.typeParams[itemsIdx >= 0 ? itemsIdx : 0]!;
     // typeParams 保持原 any(α)，未被 mutate
-    const tp = g!.typeParams.find((t) => g!.params[g!.typeParams.indexOf(t)] === "items")
-      ?? g!.typeParams[0];
+    expect(tp.value.shape.k).toBe("any");
+    expect(tp.value.term).toEqual(v("A1"));
+    // 快照 ≠ typeParams 同一引用；shape 也是新对象
+    expect(snap).not.toBe(tp.value);
+    expect(snap!.shape).not.toBe(tp.value.shape);
+    expect(snap!.shape.k).toBe("arr");
     // display 走 entryShapes，不读 typeParams
     expect(g!.display).toContain("arr(");
-    void snap;
-    void tp;
+  });
+
+  it("applyEach: for-of promotes items + direct call promotes fn", () => {
+    const src = `
+      function applyEach(items, fn) {
+        for (const x of items) fn(x);
+      }
+    `;
+    const g = generalizeFromAst("applyEach", src);
+    expect(g).toBeDefined();
+    if (!g) return;
+    expect(g.entryShapes?.has("items")).toBe(true);
+    expect(g.entryShapes!.get("items")!.abs.shape.k).toBe("arr");
+    expect(g.entryShapes!.get("items")!.source).toBe("promote");
+    expect(g.fnRels?.has("fn")).toBe(true);
+    const rel = g.fnRels!.get("fn")!.abs;
+    expect(rel.shape.k).toBe("fn");
+    if (rel.shape.k === "fn") {
+      expect(rel.shape.returnType!.term).toEqual(v("B:fn"));
+      // 元素来自 items 提升后的 A1，不是 fresh T*
+      expect(rel.shape.paramTypes?.[0]?.term).toEqual(v("A1"));
+    }
   });
 });

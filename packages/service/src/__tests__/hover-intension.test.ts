@@ -36,4 +36,18 @@ describe("getHoverAtPosition lossless Abs", () => {
     const hover = getHoverAtPosition("/t/h2.js", source, 1, 7);
     if (hover) expect(typeof hover.typeText).toBe("string");
   });
+
+  it("hover on HOF function name reads intension (formatPoly), not arity-only", () => {
+    const source = `function processItems(items, transform, filter) {
+  return items.filter(filter).map(transform);
+}
+`;
+    // 列：function 名 processItems 起始附近
+    const hover = getHoverAtPosition("/t/hof-hover.js", source, 1, 10);
+    expect(hover).not.toBeNull();
+    expect(hover!.intension).toBeDefined();
+    expect(hover!.intension).toContain("items: arr(A1)");
+    expect(hover!.intension).toContain("B:transform");
+    expect(hover!.intension).not.toContain("arr(A1) = A1");
+  });
 });

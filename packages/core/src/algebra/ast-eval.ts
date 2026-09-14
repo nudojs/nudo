@@ -64,6 +64,7 @@ import {
 import type { HofCollectCtx } from "./hof.ts";
 import {
   tryPromoteDirectCall,
+  tryPromoteForOfIteratee,
   tryPromoteHofCallback,
   tryPromoteReceiverAsArr,
 } from "./hof.ts";
@@ -1647,7 +1648,23 @@ function evalForOf(
   phi: Phi,
   budget: LeakBudget,
 ): EvalResult {
-  const iterVal = evalNode(node.right, env, phi, budget).value;
+  let iterVal = evalNode(node.right, env, phi, budget).value;
+  // 挂载点（for-of）：形参 any 上的迭代 → 提升 arr，再按元素分发
+  if (
+    node.right.type === "Identifier" &&
+    env.hofCollect &&
+    (iterVal.shape.k === "any" || iterVal.shape.k === "unknown")
+  ) {
+    const loc0 = node.loc
+      ? { line: node.loc.start.line, column: node.loc.start.column }
+      : undefined;
+    const promoted = tryPromoteForOfIteratee(
+      env,
+      (node.right as Identifier).name,
+      loc0,
+    );
+    if (promoted) iterVal = promoted;
+  }
   const elements: Abs[] =
     iterVal.shape.k === "arr"
       ? [iterVal.shape.element]

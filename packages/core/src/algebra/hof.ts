@@ -136,6 +136,25 @@ export function promoteParamShape(
 
 const HOF_ARR_METHODS = new Set(["map", "filter", "reduce", "flatMap"]);
 
+/** 形参 any → arr(自身 var) 的共享提升；挂载点①/for-of 共用 */
+function promoteParamAsArr(
+  env: AstEnv,
+  name: string,
+  loc?: { line: number; column: number },
+): Abs | undefined {
+  const hc = env.hofCollect;
+  if (!hc || !hc.paramNames.has(name)) return undefined;
+  const prev = env.vars.get(name);
+  if (!prev) return undefined;
+  if (prev.shape.k !== "any" && prev.shape.k !== "unknown") return undefined;
+  const element = prev.term
+    ? abs(prev.shape, prev.term, prev.pred, "path")
+    : abs({ k: "any" }, undefined, undefined, "path");
+  const arrShape: Shape = { k: "arr", element };
+  promoteParamShape(env, name, arrShape, { loc });
+  return env.vars.get(name);
+}
+
 /**
  * 挂载点①：方法派发 miss。receiver 是形参 Identifier 且 shape 为 any/未知，
  * 方法名为 filter/map/reduce/flatMap → 提升为 arr(自身 var)。
@@ -147,17 +166,19 @@ export function tryPromoteReceiverAsArr(
   loc?: { line: number; column: number },
 ): Abs | undefined {
   if (!HOF_ARR_METHODS.has(method)) return undefined;
-  const hc = env.hofCollect;
-  if (!hc || !hc.paramNames.has(receiverName)) return undefined;
-  const prev = env.vars.get(receiverName);
-  if (!prev) return undefined;
-  if (prev.shape.k !== "any" && prev.shape.k !== "unknown") return undefined;
-  const element = prev.term
-    ? abs(prev.shape, prev.term, prev.pred, "path")
-    : abs({ k: "any" }, undefined, undefined, "path");
-  const arrShape: Shape = { k: "arr", element };
-  promoteParamShape(env, receiverName, arrShape, { loc });
-  return env.vars.get(receiverName);
+  return promoteParamAsArr(env, receiverName, loc);
+}
+
+/**
+ * for-of 迭代对象提升（applyEach 型）：`for (const x of items)`，
+ * items 为形参且仍是 any/unknown → arr(自身 var)。不依赖方法名。
+ */
+export function tryPromoteForOfIteratee(
+  env: AstEnv,
+  iterateeName: string,
+  loc?: { line: number; column: number },
+): Abs | undefined {
+  return promoteParamAsArr(env, iterateeName, loc);
 }
 
 /**
@@ -533,7 +554,8 @@ function substTermAbs(t: Term, map: ReadonlyMap<string, Abs>): Term {
 function substShape(
   s: Shape,
   map: ReadonlyMap<string, Abs>,
-  seen: Set<object>,
+  cache: Map<object, Abs>,
+  visiting: Set<object>,
 ): Shape {
   switch (s.k) {
     case "never":
@@ -542,30 +564,37 @@ function substShape(
     case "prim":
       return s;
     case "brand":
-      return { ...s, shape: substAbsInner(s.shape, map, seen) };
+      return { ...s, shape: substAbsInner(s.shape, map, cache, visiting) };
     case "eff":
-      return { ...s, inner: substAbsInner(s.inner, map, seen) };
+      return { ...s, inner: substAbsInner(s.inner, map, cache, visiting) };
     case "arr":
-      return { ...s, element: substAbsInner(s.element, map, seen) };
+      return { ...s, element: substAbsInner(s.element, map, cache, visiting) };
     case "tuple": {
-      const elements = s.elements.map((e) => substAbsInner(e, map, seen));
+      const elements = s.elements.map((e) =>
+        substAbsInner(e, map, cache, visiting),
+      );
       const next: Shape = { k: "tuple", elements };
-      if (s.rest) next.rest = substAbsInner(s.rest, map, seen);
+      if (s.rest) next.rest = substAbsInner(s.rest, map, cache, visiting);
       return next;
     }
     case "fn": {
       const next: Shape = { k: "fn", params: s.params };
       if (s.name !== undefined) next.name = s.name;
       if (s.paramTypes) {
-        next.paramTypes = s.paramTypes.map((p) => substAbsInner(p, map, seen));
+        next.paramTypes = s.paramTypes.map((p) =>
+          substAbsInner(p, map, cache, visiting),
+        );
       }
       if (s.returnType !== undefined) {
-        next.returnType = substAbsInner(s.returnType, map, seen);
+        next.returnType = substAbsInner(s.returnType, map, cache, visiting);
       }
       return next;
     }
     case "sum":
-      return { ...s, members: s.members.map((m) => substAbsInner(m, map, seen)) };
+      return {
+        ...s,
+        members: s.members.map((m) => substAbsInner(m, map, cache, visiting)),
+      };
     case "obj": {
       const slots: Record<
         string,
@@ -573,7 +602,7 @@ function substShape(
       > = {};
       for (const [k, slot] of Object.entries(s.slots)) {
         const nextSlot: { value: Abs; optional?: boolean; readonly?: boolean } =
-          { value: substAbsInner(slot.value, map, seen) };
+          { value: substAbsInner(slot.value, map, cache, visiting) };
         if (slot.optional) nextSlot.optional = true;
         if (slot.readonly) nextSlot.readonly = true;
         slots[k] = nextSlot;
@@ -581,8 +610,8 @@ function substShape(
       const next: Shape = { k: "obj", slots };
       if (s.index) {
         next.index = {
-          key: substAbsInner(s.index.key, map, seen),
-          value: substAbsInner(s.index.value, map, seen),
+          key: substAbsInner(s.index.key, map, cache, visiting),
+          value: substAbsInner(s.index.value, map, cache, visiting),
         };
       }
       if (s.open) next.open = true;
@@ -591,13 +620,17 @@ function substShape(
   }
 }
 
+/**
+ * cache：DAG 共享同一 Abs 对象时复用已替换结果（不是「访问过就返回原对象」）。
+ * visiting：真环防御；Abs 正常是树，环路径返回原对象以避免死循环。
+ */
 function substAbsInner(
   a: Abs,
   map: ReadonlyMap<string, Abs>,
-  seen: Set<object>,
+  cache: Map<object, Abs>,
+  visiting: Set<object>,
 ): Abs {
-  if (seen.has(a)) return a;
-  // term 是映射内 var：整 Abs 替换
+  // term 是映射内 var：整 Abs 替换（不进 cache——替换结果与对象身份无关）
   if (a.term?.op === "var" && map.has(a.term.id)) {
     const repl = map.get(a.term.id)!;
     return {
@@ -608,8 +641,13 @@ function substAbsInner(
     };
   }
 
-  seen.add(a);
-  const shape = substShape(a.shape, map, seen);
+  const hit = cache.get(a);
+  if (hit !== undefined) return hit;
+  // 真环：计算中重入 → 返回原对象（不缓存半截结果）
+  if (visiting.has(a)) return a;
+
+  visiting.add(a);
+  const shape = substShape(a.shape, map, cache, visiting);
   const term = a.term ? substTermAbs(a.term, map) : undefined;
 
   let pred = a.pred;
@@ -619,8 +657,11 @@ function substAbsInner(
     pred = r.pred;
     if (r.dropped) conf = confJoin(conf, "partial");
   }
+  visiting.delete(a);
 
-  return abs(shape, term, pred, conf);
+  const result = abs(shape, term, pred, conf);
+  cache.set(a, result);
+  return result;
 }
 
 /**
@@ -629,7 +670,7 @@ function substAbsInner(
  */
 export function substAbs(a: Abs, map: ReadonlyMap<string, Abs>): Abs {
   if (map.size === 0) return a;
-  return substAbsInner(a, map, new Set());
+  return substAbsInner(a, map, new Map(), new Set());
 }
 
 /**
