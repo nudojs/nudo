@@ -1,5 +1,17 @@
 # @nudojs/parser
 
+## 0.4.0
+
+### Minor Changes
+
+- 1d6bb01: `getFunctionName` 对 `export const f = …`（ExportNamedDeclaration + VariableDeclaration）返回 `<anonymous>`——现在递归进入声明节点，导出箭头函数获得真实函数名，case 求值可达。
+
+### Patch Changes
+
+- Updated dependencies [1d6bb01]
+- Updated dependencies [1d233a7]
+  - @nudojs/core@0.4.0
+
 ## 0.3.1
 
 ### Patch Changes
