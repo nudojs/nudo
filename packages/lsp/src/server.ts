@@ -540,6 +540,7 @@ connection.onReferences((params) => {
 
     const refs = resolveReferences(filePath, source, identAtPos, {
       extraFiles: navigationExtraFiles(filePath),
+      includeDeclaration: params.context?.includeDeclaration !== false,
     });
     return refs.map((ref) => ({
       uri: ref.uri ? filePathToUri(ref.uri) : params.textDocument.uri,
