@@ -1,5 +1,25 @@
 # @nudojs/service
 
+## 0.3.2
+
+### Patch Changes
+
+- 1d233a7: Fix hover and CodeLens case switching in Zed-style clients, and fold JS ToNumber for `- * / %`.
+
+  - `const n = double(21)` now reports the init Abs (`42`) instead of the statement's `unknown` (record the declarator id in `evalVarDecl`).
+  - `const s = double("a")` is `NaN` (JS `"a" * 2`), not `unknown` — concrete string/boolean lits coerce under ToNumber; `formatAbs` prints `NaN`/`Infinity` instead of `null`.
+  - `workspace/executeCommand` accepts positional `nudo.selectCase` args from CodeLens (`[uri, fn, index, name]`), not only the agent object form.
+  - Hover inside `@nudo:case` functions goes through TypeValue + `activeCases` instead of call-site B-path nodes, so selecting a case actually changes the shown types.
+
+- Updated dependencies [1d6bb01]
+- Updated dependencies [1d6bb01]
+- Updated dependencies [1d6bb01]
+- Updated dependencies [1d233a7]
+  - @nudojs/cli@0.4.0
+  - @nudojs/core@0.4.0
+  - @nudojs/parser@0.4.0
+  - @nudojs/harvester@0.2.2
+
 ## 0.3.1
 
 ### Patch Changes
