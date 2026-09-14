@@ -1,5 +1,20 @@
 # @nudojs/service
 
+## 0.3.1
+
+### Patch Changes
+
+- df1726c: Make `@nudo:env` actually affect inference: declaration-only fnSigs (readFileSync) now become relationFns instead of unknown-on-call, B-path `$invoke` implements string methods and filters union members, and `collectAbsCallRecords` merges env modules so call@ cases no longer overwrite correct B-path results.
+- bee69d4: Publish built dist instead of TypeScript source: packages now ship compiled ESM + .d.ts, CLI bin gets a shebang, `nudo --version` reads the real package version, and `nudo check` accepts multiple paths.
+- Updated dependencies [21427eb]
+- Updated dependencies [df1726c]
+- Updated dependencies [bee69d4]
+- Updated dependencies [8d85d99]
+  - @nudojs/core@0.3.1
+  - @nudojs/cli@0.3.1
+  - @nudojs/parser@0.3.1
+  - @nudojs/harvester@0.2.1
+
 ## 0.3.0
 
 ### Minor Changes
