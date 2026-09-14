@@ -10,12 +10,12 @@ The **nudo** Zed extension attaches Nudo's language server to JavaScript and Typ
 ## Prerequisites
 
 - Node.js on `PATH` (or Zed's bundled Node runtime for the npm fallback)
-- `@nudojs/lsp` available as one of:
+- [`@nudojs/lsp` ≥ 0.5.0](https://www.npmjs.com/package/@nudojs/lsp) available as one of:
   - project-local `node_modules/@nudojs/lsp` (`npm i @nudojs/lsp`)
   - global install providing the `nudo-lsp` bin (`npm i -g @nudojs/lsp`)
   - Zed-managed npm install (automatic, if neither of the above is found)
 
-The published package ships `dist/server.js` with a `nudo-lsp` shebang entry.
+0.5.0+ ships `dist/server.js` with a `nudo-lsp` shebang entry and defaults to stdio when no transport flag is passed.
 
 ## Install
 

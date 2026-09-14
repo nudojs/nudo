@@ -10,12 +10,12 @@ description: "在 Zed 中安装 Nudo 语言服务器：hover 类型、诊断、C
 ## 前置条件
 
 - `PATH` 上有 Node.js（或使用 Zed 内置 Node 做 npm 回退）
-- `@nudojs/lsp` 可通过下列任一方式使用：
+- [`@nudojs/lsp` ≥ 0.5.0](https://www.npmjs.com/package/@nudojs/lsp) 可通过下列任一方式使用：
   - 项目本地 `node_modules/@nudojs/lsp`（`npm i @nudojs/lsp`）
   - 全局安装并提供 `nudo-lsp` bin（`npm i -g @nudojs/lsp`）
   - Zed 托管的 npm 安装（前两者都找不到时自动触发）
 
-发布包自带 `dist/server.js` 与 `nudo-lsp` shebang 入口。
+0.5.0+ 自带 `dist/server.js` 与 `nudo-lsp` shebang 入口，并在未传 transport 参数时默认走 stdio。
 
 ## 安装
 
