@@ -34,6 +34,18 @@ export function formatAbs(a: Abs, opts: FormatOptions = {}): string {
   return parts.join("  ");
 }
 
+/** fn/arr 槽位：shape + 非 lit term（禁止在 format 里内联复制 term 逻辑） */
+export function formatShapeSlot(a: Abs): string {
+  const base = formatShape(a);
+  if (!a.term || a.term.op === "lit") return base;
+  // 关系在 paramTypes/returnType 或 element 里，外层 term 是形参 α 身份，不重复展示
+  // （否则 items: arr(A1) 会变成 arr(A1) = A1）
+  if (a.shape.k === "fn" || a.shape.k === "arr") return base;
+  // any + var → 直接打 term id（A1，而不是 any = A1）
+  if (a.shape.k === "any" && a.term.op === "var") return termToString(a.term);
+  return `${base} = ${termToString(a.term)}`;
+}
+
 export function formatShape(a: Abs): string {
   const s = a.shape;
   switch (s.k) {
@@ -55,13 +67,24 @@ export function formatShape(a: Abs): string {
       });
       return `{ ${entries.join(", ")} }`;
     }
-    case "arr":
+    case "arr": {
+      // any+var 元素 → arr(A1)（展示关系）；否则 element[]
+      if (s.element.shape.k === "any" && s.element.term?.op === "var") {
+        return `arr(${formatShapeSlot(s.element)})`;
+      }
       return `${formatShape(s.element)}[]`;
+    }
     case "tuple":
       return `[${s.elements.map(formatShape).join(", ")}]`;
     case "fn": {
+      if (s.paramTypes && s.paramTypes.length > 0) {
+        const ps = s.paramTypes.map((p) => formatShapeSlot(p));
+        const ret =
+          s.returnType !== undefined ? formatShapeSlot(s.returnType) : "?";
+        return `(${ps.join(", ")}) => ${ret}`;
+      }
       const ret =
-        s.returnType !== undefined ? formatShape(s.returnType) : "?";
+        s.returnType !== undefined ? formatShapeSlot(s.returnType) : "?";
       return `(${s.params.join(", ")}) => ${ret}`;
     }
     case "brand":

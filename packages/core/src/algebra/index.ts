@@ -3,6 +3,7 @@ export * from "./pred.ts";
 export * from "./phi.ts";
 export * from "./abs.ts";
 export * from "./abs-fn.ts";
+export * from "./hof.ts";
 export * from "./arithmetic.ts";
 export * from "./surface.ts";
 export * from "./builtins.ts";

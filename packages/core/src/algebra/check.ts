@@ -46,6 +46,23 @@ import { litValue } from "./abs.ts";
 import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
 import { checkCall } from "./diagnostics.ts";
 import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
+import { getFnImpl } from "./abs-fn.ts";
+import type { PolyFn } from "./generalize.ts";
+
+/**
+ * HOF 实参是否满足目标 fn 形状。
+ * 自定义放宽比较：JS 允许多余实参（src.params.length >= tgt.params.length）。
+ * 不直接喂 leqAbs（arity 严格相等对 JS 太严）。
+ */
+function hofFnArgOk(src: Abs, tgt: Abs): boolean {
+  if (src.shape.k !== "fn") return false;
+  const t = tgt.shape;
+  if (t.k !== "fn") return false;
+  // arity：JS 允许多余实参
+  if (src.shape.params.length < t.params.length) return false;
+  // 有 returnType 槽时不要求 src 也有（弱信息可接受）
+  return true;
+}
 
 // --- 整文件 CheckReport memo（LSP/CI 重复 check → O(1)） ---
 
@@ -1777,6 +1794,55 @@ function scanLiteralCalls(
    * 实参结构 ≤ 形参必填 slot（从 `p.foo` 访问推出）。
    * 字面量节点静态求 Abs；标识符用文件绑定表。
    */
+  /** P4：HOF 实参 fn 形状检查（§6.3 豁免规则） */
+  const checkHofFnRelArgs = (
+    g: PolyFn,
+    args: Array<Record<string, unknown>>,
+    loc: { start: { line: number; column: number } } | undefined,
+    displayName: string,
+    evalArg: (n: Record<string, unknown>) => Abs | undefined,
+  ): void => {
+    const fnRels = g.fnRels;
+    if (!fnRels) return;
+    for (let i = 0; i < g.params.length; i++) {
+      const pname = g.params[i]!;
+      const rel = fnRels.get(pname);
+      if (!rel) continue;
+      const expected = rel.abs;
+      if (expected.shape.k !== "fn") continue;
+      const argNode = args[i];
+      if (!argNode) continue;
+      const absArg = evalArg(argNode);
+      if (!absArg) continue;
+      // 豁免：any / unknown / 无信息
+      if (absArg.shape.k === "any" || absArg.shape.k === "unknown") continue;
+      // 豁免：有真实 body 的 impl
+      if (getFnImpl(absArg)) continue;
+      // 豁免：sum 且任一 member 满足
+      if (absArg.shape.k === "sum") {
+        const okAny = absArg.shape.members.some((m) =>
+          hofFnArgOk(m, expected),
+        );
+        if (okAny) continue;
+      }
+      if (!hofFnArgOk(absArg, expected)) {
+        // promote 来源 → warning；refine / relationFn → error
+        const isPromote = rel.source === "promote";
+        out.push({
+          severity: isPromote ? "warning" : "error",
+          code: "nudo:arg-structure",
+          message: `${displayName}[${pname}]: 实参不是可调用的 fn`,
+          actual: formatAbs(absArg),
+          expected: formatShape(expected),
+          suggestion: `期望 ${formatShape(expected)}`,
+          fn: displayName,
+          line: loc?.start.line,
+          column: loc?.start.column,
+        });
+      }
+    }
+  };
+
   const checkArgStructures = (
     fnName: string,
     fnSource: string,
@@ -1786,18 +1852,25 @@ function scanLiteralCalls(
   ): void => {
     let structReqs: Map<string, Set<string>>;
     let paramNames: string[];
+    let gFn: ReturnType<typeof generalizeFromAst>;
     try {
       // 同文件调用复用预解析 AST；跨文件源码各自 parse
       const sameFile = fnSource === source;
       structReqs = collectParamStructReqs(fnSource, fnName, sameFile ? file : undefined);
-      const g = generalizeFromAst(
+      gFn = generalizeFromAst(
         fnName,
         fnSource,
         sameFile && file ? { file } : {},
       );
-      paramNames = g?.params ?? [];
+      paramNames = gFn?.params ?? [];
     } catch {
       return;
+    }
+    // P4：HOF 实参 arity/shape 检查（依赖 P2 的 fnRels + RelSource）
+    if (gFn?.fnRels && gFn.fnRels.size > 0) {
+      checkHofFnRelArgs(gFn, args, loc, displayName ?? fnName, (n) =>
+        evalArgAbs(n, (x) => varAbs.get(x)),
+      );
     }
     if (structReqs.size === 0) return;
     for (let i = 0; i < args.length; i++) {

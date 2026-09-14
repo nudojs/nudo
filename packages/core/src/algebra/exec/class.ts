@@ -4,11 +4,23 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { abs, unknown, confJoin, litValue } from "../abs.ts";
-import { objOf } from "../objects.ts";
+import { abs, unknown, confJoin, litValue, bool } from "../abs.ts";
+import { objOf, joinAbs } from "../objects.ts";
 import { $get, $set, asAbsVal } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl } from "../abs-fn.ts";
+import {
+  applyCallbackAbs,
+  asAbs,
+  instantiateReturn,
+  isRelFn,
+  mapElementFallback,
+  projectFlatMapResult,
+  undefAbs,
+} from "../hof.ts";
+import { emptyEnv } from "../ast-eval.ts";
+import { defaultLeakBudget } from "../leak.ts";
+import { pTrue } from "../pred.ts";
 import { notePrimMemberMissing, noteUnknownMemberMissing } from "./calls.ts";
 import {
   registerBClass,
@@ -171,21 +183,30 @@ export function $invoke(
   return unknown;
 }
 
-/** arr/tuple 上的 map/reduce/filter/join/includes */
+/** arr/tuple 上的 map/reduce/filter/join/includes/flatMap */
 function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined {
   const shape = arr.shape as
     | { k: "arr"; element: Abs }
     | { k: "tuple"; elements: Abs[] };
+  // 统一委托 applyCallbackAbs（不新增 env.fns；Abs 侧 D/E 与 ast-eval 同轨）
   const callFn = (fn: unknown, ...fnArgs: Abs[]): Abs => {
     if (typeof fn === "function") {
       const r = (fn as (...a: Abs[]) => unknown)(...fnArgs);
       if (r && typeof r === "object" && "shape" in (r as object)) return r as Abs;
       return unknown;
     }
-    if (fn && typeof fn === "object" && "shape" in (fn as object)) {
-      return $call(fn as Abs, fnArgs);
+    const absFn = asAbs(fn);
+    if (absFn) {
+      return applyCallbackAbs(absFn, fnArgs, emptyEnv(), pTrue, defaultLeakBudget);
     }
     return unknown;
+  };
+  const isRelationOnly = (fn: unknown): fn is Abs => {
+    const a = asAbs(fn);
+    if (!a) return false;
+    const impl = getFnImpl(a);
+    if (impl?.body || impl?.apply) return false;
+    return !!(impl?.relation || isRelFn(a));
   };
   if (method === "map" && args[0]) {
     if (shape.k === "tuple") {
@@ -193,11 +214,18 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       return abs({ k: "tuple", elements: mapped }, undefined, undefined, "path");
     }
     const out = callFn(args[0], shape.element);
-    return abs({ k: "arr", element: out }, undefined, undefined, "path");
+    const el = mapElementFallback(asAbs(args[0]), shape.element, out);
+    const conf = el === out ? "path" : "partial";
+    return abs({ k: "arr", element: el }, undefined, undefined, conf);
   }
   if (method === "reduce" && args.length >= 1) {
     const fn = args[0]!;
     let acc = args[1] ?? unknown;
+    // 仅 relation → 一次 join，不动点只在有 body 时跑
+    if (isRelationOnly(fn) && shape.k === "arr") {
+      const d = instantiateReturn(fn, [acc, shape.element]);
+      return joinAbs(acc, d);
+    }
     const list = shape.k === "tuple" ? shape.elements : [shape.element];
     for (const el of list) {
       acc = callFn(fn, acc, el);
@@ -206,6 +234,30 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   }
   if (method === "filter" && args[0]) {
     return arr;
+  }
+  if (method === "flatMap" && args[0]) {
+    if (shape.k === "tuple") {
+      const mapped = shape.elements.map((el) => callFn(args[0], el));
+      return projectFlatMapResult(arr.conf, mapped);
+    }
+    const out = callFn(args[0], shape.element);
+    return projectFlatMapResult(arr.conf, [out]);
+  }
+  if (method === "forEach" && args[0]) {
+    const list = shape.k === "tuple" ? shape.elements : [shape.element];
+    for (const el of list) callFn(args[0], el);
+    return undefAbs();
+  }
+  if ((method === "some" || method === "every") && args[0]) {
+    const list = shape.k === "tuple" ? shape.elements : [shape.element];
+    for (const el of list) callFn(args[0], el);
+    return bool();
+  }
+  if (method === "find" && args[0]) {
+    // 不证明命中元素：tuple 只对首元素应用回调；结果 element ∪ undefined
+    const el = shape.k === "tuple" ? (shape.elements[0] ?? unknown) : shape.element;
+    callFn(args[0], el);
+    return joinAbs(el, undefAbs());
   }
   if (method === "join") {
     return abs({ k: "prim", type: "string" }, undefined, undefined, "path");

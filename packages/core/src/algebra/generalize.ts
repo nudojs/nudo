@@ -17,7 +17,7 @@ import { abs, unknown } from "./abs.ts";
 import type { AstEnv } from "./ast-eval.ts";
 import { evalNode, emptyEnv } from "./ast-eval.ts";
 import { defaultLeakBudget, type LeakBudget } from "./leak.ts";
-import { formatShape } from "./format.ts";
+import { formatShapeSlot } from "./format.ts";
 import {
   extractRefinesFromSource,
   type RefineResolveOpts,
@@ -30,6 +30,12 @@ import {
   normPath,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
+import {
+  createHofCollectCtx,
+  snapshotAbs,
+  type RelSource,
+  type HofSite,
+} from "./hof.ts";
 
 /** 进程内 L0：同 (source, fn, refine 指纹, budget, label) 的 generalize 结果 */
 const generalizeMemo = new Map<string, PolyFn | undefined>();
@@ -498,6 +504,17 @@ export type PolyFn = {
   display: string;
   /** 入口契约（@nudo:refine），供签名/inlay 展示 */
   entryReqs?: Array<{ param: string; pred: import("./pred.ts").Pred }>;
+  /**
+   * 函数形参的符号外延（与 typeParams 同 α 空间）。
+   * symbolic 一次跑正常结束时从 env 快照拷出；instantiate 重跑不写。
+   */
+  fnRels?: Map<string, { abs: Abs; source: import("./hof.ts").RelSource }>;
+  /**
+   * 值形参（非函数）的提升快照，如 `items → arr(A1)`。
+   */
+  entryShapes?: Map<string, { abs: Abs; source: import("./hof.ts").RelSource }>;
+  /** body 内对该形参的应用点（check/hover/dts 用） */
+  hofSites?: import("./hof.ts").HofSite[];
 };
 
 export function extractFn(
@@ -606,6 +623,11 @@ function generalizeFromAstUncached(
   }));
 
   let entryReqs: Array<{ param: string; pred: import("./pred.ts").Pred }> | undefined;
+  /** refine 契约带来的 entryShapes（source=refine，不重复提升） */
+  const refineEntryShapes = new Map<
+    string,
+    { abs: Abs; source: RelSource }
+  >();
   if (opts.refine) {
     try {
       const reqs = extractRefinesFromSource(source, fnName, opts.refine);
@@ -615,10 +637,15 @@ function generalizeFromAstUncached(
           const idx = params.indexOf(r.param);
           if (idx >= 0) {
             // 契约挂入口：term 用真实参数名，pred 一并带上
+            const entryAbs = constraintToEntryAbs(r.constraint, r.param);
             typeParams[idx] = {
               id: typeParams[idx]!.id,
-              value: constraintToEntryAbs(r.constraint, r.param),
+              value: entryAbs,
             };
+            refineEntryShapes.set(r.param, {
+              abs: snapshotAbs(entryAbs),
+              source: "refine",
+            });
           }
         }
       }
@@ -631,13 +658,21 @@ function generalizeFromAstUncached(
   // 随 L0 的 PolyFn 共享；resetGeneralizeMemo 一并丢弃。
   const instMemo = new Map<string, InstHit>();
 
-  const run = (args: Abs[], phi: Phi = pTrue): Abs => {
+  const run = (
+    args: Abs[],
+    phi: Phi = pTrue,
+    collector?: import("./hof.ts").HofCollectCtx,
+  ): Abs => {
     const { key, varOrder } = instantiateMemoKey(args, phi);
     const hit = instMemo.get(key);
     if (hit !== undefined) {
       return alphaRenameResult(hit.result, hit.varOrder, varOrder);
     }
-    const local: AstEnv = { vars: new Map(env.vars), fns: env.fns };
+    const local: AstEnv = {
+      vars: new Map(env.vars),
+      fns: env.fns,
+      hofCollect: collector,
+    };
     params.forEach((p, i) => {
       local.vars.set(p, args[i] ?? unknown);
     });
@@ -649,6 +684,11 @@ function generalizeFromAstUncached(
     return result;
   };
 
+  // symbolic 一次跑安装 collector；instantiate 重跑不装
+  const paramNames = new Set(params);
+  const alphaIds = typeParams.map((t) => t.id);
+  const hofCollector = createHofCollectCtx(paramNames, alphaIds);
+
   const symbolic = run(
     typeParams.map((t) => t.value),
     // 入口契约进 Φ，让 body 内的单调性可传播
@@ -657,7 +697,38 @@ function generalizeFromAstUncached(
         ? entryReqs[0]!.pred
         : { op: "and", args: entryReqs.map((r) => r.pred) }
       : pTrue,
+    hofCollector,
   );
+
+  // 截断 / 不可缓存 → 三者置 undefined（不写部分关系）
+  let fnRels: Map<string, { abs: Abs; source: RelSource }> | undefined;
+  let entryShapes: Map<string, { abs: Abs; source: RelSource }> | undefined;
+  let hofSites: HofSite[] | undefined;
+
+  if (isCacheableAbs(symbolic)) {
+    // refine 契约 entryShapes 优先；fn 形状同时进 fnRels（source=refine，供 P4 error）
+    if (refineEntryShapes.size > 0) {
+      entryShapes = new Map(refineEntryShapes);
+      for (const [param, rec] of refineEntryShapes) {
+        if (rec.abs.shape.k !== "fn") continue;
+        if (!fnRels) fnRels = new Map();
+        fnRels.set(param, { abs: snapshotAbs(rec.abs), source: rec.source });
+      }
+    }
+    for (const [param, rec] of hofCollector.fnRels) {
+      if (refineEntryShapes.has(param)) continue;
+      if (!fnRels) fnRels = new Map();
+      fnRels.set(param, { abs: snapshotAbs(rec.abs), source: rec.source });
+    }
+    for (const [param, rec] of hofCollector.entryShapes) {
+      if (refineEntryShapes.has(param)) continue;
+      if (!entryShapes) entryShapes = new Map();
+      entryShapes.set(param, { abs: snapshotAbs(rec.abs), source: rec.source });
+    }
+    if (hofCollector.sites.length > 0) {
+      hofSites = hofCollector.sites.map((s) => ({ ...s }));
+    }
+  }
 
   return {
     name: fnName,
@@ -665,8 +736,19 @@ function generalizeFromAstUncached(
     typeParams,
     symbolic,
     instantiate: (args, phi) => run(args, phi ?? pTrue),
-    display: formatPoly(fnName, params, typeParams, symbolic, entryReqs),
+    display: formatPoly(
+      fnName,
+      params,
+      typeParams,
+      symbolic,
+      entryReqs,
+      entryShapes,
+      fnRels,
+    ),
     ...(entryReqs ? { entryReqs } : {}),
+    ...(fnRels ? { fnRels } : {}),
+    ...(entryShapes ? { entryShapes } : {}),
+    ...(hofSites ? { hofSites } : {}),
   };
 }
 
@@ -676,19 +758,31 @@ function formatPoly(
   typeParams: TypeParam[],
   symbolic: Abs,
   entryReqs?: Array<{ param: string; pred: import("./pred.ts").Pred }>,
+  entryShapes?: Map<string, { abs: Abs; source: RelSource }>,
+  fnRels?: Map<string, { abs: Abs; source: RelSource }>,
 ): string {
   const reqByParam = new Map((entryReqs ?? []).map((r) => [r.param, r.pred]));
   const ps = params
     .map((p, i) => {
       const id = typeParams[i]?.id ?? "unknown";
       const pred = reqByParam.get(p);
+      // 提升快照优先（entryShapes / fnRels）
+      const promoted =
+        entryShapes?.get(p)?.abs ?? fnRels?.get(p)?.abs;
+      if (promoted) {
+        const slot = formatShapeSlot(promoted);
+        if (pred && pred.op !== "true") {
+          return `${p}: ${slot} where ${predToString(pred)}`;
+        }
+        return `${p}: ${slot}`;
+      }
       if (pred && pred.op !== "true") {
         return `${p}: ${id} where ${predToString(pred)}`;
       }
       return `${p}: ${id}`;
     })
     .join(", ");
-  const ret = formatShape(symbolic);
+  const ret = formatShapeSlot(symbolic);
   const termPart =
     symbolic.term && symbolic.term.op !== "lit"
       ? ` = ${termToString(symbolic.term)}`
