@@ -311,6 +311,11 @@ export type EvalResult = {
   cont?: boolean;
   /** throw 了 value（未捕获时向上传播） */
   threw?: boolean;
+  /**
+   * if 无 else 且 consequent 已 return/throw：真分支已产出 value，
+   * 假分支 fall-through 仍可能走后续语句。evalBlock 需与后续结果 join。
+   */
+  partialReturn?: boolean;
 };
 
 // --- 源码入口 ---
@@ -1543,15 +1548,32 @@ function evalBlock(
   let local = env;
   let curPhi = phi;
   let last: Abs = unknown;
+  /** if 无 else 时真分支已 return 的值，待与 fall-through join */
+  let pendingPartial: Abs | undefined;
 
   for (const stmt of node.body) {
     const r = evalNode(stmt, local, curPhi, budget);
     local = r.env;
     curPhi = r.phi;
-    last = r.value;
-    if (r.returned || r.brk || r.cont || r.threw) {
-      return { value: r.value, phi: curPhi, env: local, returned: r.returned, brk: r.brk, cont: r.cont, threw: r.threw };
+    if (r.partialReturn) {
+      pendingPartial =
+        pendingPartial !== undefined ? joinAbs(pendingPartial, r.value) : r.value;
+      // fall-through：继续求后续语句
+      last = r.value;
+      continue;
     }
+    last = r.value;
+    if (pendingPartial !== undefined) {
+      last = joinAbs(pendingPartial, r.value);
+      pendingPartial = undefined;
+    }
+    if (r.returned || r.brk || r.cont || r.threw) {
+      return { value: last, phi: curPhi, env: local, returned: r.returned, brk: r.brk, cont: r.cont, threw: r.threw };
+    }
+  }
+  if (pendingPartial !== undefined) {
+    // 真分支 return 后无后续语句：return 值 ∪ undefined（隐式 undefined）
+    return { value: joinAbs(pendingPartial, unknown), phi: curPhi, env: local, returned: true };
   }
   return { value: last, phi: curPhi, env: local };
 }
@@ -1792,8 +1814,13 @@ function evalIf(
     const b = evalNode(node.alternate, env, fCons ? and(phi, fCons) : phi, budget);
     return { value: joinAbs(a.value, b.value), phi, env, returned: a.returned || b.returned };
   }
-  // if 无 else：与 fall-through join
-  return { value: joinAbs(a.value, unknown), phi, env };
+  // if 无 else：与 fall-through join。
+  // consequent 若 return/throw，真分支已退出、假分支 fall-through——
+  // 标记 partialReturn，由 evalBlock 与后续语句结果 join（不得覆盖）。
+  if (a.returned || a.threw) {
+    return { value: a.value, phi, env, partialReturn: true };
+  }
+  return { value: unknown, phi, env };
 }
 
 // --- 便捷 API ---

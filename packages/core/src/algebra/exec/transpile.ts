@@ -96,7 +96,51 @@ function indent(n: number): string {
 function stmtReturns(stmt: Statement): boolean {
   if (stmt.type === "ReturnStatement" || stmt.type === "ThrowStatement") return true;
   if (stmt.type === "BlockStatement") return stmt.body.some(stmtReturns);
+  if (stmt.type === "IfStatement") {
+    return stmtReturns(stmt.consequent) && stmt.alternate != null && stmtReturns(stmt.alternate);
+  }
   return false;
+}
+
+/** 语句恒退出（return/throw，或 if 两分支均退出）——用于 tail 折叠 */
+function stmtAlwaysExits(stmt: Statement): boolean {
+  return stmtReturns(stmt) && stmt.type !== "ExpressionStatement";
+}
+
+/**
+ * 把 `if (c) return X; …tail` 折成 `if (c) return X else { tail }`，
+ * 使后续 IfStatement 规则能提升为 `return $fork(c, () => X, () => tail)`。
+ * 仅当 tail 全部恒退出时折叠（有副作用的 fall-through 不动，避免吞语句）。
+ */
+function foldEarlyReturns(stmts: Statement[]): Statement[] {
+  for (let i = stmts.length - 2; i >= 0; i--) {
+    const stmt = stmts[i]!;
+    if (stmt.type !== "IfStatement" || stmt.alternate != null) continue;
+    if (!stmtReturns(stmt.consequent)) continue;
+    const tail = stmts.slice(i + 1);
+    if (tail.length === 0 || !tail.every(stmtAlwaysExits)) continue;
+    const alt: Statement = {
+      type: "BlockStatement",
+      body: tail,
+      directives: [],
+      start: stmt.consequent.start,
+      end: stmt.consequent.end,
+      loc: stmt.consequent.loc,
+    } as Statement;
+    const rewritten: Statement = {
+      ...stmt,
+      alternate: alt,
+    } as Statement;
+    return foldEarlyReturns([...stmts.slice(0, i), rewritten]);
+  }
+  return stmts;
+}
+
+/** 函数体语句序列：先折叠 early-return，再逐条 transpile */
+function transpileFnBodyStmts(stmts: Statement[], depth: number, opts: TranspileOptions): string {
+  return foldEarlyReturns(stmts)
+    .map((s) => transpileStatement(s, depth, opts))
+    .join("\n");
 }
 
 /** 递归解构：把 pattern 绑到 fromSrc（已是 Abs 表达式字符串） */
@@ -225,7 +269,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const params = paramsSig.join(", ");
       const bodyStmts =
         stmt.body.type === "BlockStatement"
-          ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, opts)).join("\n")
+          ? transpileFnBodyStmts(stmt.body.body, depth + 2, opts)
           : `${indent(depth + 2)}return ${transpileExpression(stmt.body as unknown as Expression, opts)};`;
       const restBind = rest
         ? `${indent(depth + 1)}const ${rest.name} = arguments.length > ${named.length} ? $arr(Array.from(arguments).slice(${named.length})) : $arr([]);\n`
@@ -631,7 +675,7 @@ function transpileClass(
 
 function transpileBlockAsThunk(stmt: Statement, depth: number, opts: TranspileOptions): string {
   if (stmt.type === "BlockStatement") {
-    const inner = stmt.body.map((s) => transpileStatement(s, depth + 1, opts)).join("\n");
+    const inner = transpileFnBodyStmts(stmt.body, depth + 1, opts);
     return `() => {\n${inner}\n${indent(depth)}}`;
   }
   if (stmt.type === "ReturnStatement") {
@@ -964,9 +1008,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       // 异步 body 包 $async 保持 eff(promise) 语义（裸 JS async 会泄漏 Promise）。
       const nameList = `[${paramParts.map((p) => JSON.stringify(p.startsWith("...") ? p.slice(3) : p)).join(", ")}]`;
       if (fn.body.type === "BlockStatement") {
-        const inner = (fn.body as { body: Statement[] }).body
-          .map((s) => transpileStatement(s, 1, opts))
-          .join("\n");
+        const inner = transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, opts);
         if (fn.async) {
           return `$fnVal(${nameList}, (${paramParts.join(", ")}) => $async(() => {\n${inner}\n}))`;
         }
