@@ -70,6 +70,10 @@ jobs:
         env:
           NPM_CONFIG_PROVENANCE: true
 
+      - name: Build website
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: pnpm --filter website run build
+
       - name: Upload Website Build Artifact
         if: steps.changesets.outputs.hasChangesets == 'false'
         uses: actions/upload-pages-artifact@v3
