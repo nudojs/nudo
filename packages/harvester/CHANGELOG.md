@@ -1,5 +1,16 @@
 # @nudojs/harvester
 
+## 0.2.1
+
+### Patch Changes
+
+- bee69d4: Publish built dist instead of TypeScript source: packages now ship compiled ESM + .d.ts, CLI bin gets a shebang, `nudo --version` reads the real package version, and `nudo check` accepts multiple paths.
+- Updated dependencies [21427eb]
+- Updated dependencies [df1726c]
+- Updated dependencies [bee69d4]
+- Updated dependencies [8d85d99]
+  - @nudojs/core@0.3.1
+
 ## 0.2.0
 
 ### Minor Changes

@@ -1,5 +1,19 @@
 # @nudojs/lsp
 
+## 0.4.1
+
+### Patch Changes
+
+- 34b246c: Implement textDocument/documentSymbol and workspace/symbol; make definition, references, and rename follow relative imports across files so go-to-definition on an imported symbol lands in the defining module and rename/references include importer call sites.
+- bee69d4: Publish built dist instead of TypeScript source: packages now ship compiled ESM + .d.ts, CLI bin gets a shebang, `nudo --version` reads the real package version, and `nudo check` accepts multiple paths.
+- Updated dependencies [21427eb]
+- Updated dependencies [df1726c]
+- Updated dependencies [bee69d4]
+- Updated dependencies [8d85d99]
+  - @nudojs/core@0.3.1
+  - @nudojs/service@0.3.1
+  - @nudojs/parser@0.3.1
+
 ## 0.4.0
 
 ### Minor Changes
