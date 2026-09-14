@@ -10,8 +10,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# lint / build / test 相互独立：测试走 vitest 的 src 别名，不依赖 tsup 产物。
-# 三个 job 并行，任一失败即红。
+# lint / build / test 并行。测试的 vitest 别名指向 src，但 path-based
+# @nudo:env 会经 Node 动态 import 真实文件——那时按 package.json exports
+# 解析 @nudojs/* → dist，故 test 也先 build。
 jobs:
   lint:
     name: Lint (tsc x2) & docs examples
@@ -81,6 +82,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: npm run build
 
       - name: Test
         run: npm run test:coverage
