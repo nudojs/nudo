@@ -15,7 +15,12 @@ import type { AstEnv } from "./ast-eval.ts";
 
 // --- P2 types ---
 
-/** 关系来源标记：P4 豁免与 diagnostics 依赖它，禁止隐式猜 */
+/**
+ * 关系来源标记：P4 豁免与 diagnostics 依赖它，禁止隐式猜。
+ * - promote：使用驱动提升（generalize symbolic / instantiate 局部）
+ * - refine：@nudo:refine 契约
+ * - relationFn：harvest/mock/测试直接写入 fnRels 时的预留来源（P4 error 路径）
+ */
 export type RelSource = "promote" | "refine" | "relationFn";
 
 export type HofSite = {
@@ -31,7 +36,8 @@ export type HofSite = {
 
 /**
  * run 局部 collector（与 Phi 并列，不进 Φ 合并）。
- * 仅 generalize 的 symbolic 一次跑安装；instantiate 重跑不装。
+ * symbolic 一次跑：安装并沉淀到 PolyFn；instantiate 重跑：装 throwaway
+ * 副本——形状提升仍生效，结果不写回共享状态（见 generalize.ts run()）。
  */
 export type HofCollectCtx = {
   /** 本次归纳的形参名集合（身份判定用） */
@@ -717,7 +723,12 @@ type ApplyCallbackHost = (
 
 let applyCallbackHost: ApplyCallbackHost | undefined;
 
-/** ast-eval 模块加载时注册；勿在多份 ast-eval 实例下各写各的 */
+/**
+ * ast-eval 模块加载时注册（副作用）。
+ * 必须经 `ast-eval.ts`（或其依赖方：exec/call、exec/class、generalize）加载，
+ * 才能启用 Identifier/env.fns/inline body 路径；只 import hof.ts 时 fallback
+ * 仅认 relation/isRelFn。勿在多份 ast-eval 实例下各写各的——双包/双副本会覆盖。
+ */
 export function setApplyCallbackHost(fn: ApplyCallbackHost): void {
   applyCallbackHost = fn;
 }

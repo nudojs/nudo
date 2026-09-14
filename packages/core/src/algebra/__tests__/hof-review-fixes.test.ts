@@ -171,3 +171,40 @@ describe("P4: promote source stays warning", () => {
     expect(hit!.severity).toBe("warning");
   });
 });
+
+describe("instantiate: shape promotion still fires (throwaway collector)", () => {
+  it("processItems instantiated with any args promotes items→arr, not stuck unknown", () => {
+    const src = `
+      function processItems(items, transform, filter) {
+        return items.filter(filter).map(transform);
+      }
+    `;
+    const g = generalizeFromAst("processItems", src);
+    expect(g).toBeDefined();
+    if (!g) return;
+    // 形参仍 any 时，instantiate 重跑靠挂载点①/③ 提升，body 能继续
+    const r = g.instantiate([a1, a1, a1]);
+    expect(r.shape.k).toBe("arr");
+    // 关系不因 instantiate 污染 PolyFn 共享槽
+    expect(g.entryShapes?.get("items")?.source).toBe("promote");
+  });
+
+  it("instantiate does not mutate typeParams / PolyFn fnRels identity", () => {
+    const src = `
+      function processItems(items, transform, filter) {
+        return items.filter(filter).map(transform);
+      }
+    `;
+    const g = generalizeFromAst("processItems", src);
+    if (!g) return;
+    const itemsIdx = g.params.indexOf("items");
+    const tpBefore = g.typeParams[itemsIdx]!;
+    const relBefore = g.fnRels?.get("transform")?.abs;
+    g.instantiate([a1, a1, a1]);
+    expect(g.typeParams[itemsIdx]).toBe(tpBefore);
+    expect(tpBefore.value.shape.k).toBe("any");
+    if (relBefore) {
+      expect(g.fnRels?.get("transform")?.abs).toBe(relBefore);
+    }
+  });
+});

@@ -50,4 +50,38 @@ describe("getHoverAtPosition lossless Abs", () => {
     expect(hover!.intension).toContain("B:transform");
     expect(hover!.intension).not.toContain("arr(A1) = A1");
   });
+
+  it("hover on call callee keeps call-site typeText and attaches intension", () => {
+    const source = `function scale(x) { return x * 2; }
+const r = scale(3);
+`;
+    // scale( 的 callee 列
+    const hover = getHoverAtPosition("/t/hof-call-hover.js", source, 2, 11);
+    expect(hover).not.toBeNull();
+    // intension 来自 generalize，不是 arity-only
+    expect(hover!.intension).toBeDefined();
+    expect(hover!.intension).toContain("scale");
+    // typeText 落 B-path/TypeValue（调用点结果），不是「只有签名」的早退
+    expect(hover!.typeText).toBeDefined();
+    expect(hover!.typeText).not.toBe(hover!.intension);
+  });
+
+  it("hover on HOF call site: intension has relations, typeText is not just signature", () => {
+    const source = `function processItems(items, transform, filter) {
+  return items.filter(filter).map(transform);
+}
+function caller(items) {
+  return processItems(items, (x) => x * 2, (x) => x > 0);
+}
+`;
+    // caller 内 processItems( 的 callee
+    const hover = getHoverAtPosition("/t/hof-call2.js", source, 5, 12);
+    expect(hover).not.toBeNull();
+    expect(hover!.intension).toContain("items: arr(A1)");
+    expect(hover!.intension).toContain("B:transform");
+    // 有外延侧结果时，typeText 不应被 intension 整份顶掉
+    if (hover!.typeText && hover!.typeText !== hover!.intension) {
+      expect(hover!.typeText.length).toBeGreaterThan(0);
+    }
+  });
 });

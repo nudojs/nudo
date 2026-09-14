@@ -658,6 +658,9 @@ function generalizeFromAstUncached(
   // 随 L0 的 PolyFn 共享；resetGeneralizeMemo 一并丢弃。
   const instMemo = new Map<string, InstHit>();
 
+  const paramNames = new Set(params);
+  const alphaIds = typeParams.map((t) => t.id);
+
   const run = (
     args: Abs[],
     phi: Phi = pTrue,
@@ -668,10 +671,13 @@ function generalizeFromAstUncached(
     if (hit !== undefined) {
       return alphaRenameResult(hit.result, hit.varOrder, varOrder);
     }
+    // symbolic 传入 collector 以沉淀关系；instantiate 装 throwaway collector——
+    // 形状提升仍生效（§5.2.5），但 run 结束即丢，不写 PolyFn 共享状态。
+    const hc = collector ?? createHofCollectCtx(paramNames, alphaIds);
     const local: AstEnv = {
       vars: new Map(env.vars),
       fns: env.fns,
-      hofCollect: collector,
+      hofCollect: hc,
     };
     params.forEach((p, i) => {
       local.vars.set(p, args[i] ?? unknown);
@@ -684,9 +690,7 @@ function generalizeFromAstUncached(
     return result;
   };
 
-  // symbolic 一次跑安装 collector；instantiate 重跑不装
-  const paramNames = new Set(params);
-  const alphaIds = typeParams.map((t) => t.id);
+  // symbolic 一次跑安装 collector 并沉淀；instantiate 不读其结果
   const hofCollector = createHofCollectCtx(paramNames, alphaIds);
 
   const symbolic = run(

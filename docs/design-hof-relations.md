@@ -530,8 +530,9 @@ type HofCollectCtx = {
 };
 ```
 
-- 仅 generalize 的 **symbolic 一次跑**安装 collector；`instantiate` 重跑不装、
-  不写 `hofSites`/`fnRels`/`entryShapes`（保证 L1/L2 memo 结果确定性）；
+- 仅 generalize 的 **symbolic 一次跑**安装用于沉淀的 collector；`instantiate` 重跑
+  可装 **throwaway** collector（只服务形参提升，run 结束即丢），**不写**
+  `hofSites`/`fnRels`/`entryShapes`（保证 L1/L2 memo 结果确定性）；
 - `instantiate` 的 body 重跑仍享受 §5.2 的**形状提升**（纯函数、run 局部），
   但不沉淀任何共享状态。
 
@@ -871,8 +872,10 @@ Agent `nudo.infer` / `nudo.hover`：在 `intension` 已有无损 Abs 时 **无�
 | LSP hover 的 **intension 侧** | 同上（Abs / formatPoly），**不读** TypeValue 的 fn 形状 |
 | LSP hover 的 **TypeValue 侧** | P5 之前仍是 arity-only 投影——**不得**当作权威关系源 |
 
-实现：`getHoverAtPosition` 在**函数名位置**优先 `generalizeFromAst` → `g.display`
-作 intension，再落 B-path / TypeValue。避免 B-path 的 arity-only fn Abs 早退。
+实现：`getHoverAtPosition` 在**函数名/调用 callee 位置**先取 `generalizeFromAst` →
+`g.display` 作 **intension**，**再落** B-path / TypeValue 得到 typeText（调用点显示
+结果类型，不是函数签名），最后把 intension 合并进结果。禁止 B-path 的 arity-only
+fn Abs 早退顶掉 intension，也禁止用 intension 顶掉调用点的结果类型。
 
 若 hover 在 P2 仍读 TypeValue，会出现「CLI 显示 `fn(A1)=>B1`、LSP 显示 `(x)=>?`」的不一致。
 P2 退出标准含：LSP 关系相关展示走 intension，或明确标记 extensional 侧尚未投影。

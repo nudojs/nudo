@@ -2324,6 +2324,11 @@ export type HoverInfo = {
 /**
  * LSP hover：优先无损 Abs（类型即计算本体），TypeValue 仅作外延对照。
  * 节点表也是 Abs（collectAbsNodeTypes），不经 bridge。
+ *
+ * 函数名/调用 callee 位置（design-hof-relations §7）：
+ * intension 一律走 generalize/formatPoly（HOF fnRels 在这里）；
+ * typeText 仍落 B-path / TypeValue（调用点显示结果类型，不是函数签名）。
+ * 禁止用 B-path 的 arity-only fn Abs 冒充权威关系源。
  */
 export function getHoverAtPosition(
   filePath: string,
@@ -2341,23 +2346,35 @@ export function getHoverAtPosition(
   const envNames = collectEnvNames(filePath, source, false);
   const fnName = findFunctionNameAtPosition(source, line, column, file);
 
-  // 函数名位置：intension 必须走 generalize / formatPoly（HOF fnRels 在这里）。
-  // 禁止用 B-path 的 arity-only fn Abs 冒充权威关系源（design-hof-relations §7）。
+  // intension 候选：先算、不早退，最后合并进 B-path/TypeValue 结果
+  let gDisplay: string | undefined;
+  let gAbs: string | undefined;
+  let gMulti: string | undefined;
   if (fnName) {
     try {
       const g = generalizeFromAst(fnName, source, file ? { file } : {});
       if (g) {
-        return {
-          typeText: g.display,
-          intension: g.display,
-          abs: formatAbs(g.symbolic),
-          absMultiline: formatAbsMultiline(g.symbolic, fnName),
-        };
+        gDisplay = g.display;
+        gAbs = formatAbs(g.symbolic);
+        gMulti = formatAbsMultiline(g.symbolic, fnName);
       }
     } catch {
-      // fall through to B-path / TypeValue
+      // ignore
     }
   }
+  const attachIntension = (info: HoverInfo | null): HoverInfo | null => {
+    if (!gDisplay) return info;
+    if (!info) {
+      return { typeText: gDisplay, intension: gDisplay, abs: gAbs, absMultiline: gMulti };
+    }
+    return {
+      ...info,
+      intension: gDisplay,
+      // 外延侧已有更准 Abs 时保留；否则用 symbolic 兜底
+      abs: info.abs ?? gAbs,
+      absMultiline: info.absMultiline ?? gMulti,
+    };
+  };
 
   // B 路径：优先 Abs 节点表 / 标识符绑定，不经 TypeValue evaluateProgram
   if (isBPathCapable(source, envNames)) {
@@ -2380,13 +2397,13 @@ export function getHoverAtPosition(
         if (bound) {
           const absLine = formatAbs(bound);
           const absMulti = formatAbsMultiline(bound, ident);
-          return { typeText: absLine, abs: absLine, absMultiline: absMulti };
+          return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
         }
       }
       if (absAt) {
         const absLine = formatAbs(absAt);
         const absMulti = formatAbsMultiline(absAt, undefined);
-        return { typeText: absLine, abs: absLine, absMultiline: absMulti };
+        return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
       }
     } catch {
       /* fall through */
@@ -2414,9 +2431,9 @@ export function getHoverAtPosition(
           if (info) {
             info.abs = absLine;
             info.absMultiline = absMulti;
-            return info;
+            return attachIntension(info);
           }
-          return { typeText: absLine, abs: absLine, absMultiline: absMulti };
+          return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
         }
       }
     } catch {
@@ -2444,7 +2461,7 @@ export function getHoverAtPosition(
           info.abs = absLine;
           info.absMultiline = absMulti;
         } else {
-          return { typeText: absLine, abs: absLine, absMultiline: absMulti };
+          return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
         }
       }
     }
@@ -2452,7 +2469,7 @@ export function getHoverAtPosition(
     // ignore
   }
 
-  return info;
+  return attachIntension(info);
 }
 
 /** 光标处任意标识符（绑定 hover） */
