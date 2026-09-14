@@ -9,6 +9,7 @@ import {
   numLit,
   numVar,
   strLit,
+  boolLit,
   gtNum,
   geNum,
   ltNum,
@@ -124,6 +125,15 @@ describe("sub / mul", () => {
   });
   it("3*4 = 12", () => {
     expect(litValue(mul(numLit(3), numLit(4)))).toBe(12);
+  });
+  it('JS ToNumber: "a"*2 → NaN, "3"*2 → 6, true*2 → 2', () => {
+    expect(litValue(mul(strLit("a"), numLit(2)))).toBeNaN();
+    expect(litValue(mul(strLit("3"), numLit(2)))).toBe(6);
+    expect(litValue(mul(boolLit(true), numLit(2)))).toBe(2);
+    expect(mul(strLit("a"), numLit(2)).shape).toEqual({
+      k: "prim",
+      type: "number",
+    });
   });
   it("x>0 * 2 ⇒ (x*2)>0", () => {
     const phi = gtNum(v("x"), 0);

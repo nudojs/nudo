@@ -812,9 +812,24 @@ function dispatchNudoCommand(command: string, arg: Record<string, unknown>) {
   }
 }
 
-connection.onExecuteCommand((params) =>
-  dispatchNudoCommand(params.command, (params.arguments?.[0] as Record<string, unknown>) ?? {}),
-);
+connection.onExecuteCommand((params) => {
+  const args = params.arguments ?? [];
+  // CodeLens (and some clients) pass selectCase positionally:
+  //   [uri, functionName, caseIndex, caseName]
+  // Agent bridges pass a single object: { uri|file, functionName, caseIndex }.
+  if (
+    params.command === "nudo.selectCase" &&
+    args.length >= 3 &&
+    typeof args[0] === "string"
+  ) {
+    return handleSelectCase({
+      uri: args[0] as string,
+      functionName: args[1] as string,
+      caseIndex: args[2] as number,
+    });
+  }
+  return dispatchNudoCommand(params.command, (args[0] as Record<string, unknown>) ?? {});
+});
 
 connection.onRequest("nudo/selectCase", handleSelectCase);
 

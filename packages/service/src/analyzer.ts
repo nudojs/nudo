@@ -2226,6 +2226,20 @@ export async function getTypeAtPositionAsync(
   return getTypeAtPosition(filePath, source, line, column, activeCases);
 }
 
+/** 光标是否落在带 @nudo:case 的函数体内（该区域 hover/inlay 须走 TypeValue + activeCases）。 */
+function positionInsideCaseFunction(
+  source: string,
+  ast: ReturnType<typeof parse>,
+  line: number,
+): boolean {
+  try {
+    const enclosing = findEnclosingFunction(extractDirectives(ast), line);
+    return !!enclosing && enclosing.directives.some((d) => d.kind === "case");
+  } catch {
+    return false;
+  }
+}
+
 export function getTypeAtPosition(
   filePath: string,
   source: string,
@@ -2239,8 +2253,12 @@ export function getTypeAtPosition(
     .filter((d) => d.kind === "env")
     .flatMap((d) => d.envs);
 
-  // B 路径 capable：节点表来自 evalProgramAbs（模块图注入），不跑 TypeValue evaluateProgram
-  if (isBPathCapable(source, envNames)) {
+  // B 路径 capable：节点表来自 evalProgramAbs（模块图注入），不跑 TypeValue evaluateProgram。
+  // 用例函数体内除外：那里的权威类型是 activeCases 选中的用例实参重放。
+  if (
+    isBPathCapable(source, envNames) &&
+    !positionInsideCaseFunction(source, ast, line)
+  ) {
     try {
       const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast));
       const { modules } = evalAbsModuleGraph(source, filePath);
@@ -2378,8 +2396,16 @@ export function getHoverAtPosition(
     };
   };
 
-  // B 路径：优先 Abs 节点表 / 标识符绑定，不经 TypeValue evaluateProgram
-  if (isBPathCapable(source, envNames)) {
+  // B 路径：优先 Abs 节点表 / 标识符绑定，不经 TypeValue evaluateProgram。
+  // 光标落在带 @nudo:case 的函数体内时交给 TypeValue：那里按 activeCases
+  // 重放用例实参；B 路径节点表来自调用点求值，会盖住用例切换。
+  const insideCaseFn = positionInsideCaseFunction(
+    source,
+    file ?? parse(source),
+    line,
+  );
+
+  if (isBPathCapable(source, envNames) && !insideCaseFn) {
     try {
       const seeds = mockDirectivesToAbsSeeds(extractDirectives(file ?? parse(source)));
       const { modules } = evalAbsModuleGraph(source, filePath);
@@ -2415,9 +2441,10 @@ export function getHoverAtPosition(
   const tv = getTypeAtPosition(filePath, source, line, column, activeCases);
   const info: HoverInfo | null = tv ? { typeText: typeValueToString(tv) } : null;
 
-  // 标识符绑定优先（比粗粒度节点表更准）
+  // 标识符绑定优先（比粗粒度节点表更准）。用例函数体内跳过：
+  // B-path 绑定来自调用点，会盖住 activeCases 重放结果。
   const ident = findIdentNameAtPosition(source, line, column, file);
-  if (ident && !fnName) {
+  if (ident && !fnName && !insideCaseFn) {
     try {
       // 经模块图（相对 + 裸包）求 Abs 绑定
       if (isBPathCapable(source, []) || !/\brequire\s*\(/.test(source)) {
@@ -2445,7 +2472,10 @@ export function getHoverAtPosition(
 
   // 任意表达式：Abs 节点表（无损）
   try {
-    if (isBPathCapable(source, []) || !/\brequire\s*\(|\bimport\s*[{'"*]/.test(source)) {
+    if (
+      !insideCaseFn &&
+      (isBPathCapable(source, []) || !/\brequire\s*\(|\bimport\s*[{'"*]/.test(source))
+    ) {
       const seeds = mockDirectivesToAbsSeeds(
         extractDirectives(file ?? parse(source)),
       );

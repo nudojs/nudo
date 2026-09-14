@@ -1785,6 +1785,9 @@ function evalVarDecl(
   for (const d of node.declarations) {
     if (d.id.type !== "Identifier" || !d.init) continue;
     const r = evalNode(d.init, local, phi, budget);
+    // Hover/inlay on the binding name must see the init Abs, not the
+    // statement's `unknown` (which would otherwise win via loc overlap).
+    recordAbsNode(d.id, r.value);
     local = withVar(local, d.id.name, r.value);
   }
   return { value: unknown, phi, env: local };

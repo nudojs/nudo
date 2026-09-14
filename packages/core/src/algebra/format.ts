@@ -57,6 +57,8 @@ export function formatShape(a: Abs): string {
       return "unknown";
     case "prim": {
       const lv = litValue(a);
+      // JSON.stringify(NaN|±Infinity) is "null" — keep JS literal spelling.
+      if (typeof lv === "number" && !Number.isFinite(lv)) return String(lv);
       if (lv !== undefined) return JSON.stringify(lv);
       return s.type;
     }

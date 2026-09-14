@@ -152,6 +152,22 @@ function isAnyLike(a: Abs): boolean {
 }
 
 /**
+ * 具体原始字面量（number/string/boolean/null/undefined）——
+ * `- * / %` 上可按 JS ToNumber 折叠：`"a"*2`→NaN，`true*2`→2，`"3"*2`→6。
+ */
+function coercibleLit(
+  v: ReturnType<typeof litValue>,
+): v is number | string | boolean | null | undefined {
+  return (
+    v !== undefined &&
+    (typeof v === "number" ||
+      typeof v === "string" ||
+      typeof v === "boolean" ||
+      v === null)
+  );
+}
+
+/**
  * 减乘除模在 any 上走 JS ToNumber：结果恒为 number（可能 NaN）。
  * 与 + 不同——+ 可能拼接；减乘除模不会。
  */
@@ -316,6 +332,9 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (typeof va === "number" && typeof vb === "number") {
     return numLit(va - vb);
   }
+  if (coercibleLit(va) && coercibleLit(vb)) {
+    return numLit(Number(va) - Number(vb));
+  }
   if (isNumericLike(a) && isNumericLike(b) && a.term && b.term) {
     const term = simplifyTerm(app("-", [a.term, b.term]));
     // a.lo - b.hi  <  a-b  <  a.hi - b.lo
@@ -354,6 +373,9 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   const vb = litValue(b);
   if (typeof va === "number" && typeof vb === "number") {
     return numLit(va * vb);
+  }
+  if (coercibleLit(va) && coercibleLit(vb)) {
+    return numLit(Number(va) * Number(vb));
   }
   if (isNumericLike(a) && isNumericLike(b) && a.term && b.term) {
     const term = simplifyTerm(app("*", [a.term, b.term]));
@@ -434,6 +456,9 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     }
     return numLit(va / vb);
   }
+  if (coercibleLit(va) && coercibleLit(vb)) {
+    return numLit(Number(va) / Number(vb));
+  }
   if (isNumericLike(a) && isNumericLike(b) && a.term && b.term) {
     const term = simplifyTerm(app("/", [a.term, b.term]));
     if (b.term.op === "lit" && typeof b.term.value === "number" && b.term.value !== 0) {
@@ -480,6 +505,9 @@ export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
       return abs(num().shape, undefined, undefined, "path");
     }
     return numLit(va % vb);
+  }
+  if (coercibleLit(va) && coercibleLit(vb)) {
+    return numLit(Number(va) % Number(vb));
   }
   if (isNumericLike(a) && isNumericLike(b) && a.term && b.term) {
     const term = simplifyTerm(app("%", [a.term, b.term]));
