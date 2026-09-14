@@ -35,12 +35,22 @@ export function decide(row) {
 }
 `;
 
+/** 依赖注入风格：computeScorecard 是参数而非 import —— workspace fallback 场景 */
+const scanSrc = `export function runScan({ computeScorecard }) {
+  return computeScorecard({ id: 1 });
+}
+`;
+
+let scanPath: string;
+
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "nudo-lsp-nav-"));
   scorecardPath = join(dir, "scorecard.js");
   decidePath = join(dir, "decide.js");
+  scanPath = join(dir, "scan.js");
   writeFileSync(scorecardPath, scorecardSrc, "utf-8");
   writeFileSync(decidePath, decideSrc, "utf-8");
+  writeFileSync(scanPath, scanSrc, "utf-8");
 });
 
 afterAll(() => {
@@ -86,6 +96,35 @@ describe("cross-file definition", () => {
     expect(ident).toBe("decide");
     const def = resolveDefinition(decidePath, decideSrc, ident!);
     expect(def!.filePath).toBe(decidePath);
+  });
+});
+
+describe("workspace fallback definition", () => {
+  it("resolves DI-param usage to same-name export in sibling file when fallback enabled", () => {
+    const ast = parse(scanSrc);
+    const ident = findIdentifierAtPosition(ast, 2, 9);
+    expect(ident).toBe("computeScorecard");
+    const def = resolveDefinition(scanPath, scanSrc, ident!, { workspaceFallback: true });
+    expect(def).not.toBeNull();
+    expect(def!.filePath).toBe(scorecardPath);
+    expect(def!.name).toBe("computeScorecard");
+    expect(def!.loc.start.line).toBe(1);
+  });
+
+  it("without fallback (rename path) DI-param usage stays unresolved", () => {
+    const def = resolveDefinition(scanPath, scanSrc, "computeScorecard");
+    expect(def).toBeNull();
+  });
+
+  it("import binding wins over fallback", () => {
+    const def = resolveDefinition(decidePath, decideSrc, "computeScorecard", { workspaceFallback: true });
+    expect(def!.filePath).toBe(scorecardPath);
+    expect(def!.loc.start.line).toBe(1);
+  });
+
+  it("unknown name still resolves to null", () => {
+    const def = resolveDefinition(scanPath, scanSrc, "noSuchNameAnywhere", { workspaceFallback: true });
+    expect(def).toBeNull();
   });
 });
 

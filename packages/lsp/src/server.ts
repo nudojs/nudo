@@ -519,7 +519,10 @@ connection.onDefinition((params) => {
     const identAtPos = findIdentifierAtPosition(ast, line, column);
     if (!identAtPos) return null;
 
-    const def = resolveDefinition(filePath, source, identAtPos);
+    const def = resolveDefinition(filePath, source, identAtPos, {
+      extraFiles: navigationExtraFiles(filePath),
+      workspaceFallback: true,
+    });
     if (!def) return null;
 
     return {
@@ -840,12 +843,15 @@ function dispatchAgentRequest(command: string, params: Record<string, unknown>):
   return dispatchNudoCommand(command, params) as AgentToolResult;
 }
 
-connection.onRequest("nudo/whatIf", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.whatIf", params));
-connection.onRequest("nudo/suggestCase", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.suggestCase", params));
-connection.onRequest("nudo/trace", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.trace", params));
-connection.onRequest("nudo/check", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.check", params));
-connection.onRequest("nudo/hover", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.hover", params));
-connection.onRequest("nudo/infer", (params: Record<string, unknown>) => dispatchAgentRequest("nudo.infer", params));
+// Request aliases: slash-form (`nudo/check`) is the protocol contract; dot-form
+// (`nudo.check`) mirrors the executeCommand command names that MCP-bridge
+// clients reuse as request methods. Both spellings route to the same handlers.
+for (const name of ["whatIf", "suggestCase", "trace", "check", "hover", "infer"] as const) {
+  const command = `nudo.${name}`;
+  const handler = (params: Record<string, unknown>) => dispatchAgentRequest(command, params);
+  connection.onRequest(`nudo/${name}`, handler);
+  connection.onRequest(command, handler);
+}
 
 connection.languages.diagnostics.on((params) => {
   const document = documents.get(params.textDocument.uri);

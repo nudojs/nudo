@@ -6,6 +6,7 @@
 
 import type { Abs } from "../abs.ts";
 import { unknown } from "../abs.ts";
+import { evalGlobalFn } from "../builtins.ts";
 import { $call } from "./call.ts";
 import {
   tagAbsOrigin,
@@ -35,6 +36,17 @@ export type BCallRecord = {
 };
 
 let bCallCollector: ((r: BCallRecord) => void) | null = null;
+
+/** evalGlobalFn 覆盖的宿主全局函数名（身份校验后再派发） */
+const GLOBAL_FNS = new Set([
+  "parseInt",
+  "parseFloat",
+  "isNaN",
+  "isFinite",
+  "Number",
+  "String",
+  "Boolean",
+]);
 
 export function setBCallCollector(
   collector: ((r: BCallRecord) => void) | null,
@@ -69,7 +81,12 @@ export function $callNamed(
   if (loc) pushCallLoc({ line: loc[0], column: loc[1] });
   try {
     if (typeof fn === "function") {
-      result = (fn as (...a: Abs[]) => Abs)(...args);
+      // 宿主全局函数（Number/String/parseInt…）：按身份识别，路由到 Abs builtin 表。
+      // 直接调用会把 Abs 喂给真 JS 函数（Number(absObj) → NaN）——静默错误。
+      const g = GLOBAL_FNS.has(name) && fn === (globalThis as Record<string, unknown>)[name]
+        ? evalGlobalFn(name, args)
+        : undefined;
+      result = g ?? (fn as (...a: Abs[]) => Abs)(...args);
     } else if (fn && typeof fn === "object" && "shape" in (fn as object)) {
       result = $call(fn as Abs, args);
     }

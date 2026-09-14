@@ -10,6 +10,7 @@ import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs } from "../surface.ts";
 import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape } from "../objects.ts";
 import { leqAbs } from "../leq.ts";
+import { evalNamespaceCall } from "../builtins.ts";
 import type { Phi } from "../pred.ts";
 import { pTrue } from "../pred.ts";
 import { noteUnknownMemberMissing } from "./calls.ts";
@@ -133,13 +134,36 @@ function litAbsFromJs(v: unknown): Abs {
   return unknown;
 }
 
+/** JS 真值：字面量按 Boolean(v)；对象形恒真；不可判 → undefined */
+export function litTruth(a: Abs): boolean | undefined {
+  if (a.term?.op === "lit") {
+    // lit(undefined) 与「无 lit」都经 litValue 折叠成 undefined，须先看 term
+    return Boolean(a.term.value);
+  }
+  switch (a.shape.k) {
+    case "obj":
+    case "arr":
+    case "tuple":
+    case "fn":
+    case "brand":
+    case "eff":
+      return true;
+    case "prim":
+      return a.shape.type === "symbol" || a.shape.type === "bigint" ? true : undefined;
+    case "never":
+      return false;
+    default:
+      return undefined;
+  }
+}
+
 export function isDefinitelyTrue(a: Abs): boolean {
-  return litValue(a) === true;
+  return litTruth(a) === true;
 }
 
 export function isDefinitelyFalse(a: Abs): boolean {
-  const lv = litValue(a);
-  if (lv === false) return true;
+  const t = litTruth(a);
+  if (t === false) return true;
   if (a.shape.k === "never") return true;
   return false;
 }
@@ -237,7 +261,7 @@ export function $arr(items: Abs[]): Abs {
   return abs({ k: "tuple", elements: items.map(asAbsVal) }, undefined, undefined, "exact");
 }
 
-/** 下标读 a[i]；字面量 i 走 tuple 精确投影，否则并所有元素 */
+/** 下标读 a[i]；字面量 i 走 tuple 精确投影，否则并所有元素；string[i] → 单字符 */
 export function $idx(a: Abs, i: Abs): Abs {
   const iv = litValue(i);
   if (a.shape.k === "tuple") {
@@ -253,24 +277,39 @@ export function $idx(a: Abs, i: Abs): Abs {
   if (a.shape.k === "sum") {
     return a.shape.members.map((m) => $idx(m, i)).reduce((x, y) => joinAbs(x, y));
   }
+  // 字符串下标：s[i] → 第 i 个字符（字面量精确）
+  const sv = litValue(a);
+  if (typeof sv === "string") {
+    if (typeof iv === "number" && Number.isInteger(iv)) {
+      if (iv >= 0 && iv < sv.length) {
+        return abs(
+          { k: "prim", type: "string" },
+          { op: "lit", value: sv[iv] as never },
+          pTrue,
+          "exact",
+        );
+      }
+      return undef();
+    }
+    return unknown;
+  }
   return unknown;
 }
 
-/** 下标写 a[i]=v → 新 tuple */
+/** 下标写 a[i]=v → 新 tuple（越界写按 JS 语义增长，空洞为 undefined） */
 export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
   const iv = litValue(i);
-  if (a.shape.k === "tuple" && typeof iv === "number" && Number.isInteger(iv)) {
+  if (a.shape.k === "tuple" && typeof iv === "number" && Number.isInteger(iv) && iv >= 0) {
     const els = [...a.shape.elements];
-    if (iv >= 0 && iv < els.length) {
-      els[iv] = asAbsVal(value);
-      const next = abs({ k: "tuple", elements: els }, undefined, undefined, a.conf);
-      return next;
-    }
+    while (els.length < iv) els.push(undef());
+    els[iv] = asAbsVal(value);
+    const next = abs({ k: "tuple", elements: els }, undefined, undefined, a.conf);
+    return next;
   }
   return a;
 }
 
-/** 数组长度 */
+/** 数组/字符串长度 */
 export function $len(a: Abs): Abs {
   if (a.shape.k === "tuple") {
     return abs(
@@ -282,6 +321,15 @@ export function $len(a: Abs): Abs {
   }
   if (a.shape.k === "arr") {
     return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
+  }
+  const sv = litValue(a);
+  if (typeof sv === "string") {
+    return abs(
+      { k: "prim", type: "number" },
+      { op: "lit", value: sv.length },
+      pTrue,
+      "exact",
+    );
   }
   return unknown;
 }
@@ -367,12 +415,66 @@ export function $forOf(
   }
 }
 
+/**
+ * 命名空间身份表：transpile 后 `Math.max(0, x)` 的接收者是宿主 JS 全局对象
+ * （非 Abs）。按对象身份识别命名空间，路由到 Abs builtin 表。
+ */
+export function namespaceNameOf(v: unknown): string | undefined {
+  if (typeof v !== "object" && typeof v !== "function") return undefined;
+  if (v === Math) return "Math";
+  if (v === Number) return "Number";
+  if (v === JSON) return "JSON";
+  if (v === Object) return "Object";
+  if (v === Array) return "Array";
+  if (v === Date) return "Date";
+  if (v === Promise) return "Promise";
+  return undefined;
+}
+
+/** 正则字面量 → RegExp brand（source/flags 进 slots，供 exec/test 精确执行） */
+export function $regex(pattern: string, flags = ""): Abs {
+  const litStr = (v: string): Abs =>
+    abs({ k: "prim", type: "string" }, { op: "lit", value: v as never }, pTrue, "exact");
+  return abs(
+    {
+      k: "brand",
+      name: "RegExp",
+      shape: objOf({
+        source: { value: litStr(pattern) },
+        flags: { value: litStr(flags) },
+      }),
+    },
+    undefined,
+    undefined,
+    "exact",
+  );
+}
+
 /** 成员读：obj.slots[key]；缺失 → undefined 字面量；brand 解包内层 */
 export function $get(
   o: Abs,
   key: string,
   opts?: { /** 调用方已负责诊断（如 $invoke） */ silent?: boolean },
 ): Abs {
+  // 宿主 JS 对象（Math/JSON…）：属性按命名空间/真值投影
+  if (!o || typeof o !== "object" || !("shape" in (o as object))) {
+    const ns = namespaceNameOf(o);
+    if (ns) {
+      try {
+        const raw = (o as Record<string, unknown>)[key];
+        if (typeof raw === "function") {
+          return absFunction([`${ns}.${key}`], {
+            body: noBody,
+            apply: (args) => evalNamespaceCall(ns, key, args) ?? unknown,
+          });
+        }
+        return $lit(raw);
+      } catch {
+        return unknown;
+      }
+    }
+    return unknown;
+  }
   if (o.shape.k === "brand") return $get(o.shape.shape, key, opts);
   if (isObj(o)) {
     const slot = (o.shape as ObjShape).slots[key];

@@ -44,6 +44,12 @@ export function absToTypeValue(a: Abs): TypeValue {
       result = T.never;
       break;
     case "unknown":
+      // null 字面量保真：`=> null` case 期望与 exec/match 的 null 结果需过桥；
+      // undefined 字面量维持 unknown（缺失属性读取的既定投影）
+      if (a.term?.op === "lit" && a.term.value === null) {
+        result = T.literal(null);
+        break;
+      }
       result = T.unknown;
       break;
     case "any":

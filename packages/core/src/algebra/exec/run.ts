@@ -51,7 +51,7 @@ function rewriteUserImports(js: string): string {
   js = js.replace(
     /^import\s*\{\s*\*\s+as\s+([A-Za-z_$][\w$]*)\s*\}\s*from\s*["']([^"']+)["'];\s*$/gm,
     (_all, local: string, spec: string) =>
-      `const ${local} = __nudoBindNamespace(${JSON.stringify(spec)});`,
+      `let ${local} = __nudoBindNamespace(${JSON.stringify(spec)});`,
   );
   // 无绑定副作用 import → 仅触发模块求值
   js = js.replace(
@@ -69,7 +69,7 @@ function rewriteUserImports(js: string): string {
         .map((p) => {
           const [imported, local] = p.split(/\s+as\s+/).map((x) => x.trim());
           const bind = local ?? imported;
-          return `const ${bind} = __nudoBindImport(${JSON.stringify(spec)}, ${JSON.stringify(imported)});`;
+          return `let ${bind} = __nudoBindImport(${JSON.stringify(spec)}, ${JSON.stringify(imported)});`;
         })
         .join("\n");
     },
@@ -254,8 +254,8 @@ export function runTranspiled(
 
   const exportFns = [...js.matchAll(/^export function (\w+)/gm)].map((m) => m[1]!);
   js = js.replace(/^export function /gm, "function ");
-  const exportConsts = [...js.matchAll(/^export const (\w+)/gm)].map((m) => m[1]!);
-  js = js.replace(/^export const /gm, "const ");
+  const exportConsts = [...js.matchAll(/^export (?:const|let) (\w+)/gm)].map((m) => m[1]!);
+  js = js.replace(/^export (?:const|let) /gm, "let ");
 
   const names = [...new Set([...exportFns, ...exportConsts])];
   const argNames = [
@@ -326,6 +326,18 @@ export function callTranspiledExportFull(
     }
   }
   if (isAbsVal(fn)) {
+    // export const f = (x) => …：导出值是一等 fn Abs —— 按调用语义 apply
+    if (fn.shape.k === "fn") {
+      try {
+        const r = $call(fn, args);
+        return { result: r, throws: never };
+      } catch (e) {
+        if (isNudoThrow(e)) {
+          return { result: never, throws: e.absValue };
+        }
+        return { result: unknown, throws: never };
+      }
+    }
     return { result: fn, throws: never };
   }
   return { result: unknown, throws: never };

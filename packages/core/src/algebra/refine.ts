@@ -124,8 +124,12 @@ function collectConstraints(
 
 /** 从源码抽函数上的 @nudo:refine 行 */
 function extractRefineLines(source: string, fnName: string): string[] {
+  // `export function f` / `export async function f` / `export const f =`
+  // 前缀必须一并匹配：否则 match 落在行中，before 以 `export …` 结尾，
+  // 反向注释扫描立即 break，@nudo:refine 整体丢失（导出函数的 refine
+  // 全部静默失效）。
   const fnRe = new RegExp(
-    `(?:export\\s+default\\s+)?(?:function\\s+${fnName}\\b|const\\s+${fnName}\\s*=)`,
+    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${fnName}\\b|const\\s+${fnName}\\s*=)`,
   );
   const m = source.match(fnRe);
   if (!m || m.index === undefined) return [];

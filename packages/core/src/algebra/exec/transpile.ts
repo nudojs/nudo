@@ -70,6 +70,93 @@ const BIN_OPS: Record<string, string> = {
   "!==": "$ne",
 };
 
+/** 复合赋值 → 二元运行时（标识符与成员路径统一走读-改-写） */
+const COMPOUND_OPS: Record<string, string> = {
+  "+=": "$add",
+  "-=": "$sub",
+  "*=": "$mul",
+  "/=": "$div",
+  "%=": "$mod",
+};
+
+type MemberLayer = { get: (base: string) => string; set: (base: string, v: string) => string };
+type MemberPath = { rootSrc: string; layers: MemberLayer[] };
+
+/**
+ * 成员/下标链 → 可重绑路径。根必须是标识符（或 transpile this 参数），
+ * 其余（调用结果、new 表达式等）不可重绑 → null。
+ */
+function memberPathOf(m: { object: Node; property: Node; computed: boolean }, opts: TranspileOptions): MemberPath | null {
+  const layers: MemberLayer[] = [];
+  let cur: Node = m as unknown as Node;
+  let rootSrc: string | null = null;
+  while (cur.type === "MemberExpression") {
+    const mm = cur as unknown as { object: Node; property: Node; computed: boolean };
+    const k = mm.property;
+    if (mm.computed) {
+      if (k.type === "NumericLiteral") {
+        const key = `$lit(${k.value})`;
+        layers.unshift({
+          get: (b) => `$idx(${b}, ${key})`,
+          set: (b, v) => `$idxSet(${b}, ${key}, ${v})`,
+        });
+      } else if (k.type === "StringLiteral") {
+        const key = JSON.stringify(k.value);
+        layers.unshift({
+          get: (b) => `$get(${b}, ${key})`,
+          set: (b, v) => `$set(${b}, ${key}, ${v})`,
+        });
+      } else if (isExpression(k)) {
+        const key = transpileExpression(k, opts);
+        layers.unshift({
+          get: (b) => `$idx(${b}, ${key})`,
+          set: (b, v) => `$idxSet(${b}, ${key}, ${v})`,
+        });
+      } else {
+        return null;
+      }
+    } else if (k.type === "Identifier") {
+      const key = JSON.stringify(k.name);
+      layers.unshift({
+        get: (b) => `$get(${b}, ${key})`,
+        set: (b, v) => `$set(${b}, ${key}, ${v})`,
+      });
+    } else {
+      return null;
+    }
+    cur = mm.object;
+  }
+  if (cur.type === "Identifier") {
+    rootSrc = cur.name;
+  } else if (cur.type === "ThisExpression" && opts.thisParam) {
+    rootSrc = opts.thisParam;
+  } else {
+    return null;
+  }
+  return { rootSrc, layers };
+}
+
+/** 路径读取源：d[i][0] → $idx($idx(d, i), 0) */
+function readPathSrc(p: MemberPath): string {
+  return p.layers.reduce((acc, l) => l.get(acc), p.rootSrc);
+}
+
+/** 路径写入源（返回新根）：d[i][0]=v → $idxSet(d, i, $idxSet($idx(d,i), 0, v)) */
+function setPathSrc(p: MemberPath, valSrc: string): string {
+  let acc = valSrc;
+  for (let i = p.layers.length - 1; i >= 0; i--) {
+    const l = p.layers[i]!;
+    const base = i === 0 ? p.rootSrc : readPrefix(p, i - 1);
+    acc = l.set(base, acc);
+  }
+  return acc;
+}
+
+/** 前 j 层的读取源 */
+function readPrefix(p: MemberPath, j: number): string {
+  return p.layers.slice(0, j + 1).reduce((acc, l) => l.get(acc), p.rootSrc);
+}
+
 export function transpileSource(source: string, opts: TranspileOptions = {}): string {
   const file = parseSource(source);
   return transpileFile(file, { ...opts, source: opts.source ?? source });
@@ -79,7 +166,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -102,45 +189,35 @@ function stmtReturns(stmt: Statement): boolean {
   return false;
 }
 
-/** 语句恒退出（return/throw，或 if 两分支均退出）——用于 tail 折叠 */
-function stmtAlwaysExits(stmt: Statement): boolean {
-  return stmtReturns(stmt) && stmt.type !== "ExpressionStatement";
-}
-
 /**
- * 把 `if (c) return X; …tail` 折成 `if (c) return X else { tail }`，
- * 使后续 IfStatement 规则能提升为 `return $fork(c, () => X, () => tail)`。
- * 仅当 tail 全部恒退出时折叠（有副作用的 fall-through 不动，避免吞语句）。
+ * 函数体语句序列：早退 if（`if (c) return X;` 无 else）位置敏感提升——
+ * 首个该形态语句把「余下全部语句」并入 else 分支，产出
+ * `return $fork(c, () => X, () => { …rest })`。抽象条件时
+ * join(早退值, 余下值) 与 JS 控制流一致；语句级 $fork 会把 thunk 的
+ * 返回值丢掉（早退全部静默失效——compareVersions 类链式卫语句的坑）。
+ * 余下语句递归同规则，链式卫语句逐层嵌套 else。
  */
-function foldEarlyReturns(stmts: Statement[]): Statement[] {
-  for (let i = stmts.length - 2; i >= 0; i--) {
+function transpileFnBodyStmts(stmts: Statement[], depth: number, opts: TranspileOptions): string {
+  for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i]!;
     if (stmt.type !== "IfStatement" || stmt.alternate != null) continue;
     if (!stmtReturns(stmt.consequent)) continue;
-    const tail = stmts.slice(i + 1);
-    if (tail.length === 0 || !tail.every(stmtAlwaysExits)) continue;
-    const alt: Statement = {
-      type: "BlockStatement",
-      body: tail,
-      directives: [],
-      start: stmt.consequent.start,
-      end: stmt.consequent.end,
-      loc: stmt.consequent.loc,
-    } as Statement;
-    const rewritten: Statement = {
-      ...stmt,
-      alternate: alt,
-    } as Statement;
-    return foldEarlyReturns([...stmts.slice(0, i), rewritten]);
+    const rest = stmts.slice(i + 1);
+    if (rest.length === 0) continue;
+    const head = stmts
+      .slice(0, i)
+      .map((s) => transpileStatement(s, depth, opts))
+      .join("\n");
+    const test = transpileExpression(stmt.test, opts);
+    const cons = transpileBlockAsThunk(stmt.consequent, depth, opts);
+    const altBody = transpileFnBodyStmts(rest, depth + 1, opts);
+    const promoted =
+      `${indent(depth)}return $fork(${test}, ${cons}, () => {\n` +
+      `${altBody}\n` +
+      `${indent(depth)}});`;
+    return head ? `${head}\n${promoted}` : promoted;
   }
-  return stmts;
-}
-
-/** 函数体语句序列：先折叠 early-return，再逐条 transpile */
-function transpileFnBodyStmts(stmts: Statement[], depth: number, opts: TranspileOptions): string {
-  return foldEarlyReturns(stmts)
-    .map((s) => transpileStatement(s, depth, opts))
-    .join("\n");
+  return stmts.map((s) => transpileStatement(s, depth, opts)).join("\n");
 }
 
 /** 递归解构：把 pattern 绑到 fromSrc（已是 Abs 表达式字符串） */
@@ -219,13 +296,68 @@ function emitDestructure(
   }
 }
 
+/**
+ * 函数参数签名 + 解构 prologue：
+ * Identifier 直通；ObjectPattern/ArrayPattern/AssignmentPattern 用占位参数
+ * `_p{i}` 接收，再在函数体首部 emitDestructure / $orDefault 绑定。
+ * RestElement 返回 rest 名（FunctionDeclaration 由 arguments 绑定；arrow 直接 rest 形参）。
+ */
+function emitParamBinding(
+  params: Node[],
+  pad: string,
+  opts: TranspileOptions,
+): { sig: string[]; rest?: string; prologue: string[] } {
+  const sig: string[] = [];
+  const prologue: string[] = [];
+  let rest: string | undefined;
+  params.forEach((p, i) => {
+    if (p.type === "Identifier") {
+      sig.push(p.name);
+      return;
+    }
+    if (p.type === "RestElement") {
+      if (p.argument.type === "Identifier") {
+        rest = p.argument.name;
+        return;
+      }
+      const ph = `_rest${i}`;
+      rest = ph;
+      emitDestructure(p.argument, ph, "const", pad, opts, prologue, { n: 0 });
+      return;
+    }
+    const ph = `_p${i}`;
+    sig.push(ph);
+    if (p.type === "AssignmentPattern") {
+      const def = transpileExpression(p.right as Expression, opts);
+      if (p.left.type === "Identifier") {
+        prologue.push(`${pad}const ${p.left.name} = $orDefault(${ph}, () => ${def});`);
+      } else {
+        const t = `_pd${i}`;
+        prologue.push(`${pad}const ${t} = $orDefault(${ph}, () => ${def});`);
+        emitDestructure(p.left, t, "const", pad, opts, prologue, { n: 0 });
+      }
+      return;
+    }
+    if (p.type === "ObjectPattern" || p.type === "ArrayPattern") {
+      emitDestructure(p, ph, "const", pad, opts, prologue, { n: 0 });
+    }
+  });
+  return { sig, rest, prologue };
+}
+
 function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptions): string {
   const pad = indent(depth);
   switch (stmt.type) {
     case "ExportNamedDeclaration": {
       const decl = stmt.declaration;
       if (!decl) return `${pad}/* export specifiers skipped */`;
-      return transpileStatement(decl as Statement, depth, opts);
+      const inner = transpileStatement(decl as Statement, depth, opts);
+      // 顶层 export const/let：保留 export 面（run.ts 收集进 exports，
+      // 供 directive case 经 callTranspiledExport 求值）
+      if (depth === 0 && decl.type === "VariableDeclaration" && !pad) {
+        return `export ${inner}`;
+      }
+      return inner;
     }
     case "ImportDeclaration": {
       // 保留 import；run.ts 会改写为 __nudoBindImport
@@ -256,23 +388,20 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     }
     case "FunctionDeclaration": {
       if (!stmt.id) return `${pad}// <anonymous fn skipped>`;
-      const paramParts = stmt.params.map((p) => {
-        if (p.type === "Identifier") return { kind: "id" as const, name: p.name };
-        if (p.type === "RestElement" && p.argument.type === "Identifier") {
-          return { kind: "rest" as const, name: p.argument.name };
-        }
-        return { kind: "id" as const, name: "_" };
-      });
-      const named = paramParts.filter((p) => p.kind === "id" && p.name !== "_").map((p) => p.name);
-      const rest = paramParts.find((p) => p.kind === "rest");
-      const paramsSig = rest ? [...named, `...${rest.name}`] : named;
+      const { sig, rest, prologue } = emitParamBinding(
+        stmt.params as Node[],
+        indent(depth + 2),
+        opts,
+      );
+      const named = sig;
+      const paramsSig = rest ? [...named, `...${rest}`] : named;
       const params = paramsSig.join(", ");
       const bodyStmts =
         stmt.body.type === "BlockStatement"
-          ? transpileFnBodyStmts(stmt.body.body, depth + 2, opts)
+          ? [...prologue, transpileFnBodyStmts(stmt.body.body, depth + 2, opts)].join("\n")
           : `${indent(depth + 2)}return ${transpileExpression(stmt.body as unknown as Expression, opts)};`;
       const restBind = rest
-        ? `${indent(depth + 1)}const ${rest.name} = arguments.length > ${named.length} ? $arr(Array.from(arguments).slice(${named.length})) : $arr([]);\n`
+        ? `${indent(depth + 1)}const ${rest} = arguments.length > ${named.length} ? $arr(Array.from(arguments).slice(${named.length})) : $arr([]);\n`
         : "";
       // function* → $gen 收集 yield
       if (stmt.generator) {
@@ -315,7 +444,8 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     case "ExpressionStatement":
       return `${pad}${transpileExpression(stmt.expression, opts)};`;
     case "VariableDeclaration": {
-      const kw = stmt.kind === "const" ? "const" : "let";
+      // const → let：成员/下标写经不可变 Abs 更新后需重绑根绑定
+      const kw = "let";
       const asVar = matchAsOverride(stmt as Node, opts);
       const lines: string[] = [];
       let tmpSeq = 0;
@@ -389,7 +519,8 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       ].join("\n");
     }
     case "BlockStatement":
-      return stmt.body.map((s) => transpileStatement(s, depth, opts)).join("\n");
+      // 块内同用早退提升：`{ if (c) return X; … }` 的 return 是函数级语义
+      return transpileFnBodyStmts(stmt.body, depth, opts);
     case "SwitchStatement": {
       // switch (d) { case 1: … case 2: … default: … } → $switch
       const disc = transpileExpression(stmt.discriminant as Expression, opts);
@@ -732,6 +863,15 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         ? `$fork(${l}, () => ${r}, () => ${l})`
         : `$fork(${l}, () => ${l}, () => ${r})`;
     }
+    case "ConditionalExpression": {
+      const test = transpileExpression(expr.test, opts);
+      const c = transpileExpression(expr.consequent, opts);
+      const a = transpileExpression(expr.alternate, opts);
+      return `$fork(${test}, () => ${c}, () => ${a})`;
+    }
+    case "RegExpLiteral": {
+      return `$regex(${JSON.stringify(expr.pattern)}${expr.flags ? `, ${JSON.stringify(expr.flags)}` : ""})`;
+    }
     case "BinaryExpression": {
       const fn = BIN_OPS[expr.operator];
       if (!fn) return `/* unsupported ${expr.operator} */ $lit(undefined)`;
@@ -746,6 +886,15 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (expr.operator === "typeof") return `$typeof(${arg})`;
       if (expr.operator === "+") return arg;
       return `/* unary ${expr.operator} */ $lit(undefined)`;
+    }
+    case "UpdateExpression": {
+      // i++/++i/i--/--i：按前缀语义重绑（$for step 只取副作用；表达值场景罕见）
+      const arg = expr.argument as Expression;
+      if (arg.type === "Identifier") {
+        const fn = expr.operator === "++" ? "$add" : "$sub";
+        return `${arg.name} = ${fn}(${arg.name}, $lit(1))`;
+      }
+      return `/* update ${expr.operator} */ $lit(undefined)`;
     }
     case "AwaitExpression": {
       const arg = transpileExpression(expr.argument as Expression, opts);
@@ -865,25 +1014,31 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     }
     case "AssignmentExpression": {
       // obj.field = v → $set；标识符赋值保持 JS 绑定（值是 Abs）
-      if (expr.operator !== "=") return `/* assign ${expr.operator} */ $lit(undefined)`;
+      // 复合赋值 s += v → s = $add(s, v)；成员/下标写以「读-改-写」链重绑根绑定
+      const compoundFn = COMPOUND_OPS[expr.operator];
       const right = transpileExpression(expr.right, opts);
       if (expr.left.type === "MemberExpression") {
-        // this.x = v → __this = $set(__this, "x", v)
-        if (
-          !expr.left.computed &&
-          expr.left.object.type === "ThisExpression" &&
-          expr.left.property.type === "Identifier" &&
-          opts.thisParam
-        ) {
-          return `${opts.thisParam} = $set(${opts.thisParam}, ${JSON.stringify(expr.left.property.name)}, ${right})`;
+        const m = expr.left as unknown as {
+          object: Node;
+          property: Node;
+          computed: boolean;
+        };
+        const path = memberPathOf(m, opts);
+        if (path) {
+          const valSrc = compoundFn
+            ? `${compoundFn}(${readPathSrc(path)}, ${right})`
+            : right;
+          const writeSrc = setPathSrc(path, valSrc);
+          return `${path.rootSrc} = ${writeSrc}`;
         }
-        if (!expr.left.computed && expr.left.property.type === "Identifier") {
-          const obj = transpileExpression(expr.left.object as Expression, opts);
-          return `$set(${obj}, ${JSON.stringify(expr.left.property.name)}, ${right})`;
+        // 根不可重绑（如 foo().x = v）：保留旧纯表达式形态
+        if (!m.computed && m.property.type === "Identifier") {
+          const obj = transpileExpression(m.object as Expression, opts);
+          return `$set(${obj}, ${JSON.stringify(m.property.name)}, ${right})`;
         }
-        if (expr.left.computed) {
-          const obj = transpileExpression(expr.left.object as Expression, opts);
-          const k = expr.left.property;
+        if (m.computed) {
+          const obj = transpileExpression(m.object as Expression, opts);
+          const k = m.property;
           if (k.type === "NumericLiteral") {
             return `$idxSet(${obj}, $lit(${k.value}), ${right})`;
           }
@@ -894,11 +1049,15 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             return `$idxSet(${obj}, ${transpileExpression(k, opts)}, ${right})`;
           }
         }
+        return `/* assign */ $lit(undefined)`;
       }
       if (expr.left.type === "Identifier") {
+        if (compoundFn) {
+          return `${expr.left.name} = ${compoundFn}(${expr.left.name}, ${right})`;
+        }
         return `${expr.left.name} = ${right}`;
       }
-      return `/* assign */ $lit(undefined)`;
+      return compoundFn ? `/* assign ${expr.operator} */ $lit(undefined)` : `/* assign */ $lit(undefined)`;
     }
     case "CallExpression":
     case "OptionalCallExpression": {
@@ -997,24 +1156,24 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         body: Node;
         async?: boolean;
       };
-      const paramParts = fn.params.map((p) => {
-        if (p.type === "Identifier") return (p as { name: string }).name;
-        if (p.type === "RestElement" && (p as { argument?: Node }).argument?.type === "Identifier") {
-          return `...${(p as { argument: { name: string } }).argument.name}`;
-        }
-        return "_p";
-      });
+      const { sig, rest, prologue } = emitParamBinding(fn.params, indent(1), opts);
+      const paramParts = rest ? [...sig, `...${rest}`] : sig;
       // 一等 fn Abs：参数名进 shape（bridge/dts 可展示）；
       // 异步 body 包 $async 保持 eff(promise) 语义（裸 JS async 会泄漏 Promise）。
-      const nameList = `[${paramParts.map((p) => JSON.stringify(p.startsWith("...") ? p.slice(3) : p)).join(", ")}]`;
+      const nameList = `[${sig.map((p) => JSON.stringify(p)).join(", ")}]`;
       if (fn.body.type === "BlockStatement") {
-        const inner = transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, opts);
+        const inner = [...prologue, transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, opts)].join("\n");
         if (fn.async) {
           return `$fnVal(${nameList}, (${paramParts.join(", ")}) => $async(() => {\n${inner}\n}))`;
         }
         return `$fnVal(${nameList}, (${paramParts.join(", ")}) => {\n${inner}\n})`;
       }
       const bodySrc = transpileExpression(fn.body as Expression, opts);
+      if (prologue.length > 0) {
+        // 表达式体 + 模式参数：提升为块体以容纳解构 prologue
+        const thunk = fn.async ? `$async(() => ${bodySrc})` : bodySrc;
+        return `$fnVal(${nameList}, (${paramParts.join(", ")}) => {\n${prologue.join("\n")}\n  return ${thunk};\n})`;
+      }
       if (fn.async) {
         return `$fnVal(${nameList}, (${paramParts.join(", ")}) => $async(() => ${bodySrc}))`;
       }

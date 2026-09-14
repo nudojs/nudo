@@ -8,13 +8,38 @@ import { defineConfig } from "tsup";
  * CJS loader for builtins. Banner is prepended to every JS chunk, before
  * esbuild's prelude, so module-scope shims resolve before first use.
  * Shebang is preserved from src/index.ts (first line) for the `nudo` bin.
+ *
+ * The published bin must run from node_modules as-is: the @nudojs/* packages
+ * publish .ts sources that Node's type stripping refuses to load there, so
+ * they are bundled INTO dist. tsconfig.build.json maps every @nudojs/*
+ * specifier (including the service → @nudojs/cli/evaluator package cycle) to
+ * sibling SRC — resolving to their dist instead would inline this package's
+ * own previous build output. The @nudojs/* sources are pure ESM, so inlining
+ * them adds no CJS-interop surface; @babel/* and typescript (transitive via
+ * core/service/harvester) are CJS and rely on the createRequire banner below.
+ * commander stays external (plain-JS declared dependency).
  */
 export default defineConfig({
   entry: ["src/index.ts", "src/evaluator-api.ts"],
   format: ["esm"],
   dts: true,
   clean: true,
+  tsconfig: "tsconfig.build.json",
+  // Single-file bin: shared chunks would make dist/index.js depend on
+  // sibling chunk files (the bin must run when copied out alone).
+  splitting: false,
+  noExternal: [/^@nudojs\//],
+  // dts uses the same src paths (types always match the bundled sources —
+  // sibling dist d.ts can be stale). The emitted d.ts still keeps
+  // @nudojs/* imports external: rollup marks declared deps external.
+  dts: true,
   banner: {
-    js: 'import { createRequire as __nudoCreateRequire } from "module";\nconst require = __nudoCreateRequire(import.meta.url);',
+    js: [
+      'import { createRequire as __nudoCreateRequire } from "module";',
+      'import { fileURLToPath as __nudoFileURLToPath } from "url";',
+      "const require = __nudoCreateRequire(import.meta.url);",
+      "const __filename = __nudoFileURLToPath(import.meta.url);",
+      'const __dirname = __nudoFileURLToPath(new URL(".", import.meta.url));',
+    ].join("\n"),
   },
 });

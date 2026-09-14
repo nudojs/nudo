@@ -575,7 +575,12 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
       const parenStart = match.index + match[0].length - 1;
       const argsStr = extractBalancedParens(text, parenStart);
       if (argsStr === null) continue;
-      const args = splitTopLevelArgs(argsStr).map(parseTypeValueExpr);
+      // 块注释续行的 ` * ` 前缀不属于实参文本（键名会被污染成 "* supplyChain"）
+      const cleaned = argsStr
+        .split("\n")
+        .map((line) => line.replace(/^\s*\*\s?/, ""))
+        .join("\n");
+      const args = splitTopLevelArgs(cleaned).map(parseTypeValueExpr);
 
       const afterParen = parenStart + argsStr.length + 2;
       const restLine = text.slice(afterParen).split("\n")[0].trim();
@@ -614,8 +619,9 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
 
 function getFunctionName(node: Node): string {
   if (node.type === "FunctionDeclaration" && node.id) return node.id.name;
-  if (node.type === "ExportNamedDeclaration" && node.declaration?.type === "FunctionDeclaration" && node.declaration.id) {
-    return node.declaration.id.name;
+  if (node.type === "ExportNamedDeclaration") {
+    // export const f = … / export function f …
+    return node.declaration ? getFunctionName(node.declaration as Node) : "<anonymous>";
   }
   if (node.type === "ExportDefaultDeclaration" && node.declaration.type === "FunctionDeclaration" && node.declaration.id) {
     return node.declaration.id.name;

@@ -4,11 +4,12 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { abs, unknown, confJoin, litValue, bool } from "../abs.ts";
+import { abs, unknown, confJoin, litValue, bool, boolLit, strLit } from "../abs.ts";
 import { objOf, joinAbs } from "../objects.ts";
-import { $get, $set, asAbsVal } from "./runtime.ts";
+import { $get, $set, asAbsVal, namespaceNameOf, $regex } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl } from "../abs-fn.ts";
+import { evalNamespaceCall } from "../builtins.ts";
 import {
   applyCallbackAbs,
   asAbs,
@@ -102,6 +103,23 @@ function findCtor(
 export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Abs {
   // JS 内建构造器（Error/Date/URL…）：直接 brand，避免 $call 对非 Abs 炸掉
   if (typeof cls === "function") {
+    // new Array(n) → n 元 tuple；new Array(a,b,c) → 字面量 tuple
+    if (cls === Array) {
+      if (args.length === 1) {
+        const n = litValue(args[0]!);
+        if (typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= 4096) {
+          const els = Array.from({ length: n }, () => undefAbs());
+          return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
+        }
+        return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
+      }
+      return abs({ k: "tuple", elements: args.map((a) => asAbs(a) ?? unknown) }, undefined, undefined, "exact");
+    }
+    // new RegExp(pattern) → 可精确 exec/test 的 RegExp brand
+    if (cls === RegExp) {
+      const p = args[0] ? litValue(args[0]) : undefined;
+      if (typeof p === "string") return $regex(p, args[1] ? String(litValue(args[1]) ?? "") : "");
+    }
     const name = cls.name || "Object";
     const shape = objOf({});
     return abs({ k: "brand", name, shape }, undefined, undefined, "path");
@@ -150,6 +168,77 @@ export function $super(thisVal: Abs, childName: string, args: Abs[]): Abs {
   return after ?? thisVal;
 }
 
+/** RegExp brand 上的 exec/test：pattern 与 subject 都是字面量 → 真执行 */
+function execRegexBrand(re: Abs, method: string, args: Abs[]): Abs | undefined {
+  if (re.shape.k !== "brand" || re.shape.name !== "RegExp") return undefined;
+  if (method !== "exec" && method !== "test" && method !== "toString") return undefined;
+  const inner = re.shape.shape;
+  const patAbs = inner.shape.k === "obj" ? inner.shape.slots["source"]?.value : undefined;
+  const flagsAbs = inner.shape.k === "obj" ? inner.shape.slots["flags"]?.value : undefined;
+  const pat = patAbs ? litValue(patAbs) : undefined;
+  if (typeof pat !== "string") return undefined;
+  const flagsV = flagsAbs ? litValue(flagsAbs) : undefined;
+  const flags = typeof flagsV === "string" ? flagsV : "";
+  if (method === "toString") return strLit(`/${pat}/${flags}`);
+  const subject = args[0] ? litValue(args[0]) : undefined;
+  if (typeof subject !== "string") {
+    // subject 非字面量：保持抽象（test → boolean，exec → null|tuple 的保守并）
+    return method === "test"
+      ? abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial")
+      : undefined;
+  }
+  let reReal: RegExp;
+  try {
+    reReal = new RegExp(pat, flags);
+  } catch {
+    return undefined;
+  }
+  const m = reReal.exec(subject);
+  if (method === "test") return boolLit(reReal.test(subject));
+  if (!m) {
+    return abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+  }
+  // m[i] 按下标可读：tuple；未参与捕获的组是 undefined 字面量（?? 默认值可用）
+  const els: Abs[] = m.map((g) => (g === undefined ? undefAbs() : strLit(g)));
+  return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
+}
+
+/** string.match(/re/) / string.search(/re/)：双字面量 → 真执行 */
+function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs | undefined {
+  if (method !== "match" && method !== "search") return undefined;
+  const re = args[0];
+  if (!re || re.shape.k !== "brand" || re.shape.name !== "RegExp") return undefined;
+  const inner = re.shape.shape;
+  const patAbs = inner.shape.k === "obj" ? inner.shape.slots["source"]?.value : undefined;
+  const flagsAbs = inner.shape.k === "obj" ? inner.shape.slots["flags"]?.value : undefined;
+  const pat = patAbs ? litValue(patAbs) : undefined;
+  const sv = litValue(recv);
+  if (typeof pat !== "string" || typeof sv !== "string") return undefined;
+  const flagsV = flagsAbs ? litValue(flagsAbs) : undefined;
+  const flags = typeof flagsV === "string" ? flagsV : "";
+  let reReal: RegExp;
+  try {
+    reReal = new RegExp(pat, flags);
+  } catch {
+    return undefined;
+  }
+  if (method === "search") {
+    const idx = sv.search(reReal);
+    return abs({ k: "prim", type: "number" }, { op: "lit", value: idx as never }, undefined, "exact");
+  }
+  // 非 global match ≡ exec；global → 全部命中串
+  if (flags.includes("g")) {
+    const all = sv.match(reReal) ?? [];
+    return abs({ k: "tuple", elements: all.map((s) => strLit(s)) }, undefined, undefined, "exact");
+  }
+  const m = reReal.exec(sv);
+  if (!m) {
+    return abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+  }
+  const els: Abs[] = m.map((g) => (g === undefined ? undefAbs() : strLit(g)));
+  return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
+}
+
 /** 实例方法调用：沿继承链；类 Abs 上回落 staticMethods；obj 上回落属性函数 */
 export function $invoke(
   thisVal: Abs,
@@ -157,6 +246,11 @@ export function $invoke(
   args: Abs[],
   loc?: [number, number],
 ): Abs {
+  // 宿主 JS 命名空间对象（Math/Number/JSON…）→ Abs builtin 表
+  if (!thisVal || typeof thisVal !== "object" || !("shape" in thisVal)) {
+    const ns = namespaceNameOf(thisVal);
+    return (ns ? evalNamespaceCall(ns, method, args) : undefined) ?? unknown;
+  }
   // union：只在「声称支持」该方法的成员上派发，再 join（string|Buffer.split
   // 不应因 Buffer 分支无 split 而整体 unknown）
   if (thisVal.shape.k === "sum") {
@@ -165,6 +259,11 @@ export function $invoke(
       .map((m) => $invoke(m, method, args, loc));
     if (results.length === 0) return unknown;
     return results.reduce((a, b) => joinAbs(a, b));
+  }
+  // RegExp brand exec/test（字面量 pattern 精确执行）
+  {
+    const reR = execRegexBrand(thisVal, method, args);
+    if (reR !== undefined) return reR;
   }
   const brandName = thisVal.shape.k === "brand" ? thisVal.shape.name : undefined;
   if (brandName) {
@@ -178,6 +277,11 @@ export function $invoke(
   if (thisVal.shape.k === "arr" || thisVal.shape.k === "tuple") {
     const arrR = invokeArrMethod(thisVal, method, args);
     if (arrR !== undefined) return arrR;
+  }
+  // string.match(/re/) / string.search(/re/)（字面量 pattern 精确执行）
+  {
+    const sm = stringRegexMethod(thisVal, method, args);
+    if (sm !== undefined) return sm;
   }
   // 字符串/模板方法表（B 路径此前缺失，与 ast-eval 对齐）
   {
@@ -289,6 +393,18 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   if (method === "join") {
     return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
   }
+  if (method === "fill" && args.length >= 1) {
+    const v = asAbs(args[0]!) ?? unknown;
+    if (shape.k === "tuple") {
+      return abs(
+        { k: "tuple", elements: shape.elements.map(() => v) },
+        undefined,
+        undefined,
+        confJoin(arr.conf, v.conf),
+      );
+    }
+    return abs({ k: "arr", element: v }, undefined, undefined, confJoin(arr.conf, v.conf));
+  }
   if (method === "includes") {
     return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
   }
@@ -348,6 +464,8 @@ export function $thisSet(thisVal: Abs, key: string, value: Abs): Abs {
 
 /** 解构默认值：undefined 时用 default */
 export function $orDefault(v: Abs, dflt: () => Abs): Abs {
+  // 实参缺失：transpile 占位参数收到 JS undefined（非 Abs）
+  if (v === undefined) return asAbsVal(dflt());
   if (litValue(v) === undefined && v.shape.k !== "never") {
     // 明确 undefined 字面量 → 默认值；unknown 保守保留
     if (v.term?.op === "lit" && v.term.value === undefined) return asAbsVal(dflt());

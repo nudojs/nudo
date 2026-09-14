@@ -102,6 +102,33 @@ greet("ada");
 `);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
+
+  // 回归：fnRe 曾不匹配 export 前缀，match 落在行中使 before 以
+  // `export ` 结尾、反向注释扫描 break —— 导出函数的 refine 全部静默失效。
+  it("exported function keeps its string() refine (export/async/const forms)", () => {
+    for (const decl of [
+      "export function first(s) { return s[0]; }",
+      "export async function first(s) { return s[0]; }",
+      "export const first = (s) => s[0];",
+    ]) {
+      const bad = issuesOf(`/// @nudo:import { nonEmpty } from "./std.nudo.js"
+/** @nudo:refine s nonEmpty */
+${decl}
+first(42);
+`);
+      expect(bad.ok).toBe(false);
+      const err = bad.issues.find((i) => i.code === "nudo:constraint-violated");
+      expect(err, decl).toBeDefined();
+      expect(err!.expected).toContain("string");
+
+      const good = issuesOf(`/// @nudo:import { nonEmpty } from "./std.nudo.js"
+/** @nudo:refine s nonEmpty */
+${decl}
+first("abc");
+`);
+      expect(good.issues.filter((i) => i.severity === "error"), decl).toEqual([]);
+    }
+  });
 });
 
 describe("structural gate vs refine priority", () => {

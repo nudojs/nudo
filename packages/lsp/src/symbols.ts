@@ -468,20 +468,56 @@ function collectJsFiles(
 }
 
 /**
+ * 同名导出兜底定义查找：ident 在当前文件既无本地定义也无 import 绑定时
+ * （典型：依赖注入风格的函数参数 `computeScorecard` 的调用点），在候选
+ * 文件集（同目录树 + 会话已知文件）里查找名为 ident 的导出定义。
+ * 仅用于 definition 跳转；rename/references 不走此路径（改名语义必须
+ * 绑定到真实绑定点，不能按名字跨文件外推）。
+ */
+export function findWorkspaceExportDefinition(
+  fromFile: string,
+  ident: string,
+  options: { extraFiles?: string[]; rootDir?: string; maxFiles?: number } = {},
+): { filePath: string; loc: SourceLocation; name: string } | null {
+  const root = options.rootDir ?? dirname(fromFile);
+  const candidates = new Set<string>(options.extraFiles ?? []);
+  try {
+    collectJsFiles(root, candidates, options.maxFiles ?? 200, 0);
+  } catch {
+    /* ignore unreadable roots */
+  }
+  candidates.delete(fromFile);
+  for (const cand of candidates) {
+    const src = readSourceIfExists(cand);
+    if (src === undefined) continue;
+    const def = findExportDefinition(src, ident);
+    if (def) return { filePath: cand, loc: def.loc, name: def.name };
+  }
+  return null;
+}
+
+/**
  * 统一导航入口：
  * - 本地定义命中 → 当前文件
  * - 否则若是 import 绑定 → 跨文件
+ * - 否则（workspaceFallback，仅 definition）→ 同名导出兜底
  */
 export function resolveDefinition(
   fromFile: string,
   source: string,
   ident: string,
+  options: { extraFiles?: string[]; workspaceFallback?: boolean } = {},
 ): { filePath: string; loc: SourceLocation; name: string } | null {
   const ast = parse(source);
   const table = buildSymbolTable(ast, fromFile);
   const local = findDefinition(table, ident);
   if (local) return { filePath: fromFile, loc: local.loc, name: local.name };
-  return findCrossFileDefinition(fromFile, source, ident);
+  const cross = findCrossFileDefinition(fromFile, source, ident);
+  if (cross) return cross;
+  if (options.workspaceFallback) {
+    return findWorkspaceExportDefinition(fromFile, ident, { extraFiles: options.extraFiles });
+  }
+  return null;
 }
 
 /**
