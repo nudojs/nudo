@@ -7,6 +7,9 @@ import {
   type InitializeResult,
   type CompletionItem as LspCompletionItem,
   CompletionItemKind,
+  SymbolKind as LspSymbolKind,
+  type DocumentSymbol,
+  type SymbolInformation,
   MarkupKind,
   type CodeLens,
   CodeLensRefreshRequest,
@@ -16,6 +19,7 @@ import {
   InlayHintKind,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
+import { readFileSync } from "node:fs";
 import { typeValueToString } from "@nudojs/core";
 import {
   getTypeAtPosition,
@@ -27,10 +31,11 @@ import {
   collectAbsInlays,
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
-import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "./symbols.ts";
+import { documentSymbols, findIdentifierAtPosition, resolveDefinition, resolveReferences, type DocumentSymbolItem } from "./symbols.ts";
 import { TOKEN_TYPES, TOKEN_MODIFIERS } from "./semantic-tokens.ts";
 import {
   analysisCache,
+  knownFiles,
   evictModuleGraphCacheEntries,
   forgetValidatedFile,
   getCachedOrAnalyze,
@@ -93,6 +98,8 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => ({
     definitionProvider: true,
     referencesProvider: true,
     renameProvider: true,
+    documentSymbolProvider: true,
+    workspaceSymbolProvider: true,
     codeActionProvider: {
       codeActionKinds: ["quickfix"],
     },
@@ -407,30 +414,113 @@ connection.languages.inlayHint.on((params) => {
   }
 });
 
+function filePathToUri(filePath: string): string {
+  if (filePath.startsWith("file://")) return filePath;
+  // Windows 路径保留盘符；POSIX 直接拼
+  const normalized = filePath.replace(/\\/g, "/");
+  return normalized.startsWith("/")
+    ? `file://${normalized}`
+    : `file:///${normalized}`;
+}
+
+/** 打开文档 + 会话 knownFiles，供跨文件 references 扫描 */
+function navigationExtraFiles(currentPath: string): string[] {
+  const open = documents.all().map((d) => uriToFilePath(d.uri));
+  const all = new Set<string>([...open, ...knownFiles, currentPath]);
+  return [...all];
+}
+
+connection.onDocumentSymbol((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return [];
+  if (!isNudoFile(params.textDocument.uri)) return [];
+
+  try {
+    const ast = parse(document.getText());
+    const toLsp = (s: DocumentSymbolItem): DocumentSymbol => ({
+      name: s.name,
+      detail: s.detail,
+      kind: s.kind as LspSymbolKind,
+      range: s.range,
+      selectionRange: s.selectionRange,
+      children: s.children?.map(toLsp),
+    });
+    return documentSymbols(ast).map(toLsp);
+  } catch {
+    return [];
+  }
+});
+
+connection.onWorkspaceSymbol((params) => {
+  const query = params.query.toLowerCase();
+  const out: SymbolInformation[] = [];
+  const files = new Set<string>([...knownFiles]);
+  for (const d of documents.all()) files.add(uriToFilePath(d.uri));
+  for (const filePath of files) {
+    const doc = documents.all().find((d) => uriToFilePath(d.uri) === filePath);
+    let source: string | undefined;
+    if (doc) {
+      source = doc.getText();
+    } else {
+      try {
+        source = readFileSync(filePath, "utf-8");
+      } catch {
+        source = undefined;
+      }
+    }
+    if (source === undefined) continue;
+    try {
+      const ast = parse(source);
+      const uri = doc?.uri ?? filePathToUri(filePath);
+      for (const sym of documentSymbols(ast)) {
+        if (query && !sym.name.toLowerCase().includes(query)) continue;
+        out.push({
+          name: sym.name,
+          kind: sym.kind as LspSymbolKind,
+          location: {
+            uri,
+            range: {
+              start: { line: sym.selectionRange.start.line, character: sym.selectionRange.start.character },
+              end: { line: sym.selectionRange.end.line, character: sym.selectionRange.end.character },
+            },
+          },
+        });
+      }
+    } catch {
+      /* skip unparseable */
+    }
+  }
+  return out;
+});
+
 connection.onDefinition((params) => {
   const document = documents.get(params.textDocument.uri);
   if (!document) return null;
   if (!isNudoFile(params.textDocument.uri)) return null;
 
   const source = document.getText();
-  const ast = parse(source);
-  const table = buildSymbolTable(ast, params.textDocument.uri);
-
+  const filePath = uriToFilePath(params.textDocument.uri);
   const line = params.position.line + 1;
   const column = params.position.character;
-  const identAtPos = findIdentifierAtPosition(ast, line, column);
-  if (!identAtPos) return null;
 
-  const def = findDefinition(table, identAtPos);
-  if (!def) return null;
+  try {
+    const ast = parse(source);
+    const identAtPos = findIdentifierAtPosition(ast, line, column);
+    if (!identAtPos) return null;
 
-  return {
-    uri: params.textDocument.uri,
-    range: {
-      start: { line: def.loc.start.line - 1, character: def.loc.start.column },
-      end: { line: def.loc.end.line - 1, character: def.loc.end.column },
-    },
-  };
+    const def = resolveDefinition(filePath, source, identAtPos);
+    if (!def) return null;
+
+    return {
+      uri: filePathToUri(def.filePath),
+      range: {
+        start: { line: def.loc.start.line - 1, character: def.loc.start.column },
+        end: { line: def.loc.end.line - 1, character: def.loc.end.column },
+      },
+    };
+  } catch {
+    return null;
+  }
 });
 
 connection.onReferences((params) => {
@@ -439,22 +529,28 @@ connection.onReferences((params) => {
   if (!isNudoFile(params.textDocument.uri)) return [];
 
   const source = document.getText();
-  const ast = parse(source);
-  const table = buildSymbolTable(ast, params.textDocument.uri);
-
+  const filePath = uriToFilePath(params.textDocument.uri);
   const line = params.position.line + 1;
   const column = params.position.character;
-  const identAtPos = findIdentifierAtPosition(ast, line, column);
-  if (!identAtPos) return [];
 
-  const refs = findReferences(table, identAtPos);
-  return refs.map((ref) => ({
-    uri: params.textDocument.uri,
-    range: {
-      start: { line: ref.loc.start.line - 1, character: ref.loc.start.column },
-      end: { line: ref.loc.end.line - 1, character: ref.loc.end.column },
-    },
-  }));
+  try {
+    const ast = parse(source);
+    const identAtPos = findIdentifierAtPosition(ast, line, column);
+    if (!identAtPos) return [];
+
+    const refs = resolveReferences(filePath, source, identAtPos, {
+      extraFiles: navigationExtraFiles(filePath),
+    });
+    return refs.map((ref) => ({
+      uri: ref.uri ? filePathToUri(ref.uri) : params.textDocument.uri,
+      range: {
+        start: { line: ref.loc.start.line - 1, character: ref.loc.start.column },
+        end: { line: ref.loc.end.line - 1, character: ref.loc.end.column },
+      },
+    }));
+  } catch {
+    return [];
+  }
 });
 
 connection.onRenameRequest((params) => {
@@ -463,44 +559,56 @@ connection.onRenameRequest((params) => {
   if (!isNudoFile(params.textDocument.uri)) return null;
 
   const source = document.getText();
-  const ast = parse(source);
-  const table = buildSymbolTable(ast, params.textDocument.uri);
-
+  const filePath = uriToFilePath(params.textDocument.uri);
   const line = params.position.line + 1;
   const column = params.position.character;
-  const identAtPos = findIdentifierAtPosition(ast, line, column);
-  if (!identAtPos) return null;
 
-  const def = findDefinition(table, identAtPos);
-  const refs = findReferences(table, identAtPos);
+  try {
+    const ast = parse(source);
+    const identAtPos = findIdentifierAtPosition(ast, line, column);
+    if (!identAtPos) return null;
 
-  const edits = [];
-
-  if (def) {
-    edits.push({
-      range: {
-        start: { line: def.loc.start.line - 1, character: def.loc.start.column },
-        end: { line: def.loc.end.line - 1, character: def.loc.end.column },
-      },
-      newText: params.newName,
+    // 跨文件：definition + references 一起改
+    const def = resolveDefinition(filePath, source, identAtPos);
+    const refs = resolveReferences(filePath, source, identAtPos, {
+      extraFiles: navigationExtraFiles(filePath),
     });
-  }
 
-  for (const ref of refs) {
-    edits.push({
-      range: {
-        start: { line: ref.loc.start.line - 1, character: ref.loc.start.column },
-        end: { line: ref.loc.end.line - 1, character: ref.loc.end.column },
-      },
-      newText: params.newName,
-    });
-  }
+    const changes: Record<string, Array<{ range: any; newText: string }>> = {};
+    const push = (uri: string, loc: { start: { line: number; column: number }; end: { line: number; column: number } }) => {
+      const list = (changes[uri] ??= []);
+      list.push({
+        range: {
+          start: { line: loc.start.line - 1, character: loc.start.column },
+          end: { line: loc.end.line - 1, character: loc.end.column },
+        },
+        newText: params.newName,
+      });
+    };
 
-  return {
-    changes: {
-      [params.textDocument.uri]: edits,
-    },
-  };
+    if (def) {
+      push(filePathToUri(def.filePath), def.loc);
+    }
+    for (const ref of refs) {
+      push(ref.uri ? filePathToUri(ref.uri) : params.textDocument.uri, ref.loc);
+    }
+
+    // 去重（同一 uri 下相同 range）
+    for (const uri of Object.keys(changes)) {
+      const seen = new Set<string>();
+      changes[uri] = changes[uri]!.filter((e) => {
+        const key = `${e.range.start.line}:${e.range.start.character}:${e.range.end.line}:${e.range.end.character}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    if (Object.keys(changes).length === 0) return null;
+    return { changes };
+  } catch {
+    return null;
+  }
 });
 
 connection.onCodeAction((params) => {
