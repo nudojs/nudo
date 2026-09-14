@@ -22,6 +22,7 @@ import { emptyEnv } from "../ast-eval.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { pTrue } from "../pred.ts";
 import { notePrimMemberMissing, noteUnknownMemberMissing } from "./calls.ts";
+import { callAbsMethod } from "../methods.ts";
 import {
   registerBClass,
   getBClass,
@@ -156,6 +157,15 @@ export function $invoke(
   args: Abs[],
   loc?: [number, number],
 ): Abs {
+  // union：只在「声称支持」该方法的成员上派发，再 join（string|Buffer.split
+  // 不应因 Buffer 分支无 split 而整体 unknown）
+  if (thisVal.shape.k === "sum") {
+    const results = thisVal.shape.members
+      .filter((m) => memberLikelyHasMethod(m, method))
+      .map((m) => $invoke(m, method, args, loc));
+    if (results.length === 0) return unknown;
+    return results.reduce((a, b) => joinAbs(a, b));
+  }
   const brandName = thisVal.shape.k === "brand" ? thisVal.shape.name : undefined;
   if (brandName) {
     const m = findMethod(brandName, method);
@@ -169,6 +179,11 @@ export function $invoke(
     const arrR = invokeArrMethod(thisVal, method, args);
     if (arrR !== undefined) return arrR;
   }
+  // 字符串/模板方法表（B 路径此前缺失，与 ast-eval 对齐）
+  {
+    const viaTable = callAbsMethod(thisVal, method, args);
+    if (viaTable) return viaTable;
+  }
   // 属性上的可调用值（require namespace / 对象方法）；method 诊断由下方统一报
   const prop = $get(thisVal, method, { silent: true });
   const impl = prop && typeof prop === "object" && "shape" in (prop as object)
@@ -181,6 +196,16 @@ export function $invoke(
   if (notePrimMemberMissing(thisVal, method, "method", loc)) return unknown;
   noteUnknownMemberMissing(thisVal, method, "method", loc);
   return unknown;
+}
+
+/** union 成员是否可能持有该方法（避免 Buffer 无 split 拖垮 string 分支） */
+function memberLikelyHasMethod(m: Abs, method: string): boolean {
+  const k = m.shape.k;
+  if (k === "prim" && m.shape.type === "string") return true;
+  if (k === "brand" || k === "obj") return true;
+  if (k === "arr" || k === "tuple") return true;
+  if (k === "eff") return true;
+  return false;
 }
 
 /** arr/tuple 上的 map/reduce/filter/join/includes/flatMap */

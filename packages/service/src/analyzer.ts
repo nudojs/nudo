@@ -70,7 +70,7 @@ import {
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
 import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph, evalProgramAbsWithModules } from "./abs-modules-graph.ts";
-import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, mockSeedFingerprint, collectEnvGlobals } from "./bpath-run.ts";
+import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, mockSeedFingerprint, collectEnvGlobals, collectEnvModules } from "./bpath-run.ts";
 import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
 import { setAbsTruncationCollector } from "@nudojs/core";
 import {
@@ -1379,7 +1379,9 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
         seedVars: seeds.seedVars,
         seedFns: seeds.seedFns as never,
       });
-      absGraphModules = g.modules;
+      // env modules 必须并入图：@nudo:env 的 node:* / 裸包由 loadEnvs 提供，
+      // 模块图只处理相对 import 与 harvest 裸包（跳过 node: 前缀）
+      absGraphModules = { ...collectEnvModules(envNames), ...g.modules };
       pushBModuleIssues(g.issues);
     } catch {
       /* 模块图失败交还 TypeValue */
@@ -1432,7 +1434,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
     // Abs 程序求值的递归截断（call@ 记录路径）；modules 已预计算时不再重跑模块图
     setAbsTruncationCollector((label) => bTruncatedFns.add(label));
     try {
-      absCallRecords = collectAbsCallRecords(source, seeds, filePath, absGraphModules);
+      absCallRecords = collectAbsCallRecords(source, seeds, filePath, absGraphModules, envNames);
     } finally {
       setAbsTruncationCollector(null);
     }
@@ -2907,12 +2909,13 @@ function collectAbsCallRecords(
   },
   filePath?: string,
   precomputedModules?: Record<string, import("@nudojs/core").AbsModuleExports>,
+  envNames: string[] = [],
 ): CallRecord[] {
   const absCalls: AbsCallRecord[] = [];
   let modules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined =
     precomputedModules;
   let importLocals = new Map<string, { modulePath: string; exportName: string }>();
-  if (filePath && absModulesOk(source, [])) {
+  if (filePath && absModulesOk(source, envNames)) {
     if (!modules) {
       try {
         const graph = evalAbsModuleGraph(source, filePath, {
@@ -2923,6 +2926,10 @@ function collectAbsCallRecords(
       } catch {
         modules = undefined;
       }
+    }
+    // 无预计算 modules 时也要并入 env（@nudo:env node / es / web）
+    if (envNames.length > 0) {
+      modules = { ...collectEnvModules(envNames), ...(modules ?? {}) };
     }
     try {
       importLocals = buildAbsImportLocalMap(source, filePath);

@@ -47,8 +47,21 @@ export function defineEnv(): EnvDefinition {
   });
 
   // --- fs module ---
+  // readFileSync 带 encoding 的字符串编码 → string（对齐 TS 重载；
+  // 否则 string|Buffer，后续 .split 等 string 方法可经 union 过滤派发）
   const fsModule: Record<string, TypeValue> = {
-    readFileSync: T.fnSig([T.string, T.union(T.string, T.object({}))], T.union(T.string, BufferInstance)),
+    readFileSync: T.fnSig(
+      [T.string, T.union(T.string, T.object({}))],
+      T.union(T.string, BufferInstance),
+      T.never,
+      (args) => {
+        const enc = args[1];
+        if (!enc) return T.union(T.string, BufferInstance);
+        if (enc.kind === "literal" && typeof enc.value === "string") return T.string;
+        if (enc.kind === "primitive" && enc.type === "string") return T.string;
+        return T.union(T.string, BufferInstance);
+      },
+    ),
     writeFileSync: T.fnSig([T.string, T.union(T.string, BufferInstance)], T.undefined),
     appendFileSync: T.fnSig([T.string, T.union(T.string, BufferInstance)], T.undefined),
     existsSync: T.fnSig([T.string], T.boolean),
