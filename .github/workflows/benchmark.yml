@@ -28,6 +28,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # CLI 以 tsx 跑 src，但 workspace package.json exports → dist/；
+      # 先构建保证 `pnpm run infer` 能解析 @nudojs/*。
+      - name: Build packages
+        run: npm run build
+
       # 跑分 + 硬门禁：exact/unknown/error 回退或 >1.5x 性能回退即失败。
       # runner 本身崩溃（引擎回归）同样失败；有意变更走 pnpm run benchmark:baseline。
       - name: Run benchmark

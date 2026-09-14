@@ -3,6 +3,10 @@ import type { Config } from "@docusaurus/types";
 import type { Configuration, Plugin } from "webpack";
 import { NormalModuleReplacementPlugin } from "webpack";
 import type * as Preset from "@docusaurus/preset-classic";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 const config: Config = {
   title: "Nudo",
@@ -65,6 +69,26 @@ const config: Config = {
         configureWebpack(): Configuration {
           return {
             resolve: {
+              // monorepo 内 @nudojs/* 的 package.json exports → dist/；
+              // 本地/CI 文档站不先 build，直接 alias 到 src
+              alias: {
+                "@nudojs/cli/evaluator": resolve(
+                  repoRoot,
+                  "packages/cli/src/evaluator-api.ts",
+                ),
+                "@nudojs/core/exec": resolve(
+                  repoRoot,
+                  "packages/core/src/algebra/exec/index.ts",
+                ),
+                "@nudojs/core": resolve(repoRoot, "packages/core/src"),
+                "@nudojs/parser": resolve(repoRoot, "packages/parser/src"),
+                "@nudojs/cli": resolve(repoRoot, "packages/cli/src"),
+                "@nudojs/service": resolve(repoRoot, "packages/service/src"),
+                "@nudojs/harvester": resolve(repoRoot, "packages/harvester/src"),
+                "@nudojs/env/es": resolve(repoRoot, "packages/env/src/es.ts"),
+                "@nudojs/env/web": resolve(repoRoot, "packages/env/src/web.ts"),
+                "@nudojs/env/node": resolve(repoRoot, "packages/env/src/node.ts"),
+              },
               // 浏览器里不可达的 Node 内建（env-loader 等只在 Node CLI
               // 用，被 evaluator-api 的 re-export 链拖进 bundle）
               fallback: {
