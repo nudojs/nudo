@@ -698,8 +698,8 @@ function findFirst(arr) {
   return undefined;
 }
 `);
-      // Nudo returns a refined type with the constraint
-      expect(results[0].result).toContain(">=");
+      // 具体数组 [1..5]：item>3 命中 4，返回字面量 4
+      expect(results[0].result).toBe("4");
     });
   });
 

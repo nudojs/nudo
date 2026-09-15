@@ -1427,9 +1427,12 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
     case "ConditionalExpression": {
       const test = node.test;
-      const [trueEnv, falseEnv] = narrow(test, env);
       const testVal = evaluate(test, env);
       if (isReturn(testVal) || isBranch(testVal) || isThrow(testVal)) return testVal;
+
+      // 已是字面量分支：不要 narrow 把具体值收成 range（44 > 3 时 x 仍是 44）
+      const [trueEnv, falseEnv] =
+        testVal.kind === "literal" ? [env, env] : narrow(test, env);
 
       if (testVal.kind === "literal") {
         return testVal.value
@@ -1453,9 +1456,12 @@ function evaluateNode(node: Node, env: Environment): EvalResult {
 
     case "IfStatement": {
       const test = node.test;
-      const [trueEnv, falseEnv] = narrow(test, env);
       const testVal = evaluate(test, env);
       if (isReturn(testVal) || isBranch(testVal) || isThrow(testVal)) return testVal;
+
+      // 字面量测试：保持入参具体值，不要收成 range
+      const [trueEnv, falseEnv] =
+        testVal.kind === "literal" ? [env, env] : narrow(test, env);
 
       // Kernel Φ：从测试表达式提取约束，真/假分支分别合取
       const phis = phiFromTest(test);

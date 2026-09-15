@@ -4,8 +4,9 @@
  */
 
 import type { Term } from "./term.ts";
+import { termToString } from "./term.ts";
 import type { Pred } from "./pred.ts";
-import { pTrue } from "./pred.ts";
+import { pTrue, predToString } from "./pred.ts";
 import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, confJoin, litValue, unknown, never } from "./abs.ts";
 
@@ -111,7 +112,8 @@ export function joinValues(a: Abs, b: Abs): Abs {
 
   const va = litValue(a);
   const vb = litValue(b);
-  if (va !== undefined && va === vb) return a;
+  // Object.is：NaN 与自身相等（`NaN === NaN` 为 false，不能用 ===）
+  if (va !== undefined && Object.is(va, vb)) return a;
 
   if (
     a.shape.k === "prim" &&
@@ -163,7 +165,14 @@ function flattenSum(xs: Abs[]): Abs[] {
 
 function shapeKey(a: Abs): string {
   const s = a.shape;
-  if (s.k === "prim") return `prim:${s.type}`;
+  // prim 按 term/pred 区分：`number=A1>3` 与 `number=A1*2` 是不同路径，不能按 shape 去重
+  if (s.k === "prim") {
+    const lv = litValue(a);
+    if (lv !== undefined) return `prim:${s.type}:${String(lv)}`;
+    const t = a.term ? termToString(a.term) : "";
+    const p = a.pred && a.pred.op !== "true" ? predToString(a.pred) : "";
+    return `prim:${s.type}:${t}:${p}`;
+  }
   if (s.k === "never") return "never";
   if (s.k === "any") return "any";
   if (s.k === "unknown") return "unknown";

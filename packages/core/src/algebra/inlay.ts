@@ -1,14 +1,18 @@
 /**
  * Abs inlay hint：把无损约束内联到源码位置。
  * 不是 TS 风格 type annotation 复读，而是 term/pred/conf 的计算结果。
+ *
+ * 参数侧只展示显式 `@nudo:refine` 契约（entryReqs）——
+ * 不从函数体 `if` 反推前置条件（那是控制流，不是对外契约）。
  */
 
 import type { Node, FunctionDeclaration } from "@babel/types";
 import { parseSource as parse } from "./parse-source.ts";
-import { generalizeFromAst } from "./generalize.ts";
+import { generalizeFromAst, type PolyFn } from "./generalize.ts";
 import { formatShape } from "./format.ts";
-import { predToString, type Pred } from "./pred.ts";
+import { predToString } from "./pred.ts";
 import { termToString } from "./term.ts";
+import { litValue, type Abs } from "./abs.ts";
 
 export type AbsInlay = {
   /** 1-based 行号 */
@@ -51,85 +55,76 @@ function listFunctions(source: string): Array<{ name: string; node: Node }> {
   return out;
 }
 
-/** 从函数体抽 param 的前置 Pred（与 check 同源逻辑的轻量版） */
-function paramPreds(
-  source: string,
-  fnName: string,
-  paramNames: string[],
-): Map<string, Pred[]> {
-  const byIndex = new Map<number, Pred[]>();
-  const file = parse(source);
-  const paramIndex = new Map(paramNames.map((p, i) => [p, i]));
-
-  const pushCmp = (
-    test: Record<string, unknown>,
-    consequent: Record<string, unknown> | undefined,
-  ): void => {
-    if (test?.type !== "BinaryExpression") return;
-    const left = test.left as { type?: string; name?: string };
-    const right = test.right as { type?: string; value?: number };
-    const op = test.operator as string;
-    if (
-      left?.type !== "Identifier" ||
-      !left.name ||
-      !paramIndex.has(left.name) ||
-      right?.type !== "NumericLiteral" ||
-      typeof right.value !== "number"
-    ) {
-      return;
-    }
-    const isReturnParam =
-      consequent?.type === "ReturnStatement" &&
-      (consequent.argument as { type?: string; name?: string })?.type === "Identifier" &&
-      (consequent.argument as { name?: string }).name === left.name;
-    if (!isReturnParam) return;
-    const idx = paramIndex.get(left.name)!;
-    const t = { op: "var" as const, id: left.name };
-    const b = { op: "lit" as const, value: right.value };
-    let pred: Pred | undefined;
-    if (op === ">") pred = { op: "gt", a: t, b };
-    else if (op === ">=") pred = { op: "ge", a: t, b };
-    else if (op === "<") pred = { op: "lt", a: t, b };
-    else if (op === "<=") pred = { op: "le", a: t, b };
-    if (!pred) return;
-    const list = byIndex.get(idx) ?? [];
-    list.push(pred);
-    byIndex.set(idx, list);
-  };
-
-  const visit = (n: unknown): void => {
-    if (!n || typeof n !== "object") return;
-    const obj = n as Record<string, unknown> & { type?: string };
-    if (obj.type === "IfStatement") {
-      const test = obj.test as Record<string, unknown>;
-      const consequent = obj.consequent as Record<string, unknown> | undefined;
-      pushCmp(test, consequent);
-      if (test?.type === "LogicalExpression" && test.operator === "&&") {
-        pushCmp(test.left as Record<string, unknown>, consequent);
-        pushCmp(test.right as Record<string, unknown>, consequent);
-      }
-    }
-    for (const key of Object.keys(obj)) {
-      if (key === "loc" || key === "start" || key === "end") continue;
-      const val = obj[key];
-      if (Array.isArray(val)) val.forEach(visit);
-      else if (val && typeof val === "object") visit(val);
-    }
-  };
-  visit(file);
-
-  const byName = new Map<string, Pred[]>();
-  for (const [idx, preds] of byIndex) {
-    const name = paramNames[idx];
-    if (name) byName.set(name, preds);
+/** A1 → 源码参数名，便于 inlay 阅读 */
+function renameTypeVars(s: string, varMap: Map<string, string>): string {
+  let out = s;
+  // 长 id 先替换，避免 A1 误伤 A10
+  const ids = [...varMap.keys()].sort((a, b) => b.length - a.length);
+  for (const id of ids) {
+    out = out.replaceAll(id, varMap.get(id)!);
   }
-  return byName;
+  return out;
+}
+
+/**
+ * 返回值 inlay：路径摘要（对应源码 return），不是精化后的外延类型。
+ * `double` → `x | x * 2`；`scale` → `x + 1`。
+ * `where` / ToNumber 拆分留给 hover 展开。
+ */
+function formatReturnDisplay(g: PolyFn): string {
+  const varMap = new Map<string, string>();
+  for (let i = 0; i < (g.typeParams?.length ?? 0); i++) {
+    const id = g.typeParams![i]!.id;
+    const pname = g.params[i];
+    if (pname) varMap.set(id, pname);
+  }
+
+  const stripParens = (t: string): string =>
+    t.startsWith("(") && t.endsWith(")") ? t.slice(1, -1) : t;
+
+  const memberPath = (m: Abs): { key: string; text: string } => {
+    if (m.term?.op === "var") {
+      const name = renameTypeVars(m.term.id, varMap);
+      return { key: `var:${name}`, text: name };
+    }
+    if (m.term?.op === "app") {
+      const t = stripParens(renameTypeVars(termToString(m.term), varMap));
+      return { key: `app:${t}`, text: t };
+    }
+    const lv = litValue(m);
+    if (typeof lv === "number" && !Number.isFinite(lv)) {
+      return { key: `lit:${String(lv)}`, text: String(lv) };
+    }
+    if (lv !== undefined) {
+      return { key: `lit:${String(lv)}`, text: JSON.stringify(lv) };
+    }
+    return { key: `shape:${formatShape(m)}`, text: formatShape(m) };
+  };
+
+  const abs = g.symbolic;
+  // 外层 term：单路径计算形（`x + 1`）
+  if (abs.term && abs.term.op !== "lit") {
+    return stripParens(renameTypeVars(termToString(abs.term), varMap));
+  }
+  if (abs.shape.k === "sum") {
+    // 同 term 的精化臂（number>3 | string 都是 A1）合并为一条路径 `x`
+    const parts: string[] = [];
+    const seen = new Set<string>();
+    for (const m of abs.shape.members) {
+      const { key, text } = memberPath(m);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      parts.push(text);
+    }
+    return parts.join(" | ");
+  }
+  return memberPath(abs).text;
 }
 
 /**
  * 收集源码中函数签名的 Abs inlay：
- * - 参数后：前置约束（声明 refine 优先；否则从 if 推）
- * - `)` 后：返回 shape + term（类型即计算）
+ * - 参数后：仅 `@nudo:refine` 声明的前置契约
+ * - `{` 前：返回计算形（`x | x * 2`），无 term 时退回 shape
  */
 export function collectAbsInlays(
   source: string,
@@ -146,15 +141,11 @@ export function collectAbsInlays(
     if (!g) continue;
 
     const params = g.params;
-    // 声明契约优先；if 推断作补充
-    const predsByName = new Map<string, Pred[]>();
+    const predsByName = new Map<string, import("./pred.ts").Pred[]>();
     if (g.entryReqs) {
       for (const r of g.entryReqs) {
         predsByName.set(r.param, [r.pred]);
       }
-    }
-    for (const [k, v] of paramPreds(source, name, params)) {
-      if (!predsByName.has(k)) predsByName.set(k, v);
     }
 
     const fnNode = node as any;
@@ -175,16 +166,14 @@ export function collectAbsInlays(
       }
     }
 
-    // 返回：插在函数体 `{` 前（类型即计算）
+    // 返回：插在函数体 `{` 前——优先 term/路径形
     const bodyLoc = fnNode.body?.loc;
     if (bodyLoc?.start) {
-      const retShape = formatShape(g.symbolic);
-      let label = `: ${retShape}`;
-      if (g.symbolic.term && g.symbolic.term.op !== "lit") {
-        label += ` = ${termToString(g.symbolic.term)}`;
-      }
-      if (g.symbolic.pred && g.symbolic.pred.op !== "true") {
-        label += `  where ${predToString(g.symbolic.pred)}`;
+      let label: string;
+      try {
+        label = `: ${formatReturnDisplay(g)}`;
+      } catch {
+        label = `: ${formatShape(g.symbolic)}`;
       }
       inlays.push({
         line: bodyLoc.start.line,

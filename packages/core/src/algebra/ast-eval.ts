@@ -47,7 +47,7 @@ import {
   isNumPrim,
   isStrPrim,
 } from "./abs.ts";
-import { add, sub, mul, div, mod, cmp, trueConstraint, falseConstraint } from "./arithmetic.ts";
+import { add, sub, mul, div, mod, cmp, trueConstraint, falseConstraint, refineAbsForRelTrue, matchRelIdentLit } from "./arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs } from "./surface.ts";
 import { leakIfNeeded, defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { spread, joinAbs } from "./objects.ts";
@@ -1802,8 +1802,17 @@ function evalIf(
   const t = evalNode(node.test, env, phi, budget).value;
   const tv = litValue(t);
 
+  /** 真/假分支：对比较里的 Identifier 做 shape 收窄（any → number>… | string） */
+  const refineEnv = (branch: "true" | "false"): AstEnv => {
+    const m = matchRelIdentLit(node.test);
+    if (!m || branch !== "true") return env;
+    const cur = env.vars.get(m.name);
+    if (!cur) return env;
+    return withVar(env, m.name, refineAbsForRelTrue(cur, m.op, m.k));
+  };
+
   if (tv === true) {
-    return evalNode(node.consequent, env, phi, budget);
+    return evalNode(node.consequent, refineEnv("true"), phi, budget);
   }
   if (tv === false) {
     if (node.alternate) return evalNode(node.alternate, env, phi, budget);
@@ -1812,7 +1821,8 @@ function evalIf(
 
   const tCons = trueConstraint(t);
   const fCons = falseConstraint(t);
-  const a = evalNode(node.consequent, env, tCons ? and(phi, tCons) : phi, budget);
+  const envT = refineEnv("true");
+  const a = evalNode(node.consequent, envT, tCons ? and(phi, tCons) : phi, budget);
   if (node.alternate) {
     const b = evalNode(node.alternate, env, fCons ? and(phi, fCons) : phi, budget);
     return { value: joinAbs(a.value, b.value), phi, env, returned: a.returned || b.returned };

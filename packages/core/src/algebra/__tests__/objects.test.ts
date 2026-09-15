@@ -96,6 +96,14 @@ describe("objects: join", () => {
     expect(collapsed.shape.slots.host!.optional).toBe(true);
     expect(collapsed.shape.slots.debug!.optional).toBe(true);
   });
+
+  it("join(NaN, NaN) keeps the NaN literal (Object.is, not ===)", () => {
+    const nan = numLit(NaN);
+    const r = joinAbs(nan, nan);
+    expect(r.term?.op).toBe("lit");
+    if (r.term?.op === "lit") expect(r.term.value).toBeNaN();
+    expect(r.conf).toBe("exact");
+  });
 });
 
 describe("format", () => {

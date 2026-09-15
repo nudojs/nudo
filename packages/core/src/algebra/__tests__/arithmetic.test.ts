@@ -6,6 +6,7 @@ import {
   div,
   mod,
   cmp,
+  refineAbsForRelTrue,
   numLit,
   numVar,
   strLit,
@@ -135,6 +136,28 @@ describe("sub / mul", () => {
       type: "number",
     });
   });
+  it('JS relational: "a">3 → false, "10"<9 → false, true>0 → true', () => {
+    expect(litValue(cmp("gt", strLit("a"), numLit(3)))).toBe(false);
+    expect(litValue(cmp("lt", strLit("10"), numLit(9)))).toBe(false);
+    expect(litValue(cmp("gt", boolLit(true), numLit(0)))).toBe(true);
+    expect(litValue(cmp("gt", strLit("hello"), numLit(3)))).toBe(false);
+  });
+
+  it("refineAbsForRelTrue: any > 3 → number>3 | string", () => {
+    const anyA = { shape: { k: "any" as const }, term: v("A1"), conf: "path" as const };
+    const r = refineAbsForRelTrue(anyA, "gt", 3);
+    expect(r.shape.k).toBe("sum");
+    if (r.shape.k !== "sum") return;
+    const kinds = r.shape.members.map((m) =>
+      m.shape.k === "prim" ? m.shape.type : m.shape.k,
+    );
+    expect(kinds.sort()).toEqual(["number", "string"]);
+    const num = r.shape.members.find(
+      (m) => m.shape.k === "prim" && m.shape.type === "number",
+    )!;
+    expect(num.pred?.op).toBe("gt");
+  });
+
   it("x>0 * 2 ⇒ (x*2)>0", () => {
     const phi = gtNum(v("x"), 0);
     const r = mul(numVar("x", gtNum(v("x"), 0)), numLit(2), phi);

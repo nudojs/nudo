@@ -33,6 +33,7 @@ import {
   never,
 } from "./abs.ts";
 import { concatString, isTemplateLike } from "./template.ts";
+import { makeSum } from "./objects.ts";
 
 /**
  * 抽象加法：eval(a + b) —— 跟真实 JS，不无根据地假定 number。
@@ -624,6 +625,23 @@ function compareLits(
         return a >= b;
     }
   }
+  // 混合/非字符串原始字面量：JS 关系比较先 ToNumber（NaN 参与时结果恒 false）
+  // e.g. `"a" > 3` → false, `"10" < 9` → false, `true > 0` → true
+  if (op === "lt" || op === "le" || op === "gt" || op === "ge") {
+    // as number: TS 不让对 null/undefined 做关系比较；运行时仍走 JS 语义
+    const x = a as number;
+    const y = b as number;
+    switch (op) {
+      case "lt":
+        return x < y;
+      case "le":
+        return x <= y;
+      case "gt":
+        return x > y;
+      case "ge":
+        return x >= y;
+    }
+  }
   return undefined;
 }
 
@@ -677,6 +695,76 @@ export function trueConstraint(c: Abs): Pred | undefined {
   if (c.term?.op === "lit" && c.term.value === true) return pTrue;
   if (c.term?.op === "lit" && c.term.value === false) return undefined;
   return c.pred;
+}
+
+/**
+ * 关系比较为真时收窄操作数 shape。
+ * `x > k` 对 any：JS 只允许 number（n>k）或数字字符串（ToNumber(s)>k）。
+ * 粗化展示为 `number>… | string`；string 臂不挂 ToNumber pred（Pred 无该构造）。
+ */
+export function refineAbsForRelTrue(
+  a: Abs,
+  op: "gt" | "ge" | "lt" | "le",
+  k: number,
+): Abs {
+  const bound = (t: Term): Pred =>
+    op === "gt"
+      ? gt(t, lit(k))
+      : op === "ge"
+        ? ge(t, lit(k))
+        : op === "lt"
+          ? lt(t, lit(k))
+          : le(t, lit(k));
+
+  if (isNumPrim(a) && a.term) {
+    const pred =
+      a.pred && a.pred.op !== "true" ? and(a.pred, bound(a.term)) : bound(a.term);
+    return abs(a.shape, a.term, pred, a.conf);
+  }
+  // string prim：比较已真，shape 保持 string（ToNumber(s) rel k 无法进 Pred）
+  if (isStrPrim(a)) return a;
+  if ((a.shape.k === "any" || a.shape.k === "unknown") && a.term) {
+    const numArm = abs({ k: "prim", type: "number" }, a.term, bound(a.term), "path");
+    const strArm = abs({ k: "prim", type: "string" }, a.term, undefined, "path");
+    return makeSum(numArm, strArm);
+  }
+  return a;
+}
+
+/**
+ * 从 Identifier 在比较中的位置解析「对哪个变量、用哪个关系」。
+ * 支持 `x > 3` 与 `3 < x`（后者关系翻转）。
+ */
+export function matchRelIdentLit(
+  test: unknown,
+): { name: string; op: "gt" | "ge" | "lt" | "le"; k: number } | undefined {
+  const t = test as {
+    type?: string;
+    operator?: string;
+    left?: { type?: string; name?: string; value?: number };
+    right?: { type?: string; name?: string; value?: number };
+  };
+  if (t?.type !== "BinaryExpression") return undefined;
+  const rel =
+    t.operator === ">"
+      ? "gt"
+      : t.operator === ">="
+        ? "ge"
+        : t.operator === "<"
+          ? "lt"
+          : t.operator === "<="
+            ? "le"
+            : undefined;
+  if (!rel) return undefined;
+  if (t.left?.type === "Identifier" && t.left.name && t.right?.type === "NumericLiteral" && typeof t.right.value === "number") {
+    return { name: t.left.name, op: rel, k: t.right.value };
+  }
+  if (t.right?.type === "Identifier" && t.right.name && t.left?.type === "NumericLiteral" && typeof t.left.value === "number") {
+    const flipped =
+      rel === "gt" ? "lt" : rel === "ge" ? "le" : rel === "lt" ? "gt" : "ge";
+    return { name: t.right.name, op: flipped, k: t.left.value };
+  }
+  return undefined;
 }
 
 export function falseConstraint(c: Abs): Pred | undefined {

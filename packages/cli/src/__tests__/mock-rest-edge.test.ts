@@ -119,8 +119,8 @@ function safeValue(x) {
 }
 `);
     console.log("Conditional results:", results.map(r => r.result));
-    // Abstract interpretation: x > 0 narrows x to number (>= 1)
-    expect(results[0].result).toBe("number (>= 1)");
+    // 具体入参 5 > 0 → 5（字面量测试不再收成 range）
+    expect(results[0].result).toBe("5");
     expect(results[1].result).toBe("0");
   });
 

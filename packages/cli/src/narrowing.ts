@@ -9,6 +9,7 @@ import {
   typeValueEquals,
   isSubtypeOf,
   createRange,
+  simplifyUnion,
   v as termVar,
 } from "@nudojs/core";
 import { attachTerm } from "./term-registry.ts";
@@ -439,20 +440,39 @@ function narrowByComparison(
   env: Environment,
 ): [Environment, Environment] {
   const current = env.lookup(varName);
+
+  // JS number 是实数：`x > 3` 不能写成 `>= 4`（会丢掉 3.5）
+  const trueRange =
+    op === ">="
+      ? createRange({ min: value })
+      : op === ">"
+        ? createRange({ min: value, minExclusive: true })
+        : op === "<="
+          ? createRange({ max: value })
+          : createRange({ max: value, maxExclusive: true });
+
+  const falseRange =
+    op === ">="
+      ? createRange({ max: value, maxExclusive: true })
+      : op === ">"
+        ? createRange({ max: value })
+        : op === "<="
+          ? createRange({ min: value, minExclusive: true })
+          : createRange({ min: value });
+
+  // unknown：关系比较真值空间是 number（带界）| 数字 string（`"10" > 3`）
+  if (current.kind === "unknown") {
+    const trueEnv0 = env.extend({});
+    const falseEnv0 = env.extend({});
+    trueEnv0.bind(varName, simplifyUnion([trueRange, T.string]));
+    falseEnv0.bind(varName, falseRange);
+    return [trueEnv0, falseEnv0];
+  }
+
   if (!isSubtypeOf(current, T.number) && current.kind !== "union") return [env, env];
 
   const trueEnv = env.extend({});
   const falseEnv = env.extend({});
-
-  const trueRange = op === ">=" ? createRange({ min: value })
-    : op === ">" ? createRange({ min: value + 1 })
-    : op === "<=" ? createRange({ max: value })
-    : createRange({ max: value - 1 });
-
-  const falseRange = op === ">=" ? createRange({ max: value - 1 })
-    : op === ">" ? createRange({ max: value })
-    : op === "<=" ? createRange({ min: value + 1 })
-    : createRange({ min: value });
 
   // 保留项身份：range 界经 toAbsWithTerms 编码为 Pred，代数继续传播
   const term = termVar(varName);

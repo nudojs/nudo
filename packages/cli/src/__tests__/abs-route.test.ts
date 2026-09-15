@@ -72,14 +72,14 @@ describe("algebra router (single path)", () => {
     expect(runFn(src, [T.literal(10)])).toBe("11");
   });
 
-  it("if (x>5) return x — keeps number shape", () => {
+  it("if (x>5) return x — concrete 10 stays 10", () => {
     const src = `
       function c(x) {
         if (x > 5) return x;
         return 0;
       }
     `;
-    expect(runFn(src, [T.literal(10)])).toContain("number");
+    expect(runFn(src, [T.literal(10)])).toContain("10");
   });
 
   it("tryAbsBinary: 2+3 → 5", () => {
