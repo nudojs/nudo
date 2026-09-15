@@ -1,10 +1,12 @@
 /**
  * Agent-facing tool implementations (`nudo.whatIf` / `nudo.suggestCase` /
- * `nudo.trace`), ported from the MCP server (packages/mcp/src/tools.ts) and
- * wired into both LSP channels in server.ts: executeCommand commands
- * (`nudo.*`) and custom requests (`nudo/…`). Like validation.ts, this module
- * holds pure logic with injected readers so tests exercise it without a live
- * connection; server.ts supplies the document/disk readers.
+ * `nudo.trace` / `nudo.interface` / `nudo.interface.emit`), ported from the
+ * MCP server (packages/mcp/src/tools.ts) and wired into both LSP channels in
+ * server.ts: executeCommand commands (`nudo.*`) and custom requests
+ * (`nudo/…`). Like validation.ts, this module holds pure logic with injected
+ * readers so tests exercise it without a live connection; server.ts supplies
+ * the document/disk readers. Also hosts computeInterfaceLenses — the pure
+ * CodeLens computation for the interface tier (design-refine-derivation §8).
  *
  * Unlike the MCP original, whatIf really applies its bindings: each binding
  * becomes a `// @nudo:as <type>` comment inserted above the declaring
@@ -20,9 +22,26 @@ import {
   getHoverAtPosition,
   collectAbsInlays,
   serializeInferJson,
+  getCasesForFile,
+  interfaceSurface,
+  emitInterface,
+  type EmitInterfaceResult,
+  type InterfaceSurfaceEntry,
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
-import { T, typeValueToString, checkSource, serializeCheckJson, pTrue } from "@nudojs/core";
+import {
+  T,
+  typeValueToString,
+  checkSource,
+  serializeCheckJson,
+  pTrue,
+  effectiveInterface,
+  generatedExportNames,
+  localNamedExports,
+  sidecarPathOf,
+  takeInterfaceDiags,
+  type InterfaceSource,
+} from "@nudojs/core";
 import type { TypeValue, CheckJson } from "@nudojs/core";
 import { lspLoadModule } from "./validation.ts";
 
@@ -483,4 +502,247 @@ export function trace(params: FunctionToolParams, deps: AgentToolDeps = {}): Age
   } catch (err) {
     return analysisError(err);
   }
+}
+
+// ---------------------------------------------------------------------------
+// interface 档（design-refine-derivation §7.5/§8）：agent 打印/固化工具 +
+// CodeLens 计算纯函数。产品名 interface；case 是 debug 副层。
+// ---------------------------------------------------------------------------
+
+export type InterfaceToolParams = {
+  file: string;
+  /** 省略 → 打印该文件全部顶层函数 */
+  functionName?: string;
+  /** .nudo.js 侧车装载（测试注入）；缺省 lspLoadModule 真实读盘 */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
+  /** 覆盖项目配置的 autoBind */
+  autoBind?: boolean;
+};
+
+/**
+ * Agent interface 打印：与 CLI `nudo interface` 同一数据源（interfaceSurface），
+ * 逐函数展示有效契约分层 handwritten / generated / implicit。
+ * interfaceSurface 以磁盘为真值（与 CLI 一致）；deps 预留给 open-buffer 通道。
+ */
+export async function interfaceTool(
+  params: InterfaceToolParams,
+  _deps: AgentToolDeps = {},
+): Promise<AgentToolResult> {
+  try {
+    const filePath = normalizeFilePath(params.file);
+    const entries = await interfaceSurface(filePath, {
+      loadModule: params.loadModule ?? lspLoadModule,
+      ...(params.autoBind !== undefined ? { autoBind: params.autoBind } : {}),
+    });
+    const selected = params.functionName
+      ? entries.filter((e) => e.fn === params.functionName)
+      : entries;
+
+    const lines: string[] = [filePath];
+    if (selected.length === 0) {
+      lines.push(
+        params.functionName
+          ? `  no interface found for '${params.functionName}'`
+          : "  (no top-level functions found)",
+      );
+    }
+    for (const line of selected.map(interfaceEntryLine)) lines.push(line);
+    lines.push("");
+    lines.push(JSON.stringify(selected, null, 2));
+    return textResult(lines.join("\n"));
+  } catch (err) {
+    return analysisError(err);
+  }
+}
+
+/** 单条 interface 打印行（与 CLI runInterface 同格式） */
+function interfaceEntryLine(e: InterfaceSurfaceEntry): string {
+  const params = `(${e.params.map((p) => `${p.name}: ${p.display}`).join(", ")})`;
+  let line = `  ${e.fn}  [${e.source}]  ${params}`;
+  if (e.returns !== undefined) line += ` → ${e.returns}`;
+  if (e.kind === "local") line += "  (local)";
+  return line;
+}
+
+export type InterfaceEmitToolParams = {
+  file: string;
+  functionName: string;
+  mode: "add" | "update";
+};
+
+/**
+ * Agent interface 固化：与 CLI `nudo interface --emit` 同一写盘器
+ * （emitInterface），把调用点域固化为侧车 `@generated` 段。结果文本含
+ * written / skipped(reason) / issues；name-clash（手写优先）明确呈现。
+ */
+export async function interfaceEmitTool(
+  params: InterfaceEmitToolParams,
+  _deps: AgentToolDeps = {},
+): Promise<AgentToolResult> {
+  try {
+    const filePath = normalizeFilePath(params.file);
+    const result = await emitInterface(filePath, {
+      fnNames: [params.functionName],
+      mode: params.mode === "update" ? "update" : "add",
+    });
+    return textResult(formatEmitResult(filePath, result));
+  } catch (err) {
+    return analysisError(err);
+  }
+}
+
+/** emit 结果文本（与 CLI runInterfaceEmit 输出口径一致） */
+export function formatEmitResult(filePath: string, result: EmitInterfaceResult): string {
+  const lines: string[] = [];
+  if (result.changed) {
+    lines.push(`Updated ${filePath} → ${result.sidecarPath}`);
+    lines.push(`  written: ${result.written.join(", ") || "(none)"}`);
+  } else {
+    lines.push(`${filePath}: no interface changes`);
+  }
+  for (const s of result.skipped.filter((x) => x.reason !== "no-change")) {
+    lines.push(`  skipped ${s.fn} (${s.reason})`);
+  }
+  for (const i of result.issues) {
+    lines.push(`  [${i.severity}] ${i.code}: ${i.message}`);
+  }
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// CodeLens interface 档计算（design-refine-derivation §8）
+// ---------------------------------------------------------------------------
+
+/** 默认层 lens：`● interface / handwritten|generated|implicit` */
+export type InterfaceLens =
+  | { kind: "interface"; fn: string; line: number; source: InterfaceSource }
+  /** 固化动作 lens：add=`⚡ persist refine`，update=`↻ update refine` */
+  | { kind: "emit"; fn: string; line: number; mode: "add" | "update" };
+
+/** case 副层 lens（debug 层，标题/命令与既有行为一致） */
+export type CaseLens = {
+  kind: "case";
+  fn: string;
+  line: number;
+  caseIndex: number;
+  caseName: string;
+  active: boolean;
+};
+
+export type NudoLens = InterfaceLens | CaseLens;
+
+export type InterfaceLensDeps = {
+  /** .nudo.js 侧车装载（effectiveInterface 同一通道）；缺省不加载侧车 */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
+  /** fn → 激活 case 下标（●/○ 标题）；缺省全部按 index 0 */
+  activeCases?: Map<string, number>;
+};
+
+/** 顶层函数位（含 export 包裹与箭头/函数表达式 const 声明）——interface 档目标集 */
+function topLevelFunctionSlots(source: string): Array<{ name: string; line: number }> {
+  const ast = parse(source);
+  const out: Array<{ name: string; line: number }> = [];
+  for (const stmt of (ast as any).program.body ?? []) {
+    const line = stmt.loc?.start?.line;
+    if (typeof line !== "number") continue;
+    const d = stmt.type === "ExportNamedDeclaration" ? stmt.declaration : stmt;
+    if (!d) continue;
+    if (d.type === "FunctionDeclaration" && d.id) {
+      out.push({ name: d.id.name, line });
+    } else if (d.type === "VariableDeclaration") {
+      for (const decl of d.declarations ?? []) {
+        if (
+          decl.id?.type === "Identifier" &&
+          decl.init &&
+          (decl.init.type === "ArrowFunctionExpression" || decl.init.type === "FunctionExpression")
+        ) {
+          out.push({ name: decl.id.name, line });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * CodeLens 全量计算（server.ts onCodeLens 的可测纯函数形态）：
+ * - interface 默认层：每个**导出**函数一条 `● interface / <source>`——
+ *   effectiveInterface 命中 handwritten/generated，否则 implicit
+ *   （隐式 interface 始终可算，§7.1）；私有函数不绑定不落盘（§2.1），不加。
+ * - 固化动作：handwritten 只读展示；侧车已含同名 @generated 段 → update，
+ *   否则 add。
+ * - case 副层：跟在本函数 interface 档之后（标题/命令零改动；来源仍是
+ *   getCasesForFile 的指令 case）。
+ */
+export function computeInterfaceLenses(
+  source: string,
+  filePath: string,
+  deps: InterfaceLensDeps = {},
+): NudoLens[] {
+  const lenses: NudoLens[] = [];
+  const exported = localNamedExports(source);
+
+  // 固化状态：侧车是否已含同名 @generated 段（与 effectiveInterface 的
+  // generatedExportNames 判定同口径；经 loadModule 读侧车，不直接碰盘）
+  const sidecarPath = sidecarPathOf(filePath);
+  const sidecarSpec = `./${sidecarPath.slice(sidecarPath.lastIndexOf("/") + 1)}`;
+  const sidecarSrc = deps.loadModule?.(sidecarSpec, filePath);
+  const persisted = sidecarSrc !== undefined ? generatedExportNames(sidecarSrc) : new Set<string>();
+
+  const fnCases = new Map(
+    getCasesForFile(filePath, source).map((f) => [f.functionName, f] as const),
+  );
+
+  const pushCaseLenses = (fnName: string, line: number): void => {
+    const fc = fnCases.get(fnName);
+    if (!fc) return;
+    const activeIdx = deps.activeCases?.get(fnName) ?? 0;
+    for (const c of fc.cases) {
+      lenses.push({
+        kind: "case",
+        fn: fnName,
+        line,
+        caseIndex: c.index,
+        caseName: c.name,
+        active: c.index === activeIdx,
+      });
+    }
+  };
+
+  const seen = new Set<string>();
+  for (const fn of topLevelFunctionSlots(source)) {
+    if (seen.has(fn.name)) continue;
+    seen.add(fn.name);
+
+    if (exported.has(fn.name)) {
+      const eff = effectiveInterface(source, fn.name, {
+        ...(deps.loadModule ? { loadModule: deps.loadModule } : {}),
+        fromFile: filePath,
+      });
+      const src: InterfaceSource = eff?.source ?? "implicit";
+      lenses.push({ kind: "interface", fn: fn.name, line: fn.line, source: src });
+      if (src !== "handwritten") {
+        lenses.push({
+          kind: "emit",
+          fn: fn.name,
+          line: fn.line,
+          mode: persisted.has(fn.name) ? "update" : "add",
+        });
+      }
+    }
+
+    // case 副层跟随 interface 档之后（同函数同 line，数组序即渲染序）
+    pushCaseLenses(fn.name, fn.line);
+  }
+
+  // getCasesForFile 宇宙中未被顶层函数扫描覆盖的形态：原样保留 case lens
+  for (const fc of fnCases.values()) {
+    if (seen.has(fc.functionName)) continue;
+    seen.add(fc.functionName);
+    pushCaseLenses(fc.functionName, fc.loc.start.line);
+  }
+
+  // lens 探测可能积累 interface-load 诊断，取走丢弃防泄漏进 check 通道
+  takeInterfaceDiags();
+  return lenses;
 }

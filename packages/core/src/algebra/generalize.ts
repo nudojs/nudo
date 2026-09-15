@@ -18,11 +18,13 @@ import type { AstEnv } from "./ast-env.ts";
 import { evalNode, emptyEnv } from "./ast-eval.ts";
 import { defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { formatShapeSlot } from "./format.ts";
+import { type RefineResolveOpts } from "./refine.ts";
+import { constraintToEntryAbs, instantiateConstraint } from "./constraint.ts";
 import {
-  extractRefinesFromSource,
-  type RefineResolveOpts,
-} from "./refine.ts";
-import { constraintToEntryAbs } from "./constraint.ts";
+  effectiveInterface,
+  sidecarClosureFingerprint,
+  sidecarPathOf,
+} from "./interface.ts";
 import { generalizeSourceKeyPart, resetFnFpCache } from "./fn-fp.ts";
 import { resetHashSourceCache } from "./hash-source.ts";
 import {
@@ -125,6 +127,8 @@ function generalizeMemoKey(
     file?: ReturnType<typeof babelParse>;
     /** checkSource 预计算：整文件一次指纹，所有 fn 的 L0 共用 */
     depsFp?: LoadDepsFingerprint;
+    /** checkSource 预计算：ambient 侧车闭包指纹（独立调用时现算） */
+    sidecarFp?: string;
   },
 ): { key: string; depPaths: string[]; truncated: boolean } {
   const r = opts.refine;
@@ -132,6 +136,15 @@ function generalizeMemoKey(
   const deps =
     opts.depsFp ??
     (r ? refineDepsFingerprint(source, r) : { fp: "-", paths: [], truncated: false });
+  // ambient 侧车闭包进键：侧车内容变更 → L0 失效；路径登记供定向逐出。
+  // 截断前缀（trunc:）→ 键不可信，调用方 fail-open。
+  const sc =
+    opts.sidecarFp ??
+    (r?.loadModule && r.fromFile ? sidecarClosureFingerprint(r.fromFile, r) : undefined);
+  const scPath =
+    sc !== undefined && !sc.startsWith("trunc:") && r?.fromFile
+      ? normPath(sidecarPathOf(r.fromFile))
+      : undefined;
   // AST 可用时用 per-function 指纹：改未引用的兄弟函数不 invalidate 本函数
   const srcPart = generalizeSourceKeyPart(source, fnName, opts.file);
   const key = [
@@ -140,9 +153,14 @@ function generalizeMemoKey(
     opts.label ?? "A",
     r ? `${loadModuleId(r.loadModule)}:${r.fromFile ?? ""}` : "-",
     deps.fp,
+    sc ?? "-",
     `${budget.maxDepth}/${budget.maxNodes}`,
   ].join("|");
-  return { key, depPaths: deps.paths, truncated: deps.truncated };
+  return {
+    key,
+    depPaths: scPath !== undefined ? [...deps.paths, scPath] : deps.paths,
+    truncated: deps.truncated || (sc?.startsWith("trunc:") ?? false),
+  };
 }
 
 function generalizeMemoGet(key: string): PolyFn | undefined | null {
@@ -583,6 +601,8 @@ export function generalizeFromAst(
     file?: ReturnType<typeof babelParse>;
     /** 预计算 load-deps 指纹（checkSource 整文件一次，避免 per-fn 重读） */
     depsFp?: LoadDepsFingerprint;
+    /** 预计算 ambient 侧车闭包指纹（checkSource 整文件一次） */
+    sidecarFp?: string;
   } = {},
 ): PolyFn | undefined {
   const { key, depPaths, truncated } = generalizeMemoKey(fnName, source, opts);
@@ -608,6 +628,8 @@ function generalizeFromAstUncached(
     label?: string;
     refine?: RefineResolveOpts;
     file?: ReturnType<typeof babelParse>;
+    /** checkSource 预计算：ambient 侧车闭包指纹（独立调用时现算） */
+    sidecarFp?: string;
   } = {},
 ): PolyFn | undefined {
   const extracted = extractFn(source, fnName, opts.file);
@@ -630,19 +652,36 @@ function generalizeFromAstUncached(
   >();
   if (opts.refine) {
     try {
-      const reqs = extractRefinesFromSource(source, fnName, opts.refine);
+      // 有效契约单点读取（handwritten 与 generated 都可用——这是推导/展示
+      // 入口面，非执法）。无源码指令且无 ambient 侧车时保持旧快路径行为。
+      const r = opts.refine;
+      const hasDirective =
+        source.includes("@nudo:refine") || source.includes("@nudo:interface");
+      const sc =
+        opts.sidecarFp ??
+        (r.loadModule && r.fromFile
+          ? sidecarClosureFingerprint(r.fromFile, r)
+          : undefined);
+      const eff =
+        hasDirective || sc !== undefined
+          ? effectiveInterface(source, fnName, r)
+          : undefined;
+      const reqs = eff?.params ?? [];
       if (reqs.length > 0) {
-        entryReqs = reqs.map((r) => ({ param: r.param, pred: r.pred }));
-        for (const r of reqs) {
-          const idx = params.indexOf(r.param);
+        entryReqs = reqs.map((e) => ({
+          param: e.param,
+          pred: instantiateConstraint(e.constraint, e.param),
+        }));
+        for (const e of reqs) {
+          const idx = params.indexOf(e.param);
           if (idx >= 0) {
             // 契约挂入口：term 用真实参数名，pred 一并带上
-            const entryAbs = constraintToEntryAbs(r.constraint, r.param);
+            const entryAbs = constraintToEntryAbs(e.constraint, e.param);
             typeParams[idx] = {
               id: typeParams[idx]!.id,
               value: entryAbs,
             };
-            refineEntryShapes.set(r.param, {
+            refineEntryShapes.set(e.param, {
               abs: snapshotAbs(entryAbs),
               source: "refine",
             });

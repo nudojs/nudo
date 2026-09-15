@@ -34,6 +34,6 @@ export { BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS } from "./builtins/builtin-prot
 
 export { loadEnvs, loadEnvsAsync, preloadPathEnvs, type LoadedEnv } from "./env-loader.ts";
 
-export { findProjectConfig, type NudoConfig } from "./config.ts";
+export { findProjectConfig, interfaceConfig, type NudoConfig, type InterfaceConfig } from "./config.ts";
 
 export { resolveNpmNudo } from "./resolve-npm.ts";

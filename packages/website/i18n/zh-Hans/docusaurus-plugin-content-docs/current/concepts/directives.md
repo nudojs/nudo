@@ -7,6 +7,8 @@ description: "全部 @nudo: 指令（case、mock、pure、skip、sample、refine
 
 指令是控制 Nudo 如何分析代码的结构化注释。它们使用 `@nudo:` 命名空间以避免与 JSDoc 和其他工具冲突。将指令放在函数上方的块注释中。
 
+**interface 产品**（精化契约）主路径在侧车文件——`*.nudo.js` 模块自动绑定源码同名导出，`@nudo:refine` / `@nudo:interface` 是其兼容的源码内形态。见 [@nudo:refine](#nudorefine--refinement-contract) 与 [`nudo interface`](../guides/cli.md#nudo-interface) 命令。
+
 ## 指令语法
 
 所有指令都在 `@nudo:` 命名空间下，以结构化注释的形式编写：
@@ -39,6 +41,8 @@ async function fetchUser(id) {
 ---
 
 ## @nudo:case — 具名执行用例
+
+case 是 **debug 见证**：Nudo 用具体或符号输入执行函数。它不是 interface 产品——精化契约住在 `*.nudo.js` 侧车（见 [@nudo:refine](#nudorefine--refinement-contract)）。`@nudo:case` 在场景测试、`nudo test` 断言与 LSP 场景切换中保持完整支持。
 
 提供具名执行用例。每个用例定义输入（具体值或符号值），供 Nudo 执行函数时使用。
 
@@ -366,19 +370,85 @@ function sum(arr) {
 
 ## @nudo:refine — 精化契约 {#nudorefine--refinement-contract}
 
-把 `*.nudo.js` 模板里的精化挂到参数或返回值。约束以 Pred 进入 Abs，**参与代数**（`x>0` ⇒ `x+1>1`），不只是调用点挡板。
+把精化契约挂到参数或返回值。约束以 Pred 进入 Abs，**参与代数**（`x>0` ⇒ `x+1>1`），不只是调用点挡板。
 
-### 语法
+`@nudo:interface` 是 `@nudo:refine` 的**完全等价别名**（解析为同一源码内精化）；CLI / LSP / 诊断中的产品名为 **interface**。
+
+### 主路径：侧车自动绑定
+
+推荐形态把契约写在源码旁的侧车文件里：`<file>.nudo.js`（对应 `.js`/`.mjs`）或 `<file>.nudo.ts`（对应 `.ts`/`.mts`）。每个 `export const <name> = fn({ ... }, ...)` **自动绑定**源码中同名本地 named export——源码零注解：
+
+```javascript
+// calc.js
+export function addTax(x) {
+  return x + 1;
+}
+
+export function greet(name) {
+  return name;
+}
+```
+
+```javascript
+// std.nudo.js — 共享约束模板
+import { number } from "@nudojs/core";
+
+export const positive = number().gt(0);
+```
+
+```javascript
+// calc.nudo.js — 侧车契约
+import { fn, lit, number, string, union } from "@nudojs/core";
+import { positive } from "./std.nudo.js";
+
+export const addTax = fn({ x: positive.shift(1) }, number());
+export const greet = fn({ name: union(lit("ada"), lit("bob")) }, string());
+```
+
+```bash
+$ nudo interface calc.js
+calc.js
+  addTax  [handwritten]  (x: number().gt(1)) → number()
+  greet  [handwritten]  (name: union(lit("ada"), lit("bob"))) → string()
+```
+
+侧车是真实 JS 模块：可从 `@nudojs/core` 引入构建器、经相对 import 从**其它侧车**引入约束。加载失败、import 成环、不识别导出形态都是 **error**（`nudo:interface-load`、`nudo:interface-cycle`），不再静默回落。
+
+**构建器**（`@nudojs/core`，裸包名同样注入）：
+
+| 构建器 | 含义 | 示例 |
+|---------|------|------|
+| `number()` / `string()` / `boolean()` | 原始类型域 | `number()` |
+| `shape({ id: number() })` | 对象形状（字段递归） | `shape({ id: number().gt(0) })` |
+| `array(c)` | 数组元素约束 | `array(string())` |
+| `lit(v)` | 字面量域 | `lit(42)` / `lit("ada")` / `lit(true)` |
+| `union(...cs)` | 域之并 | `union(lit(42), lit("a"))` |
+| `fn(params, returns?, { throws? })` | 一等函数接口 | `fn({ x: number() }, number())` |
+| `.gt(n)` `.ge(n)` `.lt(n)` `.le(n)` `.int()` | 数值界（链式） | `number().gt(0).int()` |
+| `.min(n)` `.max(n)` | 字符串长度界（`length(s)` pred） | `string().min(1)` |
+| `.shift(n)` | 每个常数界整体 `+n` 平移 | `positive.shift(1)` |
+| `.and(...cs)` | 合取 | `positive.and(number().lt(10))` |
+| `partial(c)` / `pick(c, keys)` / `omit(c, keys)` | 形状工具 | `partial(user)` |
+
+`shift` 只对数值标量链合法（每个界的右端是字面量），否则 throw。`partial`/`pick`/`omit` 接受 `shape(...)` 约束。
+
+**自动绑定规则：**
+
+- 只绑定源码文件**同名本地 named export**（`export function` / `export const`）。re-export、`export default`、CJS 不参与。
+- `node_modules/` 下的侧车永不自动加载。
+- 源码注解与侧车对同参的约束**合取**；矛盾合取（如 `x > 0` ∧ `x < 0`）报 `nudo:interface-conflict`。
+- 合并序：手写（源码注解 ∪ 侧车绑定）> 生成段 > 隐式推导。`nudo interface` 按层标注（`[handwritten]` / `[generated]` / `[implicit]`）。
+
+### 源码内形态
 
 ```text
 @nudo:refine <param> <constraint>
 @nudo:refine return <constraint>
+@nudo:interface <param> <constraint>   // 别名
 ```
 
 - **param** — 参数名，或字面量 `return` 表示后置
 - **constraint** — 来自 `*.nudo.js` 的导出名，经 `/// @nudo:import` 引入
-
-模板参数无关（`number().gt(0)`、`shape({...})`）。绑定发生在 refine 站点。
 
 ### 示例
 
@@ -658,7 +728,7 @@ const result = a + b;
 | `@nudo:pure` | （无参数） | 标记纯函数以启用记忆化 |
 | `@nudo:skip` | `[returnsExpr]` | 跳过求值，使用已有类型信息 |
 | `@nudo:sample` | `N` | 控制不动点之前的循环采样次数 |
-| `@nudo:refine` | `param constraint` / `return constraint` | 精化契约（Pred 进入 Abs） |
+| `@nudo:refine` / `@nudo:interface` | `param constraint` / `return constraint` | 源码内精化契约（别名对；主路径是 `*.nudo.js` 侧车自动绑定） |
 | `@nudo:import` | `{ name } from "spec"`（文件级 `///`） | 为 `@nudo:refine` 引入 `*.nudo.js` 约束模板 |
 | `@nudo:env` | `name1, name2`（文件级 `///`） | 声明运行时环境 API |
 | `@nudo:mock-module` | `"module" from "path"`（文件级 `///`） | 替换导入的模块为 mock |

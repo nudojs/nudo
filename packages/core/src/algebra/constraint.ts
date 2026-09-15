@@ -6,17 +6,24 @@
  *   string().min(1)                   → 非空串（长度）
  *   array(number().gt(0))             → 元素约束
  *   shape({ id: number().gt(0) })     → object 形状约束
+ *   lit(42)                           → 字面量（prim + eq(self, 42)）
+ *   union(number().gt(0), lit(0))     → 成员析取（or / joinAbs）
+ *   fn({ x: number().gt(0) }, number()) → 一等函数约束
+ *   number().gt(0).shift(1)           → 界平移（x>0 ⇒ x+n>1）
  *   instantiate("ms")                 → Pred ms > 0 / u.id > 0 ∧ …
  *
  * 在 *.nudo.js 里执行；不是 zod 绑定，是我们自己的运行时 API。
  * 不需要 interface/type 语法——契约用 JS 表达式声明。
+ * 注意：本文件的 lit/and 构建器与 term/pred 同名导出在桶导出处冲突，
+ * 消费方从 "./constraint.ts" 直接路径导入。
  */
 
 import type { Pred, PrimName } from "./pred.ts";
-import { and, gt, ge, lt, le, ptypeof } from "./pred.ts";
-import { v as termVar, lit, app as termApp, type Term } from "./term.ts";
+import { and as pAnd, or, eq, gt, ge, lt, le, ptypeof, pTrue } from "./pred.ts";
+import { v as termVar, lit as termLit, app as termApp, type Term } from "./term.ts";
 import type { Abs } from "./abs.ts";
-import { abs } from "./abs.ts";
+import { abs, unknown } from "./abs.ts";
+import { joinAbs } from "./objects.ts";
 
 /** 模板占位项；instantiate 时换成真实参数名 */
 export const SELF = "__nudo_self__";
@@ -27,7 +34,7 @@ function selfTerm(): Term {
 
 /** 字段访问项：u.id */
 export function getTerm(obj: Term, key: string): Term {
-  return termApp("get", [obj, lit(key)]);
+  return termApp("get", [obj, termLit(key)]);
 }
 
 /** 长度项：length(u) */
@@ -52,6 +59,17 @@ export type NudoConstraint = {
   readonly int?: boolean;
   /** 该约束整体可选（shape 字段用；不用 optional 以免与链式方法撞名） */
   readonly isOptional?: boolean;
+  /** union 成员（析取）：instantiate 为 or(...)，entry Abs 为成员 join */
+  readonly members?: NudoConstraint[];
+  /** 一等函数约束（fn() 构建器产出） */
+  readonly fn?: NudoFnConstraint;
+};
+
+/** fn(params, returns?, { throws? }) 的一等函数约束形态 */
+export type NudoFnConstraint = {
+  params: Record<string, NudoConstraint>;
+  returns?: NudoConstraint;
+  throws?: NudoConstraint;
 };
 
 function isConstraint(x: unknown): x is NudoConstraint {
@@ -80,6 +98,11 @@ export type ConstraintBuilder = NudoConstraint & {
   max(n: number): ConstraintBuilder;
   /** string：精确长度 */
   length(n: number): ConstraintBuilder;
+  /**
+   * 界平移：term 平移 n 后重写常数界（x>0 ⇒ x+n>n）。
+   * 仅数值标量界链合法；length 界 / shape / array / union / fn → throw。
+   */
+  shift(n: number): ConstraintBuilder;
   /** 字段可选（仅在 shape 内有意义） */
   optional(): ConstraintBuilder;
 };
@@ -92,12 +115,16 @@ function makeBuilder(
     element?: NudoConstraint;
     int?: boolean;
     optional?: boolean;
+    members?: NudoConstraint[];
+    fn?: NudoFnConstraint;
   },
 ): ConstraintBuilder {
   const fields = extra?.fields;
   const element = extra?.element;
   const isInt = extra?.int;
   const optional = extra?.optional;
+  const members = extra?.members;
+  const fnSlot = extra?.fn;
   const base: NudoConstraint = {
     __nudoConstraint: true,
     ...(prim ? { prim } : {}),
@@ -106,21 +133,57 @@ function makeBuilder(
     ...(element ? { element } : {}),
     ...(isInt ? { int: true } : {}),
     ...(optional ? { isOptional: true } : {}),
+    ...(members ? { members } : {}),
+    ...(fnSlot ? { fn: fnSlot } : {}),
   };
   const add = (p: Pred): ConstraintBuilder =>
     makeBuilder(prim, [...preds, p], extra);
-  return Object.assign(Object.create(null), base, {
-    gt: (n: number) => add(gt(selfTerm(), lit(n))),
-    ge: (n: number) => add(ge(selfTerm(), lit(n))),
-    lt: (n: number) => add(lt(selfTerm(), lit(n))),
-    le: (n: number) => add(le(selfTerm(), lit(n))),
-    int: () => makeBuilder(prim ?? "number", preds, { ...extra, int: true }),
-    min: (n: number) => add(ge(lenTerm(selfTerm()), lit(n))),
-    max: (n: number) => add(le(lenTerm(selfTerm()), lit(n))),
-    length: (n: number) =>
-      add(and(ge(lenTerm(selfTerm()), lit(n)), le(lenTerm(selfTerm()), lit(n)))),
-    optional: () => makeBuilder(prim, preds, { ...extra, optional: true }),
-  }) as ConstraintBuilder;
+  // 方法先赋、base 后赋：`int: true` 数据标志覆盖同名链式方法——
+  // 否则 int 标志永远被方法遮蔽（.int() 已在链上调用过，二次调用无意义）。
+  return Object.assign(
+    Object.create(null),
+    {
+      gt: (n: number) => add(gt(selfTerm(), termLit(n))),
+      ge: (n: number) => add(ge(selfTerm(), termLit(n))),
+      lt: (n: number) => add(lt(selfTerm(), termLit(n))),
+      le: (n: number) => add(le(selfTerm(), termLit(n))),
+      int: () => makeBuilder(prim ?? "number", preds, { ...extra, int: true }),
+      min: (n: number) => add(ge(lenTerm(selfTerm()), termLit(n))),
+      max: (n: number) => add(le(lenTerm(selfTerm()), termLit(n))),
+      length: (n: number) =>
+        add(pAnd(ge(lenTerm(selfTerm()), termLit(n)), le(lenTerm(selfTerm()), termLit(n)))),
+      shift: (n: number) => {
+        if (fields || element || members || fnSlot)
+          throw new Error("nudo shift(): 仅数值标量约束链合法（不支持 shape/array/union/fn）");
+        if (prim !== undefined && prim !== "number")
+          throw new Error(`nudo shift(): 仅数值链合法（prim=${prim}）`);
+        return makeBuilder(prim, shiftBoundPreds(preds, n), extra);
+      },
+      optional: () => makeBuilder(prim, preds, { ...extra, optional: true }),
+    },
+    base,
+  ) as ConstraintBuilder;
+}
+
+/** 常数界平移：每个 gt/ge/lt/le 右端数字 lit +n；非法形态 throw */
+function shiftBoundPreds(preds: Pred[], n: number): Pred[] {
+  return preds.map((p): Pred => {
+    if (p.op !== "gt" && p.op !== "ge" && p.op !== "lt" && p.op !== "le")
+      throw new Error(`nudo shift(): 不支持 ${p.op} 谓词（仅 gt/ge/lt/le 常数界）`);
+    const { a, b } = p;
+    if (b.op !== "lit" || typeof b.value !== "number")
+      throw new Error("nudo shift(): 常数界右端须为数字字面量");
+    if (termHasApp(a, "length") || termHasApp(b, "length"))
+      throw new Error("nudo shift(): 不支持 length(...) 界");
+    return { op: p.op, a, b: termLit(b.value + n) };
+  });
+}
+
+/** 项里是否出现 fn 应用（如 length(u)） */
+function termHasApp(t: Term, fn: string): boolean {
+  if (t.op !== "app") return false;
+  if (t.fn === fn) return true;
+  return t.args.some((x) => termHasApp(x, fn));
 }
 
 /** number() —— 约束 number 原语 + 后续链式界 */
@@ -161,6 +224,143 @@ export function shape(
   return makeBuilder(undefined, [], { fields: mapped });
 }
 
+/** 归一化为纯数据约束（剥掉 builder 方法——成员快照不可再链式改写） */
+function toPlainConstraint(c: NudoConstraint): NudoConstraint {
+  if (!isConstraint(c))
+    throw new Error("nudo: 期望约束值（number()/string()/…或其组合子）");
+  return {
+    __nudoConstraint: true,
+    ...(c.prim ? { prim: c.prim } : {}),
+    preds: [...c.preds],
+    ...(c.fields ? { fields: c.fields } : {}),
+    ...(c.element ? { element: c.element } : {}),
+    // 严格 === true：未 int 链的 builder 上 c.int 是同名方法（truthy）
+    ...(c.int === true ? { int: true } : {}),
+    ...(c.isOptional ? { isOptional: true } : {}),
+    ...(c.members ? { members: c.members } : {}),
+    ...(c.fn ? { fn: c.fn } : {}),
+  };
+}
+
+/** lit(v)：字面量契约——prim 按 v 类型、eq(self, v) pred 编码（不开新字段） */
+export function lit(v: number | string | boolean | null): ConstraintBuilder {
+  const prim: PrimName | undefined =
+    typeof v === "number" ? "number"
+    : typeof v === "string" ? "string"
+    : typeof v === "boolean" ? "boolean"
+    : undefined;
+  return makeBuilder(prim, [eq(selfTerm(), termLit(v))]);
+}
+
+/** union(...cs)：成员析取；instantiate 为 or(...)，entry Abs 为成员 joinAbs。空参 throw */
+export function union(
+  ...cs: (NudoConstraint | ConstraintBuilder)[]
+): ConstraintBuilder {
+  if (cs.length === 0)
+    throw new Error("nudo union(): 至少需要一个成员约束");
+  return makeBuilder(undefined, [], { members: cs.map(toPlainConstraint) });
+}
+
+/**
+ * fn(params, returns?, { throws? })：一等函数约束。
+ * Phase 1 只展示不执法：参数位 instantiate 恒真（pTrue），
+ * 逐参约束经 fnConstraintToEntryReqs 消费。
+ */
+export function fn(
+  params: Record<string, NudoConstraint | ConstraintBuilder>,
+  returns?: NudoConstraint | ConstraintBuilder,
+  opts?: { throws?: NudoConstraint | ConstraintBuilder },
+): ConstraintBuilder {
+  const normalized: Record<string, NudoConstraint> = {};
+  for (const [k, v] of Object.entries(params)) normalized[k] = toPlainConstraint(v);
+  return makeBuilder(undefined, [], {
+    fn: {
+      params: normalized,
+      ...(returns !== undefined ? { returns: toPlainConstraint(returns) } : {}),
+      ...(opts?.throws !== undefined ? { throws: toPlainConstraint(opts.throws) } : {}),
+    },
+  });
+}
+
+/**
+ * and(...cs)：标量合取（Phase 1 最小实现）。
+ * prim 一致（缺省 prim 视为无 prim 约束、可与任意 prim 合并）→ preds 拼接；
+ * prim 不一致或任一含 fields/element/members/fn → throw。
+ */
+export function and(
+  ...cs: (NudoConstraint | ConstraintBuilder)[]
+): ConstraintBuilder {
+  if (cs.length === 0)
+    throw new Error("nudo and(): 至少需要一个约束");
+  let prim: PrimName | undefined;
+  let isInt = false;
+  let allOptional = true;
+  const preds: Pred[] = [];
+  for (const c of cs) {
+    if (!isConstraint(c))
+      throw new Error("nudo: 期望约束值（number()/string()/…或其组合子）");
+    if (c.fields || c.element || c.members || c.fn)
+      throw new Error("nudo and(): Phase 1 仅支持标量约束合取（不支持 shape/array/union/fn）");
+    if (c.prim) {
+      if (prim !== undefined && prim !== c.prim)
+        throw new Error(`nudo and(): prim 不一致（${prim} vs ${c.prim}）`);
+      prim = c.prim;
+    }
+    preds.push(...c.preds);
+    // 严格 === true：未 int 链的 builder 上 c.int 是同名方法（truthy）
+    if (c.int === true) isInt = true;
+    if (!c.isOptional) allOptional = false;
+  }
+  return makeBuilder(prim, preds, {
+    ...(isInt ? { int: true } : {}),
+    ...(allOptional ? { optional: true } : {}),
+  });
+}
+
+/** partial(c)：shape 全字段变可选；非 shape throw */
+export function partial(c: NudoConstraint | ConstraintBuilder): ConstraintBuilder {
+  if (!isConstraint(c) || !c.fields)
+    throw new Error("nudo partial(): 仅接受 shape(...) 约束");
+  const fields: Record<string, NudoField> = {};
+  for (const [k, f] of Object.entries(c.fields)) {
+    fields[k] = {
+      constraint: { ...toPlainConstraint(f.constraint), isOptional: true },
+      optional: true,
+    };
+  }
+  return makeBuilder(c.prim, c.preds, { fields });
+}
+
+/** pick(c, keys)：shape 子形状（不存在的 key 忽略）；非 shape throw */
+export function pick(
+  c: NudoConstraint | ConstraintBuilder,
+  keys: string[],
+): ConstraintBuilder {
+  if (!isConstraint(c) || !c.fields)
+    throw new Error("nudo pick(): 仅接受 shape(...) 约束");
+  const fields: Record<string, NudoField> = {};
+  for (const k of keys) {
+    const f = c.fields[k];
+    if (f) fields[k] = f;
+  }
+  return makeBuilder(c.prim, c.preds, { fields });
+}
+
+/** omit(c, keys)：shape 去字段；非 shape throw */
+export function omit(
+  c: NudoConstraint | ConstraintBuilder,
+  keys: string[],
+): ConstraintBuilder {
+  if (!isConstraint(c) || !c.fields)
+    throw new Error("nudo omit(): 仅接受 shape(...) 约束");
+  const drop = new Set(keys);
+  const fields: Record<string, NudoField> = {};
+  for (const [k, f] of Object.entries(c.fields)) {
+    if (!drop.has(k)) fields[k] = f;
+  }
+  return makeBuilder(c.prim, c.preds, { fields });
+}
+
 function substTerm(t: Term, paramName: string): Term {
   if (t.op === "var" && t.id === SELF) return termVar(paramName);
   if (t.op === "app" && t.fn === "get" && t.args.length === 2) {
@@ -185,7 +385,7 @@ function substPred(p: Pred, paramName: string): Pred {
       return { op: "typeof", t: substTerm(p.t, paramName), type: p.type };
     }
     case "and":
-      return and(...p.args.map((x) => substPred(x, paramName)));
+      return pAnd(...p.args.map((x) => substPred(x, paramName)));
     default:
       return p;
   }
@@ -205,7 +405,23 @@ export function instantiateConstraint(
     }
     if (c.prim) parts.push(ptypeof(termVar(paramName), c.prim));
     if (parts.length === 0) return { op: "true" };
-    return parts.length === 1 ? parts[0]! : and(...parts);
+    return parts.length === 1 ? parts[0]! : pAnd(...parts);
+  }
+
+  // union：各成员实例化后 or 并（节点自身 preds 一并合取；
+  // 与标量链同口径——有实质谓词时节点 prim 不再补 typeof）
+  if (c.members) {
+    const disj = or(
+      ...c.members.map((m) => instantiateOnTerm(m, termVar(paramName))),
+    );
+    const own = c.preds.map((p) => substPred(p, paramName));
+    return own.length === 0 ? disj : pAnd(...own, disj);
+  }
+
+  // fn 形态出现在参数位：Phase 1 只展示不执法 → 恒真
+  if (c.fn) {
+    const own = c.preds.map((p) => substPred(p, paramName));
+    return own.length === 0 ? pTrue : pAnd(...own);
   }
 
   const preds = c.preds.map((p) => substPred(p, paramName));
@@ -213,19 +429,11 @@ export function instantiateConstraint(
   if (c.prim && c.preds.length === 0) {
     return ptypeof(termVar(paramName), c.prim);
   }
-  return preds.length === 0 ? { op: "true" } : preds.length === 1 ? preds[0]! : and(...preds);
+  return preds.length === 0 ? { op: "true" } : preds.length === 1 ? preds[0]! : pAnd(...preds);
 }
 
-/** 在给定项上实例化约束（shape 字段递归用） */
+/** 在给定项上实例化约束（shape 字段/union 成员递归用） */
 function instantiateOnTerm(c: NudoConstraint, t: Term): Pred {
-  if (c.fields) {
-    const parts: Pred[] = [];
-    for (const [key, field] of Object.entries(c.fields)) {
-      parts.push(instantiateOnTerm(field.constraint, getTerm(t, key)));
-    }
-    if (parts.length === 0) return { op: "true" };
-    return parts.length === 1 ? parts[0]! : and(...parts);
-  }
   const subst = (p: Pred): Pred => {
     switch (p.op) {
       case "gt":
@@ -243,19 +451,39 @@ function instantiateOnTerm(c: NudoConstraint, t: Term): Pred {
         return { op: "typeof", t: tt, type: p.type };
       }
       case "and":
-        return and(...p.args.map(subst));
+        return pAnd(...p.args.map(subst));
       default:
         return p;
     }
   };
+  if (c.fields) {
+    const parts: Pred[] = [];
+    for (const [key, field] of Object.entries(c.fields)) {
+      parts.push(instantiateOnTerm(field.constraint, getTerm(t, key)));
+    }
+    if (parts.length === 0) return { op: "true" };
+    return parts.length === 1 ? parts[0]! : pAnd(...parts);
+  }
+  // union：各成员在该项上实例化后 or 并
+  if (c.members) {
+    const disj = or(...c.members.map((m) => instantiateOnTerm(m, t)));
+    const own = c.preds.map(subst);
+    return own.length === 0 ? disj : pAnd(...own, disj);
+  }
+  // fn 形态：Phase 1 只展示不执法 → 恒真
+  if (c.fn) {
+    const own = c.preds.map(subst);
+    return own.length === 0 ? pTrue : pAnd(...own);
+  }
   const preds = c.preds.map(subst);
   if (c.prim && c.preds.length === 0) return ptypeof(t, c.prim);
-  return preds.length === 0 ? { op: "true" } : preds.length === 1 ? preds[0]! : and(...preds);
+  return preds.length === 0 ? { op: "true" } : preds.length === 1 ? preds[0]! : pAnd(...preds);
 }
 
 /**
  * 契约 → 函数入口 param Abs（infer/hover 用）。
- * 标量：prim + pred；shape：obj slots 递归。
+ * 标量：prim + pred；shape：obj slots 递归；union：成员 joinAbs；
+ * fn 形态：退化 unknown（不是参数位标量值），逐参约束由 fnConstraintToEntryReqs 消费。
  */
 export function constraintToEntryAbs(
   c: NudoConstraint,
@@ -291,6 +519,17 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
     }
     return abs({ k: "obj", slots }, t, undefined, "path");
   }
+  // union：各成员 entry Abs 的 joinAbs（joinValues 按需 sum/prim 并）
+  if (c.members) {
+    return c.members
+      .map((m) => constraintOnTermAbs(m, t))
+      .reduce((a, b) => joinAbs(a, b));
+  }
+  // fn 形态出现在参数位：无标量 entry 表达，退化 unknown（不 throw——
+  // entry@ 生成等入口会把任意约束喂进来；逐参约束由 fnConstraintToEntryReqs 消费）
+  if (c.fn) {
+    return unknown;
+  }
   // array(item) → arr(element)；元素项独立，不继承外层 term
   if (c.element) {
     const elem = constraintOnTermAbs(c.element, termVar("x[]"));
@@ -306,4 +545,18 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
     return abs({ k: "prim", type: "number" }, t, predOut, "path");
   }
   return abs({ k: "any" }, t, undefined, "path");
+}
+
+/**
+ * fn 约束 → 逐参约束表（interface 推导 / 入口签名消费）。
+ * 非 fn() 形态 throw——调用方应先判 c.fn。
+ */
+export function fnConstraintToEntryReqs(
+  c: NudoConstraint,
+): Array<{ param: string; constraint: NudoConstraint }> {
+  if (!c.fn) throw new Error("nudo fnConstraintToEntryReqs(): 约束不是 fn() 形态");
+  return Object.entries(c.fn.params).map(([param, constraint]) => ({
+    param,
+    constraint,
+  }));
 }

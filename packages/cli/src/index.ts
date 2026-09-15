@@ -490,6 +490,157 @@ program
     }
   });
 
+/**
+ * `nudo interface`（别名 `nudo refine`）：默认只打印每函数有效契约与来源分层
+ * （handwritten / generated / implicit）——设计稿 §11 第 0 步。
+ * `--emit` 走写盘器（interface-emitter.ts，§7.3/§9）。
+ */
+async function runInterface(file: string, records?: CallRecord[]): Promise<void> {
+  const { interfaceSurface } = await import("@nudojs/service");
+  const filePath = resolve(file);
+  const entries = await interfaceSurface(filePath, { records });
+  const rel = relative(process.cwd(), filePath) || filePath;
+  console.log(`${rel}`);
+  if (entries.length === 0) {
+    console.log("  (no top-level functions found)");
+    console.log();
+    return;
+  }
+  for (const e of entries) {
+    const params = `(${e.params.map((p) => `${p.name}: ${p.display}`).join(", ")})`;
+    let line = `  ${e.fn}  [${e.source}]  ${params}`;
+    if (e.returns !== undefined) line += ` → ${e.returns}`;
+    if (e.kind === "local") line += "  (local)";
+    console.log(line);
+  }
+  console.log();
+}
+
+/**
+ * `nudo interface --emit <file>`：把调用点域投影固化为侧车 `@generated` 段。
+ * 固定 mode=update（剥离生成段再重排，幂等；--exit-on-diff 配 --dry-run 作
+ * CI 门禁，类比 infer --emit-cases=update --dry-run）。默认无过滤 = 只刷新
+ * 已有生成段（§7.3 --known 语义）；--fn 白名单 / --all 显式放宽。
+ */
+async function runInterfaceEmit(
+  file: string,
+  opts: { fnNames: string[]; all: boolean; known: boolean; dryRun: boolean; exitOnDiff: boolean; records?: CallRecord[] },
+): Promise<void> {
+  const { emitInterface } = await import("@nudojs/service");
+  const filePath = resolve(file);
+  const result = await emitInterface(filePath, {
+    fnNames: opts.fnNames.length > 0 ? opts.fnNames : undefined,
+    mode: "update",
+    knownOnly: opts.fnNames.length === 0 && !opts.all,
+    all: opts.all,
+    dryRun: opts.dryRun,
+    records: opts.records,
+  });
+  const rel = relative(process.cwd(), filePath) || filePath;
+  if (result.changed) {
+    if (opts.dryRun) {
+      console.log(`[dry-run] would update ${rel}:`);
+      console.log(result.diff ?? "");
+    } else {
+      const sc = relative(process.cwd(), result.sidecarPath) || result.sidecarPath;
+      console.log(`Updated ${rel} → ${sc}`);
+      console.log(`  written: ${result.written.join(", ") || "(none)"}`);
+    }
+  } else {
+    console.log(`${rel}: no interface changes`);
+  }
+  for (const s of result.skipped.filter((x) => x.reason !== "no-change")) {
+    console.log(`  skipped ${s.fn} (${s.reason})`);
+  }
+  for (const i of result.issues) {
+    console.error(`${rel}: [${i.severity}] ${i.code}: ${i.message}`);
+    if (i.severity === "error") process.exitCode = 1;
+  }
+  if (opts.exitOnDiff && result.changed) process.exitCode = 1;
+  if (result.changed && !opts.dryRun) {
+    console.log(`  re-run \`nudo check ${rel}\` to see the persisted interfaces in action`);
+  }
+}
+
+program
+  .command("interface")
+  .alias("refine")
+  .description(
+    "Print each function's effective interface with its source layer (handwritten / generated / implicit); --emit persists inferred call-site domains as @generated sidecar segments",
+  )
+  .argument("[paths...]", "File(s) or directory(s); at least one required (with --emit these are the emit targets)")
+  .option("--emit", "Write/update @generated sidecar segments instead of printing (mode: update — strips and rewrites generated segments, idempotent)")
+  .option(
+    "--fn <name>",
+    "With --emit: only these export names (repeatable). Phase 1 filters the target file's own exports; cross-file root-closure emit arrives with Phase 2 derivation",
+    (v: string, acc: string[]) => {
+      acc.push(v);
+      return acc;
+    },
+    [] as string[],
+  )
+  .option("--known", "With --emit: only refresh already-persisted @generated segments (also the default when no filter is given)")
+  .option("--all", "With --emit: target every top-level export of the file (explicit opt-in — prefer --fn/--known to keep diffs reviewable)")
+  .option("--dry-run", "With --emit: print a unified diff instead of writing to disk")
+  .option("--exit-on-diff", "With --emit: exit 1 when the sidecar would change (CI gate)")
+  .option("--callsites <paths...>", "Usage-site files (tests/apps): their calls to this file's exports feed the domain evidence for print/emit (domain roots with no in-file call sites)")
+  .action(
+    async (
+      paths: string[],
+      opts: {
+        emit?: boolean;
+        fn?: string[];
+        known?: boolean;
+        all?: boolean;
+        dryRun?: boolean;
+        exitOnDiff?: boolean;
+        callsites?: string[];
+      },
+    ) => {
+      if (paths.length === 0) {
+        console.error(
+          "Usage error: `nudo interface` needs at least one path. " +
+            (opts.emit
+              ? "Writing additionally respects filters: --fn <names> / --known (default) / --all."
+              : "Print-only this phase; pass a file or directory."),
+        );
+        process.exitCode = 1;
+        return;
+      }
+      if (opts.emit && opts.all) {
+        console.error(
+          "warning: --all emits every export of the target file(s); review noise grows fast — prefer --fn/--known.",
+        );
+      }
+      const targets: string[] = [];
+      for (const p of paths) targets.push(...resolveTargets(p));
+      const externalRecords = opts.callsites?.length ? collectExternalRecords(opts.callsites) : undefined;
+      // 侧车（*.nudo.js / *.nudo.ts）是契约模块不是接口根——显式传入或目录
+      // 扫描命中都跳过，避免对契约文件本身打印 "(no top-level functions found)" 噪声
+      const roots = targets.filter((t) => !/\.nudo\.(js|ts)$/.test(t));
+      if (roots.length === 0) return;
+      for (const t of roots) {
+        try {
+          if (opts.emit) {
+            await runInterfaceEmit(t, {
+              fnNames: opts.fn ?? [],
+              all: opts.all === true,
+              known: opts.known === true,
+              dryRun: opts.dryRun === true,
+              exitOnDiff: opts.exitOnDiff === true,
+              records: externalRecords,
+            });
+          } else {
+            await runInterface(t, externalRecords);
+          }
+        } catch (err) {
+          console.error(`Error analyzing ${relative(process.cwd(), t)}: ${(err as Error).message}`);
+          process.exitCode = 1;
+        }
+      }
+    },
+  );
+
 program
   .command("test")
   .description("Run @nudo:case directives as assertions (case-as-test); exit 1 on failure")

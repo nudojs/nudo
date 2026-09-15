@@ -18,10 +18,27 @@ import {
 } from "./ast-eval.ts";
 import { leqAbs } from "./leq.ts";
 import {
-  refineToIndexedFull,
   extractRefineReturnFromSource,
+  setRefineDiagCollector,
+  takeRefineDiags,
 } from "./refine.ts";
-import type { NudoConstraint, NudoField } from "./constraint.ts";
+import {
+  effectiveInterface,
+  formatConstraint,
+  localNamedExports,
+  setInterfaceDiagCollector,
+  sidecarClosureFingerprint,
+  sidecarPathOf,
+  takeInterfaceDiags,
+  type EffectiveInterface,
+} from "./interface.ts";
+import {
+  constraintToEntryAbs,
+  instantiateConstraint,
+  type NudoConstraint,
+  type NudoField,
+} from "./constraint.ts";
+import { absToConstraint, joinThenProject } from "./projection.ts";
 import { extractFn, generalizeFromAst } from "./generalize.ts";
 import { getSlot } from "./objects.ts";
 import { canSkipLiteralCallScan } from "./fn-fp.ts";
@@ -32,7 +49,7 @@ import {
   normPath,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
-import { numLit, litValue } from "./abs.ts";
+import { boolLit, litValue, numLit, strLit } from "./abs.ts";
 import type { Abs } from "./abs.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { pTrue, predToString } from "./pred.ts";
@@ -123,6 +140,7 @@ function checkMemoKey(
   source: string,
   identityOpts: CheckOptions,
   deps: LoadDepsFingerprint,
+  sidecarFp?: string,
 ): string {
   // identity must stay the caller's raw loadModule or every checkSource
   // allocates a new loadModuleId and memo never hits.
@@ -131,6 +149,7 @@ function checkMemoKey(
     filePath,
     `${loadModuleId(identityOpts.loadModule)}:${identityOpts.fromFile ?? ""}`,
     deps.fp,
+    sidecarFp ?? "-",
   ].join("|");
 }
 
@@ -206,18 +225,33 @@ export function checkSource(
     };
   }
 
+  // 诊断纯缓冲模式：refine/interface 侧车诊断由 checkSource 统一收口进报告
+  setRefineDiagCollector(null);
+  setInterfaceDiagCollector(null);
+
   const useMemo = phi.op === "true";
   let memoKey: string | undefined;
   // 尾部无 @nudo 的注释/空行不进键：comment-only 编辑复用 CheckReport
   const stable = stableAnalyzeKeySource(source);
   // 一次指纹：check 整文件 memo + 所有 generalize L0 共用（避免 per-fn 重读 dep）
   const depsFp = checkDepsFingerprint(stable, callOpts);
-  // 截断指纹不可信：fail-open，整文件与 L0 都不 memo
-  const allowMemo = useMemo && !depsFp.truncated;
+  // ambient 侧车闭包指纹：进 memo 键（侧车变更 → 报告失效）+ 存在性门控 +
+  // 逐出登记（evictCheckSourceMemoForPaths）；截断前缀 → 键不可信 fail-open
+  const sidecarFp =
+    callOpts.loadModule && callOpts.fromFile
+      ? sidecarClosureFingerprint(callOpts.fromFile, callOpts)
+      : undefined;
+  const allowMemo =
+    useMemo && !depsFp.truncated && !(sidecarFp?.startsWith("trunc:") ?? false);
   if (allowMemo) {
-    memoKey = checkMemoKey(filePath, stable, opts, depsFp);
+    memoKey = checkMemoKey(filePath, stable, opts, depsFp, sidecarFp);
     const hit = checkMemoGet(memoKey);
-    if (hit) return cloneCheckReport(hit);
+    if (hit) {
+      // 命中路径本次无诊断产生；取即清空，防跨调用泄漏
+      takeRefineDiags();
+      takeInterfaceDiags();
+      return cloneCheckReport(hit);
+    }
   }
 
   const issues: CheckIssue[] = [];
@@ -225,6 +259,12 @@ export function checkSource(
   // 单次 parse：listTopFunctions / generalize / analyzeFn / scan 共用
   const file = parse(source);
   const names = listTopFunctions(source, file);
+
+  // 侧车路径登记进 memo 依赖：`*.nudo.js` 变更后定向逐出
+  const memoPaths =
+    sidecarFp !== undefined && callOpts.fromFile
+      ? [...new Set([...depsFp.paths, normPath(sidecarPathOf(callOpts.fromFile))])]
+      : depsFp.paths;
 
   // 递归截断：与 TypeValue 的 nudo:recursion-truncated 对齐
   const truncated = new Set<string>();
@@ -243,12 +283,50 @@ export function checkSource(
       truncated,
       opts,
       depsFp,
+      sidecarFp,
     );
-    if (memoKey) checkMemoSet(memoKey, report, depsFp.paths);
+    // 侧车诊断 side-channel 收口：nudo:interface-load / interface-cycle 等
+    // 不再静默（同源重复收集按 code+message 去重）
+    const diagIssues = sidecarDiagIssues([
+      ...takeRefineDiags(),
+      ...takeInterfaceDiags(),
+    ]);
+    if (diagIssues.length > 0) {
+      report.issues.push(...diagIssues);
+      const errors = report.issues.filter((i) => i.severity === "error").length;
+      const warnings = report.issues.filter((i) => i.severity === "warning").length;
+      const infos = report.issues.filter((i) => i.severity === "info").length;
+      report.ok = errors === 0;
+      report.summary = {
+        errors,
+        warnings,
+        infos,
+        functions: report.summary.functions,
+      };
+    }
+    if (memoKey) checkMemoSet(memoKey, report, memoPaths);
     return cloneCheckReport(report);
   } finally {
     setAbsTruncationCollector(null);
   }
+}
+
+/**
+ * refine/interface 侧车诊断 → CheckIssue（全部 error；code+message 去重，
+ * 同一失败侧车会在 generalize / 返回后置 / case 对账多处被重复探测）。
+ */
+function sidecarDiagIssues(
+  diags: Array<{ code: string; message: string; file?: string }>,
+): CheckIssue[] {
+  const seen = new Set<string>();
+  const out: CheckIssue[] = [];
+  for (const d of diags) {
+    const k = `${d.code}\0${d.message}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ severity: "error", code: d.code, message: d.message });
+  }
+  return out;
 }
 
 function checkSourceInner(
@@ -263,9 +341,16 @@ function checkSourceInner(
   truncated: Set<string>,
   identityOpts: CheckOptions = opts,
   depsFp?: LoadDepsFingerprint,
+  sidecarFp?: string,
 ): CheckReport {
   // 整文件一次判定，避免 per-function includes 全文扫
-  const hasRefineDirective = source.includes("@nudo:refine");
+  const hasRefineDirective =
+    source.includes("@nudo:refine") || source.includes("@nudo:interface");
+  // ambient 侧车存在时预取本地导出表（一次 parse）：侧车同名绑定只落本地 named export
+  const exportedNames =
+    sidecarFp !== undefined ? localNamedExports(source) : undefined;
+  // T10a：generated 事实快照的 drift 候选（每函数级，统一在拿到 varAbs 后判定）
+  const driftCandidates: DriftCandidate[] = [];
   // generalize L0 用调用方原始 loadModule 身份；opts 可能是 per-call I/O wrapper
   const refineLoad = identityOpts.loadModule ?? opts.loadModule;
   const refineFrom = identityOpts.fromFile ?? opts.fromFile ?? filePath;
@@ -277,6 +362,7 @@ function checkSourceInner(
         fromFile: refineFrom,
       },
       depsFp,
+      sidecarFp,
     });
     if (!g) {
       issues.push({
@@ -299,16 +385,38 @@ function checkSourceInner(
       conf: g.symbolic.conf,
     });
 
-    // 后置：@nudo:refine return <constraint> —— 推断返回值 ⊭ 契约
-    if (hasRefineDirective) {
-      const ret = extractRefineReturnFromSource(source, name, {
-        loadModule: refineLoad,
-        fromFile: refineFrom,
-      });
-      if (ret) {
+    // 有效契约（源码 @nudo:refine/@nudo:interface ∪ 侧车同名手写绑定）：
+    // - conflict（常数界交叉矛盾）→ nudo:interface-conflict，fn 级一次
+    // - 返回后置仅 handwritten 执法（generated = 事实快照，drift 另行）
+    if (hasRefineDirective || (exportedNames?.has(name) ?? false)) {
+      const intfOpts = { loadModule: refineLoad, fromFile: refineFrom };
+      const eff = effectiveInterface(source, name, intfOpts);
+      if (eff?.conflict) {
+        issues.push({
+          severity: "error",
+          code: "nudo:interface-conflict",
+          message: `${name}: 手写契约合取不可满足（${eff.conflict.params.join(", ")}）`,
+          suggestion: "检查源码 @nudo:refine 与侧车同名绑定的常数界是否矛盾",
+          fn: name,
+        });
+      }
+      if (eff && eff.source === "handwritten" && eff.returns) {
+        // 显示名优先取源码声明名（既有输出契约零改动）；侧车合取无名单 → 组合式显示
+        const named = extractRefineReturnFromSource(source, name, intfOpts);
+        const display = named?.name ?? formatConstraint(eff.returns.constraint);
         issues.push(
-          ...checkReturnConstraint(name, ret.name, ret.constraint, g.symbolic),
+          ...checkReturnConstraint(name, display, eff.returns.constraint, g.symbolic),
         );
+      }
+      // T10a drift 候选：generated 段是 emit 时的固化快照，与今日重算的
+      // 语义差异在 interfaceDriftIssues 统一判定（warning，generated 不执法）
+      if (eff && eff.source === "generated") {
+        driftCandidates.push({
+          fnName: name,
+          paramNames: g.params,
+          eff,
+          symbolic: g.symbolic,
+        });
       }
     }
 
@@ -371,12 +479,27 @@ function checkSourceInner(
       });
   issues.push(...callIssues);
 
+  // T10a：固化生成段 drift——generated 快照 ≠ 今日重算 → warning
+  // （在 varAbs 就绪后跑：标识符实参证据需要顶层绑定表）
+  if (driftCandidates.length > 0) {
+    issues.push(
+      ...interfaceDriftIssues(driftCandidates, file, varAbs, (fnName, args) => {
+        try {
+          return analyzeFn(source, fnName, args, phi, undefined, file);
+        } catch {
+          return undefined;
+        }
+      }),
+    );
+  }
+
   // case 是见证：@nudo:case 实参 ⊄ refine → inconsistency
   issues.push(
     ...scanCaseInconsistency(source, names, {
       loadModule: opts.loadModule,
       fromFile: filePath,
       file,
+      sidecarPresent: sidecarFp !== undefined,
     }),
   );
 
@@ -578,6 +701,8 @@ function structuralAssignIssues(records: AbsAssignRecord[]): CheckIssue[] {
 /**
  * case 是契约的见证：`@nudo:case` 实参 ⊄ refine → nudo:case-inconsistency。
  * 只检查字面量实参（数字/字符串/布尔/null）；非字面量跳过，不猜。
+ * 有效契约走 effectiveInterface：只执法 handwritten（generated 段 = 事实
+ * 快照不执法）；conflict 参数已由 fn 级 nudo:interface-conflict 覆盖，跳过。
  */
 function scanCaseInconsistency(
   source: string,
@@ -586,12 +711,18 @@ function scanCaseInconsistency(
     loadModule?: (spec: string, fromFile: string) => string | undefined;
     fromFile?: string;
     file?: ReturnType<typeof parse>;
+    /** ambient 侧车存在（checkSource 预探测）：无源码 refine 时侧车契约仍需对账 */
+    sidecarPresent?: boolean;
   },
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
-  // 快路径：无 case 指令则免整树 walk；无 refine 时 case 不可能 ⊄ 契约
+  // 快路径：无 case 指令则免整树 walk；无契约来源时 case 不可能 ⊄ 契约
   if (!source.includes("@nudo:case")) return out;
-  if (!source.includes("@nudo:refine")) return out;
+  const hasContractOrigin =
+    source.includes("@nudo:refine") ||
+    source.includes("@nudo:interface") ||
+    opts.sidecarPresent === true;
+  if (!hasContractOrigin) return out;
   const file = opts.file ?? parse(source);
 
   /** 解析 case 实参列表里的简单字面量 */
@@ -659,10 +790,29 @@ function scanCaseInconsistency(
     const g = generalizeFromAst(fnName, source, file ? { file } : {});
     if (!g) return;
     const paramNames = g.params;
-    const reqs = refineToIndexedFull(source, fnName, paramNames, {
+    // 有效契约单点读取：只执法 handwritten（generated/implicit 不执法）
+    const eff = effectiveInterface(source, fnName, {
       loadModule: opts.loadModule,
       fromFile: opts.fromFile ?? "",
     });
+    if (!eff || eff.source !== "handwritten") return;
+    const conflictParams = new Set(eff.conflict?.params ?? []);
+    const reqs: Array<
+      [number, { param: string; pred: Pred; constraint: NudoConstraint }]
+    > = [];
+    for (const p of eff.params) {
+      if (conflictParams.has(p.param)) continue;
+      const idx = paramNames.indexOf(p.param);
+      if (idx < 0) continue;
+      reqs.push([
+        idx,
+        {
+          param: p.param,
+          pred: instantiateConstraint(p.constraint, p.param),
+          constraint: p.constraint,
+        },
+      ]);
+    }
     if (reqs.length === 0) return;
 
     const absArgs = args.map((a) => parseLitArg(a) ?? absUnknown());
@@ -751,6 +901,182 @@ function scanCaseInconsistency(
     }
   };
   visit(file);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// T10a：nudo:interface-drift（固化生成段 ≠ 今日重算，warning）
+//
+// generated 段是 emit 时刻的固化事实快照（不执法）；本检查把它与「今日
+// 重算」做语义对比（§6 证据门槛：conf∈{exact,path} 且无截断标记，无证据
+// 不判——real-package zero-FP 红线）：
+// - 参数位：今日 = 该函数字面量调用点实参域（joinThenProject 投影归一）；
+// - 返回位：今日 = 逐调用点结果域（全证据实参 analyzeFn 重跑，与 emit 的
+//   case-result 投影同源；无结果证据不判）。
+// 语义相等 = 双方经 constraintToEntryAbs 进 entry Abs 后 leqAbs(a,b) &&
+// leqAbs(b,a)（不比字符串；两侧同构归一是关键——裸 numLit 域不带 pred，
+// 直接与 entry Abs 比 leq 会因 typeof/eq 锚定 pred 恒失败）。每 fn 每位
+// （参数名 / return）最多一条。
+// ---------------------------------------------------------------------------
+
+/** drift 候选：generated 有效契约 + 今日入口签名（checkSourceInner 每函数级收集） */
+type DriftCandidate = {
+  fnName: string;
+  /** generalize 形参名表（eff.params 的参数名 → 调用点实参位） */
+  paramNames: string[];
+  eff: EffectiveInterface;
+  /** 符号 Abs（返回位的今日重算现场变量，与 checkReturnConstraint 同源） */
+  symbolic: Abs;
+};
+
+/** §6 证据门槛：conf∈{exact,path} 且非 unknown/any。截断求值会被宽化为
+ *  partial/opaque（或退化为 unknown），自然出局——无需另查截断标记。 */
+function driftEvidence(a: Abs | undefined): a is Abs {
+  if (!a) return false;
+  if (a.conf !== "exact" && a.conf !== "path") return false;
+  return a.shape.k !== "unknown" && a.shape.k !== "any";
+}
+
+/**
+ * 静态解析调用实参节点 → Abs（scanLiteralCalls parseCallArgs 的最小子集：
+ * 标量字面量 + 顶层绑定表标识符）。对象/数组/嵌套调用等复杂形态不产
+ * 证据——drift 宁缺勿滥；别名/转发调用不采集（执法路径已在 scan 覆盖）。
+ */
+function driftArgAbs(
+  node: Record<string, unknown>,
+  varAbs: Map<string, Abs>,
+): Abs | undefined {
+  if (node.type === "NumericLiteral" && typeof node.value === "number") {
+    return numLit(node.value);
+  }
+  if (
+    node.type === "UnaryExpression" &&
+    node.operator === "-" &&
+    (node.argument as Record<string, unknown> | undefined)?.type === "NumericLiteral"
+  ) {
+    return numLit(-(node.argument as { value: number }).value);
+  }
+  if (node.type === "StringLiteral" && typeof node.value === "string") {
+    return strLit(node.value);
+  }
+  if (node.type === "BooleanLiteral" && typeof node.value === "boolean") {
+    return boolLit(node.value);
+  }
+  if (node.type === "Identifier" && typeof node.name === "string") {
+    return varAbs.get(node.name);
+  }
+  return undefined;
+}
+
+/** 每函数逐调用点实参表（仅 callee 为候选函数名的直接标识符调用） */
+function collectDriftCallsites(
+  file: ReturnType<typeof parse>,
+  wanted: Set<string>,
+  varAbs: Map<string, Abs>,
+): Map<string, Array<{ args: Array<Abs | undefined>; line?: number }>> {
+  const out = new Map<string, Array<{ args: Array<Abs | undefined>; line?: number }>>();
+  const visit = (n: unknown): void => {
+    if (!n || typeof n !== "object") return;
+    const obj = n as Record<string, unknown> & {
+      type?: string;
+      loc?: { start: { line: number } };
+    };
+    if (obj.type === "CallExpression") {
+      const callee = obj.callee as Record<string, unknown> | undefined;
+      if (
+        callee?.type === "Identifier" &&
+        typeof callee.name === "string" &&
+        wanted.has(callee.name)
+      ) {
+        const args = ((obj.arguments as Array<Record<string, unknown>>) ?? []).map(
+          (a) => driftArgAbs(a, varAbs),
+        );
+        const list = out.get(callee.name) ?? [];
+        list.push({ args, line: obj.loc?.start.line });
+        out.set(callee.name, list);
+      }
+    }
+    for (const key of Object.keys(obj)) {
+      if (key === "loc" || key === "start" || key === "end") continue;
+      const val = obj[key];
+      if (Array.isArray(val)) val.forEach(visit);
+      else if (val && typeof val === "object") visit(val);
+    }
+  };
+  visit(file);
+  return out;
+}
+
+/** generated 快照 vs 今日重算（参数位 + 返回位），每 fn 每位最多一条。
+ *  evalResult：逐调用点结果求值（与 emit 的 case-result 证据同源——
+ *  analyzeFn 以全证据实参重跑函数体；返回位若用 generalize 符号 Abs 会与
+ *  emit 的逐 case 精确结果不同宽，fresh emit 恒误报）。 */
+function interfaceDriftIssues(
+  candidates: DriftCandidate[],
+  file: ReturnType<typeof parse>,
+  varAbs: Map<string, Abs>,
+  evalResult: (fnName: string, args: Abs[]) => Abs | undefined,
+): CheckIssue[] {
+  const out: CheckIssue[] = [];
+  const wanted = new Set(candidates.map((c) => c.fnName));
+  const callsites = collectDriftCallsites(file, wanted, varAbs);
+
+  for (const cand of candidates) {
+    const sites = callsites.get(cand.fnName) ?? [];
+
+    // 参数位：今日域 = 逐调用点实参（证据门槛过滤）→ joinThenProject 投影
+    for (const { param, constraint } of cand.eff.params) {
+      const idx = cand.paramNames.indexOf(param);
+      if (idx < 0) continue; // 快照参数名已不在今日签名：无位置可对账
+      const evidence: Array<{ abs: Abs; line?: number }> = [];
+      for (const s of sites) {
+        const a = s.args[idx];
+        if (driftEvidence(a)) evidence.push({ abs: a, line: s.line });
+      }
+      if (evidence.length === 0) continue; // 无证据 → 不判 drift（宁缺勿滥）
+      const todayC = joinThenProject(evidence.map((e) => e.abs));
+      if (!todayC) continue; // 域不可表达（ widened/partial 混入等）→ 不比
+      const today = constraintToEntryAbs(todayC, param);
+      const expected = constraintToEntryAbs(constraint, param);
+      if (leqAbs(today, expected).ok && leqAbs(expected, today).ok) continue;
+      out.push({
+        severity: "warning",
+        code: "nudo:interface-drift",
+        message: `${cand.fnName}[${param}]: 固化生成段 ≠ 今日调用点域`,
+        actual: formatAbs(today),
+        expected: formatConstraint(constraint),
+        suggestion: `重跑 nudo interface --emit 刷新生成段，或核对 ${param} 的调用点`,
+        fn: cand.fnName,
+        line: evidence[0]!.line,
+      });
+    }
+
+    // 返回位：今日 = 逐调用点结果域（与 emit 同源；generated 无 returns 声明 → 只查参数位）
+    const retC = cand.eff.returns?.constraint;
+    if (!retC) continue;
+    const retEvidence: Array<{ abs: Abs; line?: number }> = [];
+    for (const s of sites) {
+      if (s.args.some((a) => !driftEvidence(a))) continue; // 全参证据才重跑（与 case 合成同口径）
+      const r = evalResult(cand.fnName, s.args as Abs[]);
+      if (driftEvidence(r)) retEvidence.push({ abs: r, line: s.line });
+    }
+    if (retEvidence.length === 0) continue; // 无结果证据 → 不判 drift（宁缺勿滥）
+    const todayRetC = joinThenProject(retEvidence.map((e) => e.abs));
+    if (!todayRetC) continue;
+    const today = constraintToEntryAbs(todayRetC, "return");
+    const expected = constraintToEntryAbs(retC, "return");
+    if (leqAbs(today, expected).ok && leqAbs(expected, today).ok) continue;
+    out.push({
+      severity: "warning",
+      code: "nudo:interface-drift",
+      message: `${cand.fnName}[return]: 固化生成段 ≠ 今日推断返回`,
+      actual: formatAbs(today),
+      expected: formatConstraint(retC),
+      suggestion: `重跑 nudo interface --emit 刷新生成段，或核对返回值`,
+      fn: cand.fnName,
+      line: retEvidence[0]!.line,
+    });
+  }
   return out;
 }
 

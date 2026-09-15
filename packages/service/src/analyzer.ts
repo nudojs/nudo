@@ -21,6 +21,7 @@ import {
   setAbsCallCollector,
   setAbsNodeCollector,
   absFunction,
+  checkInjectedDomainEvidence,
   type AbsCallRecord,
   typeValueToAbs,
   absToTypeValue,
@@ -62,6 +63,7 @@ import {
   resolveNpmNudo,
 } from "./evaluator/evaluator-api.ts";
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
+import { defaultLoadModule } from "./load-module.ts";
 import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph, evalProgramAbsWithModules } from "./abs-modules-graph.ts";
 import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, mockSeedFingerprint, collectEnvGlobals, collectEnvModules } from "./bpath-run.ts";
@@ -1902,6 +1904,39 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
         ...(externalCallRecords ?? []).filter(matchingExternal),
       ].filter((r) => !(r.resultType.kind === "never" && r.throws.kind === "never")),
     );
+    // T10b：跨文件注入的调用点域证据 ⊄ 手写契约 → nudo:interface-domain-exceeds
+    // （error）。来源分流（设计稿 §3.3/§6）：写在被分析文件里的调用点违例
+    // （scanLiteralCalls → constraint-violated，含跨文件被调路径）原码原语义
+    // 零改动；本检查只消费经 externalCallRecords 注入、且已过 matchingExternal
+    // 归属守卫的记录——该路径此前不查契约，纯增量。loc 用被调函数声明处
+    // （注入证据的 loc 在使用现场文件，不属于本文件）。
+    const injected = (externalCallRecords ?? []).filter(matchingExternal);
+    if (injected.length > 0) {
+      const declLoc = candidate.analysis.loc;
+      const domainIssues = checkInjectedDomainEvidence(
+        candidate.name,
+        source,
+        injected,
+        {
+          paramNames: extractParamNames(resolveFunctionNode(candidate.node)),
+          loadModule: defaultLoadModule,
+          fromFile: filePath,
+          loc: { line: declLoc.start.line, column: declLoc.start.column },
+        },
+      );
+      for (const issue of domainIssues) {
+        const line = issue.line ?? declLoc.start.line;
+        const column = issue.column ?? declLoc.start.column;
+        diagnostics.push({
+          range: { start: { line, column }, end: { line, column: column + candidate.name.length } },
+          severity: issue.severity,
+          message: issue.message,
+          code: issue.code,
+          suggestions: issue.suggestion ? [issue.suggestion] : undefined,
+          data: { actual: issue.actual, expected: issue.expected },
+        });
+      }
+    }
     if (records.length > 0) {
       // 案例选择偏好：结果有信息量的记录优先（精确/字面量/结构化），
       // unknown 结果的排后——收集顺序里错误路径或 undefined 形态的测试

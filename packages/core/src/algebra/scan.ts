@@ -13,8 +13,18 @@ import type { Node } from "@babel/types";
 import { emptyEnv, evalNode, evalProgramAbs } from "./ast-eval.ts";
 import { defaultLeakBudget } from "./leak.ts";
 import { leqAbs } from "./leq.ts";
-import { refineToIndexedFull, type RefineEntry } from "./refine.ts";
-import type { NudoConstraint, NudoField } from "./constraint.ts";
+import type { RefineEntry } from "./refine.ts";
+import { instantiateConstraint, type NudoConstraint, type NudoField } from "./constraint.ts";
+import {
+  effectiveInterface,
+  formatConstraint,
+  type EffectiveInterface,
+  type EffectiveInterfaceOpts,
+} from "./interface.ts";
+import { literalMeetsConstraint } from "./domain-membership.ts";
+import { getTvConfidence } from "./bridge.ts";
+import type { TypeValue } from "../type-value.ts";
+import { resolveDepPath } from "./load-deps-fp.ts";
 import { extractFn, generalizeFromAst, type PolyFn } from "./generalize.ts";
 import { numLit, abs as makeAbs, litValue } from "./abs.ts";
 import type { Abs } from "./abs.ts";
@@ -185,16 +195,19 @@ function evalArgAbs(
   }
 }
 
+/** 外部模块函数：源码 + 导出名 + 定义文件虚拟路径（interface 侧车解析基；不可得 → 省略） */
+type ExternalFnRef = { source: string; fnName: string; fromFile?: string };
+
 /** 扫描前收集：别名 / 对象属性 / require 导入 */
 type CallResolve = {
   /** 本地名 → 真实函数名（同文件） */
   aliasToFn: Map<string, string>;
   /** 对象名.属性名 → 真实函数名（同文件） */
   memberToFn: Map<string, string>;
-  /** 本地名 → 外部模块函数（源码 + 导出名） */
-  externalFn: Map<string, { source: string; fnName: string }>;
+  /** 本地名 → 外部模块函数（源码 + 导出名 + 定义文件路径） */
+  externalFn: Map<string, ExternalFnRef>;
   /** 对象名.属性名 → 外部模块函数 */
-  externalMember: Map<string, { source: string; fnName: string }>;
+  externalMember: Map<string, ExternalFnRef>;
 };
 
 function requireSpecOf(init: Record<string, unknown>): string | undefined {
@@ -244,19 +257,26 @@ function dynamicImportSpec(node: Record<string, unknown>): string | undefined {
 
 /**
  * 模块源码里找不到 fnName 时，沿 `export { fn } from './other'` / `export * from` 一跳跟进。
- * 返回定义了该函数的源码。
+ * 返回定义了该函数的源码及其虚拟路径——interface 侧车绑定按最终定义文件定位。
+ * 跳转 spec 由 loadSpec 相对 baseFromFile 解析（既有口径），路径用 resolveDepPath 同基拼接，保证与实际装载位置一致。
  */
 function resolveExportSource(
   modSrc: string,
   fnName: string,
   loadSpec: (spec: string) => string | undefined,
   depth = 0,
-): string {
-  if (depth > 3) return modSrc;
+  baseFromFile = "",
+  modFromFile = "",
+): { source: string; fromFile: string } {
+  const here = (): { source: string; fromFile: string } => ({
+    source: modSrc,
+    fromFile: modFromFile,
+  });
+  if (depth > 3) return here();
   try {
-    if (listTopFunctions(modSrc).includes(fnName)) return modSrc;
+    if (listTopFunctions(modSrc).includes(fnName)) return here();
   } catch {
-    return modSrc;
+    return here();
   }
   const file = parse(modSrc);
   let nextSpec: string | undefined;
@@ -279,10 +299,17 @@ function resolveExportSource(
     }
     if (nextSpec) break;
   }
-  if (!nextSpec) return modSrc;
+  if (!nextSpec) return here();
   const next = loadSpec(nextSpec);
-  if (!next) return modSrc;
-  return resolveExportSource(next, fnName, loadSpec, depth + 1);
+  if (!next) return here();
+  return resolveExportSource(
+    next,
+    fnName,
+    loadSpec,
+    depth + 1,
+    baseFromFile,
+    baseFromFile ? resolveDepPath(baseFromFile, nextSpec) : "",
+  );
 }
 
 /** 只递归可能含 Import/VariableDeclaration 的语句容器（resolvers/forwarders 用） */
@@ -339,8 +366,8 @@ function collectCallResolvers(
   const knownSet = new Set(knownFns);
   const aliasToFn = new Map<string, string>();
   const memberToFn = new Map<string, string>();
-  const externalFn = new Map<string, { source: string; fnName: string }>();
-  const externalMember = new Map<string, { source: string; fnName: string }>();
+  const externalFn = new Map<string, ExternalFnRef>();
+  const externalMember = new Map<string, ExternalFnRef>();
   const file = opts?.file ?? parse(source);
   const load = opts?.loadModule;
   const fromFile = opts?.fromFile ?? "";
@@ -350,10 +377,15 @@ function collectCallResolvers(
     if (!modCache.has(spec)) modCache.set(spec, load(spec, fromFile));
     return modCache.get(spec);
   };
-  const bindExternal = (local: string, modSrc: string, fnName: string): void => {
+  /** import spec → 被引模块的虚拟路径（interface 侧车解析基；无 fromFile 时不可得） */
+  const extFromFile = (spec: string): string | undefined =>
+    fromFile ? resolveDepPath(fromFile, spec) : undefined;
+  const bindExternal = (local: string, modSrc: string, fnName: string, spec: string): void => {
+    const r = resolveExportSource(modSrc, fnName, loadSpec, 0, fromFile, extFromFile(spec) ?? "");
     externalFn.set(local, {
-      source: resolveExportSource(modSrc, fnName, loadSpec),
+      source: r.source,
       fnName,
+      ...(r.fromFile ? { fromFile: r.fromFile } : {}),
     });
   };
 
@@ -378,12 +410,16 @@ function collectCallResolvers(
                     ? String(imported.value)
                     : undefined;
               if (exportName && local?.name) {
-                bindExternal(local.name, modSrc, exportName);
+                bindExternal(local.name, modSrc, exportName, String(spec.value));
               }
             } else if (sp.type === "ImportNamespaceSpecifier") {
               const local = sp.local as { type?: string; name?: string } | undefined;
               if (local?.name) {
-                externalMember.set(`${local.name}.__module__`, { source: modSrc, fnName: "" });
+                const from = extFromFile(String(spec.value));
+                externalMember.set(
+                  `${local.name}.__module__`,
+                  { source: modSrc, fnName: "", ...(from ? { fromFile: from } : {}) },
+                );
               }
             }
             // ImportDefaultSpecifier：默认导出名不定，暂不绑定
@@ -409,11 +445,15 @@ function collectCallResolvers(
               const exported =
                 key?.type === "Identifier" ? key.name : key?.type === "StringLiteral" ? String(key.value) : undefined;
               const local = val?.type === "Identifier" ? val.name : exported;
-              if (exported && local) bindExternal(local, modSrc, exported);
+              if (exported && local) bindExternal(local, modSrc, exported, dynSpec);
             }
           }
           if (modSrc && id.type === "Identifier" && id.name) {
-            externalMember.set(`${id.name}.__module__`, { source: modSrc, fnName: "" });
+            const from = extFromFile(dynSpec);
+            externalMember.set(
+              `${id.name}.__module__`,
+              { source: modSrc, fnName: "", ...(from ? { fromFile: from } : {}) },
+            );
           }
         }
 
@@ -430,7 +470,7 @@ function collectCallResolvers(
                 key?.type === "Identifier" ? key.name : key?.type === "StringLiteral" ? String(key.value) : undefined;
               const local = val?.type === "Identifier" ? val.name : exported;
               if (exported && local) {
-                bindExternal(local, modSrc, exported);
+                bindExternal(local, modSrc, exported, spec);
               }
             }
           }
@@ -438,9 +478,13 @@ function collectCallResolvers(
           if (id.type === "Identifier" && id.name && modSrc) {
             const exportName = requireExportName(init);
             if (exportName) {
-              bindExternal(id.name, modSrc, exportName);
+              bindExternal(id.name, modSrc, exportName, spec);
             } else {
-              externalMember.set(`${id.name}.__module__`, { source: modSrc, fnName: "" });
+              const from = extFromFile(spec);
+              externalMember.set(
+                `${id.name}.__module__`,
+                { source: modSrc, fnName: "", ...(from ? { fromFile: from } : {}) },
+              );
             }
           }
         }
@@ -476,7 +520,7 @@ function resolveCalleeFn(
   callee: Record<string, unknown>,
   resolve: CallResolve,
   knownFns: Set<string>,
-): string | { external: { source: string; fnName: string } } | undefined {
+): string | { external: ExternalFnRef } | undefined {
   if (callee.type === "Identifier" && typeof callee.name === "string") {
     const ext = resolve.externalFn.get(callee.name);
     if (ext) return { external: ext };
@@ -501,7 +545,13 @@ function resolveCalleeFn(
       // m = require(...)；调用 m.fn
       const mod = resolve.externalMember.get(`${obj.name}.__module__`);
       if (mod?.source) {
-        return { external: { source: mod.source, fnName: prop.name } };
+        return {
+          external: {
+            source: mod.source,
+            fnName: prop.name,
+            ...(mod.fromFile ? { fromFile: mod.fromFile } : {}),
+          },
+        };
       }
       const local = resolve.memberToFn.get(key);
       if (local) return local;
@@ -619,6 +669,65 @@ export function scanLiteralCalls(
 
   const flattenPred = (p: Pred): Pred[] =>
     p.op === "and" ? p.args.flatMap(flattenPred) : p.op === "true" ? [] : [p];
+
+  /**
+   * effectiveInterface（§11 唯一读取口）调用侧收口：
+   * - 同次扫描内按 (fn, fromFile, autoBind) 缓存——localNamedExports 走
+   *   errorRecovery 解析不进 parse LRU，逐调用点重解析会放大开销。
+   * - §3.3 执法分档：只有 handwritten 契约执法；generated 段是事实快照
+   *   （drift 由后续检查报），implicit 无契约。
+   */
+  const eiCache = new Map<string, EffectiveInterface | undefined>();
+  const effectiveInterfaceOf = (
+    fnName: string,
+    fnSource: string,
+    eiOpts: EffectiveInterfaceOpts,
+  ): EffectiveInterface | undefined => {
+    const key = `${fnName}\u0000${eiOpts.fromFile ?? ""}\u0000${eiOpts.autoBind === false ? "0" : "1"}\u0000${fnSource.length}`;
+    if (eiCache.has(key)) return eiCache.get(key);
+    const r = effectiveInterface(fnSource, fnName, eiOpts);
+    eiCache.set(key, r);
+    return r;
+  };
+
+  /** effectiveInterface → [paramIdx, RefineEntry]（pred/constraint 与旧 refineToIndexedFull 同构） */
+  const interfaceToIndexed = (
+    ei: EffectiveInterface,
+    paramNames: string[],
+  ): Array<[number, RefineEntry]> => {
+    const entries: Array<[number, RefineEntry]> = [];
+    for (const { param, constraint } of ei.params) {
+      const idx = paramNames.indexOf(param);
+      if (idx >= 0) {
+        entries.push([idx, { param, pred: instantiateConstraint(constraint, param), constraint }]);
+      }
+    }
+    return entries;
+  };
+
+  /** nudo:interface-conflict：源码 refine × 侧车手写绑定同参合取不可满足（同一接口只报一次） */
+  const reportedConflicts = new Set<string>();
+  const reportInterfaceConflict = (
+    fnName: string,
+    ei: EffectiveInterface,
+    scopeFromFile: string | undefined,
+    loc?: { start: { line: number; column: number } },
+  ): void => {
+    if (!ei.conflict) return;
+    const key = `${fnName}\u0000${scopeFromFile ?? ""}`;
+    if (reportedConflicts.has(key)) return;
+    reportedConflicts.add(key);
+    out.push({
+      severity: "error",
+      code: "nudo:interface-conflict",
+      message: `${fnName}[${ei.conflict.params.join(", ")}]: 源码 @nudo:refine 与侧车手写绑定的合取不可满足`,
+      actual: `unsat：${ei.conflict.params.join("、")} 常数界交叉矛盾`,
+      expected: `源码 refine 与侧车绑定在同参上可同时满足`,
+      fn: fnName,
+      line: loc?.start.line,
+      column: loc?.start.column,
+    });
+  };
 
   const checkReqs = (
     displayName: string,
@@ -1073,26 +1182,33 @@ export function scanLiteralCalls(
       },
     });
     const paramNames = g?.params ?? [];
-    const optsR = {
+    const optsR: EffectiveInterfaceOpts = {
       loadModule: opts?.loadModule,
       fromFile: opts?.fromFile ?? "",
     };
-    const ownFull = refineToIndexedFull(source, fnName, paramNames, optsR);
-    checkShapeReqs(fnName, ownFull, paramNames, absArgs, (i) => i, loc);
-    checkReqs(
-      fnName,
-      ownFull.map(([i, e]) => [i, e.pred] as [number, Pred]),
-      paramNames,
-      absArgs,
-      (i) => i,
-      loc,
-    );
+    const ownEi = effectiveInterfaceOf(fnName, source, optsR);
+    if (ownEi) reportInterfaceConflict(fnName, ownEi, optsR.fromFile, loc);
+    // §3.3 执法分档：仅 handwritten 执法；generated 段是事实快照（drift 另报）
+    if (ownEi?.source === "handwritten") {
+      const ownFull = interfaceToIndexed(ownEi, paramNames);
+      checkShapeReqs(fnName, ownFull, paramNames, absArgs, (i) => i, loc);
+      checkReqs(
+        fnName,
+        ownFull.map(([i, e]) => [i, e.pred] as [number, Pred]),
+        paramNames,
+        absArgs,
+        (i) => i,
+        loc,
+      );
+    }
 
     const fwd = forwards.get(fnName);
     if (fwd) {
       const tg = generalizeFromAst(fwd.target, source, file ? { file } : {});
       const tParams = tg?.params ?? [];
-      const tFull = refineToIndexedFull(source, fwd.target, tParams, optsR);
+      const tEi = effectiveInterfaceOf(fwd.target, source, optsR);
+      if (tEi) reportInterfaceConflict(fwd.target, tEi, optsR.fromFile, loc);
+      const tFull = tEi?.source === "handwritten" ? interfaceToIndexed(tEi, tParams) : [];
       if (tFull.length > 0) {
         const wrapperArgOfTarget = new Map<number, number>();
         fwd.map.forEach((wrapperIdx, targetIdx) => {
@@ -1113,12 +1229,12 @@ export function scanLiteralCalls(
   };
 
   const checkExternalCall = (
-    ext: { source: string; fnName: string },
+    ext: ExternalFnRef,
     args: Array<Record<string, unknown>>,
     displayName: string,
     loc?: { start: { line: number; column: number } },
   ): void => {
-    checkArgStructures(ext.fnName, ext.source, args, loc, displayName);
+    checkArgStructures(ext.fnName, ext.source, args, loc, displayName, ext.fromFile);
     const { absArgs, hasInfo } = parseCallArgs(args);
     if (!hasInfo || absArgs.length === 0) return;
     let full: Array<[number, RefineEntry]> = [];
@@ -1126,10 +1242,18 @@ export function scanLiteralCalls(
     try {
       const g = generalizeFromAst(ext.fnName, ext.source);
       paramNames = g?.params ?? [];
-      full = refineToIndexedFull(ext.source, ext.fnName, paramNames, {
+      // 跨文件侧车只在拿到定义文件路径时 ambient 绑定（防误绑到本文件侧车）
+      const eiOpts: EffectiveInterfaceOpts = {
         loadModule: opts?.loadModule,
-        fromFile: opts?.fromFile ?? "",
-      });
+        fromFile: ext.fromFile ?? opts?.fromFile ?? "",
+        ...(ext.fromFile ? {} : { autoBind: false }),
+      };
+      const ei = effectiveInterfaceOf(ext.fnName, ext.source, eiOpts);
+      if (ei) reportInterfaceConflict(ext.fnName, ei, eiOpts.fromFile, loc);
+      // §3.3 执法分档：仅 handwritten 执法；generated 段不执法
+      if (ei?.source === "handwritten") {
+        full = interfaceToIndexed(ei, paramNames);
+      }
     } catch {
       return;
     }
@@ -1203,6 +1327,8 @@ export function scanLiteralCalls(
     args: Array<Record<string, unknown>>,
     loc?: { start: { line: number; column: number } },
     displayName?: string,
+    /** 跨文件时 ext 定义文件路径（interface 侧车解析基）；同文件忽略 */
+    interfaceFromFile?: string,
   ): void => {
     let structReqs: Map<string, Set<string>>;
     let paramNames: string[];
@@ -1227,16 +1353,22 @@ export function scanLiteralCalls(
       );
     }
     if (structReqs.size === 0) return;
-    // refine 契约优先：有 @nudo:refine 的形参不再用 body 方法访问推形状
+    // refine 契约优先：有 handwritten 参数契约的形参不再用 body 方法访问推形状
+    // （§3.3：generated 段是事实快照，不顶替结构推断）
     let refinedParams: Set<string> | undefined;
     try {
       const sameFile = fnSource === source;
-      const reqs = refineToIndexedFull(fnSource, fnName, paramNames, {
-        loadModule: opts?.loadModule,
-        fromFile: opts?.fromFile ?? "",
-      });
-      if (reqs.length > 0) {
-        refinedParams = new Set(reqs.map(([, e]) => e.param));
+      // 跨文件无定义路径时不 ambient 绑定侧车（防误绑到本文件侧车）
+      const eiOpts: EffectiveInterfaceOpts = sameFile
+        ? { loadModule: opts?.loadModule, fromFile: opts?.fromFile ?? "" }
+        : {
+            loadModule: opts?.loadModule,
+            fromFile: interfaceFromFile ?? opts?.fromFile ?? "",
+            ...(interfaceFromFile ? {} : { autoBind: false }),
+          };
+      const ei = effectiveInterfaceOf(fnName, fnSource, eiOpts);
+      if (ei?.source === "handwritten" && ei.params.length > 0) {
+        refinedParams = new Set(ei.params.map((p) => p.param));
       }
     } catch {
       /* refine 解析失败时退回 body 结构推断 */
@@ -1307,5 +1439,121 @@ export function scanLiteralCalls(
     }
   };
   visit(file);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// T10b：跨文件注入调用点域证据 ⊄ 手写契约（nudo:interface-domain-exceeds）
+// ---------------------------------------------------------------------------
+
+/**
+ * 注入记录的最小结构面（service CallRecord 的成员子集——core 不反向依赖
+ * service 的 CallRecord 声明，按结构兼容接收）。
+ */
+export type InjectedDomainRecord = {
+  argTypes: TypeValue[];
+  resultType: TypeValue;
+  throws: TypeValue;
+};
+
+export type InjectedDomainEvidenceOpts = {
+  /** 被调函数形参名（位置序）；契约按参数名对齐证据位 */
+  paramNames: string[];
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
+  fromFile?: string;
+  /** 报告定位：被调函数声明处。注入证据的 loc 在使用现场文件，不属于本文件 */
+  loc?: { line: number; column: number };
+};
+
+/** 字面量证据展示：字符串带引号，number/boolean 原样 */
+function evidenceToString(v: number | string | boolean): string {
+  return typeof v === "string" ? JSON.stringify(v) : String(v);
+}
+
+/**
+ * 跨文件注入的调用点域证据 vs 手写契约（设计稿 §3.3/§6 对账矩阵第一行）。
+ *
+ * 来源分流铁律：写在被分析文件里的调用点违例（含 scanLiteralCalls 的
+ * checkExternalCall 跨文件被调路径）维持 `nudo:constraint-violated` 原码
+ * 原语义——本函数**只**消费经 externalCallRecords 注入的跨文件记录（analyzer
+ * 消费区已做归属守卫），该路径此前不查契约，是纯增量。
+ *
+ * 证据门槛（§6）：
+ * - 只有 plain literal 实参构成证据：union/unknown/primitive/refined 形态
+ *   无法归因到确定值，不参与（widened/partial conf 经 absToTypeValue 投影
+ *   为非 literal 形态，天然被此条排除；getTvConfidence 再兜一道底）；
+ * - null 证据预过滤（T4 caveat：lit(null) 编码 prim undefined + eq(self,
+ *   null)，对任何约束恒不满足，不过滤必 FP）；undefined/bigint/symbol
+ *   不在字面量证据域内，一并跳过；
+ * - resultType=never ∧ throws=never 是求值中断泄漏（analyzer 注入消费区
+ *   同款过滤）。CallRecord 上没有截断字段（查证于 evaluator.ts CallRecord
+ *   声明：fnName/argTypes/resultType/throws/callLoc/targetModule/
+ *   targetExport/targetAliases/fnModule 十项，无截断标记）——递归截断走
+ *   nudo:recursion-truncated 诊断通道且只 widen 结果，不产生新字面量证据；
+ * - fn/shape/array 参数位 Phase 1 不执法（§3.3 HOF 豁免：
+ *   literalMeetsConstraint 对这些形态恒 false，直接查必 FP）。
+ *
+ * 每函数每参数位最多一条 issue（多证据并列在 actual 里，去重）。
+ */
+export function checkInjectedDomainEvidence(
+  fnName: string,
+  source: string,
+  records: InjectedDomainRecord[],
+  opts: InjectedDomainEvidenceOpts,
+): CheckIssue[] {
+  const usable = records.filter(
+    (r) => !(r.resultType?.kind === "never" && r.throws?.kind === "never"),
+  );
+  if (usable.length === 0) return [];
+
+  let ei: EffectiveInterface | undefined;
+  try {
+    ei = effectiveInterface(source, fnName, {
+      ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
+      fromFile: opts.fromFile,
+    });
+  } catch {
+    return [];
+  }
+  // §3.3 执法分档：仅手写契约执法。generated 段是事实快照（过期由
+  // nudo:interface-drift 覆盖）；implicit 无契约。
+  if (!ei || ei.source !== "handwritten") return [];
+
+  const out: CheckIssue[] = [];
+  for (const { param, constraint } of ei.params) {
+    if (constraint.fields || constraint.element || constraint.fn) continue;
+    const idx = opts.paramNames.indexOf(param);
+    // 形参名对不上（解构/rest/改名）：证据无法归位，跳过不猜
+    if (idx < 0) continue;
+    const failures: Array<number | string | boolean> = [];
+    for (const rec of usable) {
+      const arg = rec.argTypes[idx];
+      if (!arg || arg.kind !== "literal") continue;
+      const v = arg.value;
+      if (
+        typeof v !== "number" &&
+        typeof v !== "string" &&
+        typeof v !== "boolean"
+      ) {
+        continue;
+      }
+      const conf = getTvConfidence(arg);
+      if (conf !== undefined && conf !== "exact" && conf !== "path") continue;
+      if (!literalMeetsConstraint(v, constraint)) failures.push(v);
+    }
+    if (failures.length === 0) continue;
+    const shown = [...new Set(failures)].map(evidenceToString).join("、");
+    out.push({
+      severity: "error",
+      code: "nudo:interface-domain-exceeds",
+      message: `${fnName}[${param}]: 跨文件调用域证据 ${shown} 超出手写契约（接口被用穿）`,
+      actual: shown,
+      expected: formatConstraint(constraint),
+      suggestion: `放宽 ${fnName} 的手写契约（${param}: ${formatConstraint(constraint)}），或修正调用方传入的值`,
+      fn: fnName,
+      line: opts.loc?.line,
+      column: opts.loc?.column,
+    });
+  }
   return out;
 }

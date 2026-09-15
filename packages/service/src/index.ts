@@ -151,3 +151,16 @@ export {
 } from "./case-emitter.ts";
 
 export { mockDirectivesToAbsSeeds, type AbsMockSeeds } from "./mock-abs.ts";
+
+export {
+  interfaceSurface,
+  type InterfaceSurfaceEntry,
+  type InterfaceSurfaceOpts,
+} from "./interface-surface.ts";
+
+export {
+  emitInterface,
+  type EmitInterfaceOpts,
+  type EmitInterfaceResult,
+  type EmitInterfaceSkipReason,
+} from "./interface-emitter.ts";
