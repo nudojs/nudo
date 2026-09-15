@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@9.1.0",
   "scripts": {
-    "ci:version": "changeset version",
+    "ci:version": "changeset version && node scripts/bump-vscode-version.mjs",
     "lint": "tsc --noEmit -p tsconfig.lint.json",
     "lint:tests": "tsc --noEmit -p tsconfig.test-lint.json",
     "build": "pnpm run build:packages",
