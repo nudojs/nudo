@@ -78,7 +78,7 @@ case（特例，可选，debug / nudo test）
 |---|---|---|
 | 角色 | 接口 | 特例 / 见证 |
 | 来源 | 手写契约；调用点域；分层推导 | 手写；`--emit-cases` 固化 |
-| 用途 | check 门禁、代数推导、dts/IDE 默认表面 | `nudo test`、CodeLens 切场景、what-if |
+| 用途 | check 门禁（仅手写，见 §3.3）、代数推导、dts/IDE 默认表面 | `nudo test`、CodeLens 切场景、what-if |
 | 是否生成 | 是（生成物可再生成） | 可选（debug 固化），非接口主产物 |
 
 case **不删除**。`nudo:case-inconsistency`（见证 ⊭ 契约）仍依赖 case 作为
@@ -141,8 +141,11 @@ export const add2 = fn({ x }, x.shift(2));
 **与源码 `@nudo:refine` 的关系：**
 
 - 主路径：旁路同名绑定，源码零注释。
-- `@nudo:refine` **仍支持**（向后兼容 / 愿把契约写在导出函数上时）；
-  只对 **exported** 函数有意义（与绑定范围一致）。
+- `@nudo:refine` **仍支持**（向后兼容 / 愿把契约写在导出函数上时）。
+  适用范围与侧车**不同**：侧车绑定限 exported；源码注释维持现状**全量**——
+  今天私有函数的 refine 就是被支持的（`extractRefineLines` 的正则 export
+  前缀可省，check 对任意函数生效），注释写在函数旁、无撞名问题，
+  不跟着侧车规则收窄。
 - 二者同时存在且不一致 → `nudo:interface-conflict`（error）；一致则合并，不报。
 - 跨文件共享模板继续用 `/// @nudo:import`（那是模块边，不是绑定边）。
 
@@ -163,7 +166,7 @@ export const add2 = fn({ x }, x.shift(2));
 host loadModule(spec, fromFile)     ← CLI 读盘 / LSP 读打开缓冲
         │  得到源码文本
         ▼
-execNudoModule(src)                 ← 沙箱：剥 ESM 壳，new Function
+execNudoModule(src)                 ← 受控执行：剥 ESM 壳，new Function
         │  注入 number/shape/fn/…
         ▼
 exports: Record<string, Constraint | FnInterface>
@@ -177,7 +180,7 @@ exports: Record<string, Constraint | FnInterface>
 |---|---|
 | 宿主可能不是 Node 运行时语义 | LSP 从 buffer 读，路径/未保存内容与磁盘 ESM 图不一致 |
 | 不依赖用户工程的 `node_modules` | 约束构建器版本由 Nudo 引擎锁定，避免用户装错 core |
-| 沙箱 | `.nudo.js` 只能造约束，无 fs/net；分析器可安全执行第三方模板 |
+| 无模块访问 | import 剥除后无模块系统、无 fs/net import；但 `new Function` **不是沙箱**（全局可达）——「可安全执行第三方模板」不成立，只承诺「不碰用户工程 `node_modules` / 模块图」；真隔离（shadow 全局 / vm）为后续可选项 |
 | 与 `loadModule` 统一 | 已有 `RefineResolveOpts.loadModule`；`.nudo.js` 互 import 走同一宿主 |
 
 **相对路径 `*.nudo.js` 互 import 也走 `loadModule` 递归，不引入 Node ESM：**
@@ -188,15 +191,29 @@ import { positive } from "./std.nudo.js";  // 引擎：loadModule("./std.nudo.js
 import { number } from "@nudojs/core";     // 引擎：注入，不 load
 ```
 
-实现要点（Phase 1 硬前置，替换「再发明一套编译」）：
+实现要点（Phase 1 硬前置）：
 
-1. `execNudoModule` 对 **相对/包外 `.nudo.js` specifier** 调 `loadModule`
-   递归求值，缓存按源码内容（已有 `nudoModuleExecCache`）。
-2. 对 `@nudojs/core`（及约定 builtin）**注入**，与今日一致，仅扩充
-   `fn/lit/union/shift/partial/…`。
-3. 循环依赖：检测 spec 环，报 `nudo:interface-cycle`，不 stack overflow。
-4. **不要**把 `.nudo.js` 编译成内部 AST 再解释——那就是「设计应避免的编译」；
-   保持「真实 JS + 注入 API」。
+1. **import/export 改写用真 parser，不再正则剥壳**。现状 `execNudoModule`
+   是正则替换（剥 `export const`、删 import 行）：不认多行 named import、
+   会命中注释/字符串里的同形文本；递归解析、环检测、**带位置的报错**
+   在这个基座上做不可靠。Babel 已是依赖，用它做语句级改写即可。
+2. `execNudoModule` 对 **相对/包外 `.nudo.js` specifier** 调 `loadModule`
+   递归求值；对 `@nudojs/core`（及约定 builtin）**注入**，与今日一致，
+   仅扩充 `fn/lit/union/shift/partial/…`。
+3. **exec 缓存键并入依赖闭包指纹**。现 `nudoModuleExecCache` 按单文件
+   源码内容 LRU——嵌套 import 后 `add.nudo.js` 的求值结果还依赖
+   `std.nudo.js` 的内容，单文件键会在 LSP 编辑 `std.nudo.js` 时命中
+   `add.nudo.js` 的陈旧导出。参照 `refineDepsFingerprint` 的做法。
+4. 循环依赖：检测 spec 环，报 `nudo:interface-cycle`（带 spec 链），不
+   stack overflow。
+5. **静默吞错改诊断**。现 `collectConstraints` 的 `catch { continue }`
+   意味着侧车里任何执行错误 = 约束静默消失 = 静默无契约；loader 只收
+   `export const`，写成 `export function` 的侧车导出今天也被静默忽略。
+   自动绑定下这两类都必须报（侧车加载失败 / 导出形式不识别），
+   否则绑定无声失效。
+6. 禁令收窄为：**不要**把 `.nudo.js` 编译成内部 AST 再解释、不发明 IR——
+   执行保持「真实 JS + 注入 API」。「用真 parser 做 import/export 语句
+   改写」不在此列，那是 loader 的正确性，不是「再发明一套编译」。
 
 ### 2.3 构建器需要补的能力
 
@@ -276,6 +293,14 @@ export const add4 = fn({ x: positive }, add2.fn.returns.shift(1));
 界；`union` ≡ `joinAbs` 的约束投影）。`fn` 的 instantiate / check 则是
 「参数 Abs 实例化 + 返回 Abs ⊭ returns」，复用现有 `analyzeFn` / entry 路径，
 不为函数接口另建求值器。
+
+**组合子的定义域。** `.shift(n)` 只对**数值标量链**合法：preds 仅含
+`gt/ge/lt/le` 且右端为 lit、无 `fields` / `element`、无 `length(self)` 类界
+（`min/max/length` 产生的是长度界，平移无意义）。构建期对不合法形态直接
+throw，不静默产出垃圾约束。`lit(v)` 的编码定为 `prim + eq(self, lit(v))`
+pred（`eq` / `predEquals` 已有），不开新字段；`union` 的 `members` 是新
+形态，需同时补 `instantiateConstraint` / `constraintToEntryAbs` / check
+三条路径（现只认标量 / shape / array）。
 
 ### 2.4 生成物写组合式，不展开
 
@@ -365,7 +390,7 @@ export const add2 = fn({ x }, x.shift(2));
 
 ## 3. 两种 refine 来源
 
-同一 `@nudo:refine` 表面，**来源（provenance）不同**，检查语义不同。
+同一 `@nudo:refine` 表面，**来源不同**（手写契约 vs 引擎生成），检查语义不同。
 
 ### 3.1 契约 refine（top-down）
 
@@ -381,18 +406,38 @@ export const add2 = fn({ x }, x.shift(2));
 - **与 call@ 的关系**：现有 `call@L*` / `call@symbolic` 已是域的见证；
   新模型把这些见证的 **join 沉淀为 refine**，case 仍可另存为 debug。
 
-### 3.3 二者相遇
+### 3.3 二者相遇：按来源分档执法
+
+check 的对账对象不是笼统的「有效契约」，而是**手写契约 × root 链上的
+会话内推导**（分轨见 §4.2）。契约来源分三档，执法语义不同：
+
+| 契约来源 | 参数位 | 返回位 | 说明 |
+|---|---|---|---|
+| 手写（侧车同名 / `@nudo:refine`） | **义务**：调用 ⊭ 前置 → error | **义务**：返回 ⊭ 声明 → error | 即现有调用点 `constraint-violated` / `checkReturnConstraint` 语义 |
+| 生成段（自上游契约下行） | **事实快照**：不执法，只 drift | **事实快照**：不执法，只 drift | 它是某条推导链的**假设**，不是被调方作者的承诺（见下） |
+| 域（call@ 观察 join） | 永不执法，只 drift / 展示 | — | 证据门槛见 §6 |
+
+对账矩阵：
 
 ```
-手写契约 refine     生成域 refine
-     │                    │
-     └────── check ───────┘
-              │
-   域 ⊄ 契约  →  error（接口被用穿）
-   域 ⊆ 契约  →  ok
-   域变化     →  drift（若曾固化）
-   契约推不出 →  info（opaque / 截断）
+域 ⊄ 手写契约   →  error（接口被用穿）    nudo:interface-domain-exceeds
+域 ⊄ 生成段     →  warning（快照过期）    nudo:interface-drift
+域 ⊆ 契约       →  ok
+域变化          →  drift（若曾固化）      nudo:interface-drift
+契约推不出      →  info（opaque / 截断）  nudo:interface-underivable
 ```
+
+**为什么生成参数约束不对第三方执法。** `add.nudo.js` 里的
+`fn({ x: positive.shift(1) })` 是 `lib.js:add4` 契约沿调用边推导出的
+**该链假设**，不是 add2 作者的承诺。若按 error 执法：lib.js 契约收紧 →
+`add.nudo.js` 生成段随之收紧 → **无关文件** main.js 里 `add2("a")` 的
+CI 报错——报错点与因果链分离，上游一次重构可以让全仓第三方调用点红灯。
+生成段参数约束与 §12.2 的返回口径一致：事实 + drift。第三方调用点的
+error 只由**手写**契约触发。
+
+同一函数同时有手写契约与生成段时，`effectiveInterface` 以手写为准
+（§11 Phase 1 第 0 步），生成段降为展示来源；两者语义冲突（手写 ≠
+今日按链重推）→ `nudo:interface-drift`，不是 double report。
 
 ---
 
@@ -415,7 +460,16 @@ export const add2 = fn({ x }, x.shift(2));
 1. 调用点 `g(e1, …, en)`：把实参 Abs **投影**为 `g` 的参数约束
    （shape / pred / 字面量域；`x+1` 在 `x>0` 下 → 值 `>1`）。
 2. `g` 的返回 Abs **回传**为 `f` 路径上的中间结果，继续参与 `f` 的代数。
-3. 同一 `g` 被多个上层调用时，参数约束取 **join**（接口是并集，不是交集）；
+3. 同一 `g` 被多个上层调用时，**check 不 join**——每条 root 链独立推导。
+   单调 join 是过逼近；join 后的域再往下推会把**仍成立**的上游契约误判
+   为失败。反例：`add2` 多出一个调用者（实参域 `(-10, ∞)`）后，join 域
+   推出的 `add4` 返回 `⊄ gt(4)`——`add4` 自己从未失效，被共享被调方的
+   join 毒化的是**证明**，不只是精度。因此分轨：
+   - **check**：沿每条 root 链逐条推导对账——等价于现有
+     「entryReqs → 求值 body → `checkReturnConstraint`」路径，天然无 join；
+   - **工件聚合**：落盘时才把多条链的参数约束取 join（接口是并集），
+     结果只进 `*.nudo.js` 生成段与 dts/IDE 表面，**不回灌**任何一条链
+     的 check。
    若上层契约互斥且应区分场景，用 case/debug，不拆 refine。
 
 ### 4.3 上行（域路径）
@@ -433,6 +487,28 @@ export const add2 = fn({ x }, x.shift(2));
   下文件变更使上文件 L0 / check 缓存失效（已有 `*.nudo.js` → parent 逐出）。
 - 循环依赖：按现有 module graph 截断策略，结果 conf 降为 `partial`，
   不写入生成 refine（诚实缺口）。
+
+### 4.5 隐式依赖边与缓存失效（Phase 1 硬前置）
+
+自动绑定让 `foo.js` **隐式**依赖 `foo.nudo.js`，而现有失效机制全部建立在
+**源码显式声明**的依赖边上——源码零注释 = 逐出图缺边 = 陈旧结果：
+
+| 现有机制 | 现状 | 自动绑定下的缺口 |
+|---|---|---|
+| `nudoDepParents` 登记 | LSP 从源码 `@nudo:import` 扫描注册（`extractNudoImports`） | 源码不写指令 ⇒ `foo.nudo.js` 变更时没有任何 parent 被逐出 ⇒ 静默用旧契约 check |
+| 整文件分析缓存 | `analyzeFile` 键 = `filePath + source + auxKey` | 侧车内容成为键外隐参数 |
+| generalize memo | `refineDepsFingerprint` 把 refine 依赖**编进键里**（正确模式） | 同名侧车及其递归闭包需并入指纹 |
+| root→derived 边 | 无此机制 | `lib.nudo.js`（根契约）变更 ⇒ `add.js` 的有效契约变了 ⇒ `add.js` 自身 check 必须失效；但 `add.js` 源码没有任何指向 `lib.nudo.js` 的指令 |
+
+规则：
+
+1. 分析 `foo.js` 时，把 `foo.nudo.js` 及其**递归依赖闭包**并入 dep 指纹
+   （generalize 键）**并**登记 `nudoDepParents`（LSP / 宿主逐出）。
+2. 下行 emit 产生的 root→derived 边同样登记：`lib.nudo.js` 进 `add.js`
+   的依赖集。
+3. 配对现有 evict 回归矩阵加「侧车变更 → parent 失效」用例：
+   `session-cache-evict` / `nudo-dep-evict` / `fn-cache-evict`。仓库对
+   陈旧缓存有专门测试矩阵，隐式边不登记就是同类 bug 的复活。
 
 ---
 
@@ -495,6 +571,10 @@ positive ──shift(1)──► add2 入参 ──shift(2)──► add2 返回
 落到 `add.nudo.js` 的是 **add2 的** `fn`；`add4` 手写契约在 `lib.nudo.js`。
 若 `add4` 也改为生成，则 `lib.nudo.js` import `add2` 再 `.shift(1)`。
 
+**多调用者不污染本链**（§4.2 分轨）：`check(add4)` 沿这条链独立推导——
+即使 `add2` 另有调用者把落盘接口 join 宽了，`add4` 的对账仍用本链结果；
+join 只影响 `add2` 的工件（生成段 / dts / IDE 展示）。
+
 ### 5.3 生成物（同名绑定）
 
 `add.nudo.js`（生成）：
@@ -531,12 +611,15 @@ add2("a");
 ```
 
 调用点域是 `add2` 隐式 interface 的一部分（参数域 join）。对账对象是
-**有效契约** `add2.fn.params.x`（手写或已 emit 的生成段），不是另一个导出名：
+`add2.fn.params.x` 本身（不是另一个导出名），但结论**按契约来源分档**
+（§3.3）：
 
 | 检查 | 含义 |
 |---|---|
 | `42 ⊆ add2.fn.params.x` | ok（若契约为 `positive.shift(1)`） |
-| `"a" ⊄ add2.fn.params.x` | `nudo:interface-domain-exceeds` |
+| `"a" ⊄` **手写** `add2.fn.params.x` | `nudo:interface-domain-exceeds`（error） |
+| `"a" ⊄` **生成段** `add2.fn.params.x` | `nudo:interface-drift`（warning，快照过期） |
+| 无契约（仅隐式域） | 不报；域留在隐式 interface / 缓存 |
 
 域**不**用 `export const add2_domain` 落盘——那会与「侧车导出 = 源码导出
 绑定」规则打架（`add2_domain` 不是 `add.js` 的导出）。域要么留在隐式
@@ -550,15 +633,29 @@ interface / 缓存里，要么在 emit 时并入 `fn` 的见证字段（后续�
 |---|---|---|
 | `nudo:constraint-violated` | error | 推断返回/调用 ⊭ 手写契约（已有） |
 | `nudo:case-inconsistency` | error | case 见证 ⊭ refine（已有） |
-| `nudo:interface-domain-exceeds` | error | 生成域 ⊄ 有效契约（手写 ∪ 生成） |
-| `nudo:interface-drift` | warning | 固化的生成 interface ≠ 今日重算结果 |
+| `nudo:interface-domain-exceeds` | error | 生成域 ⊄ **手写**契约（接口被用穿）。与调用点 `constraint-violated` 同源聚合：同一违例只报一处，聚合层负责去重 |
+| `nudo:interface-drift` | warning | 固化的生成 interface ≠ 今日重算结果；**含**域 ⊄ 生成段（快照过期，§3.3） |
 | `nudo:interface-name-clash` | error | 生成段与手写同名导出冲突（手写优先） |
 | `nudo:interface-conflict` | error | 源码 `@nudo:refine`/`@nudo:interface` 与旁路同名绑定不一致 |
-| `nudo:refine-underivable` | info | 上层约束传不下来（opaque / 循环 / native） |
-| `nudo:refine-entry-only` | info | 导出无契约根且无调用域 |
+| `nudo:interface-underivable` | info | 上层约束传不下来（opaque / 循环 / native）；旧名 `nudo:refine-underivable` 作 alias 一个版本 |
+| `nudo:interface-entry-only` | info | 导出无契约根且无调用域（含 §7.3 的「根在别处」）；旧名 `nudo:refine-entry-only` 同 alias |
 
 `nudo check` 聚合上表；`nudo doctor --callsites` 将 drift 作 CI 门禁
 （类比现有 `--emit-cases=update --exit-on-diff`）。
+
+**domain 检查的证据门槛。** bottom-up 域证据来自 `collectAbsCallRecords`，
+该路径有截断收集器（`setAbsTruncationCollector`）、unknown 实参过滤、
+mock/env 改道——部分证据下的域天然不稳定（截断、动态调用、测试专用分支
+都会让「观察域 ⊄ 手写契约」误报）。规则：
+
+- `nudo:interface-domain-exceeds` 只在证据 conf ∈ {exact, path} 且无截断
+  标记时触发；否则降 info 或不报（drift 档同理）。
+- 新诊断码必须进 `check-gold` 夹具与 real-package zero-FP 套件
+  （recall = precision = 1.0 是 CI 门禁；domain-exceeds 正是最容易在
+  真实包上 FP 的那类检查）。
+- 字符串域隶属是**新代码**：现有 case ⊭ refine 对账只查数字字面量
+  （`checkCaseAgainstReqs` 对非 number 直接 continue），`"a" ⊄ 契约`
+  无先例；字符串 / 其他 prim 的域隶属判定需另写。
 
 ---
 
@@ -594,13 +691,27 @@ CLI 必须默认可过滤，而不是 `--all` 一把梭：
 
 | 选择器 | 例 | 含义 |
 |---|---|---|
-| 路径 | `nudo interface --emit src/lib.js` | 该文件（及其 `*.nudo.js`） |
+| 路径 | `nudo interface --emit src/lib.js` | 该文件（及其 `*.nudo.js`）；若该文件是**根**，闭包内下游生成段按下方 root 驱动规则连带更新 |
 | 导出名 | `--fn add2 --fn add4` | 仅这些 exported 绑定 |
 | 已有契约文件 | `--emit --known` | 只更新已存在 `*.nudo.js` 中的生成段 |
-| 项目配置 | `nudo.json` → `interface.emit: ["src/api/**"]` | 包级白名单 |
+| 项目配置 | `package.json` → `nudo.interface.emit: ["src/api/**"]` | 包级白名单（沿用现有 `pkg.nudo` 配置入口，不另设 `nudo.json`） |
 | 全量（显式） | `--emit --all` | 明确 opt-in；文档警告勿默认 |
 
 无参数 `nudo interface` = **只打印**，不写盘。
+
+**emit 永远 root 驱动，不建全局反向索引。** 下行推导的入口是根
+（手写契约所在文件 / `--roots` / `--callsites` 观察文件）；「谁推导到
+`add.js`」不做持久索引，按入参文件扮演的角色分两种行为：
+
+| `--emit <path>` 时 `path` 的角色 | 行为 |
+|---|---|
+| 含契约根 | root 驱动下行推导；推导闭包内被点名的**下游生成段**（如 `add.nudo.js` 的 `add2`）随本次 emit 一并写/更新——这是根文件 emit 的副作用，受同一 `--fn` / 白名单过滤 |
+| 无根（纯下游，如 `add.js`） | 只处理该文件侧车里**已存在**的生成段：读生成段头部的 `derived-from: lib.js:add4` 标注反查根文件重推（§5.3 的标注就是为此）；标注指向的根已删/改名 → `nudo:interface-drift`（断链），不静默删段 |
+| 无根且无已存在生成段 | 打印「根在别处」提示（`nudo:interface-entry-only` 同源 info），不写盘、不报错 |
+
+因此「`--emit src/add.js` 找不到 lib.js 的根」是显式模型而非缺陷：
+下游生成段只能随其根的 emit 更新；会话内的 root→derived 反查信息
+来自生成段自带的 `derived-from` 标注与 §4.5 登记的依赖边，无需新建索引。
 
 ### 7.4 与缓存打通
 
@@ -617,7 +728,9 @@ CLI 必须默认可过滤，而不是 `--all` 一把梭：
 
 - **用户契约文件**（`foo.nudo.js`）= 产品表面，进 git，手写/emit 都算。
 - **缓存**（`.nudo/cache/`）= 引擎私有，可丢、可重建，不参与 review。
-- 显式契约变更 → 逐出依赖它的 L0/check（已有机制）。
+- 契约变更（手写编辑或 emit 重写）→ 逐出依赖它的 L0/check。注意「已有
+  机制」只覆盖**显式** `@nudo:import` 声明的边；自动绑定的隐式边须按
+  §4.5 登记，否则逐出图缺边、命中陈旧结果。
 - 源码变更 → 隐式 refine 与缓存失效；**不**自动改写已落盘契约（只报 drift）。
 
 ### 7.5 LSP：按导出粒度生成/更新
@@ -628,7 +741,7 @@ CLI filter 的同一套选择器应暴露给编辑器，粒度到 **单个 expor
 |---|---|---|
 | 打印当前隐式 interface | `nudo.interface` | `{ file, functionName? }` |
 | 固化单个导出 | `nudo.interface.emit` | `{ file, functionName, mode: "add"\|"update" }` |
-| 固化当前文件全部导出 | 同上省略 `functionName` | 仍尊重 `nudo.json` 白名单 |
+| 固化当前文件全部导出 | 同上省略 `functionName` | 仍尊重 `package.json#nudo.interface` 白名单 |
 | 更新已固化的生成段 | `mode: "update"` | 先剥离 `@generated` 段再写 |
 | CodeLens | `⚡ persist refine` / `↻ update refine` | 仅在该导出有隐式结果且未固化 / 已固化时出现 |
 
@@ -676,16 +789,23 @@ CodeLens 默认面对 **refine（接口）**，case 降为 debug 副层：
 
 > 兼容：`nudo refine` 别名指向 `nudo interface`，一个大版本后可弃。
 
-配置（`nudo.json`）：
+配置沿用现有 `package.json` → `nudo` 键（`config.ts` 的 `findProjectConfig`
+已读 `{ env, mocks }`），扩展 `interface` 子键——不引入第二个配置文件：
 
 ```json
 {
-  "interface": {
-    "emit": ["src/public/**"],
-    "ignore": ["**/__tests__/**"]
+  "nudo": {
+    "interface": {
+      "emit": ["src/public/**"],
+      "ignore": ["**/__tests__/**"]
+    }
   }
 }
 ```
+
+> CLI 已有顶层命令 `nudo emit`（= dts 导出）。本文的写盘动词是
+> `nudo interface --emit`（子命令选项，非顶层命令），不冲突；help 文案
+> 区分「emit dts」与「emit interface」。
 
 `--emit-cases` **保留**（debug 固化），文档标注非接口主路径。
 
@@ -698,11 +818,11 @@ CodeLens 默认面对 **refine（接口）**，case 降为 debug 副层：
 | `@nudo:refine` + `*.nudo.js` | 手写契约；语法不扩内联；侧车同名绑定为主 |
 | `generalize` entryReqs | 下行推导入口 Abs |
 | call@ 合成 case | 域证据源；join 为隐式域 refine |
-| `--emit-cases` | 可选 debug 固化；接口路径改为 `refine --emit`（默认不写） |
+| `--emit-cases` | 可选 debug 固化；接口路径改为 `nudo interface --emit`（默认不写） |
 | `nudo:case-inconsistency` | 保留：case ⊭ refine |
-| `checkReturnConstraint` | 保留；有效契约 = 手写 ∪ 已落盘生成 ∪（判定用）隐式 |
+| `checkReturnConstraint` | 保留；**判定用契约 = 手写**（error 级）。生成段/隐式只进展示与 drift，不进义务判定（§3.3） |
 | LSP `selectCase` | default/refine 档 + 按导出 `refine.emit` |
-| L0 / check memo / `*.nudo.js` 逐出 | 隐式缓存 + 显式契约失效路径 |
+| L0 / check memo / `*.nudo.js` 逐出 | 隐式缓存 + 契约失效路径；显式 `@nudo:import` 边沿用现机制，自动绑定的隐式边按 §4.5 登记 |
 | `.nudo/cache`（新） | 隐式 refine 跨会话缓存，非用户契约 |
 
 Abs 代数本身**不需要新内核**：下行只是「在根入口约束下跑已有
@@ -714,51 +834,74 @@ Abs 代数本身**不需要新内核**：下行只是「在根入口约束下跑
 
 ### Phase 1 — 表面与沉淀（可先落地）
 
+0. **单点 `effectiveInterface(fn)`**（core）：手写 ∪ 侧车同名 ∪ 生成段的
+   唯一读取口，含 dep 指纹与**来源标注**（handwritten / generated /
+   implicit）——§3.3 分档执法依赖来源可见。现有提取点必须全部改走它：
+   `check.ts` ×6（`refineToIndexedFull` ×5：714 / 1793 / 1808 / 1842 / 1947，
+   加 `extractRefineReturnFromSource` ×1：359——返回契约提取点最易漏收）
+   + `generalize.ts` ×1——否则 check / generalize / case 对账 / hover
+   各自为政。
 1. `ConstraintBuilder` 增加 `shift` / `lit` / `union` / `fn`（core），**实现与 Abs
-   代数共用**；首批 utility：`partial` / `pick` / `omit`（小写，对齐 `number()`/`shape()`）。
-2. 隐式 interface 始终可算；`nudo interface` 默认只打印；`--emit` 必须带 filter
+   代数共用**；`shift` 限数值标量链、`lit` 用 `eq` pred 编码、`union` 补三条
+   实例化路径（§2.3）；首批 utility：`partial` / `pick` / `omit`（小写，
+   对齐 `number()`/`shape()`）。
+2. Loader 升级（§2.2）：真 parser 做 import/export 改写；递归 `loadModule` +
+   环检测；exec 缓存键并依赖闭包指纹；静默吞错与 `export function` 形式
+   侧车导出改诊断。
+3. 隐式依赖边登记（§4.5）+ evict 回归用例。
+4. 隐式 interface 始终可算；`nudo interface` 默认只打印；`--emit` 必须带 filter
    （`paths` / `--fn` / `--known`），禁止无参全量写盘。
-3. `nudo:interface-domain-exceeds` / `nudo:interface-drift` / `nudo:interface-name-clash`。
-4. LSP CodeLens：`● interface / default` + case 副层；hover default 走 symbolic；
+5. `nudo:interface-domain-exceeds`（error 仅手写契约，§3.3；带 §6 证据
+   门槛，含字符串域隶属新代码）/ `nudo:interface-drift`（含域 ⊄ 生成段）/
+   `nudo:interface-name-clash`；新码进 gold 夹具与 zero-FP 套件。
+6. LSP CodeLens：`● interface / default` + case 副层；hover default 走 symbolic；
    `nudo.interface` / `nudo.interface.emit`（按 `functionName`）。
-5. 文档：directives / check / CLI；case 降为 debug 叙事。
+7. 文档：directives / check / CLI；case 降为 debug 叙事。
 
 **验收**：无 `*.nudo.js` 时隐式 refine 仍可打印；`--emit src/lib.js --fn add2`
 只写该导出；`add` 双调用点域 `union(lit(42), lit("a"))`；手写 `positive` 时
-`"a"` 报 domain-exceeds。
+`"a"` 报 domain-exceeds（字符串域隶属为 Phase 1 新代码）；侧车内容变更后
+parent 检查结果随逐出更新（§4.5 用例）。
 
-### Phase 2 — 契约下行（provenance，不编译）
+### Phase 2 — 契约下行（推导图，不编译）
 
 1. 调用图 + 实参 Abs → 被调参数约束投影（走 Abs，不另写一套）。
-2. **求值期维护 provenance 图**（边带调用位点 / `+k` / join）；emit 直接
-   打印该图的组合式，**禁止**事后从 Abs 反编译链。
+2. **求值期维护推导图（derivation trace）**（边带调用位点 / `+k` / join）；
+   emit 直接打印该图的组合式，**禁止**事后从 Abs 反编译链。不叫
+   provenance：`setProvenanceTracking` 已被 evaluator 的 TypeValue origin
+   map 占用（服务 unknown 诊断），避免同名混义。
 3. 同名 `*.nudo.js` 生成 `fn({…}, returns?)`，跨文件 `import` 上游再组合；
    源码零注释；**仅 emit 选中的导出落盘**。
-4. 多调用者 join（Abs join 后投影）；循环/截断 → `interface-underivable`。
+4. 多调用者：check 按链独立、不 join（§4.2 分轨）；落盘工件聚合才 join
+   （先 Abs join 再投影）；循环/截断 → `interface-underivable`。
 5. 隐式结果接入 L0 / check memo；可选 `.nudo/cache` 跨会话（与契约文件分离）。
 6. 示例矩阵：`docs/examples` 增加 lib/add 分层夹具。
 
-**验收**：§5 隐式结果带 provenance；emit 打印
+**验收**：§5 隐式结果带推导图；emit 打印
 `const x = positive.shift(1); export const add2 = fn({ x }, x.shift(2))`；
-`check` 回 `positive4`；未 emit 的导出不产生契约 diff。
+`check` 回 `positive4`；未 emit 的导出不产生契约 diff；`add2` 增加第二个
+调用者后 `check(add4)` 仍过（§4.2 分轨——join 只进工件，不回灌链上推导）。
 
 ### Phase 3 — 门禁与 IDE 打磨
 
 1. `doctor` refine drift CI（只针对已落盘契约）。
 2. LSP CodeLens `persist/update refine`；固化后 drift 提示。
-3. `nudo.json` emit 白名单；agent API：`nudo.interface` / emit；SKILL.md 更新。
+3. `package.json#nudo.interface` emit 白名单；agent API：`nudo.interface` / emit；SKILL.md 更新。
 4. `--emit-cases` 文档降级；迁移说明。
 
 ---
 
 ## 12. 开放问题
 
-1. **join vs 分场景契约**：多上层契约不同时，接口并集可能过宽。是否提供
-   「按调用方分契约名」（侧车里 `add2_from_add4`，不绑源码）？默认 join，
-   分名作后续选项。
-2. **返回约束下行 vs 上行**：当前 check 是「推断返回 ⊭ 声明」。下行生成的
-   返回契约是**义务**还是**事实**？建议：手写 = 义务；生成 = 事实快照，
-   drift 检查，不反向当义务压回实现（避免循环责难）。
+1. **join vs 分场景契约**：多上层契约不同时，接口并集可能过宽。**已定**
+   （§4.2）：check 按链独立、不受 join 影响；join 只发生在落盘工件聚合，
+   不回灌。「按调用方分契约名」（侧车里 `add2_from_add4`，不绑源码）保留
+   为**工件精度**的后续选项，不再是 check 正确性的前置。
+2. ~~**返回约束下行 vs 上行**~~ **已拍板（§3.3）**：手写 = 义务（error）；
+   生成 = 事实快照 + drift，不反向当义务压回实现（避免循环责难）。
+   **同一口径适用于生成的参数约束**：不对第三方调用执法——它来自某条
+   推导链的假设，执法会造成「上游契约收紧 → 无关文件 CI 失败」的
+   错位传播。
 3. **私有绑定**：**不绑定、不落盘**（§2.1）。私有推导仅内存态，供 check /
    传播；契约文件只承载 **exported** 绑定。
 4. ~~`derived_` 前缀~~ **已废弃**：改为同名自动绑定（§2.1），生成与手写
@@ -788,6 +931,9 @@ dts 是公共接口的兼容出口；接口表面已是 refine，dts 应投影�
 
 实现：`dts-generator` 改为 **Abs / NudoConstraint → TS AST**，
 不再经 `absToTypeValue` 再打印。TypeValue 从 dts 路径**拿掉**。
+现有输出精度策略必须**平移**：参数位逆变 widen（`widenParamType` /
+`widenTopLevel`——字面量放宽到基类型、嵌套精度保留）要在约束侧重写，
+否则现有 dts 消费者看到的输出变化（breaking）。
 
 **TypeValue 彻底移除是正确终态，但是多一步，不绑在 refine 下行上。**
 今日 TypeValue 仍占着这些位：
@@ -799,7 +945,8 @@ dts 是公共接口的兼容出口；接口表面已是 refine，dts 应投影�
 | `@nudo:case` 实参文法 | 否 | `parseTypeValueExpr` / `T.*` 是指令表面；要删先改 case 文法 |
 | TypeValue evaluator（非 capable 源） | 否 | 兜底求值 IR；要么 Abs-only 并接受覆盖缺口，要么长期保留 |
 | `infer --json` / agent 序列化 | 可迁 | schema 换 Abs/refine 形状，属 breaking |
-| 调用点 `CallRecord.argTypes` | 可迁 | 现为 TypeValue；应改 Abs |
+| 调用点 `CallRecord.argTypes` | 可迁 | 现为 TypeValue（`absToTypeValue(r.args)`）；应改 Abs |
+| env API 应用（`env-to-abs.ts`） | 后置 | env 实现是 TypeValue 原生（每次 Abs 调用 `absToTypeValue` 过桥进 `impl(tvArgs)`）；对真实包覆盖比 CallRecord 重，属 Abs 化大项 |
 
 **建议路径（与 kernel 单轨一致）：**
 
@@ -822,15 +969,20 @@ dts 是公共接口的兼容出口；接口表面已是 refine，dts 应投影�
 | **命名** | 产品面 **interface**（CLI/IDE/诊断）；机制层 refinement；`@nudo:refine` 兼容别名 |
 | **绑定** | **侧车同名导出自动绑定源码的 exported 绑定**；私有不落盘；源码零注释（`@nudo:refine`/`@nudo:interface` 兼容） |
 | **隐式 vs 落盘** | 推导**始终隐式存在**；`--emit` 默认必须 filter，禁止无参全量写盘 |
-| **缓存** | 隐式 interface 进 L0/check memo，可选 `.nudo/cache`；与用户契约文件分离 |
+| 配置 | 沿用 `package.json#nudo` 键扩展 `interface` 子键，不引入 `nudo.json` |
+| **缓存** | 隐式 interface 进 L0/check memo，可选 `.nudo/cache`；与用户契约文件分离；自动绑定的**隐式依赖边**并入 dep 指纹 + `nudoDepParents`（§4.5） |
 | 生成物形态 | **组合式 + import**，依赖与源码同构；禁止展开成 `gt(n)` 字面量墙 |
 | 运算实现 | `shift` / `union` / helpers **与 Abs 代数共用**，不另写一套 |
+| 推导链数据 | 求值期**推导图（derivation trace）**，emit 是其投影；非事后反编译；不与 evaluator 的 provenance 混名 |
 | 推导方向 | 顶层手写契约 top-down；调用点域 bottom-up；二者对账 |
+| **执法分档** | 手写 = 义务（error）；生成段 = 事实快照（drift，参数位与返回位同口径）；域 = 永不执法（§3.3） |
+| **check 与工件分轨** | check 沿 root 链独立推导，**不经 join**；join 只用于落盘工件聚合，不回灌任何链的 check（§4.2） |
+| **emit 方向** | 永远 root 驱动，不做全局反向索引；纯下游文件靠生成段 `derived-from` 标注反查根（§7.3） |
 | 生成位置 | 被调源文件同名 `*.nudo.js`，导出名 = 源码绑定名 |
 | **`fn`** | **一等 `NudoConstraint`**（`fn.params` / `fn.returns`），可 import / 嵌 shape |
 | 手写物 | 永不覆盖；撞名 / 源码注释不一致 → 报错 |
 | case | 保留为特例/debug；非接口主产物 |
-| 冲突 | 契约违例 / 域超出 / drift / name-clash / 源码-旁路 conflict 分码 |
+| 冲突 | 契约违例 / 域超出 / drift / name-clash / 源码-旁路 conflict 分码**且分档**（§3.3：error 只挂手写） |
 | IDE 默认 | interface / default；case 副层；**按导出** `interface.emit` |
 | dts | **refine / Abs 直接投影**；不再经 TypeValue |
 | TypeValue | 接口/dts 真理源退役；评估 IR 与 case 文法残余另轨退出 |
@@ -847,9 +999,10 @@ dts 是公共接口的兼容出口；接口表面已是 refine，dts 应投影�
 | 点 | 依据 |
 |---|---|
 | 侧车同名绑定（仅 exported） | 加载 `foo.nudo.js` + 名字匹配导出表；`isNudoConstraint` 已有 |
-| `lit` / `union` | 扩 `NudoConstraint`（需加 members 字段，见 14.3） |
-| `shift(n)`（常数界） | 对 `gt/ge/lt/le` 的 lit 右端加 n；走 Pred 重写 |
-| emit filter / `--fn` / `--known` / `nudo.json` | 编排层，复用 `case-emitter` 的剥离/写盘思路 |
+| 单点 `effectiveInterface(fn)` | 机械收口：`check.ts` ×6（5× `refineToIndexedFull` + 1× `extractRefineReturnFromSource`，返回契约提取点易漏）+ `generalize.ts` ×1 的提取点全部改走一个读取口，读出的来源标注直接服务 §3.3 分档 |
+| `lit` / `union` | `lit` = `prim + eq(self, lit v)` pred（`eq`/`predEquals` 已有），不开新字段；`union` 加 `members` 并补三条实例化路径 |
+| `shift(n)`（常数界） | 对 `gt/ge/lt/le` 的 lit 右端加 n；走 Pred 重写；构建期限数值标量链（§2.3），`length` 界 / shape / array 上 throw |
+| emit filter / `--fn` / `--known` / `package.json#nudo.interface` | 编排层，复用 `case-emitter` 的剥离/写盘思路 |
 | 隐式不落盘、手写优先 | 纯策略；`name-clash` 在 emitter 写盘前判定 |
 | LSP `nudo.interface(.emit)` | 薄封装 + 写盘器；粒度到 export |
 | drift 门禁 | 重算有效契约做**语义相等**（Abs/Pred 规范化后比），不是比源码字符串 |
@@ -859,10 +1012,11 @@ dts 是公共接口的兼容出口；接口表面已是 refine，dts 应投影�
 
 | 点 | 缺口 | 建议 |
 |---|---|---|
-| `*.nudo.js` **嵌套 import** | 现 `execNudoModule` 注掉 import，只注入 `number/string/boolean/shape/array`；**不能** `import { positive } from "./std.nudo.js"` | Phase 1：相对 `.nudo.js` 走 `loadModule` 递归（§2.2），`@nudojs/core` 仍注入 |
+| `*.nudo.js` **嵌套 import** | 现 `execNudoModule` 正则剥壳、只注入 `number/string/boolean/shape/array`；相对 import 被**静默删除**（自由变量 → ReferenceError → `catch { continue }` 静默丢约束） | Phase 1（§2.2）：真 parser 改写 + `loadModule` 递归 + 闭包指纹缓存 + 吞错改诊断，`@nudojs/core` 仍注入 |
+| 自动绑定隐式依赖边 | 逐出图 / 缓存键只认源码显式 `@nudo:import` | §4.5：侧车闭包并入 dep 指纹 + `nudoDepParents`；root→derived 边同登记 |
 | `fn` 一等约束 | 扩 `NudoConstraint.fn = { params, returns?, throws? }`；`isNudoConstraint` 收 `fn`；可嵌 shape / 被 import | Phase 1：类型 + `fn()` 构建器 + 属性读写；勿另建平行类型 |
 | Abs → 约束投影（下行第 1 步） | 有 `constraintToEntryAbs`；**反向** Abs→NudoConstraint 无 | 只投影可表达子集：prim / 常数界 / shape / 字面量 union；其余 conf=partial，不 emit |
-| 多调用者 join | `joinAbs` 已有；投影后再 join 或 join 后再投影需定序 | **先 Abs join，再投影**（与「与 Abs 共用代数」一致） |
+| 多调用者 join | `joinAbs` 已有；投影后再 join 或 join 后再投影需定序 | 仅**工件聚合**：先 Abs join，再投影；check 按链独立不 join（§4.2，join 回灌会误杀仍成立的上游契约） |
 | dts ← interface | `dts-generator` 现吃 TypeValue | 新路径 Constraint/Abs → TS AST；与旧路径并行直至切换 |
 
 ### 14.3 设计内部冲突 / 须改口径
@@ -872,27 +1026,29 @@ dts 是公共接口的兼容出口；接口表面已是 refine，dts 应投影�
 | 1 | 「无 `*.nudo.js` 仍有 `positive.shift(1)` 链」不成立——`positive` 来自根契约 | 已改 §7.1：无根时隐式 = Abs/域，不是下行链 |
 | 2 | `export const add2_domain` 违反「侧车导出 = 源码导出」 | 已改 §5.4：域不另起导出名 |
 | 3 | 手写与生成同名 `export const add2` 在同一文件是 **JS 语法错误** | 口径改为：emitter 见已有绑定则**不写**；「并存」指策略冲突而非字面双导出 |
-| 4 | `nudo.json` 键名 `refine.emit` vs `interface.emit` | 已统一 `interface.emit` |
-| 5 | §6 诊断码新旧混用（`refine-underivable` 等） | 建议全部 `nudo:interface-*`，`refine-*` 作 alias 一个版本 |
-| 6 | 生成物 pretty `shift` 链 vs 语义等价 | drift 比语义；emit 的链式是**provenance 标注**，不是从 Abs 反编译出来的唯一形式——emit 时需在求值期记调用边 provenance，否则只能写出展开式（与 §2.3 冲突） |
+| 4 | `nudo.json` 键名 `refine.emit` vs `interface.emit` | 已统一为 `package.json#nudo.interface`（不引入 `nudo.json`，沿用现有配置入口） |
+| 5 | §6 诊断码新旧混用（`refine-underivable` 等） | **已应用**：§6 统一 `nudo:interface-*`，`refine-*` 作 alias 一个版本 |
+| 6 | 生成物 pretty `shift` 链 vs 语义等价 | drift 比语义；emit 的链式是**推导图标注**，不是从 Abs 反编译出来的唯一形式——emit 时需在求值期记调用边推导图，否则只能写出展开式（与 §2.3 冲突） |
 
-**#6 是最大实现风险，且正确方法是 provenance 数据，不是反编译：**
+**#6 是最大实现风险，且正确方法是推导图数据，不是反编译：**
 
 设计原则：**尽量避免编译**。不把 Abs「编译」回 `shift` 链；链式不是
-反编译产物，而是推导过程本身的数据结构。
+反编译产物，而是推导过程本身的数据结构。该数据结构叫**推导图
+（derivation trace）**——不叫 provenance：`setProvenanceTracking` 已被
+evaluator 的 TypeValue origin map（unknown 诊断）占用，避免同名混义。
 
-1. 下行求值时显式携带 **provenance 图**：节点 = 约束/Abs，边 =（调用位点、
+1. 下行求值时显式携带**推导图**：节点 = 约束/Abs，边 =（调用位点、
    `+k`、body 步进、join）。`positive.shift(1).shift(2)` 是这张图的**投影打印**。
-2. emit 写出的是 provenance 的可读形式；语义相等用 Abs/Pred 判，不比字符串。
-3. 无 provenance（纯 call@ 域 join）时只 emit 域本身，不编造链。
+2. emit 写出的是推导图的可读形式；语义相等用 Abs/Pred 判，不比字符串。
+3. 无推导图（纯 call@ 域 join）时只 emit 域本身，不编造链。
 4. **禁止**「跑完 Abs → 猜测/恢复 shift 链」的后处理编译器。
 
 ### 14.4 语义上仍开放（非缺陷，但要拍板）
 
 | 点 | 风险 | 默认建议 |
 |---|---|---|
-| join 过宽（多上层契约） | 接口失去区分度 | 默认 join；分场景名后置 |
-| 生成返回当义务 vs 事实 | 循环责难 | 生成 = 事实快照 + drift；仅手写是义务 |
+| join 过宽（多上层契约） | join 域回灌 check 会把**仍成立**的上游契约误判为失败（§4.2 反例） | **已定**：check 按链独立；工件默认 join，分场景名后置 |
+| 生成返回当义务 vs 事实 | 循环责难；参数位同理还有「错位执法」 | **已定**（§3.3 / §12.2）：生成（参数位与返回位同口径）= 事实快照 + drift；仅手写是义务 |
 | `readonly` | TS 可写、Nudo 难查 | Phase 1 可砍 |
 | `exclude`/`extract` | 依赖尚未存在的 union 成员集 | 随 `union` 一起，勿提前 |
 | 循环 `.nudo.js` import | `execNudoModule` 无环检测 | 与模块图同一套 cycle 策略 |
@@ -902,13 +1058,18 @@ dts 是公共接口的兼容出口；接口表面已是 refine，dts 应投影�
 ### 14.5 完备性缺口（未写清但实现会撞上）
 
 1. **参数名对齐**：`fn({ x })` 的 `x` 必须与源码形参名一致；重命名形参
-   → drift/冲突规则？（建议：名字对不上 → `interface-conflict`，不静默错绑。）
+   → drift/冲突规则？（建议：名字对不上 → `interface-conflict`，不静默
+   错绑。注意现状 `refineToIndexedFull` 对名字对不上是**静默跳过**
+   （`idx >= 0` 过滤）——该规则同时是修 bug 式行为变更。）
 2. **默认参 / rest / 解构形参**：`fn` 文法未定义；Phase 2 至少 rest 用
    `args` 数组约束或降级 partial。
 3. **class / 方法**：侧车约定只覆盖 binding；`C.prototype.m` 不在模型内。
 4. **throws 域**：§4.3 提了 throws，`fn` 结构未带 throws；建议 `fn(params, returns, { throws })`。
 5. **有效契约合并序**：手写 ∪ 生成 ∪ 隐式的优先级只散落文中；check 须
-   单点函数 `effectiveInterface(fn)`，避免各处各比各的。
+   单点函数 `effectiveInterface(fn)`，避免各处各比各的。合并序定为：
+   **手写 > 生成段 > 隐式**（展示），来源随值返回供 §3.3 分档。**已升格为
+   Phase 1 第 0 步**：现有 7 个提取点（`check.ts` ×6 + `generalize.ts`
+   ×1）必须全部收口，见 §11。
 6. **序列化 / agent JSON**：隐式 interface 如何出现在 `infer --json` 未定义。
 
 ### 14.6 结论
@@ -916,14 +1077,15 @@ dts 是公共接口的兼容出口；接口表面已是 refine，dts 应投影�
 | 维度 | 判定 |
 |---|---|
 | 产品模型 | **一致**：interface=接口域，case=特例；隐式/显式/缓存三层清楚 |
-| 与现有内核 | **兼容**：不改 Abs；但 **`.nudo.js` 嵌套 import** 是硬前置 |
-| 内部冲突 | 文内 6 处已改/待改；**无根本性互斥** |
-| 最大风险 | **provenance 链式 emit**（§2.3）与 **Abs→约束投影完备性** |
-| Phase 1 可交付 | 是——构建器 + 嵌套 load + print/emit filter + 检查码骨架 |
-| Phase 2 | 须带 provenance 图，否则只能展开式（与文风冲突，需降级验收） |
+| 与现有内核 | **兼容**：不改 Abs；但 **`.nudo.js` 嵌套 import** 与 **隐式依赖边登记**（§4.5）是硬前置 |
+| 内部冲突 | 6 处已改；两个检查语义裁决已拍板（**执法分档** §3.3、**check/工件分轨** §4.2）；无根本性互斥 |
+| 最大风险 | **隐式依赖边失效**（§4.5，陈旧缓存/误报）、**推导图链式 emit**（§2.3）与 **Abs→约束投影完备性**；domain 检查的**证据门槛**（§6）是 FP 主源 |
+| Phase 1 可交付 | 是——`effectiveInterface` 单点 + 构建器 + loader 升级 + 隐式边登记 + print/emit filter + 检查码骨架 |
+| Phase 2 | 须带推导图，否则只能展开式（与文风冲突，需降级验收） |
 
-**建议修订优先级：** 嵌套 `execNudoModule` → `fn` 类型 → Abs 投影子集 →
-emit filter → 下行+provenance → drift 语义相等。
+**建议修订优先级：** `effectiveInterface` 单点 → 嵌套 loader（真 parser
+改写 / 闭包指纹 / 吞错改诊断）→ 隐式边登记（§4.5）→ `fn/shift/lit/union`
+→ Abs 投影子集 → emit filter → 下行 + 推导图 → drift 语义相等。
 
 ---
 
