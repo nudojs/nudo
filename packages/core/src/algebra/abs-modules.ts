@@ -6,7 +6,7 @@
 import type { File, ImportDeclaration } from "@babel/types";
 import type { Abs } from "./abs.ts";
 import { unknown, obj } from "./abs.ts";
-import type { AstEnv } from "./ast-eval.ts";
+import type { AstEnv } from "./ast-env.ts";
 import { absFunction } from "./abs-fn.ts";
 
 export type AbsModuleExports = {

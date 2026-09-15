@@ -180,8 +180,6 @@ createTemplate(parts: TypeValue[]): TypeValue   // e.g. [T.literal("0x"), T.stri
 isTemplate(tv: TypeValue): boolean
 getTemplateParts(tv: TypeValue): TypeValue[] | undefined
 concatTemplates(left: TypeValue, right: TypeValue): TypeValue
-getKnownPrefix(parts: TypeValue[]): string      // leading literal parts joined
-getKnownSuffix(parts: TypeValue[]): string      // trailing literal parts joined
 ```
 
 Template strings are automatically created when concatenating a literal string with an abstract string. They support `startsWith`, `endsWith`, `includes` methods and `length` property.

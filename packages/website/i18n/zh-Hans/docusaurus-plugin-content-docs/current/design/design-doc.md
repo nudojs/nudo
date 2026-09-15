@@ -355,7 +355,7 @@ Nudo 在编译时对字面量执行字符串方法：
 "hello".toUpperCase()    // Nudo: "HELLO"     | TS: string
 "hello".slice(1, 3)      // Nudo: "el"        | TS: string
 "hello".startsWith("he") // Nudo: true        | TS: boolean
-"a,b,c".split(",")       // Nudo: unknown     | TS: string[]（尚未建模）
+"a,b,c".split(",")       // Nudo: ["a","b","c"] | TS: string[]
 ```
 
 ### 6.7 循环的类型级求值

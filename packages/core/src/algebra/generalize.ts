@@ -14,7 +14,7 @@ import type { Phi, Pred } from "./pred.ts";
 import { pTrue, predToString } from "./pred.ts";
 import type { Abs, Shape } from "./abs.ts";
 import { abs, unknown } from "./abs.ts";
-import type { AstEnv } from "./ast-eval.ts";
+import type { AstEnv } from "./ast-env.ts";
 import { evalNode, emptyEnv } from "./ast-eval.ts";
 import { defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { formatShapeSlot } from "./format.ts";

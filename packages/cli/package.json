@@ -1,7 +1,7 @@
 {
   "name": "@nudojs/cli",
   "version": "0.4.0",
-  "description": "CLI and evaluator API for the Nudo type inference engine",
+  "description": "Command-line interface for the Nudo type inference engine",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -18,10 +18,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./evaluator": {
-      "types": "./dist/evaluator-api.d.ts",
-      "default": "./dist/evaluator-api.js"
     }
   },
   "bin": {
@@ -52,7 +48,6 @@
   },
   "scripts": {
     "build": "tsup",
-    "build:lib": "tsup src/evaluator-api.ts --format esm --dts",
     "prepublishOnly": "tsup"
   }
 }

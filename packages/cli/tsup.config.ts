@@ -12,15 +12,14 @@ import { defineConfig } from "tsup";
  * The published bin must run from node_modules as-is: the @nudojs/* packages
  * publish .ts sources that Node's type stripping refuses to load there, so
  * they are bundled INTO dist. tsconfig.build.json maps every @nudojs/*
- * specifier (including the service → @nudojs/cli/evaluator package cycle) to
- * sibling SRC — resolving to their dist instead would inline this package's
- * own previous build output. The @nudojs/* sources are pure ESM, so inlining
- * them adds no CJS-interop surface; @babel/* and typescript (transitive via
- * core/service/harvester) are CJS and rely on the createRequire banner below.
- * commander stays external (plain-JS declared dependency).
+ * specifier to sibling SRC — resolving to their dist instead would inline
+ * this package's own previous build output. The @nudojs/* sources are pure
+ * ESM, so inlining them adds no CJS-interop surface; @babel/* and typescript
+ * (transitive via core/service/harvester) are CJS and rely on the
+ * createRequire banner below. commander stays external (plain-JS dep).
  */
 export default defineConfig({
-  entry: ["src/index.ts", "src/evaluator-api.ts"],
+  entry: ["src/index.ts"],
   format: ["esm"],
   dts: true,
   clean: true,

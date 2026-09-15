@@ -180,8 +180,6 @@ createTemplate(parts: TypeValue[]): TypeValue   // 如 [T.literal("0x"), T.strin
 isTemplate(tv: TypeValue): boolean
 getTemplateParts(tv: TypeValue): TypeValue[] | undefined
 concatTemplates(left: TypeValue, right: TypeValue): TypeValue
-getKnownPrefix(parts: TypeValue[]): string      // 前导字面量 parts 拼接
-getKnownSuffix(parts: TypeValue[]): string      // 尾部字面量 parts 拼接
 ```
 
 模板字符串在字面量字符串与抽象字符串拼接时自动创建。支持 `startsWith`、`endsWith`、`includes` 方法和 `length` 属性。

@@ -85,6 +85,33 @@ importers:
       commander:
         specifier: ^13.0.0
         version: 13.1.0
+      debug:
+        specifier: ^4.4.3
+        version: 4.4.3
+      escape-string-regexp:
+        specifier: ^5.0.0
+        version: 5.0.0
+      eventemitter3:
+        specifier: ^5.0.4
+        version: 5.0.4
+      is-plain-obj:
+        specifier: ^4.1.0
+        version: 4.1.0
+      kleur:
+        specifier: ^4.1.5
+        version: 4.1.5
+      lodash:
+        specifier: ^4.17.21
+        version: 4.18.1
+      ms:
+        specifier: ^2.1.3
+        version: 2.1.3
+      p-limit:
+        specifier: ^7.3.2
+        version: 7.3.2
+      yocto-queue:
+        specifier: ^1.2.2
+        version: 1.2.2
 
   packages/env:
     dependencies:
@@ -119,6 +146,12 @@ importers:
         specifier: ^1.0.0
         version: 1.0.12
 
+  packages/nudo:
+    dependencies:
+      '@nudojs/cli':
+        specifier: workspace:*
+        version: link:../cli
+
   packages/parser:
     dependencies:
       '@nudojs/core':
@@ -133,12 +166,12 @@ importers:
       '@babel/types':
         specifier: ^7.29.0
         version: 7.29.0
-      '@nudojs/cli':
-        specifier: workspace:*
-        version: link:../cli
       '@nudojs/core':
         specifier: workspace:*
         version: link:../core
+      '@nudojs/env':
+        specifier: workspace:*
+        version: link:../env
       '@nudojs/harvester':
         specifier: workspace:*
         version: link:../harvester
@@ -182,9 +215,6 @@ importers:
       '@monaco-editor/react':
         specifier: ^4.6.0
         version: 4.7.0(monaco-editor@0.55.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@nudojs/cli':
-        specifier: workspace:*
-        version: link:../cli
       '@nudojs/core':
         specifier: workspace:*
         version: link:../core
@@ -3627,6 +3657,9 @@ packages:
   eventemitter3@4.0.7:
     resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
 
+  eventemitter3@5.0.4:
+    resolution: {integrity: sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==}
+
   events@3.3.0:
     resolution: {integrity: sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==}
     engines: {node: '>=0.8.x'}
@@ -4326,6 +4359,10 @@ packages:
     resolution: {integrity: sha512-eTIzlVOSUR+JxdDFepEYcBMtZ9Qqdef+rnzWdRZuMbOywu5tO2w2N7rqjoANZ5k9vywhL6Br1VRjUIgTQx4E8w==}
     engines: {node: '>=6'}
 
+  kleur@4.1.5:
+    resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
+    engines: {node: '>=6'}
+
   latest-version@7.0.0:
     resolution: {integrity: sha512-KvNT4XqAMzdcL6ka6Tl3i2lYeFDgXNCuIX+xNx6ZMVR1dFq+idXd9FLKNMOIx0t9mJ9/HudyX4oZWXZQ0UJHeg==}
     engines: {node: '>=14.16'}
@@ -4867,6 +4904,10 @@ packages:
   p-limit@4.0.0:
     resolution: {integrity: sha512-5b0R4txpzjPWVw/cXXUResoD4hb6U/x9BH08L7nw+GN1sezDzPdxeRvpc9c433fZhBan/wusjbCsqwqm4EIBIQ==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
+
+  p-limit@7.3.2:
+    resolution: {integrity: sha512-Ll0w3fU24vYpXoZmjjZIee6bJQDgG0oAyo1PdmFYI8UDwJJddaHAypxIH9avUu+t+lSsAwKVsb1jDCMIIChliw==}
+    engines: {node: '>=20'}
 
   p-locate@4.1.0:
     resolution: {integrity: sha512-R79ZZ/0wAxKGu3oYMlz8jy/kbhsNrS7SKZ7PxEHBgJ5+F2mtFW2fK2cOtBh1cHYkQsbzFV7I+EoRKe6Yt0oK7A==}
@@ -10996,6 +11037,8 @@ snapshots:
 
   eventemitter3@4.0.7: {}
 
+  eventemitter3@5.0.4: {}
+
   events@3.3.0: {}
 
   execa@5.1.1:
@@ -11792,6 +11835,8 @@ snapshots:
       graceful-fs: 4.2.11
 
   kleur@3.0.3: {}
+
+  kleur@4.1.5: {}
 
   latest-version@7.0.0:
     dependencies:
@@ -12593,6 +12638,10 @@ snapshots:
       p-try: 2.2.0
 
   p-limit@4.0.0:
+    dependencies:
+      yocto-queue: 1.2.2
+
+  p-limit@7.3.2:
     dependencies:
       yocto-queue: 1.2.2
 

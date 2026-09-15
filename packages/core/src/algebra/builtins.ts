@@ -5,6 +5,7 @@
 
 import type { Abs } from "./abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown, confJoin } from "./abs.ts";
+import { joinAbs } from "./objects.ts";
 
 function numPrim(conf: Abs["conf"] = "path"): Abs {
   return abs({ k: "prim", type: "number" }, undefined, undefined, conf);
@@ -185,9 +186,32 @@ export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
       const k = a0.shape.k;
       return boolLit(k === "arr" || k === "tuple");
     }
-    case "from":
     case "of":
       return abs({ k: "arr", element: a0 ?? unknown }, undefined, undefined, "path");
+    case "from": {
+      // Array.from(iterable)：取可迭代物的元素，不是把实参整个当元素
+      //（那是 Array.of 的语义）。Set/Map 迭代未建模 → 诚实 unknown
+      //（design-limitations §1.3；此前误给 arr<Set>，benchmark set-01 基线漂移的根因）。
+      if (!a0) return unknown;
+      const k = a0.shape.k;
+      if (k === "arr") return a0;
+      if (k === "tuple") {
+        const els = a0.shape.elements;
+        if (els.length === 0) return abs({ k: "arr", element: unknown }, undefined, undefined, "path");
+        let el = els[0]!;
+        for (let i = 1; i < els.length; i++) el = joinAbs(el, els[i]!);
+        return abs({ k: "arr", element: el }, undefined, undefined, "path");
+      }
+      if (k === "prim" && (a0.shape as { type: string }).type === "string") {
+        return abs(
+          { k: "arr", element: abs({ k: "prim", type: "string" }, undefined, undefined, "path") },
+          undefined,
+          undefined,
+          "path",
+        );
+      }
+      return unknown;
+    }
     default:
       return undefined;
   }

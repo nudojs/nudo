@@ -5,9 +5,9 @@ import { defineConfig } from "tsup";
  * Bundle vscode-languageserver* so the ESM-hostile `vscode-languageserver/node`
  * subpath never hits Node's resolver. Bundle @nudojs/* as well: their published
  * packages export .ts sources that Node refuses to load under node_modules.
- * tsconfig.build.json maps every @nudojs/* specifier (including the service →
- * @nudojs/cli/evaluator package cycle) to sibling SRC — resolving to their dist
- * instead would inline stale, pre-bundled output. The @nudojs/* sources are
+ * tsconfig.build.json maps every @nudojs/* specifier to sibling SRC —
+ * resolving to their dist instead would inline stale, pre-bundled output.
+ * The @nudojs/* sources are
  * pure ESM; the inlined CJS deps (@babel/*, typescript via harvester) rely on
  * the createRequire banner below so dynamic requires (debug → "tty") reach
  * Node's CJS loader instead of esbuild's `__require` shim.

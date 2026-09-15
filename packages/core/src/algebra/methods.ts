@@ -2,6 +2,7 @@
  * Abs 方法表：模板字符串 / 结构值上的方法与属性。
  * 类型即计算——方法结果仍是 Abs，可继续参与约束推理。
  * 宿主 TypeValue 的 dispatchMethod 只服务 IR 兜底，不是真理源。
+ * 模板语义（前缀/后缀/固定文本/长度/谓词判定）统一在 template.ts。
  */
 
 import type { Abs } from "./abs.ts";
@@ -10,6 +11,14 @@ import {
   isTemplateLike,
   templatePartsOf,
   concatString,
+  absTemplateViews,
+  knownPrefixOfViews,
+  knownSuffixOfViews,
+  allFixedTextOfViews,
+  fixedLengthOfViews,
+  decideStartsWith,
+  decideEndsWith,
+  decideIncludes,
 } from "./template.ts";
 
 function strPrim(conf: Abs["conf"] = "path"): Abs {
@@ -26,32 +35,6 @@ function numPrim(conf: Abs["conf"] = "path"): Abs {
 
 function strArr(conf: Abs["conf"] = "path"): Abs {
   return abs({ k: "arr", element: strPrim("path") }, undefined, undefined, conf);
-}
-
-function knownPrefix(parts: Abs[]): string {
-  let s = "";
-  for (const p of parts) {
-    if (p.term?.op === "lit" && typeof p.term.value === "string") s += p.term.value;
-    else break;
-  }
-  return s;
-}
-
-function knownSuffix(parts: Abs[]): string {
-  let s = "";
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const p = parts[i]!;
-    if (p.term?.op === "lit" && typeof p.term.value === "string") s = p.term.value + s;
-    else break;
-  }
-  return s;
-}
-
-function fixedLength(parts: Abs[]): number | undefined {
-  if (parts.some((p) => !(p.term?.op === "lit" && typeof p.term.value === "string"))) {
-    return undefined;
-  }
-  return parts.reduce((n, p) => n + String(p.term && p.term.op === "lit" ? p.term.value : "").length, 0);
 }
 
 function isStrRecv(recv: Abs): boolean {
@@ -78,30 +61,24 @@ export function callAbsMethod(
     : undefined;
 
   if (isTemplateLike(recv)) {
-    const parts = templatePartsOf(recv);
-    const prefix = knownPrefix(parts);
-    const suffix = knownSuffix(parts);
+    const views = absTemplateViews(templatePartsOf(recv));
+    const prefix = knownPrefixOfViews(views);
+    const suffix = knownSuffixOfViews(views);
     switch (name) {
       case "startsWith": {
         if (typeof a0 !== "string") return boolPrim();
-        if (prefix.length >= a0.length) return boolLit(prefix.startsWith(a0));
-        if (a0.startsWith(prefix)) return boolPrim();
-        return boolLit(false);
+        const d = decideStartsWith(prefix, a0);
+        return d === "unknown" ? boolPrim() : boolLit(d);
       }
       case "endsWith": {
         if (typeof a0 !== "string") return boolPrim();
-        if (suffix.length >= a0.length) return boolLit(suffix.endsWith(a0));
-        if (a0.startsWith(prefix)) return boolPrim();
-        return boolLit(false);
+        const d = decideEndsWith(suffix, a0);
+        return d === "unknown" ? boolPrim() : boolLit(d);
       }
       case "includes": {
         if (typeof a0 !== "string") return boolPrim();
-        const fixed = parts
-          .filter((p) => p.term?.op === "lit" && typeof p.term.value === "string")
-          .map((p) => String(p.term && p.term.op === "lit" ? p.term.value : ""))
-          .join("");
-        if (fixed.includes(a0)) return boolLit(true);
-        return boolPrim();
+        const d = decideIncludes(allFixedTextOfViews(views), a0);
+        return d === "unknown" ? boolPrim() : boolLit(d);
       }
       case "toUpperCase":
       case "toLowerCase":
@@ -192,8 +169,7 @@ export function callAbsMethod(
 export function getAbsProperty(recv: Abs, name: string): Abs | undefined {
   if (name === "length") {
     if (isTemplateLike(recv)) {
-      const parts = templatePartsOf(recv);
-      const n = fixedLength(parts);
+      const n = fixedLengthOfViews(absTemplateViews(templatePartsOf(recv)));
       if (n !== undefined) return numLit(n);
       return numPrim("path");
     }

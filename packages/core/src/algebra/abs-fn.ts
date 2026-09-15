@@ -8,7 +8,7 @@ import type { Abs, Confidence, Shape } from "./abs.ts";
 import { abs } from "./abs.ts";
 import type { Term } from "./term.ts";
 import type { Pred } from "./pred.ts";
-import type { AstEnv } from "./ast-eval.ts";
+import type { AstEnv } from "./ast-env.ts";
 
 export type AbsFnImpl = {
   params: string[];

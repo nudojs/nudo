@@ -8,7 +8,8 @@
 import type { Node } from "@babel/types";
 import type { Abs } from "./abs.ts";
 import { abs, confJoin, unknown } from "./abs.ts";
-import type { AstEnv } from "./ast-eval.ts";
+import { getSlot } from "./objects.ts";
+import type { AstEnv } from "./ast-env.ts";
 
 export type MethodDef = {
   name: string;
@@ -181,8 +182,8 @@ function litFalse() {
 export function projectBrand(self: Abs, key: string): Abs {
   if (self.shape.k !== "brand") return unknown;
   const inner = self.shape.shape;
-  if (inner.shape.k === "obj") {
-    const slot = inner.shape.slots[key];
+  if (inner && inner.shape.k === "obj") {
+    const slot = getSlot(inner.shape.slots, key);
     if (slot) return slot.value;
   }
   return unknown;

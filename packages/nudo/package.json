@@ -1,0 +1,37 @@
+{
+  "name": "nudo",
+  "version": "0.1.0",
+  "description": "Thin installer shell for the `nudo` command — delegates to @nudojs/cli, the CLI of the Nudo type inference engine",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "keywords": [
+    "nudo",
+    "type-inference",
+    "javascript",
+    "cli",
+    "dts",
+    "abstract-interpretation"
+  ],
+  "bin": {
+    "nudo": "./bin/nudo.mjs"
+  },
+  "files": [
+    "bin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nudojs/nudo.git",
+    "directory": "packages/nudo"
+  },
+  "homepage": "https://github.com/nudojs/nudo/tree/main/packages/nudo",
+  "bugs": "https://github.com/nudojs/nudo/issues",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org"
+  },
+  "dependencies": {
+    "@nudojs/cli": "workspace:*"
+  }
+}

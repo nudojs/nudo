@@ -10,7 +10,7 @@ import {
   setCallCollector,
   resetMemo,
   type CallRecord,
-} from '@nudojs/cli/evaluator';
+} from '@nudojs/service/evaluator';
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react'));
 

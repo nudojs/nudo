@@ -1,11 +1,21 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { resolve } from "node:path";
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, chmodSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { T, typeValueToString } from "@nudojs/core";
-import { analyzeFile, collectCallRecords, getTypeAtPosition, getCompletionsAtPosition, buildModuleGraph, type ModuleGraphCache, computeDirtySet, topoSortDirty } from "../analyzer.ts";
+import { analyzeFile, collectCallRecords, buildModuleGraph, type ModuleGraphCache, computeDirtySet, topoSortDirty } from "../analyzer.ts";
+import { getTypeAtPosition, getCompletionsAtPosition } from "../lsp-surface.ts";
 import { generateDts } from "../dts-generator.ts";
+import { resetAllAnalysisCaches } from "../index.ts";
+
+// 用例级缓存隔离：analyzeFile 背后的会话级缓存（analysisFileCache / bRunCache /
+// fnAnalysisCache / absModuleCache / core 的 checkSource·generalize·nudo-exec
+// memo / AST LRU）全部清空，杜绝跨用例陈旧命中。
+// buildModuleGraph 的 mtime 边缓存测试用的是各自传入的局部 cache，不受影响。
+beforeEach(() => {
+  resetAllAnalysisCaches();
+});
 
 const FIXTURE_PATH = resolve(import.meta.dirname, "fixtures", "sample.js");
 

@@ -1,0 +1,36 @@
+/**
+ * 容器字面量策略 —— 单一真理源。
+ *
+ * 同一数组字面量在两条求值引擎下必须得到同一 shape：
+ * - ast-eval（ArrayExpression 分支：A 路径调用点收集 / ast-eval 求值）
+ * - B 路径 runtime（transpile 目标算子 $arr/$concat）
+ *
+ * 不变式（源自 ast-eval 既有 >cap 降级语义，两引擎共享）：
+ * - 元素数 ≤ cap → tuple，conf=exact（逐元素精确，map/reduce 可展开）
+ * - 元素数 > cap → arr，元素 = 逐位 join，conf=widenedArrayConf()
+ *   （字面量路径已知但元素被合并，不再逐位确定）
+ *
+ * 注意：空数组字面量不归本策略管辖——ast-eval 给 arr<unknown>（exact），
+ * B 路径 $arr([]) 给 0 元 tuple，属两引擎已知的既有差异（本文件不收敛）。
+ * 策略调整只改本文件。
+ */
+
+import type { Confidence } from "./abs.ts";
+
+/** 数组字面量保持 tuple 的最大元素数（含边界） */
+export const TUPLE_LITERAL_CAP = 8;
+
+/** 字面量 tuple 元素数上限（>cap 降为 arr） */
+export function tupleLiteralCap(): number {
+  return TUPLE_LITERAL_CAP;
+}
+
+/** n 元素数组字面量是否应降级为 arr（元素逐位 join） */
+export function shouldWidenArrayLiteral(n: number): boolean {
+  return n > TUPLE_LITERAL_CAP;
+}
+
+/** 降级后的 conf：路径已知但元素合并，不再逐位确定 */
+export function widenedArrayConf(): Confidence {
+  return "path";
+}

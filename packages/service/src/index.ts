@@ -2,7 +2,6 @@ export {
   type AnalysisResult,
   type FunctionAnalysis,
   type CaseResult,
-  type CaseInfo,
   type CaseHint,
   type Diagnostic,
   type DiagnosticSeverity,
@@ -17,17 +16,21 @@ export {
   analyzeFileAsync,
   collectCallRecords,
   type CallRecord,
+  buildModuleGraph,
+  type ModuleGraphCache,
+  computeDirtySet,
+  topoSortDirty,
+} from "./analyzer.ts";
+
+export {
+  type CaseInfo,
   getTypeAtPosition,
   getTypeAtPositionAsync,
   getHoverAtPosition,
   type HoverInfo,
   getCompletionsAtPosition,
   getCasesForFile,
-  buildModuleGraph,
-  type ModuleGraphCache,
-  computeDirtySet,
-  topoSortDirty,
-} from "./analyzer.ts";
+} from "./lsp-surface.ts";
 
 export { collectAbsInlays, type AbsInlay } from "@nudojs/core";
 

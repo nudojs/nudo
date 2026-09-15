@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { typeValueToString } from "@nudojs/core";
 import { extractDirectives } from "@nudojs/parser";
-import { resetMemo } from "./evaluator.ts";
+import { resetMemo } from "@nudojs/service/evaluator";
 import {
   typeValueToZodSchema,
   generateGuardFunction,

@@ -34,6 +34,19 @@ export function isObj(a: Abs): a is Abs & { shape: ObjShape } {
 }
 
 /**
+ * 自有槽位读取。slots 是普通对象，直接 `slots[key]` 会让 `__proto__` /
+ * `toString` / `valueOf` 等键命中 Object.prototype 原型链，得到既非 slot
+ * 又 truthy 的原生值（历史 bug 模式，已两次复发）。所有跨来源 key 的槽位
+ * 读取必须走这里。
+ */
+export function getSlot<S extends { value: Abs }>(
+  slots: Record<string, S>,
+  key: string,
+): S | undefined {
+  return Object.prototype.hasOwnProperty.call(slots, key) ? slots[key] : undefined;
+}
+
+/**
  * spread：base ⊕ over（右侧覆盖，不是 join）
  * 未出现在 over 的 key 保留 base；over 的 key 覆盖。
  */
@@ -180,34 +193,6 @@ function shapeKey(a: Abs): string {
   if (s.k === "fn") return `fn:${s.params.length}`;
   if (s.k === "sum") return `sum:${s.members.length}`;
   return "other";
-}
-
-/**
- * 显式损失：sum-of-products → optional 槽（仅 emit/阈值）。
- * 强制 #widened。
- */
-export function collapseToOptional(sum: Abs): Abs {
-  if (sum.shape.k !== "sum") {
-    if (isObj(sum)) return { ...sum, conf: confJoin(sum.conf, "widened") };
-    return sum;
-  }
-  const objs = sum.shape.members.filter(isObj);
-  if (objs.length === 0) {
-    return abs({ k: "unknown" }, undefined, undefined, "widened");
-  }
-  const allKeys = new Set<string>();
-  for (const o of objs) {
-    for (const k of Object.keys(o.shape.slots)) allKeys.add(k);
-  }
-  const slots: Record<string, Slot> = {};
-  for (const k of allKeys) {
-    const present = objs.filter((o) => k in o.shape.slots);
-    const values = present.map((o) => o.shape.slots[k]!.value);
-    const joined = values.reduce((acc, v) => joinValues(acc, v));
-    const optional = present.length < objs.length;
-    slots[k] = { value: joined, optional };
-  }
-  return { shape: { k: "obj", slots }, conf: "widened" };
 }
 
 // --- 函数重载并 ---

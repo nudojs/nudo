@@ -359,7 +359,7 @@ Nudo evaluates string methods on literals at compile time:
 "hello".toUpperCase()    // Nudo: "HELLO"     | TS: string
 "hello".slice(1, 3)      // Nudo: "el"        | TS: string
 "hello".startsWith("he") // Nudo: true        | TS: boolean
-"a,b,c".split(",")       // Nudo: unknown     | TS: string[]  (not modeled yet)
+"a,b,c".split(",")       // Nudo: ["a","b","c"] | TS: string[]
 ```
 
 ### 6.7 Type-Level Loop Evaluation

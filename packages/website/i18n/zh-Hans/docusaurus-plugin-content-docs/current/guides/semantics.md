@@ -30,7 +30,7 @@ sli();                                // → "el"
 Case "call@L2": () => "HELLO"
 ```
 
-`toUpperCase`、`toLowerCase`、`slice` 与 `.length` 产生精确字面量。前缀/后缀/包含检查——`startsWith`、`endsWith`、`includes`——对字面量接收者折叠为确定的布尔值。`split` 与 `indexOf` 尚未建模，结果为 `unknown`。
+`toUpperCase`、`toLowerCase`、`slice`、`.length` 与 `split`（字面量接收者 + 字面量分隔符）产生精确结果——`"a,b,c".split(",")` 在调用点与指令两条路径上都折叠为 `["a", "b", "c"]`。前缀/后缀/包含检查——`startsWith`、`endsWith`、`includes`——对字面量接收者折叠为确定的布尔值。`indexOf` 只得 `number` 原语，丢字面量下标。
 
 ### 具体边界的循环
 
@@ -162,10 +162,6 @@ Combined: 0 | 1 | 3
 ### 收窄守卫
 
 `===` 比较、`typeof`、`Array.isArray` 与 `switch` 按具体调用点收窄——已验证模式见[控制流收窄](./control-flow-narrowing.md)。
-
-### 别把本页拼进同一个文件
-
-上方每个代码块都是对**独立**文件真实运行 `nudo infer` 的结果。把某些代码块拼进同一个文件会让 `nudo infer` 崩溃：`class` 声明与顶层 `Object.keys(…)` 调用共存——或与顶层递归调用共存（即 `compute`、`keysOf`、`walk` 三个代码块）——会以裸 `Maximum call stack size exceeded` 崩溃（exit `1`，无文件/行号诊断）。`nudo check` 对同一文件不崩。目前请把这三个代码块分开放进不同文件；最小复现见 monorepo `docs/design-limitations.md` §4.3。
 
 ## 尚未建模
 

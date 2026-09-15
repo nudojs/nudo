@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { typeValueToString } from "@nudojs/core";
 import {
   analyzeFile,
@@ -6,7 +6,14 @@ import {
   generateGuardFunction,
   generateDts,
   typeValueToTSType,
+  resetAllAnalysisCaches,
 } from "../index.ts";
+
+// 用例级缓存隔离：整文件分析管线背后的会话级缓存
+// （analysisFileCache / bRunCache / fnAnalysisCache / absModuleCache / core memo）清空。
+beforeEach(() => {
+  resetAllAnalysisCaches();
+});
 
 describe("integration: full pipeline", () => {
   it("infers types through the complete analyze → generate pipeline", () => {

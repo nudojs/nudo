@@ -48,7 +48,7 @@ const config: Config = {
     ],
   ],
 
-  // Playground 在浏览器里直接跑推断引擎（@nudojs/cli/evaluator）。
+  // Playground 在浏览器里直接跑推断引擎（@nudojs/service/evaluator）。
   // evaluator-api 的 re-export 链会把 env-loader（node:fs/path/crypto/
   // os/module/url）带进浏览器 bundle——浏览器里不可达（loadEnvs 只在
   // Node CLI 用），alias 成空模块。
@@ -72,9 +72,9 @@ const config: Config = {
               // monorepo 内 @nudojs/* 的 package.json exports → dist/；
               // 本地/CI 文档站不先 build，直接 alias 到 src
               alias: {
-                "@nudojs/cli/evaluator": resolve(
+                "@nudojs/service/evaluator": resolve(
                   repoRoot,
-                  "packages/cli/src/evaluator-api.ts",
+                  "packages/service/src/evaluator/evaluator-api.ts",
                 ),
                 "@nudojs/core/exec": resolve(
                   repoRoot,
@@ -82,7 +82,6 @@ const config: Config = {
                 ),
                 "@nudojs/core": resolve(repoRoot, "packages/core/src"),
                 "@nudojs/parser": resolve(repoRoot, "packages/parser/src"),
-                "@nudojs/cli": resolve(repoRoot, "packages/cli/src"),
                 "@nudojs/service": resolve(repoRoot, "packages/service/src"),
                 "@nudojs/harvester": resolve(repoRoot, "packages/harvester/src"),
                 "@nudojs/env/es": resolve(repoRoot, "packages/env/src/es.ts"),
