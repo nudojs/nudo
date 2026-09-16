@@ -162,38 +162,36 @@ getRangeMeta(tv: TypeValue): { min?: number; max?: number; integer?: boolean } |
 
 ## Mock 帮助函数
 
-`@nudo:mock` 表达式与 env 文件共享的类型安全 mock 构造器——`MockHelper` 是一个普通记录，由 `mockHelperToTypeValue` 转换为函数 TypeValue：
+`@nudo:mock` 表达式与 env 文件共享的类型安全 mock 构造器——`MockHelper` 是一个普通记录，其值字段为 **Abs**（TypeValue 退出后的真理源）。`@nudojs/parser` 经 `parseNudoMockExpr` 从 `@nudo:mock` 表达式构建它；`@nudojs/service` 的 `mockDirectivesToAbsSeeds` 将其转为 Abs mock 种子：
 
 ```typescript
 type MockHelper = {
   kind: "mock-helper";
-  returnValue?: TypeValue;        // stub().returns(v)
-  resolvedValue?: TypeValue;      // stub().resolves(v) —— 调用返回 Promise<v>
-  rejectedValue?: TypeValue;      // stub().rejects(v) —— 调用抛出/拒绝 v
-  onFirstCallValue?: TypeValue;   // stub().onFirstCall(v)
-  onSecondCallValue?: TypeValue;  // stub().onSecondCall(v)
-  withArgsCases?: { args: TypeValue[]; returnValue: TypeValue }[];  // stub().withArgs(...)
-  callsFakeImpl?: TypeValue;      // stub().callsFake(fn) —— 调用时执行 fn
-  implementation?: (...args: TypeValue[]) => TypeValue;
+  returnValue?: Abs;        // stub().returns(v)
+  resolvedValue?: Abs;      // stub().resolves(v) —— 调用返回 Promise<v>
+  rejectedValue?: Abs;      // stub().rejects(v) —— 调用抛出/拒绝 v
+  onFirstCallValue?: Abs;   // stub().onFirstCall(v)
+  onSecondCallValue?: Abs;  // stub().onSecondCall(v)
+  withArgsCases?: { args: Abs[]; returnValue: Abs }[];  // stub().withArgs(...)
+  callsFakeImpl?: { params: string[]; body: Node; async?: boolean };  // stub().callsFake(fn) —— 调用时执行 fn
 };
 
 function stub(): MockHelper;
 function spy(): MockHelper;
 function mock(): MockHelper;
-function mockHelperToTypeValue(helper: MockHelper, env: Environment): TypeValue;
 ```
 
 `stub`、`spy`、`mock` 返回相同的基础 helper，只是语义意图不同；行为来自**挂在 `stub`/`spy` 上的静态构造器**——每个都返回完整的 `MockHelper`（没有实例级链式调用）：
 
 ```typescript
-stub.returns(v: TypeValue): MockHelper
-stub.resolves(v: TypeValue): MockHelper       // 调用返回 Promise<v>
-stub.rejects(v: TypeValue): MockHelper        // 调用以 v 拒绝
-stub.onFirstCall(v: TypeValue): MockHelper
-stub.onSecondCall(v: TypeValue): MockHelper
-stub.withArgs(...args: TypeValue[]): MockHelper
-stub.callsFake(fn: TypeValue): MockHelper
-spy.returns(v: TypeValue): MockHelper
+stub.returns(v: Abs): MockHelper
+stub.resolves(v: Abs): MockHelper       // 调用返回 Promise<v>
+stub.rejects(v: Abs): MockHelper        // 调用以 v 拒绝
+stub.onFirstCall(v: Abs): MockHelper
+stub.onSecondCall(v: Abs): MockHelper
+stub.withArgs(...args: Abs[]): MockHelper
+stub.callsFake(fn: { params: string[]; body: Node; async?: boolean }): MockHelper
+spy.returns(v: Abs): MockHelper
 ```
 
 在 `@nudo:mock` 表达式中写的是 sinon 风格链 `stub().…`——解析器对整条链做模式匹配，构造等价的 `MockHelper`（`stub()` 调用本身不会执行）：

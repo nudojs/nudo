@@ -162,38 +162,36 @@ Ranges are created by comparison narrowing (e.g. `x >= 0`). They support `>=`, `
 
 ## Mock Helpers
 
-Type-safe mock builders shared by `@nudo:mock` expressions and env files — a `MockHelper` is a plain record that `mockHelperToTypeValue` turns into a function TypeValue:
+Type-safe mock builders shared by `@nudo:mock` expressions and env files — a `MockHelper` is a plain record whose value fields are **Abs** (the source of truth after the TypeValue eviction). `@nudojs/parser` builds it from the `@nudo:mock` expression via `parseNudoMockExpr`; `@nudojs/service`'s `mockDirectivesToAbsSeeds` turns it into Abs mock seeds:
 
 ```typescript
 type MockHelper = {
   kind: "mock-helper";
-  returnValue?: TypeValue;        // stub().returns(v)
-  resolvedValue?: TypeValue;      // stub().resolves(v) — call returns Promise<v>
-  rejectedValue?: TypeValue;      // stub().rejects(v) — call throws/rejects with v
-  onFirstCallValue?: TypeValue;   // stub().onFirstCall(v)
-  onSecondCallValue?: TypeValue;  // stub().onSecondCall(v)
-  withArgsCases?: { args: TypeValue[]; returnValue: TypeValue }[];  // stub().withArgs(...)
-  callsFakeImpl?: TypeValue;      // stub().callsFake(fn) — call executes fn
-  implementation?: (...args: TypeValue[]) => TypeValue;
+  returnValue?: Abs;        // stub().returns(v)
+  resolvedValue?: Abs;      // stub().resolves(v) — call returns Promise<v>
+  rejectedValue?: Abs;      // stub().rejects(v) — call throws/rejects with v
+  onFirstCallValue?: Abs;   // stub().onFirstCall(v)
+  onSecondCallValue?: Abs;  // stub().onSecondCall(v)
+  withArgsCases?: { args: Abs[]; returnValue: Abs }[];  // stub().withArgs(...)
+  callsFakeImpl?: { params: string[]; body: Node; async?: boolean };  // stub().callsFake(fn) — call executes fn
 };
 
 function stub(): MockHelper;
 function spy(): MockHelper;
 function mock(): MockHelper;
-function mockHelperToTypeValue(helper: MockHelper, env: Environment): TypeValue;
 ```
 
 `stub`, `spy`, and `mock` all return the same base helper and differ only in intent; behavior comes from the **static builders attached to `stub`/`spy`** — each returns a complete `MockHelper` (there is no instance chaining):
 
 ```typescript
-stub.returns(v: TypeValue): MockHelper
-stub.resolves(v: TypeValue): MockHelper       // call returns Promise<v>
-stub.rejects(v: TypeValue): MockHelper        // call rejects with v
-stub.onFirstCall(v: TypeValue): MockHelper
-stub.onSecondCall(v: TypeValue): MockHelper
-stub.withArgs(...args: TypeValue[]): MockHelper
-stub.callsFake(fn: TypeValue): MockHelper
-spy.returns(v: TypeValue): MockHelper
+stub.returns(v: Abs): MockHelper
+stub.resolves(v: Abs): MockHelper       // call returns Promise<v>
+stub.rejects(v: Abs): MockHelper        // call rejects with v
+stub.onFirstCall(v: Abs): MockHelper
+stub.onSecondCall(v: Abs): MockHelper
+stub.withArgs(...args: Abs[]): MockHelper
+stub.callsFake(fn: { params: string[]; body: Node; async?: boolean }): MockHelper
+spy.returns(v: Abs): MockHelper
 ```
 
 In `@nudo:mock` expressions you write the sinon-style chain `stub().…` — the parser pattern-matches the whole chain and builds the equivalent `MockHelper` (the `stub()` call itself never runs):

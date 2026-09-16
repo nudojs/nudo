@@ -227,7 +227,7 @@ CLI 主路径（B-hosted）的可见行为（2026-09 实测）：
 
 ### 3.1 全局标识符未解析（已解决）
 
-~~JavaScript 内置全局标识符（`Infinity`、`NaN`、`undefined`）和静态属性（`Number.MAX_SAFE_INTEGER`）未解析。~~ 已实现：`BUILTIN_STATIC_METHODS` 预置全部数值常量——顶层 `Infinity`/`NaN`、`Math.PI`/`Math.E` 等 8 个、`Number.MAX_SAFE_INTEGER`/`EPSILON` 等 10 个，均解析为 `number` 且不再触发 `unknown-global`/`builtin-unknown` 诊断；`@nudo:env` 指令存在时 `loadEnvs` 绑定仍优先。测试：`edge-cases.test.ts`、`builtin-functions.test.ts`。
+~~JavaScript 内置全局标识符（`Infinity`、`NaN`、`undefined`）和静态属性（`Number.MAX_SAFE_INTEGER`）未解析。~~ 已实现：内置全局常量收进 env 模块 `packages/env/src/es.ts` 的 `defineEnv()`——顶层 `Infinity`/`NaN`（`number`）与 `undefined`（`undef()`），`Math` 对象 8 个常量（`PI`/`E`/`LN2`/`LN10`/`LOG2E`/`LOG10E`/`SQRT2`/`SQRT1_2`）、`Number` 对象 8 个常量（`MAX_SAFE_INTEGER`/`MIN_SAFE_INTEGER`/`MAX_VALUE`/`MIN_VALUE`/`POSITIVE_INFINITY`/`NEGATIVE_INFINITY`/`NaN`/`EPSILON`），数值常量均解析为 `number` 且不再触发 `unknown-global`/`builtin-unknown` 诊断；`@nudo:env` 指令存在时 `loadEnvs` 绑定仍优先。测试：`service/src/__tests__/bpath-env.test.ts`（env globals 经 B-path）。
 
 ---
 
@@ -428,15 +428,15 @@ exit 0，全部 case 精确（`compute` → `25 #exact`）。网站
 
 ## 六、测试覆盖情况
 
-每个限制类别对应的测试文件：
+每个限制类别对应的测试文件（TypeValue 求值器删除后旧测试文件已移除，下表按当前 Abs 原生测试命名）：
 
 | 限制类别 | 测试文件 | 状态 |
 |---------|---------|------|
-| 集合类型 | `edge-cases.test.ts` | ✅ 已覆盖（记录当前行为） |
-| 高阶函数 | `combination-scenarios.test.ts` | ✅ 已覆盖 |
-| 全局标识符 | `edge-cases.test.ts` | ✅ 已覆盖 |
-| 宽松相等 | `edge-cases.test.ts` | ✅ 已覆盖 |
-| 循环推断 | `syntax-sugar.test.ts` | ✅ 已覆盖 |
+| 集合类型（map/reduce/forEach/some） | `core/src/algebra/__tests__/hof.test.ts` | ✅ 已覆盖（记录当前行为） |
+| 高阶函数 | `core/src/algebra/__tests__/hof.test.ts`、`hof-relation*.test.ts`、`hof-p2-generalize.test.ts`、`hof-p4-check.test.ts` | ✅ 已覆盖 |
+| 全局标识符 | `service/src/__tests__/bpath-env.test.ts`（env globals 经 B-path） | ✅ 已覆盖 |
+| 宽松相等 | ——（TypeValue 求值器删除后 `==`/`!=` 折叠回归为 `unknown`，见 3.2，无专门测试） | ⚠️ 未覆盖 |
+| 循环推断 | `core/src/algebra/__tests__/exec-bpath.test.ts`、`exec-spread-forof.test.ts` | ✅ 已覆盖 |
 
 ---
 
@@ -445,7 +445,7 @@ exit 0，全部 case 精确（`compute` → `25 #exact`）。网站
 ### 阶段 1：快速胜利（1-2 周）
 - [x] 预置全局环境（`Infinity`、`NaN`、`undefined`）
 - [x] 实现 `Number`、`Math`、`JSON` 等内置对象的静态属性
-- [x] 简单实现 `==` / `!=` 返回 `T.boolean`
+- [ ] 简单实现 `==` / `!=` 折叠（曾在 TypeValue 求值器实现，求值器删除后回归为 `unknown`，见 3.2）
 
 ### 阶段 2：精度提升（2-4 周）
 - [x] 数组 `reduce` 累加器追踪（字面量逐元素 + 符号不动点，见 1.1）

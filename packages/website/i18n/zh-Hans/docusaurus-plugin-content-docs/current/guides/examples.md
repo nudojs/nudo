@@ -160,7 +160,7 @@ Case "symbolic": (number[]) => number
 Combined: number
 ```
 
-数组方法支持并不均匀——依赖某个方法前先查这条边界。`forEach` 回调的副作用**不会写回**（被回调闭包捕获的累加器停留在初值），`some` / `every` 返回 `unknown`：
+数组方法支持并不均匀——依赖某个方法前先查这条边界。`some` / `every` 在调用点与 `@nudo:case` 两条路径上都折叠为 `boolean`。`forEach` 回调的副作用依路径而异：`@nudo:case` 指令路径下写回落地（被回调闭包捕获的累加器到达终值），调用点路径下写回从未落地——累加器停留在初值：
 
 ```js
 function forEachSum(arr) {
@@ -168,15 +168,15 @@ function forEachSum(arr) {
   arr.forEach((x) => { s = s + x; });
   return s;
 }
-forEachSum([1, 2, 3, 4, 5]);    // → 0 —— s = s + x 的写回从未落地
+forEachSum([1, 2, 3, 4, 5]);    // → 0 —— 调用点路径：s = s + x 的写回从未落地
 
 function someBig(arr) {
   return arr.some((x) => x > 3);
 }
-someBig([1, 2, 3, 4, 5]);       // → unknown
+someBig([1, 2, 3, 4, 5]);       // → boolean
 ```
 
-请改用 `map` / `reduce`（以及 `filter → map → reduce` 链，逐级保留字面量精度）。仓库示例（CI 钉住）：[`docs/examples/algebra/c-reduce-sum.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/c-reduce-sum.js)、[`docs/examples/algebra/h-array-boundary.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/h-array-boundary.js)。
+指令路径才是 `forEach` 写回的精确路径——仓库示例钉住 `@nudo:case "forEach"` → `15 #exact`。调用点若需要无副作用精确结果，请改用 `map` / `reduce`（以及 `filter → map → reduce` 链，逐级保留字面量精度）。仓库示例（CI 钉住）：[`docs/examples/algebra/c-reduce-sum.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/c-reduce-sum.js)、[`docs/examples/algebra/h-array-boundary.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/h-array-boundary.js)。
 
 ---
 
