@@ -23,10 +23,10 @@ npm install @nudojs/cli
 
 ```bash
 # Infer types for a file
-npx nudo infer src/utils.js
+npx nudojs infer src/utils.js
 
 # Generate .d.ts output
-npx nudo infer src/utils.js --dts
+npx nudojs infer src/utils.js --dts
 ```
 
 ## License

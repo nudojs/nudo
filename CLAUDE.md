@@ -38,7 +38,7 @@ core → parser → service → cli → nudo (thin shell)
 | `packages/parser` | Babel-based parser; extracts function-scoped `@nudo:` directives from JSDoc |
 | `packages/cli` | CLI commands only (`infer`, `check`, `types`, `watch`, `generate`, `harvest`, `test`, `interface`) |
 | `packages/service` | Analyzer orchestration, TypeValue evaluator, Abs program path, dts-generator, harvest, infer-json, interface emitter/surface |
-| `packages/nudo` | Thin npm shell (`nudo` bin) that re-exports `@nudojs/cli` |
+| `packages/nudojs` | Thin npm shell `nudojs` (`nudo` bin) that re-exports `@nudojs/cli` |
 | `packages/lsp` | LSP server (check diagnostics, completions, code lens, inlay hints, agent tools) |
 | `packages/env` | ES / Web / Node API type definitions (`@nudojs/env`) |
 | `packages/harvester` | Harvest `@types` → env modules |

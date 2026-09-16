@@ -1,6 +1,6 @@
 ---
 sidebar_position: 2
-description: "几分钟上手：给 JavaScript 文件添加 @nudo:case 指令并运行 npx nudo infer。"
+description: "几分钟上手：给 JavaScript 文件添加 @nudo:case 指令并运行 npx nudojs infer。"
 ---
 
 # 快速开始
@@ -32,7 +32,7 @@ function subtract(a, b) {
 在项目目录下执行：
 
 ```bash
-npx nudo infer math.js
+npx nudojs infer math.js
 ```
 
 ## 3. 输出
@@ -54,7 +54,7 @@ Nudo 对该函数执行了三次——两次使用具体输入，一次使用符
 - **`--dts`** — 在源文件旁生成 `.d.ts` 声明文件：
 
   ```bash
-  npx nudo infer math.js --dts
+  npx nudojs infer math.js --dts
   ```
 
   在上面的标准输出之后，CLI 会打印：
@@ -79,7 +79,7 @@ Nudo 对该函数执行了三次——两次使用具体输入，一次使用符
 - **`--loc`** — 在输出中显示源码位置：
 
   ```bash
-  npx nudo infer math.js --loc
+  npx nudojs infer math.js --loc
   ```
 
   ```text
@@ -97,13 +97,13 @@ Nudo 对该函数执行了三次——两次使用具体输入，一次使用符
 在文件变更时重新运行推断：
 
 ```bash
-npx nudo watch .
+npx nudojs watch .
 ```
 
 配合 `--dts` 可在每次变更时生成 `.d.ts` 文件：
 
 ```bash
-npx nudo watch . --dts
+npx nudojs watch . --dts
 ```
 
 watch 会递归扫描目录下的所有 `.js`、`.mjs`、`.ts` 文件（排除 `node_modules`）——包括没有指令的文件。
@@ -123,7 +123,7 @@ console.log(formatPrice(1999));
 ```
 
 ```bash
-npx nudo infer utils.js
+npx nudojs infer utils.js
 ```
 
 ```text
@@ -188,7 +188,7 @@ register({ id: 1, name: "ada" });    // ok
 门禁：
 
 ```bash
-npx nudo check app.js
+npx nudojs check app.js
 ```
 
 报告使用 `actual ⊭ expected`。精化也会流入推断：带 `@nudo:refine x positive` 的 `inc` 会推断出 `number = (x + 1) where (x + 1) > 1`。

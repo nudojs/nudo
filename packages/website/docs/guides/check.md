@@ -9,7 +9,7 @@ description: nudo check — refinement, assign, and arg-structure gate on Abs (t
 `nudo check` is Nudo's **refinement gate on Abs** (type-as-computation). Refinements are declared with `@nudo:refine` — Preds that enter Abs and participate in algebra. The report is **Nudo-native** (`actual ⊭ expected`), not a TypeScript diagnostic in disguise.
 
 ```bash
-npx nudo check path/to/file.js
+npx nudojs check path/to/file.js
 # exit 1 if any error
 ```
 

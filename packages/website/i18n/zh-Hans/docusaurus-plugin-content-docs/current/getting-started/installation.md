@@ -27,7 +27,8 @@ yarn add @nudojs/cli
 然后运行类型推断：
 
 ```bash
-npx nudo infer path/to/file.js
+npx nudojs infer path/to/file.js
+# 若已全局安装 `@nudojs/cli` 或 `nudojs`，命令为 `nudo`
 ```
 
 ## VS Code 扩展

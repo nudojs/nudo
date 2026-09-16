@@ -9,7 +9,7 @@ description: nudo check — Abs 上的精化、赋值与传参结构门禁（类
 `nudo check` 是 Nudo 在 **Abs 上的精化门禁**（类型即计算）。精化用 `@nudo:refine` 声明——Pred 进入 Abs 并参与代数。报告是 **Nudo 原生格式**（`actual ⊭ expected`），不是 TypeScript 诊断换皮。
 
 ```bash
-npx nudo check path/to/file.js
+npx nudojs check path/to/file.js
 # 有 error 则退出码 1
 ```
 

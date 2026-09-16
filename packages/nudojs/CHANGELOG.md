@@ -1,4 +1,4 @@
-# nudo
+# nudojs
 
 ## 0.2.0
 
@@ -13,9 +13,9 @@
   - CLI：`nudo interface`（别名 `refine`）分层打印；`--emit` / `--fn` / `--all` / `--dry-run` / `--exit-on-diff` / `--callsites`；`nudo check --callsites`
   - 配置：`package.json#nudo.interface.autoBind`（默认 true；node_modules 永不 ambient 加载）
   - LSP：CodeLens interface 默认层 + persist/update；agent 工具 `nudo.interface` / `nudo.interface.emit`（emit 路径限制在项目根内）
-  - 新薄壳包 `nudo`（`bin` 委托 `@nudojs/cli`）
+  - 新薄壳包 `nudojs`（`bin` 委托 `@nudojs/cli`，命令名仍为 `nudo`）
 
-- 0fd253f: 新增 `nudo` 薄壳包：`npm i -g nudo` 或 `npx nudo` 直接获得 `nudo` 命令（委托 @nudojs/cli，参数与退出码透传）。
+- 0fd253f: 新增 `nudojs` 薄壳包：`npm i -g nudojs` 或 `npx nudojs` 直接获得 `nudo` 命令（委托 @nudojs/cli，参数与退出码透传）。
 
 ### Patch Changes
 

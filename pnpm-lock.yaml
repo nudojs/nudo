@@ -146,7 +146,7 @@ importers:
         specifier: ^1.0.0
         version: 1.0.12
 
-  packages/nudo:
+  packages/nudojs:
     dependencies:
       '@nudojs/cli':
         specifier: workspace:*

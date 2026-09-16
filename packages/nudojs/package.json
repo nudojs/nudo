@@ -1,5 +1,5 @@
 {
-  "name": "nudo",
+  "name": "nudojs",
   "version": "0.2.0",
   "engines": {
     "node": ">=20"
@@ -10,6 +10,7 @@
   "license": "MIT",
   "keywords": [
     "nudo",
+    "nudojs",
     "type-inference",
     "javascript",
     "cli",
@@ -25,9 +26,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nudojs/nudo.git",
-    "directory": "packages/nudo"
+    "directory": "packages/nudojs"
   },
-  "homepage": "https://github.com/nudojs/nudo/tree/main/packages/nudo",
+  "homepage": "https://github.com/nudojs/nudo/tree/main/packages/nudojs",
   "bugs": "https://github.com/nudojs/nudo/issues",
   "publishConfig": {
     "access": "public",

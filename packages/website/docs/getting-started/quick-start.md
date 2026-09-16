@@ -1,6 +1,6 @@
 ---
 sidebar_position: 2
-description: "Infer your first types in minutes: add @nudo:case directives to a JavaScript file and run npx nudo infer."
+description: "Infer your first types in minutes: add @nudo:case directives to a JavaScript file and run npx nudojs infer."
 ---
 
 # Quick Start
@@ -32,7 +32,7 @@ Each `@nudo:case` provides a named input for Nudo to execute with. You can use:
 From the project directory:
 
 ```bash
-npx nudo infer math.js
+npx nudojs infer math.js
 ```
 
 ## 3. Output
@@ -54,7 +54,7 @@ Nudo executed the function three times — twice with concrete inputs, once with
 - **`--dts`** — Generate a `.d.ts` declaration file next to the source:
 
   ```bash
-  npx nudo infer math.js --dts
+  npx nudojs infer math.js --dts
   ```
 
   After the standard output above, the CLI prints:
@@ -79,7 +79,7 @@ Nudo executed the function three times — twice with concrete inputs, once with
 - **`--loc`** — Show source locations in the output:
 
   ```bash
-  npx nudo infer math.js --loc
+  npx nudojs infer math.js --loc
   ```
 
   ```text
@@ -97,13 +97,13 @@ Nudo executed the function three times — twice with concrete inputs, once with
 To re-run inference when files change:
 
 ```bash
-npx nudo watch .
+npx nudojs watch .
 ```
 
 Use `--dts` to generate `.d.ts` files on each change:
 
 ```bash
-npx nudo watch . --dts
+npx nudojs watch . --dts
 ```
 
 Watch recursively scans every `.js`, `.mjs`, and `.ts` file under the directory (excluding `node_modules`) — including files without directives.
@@ -123,7 +123,7 @@ console.log(formatPrice(1999));
 ```
 
 ```bash
-npx nudo infer utils.js
+npx nudojs infer utils.js
 ```
 
 ```text
@@ -196,7 +196,7 @@ register({ id: 1, name: "ada" });    // ok
 Gate with:
 
 ```bash
-npx nudo check app.js
+npx nudojs check app.js
 ```
 
 Reports use `actual ⊭ expected`. Refinements also flow into inference: `inc` with `@nudo:refine x positive` infers `number = (x + 1) where (x + 1) > 1`.

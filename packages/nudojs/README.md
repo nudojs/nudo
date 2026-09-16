@@ -1,13 +1,15 @@
-# nudo
+# nudojs
 
-Thin installer shell for the **`nudo`** command — it exists so that `npm i -g nudo` (or `npx nudo`) gives you the `nudo` CLI directly. Everything is delegated to [`@nudojs/cli`](https://www.npmjs.com/package/@nudojs/cli), the CLI of the Nudo type inference engine for JavaScript.
+Thin installer shell for the **`nudo`** command — it exists so that `npm i -g nudojs` (or `npx nudojs`) gives you the `nudo` CLI directly. Everything is delegated to [`@nudojs/cli`](https://www.npmjs.com/package/@nudojs/cli), the CLI of the Nudo type inference engine for JavaScript.
+
+> The bare npm name `nudo` was unavailable, so this package is published as **`nudojs`**. The installed command is still `nudo`.
 
 ```bash
-npm i -g nudo
+npm i -g nudojs
 nudo infer file.js
 
 # or without installing
-npx nudo infer file.js
+npx nudojs infer file.js
 ```
 
 Nudo infers types by executing your code with symbolic type values (`T.number`, `T.string`, …) — see the monorepo packages for the actual engine:
@@ -18,6 +20,6 @@ Nudo infers types by executing your code with symbolic type values (`T.number`, 
 - [`@nudojs/service`](https://github.com/nudojs/nudo/tree/main/packages/service) — analyzer orchestration, TypeValue evaluator API (`@nudojs/service/evaluator`), dts generation, harvest
 - [`@nudojs/env`](https://github.com/nudojs/nudo/tree/main/packages/env) — ES / Web / Node API type definitions
 
-> Installing both `nudo` and `@nudojs/cli` globally is redundant; pick one. This package only reserves the npm name and re-exports the CLI entry.
+> Installing both `nudojs` and `@nudojs/cli` globally is redundant; pick one. This package only re-exports the CLI entry under the short `nudo` bin.
 
 Full documentation (English + 中文): <https://nudojs.github.io/nudo/>

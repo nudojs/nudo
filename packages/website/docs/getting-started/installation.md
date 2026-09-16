@@ -17,8 +17,8 @@ Packages ship compiled ESM in `dist/` (`files: ["dist"]`), not TypeScript source
 ## CLI
 
 ```bash
-# thin shell (reserves the `nudo` name)
-npm install -g nudo
+# thin shell (published as `nudojs`; installs the `nudo` command)
+npm install -g nudojs
 # or the full CLI package
 npm install @nudojs/cli
 # or
@@ -30,7 +30,8 @@ yarn add @nudojs/cli
 Then run type inference:
 
 ```bash
-npx nudo infer path/to/file.js
+npx nudojs infer path/to/file.js
+# after a global install, the command is simply `nudo`
 ```
 
 ## VS Code Extension
