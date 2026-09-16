@@ -72,7 +72,7 @@ Contracts in `*.nudo.js` sidecars (and generated `@generated` segments) get thei
 | `nudo:interface-drift` | warning | Persisted `@generated` segment ≠ today's recomputed interface (semantic comparison, param and return positions) |
 | `nudo:interface-name-clash` | error | `nudo interface --emit` target is already a handwritten sidecar binding (handwritten wins, write skipped) |
 
-Source split for violations: a violating call **written in the analyzed file** keeps reporting `nudo:constraint-violated` exactly as before; `nudo:interface-domain-exceeds` covers only the previously unchecked path — call records **injected from usage-site files** (`--callsites`). Evidence gates: literal arguments with confidence `#exact`/`#path`, non-truncated records.
+Source split for violations: a violating call **written in the analyzed file** keeps reporting `nudo:constraint-violated` exactly as before; `nudo:interface-domain-exceeds` covers only the previously unchecked path — call records **injected from usage-site files** (`nudo check --callsites <paths...>`). Evidence gates: literal arguments with confidence `#exact`/`#path`, non-truncated records.
 
 Examples (each run in its own fixture directory):
 
@@ -95,7 +95,7 @@ issues
 ```text
 Diagnostics:
 
-  [error] lib.js:1:7 clamp[x]: 跨文件调用域证据 "hot" 超出手写契约（接口被用穿） (nudo:interface-domain-exceeds)
+  [error] lib.js:1:7 clamp[x]: cross-file call-site domain evidence "hot" exceeds handwritten contract (nudo:interface-domain-exceeds)
 ```
 
 ```text

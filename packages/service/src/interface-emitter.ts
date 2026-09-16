@@ -71,6 +71,11 @@ export type EmitInterfaceResult = {
   issues: Array<{ code: string; severity: "error" | "warning"; message: string }>;
   /** 侧车绝对路径（新建或已有） */
   sidecarPath: string;
+  /**
+   * 默认过滤（无 --fn/--all）且侧车无既有 @generated 段可刷 —— 调用方
+   * 用它把「no interface changes」解释成首次 emit 的用法提示，而非漂移。
+   */
+  emptyDefaultTargets?: boolean;
 };
 
 const GENERATED_HEADER =
@@ -262,6 +267,13 @@ export async function emitInterface(
     ...(diff !== undefined ? { diff } : {}),
     issues,
     sidecarPath,
+    ...(opts.fnNames && opts.fnNames.length > 0
+      ? {}
+      : opts.all
+        ? {}
+        : targetNames.length === 0
+          ? { emptyDefaultTargets: true }
+          : {}),
   };
 }
 
@@ -280,6 +292,12 @@ export function formatEmitSummary(
     lines.push(`  written: ${result.written.join(", ") || "(none)"}`);
   } else {
     lines.push(`${sourcePath}: no interface changes`);
+    // 首次 --emit（默认只刷已有生成段、侧车尚无生成段）：把 no-op 解释成用法
+    if (result.emptyDefaultTargets) {
+      lines.push(
+        `  tip: default --emit only refreshes existing @generated segments; pass --fn <name> or --all to create new ones`,
+      );
+    }
   }
   for (const s of result.skipped.filter((x) => x.reason !== "no-change")) {
     lines.push(`  skipped ${s.fn} (${s.reason})`);

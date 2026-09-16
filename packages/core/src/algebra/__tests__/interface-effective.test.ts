@@ -51,7 +51,7 @@ describe("sidecarPathOf", () => {
 });
 
 describe("localNamedExports", () => {
-  it("collects top-level declarations only", () => {
+  it("collects declaration forms and local export lists", () => {
     const src = `
 export function f() {}
 export const g = 1;
@@ -60,12 +60,14 @@ export class C {}
 export var v = 3;
 const p = 4;
 export { p };
+const q = 5;
+export { q as renamed };
 export { add2 } from "./dep.js";
 export * from "./other.js";
 export default function d() {}
 function helper() {}
 `;
-    expect(localNamedExports(src)).toEqual(new Set(["f", "g", "h", "C"]));
+    expect(localNamedExports(src)).toEqual(new Set(["f", "g", "h", "C", "v", "p", "renamed"]));
   });
 });
 
@@ -165,6 +167,27 @@ export const add2 = fn({ x: number().lt(99) });
     expect(effectiveInterface(priv, "helper", { loadModule, fromFile: "/t/add.js" })).toBeUndefined();
     const def = `export default function d(x) {\n  return x;\n}\n`;
     expect(effectiveInterface(def, "d", { loadModule, fromFile: "/t/add.js" })).toBeUndefined();
+  });
+
+  it("binds local export-list form (function + export { fn })", () => {
+    const src = `function add2(x) {\n  return x + 2;\n}\nexport { add2 };\n`;
+    const { loadModule } = makeFiles({
+      "/t/add.nudo.js": `export const add2 = fn({ x: number().gt(0) });`,
+    });
+    const r = effectiveInterface(src, "add2", { loadModule, fromFile: "/t/add.js" });
+    expect(r).toBeDefined();
+    expect(r!.source).toBe("handwritten");
+    expect(formatConstraint(r!.params[0]!.constraint)).toBe("number().gt(0)");
+  });
+
+  it("binds by export alias name (export { local as exported })", () => {
+    const src = `function helper(x) {\n  return x;\n}\nexport { helper as add2 };\n`;
+    const { loadModule } = makeFiles({
+      "/t/add.nudo.js": `export const add2 = fn({ x: number().int() });`,
+    });
+    const r = effectiveInterface(src, "add2", { loadModule, fromFile: "/t/add.js" });
+    expect(r).toBeDefined();
+    expect(formatConstraint(r!.params[0]!.constraint)).toBe("number().int()");
   });
 
   it("honors autoBind:false and node_modules boundary", () => {

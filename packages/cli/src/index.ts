@@ -342,11 +342,18 @@ program
   });
 
 /**
- * 严格 Abs-only：只跑 checkSource 代数门禁。
- * 不再叠加 analyzeFileAsync 外延诊断——语言表面问题由 Abs/B-path 诊断吸收，
- * 避免双路径语义分叉。
+ * 严格 Abs-only：只跑 checkSource 代数门禁（+ 可选 --callsites 的
+ * domain-exceeds）。不再叠加 analyzeFileAsync 全量外延诊断——语言表面
+ * 问题由 Abs/B-path 诊断吸收，避免双路径语义分叉。
+ *
+ * `--callsites` 注入跨文件调用记录后，额外跑 analyzeFile 并只合并
+ * `nudo:interface-domain-exceeds`（设计 §6：check 门禁的跨文件用穿证据；
+ * checkSource 单文件面无注入通道）。
  */
-async function runCheck(file: string, opts: { json?: boolean } = {}): Promise<void> {
+async function runCheck(
+  file: string,
+  opts: { json?: boolean; callsites?: CallRecord[] } = {},
+): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
 
@@ -359,11 +366,46 @@ async function runCheck(file: string, opts: { json?: boolean } = {}): Promise<vo
   // package.json#nudo.interface.autoBind 覆盖 check 执法路径（§2.2「整体
   // 关闭」承诺：不只打印路径——false 时侧车 ambient 绑定整体停用）
   const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
-  const algebraReport = checkSource(filePath, source, pTrue, {
+  let algebraReport = checkSource(filePath, source, pTrue, {
     loadModule,
     fromFile: filePath,
     ...(autoBind === false ? { autoBind: false } : {}),
   });
+
+  // domain-exceeds：注入调用记录 → analyzeFile 的跨文件证据执法（analyzer
+  // 内已解析 autoBind）。只合并该码，避免与 checkSource 诊断双报。
+  if (opts.callsites && opts.callsites.length > 0) {
+    const analysis = await analyzeFileAsync(filePath, source, undefined, opts.callsites);
+    const domainIssues = analysis.diagnostics
+      .filter((d) => d.code === "nudo:interface-domain-exceeds")
+      .map((d) => {
+        const data = (d.data ?? {}) as { actual?: unknown; expected?: unknown };
+        return {
+          severity: d.severity === "error" ? ("error" as const) : ("warning" as const),
+          code: "nudo:interface-domain-exceeds" as const,
+          message: d.message,
+          line: d.range.start.line,
+          column: d.range.start.column,
+          actual: typeof data.actual === "string" ? data.actual : undefined,
+          expected: typeof data.expected === "string" ? data.expected : undefined,
+          suggestion: d.suggestions?.[0],
+        };
+      });
+    if (domainIssues.length > 0) {
+      const errors = domainIssues.filter((i) => i.severity === "error").length;
+      const warnings = domainIssues.filter((i) => i.severity === "warning").length;
+      algebraReport = {
+        ...algebraReport,
+        issues: [...algebraReport.issues, ...domainIssues],
+        ok: algebraReport.ok && errors === 0,
+        summary: {
+          ...algebraReport.summary,
+          errors: algebraReport.summary.errors + errors,
+          warnings: algebraReport.summary.warnings + warnings,
+        },
+      };
+    }
+  }
 
   if (opts.json) {
     // 稳定契约：只输出 check JSON
@@ -484,7 +526,11 @@ program
   .description("Check JS/TS file(s) or directory(s) for type errors — exits with code 1 when errors are found")
   .argument("<paths...>", "File(s) or directory(s) to check")
   .option("--json", "Emit stable CheckJson (CI / Agent contract; single file only)")
-  .action(async (paths: string[], opts: { json?: boolean }) => {
+  .option(
+    "--callsites <paths...>",
+    "Usage-site files (tests/apps): inject their call records so cross-file domain evidence can produce nudo:interface-domain-exceeds",
+  )
+  .action(async (paths: string[], opts: { json?: boolean; callsites?: string[] }) => {
     const targets: string[] = [];
     for (const p of paths) {
       targets.push(...resolveTargets(p));
@@ -495,8 +541,9 @@ program
       process.exitCode = 1;
       return;
     }
+    const externalRecords = opts.callsites?.length ? collectExternalRecords(opts.callsites) : undefined;
     for (const t of targets) {
-      await runCheck(t, opts);
+      await runCheck(t, { json: opts.json, callsites: externalRecords });
     }
   });
 
@@ -613,6 +660,9 @@ program
         console.error("--exit-on-diff requires --dry-run");
         process.exitCode = 1;
         return;
+      }
+      if (!opts.emit && ((opts.fn?.length ?? 0) > 0 || opts.all)) {
+        console.error("warning: --fn/--all only apply with --emit (ignored for print-only)");
       }
       if (opts.emit && opts.all) {
         console.error(

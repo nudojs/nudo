@@ -60,6 +60,7 @@ import {
   loadEnvs,
   preloadPathEnvs,
   findProjectConfig,
+  interfaceConfig,
   resolveNpmNudo,
 } from "./evaluator/evaluator-api.ts";
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
@@ -1898,11 +1899,15 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
     if (injected.length === 0) return;
     const nameLoc = fnNameLoc(node, fallbackLoc);
     const fnNode = resolveFunctionNode(node);
+    // §2.2 kill-switch：与 CLI check / LSP validate 同口径，从项目配置解析
+    // autoBind；漏接会让 analyze 旁路在 autoBind=false 时仍 ambient 执行侧车
+    const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
     const domainIssues = checkInjectedDomainEvidence(name, source, injected, {
       paramNames: extractParamNames(fnNode),
       loadModule: defaultLoadModule,
       fromFile: filePath,
       loc: { line: nameLoc.start.line, column: nameLoc.start.column },
+      ...(autoBind === false ? { autoBind: false } : {}),
     });
     for (const issue of domainIssues) {
       const line = issue.line ?? nameLoc.start.line;

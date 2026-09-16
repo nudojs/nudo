@@ -95,7 +95,7 @@ issues
 ```text
 Diagnostics:
 
-  [error] lib.js:1:7 clamp[x]: 跨文件调用域证据 "hot" 超出手写契约（接口被用穿） (nudo:interface-domain-exceeds)
+  [error] lib.js:1:7 clamp[x]: cross-file call-site domain evidence "hot" exceeds handwritten contract (nudo:interface-domain-exceeds)
 ```
 
 ```text

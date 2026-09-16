@@ -207,6 +207,7 @@ Check a file or directory for type errors. Prints one line per diagnostic in the
 ```bash
 nudo check <file>
 nudo check <directory>
+nudo check <file> --callsites <usage-sites...>
 ```
 
 **Arguments:**
@@ -215,6 +216,13 @@ nudo check <directory>
 |----------|-------------|
 | `<file>` | Path to a `.js`, `.mjs`, or `.ts` file (relative or absolute) |
 | `<directory>` | Recursively check every inference target under the directory (`--json` requires a single file) |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Emit stable CheckJson (CI / Agent contract; single file only) |
+| `--callsites <paths...>` | Usage-site files (tests/apps): inject their call records so cross-file domain evidence can produce `nudo:interface-domain-exceeds` |
 
 **Example:**
 

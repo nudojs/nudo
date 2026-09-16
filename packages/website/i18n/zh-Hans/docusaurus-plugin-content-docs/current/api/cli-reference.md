@@ -207,6 +207,7 @@ nudo infer math.js --json
 ```bash
 nudo check <file>
 nudo check <directory>
+nudo check <file> --callsites <usage-sites...>
 ```
 
 **参数：**
@@ -215,6 +216,13 @@ nudo check <directory>
 |----------|-------------|
 | `<file>` | `.js`、`.mjs` 或 `.ts` 文件路径（相对或绝对） |
 | `<directory>` | 递归检查目录下全部推断目标（`--json` 仅支持单文件） |
+
+**选项：**
+
+| 选项 | 描述 |
+|--------|-------------|
+| `--json` | 输出稳定 CheckJson（CI / Agent 契约；仅单文件） |
+| `--callsites <paths...>` | 使用现场文件（tests/apps）：注入其调用记录，使跨文件域证据可产出 `nudo:interface-domain-exceeds` |
 
 **示例：**
 

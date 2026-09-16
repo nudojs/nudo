@@ -382,10 +382,10 @@ function formatIssues(r: { issues: Array<{ severity: string; code: string; messa
 // ---------------------------------------------------------------------------
 // T10b：跨文件注入域证据金标（nudo:interface-domain-exceeds，error）
 //
-// domain-exceeds 只消费经 --callsites 注入的跨文件调用记录，checkSource
-// 单文件面没有注入通道——正/负例走 core 侧唯一检查函数
-// checkInjectedDomainEvidence（analyzer 注入消费区的执法核心），证据以
-// 手写 positive 契约 + 注入字面量记录给出。既有 golds 与 pin 零改动。
+// domain-exceeds 消费经 `nudo check --callsites` / analyze 注入的跨文件
+// 调用记录——正/负例走 core 侧唯一检查函数 checkInjectedDomainEvidence
+// （analyzer 注入消费区的执法核心），证据以手写 positive 契约 + 注入字面量
+// 记录给出。既有 golds 与 pin 零改动。
 // ---------------------------------------------------------------------------
 import { T, type TypeValue } from "../../type-value.ts";
 import { checkInjectedDomainEvidence, type InjectedDomainRecord } from "../scan.ts";

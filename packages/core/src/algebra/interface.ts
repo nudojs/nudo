@@ -117,9 +117,11 @@ export type InterfaceSource = "handwritten" | "generated" | "implicit";
 // sidecarPathOf 定义已收敛至 sidecar-path.ts（leaf），文件头 re-export
 
 /**
- * 源文件本地 named export 表：只收**顶层** `export function/const/class/let`
- * 声明的名字。排除 re-export（`export {x} from` / `export *`）、`export default`
- * 与本地列表形式 `export { x }`——同名自动绑定只认「本文件声明并导出」。
+ * 源文件本地 named export 表：收集本文件声明并导出的名字——
+ * `export function/const/let/var/class` 声明形式，以及本地列表
+ * `export { x }` / `export { local as exported }`（按**导出名**绑定，
+ * 与侧车同名自动绑定口径一致）。
+ * 排除 re-export（`export {x} from` / `export *`）与 `export default`。
  */
 export function localNamedExports(source: string): Set<string> {
   const out = new Set<string>();
@@ -133,11 +135,19 @@ export function localNamedExports(source: string): Set<string> {
     if (stmt.type !== "ExportNamedDeclaration") continue;
     if (stmt.source) continue; // export {…} from "…"（re-export）
     const d = stmt.declaration;
-    if (!d) continue; // export { x } 本地列表（非声明形式）
+    if (!d) {
+      // export { x, y as z } 本地列表——按导出名收集（侧车绑的是公开名）
+      for (const spec of stmt.specifiers) {
+        if (spec.type !== "ExportSpecifier") continue;
+        const exported = spec.exported;
+        const name = exported.type === "Identifier" ? exported.name : exported.value;
+        if (name) out.add(name);
+      }
+      continue;
+    }
     if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
       if (d.id) out.add(d.id.name);
     } else if (d.type === "VariableDeclaration") {
-      if (d.kind !== "const" && d.kind !== "let") continue; // export var 不在约定内
       for (const decl of d.declarations) {
         if (decl.id.type === "Identifier") out.add(decl.id.name);
       }

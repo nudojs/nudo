@@ -382,7 +382,7 @@ connection.onCodeLens((params) => {
         lenses.push({
           range,
           command: {
-            title: lens.mode === "add" ? "⚡ persist refine" : "↻ update refine",
+            title: lens.mode === "add" ? "⚡ persist interface" : "↻ update interface",
             command: "nudo.interfaceEmit",
             arguments: [params.textDocument.uri, lens.fn, lens.mode],
           },
@@ -839,6 +839,14 @@ async function handleInterfaceEmit(params: {
     mode: params.mode,
   });
 
+  // emit 失败（入参校验 / 写盘异常）：不进入失效链路——侧车并未写入，
+  // 「sidecar written but cache invalidation failed」会撒谎并叠加二次异常
+  const emitText = toolResult.content[0]?.text ?? "";
+  if (emitText.startsWith("Error:")) {
+    connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {});
+    return toolResult;
+  }
+
   // 侧车写盘/新建后的缓存失效与重验证（agent 面按路径调用时文件可能未打开）
   let invalidateError: string | undefined;
   try {
@@ -857,12 +865,11 @@ async function handleInterfaceEmit(params: {
 
   connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {});
   if (invalidateError) {
-    const text = toolResult.content[0]?.text ?? "";
     return {
       content: [
         {
           type: "text" as const,
-          text: `${text}\n\n[warning] sidecar written but cache invalidation failed (diagnostics/lenses may be stale): ${invalidateError}`,
+          text: `${emitText}\n\n[warning] sidecar written but cache invalidation failed (diagnostics/lenses may be stale): ${invalidateError}`,
         },
       ],
     };

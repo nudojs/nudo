@@ -48,9 +48,11 @@ export function activate(context: ExtensionContext): void {
   const clientOptions: LanguageClientOptions = {
     documentSelector: [
       { scheme: "file", language: "javascript" },
+      { scheme: "file", language: "typescript" },
     ],
     synchronize: {
-      fileEvents: workspace.createFileSystemWatcher("**/*.js"),
+      // 源码 + 侧车：*.nudo.js 命中 .js，*.nudo.ts 命中 .ts；.mjs 入口一并覆盖
+      fileEvents: workspace.createFileSystemWatcher("**/*.{js,mjs,ts}"),
     },
   };
 

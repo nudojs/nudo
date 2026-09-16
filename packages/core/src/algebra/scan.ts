@@ -1664,10 +1664,10 @@ export function checkInjectedDomainEvidence(
     out.push({
       severity: "error",
       code: "nudo:interface-domain-exceeds",
-      message: `${fnName}[${param}]: 跨文件调用域证据 ${shown} 超出手写契约（接口被用穿）`,
+      message: `${fnName}[${param}]: cross-file call-site domain evidence ${shown} exceeds handwritten contract`,
       actual: shown,
       expected: formatConstraint(constraint),
-      suggestion: `放宽 ${fnName} 的手写契约（${param}: ${formatConstraint(constraint)}），或修正调用方传入的值`,
+      suggestion: `Loosen the handwritten contract for ${fnName} (${param}: ${formatConstraint(constraint)}), or fix the caller's values`,
       fn: fnName,
       line: opts.loc?.line,
       column: opts.loc?.column,

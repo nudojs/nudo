@@ -671,7 +671,7 @@ export function formatEmitResult(filePath: string, result: EmitInterfaceResult):
 /** 默认层 lens：`● interface / handwritten|generated|implicit` */
 export type InterfaceLens =
   | { kind: "interface"; fn: string; line: number; source: InterfaceSource }
-  /** 固化动作 lens：add=`⚡ persist refine`，update=`↻ update refine` */
+  /** 固化动作 lens：add=`⚡ persist interface`，update=`↻ update interface` */
   | { kind: "emit"; fn: string; line: number; mode: "add" | "update" };
 
 /** case 副层 lens（debug 层，标题/命令与既有行为一致） */
