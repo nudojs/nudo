@@ -691,21 +691,68 @@ function deriveOneRoot(
   }
 }
 
+/** 侧车顶层已占用标识符 → 新段 local / import 名避让 */
+class NameAllocator {
+  private readonly taken: Set<string>;
+  constructor(initial?: Iterable<string>) {
+    this.taken = new Set(initial ?? []);
+  }
+  claim(preferred: string): string {
+    if (!this.taken.has(preferred)) {
+      this.taken.add(preferred);
+      return preferred;
+    }
+    let i = 2;
+    while (this.taken.has(`${preferred}_${i}`)) i++;
+    const name = `${preferred}_${i}`;
+    this.taken.add(name);
+    return name;
+  }
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** 整词替换标识符（避免 `x` 误伤 `x_0` / 属性 `.x`） */
+function rewriteIdents(src: string, map: Map<string, string>): string {
+  if (map.size === 0) return src;
+  let out = src;
+  // 长名优先，避免 `x` 先替换破坏 `x_0`
+  const keys = [...map.keys()].sort((a, b) => b.length - a.length);
+  for (const k of keys) {
+    const v = map.get(k)!;
+    if (k === v) continue;
+    out = out.replace(new RegExp(`(?<![\\w$.])${escapeRegExp(k)}(?![\\w$])`, "g"), v);
+  }
+  return out;
+}
+
+function preludeLocalName(line: string): string | undefined {
+  const m = /^const\s+([A-Za-z_$][\w$]*)\s*=/.exec(line.trim());
+  return m?.[1];
+}
+
 /**
  * 组装生成段（组合式 + import + prelude）。
  * importFrom 相对 root 侧车解析，再相对 target 侧车写出。
+ *
+ * `takenNames`：侧车顶层已占用标识符（手写 / 既有生成段 / 本批先前段）。
+ * 同文件多导出时对 import local 与 prelude local 做避让改写，
+ * 保证拼出的侧车在模块作用域内无重复声明。
  */
 export function formatDerivedSection(
   row: DerivedExport,
   opts: {
     rootSidecarDir: string;
     targetSidecarDir: string;
+    takenNames?: Iterable<string>;
   },
-): { text: string } | undefined {
+): { text: string; usedNames: string[] } | undefined {
   if (row.underivable || row.params.length === 0) return undefined;
-  const importMap = new Map<string, string>();
+  const importMap = new Map<string, string>(); // original name → resolved path
   const preludes: string[] = [];
-  const paramParts: string[] = [];
+  const paramDsls: string[] = [];
 
   for (const p of row.params) {
     for (const imp of p.imports) {
@@ -717,14 +764,16 @@ export function formatDerivedSection(
     for (const line of p.prelude) {
       if (!preludes.includes(line)) preludes.push(line);
     }
-    // `{ x }` shorthand when local name matches param name (§5.3)
-    paramParts.push(p.dsl === p.name ? p.name : `${p.name}: ${p.dsl}`);
+    paramDsls.push(p.dsl);
   }
 
   let retDsl = "";
   if (row.returns) {
     for (const imp of row.returns.imports) {
       const rel = resolveRelImport(imp.from, opts.rootSidecarDir, opts.targetSidecarDir);
+      const prev = importMap.get(imp.name);
+      // 与参数位同口径：同名不同路径 → 本段不可投影（禁止静默覆盖）
+      if (prev !== undefined && prev !== rel) return undefined;
       importMap.set(imp.name, rel);
     }
     for (const line of row.returns.prelude) {
@@ -733,18 +782,62 @@ export function formatDerivedSection(
     retDsl = `, ${row.returns.dsl}`;
   }
 
-  const importLines = [...importMap.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([name, from]) => `import { ${name} } from ${JSON.stringify(from)};`);
+  // ---- 名字分配：先占 export 名，再 import local，再 prelude local ----
+  const namer = new NameAllocator(opts.takenNames);
+  namer.claim(row.fn);
+  const renames = new Map<string, string>();
+  const importLocals: Array<{ original: string; local: string; from: string }> = [];
+  for (const [name, from] of [...importMap.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const local = namer.claim(name);
+    if (local !== name) renames.set(name, local);
+    importLocals.push({ original: name, local, from });
+  }
+
+  const preludeClaimed = new Set<string>();
+  const renamedPreludes: string[] = [];
+  for (const line of preludes) {
+    const local = preludeLocalName(line);
+    if (local !== undefined && !preludeClaimed.has(local)) {
+      preludeClaimed.add(local);
+      if (!renames.has(local)) {
+        const next = namer.claim(local);
+        if (next !== local) renames.set(local, next);
+      }
+    }
+    renamedPreludes.push(rewriteIdents(line, renames));
+  }
+
+  // `{ x }` shorthand when rewritten dsl matches rewritten param-local binding
+  const paramParts = row.params.map((p, i) => {
+    const dsl = rewriteIdents(paramDsls[i]!, renames);
+    const name = rewriteIdents(p.name, renames);
+    return dsl === name ? name : `${name}: ${dsl}`;
+  });
+  const retPart = retDsl === "" ? "" : `, ${rewriteIdents(row.returns!.dsl, renames)}`;
+
+  const importLineTexts = importLocals
+    .map(({ original, local, from }) => {
+      const spec = original === local ? local : `${original} as ${local}`;
+      return `import { ${spec} } from ${JSON.stringify(from)};`;
+    })
+    .sort((a, b) => a.localeCompare(b));
 
   const lines = [
-    ...importLines,
-    ...(importLines.length > 0 && preludes.length > 0 ? [""] : []),
-    ...preludes,
-    `export const ${row.fn} = fn({ ${paramParts.join(", ")} }${retDsl});`,
+    ...importLineTexts,
+    ...(importLineTexts.length > 0 && renamedPreludes.length > 0 ? [""] : []),
+    ...renamedPreludes,
+    `export const ${row.fn} = fn({ ${paramParts.join(", ")} }${retPart});`,
   ];
 
-  return { text: lines.join("\n") };
+  const usedNames = new Set<string>();
+  for (const { local } of importLocals) usedNames.add(local);
+  for (const line of renamedPreludes) {
+    const n = preludeLocalName(line);
+    if (n) usedNames.add(n);
+  }
+  usedNames.add(row.fn);
+
+  return { text: lines.join("\n"), usedNames: [...usedNames] };
 }
 
 // ---------------------------------------------------------------------------
@@ -779,6 +872,57 @@ const DERIVED_HEADER =
  *
  * 手写绑定永不覆盖；round-trip 自检失败不写垃圾。
  */
+/**
+ * 侧车顶层标识符（import local / 顶层声明 / export 名）。
+ * 新生成段据此避让，避免同文件重复 `const x` / 重复 import 绑定。
+ */
+function collectTopLevelNames(src: string): Set<string> {
+  const names = new Set<string>();
+  if (src.trim() === "") return names;
+  let ast: ReturnType<typeof parseSource>;
+  try {
+    ast = parseSource(src);
+  } catch {
+    return names;
+  }
+  const addDecl = (d: ReturnType<typeof parseSource>["program"]["body"][number]): void => {
+    if (d.type === "VariableDeclaration") {
+      for (const decl of d.declarations) {
+        if (decl.id.type === "Identifier") names.add(decl.id.name);
+      }
+    } else if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
+      if (d.id) names.add(d.id.name);
+    }
+  };
+  for (const stmt of ast.program.body) {
+    if (stmt.type === "ImportDeclaration") {
+      for (const s of stmt.specifiers) names.add(s.local.name);
+      continue;
+    }
+    if (stmt.type === "ExportNamedDeclaration") {
+      if (stmt.declaration) addDecl(stmt.declaration);
+      for (const spec of stmt.specifiers) {
+        names.add(
+          spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value,
+        );
+      }
+      continue;
+    }
+    addDecl(stmt);
+  }
+  return names;
+}
+
+function sidecarAssembles(text: string, fromFile: string, loadModule: LoadModule): boolean {
+  try {
+    parseSource(text);
+    execNudoModule(text, { loadModule, fromFile });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function emitDerivedFromRoot(
   rootFile: string,
   opts: {
@@ -842,6 +986,16 @@ export function emitDerivedFromRoot(
 
     // 手写绑定名（顶层声明 − 生成段）
     const handwritten = handwrittenNames(prevSrc);
+    const loadModule = opts.loadModule ?? defaultLoadModule;
+
+    // update：剥离「本批可能重写」的生成段后收集残留顶层名；format 失败的
+    // 段会保留旧文，其名字在失败时回填 taken（避免新段抢占）。
+    const batchFns = new Set(
+      rows.filter((r) => !r.underivable && !handwritten.has(r.fn)).map((r) => r.fn),
+    );
+    const baseForNames =
+      opts.mode === "update" ? stripGeneratedFor(prevSrc, batchFns) : prevSrc;
+    const taken = collectTopLevelNames(baseForNames);
 
     const accepted: Array<{ fn: string; text: string; prevText?: string }> = [];
     const issues: EmitDerivedResult["sidecars"][number]["issues"] = [];
@@ -867,14 +1021,21 @@ export function emitDerivedFromRoot(
         anySkip = "underivable";
         continue;
       }
+      const prevSection = findGeneratedSectionText(prevSrc, row.fn);
       const body = formatDerivedSection(row, {
         rootSidecarDir,
         targetSidecarDir,
+        takenNames: taken,
       });
       if (!body) {
         anySkip = "not-projectable";
+        // 旧段将原样保留 → 名字继续占用
+        if (prevSection !== undefined) {
+          for (const n of collectTopLevelNames(prevSection)) taken.add(n);
+        }
         continue;
       }
+      for (const n of body.usedNames) taken.add(n);
       const srcRel = relative(targetSidecarDir, targetFile) || basename(targetFile);
       const section = [
         DERIVED_HEADER,
@@ -886,20 +1047,24 @@ export function emitDerivedFromRoot(
 
       // round-trip：整段（含 import）必须可执行——fromFile 用目标侧车路径，
       // 相对 spec（./std.nudo.js）按该目录解析
-      if (!derivedRoundTrips(section, row.fn, sidecarPath, opts.loadModule ?? defaultLoadModule)) {
+      if (!derivedRoundTrips(section, row.fn, sidecarPath, loadModule)) {
         anySkip = "not-projectable";
+        if (prevSection !== undefined) {
+          for (const n of collectTopLevelNames(prevSection)) taken.add(n);
+        }
         continue;
       }
 
-      const prevSection = findGeneratedSectionText(prevSrc, row.fn);
       if (opts.mode === "add" && prevSection !== undefined) {
         anySkip = "no-change";
+        for (const n of collectTopLevelNames(prevSection)) taken.add(n);
         continue;
       }
       const norm = normalizeSectionText(section);
       if (prevSection !== undefined && normalizeSectionText(prevSection) === norm) {
         anySkip = "no-change";
         accepted.push({ fn: row.fn, text: prevSection, prevText: prevSection });
+        for (const n of collectTopLevelNames(prevSection)) taken.add(n);
         continue;
       }
       written.push(row.fn);
@@ -907,13 +1072,13 @@ export function emitDerivedFromRoot(
     }
 
     // 组装：update 只剥离**已接受**的生成段；underivable/not-projectable/
-    // name-clash 的既有段原样保留（证据退化不静默删契约）
+    // name-clash 的既有段原样保留（证据退化不静默删契约）。
+    // accepted 为空时必须原样保留——否则 stripped=prev + preserved 会叠层。
     let finalContent: string;
-    if (opts.mode === "add") {
-      finalContent =
-        accepted.length === 0
-          ? prevSrc
-          : joinSectionTexts(prevSrc, accepted.map((a) => a.text));
+    if (accepted.length === 0) {
+      finalContent = prevSrc;
+    } else if (opts.mode === "add") {
+      finalContent = joinSectionTexts(prevSrc, accepted.map((a) => a.text));
     } else {
       const acceptedFns = new Set(accepted.map((a) => a.fn));
       const stripped = stripGeneratedFor(prevSrc, acceptedFns);
@@ -924,6 +1089,27 @@ export function emitDerivedFromRoot(
         ...preserved.map((s) => normalizeSectionText(s.text)),
         ...accepted.map((a) => a.text),
       ]);
+    }
+
+    // 整文件 round-trip：同侧车多段拼装后仍必须是合法可执行模块
+    // （单段自检挡不住 duplicate import / const 重定义）
+    if (finalContent.trim() !== "" && !sidecarAssembles(finalContent, sidecarPath, loadModule)) {
+      issues.push({
+        code: "nudo:interface-not-projectable",
+        severity: "error",
+        message: `assembled sidecar failed round-trip (${relative(process.cwd(), sidecarPath) || sidecarPath}); refusing to write`,
+      });
+      anySkip = "not-projectable";
+      result.sidecars.push({
+        file: targetFile,
+        sidecarPath,
+        fn: rows.map((r) => r.fn).join(","),
+        written: false,
+        changed: false,
+        ...(anySkip ? { skipped: anySkip } : {}),
+        issues,
+      });
+      continue;
     }
 
     const changed = finalContent !== prevSrc;
@@ -950,7 +1136,7 @@ export function emitDerivedFromRoot(
       file: targetFile,
       sidecarPath,
       fn: rows.map((r) => r.fn).join(","),
-      written: written.length > 0,
+      written: written.length > 0 && changed,
       changed,
       ...(anySkip ? { skipped: anySkip } : {}),
       ...(diff !== undefined ? { diff } : {}),

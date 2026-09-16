@@ -958,7 +958,8 @@ Phase 2 能力，验收见下）；`add` 双调用点域 `union(lit(42), lit("a"
 2. LSP CodeLens `persist/update refine`；固化后 drift 提示。[已实施
    persist/update；drift 提示走 check 诊断通道]
 3. `package.json#nudo.interface` emit 白名单；agent API：`nudo.interface` / emit；SKILL.md 更新。[已实施：`interface.emit` glob 白名单接
-   emitInterface / emitDerivedFromRoot；agent API Phase 1 已有]
+   emitInterface / emitDerivedFromRoot；agent API Phase 1 已有；
+   agent-skill/SKILL.md 已补 interface 契约 / 白名单 / doctor drift]
 4. `--emit-cases` 文档降级；迁移说明。[已实施：网站文档标注非接口主路径]
 
 ---

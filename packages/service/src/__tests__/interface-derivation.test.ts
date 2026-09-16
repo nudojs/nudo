@@ -310,4 +310,82 @@ export const use = fn({ x: positive, y: positive }, positive);
     expect(pick!.params.map((p) => p.name)).toEqual(["a", "b"]);
     expect(pick!.params[0]!.prelude).toEqual(["const a = positive.shift(1);"]);
   });
+
+  it("same-sidecar multi-export emit uniquifies imports/preludes and stays idempotent", () => {
+    writeFileSync(join(dir, "std.nudo.js"), STD);
+    writeFileSync(
+      join(dir, "add.js"),
+      `export function add2(x) { return x + 2; }
+export function add3(x) { return x + 3; }
+`,
+    );
+    writeFileSync(
+      join(dir, "lib.js"),
+      `import { add2, add3 } from "./add.js";
+export function add4(x) { return add2(x + 1) + add3(x + 1); }
+`,
+    );
+    writeFileSync(
+      join(dir, "lib.nudo.js"),
+      `import { fn } from "@nudojs/core";
+import { positive } from "./std.nudo.js";
+export const add4 = fn({ x: positive }, positive);
+`,
+    );
+
+    const r1 = emitDerivedFromRoot(join(dir, "lib.js"), { mode: "update" });
+    expect(r1.sidecars.length).toBe(1);
+    expect(r1.sidecars[0]!.written).toBe(true);
+    expect(r1.sidecars[0]!.issues.filter((i) => i.severity === "error")).toEqual([]);
+    const sc = readFileSync(join(dir, "add.nudo.js"), "utf-8");
+    // 模块作用域内不得重复声明
+    expect(sc.match(/^import /gm)?.length).toBe(2);
+    expect(sc).toContain("export const add2 = fn({ x }, x.shift(2));");
+    expect(sc).toContain("export const add3 = fn({ x_2 }, x_2.shift(3));");
+    expect(sc).toContain("import { positive as positive_2 }");
+    // second emit 幂等，不叠层
+    const r2 = emitDerivedFromRoot(join(dir, "lib.js"), { mode: "update" });
+    expect(r2.sidecars[0]!.changed).toBe(false);
+    expect(r2.sidecars[0]!.skipped).toBe("no-change");
+    expect(readFileSync(join(dir, "add.nudo.js"), "utf-8")).toBe(sc);
+
+    // 落盘侧车可执行且 check(add4) 仍成立
+    const check = checkSource(join(dir, "lib.js"), LIB_JS, pTrue, {
+      loadModule: defaultLoadModule,
+      fromFile: join(dir, "lib.js"),
+    });
+    expect(check.ok).toBe(true);
+    expect(check.issues.filter((i) => i.severity === "error")).toEqual([]);
+  });
+
+  it("rejects same import name from different paths across params and returns", () => {
+    writeFileSync(join(dir, "add.js"), `export function f(x) { return x; }\n`);
+    const empty = { __nudoConstraint: true, preds: [] } as never;
+    const conflict = formatDerivedSection(
+      {
+        file: join(dir, "add.js"),
+        fn: "f",
+        paramNames: ["x"],
+        params: [
+          {
+            name: "x",
+            constraint: empty,
+            dsl: "x",
+            prelude: [],
+            imports: [{ name: "positive", from: "./a.nudo.js" }],
+          },
+        ],
+        returns: {
+          constraint: empty,
+          dsl: "x",
+          prelude: [],
+          imports: [{ name: "positive", from: "./b.nudo.js" }],
+        },
+        derivedFrom: "lib.js:root",
+        compositional: false,
+      },
+      { rootSidecarDir: dir, targetSidecarDir: dir },
+    );
+    expect(conflict).toBeUndefined();
+  });
 });

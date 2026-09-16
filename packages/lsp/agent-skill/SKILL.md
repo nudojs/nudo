@@ -39,8 +39,18 @@ All commands are available as `workspace/executeCommand` (dot form) and as custo
 | `nudo.suggestCase` (`nudo/suggestCase`) | `{ "file": "src/app.js", "functionName": "parse" }` | Text: paste-ready `@nudo:case` directives when every case is call-site synthesized, e.g. `Function "parse" has 2 synthesized case(s); suggested directives:`; otherwise the current case count, e.g. `Function "parse" already has 3 case(s)`, or a suggested `@nudo:case` directive |
 | `nudo.selectCase` (`nudo/selectCase`) | `{ "file": "src/app.js", "functionName": "parse", "caseIndex": 1 }` | `{ "success": true }` — switches the active case (affects hover/diagnostics until changed back) |
 | `nudo.getActiveCases` (`nudo/getActiveCases`) | `{ "file": "src/app.js" }` | `{ "parse": 1, "greet": 0 }` — active case index per function |
+| `nudo.interface` (`nudo/interface`) | `{ "file": "src/lib.js", "functionName": "add4"? }` | Text: each export's effective contract (handwritten / generated / implicit) |
+| `nudo.interface.emit` (`nudo/interfaceEmit`) | `{ "file": "src/lib.js", "functionName": "add4", "mode": "update" }` | Persist the inferred contract as an `@generated` segment in `*.nudo.js` |
 
-Diagnostics (failed `@nudo:refine` assertions, unreachable code, …) are available as LSP diagnostics — push (`textDocument/publishDiagnostics`) and pull (`textDocument/diagnostic`).
+Diagnostics (failed `@nudo:refine` assertions, unreachable code, …) are available as LSP diagnostics — push (`textDocument/publishDiagnostics`) and pull (`textDocument/diagnostic`). Persisted-contract drift surfaces as `nudo:interface-drift` warnings.
+
+## Interface contracts (`*.nudo.js`)
+
+- **Handwritten root** in `lib.nudo.js` (e.g. `export const add4 = fn({ x: positive }, positive4)`) drives **downstream derivation**: `nudo interface --emit lib.js --fn add2` writes a compositional `@generated` segment into `add.nudo.js` (`fn({ x }, x.shift(2))`), not an expanded dump.
+- Without `--fn`/`--all`, emit only **refreshes existing** `@generated` segments — it does not invent new contracts.
+- Handwritten sidecar bindings always win; emit refuses to overwrite them (`nudo:interface-name-clash`).
+- **Package allowlist**: `package.json` → `"nudo": { "interface": { "emit": ["src/api/**"] } }`. Empty/omitted = no path filter. Paths outside the allowlist are denied (`nudo:interface-emit-denied`).
+- `nudo doctor` fails CI when a file with `@generated` sidecar segments has persisted-contract drift (`nudo:interface-drift`).
 
 ## What-if workflow
 

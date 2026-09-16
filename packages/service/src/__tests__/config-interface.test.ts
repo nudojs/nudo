@@ -67,6 +67,16 @@ describe("matchesEmitAllowlist", () => {
     expect(matchesEmitAllowlist("/proj/lib/nested/a.js", projectDir, ["lib/*.js"])).toBe(false);
   });
 
+  it("does not treat trailing ** as a prefix smear (src/** ⊄ srcX)", () => {
+    expect(matchesEmitAllowlist("/proj/src/a.js", projectDir, ["src/**"])).toBe(true);
+    expect(matchesEmitAllowlist("/proj/src/nested/a.js", projectDir, ["src/**"])).toBe(true);
+    expect(matchesEmitAllowlist("/proj/srcX/a.js", projectDir, ["src/**"])).toBe(false);
+    expect(matchesEmitAllowlist("/proj/src", projectDir, ["src/**"])).toBe(false);
+    expect(matchesEmitAllowlist("/proj/a.js", projectDir, ["**/*.js"])).toBe(true);
+    expect(matchesEmitAllowlist("/proj/x/a.js", projectDir, ["**/*.js"])).toBe(true);
+    expect(matchesEmitAllowlist("/proj/a.jsx", projectDir, ["**/*.js"])).toBe(false);
+  });
+
   it("rejects paths outside projectDir", () => {
     expect(matchesEmitAllowlist("/other/src/a.js", projectDir, ["src/**"])).toBe(false);
   });

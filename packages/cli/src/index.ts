@@ -626,9 +626,21 @@ async function runInterfaceEmit(
   }
 
   // ---- 本文件自身导出：原有 callsite-domain emit ----
-  // --fn 点名的是下游时，本地 emit 跳过 not-an-export（无害）
+  // --fn 只点名下游导出时（如 --emit lib.js --fn add2），本地 emit 不再
+  // 报 not-an-export；改为刷新已有 @generated 段（与无 --fn 同口径）
+  let localFnNames = fnNames;
+  if (fnNames) {
+    try {
+      const { localNamedExports } = await import("@nudojs/core");
+      const local = localNamedExports(readFileSync(filePath, "utf-8"));
+      const filtered = fnNames.filter((n) => local.has(n));
+      localFnNames = filtered.length > 0 ? filtered : undefined;
+    } catch {
+      localFnNames = fnNames;
+    }
+  }
   const result = await emitInterface(filePath, {
-    ...(fnNames ? { fnNames } : {}),
+    ...(localFnNames ? { fnNames: localFnNames } : {}),
     mode: "update",
     all: opts.all,
     dryRun: opts.dryRun,
@@ -819,7 +831,9 @@ async function doctorFile(filePath: string, records?: CallRecord[]): Promise<Doc
       }
     }
     // Phase 3：已落盘契约的 interface drift（只在侧车含 @generated 时跑）
-    report.interfaceDrift = await countInterfaceDrift(filePath);
+    const drift = await countInterfaceDrift(filePath);
+    report.interfaceDrift = drift.count;
+    if (drift.error) report.error = drift.error;
   } catch (err) {
     report.error = (err as Error).message;
   }
@@ -829,30 +843,35 @@ async function doctorFile(filePath: string, records?: CallRecord[]): Promise<Doc
 /**
  * 已落盘 @generated 契约的 drift 计数（Phase 3）：
  * 侧车无生成段 → 0（不跑 check，避免噪声）；有则 checkSource 收
- * nudo:interface-drift warning。
+ * nudo:interface-drift warning。check 失败上抛为 error，不静默吞成 0。
  */
-async function countInterfaceDrift(filePath: string): Promise<number> {
+async function countInterfaceDrift(
+  filePath: string,
+): Promise<{ count: number; error?: string }> {
   const { sidecarPathOf, checkSource, pTrue } = await import("@nudojs/core");
   const { defaultLoadModule } = await import("@nudojs/service");
   const { existsSync: ex, readFileSync: rf } = await import("node:fs");
   const abs = resolve(filePath);
   const sc = sidecarPathOf(abs);
-  if (!ex(sc)) return 0;
+  if (!ex(sc)) return { count: 0 };
   let scSrc: string;
   try {
     scSrc = rf(sc, "utf-8");
-  } catch {
-    return 0;
+  } catch (e) {
+    return { count: 0, error: `interface drift: cannot read sidecar: ${(e as Error).message}` };
   }
-  if (!/@generated/.test(scSrc)) return 0;
+  if (!/@generated/.test(scSrc)) return { count: 0 };
   try {
     const r = checkSource(abs, rf(abs, "utf-8"), pTrue, {
       loadModule: defaultLoadModule,
       fromFile: abs,
     });
-    return r.issues.filter((i) => i.code === "nudo:interface-drift").length;
-  } catch {
-    return 0;
+    return { count: r.issues.filter((i) => i.code === "nudo:interface-drift").length };
+  } catch (e) {
+    return {
+      count: 0,
+      error: `interface drift: checkSource failed: ${(e as Error).message}`,
+    };
   }
 }
 

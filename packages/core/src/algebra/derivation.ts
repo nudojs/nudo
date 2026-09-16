@@ -57,7 +57,7 @@ export function hasDerivationSession(): boolean {
   return sessionNodes !== null;
 }
 
-/** 开始一次推导会话（root 驱动下行求值前调用）；返回 end 用的 token */
+/** 开始一次推导会话（root 驱动下行求值前调用）；与 end/abort 成对 */
 export function beginDerivationSession(): void {
   sessionNodes = new Map();
   nextId = 1;
