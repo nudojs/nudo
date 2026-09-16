@@ -1,5 +1,11 @@
 # nudojs
 
+## 0.2.1
+
+### Patch Changes
+
+- bd28356: Rename thin shell package from unavailable npm name `nudo` to `nudojs`. The installed command remains `nudo` (`npx nudojs infer …` / `npm i -g nudojs` → `nudo infer …`).
+
 ## 0.2.0
 
 ### Minor Changes
