@@ -517,7 +517,7 @@ function checkSourceInner(
   const varAbs = new Map<string, Abs>();
   const callRecords: AbsCallRecord[] = [];
   setAbsAssignCollector((r) => records.push(r));
-  setAbsCallCollector((r) => callRecords.push(r));
+  const prevCallCollector = setAbsCallCollector((r) => callRecords.push(r));
   try {
     const { env } = evalProgramAbs(source, { file });
     for (const [k, v] of env.vars) varAbs.set(k, v);
@@ -525,7 +525,7 @@ function checkSourceInner(
     /* 求值失败：无赋值记录、无绑定表 */
   } finally {
     setAbsAssignCollector(null);
-    setAbsCallCollector(null);
+    setAbsCallCollector(prevCallCollector);
   }
 
   const callIssues = canSkipLiteralCallScan(source, file)

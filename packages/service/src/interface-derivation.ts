@@ -14,7 +14,6 @@ import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 
 import { basename, dirname, relative, resolve } from "node:path";
 import { parse } from "@nudojs/parser";
 import {
-  abortDerivationSession,
   analyzeFn,
   beginDerivationSession,
   constraintToEntryAbs,
@@ -59,6 +58,10 @@ export type DerivedParam = {
   dsl: string;
   prelude: string[];
   imports: Array<{ name: string; from: string }>;
+  /** 单链组合式投影时的推导图 root 节点 id（返回位相对锚定用） */
+  rootNodeId?: number;
+  /** 该参数位自 root 起消耗的 shift 步数（与 prelude 行数无关，读图） */
+  shiftCount?: number;
 };
 
 export type DerivedExport = {
@@ -82,6 +85,11 @@ export type RootDeriveOpts = {
   loadModule?: LoadModule;
   autoBind?: boolean;
   fnNames?: string[];
+  /**
+   * true：只刷新目标侧车里**已存在**的 @generated 段（CLI 无 --fn/--all 时
+   * 的默认行为——不发明新下游契约）。false/省略：闭包内全部可推导导出。
+   */
+  refreshExistingOnly?: boolean;
 };
 
 export type RootDeriveResult = {
@@ -300,11 +308,20 @@ function resolveRelImport(fromSpec: string, fromDir: string, targetDir: string):
 
 /**
  * 单参数位投影：单链走 derivation 组合式；多链先 join 再展开式。
+ * 组合式时附带 rootNodeId/shiftCount，供返回位相对投影做结构匹配。
  */
 function projectParamSlot(
   absList: Abs[],
   paramName: string,
-): { constraint: NudoConstraint; dsl: string; prelude: string[]; imports: Array<{ name: string; from: string }>; compositional: boolean } | undefined {
+): {
+  constraint: NudoConstraint;
+  dsl: string;
+  prelude: string[];
+  imports: Array<{ name: string; from: string }>;
+  compositional: boolean;
+  rootNodeId?: number;
+  shiftCount?: number;
+} | undefined {
   if (absList.length === 0) return undefined;
   const constraint = joinThenProject(absList);
   if (constraint === undefined) return undefined;
@@ -314,12 +331,17 @@ function projectParamSlot(
     if (node) {
       const proj = projectDerivationDsl(node, paramName);
       if (proj) {
+        const chain = derivationChain(node);
+        const root = chain[chain.length - 1];
+        const shiftCount = chain.filter((n) => n.kind === "shift").length;
         return {
           constraint,
           dsl: proj.expr,
           prelude: proj.prelude,
           imports: proj.imports,
           compositional: true,
+          ...(root?.kind === "root" ? { rootNodeId: root.id } : {}),
+          shiftCount,
         };
       }
     }
@@ -389,8 +411,9 @@ function projectReturnSlot(
 }
 
 /**
- * 返回相对某个已投影参数：chain 上找到与参数同一 root 且更深的 shift 尾巴。
- * 例：param = positive.shift(1)（local x），return = x.shift(2) → `x.shift(2)`。
+ * 返回相对某个已投影参数：按推导图 root 节点 id 结构匹配（禁止扫 DSL 字符串；
+ * 同约束双参各打独立 root 标签，id 唯一）。例：param = positive.shift(1)（local
+ * x），return = x.shift(2) → `x.shift(2)`。
  */
 function projectReturnRelativeToParams(
   node: DerivationNode,
@@ -401,25 +424,20 @@ function projectReturnRelativeToParams(
   const root = chain[chain.length - 1];
   if (!root || root.kind !== "root") return undefined;
 
-  // 找与该 root 对应的参数位（imports 含 root.expr，或 dsl/prelude 引用它）
+  const shifts: number[] = [];
+  for (let j = chain.length - 2; j >= 0; j--) {
+    const n = chain[j]!;
+    if (n.kind !== "shift" || n.offset === undefined) return undefined;
+    shifts.push(n.offset);
+  }
+
   for (let i = 0; i < params.length; i++) {
     const p = params[i]!;
-    const matchesRoot =
-      p.imports.some((im) => im.name === root.expr) ||
-      p.prelude.some((line) => line.includes(root.expr!)) ||
-      p.dsl === root.expr;
-    if (!matchesRoot) continue;
+    // 无结构锚（join/展开式参数位）无法建立关系；有锚必须同一 root 节点
+    if (p.rootNodeId === undefined || p.rootNodeId !== root.id) continue;
 
-    // 参数自身消耗的 shift 步数 = prelude 行数（每行一个 shift）
-    const paramShiftCount = p.prelude.filter((l) => l.includes(".shift(")).length;
-    // 返回链从 root 到 leaf 的全部 shift
-    const shifts: number[] = [];
-    for (let j = chain.length - 2; j >= 0; j--) {
-      const n = chain[j]!;
-      if (n.kind !== "shift" || n.offset === undefined) return undefined;
-      shifts.push(n.offset);
-    }
-    if (shifts.length < paramShiftCount) return undefined;
+    const paramShiftCount = p.shiftCount ?? 0;
+    if (shifts.length < paramShiftCount) continue;
     const tail = shifts.slice(paramShiftCount);
     if (tail.length === 0) {
       return { dsl: p.dsl, prelude: [], imports: [] };
@@ -551,13 +569,13 @@ function deriveOneRoot(
     }
 
     const calls: AbsCallRecord[] = [];
-    setAbsCallCollector((r) => calls.push(r));
+    const prevCallCollector = setAbsCallCollector((r) => calls.push(r));
     try {
       analyzeFn(source, plan.fnName, entryArgs, undefined, undefined, undefined, modules);
     } catch {
       return [];
     } finally {
-      setAbsCallCollector(null);
+      setAbsCallCollector(prevCallCollector);
     }
 
     const byCallee = new Map<string, CallAgg>();
@@ -623,6 +641,8 @@ function deriveOneRoot(
           dsl: slot.dsl,
           prelude: slot.prelude,
           imports: slot.imports,
+          ...(slot.rootNodeId !== undefined ? { rootNodeId: slot.rootNodeId } : {}),
+          ...(slot.shiftCount !== undefined ? { shiftCount: slot.shiftCount } : {}),
         });
       }
 
@@ -678,7 +698,6 @@ function deriveOneRoot(
 export function formatDerivedSection(
   row: DerivedExport,
   opts: {
-    targetSourceRel: string;
     rootSidecarDir: string;
     targetSidecarDir: string;
   },
@@ -768,6 +787,8 @@ export function emitDerivedFromRoot(
     dryRun?: boolean;
     loadModule?: LoadModule;
     autoBind?: boolean;
+    /** 只刷新目标侧车里已存在的 @generated 段（不发明新下游契约） */
+    refreshExistingOnly?: boolean;
   },
 ): EmitDerivedResult {
   const abs = resolve(rootFile);
@@ -808,15 +829,19 @@ export function emitDerivedFromRoot(
     bySidecar.set(sp, list);
   }
 
-  for (const [sidecarPath, rows] of bySidecar) {
-    const targetFile = rows[0]!.file;
+  for (const [sidecarPath, rows0] of bySidecar) {
+    const targetFile = rows0[0]!.file;
     const targetSidecarDir = dirname(sidecarPath);
     const prevSrc = existsSync(sidecarPath) ? readFileSync(sidecarPath, "utf-8") : "";
 
+    // refreshExistingOnly：只碰已有生成段的导出，不发明新契约
+    const rows = opts.refreshExistingOnly
+      ? rows0.filter((r) => findGeneratedSectionText(prevSrc, r.fn) !== undefined)
+      : rows0;
+    if (rows.length === 0) continue;
+
     // 手写绑定名（顶层声明 − 生成段）
     const handwritten = handwrittenNames(prevSrc);
-    // 既有生成段（update 剥离用）
-    const existingGen = generatedSectionNames(prevSrc);
 
     const accepted: Array<{ fn: string; text: string; prevText?: string }> = [];
     const issues: EmitDerivedResult["sidecars"][number]["issues"] = [];
@@ -843,7 +868,6 @@ export function emitDerivedFromRoot(
         continue;
       }
       const body = formatDerivedSection(row, {
-        targetSourceRel: relative(targetSidecarDir, targetFile) || basename(targetFile),
         rootSidecarDir,
         targetSidecarDir,
       });
@@ -882,7 +906,8 @@ export function emitDerivedFromRoot(
       accepted.push({ fn: row.fn, text: section, ...(prevSection !== undefined ? { prevText: prevSection } : {}) });
     }
 
-    // 组装：update 剥离目标生成段后重排；非目标生成段保留
+    // 组装：update 只剥离**已接受**的生成段；underivable/not-projectable/
+    // name-clash 的既有段原样保留（证据退化不静默删契约）
     let finalContent: string;
     if (opts.mode === "add") {
       finalContent =
@@ -890,10 +915,10 @@ export function emitDerivedFromRoot(
           ? prevSrc
           : joinSectionTexts(prevSrc, accepted.map((a) => a.text));
     } else {
-      const targetFns = new Set(rows.map((r) => r.fn));
-      const stripped = stripGeneratedFor(prevSrc, targetFns);
+      const acceptedFns = new Set(accepted.map((a) => a.fn));
+      const stripped = stripGeneratedFor(prevSrc, acceptedFns);
       const preserved = collectGeneratedSectionsRaw(prevSrc).filter(
-        (s) => !s.names.some((n) => targetFns.has(n)),
+        (s) => !s.names.some((n) => acceptedFns.has(n)),
       );
       finalContent = joinSectionTexts(stripped, [
         ...preserved.map((s) => normalizeSectionText(s.text)),
@@ -948,49 +973,53 @@ function collectGeneratedSectionsRaw(src: string): RawSection[] {
   } catch {
     return [];
   }
+  const stmts = ast.program.body;
   const out: RawSection[] = [];
-  for (const stmt of ast.program.body) {
-    if (stmt.type !== "ExportNamedDeclaration" || stmt.source) continue;
-    const d = stmt.declaration;
-    if (!d || stmt.start == null || stmt.end == null) continue;
-    const names: string[] = [];
-    if (d.type === "VariableDeclaration") {
-      for (const decl of d.declarations) {
-        if (decl.id.type === "Identifier") names.push(decl.id.name);
+  // 从 @generated 注释行起，到其后第一个顶层 export 止——中间允许
+  // import / prelude const（组合式 §5.3 形态）。
+  for (const headerPos of findGeneratedHeaderOffsets(src)) {
+    for (let i = 0; i < stmts.length; i++) {
+      const stmt = stmts[i]!;
+      if (stmt.type !== "ExportNamedDeclaration" || stmt.source) continue;
+      if (stmt.start == null || stmt.end == null || stmt.start < headerPos) continue;
+      const d = stmt.declaration;
+      if (!d) continue;
+      const names: string[] = [];
+      if (d.type === "VariableDeclaration") {
+        for (const decl of d.declarations) {
+          if (decl.id.type === "Identifier") names.push(decl.id.name);
+        }
+      } else if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
+        if (d.id) names.push(d.id.name);
       }
-    } else if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
-      if (d.id) names.push(d.id.name);
+      if (names.length === 0) continue;
+      out.push({
+        names,
+        start: headerPos,
+        end: stmt.end,
+        text: src.slice(headerPos, stmt.end),
+      });
+      break;
     }
-    if (names.length === 0) continue;
-    const blockStart = generatedCommentStart(src, stmt.start);
-    if (blockStart === undefined) continue;
-    out.push({
-      names,
-      start: blockStart,
-      end: stmt.end,
-      text: src.slice(blockStart, stmt.end),
-    });
   }
   return out;
 }
 
-function generatedCommentStart(src: string, pos: number): number | undefined {
-  const lines = src.slice(0, pos).split("\n");
-  let blockStartLine = -1;
-  let saw = false;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!.trim();
-    if (line === "" || line === "*/") continue;
-    if (line.startsWith("//") || line.startsWith("/*") || line.startsWith("*")) {
-      blockStartLine = i;
-      if (/@generated/.test(line)) saw = true;
-      continue;
+/** 注释行上的 `@generated` 字节偏移（段起点） */
+function findGeneratedHeaderOffsets(src: string): number[] {
+  const out: number[] = [];
+  let pos = 0;
+  for (const line of src.split("\n")) {
+    const t = line.trim();
+    if (
+      (t.startsWith("//") || t.startsWith("/*") || t.startsWith("*")) &&
+      /@generated/.test(t)
+    ) {
+      out.push(pos);
     }
-    break;
+    pos += line.length + 1;
   }
-  if (!saw || blockStartLine < 0) return undefined;
-  const prefix = lines.slice(0, blockStartLine);
-  return prefix.length === 0 ? 0 : prefix.join("\n").length + 1;
+  return out;
 }
 
 function generatedSectionNames(src: string): Set<string> {

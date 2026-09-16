@@ -477,7 +477,7 @@ calc.js: no interface changes
 
 证据不变时重跑 `--emit` 是 no-op（`no interface changes`）；证据消失时（如 update 未带 `--callsites`），已固化段**原样保留**，绝不静默删除。侧车自动绑定可用 `package.json` → `"nudo": { "interface": { "autoBind": false } }` 在项目级整体关闭——开关同样接线到 `nudo check` 与 LSP 执法路径，不只打印路径。
 
-**emit 白名单（Phase 3）。** `package.json` → `"nudo": { "interface": { "emit": ["src/api/**"] } }` 限制可写路径。省略/空 = 不按路径过滤。模式为相对项目根的 glob（`**` 跨目录，`*` 不跨）。
+**emit 白名单（Phase 3）。** `package.json` → `"nudo": { "interface": { "emit": ["src/api/**"] } }` 限制可写的**源文件**路径（侧车写在源文件旁）。省略/空 = 不按路径过滤。模式为相对项目根的 glob（`**` 跨目录，`*` 不跨）。未带 `--fn`/`--all` 时，root 驱动 emit 只刷新已有下游 `@generated` 段，不发明新契约。
 
 固化段是快照：`nudo check` 对其做语义比较，源码演进时报 `nudo:interface-drift` warning——见 [check](../guides/check.md#interface-诊断)。`nudo doctor` 对侧车已含 `@generated` 的文件把同一 drift 作为 CI 门禁。
 

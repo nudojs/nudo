@@ -215,10 +215,13 @@ export type AbsCallRecord = {
 
 let absCallCollector: ((r: AbsCallRecord) => void) | null = null;
 
+/** 设置收集器并返回先前值（嵌套/并发宿主须 restore，勿直接置 null） */
 export function setAbsCallCollector(
   collector: ((r: AbsCallRecord) => void) | null,
-): void {
+): ((r: AbsCallRecord) => void) | null {
+  const prev = absCallCollector;
   absCallCollector = collector;
+  return prev;
 }
 
 function recordAbsCall(

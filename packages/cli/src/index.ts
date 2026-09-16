@@ -578,7 +578,8 @@ async function runInterface(file: string, records?: CallRecord[]): Promise<void>
 /**
  * `nudo interface --emit <file>`：
  * - 含手写契约根时走 root 驱动下行（§7.3 Phase 2）：`--fn` 可点名**下游**
- *   导出（如 lib.js 根上的 add2 → 写 add.nudo.js）；
+ *   导出（如 lib.js 根上的 add2 → 写 add.nudo.js）；无 --fn/--all 时只
+ *   刷新已有下游 @generated 段，不发明新契约；
  * - 同时对目标文件自身的导出走原有 callsite-domain emit（本文件侧车）。
  * 固定 mode=update；--exit-on-diff 配 --dry-run 作 CI 门禁。
  */
@@ -591,36 +592,36 @@ async function runInterfaceEmit(
   const rel = relative(process.cwd(), filePath) || filePath;
   const fnNames = opts.fnNames.length > 0 ? opts.fnNames : undefined;
 
-  // ---- Phase 2: root 驱动下行（--fn 可含下游名）----
+  // ---- Phase 2: root 驱动下行 ----
+  // --fn/--all：点名或全量闭包；否则只刷新已有生成段（与本地 emit 同口径）
   let derivedChanged = false;
-  if (fnNames || opts.all) {
-    const derived = emitDerivedFromRoot(filePath, {
-      ...(fnNames ? { fnNames } : {}),
-      mode: "update",
-      dryRun: opts.dryRun,
-    });
-    if (derived.hasRoot) {
-      for (const sc of derived.sidecars) {
-        const scRel = relative(process.cwd(), sc.sidecarPath) || sc.sidecarPath;
-        if (sc.changed && opts.dryRun) {
-          console.log(`[dry-run] would update ${scRel} (derived-from ${derived.roots.join(", ")}):`);
-          console.log(sc.diff ?? "");
-        } else if (sc.changed) {
-          console.log(`Updated ${rel} → ${scRel} (derived-from ${derived.roots.join(", ")})`);
-          console.log(`  written: ${sc.fn}`);
-          derivedChanged = true;
-        } else {
-          console.log(`${scRel}: no derived interface changes (${sc.skipped ?? "no-change"})`);
-        }
-        for (const i of sc.issues) {
-          console.log(`  [${i.severity}] ${i.code}: ${i.message}`);
-          if (i.severity === "error") process.exitCode = 1;
-        }
-        if (sc.written) derivedChanged = true;
+  const derived = emitDerivedFromRoot(filePath, {
+    ...(fnNames ? { fnNames } : {}),
+    mode: "update",
+    dryRun: opts.dryRun,
+    ...(!(fnNames || opts.all) ? { refreshExistingOnly: true } : {}),
+  });
+  if (derived.hasRoot) {
+    for (const sc of derived.sidecars) {
+      const scRel = relative(process.cwd(), sc.sidecarPath) || sc.sidecarPath;
+      if (sc.changed && opts.dryRun) {
+        console.log(`[dry-run] would update ${scRel} (derived-from ${derived.roots.join(", ")}):`);
+        console.log(sc.diff ?? "");
+      } else if (sc.changed) {
+        console.log(`Updated ${rel} → ${scRel} (derived-from ${derived.roots.join(", ")})`);
+        console.log(`  written: ${sc.fn}`);
+        derivedChanged = true;
+      } else {
+        console.log(`${scRel}: no derived interface changes (${sc.skipped ?? "no-change"})`);
       }
-      if (derived.entryOnly) {
-        console.log(`${rel}: no handwritten contract root (root lives elsewhere); only refreshing existing @generated segments`);
+      for (const i of sc.issues) {
+        console.log(`  [${i.severity}] ${i.code}: ${i.message}`);
+        if (i.severity === "error") process.exitCode = 1;
       }
+      if (sc.written) derivedChanged = true;
+    }
+    if (derived.entryOnly) {
+      console.log(`${rel}: no handwritten contract root (root lives elsewhere); only refreshing existing @generated segments`);
     }
   }
 

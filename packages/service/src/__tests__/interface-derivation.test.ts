@@ -103,7 +103,6 @@ describe("deriveFromRoot", () => {
     const r = deriveFromRoot(join(dir, "lib.js"), { fnNames: ["add2"] });
     const add2 = r.derived[0]!;
     const section = formatDerivedSection(add2, {
-      targetSourceRel: "add.js",
       rootSidecarDir: dir,
       targetSidecarDir: dir,
     });
@@ -145,17 +144,74 @@ describe("emitDerivedFromRoot", () => {
     expect(sidecar).toContain("export const add2 = fn({ x }, x.shift(2));");
   });
 
-  it("is idempotent on second emit", () => {
+  it("is idempotent on second emit (no name-clash on compositional prelude)", () => {
     writeFixture();
-    emitDerivedFromRoot(join(dir, "lib.js"), { fnNames: ["add2"], mode: "update" });
+    const r1 = emitDerivedFromRoot(join(dir, "lib.js"), {
+      fnNames: ["add2"],
+      mode: "update",
+    });
+    expect(r1.sidecars[0]!.issues.filter((i) => i.severity === "error")).toEqual([]);
     const before = readFileSync(join(dir, "add.nudo.js"), "utf-8");
+    expect(before).toContain("const x = positive.shift(1);");
     const r2 = emitDerivedFromRoot(join(dir, "lib.js"), {
       fnNames: ["add2"],
       mode: "update",
     });
     expect(r2.sidecars[0]!.written).toBe(false);
     expect(r2.sidecars[0]!.changed).toBe(false);
+    expect(r2.sidecars[0]!.skipped).toBe("no-change");
+    expect(r2.sidecars[0]!.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(readFileSync(join(dir, "add.nudo.js"), "utf-8")).toBe(before);
+  });
+
+  it("update rewrites an existing compositional section (not blocked by name-clash)", () => {
+    writeFixture();
+    emitDerivedFromRoot(join(dir, "lib.js"), { fnNames: ["add2"], mode: "update" });
+    // 手工改写生成段内容，应被 update 以新推导覆盖
+    const sc = join(dir, "add.nudo.js");
+    const stale = readFileSync(sc, "utf-8").replace("x.shift(2)", "x.shift(99)");
+    writeFileSync(sc, stale);
+    const r = emitDerivedFromRoot(join(dir, "lib.js"), { fnNames: ["add2"], mode: "update" });
+    expect(r.sidecars[0]!.written).toBe(true);
+    expect(r.sidecars[0]!.changed).toBe(true);
+    expect(r.sidecars[0]!.issues.filter((i) => i.severity === "error")).toEqual([]);
+    const after = readFileSync(sc, "utf-8");
+    expect(after).toContain("x.shift(2)");
+    expect(after).not.toContain("x.shift(99)");
+  });
+
+  it("refreshExistingOnly does not invent new downstream contracts", () => {
+    writeFixture();
+    const r = emitDerivedFromRoot(join(dir, "lib.js"), {
+      mode: "update",
+      refreshExistingOnly: true,
+    });
+    expect(r.hasRoot).toBe(true);
+    expect(r.sidecars).toEqual([]);
+    expect(existsSync(join(dir, "add.nudo.js"))).toBe(false);
+  });
+
+  it("preserves prior generated section when re-derivation is underivable", () => {
+    writeFixture();
+    emitDerivedFromRoot(join(dir, "lib.js"), { fnNames: ["add2"], mode: "update" });
+    const before = readFileSync(join(dir, "add.nudo.js"), "utf-8");
+    // 根分析失去可投影证据：调用实参不再带 root/shift
+    writeFileSync(
+      join(dir, "lib.js"),
+      `import { add2 } from "./add.js";
+export function add4(x) { return add2({}.x); }
+`,
+    );
+    const r = emitDerivedFromRoot(join(dir, "lib.js"), { fnNames: ["add2"], mode: "update" });
+    // 既有段不得被静默删除
+    if (r.sidecars[0]?.changed) {
+      // 若仍写盘，内容必须仍含原契约（或明确 skip）
+      const after = readFileSync(join(dir, "add.nudo.js"), "utf-8");
+      expect(after).toContain("const x = positive.shift(1);");
+    } else {
+      expect(readFileSync(join(dir, "add.nudo.js"), "utf-8")).toBe(before);
+    }
+    expect(r.sidecars[0]?.issues.some((i) => i.severity === "error")).toBe(false);
   });
 
   it("dryRun does not write", () => {
@@ -209,7 +265,7 @@ describe("emitDerivedFromRoot", () => {
     expect(before.ok).toBe(true);
     expect(before.issues.filter((i) => i.severity === "error")).toEqual([]);
 
-    // 第二个调用者：把 add2 的落盘接口 join 宽，但 check(add4) 按本链独立
+    // 第二个调用者：写入无关调用方，不得回灌 root 链（deriveFromRoot 只看本根）
     writeFileSync(
       join(dir, "main.js"),
       `import { add2 } from "./add.js";\nadd2(-10);\n`,
@@ -217,5 +273,41 @@ describe("emitDerivedFromRoot", () => {
     const after = checkSource(join(dir, "lib.js"), LIB_JS, pTrue, checkOpts);
     expect(after.ok).toBe(true);
     expect(after.issues.filter((i) => i.severity === "error")).toEqual([]);
+
+    // 重跑 root emit：落盘 add2 契约保持原样（无关调用者不参与本根推导）
+    const sidecarBefore = readFileSync(join(dir, "add.nudo.js"), "utf-8");
+    const r = emitDerivedFromRoot(join(dir, "lib.js"), {
+      fnNames: ["add2"],
+      mode: "update",
+    });
+    expect(r.sidecars[0]!.changed).toBe(false);
+    expect(r.sidecars[0]!.skipped).toBe("no-change");
+    expect(readFileSync(join(dir, "add.nudo.js"), "utf-8")).toBe(sidecarBefore);
+  });
+
+  it("attributes return shift to the correct param when both share a root constraint", () => {
+    writeFileSync(join(dir, "std.nudo.js"), STD);
+    writeFileSync(join(dir, "add.js"), `export function pick(a, b) { return a; }\n`);
+    writeFileSync(
+      join(dir, "lib.js"),
+      `import { pick } from "./add.js";
+export function use(x, y) { return pick(x + 1, y + 10); }
+`,
+    );
+    writeFileSync(
+      join(dir, "lib.nudo.js"),
+      `import { fn } from "@nudojs/core";
+import { positive } from "./std.nudo.js";
+export const use = fn({ x: positive, y: positive }, positive);
+`,
+    );
+    const r = deriveFromRoot(join(dir, "lib.js"), { fnNames: ["pick"] });
+    const pick = r.derived.find((d) => d.fn === "pick");
+    expect(pick).toBeDefined();
+    // pick 返回即第一参 a（x+1 的 shift 链原样透传），不是 y
+    expect(pick!.returns).toBeDefined();
+    expect(pick!.returns!.dsl).toBe("a");
+    expect(pick!.params.map((p) => p.name)).toEqual(["a", "b"]);
+    expect(pick!.params[0]!.prelude).toEqual(["const a = positive.shift(1);"]);
   });
 });

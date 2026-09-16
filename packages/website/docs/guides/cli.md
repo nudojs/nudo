@@ -477,7 +477,7 @@ calc.js: no interface changes
 
 Re-running `--emit` with unchanged evidence is a no-op (`no interface changes`); when evidence disappears (e.g. update without `--callsites`), persisted segments are **preserved**, never silently deleted. Sidecar auto-binding can be turned off project-wide with `package.json` → `"nudo": { "interface": { "autoBind": false } }` — the switch is wired into `nudo check` and LSP enforcement paths as well, not just printing.
 
-**Emit allowlist (Phase 3).** `package.json` → `"nudo": { "interface": { "emit": ["src/api/**"] } }` restricts which paths may be written. Empty / omitted = no path filter. Patterns are globs relative to the project root (`**` crosses directories, `*` does not).
+**Emit allowlist (Phase 3).** `package.json` → `"nudo": { "interface": { "emit": ["src/api/**"] } }` restricts which **source file** paths may be written (sidecars are written next to the source). Empty / omitted = no path filter. Patterns are globs relative to the project root (`**` crosses directories, `*` does not). Without `--fn`/`--all`, root-driven emit only refreshes already-persisted downstream `@generated` segments and will not invent new contracts.
 
 Persistence is snapshots: `nudo check` compares them semantically and reports `nudo:interface-drift` warnings when the file evolves — see [check](../guides/check.md#interface-diagnostics). `nudo doctor` surfaces the same drift as a CI gate for files whose sidecar already contains `@generated` segments.
 

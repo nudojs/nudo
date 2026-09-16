@@ -47,6 +47,8 @@ export type EmitInterfaceSkipReason =
   | "not-projectable"
   | "not-an-export"
   | "no-change"
+  /** package.json#nudo.interface.emit 白名单拒绝 */
+  | "emit-denied"
   /** 手工合并的多声明符 @generated 段：按段原子保留，不拆不重写 */
   | "multi-declarator";
 
@@ -102,12 +104,13 @@ export async function emitInterface(
     );
   }
   // package.json#nudo.interface.emit 白名单（Phase 3 §7.3）：显式动作也尊重包级门禁
+  // （匹配的是**源文件**路径，不是侧车路径）
   const proj = findProjectConfig(dirname(abs));
   const allow = interfaceConfig(proj?.config).emit;
   if (!matchesEmitAllowlist(abs, proj?.projectDir, allow)) {
     return {
       written: [],
-      skipped: [{ fn: opts.fnNames?.[0] ?? "*", reason: "not-an-export" }],
+      skipped: [{ fn: opts.fnNames?.[0] ?? "*", reason: "emit-denied" }],
       changed: false,
       issues: [
         {

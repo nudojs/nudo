@@ -43,8 +43,9 @@ export function interfaceConfig(config: NudoConfig | null | undefined): Interfac
 }
 
 /**
- * 极简 glob（`**` / `*` / `?`）：相对 projectDir 匹配绝对路径。
- * 无白名单 → true。路径分隔符归一为 `/`。
+ * 极简 glob（`**` / `*` / `?`）：相对 projectDir 匹配**源文件**绝对路径
+ * （不是侧车路径；侧车随源文件同目录写出）。无白名单 → true。
+ * 路径分隔符归一为 `/`。
  */
 export function matchesEmitAllowlist(
   absPath: string,
