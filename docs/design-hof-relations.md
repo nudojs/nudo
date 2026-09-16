@@ -305,7 +305,7 @@ export function applyCallbackAbs(
 
 **函数 union（sum）回调（阻塞 P1，禁止静默掉成 unknown）：**
 
-`cond ? f : g` / `@nudo` 环境里已有的「函数 union 透传给 HOF」（见 `service/src/evaluator/evaluator.ts` 相关分支）在统一入口后必须保留。步骤 0 之后、进入 A–F 之前：
+`cond ? f : g` / `@nudo` 环境里已有的「函数 union 透传给 HOF」（见 `core/src/algebra/ast-eval.ts` 的 sum 回调分发，`fnVal.shape.k === "sum"` 时逐 member `applyAbsFn` 后 `joinAbs`）在统一入口后必须保留。步骤 0 之后、进入 A–F 之前：
 
 ```text
 shape.k === "sum"

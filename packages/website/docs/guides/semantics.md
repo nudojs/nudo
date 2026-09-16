@@ -107,6 +107,23 @@ keysOf();
 Case "call@L2": () => ["port", "host"]
 ```
 
+### Math Methods
+
+`Math` methods on literal numeric arguments fold at evaluation time — on both the call-site and `@nudo:case` paths.
+
+```js
+function root(n) { return Math.sqrt(n); }
+root(9);
+```
+
+```text
+=== root ===
+
+Case "call@L2": (9) => 3
+```
+
+`sqrt`, `pow`, `abs`, `floor`, `ceil`, `round`, `min`, and `max` all fold to their exact numeric result on literal arguments; symbolic arguments widen to `number`.
+
 ### Method Calls and `this`
 
 Method calls made inside an analyzed function bind `this` to the receiver — on both the call-site and `@nudo:case` paths.
@@ -180,7 +197,6 @@ These constructs currently evaluate to `unknown` (often with a `nudo:unknown-rec
 | `JSON.parse` | `JSON.parse('{"port": 3000}')` → `unknown` | object literals |
 | `String.fromCharCode` | → `unknown` | string literals |
 | Exponentiation `**` | → `unknown` | `x * x` |
-| `Math.*` in `@nudo:case` evaluation | `Math.sqrt(9)` → `unknown` | call sites (`sqrtOf(9)` → `3`) |
 
 ## Summary
 

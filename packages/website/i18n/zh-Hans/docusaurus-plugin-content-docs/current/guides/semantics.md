@@ -107,6 +107,23 @@ keysOf();
 Case "call@L2": () => ["port", "host"]
 ```
 
+### Math 方法
+
+字面量数值实参上的 `Math` 方法在求值期折叠——调用点与 `@nudo:case` 两条路径皆然。
+
+```js
+function root(n) { return Math.sqrt(n); }
+root(9);
+```
+
+```text
+=== root ===
+
+Case "call@L2": (9) => 3
+```
+
+`sqrt`、`pow`、`abs`、`floor`、`ceil`、`round`、`min`、`max` 都在字面量实参上折叠为精确数值结果；符号实参拓宽为 `number`。
+
 ### 方法调用与 `this`
 
 在函数体内进行的方法调用会把 `this` 绑定到 receiver——调用点与 `@nudo:case` 两条路径皆然。
@@ -180,7 +197,6 @@ Combined: 0 | 1 | 3
 | `JSON.parse` | `JSON.parse('{"port": 3000}')` → `unknown` | 对象字面量 |
 | `String.fromCharCode` | → `unknown` | 字符串字面量 |
 | 指数运算符 `**` | → `unknown` | `x * x` |
-| `@nudo:case` 求值中的 `Math.*` | `Math.sqrt(9)` → `unknown` | 调用点（`sqrtOf(9)` → `3`） |
 
 ## 小结
 

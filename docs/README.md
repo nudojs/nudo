@@ -16,6 +16,9 @@
 | [design-kernel-merge.md](./design-kernel-merge.md) | **唯一真理源**：Abs = shape × term × pred × conf 单轨架构；TypeValue 是外延投影而非平行类型系统 | 现行 |
 | [design-typevalue-algebra.md](./design-typevalue-algebra.md) | 代数重构设计：命题、项/约束内核、单调性表、迁移映射、实施阶段与验证状态 | 现行（设计 + 状态） |
 | [design-limitations.md](./design-limitations.md) | 设计限制与路线图：P0–P3 优先级、测试覆盖、改进计划 | 现行（随修复更新） |
+| [design-hof-relations.md](./design-hof-relations.md) | 高阶函数关系 Abs 设计稿（非 TS 泛型语言；P1 路线图项） | 现行（设计稿，未实施） |
+| [design-refine-derivation.md](./design-refine-derivation.md) | interface 分层推导与契约生成（Phase 1–3 已实施 + 设计稿） | 现行（设计 + 状态） |
+| [design-persistent-cache.md](./design-persistent-cache.md) | 持久化分析缓存（`.nudo/cache`）设计稿 | 现行（设计稿，未实施） |
 | [design.md](./design.md) | Abs 单轨合并前的原始设计（TypeValue 中心视图） | 历史 |
 | [基于代码执行的动态类型推导方法研究.md](./基于代码执行的动态类型推导方法研究.md) | `@nudo:returns` 时代的研究笔记 | 历史 |
 
