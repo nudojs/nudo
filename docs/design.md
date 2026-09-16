@@ -2,8 +2,8 @@
 
 > **Superseded / historical.** 本文是 Abs 单轨合并前的原始设计：以 TypeValue
 > 为「整个系统的基础抽象」（§2）的视图已被推翻——当前类型本体是
-> **Abs = shape × term × pred × conf**，TypeValue 只是评估 IR（环境绑定 /
-> dts / LSP / 序列化消费的格式），Abs ⇄ TypeValue 经 `bridge.ts` 有损投影。
+> **Abs = shape × term × pred × conf**，TypeValue 只是外延投影（dts /
+> LSP / 序列化消费的格式与 `T` 工厂），Abs ⇄ TypeValue 经 `bridge.ts` 有损投影。
 > 现行真理源见 [`design-kernel-merge.md`](./design-kernel-merge.md)，重构设计
 > 与实施状态见 [`design-typevalue-algebra.md`](./design-typevalue-algebra.md)，
 > 对外英文版见网站 `packages/website/docs/design/design-doc.md`。本文保留为

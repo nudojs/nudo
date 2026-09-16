@@ -121,53 +121,17 @@ type Refinement = {
 
 ---
 
-## Ops（运算符语义）
+## 运算符语义（Abs 原生）
 
-在 TypeValue 上的运算符和一元运算。求值器使用这些而非真实 JavaScript 运算符。
+运算符在 Abs 上代数化——不存在 `Ops` 层。算术、比较、一元与 spread 位于：
 
-### 二元运算
+| 位置 | 内容 |
+|-------|------|
+| `core/src/algebra/surface.ts` | `typeofAbs`、`negAbs`、`notAbs`、`strictEqAbs`（一元运算 + 严格相等） |
+| `core/src/algebra/arithmetic.ts` | 二元算术（`+` `-` `*` `/` `%`）与比较 |
+| `service/src/evaluator/abs-route.ts` | `tryAbsBinary` / `tryAbsUnary` / `tryAbsObjectSpread` — TypeValue ⇄ Abs 路由（union 逐成员） |
 
-| Op | 函数 | 描述 |
-|----|----------|-------------|
-| `+` | `Ops.add(left, right)` | 数值加法或字符串拼接；literal + literal → literal。 |
-| `-` | `Ops.sub(left, right)` | 减法；仅数值。 |
-| `*` | `Ops.mul(left, right)` | 乘法。 |
-| `/` | `Ops.div(left, right)` | 除法。 |
-| `%` | `Ops.mod(left, right)` | 取模。 |
-| `===` | `Ops.strictEq(left, right)` | 严格相等。 |
-| `!==` | `Ops.strictNeq(left, right)` | 严格不等。 |
-| `>` | `Ops.gt(left, right)` | 大于。 |
-| `<` | `Ops.lt(left, right)` | 小于。 |
-| `>=` | `Ops.gte(left, right)` | 大于等于。 |
-| `<=` | `Ops.lte(left, right)` | 小于等于。 |
-
-### 一元运算
-
-| Op | 函数 | 描述 |
-|----|----------|-------------|
-| `typeof` | `Ops.typeof_(operand)` | 返回 `T.literal("number")`、`T.literal("string")` 等。 |
-| `!` | `Ops.not(operand)` | 逻辑非。 |
-| `-` | `Ops.neg(operand)` | 数值取负。 |
-
-### 辅助函数
-
-```typescript
-applyBinaryOp(op: string, left: TypeValue, right: TypeValue): TypeValue
-```
-
-将运算符字符串（`"+"`、`"-"` 等）映射到对应的二元 Op。未知运算符返回 `T.unknown`。
-
-### 分派函数（精化类型感知）
-
-这些函数封装了基本运算，支持精化类型的回退链：
-
-```typescript
-dispatchBinaryOp(op: string, left: TypeValue, right: TypeValue): TypeValue
-dispatchMethod(receiver: TypeValue, name: string, args: TypeValue[]): TypeValue | undefined
-dispatchProperty(receiver: TypeValue, name: string): TypeValue | undefined
-```
-
-分派链：尝试精化类型的自定义 handler → 返回 `undefined` 则解包到 base → 递归直到原始类型 → 使用默认 `Ops`。
+下方的 `T` 工厂与 `Environment` 是仅剩的 TypeValue 层 API；生产分析在 Abs 上运行，仅展示时桥接为 TypeValue。
 
 ---
 

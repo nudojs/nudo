@@ -1,11 +1,11 @@
 ---
 sidebar_position: 1
-description: "Nudo 设计内幕：Abs = shape × term × pred × conf 作为类型系统，TypeValue 作为评估 IR，指令系统与抽象解释。"
+description: "Nudo 设计内幕：Abs = shape × term × pred × conf 作为类型系统，TypeValue 作为外延投影，指令系统与抽象解释。"
 ---
 
 # 设计文档
 
-> **Nudo** — 面向 JavaScript 的类型推断引擎。类型系统是 **Abs**（`shape × term × pred × conf`）——类型是可计算值，携带约束并参与代数。**TypeValue** 是评估 IR（环境绑定、dts/LSP/序列化），不是平行类型系统；Abs ⇄ TypeValue 经有损 bridge。
+> **Nudo** — 面向 JavaScript 的类型推断引擎。类型系统是 **Abs**（`shape × term × pred × conf`）——类型是可计算值，携带约束并参与代数。**TypeValue** 是外延投影 IR（dts/LSP/序列化与 `*.nudo.js` 模板的 `T` 工厂），不是平行类型系统；生产分析 Abs 原生。Abs ⇄ TypeValue 经有损 bridge。
 
 ---
 
@@ -72,9 +72,9 @@ Nudo：       源代码  +  Abs     →  执行  →  类型 + 约束
 
 Abs 上的运算是代数的：单调算术、比较、`leq` 可赋值、谓词蕴含。`nudo check` 是这套代数上的 CI 门禁（金标 recall = precision = 1.0）。
 
-### 2.2 TypeValue —— 评估 IR（不是第二套类型系统）
+### 2.2 TypeValue —— 外延投影（不是第二套类型系统）
 
-TypeValue 供环境绑定、dts、LSP hover 外延侧与序列化消费。它是 Abs 的**投影**（`bridge.ts` 的 `absToTypeValue` / `typeValueToAbs`）。bridge 有损：非字面量 term 与无法 encode 的 pred 会丢；丢信息时不得假装 `exact`。
+TypeValue 供 dts（`Case:` JSDoc 行与无 Abs 回退）、LSP hover 表面、序列化与 `T` 工厂（`*.nudo.js` 模板）消费。它是 Abs 的**投影**（`bridge.ts` 的 `absToTypeValue` / `typeValueToAbs`）。bridge 有损：非字面量 term 与无法 encode 的 pred 会丢；丢信息时不得假装 `exact`。不存在 TypeValue 求值器——生产分析 Abs 原生（B-path 转译+执行，ast-eval 回退）。
 
 ```text
 TypeValue
@@ -125,7 +125,7 @@ if (typeof x === "string") {
 }
 ```
 
-### 2.3 类型值 API
+### 2.4 类型值 API
 
 ```typescript
 // --- 构造 ---
@@ -151,24 +151,21 @@ typeValueToString(tv)         // 可读表示："number", "1 | 2", "string | num
 isSubtypeOf(a, b)             // 子类型检查
 ```
 
-### 2.4 类型值上的运算符语义
+### 2.5 运算符语义（Abs 原生表面）
 
-由于 JavaScript 不支持运算符重载，引擎**解释 AST** 并通过语义层分派：
+算术、比较、一元与 spread 都在 Abs 上代数化——不存在独立的 `Ops` 层。语言表面分三处：
+
+- `core/src/algebra/surface.ts` — `typeofAbs`、`negAbs`、`notAbs`、`strictEqAbs`（一元运算与严格相等，在 Abs 上）。
+- `core/src/algebra/arithmetic.ts` — 二元算术（`+` `-` `*` `/` `%`）与比较，在 Abs 上。
+- `service/src/evaluator/abs-route.ts` — `tryAbsBinary` / `tryAbsUnary` / `tryAbsObjectSpread`：TypeValue ⇄ Abs 路由，把投影层桥回代数（union 逐成员路由，约束经 term/pred 保留）。
 
 ```typescript
-// 引擎将 `a + b` 转换为：
-Ops.add(a, b)
-
-// Ops.add 知道如何处理类型值：
-// - 两个都是字面量 → 计算具体结果
-// - 涉及字符串 → 结果是 string
-// - 都是数字 → 结果是 number
-// - 兜底 → T.union(T.number, T.string)
+// 二元算术经代数路由：
+tryAbsBinary("+", left, right)   // number + number、string/template 拼接
+tryAbsBinary("<", left, right)   // 数值/字符串比较
 ```
 
-每个 JS 运算符和内置方法在 Ops 中都有对应的类型值语义规则。
-
-对于**精化类型**，引擎使用分派回退链：首先尝试精化类型的自定义 `ops`/`methods`/`properties` handler；如果返回 `undefined`，则解包到基础类型并递归，直到到达原始类型的默认规则。
+精化子集（模板字符串、数值区间）把约束作为 term 上的 Pred 携带，而非覆写表；代数在 `+`/比较时读取这些 pred。
 
 ---
 
@@ -179,12 +176,11 @@ Ops.add(a, b)
 ```text
 parser ──▶ core
             ├── algebra/     ← 类型本体（Abs / Term / Pred / Φ / check）
-            ├── type-value   ← 评估 IR
-            ├── ops          ← 代数未覆盖的语言表面
+            ├── type-value   ← 外延投影（T 工厂 / dts / 序列化）
             └── bridge       ← Abs ⇄ TypeValue（有损）
                  │
                  ▼
-            service/evaluator    ← AST 抽象解释；算术先走 Abs
+            service/evaluator    ← Abs 原生：B-path（转译+执行）→ ast-eval
                  │
                  ▼
             service / lsp / vite / dts
@@ -195,8 +191,8 @@ parser ──▶ core
 | **Parser** | 将 JS/TS 源码解析为 AST（Babel） |
 | **Directive Extractor** | 提取 `@nudo:*`；refine/import 在 core 解析 |
 | **algebra (Abs)** | 类型即计算：eval / check / leq / generalize |
-| **Evaluator（TypeValue 路径）** | import/env/复杂 mock 文件的回落 AST walker |
-| **Ops** | 代数未覆盖的运算符残差语义 |
+| **Evaluator（Abs 原生）** | B-path 转译+执行；非 B 托管文件走 ast-eval 回退 |
+| **surface / abs-route** | 算术、比较、一元、spread 经代数路由 |
 | **bridge** | Abs → TypeValue（dts/LSP/序列化） |
 | **Environment** | 变量绑定（名称 → TypeValue 或 Abs seed） |
 
@@ -218,7 +214,7 @@ eval(Identifier "x")  →  env.lookup("x")
 
 **二元表达式：**
 ```text
-eval(BinaryExpression { left, op, right })  →  Ops[op](eval(left), eval(right))
+eval(BinaryExpression { left, op, right })  →  tryAbsBinary(op, eval(left), eval(right))
 ```
 
 **条件语句（if-else）：** 引擎可能**同时求值两个分支**，各自使用窄化后的类型值，再合并：

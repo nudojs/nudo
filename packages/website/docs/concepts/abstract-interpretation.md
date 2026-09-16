@@ -31,8 +31,8 @@ When Nudo executes `transform(T.string)`, the engine propagates `T.string` throu
 │  └───────────┘   └────────────┘   └──────┬───────┘ │
 │                                          │         │
 │                  ┌───────────────────────┐│         │
-│                  │    Ops (Operator &    ││         │
-│                  │  Built-in Semantics)  │◀         │
+│                  │  algebra surface /   ││         │
+│                  │  arithmetic / route  │◀         │
 │                  └───────────────────────┘          │
 │                                                     │
 │  ┌──────────────┐  ┌─────────────┐  ┌───────────┐  │
@@ -46,8 +46,8 @@ When Nudo executes `transform(T.string)`, the engine propagates `T.string` throu
 |-----------|----------------|
 | **Parser** | Parse JS/TS source into AST (delegates to Babel) |
 | **Directive Extractor** | Extract `@nudo:*` directives from comments |
-| **Evaluator** | Traverse AST, evaluate each node with type values |
-| **Ops** | Define type-value semantics for all JS operators and built-in methods |
+| **Evaluator** | B-path transpile+exec (ast-eval fallback): evaluate each node with Abs |
+| **surface / arithmetic / abs-route** | Operator semantics on Abs for arithmetic, comparison, unary, spread |
 | **Environment** | Manage variable scopes and bindings (name → TypeValue) |
 | **Branch Executor** | Handle conditional branches: fork, narrow, evaluate, merge |
 | **Type Emitter** | Serialize final TypeValue results (optionally to TypeScript types) |
@@ -76,7 +76,7 @@ eval(Identifier { name: "x" })  →  env.lookup("x")
 ### Binary Expressions
 
 ```text
-eval(BinaryExpression { left, op, right })  →  Ops[op](eval(left), eval(right))
+eval(BinaryExpression { left, op, right })  →  tryAbsBinary(op, eval(left), eval(right))
 ```
 
 ### Assignment

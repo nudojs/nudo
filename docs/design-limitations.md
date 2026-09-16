@@ -131,8 +131,6 @@ function unique(arr) {
 - 当前拿不到元素联合——`Set` 构造保留 brand 形状、迭代整体未建模；
   `Set` 的 for-of 迭代元素同样 unknown
   （已钉进示例门禁：`docs/examples/algebra/i-map-set.js`）
-- TypeValue 求值器（service）对 `Array.from(Set实例)` 另有一份
-  set→elements 建模（见 combination-scenarios 测试），Abs/B 路径未对齐
 
 **难度：** 低（先建模 Set 元素类型，再考虑去重语义）
 
@@ -214,13 +212,12 @@ function createCounter() {
 
 ## 三、类型系统限制
 
-### 3.0 构造函数 `this` 语义（已解决·TypeValue 路径）
+### 3.0 构造函数 `this` 语义（已解决）
 
 ~~类/构造函数体内的 `this` 求值为 undefined，`this.push(...)` 报 no-method
-误报。~~ TypeValue 求值器路径已实现：`obj.f()` 调用把 receiver 作为 thisVal
-注入（含 `f.call(thisArg)`/`f.apply`）；`new C()` 创建 fresh instance 绑定 `this`；
-未绑定 this 兜底 T.unknown（this-风格函数降级 warning 而非 error）；
-`Object.prototype` 方法表 + 原始值自动装箱。json-ext 试炼 41 error → 0。
+误报。~~ 已解决（Abs 原生）：B 路径成员分派（`$invoke`/`$get`）把 receiver 作为
+thisVal 注入；`new C()` 创建 fresh instance 绑定 `this`；未绑定 this 兜底 unknown。
+json-ext 试炼 41 error → 0。
 
 CLI 主路径（B-hosted）的可见行为（2026-09 实测）：
 - `obj.f()` receiver 注入已生效：函数体内的成员调用在**调用点与指令两条路径**都精确（`compute(5)` 内 `circle.area()` → `25 #exact`）
@@ -240,10 +237,10 @@ CLI 主路径（B-hosted）的可见行为（2026-09 实测）：
 `==` / `!=` 不折叠——即使两操作数均为字面量（`5 == 5`、`"5" == 5`、`null == undefined`）
 也恒为 `unknown`，指令 case 与调用点 case 一致。
 
-TypeValue 求值器路径（`evaluateFunctionFull`，测试 harness / `nudo test` 内部）
-已实现字面量折叠（ToNumber 强转、`NaN != NaN`、`"5" == 5 为 true`，非字面量回落
-`T.boolean`，测试：`edge-cases.test.ts`）——两路径精度不对称，文档示例与
-`packages/website/docs/guides/semantics.md` 的「Not Modeled Yet」表按 CLI 可见行为记录。
+（历史注：TypeValue 求值器路径曾实现字面量折叠——ToNumber 强转、`NaN != NaN`、
+`"5" == 5 为 true`，见 `edge-cases.test.ts`；该求值器已删除。当前单一路径上
+`==`/`!=` 不折叠，文档示例与 `packages/website/docs/guides/semantics.md` 的
+「Not Modeled Yet」表按 CLI 可见行为记录。）
 
 ---
 
@@ -268,9 +265,7 @@ pick(true);
 // Case "call@…": (true) => "a"        ← 布尔字面量分叉
 ```
 
-实现位置：TypeValue 路径 `packages/service/src/evaluator/evaluator.ts` 的
-`ConditionalExpression` 分支（`narrow` + 字面量 / `definiteBoolean` 静态选支）；
-B 路径 `core/src/algebra/exec/transpile.ts` 把三元编译为 `$fork`，
+实现位置：B 路径 `core/src/algebra/exec/transpile.ts` 把三元编译为 `$fork`，
 `runtime.ts` 按 `isDefinitelyTrue` / `isDefinitelyFalse` 选支。
 
 **剩余限制：** 条件求值为 `unknown`（符号参数无具体绑定）时不分叉，

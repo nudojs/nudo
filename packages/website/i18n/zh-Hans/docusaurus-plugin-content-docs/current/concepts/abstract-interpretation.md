@@ -31,8 +31,8 @@ description: 解释 Nudo 如何用符号化类型值执行代码——求值引�
 │  └───────────┘   └────────────┘   └──────┬───────┘ │
 │                                          │         │
 │                  ┌───────────────────────┐│         │
-│                  │    Ops (Operator &    ││         │
-│                  │  Built-in Semantics)  │◀         │
+│                  │  algebra surface /   ││         │
+│                  │  arithmetic / route  │◀         │
 │                  └───────────────────────┘          │
 │                                                     │
 │  ┌──────────────┐  ┌─────────────┐  ┌───────────┐  │
@@ -46,8 +46,8 @@ description: 解释 Nudo 如何用符号化类型值执行代码——求值引�
 |-----------|----------------|
 | **Parser** | 将 JS/TS 源码解析为 AST（委托给 Babel） |
 | **Directive Extractor** | 从注释中提取 `@nudo:*` 指令 |
-| **Evaluator** | 遍历 AST，用类型值求值每个节点 |
-| **Ops** | 定义所有 JS 运算符和内置方法的类型值语义 |
+| **Evaluator** | B-path 转译+执行（ast-eval 回退）：用 Abs 求值每个节点 |
+| **surface / arithmetic / abs-route** | 在 Abs 上定义算术、比较、一元、spread 的运算符语义 |
 | **Environment** | 管理变量作用域和绑定（name → TypeValue） |
 | **Branch Executor** | 处理条件分支：分叉、窄化、求值、合并 |
 | **Type Emitter** | 序列化最终 TypeValue 结果（可选导出为 TypeScript 类型） |
@@ -76,7 +76,7 @@ eval(Identifier { name: "x" })  →  env.lookup("x")
 ### 二元表达式
 
 ```text
-eval(BinaryExpression { left, op, right })  →  Ops[op](eval(left), eval(right))
+eval(BinaryExpression { left, op, right })  →  tryAbsBinary(op, eval(left), eval(right))
 ```
 
 ### 赋值

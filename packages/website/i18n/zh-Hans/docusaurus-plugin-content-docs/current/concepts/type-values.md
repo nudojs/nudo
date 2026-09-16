@@ -5,9 +5,9 @@ description: "类型值 —— 「可能值集合」的符号化抽象：TypeVal
 
 # 类型值
 
-类型值是 Nudo 的**评估 IR**。它们是可能 JavaScript 值集合的符号化表示——不是持有单个具体值（如 `42` 或 `"hello"`），而是表示具有某类特征的所有值（例如「任意数字」或「字面量 1」）。
+类型值是 Nudo 的**外延投影 IR**。它们是可能 JavaScript 值集合的符号化表示——不是持有单个具体值（如 `42` 或 `"hello"`），而是表示具有某类特征的所有值（例如「任意数字」或「字面量 1」）。
 
-**类型系统本体是 Abs**（`shape × term × pred × conf`）——可求值的抽象值，约束参与代数。TypeValue 供 TypeValue 求值器、环境绑定、dts 输出与 LSP 外延视图消费；Abs ⇄ TypeValue 经有损 bridge。当 Nudo 执行你的代码时，它使用类型值（与 Abs）而非具体值，执行结果本身也是类型值——即推断出的类型。
+**类型系统本体是 Abs**（`shape × term × pred × conf`）——可求值的抽象值，约束参与代数。TypeValue 是**外延投影**，供 dts（`Case:` JSDoc 行与无 Abs 回退）、LSP hover 表面、序列化与 `T` 工厂（`*.nudo.js` 模板、`@nudo:mock`/`@nudo:refine` 类型表达式）消费；生产分析 Abs 原生（不存在 TypeValue 求值器），Abs ⇄ TypeValue 经有损 bridge。执行以 Abs 计算，结果投影为 TypeValue 用于展示。
 
 ## TypeValue 层级结构
 

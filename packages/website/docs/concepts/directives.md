@@ -259,7 +259,7 @@ const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
 Case "read": (string) => "{ \"port\": 3000 }"
 ```
 
-**Current limitation:** `from` mocks only bind on the TypeValue evaluation path. On B-hosted files — the default for sources without top-level `this.` — the mock is currently dropped: the name evaluates as an unknown global (`nudo:builtin-unknown`) and results using it degrade to `unknown`. The single-line arrow-function form above works on both paths; prefer it until `from` is seeded into the B path.
+**Current limitation:** `from` mocks are not seeded into the B path — and since production analysis is Abs-native (the TypeValue evaluation path no longer exists), the mock is currently dropped everywhere: the name evaluates as an unknown global (`nudo:builtin-unknown`) or, for real Node globals, the bare call is reached directly. The single-line arrow-function form above works; prefer it until `from` is seeded into the B path.
 
 ---
 

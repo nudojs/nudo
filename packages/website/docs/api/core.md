@@ -121,53 +121,17 @@ Returning `undefined` from any handler falls back to the base type's behavior.
 
 ---
 
-## Ops (Operator Semantics)
+## Operator Semantics (Abs-native)
 
-Operators and unary ops on TypeValues. The evaluator uses these instead of real JavaScript operators.
+Operators are algebraic on Abs — there is no `Ops` layer. Arithmetic, comparison, unary, and spread live in:
 
-### Binary Ops
+| Where | What |
+|-------|------|
+| `core/src/algebra/surface.ts` | `typeofAbs`, `negAbs`, `notAbs`, `strictEqAbs` (unary ops + strict equality) |
+| `core/src/algebra/arithmetic.ts` | Binary arithmetic (`+` `-` `*` `/` `%`) and comparison |
+| `service/src/evaluator/abs-route.ts` | `tryAbsBinary` / `tryAbsUnary` / `tryAbsObjectSpread` — TypeValue ⇄ Abs routing (union member-wise) |
 
-| Op | Function | Description |
-|----|----------|-------------|
-| `+` | `Ops.add(left, right)` | Number addition or string concatenation; literal + literal → literal. |
-| `-` | `Ops.sub(left, right)` | Subtraction; number only. |
-| `*` | `Ops.mul(left, right)` | Multiplication. |
-| `/` | `Ops.div(left, right)` | Division. |
-| `%` | `Ops.mod(left, right)` | Modulo. |
-| `===` | `Ops.strictEq(left, right)` | Strict equality. |
-| `!==` | `Ops.strictNeq(left, right)` | Strict inequality. |
-| `>` | `Ops.gt(left, right)` | Greater than. |
-| `<` | `Ops.lt(left, right)` | Less than. |
-| `>=` | `Ops.gte(left, right)` | Greater or equal. |
-| `<=` | `Ops.lte(left, right)` | Less or equal. |
-
-### Unary Ops
-
-| Op | Function | Description |
-|----|----------|-------------|
-| `typeof` | `Ops.typeof_(operand)` | Returns `T.literal("number")`, `T.literal("string")`, etc. |
-| `!` | `Ops.not(operand)` | Logical NOT. |
-| `-` | `Ops.neg(operand)` | Numeric negation. |
-
-### Helper
-
-```typescript
-applyBinaryOp(op: string, left: TypeValue, right: TypeValue): TypeValue
-```
-
-Maps operator strings (`"+"`, `"-"`, etc.) to the corresponding binary Op. Unknown ops return `T.unknown`.
-
-### Dispatch Functions (Refined-Aware)
-
-These functions wrap the basic ops with support for refined type fallback chains:
-
-```typescript
-dispatchBinaryOp(op: string, left: TypeValue, right: TypeValue): TypeValue
-dispatchMethod(receiver: TypeValue, name: string, args: TypeValue[]): TypeValue | undefined
-dispatchProperty(receiver: TypeValue, name: string): TypeValue | undefined
-```
-
-The dispatch chain: try refined type's custom handler → if `undefined`, unwrap to base → recurse until primitive type → use default `Ops`.
+The `T` factory and `Environment` below are the remaining TypeValue-level APIs; production analysis runs on Abs and bridges to TypeValue only for display.
 
 ---
 

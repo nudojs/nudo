@@ -37,9 +37,9 @@ The monorepo uses pnpm workspaces. Key packages:
 
 | Package | Description |
 |---------|-------------|
-| `@nudojs/core` | Type values, Ops, Environment |
+| `@nudojs/core` | Type system (Abs), TypeValue projection, `T` factory, Environment |
 | `@nudojs/parser` | Babel parse, directive extraction, `parseTypeValueExpr` |
-| `@nudojs/cli` | Evaluator, `nudo infer` / `nudo watch` |
+| `@nudojs/cli` | CLI commands only (`infer`, `check`, `types`, `watch`, `generate`, `harvest`, `test`, `interface`) |
 | `@nudojs/service` | High-level API: `analyzeFile`, `getTypeAtPosition`, `getCompletionsAtPosition` |
 | `@nudojs/lsp` | Language Server Protocol implementation, including AI-agent `executeCommand`/custom requests (see the [Agent guide](./guides/mcp-server.md)) |
 | `@nudojs/harvester` | Converts `@types/*.d.ts` declarations into Nudo env files (powers `nudo harvest`) |
@@ -75,31 +75,15 @@ pnpm exec nudo infer path/to/file.js
 
 ---
 
-## How to Add New Operator Semantics (Ops)
+## How to Add New Operator Semantics (Abs-native)
 
-1. **Add the op in `packages/core/src/ops.ts`:**
+Operator semantics live in the algebra, not a separate `Ops` layer:
 
-   ```typescript
-   export const Ops = {
-     // ...
-     myOp(left: TypeValue, right: TypeValue): TypeValue {
-       // Handle literal × literal, literal × abstract, abstract × abstract
-       return T.unknown; // fallback
-     },
-   } as const;
+1. **Binary arithmetic / comparison** — `packages/core/src/algebra/arithmetic.ts` (Abs-to-Abs). Unary ops and strict equality live in `packages/core/src/algebra/surface.ts` (`typeofAbs`, `negAbs`, `notAbs`, `strictEqAbs`).
 
-   const binaryOpMap = {
-     // ...
-     "myOpSymbol": Ops.myOp,
-   };
-   ```
+2. **Projection-layer routing** — `packages/service/src/evaluator/abs-route.ts` (`tryAbsBinary`, `tryAbsUnary`, `tryAbsObjectSpread`) bridges the TypeValue projection back into the algebra for union member-wise dispatch.
 
-2. **Wire it in the evaluator** (`packages/service/src/evaluator/evaluator.ts`):
-   - For binary ops: map the AST operator string to your op in `BinaryExpression` handling.
-   - The evaluator uses `applyBinaryOp(op, left, right)` for standard binary ops; extend `binaryOpMap` if needed.
-   - For unary ops: add handling in the `UnaryExpression` case and call `Ops.myUnary(operand)`.
-
-3. **Add tests** in `packages/core/src/__tests__/ops.test.ts` or `packages/service/src/__tests__/evaluator*.test.ts`.
+3. **Add tests** in `packages/core/src/algebra/__tests__/` (e.g. `surface.test.ts`, `arithmetic.test.ts`) or `packages/service/src/__tests__/`.
 
 ---
 

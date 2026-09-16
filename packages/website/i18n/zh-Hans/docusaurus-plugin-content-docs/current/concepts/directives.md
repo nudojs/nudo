@@ -257,7 +257,7 @@ const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
 Case "read": (string) => "{ \"port\": 3000 }"
 ```
 
-**当前限制：** `from` mock 只在 TypeValue 求值路径上生效。在 B 路径托管的文件里——没有顶层 `this.` 的源码默认走 B 路径——该 mock 目前会被丢弃：名称按未知全局求值（`nudo:builtin-unknown`），依赖它的结果退化为 `unknown`。单行箭头函数形态在两条路径都生效；在 `from` 被注入 B 路径之前请优先使用它。
+**当前限制：** `from` mock 未被注入 B 路径——而生产分析已 Abs 原生（TypeValue 求值路径已删除），该 mock 目前在所有路径上都会被丢弃：名称按未知全局求值（`nudo:builtin-unknown`），或对真实 Node 全局直接触达裸调用。单行箭头函数形态可正常生效；在 `from` 被注入 B 路径之前请优先使用它。
 
 ---
 

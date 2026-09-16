@@ -3,7 +3,6 @@
  *
  * 内涵（algebra）：Abs = shape × term × pred × conf，类型即计算。
  */
-
 export {
   type Environment,
   createEnvironment,

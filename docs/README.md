@@ -13,7 +13,7 @@
 
 | 文档 | 内容 | 状态 |
 |------|------|------|
-| [design-kernel-merge.md](./design-kernel-merge.md) | **唯一真理源**：Abs = shape × term × pred × conf 单轨架构；TypeValue 是评估 IR 而非平行类型系统 | 现行 |
+| [design-kernel-merge.md](./design-kernel-merge.md) | **唯一真理源**：Abs = shape × term × pred × conf 单轨架构；TypeValue 是外延投影而非平行类型系统 | 现行 |
 | [design-typevalue-algebra.md](./design-typevalue-algebra.md) | 代数重构设计：命题、项/约束内核、单调性表、迁移映射、实施阶段与验证状态 | 现行（设计 + 状态） |
 | [design-limitations.md](./design-limitations.md) | 设计限制与路线图：P0–P3 优先级、测试覆盖、改进计划 | 现行（随修复更新） |
 | [design.md](./design.md) | Abs 单轨合并前的原始设计（TypeValue 中心视图） | 历史 |

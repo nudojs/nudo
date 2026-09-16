@@ -1,11 +1,11 @@
 ---
 sidebar_position: 1
-description: "Nudo by design: Abs = shape × term × pred × conf as the type system, TypeValue as evaluation IR, directives, and what executing code computes that a separate type language cannot."
+description: "Nudo by design: Abs = shape × term × pred × conf as the type system, TypeValue as extensional projection, directives, and what executing code computes that a separate type language cannot."
 ---
 
 # Design Document
 
-> **Nudo** — A type inference engine for JavaScript. The type system is **Abs** (`shape × term × pred × conf`); types are computable values with constraints that participate in algebra. **TypeValue** is the evaluation IR (env bindings, dts/LSP/serialization), not a parallel type system. Abs ⇄ TypeValue goes through a lossy bridge.
+> **Nudo** — A type inference engine for JavaScript. The type system is **Abs** (`shape × term × pred × conf`); types are computable values with constraints that participate in algebra. **TypeValue** is the extensional projection IR (dts/LSP/serialization and the `T` factory for `*.nudo.js` templates), not a parallel type system; production analysis is Abs-native. Abs ⇄ TypeValue goes through a lossy bridge.
 
 ---
 
@@ -74,9 +74,9 @@ When Nudo executes `transform` on abstract string input, the engine propagates t
 
 Operations on Abs are algebraic: monotonic arithmetic, comparison, `leq` assignability, predicate implication. `nudo check` is the CI gate over this algebra (recall = precision = 1.0 on gold).
 
-### 2.2 TypeValue — evaluation IR (not a second type system)
+### 2.2 TypeValue — extensional projection (not a second type system)
 
-TypeValue is what env bindings, dts, LSP hover extensional side, and serialization consume. It is a **projection** of Abs (`absToTypeValue` / `typeValueToAbs` in `bridge.ts`). The bridge is lossy: non-literal terms and non-encodable preds drop, and confidence must not pretend `exact` when information was lost.
+TypeValue is what dts (`Case:` JSDoc rows and the Abs-less fallback), LSP hover surface, serialization, and the `T` factory (`*.nudo.js` templates) consume. It is a **projection** of Abs (`absToTypeValue` / `typeValueToAbs` in `bridge.ts`). The bridge is lossy: non-literal terms and non-encodable preds drop, and confidence must not pretend `exact` when information was lost. There is no TypeValue evaluator — production analysis runs Abs natively (B-path transpile+exec, ast-eval fallback).
 
 ```text
 TypeValue
@@ -155,24 +155,21 @@ isSubtypeOf(a, b)             // Subtype check (extensional; algebra uses leqAbs
 
 Source-level contracts use `@nudo:refine` + `*.nudo.js` templates, not `T.refine` in user code.
 
-### 2.5 Operator Semantics (Abs first, Ops residual)
+### 2.5 Operator Semantics (Abs-native surface)
 
-Because JavaScript does not support operator overloading, the engine **interprets the AST** and dispatches through a semantic layer:
+Arithmetic, comparison, unary, and spread are algebraic on Abs — there is no separate `Ops` layer. The language surface lives in three places:
+
+- `core/src/algebra/surface.ts` — `typeofAbs`, `negAbs`, `notAbs`, `strictEqAbs` (unary ops and strict equality, on Abs).
+- `core/src/algebra/arithmetic.ts` — binary arithmetic (`+` `-` `*` `/` `%`) and comparison, on Abs.
+- `service/src/evaluator/abs-route.ts` — `tryAbsBinary` / `tryAbsUnary` / `tryAbsObjectSpread`: the TypeValue ⇄ Abs routing that bridges the projection layer back into the algebra (union members routed member-wise, constraints preserved via term/pred).
 
 ```typescript
-// The engine converts `a + b` to:
-Ops.add(a, b)
-
-// Ops.add knows how to handle type values:
-// - Both literals → compute concrete result
-// - String involved → result is string
-// - Both numbers → result is number
-// - Fallback → T.union(T.number, T.string)
+// Binary arithmetic routes through the algebra:
+tryAbsBinary("+", left, right)   // number + number, string/template concat
+tryAbsBinary("<", left, right)   // numeric/string comparison
 ```
 
-Each JS operator and built-in method has a corresponding type-value semantic rule in Ops.
-
-For **refined types**, the engine uses a dispatch fallback chain: it first tries the refined type's custom `ops`/`methods`/`properties` handlers; if they return `undefined`, it unwraps to the base type and recurses until a primitive type's default rule is reached.
+Refined subsets (template strings, numeric ranges) carry their constraints as Preds on terms, not as override tables; the algebra reads those preds during `+`/comparison.
 
 ---
 
@@ -183,12 +180,11 @@ For **refined types**, the engine uses a dispatch fallback chain: it first tries
 ```text
 parser ──▶ core
             ├── algebra/     ← type system (Abs / Term / Pred / Φ / check)
-            ├── type-value   ← evaluation IR
-            ├── ops          ← language surface not yet algebraic
+            ├── type-value   ← extensional projection (T factory / dts / serialization)
             └── bridge       ← Abs ⇄ TypeValue (lossy)
                  │
                  ▼
-            service/evaluator    ← AST abstract interpretation; arithmetic first via Abs
+            service/evaluator    ← Abs-native: B-path (transpile+exec) → ast-eval
                  │
                  ▼
             service / lsp / vite / dts
@@ -199,8 +195,8 @@ parser ──▶ core
 | **Parser** | Parse JS/TS source into AST (Babel) |
 | **Directive Extractor** | Extract `@nudo:*` from comments; refine/import parsed in core |
 | **algebra (Abs)** | Types as computation: eval, check, leq, generalize |
-| **Evaluator (TypeValue path)** | Fallback AST walker for imports/env/mock-heavy files |
-| **Ops** | Residual semantics when algebra does not cover an operator |
+| **Evaluator (Abs-native)** | B-path transpile+exec; ast-eval fallback for non-B-hosted files |
+| **surface / abs-route** | Arithmetic, comparison, unary, spread routed through algebra |
 | **bridge** | Abs → TypeValue for dts/LSP/serialization |
 | **Environment** | Variable bindings (name → TypeValue or Abs seed) |
 
@@ -222,7 +218,7 @@ eval(Identifier "x")  →  env.lookup("x")
 
 **Binary expressions:**
 ```text
-eval(BinaryExpression { left, op, right })  →  Ops[op](eval(left), eval(right))
+eval(BinaryExpression { left, op, right })  →  tryAbsBinary(op, eval(left), eval(right))
 ```
 
 **Conditional (if-else):** The engine may **evaluate both branches** with narrowed type values and merge:

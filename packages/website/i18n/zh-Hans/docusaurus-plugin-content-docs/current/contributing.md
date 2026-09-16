@@ -37,9 +37,9 @@ pnpm run build
 
 | 包 | 描述 |
 |---------|-------------|
-| `@nudojs/core` | 类型值、Ops、Environment |
+| `@nudojs/core` | 类型系统（Abs）、TypeValue 投影、`T` 工厂、Environment |
 | `@nudojs/parser` | Babel 解析、指令提取、`parseTypeValueExpr` |
-| `@nudojs/cli` | 求值器、`nudo infer` / `nudo watch` |
+| `@nudojs/cli` | 仅 CLI 命令（`infer`、`check`、`types`、`watch`、`generate`、`harvest`、`test`、`interface`） |
 | `@nudojs/service` | 高层 API：`analyzeFile`、`getTypeAtPosition`、`getCompletionsAtPosition` |
 | `@nudojs/lsp` | Language Server Protocol 实现，含面向 AI agent 的 executeCommand/自定义请求（见 [Agent 集成指南](./guides/mcp-server.md)） |
 | `@nudojs/harvester` | 把 `@types/*.d.ts` 声明转换为 Nudo env 文件（`nudo harvest` 的底层引擎） |
@@ -75,31 +75,15 @@ pnpm exec nudo infer path/to/file.js
 
 ---
 
-## 如何添加新的运算符语义（Ops）
+## 如何添加新的运算符语义（Abs 原生）
 
-1. **在 `packages/core/src/ops.ts` 中添加 op：**
+运算符语义在代数中实现，不存在独立的 `Ops` 层：
 
-   ```typescript
-   export const Ops = {
-     // ...
-     myOp(left: TypeValue, right: TypeValue): TypeValue {
-       // 处理 literal × literal、literal × abstract、abstract × abstract
-       return T.unknown; // 兜底
-     },
-   } as const;
+1. **二元算术 / 比较** — `packages/core/src/algebra/arithmetic.ts`（Abs → Abs）。一元运算与严格相等在 `packages/core/src/algebra/surface.ts`（`typeofAbs`、`negAbs`、`notAbs`、`strictEqAbs`）。
 
-   const binaryOpMap = {
-     // ...
-     "myOpSymbol": Ops.myOp,
-   };
-   ```
+2. **投影层路由** — `packages/service/src/evaluator/abs-route.ts`（`tryAbsBinary`、`tryAbsUnary`、`tryAbsObjectSpread`）把 TypeValue 投影桥回代数，做 union 逐成员分发。
 
-2. **在求值器中接入**（`packages/service/src/evaluator/evaluator.ts`）：
-   - 二元运算：在 `BinaryExpression` 处理中将 AST 运算符字符串映射到你的 op。
-   - 求值器对标准二元运算使用 `applyBinaryOp(op, left, right)`；如需要可扩展 `binaryOpMap`。
-   - 一元运算：在 `UnaryExpression` 分支中添加处理并调用 `Ops.myUnary(operand)`。
-
-3. **添加测试**，位于 `packages/core/src/__tests__/ops.test.ts` 或 `packages/service/src/__tests__/evaluator*.test.ts`。
+3. **添加测试**，位于 `packages/core/src/algebra/__tests__/`（如 `surface.test.ts`、`arithmetic.test.ts`）或 `packages/service/src/__tests__/`。
 
 ---
 
