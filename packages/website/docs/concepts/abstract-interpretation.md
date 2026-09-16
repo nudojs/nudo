@@ -48,7 +48,7 @@ When Nudo executes `transform(T.string)`, the engine propagates `T.string` throu
 | **Directive Extractor** | Extract `@nudo:*` directives from comments |
 | **Evaluator** | B-path transpile+exec (ast-eval fallback): evaluate each node with Abs |
 | **surface / arithmetic / abs-route** | Operator semantics on Abs for arithmetic, comparison, unary, spread |
-| **Environment** | Manage variable scopes and bindings (name → TypeValue) |
+| **Environment** | Manage variable scopes and bindings (name → Abs) |
 | **Branch Executor** | Handle conditional branches: fork, narrow, evaluate, merge |
 | **Type Emitter** | Serialize final TypeValue results (optionally to TypeScript types) |
 
@@ -56,21 +56,21 @@ When Nudo executes `transform(T.string)`, the engine propagates `T.string` throu
 
 ## Evaluation Rules
 
-The evaluator is an AST walker. For each AST node type, there is a corresponding evaluation rule.
+The evaluator executes the function body with **Abs** values. On the primary B path the source is transpiled and run with Abs operands; the ast-eval fallback walks the AST directly with the same Abs rules. For each AST node type there is a corresponding evaluation rule.
 
 ### Literals
 
 ```text
-eval(NumericLiteral { value: 42 })   →  T.literal(42)
-eval(StringLiteral { value: "hi" })  →  T.literal("hi")
-eval(BooleanLiteral { value: true }) →  T.literal(true)
-eval(NullLiteral)                    →  T.null
+eval(NumericLiteral { value: 42 })   →  numLit(42)
+eval(StringLiteral { value: "hi" })  →  strLit("hi")
+eval(BooleanLiteral { value: true }) →  boolLit(true)
+eval(NullLiteral)                    →  null Abs
 ```
 
 ### Variables
 
 ```text
-eval(Identifier { name: "x" })  →  env.lookup("x")
+eval(Identifier { name: "x" })  →  env.vars.get("x")
 ```
 
 ### Binary Expressions
@@ -83,40 +83,40 @@ eval(BinaryExpression { left, op, right })  →  tryAbsBinary(op, eval(left), ev
 
 ```text
 eval(AssignmentExpression { left: "x", right: expr })
-  →  env.bind("x", eval(expr))
+  →  env = withVar(env, "x", eval(expr))
 ```
 
 ### Conditional (if-else)
 
-This is where the engine differs fundamentally from a normal interpreter. Instead of choosing one branch, it may **evaluate both branches** with narrowed type values:
+This is where the engine differs fundamentally from a normal interpreter. Instead of choosing one branch, it may **evaluate both branches** with narrowed Abs values:
 
 ```text
 eval(IfStatement { test, consequent, alternate }) →
   condition = eval(test)
 
   // Case 1: condition is a known literal
-  if condition === T.literal(true)  → eval(consequent)
-  if condition === T.literal(false) → eval(alternate)
+  if isDefinitelyTrue(condition)   → eval(consequent)
+  if isDefinitelyFalse(condition)  → eval(alternate)
 
   // Case 2: condition is abstract → fork both branches
   [envTrue, envFalse] = narrow(env, test)
   resultTrue  = eval(consequent, envTrue)
   resultFalse = eval(alternate, envFalse)
-  return T.union(resultTrue, resultFalse)
+  return joinAbs(resultTrue, resultFalse)
 ```
 
 ### Function Declaration
 
 ```text
 eval(FunctionDeclaration { id: "foo", params, body })
-  →  env.bind("foo", TypeValueFunction { params, body, closure: env })
+  →  env.fns.set("foo", absFunction(params, { body, closure: env }))
 ```
 
 ### Function Call
 
 ```text
 eval(CallExpression { callee: "foo", args })
-  →  fn = env.lookup("foo")
+  →  fn = env.fns.get("foo")
      argValues = args.map(eval)
      fnEnv = fn.closure.extend(zip(fn.params, argValues))
      eval(fn.body, fnEnv)

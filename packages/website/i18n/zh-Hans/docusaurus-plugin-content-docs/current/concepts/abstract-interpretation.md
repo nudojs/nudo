@@ -48,7 +48,7 @@ description: 解释 Nudo 如何用符号化类型值执行代码——求值引�
 | **Directive Extractor** | 从注释中提取 `@nudo:*` 指令 |
 | **Evaluator** | B-path 转译+执行（ast-eval 回退）：用 Abs 求值每个节点 |
 | **surface / arithmetic / abs-route** | 在 Abs 上定义算术、比较、一元、spread 的运算符语义 |
-| **Environment** | 管理变量作用域和绑定（name → TypeValue） |
+| **Environment** | 管理变量作用域和绑定（name → Abs） |
 | **Branch Executor** | 处理条件分支：分叉、窄化、求值、合并 |
 | **Type Emitter** | 序列化最终 TypeValue 结果（可选导出为 TypeScript 类型） |
 
@@ -56,21 +56,21 @@ description: 解释 Nudo 如何用符号化类型值执行代码——求值引�
 
 ## 求值规则
 
-求值器是一个 AST 遍历器。每种 AST 节点类型都有对应的求值规则。
+求值器用 **Abs** 值执行函数体。主 B 路径把源码转译后直接用 Abs 操作数运行；ast-eval 回退路径用同样的 Abs 规则直接遍历 AST。每种 AST 节点类型都有对应的求值规则。
 
 ### 字面量
 
 ```text
-eval(NumericLiteral { value: 42 })   →  T.literal(42)
-eval(StringLiteral { value: "hi" })  →  T.literal("hi")
-eval(BooleanLiteral { value: true }) →  T.literal(true)
-eval(NullLiteral)                    →  T.null
+eval(NumericLiteral { value: 42 })   →  numLit(42)
+eval(StringLiteral { value: "hi" })  →  strLit("hi")
+eval(BooleanLiteral { value: true }) →  boolLit(true)
+eval(NullLiteral)                    →  null Abs
 ```
 
 ### 变量
 
 ```text
-eval(Identifier { name: "x" })  →  env.lookup("x")
+eval(Identifier { name: "x" })  →  env.vars.get("x")
 ```
 
 ### 二元表达式
@@ -83,40 +83,40 @@ eval(BinaryExpression { left, op, right })  →  tryAbsBinary(op, eval(left), ev
 
 ```text
 eval(AssignmentExpression { left: "x", right: expr })
-  →  env.bind("x", eval(expr))
+  →  env = withVar(env, "x", eval(expr))
 ```
 
 ### 条件语句（if-else）
 
-这是引擎与普通解释器根本不同的地方。它不会选择单一分支，而可能**同时求值两个分支**，并使用窄化后的类型值：
+这是引擎与普通解释器根本不同的地方。它不会选择单一分支，而可能**同时求值两个分支**，并使用窄化后的 Abs 值：
 
 ```text
 eval(IfStatement { test, consequent, alternate }) →
   condition = eval(test)
 
   // Case 1: condition is a known literal
-  if condition === T.literal(true)  → eval(consequent)
-  if condition === T.literal(false) → eval(alternate)
+  if isDefinitelyTrue(condition)   → eval(consequent)
+  if isDefinitelyFalse(condition)  → eval(alternate)
 
   // Case 2: condition is abstract → fork both branches
   [envTrue, envFalse] = narrow(env, test)
   resultTrue  = eval(consequent, envTrue)
   resultFalse = eval(alternate, envFalse)
-  return T.union(resultTrue, resultFalse)
+  return joinAbs(resultTrue, resultFalse)
 ```
 
 ### 函数声明
 
 ```text
 eval(FunctionDeclaration { id: "foo", params, body })
-  →  env.bind("foo", TypeValueFunction { params, body, closure: env })
+  →  env.fns.set("foo", absFunction(params, { body, closure: env }))
 ```
 
 ### 函数调用
 
 ```text
 eval(CallExpression { callee: "foo", args })
-  →  fn = env.lookup("foo")
+  →  fn = env.fns.get("foo")
      argValues = args.map(eval)
      fnEnv = fn.closure.extend(zip(fn.params, argValues))
      eval(fn.body, fnEnv)

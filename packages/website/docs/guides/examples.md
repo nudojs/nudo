@@ -160,7 +160,7 @@ Case "symbolic": (number[]) => number
 Combined: number
 ```
 
-Array-method support is not uniform — check this boundary before relying on a method. `some` / `every` fold to `boolean` on both the call-site and `@nudo:case` paths. `forEach` callback side effects are path-dependent: under an `@nudo:case` directive the write-back lands (an accumulator closed over by the callback reaches its final value), but on the call-site path the write never lands — the accumulator stays at its initial value:
+Array-method support is not uniform — check this boundary before relying on a method. `some` / `every` fold to `boolean` on both the call-site and `@nudo:case` paths. `forEach` callback side effects land in the internal Abs on both paths (`abs: 15 #exact`), but the **case header** (TypeValue projection) differs: under an `@nudo:case` directive it reports the final `15`, while the call-site path reports the pre-loop `0`:
 
 ```js
 function forEachSum(arr) {
@@ -168,7 +168,7 @@ function forEachSum(arr) {
   arr.forEach((x) => { s = s + x; });
   return s;
 }
-forEachSum([1, 2, 3, 4, 5]);    // → 0 — call-site path: the s = s + x write never lands
+forEachSum([1, 2, 3, 4, 5]);    // → 0 case header on the call-site path (abs: 15 #exact)
 
 function someBig(arr) {
   return arr.some((x) => x > 3);
@@ -176,7 +176,7 @@ function someBig(arr) {
 someBig([1, 2, 3, 4, 5]);       // → boolean
 ```
 
-The directive path is the precise one for `forEach` write-back — the repo example pins `@nudo:case "forEach"` → `15 #exact`. For call sites that need side-effect-free precision, use `map` / `reduce` (and `filter → map → reduce` chains, which keep literal precision per level). Repo examples (CI-pinned): [`docs/examples/algebra/c-reduce-sum.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/c-reduce-sum.js), [`docs/examples/algebra/h-array-boundary.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/h-array-boundary.js).
+The directive path is the one whose case header reflects the `forEach` write-back — the repo example pins `@nudo:case "forEach"` → `15 #exact`. For call sites that need a precise reported value, use `map` / `reduce` (and `filter → map → reduce` chains, which keep literal precision per level). Repo examples (CI-pinned): [`docs/examples/algebra/c-reduce-sum.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/c-reduce-sum.js), [`docs/examples/algebra/h-array-boundary.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/h-array-boundary.js).
 
 ---
 
