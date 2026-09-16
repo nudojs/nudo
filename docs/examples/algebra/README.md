@@ -14,6 +14,8 @@
 | [`f-async-eff.js`](./f-async-eff.js) | async / Promise eff × `@nudo:mock` 替换内置 fetch（mock 必填：无 mock 时 B 路径泄漏真实 fetch，`ERR_INVALID_URL` 崩溃） |
 | [`g-narrow-subtract.js`](./g-narrow-subtract.js) | 守卫窄化：调用点逐位收窄（`3 \| 2 \| -1`） |
 | [`h-array-boundary.js`](./h-array-boundary.js) | 数组方法精度边界：`reduce` / `forEach` 副作用 / `some` 均精确（`15` / `15` / `boolean`） |
+| [`i-map-set.js`](./i-map-set.js) | Map / Set 精度边界：`m.get` 字面量 key → unknown、Set for-of 元素丢失 |
+| [`j-this-binding.js`](./j-this-binding.js) | this 绑定：成员调用把 receiver 注入 thisVal，`compute(5)` → `25 #exact`；顶层裸成员调用不采集为 call@ case |
 | [`sample.js`](./sample.js) | 最小合集：无调用点 → 全部 `entry@` 回退签名（参数 `unknown`，intension 是 unknown 形参的泛化签名） |
 
 运行命令与期望退出码见 [../README.md](./README.md) 的命令矩阵；`pnpm run verify:examples` 一次验证全部。

@@ -130,7 +130,7 @@ compute(5);
 Case "call@L11": (5) => 25
 ```
 
-The directive path evaluates the same way (`@nudo:case "member" ()` on `compute` → `() => 25`). The remaining gap is call-site *collection*, not evaluation: a bare top-level member call (`circle.area()` as a statement) produces no `call@` case — member callees are not collected as call sites. Wrap the member call in a function to see it.
+The directive path is equally precise when the argument is a literal (`@nudo:case "member" (5)` → `(5) => 25`); with an empty argument list (`()`) the parameter is `unknown`, so the result degrades to `unknown #partial`. The remaining gap is call-site *collection*, not evaluation: a bare top-level member call (`circle.area()` as a statement) produces no `call@` case — member callees are not collected as call sites. Wrap the member call in a function to see it.
 
 ### Recursion Unrolls per Call Site
 

@@ -1009,27 +1009,22 @@ dts 是公共接口的兼容出口；接口表面已是 refine，dts 应投影�
 否则现有 dts 消费者看到的输出变化（breaking）。
 
 **TypeValue 彻底移除是正确终态，但是多一步，不绑在 refine 下行上。**
-今日 TypeValue 仍占着这些位：
+本节写于 TypeValue 驱逐前；下表各「位」的现状（2026-09 驱逐后）：
 
-| 位 | 能否立刻删 | 说明 |
+| 位 | 当时评估 | 现状 |
 |---|---|---|
-| dts 源 | **能**（本设计） | 改走 refine / Abs 投影 |
-| LSP hover / inlay 外延显示 | 部分 | B-path 已优先 Abs；`@nudo:case` 区仍走 TypeValue + activeCases |
-| `@nudo:case` 实参文法 | 否 | `parseTypeValueExpr` / `T.*` 是指令表面；要删先改 case 文法 |
-| TypeValue evaluator（非 capable 源） | 否 | 兜底求值 IR；要么 Abs-only 并接受覆盖缺口，要么长期保留 |
-| `infer --json` / agent 序列化 | 可迁 | schema 换 Abs/refine 形状，属 breaking |
-| 调用点 `CallRecord.argTypes` | 可迁 | 现为 TypeValue（`absToTypeValue(r.args)`）；应改 Abs |
-| env API 应用（`env-to-abs.ts`） | 后置 | env 实现是 TypeValue 原生（每次 Abs 调用 `absToTypeValue` 过桥进 `impl(tvArgs)`）；对真实包覆盖比 CallRecord 重，属 Abs 化大项 |
+| dts 源 | **能**（本设计）改走 refine / Abs 投影 | ✅ 已落地：主签名 Abs → TS；TypeValue 仅剩 `Case:` JSDoc 行与无 Abs 回退（`dts-generator.ts`） |
+| LSP hover / inlay 外延显示 | 部分：B-path 已优先 Abs；`@nudo:case` 区走 TypeValue | 未变：B-path Abs；case 区仍 TypeValue + activeCases |
+| `@nudo:case` 实参文法 | 否：`parseTypeValueExpr` / `T.*` 是指令表面 | 未变：`T.*` 仍是指令表面，保留 |
+| TypeValue evaluator（非 capable 源） | 否：兜底求值 IR | ✅ 已删除：生产 Abs 原生（B-path transpile+exec，回退 ast-eval/evalProgramAbs） |
+| `infer --json` / agent 序列化 | 可迁：schema 换 Abs/refine，属 breaking | 未迁：仍 TypeValue 投影（`infer-json.ts` 的 `ext_*` 字段；`abs_*` 字段已并存） |
+| 调用点 `CallRecord.argTypes` | 可迁：现为 TypeValue | ✅ 已改 Abs：`CallRecord` 仅 `argAbs`/`resultAbs`/`throwsAbs` |
+| env API 应用（`env-to-abs.ts`） | 后置：env 实现 TypeValue 原生 | 部分：内置 es/node/web 已 Abs 原生不经桥；path 型 env（harvester / 用户 defineEnv）仍经 `absToTypeValue` 过桥 `impl` |
 
-**建议路径（与 kernel 单轨一致）：**
-
-1. **本文 Phase 1–2**：refine 成为接口；dts 改从 refine/Abs 投影。
-2. **随后**：LSP / 序列化 / CallRecord 全面 Abs 化；case 实参文法决定
-   保留 `T.*` 仅作指令语法，还是换成约束表达式。
-3. **最后**：删除 `TypeValue` 类型与 `absToTypeValue` 桥——前提是
-   非 capable 路径要么消失、要么有 Abs 宿主。
-
-在 (3) 之前，TypeValue 只是**评估/序列化残余**，不再是 dts 或接口真理源。
+**现状小结：** 评估 IR 与 CallRecord 已 Abs 化（「评估/序列化残余」中
+「评估」一侧已清）。剩余 TypeValue 出口 = dts `Case:` 行 + 无 Abs 回退、
+case 实参文法（`T.*`）、`infer --json` 的 `ext_*`、path 型 env 桥，以及
+`TypeValue` 类型与 `absToTypeValue` 桥本身——删除前提是这些出口全部换宿主。
 「彻底移除」写进路线图，不写进本设计的交付门槛。
 
 ---

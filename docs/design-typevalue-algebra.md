@@ -1,5 +1,12 @@
 # TypeValue 代数重构设计
 
+> **状态**：命题已落地为 Abs 单轨（`Abs = shape × term × pred × conf`，
+> TypeValue 退为外延投影，不再作评估 IR）。本文是重构的**命题与设计记录**，
+> §6 跟踪实施阶段与验证状态；现行真理源见
+> [`design-kernel-merge.md`](./design-kernel-merge.md)。§1.2 描述的
+> 「当前实现错在哪」是重构前的旧 TypeValue 中心视图，读时以 §2 起的
+> 代数骨架与 design-kernel-merge.md 为准。
+
 > **类型的本质不是「值的集合」，而是「可求值的计算与约束」。**
 > 函数的类型就是函数本身——`(a, b) => a + b`；给常数就求值，给带约束的符号就传播约束。
 > TypeScript 的签名 `(number, number) => number` 只是这条计算的**有损投影**（丢掉 `a>0`、丢掉 `c = a+1`）。
