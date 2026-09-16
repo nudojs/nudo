@@ -454,11 +454,11 @@ Exit codes: `0` normal; `1` for usage errors, `--exit-on-diff` with changes, and
 $ nudo interface --emit calc.js --fn addTax
 calc.js: no interface changes
   skipped addTax (name-clash)
-calc.js: [error] nudo:interface-name-clash: sidecar already has a handwritten binding 'addTax' (calc.js); handwritten wins — skipping emit for it
+  [error] nudo:interface-name-clash: sidecar already has a handwritten binding 'addTax' (calc.js); handwritten wins — skipping emit for it
 # exit 1
 ```
 
-Re-running `--emit` with unchanged evidence is a no-op (`no interface changes`); when evidence disappears (e.g. update without `--callsites`), persisted segments are **preserved**, never silently deleted.
+Re-running `--emit` with unchanged evidence is a no-op (`no interface changes`); when evidence disappears (e.g. update without `--callsites`), persisted segments are **preserved**, never silently deleted. Sidecar auto-binding can be turned off project-wide with `package.json` → `"nudo": { "interface": { "autoBind": false } }` — the switch is wired into `nudo check` and LSP enforcement paths as well, not just printing.
 
 Persistence is snapshots: `nudo check` compares them semantically and reports `nudo:interface-drift` warnings when the file evolves — see [check](../guides/check.md#interface-diagnostics).
 

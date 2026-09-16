@@ -18,17 +18,19 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { basename, dirname, relative, resolve } from "node:path";
 import {
   execNudoModule,
   formatConstraint,
+  interfaceDiagCount,
   isNudoConstraint,
   joinThenProject,
   localNamedExports,
   parseSource,
+  refineDiagCount,
   sidecarPathOf,
-  takeInterfaceDiags,
-  takeRefineDiags,
+  takeInterfaceDiagsSince,
+  takeRefineDiagsSince,
   typeValueToAbs,
   type Abs,
   type NudoConstraint,
@@ -41,7 +43,9 @@ export type EmitInterfaceSkipReason =
   | "name-clash"
   | "not-projectable"
   | "not-an-export"
-  | "no-change";
+  | "no-change"
+  /** 手工合并的多声明符 @generated 段：按段原子保留，不拆不重写 */
+  | "multi-declarator";
 
 export type EmitInterfaceOpts = {
   /** 目标导出名白名单（Phase 1：只过滤目标文件自身的导出；跨文件 root 闭包 emit 是 Phase 2 下行推导能力） */
@@ -87,9 +91,15 @@ export async function emitInterface(
 ): Promise<EmitInterfaceResult> {
   const abs = resolve(filePath);
   const source = readFileSync(abs, "utf-8");
+  // since 锚：emit 只排干自身 round-trip 自检产生的诊断（全量 take 会在 LSP
+  // 长驻进程的 await 窗口窃取在途 validateText 的待消费诊断）
+  const ifaceSince = interfaceDiagCount();
+  const refineSince = refineDiagCount();
   const sidecarPath = sidecarPathOf(abs);
   const sidecarSrc = existsSync(sidecarPath) ? readFileSync(sidecarPath, "utf-8") : "";
-  const srcRel = relative(process.cwd(), abs) || abs;
+  // 源路径锚定侧车自身目录（与 cwd 无关）：monorepo 子包/仓库根两处跑 emit
+  // 不再因 `// source:` 行漂移把 no-change 判成 rewrite
+  const srcRel = relative(dirname(sidecarPath), abs) || basename(abs);
 
   const sections = collectGeneratedSections(sidecarSrc);
   const generatedNames = new Set(sections.flatMap((s) => s.names));
@@ -127,6 +137,41 @@ export async function emitInterface(
   /** 通过全部检查的段落（名字 → 段文本）与既有段文本（update no-change 判定） */
   const accepted: Array<{ fn: string; text: string; prevText?: string }> = [];
 
+  /** 逐名投影计划（dsl + round-trip 自检，单次计算复用——段原子判定与主循环同源） */
+  const planCache = new Map<string, { dsl?: string; roundTrip: boolean }>();
+  const planFor = (name: string): { dsl?: string; roundTrip: boolean } => {
+    const hit = planCache.get(name);
+    if (hit) return hit;
+    const fn = fnByName.get(name);
+    const dsl = fn === undefined ? undefined : projectFunctionDsl(fn);
+    const roundTrip =
+      dsl !== undefined && roundTrips(sectionText(name, dsl, srcRel), name);
+    const rec = { dsl, roundTrip };
+    planCache.set(name, rec);
+    return rec;
+  };
+
+  /**
+   * 多声明符生成段（手工合并形态，collectGeneratedSections 显式支持）按段
+   * 原子处理：段内任一名字不可重写（非目标/无证据/自检失败）→ 整段原样
+   * 保留一次、全部名字跳过重写。按名归位会复制整段文本，与可重写兄弟的
+   * 新段叠加成重复声明 → 侧车不可解析 → 全部契约失联（数据丢失路径）。
+   */
+  const atomicSections = new Set<GeneratedSection>();
+  for (const s of sections) {
+    if (s.names.length <= 1) continue;
+    const everyRewritable = s.names.every(
+      (n) =>
+        targetSet.has(n) &&
+        exported.has(n) &&
+        !declared.has(n) &&
+        planFor(n).dsl !== undefined &&
+        planFor(n).roundTrip,
+    );
+    if (!everyRewritable) atomicSections.add(s);
+  }
+  const acceptedAtomic = new Set<GeneratedSection>();
+
   for (const name of targetNames) {
     if (!exported.has(name) || !fnByName.has(name)) {
       skipped.push({
@@ -145,9 +190,24 @@ export async function emitInterface(
       continue;
     }
     const prev = sections.find((s) => s.names.includes(name));
+    if (prev !== undefined && atomicSections.has(prev)) {
+      // 段原子保留：整段原样归位一次，段内所有名字跳过（防重复声明）
+      if (!acceptedAtomic.has(prev)) {
+        acceptedAtomic.add(prev);
+        const keptText = normalizeSection(prev.text);
+        accepted.push({ fn: prev.names.join("+"), text: keptText, prevText: keptText });
+        issues.push({
+          code: "nudo:interface-multi-declarator",
+          severity: "warning",
+          message: `generated section '${prev.names.join(", ")}' is a hand-merged multi-declarator form; kept verbatim (split it into one export per section to re-emit)`,
+        });
+      }
+      skipped.push({ fn: name, reason: "multi-declarator" });
+      continue;
+    }
     const prevText = prev === undefined ? undefined : normalizeSection(prev.text);
-    const dsl = projectFunctionDsl(fnByName.get(name)!);
-    if (dsl === undefined) {
+    const plan = planFor(name);
+    if (plan.dsl === undefined || !plan.roundTrip) {
       skipped.push({ fn: name, reason: "not-projectable" });
       if (prevText !== undefined) {
         // 既有生成段但今日证据不可得（如 update 未带 --callsites）：
@@ -156,21 +216,14 @@ export async function emitInterface(
       }
       continue;
     }
-    const text = sectionText(name, dsl, srcRel);
-    if (!roundTrips(text, name)) {
-      skipped.push({ fn: name, reason: "not-projectable" });
-      if (prevText !== undefined) {
-        accepted.push({ fn: name, text: prevText, prevText });
-      }
-      continue;
-    }
+    const text = sectionText(name, plan.dsl, srcRel);
     if (opts.mode === "add" && prev !== undefined) {
       skipped.push({ fn: name, reason: "no-change" });
       continue;
     }
     if (prevText !== undefined && prevText === normalizeSection(text)) {
       skipped.push({ fn: name, reason: "no-change" });
-      accepted.push({ fn: name, text, prevText }); // update：内容不变也要归位（已剥离）
+      accepted.push({ fn: name, text: prevText, prevText }); // update：内容不变也要归位（已剥离）
       continue;
     }
     written.push(name);
@@ -198,8 +251,8 @@ export async function emitInterface(
   if (changed && !opts.dryRun) {
     writeFileSync(sidecarPath, finalContent, "utf-8");
   }
-  takeRefineDiags(); // round-trip 自检可能留下 interface-load 诊断——emit 不执法，丢弃
-  takeInterfaceDiags();
+  takeRefineDiagsSince(refineSince); // round-trip 自检可能留下 interface-load 诊断——emit 不执法，丢弃
+  takeInterfaceDiagsSince(ifaceSince);
 
   return {
     written,
@@ -209,6 +262,31 @@ export async function emitInterface(
     issues,
     sidecarPath,
   };
+}
+
+/**
+ * emit 摘要行（CLI runInterfaceEmit 与 LSP agent 面共用；路径由调用方按
+ * 展示口径传入——CLI 传 cwd 相对、agent 传绝对路径）。
+ */
+export function formatEmitSummary(
+  sourcePath: string,
+  sidecarRel: string,
+  result: EmitInterfaceResult,
+): string[] {
+  const lines: string[] = [];
+  if (result.changed) {
+    lines.push(`Updated ${sourcePath} → ${sidecarRel}`);
+    lines.push(`  written: ${result.written.join(", ") || "(none)"}`);
+  } else {
+    lines.push(`${sourcePath}: no interface changes`);
+  }
+  for (const s of result.skipped.filter((x) => x.reason !== "no-change")) {
+    lines.push(`  skipped ${s.fn} (${s.reason})`);
+  }
+  for (const i of result.issues) {
+    lines.push(`  [${i.severity}] ${i.code}: ${i.message}`);
+  }
+  return lines;
 }
 
 // ---------------------------------------------------------------------------
@@ -278,6 +356,7 @@ function sectionText(fn: string, dsl: string, srcRel: string): string {
  * `{谓词原文}`、`any()`）在此被拦下 → 调用方按 not-projectable 跳过。
  */
 function roundTrips(text: string, fn: string): boolean {
+  const since = refineDiagCount();
   try {
     const exports = execNudoModule(text);
     const v = exports[fn];
@@ -285,7 +364,7 @@ function roundTrips(text: string, fn: string): boolean {
   } catch {
     return false;
   } finally {
-    takeRefineDiags(); // 自检触发的诊断不外泄（add 侧车导出形式提示等）
+    takeRefineDiagsSince(since); // 自检触发的诊断只清本次增量（不窃在途队列）
   }
 }
 
@@ -406,11 +485,13 @@ function normalizeSection(text: string): string {
   return text.replace(/\s*$/, "") + "\n";
 }
 
-/** 基底 + 段落组装：基底尾随空白压成单换行，段间空一行；空基底段顶格 */
+/** 基底 + 段落组装：段存在时基底两端空白压净（update 剥离首行生成段后残留的
+ *  前导空行一并剥除），段间空一行；空基底段顶格 */
 function joinSections(base: string, sectionTexts: string[]): string {
   const normalized = sectionTexts.map(normalizeSection).filter((t) => t.trim() !== "");
-  const trimmed = base.replace(/\s+$/, "");
-  if (normalized.length === 0) return trimmed === "" ? "" : `${trimmed}\n`;
+  const tailTrimmed = base.replace(/\s+$/, "");
+  if (normalized.length === 0) return tailTrimmed === "" ? "" : `${tailTrimmed}\n`;
+  const trimmed = tailTrimmed.replace(/^\s+/, "");
   const lead = trimmed === "" ? "" : `${trimmed}\n\n`;
   return lead + normalized.join("\n");
 }

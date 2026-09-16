@@ -6,6 +6,8 @@
  */
 import { describe, it, expect } from "vitest";
 import { loadModuleDepsFingerprint, sidecarSpecsOf } from "../load-deps-fp.ts";
+import { generalizeFromAst } from "../generalize.ts";
+import { pTrue, predToString } from "../pred.ts";
 import { hashSource } from "../hash-source.ts";
 
 function makeLoad(deps: Record<string, string>) {
@@ -35,6 +37,60 @@ describe("sidecarSpecsOf", () => {
       "./other.nudo.js",
       "./dyn.nudo.js",
     ]);
+  });
+});
+
+describe("loadModuleDepsFingerprint dependency sidecars", () => {
+  it("dependency file's ambient sidecar enters fingerprint and eviction paths", () => {
+    // R08 P1：跨文件被调（checkExternalCall）按定义文件路径绑定 lib.nudo.js，
+    // 其内容影响调用方报告——lib.nudo.js 必须进调用方指纹与逐出索引，
+    // 否则编辑依赖侧车后 check memo 陈旧命中（错诊断）。
+    const deps: Record<string, string> = {
+      "/t/lib.js": "module.exports = { needsPos: (x) => x };\n",
+      "/t/lib.nudo.js": "export const needsPos = fn({ x: number().gt(0) });\n",
+    };
+    const src = `const { needsPos } = require("./lib.js");\nneedsPos(1);\n`;
+    const r = loadModuleDepsFingerprint(src, makeLoad(deps), "/t/a.js");
+    expect(r.truncated).toBe(false);
+    expect(r.paths).toContain("/t/lib.nudo.js");
+    expect(r.fp).toContain(`sidecar:/t/lib.nudo.js=${hashSource(deps["/t/lib.nudo.js"]!)}`);
+    // 依赖侧车内容变 → 指纹变（整文件 memo 借此失效）
+    deps["/t/lib.nudo.js"] = "export const needsPos = fn({ x: number().gt(5) });\n";
+    const r2 = loadModuleDepsFingerprint(src, makeLoad(deps), "/t/a.js");
+    expect(r2.fp).not.toBe(r.fp);
+    expect(r2.paths).toContain("/t/lib.nudo.js");
+  });
+
+  it("dep sidecar with recursive .nudo closure contributes transitive entries", () => {
+    const deps: Record<string, string> = {
+      "/t/lib.js": "module.exports = { f: (x) => x };\n",
+      "/t/lib.nudo.js": `import { positive } from "./std.nudo.js";\nexport const f = fn({ x: positive });\n`,
+      "/t/std.nudo.js": "export const positive = number().gt(0);\n",
+    };
+    const src = `const { f } = require("./lib.js");\nf(1);\n`;
+    const r = loadModuleDepsFingerprint(src, makeLoad(deps), "/t/a.js");
+    expect(r.paths).toContain("/t/lib.nudo.js");
+    expect(r.paths).toContain("/t/std.nudo.js");
+    expect(r.fp).toContain(`sidecar:/t/std.nudo.js=${hashSource(deps["/t/std.nudo.js"]!)}`);
+  });
+
+  it("generalize L0 recomputes when the analyzed file's sidecar content changes", () => {
+    // R08 minor：两阶段断言——不只是指纹字符串翻转，L0 结果必须重算且
+    // 签名携带新约束（防「键构成回归」）。go 必须是导出（侧车同名绑定
+    // 只落本地 named export）。
+    const deps: Record<string, string> = {
+      "/t/a.nudo.js": "export const go = fn({ x: number().gt(0) });\n",
+    };
+    const src = `export function go(x) { return x; }\ngo(1);\n`;
+    const refine = { loadModule: makeLoad(deps), fromFile: "/t/a.js" };
+    const g1 = generalizeFromAst("go", src, { refine });
+    expect(g1).toBeDefined();
+    expect(predToString(g1!.entryReqs?.find((r) => r.param === "x")!.pred ?? pTrue)).toContain("x > 0");
+    deps["/t/a.nudo.js"] = "export const go = fn({ x: number().gt(5) });\n";
+    const g2 = generalizeFromAst("go", src, { refine });
+    expect(g2).toBeDefined();
+    expect(g2).not.toBe(g1);
+    expect(predToString(g2!.entryReqs?.find((r) => r.param === "x")!.pred ?? pTrue)).toContain("x > 5");
   });
 });
 

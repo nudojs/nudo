@@ -15,6 +15,8 @@ import { join } from "node:path";
 import {
   interfaceTool,
   interfaceEmitTool,
+  interfacePositionalArgs,
+  interfaceEmitPositionalArgs,
   computeInterfaceLenses,
 } from "../agent-tools.ts";
 
@@ -244,5 +246,54 @@ function helper(n) {
       { kind: "emit", fn: "add", line: 2, mode: "add" },
     ]);
     expect(existsSync("/t/lib.nudo.js")).toBe(false); // 注入通道不落盘
+  });
+});
+
+describe("interfaceEmitTool 入参校验（非法输入显式报错，不静默降级）", () => {
+  it("invalid mode → explicit error text", async () => {
+    const r = await interfaceEmitTool({
+      file: "/t/x.js",
+      functionName: "f",
+      mode: "Add" as unknown as "add",
+    });
+    expect(r.content[0]!.text).toContain("invalid mode");
+  });
+
+  it("missing functionName → explicit error text", async () => {
+    const r = await interfaceEmitTool({
+      file: "/t/x.js",
+      functionName: "",
+      mode: "add",
+    });
+    expect(r.content[0]!.text).toContain("functionName is required");
+  });
+
+  it("valid params still reach the emitter (no sidecar file → clean no-change)", async () => {
+    const file = join(dir, "ok.js");
+    writeFileSync(file, `export function f(x) {\n  return x;\n}\n`);
+    const r = await interfaceEmitTool({ file, functionName: "f", mode: "add" });
+    expect(r.content[0]!.text).toContain("no interface changes");
+  });
+});
+
+describe("executeCommand 位置参数桥接（server.ts 特判的纯函数形态）", () => {
+  it("interfacePositionalArgs: [uri] → 全量；[uri, fn] → 过滤", () => {
+    expect(interfacePositionalArgs(["file:///t/a.js"])).toEqual({ file: "file:///t/a.js" });
+    expect(interfacePositionalArgs(["file:///t/a.js", "scale"])).toEqual({
+      file: "file:///t/a.js",
+      functionName: "scale",
+    });
+    expect(interfacePositionalArgs([])).toBeUndefined();
+    expect(interfacePositionalArgs([42])).toBeUndefined();
+  });
+
+  it("interfaceEmitPositionalArgs: [uri, fn, mode] 三串；非法形态 undefined", () => {
+    expect(interfaceEmitPositionalArgs(["file:///t/a.js", "f", "update"])).toEqual({
+      file: "file:///t/a.js",
+      functionName: "f",
+      mode: "update",
+    });
+    expect(interfaceEmitPositionalArgs(["file:///t/a.js", "f"])).toBeUndefined();
+    expect(interfaceEmitPositionalArgs(["file:///t/a.js", "f", 7])).toBeUndefined();
   });
 });

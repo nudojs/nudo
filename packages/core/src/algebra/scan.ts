@@ -658,6 +658,8 @@ export function scanLiteralCalls(
     file?: ReturnType<typeof parse>;
     /** 顶层绑定表（与结构赋值共享的 evalProgramAbs 结果） */
     varAbs?: Map<string, Abs>;
+    /** 侧车 ambient 绑定开关（checkSource 的 package.json 配置下传） */
+    autoBind?: boolean;
   },
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
@@ -705,28 +707,55 @@ export function scanLiteralCalls(
     return entries;
   };
 
-  /** nudo:interface-conflict：源码 refine × 侧车手写绑定同参合取不可满足（同一接口只报一次） */
-  const reportedConflicts = new Set<string>();
-  const reportInterfaceConflict = (
-    fnName: string,
-    ei: EffectiveInterface,
-    scopeFromFile: string | undefined,
-    loc?: { start: { line: number; column: number } },
-  ): void => {
-    if (!ei.conflict) return;
-    const key = `${fnName}\u0000${scopeFromFile ?? ""}`;
-    if (reportedConflicts.has(key)) return;
-    reportedConflicts.add(key);
-    out.push({
-      severity: "error",
-      code: "nudo:interface-conflict",
-      message: `${fnName}[${ei.conflict.params.join(", ")}]: 源码 @nudo:refine 与侧车手写绑定的合取不可满足`,
-      actual: `unsat：${ei.conflict.params.join("、")} 常数界交叉矛盾`,
-      expected: `源码 refine 与侧车绑定在同参上可同时满足`,
-      fn: fnName,
-      line: loc?.start.line,
-      column: loc?.start.column,
-    });
+  // nudo:interface-conflict 只在 check.ts fn 级报告（权威面）：conflict 必然
+  // 蕴含源文件含 @nudo:refine/@nudo:interface，fn 级门恒开且必然已报——
+  // 调用点级再报一次只会双报两种消息形态（此处历史上曾重复，已收口）。
+
+  /** eq(var, lit) / eq(lit, var) 的标量字面量端；非该形态 → undefined */
+  const predEqLiteral = (p: Pred): number | string | boolean | undefined => {
+    if (p.op !== "eq") return undefined;
+    const v =
+      p.a.op === "var" && p.b.op === "lit"
+        ? p.b.value
+        : p.b.op === "var" && p.a.op === "lit"
+          ? p.a.value
+          : undefined;
+    return typeof v === "number" || typeof v === "string" || typeof v === "boolean"
+      ? v
+      : undefined;
+  };
+
+  /**
+   * 字面量可判定的原子谓词 → true/false；不可判定（非字面量端 / 非
+   * number 值上的数值界）→ undefined。or 分支聚合用：任一 true 即过，
+   * 全可判定且全 false 才报，含 undefined 不猜。
+   */
+  const judgeLiteralPred = (
+    p: Pred,
+    lv: number | string | boolean,
+    strLen: number | undefined,
+  ): boolean | undefined => {
+    if (p.op === "eq") {
+      const v = predEqLiteral(p);
+      return v === undefined ? undefined : lv === v;
+    }
+    if (p.op !== "gt" && p.op !== "ge" && p.op !== "lt" && p.op !== "le") {
+      return undefined;
+    }
+    if (p.b.op !== "lit" || typeof p.b.value !== "number") return undefined;
+    const n = p.b.value;
+    if (p.a.op === "app" && p.a.fn === "length") {
+      if (strLen === undefined) return undefined;
+      if (p.op === "gt") return strLen > n;
+      if (p.op === "ge") return strLen >= n;
+      if (p.op === "lt") return strLen < n;
+      return strLen <= n;
+    }
+    if (typeof lv !== "number") return undefined;
+    if (p.op === "gt") return lv > n;
+    if (p.op === "ge") return lv >= n;
+    if (p.op === "lt") return lv < n;
+    return lv <= n;
   };
 
   const checkReqs = (
@@ -778,6 +807,54 @@ export function scanLiteralCalls(
           continue;
         }
         if (lv === undefined) continue;
+        // eq / or 域（lit()/union() 契约实例化出的 eq/or 原子）：此前两个
+        // 消费分支都只认 typeof/gt/ge/lt/le，字面量/析取契约违例被静默
+        // 跳过——写了等于没写。可判定才报（宁缺勿滥）。
+        if (typeof lv === "number" || typeof lv === "string" || typeof lv === "boolean") {
+          if (p.op === "eq") {
+            const v = predEqLiteral(p);
+            if (v !== undefined && lv !== v) {
+              out.push({
+                severity: "error",
+                code: "nudo:constraint-violated",
+                message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+                actual: formatAbs(arg),
+                expected: predToString(p),
+                suggestion: `改用满足 ${predToString(p)} 的值，或放宽 ${paramName} 的前置`,
+                fn: displayName,
+                line: loc?.start.line,
+                column: loc?.start.column,
+              });
+            }
+            continue;
+          }
+          if (p.op === "or") {
+            let pass = false;
+            let unknown = false;
+            for (const q of p.args) {
+              const r = judgeLiteralPred(q, lv, strLen);
+              if (r === true) {
+                pass = true;
+                break;
+              }
+              if (r === undefined) unknown = true;
+            }
+            if (!pass && !unknown) {
+              out.push({
+                severity: "error",
+                code: "nudo:constraint-violated",
+                message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+                actual: formatAbs(arg),
+                expected: predToString(p),
+                suggestion: `改用满足 ${predToString(p)} 的值，或放宽 ${paramName} 的前置`,
+                fn: displayName,
+                line: loc?.start.line,
+                column: loc?.start.column,
+              });
+            }
+            continue;
+          }
+        }
         if (
           (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") &&
           p.b.op === "lit" &&
@@ -1037,6 +1114,28 @@ export function scanLiteralCalls(
         }
       }
     }
+
+    // eq / union 域（lit()/union() 字段契约）：bounds 分支判不了——域隶属
+    // 判定（domain-membership 语义复用）；仅 eq/union 形态触发，防双报
+    if (
+      lv !== undefined &&
+      (typeof lv === "number" || typeof lv === "string" || typeof lv === "boolean") &&
+      ((constraint.members?.length ?? 0) > 0 ||
+        constraint.preds.some((p) => p.op === "eq")) &&
+      !literalMeetsConstraint(lv, constraint)
+    ) {
+      out.push({
+        severity: "error",
+        code: "nudo:constraint-violated",
+        message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+        actual: formatAbs(fieldAbs),
+        expected: `${fieldPath} ∈ ${formatConstraint(constraint)}`,
+        suggestion: `改用满足 ${formatConstraint(constraint)} 的 ${fieldPath}`,
+        fn: displayName,
+        line: loc?.start.line,
+        column: loc?.start.column,
+      });
+    }
   };
 
   /** 对带 shape / array / int / prim 的 refine 做结构检查 */
@@ -1185,9 +1284,9 @@ export function scanLiteralCalls(
     const optsR: EffectiveInterfaceOpts = {
       loadModule: opts?.loadModule,
       fromFile: opts?.fromFile ?? "",
+      ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
     };
     const ownEi = effectiveInterfaceOf(fnName, source, optsR);
-    if (ownEi) reportInterfaceConflict(fnName, ownEi, optsR.fromFile, loc);
     // §3.3 执法分档：仅 handwritten 执法；generated 段是事实快照（drift 另报）
     if (ownEi?.source === "handwritten") {
       const ownFull = interfaceToIndexed(ownEi, paramNames);
@@ -1207,7 +1306,6 @@ export function scanLiteralCalls(
       const tg = generalizeFromAst(fwd.target, source, file ? { file } : {});
       const tParams = tg?.params ?? [];
       const tEi = effectiveInterfaceOf(fwd.target, source, optsR);
-      if (tEi) reportInterfaceConflict(fwd.target, tEi, optsR.fromFile, loc);
       const tFull = tEi?.source === "handwritten" ? interfaceToIndexed(tEi, tParams) : [];
       if (tFull.length > 0) {
         const wrapperArgOfTarget = new Map<number, number>();
@@ -1247,9 +1345,9 @@ export function scanLiteralCalls(
         loadModule: opts?.loadModule,
         fromFile: ext.fromFile ?? opts?.fromFile ?? "",
         ...(ext.fromFile ? {} : { autoBind: false }),
+        ...(ext.fromFile && opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
       };
       const ei = effectiveInterfaceOf(ext.fnName, ext.source, eiOpts);
-      if (ei) reportInterfaceConflict(ext.fnName, ei, eiOpts.fromFile, loc);
       // §3.3 执法分档：仅 handwritten 执法；generated 段不执法
       if (ei?.source === "handwritten") {
         full = interfaceToIndexed(ei, paramNames);
@@ -1461,6 +1559,8 @@ export type InjectedDomainEvidenceOpts = {
   paramNames: string[];
   loadModule?: (spec: string, fromFile: string) => string | undefined;
   fromFile?: string;
+  /** 侧车 ambient 绑定开关（host 配置下传；默认 true） */
+  autoBind?: boolean;
   /** 报告定位：被调函数声明处。注入证据的 loc 在使用现场文件，不属于本文件 */
   loc?: { line: number; column: number };
 };
@@ -1511,6 +1611,7 @@ export function checkInjectedDomainEvidence(
     ei = effectiveInterface(source, fnName, {
       ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
       fromFile: opts.fromFile,
+      ...(opts.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
     });
   } catch {
     return [];

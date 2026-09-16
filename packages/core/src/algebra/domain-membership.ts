@@ -16,7 +16,7 @@
  */
 
 import type { NudoConstraint } from "./constraint.ts";
-import { SELF } from "./constraint.ts";
+import { SELF, isIntFlag } from "./constraint.ts";
 import type { Pred, PrimName } from "./pred.ts";
 import type { LiteralValue, Term } from "./term.ts";
 
@@ -47,10 +47,10 @@ export function literalMeetsConstraint(
   if (!primMatches(c.prim, lv)) return false;
   // int：整数性（number 字面量）。int 是 number 链概念（.int() 强制
   // prim="number"），仅在 number prim 上执法；非 number prim 上的 int 位
-  // 视为无意义不执法（builder 的 int 方法遮蔽 base.int:true 的已知形态下，
-  // 归一化可能给非数值约束带上杂散 int 位，此处不受其污染）。
+  // 视为无意义不执法（builder 归一化可能给非数值约束带上杂散 int 位，
+  // 此处不受其污染）。isIntFlag 统一读 builder/纯数据两种形态。
   if (
-    c.int === true &&
+    isIntFlag(c) &&
     c.prim === "number" &&
     !(typeof lv === "number" && Number.isInteger(lv))
   ) {

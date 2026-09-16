@@ -80,9 +80,42 @@ export function absToConstraint(a: Abs): NudoConstraint | undefined {
 /**
  * 工件聚合投影（设计 §4.2：先 Abs join 折叠再投影）。
  * 空列表 → undefined（无证据不产约束）。
+ *
+ * 全员可投影字面量时走**字面量快路径**（直接 union 去重）：joinValues 对
+ * 两个同 prim 字面量的相遇会急切塌缩为裸 prim（term/pred 丢失），reduce
+ * 左折叠因此对证据**顺序敏感**——{42,"a",7} 一序产出 union 三字面量、
+ * 另一序 not-projectable。快路径绕过 join，聚合结果顺序无关。
  */
 export function joinThenProject(absList: Abs[]): NudoConstraint | undefined {
   if (absList.length === 0) return undefined;
+  if (absList.length > 1) {
+    const litCs = absList.map(absLitConstraint);
+    if (litCs.every((c) => c !== undefined)) {
+      // lit 契约的 eq 字面量值做去重 + 排序（typeof 敏感：1 与 "1" 不合并；
+      // number 数值序 < string 字典序 < boolean）——成员序与证据顺序无关，
+      // emit 幂等比较稳定
+      const byKey = new Map<string, { v: number | string | boolean; c: NudoConstraint }>();
+      for (const c of litCs as NudoConstraint[]) {
+        const eq = c.preds[0]!;
+        if (eq.op !== "eq") continue; // 不可达（absLitConstraint 只产 lit 形态）
+        const v =
+          eq.b.op === "lit" ? eq.b.value : eq.a.op === "lit" ? eq.a.value : undefined;
+        if (v === undefined || v === null) continue; // lit(null) 不经 absLitConstraint，类型兜底
+        byKey.set(`${typeof v}:${String(v)}`, { v, c });
+      }
+      const primOrder = (v: unknown): number =>
+        typeof v === "number" ? 0 : typeof v === "string" ? 1 : 2;
+      const members = [...byKey.values()]
+        .sort((x, y) => {
+          const pa = primOrder(x.v);
+          const pb = primOrder(y.v);
+          if (pa !== pb) return pa - pb;
+          return x.v === y.v ? 0 : x.v > y.v ? 1 : -1;
+        })
+        .map((e) => e.c);
+      return members.length === 1 ? members[0]! : union(...members);
+    }
+  }
   return absToConstraint(absList.reduce((a, b) => joinAbs(a, b)));
 }
 
@@ -90,7 +123,10 @@ export function joinThenProject(absList: Abs[]): NudoConstraint | undefined {
 
 function projectNumber(a: Abs): NudoConstraint | undefined {
   if (a.term?.op === "lit") {
-    return typeof a.term.value === "number" ? lit(a.term.value) : undefined;
+    const v = a.term.value;
+    // NaN 字面量：lit(NaN) 不可满足（NaN≠NaN）→ 不投影（join 路径塌缩为 number()）
+    if (typeof v === "number" && !Number.isNaN(v)) return lit(v);
+    return undefined;
   }
   const leaves = predLeaves(a.pred);
   if (!leaves) return undefined;
@@ -111,6 +147,7 @@ function projectNumber(a: Abs): NudoConstraint | undefined {
       }
       const v = anchoredEqLit(p, self);
       if (v === undefined || typeof v !== "number") return undefined;
+      if (Number.isNaN(v)) return undefined; // eq(self, NaN) 不可满足，不产垃圾
       if (eqVal !== undefined && eqVal !== v) return undefined; // 多个不同 eq：不可满足，不产垃圾
       eqVal = v;
       continue;
@@ -202,6 +239,7 @@ function projectOrLiterals(a: Abs): NudoConstraint | undefined {
     if (q.op !== "eq") return undefined;
     const v = anchoredEqLit(q, a.term);
     if (v === undefined) return undefined;
+    if (typeof v === "number" && Number.isNaN(v)) return undefined; // NaN 不可满足
     if (expectedPrim !== undefined && primOfLit(v) !== expectedPrim) return undefined;
     lits.push(lit(v));
   }
@@ -253,16 +291,20 @@ function projectSum(members: Abs[]): NudoConstraint | undefined {
   return lits.length > 0 ? union(...lits) : undefined;
 }
 
-/** 字面量 Abs → lit 契约：term lit 形态或 eq(self, lit) 单叶形态 */
+/** 字面量 Abs → lit 契约：term lit 形态或 eq(self, lit) 单叶形态。
+ *  NaN 是数字字面量但 NaN≠NaN（域不可满足）——lit(NaN) 是垃圾约束，
+ *  一律 undefined（回调调用方 not-projectable / join 塌缩回 number()）。 */
 function absLitConstraint(a: Abs): NudoConstraint | undefined {
   if (!PROJECTABLE_CONF.has(a.conf)) return undefined;
   const s = a.shape;
   if (s.k !== "prim") return undefined;
   if (a.term?.op === "lit" && primOfLit(a.term.value) === s.type) {
+    if (typeof a.term.value === "number" && Number.isNaN(a.term.value)) return undefined;
     return lit(a.term.value as LitVal);
   }
   if (a.pred?.op === "eq") {
     const v = anchoredEqLit(a.pred, a.term);
+    if (v !== undefined && typeof v === "number" && Number.isNaN(v)) return undefined;
     if (v !== undefined && primOfLit(v) === s.type) return lit(v);
   }
   return undefined;
@@ -313,15 +355,17 @@ function lengthBound(
   for (const anchor of anchors) {
     const b = numericBound(p, anchor);
     if (b) {
+      // 长度整数域换算：> n ⟺ ≥ floor(n)+1、< n ⟺ ≤ ceil(n)−1
+      // （n 非整数时 n±1 偏窄：gt(len,2.5) 真域是 len≥3，不是 len≥3.5）
       switch (b.op) {
         case "ge":
           return { dir: "min", n: b.n };
         case "gt":
-          return { dir: "min", n: b.n + 1 };
+          return { dir: "min", n: Math.floor(b.n) + 1 };
         case "le":
           return { dir: "max", n: b.n };
         case "lt":
-          return { dir: "max", n: b.n - 1 };
+          return { dir: "max", n: Math.ceil(b.n) - 1 };
       }
     }
   }

@@ -67,7 +67,7 @@ clamp(-5, 0, 10);  // OK — 未声明 @nudo:refine
 |------|----------|---------|
 | `nudo:interface-cycle` | error | 侧车互相 import 成环 |
 | `nudo:interface-load` | error | 侧车加载/求值失败，或导出形态不识别 |
-| `nudo:interface-conflict` | error | 源码 `@nudo:refine` 与侧车绑定同参矛盾（`x > 0 ∧ x < 0`） |
+| `nudo:interface-conflict` | error | 源码 `@nudo:refine` 与侧车绑定同参（或返回位）矛盾（`x > 0 ∧ x < 0`）；矛盾位跳过执法，不把契约层矛盾误诊为函数体违例 |
 | `nudo:interface-domain-exceeds` | error | **跨文件**注入的调用证据 ⊄ **手写**契约（接口被用穿） |
 | `nudo:interface-drift` | warning | 固化的 `@generated` 段 ≠ 今日重算接口（语义比较，参数位与返回位） |
 | `nudo:interface-name-clash` | error | `nudo interface --emit` 目标名已是侧车手写绑定（手写优先，跳过写入） |
@@ -110,7 +110,7 @@ issues
       → 重跑 nudo interface --emit 刷新生成段，或核对返回值
 ```
 
-drift warning 不使 `nudo check` 失败（退出码 `0`）；六个码全部进 check-gold 与 real-package zero-FP 套件。契约形态见 [@nudo:refine](../concepts/directives.md#nudorefine--refinement-contract)。
+drift warning 不使 `nudo check` 失败（退出码 `0`）。分码覆盖：`nudo:interface-drift` 与 `nudo:interface-domain-exceeds` 钉在 check-gold 夹具；`nudo:interface-load` / `nudo:interface-cycle` / `nudo:interface-conflict` 由 wiring、loader 与 emitter 套件覆盖（`check-interface-wiring`、`refine-loader`、`interface-emitter`）；`nudo:interface-name-clash` 在 emitter/agent 套件。契约形态见 [@nudo:refine](../concepts/directives.md#nudorefine--refinement-contract)。
 
 ## 报告形态（Abs 优先）
 

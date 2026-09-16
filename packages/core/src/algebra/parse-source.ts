@@ -27,22 +27,27 @@ export function getParseSourceCacheSize(): number {
   return astCache.size;
 }
 
-function parseUncached(source: string, opts?: { errorRecovery?: boolean }): File {
+function parseUncached(
+  source: string,
+  opts?: { errorRecovery?: boolean; keepTs?: boolean },
+): File {
   const ast = babelParse(source, {
     sourceType: "module",
     plugins: ["typescript", "jsx"],
     attachComment: true,
     errorRecovery: opts?.errorRecovery === true,
   });
-  return stripTypes(ast);
+  // keepTs：保留 TS 节点（侧车 .nudo.ts 的语句级文本改写需要未剥除的
+  // 区间——rewriteSidecarSource 据此切掉类型注解/声明）
+  return opts?.keepTs === true ? ast : stripTypes(ast);
 }
 
 export function parseSource(
   source: string,
-  opts?: { errorRecovery?: boolean },
+  opts?: { errorRecovery?: boolean; keepTs?: boolean },
 ): File {
-  // errorRecovery 是兜底路径，不进缓存（可能产出不完整 AST）
-  if (opts?.errorRecovery === true) {
+  // keepTs 与 errorRecovery 同属兜底/特殊路径，不进缓存（缓存条目是剥除后的 AST）
+  if (opts?.keepTs === true || opts?.errorRecovery === true) {
     return parseUncached(source, opts);
   }
   if (source.length > MAX_AST_SOURCE_CHARS) {

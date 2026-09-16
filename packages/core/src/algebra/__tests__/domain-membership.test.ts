@@ -17,7 +17,7 @@ import {
 } from "../constraint.ts";
 import { eq, ge } from "../pred.ts";
 import { lit, v } from "../term.ts";
-import { lit as cLit, union as cUnion } from "../constraint.ts";
+import { lit as cLit, union as cUnion, and as cAnd } from "../constraint.ts";
 
 /** lit(v) 的编码形态（prim + eq(self, lit v)；null 无 PrimName 可配） */
 function litConstraint(value: number | string | boolean | null): NudoConstraint {
@@ -33,7 +33,8 @@ function litConstraint(value: number | string | boolean | null): NudoConstraint 
   return { __nudoConstraint: true, prim, preds: [eq(v(SELF), lit(value))] };
 }
 
-/** union(...cs) 的编码形态（members；Phase 1 构建器落地前的手工等价物） */
+/** union(...cs) 编码形态的手工等价物：绕过 toPlainConstraint 归一化直测
+ *  members 裸解码（union() 构建器已落地，此处不复刻其 builder 表面） */
 function unionOf(...members: NudoConstraint[]): NudoConstraint {
   return {
     __nudoConstraint: true,
@@ -182,6 +183,19 @@ describe("literalMeetsConstraint", () => {
       expect(literalMeetsConstraint("b", u)).toBe(false);
       // 非整数字面量成员：归一化不得带杂散 int 位（T1 assign 序修复后）
       expect(literalMeetsConstraint(2.5, cUnion(cLit(2.5), cLit("a")))).toBe(true);
+    });
+
+    it("and(...cs) 合成（源码 refine × 侧车同名合一的有效契约形态）", () => {
+      // R02：effectiveInterface 的 conjoin 产出 and() 合成约束——prim 合并 +
+      // preds 拼接 + int 位传播，域判定必须走同一条合取路径
+      const both = cAnd(number().gt(0), number().int());
+      expect(literalMeetsConstraint(3, both)).toBe(true);
+      expect(literalMeetsConstraint(3.5, both)).toBe(false); // int 位传播
+      expect(literalMeetsConstraint(0, both)).toBe(false); // gt(0) 下界
+      const neg = cAnd(number().gt(0), number().lt(10));
+      expect(literalMeetsConstraint(5, neg)).toBe(true);
+      expect(literalMeetsConstraint(-1, neg)).toBe(false);
+      expect(literalMeetsConstraint(11, neg)).toBe(false);
     });
   });
 

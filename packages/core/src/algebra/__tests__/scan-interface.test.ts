@@ -4,11 +4,13 @@
  * - generated 段 = 事实快照，不执法
  * - 跨文件（import / namespace member）侧车按定义文件路径绑定
  * - fwd 转发（wrapper→target）在侧车来源下仍工作
- * - conflict（源码 refine × 侧车手写绑定矛盾）→ nudo:interface-conflict，每接口一次
+ * - conflict（源码 refine × 侧车手写绑定矛盾）→ nudo:interface-conflict 只在
+ *   checkSource fn 级报告（scan 调用点级曾双报，已收口）
  * - 手写侧车参数契约优先于 body 结构推断（refinedParams）
  */
 import { describe, it, expect } from "vitest";
 import { scanLiteralCalls, listTopFunctions } from "../scan.ts";
+import { checkSource } from "../check.ts";
 import { pTrue } from "../pred.ts";
 
 /** 虚拟文件系统 loader：相对 spec 按 fromFile 目录解析（与 interface-effective.test.ts 同构） */
@@ -182,7 +184,7 @@ const r = w(-1);
 });
 
 describe("scan × effectiveInterface：conflict 与结构推断优先级", () => {
-  it("源码 refine 与侧车手写绑定矛盾 → nudo:interface-conflict 每接口一次", () => {
+  it("源码 refine 与侧车手写绑定矛盾 → conflict 只在 check fn 级报告（scan 不双报）", () => {
     const source = `
 /// @nudo:import { positive, negative } from "./std.nudo.js"
 /**
@@ -195,14 +197,17 @@ export function needsPos(x) {
 const a = needsPos(1);
 const b = needsPos(2);
 `;
-    const issues = scanSameFile(
-      {
-        "/t/std.nudo.js": STD,
-        "/t/app.nudo.js": `export const needsPos = fn({ x: number().lt(0) });`,
-      },
-      source,
-    );
-    const conflicts = issues.filter((i) => i.code === "nudo:interface-conflict");
+    const files = {
+      "/t/std.nudo.js": STD,
+      "/t/app.nudo.js": `export const needsPos = fn({ x: number().lt(0) });`,
+    };
+    // scan 调用点级不再报 conflict（与 check.ts fn 级报告纯重复，曾双报两种消息形态）
+    const scanIssues = scanSameFile(files, source);
+    expect(scanIssues.filter((i) => i.code === "nudo:interface-conflict")).toEqual([]);
+    // checkSource fn 级是权威面：恰好一条 error
+    const { loadModule } = makeFiles(files);
+    const report = checkSource("/t/app.js", source, pTrue, { loadModule, fromFile: "/t/app.js" });
+    const conflicts = report.issues.filter((i) => i.code === "nudo:interface-conflict");
     expect(conflicts.length).toBe(1);
     expect(conflicts[0]!.severity).toBe("error");
     expect(conflicts[0]!.fn).toBe("needsPos");
@@ -229,3 +234,85 @@ const r = readY({ x: 1 });
     expect(withSidecar.filter((i) => i.severity === "error")).toEqual([]);
   });
 });
+
+describe("scan × effectiveInterface：lit()/union() 契约执法（eq/or 分支）", () => {
+  it("fn({ x: lit(42) }) + 调用 f(7) → nudo:constraint-violated", () => {
+    const source = `
+export function f(x) {
+  return x;
+}
+const a = f(7);
+`;
+    const issues = scanSameFile(
+      { "/t/app.nudo.js": `export const f = fn({ x: lit(42) });` },
+      source,
+    );
+    const err = issues.find((i) => i.code === "nudo:constraint-violated");
+    expect(err).toBeDefined();
+    expect(err!.severity).toBe("error");
+    expect(err!.fn).toBe("f");
+    expect(err!.expected).toBe("x = 42");
+    expect(err!.actual).toContain("7");
+  });
+
+  it("lit 契约命中（f(42)）→ 零违例", () => {
+    const source = `
+export function f(x) {
+  return x;
+}
+const a = f(42);
+`;
+    const issues = scanSameFile(
+      { "/t/app.nudo.js": `export const f = fn({ x: lit(42) });` },
+      source,
+    );
+    expect(issues.filter((i) => i.severity === "error")).toEqual([]);
+  });
+
+  it("fn({ x: union(lit(1), lit(2)) })：f(5) 违例、f(1)/f(2) 通过", () => {
+    const bad = `
+export function f(x) {
+  return x;
+}
+const a = f(5);
+`;
+    const badIssues = scanSameFile(
+      { "/t/app.nudo.js": `export const f = fn({ x: union(lit(1), lit(2)) });` },
+      bad,
+    );
+    const err = badIssues.find((i) => i.code === "nudo:constraint-violated");
+    expect(err).toBeDefined();
+    expect(err!.fn).toBe("f");
+
+    const good = `
+export function f(x) {
+  return x;
+}
+const a = f(1);
+const b = f(2);
+`;
+    const goodIssues = scanSameFile(
+      { "/t/app.nudo.js": `export const f = fn({ x: union(lit(1), lit(2)) });` },
+      good,
+    );
+    expect(goodIssues.filter((i) => i.severity === "error")).toEqual([]);
+  });
+
+  it("shape 字段位 lit 契约：shape({ level: lit(3) }) × 实参 level=4 → 违例", () => {
+    const source = `
+export function setLevel(cfg) {
+  return cfg.level;
+}
+const a = setLevel({ level: 4 });
+`;
+    const issues = scanSameFile(
+      { "/t/app.nudo.js": `export const setLevel = fn({ cfg: shape({ level: lit(3) }) });` },
+      source,
+    );
+    const err = issues.find((i) => i.code === "nudo:constraint-violated");
+    expect(err).toBeDefined();
+    expect(err!.fn).toBe("setLevel");
+    expect(err!.expected).toContain("cfg.level");
+  });
+});
+

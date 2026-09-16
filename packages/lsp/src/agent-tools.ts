@@ -25,8 +25,9 @@ import {
   getCasesForFile,
   interfaceSurface,
   emitInterface,
+  formatEmitSummary,
+  formatInterfaceSurfaceLine,
   type EmitInterfaceResult,
-  type InterfaceSurfaceEntry,
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
 import {
@@ -37,9 +38,10 @@ import {
   pTrue,
   effectiveInterface,
   generatedExportNames,
+  interfaceDiagCount,
   localNamedExports,
   sidecarPathOf,
-  takeInterfaceDiags,
+  takeInterfaceDiagsSince,
   type InterfaceSource,
 } from "@nudojs/core";
 import type { TypeValue, CheckJson } from "@nudojs/core";
@@ -520,6 +522,46 @@ export type InterfaceToolParams = {
 };
 
 /**
+ * executeCommand 位置参数桥接（server.ts onExecuteCommand 特判移出的纯函数
+ * 形态，供请求面测试）：`nudo.interface [uri, functionName?]`。
+ */
+export function interfacePositionalArgs(
+  args: unknown[],
+): InterfaceToolParams | undefined {
+  if (args.length >= 1 && typeof args[0] === "string") {
+    return {
+      file: args[0],
+      ...(args.length >= 2 && typeof args[1] === "string"
+        ? { functionName: args[1] }
+        : {}),
+    };
+  }
+  return undefined;
+}
+
+/**
+ * executeCommand 位置参数桥接：`nudo.interfaceEmit [uri, functionName, mode]`。
+ * 非法 mode 由 interfaceEmitTool 校验（显式错误文本，不静默降级）。
+ */
+export function interfaceEmitPositionalArgs(
+  args: unknown[],
+): { file: string; functionName: string; mode: "add" | "update" } | undefined {
+  if (
+    args.length >= 3 &&
+    typeof args[0] === "string" &&
+    typeof args[1] === "string" &&
+    typeof args[2] === "string"
+  ) {
+    return {
+      file: args[0],
+      functionName: args[1],
+      mode: args[2] as "add" | "update",
+    };
+  }
+  return undefined;
+}
+
+/**
  * Agent interface 打印：与 CLI `nudo interface` 同一数据源（interfaceSurface），
  * 逐函数展示有效契约分层 handwritten / generated / implicit。
  * interfaceSurface 以磁盘为真值（与 CLI 一致）；deps 预留给 open-buffer 通道。
@@ -546,7 +588,7 @@ export async function interfaceTool(
           : "  (no top-level functions found)",
       );
     }
-    for (const line of selected.map(interfaceEntryLine)) lines.push(line);
+    for (const line of selected.map(formatInterfaceSurfaceLine)) lines.push(line);
     lines.push("");
     lines.push(JSON.stringify(selected, null, 2));
     return textResult(lines.join("\n"));
@@ -555,20 +597,36 @@ export async function interfaceTool(
   }
 }
 
-/** 单条 interface 打印行（与 CLI runInterface 同格式） */
-function interfaceEntryLine(e: InterfaceSurfaceEntry): string {
-  const params = `(${e.params.map((p) => `${p.name}: ${p.display}`).join(", ")})`;
-  let line = `  ${e.fn}  [${e.source}]  ${params}`;
-  if (e.returns !== undefined) line += ` → ${e.returns}`;
-  if (e.kind === "local") line += "  (local)";
-  return line;
-}
-
 export type InterfaceEmitToolParams = {
   file: string;
   functionName: string;
   mode: "add" | "update";
 };
+
+/** 每侧车路径写盘串行化：emitInterface 的读-分析-写之间有 await 边界，
+ *  连续两次 emit（如连续点击两个 persist lens）都基于同一份旧侧车内容计算，
+ *  后写整文件覆盖 → 前一个 @generated 段丢失且首次结果文本虚报 written。
+ *  同路径排队后两次 emit 串行，第二次读到第一次的写盘结果。 */
+const emitChains = new Map<string, Promise<unknown>>();
+function serializedEmit(
+  filePath: string,
+  fnNames: string[],
+  mode: "add" | "update",
+): Promise<EmitInterfaceResult> {
+  const prev = emitChains.get(filePath) ?? Promise.resolve();
+  const next = prev.then(
+    () => emitInterface(filePath, { fnNames, mode }),
+    () => emitInterface(filePath, { fnNames, mode }), // 前次失败不阻塞后续
+  );
+  emitChains.set(
+    filePath,
+    next.then(
+      () => {},
+      () => {},
+    ),
+  );
+  return next;
+}
 
 /**
  * Agent interface 固化：与 CLI `nudo interface --emit` 同一写盘器
@@ -580,33 +638,28 @@ export async function interfaceEmitTool(
   _deps: AgentToolDeps = {},
 ): Promise<AgentToolResult> {
   try {
+    // 入参校验：非法 mode / 缺 functionName → 显式错误回报（server.ts 的
+    // dispatch 对 JSON 请求体只做 as 强转，不校验会静默降级成 add / skipped）
+    if (typeof params.functionName !== "string" || params.functionName.trim() === "") {
+      return textResult("Error: functionName is required for nudo.interface.emit");
+    }
+    if (params.mode !== "add" && params.mode !== "update") {
+      return textResult(
+        `Error: invalid mode '${String(params.mode)}' — expected "add" | "update"`,
+      );
+    }
     const filePath = normalizeFilePath(params.file);
-    const result = await emitInterface(filePath, {
-      fnNames: [params.functionName],
-      mode: params.mode === "update" ? "update" : "add",
-    });
+    const result = await serializedEmit(filePath, [params.functionName], params.mode);
     return textResult(formatEmitResult(filePath, result));
   } catch (err) {
     return analysisError(err);
   }
 }
 
-/** emit 结果文本（与 CLI runInterfaceEmit 输出口径一致） */
+/** emit 结果文本（与 CLI runInterfaceEmit 共用 formatEmitSummary 骨架；
+ *  本包装传绝对路径口径） */
 export function formatEmitResult(filePath: string, result: EmitInterfaceResult): string {
-  const lines: string[] = [];
-  if (result.changed) {
-    lines.push(`Updated ${filePath} → ${result.sidecarPath}`);
-    lines.push(`  written: ${result.written.join(", ") || "(none)"}`);
-  } else {
-    lines.push(`${filePath}: no interface changes`);
-  }
-  for (const s of result.skipped.filter((x) => x.reason !== "no-change")) {
-    lines.push(`  skipped ${s.fn} (${s.reason})`);
-  }
-  for (const i of result.issues) {
-    lines.push(`  [${i.severity}] ${i.code}: ${i.message}`);
-  }
-  return lines.join("\n");
+  return formatEmitSummary(filePath, result.sidecarPath, result).join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -679,6 +732,9 @@ export function computeInterfaceLenses(
   filePath: string,
   deps: InterfaceLensDeps = {},
 ): NudoLens[] {
+  // since 锚：lens 探测只排干自身产生的诊断增量——全量 take 会在 validateText
+  // 的 await 窗口窃取在途待消费的 interface-load 等诊断（check 通道被饿死）
+  const ifaceSince = interfaceDiagCount();
   const lenses: NudoLens[] = [];
   const exported = localNamedExports(source);
 
@@ -742,7 +798,7 @@ export function computeInterfaceLenses(
     pushCaseLenses(fc.functionName, fc.loc.start.line);
   }
 
-  // lens 探测可能积累 interface-load 诊断，取走丢弃防泄漏进 check 通道
-  takeInterfaceDiags();
+  // lens 探测可能积累 interface-load 诊断——只排本次增量，防泄漏进 check 通道
+  takeInterfaceDiagsSince(ifaceSince);
   return lenses;
 }

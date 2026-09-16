@@ -64,6 +64,63 @@ export const real = number().gt(1);
   });
 });
 
+describe("侧车 loader：.nudo.ts TS 语法剥除", () => {
+  it("带类型注解/泛型/as/! 的合法 TS 契约正常求值（不再 exec 崩溃）", () => {
+    const src = `
+export const positive: number = number().gt(0);
+export const name2 = (x?: string): boolean => {
+  return typeof x === "string" as boolean;
+};
+function pick2<T extends number>(a: T): T {
+  return a as T;
+}
+export const g = fn({ x: number() }, lit(3));
+interface HelperShape { a: number }
+type Alias = string;
+enum E { A = 1 }
+export const y = positive!;
+`;
+    const exp = execNudoModule(src, { fromFile: "/t/std.nudo.ts" });
+    expect(Object.keys(exp).sort()).toEqual(["g", "name2", "positive", "y"]);
+    expect(isNudoConstraint(exp.positive)).toBe(true);
+    expect(isNudoConstraint(exp.g)).toBe(true);
+    // 类型声明整体剥除、无残留执行错误
+    expect(takeRefineDiags()).toEqual([]);
+  });
+
+  it("无注解的 JS 风格 .nudo.ts 零切除（与 .nudo.js 行为一致）", () => {
+    const src = `export const positive = number().gt(0);`;
+    const exp = execNudoModule(src, { fromFile: "/t/std.nudo.ts" });
+    expect(isNudoConstraint(exp.positive)).toBe(true);
+    expect(takeRefineDiags()).toEqual([]);
+  });
+
+  it("declare 语句整体删除，不留运行时残片", () => {
+    const src = `
+declare const legacy: number;
+export const positive = number().gt(0);
+`;
+    const exp = execNudoModule(src, { fromFile: "/t/std.nudo.ts" });
+    expect(Object.keys(exp)).toEqual(["positive"]);
+    expect(takeRefineDiags()).toEqual([]);
+  });
+});
+
+describe("侧车 loader：default import 显式诊断（不再静默 undefined）", () => {
+  it("裸包名 default import → nudo:interface-load 诊断", () => {
+    const src = `
+import whatever from "@nudojs/core";
+export const x = whatever;
+`;
+    execNudoModule(src, { fromFile: "/t/std.nudo.js" });
+    const diags = takeRefineDiags();
+    expect(diags.length).toBe(1);
+    expect(diags[0]!.code).toBe("nudo:interface-load");
+    expect(diags[0]!.message).toContain("default import");
+    expect(diags[0]!.message).toContain("whatever");
+  });
+});
+
 describe("侧车 loader：相对 .nudo 递归", () => {
   it("两级相对 import 递归求值", () => {
     const std = `export const positive = number().gt(0);`;

@@ -24,6 +24,7 @@ import {
   effectiveInterface,
   sidecarClosureFingerprint,
   sidecarPathOf,
+  type EffectiveInterfaceOpts,
 } from "./interface.ts";
 import { generalizeSourceKeyPart, resetFnFpCache } from "./fn-fp.ts";
 import { resetHashSourceCache } from "./hash-source.ts";
@@ -123,7 +124,7 @@ function generalizeMemoKey(
   opts: {
     budget?: LeakBudget;
     label?: string;
-    refine?: RefineResolveOpts;
+    refine?: EffectiveInterfaceOpts;
     file?: ReturnType<typeof babelParse>;
     /** checkSource 预计算：整文件一次指纹，所有 fn 的 L0 共用 */
     depsFp?: LoadDepsFingerprint;
@@ -596,7 +597,7 @@ export function generalizeFromAst(
     budget?: LeakBudget;
     label?: string;
     /** 传入则把 @nudo:refine 挂到入口 param Abs */
-    refine?: RefineResolveOpts;
+    refine?: EffectiveInterfaceOpts;
     /** 预解析 AST，避免 check 批量场景重复 parse */
     file?: ReturnType<typeof babelParse>;
     /** 预计算 load-deps 指纹（checkSource 整文件一次，避免 per-fn 重读） */
@@ -626,7 +627,7 @@ function generalizeFromAstUncached(
   opts: {
     budget?: LeakBudget;
     label?: string;
-    refine?: RefineResolveOpts;
+    refine?: EffectiveInterfaceOpts;
     file?: ReturnType<typeof babelParse>;
     /** checkSource 预计算：ambient 侧车闭包指纹（独立调用时现算） */
     sidecarFp?: string;

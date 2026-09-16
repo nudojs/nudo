@@ -11,10 +11,12 @@ import {
   generatedExportNames,
   sidecarClosureFingerprint,
   formatConstraint,
+  interfaceDiagCount,
   takeInterfaceDiags,
+  takeInterfaceDiagsSince,
   type EffectiveInterfaceOpts,
 } from "../interface.ts";
-import { execNudoModule } from "../refine.ts";
+import { execNudoModule, takeRefineDiags } from "../refine.ts";
 import { isNudoConstraint, number, string, lit, union, fn, shape, array } from "../constraint.ts";
 
 /** 虚拟文件系统 loader：相对 spec 按 fromFile 目录解析 */
@@ -194,9 +196,84 @@ export const add2 = fn({ x: number().lt(99) });
     expect(diags.some((d) => d.code === "nudo:interface-load" && d.message.includes("fn()"))).toBe(true);
   });
 
+  it("autoBind 谓词形态：按侧车路径逐个判定", () => {
+    const { loadModule } = makeFiles({
+      "/t/add.nudo.js": `export const add2 = fn({ x: number() });`,
+    });
+    const allow = (sidecarPath: string) => !sidecarPath.includes("/blocked/");
+    expect(
+      effectiveInterface(source, "add2", {
+        loadModule,
+        fromFile: "/t/add.js",
+        autoBind: allow,
+      }),
+    ).toBeDefined();
+    const blocked = makeFiles({
+      "/blocked/add.nudo.js": `export const add2 = fn({ x: number() });`,
+    });
+    expect(
+      effectiveInterface(source, "add2", {
+        loadModule: blocked.loadModule,
+        fromFile: "/blocked/add.js",
+        autoBind: allow,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("侧车环：NudoSidecarError 透传为 nudo:interface-cycle 诊断（不裸抛）", () => {
+    takeInterfaceDiags(); // 清空
+    const files: Record<string, string> = {
+      "/t/a.nudo.js": `import { b } from "./b.nudo.js";\nexport const add2 = fn({ x: number() });\n`,
+      "/t/b.nudo.js": `import { a } from "./a.nudo.js";\nexport const b = number();\n`,
+    };
+    const { loadModule } = makeFiles(files);
+    const r = effectiveInterface(source, "add2", { loadModule, fromFile: "/t/a.js" });
+    expect(r).toBeUndefined(); // 环中不可求值，无契约
+    const diags = takeInterfaceDiags();
+    expect(diags.some((d) => d.code === "nudo:interface-cycle")).toBe(true);
+  });
+
   it("returns undefined when no sidecar and no refine (implicit 由调用方处理)", () => {
     const { loadModule } = makeFiles({});
     expect(effectiveInterface(source, "add2", { loadModule, fromFile: "/t/add.js" })).toBeUndefined();
+  });
+});
+
+describe("诊断 side-channel（R04/R13：单口取走 + 不窃在途队列）", () => {
+  it("takeInterfaceDiagsSince 只排本次增量，既有诊断保留", () => {
+    takeInterfaceDiags(); // 清空
+    const source = `export function add2(x) {\n  return x;\n}\nadd2(1);\n`;
+    const bad = makeFiles({ "/t/add.nudo.js": `export const add2 = number().gt(0);` });
+    // 第一条诊断（在途验证待消费）
+    effectiveInterface(source, "add2", { loadModule: bad.loadModule, fromFile: "/t/add.js" });
+    const since = interfaceDiagCount(); // 锚：既有诊断保留
+    // 第二条诊断（工具自身探测）
+    effectiveInterface(source, "add2", { loadModule: bad.loadModule, fromFile: "/t/add.js" });
+    expect(takeInterfaceDiagsSince(since).length).toBe(1);
+    // 既有诊断仍在队列，全量 take 才取走
+    expect(takeInterfaceDiags().length).toBe(1);
+  });
+
+  it("@nudo:import 失败诊断转发进 interface 通道（不再残留 refine 通道跨文件污染）", () => {
+    takeInterfaceDiags();
+    takeRefineDiags();
+    const srcWithBadImport = `/// @nudo:import { positive } from "./missing.nudo.js"
+/**
+ * @nudo:refine x positive
+ */
+export function needsPos(x) {
+  return x;
+}
+`;
+    const { loadModule } = makeFiles({});
+    const r = effectiveInterface(srcWithBadImport, "needsPos", {
+      loadModule,
+      fromFile: "/t/a.js",
+    });
+    expect(r).toBeUndefined();
+    expect(takeRefineDiags()).toEqual([]); // 已转发，refine 通道零残留
+    const diags = takeInterfaceDiags();
+    expect(diags.some((d) => d.code === "nudo:interface-load")).toBe(true);
   });
 });
 
@@ -240,6 +317,27 @@ describe("sidecarClosureFingerprint", () => {
     expect(sidecarClosureFingerprint("/t/add.js", {})).toBeUndefined();
     const { loadModule } = makeFiles({});
     expect(sidecarClosureFingerprint("/t/add.js", { loadModule })).toBeUndefined();
+  });
+
+  it("autoBind:false → undefined（与 effectiveInterface 同门）", () => {
+    const files: Record<string, string> = {
+      "/t/add.nudo.js": `export const add2 = fn({ x: number().gt(0) });`,
+    };
+    const { loadModule } = makeFiles(files);
+    expect(
+      sidecarClosureFingerprint("/t/add.js", { loadModule, autoBind: false }),
+    ).toBeUndefined();
+    expect(sidecarClosureFingerprint("/t/add.js", { loadModule })).toBeDefined();
+  });
+
+  it("node_modules 侧车路径 → undefined（永不 ambient 加载）", () => {
+    const files: Record<string, string> = {
+      "/proj/node_modules/pkg/x.nudo.js": `export const x = fn({});`,
+    };
+    const { loadModule } = makeFiles(files);
+    expect(
+      sidecarClosureFingerprint("/proj/node_modules/pkg/x.js", { loadModule }),
+    ).toBeUndefined();
   });
 });
 

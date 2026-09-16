@@ -427,7 +427,7 @@ calc.js
 | `.gt(n)` `.ge(n)` `.lt(n)` `.le(n)` `.int()` | 数值界（链式） | `number().gt(0).int()` |
 | `.min(n)` `.max(n)` | 字符串长度界（`length(s)` pred） | `string().min(1)` |
 | `.shift(n)` | 每个常数界整体 `+n` 平移 | `positive.shift(1)` |
-| `.and(...cs)` | 合取 | `positive.and(number().lt(10))` |
+| `and(...cs)` | 标量合取（顶层函数，不是链式方法） | `and(positive, number().lt(10))` |
 | `partial(c)` / `pick(c, keys)` / `omit(c, keys)` | 形状工具 | `partial(user)` |
 
 `shift` 只对数值标量链合法（每个界的右端是字面量），否则 throw。`partial`/`pick`/`omit` 接受 `shape(...)` 约束。

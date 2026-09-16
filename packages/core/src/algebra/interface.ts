@@ -33,20 +33,25 @@ import type { Term } from "./term.ts";
 import { termToString } from "./term.ts";
 import { parseSource } from "./parse-source.ts";
 import { hashSource } from "./hash-source.ts";
-import { resolveDepPath } from "./load-deps-fp.ts";
+import { resolveDepPath, sidecarPathOf } from "./sidecar-path.ts";
 import {
   type NudoConstraint,
   isNudoConstraint,
   fnConstraintToEntryReqs,
   and,
+  isIntFlag,
 } from "./constraint.ts";
 import {
   execNudoModule,
   NudoSidecarError,
   extractRefinesFromSource,
   extractRefineReturnFromSource,
+  takeRefineDiags,
   type RefineResolveOpts,
 } from "./refine.ts";
+
+// 单一定义在 sidecar-path.ts（leaf）；re-export 维持 @nudojs/core 导出面稳定
+export { sidecarPathOf };
 
 // ---------------------------------------------------------------------------
 // 诊断 side-channel（镜像 refine.ts 的 RefineDiag 机制）
@@ -56,7 +61,8 @@ import {
 export type InterfaceDiag = { code: string; message: string; file?: string };
 
 let interfaceDiagCollector: ((d: InterfaceDiag) => void) | null = null;
-const interfaceDiags: InterfaceDiag[] = [];
+let interfaceDiagSeq = 0;
+const interfaceDiags: Array<{ seq: number; d: InterfaceDiag }> = [];
 /** 防长会话无界增长；消费方 takeInterfaceDiags 按批取走 */
 const MAX_INTERFACE_DIAGS = 1024;
 
@@ -67,16 +73,37 @@ export function setInterfaceDiagCollector(
   interfaceDiagCollector = fn;
 }
 
+/** 当前诊断累计序号（since 锚：工具面只排干自身探测产生的增量） */
+export function interfaceDiagCount(): number {
+  return interfaceDiagSeq;
+}
+
 /** 取走已收集的诊断（收集即清空） */
 export function takeInterfaceDiags(): InterfaceDiag[] {
-  const out = interfaceDiags.slice();
+  const out = interfaceDiags.map((e) => e.d);
   interfaceDiags.length = 0;
+  return out;
+}
+
+/**
+ * 只取走 seq > since 的诊断（清空仅限增量）——LSP 长驻进程里 lens/打印/
+ * emit 工具用它排干**自身探测**产生的诊断，不窃取在途 validateText 待消费
+ * 的接口诊断（全量 take 曾在 await 窗口偷走 checkSource 的待收诊断）。
+ */
+export function takeInterfaceDiagsSince(since: number): InterfaceDiag[] {
+  const out: InterfaceDiag[] = [];
+  let kept = 0;
+  for (const e of interfaceDiags) {
+    if (e.seq > since) out.push(e.d);
+    else interfaceDiags[kept++] = e;
+  }
+  interfaceDiags.length = kept;
   return out;
 }
 
 function collectDiag(d: InterfaceDiag): void {
   if (interfaceDiags.length >= MAX_INTERFACE_DIAGS) interfaceDiags.shift();
-  interfaceDiags.push(d);
+  interfaceDiags.push({ seq: ++interfaceDiagSeq, d });
   interfaceDiagCollector?.(d);
 }
 
@@ -87,18 +114,7 @@ function collectDiag(d: InterfaceDiag): void {
 /** 有效契约来源：手写（源码 refine ∪ 侧车手写绑定）> 生成段 > 隐式 */
 export type InterfaceSource = "handwritten" | "generated" | "implicit";
 
-/**
- * 源文件的旁路侧车路径：.js/.mjs → 同名 .nudo.js；.ts/.mts → 同名 .nudo.ts。
- * 其他扩展名（.cjs/.jsx/无扩展名…）不做替换，直接追加 .nudo.js——侧车约定
- * 只覆盖四类入口；host loadModule 对不存在的路径返回 miss，自然无侧车来源。
- */
-export function sidecarPathOf(file: string): string {
-  if (file.endsWith(".mjs")) return file.slice(0, -4) + ".nudo.js";
-  if (file.endsWith(".js")) return file.slice(0, -3) + ".nudo.js";
-  if (file.endsWith(".mts")) return file.slice(0, -4) + ".nudo.ts";
-  if (file.endsWith(".ts")) return file.slice(0, -3) + ".nudo.ts";
-  return `${file}.nudo.js`;
-}
+// sidecarPathOf 定义已收敛至 sidecar-path.ts（leaf），文件头 re-export
 
 /**
  * 源文件本地 named export 表：只收**顶层** `export function/const/class/let`
@@ -197,8 +213,12 @@ export type EffectiveInterface = {
   params: Array<{ param: string; constraint: NudoConstraint }>;
   returns?: { constraint: NudoConstraint };
   source: InterfaceSource;
-  /** 常数界交叉矛盾（x>0 ∧ x<0）的参数名；调用方报 nudo:interface-conflict */
-  conflict?: { params: string[] };
+  /**
+   * 合取不可满足标记：params = 常数界交叉矛盾（或 prim 矛盾等 and() 不可
+   * 合取形态）的参数名；returns = 返回位同样不可满足。调用方报
+   * nudo:interface-conflict 并跳过对应位执法。
+   */
+  conflict?: { params: string[]; returns?: boolean };
 };
 
 /** 自动绑定边界：/node_modules/ 永不 ambient 加载；autoBind 可关（§2.2） */
@@ -316,11 +336,19 @@ function crossBoundConflict(a: NudoConstraint, b: NudoConstraint): boolean {
   return false;
 }
 
-/** 同参合一：and() 合取；合形不可 and（prim 不一致 / 非 shape 标量）→ 保既有 */
-function conjoin(prev: NudoConstraint, next: NudoConstraint): NudoConstraint {
+/**
+ * 同参合一：and() 合取；不可合取（prim 不一致 / 非 shape 标量等 and()
+ * throw）= 合取不可满足——onConflict 标记后保既有（消费方跳过执法）。
+ */
+function conjoinOrConflict(
+  prev: NudoConstraint,
+  next: NudoConstraint,
+  onConflict: () => void,
+): NudoConstraint {
   try {
     return and(prev, next);
   } catch {
+    onConflict();
     return prev;
   }
 }
@@ -334,9 +362,15 @@ export function effectiveInterface(
   fnName: string,
   opts: EffectiveInterfaceOpts = {},
 ): EffectiveInterface | undefined {
-  // 手写来源 ①：源码 refine / interface 行（@nudo:import 模板由 refine.ts 解析）
+  // 手写来源 ①：源码 refine / interface 行（@nudo:import 模板由 refine.ts 解析）。
+  // extract 触发的 @nudo:import 失败等诊断默认落 refine 通道——转发进本文件
+  // side-channel，保证 takeInterfaceDiags 单口取走（否则残留 refine 通道，
+  // LSP 长会话里被后续无关文件的 checkSource 吸收 = 跨文件污染）。
   const sourceEntries = extractRefinesFromSource(source, fnName, opts);
   const sourceReturn = extractRefineReturnFromSource(source, fnName, opts);
+  for (const d of takeRefineDiags()) {
+    collectDiag({ code: d.code, message: d.message, ...(d.file ? { file: d.file } : {}) });
+  }
 
   // 手写来源 ② ∪ 生成段：侧车同名自动绑定
   const sidecar = loadSidecarBinding(source, fnName, opts);
@@ -363,35 +397,64 @@ export function effectiveInterface(
     return undefined; // implicit：调用方自行处理隐式
   }
 
-  // 手写层合并：源码行先入（同名重复行合一），侧车手写绑定同参合取
+  // 手写层合并：源码行先入（同名重复行合一），侧车手写绑定同参合取。
+  // 不可合取（prim 矛盾 / shape×标量等 and() throw）= 合取不可满足——
+  // 标记 conflict（不再静默吞侧车契约：消费方报 nudo:interface-conflict
+  // 并跳过该参执法），显示保源码行。
   const params = new Map<string, NudoConstraint>();
   for (const e of sourceEntries) {
-    params.set(e.param, params.has(e.param) ? conjoin(params.get(e.param)!, e.constraint) : e.constraint);
+    params.set(
+      e.param,
+      params.has(e.param)
+        ? conjoinOrConflict(params.get(e.param)!, e.constraint, () => {})
+        : e.constraint,
+    );
   }
   const conflictParams: string[] = [];
   if (sidecarFn !== undefined && !sidecarGenerated) {
     for (const { param, constraint } of sidecarParams) {
       const prev = params.get(param);
       if (prev !== undefined) {
-        if (crossBoundConflict(prev, constraint)) conflictParams.push(param);
-        params.set(param, conjoin(prev, constraint));
+        if (crossBoundConflict(prev, constraint) && !conflictParams.includes(param)) {
+          conflictParams.push(param);
+        }
+        params.set(param, conjoinOrConflict(prev, constraint, () => {
+          if (!conflictParams.includes(param)) conflictParams.push(param);
+        }));
       } else {
         params.set(param, constraint);
       }
     }
   }
 
-  // 返回约束：源码 refine return 与侧车 fn.returns 并存 → and()
+  // 返回约束：源码 refine return 与侧车 fn.returns 并存 → and()；
+  // 交叉矛盾 / 不可合取 → conflict.returns（调用方跳过返回位执法）
   const r1 = sourceReturn?.constraint;
   const r2 = sidecarFn !== undefined && !sidecarGenerated ? sidecarReturns : undefined;
-  const returnsC = r1 !== undefined && r2 !== undefined ? conjoin(r1, r2) : (r1 ?? r2);
+  let returnsC: NudoConstraint | undefined;
+  let conflictReturns = false;
+  if (r1 !== undefined && r2 !== undefined) {
+    if (crossBoundConflict(r1, r2)) conflictReturns = true;
+    returnsC = conjoinOrConflict(r1, r2, () => {
+      conflictReturns = true;
+    });
+  } else {
+    returnsC = r1 ?? r2;
+  }
 
   return {
     fnName,
     params: [...params.entries()].map(([param, constraint]) => ({ param, constraint })),
     ...(returnsC !== undefined ? { returns: { constraint: returnsC } } : {}),
     source: "handwritten",
-    ...(conflictParams.length > 0 ? { conflict: { params: conflictParams } } : {}),
+    ...(conflictParams.length > 0 || conflictReturns
+      ? {
+          conflict: {
+            params: conflictParams,
+            ...(conflictReturns ? { returns: true } : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -555,14 +618,14 @@ function fmtConstraint(c: NudoConstraint): string {
     c.preds[0]!.op === "eq" &&
     c.preds[0]!.a.op === "var" &&
     c.preds[0]!.b.op === "lit" &&
-    c.int !== true
+    !isIntFlag(c)
   ) {
     return `lit(${litToString(c.preds[0]!.b.value)})`;
   }
   // 标量链：prim() + .int() + 逐 pred 链段（+ .optional()）
   let out =
     c.prim !== undefined ? `${c.prim}()` : c.preds.length > 0 ? "number()" : "any()";
-  if (c.int === true) out += ".int()";
+  if (isIntFlag(c)) out += ".int()";
   for (const p of c.preds) out += predToChain(p);
   if (c.isOptional) out += ".optional()";
   return out;

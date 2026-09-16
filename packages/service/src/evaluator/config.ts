@@ -5,27 +5,23 @@ export type NudoConfig = {
   env?: string[];
   mocks?: Record<string, string>;
   interface?: {
+    /** 侧车 ambient 绑定总开关（check/LSP 执法与 interface 打印共用） */
     autoBind?: boolean;
-    emit?: string[];
-    ignore?: string[];
   };
 };
 
 export type InterfaceConfig = {
   autoBind: boolean;
-  emit: string[];
-  ignore: string[];
 };
 
-/** 归一化 `nudo.interface` 配置段：autoBind 默认 true，数组默认 []。 */
+/**
+ * 归一化 `nudo.interface` 配置段：autoBind 默认 true。
+ * （emit/ignore 白名单键随 Phase 2 root 推导落地时再引入——不留未接线的
+ * 声明面，用户写了会被静默忽略。）
+ */
 export function interfaceConfig(config: NudoConfig | null | undefined): InterfaceConfig {
-  const iface = config?.interface;
-  const emit = iface?.emit;
-  const ignore = iface?.ignore;
   return {
-    autoBind: iface?.autoBind ?? true,
-    emit: Array.isArray(emit) ? [...emit] : [],
-    ignore: Array.isArray(ignore) ? [...ignore] : [],
+    autoBind: config?.interface?.autoBind ?? true,
   };
 }
 

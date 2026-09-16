@@ -154,12 +154,22 @@ export { mockDirectivesToAbsSeeds, type AbsMockSeeds } from "./mock-abs.ts";
 
 export {
   interfaceSurface,
+  formatInterfaceSurfaceLine,
   type InterfaceSurfaceEntry,
   type InterfaceSurfaceOpts,
 } from "./interface-surface.ts";
 
+// check/LSP 执法路径的 autoBind 接线（package.json#nudo.interface → checkSource）
+export {
+  findProjectConfig,
+  interfaceConfig,
+  type NudoConfig,
+  type InterfaceConfig,
+} from "./evaluator/config.ts";
+
 export {
   emitInterface,
+  formatEmitSummary,
   type EmitInterfaceOpts,
   type EmitInterfaceResult,
   type EmitInterfaceSkipReason,

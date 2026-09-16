@@ -224,4 +224,52 @@ describe("autoBind implicit sidecar dep edges (设计 §4.5)", () => {
     registerNudoImportDeps(parent, "export function go(x: number) { return x; }\n");
     expect(nudoDepParents.get(norm(sidecar))).toContain(norm(parent));
   });
+
+  it("ESM dependency's ambient sidecar registers as a parent dependency", () => {
+    // P1#2 LSP 半边：跨文件被调按定义文件路径绑定 lib.nudo.js，边必须
+    // main→lib.nudo.js 存在——编辑依赖侧车后打开中的调用方重检
+    const dir = mkdtempSync(join(tmpdir(), "nudo-dep-sidecar-"));
+    const parent = join(dir, "main.js");
+    const lib = join(dir, "lib.js");
+    const libSidecar = join(dir, "lib.nudo.js");
+    writeFileSync(lib, "module.exports = { needsPos: (x) => x };\n");
+    writeFileSync(libSidecar, "export const needsPos = fn({ x: number().gt(0) });\n");
+    registerNudoImportDeps(parent, `const { needsPos } = require("./lib.js");\nneedsPos(1);\n`);
+    expect(nudoDepParents.get(norm(libSidecar))).toContain(norm(parent));
+  });
+
+  it("sidecar content change → revalidated parent publishes changed diagnostics", async () => {
+    // R14：钉住「侧车内容变 → 父文件诊断内容更新」——此前只断言重验被触发
+    // 与 memo 实例身份，不校验发布诊断随内容翻转（逐出失效仍全绿）。
+    const dir = mkdtempSync(join(tmpdir(), "nudo-sidecar-diag-"));
+    const parent = join(dir, "a.js");
+    const sidecar = join(dir, "a.nudo.js");
+    writeFileSync(
+      sidecar,
+      "export const needsPositive = fn({ x: number().gt(0) });\n",
+    );
+    const parentSrc = `export function needsPositive(x) {\n  return x;\n}\nneedsPositive(-1);\n`;
+    writeFileSync(parent, parentSrc);
+    registerNudoImportDeps(parent, parentSrc);
+
+    const sent = new Map<string, { code?: unknown }[]>();
+    const openDocs = new Map([
+      [norm(parent), { uri: `file://${parent}`, version: 2, getText: () => parentSrc }],
+    ]);
+    const deps: ValidateTextDeps = {
+      sendDiagnostics: (p) => sent.set(p.uri, p.diagnostics),
+      getOpenDocumentByPath: (p) => openDocs.get(p.replace(/\\/g, "/")),
+    };
+    // 初验：gt(0) 契约 × -1 实参 → nudo:constraint-violated
+    await validateText(parent, `file://${parent}`, parentSrc, 2, deps, false);
+    const before = sent.get(`file://${parent}`) ?? [];
+    expect(before.some((d) => d.code === "nudo:constraint-violated")).toBe(true);
+
+    // 放宽契约：lt(0) 下 -1 满足 → 违例消失（诊断集合随内容翻转）
+    writeFileSync(sidecar, "export const needsPositive = fn({ x: number().lt(0) });\n");
+    sent.clear();
+    await handleNudoDepFileChanged(sidecar, deps);
+    const after = sent.get(`file://${parent}`) ?? [];
+    expect(after.some((d) => d.code === "nudo:constraint-violated")).toBe(false);
+  });
 });

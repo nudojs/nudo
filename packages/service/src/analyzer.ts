@@ -510,6 +510,24 @@ function resolveFunctionNode(node: Node): Node {
   return node;
 }
 
+/** 函数声明名的标识符定位（无 id 的箭头函数回退声明节点）——诊断高亮
+ *  应落函数名 token，而非 function 关键字 / 参数表起点 */
+function fnNameLoc(node: Node, fallback: SourceLocation): SourceLocation {
+  const unwrap = (n: Node): Node =>
+    n.type === "ExportNamedDeclaration" && n.declaration
+      ? n.declaration
+      : n.type === "ExportDefaultDeclaration"
+        ? n.declaration
+        : n;
+  const d = unwrap(node);
+  if (d.type === "VariableDeclaration") {
+    const id = (d as any).declarations[0]?.id;
+    if (id?.type === "Identifier" && id.loc) return id.loc;
+  }
+  if ((d as any).id?.loc) return (d as any).id.loc;
+  return fallback;
+}
+
 function isFnExprValue(node: Node | null | undefined): node is Node {
   return !!node && (node.type === "FunctionExpression" || node.type === "ArrowFunctionExpression");
 }
@@ -1912,21 +1930,25 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
     // （注入证据的 loc 在使用现场文件，不属于本文件）。
     const injected = (externalCallRecords ?? []).filter(matchingExternal);
     if (injected.length > 0) {
+      // 函数名标识符定位：declLoc 是函数节点起点（function 关键字 / 箭头参数
+      // 表），end 用 +name.length 会高亮错 token——取声明名自身 loc
       const declLoc = candidate.analysis.loc;
+      const nameLoc = fnNameLoc(candidate.node, declLoc);
+      const fnNode = resolveFunctionNode(candidate.node);
       const domainIssues = checkInjectedDomainEvidence(
         candidate.name,
         source,
         injected,
         {
-          paramNames: extractParamNames(resolveFunctionNode(candidate.node)),
+          paramNames: extractParamNames(fnNode),
           loadModule: defaultLoadModule,
           fromFile: filePath,
-          loc: { line: declLoc.start.line, column: declLoc.start.column },
+          loc: { line: nameLoc.start.line, column: nameLoc.start.column },
         },
       );
       for (const issue of domainIssues) {
-        const line = issue.line ?? declLoc.start.line;
-        const column = issue.column ?? declLoc.start.column;
+        const line = issue.line ?? nameLoc.start.line;
+        const column = issue.column ?? nameLoc.start.column;
         diagnostics.push({
           range: { start: { line, column }, end: { line, column: column + candidate.name.length } },
           severity: issue.severity,

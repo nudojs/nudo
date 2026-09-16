@@ -93,6 +93,56 @@ area(-2);
     expect(r.ok).toBe(true);
   });
 
+  it("执行态证据：兄弟函数内未执行的调用不进今日域（fresh emit 零 drift）", () => {
+    // 回归（T10a）：语法全树扫描曾把 process() 体内从未执行的 area(-50)
+    // 算进今日域 → fresh emit 后立即误报 drift 且重跑 emit 无法消除；
+    // 今日域证据必须与 emit 同为执行态（evalProgramAbs 的 AbsCallRecord）
+    const { loadModule } = makeFiles({
+      "/t/area.nudo.js": GEN(`export const area = fn({ x: lit(3) }, lit(3));`),
+    });
+    const src = `
+export function area(x) {
+  return x;
+}
+export function process() {
+  return area(-50);
+}
+area(3);
+`;
+    const r2 = checkSource("/t/area.js", src, pTrue, {
+      loadModule,
+      fromFile: "/t/area.js",
+    });
+    expect(
+      r2.issues.filter((i) => i.code === "nudo:interface-drift"),
+    ).toEqual([]);
+    expect(r2.ok).toBe(true);
+  });
+
+  it("兄弟函数被调用后其内部调用进今日域 → 真 drift", () => {
+    // process() 在顶层被调用 → area(-50) 真实执行，今日域吸收 -50
+    const { loadModule } = makeFiles({
+      "/t/area.nudo.js": GEN(`export const area = fn({ x: lit(3) }, lit(3));`),
+    });
+    const src = `
+export function area(x) {
+  return x;
+}
+export function process() {
+  return area(-50);
+}
+area(3);
+process();
+`;
+    const r3 = checkSource("/t/area.js", src, pTrue, {
+      loadModule,
+      fromFile: "/t/area.js",
+    });
+    const drifts = r3.issues.filter((i) => i.code === "nudo:interface-drift");
+    expect(drifts.length).toBeGreaterThanOrEqual(1);
+    expect(drifts[0]!.fn).toBe("area");
+  });
+
   it("手写契约同场景不报 drift（执法走 constraint-violated）", () => {
     const { loadModule } = makeFiles({
       "/t/area.nudo.js": `import { fn, number } from "@nudojs/core";\nexport const area = fn({ x: number().gt(0) });`,

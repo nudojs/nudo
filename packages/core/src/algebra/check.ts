@@ -12,9 +12,11 @@ import {
   analyzeFn,
   evalProgramAbs,
   setAbsAssignCollector,
+  setAbsCallCollector,
   setAbsTruncationCollector,
   resetAbsCallBudget,
   type AbsAssignRecord,
+  type AbsCallRecord,
 } from "./ast-eval.ts";
 import { leqAbs } from "./leq.ts";
 import {
@@ -39,6 +41,7 @@ import {
   type NudoField,
 } from "./constraint.ts";
 import { absToConstraint, joinThenProject } from "./projection.ts";
+import { literalMeetsConstraint } from "./domain-membership.ts";
 import { extractFn, generalizeFromAst } from "./generalize.ts";
 import { getSlot } from "./objects.ts";
 import { canSkipLiteralCallScan } from "./fn-fp.ts";
@@ -191,6 +194,12 @@ export type CheckOptions = {
   loadModule?: (spec: string, fromFile: string) => string | undefined;
   /** 当前文件路径（供 loadModule 解析相对 spec） */
   fromFile?: string;
+  /**
+   * 侧车 ambient 绑定开关（host 从 package.json#nudo.interface.autoBind
+   * 解析后下传；默认 true）。false = check/LSP 执法路径不自动加载侧车
+   * （§2.2「整体关闭」承诺覆盖 CI 门禁，不只是打印路径）。
+   */
+  autoBind?: boolean;
 };
 
 /**
@@ -354,12 +363,16 @@ function checkSourceInner(
   // generalize L0 用调用方原始 loadModule 身份；opts 可能是 per-call I/O wrapper
   const refineLoad = identityOpts.loadModule ?? opts.loadModule;
   const refineFrom = identityOpts.fromFile ?? opts.fromFile ?? filePath;
+  // autoBind（package.json#nudo.interface）统一透传：effectiveInterface /
+  // generalize L0 / scan 执法 / case 对账同一开关口径
+  const autoBind = opts.autoBind;
   for (const name of names) {
     const g = generalizeFromAst(name, source, {
       file,
       refine: {
         loadModule: refineLoad,
         fromFile: refineFrom,
+        ...(autoBind !== undefined ? { autoBind } : {}),
       },
       depsFp,
       sidecarFp,
@@ -389,18 +402,41 @@ function checkSourceInner(
     // - conflict（常数界交叉矛盾）→ nudo:interface-conflict，fn 级一次
     // - 返回后置仅 handwritten 执法（generated = 事实快照，drift 另行）
     if (hasRefineDirective || (exportedNames?.has(name) ?? false)) {
-      const intfOpts = { loadModule: refineLoad, fromFile: refineFrom };
+      const intfOpts = {
+        loadModule: refineLoad,
+        fromFile: refineFrom,
+        ...(autoBind !== undefined ? { autoBind } : {}),
+      };
       const eff = effectiveInterface(source, name, intfOpts);
       if (eff?.conflict) {
-        issues.push({
-          severity: "error",
-          code: "nudo:interface-conflict",
-          message: `${name}: 手写契约合取不可满足（${eff.conflict.params.join(", ")}）`,
-          suggestion: "检查源码 @nudo:refine 与侧车同名绑定的常数界是否矛盾",
-          fn: name,
-        });
+        if (eff.conflict.params.length > 0) {
+          issues.push({
+            severity: "error",
+            code: "nudo:interface-conflict",
+            message: `${name}: 手写契约合取不可满足（${eff.conflict.params.join(", ")}）`,
+            suggestion: "检查源码 @nudo:refine 与侧车同名绑定的常数界是否矛盾",
+            fn: name,
+          });
+        }
+        if (eff.conflict.returns) {
+          issues.push({
+            severity: "error",
+            code: "nudo:interface-conflict",
+            message: `${name}: 返回位手写契约合取不可满足`,
+            suggestion:
+              "检查源码 @nudo:refine return 与侧车 fn() 返回约束是否矛盾（矛盾时返回位不执法）",
+            fn: name,
+          });
+        }
       }
-      if (eff && eff.source === "handwritten" && eff.returns) {
+      // 返回后置仅 handwritten 执法（generated = 事实快照，drift 另行）；
+      // 返回位 conflict（合取不可满足）时跳过——矛盾契约不该误诊为函数体违例
+      if (
+        eff &&
+        eff.source === "handwritten" &&
+        eff.returns &&
+        !eff.conflict?.returns
+      ) {
         // 显示名优先取源码声明名（既有输出契约零改动）；侧车合取无名单 → 组合式显示
         const named = extractRefineReturnFromSource(source, name, intfOpts);
         const display = named?.name ?? formatConstraint(eff.returns.constraint);
@@ -415,7 +451,6 @@ function checkSourceInner(
           fnName: name,
           paramNames: g.params,
           eff,
-          symbolic: g.symbolic,
         });
       }
     }
@@ -456,10 +491,13 @@ function checkSourceInner(
     });
   }
 
-  // 一次 evalProgramAbs：结构赋值记录 + 顶层绑定表（scanLiteralCalls 实参解析用）
+  // 一次 evalProgramAbs：结构赋值记录 + 顶层绑定表（scanLiteralCalls 实参
+  // 解析用）+ 执行态调用记录（T10a drift 的今日域证据，与 emit 同源）
   const records: AbsAssignRecord[] = [];
   const varAbs = new Map<string, Abs>();
+  const callRecords: AbsCallRecord[] = [];
   setAbsAssignCollector((r) => records.push(r));
+  setAbsCallCollector((r) => callRecords.push(r));
   try {
     const { env } = evalProgramAbs(source, { file });
     for (const [k, v] of env.vars) varAbs.set(k, v);
@@ -467,6 +505,7 @@ function checkSourceInner(
     /* 求值失败：无赋值记录、无绑定表 */
   } finally {
     setAbsAssignCollector(null);
+    setAbsCallCollector(null);
   }
 
   const callIssues = canSkipLiteralCallScan(source, file)
@@ -476,14 +515,15 @@ function checkSourceInner(
         fromFile: filePath,
         file,
         varAbs,
+        ...(autoBind !== undefined ? { autoBind } : {}),
       });
   issues.push(...callIssues);
 
   // T10a：固化生成段 drift——generated 快照 ≠ 今日重算 → warning
-  // （在 varAbs 就绪后跑：标识符实参证据需要顶层绑定表）
+  // （在执行态调用记录就绪后跑：今日域证据与 emit 的 callsite case 同源）
   if (driftCandidates.length > 0) {
     issues.push(
-      ...interfaceDriftIssues(driftCandidates, file, varAbs, (fnName, args) => {
+      ...interfaceDriftIssues(driftCandidates, callRecords, (fnName, args) => {
         try {
           return analyzeFn(source, fnName, args, phi, undefined, file);
         } catch {
@@ -500,6 +540,7 @@ function checkSourceInner(
       fromFile: filePath,
       file,
       sidecarPresent: sidecarFp !== undefined,
+      ...(autoBind !== undefined ? { autoBind } : {}),
     }),
   );
 
@@ -659,6 +700,16 @@ function checkReturnConstraint(
       }
     }
   }
+  // eq/or 域（lit()/union() 返回契约）：bounds 分支判不了——域隶属判定
+  if (
+    lv !== undefined &&
+    (typeof lv === "number" || typeof lv === "string" || typeof lv === "boolean") &&
+    ((constraint.members?.length ?? 0) > 0 ||
+      constraint.preds.some((p) => p.op === "eq")) &&
+    !literalMeetsConstraint(lv, constraint)
+  ) {
+    push(formatAbs(ret), formatConstraint(constraint), `返回满足 ${formatConstraint(constraint)} 的值`);
+  }
   return out;
 }
 
@@ -713,6 +764,8 @@ function scanCaseInconsistency(
     file?: ReturnType<typeof parse>;
     /** ambient 侧车存在（checkSource 预探测）：无源码 refine 时侧车契约仍需对账 */
     sidecarPresent?: boolean;
+    /** 侧车 ambient 绑定开关（checkSource 的 package.json 配置下传） */
+    autoBind?: boolean;
   },
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
@@ -794,6 +847,7 @@ function scanCaseInconsistency(
     const eff = effectiveInterface(source, fnName, {
       loadModule: opts.loadModule,
       fromFile: opts.fromFile ?? "",
+      ...(opts.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
     });
     if (!eff || eff.source !== "handwritten") return;
     const conflictParams = new Set(eff.conflict?.params ?? []);
@@ -816,13 +870,40 @@ function scanCaseInconsistency(
     if (reqs.length === 0) return;
 
     const absArgs = args.map((a) => parseLitArg(a) ?? absUnknown());
-    // 标量界
+    // 标量域：eq/union 形态（lit()/union() 契约）走域隶属判定（bounds 分支
+    // 判不了 eq/or，此前静默跳过 = 写了等于没写）；纯 bounds 域沿用逐原子
+    // 报告（expected 保持 predToString 原文，既有输出契约零改动）
     for (const [idx, entry] of reqs) {
       if (entry.constraint.fields) continue;
       const arg = absArgs[idx];
       if (!arg) continue;
       const lv = litValue(arg);
-      if (lv === undefined || typeof lv !== "number") continue;
+      if (
+        lv === undefined ||
+        (typeof lv !== "number" && typeof lv !== "string" && typeof lv !== "boolean")
+      ) {
+        continue;
+      }
+      const hasEqOr =
+        (entry.constraint.members?.length ?? 0) > 0 ||
+        entry.constraint.preds.some((p) => p.op === "eq");
+      if (hasEqOr) {
+        if (!literalMeetsConstraint(lv, entry.constraint)) {
+          const paramName = entry.param || paramNames[idx] || `arg${idx}`;
+          out.push({
+            severity: "error",
+            code: "nudo:case-inconsistency",
+            message: `${fnName} case "${caseName}": 见证 ⊭ 契约`,
+            actual: formatAbs(arg),
+            expected: formatConstraint(entry.constraint),
+            suggestion: `改 case 实参，或放宽 ${paramName} 的 refine`,
+            fn: fnName,
+            line,
+          });
+        }
+        continue;
+      }
+      if (typeof lv !== "number") continue;
       const flatten = (p: Pred): Pred[] => (p.op === "and" ? p.args.flatMap(flatten) : p.op === "true" ? [] : [p]);
       for (const p of flatten(entry.pred)) {
         if (
@@ -910,7 +991,8 @@ function scanCaseInconsistency(
 // generated 段是 emit 时刻的固化事实快照（不执法）；本检查把它与「今日
 // 重算」做语义对比（§6 证据门槛：conf∈{exact,path} 且无截断标记，无证据
 // 不判——real-package zero-FP 红线）：
-// - 参数位：今日 = 该函数字面量调用点实参域（joinThenProject 投影归一）；
+// - 参数位：今日 = 该函数**执行态**调用点实参域（evalProgramAbs 的
+//   AbsCallRecord，joinThenProject 投影归一；与 emit 的 callsite case 同源）；
 // - 返回位：今日 = 逐调用点结果域（全证据实参 analyzeFn 重跑，与 emit 的
 //   case-result 投影同源；无结果证据不判）。
 // 语义相等 = 双方经 constraintToEntryAbs 进 entry Abs 后 leqAbs(a,b) &&
@@ -925,8 +1007,6 @@ type DriftCandidate = {
   /** generalize 形参名表（eff.params 的参数名 → 调用点实参位） */
   paramNames: string[];
   eff: EffectiveInterface;
-  /** 符号 Abs（返回位的今日重算现场变量，与 checkReturnConstraint 同源） */
-  symbolic: Abs;
 };
 
 /** §6 证据门槛：conf∈{exact,path} 且非 unknown/any。截断求值会被宽化为
@@ -938,88 +1018,37 @@ function driftEvidence(a: Abs | undefined): a is Abs {
 }
 
 /**
- * 静态解析调用实参节点 → Abs（scanLiteralCalls parseCallArgs 的最小子集：
- * 标量字面量 + 顶层绑定表标识符）。对象/数组/嵌套调用等复杂形态不产
- * 证据——drift 宁缺勿滥；别名/转发调用不采集（执法路径已在 scan 覆盖）。
+ * 每函数逐调用点实参表——**执行态**通道（evalProgramAbs 的 AbsCallRecord，
+ * 与 emit 的 callsite case 同源：只有真正执行了的调用才产证据）。
+ * 语法全树扫描会把「兄弟函数体内从未执行的调用」也算进今日域，fresh
+ * emit 后立即误报 drift 且重跑 emit 无法消除——两端口径必须一致。
  */
-function driftArgAbs(
-  node: Record<string, unknown>,
-  varAbs: Map<string, Abs>,
-): Abs | undefined {
-  if (node.type === "NumericLiteral" && typeof node.value === "number") {
-    return numLit(node.value);
-  }
-  if (
-    node.type === "UnaryExpression" &&
-    node.operator === "-" &&
-    (node.argument as Record<string, unknown> | undefined)?.type === "NumericLiteral"
-  ) {
-    return numLit(-(node.argument as { value: number }).value);
-  }
-  if (node.type === "StringLiteral" && typeof node.value === "string") {
-    return strLit(node.value);
-  }
-  if (node.type === "BooleanLiteral" && typeof node.value === "boolean") {
-    return boolLit(node.value);
-  }
-  if (node.type === "Identifier" && typeof node.name === "string") {
-    return varAbs.get(node.name);
-  }
-  return undefined;
-}
-
-/** 每函数逐调用点实参表（仅 callee 为候选函数名的直接标识符调用） */
-function collectDriftCallsites(
-  file: ReturnType<typeof parse>,
+function driftCallsites(
+  records: AbsCallRecord[],
   wanted: Set<string>,
-  varAbs: Map<string, Abs>,
-): Map<string, Array<{ args: Array<Abs | undefined>; line?: number }>> {
-  const out = new Map<string, Array<{ args: Array<Abs | undefined>; line?: number }>>();
-  const visit = (n: unknown): void => {
-    if (!n || typeof n !== "object") return;
-    const obj = n as Record<string, unknown> & {
-      type?: string;
-      loc?: { start: { line: number } };
-    };
-    if (obj.type === "CallExpression") {
-      const callee = obj.callee as Record<string, unknown> | undefined;
-      if (
-        callee?.type === "Identifier" &&
-        typeof callee.name === "string" &&
-        wanted.has(callee.name)
-      ) {
-        const args = ((obj.arguments as Array<Record<string, unknown>>) ?? []).map(
-          (a) => driftArgAbs(a, varAbs),
-        );
-        const list = out.get(callee.name) ?? [];
-        list.push({ args, line: obj.loc?.start.line });
-        out.set(callee.name, list);
-      }
-    }
-    for (const key of Object.keys(obj)) {
-      if (key === "loc" || key === "start" || key === "end") continue;
-      const val = obj[key];
-      if (Array.isArray(val)) val.forEach(visit);
-      else if (val && typeof val === "object") visit(val);
-    }
-  };
-  visit(file);
+): Map<string, Array<{ args: Abs[]; line?: number }>> {
+  const out = new Map<string, Array<{ args: Abs[]; line?: number }>>();
+  for (const r of records) {
+    if (!wanted.has(r.fnName)) continue;
+    const list = out.get(r.fnName) ?? [];
+    list.push({ args: r.args, line: r.callLoc?.line });
+    out.set(r.fnName, list);
+  }
   return out;
 }
 
 /** generated 快照 vs 今日重算（参数位 + 返回位），每 fn 每位最多一条。
- *  evalResult：逐调用点结果求值（与 emit 的 case-result 证据同源——
- *  analyzeFn 以全证据实参重跑函数体；返回位若用 generalize 符号 Abs 会与
- *  emit 的逐 case 精确结果不同宽，fresh emit 恒误报）。 */
+ *  callRecords：evalProgramAbs 的执行态调用记录（今日域证据，与 emit 的
+ *  callsite case 同源——analyzeFn 以全证据实参重跑返回位；语法扫描会把
+ *  未执行的调用算进今日域，fresh emit 恒误报）。 */
 function interfaceDriftIssues(
   candidates: DriftCandidate[],
-  file: ReturnType<typeof parse>,
-  varAbs: Map<string, Abs>,
+  callRecords: AbsCallRecord[],
   evalResult: (fnName: string, args: Abs[]) => Abs | undefined,
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
   const wanted = new Set(candidates.map((c) => c.fnName));
-  const callsites = collectDriftCallsites(file, wanted, varAbs);
+  const callsites = driftCallsites(callRecords, wanted);
 
   for (const cand of candidates) {
     const sites = callsites.get(cand.fnName) ?? [];

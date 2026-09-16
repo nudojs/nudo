@@ -11,49 +11,28 @@ afterAll(() => {
 
 describe("interfaceConfig", () => {
   it("defaults when config is null/undefined or lacks the interface key", () => {
-    expect(interfaceConfig(undefined)).toEqual({ autoBind: true, emit: [], ignore: [] });
-    expect(interfaceConfig(null)).toEqual({ autoBind: true, emit: [], ignore: [] });
-    expect(interfaceConfig({})).toEqual({ autoBind: true, emit: [], ignore: [] });
+    expect(interfaceConfig(undefined)).toEqual({ autoBind: true });
+    expect(interfaceConfig(null)).toEqual({ autoBind: true });
+    expect(interfaceConfig({})).toEqual({ autoBind: true });
     // 向后兼容：既有键（env/mocks）存在时不改变 interface 段行为
     const legacy: NudoConfig = { env: ["es"], mocks: { fetch: "stub" } };
-    expect(interfaceConfig(legacy)).toEqual({ autoBind: true, emit: [], ignore: [] });
+    expect(interfaceConfig(legacy)).toEqual({ autoBind: true });
   });
 
   it("defaults when interface key is present but empty", () => {
-    expect(interfaceConfig({ interface: {} })).toEqual({ autoBind: true, emit: [], ignore: [] });
+    expect(interfaceConfig({ interface: {} })).toEqual({ autoBind: true });
   });
 
-  it("reads explicit autoBind/emit/ignore", () => {
-    const config: NudoConfig = {
-      interface: { autoBind: false, emit: ["src/a.nudo.js", "src/b.nudo.js"], ignore: ["dist/**"] },
-    };
-    expect(interfaceConfig(config)).toEqual({
-      autoBind: false,
-      emit: ["src/a.nudo.js", "src/b.nudo.js"],
-      ignore: ["dist/**"],
-    });
+  it("reads explicit autoBind", () => {
+    const config: NudoConfig = { interface: { autoBind: false } };
+    expect(interfaceConfig(config)).toEqual({ autoBind: false });
   });
 
-  it("reads partial overrides (autoBind:false alone)", () => {
-    expect(interfaceConfig({ interface: { autoBind: false } })).toEqual({
-      autoBind: false,
-      emit: [],
-      ignore: [],
-    });
-  });
-
-  it("returns defensive copies of emit/ignore arrays", () => {
-    const config: NudoConfig = { interface: { emit: ["a"], ignore: ["b"] } };
-    const norm = interfaceConfig(config);
-    norm.emit.push("c");
-    norm.ignore.push("d");
-    expect(config.interface?.emit).toEqual(["a"]);
-    expect(config.interface?.ignore).toEqual(["b"]);
-  });
-
-  it("non-array emit/ignore degrade to [] instead of throwing", () => {
-    const malformed = { interface: { emit: "src/a.nudo.js" } } as unknown as NudoConfig;
-    expect(interfaceConfig(malformed)).toEqual({ autoBind: true, emit: [], ignore: [] });
+  it("ignores unknown keys in the interface section (emit/ignore arrive with Phase 2)", () => {
+    // emit/ignore 白名单曾声明+归一化但全仓零消费（用户写了被静默忽略）——
+    // 已从类型面移除；写在 package.json 里的残留键不再是配置契约的一部分
+    const malformed = { interface: { emit: "src/a.nudo.js", ignore: ["dist/**"] } } as unknown as NudoConfig;
+    expect(interfaceConfig(malformed)).toEqual({ autoBind: true });
   });
 });
 
@@ -65,7 +44,7 @@ describe("findProjectConfig with interface key", () => {
       join(root, "package.json"),
       JSON.stringify({
         name: "iface-fixture",
-        nudo: { interface: { autoBind: false, emit: ["out.d.ts"], ignore: ["vendor/**"] } },
+        nudo: { interface: { autoBind: false } },
       }),
     );
     const deep = join(root, "packages", "lib", "src");
@@ -73,11 +52,7 @@ describe("findProjectConfig with interface key", () => {
 
     const found = findProjectConfig(deep);
     expect(found?.projectDir).toBe(root);
-    expect(interfaceConfig(found?.config)).toEqual({
-      autoBind: false,
-      emit: ["out.d.ts"],
-      ignore: ["vendor/**"],
-    });
+    expect(interfaceConfig(found?.config)).toEqual({ autoBind: false });
   });
 
   it("package.json without a nudo key yields null config and default interface settings", () => {
@@ -89,6 +64,6 @@ describe("findProjectConfig with interface key", () => {
 
     const found = findProjectConfig(sub);
     expect(found).toBeNull();
-    expect(interfaceConfig(found?.config)).toEqual({ autoBind: true, emit: [], ignore: [] });
+    expect(interfaceConfig(found?.config)).toEqual({ autoBind: true });
   });
 });

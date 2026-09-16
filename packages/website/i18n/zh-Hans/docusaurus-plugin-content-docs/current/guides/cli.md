@@ -454,11 +454,11 @@ export const scale = fn({ x: union(lit(42), lit("a")) }, number());
 $ nudo interface --emit calc.js --fn addTax
 calc.js: no interface changes
   skipped addTax (name-clash)
-calc.js: [error] nudo:interface-name-clash: sidecar already has a handwritten binding 'addTax' (calc.js); handwritten wins — skipping emit for it
+  [error] nudo:interface-name-clash: sidecar already has a handwritten binding 'addTax' (calc.js); handwritten wins — skipping emit for it
 # exit 1
 ```
 
-证据不变时重跑 `--emit` 是 no-op（`no interface changes`）；证据消失时（如 update 未带 `--callsites`），已固化段**原样保留**，绝不静默删除。
+证据不变时重跑 `--emit` 是 no-op（`no interface changes`）；证据消失时（如 update 未带 `--callsites`），已固化段**原样保留**，绝不静默删除。侧车自动绑定可用 `package.json` → `"nudo": { "interface": { "autoBind": false } }` 在项目级整体关闭——开关同样接线到 `nudo check` 与 LSP 执法路径，不只打印路径。
 
 固化段是快照：`nudo check` 对其做语义比较，源码演进时报 `nudo:interface-drift` warning——见 [check](../guides/check.md#interface-诊断)。
 

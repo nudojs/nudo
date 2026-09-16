@@ -21,6 +21,7 @@ import {
   instantiateConstraint,
   constraintToEntryAbs,
   fnConstraintToEntryReqs,
+  isIntFlag,
 } from "../constraint.ts";
 import { predToString } from "../pred.ts";
 
@@ -51,8 +52,16 @@ describe("shift(n)：数值常数界平移", () => {
 
   it("int 标志保留", () => {
     const c = number().int().gt(0).shift(1);
-    expect(c.int).toBe(true);
+    // builder 上 int 恒为链式方法（幂等可重复调用）；标志经 isIntFlag 统一读取
+    expect(isIntFlag(c)).toBe(true);
     expect(inst(c, "ms")).toBe("ms > 1");
+  });
+
+  it(".int() 重复调用幂等（方法遮蔽时期曾 TypeError）", () => {
+    const c = number().int().int().gt(0);
+    expect(isIntFlag(c)).toBe(true);
+    // int 位不进实例化 pred（toPlainConstraint 归一后仍是单一 gt 界）
+    expect(inst(c, "x")).toBe("x > 0");
   });
 
   it("不可变：原约束不受 shift 影响", () => {
@@ -348,11 +357,12 @@ describe("既有构建器回归（新形态不改变原语义）", () => {
     expect(inst(array(number().gt(0)), "xs")).toBe("true");
   });
 
-  it("int 链数据标志在 builder 上可见（方法遮蔽修复后）", () => {
+  it("int 链标志经 isIntFlag 可见（builder/纯数据统一读取）", () => {
     const withInt = number().int().gt(0);
-    expect(withInt.int).toBe(true);
-    // 未 int 链的约束上 .int 仍是链式方法
-    expect(typeof number().gt(0).int).toBe("function");
+    // builder 上 .int 恒为链式方法（重复调用幂等）；标志由 isIntFlag 承载
+    expect(typeof withInt.int).toBe("function");
+    expect(isIntFlag(withInt)).toBe(true);
+    expect(isIntFlag(number().gt(0))).toBe(false);
     // 归一化后标志忠实保留 / 不虚增
     expect(union(withInt).members![0]!.int).toBe(true);
     expect(union(number().gt(0)).members![0]!.int).toBeUndefined();

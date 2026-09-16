@@ -58,6 +58,8 @@ import {
   inferTool,
   interfaceTool,
   interfaceEmitTool,
+  interfacePositionalArgs,
+  interfaceEmitPositionalArgs,
   computeInterfaceLenses,
   type AgentToolDeps,
   type AgentToolResult,
@@ -904,30 +906,20 @@ connection.onExecuteCommand((params) => {
     });
   }
   // CodeLens passes interface print positionally: [uri, functionName?]
-  if (
-    params.command === "nudo.interface" &&
-    args.length >= 1 &&
-    typeof args[0] === "string"
-  ) {
-    return interfaceTool(
-      {
-        file: args[0] as string,
-        functionName: typeof args[1] === "string" ? (args[1] as string) : undefined,
-      },
-      agentToolDeps,
-    );
+  if (params.command === "nudo.interface") {
+    const bridged = interfacePositionalArgs(args);
+    if (bridged) return interfaceTool(bridged, agentToolDeps);
   }
   // CodeLens passes interfaceEmit positionally: [uri, functionName, mode]
-  if (
-    params.command === "nudo.interfaceEmit" &&
-    args.length >= 3 &&
-    typeof args[0] === "string"
-  ) {
-    return handleInterfaceEmit({
-      uri: args[0] as string,
-      functionName: args[1] as string,
-      mode: args[2] as "add" | "update",
-    });
+  if (params.command === "nudo.interfaceEmit") {
+    const bridged = interfaceEmitPositionalArgs(args);
+    if (bridged) {
+      return handleInterfaceEmit({
+        file: bridged.file,
+        functionName: bridged.functionName,
+        mode: bridged.mode,
+      });
+    }
   }
   return dispatchNudoCommand(params.command, (args[0] as Record<string, unknown>) ?? {});
 });

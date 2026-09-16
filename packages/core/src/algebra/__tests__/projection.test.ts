@@ -40,6 +40,7 @@ import {
   constraintToEntryAbs,
   instantiateConstraint,
   isNudoConstraint,
+  isIntFlag,
   lit as cLit,
   number,
   shape,
@@ -47,6 +48,7 @@ import {
   union,
   type NudoConstraint,
 } from "../constraint.ts";
+import { formatConstraint } from "../interface.ts";
 import { joinAbs } from "../objects.ts";
 
 /** 契约实例化成 Pred 的显示串（golden 比较用） */
@@ -128,7 +130,8 @@ describe("absToConstraint", () => {
         numVar("n", and(eq(app("%", [v("n"), lit(1)]), lit(0)), gt(v("n"), lit(0)))),
       );
       expect(c).toBeDefined();
-      expect(c!.int).toBe(true);
+      // 投影产物是 builder：int 标志经 isIntFlag 统一读取
+      expect(isIntFlag(c!)).toBe(true);
       expect(inst(c!)).toBe("x > 0");
     });
 
@@ -430,11 +433,14 @@ describe("joinThenProject（§4.2 先 join 再投影）", () => {
     expect(inst(c!)).toBe(inst(union(cLit(42), cLit("a"))));
   });
 
-  it("同 prim 字面量 join 丢 term（Phase A）→ number()", () => {
-    const c = joinThenProject([numLit(42), numLit(7)]);
-    expect(c).toBeDefined();
-    expect(c!.prim).toBe("number");
-    expect(c!.preds).toHaveLength(0);
+  it("同 prim 字面量 → union(lit…)（字面量快路径，顺序无关）", () => {
+    // joinValues 的同 prim 塌缩（Phase A 丢 term）曾使结果依赖证据顺序：
+    // [42,7,"a"] 一序 union 三字面量、另一序 not-projectable。快路径绕过
+    // join 直接聚合（去重 + typeof/value 排序），任意证据顺序产物一致。
+    const a = joinThenProject([numLit(42), numLit(7)]);
+    const b = joinThenProject([numLit(7), numLit(42)]);
+    expect(formatConstraint(a!)).toBe("union(lit(7), lit(42))");
+    expect(formatConstraint(b!)).toBe("union(lit(7), lit(42))");
   });
 
   it("混合 widened → undefined", () => {

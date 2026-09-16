@@ -38,7 +38,6 @@ export * from "./exec/index.ts";
 // modules/fs/path 属于 host（service/cli），不进代数
 export * from "./bridge.ts";
 export * from "./interface.ts";
-export * from "./domain-membership.ts";
 export * from "./projection.ts";
 // T10b：注入域证据检查经桶导出给 service analyzer（scan.ts 其余为 check.ts 内部机械）
 export { checkInjectedDomainEvidence, type InjectedDomainRecord } from "./scan.ts";

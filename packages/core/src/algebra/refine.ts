@@ -23,7 +23,9 @@ import type { Pred } from "./pred.ts";
 import { v as termVar } from "./term.ts";
 import { parseSource } from "./parse-source.ts";
 import { hashSource } from "./hash-source.ts";
-import { resolveDepPath } from "./load-deps-fp.ts";
+// leaf 模块：load-deps-fp.ts 已 import 本文件（extractNudoImports），
+// 反向 import 会成环——路径函数从 sidecar-path.ts 单源取用
+import { resolveDepPath } from "./sidecar-path.ts";
 import type { ImportDeclaration } from "@babel/types";
 import {
   type NudoConstraint,
@@ -78,7 +80,8 @@ export function extractNudoImports(source: string): NamedImport[] {
 export type RefineDiag = { code: string; message: string; file?: string };
 
 let refineDiagCollector: ((d: RefineDiag) => void) | null = null;
-const refineDiags: RefineDiag[] = [];
+let refineDiagSeq = 0;
+const refineDiags: Array<{ seq: number; d: RefineDiag }> = [];
 /** 防长会话无界增长；消费方 takeRefineDiags 按批取走 */
 const MAX_REFINE_DIAGS = 1024;
 
@@ -87,16 +90,33 @@ export function setRefineDiagCollector(fn: ((d: RefineDiag) => void) | null): vo
   refineDiagCollector = fn;
 }
 
+/** 当前诊断累计序号（since 锚） */
+export function refineDiagCount(): number {
+  return refineDiagSeq;
+}
+
 /** 取走已收集的诊断（收集即清空） */
 export function takeRefineDiags(): RefineDiag[] {
-  const out = refineDiags.slice();
+  const out = refineDiags.map((e) => e.d);
   refineDiags.length = 0;
+  return out;
+}
+
+/** 只取走 seq > since 的增量（工具面防窃取在途诊断；全量 take 的 since 版） */
+export function takeRefineDiagsSince(since: number): RefineDiag[] {
+  const out: RefineDiag[] = [];
+  let kept = 0;
+  for (const e of refineDiags) {
+    if (e.seq > since) out.push(e.d);
+    else refineDiags[kept++] = e;
+  }
+  refineDiags.length = kept;
   return out;
 }
 
 function collectDiag(d: RefineDiag): void {
   if (refineDiags.length >= MAX_REFINE_DIAGS) refineDiags.shift();
-  refineDiags.push(d);
+  refineDiags.push({ seq: ++refineDiagSeq, d });
   refineDiagCollector?.(d);
 }
 
@@ -168,13 +188,19 @@ function sidecarImportNames(stmt: ImportDeclaration): SidecarImportName[] {
  * - import 全部剥离（构建器注入 / 相对 .nudo 递归的绑定由 prologue 生成）；
  * - `export const` 剥 export、收集导出名；其余 export 形式剥除 + 收集
  *   nudo:interface-load 诊断（loader 只认 export const）；
+ * - `.nudo.ts` 入口额外剥除 TS 语法（类型注解/类型声明/as/satisfies/
+ *   非空断言/泛型参数）——Babel 的 TS 节点区间含冒号（`": number"`），
+ *   纯区间切除即得合法 JS；不带注解的 JS 风格 .nudo.ts 天然零切除；
  * - 只动 AST 节点区间——注释/字符串里的同形文本不参与（正则剥壳的误伤源）。
  */
 function rewriteSidecarSource(
   src: string,
   fromFile: string | undefined,
 ): { code: string; exportNames: string[]; imports: SidecarImport[] } {
-  const ast = parseSource(src);
+  // .nudo.ts 需要未剥除 TS 的 AST（keepTs）——类型注解/声明的区间才能切除；
+  // 默认路径照旧走剥除（全链消费方依赖剥除后形态）
+  const keepTs = fromFile?.endsWith(".nudo.ts") === true;
+  const ast = parseSource(src, keepTs ? { keepTs: true } : undefined);
   const cuts: Array<{ start: number; end: number; text: string }> = [];
   const exportNames: string[] = [];
   const imports: SidecarImport[] = [];
@@ -190,6 +216,19 @@ function rewriteSidecarSource(
   for (const stmt of ast.program.body) {
     if (stmt.type === "ImportDeclaration") {
       imports.push({ spec: stmt.source.value, names: sidecarImportNames(stmt) });
+      if (stmt.start != null && stmt.end != null) {
+        cuts.push({ start: stmt.start, end: stmt.end, text: "" });
+      }
+      continue;
+    }
+    // `export type X = …` / `export interface X {…}`：类型声明整体移除（非坏导出）
+    if (
+      stmt.type === "ExportNamedDeclaration" &&
+      stmt.declaration &&
+      (stmt.declaration.type === "TSTypeAliasDeclaration" ||
+        stmt.declaration.type === "TSInterfaceDeclaration" ||
+        stmt.declaration.type === "TSEnumDeclaration")
+    ) {
       if (stmt.start != null && stmt.end != null) {
         cuts.push({ start: stmt.start, end: stmt.end, text: "" });
       }
@@ -255,15 +294,124 @@ function rewriteSidecarSource(
     }
   }
 
+  // .nudo.ts：收集 TS 子语法区间（类型注解/类型声明/as/!/泛型）一并切除。
+  // 区间与语句级 cuts 可能重叠（如 declare 语句）——排序后合并重叠段。
+  if (fromFile?.endsWith(".nudo.ts")) {
+    for (const cut of collectTsSyntaxCuts(ast.program, src)) {
+      cuts.push({ start: cut.start, end: cut.end, text: "" });
+    }
+  }
+
   cuts.sort((a, b) => a.start - b.start);
+  // 合并重叠区间（替换文本均为 ""，取并集等价）；套入原文切片
+  const merged: Array<{ start: number; end: number }> = [];
+  for (const c of cuts) {
+    const last = merged[merged.length - 1];
+    if (last && c.start <= last.end) {
+      last.end = Math.max(last.end, c.end);
+    } else {
+      merged.push({ start: c.start, end: c.end });
+    }
+  }
   let code = "";
   let pos = 0;
-  for (const c of cuts) {
-    code += src.slice(pos, c.start) + c.text;
+  for (const c of merged) {
+    code += src.slice(pos, c.start);
     pos = c.end;
   }
   code += src.slice(pos);
   return { code, exportNames, imports };
+}
+
+/** 纯类型语句：整体删除（运行时无对应语义；enum 的反向映射本引擎不支持） */
+const TS_STMT_CUT_TYPES = new Set([
+  "TSInterfaceDeclaration",
+  "TSTypeAliasDeclaration",
+  "TSEnumDeclaration",
+  "TSDeclareFunction",
+  "TSModuleDeclaration",
+  "TSImportEqualsDeclaration",
+]);
+
+/**
+ * TS 子语法区间收集（节点区间均含标点：TSTypeAnnotation 含冒号、
+ * TSTypeParameterDeclaration 含尖括号——探针实测 Babel 区间语义）。
+ */
+function collectTsSyntaxCuts(
+  node: unknown,
+  src: string,
+  cuts: Array<{ start: number; end: number }> = [],
+): Array<{ start: number; end: number }> {
+  if (!node || typeof node !== "object") return cuts;
+  if (Array.isArray(node)) {
+    for (const x of node) collectTsSyntaxCuts(x, src, cuts);
+    return cuts;
+  }
+  const o = node as Record<string, unknown> & {
+    type?: string;
+    start?: number;
+    end?: number;
+  };
+  if (typeof o.start === "number" && typeof o.end === "number") {
+    if (typeof o.type === "string" && TS_STMT_CUT_TYPES.has(o.type)) {
+      cuts.push({ start: o.start, end: o.end });
+      return cuts; // 整语句删除，不深入
+    }
+    if (o.type === "TSAsExpression" || o.type === "TSSatisfiesExpression") {
+      collectTsSyntaxCuts(o.expression, src, cuts);
+      const exprEnd = (o.expression as { end?: number } | undefined)?.end;
+      if (typeof exprEnd === "number") cuts.push({ start: exprEnd, end: o.end });
+      return cuts;
+    }
+    if (o.type === "TSNonNullExpression") {
+      collectTsSyntaxCuts(o.expression, src, cuts);
+      const exprEnd = (o.expression as { end?: number } | undefined)?.end;
+      if (typeof exprEnd === "number") cuts.push({ start: exprEnd, end: o.end });
+      return cuts;
+    }
+    if (o.type === "TSTypeAssertion") {
+      collectTsSyntaxCuts(o.expression, src, cuts);
+      const exprStart = (o.expression as { start?: number } | undefined)?.start;
+      if (typeof exprStart === "number") cuts.push({ start: o.start, end: exprStart });
+      return cuts;
+    }
+    // 类型注解（宿主 Identifier/Pattern/ClassProperty 等的 typeAnnotation）：
+    // 宿主节点区间含注解，切除注解本体 + 可选 `?` 前缀（`x?: string`）
+    const ta = o.typeAnnotation as { start?: number; end?: number } | undefined;
+    if (ta && typeof ta.start === "number" && typeof ta.end === "number") {
+      let start = ta.start;
+      if (src[start - 1] === "?") start -= 1;
+      cuts.push({ start, end: ta.end });
+    }
+    // 返回类型注解（函数/箭头）：区间同样含冒号
+    const rt = o.returnType as { start?: number; end?: number } | undefined;
+    if (rt && typeof rt.start === "number" && typeof rt.end === "number") {
+      cuts.push({ start: rt.start, end: rt.end });
+    }
+    // 泛型参数声明 `<T extends …>` / 泛型实参 `f<number>(…)`
+    for (const key of ["typeParameters", "typeArguments"] as const) {
+      const tp = o[key] as { start?: number; end?: number } | undefined;
+      if (tp && typeof tp.start === "number" && typeof tp.end === "number") {
+        cuts.push({ start: tp.start, end: tp.end });
+      }
+    }
+    // 无注解的可选参数 `x?`（`?` 紧跟标识符，宿主区间不含）
+    if (o.optional === true && !ta && typeof o.end === "number" && src[o.end] === "?") {
+      cuts.push({ start: o.end, end: o.end + 1 });
+    }
+    // declare 修饰（`declare const x: …` / `declare class`）：整语句删除
+    if (o.declare === true) {
+      cuts.push({ start: o.start, end: o.end });
+      return cuts;
+    }
+  }
+  for (const key of Object.keys(o)) {
+    if (key === "loc" || key === "leadingComments" || key === "trailingComments" || key === "innerComments") {
+      continue;
+    }
+    collectTsSyntaxCuts(o[key], src, cuts);
+  }
+  return cuts;
 }
 
 /**
@@ -308,6 +456,12 @@ function execSidecar(
             prologue.push(`var ${n.local} = __nudoInjects[${JSON.stringify(n.imported)}];`);
           }
         } else {
+          // default import：侧车无默认导出概念——显式诊断（不再静默 undefined）
+          collectDiag({
+            code: "nudo:interface-load",
+            message: `sidecar default import '${n.local}' from '${imp.spec}' has no default export to bind (sidecars export named constraints only)`,
+            file: fromFile,
+          });
           prologue.push(`var ${n.local} = undefined;`);
         }
       }

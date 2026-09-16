@@ -15,8 +15,11 @@ import { dirname, resolve } from "node:path";
 import {
   effectiveInterface,
   formatConstraint,
+  interfaceDiagCount,
   localNamedExports,
-  takeInterfaceDiags,
+  refineDiagCount,
+  takeInterfaceDiagsSince,
+  takeRefineDiagsSince,
   typeValueToString,
 } from "@nudojs/core";
 import { analyzeFileAsync } from "./analyzer.ts";
@@ -42,6 +45,15 @@ export type InterfaceSurfaceOpts = {
   records?: CallRecord[];
 };
 
+/** 单条 interface 打印行（CLI runInterface 与 LSP agent 面共用） */
+export function formatInterfaceSurfaceLine(e: InterfaceSurfaceEntry): string {
+  const params = `(${e.params.map((p) => `${p.name}: ${p.display}`).join(", ")})`;
+  let line = `  ${e.fn}  [${e.source}]  ${params}`;
+  if (e.returns !== undefined) line += ` → ${e.returns}`;
+  if (e.kind === "local") line += "  (local)";
+  return line;
+}
+
 /**
  * 单文件 interface 表面：analyzer 推断结果给出函数清单与 implicit 展示，
  * effectiveInterface 给出契约命中（手写 > 生成段）。诊断 side-channel
@@ -53,6 +65,10 @@ export async function interfaceSurface(
 ): Promise<InterfaceSurfaceEntry[]> {
   const abs = resolve(filePath);
   const source = readFileSync(abs, "utf-8");
+  // since 锚：收尾只排干本次打印自身产生的诊断——全量 take 会在 LSP 长驻
+  // 进程的 await 窗口窃取在途 validateText 待消费诊断（接口/精化两通道同防）
+  const ifaceSince = interfaceDiagCount();
+  const refineSince = refineDiagCount();
   const autoBind =
     opts.autoBind ?? interfaceConfig(findProjectConfig(dirname(abs))?.config).autoBind;
   const loadModule = opts.loadModule ?? defaultLoadModule;
@@ -95,6 +111,7 @@ export async function interfaceSurface(
     entries.push({ fn: fn.name, kind: kindOf(fn.name), source: "implicit", params, returns: ret });
   }
 
-  takeInterfaceDiags(); // 清空 side-channel，防跨命令泄漏陈旧诊断
+  takeInterfaceDiagsSince(ifaceSince); // 清空本次增量，防跨命令/在途验证互窃
+  takeRefineDiagsSince(refineSince);
   return entries;
 }

@@ -429,7 +429,7 @@ Sidecars are real JS modules: they may import builders from `@nudojs/core` and c
 | `.gt(n)` `.ge(n)` `.lt(n)` `.le(n)` `.int()` | numeric bounds (chained) | `number().gt(0).int()` |
 | `.min(n)` `.max(n)` | string length bounds (`length(s)` pred) | `string().min(1)` |
 | `.shift(n)` | translate every constant bound by `+n` | `positive.shift(1)` |
-| `.and(...cs)` | conjunction | `positive.and(number().lt(10))` |
+| `and(...cs)` | scalar conjunction (top-level function, not a chained method) | `and(positive, number().lt(10))` |
 | `partial(c)` / `pick(c, keys)` / `omit(c, keys)` | shape utilities | `partial(user)` |
 
 `shift` is legal only on numeric scalar chains (every bound's right side is a literal); anything else throws. `partial`/`pick`/`omit` accept `shape(...)` constraints.

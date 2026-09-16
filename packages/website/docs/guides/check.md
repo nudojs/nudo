@@ -67,7 +67,7 @@ Contracts in `*.nudo.js` sidecars (and generated `@generated` segments) get thei
 |------|----------|---------|
 | `nudo:interface-cycle` | error | Sidecars importing each other in a cycle |
 | `nudo:interface-load` | error | Sidecar fails to load/evaluate, or uses an unrecognized export form |
-| `nudo:interface-conflict` | error | Source `@nudo:refine` and sidecar binding for the same parameter are contradictory (`x > 0 ∧ x < 0`) |
+| `nudo:interface-conflict` | error | Source `@nudo:refine` and sidecar binding for the same parameter (or the return position) are contradictory (`x > 0 ∧ x < 0`); a contradicted position skips enforcement rather than blaming the function body |
 | `nudo:interface-domain-exceeds` | error | **Cross-file** injected call evidence ⊄ **handwritten** contract (the interface is being used past its contract) |
 | `nudo:interface-drift` | warning | Persisted `@generated` segment ≠ today's recomputed interface (semantic comparison, param and return positions) |
 | `nudo:interface-name-clash` | error | `nudo interface --emit` target is already a handwritten sidecar binding (handwritten wins, write skipped) |
@@ -110,7 +110,7 @@ issues
       → 重跑 nudo interface --emit 刷新生成段，或核对返回值
 ```
 
-Drift warnings do not fail `nudo check` (exit `0`); all six codes appear in the check-gold and real-package zero-FP suites. See [@nudo:refine](../concepts/directives.md#nudorefine--refinement-contract) for the contract forms.
+Drift warnings do not fail `nudo check` (exit `0`). Coverage by code: `nudo:interface-drift` and `nudo:interface-domain-exceeds` are pinned in the check-gold fixtures; `nudo:interface-load` / `nudo:interface-cycle` / `nudo:interface-conflict` are covered by the wiring, loader and emitter suites (`check-interface-wiring`, `refine-loader`, `interface-emitter`); `nudo:interface-name-clash` lives in the emitter/agent suites. See [@nudo:refine](../concepts/directives.md#nudorefine--refinement-contract) for the contract forms.
 
 ## Report shape (Abs-first)
 

@@ -107,6 +107,17 @@ export type ConstraintBuilder = NudoConstraint & {
   optional(): ConstraintBuilder;
 };
 
+/** 已链 .int() 的 builder 对象（int 数据标志与链式方法同名，WeakSet 承载） */
+const intFlaggedBuilders = new WeakSet<object>();
+
+/**
+ * builder 与纯数据形态统一的 int 标志读取：纯数据看 `int === true`，
+ * builder（int 是链式方法）查 WeakSet。toPlainConstraint 归一化后只剩前者。
+ */
+export function isIntFlag(c: NudoConstraint): boolean {
+  return c.int === true || intFlaggedBuilders.has(c as object);
+}
+
 function makeBuilder(
   prim: PrimName | undefined,
   preds: Pred[],
@@ -125,23 +136,25 @@ function makeBuilder(
   const optional = extra?.optional;
   const members = extra?.members;
   const fnSlot = extra?.fn;
+  // base 不携带 int 键（methods-last 下会被同名方法覆盖，信息反而丢失）：
+  // int 标志经 intFlaggedBuilders WeakSet 承载，归一化时由 isIntFlag 落回数据
   const base: NudoConstraint = {
     __nudoConstraint: true,
     ...(prim ? { prim } : {}),
     preds: [...preds],
     ...(fields ? { fields } : {}),
     ...(element ? { element } : {}),
-    ...(isInt ? { int: true } : {}),
     ...(optional ? { isOptional: true } : {}),
     ...(members ? { members } : {}),
     ...(fnSlot ? { fn: fnSlot } : {}),
   };
   const add = (p: Pred): ConstraintBuilder =>
     makeBuilder(prim, [...preds, p], extra);
-  // 方法先赋、base 后赋：`int: true` 数据标志覆盖同名链式方法——
-  // 否则 int 标志永远被方法遮蔽（.int() 已在链上调用过，二次调用无意义）。
-  return Object.assign(
+  // base 先赋、方法后赋：所有链式方法（含 .int() 的重复幂等调用）恒可用；
+  // int 数据可见性由 isIntFlag 统一读取（域判定 / 显示 / 归一化）。
+  const builder = Object.assign(
     Object.create(null),
+    base,
     {
       gt: (n: number) => add(gt(selfTerm(), termLit(n))),
       ge: (n: number) => add(ge(selfTerm(), termLit(n))),
@@ -161,8 +174,9 @@ function makeBuilder(
       },
       optional: () => makeBuilder(prim, preds, { ...extra, optional: true }),
     },
-    base,
   ) as ConstraintBuilder;
+  if (isInt) intFlaggedBuilders.add(builder as object);
+  return builder;
 }
 
 /** 常数界平移：每个 gt/ge/lt/le 右端数字 lit +n；非法形态 throw */
@@ -234,8 +248,8 @@ function toPlainConstraint(c: NudoConstraint): NudoConstraint {
     preds: [...c.preds],
     ...(c.fields ? { fields: c.fields } : {}),
     ...(c.element ? { element: c.element } : {}),
-    // 严格 === true：未 int 链的 builder 上 c.int 是同名方法（truthy）
-    ...(c.int === true ? { int: true } : {}),
+    // isIntFlag 统一读取：builder（int 是方法）查 WeakSet，纯数据看 === true
+    ...(isIntFlag(c) ? { int: true } : {}),
     ...(c.isOptional ? { isOptional: true } : {}),
     ...(c.members ? { members: c.members } : {}),
     ...(c.fn ? { fn: c.fn } : {}),
@@ -307,8 +321,8 @@ export function and(
       prim = c.prim;
     }
     preds.push(...c.preds);
-    // 严格 === true：未 int 链的 builder 上 c.int 是同名方法（truthy）
-    if (c.int === true) isInt = true;
+    // isIntFlag 统一读取：builder（int 是方法）查 WeakSet，纯数据看 === true
+    if (isIntFlag(c)) isInt = true;
     if (!c.isOptional) allOptional = false;
   }
   return makeBuilder(prim, preds, {
@@ -521,9 +535,21 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
   }
   // union：各成员 entry Abs 的 joinAbs（joinValues 按需 sum/prim 并）
   if (c.members) {
-    return c.members
+    const joined = c.members
       .map((m) => constraintOnTermAbs(m, t))
       .reduce((a, b) => joinAbs(a, b));
+    // 同 prim 字面量成员经 joinValues 塌缩丢 term/pred——重锚定参数项并补
+    // typeof，与裸 prim 链（number()/string()）的 entry Abs 同构（drift 双向
+    // leq 的锚定对称性；塌缩仅发生在 pred 被丢尽的形态，无信息可再损失）
+    if (
+      joined.shape.k === "prim" &&
+      joined.pred === undefined &&
+      c.members.every((m) => m.prim === (joined.shape as { type: unknown }).type)
+    ) {
+      const type = (joined.shape as { type: PrimName }).type;
+      return abs({ k: "prim", type }, t, ptypeof(t, type), "path");
+    }
+    return joined;
   }
   // fn 形态出现在参数位：无标量 entry 表达，退化 unknown（不 throw——
   // entry@ 生成等入口会把任意约束喂进来；逐参约束由 fnConstraintToEntryReqs 消费）
@@ -539,6 +565,19 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
   const predOut = pred.op === "true" ? undefined : pred;
   if (c.prim) {
     return abs({ k: "prim", type: c.prim }, t, predOut, "path");
+  }
+  // lit(null)：null 无 prim 域（prim 缺失 + eq(self, null)）——unknown 形状
+  // 挂 eq 谓词，不落 number 回退（typeof null ≠ "number"，污染 join/leq 锚定）
+  const allEqNull =
+    c.preds.length > 0 &&
+    c.preds.every(
+      (p) =>
+        p.op === "eq" &&
+        ((p.b.op === "lit" && p.b.value === null) ||
+          (p.a.op === "lit" && p.a.value === null)),
+    );
+  if (allEqNull) {
+    return abs({ k: "unknown" }, t, predOut, "path");
   }
   // 有界但无 prim：按 number 处理（number().gt(0) 已带 prim）
   if (c.preds.length > 0) {

@@ -22,6 +22,8 @@ import {
   isNudoTargetPath,
   collectDtsFromEntry,
   evictAnalysisCachesForFiles,
+  formatEmitSummary,
+  formatInterfaceSurfaceLine,
   type CallRecord,
   type CaseResult,
   type FunctionAnalysis,
@@ -349,10 +351,18 @@ async function runCheck(file: string, opts: { json?: boolean } = {}): Promise<vo
   const source = readFileSync(filePath, "utf-8");
 
   const { checkSource, formatCheckReport, serializeCheckJson, pTrue } = await import("@nudojs/core");
-  const { defaultLoadModule: loadModule } = await import("@nudojs/service");
+  const {
+    defaultLoadModule: loadModule,
+    findProjectConfig,
+    interfaceConfig,
+  } = await import("@nudojs/service");
+  // package.json#nudo.interface.autoBind 覆盖 check 执法路径（§2.2「整体
+  // 关闭」承诺：不只打印路径——false 时侧车 ambient 绑定整体停用）
+  const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
   const algebraReport = checkSource(filePath, source, pTrue, {
     loadModule,
     fromFile: filePath,
+    ...(autoBind === false ? { autoBind: false } : {}),
   });
 
   if (opts.json) {
@@ -507,11 +517,7 @@ async function runInterface(file: string, records?: CallRecord[]): Promise<void>
     return;
   }
   for (const e of entries) {
-    const params = `(${e.params.map((p) => `${p.name}: ${p.display}`).join(", ")})`;
-    let line = `  ${e.fn}  [${e.source}]  ${params}`;
-    if (e.returns !== undefined) line += ` → ${e.returns}`;
-    if (e.kind === "local") line += "  (local)";
-    console.log(line);
+    console.log(formatInterfaceSurfaceLine(e));
   }
   console.log();
 }
@@ -537,23 +543,15 @@ async function runInterfaceEmit(
     records: opts.records,
   });
   const rel = relative(process.cwd(), filePath) || filePath;
-  if (result.changed) {
-    if (opts.dryRun) {
-      console.log(`[dry-run] would update ${rel}:`);
-      console.log(result.diff ?? "");
-    } else {
-      const sc = relative(process.cwd(), result.sidecarPath) || result.sidecarPath;
-      console.log(`Updated ${rel} → ${sc}`);
-      console.log(`  written: ${result.written.join(", ") || "(none)"}`);
-    }
+  if (result.changed && opts.dryRun) {
+    console.log(`[dry-run] would update ${rel}:`);
+    console.log(result.diff ?? "");
   } else {
-    console.log(`${rel}: no interface changes`);
+    const sc = relative(process.cwd(), result.sidecarPath) || result.sidecarPath;
+    for (const line of formatEmitSummary(rel, sc, result)) console.log(line);
   }
-  for (const s of result.skipped.filter((x) => x.reason !== "no-change")) {
-    console.log(`  skipped ${s.fn} (${s.reason})`);
-  }
+  // issues 已由 formatEmitSummary 打印（CLI 与 agent 面同骨架）；退出码仍按错误定档
   for (const i of result.issues) {
-    console.error(`${rel}: [${i.severity}] ${i.code}: ${i.message}`);
     if (i.severity === "error") process.exitCode = 1;
   }
   if (opts.exitOnDiff && result.changed) process.exitCode = 1;
