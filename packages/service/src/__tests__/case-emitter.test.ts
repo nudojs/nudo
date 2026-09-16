@@ -2,7 +2,7 @@
 // 该模块为新建（调用点固化：序列化合成 case、剥离/插入 @nudo:case 指令、
 // unified diff），此前无既有测试归属文件，故独立成文件。
 import { describe, it, expect } from "vitest";
-import { T, createEnvironment, typeValueEquals, type TypeValue } from "@nudojs/core";
+import { T, createEnvironment, typeValueEquals, typeValueToAbs, litValue, type TypeValue } from "@nudojs/core";
 import { parse, extractDirectives, parseTypeValueExpr, type CaseDirective } from "@nudojs/parser";
 import {
   serializeCaseArg,
@@ -71,6 +71,7 @@ function makeFn(
     cases: cases.map((c) => ({
       name: c.name,
       args: c.args,
+      argAbs: c.args.map(typeValueToAbs),
       result: T.unknown,
       throws: T.never,
       source: c.source,
@@ -190,20 +191,20 @@ describe("serializeCaseArg", () => {
 
 describe("buildCaseDirective", () => {
   it("builds a single directive line without trailing newline", () => {
-    expect(buildCaseDirective("call@L3", [T.number, T.literal(1)])).toBe(
+    expect(buildCaseDirective("call@L3", [typeValueToAbs(T.number), typeValueToAbs(T.literal(1))])).toBe(
       ' * @nudo:case "call@L3" (T.number, 1)',
     );
     expect(buildCaseDirective("x", [])).toBe(' * @nudo:case "x" ()');
   });
 
   it("propagates unserializable args as null", () => {
-    expect(buildCaseDirective("call@L3", [T.number, T.promise(T.string)])).toBeNull();
-    expect(buildCaseDirective("call@L3", [T.instanceOf("Error")])).toBeNull();
+    expect(buildCaseDirective("call@L3", [typeValueToAbs(T.number), typeValueToAbs(T.promise(T.string))])).toBeNull();
+    expect(buildCaseDirective("call@L3", [typeValueToAbs(T.instanceOf("Error"))])).toBeNull();
   });
 
   it("rejects names the case-name regex cannot carry", () => {
-    expect(buildCaseDirective('bad"name', [T.number])).toBeNull();
-    expect(buildCaseDirective("bad\nname", [T.number])).toBeNull();
+    expect(buildCaseDirective('bad"name', [typeValueToAbs(T.number)])).toBeNull();
+    expect(buildCaseDirective("bad\nname", [typeValueToAbs(T.number)])).toBeNull();
   });
 });
 
@@ -523,9 +524,9 @@ b2("s");
     const fwd = extractDirectives(parse(result.source)).find((f) => f.name === "add")!;
     const caseDirs = fwd.directives.filter((d): d is CaseDirective => d.kind === "case");
     expect(caseDirs.map((d) => d.name)).toEqual(["call@L1"]);
-    expect(caseDirs[0].args).toHaveLength(2);
-    expect(structurallyEqual(caseDirs[0].args[0], T.literal(1))).toBe(true);
-    expect(structurallyEqual(caseDirs[0].args[1], argTuple)).toBe(true);
+    expect(caseDirs[0].argsAbs).toHaveLength(2);
+    expect(litValue(caseDirs[0].argsAbs[0]!)).toBe(1);
+    expect(caseDirs[0].argsAbs[1]!.shape.k).toBe("obj");
   });
 });
 
@@ -553,10 +554,10 @@ function unused(u) {
     const fwd = extractDirectives(parse(result.source)).find((f) => f.name === "add")!;
     const caseDirs = fwd.directives.filter((d): d is CaseDirective => d.kind === "case");
     expect(caseDirs.map((c) => c.name)).toEqual(["call@L4", "call@L5"]);
-    expect(structurallyEqual(caseDirs[0].args[0], T.literal(1))).toBe(true);
-    expect(structurallyEqual(caseDirs[0].args[1], T.literal(2))).toBe(true);
-    expect(structurallyEqual(caseDirs[1].args[0], T.literal("x"))).toBe(true);
-    expect(structurallyEqual(caseDirs[1].args[1], T.literal("y"))).toBe(true);
+    expect(litValue(caseDirs[0].argsAbs[0]!)).toBe(1);
+    expect(litValue(caseDirs[0].argsAbs[1]!)).toBe(2);
+    expect(litValue(caseDirs[1].argsAbs[0]!)).toBe("x");
+    expect(litValue(caseDirs[1].argsAbs[1]!)).toBe("y");
   });
 
   it("strip(insert(x)) recovers the original source", () => {

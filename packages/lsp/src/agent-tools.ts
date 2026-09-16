@@ -518,7 +518,7 @@ export function suggestCase(params: FunctionToolParams, deps: AgentToolDeps = {}
       // 全部为合成 case 时可产出直接粘贴回源码的指令文本
       if (fn.cases.every((c) => c.source === "callsite")) {
         const directives = fn.cases
-          .map((c) => buildCaseDirective(c.name, c.args))
+          .map((c) => buildCaseDirective(c.name, c.argAbs ?? []))
           .filter((d): d is string => d !== null);
         if (directives.length > 0) {
           const skipped = fn.cases.length - directives.length;

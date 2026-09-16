@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "../parse.ts";
 import { extractDirectives, parseTypeValueExpr } from "../directives.ts";
-import { T, typeValueEquals } from "@nudojs/core";
+import { T, typeValueEquals, litValue } from "@nudojs/core";
 
 describe("parseTypeValueExpr", () => {
   it("parses T.number", () => {
@@ -111,16 +111,16 @@ function calc(a, b) {
     expect(d0.kind).toBe("case");
     if (d0.kind !== "case") throw new Error("expected case directive");
     expect(d0.name).toBe("concrete");
-    expect(d0.args).toHaveLength(2);
-    expect(typeValueEquals(d0.args[0], T.literal(1))).toBe(true);
-    expect(typeValueEquals(d0.args[1], T.literal(2))).toBe(true);
+    expect(d0.argsAbs).toHaveLength(2);
+    expect(litValue(d0.argsAbs[0]!)).toBe(1);
+    expect(litValue(d0.argsAbs[1]!)).toBe(2);
 
     const d1 = results[0].directives[1];
     expect(d1.kind).toBe("case");
     if (d1.kind !== "case") throw new Error("expected case directive");
     expect(d1.name).toBe("symbolic");
-    expect(typeValueEquals(d1.args[0], T.number)).toBe(true);
-    expect(typeValueEquals(d1.args[1], T.number)).toBe(true);
+    expect(d1.argsAbs[0]!.shape.k).toBe("prim");
+    expect(d1.argsAbs[1]!.shape.k).toBe("prim");
   });
 
   it("extracts from multiple functions", () => {
@@ -168,9 +168,9 @@ function greet(a, b) { return a + b; }
     const results = extractDirectives(ast);
     const d = results[0].directives[0];
     if (d.kind !== "case") throw new Error("expected case directive");
-    expect(d.args).toHaveLength(2);
-    expect(typeValueEquals(d.args[0], T.literal("hello"))).toBe(true);
-    expect(typeValueEquals(d.args[1], T.literal("world"))).toBe(true);
+    expect(d.argsAbs).toHaveLength(2);
+    expect(litValue(d.argsAbs[0]!)).toBe("hello");
+    expect(litValue(d.argsAbs[1]!)).toBe("world");
   });
 
   it("extracts arrow function literal as case argument", () => {
@@ -185,12 +185,8 @@ function apply(items, cb) { return items; }
     const d = results[0].directives[0];
     expect(d.kind).toBe("case");
     if (d.kind !== "case") throw new Error("expected case directive");
-    expect(d.args[0].kind).toBe("tuple");
-    expect(d.args[1].kind).toBe("function");
-    if (d.args[1].kind === "function") {
-      expect(d.args[1].params).toEqual(["a"]);
-      expect(d.args[1].body.type).toBe("BinaryExpression");
-    }
+    expect(d.argsAbs[0]!.shape.k).toBe("tuple");
+    expect(d.argsAbs[1]!.shape.k).toBe("fn");
   });
 
   it("extracts arrow function inside nested object literal in case", () => {
@@ -205,13 +201,10 @@ function use(opts) { return opts; }
     const d = results[0].directives[0];
     expect(d.kind).toBe("case");
     if (d.kind !== "case") throw new Error("expected case directive");
-    expect(d.args[0].kind).toBe("object");
-    if (d.args[0].kind === "object") {
-      const fn = d.args[0].properties.fn;
-      expect(fn.kind).toBe("function");
-      if (fn.kind === "function") {
-        expect(fn.params).toEqual(["a"]);
-      }
+    expect(d.argsAbs[0]!.shape.k).toBe("obj");
+    if (d.argsAbs[0]!.shape.k === "obj") {
+      const fn = d.argsAbs[0]!.shape.slots.fn?.value;
+      expect(fn?.shape.k).toBe("fn");
     }
   });
 });

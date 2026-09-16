@@ -1,4 +1,4 @@
-import { type TypeValue } from "@nudojs/core";
+import { type Abs, type TypeValue, absToTypeValue } from "@nudojs/core";
 import { parse, extractDirectives } from "@nudojs/parser";
 import type { CaseDirective } from "@nudojs/parser";
 import type { AnalysisResult } from "./analyzer.ts";
@@ -130,12 +130,13 @@ export function serializeCaseArg(tv: TypeValue): string | null {
 /**
  * 组装单行 ` * @nudo:case "name" (a, b)` 指令文本（无尾换行）。
  * 任一实参不可序列化、或名字含双引号/换行（名字正则 `"([^"]+)"` 承载不了）→ 整体 null。
+ * 序列化经 Abs → TypeValue 桥（serializeCaseArg 仍吃 TypeValue 文法）。
  */
-export function buildCaseDirective(name: string, args: TypeValue[]): string | null {
+export function buildCaseDirective(name: string, argsAbs: Abs[]): string | null {
   if (name.includes('"') || /[\r\n]/.test(name)) return null;
   const parts: string[] = [];
-  for (const arg of args) {
-    const s = serializeCaseArg(arg);
+  for (const arg of argsAbs) {
+    const s = serializeCaseArg(absToTypeValue(arg));
     if (s === null) return null;
     parts.push(s);
   }
@@ -285,7 +286,7 @@ export function insertGeneratedCaseDirectives(source: string, analysis: Analysis
     const built: string[] = [];
     const names: string[] = [];
     for (const c of callsiteCases) {
-      const directive = buildCaseDirective(c.name, c.args);
+      const directive = buildCaseDirective(c.name, c.argAbs ?? []);
       if (directive === null) {
         skipped.push({ fn: fn.name, reason: "no-serializable-cases", detail: `case ${c.name} not serializable` });
       } else {

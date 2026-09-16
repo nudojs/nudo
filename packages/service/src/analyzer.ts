@@ -7,7 +7,6 @@ import {
   T,
   typeValueToString,
   simplifyUnion,
-  widenLiteral,
   collapseLiteralUnion,
   createEnvironment,
   isSubtypeOf,
@@ -39,6 +38,15 @@ import { parse, extractDirectives, extractFileDirectives, parseTypeValueExpr } f
 import type { FunctionWithDirectives, SinonExpression } from "@nudojs/parser";
 import {
   type CallRecord,
+  absStructureKey,
+  collapseAbsLits,
+  isLeakedCallRecord,
+  isOversizedCallRecord,
+  joinAllAbs,
+  neverAbs,
+  undefAbs,
+  widenJoinAbs,
+  widenAbsPrim,
 } from "./evaluator/call-record.ts";
 import { loadEnvs, preloadPathEnvs } from "./evaluator/env-loader.ts";
 import { findProjectConfig, interfaceConfig } from "./evaluator/config.ts";
@@ -662,75 +670,26 @@ function typeStructureKeyUncached(tv: TypeValue, seen: Set<object>): string {
 const MAX_PRECISE_CALLSITE_CASES = 3;
 const COLLAPSE_LITERAL_THRESHOLD = 4;
 
-/** widenLiteral for unions: widen each member, then dedupe (1|2|…|20 → number). */
-function widenType(tv: TypeValue): TypeValue {
-  if (tv.kind === "union") return simplifyUnion(tv.members.map(widenLiteral));
-  return widenLiteral(tv);
-}
-
 function dedupeCallRecords(records: CallRecord[]): CallRecord[] {
   const seen = new Set<string>();
   const out: CallRecord[] = [];
   for (const rec of records) {
-    // 类型值是重共享的 DAG（同一 JSON fixture 字面量流入多个参数/记录），
-    // 下方树形 key 会随共享度指数膨胀。超大记录与 resultType=never 一样
-    // 没有逐调用信息量（其 widen 后的形态才有），在 key 计算前统一丢弃。
-    if (isOversizedRecord(rec)) continue;
+    // Abs DAG 共享会指数膨胀树形 key；超大记录在 key 前丢弃。
+    if (isOversizedCallRecord(rec)) continue;
     // key 必须含结果形态：同实参形状但不同结果（错误路径 never+throws vs
     // 成功路径 Promise<...>）是不同的 case，只按实参去重会把成功记录吞进
     // 首条错误记录里（parseChunked 的 Promise 记录曾被 L203 的 throw 吞掉）。
     const key =
-      rec.argTypes.map(typeStructureKey).join(",") +
+      rec.argAbs.map(absStructureKey).join(",") +
       "=>" +
-      typeStructureKey(rec.resultType) +
+      absStructureKey(rec.resultAbs) +
       "!" +
-      typeStructureKey(rec.throws);
+      absStructureKey(rec.throwsAbs);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(rec);
   }
   return out;
-}
-
-/** DAG node budget for a usable call record; tree-shaped renderings of a
- * type (the dedup key, the synthesized case output) grow exponentially with
- * substructure sharing, so records whose argument/result DAGs exceed the
- * budget are dropped rather than blown up. */
-const MAX_RECORD_TYPE_NODES = 2000;
-
-/** Linear-in-DAG-size node count (a `seen` set makes shared subtrees count
- * once, so this stays cheap where a naive tree walk is exponential). */
-function typeNodeCount(tv: TypeValue, seen: Set<object>): number {
-  if (tv === null || typeof tv !== "object") return 1;
-  if (seen.has(tv)) return 0;
-  seen.add(tv);
-  switch (tv.kind) {
-    case "array":
-      return 1 + typeNodeCount(tv.element, seen);
-    case "tuple":
-      return 1 + tv.elements.reduce((acc, e) => acc + typeNodeCount(e, seen), 0);
-    case "object": {
-      let n = 1;
-      for (const v of Object.values(tv.properties)) n += typeNodeCount(v, seen);
-      return n;
-    }
-    case "promise":
-      return 1 + typeNodeCount(tv.value, seen);
-    case "union":
-      return 1 + tv.members.reduce((acc, e) => acc + typeNodeCount(e, seen), 0);
-    case "refined":
-      return 1 + typeNodeCount(tv.base, seen);
-    default:
-      return 1;
-  }
-}
-
-function isOversizedRecord(rec: CallRecord): boolean {
-  const seen = new Set<object>();
-  for (const a of rec.argTypes) {
-    if (typeNodeCount(a, seen) > MAX_RECORD_TYPE_NODES) return true;
-  }
-  return typeNodeCount(rec.resultType, seen) > MAX_RECORD_TYPE_NODES;
 }
 
 function locFromCallLoc(loc: { line: number; column: number } | undefined): SourceLocation {
@@ -743,7 +702,7 @@ function locFromCallLoc(loc: { line: number; column: number } | undefined): Sour
  * exported by another module (tagged by the evaluator's export side table)
  * are grouped by (targetModule, targetExport) and synthesized directly into
  * FunctionAnalysis entries — no re-evaluation needed, each CallRecord already
- * carries the resultType/throws computed when this file was evaluated.
+ * carries the resultAbs/throwsAbs computed when this file was evaluated.
  *
  * v1 limitation: only named-import direct calls are recorded by the
  * evaluator; `import * as ns` member calls go through the method path and
@@ -766,7 +725,7 @@ function synthesizeExternalFunctions(records: CallRecord[], currentFile: string)
   const out: FunctionAnalysis[] = [];
   for (const { module, exportName, records } of groups.values()) {
     const deduped = dedupeCallRecords(records);
-    const arity = Math.max(...deduped.map((r) => r.argTypes.length));
+    const arity = Math.max(...deduped.map((r) => r.argAbs.length));
     const analysis: FunctionAnalysis = {
       name: exportName,
       loc: locFromCallLoc(deduped[0].callLoc),
@@ -778,44 +737,53 @@ function synthesizeExternalFunctions(records: CallRecord[], currentFile: string)
     // Same capping as local synthesis: at most MAX_PRECISE_CALLSITE_CASES
     // precise cases. The symbolic aggregate cannot re-evaluate the foreign
     // function (its AST belongs to another file's analysis), so it unions the
-    // observed argument/result/throws types of the remaining records instead.
+    // observed argument/result/throws Abs of the remaining records instead.
     const precise = deduped.slice(0, MAX_PRECISE_CALLSITE_CASES);
     for (const rec of precise) {
       analysis.cases.push({
         name: `call@L${rec.callLoc?.line ?? 0}`,
-        args: rec.argTypes,
-        argAbs: callRecordArgAbs(rec),
-        result: rec.resultType,
-        abs: callRecordResultAbs(rec),
-        throws: rec.throws,
+        args: rec.argAbs.map(safeAbsToTv),
+        argAbs: [...rec.argAbs],
+        result: safeAbsToTv(rec.resultAbs),
+        abs: rec.resultAbs,
+        throws: safeAbsToTv(rec.throwsAbs),
         source: "callsite",
       });
     }
     const remaining = deduped.slice(MAX_PRECISE_CALLSITE_CASES);
     if (remaining.length > 0) {
+      const symArgsAbs = Array.from({ length: arity }, (_, i) =>
+        // 缺参按真实 JS 语义 widen 成 undefined 而非 unknown——可选参守卫
+        // （target || [] 等）对 unknown 全塌，对 undefined 正常走默认分支
+        widenJoinAbs(remaining.map((rec) => rec.argAbs[i] ?? undefAbs)),
+      );
+      const symResultAbs = collapseAbsLits(
+        remaining.map((r) => r.resultAbs),
+        COLLAPSE_LITERAL_THRESHOLD,
+      );
+      const symThrowsAbs = joinAllAbs(remaining.map((r) => r.throwsAbs));
       analysis.cases.push({
         name: "call@symbolic",
-        args: Array.from({ length: arity }, (_, i) =>
-          // 缺参按真实 JS 语义 widen 成 undefined 而非 unknown——可选参守卫
-          // （target || [] 等）对 unknown 全塌，对 undefined 正常走默认分支
-          widenType(simplifyUnion(remaining.map((rec) => rec.argTypes[i] ?? T.undefined))),
-        ),
-        result: collapseLiteralUnion(simplifyUnion(remaining.map((r) => r.resultType)), COLLAPSE_LITERAL_THRESHOLD),
-        throws: simplifyUnion(remaining.map((r) => r.throws)),
+        args: symArgsAbs.map(safeAbsToTv),
+        argAbs: symArgsAbs,
+        result: safeAbsToTv(symResultAbs),
+        abs: symResultAbs,
+        throws: safeAbsToTv(symThrowsAbs),
         source: "callsite",
         aggregatedFrom: remaining.length,
       });
     }
 
     if (deduped.length > 1) {
-      analysis.combined = collapseLiteralUnion(
-        simplifyUnion(deduped.map((r) => r.resultType)),
+      analysis.combinedAbs = collapseAbsLits(
+        deduped.map((r) => r.resultAbs),
         COLLAPSE_LITERAL_THRESHOLD,
       );
+      analysis.combined = safeAbsToTv(analysis.combinedAbs);
     } else {
-      analysis.combined = deduped[0].resultType;
+      analysis.combinedAbs = deduped[0].resultAbs;
+      analysis.combined = safeAbsToTv(deduped[0].resultAbs);
     }
-    analysis.combinedAbs = computeCombinedAbs(analysis.cases, analysis.combined);
     out.push(analysis);
   }
   return out;
@@ -1396,7 +1364,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
             fp.own,
             fp.deps,
             String(activeCaseIdx),
-            caseDirectiveKey(caseDirectives, typeValueToString),
+            caseDirectiveKey(caseDirectives, formatAbs),
             envKeyFn,
             mockKeyFn,
           ].join("\0")
@@ -1564,7 +1532,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
 
       const caseEntry: CaseResult = {
         name: directive.name,
-        args: directive.args,
+        args: directive.argsAbs.map(safeAbsToTv),
         argAbs: directive.argsAbs,
         result: tv,
         throws: throwsTv,
@@ -1780,16 +1748,16 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
       if (!attributed) return false;
       return nameRoutes(r);
     };
-    // resultType=never 且 throws=never 是求值中断的信号泄漏（如
+    // resultAbs=never 且 throwsAbs=never 是求值中断的信号泄漏（如
     // `new Promise(async …)` 高阶 async 中 await 切断求值），无信息量，
     // 注入会产出误导 case；本地与注入记录一致跳过，全部被跳过的
-    // candidate 自然落入下方 entry@ 回退。resultType=never 但 throws≠never
-    // 是真实的抛出调用（argTypes + throws 都有信息），保留。
+    // candidate 自然落入下方 entry@ 回退。resultAbs=never 但 throws≠never
+    // 是真实的抛出调用（argAbs + throws 都有信息），保留。
     const records = dedupeCallRecords(
       [
         ...callRecords.filter(matchingLocal),
         ...(externalCallRecords ?? []).filter(matchingExternal),
-      ].filter((r) => !(r.resultType.kind === "never" && r.throws.kind === "never")),
+      ].filter((r) => !isLeakedCallRecord(r)),
     );
     // T10b：跨文件注入的调用点域证据 ⊄ 手写契约 → nudo:interface-domain-exceeds
     reportInjectedDomainExceeds(candidate.name, candidate.node, candidate.analysis.loc);
@@ -1799,8 +1767,8 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
       // 常排在前面，slice 截断会把 concrete-precise 记录挤掉（hoek clone
       // 的 682 条记录曾由 3 条 undefined 形态占满前 3 席）。
       const informativeness = (r: CallRecord): number => {
-        if (r.resultType.kind === "unknown") return 2;
-        if (r.resultType.kind === "never") return 1;
+        if (r.resultAbs.shape.k === "unknown") return 2;
+        if (r.resultAbs.shape.k === "never") return 1;
         return 0;
       };
       const ordered = records
@@ -1811,25 +1779,27 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
       for (const rec of precise) {
         // Abs 重求值仅在更有信息量时覆盖（不破坏 mock/callsite 精确结构）
         let absRaw: Abs | undefined;
-        let absResult: TypeValue | undefined;
-        if (rec.resultType.kind !== "never" && rec.argTypes.length > 0) {
-          absRaw = tryEvalAbsRaw(source, candidate.name, rec.argTypes, filePath, mockSeedsToAbsMocks(seeds));
+        let absResult: Abs | undefined;
+        if (rec.resultAbs.shape.k !== "never" && rec.argAbs.length > 0) {
+          absRaw = tryEvalAbsRaw(source, candidate.name, rec.argAbs, filePath, mockSeedsToAbsMocks(seeds));
           if (absRaw) {
-            const projected = absToTypeValue(absRaw);
-            if (absIsBetter(projected, rec.resultType)) absResult = projected;
+            if (absIsBetter(absToTypeValue(absRaw), safeAbsToTv(rec.resultAbs))) {
+              absResult = absRaw;
+            }
           }
         }
         // 记录自带的无损结果 Abs：重求值失败/跳过时作兜底（B-path 产物）
-        if (!absRaw && rec.resultAbs && rec.resultAbs.shape.k !== "never") {
+        if (!absRaw && rec.resultAbs.shape.k !== "never") {
           absRaw = rec.resultAbs;
         }
+        const caseAbs = absResult ?? rec.resultAbs;
         const caseResult: CaseResult = {
           name: `call@L${rec.callLoc?.line ?? candidate.analysis.loc.start.line}`,
-          args: rec.argTypes,
-          argAbs: callRecordArgAbs(rec),
-          result: absResult ?? rec.resultType,
-          ...(rec.resultAbs && !absResult ? { abs: rec.resultAbs } : {}),
-          throws: rec.throws,
+          args: rec.argAbs.map(safeAbsToTv),
+          argAbs: [...rec.argAbs],
+          result: safeAbsToTv(caseAbs),
+          abs: caseAbs,
+          throws: safeAbsToTv(rec.throwsAbs),
           source: "callsite",
         };
         tryAttachIntension(caseResult, source, candidate.name);
@@ -1842,43 +1812,34 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
       // 排除不声明覆盖，sound；全部不可求值时不产 symbolic case（诚实）。
       const remaining = ordered
         .slice(MAX_PRECISE_CALLSITE_CASES)
-        .filter((rec) => !rec.argTypes.some((a) => a.kind === "unknown"));
+        .filter((rec) => !rec.argAbs.some((a) => a.shape.k === "unknown" && !a.term));
       if (remaining.length > 0) {
         const fnNode = resolveFunctionNode(candidate.node);
         const paramCount = extractParamNames(fnNode).length;
-        const widenedArgs = Array.from({ length: paramCount }, (_, i) =>
+        const widenedArgsAbs = Array.from({ length: paramCount }, (_, i) =>
           // 缺参按真实 JS 语义 widen 成 undefined 而非 unknown——可选参守卫
           // （target || [] 等）对 unknown 全塌，对 undefined 正常走默认分支
-          widenType(simplifyUnion(remaining.map((rec) => rec.argTypes[i] ?? T.undefined))),
+          widenJoinAbs(remaining.map((rec) => rec.argAbs[i] ?? undefAbs)),
         );
-        const absSymRaw = tryEvalAbs(source, candidate.name, widenedArgs, filePath, mockSeedsToAbsMocks(seeds));
-        const absSym = absSymRaw && absIsBetter(absSymRaw, /* 无先验：仅 unknown 时 */ { kind: "unknown" })
-          ? absSymRaw
-          : undefined;
-        // B 路径优先（capable）；否则 Abs 优先，TypeValue 仅 throws/失败兜底
-        let symValue: TypeValue | undefined;
-        let symThrows: TypeValue = T.never as TypeValue;
-        let symLoc: SourceLocation | undefined;
+        // B 路径优先（capable）；否则 Abs 优先
         let symAbs: Abs | undefined;
         if (isBPathCapable(source, envNames) && filePath) {
           const bSym = tryBPathCall(
             source,
             filePath,
             candidate.name,
-            widenedArgs.map((a) => typeValueToAbs(a)),
+            widenedArgsAbs,
             { envNames, mocks: mockSeedsToAbsMocks(seeds) },
           );
           if (bSym && (bHostedEval || !(bSym.shape.k === "unknown" && !bSym.term))) {
             symAbs = bSym;
-            symValue = absToTypeValue(bSym);
           }
         }
         if (!symAbs && !bHostedEval) {
-          // Abs-first：tryEvalAbsRaw（analyzeFn / B 兜底）
           const absTry = tryEvalAbsRaw(
             source,
             candidate.name,
-            widenedArgs.map((a) => typeValueToAbs(a)),
+            widenedArgsAbs,
             filePath,
             mockSeedsToAbsMocks(seeds),
           );
@@ -1888,19 +1849,15 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
             (!absTry.term || (absTry.term.op === "lit" && absTry.term.value === undefined));
           if (absTry && !weak && absTry.shape.k !== "never" && absTry.conf !== "opaque") {
             symAbs = absTry;
-            symValue = absToTypeValue(absTry);
-          } else {
-            // TypeValue evaluateFunctionFull 已删除：Abs 失败 → unknown
-            symValue = absSym ?? T.unknown;
           }
         }
         const symCase: CaseResult = {
           name: "call@symbolic",
-          args: widenedArgs,
-          argAbs: argAbsFromTypeValues(widenedArgs),
-          result: symValue ?? T.unknown,
-          throws: symThrows,
-          throwLoc: symLoc,
+          args: widenedArgsAbs.map(safeAbsToTv),
+          argAbs: widenedArgsAbs,
+          result: symAbs ? safeAbsToTv(symAbs) : T.unknown,
+          ...(symAbs ? { abs: symAbs } : {}),
+          throws: T.never as TypeValue,
           source: "callsite",
           aggregatedFrom: remaining.length,
         };
@@ -1911,14 +1868,11 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
       // Combined covers every observed call site (not just the retained
       // cases), so a large set of same-base literal results collapses to
       // the widened base type instead of a 20-literal union.
-      candidate.analysis.combined = collapseLiteralUnion(
-        simplifyUnion(records.map((r) => r.resultType)),
+      candidate.analysis.combinedAbs = collapseAbsLits(
+        records.map((r) => r.resultAbs),
         COLLAPSE_LITERAL_THRESHOLD,
       );
-      candidate.analysis.combinedAbs = computeCombinedAbs(
-        candidate.analysis.cases,
-        candidate.analysis.combined,
-      );
+      candidate.analysis.combined = safeAbsToTv(candidate.analysis.combinedAbs);
       continue;
     }
 
@@ -2283,17 +2237,6 @@ function resolveImportAbs(spec: string, fromFile: string): string | null {
   return null;
 }
 
-function tryEvalAbs(
-  source: string,
-  fnName: string,
-  args: TypeValue[],
-  filePath?: string,
-  mocks?: Record<string, Abs>,
-): TypeValue | undefined {
-  const raw = tryEvalAbsRaw(source, fnName, args, filePath, mocks);
-  return raw ? absToTypeValue(raw) : undefined;
-}
-
 /** Abs 原生重求值（无损）；B 路径 transpile+exec 优先，失败回退 ast-eval */
 function tryEvalAbsRaw(
   source: string,
@@ -2455,8 +2398,8 @@ function safeAbsToTv(a: Abs | undefined): TypeValue {
 }
 
 /**
- * B-path / Abs program 调用记录 → CallRecord（Abs 无损为主 + TypeValue 外延桥）。
- * threw 时 result 位为 never、throws 位为抛出值（与历史 TypeValue 语义一致）。
+ * B-path / Abs program 调用记录 → CallRecord（Abs 唯一）。
+ * threw 时 result 位为 never、throws 位为抛出值。
  */
 function callRecordFromAbsCall(
   r: {
@@ -2471,17 +2414,11 @@ function callRecordFromAbsCall(
   const argAbs = r.args.map(safeAbsOrUnknown);
   const threw = !!r.threw;
   const thrownOrResult = safeAbsOrUnknown(r.result);
-  const neverAbs: Abs = { shape: { k: "never" }, conf: "exact" };
-  const resultAbs = threw ? neverAbs : thrownOrResult;
-  const throwsAbs = threw ? thrownOrResult : neverAbs;
   const rec: CallRecord = {
     fnName: r.fnName,
     argAbs,
-    resultAbs,
-    throwsAbs,
-    argTypes: argAbs.map(safeAbsToTv),
-    resultType: safeAbsToTv(resultAbs),
-    throws: safeAbsToTv(throwsAbs),
+    resultAbs: threw ? neverAbs : thrownOrResult,
+    throwsAbs: threw ? thrownOrResult : neverAbs,
     callLoc: r.callLoc,
   };
   const imp = impMap?.get(r.fnName);
@@ -2495,22 +2432,6 @@ function callRecordFromAbsCall(
 /** cases 实参 → argAbs（与 args 对齐；缺位不填） */
 function argAbsFromTypeValues(args: TypeValue[]): Abs[] {
   return args.map(safeArgAbs);
-}
-
-/** 记录 → case 的 argAbs：优先 CallRecord.argAbs，否则桥 TypeValue */
-function callRecordArgAbs(rec: CallRecord): Abs[] | undefined {
-  if (rec.argAbs && rec.argAbs.length > 0) return rec.argAbs;
-  return argAbsFromTypeValues(rec.argTypes);
-}
-
-/** 记录结果 Abs：优先 resultAbs */
-function callRecordResultAbs(rec: CallRecord): Abs | undefined {
-  if (rec.resultAbs) return rec.resultAbs;
-  try {
-    return typeValueToAbs(rec.resultType);
-  } catch {
-    return undefined;
-  }
 }
 
 /**

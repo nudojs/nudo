@@ -9,7 +9,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { interfaceSurface } from "../interface-surface.ts";
-import { T } from "@nudojs/core";
+import { T, typeValueToAbs } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -155,9 +155,9 @@ describe("interfaceSurface", () => {
       fnName: "scale",
       targetModule: libPath,
       targetExport: "scale",
-      argTypes: [T.literal(arg)],
-      resultType: T.literal(84),
-      throws: T.never,
+      argAbs: [typeValueToAbs(T.literal(arg))],
+      resultAbs: typeValueToAbs(T.literal(84)),
+      throwsAbs: typeValueToAbs(T.never),
       callLoc: { line: 3, column: 0 },
     });
     const entries = await interfaceSurface(libPath, { records: [rec(42), rec("a")] });

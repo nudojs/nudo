@@ -1,15 +1,16 @@
 /**
- * 内置类原型机制：错误类集合、可构造内置类、Object/Array/Map/Set/…/Buffer
- * 的原型成员近似表，以及 `X.prototype` 单例与类命名空间记忆化。
- * 求值器成员分派与补全侧成员派生共用本表的唯一真值。
+ * 内置类原型成员近似表（Abs 声明）。
+ * LSP 补全唯一真值；TypeValue 求值器已删，不再承载 impl 微求值。
  */
 
-import { T, simplifyUnion, type TypeValue } from "@nudojs/core";
-import { MAP_INSTANCE_METHODS, mapEntriesIterable } from "./builtin-map.ts";
-import { SET_INSTANCE_METHODS } from "./builtin-set.ts";
+import {
+  type Abs,
+  abs,
+  objOf,
+  formatAbs,
+  relationFn,
+} from "@nudojs/core";
 
-// hasOwnProp 守卫：普通 Record 表查找会从原型链泄漏原生函数（如 "constructor"）。
-// 与 evaluator 内同名 helper 同语义；独立副本避免 evaluator → 本模块循环依赖。
 function hasOwnProp(props: Record<string, unknown>, name: string): boolean {
   return Object.prototype.hasOwnProperty.call(props, name);
 }
@@ -17,263 +18,226 @@ function hasOwnProp(props: Record<string, unknown>, name: string): boolean {
 const BUILTIN_ERROR_CLASSES = new Set([
   "Error", "TypeError", "SyntaxError", "RangeError", "ReferenceError", "URIError", "EvalError",
 ]);
-// Constructible built-in classes. A bare reference to one of these names
-// resolves to a namespace object (like the BUILTIN_STATIC_METHODS entries),
-// and `X.prototype` evaluates to an instance of X instead of degrading to
-// undefined/unknown.
+
 const BUILTIN_PROTOTYPE_CLASSES = new Set([
   ...BUILTIN_ERROR_CLASSES,
   "Date", "Object", "Map", "Set", "Promise", "RegExp", "Array", "Function",
   "String", "Number", "Boolean", "Symbol", "WeakMap", "WeakSet", "Buffer",
 ]);
-// Object.prototype members. Real property access reads through the
-// prototype chain, so every object-typed receiver materializes these —
-// destructuring `const { hasOwnProperty } = obj` yields a function (not
-// undefined) and `Object.prototype.hasOwnProperty` types as boolean.
-// Lookup must be own-property guarded: a plain `{}` record would otherwise
-// leak native JS functions (e.g. for "constructor") into the type system.
-//
-// toString/valueOf carry impls so the receiver (thisVal) shapes the result:
-// `Object.prototype.toString.call(x)` yields the brand literal
-// ('[object Map]', '[object Null]', ...) that Map-based type dispatch
-// (hoek internals.typeMap) keys on; valueOf returns its receiver.
-const OBJECT_PROTOTYPE_METHODS: Record<string, TypeValue> = {
-  hasOwnProperty: T.fnSig([T.unknown], T.boolean),
-  isPrototypeOf: T.fnSig([T.unknown], T.boolean),
-  propertyIsEnumerable: T.fnSig([T.unknown], T.boolean),
-  toString: T.fnSig([], T.string, T.never, (_args, thisVal) => objectToStringBrand(thisVal)),
-  toLocaleString: T.fnSig([], T.string),
-  valueOf: T.fnSig([], T.unknown, T.never, (_args, thisVal) => thisVal),
+
+const numA: Abs = { shape: { k: "prim", type: "number" }, conf: "exact" };
+const strA: Abs = { shape: { k: "prim", type: "string" }, conf: "exact" };
+const boolA: Abs = { shape: { k: "prim", type: "boolean" }, conf: "exact" };
+const unkA: Abs = { shape: { k: "unknown" }, conf: "partial" };
+const undefA: Abs = abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
+const nullA: Abs = abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
+const neverA: Abs = { shape: { k: "never" }, conf: "exact" };
+
+function arrOf(el: Abs): Abs {
+  return { shape: { k: "arr", element: el }, conf: "exact" };
+}
+function tupleOf(els: Abs[]): Abs {
+  return { shape: { k: "tuple", elements: els }, conf: "exact" };
+}
+function promiseOf(inner: Abs): Abs {
+  return { shape: { k: "eff", eff: "promise", inner }, conf: "exact" };
+}
+function sumOf(...members: Abs[]): Abs {
+  if (members.length === 1) return members[0]!;
+  return { shape: { k: "sum", members }, conf: "exact" };
+}
+function brand(name: string): Abs {
+  return { shape: { k: "brand", name, shape: unkA }, conf: "path" };
+}
+function emptyObj(): Abs {
+  return objOf({});
+}
+
+/** 声明型签名（无 apply）；参数名对齐历史 T.fnSig 的 _argN */
+function sig(params: Abs[], ret: Abs): Abs {
+  return relationFn(params, ret, {
+    conf: "exact",
+    params: params.map((_, i) => `_arg${i}`),
+  });
+}
+
+const OBJECT_PROTOTYPE_METHODS: Record<string, Abs> = {
+  hasOwnProperty: sig([unkA], boolA),
+  isPrototypeOf: sig([unkA], boolA),
+  propertyIsEnumerable: sig([unkA], boolA),
+  toString: sig([], strA),
+  toLocaleString: sig([], strA),
+  valueOf: sig([], unkA),
 };
-// Common prototype members approximated as unknown-result signatures
-// (mirrors the knownInstanceMethods fallback pattern). `X.prototype.m`
-// stays a callable function value instead of degrading to undefined.
-const BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS: Record<string, Record<string, TypeValue>> = {
+
+const BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS: Record<string, Record<string, Abs>> = {
   Object: { ...OBJECT_PROTOTYPE_METHODS },
   Array: {
-    push: T.fnSig([T.unknown], T.number),
-    pop: T.fnSig([], T.unknown),
-    shift: T.fnSig([], T.unknown),
-    unshift: T.fnSig([T.unknown], T.number),
-    slice: T.fnSig([T.number, T.number], T.array(T.unknown)),
-    splice: T.fnSig([T.number, T.number], T.array(T.unknown)),
-    concat: T.fnSig([T.unknown], T.array(T.unknown)),
-    join: T.fnSig([T.string], T.string),
-    indexOf: T.fnSig([T.unknown], T.number),
-    lastIndexOf: T.fnSig([T.unknown], T.number),
-    includes: T.fnSig([T.unknown], T.boolean),
-    map: T.fnSig([T.unknown], T.array(T.unknown)),
-    flatMap: T.fnSig([T.unknown], T.array(T.unknown)),
-    filter: T.fnSig([T.unknown], T.array(T.unknown)),
-    forEach: T.fnSig([T.unknown], T.undefined),
-    find: T.fnSig([T.unknown], T.unknown),
-    findIndex: T.fnSig([T.unknown], T.number),
-    some: T.fnSig([T.unknown], T.boolean),
-    every: T.fnSig([T.unknown], T.boolean),
-    reduce: T.fnSig([T.unknown, T.unknown], T.unknown),
-    sort: T.fnSig([T.unknown], T.array(T.unknown)),
-    reverse: T.fnSig([], T.array(T.unknown)),
-    toString: T.fnSig([], T.string),
+    push: sig([unkA], numA),
+    pop: sig([], unkA),
+    shift: sig([], unkA),
+    unshift: sig([unkA], numA),
+    slice: sig([numA, numA], arrOf(unkA)),
+    splice: sig([numA, numA], arrOf(unkA)),
+    concat: sig([unkA], arrOf(unkA)),
+    join: sig([strA], strA),
+    indexOf: sig([unkA], numA),
+    lastIndexOf: sig([unkA], numA),
+    includes: sig([unkA], boolA),
+    map: sig([unkA], arrOf(unkA)),
+    flatMap: sig([unkA], arrOf(unkA)),
+    filter: sig([unkA], arrOf(unkA)),
+    forEach: sig([unkA], undefA),
+    find: sig([unkA], unkA),
+    findIndex: sig([unkA], numA),
+    some: sig([unkA], boolA),
+    every: sig([unkA], boolA),
+    reduce: sig([unkA, unkA], unkA),
+    sort: sig([unkA], arrOf(unkA)),
+    reverse: sig([], arrOf(unkA)),
+    toString: sig([], strA),
   },
   Function: {
-    call: T.fnSig([T.unknown], T.unknown),
-    apply: T.fnSig([T.unknown, T.unknown], T.unknown),
-    bind: T.fnSig([T.unknown], T.unknown),
-    toString: T.fnSig([], T.string),
+    call: sig([unkA], unkA),
+    apply: sig([unkA, unkA], unkA),
+    bind: sig([unkA], unkA),
+    toString: sig([], strA),
   },
   Map: {
-    // Impl-routed: `Map.prototype.m.call(instance)` (and direct prototype
-    // calls) consult the receiver's exact entry side table, making the
-    // hoek deepEqual reflection idioms decide literally.
-    get: T.fnSig([T.unknown], T.unknown, T.never, (args, thisVal) => MAP_INSTANCE_METHODS.get(args[0] ?? T.unknown, thisVal ?? T.unknown)),
-    set: T.fnSig([T.unknown, T.unknown], T.unknown, T.never, (args, thisVal) => MAP_INSTANCE_METHODS.set(args[0] ?? T.unknown, args[1] ?? T.unknown, thisVal ?? T.unknown)),
-    has: T.fnSig([T.unknown], T.boolean, T.never, (args, thisVal) => MAP_INSTANCE_METHODS.has(args[0] ?? T.unknown, thisVal ?? T.unknown)),
-    delete: T.fnSig([T.unknown], T.boolean, T.never, (args, thisVal) => MAP_INSTANCE_METHODS.delete(args[0] ?? T.unknown, thisVal ?? T.unknown)),
-    clear: T.fnSig([], T.undefined, T.never, (args, thisVal) => MAP_INSTANCE_METHODS.clear(args[0] ?? T.unknown, thisVal ?? T.unknown)),
-    forEach: T.fnSig([T.unknown], T.undefined),
-    keys: T.fnSig([], T.array(T.unknown), T.never, (_args, thisVal) => MAP_INSTANCE_METHODS.keys(thisVal ?? T.unknown)),
-    values: T.fnSig([], T.array(T.unknown), T.never, (_args, thisVal) => MAP_INSTANCE_METHODS.values(thisVal ?? T.unknown)),
-    entries: T.fnSig([], T.array(T.tuple([T.unknown, T.unknown])), T.never, (_args, thisVal) => mapEntriesIterable(thisVal ?? T.unknown)),
-    toString: T.fnSig([], T.string),
+    get: sig([unkA], unkA),
+    set: sig([unkA, unkA], unkA),
+    has: sig([unkA], boolA),
+    delete: sig([unkA], boolA),
+    clear: sig([], undefA),
+    forEach: sig([unkA], undefA),
+    keys: sig([], arrOf(unkA)),
+    values: sig([], arrOf(unkA)),
+    entries: sig([], arrOf(tupleOf([unkA, unkA]))),
+    toString: sig([], strA),
   },
   Set: {
-    // Impl-routed like Map above (Set.prototype.values.call(s) ≡ s.values()).
-    add: T.fnSig([T.unknown], T.unknown, T.never, (args, thisVal) => SET_INSTANCE_METHODS.add(args[0] ?? T.unknown, thisVal ?? T.unknown)),
-    has: T.fnSig([T.unknown], T.boolean, T.never, (args, thisVal) => SET_INSTANCE_METHODS.has(args[0] ?? T.unknown, thisVal ?? T.unknown)),
-    delete: T.fnSig([T.unknown], T.boolean, T.never, (args, thisVal) => SET_INSTANCE_METHODS.delete(args[0] ?? T.unknown, thisVal ?? T.unknown)),
-    clear: T.fnSig([], T.undefined, T.never, (args, thisVal) => SET_INSTANCE_METHODS.clear(args[0] ?? T.unknown, thisVal ?? T.unknown)),
-    forEach: T.fnSig([T.unknown], T.undefined),
-    keys: T.fnSig([], T.array(T.unknown), T.never, (_args, thisVal) => SET_INSTANCE_METHODS.keys(thisVal ?? T.unknown)),
-    values: T.fnSig([], T.array(T.unknown), T.never, (_args, thisVal) => SET_INSTANCE_METHODS.values(thisVal ?? T.unknown)),
-    entries: T.fnSig([], T.array(T.tuple([T.unknown, T.unknown])), T.never, (_args, thisVal) => SET_INSTANCE_METHODS.entries(thisVal ?? T.unknown)),
-    toString: T.fnSig([], T.string),
+    add: sig([unkA], unkA),
+    has: sig([unkA], boolA),
+    delete: sig([unkA], boolA),
+    clear: sig([], undefA),
+    forEach: sig([unkA], undefA),
+    keys: sig([], arrOf(unkA)),
+    values: sig([], arrOf(unkA)),
+    entries: sig([], arrOf(tupleOf([unkA, unkA]))),
+    toString: sig([], strA),
   },
   WeakMap: {
-    get: T.fnSig([T.unknown], T.unknown),
-    set: T.fnSig([T.unknown, T.unknown], T.unknown),
-    has: T.fnSig([T.unknown], T.boolean),
-    delete: T.fnSig([T.unknown], T.boolean),
-    toString: T.fnSig([], T.string),
+    get: sig([unkA], unkA),
+    set: sig([unkA, unkA], unkA),
+    has: sig([unkA], boolA),
+    delete: sig([unkA], boolA),
+    toString: sig([], strA),
   },
   WeakSet: {
-    add: T.fnSig([T.unknown], T.unknown),
-    has: T.fnSig([T.unknown], T.boolean),
-    delete: T.fnSig([T.unknown], T.boolean),
-    toString: T.fnSig([], T.string),
+    add: sig([unkA], unkA),
+    has: sig([unkA], boolA),
+    delete: sig([unkA], boolA),
+    toString: sig([], strA),
   },
   Promise: {
-    then: T.fnSig([T.unknown], T.promise(T.unknown)),
-    catch: T.fnSig([T.unknown], T.promise(T.unknown)),
-    finally: T.fnSig([T.unknown], T.promise(T.unknown)),
-    toString: T.fnSig([], T.string),
+    then: sig([unkA], promiseOf(unkA)),
+    catch: sig([unkA], promiseOf(unkA)),
+    finally: sig([unkA], promiseOf(unkA)),
+    toString: sig([], strA),
   },
   Date: {
-    getTime: T.fnSig([], T.number),
-    valueOf: T.fnSig([], T.number),
-    toISOString: T.fnSig([], T.string),
-    toJSON: T.fnSig([], T.string),
-    toLocaleString: T.fnSig([], T.string),
-    toString: T.fnSig([], T.string),
+    getTime: sig([], numA),
+    valueOf: sig([], numA),
+    toISOString: sig([], strA),
+    toJSON: sig([], strA),
+    toLocaleString: sig([], strA),
+    toString: sig([], strA),
   },
   RegExp: {
-    test: T.fnSig([T.string], T.boolean),
-    exec: T.fnSig([T.string], T.union(T.object({}), T.null)),
-    toString: T.fnSig([], T.string),
+    test: sig([strA], boolA),
+    exec: sig([strA], sumOf(emptyObj(), nullA)),
+    toString: sig([], strA),
   },
   String: {
-    charAt: T.fnSig([T.number], T.string),
-    charCodeAt: T.fnSig([T.number], T.number),
-    indexOf: T.fnSig([T.string], T.number),
-    lastIndexOf: T.fnSig([T.string], T.number),
-    includes: T.fnSig([T.string], T.boolean),
-    startsWith: T.fnSig([T.string], T.boolean),
-    endsWith: T.fnSig([T.string], T.boolean),
-    slice: T.fnSig([T.number, T.number], T.string),
-    substring: T.fnSig([T.number, T.number], T.string),
-    toUpperCase: T.fnSig([], T.string),
-    toLowerCase: T.fnSig([], T.string),
-    trim: T.fnSig([], T.string),
-    replace: T.fnSig([T.unknown, T.string], T.string),
-    split: T.fnSig([T.string], T.array(T.string)),
-    toString: T.fnSig([], T.string),
-    valueOf: T.fnSig([], T.string),
+    charAt: sig([numA], strA),
+    charCodeAt: sig([numA], numA),
+    indexOf: sig([strA], numA),
+    lastIndexOf: sig([strA], numA),
+    includes: sig([strA], boolA),
+    startsWith: sig([strA], boolA),
+    endsWith: sig([strA], boolA),
+    slice: sig([numA, numA], strA),
+    substring: sig([numA, numA], strA),
+    toUpperCase: sig([], strA),
+    toLowerCase: sig([], strA),
+    trim: sig([], strA),
+    replace: sig([unkA, strA], strA),
+    split: sig([strA], arrOf(strA)),
+    toString: sig([], strA),
+    valueOf: sig([], strA),
   },
   Number: {
-    toFixed: T.fnSig([T.number], T.string),
-    toPrecision: T.fnSig([T.number], T.string),
-    valueOf: T.fnSig([], T.number),
-    toString: T.fnSig([T.number], T.string),
+    toFixed: sig([numA], strA),
+    toPrecision: sig([numA], strA),
+    valueOf: sig([], numA),
+    toString: sig([numA], strA),
   },
   Boolean: {
-    valueOf: T.fnSig([], T.boolean),
-    toString: T.fnSig([], T.string),
+    valueOf: sig([], boolA),
+    toString: sig([], strA),
   },
   Symbol: {
-    toString: T.fnSig([], T.string),
-    valueOf: T.fnSig([], T.symbol),
+    toString: sig([], strA),
+    valueOf: sig([], brand("Symbol")),
   },
   Buffer: {
-    equals: T.fnSig([T.unknown], T.boolean),
-    compare: T.fnSig([T.unknown], T.number),
-    toString: T.fnSig([T.unknown], T.string),
-    toJSON: T.fnSig([], T.unknown),
+    equals: sig([unkA], boolA),
+    compare: sig([unkA], numA),
+    toString: sig([unkA], strA),
+    toJSON: sig([], unkA),
   },
   Error: {
-    toString: T.fnSig([], T.string),
+    toString: sig([], strA),
   },
 };
-// Memoized namespace values for built-in classes. Reference-stable so
-// `'x'.constructor === String` compares identical objects (typeValueEquals
-// falls back to reference equality for object kinds).
-const _builtinClassValues = new Map<string, TypeValue>();
-function builtinClassValue(name: string): TypeValue {
-  let v = _builtinClassValues.get(name);
-  if (v === undefined) {
-    v = T.object({});
-    (v as any)._builtinName = name;
-    _builtinClassValues.set(name, v);
-  }
-  return v;
-}
-// Cached `X.prototype` singletons. hoek-style modules assign
-// `exports.array = Array.prototype` and later compare
-// `baseProto === Types.buffer`: strict-equality on instances only stays
-// precise when every evaluation of `X.prototype` yields the same TypeValue.
-const BUILTIN_PROTOTYPE_SINGLETONS = new Map<string, TypeValue>();
 
-function builtinPrototype(className: string): TypeValue {
-  let proto = BUILTIN_PROTOTYPE_SINGLETONS.get(className);
-  if (!proto) {
-    const methods = hasOwnProp(BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS, className)
-      ? BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS[className]
-      : BUILTIN_ERROR_CLASSES.has(className)
-        ? BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS.Error
-        : {};
-    proto = T.instanceOf(className, { ...methods });
-    (proto as any)._builtinProto = className;
-    BUILTIN_PROTOTYPE_SINGLETONS.set(className, proto);
-  }
-  return proto;
+/** formatAbs 去 conf 后缀（补全 detail 不展示 #exact） */
+function fmtNoConf(a: Abs): string {
+  return formatAbs(a).replace(/\s+#(exact|path|widened|mock|partial|opaque)$/, "");
 }
-// `Object.prototype.toString` brand string ('[object Map]', '[object Null]',
-// ...). Returns undefined when the receiver has no representable brand, so
-// the fnSig falls back to its plain `string` return type.
-function objectToStringBrand(v: TypeValue | undefined): TypeValue | undefined {
-  if (!v) return undefined;
-  if (v.kind === "union") {
-    const parts = v.members.map((m) => objectToStringBrand(m));
-    if (parts.some((p) => p === undefined)) return undefined;
-    return simplifyUnion(parts as TypeValue[]);
-  }
-  let base: TypeValue = v;
-  while (base.kind === "refined") base = base.base;
-  switch (base.kind) {
-    case "object": return T.literal("[object Object]");
-    case "array":
-    case "tuple": return T.literal("[object Array]");
-    case "function": return T.literal("[object Function]");
-    case "promise": return T.literal("[object Promise]");
-    case "instance": return T.literal(`[object ${base.className}]`);
-    case "literal": {
-      if (base.value === null) return T.literal("[object Null]");
-      if (base.value === undefined) return T.literal("[object Undefined]");
-      const t = typeof base.value;
-      return T.literal(`[object ${t === "number" ? "Number" : t === "string" ? "String" : "Boolean"}]`);
-    }
-    case "primitive": {
-      const brands: Record<string, string> = {
-        number: "Number", string: "String", boolean: "Boolean", bigint: "BigInt", symbol: "Symbol",
-      };
-      return T.literal(`[object ${brands[base.type] ?? "Object"}]`);
-    }
-    default: return undefined;
-  }
+
+/** LSP detail：Abs fn → `(a: number) => string` 形态 */
+export function describeAbsMember(a: Abs): string | null {
+  if (a.shape.k !== "fn") return fmtNoConf(a);
+  const s = a.shape;
+  const pts = s.paramTypes ?? [];
+  const params = pts
+    .map((p, i) => `${s.params[i] ?? `arg${i}`}: ${fmtNoConf(p)}`)
+    .join(", ");
+  const ret = s.returnType ? fmtNoConf(s.returnType) : "unknown";
+  return `(${params}) => ${ret}`;
 }
-// Object.getPrototypeOf: map a receiver onto its class's cached prototype
-// singleton (plain objects → Object.prototype, arrays → Array.prototype,
-// instances → their class's prototype). Unrepresentable receivers degrade
-// to unknown.
-function protoOfValue(v: TypeValue | undefined): TypeValue {
-  if (!v) return T.unknown;
-  if (v.kind === "union") return simplifyUnion(v.members.map((m) => protoOfValue(m)));
-  let base: TypeValue = v;
-  while (base.kind === "refined") base = base.base;
-  switch (base.kind) {
-    case "object": return builtinPrototype("Object");
-    case "array":
-    case "tuple": return builtinPrototype("Array");
-    case "function": return builtinPrototype("Function");
-    case "promise": return builtinPrototype("Promise");
-    case "instance": return builtinPrototype(base.className);
-    default: return T.unknown;
-  }
+
+export function builtinProtoMemberNames(className: string): string[] {
+  const table = hasOwnProp(BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS, className)
+    ? BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS[className]
+    : undefined;
+  return table ? Object.keys(table) : [];
 }
+
+export function builtinProtoMember(className: string, member: string): Abs | null {
+  const table = hasOwnProp(BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS, className)
+    ? BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS[className]
+    : BUILTIN_ERROR_CLASSES.has(className)
+      ? BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS.Error
+      : undefined;
+  if (!table) return null;
+  return table[member] ?? null;
+}
+
 export {
   BUILTIN_ERROR_CLASSES,
   BUILTIN_PROTOTYPE_CLASSES,
   OBJECT_PROTOTYPE_METHODS,
   BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS,
-  builtinClassValue,
-  builtinPrototype,
-  protoOfValue,
 };

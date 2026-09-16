@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { emitInterface } from "../interface-emitter.ts";
-import { effectiveInterface, T } from "@nudojs/core";
+import { effectiveInterface, T, typeValueToAbs } from "@nudojs/core";
 
 let dir: string;
 
@@ -139,9 +139,9 @@ describe("emitInterface", () => {
       fnName: "scale",
       targetModule: file,
       targetExport: "scale",
-      argTypes: [T.literal(arg)],
-      resultType: T.literal(84),
-      throws: T.never,
+      argAbs: [typeValueToAbs(T.literal(arg))],
+      resultAbs: typeValueToAbs(T.literal(84)),
+      throwsAbs: typeValueToAbs(T.never),
       callLoc: { line: 3, column: 0 },
     });
     const r = await emitInterface(file, {
@@ -217,9 +217,9 @@ describe("emitInterface", () => {
       fnName: "scale",
       targetModule: file,
       targetExport: "scale",
-      argTypes: [T.literal(arg)],
-      resultType: T.literal(84),
-      throws: T.never,
+      argAbs: [typeValueToAbs(T.literal(arg))],
+      resultAbs: typeValueToAbs(T.literal(84)),
+      throwsAbs: typeValueToAbs(T.never),
       callLoc: { line: 3, column: 0 },
     });
     const first = await emitInterface(file, { fnNames: ["scale"], mode: "add", records: [rec(42)] });

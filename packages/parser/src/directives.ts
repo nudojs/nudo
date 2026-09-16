@@ -34,10 +34,8 @@ function tvToAbs(v: TypeValue): Abs {
 export type CaseDirective = {
   kind: "case";
   name: string;
-  /** 无损参数 Abs（case 文法主路径；约束表达式与 T.* 均产出） */
+  /** 无损参数 Abs（case 文法唯一真理源；约束表达式与 T.* 均产出） */
   argsAbs: Abs[];
-  /** @deprecated 外延投影；优先 argsAbs */
-  args: TypeValue[];
   expected?: TypeValue;
   commentLine?: number;
 };
@@ -718,7 +716,6 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
         .map((line) => line.replace(/^\s*\*\s?/, ""))
         .join("\n");
       const parsedArgs = splitTopLevelArgs(cleaned).map(parseCaseArgExpr);
-      const args = parsedArgs.map((p) => p.typeValue);
       const argsAbs = parsedArgs.map((p) => p.abs);
 
       const afterParen = parenStart + argsStr.length + 2;
@@ -732,7 +729,6 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
       directives.push({
         kind: "case",
         name,
-        args,
         argsAbs,
         expected,
         commentLine,

@@ -3,11 +3,35 @@ import { resolve } from "node:path";
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, chmodSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { T, typeValueToString } from "@nudojs/core";
+import { T, typeValueToString, typeValueToAbs, litValue, type TypeValue } from "@nudojs/core";
 import { analyzeFile, collectCallRecords, buildModuleGraph, type ModuleGraphCache, computeDirtySet, topoSortDirty } from "../analyzer.ts";
 import { getTypeAtPosition, getCompletionsAtPosition } from "../lsp-surface.ts";
 import { generateDts } from "../dts-generator.ts";
 import { resetAllAnalysisCaches } from "../index.ts";
+import type { CallRecord } from "../evaluator/call-record.ts";
+
+/** 测试夹具：TypeValue 字面量 → Abs CallRecord */
+function absRec(p: {
+  fnName: string;
+  argTypes: TypeValue[];
+  resultType: TypeValue;
+  throws: TypeValue;
+  callLoc?: { line: number; column: number };
+  targetModule?: string;
+  targetExport?: string;
+  targetAliases?: string[];
+}): CallRecord {
+  return {
+    fnName: p.fnName,
+    argAbs: p.argTypes.map(typeValueToAbs),
+    resultAbs: typeValueToAbs(p.resultType),
+    throwsAbs: typeValueToAbs(p.throws),
+    ...(p.callLoc ? { callLoc: p.callLoc } : {}),
+    ...(p.targetModule ? { targetModule: p.targetModule } : {}),
+    ...(p.targetExport ? { targetExport: p.targetExport } : {}),
+    ...(p.targetAliases ? { targetAliases: p.targetAliases } : {}),
+  };
+}
 
 // 用例级缓存隔离：analyzeFile 背后的会话级缓存（analysisFileCache / bRunCache /
 // fnAnalysisCache / absModuleCache / core 的 checkSource·generalize·nudo-exec
@@ -451,14 +475,14 @@ module.exports = { formatName, shout };
     // 模拟 CLI --callsites 从使用现场（测试/上层应用）收集的记录：
     // targetExport 命中导出名 formatName，fnName 形态也会被匹配
     const external = [
-      {
+      absRec({
         fnName: "formatName",
         argTypes: [T.literal("Ada"), T.literal("Lovelace")],
         resultType: T.literal("Ada Lovelace"),
         throws: T.never,
         targetModule: "/test/lib/util.js",
         targetExport: "formatName",
-      },
+      }),
     ];
     const result = analyzeFile("/test/lib/util.js", source, undefined, external);
     const formatName = result.functions.find((f) => f.name === "formatName")!;
@@ -484,8 +508,8 @@ module.exports = { formatName, shout };
       const records = collectCallRecords(testPath, readFileSync(testPath, "utf-8"));
       const double = records.find((r) => r.targetExport === "double");
       expect(double).toBeDefined();
-      expect(double!.argTypes.map(typeValueToString)).toEqual(["21"]);
-      expect(typeValueToString(double!.resultType)).toBe("42");
+      expect(double!.argAbs.map((a) => String(litValue(a)))).toEqual(["21"]);
+      expect(String(litValue(double!.resultAbs))).toBe("42");
 
       // 注入后 double 从 entry-only 升级为真实调用形态
       const result = analyzeFile(libPath, readFileSync(libPath, "utf-8"), undefined, records);
@@ -509,7 +533,7 @@ module.exports = function (a, b) {
     // 使用方经转发 shim 以别的名字调用：fnName/targetExport/targetAliases
     // 都对不上本地 candidate 名 "default"，仅模块路命中
     const external = [
-      {
+      absRec({
         fnName: "renamed",
         argTypes: [T.literal(1), T.literal(2)],
         resultType: T.literal(3),
@@ -518,7 +542,7 @@ module.exports = function (a, b) {
         targetModule: "/test/anon-export.js",
         targetExport: "renamed",
         targetAliases: ["shorthand"],
-      },
+      }),
     ];
     const result = analyzeFile("/test/anon-export.js", source, undefined, external);
     const main = result.functions.find((f) => f.name === "default")!;
@@ -542,7 +566,7 @@ function beta(x) { return x; }
 module.exports = { alpha, beta };
 `;
     const external = [
-      {
+      absRec({
         fnName: "gamma",
         argTypes: [T.literal(1)],
         resultType: T.literal(1),
@@ -550,7 +574,7 @@ module.exports = { alpha, beta };
         callLoc: { line: 4, column: 0 },
         targetModule: "/test/multi-export.js",
         targetExport: "gamma",
-      },
+      }),
     ];
     const result = analyzeFile("/test/multi-export.js", source, undefined, external);
     for (const name of ["alpha", "beta"]) {
@@ -570,7 +594,7 @@ function parseChunked(emitter) {
     // 高阶 async（new Promise(async …)）求值中断的信号泄漏：resultType=never
     // 且 throws=never，无任何信息 → 跳过
     const external = [
-      {
+      absRec({
         fnName: "parseChunked",
         argTypes: [T.object({})],
         resultType: T.never,
@@ -578,7 +602,7 @@ function parseChunked(emitter) {
         callLoc: { line: 5, column: 0 },
         targetModule: "/test/higher-order.js",
         targetExport: "parseChunked",
-      },
+      }),
     ];
     const result = analyzeFile("/test/higher-order.js", source, undefined, external);
     const fn = result.functions.find((f) => f.name === "parseChunked")!;
@@ -597,7 +621,7 @@ function fail(msg) {
 `;
     // resultType=never 但 throws≠never：真实的抛出调用，argTypes/throws 均有信息
     const external = [
-      {
+      absRec({
         fnName: "fail",
         argTypes: [T.literal("boom")],
         resultType: T.never,
@@ -605,7 +629,7 @@ function fail(msg) {
         callLoc: { line: 7, column: 0 },
         targetModule: "/test/throwing.js",
         targetExport: "fail",
-      },
+      }),
     ];
     const result = analyzeFile("/test/throwing.js", source, undefined, external);
     const fn = result.functions.find((f) => f.name === "fail")!;
@@ -722,7 +746,7 @@ describe("getCompletionsAtPosition", () => {
     expect(str.find((c) => c.label === "slice")?.detail).toBe("(_arg0: number, _arg1: number) => string");
 
     const promise = getCompletionsAtPosition("/test/promise.js", `const p = Promise.resolve(1);\np.then;\n`, 2, 2);
-    expect(promise.find((c) => c.label === "then")?.detail).toBe("(_arg0: unknown) => Promise<unknown>");
+    expect(promise.find((c) => c.label === "then")?.detail).toBe("(_arg0: unknown) => promise<unknown>");
     // 派生自求值器原型近似表：含建模过的 Object.prototype 继承方法 toString
     expect(promise.map((c) => c.label).sort()).toEqual(["catch", "finally", "then", "toString"]);
   });

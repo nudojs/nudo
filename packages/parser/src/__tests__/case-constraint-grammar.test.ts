@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { extractDirectives, parseTypeValueExpr, parseCaseArgExpr } from "../directives.ts";
-import { typeValueToString, formatAbs, T, typeValueEquals, type Abs, type TypeValue } from "@nudojs/core";
+import { typeValueToString, formatAbs, T, typeValueEquals, litValue, type Abs, type TypeValue } from "@nudojs/core";
 import { parse } from "../parse.ts";
 
 describe("parseTypeValueExpr constraint grammar", () => {
@@ -71,7 +71,23 @@ function id(x) { return x; }
     }
   });
 
-  it("T.* cases still project TypeValue via bridge", () => {
+  it("constraint expressions produce Abs without TypeValue on the directive", () => {
+    const src = `
+/**
+ * @nudo:case "lit" (lit(7))
+ */
+function id(x) { return x; }
+`;
+    const fns = extractDirectives(parse(src));
+    const c = fns[0]!.directives.find((d) => d.kind === "case") as {
+      argsAbs: Abs[];
+      args?: unknown;
+    };
+    expect(litValue(c.argsAbs[0]!)).toBe(7);
+    expect(c.args).toBeUndefined();
+  });
+
+  it("T.* cases produce prim Abs via bridge", () => {
     const src = `
 /**
  * @nudo:case "n" (T.number)
@@ -81,9 +97,10 @@ function id(x) { return x; }
     const fns = extractDirectives(parse(src));
     const c = fns[0]!.directives.find((d) => d.kind === "case") as {
       argsAbs: Abs[];
-      args: TypeValue[];
     };
     expect(c.argsAbs[0]!.shape.k).toBe("prim");
-    expect(c.args[0]).toEqual(T.number);
+    if (c.argsAbs[0]!.shape.k === "prim") {
+      expect(c.argsAbs[0]!.shape.type).toBe("number");
+    }
   });
 });

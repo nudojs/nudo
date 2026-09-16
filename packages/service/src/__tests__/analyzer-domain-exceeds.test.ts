@@ -17,15 +17,15 @@ import { join, dirname } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { analyzeFile, collectCallRecords, type CallRecord } from "../analyzer.ts";
-import { T } from "@nudojs/core";
+import { T, typeValueToAbs } from "@nudojs/core";
 
 const DOMAIN = "nudo:interface-domain-exceeds";
 
 const rec = (over: Partial<CallRecord>): CallRecord => ({
   fnName: "area",
-  argTypes: [T.literal("a")],
-  resultType: T.literal(1),
-  throws: T.never,
+  argAbs: [typeValueToAbs(T.literal("a"))],
+  resultAbs: typeValueToAbs(T.literal(1)),
+  throwsAbs: typeValueToAbs(T.never),
   ...over,
 });
 
@@ -105,8 +105,8 @@ export function area(x) {
         'import { fn, number } from "@nudojs/core";\nexport const area = fn({ x: number().gt(0) });\n',
       );
       const result = analyzeFile(libPath, libSrc, undefined, [
-        rec({ argTypes: [T.literal(5)], targetModule: libPath, targetExport: "area" }),
-        rec({ argTypes: [T.literal(1)], targetModule: libPath, targetExport: "area" }),
+        rec({ argAbs: [typeValueToAbs(T.literal(5))], targetModule: libPath, targetExport: "area" }),
+        rec({ argAbs: [typeValueToAbs(T.literal(1))], targetModule: libPath, targetExport: "area" }),
       ]);
       expect(result.diagnostics.filter((d) => d.code === DOMAIN)).toEqual([]);
     } finally {
@@ -235,7 +235,7 @@ kleur.blue(42);
 
       // 夹具带电三重断言：有记录、有字面量实参证据、有指向包内文件的归属
       expect(records.length).toBeGreaterThan(0);
-      expect(records.some((r) => r.argTypes.some((a) => a.kind === "literal"))).toBe(true);
+      expect(records.some((r) => r.argAbs.some((a) => a.term?.op === "lit"))).toBe(true);
       const targets = new Set(
         records
           .flatMap((r) => [r.targetModule, r.fnModule])

@@ -5,7 +5,7 @@
  * - getTypeAtPosition / getHoverAtPosition：B 路径 Abs 节点表优先；
  *   用例函数体内走 Abs 重放（activeCases 选中 case + evalSource），
  *   失败才 TypeValue evaluateFunctionFull 兜底；
- * - getCompletionsAtPosition 及补全辅助（builtinMemberType 微求值、
+ * - getCompletionsAtPosition 及补全辅助（builtinMemberAbs 微求值、
  *   array/promise/string/union 成员补全）——内置成员唯一真值来源是
  *   evaluator 的 BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS；
  * - 光标定位 helpers（标识符/函数名/包围函数/最佳节点匹配）。
@@ -27,7 +27,6 @@ import {
   generalizeFromAst,
   formatAbs,
   formatAbsMultiline,
-  getFnSig,
   collectAbsNodeTypes,
   findAbsAtPosition,
   absToTypeValue,
@@ -39,7 +38,9 @@ import type { FunctionWithDirectives } from "@nudojs/parser";
 import {
   loadEnvs,
   preloadPathEnvs,
-  BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS,
+  describeAbsMember,
+  builtinProtoMember,
+  builtinProtoMemberNames,
 } from "./evaluator/evaluator-api.ts";
 import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
 import { autoHarvestModules } from "./harvest-auto.ts";
@@ -657,42 +658,28 @@ function getVariableCompletions(filePath: string, source: string): CompletionIte
 }
 
 /**
- * 内置成员签名：直接读 BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS（唯一真值），
- * 不经 TypeValue evaluate 微求值。
+ * 内置成员签名：直接读 BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS（唯一真值）。
  */
-function builtinMemberType(className: string, member: string): TypeValue | null {
-  const table = BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS[className];
-  if (!table) return null;
-  const tv = table[member];
-  return tv ?? null;
+function builtinMemberAbs(className: string, member: string): Abs | null {
+  return builtinProtoMember(className, member);
 }
 
 /**
- * 内置成员补全的唯一真值来源：求值器原型近似表
- * （BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS）。表内新增建模的方法
- * （如 flatMap）自动进入补全，不再手工同步平行名单；表外方法未建模，
- * 微求值拿 undefined、列出只会得到回退文案，故不派生。
+ * 内置成员补全的唯一真值来源：求值器原型近似表。
  */
 function builtinProtoMembers(className: string): string[] {
-  const table = BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS[className];
-  return table ? Object.keys(table) : [];
+  return builtinProtoMemberNames(className);
 }
 
 /**
- * 成员 detail 的展示形态：内置方法优先取 evaluator 的真实 fnSig
- * （typeValueToString 渲染为 `(a: string) => boolean` 形式）；无签名
- * （未建模或求值异常）时退回 `成员名(…)@<类>` 概要。取舍：不伪造平行签名，
- * 缺席就明示缺席——detail 永远可解释、与求值结果一致。
+ * 成员 detail 的展示形态：内置方法优先取 Abs 签名
+ * （formatAbs 渲染为 `(a: string) => boolean` 形式）；无签名
+ * （未建模）时退回 `成员名(…)@<类>` 概要。
  */
-function describeMember(label: string, tv: TypeValue | null, fallbackClass: string): string {
-  if (tv) {
-    const sig = getFnSig(tv);
-    if (sig) {
-      const paramNames = tv.kind === "function" ? tv.params : [];
-      const params = sig.paramTypes.map((p, i) => `${paramNames[i] ?? `arg${i}`}: ${typeValueToString(p)}`).join(", ");
-      return `(${params}) => ${typeValueToString(sig.returnType)}`;
-    }
-    if (tv.kind !== "function") return typeValueToString(tv);
+function describeMember(label: string, a: Abs | null, fallbackClass: string): string {
+  if (a) {
+    const s = describeAbsMember(a);
+    if (s) return s;
   }
   return `${label}(…)@${fallbackClass}`;
 }
@@ -700,7 +687,7 @@ function describeMember(label: string, tv: TypeValue | null, fallbackClass: stri
 function getArrayCompletions(tv: TypeValue): CompletionItem[] {
   const completions: CompletionItem[] = [];
   for (const m of builtinProtoMembers("Array")) {
-    const detail = describeMember(m, builtinMemberType("Array", m), "Array");
+    const detail = describeMember(m, builtinMemberAbs("Array", m), "Array");
     completions.push({ label: m, kind: "method", detail });
   }
   completions.push({
@@ -716,7 +703,7 @@ function getPromiseCompletions(): CompletionItem[] {
   return builtinProtoMembers("Promise").map((m) => ({
     label: m,
     kind: "method" as const,
-    detail: describeMember(m, builtinMemberType("Promise", m), "Promise"),
+    detail: describeMember(m, builtinMemberAbs("Promise", m), "Promise"),
   }));
 }
 
@@ -726,7 +713,7 @@ function getStringCompletions(): CompletionItem[] {
     completions.push({
       label: m,
       kind: "method",
-      detail: describeMember(m, builtinMemberType("String", m), "String"),
+      detail: describeMember(m, builtinMemberAbs("String", m), "String"),
     });
   }
   completions.push({ label: "length", kind: "property", detail: "number" });
@@ -874,7 +861,7 @@ function getCompletionsForAbs(a: Abs): CompletionItem[] {
 function getArrayCompletionsAbs(tupleLen?: number): CompletionItem[] {
   const completions: CompletionItem[] = [];
   for (const m of builtinProtoMembers("Array")) {
-    const detail = describeMember(m, builtinMemberType("Array", m), "Array");
+    const detail = describeMember(m, builtinMemberAbs("Array", m), "Array");
     completions.push({ label: m, kind: "method", detail });
   }
   completions.push({

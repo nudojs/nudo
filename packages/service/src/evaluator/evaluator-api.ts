@@ -4,7 +4,12 @@
  */
 export type { CallRecord } from "./call-record.ts";
 
-export { BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS } from "./builtins/builtin-prototype.ts";
+export {
+  BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS,
+  describeAbsMember,
+  builtinProtoMember,
+  builtinProtoMemberNames,
+} from "./builtins/builtin-prototype.ts";
 
 export { loadEnvs, loadEnvsAsync, preloadPathEnvs, type LoadedEnv } from "./env-loader.ts";
 

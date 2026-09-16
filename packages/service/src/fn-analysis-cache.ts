@@ -2,7 +2,7 @@
  * Per-function FunctionAnalysis cache (body-edit: recompute only dirty fns).
  * Cleared together with B-path / whole-file analysis caches.
  */
-import type { TypeValue } from "@nudojs/core";
+import type { Abs, TypeValue } from "@nudojs/core";
 
 // Structural types — avoid importing analyzer (cycle).
 export type CachedSourceLocation = {
@@ -107,13 +107,13 @@ export function evictFnAnalysisCacheForFiles(files: string[]): number {
 }
 
 export function caseDirectiveKey(
-  directives: Array<{ kind: string; name?: string; args?: TypeValue[] }>,
-  typeValueToString: (t: TypeValue) => string,
+  directives: Array<{ kind: string; name?: string; argsAbs?: Abs[] }>,
+  formatAbs: (a: Abs) => string,
 ): string {
   return directives
     .map((d) => {
       if (d.kind === "case") {
-        const args = (d.args ?? []).map((a) => typeValueToString(a)).join(",");
+        const args = (d.argsAbs ?? []).map((a) => formatAbs(a)).join(",");
         return `c:${d.name ?? ""}:${args}`;
       }
       return d.kind;
