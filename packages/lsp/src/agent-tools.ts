@@ -14,7 +14,7 @@
  * variable declarations, expression statements and returns, so the assumed
  * type flows through the whole program like any other directive.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve, relative, isAbsolute } from "node:path";
 import {
   analyzeFile,
@@ -43,6 +43,7 @@ import {
   generatedExportNames,
   interfaceDiagCount,
   localNamedExports,
+  isNodeModulesPath,
   sidecarPathOf,
   takeInterfaceDiagsSince,
   type InterfaceSource,
@@ -61,8 +62,8 @@ export type AgentToolDeps = {
   /** Open-document lookup by absolute file path; the editor buffer wins over disk. */
   getOpenText?: (filePath: string) => { text: string } | undefined;
   /**
-   * LSP client workspace folders（server 注入）。emit 写盘仅允许落在这些根内；
-   * 未提供时退回 findProjectConfig 的 projectDir（若能找到）。
+   * LSP client workspace folders（server 注入）。emit 写盘仅允许落在这些根内
+   * （fail-closed，realpath 比较）；undefined = 无 bound（CLI/测试）。
    */
   workspaceRoots?: string[];
 };
@@ -101,10 +102,28 @@ export function normalizeFilePath(file: string): string {
   return resolve(path);
 }
 
+function tryRealpath(p: string): string | undefined {
+  try {
+    return realpathSync(p);
+  } catch {
+    return undefined;
+  }
+}
+
+function pathInsideRoot(root: string, filePath: string): boolean {
+  const rel = relative(root, filePath);
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
 /**
  * emit 路径边界：目标必须是可分析的 JS/TS 源（非侧车契约模块本身），
- * 且必须落在某个 workspace root（或 findProjectConfig 的 projectDir）内。
- * 防止 agent 客户端对 workspace 外任意路径写 `.nudo.js/.nudo.ts`。
+ * 不得落在 node_modules（含侧车路径），且在提供 workspaceRoots 时必须
+ * 落在某个 root 内（realpath 防符号链接逃逸）。
+ *
+ * - workspaceRoots === undefined：CLI/无 bound 场景，只做类型/node_modules 检查。
+ * - workspaceRoots 提供（含空数组）：LSP agent 写盘，fail-closed——没有任何
+ *   root 能包含目标就拒；不回落到 findProjectConfig 祖先 package.json
+ * （那会把 workspace 外的项目根误当成授权根）。
  */
 export function assertEmitTargetAllowed(
   filePath: string,
@@ -113,20 +132,23 @@ export function assertEmitTargetAllowed(
   if (!isNudoTargetPath(filePath)) {
     return `Error: '${filePath}' is not an analysis target (.js/.mjs/.ts required; sidecar contract modules cannot be emit targets)`;
   }
+  if (isNodeModulesPath(filePath) || isNodeModulesPath(sidecarPathOf(filePath))) {
+    return `Error: '${filePath}' is inside node_modules; emit never writes contract sidecars there`;
+  }
+  if (workspaceRoots === undefined) return undefined;
+
+  const realFile = tryRealpath(filePath) ?? filePath;
   const roots: string[] = [];
-  for (const r of workspaceRoots ?? []) {
+  for (const r of workspaceRoots) {
     const abs = resolve(r);
-    if (!roots.includes(abs)) roots.push(abs);
+    const real = tryRealpath(abs) ?? abs;
+    if (!roots.includes(real)) roots.push(real);
   }
+  // fail-closed：有 bound 却没有任何可用 root（或 root 不含目标）→ 拒
   if (roots.length === 0) {
-    const proj = findProjectConfig(dirname(filePath));
-    if (proj) roots.push(proj.projectDir);
+    return `Error: emit requires at least one workspace root; '${filePath}' cannot be authorized`;
   }
-  if (roots.length === 0) return undefined; // 无任何根信息：不额外拦（与 CLI 显式路径一致）
-  const ok = roots.some((root) => {
-    const rel = relative(root, filePath);
-    return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
-  });
+  const ok = roots.some((root) => pathInsideRoot(root, realFile));
   if (!ok) {
     return `Error: '${filePath}' is outside allowed roots (${roots.join(", ")})`;
   }

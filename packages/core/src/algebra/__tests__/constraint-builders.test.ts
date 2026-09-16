@@ -95,6 +95,12 @@ describe("shift(n)：数值常数界平移", () => {
   it("eq 谓词（lit 编码）→ throw", () => {
     expect(() => lit(42).shift(1)).toThrow();
   });
+
+  it("非有限 offset → throw", () => {
+    expect(() => number().gt(0).shift(NaN)).toThrow(/finite/);
+    expect(() => number().gt(0).shift(Infinity)).toThrow(/finite/);
+    expect(() => number().gt(0).shift(-Infinity)).toThrow(/finite/);
+  });
 });
 
 describe("lit(v)：字面量契约", () => {

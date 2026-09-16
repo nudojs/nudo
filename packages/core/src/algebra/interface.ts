@@ -52,7 +52,7 @@ import {
 } from "./refine.ts";
 
 // 单一定义在 sidecar-path.ts（leaf）；re-export 维持 @nudojs/core 导出面稳定
-export { sidecarPathOf };
+export { sidecarPathOf, isNodeModulesPath };
 
 // ---------------------------------------------------------------------------
 // 诊断 side-channel（镜像 refine.ts 的 RefineDiag 机制）
@@ -212,16 +212,17 @@ export function generatedExportNames(sidecarSrc: string): Set<string> {
   return out;
 }
 
-/** 从 pos 向上扫连续注释块（空行可跨），块内含 @generated → true */
-function leadingCommentHas(pos: number, src: string, marker: RegExp): boolean;
-function leadingCommentHas(pos: number, src: string): boolean;
-function leadingCommentHas(pos: number, src: string, marker = /@generated/): boolean {
-  const lines = src.slice(0, pos).split("\n");
+/** 紧邻声明上方的注释块（空行即断开）内含 @generated → true */
+function leadingCommentHas(pos: number, src: string): boolean {
+  // strip trailing newline：slice(0,pos) 常以 \n 结尾，split 最后一项是空串，
+  // 会把紧邻上方的注释误判成隔了空行
+  const lines = src.slice(0, pos).replace(/\n$/, "").split("\n");
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]!.trim();
-    if (line === "" || line === "*/") continue;
+    if (line === "") break; // 空行断开：隔空行的 @generated 不算紧邻
+    if (line === "*/") continue;
     if (line.startsWith("//") || line.startsWith("/*") || line.startsWith("*")) {
-      if (marker.test(line)) return true;
+      if (/@generated/.test(line)) return true;
       continue;
     }
     break;
@@ -348,9 +349,47 @@ function boundsOf(c: NudoConstraint): Bound[] {
   return out;
 }
 
+/** eq(self, lit v) 提取（and 嵌套展开） */
+function eqLitsOf(c: NudoConstraint): Array<{ term: string; value: number | string | boolean | null }> {
+  const out: Array<{ term: string; value: number | string | boolean | null }> = [];
+  const visit = (p: Pred): void => {
+    if (p.op === "and") {
+      p.args.forEach(visit);
+      return;
+    }
+    if (p.op !== "eq") return;
+    let term: Term | undefined;
+    let value: number | string | boolean | null | undefined;
+    if (p.a.op === "var" && p.b.op === "lit") {
+      term = p.a;
+      value = p.b.value as number | string | boolean | null | undefined;
+    } else if (p.b.op === "var" && p.a.op === "lit") {
+      term = p.b;
+      value = p.a.value as number | string | boolean | null | undefined;
+    }
+    if (term !== undefined && value !== undefined) {
+      out.push({ term: termToString(term), value });
+    }
+  };
+  c.preds.forEach(visit);
+  return out;
+}
+
+/** 常数界是否排除字面量 v（同项） */
+function boundExcludes(bounds: Bound[], term: string, v: number): boolean {
+  for (const b of bounds) {
+    if (b.term !== term) continue;
+    if (b.lower && (b.strict ? v <= b.n : v < b.n)) return true;
+    if (!b.lower && (b.strict ? v >= b.n : v > b.n)) return true;
+  }
+  return false;
+}
+
 /**
- * 最小 unsat：同参两约束的同项常数界交叉矛盾（§2.1：x>0 ∧ x<0）。
- * 双非严格界仅在开区间为空时矛盾（x≥0 ∧ x≤0 在 x=0 可满足）。
+ * 最小 unsat：同参两约束的
+ * - 常数界交叉矛盾（§2.1：x>0 ∧ x<0；双非严格界仅在开区间为空时矛盾）
+ * - eq 字面量冲突（lit(42) ∧ lit(43)）
+ * - eq 与对侧常数界互斥（lit(5) ∧ number().gt(10)）
  */
 function crossBoundConflict(a: NudoConstraint, b: NudoConstraint): boolean {
   const A = boundsOf(a);
@@ -362,6 +401,20 @@ function crossBoundConflict(a: NudoConstraint, b: NudoConstraint): boolean {
       const hi = x.lower ? y : x;
       if (lo.strict || hi.strict ? lo.n >= hi.n : lo.n > hi.n) return true;
     }
+  }
+  const eqA = eqLitsOf(a);
+  const eqB = eqLitsOf(b);
+  for (const x of eqA) {
+    for (const y of eqB) {
+      if (x.term !== y.term) continue;
+      if (x.value !== y.value) return true;
+    }
+  }
+  for (const eq of eqA) {
+    if (typeof eq.value === "number" && boundExcludes(B, eq.term, eq.value)) return true;
+  }
+  for (const eq of eqB) {
+    if (typeof eq.value === "number" && boundExcludes(A, eq.term, eq.value)) return true;
   }
   return false;
 }
@@ -541,7 +594,7 @@ export function sidecarClosureFingerprint(
   opts: EffectiveInterfaceOpts,
 ): string | undefined {
   const { loadModule, autoBind } = opts;
-  if (!loadModule) return undefined;
+  if (!loadModule || !fromFile) return undefined;
   const sidecarPath = sidecarPathOf(fromFile);
   if (!sidecarAutoBindAllowed(sidecarPath, autoBind)) return undefined;
   const spec = `./${sidecarPath.slice(sidecarPath.lastIndexOf("/") + 1)}`;

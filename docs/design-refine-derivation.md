@@ -899,8 +899,9 @@ Abs 代数本身**不需要新内核**：下行只是「在根入口约束下跑
    对齐 `number()`/`shape()`）。[已实施]
 2. Loader 升级（§2.2）：真 parser 做 import/export 改写；递归 `loadModule` +
    环检测；exec 缓存键并依赖闭包指纹；静默吞错与 `export function` 形式
-   侧车导出改诊断；**执行边界三条落地**（项目根内 / `node_modules` 不自动
-   加载 / `autoBind` 可关，§2.2）。存量行为翻转（吞错 → 诊断、
+   侧车导出改诊断；**执行边界落地**（`node_modules` 不自动加载 / `autoBind`
+   可关并透传到 scan generalize 与同文件 eiOpts；「项目根内」仍属宿主层
+   未实现，见 §2.2）。存量行为翻转（吞错 → 诊断、
    `export function` 导出 → 报错）需同步改写 refine-import / check-shape-gold
    等夹具的相关期望——「gold 只增不改」只约束 `constraint-violated` 旧码，
    loader 行为翻转不适用。[已实施；.nudo.ts 入口剥 TS 语法]
@@ -909,7 +910,8 @@ Abs 代数本身**不需要新内核**：下行只是「在根入口约束下跑
    （`paths` / `--fn` / 默认只刷新已有生成段），禁止无参全量写盘。[已实施]
 5. `nudo:interface-domain-exceeds`（**T10b**；error 仅手写契约，§3.3；带 §6 证据
    门槛，含字符串域隶属新代码）/ `nudo:interface-drift`（**T10a**；含域 ⊄ 生成段）/
-   `nudo:interface-name-clash`；新码进 gold 夹具与 zero-FP 套件。[已实施]
+   `nudo:interface-name-clash`；drift / domain-exceeds 进 gold 夹具，
+   name-clash 与其余新码进 zero-FP 套件。[已实施]
 6. LSP CodeLens：`● interface / default` + case 副层；hover default 走 symbolic；
    `nudo.interface` / `nudo.interface.emit`（按 `functionName`）。[已实施]
 7. 文档：directives / check / CLI；case 降为 debug 叙事。[已实施]

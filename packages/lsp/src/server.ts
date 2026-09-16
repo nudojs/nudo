@@ -845,11 +845,16 @@ async function handleInterfaceEmit(params: {
   const filePath = params.uri
     ? uriToFilePath(params.uri)
     : normalizeFilePath(params.file ?? "");
-  const toolResult = await interfaceEmitTool({
-    file: filePath,
-    functionName: params.functionName,
-    mode: params.mode,
-  });
+  // 必须传 agentToolDeps：workspaceRoots 来自 onInitialize 注入，emit 写盘
+  // 边界（assertEmitTargetAllowed）依赖它。漏传会让边界静默失效。
+  const toolResult = await interfaceEmitTool(
+    {
+      file: filePath,
+      functionName: params.functionName,
+      mode: params.mode,
+    },
+    agentToolDeps,
+  );
 
   // emit 失败（入参校验 / 写盘异常）：不进入失效链路——侧车并未写入，
   // 「sidecar written but cache invalidation failed」会撒谎并叠加二次异常

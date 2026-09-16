@@ -31,6 +31,7 @@ import {
   evictCheckSourceMemoForPaths,
   extractAllLoadSpecs,
   extractNudoImports,
+  isNodeModulesPath,
   resolveDepPath,
   sidecarPathOf,
   sidecarSpecsOf,
@@ -109,7 +110,7 @@ const MAX_IMPLICIT_SIDECAR_NODES = 64;
  */
 function registerSidecarClosureFor(entryFile: string, parent: string): void {
   const sidecar = sidecarPathOf(entryFile);
-  if (sidecar.includes("/node_modules/")) return;
+  if (isNodeModulesPath(sidecar)) return;
   let rootSrc: string;
   try {
     rootSrc = readFileSync(sidecar, "utf8");
@@ -366,7 +367,7 @@ export async function validateText(
   const sidecarPath = sidecarPathOf(filePath);
   const hasSidecar =
     interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind &&
-    !sidecarPath.includes("/node_modules/") &&
+    !isNodeModulesPath(sidecarPath) &&
     existsSync(sidecarPath);
   if (deps.isNudoUri && !deps.isNudoUri(uri) && !hasSidecar) {
     deps.sendDiagnostics({ uri, diagnostics: [] });

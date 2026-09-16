@@ -21,17 +21,19 @@ import {
 import { leqAbs } from "./leq.ts";
 import {
   extractRefineReturnFromSource,
+  refineDiagCount,
   setRefineDiagCollector,
-  takeRefineDiags,
+  takeRefineDiagsSince,
 } from "./refine.ts";
 import {
   effectiveInterface,
   formatConstraint,
+  interfaceDiagCount,
   localNamedExports,
   setInterfaceDiagCollector,
   sidecarClosureFingerprint,
   sidecarPathOf,
-  takeInterfaceDiags,
+  takeInterfaceDiagsSince,
   type EffectiveInterface,
 } from "./interface.ts";
 import {
@@ -237,6 +239,10 @@ export function checkSource(
   // 诊断纯缓冲模式：refine/interface 侧车诊断由 checkSource 统一收口进报告
   setRefineDiagCollector(null);
   setInterfaceDiagCollector(null);
+  // since 锚：memo 命中路径只排干本次（指纹/侧车加载）产生的增量诊断，
+  // 不全量 take——全量 take 会窃取在途 LSP validateText 的待消费诊断
+  const refineSince = refineDiagCount();
+  const ifaceSince = interfaceDiagCount();
 
   const useMemo = phi.op === "true";
   let memoKey: string | undefined;
@@ -256,9 +262,8 @@ export function checkSource(
     memoKey = checkMemoKey(filePath, stable, opts, depsFp, sidecarFp);
     const hit = checkMemoGet(memoKey);
     if (hit) {
-      // 命中路径本次无诊断产生；取即清空，防跨调用泄漏
-      takeRefineDiags();
-      takeInterfaceDiags();
+      takeRefineDiagsSince(refineSince);
+      takeInterfaceDiagsSince(ifaceSince);
       return cloneCheckReport(hit);
     }
   }
@@ -295,10 +300,11 @@ export function checkSource(
       sidecarFp,
     );
     // 侧车诊断 side-channel 收口：nudo:interface-load / interface-cycle 等
-    // 不再静默（同源重复收集按 code+message 去重）
+    // 不再静默（同源重复收集按 code+message 去重）。用 since 锚避免窃取
+    // 在途 LSP validateText 的待消费诊断。
     const diagIssues = sidecarDiagIssues([
-      ...takeRefineDiags(),
-      ...takeInterfaceDiags(),
+      ...takeRefineDiagsSince(refineSince),
+      ...takeInterfaceDiagsSince(ifaceSince),
     ]);
     if (diagIssues.length > 0) {
       report.issues.push(...diagIssues);
@@ -366,6 +372,22 @@ function checkSourceInner(
   // autoBind（package.json#nudo.interface）统一透传：effectiveInterface /
   // generalize L0 / scan 执法 / case 对账同一开关口径
   const autoBind = opts.autoBind;
+  // effectiveInterface 文件内 memo：localNamedExports 走 errorRecovery 解析
+  // 不进 parse LRU，逐函数重跑会 O(exports × reparse)
+  const eiCache = new Map<string, EffectiveInterface | undefined>();
+  const effectiveInterfaceCached = (
+    fnName: string,
+  ): EffectiveInterface | undefined => {
+    const key = `${fnName}\0${autoBind === false ? "0" : "1"}`;
+    if (eiCache.has(key)) return eiCache.get(key);
+    const eff = effectiveInterface(source, fnName, {
+      loadModule: refineLoad,
+      fromFile: refineFrom,
+      ...(autoBind !== undefined ? { autoBind } : {}),
+    });
+    eiCache.set(key, eff);
+    return eff;
+  };
   for (const name of names) {
     const g = generalizeFromAst(name, source, {
       file,
@@ -402,12 +424,7 @@ function checkSourceInner(
     // - conflict（常数界交叉矛盾）→ nudo:interface-conflict，fn 级一次
     // - 返回后置仅 handwritten 执法（generated = 事实快照，drift 另行）
     if (hasRefineDirective || (exportedNames?.has(name) ?? false)) {
-      const intfOpts = {
-        loadModule: refineLoad,
-        fromFile: refineFrom,
-        ...(autoBind !== undefined ? { autoBind } : {}),
-      };
-      const eff = effectiveInterface(source, name, intfOpts);
+      const eff = effectiveInterfaceCached(name);
       if (eff?.conflict) {
         if (eff.conflict.params.length > 0) {
           issues.push({
@@ -438,7 +455,10 @@ function checkSourceInner(
         !eff.conflict?.returns
       ) {
         // 显示名优先取源码声明名（既有输出契约零改动）；侧车合取无名单 → 组合式显示
-        const named = extractRefineReturnFromSource(source, name, intfOpts);
+        const named = extractRefineReturnFromSource(source, name, {
+          loadModule: refineLoad,
+          fromFile: refineFrom,
+        });
         const display = named?.name ?? formatConstraint(eff.returns.constraint);
         issues.push(
           ...checkReturnConstraint(name, display, eff.returns.constraint, g.symbolic),
@@ -702,12 +722,14 @@ function checkReturnConstraint(
       }
     }
   }
-  // eq/or 域（lit()/union() 返回契约）：bounds 分支判不了——域隶属判定
+  // eq/or/length 域：数值 bounds 分支判不了 eq 与 length(self)，统一走域隶属
+  // （string().min/max/length 返回契约此前静默放过）
   if (
     lv !== undefined &&
     (typeof lv === "number" || typeof lv === "string" || typeof lv === "boolean") &&
     ((constraint.members?.length ?? 0) > 0 ||
-      constraint.preds.some((p) => p.op === "eq")) &&
+      constraint.preds.some((p) => p.op === "eq") ||
+      (typeof lv === "string" && constraint.preds.length > 0)) &&
     !literalMeetsConstraint(lv, constraint)
   ) {
     push(formatAbs(ret), formatConstraint(constraint), `返回满足 ${formatConstraint(constraint)} 的值`);

@@ -708,13 +708,16 @@ export function scanLiteralCalls(
     return r;
   };
 
-  /** effectiveInterface → [paramIdx, RefineEntry]（pred/constraint 与旧 refineToIndexedFull 同构） */
+  /** effectiveInterface → [paramIdx, RefineEntry]（pred/constraint 与旧 refineToIndexedFull 同构）
+   *  conflict 位跳过：契约本身不可满足时调用点不该被当成违例（§2.1 / interface.ts conflict 注释） */
   const interfaceToIndexed = (
     ei: EffectiveInterface,
     paramNames: string[],
   ): Array<[number, RefineEntry]> => {
+    const conflict = new Set(ei.conflict?.params ?? []);
     const entries: Array<[number, RefineEntry]> = [];
     for (const { param, constraint } of ei.params) {
+      if (conflict.has(param)) continue;
       const idx = paramNames.indexOf(param);
       if (idx >= 0) {
         entries.push([idx, { param, pred: instantiateConstraint(constraint, param), constraint }]);
@@ -1294,6 +1297,7 @@ export function scanLiteralCalls(
       refine: {
         loadModule: opts?.loadModule,
         fromFile: opts?.fromFile ?? "",
+        ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
       },
     });
     const paramNames = g?.params ?? [];
@@ -1492,11 +1496,19 @@ export function scanLiteralCalls(
       const sameFile = fnSource === source;
       // 跨文件无定义路径时不 ambient 绑定侧车（防误绑到本文件侧车）
       const eiOpts: EffectiveInterfaceOpts = sameFile
-        ? { loadModule: opts?.loadModule, fromFile: opts?.fromFile ?? "" }
+        ? {
+            loadModule: opts?.loadModule,
+            fromFile: opts?.fromFile ?? "",
+            ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+          }
         : {
             loadModule: opts?.loadModule,
             fromFile: interfaceFromFile ?? opts?.fromFile ?? "",
-            ...(interfaceFromFile ? {} : { autoBind: false }),
+            ...(interfaceFromFile
+              ? opts?.autoBind !== undefined
+                ? { autoBind: opts.autoBind }
+                : {}
+              : { autoBind: false }),
           };
       const ei = effectiveInterfaceOf(fnName, fnSource, eiOpts);
       if (ei?.source === "handwritten" && ei.params.length > 0) {

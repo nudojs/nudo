@@ -166,6 +166,8 @@ function makeBuilder(
       length: (n: number) =>
         add(pAnd(ge(lenTerm(selfTerm()), termLit(n)), le(lenTerm(selfTerm()), termLit(n)))),
       shift: (n: number) => {
+        if (!Number.isFinite(n))
+          throw new Error("nudo shift(): offset must be a finite number");
         if (fields || element || members || fnSlot)
           throw new Error("nudo shift(): 仅数值标量约束链合法（不支持 shape/array/union/fn）");
         if (prim !== undefined && prim !== "number")

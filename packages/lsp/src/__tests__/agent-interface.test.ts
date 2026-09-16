@@ -9,7 +9,7 @@
  * emitInterface 以磁盘为真值，与 CLI 路径一致），lens 计算用注入 loadModule 纯测。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -321,6 +321,28 @@ describe("interfaceEmitTool 入参校验（非法输入显式报错，不静默�
       { workspaceRoots: [dir] },
     );
     expect(r.content[0]!.text).not.toContain("outside allowed roots");
+  });
+
+  it("fail-closed when workspaceRoots is empty array", async () => {
+    const file = join(dir, "orphan.js");
+    writeFileSync(file, `export function f(x) {\n  return x;\n}\n`);
+    const r = await interfaceEmitTool(
+      { file, functionName: "f", mode: "add" },
+      { workspaceRoots: [] },
+    );
+    expect(r.content[0]!.text).toContain("at least one workspace root");
+  });
+
+  it("rejects emit targets inside node_modules", async () => {
+    const nm = join(dir, "node_modules", "pkg");
+    mkdirSync(nm, { recursive: true });
+    const file = join(nm, "index.js");
+    writeFileSync(file, `export function f(x) {\n  return x;\n}\n`);
+    const r = await interfaceEmitTool(
+      { file, functionName: "f", mode: "add" },
+      { workspaceRoots: [dir] },
+    );
+    expect(r.content[0]!.text).toContain("node_modules");
   });
 });
 

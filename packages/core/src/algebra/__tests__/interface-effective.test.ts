@@ -37,8 +37,10 @@ function makeFiles(files: Record<string, string>) {
 }
 
 const STD = `
-import { number } from "@nudojs/core";
+import { number, lit } from "@nudojs/core";
 export const positive = number().gt(0);
+export const fortyTwo = lit(42);
+export const five = lit(5);
 `;
 
 describe("sidecarPathOf", () => {
@@ -171,6 +173,26 @@ export const add2 = fn({ x: number().lt(99) });
     const { loadModule } = makeFiles({
       "/t/std.nudo.js": STD,
       "/t/add.nudo.js": `export const add2 = fn({ x: number().lt(0) });`,
+    });
+    const r = effectiveInterface(src, "add2", { loadModule, fromFile: "/t/add.js" });
+    expect(r!.conflict).toEqual({ params: ["x"] });
+  });
+
+  it("flags eq/eq contradiction as conflict", () => {
+    const src = `/// @nudo:import { fortyTwo } from "./std.nudo.js"\n/**\n * @nudo:refine x fortyTwo\n */\nexport function add2(x) {\n  return x + 2;\n}\n`;
+    const { loadModule } = makeFiles({
+      "/t/std.nudo.js": STD,
+      "/t/add.nudo.js": `export const add2 = fn({ x: lit(43) });`,
+    });
+    const r = effectiveInterface(src, "add2", { loadModule, fromFile: "/t/add.js" });
+    expect(r!.conflict).toEqual({ params: ["x"] });
+  });
+
+  it("flags eq/bound contradiction as conflict", () => {
+    const src = `/// @nudo:import { five } from "./std.nudo.js"\n/**\n * @nudo:refine x five\n */\nexport function add2(x) {\n  return x + 2;\n}\n`;
+    const { loadModule } = makeFiles({
+      "/t/std.nudo.js": STD,
+      "/t/add.nudo.js": `export const add2 = fn({ x: number().gt(10) });`,
     });
     const r = effectiveInterface(src, "add2", { loadModule, fromFile: "/t/add.js" });
     expect(r!.conflict).toEqual({ params: ["x"] });
@@ -396,6 +418,13 @@ describe("sidecarClosureFingerprint", () => {
     expect(sidecarClosureFingerprint("/t/add.js", {})).toBeUndefined();
     const { loadModule } = makeFiles({});
     expect(sidecarClosureFingerprint("/t/add.js", { loadModule })).toBeUndefined();
+  });
+
+  it("empty fromFile → undefined（不 ambient 绑 ./.nudo.js）", () => {
+    const { loadModule } = makeFiles({
+      "/t/add.nudo.js": `export const add2 = fn({ x: number() });`,
+    });
+    expect(sidecarClosureFingerprint("", { loadModule })).toBeUndefined();
   });
 
   it("autoBind:false → undefined（与 effectiveInterface 同门）", () => {

@@ -23,6 +23,7 @@ import {
   execNudoModule,
   formatConstraint,
   interfaceDiagCount,
+  isNodeModulesPath,
   isNudoConstraint,
   joinThenProject,
   localNamedExports,
@@ -35,6 +36,7 @@ import {
   type Abs,
   type NudoConstraint,
 } from "@nudojs/core";
+import { randomBytes } from "node:crypto";
 import { analyzeFileAsync, type CaseResult, type FunctionAnalysis } from "./analyzer.ts";
 import type { CallRecord } from "./evaluator/evaluator.ts";
 import { unifiedDiff } from "./case-emitter.ts";
@@ -93,6 +95,11 @@ export async function emitInterface(
   opts: EmitInterfaceOpts,
 ): Promise<EmitInterfaceResult> {
   const abs = resolve(filePath);
+  if (isNodeModulesPath(abs) || isNodeModulesPath(sidecarPathOf(abs))) {
+    throw new Error(
+      `emit target '${abs}' is inside node_modules; contract sidecars are never written there`,
+    );
+  }
   const source = readFileSync(abs, "utf-8");
   // since 锚：emit 只排干自身 round-trip 自检产生的诊断（全量 take 会在 LSP
   // 长驻进程的 await 窗口窃取在途 validateText 的待消费诊断）
@@ -236,8 +243,9 @@ export async function emitInterface(
   // ---- 组装最终内容 ----
   let finalContent: string;
   if (opts.mode === "add") {
-    // add：不动既有内容，仅追加缺失段
-    finalContent = joinSections(sidecarSrc, accepted.map((a) => a.text));
+    // add：不动既有内容，仅追加缺失段；空接受集保持原样（防尾空白 trim 误报 changed）
+    finalContent =
+      accepted.length === 0 ? sidecarSrc : joinSections(sidecarSrc, accepted.map((a) => a.text));
   } else {
     // update：剥离全部生成段；非目标段原样保留，目标段用新文本重排（幂等）
     const base = removeSections(sidecarSrc, sections);
@@ -252,8 +260,9 @@ export async function emitInterface(
     ? unifiedDiff(sidecarSrc, finalContent, relative(process.cwd(), sidecarPath) || sidecarPath)
     : undefined;
   if (changed && !opts.dryRun) {
-    // 同目录 temp + rename：崩溃/磁盘满时侧车不会变成半截文件
-    const tmp = `${sidecarPath}.tmp-${process.pid}`;
+    // 同目录 temp + rename：崩溃/磁盘满时侧车不会变成半截文件。
+    // 随机后缀防可预测 tmp 路径被预置符号链接劫持。
+    const tmp = `${sidecarPath}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
     try {
       writeFileSync(tmp, finalContent, "utf-8");
       renameSync(tmp, sidecarPath);
