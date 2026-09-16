@@ -30,7 +30,7 @@ sli();                                // → "el"
 Case "call@L2": () => "HELLO"
 ```
 
-`toUpperCase`, `toLowerCase`, `slice`, `.length`, and `split` (literal receiver and separator) produce exact results — `"a,b,c".split(",")` folds to `["a", "b", "c"]` on both the call-site and directive paths. Prefix/suffix/membership checks — `startsWith`, `endsWith`, `includes` — fold to a definite boolean on literal receivers. `indexOf` yields the `number` primitive without the literal index.
+`toUpperCase`, `toLowerCase`, `slice`, `.length`, and `split` (literal receiver and separator) produce exact results — `"a,b,c".split(",")` folds to `["a", "b", "c"]` at the call site, and a comma-free receiver like `"abc".split("b")` folds to `["a", "c"]` under an `@nudo:case` directive. The directive path cannot express a comma-containing receiver: the directive parser splits case arguments on commas, so `@nudo:case "split" ("a,b,c")` arrives as three `unknown` parameters rather than one string. Prefix/suffix/membership checks — `startsWith`, `endsWith`, `includes` — fold to a definite boolean on literal receivers. `indexOf` yields the `number` primitive without the literal index.
 
 ### Loops with Concrete Bounds
 

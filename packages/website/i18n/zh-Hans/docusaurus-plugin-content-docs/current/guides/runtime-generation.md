@@ -143,7 +143,7 @@ nudo generate src/api/users.js --format guard
 ```js
 // === createUser Type Guards ===
 export function iscreateUserInputOutput(data) {
-  return typeof data === 'object' && data !== null && data.id === 123 && typeof data.name === 'string' && typeof data.age === 'number';
+  return typeof data === "object" && data !== null && data.id === 123 && typeof data.name === "string" && typeof data.age === "number";
 }
 ```
 
@@ -181,7 +181,7 @@ export declare function createUser(input: { name: string; age: number }): { id: 
 // @nudo:case "string input" ("hello")
 // @nudo:case "number input" (42)
 function formatValue(value) {
-  return String(value);
+  return `${value}`;
 }
 ```
 
@@ -323,7 +323,7 @@ nudo generate src/api/products.js --format all
 
 // === createProduct Type Guards ===
 export function iscreateProductInputOutput(data) {
-  return typeof data === 'object' && data !== null && data.id === 456 && typeof data.name === 'string' && typeof data.price === 'number' && Array.isArray(data.tags) && data.tags.every(item => typeof item === 'string');
+  return typeof data === "object" && data !== null && data.id === 456 && typeof data.name === "string" && typeof data.price === "number" && Array.isArray(data.tags) && data.tags.every((item) => typeof item === "string");
 }
 
 // === createProduct TypeScript Declarations ===
@@ -339,7 +339,7 @@ export declare function createProduct(input: { name: string; price: number; tags
 ```js
 // src/api/products.guard.js -- 粘贴自上面的 stdout
 export function iscreateProductInputOutput(data) {
-  return typeof data === 'object' && data !== null && data.id === 456 && typeof data.name === 'string' && typeof data.price === 'number' && Array.isArray(data.tags) && data.tags.every(item => typeof item === 'string');
+  return typeof data === "object" && data !== null && data.id === 456 && typeof data.name === "string" && typeof data.price === "number" && Array.isArray(data.tags) && data.tags.every((item) => typeof item === "string");
 }
 ```
 

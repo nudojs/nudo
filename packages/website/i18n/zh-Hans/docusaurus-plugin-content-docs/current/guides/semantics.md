@@ -30,7 +30,7 @@ sli();                                // → "el"
 Case "call@L2": () => "HELLO"
 ```
 
-`toUpperCase`、`toLowerCase`、`slice`、`.length` 与 `split`（字面量接收者 + 字面量分隔符）产生精确结果——`"a,b,c".split(",")` 在调用点与指令两条路径上都折叠为 `["a", "b", "c"]`。前缀/后缀/包含检查——`startsWith`、`endsWith`、`includes`——对字面量接收者折叠为确定的布尔值。`indexOf` 只得 `number` 原语，丢字面量下标。
+`toUpperCase`、`toLowerCase`、`slice`、`.length` 与 `split`（字面量接收者 + 字面量分隔符）产生精确结果——`"a,b,c".split(",")` 在调用点路径折叠为 `["a", "b", "c"]`，无逗号的接收者如 `"abc".split("b")` 在 `@nudo:case` 指令路径折叠为 `["a", "c"]`。指令路径无法表达含逗号的接收者：指令解析器按逗号拆分用例实参，`@nudo:case "split" ("a,b,c")` 会变成三个 `unknown` 形参而非一个字符串。前缀/后缀/包含检查——`startsWith`、`endsWith`、`includes`——对字面量接收者折叠为确定的布尔值。`indexOf` 只得 `number` 原语，丢字面量下标。
 
 ### 具体边界的循环
 
