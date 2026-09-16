@@ -122,7 +122,36 @@ root(9);
 Case "call@L2": (9) => 3
 ```
 
-`sqrt`, `pow`, `abs`, `floor`, `ceil`, `round`, `min`, and `max` all fold to their exact numeric result on literal arguments; symbolic arguments widen to `number`.
+`sqrt`, `pow`, `abs`, `floor`, `ceil`, `round`, `sign`, `min`, and `max` all fold to their exact numeric result on literal arguments; symbolic arguments widen to `number`.
+
+### Primitive Conversions & Parsing
+
+The global coercion constructors and numeric parsers fold literals to exact results at the call site and under `@nudo:case` alike:
+
+```js
+function strOf(x) { return String(x); }
+strOf(5);                            // → "5"
+
+function boolOf(x) { return Boolean(x); }
+boolOf("hi");                        // → true
+
+function numOf(x) { return Number(x); }
+numOf("42");                         // → 42
+
+function intOf(s) { return parseInt(s); }
+intOf("42px");                       // → 42
+
+function floatOf(s) { return parseFloat(s); }
+floatOf("3.14");                     // → 3.14
+```
+
+```text
+=== strOf ===
+
+Case "call@L2": (5) => "5"
+```
+
+`String(x)`, `Number(x)`, and `Boolean(x)` fold number/string/boolean literals to the exact coerced literal; `parseInt(s)` / `parseFloat(s)` fold string/number literals to the exact numeric prefix/parse. Symbolic arguments widen to the target primitive (`string` / `number` / `boolean`). Repo example (CI-pinned): [`docs/examples/algebra/l-primitive-conversion.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/l-primitive-conversion.js).
 
 ### Method Calls and `this`
 

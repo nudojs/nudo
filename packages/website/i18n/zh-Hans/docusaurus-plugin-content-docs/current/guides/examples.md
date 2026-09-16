@@ -316,6 +316,39 @@ Case "call@L7": () => { upper: "HELLO", sliced: "el", len: 5 }
 
 ---
 
+### 原始值转换与解析
+
+全局强制转换构造器与数值解析器在字面量上折叠为精确结果——调用点与指令两条路径皆然：
+
+```javascript
+function strOf(x) { return String(x); }
+strOf(5);                            // → "5"
+
+function boolOf(x) { return Boolean(x); }
+boolOf("hi");                        // → true
+
+function numOf(x) { return Number(x); }
+numOf("42");                         // → 42
+
+function intOf(s) { return parseInt(s); }
+intOf("42px");                       // → 42
+
+function floatOf(s) { return parseFloat(s); }
+floatOf("3.14");                     // → 3.14
+```
+
+**推断输出：**
+
+```text
+=== strOf ===
+
+Case "call@L2": (5) => "5"
+```
+
+`String`、`Number`、`Boolean` 把 number/string/boolean 字面量折叠为精确强转结果；`parseInt` / `parseFloat` 把 string/number 字面量折叠为精确数值前缀/解析结果。符号实参拓宽为目标原语。仓库示例（CI 钉住）：[`docs/examples/algebra/l-primitive-conversion.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/l-primitive-conversion.js)。
+
+---
+
 ## 循环与范围
 
 ### 8. 循环求值

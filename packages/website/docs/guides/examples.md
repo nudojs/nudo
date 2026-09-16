@@ -316,6 +316,39 @@ Case "call@L7": () => { upper: "HELLO", sliced: "el", len: 5 }
 
 ---
 
+### Primitive Conversions & Parsing
+
+The global coercion constructors and numeric parsers fold literals to exact results, on the call-site and directive paths alike:
+
+```javascript
+function strOf(x) { return String(x); }
+strOf(5);                            // → "5"
+
+function boolOf(x) { return Boolean(x); }
+boolOf("hi");                        // → true
+
+function numOf(x) { return Number(x); }
+numOf("42");                         // → 42
+
+function intOf(s) { return parseInt(s); }
+intOf("42px");                       // → 42
+
+function floatOf(s) { return parseFloat(s); }
+floatOf("3.14");                     // → 3.14
+```
+
+**Inferred output:**
+
+```text
+=== strOf ===
+
+Case "call@L2": (5) => "5"
+```
+
+`String`, `Number`, and `Boolean` fold number/string/boolean literals to the exact coerced literal; `parseInt` / `parseFloat` fold string/number literals to the exact numeric prefix/parse. Symbolic arguments widen to the target primitive. Repo example (CI-pinned): [`docs/examples/algebra/l-primitive-conversion.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/l-primitive-conversion.js).
+
+---
+
 ## Loops and Ranges
 
 ### 8. Loop Evaluation

@@ -122,7 +122,36 @@ root(9);
 Case "call@L2": (9) => 3
 ```
 
-`sqrt`、`pow`、`abs`、`floor`、`ceil`、`round`、`min`、`max` 都在字面量实参上折叠为精确数值结果；符号实参拓宽为 `number`。
+`sqrt`、`pow`、`abs`、`floor`、`ceil`、`round`、`sign`、`min`、`max` 都在字面量实参上折叠为精确数值结果；符号实参拓宽为 `number`。
+
+### 原始值转换与解析
+
+全局强制转换构造器与数值解析器在字面量上折叠为精确结果——调用点与 `@nudo:case` 两条路径皆然：
+
+```js
+function strOf(x) { return String(x); }
+strOf(5);                            // → "5"
+
+function boolOf(x) { return Boolean(x); }
+boolOf("hi");                        // → true
+
+function numOf(x) { return Number(x); }
+numOf("42");                         // → 42
+
+function intOf(s) { return parseInt(s); }
+intOf("42px");                       // → 42
+
+function floatOf(s) { return parseFloat(s); }
+floatOf("3.14");                     // → 3.14
+```
+
+```text
+=== strOf ===
+
+Case "call@L2": (5) => "5"
+```
+
+`String(x)`、`Number(x)`、`Boolean(x)` 把 number/string/boolean 字面量折叠为精确强转结果；`parseInt(s)` / `parseFloat(s)` 把 string/number 字面量折叠为精确数值前缀/解析结果。符号实参拓宽为目标原语（`string` / `number` / `boolean`）。仓库示例（CI 钉住）：[`docs/examples/algebra/l-primitive-conversion.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/l-primitive-conversion.js)。
 
 ### 方法调用与 `this`
 

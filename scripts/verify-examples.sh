@@ -266,6 +266,12 @@ pin 'pnpm run infer docs/examples/algebra/k-try-catch.js' \
   'Case "fold": () => "inner"' 'abs: "inner"  #exact' \
   'Case "caught": () => unknown' 'abs: unknown  #exact' \
   'Built-in API "err" is not covered' 'nudo:builtin-unknown'
+pin 'pnpm run infer docs/examples/algebra/l-primitive-conversion.js' \
+  'Case "str": (5) => "5"' 'abs: "5"  #exact' \
+  'Case "bool": ("hi") => true' 'abs: true  #exact' \
+  'Case "num": ("42") => 42' 'abs: 42  #exact' \
+  'Case "int": ("42px") => 42' 'abs: 42  #exact' \
+  'Case "float": ("3.14") => 3.14' 'abs: 3.14  #exact'
 pin 'pnpm run infer docs/examples/algebra/sample.js' \
   'Case "entry@' '# no call sites found; parameters default to unknown' \
   'add: (a: A1, b: A2) => number | string = (A1 + A2)' \
