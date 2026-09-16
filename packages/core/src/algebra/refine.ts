@@ -25,7 +25,7 @@ import { parseSource } from "./parse-source.ts";
 import { hashSource } from "./hash-source.ts";
 // leaf 模块：load-deps-fp.ts 已 import 本文件（extractNudoImports），
 // 反向 import 会成环——路径函数从 sidecar-path.ts 单源取用
-import { resolveDepPath } from "./sidecar-path.ts";
+import { isNodeModulesPath, resolveDepPath } from "./sidecar-path.ts";
 import type { ImportDeclaration } from "@babel/types";
 import {
   type NudoConstraint,
@@ -442,6 +442,13 @@ function execSidecar(
       // 裸包名 / @nudojs/core：注入
       for (const n of imp.names) {
         if (n.ns) {
+          // namespace import 绑成整个 inject 表会静默把 fs/path 等本地名
+          // 变成构建器袋——显式诊断，不再静默错绑
+          collectDiag({
+            code: "nudo:interface-load",
+            message: `sidecar namespace import '${n.local}' from '${imp.spec}' is not supported (import named builders only)`,
+            file: fromFile,
+          });
           prologue.push(`var ${n.local} = __nudoInjects;`);
         } else if (n.imported !== undefined) {
           if (!(n.imported in sidecarInjects)) {
@@ -487,6 +494,15 @@ function execSidecar(
       continue;
     }
     const canonical = resolveDepPath(fromFile, imp.spec);
+    if (isNodeModulesPath(canonical)) {
+      collectDiag({
+        code: "nudo:interface-load",
+        message: `sidecar import '${imp.spec}' resolves into node_modules (${canonical}); ambient sidecar loading never crosses node_modules`,
+        file: fromFile,
+      });
+      for (const n of imp.names) deps[n.local] = undefined;
+      continue;
+    }
     if (chain.includes(canonical)) {
       throw new NudoSidecarError(
         "nudo:interface-cycle",
@@ -522,6 +538,12 @@ function execSidecar(
         }
         deps[n.local] = depExports[n.imported];
       } else {
+        // 相对侧车 default import：侧车只收集 named export，default 恒空
+        collectDiag({
+          code: "nudo:interface-load",
+          message: `sidecar default import '${n.local}' from '${imp.spec}' has no default export (sidecars export named constraints only)`,
+          file: fromFile,
+        });
         deps[n.local] = depExports.default;
       }
     }
@@ -718,8 +740,9 @@ function extractRefineLines(source: string, fnName: string): string[] {
   // 前缀必须一并匹配：否则 match 落在行中，before 以 `export …` 结尾，
   // 反向注释扫描立即 break，@nudo:refine 整体丢失（导出函数的 refine
   // 全部静默失效）。
+  const escaped = fnName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const fnRe = new RegExp(
-    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${fnName}\\b|const\\s+${fnName}\\s*=)`,
+    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}\\b|const\\s+${escaped}\\s*=)`,
   );
   const m = source.match(fnRe);
   if (!m || m.index === undefined) return [];

@@ -435,6 +435,12 @@ function resolveTargets(path: string): string[] {
     }
     return files;
   }
+  // 显式单文件与目录展开同口径：*.nudo.js/*.nudo.ts/.d.ts/.tsx 不是推断目标
+  if (!isNudoTargetPath(resolved)) {
+    console.error(`Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX): ${resolved}`);
+    process.exitCode = 1;
+    return [];
+  }
   return [resolved];
 }
 
@@ -656,8 +662,8 @@ program
         process.exitCode = 1;
         return;
       }
-      if (opts.exitOnDiff && !opts.dryRun) {
-        console.error("--exit-on-diff requires --dry-run");
+      if (opts.exitOnDiff && (!opts.dryRun || !opts.emit)) {
+        console.error("--exit-on-diff requires --emit --dry-run");
         process.exitCode = 1;
         return;
       }

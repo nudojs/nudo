@@ -316,3 +316,23 @@ const a = setLevel({ level: 4 });
   });
 });
 
+describe("re-export 跳转相对中间模块解析", () => {
+  it("a.js → sub/b.js → ./c.js 解析为 sub/c.js（不是与 a 同目录的 c.js）", () => {
+    const files = {
+      "/t/sub/b.js": `export { needsPos } from "./c.js";\n`,
+      "/t/sub/c.js": `export function needsPos(x) {\n  return x > 0 ? x : 0;\n}\n`,
+      "/t/sub/c.nudo.js": `export const needsPos = fn({ x: number().gt(0) });\n`,
+      // 诱饵：与 a 同目录的 c.js（错误目标）
+      "/t/c.js": `export function needsPos(x) {\n  return x;\n}\n`,
+      "/t/c.nudo.js": `export const needsPos = fn({ x: number().int() });\n`,
+    };
+    const source = `import { needsPos } from "./sub/b.js";\nconst r = needsPos(-1);\n`;
+    const { loadModule } = makeFiles(files);
+    const issues = scanLiteralCalls(source, [], pTrue, { loadModule, fromFile: "/t/a.js" });
+    const err = issues.find((i) => i.code === "nudo:constraint-violated");
+    // 侧车绑在定义文件 sub/c.nudo.js（x>0）上，-1 违例；若误绑 /t/c.nudo.js（int）则 -1 通过
+    expect(err).toBeDefined();
+    expect(err!.expected).toContain(">");
+  });
+});
+

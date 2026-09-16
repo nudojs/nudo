@@ -15,7 +15,7 @@
  * type flows through the whole program like any other directive.
  */
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve, relative, isAbsolute } from "node:path";
 import {
   analyzeFile,
   buildCaseDirective,
@@ -27,6 +27,9 @@ import {
   emitInterface,
   formatEmitSummary,
   formatInterfaceSurfaceLine,
+  findProjectConfig,
+  interfaceConfig,
+  isNudoTargetPath,
   type EmitInterfaceResult,
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
@@ -57,6 +60,11 @@ export type AgentToolDeps = {
   readFile?: (filePath: string) => string;
   /** Open-document lookup by absolute file path; the editor buffer wins over disk. */
   getOpenText?: (filePath: string) => { text: string } | undefined;
+  /**
+   * LSP client workspace folders（server 注入）。emit 写盘仅允许落在这些根内；
+   * 未提供时退回 findProjectConfig 的 projectDir（若能找到）。
+   */
+  workspaceRoots?: string[];
 };
 
 export function textResult(text: string): AgentToolResult {
@@ -91,6 +99,38 @@ export function parseTypeExpr(expr: string): TypeValue {
 export function normalizeFilePath(file: string): string {
   const path = file.startsWith("file://") ? decodeURIComponent(file.slice(7)) : file;
   return resolve(path);
+}
+
+/**
+ * emit 路径边界：目标必须是可分析的 JS/TS 源（非侧车契约模块本身），
+ * 且必须落在某个 workspace root（或 findProjectConfig 的 projectDir）内。
+ * 防止 agent 客户端对 workspace 外任意路径写 `.nudo.js/.nudo.ts`。
+ */
+export function assertEmitTargetAllowed(
+  filePath: string,
+  workspaceRoots?: string[],
+): string | undefined {
+  if (!isNudoTargetPath(filePath)) {
+    return `Error: '${filePath}' is not an analysis target (.js/.mjs/.ts required; sidecar contract modules cannot be emit targets)`;
+  }
+  const roots: string[] = [];
+  for (const r of workspaceRoots ?? []) {
+    const abs = resolve(r);
+    if (!roots.includes(abs)) roots.push(abs);
+  }
+  if (roots.length === 0) {
+    const proj = findProjectConfig(dirname(filePath));
+    if (proj) roots.push(proj.projectDir);
+  }
+  if (roots.length === 0) return undefined; // 无任何根信息：不额外拦（与 CLI 显式路径一致）
+  const ok = roots.some((root) => {
+    const rel = relative(root, filePath);
+    return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+  });
+  if (!ok) {
+    return `Error: '${filePath}' is outside allowed roots (${roots.join(", ")})`;
+  }
+  return undefined;
 }
 
 const BARE_PRIMITIVES = new Set(["number", "string", "boolean", "bigint", "symbol"]);
@@ -517,7 +557,10 @@ export type InterfaceToolParams = {
   functionName?: string;
   /** .nudo.js 侧车装载（测试注入）；缺省 lspLoadModule 真实读盘 */
   loadModule?: (spec: string, fromFile: string) => string | undefined;
-  /** 覆盖项目配置的 autoBind */
+  /**
+   * 测试注入用。客户端不能借此把项目 `autoBind: false` 打开——有效值与
+   * 项目配置 AND：`projectAutoBind && (params.autoBind ?? true)`。
+   */
   autoBind?: boolean;
 };
 
@@ -572,9 +615,14 @@ export async function interfaceTool(
 ): Promise<AgentToolResult> {
   try {
     const filePath = normalizeFilePath(params.file);
+    // 有效 autoBind = 项目配置 AND 客户端请求——客户端不能把 autoBind:false 打开
+    const projectAutoBind = interfaceConfig(
+      findProjectConfig(dirname(filePath))?.config,
+    ).autoBind;
+    const autoBind = projectAutoBind && (params.autoBind ?? true);
     const entries = await interfaceSurface(filePath, {
       loadModule: params.loadModule ?? lspLoadModule,
-      ...(params.autoBind !== undefined ? { autoBind: params.autoBind } : {}),
+      autoBind,
     });
     const selected = params.functionName
       ? entries.filter((e) => e.fn === params.functionName)
@@ -637,7 +685,7 @@ function serializedEmit(
  */
 export async function interfaceEmitTool(
   params: InterfaceEmitToolParams,
-  _deps: AgentToolDeps = {},
+  deps: AgentToolDeps = {},
 ): Promise<AgentToolResult> {
   try {
     // 入参校验：非法 mode / 缺 functionName → 显式错误回报（server.ts 的
@@ -651,6 +699,8 @@ export async function interfaceEmitTool(
       );
     }
     const filePath = normalizeFilePath(params.file);
+    const err = assertEmitTargetAllowed(filePath, deps.workspaceRoots);
+    if (err) return textResult(err);
     const result = await serializedEmit(filePath, [params.functionName], params.mode);
     return textResult(formatEmitResult(filePath, result));
   } catch (err) {

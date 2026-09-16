@@ -215,7 +215,8 @@ export function boolean(): ConstraintBuilder {
 
 /** array(item) —— 数组，元素满足 item */
 export function array(item: NudoConstraint | ConstraintBuilder): ConstraintBuilder {
-  if (!isConstraint(item)) return makeBuilder(undefined, []);
+  if (!isConstraint(item))
+    throw new Error("nudo: array(item) 期望约束值（number()/string()/…或其组合子）");
   return makeBuilder(undefined, [], { element: item });
 }
 
@@ -229,7 +230,10 @@ export function shape(
 ): ConstraintBuilder {
   const mapped: Record<string, NudoField> = {};
   for (const [k, v] of Object.entries(fields)) {
-    if (!isConstraint(v)) continue;
+    if (!isConstraint(v))
+      throw new Error(
+        `nudo: shape 字段 '${k}' 期望约束值（number()/string()/…或其组合子），收到非约束`,
+      );
     mapped[k] = {
       constraint: v,
       ...(v.isOptional ? { optional: true } : {}),
@@ -410,10 +414,12 @@ export function instantiateConstraint(
   c: NudoConstraint,
   paramName: string,
 ): Pred {
-  // shape：展开为 and(字段 preds)
+  // shape：展开为 and(字段 preds)。optional 字段不进硬 pred（缺省可接受）——
+  // 与 constraintToEntryAbs 的 slot.optional 对齐，避免缺失可选字段误报。
   if (c.fields) {
     const parts: Pred[] = [];
     for (const [key, field] of Object.entries(c.fields)) {
+      if (field.optional || field.constraint.isOptional) continue;
       const fieldTerm = getTerm(termVar(paramName), key);
       parts.push(instantiateOnTerm(field.constraint, fieldTerm));
     }
@@ -473,6 +479,7 @@ function instantiateOnTerm(c: NudoConstraint, t: Term): Pred {
   if (c.fields) {
     const parts: Pred[] = [];
     for (const [key, field] of Object.entries(c.fields)) {
+      if (field.optional || field.constraint.isOptional) continue;
       parts.push(instantiateOnTerm(field.constraint, getTerm(t, key)));
     }
     if (parts.length === 0) return { op: "true" };

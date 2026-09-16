@@ -239,7 +239,7 @@ export function apply(f) {
       { paramNames: ["x"], loadModule, fromFile: "/t/area.js" },
     );
     expect(issues).toHaveLength(1);
-    expect(issues[0]!.actual).toBe('"a"、"b"');
+    expect(issues[0]!.actual).toBe('"a", "b"');
   });
 
   it("多参数位各自独立：x 证据越域、y 证据合规 → 仅 x 一条", () => {

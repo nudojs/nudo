@@ -33,7 +33,7 @@ import type { Term } from "./term.ts";
 import { termToString } from "./term.ts";
 import { parseSource } from "./parse-source.ts";
 import { hashSource } from "./hash-source.ts";
-import { resolveDepPath, sidecarPathOf } from "./sidecar-path.ts";
+import { isNodeModulesPath, resolveDepPath, sidecarPathOf } from "./sidecar-path.ts";
 import {
   type NudoConstraint,
   isNudoConstraint,
@@ -46,7 +46,8 @@ import {
   NudoSidecarError,
   extractRefinesFromSource,
   extractRefineReturnFromSource,
-  takeRefineDiags,
+  refineDiagCount,
+  takeRefineDiagsSince,
   type RefineResolveOpts,
 } from "./refine.ts";
 
@@ -131,17 +132,36 @@ export function localNamedExports(source: string): Set<string> {
   } catch {
     return out; // 解析失败：无本地导出信息，不阻断（refine 行走 regex 路径）
   }
+  // 先收 import 绑定名：export { x } 若 x 来自 import，则是 re-export 不绑源码
+  const importedLocalNames = new Set<string>();
+  for (const stmt of ast.program.body) {
+    if (stmt.type !== "ImportDeclaration") continue;
+    for (const spec of stmt.specifiers) {
+      if (spec.type === "ImportNamespaceSpecifier" || spec.type === "ImportDefaultSpecifier") {
+        importedLocalNames.add(spec.local.name);
+      } else if (spec.type === "ImportSpecifier") {
+        importedLocalNames.add(spec.local.name);
+      }
+    }
+  }
   for (const stmt of ast.program.body) {
     if (stmt.type !== "ExportNamedDeclaration") continue;
     if (stmt.source) continue; // export {…} from "…"（re-export）
     const d = stmt.declaration;
     if (!d) {
-      // export { x, y as z } 本地列表——按导出名收集（侧车绑的是公开名）
+      // export { x, y as z } 本地列表——按导出名收集（侧车绑的是公开名）。
+      // 排除「import 后 re-export」：`import { x } from …; export { x }` 不是
+      // 本地定义，契约跟随定义文件（与 `export { x } from` 同口径）。
       for (const spec of stmt.specifiers) {
         if (spec.type !== "ExportSpecifier") continue;
         const exported = spec.exported;
         const name = exported.type === "Identifier" ? exported.name : exported.value;
-        if (name) out.add(name);
+        if (!name || name === "default") continue;
+        const local = spec.local;
+        const localName =
+          local.type === "Identifier" ? local.name : (local as { value?: string }).value;
+        if (localName && importedLocalNames.has(localName)) continue;
+        out.add(name);
       }
       continue;
     }
@@ -231,12 +251,12 @@ export type EffectiveInterface = {
   conflict?: { params: string[]; returns?: boolean };
 };
 
-/** 自动绑定边界：/node_modules/ 永不 ambient 加载；autoBind 可关（§2.2） */
+/** 自动绑定边界：node_modules 永不 ambient 加载；autoBind 可关（§2.2） */
 function sidecarAutoBindAllowed(
   sidecarPath: string,
   autoBind: boolean | ((sidecarPath: string) => boolean) | undefined,
 ): boolean {
-  if (sidecarPath.includes("/node_modules/")) return false;
+  if (isNodeModulesPath(sidecarPath)) return false;
   if (autoBind === undefined || autoBind === true) return true;
   if (typeof autoBind === "function") return autoBind(sidecarPath) === true;
   return false;
@@ -373,17 +393,17 @@ export function effectiveInterface(
   opts: EffectiveInterfaceOpts = {},
 ): EffectiveInterface | undefined {
   // 手写来源 ①：源码 refine / interface 行（@nudo:import 模板由 refine.ts 解析）。
-  // extract 触发的 @nudo:import 失败等诊断默认落 refine 通道——转发进本文件
-  // side-channel，保证 takeInterfaceDiags 单口取走（否则残留 refine 通道，
-  // LSP 长会话里被后续无关文件的 checkSource 吸收 = 跨文件污染）。
+  // extract + 侧车加载都会往 refine 通道丢诊断——在两者之后统一 since 转发，
+  // 否则 loadSidecarBinding 期间的 interface-load 诊断会滞留 refine 通道。
+  const refineSince = refineDiagCount();
   const sourceEntries = extractRefinesFromSource(source, fnName, opts);
   const sourceReturn = extractRefineReturnFromSource(source, fnName, opts);
-  for (const d of takeRefineDiags()) {
-    collectDiag({ code: d.code, message: d.message, ...(d.file ? { file: d.file } : {}) });
-  }
 
   // 手写来源 ② ∪ 生成段：侧车同名自动绑定
   const sidecar = loadSidecarBinding(source, fnName, opts);
+  for (const d of takeRefineDiagsSince(refineSince)) {
+    collectDiag({ code: d.code, message: d.message, ...(d.file ? { file: d.file } : {}) });
+  }
   const sidecarFn = sidecar.ok ? sidecar.constraint : undefined;
   const sidecarGenerated = sidecar.ok && sidecar.generated;
   const sidecarParams = sidecarFn ? fnConstraintToEntryReqs(sidecarFn) : [];

@@ -368,3 +368,18 @@ describe("既有构建器回归（新形态不改变原语义）", () => {
     expect(union(number().gt(0)).members![0]!.int).toBeUndefined();
   });
 });
+
+describe("非法成员不再静默丢弃", () => {
+  it("shape 非约束字段 throw", () => {
+    expect(() => shape({ id: 42 as never })).toThrow(/shape/);
+  });
+
+  it("array 非约束元素 throw", () => {
+    expect(() => array(42 as never)).toThrow(/array/);
+  });
+
+  it("optional 字段不进 instantiate 硬 pred（与 Abs 路径 slot.optional 对齐）", () => {
+    const c = shape({ req: number().gt(0), opt: number().gt(0).optional() });
+    expect(inst(c, "u")).toBe("u.req > 0");
+  });
+});

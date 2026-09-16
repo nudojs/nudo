@@ -285,6 +285,43 @@ describe("interfaceEmitTool 入参校验（非法输入显式报错，不静默�
     const r = await interfaceEmitTool({ file, functionName: "f", mode: "add" });
     expect(r.content[0]!.text).toContain("no interface changes");
   });
+
+  it("rejects sidecar contract modules as emit targets", async () => {
+    const r = await interfaceEmitTool({
+      file: join(dir, "lib.nudo.js"),
+      functionName: "f",
+      mode: "add",
+    });
+    expect(r.content[0]!.text).toContain("not an analysis target");
+  });
+
+  it("rejects paths outside allowed workspace roots", async () => {
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "proj", version: "1.0.0", nudo: {} }),
+    );
+    const outside = join(dir, "..", `nudo-outside-${process.pid}.js`);
+    writeFileSync(outside, `export function f(x) {\n  return x;\n}\n`);
+    try {
+      const r = await interfaceEmitTool(
+        { file: outside, functionName: "f", mode: "add" },
+        { workspaceRoots: [dir] },
+      );
+      expect(r.content[0]!.text).toContain("outside allowed roots");
+    } finally {
+      rmSync(outside, { force: true });
+    }
+  });
+
+  it("allows emit inside workspace roots", async () => {
+    const file = join(dir, "inside.js");
+    writeFileSync(file, `export function f(x) {\n  return x;\n}\nf(1);\n`);
+    const r = await interfaceEmitTool(
+      { file, functionName: "f", mode: "add" },
+      { workspaceRoots: [dir] },
+    );
+    expect(r.content[0]!.text).not.toContain("outside allowed roots");
+  });
 });
 
 describe("executeCommand 位置参数桥接（server.ts 特判的纯函数形态）", () => {

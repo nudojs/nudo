@@ -105,7 +105,15 @@ function getActiveCasesForUri(uri: string): Map<string, number> {
   return map;
 }
 
-connection.onInitialize((_params: InitializeParams): InitializeResult => ({
+connection.onInitialize((params: InitializeParams): InitializeResult => {
+  workspaceRoots = (params.workspaceFolders ?? [])
+    .map((w) => uriToFilePath(w.uri))
+    .filter(Boolean);
+  if (workspaceRoots.length === 0 && params.rootUri) {
+    const root = uriToFilePath(params.rootUri);
+    if (root) workspaceRoots = [root];
+  }
+  return {
   capabilities: {
     textDocumentSync: TextDocumentSyncKind.Full,
     hoverProvider: true,
@@ -143,7 +151,11 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => ({
       workspaceDiagnostics: false,
     },
   },
-}));
+  };
+});
+
+/** LSP client workspace folders（emit 路径边界用） */
+let workspaceRoots: string[] = [];
 
 let debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -881,6 +893,9 @@ const agentToolDeps: AgentToolDeps = {
   getOpenText: (filePath) => {
     const doc = documents.all().find((d) => uriToFilePath(d.uri) === filePath);
     return doc ? { text: doc.getText() } : undefined;
+  },
+  get workspaceRoots() {
+    return workspaceRoots;
   },
 };
 

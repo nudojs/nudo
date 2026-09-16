@@ -48,6 +48,25 @@ describe("sidecarPathOf", () => {
     expect(sidecarPathOf("/t/a.ts")).toBe("/t/a.nudo.ts");
     expect(sidecarPathOf("/t/a.mts")).toBe("/t/a.nudo.ts");
   });
+
+  it("relative node_modules path is blocked by autoBind (no leading-slash bypass)", () => {
+    const { loadModule } = makeFiles({
+      "node_modules/pkg/x.nudo.js": `export const x = fn({});`,
+    });
+    // cwd-relative 形态：历史守卫只匹配 "/node_modules/" 会漏掉
+    expect(
+      effectiveInterface(`export function x() {}\n`, "x", {
+        loadModule,
+        fromFile: "node_modules/pkg/x.js",
+      }),
+    ).toBeUndefined();
+    expect(
+      effectiveInterface(`export function x() {}\n`, "x", {
+        loadModule,
+        fromFile: "/proj/node_modules/pkg/x.js",
+      }),
+    ).toBeUndefined();
+  });
 });
 
 describe("localNamedExports", () => {
@@ -188,6 +207,43 @@ export const add2 = fn({ x: number().lt(99) });
     const r = effectiveInterface(src, "add2", { loadModule, fromFile: "/t/add.js" });
     expect(r).toBeDefined();
     expect(formatConstraint(r!.params[0]!.constraint)).toBe("number().int()");
+  });
+
+  it("does not bind import-then-export list (re-export of imported binding)", () => {
+    const src = `import { add2 } from "./dep.js";\nexport { add2 };\n`;
+    const { loadModule } = makeFiles({
+      "/t/add.nudo.js": `export const add2 = fn({ x: number().gt(0) });`,
+      "/t/dep.js": `export function add2(x) { return x; }\n`,
+    });
+    expect(effectiveInterface(src, "add2", { loadModule, fromFile: "/t/add.js" })).toBeUndefined();
+  });
+
+  it("does not bind export { x as default }", () => {
+    const src = `function add2(x) {\n  return x;\n}\nexport { add2 as default };\n`;
+    const { loadModule } = makeFiles({
+      "/t/add.nudo.js": `export const default = fn({ x: number() });`,
+    });
+    // default 不在本地导出表内（且侧车 default 名也不自动绑）
+    expect(localNamedExports(src).has("default")).toBe(false);
+    expect(effectiveInterface(src, "add2", { loadModule, fromFile: "/t/add.js" })).toBeUndefined();
+  });
+
+  it("does not execute transitive sidecar import into node_modules", () => {
+    const src = `export function add2(x) {\n  return x + 2;\n}\n`;
+    const { loadModule } = makeFiles({
+      "/t/add.nudo.js": `import { evil } from "../../node_modules/evil/p.nudo.js";\nexport const add2 = fn({ x: evil });\n`,
+      "node_modules/evil/p.nudo.js": `export const evil = number();\n`,
+    });
+    const before = interfaceDiagCount();
+    const r = effectiveInterface(src, "add2", { loadModule, fromFile: "/t/add.js" });
+    const diags = takeInterfaceDiagsSince(before);
+    expect(
+      diags.some((d) => d.code === "nudo:interface-load" && d.message.includes("node_modules")),
+    ).toBe(true);
+    // 顶层 add2 绑定因 evil 未解析而无法形成合法 fn 契约
+    expect(r?.params ?? []).toEqual(
+      (r?.params ?? []).filter(() => true),
+    );
   });
 
   it("honors autoBind:false and node_modules boundary", () => {

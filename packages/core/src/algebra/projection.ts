@@ -121,6 +121,40 @@ export function joinThenProject(absList: Abs[]): NudoConstraint | undefined {
 
 // --- 标量投影 ---
 
+/** 常数界集合是否可满足（下界 < 上界；双非严格允许端点相等） */
+function boundsSatisfiable(bounds: Array<{ op: CmpOp; n: number }>): boolean {
+  let lo = -Infinity;
+  let loStrict = false;
+  let hi = Infinity;
+  let hiStrict = false;
+  for (const b of bounds) {
+    if (b.op === "gt") {
+      if (b.n > lo || (b.n === lo && !loStrict)) {
+        lo = b.n;
+        loStrict = true;
+      }
+    } else if (b.op === "ge") {
+      if (b.n > lo || (b.n === lo && loStrict)) {
+        lo = b.n;
+        loStrict = false;
+      }
+    } else if (b.op === "lt") {
+      if (b.n < hi || (b.n === hi && !hiStrict)) {
+        hi = b.n;
+        hiStrict = true;
+      }
+    } else if (b.op === "le") {
+      if (b.n < hi || (b.n === hi && hiStrict)) {
+        hi = b.n;
+        hiStrict = false;
+      }
+    }
+  }
+  if (lo > hi) return false;
+  if (lo === hi && (loStrict || hiStrict)) return false;
+  return true;
+}
+
 function projectNumber(a: Abs): NudoConstraint | undefined {
   if (a.term?.op === "lit") {
     const v = a.term.value;
@@ -161,6 +195,8 @@ function projectNumber(a: Abs): NudoConstraint | undefined {
     return undefined; // ne / not / false / length 于 number 等
   }
   if (eqVal !== undefined) return lit(eqVal); // eq 主导，常数界冗余
+  // 不可满足的界集合（x>5 ∧ x<3）→ undefined，不产垃圾约束
+  if (!boundsSatisfiable(bounds)) return undefined;
   let c = number();
   if (isInt) c = c.int();
   for (const b of bounds) c = c[b.op](b.n);
@@ -354,20 +390,13 @@ function lengthBound(
   const anchors = [termApp("length", [self]), termApp("length", [termVar(SELF)])];
   for (const anchor of anchors) {
     const b = numericBound(p, anchor);
-    if (b) {
-      // 长度整数域换算：> n ⟺ ≥ floor(n)+1、< n ⟺ ≤ ceil(n)−1
-      // （n 非整数时 n±1 偏窄：gt(len,2.5) 真域是 len≥3，不是 len≥3.5）
-      switch (b.op) {
-        case "ge":
-          return { dir: "min", n: b.n };
-        case "gt":
-          return { dir: "min", n: Math.floor(b.n) + 1 };
-        case "le":
-          return { dir: "max", n: b.n };
-        case "lt":
-          return { dir: "max", n: Math.ceil(b.n) - 1 };
-      }
-    }
+    if (!b) continue;
+    // 长度是整数域：ge/le 用 ceil/floor 归一，避免 ge(len,2.5)→min(2.5)
+    // gt: > n ⟺ ≥ floor(n)+1；lt: < n ⟺ ≤ ceil(n)−1
+    if (p.op === "ge") return { dir: "min", n: Math.ceil(b.n) };
+    if (p.op === "gt") return { dir: "min", n: Math.floor(b.n) + 1 };
+    if (p.op === "le") return { dir: "max", n: Math.floor(b.n) };
+    if (p.op === "lt") return { dir: "max", n: Math.ceil(b.n) - 1 };
   }
   return undefined;
 }

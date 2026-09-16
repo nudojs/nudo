@@ -265,12 +265,13 @@ function dynamicImportSpec(node: Record<string, unknown>): string | undefined {
 /**
  * 模块源码里找不到 fnName 时，沿 `export { fn } from './other'` / `export * from` 一跳跟进。
  * 返回定义了该函数的源码及其虚拟路径——interface 侧车绑定按最终定义文件定位。
- * 跳转 spec 由 loadSpec 相对 baseFromFile 解析（既有口径），路径用 resolveDepPath 同基拼接，保证与实际装载位置一致。
+ * 跳转 spec 必须相对**当前中间模块**目录解析（不是原始调用方）：`a.js` →
+ * `sub/b.js` → `./c.js` 的目标是 `sub/c.js`，不是与 `a.js` 同目录的 `c.js`。
  */
 function resolveExportSource(
   modSrc: string,
   fnName: string,
-  loadSpec: (spec: string) => string | undefined,
+  loadSpecFrom: (spec: string, fromFile: string) => string | undefined,
   depth = 0,
   baseFromFile = "",
   modFromFile = "",
@@ -307,15 +308,18 @@ function resolveExportSource(
     if (nextSpec) break;
   }
   if (!nextSpec) return here();
-  const next = loadSpec(nextSpec);
+  // 中间模块路径是下一跳解析基；首跳用 modFromFile，再跳用上一跳解析结果
+  const hopFrom = modFromFile || baseFromFile;
+  const next = hopFrom ? loadSpecFrom(nextSpec, hopFrom) : undefined;
   if (!next) return here();
+  const nextFromFile = hopFrom ? resolveDepPath(hopFrom, nextSpec) : "";
   return resolveExportSource(
     next,
     fnName,
-    loadSpec,
+    loadSpecFrom,
     depth + 1,
     baseFromFile,
-    baseFromFile ? resolveDepPath(baseFromFile, nextSpec) : "",
+    nextFromFile,
   );
 }
 
@@ -379,22 +383,26 @@ function collectCallResolvers(
   const load = opts?.loadModule;
   const fromFile = opts?.fromFile ?? "";
   const modCache = new Map<string, string | undefined>();
-  const loadSpec = (spec: string): string | undefined => {
+  /** 按 (spec, 解析基文件) 加载——re-export 跳转必须相对中间模块，不是原始调用方 */
+  const loadSpecFrom = (spec: string, from: string): string | undefined => {
     if (!load) return undefined;
-    if (!modCache.has(spec)) modCache.set(spec, load(spec, fromFile));
-    return modCache.get(spec);
+    const key = from + "\0" + spec;
+    if (!modCache.has(key)) modCache.set(key, load(spec, from));
+    return modCache.get(key);
   };
   /** import spec → 被引模块的虚拟路径（interface 侧车解析基；无 fromFile 时不可得） */
   const extFromFile = (spec: string): string | undefined =>
     fromFile ? resolveDepPath(fromFile, spec) : undefined;
   const bindExternal = (local: string, modSrc: string, fnName: string, spec: string): void => {
-    const r = resolveExportSource(modSrc, fnName, loadSpec, 0, fromFile, extFromFile(spec) ?? "");
+    const r = resolveExportSource(modSrc, fnName, loadSpecFrom, 0, fromFile, extFromFile(spec) ?? "");
     externalFn.set(local, {
       source: r.source,
       fnName,
       ...(r.fromFile ? { fromFile: r.fromFile } : {}),
     });
   };
+  /** 首跳加载：相对当前调用方文件（与既有口径一致） */
+  const loadSpec = (spec: string): string | undefined => loadSpecFrom(spec, fromFile);
 
   const visit = (n: unknown): void => {
     if (!n || typeof n !== "object") return;
@@ -1458,7 +1466,16 @@ export function scanLiteralCalls(
         sameFile && file ? { file } : {},
       );
       paramNames = gFn?.params ?? [];
-    } catch {
+    } catch (e) {
+      // 不再静默放弃：signature 恢复失败进 warning，便于定位侧车/AST 问题
+      out.push({
+        severity: "warning",
+        code: "nudo:no-signature",
+        message: `${displayName ?? fnName}: signature recovery failed (${e instanceof Error ? e.message : String(e)}); skipping call-site checks`,
+        fn: displayName ?? fnName,
+        line: loc?.start.line,
+        column: loc?.start.column,
+      });
       return;
     }
     // P4：HOF 实参 arity/shape 检查（依赖 P2 的 fnRels + RelSource）
@@ -1486,7 +1503,15 @@ export function scanLiteralCalls(
         refinedParams = new Set(ei.params.map((p) => p.param));
       }
     } catch {
-      /* refine 解析失败时退回 body 结构推断 */
+      // refine 解析失败时退回 body 结构推断——不静默丢诊断，但也不中断检查
+      out.push({
+        severity: "warning",
+        code: "nudo:no-signature",
+        message: `${displayName ?? fnName}: handwritten interface load failed; falling back to body structure inference`,
+        fn: displayName ?? fnName,
+        line: loc?.start.line,
+        column: loc?.start.column,
+      });
     }
     for (let i = 0; i < args.length; i++) {
       const pname = paramNames[i];
@@ -1630,8 +1655,17 @@ export function checkInjectedDomainEvidence(
       fromFile: opts.fromFile,
       ...(opts.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
     });
-  } catch {
-    return [];
+  } catch (e) {
+    return [
+      {
+        severity: "warning",
+        code: "nudo:interface-load",
+        message: `${fnName}: effective interface load failed (${e instanceof Error ? e.message : String(e)}); skipping domain-exceeds check`,
+        fn: fnName,
+        line: opts.loc?.line,
+        column: opts.loc?.column,
+      },
+    ];
   }
   // §3.3 执法分档：仅手写契约执法。generated 段是事实快照（过期由
   // nudo:interface-drift 覆盖）；implicit 无契约。
@@ -1660,7 +1694,7 @@ export function checkInjectedDomainEvidence(
       if (!literalMeetsConstraint(v, constraint)) failures.push(v);
     }
     if (failures.length === 0) continue;
-    const shown = [...new Set(failures)].map(evidenceToString).join("、");
+    const shown = [...new Set(failures)].map(evidenceToString).join(", ");
     out.push({
       severity: "error",
       code: "nudo:interface-domain-exceeds",

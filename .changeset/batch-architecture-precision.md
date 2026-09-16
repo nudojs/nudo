@@ -1,7 +1,7 @@
 ---
-"@nudojs/core": minor
-"@nudojs/service": minor
-"@nudojs/cli": minor
+"@nudojs/core": major
+"@nudojs/service": major
+"@nudojs/cli": major
 ---
 
 **BREAKING**: `@nudojs/cli/evaluator` 子路径已移除。求值器 API 迁至 `@nudojs/service/evaluator`（消除 cli↔service 工作区环）。迁移：`import { … } from "@nudojs/cli/evaluator"` → `import { … } from "@nudojs/service/evaluator"`。

@@ -24,6 +24,17 @@ export function resolveDepPath(fromFile: string, spec: string): string {
 }
 
 /**
+ * 是否落在 node_modules 下（相对/绝对/盘符形态统一）。
+ * autoBind 永不 ambient 加载 node_modules 侧车（§2.2）——必须在 normPath
+ * 之后判定，否则 `node_modules/pkg/x.js`（无前导 `/`）会绕过守卫。
+ */
+export function isNodeModulesPath(p: string): boolean {
+  const f = normPath(p);
+  if (f === "node_modules" || f.startsWith("node_modules/")) return true;
+  return f.includes("/node_modules/") || f.endsWith("/node_modules");
+}
+
+/**
  * 源文件的旁路侧车路径：.js/.mjs → 同名 .nudo.js；.ts/.mts → 同名 .nudo.ts。
  * 其他扩展名（.cjs/.jsx/无扩展名…）不做替换，直接追加 .nudo.js——侧车约定
  * 只覆盖四类入口；host loadModule 对不存在的路径返回 miss，自然无侧车来源。

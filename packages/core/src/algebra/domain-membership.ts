@@ -42,8 +42,11 @@ export function literalMeetsConstraint(
   if (Array.isArray(ext.members) && ext.members.length > 0) {
     return ext.members.some((m) => literalMeetsConstraint(lv, m));
   }
-  // prim 门：缺失（array()/shape()/lit(null) 等无 prim 形态）或不匹配 → false
-  if (c.prim === undefined) return false;
+  // prim 门：缺失时（lit(null)/any() 等）只按 preds 判定——eq(self,null)
+  // 能满足 null；any()（无 pred）接受一切字面量。有 prim 则必须类型匹配。
+  if (c.prim === undefined) {
+    return c.preds.every((p) => predHolds(lv, p));
+  }
   if (!primMatches(c.prim, lv)) return false;
   // int：整数性（number 字面量）。int 是 number 链概念（.int() 强制
   // prim="number"），仅在 number prim 上执法；非 number prim 上的 int 位

@@ -138,9 +138,10 @@ describe("literalMeetsConstraint", () => {
       expect(literalMeetsConstraint(false, litConstraint(true))).toBe(false);
     });
 
-    it("null：PrimName 无 null，lit(null) 编码（prim 缺失）→ 保守 false", () => {
-      expect(literalMeetsConstraint(null, litConstraint(null))).toBe(false);
+    it("null：lit(null) 无 prim，eq(self,null) 可满足；对非 null 字面量不满足", () => {
+      expect(literalMeetsConstraint(null, litConstraint(null))).toBe(true);
       expect(literalMeetsConstraint(null, string())).toBe(false);
+      expect(literalMeetsConstraint(0, litConstraint(null))).toBe(false);
     });
   });
 
@@ -172,8 +173,9 @@ describe("literalMeetsConstraint", () => {
       expect(literalMeetsConstraint(43, cLit(42))).toBe(false);
       expect(literalMeetsConstraint("a", cLit("a"))).toBe(true);
       expect(literalMeetsConstraint(true, cLit(true))).toBe(true);
-      // null 无 PrimName 可配 → prim 缺失 → 保守 false
-      expect(literalMeetsConstraint(null, cLit(null))).toBe(false);
+      // lit(null) 无 prim，eq(self,null) 可满足
+      expect(literalMeetsConstraint(null, cLit(null))).toBe(true);
+      expect(literalMeetsConstraint(0, cLit(null))).toBe(false);
     });
 
     it("union(...cs)：members 任一满足", () => {
@@ -219,9 +221,10 @@ describe("literalMeetsConstraint", () => {
   });
 
   describe("prim 门", () => {
-    it("prim 缺失 → false", () => {
-      const noPrim: NudoConstraint = { __nudoConstraint: true, preds: [] };
-      expect(literalMeetsConstraint(42, noPrim)).toBe(false);
+    it("prim 缺失且无 preds（any）→ 接受字面量", () => {
+      const anyC: NudoConstraint = { __nudoConstraint: true, preds: [] };
+      expect(literalMeetsConstraint(42, anyC)).toBe(true);
+      expect(literalMeetsConstraint(null, anyC)).toBe(true);
     });
 
     it("prim 与字面量类型不符 → false", () => {
