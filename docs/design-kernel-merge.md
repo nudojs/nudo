@@ -3,8 +3,10 @@
 > **唯一真理源**：`Abs = shape × term × pred × conf`（类型即计算）。
 > 位置：`@nudojs/core/src/algebra`。
 >
-> **TypeValue** 是评估 IR / 外延投影——环境绑定、dts/LSP/序列化消费的格式，
-> **不是**平行类型系统。Abs ⇄ TypeValue 经 `bridge.ts` 有损投影。
+> **TypeValue** 是外延投影——dts/LSP/序列化消费的格式与 `T` 工厂
+> （`*.nudo.js` 模板约束），**不是**平行类型系统，也不再是评估 IR
+> （TypeValue AST 解释器已删除，生产求值 Abs 原生）。Abs ⇄ TypeValue
+> 经 `bridge.ts` 有损投影。
 >
 > 无 `NUDO_KERNEL` 开关、无 `packages/kernel`、无双矩阵。
 
@@ -14,13 +16,12 @@
 
 ```
 parser ──▶ core
-            ├── algebra/     ← 类型本体（Abs / Term / Pred / Φ / check）
-            ├── type-value   ← 评估 IR
-            ├── ops          ← 代数未覆盖的语言表面（/ % === typeof …）
-            └── bridge       ← Abs ⇄ TypeValue
+            ├── algebra/     ← 类型本体（Abs / Term / Pred / Φ / check / surface）
+            ├── type-value   ← 外延投影（T 工厂 / dts / 序列化）
+            └── bridge       ← Abs ⇄ TypeValue（有损）
                  │
                  ▼
-            service/evaluator    ← AST 抽象解释；算术/比较/spread 先走代数
+            service/evaluator    ← Abs 原生：B-path（transpile+exec）→ ast-eval
                  │
                  ▼
             service / lsp / vscode / dts
@@ -38,9 +39,9 @@ parser ──▶ core
 | range narrow | Pred 编码进 Abs |
 | union | 逐成员代数 |
 | refined 方法/属性 | `dispatchMethod/Property`（宿主扩展） |
-| 混合 `+` / 无法判定的比较 | 残差 `Ops`（IR 兜底，不传播约束） |
+| 混合 `+` / 无法判定的比较 | 粗化回 shape 基类型（Abs 内部，不传播约束） |
 
-路由：`abs-route.ts` + `eval-binary.ts`。
+路由：`algebra/surface.ts` + `service/evaluator/abs-route.ts`。
 
 ## 约束如何传播
 
