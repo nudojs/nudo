@@ -1,5 +1,7 @@
 # Built-in API Coverage Implementation Plan
 
+> **Superseded / historical.** This plan targets `packages/cli/src/builtins/*` and `evaluator.ts` — the TypeValue evaluator modules deleted when production analysis moved Abs-native. Built-in APIs now live in `packages/env/` as Abs-native env modules; see `docs/design-kernel-merge.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add comprehensive built-in JavaScript API type inference for Promise, Map, Set, RegExp, URL, fetch, and other modern APIs.

@@ -1,5 +1,7 @@
 # Nudo Capability Boost Implementation Plan
 
+> **Superseded / historical.** This plan targets the pre-Abs TypeValue evaluator (`packages/cli/src/narrowing.ts`, `evaluator.ts`), deleted when production analysis moved Abs-native (B-path + ast-eval). The planned features landed in different files; see `docs/design-kernel-merge.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Level up Nudo's type inference precision, editor experience, AI agent integration, and runtime type generation across 4 phases.

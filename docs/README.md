@@ -47,6 +47,13 @@
 主题式示例指南是 `guides/examples.md`。本目录文档面向维护者；示例输出块的
 CI 真值仍是 `examples/`——网站指南开头已声明这一契约。
 
+## 历史规划
+
+[`superpowers/plans/`](./superpowers/plans/) 与 [`superpowers/specs/`](./superpowers/specs/)
+是带日期的实现计划与设计稿（superpowers.ai 工作流），属历史文档——其中对
+`packages/cli/src/{narrowing.ts, evaluator.ts, builtins/}` 的引用是 Abs 原生改造前的
+TypeValue 求值器文件，现已删除。实现现状以本页「现行」文档为准。
+
 ## 修改约定
 
 - 改示例 / 矩阵 / 期望退出码 → 同步 `scripts/verify-examples.sh` 的 pins，跑

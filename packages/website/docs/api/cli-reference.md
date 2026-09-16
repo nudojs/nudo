@@ -1,6 +1,6 @@
 ---
 sidebar_position: 4
-description: "Reference every nudo CLI command — infer, check, types, test, doctor, generate, emit, guard, watch, harvest — with arguments, options, output formats, and exit codes."
+description: "Reference every nudo CLI command — infer, check, interface, types, test, doctor, generate, emit, guard, watch, harvest — with arguments, options, output formats, and exit codes."
 ---
 
 # CLI Reference
@@ -21,6 +21,7 @@ npx @nudojs/cli infer ./src/utils.js
 |---------|---------|
 | [`nudo infer`](#nudo-infer) | Infer types from files or directories |
 | [`nudo check`](#nudo-check) | Check a file or directory for type errors (error-level diagnostics exit `1`) |
+| [`nudo interface`](#nudo-interface) | Print/emit each function's effective interface — `[handwritten]` / `[generated]` / `[implicit]` layers (alias `nudo refine`) |
 | [`nudo types`](#nudo-types) | Type-as-computation view: term + constraints from Abs algebra |
 | [`nudo test`](#nudo-test) | Run `@nudo:case` directives as assertions (exit `1` on failure) |
 | [`nudo doctor`](#nudo-doctor) | Health-check files: call-site solidification drift, analysis errors, uncovered functions |

@@ -1,6 +1,6 @@
 ---
 sidebar_position: 4
-description: "查阅 nudo CLI 全部命令——infer、check、types、test、doctor、generate、emit、guard、watch、harvest——的参数、选项、输出格式与退出码。"
+description: "查阅 nudo CLI 全部命令——infer、check、interface、types、test、doctor、generate、emit、guard、watch、harvest——的参数、选项、输出格式与退出码。"
 ---
 
 # CLI 参考
@@ -21,6 +21,7 @@ npx @nudojs/cli infer ./src/utils.js
 |---------|---------|
 | [`nudo infer`](#nudo-infer) | 从文件或目录推断类型 |
 | [`nudo check`](#nudo-check) | 检查文件或目录的类型错误（error 级诊断以退出码 `1` 结束） |
+| [`nudo interface`](#nudo-interface) | 打印/持久化每个函数的有效接口——`[handwritten]` / `[generated]` / `[implicit]` 分层（别名 `nudo refine`） |
 | [`nudo types`](#nudo-types) | 类型即计算视图：展示 Abs 的 term + 约束 |
 | [`nudo test`](#nudo-test) | 把 `@nudo:case` 当断言跑（失败退出码 `1`） |
 | [`nudo doctor`](#nudo-doctor) | 健康检查：调用点固化漂移、分析报错、无用例函数 |

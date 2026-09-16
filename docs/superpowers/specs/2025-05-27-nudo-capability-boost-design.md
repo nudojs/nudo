@@ -1,5 +1,7 @@
 # Nudo Capability Boost Design
 
+> **Superseded / historical.** This design predates the Abs single-track merge and targets the TypeValue evaluator (`narrowing.ts`, `evaluator.ts`) later deleted. See `docs/design-kernel-merge.md` for the current Abs-native architecture.
+
 > A comprehensive roadmap to level up Nudo's type inference precision, editor experience, AI agent integration, and runtime type generation.
 
 ## Background

@@ -256,7 +256,9 @@ const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
 ```text
 === readConfig ===
 
-Case "read": (string) => "{ \"port\": 3000 }"
+Case "read": (string) => unknown
+
+[warning] read-config.js:6:9 Built-in API "fs" is not covered by Nudo's type inference (nudo:builtin-unknown)
 ```
 
 **Current limitation:** `from` mocks are not seeded into the B path — and since production analysis is Abs-native (the TypeValue evaluation path no longer exists), the mock is currently dropped everywhere: the name evaluates as an unknown global (`nudo:builtin-unknown`) or, for real Node globals, the bare call is reached directly. The single-line arrow-function form above works; prefer it until `from` is seeded into the B path.
