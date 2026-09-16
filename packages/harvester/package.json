@@ -1,6 +1,9 @@
 {
   "name": "@nudojs/harvester",
   "version": "0.2.2",
+  "engines": {
+    "node": ">=20"
+  },
   "description": "Harvests TypeScript .d.ts declarations into Nudo env definitions",
   "type": "module",
   "license": "MIT",

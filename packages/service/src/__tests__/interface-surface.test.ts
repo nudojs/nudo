@@ -151,7 +151,7 @@ describe("interfaceSurface", () => {
   it("cross-file records feed the implicit domain display", async () => {
     const root = makeFixture({ "lib.js": `export function scale(x) {\n  return x * 2;\n}\n` });
     const libPath = join(root, "lib.js");
-    const rec = (arg: unknown) => ({
+    const rec = (arg: string | number | boolean | null | undefined) => ({
       fnName: "scale",
       targetModule: libPath,
       targetExport: "scale",

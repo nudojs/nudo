@@ -135,7 +135,7 @@ describe("emitInterface", () => {
     // 设计验收（§11）：域根导出——本文件无调用点，域证据全部来自 --callsites
     const file = join(dir, "mixed.js");
     writeFileSync(file, `export function scale(x) {\n  return x * 2;\n}\n`);
-    const rec = (arg: unknown) => ({
+    const rec = (arg: string | number | boolean | null | undefined) => ({
       fnName: "scale",
       targetModule: file,
       targetExport: "scale",
@@ -213,7 +213,7 @@ describe("emitInterface", () => {
     // 归位，不得被静默删除（--known 未带 --callsites 的典型场景）。
     const file = join(dir, "mixed.js");
     writeFileSync(file, `export function scale(x) {\n  return x * 2;\n}\n`);
-    const rec = (arg: unknown) => ({
+    const rec = (arg: string | number | boolean | null | undefined) => ({
       fnName: "scale",
       targetModule: file,
       targetExport: "scale",

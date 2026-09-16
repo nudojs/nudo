@@ -9,12 +9,13 @@ import { defineConfig } from "tsup";
  * esbuild's prelude, so module-scope shims resolve before first use.
  * Shebang is preserved from src/index.ts (first line) for the `nudo` bin.
  *
- * The published bin must run from node_modules as-is: the @nudojs/* packages
- * publish .ts sources that Node's type stripping refuses to load there, so
- * they are bundled INTO dist. tsconfig.build.json maps every @nudojs/*
- * specifier to sibling SRC — resolving to their dist instead would inline
- * this package's own previous build output. The @nudojs/* sources are pure
- * ESM, so inlining them adds no CJS-interop surface; @babel/* and typescript
+ * The published bin must run from node_modules as-is and stay a single
+ * self-contained file (shared chunks would break copying the bin out alone):
+ * the @nudojs/* packages publish dist output, but inlining them keeps the
+ * bin free of sibling-chunk and workspace-link assumptions. tsconfig.build.json
+ * maps every @nudojs/* specifier to sibling SRC — resolving to their dist
+ * instead would inline this package's own previous build output. The @nudojs/*
+ * sources are pure ESM, so inlining them adds no CJS-interop surface; @babel/* and typescript
  * (transitive via core/service/harvester) are CJS and rely on the
  * createRequire banner below. commander stays external (plain-JS dep).
  */

@@ -3,10 +3,10 @@ import { defineConfig } from "tsup";
 /**
  * `nudo-lsp` is spawned as `node dist/server.js` from any cwd.
  * Bundle vscode-languageserver* so the ESM-hostile `vscode-languageserver/node`
- * subpath never hits Node's resolver. Bundle @nudojs/* as well: their published
- * packages export .ts sources that Node refuses to load under node_modules.
- * tsconfig.build.json maps every @nudojs/* specifier to sibling SRC —
- * resolving to their dist instead would inline stale, pre-bundled output.
+ * subpath never hits Node's resolver. Bundle @nudojs/* as well: inlining keeps
+ * the server single-file and independent of workspace-link resolution in
+ * node_modules (tsconfig.build.json maps every @nudojs/* specifier to sibling
+ * SRC — resolving to their dist instead would inline stale, pre-bundled output).
  * The @nudojs/* sources are
  * pure ESM; the inlined CJS deps (@babel/*, typescript via harvester) rely on
  * the createRequire banner below so dynamic requires (debug → "tty") reach

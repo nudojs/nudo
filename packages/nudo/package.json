@@ -1,6 +1,9 @@
 {
   "name": "nudo",
   "version": "0.1.0",
+  "engines": {
+    "node": ">=20"
+  },
   "description": "Thin installer shell for the `nudo` command — delegates to @nudojs/cli, the CLI of the Nudo type inference engine",
   "type": "module",
   "private": false,

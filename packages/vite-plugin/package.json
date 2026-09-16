@@ -1,6 +1,9 @@
 {
   "name": "vite-plugin-nudo",
   "version": "0.3.2",
+  "engines": {
+    "node": ">=20"
+  },
   "description": "Vite plugin for build-time JavaScript type inference with Nudo",
   "type": "module",
   "license": "MIT",

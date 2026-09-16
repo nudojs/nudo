@@ -1,0 +1,28 @@
+# Weekly dependency updates. pnpm workspaces are supported natively by the
+# npm ecosystem; the root package.json drives the lockfile.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      # One PR per ecosystem instead of one per dependency.
+      deps:
+        patterns:
+          - "*"
+    ignore:
+      # Major bumps land deliberately, not via dependabot.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Action upgrades need a coordinated SHA re-pin; leave a single grouped PR.
+    groups:
+      actions:
+        patterns:
+          - "*"

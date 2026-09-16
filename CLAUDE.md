@@ -60,8 +60,8 @@ core → parser → cli → service → lsp
 ## Code Conventions
 
 - All ESM (`"type": "module"` everywhere)
-- Imports use `.ts` extensions (e.g., `import { T } from "./type-value.ts"`) — enabled by `allowImportingTsExtensions`
-- Package `exports` point to `./src/index.ts` source, not built output
+- Imports use `.ts` extensions (e.g., `import { T } from "./type-value.ts"`) — enabled by `allowImportingTsExtensions`; source-level imports stay `.ts` even though published output is `.js`
+- Package `exports` point to `./dist/*` built output (tsup); `files: ["dist"]` on published packages
 - No ESLint/Prettier — linting is type-checking only (`tsc --noEmit`)
 - Tests live in `__tests__/` dirs alongside source, named `*.test.ts`
 - Test files use `describe`/`it`/`expect` from vitest

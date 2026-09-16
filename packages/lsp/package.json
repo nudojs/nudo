@@ -1,6 +1,9 @@
 {
   "name": "@nudojs/lsp",
   "version": "0.6.0",
+  "engines": {
+    "node": ">=20"
+  },
   "description": "Language Server Protocol implementation for the Nudo type inference engine",
   "type": "module",
   "license": "MIT",

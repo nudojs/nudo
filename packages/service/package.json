@@ -1,6 +1,9 @@
 {
   "name": "@nudojs/service",
   "version": "0.3.2",
+  "engines": {
+    "node": ">=20"
+  },
   "description": "Shared inference service for Nudo IDE integrations — evaluator, file analysis, completions, and .d.ts generation",
   "type": "module",
   "license": "MIT",
