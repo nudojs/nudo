@@ -69,8 +69,9 @@ clamp(-5, 0, 10);  // OK — 未声明 @nudo:refine
 | `nudo:interface-load` | error | 侧车加载/求值失败，或导出形态不识别 |
 | `nudo:interface-conflict` | error | 源码 `@nudo:refine` 与侧车绑定同参（或返回位）矛盾（`x > 0 ∧ x < 0`）；矛盾位跳过执法，不把契约层矛盾误诊为函数体违例 |
 | `nudo:interface-domain-exceeds` | error | **跨文件**注入的调用证据 ⊄ **手写**契约（接口被用穿） |
-| `nudo:interface-drift` | warning | 固化的 `@generated` 段 ≠ 今日重算接口（语义比较，参数位与返回位） |
+| `nudo:interface-drift` | warning | 固化的 `@generated` 段 ≠ 今日重算接口（语义比较，参数位与返回位）。`nudo doctor` 对侧车已含 `@generated` 的文件把同一 drift 作为 CI 门禁 |
 | `nudo:interface-name-clash` | error | `nudo interface --emit` 目标名已是侧车手写绑定（手写优先，跳过写入） |
+| `nudo:interface-underivable` | info | root 下行推不出下游契约（opaque / 截断 / 无证据）——只作 skip，不写垃圾 |
 
 违例来源分流：写在**被分析文件里**的违例调用维持 `nudo:constraint-violated` 原码原语义；`nudo:interface-domain-exceeds` 只覆盖此前不查契约的路径——从使用现场文件注入的调用记录（`--callsites`）。证据门槛：字面量实参、conf `#exact`/`#path`、无截断记录。
 

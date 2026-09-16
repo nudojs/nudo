@@ -39,6 +39,7 @@ export * from "./exec/index.ts";
 export * from "./bridge.ts";
 export * from "./interface.ts";
 export * from "./projection.ts";
+export * from "./derivation.ts";
 // T10b：注入域证据检查经桶导出给 service analyzer（scan.ts 其余为 check.ts 内部机械）
 export { checkInjectedDomainEvidence, type InjectedDomainRecord } from "./scan.ts";
 

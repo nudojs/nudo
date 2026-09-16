@@ -529,6 +529,63 @@ export function constraintToEntryAbs(
   return constraintOnTermAbs(c, t);
 }
 
+/**
+ * lit(v) 形态提取：prim + 唯一 eq(self, v)（and 展平一层）。
+ * 非字面量形态 → undefined。
+ */
+function memberLitValue(m: NudoConstraint): number | string | boolean | null | undefined {
+  const leaves: Pred[] = [];
+  const visit = (p: Pred): void => {
+    if (p.op === "and") {
+      p.args.forEach(visit);
+      return;
+    }
+    leaves.push(p);
+  };
+  m.preds.forEach(visit);
+  if (leaves.length !== 1) return undefined;
+  const p = leaves[0]!;
+  if (p.op !== "eq") return undefined;
+  if (p.a.op === "var" && p.b.op === "lit") return p.b.value as number | string | boolean | null;
+  if (p.b.op === "var" && p.a.op === "lit") return p.a.value as number | string | boolean | null;
+  return undefined;
+}
+
+/**
+ * 全员同 prim 字面量 union → prim + or(eq(self, v)…)。
+ * 绕开 joinValues 对同 prim 双字面量的急切塌缩（裸 prim、丢 term/pred），
+ * 否则 union(lit(5),lit(7)) 与 union(lit(5),lit(7),lit(-1)) 的 entry Abs
+ * 不可区分——drift / leq 漏报。非该形态 → undefined。
+ */
+function samePrimLiteralUnionAbs(
+  members: NudoConstraint[],
+  t: Term,
+): Abs | undefined {
+  if (members.length === 0) return undefined;
+  const values: Array<number | string | boolean> = [];
+  let prim: PrimName | undefined;
+  for (const m of members) {
+    const v = memberLitValue(m);
+    if (v === undefined) return undefined;
+    // lit(null) 无 prim；与有 prim 成员混排不算「同 prim 字面量集」
+    if (v === null) return undefined;
+    const mp = m.prim ?? (typeof v === "number" ? "number" : typeof v === "string" ? "string" : "boolean");
+    if (prim === undefined) prim = mp;
+    else if (prim !== mp) return undefined;
+    values.push(v);
+  }
+  if (prim === undefined) return undefined;
+  // 去重（union(lit(1), lit(1)) ≡ lit(1)）
+  const uniq: Array<number | string | boolean> = [];
+  for (const v of values) {
+    if (!uniq.some((u) => Object.is(u, v))) uniq.push(v);
+  }
+  const disj = or(
+    ...uniq.map((v) => eq(t, termLit(v))),
+  );
+  return abs({ k: "prim", type: prim }, t, disj, "path");
+}
+
 function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
   if (c.fields) {
     const slots: Record<string, { value: Abs; optional?: boolean }> = {};
@@ -542,14 +599,18 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
     }
     return abs({ k: "obj", slots }, t, undefined, "path");
   }
-  // union：各成员 entry Abs 的 joinAbs（joinValues 按需 sum/prim 并）
+  // union：成员析取
   if (c.members) {
+    // 全员同 prim 字面量 → or(eq…) 保留字面量域（见 samePrimLiteralUnionAbs）
+    const litUnion = samePrimLiteralUnionAbs(c.members, t);
+    if (litUnion) return litUnion;
+    // 混合形态（界 / 跨 prim / shape…）：joinAbs 折叠
     const joined = c.members
       .map((m) => constraintOnTermAbs(m, t))
       .reduce((a, b) => joinAbs(a, b));
-    // 同 prim 字面量成员经 joinValues 塌缩丢 term/pred——重锚定参数项并补
+    // 同 prim 非字面量成员经 joinValues 塌缩丢 term/pred——重锚定参数项并补
     // typeof，与裸 prim 链（number()/string()）的 entry Abs 同构（drift 双向
-    // leq 的锚定对称性；塌缩仅发生在 pred 被丢尽的形态，无信息可再损失）
+    // leq 的锚定对称性）
     if (
       joined.shape.k === "prim" &&
       joined.pred === undefined &&

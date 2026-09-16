@@ -69,8 +69,9 @@ Contracts in `*.nudo.js` sidecars (and generated `@generated` segments) get thei
 | `nudo:interface-load` | error | Sidecar fails to load/evaluate, or uses an unrecognized export form |
 | `nudo:interface-conflict` | error | Source `@nudo:refine` and sidecar binding for the same parameter (or the return position) are contradictory (`x > 0 ∧ x < 0`); a contradicted position skips enforcement rather than blaming the function body |
 | `nudo:interface-domain-exceeds` | error | **Cross-file** injected call evidence ⊄ **handwritten** contract (the interface is being used past its contract) |
-| `nudo:interface-drift` | warning | Persisted `@generated` segment ≠ today's recomputed interface (semantic comparison, param and return positions) |
+| `nudo:interface-drift` | warning | Persisted `@generated` segment ≠ today's recomputed interface (semantic comparison, param and return positions). Also surfaced by `nudo doctor` as a CI gate for files whose sidecar already has `@generated` segments |
 | `nudo:interface-name-clash` | error | `nudo interface --emit` target is already a handwritten sidecar binding (handwritten wins, write skipped) |
+| `nudo:interface-underivable` | info | Root-driven derivation cannot project a downstream contract (opaque / truncated / no evidence) — emitted only as a skip, never as garbage |
 
 Source split for violations: a violating call **written in the analyzed file** keeps reporting `nudo:constraint-violated` exactly as before; `nudo:interface-domain-exceeds` covers only the previously unchecked path — call records **injected from usage-site files** (`nudo check --callsites <paths...>`). Evidence gates: literal arguments with confidence `#exact`/`#path`, non-truncated records.
 

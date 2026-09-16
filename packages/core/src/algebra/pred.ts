@@ -201,12 +201,25 @@ export const phiAnd = and;
 export function implies(phi: Phi, pred: Pred): boolean {
   if (pred.op === "true") return true;
   if (pred.op === "false") return false;
+  if (phi.op === "false") return true;
+  if (predEquals(phi, pred)) return true;
+  if (phi.op === "and" && phi.args.some((c) => predEquals(c, pred))) return true;
+
+  // or 蕴含（字面量集 / 析取收窄）：
+  //   or(A…) ⇒ P     iff 每个 A ⇒ P
+  //   Φ ⇒ or(B…)     iff 存在 B 使 Φ ⇒ B
+  // 先于 extractBounds：or 不是区间事实，不能当 bound 提取
+  if (phi.op === "or") {
+    return phi.args.every((a) => implies(a, pred));
+  }
+  if (pred.op === "or") {
+    return pred.args.some((b) => implies(phi, b));
+  }
+
   if (phi.op === "true") {
     // 无约束时，纯字面量比较可判定
     return decideLiteralPred(pred) === true;
   }
-  if (predEquals(phi, pred)) return true;
-  if (phi.op === "and" && phi.args.some((c) => predEquals(c, pred))) return true;
 
   // 尝试从 Φ 提取同一 term 的界，做区间蕴含
   const bounds = extractBounds(phi);

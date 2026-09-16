@@ -1,8 +1,8 @@
 # Interface 分层推导与契约生成
 
-> **状态**：Phase 1 已实施（feat/interface，含 Phase 2 第 1 步的 Abs→契约
-> 投影）；Phase 2 推导图/契约下行与 Phase 3 未实施。已实施部分以代码为准
-> （§11 各步骤标注 [已实施]），其余条款是设计稿。
+> **状态**：Phase 1–3 已实施（feat/interface，含 root 驱动下行推导图 /
+> 组合式 emit / doctor interface drift / emit 白名单）。已实施部分以代码
+> 为准（§11 各步骤标注 [已实施]），其余条款是设计稿。
 > **真理源关系**：类型本体仍是 `Abs = shape × term × pred × conf`（见
 > [`design-kernel-merge.md`](./design-kernel-merge.md)）。本文定义的是
 > **接口表面**——约束如何落在同名 `*.nudo.js` 并与源码自动绑定，以及
@@ -925,19 +925,24 @@ Phase 2 能力，验收见下）；`add` 双调用点域 `union(lit(42), lit("a"
 
 ### Phase 2 — 契约下行（推导图，不编译）
 
-1. 调用图 + 实参 Abs → 被调参数约束投影（走 Abs，不另写一套）。
+1. 调用图 + 实参 Abs → 被调参数约束投影（走 Abs，不另写一套）。[已实施]
 2. **求值期维护推导图（derivation trace）**（边带调用位点 / `+k` / join）；
    emit 直接打印该图的组合式，**禁止**事后从 Abs 反编译链。不叫
    provenance：`setProvenanceTracking` 已被 evaluator 的 TypeValue origin
    map 占用（服务 unknown 诊断），避免同名混义。机制 = side-channel
    **derivation collector** + core ops 层 shift/join 打点
-   （`setCallCollector` 先例），不进 Abs payload（§14.3#6）。
+   （`setCallCollector` 先例），不进 Abs payload（§14.3#6）。[已实施：
+   `core/algebra/derivation.ts` + `arithmetic.add` / `objects.joinAbs` 打点]
 3. 同名 `*.nudo.js` 生成 `fn({…}, returns?)`，跨文件 `import` 上游再组合；
-   源码零注释；**仅 emit 选中的导出落盘**。
+   源码零注释；**仅 emit 选中的导出落盘**。[已实施：
+   `emitDerivedFromRoot` / `formatDerivedSection`]
 4. 多调用者：check 按链独立、不 join（§4.2 分轨）；落盘工件聚合才 join
-   （先 Abs join 再投影）；循环/截断 → `interface-underivable`。
+   （先 Abs join 再投影）；循环/截断 → `interface-underivable`。[已实施
+   分轨与 underivable；join 组合式退回展开式]
 5. 隐式结果接入 L0 / check memo；可选 `.nudo/cache` 跨会话（与契约文件分离）。
-6. 示例矩阵：`docs/examples` 增加 lib/add 分层夹具。
+   [部分：L0/check memo 已有；`.nudo/cache` 未做]
+6. 示例矩阵：`docs/examples` 增加 lib/add 分层夹具。[已实施：
+   `docs/examples/interface-derivation/`]
 
 **验收（Phase 2）**：§5 隐式结果带推导图；`--emit src/lib.js --fn add2`
 只写该导出（`--fn` 过滤的是 root 推导闭包内的目标名——`add2` 是 lib.js
@@ -948,10 +953,14 @@ Phase 2 能力，验收见下）；`add` 双调用点域 `union(lit(42), lit("a"
 
 ### Phase 3 — 门禁与 IDE 打磨
 
-1. `doctor` refine drift CI（只针对已落盘契约）。
-2. LSP CodeLens `persist/update refine`；固化后 drift 提示。
-3. `package.json#nudo.interface` emit 白名单；agent API：`nudo.interface` / emit；SKILL.md 更新。
-4. `--emit-cases` 文档降级；迁移说明。
+1. `doctor` refine drift CI（只针对已落盘契约）。[已实施：
+   doctor 对含 `@generated` 侧车的文件收 `nudo:interface-drift` 并破门禁]
+2. LSP CodeLens `persist/update refine`；固化后 drift 提示。[已实施
+   persist/update；drift 提示走 check 诊断通道]
+3. `package.json#nudo.interface` emit 白名单；agent API：`nudo.interface` / emit；SKILL.md 更新。[已实施：`interface.emit` glob 白名单接
+   emitInterface / emitDerivedFromRoot；agent API Phase 1 已有；
+   agent-skill/SKILL.md 已补 interface 契约 / 白名单 / doctor drift]
+4. `--emit-cases` 文档降级；迁移说明。[已实施：网站文档标注非接口主路径]
 
 ---
 

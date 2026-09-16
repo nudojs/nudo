@@ -163,6 +163,7 @@ export {
 export {
   findProjectConfig,
   interfaceConfig,
+  matchesEmitAllowlist,
   type NudoConfig,
   type InterfaceConfig,
 } from "./evaluator/config.ts";
@@ -174,3 +175,17 @@ export {
   type EmitInterfaceResult,
   type EmitInterfaceSkipReason,
 } from "./interface-emitter.ts";
+
+// Phase 2：root 驱动契约下行（design-refine-derivation §4.2 / §7.3）
+export {
+  deriveFromRoot,
+  emitDerivedFromRoot,
+  extractFnConstraintSources,
+  formatDerivedSection,
+  type ConstraintSourceExpr,
+  type DerivedExport,
+  type DerivedParam,
+  type EmitDerivedResult,
+  type RootDeriveOpts,
+  type RootDeriveResult,
+} from "./interface-derivation.ts";
