@@ -374,7 +374,7 @@ sumTo(5);
 Case "call@L8": (5) => 10
 ```
 
-输入具体值 `5` 时，Nudo 执行循环并产生精确结果 `10`。输入抽象边界（`T.number`）时循环条件无法判定，结果会拓宽为 `number | string`——即累加器未知时 `+` 的真实 JS 语义。
+输入具体值 `5` 时，Nudo 执行循环并产生精确结果 `10`。输入抽象边界（`T.number`）时，守卫 `i < n` 永远不会确定地为假，循环会跑到有界展开上限（8 次）——累加器求和 `0…7`，case 报告 `28 #exact`。这个上限是抽象条件无法诚实终止时的兜底预算，不是不动点合并。
 
 ---
 
@@ -402,7 +402,7 @@ Case "call@L6": (12) => -1
 Combined: 25 | -1
 ```
 
-`pickAdult(25)` 走 `age >= 18` 分支返回 `25`；`pickAdult(12)` 落到回退分支返回 `-1`。合并类型保留两个字面量结果。（对抽象 `T.number` 实参，守卫无法分叉，只会报告回退结果 `-1`。）仓库示例（CI 钉住）：[`docs/examples/algebra/g-narrow-subtract.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/g-narrow-subtract.js)。
+`pickAdult(25)` 走 `age >= 18` 分支返回 `25`；`pickAdult(12)` 落到回退分支返回 `-1`。合并类型保留两个字面量结果。（对抽象 `T.number` 实参，守卫无法分叉，两个分支合并——`age | -1` 吸收为 `number`，case 报告 `number`。）仓库示例（CI 钉住）：[`docs/examples/algebra/g-narrow-subtract.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/g-narrow-subtract.js)。
 
 ---
 

@@ -7,7 +7,7 @@ description: See how Nudo narrows types per call site — equality guards, discr
 
 Nudo narrows types when it can decide a condition for the **concrete argument of a call site**. Each `Case "call@L…" => …` line in the output reports the result of one call, evaluated with that call's exact argument — branches eliminated by narrowing never contribute to that case's result, and `Combined:` is the union of all per-call results.
 
-Narrowing is currently precise on the **call-site path** (functions called at the top level, reported as `call@` cases). The same guards inside `@nudo:case` directive evaluation degrade to `unknown` — this guide therefore demonstrates every pattern with call sites. Every output block below is a real `nudo infer` run of the code above it.
+Narrowing is precise on the **call-site path** (functions called at the top level, reported as `call@` cases) and on `@nudo:case` directives with **concrete** arguments. Symbolic arguments (`T.number`, `T.union(...)`) cannot decide a condition, so their branches join instead of narrowing. Every output block below is a real `nudo infer` run of the code above it.
 
 ## Comparison Guards
 
@@ -127,7 +127,7 @@ These patterns currently do **not** fork on the call-site path — each one degr
 | Pattern | Current behavior |
 |---|---|
 | Ternary with an `unknown` condition | `flag ? "a" : "b"` with a symbolic condition joins both branches (`string`). Definite conditions fork precisely on both paths — `pick(true)` → `"a"`, `x === 5 ? "five" : "other"` with `5` → `"five"` — so no `if`-guard workaround is needed anymore. |
-| Symbolic inputs | `@nudo:case` with `T.union(...)` arguments do not fork conditions — only concrete call sites narrow. |
+| Symbolic inputs | `@nudo:case` with symbolic arguments (`T.number`, `T.union(...)`) do not fork conditions — the branches join; concrete arguments narrow on both paths. |
 | `in` operator | `if ("toJSON" in value)` narrows for object arguments, but method results widen (`string` instead of the closure's `"serialized"`); non-object arguments also report `nudo:no-method`. |
 | `?.` / `??` | Shallow `config.port ?? 3000` with a known property yields `number`; deep chains and short-circuiting members degrade to `unknown`. |
 | Array indexing | `input[0]` on a narrowed array is `unknown` — use `.length` or element-level operations. |

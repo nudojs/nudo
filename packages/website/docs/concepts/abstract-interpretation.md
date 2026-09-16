@@ -150,15 +150,9 @@ Where `∩` is type intersection and `-` is type subtraction.
 
 ## Advanced Behaviors
 
-### Loops (Fixed-Point Iteration)
+### Loops (Bounded Unrolling)
 
-When loop count depends on type values, the engine uses fixed-point iteration:
-
-1. If the array is a concrete tuple, unroll the loop.
-2. If the array is abstract, execute the loop body once with the element type and iterate until variable types stabilize:
-   - Iteration 0: `sum = T.literal(0)`
-   - Iteration 1: `sum = T.union(T.literal(0), T.number)` → `T.number`
-   - Iteration 2: `sum = T.number` (fixed point reached, stop)
+When the loop bound is concrete, the engine unrolls the loop that many times. When the bound is abstract, the condition is never *definitely false*, so the engine unrolls up to a bounded cap (`DEFAULT_MAX_LOOP_ITERS = 8`) — a termination guard for abstract conditions, not a fixed-point join. Within the cap, the loop exits early when the test becomes definitely false, or when two adjacent loop states stop changing (`leqAbs`).
 
 ### Closures and Higher-Order Functions
 

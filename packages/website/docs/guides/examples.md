@@ -374,7 +374,7 @@ sumTo(5);
 Case "call@L8": (5) => 10
 ```
 
-With concrete input `5`, Nudo evaluates the loop and produces the exact result `10`. With an abstract bound (`T.number`), the loop guard cannot be decided, so the result widens to `number | string` — the plain JS semantics of `+` with an unknown accumulator.
+With concrete input `5`, Nudo evaluates the loop and produces the exact result `10`. With an abstract bound (`T.number`), the guard `i < n` is never definitely false, so the loop runs to its bounded-iteration cap (8) — the accumulator sums `0…7` and the case reports `28 #exact`. The cap is a termination guard for abstract conditions, not a fixed-point join.
 
 ---
 
@@ -402,7 +402,7 @@ Case "call@L6": (12) => -1
 Combined: 25 | -1
 ```
 
-`pickAdult(25)` takes the `age >= 18` branch and returns `25`; `pickAdult(12)` falls through to `-1`. The combined type keeps both literal results. (For an abstract `T.number` argument the guard cannot fork, and only the fallback `-1` is reported.) Repo example (CI-pinned): [`docs/examples/algebra/g-narrow-subtract.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/g-narrow-subtract.js).
+`pickAdult(25)` takes the `age >= 18` branch and returns `25`; `pickAdult(12)` falls through to `-1`. The combined type keeps both literal results. (For an abstract `T.number` argument the guard cannot fork, and the two branches join — `age | -1` absorbs into `number`, so the case reports `number`.) Repo example (CI-pinned): [`docs/examples/algebra/g-narrow-subtract.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/g-narrow-subtract.js).
 
 ---
 
