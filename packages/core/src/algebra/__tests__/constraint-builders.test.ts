@@ -24,6 +24,7 @@ import {
   isIntFlag,
 } from "../constraint.ts";
 import { predToString } from "../pred.ts";
+import { leqAbs } from "../leq.ts";
 
 function inst(c: Parameters<typeof instantiateConstraint>[0], name: string): string {
   return predToString(instantiateConstraint(c, name));
@@ -197,6 +198,27 @@ describe("union(...cs)：成员析取", () => {
         { k: "prim", type: "string" },
       ]);
     }
+  });
+
+  it("同 prim 字面量 union → or(eq…) 保留字面量域（不塌成裸 number）", () => {
+    // joinValues 对同 prim 双字面量会急切塌成裸 prim——entry Abs 必须绕开，
+    // 否则 union(lit(5),lit(7)) 与更宽的字面量集在 leq/drift 下不可区分
+    const a = constraintToEntryAbs(union(lit(5), lit(7)), "x");
+    expect(a.shape).toEqual({ k: "prim", type: "number" });
+    expect(a.pred?.op).toBe("or");
+    if (a.pred?.op === "or") {
+      expect(a.pred.args).toHaveLength(2);
+    }
+    const b = constraintToEntryAbs(union(lit(5), lit(7), lit(-1)), "x");
+    expect(b.pred?.op).toBe("or");
+    // 更宽的集不是更窄集的子集（今天 ⊄ 期望）→ drift 应能区分
+    expect(leqAbs(b, a).ok).toBe(false);
+    expect(leqAbs(a, b).ok).toBe(true);
+  });
+
+  it("跨 prim 字面量 union 仍走 sum（number|string）", () => {
+    const a = constraintToEntryAbs(union(lit(42), lit("a")), "x");
+    expect(a.shape.k).toBe("sum");
   });
 
   it("union 嵌在 shape 字段里递归 or", () => {

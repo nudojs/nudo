@@ -9,6 +9,7 @@ import type { Pred } from "./pred.ts";
 import { pTrue, predToString } from "./pred.ts";
 import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, confJoin, litValue, unknown, never } from "./abs.ts";
+import { noteDerivationJoin } from "./derivation.ts";
 
 export type Slot = { value: Abs; optional?: boolean; readonly?: boolean };
 
@@ -241,5 +242,8 @@ export function joinAbs(a: Abs, b: Abs): Abs {
   if (b.shape.k === "never") return a;
   if (isObj(a) && isObj(b)) return joinObjects(a, b);
   if (a.shape.k === "fn" && b.shape.k === "fn") return joinFunctions(a, b);
-  return joinValues(a, b);
+  const result = joinValues(a, b);
+  // 推导图打点：任一侧有标签时结果挂 join 边（工件聚合；check 分轨不依赖）
+  noteDerivationJoin([a, b], result);
+  return result;
 }

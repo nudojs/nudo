@@ -34,6 +34,7 @@ import {
 } from "./abs.ts";
 import { concatString, isTemplateLike } from "./template.ts";
 import { makeSum } from "./objects.ts";
+import { noteDerivationAdd } from "./derivation.ts";
 
 /**
  * 抽象加法：eval(a + b) —— 跟真实 JS，不无根据地假定 number。
@@ -72,7 +73,10 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     const pred = addPred(a, b, term, phi);
     const conf =
       term.op === "lit" ? "exact" : confJoin(confJoin(a.conf, b.conf), "path");
-    return abs({ k: "prim", type: "number" }, term, pred, conf);
+    const result = abs({ k: "prim", type: "number" }, term, pred, conf);
+    // 推导图打点（§14.3#6）：a+k 且 a 带 root/shift 标签 → 结果挂 shift 边
+    noteDerivationAdd(a, b, result);
+    return result;
   }
 
   // any / type-var：JS + 的并集，不是 unknown，也不是 number

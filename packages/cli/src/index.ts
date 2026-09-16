@@ -576,29 +576,66 @@ async function runInterface(file: string, records?: CallRecord[]): Promise<void>
 }
 
 /**
- * `nudo interface --emit <file>`：把调用点域投影固化为侧车 `@generated` 段。
- * 固定 mode=update（剥离生成段再重排，幂等；--exit-on-diff 配 --dry-run 作
- * CI 门禁，类比 infer --emit-cases=update --dry-run）。默认无过滤 = 只刷新
- * 已有生成段（默认行为）；--fn 白名单 / --all 显式放宽。
+ * `nudo interface --emit <file>`：
+ * - 含手写契约根时走 root 驱动下行（§7.3 Phase 2）：`--fn` 可点名**下游**
+ *   导出（如 lib.js 根上的 add2 → 写 add.nudo.js）；
+ * - 同时对目标文件自身的导出走原有 callsite-domain emit（本文件侧车）。
+ * 固定 mode=update；--exit-on-diff 配 --dry-run 作 CI 门禁。
  */
 async function runInterfaceEmit(
   file: string,
   opts: { fnNames: string[]; all: boolean; dryRun: boolean; exitOnDiff: boolean; records?: CallRecord[] },
 ): Promise<void> {
-  const { emitInterface } = await import("@nudojs/service");
+  const { emitInterface, emitDerivedFromRoot } = await import("@nudojs/service");
   const filePath = resolve(file);
+  const rel = relative(process.cwd(), filePath) || filePath;
+  const fnNames = opts.fnNames.length > 0 ? opts.fnNames : undefined;
+
+  // ---- Phase 2: root 驱动下行（--fn 可含下游名）----
+  let derivedChanged = false;
+  if (fnNames || opts.all) {
+    const derived = emitDerivedFromRoot(filePath, {
+      ...(fnNames ? { fnNames } : {}),
+      mode: "update",
+      dryRun: opts.dryRun,
+    });
+    if (derived.hasRoot) {
+      for (const sc of derived.sidecars) {
+        const scRel = relative(process.cwd(), sc.sidecarPath) || sc.sidecarPath;
+        if (sc.changed && opts.dryRun) {
+          console.log(`[dry-run] would update ${scRel} (derived-from ${derived.roots.join(", ")}):`);
+          console.log(sc.diff ?? "");
+        } else if (sc.changed) {
+          console.log(`Updated ${rel} → ${scRel} (derived-from ${derived.roots.join(", ")})`);
+          console.log(`  written: ${sc.fn}`);
+          derivedChanged = true;
+        } else {
+          console.log(`${scRel}: no derived interface changes (${sc.skipped ?? "no-change"})`);
+        }
+        for (const i of sc.issues) {
+          console.log(`  [${i.severity}] ${i.code}: ${i.message}`);
+          if (i.severity === "error") process.exitCode = 1;
+        }
+        if (sc.written) derivedChanged = true;
+      }
+      if (derived.entryOnly) {
+        console.log(`${rel}: no handwritten contract root (root lives elsewhere); only refreshing existing @generated segments`);
+      }
+    }
+  }
+
+  // ---- 本文件自身导出：原有 callsite-domain emit ----
+  // --fn 点名的是下游时，本地 emit 跳过 not-an-export（无害）
   const result = await emitInterface(filePath, {
-    fnNames: opts.fnNames.length > 0 ? opts.fnNames : undefined,
+    ...(fnNames ? { fnNames } : {}),
     mode: "update",
     all: opts.all,
     dryRun: opts.dryRun,
     records: opts.records,
   });
-  const rel = relative(process.cwd(), filePath) || filePath;
   if (result.changed && opts.dryRun) {
     console.log(`[dry-run] would update ${rel}:`);
     console.log(result.diff ?? "");
-    // dry-run 也打印 issues/skipped——退出码已按 error 置位，信息面须同步
     for (const i of result.issues) {
       console.log(`[${i.severity}] ${i.code}: ${i.message}`);
     }
@@ -609,12 +646,12 @@ async function runInterfaceEmit(
     const sc = relative(process.cwd(), result.sidecarPath) || result.sidecarPath;
     for (const line of formatEmitSummary(rel, sc, result)) console.log(line);
   }
-  // issues 已由 formatEmitSummary 打印（CLI 与 agent 面同骨架）；退出码仍按错误定档
   for (const i of result.issues) {
     if (i.severity === "error") process.exitCode = 1;
   }
-  if (opts.exitOnDiff && result.changed) process.exitCode = 1;
-  if (result.changed && !opts.dryRun) {
+  const anyChanged = result.changed || derivedChanged;
+  if (opts.exitOnDiff && anyChanged) process.exitCode = 1;
+  if (anyChanged && !opts.dryRun) {
     console.log(`  re-run \`nudo check ${rel}\` to see the persisted interfaces in action`);
   }
 }
@@ -629,7 +666,7 @@ program
   .option("--emit", "Write/update @generated sidecar segments instead of printing (mode: update — strips and rewrites generated segments, idempotent)")
   .option(
     "--fn <name>",
-    "With --emit: only these export names (repeatable). Phase 1 filters the target file's own exports; cross-file root-closure emit arrives with Phase 2 derivation",
+    "With --emit: only these export names (repeatable). May name a downstream export in the root derivation closure (e.g. --emit lib.js --fn add2 writes add.nudo.js)",
     (v: string, acc: string[]) => {
       acc.push(v);
       return acc;
@@ -735,6 +772,8 @@ type DoctorReport = {
   entryOnly: number;
   uncovered: string[];
   drift?: { added: number; removed: number };
+  /** 已落盘 @generated 契约 ≠ 今日重算（Phase 3 §9 doctor interface drift） */
+  interfaceDrift?: number;
   error?: string;
 };
 
@@ -745,12 +784,13 @@ const displayPath = (p: string): string => {
 };
 
 /**
- * 单文件体检。三项检查：
+ * 单文件体检。四项检查：
  *  a) uncovered —— 零 case 且非 skipped/entryOnly 的函数（信息级，不影响退出码）；
  *  b) drift —— 给了调用记录时按 infer --emit-cases=update 的 dry-run 编排
- *     （剥离 → 重析 → 重插）重算固化结果，最终源码与原源码不一致即漂移，
- *     指令数按 removed/新增 written 计；
- *  c) 报错 —— 读取/分析抛异常即记（含 update dry-run 阶段）。
+ *     （剥离 → 重析 → 重插）重算固化结果，最终源码与原源码不一致即漂移；
+ *  c) interface drift —— 侧车存在 @generated 段时，checkSource 的
+ *     nudo:interface-drift warning 计数（Phase 3：只针对已落盘契约）；
+ *  d) 报错 —— 读取/分析抛异常即记。
  */
 async function doctorFile(filePath: string, records?: CallRecord[]): Promise<DoctorReport> {
   const report: DoctorReport = { file: displayPath(filePath), functions: 0, entryOnly: 0, uncovered: [] };
@@ -777,10 +817,42 @@ async function doctorFile(filePath: string, records?: CallRecord[]): Promise<Doc
         };
       }
     }
+    // Phase 3：已落盘契约的 interface drift（只在侧车含 @generated 时跑）
+    report.interfaceDrift = await countInterfaceDrift(filePath);
   } catch (err) {
     report.error = (err as Error).message;
   }
   return report;
+}
+
+/**
+ * 已落盘 @generated 契约的 drift 计数（Phase 3）：
+ * 侧车无生成段 → 0（不跑 check，避免噪声）；有则 checkSource 收
+ * nudo:interface-drift warning。
+ */
+async function countInterfaceDrift(filePath: string): Promise<number> {
+  const { sidecarPathOf, checkSource, pTrue } = await import("@nudojs/core");
+  const { defaultLoadModule } = await import("@nudojs/service");
+  const { existsSync: ex, readFileSync: rf } = await import("node:fs");
+  const abs = resolve(filePath);
+  const sc = sidecarPathOf(abs);
+  if (!ex(sc)) return 0;
+  let scSrc: string;
+  try {
+    scSrc = rf(sc, "utf-8");
+  } catch {
+    return 0;
+  }
+  if (!/@generated/.test(scSrc)) return 0;
+  try {
+    const r = checkSource(abs, rf(abs, "utf-8"), pTrue, {
+      loadModule: defaultLoadModule,
+      fromFile: abs,
+    });
+    return r.issues.filter((i) => i.code === "nudo:interface-drift").length;
+  } catch {
+    return 0;
+  }
 }
 
 async function runDoctor(paths: string[], opts: { callsites?: string[]; json?: boolean }): Promise<void> {
@@ -804,9 +876,10 @@ async function runDoctor(paths: string[], opts: { callsites?: string[]; json?: b
   }
 
   const driftCount = reports.filter((r) => r.drift).length;
+  const ifaceDriftCount = reports.filter((r) => (r.interfaceDrift ?? 0) > 0).length;
   const errorCount = reports.filter((r) => r.error).length;
   const uncoveredTotal = reports.reduce((n, r) => n + r.uncovered.length, 0);
-  const failed = driftCount > 0 || errorCount > 0;
+  const failed = driftCount > 0 || ifaceDriftCount > 0 || errorCount > 0;
 
   if (opts.json) {
     console.log(
@@ -820,9 +893,16 @@ async function runDoctor(paths: string[], opts: { callsites?: string[]; json?: b
             entryOnly: r.entryOnly,
             uncovered: r.uncovered,
             ...(r.drift ? { drift: r.drift } : {}),
+            ...(r.interfaceDrift ? { interfaceDrift: r.interfaceDrift } : {}),
             ...(r.error ? { error: r.error } : {}),
           })),
-          summary: { files: reports.length, drift: driftCount, errors: errorCount, uncovered: uncoveredTotal },
+          summary: {
+            files: reports.length,
+            drift: driftCount,
+            interfaceDrift: ifaceDriftCount,
+            errors: errorCount,
+            uncovered: uncoveredTotal,
+          },
         },
         null,
         2,
@@ -850,9 +930,14 @@ async function runDoctor(paths: string[], opts: { callsites?: string[]; json?: b
           `  ✗ drift: ${r.drift.added + r.drift.removed} directive(s) changed (+${r.drift.added} new, -${r.drift.removed} removed) — refresh with: ${refresh.trim()}`,
         );
       }
+      if ((r.interfaceDrift ?? 0) > 0) {
+        console.log(
+          `  ✗ interface drift: ${r.interfaceDrift} @generated slot(s) ≠ today's recompute — refresh with: nudo interface --emit ${r.file} --fn <name>`,
+        );
+      }
     }
     console.log(
-      `\nSummary: ${reports.length} file(s) · ${driftCount} drift · ${errorCount} error(s) · ${uncoveredTotal} uncovered function(s)`,
+      `\nSummary: ${reports.length} file(s) · ${driftCount} case drift · ${ifaceDriftCount} interface drift · ${errorCount} error(s) · ${uncoveredTotal} uncovered function(s)`,
     );
     console.log(failed ? "Result: FAIL (drift or errors found)" : "Result: OK (uncovered function(s) are informational only)");
   }
@@ -862,7 +947,9 @@ async function runDoctor(paths: string[], opts: { callsites?: string[]; json?: b
 
 program
   .command("doctor")
-  .description("Health-check JS files: functions without cases, call-site solidification drift (--callsites), analysis errors — exits 1 on drift/errors")
+  .description(
+    "Health-check JS files: functions without cases, call-site solidification drift (--callsites), persisted interface drift, analysis errors — exits 1 on drift/errors",
+  )
   .argument("[paths...]", "File(s) or directory(s) to check (default: current directory)")
   .option("--callsites <paths...>", "Usage-site files (tests/apps): re-solidify per current call shapes and report drift when directives would change")
   .option("--json", "Output as JSON")

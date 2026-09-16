@@ -72,9 +72,13 @@ area(7);
     expect(r.ok).toBe(true);
   });
 
-  it("emit 后快照与今日域一致（number() ↔ 1,-2 域并集）→ 无 issue", () => {
+  it("emit 后快照与今日字面量域一致（union(lit…)）→ 无 issue", () => {
+    // joinThenProject 的字面量快路径产出 union(lit…)，快照与今日同构时零 drift。
+    // 快照若是 number() 而今日是 {1,-2} 字面量集——语义不等，会报 drift（见下一条）。
     const { loadModule } = makeFiles({
-      "/t/area.nudo.js": GEN(`export const area = fn({ x: number() });`),
+      "/t/area.nudo.js": GEN(
+        `export const area = fn({ x: union(lit(1), lit(-2)) }, union(lit(1), lit(-2)));`,
+      ),
     });
     const src = `
 export function area(x) {
@@ -91,6 +95,52 @@ area(-2);
       r.issues.filter((i) => i.code === "nudo:interface-drift"),
     ).toEqual([]);
     expect(r.ok).toBe(true);
+  });
+
+  it("快照 number() vs 今日字面量集 {1,-2} → drift（语义不等，不再靠 join 塌缩掩盖）", () => {
+    const { loadModule } = makeFiles({
+      "/t/area.nudo.js": GEN(`export const area = fn({ x: number() }, number());`),
+    });
+    const src = `
+export function area(x) {
+  return x;
+}
+area(1);
+area(-2);
+`;
+    const r = checkSource("/t/area.js", src, pTrue, {
+      loadModule,
+      fromFile: "/t/area.js",
+    });
+    const drifts = r.issues.filter((i) => i.code === "nudo:interface-drift");
+    expect(drifts.length).toBeGreaterThanOrEqual(1);
+    expect(drifts[0]!.fn).toBe("area");
+  });
+
+  it("字面量 union 快照被更宽调用域吸收 → drift（同 prim 不塌缩）", () => {
+    // 回归：joinValues 对同 prim 双字面量曾急切塌成裸 number，导致
+    // union(lit(5),lit(7)) 与 union(lit(5),lit(7),lit(-1)) 在 entry Abs
+    // 下不可区分——drift 漏报。entry Abs 现走 or(eq…) 保留字面量域。
+    const { loadModule } = makeFiles({
+      "/t/area.nudo.js": GEN(
+        `export const area = fn({ x: union(lit(5), lit(7)) }, union(lit(5), lit(7)));`,
+      ),
+    });
+    const src = `
+export function area(x) {
+  return x;
+}
+area(5);
+area(7);
+area(-1);
+`;
+    const r = checkSource("/t/area.js", src, pTrue, {
+      loadModule,
+      fromFile: "/t/area.js",
+    });
+    const drifts = r.issues.filter((i) => i.code === "nudo:interface-drift");
+    expect(drifts.length).toBeGreaterThanOrEqual(1);
+    expect(drifts[0]!.fn).toBe("area");
   });
 
   it("执行态证据：兄弟函数内未执行的调用不进今日域（fresh emit 零 drift）", () => {
@@ -202,13 +252,15 @@ ret(-2);
       fromFile: "/t/ret.js",
     });
     const drifts = r.issues.filter((i) => i.code === "nudo:interface-drift");
-    expect(drifts.length).toBe(1);
-    expect(drifts[0]!.severity).toBe("warning");
-    expect(drifts[0]!.fn).toBe("ret");
-    expect(drifts[0]!.message).toContain("return");
-    expect(drifts[0]!.expected).toBe("number().gt(0)");
-    expect(drifts[0]!.actual).toContain("-1");
-    // 参数位 {1,-2} join → number() == 快照无 drift；仅返回位一条
+    // 参数位：快照 number()，今日 {1,-2} 字面量集——语义不等（number ⊄ {1,-2}）
+    // 也报 drift（域变化，§6）；返回位 lit(-1) ⊄ gt(0) 另一条
+    expect(drifts.length).toBe(2);
+    const retDrift = drifts.find((d) => d.message.includes("return"));
+    expect(retDrift).toBeDefined();
+    expect(retDrift!.severity).toBe("warning");
+    expect(retDrift!.fn).toBe("ret");
+    expect(retDrift!.expected).toBe("number().gt(0)");
+    expect(retDrift!.actual).toContain("-1");
     expect(r.ok).toBe(true);
   });
 

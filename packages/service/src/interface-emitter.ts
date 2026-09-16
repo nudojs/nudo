@@ -40,6 +40,7 @@ import { randomBytes } from "node:crypto";
 import { analyzeFileAsync, type CaseResult, type FunctionAnalysis } from "./analyzer.ts";
 import type { CallRecord } from "./evaluator/evaluator.ts";
 import { unifiedDiff } from "./case-emitter.ts";
+import { findProjectConfig, interfaceConfig, matchesEmitAllowlist } from "./evaluator/config.ts";
 
 export type EmitInterfaceSkipReason =
   | "name-clash"
@@ -99,6 +100,24 @@ export async function emitInterface(
     throw new Error(
       `emit target '${abs}' is inside node_modules; contract sidecars are never written there`,
     );
+  }
+  // package.json#nudo.interface.emit 白名单（Phase 3 §7.3）：显式动作也尊重包级门禁
+  const proj = findProjectConfig(dirname(abs));
+  const allow = interfaceConfig(proj?.config).emit;
+  if (!matchesEmitAllowlist(abs, proj?.projectDir, allow)) {
+    return {
+      written: [],
+      skipped: [{ fn: opts.fnNames?.[0] ?? "*", reason: "not-an-export" }],
+      changed: false,
+      issues: [
+        {
+          code: "nudo:interface-emit-denied",
+          severity: "warning",
+          message: `emit target '${relative(process.cwd(), abs) || abs}' is outside package.json#nudo.interface.emit allowlist`,
+        },
+      ],
+      sidecarPath: sidecarPathOf(abs),
+    };
   }
   const source = readFileSync(abs, "utf-8");
   // since 锚：emit 只排干自身 round-trip 自检产生的诊断（全量 take 会在 LSP

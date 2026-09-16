@@ -2,7 +2,12 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findProjectConfig, interfaceConfig, type NudoConfig } from "../evaluator/config.ts";
+import {
+  findProjectConfig,
+  interfaceConfig,
+  matchesEmitAllowlist,
+  type NudoConfig,
+} from "../evaluator/config.ts";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -11,28 +16,59 @@ afterAll(() => {
 
 describe("interfaceConfig", () => {
   it("defaults when config is null/undefined or lacks the interface key", () => {
-    expect(interfaceConfig(undefined)).toEqual({ autoBind: true });
-    expect(interfaceConfig(null)).toEqual({ autoBind: true });
-    expect(interfaceConfig({})).toEqual({ autoBind: true });
-    // 向后兼容：既有键（env/mocks）存在时不改变 interface 段行为
+    expect(interfaceConfig(undefined)).toEqual({ autoBind: true, emit: [] });
+    expect(interfaceConfig(null)).toEqual({ autoBind: true, emit: [] });
+    expect(interfaceConfig({})).toEqual({ autoBind: true, emit: [] });
     const legacy: NudoConfig = { env: ["es"], mocks: { fetch: "stub" } };
-    expect(interfaceConfig(legacy)).toEqual({ autoBind: true });
+    expect(interfaceConfig(legacy)).toEqual({ autoBind: true, emit: [] });
   });
 
   it("defaults when interface key is present but empty", () => {
-    expect(interfaceConfig({ interface: {} })).toEqual({ autoBind: true });
+    expect(interfaceConfig({ interface: {} })).toEqual({ autoBind: true, emit: [] });
   });
 
   it("reads explicit autoBind", () => {
     const config: NudoConfig = { interface: { autoBind: false } };
-    expect(interfaceConfig(config)).toEqual({ autoBind: false });
+    expect(interfaceConfig(config)).toEqual({ autoBind: false, emit: [] });
   });
 
-  it("ignores unknown keys in the interface section (emit/ignore arrive with Phase 2)", () => {
-    // emit/ignore 白名单曾声明+归一化但全仓零消费（用户写了被静默忽略）——
-    // 已从类型面移除；写在 package.json 里的残留键不再是配置契约的一部分
-    const malformed = { interface: { emit: "src/a.nudo.js", ignore: ["dist/**"] } } as unknown as NudoConfig;
-    expect(interfaceConfig(malformed)).toEqual({ autoBind: true });
+  it("reads emit allowlist as string or array (Phase 3 §7.3)", () => {
+    expect(interfaceConfig({ interface: { emit: "src/api/**" } })).toEqual({
+      autoBind: true,
+      emit: ["src/api/**"],
+    });
+    expect(interfaceConfig({ interface: { emit: ["src/api/**", "lib/*.js"] } })).toEqual({
+      autoBind: true,
+      emit: ["src/api/**", "lib/*.js"],
+    });
+    expect(interfaceConfig({ interface: { emit: [] } })).toEqual({
+      autoBind: true,
+      emit: [],
+    });
+  });
+
+  it("ignores unknown keys in the interface section", () => {
+    const malformed = { interface: { ignore: ["dist/**"] } } as unknown as NudoConfig;
+    expect(interfaceConfig(malformed)).toEqual({ autoBind: true, emit: [] });
+  });
+});
+
+describe("matchesEmitAllowlist", () => {
+  const projectDir = "/proj";
+
+  it("empty allowlist allows everything", () => {
+    expect(matchesEmitAllowlist("/proj/src/a.js", projectDir, [])).toBe(true);
+  });
+
+  it("matches ** and * globs relative to projectDir", () => {
+    expect(matchesEmitAllowlist("/proj/src/api/add.js", projectDir, ["src/api/**"])).toBe(true);
+    expect(matchesEmitAllowlist("/proj/src/util/x.js", projectDir, ["src/api/**"])).toBe(false);
+    expect(matchesEmitAllowlist("/proj/lib/a.js", projectDir, ["lib/*.js"])).toBe(true);
+    expect(matchesEmitAllowlist("/proj/lib/nested/a.js", projectDir, ["lib/*.js"])).toBe(false);
+  });
+
+  it("rejects paths outside projectDir", () => {
+    expect(matchesEmitAllowlist("/other/src/a.js", projectDir, ["src/**"])).toBe(false);
   });
 });
 
@@ -44,7 +80,7 @@ describe("findProjectConfig with interface key", () => {
       join(root, "package.json"),
       JSON.stringify({
         name: "iface-fixture",
-        nudo: { interface: { autoBind: false } },
+        nudo: { interface: { autoBind: false, emit: ["src/**"] } },
       }),
     );
     const deep = join(root, "packages", "lib", "src");
@@ -52,7 +88,7 @@ describe("findProjectConfig with interface key", () => {
 
     const found = findProjectConfig(deep);
     expect(found?.projectDir).toBe(root);
-    expect(interfaceConfig(found?.config)).toEqual({ autoBind: false });
+    expect(interfaceConfig(found?.config)).toEqual({ autoBind: false, emit: ["src/**"] });
   });
 
   it("package.json without a nudo key yields null config and default interface settings", () => {
@@ -64,7 +100,7 @@ describe("findProjectConfig with interface key", () => {
 
     const found = findProjectConfig(sub);
     expect(found).toBeNull();
-    expect(interfaceConfig(found?.config)).toEqual({ autoBind: true });
+    expect(interfaceConfig(found?.config)).toEqual({ autoBind: true, emit: [] });
   });
 
   it("monorepo: child package.json without nudo continues up to the root nudo config", () => {
@@ -86,6 +122,6 @@ describe("findProjectConfig with interface key", () => {
 
     const found = findProjectConfig(src);
     expect(found?.projectDir).toBe(root);
-    expect(interfaceConfig(found?.config)).toEqual({ autoBind: false });
+    expect(interfaceConfig(found?.config)).toEqual({ autoBind: false, emit: [] });
   });
 });
