@@ -254,6 +254,10 @@ pin 'pnpm run infer docs/examples/algebra/h-array-boundary.js' \
   'Case "reduce": ([1, 2, 3, 4, 5]) => 15' 'abs: 15  #exact' \
   'Case "forEach": ([1, 2, 3, 4, 5]) => 15' 'abs: 15  #exact' \
   'Case "some": ([1, 2, 3, 4, 5]) => boolean' 'abs: boolean  #exact'
+pin 'pnpm run infer docs/examples/algebra/i-map-set.js' \
+  'Case "map-get": ("alice") => unknown' \
+  'intension: dedup: (arr: A1) => unknown[]' \
+  'Case "set-forof": ([1, 2, 2, 3]) => []'
 pin 'pnpm run infer docs/examples/algebra/sample.js' \
   'Case "entry@' '# no call sites found; parameters default to unknown' \
   'add: (a: A1, b: A2) => number | string = (A1 + A2)' \

@@ -1,74 +1,64 @@
 import { type TypeValue, type Refinement, T, typeValueToString } from "../type-value.ts";
 import { createRange } from "./range.ts";
+import {
+  type TemplatePartView,
+  viewTemplateParts,
+  knownPrefixOfViews,
+  knownSuffixOfViews,
+  allFixedTextOfViews,
+  formatTemplateNameViews,
+  mergeAdjacentFixedViews,
+  templateMatchesValue,
+  decideStartsWith,
+  decideEndsWith,
+  decideIncludes,
+} from "../algebra/template.ts";
+
+/**
+ * TypeValue 模板 refined 机制（派发表/check/ops）接线。
+ * 语义计算（前缀/后缀/固定文本/匹配/名称渲染/相邻合并/谓词判定）的唯一
+ * 实现在 algebra/template.ts；本模块只做 TypeValue 形态的薄适配。
+ */
+function tvTemplateViews(parts: TypeValue[]): TemplatePartView<TypeValue>[] {
+  return viewTemplateParts(parts, (p) =>
+    p.kind === "literal" && typeof p.value === "string"
+      ? { fixed: p.value }
+      : { render: typeValueToString(p) },
+  );
+}
 
 export function getKnownPrefix(parts: TypeValue[]): string {
-  let prefix = "";
-  for (const p of parts) {
-    if (p.kind === "literal" && typeof p.value === "string") {
-      prefix += p.value;
-    } else {
-      break;
-    }
-  }
-  return prefix;
+  return knownPrefixOfViews(tvTemplateViews(parts));
 }
 
 export function getKnownSuffix(parts: TypeValue[]): string {
-  let suffix = "";
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const p = parts[i];
-    if (p.kind === "literal" && typeof p.value === "string") {
-      suffix = p.value + suffix;
-    } else {
-      break;
-    }
-  }
-  return suffix;
-}
-
-function getFixedLength(parts: TypeValue[]): number {
-  let len = 0;
-  for (const p of parts) {
-    if (p.kind === "literal" && typeof p.value === "string") {
-      len += p.value.length;
-    }
-  }
-  return len;
-}
-
-function getAllFixedText(parts: TypeValue[]): string {
-  return parts
-    .filter((p): p is TypeValue & { kind: "literal" } => p.kind === "literal" && typeof p.value === "string")
-    .map((p) => p.value as string)
-    .join("");
+  return knownSuffixOfViews(tvTemplateViews(parts));
 }
 
 function formatTemplateName(parts: TypeValue[]): string {
-  const inner = parts
-    .map((p) => (p.kind === "literal" && typeof p.value === "string" ? p.value : `\${${typeValueToString(p)}}`))
-    .join("");
-  return `\`${inner}\``;
+  return formatTemplateNameViews(tvTemplateViews(parts));
 }
 
 function normalizeParts(parts: TypeValue[]): TypeValue[] {
-  const result: TypeValue[] = [];
-  for (const p of parts) {
-    const last = result[result.length - 1];
+  const merged = mergeAdjacentFixedViews(tvTemplateViews(parts), (text) => ({
+    fixed: text,
+    render: text,
+    part: T.literal(text),
+  }));
+  // T.string + T.string 折叠为 T.string（TypeValue 侧特有；Abs 侧无此折叠）
+  const out: TypeValue[] = [];
+  for (const { part: p } of merged) {
+    const last = out[out.length - 1];
     if (
-      last?.kind === "literal" && typeof last.value === "string" &&
-      p.kind === "literal" && typeof p.value === "string"
-    ) {
-      result[result.length - 1] = T.literal(last.value + p.value);
-    } else if (
       last?.kind === "primitive" && last.type === "string" &&
       p.kind === "primitive" && p.type === "string"
     ) {
-      // T.string + T.string collapses to T.string
+      // 丢弃重复的相邻 string prim
     } else {
-      result.push(p);
+      out.push(p);
     }
   }
-  return result;
+  return out;
 }
 
 function createTemplateRefinement(parts: TypeValue[]): Refinement {
@@ -77,7 +67,7 @@ function createTemplateRefinement(parts: TypeValue[]): Refinement {
     meta: { parts },
     check(value: unknown) {
       if (typeof value !== "string") return false;
-      return matchesTemplate(value, parts);
+      return templateMatchesValue(value, tvTemplateViews(parts));
     },
     ops: {
       "+"(self: TypeValue, other: TypeValue) {
@@ -88,31 +78,23 @@ function createTemplateRefinement(parts: TypeValue[]): Refinement {
       startsWith(_self: TypeValue, args: TypeValue[]) {
         const arg = args[0];
         if (arg?.kind !== "literal" || typeof arg.value !== "string") return undefined;
-        const prefix = getKnownPrefix((_self as any).refinement.meta.parts as TypeValue[]);
-        const search = arg.value;
-        if (prefix.length >= search.length) {
-          return T.literal(prefix.startsWith(search));
-        }
-        if (search.startsWith(prefix)) return undefined;
-        return T.literal(false);
+        const parts = (_self as any).refinement.meta.parts as TypeValue[];
+        const d = decideStartsWith(knownPrefixOfViews(tvTemplateViews(parts)), arg.value);
+        return d === "unknown" ? undefined : T.literal(d);
       },
       endsWith(_self: TypeValue, args: TypeValue[]) {
         const arg = args[0];
         if (arg?.kind !== "literal" || typeof arg.value !== "string") return undefined;
-        const suffix = getKnownSuffix((_self as any).refinement.meta.parts as TypeValue[]);
-        const search = arg.value;
-        if (suffix.length >= search.length) {
-          return T.literal(suffix.endsWith(search));
-        }
-        if (search.endsWith(suffix)) return undefined;
-        return T.literal(false);
+        const parts = (_self as any).refinement.meta.parts as TypeValue[];
+        const d = decideEndsWith(knownSuffixOfViews(tvTemplateViews(parts)), arg.value);
+        return d === "unknown" ? undefined : T.literal(d);
       },
       includes(_self: TypeValue, args: TypeValue[]) {
         const arg = args[0];
         if (arg?.kind !== "literal" || typeof arg.value !== "string") return undefined;
-        const fixed = getAllFixedText((_self as any).refinement.meta.parts as TypeValue[]);
-        if (fixed.includes(arg.value)) return T.literal(true);
-        return undefined;
+        const parts = (_self as any).refinement.meta.parts as TypeValue[];
+        const d = decideIncludes(allFixedTextOfViews(tvTemplateViews(parts)), arg.value);
+        return d === "unknown" ? undefined : T.literal(d);
       },
     },
     properties: {
@@ -120,33 +102,11 @@ function createTemplateRefinement(parts: TypeValue[]): Refinement {
         const parts = (_self as any).refinement.meta.parts as TypeValue[];
         const hasAbstract = parts.some((p) => p.kind !== "literal");
         if (!hasAbstract) return undefined;
-        const minLen = getFixedLength(parts);
-        return createRange({ min: minLen });
+        // 最小长度 = 固定文本总长（与旧 getFixedLength 同口径：只计字符串字面量）
+        return createRange({ min: allFixedTextOfViews(tvTemplateViews(parts)).length });
       },
     },
   };
-}
-
-function matchesTemplate(value: string, parts: TypeValue[]): boolean {
-  let pos = 0;
-  for (let i = 0; i < parts.length; i++) {
-    const p = parts[i];
-    if (p.kind === "literal" && typeof p.value === "string") {
-      if (!value.startsWith(p.value, pos)) return false;
-      pos += p.value.length;
-    } else {
-      if (i === parts.length - 1) return true;
-      const next = parts[i + 1];
-      if (next?.kind === "literal" && typeof next.value === "string") {
-        const idx = value.indexOf(next.value, pos);
-        if (idx === -1) return false;
-        pos = idx;
-      } else {
-        return true;
-      }
-    }
-  }
-  return pos === value.length;
 }
 
 export function createTemplate(parts: TypeValue[]): TypeValue {

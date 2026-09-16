@@ -1,13 +1,19 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, beforeEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { tryBPathCallFull, analyzeFile } from "@nudojs/service";
+import { tryBPathCallFull, analyzeFile, resetAllAnalysisCaches } from "@nudojs/service";
 import { $lit, litValue, typeValueToString } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
+
+// 用例级缓存隔离：tryBPathCallFull / analyzeFile 背后的 bRunCache 及级联的
+// analysisFileCache·fnAnalysisCache、absModuleCache、core memo 全部清空。
+beforeEach(() => {
+  resetAllAnalysisCaches();
 });
 
 describe("B-path call site collection", () => {

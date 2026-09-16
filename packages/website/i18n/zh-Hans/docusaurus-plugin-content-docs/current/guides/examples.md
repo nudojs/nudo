@@ -286,7 +286,7 @@ checkUrl("https://api.example.com/users");
 Case "call@L4": ("https://api.example.com/users") => true
 ```
 
-`startsWith`、`endsWith` 与 `includes` 在调用点对字面量接收者折叠为确定的布尔值（同一函数体在 `@nudo:case` 指令下会泛化为 `unknown`）。并非所有方法都已建模——`"a,b,c".split(",")` 与 `"hello".indexOf("l")` 在两条路径上都会求值为 `unknown`（见示例 7）。
+`startsWith`、`endsWith` 与 `includes` 在字面量接收者上折叠为确定的布尔值——调用点路径与 `@nudo:case` 指令路径同样精确。但并非所有方法都保留完整精度——`"hello".indexOf("l")` 只得 `number` 原语，丢字面量下标（见示例 7）。
 
 ---
 
@@ -312,7 +312,7 @@ stringDemo();
 Case "call@L7": () => { upper: "HELLO", sliced: "el", len: 5 }
 ```
 
-`toUpperCase`、`slice` 和 `.length` 在调用点折叠为精确字面量，TypeScript 对这些操作只能推断出 `string` 或 `number`。并非所有方法都已建模——`"a,b,c".split(",")` 与 `"hello".indexOf("l")` 目前会求值为 `unknown`，依赖具体方法前请先跑 `nudo infer` 确认。
+`toUpperCase`、`slice`、`.length` 与 `split`（字面量接收者 + 字面量分隔符）在调用点折叠为精确结果，TypeScript 对这些操作只能推断出 `string`、`number` 或 `string[]`。`indexOf` 目前只得 `number` 原语（丢字面量下标），依赖具体方法前请先跑 `nudo infer` 确认。
 
 ---
 

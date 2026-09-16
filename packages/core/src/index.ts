@@ -43,8 +43,6 @@ export {
   isTemplate,
   getTemplateParts,
   concatTemplates,
-  getKnownPrefix,
-  getKnownSuffix,
 } from "./refinements/template.ts";
 
 export {

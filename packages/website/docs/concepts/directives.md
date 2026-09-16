@@ -7,6 +7,8 @@ description: "Syntax reference for all @nudo: directives — case, mock, pure, s
 
 Directives are structured comments that control how Nudo analyzes your code. They use the `@nudo:` namespace to avoid conflicts with JSDoc and other tools. Place directives in block comments immediately above the function they apply to.
 
+The **interface product** (refinement contracts) lives primarily in sidecar files — `*.nudo.js` modules auto-bound to same-name exports of your source file — with `@nudo:refine` / `@nudo:interface` as the compatible in-source form. See [@nudo:refine](#nudorefine--refinement-contract) and the [`nudo interface`](../guides/cli.md#nudo-interface) command.
+
 ## Directive Syntax
 
 All directives live in the `@nudo:` namespace and are written as structured comments:
@@ -39,6 +41,8 @@ Both forms are parsed identically — in particular, the single-line rule for mo
 ---
 
 ## @nudo:case — Named Execution Cases
+
+Cases are **debug witnesses**: concrete or symbolic inputs Nudo executes the function with. They are not the interface product — refinement contracts live in `*.nudo.js` sidecars (see [@nudo:refine](#nudorefine--refinement-contract)). `@nudo:case` remains fully supported for scenario testing, `nudo test` assertions, and LSP scenario switching.
 
 Provide named execution cases. Each case defines inputs (concrete or symbolic) for Nudo to run the function with.
 
@@ -368,19 +372,85 @@ function sum(arr) {
 
 ## @nudo:refine — Refinement Contract {#nudorefine--refinement-contract}
 
-Attach a refinement from a `*.nudo.js` template to a parameter or the return value. The constraint enters Abs as a Pred and **participates in algebra** (`x>0` ⇒ `x+1>1`) — it is not just a call-site gate.
+Attach a refinement contract to a parameter or the return value. The constraint enters Abs as a Pred and **participates in algebra** (`x>0` ⇒ `x+1>1`) — it is not just a call-site gate.
 
-### Syntax
+`@nudo:interface` is an **exact alias** of `@nudo:refine` (both parse to the same in-source refinement); the product name in CLI / LSP / diagnostics is **interface**.
+
+### Main path: sidecar auto-binding
+
+The recommended form writes contracts in a sidecar file next to the source: `<file>.nudo.js` (for `.js`/`.mjs`) or `<file>.nudo.ts` (for `.ts`/`.mts`). Every `export const <name> = fn({ ... }, ...)` **auto-binds** to the same-name local named export of the source file — the source needs no annotation at all:
+
+```javascript
+// calc.js
+export function addTax(x) {
+  return x + 1;
+}
+
+export function greet(name) {
+  return name;
+}
+```
+
+```javascript
+// std.nudo.js — shared constraint templates
+import { number } from "@nudojs/core";
+
+export const positive = number().gt(0);
+```
+
+```javascript
+// calc.nudo.js — sidecar contracts
+import { fn, lit, number, string, union } from "@nudojs/core";
+import { positive } from "./std.nudo.js";
+
+export const addTax = fn({ x: positive.shift(1) }, number());
+export const greet = fn({ name: union(lit("ada"), lit("bob")) }, string());
+```
+
+```bash
+$ nudo interface calc.js
+calc.js
+  addTax  [handwritten]  (x: number().gt(1)) → number()
+  greet  [handwritten]  (name: union(lit("ada"), lit("bob"))) → string()
+```
+
+Sidecars are real JS modules: they may import builders from `@nudojs/core` and constraints from **other sidecars** via relative imports. Loading failures, import cycles, and unrecognized export forms are **errors** (`nudo:interface-load`, `nudo:interface-cycle`) instead of silent fallbacks.
+
+**Builders** (`@nudojs/core`, also injectable bare):
+
+| Builder | Meaning | Example |
+|---------|---------|---------|
+| `number()` / `string()` / `boolean()` | primitive domain | `number()` |
+| `shape({ id: number() })` | object shape (fields recursive) | `shape({ id: number().gt(0) })` |
+| `array(c)` | array element constraint | `array(string())` |
+| `lit(v)` | literal domain | `lit(42)` / `lit("ada")` / `lit(true)` |
+| `union(...cs)` | join of domains | `union(lit(42), lit("a"))` |
+| `fn(params, returns?, { throws? })` | first-class function interface | `fn({ x: number() }, number())` |
+| `.gt(n)` `.ge(n)` `.lt(n)` `.le(n)` `.int()` | numeric bounds (chained) | `number().gt(0).int()` |
+| `.min(n)` `.max(n)` | string length bounds (`length(s)` pred) | `string().min(1)` |
+| `.shift(n)` | translate every constant bound by `+n` | `positive.shift(1)` |
+| `and(...cs)` | scalar conjunction (top-level function, not a chained method) | `and(positive, number().lt(10))` |
+| `partial(c)` / `pick(c, keys)` / `omit(c, keys)` | shape utilities | `partial(user)` |
+
+`shift` is legal only on numeric scalar chains (every bound's right side is a literal); anything else throws. `partial`/`pick`/`omit` accept `shape(...)` constraints.
+
+**Auto-binding rules:**
+
+- Binds only **same-name local named exports** of the source file (`export function` / `export const`). Re-exports, `export default`, and CJS are out of scope.
+- Sidecars under `node_modules/` are never auto-loaded.
+- Same-parameter annotations from source and sidecar are **conjoined**; a contradictory conjunction (e.g. `x > 0` ∧ `x < 0`) reports `nudo:interface-conflict`.
+- A sidecar binding wins over nothing else — merge order is: handwritten (source annotation ∪ sidecar binding) > generated segment > implicit inference. The layer is shown by `nudo interface` (`[handwritten]` / `[generated]` / `[implicit]`).
+
+### In-source form
 
 ```text
 @nudo:refine <param> <constraint>
 @nudo:refine return <constraint>
+@nudo:interface <param> <constraint>   // alias
 ```
 
 - **param** — Parameter name, or the literal `return` for the postcondition
 - **constraint** — Name exported from a `*.nudo.js` module, imported via `/// @nudo:import`
-
-Templates are parameter-agnostic (`number().gt(0)`, `shape({...})`). Binding happens at the refine site.
 
 ### Examples
 
@@ -660,7 +730,7 @@ const result = a + b;
 | `@nudo:pure` | (no args) | Mark function as pure for memoization |
 | `@nudo:skip` | `[returnsExpr]` | Skip evaluation, use existing type info |
 | `@nudo:sample` | `N` | Control loop sampling before fixed-point |
-| `@nudo:refine` | `param constraint` / `return constraint` | Refinement contract (enters Abs as Pred) |
+| `@nudo:refine` / `@nudo:interface` | `param constraint` / `return constraint` | In-source refinement contract (alias pair; main path is the `*.nudo.js` sidecar auto-binding) |
 | `@nudo:import` | `{ name } from "spec"` (file-level `///`) | Import `*.nudo.js` constraint templates for `@nudo:refine` |
 | `@nudo:env` | `name1, name2` (file-level `///`) | Declare runtime environment APIs |
 | `@nudo:mock-module` | `"module" from "path"` (file-level `///`) | Replace imported modules with mocks |

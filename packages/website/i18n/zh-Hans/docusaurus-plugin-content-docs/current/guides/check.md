@@ -59,6 +59,59 @@ clamp(-5, 0, 10);  // OK — 未声明 @nudo:refine
 
 它 **不** 替代 `tsc` 的完备结构检查。它做 tsc 在无注解 JS 上做不到的事：**声明式精化进入代数**，外加赋值/实参上的 **Abs leq**。
 
+## interface 诊断
+
+`*.nudo.js` 侧车契约（与生成的 `@generated` 段）有独立诊断族，按**执法分档**：手写 = 义务（**error**）；生成段 = 事实快照会漂移（**warning**）；观察到的调用点域本身永不执法。
+
+| code | severity | 触发条件 |
+|------|----------|---------|
+| `nudo:interface-cycle` | error | 侧车互相 import 成环 |
+| `nudo:interface-load` | error | 侧车加载/求值失败，或导出形态不识别 |
+| `nudo:interface-conflict` | error | 源码 `@nudo:refine` 与侧车绑定同参（或返回位）矛盾（`x > 0 ∧ x < 0`）；矛盾位跳过执法，不把契约层矛盾误诊为函数体违例 |
+| `nudo:interface-domain-exceeds` | error | **跨文件**注入的调用证据 ⊄ **手写**契约（接口被用穿） |
+| `nudo:interface-drift` | warning | 固化的 `@generated` 段 ≠ 今日重算接口（语义比较，参数位与返回位） |
+| `nudo:interface-name-clash` | error | `nudo interface --emit` 目标名已是侧车手写绑定（手写优先，跳过写入） |
+
+违例来源分流：写在**被分析文件里**的违例调用维持 `nudo:constraint-violated` 原码原语义；`nudo:interface-domain-exceeds` 只覆盖此前不查契约的路径——从使用现场文件注入的调用记录（`--callsites`）。证据门槛：字面量实参、conf `#exact`/`#path`、无截断记录。
+
+示例（各自独立 fixture 目录实跑）：
+
+```text
+issues
+  [ERROR] sidecar './cyc.nudo.js' for 'f' failed: sidecar import cycle: /tmp/…/cyc.nudo.js → /tmp/…/cyc2.nudo.js → /tmp/…/cyc.nudo.js  (nudo:interface-cycle)
+```
+
+```text
+issues
+  [ERROR] sidecar './broken.nudo.js' for 'broken' failed: Unexpected token, expected "," (2:0)  (nudo:interface-load)
+```
+
+```text
+issues
+  [ERROR f] f: 手写契约合取不可满足（x）  (nudo:interface-conflict)
+      → 检查源码 @nudo:refine 与侧车同名绑定的常数界是否矛盾
+```
+
+```text
+Diagnostics:
+
+  [error] lib.js:1:7 clamp[x]: cross-file call-site domain evidence "hot" exceeds handwritten contract (nudo:interface-domain-exceeds)
+```
+
+```text
+issues
+  [WARNING L5 half] half[n]: 固化生成段 ≠ 今日调用点域  (nudo:interface-drift)
+      actual:   number  = n  where n = 12  #path
+      expected: lit(10)
+      → 重跑 nudo interface --emit 刷新生成段，或核对 n 的调用点
+  [WARNING L5 half] half[return]: 固化生成段 ≠ 今日推断返回  (nudo:interface-drift)
+      actual:   number  = return  where return = 6  #path
+      expected: lit(5)
+      → 重跑 nudo interface --emit 刷新生成段，或核对返回值
+```
+
+drift warning 不使 `nudo check` 失败（退出码 `0`）。分码覆盖：`nudo:interface-drift` 与 `nudo:interface-domain-exceeds` 钉在 check-gold 夹具；`nudo:interface-load` / `nudo:interface-cycle` / `nudo:interface-conflict` 由 wiring、loader 与 emitter 套件覆盖（`check-interface-wiring`、`refine-loader`、`interface-emitter`）；`nudo:interface-name-clash` 在 emitter/agent 套件。契约形态见 [@nudo:refine](../concepts/directives.md#nudorefine--refinement-contract)。
+
 ## 报告形态（Abs 优先）
 
 ```

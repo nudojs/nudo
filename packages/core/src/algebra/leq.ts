@@ -14,8 +14,9 @@ import { litValue } from "./abs.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { pTrue, implies } from "./pred.ts";
 import { termEquals } from "./term.ts";
-import type { AstEnv } from "./ast-eval.ts";
+import type { AstEnv } from "./ast-env.ts";
 import { getClassChain } from "./language.ts";
+import { getSlot } from "./objects.ts";
 
 export type LeqResult = {
   ok: boolean;
@@ -204,7 +205,7 @@ function leqShape(
           : null;
     if (!srcObj || srcObj.k !== "obj") return fail(`shape ${s.k} ⊭ obj`);
     for (const [key, slot] of Object.entries(t.slots)) {
-      const srcSlot = srcObj.slots[key];
+      const srcSlot = getSlot(srcObj.slots, key);
       if (!srcSlot) {
         if (slot.optional) continue;
         return fail(`missing slot ${key}`);

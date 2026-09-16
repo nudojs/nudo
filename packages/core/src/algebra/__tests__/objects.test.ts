@@ -5,7 +5,6 @@ import {
   spread,
   joinAbs,
   joinObjects,
-  collapseToOptional,
   numLit,
   strLit,
   boolLit,
@@ -82,21 +81,6 @@ describe("objects: join", () => {
     // 应是 sum 而不是 { port?: number }
     expect(r.shape.k).toBe("sum");
   });
-
-  it("collapseToOptional is explicit loss and #widened", () => {
-    const a = objOf({ port: { value: numLit(3000) }, debug: { value: boolLit(true) } });
-    const b = objOf({ host: { value: strLit("x") } });
-    const sum = joinAbs(a, b);
-    expect(sum.shape.k).toBe("sum");
-    const collapsed = collapseToOptional(sum);
-    expect(collapsed.conf).toBe("widened");
-    expect(collapsed.shape.k).toBe("obj");
-    if (collapsed.shape.k !== "obj") return;
-    expect(collapsed.shape.slots.port!.optional).toBe(true);
-    expect(collapsed.shape.slots.host!.optional).toBe(true);
-    expect(collapsed.shape.slots.debug!.optional).toBe(true);
-  });
-
   it("join(NaN, NaN) keeps the NaN literal (Object.is, not ===)", () => {
     const nan = numLit(NaN);
     const r = joinAbs(nan, nan);

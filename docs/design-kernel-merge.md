@@ -20,7 +20,7 @@ parser ──▶ core
             └── bridge       ← Abs ⇄ TypeValue
                  │
                  ▼
-            cli/evaluator    ← AST 抽象解释；算术/比较/spread 先走代数
+            service/evaluator    ← AST 抽象解释；算术/比较/spread 先走代数
                  │
                  ▼
             service / lsp / vscode / dts

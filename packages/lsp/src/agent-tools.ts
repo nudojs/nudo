@@ -1,10 +1,12 @@
 /**
  * Agent-facing tool implementations (`nudo.whatIf` / `nudo.suggestCase` /
- * `nudo.trace`), ported from the MCP server (packages/mcp/src/tools.ts) and
- * wired into both LSP channels in server.ts: executeCommand commands
- * (`nudo.*`) and custom requests (`nudo/…`). Like validation.ts, this module
- * holds pure logic with injected readers so tests exercise it without a live
- * connection; server.ts supplies the document/disk readers.
+ * `nudo.trace` / `nudo.interface` / `nudo.interface.emit`), ported from the
+ * MCP server (packages/mcp/src/tools.ts) and wired into both LSP channels in
+ * server.ts: executeCommand commands (`nudo.*`) and custom requests
+ * (`nudo/…`). Like validation.ts, this module holds pure logic with injected
+ * readers so tests exercise it without a live connection; server.ts supplies
+ * the document/disk readers. Also hosts computeInterfaceLenses — the pure
+ * CodeLens computation for the interface tier (design-refine-derivation §8).
  *
  * Unlike the MCP original, whatIf really applies its bindings: each binding
  * becomes a `// @nudo:as <type>` comment inserted above the declaring
@@ -12,17 +14,40 @@
  * variable declarations, expression statements and returns, so the assumed
  * type flows through the whole program like any other directive.
  */
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { dirname, resolve, relative, isAbsolute } from "node:path";
 import {
   analyzeFile,
   buildCaseDirective,
   getHoverAtPosition,
   collectAbsInlays,
   serializeInferJson,
+  getCasesForFile,
+  interfaceSurface,
+  emitInterface,
+  formatEmitSummary,
+  formatInterfaceSurfaceLine,
+  findProjectConfig,
+  interfaceConfig,
+  isNudoTargetPath,
+  type EmitInterfaceResult,
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
-import { T, typeValueToString, checkSource, serializeCheckJson, pTrue } from "@nudojs/core";
+import {
+  T,
+  typeValueToString,
+  checkSource,
+  serializeCheckJson,
+  pTrue,
+  effectiveInterface,
+  generatedExportNames,
+  interfaceDiagCount,
+  localNamedExports,
+  isNodeModulesPath,
+  sidecarPathOf,
+  takeInterfaceDiagsSince,
+  type InterfaceSource,
+} from "@nudojs/core";
 import type { TypeValue, CheckJson } from "@nudojs/core";
 import { lspLoadModule } from "./validation.ts";
 
@@ -36,6 +61,11 @@ export type AgentToolDeps = {
   readFile?: (filePath: string) => string;
   /** Open-document lookup by absolute file path; the editor buffer wins over disk. */
   getOpenText?: (filePath: string) => { text: string } | undefined;
+  /**
+   * LSP client workspace folders（server 注入）。emit 写盘仅允许落在这些根内
+   * （fail-closed，realpath 比较）；undefined = 无 bound（CLI/测试）。
+   */
+  workspaceRoots?: string[];
 };
 
 export function textResult(text: string): AgentToolResult {
@@ -70,6 +100,59 @@ export function parseTypeExpr(expr: string): TypeValue {
 export function normalizeFilePath(file: string): string {
   const path = file.startsWith("file://") ? decodeURIComponent(file.slice(7)) : file;
   return resolve(path);
+}
+
+function tryRealpath(p: string): string | undefined {
+  try {
+    return realpathSync(p);
+  } catch {
+    return undefined;
+  }
+}
+
+function pathInsideRoot(root: string, filePath: string): boolean {
+  const rel = relative(root, filePath);
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
+/**
+ * emit 路径边界：目标必须是可分析的 JS/TS 源（非侧车契约模块本身），
+ * 不得落在 node_modules（含侧车路径），且在提供 workspaceRoots 时必须
+ * 落在某个 root 内（realpath 防符号链接逃逸）。
+ *
+ * - workspaceRoots === undefined：CLI/无 bound 场景，只做类型/node_modules 检查。
+ * - workspaceRoots 提供（含空数组）：LSP agent 写盘，fail-closed——没有任何
+ *   root 能包含目标就拒；不回落到 findProjectConfig 祖先 package.json
+ * （那会把 workspace 外的项目根误当成授权根）。
+ */
+export function assertEmitTargetAllowed(
+  filePath: string,
+  workspaceRoots?: string[],
+): string | undefined {
+  if (!isNudoTargetPath(filePath)) {
+    return `Error: '${filePath}' is not an analysis target (.js/.mjs/.ts required; sidecar contract modules cannot be emit targets)`;
+  }
+  if (isNodeModulesPath(filePath) || isNodeModulesPath(sidecarPathOf(filePath))) {
+    return `Error: '${filePath}' is inside node_modules; emit never writes contract sidecars there`;
+  }
+  if (workspaceRoots === undefined) return undefined;
+
+  const realFile = tryRealpath(filePath) ?? filePath;
+  const roots: string[] = [];
+  for (const r of workspaceRoots) {
+    const abs = resolve(r);
+    const real = tryRealpath(abs) ?? abs;
+    if (!roots.includes(real)) roots.push(real);
+  }
+  // fail-closed：有 bound 却没有任何可用 root（或 root 不含目标）→ 拒
+  if (roots.length === 0) {
+    return `Error: emit requires at least one workspace root; '${filePath}' cannot be authorized`;
+  }
+  const ok = roots.some((root) => pathInsideRoot(root, realFile));
+  if (!ok) {
+    return `Error: '${filePath}' is outside allowed roots (${roots.join(", ")})`;
+  }
+  return undefined;
 }
 
 const BARE_PRIMITIVES = new Set(["number", "string", "boolean", "bigint", "symbol"]);
@@ -483,4 +566,318 @@ export function trace(params: FunctionToolParams, deps: AgentToolDeps = {}): Age
   } catch (err) {
     return analysisError(err);
   }
+}
+
+// ---------------------------------------------------------------------------
+// interface 档（design-refine-derivation §7.5/§8）：agent 打印/固化工具 +
+// CodeLens 计算纯函数。产品名 interface；case 是 debug 副层。
+// ---------------------------------------------------------------------------
+
+export type InterfaceToolParams = {
+  file: string;
+  /** 省略 → 打印该文件全部顶层函数 */
+  functionName?: string;
+  /** .nudo.js 侧车装载（测试注入）；缺省 lspLoadModule 真实读盘 */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
+  /**
+   * 测试注入用。客户端不能借此把项目 `autoBind: false` 打开——有效值与
+   * 项目配置 AND：`projectAutoBind && (params.autoBind ?? true)`。
+   */
+  autoBind?: boolean;
+};
+
+/**
+ * executeCommand 位置参数桥接（server.ts onExecuteCommand 特判移出的纯函数
+ * 形态，供请求面测试）：`nudo.interface [uri, functionName?]`。
+ */
+export function interfacePositionalArgs(
+  args: unknown[],
+): InterfaceToolParams | undefined {
+  if (args.length >= 1 && typeof args[0] === "string") {
+    return {
+      file: args[0],
+      ...(args.length >= 2 && typeof args[1] === "string"
+        ? { functionName: args[1] }
+        : {}),
+    };
+  }
+  return undefined;
+}
+
+/**
+ * executeCommand 位置参数桥接：`nudo.interfaceEmit [uri, functionName, mode]`。
+ * 非法 mode 由 interfaceEmitTool 校验（显式错误文本，不静默降级）。
+ */
+export function interfaceEmitPositionalArgs(
+  args: unknown[],
+): { file: string; functionName: string; mode: "add" | "update" } | undefined {
+  if (
+    args.length >= 3 &&
+    typeof args[0] === "string" &&
+    typeof args[1] === "string" &&
+    typeof args[2] === "string"
+  ) {
+    return {
+      file: args[0],
+      functionName: args[1],
+      mode: args[2] as "add" | "update",
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Agent interface 打印：与 CLI `nudo interface` 同一数据源（interfaceSurface），
+ * 逐函数展示有效契约分层 handwritten / generated / implicit。
+ * interfaceSurface 以磁盘为真值（与 CLI 一致）；deps 预留给 open-buffer 通道。
+ */
+export async function interfaceTool(
+  params: InterfaceToolParams,
+  _deps: AgentToolDeps = {},
+): Promise<AgentToolResult> {
+  try {
+    const filePath = normalizeFilePath(params.file);
+    // 有效 autoBind = 项目配置 AND 客户端请求——客户端不能把 autoBind:false 打开
+    const projectAutoBind = interfaceConfig(
+      findProjectConfig(dirname(filePath))?.config,
+    ).autoBind;
+    const autoBind = projectAutoBind && (params.autoBind ?? true);
+    const entries = await interfaceSurface(filePath, {
+      loadModule: params.loadModule ?? lspLoadModule,
+      autoBind,
+    });
+    const selected = params.functionName
+      ? entries.filter((e) => e.fn === params.functionName)
+      : entries;
+
+    const lines: string[] = [filePath];
+    if (selected.length === 0) {
+      lines.push(
+        params.functionName
+          ? `  no interface found for '${params.functionName}'`
+          : "  (no top-level functions found)",
+      );
+    }
+    for (const line of selected.map(formatInterfaceSurfaceLine)) lines.push(line);
+    lines.push("");
+    lines.push(JSON.stringify(selected, null, 2));
+    return textResult(lines.join("\n"));
+  } catch (err) {
+    return analysisError(err);
+  }
+}
+
+export type InterfaceEmitToolParams = {
+  file: string;
+  functionName: string;
+  mode: "add" | "update";
+};
+
+/** 每侧车路径写盘串行化：emitInterface 的读-分析-写之间有 await 边界，
+ *  连续两次 emit（如连续点击两个 persist lens）都基于同一份旧侧车内容计算，
+ *  后写整文件覆盖 → 前一个 @generated 段丢失且首次结果文本虚报 written。
+ *  同路径排队后两次 emit 串行，第二次读到第一次的写盘结果。 */
+const emitChains = new Map<string, Promise<unknown>>();
+function serializedEmit(
+  filePath: string,
+  fnNames: string[],
+  mode: "add" | "update",
+): Promise<EmitInterfaceResult> {
+  const prev = emitChains.get(filePath) ?? Promise.resolve();
+  const next = prev.then(
+    () => emitInterface(filePath, { fnNames, mode }),
+    () => emitInterface(filePath, { fnNames, mode }), // 前次失败不阻塞后续
+  );
+  const settled = next.then(
+    () => {},
+    () => {},
+  );
+  emitChains.set(filePath, settled);
+  // 链尾落地后清掉，避免长驻 LSP 会话 Map 无界增长
+  void settled.then(() => {
+    if (emitChains.get(filePath) === settled) emitChains.delete(filePath);
+  });
+  return next;
+}
+
+/**
+ * Agent interface 固化：与 CLI `nudo interface --emit` 同一写盘器
+ * （emitInterface），把调用点域固化为侧车 `@generated` 段。结果文本含
+ * written / skipped(reason) / issues；name-clash（手写优先）明确呈现。
+ */
+export async function interfaceEmitTool(
+  params: InterfaceEmitToolParams,
+  deps: AgentToolDeps = {},
+): Promise<AgentToolResult> {
+  try {
+    // 入参校验：非法 mode / 缺 functionName → 显式错误回报（server.ts 的
+    // dispatch 对 JSON 请求体只做 as 强转，不校验会静默降级成 add / skipped）
+    if (typeof params.functionName !== "string" || params.functionName.trim() === "") {
+      return textResult("Error: functionName is required for nudo.interface.emit");
+    }
+    if (params.mode !== "add" && params.mode !== "update") {
+      return textResult(
+        `Error: invalid mode '${String(params.mode)}' — expected "add" | "update"`,
+      );
+    }
+    const filePath = normalizeFilePath(params.file);
+    const err = assertEmitTargetAllowed(filePath, deps.workspaceRoots);
+    if (err) return textResult(err);
+    const result = await serializedEmit(filePath, [params.functionName], params.mode);
+    return textResult(formatEmitResult(filePath, result));
+  } catch (err) {
+    return analysisError(err);
+  }
+}
+
+/** emit 结果文本（与 CLI runInterfaceEmit 共用 formatEmitSummary 骨架；
+ *  本包装传绝对路径口径） */
+export function formatEmitResult(filePath: string, result: EmitInterfaceResult): string {
+  return formatEmitSummary(filePath, result.sidecarPath, result).join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// CodeLens interface 档计算（design-refine-derivation §8）
+// ---------------------------------------------------------------------------
+
+/** 默认层 lens：`● interface / handwritten|generated|implicit` */
+export type InterfaceLens =
+  | { kind: "interface"; fn: string; line: number; source: InterfaceSource }
+  /** 固化动作 lens：add=`⚡ persist interface`，update=`↻ update interface` */
+  | { kind: "emit"; fn: string; line: number; mode: "add" | "update" };
+
+/** case 副层 lens（debug 层，标题/命令与既有行为一致） */
+export type CaseLens = {
+  kind: "case";
+  fn: string;
+  line: number;
+  caseIndex: number;
+  caseName: string;
+  active: boolean;
+};
+
+export type NudoLens = InterfaceLens | CaseLens;
+
+export type InterfaceLensDeps = {
+  /** .nudo.js 侧车装载（effectiveInterface 同一通道）；缺省不加载侧车 */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
+  /** fn → 激活 case 下标（●/○ 标题）；缺省全部按 index 0 */
+  activeCases?: Map<string, number>;
+  /** 侧车 ambient 绑定开关（与 check/validate 同口径；false 时回落 implicit） */
+  autoBind?: boolean;
+};
+
+/** 顶层函数位（含 export 包裹与箭头/函数表达式 const 声明）——interface 档目标集 */
+function topLevelFunctionSlots(source: string): Array<{ name: string; line: number }> {
+  const ast = parse(source);
+  const out: Array<{ name: string; line: number }> = [];
+  for (const stmt of (ast as any).program.body ?? []) {
+    const line = stmt.loc?.start?.line;
+    if (typeof line !== "number") continue;
+    const d = stmt.type === "ExportNamedDeclaration" ? stmt.declaration : stmt;
+    if (!d) continue;
+    if (d.type === "FunctionDeclaration" && d.id) {
+      out.push({ name: d.id.name, line });
+    } else if (d.type === "VariableDeclaration") {
+      for (const decl of d.declarations ?? []) {
+        if (
+          decl.id?.type === "Identifier" &&
+          decl.init &&
+          (decl.init.type === "ArrowFunctionExpression" || decl.init.type === "FunctionExpression")
+        ) {
+          out.push({ name: decl.id.name, line });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * CodeLens 全量计算（server.ts onCodeLens 的可测纯函数形态）：
+ * - interface 默认层：每个**导出**函数一条 `● interface / <source>`——
+ *   effectiveInterface 命中 handwritten/generated，否则 implicit
+ *   （隐式 interface 始终可算，§7.1）；私有函数不绑定不落盘（§2.1），不加。
+ * - 固化动作：handwritten 只读展示；侧车已含同名 @generated 段 → update，
+ *   否则 add。
+ * - case 副层：跟在本函数 interface 档之后（标题/命令零改动；来源仍是
+ *   getCasesForFile 的指令 case）。
+ */
+export function computeInterfaceLenses(
+  source: string,
+  filePath: string,
+  deps: InterfaceLensDeps = {},
+): NudoLens[] {
+  // since 锚：lens 探测只排干自身产生的诊断增量——全量 take 会在 validateText
+  // 的 await 窗口窃取在途待消费的 interface-load 等诊断（check 通道被饿死）
+  const ifaceSince = interfaceDiagCount();
+  const lenses: NudoLens[] = [];
+  const exported = localNamedExports(source);
+
+  // 固化状态：侧车是否已含同名 @generated 段（与 effectiveInterface 的
+  // generatedExportNames 判定同口径；经 loadModule 读侧车，不直接碰盘）
+  const sidecarPath = sidecarPathOf(filePath);
+  const sidecarSpec = `./${sidecarPath.slice(sidecarPath.lastIndexOf("/") + 1)}`;
+  const sidecarSrc = deps.loadModule?.(sidecarSpec, filePath);
+  const persisted = sidecarSrc !== undefined ? generatedExportNames(sidecarSrc) : new Set<string>();
+
+  const fnCases = new Map(
+    getCasesForFile(filePath, source).map((f) => [f.functionName, f] as const),
+  );
+
+  const pushCaseLenses = (fnName: string, line: number): void => {
+    const fc = fnCases.get(fnName);
+    if (!fc) return;
+    const activeIdx = deps.activeCases?.get(fnName) ?? 0;
+    for (const c of fc.cases) {
+      lenses.push({
+        kind: "case",
+        fn: fnName,
+        line,
+        caseIndex: c.index,
+        caseName: c.name,
+        active: c.index === activeIdx,
+      });
+    }
+  };
+
+  const seen = new Set<string>();
+  for (const fn of topLevelFunctionSlots(source)) {
+    if (seen.has(fn.name)) continue;
+    seen.add(fn.name);
+
+    if (exported.has(fn.name)) {
+      const eff = effectiveInterface(source, fn.name, {
+        ...(deps.loadModule ? { loadModule: deps.loadModule } : {}),
+        fromFile: filePath,
+        // §2.2「整体关闭」：autoBind=false 时侧车 ambient 停用，lens 回落
+        // implicit（与 check/validate/print 同口径，避免 UI 仍暗示契约生效）
+        ...(deps.autoBind === false ? { autoBind: false } : {}),
+      });
+      const src: InterfaceSource = eff?.source ?? "implicit";
+      lenses.push({ kind: "interface", fn: fn.name, line: fn.line, source: src });
+      if (src !== "handwritten") {
+        lenses.push({
+          kind: "emit",
+          fn: fn.name,
+          line: fn.line,
+          mode: persisted.has(fn.name) ? "update" : "add",
+        });
+      }
+    }
+
+    // case 副层跟随 interface 档之后（同函数同 line，数组序即渲染序）
+    pushCaseLenses(fn.name, fn.line);
+  }
+
+  // getCasesForFile 宇宙中未被顶层函数扫描覆盖的形态：原样保留 case lens
+  for (const fc of fnCases.values()) {
+    if (seen.has(fc.functionName)) continue;
+    seen.add(fc.functionName);
+    pushCaseLenses(fc.functionName, fc.loc.start.line);
+  }
+
+  // lens 探测可能积累 interface-load 诊断——只排本次增量，防泄漏进 check 通道
+  takeInterfaceDiagsSince(ifaceSince);
+  return lenses;
 }

@@ -108,7 +108,10 @@ function test() {
 ### 1.3 Set 操作返回值精度
 
 **问题描述：**
-`Array.from(Set)` 当前求值为 `unknown`（Set 的迭代器未建模），无法得到元素联合数组。
+`Array.from(Set)` 的 Set 迭代器未建模，拿不到元素联合。曾有一段时间
+`Array.from` 把 Set 实例整个当数组元素（`from`/`of` 语义混用），误报
+`Set[]`（2026-09 实测曾三路径一致 `Set[] #path`）；已修复为对未建模
+可迭代物诚实返回 `unknown`（2026-09-15）。
 
 **当前行为：**
 ```javascript
@@ -119,12 +122,17 @@ function unique(arr) {
   return Array.from(new Set(arr));
 }
 // 期望: [1, 2, 3]（或 (1 | 2 | 3)[]）
-// 实际: unknown
+// 实际: unknown（Set 构造保留 brand 形状，迭代未建模）
+// 注：Array.from(tuple) 现在按元素分布（join 后 arr），Array.from(string) → string[]
 ```
 
 **分析：**
 - Set 不保证顺序，返回数组而非元组是合理形态
-- 但当前连元素联合都拿不到——`Set` 构造/迭代整体未建模，直接 `unknown`
+- 当前拿不到元素联合——`Set` 构造保留 brand 形状、迭代整体未建模；
+  `Set` 的 for-of 迭代元素同样 unknown
+  （已钉进示例门禁：`docs/examples/algebra/i-map-set.js`）
+- TypeValue 求值器（service）对 `Array.from(Set实例)` 另有一份
+  set→elements 建模（见 combination-scenarios 测试），Abs/B 路径未对齐
 
 **难度：** 低（先建模 Set 元素类型，再考虑去重语义）
 
@@ -239,38 +247,46 @@ TypeValue 求值器路径（`evaluateFunctionFull`，测试 harness / `nudo test
 
 ---
 
-### 3.3 三元条件表达式不分叉（2026-09 实测）
+### 3.3 三元条件表达式分叉（已解决·确定条件）
 
-**当前行为：** `cond ? a : b` 的条件在两条路径（指令 case / 调用点）上都不
-求值分叉——即使实参是布尔字面量或可判定的比较，整个三元表达式恒为
-`unknown`（指令路径与调用点路径一致）。
+~~`cond ? a : b` 的条件在两条路径上都不求值分叉——即使实参是布尔字面量或
+可判定的比较，整个三元表达式恒为 `unknown`。~~ 已修复（2026-09 实测复验）：
+**确定条件**（布尔字面量、可折叠的 `===` 比较）在调用点与指令两条路径上
+都静态选支，得到精确字面量：
 
 ```javascript
-function pick(flag) {
-  return flag ? "a" : "b";
-}
-pick(true);
-pick(false);
-// Case "call@…": (true) => unknown     ← 布尔字面量也不分叉
-
 function eq5(x) {
   return x === 5 ? "five" : "other";
 }
 eq5(5);
-// Case "call@…": (5) => unknown        ← === 比较在三元里不折叠
+// Case "call@…": (5) => "five"        ← === 比较在三元条件里折叠，选真支
+
+function pick(b) {
+  return b ? "a" : "b";
+}
+pick(true);
+// Case "call@…": (true) => "a"        ← 布尔字面量分叉
 ```
 
-**对照（已建模的相邻形态）：** 同一测试放进 `if` 守卫就按调用点精确分叉——
-`if (typeof x === "number") return "num"; return "not-num"` 在 `kind(5)` /
-`kind("s")` 上得到 `"num"` / `"not-num"`（见网站
-`guides/control-flow-narrowing.md` 与 `guides/semantics.md`）。与 3.2 的
-宽松相等同属「条件不折叠」家族——一个不折叠运算符，一个不折叠三元条件。
+实现位置：TypeValue 路径 `packages/service/src/evaluator/evaluator.ts` 的
+`ConditionalExpression` 分支（`narrow` + 字面量 / `definiteBoolean` 静态选支）；
+B 路径 `core/src/algebra/exec/transpile.ts` 把三元编译为 `$fork`，
+`runtime.ts` 按 `isDefinitelyTrue` / `isDefinitelyFalse` 选支。
 
-**影响范围：** 所有用三元做返回值选择的函数（`flag ? A : B` 是 JS 常态）。
+**剩余限制：** 条件求值为 `unknown`（符号参数无具体绑定）时不分叉，
+两支合并（形态依路径而异）：
 
-**可能的解决方案：** 三元条件接入与 `if` 相同的测试提取（`phiFromTest`）路径。
+```javascript
+function opaque() { return JSON.parse("1"); }
+function t2(x) { return x ? "a" : "b"; }
+t2(opaque());
+// Case "call@…": (unknown) => string      #path（"a" | "b" 拓宽合并）
+// 指令 case 无实参（参数 unknown）：() => unknown  #partial
+```
 
-**难度：** 低（if 侧测试提取已存在）
+这与 `if` 守卫面对 unknown 条件的行为一致（两支 join），属保守正确，
+非精度缺口。与 3.2 的宽松相等同属「条件折叠」家族——`==`/`!=` 运算符
+仍不折叠，三元条件侧已折叠。
 
 ---
 
@@ -341,17 +357,15 @@ function nested() {
 
 ---
 
-### 4.3 `infer` 崩溃：class 声明 × 顶层调用点（2026-09 实测）
+### 4.3 `infer` 崩溃：class 声明 × 顶层调用点（已解决·2026-09 复测）
 
-**症状：** 文件同时包含 class 声明与特定形态的顶层调用点时，`nudo infer`
-以裸 `Maximum call stack size exceeded` 崩溃（exit 1，无文件/行号诊断）。
-与声明顺序无关，class 不必被实例化；`nudo check` 对同一文件**不**崩溃
-（递归调用只报 `nudo:recursion-truncated` 警告）。
-
-**最小复现（任一触发即可）：**
+~~文件同时包含 class 声明与特定形态的顶层调用点时，`nudo infer`
+以裸 `Maximum call stack size exceeded` 崩溃（exit 1，无文件/行号诊断），
+与声明顺序无关，class 不必被实例化。~~ 已修复：2026-09 复测两个原触发
+变体与合体文件均 exit 0，调用点逐位精确。
 
 ```javascript
-// 触发形态 A：顶层调用 Object.keys(具体形状)
+// 原触发形态 A：顶层调用 Object.keys(具体形状) —— 现已正常
 function keysOf() { return Object.keys({ port: 3000, host: "x" }); }
 keysOf();
 
@@ -359,10 +373,11 @@ class Circle {
   constructor(r) { this.radius = r; }
   area() { return this.radius * this.radius; }
 }
+// Case "call@…": () => ["port", "host"]  #exact
 ```
 
 ```javascript
-// 触发形态 B：顶层调用递归函数
+// 原触发形态 B：顶层调用递归函数 —— 现已正常
 function walk(n) {
   if (n <= 0) return 0;
   return n + walk(n - 1);
@@ -370,18 +385,14 @@ function walk(n) {
 walk(2);
 
 class Circle { /* 同上 */ }
+// Case "call@…": (2) => 3  #exact
+//   （递归逐层展开为独立 call@ case：walk(0)→0、walk(1)→1、walk(2)→3，
+//     Combined: 0 | 1 | 3）
 ```
 
-**对照（不崩）：** 上述函数各自单独成文件均正常（`keysOf()` →
-`["port", "host"]`、`walk(2)` → `3`）；class 与 `upper()`/`sumTo(5)`/
-`sumArr([1,2,3])`/`findBig()`/`compute(5)` 组合也不崩。当前触发面为
-`Object.keys` 调用点求值与递归调用点求值两类（B 路径托管下的调用点
-采集/求值链与 class registry 交互），其余构造未穷举。
-
-**影响：** 真实项目里 class 与 Object.keys/递归并存极常见；`infer` 目录
-扫描一旦命中即整体失败。
-
-**难度：** 待定位（需在 B 路径调用点采集链上做栈深度探查）。
+四片段合体（class + `compute(5)` + `keysOf()` + `walk(2)` 同文件）同样
+exit 0，全部 case 精确（`compute` → `25 #exact`）。网站
+`guides/semantics.md` 的「勿拼页」警示已同步移除。
 
 ---
 
@@ -394,7 +405,7 @@ class Circle { /* 同上 */ }
 | 全局标识符未解析 | 常见代码模式 | ✅ 已解决（见 3.1） |
 | `this` 绑定语义 | 方法调用 | ✅ 已解决（见 3.0） |
 | 数组 `reduce` 累加 | 链式调用 | ✅ 已解决（见 1.1） |
-| `infer` class × 顶层调用点裸栈溢出 | 崩溃：目录扫描整体失败 | ⬜ 未修复（见 4.3） |
+| `infer` class × 顶层调用点裸栈溢出 | 崩溃：目录扫描整体失败 | ✅ 已解决（见 4.3） |
 
 ### P1 - 高影响，复杂
 
@@ -410,7 +421,6 @@ class Circle { /* 同上 */ }
 |------|------|------|
 | 闭包变量追踪 | 状态管理模式 | 闭包环境扩展 |
 | 嵌套 try-catch 精度 | 错误处理 | 异常分析 |
-| 三元条件不分叉 | 返回值选择模式 | 复用 if 侧测试提取（见 3.3） |
 
 ### P3 - 低影响 / 设计选择
 

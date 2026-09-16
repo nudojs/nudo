@@ -26,16 +26,19 @@ Run a single test file: `pnpm vitest run packages/core/src/algebra/__tests__/che
 pnpm workspaces monorepo. Dependency graph (arrows mean "depends on"):
 
 ```
-core → parser → cli → service → lsp
-                            → vite-plugin
+core → parser → service → cli → nudo (thin shell)
+                 │
+                 ├→ lsp
+                 └→ vite-plugin
 ```
 
 | Package | Purpose |
 |---|---|
-| `packages/core` | **Type system**: algebra/Abs (term, pred, check, leq, ast-eval), TypeValue IR, `T` factory, ops residual, environment, refinements |
+| `packages/core` | **Type system**: algebra/Abs (term, pred, check, leq, ast-eval), TypeValue IR, `T` factory, ops residual, environment, refinements, interface (sidecar/effectiveInterface/projection) |
 | `packages/parser` | Babel-based parser; extracts function-scoped `@nudo:` directives from JSDoc |
-| `packages/cli` | TypeValue evaluator (abstract interpreter) + CLI (`infer`, `check`, `types`, `watch`, `generate`, `harvest`, `test`) |
-| `packages/service` | Analyzer orchestration, Abs program path for self-contained sources, dts-generator, harvest, infer-json |
+| `packages/cli` | CLI commands only (`infer`, `check`, `types`, `watch`, `generate`, `harvest`, `test`, `interface`) |
+| `packages/service` | Analyzer orchestration, TypeValue evaluator, Abs program path, dts-generator, harvest, infer-json, interface emitter/surface |
+| `packages/nudo` | Thin npm shell (`nudo` bin) that re-exports `@nudojs/cli` |
 | `packages/lsp` | LSP server (check diagnostics, completions, code lens, inlay hints, agent tools) |
 | `packages/env` | ES / Web / Node API type definitions (`@nudojs/env`) |
 | `packages/harvester` | Harvest `@types` → env modules |
@@ -51,7 +54,7 @@ core → parser → cli → service → lsp
 
 **Parser** (`parser`): Uses `@babel/parser` with TypeScript+JSX plugins. Extracts function/file directives: `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, `@nudo:replace`. File-level `@nudo:import` and function-level `@nudo:refine` are parsed in **core** (`algebra/refine.ts`), not the parser package.
 
-**Evaluator** (`cli/src/evaluator.ts`): TypeValue AST abstract interpreter. Primary analysis path for capable files is **B-path** (`core/algebra/exec`: transpile → `new Function` with Abs values). TypeValue remains fallback for non-capable sources and some LSP helpers. Arithmetic/compare/unary/spread route to Abs first via `abs-route.ts` / `eval-binary.ts`. Control-flow signals (`ReturnSignal`, `BranchSignal`, `ThrowSignal`) use Symbol keys. Narrowing is in `cli/src/narrowing.ts`.
+**Evaluator** (`service/src/evaluator`): TypeValue AST abstract interpreter. Primary analysis path for capable files is **B-path** (`core/algebra/exec`: transpile → `new Function` with Abs values). TypeValue remains fallback for non-capable sources and some LSP helpers. Arithmetic/compare/unary/spread route to Abs first via `abs-route.ts` / `eval-binary.ts`. Control-flow signals (`ReturnSignal`, `BranchSignal`, `ThrowSignal`) use Symbol keys. Narrowing is in `service/src/evaluator/narrowing.ts`. Public API: `@nudojs/service/evaluator`.
 
 **Service** (`service`): `analyzer.ts` orchestrates parse → directives → evaluate → diagnostics. For **B-hosted** files (`tryRunBPath` succeeds) `evaluateProgram` is **skipped** — diagnostics, call@, nodeTypeMap, and case/entry evaluation are B-path only. TypeValue `evaluateProgram` still runs when B cannot host. Modules via `evalAbsModuleGraph`（named/default/namespace、re-export/`export *`、require、harvest、@nudo:env）。Class bridge: Abs-eval `registerClassDecl` → `exec/class-registry` → B `$new`. `dts-generator.ts` projects TypeValue to TypeScript declarations.
 
@@ -60,8 +63,8 @@ core → parser → cli → service → lsp
 ## Code Conventions
 
 - All ESM (`"type": "module"` everywhere)
-- Imports use `.ts` extensions (e.g., `import { T } from "./type-value.ts"`) — enabled by `allowImportingTsExtensions`
-- Package `exports` point to `./src/index.ts` source, not built output
+- Imports use `.ts` extensions (e.g., `import { T } from "./type-value.ts"`) — enabled by `allowImportingTsExtensions`; source-level imports stay `.ts` even though published output is `.js`
+- Package `exports` point to `./dist/*` built output (tsup); `files: ["dist"]` on published packages
 - No ESLint/Prettier — linting is type-checking only (`tsc --noEmit`)
 - Tests live in `__tests__/` dirs alongside source, named `*.test.ts`
 - Test files use `describe`/`it`/`expect` from vitest

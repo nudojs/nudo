@@ -236,7 +236,7 @@ type NumBounds = {
  * 提取 Abs 上相对 term 的数值界。
  * 优先用自身 pred；否则查 Φ（针对 var id）。
  */
-export function numericBounds(a: Abs, phi: Phi = pTrue): NumBounds | undefined {
+function numericBounds(a: Abs, phi: Phi = pTrue): NumBounds | undefined {
   if (!isNumPrim(a)) return undefined;
   const result: NumBounds = {};
 

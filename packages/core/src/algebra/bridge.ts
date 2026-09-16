@@ -14,7 +14,7 @@ import { createTemplate, getTemplateParts } from "../refinements/template.ts";
 import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, confJoin, litValue } from "./abs.ts";
 import type { Term } from "./term.ts";
-import { lit, v as termVar, termToString } from "./term.ts";
+import { lit, v as termVar } from "./term.ts";
 import type { Pred } from "./pred.ts";
 import { pTrue, predToString, gt, ge, lt, le } from "./pred.ts";
 import { isTemplateLike, templatePartsOf, createTemplateAbs } from "./template.ts";
@@ -337,20 +337,3 @@ function shapeOfLit(v: CoreLit): Shape {
   return { k: "unknown" };
 }
 
-/**
- * 有损检查：Abs 转 TypeValue 后是否丢了 term/pred。
- * 用于金标与调试。
- */
-export function bridgeIsLossy(a: Abs): { lossy: boolean; reasons: string[] } {
-  const reasons: string[] = [];
-  if (a.term && a.term.op !== "lit") {
-    reasons.push(`dropped term ${termToString(a.term)}`);
-  }
-  if (a.pred && a.pred.op !== "true") {
-    const tv = absToTypeValue(a);
-    if (tv.kind !== "refined") {
-      reasons.push(`dropped pred ${predToString(a.pred)}`);
-    }
-  }
-  return { lossy: reasons.length > 0, reasons };
-}

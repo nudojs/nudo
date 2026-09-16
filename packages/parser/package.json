@@ -1,6 +1,9 @@
 {
   "name": "@nudojs/parser",
   "version": "0.4.0",
+  "engines": {
+    "node": ">=20"
+  },
   "description": "Babel-based parser and directive extraction for Nudo",
   "type": "module",
   "license": "MIT",

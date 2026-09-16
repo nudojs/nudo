@@ -1,6 +1,6 @@
 ---
 sidebar_position: 5
-description: See how Nudo narrows types per call site — equality guards, discriminated object shapes, typeof, Array.isArray, and switch — plus the current limits of truthiness, ternary conditions, in, and ?./??.
+description: See how Nudo narrows types per call site — equality guards, discriminated object shapes, typeof, Array.isArray, switch, and literal truthiness — plus the current limits of unknown-condition branches, in, and ?./??.
 ---
 
 # Control Flow Narrowing
@@ -126,8 +126,7 @@ These patterns currently do **not** fork on the call-site path — each one degr
 
 | Pattern | Current behavior |
 |---|---|
-| Truthiness `if (x)` | Only boolean literals fork — `if (x)` with `true` reports the true branch. A number or string argument always takes the false branch: `truthy(42)` with `if (x) return "yes"; return "no"` reports `"no"`. |
-| Ternary conditions | `flag ? "a" : "b"` never forks — even literal booleans (`pick(true)`) and foldable comparisons (`x === 5`) evaluate to `unknown` on both the call-site and directive paths. Use `if` guards instead. |
+| Ternary with an `unknown` condition | `flag ? "a" : "b"` with a symbolic condition joins both branches (`string`). Definite conditions fork precisely on both paths — `pick(true)` → `"a"`, `x === 5 ? "five" : "other"` with `5` → `"five"` — so no `if`-guard workaround is needed anymore. |
 | Symbolic inputs | `@nudo:case` with `T.union(...)` arguments do not fork conditions — only concrete call sites narrow. |
 | `in` operator | `if ("toJSON" in value)` narrows for object arguments, but method results widen (`string` instead of the closure's `"serialized"`); non-object arguments also report `nudo:no-method`. |
 | `?.` / `??` | Shallow `config.port ?? 3000` with a known property yields `number`; deep chains and short-circuiting members degrade to `unknown`. |
@@ -142,7 +141,7 @@ These patterns currently do **not** fork on the call-site path — each one degr
 | `typeof` | Yes | `typeof x === "string"` → `3` |
 | `Array.isArray()` | Yes | `Array.isArray(x)` → `2` |
 | `switch` | Yes (including directive inputs) | per-clause literals |
-| Truthiness | No | false branch always wins |
-| Ternary conditions | No | always `unknown` |
+| Truthiness | Yes (literal args) | `truthy(42)` → `"yes"`, `truthy(0)` → `"no"`; `undefined`/symbolic args join branches |
+| Ternary conditions | Yes (definite conditions) | `pick(true)` → `"a"`; unknown condition joins branches |
 | `in` | Partial | forks, member results widen |
 | `?.` / `??` | Partial | shallow `??` only |

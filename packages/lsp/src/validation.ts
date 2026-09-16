@@ -17,6 +17,8 @@ import {
   evictBPathCacheForFiles,
   evictAnalysisFileCacheForFiles,
   evictFnAnalysisCacheForFiles,
+  findProjectConfig,
+  interfaceConfig,
   type AnalysisResult,
   type Diagnostic as JsDiagnostic,
   type DiagnosticSeverity as JsDiagSeverity,
@@ -27,7 +29,12 @@ import {
   pTrue,
   evictGeneralizeMemoForPaths,
   evictCheckSourceMemoForPaths,
+  extractAllLoadSpecs,
   extractNudoImports,
+  isNodeModulesPath,
+  resolveDepPath,
+  sidecarPathOf,
+  sidecarSpecsOf,
 } from "@nudojs/core";
 import {
   DiagnosticSeverity,
@@ -60,7 +67,9 @@ function normPath(p: string): string {
   return p.replace(/\\/g, "/");
 }
 
-/** 每次 validate 后刷新：parent 的全部 @nudo:import 边 */
+/** 每次 validate 后刷新：parent 的全部 @nudo:import 边 + autoBind 隐式侧车边
+ *  （自身侧车 + 每个依赖文件的侧车——跨文件被调按定义文件路径绑定，
+ *   依赖侧车变更同样须重检 parent；与 loadModuleDepsFingerprint 同口径） */
 export function registerNudoImportDeps(filePath: string, source: string): void {
   const parent = normPath(resolvePath(filePath));
   for (const set of nudoDepParents.values()) {
@@ -70,12 +79,64 @@ export function registerNudoImportDeps(filePath: string, source: string): void {
   for (const imp of imports) {
     if (!imp.spec.startsWith(".") && !imp.spec.startsWith("/")) continue;
     const dep = normPath(resolvePath(dirname(filePath), imp.spec));
-    let set = nudoDepParents.get(dep);
-    if (!set) {
-      set = new Set();
-      nudoDepParents.set(dep, set);
+    addNudoDepParent(dep, parent);
+  }
+  registerSidecarClosureFor(parent, parent);
+  for (const spec of extractAllLoadSpecs(source)) {
+    if (!spec.startsWith(".") && !spec.startsWith("/")) continue;
+    const dep = normPath(resolvePath(dirname(filePath), spec));
+    registerSidecarClosureFor(dep, parent);
+  }
+}
+
+function addNudoDepParent(dep: string, parent: string): void {
+  let set = nudoDepParents.get(dep);
+  if (!set) {
+    set = new Set();
+    nudoDepParents.set(dep, set);
+  }
+  set.add(parent);
+}
+
+/** 隐式侧车登记的闭包节点上限（防病态侧车图；与 loadModuleDepsFingerprint 同量级） */
+const MAX_IMPLICIT_SIDECAR_NODES = 64;
+
+/**
+ * autoBind 隐式依赖边（设计 §4.5）：入口文件的旁路侧车与其递归 .nudo 依赖
+ * 登记 deps → parent——侧车不被 @nudo:import 声明，不登记则侧车（或其依赖）
+ * 变更不触发 parent 重检（陈旧缓存）。侧车文件不存在 → 不登记（与旧行为
+ * 完全一致）；node_modules 不登记。递归依赖边与 loadModuleDepsFingerprint
+ * 的 sidecar 闭包同口径（miss 也登记：创建事件即重检）。
+ */
+function registerSidecarClosureFor(entryFile: string, parent: string): void {
+  const sidecar = sidecarPathOf(entryFile);
+  if (isNodeModulesPath(sidecar)) return;
+  let rootSrc: string;
+  try {
+    rootSrc = readFileSync(sidecar, "utf8");
+  } catch {
+    return; // 无侧车文件：登记与旧完全一致
+  }
+  addNudoDepParent(sidecar, parent);
+  const seen = new Set<string>([sidecar]);
+  const queue: string[] = [sidecar];
+  let n = 0;
+  while (queue.length > 0) {
+    if (n++ >= MAX_IMPLICIT_SIDECAR_NODES) return;
+    const path = queue.shift()!;
+    let src: string;
+    try {
+      src = readFileSync(path, "utf8");
+    } catch {
+      continue; // 声明了但缺文件：边保留（创建即重检），闭包到此为止
     }
-    set.add(parent);
+    for (const spec of sidecarSpecsOf(src)) {
+      const depPath = resolveDepPath(path, spec);
+      if (seen.has(depPath)) continue;
+      seen.add(depPath);
+      addNudoDepParent(depPath, parent);
+      queue.push(depPath);
+    }
   }
 }
 
@@ -242,9 +303,13 @@ export function checkToLspDiagnostics(
   loadModule?: (spec: string, fromFile: string) => string | undefined,
 ): LspDiagnostic[] {
   try {
+    // package.json#nudo.interface.autoBind 覆盖 LSP 执法路径（§2.2「整体
+    // 关闭」承诺——false 时侧车 ambient 绑定停用，与 CLI runCheck 同口径）
+    const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
     const report = checkSource(filePath, source, pTrue, {
       loadModule: loadModule ?? lspLoadModule,
       fromFile: filePath,
+      ...(autoBind === false ? { autoBind: false } : {}),
     });
     return report.issues
       .filter((i) => i.severity === "error" || i.severity === "warning")
@@ -296,7 +361,15 @@ export async function validateText(
   deps: ValidateTextDeps,
   propagate = false,
 ): Promise<void> {
-  if (deps.isNudoUri && !deps.isNudoUri(uri)) {
+  // 零注解文件 gate 放行例外：磁盘上存在同名侧车（interface 档主场景——
+  // emit 后的 generated 段 + drift/domain-exceeds 诊断都以侧车为契约源）。
+  // autoBind=false 或 node_modules 下不例外（侧车 ambient 整体停用）。
+  const sidecarPath = sidecarPathOf(filePath);
+  const hasSidecar =
+    interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind &&
+    !isNodeModulesPath(sidecarPath) &&
+    existsSync(sidecarPath);
+  if (deps.isNudoUri && !deps.isNudoUri(uri) && !hasSidecar) {
     deps.sendDiagnostics({ uri, diagnostics: [] });
     return;
   }

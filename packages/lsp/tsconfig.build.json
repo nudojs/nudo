@@ -8,8 +8,6 @@
       "@nudojs/core": ["../core/src/index.ts"],
       "@nudojs/core/exec": ["../core/src/algebra/exec/index.ts"],
       "@nudojs/parser": ["../parser/src/index.ts"],
-      "@nudojs/cli": ["../cli/src/index.ts"],
-      "@nudojs/cli/evaluator": ["../cli/src/evaluator-api.ts"],
       "@nudojs/service": ["../service/src/index.ts"],
       "@nudojs/harvester": ["../harvester/src/index.ts"],
       "@nudojs/env/es": ["../env/src/es.ts"],

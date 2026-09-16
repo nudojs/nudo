@@ -4,11 +4,12 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, unknown } from "../abs.ts";
+import { abs, bool, boolLit, confJoin, litValue, unknown, type Confidence } from "../abs.ts";
 import { absFunction } from "../abs-fn.ts";
 import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs } from "../surface.ts";
 import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape } from "../objects.ts";
+import { shouldWidenArrayLiteral, widenedArrayConf } from "../containers.ts";
 import { leqAbs } from "../leq.ts";
 import { evalNamespaceCall } from "../builtins.ts";
 import type { Phi } from "../pred.ts";
@@ -256,9 +257,22 @@ export function $for(
 
 // --- 数组 ---
 
-/** 数组字面量 → Abs tuple（长度已知） */
+/** 容器策略单点（containers.ts）：≤cap → tuple；>cap → arr（元素 join，path） */
+function tupleOrWiden(els: Abs[], conf: Confidence): Abs {
+  if (shouldWidenArrayLiteral(els.length)) {
+    return abs(
+      { k: "arr", element: els.reduce((x, y) => joinAbs(x, y)) },
+      undefined,
+      undefined,
+      widenedArrayConf(),
+    );
+  }
+  return abs({ k: "tuple", elements: els }, undefined, undefined, conf);
+}
+
+/** 数组字面量 → ≤cap tuple（逐元素精确）/ >cap arr；策略与 ast-eval 同源（containers.ts） */
 export function $arr(items: Abs[]): Abs {
-  return abs({ k: "tuple", elements: items.map(asAbsVal) }, undefined, undefined, "exact");
+  return tupleOrWiden(items.map(asAbsVal), "exact");
 }
 
 /** 下标读 a[i]；字面量 i 走 tuple 精确投影，否则并所有元素；string[i] → 单字符 */
@@ -348,39 +362,49 @@ export function $spread(a: Abs, b: Abs): Abs {
   return spreadObj(asAbsVal(a), asAbsVal(b));
 }
 
-/** 数组连接 [...a, ...b] / [...a, x] */
+/** 数组连接 [...a, ...b] / [...a, x]；结果超 cap 时与字面量同策略降 arr */
 export function $concat(a: Abs, b: Abs): Abs {
   a = asAbsVal(a);
   b = asAbsVal(b);
-  if (a.shape.k === "tuple" && b.shape.k === "tuple") {
+  const as = a.shape;
+  const bs = b.shape;
+  if (as.k === "tuple" && bs.k === "tuple") {
+    return tupleOrWiden([...as.elements, ...bs.elements], confJoin(a.conf, b.conf));
+  }
+  // 一侧是抽象数组（arr）：spread 语义按元素并入（元素 join），
+  // 不得整体嵌为单元素——字面量链超 cap 降级为 arr 后继续吸收后续元素也走此分支
+  if (as.k === "arr" || bs.k === "arr") {
+    const ea: Abs = as.k === "tuple"
+      ? as.elements.reduce((x, y) => joinAbs(x, y))
+      : as.k === "arr"
+        ? as.element
+        : a;
+    const eb: Abs = bs.k === "tuple"
+      ? bs.elements.reduce((x, y) => joinAbs(x, y))
+      : bs.k === "arr"
+        ? bs.element
+        : b;
+    return abs({ k: "arr", element: joinAbs(ea, eb) }, undefined, undefined, "path");
+  }
+  if (as.k === "tuple") {
+    // [...a, x]：非数组 x 作单元素
     return abs(
-      { k: "tuple", elements: [...a.shape.elements, ...b.shape.elements] },
+      { k: "tuple", elements: [...as.elements, b] },
       undefined,
       undefined,
       confJoin(a.conf, b.conf),
     );
   }
-  if (a.shape.k === "tuple" && b.shape.k !== "tuple") {
-    // [...a, x]：x 作单元素
+  if (bs.k === "tuple") {
     return abs(
-      { k: "tuple", elements: [...a.shape.elements, b] },
+      { k: "tuple", elements: [a, ...bs.elements] },
       undefined,
       undefined,
       confJoin(a.conf, b.conf),
     );
   }
-  if (a.shape.k !== "tuple" && b.shape.k === "tuple") {
-    return abs(
-      { k: "tuple", elements: [a, ...b.shape.elements] },
-      undefined,
-      undefined,
-      confJoin(a.conf, b.conf),
-    );
-  }
-  // 抽象数组：元素类型 join
-  const ea = a.shape.k === "arr" ? a.shape.element : a;
-  const eb = b.shape.k === "arr" ? b.shape.element : b;
-  return abs({ k: "arr", element: joinAbs(ea, eb) }, undefined, undefined, "path");
+  // 双侧皆非容器：元素 join
+  return abs({ k: "arr", element: joinAbs(a, b) }, undefined, undefined, "path");
 }
 
 /** 元素列表（tuple 展开；arr 抽象） */

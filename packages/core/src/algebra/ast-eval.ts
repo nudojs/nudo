@@ -50,7 +50,8 @@ import {
 import { add, sub, mul, div, mod, cmp, trueConstraint, falseConstraint, refineAbsForRelTrue, matchRelIdentLit } from "./arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs } from "./surface.ts";
 import { leakIfNeeded, defaultLeakBudget, type LeakBudget } from "./leak.ts";
-import { spread, joinAbs } from "./objects.ts";
+import { spread, joinAbs, getSlot } from "./objects.ts";
+import { shouldWidenArrayLiteral, widenedArrayConf } from "./containers.ts";
 import { absFunction, attachFnImpl, getFnImpl } from "./abs-fn.ts";
 import {
   applyCallbackAbs,
@@ -61,7 +62,7 @@ import {
   setApplyCallbackHost,
   undefAbs,
 } from "./hof.ts";
-import type { HofCollectCtx } from "./hof.ts";
+import type { AstEnv } from "./ast-env.ts";
 import {
   tryPromoteDirectCall,
   tryPromoteForOfIteratee,
@@ -99,17 +100,8 @@ import {
 
 // --- 环境 ---
 
-export type AstEnv = {
-  vars: Map<string, Abs>;
-  /** 用户函数：name → { params, body } */
-  fns: Map<string, { params: string[]; body: Node; async?: boolean; kind?: string }>;
-  /** class 表（旁路，withVar 必须保留） */
-  classes?: Map<string, unknown>;
-  /** 当前正在求值的方法所属类名（super.x() 从它的父类派发） */
-  currentOwner?: string;
-  /** P2：generalize symbolic 跑的 HOF collector（run 局部，不进 Φ） */
-  hofCollect?: HofCollectCtx;
-};
+/** AstEnv 已迁 ./ast-env.ts；此处兼容 re-export，外部消费不破坏 */
+export type { AstEnv };
 
 export function emptyEnv(): AstEnv {
   return { vars: new Map(), fns: new Map() };
@@ -269,14 +261,29 @@ export type AbsAssignRecord = {
   next: Abs;
   line?: number;
   column?: number;
+  /** 分支/循环体内发生：可变绑定在路径上取并集是合法 JS，不参与结构检查 */
+  conditional?: boolean;
 };
 
 let absAssignCollector: ((r: AbsAssignRecord) => void) | null = null;
+
+/** >0 表示当前正在求值分支/循环体（赋值是路径条件性的） */
+let assignFlowDepth = 0;
 
 export function setAbsAssignCollector(
   collector: ((r: AbsAssignRecord) => void) | null,
 ): void {
   absAssignCollector = collector;
+}
+
+/** 在条件流（分支体/循环体）内求值 body——期间记录的赋值标记 conditional */
+function evalInConditionalFlow<T>(body: () => T): T {
+  assignFlowDepth++;
+  try {
+    return body();
+  } finally {
+    assignFlowDepth--;
+  }
 }
 
 function recordAbsAssign(
@@ -293,6 +300,7 @@ function recordAbsAssign(
       next,
       line: loc?.start.line,
       column: loc?.start.column,
+      conditional: assignFlowDepth > 0,
     });
   } catch {
     // ignore
@@ -806,7 +814,7 @@ function evalNodeInner(
       // 静态属性访问
       if (!m.computed && m.property.type === "Identifier" && obj.shape.k === "obj") {
         const key = (m.property as Identifier).name;
-        const slot = (obj.shape as { slots: Record<string, { value: Abs }> }).slots[key];
+        const slot = getSlot((obj.shape as { slots: Record<string, { value: Abs }> }).slots, key);
         if (slot) return ok(slot.value, phi, env);
       }
       // 计算属性 obj[key]
@@ -814,7 +822,7 @@ function evalNodeInner(
         const key = evalNode(m.property, env, phi, budget).value;
         const kl = litValue(key);
         if (typeof kl === "string" && obj.shape.k === "obj") {
-          const slot = (obj.shape as { slots: Record<string, { value: Abs }> }).slots[kl];
+          const slot = getSlot((obj.shape as { slots: Record<string, { value: Abs }> }).slots, kl);
           if (slot) return ok(slot.value, phi, env);
         }
         // 数组/元组下标
@@ -883,12 +891,12 @@ function evalNodeInner(
       if (els.length === 0) {
         return ok(abs({ k: "arr", element: unknown }, undefined, undefined, "exact"), phi, env);
       }
-      // 小数组字面量 → tuple（保逐元素精确，map/reduce 可展开）
-      if (els.length <= 8) {
+      // 容器策略单点（containers.ts）：≤cap tuple / >cap arr，与 B 路径 $arr 同源
+      if (!shouldWidenArrayLiteral(els.length)) {
         return ok(abs({ k: "tuple", elements: els }, undefined, undefined, "exact"), phi, env);
       }
       const elem = els.reduce((x, y) => joinAbs(x, y));
-      return ok(abs({ k: "arr", element: elem }, undefined, undefined, "path"), phi, env);
+      return ok(abs({ k: "arr", element: elem }, undefined, undefined, widenedArrayConf()), phi, env);
     }
     default:
       return ok(unknown, phi, env);
@@ -1599,7 +1607,7 @@ function evalFor(
       const lv = litValue(t.value);
       if (lv === false || lv === null || lv === undefined) break;
     }
-    const bodyR = evalNode(node.body, local, phi, budget);
+    const bodyR = evalInConditionalFlow(() => evalNode(node.body, local, phi, budget));
     if (bodyR.returned) return bodyR;
     if (bodyR.threw) return bodyR;
     if (bodyR.brk) {
@@ -1628,7 +1636,7 @@ function evalWhile(
     const t = evalNode(node.test, local, phi, budget);
     const lv = litValue(t.value);
     if (lv === false || lv === null || lv === undefined) break;
-    const bodyR = evalNode(node.body, local, phi, budget);
+    const bodyR = evalInConditionalFlow(() => evalNode(node.body, local, phi, budget));
     if (bodyR.returned || bodyR.threw) return bodyR;
     if (bodyR.brk) {
       local = bodyR.env;
@@ -1649,7 +1657,7 @@ function evalDoWhile(
   let local = env;
   let acc: Abs = unknown;
   for (let i = 0; i < MAX_LOOP_ITERS; i++) {
-    const bodyR = evalNode(node.body, local, phi, budget);
+    const bodyR = evalInConditionalFlow(() => evalNode(node.body, local, phi, budget));
     if (bodyR.returned || bodyR.threw) return bodyR;
     if (bodyR.brk) {
       local = bodyR.env;
@@ -1717,7 +1725,7 @@ function evalForOf(
   const n = Math.min(elements.length, MAX_LOOP_ITERS);
   for (let i = 0; i < n; i++) {
     local = withVar(local, bindName, elements[i]!);
-    const bodyR = evalNode(node.body, local, phi, budget);
+    const bodyR = evalInConditionalFlow(() => evalNode(node.body, local, phi, budget));
     if (bodyR.returned || bodyR.threw) return bodyR;
     if (bodyR.brk) {
       local = bodyR.env;
@@ -1822,9 +1830,14 @@ function evalIf(
   const tCons = trueConstraint(t);
   const fCons = falseConstraint(t);
   const envT = refineEnv("true");
-  const a = evalNode(node.consequent, envT, tCons ? and(phi, tCons) : phi, budget);
-  if (node.alternate) {
-    const b = evalNode(node.alternate, env, fCons ? and(phi, fCons) : phi, budget);
+  const a = evalInConditionalFlow(() =>
+    evalNode(node.consequent, envT, tCons ? and(phi, tCons) : phi, budget),
+  );
+  const alt = node.alternate;
+  if (alt) {
+    const b = evalInConditionalFlow(() =>
+      evalNode(alt, env, fCons ? and(phi, fCons) : phi, budget),
+    );
     return { value: joinAbs(a.value, b.value), phi, env, returned: a.returned || b.returned };
   }
   // if 无 else：与 fall-through join。

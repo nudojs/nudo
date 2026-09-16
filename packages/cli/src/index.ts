@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { typeValueToString } from "@nudojs/core";
 import { extractDirectives } from "@nudojs/parser";
-import { resetMemo } from "./evaluator.ts";
+import { resetMemo } from "@nudojs/service/evaluator";
 import {
   typeValueToZodSchema,
   generateGuardFunction,
@@ -22,6 +22,8 @@ import {
   isNudoTargetPath,
   collectDtsFromEntry,
   evictAnalysisCachesForFiles,
+  formatEmitSummary,
+  formatInterfaceSurfaceLine,
   type CallRecord,
   type CaseResult,
   type FunctionAnalysis,
@@ -340,20 +342,70 @@ program
   });
 
 /**
- * 严格 Abs-only：只跑 checkSource 代数门禁。
- * 不再叠加 analyzeFileAsync 外延诊断——语言表面问题由 Abs/B-path 诊断吸收，
- * 避免双路径语义分叉。
+ * 严格 Abs-only：只跑 checkSource 代数门禁（+ 可选 --callsites 的
+ * domain-exceeds）。不再叠加 analyzeFileAsync 全量外延诊断——语言表面
+ * 问题由 Abs/B-path 诊断吸收，避免双路径语义分叉。
+ *
+ * `--callsites` 注入跨文件调用记录后，额外跑 analyzeFile 并只合并
+ * `nudo:interface-domain-exceeds`（设计 §6：check 门禁的跨文件用穿证据；
+ * checkSource 单文件面无注入通道）。
  */
-async function runCheck(file: string, opts: { json?: boolean } = {}): Promise<void> {
+async function runCheck(
+  file: string,
+  opts: { json?: boolean; callsites?: CallRecord[] } = {},
+): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
 
   const { checkSource, formatCheckReport, serializeCheckJson, pTrue } = await import("@nudojs/core");
-  const { defaultLoadModule: loadModule } = await import("@nudojs/service");
-  const algebraReport = checkSource(filePath, source, pTrue, {
+  const {
+    defaultLoadModule: loadModule,
+    findProjectConfig,
+    interfaceConfig,
+  } = await import("@nudojs/service");
+  // package.json#nudo.interface.autoBind 覆盖 check 执法路径（§2.2「整体
+  // 关闭」承诺：不只打印路径——false 时侧车 ambient 绑定整体停用）
+  const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
+  let algebraReport = checkSource(filePath, source, pTrue, {
     loadModule,
     fromFile: filePath,
+    ...(autoBind === false ? { autoBind: false } : {}),
   });
+
+  // domain-exceeds：注入调用记录 → analyzeFile 的跨文件证据执法（analyzer
+  // 内已解析 autoBind）。只合并该码，避免与 checkSource 诊断双报。
+  if (opts.callsites && opts.callsites.length > 0) {
+    const analysis = await analyzeFileAsync(filePath, source, undefined, opts.callsites);
+    const domainIssues = analysis.diagnostics
+      .filter((d) => d.code === "nudo:interface-domain-exceeds")
+      .map((d) => {
+        const data = (d.data ?? {}) as { actual?: unknown; expected?: unknown };
+        return {
+          severity: d.severity === "error" ? ("error" as const) : ("warning" as const),
+          code: "nudo:interface-domain-exceeds" as const,
+          message: d.message,
+          line: d.range.start.line,
+          column: d.range.start.column,
+          actual: typeof data.actual === "string" ? data.actual : undefined,
+          expected: typeof data.expected === "string" ? data.expected : undefined,
+          suggestion: d.suggestions?.[0],
+        };
+      });
+    if (domainIssues.length > 0) {
+      const errors = domainIssues.filter((i) => i.severity === "error").length;
+      const warnings = domainIssues.filter((i) => i.severity === "warning").length;
+      algebraReport = {
+        ...algebraReport,
+        issues: [...algebraReport.issues, ...domainIssues],
+        ok: algebraReport.ok && errors === 0,
+        summary: {
+          ...algebraReport.summary,
+          errors: algebraReport.summary.errors + errors,
+          warnings: algebraReport.summary.warnings + warnings,
+        },
+      };
+    }
+  }
 
   if (opts.json) {
     // 稳定契约：只输出 check JSON
@@ -382,6 +434,12 @@ function resolveTargets(path: string): string[] {
       process.exitCode = 1;
     }
     return files;
+  }
+  // 显式单文件与目录展开同口径：*.nudo.js/*.nudo.ts/.d.ts/.tsx 不是推断目标
+  if (!isNudoTargetPath(resolved)) {
+    console.error(`Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX): ${resolved}`);
+    process.exitCode = 1;
+    return [];
   }
   return [resolved];
 }
@@ -474,7 +532,11 @@ program
   .description("Check JS/TS file(s) or directory(s) for type errors — exits with code 1 when errors are found")
   .argument("<paths...>", "File(s) or directory(s) to check")
   .option("--json", "Emit stable CheckJson (CI / Agent contract; single file only)")
-  .action(async (paths: string[], opts: { json?: boolean }) => {
+  .option(
+    "--callsites <paths...>",
+    "Usage-site files (tests/apps): inject their call records so cross-file domain evidence can produce nudo:interface-domain-exceeds",
+  )
+  .action(async (paths: string[], opts: { json?: boolean; callsites?: string[] }) => {
     const targets: string[] = [];
     for (const p of paths) {
       targets.push(...resolveTargets(p));
@@ -485,10 +547,161 @@ program
       process.exitCode = 1;
       return;
     }
+    const externalRecords = opts.callsites?.length ? collectExternalRecords(opts.callsites) : undefined;
     for (const t of targets) {
-      await runCheck(t, opts);
+      await runCheck(t, { json: opts.json, callsites: externalRecords });
     }
   });
+
+/**
+ * `nudo interface`（别名 `nudo refine`）：默认只打印每函数有效契约与来源分层
+ * （handwritten / generated / implicit）——设计稿 §11 第 0 步。
+ * `--emit` 走写盘器（interface-emitter.ts，§7.3/§9）。
+ */
+async function runInterface(file: string, records?: CallRecord[]): Promise<void> {
+  const { interfaceSurface } = await import("@nudojs/service");
+  const filePath = resolve(file);
+  const entries = await interfaceSurface(filePath, { records });
+  const rel = relative(process.cwd(), filePath) || filePath;
+  console.log(`${rel}`);
+  if (entries.length === 0) {
+    console.log("  (no top-level functions found)");
+    console.log();
+    return;
+  }
+  for (const e of entries) {
+    console.log(formatInterfaceSurfaceLine(e));
+  }
+  console.log();
+}
+
+/**
+ * `nudo interface --emit <file>`：把调用点域投影固化为侧车 `@generated` 段。
+ * 固定 mode=update（剥离生成段再重排，幂等；--exit-on-diff 配 --dry-run 作
+ * CI 门禁，类比 infer --emit-cases=update --dry-run）。默认无过滤 = 只刷新
+ * 已有生成段（默认行为）；--fn 白名单 / --all 显式放宽。
+ */
+async function runInterfaceEmit(
+  file: string,
+  opts: { fnNames: string[]; all: boolean; dryRun: boolean; exitOnDiff: boolean; records?: CallRecord[] },
+): Promise<void> {
+  const { emitInterface } = await import("@nudojs/service");
+  const filePath = resolve(file);
+  const result = await emitInterface(filePath, {
+    fnNames: opts.fnNames.length > 0 ? opts.fnNames : undefined,
+    mode: "update",
+    all: opts.all,
+    dryRun: opts.dryRun,
+    records: opts.records,
+  });
+  const rel = relative(process.cwd(), filePath) || filePath;
+  if (result.changed && opts.dryRun) {
+    console.log(`[dry-run] would update ${rel}:`);
+    console.log(result.diff ?? "");
+    // dry-run 也打印 issues/skipped——退出码已按 error 置位，信息面须同步
+    for (const i of result.issues) {
+      console.log(`[${i.severity}] ${i.code}: ${i.message}`);
+    }
+    for (const s of result.skipped) {
+      console.log(`  skipped ${s.fn}: ${s.reason}`);
+    }
+  } else {
+    const sc = relative(process.cwd(), result.sidecarPath) || result.sidecarPath;
+    for (const line of formatEmitSummary(rel, sc, result)) console.log(line);
+  }
+  // issues 已由 formatEmitSummary 打印（CLI 与 agent 面同骨架）；退出码仍按错误定档
+  for (const i of result.issues) {
+    if (i.severity === "error") process.exitCode = 1;
+  }
+  if (opts.exitOnDiff && result.changed) process.exitCode = 1;
+  if (result.changed && !opts.dryRun) {
+    console.log(`  re-run \`nudo check ${rel}\` to see the persisted interfaces in action`);
+  }
+}
+
+program
+  .command("interface")
+  .alias("refine")
+  .description(
+    "Print each function's effective interface with its source layer (handwritten / generated / implicit); --emit persists inferred call-site domains as @generated sidecar segments",
+  )
+  .argument("[paths...]", "File(s) or directory(s); at least one required (with --emit these are the emit targets)")
+  .option("--emit", "Write/update @generated sidecar segments instead of printing (mode: update — strips and rewrites generated segments, idempotent)")
+  .option(
+    "--fn <name>",
+    "With --emit: only these export names (repeatable). Phase 1 filters the target file's own exports; cross-file root-closure emit arrives with Phase 2 derivation",
+    (v: string, acc: string[]) => {
+      acc.push(v);
+      return acc;
+    },
+    [] as string[],
+  )
+  .option("--all", "With --emit: target every top-level export of the file (explicit opt-in — prefer --fn to keep diffs reviewable)")
+  .option("--dry-run", "With --emit: print a unified diff instead of writing to disk")
+  .option("--exit-on-diff", "With --emit + --dry-run: exit 1 when the sidecar would change (CI gate; same as infer --emit-cases)")
+  .option("--callsites <paths...>", "Usage-site files (tests/apps): their calls to this file's exports feed the domain evidence for print/emit (domain roots with no in-file call sites)")
+  .action(
+    async (
+      paths: string[],
+      opts: {
+        emit?: boolean;
+        fn?: string[];
+        all?: boolean;
+        dryRun?: boolean;
+        exitOnDiff?: boolean;
+        callsites?: string[];
+      },
+    ) => {
+      if (paths.length === 0) {
+        console.error(
+          "Usage error: `nudo interface` needs at least one path. " +
+            (opts.emit
+              ? "Writing additionally respects filters: --fn <names> / --all (default: only refresh existing @generated segments)."
+              : "Print-only this phase; pass a file or directory."),
+        );
+        process.exitCode = 1;
+        return;
+      }
+      if (opts.exitOnDiff && (!opts.dryRun || !opts.emit)) {
+        console.error("--exit-on-diff requires --emit --dry-run");
+        process.exitCode = 1;
+        return;
+      }
+      if (!opts.emit && ((opts.fn?.length ?? 0) > 0 || opts.all)) {
+        console.error("warning: --fn/--all only apply with --emit (ignored for print-only)");
+      }
+      if (opts.emit && opts.all) {
+        console.error(
+          "warning: --all emits every export of the target file(s); review noise grows fast — prefer --fn.",
+        );
+      }
+      const targets: string[] = [];
+      for (const p of paths) targets.push(...resolveTargets(p));
+      const externalRecords = opts.callsites?.length ? collectExternalRecords(opts.callsites) : undefined;
+      // 侧车（*.nudo.js / *.nudo.ts）是契约模块不是接口根——显式传入或目录
+      // 扫描命中都跳过，避免对契约文件本身打印 "(no top-level functions found)" 噪声
+      const roots = targets.filter((t) => !/\.nudo\.(js|ts)$/.test(t));
+      if (roots.length === 0) return;
+      for (const t of roots) {
+        try {
+          if (opts.emit) {
+            await runInterfaceEmit(t, {
+              fnNames: opts.fn ?? [],
+              all: opts.all === true,
+              dryRun: opts.dryRun === true,
+              exitOnDiff: opts.exitOnDiff === true,
+              records: externalRecords,
+            });
+          } else {
+            await runInterface(t, externalRecords);
+          }
+        } catch (err) {
+          console.error(`Error analyzing ${relative(process.cwd(), t)}: ${(err as Error).message}`);
+          process.exitCode = 1;
+        }
+      }
+    },
+  );
 
 program
   .command("test")

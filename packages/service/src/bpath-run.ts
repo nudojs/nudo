@@ -25,7 +25,7 @@ import {
   getFnImpl,
 } from "@nudojs/core";
 import { parse, extractInlineDirectives } from "@nudojs/parser";
-import { loadEnvs } from "@nudojs/cli/evaluator";
+import { loadEnvs } from "./evaluator/evaluator-api.ts";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
 import { envValueToAbs } from "./env-to-abs.ts";
 import { clearAnalysisFileCache } from "./analysis-file-cache.ts";

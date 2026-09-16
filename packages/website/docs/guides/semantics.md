@@ -30,7 +30,7 @@ sli();                                // → "el"
 Case "call@L2": () => "HELLO"
 ```
 
-`toUpperCase`, `toLowerCase`, `slice`, and `.length` produce exact literals. Prefix/suffix/membership checks — `startsWith`, `endsWith`, `includes` — fold to a definite boolean on literal receivers. `split` and `indexOf` are not modeled yet and yield `unknown`.
+`toUpperCase`, `toLowerCase`, `slice`, `.length`, and `split` (literal receiver and separator) produce exact results — `"a,b,c".split(",")` folds to `["a", "b", "c"]` on both the call-site and directive paths. Prefix/suffix/membership checks — `startsWith`, `endsWith`, `includes` — fold to a definite boolean on literal receivers. `indexOf` yields the `number` primitive without the literal index.
 
 ### Loops with Concrete Bounds
 
@@ -162,10 +162,6 @@ More calls than the precise-case cap aggregate into a `call@symbolic` case with 
 ### Narrowing Guards
 
 `===` comparisons, `typeof`, `Array.isArray`, and `switch` narrow per concrete call site — see [Control Flow Narrowing](./control-flow-narrowing.md) for the verified patterns.
-
-### Don't Assemble This Page Into One File
-
-Each snippet above is a real `nudo infer` run of a **standalone** file. Combining certain snippets into one file crashes `nudo infer`: a `class` declaration together with a top-level `Object.keys(…)` call — or together with a top-level recursive call (the `compute`, `keysOf`, and `walk` snippets) — dies with a bare `Maximum call stack size exceeded` (exit `1`, no file/line diagnostic). `nudo check` on the same file does not crash. Keep those three snippets in separate files for now; see the monorepo `docs/design-limitations.md` §4.3 for the minimal reproductions.
 
 ## Not Modeled Yet
 

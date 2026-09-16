@@ -7,7 +7,7 @@ import {
   setModuleResolver,
   setCurrentFileDir,
   resetMemo,
-} from "@nudojs/cli/evaluator";
+} from "./evaluator/evaluator-api.ts";
 import { resolveModule } from "./analyzer.ts";
 
 /**

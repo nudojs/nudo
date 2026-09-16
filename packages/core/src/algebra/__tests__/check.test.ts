@@ -67,3 +67,33 @@ f(-1);
     expect(text).toContain("expected:");
   });
 });
+
+describe("nudo check gate: real-world regression (slots prototype leak / guarded access)", () => {
+  it("__proto__ member on brand instance must not crash (slots['__proto__'] hits Object.prototype)", () => {
+    const r = checkSource(
+      "proto-brand",
+      "function Events() {}\nvar prefix = '~';\nif (Object.create) {\n  if (!new Events().__proto__) prefix = false;\n}",
+    );
+    expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
+  });
+
+  it("object literal member named toString/valueOf must not read through the prototype chain", () => {
+    const r = checkSource("proto-obj", "var o = {};\nfunction f(x) { return x.toString ? 1 : 0; }\nf(o);");
+    expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
+  });
+
+  it("guarded param access (x && x.__esModule && x.default) is not a required slot", () => {
+    const r = checkSource(
+      "cjs-helper",
+      'function getDefaultExportFromCjs(x) { return x && x.__esModule && x.default ? x.default : x; }\nvar ee = { exports: {} };\nvar mod = getDefaultExportFromCjs(ee.exports);',
+    );
+    expect(r.issues.filter((i) => i.severity === "error" && i.code === "nudo:arg-structure")).toEqual([]);
+  });
+
+  it("unconditional scalar retype still violates (gold assign-prim-mismatch), branch retype does not", () => {
+    const unconditional = checkSource("prim", 'let n = 1;\nn = "str";');
+    expect(unconditional.issues.some((i) => i.code === "nudo:assign-mismatch")).toBe(true);
+    const conditional = checkSource("prim-if", 'let n = 1;\nif (Object.create) { n = "str"; }');
+    expect(conditional.issues.some((i) => i.code === "nudo:assign-mismatch")).toBe(false);
+  });
+});

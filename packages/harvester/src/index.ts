@@ -20,7 +20,7 @@ type NamedTypeDecl = ts.InterfaceDeclaration | ts.ClassDeclaration;
  * regardless of file order).
  */
 type PendingSymbol =
-  | { t: "fn"; scope: Scope; name: string; decls: ts.FunctionDeclaration[] }
+  | { t: "fn"; scope: Scope; name: string; decls: ts.SignatureDeclaration[] }
   | { t: "var"; scope: Scope; name: string; typeNode?: ts.TypeNode }
   /** class / value-position interface re-export; `lookup` is the symbol-table name when the exported name differs */
   | { t: "value"; scope: Scope; name: string; lookup?: string }
@@ -246,6 +246,15 @@ function collectStatement(ctx: HarvestContext, stmt: ts.Statement, scope: Scope)
         ctx.skipped++;
         continue;
       }
+      // 值位置接口暴露（@types/node 24 的 path 模块形态）：
+      // `const path: path.PlatformPath`——接口成员提升为模块级符号
+      // （方法签名 → fn、属性签名 → var）。@types/node 25 起这些成员是
+      // 模块级 FunctionDeclaration，两代声明形态都要 harvest。
+      const iface = decl.type ? interfaceDeclOf(ctx, decl.type) : undefined;
+      if (iface) {
+        expandInterfaceAsModuleMembers(ctx, scope, iface);
+        continue;
+      }
       ctx.pending.push({ t: "var", scope, name: decl.name.text, typeNode: decl.type });
       ctx.symbols++;
     }
@@ -369,6 +378,51 @@ function registerTypeDecl(ctx: HarvestContext, scope: Scope, name: string, decl:
   const qualified = [...scope.ns, name].join(".");
   if (qualified !== name && !ctx.qualifiedInterfaces.has(qualified)) {
     ctx.qualifiedInterfaces.set(qualified, decl);
+  }
+}
+
+/** TypeReference → 已登记的 interface 声明（simple 或 namespace-qualified）；class 不适用 */
+function interfaceDeclOf(
+  ctx: HarvestContext,
+  typeNode: ts.TypeNode,
+): ts.InterfaceDeclaration | undefined {
+  if (!ts.isTypeReferenceNode(typeNode)) return undefined;
+  const name = typeNameString(typeNode.typeName);
+  const d = ctx.interfaces.get(name) ?? ctx.qualifiedInterfaces.get(name);
+  return d && ts.isInterfaceDeclaration(d) ? d : undefined;
+}
+
+/**
+ * 值位置接口暴露的成员提升（@types/node 24 path 形态）：
+ * 方法签名 → 模块级 fn（同名重载并入同一 pending）；属性签名 → 模块级 var。
+ * 直接成员一层，不递归（嵌套接口经 mapTypeRef 映射为实例形状）。
+ */
+function expandInterfaceAsModuleMembers(
+  ctx: HarvestContext,
+  scope: Scope,
+  iface: ts.InterfaceDeclaration,
+): void {
+  for (const member of iface.members) {
+    if (ts.isMethodSignature(member)) {
+      const name = memberName(member);
+      if (name === undefined) continue;
+      const existing = ctx.pending.find(
+        (p) => p.t === "fn" && p.name === name && scopeKey(p.scope) === scopeKey(scope),
+      );
+      if (existing && existing.t === "fn") {
+        existing.decls.push(member); // overload
+        continue;
+      }
+      ctx.pending.push({ t: "fn", scope, name, decls: [member] });
+      ctx.symbols++;
+      continue;
+    }
+    if (ts.isPropertySignature(member)) {
+      const name = memberName(member);
+      if (name === undefined) continue;
+      ctx.pending.push({ t: "var", scope, name, typeNode: member.type });
+      ctx.symbols++;
+    }
   }
 }
 

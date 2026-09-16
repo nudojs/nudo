@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getHoverAtPosition } from "../analyzer.ts";
+import { getHoverAtPosition } from "../lsp-surface.ts";
 
 describe("getHoverAtPosition lossless Abs", () => {
   it("hover on function name shows Abs + intension", () => {

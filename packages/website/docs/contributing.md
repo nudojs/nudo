@@ -11,7 +11,7 @@ Thank you for your interest in contributing to Nudo. This guide covers setup, pr
 
 ## Prerequisites
 
-- **Node.js** 18 or later
+- **Node.js** 20 or later
 - **pnpm** 8 or later
 
 ```bash
@@ -94,12 +94,12 @@ pnpm exec nudo infer path/to/file.js
    };
    ```
 
-2. **Wire it in the evaluator** (`packages/cli/src/evaluator.ts`):
+2. **Wire it in the evaluator** (`packages/service/src/evaluator/evaluator.ts`):
    - For binary ops: map the AST operator string to your op in `BinaryExpression` handling.
    - The evaluator uses `applyBinaryOp(op, left, right)` for standard binary ops; extend `binaryOpMap` if needed.
    - For unary ops: add handling in the `UnaryExpression` case and call `Ops.myUnary(operand)`.
 
-3. **Add tests** in `packages/core/src/__tests__/ops.test.ts` or `packages/cli/src/__tests__/evaluator*.test.ts`.
+3. **Add tests** in `packages/core/src/__tests__/ops.test.ts` or `packages/service/src/__tests__/evaluator*.test.ts`.
 
 ---
 

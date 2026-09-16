@@ -11,7 +11,7 @@ import type { Pred } from "./pred.ts";
 import { and, pTrue, pFalse, substPred } from "./pred.ts";
 import { getFnImpl } from "./abs-fn.ts";
 import { joinAbs } from "./objects.ts";
-import type { AstEnv } from "./ast-eval.ts";
+import type { AstEnv } from "./ast-env.ts";
 
 // --- P2 types ---
 

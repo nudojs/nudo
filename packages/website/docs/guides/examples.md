@@ -286,7 +286,7 @@ checkUrl("https://api.example.com/users");
 Case "call@L4": ("https://api.example.com/users") => true
 ```
 
-`startsWith`, `endsWith`, and `includes` fold to a definite boolean on literal receivers at the call site (under an `@nudo:case` directive the same body generalizes to `unknown`). Not every method is modeled — `"a,b,c".split(",")` and `"hello".indexOf("l")` evaluate to `unknown` on both paths (see example 7).
+`startsWith`, `endsWith`, and `includes` fold to a definite boolean on literal receivers — on the call-site path and under an `@nudo:case` directive alike. Not every method keeps full precision though — `"hello".indexOf("l")` yields the `number` primitive without the literal index (see example 7).
 
 ---
 
@@ -312,7 +312,7 @@ stringDemo();
 Case "call@L7": () => { upper: "HELLO", sliced: "el", len: 5 }
 ```
 
-`toUpperCase`, `slice`, and `.length` fold to precise literals at the call site. TypeScript can only infer `string` or `number` for these operations. Not every method is modeled yet — `"a,b,c".split(",")` and `"hello".indexOf("l")` currently evaluate to `unknown`, so check with `nudo infer` before relying on a specific method.
+`toUpperCase`, `slice`, `.length`, and `split` (literal receiver and separator) fold to precise results at the call site. TypeScript can only infer `string`, `number`, or `string[]` for these operations. `indexOf` still yields the `number` primitive without the literal index, so check with `nudo infer` before relying on a specific method.
 
 ---
 

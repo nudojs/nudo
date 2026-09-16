@@ -17,6 +17,7 @@ Nudo infers types by **running your functions** with symbolic inputs like `T.num
 
 ```bash
 npm install -g @nudojs/cli
+# or via the thin `nudo` shell package: npm install -g nudo / npx nudo
 ```
 
 Add directives to your JavaScript functions:

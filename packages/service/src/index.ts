@@ -2,7 +2,6 @@ export {
   type AnalysisResult,
   type FunctionAnalysis,
   type CaseResult,
-  type CaseInfo,
   type CaseHint,
   type Diagnostic,
   type DiagnosticSeverity,
@@ -17,17 +16,21 @@ export {
   analyzeFileAsync,
   collectCallRecords,
   type CallRecord,
+  buildModuleGraph,
+  type ModuleGraphCache,
+  computeDirtySet,
+  topoSortDirty,
+} from "./analyzer.ts";
+
+export {
+  type CaseInfo,
   getTypeAtPosition,
   getTypeAtPositionAsync,
   getHoverAtPosition,
   type HoverInfo,
   getCompletionsAtPosition,
   getCasesForFile,
-  buildModuleGraph,
-  type ModuleGraphCache,
-  computeDirtySet,
-  topoSortDirty,
-} from "./analyzer.ts";
+} from "./lsp-surface.ts";
 
 export { collectAbsInlays, type AbsInlay } from "@nudojs/core";
 
@@ -148,3 +151,26 @@ export {
 } from "./case-emitter.ts";
 
 export { mockDirectivesToAbsSeeds, type AbsMockSeeds } from "./mock-abs.ts";
+
+export {
+  interfaceSurface,
+  formatInterfaceSurfaceLine,
+  type InterfaceSurfaceEntry,
+  type InterfaceSurfaceOpts,
+} from "./interface-surface.ts";
+
+// check/LSP 执法路径的 autoBind 接线（package.json#nudo.interface → checkSource）
+export {
+  findProjectConfig,
+  interfaceConfig,
+  type NudoConfig,
+  type InterfaceConfig,
+} from "./evaluator/config.ts";
+
+export {
+  emitInterface,
+  formatEmitSummary,
+  type EmitInterfaceOpts,
+  type EmitInterfaceResult,
+  type EmitInterfaceSkipReason,
+} from "./interface-emitter.ts";

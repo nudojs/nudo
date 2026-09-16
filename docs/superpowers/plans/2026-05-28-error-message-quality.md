@@ -303,7 +303,7 @@ case "Identifier": {
 In `packages/service/src/analyzer.ts`, set the handler before evaluation:
 
 ```typescript
-import { setUnknownBuiltinHandler } from "@nudojs/cli/evaluator";
+import { setUnknownBuiltinHandler } from "./evaluator/evaluator-api.ts";
 
 // In analyzeFile, before evaluateProgram:
 setUnknownBuiltinHandler((name, loc) => {

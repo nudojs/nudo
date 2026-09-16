@@ -74,6 +74,31 @@ function big() {
     expect(r.issues.some((i) => i.message.includes("@nudo:refine return"))).toBe(true);
   });
 
+  it("error: string 长度界（shortName min/max）", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:refine return shortName
+ */
+function name() {
+  return "";
+}
+`);
+    expect(r.ok).toBe(false);
+    expect(r.issues.some((i) => i.message.includes("@nudo:refine return"))).toBe(true);
+  });
+
+  it("ok: string 满足长度界", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:refine return shortName
+ */
+function name() {
+  return "abc";
+}
+`);
+    expect(r.issues.filter((i) => i.message.includes("@nudo:refine return"))).toEqual([]);
+  });
+
   it("ok: any/符号返回不误报", () => {
     const r = issuesOf(`
 /**
