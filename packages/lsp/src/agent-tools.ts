@@ -618,13 +618,15 @@ function serializedEmit(
     () => emitInterface(filePath, { fnNames, mode }),
     () => emitInterface(filePath, { fnNames, mode }), // 前次失败不阻塞后续
   );
-  emitChains.set(
-    filePath,
-    next.then(
-      () => {},
-      () => {},
-    ),
+  const settled = next.then(
+    () => {},
+    () => {},
   );
+  emitChains.set(filePath, settled);
+  // 链尾落地后清掉，避免长驻 LSP 会话 Map 无界增长
+  void settled.then(() => {
+    if (emitChains.get(filePath) === settled) emitChains.delete(filePath);
+  });
   return next;
 }
 
@@ -689,6 +691,8 @@ export type InterfaceLensDeps = {
   loadModule?: (spec: string, fromFile: string) => string | undefined;
   /** fn → 激活 case 下标（●/○ 标题）；缺省全部按 index 0 */
   activeCases?: Map<string, number>;
+  /** 侧车 ambient 绑定开关（与 check/validate 同口径；false 时回落 implicit） */
+  autoBind?: boolean;
 };
 
 /** 顶层函数位（含 export 包裹与箭头/函数表达式 const 声明）——interface 档目标集 */
@@ -774,6 +778,9 @@ export function computeInterfaceLenses(
       const eff = effectiveInterface(source, fn.name, {
         ...(deps.loadModule ? { loadModule: deps.loadModule } : {}),
         fromFile: filePath,
+        // §2.2「整体关闭」：autoBind=false 时侧车 ambient 停用，lens 回落
+        // implicit（与 check/validate/print 同口径，避免 UI 仍暗示契约生效）
+        ...(deps.autoBind === false ? { autoBind: false } : {}),
       });
       const src: InterfaceSource = eff?.source ?? "implicit";
       lenses.push({ kind: "interface", fn: fn.name, line: fn.line, source: src });

@@ -268,7 +268,7 @@ pick(true);
 // Case "call@…": (true) => "a"        ← 布尔字面量分叉
 ```
 
-实现位置：TypeValue 路径 `packages/cli/src/evaluator.ts` 的
+实现位置：TypeValue 路径 `packages/service/src/evaluator/evaluator.ts` 的
 `ConditionalExpression` 分支（`narrow` + 字面量 / `definiteBoolean` 静态选支）；
 B 路径 `core/src/algebra/exec/transpile.ts` 把三元编译为 `$fork`，
 `runtime.ts` 按 `isDefinitelyTrue` / `isDefinitelyFalse` 选支。

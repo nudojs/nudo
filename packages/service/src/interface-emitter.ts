@@ -12,12 +12,12 @@
  *   `nudo:interface-name-clash`（error，手写优先）。
  * - mode=update：剥离全部生成段再重排（幂等；非目标的既有生成段原样保留，
  *   不随 --fn 丢失）；mode=add：仅追加缺失段。
- * - 目标过滤（§7.3）：--fn 白名单 > --all 全量 > 默认/--known 只刷新已有生成段
+ * - 目标过滤（§7.3）：--fn 白名单 > --all 全量 > 默认只刷新已有生成段
  *   （「无根只处理已存在生成段」；Phase 1 无 root 闭包下行推导）。
  * - autoBind=false 不影响 emit（显式动作，非 ambient 加载）。
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { basename, dirname, relative, resolve } from "node:path";
 import {
   execNudoModule,
@@ -52,8 +52,6 @@ export type EmitInterfaceOpts = {
   fnNames?: string[];
   /** update=剥离全部生成段再重排（幂等）；add=仅追加缺失段 */
   mode: "add" | "update";
-  /** 只更新已有 @generated 段的导出（显式形式；默认无 --fn/--all 时同此行为） */
-  knownOnly?: boolean;
   /** 全部顶层导出（显式 opt-in，CLI 侧文档警告勿默认） */
   all?: boolean;
   /** 不写盘，返回 unifiedDiff */
@@ -120,7 +118,7 @@ export async function emitInterface(
   }
   const fileExportOrder = analysis.functions.map((f) => f.name).filter((n) => exported.has(n));
 
-  // ---- 目标过滤（§7.3）：白名单 > --all > 默认/--known 刷新已有生成段 ----
+  // ---- 目标过滤（§7.3）：白名单 > --all > 默认刷新已有生成段 ----
   let targetNames: string[];
   if (opts.fnNames && opts.fnNames.length > 0) {
     targetNames = [...new Set(opts.fnNames)];
@@ -249,7 +247,10 @@ export async function emitInterface(
     ? unifiedDiff(sidecarSrc, finalContent, relative(process.cwd(), sidecarPath) || sidecarPath)
     : undefined;
   if (changed && !opts.dryRun) {
-    writeFileSync(sidecarPath, finalContent, "utf-8");
+    // 同目录 temp + rename：崩溃/磁盘满时侧车不会变成半截文件
+    const tmp = `${sidecarPath}.tmp-${process.pid}`;
+    writeFileSync(tmp, finalContent, "utf-8");
+    renameSync(tmp, sidecarPath);
   }
   takeRefineDiagsSince(refineSince); // round-trip 自检可能留下 interface-load 诊断——emit 不执法，丢弃
   takeInterfaceDiagsSince(ifaceSince);

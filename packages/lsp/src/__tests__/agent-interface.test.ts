@@ -247,6 +247,17 @@ function helper(n) {
     ]);
     expect(existsSync("/t/lib.nudo.js")).toBe(false); // 注入通道不落盘
   });
+
+  it("autoBind:false falls back to implicit even when a handwritten sidecar loads", () => {
+    const lenses = computeInterfaceLenses(LENS_SRC, "/t/lib.js", {
+      loadModule: sidecarLoader(HANDWRITTEN_SIDECAR),
+      autoBind: false,
+    });
+    expect(lenses).toEqual([
+      { kind: "interface", fn: "add", line: 2, source: "implicit" },
+      { kind: "emit", fn: "add", line: 2, mode: "add" },
+    ]);
+  });
 });
 
 describe("interfaceEmitTool 入参校验（非法输入显式报错，不静默降级）", () => {

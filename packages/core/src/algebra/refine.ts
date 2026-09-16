@@ -654,7 +654,15 @@ function collectConstraints(
   const map = new Map<string, NudoConstraint>();
   const imports = extractNudoImports(source);
   for (const imp of imports) {
-    if (!opts.loadModule || !opts.fromFile) continue;
+    if (!opts.loadModule || !opts.fromFile) {
+      // host 忘传 loader：约束会静默失效——必须报，否则 refine 无声消失
+      collectDiag({
+        code: "nudo:interface-load",
+        message: `sidecar '${imp.spec}' not loaded: loadModule/fromFile missing from host options`,
+        file: opts.fromFile,
+      });
+      continue;
+    }
     const src = opts.loadModule(imp.spec, opts.fromFile);
     if (src === undefined) {
       collectDiag({

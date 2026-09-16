@@ -442,8 +442,7 @@ export const scale = fn({ x: union(lit(42), lit("a")) }, number());
 |--------|-------------|
 | `--emit` | Write/update `@generated` segments instead of printing (mode: update — strips and rewrites generated segments; idempotent) |
 | `--fn <name>` | With `--emit`: only these export names (repeatable) |
-| `--known` | With `--emit`: only refresh already-persisted `@generated` segments (also the default with no filter) |
-| `--all` | With `--emit`: target every top-level export (explicit opt-in; prefer `--fn`/`--known` to keep diffs reviewable) |
+| `--all` | With `--emit`: target every top-level export (explicit opt-in; prefer `--fn` to keep diffs reviewable) |
 | `--dry-run` | With `--emit`: print a unified diff instead of writing |
 | `--exit-on-diff` | With `--emit` + `--dry-run`: exit `1` when the sidecar would change (CI gate) |
 | `--callsites <paths...>` | Usage-site files feeding the domain evidence for print/emit |

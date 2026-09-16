@@ -22,6 +22,12 @@ const ERROR_CODES = [
   "nudo:assign-mismatch",
   "nudo:arg-structure",
   "nudo:case-inconsistency",
+  // interface 产品面新 error 码：同样要求真实包零 FP 背书
+  "nudo:interface-load",
+  "nudo:interface-cycle",
+  "nudo:interface-conflict",
+  "nudo:interface-domain-exceeds",
+  "nudo:interface-name-clash",
 ] as const;
 
 type ScanOutcome = { scanned: number; violations: string[]; errors: string[] };

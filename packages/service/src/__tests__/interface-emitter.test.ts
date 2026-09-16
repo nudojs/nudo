@@ -1,6 +1,6 @@
 /**
  * `nudo interface --emit` 写盘器（service/interface-emitter.ts）：
- * 生成段写盘 / name-clash（手写优先）/ update 幂等 / knownOnly /
+ * 生成段写盘 / name-clash（手写优先）/ update 幂等 / 默认只刷新已有段 /
  * dryRun / not-projectable / 写盘产物可被 effectiveInterface 读回。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -210,7 +210,7 @@ describe("emitInterface", () => {
 
   it("update without evidence preserves persisted segments (no data loss)", async () => {
     // 回归：update 剥离生成段后若重投影失败（证据缺失），既有段必须原样
-    // 归位，不得被静默删除（--known 未带 --callsites 的典型场景）。
+    // 归位，不得被静默删除（默认无 --callsites 的典型场景）。
     const file = join(dir, "mixed.js");
     writeFileSync(file, `export function scale(x) {\n  return x * 2;\n}\n`);
     const rec = (arg: string | number | boolean | null | undefined) => ({

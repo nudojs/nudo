@@ -526,18 +526,17 @@ async function runInterface(file: string, records?: CallRecord[]): Promise<void>
  * `nudo interface --emit <file>`：把调用点域投影固化为侧车 `@generated` 段。
  * 固定 mode=update（剥离生成段再重排，幂等；--exit-on-diff 配 --dry-run 作
  * CI 门禁，类比 infer --emit-cases=update --dry-run）。默认无过滤 = 只刷新
- * 已有生成段（§7.3 --known 语义）；--fn 白名单 / --all 显式放宽。
+ * 已有生成段（默认行为）；--fn 白名单 / --all 显式放宽。
  */
 async function runInterfaceEmit(
   file: string,
-  opts: { fnNames: string[]; all: boolean; known: boolean; dryRun: boolean; exitOnDiff: boolean; records?: CallRecord[] },
+  opts: { fnNames: string[]; all: boolean; dryRun: boolean; exitOnDiff: boolean; records?: CallRecord[] },
 ): Promise<void> {
   const { emitInterface } = await import("@nudojs/service");
   const filePath = resolve(file);
   const result = await emitInterface(filePath, {
     fnNames: opts.fnNames.length > 0 ? opts.fnNames : undefined,
     mode: "update",
-    knownOnly: opts.fnNames.length === 0 && !opts.all,
     all: opts.all,
     dryRun: opts.dryRun,
     records: opts.records,
@@ -546,6 +545,13 @@ async function runInterfaceEmit(
   if (result.changed && opts.dryRun) {
     console.log(`[dry-run] would update ${rel}:`);
     console.log(result.diff ?? "");
+    // dry-run 也打印 issues/skipped——退出码已按 error 置位，信息面须同步
+    for (const i of result.issues) {
+      console.log(`[${i.severity}] ${i.code}: ${i.message}`);
+    }
+    for (const s of result.skipped) {
+      console.log(`  skipped ${s.fn}: ${s.reason}`);
+    }
   } else {
     const sc = relative(process.cwd(), result.sidecarPath) || result.sidecarPath;
     for (const line of formatEmitSummary(rel, sc, result)) console.log(line);
@@ -577,10 +583,9 @@ program
     },
     [] as string[],
   )
-  .option("--known", "With --emit: only refresh already-persisted @generated segments (also the default when no filter is given)")
-  .option("--all", "With --emit: target every top-level export of the file (explicit opt-in — prefer --fn/--known to keep diffs reviewable)")
+  .option("--all", "With --emit: target every top-level export of the file (explicit opt-in — prefer --fn to keep diffs reviewable)")
   .option("--dry-run", "With --emit: print a unified diff instead of writing to disk")
-  .option("--exit-on-diff", "With --emit: exit 1 when the sidecar would change (CI gate)")
+  .option("--exit-on-diff", "With --emit + --dry-run: exit 1 when the sidecar would change (CI gate; same as infer --emit-cases)")
   .option("--callsites <paths...>", "Usage-site files (tests/apps): their calls to this file's exports feed the domain evidence for print/emit (domain roots with no in-file call sites)")
   .action(
     async (
@@ -588,7 +593,6 @@ program
       opts: {
         emit?: boolean;
         fn?: string[];
-        known?: boolean;
         all?: boolean;
         dryRun?: boolean;
         exitOnDiff?: boolean;
@@ -599,15 +603,20 @@ program
         console.error(
           "Usage error: `nudo interface` needs at least one path. " +
             (opts.emit
-              ? "Writing additionally respects filters: --fn <names> / --known (default) / --all."
+              ? "Writing additionally respects filters: --fn <names> / --all (default: only refresh existing @generated segments)."
               : "Print-only this phase; pass a file or directory."),
         );
         process.exitCode = 1;
         return;
       }
+      if (opts.exitOnDiff && !opts.dryRun) {
+        console.error("--exit-on-diff requires --dry-run");
+        process.exitCode = 1;
+        return;
+      }
       if (opts.emit && opts.all) {
         console.error(
-          "warning: --all emits every export of the target file(s); review noise grows fast — prefer --fn/--known.",
+          "warning: --all emits every export of the target file(s); review noise grows fast — prefer --fn.",
         );
       }
       const targets: string[] = [];
@@ -623,7 +632,6 @@ program
             await runInterfaceEmit(t, {
               fnNames: opts.fn ?? [],
               all: opts.all === true,
-              known: opts.known === true,
               dryRun: opts.dryRun === true,
               exitOnDiff: opts.exitOnDiff === true,
               records: externalRecords,

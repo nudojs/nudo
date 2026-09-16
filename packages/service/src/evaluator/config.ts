@@ -29,6 +29,9 @@ export function findProjectConfig(startDir: string): { config: NudoConfig; proje
   let dir = resolve(startDir);
   const root = resolve("/");
 
+  // 向上查找带 `nudo` 键的 package.json。子包自有 package.json（monorepo
+  // packages/*）时**不**在此停步——否则仓库根的 nudo.interface.autoBind
+  // 对该子包完全不可见。
   while (dir !== root) {
     const pkgPath = resolve(dir, "package.json");
     if (existsSync(pkgPath)) {
@@ -40,7 +43,6 @@ export function findProjectConfig(startDir: string): { config: NudoConfig; proje
       } catch {
         // ignore parse errors
       }
-      return null;
     }
     const parent = dirname(dir);
     if (parent === dir) break;

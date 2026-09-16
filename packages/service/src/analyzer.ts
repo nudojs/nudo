@@ -1872,6 +1872,59 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
   const currentModulePath = normalizeModulePath(resolve(filePath));
   const singleExportFn = findSingleModuleExportsFunction(ast);
 
+  // T10b：跨文件注入的调用点域证据 ⊄ 手写契约 → nudo:interface-domain-exceeds
+  // （error）。带 @nudo:case 的函数同样检查——case 路径只覆盖本文件内 case
+  // 实参 vs 契约；跨文件注入证据此前是执法盲区。
+  const reportInjectedDomainExceeds = (
+    name: string,
+    node: Node,
+    fallbackLoc: SourceLocation,
+  ): void => {
+    if (!externalCallRecords || externalCallRecords.length === 0) return;
+    const singleExportHit = singleExportFn !== null && node === singleExportFn;
+    const nameRoutes = (r: CallRecord): boolean =>
+      r.fnName === name ||
+      r.targetExport === name ||
+      (r.targetAliases?.includes(name) ?? false) ||
+      (singleExportHit && (r.fnModule !== undefined || r.targetModule !== undefined));
+    const matchingExternal = (r: CallRecord): boolean => {
+      const attributed =
+        (r.fnModule !== undefined && normalizeModulePath(r.fnModule) === currentModulePath) ||
+        (r.targetModule !== undefined && normalizeModulePath(r.targetModule) === currentModulePath);
+      if (!attributed) return false;
+      return nameRoutes(r);
+    };
+    const injected = externalCallRecords.filter(matchingExternal);
+    if (injected.length === 0) return;
+    const nameLoc = fnNameLoc(node, fallbackLoc);
+    const fnNode = resolveFunctionNode(node);
+    const domainIssues = checkInjectedDomainEvidence(name, source, injected, {
+      paramNames: extractParamNames(fnNode),
+      loadModule: defaultLoadModule,
+      fromFile: filePath,
+      loc: { line: nameLoc.start.line, column: nameLoc.start.column },
+    });
+    for (const issue of domainIssues) {
+      const line = issue.line ?? nameLoc.start.line;
+      const column = issue.column ?? nameLoc.start.column;
+      diagnostics.push({
+        range: { start: { line, column }, end: { line, column: column + name.length } },
+        severity: issue.severity,
+        message: issue.message,
+        code: issue.code,
+        suggestions: issue.suggestion ? [issue.suggestion] : undefined,
+        data: { actual: issue.actual, expected: issue.expected },
+      });
+    }
+  };
+
+  // 带 @nudo:case 的指令函数：同样走跨文件注入证据执法（盲区补齐）
+  for (const fn of functions) {
+    if (fn.directives.some((d) => d.kind === "case")) {
+      reportInjectedDomainExceeds(fn.name, fn.node, locFromNode(fn.node));
+    }
+  }
+
   for (const candidate of synthCandidates) {
     // 调用点来源有两路：本文件求值中观察到的调用，以及外部注入的
     // （使用现场文件——如测试——对本文导出函数的真实调用，CLI 经
@@ -1923,42 +1976,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
       ].filter((r) => !(r.resultType.kind === "never" && r.throws.kind === "never")),
     );
     // T10b：跨文件注入的调用点域证据 ⊄ 手写契约 → nudo:interface-domain-exceeds
-    // （error）。来源分流（设计稿 §3.3/§6）：写在被分析文件里的调用点违例
-    // （scanLiteralCalls → constraint-violated，含跨文件被调路径）原码原语义
-    // 零改动；本检查只消费经 externalCallRecords 注入、且已过 matchingExternal
-    // 归属守卫的记录——该路径此前不查契约，纯增量。loc 用被调函数声明处
-    // （注入证据的 loc 在使用现场文件，不属于本文件）。
-    const injected = (externalCallRecords ?? []).filter(matchingExternal);
-    if (injected.length > 0) {
-      // 函数名标识符定位：declLoc 是函数节点起点（function 关键字 / 箭头参数
-      // 表），end 用 +name.length 会高亮错 token——取声明名自身 loc
-      const declLoc = candidate.analysis.loc;
-      const nameLoc = fnNameLoc(candidate.node, declLoc);
-      const fnNode = resolveFunctionNode(candidate.node);
-      const domainIssues = checkInjectedDomainEvidence(
-        candidate.name,
-        source,
-        injected,
-        {
-          paramNames: extractParamNames(fnNode),
-          loadModule: defaultLoadModule,
-          fromFile: filePath,
-          loc: { line: nameLoc.start.line, column: nameLoc.start.column },
-        },
-      );
-      for (const issue of domainIssues) {
-        const line = issue.line ?? nameLoc.start.line;
-        const column = issue.column ?? nameLoc.start.column;
-        diagnostics.push({
-          range: { start: { line, column }, end: { line, column: column + candidate.name.length } },
-          severity: issue.severity,
-          message: issue.message,
-          code: issue.code,
-          suggestions: issue.suggestion ? [issue.suggestion] : undefined,
-          data: { actual: issue.actual, expected: issue.expected },
-        });
-      }
-    }
+    reportInjectedDomainExceeds(candidate.name, candidate.node, candidate.analysis.loc);
     if (records.length > 0) {
       // 案例选择偏好：结果有信息量的记录优先（精确/字面量/结构化），
       // unknown 结果的排后——收集顺序里错误路径或 undefined 形态的测试

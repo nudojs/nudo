@@ -245,7 +245,7 @@ nudo check src/broken.js
 
 ```bash
 nudo interface <paths...> [--callsites <paths...>]
-nudo interface --emit <paths...> [--fn <name>] [--known | --all] [--dry-run] [--exit-on-diff] [--callsites <paths...>]
+nudo interface --emit <paths...> [--fn <name>] [--all] [--dry-run] [--exit-on-diff] [--callsites <paths...>]
 ```
 
 **参数：**
@@ -260,7 +260,6 @@ nudo interface --emit <paths...> [--fn <name>] [--known | --all] [--dry-run] [--
 |--------|-------------|
 | `--emit` | 写/更新 `@generated` 段而非打印（update 模式：剥离并重写生成段，幂等） |
 | `--fn <name>` | 配 `--emit`：只处理这些导出名（可重复） |
-| `--known` | 配 `--emit`：只刷新已固化的 `@generated` 段（无过滤时亦为默认行为） |
 | `--all` | 配 `--emit`：目标为全部顶层导出（显式 opt-in） |
 | `--dry-run` | 配 `--emit`：打印 unified diff 而非写盘 |
 | `--exit-on-diff` | 配 `--emit`：侧车将变更时退出码 `1`（CI 门禁） |

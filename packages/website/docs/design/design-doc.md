@@ -188,7 +188,7 @@ parser ──▶ core
             └── bridge       ← Abs ⇄ TypeValue (lossy)
                  │
                  ▼
-            cli/evaluator    ← AST abstract interpretation; arithmetic first via Abs
+            service/evaluator    ← AST abstract interpretation; arithmetic first via Abs
                  │
                  ▼
             service / lsp / vite / dts

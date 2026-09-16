@@ -14,7 +14,12 @@ import { emptyEnv, evalNode, evalProgramAbs } from "./ast-eval.ts";
 import { defaultLeakBudget } from "./leak.ts";
 import { leqAbs } from "./leq.ts";
 import type { RefineEntry } from "./refine.ts";
-import { instantiateConstraint, type NudoConstraint, type NudoField } from "./constraint.ts";
+import {
+  instantiateConstraint,
+  isIntFlag,
+  type NudoConstraint,
+  type NudoField,
+} from "./constraint.ts";
 import {
   effectiveInterface,
   formatConstraint,
@@ -28,11 +33,13 @@ import { resolveDepPath } from "./load-deps-fp.ts";
 import { extractFn, generalizeFromAst, type PolyFn } from "./generalize.ts";
 import { numLit, abs as makeAbs, litValue } from "./abs.ts";
 import type { Abs } from "./abs.ts";
+import { hashSource } from "./hash-source.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { pTrue, predToString } from "./pred.ts";
 import { formatAbs, formatShape } from "./format.ts";
 import type { CheckIssue } from "./check-report.ts";
 import { getFnImpl } from "./abs-fn.ts";
+import { getSlot } from "./objects.ts";
 
 /**
  * HOF 实参是否满足目标 fn 形状。
@@ -685,7 +692,8 @@ export function scanLiteralCalls(
     fnSource: string,
     eiOpts: EffectiveInterfaceOpts,
   ): EffectiveInterface | undefined => {
-    const key = `${fnName}\u0000${eiOpts.fromFile ?? ""}\u0000${eiOpts.autoBind === false ? "0" : "1"}\u0000${fnSource.length}`;
+    // 等长不同内容不得串缓存（跨文件 checkExternalCall 场景）
+    const key = `${fnName}\u0000${eiOpts.fromFile ?? ""}\u0000${eiOpts.autoBind === false ? "0" : "1"}\u0000${hashSource(fnSource)}`;
     if (eiCache.has(key)) return eiCache.get(key);
     const r = effectiveInterface(fnSource, fnName, eiOpts);
     eiCache.set(key, r);
@@ -953,7 +961,7 @@ export function scanLiteralCalls(
     for (const [key, field] of Object.entries(constraint.fields) as Array<
       [string, NudoField]
     >) {
-      const slot = slots[key];
+      const slot = getSlot(slots, key);
       const fieldPath = path === paramName ? `${paramName}.${key}` : `${path}.${key}`;
       if (!slot) {
         if (!field.optional && !field.constraint.isOptional) {
@@ -1005,8 +1013,8 @@ export function scanLiteralCalls(
       }
     }
 
-    // int：字面量必须是整数
-    if (constraint.int) {
+    // int：字面量必须是整数（builder 上 .int 是方法，标志须经 isIntFlag 读）
+    if (isIntFlag(constraint)) {
       const iv = litValue(fieldAbs);
       if (typeof iv === "number" && !Number.isInteger(iv)) {
         out.push({
@@ -1149,7 +1157,7 @@ export function scanLiteralCalls(
   ): void => {
     for (const [idx, entry] of reqs) {
       const c = entry.constraint;
-      if (!c.fields && !c.element && !c.int && !c.prim) continue;
+      if (!c.fields && !c.element && !isIntFlag(c) && !c.prim) continue;
       const argIdx = argIndexOf(idx);
       if (argIdx === undefined) continue;
       const arg = absArgs[argIdx];
@@ -1197,8 +1205,8 @@ export function scanLiteralCalls(
           });
         }
       }
-      // 顶层 int
-      if (c.int) {
+      // 顶层 int（builder 上 .int 是方法，标志须经 isIntFlag 读）
+      if (isIntFlag(c)) {
         const iv = litValue(arg);
         if (typeof iv === "number" && !Number.isInteger(iv)) {
           out.push({
@@ -1353,6 +1361,15 @@ export function scanLiteralCalls(
         full = interfaceToIndexed(ei, paramNames);
       }
     } catch {
+      // 外部被调契约解析失败：不再静默放弃执法——报 warning 便于定位
+      out.push({
+        severity: "warning",
+        code: "nudo:no-signature",
+        message: `${displayName}: 外部被调契约解析失败，跳过调用点前置检查`,
+        fn: displayName,
+        line: loc?.start.line,
+        column: loc?.start.column,
+      });
       return;
     }
     checkShapeReqs(displayName, full, paramNames, absArgs, (i) => i, loc);

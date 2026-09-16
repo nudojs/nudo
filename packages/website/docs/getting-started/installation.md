@@ -1,6 +1,6 @@
 ---
 sidebar_position: 1
-description: Install the Nudo CLI, VS Code extension, and Vite plugin via npm, pnpm, or yarn — the published CLI requires Node.js 22.18+ LTS or 23.6+.
+description: Install the Nudo CLI, VS Code extension, and Vite plugin via npm, pnpm, or yarn — published packages require Node.js >= 20.
 ---
 
 # Installation
@@ -9,12 +9,17 @@ Install Nudo tools via npm, pnpm, or yarn.
 
 ## Prerequisites
 
-- **Run the published CLI**: Node.js >= 23.6 (or >= 22.18 LTS) — packages ship as source `.ts` and run via native type stripping
-- **Develop this repo**: Node.js >= 18
+- **Run the published CLI**: Node.js >= 20 (`engines` on all published packages)
+- **Develop this repo**: Node.js >= 20 (CI uses Node 24)
+
+Packages ship compiled ESM in `dist/` (`files: ["dist"]`), not TypeScript source.
 
 ## CLI
 
 ```bash
+# thin shell (reserves the `nudo` name)
+npm install -g nudo
+# or the full CLI package
 npm install @nudojs/cli
 # or
 pnpm add @nudojs/cli

@@ -512,7 +512,9 @@ function checkSourceInner(
     ? []
     : scanLiteralCalls(source, names, phi, {
         loadModule: opts.loadModule,
-        fromFile: filePath,
+        // 与 generalize / 返回后置同一 fromFile 口径：ambient 侧车按真实
+        // 路径解析（opts.fromFile），filePath 仅是报告标签
+        fromFile: refineFrom,
         file,
         varAbs,
         ...(autoBind !== undefined ? { autoBind } : {}),
@@ -537,7 +539,7 @@ function checkSourceInner(
   issues.push(
     ...scanCaseInconsistency(source, names, {
       loadModule: opts.loadModule,
-      fromFile: filePath,
+      fromFile: refineFrom,
       file,
       sidecarPresent: sidecarFp !== undefined,
       ...(autoBind !== undefined ? { autoBind } : {}),

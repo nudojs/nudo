@@ -245,7 +245,7 @@ Print each function's effective interface with its source layer — `[handwritte
 
 ```bash
 nudo interface <paths...> [--callsites <paths...>]
-nudo interface --emit <paths...> [--fn <name>] [--known | --all] [--dry-run] [--exit-on-diff] [--callsites <paths...>]
+nudo interface --emit <paths...> [--fn <name>] [--all] [--dry-run] [--exit-on-diff] [--callsites <paths...>]
 ```
 
 **Arguments:**
@@ -260,7 +260,6 @@ nudo interface --emit <paths...> [--fn <name>] [--known | --all] [--dry-run] [--
 |--------|-------------|
 | `--emit` | Write/update `@generated` segments instead of printing (update mode: strips and rewrites generated segments, idempotent) |
 | `--fn <name>` | With `--emit`: only these export names (repeatable) |
-| `--known` | With `--emit`: only refresh already-persisted `@generated` segments (also the default when no filter is given) |
 | `--all` | With `--emit`: target every top-level export (explicit opt-in) |
 | `--dry-run` | With `--emit`: print a unified diff instead of writing to disk |
 | `--exit-on-diff` | With `--emit`: exit `1` when the sidecar would change (CI gate) |

@@ -158,6 +158,31 @@ export function area(x) {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("带 @nudo:case 的导出函数同样执法（此前盲区）", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-dom-case-"));
+    try {
+      const withCase = `// @nudo:case "ok" (5)
+export function area(x) {
+  return x;
+}
+`;
+      const libPath = join(dir, "lib.js");
+      writeFileSync(libPath, withCase);
+      writeFileSync(
+        join(dir, "lib.nudo.js"),
+        'import { fn, number } from "@nudojs/core";\nexport const area = fn({ x: number().gt(0) });\n',
+      );
+      const result = analyzeFile(libPath, withCase, undefined, [
+        rec({ targetModule: libPath, targetExport: "area", callLoc: { line: 5, column: 0 } }),
+      ]);
+      const issues = result.diagnostics.filter((d) => d.code === DOMAIN);
+      expect(issues).toHaveLength(1);
+      expect(issues[0]!.severity).toBe("error");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("real-package zero-FP：真实包注入记录不产生 domain-exceeds", () => {

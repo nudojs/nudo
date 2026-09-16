@@ -1,6 +1,6 @@
 ---
 sidebar_position: 1
-description: 安装 Nudo 的 CLI、VS Code 扩展与 Vite 插件，支持 npm、pnpm、yarn——发布版 CLI 需要 Node.js 22.18+ LTS 或 23.6+。
+description: 安装 Nudo 的 CLI、VS Code 扩展与 Vite 插件，支持 npm、pnpm、yarn——发布包要求 Node.js >= 20。
 ---
 
 # 安装
@@ -9,8 +9,10 @@ description: 安装 Nudo 的 CLI、VS Code 扩展与 Vite 插件，支持 npm、
 
 ## 前置要求
 
-- **运行发布版 CLI**：Node.js >= 23.6（或 >= 22.18 LTS）——包以 `.ts` 源码发布，依赖原生类型剥离运行
-- **开发本仓库**：Node.js >= 18
+- **运行发布版 CLI**：Node.js >= 20（各发布包 `engines`）
+- **开发本仓库**：Node.js >= 20（CI 使用 Node 24）
+
+发布包以编译后的 ESM `dist/` 发布（`files: ["dist"]`），不是 TypeScript 源码。
 
 ## CLI
 

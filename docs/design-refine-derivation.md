@@ -738,7 +738,7 @@ CLI 必须默认可过滤，而不是 `--all` 一把梭：
 |---|---|---|
 | 路径 | `nudo interface --emit src/lib.js` | 该文件（及其 `*.nudo.js`）；若该文件是**根**，闭包内下游生成段按下方 root 驱动规则连带更新 |
 | 导出名 | `nudo interface --emit src/lib.js --fn add2` | 仅这些名字——Phase 1 过滤的是**目标文件自身的导出**；root 推导闭包内的下游目标（含下游文件的导出）是 Phase 2 能力（见 §11 Phase 2 验收） |
-| 已有契约文件 | `--emit --known` | 只更新已存在 `*.nudo.js` 中的生成段 |
+| 已有契约文件 | `--emit`（默认） | 只更新已存在 `*.nudo.js` 中的生成段 |
 | 项目配置 | `package.json` → `nudo.interface.emit: ["src/api/**"]` | 包级白名单（沿用现有 `pkg.nudo` 配置入口，不另设 `nudo.json`）。**Phase 2 引入**：Phase 1 的 InterfaceConfig 只含 `autoBind`（未接线的声明面不留） |
 | 全量（显式） | `--emit --all` | 明确 opt-in；文档警告勿默认 |
 
@@ -826,7 +826,6 @@ CodeLens 默认面对 **refine（接口）**，case 降为 debug 副层：
 | `nudo interface [paths…]` | **只打印**每导出有效 interface 与来源（handwritten / generated / implicit）；无路径 → usage error（已实施） |
 | `nudo interface --emit [paths…]` | 按 filter 写盘（mode=update，幂等） |
 | `--fn <name>`（可重复） | 仅这些名字（Phase 1：目标文件自身导出；root 推导闭包内下游目标为 Phase 2） |
-| `--known` | 只更新已有 `*.nudo.js` 生成段（也是无 `--fn`/`--all` 时的默认） |
 | `--all` | 显式全量（文档警告） |
 | `--callsites <paths…>` | 使用现场文件：跨文件调用记录注入域证据（域根导出 emit 的必需通道，已实施） |
 | `--dry-run` / `--exit-on-diff` | diff / CI 门禁 |
@@ -907,7 +906,7 @@ Abs 代数本身**不需要新内核**：下行只是「在根入口约束下跑
    loader 行为翻转不适用。[已实施；.nudo.ts 入口剥 TS 语法]
 3. 隐式依赖边登记（§4.5）+ evict 回归用例。[已实施]
 4. 隐式 interface 始终可算；`nudo interface` 默认只打印；`--emit` 必须带 filter
-   （`paths` / `--fn` / `--known`），禁止无参全量写盘。[已实施]
+   （`paths` / `--fn` / 默认只刷新已有生成段），禁止无参全量写盘。[已实施]
 5. `nudo:interface-domain-exceeds`（**T10b**；error 仅手写契约，§3.3；带 §6 证据
    门槛，含字符串域隶属新代码）/ `nudo:interface-drift`（**T10a**；含域 ⊄ 生成段）/
    `nudo:interface-name-clash`；新码进 gold 夹具与 zero-FP 套件。[已实施]
@@ -1066,7 +1065,7 @@ dts 是公共接口的兼容出口；接口表面已是 refine，dts 应投影�
 | 单点 `effectiveInterface(fn)` | 机械收口：`check.ts` ×2 + **`scan.ts` ×4** + `generalize.ts` ×1 共 7 处提取点全部改走一个读取口（清单见 §11；scan.ts 的 wrapper→target 转发保留），读出的来源标注直接服务 §3.3 分档 |
 | `lit` / `union` | `lit` = `prim + eq(self, lit v)` pred（`eq`/`predEquals` 已有），不开新字段；`union` 加 `members` 并补三条实例化路径 |
 | `shift(n)`（常数界） | 对 `gt/ge/lt/le` 的 lit 右端加 n；走 Pred 重写；构建期限数值标量链（§2.3），`length` 界 / shape / array 上 throw |
-| emit filter / `--fn` / `--known` / `package.json#nudo.interface` | 编排层，复用 `case-emitter` 的剥离/写盘思路 |
+| emit filter / `--fn` / `package.json#nudo.interface` | 编排层，复用 `case-emitter` 的剥离/写盘思路 |
 | 隐式不落盘、手写优先 | 纯策略；`name-clash` 在 emitter 写盘前判定 |
 | LSP `nudo.interface(.emit)` | 薄封装 + 写盘器；粒度到 export |
 | drift 门禁 | 重算有效契约做**语义相等**：instantiate 后的 entry Abs 上 `leqAbs(a,b) && leqAbs(b,a)`（复用现有 `leqAbs`，不新造 Pred 规范化器），不是比源码字符串 |

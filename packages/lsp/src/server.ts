@@ -21,6 +21,7 @@ import {
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { readFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { typeValueToString, sidecarPathOf } from "@nudojs/core";
 import {
   getTypeAtPosition,
@@ -29,6 +30,8 @@ import {
   buildSemanticTokens,
   isNudoTargetPath,
   collectAbsInlays,
+  findProjectConfig,
+  interfaceConfig,
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
 import { documentSymbols, findIdentifierAtPosition, resolveDefinition, resolveReferences, type DocumentSymbolItem } from "./symbols.ts";
@@ -173,6 +176,7 @@ documents.onDidClose((event) => {
   debounceTimers.delete(event.document.uri);
   nudoFileCache.delete(event.document.uri);
   analysisCache.delete(uriToFilePath(event.document.uri));
+  activeCases.delete(event.document.uri);
   connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
 });
 
@@ -354,9 +358,11 @@ connection.onCodeLens((params) => {
     // interface 档在前（默认层 + 固化动作），case 降为 debug 副层跟随其后
     // （design-refine-derivation §8）；标题与命令与既有 case lens 零改动。
     const lenses: CodeLens[] = [];
+    const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
     for (const lens of computeInterfaceLenses(source, filePath, {
       loadModule: lspLoadModule,
       activeCases: cases,
+      ...(autoBind === false ? { autoBind: false } : {}),
     })) {
       const range = {
         start: { line: lens.line - 1, character: 0 },
@@ -834,6 +840,7 @@ async function handleInterfaceEmit(params: {
   });
 
   // 侧车写盘/新建后的缓存失效与重验证（agent 面按路径调用时文件可能未打开）
+  let invalidateError: string | undefined;
   try {
     const openDoc = documents.all().find((d) => uriToFilePath(d.uri) === filePath);
     registerNudoImportDeps(filePath, openDoc ? openDoc.getText() : readFileSync(filePath, "utf-8"));
@@ -842,11 +849,24 @@ async function handleInterfaceEmit(params: {
       analysisCache.delete(filePath); // version 键未变，逐出防 getCachedOrAnalyze 命中陈旧结果
       await validateDocument(openDoc);
     }
-  } catch {
-    // 写盘已成功；失效/重验证失败不吞掉 emit 结果
+  } catch (e) {
+    // 写盘已成功；失效/重验证失败须可见——否则用户看到 written 但诊断/lens 仍是旧契约
+    invalidateError = e instanceof Error ? e.message : String(e);
+    connection.console.error(`nudo.interfaceEmit: sidecar written but cache invalidation failed: ${invalidateError}`);
   }
 
   connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {});
+  if (invalidateError) {
+    const text = toolResult.content[0]?.text ?? "";
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `${text}\n\n[warning] sidecar written but cache invalidation failed (diagnostics/lenses may be stale): ${invalidateError}`,
+        },
+      ],
+    };
+  }
   return toolResult;
 }
 

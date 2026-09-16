@@ -320,6 +320,35 @@ area(-1);
     expectOk: false,
     expectCode: "nudo:constraint-violated",
   },
+  {
+    // P0 回归：builder 上 .int 是方法；positive（无 .int()）+ 非整数必须零 issue
+    name: "non-int literal against positive (no int flag) is silent",
+    source: `
+/**
+ * @nudo:refine x positive
+ */
+export function needsPos(x) {
+  return x + 1;
+}
+needsPos(1.5);
+`,
+    expectOk: true,
+  },
+  {
+    // 对照：intId（number().int().gt(0)）+ 非整数仍应报 constraint-violated
+    name: "non-int literal against intId still violates",
+    source: `
+/**
+ * @nudo:refine x intId
+ */
+export function needsInt(x) {
+  return x + 1;
+}
+needsInt(1.5);
+`,
+    expectOk: false,
+    expectCode: "nudo:constraint-violated",
+  },
 ];
 
 describe("nudo check gold standards", () => {

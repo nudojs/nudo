@@ -402,15 +402,25 @@ export function effectiveInterface(
   // 标记 conflict（不再静默吞侧车契约：消费方报 nudo:interface-conflict
   // 并跳过该参执法），显示保源码行。
   const params = new Map<string, NudoConstraint>();
+  const conflictParams: string[] = [];
   for (const e of sourceEntries) {
+    const prev = params.get(e.param);
+    if (prev === undefined) {
+      params.set(e.param, e.constraint);
+      continue;
+    }
+    // 源码双 refine 行：与「源码 × 侧车」同口径——常数界交叉与 and() throw
+    // 都进 conflictParams（调用方报 nudo:interface-conflict 并跳过该位执法）
+    if (crossBoundConflict(prev, e.constraint) && !conflictParams.includes(e.param)) {
+      conflictParams.push(e.param);
+    }
     params.set(
       e.param,
-      params.has(e.param)
-        ? conjoinOrConflict(params.get(e.param)!, e.constraint, () => {})
-        : e.constraint,
+      conjoinOrConflict(prev, e.constraint, () => {
+        if (!conflictParams.includes(e.param)) conflictParams.push(e.param);
+      }),
     );
   }
-  const conflictParams: string[] = [];
   if (sidecarFn !== undefined && !sidecarGenerated) {
     for (const { param, constraint } of sidecarParams) {
       const prev = params.get(param);

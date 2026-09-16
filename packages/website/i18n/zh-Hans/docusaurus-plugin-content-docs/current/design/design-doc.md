@@ -184,7 +184,7 @@ parser ──▶ core
             └── bridge       ← Abs ⇄ TypeValue（有损）
                  │
                  ▼
-            cli/evaluator    ← AST 抽象解释；算术先走 Abs
+            service/evaluator    ← AST 抽象解释；算术先走 Abs
                  │
                  ▼
             service / lsp / vite / dts

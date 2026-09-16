@@ -11,7 +11,7 @@ description: 搭建 Nudo monorepo 开发环境并参与贡献——项目结构�
 
 ## 环境要求
 
-- **Node.js** 18 或更高
+- **Node.js** 20 或更高
 - **pnpm** 8 或更高
 
 ```bash
@@ -94,12 +94,12 @@ pnpm exec nudo infer path/to/file.js
    };
    ```
 
-2. **在求值器中接入**（`packages/cli/src/evaluator.ts`）：
+2. **在求值器中接入**（`packages/service/src/evaluator/evaluator.ts`）：
    - 二元运算：在 `BinaryExpression` 处理中将 AST 运算符字符串映射到你的 op。
    - 求值器对标准二元运算使用 `applyBinaryOp(op, left, right)`；如需要可扩展 `binaryOpMap`。
    - 一元运算：在 `UnaryExpression` 分支中添加处理并调用 `Ops.myUnary(operand)`。
 
-3. **添加测试**，位于 `packages/core/src/__tests__/ops.test.ts` 或 `packages/cli/src/__tests__/evaluator*.test.ts`。
+3. **添加测试**，位于 `packages/core/src/__tests__/ops.test.ts` 或 `packages/service/src/__tests__/evaluator*.test.ts`。
 
 ---
 

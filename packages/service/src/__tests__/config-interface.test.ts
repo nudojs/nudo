@@ -66,4 +66,26 @@ describe("findProjectConfig with interface key", () => {
     expect(found).toBeNull();
     expect(interfaceConfig(found?.config)).toEqual({ autoBind: true });
   });
+
+  it("monorepo: child package.json without nudo continues up to the root nudo config", () => {
+    const root = mkdtempSync(join(tmpdir(), "nudo-iface-mono-"));
+    dirs.push(root);
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({
+        name: "mono-root",
+        private: true,
+        nudo: { interface: { autoBind: false } },
+      }),
+    );
+    const child = join(root, "packages", "lib");
+    mkdirSync(child, { recursive: true });
+    writeFileSync(join(child, "package.json"), JSON.stringify({ name: "@acme/lib", version: "1.0.0" }));
+    const src = join(child, "src");
+    mkdirSync(src);
+
+    const found = findProjectConfig(src);
+    expect(found?.projectDir).toBe(root);
+    expect(interfaceConfig(found?.config)).toEqual({ autoBind: false });
+  });
 });
