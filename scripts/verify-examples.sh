@@ -281,6 +281,16 @@ pin 'pnpm run infer docs/examples/mini-repo/validators.js' \
 pin 'pnpm run infer docs/examples/mini-repo/store.js' \
   'No functions with @nudo:case directives found.'
 
+# interface-derivation/ — layered contract derivation (Phase 2). The root
+# contract (lib.nudo.js handwritten add4) loads for lib.js; the downstream
+# derived contract (add.nudo.js generated add2) is enforced for add.js.
+pin 'pnpm run check docs/examples/interface-derivation/add.js' \
+  'add2(x)  number  = (x + 2)  where (x + 2) > 3  #path' \
+  'pred: (x + 2) > 3' 'conf: path'
+pin 'pnpm run check docs/examples/interface-derivation/lib.js' \
+  '0 error · 0 warning' \
+  'add4(x)  number | string  #partial'
+
 printf -- '--------------------------------------------------------------\n'
 printf 'examples verified: %s checks passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
