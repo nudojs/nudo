@@ -290,8 +290,9 @@ t2(opaque());
 ### 4.1 循环中的条件返回
 
 **问题描述：**
-循环中的条件返回精度依赖求值路径：调用点路径逐元素分叉、精确命中；
-指令 case 路径（`@nudo:case`）退化为 `unknown`。
+循环内 `return item` 的命中值未折叠进 Abs 结果：两条路径的 `abs` 均退化为
+`unknown #exact`，`intension` 是 `number | string | unknown`。两路径的唯一差异在
+case 头（TypeValue 投影）：调用点路径投影出字面量 `4`，指令路径投影为 `unknown`。
 
 **失败示例（指令路径）：**
 ```javascript
@@ -305,29 +306,33 @@ function findFirst(arr) {
   return undefined;
 }
 // Case "break-loop": ([1, 2, 3, 4, 5]) => unknown
+// intension: findFirst: (arr: arr(A1)) => number | string | unknown
+// abs: unknown  #exact
 ```
 
 **对照（调用点路径）：**
 ```javascript
 function findFirst(arr) { /* 同上 */ }
 findFirst([1, 2, 3, 4, 5]);
-// Case "call@L7": ([1, 2, 3, 4, 5]) => 4
+// Case "call@L7": ([1, 2, 3, 4, 5]) => 4   ← case 头（投影）命中 4
+// abs: unknown  #exact                     ← Abs 结果仍 unknown
 ```
 
 **分析：**
-- 调用点路径已精确（for-of 逐元素 + 条件返回命中 `4`）
-- 指令 case 路径的 for-of 条件返回仍 unknown（两路径精度不对称）
+- case 头（TypeValue 投影）在调用点路径命中 `4`，但 `abs:` 结果两条路径都是
+  `unknown #exact`——条件返回的命中值尚未折叠进 Abs 结果
+- 两路径精度不对称的实质是「case 头投影」与「Abs 结果」的落差，而非调用点已精确
 
-**难度：** 低（指令路径接入 for-of 元素分发即可）
+**难度：** 低（把 for-of 条件返回的命中值折叠进 Abs 结果）
 
 ---
 
-### 4.2 嵌套 try-catch 路径联合
+### 4.2 try-catch：确定性 return 已折叠；catch 形参未建模（2026-09 复测）
 
-**问题描述：**
-嵌套的 try-catch 返回所有可能路径的联合，而非最可能的路径。
+**当前行为（2026-09 实测）：**
+try 体是确定性 `return`（无抛点）时静态选支精确——嵌套 try-catch 折叠为
+`"inner" #exact`（catch 分支不可达，不产生路径联合）：
 
-**当前行为：**
 ```javascript
 function nested() {
   try {
@@ -340,15 +345,37 @@ function nested() {
     return "outer-catch";
   }
 }
-// 返回: "inner" | "inner-catch" | "outer-catch"
-// 期望: "inner"（如果能证明内层不会抛异常）
+nested();
+// Case "call@L12": () => "inner"
+// abs: "inner"  #exact
 ```
 
-**分析：**
-- 静态分析无法证明内层 `try` 不会抛异常
-- 返回联合类型是**保守但正确的**行为
+**剩余缺口：** catch 形参未建模。`catch (err)` 里的 `err` 被当作未知内置
+（`nudo:builtin-unknown` 诊断），`err.message` 等成员访问求值为 `unknown`：
 
-**难度：** 高（需要更精确的异常分析）
+```javascript
+function caught() {
+  try {
+    throw new Error("boom");
+  } catch (err) {
+    return err.message;
+  }
+}
+caught();
+// Case "call@L…": () => unknown
+// abs: unknown  #exact
+// [warning] Built-in API "err" is not covered by Nudo's type inference (nudo:builtin-unknown)
+```
+
+注意：catch 形参的 `nudo:builtin-unknown` 诊断在 catch 分支**不可达**时也会触发
+（上面的 `nested()` 的 `catch (e)` 同样报 `e`）——catch 形参绑定本身未建模，
+与分支可达性无关。
+
+已固化为示例门禁：
+[`docs/examples/algebra/k-try-catch.js`](examples/algebra/k-try-catch.js)
+（CI 钉住：`"inner" #exact`、`caught` → `unknown #exact`、`nudo:builtin-unknown`）。
+
+**难度：** 中（catch 形参绑定为 thrown 值的类型）
 
 ---
 
@@ -415,7 +442,7 @@ exit 0，全部 case 精确（`compute` → `25 #exact`）。网站
 | 限制 | 影响 | 方案 |
 |------|------|------|
 | 闭包变量追踪 | 状态管理模式 | 闭包环境扩展 |
-| 嵌套 try-catch 精度 | 错误处理 | 异常分析 |
+| catch 形参绑定（thrown 值类型） | 错误处理 | 异常分析 |
 
 ### P3 - 低影响 / 设计选择
 
@@ -454,7 +481,7 @@ exit 0，全部 case 精确（`compute` → `25 #exact`）。网站
 
 ### 阶段 3：深度改进（1-2 月）
 - [ ] 闭包变量状态追踪
-- [ ] 嵌套异常路径分析
+- [ ] catch 形参绑定（thrown 值类型，见 4.2）
 - [ ] ~~泛型函数支持~~ → 由关系型 Abs / PolyFn.fnRels 承担（非 TS 泛型语法）
 
 ## 八、调用点发现的已知边界（P7 实测，2026-08）

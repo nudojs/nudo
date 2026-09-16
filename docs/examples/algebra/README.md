@@ -16,6 +16,7 @@
 | [`h-array-boundary.js`](./h-array-boundary.js) | 数组方法精度边界：`reduce` / `forEach` 副作用 / `some` 均精确（`15` / `15` / `boolean`） |
 | [`i-map-set.js`](./i-map-set.js) | Map / Set 精度边界：`m.get` 字面量 key → unknown、Set for-of 元素丢失 |
 | [`j-this-binding.js`](./j-this-binding.js) | this 绑定：成员调用把 receiver 注入 thisVal，`compute(5)` → `25 #exact`；顶层裸成员调用不采集为 call@ case |
+| [`k-try-catch.js`](./k-try-catch.js) | try/catch 精度边界：try 体确定性 return 折叠（`"inner" #exact`）；catch 形参未建模（`err` → `nudo:builtin-unknown`，成员访问 unknown） |
 | [`sample.js`](./sample.js) | 最小合集：无调用点 → 全部 `entry@` 回退签名（参数 `unknown`，intension 是 unknown 形参的泛化签名） |
 
 运行命令与期望退出码见 [../README.md](./README.md) 的命令矩阵；`pnpm run verify:examples` 一次验证全部。

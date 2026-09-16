@@ -262,6 +262,10 @@ pin 'pnpm run infer docs/examples/algebra/j-this-binding.js' \
   '(5) => 25' 'abs: 25  #exact' \
   '(3) => 9' 'abs: 9  #exact' \
   'Combined: 25 | 9'
+pin 'pnpm run infer docs/examples/algebra/k-try-catch.js' \
+  'Case "fold": () => "inner"' 'abs: "inner"  #exact' \
+  'Case "caught": () => unknown' 'abs: unknown  #exact' \
+  'Built-in API "err" is not covered' 'nudo:builtin-unknown'
 pin 'pnpm run infer docs/examples/algebra/sample.js' \
   'Case "entry@' '# no call sites found; parameters default to unknown' \
   'add: (a: A1, b: A2) => number | string = (A1 + A2)' \
