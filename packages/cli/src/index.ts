@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { typeValueToString } from "@nudojs/core";
 import { extractDirectives } from "@nudojs/parser";
-import { resetMemo } from "@nudojs/service/evaluator";
 import {
   typeValueToZodSchema,
   generateGuardFunction,
@@ -1025,10 +1024,8 @@ program
       console.clear();
       console.log(`[${new Date().toLocaleTimeString()}] Analyzing (incremental)...\n`);
       const t0 = performance.now();
-      // 缓存失效：callMemo 按名键陈旧 + moduleCache 嵌入旧类型；
-      // 入口 source 未变但 dep 变了时，B-path / AnalysisResult / fn-cache
-      // 键不含 dep 指纹——必须按脏集入口文件定向逐出，否则命中陈旧结果。
-      resetMemo();
+      // 缓存失效：B-path / AnalysisResult / fn-cache 键不含 dep 指纹——
+      // 必须按脏集入口文件定向逐出，否则命中陈旧结果。
       evictAnalysisCachesForFiles(ordered);
       for (const f of ordered) {
         try {

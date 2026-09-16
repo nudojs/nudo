@@ -1,5 +1,6 @@
 import type { Node } from "@babel/types";
 import type { Environment } from "./environment.ts";
+import type { Abs } from "./algebra/abs.ts";
 // 注意：isTemplate 必须来自 template-predicates.ts（只含 `import type` 反向边）
 // 而非 template.ts——后者运行时依赖本模块（T、typeValueToString），会构成环。
 import { isTemplate } from "./refinements/template-predicates.ts";
@@ -13,11 +14,16 @@ export type LiteralValue = string | number | boolean | bigint | null | undefined
 // brand computation needs it); direct calls leave it undefined.
 export type SigImpl = (args: TypeValue[], thisVal?: TypeValue) => TypeValue | undefined;
 
+/** Abs 原生 env/builtin 实现（B-path 优先；无则桥 TypeValue impl） */
+export type AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs | undefined;
+
 export type FunctionSignature = {
   paramTypes: TypeValue[];
   returnType: TypeValue;
   throwsType: TypeValue;
   impl?: SigImpl;
+  /** 无损 Abs 路径（env-to-abs / B-path 不经 absToTypeValue 过桥） */
+  implAbs?: AbsSigImpl;
 };
 
 export type Refinement = {
@@ -103,6 +109,7 @@ export const T = {
     returnType: TypeValue,
     throwsType: TypeValue = { kind: "never" },
     impl?: SigImpl,
+    implAbs?: AbsSigImpl,
   ): TypeValue => {
     const dummy = {
       kind: "function" as const,
@@ -110,7 +117,13 @@ export const T = {
       body: { type: "BlockStatement", body: [], directives: [] } as unknown as Node,
       closure: null as unknown as Environment,
     };
-    (dummy as any)._signature = { paramTypes, returnType, throwsType, impl } satisfies FunctionSignature;
+    (dummy as any)._signature = {
+      paramTypes,
+      returnType,
+      throwsType,
+      impl,
+      ...(implAbs ? { implAbs } : {}),
+    } satisfies FunctionSignature;
     return dummy;
   },
 } as const;
@@ -330,63 +343,6 @@ function isErrorSubclass(child: string, parent: string): boolean {
   return sup ? isErrorSubclass(sup, parent) : false;
 }
 
-export function deepCloneTypeValue(tv: TypeValue, idMap?: Map<symbol, symbol>): TypeValue {
-  const map = idMap ?? new Map<symbol, symbol>();
-  if (tv.kind === "object") {
-    let newId = map.get(tv.id);
-    if (!newId) {
-      newId = Symbol("object");
-      map.set(tv.id, newId);
-    }
-    const newProps: Record<string, TypeValue> = {};
-    for (const [k, v] of Object.entries(tv.properties)) {
-      newProps[k] = deepCloneTypeValue(v, map);
-    }
-    return { kind: "object", properties: newProps, id: newId };
-  }
-  if (tv.kind === "array") {
-    return { kind: "array", element: deepCloneTypeValue(tv.element, map) };
-  }
-  if (tv.kind === "tuple") {
-    return { kind: "tuple", elements: tv.elements.map((e) => deepCloneTypeValue(e, map)) };
-  }
-  if (tv.kind === "promise") {
-    return { kind: "promise", value: deepCloneTypeValue(tv.value, map) };
-  }
-  if (tv.kind === "instance") {
-    const newProps: Record<string, TypeValue> = {};
-    for (const [k, v] of Object.entries(tv.properties)) {
-      newProps[k] = deepCloneTypeValue(v, map);
-    }
-    return { kind: "instance", className: tv.className, properties: newProps };
-  }
-  if (tv.kind === "refined") {
-    return { kind: "refined", base: deepCloneTypeValue(tv.base, map), refinement: tv.refinement };
-  }
-  if (tv.kind === "union") {
-    return simplifyUnion(tv.members.map((m) => deepCloneTypeValue(m, map)));
-  }
-  return tv;
-}
-
-export function mergeObjectProperties(
-  a: TypeValue & { kind: "object" },
-  b: TypeValue & { kind: "object" },
-): TypeValue {
-  const allKeys = new Set([...Object.keys(a.properties), ...Object.keys(b.properties)]);
-  const merged: Record<string, TypeValue> = {};
-  for (const k of allKeys) {
-    const av = a.properties[k];
-    const bv = b.properties[k];
-    if (av && bv) {
-      merged[k] = simplifyUnion([av, bv]);
-    } else {
-      merged[k] = av ?? bv;
-    }
-  }
-  return { kind: "object", properties: merged, id: a.id };
-}
-
 export function typeValueToString(tv: TypeValue): string {
   // Self-referential structures (x.y = x surviving a clone) would recurse
   // infinitely: a seen-set renders revisits as an ellipsis token.
@@ -462,43 +418,6 @@ function typeValueToStringInner(tv: TypeValue, seen: Set<object>, depth = 0): st
     case "unknown":
       return "unknown";
   }
-}
-
-export function narrowType(
-  tv: TypeValue,
-  predicate: (member: TypeValue) => boolean,
-): TypeValue {
-  if (tv.kind === "union") {
-    return simplifyUnion(tv.members.filter(predicate));
-  }
-  return predicate(tv) ? tv : T.never;
-}
-
-export function subtractType(
-  tv: TypeValue,
-  predicate: (member: TypeValue) => boolean,
-): TypeValue {
-  return narrowType(tv, (m) => !predicate(m));
-}
-
-export function getPrimitiveTypeOf(tv: TypeValue): string | undefined {
-  if (tv.kind === "literal") {
-    const v = tv.value;
-    if (v === null) return "object";
-    return typeof v;
-  }
-  if (tv.kind === "primitive") return tv.type;
-  if (tv.kind === "refined") return getPrimitiveTypeOf(tv.base);
-  if (tv.kind === "object") return "object";
-  if (tv.kind === "array" || tv.kind === "tuple") return "object";
-  if (tv.kind === "function") return "function";
-  if (tv.kind === "promise") return "object";
-  if (tv.kind === "instance") return "object";
-  return undefined;
-}
-
-export function getRefinedBase(tv: TypeValue): TypeValue {
-  return tv.kind === "refined" ? getRefinedBase(tv.base) : tv;
 }
 
 export function isFnSig(tv: TypeValue): boolean {

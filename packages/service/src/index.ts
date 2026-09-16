@@ -26,6 +26,8 @@ export {
   type CaseInfo,
   getTypeAtPosition,
   getTypeAtPositionAsync,
+  getAbsAtPosition,
+  getAbsAtPositionAsync,
   getHoverAtPosition,
   type HoverInfo,
   getCompletionsAtPosition,

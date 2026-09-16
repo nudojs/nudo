@@ -1,311 +1,384 @@
-import { type TypeValue, type SigImpl, T } from "@nudojs/core";
+/**
+ * Web env：es globals + Fetch/URL/DOM（Abs 原生）。
+ */
+
+import { type Abs, type AbsSigImpl, litValue, strLit, numLit } from "@nudojs/core";
+import {
+  arrOf,
+  envFn,
+  nullLit,
+  objAbs,
+  promiseOf,
+  undef,
+  unionOf,
+  prim,
+} from "./abs-helpers.ts";
 import { type EnvDefinition, defineEnv as defineEsEnv } from "./es.ts";
 
 export type { EnvDefinition };
 
-function litStr(tv: TypeValue): string | undefined {
-  return tv.kind === "literal" && typeof tv.value === "string" ? tv.value : undefined;
+function absStr(a: Abs | undefined): string | undefined {
+  if (!a) return undefined;
+  const v = litValue(a);
+  return typeof v === "string" ? v : undefined;
 }
 
-function makeURLObj(url: URL): TypeValue {
-  return T.object({
-    href: T.literal(url.href),
-    origin: T.literal(url.origin),
-    protocol: T.literal(url.protocol),
-    username: T.literal(url.username),
-    password: T.literal(url.password),
-    host: T.literal(url.host),
-    hostname: T.literal(url.hostname),
-    port: T.literal(url.port),
-    pathname: T.literal(url.pathname),
-    search: T.literal(url.search),
-    searchParams: T.object({
-      append: T.fnSig([T.string, T.string], T.undefined),
-      delete: T.fnSig([T.string], T.undefined),
-      get: T.fnSig([T.string], T.union(T.string, T.null)),
-      getAll: T.fnSig([T.string], T.array(T.string)),
-      has: T.fnSig([T.string], T.boolean),
-      set: T.fnSig([T.string, T.string], T.undefined),
-      sort: T.fnSig([], T.undefined),
-      toString: T.fnSig([], T.string, T.never, () => T.literal(url.searchParams.toString())),
-      entries: T.fnSig([], T.unknown),
-      keys: T.fnSig([], T.unknown),
-      values: T.fnSig([], T.unknown),
-      forEach: T.fnSig([T.unknown], T.undefined),
-      size: T.literal(url.searchParams.size),
+function makeURLObj(url: URL): Abs {
+  return objAbs({
+    href: strLit(url.href),
+    origin: strLit(url.origin),
+    protocol: strLit(url.protocol),
+    username: strLit(url.username),
+    password: strLit(url.password),
+    host: strLit(url.host),
+    hostname: strLit(url.hostname),
+    port: strLit(url.port),
+    pathname: strLit(url.pathname),
+    search: strLit(url.search),
+    searchParams: objAbs({
+      append: envFn([prim.str(), prim.str()], undef()),
+      delete: envFn([prim.str()], undef()),
+      get: envFn([prim.str()], unionOf(prim.str(), nullLit())),
+      getAll: envFn([prim.str()], arrOf(prim.str())),
+      has: envFn([prim.str()], prim.bool()),
+      set: envFn([prim.str(), prim.str()], undef()),
+      sort: envFn([], undef()),
+      toString: envFn([], prim.str(), () => strLit(url.searchParams.toString())),
+      entries: envFn([], prim.unknown),
+      keys: envFn([], prim.unknown),
+      values: envFn([], prim.unknown),
+      forEach: envFn([prim.unknown], undef()),
+      size: numLit(url.searchParams.size),
     }),
-    hash: T.literal(url.hash),
-    toString: T.fnSig([], T.string, T.never, () => T.literal(url.href)),
-    toJSON: T.fnSig([], T.string, T.never, () => T.literal(url.href)),
+    hash: strLit(url.hash),
+    toString: envFn([], prim.str(), () => strLit(url.href)),
+    toJSON: envFn([], prim.str(), () => strLit(url.href)),
   });
 }
 
 export function defineEnv(): EnvDefinition {
   const esEnv = defineEsEnv();
 
-  const Headers = T.object({
-    append: T.fnSig([T.string, T.string], T.undefined),
-    delete: T.fnSig([T.string], T.undefined),
-    get: T.fnSig([T.string], T.union(T.string, T.null)),
-    has: T.fnSig([T.string], T.boolean),
-    set: T.fnSig([T.string, T.string], T.undefined),
-    forEach: T.fnSig([T.unknown], T.undefined),
-    entries: T.fnSig([], T.unknown),
-    keys: T.fnSig([], T.unknown),
-    values: T.fnSig([], T.unknown),
+  const Headers = objAbs({
+    append: envFn([prim.str(), prim.str()], undef()),
+    delete: envFn([prim.str()], undef()),
+    get: envFn([prim.str()], unionOf(prim.str(), nullLit())),
+    has: envFn([prim.str()], prim.bool()),
+    set: envFn([prim.str(), prim.str()], undef()),
+    forEach: envFn([prim.unknown], undef()),
+    entries: envFn([], prim.unknown),
+    keys: envFn([], prim.unknown),
+    values: envFn([], prim.unknown),
   });
 
-  const Body = {
-    json: T.fnSig([], T.promise(T.unknown)),
-    text: T.fnSig([], T.promise(T.string)),
-    arrayBuffer: T.fnSig([], T.promise(T.unknown)),
-    blob: T.fnSig([], T.promise(T.unknown)),
-    formData: T.fnSig([], T.promise(T.unknown)),
-    clone: T.fnSig([], T.unknown),
-    ok: T.boolean,
-    status: T.number,
-    statusText: T.string,
+  const bodySlots = {
+    json: envFn([], promiseOf(prim.unknown)),
+    text: envFn([], promiseOf(prim.str())),
+    arrayBuffer: envFn([], promiseOf(prim.unknown)),
+    blob: envFn([], promiseOf(prim.unknown)),
+    formData: envFn([], promiseOf(prim.unknown)),
+    clone: envFn([], prim.unknown),
+    ok: prim.bool(),
+    status: prim.num(),
+    statusText: prim.str(),
     headers: Headers,
-    url: T.string,
-    redirected: T.boolean,
-    type: T.string,
-    bodyUsed: T.boolean,
+    url: prim.str(),
+    redirected: prim.bool(),
+    type: prim.str(),
+    bodyUsed: prim.bool(),
   };
 
-  const Response = T.object(Body);
+  const Response = objAbs(bodySlots);
 
-  const Request = T.object({
-    ...Body,
-    method: T.string,
-    url: T.string,
-    headers: Headers,
-    body: T.union(T.unknown, T.null),
-    mode: T.string,
-    credentials: T.string,
-    cache: T.string,
-    redirect: T.string,
-    referrer: T.string,
-    integrity: T.string,
-    signal: T.unknown,
-    clone: T.fnSig([], T.unknown),
+  const Request = objAbs({
+    ...bodySlots,
+    method: prim.str(),
+    url: prim.str(),
+    body: unionOf(prim.unknown, nullLit()),
+    mode: prim.str(),
+    credentials: prim.str(),
+    cache: prim.str(),
+    redirect: prim.str(),
+    referrer: prim.str(),
+    integrity: prim.str(),
+    signal: prim.unknown,
   });
 
-  const URLSearchParams = T.object({
-    append: T.fnSig([T.string, T.string], T.undefined),
-    delete: T.fnSig([T.string], T.undefined),
-    get: T.fnSig([T.string], T.union(T.string, T.null)),
-    getAll: T.fnSig([T.string], T.array(T.string)),
-    has: T.fnSig([T.string], T.boolean),
-    set: T.fnSig([T.string, T.string], T.undefined),
-    sort: T.fnSig([], T.undefined),
-    toString: T.fnSig([], T.string),
-    entries: T.fnSig([], T.unknown),
-    keys: T.fnSig([], T.unknown),
-    values: T.fnSig([], T.unknown),
-    forEach: T.fnSig([T.unknown], T.undefined),
-    size: T.number,
+  const URLSearchParams = objAbs({
+    append: envFn([prim.str(), prim.str()], undef()),
+    delete: envFn([prim.str()], undef()),
+    get: envFn([prim.str()], unionOf(prim.str(), nullLit())),
+    getAll: envFn([prim.str()], arrOf(prim.str())),
+    has: envFn([prim.str()], prim.bool()),
+    set: envFn([prim.str(), prim.str()], undef()),
+    sort: envFn([], undef()),
+    toString: envFn([], prim.str()),
+    entries: envFn([], prim.unknown),
+    keys: envFn([], prim.unknown),
+    values: envFn([], prim.unknown),
+    forEach: envFn([prim.unknown], undef()),
+    size: prim.num(),
   });
 
-  const URLObj = T.object({
-    href: T.string,
-    origin: T.string,
-    protocol: T.string,
-    username: T.string,
-    password: T.string,
-    host: T.string,
-    hostname: T.string,
-    port: T.string,
-    pathname: T.string,
-    search: T.string,
+  const URLObj = objAbs({
+    href: prim.str(),
+    origin: prim.str(),
+    protocol: prim.str(),
+    username: prim.str(),
+    password: prim.str(),
+    host: prim.str(),
+    hostname: prim.str(),
+    port: prim.str(),
+    pathname: prim.str(),
+    search: prim.str(),
     searchParams: URLSearchParams,
-    hash: T.string,
-    toString: T.fnSig([], T.string),
-    toJSON: T.fnSig([], T.string),
+    hash: prim.str(),
+    toString: envFn([], prim.str()),
+    toJSON: envFn([], prim.str()),
   });
 
-  const AbortController = T.object({
-    signal: T.unknown,
-    abort: T.fnSig([], T.undefined),
+  const AbortController = objAbs({
+    signal: prim.unknown,
+    abort: envFn([], undef()),
   });
 
-  const Storage = T.object({
-    getItem: T.fnSig([T.string], T.union(T.string, T.null)),
-    setItem: T.fnSig([T.string, T.string], T.undefined),
-    removeItem: T.fnSig([T.string], T.undefined),
-    clear: T.fnSig([], T.undefined),
-    key: T.fnSig([T.number], T.union(T.string, T.null)),
-    length: T.number,
+  const Storage = objAbs({
+    getItem: envFn([prim.str()], unionOf(prim.str(), nullLit())),
+    setItem: envFn([prim.str(), prim.str()], undef()),
+    removeItem: envFn([prim.str()], undef()),
+    clear: envFn([], undef()),
+    key: envFn([prim.num()], unionOf(prim.str(), nullLit())),
+    length: prim.num(),
   });
 
-  const EventTarget = T.object({
-    addEventListener: T.fnSig([T.string, T.unknown], T.undefined),
-    removeEventListener: T.fnSig([T.string, T.unknown], T.undefined),
-    dispatchEvent: T.fnSig([T.unknown], T.boolean),
+  const EventTarget = objAbs({
+    addEventListener: envFn([prim.str(), prim.unknown], undef()),
+    removeEventListener: envFn([prim.str(), prim.unknown], undef()),
+    dispatchEvent: envFn([prim.unknown], prim.bool()),
   });
 
-  const webGlobals: Record<string, TypeValue> = {
-    // --- Fetch API ---
-    fetch: T.fnSig([T.union(T.string, Request)], T.promise(Response)),
-    Request: T.fnSig([T.string, T.unknown], Request),
-    Response: T.object({
-      json: T.fnSig([T.unknown], Response),
-      redirect: T.fnSig([T.string, T.number], Response),
-      error: T.fnSig([], Response),
-    }),
-    Headers: T.fnSig([T.unknown], Headers),
+  const atobImpl: AbsSigImpl = (args) => {
+    const v = args[0] ? litValue(args[0]) : undefined;
+    if (typeof v !== "string") return undefined;
+    try {
+      return strLit(atob(v));
+    } catch {
+      return undefined;
+    }
+  };
+  const btoaImpl: AbsSigImpl = (args) => {
+    const v = args[0] ? litValue(args[0]) : undefined;
+    if (typeof v !== "string") return undefined;
+    try {
+      return strLit(btoa(v));
+    } catch {
+      return undefined;
+    }
+  };
 
-    // --- URL ---
-    URL: T.fnSig([T.string, T.string], URLObj, T.instanceOf("TypeError"), (args) => {
-      const href = litStr(args[0]);
-      const base = args[1] !== undefined ? litStr(args[1]) : undefined;
-      if (href === undefined) return undefined;
-      try {
-        const url = base !== undefined ? new URL(href, base) : new URL(href);
-        return makeURLObj(url);
-      } catch { return undefined; }
-    }),
-    URLSearchParams: T.fnSig([T.unknown], URLSearchParams),
+  const urlCtorImpl: AbsSigImpl = (args) => {
+    const href = absStr(args[0]);
+    const base = args[1] !== undefined ? absStr(args[1]) : undefined;
+    if (href === undefined) return undefined;
+    try {
+      const url = base !== undefined ? new URL(href, base) : new URL(href);
+      return makeURLObj(url);
+    } catch {
+      return undefined;
+    }
+  };
 
-    // --- Timers ---
-    setTimeout: T.fnSig([T.unknown, T.number], T.number),
-    setInterval: T.fnSig([T.unknown, T.number], T.number),
-    clearTimeout: T.fnSig([T.number], T.undefined),
-    clearInterval: T.fnSig([T.number], T.undefined),
-    queueMicrotask: T.fnSig([T.unknown], T.undefined),
-    requestAnimationFrame: T.fnSig([T.unknown], T.number),
-    cancelAnimationFrame: T.fnSig([T.number], T.undefined),
+  const webGlobals: Record<string, Abs> = {
+    fetch: envFn([unionOf(prim.str(), Request)], promiseOf(Response)),
+    Request: envFn([prim.str(), prim.unknown], Request),
+    Response: objAbs({
+      json: envFn([prim.unknown], Response),
+      redirect: envFn([prim.str(), prim.num()], Response),
+      error: envFn([], Response),
+    }),
+    Headers: envFn([prim.unknown], Headers),
 
-    // --- Abort ---
-    AbortController: T.fnSig([], AbortController),
-    AbortSignal: T.object({
-      abort: T.fnSig([], T.unknown),
-      timeout: T.fnSig([T.number], T.unknown),
+    URL: envFn([prim.str(), prim.str()], URLObj, urlCtorImpl),
+    URLSearchParams: envFn([prim.unknown], URLSearchParams),
+
+    setTimeout: envFn([prim.unknown, prim.num()], prim.num()),
+    setInterval: envFn([prim.unknown, prim.num()], prim.num()),
+    clearTimeout: envFn([prim.num()], undef()),
+    clearInterval: envFn([prim.num()], undef()),
+    queueMicrotask: envFn([prim.unknown], undef()),
+    requestAnimationFrame: envFn([prim.unknown], prim.num()),
+    cancelAnimationFrame: envFn([prim.num()], undef()),
+
+    AbortController: envFn([], AbortController),
+    AbortSignal: objAbs({
+      abort: envFn([], prim.unknown),
+      timeout: envFn([prim.num()], prim.unknown),
     }),
 
-    // --- Encoding ---
-    atob: T.fnSig([T.string], T.string, T.never, (args) => {
-      const s = litStr(args[0]);
-      if (s === undefined) return undefined;
-      try { return T.literal(atob(s)); } catch { return undefined; }
-    }),
-    btoa: T.fnSig([T.string], T.string, T.never, (args) => {
-      const s = litStr(args[0]);
-      if (s === undefined) return undefined;
-      try { return T.literal(btoa(s)); } catch { return undefined; }
-    }),
-    TextEncoder: T.fnSig([], T.object({
-      encode: T.fnSig([T.string], T.unknown),
-      encodeInto: T.fnSig([T.string, T.unknown], T.unknown),
-    })),
-    TextDecoder: T.fnSig([T.string], T.object({
-      decode: T.fnSig([T.unknown], T.string),
-      encoding: T.string,
-      fatal: T.boolean,
-      ignoreBOM: T.boolean,
-    })),
+    atob: envFn([prim.str()], prim.str(), atobImpl),
+    btoa: envFn([prim.str()], prim.str(), btoaImpl),
+    TextEncoder: envFn(
+      [],
+      objAbs({
+        encode: envFn([prim.str()], prim.unknown),
+        encodeInto: envFn([prim.str(), prim.unknown], prim.unknown),
+      }),
+    ),
+    TextDecoder: envFn(
+      [prim.str()],
+      objAbs({
+        decode: envFn([prim.unknown], prim.str()),
+        encoding: prim.str(),
+        fatal: prim.bool(),
+        ignoreBOM: prim.bool(),
+      }),
+    ),
 
-    // --- Storage ---
     localStorage: Storage,
     sessionStorage: Storage,
 
-    // --- DOM (minimal) ---
-    document: T.object({
-      getElementById: T.fnSig([T.string], T.union(T.unknown, T.null)),
-      querySelector: T.fnSig([T.string], T.union(T.unknown, T.null)),
-      querySelectorAll: T.fnSig([T.string], T.unknown),
-      createElement: T.fnSig([T.string], T.unknown),
-      createTextNode: T.fnSig([T.string], T.unknown),
-      body: T.unknown,
-      head: T.unknown,
-      documentElement: T.unknown,
-      title: T.string,
-      cookie: T.string,
-      readyState: T.string,
-      addEventListener: T.fnSig([T.string, T.unknown], T.undefined),
-      removeEventListener: T.fnSig([T.string, T.unknown], T.undefined),
+    document: objAbs({
+      getElementById: envFn(
+        [prim.str()],
+        unionOf(prim.unknown, nullLit()),
+      ),
+      querySelector: envFn(
+        [prim.str()],
+        unionOf(prim.unknown, nullLit()),
+      ),
+      querySelectorAll: envFn([prim.str()], prim.unknown),
+      createElement: envFn([prim.str()], prim.unknown),
+      createTextNode: envFn([prim.str()], prim.unknown),
+      body: prim.unknown,
+      head: prim.unknown,
+      documentElement: prim.unknown,
+      title: prim.str(),
+      cookie: prim.str(),
+      readyState: prim.str(),
+      addEventListener: envFn([prim.str(), prim.unknown], undef()),
+      removeEventListener: envFn([prim.str(), prim.unknown], undef()),
     }),
 
-    // --- Window ---
-    window: T.unknown,
-    self: T.unknown,
-    navigator: T.object({
-      userAgent: T.string,
-      language: T.string,
-      languages: T.array(T.string),
-      onLine: T.boolean,
-      platform: T.string,
-      clipboard: T.object({
-        readText: T.fnSig([], T.promise(T.string)),
-        writeText: T.fnSig([T.string], T.promise(T.undefined)),
+    window: prim.unknown,
+    self: prim.unknown,
+    navigator: objAbs({
+      userAgent: prim.str(),
+      language: prim.str(),
+      languages: arrOf(prim.str()),
+      onLine: prim.bool(),
+      platform: prim.str(),
+      clipboard: objAbs({
+        readText: envFn([], promiseOf(prim.str())),
+        writeText: envFn([prim.str()], promiseOf(undef())),
       }),
     }),
-    location: T.object({
-      href: T.string,
-      origin: T.string,
-      protocol: T.string,
-      host: T.string,
-      hostname: T.string,
-      port: T.string,
-      pathname: T.string,
-      search: T.string,
-      hash: T.string,
-      assign: T.fnSig([T.string], T.undefined),
-      replace: T.fnSig([T.string], T.undefined),
-      reload: T.fnSig([], T.undefined),
+    location: objAbs({
+      href: prim.str(),
+      origin: prim.str(),
+      protocol: prim.str(),
+      host: prim.str(),
+      hostname: prim.str(),
+      port: prim.str(),
+      pathname: prim.str(),
+      search: prim.str(),
+      hash: prim.str(),
+      assign: envFn([prim.str()], undef()),
+      replace: envFn([prim.str()], undef()),
+      reload: envFn([], undef()),
     }),
-    history: T.object({
-      length: T.number,
-      state: T.unknown,
-      back: T.fnSig([], T.undefined),
-      forward: T.fnSig([], T.undefined),
-      go: T.fnSig([T.number], T.undefined),
-      pushState: T.fnSig([T.unknown, T.string, T.string], T.undefined),
-      replaceState: T.fnSig([T.unknown, T.string, T.string], T.undefined),
-    }),
-
-    // --- Events ---
-    EventTarget: T.fnSig([], EventTarget),
-    Event: T.fnSig([T.string, T.unknown], T.object({
-      type: T.string,
-      target: T.union(T.unknown, T.null),
-      currentTarget: T.union(T.unknown, T.null),
-      bubbles: T.boolean,
-      cancelable: T.boolean,
-      defaultPrevented: T.boolean,
-      preventDefault: T.fnSig([], T.undefined),
-      stopPropagation: T.fnSig([], T.undefined),
-      stopImmediatePropagation: T.fnSig([], T.undefined),
-    })),
-    CustomEvent: T.fnSig([T.string, T.unknown], T.unknown),
-
-    // --- Structured clone ---
-    structuredClone: T.fnSig([T.unknown], T.unknown),
-
-    // --- Performance ---
-    performance: T.object({
-      now: T.fnSig([], T.number),
-      mark: T.fnSig([T.string], T.undefined),
-      measure: T.fnSig([T.string, T.string, T.string], T.unknown),
-      getEntriesByName: T.fnSig([T.string], T.array(T.unknown)),
-      getEntriesByType: T.fnSig([T.string], T.array(T.unknown)),
-      clearMarks: T.fnSig([], T.undefined),
-      clearMeasures: T.fnSig([], T.undefined),
-      timeOrigin: T.number,
+    history: objAbs({
+      length: prim.num(),
+      state: prim.unknown,
+      back: envFn([], undef()),
+      forward: envFn([], undef()),
+      go: envFn([prim.num()], undef()),
+      pushState: envFn(
+        [prim.unknown, prim.str(), prim.str()],
+        undef(),
+      ),
+      replaceState: envFn(
+        [prim.unknown, prim.str(), prim.str()],
+        undef(),
+      ),
     }),
 
-    // --- Crypto ---
-    crypto: T.object({
-      randomUUID: T.fnSig([], T.string),
-      getRandomValues: T.fnSig([T.unknown], T.unknown),
-      subtle: T.object({
-        digest: T.fnSig([T.string, T.unknown], T.promise(T.unknown)),
-        encrypt: T.fnSig([T.unknown, T.unknown, T.unknown], T.promise(T.unknown)),
-        decrypt: T.fnSig([T.unknown, T.unknown, T.unknown], T.promise(T.unknown)),
-        sign: T.fnSig([T.unknown, T.unknown, T.unknown], T.promise(T.unknown)),
-        verify: T.fnSig([T.unknown, T.unknown, T.unknown, T.unknown], T.promise(T.boolean)),
-        generateKey: T.fnSig([T.unknown, T.boolean, T.array(T.string)], T.promise(T.unknown)),
-        importKey: T.fnSig([T.string, T.unknown, T.unknown, T.boolean, T.array(T.string)], T.promise(T.unknown)),
-        exportKey: T.fnSig([T.string, T.unknown], T.promise(T.unknown)),
+    EventTarget: envFn([], EventTarget),
+    Event: envFn(
+      [prim.str(), prim.unknown],
+      objAbs({
+        type: prim.str(),
+        target: unionOf(prim.unknown, nullLit()),
+        currentTarget: unionOf(prim.unknown, nullLit()),
+        bubbles: prim.bool(),
+        cancelable: prim.bool(),
+        defaultPrevented: prim.bool(),
+        preventDefault: envFn([], undef()),
+        stopPropagation: envFn([], undef()),
+        stopImmediatePropagation: envFn([], undef()),
+      }),
+    ),
+    CustomEvent: envFn([prim.str(), prim.unknown], prim.unknown),
+
+    structuredClone: envFn([prim.unknown], prim.unknown),
+
+    performance: objAbs({
+      now: envFn([], prim.num()),
+      mark: envFn([prim.str()], undef()),
+      measure: envFn([prim.str(), prim.str(), prim.str()], prim.unknown),
+      getEntriesByName: envFn([prim.str()], arrOf(prim.unknown)),
+      getEntriesByType: envFn([prim.str()], arrOf(prim.unknown)),
+      clearMarks: envFn([], undef()),
+      clearMeasures: envFn([], undef()),
+      timeOrigin: prim.num(),
+    }),
+
+    crypto: objAbs({
+      randomUUID: envFn([], prim.str()),
+      getRandomValues: envFn([prim.unknown], prim.unknown),
+      subtle: objAbs({
+        digest: envFn(
+          [prim.str(), prim.unknown],
+          promiseOf(prim.unknown),
+        ),
+        encrypt: envFn(
+          [prim.unknown, prim.unknown, prim.unknown],
+          promiseOf(prim.unknown),
+        ),
+        decrypt: envFn(
+          [prim.unknown, prim.unknown, prim.unknown],
+          promiseOf(prim.unknown),
+        ),
+        sign: envFn(
+          [prim.unknown, prim.unknown, prim.unknown],
+          promiseOf(prim.unknown),
+        ),
+        verify: envFn(
+          [
+            prim.unknown,
+            prim.unknown,
+            prim.unknown,
+            prim.unknown,
+          ],
+          promiseOf(prim.bool()),
+        ),
+        generateKey: envFn(
+          [prim.unknown, prim.bool(), arrOf(prim.str())],
+          promiseOf(prim.unknown),
+        ),
+        importKey: envFn(
+          [
+            prim.str(),
+            prim.unknown,
+            prim.unknown,
+            prim.bool(),
+            arrOf(prim.str()),
+          ],
+          promiseOf(prim.unknown),
+        ),
+        exportKey: envFn(
+          [prim.str(), prim.unknown],
+          promiseOf(prim.unknown),
+        ),
       }),
     }),
   };

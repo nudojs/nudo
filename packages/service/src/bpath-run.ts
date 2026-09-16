@@ -27,7 +27,6 @@ import {
 import { parse, extractInlineDirectives } from "@nudojs/parser";
 import { loadEnvs } from "./evaluator/evaluator-api.ts";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
-import { envValueToAbs } from "./env-to-abs.ts";
 import { clearAnalysisFileCache } from "./analysis-file-cache.ts";
 import { clearFnAnalysisCache } from "./fn-analysis-cache.ts";
 
@@ -85,39 +84,30 @@ export function mockSeedFingerprint(
   return hashSource(parts.join(";"));
 }
 
-/** @nudo:env → Abs 全局表（保留 fnSig impl） */
+/** @nudo:env → Abs 全局表（env 模块 Abs 原生） */
 export function collectEnvGlobals(envNames: string[]): Record<string, Abs> {
   if (envNames.length === 0) return {};
   const env = createEnvironment();
   try {
-    loadEnvs(envNames, env);
+    return { ...loadEnvs(envNames, env).globals };
   } catch {
     return {};
   }
-  const out: Record<string, Abs> = {};
-  for (const [k, v] of Object.entries(env.getOwnBindings())) {
-    out[k] = envValueToAbs(v);
-  }
-  return out;
 }
 
 /** @nudo:env modules（path / node:path / fs…）→ AbsModuleExports */
 export function collectEnvModules(envNames: string[]): Record<string, AbsModuleExports> {
   if (envNames.length === 0) return {};
   const env = createEnvironment();
-  let mods: Record<string, Record<string, import("@nudojs/core").TypeValue>> = {};
+  let mods: Record<string, Record<string, Abs>> = {};
   try {
     mods = loadEnvs(envNames, env).modules;
   } catch {
     return {};
   }
   const out: Record<string, AbsModuleExports> = {};
-  for (const [spec, exports] of Object.entries(mods)) {
-    const named: Record<string, Abs> = {};
-    for (const [k, v] of Object.entries(exports)) {
-      named[k] = envValueToAbs(v);
-    }
-    out[spec] = { named };
+  for (const [spec, named] of Object.entries(mods)) {
+    out[spec] = { named: { ...named } };
   }
   return out;
 }

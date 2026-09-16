@@ -13,6 +13,7 @@ export {
   type Refinement,
   type FunctionSignature,
   type SigImpl,
+  type AbsSigImpl,
   T,
   typeValueEquals,
   simplifyUnion,
@@ -20,18 +21,9 @@ export {
   collapseLiteralUnion,
   isSubtypeOf,
   typeValueToString,
-  narrowType,
-  subtractType,
-  getPrimitiveTypeOf,
-  getRefinedBase,
-  deepCloneTypeValue,
-  mergeObjectProperties,
   isFnSig,
   getFnSig,
 } from "./type-value.ts";
-
-/** 外延二元/一元运算：代数未覆盖的语言表面（/ % === typeof 等） */
-export { Ops, applyBinaryOp, dispatchBinaryOp, dispatchMethod, dispatchProperty } from "./ops.ts";
 
 export {
   type Environment,
@@ -57,7 +49,6 @@ export {
   stub,
   spy,
   mock,
-  mockHelperToTypeValue,
 } from "./mock-helpers.ts";
 
 export { stripTypes } from "./strip-types.ts";

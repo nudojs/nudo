@@ -2,8 +2,9 @@
  * LSP 表面（hover / 补全 / 用例枚举）——自 analyzer.ts 拆出的展示层。
  *
  * 这里只做「光标位置 → 类型」的查询与渲染：
- * - getTypeAtPosition / getHoverAtPosition：B 路径 Abs 节点表优先，
- *   用例函数体内回退 TypeValue + activeCases 重放；
+ * - getTypeAtPosition / getHoverAtPosition：B 路径 Abs 节点表优先；
+ *   用例函数体内走 Abs 重放（activeCases 选中 case + evalSource），
+ *   失败才 TypeValue evaluateFunctionFull 兜底；
  * - getCompletionsAtPosition 及补全辅助（builtinMemberType 微求值、
  *   array/promise/string/union 成员补全）——内置成员唯一真值来源是
  *   evaluator 的 BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS；
@@ -11,15 +12,17 @@
  *
  * 分析编排（diagnostics / case 求值 / 调用记录）仍在 analyzer.ts；
  * 依赖的共享 helpers（resolveModule / locFromNode / collectEnvNames /
- * buildNodeTypeMap）由 analyzer 显式导出。纯迁移，零行为变化。
+ * buildNodeTypeMap）由 analyzer 显式导出。
  */
 import { dirname } from "node:path";
 import type { Node } from "@babel/types";
 import traverse from "@babel/traverse";
 import {
   type TypeValue,
+  type Abs,
   type Environment,
   typeValueToString,
+  typeValueToAbs,
   createEnvironment,
   generalizeFromAst,
   formatAbs,
@@ -28,21 +31,12 @@ import {
   collectAbsNodeTypes,
   findAbsAtPosition,
   absToTypeValue,
+  evalSource,
+  setAbsNodeCollector,
 } from "@nudojs/core";
 import { parse, extractDirectives, extractFileDirectives } from "@nudojs/parser";
 import type { FunctionWithDirectives } from "@nudojs/parser";
 import {
-  evaluate,
-  evaluateFunctionFull,
-  evaluateProgram,
-  setModuleResolver,
-  setCurrentFileDir,
-  setCurrentSource,
-  resetMemo,
-  resetEnvModules,
-  resetMockModules,
-  setEnvModules,
-  setNodeTypeCollector,
   loadEnvs,
   preloadPathEnvs,
   BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS,
@@ -92,6 +86,21 @@ export async function getTypeAtPositionAsync(
   return getTypeAtPosition(filePath, source, line, column, activeCases);
 }
 
+/** Async entry to getAbsAtPosition（与 getTypeAtPositionAsync 同预加载口径） */
+export async function getAbsAtPositionAsync(
+  filePath: string,
+  source: string,
+  line: number,
+  column: number,
+  activeCases?: Map<string, number>,
+): Promise<Abs | null> {
+  const envNames = collectEnvNames(filePath, source, false);
+  if (envNames.length > 0) {
+    await preloadPathEnvs(envNames, dirname(filePath));
+  }
+  return getAbsAtPosition(filePath, source, line, column, activeCases);
+}
+
 /** 光标是否落在带 @nudo:case 的函数体内（该区域 hover/inlay 须走 TypeValue + activeCases）。 */
 function positionInsideCaseFunction(
   source: string,
@@ -106,6 +115,134 @@ function positionInsideCaseFunction(
   }
 }
 
+/**
+ * B-path 节点表 / 标识符绑定上的无损 Abs（不经 TypeValue）。
+ * 用例函数体内返回 null——那里走 case Abs 重放（见 absFromCaseReplay）。
+ */
+function absFromBPath(
+  filePath: string,
+  source: string,
+  line: number,
+  column: number,
+  ast: ReturnType<typeof parse>,
+  envNames: string[],
+): Abs | null {
+  if (!isBPathCapable(source, envNames)) return null;
+  if (positionInsideCaseFunction(source, ast, line)) return null;
+  try {
+    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast));
+    const { modules } = evalAbsModuleGraph(source, filePath);
+    const absNodes = collectAbsNodeTypes(source, {
+      ...seeds,
+      modules,
+      file: ast as never,
+    });
+    const absAt = findAbsAtPosition(absNodes, line, column);
+    if (absAt) return absAt;
+    const ident = findIdentNameAtPosition(source, line, column, ast);
+    if (ident) {
+      const binds = collectAbsBindingsFromGraph(source, filePath, {
+        seedVars: seeds.seedVars,
+        seedFns: seeds.seedFns as never,
+      });
+      const bound = binds.get(ident);
+      if (bound) return bound;
+    }
+  } catch {
+    /* fall through */
+  }
+  return null;
+}
+
+/**
+ * 用例函数体内的 Abs 重放（T17）：按 activeCases 选中的 case 实参跑
+ * evalSource + 节点收集，光标处取无损 Abs。不经 TypeValue evaluateFunctionFull。
+ * 失败/空表 → undefined，调用方落 TypeValue 兜底。
+ */
+function absFromCaseReplay(
+  filePath: string,
+  source: string,
+  line: number,
+  column: number,
+  ast: ReturnType<typeof parse>,
+  activeCases?: Map<string, number>,
+): Abs | null {
+  const functions = extractDirectives(ast);
+  const enclosingFn = findEnclosingFunction(functions, line);
+  if (!enclosingFn) return null;
+  const caseDirectives = enclosingFn.directives.filter((d) => d.kind === "case");
+  if (caseDirectives.length === 0) return null;
+  const caseIndex = activeCases?.get(enclosingFn.name) ?? 0;
+  const directive = caseDirectives[Math.min(caseIndex, caseDirectives.length - 1)];
+
+  // 约束表达式 argsAbs 主路径
+  const caseArgs: Abs[] = directive.argsAbs;
+
+  const map = new Map<Node, Abs>();
+  setAbsNodeCollector((node, value) => map.set(node, value));
+  try {
+    const seeds = mockDirectivesToAbsSeeds(functions);
+    let modules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined;
+    try {
+      modules = evalAbsModuleGraph(source, filePath).modules;
+    } catch {
+      modules = undefined;
+    }
+    evalSource(
+      source,
+      { fn: enclosingFn.name, args: caseArgs },
+      {
+        file: ast as never,
+        modules,
+        seedVars: seeds.seedVars,
+        seedFns: seeds.seedFns as never,
+      },
+    );
+  } catch {
+    /* 重放失败 → TypeValue 兜底 */
+  } finally {
+    setAbsNodeCollector(null);
+  }
+  if (map.size === 0) return null;
+  return findAbsAtPosition(map, line, column) ?? null;
+}
+
+function safeTypeValueToAbs(tv: TypeValue): Abs {
+  try {
+    return typeValueToAbs(tv);
+  } catch {
+    return { shape: { k: "unknown" }, conf: "opaque" };
+  }
+}
+
+/**
+ * 光标处无损 Abs。B-path 节点表优先；用例函数体走 Abs 重放。
+ * TypeValue evaluateProgram 已删除——无 Abs 时返回 null。
+ */
+export function getAbsAtPosition(
+  filePath: string,
+  source: string,
+  line: number,
+  column: number,
+  activeCases?: Map<string, number>,
+): Abs | null {
+  const ast = parse(source);
+  const envNames = extractFileDirectives(ast)
+    .filter((d) => d.kind === "env")
+    .flatMap((d) => d.envs);
+
+  const fromB = absFromBPath(filePath, source, line, column, ast, envNames);
+  if (fromB) return fromB;
+
+  // 用例函数体：按 activeCases 选中 case 做 Abs 重放（不经 TypeValue）
+  if (positionInsideCaseFunction(source, ast, line)) {
+    const fromCase = absFromCaseReplay(filePath, source, line, column, ast, activeCases);
+    if (fromCase) return fromCase;
+  }
+
+  return null;
+}
+
 export function getTypeAtPosition(
   filePath: string,
   source: string,
@@ -113,87 +250,9 @@ export function getTypeAtPosition(
   column: number,
   activeCases?: Map<string, number>,
 ): TypeValue | null {
-  const ast = parse(source);
-  const fileDirectives = extractFileDirectives(ast);
-  const envNames = fileDirectives
-    .filter((d) => d.kind === "env")
-    .flatMap((d) => d.envs);
-
-  // B 路径 capable：节点表来自 evalProgramAbs（模块图注入），不跑 TypeValue evaluateProgram。
-  // 用例函数体内除外：那里的权威类型是 activeCases 选中的用例实参重放。
-  if (
-    isBPathCapable(source, envNames) &&
-    !positionInsideCaseFunction(source, ast, line)
-  ) {
-    try {
-      const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast));
-      const { modules } = evalAbsModuleGraph(source, filePath);
-      const absNodes = collectAbsNodeTypes(source, {
-        ...seeds,
-        modules,
-        file: ast as never,
-      });
-      const absAt = findAbsAtPosition(absNodes, line, column);
-      if (absAt) return absToTypeValue(absAt);
-      // 标识符绑定兜底
-      const ident = findIdentNameAtPosition(source, line, column, ast);
-      if (ident) {
-        const binds = collectAbsBindingsFromGraph(source, filePath, {
-          seedVars: seeds.seedVars,
-          seedFns: seeds.seedFns as never,
-        });
-        const bound = binds.get(ident);
-        if (bound) return absToTypeValue(bound);
-      }
-    } catch {
-      /* fall through to TypeValue */
-    }
-  }
-
-  resetMemo();
-  resetEnvModules();
-  setModuleResolver(resolveModule);
-  setCurrentFileDir(dirname(filePath));
-  setCurrentSource(source);
-
-  const globalEnv = createEnvironment();
-
-  {
-    const loaded = envNames.length > 0 ? loadEnvs(envNames, globalEnv) : { modules: {} };
-    const auto = autoHarvestModules(source, dirname(filePath));
-    const modules = { ...loaded.modules, ...auto };
-    if (Object.keys(modules).length > 0) setEnvModules(modules);
-  }
-
-  evaluateProgram(ast, globalEnv);
-
-  const nodeTypeMap = new Map<Node, TypeValue>();
-  buildNodeTypeMap(ast, globalEnv, nodeTypeMap);
-
-  const functions = extractDirectives(ast);
-  const enclosingFn = findEnclosingFunction(functions, line);
-
-  if (enclosingFn) {
-    const caseDirectives = enclosingFn.directives.filter((d) => d.kind === "case");
-    if (caseDirectives.length > 0) {
-      const caseIndex = activeCases?.get(enclosingFn.name) ?? 0;
-      const directive = caseDirectives[Math.min(caseIndex, caseDirectives.length - 1)];
-
-      const fnNodeTypeMap = new Map<Node, TypeValue>();
-      setNodeTypeCollector((node, tv) => fnNodeTypeMap.set(node, tv));
-      evaluateFunctionFull(enclosingFn.node, directive.args, globalEnv);
-      setNodeTypeCollector(null);
-
-      for (const [node, tv] of fnNodeTypeMap) {
-        nodeTypeMap.set(node, tv);
-      }
-    }
-  }
-
-  setModuleResolver(null);
-  resetEnvModules();
-  resetMockModules();
-  return findBestTypeAtPosition(nodeTypeMap, globalEnv, ast, line, column);
+  // TypeValue evaluateProgram/evaluateFunctionFull 已删除：统一走 Abs 再 bridge
+  const absVal = getAbsAtPosition(filePath, source, line, column, activeCases);
+  return absVal ? absToTypeValue(absVal) : null;
 }
 
 export type HoverInfo = {
@@ -263,45 +322,49 @@ export function getHoverAtPosition(
   };
 
   // B 路径：优先 Abs 节点表 / 标识符绑定，不经 TypeValue evaluateProgram。
-  // 光标落在带 @nudo:case 的函数体内时交给 TypeValue：那里按 activeCases
-  // 重放用例实参；B 路径节点表来自调用点求值，会盖住用例切换。
+  // 用例函数体内：Abs 重放 selected case（activeCases），再 TypeValue 兜底。
   const insideCaseFn = positionInsideCaseFunction(
     source,
     file ?? parse(source),
     line,
   );
 
-  if (isBPathCapable(source, envNames) && !insideCaseFn) {
-    try {
-      const seeds = mockDirectivesToAbsSeeds(extractDirectives(file ?? parse(source)));
-      const { modules } = evalAbsModuleGraph(source, filePath);
-      const absNodes = collectAbsNodeTypes(source, {
-        ...seeds,
-        modules,
-        ...(file ? { file: file as never } : {}),
-      });
-      const absAt = findAbsAtPosition(absNodes, line, column);
-      const ident = findIdentNameAtPosition(source, line, column, file);
-      if (ident && !fnName) {
-        const binds = collectAbsBindingsFromGraph(source, filePath, {
-          seedVars: seeds.seedVars,
-          seedFns: seeds.seedFns as never,
-        });
-        const bound = binds.get(ident);
-        if (bound) {
-          const absLine = formatAbs(bound);
-          const absMulti = formatAbsMultiline(bound, ident);
-          return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
-        }
-      }
-      if (absAt) {
-        const absLine = formatAbs(absAt);
-        const absMulti = formatAbsMultiline(absAt, undefined);
-        return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
-      }
-    } catch {
-      /* fall through */
+  if (!insideCaseFn) {
+    const fromB = absFromBPath(
+      filePath,
+      source,
+      line,
+      column,
+      file ?? parse(source),
+      envNames,
+    );
+    if (fromB) {
+      const absLine = formatAbs(fromB);
+      const absMulti = formatAbsMultiline(fromB, undefined);
+      return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
     }
+  } else {
+    const fromCase = absFromCaseReplay(
+      filePath,
+      source,
+      line,
+      column,
+      file ?? parse(source),
+      activeCases,
+    );
+    if (fromCase) {
+      const absLine = formatAbs(fromCase);
+      const absMulti = formatAbsMultiline(fromCase, undefined);
+      return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
+    }
+  }
+
+  // Abs 兜底（含 case 重放失败后的 TypeValue 桥）
+  const absFallback = getAbsAtPosition(filePath, source, line, column, activeCases);
+  if (absFallback) {
+    const absLine = formatAbs(absFallback);
+    const absMulti = formatAbsMultiline(absFallback, undefined);
+    return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
   }
 
   const tv = getTypeAtPosition(filePath, source, line, column, activeCases);
@@ -532,23 +595,25 @@ export function getCompletionsAtPosition(
     }
   }
 
-  resetMemo();
-  setModuleResolver(resolveModule);
-  setCurrentFileDir(dirname(filePath));
-
-  const globalEnv = createEnvironment();
-  evaluateProgram(ast, globalEnv);
-
-  if (!globalEnv.has(objName)) {
-    setModuleResolver(null);
-    return [];
+  // Abs 接收者优先：模块图绑定无损，不经 TypeValue evaluateProgram。
+  // 空结果（unknown/never/fn 无属性）再落 TypeValue 兜底。
+  try {
+    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast));
+    const binds = collectAbsBindingsFromGraph(source, filePath, {
+      seedVars: seeds.seedVars,
+      seedFns: seeds.seedFns as never,
+    });
+    const bound = binds.get(objName);
+    if (bound && bound.shape.k !== "unknown" && bound.shape.k !== "never") {
+      const absCompletions = getCompletionsForAbs(bound);
+      if (absCompletions.length > 0) return absCompletions;
+    }
+  } catch {
+    /* fall through */
   }
 
-  const objType = globalEnv.lookup(objName);
-  const completions = getCompletionsForType(objType);
-
-  setModuleResolver(null);
-  return completions;
+  // TypeValue evaluateProgram 已删除：无 Abs 接收者 → 空
+  return [];
 }
 
 function sanitizeSourceForParsing(source: string): string {
@@ -563,43 +628,43 @@ function getTextBeforePosition(source: string, line: number, column: number): st
 
 function getVariableCompletions(filePath: string, source: string): CompletionItem[] {
   const ast = parse(source);
-  resetMemo();
-  setModuleResolver(resolveModule);
-  setCurrentFileDir(dirname(filePath));
 
-  const globalEnv = createEnvironment();
-  evaluateProgram(ast, globalEnv);
-
-  const ownBindings = globalEnv.getOwnBindings();
-  const completions: CompletionItem[] = [];
-  for (const [name, tv] of Object.entries(ownBindings)) {
-    if (name.startsWith("__export_")) continue;
-    completions.push({
-      label: name,
-      kind: tv.kind === "function" ? "method" : "variable",
-      detail: typeValueToString(tv),
+  // Abs 模块图绑定优先（无损；detail 经外延桥保持既有文案）
+  try {
+    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast));
+    const binds = collectAbsBindingsFromGraph(source, filePath, {
+      seedVars: seeds.seedVars,
+      seedFns: seeds.seedFns as never,
     });
+    if (binds.size > 0) {
+      const completions: CompletionItem[] = [];
+      for (const [name, absVal] of binds) {
+        if (name.startsWith("__export_")) continue;
+        completions.push({
+          label: name,
+          kind: absVal.shape.k === "fn" ? "method" : "variable",
+          detail: absDetail(absVal),
+        });
+      }
+      if (completions.length > 0) return completions;
+    }
+  } catch {
+    /* fall through */
   }
 
-  setModuleResolver(null);
-  return completions;
+  // TypeValue evaluateProgram 已删除：无 Abs 绑定时返回空
+  return [];
 }
 
 /**
- * 内置成员的真实签名：把「<类>.prototype.<成员>」交给 evaluator 微求值。
- * 这是唯一真值来源（与诊断/求值同表——BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS），
- * 不在补全侧另建平行类型系统。evaluate 直接返回 TypeValue（或 return/throw
- * 控制标记，此处到不了）；无 kind 的结果一律视为不可用返回 null 由调用方回退。
- * 微求值受 evaluator 全局态（当前 env、resolver）影响，仅用于补全展示。
+ * 内置成员签名：直接读 BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS（唯一真值），
+ * 不经 TypeValue evaluate 微求值。
  */
-function builtinMemberType(memberExpr: string): TypeValue | null {
-  try {
-    const result: unknown = evaluate(parse(`${memberExpr};`), createEnvironment());
-    if (!result || typeof result !== "object" || !("kind" in result)) return null;
-    return result as TypeValue;
-  } catch {
-    return null;
-  }
+function builtinMemberType(className: string, member: string): TypeValue | null {
+  const table = BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS[className];
+  if (!table) return null;
+  const tv = table[member];
+  return tv ?? null;
 }
 
 /**
@@ -635,7 +700,7 @@ function describeMember(label: string, tv: TypeValue | null, fallbackClass: stri
 function getArrayCompletions(tv: TypeValue): CompletionItem[] {
   const completions: CompletionItem[] = [];
   for (const m of builtinProtoMembers("Array")) {
-    const detail = describeMember(m, builtinMemberType(`Array.prototype.${m}`), "Array");
+    const detail = describeMember(m, builtinMemberType("Array", m), "Array");
     completions.push({ label: m, kind: "method", detail });
   }
   completions.push({
@@ -651,7 +716,7 @@ function getPromiseCompletions(): CompletionItem[] {
   return builtinProtoMembers("Promise").map((m) => ({
     label: m,
     kind: "method" as const,
-    detail: describeMember(m, builtinMemberType(`Promise.prototype.${m}`), "Promise"),
+    detail: describeMember(m, builtinMemberType("Promise", m), "Promise"),
   }));
 }
 
@@ -661,7 +726,7 @@ function getStringCompletions(): CompletionItem[] {
     completions.push({
       label: m,
       kind: "method",
-      detail: describeMember(m, builtinMemberType(`"s".${m}`), "String"),
+      detail: describeMember(m, builtinMemberType("String", m), "String"),
     });
   }
   completions.push({ label: "length", kind: "property", detail: "number" });
@@ -748,5 +813,107 @@ function getCompletionsForType(tv: TypeValue): CompletionItem[] {
   }
 
   return completions;
+}
+
+// ---------------------------------------------------------------------------
+// Abs 接收者补全（TypeValue 退出主路径）
+// ---------------------------------------------------------------------------
+
+/** Abs → 补全 detail：经 TypeValue 桥保持与既有展示口径一致（"1" / "number"） */
+function absDetail(a: Abs): string {
+  try {
+    return typeValueToString(absToTypeValue(a));
+  } catch {
+    return formatAbs(a);
+  }
+}
+
+function absIsFn(a: Abs): boolean {
+  return a.shape.k === "fn";
+}
+
+/** Abs 接收者的成员补全；空数组表示该形态无可派生成员（调用方可回退） */
+function getCompletionsForAbs(a: Abs): CompletionItem[] {
+  const s = a.shape;
+  switch (s.k) {
+    case "obj": {
+      const completions: CompletionItem[] = [];
+      for (const [key, slot] of Object.entries(s.slots)) {
+        completions.push({
+          label: key,
+          kind: absIsFn(slot.value) ? "method" : "property",
+          detail: absDetail(slot.value),
+        });
+      }
+      return completions;
+    }
+    case "brand":
+      return getCompletionsForAbs(s.shape);
+    case "sum":
+      return getSumCompletions(s.members);
+    case "tuple":
+      // 仅 exact 定长元组走 Abs（字面量数组）；path 元组（filter 等仍挂
+      // 定长形状）回退 TypeValue——那里 filter 结果已 widen 成 array，
+      // length 显示 number，避免假精确。
+      if (a.conf === "exact") return getArrayCompletionsAbs(s.elements.length);
+      return [];
+    case "arr":
+      return getArrayCompletionsAbs(undefined);
+    case "eff":
+      if (s.eff === "promise") return getPromiseCompletions();
+      return [];
+    case "prim":
+      if (s.type === "string") return getStringCompletions();
+      return [];
+    default:
+      // fn / never / unknown / any：无属性面
+      return [];
+  }
+}
+
+function getArrayCompletionsAbs(tupleLen?: number): CompletionItem[] {
+  const completions: CompletionItem[] = [];
+  for (const m of builtinProtoMembers("Array")) {
+    const detail = describeMember(m, builtinMemberType("Array", m), "Array");
+    completions.push({ label: m, kind: "method", detail });
+  }
+  completions.push({
+    label: "length",
+    kind: "property",
+    detail: tupleLen !== undefined ? `${tupleLen}` : "number",
+  });
+  return completions;
+}
+
+/**
+ * sum 接收者：各成员补全取交集（与 getUnionCompletions 同口径），
+ * detail 为各成员该键类型字符串的并集渲染。
+ */
+function getSumCompletions(members: Abs[]): CompletionItem[] {
+  if (members.length === 0) return [];
+  const labelsByMember = members.map((m) => getCompletionsForAbs(m));
+  const baseIdx = labelsByMember.findIndex((labels) => labels.length > 0);
+  if (baseIdx === -1) return [];
+
+  const common: CompletionItem[] = [];
+  for (const base of labelsByMember[baseIdx]!) {
+    let allPresent = true;
+    const memberTypes: string[] = [base.detail ?? base.label];
+    for (let i = 0; i < members.length; i++) {
+      if (i === baseIdx) continue;
+      const labels = labelsByMember[i]!;
+      if (labels.length === 0) continue;
+      const hit = labels.find((l) => l.label === base.label);
+      if (!hit) {
+        allPresent = false;
+        break;
+      }
+      memberTypes.push(hit.detail ?? hit.label);
+    }
+    if (allPresent) {
+      common.push({ ...base, detail: memberTypes.join(" | ") });
+    }
+  }
+  return common;
 }
 

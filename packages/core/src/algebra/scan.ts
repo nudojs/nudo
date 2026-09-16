@@ -1599,13 +1599,18 @@ export function scanLiteralCalls(
 // ---------------------------------------------------------------------------
 
 /**
- * 注入记录的最小结构面（service CallRecord 的成员子集——core 不反向依赖
- * service 的 CallRecord 声明，按结构兼容接收）。
+ * 注入记录的最小结构面。Abs 为主（TypeValue 退出后真理源）；
+ * argTypes 等外延字段仅兼容旧调用方，证据提取不再依赖。
  */
 export type InjectedDomainRecord = {
-  argTypes: TypeValue[];
-  resultType: TypeValue;
-  throws: TypeValue;
+  /** 无损参数 Abs（必填；domain 证据唯一来源） */
+  argAbs?: Abs[];
+  resultAbs?: Abs;
+  throwsAbs?: Abs;
+  /** @deprecated 外延兼容；证据提取已不读 */
+  argTypes?: TypeValue[];
+  resultType?: TypeValue;
+  throws?: TypeValue;
 };
 
 export type InjectedDomainEvidenceOpts = {
@@ -1635,14 +1640,15 @@ function evidenceToString(v: number | string | boolean): string {
  * 证据门槛（§6）：
  * - 只有 plain literal 实参构成证据：union/unknown/primitive/refined 形态
  *   无法归因到确定值，不参与（widened/partial conf 经 absToTypeValue 投影
- *   为非 literal 形态，天然被此条排除；getTvConfidence 再兜一道底）；
+ *   为非 literal 形态，天然被此条排除；getTvConfidence 再兜一道底）。
+ *   **Abs 路径优先**：`argAbs[i]` 有无损 Abs 时直接读 `litValue` + conf
+ *   ∈ {exact, path}，不经 TypeValue 桥；
  * - null 证据预过滤（T4 caveat：lit(null) 编码 prim undefined + eq(self,
  *   null)，对任何约束恒不满足，不过滤必 FP）；undefined/bigint/symbol
  *   不在字面量证据域内，一并跳过；
  * - resultType=never ∧ throws=never 是求值中断泄漏（analyzer 注入消费区
- *   同款过滤）。CallRecord 上没有截断字段（查证于 evaluator.ts CallRecord
- *   声明：fnName/argTypes/resultType/throws/callLoc/targetModule/
- *   targetExport/targetAliases/fnModule 十项，无截断标记）——递归截断走
+ *   同款过滤；有 resultAbs/throwsAbs 时同口径）。CallRecord 上没有截断字段
+ *   （查证于 evaluator.ts CallRecord 声明）——递归截断走
  *   nudo:recursion-truncated 诊断通道且只 widen 结果，不产生新字面量证据；
  * - fn/shape/array 参数位 Phase 1 不执法（§3.3 HOF 豁免：
  *   literalMeetsConstraint 对这些形态恒 false，直接查必 FP）。
@@ -1655,9 +1661,13 @@ export function checkInjectedDomainEvidence(
   records: InjectedDomainRecord[],
   opts: InjectedDomainEvidenceOpts,
 ): CheckIssue[] {
-  const usable = records.filter(
-    (r) => !(r.resultType?.kind === "never" && r.throws?.kind === "never"),
-  );
+  const isLeaked = (r: InjectedDomainRecord): boolean => {
+    if (r.resultAbs && r.throwsAbs) {
+      return r.resultAbs.shape.k === "never" && r.throwsAbs.shape.k === "never";
+    }
+    return r.resultType?.kind === "never" && r.throws?.kind === "never";
+  };
+  const usable = records.filter((r) => !isLeaked(r));
   if (usable.length === 0) return [];
 
   let ei: EffectiveInterface | undefined;
@@ -1691,19 +1701,9 @@ export function checkInjectedDomainEvidence(
     if (idx < 0) continue;
     const failures: Array<number | string | boolean> = [];
     for (const rec of usable) {
-      const arg = rec.argTypes[idx];
-      if (!arg || arg.kind !== "literal") continue;
-      const v = arg.value;
-      if (
-        typeof v !== "number" &&
-        typeof v !== "string" &&
-        typeof v !== "boolean"
-      ) {
-        continue;
-      }
-      const conf = getTvConfidence(arg);
-      if (conf !== undefined && conf !== "exact" && conf !== "path") continue;
-      if (!literalMeetsConstraint(v, constraint)) failures.push(v);
+      const lit = extractLiteralEvidence(rec, idx);
+      if (lit === undefined) continue;
+      if (!literalMeetsConstraint(lit, constraint)) failures.push(lit);
     }
     if (failures.length === 0) continue;
     const shown = [...new Set(failures)].map(evidenceToString).join(", ");
@@ -1720,4 +1720,33 @@ export function checkInjectedDomainEvidence(
     });
   }
   return out;
+}
+
+/**
+ * 单条记录在参数位 idx 的字面量证据。
+ * Abs 为主（无损 lit + conf 门槛）；无 argAbs 时回退 TypeValue literal。
+ * 非字面量 / conf 门槛不过 / null·undefined·bigint·symbol → undefined。
+ */
+function extractLiteralEvidence(
+  rec: InjectedDomainRecord,
+  idx: number,
+): number | string | boolean | undefined {
+  const absArg = rec.argAbs?.[idx];
+  if (absArg) {
+    if (absArg.conf !== "exact" && absArg.conf !== "path") return undefined;
+    const lv = litValue(absArg);
+    if (typeof lv === "number" || typeof lv === "string" || typeof lv === "boolean") {
+      return lv;
+    }
+    return undefined;
+  }
+  const arg = rec.argTypes?.[idx];
+  if (!arg || arg.kind !== "literal") return undefined;
+  const v = arg.value;
+  if (typeof v !== "number" && typeof v !== "string" && typeof v !== "boolean") {
+    return undefined;
+  }
+  const conf = getTvConfidence(arg);
+  if (conf !== undefined && conf !== "exact" && conf !== "path") return undefined;
+  return v;
 }

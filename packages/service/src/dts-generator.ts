@@ -1,6 +1,16 @@
-import type { TypeValue } from "@nudojs/core";
-import { T, isTemplate, getTemplateParts, simplifyUnion, typeValueEquals, getFnSig } from "@nudojs/core";
-import type { AnalysisResult, FunctionAnalysis } from "./analyzer.ts";
+import type { TypeValue, Abs } from "@nudojs/core";
+import {
+  isTemplate,
+  getTemplateParts,
+  getFnSig,
+  typeValueToAbs,
+  joinAbs,
+  litValue,
+  abs as makeAbs,
+  isTemplateLike,
+  templatePartsOf,
+} from "@nudojs/core";
+import type { AnalysisResult, CaseResult, FunctionAnalysis } from "./analyzer.ts";
 
 export function typeValueToTSType(tv: TypeValue): string {
   switch (tv.kind) {
@@ -65,6 +75,236 @@ function wrapComplexType(tv: TypeValue): string {
   return ts;
 }
 
+// ---------------------------------------------------------------------------
+// Abs → TS（dts 主路径）
+//
+// design-refine-derivation §12.1：`.d.ts` 优先源是 refine / Abs，不再经
+// absToTypeValue 再打印。TypeValue 仅作 Case: JSDoc 行的精确展示，以及
+// FunctionAnalysis 尚未挂 Abs 时的桥接源。
+//
+// widen 策略从旧 TypeValue 路径平移（参数逆变 / 返回协变），语义不变：
+//   - 参数位：结构内字面量与收窄 pred 剥到基类型；同构元组 → array
+//   - 返回位：仅顶层（含 sum 成员）标量字面量 → 基类型，嵌套精度保留
+// ---------------------------------------------------------------------------
+
+function wrapComplexAbs(a: Abs): string {
+  const ts = absToTSType(a);
+  if (a.shape.k === "sum") return `(${ts})`;
+  return ts;
+}
+
+/** Abs → TS 类型串。有损：pred / 非 lit term 落到 shape 基类型。 */
+export function absToTSType(a: Abs): string {
+  if (a.term?.op === "lit") {
+    const v = a.term.value;
+    if (v === null) return "null";
+    if (v === undefined) return "undefined";
+    if (a.shape.k === "prim") {
+      if (typeof v === "string") return JSON.stringify(v);
+      if (typeof v === "boolean") return String(v);
+      if (typeof v === "number") return String(v);
+    }
+  }
+
+  // 模板串：prim(string) + template pred
+  if (a.shape.k === "prim" && a.shape.type === "string" && isTemplateLike(a)) {
+    const parts = templatePartsOf(a);
+    const inner = parts
+      .map((p) => {
+        const lv = litValue(p);
+        if (typeof lv === "string") return lv;
+        return `\${${absToTSType(p)}}`;
+      })
+      .join("");
+    return `\`${inner}\``;
+  }
+
+  switch (a.shape.k) {
+    case "never":
+      return "never";
+    case "unknown":
+    case "any":
+      return "unknown";
+    case "prim":
+      return a.shape.type;
+    case "obj": {
+      const entries = Object.entries(a.shape.slots).map(([k, slot]) => {
+        // optional 槽与 TypeValue 桥接出口径一致：`k: T | undefined`，不用 `k?:`
+        const inner = absToTSType(slot.value);
+        if (slot.optional) {
+          const t = slot.value.shape.k === "sum" ? `(${inner})` : inner;
+          return `${k}: ${t} | undefined`;
+        }
+        return `${k}: ${inner}`;
+      });
+      if (entries.length === 0) return "{}";
+      return `{ ${entries.join("; ")} }`;
+    }
+    case "arr":
+      return `${wrapComplexAbs(a.shape.element)}[]`;
+    case "tuple": {
+      const inner = a.shape.elements.map(absToTSType).join(", ");
+      return `[${inner}]`;
+    }
+    case "fn": {
+      const params = a.shape.params.map((p) => `${p}: unknown`).join(", ");
+      const ret = a.shape.returnType ? absToTSType(a.shape.returnType) : "unknown";
+      return `(${params}) => ${ret}`;
+    }
+    case "brand":
+      return a.shape.name;
+    case "eff":
+      if (a.shape.eff === "promise") return `Promise<${absToTSType(a.shape.inner)}>`;
+      return absToTSType(a.shape.inner);
+    case "sum":
+      return a.shape.members.map(absToTSType).join(" | ");
+    default:
+      return "unknown";
+  }
+}
+
+function safeTypeValueToAbs(tv: TypeValue): Abs {
+  try {
+    return typeValueToAbs(tv);
+  } catch {
+    return makeAbs({ k: "unknown" }, undefined, undefined, "opaque");
+  }
+}
+
+/** case 在参数位 i 的 Abs：优先 argAbs，否则桥 TypeValue args */
+function caseArgAbs(c: CaseResult, i: number): Abs | undefined {
+  if (c.argAbs && i < c.argAbs.length && c.argAbs[i]) return c.argAbs[i]!;
+  if (i < c.args.length && c.args[i] !== undefined) return safeTypeValueToAbs(c.args[i]!);
+  return undefined;
+}
+
+/** case 结果 Abs：优先 c.abs，否则桥 TypeValue result */
+function caseResultAbs(c: CaseResult): Abs | undefined {
+  if (c.abs) return c.abs;
+  try {
+    return typeValueToAbs(c.result);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 参数位（逆变）递归 widen：字面量/收窄 pred → 基类型，结构递归。
+ * 同构元组 → array；null/undefined/never/unknown/fn 保持。
+ */
+function widenParamAbs(a: Abs): Abs {
+  const s = a.shape;
+  switch (s.k) {
+    case "prim":
+      return makeAbs(s, undefined, undefined, "exact");
+    case "tuple": {
+      const widened = s.elements.map(widenParamAbs);
+      const first = widened[0];
+      if (
+        first &&
+        widened.length > 0 &&
+        widened.every((el) => absToTSType(el) === absToTSType(first))
+      ) {
+        return makeAbs({ k: "arr", element: first }, undefined, undefined, "exact");
+      }
+      return makeAbs({ k: "tuple", elements: widened }, undefined, undefined, "exact");
+    }
+    case "arr":
+      return makeAbs({ k: "arr", element: widenParamAbs(s.element) }, undefined, undefined, "exact");
+    case "obj": {
+      const slots: Record<string, { value: Abs; optional?: boolean }> = {};
+      for (const [k, slot] of Object.entries(s.slots)) {
+        slots[k] = {
+          value: widenParamAbs(slot.value),
+          ...(slot.optional ? { optional: true } : {}),
+        };
+      }
+      return makeAbs({ k: "obj", slots }, undefined, undefined, "exact");
+    }
+    case "eff":
+      return makeAbs(
+        { k: "eff", eff: s.eff, inner: widenParamAbs(s.inner) },
+        undefined,
+        undefined,
+        "exact",
+      );
+    case "brand":
+      return makeAbs(
+        { k: "brand", name: s.name, shape: widenParamAbs(s.shape) },
+        undefined,
+        undefined,
+        "exact",
+      );
+    case "sum":
+      return makeAbs(
+        { k: "sum", members: s.members.map(widenParamAbs) },
+        undefined,
+        undefined,
+        "exact",
+      );
+    default:
+      return a;
+  }
+}
+
+/** 返回位（协变）：仅顶层（含 sum 成员）标量字面量 → 基类型，嵌套精度保留 */
+function widenTopLevelAbs(a: Abs): Abs {
+  if (a.shape.k === "sum") {
+    return makeAbs(
+      { k: "sum", members: a.shape.members.map(widenTopLevelAbs) },
+      undefined,
+      undefined,
+      a.conf,
+    );
+  }
+  return widenLiteralToPrimAbs(a);
+}
+
+function widenLiteralToPrimAbs(a: Abs): Abs {
+  if (a.term?.op === "lit" && a.term.value === null) return a;
+  if (a.term?.op === "lit" && a.term.value === undefined) return a;
+  if (a.term?.op === "lit" && a.shape.k === "prim") {
+    const v = a.term.value;
+    if (
+      typeof v === "number" ||
+      typeof v === "string" ||
+      typeof v === "boolean" ||
+      typeof v === "bigint"
+    ) {
+      return makeAbs(a.shape, undefined, undefined, a.conf);
+    }
+  }
+  return a;
+}
+
+/** 同参数位多 case 的 Abs join + 逆变 widen → TS 串 */
+function paramTypeFromAbs(members: Abs[]): string {
+  if (members.length === 0) return "unknown";
+  let joined: Abs;
+  try {
+    joined = members.reduce((a, b) => joinAbs(a, b));
+  } catch {
+    joined = members[0]!;
+  }
+  return absToTSType(widenParamAbs(joined));
+}
+
+/** 返回位 Abs：combinedAbs 优先，否则 join case 结果 Abs，再桥 combined */
+function returnAbsOf(fn: FunctionAnalysis): Abs | undefined {
+  if (fn.combinedAbs) return fn.combinedAbs;
+  const results = fn.cases.map(caseResultAbs).filter((a): a is Abs => a !== undefined);
+  if (results.length > 0 && results.length === fn.cases.length) {
+    try {
+      return results.reduce((a, b) => joinAbs(a, b));
+    } catch {
+      /* fall through */
+    }
+  }
+  if (fn.combined) return safeTypeValueToAbs(fn.combined);
+  if (results.length > 0) return results[0];
+  return undefined;
+}
+
 function getParamName(fn: FunctionAnalysis, index: number): string {
   if (fn.paramNames && fn.paramNames[index]) {
     return fn.paramNames[index];
@@ -73,7 +313,7 @@ function getParamName(fn: FunctionAnalysis, index: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Widening —— 主签名语义
+// Widening —— 主签名语义（注释保留自 TypeValue 路径；实现已在 Abs 侧）
 //
 // case 形状携带字面量精度（10、"Alice"、true、[1,2,3]、{ id: 1 }），但
 // .d.ts 是调用面而非 case 台账：按 case 生成重载时 `safeSqrt(arg0: 10): 10`
@@ -98,87 +338,7 @@ function getParamName(fn: FunctionAnalysis, index: number): string {
 // 返回值位是协变位，收窄只会让调用方拿到更精确的类型、不会拦截调用，
 // 维持现状：仅顶层（含 union 成员）标量字面量 widen，嵌套精度保留
 // （Promise<42>、返回元组字面量等）。
-//
-// 就地实现而不复用 core 的 widenLiteral：①本路径不依赖 core 侧并行改动的
-// 落地时序；②core 版本把 bigint 字面量映射到 unknown，不符合此处语义。
 // ---------------------------------------------------------------------------
-function widenLiteralToBase(tv: TypeValue): TypeValue {
-  if (tv.kind !== "literal") return tv;
-  const v = tv.value;
-  if (typeof v === "number") return T.number;
-  if (typeof v === "string") return T.string;
-  if (typeof v === "boolean") return T.boolean;
-  if (typeof v === "bigint") return T.bigint;
-  return tv;
-}
-
-/** 返回值位（协变）：仅顶层标量字面量 widen，嵌套精度保留 */
-function widenTopLevel(tv: TypeValue): TypeValue {
-  if (tv.kind !== "union") return widenLiteralToBase(tv);
-  return simplifyUnion(tv.members.map(widenLiteralToBase));
-}
-
-function widenProperties(properties: Record<string, TypeValue>): Record<string, TypeValue> {
-  const out: Record<string, TypeValue> = {};
-  for (const [k, v] of Object.entries(properties)) out[k] = widenParamType(v);
-  return out;
-}
-
-/** 参数位（逆变）递归 widen：结构内的字面量精度一律放宽到基类型 */
-function widenParamType(tv: TypeValue): TypeValue {
-  switch (tv.kind) {
-    case "literal":
-      return widenLiteralToBase(tv);
-    case "union":
-      return simplifyUnion(tv.members.map(widenParamType));
-    case "tuple": {
-      const widened = tv.elements.map(widenParamType);
-      const first = widened[0];
-      if (first && widened.every((el) => typeValueEquals(el, first))) {
-        return T.array(first);
-      }
-      return T.tuple(widened);
-    }
-    case "array":
-      return T.array(widenParamType(tv.element));
-    case "object":
-      return T.object(widenProperties(tv.properties));
-    case "promise":
-      return T.promise(widenParamType(tv.value));
-    case "instance":
-      return T.instanceOf(tv.className, widenProperties(tv.properties));
-    case "refined":
-      return widenParamType(tv.base);
-    default:
-      return tv;
-  }
-}
-
-/**
- * 各 case 在同一参数位的类型 → 拍平、递归 widen、去重后的单一 TypeValue。
- * 去重以 TS 渲染串为键：TypeValue 的对象/元组相等性是引用比较，两个同形
- * 的 widened 对象（如各 case 的 { id: number }）不去重会渲染成重复成员。
- */
-function widenedUnion(members: TypeValue[]): TypeValue {
-  const flat: TypeValue[] = [];
-  const collect = (tv: TypeValue): void => {
-    if (tv.kind === "union") {
-      tv.members.forEach(collect);
-      return;
-    }
-    flat.push(tv);
-  };
-  members.forEach(collect);
-  const widened = flat.map(widenParamType);
-  const seen = new Set<string>();
-  const deduped = widened.filter((tv) => {
-    const key = typeValueToTSType(tv);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  return simplifyUnion(deduped);
-}
 
 type MainSignature = {
   /** 渲染后的参数声明（含 `?` / `...rest`），如 `["x: number", "y?: string"]` */
@@ -199,10 +359,13 @@ function computeMainSignature(fn: FunctionAnalysis): MainSignature {
   const paramTypes: string[] = [];
   const usedNames = new Set<string>();
   for (let i = 0; i < arity; i++) {
-    const members = fn.cases
-      .filter((c) => i < c.args.length)
-      .map((c) => c.args[i]);
-    const typeStr = typeValueToTSType(widenedUnion(members));
+    const members: Abs[] = [];
+    for (const c of fn.cases) {
+      if (i >= c.args.length) continue;
+      const a = caseArgAbs(c, i);
+      if (a) members.push(a);
+    }
+    const typeStr = paramTypeFromAbs(members);
     let name = getParamName(fn, i);
     if (usedNames.has(name)) {
       // 解构/模式参数在 AST 提取时都叫 "_"；单一签名里重名会让 .d.ts
@@ -218,8 +381,10 @@ function computeMainSignature(fn: FunctionAnalysis): MainSignature {
     paramNames.push(name);
     paramTypes.push(typeStr);
   }
-  const combined = fn.combined ?? simplifyUnion(fn.cases.map((c) => c.result));
-  const returnType = typeValueToTSType(widenTopLevel(combined));
+  const retAbs = returnAbsOf(fn);
+  const returnType = retAbs
+    ? absToTSType(widenTopLevelAbs(retAbs))
+    : "unknown";
   return { params, paramNames, paramTypes, returnType };
 }
 
@@ -234,6 +399,7 @@ function generateJSDoc(fn: FunctionAnalysis, sig: MainSignature): string {
   // case，逐 case 重载会让声明面爆炸；② throwing case 的 `: never` 重载对
   // 调用方是陷阱（对 never 取属性/运算直接报错）；③ 字面量精度由下面的
   // Case: 行完整保留。与主签名同形的 case（无信息损失）不罗列。
+  // Case: 行仍走 TypeValue 精确展示（字面量台账），不参与主签名计算。
   for (const c of fn.cases) {
     const preciseDiffers =
       c.args.length !== sig.paramTypes.length ||
@@ -264,6 +430,12 @@ export function generateFunctionDtsLines(fn: FunctionAnalysis): string[] {
   if (fn.cases.length === 0) {
     // skipped / entryOnly / 无 case 函数：只有声明或 combined 返回类型已知，
     // 保持历史行为——rest-args 形式，combined（含 Promise<T>）原样输出。
+    const retAbs = fn.combinedAbs;
+    if (retAbs) {
+      return [
+        `export declare function ${fn.name}(...args: unknown[]): ${absToTSType(retAbs)};`,
+      ];
+    }
     if (fn.combined) {
       return [
         `export declare function ${fn.name}(...args: unknown[]): ${typeValueToTSType(fn.combined)};`,

@@ -68,4 +68,30 @@ export function id(x) { return x; }
     const { result } = analyze(src);
     expect(result.nodeTypeMap.size).toBeGreaterThan(0);
   });
+
+  it("Abs host fill: nodeAbsMap + BindingInfo.abs even without B hosted", () => {
+    const src = `const n = 1 + 2;
+export function id(x) { return x; }
+`;
+    const { result } = analyze(src);
+    // BindingInfo 携带无损 Abs
+    const n = result.bindings.get("n");
+    expect(n?.abs).toBeDefined();
+    // 节点表 Abs（与 TypeValue nodeTypeMap 并存）
+    expect(result.nodeAbsMap).toBeDefined();
+    expect(result.nodeAbsMap!.size).toBeGreaterThan(0);
+  });
+
+  it("constraint case grammar still fills case Abs via TypeValue fallback", () => {
+    const src = `
+/**
+ * @nudo:case "n" (number())
+ */
+export function double(x) { return x * 2; }
+`;
+    const { result } = analyze(src);
+    const fn = result.functions.find((f) => f.name === "double");
+    expect(fn?.cases[0]?.argAbs).toBeDefined();
+    expect(fn?.cases[0]?.abs).toBeDefined();
+  });
 });

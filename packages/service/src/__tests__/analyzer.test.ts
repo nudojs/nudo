@@ -478,9 +478,9 @@ module.exports = { formatName, shout };
     const dir = mkdtempSync(join(tmpdir(), "nudo-cs-"));
     try {
       const libPath = join(dir, "util.js");
-      writeFileSync(libPath, "function double(n) { return n * 2; }\nmodule.exports = { double };\n");
+      writeFileSync(libPath, "export function double(n) { return n * 2; }\n");
       const testPath = join(dir, "test.js");
-      writeFileSync(testPath, "const { double } = require('./util.js');\nconst r = double(21);\n");
+      writeFileSync(testPath, 'import { double } from "./util.js";\nconst r = double(21);\n');
       const records = collectCallRecords(testPath, readFileSync(testPath, "utf-8"));
       const double = records.find((r) => r.targetExport === "double");
       expect(double).toBeDefined();
@@ -663,9 +663,10 @@ describe("getCompletionsAtPosition", () => {
   });
 
   // 来源：IDE 深度批次——union 接收者的 dot 补全不再返回空
+  // Abs：同 key 集对象 join 会字段合并；异 key 集保持 sum（与 TypeValue union 同形）
   it("completes only members common to every union member, with per-member type detail", () => {
     const source = [
-      `const a = { x: 1, m() { return 1; } };`,
+      `const a = { x: 1, y: 9 };`,
       `const b = { x: 2 };`,
       `const u = Math.random() > 0.5 ? a : b;`,
       `u.x;`,
@@ -673,8 +674,8 @@ describe("getCompletionsAtPosition", () => {
     const completions = getCompletionsAtPosition("/test/union.js", source, 4, 2);
     const names = completions.map((c) => c.label);
     expect(names).toContain("x");
-    // m 只存在于一个成员：非公共成员不得出现在补全里
-    expect(names).not.toContain("m");
+    // y 只存在于 a：非公共成员不得出现在补全里
+    expect(names).not.toContain("y");
     // detail 是各成员上该成员类型的并集渲染
     const x = completions.find((c) => c.label === "x");
     expect(x?.kind).toBe("property");

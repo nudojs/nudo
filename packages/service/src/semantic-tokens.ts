@@ -1,14 +1,7 @@
 import { dirname } from "node:path";
 import type { Node } from "@babel/types";
-import { createEnvironment, type Environment } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
-import {
-  evaluateProgram,
-  setModuleResolver,
-  setCurrentFileDir,
-  resetMemo,
-} from "./evaluator/evaluator-api.ts";
-import { resolveModule } from "./analyzer.ts";
+import { collectAbsBindingsFromGraph } from "./abs-modules-graph.ts";
 
 /**
  * Semantic tokens 图例（tokenTypes 下标即 LSP 编码里的 tokenType 值）。
@@ -73,6 +66,26 @@ const TYPE_METHOD = SEMANTIC_TOKEN_TYPES.indexOf("method");
 const MOD_DECLARATION = 1 << SEMANTIC_TOKEN_MODIFIERS.indexOf("declaration");
 
 /**
+ * 顶层绑定中「函数值」名集合。
+ * Abs 模块图（shape.k === "fn"）；TypeValue evaluateProgram 已删除。
+ */
+function collectFunctionBindingNames(filePath: string, source: string, _ast: Node): Set<string> {
+  try {
+    const binds = collectAbsBindingsFromGraph(source, filePath);
+    if (binds.size > 0) {
+      const fns = new Set<string>();
+      for (const [name, a] of binds) {
+        if (a.shape.k === "fn") fns.add(name);
+      }
+      return fns;
+    }
+  } catch {
+    /* fall through */
+  }
+  return new Set();
+}
+
+/**
  * 从源码提取 semantic tokens 并按 LSP 相对编码返回扁平 number[]。
  *
  * 上色范围（声明位优先，未解析的 token 一律不上色）：
@@ -81,8 +94,8 @@ const MOD_DECLARATION = 1 << SEMANTIC_TOKEN_MODIFIERS.indexOf("declaration");
  * - 函数声明/函数表达式的名字 → function；所有函数的参数 → parameter；
  * - 对象字面量的键：值为函数 → method，否则 property。
  *
- * 推断复用 evaluateProgram 的绑定分析（与补全/诊断同一求值链），不另建
- * 符号体系；解析失败返回 []，求值中断则按已绑定的部分结果继续上色。
+ * 推断优先 Abs 模块图绑定（TypeValue 退出主路径）；失败时复用
+ * evaluateProgram。解析失败返回 []。
  */
 export function buildSemanticTokens(filePath: string, source: string): number[] {
   let ast: Node;
@@ -92,21 +105,9 @@ export function buildSemanticTokens(filePath: string, source: string): number[] 
     return [];
   }
 
-  const env = createEnvironment();
-  resetMemo();
-  setModuleResolver(resolveModule);
-  setCurrentFileDir(dirname(filePath));
-  try {
-    evaluateProgram(ast, env);
-  } catch {
-    // 求值中断（如未支持语法）：尽力而为，用已落进 env 的绑定继续上色
-  } finally {
-    setModuleResolver(null);
-  }
+  const functionNames = collectFunctionBindingNames(filePath, source, ast);
 
   const program = (ast as { program?: Node }).program ?? ast;
-  const ownBindings = env.getOwnBindings();
-  // 顶层声明器节点集合：仅这些绑定名做 env 反查区分 function/variable
   const topLevelDeclarators = new Set<unknown>();
   for (const stmt of ((program as { body?: Node[] }).body ?? []) as Node[]) {
     const decl =
@@ -143,13 +144,10 @@ export function buildSemanticTokens(filePath: string, source: string): number[] 
       } else if (p.type === "RestElement" && (p as { argument?: Node }).argument?.type === "Identifier") {
         pushIdentifier((p as { argument: Node }).argument, TYPE_PARAMETER);
       }
-      // 解构模式（ObjectPattern/ArrayPattern）内部不上色：子绑定的
-      // function/variable 区分没有可靠推断依据，宁缺毋滥
     }
   };
 
-  const isFunctionValue = (name: string): boolean =>
-    ownBindings[name]?.kind === "function";
+  const isFunctionValue = (name: string): boolean => functionNames.has(name);
 
   const visit = (node: unknown): void => {
     if (!node || typeof node !== "object") return;

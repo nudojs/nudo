@@ -36,6 +36,8 @@ export function evalMathMethod(name: string, args: Abs[]): Abs | undefined {
     case "round":
       if (typeof a0 === "number") return numLit(Math.round(a0));
       return numPrim();
+    case "random":
+      return numPrim("path");
     case "sqrt":
       if (typeof a0 === "number") return numLit(Math.sqrt(a0));
       return numPrim();

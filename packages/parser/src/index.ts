@@ -20,4 +20,5 @@ export {
   extractFileDirectives,
   extractInlineDirectives,
   parseTypeValueExpr,
+  parseCaseArgExpr,
 } from "./directives.ts";

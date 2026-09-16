@@ -144,6 +144,60 @@ describe("checkInjectedDomainEvidence（helper 面）", () => {
     expect(issues).toEqual([]);
   });
 
+  it("Abs 证据优先：argAbs 携带 exact lit 且 TypeValue 为非 literal 仍执法", () => {
+    const { loadModule } = makeFiles({});
+    // TypeValue 侧故意给 primitive（非 literal），Abs 侧给 exact "a"：
+    // 消费应走 Abs lit，不因外延桥接降级而漏报
+    const absRec: InjectedDomainRecord = {
+      argTypes: [T.string],
+      resultType: T.literal(1),
+      throws: T.never,
+      argAbs: [makeAbs({ k: "prim", type: "string" }, termLit("a"), undefined, "exact")],
+    };
+    const issues = checkInjectedDomainEvidence("area", POS_SRC, [absRec], {
+      paramNames: ["x"],
+      loadModule,
+      fromFile: "/t/area.js",
+    });
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.code).toBe("nudo:interface-domain-exceeds");
+    expect(issues[0]!.actual).toBe('"a"');
+  });
+
+  it("Abs 证据 conf 门槛：widened Abs lit 不执法", () => {
+    const { loadModule } = makeFiles({});
+    const absRec: InjectedDomainRecord = {
+      argTypes: [T.literal("a")],
+      resultType: T.literal(1),
+      throws: T.never,
+      argAbs: [makeAbs({ k: "prim", type: "string" }, termLit("a"), undefined, "widened")],
+    };
+    const issues = checkInjectedDomainEvidence("area", POS_SRC, [absRec], {
+      paramNames: ["x"],
+      loadModule,
+      fromFile: "/t/area.js",
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it("Abs 证据：无 lit 的 prim（符号项）不构成字面量证据", () => {
+    const { loadModule } = makeFiles({});
+    const absRec: InjectedDomainRecord = {
+      argTypes: [T.number],
+      resultType: T.literal(1),
+      throws: T.never,
+      argAbs: [
+        makeAbs({ k: "prim", type: "number" }, { op: "var", id: "x" }, undefined, "path"),
+      ],
+    };
+    const issues = checkInjectedDomainEvidence("area", POS_SRC, [absRec], {
+      paramNames: ["x"],
+      loadModule,
+      fromFile: "/t/area.js",
+    });
+    expect(issues).toEqual([]);
+  });
+
   it("never∧never 泄漏记录（求值中断）不触发", () => {
     const { loadModule } = makeFiles({});
     const leaked: InjectedDomainRecord = {

@@ -1,17 +1,41 @@
-import { type TypeValue, type SigImpl, T } from "@nudojs/core";
+/**
+ * Node env：es globals + node 内建 modules（Abs 原生）。
+ */
+
+import {
+  type Abs,
+  type AbsSigImpl,
+  litValue,
+  strLit,
+  boolLit,
+} from "@nudojs/core";
+import {
+  arrOf,
+  brandOf,
+  envFn,
+  nullLit,
+  objAbs,
+  promiseOf,
+  tupleOf,
+  undef,
+  unionOf,
+  prim,
+} from "./abs-helpers.ts";
 import { type EnvDefinition, defineEnv as defineEsEnv } from "./es.ts";
 import nodePath from "node:path";
 
 export type { EnvDefinition };
 
-function litStr(tv: TypeValue): string | undefined {
-  return tv.kind === "literal" && typeof tv.value === "string" ? tv.value : undefined;
+function absStr(a: Abs | undefined): string | undefined {
+  if (!a) return undefined;
+  const v = litValue(a);
+  return typeof v === "string" ? v : undefined;
 }
 
-function allLitStr(args: TypeValue[]): string[] | undefined {
+function allAbsStr(args: Abs[]): string[] | undefined {
   const result: string[] = [];
   for (const a of args) {
-    const s = litStr(a);
+    const s = absStr(a);
     if (s === undefined) return undefined;
     result.push(s);
   }
@@ -21,362 +45,471 @@ function allLitStr(args: TypeValue[]): string[] | undefined {
 export function defineEnv(): EnvDefinition {
   const esEnv = defineEsEnv();
 
-  const BufferInstance = T.instanceOf("Buffer", {
-    toString: T.fnSig([T.string], T.string),
-    toJSON: T.fnSig([], T.object({ type: T.string, data: T.array(T.number) })),
-    length: T.number,
-    slice: T.fnSig([T.number, T.number], T.instanceOf("Buffer")),
-    copy: T.fnSig([T.unknown, T.number, T.number, T.number], T.number),
-    write: T.fnSig([T.string, T.number, T.number, T.string], T.number),
-    readUInt8: T.fnSig([T.number], T.number),
-    readUInt16BE: T.fnSig([T.number], T.number),
-    readUInt16LE: T.fnSig([T.number], T.number),
-    readUInt32BE: T.fnSig([T.number], T.number),
-    readUInt32LE: T.fnSig([T.number], T.number),
-    readInt8: T.fnSig([T.number], T.number),
-    readInt16BE: T.fnSig([T.number], T.number),
-    readInt16LE: T.fnSig([T.number], T.number),
-    readInt32BE: T.fnSig([T.number], T.number),
-    readInt32LE: T.fnSig([T.number], T.number),
-    includes: T.fnSig([T.union(T.string, T.number)], T.boolean),
-    indexOf: T.fnSig([T.union(T.string, T.number)], T.number),
-    fill: T.fnSig([T.union(T.string, T.number)], T.instanceOf("Buffer")),
-    equals: T.fnSig([T.instanceOf("Buffer")], T.boolean),
-    compare: T.fnSig([T.instanceOf("Buffer")], T.number),
-    subarray: T.fnSig([T.number, T.number], T.instanceOf("Buffer")),
-  });
+  const BufferInstance = brandOf(
+    "Buffer",
+    objAbs({
+      toString: envFn([prim.str()], prim.str()),
+      toJSON: envFn(
+        [],
+        objAbs({ type: prim.str(), data: arrOf(prim.num()) }),
+      ),
+      length: prim.num(),
+      slice: envFn([prim.num(), prim.num()], brandOf("Buffer")),
+      copy: envFn(
+        [prim.unknown, prim.num(), prim.num(), prim.num()],
+        prim.num(),
+      ),
+      write: envFn(
+        [prim.str(), prim.num(), prim.num(), prim.str()],
+        prim.num(),
+      ),
+      readUInt8: envFn([prim.num()], prim.num()),
+      readUInt16BE: envFn([prim.num()], prim.num()),
+      readUInt16LE: envFn([prim.num()], prim.num()),
+      readUInt32BE: envFn([prim.num()], prim.num()),
+      readUInt32LE: envFn([prim.num()], prim.num()),
+      readInt8: envFn([prim.num()], prim.num()),
+      readInt16BE: envFn([prim.num()], prim.num()),
+      readInt16LE: envFn([prim.num()], prim.num()),
+      readInt32BE: envFn([prim.num()], prim.num()),
+      readInt32LE: envFn([prim.num()], prim.num()),
+      includes: envFn([unionOf(prim.str(), prim.num())], prim.bool()),
+      indexOf: envFn([unionOf(prim.str(), prim.num())], prim.num()),
+      fill: envFn([unionOf(prim.str(), prim.num())], brandOf("Buffer")),
+      equals: envFn([brandOf("Buffer")], prim.bool()),
+      compare: envFn([brandOf("Buffer")], prim.num()),
+      subarray: envFn([prim.num(), prim.num()], brandOf("Buffer")),
+    }),
+  );
 
-  // --- fs module ---
-  // readFileSync 带 encoding 的字符串编码 → string（对齐 TS 重载；
-  // 否则 string|Buffer，后续 .split 等 string 方法可经 union 过滤派发）
-  const fsModule: Record<string, TypeValue> = {
-    readFileSync: T.fnSig(
-      [T.string, T.union(T.string, T.object({}))],
-      T.union(T.string, BufferInstance),
-      T.never,
+  // Buffer brand 作为槽位时用同一实例引用（避免重复 brand）
+  const bufferBrand = BufferInstance;
+
+  const fsModule: Record<string, Abs> = {
+    // encoding 字面量 → string；否则 string|Buffer（TS 重载近似）
+    readFileSync: envFn(
+      [prim.str(), unionOf(prim.str(), objAbs({}))],
+      unionOf(prim.str(), bufferBrand),
       (args) => {
         const enc = args[1];
-        if (!enc) return T.union(T.string, BufferInstance);
-        if (enc.kind === "literal" && typeof enc.value === "string") return T.string;
-        if (enc.kind === "primitive" && enc.type === "string") return T.string;
-        return T.union(T.string, BufferInstance);
+        if (!enc) return unionOf(prim.str(), bufferBrand);
+        if (enc.term?.op === "lit" && typeof enc.term.value === "string") {
+          return prim.str();
+        }
+        if (enc.shape.k === "prim" && enc.shape.type === "string" && !enc.term) {
+          return prim.str();
+        }
+        return unionOf(prim.str(), bufferBrand);
       },
     ),
-    writeFileSync: T.fnSig([T.string, T.union(T.string, BufferInstance)], T.undefined),
-    appendFileSync: T.fnSig([T.string, T.union(T.string, BufferInstance)], T.undefined),
-    existsSync: T.fnSig([T.string], T.boolean),
-    mkdirSync: T.fnSig([T.string, T.unknown], T.union(T.string, T.undefined)),
-    rmdirSync: T.fnSig([T.string], T.undefined),
-    rmSync: T.fnSig([T.string, T.unknown], T.undefined),
-    unlinkSync: T.fnSig([T.string], T.undefined),
-    renameSync: T.fnSig([T.string, T.string], T.undefined),
-    copyFileSync: T.fnSig([T.string, T.string], T.undefined),
-    statSync: T.fnSig([T.string], T.object({
-      isFile: T.fnSig([], T.boolean),
-      isDirectory: T.fnSig([], T.boolean),
-      isSymbolicLink: T.fnSig([], T.boolean),
-      size: T.number,
-      mtime: T.unknown,
-      ctime: T.unknown,
-      atime: T.unknown,
-      birthtime: T.unknown,
-      mode: T.number,
-      uid: T.number,
-      gid: T.number,
-    })),
-    readdirSync: T.fnSig([T.string, T.unknown], T.array(T.union(T.string, T.unknown))),
-    realpathSync: T.fnSig([T.string], T.string),
-    readlinkSync: T.fnSig([T.string], T.string),
-    symlinkSync: T.fnSig([T.string, T.string], T.undefined),
-    chmodSync: T.fnSig([T.string, T.number], T.undefined),
-    chownSync: T.fnSig([T.string, T.number, T.number], T.undefined),
-    accessSync: T.fnSig([T.string, T.number], T.undefined),
-    readFile: T.fnSig([T.string, T.unknown], T.promise(T.union(T.string, BufferInstance))),
-    writeFile: T.fnSig([T.string, T.union(T.string, BufferInstance)], T.promise(T.undefined)),
-    mkdir: T.fnSig([T.string, T.unknown], T.promise(T.union(T.string, T.undefined))),
-    rm: T.fnSig([T.string, T.unknown], T.promise(T.undefined)),
-    stat: T.fnSig([T.string], T.promise(T.unknown)),
-    readdir: T.fnSig([T.string, T.unknown], T.promise(T.array(T.unknown))),
-    access: T.fnSig([T.string, T.number], T.promise(T.undefined)),
+    writeFileSync: envFn(
+      [prim.str(), unionOf(prim.str(), bufferBrand)],
+      undef(),
+    ),
+    appendFileSync: envFn(
+      [prim.str(), unionOf(prim.str(), bufferBrand)],
+      undef(),
+    ),
+    existsSync: envFn([prim.str()], prim.bool()),
+    mkdirSync: envFn([prim.str(), prim.unknown], unionOf(prim.str(), undef())),
+    rmdirSync: envFn([prim.str()], undef()),
+    rmSync: envFn([prim.str(), prim.unknown], undef()),
+    unlinkSync: envFn([prim.str()], undef()),
+    renameSync: envFn([prim.str(), prim.str()], undef()),
+    copyFileSync: envFn([prim.str(), prim.str()], undef()),
+    statSync: envFn(
+      [prim.str()],
+      objAbs({
+        isFile: envFn([], prim.bool()),
+        isDirectory: envFn([], prim.bool()),
+        isSymbolicLink: envFn([], prim.bool()),
+        size: prim.num(),
+        mtime: prim.unknown,
+        ctime: prim.unknown,
+        atime: prim.unknown,
+        birthtime: prim.unknown,
+        mode: prim.num(),
+        uid: prim.num(),
+        gid: prim.num(),
+      }),
+    ),
+    readdirSync: envFn(
+      [prim.str(), prim.unknown],
+      arrOf(unionOf(prim.str(), prim.unknown)),
+    ),
+    realpathSync: envFn([prim.str()], prim.str()),
+    readlinkSync: envFn([prim.str()], prim.str()),
+    symlinkSync: envFn([prim.str(), prim.str()], undef()),
+    chmodSync: envFn([prim.str(), prim.num()], undef()),
+    chownSync: envFn([prim.str(), prim.num(), prim.num()], undef()),
+    accessSync: envFn([prim.str(), prim.num()], undef()),
+    readFile: envFn(
+      [prim.str(), prim.unknown],
+      promiseOf(unionOf(prim.str(), bufferBrand)),
+    ),
+    writeFile: envFn(
+      [prim.str(), unionOf(prim.str(), bufferBrand)],
+      promiseOf(undef()),
+    ),
+    mkdir: envFn(
+      [prim.str(), prim.unknown],
+      promiseOf(unionOf(prim.str(), undef())),
+    ),
+    rm: envFn([prim.str(), prim.unknown], promiseOf(undef())),
+    stat: envFn([prim.str()], promiseOf(prim.unknown)),
+    readdir: envFn(
+      [prim.str(), prim.unknown],
+      promiseOf(arrOf(prim.unknown)),
+    ),
+    access: envFn([prim.str(), prim.num()], promiseOf(undef())),
   };
 
-  // --- path module ---
-  const strImpl1 = (fn: (a: string) => string): SigImpl => (args) => {
-    const a = litStr(args[0]);
-    return a !== undefined ? T.literal(fn(a)) : undefined;
+  const strImpl1Abs = (fn: (a: string) => string): AbsSigImpl => (args) => {
+    const a = absStr(args[0]);
+    return a !== undefined ? strLit(fn(a)) : undefined;
   };
 
-  const pathModule: Record<string, TypeValue> = {
-    join: T.fnSig([T.string, T.string], T.string, T.never, (args) => {
-      const strs = allLitStr(args);
-      return strs ? T.literal(nodePath.join(...strs)) : undefined;
-    }),
-    resolve: T.fnSig([T.string], T.string, T.never, (args) => {
-      const strs = allLitStr(args);
-      return strs ? T.literal(nodePath.resolve(...strs)) : undefined;
-    }),
-    dirname: T.fnSig([T.string], T.string, T.never, strImpl1(nodePath.dirname)),
-    basename: T.fnSig([T.string, T.string], T.string, T.never, (args) => {
-      const p = litStr(args[0]);
-      if (p === undefined) return undefined;
-      const ext = args[1] !== undefined ? litStr(args[1]) : undefined;
-      return T.literal(ext !== undefined ? nodePath.basename(p, ext) : nodePath.basename(p));
-    }),
-    extname: T.fnSig([T.string], T.string, T.never, strImpl1(nodePath.extname)),
-    relative: T.fnSig([T.string, T.string], T.string, T.never, (args) => {
-      const from = litStr(args[0]);
-      const to = litStr(args[1]);
-      return from !== undefined && to !== undefined ? T.literal(nodePath.relative(from, to)) : undefined;
-    }),
-    normalize: T.fnSig([T.string], T.string, T.never, strImpl1(nodePath.normalize)),
-    isAbsolute: T.fnSig([T.string], T.boolean, T.never, (args) => {
-      const p = litStr(args[0]);
-      return p !== undefined ? T.literal(nodePath.isAbsolute(p)) : undefined;
-    }),
-    parse: T.fnSig([T.string], T.object({
-      root: T.string,
-      dir: T.string,
-      base: T.string,
-      ext: T.string,
-      name: T.string,
-    }), T.never, (args) => {
-      const p = litStr(args[0]);
-      if (p === undefined) return undefined;
-      const parsed = nodePath.parse(p);
-      return T.object({
-        root: T.literal(parsed.root),
-        dir: T.literal(parsed.dir),
-        base: T.literal(parsed.base),
-        ext: T.literal(parsed.ext),
-        name: T.literal(parsed.name),
-      });
-    }),
-    format: T.fnSig([T.object({})], T.string),
-    sep: T.string,
-    delimiter: T.string,
-    posix: T.unknown,
-    win32: T.unknown,
+  const pathJoinAbs: AbsSigImpl = (args) => {
+    const strs = allAbsStr(args);
+    return strs ? strLit(nodePath.join(...strs)) : undefined;
+  };
+  const pathResolveAbs: AbsSigImpl = (args) => {
+    const strs = allAbsStr(args);
+    return strs ? strLit(nodePath.resolve(...strs)) : undefined;
+  };
+  const pathBasenameAbs: AbsSigImpl = (args) => {
+    const p = absStr(args[0]);
+    if (p === undefined) return undefined;
+    const ext = args[1] !== undefined ? absStr(args[1]) : undefined;
+    return strLit(ext !== undefined ? nodePath.basename(p, ext) : nodePath.basename(p));
+  };
+  const pathRelativeAbs: AbsSigImpl = (args) => {
+    const from = absStr(args[0]);
+    const to = absStr(args[1]);
+    return from !== undefined && to !== undefined
+      ? strLit(nodePath.relative(from, to))
+      : undefined;
+  };
+  const pathIsAbsoluteAbs: AbsSigImpl = (args) => {
+    const p = absStr(args[0]);
+    return p !== undefined ? boolLit(nodePath.isAbsolute(p)) : undefined;
   };
 
-  // --- os module ---
-  const osModule: Record<string, TypeValue> = {
-    platform: T.fnSig([], T.string),
-    arch: T.fnSig([], T.string),
-    type: T.fnSig([], T.string),
-    release: T.fnSig([], T.string),
-    hostname: T.fnSig([], T.string),
-    homedir: T.fnSig([], T.string),
-    tmpdir: T.fnSig([], T.string),
-    cpus: T.fnSig([], T.array(T.object({
-      model: T.string,
-      speed: T.number,
-    }))),
-    totalmem: T.fnSig([], T.number),
-    freemem: T.fnSig([], T.number),
-    uptime: T.fnSig([], T.number),
-    loadavg: T.fnSig([], T.tuple([T.number, T.number, T.number])),
-    networkInterfaces: T.fnSig([], T.unknown),
-    userInfo: T.fnSig([], T.object({
-      username: T.string,
-      uid: T.number,
-      gid: T.number,
-      shell: T.union(T.string, T.null),
-      homedir: T.string,
-    })),
-    EOL: T.string,
+  const pathModule: Record<string, Abs> = {
+    join: envFn([prim.str(), prim.str()], prim.str(), pathJoinAbs),
+    resolve: envFn([prim.str()], prim.str(), pathResolveAbs),
+    dirname: envFn([prim.str()], prim.str(), strImpl1Abs(nodePath.dirname)),
+    basename: envFn([prim.str(), prim.str()], prim.str(), pathBasenameAbs),
+    extname: envFn([prim.str()], prim.str(), strImpl1Abs(nodePath.extname)),
+    relative: envFn([prim.str(), prim.str()], prim.str(), pathRelativeAbs),
+    normalize: envFn([prim.str()], prim.str(), strImpl1Abs(nodePath.normalize)),
+    isAbsolute: envFn([prim.str()], prim.bool(), pathIsAbsoluteAbs),
+    parse: envFn(
+      [prim.str()],
+      objAbs({
+        root: prim.str(),
+        dir: prim.str(),
+        base: prim.str(),
+        ext: prim.str(),
+        name: prim.str(),
+      }),
+      (args) => {
+        const p = absStr(args[0]);
+        if (p === undefined) return undefined;
+        const parsed = nodePath.parse(p);
+        return objAbs({
+          root: strLit(parsed.root),
+          dir: strLit(parsed.dir),
+          base: strLit(parsed.base),
+          ext: strLit(parsed.ext),
+          name: strLit(parsed.name),
+        });
+      },
+    ),
+    format: envFn([objAbs({})], prim.str()),
+    sep: prim.str(),
+    delimiter: prim.str(),
+    posix: prim.unknown,
+    win32: prim.unknown,
   };
 
-  // --- url module ---
-  const nodeUrlObj = T.object({
-    href: T.string,
-    origin: T.string,
-    protocol: T.string,
-    username: T.string,
-    password: T.string,
-    host: T.string,
-    hostname: T.string,
-    port: T.string,
-    pathname: T.string,
-    search: T.string,
-    hash: T.string,
-    toString: T.fnSig([], T.string),
-    toJSON: T.fnSig([], T.string),
+  const osModule: Record<string, Abs> = {
+    platform: envFn([], prim.str()),
+    arch: envFn([], prim.str()),
+    type: envFn([], prim.str()),
+    release: envFn([], prim.str()),
+    hostname: envFn([], prim.str()),
+    homedir: envFn([], prim.str()),
+    tmpdir: envFn([], prim.str()),
+    cpus: envFn(
+      [],
+      arrOf(objAbs({ model: prim.str(), speed: prim.num() })),
+    ),
+    totalmem: envFn([], prim.num()),
+    freemem: envFn([], prim.num()),
+    uptime: envFn([], prim.num()),
+    loadavg: envFn([], tupleOf([prim.num(), prim.num(), prim.num()])),
+    networkInterfaces: envFn([], prim.unknown),
+    userInfo: envFn(
+      [],
+      objAbs({
+        username: prim.str(),
+        uid: prim.num(),
+        gid: prim.num(),
+        shell: unionOf(prim.str(), nullLit()),
+        homedir: prim.str(),
+      }),
+    ),
+    EOL: prim.str(),
+  };
+
+  const nodeUrlObj = objAbs({
+    href: prim.str(),
+    origin: prim.str(),
+    protocol: prim.str(),
+    username: prim.str(),
+    password: prim.str(),
+    host: prim.str(),
+    hostname: prim.str(),
+    port: prim.str(),
+    pathname: prim.str(),
+    search: prim.str(),
+    hash: prim.str(),
+    toString: envFn([], prim.str()),
+    toJSON: envFn([], prim.str()),
   });
 
-  const urlModule: Record<string, TypeValue> = {
-    URL: T.fnSig([T.string, T.string], nodeUrlObj, T.instanceOf("TypeError"), (args) => {
-      const href = litStr(args[0]);
-      const base = args[1] !== undefined ? litStr(args[1]) : undefined;
-      if (href === undefined) return undefined;
-      try {
-        const url = base !== undefined ? new URL(href, base) : new URL(href);
-        return T.object({
-          href: T.literal(url.href),
-          origin: T.literal(url.origin),
-          protocol: T.literal(url.protocol),
-          username: T.literal(url.username),
-          password: T.literal(url.password),
-          host: T.literal(url.host),
-          hostname: T.literal(url.hostname),
-          port: T.literal(url.port),
-          pathname: T.literal(url.pathname),
-          search: T.literal(url.search),
-          hash: T.literal(url.hash),
-          toString: T.fnSig([], T.string, T.never, () => T.literal(url.href)),
-          toJSON: T.fnSig([], T.string, T.never, () => T.literal(url.href)),
-        });
-      } catch { return undefined; }
-    }),
-    URLSearchParams: T.fnSig([T.unknown], T.object({
-      get: T.fnSig([T.string], T.union(T.string, T.null)),
-      has: T.fnSig([T.string], T.boolean),
-      set: T.fnSig([T.string, T.string], T.undefined),
-      append: T.fnSig([T.string, T.string], T.undefined),
-      delete: T.fnSig([T.string], T.undefined),
-      toString: T.fnSig([], T.string),
-    })),
-    fileURLToPath: T.fnSig([T.string], T.string, T.never, strImpl1((s) => {
-      try { return new URL(s).pathname; } catch { return s; }
-    })),
-    pathToFileURL: T.fnSig([T.string], T.object({ href: T.string }), T.never, (args) => {
-      const p = litStr(args[0]);
-      if (p === undefined) return undefined;
-      try {
-        const href = `file://${p.startsWith("/") ? "" : "/"}${p}`;
-        return T.object({ href: T.literal(href) });
-      } catch { return undefined; }
-    }),
-    format: T.fnSig([T.unknown], T.string),
-  };
-
-  // --- crypto module ---
-  const cryptoModule: Record<string, TypeValue> = {
-    randomBytes: T.fnSig([T.number], BufferInstance),
-    randomUUID: T.fnSig([], T.string),
-    randomInt: T.fnSig([T.number, T.number], T.number),
-    createHash: T.fnSig([T.string], T.object({
-      update: T.fnSig([T.union(T.string, BufferInstance)], T.unknown),
-      digest: T.fnSig([T.string], T.union(T.string, BufferInstance)),
-    })),
-    createHmac: T.fnSig([T.string, T.union(T.string, BufferInstance)], T.object({
-      update: T.fnSig([T.union(T.string, BufferInstance)], T.unknown),
-      digest: T.fnSig([T.string], T.union(T.string, BufferInstance)),
-    })),
-    createCipheriv: T.fnSig([T.string, T.unknown, T.unknown], T.unknown),
-    createDecipheriv: T.fnSig([T.string, T.unknown, T.unknown], T.unknown),
-    pbkdf2Sync: T.fnSig([T.string, T.string, T.number, T.number, T.string], BufferInstance),
-    scryptSync: T.fnSig([T.string, T.string, T.number], BufferInstance),
-    timingSafeEqual: T.fnSig([BufferInstance, BufferInstance], T.boolean),
-  };
-
-  // --- child_process module ---
-  const childProcessModule: Record<string, TypeValue> = {
-    execSync: T.fnSig([T.string, T.unknown], T.union(T.string, BufferInstance)),
-    execFileSync: T.fnSig([T.string, T.array(T.string), T.unknown], T.union(T.string, BufferInstance)),
-    spawnSync: T.fnSig([T.string, T.array(T.string), T.unknown], T.object({
-      status: T.union(T.number, T.null),
-      stdout: T.union(T.string, BufferInstance),
-      stderr: T.union(T.string, BufferInstance),
-      error: T.union(T.instanceOf("Error"), T.undefined),
-    })),
-    exec: T.fnSig([T.string, T.unknown], T.unknown),
-    spawn: T.fnSig([T.string, T.array(T.string), T.unknown], T.unknown),
-    fork: T.fnSig([T.string, T.array(T.string), T.unknown], T.unknown),
-  };
-
-  // --- util module ---
-  const utilModule: Record<string, TypeValue> = {
-    promisify: T.fnSig([T.unknown], T.unknown),
-    inspect: T.fnSig([T.unknown, T.unknown], T.string),
-    format: T.fnSig([T.string], T.string),
-    types: T.object({
-      isDate: T.fnSig([T.unknown], T.boolean),
-      isRegExp: T.fnSig([T.unknown], T.boolean),
-      isPromise: T.fnSig([T.unknown], T.boolean),
-      isArrayBuffer: T.fnSig([T.unknown], T.boolean),
-      isTypedArray: T.fnSig([T.unknown], T.boolean),
-    }),
-    TextEncoder: T.fnSig([], T.object({
-      encode: T.fnSig([T.string], T.unknown),
-    })),
-    TextDecoder: T.fnSig([T.string], T.object({
-      decode: T.fnSig([T.unknown], T.string),
-    })),
-  };
-
-  const nodeGlobals: Record<string, TypeValue> = {
-    process: T.object({
-      env: T.object({}),
-      argv: T.array(T.string),
-      argv0: T.string,
-      execArgv: T.array(T.string),
-      execPath: T.string,
-      cwd: T.fnSig([], T.string),
-      chdir: T.fnSig([T.string], T.undefined),
-      exit: T.fnSig([T.number], T.never),
-      pid: T.number,
-      ppid: T.number,
-      platform: T.string,
-      arch: T.string,
-      version: T.string,
-      versions: T.object({}),
-      stdout: T.object({ write: T.fnSig([T.string], T.boolean) }),
-      stderr: T.object({ write: T.fnSig([T.string], T.boolean) }),
-      stdin: T.object({ on: T.fnSig([T.string, T.unknown], T.unknown) }),
-      hrtime: T.object({
-        bigint: T.fnSig([], T.bigint),
+  const urlModule: Record<string, Abs> = {
+    URL: envFn(
+      [prim.str(), prim.str()],
+      nodeUrlObj,
+      (args) => {
+        const href = absStr(args[0]);
+        const base = args[1] !== undefined ? absStr(args[1]) : undefined;
+        if (href === undefined) return undefined;
+        try {
+          const url = base !== undefined ? new URL(href, base) : new URL(href);
+          return objAbs({
+            href: strLit(url.href),
+            origin: strLit(url.origin),
+            protocol: strLit(url.protocol),
+            username: strLit(url.username),
+            password: strLit(url.password),
+            host: strLit(url.host),
+            hostname: strLit(url.hostname),
+            port: strLit(url.port),
+            pathname: strLit(url.pathname),
+            search: strLit(url.search),
+            hash: strLit(url.hash),
+            toString: envFn([], prim.str(), () => strLit(url.href)),
+            toJSON: envFn([], prim.str(), () => strLit(url.href)),
+          });
+        } catch {
+          return undefined;
+        }
+      },
+    ),
+    URLSearchParams: envFn(
+      [prim.unknown],
+      objAbs({
+        get: envFn([prim.str()], unionOf(prim.str(), nullLit())),
+        has: envFn([prim.str()], prim.bool()),
+        set: envFn([prim.str(), prim.str()], undef()),
+        append: envFn([prim.str(), prim.str()], undef()),
+        delete: envFn([prim.str()], undef()),
+        toString: envFn([], prim.str()),
       }),
-      memoryUsage: T.fnSig([], T.object({
-        rss: T.number,
-        heapTotal: T.number,
-        heapUsed: T.number,
-        external: T.number,
-        arrayBuffers: T.number,
-      })),
-      cpuUsage: T.fnSig([], T.object({ user: T.number, system: T.number })),
-      uptime: T.fnSig([], T.number),
-      nextTick: T.fnSig([T.unknown], T.undefined),
-      on: T.fnSig([T.string, T.unknown], T.unknown),
-      once: T.fnSig([T.string, T.unknown], T.unknown),
-      off: T.fnSig([T.string, T.unknown], T.unknown),
-      emit: T.fnSig([T.string], T.boolean),
-    }),
-
-    Buffer: T.object({
-      from: T.fnSig([T.union(T.string, T.array(T.number))], BufferInstance),
-      alloc: T.fnSig([T.number], BufferInstance),
-      allocUnsafe: T.fnSig([T.number], BufferInstance),
-      isBuffer: T.fnSig([T.unknown], T.boolean),
-      byteLength: T.fnSig([T.union(T.string, BufferInstance)], T.number),
-      concat: T.fnSig([T.array(BufferInstance)], BufferInstance),
-      compare: T.fnSig([BufferInstance, BufferInstance], T.number),
-    }),
-
-    __dirname: T.string,
-    __filename: T.string,
-
-    setTimeout: T.fnSig([T.unknown, T.number], T.unknown),
-    setInterval: T.fnSig([T.unknown, T.number], T.unknown),
-    setImmediate: T.fnSig([T.unknown], T.unknown),
-    clearTimeout: T.fnSig([T.unknown], T.undefined),
-    clearInterval: T.fnSig([T.unknown], T.undefined),
-    clearImmediate: T.fnSig([T.unknown], T.undefined),
-    queueMicrotask: T.fnSig([T.unknown], T.undefined),
-
-    structuredClone: T.fnSig([T.unknown], T.unknown),
+    ),
+    fileURLToPath: envFn([prim.str()], prim.str(), strImpl1Abs((s) => {
+      try {
+        return new URL(s).pathname;
+      } catch {
+        return s;
+      }
+    })),
+    pathToFileURL: envFn(
+      [prim.str()],
+      objAbs({ href: prim.str() }),
+      (args) => {
+        const p = absStr(args[0]);
+        if (p === undefined) return undefined;
+        try {
+          const href = `file://${p.startsWith("/") ? "" : "/"}${p}`;
+          return objAbs({ href: strLit(href) });
+        } catch {
+          return undefined;
+        }
+      },
+    ),
+    format: envFn([prim.unknown], prim.str()),
   };
 
-  const modules: Record<string, Record<string, TypeValue>> = {
+  const cryptoModule: Record<string, Abs> = {
+    randomBytes: envFn([prim.num()], bufferBrand),
+    randomUUID: envFn([], prim.str()),
+    randomInt: envFn([prim.num(), prim.num()], prim.num()),
+    createHash: envFn(
+      [prim.str()],
+      objAbs({
+        update: envFn([unionOf(prim.str(), bufferBrand)], prim.unknown),
+        digest: envFn(
+          [prim.str()],
+          unionOf(prim.str(), bufferBrand),
+        ),
+      }),
+    ),
+    createHmac: envFn(
+      [prim.str(), unionOf(prim.str(), bufferBrand)],
+      objAbs({
+        update: envFn([unionOf(prim.str(), bufferBrand)], prim.unknown),
+        digest: envFn(
+          [prim.str()],
+          unionOf(prim.str(), bufferBrand),
+        ),
+      }),
+    ),
+    createCipheriv: envFn(
+      [prim.str(), prim.unknown, prim.unknown],
+      prim.unknown,
+    ),
+    createDecipheriv: envFn(
+      [prim.str(), prim.unknown, prim.unknown],
+      prim.unknown,
+    ),
+    pbkdf2Sync: envFn(
+      [prim.str(), prim.str(), prim.num(), prim.num(), prim.str()],
+      bufferBrand,
+    ),
+    scryptSync: envFn([prim.str(), prim.str(), prim.num()], bufferBrand),
+    timingSafeEqual: envFn([bufferBrand, bufferBrand], prim.bool()),
+  };
+
+  const childProcessModule: Record<string, Abs> = {
+    execSync: envFn(
+      [prim.str(), prim.unknown],
+      unionOf(prim.str(), bufferBrand),
+    ),
+    execFileSync: envFn(
+      [prim.str(), arrOf(prim.str()), prim.unknown],
+      unionOf(prim.str(), bufferBrand),
+    ),
+    spawnSync: envFn(
+      [prim.str(), arrOf(prim.str()), prim.unknown],
+      objAbs({
+        status: unionOf(prim.num(), nullLit()),
+        stdout: unionOf(prim.str(), bufferBrand),
+        stderr: unionOf(prim.str(), bufferBrand),
+        error: unionOf(brandOf("Error"), undef()),
+      }),
+    ),
+    exec: envFn([prim.str(), prim.unknown], prim.unknown),
+    spawn: envFn([prim.str(), arrOf(prim.str()), prim.unknown], prim.unknown),
+    fork: envFn([prim.str(), arrOf(prim.str()), prim.unknown], prim.unknown),
+  };
+
+  const utilModule: Record<string, Abs> = {
+    promisify: envFn([prim.unknown], prim.unknown),
+    inspect: envFn([prim.unknown, prim.unknown], prim.str()),
+    format: envFn([prim.str()], prim.str()),
+    types: objAbs({
+      isDate: envFn([prim.unknown], prim.bool()),
+      isRegExp: envFn([prim.unknown], prim.bool()),
+      isPromise: envFn([prim.unknown], prim.bool()),
+      isArrayBuffer: envFn([prim.unknown], prim.bool()),
+      isTypedArray: envFn([prim.unknown], prim.bool()),
+    }),
+    TextEncoder: envFn(
+      [],
+      objAbs({ encode: envFn([prim.str()], prim.unknown) }),
+    ),
+    TextDecoder: envFn(
+      [prim.str()],
+      objAbs({ decode: envFn([prim.unknown], prim.str()) }),
+    ),
+  };
+
+  const nodeGlobals: Record<string, Abs> = {
+    process: objAbs({
+      env: objAbs({}),
+      argv: arrOf(prim.str()),
+      argv0: prim.str(),
+      execArgv: arrOf(prim.str()),
+      execPath: prim.str(),
+      cwd: envFn([], prim.str()),
+      chdir: envFn([prim.str()], undef()),
+      exit: envFn([prim.num()], prim.never),
+      pid: prim.num(),
+      ppid: prim.num(),
+      platform: prim.str(),
+      arch: prim.str(),
+      version: prim.str(),
+      versions: objAbs({}),
+      stdout: objAbs({ write: envFn([prim.str()], prim.bool()) }),
+      stderr: objAbs({ write: envFn([prim.str()], prim.bool()) }),
+      stdin: objAbs({
+        on: envFn([prim.str(), prim.unknown], prim.unknown),
+      }),
+      hrtime: objAbs({ bigint: envFn([], brandOf("bigint")) }),
+      memoryUsage: envFn(
+        [],
+        objAbs({
+          rss: prim.num(),
+          heapTotal: prim.num(),
+          heapUsed: prim.num(),
+          external: prim.num(),
+          arrayBuffers: prim.num(),
+        }),
+      ),
+      cpuUsage: envFn(
+        [],
+        objAbs({ user: prim.num(), system: prim.num() }),
+      ),
+      uptime: envFn([], prim.num()),
+      nextTick: envFn([prim.unknown], undef()),
+      on: envFn([prim.str(), prim.unknown], prim.unknown),
+      once: envFn([prim.str(), prim.unknown], prim.unknown),
+      off: envFn([prim.str(), prim.unknown], prim.unknown),
+      emit: envFn([prim.str()], prim.bool()),
+    }),
+
+    Buffer: objAbs({
+      from: envFn([unionOf(prim.str(), arrOf(prim.num()))], bufferBrand),
+      alloc: envFn([prim.num()], bufferBrand),
+      allocUnsafe: envFn([prim.num()], bufferBrand),
+      isBuffer: envFn([prim.unknown], prim.bool()),
+      byteLength: envFn(
+        [unionOf(prim.str(), bufferBrand)],
+        prim.num(),
+      ),
+      concat: envFn([arrOf(bufferBrand)], bufferBrand),
+      compare: envFn([bufferBrand, bufferBrand], prim.num()),
+    }),
+
+    __dirname: prim.str(),
+    __filename: prim.str(),
+
+    setTimeout: envFn([prim.unknown, prim.num()], prim.unknown),
+    setInterval: envFn([prim.unknown, prim.num()], prim.unknown),
+    setImmediate: envFn([prim.unknown], prim.unknown),
+    clearTimeout: envFn([prim.unknown], undef()),
+    clearInterval: envFn([prim.unknown], undef()),
+    clearImmediate: envFn([prim.unknown], undef()),
+    queueMicrotask: envFn([prim.unknown], undef()),
+
+    structuredClone: envFn([prim.unknown], prim.unknown),
+  };
+
+  const modules: Record<string, Record<string, Abs>> = {
     fs: fsModule,
     "node:fs": fsModule,
     "node:fs/promises": {
-      readFile: fsModule.readFile,
-      writeFile: fsModule.writeFile,
-      mkdir: fsModule.mkdir,
-      rm: fsModule.rm,
-      stat: fsModule.stat,
-      readdir: fsModule.readdir,
-      access: fsModule.access,
+      readFile: fsModule.readFile!,
+      writeFile: fsModule.writeFile!,
+      mkdir: fsModule.mkdir!,
+      rm: fsModule.rm!,
+      stat: fsModule.stat!,
+      readdir: fsModule.readdir!,
+      access: fsModule.access!,
     },
     path: pathModule,
     "node:path": pathModule,

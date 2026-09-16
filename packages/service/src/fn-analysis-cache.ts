@@ -42,6 +42,7 @@ export type CachedFnAnalysis = {
     cases: Array<{
       name: string;
       args: TypeValue[];
+      argAbs?: unknown[];
       result: TypeValue;
       throws: TypeValue;
       throwLoc?: CachedSourceLocation;
@@ -49,8 +50,10 @@ export type CachedFnAnalysis = {
       expected?: TypeValue;
       aggregatedFrom?: number;
       intension?: Record<string, unknown>;
+      abs?: unknown;
     }>;
     combined?: TypeValue;
+    combinedAbs?: unknown;
     entryOnly?: boolean;
     skipped?: boolean;
     noDeclaration?: boolean;

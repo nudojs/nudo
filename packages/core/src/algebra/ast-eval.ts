@@ -120,6 +120,9 @@ export type EvalOptions = {
   file?: File;
   /** host 已求值的相对依赖导出表 */
   modules?: Record<string, AbsModuleExports>;
+  /** host 注入（@nudo:mock 等）在求值前绑定（evalSource 也认） */
+  seedVars?: Record<string, Abs>;
+  seedFns?: Record<string, { params: string[]; body: Node; async?: boolean }>;
 };
 
 // --- 调用预算（与 TypeValue evaluator 对齐）---
@@ -322,6 +325,8 @@ export type EvalResult = {
   cont?: boolean;
   /** throw 了 value（未捕获时向上传播） */
   threw?: boolean;
+  /** throw 语句源位置（1-based line，0-based column；Babel loc 口径） */
+  throwLoc?: { line: number; column: number };
   /**
    * if 无 else 且 consequent 已 return/throw：真分支已产出 value，
    * 假分支 fall-through 仍可能走后续语句。evalBlock 需与后续结果 join。
@@ -346,6 +351,17 @@ export function evalSource(
   const file = opts.file ?? parse(source);
   const env = emptyEnv();
   let phi = opts.phi ?? pTrue;
+
+  if (opts.seedVars) {
+    for (const [k, v] of Object.entries(opts.seedVars)) {
+      env.vars.set(k, v);
+    }
+  }
+  if (opts.seedFns) {
+    for (const [k, fn] of Object.entries(opts.seedFns)) {
+      env.fns.set(k, fn);
+    }
+  }
 
   if (opts.modules) {
     for (const stmt of file.program.body) {
@@ -388,8 +404,15 @@ export function evalSource(
     }
   }
 
-  const value = callFunction(env, entry.fn, entry.args, phi, opts.budget);
-  return { value, phi, env };
+  const full = callFunctionFull(env, entry.fn, entry.args, phi, opts.budget);
+  return {
+    value: full.result,
+    phi,
+    env,
+    ...(full.throws.shape.k !== "never"
+      ? { threw: true, ...(full.throwLoc ? { throwLoc: full.throwLoc } : {}) }
+      : {}),
+  };
 }
 
 /** 注册 ClassDeclaration 到 env.classes 与 env.vars */
@@ -470,6 +493,51 @@ function registerFunction(env: AstEnv, decl: FunctionDeclaration): void {
     body: decl.body,
     async: decl.async === true,
   });
+}
+
+/**
+ * 调用具名函数并返回 throws/loc（T20）。
+ * threw 时 result=never、throws=抛出值、throwLoc=throw 语句位置。
+ */
+export function callFunctionFull(
+  env: AstEnv,
+  name: string,
+  args: Abs[],
+  phi: Phi = pTrue,
+  budget: LeakBudget = defaultLeakBudget,
+): { result: Abs; throws: Abs; throwLoc?: { line: number; column: number } } {
+  const fn = env.fns.get(name);
+  const neverAbs = abs({ k: "never" }, undefined, undefined, "exact");
+  if (!fn) return { result: unknown, throws: neverAbs };
+
+  const key = callBudgetKey("fn", name, args);
+  if (!enterCall(key, name)) {
+    return { result: truncatedAbs(), throws: neverAbs };
+  }
+  try {
+    let local: AstEnv = { vars: new Map(env.vars), fns: env.fns, hofCollect: env.hofCollect };
+    const cls = (env as AstEnv & { classes?: Map<string, unknown> }).classes;
+    if (cls) (local as AstEnv & { classes?: Map<string, unknown> }).classes = cls;
+
+    fn.params.forEach((p, i) => {
+      local.vars.set(p, args[i] ?? unknown);
+    });
+
+    const result = evalNode(fn.body, local, phi, budget);
+    if (result.threw) {
+      return {
+        result: neverAbs,
+        throws: result.value,
+        ...(result.throwLoc ? { throwLoc: result.throwLoc } : {}),
+      };
+    }
+    if (fn.async) {
+      return { result: coerceAsyncReturn(result.value), throws: neverAbs };
+    }
+    return { result: result.value, throws: neverAbs };
+  } finally {
+    exitCall();
+  }
 }
 
 export function callFunction(
@@ -694,7 +762,20 @@ function evalNodeInner(
     case "ThrowStatement": {
       const arg = (node as { argument?: Node }).argument;
       const v = arg ? evalNode(arg, env, phi, budget).value : unknown;
-      return { value: v, phi, env, threw: true };
+      const loc = node.loc
+        ? { line: node.loc.start.line, column: node.loc.start.column }
+        : undefined;
+      return { value: v, phi, env, threw: true, ...(loc ? { throwLoc: loc } : {}) };
+    }
+    case "ConditionalExpression": {
+      const cond = node as unknown as { test: Node; consequent: Node; alternate: Node };
+      const t = evalNode(cond.test, env, phi, budget).value;
+      const tv = litValue(t);
+      if (tv === true) return evalNode(cond.consequent, env, phi, budget);
+      if (tv === false) return evalNode(cond.alternate, env, phi, budget);
+      const a = evalNode(cond.consequent, env, phi, budget);
+      const b = evalNode(cond.alternate, env, phi, budget);
+      return { value: joinAbs(a.value, b.value), phi, env };
     }
     case "ForStatement":
       return evalFor(node as ForStatement, env, phi, budget);
@@ -1261,19 +1342,29 @@ function evalCall(
         }
         if (obj.shape.k === "tuple") {
           const kept: Abs[] = [];
+          let anyUncertain = false;
           for (const el of obj.shape.elements) {
             const p = applyUnaryCallback(fnNode, el, env, phi, budget);
             const lv = litValue(p);
             if (lv === false) continue;
+            if (lv !== true) anyUncertain = true;
             kept.push(el);
           }
           if (kept.length === 0) {
             return ok(abs({ k: "arr", element: unknown }, undefined, undefined, "path"), phi, env);
           }
-          if (kept.length === 1) return ok(kept[0]!, phi, env);
-          // 多元素：tuple（保精确）或 join 成 arr
+          // 剩余元素谓词恒 true → 精确子序列，保留 tuple 字面量精度。
+          // 任一谓词不确定（random/符号）→ 降为 arr：长度是上界不是精确值。
+          if (!anyUncertain) {
+            return ok(
+              abs({ k: "tuple", elements: kept }, undefined, undefined, confJoin(obj.conf, "path")),
+              phi,
+              env,
+            );
+          }
+          const el = kept.reduce((a, b) => joinAbs(a, b));
           return ok(
-            abs({ k: "tuple", elements: kept }, undefined, undefined, confJoin(obj.conf, "path")),
+            abs({ k: "arr", element: el }, undefined, undefined, confJoin(obj.conf, "path")),
             phi,
             env,
           );
@@ -1579,7 +1670,16 @@ function evalBlock(
       pendingPartial = undefined;
     }
     if (r.returned || r.brk || r.cont || r.threw) {
-      return { value: last, phi: curPhi, env: local, returned: r.returned, brk: r.brk, cont: r.cont, threw: r.threw };
+      return {
+        value: last,
+        phi: curPhi,
+        env: local,
+        returned: r.returned,
+        brk: r.brk,
+        cont: r.cont,
+        threw: r.threw,
+        ...(r.throwLoc ? { throwLoc: r.throwLoc } : {}),
+      };
     }
   }
   if (pendingPartial !== undefined) {
@@ -1873,6 +1973,30 @@ export function analyzeFn(
   modules?: Record<string, AbsModuleExports>,
 ): Abs {
   return evalSource(source, { fn: fnName, args }, { phi, budget, file, modules }).value;
+}
+
+/**
+ * analyzeFn 的 throws/loc 感知版（T19/T20）：threw 时 result=never、throws=抛出值。
+ * 供 case 兜底在 B-path 失败时仍可无损拿 throws+loc，不经 TypeValue evaluateFunctionFull。
+ */
+export function analyzeFnFull(
+  source: string,
+  fnName: string,
+  args: Abs[],
+  opts: EvalOptions = {},
+): { result: Abs; throws: Abs; throwLoc?: { line: number; column: number } } {
+  const r = evalSource(source, { fn: fnName, args }, opts);
+  if (r.threw) {
+    return {
+      result: abs({ k: "never" }, undefined, undefined, "exact"),
+      throws: r.value,
+      ...(r.throwLoc ? { throwLoc: r.throwLoc } : {}),
+    };
+  }
+  return {
+    result: r.value,
+    throws: abs({ k: "never" }, undefined, undefined, "exact"),
+  };
 }
 
 /**

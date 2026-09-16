@@ -1,10 +1,42 @@
 import type { Node, Comment } from "@babel/types";
-import { type TypeValue, type MockHelper, T, createEnvironment, stub, spy, mock } from "@nudojs/core";
+import {
+  type TypeValue,
+  type Abs,
+  type MockHelper,
+  type NudoConstraint,
+  type Pred,
+  T,
+  createEnvironment,
+  stub,
+  spy,
+  mock,
+  execNudoModule,
+  isNudoConstraint,
+  constraintToEntryAbs,
+  absToTypeValue,
+  typeValueToAbs,
+  numLit,
+  strLit,
+  boolLit,
+  SELF,
+} from "@nudojs/core";
 import { parse as babelParse } from "./parse.ts";
+
+/** TypeValue → Abs（MockHelper 值字段）；失败落 opaque unknown */
+function tvToAbs(v: TypeValue): Abs {
+  try {
+    return typeValueToAbs(v);
+  } catch {
+    return { shape: { k: "unknown" }, conf: "opaque" };
+  }
+}
 
 export type CaseDirective = {
   kind: "case";
   name: string;
+  /** 无损参数 Abs（case 文法主路径；约束表达式与 T.* 均产出） */
+  argsAbs: Abs[];
+  /** @deprecated 外延投影；优先 argsAbs */
   args: TypeValue[];
   expected?: TypeValue;
   commentLine?: number;
@@ -83,7 +115,111 @@ const PURE_REGEX = /@nudo:pure\b/g;
 const SKIP_REGEX = /@nudo:skip(?:\s+(.+))?/g;
 const SAMPLE_REGEX = /@nudo:sample\s+(\d+)/g;
 
+/**
+ * 约束表达式（design-refine-derivation：case 实参主文法）。
+ * 识别 `number()` / `number().gt(0)` / `lit(42)` / `union(…)` / `shape({…})` /
+ * `array(…)` / `fn({…}, …)` / `partial` / `pick` / `omit` / `and` 等构建器。
+ * 不匹配 `T.*`（TypeValue 兼容文法）与裸字面量 / 箭头函数。
+ */
+const CONSTRAINT_EXPR_RE =
+  /^(number|string|boolean|array|shape|lit|union|fn|partial|pick|omit|record|required|readonly|nonNullable|and)\s*\(/;
+
+/** 约束表达式 → NudoConstraint；非约束文法或执行失败 → undefined */
+function tryParseConstraint(expr: string): NudoConstraint | undefined {
+  const s = expr.trim();
+  if (!CONSTRAINT_EXPR_RE.test(s)) return undefined;
+  try {
+    // 受控执行：注入构建器，不碰用户 node_modules（与侧车同一路径）
+    const src = `export const __nudo_case_arg = (${s});`;
+    const exports = execNudoModule(src);
+    const v = exports.__nudo_case_arg;
+    if (!isNudoConstraint(v)) return undefined;
+    return v;
+  } catch {
+    return undefined;
+  }
+}
+
+function flattenPreds(preds: Pred[]): Pred[] {
+  const out: Pred[] = [];
+  const visit = (p: Pred): void => {
+    if (p.op === "and") {
+      p.args.forEach(visit);
+      return;
+    }
+    out.push(p);
+  };
+  preds.forEach(visit);
+  return out;
+}
+
+/** lit(42) 形态：唯一 eq(self, v)；非字面量 → undefined */
+function constraintSelfEqLit(
+  c: NudoConstraint,
+  selfIds: string[],
+): number | string | boolean | null | undefined {
+  const leaves = flattenPreds(c.preds);
+  const eqs = leaves.filter((p) => p.op === "eq");
+  if (eqs.length !== 1) return undefined;
+  const p = eqs[0]!;
+  if (p.op !== "eq") return undefined;
+  const isSelf = (t: { op: string; id?: string }): boolean =>
+    t.op === "var" && typeof t.id === "string" && selfIds.includes(t.id);
+  const a = p.a;
+  const b = p.b;
+  if (isSelf(a) && b.op === "lit") return b.value as number | string | boolean | null;
+  if (isSelf(b) && a.op === "lit") return a.value as number | string | boolean | null;
+  return undefined;
+}
+
+/**
+ * case 实参约束 → Abs。lit 优先成字面量 Abs（term=lit，不是 var+eq）；
+ * union 成员递归再拼 sum（同 prim 双 lit 不经 joinValues 急切塌缩）；
+ * 其余走 constraintToEntryAbs（var 项 + pred）。
+ */
+function constraintToCaseArgAbs(c: NudoConstraint): Abs {
+  if (c.members && c.members.length > 0) {
+    const parts = c.members.map((m) => constraintToCaseArgAbs(m));
+    if (parts.length === 1) return parts[0]!;
+    return { shape: { k: "sum", members: parts }, conf: "path" };
+  }
+  const selfIds = [SELF, "__arg", "__nudo_self__"];
+  const lv = constraintSelfEqLit(c, selfIds);
+  if (typeof lv === "number" && !Number.isNaN(lv)) return numLit(lv);
+  if (typeof lv === "string") return strLit(lv);
+  if (typeof lv === "boolean") return boolLit(lv);
+  return constraintToEntryAbs(c, "__arg");
+}
+
 export function parseTypeValueExpr(expr: string): TypeValue {
+  // 约束表达式优先：number() / lit(42) / shape({…}) / …
+  const constraint = tryParseConstraint(expr);
+  if (constraint) {
+    try {
+      return absToTypeValue(constraintToCaseArgAbs(constraint));
+    } catch {
+      return T.unknown;
+    }
+  }
+  return parseTypeValueExprLegacy(expr);
+}
+
+/** case 实参主路径：始终产出 Abs；TypeValue 为外延兼容投影 */
+export function parseCaseArgExpr(expr: string): { typeValue: TypeValue; abs: Abs } {
+  const constraint = tryParseConstraint(expr);
+  if (constraint) {
+    try {
+      const absVal = constraintToCaseArgAbs(constraint);
+      return { typeValue: absToTypeValue(absVal), abs: absVal };
+    } catch {
+      return { typeValue: T.unknown, abs: { shape: { k: "unknown" }, conf: "opaque" } };
+    }
+  }
+  const tv = parseTypeValueExprLegacy(expr);
+  return { typeValue: tv, abs: tvToAbs(tv) };
+}
+
+function parseTypeValueExprLegacy(expr: string): TypeValue {
   const s = expr.trim();
 
   if (s === "T.number") return T.number;
@@ -107,19 +243,19 @@ export function parseTypeValueExpr(expr: string): TypeValue {
   if (s.startsWith("T.union(") && s.endsWith(")")) {
     const inner = s.slice("T.union(".length, -1);
     const args = splitTopLevelArgs(inner);
-    return T.union(...args.map(parseTypeValueExpr));
+    return T.union(...args.map(parseTypeValueExprLegacy));
   }
 
   if (s.startsWith("T.array(") && s.endsWith(")")) {
     const inner = s.slice("T.array(".length, -1);
-    return T.array(parseTypeValueExpr(inner));
+    return T.array(parseTypeValueExprLegacy(inner));
   }
 
   if (s.startsWith("T.tuple(") && s.endsWith(")")) {
     const inner = s.slice("T.tuple(".length, -1).trim();
     if (inner.startsWith("[") && inner.endsWith("]")) {
       const elements = splitTopLevelArgs(inner.slice(1, -1));
-      return T.tuple(elements.map(parseTypeValueExpr));
+      return T.tuple(elements.map(parseTypeValueExprLegacy));
     }
     return T.tuple([]);
   }
@@ -136,7 +272,7 @@ export function parseTypeValueExpr(expr: string): TypeValue {
         if (colonIdx === -1) continue;
         const key = entry.slice(0, colonIdx).trim();
         const val = entry.slice(colonIdx + 1).trim();
-        props[key] = parseTypeValueExpr(val);
+        props[key] = parseTypeValueExprLegacy(val);
       }
       return T.object(props);
     }
@@ -169,7 +305,7 @@ export function parseTypeValueExpr(expr: string): TypeValue {
       if (colonIdx === -1) continue;
       const key = entry.slice(0, colonIdx).trim().replace(/^["']|["']$/g, "");
       const val = entry.slice(colonIdx + 1).trim();
-      props[key] = parseTypeValueExpr(val);
+      props[key] = parseTypeValueExprLegacy(val);
     }
     return T.object(props);
   }
@@ -178,7 +314,7 @@ export function parseTypeValueExpr(expr: string): TypeValue {
     const content = s.slice(1, -1).trim();
     if (!content) return T.tuple([]);
     const elements = splitTopLevelArgs(content);
-    return T.tuple(elements.map(parseTypeValueExpr));
+    return T.tuple(elements.map(parseTypeValueExprLegacy));
   }
 
   return T.unknown;
@@ -409,7 +545,7 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
   // Match stub().returns(value).onFirstCall()
   const stubReturnsOnFirstMatch = s.match(/^stub\(\)\.returns\((.+)\)\.onFirstCall\(\)$/);
   if (stubReturnsOnFirstMatch) {
-    const helper = stub.returns(parseTypeValueExpr(stubReturnsOnFirstMatch[1].trim()));
+    const helper = stub.returns(tvToAbs(parseTypeValueExpr(stubReturnsOnFirstMatch[1].trim())));
     helper.onFirstCallValue = helper.returnValue;
     return helper;
   }
@@ -417,29 +553,31 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
   // Match stub().returns(value).onSecondCall()
   const stubReturnsOnSecondMatch = s.match(/^stub\(\)\.returns\((.+)\)\.onSecondCall\(\)$/);
   if (stubReturnsOnSecondMatch) {
-    return stub.returns(parseTypeValueExpr(stubReturnsOnSecondMatch[1].trim()));
+    return stub.returns(tvToAbs(parseTypeValueExpr(stubReturnsOnSecondMatch[1].trim())));
   }
 
   // Match stub().returns(value).onCall(n)
   const stubReturnsOnCallMatch = s.match(/^stub\(\)\.returns\((.+)\)\.onCall\(\d+\)$/);
   if (stubReturnsOnCallMatch) {
-    return stub.returns(parseTypeValueExpr(stubReturnsOnCallMatch[1].trim()));
+    return stub.returns(tvToAbs(parseTypeValueExpr(stubReturnsOnCallMatch[1].trim())));
   }
 
   // Match stub().callsFake((args) => body)
   const stubCallsFakeMatch = s.match(/^stub\(\)\.callsFake\((.+)\)$/);
   if (stubCallsFakeMatch) {
-    const helper: MockHelper = { kind: "mock-helper" };
-    helper.callsFakeImpl = parseTypeValueExpr(stubCallsFakeMatch[1].trim());
-    return helper;
+    const fnVal = parseTypeValueExpr(stubCallsFakeMatch[1].trim());
+    if (fnVal.kind === "function") {
+      return stub.callsFake({ params: fnVal.params, body: fnVal.body, async: false });
+    }
+    return { kind: "mock-helper" };
   }
 
   // Match stub().withArgs(args).returns(value)
   const stubWithArgsMatch = s.match(/^stub\(\)\.withArgs\((.+)\)\.returns\((.+)\)$/);
   if (stubWithArgsMatch) {
-    const retVal = parseTypeValueExpr(stubWithArgsMatch[2].trim());
+    const retVal = tvToAbs(parseTypeValueExpr(stubWithArgsMatch[2].trim()));
     const argsStr = stubWithArgsMatch[1].trim();
-    const args = splitTopLevelArgs(argsStr).map(parseTypeValueExpr);
+    const args = splitTopLevelArgs(argsStr).map((a) => tvToAbs(parseTypeValueExpr(a)));
     // 返回值只挂在 withArgs 分支上（sinon 语义：实参匹配才返回），不设全局
     // returnValue —— 否则未命中调用会错误复用链返回值
     const helper: MockHelper = { kind: "mock-helper" };
@@ -450,46 +588,46 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
   // Match stub().onFirstCall().returns(value) —— 链在 returns 上取值
   const stubOnFirstReturnsMatch = s.match(/^stub\(\)\.onFirstCall\(\)\.returns\((.+)\)$/);
   if (stubOnFirstReturnsMatch) {
-    return stub.returns(parseTypeValueExpr(stubOnFirstReturnsMatch[1].trim()));
+    return stub.returns(tvToAbs(parseTypeValueExpr(stubOnFirstReturnsMatch[1].trim())));
   }
 
-  // Match stub().onFirstCall(value) —— 无 returnValue 时 TypeValue/Abs 均作默认返回
+  // Match stub().onFirstCall(value) —— 无 returnValue 时 Abs 作默认返回
   // [^()]* 避免把 onFirstCall().returns(...) 的尾链吞进实参
   const stubOnFirstValueMatch = s.match(/^stub\(\)\.onFirstCall\(([^()]*)\)$/);
   if (stubOnFirstValueMatch && stubOnFirstValueMatch[1].trim() !== "") {
     const helper: MockHelper = { kind: "mock-helper" };
-    helper.onFirstCallValue = parseTypeValueExpr(stubOnFirstValueMatch[1].trim());
+    helper.onFirstCallValue = tvToAbs(parseTypeValueExpr(stubOnFirstValueMatch[1].trim()));
     return helper;
   }
 
   // Match spy().returns(value)
   const spyReturnsMatch = s.match(/^spy\(\)\.returns\((.+)\)$/);
   if (spyReturnsMatch) {
-    return spy.returns(parseTypeValueExpr(spyReturnsMatch[1].trim()));
+    return spy.returns(tvToAbs(parseTypeValueExpr(spyReturnsMatch[1].trim())));
   }
 
   // Match stub().resolves(value).onFirstCall()
   const stubResolvesOnFirstMatch = s.match(/^stub\(\)\.resolves\((.+)\)\.onFirstCall\(\)$/);
   if (stubResolvesOnFirstMatch) {
-    return stub.resolves(parseTypeValueExpr(stubResolvesOnFirstMatch[1].trim()));
+    return stub.resolves(tvToAbs(parseTypeValueExpr(stubResolvesOnFirstMatch[1].trim())));
   }
 
   // Match stub().returns(value)
   const stubReturnsMatch = s.match(/^stub\(\)\.returns\((.+)\)$/);
   if (stubReturnsMatch) {
-    return stub.returns(parseTypeValueExpr(stubReturnsMatch[1].trim()));
+    return stub.returns(tvToAbs(parseTypeValueExpr(stubReturnsMatch[1].trim())));
   }
 
   // Match stub().resolves(value)
   const stubResolvesMatch = s.match(/^stub\(\)\.resolves\((.+)\)$/);
   if (stubResolvesMatch) {
-    return stub.resolves(parseTypeValueExpr(stubResolvesMatch[1].trim()));
+    return stub.resolves(tvToAbs(parseTypeValueExpr(stubResolvesMatch[1].trim())));
   }
 
   // Match stub().rejects(value)
   const stubRejectsMatch = s.match(/^stub\(\)\.rejects\((.+)\)$/);
   if (stubRejectsMatch) {
-    return stub.rejects(parseTypeValueExpr(stubRejectsMatch[1].trim()));
+    return stub.rejects(tvToAbs(parseTypeValueExpr(stubRejectsMatch[1].trim())));
   }
 
   // Match stub()
@@ -580,7 +718,9 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
         .split("\n")
         .map((line) => line.replace(/^\s*\*\s?/, ""))
         .join("\n");
-      const args = splitTopLevelArgs(cleaned).map(parseTypeValueExpr);
+      const parsedArgs = splitTopLevelArgs(cleaned).map(parseCaseArgExpr);
+      const args = parsedArgs.map((p) => p.typeValue);
+      const argsAbs = parsedArgs.map((p) => p.abs);
 
       const afterParen = parenStart + argsStr.length + 2;
       const restLine = text.slice(afterParen).split("\n")[0].trim();
@@ -590,7 +730,14 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
       const linesBeforeMatch = text.slice(0, match.index).split("\n").length - 1;
       const commentLine = commentStartLine + linesBeforeMatch;
 
-      directives.push({ kind: "case", name, args, expected, commentLine });
+      directives.push({
+        kind: "case",
+        name,
+        args,
+        argsAbs,
+        expected,
+        commentLine,
+      });
     }
 
     PURE_REGEX.lastIndex = 0;

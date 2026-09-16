@@ -4,15 +4,35 @@ import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { type TypeValue, type Environment } from "@nudojs/core";
+import {
+  type Abs,
+  type TypeValue,
+  type Environment,
+  absToTypeValue,
+} from "@nudojs/core";
 import { defineEnv as defineEsEnv } from "@nudojs/env/es";
 import { defineEnv as defineWebEnv } from "@nudojs/env/web";
 import { defineEnv as defineNodeEnv } from "@nudojs/env/node";
+import { envValueToAbs } from "../env-to-abs.ts";
 
-type EnvDefinition = {
+/** Abs 原生 env 定义（内置 es/web/node） */
+type AbsEnvDefinition = {
+  globals: Record<string, Abs>;
+  modules?: Record<string, Record<string, Abs>>;
+};
+
+/** path 型 / harvester 生成的 TypeValue 定义（兼容） */
+type TvEnvDefinition = {
   globals: Record<string, TypeValue>;
   modules?: Record<string, Record<string, TypeValue>>;
 };
+
+type EnvDefinition = AbsEnvDefinition | TvEnvDefinition;
+
+function isAbsEnv(def: EnvDefinition): def is AbsEnvDefinition {
+  const sample = Object.values(def.globals)[0];
+  return !!sample && typeof sample === "object" && "shape" in sample && "conf" in sample;
+}
 
 const envFactories: Record<string, () => EnvDefinition> = {
   es: defineEsEnv,
@@ -38,7 +58,11 @@ function resolveEnvNames(names: string[]): string[] {
 }
 
 export type LoadedEnv = {
-  modules: Record<string, Record<string, TypeValue>>;
+  /** Abs 原生模块导出（B 路径 / Abs 模块图） */
+  modules: Record<string, Record<string, Abs>>;
+  /** TypeValue 投影（Environment 绑定 / BindingInfo.type 占位） */
+  modulesTV: Record<string, Record<string, TypeValue>>;
+  globals: Record<string, Abs>;
 };
 
 // Path-based env files (`/// @nudo:env ./nudo-harvest-node.ts`) are imported
@@ -150,8 +174,36 @@ export async function loadEnvsAsync(
   return loadEnvs(envNames, globalEnv);
 }
 
+/** TypeValue env 定义 → Abs + TypeValue 投影 */
+function normalizeTvDef(def: TvEnvDefinition): {
+  globals: Record<string, Abs>;
+  globalsTV: Record<string, TypeValue>;
+  modules: Record<string, Record<string, Abs>>;
+  modulesTV: Record<string, Record<string, TypeValue>>;
+} {
+  const globals: Record<string, Abs> = {};
+  for (const [k, v] of Object.entries(def.globals)) {
+    globals[k] = envValueToAbs(v);
+  }
+  const modules: Record<string, Record<string, Abs>> = {};
+  const modulesTV: Record<string, Record<string, TypeValue>> = {};
+  if (def.modules) {
+    for (const [modName, exports] of Object.entries(def.modules)) {
+      const named: Record<string, Abs> = {};
+      for (const [k, v] of Object.entries(exports)) {
+        named[k] = envValueToAbs(v);
+      }
+      modules[modName] = named;
+      modulesTV[modName] = { ...exports };
+    }
+  }
+  return { globals, globalsTV: def.globals, modules, modulesTV };
+}
+
 export function loadEnvs(envNames: string[], globalEnv: Environment): LoadedEnv {
-  const allModules: Record<string, Record<string, TypeValue>> = {};
+  const allModules: Record<string, Record<string, Abs>> = {};
+  const allModulesTV: Record<string, Record<string, TypeValue>> = {};
+  const allGlobals: Record<string, Abs> = {};
   const resolved = resolveEnvNames(envNames);
 
   for (const name of resolved) {
@@ -159,16 +211,37 @@ export function loadEnvs(envNames: string[], globalEnv: Environment): LoadedEnv 
     if (!factory) continue;
     const def = factory();
 
-    for (const [key, value] of Object.entries(def.globals)) {
-      globalEnv.bind(key, value);
-    }
-
-    if (def.modules) {
-      for (const [modName, exports] of Object.entries(def.modules)) {
+    if (isAbsEnv(def)) {
+      for (const [key, value] of Object.entries(def.globals)) {
+        allGlobals[key] = value;
+        globalEnv.bind(key, absToTypeValue(value));
+      }
+      if (def.modules) {
+        for (const [modName, exports] of Object.entries(def.modules)) {
+          allModules[modName] = { ...allModules[modName], ...exports };
+          const tvExports: Record<string, TypeValue> = {};
+          for (const [k, v] of Object.entries(exports)) {
+            tvExports[k] = absToTypeValue(v);
+          }
+          allModulesTV[modName] = { ...allModulesTV[modName], ...tvExports };
+        }
+      }
+    } else {
+      const norm = normalizeTvDef(def);
+      for (const [key, value] of Object.entries(norm.globalsTV)) {
+        globalEnv.bind(key, value);
+      }
+      for (const [key, value] of Object.entries(norm.globals)) {
+        allGlobals[key] = value;
+      }
+      for (const [modName, exports] of Object.entries(norm.modules)) {
         allModules[modName] = { ...allModules[modName], ...exports };
+      }
+      for (const [modName, exports] of Object.entries(norm.modulesTV)) {
+        allModulesTV[modName] = { ...allModulesTV[modName], ...exports };
       }
     }
   }
 
-  return { modules: allModules };
+  return { modules: allModules, modulesTV: allModulesTV, globals: allGlobals };
 }

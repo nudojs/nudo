@@ -36,6 +36,7 @@ import { parse } from "@nudojs/parser";
 import {
   T,
   typeValueToString,
+  formatAbs,
   checkSource,
   serializeCheckJson,
   pTrue,
@@ -472,8 +473,12 @@ export function whatIf(params: WhatIfParams, deps: AgentToolDeps = {}): AgentToo
     // Direct analysis: the injected source never matches the version-keyed
     // editor cache, so bypass it entirely.
     const result = analyzeFile(filePath, source);
-    const typeStr = result.bindings.has(params.target)
-      ? typeValueToString(result.bindings.get(params.target)!.type)
+    const binding = result.bindings.get(params.target);
+    // 无损 Abs 优先；缺失再落 TypeValue 外延投影
+    const typeStr = binding
+      ? binding.abs
+        ? formatAbs(binding.abs)
+        : typeValueToString(binding.type)
       : "unknown";
 
     const notes: string[] = [];

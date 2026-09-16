@@ -4,9 +4,11 @@
  * 字段只增不改语义：
  * - ext_*：TypeValue 投影字符串（有损，兼容）
  * - intension.abs*：无损 Abs 展示（主线）
+ * - argsAbs / resultAbs：CaseResult 上的无损 Abs（formatAbs）；有则补齐，
+ *   与 TypeValue 外延字段并存——消费者可逐步切到 Abs，不强制 breaking
  */
 
-import { typeValueToString, type TypeValue } from "@nudojs/core";
+import { typeValueToString, formatAbs, type TypeValue, type Abs } from "@nudojs/core";
 import type { AnalysisResult, CaseResult, FunctionAnalysis, SourceLocation } from "./analyzer.ts";
 
 export type InferJsonCase = {
@@ -17,6 +19,10 @@ export type InferJsonCase = {
   throws: string | null;
   source: string | null;
   aggregatedFrom?: number;
+  /** 无损参数 Abs 展示（与 args 对齐；缺失位省略） */
+  argsAbs?: string[];
+  /** 无损结果 Abs 展示 */
+  resultAbs?: string;
   /** 无损内涵（Abs）；无则省略 */
   intension?: {
     display?: string;
@@ -35,6 +41,8 @@ export type InferJsonFunction = {
   noDeclaration?: boolean;
   cases: InferJsonCase[];
   combined?: string;
+  /** 无损 combined Abs 展示 */
+  combinedAbs?: string;
 };
 
 export type InferJson = {
@@ -72,6 +80,22 @@ function mapCase(c: CaseResult): InferJsonCase {
     source: c.source ?? null,
   };
   if (c.aggregatedFrom !== undefined) out.aggregatedFrom = c.aggregatedFrom;
+  if (c.argAbs && c.argAbs.length > 0) {
+    out.argsAbs = c.argAbs.map((a: Abs) => {
+      try {
+        return formatAbs(a);
+      } catch {
+        return "unknown";
+      }
+    });
+  }
+  if (c.abs) {
+    try {
+      out.resultAbs = formatAbs(c.abs);
+    } catch {
+      /* skip */
+    }
+  }
   if (c.intension) {
     const i = c.intension;
     out.intension = {
@@ -95,6 +119,13 @@ function mapFunction(f: FunctionAnalysis): InferJsonFunction {
   };
   if (f.noDeclaration) out.noDeclaration = true;
   if (f.combined) out.combined = typeValueToString(f.combined);
+  if (f.combinedAbs) {
+    try {
+      out.combinedAbs = formatAbs(f.combinedAbs);
+    } catch {
+      /* skip */
+    }
+  }
   return out;
 }
 

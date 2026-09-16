@@ -38,7 +38,7 @@ import {
 } from "@nudojs/core";
 import { randomBytes } from "node:crypto";
 import { analyzeFileAsync, type CaseResult, type FunctionAnalysis } from "./analyzer.ts";
-import type { CallRecord } from "./evaluator/evaluator.ts";
+import type { CallRecord } from "./evaluator/call-record.ts";
 import { unifiedDiff } from "./case-emitter.ts";
 import { findProjectConfig, interfaceConfig, matchesEmitAllowlist } from "./evaluator/config.ts";
 
@@ -369,6 +369,11 @@ function projectFunctionDsl(fn: FunctionAnalysis): string | undefined {
   for (let i = 0; i < fn.paramNames.length; i++) {
     const argAbs: Abs[] = [];
     for (const c of paramCases) {
+      // CaseResult.argAbs 优先（B-path / CallRecord 无损）；缺失再桥 TypeValue
+      if (c.argAbs && i < c.argAbs.length && c.argAbs[i]) {
+        argAbs.push(c.argAbs[i]!);
+        continue;
+      }
       const a = c.args[i];
       if (a === undefined) continue;
       argAbs.push(safeTypeValueToAbs(a));

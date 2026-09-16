@@ -1,252 +1,323 @@
-import { type TypeValue, type SigImpl, T } from "@nudojs/core";
+/**
+ * ES env：Abs 原生 globals。
+ * EnvDefinition.globals / modules 均为 Abs；TypeValue 投影走 absToTypeValue。
+ */
+
+import {
+  type Abs,
+  type AbsSigImpl,
+  litValue,
+  numLit,
+  strLit,
+  boolLit,
+} from "@nudojs/core";
+import {
+  arrOf,
+  brandOf,
+  envFn,
+  nullLit,
+  objAbs,
+  promiseOf,
+  undef,
+  unionOf,
+  prim,
+} from "./abs-helpers.ts";
 
 export type EnvDefinition = {
-  globals: Record<string, TypeValue>;
-  modules?: Record<string, Record<string, TypeValue>>;
+  globals: Record<string, Abs>;
+  modules?: Record<string, Record<string, Abs>>;
 };
 
-function litNum(tv: TypeValue): number | undefined {
-  return tv.kind === "literal" && typeof tv.value === "number" ? tv.value : undefined;
+function absNumLit(a: Abs | undefined): number | undefined {
+  if (!a) return undefined;
+  const v = litValue(a);
+  return typeof v === "number" ? v : undefined;
 }
 
-function litStr(tv: TypeValue): string | undefined {
-  return tv.kind === "literal" && typeof tv.value === "string" ? tv.value : undefined;
+function absStrLit(a: Abs | undefined): string | undefined {
+  if (!a) return undefined;
+  const v = litValue(a);
+  return typeof v === "string" ? v : undefined;
 }
 
-function numImpl1(fn: (a: number) => number): SigImpl {
+function numImpl1Abs(fn: (a: number) => number): AbsSigImpl {
   return (args) => {
-    const a = litNum(args[0]);
-    return a !== undefined ? T.literal(fn(a)) : undefined;
+    const a = absNumLit(args[0]);
+    return a !== undefined ? numLit(fn(a)) : undefined;
   };
 }
 
-function numImpl2(fn: (a: number, b: number) => number): SigImpl {
+function numImpl2Abs(fn: (a: number, b: number) => number): AbsSigImpl {
   return (args) => {
-    const a = litNum(args[0]);
-    const b = litNum(args[1]);
-    return a !== undefined && b !== undefined ? T.literal(fn(a, b)) : undefined;
+    const a = absNumLit(args[0]);
+    const b = absNumLit(args[1]);
+    return a !== undefined && b !== undefined ? numLit(fn(a, b)) : undefined;
   };
 }
 
-function strToStrImpl(fn: (s: string) => string): SigImpl {
+function strToStrImplAbs(fn: (s: string) => string): AbsSigImpl {
   return (args) => {
-    const s = litStr(args[0]);
-    return s !== undefined ? T.literal(fn(s)) : undefined;
+    const s = absStrLit(args[0]);
+    return s !== undefined ? strLit(fn(s)) : undefined;
   };
 }
 
 export function defineEnv(): EnvDefinition {
-  const voidFn = T.fnSig([T.unknown], T.undefined);
+  const voidFn = envFn([prim.unknown], undef());
 
-  const consoleMethods: Record<string, TypeValue> = {};
-  for (const name of ["log", "error", "warn", "info", "debug", "trace", "dir", "table", "time", "timeEnd", "timeLog", "clear", "count", "countReset", "group", "groupCollapsed", "groupEnd", "assert"]) {
-    consoleMethods[name] = voidFn;
+  const consoleSlots: Record<string, Abs> = {};
+  for (const name of [
+    "log",
+    "error",
+    "warn",
+    "info",
+    "debug",
+    "trace",
+    "dir",
+    "table",
+    "time",
+    "timeEnd",
+    "timeLog",
+    "clear",
+    "count",
+    "countReset",
+    "group",
+    "groupCollapsed",
+    "groupEnd",
+    "assert",
+  ]) {
+    consoleSlots[name] = voidFn;
   }
 
-  const jsonStringifyImpl: SigImpl = (args) => {
-    const v = args[0];
-    if (v.kind === "literal") {
-      try {
-        const result = JSON.stringify(v.value);
-        return result === undefined ? T.undefined : T.literal(result);
-      } catch { /* fallback */ }
+  const jsonStringifyImplAbs: AbsSigImpl = (args) => {
+    const a = args[0];
+    if (!a) return undefined;
+    const v = litValue(a);
+    if (v === undefined && a.term?.op !== "lit") return undefined;
+    try {
+      const result = JSON.stringify(v);
+      return result === undefined ? undef() : strLit(result);
+    } catch {
+      return undefined;
     }
-    return undefined;
   };
 
-  const parseIntImpl: SigImpl = (args) => {
-    const s = litStr(args[0]);
-    const radix = args[1] !== undefined ? litNum(args[1]) : 10;
+  const parseIntImplAbs: AbsSigImpl = (args) => {
+    const s = absStrLit(args[0]);
+    const radix = args[1] !== undefined ? absNumLit(args[1]) : 10;
     if (s !== undefined && radix !== undefined) {
       const result = parseInt(s, radix);
-      return Number.isNaN(result) ? T.literal(NaN) : T.literal(result);
+      return Number.isNaN(result) ? numLit(NaN) : numLit(result);
     }
     return undefined;
   };
 
-  const parseFloatImpl: SigImpl = (args) => {
-    const s = litStr(args[0]);
-    if (s !== undefined) {
-      const result = parseFloat(s);
-      return T.literal(result);
-    }
+  const parseFloatImplAbs: AbsSigImpl = (args) => {
+    const s = absStrLit(args[0]);
+    if (s !== undefined) return numLit(parseFloat(s));
     return undefined;
   };
 
-  const isNaNImpl: SigImpl = (args) => {
-    const v = args[0];
-    if (v.kind === "literal" && typeof v.value === "number") return T.literal(Number.isNaN(v.value));
+  const isNaNImplAbs: AbsSigImpl = (args) => {
+    const n = absNumLit(args[0]);
+    return n !== undefined ? boolLit(Number.isNaN(n)) : undefined;
+  };
+
+  const isFiniteImplAbs: AbsSigImpl = (args) => {
+    const n = absNumLit(args[0]);
+    return n !== undefined ? boolLit(Number.isFinite(n)) : undefined;
+  };
+
+  const isIntegerImplAbs: AbsSigImpl = (args) => {
+    const n = absNumLit(args[0]);
+    return n !== undefined ? boolLit(Number.isInteger(n)) : undefined;
+  };
+
+  const isSafeIntegerImplAbs: AbsSigImpl = (args) => {
+    const n = absNumLit(args[0]);
+    return n !== undefined ? boolLit(Number.isSafeInteger(n)) : undefined;
+  };
+
+  const booleanImplAbs: AbsSigImpl = (args) => {
+    const a = args[0];
+    if (!a) return undefined;
+    const v = litValue(a);
+    if (v === undefined && a.term?.op !== "lit") return undefined;
+    return boolLit(Boolean(v));
+  };
+
+  const stringImplAbs: AbsSigImpl = (args) => {
+    const a = args[0];
+    if (!a) return undefined;
+    const v = litValue(a);
+    if (v === null || v === undefined) return undefined;
+    return strLit(String(v));
+  };
+
+  const isArrayImplAbs: AbsSigImpl = (args) => {
+    const a = args[0];
+    if (!a) return undefined;
+    if (a.shape.k === "arr" || a.shape.k === "tuple") return boolLit(true);
+    if (a.shape.k === "prim" || a.shape.k === "obj") return boolLit(false);
+    if (a.term?.op === "lit") return boolLit(false);
     return undefined;
   };
 
-  const isFiniteImpl: SigImpl = (args) => {
-    const v = args[0];
-    if (v.kind === "literal" && typeof v.value === "number") return T.literal(Number.isFinite(v.value));
-    return undefined;
+  const promiseResolveImplAbs: AbsSigImpl = (args) => {
+    if (!args[0]) return undefined;
+    return promiseOf(args[0]);
   };
 
   return {
     globals: {
-      // --- JSON ---
-      JSON: T.object({
-        parse: T.fnSig([T.string], T.unknown, T.instanceOf("SyntaxError")),
-        stringify: T.fnSig([T.unknown], T.union(T.string, T.undefined), T.never, jsonStringifyImpl),
+      JSON: objAbs({
+        parse: envFn([prim.str()], prim.unknown),
+        stringify: envFn(
+          [prim.unknown],
+          unionOf(prim.str(), undef()),
+          jsonStringifyImplAbs,
+        ),
       }),
 
-      // --- Math ---
-      Math: T.object({
-        abs: T.fnSig([T.number], T.number, T.never, numImpl1(Math.abs)),
-        ceil: T.fnSig([T.number], T.number, T.never, numImpl1(Math.ceil)),
-        floor: T.fnSig([T.number], T.number, T.never, numImpl1(Math.floor)),
-        round: T.fnSig([T.number], T.number, T.never, numImpl1(Math.round)),
-        trunc: T.fnSig([T.number], T.number, T.never, numImpl1(Math.trunc)),
-        sign: T.fnSig([T.number], T.number, T.never, numImpl1(Math.sign)),
-        max: T.fnSig([T.number, T.number], T.number, T.never, numImpl2(Math.max)),
-        min: T.fnSig([T.number, T.number], T.number, T.never, numImpl2(Math.min)),
-        pow: T.fnSig([T.number, T.number], T.number, T.never, numImpl2(Math.pow)),
-        sqrt: T.fnSig([T.number], T.number, T.never, numImpl1(Math.sqrt)),
-        cbrt: T.fnSig([T.number], T.number, T.never, numImpl1(Math.cbrt)),
-        log: T.fnSig([T.number], T.number, T.never, numImpl1(Math.log)),
-        log2: T.fnSig([T.number], T.number, T.never, numImpl1(Math.log2)),
-        log10: T.fnSig([T.number], T.number, T.never, numImpl1(Math.log10)),
-        exp: T.fnSig([T.number], T.number, T.never, numImpl1(Math.exp)),
-        random: T.fnSig([], T.number),
-        sin: T.fnSig([T.number], T.number, T.never, numImpl1(Math.sin)),
-        cos: T.fnSig([T.number], T.number, T.never, numImpl1(Math.cos)),
-        tan: T.fnSig([T.number], T.number, T.never, numImpl1(Math.tan)),
-        asin: T.fnSig([T.number], T.number, T.never, numImpl1(Math.asin)),
-        acos: T.fnSig([T.number], T.number, T.never, numImpl1(Math.acos)),
-        atan: T.fnSig([T.number], T.number, T.never, numImpl1(Math.atan)),
-        atan2: T.fnSig([T.number, T.number], T.number, T.never, numImpl2(Math.atan2)),
-        hypot: T.fnSig([T.number, T.number], T.number, T.never, numImpl2(Math.hypot)),
-        clz32: T.fnSig([T.number], T.number, T.never, numImpl1(Math.clz32)),
-        imul: T.fnSig([T.number, T.number], T.number, T.never, numImpl2(Math.imul)),
-        fround: T.fnSig([T.number], T.number, T.never, numImpl1(Math.fround)),
-        PI: T.number,
-        E: T.number,
-        LN2: T.number,
-        LN10: T.number,
-        LOG2E: T.number,
-        LOG10E: T.number,
-        SQRT2: T.number,
-        SQRT1_2: T.number,
+      Math: objAbs({
+        abs: envFn([prim.num()], prim.num(), numImpl1Abs(Math.abs)),
+        ceil: envFn([prim.num()], prim.num(), numImpl1Abs(Math.ceil)),
+        floor: envFn([prim.num()], prim.num(), numImpl1Abs(Math.floor)),
+        round: envFn([prim.num()], prim.num(), numImpl1Abs(Math.round)),
+        trunc: envFn([prim.num()], prim.num(), numImpl1Abs(Math.trunc)),
+        sign: envFn([prim.num()], prim.num(), numImpl1Abs(Math.sign)),
+        max: envFn([prim.num(), prim.num()], prim.num(), numImpl2Abs(Math.max)),
+        min: envFn([prim.num(), prim.num()], prim.num(), numImpl2Abs(Math.min)),
+        pow: envFn([prim.num(), prim.num()], prim.num(), numImpl2Abs(Math.pow)),
+        sqrt: envFn([prim.num()], prim.num(), numImpl1Abs(Math.sqrt)),
+        cbrt: envFn([prim.num()], prim.num(), numImpl1Abs(Math.cbrt)),
+        log: envFn([prim.num()], prim.num(), numImpl1Abs(Math.log)),
+        log2: envFn([prim.num()], prim.num(), numImpl1Abs(Math.log2)),
+        log10: envFn([prim.num()], prim.num(), numImpl1Abs(Math.log10)),
+        exp: envFn([prim.num()], prim.num(), numImpl1Abs(Math.exp)),
+        random: envFn([], prim.num()),
+        sin: envFn([prim.num()], prim.num(), numImpl1Abs(Math.sin)),
+        cos: envFn([prim.num()], prim.num(), numImpl1Abs(Math.cos)),
+        tan: envFn([prim.num()], prim.num(), numImpl1Abs(Math.tan)),
+        asin: envFn([prim.num()], prim.num(), numImpl1Abs(Math.asin)),
+        acos: envFn([prim.num()], prim.num(), numImpl1Abs(Math.acos)),
+        atan: envFn([prim.num()], prim.num(), numImpl1Abs(Math.atan)),
+        atan2: envFn([prim.num(), prim.num()], prim.num(), numImpl2Abs(Math.atan2)),
+        hypot: envFn([prim.num(), prim.num()], prim.num(), numImpl2Abs(Math.hypot)),
+        clz32: envFn([prim.num()], prim.num(), numImpl1Abs(Math.clz32)),
+        imul: envFn([prim.num(), prim.num()], prim.num(), numImpl2Abs(Math.imul)),
+        fround: envFn([prim.num()], prim.num(), numImpl1Abs(Math.fround)),
+        PI: prim.num(),
+        E: prim.num(),
+        LN2: prim.num(),
+        LN10: prim.num(),
+        LOG2E: prim.num(),
+        LOG10E: prim.num(),
+        SQRT2: prim.num(),
+        SQRT1_2: prim.num(),
       }),
 
-      // --- Number ---
-      Number: T.object({
-        isFinite: T.fnSig([T.unknown], T.boolean, T.never, isFiniteImpl),
-        isInteger: T.fnSig([T.unknown], T.boolean, T.never, (args) => {
-          const v = args[0];
-          if (v.kind === "literal" && typeof v.value === "number") return T.literal(Number.isInteger(v.value));
-          return undefined;
-        }),
-        isNaN: T.fnSig([T.unknown], T.boolean, T.never, isNaNImpl),
-        isSafeInteger: T.fnSig([T.unknown], T.boolean, T.never, (args) => {
-          const v = args[0];
-          if (v.kind === "literal" && typeof v.value === "number") return T.literal(Number.isSafeInteger(v.value));
-          return undefined;
-        }),
-        parseFloat: T.fnSig([T.string], T.number, T.never, parseFloatImpl),
-        parseInt: T.fnSig([T.string], T.number, T.never, parseIntImpl),
-        MAX_SAFE_INTEGER: T.number,
-        MIN_SAFE_INTEGER: T.number,
-        MAX_VALUE: T.number,
-        MIN_VALUE: T.number,
-        POSITIVE_INFINITY: T.number,
-        NEGATIVE_INFINITY: T.number,
-        NaN: T.number,
-        EPSILON: T.number,
+      Number: objAbs({
+        isFinite: envFn([prim.unknown], prim.bool(), isFiniteImplAbs),
+        isInteger: envFn([prim.unknown], prim.bool(), isIntegerImplAbs),
+        isNaN: envFn([prim.unknown], prim.bool(), isNaNImplAbs),
+        isSafeInteger: envFn([prim.unknown], prim.bool(), isSafeIntegerImplAbs),
+        parseFloat: envFn([prim.str()], prim.num(), parseFloatImplAbs),
+        parseInt: envFn([prim.str()], prim.num(), parseIntImplAbs),
+        MAX_SAFE_INTEGER: prim.num(),
+        MIN_SAFE_INTEGER: prim.num(),
+        MAX_VALUE: prim.num(),
+        MIN_VALUE: prim.num(),
+        POSITIVE_INFINITY: prim.num(),
+        NEGATIVE_INFINITY: prim.num(),
+        NaN: prim.num(),
+        EPSILON: prim.num(),
       }),
 
-      // --- Boolean ---
-      Boolean: T.fnSig([T.unknown], T.boolean, T.never, (args) => {
-        const v = args[0];
-        if (v.kind === "literal") return T.literal(Boolean(v.value));
-        return undefined;
+      Boolean: envFn([prim.unknown], prim.bool(), booleanImplAbs),
+      String: envFn([prim.unknown], prim.str(), stringImplAbs),
+
+      Array: objAbs({
+        isArray: envFn([prim.unknown], prim.bool(), isArrayImplAbs),
+        from: envFn([prim.unknown], arrOf(prim.unknown)),
+        of: envFn([prim.unknown], arrOf(prim.unknown)),
       }),
 
-      // --- String ---
-      String: T.fnSig([T.unknown], T.string, T.never, (args) => {
-        const v = args[0];
-        if (v.kind === "literal" && v.value !== null && v.value !== undefined) return T.literal(String(v.value));
-        return undefined;
+      console: objAbs(consoleSlots),
+
+      parseInt: envFn([prim.str(), prim.num()], prim.num(), parseIntImplAbs),
+      parseFloat: envFn([prim.str()], prim.num(), parseFloatImplAbs),
+      isNaN: envFn([prim.unknown], prim.bool(), isNaNImplAbs),
+      isFinite: envFn([prim.unknown], prim.bool(), isFiniteImplAbs),
+      encodeURI: envFn([prim.str()], prim.str(), strToStrImplAbs(encodeURI)),
+      decodeURI: envFn([prim.str()], prim.str(), strToStrImplAbs(decodeURI)),
+      encodeURIComponent: envFn(
+        [prim.str()],
+        prim.str(),
+        strToStrImplAbs(encodeURIComponent),
+      ),
+      decodeURIComponent: envFn(
+        [prim.str()],
+        prim.str(),
+        strToStrImplAbs(decodeURIComponent),
+      ),
+
+      Error: envFn([prim.str()], brandOf("Error")),
+      TypeError: envFn([prim.str()], brandOf("TypeError")),
+      RangeError: envFn([prim.str()], brandOf("RangeError")),
+      SyntaxError: envFn([prim.str()], brandOf("SyntaxError")),
+      ReferenceError: envFn([prim.str()], brandOf("ReferenceError")),
+      URIError: envFn([prim.str()], brandOf("URIError")),
+
+      Promise: objAbs({
+        resolve: envFn([prim.unknown], promiseOf(prim.unknown), promiseResolveImplAbs),
+        reject: envFn([prim.unknown], promiseOf(prim.never)),
+        all: envFn([arrOf(promiseOf(prim.unknown))], promiseOf(arrOf(prim.unknown))),
+        allSettled: envFn(
+          [arrOf(promiseOf(prim.unknown))],
+          promiseOf(arrOf(prim.unknown)),
+        ),
+        race: envFn([arrOf(promiseOf(prim.unknown))], promiseOf(prim.unknown)),
+        any: envFn([arrOf(promiseOf(prim.unknown))], promiseOf(prim.unknown)),
       }),
 
-      // --- Array ---
-      Array: T.object({
-        isArray: T.fnSig([T.unknown], T.boolean, T.never, (args) => {
-          const v = args[0];
-          if (v.kind === "array" || v.kind === "tuple") return T.literal(true);
-          if (v.kind === "literal" || v.kind === "primitive" || v.kind === "object") return T.literal(false);
-          return undefined;
-        }),
-        from: T.fnSig([T.unknown], T.array(T.unknown)),
-        of: T.fnSig([T.unknown], T.array(T.unknown)),
+      Date: objAbs({
+        now: envFn([], prim.num()),
+        parse: envFn([prim.str()], prim.num()),
+        UTC: envFn([prim.num(), prim.num()], prim.num()),
       }),
 
-      // --- console ---
-      console: T.object(consoleMethods),
+      Symbol: envFn([prim.str()], brandOf("Symbol")),
 
-      // --- Global functions ---
-      parseInt: T.fnSig([T.string, T.number], T.number, T.never, parseIntImpl),
-      parseFloat: T.fnSig([T.string], T.number, T.never, parseFloatImpl),
-      isNaN: T.fnSig([T.unknown], T.boolean, T.never, isNaNImpl),
-      isFinite: T.fnSig([T.unknown], T.boolean, T.never, isFiniteImpl),
-      encodeURI: T.fnSig([T.string], T.string, T.never, strToStrImpl(encodeURI)),
-      decodeURI: T.fnSig([T.string], T.string, T.instanceOf("URIError"), strToStrImpl(decodeURI)),
-      encodeURIComponent: T.fnSig([T.string], T.string, T.never, strToStrImpl(encodeURIComponent)),
-      decodeURIComponent: T.fnSig([T.string], T.string, T.instanceOf("URIError"), strToStrImpl(decodeURIComponent)),
-
-      // --- Error constructors ---
-      Error: T.fnSig([T.string], T.instanceOf("Error")),
-      TypeError: T.fnSig([T.string], T.instanceOf("TypeError")),
-      RangeError: T.fnSig([T.string], T.instanceOf("RangeError")),
-      SyntaxError: T.fnSig([T.string], T.instanceOf("SyntaxError")),
-      ReferenceError: T.fnSig([T.string], T.instanceOf("ReferenceError")),
-      URIError: T.fnSig([T.string], T.instanceOf("URIError")),
-
-      // --- Promise ---
-      Promise: T.object({
-        resolve: T.fnSig([T.unknown], T.promise(T.unknown), T.never, (args) => T.promise(args[0])),
-        reject: T.fnSig([T.unknown], T.promise(T.never)),
-        all: T.fnSig([T.array(T.promise(T.unknown))], T.promise(T.array(T.unknown))),
-        allSettled: T.fnSig([T.array(T.promise(T.unknown))], T.promise(T.array(T.unknown))),
-        race: T.fnSig([T.array(T.promise(T.unknown))], T.promise(T.unknown)),
-        any: T.fnSig([T.array(T.promise(T.unknown))], T.promise(T.unknown)),
+      Reflect: objAbs({
+        apply: envFn(
+          [prim.unknown, prim.unknown, arrOf(prim.unknown)],
+          prim.unknown,
+        ),
+        construct: envFn([prim.unknown, arrOf(prim.unknown)], prim.unknown),
+        defineProperty: envFn(
+          [prim.unknown, prim.str(), prim.unknown],
+          prim.bool(),
+        ),
+        deleteProperty: envFn([prim.unknown, prim.str()], prim.bool()),
+        get: envFn([prim.unknown, prim.str()], prim.unknown),
+        getOwnPropertyDescriptor: envFn(
+          [prim.unknown, prim.str()],
+          unionOf(prim.unknown, undef()),
+        ),
+        getPrototypeOf: envFn([prim.unknown], unionOf(prim.unknown, nullLit())),
+        has: envFn([prim.unknown, prim.str()], prim.bool()),
+        isExtensible: envFn([prim.unknown], prim.bool()),
+        ownKeys: envFn([prim.unknown], arrOf(prim.str())),
+        preventExtensions: envFn([prim.unknown], prim.bool()),
+        set: envFn([prim.unknown, prim.str(), prim.unknown], prim.bool()),
+        setPrototypeOf: envFn([prim.unknown, prim.unknown], prim.bool()),
       }),
 
-      // --- Date ---
-      Date: T.object({
-        now: T.fnSig([], T.number),
-        parse: T.fnSig([T.string], T.number),
-        UTC: T.fnSig([T.number, T.number], T.number),
-      }),
-
-      // --- Symbol ---
-      Symbol: T.fnSig([T.string], T.symbol),
-
-      // --- Reflect ---
-      Reflect: T.object({
-        apply: T.fnSig([T.unknown, T.unknown, T.array(T.unknown)], T.unknown),
-        construct: T.fnSig([T.unknown, T.array(T.unknown)], T.unknown),
-        defineProperty: T.fnSig([T.unknown, T.string, T.unknown], T.boolean),
-        deleteProperty: T.fnSig([T.unknown, T.string], T.boolean),
-        get: T.fnSig([T.unknown, T.string], T.unknown),
-        getOwnPropertyDescriptor: T.fnSig([T.unknown, T.string], T.union(T.unknown, T.undefined)),
-        getPrototypeOf: T.fnSig([T.unknown], T.union(T.unknown, T.null)),
-        has: T.fnSig([T.unknown, T.string], T.boolean),
-        isExtensible: T.fnSig([T.unknown], T.boolean),
-        ownKeys: T.fnSig([T.unknown], T.array(T.string)),
-        preventExtensions: T.fnSig([T.unknown], T.boolean),
-        set: T.fnSig([T.unknown, T.string, T.unknown], T.boolean),
-        setPrototypeOf: T.fnSig([T.unknown, T.unknown], T.boolean),
-      }),
-
-      // --- globalThis ---
-      globalThis: T.unknown,
-      undefined: T.undefined,
-      NaN: T.number,
-      Infinity: T.number,
+      globalThis: prim.unknown,
+      undefined: undef(),
+      NaN: prim.num(),
+      Infinity: prim.num(),
     },
   };
 }

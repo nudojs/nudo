@@ -364,6 +364,15 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     return acc;
   }
   if (method === "filter" && args[0]) {
+    // 长度不保留：定长 tuple 经 filter 后最多是子序列，谓词不逐位证明时
+    // 必须降为 arr（元素 join），否则 length/索引会假精确。
+    if (shape.k === "tuple") {
+      const el =
+        shape.elements.length > 0
+          ? shape.elements.reduce((a, b) => joinAbs(a, b))
+          : unknown;
+      return abs({ k: "arr", element: el }, undefined, undefined, confJoin(arr.conf, "path"));
+    }
     return arr;
   }
   if (method === "flatMap" && args[0]) {

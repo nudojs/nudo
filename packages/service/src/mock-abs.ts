@@ -100,29 +100,27 @@ function constantMockFn(result: Abs): Abs {
 }
 
 /**
- * withArgs 实参匹配（与 mock-helpers.mockArgMatches 同语义）：
+ * withArgs 实参匹配：
  * - 字面量声明要求实参同值字面量
- * - primitive 声明接受同源字面量
+ * - prim 声明接受同源字面量或同 prim
  */
-function absArgMatches(declared: TypeValue, actual: Abs | undefined): boolean {
+function absArgMatches(declared: Abs, actual: Abs | undefined): boolean {
   if (!actual) return false;
-  const declaredAbs = typeValueToAbs(declared);
-  // 同 shape + 同字面量
   const av = litValue(actual);
-  const dv = litValue(declaredAbs);
+  const dv = litValue(declared);
   if (dv !== undefined) {
     return av !== undefined && Object.is(av, dv);
   }
-  // declared 是 primitive（如 T.number）：接受同源字面量或同 prim
-  if (declared.kind === "primitive") {
-    if (actual.shape.k === "prim") return actual.shape.type === declared.type;
+  // declared 是 prim（如 number()）：接受同源字面量或同 prim
+  if (declared.shape.k === "prim") {
+    if (actual.shape.k === "prim") return actual.shape.type === declared.shape.type;
     if (av !== undefined) {
       const t = typeof av;
       return (
-        (declared.type === "number" && t === "number") ||
-        (declared.type === "string" && t === "string") ||
-        (declared.type === "boolean" && t === "boolean") ||
-        (declared.type === "bigint" && t === "bigint")
+        (declared.shape.type === "number" && t === "number") ||
+        (declared.shape.type === "string" && t === "string") ||
+        (declared.shape.type === "boolean" && t === "boolean") ||
+        (declared.shape.type === "bigint" && t === "bigint")
       );
     }
   }
@@ -130,11 +128,11 @@ function absArgMatches(declared: TypeValue, actual: Abs | undefined): boolean {
   return false;
 }
 
-function dispatchMockFn(defaultReturn: Abs, cases?: { args: TypeValue[]; returnValue: TypeValue }[]): Abs {
+function dispatchMockFn(defaultReturn: Abs, cases?: { args: Abs[]; returnValue: Abs }[]): Abs {
   if (!cases?.length) return constantMockFn(defaultReturn);
   const caseAbs = cases.map((c) => ({
     declared: c.args,
-    result: markMockConf(typeValueToAbs(c.returnValue)),
+    result: markMockConf(c.returnValue),
   }));
   const dummyBody = {
     type: "BlockStatement",
@@ -150,7 +148,7 @@ function dispatchMockFn(defaultReturn: Abs, cases?: { args: TypeValue[]; returnV
   const caseKey = cases
     .map(
       (c) =>
-        `${c.args.map((a) => typeValueToString(a)).join(",")}->${typeValueToString(c.returnValue)}`,
+        `${c.args.map((a) => formatAbs(a)).join(",")}->${formatAbs(c.returnValue)}`,
     )
     .join("|");
   return stampFingerprint(
@@ -173,19 +171,18 @@ function dispatchMockFn(defaultReturn: Abs, cases?: { args: TypeValue[]; returnV
 }
 
 function absFromMockHelper(h: MockHelper): Abs {
-  if (h.callsFakeImpl && h.callsFakeImpl.kind === "function") {
-    const fn = h.callsFakeImpl;
-    const body = fn.body as Node;
+  if (h.callsFakeImpl) {
+    const { params, body, async } = h.callsFakeImpl;
     return stampFingerprint(
-      absFunction(fn.params, { body, async: false }),
-      `fake=${fn.params.join(",")}:${astContentKey(body)}`,
+      absFunction(params, { body: body as never, async: async ?? false }),
+      `fake=${params.join(",")}:${astContentKey(body)}`,
     );
   }
 
   let defaultReturn: Abs;
   if (h.resolvedValue) {
     defaultReturn = makeAbs(
-      { k: "eff", eff: "promise", inner: typeValueToAbs(h.resolvedValue) },
+      { k: "eff", eff: "promise", inner: h.resolvedValue },
       undefined,
       undefined,
       "path",
@@ -193,10 +190,10 @@ function absFromMockHelper(h: MockHelper): Abs {
   } else if (h.rejectedValue) {
     defaultReturn = makeAbs({ k: "never" }, undefined, undefined, "exact");
   } else if (h.returnValue) {
-    defaultReturn = typeValueToAbs(h.returnValue);
+    defaultReturn = h.returnValue;
   } else if (h.onFirstCallValue) {
-    // 与 TypeValue 路径一致：无 returnValue 时 onFirstCall 作默认返回
-    defaultReturn = typeValueToAbs(h.onFirstCallValue);
+    // 无 returnValue 时 onFirstCall 作默认返回
+    defaultReturn = h.onFirstCallValue;
   } else {
     defaultReturn = absUnknown;
   }
