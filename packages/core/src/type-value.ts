@@ -22,8 +22,6 @@ export type FunctionSignature = {
   returnType: TypeValue;
   throwsType: TypeValue;
   impl?: SigImpl;
-  /** 无损 Abs 路径（env-to-abs / B-path 不经 absToTypeValue 过桥） */
-  implAbs?: AbsSigImpl;
 };
 
 export type Refinement = {
@@ -109,7 +107,6 @@ export const T = {
     returnType: TypeValue,
     throwsType: TypeValue = { kind: "never" },
     impl?: SigImpl,
-    implAbs?: AbsSigImpl,
   ): TypeValue => {
     const dummy = {
       kind: "function" as const,
@@ -122,7 +119,6 @@ export const T = {
       returnType,
       throwsType,
       impl,
-      ...(implAbs ? { implAbs } : {}),
     } satisfies FunctionSignature;
     return dummy;
   },

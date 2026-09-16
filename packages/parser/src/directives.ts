@@ -645,8 +645,7 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
     return mock();
   }
 
-  // sinon 前缀链统一为同一 MockHelper 形态：strip 前缀后复用裸 stub 解析，
-  // 使下游（applyMocks → mockHelperToTypeValue）两条路径消费一致。
+  // sinon 前缀链统一为同一 MockHelper 形态：strip 前缀后复用裸 stub 解析。
   // 解析不出的 sinon 链仍回落 sinonExpr 路径（parseSinonExpr 自己的分支）。
   if (s.startsWith("sinon.")) {
     return parseNudoMockExpr(s.slice("sinon.".length));

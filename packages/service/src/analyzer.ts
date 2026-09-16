@@ -368,7 +368,7 @@ export function topoSortDirty(imports: Map<string, Set<string>>, dirty: string[]
   return ordered;
 }
 
-/** mock 指令静态校验（B hosted 也要报 mock-invalid；TypeValue applyMocks 已删） */
+/** mock 指令静态校验（B hosted 也要报 mock-invalid） */
 function validateMockDirectives(
   directives: FunctionWithDirectives["directives"],
   diagnostics: Diagnostic[],
@@ -1148,9 +1148,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
     validateMockDirectives(fn.directives, diagnostics);
   }
 
-  // @nudo:mock 已编译为 Abs seed 注入；env/require 强制 TypeValue 路径。
-  // TypeValue applyMocks 仅在 !bHostedEval 时执行（见下方 evaluateProgram 分支）——
-  // B hosted 时 mock 经 mockDirectivesToAbsSeeds 注入，无需再绑 TypeValue env。
+  // @nudo:mock 已编译为 Abs seed 注入（mockDirectivesToAbsSeeds）；无 TypeValue applyMocks。
   const selfContained = isSelfContainedSource(source, envNames);
   const canAbsModules = absModulesOk(source, envNames);
   const bCapable = isBPathCapable(source, envNames);
@@ -1259,9 +1257,8 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
       /* Abs 补齐失败仍以 B 诊断为准 */
     }
   }
-  // TypeValue evaluateProgram / applyMocks 已删除（接受覆盖缺口）：
-  // 非 B-hosted 源不再跑 TypeValue 全程序求值；绑定/节点靠上方 Abs 宿主补齐
-  // （collectAbsBindsAndNodes）。case 兜底见下方 Abs-first 分支。
+  // TypeValue evaluateProgram / applyMocks 已删除：非 B-hosted 源不跑全程序求值；
+  // 绑定/节点靠 Abs 宿主（collectAbsBindsAndNodes）。case 兜底 Abs-first。
 
   // Abs / B 顶层调用记录优先；再空才保留 TypeValue
   if ((selfContained || canAbsModules) && absCallRecords.length > 0) {

@@ -1,8 +1,8 @@
 /**
- * env TypeValue → Abs：
- * - fnSig 带 implAbs（Abs 原生）→ 直接 apply，无桥
- * - fnSig 带 impl（TypeValue）→ apply 路径经 absToTypeValue 过桥（兼容）
- * - fnSig 仅有声明（readFileSync…）→ relationFn，调用产出声明返回类型而非 unknown
+ * path 型 TypeValue env（harvester / 用户 defineEnv）→ Abs。
+ * - fnSig 带 impl → apply 经 absToTypeValue 过桥（兼容）
+ * - fnSig 仅有声明 → relationFn，调用产出声明返回类型而非 unknown
+ * 内置 es/node/web 已 Abs 原生，不经此桥。
  */
 
 import {
@@ -31,26 +31,8 @@ export function envValueToAbs(tv: TypeValue): Abs {
         directives: [],
       } as never;
 
-      // Abs 原生实现优先：不经 absToTypeValue
-      if (sig.implAbs) {
-        const implAbs = sig.implAbs;
-        return absFunction(params, {
-          body: dummyBody,
-          apply: (args: Abs[]): Abs => {
-            try {
-              const r = implAbs(args);
-              if (!r) return returnType;
-              return r;
-            } catch {
-              return returnType;
-            }
-          },
-        });
-      }
-
       if (sig.impl) {
         const impl = sig.impl;
-        // apply 优先于 relation；impl 失败/无返回时回落声明返回类型
         return absFunction(params, {
           body: dummyBody,
           apply: (args: Abs[]): Abs => {
