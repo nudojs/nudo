@@ -632,10 +632,10 @@ function len(x) {
 | **B 路径（主路径）** | capable 文件 case / entry@ / call@symbolic 主求值；语言面基本齐 |
 | for / while | 有界 `$for`/`$while`；transpile while 用 `$whileSeq`（预算） |
 | service Abs 路径 | 相对 import + 裸包 harvest + require + @nudo:env（含路径型） |
-| TypeValue 兜底 | 弱结果、B 失败；method-missing 已 B 化并按名去重；provenance B 有调用点 origin；**named/default/ns 相对 import + re-export（`export {x} from` / `export * from`）+ class/async default 均走 B Abs 模块图** |
-| **method-missing / unknown-recv 双报** | B 成员分派（`$invoke`/`$get` + **ast-eval** 跨文件函数体）为权威；TypeValue 同类 method/property 在 B hosted 时整类让位。实参 provenance argLocs |
+| Abs 兜底（非 B-hosted） | `ast-eval` / `evalProgramAbs`（Abs 原生，TypeValue evaluateProgram 已删）；method-missing 已 B 化并按名去重；provenance B 有调用点 origin；**named/default/ns 相对 import + re-export（`export {x} from` / `export * from`）+ class/async default 均走 B Abs 模块图** |
+| **method-missing / unknown-recv 双报** | B 成员分派（`$invoke`/`$get` + **ast-eval** 跨文件函数体）为权威。实参 provenance argLocs |
 | **module-load / recursion / unknown-global 双报** | B `evalAbsModuleGraph.issues`；Abs 截断；静态 builtin-unknown |
-| **evaluateProgram** | **B hosted 时跳过**。诊断/call@/nodeTypeMap/env 全 B；TypeValue 仅 `!bHostedEval` 时跑 |
+| **evaluateProgram** | **B hosted 时跳过**。诊断/call@/nodeTypeMap/env 全 B；非 B-hosted 走 `evalProgramAbs`（Abs 原生，无 TypeValue 兜底） |
 | **class 桥接** | Abs-eval `registerClassDecl` → `class-registry` → B `$new`/ctor |
 | **箭头函数** | transpile `ArrowFunctionExpression`/`FunctionExpression`（原先未覆盖） |
 | **arr 方法** | B `$invoke` map/reduce/filter/join；JS 回调与 Abs 回调都可 |

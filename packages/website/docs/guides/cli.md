@@ -54,10 +54,10 @@ Case "entry@L1": (unknown) => unknown
 
 === slugify ===
 
-Case "call@L4": ("Hello World") => unknown
+Case "call@L4": ("Hello World") => string
 ```
 
-`slugify` gets a `call@L4` case from the top-level call, but `toLowerCase().replace(...)` on the concrete input is not modeled yet, so the result is `unknown`. When one analyzed file imports a function from another, the imported function's cases appear in an `--- <path> (imported) ---` section instead.
+`slugify` gets a `call@L4` case from the top-level call — `toLowerCase()` folds to the literal, then `.replace(...)` widens to `string`, so the result is `string`. When one analyzed file imports a function from another, the imported function's cases appear in an `--- <path> (imported) ---` section instead.
 
 ### Options
 

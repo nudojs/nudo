@@ -54,10 +54,10 @@ Case "entry@L1": (unknown) => unknown
 
 === slugify ===
 
-Case "call@L4": ("Hello World") => unknown
+Case "call@L4": ("Hello World") => string
 ```
 
-`slugify` 从顶层调用得到 `call@L4` 用例，但具体输入上的 `toLowerCase().replace(...)` 尚未建模，因此结果为 `unknown`。当一个被分析文件从另一个文件导入函数时，被导入函数的用例会出现在 `--- <路径> (imported) ---` 区块中。
+`slugify` 从顶层调用得到 `call@L4` 用例——`toLowerCase()` 折叠为字面量，`.replace(...)` 再拓宽为 `string`，因此结果为 `string`。当一个被分析文件从另一个文件导入函数时，被导入函数的用例会出现在 `--- <路径> (imported) ---` 区块中。
 
 ### 选项
 

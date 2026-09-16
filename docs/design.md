@@ -852,7 +852,7 @@ const v = "hello".length;            // number
 ```javascript
 const x = "hello".toUpperCase();     // "HELLO"
 const y = "a,b,c".split(",");        // ["a", "b", "c"]
-const z = "hello".indexOf("l");      // 2
+const z = "hello".indexOf("l");      // number（丢字面量下标）
 const w = "hello".slice(1, 3);       // "el"
 const v = "hello".length;            // 5
 ```
