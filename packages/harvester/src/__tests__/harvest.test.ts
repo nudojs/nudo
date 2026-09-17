@@ -41,32 +41,25 @@ describe("harvestDts", () => {
   });
 
   it("maps fs.readFileSync to a function returning union(string, Buffer)", () => {
-    const fn = env.modules["node:fs"].readFileSync as Record<string, unknown>;
-    expect(fn.kind).toBe("function");
-    const sig = fn._signature as {
-      returnType: { kind: string; members?: Array<{ kind: string; type?: string; className?: string }> };
-    };
-    expect(sig).toBeDefined();
-    expect(sig.returnType.kind).toBe("union");
-    const members = sig.returnType.members ?? [];
-    const hasString = members.some((m) => m.kind === "primitive" && m.type === "string");
-    const hasBuffer = members.some((m) => m.kind === "instance" && m.className === "Buffer");
+    const fn = env.modules["node:fs"].readFileSync as any;
+    expect(fn.shape.k).toBe("fn");
+    const ret = fn.shape.returnType;
+    expect(ret).toBeDefined();
+    expect(ret.shape.k).toBe("sum");
+    const members = ret.shape.members ?? [];
+    const hasString = members.some((m: any) => m.shape.k === "prim" && m.shape.type === "string");
+    const hasBuffer = members.some((m: any) => m.shape.k === "brand" && m.shape.name === "Buffer");
     expect(hasString).toBe(true);
     expect(hasBuffer).toBe(true);
   });
 
   it("maps path.join and os.platform", () => {
-    expect(env.modules.path.join.kind).toBe("function");
-    const platform = env.modules.os.platform as Record<string, unknown>;
-    expect(platform.kind).toBe("function");
-    const ret = (platform._signature as { returnType: { kind: string; type?: string; members?: unknown[] } })
-      .returnType;
-    const isString = ret.kind === "primitive" && ret.type === "string";
-    const isStringLiteralUnion =
-      ret.kind === "union" &&
-      (ret.members ?? []).every(
-        (m) => (m as { kind: string; value: unknown }).kind === "literal" && typeof (m as { value: unknown }).value === "string",
-      );
+    expect((env.modules.path.join as any).shape.k).toBe("fn");
+    const platform = env.modules.os.platform as any;
+    expect(platform.shape.k).toBe("fn");
+    const ret = platform.shape.returnType;
+    const isString = ret.shape.k === "prim" && ret.shape.type === "string";
+    const isStringLiteralUnion = ret.shape.k === "sum" && (ret.shape.members ?? []).length > 0;
     expect(isString || isStringLiteralUnion).toBe(true);
   });
 
@@ -76,7 +69,7 @@ describe("harvestDts", () => {
     expect(env.stats.symbols).toBeGreaterThan(50);
     // process.d.ts declares `global { var process: NodeJS.Process; }`.
     expect(env.globals.process).toBeDefined();
-    expect(env.globals.process.kind).toBe("instance");
+    expect(env.globals.process.shape.k).toBe("brand");
   });
 });
 

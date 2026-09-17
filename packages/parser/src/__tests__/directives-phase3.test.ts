@@ -51,7 +51,10 @@ describe("@nudo:skip directive", () => {
     const skip = fns[0].directives.find((d) => d.kind === "skip");
     expect(skip).toBeDefined();
     if (skip && skip.kind === "skip") {
-      expect(skip.returns).toEqual(T.number);
+      expect(skip.returns?.shape.k).toBe("prim");
+      if (skip.returns?.shape.k === "prim") {
+        expect(skip.returns.shape.type).toBe("number");
+      }
     }
   });
 });

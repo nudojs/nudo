@@ -31,20 +31,6 @@ export {
 } from "./environment.ts";
 
 export {
-  createTemplate,
-  isTemplate,
-  getTemplateParts,
-  concatTemplates,
-} from "./refinements/template.ts";
-
-export {
-  createRange,
-  isRange,
-  getRangeMeta,
-  type RangeMeta,
-} from "./refinements/range.ts";
-
-export {
   type MockHelper,
   stub,
   spy,

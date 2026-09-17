@@ -40,7 +40,7 @@ import {
   stableAnalyzeKeySource,
   fnFingerprints,
 } from "@nudojs/core";
-import { parse, extractDirectives, extractFileDirectives, parseTypeValueExpr } from "@nudojs/parser";
+import { parse, extractDirectives, extractFileDirectives } from "@nudojs/parser";
 import type { FunctionWithDirectives, SinonExpression } from "@nudojs/parser";
 import {
   type CallRecord,
@@ -1330,7 +1330,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
     if (skipDirective && skipDirective.kind === "skip") {
       analysis.skipped = true;
       if (skipDirective.returns) {
-        analysis.combinedAbs = typeValueToAbs(skipDirective.returns);
+        analysis.combinedAbs = skipDirective.returns;
       }
       functionResults.push(analysis);
       continue;

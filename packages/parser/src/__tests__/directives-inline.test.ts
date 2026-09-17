@@ -22,7 +22,7 @@ const config = JSON.parse(text);
     expect(directives).toHaveLength(1);
     expect(directives[0].kind).toBe("as");
     if (directives[0].kind === "as") {
-      expect(directives[0].typeExpr.kind).toBe("object");
+      expect(directives[0].typeAbs.shape.k).toBe("obj");
     }
   });
 
@@ -36,7 +36,7 @@ const x = a + b;
     expect(directives[0].kind).toBe("replace");
     if (directives[0].kind === "replace") {
       expect(directives[0].targetSource).toBe("a");
-      expect(directives[0].typeExpr.kind).toBe("primitive");
+      expect(directives[0].typeAbs.shape.k).toBe("prim");
     }
   });
 

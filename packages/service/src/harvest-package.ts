@@ -6,7 +6,7 @@
 import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
 import { join, resolve, dirname, basename } from "node:path";
 import { harvestDts, type HarvestedEnv } from "@nudojs/harvester";
-import { typeValueToString, type TypeValue } from "@nudojs/core";
+import { formatShape } from "@nudojs/core";
 
 /** 在 node_modules 中解析包根（含 @types/*） */
 export function resolvePackageRoot(
@@ -191,14 +191,14 @@ export function formatHarvestSummary(h: PackageHarvest): string {
   return lines.join("\n");
 }
 
-/** 取某个导出的 TypeValue 字符串 */
+/** 取某个导出的展示串（formatShape） */
 export function lookupHarvested(
   h: PackageHarvest,
   moduleName: string,
   exportName: string,
 ): string | undefined {
   const mod = h.env.modules[moduleName];
-  const tv = mod?.[exportName] ?? h.env.globals[exportName];
-  if (!tv) return undefined;
-  return typeValueToString(tv as TypeValue);
+  const a = mod?.[exportName] ?? h.env.globals[exportName];
+  if (!a) return undefined;
+  return formatShape(a);
 }

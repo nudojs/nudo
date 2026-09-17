@@ -1,15 +1,11 @@
 /**
- * Harvest TypeValue 导出 → AbsModuleExports（供 Abs 模块图注入）。
- * fnSig → absFunction + apply 直接返回声明返回类型（conf=mock）。
+ * Harvest Abs 导出 → AbsModuleExports（供 Abs 模块图注入）。
+ * harvest 产物已是 Abs；fn 槽 apply 直接返回声明返回类型（conf=mock）。
  */
 
-import type { TypeValue } from "@nudojs/core";
 import {
-  T,
   type Abs,
-  typeValueToAbs,
   confJoin,
-  getFnSig,
   absFunction,
 } from "@nudojs/core";
 import type { AbsModuleExports } from "@nudojs/core";
@@ -22,16 +18,11 @@ function markMockConf(a: Abs): Abs {
   return a;
 }
 
-/** 单个 TypeValue 导出 → Abs（可调用） */
-export function harvestedValueToAbs(tv: TypeValue): Abs {
-  if (!tv) return markMockConf(typeValueToAbs(T.unknown));
-  const sig = getFnSig(tv);
-  if (sig) {
-    const ret = markMockConf(typeValueToAbs(sig.returnType));
-    const params =
-      tv.kind === "function" && tv.params?.length
-        ? tv.params
-        : sig.paramTypes.map((_, i) => `_arg${i}`);
+/** 单个 Abs 导出 → 可调用 mock（fn 槽 apply 返回声明返回类型） */
+export function harvestedValueToAbs(a: Abs): Abs {
+  if (a.shape.k === "fn") {
+    const ret = a.shape.returnType ?? { shape: { k: "unknown" }, conf: "mock" } as Abs;
+    const params = a.shape.params.length ? a.shape.params : a.shape.paramTypes?.map((_, i) => `_arg${i}`) ?? ["...args"];
     const dummyBody = {
       type: "BlockStatement",
       body: [],
@@ -40,11 +31,11 @@ export function harvestedValueToAbs(tv: TypeValue): Abs {
     return markMockConf(
       absFunction(params, {
         body: dummyBody,
-        apply: () => ret,
+        apply: () => markMockConf({ ...ret }),
       }),
     );
   }
-  return markMockConf(typeValueToAbs(tv));
+  return markMockConf({ ...a });
 }
 
 /**
@@ -67,7 +58,7 @@ export function packageHarvestToAbsModules(
   const out: Record<string, AbsModuleExports> = {};
 
   const convertRecord = (
-    rec: Record<string, TypeValue>,
+    rec: Record<string, Abs>,
   ): Record<string, Abs> => {
     const named: Record<string, Abs> = {};
     for (const [k, v] of Object.entries(rec)) {

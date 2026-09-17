@@ -150,7 +150,7 @@ export function collectBPathReplacements(source: string): {
               stmtStart: loc?.start.line,
               stmtEnd: loc?.end.line,
             });
-            values[varName] = typeValueToAbs(d.typeExpr);
+            values[varName] = d.typeAbs;
           } else if (d.kind === "as" && loc) {
             const varName = `__as${i++}`;
             asTargets.push({
@@ -158,7 +158,7 @@ export function collectBPathReplacements(source: string): {
               stmtStart: loc.start.line,
               stmtEnd: loc.end.line,
             });
-            asValues[varName] = typeValueToAbs(d.typeExpr);
+            asValues[varName] = d.typeAbs;
           }
         }
         const s = stmt as {

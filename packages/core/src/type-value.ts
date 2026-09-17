@@ -1,9 +1,7 @@
 import type { Node } from "@babel/types";
 import type { Environment } from "./environment.ts";
 import type { Abs } from "./algebra/abs.ts";
-// 注意：isTemplate 必须来自 template-predicates.ts（只含 `import type` 反向边）
-// 而非 template.ts——后者运行时依赖本模块（T、typeValueToString），会构成环。
-import { isTemplate } from "./refinements/template-predicates.ts";
+// 注意：isTemplate 已随 TypeValue refinements 删除；widenLiteral 对 refined 直接落 base
 
 // --- 评估 IR：不是类型系统本体，是 Abs 的外延投影格式 ---
 
@@ -221,7 +219,7 @@ function absorbablePrimitiveBase(tv: TypeValue): TypeValue | undefined {
     const widened = widenLiteral(tv);
     return widened.kind === "primitive" ? widened : undefined;
   }
-  if (isTemplate(tv)) return T.string;
+  if (tv.kind === "refined") return T.string; // template/range refined → base prim
   return undefined;
 }
 

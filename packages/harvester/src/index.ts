@@ -1,14 +1,14 @@
 import { readFileSync, statSync } from "node:fs";
 import ts from "typescript";
-import { type TypeValue, typeValueEquals, getFnSig, T } from "@nudojs/core";
+import { type Abs, type TypeValue, typeValueToAbs, typeValueEquals, getFnSig, T } from "@nudojs/core";
 
 /**
- * The result of harvesting a set of `.d.ts` files: a Nudo env shaped exactly
- * like `EnvDefinition` (`{ globals, modules }`), plus harvest statistics.
+ * Harvested env：Abs 原生（与 EnvDefinition 同形）。
+ * 内部收集仍走 TypeValue 投影（mapType），出口统一 typeValueToAbs。
  */
 export type HarvestedEnv = {
-  globals: Record<string, TypeValue>;
-  modules: Record<string, Record<string, TypeValue>>;
+  globals: Record<string, Abs>;
+  modules: Record<string, Record<string, Abs>>;
   stats: { files: number; symbols: number; skipped: number };
 };
 
@@ -119,9 +119,31 @@ export function harvestDts(
   // Phase 2: materialize TypeValues with the complete symbol table available.
   materialize(ctx);
 
+  // 出口：TypeValue → Abs（harvest 产物 Abs 原生）
+  // 共享记录（fs/node:fs 别名）只转一次，保持引用同一
+  const convertedByRec = new Map<Record<string, TypeValue>, Record<string, Abs>>();
+  const toAbsRec = (rec: Record<string, TypeValue>): Record<string, Abs> => {
+    const hit = convertedByRec.get(rec);
+    if (hit) return hit;
+    const out: Record<string, Abs> = {};
+    for (const [k, v] of Object.entries(rec)) {
+      try {
+        out[k] = typeValueToAbs(v);
+      } catch {
+        out[k] = { shape: { k: "unknown" }, conf: "opaque" };
+      }
+    }
+    convertedByRec.set(rec, out);
+    return out;
+  };
+  const modules: Record<string, Record<string, Abs>> = {};
+  for (const [mod, rec] of Object.entries(ctx.modules)) {
+    modules[mod] = toAbsRec(rec);
+  }
+
   return {
-    globals: ctx.globals,
-    modules: ctx.modules,
+    globals: toAbsRec(ctx.globals),
+    modules,
     stats: { files: parsed, symbols: ctx.symbols, skipped: ctx.skipped },
   };
 }
@@ -130,13 +152,13 @@ export function emitEnvModule(env: HarvestedEnv, pkgName: string): string {
   // Module records can be shared (e.g. "fs" aliasing "node:fs"); emit those
   // once as a const and reference it under every key.
   const moduleEntries = Object.entries(env.modules);
-  const keysByRecord = new Map<Record<string, TypeValue>, string[]>();
+  const keysByRecord = new Map<Record<string, Abs>, string[]>();
   for (const [moduleName, record] of moduleEntries) {
     const keys = keysByRecord.get(record);
     if (keys) keys.push(moduleName);
     else keysByRecord.set(record, [moduleName]);
   }
-  const constNameByRecord = new Map<Record<string, TypeValue>, string>();
+  const constNameByRecord = new Map<Record<string, Abs>, string>();
   const constLines: string[] = [];
   let constIndex = 0;
   for (const [record, keys] of keysByRecord) {
@@ -736,72 +758,76 @@ function emitKey(key: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? key : JSON.stringify(key);
 }
 
-function emitEntries(lines: string[], record: Record<string, TypeValue>, level: number): void {
+function emitEntries(lines: string[], record: Record<string, Abs>, level: number): void {
   for (const [key, value] of Object.entries(record)) {
-    lines.push(`${indent(level)}${emitKey(key)}: ${emitType(value, new Set())},`);
+    lines.push(`${indent(level)}${emitKey(key)}: ${emitAbs(value, new Set())},`);
   }
 }
 
-/** TypeValue → Abs 构造源码（harvest 产物 Abs 原生） */
-function emitType(tv: TypeValue, expanding: Set<string>): string {
-  switch (tv.kind) {
-    case "literal":
-      if (tv.value === null) return `makeAbs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact")`;
-      if (tv.value === undefined) return `makeAbs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact")`;
-      if (typeof tv.value === "number") return `numLit(${JSON.stringify(tv.value)})`;
-      if (typeof tv.value === "boolean") return `boolLit(${tv.value})`;
-      if (typeof tv.value === "string") return `strLit(${JSON.stringify(tv.value)})`;
-      if (typeof tv.value === "bigint") return `numLit(${Number(tv.value)})`;
-      return "absUnknown";
-    case "primitive":
-      if (tv.type === "number") return "num()";
-      if (tv.type === "string") return "str()";
-      if (tv.type === "boolean") return "bool()";
-      return "absUnknown";
-    case "unknown":
-      return "absUnknown";
+/** Abs → 构造源码（harvest 产物 Abs 原生） */
+function emitAbs(a: Abs, expanding: Set<string>): string {
+  const s = a.shape;
+  switch (s.k) {
     case "never":
       return "absNever";
-    case "array":
-      return `makeAbs({ k: "arr", element: ${emitType(tv.element, expanding)} }, undefined, undefined, "exact")`;
+    case "unknown":
+      if (a.term?.op === "lit") {
+        const v = a.term.value;
+        if (v === null) return `makeAbs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact")`;
+        if (v === undefined) return `makeAbs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact")`;
+        if (typeof v === "number") return `numLit(${JSON.stringify(v)})`;
+        if (typeof v === "boolean") return `boolLit(${v})`;
+        if (typeof v === "string") return `strLit(${JSON.stringify(v)})`;
+      }
+      return "absUnknown";
+    case "any":
+      return "absUnknown";
+    case "prim": {
+      if (a.term?.op === "lit") {
+        const v = a.term.value;
+        if (typeof v === "number") return `numLit(${JSON.stringify(v)})`;
+        if (typeof v === "boolean") return `boolLit(${v})`;
+        if (typeof v === "string") return `strLit(${JSON.stringify(v)})`;
+      }
+      if (s.type === "number") return "num()";
+      if (s.type === "string") return "str()";
+      if (s.type === "boolean") return "bool()";
+      return "absUnknown";
+    }
+    case "arr":
+      return `makeAbs({ k: "arr", element: ${emitAbs(s.element, expanding)} }, undefined, undefined, "exact")`;
     case "tuple":
-      return `makeAbs({ k: "tuple", elements: [${tv.elements.map((e) => emitType(e, expanding)).join(", ")}] }, undefined, undefined, "exact")`;
-    case "promise":
-      return `makeAbs({ k: "eff", eff: "promise", inner: ${emitType(tv.value, expanding)} }, undefined, undefined, "exact")`;
-    case "object": {
-      const entries = Object.entries(tv.properties).map(
-        ([key, value]) => `${emitKey(key)}: { value: ${emitType(value, expanding)} }`,
+      return `makeAbs({ k: "tuple", elements: [${s.elements.map((e) => emitAbs(e, expanding)).join(", ")}] }, undefined, undefined, "exact")`;
+    case "eff":
+      return `makeAbs({ k: "eff", eff: ${JSON.stringify(s.eff)}, inner: ${emitAbs(s.inner, expanding)} }, undefined, undefined, "exact")`;
+    case "obj": {
+      const entries = Object.entries(s.slots).map(
+        ([key, slot]) => `${emitKey(key)}: { value: ${emitAbs(slot.value, expanding)} }`,
       );
       return `objOf({ ${entries.join(", ")} })`;
     }
-    case "instance": {
-      if (expanding.has(tv.className)) {
-        return `makeAbs({ k: "brand", name: ${JSON.stringify(tv.className)}, shape: absUnknown }, undefined, undefined, "path")`;
+    case "brand": {
+      if (expanding.has(s.name)) {
+        return `makeAbs({ k: "brand", name: ${JSON.stringify(s.name)}, shape: absUnknown }, undefined, undefined, "path")`;
       }
-      expanding.add(tv.className);
+      expanding.add(s.name);
       try {
-        const entries = Object.entries(tv.properties).map(
-          ([key, value]) => `${emitKey(key)}: { value: ${emitType(value, expanding)} }`,
-        );
-        return `makeAbs({ k: "brand", name: ${JSON.stringify(tv.className)}, shape: objOf({ ${entries.join(", ")} }) }, undefined, undefined, "path")`;
+        return `makeAbs({ k: "brand", name: ${JSON.stringify(s.name)}, shape: ${emitAbs(s.shape, expanding)} }, undefined, undefined, "path")`;
       } finally {
-        expanding.delete(tv.className);
+        expanding.delete(s.name);
       }
     }
-    case "union": {
-      if (tv.members.length === 0) return "absNever";
-      if (tv.members.length === 1) return emitType(tv.members[0]!, expanding);
-      return `makeAbs({ k: "sum", members: [${tv.members.map((m) => emitType(m, expanding)).join(", ")}] }, undefined, undefined, "exact")`;
+    case "sum": {
+      if (s.members.length === 0) return "absNever";
+      if (s.members.length === 1) return emitAbs(s.members[0]!, expanding);
+      return `makeAbs({ k: "sum", members: [${s.members.map((m) => emitAbs(m, expanding)).join(", ")}] }, undefined, undefined, "exact")`;
     }
-    case "function": {
-      const sig = getFnSig(tv);
-      if (!sig) return "absUnknown";
-      const params = sig.paramTypes.map((p) => emitType(p, expanding)).join(", ");
-      const ret = emitType(sig.returnType, expanding);
+    case "fn": {
+      const pts = s.paramTypes ?? [];
+      const params = pts.map((p) => emitAbs(p, expanding)).join(", ");
+      const ret = s.returnType ? emitAbs(s.returnType, expanding) : "absUnknown";
       return `relationFn([${params}], ${ret}, { conf: "exact" })`;
     }
-    case "refined":
-      return emitType(tv.base, expanding);
     default:
       return "absUnknown";
   }

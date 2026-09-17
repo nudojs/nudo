@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { harvestedValueToAbs, bareSpecToAbsModules, evalAbsModuleGraph } from "@nudojs/service";
-import { T, analyzeFn, numLit, absToString, getFnImpl } from "@nudojs/core";
+import { T, analyzeFn, numLit, absToString, getFnImpl, relationFn, num, str } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -10,9 +10,9 @@ afterAll(() => {
 });
 
 describe("harvest → Abs", () => {
-  it("fnSig becomes callable absFunction with declared return", () => {
-    const tv = T.fnSig([T.number], T.string);
-    const a = harvestedValueToAbs(tv);
+  it("fn Abs becomes callable absFunction with declared return", () => {
+    const a0 = relationFn([num()], str(), { conf: "exact" });
+    const a = harvestedValueToAbs(a0);
     expect(a.shape.k).toBe("fn");
     expect(a.conf).toBe("mock");
     expect(getFnImpl(a)?.apply).toBeTypeOf("function");

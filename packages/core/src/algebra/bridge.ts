@@ -8,8 +8,7 @@
  */
 
 import type { TypeValue, LiteralValue as CoreLit } from "../type-value.ts";
-import { T, typeValueToString } from "../type-value.ts";
-import { createTemplate, getTemplateParts } from "../refinements/template.ts";
+import { T, typeValueToString, getFnSig } from "../type-value.ts";
 
 import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, confJoin, litValue } from "./abs.ts";
@@ -17,7 +16,7 @@ import type { Term } from "./term.ts";
 import { lit, v as termVar } from "./term.ts";
 import type { Pred } from "./pred.ts";
 import { pTrue, predToString, gt, ge, lt, le } from "./pred.ts";
-import { isTemplateLike, templatePartsOf, createTemplateAbs } from "./template.ts";
+import { isTemplateLike } from "./template.ts";
 
 /** TypeValue 上的置信度旁路（零侵入 core） */
 const confByTv = new WeakMap<object, Confidence>();
@@ -62,10 +61,9 @@ export function absToTypeValue(a: Abs): TypeValue {
         result = T.literal(lv as CoreLit);
         break;
       }
-      // template string：parts → core createTemplate
+      // template string：外延投影为 prim string（TypeValue template 已删）
       if (isTemplateLike(a) && a.shape.k === "prim" && a.shape.type === "string") {
-        const parts = templatePartsOf(a).map(absToTypeValue);
-        result = createTemplate(parts);
+        result = T.string;
         break;
       }
       // 有 pred 无 lit → refined 尽力，否则 primitive
@@ -236,11 +234,7 @@ export function typeValueToAbs(tv: TypeValue): Abs {
     case "primitive":
       return abs({ k: "prim", type: tv.type }, undefined, undefined, confOr("exact"));
     case "refined": {
-      // template refined → 恢复 parts，便于链式拼接
-      const tplParts = getTemplateParts(tv);
-      if (tplParts) {
-        return createTemplateAbs(tplParts.map(typeValueToAbs));
-      }
+      // TypeValue template/range refinements 已删：refined → base Abs
       const base = typeValueToAbs(tv.base);
       const decoded = tryDecodeRefinedPred(tv, base.term);
       return abs(
@@ -273,6 +267,20 @@ export function typeValueToAbs(tv: TypeValue): Abs {
       );
     case "function": {
       const params = tv.params ?? [];
+      const sig = getFnSig(tv);
+      if (sig) {
+        return abs(
+          {
+            k: "fn",
+            params,
+            paramTypes: sig.paramTypes.map(typeValueToAbs),
+            returnType: typeValueToAbs(sig.returnType),
+          },
+          undefined,
+          undefined,
+          confOr("exact"),
+        );
+      }
       return abs({ k: "fn", params }, undefined, undefined, confOr("exact"));
     }
     case "promise":

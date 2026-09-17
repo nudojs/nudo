@@ -10,6 +10,7 @@ import {
   stub,
   spy,
   mock,
+  absFunction,
   execNudoModule,
   isNudoConstraint,
   constraintToEntryAbs,
@@ -53,9 +54,9 @@ export type MockDirective = {
 
 export type SinonExpression = {
   type: "stub" | "spy" | "mock";
-  returnValue?: TypeValue;
-  resolvedValue?: TypeValue;
-  rejectedValue?: TypeValue;
+  returnValue?: Abs;
+  resolvedValue?: Abs;
+  rejectedValue?: Abs;
 };
 
 export type PureDirective = {
@@ -64,7 +65,7 @@ export type PureDirective = {
 
 export type SkipDirective = {
   kind: "skip";
-  returns?: TypeValue;
+  returns?: Abs;
 };
 
 export type SampleDirective = {
@@ -86,13 +87,13 @@ export type MockModuleDirective = {
 
 export type AsDirective = {
   kind: "as";
-  typeExpr: TypeValue;
+  typeAbs: Abs;
 };
 
 export type ReplaceDirective = {
   kind: "replace";
   targetSource: string;
-  typeExpr: TypeValue;
+  typeAbs: Abs;
 };
 
 export type InlineDirective = AsDirective | ReplaceDirective;
@@ -424,6 +425,11 @@ function parseArrowFunctionExpr(expr: string): { params: string[]; body: Node; p
   }
 }
 
+/** 实参/期望/mock 返回值文法 → Abs（约束表达式优先，T.* 兼容） */
+function parseAbsExpr(expr: string): Abs {
+  return parseCaseArgExpr(expr).abs;
+}
+
 function parseSinonExpr(expr: string): SinonExpression | null {
   const s = expr.trim();
 
@@ -432,7 +438,7 @@ function parseSinonExpr(expr: string): SinonExpression | null {
   if (stubReturnsMatch) {
     return {
       type: "stub",
-      returnValue: parseTypeValueExpr(stubReturnsMatch[1].trim()),
+      returnValue: parseAbsExpr(stubReturnsMatch[1].trim()),
     };
   }
 
@@ -441,7 +447,7 @@ function parseSinonExpr(expr: string): SinonExpression | null {
   if (stubResolvesMatch) {
     return {
       type: "stub",
-      resolvedValue: parseTypeValueExpr(stubResolvesMatch[1].trim()),
+      resolvedValue: parseAbsExpr(stubResolvesMatch[1].trim()),
     };
   }
 
@@ -450,7 +456,7 @@ function parseSinonExpr(expr: string): SinonExpression | null {
   if (stubRejectsMatch) {
     return {
       type: "stub",
-      rejectedValue: parseTypeValueExpr(stubRejectsMatch[1].trim()),
+      rejectedValue: parseAbsExpr(stubRejectsMatch[1].trim()),
     };
   }
 
@@ -459,7 +465,7 @@ function parseSinonExpr(expr: string): SinonExpression | null {
   if (onFirstCallReturnsMatch) {
     return {
       type: "stub",
-      returnValue: parseTypeValueExpr(onFirstCallReturnsMatch[1].trim()),
+      returnValue: parseAbsExpr(onFirstCallReturnsMatch[1].trim()),
     };
   }
 
@@ -468,7 +474,7 @@ function parseSinonExpr(expr: string): SinonExpression | null {
   if (onSecondCallReturnsMatch) {
     return {
       type: "stub",
-      returnValue: parseTypeValueExpr(onSecondCallReturnsMatch[1].trim()),
+      returnValue: parseAbsExpr(onSecondCallReturnsMatch[1].trim()),
     };
   }
 
@@ -477,7 +483,7 @@ function parseSinonExpr(expr: string): SinonExpression | null {
   if (onThirdCallReturnsMatch) {
     return {
       type: "stub",
-      returnValue: parseTypeValueExpr(onThirdCallReturnsMatch[1].trim()),
+      returnValue: parseAbsExpr(onThirdCallReturnsMatch[1].trim()),
     };
   }
 
@@ -486,7 +492,7 @@ function parseSinonExpr(expr: string): SinonExpression | null {
   if (onCallReturnsMatch) {
     return {
       type: "stub",
-      returnValue: parseTypeValueExpr(onCallReturnsMatch[1].trim()),
+      returnValue: parseAbsExpr(onCallReturnsMatch[1].trim()),
     };
   }
 
@@ -495,7 +501,7 @@ function parseSinonExpr(expr: string): SinonExpression | null {
   if (withArgsReturnsMatch) {
     return {
       type: "stub",
-      returnValue: parseTypeValueExpr(withArgsReturnsMatch[1].trim()),
+      returnValue: parseAbsExpr(withArgsReturnsMatch[1].trim()),
     };
   }
 
@@ -507,7 +513,9 @@ function parseSinonExpr(expr: string): SinonExpression | null {
     if (arrowFn) {
       return {
         type: "stub",
-        returnValue: T.fn(arrowFn.params, arrowFn.body, null),
+        returnValue: absFunction(arrowFn.params, {
+          body: arrowFn.body,
+        }),
       };
     }
     return { type: "stub" };
@@ -519,7 +527,7 @@ function parseSinonExpr(expr: string): SinonExpression | null {
   if (complexChainMatch) {
     return {
       type: "stub",
-      returnValue: parseTypeValueExpr(complexChainMatch[1].trim()),
+      returnValue: parseAbsExpr(complexChainMatch[1].trim()),
     };
   }
 
@@ -547,7 +555,7 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
   // Match stub().returns(value).onFirstCall()
   const stubReturnsOnFirstMatch = s.match(/^stub\(\)\.returns\((.+)\)\.onFirstCall\(\)$/);
   if (stubReturnsOnFirstMatch) {
-    const helper = stub.returns(tvToAbs(parseTypeValueExpr(stubReturnsOnFirstMatch[1].trim())));
+    const helper = stub.returns(parseAbsExpr(stubReturnsOnFirstMatch[1].trim()));
     helper.onFirstCallValue = helper.returnValue;
     return helper;
   }
@@ -555,21 +563,21 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
   // Match stub().returns(value).onSecondCall()
   const stubReturnsOnSecondMatch = s.match(/^stub\(\)\.returns\((.+)\)\.onSecondCall\(\)$/);
   if (stubReturnsOnSecondMatch) {
-    return stub.returns(tvToAbs(parseTypeValueExpr(stubReturnsOnSecondMatch[1].trim())));
+    return stub.returns(parseAbsExpr(stubReturnsOnSecondMatch[1].trim()));
   }
 
   // Match stub().returns(value).onCall(n)
   const stubReturnsOnCallMatch = s.match(/^stub\(\)\.returns\((.+)\)\.onCall\(\d+\)$/);
   if (stubReturnsOnCallMatch) {
-    return stub.returns(tvToAbs(parseTypeValueExpr(stubReturnsOnCallMatch[1].trim())));
+    return stub.returns(parseAbsExpr(stubReturnsOnCallMatch[1].trim()));
   }
 
   // Match stub().callsFake((args) => body)
   const stubCallsFakeMatch = s.match(/^stub\(\)\.callsFake\((.+)\)$/);
   if (stubCallsFakeMatch) {
-    const fnVal = parseTypeValueExpr(stubCallsFakeMatch[1].trim());
-    if (fnVal.kind === "function") {
-      return stub.callsFake({ params: fnVal.params, body: fnVal.body, async: false });
+    const arrowFn = parseArrowFunctionExpr(stubCallsFakeMatch[1].trim());
+    if (arrowFn) {
+      return stub.callsFake({ params: arrowFn.params, body: arrowFn.body, async: false });
     }
     return { kind: "mock-helper" };
   }
@@ -577,9 +585,9 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
   // Match stub().withArgs(args).returns(value)
   const stubWithArgsMatch = s.match(/^stub\(\)\.withArgs\((.+)\)\.returns\((.+)\)$/);
   if (stubWithArgsMatch) {
-    const retVal = tvToAbs(parseTypeValueExpr(stubWithArgsMatch[2].trim()));
+    const retVal = parseAbsExpr(stubWithArgsMatch[2].trim());
     const argsStr = stubWithArgsMatch[1].trim();
-    const args = splitTopLevelArgs(argsStr).map((a) => tvToAbs(parseTypeValueExpr(a)));
+    const args = splitTopLevelArgs(argsStr).map((a) => parseAbsExpr(a));
     // 返回值只挂在 withArgs 分支上（sinon 语义：实参匹配才返回），不设全局
     // returnValue —— 否则未命中调用会错误复用链返回值
     const helper: MockHelper = { kind: "mock-helper" };
@@ -590,7 +598,7 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
   // Match stub().onFirstCall().returns(value) —— 链在 returns 上取值
   const stubOnFirstReturnsMatch = s.match(/^stub\(\)\.onFirstCall\(\)\.returns\((.+)\)$/);
   if (stubOnFirstReturnsMatch) {
-    return stub.returns(tvToAbs(parseTypeValueExpr(stubOnFirstReturnsMatch[1].trim())));
+    return stub.returns(parseAbsExpr(stubOnFirstReturnsMatch[1].trim()));
   }
 
   // Match stub().onFirstCall(value) —— 无 returnValue 时 Abs 作默认返回
@@ -598,38 +606,38 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
   const stubOnFirstValueMatch = s.match(/^stub\(\)\.onFirstCall\(([^()]*)\)$/);
   if (stubOnFirstValueMatch && stubOnFirstValueMatch[1].trim() !== "") {
     const helper: MockHelper = { kind: "mock-helper" };
-    helper.onFirstCallValue = tvToAbs(parseTypeValueExpr(stubOnFirstValueMatch[1].trim()));
+    helper.onFirstCallValue = parseAbsExpr(stubOnFirstValueMatch[1].trim());
     return helper;
   }
 
   // Match spy().returns(value)
   const spyReturnsMatch = s.match(/^spy\(\)\.returns\((.+)\)$/);
   if (spyReturnsMatch) {
-    return spy.returns(tvToAbs(parseTypeValueExpr(spyReturnsMatch[1].trim())));
+    return spy.returns(parseAbsExpr(spyReturnsMatch[1].trim()));
   }
 
   // Match stub().resolves(value).onFirstCall()
   const stubResolvesOnFirstMatch = s.match(/^stub\(\)\.resolves\((.+)\)\.onFirstCall\(\)$/);
   if (stubResolvesOnFirstMatch) {
-    return stub.resolves(tvToAbs(parseTypeValueExpr(stubResolvesOnFirstMatch[1].trim())));
+    return stub.resolves(parseAbsExpr(stubResolvesOnFirstMatch[1].trim()));
   }
 
   // Match stub().returns(value)
   const stubReturnsMatch = s.match(/^stub\(\)\.returns\((.+)\)$/);
   if (stubReturnsMatch) {
-    return stub.returns(tvToAbs(parseTypeValueExpr(stubReturnsMatch[1].trim())));
+    return stub.returns(parseAbsExpr(stubReturnsMatch[1].trim()));
   }
 
   // Match stub().resolves(value)
   const stubResolvesMatch = s.match(/^stub\(\)\.resolves\((.+)\)$/);
   if (stubResolvesMatch) {
-    return stub.resolves(tvToAbs(parseTypeValueExpr(stubResolvesMatch[1].trim())));
+    return stub.resolves(parseAbsExpr(stubResolvesMatch[1].trim()));
   }
 
   // Match stub().rejects(value)
   const stubRejectsMatch = s.match(/^stub\(\)\.rejects\((.+)\)$/);
   if (stubRejectsMatch) {
-    return stub.rejects(tvToAbs(parseTypeValueExpr(stubRejectsMatch[1].trim())));
+    return stub.rejects(parseAbsExpr(stubRejectsMatch[1].trim()));
   }
 
   // Match stub()
@@ -750,7 +758,7 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
       const returnsExpr = skipMatch[1]?.trim();
       directives.push({
         kind: "skip",
-        returns: returnsExpr ? parseTypeValueExpr(returnsExpr) : undefined,
+        returns: returnsExpr ? parseAbsExpr(returnsExpr) : undefined,
       });
     }
 
@@ -813,7 +821,7 @@ export function extractInlineDirectives(node: Node): InlineDirective[] {
 
     const asMatch = text.match(AS_REGEX);
     if (asMatch) {
-      results.push({ kind: "as", typeExpr: parseTypeValueExpr(asMatch[1].trim()) });
+      results.push({ kind: "as", typeAbs: parseAbsExpr(asMatch[1].trim()) });
       continue;
     }
 
@@ -827,7 +835,7 @@ export function extractInlineDirectives(node: Node): InlineDirective[] {
         results.push({
           kind: "replace",
           targetSource,
-          typeExpr: parseTypeValueExpr(typeExprStr),
+          typeAbs: parseAbsExpr(typeExprStr),
         });
       }
     }

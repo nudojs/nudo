@@ -4,7 +4,7 @@
  */
 
 import { parse } from "@nudojs/parser";
-import type { TypeValue } from "@nudojs/core";
+import type { Abs } from "@nudojs/core";
 import { collectDependencySpecs } from "./static-imports.ts";
 import { harvestPackage, type PackageHarvest } from "./harvest-package.ts";
 
@@ -61,10 +61,10 @@ export function clearHarvestCache(): void {
 export function autoHarvestModules(
   source: string,
   fromDir: string,
-): Record<string, Record<string, TypeValue>> {
+): Record<string, Record<string, Abs>> {
   const packages = collectBarePackages(source);
   if (packages.length === 0) return {};
-  const modules: Record<string, Record<string, TypeValue>> = {};
+  const modules: Record<string, Record<string, Abs>> = {};
   for (const pkg of packages) {
     const h = harvestPackageCached(pkg, fromDir);
     if (!h) continue;

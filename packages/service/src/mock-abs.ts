@@ -5,7 +5,7 @@
 
 import type { Node } from "@babel/types";
 import type { FunctionWithDirectives } from "@nudojs/parser";
-import { parseTypeValueExpr } from "@nudojs/parser";
+import { parseCaseArgExpr } from "@nudojs/parser";
 import type { MockHelper, TypeValue } from "@nudojs/core";
 import {
   type Abs,
@@ -203,14 +203,14 @@ function absFromMockHelper(h: MockHelper): Abs {
 
 function absFromSinon(sinonExpr: {
   type: string;
-  returnValue?: TypeValue;
-  resolvedValue?: TypeValue;
-  rejectedValue?: TypeValue;
+  returnValue?: Abs;
+  resolvedValue?: Abs;
+  rejectedValue?: Abs;
 }): Abs {
   if (sinonExpr.resolvedValue) {
     return constantMockFn(
       makeAbs(
-        { k: "eff", eff: "promise", inner: typeValueToAbs(sinonExpr.resolvedValue) },
+        { k: "eff", eff: "promise", inner: sinonExpr.resolvedValue },
         undefined,
         undefined,
         "path",
@@ -221,7 +221,7 @@ function absFromSinon(sinonExpr: {
     return constantMockFn(makeAbs({ k: "never" }, undefined, undefined, "exact"));
   }
   if (sinonExpr.returnValue) {
-    return constantMockFn(typeValueToAbs(sinonExpr.returnValue));
+    return constantMockFn(sinonExpr.returnValue);
   }
   return constantMockFn(absUnknown);
 }
@@ -271,7 +271,7 @@ export function mockDirectivesToAbsSeeds(
         // B 路径注入只吃 seed → 被当 unknown 全局（nudo:builtin-unknown）。
         // 桥进 seedVars 后两条路径口径一致。
         try {
-          seedVars[d.name] = typeValueToAbs(parseTypeValueExpr(d.expression));
+          seedVars[d.name] = parseCaseArgExpr(d.expression).abs;
         } catch {
           seedVars[d.name] = absUnknown;
         }

@@ -27,7 +27,6 @@ import {
   ge as predGe,
   le as predLe,
   lit as termLit,
-  getRangeMeta,
   spread as kSpread,
   joinAbs as kJoinAbs,
   abs as makeAbs,
@@ -99,32 +98,16 @@ function canAdd(left: TypeValue, right: TypeValue): boolean {
 
 /**
  * 带 term 旁路的 TypeValue → Abs。
- * range refined 编码为 term 上的 Pred（唯一约束通道），不再靠 refinement.ops。
+ * range refined 已随 TypeValue refinements 删除；仅 term/pred 旁路。
  */
 function toAbsWithTerms(tv: TypeValue): Abs {
   const base = typeValueToAbs(tv);
   const term = getTerm(tv);
   const pred = getPred(tv);
-  let abs: Abs =
-    !term && !pred && !getRangeMeta(tv)
+  const abs: Abs =
+    !term && !pred
       ? base
       : makeAbs(base.shape, term ?? base.term, pred ?? base.pred, base.conf);
-
-  const range = getRangeMeta(tv);
-  if (range && abs.term) {
-    const facts: Pred[] = [];
-    if (range.min != null) facts.push(predGe(abs.term, termLit(range.min)));
-    if (range.max != null) facts.push(predLe(abs.term, termLit(range.max)));
-    if (facts.length > 0) {
-      const existing = abs.pred && abs.pred.op !== "true" ? abs.pred : undefined;
-      abs = makeAbs(
-        abs.shape,
-        abs.term,
-        existing ? predAnd(existing, ...facts) : predAnd(...facts),
-        abs.conf,
-      );
-    }
-  }
   return abs;
 }
 
