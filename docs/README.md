@@ -36,7 +36,7 @@
 | 文档 | 内容 | 状态 |
 |------|------|------|
 | [examples/README.md](./examples/README.md) | **示例命令 × 退出码矩阵（唯一真值）**；`pnpm run verify:examples` 从矩阵解析命令，矩阵 ↔ 磁盘双向交叉校验 | 现行 |
-| [examples/](./examples/) | 分场景示例：constraints（refine）/ structure（leq）/ vs-ts（tsc 对照）/ mini-repo（多文件）/ algebra（类型即计算） | 现行（输出钉住） |
+| [examples/](./examples/) | 分场景示例：constraints（refine）/ structure（leq）/ vs-ts（tsc 对照）/ mini-repo（多文件）/ algebra（类型即计算）/ interface-derivation（契约分层推导） | 现行（输出钉住） |
 
 每个子目录 README 与示例文件头注释里的单行命令只是就近提示；矩阵才是真值。
 

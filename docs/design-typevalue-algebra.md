@@ -503,11 +503,18 @@ map : ∀α β. (Arr α, α→β) → Arr β
 调用 2: β=string
 ```
 
-若回调是 `x => x + 1` 且元素带约束 `>0`，结果元素 term/pred 同步传播——**外延 `number[]` 只是投影**。
+> **现状（Abs 原生，2026-09）：** 上面 `out : Arr(eval(fn(α)))` 与 `[2,4,6] #exact`
+> 是**设计目标**，尚未落地——手写 `for-of` + `push(fn(item))` 的元素类型不回填进
+> push，`out` 实得 `unknown[]`（`abs: [] #exact`）。HOF 关系已归纳出
+> `fn: (A1) => B:fn`（intension 可见），但元素传播未接入 push。当前精确路径是
+> 内建 `arr.map(cb)`（见 `docs/examples/algebra/b-hof-map.js`）；限制见
+> `design-limitations.md` §1.1「影响范围（剩余）」。
+
+若回调是 `x => x + 1` 且元素带约束 `>0`，结果元素 term/pred 同步传播——**外延 `number[]` 只是投影**（同样为设计目标）。
 
 ---
 
-### 示例 C：`reduce` —— 累加器的项与不动点
+### 示例 C：`reduce` —— 累加器的项（单 pass）
 
 ```javascript
 function sum(numbers) {
@@ -518,8 +525,7 @@ sum([1,2,3,4,5]);
 
 ```
 字面量路径：0+1+…+5 → lit(15) #exact
-符号路径：acc₀=0, accᵢ₊₁=accᵢ+nᵢ
-  不动点：shape=number
+符号路径：init + element 一次应用 → shape=number #widened（单 pass，非不动点迭代）
   term 可选保留为 fold；深度超阈则 leak
   pred：若 nᵢ > 0 则 sum > 0
 ```
@@ -726,7 +732,7 @@ twice: (x: A1 where x > 0) => number = ((x + 1) + 1)  where ((x + 1) + 1) > 2
 | **0 add** | **类型即计算** | **term 保留 + 约束单调性** |
 | A createConfig | 结构层字面量/重载 | 积之和、函数并、Merge |
 | B map | HOF 内涵 | generalize |
-| C reduce | 累加器 | 不动点 + term |
+| C reduce | 累加器 | 单 pass + term |
 | D mixin | 交叉 | meet / brand |
 | E pick | 投影 | 字面量 key / index |
 | F async | 效应 | eff |

@@ -22,27 +22,30 @@
 function sum(arr) {
   return arr.reduce((a, b) => a + b, 0);
 }
-// Case "reduce": ([1, 2, 3, 4, 5]) => 15  #exact
+// Case "reduce": ([1, 2, 3, 4, 5]) => 15
+//   abs: 15  #exact
 ```
 
 ```javascript
 /**
- * @nudo:case "t" ([1, 2, 3, 4, 5])
+ * @nudo:case "forEach" ([1, 2, 3, 4, 5])
  */
 function forEachSum(arr) {
   let s = 0;
   arr.forEach((x) => { s = s + x; });
   return s;
 }
-// Case "t": ([1, 2, 3, 4, 5]) => 15 —— forEach 回调副作用写回 s
+// Case "forEach": ([1, 2, 3, 4, 5]) => 15 —— forEach 回调副作用写回 s
+//   abs: 15  #exact（intension 侧仍 0：符号重跑不写回）
 
 /**
- * @nudo:case "t" ([1, 2, 3, 4, 5])
+ * @nudo:case "some" ([1, 2, 3, 4, 5])
  */
 function someBig(arr) {
   return arr.some((x) => x > 3);
 }
-// Case "t": ([1, 2, 3, 4, 5]) => boolean
+// Case "some": ([1, 2, 3, 4, 5]) => boolean
+//   abs: boolean  #exact
 ```
 
 **影响范围（剩余）：**
