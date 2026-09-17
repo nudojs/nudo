@@ -18,10 +18,50 @@ import type { AnalysisResult, CaseResult, FunctionAnalysis } from "./analyzer.ts
 //   - 返回位：仅顶层（含 sum 成员）标量字面量 → 基类型，嵌套精度保留
 // ---------------------------------------------------------------------------
 
+/** 函数类型 / 并集在数组元素、`| undefined` 等位置必须加括号（TS 优先级）。 */
 function wrapComplexAbs(a: Abs): string {
   const ts = absToTSType(a);
-  if (a.shape.k === "sum") return `(${ts})`;
+  if (a.shape.k === "sum" || a.shape.k === "fn") return `(${ts})`;
   return ts;
+}
+
+/** 并集成员：函数类型必须括号，否则 `number | (x) => T` 非法（TS1385）。 */
+function wrapUnionMember(a: Abs): string {
+  const ts = absToTSType(a);
+  if (a.shape.k === "fn") return `(${ts})`;
+  return ts;
+}
+
+const TS_PARAM_RESERVED = new Set([
+  "break", "case", "catch", "class", "const", "continue", "debugger",
+  "default", "delete", "do", "else", "enum", "export", "extends", "false",
+  "finally", "for", "function", "if", "import", "in", "instanceof", "new",
+  "null", "return", "super", "switch", "this", "throw", "true", "try",
+  "typeof", "var", "void", "while", "with", "yield", "let", "static",
+  "await", "implements", "interface", "package", "private", "protected",
+  "public", "arguments", "eval", "constructor",
+]);
+
+function isTsIdent(name: string): boolean {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) && !TS_PARAM_RESERVED.has(name);
+}
+
+/** 成员声明里不能用保留字/非法标识符；空名与非 ident 落到 argN。 */
+function sanitizeParamName(name: string, index: number): string {
+  if (name.startsWith("...")) {
+    const rest = name.slice(3);
+    if (isTsIdent(rest)) return name;
+    return `...arg${index}`;
+  }
+  if (isTsIdent(name)) return name;
+  return `arg${index}`;
+}
+
+/** 对象字面量键：ident 与数字键可裸写，其余 JSON 引号。 */
+function formatPropKey(k: string): string {
+  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k)) return k;
+  if (/^\d+$/.test(k)) return k;
+  return JSON.stringify(k);
 }
 
 /** Abs → TS 类型串。有损：pred / 非 lit term 落到 shape 基类型。 */
@@ -63,10 +103,10 @@ export function absToTSType(a: Abs): string {
         // optional 槽与 TypeValue 桥接出口径一致：`k: T | undefined`，不用 `k?:`
         const inner = absToTSType(slot.value);
         if (slot.optional) {
-          const t = slot.value.shape.k === "sum" ? `(${inner})` : inner;
-          return `${k}: ${t} | undefined`;
+          const t = wrapComplexAbs(slot.value);
+          return `${formatPropKey(k)}: ${t} | undefined`;
         }
-        return `${k}: ${inner}`;
+        return `${formatPropKey(k)}: ${inner}`;
       });
       if (entries.length === 0) return "{}";
       return `{ ${entries.join("; ")} }`;
@@ -74,16 +114,36 @@ export function absToTSType(a: Abs): string {
     case "arr":
       return `${wrapComplexAbs(a.shape.element)}[]`;
     case "tuple": {
-      const inner = a.shape.elements.map(absToTSType).join(", ");
-      return `[${inner}]`;
+      const parts = a.shape.elements.map(absToTSType);
+      if (a.shape.rest) {
+        const rest = a.shape.rest;
+        const restTs =
+          rest.shape.k === "arr" ? absToTSType(rest) : `${absToTSType(rest)}[]`;
+        parts.push(`...${restTs}`);
+      }
+      return `[${parts.join(", ")}]`;
     }
     case "fn": {
-      const params = a.shape.params.map((p) => `${p}: unknown`).join(", ");
+      const paramTypes = a.shape.paramTypes;
+      const params = a.shape.params
+        .map((p, i) => {
+          const isRest = p.startsWith("...");
+          const name = sanitizeParamName(p, i);
+          const pt = paramTypes?.[i];
+          let typeStr: string;
+          if (pt) typeStr = absToTSType(pt);
+          else if (isRest) typeStr = "unknown[]";
+          else typeStr = "unknown";
+          return `${name}: ${typeStr}`;
+        })
+        .join(", ");
       const ret = a.shape.returnType ? absToTSType(a.shape.returnType) : "unknown";
       return `(${params}) => ${ret}`;
     }
     case "brand":
-      return a.shape.name;
+      return isTsIdent(a.shape.name) || /^[A-Z][A-Za-z0-9_$]*$/.test(a.shape.name)
+        ? a.shape.name
+        : "unknown";
     case "eff":
       if (a.shape.eff === "promise") return `Promise<${absToTSType(a.shape.inner)}>`;
       return absToTSType(a.shape.inner);
@@ -91,7 +151,7 @@ export function absToTSType(a: Abs): string {
       // 并集成员按渲染串去重：widen 后可能出现 number | number；
       // never 是 join 单位元，对 .d.ts 返回位无意义。
       const parts = a.shape.members
-        .map(absToTSType)
+        .map(wrapUnionMember)
         .filter((p) => p !== "never");
       const uniq = [...new Set(parts)];
       if (uniq.length === 0) return "never";
@@ -291,6 +351,11 @@ function computeMainSignature(fn: FunctionAnalysis): MainSignature {
     }
     const typeStr = paramTypeFromAbs(members);
     let name = getParamName(fn, i);
+    const isRest = name.startsWith("...");
+    const bare = isRest ? name.slice(3) : name;
+    if (!isTsIdent(bare)) {
+      name = isRest ? `...arg${i}` : `arg${i}`;
+    }
     if (usedNames.has(name)) {
       // 解构/模式参数在 AST 提取时都叫 "_"；单一签名里重名会让 .d.ts
       // 非法（tsc TS2300 Duplicate identifier），序号去重
@@ -300,7 +365,7 @@ function computeMainSignature(fn: FunctionAnalysis): MainSignature {
     }
     usedNames.add(name);
     // 各 case 元数不一致时，短 case 不传的尾部参数标可选，长调用短调用都放行
-    const optional = i >= minArity && !name.startsWith("...");
+    const optional = i >= minArity && !isRest;
     params.push(optional ? `${name}?: ${typeStr}` : `${name}: ${typeStr}`);
     paramNames.push(name);
     paramTypes.push(typeStr);
