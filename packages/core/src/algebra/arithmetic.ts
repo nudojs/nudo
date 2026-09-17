@@ -285,7 +285,8 @@ function collectBoundsFromPred(pred: Pred, term: Term, acc: NumBounds): void {
     }
     if (p.op === "lt" && match(p.a) && p.b.op === "lit" && typeof p.b.value === "number") {
       const n = p.b.value;
-      if (acc.hi === undefined || n < acc.hi.value) {
+      // 与 gt 对称：x < n 在 x ≤ n 之上更紧，等值须升级 strict（否则 le 在前会吞掉 lt）
+      if (acc.hi === undefined || n < acc.hi.value || (n === acc.hi.value && !acc.hi.strict)) {
         acc.hi = { value: n, strict: true };
       }
       return;
@@ -305,7 +306,7 @@ function collectBoundsFromPhi(phi: Phi, id: string, acc: NumBounds): void {
   for (const p of conjs) {
     if (p.op === "gt" && p.a.op === "var" && p.a.id === id && p.b.op === "lit" && typeof p.b.value === "number") {
       const n = p.b.value;
-      if (acc.lo === undefined || n > acc.lo.value) {
+      if (acc.lo === undefined || n > acc.lo.value || (n === acc.lo.value && !acc.lo.strict)) {
         acc.lo = { value: n, strict: true };
       }
     }
@@ -317,7 +318,7 @@ function collectBoundsFromPhi(phi: Phi, id: string, acc: NumBounds): void {
     }
     if (p.op === "lt" && p.a.op === "var" && p.a.id === id && p.b.op === "lit" && typeof p.b.value === "number") {
       const n = p.b.value;
-      if (acc.hi === undefined || n < acc.hi.value) {
+      if (acc.hi === undefined || n < acc.hi.value || (n === acc.hi.value && !acc.hi.strict)) {
         acc.hi = { value: n, strict: true };
       }
     }

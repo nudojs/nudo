@@ -7,6 +7,7 @@ import {
   mod,
   cmp,
   refineAbsForRelTrue,
+  and,
   numLit,
   numVar,
   strLit,
@@ -14,6 +15,7 @@ import {
   gtNum,
   geNum,
   ltNum,
+  leNum,
   lit,
   v,
   termToString,
@@ -199,5 +201,30 @@ describe("cmp under phi", () => {
   });
   it("1<3 → true", () => {
     expect(litValue(cmp("lt", numLit(1), numLit(3)))).toBe(true);
+  });
+});
+
+describe("bound tightening: strict over non-strict at equal bound", () => {
+  // le(x,5) ∧ lt(x,5) ≡ lt(x,5)。等值处 strict 必须胜出，否则顺序
+  // 会影响结果：le 在前会把 lt 的 strict 吞掉，得到过弱的 x≤5。
+  it("pred path: le then lt keeps strict (hi bound)", () => {
+    const x = v("x");
+    const r = add(numVar("x", and(leNum(x, 5), ltNum(x, 5))), numLit(0));
+    expect(r.pred?.op).toBe("lt");
+    if (r.pred?.op === "lt") expect(r.pred.b).toEqual(lit(5));
+  });
+
+  it("phi path: le then lt keeps strict (hi bound)", () => {
+    const x = v("x");
+    const r = add(numVar("x"), numLit(0), and(leNum(x, 5), ltNum(x, 5)));
+    expect(r.pred?.op).toBe("lt");
+    if (r.pred?.op === "lt") expect(r.pred.b).toEqual(lit(5));
+  });
+
+  it("phi path: ge then gt keeps strict (lo bound)", () => {
+    const x = v("x");
+    const r = add(numVar("x"), numLit(0), and(geNum(x, 5), gtNum(x, 5)));
+    expect(r.pred?.op).toBe("gt");
+    if (r.pred?.op === "gt") expect(r.pred.b).toEqual(lit(5));
   });
 });
