@@ -9,7 +9,7 @@
 import { parseSource as babelParse } from "./parse-source.ts";
 import type { Node } from "@babel/types";
 import type { Term } from "./term.ts";
-import { v as termVar, termToString } from "./term.ts";
+import { v as termVar } from "./term.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { pTrue, predToString } from "./pred.ts";
 import type { Abs, Shape } from "./abs.ts";
@@ -832,16 +832,14 @@ function formatPoly(
       return `${p}: ${id}`;
     })
     .join(", ");
+  // formatShapeSlot 已内联 term（fn/arr 槽位刻意不重复展示外层 α 身份），
+  // 这里不得再追加 termPart——否则会重复输出 `= (A1 + A2) = (A1 + A2)`。
   const ret = formatShapeSlot(symbolic);
-  const termPart =
-    symbolic.term && symbolic.term.op !== "lit"
-      ? ` = ${termToString(symbolic.term)}`
-      : "";
   const predPart =
     symbolic.pred && symbolic.pred.op !== "true"
       ? `  where ${predToString(symbolic.pred)}`
       : "";
-  return `${name}: (${ps}) => ${ret}${termPart}${predPart}`;
+  return `${name}: (${ps}) => ${ret}${predPart}`;
 }
 
 export function generalizeAll(

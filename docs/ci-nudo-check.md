@@ -18,6 +18,10 @@ FAILED
 
 signatures
   needsPositive(x)  number  = x  where x > 0  #path
+    number
+    term: x
+    pred: x > 0
+    conf: path
 
 issues
   [ERROR L12 needsPositive] needsPositive[x]: 实参 ⊭ 前置  (nudo:constraint-violated)

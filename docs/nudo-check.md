@@ -33,11 +33,13 @@ FAILED
 
 signatures
   needsPositive(x)  number  = x  where x > 0  #path
+    number
+    term: x
     pred: x > 0
     conf: path
 
 issues
-  [ERROR L12 needsPositive] needsPositive[x]: 实参 ⊭ 前置
+  [ERROR L12 needsPositive] needsPositive[x]: 实参 ⊭ 前置  (nudo:constraint-violated)
       actual:   -1  #exact
       expected: x > 0
       → 改用满足 x > 0 的值，或放宽 x 的前置
@@ -248,8 +250,8 @@ pnpm run infer file.js --json
       "throws": null,
       "source": null,
       "intension": {
-        "display": "scale: <A1>(x: A1) => number | string = (A1 + 1)",
-        "abs": "number | string  = (A1 + 1)  #partial",
+        "display": "scale: (x: A1) => number | string = (A1 + 1)",
+        "abs": "number | string  #partial",
         "absMultiline": "…",
         "term": "(A1 + 1)",
         "conf": "partial"

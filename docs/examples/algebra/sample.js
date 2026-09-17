@@ -5,7 +5,8 @@
 //
 // 输出（每段都带 '# no call sites found; parameters default to unknown'）：
 //   add          Case "entry@": (unknown, unknown) => unknown
-//     intension: add: (a: A1, b: A2) => number | string = (A1 + A2)  #partial
+//     intension: add: (a: A1, b: A2) => number | string = (A1 + A2)
+//     abs: number | string  = (A1 + A2)  #partial
 //     —— 无契约时 + 跟真实 JS：number | string，不是 unknown
 //   scale        (unknown) => number | string = (A1 + 1)
 //   twice        (unknown) => number | `${string}1` = ((A1 + 1) + 1)

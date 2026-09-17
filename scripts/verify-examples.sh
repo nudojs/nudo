@@ -291,7 +291,7 @@ pin 'pnpm run infer docs/examples/mini-repo/user-service.js' \
 pin 'pnpm run infer docs/examples/mini-repo/validators.js' \
   'Case "entry@L1": (unknown) => boolean' \
   'isPositive: (n: A1) => boolean  where A1 > 0' \
-  'clamp: (n: A1, lo: A2, hi: A3) => A2 = A2'
+  'clamp: (n: A1, lo: A2, hi: A3) => A2'
 pin 'pnpm run infer docs/examples/mini-repo/store.js' \
   'No functions with @nudo:case directives found.'
 
