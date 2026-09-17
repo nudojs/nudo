@@ -1,6 +1,6 @@
 # Close TS DX Gaps — 技术缺口任务列表
 
-> **状态**：路线图（未开工）。本文把「Nudo vs TypeScript 开发体验对比」讨论中
+> **状态**：路线图主体已交付（fix-2）。本文把「Nudo vs TypeScript 开发体验对比」讨论中
 > **可补齐的技术缺口**收敛成可执行任务，不复述已实现设计。
 >
 > **真理源关系**：
@@ -282,6 +282,9 @@ flowchart TB
 - [x] **E3** Vite 默认策略对齐 A1：`shouldAnalyzeFile` 替换硬编码指令正则；`failOnError` 默认 false；诊断档项目显式配置优先，否则 default（保留 warning）
 - [x] **B6** 真实 monorepo 基准（**已拍板跳过**）
 - [x] **F1–F2** 概念分层（`concepts/layers.md`：Day-0 / Day-1 / Abs）
+- [x] **A7–A8** interface 档 hover/inlay/semantic tokens 与 CodeLens 同源（`interfaceTierOf`）；validate 取消 + 自适应防抖
+- [x] **E4–E6** LSP 客户端矩阵（`guides/lsp-clients.md`）；agent 工具与 LSP/CLI 同源测试（`AGENT_TOOL_SOURCES`）；0.x/1.x 版本策略（`docs/versioning.md`）
+- [x] **F4–F5** vs TypeScript 定位页；`scripts/learning-cost.mjs`（`pnpm run learning-cost`，非门禁）
 
 ---
 
