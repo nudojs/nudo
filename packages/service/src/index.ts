@@ -44,6 +44,10 @@ export {
 } from "./infer-json.ts";
 
 export { isNudoTargetPath } from "./target-path.ts";
+export {
+  shouldAnalyzeFile,
+  hasNudoDirectives as sourceHasNudoDirectives,
+} from "./analysis-scope.ts";
 export { defaultLoadModule, type LoadModule } from "./load-module.ts";
 export {
   collectStaticImports,

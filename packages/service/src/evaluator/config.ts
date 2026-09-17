@@ -40,7 +40,7 @@ export type AnalysisConfig = {
   diagnostics: DiagnosticsLevel;
 };
 
-const DEFAULT_ANALYSIS_INCLUDE = ["**/*.{js,mjs,cjs,ts}"];
+const DEFAULT_ANALYSIS_INCLUDE: string[] = [];
 const DEFAULT_ANALYSIS_EXCLUDE = [
   "**/node_modules/**",
   "**/dist/**",
@@ -57,6 +57,7 @@ function toStringArray(raw: string[] | string | undefined, fallback: string[]): 
 /**
  * 归一化 `nudo.analysis`。默认 mode=directives（A1 前不改 IDE 行为）；
  * diagnostics：directives→errors，all/exports→default。
+ * include 空 = 不按路径过滤（isNudoTargetPath 已管扩展名）。
  */
 export function analysisConfig(config: NudoConfig | null | undefined): AnalysisConfig {
   const raw = config?.analysis;
@@ -71,7 +72,9 @@ export function analysisConfig(config: NudoConfig | null | undefined): AnalysisC
         ? "errors"
         : "default";
   return {
-    include: toStringArray(raw?.include, DEFAULT_ANALYSIS_INCLUDE),
+    // include 空数组 = 不过滤（与「省略」同义）
+    include: toStringArray(raw?.include, []),
+    // exclude 空数组回落默认安全列表，避免误关 node_modules 保护
     exclude: toStringArray(raw?.exclude, DEFAULT_ANALYSIS_EXCLUDE),
     mode,
     diagnostics,

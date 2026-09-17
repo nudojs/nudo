@@ -29,7 +29,8 @@
     "interface": { "autoBind": true, "emit": [] },
     "analysis": {
       // 路径（相对 projectDir；glob 与 emit 同极简实现）
-      "include": ["**/*.{js,mjs,cjs,ts}"],  // 默认：目标扩展名
+      // include 空数组/省略 = 不按路径过滤（扩展名仍由 isNudoTargetPath 保证）
+      "include": [],
       "exclude": ["**/node_modules/**", "**/dist/**", "**/coverage/**"],
       // 何时分析无指令文件
       // "directives" | "exports" | "all"

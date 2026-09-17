@@ -8,7 +8,7 @@ describe("analysisConfig", () => {
       expect(a.mode).toBe("directives");
       expect(a.diagnostics).toBe("errors");
       expect(a.exclude).toContain("**/node_modules/**");
-      expect(a.include.length).toBeGreaterThan(0);
+      expect(a.include).toEqual([]);
     }
   });
 
@@ -34,9 +34,9 @@ describe("analysisConfig", () => {
     expect(a.exclude).toEqual(["**/tmp/**"]);
   });
 
-  it("empty include/exclude arrays fall back to defaults", () => {
+  it("empty include means no path filter; empty exclude falls back to defaults", () => {
     const a = analysisConfig({ analysis: { include: [], exclude: [] } });
-    expect(a.include.length).toBeGreaterThan(0);
+    expect(a.include).toEqual([]);
     expect(a.exclude.length).toBeGreaterThan(0);
   });
 

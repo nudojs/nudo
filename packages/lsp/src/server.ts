@@ -29,6 +29,7 @@ import {
   getCompletionsAtPosition,
   buildSemanticTokens,
   isNudoTargetPath,
+  shouldAnalyzeFile,
   collectAbsInlays,
   findProjectConfig,
   interfaceConfig,
@@ -43,7 +44,6 @@ import {
   forgetValidatedFile,
   getCachedOrAnalyze,
   handleNudoDepFileChanged,
-  hasNudoDirectives,
   lspLoadModule,
   registerNudoImportDeps,
   toLspDiagnostic,
@@ -1013,14 +1013,15 @@ connection.languages.diagnostics.on((params) => {
 const nudoFileCache = new Map<string, boolean>();
 
 function isNudoFile(uri: string): boolean {
-  // 推断目标判定收敛到 service 层（TaskA 提供）：.js/.mjs/.ts 为目标，
-  // .d.ts（类型声明，harvester 输入）与 .tsx/.jsx 等一律排除
+  // 路径目标 + analysis.mode（design-analysis-scope）：directives=今日行为；
+  // exports/all 由 package.json#nudo.analysis 打开无指令分析
   if (!isNudoTargetPath(uriToFilePath(uri))) return false;
+  const filePath = uriToFilePath(uri);
   const cached = nudoFileCache.get(uri);
   if (cached !== undefined) return cached;
   const doc = documents.get(uri);
   if (!doc) return false;
-  const result = hasNudoDirectives(doc.getText());
+  const result = shouldAnalyzeFile(filePath, doc.getText());
   nudoFileCache.set(uri, result);
   return result;
 }
