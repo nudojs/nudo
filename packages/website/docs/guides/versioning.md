@@ -1,0 +1,95 @@
+---
+sidebar_position: 10
+description: "How Nudo packages are versioned: 0.x vs 1.x SemVer, what counts as breaking, changeset workflow, and migration notes."
+---
+
+# Versioning & Releases
+
+Nudo is a pnpm monorepo that publishes **per-package** versions via [changesets](https://github.com/changesets/changesets). The monorepo root version is private and is not a publish unit.
+
+## Package lines
+
+| Package | Line | Upgrade rule |
+|---------|------|----------------|
+| `@nudojs/core` | **1.x** | SemVer: breaking → major |
+| `@nudojs/service` | **1.x** | SemVer: breaking → major |
+| `@nudojs/cli` | **1.x** | SemVer: breaking → major |
+| `@nudojs/parser` | 0.x | **Minor may break** — read CHANGELOG |
+| `@nudojs/lsp` | 0.x | **Minor may break** |
+| `@nudojs/env` / `@nudojs/harvester` | 0.x | Minor may break |
+| `nudojs` (npm shell) | 0.x | Prefer `@nudojs/cli` / `@nudojs/core` directly |
+| `vite-plugin-nudo` | 0.x | Minor may break |
+| `nudo-vscode` | Marketplace | Follow extension release notes |
+
+### 0.x in one sentence
+
+`0.x.y` patches are safe; `0.(x+1).0` minors **may** contain breaking changes. Pin exact versions in CI if you need bit-stable diagnostics.
+
+### 1.x in one sentence
+
+Patches fix soundness (results may get *more correct*); minors add APIs/codes/flags; majors remove or rename public surfaces.
+
+Full policy (what Nudo treats as breaking): [`docs/versioning.md`](https://github.com/nudojs/nudo/blob/main/docs/versioning.md) in the repo.
+
+## What usually breaks
+
+- Removing package export subpaths
+- `CheckJson` / `InferJson` / generated `.d.ts` schema or shape changes
+- Renaming diagnostic codes or flipping default severity
+- Removing CLI flags or changing analysis defaults without an escape hatch
+- Directive grammar / sidecar binding-key changes
+- Removing LSP `nudo.*` commands or custom requests
+
+**Non-breaking:** new diagnostic codes, new optional `package.json#nudo` keys, more precise inference, new CLI flags with safe defaults.
+
+## Following releases
+
+Each published package ships a `CHANGELOG.md` maintained by changesets. Breaking entries are prefixed `**BREAKING**:` and include a one-line migration.
+
+Example (core 1.0.0): evaluator subpath moved from `@nudojs/cli/evaluator` to `@nudojs/service/evaluator`.
+
+```bash
+# after a minor bump on a 0.x package
+npm i @nudojs/lsp@0.8.0
+# read node_modules/@nudojs/lsp/CHANGELOG.md for BREAKING bullets
+```
+
+## Changesets (contributors)
+
+```bash
+pnpm exec changeset
+```
+
+Pick packages + bump type, then write a short **who breaks / how to migrate** summary. CI on `main` runs `changeset version` → publish → docs/VS Code packaging.
+
+| Situation | Bump |
+|-----------|------|
+| 0.x package, breaking | minor |
+| 0.x package, fix/additive | patch |
+| 1.x package, API/schema break | major |
+| 1.x package, additive | minor |
+| 1.x package, soundness fix | patch (note result changes) |
+
+## Pinning recipes
+
+```jsonc
+// reproducible CI
+{ "dependencies": { "@nudojs/core": "1.0.1" } }
+
+// 1.x: track compatible fixes
+{ "dependencies": { "@nudojs/core": "^1.0.1" } }
+
+// 0.x: only take patches automatically
+{ "dependencies": { "@nudojs/lsp": "~0.7.1" } }
+```
+
+## IDE extensions
+
+VS Code (`wmzy.nudo-vscode`) and Zed (`nudojs/nudo-zed`) bundle or resolve `@nudojs/lsp`. Extension release notes are the source of truth for editor-facing changes; the language server still follows the 0.x table above.
+
+## See also
+
+- [LSP Client Matrix](./lsp-clients.md)
+- [VS Code Extension](./vscode.md)
+- [Zed Extension](./zed.md)
+- [Agent Integration](./mcp-server.md)

@@ -126,5 +126,6 @@ cargo build --target wasm32-wasip2 --release
 
 - [VS Code Extension](./vscode.md)
 - [LSP Client Matrix](./lsp-clients.md) — capability alignment across editors
+- [Versioning & Releases](./versioning.md)
 - [Agent Integration](./mcp-server.md) — the same server, for coding agents
 - [@nudojs/lsp API](../api/lsp.md)

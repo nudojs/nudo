@@ -126,5 +126,6 @@ cargo build --target wasm32-wasip2 --release
 
 - [VS Code 扩展](./vscode.md)
 - [LSP 客户端矩阵](./lsp-clients.md)——跨编辑器能力对齐
+- [版本与发布](./versioning.md)
 - [Agent 集成](./mcp-server.md)——同一服务器服务 coding agent
 - [@nudojs/lsp API](../api/lsp.md)

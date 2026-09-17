@@ -122,4 +122,5 @@ Helix 渲染诊断 / hover / 定义；UI 无 CodeLens——用 CLI `nudo interfa
 - [VS Code 扩展](./vscode.md)
 - [Zed 扩展](./zed.md)
 - [Agent 集成](./mcp-server.md)
+- [版本与发布](./versioning.md)
 - [@nudojs/lsp API](../api/lsp.md)
