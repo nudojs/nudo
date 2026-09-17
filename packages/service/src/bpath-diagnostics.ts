@@ -135,6 +135,10 @@ function collectDeclared(file: File): Set<string> {
       case "ImportNamespaceSpecifier":
         addId((o as { local?: Node }).local);
         break;
+      case "CatchClause":
+        // C2.2：catch (e) 形参是局部绑定，不得报 builtin-unknown
+        addId((o as { param?: Node }).param);
+        break;
       default:
         break;
     }

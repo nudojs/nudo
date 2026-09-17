@@ -221,7 +221,7 @@ Combined: 0 | 1 | 3
 | `Symbol.iterator in x` | → `unknown` | `Array.isArray(x)` |
 | `Set` / `Map` 上的 `for...of` | 元素 → `unknown` | 数组 / `.map` 回调 |
 | Promise 执行器 | `new Promise((r) => r("done"))` → `promise<unknown>` | `@nudo:mock` + `async` 函数 |
-| `try`/`catch` 形参 | `catch (err)` → `err` 为 `unknown`（`nudo:builtin-unknown`） | `try` 体内的确定性 `return`（无抛点）折叠为精确 |
+| `try`/`catch` 形参 | **已建模** — `catch (err)` 绑定 thrown Abs；`new Error("boom")` → `err.message` 为 `"boom"` | 使用 Error 家族 / 对象 / 字面量 throw |
 | 每迭代 `let` 闭包 | `fns[i]()` → `unknown` | 直接使用迭代结果 |
 | `arguments` | → `unknown`（`nudo:builtin-unknown`） | 具名参数 |
 | `JSON.parse` | `JSON.parse('{"port": 3000}')` → `unknown` | 对象字面量 |

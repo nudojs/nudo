@@ -14,6 +14,7 @@ import {
 import {
   arrOf,
   brandOf,
+  errorBrandOf,
   envFn,
   nullLit,
   objAbs,
@@ -265,12 +266,12 @@ export function defineEnv(): EnvDefinition {
         strToStrImplAbs(decodeURIComponent),
       ),
 
-      Error: envFn([prim.str()], brandOf("Error")),
-      TypeError: envFn([prim.str()], brandOf("TypeError")),
-      RangeError: envFn([prim.str()], brandOf("RangeError")),
-      SyntaxError: envFn([prim.str()], brandOf("SyntaxError")),
-      ReferenceError: envFn([prim.str()], brandOf("ReferenceError")),
-      URIError: envFn([prim.str()], brandOf("URIError")),
+      Error: envFn([prim.str()], errorBrandOf("Error")),
+      TypeError: envFn([prim.str()], errorBrandOf("TypeError")),
+      RangeError: envFn([prim.str()], errorBrandOf("RangeError")),
+      SyntaxError: envFn([prim.str()], errorBrandOf("SyntaxError")),
+      ReferenceError: envFn([prim.str()], errorBrandOf("ReferenceError")),
+      URIError: envFn([prim.str()], errorBrandOf("URIError")),
 
       Promise: objAbs({
         resolve: envFn([prim.unknown], promiseOf(prim.unknown), promiseResolveImplAbs),

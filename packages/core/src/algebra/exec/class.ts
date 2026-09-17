@@ -9,7 +9,7 @@ import { objOf, joinAbs } from "../objects.ts";
 import { $get, $set, asAbsVal, namespaceNameOf, $regex } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl } from "../abs-fn.ts";
-import { evalNamespaceCall } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName } from "../builtins.ts";
 import {
   applyCallbackAbs,
   asAbs,
@@ -119,6 +119,10 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     if (cls === RegExp) {
       const p = args[0] ? litValue(args[0]) : undefined;
       if (typeof p === "string") return $regex(p, args[1] ? String(litValue(args[1]) ?? "") : "");
+    }
+    // C2.2：Error 家族携带 name/message 槽（catch 形参可读）
+    if (isErrorCtorName(cls.name)) {
+      return errorBrandAbs(cls.name, args[0]);
     }
     const name = cls.name || "Object";
     const shape = objOf({});

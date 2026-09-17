@@ -263,8 +263,7 @@ pin 'pnpm run infer docs/examples/algebra/j-this-binding.js' \
   'Combined: 25 | 9'
 pin 'pnpm run infer docs/examples/algebra/k-try-catch.js' \
   'Case "fold": () => "inner"' 'abs: "inner"  #exact' \
-  'Case "caught": () => unknown' 'abs: unknown  #exact' \
-  'Built-in API "err" is not covered' 'nudo:builtin-unknown'
+  'Case "caught": () => "boom"' 'abs: "boom"  #exact'
 pin 'pnpm run infer docs/examples/algebra/l-primitive-conversion.js' \
   'Case "str": (5) => "5"' 'abs: "5"  #exact' \
   'Case "bool": ("hi") => true' 'abs: true  #exact' \

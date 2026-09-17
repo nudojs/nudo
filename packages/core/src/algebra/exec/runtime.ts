@@ -661,12 +661,36 @@ export function isNudoThrow(e: unknown): e is NudoThrow {
   return e instanceof NudoThrow;
 }
 
-/** catch 参数：从 NudoThrow 取出 Abs，否则 unknown */
+/** catch 参数：从 NudoThrow 取出 Abs；宿主 Error 补 name/message；否则 unknown */
 export function $catchVal(e: unknown): Abs {
   if (isNudoThrow(e)) return e.absValue;
   if (e instanceof Error) {
+    const name = e.name || "Error";
+    const msgAbs: Abs =
+      typeof e.message === "string"
+        ? abs(
+            { k: "prim", type: "string" },
+            { op: "lit", value: e.message as never },
+            pTrue,
+            "exact",
+          )
+        : abs({ k: "prim", type: "string" }, undefined, undefined, "path");
     return abs(
-      { k: "brand", name: e.name || "Error", shape: objOf({}) },
+      {
+        k: "brand",
+        name,
+        shape: objOf({
+          name: {
+            value: abs(
+              { k: "prim", type: "string" },
+              { op: "lit", value: name as never },
+              pTrue,
+              "exact",
+            ),
+          },
+          message: { value: msgAbs },
+        }),
+      },
       undefined,
       undefined,
       "path",

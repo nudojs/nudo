@@ -67,6 +67,23 @@ export function brandOf(name: string, shape: Abs = unknown): Abs {
   return makeAbs({ k: "brand", name, shape }, undefined, undefined, "path");
 }
 
+/** Error 家族 brand：shape 带 name/message（catch 形参成员可解） */
+export function errorBrandOf(name: string): Abs {
+  return makeAbs(
+    {
+      k: "brand",
+      name,
+      shape: objOf({
+        name: { value: str(name) },
+        message: { value: str() },
+      }),
+    },
+    undefined,
+    undefined,
+    "path",
+  );
+}
+
 /**
  * env 声明函数：无 apply 时 relationFn；有 apply 时 absFunction + shape 签名槽。
  * shape.paramTypes/returnType 同步写入（format/leq 读这里）。

@@ -5,7 +5,7 @@
 
 import type { Abs } from "./abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown, confJoin } from "./abs.ts";
-import { joinAbs } from "./objects.ts";
+import { joinAbs, objOf } from "./objects.ts";
 
 function numPrim(conf: Abs["conf"] = "path"): Abs {
   return abs({ k: "prim", type: "number" }, undefined, undefined, conf);
@@ -366,6 +366,43 @@ export function evalNamespaceCall(
   }
 }
 
+/** JS Error 家族构造器名（B 路径与 ast-eval 共用） */
+const ERROR_CTOR_NAMES = new Set([
+  "Error",
+  "TypeError",
+  "RangeError",
+  "SyntaxError",
+  "ReferenceError",
+  "URIError",
+  "EvalError",
+  "AggregateError",
+]);
+
+export function isErrorCtorName(name: string | undefined): boolean {
+  return !!name && ERROR_CTOR_NAMES.has(name);
+}
+
+/**
+ * Error brand：shape 带 name/message（字面量 message 保精确）。
+ * $new 与 ast-eval 的 new Error 共用——catch 形参成员访问可解。
+ */
+export function errorBrandAbs(name: string, messageArg?: Abs): Abs {
+  const message = messageArg ?? strPrim();
+  return abs(
+    {
+      k: "brand",
+      name,
+      shape: objOf({
+        name: { value: strLit(name) },
+        message: { value: message },
+      }),
+    },
+    undefined,
+    undefined,
+    "path",
+  );
+}
+
 /** new X(...) */
 export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined {
   switch (className) {
@@ -390,6 +427,10 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
         "path",
       );
     default:
+      // C2.2：Error 家族 → name/message 槽
+      if (isErrorCtorName(className)) {
+        return errorBrandAbs(className, args[0]);
+      }
       return undefined;
   }
 }

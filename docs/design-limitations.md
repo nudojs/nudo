@@ -332,9 +332,9 @@ function findFirst(arr) {
 
 ---
 
-### 4.2 try-catch：确定性 return 已折叠；catch 形参未建模（2026-09 复测）
+### 4.2 try-catch：确定性 return 与 catch 形参绑定（已解决·C2.2）
 
-**当前行为（2026-09 实测）：**
+**当前行为（2026-05 实测）：**
 try 体是确定性 `return`（无抛点）时静态选支精确——嵌套 try-catch 折叠为
 `"inner" #exact`（catch 分支不可达，不产生路径联合）：
 
@@ -355,8 +355,10 @@ nested();
 // abs: "inner"  #exact
 ```
 
-**剩余缺口：** catch 形参未建模。`catch (err)` 里的 `err` 被当作未知内置
-（`nudo:builtin-unknown` 诊断），`err.message` 等成员访问求值为 `unknown`：
+**catch 形参（C2.2 已实现）：** `catch (err)` 绑定 thrown 值 Abs。
+`new Error` / `TypeError` 等 Error 家族携带 `name` / `message` 槽
+（字面量 message 保精确）；非 Error 抛出值原样绑定。catch 形参
+是局部绑定，不再报 `nudo:builtin-unknown`。
 
 ```javascript
 function caught() {
@@ -367,20 +369,17 @@ function caught() {
   }
 }
 caught();
-// Case "call@L…": () => unknown
-// abs: unknown  #exact
-// [warning] Built-in API "err" is not covered by Nudo's type inference (nudo:builtin-unknown)
+// Case "call@L…": () => "boom"
+// abs: "boom"  #exact
 ```
-
-注意：catch 形参的 `nudo:builtin-unknown` 诊断在 catch 分支**不可达**时也会触发
-（上面的 `nested()` 的 `catch (e)` 同样报 `e`）——catch 形参绑定本身未建模，
-与分支可达性无关。
 
 已固化为示例门禁：
 [`docs/examples/algebra/k-try-catch.js`](examples/algebra/k-try-catch.js)
-（CI 钉住：`"inner" #exact`、`caught` → `unknown #exact`、`nudo:builtin-unknown`）。
+（CI 钉住：`"inner" #exact`、`caught` → `"boom" #exact`）。
 
-**难度：** 中（catch 形参绑定为 thrown 值的类型）
+实现：`errorBrandAbs`（`builtins.ts`，B `$new` 与 ast-eval `evalBuiltinNew`
+共用）、`$catchVal`（宿主 Error 补槽）、`collectDeclared` 收 CatchClause 形参。
+测试：`catch-binding.test.ts`、`catch-param-declared.test.ts`、`exec-trycatch.test.ts`。
 
 ---
 
