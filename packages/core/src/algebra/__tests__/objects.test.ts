@@ -5,6 +5,8 @@ import {
   spread,
   joinAbs,
   joinObjects,
+  abs,
+  type Abs,
   numLit,
   strLit,
   boolLit,
@@ -87,6 +89,40 @@ describe("objects: join", () => {
     expect(r.term?.op).toBe("lit");
     if (r.term?.op === "lit") expect(r.term.value).toBeNaN();
     expect(r.conf).toBe("exact");
+  });
+
+  it("join of two array types is a sum, not a collapsed single array", () => {
+    const numArr = abs({ k: "arr", element: numLit(1) }, undefined, undefined, "path");
+    const strArr = abs({ k: "arr", element: strLit("a") }, undefined, undefined, "path");
+    const r = joinAbs(numArr, strArr);
+    expect(r.shape.k).toBe("sum");
+    if (r.shape.k === "sum") expect(r.shape.members.length).toBe(2);
+  });
+
+  it("join of same-arity function overloads keeps both signatures", () => {
+    const f1: Abs = {
+      shape: {
+        k: "fn",
+        params: ["a", "b"],
+        name: "f",
+        paramTypes: [numLit(1), strLit("x")],
+        returnType: strLit("r"),
+      },
+      conf: "path",
+    };
+    const f2: Abs = {
+      shape: {
+        k: "fn",
+        params: ["c", "d"],
+        name: "g",
+        paramTypes: [strLit("y"), numLit(2)],
+        returnType: numLit(3),
+      },
+      conf: "path",
+    };
+    const r = joinAbs(f1, f2);
+    expect(r.shape.k).toBe("sum");
+    if (r.shape.k === "sum") expect(r.shape.members.length).toBe(2);
   });
 });
 

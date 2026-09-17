@@ -165,7 +165,8 @@ function flattenSum(xs: Abs[]): Abs[] {
     if (x.shape.k === "sum") out.push(...x.shape.members);
     else out.push(x);
   }
-  // 简单去重（按 shape 粗等）
+  // 去重按结构 key，不能按「shape 粗等」——`fn:2`/`sum:2`/`other` 会把
+  // 不同重载 / 不同数组元素 / 不同 brand 塌缩成一个（历史 soundness bug）。
   const seen = new Set<string>();
   const deduped: Abs[] = [];
   for (const x of out) {
@@ -177,23 +178,58 @@ function flattenSum(xs: Abs[]): Abs[] {
   return deduped;
 }
 
-function shapeKey(a: Abs): string {
-  const s = a.shape;
-  // prim 按 term/pred 区分：`number=A1>3` 与 `number=A1*2` 是不同路径，不能按 shape 去重
-  if (s.k === "prim") {
-    const lv = litValue(a);
-    if (lv !== undefined) return `prim:${s.type}:${String(lv)}`;
-    const t = a.term ? termToString(a.term) : "";
-    const p = a.pred && a.pred.op !== "true" ? predToString(a.pred) : "";
-    return `prim:${s.type}:${t}:${p}`;
+function shapeKey(a: Abs, seen: Set<object> = new Set()): string {
+  if (seen.has(a)) return "cycle";
+  seen.add(a);
+  try {
+    const s = a.shape;
+    // prim 按 term/pred 区分：`number=A1>3` 与 `number=A1*2` 是不同路径，不能按 shape 去重
+    if (s.k === "prim") {
+      const lv = litValue(a);
+      if (lv !== undefined) return `prim:${s.type}:${String(lv)}`;
+      const t = a.term ? termToString(a.term) : "";
+      const p = a.pred && a.pred.op !== "true" ? predToString(a.pred) : "";
+      return `prim:${s.type}:${t}:${p}`;
+    }
+    if (s.k === "never") return "never";
+    if (s.k === "any") return "any";
+    if (s.k === "unknown") return "unknown";
+    if (s.k === "arr") return `arr(${shapeKey(s.element, seen)})`;
+    if (s.k === "tuple") {
+      const els = s.elements.map((e) => shapeKey(e, seen)).join(",");
+      const rest = s.rest ? `...${shapeKey(s.rest, seen)}` : "";
+      return `tuple[${els}${rest}]`;
+    }
+    if (s.k === "brand") return `brand:${s.name}(${shapeKey(s.shape, seen)})`;
+    if (s.k === "eff") return `eff:${s.eff}<${shapeKey(s.inner, seen)}>`;
+    if (s.k === "obj") {
+      const slots = Object.keys(s.slots)
+        .sort()
+        .map((k) => {
+          const slot = s.slots[k]!;
+          const flags = (slot.optional ? "?" : "") + (slot.readonly ? "r" : "");
+          return `${k}${flags}:${shapeKey(slot.value, seen)}`;
+        })
+        .join(",");
+      const idx = s.index
+        ? `idx(${shapeKey(s.index.key, seen)}→${shapeKey(s.index.value, seen)})`
+        : "";
+      const open = s.open ? "open" : "";
+      return `obj{${slots}}${idx}${open}`;
+    }
+    if (s.k === "fn") {
+      const pts = (s.paramTypes ?? []).map((t) => shapeKey(t, seen)).join(",");
+      const ret = s.returnType ? shapeKey(s.returnType, seen) : "?";
+      const name = s.name ? `#${s.name}` : "";
+      return `fn${name}(${s.params.join(",")}|${pts})=>${ret}`;
+    }
+    if (s.k === "sum") {
+      return `sum(${s.members.map((m) => shapeKey(m, seen)).join("|")})`;
+    }
+    return "other";
+  } finally {
+    seen.delete(a);
   }
-  if (s.k === "never") return "never";
-  if (s.k === "any") return "any";
-  if (s.k === "unknown") return "unknown";
-  if (s.k === "obj") return `obj:${Object.keys(s.slots).sort().join(",")}`;
-  if (s.k === "fn") return `fn:${s.params.length}`;
-  if (s.k === "sum") return `sum:${s.members.length}`;
-  return "other";
 }
 
 // --- 函数重载并 ---
