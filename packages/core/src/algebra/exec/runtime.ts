@@ -244,7 +244,13 @@ export function $for(
       exitJoin = exitJoin ? joinAbs(exitJoin, state) : state;
     }
 
-    const afterBody = body(state);
+    let afterBody: Abs;
+    try {
+      afterBody = body(state);
+    } catch (e) {
+      if (isNudoReturn(e)) throw e;
+      throw e;
+    }
     const next = step(afterBody);
 
     // 不动点：字面量不变，或两侧皆非字面量且 next ≤ state
@@ -439,12 +445,18 @@ export function $forOf(
       items.length > 0
         ? items[Math.min(i, items.length - 1)]!
         : unknown;
-    body(item, abs(
-      { k: "prim", type: "number" },
-      { op: "lit", value: i },
-      pTrue,
-      "exact",
-    ));
+    try {
+      body(item, abs(
+        { k: "prim", type: "number" },
+        { op: "lit", value: i },
+        pTrue,
+        "exact",
+      ));
+    } catch (e) {
+      // C2.1：循环体内 return → 冒泡到函数调用方
+      if (isNudoReturn(e)) throw e;
+      throw e;
+    }
   }
 }
 
@@ -598,8 +610,34 @@ export function $whileSeq(
   for (let i = 0; i < maxIters; i++) {
     const t = test();
     if (isDefinitelyFalse(t)) return;
-    body();
+    try {
+      body();
+    } catch (e) {
+      if (isNudoReturn(e)) throw e;
+      throw e;
+    }
   }
+}
+
+// --- early return from loop bodies (C2.1) ---
+
+/** B 路径「函数提前 return」信号（区别于 throw） */
+export class NudoReturn extends Error {
+  readonly absValue: Abs;
+  constructor(absValue: Abs) {
+    super("nudo:return");
+    this.name = "NudoReturn";
+    this.absValue = absValue;
+  }
+}
+
+/** transpile `return x` inside for/while → `$loopReturn(x)` */
+export function $loopReturn(v: Abs): never {
+  throw new NudoReturn(v);
+}
+
+export function isNudoReturn(e: unknown): e is NudoReturn {
+  return e instanceof NudoReturn;
 }
 
 // --- throws ---

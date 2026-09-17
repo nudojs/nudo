@@ -307,14 +307,15 @@ t2(opaque());
 
 ## 四、控制流推断限制
 
-### 4.1 循环中的条件返回
+### 4.1 循环中的条件返回（已解决·C2.1）
 
-**问题描述：**
-循环内 `return item` 的命中值未折叠进 Abs 结果：两条路径的 `abs` 均退化为
-`unknown #exact`，`intension` 是 `number | string | unknown`。两路径的唯一差异在
-case 头（TypeValue 投影）：调用点路径投影出字面量 `4`，指令路径投影为 `unknown`。
+~~循环内 `return item` 的命中值未折叠进 Abs 结果：两条路径的 `abs` 均退化为
+`unknown #exact`。~~
 
-**失败示例（指令路径）：**
+**已实现**：循环体内的 `return` transpile 为 `$loopReturn`（NudoReturn 信号），
+`$forOf` / `$whileSeq` / `$for` 冒泡到函数调用方，`callTranspiledExportFull`
+把它当作函数返回值。
+
 ```javascript
 /**
  * @nudo:case "break-loop" ([1, 2, 3, 4, 5])
@@ -325,25 +326,9 @@ function findFirst(arr) {
   }
   return undefined;
 }
-// Case "break-loop": ([1, 2, 3, 4, 5]) => unknown
-// intension: findFirst: (arr: arr(A1)) => number | string | unknown
-// abs: unknown  #exact
+// Case "break-loop": ([1, 2, 3, 4, 5]) => 4
+// abs: 4  #exact
 ```
-
-**对照（调用点路径）：**
-```javascript
-function findFirst(arr) { /* 同上 */ }
-findFirst([1, 2, 3, 4, 5]);
-// Case "call@L7": ([1, 2, 3, 4, 5]) => 4   ← case 头（投影）命中 4
-// abs: unknown  #exact                     ← Abs 结果仍 unknown
-```
-
-**分析：**
-- case 头（TypeValue 投影）在调用点路径命中 `4`，但 `abs:` 结果两条路径都是
-  `unknown #exact`——条件返回的命中值尚未折叠进 Abs 结果
-- 两路径精度不对称的实质是「case 头投影」与「Abs 结果」的落差，而非调用点已精确
-
-**难度：** 低（把 for-of 条件返回的命中值折叠进 Abs 结果）
 
 ---
 

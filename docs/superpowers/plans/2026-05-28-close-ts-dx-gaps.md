@@ -180,7 +180,7 @@ flowchart TB
 
 | ID | 任务 | 验收 | 状态 |
 |---|---|---|---|
-| C2.1 | **循环内条件 return 折叠进 Abs**（现 case 头可精确、abs 仍 unknown） | `findFirst([1..5])` abs → `4` 或 `number` 而非 `unknown` | [ ] |
+| C2.1 | **循环内条件 return 折叠进 Abs**（现 case 头可精确、abs 仍 unknown） | `findFirst([1..5])` abs → `4` 或 `number` 而非 `unknown` | [x] |
 | C2.2 | **catch 形参绑定**：`catch (e)` → thrown 值 Abs；`e.message` 可解 | 去掉无意义的 `nudo:builtin-unknown` on catch | [ ] |
 | C2.3 | **`==` / `!=` 字面量折叠**（TypeValue 删除后回归 unknown） | `5=="5"` / `null==undefined` 等表驱动；semantics 文档同步 | [x] |
 | C2.4 | **未知条件三元/分支的可解释度**：join 结果标注 `#path` 原因（哪两支） | hover/报告可见分支来源 | [ ] |
@@ -268,7 +268,7 @@ flowchart TB
 
 - [ ] **B3–B5** 持久缓存 + polyvariant 预算
 - [ ] **C1.*** Map/Set/索引/循环分发
-- [ ] **C2.1–C2.2** 循环 return / catch
+- [x] **C2.1–C2.2** 循环 return（C2.1 `$loopReturn`）；catch 仍开放
 - [ ] **A4–A6** 侧车 buffer、导航、quickfix
 
 ### Phase 3 — 替代门槛冲刺

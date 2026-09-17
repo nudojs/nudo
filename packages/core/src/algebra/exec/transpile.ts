@@ -27,6 +27,8 @@ export type TranspileOptions = {
   }>;
   /** @nudo:as：覆盖紧随语句的 init / return */
   asOverrides?: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
+  /** 循环嵌套深度（>0 时 return → $loopReturn，C2.1） */
+  inLoop?: number;
 };
 
 function matchAsOverride(stmt: Node, opts: TranspileOptions): string | null {
@@ -168,7 +170,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -435,9 +437,11 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     }
     case "ReturnStatement": {
       const asVar = matchAsOverride(stmt as Node, opts);
-      if (asVar) return `${pad}return ${asVar};`;
-      if (!stmt.argument) return `${pad}return $lit(undefined);`;
-      return `${pad}return ${transpileExpression(stmt.argument, opts)};`;
+      // C2.1：循环体内 return 不是「回调返回」，而是函数提前返回
+      const prefix = (opts.inLoop ?? 0) > 0 ? "$loopReturn" : "return";
+      if (asVar) return `${pad}${prefix}(${asVar});`;
+      if (!stmt.argument) return `${pad}${prefix}($lit(undefined));`;
+      return `${pad}${prefix}(${transpileExpression(stmt.argument, opts)});`;
     }
     case "ThrowStatement": {
       const arg = stmt.argument ? transpileExpression(stmt.argument, opts) : "$lit(undefined)";
@@ -647,10 +651,14 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
           { n: 0 },
         );
       }
+      const bodyOpts: TranspileOptions = {
+        ...opts,
+        inLoop: (opts.inLoop ?? 0) + 1,
+      };
       const bodyStmts =
         stmt.body.type === "BlockStatement"
-          ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, opts)).join("\n")
-          : transpileStatement(stmt.body, depth + 2, opts);
+          ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, bodyOpts)).join("\n")
+          : transpileStatement(stmt.body, depth + 2, bodyOpts);
       const max = opts.maxLoopIters ?? 8;
       return [
         `${pad}$forOf(${iter}, (${bindName}, _i) => {`,
@@ -661,10 +669,14 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     }
     case "WhileStatement": {
       const test = transpileExpression(stmt.test, opts);
+      const bodyOpts: TranspileOptions = {
+        ...opts,
+        inLoop: (opts.inLoop ?? 0) + 1,
+      };
       const body =
         stmt.body.type === "BlockStatement"
-          ? stmt.body.body.map((s) => transpileStatement(s, depth + 1, opts)).join("\n")
-          : transpileStatement(stmt.body, depth + 1, opts);
+          ? stmt.body.body.map((s) => transpileStatement(s, depth + 1, bodyOpts)).join("\n")
+          : transpileStatement(stmt.body, depth + 1, bodyOpts);
       const max = opts.maxLoopIters ?? 8;
       // 顺序形态：body 内对 JS let 赋值即状态；抽象条件靠预算
       return [
@@ -813,6 +825,10 @@ function transpileBlockAsThunk(stmt: Statement, depth: number, opts: TranspileOp
   }
   if (stmt.type === "ReturnStatement") {
     const v = stmt.argument ? transpileExpression(stmt.argument, opts) : "$lit(undefined)";
+    // C2.1：循环体内的 return 是函数提前返回，不是 thunk 的表达式值
+    if ((opts.inLoop ?? 0) > 0) {
+      return `() => { $loopReturn(${v}); }`;
+    }
     return `() => ${v}`;
   }
   const one = transpileStatement(stmt, depth + 1, opts);

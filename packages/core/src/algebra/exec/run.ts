@@ -16,7 +16,7 @@ import { never, unknown } from "../abs.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
 import { transpile } from "./transpile.ts";
 import { $call } from "./call.ts";
-import { isNudoThrow } from "./runtime.ts";
+import { isNudoThrow, isNudoReturn } from "./runtime.ts";
 
 const rtAll = { ...runtime, ...classRt, ...callsRt } as Record<string, unknown>;
 
@@ -319,6 +319,10 @@ export function callTranspiledExportFull(
       if (!isAbsVal(r)) return { result: unknown, throws: never };
       return { result: r, throws: never };
     } catch (e) {
+      // C2.1：循环体 $loopReturn → 函数返回值
+      if (isNudoReturn(e)) {
+        return { result: e.absValue, throws: never };
+      }
       if (isNudoThrow(e)) {
         return { result: never, throws: e.absValue };
       }
@@ -332,6 +336,9 @@ export function callTranspiledExportFull(
         const r = $call(fn, args);
         return { result: r, throws: never };
       } catch (e) {
+        if (isNudoReturn(e)) {
+          return { result: e.absValue, throws: never };
+        }
         if (isNudoThrow(e)) {
           return { result: never, throws: e.absValue };
         }
