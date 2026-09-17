@@ -49,7 +49,7 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 |------|---------|
 | `nudo:constraint-violated` | 调用实参 ⊭ 前置条件 |
 | `nudo:assign-mismatch` | 赋值 ⊭ 既有绑定形状 |
-| `nudo:arg-structure` | 实参结构 ⊭ 函数体访问的槽位 |
+| `nudo:arg-structure` | HOF：实参不是可调用 fn / arity 不匹配 |
 
 ```json
 {

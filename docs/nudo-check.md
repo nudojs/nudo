@@ -23,7 +23,7 @@ pnpm run check path/to/file.js
 |---|---|
 | `nudo:constraint-violated` | 调用/返回 ⊭ refine（标量界 / **shape 字段**） |
 | `nudo:assign-mismatch` | 赋值 ⊭ 原有形状（leqAbs） |
-| `nudo:arg-structure` | 实参结构 ⊭ body 访问的 slot |
+| `nudo:arg-structure` | HOF：实参不是可调用 fn / arity 不匹配（**不再**表示 body 缺 slot） |
 | `nudo:case-inconsistency` | **`@nudo:case` 见证 ⊭ refine** |
 
 ```
@@ -132,11 +132,14 @@ pct(150);           // error
 let a = { x: 1 };
 a = { y: 2 };       // error: missing slot x（nudo:assign-mismatch）
 
-// ✓ 传参结构：body 访问 p.x / p.y → 实参须齐（字面量或标识符）
+// ✓ 传参结构：义务来自显式 shape 契约（C0.1：不从 body 扫 slot）
+/// @nudo:import { xy } from "./shapes.nudo.js"
+/**
+ * @nudo:refine p xy
+ */
 function readXY(p) { return p.x + p.y; }
-readXY({ x: 1 });   // error: missing slot y（nudo:arg-structure）
-const o = { x: 1 };
-readXY(o);          // error（标识符绑定表）
+readXY({ x: 1 });   // error: missing field p.y（nudo:constraint-violated）
+// 无 refine 时同调用不报（调用点事实 / any）
 
 // ✗ if 分支不是精化；无 refine 则不检查
 function clamp(n, lo, hi) {
@@ -168,7 +171,7 @@ npx tsx scripts/scan-real-packages.ts commander
 
 | | `tsc --noEmit` | `nudo check` |
 |---|---|---|
-| 赋值/结构 | 完备（显式注解下） | 部分：推断 Abs 上的 leq（`nudo:assign-mismatch` / `nudo:arg-structure`），宽度子类型无 excess 检查 |
+| 赋值/结构 | 完备（显式注解下） | 部分：推断 Abs 上的 leq（`nudo:assign-mismatch`）+ 显式 shape 契约；HOF `arg-structure` 仅回调形态；宽度子类型无 excess 检查 |
 | 约束（`x>0`）+ 字面量调用 | 做不到 | **做** |
 | 报告形态 | TS 诊断 | Abs / actual ⊭ expected |
 | 零注解 JS | 需 checkJs | 默认 |

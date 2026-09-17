@@ -19,7 +19,7 @@ npx nudojs check path/to/file.js
 |------|---------|
 | `nudo:constraint-violated` | 调用/返回 ⊭ `@nudo:refine`（标量界 / shape 字段） |
 | `nudo:assign-mismatch` | 赋值 ⊭ 原有绑定形状（`leqAbs`） |
-| `nudo:arg-structure` | 实参结构 ⊭ body 访问的 slot（`p.foo`） |
+| `nudo:arg-structure` | HOF：实参不是可调用 `fn` / arity 不匹配（**不是** body slot 推断） |
 | `nudo:case-inconsistency` | `@nudo:case` 见证 ⊭ refine |
 
 ```js
@@ -41,9 +41,15 @@ let a = { x: 1 };
 a = { y: 2 };
 // [ERROR] a: 赋值 ⊭ 原有形状  (nudo:assign-mismatch)
 
+// 结构义务来自显式 shape 契约，不是 body AST 扫描
+/// @nudo:import { xy } from "./shapes.nudo.js"
+/**
+ * @nudo:refine p xy
+ */
 function readXY(p) { return p.x + p.y; }
 readXY({ x: 1 });
-// [ERROR] readXY[p]: 实参结构 ⊭ 形参  (nudo:arg-structure)
+// [ERROR] readXY[p]: 实参 ⊭ 前置  (nudo:constraint-violated)
+// 无 refine 时同调用合法（调用点事实 / any）
 ```
 
 **`if` 不是精化。** Clamp 式守卫接受越界输入：
@@ -147,7 +153,8 @@ issues
 | ESM import | `import { fn as x } from './m'` |
 | 动态 import | `const { fn } = await import('./m')` |
 | barrel（一跳） | `export { fn } from './v.js'` |
-| 实参结构 | 字面量 `{…}` 或标识符绑定 vs `p.foo` slot |
+| 实参结构（HOF） | 回调实参须为可调用 `fn` 且 arity 匹配 |
+| shape 契约 | 声明的 `shape({…})` vs 字面量 / 标识符实参 |
 
 ## 质量门禁
 

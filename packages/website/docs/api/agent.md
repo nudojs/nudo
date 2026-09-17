@@ -49,7 +49,7 @@ Constraint gate on **Abs** (type-as-computation). Same contract as CLI `nudo che
 |------|---------|
 | `nudo:constraint-violated` | Call argument ⊭ precondition |
 | `nudo:assign-mismatch` | Assignment ⊭ previous binding shape |
-| `nudo:arg-structure` | Argument structure ⊭ slots accessed in the body |
+| `nudo:arg-structure` | HOF: argument is not a callable `fn` / arity mismatch |
 
 ```json
 {

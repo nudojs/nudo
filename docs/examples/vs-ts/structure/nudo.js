@@ -1,13 +1,20 @@
 // 结构场景 — Nudo 侧
 // 运行：pnpm run check docs/examples/vs-ts/structure/nudo.js
+//
+// 契约来自侧车 user.nudo.js（@nudo:refine user user），不是 body 扫描。
 
-function greet(user) {
-  return "hi " + user.id + " " + user.name;
+/// @nudo:import { user } from "./user.nudo.js"
+
+/**
+ * @nudo:refine u user
+ */
+function greet(u) {
+  return "hi " + u.id + " " + u.name;
 }
 
 let config = { host: "localhost", port: 8080 };
 
-greet({ id: 1 });                    // nudo: arg-structure（缺 name，从 body 推出）
+greet({ id: 1 });                    // nudo: constraint-violated（契约缺 name）
 greet({ id: 1, name: "a" });         // ok
 greet({ id: 1, name: "a", extra: 1 }); // ok（宽度允许）
 

@@ -17,8 +17,7 @@ export async function fetchUser(id) {
 
 /**
  * HOF 精度需要具体数组：case 指令逐元素累加 → 60 #exact
- * （顶层调用会触发 check 的 arg-structure 门禁：body 访问 ages.reduce，
- *  实参数组 ⊭ 对象形状 { reduce }，报错而非演示）
+ * （C0.1：不再因 body 访问 ages.reduce 报 arg-structure）
  * @nudo:case "ages" ([10, 20, 30])
  */
 export function sumAges(ages) {

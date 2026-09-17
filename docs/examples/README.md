@@ -61,10 +61,10 @@ function score(x) { return x + 1; }
 | `pnpm run check docs/examples/constraints/add-pred.js` | **1** | 负例：`scale[x]: 实参 ⊭ 前置`（`actual: -1 #exact`） |
 | `pnpm run infer docs/examples/constraints/add-pred.js` | **0** | Pred 流入代数（infer 正例） |
 | `pnpm run check docs/examples/structure/assign.js` | **1** | 负例：`config: 赋值 ⊭ 原有形状`（缺 port） |
-| `pnpm run check docs/examples/structure/arg-structure.js` | **1** | 负例：`readXY[p]: 实参结构 ⊭ 形参`（缺 slot y） |
+| `pnpm run check docs/examples/structure/arg-structure.js` | **1** | 负例：shape 契约缺字段（`constraint-violated`，非 body 扫描） |
 | `pnpm run check docs/examples/vs-ts/constraints/nudo.js` | **1** | nudo 报，对照 tsc 不报 |
 | `pnpm exec tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts` | **0** | tsc 侧对照（不报） |
-| `pnpm run check docs/examples/vs-ts/structure/nudo.js` | **1** | nudo 报（结构缺字段 / 赋值） |
+| `pnpm run check docs/examples/vs-ts/structure/nudo.js` | **1** | nudo 报（契约缺 name / 赋值缺 port） |
 | `pnpm exec tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts` | **2** | tsc 报 3 处（缺 name / excess / 缺 port） |
 | `pnpm run check docs/examples/algebra/0-add-intensional.js` | **0** | 内包式 Abs 签名（term/pred/conf，#path） |
 | `pnpm run infer docs/examples/algebra/0-add-intensional.js` | **0** | 字面量 `#exact` |

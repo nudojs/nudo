@@ -26,5 +26,5 @@ infer 亮点（每行都是逐调用点/逐 case 真值）：
 - `score(4)` → `5` —— 字面量算术
 
 注意：`sumAges` 用 `@nudo:case` 而不是顶层调用——顶层调用数组实参会被
-`check` 的 arg-structure 门禁拦截（body 访问 `ages.reduce`，实参数组 ⊭ 对象
-形状 `{ reduce }`）。这正是 `nudo:arg-structure` 的语义（见 `structure/`）。
+`check` **不会**因 body 访问 `ages.reduce` 报 arg-structure（C0.1 已移除
+body slot 门禁）。若要拦截错误实参形状，需显式 shape 契约（见 `structure/`）。

@@ -1,7 +1,7 @@
 ---
 sidebar_position: 8
 slug: /guides/check
-description: nudo check — refinement, assign, and arg-structure gate on Abs (type-as-computation).
+description: nudo check — refinement, assign, and HOF arg-structure gate on Abs (type-as-computation).
 ---
 
 # nudo check
@@ -19,7 +19,7 @@ npx nudojs check path/to/file.js
 |------|---------|
 | `nudo:constraint-violated` | Call/return ⊭ `@nudo:refine` (scalar bounds / shape fields) |
 | `nudo:assign-mismatch` | Assignment ⊭ previous binding shape (`leqAbs`) |
-| `nudo:arg-structure` | Argument structure ⊭ slots the body accesses (`p.foo`) |
+| `nudo:arg-structure` | HOF: argument is not a callable `fn` / arity mismatch (**not** body slot inference) |
 | `nudo:case-inconsistency` | `@nudo:case` witness ⊭ refine |
 
 ```js
@@ -41,9 +41,15 @@ let a = { x: 1 };
 a = { y: 2 };
 // [ERROR] a: 赋值 ⊭ 原有形状  (nudo:assign-mismatch)
 
+// Structure obligations come from declared shape contracts, not body AST scans.
+/// @nudo:import { xy } from "./shapes.nudo.js"
+/**
+ * @nudo:refine p xy
+ */
 function readXY(p) { return p.x + p.y; }
 readXY({ x: 1 });
-// [ERROR] readXY[p]: 实参结构 ⊭ 形参  (nudo:arg-structure)
+// [ERROR] readXY[p]: 实参 ⊭ 前置  (nudo:constraint-violated)
+// Without the refine, the same call is legal (call-site fact / any).
 ```
 
 **`if` is not a refinement.** Clamp-style guards accept out-of-range input:
@@ -147,7 +153,8 @@ Signatures carry the **lossless Abs** (`shape`, `term`, `pred`, `conf`). Optiona
 | ESM import | `import { fn as x } from './m'` |
 | Dynamic import | `const { fn } = await import('./m')` |
 | Barrel (one hop) | `export { fn } from './v.js'` |
-| Arg structure | literal `{…}` or identifier binding vs `p.foo` slots |
+| Arg structure (HOF) | callback argument must be callable `fn` with matching arity |
+| Shape contract | declared `shape({…})` vs literal / identifier argument |
 
 ## Quality gates
 

@@ -160,9 +160,9 @@ flowchart TB
 | ID | 任务 | 验收 | 依赖 | 状态 |
 |---|---|---|---|---|
 | C0.1 | **删除 `collectParamStructReqs` 及其实参 slot 执法**（`scan.ts` 中 body 访问 → 必填字段 → `arg-structure` 的路径） | 无侧车时 `readXY({x:1})` **不再**因 body 读 `p.y` 报 error；HOF `checkHofFnRelArgs` 与 `assign-mismatch` 行为不变 | — | [x] |
-| C0.2 | **HOF `arg-structure` 语义收窄**：码名/文案只描述「实参不是可调用 fn / arity」，不再暗示「缺 body slot」 | `nudo-check.md`、agent 文档、CLI help 一致 | C0.1 | [ ] |
-| C0.3 | **测试与金样例迁移**：`structure/arg-structure.js`、`vs-ts/structure`、recall-gold、scan-interface 用例改为「侧车契约报」或「无契约不报」 | `pnpm test` 绿；`verify:examples` 矩阵更新 | C0.1 | [ ] |
-| C0.4 | **zero-FP / 真实包回归**：确认 commander 等在删掉 body `arg-structure` 后 FP 不升、该报的仍由契约/求值覆盖 | `check-real-packages` 仍零 error | C0.1 | [ ] |
+| C0.2 | **HOF `arg-structure` 语义收窄**：码名/文案只描述「实参不是可调用 fn / arity」，不再暗示「缺 body slot」 | `nudo-check.md`、agent 文档、CLI help 一致 | C0.1 | [x] |
+| C0.3 | **测试与金样例迁移**：`structure/arg-structure.js`、`vs-ts/structure`、recall-gold、scan-interface 用例改为「侧车契约报」或「无契约不报」 | `pnpm test` 绿；`verify:examples` 矩阵更新 | C0.1 | [x] |
+| C0.4 | **zero-FP / 真实包回归**：确认 commander 等在删掉 body `arg-structure` 后 FP 不升、该报的仍由契约/求值覆盖 | `check-real-packages` 仍零 error | C0.1 | [x] |
 | C0.5 | **（可选后续）求值驱动缺槽诊断**：实参绑定后 `p.name` 求值失败时的 `missing-slot` 类报告——**禁止**回到 AST 预扫描 | 有设计短文 + 样例；默认 off 或 warning | C0.1 | [ ] |
 
 **不做**：把 body 访问重新做成 opt-in 门禁（除非未来单独立项并重新论证）。
@@ -250,10 +250,10 @@ flowchart TB
 
 ### Phase 0 — 门槛（1–2 周量级）
 
-- [ ] **C0.1–C0.4** 移除 body slot 门禁 + 测试/文档迁移（模型纠偏，优先于一切叙事）
+- [x] **C0.1–C0.4** 移除 body slot 门禁 + 测试/文档迁移（模型纠偏，优先于一切叙事）
 - [ ] **B1** bench 进 CI
 - [ ] **D3** pred 化简（低成本高观感）
-- [ ] **D1 + F3** 叙事与示例按 §0.1 纠偏
+- [x] **D1 + F3** 叙事与示例按 §0.1 纠偏（examples / vs-ts / website check 指南已改；根 README 对比表待 F3 收尾）
 - [ ] **A2** 分析范围配置设计拍板（可先文档后实现）
 
 ### Phase 1 — IDE 可日用（2–4 周）

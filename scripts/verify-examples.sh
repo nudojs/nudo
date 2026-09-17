@@ -194,7 +194,7 @@ pin 'pnpm run check docs/examples/structure/assign.js' \
   'config: 赋值 ⊭ 原有形状' 'missing slot port'
 pin 'pnpm run check docs/examples/structure/arg-structure.js' \
   '2 error · 0 warning' \
-  'readXY[p]: 实参结构 ⊭ 形参' 'missing slot y'
+  'nudo:constraint-violated' 'missing field p.y'
 
 # vs-ts/ — nudo side pins its diagnostics; tsc side pins its own.
 pin 'pnpm run check docs/examples/vs-ts/constraints/nudo.js' \
@@ -203,7 +203,7 @@ pin 'pnpm run check docs/examples/vs-ts/constraints/nudo.js' \
 pin_empty 'pnpm exec tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts'
 pin 'pnpm run check docs/examples/vs-ts/structure/nudo.js' \
   '2 error · 0 warning' \
-  'greet[user]: 实参结构 ⊭ 形参' 'missing slot name' \
+  'greet[u]' 'constraint-violated' \
   'config: 赋值 ⊭ 原有形状'
 pin 'pnpm exec tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts' \
   'error TS2345' 'error TS2353' 'error TS2741'
