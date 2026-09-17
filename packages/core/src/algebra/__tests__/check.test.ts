@@ -66,6 +66,26 @@ f(-1);
     expect(text).toContain("actual:");
     expect(text).toContain("expected:");
   });
+
+  it("formatCheckReport default omits term/pred/conf detail (D2)", () => {
+    const ok = checkSource(
+      "t.js",
+      withStdImport(`/**
+ * @nudo:refine x positive
+ */
+function f(x){ if (x>0) return x; return 0; }
+f(1);
+`),
+      pTrue,
+      stdOpts,
+    );
+    const text = formatCheckReport(ok);
+    expect(text).toContain("OK");
+    expect(text).toContain("signatures");
+    expect(text).not.toContain("term:");
+    const verbose = formatCheckReport(ok, { verbose: true });
+    expect(verbose).toContain("term:");
+  });
 });
 
 describe("nudo check gate: real-world regression (slots prototype leak / guarded access)", () => {

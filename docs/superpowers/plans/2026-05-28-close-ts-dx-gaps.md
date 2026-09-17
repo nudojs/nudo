@@ -213,7 +213,7 @@ flowchart TB
 | ID | 任务 | 验收 | 依赖 | 状态 |
 |---|---|---|---|---|
 | D1 | **`vs-ts` 示例改为 interface 主路径对照** | structure/constraints 各有「侧车契约」正负例；**删除或改写**「零注解 body 推出 shape」卖点行 | C0 | [x] |
-| D2 | **报告默认「人类档」**：一行 code + actual/expected + suggestion；`--verbose` / agent JSON 才吐完整 Abs | CLI 默认可读；`--json` 含 `signatures[].abs` | — | [ ] |
+| D2 | **报告默认「人类档」**：一行 code + actual/expected + suggestion；`--verbose` / agent JSON 才吐完整 Abs | CLI 默认可读；`--json` 含 `signatures[].abs` | [x] |
 | D3 | **pred 化简**：`ms > 0 ∧ ms > 0` 等合取去重/幂等 | 金样例无重复谓词；`and`/`or` 用 `predEquals` 去重 | — | [x] |
 | D4 | **诊断码收敛与文案**：`nudo:*` 表与 quickfix 一一对应；`arg-structure` 仅 HOF | 网站 check 指南与 CLI 输出一致 | C0.2 | [ ] |
 | D5 | **`nudo interface` 日用命令打磨**：diff、drift 解释、只刷新已有生成段的 UX | 文档 + 一键 doctor | — | [ ] |
@@ -261,7 +261,7 @@ flowchart TB
 - [x] **A1** LSP `isNudoFile` → `shouldAnalyzeFile`（`analysis.mode`；默认仍 `directives`）
 - [x] **B2** 编辑增量（内容指纹短路 + 既有 version cache / 脏传播）
 - [x] **C2.3** `==` 折叠（`looseEqAbs` + B 路径 / ast-eval）
-- [ ] **D2** 默认人类报告
+- [x] **D2** 默认人类报告（签名一行摘要；`--verbose` 才 term/pred/conf）
 - [ ] **C0.5**（可选）求值驱动缺槽诊断评估
 
 ### Phase 2 — 缩放与集合完备（4–8 周）

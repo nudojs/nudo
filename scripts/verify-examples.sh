@@ -178,8 +178,7 @@ pin 'pnpm run check docs/examples/constraints/declared-vs-if.js' \
 pin 'pnpm run check docs/examples/constraints/register.js' \
   '0 error · 0 warning' \
   'register(u)  string  #path' \
-  'setup(c)  number  = c.retries  where c.retries ≥ 0 ∧ c.retries ≤ 5  #path' \
-  'pred: c.retries ≥ 0 ∧ c.retries ≤ 5'
+  'setup(c)  number  = c.retries  where c.retries ≥ 0 ∧ c.retries ≤ 5  #path'
 pin 'pnpm run check docs/examples/constraints/add-pred.js' \
   'scale[x]: 实参 ⊭ 前置' 'actual:   -1  #exact'
 pin 'pnpm run infer docs/examples/constraints/add-pred.js' \
@@ -298,9 +297,9 @@ pin 'pnpm run infer docs/examples/mini-repo/store.js' \
 # interface-derivation/ — layered contract derivation (Phase 2). The root
 # contract (lib.nudo.js handwritten add4) loads for lib.js; the downstream
 # derived contract (add.nudo.js generated add2) is enforced for add.js.
+# D2: default human report is one-line signatures (term/pred/conf behind --verbose).
 pin 'pnpm run check docs/examples/interface-derivation/add.js' \
-  'add2(x)  number  = (x + 2)  where (x + 2) > 3  #path' \
-  'pred: (x + 2) > 3' 'conf: path'
+  'add2(x)  number  = (x + 2)  where (x + 2) > 3  #path'
 pin 'pnpm run check docs/examples/interface-derivation/lib.js' \
   '0 error · 0 warning' \
   'add4(x)  number | string  #partial'

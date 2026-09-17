@@ -118,6 +118,7 @@ export function formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = 
     `  ${r.summary.errors} error · ${r.summary.warnings} warning · ${r.summary.infos} info · ${r.summary.functions} fn`,
   );
 
+  // D2：默认人类档——签名始终一行摘要；term/pred/conf 细节仅 --verbose
   if (r.signatures.length > 0) {
     lines.push("");
     lines.push("signatures");

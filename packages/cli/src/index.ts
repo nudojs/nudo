@@ -351,7 +351,7 @@ program
  */
 async function runCheck(
   file: string,
-  opts: { json?: boolean; callsites?: CallRecord[] } = {},
+  opts: { json?: boolean; callsites?: CallRecord[]; verbose?: boolean } = {},
 ): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
@@ -410,7 +410,8 @@ async function runCheck(
     // 稳定契约：只输出 check JSON
     console.log(JSON.stringify(serializeCheckJson(algebraReport), null, 2));
   } else {
-    console.log(formatCheckReport(algebraReport, { verbose: true }));
+    // D2：默认人类短报告；--verbose 展开 term/pred/conf
+    console.log(formatCheckReport(algebraReport, { verbose: opts.verbose === true }));
   }
 
   if (!algebraReport.ok) {
@@ -531,11 +532,12 @@ program
   .description("Check JS/TS file(s) or directory(s) for type errors — exits with code 1 when errors are found")
   .argument("<paths...>", "File(s) or directory(s) to check")
   .option("--json", "Emit stable CheckJson (CI / Agent contract; single file only)")
+  .option("--verbose", "Expand Abs signatures (term/pred/conf detail)")
   .option(
     "--callsites <paths...>",
     "Usage-site files (tests/apps): inject their call records so cross-file domain evidence can produce nudo:interface-domain-exceeds",
   )
-  .action(async (paths: string[], opts: { json?: boolean; callsites?: string[] }) => {
+  .action(async (paths: string[], opts: { json?: boolean; callsites?: string[]; verbose?: boolean }) => {
     const targets: string[] = [];
     for (const p of paths) {
       targets.push(...resolveTargets(p));
@@ -548,7 +550,7 @@ program
     }
     const externalRecords = opts.callsites?.length ? collectExternalRecords(opts.callsites) : undefined;
     for (const t of targets) {
-      await runCheck(t, { json: opts.json, callsites: externalRecords });
+      await runCheck(t, { json: opts.json, callsites: externalRecords, verbose: opts.verbose });
     }
   });
 
