@@ -88,7 +88,32 @@ export * from "./other.js";
 export default function d() {}
 function helper() {}
 `;
-    expect(localNamedExports(src)).toEqual(new Set(["f", "g", "h", "C", "v", "p", "renamed"]));
+    // C4.4：具名 export default 同时登记本地名 d 与 "default"
+    expect(localNamedExports(src)).toEqual(
+      new Set(["f", "g", "h", "C", "v", "p", "renamed", "default", "d"]),
+    );
+  });
+
+  it("collects CJS module.exports forms (C4.3)", () => {
+    const objForm = `
+function add(a, b) { return a + b; }
+function sub(a, b) { return a - b; }
+module.exports = { add, sub };
+`;
+    expect(localNamedExports(objForm)).toEqual(new Set(["add", "sub"]));
+
+    const memberForm = `
+function mul(a, b) { return a * b; }
+exports.mul = mul;
+module.exports.div = (a, b) => a / b;
+`;
+    expect([...localNamedExports(memberForm)].sort()).toEqual(["div", "mul"]);
+
+    const single = `
+function neg(x) { return -x; }
+module.exports = neg;
+`;
+    expect(localNamedExports(single).has("neg")).toBe(true);
   });
 });
 
@@ -198,7 +223,7 @@ export const add2 = fn({ x: number().lt(99) });
     expect(r!.conflict).toEqual({ params: ["x"] });
   });
 
-  it("does not bind re-exports / private names / export default", () => {
+  it("does not bind re-exports / private names", () => {
     const { loadModule } = makeFiles({
       "/t/add.nudo.js": `export const add2 = fn({ x: number() });\nexport const helper = fn({ x: number() });\nexport const d = fn({ x: number() });`,
     });
@@ -206,8 +231,37 @@ export const add2 = fn({ x: number().lt(99) });
     expect(effectiveInterface(reexport, "add2", { loadModule, fromFile: "/t/add.js" })).toBeUndefined();
     const priv = `function helper(x) {\n  return x;\n}\n`;
     expect(effectiveInterface(priv, "helper", { loadModule, fromFile: "/t/add.js" })).toBeUndefined();
+  });
+
+  it("binds named export default by local name (C4.4)", () => {
+    const { loadModule } = makeFiles({
+      "/t/add.nudo.js": `export const d = fn({ x: number().gt(0) });`,
+    });
     const def = `export default function d(x) {\n  return x;\n}\n`;
-    expect(effectiveInterface(def, "d", { loadModule, fromFile: "/t/add.js" })).toBeUndefined();
+    const r = effectiveInterface(def, "d", { loadModule, fromFile: "/t/add.js" });
+    expect(r).toBeDefined();
+    expect(r!.source).toBe("handwritten");
+    expect(formatConstraint(r!.params[0]!.constraint)).toBe("number().gt(0)");
+  });
+
+  it("binds CJS module.exports = { add } (C4.3)", () => {
+    const { loadModule } = makeFiles({
+      "/t/add.nudo.js": `export const add = fn({ x: number().int() }, number());`,
+    });
+    const src = `function add(x) {\n  return x + 1;\n}\nmodule.exports = { add };\n`;
+    const r = effectiveInterface(src, "add", { loadModule, fromFile: "/t/add.js" });
+    expect(r).toBeDefined();
+    expect(formatConstraint(r!.params[0]!.constraint)).toBe("number().int()");
+  });
+
+  it("binds CJS exports.mul = mul (C4.3)", () => {
+    const { loadModule } = makeFiles({
+      "/t/mul.nudo.js": `export const mul = fn({ x: number().gt(0) }, number());`,
+    });
+    const src = `function mul(x) {\n  return x * 2;\n}\nexports.mul = mul;\n`;
+    const r = effectiveInterface(src, "mul", { loadModule, fromFile: "/t/mul.js" });
+    expect(r).toBeDefined();
+    expect(r!.source).toBe("handwritten");
   });
 
   it("binds local export-list form (function + export { fn })", () => {
@@ -240,14 +294,17 @@ export const add2 = fn({ x: number().lt(99) });
     expect(effectiveInterface(src, "add2", { loadModule, fromFile: "/t/add.js" })).toBeUndefined();
   });
 
-  it("does not bind export { x as default }", () => {
+  it("export { add2 as default } registers default and can bind sidecar default", () => {
     const src = `function add2(x) {\n  return x;\n}\nexport { add2 as default };\n`;
     const { loadModule } = makeFiles({
-      "/t/add.nudo.js": `export const default = fn({ x: number() });`,
+      "/t/add.nudo.js": `export default fn({ x: number().int() });`,
     });
-    // default 不在本地导出表内（且侧车 default 名也不自动绑）
-    expect(localNamedExports(src).has("default")).toBe(false);
-    expect(effectiveInterface(src, "add2", { loadModule, fromFile: "/t/add.js" })).toBeUndefined();
+    // C4.4：default 进导出表；侧车 export default fn(…) 可绑
+    expect(localNamedExports(src).has("default")).toBe(true);
+    expect(localNamedExports(src).has("add2")).toBe(false); // 只导出 default
+    const r = effectiveInterface(src, "default", { loadModule, fromFile: "/t/add.js" });
+    expect(r).toBeDefined();
+    expect(formatConstraint(r!.params[0]!.constraint)).toBe("number().int()");
   });
 
   it("does not execute transitive sidecar import into node_modules", () => {

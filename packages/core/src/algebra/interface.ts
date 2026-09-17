@@ -118,11 +118,15 @@ export type InterfaceSource = "handwritten" | "generated" | "implicit";
 // sidecarPathOf 定义已收敛至 sidecar-path.ts（leaf），文件头 re-export
 
 /**
- * 源文件本地 named export 表：收集本文件声明并导出的名字——
- * `export function/const/let/var/class` 声明形式，以及本地列表
- * `export { x }` / `export { local as exported }`（按**导出名**绑定，
- * 与侧车同名自动绑定口径一致）。
- * 排除 re-export（`export {x} from` / `export *`）与 `export default`。
+ * 源文件本地导出名表（侧车自动绑定边界）：
+ * - ESM：`export function/const/let/var/class` 与本地 `export { x }` /
+ *   `export { local as exported }`（按**导出名**绑定）；
+ * - `export default function add` / `const add = …; export default add`：
+ *   按**本地名** `add` 绑定（侧车可 `export const add = fn(…)`）；
+ *   同时登记 `"default"`，供侧车 `export default fn(…)` 对齐；
+ * - CJS（C4.3）：`module.exports = { a, b }`、`module.exports.a = …`、
+ *   `exports.a = …`、`module.exports = localFn`（登记 localFn 名）。
+ * 排除 re-export（`export {x} from` / `export *`）。
  */
 export function localNamedExports(source: string): Set<string> {
   const out = new Set<string>();
@@ -144,32 +148,116 @@ export function localNamedExports(source: string): Set<string> {
       }
     }
   }
+
+  type NodeLike = Record<string, unknown> & { type?: string };
+  const identName = (n: NodeLike | undefined): string | undefined => {
+    if (!n) return undefined;
+    if (n.type === "Identifier" && typeof n.name === "string") return n.name;
+    if (n.type === "Literal" && typeof n.value === "string") return n.value;
+    return undefined;
+  };
+  /** `module.exports` 或 `exports` → true */
+  const isExportsTarget = (n: NodeLike | undefined): boolean => {
+    if (!n) return false;
+    if (n.type === "Identifier") return n.name === "exports";
+    if (n.type === "MemberExpression") {
+      return identName(n.object as NodeLike) === "module" && n.property !== undefined
+        ? identName(n.property as NodeLike) === "exports"
+        : false;
+    }
+    return false;
+  };
+  /** `exports.a` / `module.exports.a` → "a" */
+  const cjsPropName = (left: NodeLike | undefined): string | undefined => {
+    if (!left || left.type !== "MemberExpression") return undefined;
+    if (left.computed === true) return undefined;
+    const obj = left.object as NodeLike | undefined;
+    if (!isExportsTarget(obj)) return undefined;
+    return identName(left.property as NodeLike);
+  };
+
   for (const stmt of ast.program.body) {
-    if (stmt.type !== "ExportNamedDeclaration") continue;
-    if (stmt.source) continue; // export {…} from "…"（re-export）
-    const d = stmt.declaration;
-    if (!d) {
-      // export { x, y as z } 本地列表——按导出名收集（侧车绑的是公开名）。
-      // 排除「import 后 re-export」：`import { x } from …; export { x }` 不是
-      // 本地定义，契约跟随定义文件（与 `export { x } from` 同口径）。
-      for (const spec of stmt.specifiers) {
-        if (spec.type !== "ExportSpecifier") continue;
-        const exported = spec.exported;
-        const name = exported.type === "Identifier" ? exported.name : exported.value;
-        if (!name || name === "default") continue;
-        const local = spec.local;
-        const localName =
-          local.type === "Identifier" ? local.name : (local as { value?: string }).value;
-        if (localName && importedLocalNames.has(localName)) continue;
-        out.add(name);
+    const s = stmt as NodeLike;
+
+    // --- ESM named ---
+    if (s.type === "ExportNamedDeclaration") {
+      if (s.source) continue; // export {…} from "…"（re-export）
+      const d = s.declaration as NodeLike | null | undefined;
+      if (!d) {
+        const specs = (s.specifiers as NodeLike[] | undefined) ?? [];
+        for (const spec of specs) {
+          if (spec.type !== "ExportSpecifier") continue;
+          const name = identName(spec.exported as NodeLike);
+          // C4.4：`export { local as default }` 登记 default
+          if (!name) continue;
+          if (name === "default") {
+            out.add("default");
+            continue;
+          }
+          const localName = identName(spec.local as NodeLike);
+          if (localName && importedLocalNames.has(localName)) continue;
+          out.add(name);
+        }
+        continue;
+      }
+      if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
+        const idName = identName(d.id as NodeLike | undefined);
+        if (idName) out.add(idName);
+      } else if (d.type === "VariableDeclaration") {
+        const decls = (d.declarations as NodeLike[] | undefined) ?? [];
+        for (const decl of decls) {
+          const idName = identName(decl.id as NodeLike | undefined);
+          if (idName) out.add(idName);
+        }
       }
       continue;
     }
-    if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
-      if (d.id) out.add(d.id.name);
-    } else if (d.type === "VariableDeclaration") {
-      for (const decl of d.declarations) {
-        if (decl.id.type === "Identifier") out.add(decl.id.name);
+
+    // --- export default（C4.4）---
+    if (s.type === "ExportDefaultDeclaration") {
+      out.add("default");
+      const d = s.declaration as NodeLike | null | undefined;
+      if (d) {
+        if ((d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") && d.id) {
+          const idName = identName(d.id as NodeLike);
+          if (idName) out.add(idName);
+        } else if (d.type === "Identifier") {
+          const n = identName(d);
+          if (n && !importedLocalNames.has(n)) out.add(n);
+        }
+      }
+      continue;
+    }
+
+    // --- CJS（C4.3）---
+    if (s.type === "ExpressionStatement") {
+      const expr = s.expression as NodeLike | undefined;
+      if (!expr || expr.type !== "AssignmentExpression" || expr.operator !== "=") continue;
+      const left = expr.left as NodeLike | undefined;
+      const right = expr.right as NodeLike | undefined;
+      if (!left || !right) continue;
+
+      // exports.a = … / module.exports.a = …
+      const prop = cjsPropName(left);
+      if (prop && prop !== "default") out.add(prop);
+
+      // module.exports = { … } / exports = { … }
+      if (isExportsTarget(left)) {
+        if (right.type === "ObjectExpression") {
+          const props = (right.properties as NodeLike[] | undefined) ?? [];
+          for (const p of props) {
+            if (p.type !== "ObjectProperty" && p.type !== "Property") continue;
+            const keyName = identName(p.key as NodeLike);
+            if (keyName && keyName !== "default") out.add(keyName);
+            else {
+              const valName = identName(p.value as NodeLike);
+              if (valName) out.add(valName);
+            }
+          }
+        } else if (right.type === "Identifier") {
+          const n = identName(right);
+          if (n && !importedLocalNames.has(n)) out.add(n);
+        }
       }
     }
   }
@@ -296,6 +384,9 @@ function loadSidecarBinding(
   const spec = `./${sidecarPath.slice(sidecarPath.lastIndexOf("/") + 1)}`;
   const sidecarSrc = loadModule(spec, fromFile);
   if (sidecarSrc === undefined) return { ok: false };
+  // 自加载守卫：host loader 误把源文件/自身内容当作侧车返回时不当侧车 exec
+  // （CJS 源含 module.exports 时会变成 "module is not defined" 假诊断）
+  if (sidecarSrc === source) return { ok: false };
   let exports: Record<string, unknown>;
   try {
     exports = execNudoModule(sidecarSrc, { loadModule, fromFile: sidecarPath });

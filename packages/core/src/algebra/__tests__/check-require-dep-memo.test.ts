@@ -21,7 +21,9 @@ module.exports = { needsPositive };
 `;
     const loadModule = (spec: string) => {
       if (spec.includes("std.nudo")) return STD_NUDO_SRC;
-      return dep;
+      // 只解析真实 require 目标；侧车 spec 返回 undefined（missing sidecar）
+      if (spec.includes("v.js")) return dep;
+      return undefined;
     };
     const opts = { loadModule, fromFile: "/t/a.js" };
     const src = `

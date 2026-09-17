@@ -196,19 +196,21 @@ function sidecarImportNames(stmt: ImportDeclaration): SidecarImportName[] {
 function rewriteSidecarSource(
   src: string,
   fromFile: string | undefined,
-): { code: string; exportNames: string[]; imports: SidecarImport[] } {
+): { code: string; exportPairs: Array<{ key: string; expr: string }>; imports: SidecarImport[] } {
   // .nudo.ts 需要未剥除 TS 的 AST（keepTs）——类型注解/声明的区间才能切除；
   // 默认路径照旧走剥除（全链消费方依赖剥除后形态）
   const keepTs = fromFile?.endsWith(".nudo.ts") === true;
   const ast = parseSource(src, keepTs ? { keepTs: true } : undefined);
   const cuts: Array<{ start: number; end: number; text: string }> = [];
-  const exportNames: string[] = [];
+  /** 导出表：key = 绑定名（含 "default"），expr = 求值表达式标识符 */
+  const exportPairs: Array<{ key: string; expr: string }> = [];
   const imports: SidecarImport[] = [];
+  const DEFAULT_LOCAL = "__nudoDefault";
 
   const badExport = (what: string): void => {
     collectDiag({
       code: "nudo:interface-load",
-      message: `sidecar ${what}; only 'export const <name> = …' is a recognized export form`,
+      message: `sidecar ${what}; recognized export forms are 'export const <name> = …' and 'export default <constraint|fn>'`,
       file: fromFile,
     });
   };
@@ -240,7 +242,7 @@ function rewriteSidecarSource(
         if (decl.kind === "const") {
           let simple = true;
           for (const d of decl.declarations) {
-            if (d.id.type === "Identifier") exportNames.push(d.id.name);
+            if (d.id.type === "Identifier") exportPairs.push({ key: d.id.name, expr: d.id.name });
             else simple = false;
           }
           if (!simple) badExport("'export const' with destructuring pattern");
@@ -257,7 +259,8 @@ function rewriteSidecarSource(
       ) {
         const kind = decl.type === "FunctionDeclaration" ? "function" : "class";
         badExport(`'export ${kind} ${decl.id?.name ?? "(anonymous)"}'`);
-        // 保留声明本体（可执行），只剥 export
+        // 保留声明本体（可执行），只剥 export；**不**登记为侧车导出
+        // （recognized form 只有 export const / export default）
         cuts.push({ start: stmt.start, end: decl.start, text: "" });
         continue;
       }
@@ -269,20 +272,57 @@ function rewriteSidecarSource(
       continue;
     }
     if (stmt.type === "ExportDefaultDeclaration") {
-      const decl = stmt.declaration;
+      const decl = stmt.declaration as
+        | {
+            type: string;
+            id?: { name?: string } | null;
+            start?: number | null;
+            end?: number | null;
+          }
+        | undefined;
       if (
-        (decl?.type === "FunctionDeclaration" || decl?.type === "ClassDeclaration") &&
+        decl &&
+        (decl.type === "FunctionDeclaration" || decl.type === "ClassDeclaration") &&
         stmt.start != null &&
         decl.start != null
       ) {
-        const kind = decl.type === "FunctionDeclaration" ? "function" : "class";
-        badExport(`'export default ${kind}'`);
-        cuts.push({ start: stmt.start, end: decl.start, text: "" });
-      } else {
-        badExport("'export default'");
-        if (stmt.start != null && stmt.end != null) {
-          cuts.push({ start: stmt.start, end: stmt.end, text: "" });
+        // export default function d() / class D：剥 export，本体可执行；
+        // 同时登记本地名与 "default"（C4.4）
+        if (decl.id?.name) {
+          exportPairs.push({ key: decl.id.name, expr: decl.id.name });
+          exportPairs.push({ key: "default", expr: decl.id.name });
+        } else {
+          // 匿名：包一层本地绑定
+          exportPairs.push({ key: "default", expr: DEFAULT_LOCAL });
+          if (decl.start != null && decl.end != null) {
+            const kind = decl.type === "FunctionDeclaration" ? "function" : "class";
+            cuts.push({
+              start: stmt.start,
+              end: decl.start,
+              text: `var ${DEFAULT_LOCAL} = `,
+            });
+            void kind;
+          }
         }
+        if (decl.id?.name) {
+          cuts.push({ start: stmt.start, end: decl.start, text: "" });
+        }
+        continue;
+      }
+      // export default <expr>（fn(…) / 标识符等）：var __nudoDefault = <expr>
+      if (decl && stmt.start != null && decl.start != null && decl.end != null) {
+        exportPairs.push({ key: "default", expr: DEFAULT_LOCAL });
+        cuts.push({
+          start: stmt.start,
+          end: decl.start,
+          text: `var ${DEFAULT_LOCAL} = `,
+        });
+        cuts.push({ start: decl.end, end: stmt.end ?? decl.end, text: ";" });
+        continue;
+      }
+      badExport("'export default'");
+      if (stmt.start != null && stmt.end != null) {
+        cuts.push({ start: stmt.start, end: stmt.end, text: "" });
       }
       continue;
     }
@@ -303,24 +343,26 @@ function rewriteSidecarSource(
   }
 
   cuts.sort((a, b) => a.start - b.start);
-  // 合并重叠区间（替换文本均为 ""，取并集等价）；套入原文切片
-  const merged: Array<{ start: number; end: number }> = [];
+  // 仅合并「纯删除」（text === ""）重叠区间；带替换文本的 cut 不得吞掉
+  // （export default → `var __nudoDefault = ` 等）。套入原文 + 替换文本。
+  const merged: Array<{ start: number; end: number; text: string }> = [];
   for (const c of cuts) {
     const last = merged[merged.length - 1];
-    if (last && c.start <= last.end) {
+    if (last && c.start <= last.end && last.text === "" && c.text === "") {
       last.end = Math.max(last.end, c.end);
     } else {
-      merged.push({ start: c.start, end: c.end });
+      merged.push({ start: c.start, end: c.end, text: c.text });
     }
   }
   let code = "";
   let pos = 0;
   for (const c of merged) {
-    code += src.slice(pos, c.start);
+    if (c.start < pos) continue; // 与前一非空替换重叠：跳过（宁可少删，不可坏代码）
+    code += src.slice(pos, c.start) + c.text;
     pos = c.end;
   }
   code += src.slice(pos);
-  return { code, exportNames, imports };
+  return { code, exportPairs, imports };
 }
 
 /** 纯类型语句：整体删除（运行时无对应语义；enum 的反向映射本引擎不支持） */
@@ -432,7 +474,7 @@ function execSidecar(
   preloaded: ReadonlyMap<string, string | undefined>,
 ): Record<string, unknown> {
   const fromFile = opts?.fromFile;
-  const { code, exportNames, imports } = rewriteSidecarSource(src, fromFile);
+  const { code, exportPairs, imports } = rewriteSidecarSource(src, fromFile);
   const prologue: string[] = [];
   const deps: Record<string, unknown> = {};
 
@@ -553,7 +595,12 @@ function execSidecar(
     prologue.push(`var ${local} = __nudoDeps[${JSON.stringify(local)}];`);
   }
 
-  const body = `${prologue.length > 0 ? `${prologue.join("\n")}\n` : ""}${code}\nreturn { ${exportNames.join(", ")} };`;
+  const returnObj = exportPairs
+    .map((p) =>
+      p.key === p.expr ? p.key : `${JSON.stringify(p.key)}: ${p.expr}`,
+    )
+    .join(", ");
+  const body = `${prologue.length > 0 ? `${prologue.join("\n")}\n` : ""}${code}\nreturn { ${returnObj} };`;
   const fn = new Function(
     ...Object.keys(sidecarInjects),
     "__nudoInjects",

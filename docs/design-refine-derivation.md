@@ -122,9 +122,9 @@ export const add2 = fn({ x }, x.shift(2)); // body x+2
 
 | 情形 | 规则 |
 |---|---|
-| `export default` | 无绑定名，**不自动绑定**（模型外；后续如需，约定导出名 `default` 再议） |
+| `export default` | **C4.4**：具名 `export default function add` 绑本地名 `add` + 登记 `"default"`；侧车可 `export const add = fn(…)` 或 `export default fn(…)`。匿名 default 仅 `"default"` |
 | re-export / barrel（`export { add2 } from "./add.js"`、`export *`） | 不算本地导出、不参与同名绑定——re-export 的契约**永远跟随定义文件**的侧车；`lib.nudo.js` 里的 `add2` 只是 import 引用，不构成第二绑定 |
-| CJS（`module.exports = {...}`） | 导出表动态，Phase 1 仅支持 ESM named export；CJS 文件不参与自动绑定 |
+| CJS（`module.exports = {...}`） | **C4.3**：静态可解析形态参与绑定——`module.exports = { a, b }`、`exports.a = …`、`module.exports.a = …`、`module.exports = localFn`（登记 localFn 名）。动态计算导出名仍不猜 |
 
 **私有函数不绑定、不落盘。**
 
@@ -1035,7 +1035,7 @@ case 实参文法（`T.*`）、`infer --json` 的 `ext_*`、path 型 env 桥，�
 |---|---|
 | refine 文法 | 不内联类型；`*.nudo.js` + `shift/lit/union/fn` + utility helpers |
 | **命名** | 产品面 **interface**（CLI/IDE/诊断）；机制层 refinement；`@nudo:refine` 兼容别名 |
-| **绑定** | **侧车同名导出自动绑定源码的本地 named export**（re-export / `export default` / CJS 不参与，§2.1）；私有不落盘；源码零注释（`@nudo:refine`/`@nudo:interface` 兼容） |
+| **绑定** | **侧车同名导出自动绑定源码的本地导出**（ESM named / 本地 `export {x}` / **CJS 静态 module.exports** / **export default** 见 C4.3–C4.4；re-export 不参与）；私有不落盘；源码零注释（`@nudo:refine`/`@nudo:interface` 兼容） |
 | **隐式 vs 落盘** | 推导**始终隐式存在**；`--emit` 默认必须 filter，禁止无参全量写盘 |
 | 配置 | 沿用 `package.json#nudo` 键扩展 `interface` 子键，不引入 `nudo.json` |
 | **缓存** | 隐式 interface 进 L0/check memo，可选 `.nudo/cache`；与用户契约文件分离；自动绑定的**隐式依赖边**并入 dep 指纹 + `nudoDepParents`（§4.5） |
