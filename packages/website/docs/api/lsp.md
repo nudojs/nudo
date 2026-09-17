@@ -94,7 +94,7 @@ Synchronous, cache-aware analysis for high-frequency handlers (hover, completion
 hasNudoDirectives(source: string): boolean
 ```
 
-Returns `true` when the source contains any Nudo directive: `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:refine`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, or `@nudo:replace`. The server uses it (plus a `.js` / `.ts` / `.mjs` extension check) as the `isNudoFile` gate — every feature handler below is a no-op for files that fail it.
+Returns `true` when the source contains any Nudo directive: `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:refine`, `@nudo:import`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, or `@nudo:replace`. The server uses it (plus a `.js` / `.ts` / `.mjs` extension check) as the `isNudoFile` gate — every feature handler below is a no-op for files that fail it.
 
 ### toLspDiagnostic
 

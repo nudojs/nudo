@@ -13,9 +13,9 @@ export type NudoPluginOptions = {
   failOnError?: boolean;
 };
 
-/** 与 LSP hasNudoDirectives 对齐：含 refine/import，避免漏掉契约文件 */
+/** 与 LSP hasNudoDirectives 对齐：含 refine/interface/import，避免漏掉契约文件 */
 const NUDO_DIRECTIVE_RE =
-  /@nudo:(case|mock|pure|skip|sample|refine|import|env|mock-module|as|replace)\b/;
+  /@nudo:(case|mock|pure|skip|sample|refine|interface|import|env|mock-module|as|replace)\b/;
 
 /** Abs check issues → service Diagnostic（与 evaluator 诊断同管道进 vite warn/error） */
 function checkIssuesToDiagnostics(id: string, code: string): Diagnostic[] {

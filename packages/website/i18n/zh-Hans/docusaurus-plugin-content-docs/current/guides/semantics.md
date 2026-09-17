@@ -225,6 +225,7 @@ Combined: 0 | 1 | 3
 | 每迭代 `let` 闭包 | `fns[i]()` → `unknown` | 直接使用迭代结果 |
 | `arguments` | → `unknown`（`nudo:builtin-unknown`） | 具名参数 |
 | `JSON.parse` | `JSON.parse('{"port": 3000}')` → `unknown` | 对象字面量 |
+| 数值格式化方法 | `(cents / 100).toFixed(2)` → `unknown`（`nudo:no-method`） | `Math.round` / 算术 |
 | `String.fromCharCode` | → `unknown` | 字符串字面量 |
 | 指数运算符 `**` | → `unknown` | `x * x` |
 

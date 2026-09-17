@@ -212,7 +212,7 @@ export function evictModuleGraphCacheEntries(uris: string[]): void {
 }
 
 export function hasNudoDirectives(source: string): boolean {
-  return /@nudo:(case|mock|pure|skip|sample|refine|import|env|mock-module|as|replace)\b/.test(source);
+  return /@nudo:(case|mock|pure|skip|sample|refine|interface|import|env|mock-module|as|replace)\b/.test(source);
 }
 
 export function uriToFilePath(uri: string): string {

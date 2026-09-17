@@ -94,7 +94,7 @@ getCachedOrAnalyze(
 hasNudoDirectives(source: string): boolean
 ```
 
-源码包含任一 Nudo 指令时返回 `true`：`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:refine`、`@nudo:env`、`@nudo:mock-module`、`@nudo:as`、`@nudo:replace`。服务器将它（加上 `.js` / `.ts` / `.mjs` 扩展名检查）用作 `isNudoFile` 门控 —— 下文的每个功能 handler 对未通过门控的文件都是空操作。
+源码包含任一 Nudo 指令时返回 `true`：`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:refine`、`@nudo:import`、`@nudo:env`、`@nudo:mock-module`、`@nudo:as`、`@nudo:replace`。服务器将它（加上 `.js` / `.ts` / `.mjs` 扩展名检查）用作 `isNudoFile` 门控 —— 下文的每个功能 handler 对未通过门控的文件都是空操作。
 
 ### toLspDiagnostic
 

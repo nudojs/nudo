@@ -225,6 +225,7 @@ These constructs currently evaluate to `unknown` (often with a `nudo:unknown-rec
 | Per-iteration `let` closures | `fns[i]()` → `unknown` | direct iteration results |
 | `arguments` | → `unknown` (`nudo:builtin-unknown`) | named parameters |
 | `JSON.parse` | `JSON.parse('{"port": 3000}')` → `unknown` | object literals |
+| Number formatting methods | `(cents / 100).toFixed(2)` → `unknown` (`nudo:no-method`) | `Math.round` / arithmetic |
 | `String.fromCharCode` | → `unknown` | string literals |
 | Exponentiation `**` | → `unknown` | `x * x` |
 
