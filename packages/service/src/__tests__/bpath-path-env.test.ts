@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { analyzeFileAsync, clearBPathCache } from "@nudojs/service";
-import { typeValueToString } from "@nudojs/core";
+import { formatShape } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -41,6 +41,6 @@ function getMagic() {
     const result = await analyzeFileAsync(p, main);
     const fn = result.functions.find((f) => f.name === "getMagic");
     expect(fn).toBeDefined();
-    expect(typeValueToString(fn!.cases[0].result)).toBe("99");
+    expect(formatShape(fn!.cases[0].abs)).toBe("99");
   });
 });

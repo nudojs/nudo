@@ -37,6 +37,7 @@ import {
   T,
   typeValueToString,
   formatAbs,
+  formatShape,
   checkSource,
   serializeCheckJson,
   pTrue,
@@ -474,12 +475,8 @@ export function whatIf(params: WhatIfParams, deps: AgentToolDeps = {}): AgentToo
     // editor cache, so bypass it entirely.
     const result = analyzeFile(filePath, source);
     const binding = result.bindings.get(params.target);
-    // 无损 Abs 优先；缺失再落 TypeValue 外延投影
-    const typeStr = binding
-      ? binding.abs
-        ? formatAbs(binding.abs)
-        : typeValueToString(binding.type)
-      : "unknown";
+    // 无损 Abs
+    const typeStr = binding ? formatAbs(binding.abs) : "unknown";
 
     const notes: string[] = [];
     if (applied.length > 0) notes.push(`Bindings applied: ${applied.join(", ")}`);
@@ -563,8 +560,8 @@ export function trace(params: FunctionToolParams, deps: AgentToolDeps = {}): Age
     }
 
     const traces = fn.cases.map((c) => {
-      const args = c.args.map(typeValueToString).join(", ");
-      return `Input: (${args}) => Output: ${typeValueToString(c.result)}`;
+      const args = c.argAbs.map(formatShape).join(", ");
+      return `Input: (${args}) => Output: ${formatShape(c.abs)}`;
     }).join("\n");
 
     return textResult(traces);

@@ -119,11 +119,14 @@ export function widenAbsPrim(a: Abs): Abs {
 /**
  * 多成员聚合：保 lit 为 sum；超过阈值且同 prim lit → 塌为 prim
  * （对齐 collapseLiteralUnion 语义）。
+ * 吸收律：同 prim 的非字面量成员吸收该类型字面量（3 | number → number）；
+ * never 成员在 join 中是单位元，直接丢弃（10 | never → 10）。
  */
 export function collapseAbsLits(members: Abs[], maxLits: number): Abs {
   const uniq: Abs[] = [];
   const seen = new Set<string>();
   for (const m of members) {
+    if (m.shape.k === "never") continue;
     const k = absStructureKey(m);
     if (seen.has(k)) continue;
     seen.add(k);
@@ -131,6 +134,28 @@ export function collapseAbsLits(members: Abs[], maxLits: number): Abs {
   }
   if (uniq.length === 0) return neverAbs;
   if (uniq.length === 1) return uniq[0]!;
+
+  // 同 prim 非字面量成员吸收该类型全部字面量
+  const nonLitPrims = new Set<string>();
+  for (const m of uniq) {
+    if (m.shape.k === "prim" && m.term?.op !== "lit") {
+      nonLitPrims.add(m.shape.type);
+    }
+  }
+  if (nonLitPrims.size > 0) {
+    const absorbed = uniq.filter(
+      (m) =>
+        !(
+          m.shape.k === "prim" &&
+          m.term?.op === "lit" &&
+          nonLitPrims.has(m.shape.type)
+        ),
+    );
+    if (absorbed.length !== uniq.length) {
+      return collapseAbsLits(absorbed, maxLits);
+    }
+  }
+
   if (uniq.length > maxLits && uniq.every(isPrimLit)) {
     const t = uniq[0]!.shape.type;
     if (uniq.every((m) => m.shape.k === "prim" && m.shape.type === t)) {

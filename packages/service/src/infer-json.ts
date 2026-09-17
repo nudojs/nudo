@@ -8,7 +8,7 @@
  *   与 TypeValue 外延字段并存——消费者可逐步切到 Abs，不强制 breaking
  */
 
-import { typeValueToString, formatAbs, type TypeValue, type Abs } from "@nudojs/core";
+import { typeValueToString, formatAbs, formatShape, type TypeValue, type Abs } from "@nudojs/core";
 import type { AnalysisResult, CaseResult, FunctionAnalysis, SourceLocation } from "./analyzer.ts";
 
 export type InferJsonCase = {
@@ -74,13 +74,13 @@ export type InferJson = {
 function mapCase(c: CaseResult): InferJsonCase {
   const out: InferJsonCase = {
     name: c.name,
-    args: c.args.map((a: TypeValue) => typeValueToString(a)),
-    result: typeValueToString(c.result),
-    throws: c.throws.kind !== "never" ? typeValueToString(c.throws) : null,
+    args: c.argAbs.map((a: Abs) => formatShape(a)),
+    result: formatShape(c.abs),
+    throws: c.throwsAbs.shape.k !== "never" ? formatShape(c.throwsAbs) : null,
     source: c.source ?? null,
   };
   if (c.aggregatedFrom !== undefined) out.aggregatedFrom = c.aggregatedFrom;
-  if (c.argAbs && c.argAbs.length > 0) {
+  if (c.argAbs.length > 0) {
     out.argsAbs = c.argAbs.map((a: Abs) => {
       try {
         return formatAbs(a);
@@ -89,12 +89,10 @@ function mapCase(c: CaseResult): InferJsonCase {
       }
     });
   }
-  if (c.abs) {
-    try {
-      out.resultAbs = formatAbs(c.abs);
-    } catch {
-      /* skip */
-    }
+  try {
+    out.resultAbs = formatAbs(c.abs);
+  } catch {
+    /* skip */
   }
   if (c.intension) {
     const i = c.intension;
@@ -118,8 +116,8 @@ function mapFunction(f: FunctionAnalysis): InferJsonFunction {
     cases: f.cases.map(mapCase),
   };
   if (f.noDeclaration) out.noDeclaration = true;
-  if (f.combined) out.combined = typeValueToString(f.combined);
   if (f.combinedAbs) {
+    out.combined = formatShape(f.combinedAbs);
     try {
       out.combinedAbs = formatAbs(f.combinedAbs);
     } catch {

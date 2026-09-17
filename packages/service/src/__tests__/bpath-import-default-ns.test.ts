@@ -1,5 +1,6 @@
 import { it, expect, describe, afterAll } from "vitest";
 import { analyzeFile, clearBPathCache } from "@nudojs/service";
+import { litValue } from "@nudojs/core";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,14 +31,14 @@ function goResult(dir: string, src: string) {
   writeFileSync(join(dir, "index.js"), src);
   const r = analyzeFile(join(dir, "index.js"), src);
   const go = r.functions.find((f) => f.name === "go");
-  return { result: go?.cases[0]?.result, diagnostics: r.diagnostics };
+  return { abs: go?.cases[0]?.abs, diagnostics: r.diagnostics };
 }
 
 describe("B-path import default / namespace", () => {
   it("named import", () => {
     clearBPathCache();
     const dir = setup();
-    const { result } = goResult(
+    const { abs } = goResult(
       dir,
       `import { add } from "./util.js";
 /**
@@ -48,13 +49,13 @@ export function go(a, b) {
 }
 `,
     );
-    expect(result).toMatchObject({ kind: "literal", value: 3 });
+    expect(litValue(abs!)).toBe(3);
   });
 
   it("default import of export default function", () => {
     clearBPathCache();
     const dir = setup();
-    const { result, diagnostics } = goResult(
+    const { abs, diagnostics } = goResult(
       dir,
       `import mul from "./util.js";
 /**
@@ -65,14 +66,14 @@ export function go(a, b) {
 }
 `,
     );
-    expect(result).toMatchObject({ kind: "literal", value: 12 });
+    expect(litValue(abs!)).toBe(12);
     expect(diagnostics.filter((d) => d.severity === "error")).toHaveLength(0);
   });
 
   it("namespace import member call", () => {
     clearBPathCache();
     const dir = setup();
-    const { result, diagnostics } = goResult(
+    const { abs, diagnostics } = goResult(
       dir,
       `import * as util from "./util.js";
 /**
@@ -83,14 +84,14 @@ export function go(a, b) {
 }
 `,
     );
-    expect(result).toMatchObject({ kind: "literal", value: 11 });
+    expect(litValue(abs!)).toBe(11);
     expect(diagnostics.filter((d) => d.severity === "error")).toHaveLength(0);
   });
 
   it("namespace import default slot", () => {
     clearBPathCache();
     const dir = setup();
-    const { result } = goResult(
+    const { abs } = goResult(
       dir,
       `import * as util from "./util.js";
 /**
@@ -101,6 +102,6 @@ export function go(a, b) {
 }
 `,
     );
-    expect(result).toMatchObject({ kind: "literal", value: 10 });
+    expect(litValue(abs!)).toBe(10);
   });
 });

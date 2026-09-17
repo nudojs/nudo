@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { analyzeFile, tryBPathCall, isBPathCapable, clearBPathCache } from "@nudojs/service";
-import { typeValueToString, $lit, absToString } from "@nudojs/core";
+import { formatShape, $lit, absToString } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -50,7 +50,7 @@ function addOne(n) {
     const result = analyzeFile("/test/env.js", source);
     const fn = result.functions.find((f) => f.name === "addOne");
     expect(fn).toBeDefined();
-    expect(typeValueToString(fn!.cases[0].result)).toBe("6");
+    expect(formatShape(fn!.cases[0].abs)).toBe("6");
   });
 
   it("arrowFn @nudo:mock injects into B-path (no real fetch call)", () => {

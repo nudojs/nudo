@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { analyzeFile } from "../analyzer.ts";
-import { typeValueToString } from "@nudojs/core";
+import { formatShape } from "@nudojs/core";
 
 /**
  * Service 层 Abs ↔ TypeValue 差分门禁。
@@ -41,7 +41,7 @@ describe("Abs vs TypeValue service differential", () => {
       const fn = result.functions.find((f) => f.name === s.fn);
       const call = fn!.cases.find((c) => c.source === "callsite");
       expect(call, `no call@ for ${s.fn}`).toBeDefined();
-      expect(typeValueToString(call!.result)).toBe(s.expect);
+      expect(formatShape(call!.abs)).toBe(s.expect);
       // Abs 路径应填充 intension
       expect(call!.intension).toBeDefined();
     });
@@ -56,8 +56,8 @@ describe("Abs vs TypeValue service differential", () => {
     const result = analyzeFile("/t/diff-mock.js", source);
     const run = result.functions.find((f) => f.name === "run");
     const call = run!.cases.find((c) => c.source === "callsite");
-    expect(typeValueToString(call!.result)).not.toBe("unknown");
-    expect(typeValueToString(call!.result)).toBe('"ok"');
+    expect(formatShape(call!.abs)).not.toBe("unknown");
+    expect(formatShape(call!.abs)).toBe('"ok"');
   });
 
   it("mock withArgs dispatches on Abs path (literal hit)", () => {
@@ -69,7 +69,7 @@ describe("Abs vs TypeValue service differential", () => {
     const result = analyzeFile("/t/diff-withargs.js", source);
     const run = result.functions.find((f) => f.name === "run");
     const call = run!.cases.find((c) => c.source === "callsite");
-    expect(typeValueToString(call!.result)).toBe('"hit"');
+    expect(formatShape(call!.abs)).toBe('"hit"');
   });
 
   it("mock withArgs miss falls back to unknown", () => {
@@ -81,7 +81,7 @@ describe("Abs vs TypeValue service differential", () => {
     const result = analyzeFile("/t/diff-withargs-miss.js", source);
     const run = result.functions.find((f) => f.name === "run");
     const call = run!.cases.find((c) => c.source === "callsite");
-    expect(typeValueToString(call!.result)).toBe("unknown");
+    expect(formatShape(call!.abs)).toBe("unknown");
   });
 
   it("mock onFirstCall without returns is default value", () => {
@@ -93,7 +93,7 @@ describe("Abs vs TypeValue service differential", () => {
     const result = analyzeFile("/t/diff-onfirst.js", source);
     const run = result.functions.find((f) => f.name === "run");
     const call = run!.cases.find((c) => c.source === "callsite");
-    expect(typeValueToString(call!.result)).toBe("8080");
+    expect(formatShape(call!.abs)).toBe("8080");
   });
 
   it("mock sinon.stub().onFirstCall().returns() matches Abs path", () => {
@@ -105,7 +105,7 @@ describe("Abs vs TypeValue service differential", () => {
     const result = analyzeFile("/t/diff-onfirst-sinon.js", source);
     const run = result.functions.find((f) => f.name === "run");
     const call = run!.cases.find((c) => c.source === "callsite");
-    expect(typeValueToString(call!.result)).not.toBe("unknown");
-    expect(typeValueToString(call!.result)).toContain("first");
+    expect(formatShape(call!.abs)).not.toBe("unknown");
+    expect(formatShape(call!.abs)).toContain("first");
   });
 });

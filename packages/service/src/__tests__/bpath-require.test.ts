@@ -8,7 +8,7 @@ import {
   isBPathCapable,
   clearBPathCache,
 } from "@nudojs/service";
-import { typeValueToString, $lit, litValue } from "@nudojs/core";
+import { formatShape, $lit, litValue } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -61,6 +61,6 @@ function go(n) {
     const go = result.functions.find((f) => f.name === "go");
     expect(go).toBeDefined();
     const c = go!.cases.find((x) => x.name === "t");
-    expect(typeValueToString(c!.result)).toBe("2");
+    expect(formatShape(c!.abs)).toBe("2");
   });
 });

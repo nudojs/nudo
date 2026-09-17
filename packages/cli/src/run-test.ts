@@ -5,7 +5,7 @@
  * 失败记 FAIL，进程退出码 1。无期望的 directive case 记 unchecked。
  */
 
-import { isSubtypeOf, typeValueToString, type TypeValue } from "@nudojs/core";
+import { isSubtypeOf, typeValueToString, absToTypeValue, formatShape, type TypeValue } from "@nudojs/core";
 import type { AnalysisResult } from "@nudojs/service";
 
 export type CaseTestOutcome = {
@@ -30,7 +30,7 @@ export function buildTestReport(file: string, result: AnalysisResult): TestRepor
   for (const fn of result.functions) {
     for (const c of fn.cases) {
       if (c.source !== "directive") continue;
-      const actual = typeValueToString(c.result);
+      const actual = formatShape(c.abs);
       if (!c.expected) {
         outcomes.push({
           fn: fn.name,
@@ -44,7 +44,7 @@ export function buildTestReport(file: string, result: AnalysisResult): TestRepor
       const expected = typeValueToString(c.expected as TypeValue);
       let ok = false;
       try {
-        ok = isSubtypeOf(c.result, c.expected as TypeValue);
+        ok = isSubtypeOf(absToTypeValue(c.abs), c.expected as TypeValue);
       } catch {
         ok = false;
       }

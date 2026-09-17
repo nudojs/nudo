@@ -3,7 +3,7 @@ import { readFileSync, existsSync, watch, readdirSync, statSync, writeFileSync, 
 import { resolve, dirname, relative, join, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
-import { typeValueToString } from "@nudojs/core";
+import { typeValueToString, formatShape, absToTypeValue } from "@nudojs/core";
 import { extractDirectives } from "@nudojs/parser";
 import {
   typeValueToZodSchema,
@@ -130,8 +130,8 @@ async function runInfer(
     }
 
     if (fn.skipped) {
-      if (fn.combined) {
-        console.log(`Skipped (declared): ${typeValueToString(fn.combined)}`);
+      if (fn.combinedAbs) {
+        console.log(`Skipped (declared): ${formatShape(fn.combinedAbs)}`);
       } else {
         console.log("Skipped (no return type declared)");
       }
@@ -140,9 +140,9 @@ async function runInfer(
     }
 
     for (const c of fn.cases) {
-      const argsStr = c.args.map(typeValueToString).join(", ");
-      let line = `Case "${c.name}": (${argsStr}) => ${typeValueToString(c.result)}`;
-      if (c.throws.kind !== "never") line += ` throws ${typeValueToString(c.throws)}`;
+      const argsStr = c.argAbs.map(formatShape).join(", ");
+      let line = `Case "${c.name}": (${argsStr}) => ${formatShape(c.abs)}`;
+      if (c.throwsAbs.shape.k !== "never") line += ` throws ${formatShape(c.throwsAbs)}`;
       console.log(line);
       // M3：内涵摘要（term/pred/conf）+ 无损 Abs
       if (c.intension?.display) {
@@ -163,8 +163,8 @@ async function runInfer(
       console.log("# no call sites found; parameters default to unknown");
     }
 
-    if (fn.cases.length > 1 && fn.combined) {
-      console.log(`\nCombined: ${typeValueToString(fn.combined)}`);
+    if (fn.cases.length > 1 && fn.combinedAbs) {
+      console.log(`\nCombined: ${formatShape(fn.combinedAbs)}`);
     }
 
     console.log();
@@ -187,13 +187,13 @@ async function runInfer(
       for (const fn of fns) {
         console.log(`=== ${fn.name} ===\n`);
         for (const c of fn.cases) {
-          const argsStr = c.args.map(typeValueToString).join(", ");
-          let line = `Case "${c.name}": (${argsStr}) => ${typeValueToString(c.result)}`;
-          if (c.throws.kind !== "never") line += ` throws ${typeValueToString(c.throws)}`;
+          const argsStr = c.argAbs.map(formatShape).join(", ");
+          let line = `Case "${c.name}": (${argsStr}) => ${formatShape(c.abs)}`;
+          if (c.throwsAbs.shape.k !== "never") line += ` throws ${formatShape(c.throwsAbs)}`;
           console.log(line);
         }
-        if (fn.cases.length > 1 && fn.combined) {
-          console.log(`\nCombined: ${typeValueToString(fn.combined)}`);
+        if (fn.cases.length > 1 && fn.combinedAbs) {
+          console.log(`\nCombined: ${formatShape(fn.combinedAbs)}`);
         }
         console.log();
       }
@@ -1148,8 +1148,8 @@ async function runGenerate(
     if (format === "zod" || format === "all") {
       const lines: string[] = [`\n// === ${baseName} Zod Schemas ===`];
       for (const c of caseResults) {
-        const inputSchemas = c.args.map((a, i) => `arg${i}: ${typeValueToZodSchema(a)}`).join(", ");
-        const outputSchema = typeValueToZodSchema(c.result);
+        const inputSchemas = c.argAbs.map((a, i) => `arg${i}: ${typeValueToZodSchema(absToTypeValue(a))}`).join(", ");
+        const outputSchema = typeValueToZodSchema(absToTypeValue(c.abs));
         lines.push(`// Case "${c.name}":`);
         lines.push(`// Input: { ${inputSchemas} }`);
         lines.push(`// Output: ${outputSchema}`);
@@ -1161,12 +1161,7 @@ async function runGenerate(
       const lines: string[] = [`\n// === ${baseName} Type Guards ===`];
       for (const c of caseResults) {
         const guardName = `is${baseName}${c.name.charAt(0).toUpperCase() + c.name.slice(1)}Output`;
-        // Abs 路径优先：denote 保留 pred；否则回退 TypeValue 投影
-        if (c.abs) {
-          lines.push(generateGuardFunctionFromAbs(guardName, c.abs));
-        } else {
-          lines.push(generateGuardFunction(guardName, c.result));
-        }
+        lines.push(generateGuardFunctionFromAbs(guardName, c.abs));
       }
       guardChunks.push(lines.join("\n"));
     }

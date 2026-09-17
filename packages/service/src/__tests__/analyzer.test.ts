@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, chmodSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { T, typeValueToString, typeValueToAbs, litValue, type TypeValue } from "@nudojs/core";
+import { T, typeValueToString, typeValueToAbs, litValue, type TypeValue, formatShape } from "@nudojs/core";
 import { analyzeFile, collectCallRecords, buildModuleGraph, type ModuleGraphCache, computeDirtySet, topoSortDirty } from "../analyzer.ts";
 import { getTypeAtPosition, getCompletionsAtPosition } from "../lsp-surface.ts";
 import { generateDts } from "../dts-generator.ts";
@@ -93,17 +93,17 @@ describe("analyzeFile", () => {
     expect(addFn.name).toBe("add");
     expect(addFn.cases).toHaveLength(2);
     expect(addFn.cases[0].name).toBe("concrete");
-    expect(typeValueToString(addFn.cases[0].result)).toBe("3");
+    expect(formatShape(addFn.cases[0].abs)).toBe("3");
     expect(addFn.cases[1].name).toBe("symbolic");
-    expect(typeValueToString(addFn.cases[1].result)).toBe("number");
+    expect(formatShape(addFn.cases[1].abs)).toBe("number");
   });
 
   it("provides combined type for multiple cases", () => {
     const result = analyzeFile("/test/sample.js", SAMPLE_SOURCE);
     const addFn = result.functions[0];
-    expect(addFn.combined).toBeDefined();
+    expect(addFn.combinedAbs).toBeDefined();
     // 行为已修复：吸收律生效，字面量 3 被共存的 number 吸收（原期望 "3 | number"）
-    expect(typeValueToString(addFn.combined!)).toBe("number");
+    expect(formatShape(addFn.combinedAbs!)).toBe("number");
   });
 
   it("reports throws as diagnostics", () => {
@@ -112,8 +112,8 @@ describe("analyzeFile", () => {
     const fn = result.functions[0];
     expect(fn.cases).toHaveLength(2);
 
-    const negativeCaseThrows = fn.cases[1].throws;
-    expect(negativeCaseThrows.kind).not.toBe("never");
+    const negativeCaseThrows = fn.cases[1].throwsAbs;
+    expect(negativeCaseThrows.shape.k).not.toBe("never");
   });
 
   it("returns source locations for functions", () => {
@@ -127,7 +127,7 @@ describe("analyzeFile", () => {
     const result = analyzeFile("/test/obj.js", OBJ_SOURCE);
     expect(result.bindings.has("obj")).toBe(true);
     const objBinding = result.bindings.get("obj")!;
-    expect(objBinding.type.kind).toBe("object");
+    expect(objBinding.abs.shape.k).toBe("obj");
   });
 
   it("synthesizes cases from call sites for directive-less functions", () => {
@@ -149,8 +149,8 @@ function caller(y) {
     expect(uncalled!.cases).toHaveLength(1);
     expect(uncalled!.cases[0].source).toBe("callsite");
     expect(uncalled!.cases[0].name).toMatch(/^call@L\d+$/);
-    expect(typeValueToString(uncalled!.cases[0].result)).toBe("10");
-    expect(typeValueToString(uncalled!.combined!)).toBe("10");
+    expect(formatShape(uncalled!.cases[0].abs)).toBe("10");
+    expect(formatShape(uncalled!.combinedAbs!)).toBe("10");
     expect(uncalled!.entryOnly).toBeFalsy();
   });
 
@@ -172,15 +172,15 @@ ${calls}
       expect(c.source).toBe("callsite");
       expect(c.aggregatedFrom).toBeUndefined();
     }
-    expect(typeValueToString(precise[0].args[0])).toBe("1");
+    expect(formatShape(precise[0].argAbs[0])).toBe("1");
     const symbolic = sq!.cases[3];
     expect(symbolic.name).toBe("call@symbolic");
     expect(symbolic.source).toBe("callsite");
     expect(symbolic.aggregatedFrom).toBe(17);
-    expect(symbolic.args).toHaveLength(1);
-    expect(symbolic.args[0]).toEqual(T.number);
-    expect(typeValueToString(symbolic.result)).toBe("number");
-    expect(sq!.combined).toEqual(T.number);
+    expect(symbolic.argAbs).toHaveLength(1);
+    expect(formatShape(symbolic.argAbs[0]!)).toBe("number");
+    expect(formatShape(symbolic.abs)).toBe("number");
+    expect(formatShape(sq!.combinedAbs!)).toBe("number");
     expect(sq!.entryOnly).toBeFalsy();
   });
 
@@ -198,9 +198,9 @@ twice(21);
     expect(twice.cases.every((c) => /^call@L\d+$/.test(c.name))).toBe(true);
     expect(twice.cases.some((c) => c.name === "call@symbolic")).toBe(false);
     expect(twice.cases.some((c) => c.aggregatedFrom !== undefined)).toBe(false);
-    expect(typeValueToString(twice.cases[0].result)).toBe("6");
-    expect(typeValueToString(twice.cases[1].result)).toBe("42");
-    expect(typeValueToString(twice.combined!)).toBe("6 | 42");
+    expect(formatShape(twice.cases[0].abs)).toBe("6");
+    expect(formatShape(twice.cases[1].abs)).toBe("42");
+    expect(formatShape(twice.combinedAbs!)).toBe("6 | 42");
   });
 
   it("infers entry-only functions in directive-free files", () => {
@@ -214,7 +214,7 @@ function lonely(x) {
     expect(lonely).toBeDefined();
     expect(lonely!.entryOnly).toBe(true);
     expect(lonely!.cases).toHaveLength(1);
-    expect(typeValueToString(lonely!.combined!)).toBe("number");
+    expect(formatShape(lonely!.combinedAbs!)).toBe("number");
   });
 
   it("keeps directive case output unchanged for functions with @nudo:case", () => {
@@ -224,9 +224,9 @@ function lonely(x) {
     expect(addFn!.cases[0].name).toBe("concrete");
     expect(addFn!.cases[0].source).toBe("directive");
     expect(addFn!.entryOnly).toBeUndefined();
-    expect(typeValueToString(addFn!.cases[0].result)).toBe("3");
+    expect(formatShape(addFn!.cases[0].abs)).toBe("3");
     // 行为已修复：吸收律生效，combined 的字面量 3 被共存的 number 吸收（原期望 "3 | number"）
-    expect(typeValueToString(addFn!.combined!)).toBe("number");
+    expect(formatShape(addFn!.combinedAbs!)).toBe("number");
     expect(addFn!.skipped).toBeUndefined();
   });
 
@@ -322,13 +322,10 @@ function lonely(u) {
       expect(triple.cases).toHaveLength(1);
       expect(triple.cases[0].name).toMatch(/^call@L\d+$/);
       expect(triple.cases[0].source).toBe("callsite");
-      expect(triple.cases[0].args.map(typeValueToString)).toEqual(["4"]);
-      const caseResult = triple.cases[0].result;
-      if (caseResult === undefined) throw new Error("expected case result");
-      expect(typeValueToString(caseResult)).toBe("12");
-      const combined = triple.combined;
-      if (combined === undefined) throw new Error("expected combined result");
-      expect(typeValueToString(combined)).toBe("12");
+      expect(triple.cases[0].argAbs.map(formatShape)).toEqual(["4"]);
+      expect(formatShape(triple.cases[0].abs)).toBe("12");
+      expect(triple.combinedAbs).toBeDefined();
+      expect(formatShape(triple.combinedAbs!)).toBe("12");
       // imported function must not leak into this file's local functions
       expect(result.functions.map((f) => f.name)).toEqual(["caller"]);
     } finally {
@@ -357,9 +354,11 @@ module.exports = internals.clone = function (obj, options = {}) {
     expect(clone!.entryOnly).toBe(true);
     expect(clone!.cases).toHaveLength(1);
     // entry fallback: parameters enter as unknown, so returning obj propagates unknown
-    expect(clone!.cases[0].args).toEqual([T.unknown, T.unknown]);
+    expect(clone!.cases[0].argAbs).toHaveLength(2);
+    expect(formatShape(clone!.cases[0].argAbs[0]!)).toBe("unknown");
+    expect(formatShape(clone!.cases[0].argAbs[1]!)).toBe("unknown");
     expect(clone!.cases[0].name).toMatch(/^entry@L\d+$/);
-    expect(clone!.cases[0].result.kind).toBe("unknown");
+    expect(clone!.cases[0].abs.shape.k).toBe("unknown");
   });
 
   it("names chained exports after the first non-module.exports property", () => {
@@ -387,7 +386,7 @@ exports.applyToDefaults = function _apply(src, opts) {
     const fn = result.functions.find((f) => f.name === "_apply");
     expect(fn).toBeDefined();
     expect(fn!.noDeclaration).toBe(true);
-    expect(fn!.cases[0].result.kind).toBe("unknown");
+    expect(fn!.cases[0].abs.shape.k).toBe("unknown");
   });
 
   it("collects exports.X assignment functions", () => {
@@ -403,7 +402,7 @@ exports.applyToDefaults = function (a, b) {
     expect(fn!.entryOnly).toBe(true);
     expect(fn!.noDeclaration).toBe(true);
     expect(fn!.cases).toHaveLength(1);
-    expect(fn!.cases[0].result.kind).toBe("unknown");
+    expect(fn!.cases[0].abs.shape.k).toBe("unknown");
   });
 
   it("synthesizes callsite cases for const-declared arrow functions", () => {
@@ -419,9 +418,9 @@ f(3);
     expect(f!.cases).toHaveLength(1);
     expect(f!.cases[0].source).toBe("callsite");
     expect(f!.cases[0].name).toMatch(/^call@L\d+$/);
-    expect(f!.cases[0].args.map(typeValueToString)).toEqual(["3"]);
-    expect(typeValueToString(f!.cases[0].result)).toBe("6");
-    expect(typeValueToString(f!.combined!)).toBe("6");
+    expect(f!.cases[0].argAbs.map(formatShape)).toEqual(["3"]);
+    expect(formatShape(f!.cases[0].abs)).toBe("6");
+    expect(formatShape(f!.combinedAbs!)).toBe("6");
   });
 
   it("keeps pure FunctionDeclaration collection unchanged alongside CJS forms", () => {
@@ -438,7 +437,7 @@ exports.helper = function (y) {
     expect(lonely).toBeDefined();
     expect(lonely.noDeclaration).toBeUndefined();
     expect(lonely.entryOnly).toBe(true);
-    expect(typeValueToString(lonely.combined!)).toBe("number");
+    expect(formatShape(lonely.combinedAbs!)).toBe("number");
     const helper = result.functions.find((f) => f.name === "helper")!;
     expect(helper).toBeDefined();
     expect(helper.noDeclaration).toBe(true);
@@ -490,8 +489,8 @@ module.exports = { formatName, shout };
     expect(formatName.entryOnly).toBeFalsy();
     expect(formatName.cases).toHaveLength(1);
     expect(formatName.cases[0].source).toBe("callsite");
-    expect(formatName.cases[0].args.map(typeValueToString)).toEqual(['"Ada"', '"Lovelace"']);
-    expect(typeValueToString(formatName.cases[0].result)).toBe('"Ada Lovelace"');
+    expect(formatName.cases[0].argAbs.map(formatShape)).toEqual(['"Ada"', '"Lovelace"']);
+    expect(formatShape(formatName.cases[0].abs)).toBe('"Ada Lovelace"');
 
     // 未被使用现场调用的 shout 保持 entry-only
     const shout = result.functions.find((f) => f.name === "shout")!;
@@ -515,7 +514,7 @@ module.exports = { formatName, shout };
       const result = analyzeFile(libPath, readFileSync(libPath, "utf-8"), undefined, records);
       const fn = result.functions.find((f) => f.name === "double")!;
       expect(fn.entryOnly).toBeFalsy();
-      expect(typeValueToString(fn.combined!)).toBe("42");
+      expect(formatShape(fn.combinedAbs!)).toBe("42");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -550,8 +549,8 @@ module.exports = function (a, b) {
     expect(main.entryOnly).toBeFalsy();
     expect(main.cases).toHaveLength(1);
     expect(main.cases[0].source).toBe("callsite");
-    expect(main.cases[0].args.map(typeValueToString)).toEqual(["1", "2"]);
-    expect(typeValueToString(main.cases[0].result)).toBe("3");
+    expect(main.cases[0].argAbs.map(formatShape)).toEqual(["1", "2"]);
+    expect(formatShape(main.cases[0].abs)).toBe("3");
 
     // 同文件其他函数不经模块路误染：名字对不上 → 保持 entry-only
     const helper = result.functions.find((f) => f.name === "helper")!;
@@ -637,9 +636,9 @@ function fail(msg) {
     expect(fn.entryOnly).toBeFalsy();
     expect(fn.cases).toHaveLength(1);
     expect(fn.cases[0].source).toBe("callsite");
-    expect(fn.cases[0].args.map(typeValueToString)).toEqual(['"boom"']);
-    expect(fn.cases[0].result).toEqual(T.never);
-    expect(fn.cases[0].throws).toEqual(T.string);
+    expect(fn.cases[0].argAbs.map(formatShape)).toEqual(['"boom"']);
+    expect(fn.cases[0].abs.shape.k).toBe("never");
+    expect(formatShape(fn.cases[0].throwsAbs)).toBe("string");
   });
 });
 

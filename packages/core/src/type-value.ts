@@ -90,12 +90,12 @@ export const T = {
   fn: (
     params: string[],
     body: Node,
-    closure: Environment,
+    closure: Environment | null,
   ): TypeValue => ({
     kind: "function",
     params,
     body,
-    closure,
+    closure: closure as never,
   }),
   refine: (base: TypeValue, refinement: Refinement): TypeValue => ({
     kind: "refined",

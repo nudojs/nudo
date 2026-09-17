@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runTranspiled, callTranspiledExport, $lit, litValue } from "@nudojs/core";
 import { tryBPathCall, isBPathCapable, analyzeFile } from "@nudojs/service";
-import { typeValueToString } from "@nudojs/core";
+import { formatShape } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -59,7 +59,7 @@ export function run(n) { return triple(n); }
     expect(run).toBeDefined();
     const c = run!.cases.find((x) => x.name === "four");
     expect(c).toBeDefined();
-    expect(typeValueToString(c!.result)).toBe("12");
+    expect(formatShape(c!.abs)).toBe("12");
     // B 路径应挂上 intension
     expect(c!.intension?.abs ?? c!.intension?.display).toBeTruthy();
   });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { analyzeFile, clearBPathCache } from "@nudojs/service";
-import { typeValueToString } from "@nudojs/core";
+import { formatShape } from "@nudojs/core";
 import { transpile, analyzeFn, generalizeFromAst, numLit, absToString } from "@nudojs/core";
 
 describe("directive case args in branch bodies", () => {
@@ -28,7 +28,7 @@ export function gradeFor(score) {
       .find((f) => f.name === "gradeFor")
       ?.cases.find((c) => c.name === "A");
     expect(a).toBeDefined();
-    expect(typeValueToString(a!.result)).toBe('"A"');
+    expect(formatShape(a!.abs)).toBe('"A"');
   });
 
   it("AST analyzeFn and generalize agree on early-return", () => {

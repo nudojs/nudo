@@ -30,6 +30,11 @@ import {
   joinAbs,
   formatAbs,
   formatAbsMultiline,
+  formatShape,
+  numLit,
+  strLit,
+  boolLit,
+  abs as makeAbsVal,
   type Abs,
   stableAnalyzeKeySource,
   fnFingerprints,
@@ -93,9 +98,12 @@ export type Diagnostic = {
 
 export type CaseResult = {
   name: string;
-  args: TypeValue[];
-  result: TypeValue;
-  throws: TypeValue;
+  /** 无损参数 Abs */
+  argAbs: Abs[];
+  /** 无损结果 Abs */
+  abs: Abs;
+  /** 无损抛出 Abs（未抛为 never） */
+  throwsAbs: Abs;
   throwLoc?: SourceLocation;
   source?: "directive" | "callsite";
   /** `@nudo:case "name" (…) => expected` — presence means the case is a test assertion */
@@ -104,7 +112,6 @@ export type CaseResult = {
   aggregatedFrom?: number;
   /**
    * 内涵摘要（代数 generalize）：无损 Abs + term/pred/conf。
-   * 仅在 entry@ / call@（Abs 路径）填充；外延 TypeValue 不变。
    */
   intension?: {
     display?: string;
@@ -116,13 +123,6 @@ export type CaseResult = {
     /** 无损 Abs 多行（formatAbsMultiline） */
     absMultiline?: string;
   };
-  /** 无损 Abs（denote/守卫用）；仅 Abs 路径 case 填充 */
-  abs?: Abs;
-  /**
-   * 无损参数 Abs（与 `args` 对齐，可短于 args）。B-path / typeValueToAbs
-   * 桥接填充；dts 主签名走 Abs 投影时优先读，避免再经 absToTypeValue。
-   */
-  argAbs?: Abs[];
 };
 
 export type FunctionAnalysis = {
@@ -130,8 +130,7 @@ export type FunctionAnalysis = {
   loc: SourceLocation;
   paramNames: string[];
   cases: CaseResult[];
-  combined?: TypeValue;
-  /** cases 结果 Abs 的 join（或 combined 的 Abs 桥）；dts 返回位优先源 */
+  /** cases 结果 Abs 的 join；dts 返回位源 */
   combinedAbs?: Abs;
   entryOnly?: boolean;
   skipped?: boolean;
@@ -147,9 +146,8 @@ export type FunctionAnalysis = {
 };
 
 export type BindingInfo = {
-  type: TypeValue;
-  /** 无损 Abs（B-path / typeValueToAbs 桥）；展示优先源 */
-  abs?: Abs;
+  /** 无损 Abs */
+  abs: Abs;
   loc?: SourceLocation;
 };
 
@@ -742,11 +740,9 @@ function synthesizeExternalFunctions(records: CallRecord[], currentFile: string)
     for (const rec of precise) {
       analysis.cases.push({
         name: `call@L${rec.callLoc?.line ?? 0}`,
-        args: rec.argAbs.map(safeAbsToTv),
         argAbs: [...rec.argAbs],
-        result: safeAbsToTv(rec.resultAbs),
         abs: rec.resultAbs,
-        throws: safeAbsToTv(rec.throwsAbs),
+        throwsAbs: rec.throwsAbs,
         source: "callsite",
       });
     }
@@ -764,11 +760,9 @@ function synthesizeExternalFunctions(records: CallRecord[], currentFile: string)
       const symThrowsAbs = joinAllAbs(remaining.map((r) => r.throwsAbs));
       analysis.cases.push({
         name: "call@symbolic",
-        args: symArgsAbs.map(safeAbsToTv),
         argAbs: symArgsAbs,
-        result: safeAbsToTv(symResultAbs),
         abs: symResultAbs,
-        throws: safeAbsToTv(symThrowsAbs),
+        throwsAbs: symThrowsAbs,
         source: "callsite",
         aggregatedFrom: remaining.length,
       });
@@ -779,10 +773,8 @@ function synthesizeExternalFunctions(records: CallRecord[], currentFile: string)
         deduped.map((r) => r.resultAbs),
         COLLAPSE_LITERAL_THRESHOLD,
       );
-      analysis.combined = safeAbsToTv(analysis.combinedAbs);
     } else {
       analysis.combinedAbs = deduped[0].resultAbs;
-      analysis.combined = safeAbsToTv(deduped[0].resultAbs);
     }
     out.push(analysis);
   }
@@ -997,8 +989,7 @@ function cloneFunctionAnalysis(a: FunctionAnalysis): FunctionAnalysis {
     paramNames: [...a.paramNames],
     cases: a.cases.map((c) => ({
       ...c,
-      args: [...c.args],
-      ...(c.argAbs ? { argAbs: [...c.argAbs] } : {}),
+      argAbs: [...c.argAbs],
       ...(c.intension ? { intension: { ...c.intension } } : {}),
     })),
     loc: { start: { ...a.loc.start }, end: { ...a.loc.end } },
@@ -1215,7 +1206,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
       for (const [name, absVal] of absBindsShared) {
         if (absVal?.shape?.k === "fn") continue;
         if (!globalEnv.has(name)) {
-          globalEnv.bind(name, absToTypeValue(absVal));
+          globalEnv.bind(name, absVal);
         }
       }
       for (const [node, absVal] of absNodesShared) {
@@ -1308,7 +1299,6 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
       for (const [name, absVal] of absBinds) {
         const prev = bindings.get(name);
         bindings.set(name, {
-          type: absToTypeValue(absVal),
           abs: absVal,
           loc: prev?.loc,
         });
@@ -1341,7 +1331,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
     if (skipDirective && skipDirective.kind === "skip") {
       analysis.skipped = true;
       if (skipDirective.returns) {
-        analysis.combined = skipDirective.returns;
+        analysis.combinedAbs = typeValueToAbs(skipDirective.returns);
       }
       functionResults.push(analysis);
       continue;
@@ -1408,7 +1398,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
 
     if (isPure) {
       const fnVal = globalEnv.has(fn.name) ? globalEnv.lookup(fn.name) : null;
-      if (fnVal && fnVal.kind === "function") {
+      if (fnVal && fnVal.shape.k === "fn") {
         (fnVal as any)._memoize = fn.name;
       }
     }
@@ -1423,23 +1413,14 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
     for (let ci = 0; ci < caseDirectives.length; ci++) {
       const directive = caseDirectives[ci];
 
-      // B 路径主求值（capable）：analyze 模式 + $callNamed 采集。
-      // 成功则跳过 evaluateFunctionFull；失败再落 TypeValue。
-      let caseValue: TypeValue | undefined;
       let caseAbs: Abs | undefined;
-      let caseThrows: TypeValue | undefined;
-      let fullResult: {
-        value: TypeValue;
-        throws: TypeValue;
-        throwLoc?: SourceLocation;
-      } | null = null;
+      let caseThrowsAbs: Abs | undefined;
+      let caseThrowLoc: SourceLocation | undefined;
       let caseUnreachable: SourceLocation[] = [];
 
       const bCapable = isBPathCapable(source, envNames);
-      // env fnSig impl 已在 B 注入中保留，B 可作主路径
       const bPrimary = bCapable;
       if (bCapable && filePath) {
-        // 约束表达式文法：argsAbs 无损主路径
         const caseArgsAbs = directive.argsAbs;
         const bFull = tryBPathCallFull(
           source,
@@ -1456,11 +1437,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
         const bOk = !!res && (bHostedEval || (!weakUnknown && res.conf !== "opaque"));
         if (bOk && bFull && bPrimary) {
           caseAbs = bFull.result;
-          caseValue = absToTypeValue(bFull.result);
-          caseThrows =
-            bFull.throws.shape.k !== "never" ? absToTypeValue(bFull.throws) : T.never;
-          fullResult = { value: caseValue, throws: caseThrows };
-          // B 执行期 method-missing 诊断（唯一权威来源；TypeValue 按名去重）
+          caseThrowsAbs = bFull.throws;
           for (const d of bFull.memberDiags ?? []) {
             pushBMemberDiag(d, fnLoc.start.line);
           }
@@ -1473,12 +1450,11 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
         }
       }
 
-      if (!fullResult) {
+      if (!caseAbs) {
         if (bHostedEval) {
-          fullResult = { value: T.unknown, throws: T.never };
-          caseValue = T.unknown;
+          caseAbs = absUnknown;
+          caseThrowsAbs = neverAbs;
         } else {
-          // Abs 优先（T18/T19）：含 throws 通道；TypeValue 仅 Abs 失败时兜底。
           const caseArgsAbs = directive.argsAbs;
           const absFull = (selfContained || canAbsModules)
             ? tryEvalAbsFull(
@@ -1506,59 +1482,49 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
             absFull.throws.shape.k !== "never";
           if (absOk) {
             caseAbs = absFull.result;
-            caseValue = absToTypeValue(absFull.result);
-            fullResult = { value: caseValue, throws: T.never };
+            caseThrowsAbs = neverAbs;
           } else if (absThrew) {
-            // Abs 无损 throws + loc：不再落 TypeValue
             caseAbs = absFull!.result; // never
-            caseValue = T.never;
-            caseThrows = absToTypeValue(absFull!.throws);
+            caseThrowsAbs = absFull!.throws;
             const tl = absFull!.throwLoc;
-            fullResult = {
-              value: T.never,
-              throws: caseThrows,
-              ...(tl ? { throwLoc: { start: { ...tl }, end: { ...tl } } } : {}),
-            };
+            if (tl) caseThrowLoc = { start: { ...tl }, end: { ...tl } };
           } else {
-            // TypeValue evaluateFunctionFull 已删除（覆盖缺口）：Abs 失败 → unknown
-            caseValue = T.unknown;
-            fullResult = { value: T.unknown, throws: T.never };
+            caseAbs = absUnknown;
+            caseThrowsAbs = neverAbs;
           }
         }
       }
-
-      const tv = caseValue!;
-      const throwsTv = caseThrows ?? fullResult.throws;
+      if (!caseThrowsAbs) caseThrowsAbs = neverAbs;
 
       const caseEntry: CaseResult = {
         name: directive.name,
-        args: directive.argsAbs.map(safeAbsToTv),
         argAbs: directive.argsAbs,
-        result: tv,
-        throws: throwsTv,
-        throwLoc: fullResult.throwLoc,
+        abs: caseAbs,
+        throwsAbs: caseThrowsAbs,
+        throwLoc: caseThrowLoc,
         expected: directive.expected,
         source: "directive",
       };
       tryAttachIntension(caseEntry, source, fn.name);
-      if (caseAbs) attachAbsToIntension(caseEntry, caseAbs, fn.name);
+      attachAbsToIntension(caseEntry, caseAbs, fn.name);
       analysis.cases.push(caseEntry);
 
       if (directive.commentLine) {
-        const hasThrow = throwsTv.kind !== "never";
-        const resultStr = tv.kind !== "never" ? typeValueToString(tv) : "";
-        const throwStr = hasThrow ? `throws ${typeValueToString(throwsTv)}` : "";
+        const hasThrow = caseThrowsAbs.shape.k !== "never";
+        const resultStr = caseAbs.shape.k !== "never" ? formatShape(caseAbs) : "";
+        const throwStr = hasThrow ? `throws ${formatShape(caseThrowsAbs)}` : "";
         const label = [resultStr, throwStr].filter(Boolean).join(" ");
         const hintLabel = `=> ${label}`;
 
         let ok = true;
         if (directive.expected) {
-          ok = isSubtypeOf(tv, directive.expected);
+          const gotTv = absToTypeValue(caseAbs);
+          ok = isSubtypeOf(gotTv, directive.expected);
           if (!ok) {
             diagnostics.push({
               range: { start: { line: directive.commentLine, column: 0 }, end: { line: directive.commentLine, column: 999 } },
               severity: "error",
-              message: `Case "${directive.name}": expected ${typeValueToString(directive.expected)}, got ${typeValueToString(tv)}. The inferred return type does not match the expected type declared in the @nudo:case directive`,
+              message: `Case "${directive.name}": expected ${typeValueToString(directive.expected)}, got ${formatShape(caseAbs)}. The inferred return type does not match the expected type declared in the @nudo:case directive`,
               code: "nudo:case-expected",
             });
           }
@@ -1570,12 +1536,12 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
       const isActive = ci === Math.min(activeCaseIdx, caseDirectives.length - 1);
 
       if (isActive) {
-        if (throwsTv.kind !== "never") {
-          const throwRange = fullResult?.throwLoc ?? fnLoc;
+        if (caseThrowsAbs.shape.k !== "never") {
+          const throwRange = caseThrowLoc ?? fnLoc;
           diagnostics.push({
             range: throwRange,
             severity: "warning",
-            message: `Function "${fn.name}" case "${directive.name}" may throw: ${typeValueToString(throwsTv)}. Consider adding a try-catch block or using @nudo:refine return <constraint>`,
+            message: `Function "${fn.name}" case "${directive.name}" may throw: ${formatShape(caseThrowsAbs)}. Consider adding a try-catch block or using @nudo:refine return <constraint>`,
             code: "nudo-may-throw",
           });
         }
@@ -1596,13 +1562,11 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
       }
     }
 
-    if (analysis.cases.length > 1) {
-      analysis.combined = collapseLiteralUnion(simplifyUnion(analysis.cases.map((c) => c.result)), COLLAPSE_LITERAL_THRESHOLD);
-    } else if (analysis.cases.length === 1) {
-      analysis.combined = analysis.cases[0].result;
-    }
     if (analysis.cases.length > 0) {
-      analysis.combinedAbs = computeCombinedAbs(analysis.cases, analysis.combined);
+      analysis.combinedAbs = collapseAbsLits(
+        analysis.cases.map((c) => c.abs),
+        COLLAPSE_LITERAL_THRESHOLD,
+      );
     }
 
     if (fnCacheKey) {
@@ -1795,11 +1759,9 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
         const caseAbs = absResult ?? rec.resultAbs;
         const caseResult: CaseResult = {
           name: `call@L${rec.callLoc?.line ?? candidate.analysis.loc.start.line}`,
-          args: rec.argAbs.map(safeAbsToTv),
           argAbs: [...rec.argAbs],
-          result: safeAbsToTv(caseAbs),
           abs: caseAbs,
-          throws: safeAbsToTv(rec.throwsAbs),
+          throwsAbs: rec.throwsAbs,
           source: "callsite",
         };
         tryAttachIntension(caseResult, source, candidate.name);
@@ -1853,11 +1815,9 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
         }
         const symCase: CaseResult = {
           name: "call@symbolic",
-          args: widenedArgsAbs.map(safeAbsToTv),
           argAbs: widenedArgsAbs,
-          result: symAbs ? safeAbsToTv(symAbs) : T.unknown,
-          ...(symAbs ? { abs: symAbs } : {}),
-          throws: T.never as TypeValue,
+          abs: symAbs ?? absUnknown,
+          throwsAbs: neverAbs,
           source: "callsite",
           aggregatedFrom: remaining.length,
         };
@@ -1872,23 +1832,20 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
         records.map((r) => r.resultAbs),
         COLLAPSE_LITERAL_THRESHOLD,
       );
-      candidate.analysis.combined = safeAbsToTv(candidate.analysis.combinedAbs);
       continue;
     }
 
     const fnNode = resolveFunctionNode(candidate.node);
-    const args = extractParamNames(fnNode).map(() => T.unknown);
-    // B 路径主求值（capable）；失败再 Abs ast-eval / TypeValue
-    let entryValue: TypeValue | undefined;
-    let entryThrows: TypeValue = T.never as TypeValue;
-    let entryLoc: SourceLocation | undefined;
+    const argAbsEntry = extractParamNames(fnNode).map(() => absUnknown);
+    // B 路径主求值（capable）；失败再 Abs ast-eval
     let entryAbs: Abs | undefined;
+    let entryThrowsAbs: Abs = neverAbs;
     if (isBPathCapable(source, envNames) && filePath) {
       const bEntryFull = tryBPathCallFull(
         source,
         filePath,
         candidate.analysis.name,
-        args.map((a) => typeValueToAbs(a)),
+        argAbsEntry,
         { envNames, mocks: mockSeedsToAbsMocks(seeds), collectMemberDiags: true },
       );
       if (bEntryFull?.memberDiags?.length) {
@@ -1899,48 +1856,40 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
       const bEntry = bEntryFull?.result;
       if (bEntry && (bHostedEval || !(bEntry.shape.k === "unknown" && !bEntry.term))) {
         entryAbs = bEntry;
-        entryValue = absToTypeValue(bEntry);
+        if (bEntryFull?.throws) entryThrowsAbs = bEntryFull.throws;
       }
     }
-    if (!entryValue) {
+    if (!entryAbs) {
       if (bHostedEval) {
-        entryValue = T.unknown;
-        entryThrows = T.never as TypeValue;
+        entryAbs = absUnknown;
+        entryThrowsAbs = neverAbs;
       } else {
-        // TypeValue evaluateFunctionFull 已删除：Abs 入口求值优先
-        const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, args, filePath, seeds.seedVars);
+        const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, argAbsEntry.map(absToTypeValue), filePath, seeds.seedVars);
         if (absEntry) {
-          entryValue = absToTypeValue(absEntry);
           entryAbs = absEntry;
-          entryThrows = T.never as TypeValue;
+          entryThrowsAbs = neverAbs;
         } else {
-          entryValue = T.unknown;
-          entryThrows = T.never as TypeValue;
+          entryAbs = absUnknown;
+          entryThrowsAbs = neverAbs;
         }
       }
     }
     const caseResult: CaseResult = {
       name: `entry@L${candidate.analysis.loc.start.line}`,
-      args,
-      argAbs: argAbsFromTypeValues(args),
-      result: entryValue,
-      throws: entryThrows,
-      throwLoc: entryLoc,
+      argAbs: argAbsEntry,
+      abs: entryAbs,
+      throwsAbs: entryThrowsAbs,
     };
     // display 来自 generalize；attachAbs 补无损 abs 字段（后写覆盖 abs/conf）
     tryAttachIntension(caseResult, source, candidate.analysis.name);
-    if (entryAbs) attachAbsToIntension(caseResult, entryAbs, candidate.analysis.name);
+    attachAbsToIntension(caseResult, entryAbs, candidate.analysis.name);
     candidate.analysis.cases.push(caseResult);
     candidate.analysis.entryOnly = true;
-    candidate.analysis.combined = collapseLiteralUnion(entryValue, COLLAPSE_LITERAL_THRESHOLD);
-    candidate.analysis.combinedAbs = computeCombinedAbs(
-      candidate.analysis.cases,
-      candidate.analysis.combined,
-    );
+    candidate.analysis.combinedAbs = entryAbs;
   }
 
   if (!bHostedEval) {
-    buildNodeTypeMap(ast, globalEnv, nodeTypeMap);
+    buildNodeTypeMap(ast, globalEnv, nodeTypeMap, absNodesShared);
   }
 
   const externalFunctions = synthesizeExternalFunctions(callRecords, filePath);
@@ -1964,11 +1913,9 @@ function collectBindings(
 ): void {
   if (ast.type !== "File") return;
   const setBinding = (name: string, loc: SourceLocation): void => {
-    const val = env.has(name) ? env.lookup(name) : T.unknown;
-    const absVal = absBinds?.get(name);
+    const absVal = absBinds?.get(name) ?? absUnknown;
     bindings.set(name, {
-      type: val,
-      ...(absVal ? { abs: absVal } : {}),
+      abs: absVal,
       loc,
     });
   };
@@ -1992,13 +1939,26 @@ function collectBindings(
   }
 }
 
-export function buildNodeTypeMap(ast: Node, env: Environment, nodeTypeMap: Map<Node, TypeValue>): void {
+function nullLitAbs(): Abs {
+  return makeAbsVal({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
+}
+
+export function buildNodeTypeMap(
+  ast: Node,
+  env: Environment,
+  nodeTypeMap: Map<Node, TypeValue>,
+  nodeAbsMap?: Map<Node, Abs>,
+): void {
   const traverseFn = (typeof traverse === "function" ? traverse : (traverse as any).default) as typeof traverse;
   try {
     traverseFn(ast, {
       enter(path) {
         const node = path.node;
         try {
+          const setAbs = (a: Abs): void => {
+            nodeAbsMap?.set(node, a);
+            nodeTypeMap.set(node, absToTypeValue(a));
+          };
           if (
             node.type === "Identifier" &&
             node.name !== "undefined" &&
@@ -2006,20 +1966,20 @@ export function buildNodeTypeMap(ast: Node, env: Environment, nodeTypeMap: Map<N
             path.parentPath?.node.type !== "VariableDeclarator"
           ) {
             if (env.has(node.name)) {
-              nodeTypeMap.set(node, env.lookup(node.name));
+              setAbs(env.lookup(node.name));
             }
           }
           if (node.type === "NumericLiteral") {
-            nodeTypeMap.set(node, T.literal(node.value));
+            setAbs(numLit(node.value));
           }
           if (node.type === "StringLiteral") {
-            nodeTypeMap.set(node, T.literal(node.value));
+            setAbs(strLit(node.value));
           }
           if (node.type === "BooleanLiteral") {
-            nodeTypeMap.set(node, T.literal(node.value));
+            setAbs(boolLit(node.value));
           }
           if (node.type === "NullLiteral") {
-            nodeTypeMap.set(node, T.null);
+            setAbs(nullLitAbs());
           }
         } catch {
           // skip nodes that fail

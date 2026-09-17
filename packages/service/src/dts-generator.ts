@@ -156,8 +156,17 @@ export function absToTSType(a: Abs): string {
     case "eff":
       if (a.shape.eff === "promise") return `Promise<${absToTSType(a.shape.inner)}>`;
       return absToTSType(a.shape.inner);
-    case "sum":
-      return a.shape.members.map(absToTSType).join(" | ");
+    case "sum": {
+      // 并集成员按渲染串去重：widen 后可能出现 number | number；
+      // never 是 join 单位元，对 .d.ts 返回位无意义。
+      const parts = a.shape.members
+        .map(absToTSType)
+        .filter((p) => p !== "never");
+      const uniq = [...new Set(parts)];
+      if (uniq.length === 0) return "never";
+      if (uniq.length === 1) return uniq[0]!;
+      return uniq.join(" | ");
+    }
     default:
       return "unknown";
   }
@@ -171,21 +180,14 @@ function safeTypeValueToAbs(tv: TypeValue): Abs {
   }
 }
 
-/** case 在参数位 i 的 Abs：优先 argAbs，否则桥 TypeValue args */
+/** case 在参数位 i 的 Abs */
 function caseArgAbs(c: CaseResult, i: number): Abs | undefined {
-  if (c.argAbs && i < c.argAbs.length && c.argAbs[i]) return c.argAbs[i]!;
-  if (i < c.args.length && c.args[i] !== undefined) return safeTypeValueToAbs(c.args[i]!);
-  return undefined;
+  return c.argAbs[i];
 }
 
-/** case 结果 Abs：优先 c.abs，否则桥 TypeValue result */
-function caseResultAbs(c: CaseResult): Abs | undefined {
-  if (c.abs) return c.abs;
-  try {
-    return typeValueToAbs(c.result);
-  } catch {
-    return undefined;
-  }
+/** case 结果 Abs */
+function caseResultAbs(c: CaseResult): Abs {
+  return c.abs;
 }
 
 /**
@@ -289,19 +291,18 @@ function paramTypeFromAbs(members: Abs[]): string {
   return absToTSType(widenParamAbs(joined));
 }
 
-/** 返回位 Abs：combinedAbs 优先，否则 join case 结果 Abs，再桥 combined */
+/** 返回位 Abs：combinedAbs 优先，否则 join case 结果 Abs */
 function returnAbsOf(fn: FunctionAnalysis): Abs | undefined {
   if (fn.combinedAbs) return fn.combinedAbs;
-  const results = fn.cases.map(caseResultAbs).filter((a): a is Abs => a !== undefined);
-  if (results.length > 0 && results.length === fn.cases.length) {
+  const results = fn.cases.map(caseResultAbs);
+  if (results.length > 0) {
     try {
       return results.reduce((a, b) => joinAbs(a, b));
     } catch {
       /* fall through */
     }
+    return results[0];
   }
-  if (fn.combined) return safeTypeValueToAbs(fn.combined);
-  if (results.length > 0) return results[0];
   return undefined;
 }
 
@@ -352,8 +353,8 @@ type MainSignature = {
 };
 
 function computeMainSignature(fn: FunctionAnalysis): MainSignature {
-  const arity = Math.max(...fn.cases.map((c) => c.args.length));
-  const minArity = Math.min(...fn.cases.map((c) => c.args.length));
+  const arity = Math.max(...fn.cases.map((c) => c.argAbs.length));
+  const minArity = Math.min(...fn.cases.map((c) => c.argAbs.length));
   const params: string[] = [];
   const paramNames: string[] = [];
   const paramTypes: string[] = [];
@@ -361,7 +362,7 @@ function computeMainSignature(fn: FunctionAnalysis): MainSignature {
   for (let i = 0; i < arity; i++) {
     const members: Abs[] = [];
     for (const c of fn.cases) {
-      if (i >= c.args.length) continue;
+      if (i >= c.argAbs.length) continue;
       const a = caseArgAbs(c, i);
       if (a) members.push(a);
     }
@@ -402,12 +403,12 @@ function generateJSDoc(fn: FunctionAnalysis, sig: MainSignature): string {
   // Case: 行仍走 TypeValue 精确展示（字面量台账），不参与主签名计算。
   for (const c of fn.cases) {
     const preciseDiffers =
-      c.args.length !== sig.paramTypes.length ||
-      c.args.some((a, i) => typeValueToTSType(a) !== sig.paramTypes[i]) ||
-      typeValueToTSType(c.result) !== sig.returnType;
+      c.argAbs.length !== sig.paramTypes.length ||
+      c.argAbs.some((a, i) => absToTSType(a) !== sig.paramTypes[i]) ||
+      absToTSType(c.abs) !== sig.returnType;
     if (!preciseDiffers) continue;
-    const argsStr = c.args.map(typeValueToTSType).join(", ");
-    lines.push(` * Case: ${c.name} (${argsStr}) => ${typeValueToTSType(c.result)}`);
+    const argsStr = c.argAbs.map(absToTSType).join(", ");
+    lines.push(` * Case: ${c.name} (${argsStr}) => ${absToTSType(c.abs)}`);
   }
   for (let i = 0; i < sig.paramTypes.length; i++) {
     lines.push(` * @param ${sig.paramNames[i]} - ${sig.paramTypes[i]}`);
@@ -436,11 +437,7 @@ export function generateFunctionDtsLines(fn: FunctionAnalysis): string[] {
         `export declare function ${fn.name}(...args: unknown[]): ${absToTSType(retAbs)};`,
       ];
     }
-    if (fn.combined) {
-      return [
-        `export declare function ${fn.name}(...args: unknown[]): ${typeValueToTSType(fn.combined)};`,
-      ];
-    }
+    return [];
     return [];
   }
 

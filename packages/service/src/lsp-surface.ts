@@ -540,7 +540,7 @@ function findBestTypeAtPosition(
   if (!bestMatch) {
     const identAtPos = findIdentifierAtPosition(ast, line, column);
     if (identAtPos && globalEnv.has(identAtPos)) {
-      bestMatch = globalEnv.lookup(identAtPos);
+      bestMatch = absToTypeValue(globalEnv.lookup(identAtPos));
     }
   }
 

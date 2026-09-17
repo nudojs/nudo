@@ -1,48 +1,48 @@
 import { describe, it, expect } from "vitest";
 import { createEnvironment } from "../environment.ts";
-import { T, typeValueEquals } from "../type-value.ts";
+import { numLit, litValue, formatShape, type Abs } from "../algebra/index.ts";
 
 describe("Environment", () => {
-  it("binds and looks up values", () => {
+  it("binds and looks up Abs values", () => {
     const env = createEnvironment();
-    env.bind("x", T.literal(42));
-    expect(typeValueEquals(env.lookup("x"), T.literal(42))).toBe(true);
+    env.bind("x", numLit(42));
+    expect(litValue(env.lookup("x"))).toBe(42);
   });
 
-  it("returns undefined for unbound names", () => {
+  it("returns unknown for unbound names", () => {
     const env = createEnvironment();
-    expect(typeValueEquals(env.lookup("x"), T.undefined)).toBe(true);
+    expect(env.lookup("x").shape.k).toBe("unknown");
   });
 
   it("extends with child scope", () => {
     const parent = createEnvironment();
-    parent.bind("x", T.literal(1));
-    const child = parent.extend({ y: T.literal(2) });
-    expect(typeValueEquals(child.lookup("x"), T.literal(1))).toBe(true);
-    expect(typeValueEquals(child.lookup("y"), T.literal(2))).toBe(true);
+    parent.bind("x", numLit(1));
+    const child = parent.extend({ y: numLit(2) });
+    expect(litValue(child.lookup("x"))).toBe(1);
+    expect(litValue(child.lookup("y"))).toBe(2);
   });
 
   it("child binding shadows parent", () => {
     const parent = createEnvironment();
-    parent.bind("x", T.literal(1));
-    const child = parent.extend({ x: T.literal(99) });
-    expect(typeValueEquals(child.lookup("x"), T.literal(99))).toBe(true);
-    expect(typeValueEquals(parent.lookup("x"), T.literal(1))).toBe(true);
+    parent.bind("x", numLit(1));
+    const child = parent.extend({ x: numLit(99) });
+    expect(litValue(child.lookup("x"))).toBe(99);
+    expect(litValue(parent.lookup("x"))).toBe(1);
   });
 
   it("has checks existence", () => {
     const env = createEnvironment();
     expect(env.has("x")).toBe(false);
-    env.bind("x", T.number);
+    env.bind("x", { shape: { k: "prim", type: "number" }, conf: "exact" } as Abs);
     expect(env.has("x")).toBe(true);
   });
 
   it("snapshot creates independent copy", () => {
     const env = createEnvironment();
-    env.bind("x", T.literal(1));
+    env.bind("x", numLit(1));
     const snap = env.snapshot();
-    env.bind("x", T.literal(2));
-    expect(typeValueEquals(snap.lookup("x"), T.literal(1))).toBe(true);
-    expect(typeValueEquals(env.lookup("x"), T.literal(2))).toBe(true);
+    env.bind("x", numLit(2));
+    expect(litValue(snap.lookup("x"))).toBe(1);
+    expect(litValue(env.lookup("x"))).toBe(2);
   });
 });

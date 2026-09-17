@@ -214,7 +214,7 @@ export function loadEnvs(envNames: string[], globalEnv: Environment): LoadedEnv 
     if (isAbsEnv(def)) {
       for (const [key, value] of Object.entries(def.globals)) {
         allGlobals[key] = value;
-        globalEnv.bind(key, absToTypeValue(value));
+        globalEnv.bind(key, value);
       }
       if (def.modules) {
         for (const [modName, exports] of Object.entries(def.modules)) {
@@ -228,11 +228,9 @@ export function loadEnvs(envNames: string[], globalEnv: Environment): LoadedEnv 
       }
     } else {
       const norm = normalizeTvDef(def);
-      for (const [key, value] of Object.entries(norm.globalsTV)) {
-        globalEnv.bind(key, value);
-      }
       for (const [key, value] of Object.entries(norm.globals)) {
         allGlobals[key] = value;
+        globalEnv.bind(key, value);
       }
       for (const [modName, exports] of Object.entries(norm.modules)) {
         allModules[modName] = { ...allModules[modName], ...exports };

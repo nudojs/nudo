@@ -1,19 +1,20 @@
-import { type TypeValue, T } from "./type-value.ts";
+import type { Abs } from "./algebra/abs.ts";
+import { unknown as absUnknown } from "./algebra/abs.ts";
 
 export type Environment = {
-  lookup(name: string): TypeValue;
-  bind(name: string, value: TypeValue): Environment;
-  update(name: string, value: TypeValue): boolean;
-  extend(bindings: Record<string, TypeValue>): Environment;
+  lookup(name: string): Abs;
+  bind(name: string, value: Abs): Environment;
+  update(name: string, value: Abs): boolean;
+  extend(bindings: Record<string, Abs>): Environment;
   fork(): Environment;
   has(name: string): boolean;
   snapshot(): Environment;
-  getOwnBindings(): Record<string, TypeValue>;
+  getOwnBindings(): Record<string, Abs>;
 };
 
 export function createEnvironment(
   parent?: Environment,
-  bindings: Map<string, TypeValue> = new Map(),
+  bindings: Map<string, Abs> = new Map(),
 ): Environment {
   const store = new Map(bindings);
 
@@ -22,7 +23,7 @@ export function createEnvironment(
       const val = store.get(name);
       if (val !== undefined) return val;
       if (parent) return parent.lookup(name);
-      return T.undefined;
+      return absUnknown;
     },
 
     bind(name, value) {
@@ -40,7 +41,7 @@ export function createEnvironment(
     },
 
     extend(newBindings) {
-      const childMap = new Map<string, TypeValue>();
+      const childMap = new Map<string, Abs>();
       for (const [k, v] of Object.entries(newBindings)) {
         childMap.set(k, v);
       }
@@ -62,7 +63,7 @@ export function createEnvironment(
     },
 
     getOwnBindings() {
-      const result: Record<string, TypeValue> = {};
+      const result: Record<string, Abs> = {};
       for (const [k, v] of store) {
         result[k] = v;
       }

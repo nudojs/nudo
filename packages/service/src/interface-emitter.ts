@@ -369,14 +369,8 @@ function projectFunctionDsl(fn: FunctionAnalysis): string | undefined {
   for (let i = 0; i < fn.paramNames.length; i++) {
     const argAbs: Abs[] = [];
     for (const c of paramCases) {
-      // CaseResult.argAbs 优先（B-path / CallRecord 无损）；缺失再桥 TypeValue
-      if (c.argAbs && i < c.argAbs.length && c.argAbs[i]) {
-        argAbs.push(c.argAbs[i]!);
-        continue;
-      }
-      const a = c.args[i];
-      if (a === undefined) continue;
-      argAbs.push(safeTypeValueToAbs(a));
+      const a = c.argAbs[i];
+      if (a !== undefined) argAbs.push(a);
     }
     if (argAbs.length === 0) continue; // 无证据：参数位留空（不产约束）
     const constraint = joinThenProject(argAbs);
@@ -387,8 +381,8 @@ function projectFunctionDsl(fn: FunctionAnalysis): string | undefined {
   // 返回位：排除 throw case（其 result 是抛出值不是返回值）
   const retAbs: Abs[] = [];
   for (const c of returnCases) {
-    if (c.throws !== undefined && c.throws.kind !== "never") continue;
-    retAbs.push(c.abs ?? safeTypeValueToAbs(c.result));
+    if (c.throwsAbs.shape.k !== "never") continue;
+    retAbs.push(c.abs);
   }
   const retConstraint: NudoConstraint | undefined =
     retAbs.length > 0 ? joinThenProject(retAbs) : undefined;

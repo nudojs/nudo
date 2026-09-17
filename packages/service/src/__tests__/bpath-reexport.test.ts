@@ -1,5 +1,6 @@
 import { it, expect, describe, afterAll } from "vitest";
 import { analyzeFile, clearBPathCache } from "@nudojs/service";
+import { litValue, formatShape } from "@nudojs/core";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,7 +25,7 @@ function goResult(dir: string, src: string) {
   clearBPathCache();
   const r = analyzeFile(join(dir, "index.js"), src);
   const f = r.functions.find((x) => x.name === "go");
-  return { result: f?.cases[0]?.result, diags: r.diagnostics };
+  return { abs: f?.cases[0]?.abs, diags: r.diagnostics };
 }
 
 describe("B-path re-export / export *", () => {
@@ -35,7 +36,7 @@ describe("B-path re-export / export *", () => {
       "barrel.js": `export { add } from "./core.js";
 `,
     });
-    const { result } = goResult(
+    const { abs } = goResult(
       dir,
       `import { add } from "./barrel.js";
 /**
@@ -44,7 +45,7 @@ describe("B-path re-export / export *", () => {
 export function go(a, b) { return add(a, b); }
 `,
     );
-    expect(result).toMatchObject({ kind: "literal", value: 5 });
+    expect(litValue(abs!)).toBe(5);
   });
 
   it("export { add as default } from './core.js'", () => {
@@ -54,7 +55,7 @@ export function go(a, b) { return add(a, b); }
       "barrel.js": `export { add as default } from "./core.js";
 `,
     });
-    const { result } = goResult(
+    const { abs } = goResult(
       dir,
       `import add from "./barrel.js";
 /**
@@ -63,7 +64,7 @@ export function go(a, b) { return add(a, b); }
 export function go(a, b) { return add(a, b); }
 `,
     );
-    expect(result).toMatchObject({ kind: "literal", value: 10 });
+    expect(litValue(abs!)).toBe(10);
   });
 
   it("export * from './core.js'", () => {
@@ -74,7 +75,7 @@ export function mul(a, b) { return a * b; }
       "barrel.js": `export * from "./core.js";
 `,
     });
-    const { result } = goResult(
+    const { abs } = goResult(
       dir,
       `import { mul } from "./barrel.js";
 /**
@@ -83,7 +84,7 @@ export function mul(a, b) { return a * b; }
 export function go(a, b) { return mul(a, b); }
 `,
     );
-    expect(result).toMatchObject({ kind: "literal", value: 15 });
+    expect(litValue(abs!)).toBe(15);
   });
 
   it("class default export", () => {
@@ -94,7 +95,7 @@ export function go(a, b) { return mul(a, b); }
 }
 `,
     });
-    const { result } = goResult(
+    const { abs } = goResult(
       dir,
       `import Box from "./box.js";
 /**
@@ -106,7 +107,7 @@ export function go(v) {
 }
 `,
     );
-    expect(result).toMatchObject({ kind: "literal", value: 7 });
+    expect(litValue(abs!)).toBe(7);
   });
 
   it("async default export", () => {
@@ -114,7 +115,7 @@ export function go(v) {
       "afn.js": `export default async function load(x) { return x + 1; }
 `,
     });
-    const { result } = goResult(
+    const { abs } = goResult(
       dir,
       `import load from "./afn.js";
 /**
@@ -123,9 +124,7 @@ export function go(v) {
 export async function go(x) { return await load(x); }
 `,
     );
-    expect(result).toMatchObject({
-      kind: "promise",
-      value: { kind: "literal", value: 10 },
-    });
+    expect(abs!.shape.k).toBe("eff");
+    expect(formatShape(abs!)).toBe("promise<10>");
   });
 });

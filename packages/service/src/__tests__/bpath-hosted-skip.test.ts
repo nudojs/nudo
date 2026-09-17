@@ -32,7 +32,7 @@ export function scale(x) {
     expect(isBPathCapable(src, [])).toBe(true);
     const fn = result.functions.find((f) => f.name === "scale");
     expect(fn?.cases).toHaveLength(1);
-    expect(fn?.cases[0]?.result.kind).toBe("literal");
+    expect(fn?.cases[0]?.abs.shape.k).toBe("prim");
     // 无 TypeValue 专有叠报
     expect(result.diagnostics.filter((d) => d.code === "nudo:unknown-global")).toHaveLength(0);
     expect(result.bindings.has("scale")).toBe(true);

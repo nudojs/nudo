@@ -202,7 +202,10 @@ export function parseTypeValueExpr(expr: string): TypeValue {
   return parseTypeValueExprLegacy(expr);
 }
 
-/** case 实参主路径：始终产出 Abs；TypeValue 为外延兼容投影 */
+/**
+ * case 实参主路径：始终产出 Abs；约束表达式优先。
+ * `T.*` 文法 **已弃用**，仅为旧 fixture 兼容保留——新代码用 `number()`/`lit()`。
+ */
 export function parseCaseArgExpr(expr: string): { typeValue: TypeValue; abs: Abs } {
   const constraint = tryParseConstraint(expr);
   if (constraint) {

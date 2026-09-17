@@ -101,32 +101,24 @@ export async function interfaceSurface(
       });
       continue;
     }
-    // implicit：优先 argAbs / combinedAbs（无损 Abs 源）；展示仍外延串。
-    // 参数位取各 case 实参类型的去重并（保留首次出现序），返回位优先 Combined。
+    // implicit：argAbs / combinedAbs（无损 Abs 源）；展示仍外延串。
     const params = fn.paramNames.map((name, i) => {
       const seen: string[] = [];
       for (const c of fn.cases) {
-        const absArg = c.argAbs?.[i];
+        const absArg = c.argAbs[i];
         if (absArg) {
           const s = absToImplicitDisplay(absArg);
           if (!seen.includes(s)) seen.push(s);
-          continue;
         }
-        const arg = c.args[i];
-        if (!arg) continue;
-        const s = typeValueToString(arg);
-        if (!seen.includes(s)) seen.push(s);
       }
       return { name, display: seen.length > 0 ? seen.join(" | ") : "unknown" };
     });
     let ret: string | undefined;
     if (fn.combinedAbs) {
       ret = absToImplicitDisplay(fn.combinedAbs);
-    } else if (fn.combined !== undefined) {
-      ret = typeValueToString(fn.combined);
     } else if (fn.cases.length > 0) {
       const last = fn.cases[fn.cases.length - 1]!;
-      ret = last.abs ? absToImplicitDisplay(last.abs) : typeValueToString(last.result);
+      ret = absToImplicitDisplay(last.abs);
     }
     entries.push({ fn: fn.name, kind: kindOf(fn.name), source: "implicit", params, returns: ret });
   }

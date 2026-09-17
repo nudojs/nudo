@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { analyzeFile } from "../analyzer.ts";
-import { typeValueToString } from "@nudojs/core";
+import { formatShape } from "@nudojs/core";
 
 describe("self-contained Abs call records", () => {
   it("collects call sites from Abs program eval", () => {
@@ -13,7 +13,7 @@ describe("self-contained Abs call records", () => {
     expect(add).toBeDefined();
     expect(add!.cases.length).toBeGreaterThan(0);
     expect(add!.cases[0]!.source).toBe("callsite");
-    expect(typeValueToString(add!.cases[0]!.result)).toBe("5");
+    expect(formatShape(add!.cases[0]!.abs)).toBe("5");
   });
 
   it("self-contained entry still works", () => {
@@ -37,7 +37,7 @@ describe("self-contained Abs call records", () => {
     expect(run).toBeDefined();
     const call = run!.cases.find((c) => c.source === "callsite");
     expect(call).toBeDefined();
-    expect(typeValueToString(call!.result)).toBe("42");
+    expect(formatShape(call!.abs)).toBe("42");
   });
 
   it("directive expected is carried on CaseResult", () => {

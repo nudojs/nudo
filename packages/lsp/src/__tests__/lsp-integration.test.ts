@@ -14,7 +14,7 @@ import {
   buildSemanticTokens,
   SEMANTIC_TOKEN_TYPES,
 } from "@nudojs/service";
-import { T } from "@nudojs/core";
+import { T, absToTypeValue } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
 import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "../symbols.ts";
 import {
@@ -541,8 +541,8 @@ describe("LSP Integration - Type Generation", () => {
     const result = analyzeFile(filePath, testCode);
     const greetingFn = result.functions.find(f => f.name === "getGreeting");
     expect(greetingFn).toBeDefined();
-    if (greetingFn?.combined) {
-      const schema = typeValueToZodSchema(greetingFn.combined);
+    if (greetingFn?.combinedAbs) {
+      const schema = typeValueToZodSchema(absToTypeValue(greetingFn.combinedAbs));
       expect(schema).toBeTruthy();
       expect(schema.length).toBeGreaterThan(0);
     }
@@ -563,7 +563,7 @@ describe("LSP Integration - Type Generation", () => {
     const result = analyzeFile(filePath, testCode);
     for (const fn of result.functions) {
       for (const c of fn.cases) {
-        const tsType = typeValueToTSType(c.result);
+        const tsType = typeValueToTSType(absToTypeValue(c.abs));
         expect(tsType).toBeTruthy();
         expect(typeof tsType).toBe("string");
       }
@@ -581,8 +581,8 @@ describe("LSP Integration - Narrowing Features", () => {
     // Each case should produce different types
     const case0 = greetingFn!.cases[0];
     const case1 = greetingFn!.cases[1];
-    expect(case0.result).toBeDefined();
-    expect(case1.result).toBeDefined();
+    expect(case0.abs).toBeDefined();
+    expect(case1.abs).toBeDefined();
   });
 
   it("narrows through truthiness check", () => {

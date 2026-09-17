@@ -12,7 +12,7 @@ import {
   clearAnalysisSessionCaches,
   evictAnalysisCachesForFiles,
 } from "@nudojs/service";
-import { typeValueToString } from "@nudojs/core";
+import { typeValueToString, formatShape } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -24,7 +24,7 @@ function caseResultOf(result: ReturnType<typeof analyzeFile>, fnName: string, ca
   const fn = result.functions.find((f) => f.name === fnName);
   const c = fn?.cases.find((x) => x.name === caseName);
   if (!c) throw new Error(`missing case ${fnName}/${caseName}`);
-  return typeValueToString(c.result);
+  return formatShape(c.abs);
 }
 
 describe("dep-change host eviction contract", () => {

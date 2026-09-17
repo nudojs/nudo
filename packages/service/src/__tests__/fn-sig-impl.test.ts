@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { typeValueToString } from "@nudojs/core";
+import { typeValueToString, formatShape } from "@nudojs/core";
 import { analyzeFile } from "../analyzer.ts";
 
 describe("fnSig impl: concrete args produce precise values", () => {
@@ -18,9 +18,9 @@ function floorIt(x) {
     const result = analyzeFile("/test/math.js", source);
     const fn = result.functions[0];
     expect(fn.cases[0].name).toBe("concrete");
-    expect(typeValueToString(fn.cases[0].result)).toBe("3");
+    expect(formatShape(fn.cases[0].abs)).toBe("3");
     expect(fn.cases[1].name).toBe("symbolic");
-    expect(typeValueToString(fn.cases[1].result)).toBe("number");
+    expect(formatShape(fn.cases[1].abs)).toBe("number");
   });
 
   it("Math.max with literals returns exact result", () => {
@@ -35,7 +35,7 @@ function maxOf(a, b) {
 }
 `;
     const result = analyzeFile("/test/math.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe("7");
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe("7");
   });
 
   it("JSON.stringify with literal returns exact string", () => {
@@ -50,7 +50,7 @@ function toJson(x) {
 }
 `;
     const result = analyzeFile("/test/json.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe('"42"');
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe('"42"');
   });
 
   it("encodeURIComponent with literal returns exact string", () => {
@@ -65,7 +65,7 @@ function encode(s) {
 }
 `;
     const result = analyzeFile("/test/encode.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe('"hello%20world"');
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe('"hello%20world"');
   });
 
   it("Number.isInteger with literal returns exact boolean", () => {
@@ -81,8 +81,8 @@ function checkInt(x) {
 }
 `;
     const result = analyzeFile("/test/num.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe("true");
-    expect(typeValueToString(result.functions[0].cases[1].result)).toBe("false");
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe("true");
+    expect(formatShape(result.functions[0].cases[1].abs)).toBe("false");
   });
 
   it("parseInt with literal returns exact number", () => {
@@ -97,7 +97,7 @@ function parseIt(s) {
 }
 `;
     const result = analyzeFile("/test/parse.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe("42");
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe("42");
   });
 
   it("Promise.resolve preserves argument type", () => {
@@ -112,7 +112,7 @@ async function wrap(x) {
 }
 `;
     const result = analyzeFile("/test/promise.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe("Promise<42>");
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe("promise<42>");
   });
 });
 
@@ -135,7 +135,7 @@ function parseUrl(raw) {
 }
 `;
     const result = analyzeFile("/test/url.js", source);
-    const res = typeValueToString(result.functions[0].cases[0].result);
+    const res = formatShape(result.functions[0].cases[0].abs);
     expect(res).toContain('"example.com"');
     expect(res).toContain('"/path"');
     expect(res).toContain('"?q=hello"');
@@ -155,7 +155,7 @@ function parseUrl(raw) {
 }
 `;
     const result = analyzeFile("/test/url.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe("string");
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe("string");
   });
 });
 
@@ -174,7 +174,7 @@ function buildPath(a, b, c) {
 }
 `;
     const result = analyzeFile("/test/path.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe('"src/utils/index.js"');
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe('"src/utils/index.js"');
   });
 
   it("path.extname with literal returns exact extension", () => {
@@ -191,7 +191,7 @@ function getExt(f) {
 }
 `;
     const result = analyzeFile("/test/path.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe('".ts"');
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe('".ts"');
   });
 
   it("path.basename with literal returns exact name", () => {
@@ -208,7 +208,7 @@ function getName(p) {
 }
 `;
     const result = analyzeFile("/test/path.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe('"file.txt"');
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe('"file.txt"');
   });
 
   it("path.dirname with literal returns exact dir", () => {
@@ -225,7 +225,7 @@ function getDir(p) {
 }
 `;
     const result = analyzeFile("/test/path.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe('"/home/user"');
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe('"/home/user"');
   });
 
   it("path.join with symbolic args falls back to string", () => {
@@ -242,6 +242,6 @@ function buildPath(a, b) {
 }
 `;
     const result = analyzeFile("/test/path.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe("string");
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe("string");
   });
 });

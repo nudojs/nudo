@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { analyzeFile, clearBPathCache } from "@nudojs/service";
-import { typeValueToString } from "@nudojs/core";
+import { formatShape } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -25,6 +25,6 @@ function buildPath(a, b, c) {
 }
 `;
     const result = analyzeFile("/test/pathmod.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe('"src/utils/index.js"');
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe('"src/utils/index.js"');
   });
 });

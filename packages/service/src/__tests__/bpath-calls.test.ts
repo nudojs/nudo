@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { tryBPathCallFull, analyzeFile, resetAllAnalysisCaches } from "@nudojs/service";
-import { $lit, litValue, typeValueToString } from "@nudojs/core";
+import { $lit, litValue, typeValueToString, formatShape } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -55,7 +55,7 @@ function caller(y) {
     // 结果应为 10
     const hit = uncalled!.cases.find((c) => c.name.startsWith("call@"));
     if (hit) {
-      expect(typeValueToString(hit.result)).toBe("10");
+      expect(formatShape(hit.abs)).toBe("10");
     }
   });
 
@@ -80,8 +80,8 @@ function caller(y) {
     expect(map2).toBeDefined();
     const names = map2!.cases.map((c) => c.name);
     expect(names).toEqual(["call@L2", "call@L3"]);
-    const results = map2!.cases.map((c) => typeValueToString(c.result));
+    const results = map2!.cases.map((c) => formatShape(c.abs));
     expect(results).toEqual(["[2, 4, 6]", '["A", "B"]']);
-    expect(typeValueToString(map2!.combined!)).toBe('[2, 4, 6] | ["A", "B"]');
+    expect(formatShape(map2!.combinedAbs!)).toBe('[2, 4, 6] | ["A", "B"]');
   });
 });

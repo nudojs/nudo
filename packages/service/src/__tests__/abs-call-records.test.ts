@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { analyzeFile } from "@nudojs/service";
-import { typeValueToString } from "@nudojs/core";
+import { typeValueToString, formatShape } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -28,6 +28,6 @@ describe("Abs call records with relative import", () => {
     expect(triple.name).toBe("triple");
     expect(triple.fromModule).toContain("b.js");
     expect(triple.cases).toHaveLength(1);
-    expect(typeValueToString(triple.cases[0].result)).toBe("12");
+    expect(formatShape(triple.cases[0].abs)).toBe("12");
   });
 });

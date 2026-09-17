@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { T } from "@nudojs/core";
+import { T, typeValueToAbs } from "@nudojs/core";
 import { typeValueToTSType, generateDts } from "../dts-generator.ts";
 import { analyzeFile } from "../analyzer.ts";
 
@@ -226,9 +226,9 @@ function flag(x) {
       cases: [
         {
           name: "c",
-          args: [T.literal(10n)],
-          result: T.literal(10n),
-          throws: T.never,
+          argAbs: [typeValueToAbs(T.literal(10n))],
+          abs: typeValueToAbs(T.literal(10n)),
+          throwsAbs: typeValueToAbs(T.never),
         },
       ],
     };
@@ -258,7 +258,7 @@ function either(x, y) {
       loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 9 } },
       paramNames: ["x"],
       cases: [],
-      combined: T.promise(T.number),
+      combinedAbs: typeValueToAbs(T.promise(T.number)),
     };
     const dts = generateDts({ functions: [fn] } as unknown as Parameters<typeof generateDts>[0]);
     expect(dts).toBe("export declare function entryOnly(...args: unknown[]): Promise<number>;\n");
@@ -350,9 +350,12 @@ function byId(q) {
       cases: [
         {
           name: "c",
-          args: [T.object({ a: T.number }), T.object({ b: T.string })],
-          result: T.number,
-          throws: T.never,
+          argAbs: [
+            typeValueToAbs(T.object({ a: T.number })),
+            typeValueToAbs(T.object({ b: T.string })),
+          ],
+          abs: typeValueToAbs(T.number),
+          throwsAbs: typeValueToAbs(T.never),
         },
       ],
     };
@@ -369,9 +372,9 @@ function byId(q) {
       cases: [
         {
           name: "test",
-          args: [],
-          result: T.promise(T.literal(42)),
-          throws: T.never,
+          argAbs: [],
+          abs: typeValueToAbs(T.promise(T.literal(42))),
+          throwsAbs: typeValueToAbs(T.never),
         },
       ],
     };

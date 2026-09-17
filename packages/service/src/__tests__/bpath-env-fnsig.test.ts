@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { analyzeFile, clearBPathCache } from "@nudojs/service";
-import { typeValueToString } from "@nudojs/core";
+import { formatShape } from "@nudojs/core";
 
 describe("@nudo:env declaration-only fnSig (readFileSync)", () => {
   it("utf8 encoding yields string, then .split[0] is string", () => {
@@ -15,7 +15,7 @@ firstLine("/etc/hostname");
     expect(fn).toBeDefined();
     const call = fn!.cases.find((c) => c.name.startsWith("call@"));
     expect(call).toBeDefined();
-    expect(typeValueToString(call!.result)).toBe("string");
+    expect(formatShape(call!.abs)).toBe("string");
     expect(result.diagnostics.some((d) => d.code === "nudo:unknown-recv")).toBe(false);
   });
 
@@ -29,6 +29,6 @@ firstLine("/etc/hostname");
     const fn = result.functions.find((f) => f.name === "firstLine");
     const call = fn?.cases.find((c) => c.name.startsWith("call@"));
     expect(call).toBeDefined();
-    expect(typeValueToString(call!.result)).toBe("unknown");
+    expect(formatShape(call!.abs)).toBe("unknown");
   });
 });

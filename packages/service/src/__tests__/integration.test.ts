@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { typeValueToString } from "@nudojs/core";
+import { typeValueToString, formatShape, absToTypeValue } from "@nudojs/core";
 import {
   analyzeFile,
   typeValueToZodSchema,
@@ -33,18 +33,18 @@ function process(x) {
     expect(result.functions).toHaveLength(1);
     expect(result.functions[0].name).toBe("process");
     expect(result.functions[0].cases).toHaveLength(2);
-    expect(result.functions[0].combined).toBeDefined();
+    expect(result.functions[0].combinedAbs).toBeDefined();
 
     // Verify Zod generation for each case result
-    const zodSchema0 = typeValueToZodSchema(result.functions[0].cases[0].result);
+    const zodSchema0 = typeValueToZodSchema(absToTypeValue(result.functions[0].cases[0].abs));
     expect(zodSchema0).toBeTruthy();
     expect(typeof zodSchema0).toBe("string");
 
-    const zodSchema1 = typeValueToZodSchema(result.functions[0].cases[1].result);
+    const zodSchema1 = typeValueToZodSchema(absToTypeValue(result.functions[0].cases[1].abs));
     expect(zodSchema1).toBeTruthy();
 
     // Verify guard generation
-    const guard = generateGuardFunction("isProcessOutput", result.functions[0].cases[0].result);
+    const guard = generateGuardFunction("isProcessOutput", absToTypeValue(result.functions[0].cases[0].abs));
     expect(guard).toContain("function isProcessOutput");
     expect(guard).toContain("export function");
 
@@ -70,14 +70,14 @@ function double(x) {
     const fn = result.functions[0];
     expect(fn.name).toBe("double");
     expect(fn.cases).toHaveLength(1);
-    expect(typeValueToString(fn.cases[0].result)).toBe("number");
+    expect(formatShape(fn.cases[0].abs)).toBe("number");
 
     // Zod schema should produce a valid z.number() call
-    const zod = typeValueToZodSchema(fn.cases[0].result);
+    const zod = typeValueToZodSchema(absToTypeValue(fn.cases[0].abs));
     expect(zod).toBe("z.number()");
 
     // Guard should check typeof
-    const guard = generateGuardFunction("isDoubleOutput", fn.cases[0].result);
+    const guard = generateGuardFunction("isDoubleOutput", absToTypeValue(fn.cases[0].abs));
     expect(guard).toContain("typeof data === 'number'");
 
     // DTS should have a single declaration line
@@ -98,7 +98,7 @@ function getUser(config) {
 `;
     const result = analyzeFile("/test/user.js", source);
     const fn = result.functions[0];
-    const zod = typeValueToZodSchema(fn.cases[0].result);
+    const zod = typeValueToZodSchema(absToTypeValue(fn.cases[0].abs));
 
     expect(zod).toContain("z.object");
     expect(zod).toContain("name");
@@ -120,11 +120,11 @@ function parse(x) {
     const fn = result.functions[0];
 
     // Each case should produce a valid Zod schema
-    expect(typeValueToZodSchema(fn.cases[0].result)).toBe("z.string()");
-    expect(typeValueToZodSchema(fn.cases[1].result)).toBe("z.number()");
+    expect(typeValueToZodSchema(absToTypeValue(fn.cases[0].abs))).toBe("z.string()");
+    expect(typeValueToZodSchema(absToTypeValue(fn.cases[1].abs))).toBe("z.number()");
 
     // Combined type should produce a union schema
-    const combined = fn.combined!;
+    const combined = absToTypeValue(fn.combinedAbs!);
     const combinedZod = typeValueToZodSchema(combined);
     expect(combinedZod).toContain("z.union");
   });
@@ -142,7 +142,7 @@ function identity(x) {
 `;
     const result = analyzeFile("/test/tuple.js", source);
     const fn = result.functions[0];
-    const guard = generateGuardFunction("isTuple", fn.cases[0].result);
+    const guard = generateGuardFunction("isTuple", absToTypeValue(fn.cases[0].abs));
 
     expect(guard).toContain("export function isTuple");
     expect(guard).toContain("Array.isArray");
@@ -164,7 +164,7 @@ function getRecord(x) {
 `;
     const result = analyzeFile("/test/record.js", source);
     const fn = result.functions[0];
-    const guard = generateGuardFunction("isRecord", fn.cases[0].result);
+    const guard = generateGuardFunction("isRecord", absToTypeValue(fn.cases[0].abs));
 
     expect(guard).toContain("export function isRecord");
     expect(guard).toContain("typeof data === 'object'");
@@ -205,8 +205,8 @@ function add(a, b) {
     const result = analyzeFile("/test/add.js", source);
     const fn = result.functions[0];
 
-    expect(typeValueToTSType(fn.cases[0].result)).toBe("3");
-    expect(typeValueToTSType(fn.cases[1].result)).toBe("number");
+    expect(typeValueToTSType(absToTypeValue(fn.cases[0].abs))).toBe("3");
+    expect(typeValueToTSType(absToTypeValue(fn.cases[1].abs))).toBe("number");
 
     // 行为已修复：多 case 不再逐 case 生成字面量重载（`): 3;` 拦截合法调用），
     // 改为单一 widen 主签名 + JSDoc 保留字面量精度
@@ -239,8 +239,8 @@ function stringify(x) {
     expect(fn.cases[2].name).toBe("boolean-input");
 
     // Combined type should be a union of the three return types
-    expect(fn.combined).toBeDefined();
-    const combinedStr = typeValueToString(fn.combined!);
+    expect(fn.combinedAbs).toBeDefined();
+    const combinedStr = formatShape(fn.combinedAbs!);
     expect(combinedStr).toBeTruthy();
 
     // DTS should contain overloads for all three cases
@@ -264,12 +264,12 @@ function passThrough(x) {
     const fn = result.functions[0];
 
     expect(fn.cases).toHaveLength(2);
-    expect(typeValueToString(fn.cases[0].result)).toBe("42");
-    expect(typeValueToString(fn.cases[1].result)).toBe("number");
+    expect(formatShape(fn.cases[0].abs)).toBe("42");
+    expect(formatShape(fn.cases[1].abs)).toBe("number");
 
     // Zod should produce valid schemas for both
-    expect(typeValueToZodSchema(fn.cases[0].result)).toBe("z.literal(42)");
-    expect(typeValueToZodSchema(fn.cases[1].result)).toBe("z.number()");
+    expect(typeValueToZodSchema(absToTypeValue(fn.cases[0].abs))).toBe("z.literal(42)");
+    expect(typeValueToZodSchema(absToTypeValue(fn.cases[1].abs))).toBe("z.number()");
   });
 });
 
@@ -293,10 +293,10 @@ function safeSqrt(x) {
     expect(fn.cases).toHaveLength(2);
 
     // The valid case should not throw
-    expect(fn.cases[0].throws.kind).toBe("never");
+    expect(fn.cases[0].throwsAbs.shape.k).toBe("never");
 
     // The negative case should throw
-    expect(fn.cases[1].throws.kind).not.toBe("never");
+    expect(fn.cases[1].throwsAbs.shape.k).not.toBe("never");
 
     // Diagnostics should contain a may-throw warning for the active (first) case
     // if its branch can throw, or for the negative case
@@ -325,9 +325,9 @@ function alwaysFails(x) {
 
     expect(fn.cases).toHaveLength(1);
     // Result type should be never since the function always throws
-    expect(fn.cases[0].result.kind).toBe("never");
+    expect(fn.cases[0].abs.shape.k).toBe("never");
     // Throws type should not be never
-    expect(fn.cases[0].throws.kind).not.toBe("never");
+    expect(fn.cases[0].throwsAbs.shape.k).not.toBe("never");
 
     // A throw diagnostic should be generated
     const throwDiags = result.diagnostics.filter(
@@ -396,9 +396,9 @@ export { add, cast };
     const jsAdd = js.functions[0];
     expect(tsAdd.cases).toHaveLength(jsAdd.cases.length);
     for (let i = 0; i < tsAdd.cases.length; i++) {
-      expect(typeValueToString(tsAdd.cases[i].result)).toBe(typeValueToString(jsAdd.cases[i].result));
+      expect(formatShape(tsAdd.cases[i].abs)).toBe(formatShape(jsAdd.cases[i].abs));
     }
-    expect(typeValueToString(tsAdd.cases[0].result)).toBe("3");
+    expect(formatShape(tsAdd.cases[0].abs)).toBe("3");
   });
 
   it("TS-only syntax produces no false diagnostics", () => {
@@ -417,7 +417,7 @@ export { add, cast };
     expect(scale).toBeDefined();
     expect(scale!.cases.length).toBeGreaterThan(0);
     expect(scale!.cases[0].source).toBe("callsite");
-    expect(typeValueToString(scale!.cases[0].result)).toBe("42");
+    expect(formatShape(scale!.cases[0].abs)).toBe("42");
   });
 
   it("isNudoTargetPath is exported from the service surface", () => {

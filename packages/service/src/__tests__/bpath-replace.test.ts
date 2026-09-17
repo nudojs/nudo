@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { analyzeFile } from "@nudojs/service";
-import { typeValueToString } from "@nudojs/core";
+import { formatShape } from "@nudojs/core";
 
 describe("@nudo:replace on B path", () => {
   it("replaces only matching sub-expression", () => {
@@ -15,7 +15,7 @@ function compute(a, b) {
 }
 `;
     const result = analyzeFile("/test/replace.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe("110");
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe("110");
   });
 
   it("does not match partial identifiers", () => {
@@ -32,7 +32,7 @@ function test() {
 }
 `;
     const result = analyzeFile("/test/replace2.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe("100");
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe("100");
   });
 
   it("replaces call expression target", () => {
@@ -47,6 +47,6 @@ function process(input) {
 }
 `;
     const result = analyzeFile("/test/replace3.js", source);
-    expect(typeValueToString(result.functions[0].cases[0].result)).toBe("number");
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe("number");
   });
 });
