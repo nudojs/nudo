@@ -23,7 +23,7 @@ code --install-extension wmzy.nudo-vscode
 
 The extension activates when you open JavaScript files. It uses the `@nudojs/lsp` package to run a Language Server Protocol (LSP) server that provides all editor features.
 
-**File detection**: The language server analyzes `.js`, `.ts`, and `.mjs` files that contain Nudo directives — `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:refine`, `@nudo:import`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, and `@nudo:replace`. The full syntax for every directive is covered in the [Directives reference](../concepts/directives.md). Files without these directives are not analyzed.
+**File detection**: The language server analyzes `.js`, `.ts`, and `.mjs` files. Directive-only mode is conservative; project-wide analysis opens via `package.json#nudo.analysis.mode` (`exports` | `all`). Directives (`@nudo:case`, `@nudo:mock`, `@nudo:refine`, …) remain the explicit contract surface — full syntax in the [Directives reference](../concepts/directives.md). Cross-editor capability comparison: [LSP Client Matrix](./lsp-clients.md).
 
 ## Features
 
@@ -53,14 +53,15 @@ function upper(s) {
 }
 ```
 
-### CodeLens on `@nudo:case` Lines
+### CodeLens on Interface and Cases
 
-Each `@nudo:case` directive gets a CodeLens above the function. Click a lens to select that case as the active context for type inference. The active case is highlighted with a distinct style.
+CodeLens faces the **interface tier** first (design §8):
 
-- **● case "name"** — currently active
-- **○ case "name"** — click to activate
+- **● interface / handwritten|generated|implicit** — effective contract source for each exported function; click prints the same surface as `nudo interface`
+- **⚡ persist interface** / **↻ update interface** — freeze call-site domains into the `*.nudo.js` sidecar
+- **● / ○ case "name"** — debug sub-layer; click selects the active case for type replay
 
-This lets you see types under different inputs without changing the file.
+Hover on an exported function name shows the same `● interface / <source>` line (A7 same-source). The active case is highlighted with a distinct style in VS Code.
 
 ### Inlay Hints
 
@@ -132,15 +133,17 @@ The Nudo language server is designed to stay small next to your other tooling:
 
 | Feature           | Description                                              |
 |-------------------|----------------------------------------------------------|
-| Hover             | Shows inferred type at cursor via `getTypeAtPosition`    |
+| Hover             | Abs / intension; `● interface / <source>` on export fn names |
 | Completions       | Triggered on `.`; property/method suggestions            |
-| CodeLens          | Case selection on `@nudo:case` lines                     |
-| Inlay hints       | Inline type annotations                                  |
+| CodeLens          | Interface tier + persist/update; case sub-layer          |
+| Inlay hints       | Abs param/return; `derived` on implicit exports          |
 | Go-to-Definition  | Jump to symbol definition (`F12`)                        |
 | Find References   | Find all usages of a symbol (`Shift+F12`)                |
 | Rename Symbol     | Rename symbol and all references (`F2`)                  |
 | Signature Help    | Parameter hints inside function calls                    |
 | Code Actions      | Quick fixes for diagnostics                              |
-| Semantic Tokens   | Type-aware syntax highlighting                           |
+| Semantic Tokens   | Type-aware highlighting + interface-tier modifiers       |
 | Status bar        | "Nudo" indicator when active                             |
-| Command           | `nudo.selectCase` — select active case for inference     |
+| Command           | `nudo.selectCase` / `nudo.interface` / `nudo.interfaceEmit` |
+
+See also: [LSP Client Matrix](./lsp-clients.md) for other editors.

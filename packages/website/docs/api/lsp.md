@@ -152,14 +152,16 @@ What the server registers on `connection.onInitialize` (`src/server.ts`):
 |------------|---------|----------|
 | Hover | `onHover` | Inferred type at cursor via `getTypeAtPosition`; when the cursor is on an exported function name, the first line is `● interface / handwritten|generated|implicit` (same source as CodeLens) plus the effective contract display for handwritten/generated |
 | Completion (trigger `.`) | `onCompletion` | Property/method/variable items from `getCompletionsAtPosition` |
-| CodeLens | `onCodeLens` | One lens per `@nudo:case`: `● case "name"` for the active case, `○ case "name"` otherwise; clicking sends the custom `nudo/selectCase` request and refreshes lenses |
-| Inlay hints | `languages.inlayHint.on` | End-of-line `Type` hints from analysis `caseHints` |
-| Definition | `onDefinition` | `buildSymbolTable` + `findDefinition` |
+| CodeLens | `onCodeLens` | Interface tier first: `● interface / handwritten|generated|implicit` (+ persist/update emit lenses); case lenses are the debug sub-layer — `● case "name"` active, `○` otherwise. Clicking sends `nudo.selectCase` / `nudo.interface` / `nudo.interfaceEmit` and refreshes lenses |
+| Inlay hints | `languages.inlayHint` | End-of-line case `Type` hints + Abs param/return inlays; implicit exports carry `· derived` |
+| Definition | `onDefinition` | `buildSymbolTable` + `findDefinition` (sidecar names included) |
 | References | `onReferences` | `buildSymbolTable` + `findReferences` |
 | Rename | `onRenameRequest` | Workspace edit over the definition plus all references |
-| Code actions (`quickfix`) | `onCodeAction` | *Remove unreachable code* for `nudo-unreachable` |
+| Code actions (`quickfix`) | `onCodeAction` | *Remove unreachable code* for `nudo-unreachable`; contract/param fixes |
 | Signature help (triggers `(`, `,`) | `onSignatureHelp` | Locates the enclosing call, types the callee, highlights the active parameter |
-| Semantic tokens (full) | `languages.semanticTokens.on` | Inference-driven highlighting: `function`/`variable`/`parameter` tokens from the analysis result (`buildSemanticTokens`) |
+| Semantic tokens (full) | `languages.semanticTokens` | Inference-driven highlighting via `buildSemanticTokens`; export function bindings carry interface-tier modifiers (`contract`/`generated`/`derived`) |
+
+Cross-editor support matrix: [LSP Client Matrix](../guides/lsp-clients.md).
 
 Text synchronization is `Full`. Opening a document validates it immediately, and content changes are debounced 300 ms — both paths trigger `validateText` with `propagate = true` (the only propagation entry points); closing a document cancels its timer, drops its cache entry, and clears its diagnostics. Watched-file deletions are handled out-of-band, and everything the session keeps in memory is bounded — see [Memory and Isolation Model](#memory-and-isolation-model).
 

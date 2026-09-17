@@ -95,19 +95,22 @@ The extension's `language_server_command` tries, in order:
 
 | Capability | Notes |
 |------------|-------|
-| Diagnostics | Automatic for files with Nudo directives |
-| Hover types | Standard LSP hover |
-| Go to Definition / References / Rename | Standard LSP |
-| Inlay hints | Enable `inlay_hints.enabled` |
-| CodeLens (case switching) | Enable `code_lens: "on"` |
-| Semantic tokens | Default off; set `semantic_tokens` |
-| Agent commands (`nudo.check` / `nudo.infer` / …) | Reachable via any LSP client or Zed agent tooling |
+| Diagnostics | Automatic for analysis targets (`.js`/`.mjs`/`.ts`); see `nudo.analysis.mode` for directive-less files |
+| Hover types | Standard LSP; exported fn names show `● interface / <source>` (same as CodeLens) |
+| Go to Definition / References / Rename | Standard LSP (sidecar binding names included) |
+| Inlay hints | Enable `inlay_hints.enabled`; implicit exports mark `derived` |
+| CodeLens | Enable `code_lens: "on"` — **interface tier first** (`● interface` + persist/update), case lenses behind |
+| Semantic tokens | Default off; set `semantic_tokens: "combined"` — includes `contract`/`generated`/`derived` modifiers |
+| Code actions / Signature help | Standard LSP quickfix + signature help |
+| Agent commands (`nudo.check` / `nudo.infer` / `nudo.interface` / …) | Reachable via any LSP client or Zed agent tooling |
 
 VS Code-only decorations for the active case are not available; use the CodeLens case picker instead.
 
+Full client comparison and known gaps: [LSP Client Matrix](./lsp-clients.md).
+
 ## File detection
 
-Same as other editors: `.js`, `.mjs`, and `.ts` files that contain Nudo directives. Files without directives are skipped.
+Analysis targets are `.js`, `.mjs`, and `.ts`. Directive-only mode is conservative; open whole-file analysis with `package.json#nudo.analysis.mode` (`exports` | `all`). CodeLens interface tier uses the broader target path.
 
 ## Building the WASM extension
 
@@ -122,5 +125,6 @@ cargo build --target wasm32-wasip2 --release
 ## See also
 
 - [VS Code Extension](./vscode.md)
+- [LSP Client Matrix](./lsp-clients.md) — capability alignment across editors
 - [Agent Integration](./mcp-server.md) — the same server, for coding agents
 - [@nudojs/lsp API](../api/lsp.md)

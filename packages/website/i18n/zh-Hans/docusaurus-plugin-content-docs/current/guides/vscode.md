@@ -23,7 +23,7 @@ code --install-extension wmzy.nudo-vscode
 
 打开 JavaScript 文件时扩展会激活。它使用 `@nudojs/lsp` 包运行 Language Server Protocol（LSP）服务器，提供所有编辑器功能。
 
-**文件检测**：语言服务器会分析包含 Nudo 指令的 `.js`、`.ts` 和 `.mjs` 文件——`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:refine`、`@nudo:import`、`@nudo:env`、`@nudo:mock-module`、`@nudo:as`、`@nudo:replace`。每个指令的完整语法见[指令参考](../concepts/directives.md)。不含这些指令的文件不会参与分析。
+**文件检测**：语言服务器分析 `.js`、`.ts` 与 `.mjs` 文件。指令模式偏保守；项目级可用 `package.json#nudo.analysis.mode`（`exports` | `all`）打开无指令分析。指令（`@nudo:case`、`@nudo:mock`、`@nudo:refine` 等）仍是显式契约面——完整语法见[指令参考](../concepts/directives.md)。跨编辑器能力对比：[LSP 客户端矩阵](./lsp-clients.md)。
 
 ## 功能
 
@@ -53,9 +53,15 @@ function upper(s) {
 }
 ```
 
-### `@nudo:case` 行上的 CodeLens
+### Interface 与 Case 上的 CodeLens
 
-每个 `@nudo:case` 指令会在函数上方显示 CodeLens。点击 lens 可将该 case 选为类型推断的当前上下文。当前激活的 case 会以不同样式高亮显示。
+CodeLens 面向 **interface 档**（设计 §8）：
+
+- **● interface / handwritten|generated|implicit** —— 每个导出函数的有效契约来源；点击打印与 `nudo interface` 同一表面
+- **⚡ persist interface** / **↻ update interface** —— 把调用点域固化进 `*.nudo.js` 侧车
+- **● / ○ case "name"** —— debug 副层；点击选择类型重放的激活 case
+
+悬停导出函数名时，hover 首行与 CodeLens 同源显示 `● interface / <source>`（A7）。VS Code 中当前激活 case 以不同样式高亮。
 
 - **● case "name"** — 当前激活
 - **○ case "name"** — 点击激活
@@ -131,15 +137,17 @@ Nudo 语言服务器的设计目标是在你的其他工具旁保持轻量：
 
 | 功能             | 描述                                                     |
 |-------------------|----------------------------------------------------------|
-| 悬停              | 通过 `getTypeAtPosition` 在光标处显示推断类型             |
+| 悬停              | Abs / intension；导出函数名显示 `● interface / <source>` |
 | 补全              | 在 `.` 后触发；属性和方法建议                            |
-| CodeLens          | `@nudo:case` 行上的 case 选择                            |
-| 内联提示          | 内联类型注释                                             |
+| CodeLens          | interface 档 + persist/update；case 副层                 |
+| 内联提示          | Abs 参数/返回；implicit 导出标 `derived`                 |
 | 跳转到定义        | 跳转到符号定义（`F12`）                                  |
 | 查找引用          | 查找符号的所有使用（`Shift+F12`）                        |
 | 重命名符号        | 重命名符号及其所有引用（`F2`）                           |
 | 签名帮助          | 函数调用内的参数提示                                     |
 | 代码操作          | 诊断的快速修复                                           |
-| 语义标记          | 基于类型的语法高亮                                       |
+| 语义标记          | 类型感知高亮 + interface 档 modifier                     |
 | 状态栏            | 激活时显示 "Nudo" 指示器                                 |
-| 命令              | `nudo.selectCase` — 选择推断的激活 case                  |
+| 命令              | `nudo.selectCase` / `nudo.interface` / `nudo.interfaceEmit` |
+
+参见：[LSP 客户端矩阵](./lsp-clients.md)（其他编辑器）。

@@ -95,19 +95,22 @@ git clone https://github.com/nudojs/nudo-zed
 
 | 能力 | 说明 |
 |------|------|
-| Diagnostics | 含 Nudo 指令的文件自动分析 |
-| Hover 类型 | 标准 LSP hover |
-| 跳转定义 / 引用 / 重命名 | 标准 LSP |
-| Inlay hints | 需打开 `inlay_hints.enabled` |
-| CodeLens（case 切换） | 需打开 `code_lens: "on"` |
-| Semantic tokens | 默认关闭，设置 `semantic_tokens` |
-| Agent 命令（`nudo.check` / `nudo.infer` / …） | 经任意 LSP 客户端或 Zed agent 工具可达 |
+| Diagnostics | 分析目标（`.js`/`.mjs`/`.ts`）自动分析；无指令文件见 `nudo.analysis.mode` |
+| Hover 类型 | 标准 LSP；导出函数名显示 `● interface / <source>`（与 CodeLens 同源） |
+| 跳转定义 / 引用 / 重命名 | 标准 LSP（含侧车绑定名） |
+| Inlay hints | 需打开 `inlay_hints.enabled`；implicit 导出标 `derived` |
+| CodeLens | 需打开 `code_lens: "on"`——**interface 档在前**（`● interface` + persist/update），case 副层在后 |
+| Semantic tokens | 默认关闭，设 `semantic_tokens: "combined"`——含 `contract`/`generated`/`derived` modifier |
+| Code actions / Signature help | 标准 LSP quickfix 与 signature help |
+| Agent 命令（`nudo.check` / `nudo.infer` / `nudo.interface` / …） | 经任意 LSP 客户端或 Zed agent 工具可达 |
 
 VS Code 扩展里 active case 的 decoration 在 Zed 无对应 API，请改用 CodeLens 的 case 选择。
 
+完整客户端对比与已知缺口：[LSP 客户端矩阵](./lsp-clients.md)。
+
 ## 文件检测
 
-与其他编辑器一致：分析含 Nudo 指令的 `.js` / `.mjs` / `.ts`。无指令文件会被跳过。
+分析目标为 `.js` / `.mjs` / `.ts`。指令模式偏保守；可用 `package.json#nudo.analysis.mode`（`exports` | `all`）打开无指令分析。CodeLens interface 档使用更宽的目标路径。
 
 ## 构建 WASM 扩展
 
@@ -122,5 +125,6 @@ cargo build --target wasm32-wasip2 --release
 ## 参见
 
 - [VS Code 扩展](./vscode.md)
+- [LSP 客户端矩阵](./lsp-clients.md)——跨编辑器能力对齐
 - [Agent 集成](./mcp-server.md)——同一服务器服务 coding agent
 - [@nudojs/lsp API](../api/lsp.md)

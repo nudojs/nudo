@@ -152,14 +152,16 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 |------------|---------|----------|
 | 悬停 | `onHover` | 通过 `getTypeAtPosition` 获取光标处推断类型；光标落在导出函数名上时，首行为 `● interface / handwritten|generated|implicit`（与 CodeLens 同源），handwritten/generated 另附有效契约展示 |
 | 补全（触发 `.`） | `onCompletion` | 来自 `getCompletionsAtPosition` 的属性/方法/变量项 |
-| CodeLens | `onCodeLens` | 每个 `@nudo:case` 一个透镜：激活用例显示 `● case "name"`，其余显示 `○ case "name"`；点击发送自定义 `nudo/selectCase` 请求并刷新透镜 |
-| 内联提示 | `languages.inlayHint.on` | 来自分析 `caseHints` 的行尾 `Type` 提示 |
-| 定义 | `onDefinition` | `buildSymbolTable` + `findDefinition` |
+| CodeLens | `onCodeLens` | interface 档在前：`● interface / handwritten|generated|implicit`（+ persist/update 固化透镜）；case 为 debug 副层——激活 `● case "name"`，其余 `○`。点击发送 `nudo.selectCase` / `nudo.interface` / `nudo.interfaceEmit` 并刷新透镜 |
+| 内联提示 | `languages.inlayHint` | 行尾 case `Type` 提示 + Abs 参数/返回 inlay；implicit 导出带 `· derived` |
+| 定义 | `onDefinition` | `buildSymbolTable` + `findDefinition`（含侧车绑定名） |
 | 引用 | `onReferences` | `buildSymbolTable` + `findReferences` |
 | 重命名 | `onRenameRequest` | 对定义及全部引用生成 workspace edit |
-| 代码操作（`quickfix`） | `onCodeAction` | `nudo-unreachable` 对应 *Remove unreachable code* |
+| 代码操作（`quickfix`） | `onCodeAction` | `nudo-unreachable` 对应 *Remove unreachable code*；契约/参数修复 |
 | 签名帮助（触发 `(`、`,`） | `onSignatureHelp` | 定位包裹的调用、对被调函数求类型、高亮当前参数 |
-| 语义 token（full） | `languages.semanticTokens.on` | 推断驱动的着色：来自分析结果的 `function`/`variable`/`parameter` token（`buildSemanticTokens`） |
+| 语义 token（full） | `languages.semanticTokens` | `buildSemanticTokens` 推断着色；导出函数绑定带 interface 档 modifier（`contract`/`generated`/`derived`） |
+
+跨编辑器支持矩阵：[LSP 客户端矩阵](../guides/lsp-clients.md)。
 
 文本同步方式为 `Full`。打开文档会立即验证，内容变更则防抖 300 ms —— 两条路径都以 `propagate = true` 触发 `validateText`（仅有的传播入口）；关闭文档会取消其计时器、丢弃缓存条目并清除诊断。被监视文件的删除事件在带外处理，且会话常驻的全部状态都是有界的 —— 见[内存与隔离模型](#内存与隔离模型)。
 
