@@ -17,6 +17,7 @@
     "check": "tsx packages/cli/src/index.ts check",
     "types": "tsx packages/cli/src/index.ts types",
     "verify:examples": "bash scripts/verify-examples.sh",
+    "learning-cost": "node scripts/learning-cost.mjs",
     "docs:dev": "pnpm --filter website run start",
     "docs:build": "pnpm --filter website run build",
     "benchmark": "node benchmark/src/runner.js",
