@@ -975,6 +975,27 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           acc = acc === null ? arg : `$spread(${acc}, ${arg})`;
           continue;
         }
+        // C3.2：对象方法简写 → $fnVal（方法槽进 shape；闭包捕获外层 let）
+        if (prop.type === "ObjectMethod") {
+          flushProps();
+          const mkey =
+            prop.key.type === "Identifier"
+              ? JSON.stringify(prop.key.name)
+              : prop.key.type === "StringLiteral"
+                ? JSON.stringify(prop.key.value)
+                : null;
+          if (mkey === null) continue;
+          const paramNames = (prop.params as Array<{ type: string; name?: string }>).map((p) =>
+            p.type === "Identifier" && p.name ? p.name : "_a",
+          );
+          const bodySrc =
+            prop.body.type === "BlockStatement"
+              ? `{\n${prop.body.body.map((s) => transpileStatement(s, 1, opts)).join("\n")}\n}`
+              : transpileExpression(prop.body as Expression, opts);
+          const fnValSrc = `$fnVal([${paramNames.map((p) => JSON.stringify(p)).join(", ")}], (${paramNames.join(", ")}) => ${bodySrc})`;
+          props.push(`${mkey}: ${fnValSrc}`);
+          continue;
+        }
         if (prop.type !== "ObjectProperty") continue;
         // 计算属性 { [expr]: v } → $setKey
         if (prop.computed) {

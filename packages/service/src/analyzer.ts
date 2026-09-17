@@ -1143,8 +1143,12 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
   // TypeValue evaluateProgram / applyMocks 已删除：非 B-hosted 源不跑全程序求值；
   // 绑定/节点靠 Abs 宿主（collectAbsBindsAndNodes）。case 兜底 Abs-first。
 
-  // Abs / B 顶层调用记录优先；再空才保留 TypeValue
-  if ((selfContained || canAbsModules) && absCallRecords.length > 0) {
+  // Abs / B 顶层调用记录：B-hosted 时 B 路径优先（调用点实参含宿主 JS 函数
+  // 时 Abs 会把它们打成 unknown——C3.1）；否则 Abs 优先。
+  if (bHostedEval && bTopCallRecords.length > 0) {
+    callRecords.length = 0;
+    callRecords.push(...bTopCallRecords);
+  } else if ((selfContained || canAbsModules) && absCallRecords.length > 0) {
     callRecords.length = 0;
     callRecords.push(...absCallRecords);
   } else if (bTopCallRecords.length > 0) {
@@ -2249,11 +2253,29 @@ function attachAbsToIntension(
   };
 }
 
-function safeAbsOrUnknown(a: Abs | undefined): Abs {
-  if (!a || typeof a !== "object" || !("shape" in a) || !a.shape) {
-    return { shape: { k: "unknown" }, conf: "opaque" };
+function safeAbsOrUnknown(a: unknown): Abs {
+  if (a && typeof a === "object" && "shape" in (a as object) && "conf" in (a as object)) {
+    return a as Abs;
   }
-  return a;
+  // C3.1：调用点实参是宿主 JS 函数（transpile 导出）→ 包成可调用 Abs
+  if (typeof a === "function") {
+    const fn = a as (...args: Abs[]) => unknown;
+    const n = Math.max(0, fn.length);
+    const params = Array.from({ length: n }, (_, i) => `arg${i}`);
+    return absFunction(params, {
+      body: { type: "BlockStatement", body: [], directives: [] } as never,
+      apply: (args: Abs[]) => {
+        try {
+          const r = fn(...args);
+          if (r && typeof r === "object" && "shape" in (r as object)) return r as Abs;
+          return absUnknown;
+        } catch {
+          return absUnknown;
+        }
+      },
+    });
+  }
+  return absUnknown;
 }
 
 /**

@@ -932,6 +932,7 @@ function evalNodeInner(
       const o = node as {
         properties: Array<
           | { type: "ObjectProperty"; key?: Node; value?: Node }
+          | { type: "ObjectMethod"; key?: Node; params?: Node[]; body?: Node }
           | { type: "SpreadElement"; argument: Node }
         >;
       };
@@ -955,6 +956,32 @@ function evalNodeInner(
           acc = flushPending(acc);
           const sp = evalNode(p.argument, env, phi, budget).value;
           acc = spread(acc, sp);
+          continue;
+        }
+        // C3.2：对象方法简写 → fn Abs（body 求值；闭包经 env 捕获）
+        if ((p as { type: string }).type === "ObjectMethod") {
+          const om = p as { key?: Node; params?: Node[]; body?: Node };
+          const keyNode = om.key;
+          let key: string | undefined;
+          if (keyNode && keyNode.type === "Identifier") key = (keyNode as Identifier).name;
+          if (keyNode && keyNode.type === "StringLiteral") key = (keyNode as StringLiteral).value;
+          if (!key || !om.body) continue;
+          const paramNames = (om.params ?? []).map((pp, i) =>
+            pp.type === "Identifier" ? (pp as Identifier).name : `_a${i}`,
+          );
+          const methodBody = om.body;
+          const fnAbs = absFunction(paramNames, {
+            body: methodBody as never,
+            apply: (args: Abs[]) => {
+              let e2 = env;
+              for (let i = 0; i < paramNames.length; i++) {
+                e2 = withVar(e2, paramNames[i]!, args[i] ?? unknown);
+              }
+              const r = evalNode(methodBody, e2, phi, budget);
+              return r.value;
+            },
+          });
+          pending[key] = { value: fnAbs };
           continue;
         }
         const keyNode = p.key;

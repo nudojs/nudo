@@ -189,8 +189,8 @@ flowchart TB
 
 | ID | 任务 | 验收 | 状态 |
 |---|---|---|---|
-| C3.1 | **concrete case 消费关系 Abs**：无 impl 回调不再链式断成 unknown | `processItems(items, transform, filter)` 字面量路径不再 `unknown-recv` | [ ] |
-| C3.2 | **闭包状态 / 返回对象方法槽** | `createCounter()` 方法槽有类型；基础状态追踪 | [ ] |
+| C3.1 | **concrete case 消费关系 Abs**：无 impl 回调不再链式断成 unknown | `processItems(items, transform, filter)` 字面量路径不再 `unknown-recv` | [x] |
+| C3.2 | **闭包状态 / 返回对象方法槽** | `createCounter()` 方法槽有类型；基础状态追踪 | [x] |
 | C3.3 | **HOF dts 投影**（design-hof-relations P5） | 关系签名 `.d.ts` 可读 | [ ] |
 
 ### C4. 语言边角（P1–P2）
@@ -275,7 +275,7 @@ flowchart TB
 
 ### Phase 3 — 替代门槛冲刺
 
-- [ ] **C3.*** HOF concrete / 闭包
+- [~] **C3.*** HOF concrete 消费（宿主 fn 包 Abs + B 记录优先）/ 闭包方法槽（ObjectMethod→$fnVal）；C3.3 dts 投影仍开放
 - [ ] **D5–D6** interface 日用
 - [ ] **E1–E3** dts 与并存
 - [ ] **B6** 真实 monorepo 基准
