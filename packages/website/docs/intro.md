@@ -64,6 +64,8 @@ Contracts live in `*.nudo.js` templates (`number().gt(0)`, `shape({...})`) — n
 
 - **[Installation](./getting-started/installation.md)** — Install the CLI, VS Code extension, and Vite plugin
 - **[Quick Start](./getting-started/quick-start.md)** — Run `nudo infer` on your first file
+- **[Nudo vs TypeScript](./guides/vs-typescript.md)** — Where replacement is real, where TS stays, coexistence
+- **[Coexistence](./guides/coexistence.md)** — Monorepo recipes (JS=Nudo, TS=tsc)
 - **[Core Concepts](./concepts/type-values.md)** — Type values, directives, and abstract interpretation
 - **[Call-Site Discovery](./guides/callsite-discovery.md)** — Let Nudo mine your tests for real call shapes instead of writing cases by hand
 - **[nudo check](./guides/check.md)** — Refinement gate on Abs (type-as-computation)

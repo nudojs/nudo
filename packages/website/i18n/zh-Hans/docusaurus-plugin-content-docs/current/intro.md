@@ -64,6 +64,8 @@ for (let i = 0; i < 5; i++) sum += i;
 
 - **[安装](./getting-started/installation.md)** — 安装 CLI、VS Code 扩展和 Vite 插件
 - **[快速开始](./getting-started/quick-start.md)** — 在第一个文件上运行 `nudo infer`
+- **[Nudo vs TypeScript](./guides/vs-typescript.md)** — 何时可替代、何时不替代、如何共存
+- **[与 TypeScript 共存](./guides/coexistence.md)** — monorepo 配方（JS=Nudo，TS=tsc）
 - **[核心概念](./concepts/type-values.md)** — 类型值、指令与抽象解释
 - **[调用点发现](./guides/callsite-discovery.md)** — 让 Nudo 从你的测试中挖掘真实调用形状，无需手写 case
 - **[nudo check](./guides/check.md)** — Abs 上的精化门禁

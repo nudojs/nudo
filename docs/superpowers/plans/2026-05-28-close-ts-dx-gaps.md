@@ -241,7 +241,7 @@ flowchart TB
 | F1 | **「30 分钟」路径**：infer → IDE hover → 一条侧车契约 → check 红灯 | 网站 getting-started 只含必要概念 | [x] |
 | F2 | **概念分层文档**：Day-0（零概念）/ Day-1（侧车契约）/ 进阶（Abs、case、mock） | 三份入口互链；Abs 不出现在 Day-0 | [x] |
 | F3 | **纠偏 README / website 对比表**：与 §0.1 一致；去掉「从 body 零注解推出 shape」作为主卖点；写清「无契约=调用点/any」 | 根 README + website intro + vs-ts README | C0 | [x] |
-| F4 | **「vs TypeScript」定位页**：可替代场景 / 不替代场景 / 共存 | 诚实，不弱化目标 | [ ] |
+| F4 | **「vs TypeScript」定位页**：可替代场景 / 不替代场景 / 共存 | `guides/vs-typescript.md`（en+zh），诚实，不弱化目标 | [x] |
 | F5 | **学习成本实测脚本**：新人任务计时（可选） | 内部基准，非门禁 | [ ] |
 
 ---
