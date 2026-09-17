@@ -159,4 +159,5 @@ pnpm run ci:version   # only on a throwaway branch — rewrites package.json ver
 - `docs/superpowers/plans/2026-05-28-close-ts-dx-gaps.md` — E6 task
 - `docs/design-refine-derivation.md` — interface tier semantics
 - `docs/design-eval-missing-slot.md` — C0.5 optional eval-driven diagnostics
+- Website: `guides/migrating-js.md` — code-first migration walkthrough
 - Website guide: `packages/website/docs/guides/versioning.md`

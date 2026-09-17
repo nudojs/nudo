@@ -394,6 +394,7 @@ Rules:
 - `--emit` remains the path that freezes **call-site domains** as `@generated` facts; `--draft` is the human-facing starting point.
 - IDE: CodeLens `⚡ draft interface` (non-handwritten exports) runs the same draft path; agents use `nudo.interface.draft`.
 - Optional: `package.json` → `nudo.analysis.evalMissingSlot: "warning"` surfaces evaluation-hit missing fields as `nudo:missing-slot` (default `off`).
+- End-to-end walkthrough: [Migrating existing JS](./migrating-js.md).
 
 ```text
 lib.js

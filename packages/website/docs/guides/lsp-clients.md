@@ -121,6 +121,7 @@ These surfaces always share one computation (pinned by tests):
 
 - [VS Code Extension](./vscode.md)
 - [Zed Extension](./zed.md)
+- [Migrating existing JS](./migrating-js.md)
 - [Agent Integration](./mcp-server.md)
 - [Versioning & Releases](./versioning.md)
 - [@nudojs/lsp API](../api/lsp.md)

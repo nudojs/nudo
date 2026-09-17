@@ -99,10 +99,12 @@ git clone https://github.com/nudojs/nudo-zed
 | Hover 类型 | 标准 LSP；导出函数名显示 `● interface / <source>`（与 CodeLens 同源） |
 | 跳转定义 / 引用 / 重命名 | 标准 LSP（含侧车绑定名） |
 | Inlay hints | 需打开 `inlay_hints.enabled`；implicit 导出标 `derived` |
-| CodeLens | 需打开 `code_lens: "on"`——**interface 档在前**（`● interface` + persist/update），case 副层在后 |
+| CodeLens | 需打开 `code_lens: "on"`——**interface 档在前**（`● interface`、persist/update、`⚡ draft interface`），case 副层在后 |
 | Semantic tokens | 默认关闭，设 `semantic_tokens: "combined"`——含 `contract`/`generated`/`derived` modifier |
 | Code actions / Signature help | 标准 LSP quickfix 与 signature help |
-| Agent 命令（`nudo.check` / `nudo.infer` / `nudo.interface` / …） | 经任意 LSP 客户端或 Zed agent 工具可达 |
+| Agent 命令（`nudo.check` / `nudo.interface.draft` / …） | 经任意 LSP 客户端或 Zed agent 工具可达 |
+
+CodeLens `⚡ draft interface` 与 CLI `nudo interface --draft` 同源（仅客户端显式 `write: true` 时写 `*.nudo.draft.js`）。迁移步骤：[迁移已有 JS](./migrating-js.md)。
 
 VS Code 扩展里 active case 的 decoration 在 Zed 无对应 API，请改用 CodeLens 的 case 选择。
 
@@ -126,6 +128,7 @@ cargo build --target wasm32-wasip2 --release
 
 - [VS Code 扩展](./vscode.md)
 - [LSP 客户端矩阵](./lsp-clients.md)——跨编辑器能力对齐
+- [迁移已有 JS](./migrating-js.md)
 - [版本与发布](./versioning.md)
 - [Agent 集成](./mcp-server.md)——同一服务器服务 coding agent
 - [@nudojs/lsp API](../api/lsp.md)

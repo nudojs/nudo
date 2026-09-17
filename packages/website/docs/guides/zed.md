@@ -99,10 +99,12 @@ The extension's `language_server_command` tries, in order:
 | Hover types | Standard LSP; exported fn names show `● interface / <source>` (same as CodeLens) |
 | Go to Definition / References / Rename | Standard LSP (sidecar binding names included) |
 | Inlay hints | Enable `inlay_hints.enabled`; implicit exports mark `derived` |
-| CodeLens | Enable `code_lens: "on"` — **interface tier first** (`● interface` + persist/update), case lenses behind |
+| CodeLens | Enable `code_lens: "on"` — **interface tier first** (`● interface`, persist/update, `⚡ draft interface`), case lenses behind |
 | Semantic tokens | Default off; set `semantic_tokens: "combined"` — includes `contract`/`generated`/`derived` modifiers |
 | Code actions / Signature help | Standard LSP quickfix + signature help |
-| Agent commands (`nudo.check` / `nudo.infer` / `nudo.interface` / …) | Reachable via any LSP client or Zed agent tooling |
+| Agent commands (`nudo.check` / `nudo.interface.draft` / …) | Reachable via any LSP client or Zed agent tooling |
+
+CodeLens `⚡ draft interface` runs the same code-first draft path as CLI `nudo interface --draft` (writes `*.nudo.draft.js` only when the client requests `write: true`). Migration walkthrough: [Migrating existing JS](./migrating-js.md).
 
 VS Code-only decorations for the active case are not available; use the CodeLens case picker instead.
 
@@ -126,6 +128,7 @@ cargo build --target wasm32-wasip2 --release
 
 - [VS Code Extension](./vscode.md)
 - [LSP Client Matrix](./lsp-clients.md) — capability alignment across editors
+- [Migrating existing JS](./migrating-js.md) — draft → review → check
 - [Versioning & Releases](./versioning.md)
 - [Agent Integration](./mcp-server.md) — the same server, for coding agents
 - [@nudojs/lsp API](../api/lsp.md)
