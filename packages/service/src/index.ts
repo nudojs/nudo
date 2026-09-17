@@ -164,9 +164,13 @@ export {
 export {
   findProjectConfig,
   interfaceConfig,
+  analysisConfig,
   matchesEmitAllowlist,
   type NudoConfig,
   type InterfaceConfig,
+  type AnalysisConfig,
+  type AnalysisMode,
+  type DiagnosticsLevel,
 } from "./evaluator/config.ts";
 
 export {

@@ -13,6 +13,15 @@ export {
 
 export { loadEnvs, loadEnvsAsync, preloadPathEnvs, type LoadedEnv } from "./env-loader.ts";
 
-export { findProjectConfig, interfaceConfig, type NudoConfig, type InterfaceConfig } from "./config.ts";
+export {
+  findProjectConfig,
+  interfaceConfig,
+  analysisConfig,
+  type NudoConfig,
+  type InterfaceConfig,
+  type AnalysisConfig,
+  type AnalysisMode,
+  type DiagnosticsLevel,
+} from "./config.ts";
 
 export { resolveNpmNudo } from "./resolve-npm.ts";

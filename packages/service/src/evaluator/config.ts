@@ -13,6 +13,15 @@ export type NudoConfig = {
      */
     emit?: string[] | string;
   };
+  /** 分析范围与噪声档（design-analysis-scope.md / A2） */
+  analysis?: {
+    include?: string[] | string;
+    exclude?: string[] | string;
+    /** directives（默认，今日行为）| exports | all */
+    mode?: string;
+    /** off | errors | default | verbose */
+    diagnostics?: string;
+  };
 };
 
 export type InterfaceConfig = {
@@ -20,6 +29,54 @@ export type InterfaceConfig = {
   /** emit 路径白名单（已归一化；空数组 = 不限制） */
   emit: string[];
 };
+
+export type AnalysisMode = "directives" | "exports" | "all";
+export type DiagnosticsLevel = "off" | "errors" | "default" | "verbose";
+
+export type AnalysisConfig = {
+  include: string[];
+  exclude: string[];
+  mode: AnalysisMode;
+  diagnostics: DiagnosticsLevel;
+};
+
+const DEFAULT_ANALYSIS_INCLUDE = ["**/*.{js,mjs,cjs,ts}"];
+const DEFAULT_ANALYSIS_EXCLUDE = [
+  "**/node_modules/**",
+  "**/dist/**",
+  "**/coverage/**",
+];
+
+function toStringArray(raw: string[] | string | undefined, fallback: string[]): string[] {
+  if (raw === undefined) return fallback;
+  const arr = Array.isArray(raw) ? raw : [raw];
+  const out = arr.filter((s): s is string => typeof s === "string" && s.length > 0);
+  return out.length > 0 ? out : fallback;
+}
+
+/**
+ * 归一化 `nudo.analysis`。默认 mode=directives（A1 前不改 IDE 行为）；
+ * diagnostics：directives→errors，all/exports→default。
+ */
+export function analysisConfig(config: NudoConfig | null | undefined): AnalysisConfig {
+  const raw = config?.analysis;
+  const modeRaw = raw?.mode;
+  const mode: AnalysisMode =
+    modeRaw === "exports" || modeRaw === "all" ? modeRaw : "directives";
+  const diagRaw = raw?.diagnostics;
+  const diagnostics: DiagnosticsLevel =
+    diagRaw === "off" || diagRaw === "errors" || diagRaw === "default" || diagRaw === "verbose"
+      ? diagRaw
+      : mode === "directives"
+        ? "errors"
+        : "default";
+  return {
+    include: toStringArray(raw?.include, DEFAULT_ANALYSIS_INCLUDE),
+    exclude: toStringArray(raw?.exclude, DEFAULT_ANALYSIS_EXCLUDE),
+    mode,
+    diagnostics,
+  };
+}
 
 /**
  * 归一化 `nudo.interface` 配置段。

@@ -1,0 +1,162 @@
+# Analysis Scope Config — 分析范围与噪声档
+
+> **状态**：设计拍板（A2）。实现跟随 A1（LSP 无指令默认分析）。
+>
+> **真理源关系**：配置入口沿用 `package.json#nudo`（不引入 `nudo.json`），
+> 与 `nudo.interface.autoBind` 同源。见
+> [`design-refine-derivation.md`](./design-refine-derivation.md) §2.2。
+
+---
+
+## 1. 问题
+
+今日 LSP 用 `hasNudoDirectives` 门控：无 `@nudo:` 指令的文件**完全不分析**。
+这与「零注解 call-site 推断」产品故事冲突（A1）。一旦默认打开无指令分析，
+需要：
+
+1. **范围**：哪些路径进引擎（include / exclude）
+2. **噪声**：implicit 推断产生多少诊断
+3. **与既有开关的关系**：`interface.autoBind` 管侧车 ambient，不管「分析谁」
+
+---
+
+## 2. 配置形状
+
+```jsonc
+// package.json
+{
+  "nudo": {
+    "interface": { "autoBind": true, "emit": [] },
+    "analysis": {
+      // 路径（相对 projectDir；glob 与 emit 同极简实现）
+      "include": ["**/*.{js,mjs,cjs,ts}"],  // 默认：目标扩展名
+      "exclude": ["**/node_modules/**", "**/dist/**", "**/coverage/**"],
+      // 何时分析无指令文件
+      // "directives" | "exports" | "all"
+      //   directives — 仅含 @nudo: 指令（今日行为，默认过渡期）
+      //   exports    — 有 top-level export 或同名 *.nudo.js 侧车
+      //   all        — include 命中即分析（IDE 目标态）
+      "mode": "directives",
+      // implicit / 无契约诊断的噪声档
+      // "off" | "errors" | "default" | "verbose"
+      //   off      — 只报显式契约违例
+      //   errors   — 高置信 error（契约 + assign + HOF）；warning/info 静音
+      //   default  — errors + 已知 evaluator warning（推荐 all 模式默认）
+      //   verbose  — 全量，含 unknown-recv 等（开发 Nudo 本身时用）
+      "diagnostics": "default"
+    }
+  }
+}
+```
+
+### 归一化类型
+
+```ts
+export type AnalysisMode = "directives" | "exports" | "all";
+export type DiagnosticsLevel = "off" | "errors" | "default" | "verbose";
+
+export type AnalysisConfig = {
+  include: string[];
+  exclude: string[];
+  mode: AnalysisMode;
+  diagnostics: DiagnosticsLevel;
+};
+
+export function analysisConfig(config: NudoConfig | null | undefined): AnalysisConfig
+```
+
+默认：
+
+| 键 | 默认 | 理由 |
+|---|---|---|
+| `include` | `**/*.{js,mjs,cjs,ts}`（经 `isNudoTargetPath` 过滤后） | 与现 target 路径一致 |
+| `exclude` | `node_modules` / `dist` / `coverage` | 安全默认；emitter 已拒绝 node_modules 侧车 |
+| `mode` | `directives` | **A1 落地前不改变行为**；A1 将默认改为 `all` 或 `exports` |
+| `diagnostics` | `errors` for `mode=directives`；`default` for `mode=all` | 打开无指令分析时避免刷屏 |
+
+`findProjectConfig` 的「向上找带 `nudo` 键的 package.json」规则不变。
+
+---
+
+## 3. 判定管线
+
+```
+打开/编辑 .js
+    │
+    ├─ isNudoTargetPath?  ──no──► 忽略
+    │
+    ├─ analysis.exclude 命中? ──yes──► 忽略
+    │
+    ├─ analysis.include 未命中? ──yes──► 忽略
+    │
+    └─ mode
+         directives → hasNudoDirectives(source)   // 今日
+         exports    → hasNudoDirectives || hasSidecar || hasExport
+         all        → true
+    │
+    ▼
+  analyze + publish diagnostics（按 diagnostics 档过滤）
+```
+
+### 诊断过滤（LSP / CLI 可共用）
+
+| 档 | 发布 |
+|---|---|
+| `off` | 不发 implicit 相关；仍发 `constraint-violated` 等显式契约（若 mode 允许分析） |
+| `errors` | severity=error 的 check 码 + 高置信 evaluator error |
+| `default` | errors + 已收录 warning（排除 `unknown-recv` 类） |
+| `verbose` | 全部 |
+
+**不按码名白名单维护第二份清单**：优先在 Diagnostic 上加 `confidence` 或复用
+severity；过滤在发布层做，不进 core 求值。
+
+---
+
+## 4. 与既有配置的关系
+
+| 键 | 管什么 | 不管什么 |
+|---|---|---|
+| `nudo.interface.autoBind` | 侧车 ambient 执行 | 是否分析该文件 |
+| `nudo.interface.emit` | emit 写盘白名单 | 分析范围 |
+| `nudo.analysis.*` | **是否分析 + 诊断噪声** | 契约语义 |
+
+CLI `nudo check <file>` / `nudo infer <file>` **显式路径始终分析**，
+不受 `mode=directives` 限制（用户点名即意图）。`analysis.mode` 主要约束
+**IDE 全工作区/自动验证** 与 **watch 扫描**。
+
+---
+
+## 5. CLI / watch / Vite
+
+| 入口 | include/exclude | mode |
+|---|---|---|
+| `nudo check path` | 忽略（点名路径） | 忽略 |
+| `nudo watch src` | 应用 include/exclude | 应用 mode |
+| vite-plugin | 应用 include/exclude | 应用 mode；`failOnError` 仍看 severity |
+| LSP validate | 应用 | 应用；默认档从 config 读 |
+
+---
+
+## 6. 迁移
+
+1. **Phase A2 实现**：只加 `analysisConfig()` + 解析 + 测试；LSP 行为不变（默认 `directives`）。
+2. **A1**：LSP `isNudoFile` 改读 `mode`；文档把「无指令不分析」改为「按 mode」。
+3. **默认切换**（可选后续）：major/minor note — `mode` 默认 `all` + `diagnostics: default`。
+
+---
+
+## 7. 非目标
+
+- 不做独立 `.nudorc` / `nudo.config.js`
+- 不在 analysis 里配 refine 语义
+- 不用 analysis 绕过 `node_modules` 侧车禁令
+
+---
+
+## 8. 验收（实现时）
+
+- [ ] `analysisConfig(undefined)` 返回上表默认
+- [ ] `package.json#nudo.analysis` 解析与非法值回落
+- [ ] include/exclude glob 与 `matchesEmitAllowlist` 同实现或抽出共享
+- [ ] LSP 在 `mode=directives` 下行为与今日一致（回归）
+- [ ] `mode=exports`：有 `export` 的无指令文件进入 hover/diagnostics
