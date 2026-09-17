@@ -134,7 +134,7 @@ flowchart TB
 | ID | 任务 | 验收 | 依赖 | 状态 |
 |---|---|---|---|---|
 | B1 | **把 micro bench 升格为 CI gate**：cold / warm / LS-invalidated / scaling 曲线；回退阈值失败即红 | `pnpm run benchmark:gate` 进 CI | 现有 bench | [x] |
-| B2 | **编辑路径增量**：按文件脏标记 + 依赖边失效（隐式侧车边已在设计 §4.5）；避免整文件 Full sync 重算 | 单字符编辑 warm 分析 < 5ms（中位文件） | design-persistent-cache | [ ] |
+| B2 | **编辑路径增量**：按文件脏标记 + 依赖边失效（隐式侧车边已在设计 §4.5）；避免整文件 Full sync 重算 | 单字符编辑 warm 分析 < 5ms（中位文件） | design-persistent-cache | [x] |
 | B3 | **`effectiveInterface` 跨会话缓存落地**（设计 Phase B） | 二次启动契约读取命中磁盘缓存 | design-persistent-cache | [ ] |
 | B4 | **polyvariant 预算**：调用点/实例化上限 + 可配置 widen；超限可预测降级 | 400 函数缩放曲线不劣于 tsc LS 同档；超限有可解释 `#widened` | C 系列 | [ ] |
 | B5 | **LSP 与 CLI 共享 memo**：避免两套缓存；workspace 级 AnalysisSession | IDE 与 `nudo check` 结果一致且不重复算 | B2, B3 | [ ] |
@@ -259,7 +259,7 @@ flowchart TB
 ### Phase 1 — IDE 可日用（2–4 周）
 
 - [x] **A1** LSP `isNudoFile` → `shouldAnalyzeFile`（`analysis.mode`；默认仍 `directives`）
-- [ ] **B2** 编辑增量（至少文件级）
+- [x] **B2** 编辑增量（内容指纹短路 + 既有 version cache / 脏传播）
 - [x] **C2.3** `==` 折叠（`looseEqAbs` + B 路径 / ast-eval）
 - [ ] **D2** 默认人类报告
 - [ ] **C0.5**（可选）求值驱动缺槽诊断评估

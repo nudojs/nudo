@@ -38,6 +38,11 @@ import {
   sidecarPathOf,
   sidecarSpecsOf,
 } from "@nudojs/core";
+import { createHash } from "node:crypto";
+
+function sourceFingerprint(s: string): string {
+  return createHash("sha1").update(s).digest("hex");
+}
 import {
   DiagnosticSeverity,
   DiagnosticTag,
@@ -45,7 +50,10 @@ import {
 } from "vscode-languageserver/node";
 
 /** Per-file analysis cache; version comes from TextDocument.version. */
-export const analysisCache = new Map<string, { version: number; result: AnalysisResult }>();
+export const analysisCache = new Map<
+  string,
+  { version: number; result: AnalysisResult; sourceHash?: string }
+>();
 
 /** Every file analyzed successfully in this session (import-graph nodes for dirty propagation). */
 export const knownFiles = new Set<string>();
@@ -234,9 +242,14 @@ export function getCachedOrAnalyze(
   activeCases?: Map<string, number>,
 ): AnalysisResult {
   const cached = analysisCache.get(filePath);
+  // 版本命中才复用：activeCases（CodeLens 切换）不进指纹，version bump 必须重算
   if (cached && cached.version === version) return cached.result;
   const result = analyzeFile(filePath, source, activeCases);
-  analysisCache.set(filePath, { version, result });
+  analysisCache.set(filePath, {
+    version,
+    result,
+    sourceHash: sourceFingerprint(source),
+  });
   return result;
 }
 
@@ -362,6 +375,8 @@ export async function validateText(
   version: number,
   deps: ValidateTextDeps,
   propagate = false,
+  /** 脏传播：源码未变但依赖变了，必须重算，不可用源码指纹短路 */
+  force = false,
 ): Promise<void> {
   // 零注解文件 gate 放行例外：磁盘上存在同名侧车（interface 档主场景——
   // emit 后的 generated 段 + drift/domain-exceeds 诊断都以侧车为契约源）。
@@ -376,23 +391,30 @@ export async function validateText(
     return;
   }
 
+  // B2：内容未变（undo/redo）且非脏传播 → 复用上次 AnalysisResult
+  const fp = sourceFingerprint(text);
+  const prev = analysisCache.get(filePath);
   let result: AnalysisResult;
-  try {
-    result = await analyzeFileAsync(filePath, text, deps.getActiveCases?.(uri));
-  } catch (err) {
-    deps.sendDiagnostics({
-      uri,
-      diagnostics: [{
-        severity: DiagnosticSeverity.Error,
-        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-        message: `Analysis error: ${(err as Error).message}`,
-        source: "nudo",
-      }],
-    });
-    return;
+  if (!force && prev?.sourceHash === fp && prev.result) {
+    result = prev.result;
+  } else {
+    try {
+      result = await analyzeFileAsync(filePath, text, deps.getActiveCases?.(uri));
+    } catch (err) {
+      deps.sendDiagnostics({
+        uri,
+        diagnostics: [{
+          severity: DiagnosticSeverity.Error,
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+          message: `Analysis error: ${(err as Error).message}`,
+          source: "nudo",
+        }],
+      });
+      return;
+    }
   }
 
-  analysisCache.set(filePath, { version, result });
+  analysisCache.set(filePath, { version, result, sourceHash: fp });
   knownFiles.add(filePath);
   registerNudoImportDeps(filePath, text);
 
@@ -425,6 +447,6 @@ export async function validateText(
     evictBPathCacheForFiles([dirtyPath]);
     evictAnalysisFileCacheForFiles([dirtyPath]);
     evictFnAnalysisCacheForFiles([dirtyPath]);
-    await validateText(dirtyPath, doc.uri, doc.getText(), doc.version, deps, false);
+    await validateText(dirtyPath, doc.uri, doc.getText(), doc.version, deps, false, true);
   }
 }
