@@ -215,7 +215,7 @@ flowchart TB
 | D1 | **`vs-ts` 示例改为 interface 主路径对照** | structure/constraints 各有「侧车契约」正负例；**删除或改写**「零注解 body 推出 shape」卖点行 | C0 | [x] |
 | D2 | **报告默认「人类档」**：一行 code + actual/expected + suggestion；`--verbose` / agent JSON 才吐完整 Abs | CLI 默认可读；`--json` 含 `signatures[].abs` | [x] |
 | D3 | **pred 化简**：`ms > 0 ∧ ms > 0` 等合取去重/幂等 | 金样例无重复谓词；`and`/`or` 用 `predEquals` 去重 | — | [x] |
-| D4 | **诊断码收敛与文案**：`nudo:*` 表与 quickfix 一一对应；`arg-structure` 仅 HOF | 网站 check 指南与 CLI 输出一致 | C0.2 | [ ] |
+| D4 | **诊断码收敛与文案**：`nudo:*` 表与 CLI 一致；`arg-structure` 仅 HOF | 网站 check 指南（en/zh）与 `nudo-check.md` 同表 | C0.2 | [x] |
 | D5 | **`nudo interface` 日用命令打磨**：diff、drift 解释、只刷新已有生成段的 UX | 文档 + 一键 doctor | — | [ ] |
 | D6 | **执法分档可见**：handwritten=义务 / generated=事实+drift / implicit=展示 | CLI/IDE 标注来源层 | — | [ ] |
 
