@@ -53,7 +53,8 @@ function hofFnArgOk(src: Abs, tgt: Abs): boolean {
   return true;
 }
 
-/** 顶层函数清单：function 声明 + const 箭头/函数表达式（含 export 包装） */
+/** 顶层函数清单：function 声明 + const 箭头/函数表达式（含 export 包装）
+ *  + **导出 class 的实例方法**（C4.2，命名 `Class.method`）。 */
 export function listTopFunctions(source: string, file?: ReturnType<typeof parse>): string[] {
   const f = file ?? parse(source);
   const names: string[] = [];
@@ -76,6 +77,33 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
         ) {
           names.push(d.id.name);
         }
+      }
+    }
+    // C4.2：导出 class 的普通实例方法 → `Class.method`（跳过 ctor/get/set）
+    if (
+      decl.type === "ClassDeclaration" &&
+      (decl as { id?: { name?: string } }).id?.name &&
+      (stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration")
+    ) {
+      const cname = (decl as { id: { name: string } }).id.name;
+      const body = (decl as { body?: { body?: unknown[] } }).body?.body ?? [];
+      for (const m of body) {
+        const mem = m as {
+          type?: string;
+          kind?: string;
+          key?: { type?: string; name?: string };
+          static?: boolean;
+        };
+        const isMethod =
+          mem.type === "MethodDefinition" ||
+          mem.type === "ClassMethod" ||
+          mem.type === "TSDeclareMethod";
+        if (!isMethod) continue;
+        if (mem.kind && mem.kind !== "method") continue; // skip ctor/get/set
+        if (mem.static) continue;
+        const keyName =
+          mem.key?.type === "Identifier" ? mem.key.name : undefined;
+        if (keyName) names.push(`${cname}.${keyName}`);
       }
     }
   }

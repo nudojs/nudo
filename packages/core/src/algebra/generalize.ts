@@ -577,6 +577,39 @@ export function extractFn(
       });
       formalsByName.set(decl.id.name, formals);
     }
+    if (decl.type === "ClassDeclaration" && (decl as { id?: { name?: string } }).id?.name) {
+      // C4.2：导出 class 实例方法 → `Class.method`
+      const cname = (decl as { id: { name: string } }).id.name;
+      const body = (decl as { body?: { body?: unknown[] } }).body?.body ?? [];
+      for (const m of body) {
+        const mem = m as {
+          type?: string;
+          kind?: string;
+          static?: boolean;
+          key?: { type?: string; name?: string };
+          params?: unknown[];
+          body?: Node;
+          async?: boolean;
+        };
+        const isMethod =
+          mem.type === "MethodDefinition" ||
+          mem.type === "ClassMethod" ||
+          mem.type === "TSDeclareMethod";
+        if (!isMethod || !mem.body) continue;
+        if (mem.kind && mem.kind !== "method") continue;
+        if (mem.static) continue;
+        const keyName = mem.key?.type === "Identifier" ? mem.key.name : undefined;
+        if (!keyName) continue;
+        const fullName = `${cname}.${keyName}`;
+        const formals = formalParamsFromNodes((mem.params ?? []) as never);
+        env.fns.set(fullName, {
+          params: formalParamDisplayNames(formals),
+          body: mem.body,
+          async: mem.async === true,
+        });
+        formalsByName.set(fullName, formals);
+      }
+    }
     if (decl.type === "VariableDeclaration") {
       for (const d of decl.declarations) {
         if (

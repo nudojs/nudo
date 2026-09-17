@@ -203,6 +203,26 @@ export function localNamedExports(source: string): Set<string> {
       if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
         const idName = identName(d.id as NodeLike | undefined);
         if (idName) out.add(idName);
+        // C4.2：导出 class 的实例方法 → `Class.method` 契约键
+        if (d.type === "ClassDeclaration" && idName) {
+          const body = ((d as NodeLike).body as { body?: NodeLike[] } | undefined)?.body ?? [];
+          for (const m of body) {
+            const mem = m as NodeLike & {
+              kind?: string;
+              static?: boolean;
+              key?: NodeLike;
+            };
+            const isMethod =
+              mem.type === "MethodDefinition" ||
+              mem.type === "ClassMethod" ||
+              mem.type === "TSDeclareMethod";
+            if (!isMethod) continue;
+            if (mem.kind && mem.kind !== "method") continue;
+            if (mem.static) continue;
+            const keyName = identName(mem.key as NodeLike);
+            if (keyName) out.add(`${idName}.${keyName}`);
+          }
+        }
       } else if (d.type === "VariableDeclaration") {
         const decls = (d.declarations as NodeLike[] | undefined) ?? [];
         for (const decl of decls) {
@@ -398,7 +418,20 @@ function loadSidecarBinding(
     });
     return { ok: false };
   }
-  const binding = exports[fnName];
+  // C4.2 绑定键解析：
+  // 1. 平铺 `Class.method` / `Class_method`
+  // 2. 嵌套对象 `export const Class = { method: fn(…) }`
+  let binding: unknown = exports[fnName];
+  if (binding === undefined && fnName.includes(".")) {
+    const [cls, method] = fnName.split(".", 2);
+    binding = exports[`${cls}_${method}`];
+    if (binding === undefined) {
+      const bag = exports[cls!] as Record<string, unknown> | undefined;
+      if (bag && typeof bag === "object" && !isNudoConstraint(bag)) {
+        binding = (bag as Record<string, unknown>)[method!];
+      }
+    }
+  }
   if (binding === undefined) return { ok: false };
   if (!isNudoConstraint(binding)) {
     collectDiag({
