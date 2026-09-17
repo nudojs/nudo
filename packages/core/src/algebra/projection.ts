@@ -134,7 +134,7 @@ function boundsSatisfiable(bounds: Array<{ op: CmpOp; n: number }>): boolean {
         loStrict = true;
       }
     } else if (b.op === "ge") {
-      if (b.n > lo || (b.n === lo && loStrict)) {
+      if (b.n > lo) {
         lo = b.n;
         loStrict = false;
       }
@@ -144,7 +144,7 @@ function boundsSatisfiable(bounds: Array<{ op: CmpOp; n: number }>): boolean {
         hiStrict = true;
       }
     } else if (b.op === "le") {
-      if (b.n < hi || (b.n === hi && hiStrict)) {
+      if (b.n < hi) {
         hi = b.n;
         hiStrict = false;
       }

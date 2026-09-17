@@ -135,6 +135,21 @@ describe("absToConstraint", () => {
       expect(inst(c!)).toBe("x > 0");
     });
 
+    it("不可满足界集（含冗余 ge/le）→ undefined", () => {
+      // gt(x,5) ∧ le(x,5) 已不可满足；冗余 ge(x,5) 不得把 strict 降级而误判可满足
+      expect(
+        absToConstraint(numVar("n", and(gt(v("n"), lit(5)), ge(v("n"), lit(5)), le(v("n"), lit(5))))),
+      ).toBeUndefined();
+      // 对称：lt(x,5) ∧ le(x,5) ∧ ge(x,5)
+      expect(
+        absToConstraint(numVar("n", and(lt(v("n"), lit(5)), le(v("n"), lit(5)), ge(v("n"), lit(5))))),
+      ).toBeUndefined();
+      // 对照组：无冗余同样不可满足
+      expect(
+        absToConstraint(numVar("n", and(gt(v("n"), lit(5)), le(v("n"), lit(5))))),
+      ).toBeUndefined();
+    });
+
     it("反例：ne → undefined", () => {
       expect(absToConstraint(numVar("n", ne(v("n"), lit(0))))).toBeUndefined();
     });
