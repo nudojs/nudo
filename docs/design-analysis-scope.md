@@ -105,7 +105,7 @@ export function analysisConfig(config: NudoConfig | null | undefined): AnalysisC
 |---|---|
 | `off` | 不发 implicit 相关；仍发 `constraint-violated` 等显式契约（若 mode 允许分析） |
 
-> C0.5（可选）：`nudo.analysis.evalMissingSlot` 默认 `off`；开启后仅对**求值命中**的已知对象缺字段发 `nudo:missing-slot` warning。禁止 body AST 预扫描。见 `design-eval-missing-slot.md`。
+> C0.5（可选）：`nudo.analysis.evalMissingSlot` 默认 `off`；开启后仅对**求值命中**的已知对象缺字段发 `nudo:missing-slot` warning。禁止 body AST 预扫描。见 `design-eval-missing-slot.md`。草稿产品路径：`nudo interface --draft` / CodeLens `⚡ draft interface`。
 | `errors` | severity=error 的 check 码 + 高置信 evaluator error |
 | `default` | errors + 已收录 warning（排除 `unknown-recv` 类） |
 | `verbose` | 全部 |

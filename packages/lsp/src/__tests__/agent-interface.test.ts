@@ -179,17 +179,18 @@ describe("computeInterfaceLenses", () => {
     ]);
   });
 
-  it("persisted (@generated) export gets an update-mode emit lens", () => {
+  it("persisted (@generated) export gets an update-mode emit lens + draft lens", () => {
     const lenses = computeInterfaceLenses(LENS_SRC, "/t/lib.js", {
       loadModule: sidecarLoader(GENERATED_SIDECAR),
     });
     expect(lenses).toEqual([
       { kind: "interface", fn: "add", line: 2, source: "generated" },
       { kind: "emit", fn: "add", line: 2, mode: "update" },
+      { kind: "draft", fn: "add", line: 2 },
     ]);
   });
 
-  it("implicit export gets an add-mode emit lens; case lenses stay but rank behind", () => {
+  it("implicit export gets an add-mode emit lens + draft; case lenses stay but rank behind", () => {
     const src = `
 // @nudo:case "num" (42)
 // @nudo:case "str" ("a")
@@ -210,10 +211,12 @@ function helper(n) {
     expect(lenses).toEqual([
       { kind: "interface", fn: "withCase", line: 4, source: "implicit" },
       { kind: "emit", fn: "withCase", line: 4, mode: "add" },
+      { kind: "draft", fn: "withCase", line: 4 },
       { kind: "case", fn: "withCase", line: 4, caseIndex: 0, caseName: "num", active: true },
       { kind: "case", fn: "withCase", line: 4, caseIndex: 1, caseName: "str", active: false },
       { kind: "interface", fn: "plain", line: 8, source: "implicit" },
       { kind: "emit", fn: "plain", line: 8, mode: "add" },
+      { kind: "draft", fn: "plain", line: 8 },
       // 私有函数：不进 interface 档（不绑定不落盘），case 副层原样保留
       { kind: "case", fn: "helper", line: 13, caseIndex: 0, caseName: "h", active: true },
     ]);
@@ -235,6 +238,7 @@ function helper(n) {
     expect(lenses).toEqual([
       { kind: "interface", fn: "double", line: 8, source: "implicit" },
       { kind: "emit", fn: "double", line: 8, mode: "add" },
+      { kind: "draft", fn: "double", line: 8 },
     ]);
   });
 
@@ -244,6 +248,7 @@ function helper(n) {
     expect(lenses).toEqual([
       { kind: "interface", fn: "add", line: 2, source: "implicit" },
       { kind: "emit", fn: "add", line: 2, mode: "add" },
+      { kind: "draft", fn: "add", line: 2 },
     ]);
     expect(existsSync("/t/lib.nudo.js")).toBe(false); // 注入通道不落盘
   });
@@ -256,6 +261,7 @@ function helper(n) {
     expect(lenses).toEqual([
       { kind: "interface", fn: "add", line: 2, source: "implicit" },
       { kind: "emit", fn: "add", line: 2, mode: "add" },
+      { kind: "draft", fn: "add", line: 2 },
     ]);
   });
 });

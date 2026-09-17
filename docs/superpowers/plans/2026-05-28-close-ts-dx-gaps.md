@@ -163,7 +163,7 @@ flowchart TB
 | C0.2 | **HOF `arg-structure` 语义收窄**：码名/文案只描述「实参不是可调用 fn / arity」，不再暗示「缺 body slot」 | `nudo-check.md`、agent 文档、CLI help 一致 | C0.1 | [x] |
 | C0.3 | **测试与金样例迁移**：`structure/arg-structure.js`、`vs-ts/structure`、recall-gold、scan-interface 用例改为「侧车契约报」或「无契约不报」 | `pnpm test` 绿；`verify:examples` 矩阵更新 | C0.1 | [x] |
 | C0.4 | **zero-FP / 真实包回归**：确认 commander 等在删掉 body `arg-structure` 后 FP 不升、该报的仍由契约/求值覆盖 | `check-real-packages` 仍零 error | C0.1 | [x] |
-| C0.5 | **（可选后续）求值驱动缺槽诊断**：实参绑定后 `p.name` 求值失败时的 `missing-slot` 类报告——**禁止**回到 AST 预扫描 | 有设计短文 + 样例；默认 off 或 warning | C0.1 | [x] 设计 |
+| C0.5 | **（可选后续）求值驱动缺槽诊断**：实参绑定后 `p.name` 求值失败时的 `missing-slot` 类报告——**禁止**回到 AST 预扫描 | 有设计短文 + 样例；默认 off 或 warning | C0.1 | [x] |
 
 **不做**：把 body 访问重新做成 opt-in 门禁（除非未来单独立项并重新论证）。
 
@@ -263,7 +263,7 @@ flowchart TB
 - [x] **B2** 编辑增量（内容指纹短路 + 既有 version cache / 脏传播）
 - [x] **C2.3** `==` 折叠（`looseEqAbs` + B 路径 / ast-eval）
 - [x] **D2** 默认人类报告（签名一行摘要；`--verbose` 才 term/pred/conf）
-- [x] **C0.5**（可选）求值驱动缺槽 — 设计短文 `docs/design-eval-missing-slot.md`（默认 off）
+- [x] **C0.5**（可选）求值驱动缺槽 — `nudo.analysis.evalMissingSlot` 默认 off；warning 时 B-path `$get` 报 `nudo:missing-slot`
 
 ### Phase 2 — 缩放与集合完备（4–8 周）
 

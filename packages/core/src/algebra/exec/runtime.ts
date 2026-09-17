@@ -15,7 +15,7 @@ import { leqAbs } from "../leq.ts";
 import { evalNamespaceCall } from "../builtins.ts";
 import type { Phi } from "../pred.ts";
 import { pTrue } from "../pred.ts";
-import { noteUnknownMemberMissing } from "./calls.ts";
+import { noteUnknownMemberMissing, noteObjSlotMissing } from "./calls.ts";
 
 /** 当前路径前提 Φ（transpile 后的 fork 会压栈） */
 let phi: Phi = pTrue;
@@ -545,6 +545,8 @@ export function $get(
     const slot = (o.shape as ObjShape).slots[key];
     if (slot) return slot.value;
     if ((o.shape as ObjShape).open) return unknown;
+    // C0.5：闭 shape 缺槽且求值命中 → 可选 nudo:missing-slot（默认 off）
+    noteObjSlotMissing(o, key);
     return undef();
   }
   if (o.shape.k === "sum") {
@@ -554,6 +556,7 @@ export function $get(
   if (!opts?.silent) {
     // 裸属性访问落在 unknown 上 → unknown-recv（$invoke 自己报 method）
     noteUnknownMemberMissing(o, key, "property");
+    noteObjSlotMissing(o, key);
   }
   return unknown;
 }

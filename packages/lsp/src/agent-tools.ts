@@ -851,7 +851,9 @@ export function formatEmitResult(filePath: string, result: EmitInterfaceResult):
 export type InterfaceLens =
   | { kind: "interface"; fn: string; line: number; source: InterfaceSource }
   /** 固化动作 lens：add=`⚡ persist interface`，update=`↻ update interface` */
-  | { kind: "emit"; fn: string; line: number; mode: "add" | "update" };
+  | { kind: "emit"; fn: string; line: number; mode: "add" | "update" }
+  /** 代码优先草稿：`⚡ draft interface`（F6；handwritten 不加） */
+  | { kind: "draft"; fn: string; line: number };
 
 /** case 副层 lens（debug 层，标题/命令与既有行为一致） */
 export type CaseLens = {
@@ -970,6 +972,8 @@ export function computeInterfaceLenses(
           line: fn.line,
           mode: persisted.has(fn.name) ? "update" : "add",
         });
+        // F6：代码优先草稿（与 CLI --draft / agent nudo.interface.draft 同源）
+        lenses.push({ kind: "draft", fn: fn.name, line: fn.line });
       }
     }
 

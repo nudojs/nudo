@@ -79,6 +79,7 @@ const NUDO_COMMANDS = [
   "nudo.infer",
   "nudo.interface",
   "nudo.interface.draft",
+  "nudo.interfaceDraft",
   "nudo.interfaceEmit",
   "nudo.interface.emit",
   "nudo.selectCase",
@@ -424,6 +425,15 @@ connection.onCodeLens((params) => {
             title: lens.mode === "add" ? "⚡ persist interface" : "↻ update interface",
             command: "nudo.interfaceEmit",
             arguments: [params.textDocument.uri, lens.fn, lens.mode],
+          },
+        });
+      } else if (lens.kind === "draft") {
+        lenses.push({
+          range,
+          command: {
+            title: "⚡ draft interface",
+            command: "nudo.interface.draft",
+            arguments: [params.textDocument.uri, lens.fn],
           },
         });
       } else {
@@ -1042,6 +1052,18 @@ connection.onExecuteCommand((params) => {
   if (params.command === "nudo.interface") {
     const bridged = interfacePositionalArgs(args);
     if (bridged) return interfaceTool(bridged, agentToolDeps);
+  }
+  // CodeLens ⚡ draft interface: [uri, functionName]
+  if (params.command === "nudo.interface.draft" || params.command === "nudo.interfaceDraft") {
+    if (typeof args[0] === "string") {
+      return interfaceDraftTool(
+        {
+          file: args[0],
+          ...(typeof args[1] === "string" ? { functionName: args[1] } : {}),
+        },
+        agentToolDeps,
+      );
+    }
   }
   // CodeLens passes interfaceEmit positionally: [uri, functionName, mode]
   if (params.command === "nudo.interfaceEmit") {

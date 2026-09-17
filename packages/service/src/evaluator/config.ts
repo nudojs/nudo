@@ -23,6 +23,8 @@ export type NudoConfig = {
     diagnostics?: string;
     /** polyvariant：保留的精确调用点 case 上限（默认 3）；超出进 symbolic #widened */
     callSiteBudget?: number;
+    /** C0.5：求值命中闭对象缺字段 → nudo:missing-slot；默认 off */
+    evalMissingSlot?: "off" | "warning";
   };
   /** 磁盘缓存（B3）：true → `.nudo/cache`；字符串 → 自定义根；false/省略 → 关 */
   cache?: boolean | string;
@@ -44,6 +46,8 @@ export type AnalysisConfig = {
   diagnostics: DiagnosticsLevel;
   /** polyvariant 精确调用点上限（B4） */
   callSiteBudget: number;
+  /** C0.5 evaluation-driven missing-slot；默认 off */
+  evalMissingSlot: "off" | "warning";
 };
 
 const DEFAULT_ANALYSIS_INCLUDE: string[] = [];
@@ -90,6 +94,7 @@ export function analysisConfig(config: NudoConfig | null | undefined): AnalysisC
     mode,
     diagnostics,
     callSiteBudget,
+    evalMissingSlot: raw?.evalMissingSlot === "warning" ? "warning" : "off",
   };
 }
 

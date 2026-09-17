@@ -8,12 +8,14 @@ import type { Abs } from "../abs.ts";
 export type BMemberDiag = {
   kind: "method" | "property";
   name: string;
-  /** 接收者 prim 类型名，或 "unknown" */
+  /** 接收者 prim 类型名，或 "unknown" / "object"（C0.5 闭 shape 缺槽） */
   receiver: string;
   line?: number;
   column?: number;
   /** 调用点来源（provenance）：实参字面量 loc 优先，否则最近 $callNamed loc */
   origin?: { line: number; column: number };
+  /** 覆盖默认 no-method 码；C0.5 用 nudo:missing-slot */
+  code?: string;
 };
 
 let memberDiagCollector: ((d: BMemberDiag) => void) | null = null;
@@ -137,5 +139,52 @@ export function noteMemberDispatchMiss(
   loc?: [number, number],
 ): void {
   if (notePrimMemberMissing(recv, name, kind, loc)) return;
-  noteUnknownMemberMissing(recv, name, kind, loc);
+  if (noteUnknownMemberMissing(recv, name, kind, loc)) return;
+  noteObjSlotMissing(recv, name, loc);
+}
+
+// ---------------------------------------------------------------------------
+// C0.5 — evaluation-driven missing-slot（默认 off）
+// ---------------------------------------------------------------------------
+
+let evalMissingSlotEnabled = false;
+
+/** host（service analysisConfig）在 B-path 前设置；默认 false */
+export function setEvalMissingSlotEnabled(enabled: boolean): void {
+  evalMissingSlotEnabled = enabled;
+}
+
+export function isEvalMissingSlotEnabled(): boolean {
+  return evalMissingSlotEnabled;
+}
+
+/**
+ * 闭对象 shape 上缺失字段且**求值真实走到**该读取 → `nudo:missing-slot`。
+ * 仅展示/草稿提示；不参与 handwritten check 义务（C0：禁止 body AST 预扫）。
+ */
+export function noteObjSlotMissing(
+  recv: Abs | undefined,
+  name: string,
+  loc?: [number, number],
+): boolean {
+  if (!evalMissingSlotEnabled) return false;
+  const shape = recv?.shape;
+  if (!shape || shape.k !== "obj") return false;
+  const obj = shape as { open?: boolean; slots?: Record<string, unknown> };
+  if (obj.open) return false;
+  if (obj.slots && name in obj.slots) return false;
+  // opaque / widened conf：成员可能被藏住，不报
+  const conf = recv?.conf;
+  if (conf === "opaque" || conf === "widened") return false;
+  const origin = getAbsOrigin(recv);
+  recordMemberDiag({
+    kind: "property",
+    name,
+    receiver: "object",
+    code: "nudo:missing-slot",
+    line: loc?.[0],
+    column: loc?.[1],
+    ...(origin ? { origin } : {}),
+  });
+  return true;
 }

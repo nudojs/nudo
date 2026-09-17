@@ -29,6 +29,7 @@ import {
   abs as makeAbsVal,
   formalParamsFromNodes,
   formalParamDisplayNames,
+  setEvalMissingSlotEnabled,
   type Abs,
   stableAnalyzeKeySource,
   fnFingerprints,
@@ -1040,7 +1041,10 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
   const projectConfig = findProjectConfig(dirname(filePath));
   const projectEnvNames = projectConfig?.config.env ?? [];
   const envNames = [...new Set([...projectEnvNames, ...fileEnvNames])];
-  const callSiteBudget = analysisConfig(projectConfig?.config).callSiteBudget;
+  const analysisCfg = analysisConfig(projectConfig?.config);
+  const callSiteBudget = analysisCfg.callSiteBudget;
+  // C0.5：求值驱动 missing-slot（默认 off）
+  setEvalMissingSlotEnabled(analysisCfg.evalMissingSlot === "warning");
 
   const callRecords: CallRecord[] = [];
   // Environment 绑定 Abs（BindingInfo.abs）；nodeAbsMap 另走 absBinds
@@ -1049,11 +1053,25 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
   /** B 路径已报告的 method/property 名（避免双报） */
   const bMemberDiagNames = new Set<string>();
   const bMemberDiagSeen = new Set<string>();
-  const pushBMemberDiag = (d: { kind: string; name: string; receiver: string; line?: number; column?: number; origin?: { line: number; column: number } }, fallbackLine: number) => {
+  const pushBMemberDiag = (d: { kind: string; name: string; receiver: string; line?: number; column?: number; origin?: { line: number; column: number }; code?: string }, fallbackLine: number) => {
     bMemberDiagNames.add(d.name);
-    const key = `${d.kind}:${d.name}:${d.receiver}:${d.line ?? fallbackLine}:${d.column ?? 0}`;
+    const key = `${d.kind}:${d.name}:${d.receiver}:${d.line ?? fallbackLine}:${d.column ?? 0}:${d.code ?? ""}`;
     if (bMemberDiagSeen.has(key)) return;
     bMemberDiagSeen.add(key);
+    // C0.5：求值命中闭 shape 缺槽（默认 off；host 已 setEvalMissingSlotEnabled）
+    if (d.code === "nudo:missing-slot") {
+      diagnostics.push({
+        range: {
+          start: { line: d.line ?? fallbackLine, column: d.column ?? 0 },
+          end: { line: d.line ?? fallbackLine, column: (d.column ?? 0) + d.name.length },
+        },
+        severity: "warning",
+        message: `Field '${d.name}' is missing on the evaluated object shape`,
+        code: "nudo:missing-slot",
+        ...(d.origin ? { origin: d.origin } : {}),
+      });
+      return;
+    }
     // unknown 接收者 → unknown-recv（与 TypeValue 口径一致，warning）
     if (d.receiver === "unknown") {
       diagnostics.push({

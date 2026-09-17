@@ -23,6 +23,9 @@ export {
   notePrimMemberMissing,
   noteUnknownMemberMissing,
   noteMemberDispatchMiss,
+  noteObjSlotMissing,
+  setEvalMissingSlotEnabled,
+  isEvalMissingSlotEnabled,
   tagAbsOrigin,
   getAbsOrigin,
 } from "./member-diag.ts";

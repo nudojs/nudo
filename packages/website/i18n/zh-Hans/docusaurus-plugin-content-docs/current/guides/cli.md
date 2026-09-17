@@ -386,7 +386,7 @@ nudo interface --draft lib.js --fn greet
 | `symbolic` | 返回位 `generalizeFromAst` 兜底 |
 | 省略的参数槽 | 无证据 — 注释 `/* tighten */`，不是契约 |
 
-规则：手写契约跳过不覆盖；产物 `*.nudo.draft.js` **不** ambient 绑定；审阅后复制进 `*.nudo.js` 才生效。`--emit` 固化调用点事实，`--draft` 是给人审的起点。
+规则：手写契约跳过不覆盖；产物 `*.nudo.draft.js` **不** ambient 绑定；审阅后复制进 `*.nudo.js` 才生效。`--emit` 固化调用点事实，`--draft` 是给人审的起点。IDE 侧 CodeLens `⚡ draft interface` 与 agent `nudo.interface.draft` 同源。可选 `nudo.analysis.evalMissingSlot: "warning"` 打开求值命中缺字段提示（默认 off）。
 
 文件内有调用点、无侧车：
 

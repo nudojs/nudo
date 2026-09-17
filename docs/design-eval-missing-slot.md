@@ -1,6 +1,7 @@
-# C0.5 — Evaluation-driven missing-slot (design short)
+# C0.5 — Evaluation-driven missing-slot
 
-> Status: **design only**. Default **off**. Does **not** reintroduce body-AST slot scans.
+> Status: **implemented (default off)**. Does **not** reintroduce body-AST slot scans.
+> Config: `package.json` → `nudo.analysis.evalMissingSlot`: `"off"` (default) | `"warning"`.
 > Roadmap: `2026-05-28-close-ts-dx-gaps.md` C0.5 (optional).
 
 ## Problem
@@ -81,6 +82,18 @@ export const greet = fn({ user: shape({ name: string() }) }, string());
 2. Gate on `analysisConfig().evalMissingSlot === "warning"`.
 3. Gold tests: default off = zero new diags on C0 recall cases; on = only eval-hit misses.
 4. Keep `check` recall gold green: no new default-on obligations.
+
+## Implementation (landed)
+
+| Piece | Location |
+|-------|----------|
+| Gate | `setEvalMissingSlotEnabled` / `noteObjSlotMissing` in `core/exec/member-diag.ts` |
+| Hook | `$get` closed-obj missing key → note (runtime.ts) |
+| Config | `nudo.analysis.evalMissingSlot` in `service/evaluator/config.ts` |
+| Diagnostic | analyzer `pushBMemberDiag` maps `code === "nudo:missing-slot"` → warning |
+| Tests | `packages/service/src/__tests__/c05-missing-slot.test.ts` |
+
+Handwritten contracts still enforce via `nudo:constraint-violated` regardless of this flag. Product path for drafts remains `nudo interface --draft` (body-read keys as suggestions).
 
 ## Related
 
