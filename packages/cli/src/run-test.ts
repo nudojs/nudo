@@ -1,11 +1,11 @@
 /**
  * nudo test — @nudo:case 即测试。
  *
- * directive case 带 `=> expected` 时，用 isSubtypeOf 校验推断结果；
+ * directive case 带 `=> expected` 时，用 leqAbs 校验推断结果；
  * 失败记 FAIL，进程退出码 1。无期望的 directive case 记 unchecked。
  */
 
-import { isSubtypeOf, typeValueToString, absToTypeValue, formatShape, type TypeValue } from "@nudojs/core";
+import { leqAbs, formatShape, type Abs } from "@nudojs/core";
 import type { AnalysisResult } from "@nudojs/service";
 
 export type CaseTestOutcome = {
@@ -41,10 +41,10 @@ export function buildTestReport(file: string, result: AnalysisResult): TestRepor
         });
         continue;
       }
-      const expected = typeValueToString(c.expected as TypeValue);
+      const expected = formatShape(c.expected as Abs);
       let ok = false;
       try {
-        ok = isSubtypeOf(absToTypeValue(c.abs), c.expected as TypeValue);
+        ok = leqAbs(c.abs, c.expected as Abs).ok;
       } catch {
         ok = false;
       }

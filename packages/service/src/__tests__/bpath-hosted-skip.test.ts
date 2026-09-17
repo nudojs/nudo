@@ -61,12 +61,12 @@ export function go(n) { return twice(n); }
     expect(go!.cases.length + (twice?.cases.length ?? 0)).toBeGreaterThan(0);
   });
 
-  it("nodeTypeMap is populated without TypeValue env walk", () => {
+  it("nodeAbsMap is populated without TypeValue env walk", () => {
     const src = `const n = 1;
 export function id(x) { return x; }
 `;
     const { result } = analyze(src);
-    expect(result.nodeTypeMap.size).toBeGreaterThan(0);
+    expect(result.nodeAbsMap.size).toBeGreaterThan(0);
   });
 
   it("Abs host fill: nodeAbsMap + BindingInfo.abs even without B hosted", () => {
@@ -77,9 +77,9 @@ export function id(x) { return x; }
     // BindingInfo 携带无损 Abs
     const n = result.bindings.get("n");
     expect(n?.abs).toBeDefined();
-    // 节点表 Abs（与 TypeValue nodeTypeMap 并存）
+    // 节点表 Abs
     expect(result.nodeAbsMap).toBeDefined();
-    expect(result.nodeAbsMap!.size).toBeGreaterThan(0);
+    expect(result.nodeAbsMap.size).toBeGreaterThan(0);
   });
 
   it("constraint case grammar still fills case Abs via TypeValue fallback", () => {

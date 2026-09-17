@@ -50,7 +50,6 @@ import {
   resolveModule,
   locFromNode,
   collectEnvNames,
-  buildNodeTypeMap,
   type CompletionItem,
   type SourceLocation,
 } from "./analyzer.ts";
@@ -511,16 +510,16 @@ function findEnclosingFunction(
 }
 
 function findBestTypeAtPosition(
-  nodeTypeMap: Map<Node, TypeValue>,
+  nodeAbsMap: Map<Node, Abs>,
   globalEnv: Environment,
   ast: Node,
   line: number,
   column: number,
 ): TypeValue | null {
-  let bestMatch: TypeValue | null = null;
+  let bestMatch: Abs | null = null;
   let bestSize = Infinity;
 
-  for (const [node, tv] of nodeTypeMap) {
+  for (const [node, a] of nodeAbsMap) {
     const loc = node.loc;
     if (!loc) continue;
     if (
@@ -532,7 +531,7 @@ function findBestTypeAtPosition(
       const size = (loc.end.line - loc.start.line) * 10000 + (loc.end.column - loc.start.column);
       if (size < bestSize) {
         bestSize = size;
-        bestMatch = tv;
+        bestMatch = a;
       }
     }
   }
@@ -540,11 +539,11 @@ function findBestTypeAtPosition(
   if (!bestMatch) {
     const identAtPos = findIdentifierAtPosition(ast, line, column);
     if (identAtPos && globalEnv.has(identAtPos)) {
-      bestMatch = absToTypeValue(globalEnv.lookup(identAtPos));
+      bestMatch = globalEnv.lookup(identAtPos);
     }
   }
 
-  return bestMatch;
+  return bestMatch ? absToTypeValue(bestMatch) : null;
 }
 
 function findIdentifierAtPosition(ast: Node, line: number, column: number): string | null {

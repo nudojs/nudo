@@ -2,7 +2,7 @@
  * Per-function FunctionAnalysis cache (body-edit: recompute only dirty fns).
  * Cleared together with B-path / whole-file analysis caches.
  */
-import type { Abs, TypeValue } from "@nudojs/core";
+import type { Abs } from "@nudojs/core";
 
 // Structural types — avoid importing analyzer (cycle).
 export type CachedSourceLocation = {
@@ -46,7 +46,7 @@ export type CachedFnAnalysis = {
       throwsAbs: Abs;
       throwLoc?: CachedSourceLocation;
       source?: string;
-      expected?: TypeValue;
+      expected?: Abs;
       aggregatedFrom?: number;
       intension?: Record<string, unknown>;
     }>;

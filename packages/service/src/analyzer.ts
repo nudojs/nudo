@@ -31,6 +31,7 @@ import {
   formatAbs,
   formatAbsMultiline,
   formatShape,
+  leqAbs,
   numLit,
   strLit,
   boolLit,
@@ -107,7 +108,7 @@ export type CaseResult = {
   throwLoc?: SourceLocation;
   source?: "directive" | "callsite";
   /** `@nudo:case "name" (…) => expected` — presence means the case is a test assertion */
-  expected?: TypeValue;
+  expected?: Abs;
   /** number of additional call sites folded into a symbolic case */
   aggregatedFrom?: number;
   /**
@@ -167,9 +168,8 @@ export type AnalysisResult = {
    * the original — lookups must use the File that produced this result, not a
    * freshly parsed one. getTypeAtPosition rebuilds its own map and is unaffected.
    */
-  nodeTypeMap: Map<Node, TypeValue>;
-  /** 无损节点 Abs（与 nodeTypeMap 同键；B-path / Abs 补齐时填充） */
-  nodeAbsMap?: Map<Node, Abs>;
+  /** 无损节点 Abs */
+  nodeAbsMap: Map<Node, Abs>;
   caseHints: CaseHint[];
   /** functions imported from other modules, synthesized from cross-file call sites observed while analyzing this file */
   externalFunctions?: FunctionAnalysis[];
@@ -972,8 +972,7 @@ function cloneAnalysisResult(r: AnalysisResult): AnalysisResult {
     diagnostics: r.diagnostics.map((d) => ({ ...d })),
     bindings: new Map(r.bindings),
     // Node 键与 AST LRU 共享身份；Map 浅拷贝即可
-    nodeTypeMap: new Map(r.nodeTypeMap),
-    ...(r.nodeAbsMap ? { nodeAbsMap: new Map(r.nodeAbsMap) } : {}),
+    nodeAbsMap: new Map(r.nodeAbsMap),
     caseHints: r.caseHints.map((h) => ({ ...h })),
     ...(r.externalFunctions
       ? { externalFunctions: r.externalFunctions.map(cloneFunctionAnalysis) }
@@ -1045,7 +1044,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
   const functions = extractDirectives(ast);
   const diagnostics: Diagnostic[] = [];
   const bindings = new Map<string, BindingInfo>();
-  const nodeTypeMap = new Map<Node, TypeValue>();
+  const nodeAbsMap = new Map<Node, Abs>();
   const functionResults: FunctionAnalysis[] = [];
   const caseHints: CaseHint[] = [];
 
@@ -1210,7 +1209,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
         }
       }
       for (const [node, absVal] of absNodesShared) {
-        nodeTypeMap.set(node, absToTypeValue(absVal));
+        nodeAbsMap.set(node, absVal);
       }
     } catch {
       /* Abs 补齐失败仍以 B 诊断为准 */
@@ -1518,13 +1517,12 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
 
         let ok = true;
         if (directive.expected) {
-          const gotTv = absToTypeValue(caseAbs);
-          ok = isSubtypeOf(gotTv, directive.expected);
+          ok = leqAbs(caseAbs, directive.expected).ok;
           if (!ok) {
             diagnostics.push({
               range: { start: { line: directive.commentLine, column: 0 }, end: { line: directive.commentLine, column: 999 } },
               severity: "error",
-              message: `Case "${directive.name}": expected ${typeValueToString(directive.expected)}, got ${formatShape(caseAbs)}. The inferred return type does not match the expected type declared in the @nudo:case directive`,
+              message: `Case "${directive.name}": expected ${formatShape(directive.expected)}, got ${formatShape(caseAbs)}. The inferred return type does not match the expected type declared in the @nudo:case directive`,
               code: "nudo:case-expected",
             });
           }
@@ -1889,7 +1887,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
   }
 
   if (!bHostedEval) {
-    buildNodeTypeMap(ast, globalEnv, nodeTypeMap, absNodesShared);
+    buildNodeTypeMap(ast, globalEnv, nodeAbsMap);
   }
 
   const externalFunctions = synthesizeExternalFunctions(callRecords, filePath);
@@ -1898,8 +1896,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
     functions: functionResults,
     diagnostics,
     bindings,
-    nodeTypeMap,
-    ...(absNodesShared && absNodesShared.size > 0 ? { nodeAbsMap: absNodesShared } : {}),
+    nodeAbsMap,
     caseHints,
     ...(externalFunctions.length > 0 ? { externalFunctions } : {}),
   };
@@ -1946,8 +1943,7 @@ function nullLitAbs(): Abs {
 export function buildNodeTypeMap(
   ast: Node,
   env: Environment,
-  nodeTypeMap: Map<Node, TypeValue>,
-  nodeAbsMap?: Map<Node, Abs>,
+  nodeAbsMap: Map<Node, Abs>,
 ): void {
   const traverseFn = (typeof traverse === "function" ? traverse : (traverse as any).default) as typeof traverse;
   try {
@@ -1956,8 +1952,7 @@ export function buildNodeTypeMap(
         const node = path.node;
         try {
           const setAbs = (a: Abs): void => {
-            nodeAbsMap?.set(node, a);
-            nodeTypeMap.set(node, absToTypeValue(a));
+            nodeAbsMap.set(node, a);
           };
           if (
             node.type === "Identifier" &&

@@ -83,7 +83,7 @@ function makeFn(
 }
 
 function makeAnalysis(functions: FunctionAnalysis[]): AnalysisResult {
-  return { functions, diagnostics: [], bindings: new Map(), nodeTypeMap: new Map(), caseHints: [] };
+  return { functions, diagnostics: [], bindings: new Map(), nodeAbsMap: new Map(), caseHints: [] };
 }
 
 describe("serializeCaseArg", () => {

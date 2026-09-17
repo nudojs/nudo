@@ -6,7 +6,7 @@ import {
   type NudoConstraint,
   type Pred,
   T,
-  createEnvironment,
+
   stub,
   spy,
   mock,
@@ -36,7 +36,8 @@ export type CaseDirective = {
   name: string;
   /** 无损参数 Abs（case 文法唯一真理源；约束表达式与 T.* 均产出） */
   argsAbs: Abs[];
-  expected?: TypeValue;
+  /** `=> expected` 断言 Abs */
+  expected?: Abs;
   commentLine?: number;
 };
 
@@ -284,7 +285,7 @@ function parseTypeValueExprLegacy(expr: string): TypeValue {
   if (findTopLevelArrow(s) !== -1 || /^function\s*[\w$]*\s*\(/.test(s)) {
     const fnExpr = parseArrowFunctionExpr(s);
     if (fnExpr) {
-      const fnType = T.fn(fnExpr.params, fnExpr.body, createEnvironment());
+      const fnType = T.fn(fnExpr.params, fnExpr.body, null);
       (fnType as any)._paramPatterns = fnExpr.paramPatterns;
       return fnType;
     }
@@ -506,7 +507,7 @@ function parseSinonExpr(expr: string): SinonExpression | null {
     if (arrowFn) {
       return {
         type: "stub",
-        returnValue: T.fn(arrowFn.params, arrowFn.body, createEnvironment()),
+        returnValue: T.fn(arrowFn.params, arrowFn.body, null),
       };
     }
     return { type: "stub" };
@@ -724,7 +725,7 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
       const afterParen = parenStart + argsStr.length + 2;
       const restLine = text.slice(afterParen).split("\n")[0].trim();
       const arrowMatch = restLine.match(/^=>\s*(.+)/);
-      const expected = arrowMatch ? parseTypeValueExpr(arrowMatch[1].trim()) : undefined;
+      const expected = arrowMatch ? parseCaseArgExpr(arrowMatch[1].trim()).abs : undefined;
 
       const linesBeforeMatch = text.slice(0, match.index).split("\n").length - 1;
       const commentLine = commentStartLine + linesBeforeMatch;
