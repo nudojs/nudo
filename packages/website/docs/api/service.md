@@ -139,10 +139,14 @@ Extension gate shared by the CLI collector, watch mode, and the LSP `isNudoFile`
 ## buildSemanticTokens
 
 ```typescript
-buildSemanticTokens(filePath: string, source: string): number[]
+buildSemanticTokens(
+  filePath: string,
+  source: string,
+  opts?: { loadModule?: LoadModule; autoBind?: boolean },
+): number[]
 ```
 
-Produces LSP-encoded semantic tokens (5-tuples: deltaLine/deltaStartChar/length/tokenType/tokenModifiers) from the analysis result — function bindings typed as `function`, other bindings as `variable`, parameters as `parameter`. The LSP server's semanticTokens handler consumes this directly.
+Produces LSP-encoded semantic tokens (5-tuples: deltaLine/deltaStartChar/length/tokenType/tokenModifiers) from the analysis result — function bindings typed as `function`, other bindings as `variable`, parameters as `parameter`. Top-level **named-export** function bindings also carry an interface-tier modifier (`contract` / `generated` / `derived`) aligned with CodeLens `● interface` via `interfaceTierOf` (A7). Non-export declarations keep `declaration` only. The LSP server's semanticTokens handler consumes this directly.
 
 The matching legend and encoder are exported from the same module, and the LSP package re-exports them (`TOKEN_TYPES`/`TOKEN_MODIFIERS`) so the token-type indices can never drift from the extractor:
 
@@ -150,7 +154,8 @@ The matching legend and encoder are exported from the same module, and the LSP p
 SEMANTIC_TOKEN_TYPES: readonly string[]    // ["function", "variable", "parameter", "property",
                                            //  "type", "keyword", "string", "number", "comment",
                                            //  "decorator", "method"]
-SEMANTIC_TOKEN_MODIFIERS: readonly string[] // ["declaration", "readonly", "deprecated", "unreachable"]
+SEMANTIC_TOKEN_MODIFIERS: readonly string[] // ["declaration", "readonly", "deprecated", "unreachable",
+                                           //  "contract", "generated", "derived"]
 
 type SemanticToken = {
   line: number; char: number; length: number;
@@ -158,6 +163,7 @@ type SemanticToken = {
 };
 
 encodeSemanticTokens(tokens: SemanticToken[]): number[];
+interfaceTierModifierBit(src: "handwritten" | "generated" | "implicit"): number;
 ```
 
 `encodeSemanticTokens` delta-encodes `{ line, char, … }` tokens into the flat `number[]` the LSP expects — `buildSemanticTokens` already returns encoded output, so you only need it when building tokens yourself.

@@ -139,10 +139,14 @@ CLI 收集器、监视模式与 LSP `isNudoFile` 判定共享的扩展名门：`
 ## buildSemanticTokens
 
 ```typescript
-buildSemanticTokens(filePath: string, source: string): number[]
+buildSemanticTokens(
+  filePath: string,
+  source: string,
+  opts?: { loadModule?: LoadModule; autoBind?: boolean },
+): number[]
 ```
 
-从分析结果产出 LSP 编码的语义 token（五元组：deltaLine/deltaStartChar/length/tokenType/tokenModifiers）——函数绑定标为 `function`，其余绑定标为 `variable`，参数标为 `parameter`。LSP 服务器的 semanticTokens handler 直接消费它。
+从分析结果产出 LSP 编码的语义 token（五元组：deltaLine/deltaStartChar/length/tokenType/tokenModifiers）——函数绑定标为 `function`，其余绑定标为 `variable`，参数标为 `parameter`。顶层 **named-export** 函数绑定额外带 interface 档 modifier（`contract` / `generated` / `derived`），与 CodeLens `● interface` 经 `interfaceTierOf` 同源（A7）；非导出声明只带 `declaration`。LSP 服务器的 semanticTokens handler 直接消费它。
 
 配套的图例与编码器从同一模块导出，LSP 包再原样再导出（`TOKEN_TYPES`/`TOKEN_MODIFIERS`），因此 tokenType 索引不可能与提取器漂移：
 
@@ -150,7 +154,8 @@ buildSemanticTokens(filePath: string, source: string): number[]
 SEMANTIC_TOKEN_TYPES: readonly string[]    // ["function", "variable", "parameter", "property",
                                            //  "type", "keyword", "string", "number", "comment",
                                            //  "decorator", "method"]
-SEMANTIC_TOKEN_MODIFIERS: readonly string[] // ["declaration", "readonly", "deprecated", "unreachable"]
+SEMANTIC_TOKEN_MODIFIERS: readonly string[] // ["declaration", "readonly", "deprecated", "unreachable",
+                                           //  "contract", "generated", "derived"]
 
 type SemanticToken = {
   line: number; char: number; length: number;
@@ -158,6 +163,7 @@ type SemanticToken = {
 };
 
 encodeSemanticTokens(tokens: SemanticToken[]): number[];
+interfaceTierModifierBit(src: "handwritten" | "generated" | "implicit"): number;
 ```
 
 `encodeSemanticTokens` 把 `{ line, char, … }` token 增量编码为 LSP 期望的扁平 `number[]`——`buildSemanticTokens` 已经返回编码后的输出，只有自己构造 token 时才需要它。

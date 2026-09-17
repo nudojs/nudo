@@ -1,14 +1,19 @@
-import { dirname } from "node:path";
 import type { Node } from "@babel/types";
 import { parse } from "@nudojs/parser";
 import { collectAbsBindingsFromGraph } from "./abs-modules-graph.ts";
+import {
+  interfaceTierOf,
+  type InterfaceSource,
+  type InterfaceTierOpts,
+} from "@nudojs/core";
 
 /**
  * Semantic tokens 图例（tokenTypes 下标即 LSP 编码里的 tokenType 值）。
  * 与 LSP server capabilities 里声明的 legend 必须逐字对齐——server.ts 直接
  * 导入本常量注册，保证「提取端索引」与「客户端图例」单一来源。
  * 顺序沿用 lsp 包原 legend（function/variable/parameter/property 在前），
- * 末尾追加 method（对象字面量方法键），只追加不重排，客户端索引稳定。
+ * 末尾追加 method（对象字面量方法键）与 interface 档 modifier（A7），
+ * 只追加不重排，客户端索引稳定。
  */
 export const SEMANTIC_TOKEN_TYPES = [
   "function",
@@ -29,6 +34,12 @@ export const SEMANTIC_TOKEN_MODIFIERS = [
   "readonly",
   "deprecated",
   "unreachable",
+  /** handwritten：显式契约（侧车手写 / @nudo:refine） */
+  "contract",
+  /** generated：侧车 @generated 段 */
+  "generated",
+  /** derived：implicit 展示档（非义务契约） */
+  "derived",
 ] as const;
 
 export type SemanticToken = {
@@ -64,6 +75,14 @@ const TYPE_PARAMETER = SEMANTIC_TOKEN_TYPES.indexOf("parameter");
 const TYPE_PROPERTY = SEMANTIC_TOKEN_TYPES.indexOf("property");
 const TYPE_METHOD = SEMANTIC_TOKEN_TYPES.indexOf("method");
 const MOD_DECLARATION = 1 << SEMANTIC_TOKEN_MODIFIERS.indexOf("declaration");
+const MOD_CONTRACT = 1 << SEMANTIC_TOKEN_MODIFIERS.indexOf("contract");
+const MOD_GENERATED = 1 << SEMANTIC_TOKEN_MODIFIERS.indexOf("generated");
+const MOD_DERIVED = 1 << SEMANTIC_TOKEN_MODIFIERS.indexOf("derived");
+
+/** A7：interface 档 → semantic token modifier（与 CodeLens 同源） */
+export function interfaceTierModifierBit(src: InterfaceSource): number {
+  return src === "handwritten" ? MOD_CONTRACT : src === "generated" ? MOD_GENERATED : MOD_DERIVED;
+}
 
 /**
  * 顶层绑定中「函数值」名集合。
@@ -85,6 +104,10 @@ function collectFunctionBindingNames(filePath: string, source: string, _ast: Nod
   return new Set();
 }
 
+export type BuildSemanticTokensOpts = InterfaceTierOpts & {
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
+};
+
 /**
  * 从源码提取 semantic tokens 并按 LSP 相对编码返回扁平 number[]。
  *
@@ -94,10 +117,18 @@ function collectFunctionBindingNames(filePath: string, source: string, _ast: Nod
  * - 函数声明/函数表达式的名字 → function；所有函数的参数 → parameter；
  * - 对象字面量的键：值为函数 → method，否则 property。
  *
+ * A7：本地 named export 的函数绑定额外带 interface 档 modifier
+ * （contract / generated / derived），与 CodeLens `● interface` 同源。
+ * 非导出绑定只带 declaration，不假装进档。
+ *
  * 推断优先 Abs 模块图绑定（TypeValue 退出主路径）；失败时复用
  * evaluateProgram。解析失败返回 []。
  */
-export function buildSemanticTokens(filePath: string, source: string): number[] {
+export function buildSemanticTokens(
+  filePath: string,
+  source: string,
+  opts?: BuildSemanticTokensOpts,
+): number[] {
   let ast: Node;
   try {
     ast = parse(source);
@@ -121,8 +152,27 @@ export function buildSemanticTokens(filePath: string, source: string): number[] 
     }
   }
 
+  const tierOpts: InterfaceTierOpts = {
+    ...(opts?.loadModule ? { loadModule: opts.loadModule } : {}),
+    ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+  };
+  const tierModCache = new Map<string, number>();
+  const tierModFor = (name: string): number => {
+    const cached = tierModCache.get(name);
+    if (cached !== undefined) return cached;
+    let bit = 0;
+    try {
+      const tier = interfaceTierOf(source, name, filePath, tierOpts);
+      if (tier) bit = interfaceTierModifierBit(tier.source);
+    } catch {
+      bit = 0;
+    }
+    tierModCache.set(name, bit);
+    return bit;
+  };
+
   const tokens: SemanticToken[] = [];
-  const pushIdentifier = (id: Node, typeIndex: number): void => {
+  const pushIdentifier = (id: Node, typeIndex: number, extraMod = 0): void => {
     const loc = (id as { loc?: { start: { line: number; column: number } } }).loc;
     const name = (id as { name?: string }).name;
     if (!loc || typeof name !== "string") return;
@@ -131,7 +181,7 @@ export function buildSemanticTokens(filePath: string, source: string): number[] 
       char: loc.start.column,
       length: name.length,
       typeIndex,
-      modifierBitmask: MOD_DECLARATION,
+      modifierBitmask: MOD_DECLARATION | extraMod,
     });
   };
 
@@ -158,16 +208,29 @@ export function buildSemanticTokens(filePath: string, source: string): number[] 
         const id = n.id as Node | undefined;
         if (id?.type === "Identifier") {
           const isTopLevel = topLevelDeclarators.has(node);
-          const typeIndex =
-            isTopLevel && isFunctionValue((id as { name: string }).name) ? TYPE_FUNCTION : TYPE_VARIABLE;
-          pushIdentifier(id, typeIndex);
+          const name = (id as { name: string }).name;
+          const isFn = isTopLevel && isFunctionValue(name);
+          const typeIndex = isFn ? TYPE_FUNCTION : TYPE_VARIABLE;
+          // 仅顶层函数值导出带 interface 档 modifier（A7）
+          const extraMod = isFn ? tierModFor(name) : 0;
+          pushIdentifier(id, typeIndex, extraMod);
         }
         break;
       }
       case "FunctionDeclaration":
       case "FunctionExpression": {
         const id = n.id as Node | undefined;
-        if (id?.type === "Identifier") pushIdentifier(id, TYPE_FUNCTION);
+        if (id?.type === "Identifier") {
+          const name = (id as { name: string }).name;
+          const isTopLevelFnDecl =
+            n.type === "FunctionDeclaration" &&
+            // FunctionDeclaration 的顶层判定：parent 是 Program 或 ExportNamed
+            // 通过 topLevel 间接：函数声明名总是 TYPE_FUNCTION；导出档用 tierModFor
+            // （非导出返回 0，与 CodeLens 不加 lens 一致）
+            true;
+          const extraMod = isTopLevelFnDecl ? tierModFor(name) : 0;
+          pushIdentifier(id, TYPE_FUNCTION, extraMod);
+        }
         collectParams((n.params as Node[] | undefined) ?? []);
         break;
       }

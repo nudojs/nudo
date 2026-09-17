@@ -43,9 +43,10 @@ import {
   checkSource,
   serializeCheckJson,
   pTrue,
-  effectiveInterface,
+  formatInterfaceTierLine,
   generatedExportNames,
   interfaceDiagCount,
+  interfaceTierOf,
   localNamedExports,
   isNodeModulesPath,
   sidecarPathOf,
@@ -358,13 +359,15 @@ export type HoverToolParams = {
   source?: string;
   /** true 时同时返回该文件全部 Abs inlay */
   includeInlays?: boolean;
-  /** 可选：*.nudo.js 加载（契约进 inlay） */
+  /** 可选：*.nudo.js 加载（契约进 inlay / interface 档） */
   loadModule?: (spec: string, fromFile: string) => string | undefined;
+  /** autoBind=false 时 interface 档回落 implicit（与 CodeLens 同口径） */
+  autoBind?: boolean;
 };
 
 /**
  * Agent hover：无损 Abs（不经 TypeValue bridge）。
- * 与 LSP hover 同一信息源。
+ * 与 LSP hover 同一信息源；interfaceSource 与 CodeLens `● interface` 同源（A7）。
  */
 export function hoverTool(
   params: HoverToolParams,
@@ -373,7 +376,11 @@ export function hoverTool(
   try {
     const filePath = normalizeFilePath(params.file);
     const source = params.source ?? readSource(filePath, deps);
-    const hover = getHoverAtPosition(filePath, source, params.line, params.column);
+    const loadModule = params.loadModule ?? lspLoadModule;
+    const hover = getHoverAtPosition(filePath, source, params.line, params.column, undefined, {
+      loadModule,
+      ...(params.autoBind !== undefined ? { autoBind: params.autoBind } : {}),
+    });
     const payload: Record<string, unknown> = {
       file: filePath,
       line: params.line,
@@ -383,11 +390,18 @@ export function hoverTool(
       intension: hover?.intension ?? null,
       /** 有损外延，仅对照 */
       ext: hover?.typeText ?? null,
+      /** CodeLens `● interface` 同源档（A7）；非导出 / 无档 → null */
+      interfaceSource: hover?.interfaceSource ?? null,
+      interfaceDisplay: hover?.interfaceDisplay ?? null,
+      interfaceLine: hover?.interfaceSource
+        ? formatInterfaceTierLine(hover.interfaceSource)
+        : null,
     };
     if (params.includeInlays) {
       payload.inlays = collectAbsInlays(source, {
-        loadModule: params.loadModule ?? lspLoadModule,
+        loadModule,
         fromFile: filePath,
+        ...(params.autoBind !== undefined ? { autoBind: params.autoBind } : {}),
       });
     }
     return textResult(JSON.stringify(payload, null, 2));
@@ -853,14 +867,14 @@ export function computeInterfaceLenses(
     seen.add(fn.name);
 
     if (exported.has(fn.name)) {
-      const eff = effectiveInterface(source, fn.name, {
+      // A7：与 hover / semantic tokens / inlay 共用 interfaceTierOf（同源）
+      const tier = interfaceTierOf(source, fn.name, filePath, {
         ...(deps.loadModule ? { loadModule: deps.loadModule } : {}),
-        fromFile: filePath,
         // §2.2「整体关闭」：autoBind=false 时侧车 ambient 停用，lens 回落
         // implicit（与 check/validate/print 同口径，避免 UI 仍暗示契约生效）
         ...(deps.autoBind === false ? { autoBind: false } : {}),
       });
-      const src: InterfaceSource = eff?.source ?? "implicit";
+      const src: InterfaceSource = tier?.source ?? "implicit";
       lenses.push({ kind: "interface", fn: fn.name, line: fn.line, source: src });
       if (src !== "handwritten") {
         lenses.push({

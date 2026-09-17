@@ -861,3 +861,58 @@ function fmtConstraint(c: NudoConstraint): string {
 export function formatConstraint(c: NudoConstraint): string {
   return fmtConstraint(c);
 }
+
+/** EffectiveInterface → 契约展示串（与 CLI interface 打印同口径，不含函数名） */
+export function formatEffectiveInterfaceDisplay(eff: EffectiveInterface): string {
+  const params = eff.params
+    .map((p) => `${p.param}: ${formatConstraint(p.constraint)}`)
+    .join(", ");
+  let s = `(${params})`;
+  if (eff.returns) s += ` → ${formatConstraint(eff.returns.constraint)}`;
+  return s;
+}
+
+/** CodeLens / hover 首行标题（design-refine-derivation §8）：`● interface / <source>` */
+export function formatInterfaceTierLine(source: InterfaceSource): string {
+  return `● interface / ${source}`;
+}
+
+export type InterfaceTierInfo = {
+  source: InterfaceSource;
+  /** handwritten/generated 时的契约展示；implicit 为 undefined */
+  display?: string;
+};
+
+export type InterfaceTierOpts = EffectiveInterfaceOpts;
+
+/**
+ * interface 档单一读取口（A7）：CodeLens `● interface`、hover、inlay、
+ * semantic tokens 共用本函数，保证「同源」。
+ *
+ * 与 computeInterfaceLenses 同口径：仅源文件 **本地 named export** 进档；
+ * 私有名 / 非导出 → undefined（不进 interface 档，不假装 implicit 契约）。
+ */
+export function interfaceTierOf(
+  source: string,
+  fnName: string,
+  fromFile: string,
+  opts: InterfaceTierOpts = {},
+): InterfaceTierInfo | undefined {
+  if (!localNamedExports(source).has(fnName)) return undefined;
+  const eff = effectiveInterface(source, fnName, { fromFile, ...opts });
+  const src: InterfaceSource = eff?.source ?? "implicit";
+  if (eff && src !== "implicit") {
+    return { source: src, display: formatEffectiveInterfaceDisplay(eff) };
+  }
+  return { source: src };
+}
+
+/** interfaceTierOf 的来源投影；非导出 → undefined */
+export function interfaceSourceOf(
+  source: string,
+  fnName: string,
+  fromFile: string,
+  opts: InterfaceTierOpts = {},
+): InterfaceSource | undefined {
+  return interfaceTierOf(source, fnName, fromFile, opts)?.source;
+}

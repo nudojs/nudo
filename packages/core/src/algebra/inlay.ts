@@ -4,6 +4,10 @@
  *
  * 参数侧只展示显式 `@nudo:refine` 契约（entryReqs）——
  * 不从函数体 `if` 反推前置条件（那是控制流，不是对外契约）。
+ *
+ * A7（design-refine-derivation §8）：default 走 symbolic + entryReqs；
+ * 与 CodeLens `● interface` 同源——interfaceTierOf 标注来源；
+ * implicit 导出的返回 inlay 标明 `derived`（展示档，非义务契约）。
  */
 
 import type { Node, FunctionDeclaration } from "@babel/types";
@@ -13,6 +17,7 @@ import { formatShape } from "./format.ts";
 import { predToString } from "./pred.ts";
 import { termToString } from "./term.ts";
 import { litValue, type Abs } from "./abs.ts";
+import { interfaceTierOf, type InterfaceSource, type InterfaceTierOpts } from "./interface.ts";
 
 export type AbsInlay = {
   /** 1-based 行号 */
@@ -21,6 +26,15 @@ export type AbsInlay = {
   character: number;
   label: string;
   kind: "type" | "parameter";
+  /** interface 档来源（与 CodeLens `● interface` 同源）；非导出缺省 */
+  interfaceSource?: InterfaceSource;
+  /** true = 隐式推导展示（非义务契约），label 已带 `· derived` */
+  derived?: boolean;
+};
+
+export type CollectAbsInlaysOpts = InterfaceTierOpts & {
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
+  fromFile?: string;
 };
 
 function listFunctions(source: string): Array<{ name: string; node: Node }> {
@@ -123,14 +137,23 @@ function formatReturnDisplay(g: PolyFn): string {
 
 /**
  * 收集源码中函数签名的 Abs inlay：
- * - 参数后：仅 `@nudo:refine` 声明的前置契约
+ * - 参数后：仅 `@nudo:refine` / 侧车显式契约（entryReqs）
  * - `{` 前：返回计算形（`x | x * 2`），无 term 时退回 shape
+ * - interface 档：导出函数带 `interfaceSource`；implicit 返回标 `derived`
  */
 export function collectAbsInlays(
   source: string,
-  refineOpts?: { loadModule?: (spec: string, fromFile: string) => string | undefined; fromFile?: string },
+  opts?: CollectAbsInlaysOpts,
 ): AbsInlay[] {
   const inlays: AbsInlay[] = [];
+  const refineOpts =
+    opts?.loadModule || opts?.fromFile
+      ? {
+          ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
+          ...(opts.fromFile ? { fromFile: opts.fromFile } : {}),
+        }
+      : undefined;
+
   for (const { name, node } of listFunctions(source)) {
     let g: ReturnType<typeof generalizeFromAst>;
     try {
@@ -139,6 +162,17 @@ export function collectAbsInlays(
       continue;
     }
     if (!g) continue;
+
+    // A7：与 CodeLens `● interface` 同源；仅本地 named export 进档
+    const tier =
+      opts?.fromFile !== undefined
+        ? interfaceTierOf(source, name, opts.fromFile, {
+            ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
+            ...(opts.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+          })
+        : undefined;
+    const tierSrc = tier?.source;
+    const isImplicitExport = tierSrc === "implicit";
 
     const params = g.params;
     const predsByName = new Map<string, import("./pred.ts").Pred[]>();
@@ -162,11 +196,12 @@ export function collectAbsInlays(
           character: p.loc.end.column,
           label: `  where ${text}`,
           kind: "parameter",
+          ...(tierSrc ? { interfaceSource: tierSrc } : {}),
         });
       }
     }
 
-    // 返回：插在函数体 `{` 前——优先 term/路径形
+    // 返回：插在函数体 `{` 前——优先 term/路径形；implicit 导出标明 derived
     const bodyLoc = fnNode.body?.loc;
     if (bodyLoc?.start) {
       let label: string;
@@ -175,11 +210,14 @@ export function collectAbsInlays(
       } catch {
         label = `: ${formatShape(g.symbolic)}`;
       }
+      if (isImplicitExport) label += "  · derived";
       inlays.push({
         line: bodyLoc.start.line,
         character: Math.max(0, bodyLoc.start.column),
         label: `${label}  `,
         kind: "type",
+        ...(tierSrc ? { interfaceSource: tierSrc } : {}),
+        ...(isImplicitExport ? { derived: true } : {}),
       });
     }
   }

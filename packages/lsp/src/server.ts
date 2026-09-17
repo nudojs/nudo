@@ -307,12 +307,25 @@ connection.onHover((params) => {
   const line = params.position.line + 1;
   const column = params.position.character;
   const cases = getActiveCasesForUri(params.textDocument.uri);
+  const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
 
   try {
-    const hover = getHoverAtPosition(filePath, source, line, column, cases);
+    // A7：interface 档与 CodeLens 同源——default 走 symbolic + entryReqs；
+    // 选 case 时 body 仍走 activeCases 重放，interface 标注不变
+    const hover = getHoverAtPosition(filePath, source, line, column, cases, {
+      loadModule: activeLoadModule,
+      ...(autoBind === false ? { autoBind: false } : {}),
+    });
     if (!hover) return null;
 
     const lines: string[] = [];
+    // 与 CodeLens `● interface / <source>` 同源首行（A7 验收）
+    if (hover.interfaceSource) {
+      lines.push(`● interface / ${hover.interfaceSource}`);
+      if (hover.interfaceDisplay && hover.interfaceSource !== "implicit") {
+        lines.push("```nudo", hover.interfaceDisplay, "```");
+      }
+    }
     // 无损 Abs 优先（类型即计算本体）
     if (hover.absMultiline) {
       lines.push("```nudo", hover.absMultiline, "```");
@@ -438,6 +451,7 @@ connection.languages.inlayHint.on((params) => {
   const source = document.getText();
   const cases = getActiveCasesForUri(params.textDocument.uri);
   const lines = source.split("\n");
+  const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
 
   try {
     const result = getCachedOrAnalyze(filePath, source, document.version, cases);
@@ -457,10 +471,12 @@ connection.languages.inlayHint.on((params) => {
     }
 
     // Abs inlay：参数约束 + 返回 term/pred（类型即计算，无损）
+    // A7：default 走 symbolic + entryReqs；与 CodeLens interface 档同源
     try {
       for (const abs of collectAbsInlays(source, {
         loadModule: activeLoadModule,
         fromFile: filePath,
+        ...(autoBind === false ? { autoBind: false } : {}),
       })) {
         const lineIdx = abs.line - 1;
         if (lineIdx < 0 || lineIdx >= lines.length) continue;
@@ -848,7 +864,14 @@ connection.languages.semanticTokens.on((params) => {
 
   try {
     const filePath = uriToFilePath(document.uri);
-    return { data: buildSemanticTokens(filePath, document.getText()) };
+    const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
+    // A7：export 函数绑定带 contract/generated/derived modifier，与 CodeLens 同源
+    return {
+      data: buildSemanticTokens(filePath, document.getText(), {
+        loadModule: activeLoadModule,
+        ...(autoBind === false ? { autoBind: false } : {}),
+      }),
+    };
   } catch {
     return { data: [] };
   }

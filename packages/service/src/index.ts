@@ -142,9 +142,11 @@ export {
 export {
   buildSemanticTokens,
   encodeSemanticTokens,
+  interfaceTierModifierBit,
   SEMANTIC_TOKEN_TYPES,
   SEMANTIC_TOKEN_MODIFIERS,
   type SemanticToken,
+  type BuildSemanticTokensOpts,
 } from "./semantic-tokens.ts";
 
 export {

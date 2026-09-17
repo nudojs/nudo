@@ -26,6 +26,9 @@ import {
   findAbsAtPosition,
   evalSource,
   setAbsNodeCollector,
+  interfaceTierOf,
+  type InterfaceSource,
+  type InterfaceTierOpts,
 } from "@nudojs/core";
 import { parse, extractDirectives, extractFileDirectives } from "@nudojs/parser";
 import type { FunctionWithDirectives } from "@nudojs/parser";
@@ -248,7 +251,14 @@ export type HoverInfo = {
   abs?: string;
   /** 无损 Abs 多行展示 */
   absMultiline?: string;
+  /** CodeLens `● interface` 同源档位（A7）；仅本地 named export */
+  interfaceSource?: InterfaceSource;
+  /** 有效契约展示（handwritten/generated）；implicit 为 undefined */
+  interfaceDisplay?: string;
 };
+
+/** A7：hover/inlay 与 CodeLens interface 档同源（design-refine-derivation §8） */
+export type HoverInterfaceOpts = InterfaceTierOpts;
 
 /**
  * LSP hover：优先无损 Abs（类型即计算本体）。
@@ -258,6 +268,10 @@ export type HoverInfo = {
  * intension 一律走 generalize/formatPoly（HOF fnRels 在这里）；
  * typeText 仍落 B-path Abs（调用点显示结果类型，不是函数签名）。
  * 禁止用 B-path 的 arity-only fn Abs 冒充权威关系源。
+ *
+ * A7 default 档：函数名 hover 附带 interfaceTierOf 来源 + 契约展示，
+ * 与 CodeLens `● interface / <source>` 同源；选 case 时 body 仍走
+ * activeCases 重放，interface 档标注不变。
  */
 export function getHoverAtPosition(
   filePath: string,
@@ -265,6 +279,7 @@ export function getHoverAtPosition(
   line: number,
   column: number,
   activeCases?: Map<string, number>,
+  opts?: HoverInterfaceOpts,
 ): HoverInfo | null {
   let file: ReturnType<typeof parse> | undefined;
   try {
@@ -274,6 +289,12 @@ export function getHoverAtPosition(
   }
   const envNames = collectEnvNames(filePath, source, false);
   const fnName = findFunctionNameAtPosition(source, line, column, file);
+
+  // interface 档（A7）：与 CodeLens 同源；仅导出函数标注
+  const tier =
+    fnName !== undefined
+      ? interfaceTierOf(source, fnName, filePath, opts ?? {})
+      : undefined;
 
   // intension 候选：先算、不早退，最后合并进 B-path/TypeValue 结果
   let gDisplay: string | undefined;
@@ -291,18 +312,26 @@ export function getHoverAtPosition(
       // ignore
     }
   }
-  const attachIntension = (info: HoverInfo | null): HoverInfo | null => {
-    if (!gDisplay) return info;
-    if (!info) {
-      return { typeText: gDisplay, intension: gDisplay, abs: gAbs, absMultiline: gMulti };
-    }
+  const withTier = <T extends HoverInfo | null>(info: T): T => {
+    if (!info || !tier) return info;
     return {
+      ...info,
+      interfaceSource: tier.source,
+      ...(tier.display !== undefined ? { interfaceDisplay: tier.display } : {}),
+    };
+  };
+  const attachIntension = (info: HoverInfo | null): HoverInfo | null => {
+    if (!gDisplay) return withTier(info);
+    if (!info) {
+      return withTier({ typeText: gDisplay, intension: gDisplay, abs: gAbs, absMultiline: gMulti });
+    }
+    return withTier({
       ...info,
       intension: gDisplay,
       // 外延侧已有更准 Abs 时保留；否则用 symbolic 兜底
       abs: info.abs ?? gAbs,
       absMultiline: info.absMultiline ?? gMulti,
-    };
+    });
   };
 
   // B 路径：优先 Abs 节点表 / 标识符绑定，不经 TypeValue evaluateProgram。
@@ -401,6 +430,15 @@ export function getHoverAtPosition(
     // ignore
   }
 
+  // 无类型结果时仍附 interface 档（函数名 hover 的同源保证）
+  if (tier && gDisplay) {
+    return withTier({
+      typeText: gDisplay,
+      intension: gDisplay,
+      abs: gAbs,
+      absMultiline: gMulti,
+    });
+  }
   return null;
 }
 

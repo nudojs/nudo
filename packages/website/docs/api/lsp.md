@@ -142,7 +142,7 @@ findIdentifierAtPosition(ast: Node, line: number, column: number): string | null
 encodeSemanticTokens(tokens: SemanticToken[]): number[];
 ```
 
-Delta-encodes `{ line, char, length, typeIndex, modifierBitmask }` tokens into the flat `number[]` the LSP expects. `TOKEN_TYPES` (`function`, `variable`, `parameter`, `property`, `type`, `keyword`, `string`, `number`, `comment`, `decorator`, `method`) and `TOKEN_MODIFIERS` (`declaration`, `readonly`, `deprecated`, `unreachable`) form the server's declared legend. The server's semanticTokens handler colors declarations from the analysis result — function bindings get the `function` type, other bindings `variable`, parameters `parameter` — via `buildSemanticTokens` from `@nudojs/service`.
+Delta-encodes `{ line, char, length, typeIndex, modifierBitmask }` tokens into the flat `number[]` the LSP expects. `TOKEN_TYPES` (`function`, `variable`, `parameter`, `property`, `type`, `keyword`, `string`, `number`, `comment`, `decorator`, `method`) and `TOKEN_MODIFIERS` (`declaration`, `readonly`, `deprecated`, `unreachable`, `contract`, `generated`, `derived`) form the server's declared legend. The server's semanticTokens handler colors declarations from the analysis result — function bindings get the `function` type, other bindings `variable`, parameters `parameter`; top-level named-export functions also carry an interface-tier modifier aligned with CodeLens `● interface` (A7) — via `buildSemanticTokens` from `@nudojs/service`.
 
 ## Server Capabilities
 
@@ -150,7 +150,7 @@ What the server registers on `connection.onInitialize` (`src/server.ts`):
 
 | Capability | Handler | Behavior |
 |------------|---------|----------|
-| Hover | `onHover` | Inferred type at cursor via `getTypeAtPosition`, rendered as a fenced `nudo` markdown code block |
+| Hover | `onHover` | Inferred type at cursor via `getTypeAtPosition`; when the cursor is on an exported function name, the first line is `● interface / handwritten|generated|implicit` (same source as CodeLens) plus the effective contract display for handwritten/generated |
 | Completion (trigger `.`) | `onCompletion` | Property/method/variable items from `getCompletionsAtPosition` |
 | CodeLens | `onCodeLens` | One lens per `@nudo:case`: `● case "name"` for the active case, `○ case "name"` otherwise; clicking sends the custom `nudo/selectCase` request and refreshes lenses |
 | Inlay hints | `languages.inlayHint.on` | End-of-line `Type` hints from analysis `caseHints` |

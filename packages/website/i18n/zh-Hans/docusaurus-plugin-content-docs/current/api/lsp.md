@@ -142,7 +142,7 @@ findIdentifierAtPosition(ast: Node, line: number, column: number): string | null
 encodeSemanticTokens(tokens: SemanticToken[]): number[];
 ```
 
-把 `{ line, char, length, typeIndex, modifierBitmask }` token 增量编码为 LSP 期望的扁平 `number[]`。`TOKEN_TYPES`（`function`、`variable`、`parameter`、`property`、`type`、`keyword`、`string`、`number`、`comment`、`decorator`、`method`）与 `TOKEN_MODIFIERS`（`declaration`、`readonly`、`deprecated`、`unreachable`）构成服务器声明的图例。服务器的 semanticTokens handler 基于 `@nudojs/service` 的 `buildSemanticTokens` 对分析结果着色——函数绑定标为 `function`，其余绑定标为 `variable`，参数标为 `parameter`。
+把 `{ line, char, length, typeIndex, modifierBitmask }` token 增量编码为 LSP 期望的扁平 `number[]`。`TOKEN_TYPES`（`function`、`variable`、`parameter`、`property`、`type`、`keyword`、`string`、`number`、`comment`、`decorator`、`method`）与 `TOKEN_MODIFIERS`（`declaration`、`readonly`、`deprecated`、`unreachable`、`contract`、`generated`、`derived`）构成服务器声明的图例。服务器的 semanticTokens handler 基于 `@nudojs/service` 的 `buildSemanticTokens` 对分析结果着色——函数绑定标为 `function`，其余绑定标为 `variable`，参数标为 `parameter`；顶层 named-export 函数绑定额外带与 CodeLens `● interface` 同源的 interface 档 modifier（A7）。
 
 ## 服务器能力
 
@@ -150,7 +150,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 
 | 能力 | Handler | 行为 |
 |------------|---------|----------|
-| 悬停 | `onHover` | 通过 `getTypeAtPosition` 获取光标处推断类型，渲染为 `nudo` 围栏 markdown 代码块 |
+| 悬停 | `onHover` | 通过 `getTypeAtPosition` 获取光标处推断类型；光标落在导出函数名上时，首行为 `● interface / handwritten|generated|implicit`（与 CodeLens 同源），handwritten/generated 另附有效契约展示 |
 | 补全（触发 `.`） | `onCompletion` | 来自 `getCompletionsAtPosition` 的属性/方法/变量项 |
 | CodeLens | `onCodeLens` | 每个 `@nudo:case` 一个透镜：激活用例显示 `● case "name"`，其余显示 `○ case "name"`；点击发送自定义 `nudo/selectCase` 请求并刷新透镜 |
 | 内联提示 | `languages.inlayHint.on` | 来自分析 `caseHints` 的行尾 `Type` 提示 |
