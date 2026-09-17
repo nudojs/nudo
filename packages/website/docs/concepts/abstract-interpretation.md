@@ -164,12 +164,15 @@ map(T.array(T.number), (x) => x + 1)
 // Result: T.array(T.number)
 ```
 
-### Recursion (Memoization + Widening)
+### Recursion (Call Budget)
 
-1. First call with a given type-value signature: record and start evaluation.
-2. If the same signature is encountered again (recursive call): return a placeholder (`T.unknown`).
-3. After first evaluation completes, re-evaluate with the known return type.
-4. Repeat until the return type reaches a fixed point.
+Recursion is bounded by a call budget (`MAX_CALL_DEPTH = 64`), not refined to a fixed point:
+
+1. A recursive call is evaluated with the current arguments.
+2. When a signature is re-entered past the budget, the call is truncated.
+3. The truncated result is widened to `unknown`, reported as `nudo:recursion-truncated` (a warning in `nudo check`).
+
+Concrete base cases inside the budget still evaluate to literals; symbolic self-recursion widens to `unknown` rather than diverging.
 
 ### Async / Promise
 

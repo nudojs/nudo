@@ -253,7 +253,7 @@ eval(IfStatement { test, consequent, alternate }) →
 
 ### 4.1 Loops
 
-When loop count depends on type values, the engine uses **fixed-point iteration**:
+Loops use **bounded unrolling**, not fixed-point iteration. A concrete bound unrolls that many times. An abstract bound — whose test is never *definitely false* — unrolls up to a cap (`DEFAULT_MAX_LOOP_ITERS = 8`), a termination guard for abstract conditions. Within the cap the loop exits early when the test becomes definitely false, or when two adjacent loop states stop changing (`leqAbs`).
 
 ```javascript
 let sum = 0;
@@ -262,7 +262,7 @@ for (let i = 0; i < arr.length; i++) {
 }
 ```
 
-Strategy: if `arr` is abstract, execute the loop body with `arr[i]` as the element type and iterate until `sum`'s type reaches a fixed point (e.g. `T.literal(0)` → `T.number`).
+A concrete bound accumulates element-wise to a literal. An abstract bound sums the first `0…7` iterations and reports `28 #exact`.
 
 ### 4.2 Closures and Higher-Order Functions
 
@@ -270,7 +270,7 @@ Functions are first-class type values. When a function is passed as an argument,
 
 ### 4.3 Recursion
 
-Recursion is handled via **memoization + widening**: recursive calls with the same signature return a placeholder, then the result is refined until it reaches a fixed point.
+Recursion is bounded by a **call budget** (`MAX_CALL_DEPTH = 64`). A recursive call that re-enters a signature past the budget is truncated and its result widened to `unknown`, reported as `nudo:recursion-truncated` — there is no fixed-point refinement. Concrete base cases inside the budget still evaluate to literals.
 
 ### 4.4 Async / Promise
 
@@ -296,7 +296,7 @@ Directives are structured comments that guide the engine. They use the `@nudo:` 
 | `@nudo:mock` | Mock external dependencies with type-value implementations |
 | `@nudo:pure` | Mark function as pure for memoization |
 | `@nudo:skip` | Skip evaluation; an optional type expression declares the return type (e.g. `@nudo:skip T.number`) |
-| `@nudo:sample` | Number of loop iterations before fixed-point |
+| `@nudo:sample` | Reserved no-op (parsed, not consumed) |
 | `@nudo:refine` | Refinement contract: `@nudo:refine param name` / `@nudo:refine return name` (Pred enters Abs) |
 | `@nudo:env` | Declare runtime environment APIs (file-level `///` comment) |
 | `@nudo:mock-module` | Replace imported modules with mock files (file-level `///` comment) |

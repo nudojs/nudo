@@ -121,7 +121,7 @@ type SampleDirective = {
 }
 ```
 
-在不动点分析之前要执行的循环迭代次数。
+请求的循环迭代次数。仅为源码兼容而解析，analyzer 不消费——循环求值走有界展开，此指令对输出无效果。
 
 ### FileDirective
 

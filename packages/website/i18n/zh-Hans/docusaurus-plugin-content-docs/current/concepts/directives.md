@@ -340,9 +340,9 @@ Skipped (declared): number
 
 ---
 
-## @nudo:sample — 循环采样
+## @nudo:sample — 循环采样（保留，无效果）
 
-控制引擎在切换到不动点分析之前求值多少次循环迭代。用于在精度和性能之间权衡。
+`@nudo:sample` 已被解析但没有消费者——analyzer 会丢弃它（`service/src/analyzer.ts` 中的 `void sampleDirective`）。它不会改变循环求值：循环本就通过有界展开（`DEFAULT_MAX_LOOP_ITERS = 8`）终止，不存在可切换的不动点阶段。该指令为源码兼容而被接受，但对输出无任何影响；不要依赖它在精度与性能之间权衡。
 
 ### 语法
 
@@ -350,23 +350,7 @@ Skipped (declared): number
 @nudo:sample N
 ```
 
-- **N** — 正整数：泛化之前运行的具体迭代次数。
-
-### 示例
-
-```javascript
-/**
- * @nudo:sample 10
- * @nudo:case "reduce" (T.array(T.number))
- */
-function sum(arr) {
-  let total = 0;
-  for (let i = 0; i < arr.length; i++) {
-    total += arr[i];
-  }
-  return total;
-}
-```
+- **N** — 正整数。分析时被忽略。
 
 ---
 
@@ -729,7 +713,7 @@ const result = a + b;
 | `@nudo:mock` | `name = expr` 或 `name from "path"` | Mock 外部依赖 |
 | `@nudo:pure` | （无参数） | 标记纯函数以启用记忆化 |
 | `@nudo:skip` | `[returnsExpr]` | 跳过求值，使用已有类型信息 |
-| `@nudo:sample` | `N` | 控制不动点之前的循环采样次数 |
+| `@nudo:sample` | `N` | 保留的无效果指令（已解析，未消费） |
 | `@nudo:refine` / `@nudo:interface` | `param constraint` / `return constraint` | 源码内精化契约（别名对；主路径是 `*.nudo.js` 侧车自动绑定） |
 | `@nudo:import` | `{ name } from "spec"`（文件级 `///`） | 为 `@nudo:refine` 引入 `*.nudo.js` 约束模板 |
 | `@nudo:env` | `name1, name2`（文件级 `///`） | 声明运行时环境 API |

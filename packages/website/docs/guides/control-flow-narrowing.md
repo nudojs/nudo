@@ -84,7 +84,7 @@ Case "call@L9": (5) => -1
 Combined: 3 | 2 | -1
 ```
 
-The string call reaches `x.length` on a narrowed string (`3`), the array call on a narrowed array (`2`), and the number call falls through both guards to `-1`. Note the narrowed branch keeps the value itself: `input[0]` on a narrowed array is not modeled yet (`unknown`), while `.length` is.
+The string call reaches `x.length` on a narrowed string (`3`), the array call on a narrowed array (`2`), and the number call falls through both guards to `-1`. The narrowed branch keeps the value itself: indexing a narrowed array (`x[0]`) resolves to its element type — a literal for a literal array, the element type for an abstract array — just like `.length` does.
 
 ## Switch Statements
 
@@ -130,7 +130,6 @@ These patterns currently do **not** fork on the call-site path — each one degr
 | Symbolic inputs | `@nudo:case` with symbolic arguments (`T.number`, `T.union(...)`) do not fork conditions — the branches join; concrete arguments narrow on both paths. |
 | `in` operator | `if ("toJSON" in value)` narrows for object arguments, but method results widen (`string` instead of the closure's `"serialized"`); non-object arguments also report `nudo:no-method`. |
 | `?.` / `??` | Shallow `config.port ?? 3000` with a known property yields `number`; deep chains and short-circuiting members degrade to `unknown`. |
-| Array indexing | `input[0]` on a narrowed array is `unknown` — use `.length` or element-level operations. |
 
 ## Summary
 

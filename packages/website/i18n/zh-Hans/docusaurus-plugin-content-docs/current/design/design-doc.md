@@ -249,7 +249,7 @@ eval(IfStatement { test, consequent, alternate }) →
 
 ### 4.1 循环
 
-当循环次数依赖于类型值时，引擎使用**不动点迭代**：
+循环使用**有界展开**，而非不动点迭代。具体边界按该次数展开。抽象边界——其测试永远不会*确定地为假*——最多展开到上限（`DEFAULT_MAX_LOOP_ITERS = 8`），这是抽象条件的终止守卫。在上限之内，当测试变为确定地为假、或相邻两个循环状态不再变化（`leqAbs`）时提前退出。
 
 ```javascript
 let sum = 0;
@@ -258,7 +258,7 @@ for (let i = 0; i < arr.length; i++) {
 }
 ```
 
-策略：若 `arr` 是抽象的，用 `arr[i]` 作为元素类型执行循环体，直到 `sum` 的类型达到不动点（如 `T.literal(0)` → `T.number`）。
+具体边界逐元素累加得到字面量。抽象边界对前 `0…7` 次迭代求和并报告 `28 #exact`。
 
 ### 4.2 闭包与高阶函数
 
@@ -266,7 +266,7 @@ for (let i = 0; i < arr.length; i++) {
 
 ### 4.3 递归
 
-递归通过**记忆化 + 拓宽**处理：相同签名的递归调用返回占位符，随后 refining 直到结果达到不动点。
+递归由**调用预算**约束（`MAX_CALL_DEPTH = 64`）。超过预算重新进入同一签名的递归调用被截断，结果拓宽为 `unknown`，报 `nudo:recursion-truncated`——不存在不动点精化。预算内的具体基例仍求值为字面量。
 
 ### 4.4 异步 / Promise
 
@@ -292,7 +292,7 @@ Nudo 将异常作为函数类型的一等部分追踪。每个函数不仅有 `r
 | `@nudo:mock` | 用类型值实现 mock 外部依赖 |
 | `@nudo:pure` | 标记函数为纯函数，启用记忆化 |
 | `@nudo:skip` | 跳过求值；可选的类型表达式直接声明返回类型（如 `@nudo:skip T.number`） |
-| `@nudo:sample` | 不动点之前的循环迭代次数 |
+| `@nudo:sample` | 保留的无效果指令（已解析，未消费） |
 | `@nudo:refine` | 精化契约：`@nudo:refine param name` / `@nudo:refine return name`（Pred 进入 Abs） |
 | `@nudo:env` | 声明运行时环境 API（文件级 `///` 注释） |
 | `@nudo:mock-module` | 用 mock 文件替换导入的模块（文件级 `///` 注释） |

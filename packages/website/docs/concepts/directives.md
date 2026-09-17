@@ -342,9 +342,9 @@ Skipped (declared): number
 
 ---
 
-## @nudo:sample — Loop Sampling
+## @nudo:sample — Loop Sampling (Reserved, No-Op)
 
-Control how many loop iterations the engine evaluates before switching to fixed-point analysis. Use this to trade off precision and performance for loops over type-value arrays.
+`@nudo:sample` is **parsed but has no consumer** — the analyzer discards it (`void sampleDirective` in `service/src/analyzer.ts`). It does not change loop evaluation: loops already terminate via bounded unrolling (`DEFAULT_MAX_LOOP_ITERS = 8`), so there is no fixed-point phase to switch into. The directive is accepted for source compatibility but has no effect on output; do not rely on it to trade precision for performance.
 
 ### Syntax
 
@@ -352,23 +352,7 @@ Control how many loop iterations the engine evaluates before switching to fixed-
 @nudo:sample N
 ```
 
-- **N** — A positive integer: number of concrete iterations to run before generalizing.
-
-### Example
-
-```javascript
-/**
- * @nudo:sample 10
- * @nudo:case "reduce" (T.array(T.number))
- */
-function sum(arr) {
-  let total = 0;
-  for (let i = 0; i < arr.length; i++) {
-    total += arr[i];
-  }
-  return total;
-}
-```
+- **N** — A positive integer. Ignored at analysis time.
 
 ---
 
@@ -731,7 +715,7 @@ const result = a + b;
 | `@nudo:mock` | `name = expr` or `name from "path"` | Mock external dependencies |
 | `@nudo:pure` | (no args) | Mark function as pure for memoization |
 | `@nudo:skip` | `[returnsExpr]` | Skip evaluation, use existing type info |
-| `@nudo:sample` | `N` | Control loop sampling before fixed-point |
+| `@nudo:sample` | `N` | Reserved no-op (parsed, not consumed) |
 | `@nudo:refine` / `@nudo:interface` | `param constraint` / `return constraint` | In-source refinement contract (alias pair; main path is the `*.nudo.js` sidecar auto-binding) |
 | `@nudo:import` | `{ name } from "spec"` (file-level `///`) | Import `*.nudo.js` constraint templates for `@nudo:refine` |
 | `@nudo:env` | `name1, name2` (file-level `///`) | Declare runtime environment APIs |

@@ -121,7 +121,7 @@ type SampleDirective = {
 }
 ```
 
-Number of loop iterations to evaluate before fixed-point analysis.
+Requested loop iteration count. Parsed for source compatibility but not consumed by the analyzer — loop evaluation uses bounded unrolling, so this directive has no effect on output.
 
 ### FileDirective
 
