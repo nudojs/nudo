@@ -25,8 +25,15 @@ pnpm run check path/to/file.js
 | `nudo:assign-mismatch` | 赋值 ⊭ 原有形状（leqAbs） |
 | `nudo:arg-structure` | HOF：实参不是可调用 fn / arity 不匹配（**不再**表示 body 缺 slot） |
 | `nudo:case-inconsistency` | **`@nudo:case` 见证 ⊭ refine** |
-| `nudo:interface-param-mismatch` | 手写契约参数名不在函数形参表（C4.5，不再静默跳过） |
+| `nudo:interface-param-mismatch` | 手写契约参数名不在形参表面（C4.5；默认参名/rest 裸名/解构绑定名合法） |
 | `nudo:interface-conflict` | 手写契约合取不可满足（常数界交叉等） |
+| `nudo:interface-load` / `nudo:interface-cycle` | 侧车加载失败 / 侧车环 |
+| `nudo:interface-domain-exceeds` | 跨文件调用证据 ⊄ 手写契约 |
+| `nudo:interface-drift` | `@generated` 段 ≠ 今日重算（warning，不挡 exit） |
+| `nudo:no-signature` | 无法归纳符号 Abs |
+| `nudo:opaque-result` / `nudo:eval-error` | 求值不透明 / 求值抛错 |
+| `nudo:recursion-truncated` | 递归预算截断（结果 widen） |
+| `nudo:may-throw` / `nudo:unreachable` | 路径可能抛出 / 不可达代码 |
 
 ```
 nudo check  src/validators.js

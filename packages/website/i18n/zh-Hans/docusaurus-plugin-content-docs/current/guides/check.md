@@ -21,6 +21,14 @@ npx nudojs check path/to/file.js
 | `nudo:assign-mismatch` | 赋值 ⊭ 原有绑定形状（`leqAbs`） |
 | `nudo:arg-structure` | HOF：实参不是可调用 `fn` / arity 不匹配（**不是** body slot 推断） |
 | `nudo:case-inconsistency` | `@nudo:case` 见证 ⊭ refine |
+| `nudo:interface-param-mismatch` | 手写契约参数名不在形参表面（C4.5；默认参名/rest 裸名/解构绑定名合法） |
+| `nudo:interface-conflict` | 手写契约合取不可满足（如 `x > 0 ∧ x < 0`） |
+| `nudo:no-signature` | 无法归纳符号 Abs |
+| `nudo:opaque-result` | 求值结果不透明 / 无信息 |
+| `nudo:eval-error` | 函数体求值抛错 |
+| `nudo:recursion-truncated` | 递归预算截断，结果 widen |
+| `nudo:may-throw` | 路径可能抛出（warning） |
+| `nudo:unreachable` | return/throw 之后不可达（info） |
 
 ```js
 /// @nudo:import { positive } from "./shapes.nudo.js"
@@ -73,6 +81,7 @@ clamp(-5, 0, 10);  // OK — 未声明 @nudo:refine
 |------|----------|---------|
 | `nudo:interface-cycle` | error | 侧车互相 import 成环 |
 | `nudo:interface-load` | error | 侧车加载/求值失败，或导出形态不识别 |
+| `nudo:interface-param-mismatch` | error | 契约参数名 ∉ 形参表面（C4.5；默认参名/rest 裸名/解构绑定名合法） |
 | `nudo:interface-conflict` | error | 源码 `@nudo:refine` 与侧车绑定同参（或返回位）矛盾（`x > 0 ∧ x < 0`）；矛盾位跳过执法，不把契约层矛盾误诊为函数体违例 |
 | `nudo:interface-domain-exceeds` | error | **跨文件**注入的调用证据 ⊄ **手写**契约（接口被用穿） |
 | `nudo:interface-drift` | warning | 固化的 `@generated` 段 ≠ 今日重算接口（语义比较，参数位与返回位）。`nudo doctor` 对侧车已含 `@generated` 的文件把同一 drift 作为 CI 门禁 |

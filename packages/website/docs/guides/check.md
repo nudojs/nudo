@@ -21,6 +21,14 @@ npx nudojs check path/to/file.js
 | `nudo:assign-mismatch` | Assignment ⊭ previous binding shape (`leqAbs`) |
 | `nudo:arg-structure` | HOF: argument is not a callable `fn` / arity mismatch (**not** body slot inference) |
 | `nudo:case-inconsistency` | `@nudo:case` witness ⊭ refine |
+| `nudo:interface-param-mismatch` | Handwritten contract param name is not on the formal surface (default/rest/destructure-aware) |
+| `nudo:interface-conflict` | Handwritten contract conjunction unsatisfiable (e.g. `x > 0 ∧ x < 0`) |
+| `nudo:no-signature` | Function could not be generalized to a symbolic Abs |
+| `nudo:opaque-result` | Evaluation returned opaque / uninformative Abs |
+| `nudo:eval-error` | Body evaluation threw during analysis |
+| `nudo:recursion-truncated` | Recursion budget hit; result widened |
+| `nudo:may-throw` | Case path may throw (warning) |
+| `nudo:unreachable` | Code after return/throw (info) |
 
 ```js
 /// @nudo:import { positive } from "./shapes.nudo.js"
@@ -73,6 +81,7 @@ Contracts in `*.nudo.js` sidecars (and generated `@generated` segments) get thei
 |------|----------|---------|
 | `nudo:interface-cycle` | error | Sidecars importing each other in a cycle |
 | `nudo:interface-load` | error | Sidecar fails to load/evaluate, or uses an unrecognized export form |
+| `nudo:interface-param-mismatch` | error | Contract param name ∉ formal surface (C4.5; default left name, rest bare name, destructure bound names are valid) |
 | `nudo:interface-conflict` | error | Source `@nudo:refine` and sidecar binding for the same parameter (or the return position) are contradictory (`x > 0 ∧ x < 0`); a contradicted position skips enforcement rather than blaming the function body |
 | `nudo:interface-domain-exceeds` | error | **Cross-file** injected call evidence ⊄ **handwritten** contract (the interface is being used past its contract) |
 | `nudo:interface-drift` | warning | Persisted `@generated` segment ≠ today's recomputed interface (semantic comparison, param and return positions). Also surfaced by `nudo doctor` as a CI gate for files whose sidecar already has `@generated` segments |
