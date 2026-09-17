@@ -435,8 +435,15 @@ export function locFromNode(node: Node): SourceLocation {
 
 function extractParamNames(node: Node): string[] {
   const fn = node.type === "ExportDefaultDeclaration" ? node.declaration : node;
-  if (fn.type === "FunctionDeclaration" || fn.type === "FunctionExpression" || fn.type === "ArrowFunctionExpression") {
-    return formalParamDisplayNames(formalParamsFromNodes(fn.params as never));
+  if (
+    fn.type === "FunctionDeclaration" ||
+    fn.type === "FunctionExpression" ||
+    fn.type === "ArrowFunctionExpression" ||
+    fn.type === "ClassMethod" ||
+    fn.type === "ObjectMethod" ||
+    fn.type === "TSDeclareMethod"
+  ) {
+    return formalParamDisplayNames(formalParamsFromNodes((fn as { params?: unknown[] }).params as never));
   }
   if (fn.type === "VariableDeclaration") {
     const decl = fn.declarations[0];
@@ -559,6 +566,44 @@ function collectTopLevelFunctions(ast: Node): { name: string; node: Node; stmt: 
     const decl = resolveFunctionNode(stmt);
     if (decl.type === "FunctionDeclaration" && decl.id) {
       results.push({ name: decl.id.name, node: decl, stmt, noDeclaration: false });
+      continue;
+    }
+    // C4.2/D6：导出 class 实例方法 → `Class.method`（dts 无稳定声明形态，noDeclaration）
+    if (decl.type === "ClassDeclaration" && decl.id?.name) {
+      const cname = decl.id.name as string;
+      const isExported =
+        stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration";
+      if (!isExported) continue;
+      const body = (decl as any).body?.body ?? [];
+      for (const m of body) {
+        const mem = m as {
+          type?: string;
+          kind?: string;
+          static?: boolean;
+          key?: { type?: string; name?: string };
+          value?: Node;
+          params?: unknown[];
+          body?: Node;
+        };
+        const isMethod =
+          mem.type === "MethodDefinition" ||
+          mem.type === "ClassMethod" ||
+          mem.type === "TSDeclareMethod";
+        if (!isMethod) continue;
+        if (mem.kind && mem.kind !== "method") continue;
+        if (mem.static) continue;
+        const keyName = mem.key?.type === "Identifier" ? mem.key.name : undefined;
+        if (!keyName) continue;
+        const methodNode =
+          mem.type === "MethodDefinition" ? (mem.value as Node | undefined) : (mem as unknown as Node);
+        if (!methodNode) continue;
+        results.push({
+          name: `${cname}.${keyName}`,
+          node: methodNode,
+          stmt,
+          noDeclaration: true,
+        });
+      }
       continue;
     }
     if (stmt.type === "VariableDeclaration") {

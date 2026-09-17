@@ -216,8 +216,8 @@ flowchart TB
 | D2 | **报告默认「人类档」**：一行 code + actual/expected + suggestion；`--verbose` / agent JSON 才吐完整 Abs | CLI 默认可读；`--json` 含 `signatures[].abs` | [x] |
 | D3 | **pred 化简**：`ms > 0 ∧ ms > 0` 等合取去重/幂等 | 金样例无重复谓词；`and`/`or` 用 `predEquals` 去重 | — | [x] |
 | D4 | **诊断码收敛与文案**：`nudo:*` 表与 CLI 一致；`arg-structure` 仅 HOF | 网站 check 指南（en/zh）与 `nudo-check.md` 同表 | C0.2 | [x] |
-| D5 | **`nudo interface` 日用命令打磨**：diff、drift 解释、只刷新已有生成段的 UX | 文档 + 一键 doctor | — | [ ] |
-| D6 | **执法分档可见**：handwritten=义务 / generated=事实+drift / implicit=展示 | CLI/IDE 标注来源层 | — | [ ] |
+| D5 | **`nudo interface` 日用命令打磨**：diff、drift 解释、只刷新已有生成段的 UX | `--emit --dry-run --exit-on-diff` + `nudo doctor` | — | [x] |
+| D6 | **执法分档可见**：handwritten=义务 / generated=事实+drift / implicit=展示 | CLI `interface` 打印 `[handwritten\|generated\|implicit]`（含 `Class.method`） | — | [x] |
 
 ---
 
@@ -276,7 +276,7 @@ flowchart TB
 ### Phase 3 — 替代门槛冲刺
 
 - [x] **C3.*** HOF concrete 消费（宿主 fn 包 Abs + B 记录优先）/ 闭包方法槽（ObjectMethod→$fnVal）/ C3.3 dts 泛型投影（`fn.hof` 快照 → `<A1,B_transform>`；有精确 case 时让位 case-widen）
-- [~] **D5–D6** interface：`--emit --dry-run` / doctor drift 已有；执法分档 CLI 标注部分（handwritten/generated/implicit 在 `nudo interface` 打印）
+- [x] **D4–D6** 诊断码表（en/zh + nudo-check.md）；interface `--dry-run`/`doctor`；执法分档 CLI 标注（含 class 方法）
 - [x] **E2** 与 TS 并存指南（website `guides/coexistence.md`）
 - [x] **E1** dts 投影质量：函数类型在 union/array/optional 处加括号；`paramTypes`/`returnType` 下推；对象键转义；rest/保留字形参清洗（`dts-projection-quality.test.ts` 对投影跑 `tsc --noEmit --strict`）
 - [x] **E3** Vite 默认策略对齐 A1：`shouldAnalyzeFile` 替换硬编码指令正则；`failOnError` 默认 false；诊断档项目显式配置优先，否则 default（保留 warning）
