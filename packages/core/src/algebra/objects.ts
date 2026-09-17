@@ -272,6 +272,50 @@ export function joinFunctions(a: Abs, b: Abs): Abs {
   return makeSum(a, b);
 }
 
+/** 简短 shape 标签（join 路径注释用；不递归展开深层结构） */
+function shapeBrief(a: Abs): string {
+  const s = a.shape;
+  switch (s.k) {
+    case "never":
+      return "never";
+    case "unknown":
+    case "any":
+      return s.k;
+    case "prim":
+      return s.type;
+    case "arr":
+      return `${shapeBrief(s.element)}[]`;
+    case "obj":
+      return "{…}";
+    case "tuple":
+      return `[${s.elements.length}]`;
+    case "fn":
+      return "fn";
+    case "brand":
+      return s.name;
+    case "eff":
+      return s.eff;
+    case "sum":
+      return s.members.map(shapeBrief).join("|");
+    default:
+      return "·";
+  }
+}
+
+/**
+ * C2.4：给 join 结果挂可解释路径注释。
+ * 两支同形 → 不加注；结果仍是一侧原值（never 吸收）→ 不加注。
+ */
+function annotateJoinPath(a: Abs, b: Abs, result: Abs): Abs {
+  if (result === a || result === b) return result;
+  const sa = shapeBrief(a);
+  const sb = shapeBrief(b);
+  if (sa === sb && result.shape.k === a.shape.k) return result;
+  const note = `join(${sa} | ${sb})`;
+  if (result.pathNote === note) return result;
+  return { ...result, pathNote: note };
+}
+
 /** 通用 join：分派到对象/函数/值 */
 export function joinAbs(a: Abs, b: Abs): Abs {
   if (a.shape.k === "never") return b;
@@ -281,5 +325,5 @@ export function joinAbs(a: Abs, b: Abs): Abs {
   const result = joinValues(a, b);
   // 推导图打点：任一侧有标签时结果挂 join 边（工件聚合；check 分轨不依赖）
   noteDerivationJoin([a, b], result);
-  return result;
+  return annotateJoinPath(a, b, result);
 }

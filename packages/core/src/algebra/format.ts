@@ -31,6 +31,10 @@ export function formatAbs(a: Abs, opts: FormatOptions = {}): string {
     parts.push(`where ${predToString(a.pred)}`);
   }
   parts.push(`#${a.conf}`);
+  // C2.4：分支 join 来源（hover / --verbose 报告可见）
+  if (a.pathNote) {
+    parts.push(a.pathNote);
+  }
   return parts.join("  ");
 }
 

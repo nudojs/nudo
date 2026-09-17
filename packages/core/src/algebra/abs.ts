@@ -42,6 +42,11 @@ export type Abs = {
   term?: Term;
   pred?: Pred;
   conf: Confidence;
+  /**
+   * C2.4：分支 join 可解释标注（如 `join(number | string)`）。
+   * 仅展示用：不进 leq / 指纹 / check 等价；formatAbs 读取。
+   */
+  pathNote?: string;
 };
 
 // --- 工厂 ---
