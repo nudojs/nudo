@@ -180,12 +180,16 @@ documents.onDidChangeContent((change) => {
   const existing = debounceTimers.get(uri);
   if (existing) clearTimeout(existing);
 
+  // A8：大文件拉长防抖，避免编辑风暴排队爆炸；取消由 validateGeneration 保证
+  const len = change.document.getText().length;
+  const delay = len > 200_000 ? 800 : len > 50_000 ? 400 : 300;
+
   debounceTimers.set(
     uri,
     setTimeout(() => {
       debounceTimers.delete(uri);
       validateDocument(change.document, true).catch(() => {});
-    }, 300),
+    }, delay),
   );
 });
 

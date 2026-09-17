@@ -115,7 +115,7 @@ flowchart TB
 | A5 | **跨文件导航补齐**：侧车绑定名的 Go-to-Definition（源码 ↔ `*.nudo.js`）、Find References 含契约边 | F12 从 `add2` 到侧车契约可跳 | A1 | [x] |
 | A6 | **Quickfix / Code Action 扩展**：缺 slot → 插入侧车 shape；refine 违例 → 放宽契约/改实参建议 | 两类一键修复可用 | D2 | [x] |
 | A7 | **语义高亮与 inlay 对齐 interface 档**：default 走 symbolic（设计 Phase 1 已提），与 CodeLens 切换一致 | CodeLens `● interface` 与 hover 同源 | design-refine-derivation | [ ] |
-| A8 | **大文件防抖与取消**：分析可取消；编辑风暴下不排队爆炸 | 快速输入 50 字符无卡死 | B2 | [ ] |
+| A8 | **大文件防抖与取消**：分析可取消；编辑风暴下不排队爆炸 | `validateGeneration` 取消 + 大文件防抖 400/800ms | B2 | [x] |
 
 **相关代码锚点**
 

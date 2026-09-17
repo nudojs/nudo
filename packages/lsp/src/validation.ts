@@ -73,6 +73,9 @@ export const moduleGraphCache: ModuleGraphCache = new Map();
  */
 export const nudoDepParents = new Map<string, Set<string>>();
 
+/** 每文件校验代数（A8）：新 validate 启动即 bump；await 返回后代数不一致 → 放弃发布 */
+export const validateGeneration = new Map<string, number>();
+
 function normPath(p: string): string {
   return p.replace(/\\/g, "/");
 }
@@ -184,10 +187,11 @@ export async function handleNudoDepFileChanged(
 
 /** Test hook — resets module-level session state. */
 export function clearValidationState(): void {
-  analysisCache.clear();
   knownFiles.clear();
-  moduleGraphCache.clear();
+  analysisCache.clear();
   nudoDepParents.clear();
+  moduleGraphCache.clear();
+  validateGeneration.clear();
   // service+core 会话 memo 全清（B-path / analysis-file / fn-analysis /
   // abs-module / generalize L0 / check 整文件 / nudo-module exec）
   clearAnalysisSessionCaches();
@@ -410,6 +414,11 @@ export async function validateText(
   /** 脏传播：源码未变但依赖变了，必须重算，不可用源码指纹短路 */
   force = false,
 ): Promise<void> {
+  // A8：编辑风暴取消——同文件新一轮 validate 启动后，旧 await 不得发布陈旧诊断
+  const gen = (validateGeneration.get(filePath) ?? 0) + 1;
+  validateGeneration.set(filePath, gen);
+  const stillCurrent = (): boolean => validateGeneration.get(filePath) === gen;
+
   // 零注解文件 gate 放行例外：磁盘上存在同名侧车（interface 档主场景——
   // emit 后的 generated 段 + drift/domain-exceeds 诊断都以侧车为契约源）。
   // autoBind=false 或 node_modules 下不例外（侧车 ambient 整体停用）。
@@ -419,7 +428,7 @@ export async function validateText(
     !isNodeModulesPath(sidecarPath) &&
     existsSync(sidecarPath);
   if (deps.isNudoUri && !deps.isNudoUri(uri) && !hasSidecar) {
-    deps.sendDiagnostics({ uri, diagnostics: [] });
+    if (stillCurrent()) deps.sendDiagnostics({ uri, diagnostics: [] });
     return;
   }
 
@@ -433,6 +442,7 @@ export async function validateText(
     try {
       result = await analyzeFileAsync(filePath, text, deps.getActiveCases?.(uri));
     } catch (err) {
+      if (!stillCurrent()) return;
       deps.sendDiagnostics({
         uri,
         diagnostics: [{
@@ -445,6 +455,8 @@ export async function validateText(
       return;
     }
   }
+  // await 期间有更新一轮 validate → 本轮作废（防抖已合并；不发布陈旧结果）
+  if (!stillCurrent()) return;
 
   analysisCache.set(filePath, { version, result, sourceHash: fp });
   knownFiles.add(filePath);
