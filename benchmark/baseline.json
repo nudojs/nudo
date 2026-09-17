@@ -1,13 +1,13 @@
 {
-  "updatedAt": "2026-09-13T01:54:18.083Z",
+  "updatedAt": "2026-09-17T10:26:42.192Z",
   "totalCases": 24,
   "results": {
-    "exactMatches": 7,
-    "partialMatches": 1,
-    "unknownCount": 9,
+    "exactMatches": 13,
+    "partialMatches": 5,
+    "unknownCount": 3,
     "errorCount": 0
   },
-  "averageTimeMs": 1135.7,
+  "averageTimeMs": 651.9,
   "cases": [
     {
       "id": "basic-01",
@@ -27,12 +27,12 @@
     {
       "id": "flow-01",
       "name": "Conditional return",
-      "comparison": "mismatch"
+      "comparison": "exact"
     },
     {
       "id": "flow-02",
       "name": "Loop accumulation",
-      "comparison": "mismatch"
+      "comparison": "exact"
     },
     {
       "id": "flow-03",
@@ -57,17 +57,17 @@
     {
       "id": "array-04",
       "name": "Array chaining",
-      "comparison": "mismatch"
+      "comparison": "partial"
     },
     {
       "id": "obj-01",
       "name": "Object spread",
-      "comparison": "unknown"
+      "comparison": "partial"
     },
     {
       "id": "obj-02",
       "name": "Destructuring",
-      "comparison": "unknown"
+      "comparison": "exact"
     },
     {
       "id": "obj-03",
@@ -77,12 +77,12 @@
     {
       "id": "async-01",
       "name": "Promise.resolve",
-      "comparison": "unknown"
+      "comparison": "exact"
     },
     {
       "id": "async-02",
       "name": "Promise.all",
-      "comparison": "unknown"
+      "comparison": "exact"
     },
     {
       "id": "async-03",
@@ -112,17 +112,17 @@
     {
       "id": "complex-03",
       "name": "Generic data processor",
-      "comparison": "unknown"
+      "comparison": "partial"
     },
     {
       "id": "real-01",
       "name": "API response handler",
-      "comparison": "unknown"
+      "comparison": "partial"
     },
     {
       "id": "real-02",
       "name": "Configuration validator",
-      "comparison": "mismatch"
+      "comparison": "exact"
     },
     {
       "id": "real-03",

@@ -69,6 +69,12 @@ export function compareTypeWithValue(inferredType, expected) {
     return "partial";
   }
 
+  // `number[]` / `string[]` vs 字面元组：元素类型数组是元组的合理外推
+  // （filter 等会丢长度信息；`number[]` 对 [2,4] 不是完全 mismatch）
+  if (normalizedInferred.endsWith("[]") && normalizedExpected.startsWith("[")) {
+    return "partial";
+  }
+
   // Object partial match
   if (normalizedInferred.startsWith("{") && normalizedExpected.startsWith("{")) {
     // Check if inferred object has all expected keys
