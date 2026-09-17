@@ -59,6 +59,13 @@ nudo interface --draft --write src/lib.js --fn greet --fn double
 
 样例：[`docs/examples/interface-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/interface-draft)。
 
+可运行演示（临时目录：盘点 → draft → 接受 → check）：
+
+```bash
+pnpm run migrate-demo
+# 在 nudo monorepo 根目录执行 scripts/migrate-demo.sh
+```
+
 ## 3. 审阅清单
 
 1. **参数** — 调用点形状是否过窄？可放宽（`number()` vs `lit(21)`）。

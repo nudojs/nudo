@@ -65,6 +65,13 @@ Output lands in `src/lib.nudo.draft.js` — **not** ambient-loaded. Copy reviewe
 
 Worked sample: [`docs/examples/interface-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/interface-draft).
 
+Runnable demo (temp dir: inventory → draft → accept → check):
+
+```bash
+pnpm run migrate-demo
+# from the nudo monorepo — scripts/migrate-demo.sh
+```
+
 ## 3. Review checklist
 
 For each draft export:

@@ -195,6 +195,14 @@ npx nudojs check app.js
 
 详见 [nudo check](../guides/check.md) 与[指令参考](../concepts/directives.md)。
 
+## 已有 JavaScript 包
+
+若实现已经存在、没有注解，不要从指令起步——先从代码草稿契约，再收紧：
+
+- 指南：[迁移已有 JS](../guides/migrating-js.md)
+- 样例：[`docs/examples/interface-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/interface-draft)
+- 仓库演示：`pnpm run migrate-demo`
+
 ## 发生了什么？
 
 1. **解析** — Nudo 解析文件，找到带有 `@nudo:case` 指令的 `subtract` 函数。

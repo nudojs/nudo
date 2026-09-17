@@ -17,3 +17,12 @@ pnpm run interface --draft --write docs/examples/interface-draft/greet.js  # →
 手写契约永不被 draft 覆盖。IDE：CodeLens `⚡ draft interface`；agent：`nudo.interface.draft`。
 
 可选诊断：`nudo.analysis.evalMissingSlot: "warning"`（默认 off）见 `docs/design-eval-missing-slot.md`。
+
+端到端演示（临时目录：盘点 → draft → 接受 → check）：
+
+```bash
+pnpm run migrate-demo          # bash scripts/migrate-demo.sh
+pnpm run migrate-demo -- --keep
+```
+
+指南：[`guides/migrating-js.md`](../../packages/website/docs/guides/migrating-js.md)。

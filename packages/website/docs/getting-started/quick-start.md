@@ -202,3 +202,11 @@ npx nudojs check app.js
 Reports use `actual ⊭ expected`. Refinements also flow into inference: `inc` with `@nudo:refine x positive` infers `number = (x + 1) where (x + 1) > 1`.
 
 See [nudo check](../guides/check.md) and [Directives](../concepts/directives.md#nudorefine--refinement-contract).
+
+## Existing JavaScript packages
+
+If you already have logic without annotations, do not start from directives — draft contracts from the code first, then tighten:
+
+- Guide: [Migrating existing JS](../guides/migrating-js.md)
+- Sample: [`docs/examples/interface-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/interface-draft)
+- Repo demo: `pnpm run migrate-demo`
