@@ -220,7 +220,7 @@ Combined: 0 | 1 | 3
 | `Object.prototype` 方法 | `({}).hasOwnProperty("key")` → `unknown` | `Object.keys(...)` / 形状检查 |
 | `Symbol.iterator in x` | → `unknown` | `Array.isArray(x)` |
 | `Set` / `Map` 上的 `for...of` | 元素 → `unknown` | 数组 / `.map` 回调 |
-| Promise 执行器 | `new Promise((r) => r("done"))` → `Promise<unknown>` | `@nudo:mock` + `async` 函数 |
+| Promise 执行器 | `new Promise((r) => r("done"))` → `promise<unknown>` | `@nudo:mock` + `async` 函数 |
 | `try`/`catch` 形参 | `catch (err)` → `err` 为 `unknown`（`nudo:builtin-unknown`） | `try` 体内的确定性 `return`（无抛点）折叠为精确 |
 | 每迭代 `let` 闭包 | `fns[i]()` → `unknown` | 直接使用迭代结果 |
 | `arguments` | → `unknown`（`nudo:builtin-unknown`） | 具名参数 |

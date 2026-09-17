@@ -324,7 +324,7 @@ After the source changes, `--dry-run --exit-on-diff` shows the pending update an
 
 ### nudo types
 
-Type-as-computation view: show term + constraints from Abs algebra (not just extensional TypeValue shape). Accepts a single file or a directory (recursively).
+Type-as-computation view: show term + constraints from Abs algebra (not just extensional shape). Accepts a single file or a directory (recursively).
 
 ```bash
 nudo types <file> [--fn <name>] [--assume <pred...>] [--generalize]
@@ -540,7 +540,7 @@ nudo emit src/user.js --output dist/types
 
 ### nudo guard
 
-Generate runtime type-guard functions from inferred result types. Prefer the Abs path (`denoteGuard`: shape + decidable numeric preds) when the case has a lossless Abs result; fall back to TypeValue projection otherwise. Equivalent to `nudo generate --format guard`.
+Generate runtime type-guard functions from inferred result types. Prefer the Abs path (`denoteGuard`: shape + decidable numeric preds) when the case has a lossless Abs result; fall back to the extensional projection otherwise. Equivalent to `nudo generate --format guard`.
 
 ```bash
 nudo guard <file> [options]

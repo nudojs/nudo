@@ -1,162 +1,115 @@
 ---
 sidebar_position: 1
-description: "@nudojs/core API — the TypeValue system, T factory (including T.fnSig), union/precision utilities, operator semantics, mock helpers, and Environment."
+description: "@nudojs/core API — the Abs type system (shape × term × pred × conf), constructors, assignability and formatting, operator semantics, template strings, mock helpers, and Environment."
 ---
 
 # @nudojs/core
 
-The core package provides the type value system, operator semantics, and environment abstraction that power Nudo's abstract interpretation engine.
+The core package provides the Abs type system, operator semantics, and environment abstraction that power Nudo's abstract interpretation engine. There is a **single type system — Abs**: analysis, display, and projections (`.d.ts` / zod / guards) all consume Abs directly; there is no parallel IR.
 
-## TypeValue
+## Abs
 
-`TypeValue` is a discriminated union representing a set of possible JavaScript values at type level. Use the `kind` property to narrow the type.
+`Abs` is the type system — a computable value `{ shape, term?, pred?, conf }`:
 
-### Discriminated Union Members
+- **shape** — the extensional carrier: what the value looks like (`prim`, `obj`, `arr`, …).
+- **term** — abstract value identity: `lit` (a concrete value), `var` (symbolic α like `A1`), or `app` (an application like `(x + 2)`). This is what makes constraints participate in algebra: `x > 0` ⇒ `x + 1 > 1`.
+- **pred** — constraints relative to the term (`(x + 2) > 3`), or `undefined` when vacuously true.
+- **conf** — `Confidence`: `"exact" | "path" | "widened" | "mock" | "partial" | "opaque"`.
 
-| `kind` | Description |
-|--------|-------------|
-| `literal` | A single concrete value: `string \| number \| boolean \| null \| undefined` |
-| `primitive` | All values of a primitive type: `number`, `string`, `boolean`, `bigint`, `symbol` |
-| `object` | Object with known property types; has a unique `id` for reference semantics |
-| `array` | Array with a single element type |
-| `tuple` | Fixed-length array with per-element types |
-| `function` | Function with `params`, `body` (AST), and `closure` (Environment) |
-| `promise` | Promise wrapping a TypeValue |
-| `instance` | Class instance (e.g. `Error`) with optional properties |
-| `refined` | Subset of a base type with metadata and custom operation rules |
-| `union` | Union of multiple TypeValues |
+### Shape Kinds
+
+| `shape.k` | Description |
+|-----------|-------------|
+| `prim` | Primitive domain (`number`, `string`, `boolean`, `bigint`, `symbol`); a `lit` term makes it a concrete value |
+| `obj` | Object with known slots — `{ value: Abs; optional?: boolean }` per key |
+| `arr` | Array with one element Abs |
+| `tuple` | Fixed length, one Abs per element |
+| `fn` | Function value — param names, or `paramTypes`/`returnType` for signature-only functions |
+| `eff` | Effect wrapper (`promise` / `generator`) around an inner Abs — rendered `promise<inner>` |
+| `brand` | Nominal class instance (e.g. `MemoryStore`, `Error`) |
+| `sum` | Union of member Abs |
 | `never` | Empty set (unreachable) |
-| `unknown` | Universal set (any value) |
+| `unknown` / `any` | Universal set / any value |
 
 ---
 
-## T Factory
-
-`T` provides static factory functions and constants to construct TypeValues.
-
-### Literals and Primitives
+## Abs Constructors
 
 ```typescript
-T.literal(value)   // value: LiteralValue (string | number | boolean | null | undefined)
-T.number
-T.string
-T.boolean
-T.bigint
-T.symbol
-T.null
-T.undefined
-T.unknown
-T.never
+// primitives (domain, no term)
+num(): Abs
+str(): Abs
+bool(): Abs
+
+// literal values (prim shape + lit term)
+numLit(value: number): Abs
+strLit(value: string): Abs
+boolLit(value: boolean): Abs
+
+// objects: slots keyed by property name
+obj(slots: Record<string, { value: Abs; optional?: boolean }>): Abs
+
+// symbolic variables (parameters of an intensional signature)
+anyVar(id: string, conf?): Abs
+numVar(id: string, pred?, conf?): Abs
+
+// constants
+never: Abs            // { shape: { k: "never" }, conf: "exact" }
+unknown: Abs          // { shape: { k: "unknown" }, conf: "partial" }
+
+// general constructor (pred=true is dropped)
+abs(shape: Shape, term: Term | undefined, pred: Pred | undefined, conf: Confidence): Abs
+
+// function values (impl: body AST, closure env, or a direct apply dispatcher)
+absFunction(params: string[], impl: { body?: Node; async?: boolean; env?: AstEnv; apply?: (args: Abs[]) => Abs }): Abs
 ```
 
-### Composite Types
-
-```typescript
-T.object(props)           // props: Record<string, TypeValue>
-T.array(element)          // element: TypeValue
-T.tuple(elements)         // elements: TypeValue[]
-T.promise(value)          // value: TypeValue
-T.instanceOf(className, properties?)  // className: string, properties?: Record<string, TypeValue>
-T.union(...members)       // members: TypeValue[]
-T.fn(params, body, closure)  // params: string[], body: Node (Babel AST), closure: Environment
-T.fnSig(paramTypes, returnType, throwsType?, impl?)  // signature-only function (see below)
-T.refine(base, refinement)   // base: TypeValue, refinement: Refinement
-```
-
-### Signature-Only Functions
-
-`T.fn` describes a real function value (parameter **names**, body AST, closure). `T.fnSig` describes only a **signature** — it is how env files and the harvester express "a function that takes these types and returns that type" without a body:
-
-```typescript
-T.fnSig(paramTypes: TypeValue[], returnType: TypeValue,
-        throwsType: TypeValue = T.never, impl?: SigImpl): TypeValue
-
-type SigImpl = (args: TypeValue[], thisVal?: TypeValue) => TypeValue | undefined;
-```
-
-When `impl` is provided, calling the function evaluates it against the argument TypeValues (this is how harvested `join` actually concatenates template strings); without `impl`, the call returns the declared `returnType`. Test with [`isFnSig`](#utility-functions) / read back with `getFnSig`, which returns the `{ paramTypes, returnType, throwsType, impl }` record.
-
-```typescript
-T.fnSig([T.array(T.string)], T.string)
-// a function (string[]) => string
-```
-
-### Refinement Type
-
-`T.refine` is the **TypeValue-IR primitive** for refined subsets (template strings, numeric ranges). Source-level contracts use `@nudo:refine` + `*.nudo.js` templates instead — see [Directives](../concepts/directives.md#nudorefine--refinement-contract).
-
-```typescript
-type Refinement = {
-  name: string;                    // readable name for toString/toTSType
-  meta: Record<string, unknown>;   // metadata (e.g. template parts, range bounds)
-  check?: (value: unknown) => boolean;  // test if a concrete value belongs to this type
-  ops?: Record<string, (self: TypeValue, other: TypeValue) => TypeValue | undefined>;
-  methods?: Record<string, (self: TypeValue, args: TypeValue[]) => TypeValue | undefined>;
-  properties?: Record<string, (self: TypeValue) => TypeValue | undefined>;
-};
-```
-
-Returning `undefined` from any handler falls back to the base type's behavior.
+Terms and predicates are first-class too: `lit(value)` / `v(id)` build terms, `eq/ne/lt/le/gt/ge`, `ptypeof`, `and/or/not` build preds (`pred.ts`, `term.ts`).
 
 ---
 
-## Utility Functions
+## Core Functions
 
 | Function | Description |
 |----------|-------------|
-| `typeValueEquals(a, b)` | Deep equality for two TypeValues. |
-| `simplifyUnion(members)` | Flatten nested unions, deduplicate, remove `never`, and absorb literals into a co-present base (`3 \| number` → `number`). Returns `T.never` if empty, single member if one, `T.unknown` if any member is unknown. |
-| `widenLiteral(tv)` | Convert a literal to its primitive: `T.literal(1)` → `T.number`, etc. Non-literals pass through unchanged. |
-| `collapseLiteralUnion(tv, maxLiterals)` | Collapse a union of same-primitive literals when it exceeds `maxLiterals` (`1 \| 2 \| … \| 20` → `number`). Heterogeneous unions and unions small enough to keep are returned as-is. |
-| `isSubtypeOf(a, b)` | Check if `a` is a subtype of `b`. |
-| `typeValueToString(tv)` | Human-readable string representation (e.g. `"number"`, `"string \| number"`). |
-| `narrowType(tv, predicate)` | Filter union members by predicate (then `simplifyUnion`); for non-unions, keep the value if the predicate passes, else `T.never`. |
-| `subtractType(tv, predicate)` | Keep members where predicate is false (`narrowType` with the inverted predicate). |
-| `getPrimitiveTypeOf(tv)` | Return `typeof` string: `"number"`, `"string"`, `"object"`, `"function"`, or `undefined`. |
-| `deepCloneTypeValue(tv, idMap?)` | Deep clone; optional `idMap` preserves object identity across clones. |
-| `getRefinedBase(tv)` | Recursively unwrap refined types to get the innermost non-refined base. |
-| `mergeObjectProperties(a, b)` | Merge two object TypeValues; overlapping keys become unions. |
-| `isFnSig(tv)` | Whether `tv` is a signature-only function (created by `T.fnSig`). |
-| `getFnSig(tv)` | Read back the `FunctionSignature` of a `T.fnSig` value, or `undefined` for plain functions. |
+| `leqAbs(src, tgt, opts?)` | Assignability: can `src` flow into `tgt`? Returns `{ ok, reason? }` — `reason` is the Nudo-style `actual ⊭ expected` evidence, not TS wording. |
+| `formatAbs(a, opts?)` | Human-readable one-liner: shape, `= term`, `where pred`, `#conf`. |
+| `formatShape(a)` | Shape-only rendering (`{ host: "localhost", port: 8080 }`, `[2, 4, 6]`, `promise<{…}>`). |
+| `formatAbsMultiline(a, label?)` | Multi-line display (CLI inlay). |
+| `absToString(a)` / `shapeToString(s)` | Debug rendering including `term=`. |
+| `litValue(a)` | Extract the concrete literal value, if the Abs is exact. |
+| `confJoin(a, b)` | Join two confidences (the worse one wins). |
+| `checkSource(source, opts?)` | The CI gate: refinement/Pred implication over Abs — see [Check](../guides/check.md). |
+| `evalProgramAbs(source, opts?)` / `analyzeFn(…)` | Abs-native evaluation entrypoints (AST interpreter path). |
+| `generalizeFromAst(…)` | Intensional signature extraction — the `intension:` lines and `A1` parameters. |
 
 ---
 
 ## Operator Semantics (Abs-native)
 
-Operators are algebraic on Abs — there is no `Ops` layer. Arithmetic, comparison, unary, and spread live in:
+Operators are algebraic on Abs. Arithmetic, comparison, unary, and spread live in:
 
 | Where | What |
 |-------|------|
 | `core/src/algebra/surface.ts` | `typeofAbs`, `negAbs`, `notAbs`, `strictEqAbs` (unary ops + strict equality) |
 | `core/src/algebra/arithmetic.ts` | Binary arithmetic (`+` `-` `*` `/` `%`) and comparison |
-| `service/src/evaluator/abs-route.ts` | `tryAbsBinary` / `tryAbsUnary` / `tryAbsObjectSpread` — TypeValue ⇄ Abs routing (union member-wise) |
+| `service/src/evaluator/abs-route.ts` | Union member-wise routing of binary/unary ops and object spread |
 
-The `T` factory and `Environment` below are the remaining TypeValue-level APIs; production analysis runs on Abs and bridges to TypeValue only for display.
+The B path (`core/algebra/exec`: transpile → `new Function` with Abs values) is the primary evaluation route; `ast-eval`/`evalProgramAbs` is the AST-interpreter fallback.
 
 ---
 
-## Built-in Refinements
+## Template Strings
 
-### Template String
-
-```typescript
-createTemplate(parts: TypeValue[]): TypeValue   // e.g. [T.literal("0x"), T.string]
-isTemplate(tv: TypeValue): boolean
-getTemplateParts(tv: TypeValue): TypeValue[] | undefined
-concatTemplates(left: TypeValue, right: TypeValue): TypeValue
-```
-
-Template strings are automatically created when concatenating a literal string with an abstract string. They support `startsWith`, `endsWith`, `includes` methods and `length` property.
-
-### Numeric Range
+String concatenation with at least one literal operand produces a **template** Abs — the known prefix/suffix is preserved as pred metadata, enabling precise `startsWith` / `endsWith` / `includes`.
 
 ```typescript
-createRange(opts: { min?: number; max?: number; integer?: boolean }): TypeValue
-isRange(tv: TypeValue): boolean
-getRangeMeta(tv: TypeValue): { min?: number; max?: number; integer?: boolean } | undefined
+createTemplateAbs(parts: Abs[]): Abs   // e.g. [strLit("0x"), str()] — single-part or
+                                       // all-literal inputs collapse to the plain Abs
+isTemplateLike(a: Abs): boolean
 ```
 
-Ranges are created by comparison narrowing (e.g. `x >= 0`). They support `>=`, `>`, `<=`, `<` comparison operators with deterministic results when bounds are known.
+Numeric ranges are not a type wrapper in the algebra — a narrowed bound is a **pred** on the term (`x >= 0` stores `ge(x, lit(0))`), which is what `checkSource`'s implication gate reasons over.
 
 ---
 
@@ -209,24 +162,24 @@ In `@nudo:mock` expressions you write the sinon-style chain `stub().…` — the
 
 ## Environment
 
-Environment manages variable bindings (name → TypeValue) with lexical scoping.
+Environment manages variable bindings (name → Abs) with lexical scoping.
 
 ```typescript
 createEnvironment(parent?, bindings?)
 ```
 
 - `parent` — Optional parent Environment for scope chain.
-- `bindings` — Optional `Map<string, TypeValue>` for initial bindings (default: `new Map()`).
+- `bindings` — Optional `Map<string, Abs>` for initial bindings (default: `new Map()`).
 
 ### Environment Methods
 
 | Method | Description |
 |--------|-------------|
-| `lookup(name)` | Get TypeValue for `name`; walks parent chain; returns `T.undefined` if missing. |
+| `lookup(name)` | Get the Abs bound to `name`; walks parent chain; returns the `unknown` Abs if missing. |
 | `bind(name, value)` | Set binding in this env; returns env for chaining. |
 | `update(name, value)` | Update existing binding in this env or parent; returns `boolean` success. |
-| `extend(bindings)` | Create child env with new bindings (plain `Record<string, TypeValue>`). |
+| `extend(bindings)` | Create child env with new bindings (plain `Record<string, Abs>`). |
 | `fork()` | Create an empty child env sharing this scope chain — used for branch forking. |
 | `has(name)` | Check if name is bound (this env or parent). |
 | `snapshot()` | Deep copy of env (for branch forking). |
-| `getOwnBindings()` | Get `Record<string, TypeValue>` for bindings in this env only. |
+| `getOwnBindings()` | Get `Record<string, Abs>` for bindings in this env only. |

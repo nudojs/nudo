@@ -160,13 +160,13 @@ Signatures carry the **lossless Abs** (`shape`, `term`, `pred`, `conf`). Optiona
 
 ## Editor integration
 
-LSP publishes **`nudo-check` diagnostics first** (Abs violations with `actual` / `expected`), then evaluator diagnostics (`source: nudo`). Hover and inlay hints read lossless Abs — not a lossy TypeValue bridge.
+LSP publishes **`nudo-check` diagnostics first** (Abs violations with `actual` / `expected`), then evaluator diagnostics (`source: nudo`). Hover and inlay hints read lossless Abs — no lossy projection in between.
 
 Agents use the same gate via **`nudo.check`** (CheckJson v1) — see [Agent API](../api/agent.md#nudocheck).
 
 ## Service Abs path boundary
 
-`nudo check` (and `checkSource`) always analyzes on Abs, including cross-file require/import forwarding. The CLI is **strictly Abs-only** — production analysis has no TypeValue evaluator to run for extra diagnostics.
+`nudo check` (and `checkSource`) always analyzes on Abs, including cross-file require/import forwarding. The CLI is **strictly Abs-only** — there is no other evaluation path to run for extra diagnostics.
 
 The **service evaluation path** (`infer` case output, `call@` synthesis, JSON `intension`) runs Abs for the analyzed file's own functions even when the file has imports — every local function's case carries `intension:` / `abs:` lines (see [`docs/examples/mini-repo/user-service.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/mini-repo/user-service.js): a file with imports whose `fetchUser(7)` case reports `abs: promise<{ id: 7, name: "u7" }>  #path`). Cases of functions from **imported modules** (`externalFunctions`, the `--- path (imported) ---` sections) carry call evidence only — case headers without `intension`. `@nudo:mock` does **not** disable Abs — mocks compile to Abs seeds. Contract violations are always caught by `nudo check`.
 

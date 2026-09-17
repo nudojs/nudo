@@ -50,7 +50,7 @@ When Nudo executes `transform(T.string)`, the engine propagates `T.string` throu
 | **surface / arithmetic / abs-route** | Operator semantics on Abs for arithmetic, comparison, unary, spread |
 | **Environment** | Manage variable scopes and bindings (name → Abs) |
 | **Branch Executor** | Handle conditional branches: fork, narrow, evaluate, merge |
-| **Type Emitter** | Serialize final TypeValue results (optionally to TypeScript types) |
+| **Type Emitter** | Serialize final Abs results (optionally to TypeScript types) |
 
 ---
 
@@ -126,22 +126,22 @@ eval(CallExpression { callee: "foo", args })
 
 ## Narrowing Rules
 
-Narrowing refines type values based on conditions. The engine supports these patterns:
+Narrowing refines values based on conditions. The engine supports these patterns:
 
 | Pattern | True branch | False branch |
 |---------|-------------|--------------|
-| `typeof x === "string"` | `x ∩ T.string` | `x - T.string` |
-| `typeof x === "number"` | `x ∩ T.number` | `x - T.number` |
-| `x === null` | `x ∩ T.null` | `x - T.null` |
-| `x === undefined` | `x ∩ T.undefined` | `x - T.undefined` |
-| `x === <literal>` | `x ∩ T.literal(v)` | `x - T.literal(v)` |
-| `Array.isArray(x)` | `x ∩ T.array(T.unknown)` | `x - T.array(T.unknown)` |
-| `x` (truthiness) | `x - T.null - T.undefined - T.literal(0) - T.literal("") - T.literal(false)` | complement |
-| `x instanceof C` | `x ∩ T.instanceOf(C)` | `x - T.instanceOf(C)` |
+| `typeof x === "string"` | `x ∩ string` | `x - string` |
+| `typeof x === "number"` | `x ∩ number` | `x - number` |
+| `x === null` | `x ∩ null` | `x - null` |
+| `x === undefined` | `x ∩ undefined` | `x - undefined` |
+| `x === <literal>` | `x ∩ lit(v)` | `x - lit(v)` |
+| `Array.isArray(x)` | `x ∩ array` | `x - array` |
+| `x` (truthiness) | `x - null - undefined - lit(0) - lit("") - lit(false)` | complement |
+| `x instanceof C` | `x ∩ instance(C)` | `x - instance(C)` |
 | `"key" in x` | union members with `key` property | union members without `key` |
 | `x?.prop` | normal member access (short-circuits to `undefined` for nullish) | — |
 | `a ?? b` | `a` with null/undefined removed | — |
-| `switch(x) { case v: ... }` | `x ∩ T.literal(v)` per case | remaining after all cases |
+| `switch(x) { case v: ... }` | `x ∩ lit(v)` per case | remaining after all cases |
 | `x.kind === "a"` (discriminated union) | union members where `kind` matches literal | union members where `kind` differs |
 
 Where `∩` is type intersection and `-` is type subtraction.
@@ -156,12 +156,12 @@ When the loop bound is concrete, the engine unrolls the loop that many times. Wh
 
 ### Closures and Higher-Order Functions
 
-Functions are first-class type values. When a function is passed as an argument, the engine evaluates calls using the function's type-value representation:
+Functions are first-class Abs values (`fn` shape). When a function is passed as an argument, the engine evaluates calls through its Abs representation (parameters, body, closure environment):
 
 ```javascript
-map(T.array(T.number), (x) => x + 1)
-// Engine evaluates: fn(T.number) → T.number + T.literal(1) → T.number
-// Result: T.array(T.number)
+map(number[], (x) => x + 1)
+// Engine evaluates: fn(number) → number + lit(1) → number
+// Result: number[]
 ```
 
 ### Recursion (Call Budget)
@@ -176,9 +176,9 @@ Concrete base cases inside the budget still evaluate to literals; symbolic self-
 
 ### Async / Promise
 
-Promises are modeled as wrapped type values:
-- `await expr` unwraps `T.promise(V)` to `V`
-- `async function` wraps the return value in `T.promise(...)`
+Promises are modeled as an effect shape (`eff`):
+- `await expr` unwraps `promise<V>` to `V`
+- `async function` wraps the return value in `promise<...>`
 
 ### Exception and throws Tracking
 
@@ -189,15 +189,15 @@ function divide(a, b) {
   if (b === 0) throw new Error("Division by zero");
   return a / b;
 }
-// divide(T.number, T.number):
-//   returns: T.number
-//   throws: T.instanceOf(Error)
+// divide(number, number):
+//   returns: number
+//   throws: instance(Error)
 ```
 
-`try-catch` absorbs thrown types. The catch parameter receives the union of all thrown types from the try block. If the function never throws, `throws` is `T.never`.
+`try-catch` absorbs thrown types. The catch parameter receives the union of all thrown types from the try block. If the function never throws, `throws` is `never`.
 
 ### Mutability (Reference Semantics, Copy-on-Write)
 
-Object type values use **reference semantics** — assignment copies references, not values. Multiple variables can point to the same object type value.
+Object Abs values use **reference semantics** — assignment copies references, not values. Multiple variables can point to the same object Abs value.
 
 When entering conditional branches, the engine deep-copies modified objects so each branch has its own copy. On merge, overlapping properties become unions. Without branching, mutations are applied in-place with no overhead.

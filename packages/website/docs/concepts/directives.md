@@ -178,10 +178,10 @@ async function fetchUser(id) {
 ```text
 === fetchUser ===
 
-Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
+Case "user": (1) => promise<{ id: 1, name: "Alice" }>
 ```
 
-A mock helper for resolved promises — `stub().resolves(value)` makes every call return `Promise<value>`:
+A mock helper for resolved promises — `stub().resolves(value)` makes every call return `promise<value>`:
 
 ```javascript
 /**
@@ -194,7 +194,7 @@ async function fetchUser(id) {
 }
 ```
 
-**Not the same result here:** the resolved object's closure slots are not bridged — `json` arrives body-less (`json: () => ?`), so `res.json()` evaluates to `unknown` and this example infers `Promise<unknown>` (abs `promise<unknown> #partial`), not the arrow mock's `Promise<{ id: 1, name: "Alice" }>`. `resolves` keeps full precision for plain data (`stub().resolves({ ok: true, id: 1 })` → `Promise<{ ok: true, id: 1 }>`); when the mock result gets called, use the arrow-function form. A synchronous helper:
+**Not the same result here:** the resolved object's closure slots are not bridged — `json` arrives body-less (`json: () => ?`), so `res.json()` evaluates to `unknown` and this example infers `promise<unknown>` (abs `promise<unknown> #partial`), not the arrow mock's `promise<{ id: 1, name: "Alice" }>`. `resolves` keeps full precision for plain data (`stub().resolves({ ok: true, id: 1 })` → `promise<{ ok: true, id: 1 }>`); when the mock result gets called, use the arrow-function form. A synchronous helper:
 
 ```javascript
 /**
@@ -267,7 +267,7 @@ Case "read": (string) => unknown
 
 ## @nudo:pure — Mark Pure Functions
 
-Mark a function as pure so the engine can memoize results. Same type-value inputs produce the same output, so repeated calls can reuse cached results.
+Mark a function as pure so the engine can memoize results. Same Abs inputs produce the same output, so repeated calls can reuse cached results.
 
 ### Syntax
 

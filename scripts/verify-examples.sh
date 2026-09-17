@@ -222,7 +222,7 @@ pin 'pnpm run types docs/examples/algebra/0-add-intensional.js --assume "x>0"' \
   'term: ((x + 1) + 1)' 'pred: ((x + 1) + 1) > 2' 'conf: path'
 pin 'pnpm run infer docs/examples/algebra/a-spread-optional.js' \
   '({ port: 3000, debug: true }) => { host: "localhost", port: 3000, debug: true }' \
-  '({}) => { host: "localhost", port: 8080, debug: false }' \
+  '({  }) => { host: "localhost", port: 8080, debug: false }' \
   '({ host: "api.example.com" }) => { host: "api.example.com", port: 8080, debug: false }'
 pin 'pnpm run infer docs/examples/algebra/a-spread-optional.js --dts' \
   'Generated: docs/examples/algebra/a-spread-optional.d.ts'
@@ -233,8 +233,8 @@ pin_file docs/examples/algebra/a-spread-optional.d.ts \
   ': { host: "localhost"; port: 3000; debug: true } | { host: "localhost"; port: 8080; debug: false } | { host: "api.example.com"; port: 8080; debug: false }' \
   'Case: call@L24'
 pin 'pnpm run infer docs/examples/algebra/b-hof-map.js' \
-  '([1, 2, 3], (x) => ...) => [2, 4, 6]' \
-  '(["a", "b"], (s) => ...) => ["A", "B"]'
+  '([1, 2, 3], (x) => ?) => [2, 4, 6]' \
+  '(["a", "b"], (s) => ?) => ["A", "B"]'
 pin 'pnpm run infer docs/examples/algebra/c-reduce-sum.js' \
   'Case "literal": ([1, 2, 3, 4, 5]) => 15' 'abs: 15  #exact' \
   'Case "symbolic": (number[]) => number'
@@ -247,7 +247,7 @@ pin 'pnpm run infer docs/examples/algebra/e-index-proj.js' \
   'Case "dynamic key": ({ a: 1, b: "x" }, string) => unknown' \
   'Combined: 1 | "x" | "/usr/bin"'
 pin 'pnpm run infer docs/examples/algebra/f-async-eff.js' \
-  '(42) => Promise<unknown>' 'abs: promise<{ id: 1, name: "ada" }>  #path'
+  '(42) => promise<{ id: 1, name: "ada" }>' 'abs: promise<{ id: 1, name: "ada" }>  #path'
 pin 'pnpm run infer docs/examples/algebra/g-narrow-subtract.js' \
   '("abc") => 3' '([1, 2]) => 2' '(5) => -1' 'Combined: 3 | 2 | -1'
 pin 'pnpm run infer docs/examples/algebra/h-array-boundary.js' \
@@ -283,7 +283,7 @@ pin 'pnpm run check docs/examples/mini-repo/user-service.js' \
   'createService()  { store: MemoryStore, load: (id) => ? }  #exact'
 pin 'pnpm run infer docs/examples/mini-repo/user-service.js' \
   'Case "ages": ([10, 20, 30]) => 60' \
-  '(7) => Promise<{ id: 7, name: "u7" }>' '(4) => 5' \
+  '(7) => promise<{ id: 7, name: "u7" }>' '(4) => 5' \
   '(7, 1, 9999) => 7' '(5, 1, 9999) => 5' 'Combined: 7 | 5'
 # support files are matrix rows too: validators.js shows body-inferred
 # preconditions at entry; store.js documents that class methods don't

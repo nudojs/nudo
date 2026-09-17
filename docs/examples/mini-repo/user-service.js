@@ -38,7 +38,7 @@ export function score(x) {
 }
 
 // 顶层调用点：async 无 I/O、跨文件 clamp 逐位收窄、score 字面量
-fetchUser(7);     // → Promise<{ id: 7, name: "u7" }>
+fetchUser(7);     // → promise<{ id: 7, name: "u7" }>
 normalizeId(5);   // → 5（clamp 跨文件收窄：5 在 [1, 9999]）
 score(4);         // → 5
 

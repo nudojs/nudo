@@ -37,8 +37,8 @@ pnpm run build
 
 | 包 | 描述 |
 |---------|-------------|
-| `@nudojs/core` | 类型系统（Abs）、TypeValue 投影、`T` 工厂、Environment |
-| `@nudojs/parser` | Babel 解析、指令提取、`parseTypeValueExpr` |
+| `@nudojs/core` | 类型系统（Abs 代数）、外延渲染（format）、Environment |
+| `@nudojs/parser` | Babel 解析、指令提取、`parseCaseArgExpr` |
 | `@nudojs/cli` | 仅 CLI 命令（`infer`、`check`、`types`、`watch`、`generate`、`harvest`、`test`、`interface`） |
 | `@nudojs/service` | 高层 API：`analyzeFile`、`getTypeAtPosition`、`getCompletionsAtPosition` |
 | `@nudojs/lsp` | Language Server Protocol 实现，含面向 AI agent 的 executeCommand/自定义请求（见 [Agent 集成指南](./guides/mcp-server.md)） |
@@ -81,7 +81,7 @@ pnpm exec nudo infer path/to/file.js
 
 1. **二元算术 / 比较** — `packages/core/src/algebra/arithmetic.ts`（Abs → Abs）。一元运算与严格相等在 `packages/core/src/algebra/surface.ts`（`typeofAbs`、`negAbs`、`notAbs`、`strictEqAbs`）。
 
-2. **投影层路由** — `packages/service/src/evaluator/abs-route.ts`（`tryAbsBinary`、`tryAbsUnary`、`tryAbsObjectSpread`）把 TypeValue 投影桥回代数，做 union 逐成员分发。
+2. **分支合并辅助** — `packages/service/src/evaluator/abs-route.ts`（`tryAbsJoinObjects`、φ 约束辅助）在分支合并时 join 对象形状。
 
 3. **添加测试**，位于 `packages/core/src/algebra/__tests__/`（如 `surface.test.ts`、`arithmetic.test.ts`）或 `packages/service/src/__tests__/`。
 
@@ -107,7 +107,7 @@ pnpm exec nudo infer path/to/file.js
    - `packages/cli/src/index.ts` 或 `packages/service/src/analyzer.ts` 中实现分析行为。
    - 用 `d.kind === "my"` 过滤 `fn.directives` 并应用你的逻辑。
 
-4. 若指令接收类型值参数，需**更新 `parseTypeValueExpr`**。
+4. 若指令接收类型表达式参数，需**更新 `parseCaseArgExpr`**。
 
 5. **添加测试**，位于 `packages/parser/src/__tests__/directives*.test.ts`。
 

@@ -220,7 +220,7 @@ These constructs currently evaluate to `unknown` (often with a `nudo:unknown-rec
 | `Object.prototype` methods | `({}).hasOwnProperty("key")` → `unknown` | `Object.keys(...)` / shape checks |
 | `Symbol.iterator in x` | → `unknown` | `Array.isArray(x)` |
 | `for...of` over `Set` / `Map` | elements → `unknown` | arrays / `.map` callbacks |
-| Promise executor | `new Promise((r) => r("done"))` → `Promise<unknown>` | `@nudo:mock` + `async` functions |
+| Promise executor | `new Promise((r) => r("done"))` → `promise<unknown>` | `@nudo:mock` + `async` functions |
 | `try`/`catch` parameter | `catch (err)` → `err` is `unknown` (`nudo:builtin-unknown`) | deterministic `return` in `try` (no throw point) folds to exact |
 | Per-iteration `let` closures | `fns[i]()` → `unknown` | direct iteration results |
 | `arguments` | → `unknown` (`nudo:builtin-unknown`) | named parameters |

@@ -37,8 +37,8 @@ The monorepo uses pnpm workspaces. Key packages:
 
 | Package | Description |
 |---------|-------------|
-| `@nudojs/core` | Type system (Abs), TypeValue projection, `T` factory, Environment |
-| `@nudojs/parser` | Babel parse, directive extraction, `parseTypeValueExpr` |
+| `@nudojs/core` | Type system (Abs algebra), extensional rendering (format), Environment |
+| `@nudojs/parser` | Babel parse, directive extraction, `parseCaseArgExpr` |
 | `@nudojs/cli` | CLI commands only (`infer`, `check`, `types`, `watch`, `generate`, `harvest`, `test`, `interface`) |
 | `@nudojs/service` | High-level API: `analyzeFile`, `getTypeAtPosition`, `getCompletionsAtPosition` |
 | `@nudojs/lsp` | Language Server Protocol implementation, including AI-agent `executeCommand`/custom requests (see the [Agent guide](./guides/mcp-server.md)) |
@@ -81,7 +81,7 @@ Operator semantics live in the algebra, not a separate `Ops` layer:
 
 1. **Binary arithmetic / comparison** — `packages/core/src/algebra/arithmetic.ts` (Abs-to-Abs). Unary ops and strict equality live in `packages/core/src/algebra/surface.ts` (`typeofAbs`, `negAbs`, `notAbs`, `strictEqAbs`).
 
-2. **Projection-layer routing** — `packages/service/src/evaluator/abs-route.ts` (`tryAbsBinary`, `tryAbsUnary`, `tryAbsObjectSpread`) bridges the TypeValue projection back into the algebra for union member-wise dispatch.
+2. **Branch merge helpers** — `packages/service/src/evaluator/abs-route.ts` (`tryAbsJoinObjects`, φ-constraint helpers) joins object shapes when branches merge.
 
 3. **Add tests** in `packages/core/src/algebra/__tests__/` (e.g. `surface.test.ts`, `arithmetic.test.ts`) or `packages/service/src/__tests__/`.
 
@@ -107,7 +107,7 @@ Operator semantics live in the algebra, not a separate `Ops` layer:
    - `packages/cli/src/index.ts` or `packages/service/src/analyzer.ts` for analysis behavior.
    - Filter `fn.directives` by `d.kind === "my"` and apply your logic.
 
-4. **Update `parseTypeValueExpr`** if the directive takes type-value arguments.
+4. **Update `parseCaseArgExpr`** if the directive takes type-expression arguments.
 
 5. **Add tests** in `packages/parser/src/__tests__/directives*.test.ts`.
 

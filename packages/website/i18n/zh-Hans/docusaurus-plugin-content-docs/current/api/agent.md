@@ -27,7 +27,7 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 - **`file` 参数**——每个命令都接收字符串 `file`，接受 `file://` URI 或裸路径。未在编辑器中打开的文件从磁盘读取。
 - **编辑器风格请求**——`nudo/selectCase` 与 `nudo/getActiveCases` 请求额外接受编辑器风格的 `{ uri, ... }` 参数（VS Code 扩展的 CodeLens 使用）。Agent 应始终使用 `file`。
 - **类型表达式**——见下方[类型表达式](#类型表达式)。
-- **Abs 优先**——`check` / `infer` / `hover` 暴露无损代数（Abs）。TypeValue 字符串是兼容用的外延投影，不是类型模型本身。
+- **Abs 优先**——`check` / `infer` / `hover` 暴露无损代数（Abs）。外延字符串（`args` / `result` / `ext`）是兼容用的有损投影，不是类型模型本身。
 
 ---
 
@@ -71,7 +71,7 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 | `format` | `"text" \| "json"` | `"json"` → 只返回 InferJson |
 | `functions` | `string[]?` | 过滤到这些函数名 |
 
-**返回（InferJson v1）：** `cases[].intension` 携带 `abs` / `term` / `pred` / `conf`（无损）；`args` / `result` 是 TypeValue 字符串（外延）。
+**返回（InferJson v1）：** `cases[].intension` 携带 `abs` / `term` / `pred` / `conf`（无损）；`args` / `result` 是外延字符串（`formatShape` 投影）。
 
 ```json
 {
@@ -82,7 +82,7 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 
 ## nudo.hover
 
-位置上的无损 Abs —— 与编辑器 hover 同源，不是 TypeValue 桥。
+位置上的无损 Abs —— 与编辑器 hover 同源，中间不经过投影。
 
 **参数：**
 
@@ -94,7 +94,7 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 | `source` | `string?` | 预读源码 |
 | `includeInlays` | `boolean?` | 同时返回该文件全部 Abs inlay |
 
-**返回 JSON：** `{ file, line, column, abs, absMultiline, intension, ext, inlays? }` —— `abs` 无损；`ext` 仅作对照用的 TypeValue 投影。
+**返回 JSON：** `{ file, line, column, abs, absMultiline, intension, ext, inlays? }` —— `abs` 无损；`ext` 仅作对照用的外延投影。
 
 ## nudo.whatIf
 

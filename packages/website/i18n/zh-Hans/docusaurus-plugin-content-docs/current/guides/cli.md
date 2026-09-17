@@ -485,7 +485,7 @@ calc.js: no interface changes
 
 ## `nudo types`
 
-类型即计算视图：展示每个函数在 Abs 代数上的**内涵**——形状、`term`、`pred` 与置信度——而不是 `infer` 汇报的外延 TypeValue 形状。精化参与代数运算，所以声明的前置条件会出现在推断出的 term 内部：
+类型即计算视图：展示每个函数在 Abs 代数上的**内涵**——形状、`term`、`pred` 与置信度——而不是 `infer` 汇报的外延形状。精化参与代数运算，所以声明的前置条件会出现在推断出的 term 内部：
 
 ```bash
 nudo types docs/examples/algebra/0-add-intensional.js --assume "x>0"
@@ -559,7 +559,7 @@ nudo generate src/user.js --format zod  # 只要 zod
 nudo generate src/user.js --output dist # 写出 dist/user.nudo.zod.ts、user.nudo.guard.ts、user.d.ts
 ```
 
-`nudo emit` 是仅 `.d.ts` 的别名（`generate --format dts`），`nudo guard` 是仅守卫函数的别名（`--format guard`）；守卫优先走无损 Abs 路径（形状 + 可判定的数值 Pred），失败时回退到 TypeValue 投影。选项与输出格式参见 [`nudo generate` 参考](../api/cli-reference.md#nudo-generate)。
+`nudo emit` 是仅 `.d.ts` 的别名（`generate --format dts`），`nudo guard` 是仅守卫函数的别名（`--format guard`）；守卫优先走无损 Abs 路径（形状 + 可判定的数值 Pred），失败时回退到外延投影。选项与输出格式参见 [`nudo generate` 参考](../api/cli-reference.md#nudo-generate)。
 
 ---
 

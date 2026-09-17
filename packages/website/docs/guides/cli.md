@@ -485,7 +485,7 @@ Persistence is snapshots: `nudo check` compares them semantically and reports `n
 
 ## `nudo types`
 
-The type-as-computation view: each function's **intension** from Abs algebra — shape, `term`, `pred`, and confidence — instead of the extensional TypeValue shape that `infer` reports. Refinements participate in algebra, so a declared precondition shows up inside the inferred term:
+The type-as-computation view: each function's **intension** from Abs algebra — shape, `term`, `pred`, and confidence — instead of the extensional shape that `infer` reports. Refinements participate in algebra, so a declared precondition shows up inside the inferred term:
 
 ```bash
 nudo types docs/examples/algebra/0-add-intensional.js --assume "x>0"
@@ -559,7 +559,7 @@ nudo generate src/user.js --format zod  # zod only
 nudo generate src/user.js --output dist # writes dist/user.nudo.zod.ts, user.nudo.guard.ts, user.d.ts
 ```
 
-`nudo emit` is the `.d.ts`-only alias (`generate --format dts`) and `nudo guard` the guard-only alias (`--format guard`); guards prefer the lossless Abs path (shape + decidable numeric preds) and fall back to the TypeValue projection. Options and output formats: [`nudo generate` reference](../api/cli-reference.md#nudo-generate).
+`nudo emit` is the `.d.ts`-only alias (`generate --format dts`) and `nudo guard` the guard-only alias (`--format guard`); guards prefer the lossless Abs path (shape + decidable numeric preds) and fall back to the extensional projection. Options and output formats: [`nudo generate` reference](../api/cli-reference.md#nudo-generate).
 
 ---
 

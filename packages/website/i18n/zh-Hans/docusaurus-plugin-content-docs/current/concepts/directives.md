@@ -176,10 +176,10 @@ async function fetchUser(id) {
 ```text
 === fetchUser ===
 
-Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
+Case "user": (1) => promise<{ id: 1, name: "Alice" }>
 ```
 
-决议 Promise 的 mock helper——`stub().resolves(value)` 让每次调用返回 `Promise<value>`：
+决议 Promise 的 mock helper——`stub().resolves(value)` 让每次调用返回 `promise<value>`：
 
 ```javascript
 /**
@@ -192,7 +192,7 @@ async function fetchUser(id) {
 }
 ```
 
-**这里并非同样结果：**resolved 对象的闭包槽位不被桥接——`json` 到达时无 body（`json: () => ?`），于是 `res.json()` 求值为 `unknown`，本例实际推断为 `Promise<unknown>`（abs `promise<unknown> #partial`），而非箭头 mock 的 `Promise<{ id: 1, name: "Alice" }>`。`resolves` 对纯数据保持完整精度（`stub().resolves({ ok: true, id: 1 })` → `Promise<{ ok: true, id: 1 }>`）；mock 结果要被调用时，用箭头函数形态。同步 helper：
+**这里并非同样结果：**resolved 对象的闭包槽位不被桥接——`json` 到达时无 body（`json: () => ?`），于是 `res.json()` 求值为 `unknown`，本例实际推断为 `promise<unknown>`（abs `promise<unknown> #partial`），而非箭头 mock 的 `promise<{ id: 1, name: "Alice" }>`。`resolves` 对纯数据保持完整精度（`stub().resolves({ ok: true, id: 1 })` → `promise<{ ok: true, id: 1 }>`）；mock 结果要被调用时，用箭头函数形态。同步 helper：
 
 ```javascript
 /**
@@ -265,7 +265,7 @@ Case "read": (string) => unknown
 
 ## @nudo:pure — 标记纯函数
 
-将函数标记为纯函数，使引擎可以记忆化结果。相同的类型值输入产生相同的输出，因此重复调用可以复用缓存的结果。
+将函数标记为纯函数，使引擎可以记忆化结果。相同的 Abs 输入产生相同的输出，因此重复调用可以复用缓存的结果。
 
 ### 语法
 

@@ -160,7 +160,7 @@ Case "symbolic": (number[]) => number
 Combined: number
 ```
 
-Array-method support is not uniform — check this boundary before relying on a method. `some` / `every` fold to `boolean` on both the call-site and `@nudo:case` paths. `forEach` callback side effects land in the internal Abs on both paths (`abs: 15 #exact`), but the **case header** (TypeValue projection) differs: under an `@nudo:case` directive it reports the final `15`, while the call-site path reports the pre-loop `0`:
+Array-method support is not uniform — check this boundary before relying on a method. `some` / `every` fold to `boolean` on both the call-site and `@nudo:case` paths. `forEach` callback side effects land in the internal Abs on both paths (`abs: 15 #exact`), but the **case header** (extensional projection) differs: under an `@nudo:case` directive it reports the final `15`, while the call-site path reports the pre-loop `0`:
 
 ```js
 function forEachSum(arr) {
@@ -202,10 +202,10 @@ async function fetchUser(id) {
 ```text
 === fetchUser ===
 
-Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
+Case "user": (1) => promise<{ id: 1, name: "Alice" }>
 ```
 
-With the mock in place, Nudo infers that `fetchUser` returns `Promise<{ id: 1, name: "Alice" }>` without real network calls. Two rules for inline mocks: the expression **must fit on one line** (multi-line expressions are truncated and reported as `nudo:mock-invalid`), and `T.*` constructors are **not available inside the mock body** — write plain JavaScript values and closures. The `stub().resolves(...)` helper is only equivalent for plain data: it keeps literal slots (`stub().resolves({ ok: true, id: 1 })` → `Promise<{ ok: true, id: 1 }>`), but closure slots in the resolved value are **not bridged** — `json` arrives body-less (`json: () => ?`), so `res.json()` evaluates to `unknown` and this example degrades to `Promise<unknown>`. When the mock result gets called, use the arrow-function form above. Repo example (CI-pinned): [`docs/examples/algebra/f-async-eff.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/f-async-eff.js) — `@nudo:mock` is required there, not optional: without it, the B path executes the real `fetch` and crashes with `ERR_INVALID_URL`.
+With the mock in place, Nudo infers that `fetchUser` returns `promise<{ id: 1, name: "Alice" }>` without real network calls. Two rules for inline mocks: the expression **must fit on one line** (multi-line expressions are truncated and reported as `nudo:mock-invalid`), and `T.*` constructors are **not available inside the mock body** — write plain JavaScript values and closures. The `stub().resolves(...)` helper is only equivalent for plain data: it keeps literal slots (`stub().resolves({ ok: true, id: 1 })` → `promise<{ ok: true, id: 1 }>`), but closure slots in the resolved value are **not bridged** — `json` arrives body-less (`json: () => ?`), so `res.json()` evaluates to `unknown` and this example degrades to `promise<unknown>`. When the mock result gets called, use the arrow-function form above. Repo example (CI-pinned): [`docs/examples/algebra/f-async-eff.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/f-async-eff.js) — `@nudo:mock` is required there, not optional: without it, the B path executes the real `fetch` and crashes with `ERR_INVALID_URL`.
 
 ---
 
@@ -615,7 +615,7 @@ Diagnostics:
   [warning] env.js:7:0 Function "fetchUser" case "get user" may throw: Error. Consider adding a try-catch block or using @nudo:refine return <constraint> (nudo-may-throw)
 ```
 
-`fetch` is bound from the environment as `Promise<Response>` — `res.ok` (`boolean`) and `res.status` (`number`) resolve, so the `!res.ok` throw branch is reachable and both cases report `never throws Error` with a `nudo-may-throw` warning. The body shape stays shallow though: `res.json()` returns `Promise<unknown>`, so a precise response shape still requires an `@nudo:mock fetch = ...` override (example 4 infers `Promise<{ id: 1, name: "Alice" }>`).
+`fetch` is bound from the environment as `promise<Response>` — `res.ok` (`boolean`) and `res.status` (`number`) resolve, so the `!res.ok` throw branch is reachable and both cases report `never throws Error` with a `nudo-may-throw` warning. The body shape stays shallow though: `res.json()` returns `promise<unknown>`, so a precise response shape still requires an `@nudo:mock fetch = ...` override (example 4 infers `promise<{ id: 1, name: "Alice" }>`).
 
 Non-network globals behave the same way:
 
@@ -701,4 +701,4 @@ Case "hash": ("hello world") => string | Buffer { … }
 
 The full directive set — `@nudo:refine` contracts, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:mock-module`, and more — is documented in [Directives](../concepts/directives.md).
 
-For more on type values (`T.number`, `T.object`, etc.) and abstract interpretation, see [Type Values](../concepts/type-values.md) and [Abstract Interpretation](../concepts/abstract-interpretation.md).
+For more on type values and abstract interpretation, see [Type Values](../concepts/type-values.md) and [Abstract Interpretation](../concepts/abstract-interpretation.md).

@@ -56,13 +56,13 @@ type Directive =
 type CaseDirective = {
   kind: "case";
   name: string;
-  args: TypeValue[];
-  expected?: TypeValue;
+  argsAbs: Abs[];
+  expected?: Abs;
   commentLine?: number;
 }
 ```
 
-Named execution case with input arguments. Optional `expected` for return type validation.
+Named execution case with input arguments (constraint expressions first, legacy `T.*` accepted). Optional `expected` for return type validation.
 
 ### MockDirective
 
@@ -78,16 +78,16 @@ type MockDirective = {
 }
 ```
 
-Replaces a binding with a type-value–aware mock implementation. An inline arrow function (`@nudo:mock fetch = (url) => ({ ok: true })`) is parsed into `arrowFn`; sinon-style and `stub()`-style expressions are normalized into `nudoMock` (a `MockHelper` from `@nudojs/core`).
+Replaces a binding with an Abs-aware mock implementation. An inline arrow function (`@nudo:mock fetch = (url) => ({ ok: true })`) is parsed into `arrowFn`; sinon-style and `stub()`-style expressions are normalized into `nudoMock` (a `MockHelper` from `@nudojs/core`).
 
 ### SinonExpression
 
 ```typescript
 type SinonExpression = {
   type: "stub" | "spy" | "mock";
-  returnValue?: TypeValue;
-  resolvedValue?: TypeValue;
-  rejectedValue?: TypeValue;
+  returnValue?: Abs;
+  resolvedValue?: Abs;
+  rejectedValue?: Abs;
 }
 ```
 
@@ -106,7 +106,7 @@ Marks the function as pure for memoization.
 ```typescript
 type SkipDirective = {
   kind: "skip";
-  returns?: TypeValue;
+  returns?: Abs;
 }
 ```
 
@@ -152,13 +152,13 @@ type InlineDirective = AsDirective | ReplaceDirective;
 
 type AsDirective = {
   kind: "as";
-  typeExpr: TypeValue;     // assumed type: // @nudo:as T.string
+  typeAbs: Abs;             // assumed type: // @nudo:as string
 }
 
 type ReplaceDirective = {
   kind: "replace";
   targetSource: string;    // expression text to override
-  typeExpr: TypeValue;     // replacement type
+  typeAbs: Abs;            // replacement type
 }
 ```
 
@@ -225,19 +225,19 @@ const y = f(x);
 
 ---
 
-## parseTypeValueExpr
+## parseCaseArgExpr
 
 ```typescript
-parseTypeValueExpr(expr: string): TypeValue
+parseCaseArgExpr(expr: string): Abs
 ```
 
-Parses a string expression into a TypeValue. Used for directive arguments (e.g. `@nudo:case` args, `@nudo:as`/`@nudo:replace` type expressions).
+Parses a string expression into an Abs. Used for directive arguments (e.g. `@nudo:case` args, `@nudo:as`/`@nudo:replace` type expressions, mock return values). `parseTypeValueExpr` is the deprecated old name for the same function.
 
-**Supported forms:**
-- Primitives: `T.number`, `T.string`, `T.boolean`, `T.unknown`, `T.never`, `T.null`, `T.undefined`
-- Literals: `T.literal(...)`, `true`, `false`, `null`, `undefined`, numbers, quoted strings
-- Composite: `T.object({...})`, `T.array(...)`, `T.tuple([...])`, `T.union(...)`
-- Functions: arrow expressions (`(x) => x + 1`) and `function(x) { ... }` — parsed into a real `T.fn` value
+**Supported forms (in precedence order):**
+- Constraint expressions (primary grammar): `number()`, `number().gt(0)`, `lit(...)`, `union(…)`, `shape({…})`, `array(…)`, `fn({…}, …)`, `and`, `partial`/`pick`/`omit`/`record`/`required`/`readonly`/`nonNullable`
+- Legacy `T.*`: `T.number`, `T.string`, `T.boolean`, `T.unknown`, `T.never`, `T.null`, `T.undefined`, `T.literal(...)`, `T.object({...})`, `T.array(...)`, `T.tuple([...])`, `T.union(...)`
+- Bare literals: `true`, `false`, `null`, `undefined`, numbers, quoted strings
+- Functions: arrow expressions (`(x) => x + 1`) and `function(x) { ... }` — parsed into a real function Abs
 - JSON-like: `{ "key": value }`, `[a, b, c]`
 
-**Returns:** Parsed TypeValue, or `T.unknown` for unrecognized expressions.
+**Returns:** Parsed Abs, or `unknown` for unrecognized expressions.

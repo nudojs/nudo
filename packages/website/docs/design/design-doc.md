@@ -1,11 +1,11 @@
 ---
 sidebar_position: 1
-description: "Nudo by design: Abs = shape × term × pred × conf as the type system, TypeValue as extensional projection, directives, and what executing code computes that a separate type language cannot."
+description: "Nudo by design: Abs = shape × term × pred × conf as the single type system, extensional projection for display, directives, and what executing code computes that a separate type language cannot."
 ---
 
 # Design Document
 
-> **Nudo** — A type inference engine for JavaScript. The type system is **Abs** (`shape × term × pred × conf`); types are computable values with constraints that participate in algebra. **TypeValue** is the extensional projection IR (dts/LSP/serialization and the `T` factory for `*.nudo.js` templates), not a parallel type system; production analysis is Abs-native. Abs ⇄ TypeValue goes through a lossy bridge.
+> **Nudo** — A type inference engine for JavaScript. The type system is **Abs** (`shape × term × pred × conf`); types are computable values with constraints that participate in algebra. There is no second IR: dts/LSP/serialization consume Abs directly, and the extensional view is a one-way, lossy rendering. Production analysis is Abs-native.
 
 ---
 
@@ -50,14 +50,14 @@ This is not "induction from samples" (inferring from finite examples). It is **A
 | Approach | Input | Output | Completeness |
 |----------|-------|--------|--------------|
 | Unit tests | Concrete values (`1`, `"hello"`) | Concrete result | Only test cases |
-| Nudo | Abs (`shape × term × pred`) | Abs (projected to TypeValue for display) | All values in the abstract set |
+| Nudo | Abs (`shape × term × pred`) | Abs (rendered extensionally for display) | All values in the abstract set |
 | TypeScript | AST (no execution) | Types | All syntactic paths |
 
 When Nudo executes `transform` on abstract string input, the engine propagates that Abs through the body. At `typeof x === "string"`, the engine knows that branch is taken. At `x.toUpperCase()`, the result stays string-shaped. The result is not a concrete value—it is an **Abs**.
 
 ---
 
-## 2. Type System: Abs and TypeValue IR
+## 2. Type System: Abs
 
 ### 2.1 Abs — the type system
 
@@ -74,99 +74,77 @@ When Nudo executes `transform` on abstract string input, the engine propagates t
 
 Operations on Abs are algebraic: monotonic arithmetic, comparison, `leq` assignability, predicate implication. `nudo check` is the CI gate over this algebra (recall = precision = 1.0 on gold).
 
-### 2.2 TypeValue — extensional projection (not a second type system)
+### 2.2 Extensional projection (not a second type system)
 
-TypeValue is what dts (`Case:` JSDoc rows and the Abs-less fallback), LSP hover surface, serialization, and the `T` factory (`*.nudo.js` templates) consume. It is a **projection** of Abs (`absToTypeValue` / `typeValueToAbs` in `bridge.ts`). The bridge is lossy: non-literal terms and non-encodable preds drop, and confidence must not pretend `exact` when information was lost. There is no TypeValue evaluator — production analysis runs Abs natively (B-path transpile+exec, ast-eval fallback).
-
-```text
-TypeValue
-├── Literal<V>          — Single concrete value: 1, "hello", true, null, undefined
-├── Primitive<T>        — All values of a primitive: number, string, boolean, bigint, symbol
-├── RefinedType         — Subset of a base type (IR primitive; source contracts use @nudo:refine)
-├── ObjectType          — Object with known property types
-├── ArrayType / TupleType
-├── FunctionType
-├── UnionType
-├── NeverType / UnknownType
-```
+There is no second IR. dts (`Case:` JSDoc rows), the LSP hover surface, serialization, and the `*.nudo.js` template constraints all consume **Abs directly** — the extensional view is a rendering (`formatShape` for display, `absToTSType` / `absToZodSchema` / guard generators for projections). Rendering is lossy by design (`formatShape` drops non-literal terms), but nothing round-trips: analysis never reads a projection back. Production analysis runs Abs natively (B-path transpile+exec, ast-eval fallback).
 
 ### 2.3 Design Principles
 
 **Principle 1: Literal preservation.** When all inputs are literals, the result should be a literal.
 
 ```javascript
-T.literal(1) + T.literal(2)  // → T.literal(3), not T.number
+combine(5, 3)   // → 8  #exact, not number
+"ab" + "c"      // → "abc"  #exact
 ```
 
-**Principle 2: Widen when abstract.** When any input is abstract (non-literal), the result widens to the corresponding abstract type — but preserves structure through refined types when possible.
+**Principle 2: Widen when abstract.** When any input is abstract (non-literal), the result widens to the corresponding domain — but preserves structure where the algebra can (template strings keep the known prefix as pred metadata).
 
 ```javascript
-T.literal(1) + T.number       // → T.number
-T.literal("0x") + T.string    // → `0x${string}` (template refined type)
+1 + number        // → number  #path
+"0x" + string     // → string  #path, template metadata tracked internally
 ```
 
-**Principle 3: Lazy union distribution.** Operations on unions are distributed over members, but using **lazy evaluation**—unions propagate as a whole and are expanded only when an operator **must distinguish** members. This avoids combinatorial explosion from Cartesian products.
+**Principle 3: Lazy union distribution.** Unions propagate as a whole and are expanded only when an operator **must distinguish** members. This avoids combinatorial explosion from Cartesian products — and preserves correlation (`a + a` keeps one symbolic variable: `(A1 + A1)`, never `A1 + A1'`).
 
 ```javascript
-const a = T.union(T.literal(1), T.literal(2));
-const b = T.union(T.literal("x"), T.literal("y"));
-
-// No expansion—members need not be distinguished
-const arr = [a, b];  // → T.tuple([T.union(1, 2), T.union("x", "y")])
-
-// Expansion—operation requires distinguishing members
-const sum = a + b;   // → expanded to 1+"x", 1+"y", etc. → union of literals
+function selfAdd(a) { return a + a; }
+selfAdd(1);  // → 2  #exact
+selfAdd(2);  // → 4  #exact
+// Combined: 2 | 4 — never 1+1 | 1+2 | 2+1 | 2+2
 ```
 
-**Principle 4: Guard narrowing.** Type guards (`typeof`, `instanceof`, truthiness checks) narrow type values in branches.
+**Principle 4: Guard narrowing.** Type guards (`typeof`, `instanceof`, truthiness checks) narrow values in branches.
 
 ```javascript
-const x = T.union(T.number, T.string);
-if (typeof x === "string") {
-  // In this branch, x is narrowed to T.string
+function process(x) {          // x: number | string
+  if (typeof x === "string") {
+    // In this branch, x is narrowed to string
+  }
 }
 ```
 
-### 2.4 TypeValue IR API
+### 2.4 Abs API
 
 ```typescript
-// --- Construction (IR / tests / env modules) ---
-T.literal(value)              // Literal type value
-T.number                      // Abstract number
-T.string                      // Abstract string
-T.boolean                     // Abstract boolean
-T.null                        // Literal null
-T.undefined                   // Literal undefined
-T.unknown                     // unknown type
-T.never                       // never type
-
-T.object({ key: TypeValue })  // Object type
-T.array(TypeValue)            // Array type
-T.tuple([TypeValue, ...])     // Tuple type
-T.union(TypeValue, ...)       // Union type
-T.fn(params, body, closure)  // Function type
-T.refine(base, refinement)   // IR primitive for refined subsets (templates/ranges)
+// --- Construction (analysis / tests / env modules) ---
+numLit(value)                 // Exact number literal
+strLit(value)                 // Exact string literal
+num() / str() / bool()        // Primitive domains
+never / unknown               // Empty set / universal set (constants)
+obj({ key: { value, optional? } })  // Object shape
+abs(shape, term, pred, conf)  // General constructor
+absFunction(params, { body, env, apply })  // Function values
 
 // --- Introspection ---
-typeValue.kind                // "literal" | "primitive" | "refined" | "object" | "array" | ...
-typeValueToString(tv)         // Human-readable: "number", "1 | 2", "string | number"
-isSubtypeOf(a, b)             // Subtype check (extensional; algebra uses leqAbs)
+formatShape(a)                // Extensional rendering: "number", "1 | 2", "string | number"
+formatAbs(a)                  // Lossless: shape, = term, where pred, #conf
+leqAbs(src, tgt)              // Assignability (the algebra's subtype check)
 ```
 
-Source-level contracts use `@nudo:refine` + `*.nudo.js` templates, not `T.refine` in user code.
+Source-level contracts use `@nudo:refine` + `*.nudo.js` templates (constraint builders), not raw constructors.
 
 ### 2.5 Operator Semantics (Abs-native surface)
 
-Arithmetic, comparison, unary, and spread are algebraic on Abs — there is no separate `Ops` layer. The language surface lives in three places:
+Arithmetic, comparison, unary, and spread are algebraic on Abs — there is no separate `Ops` layer and no routing to another IR. The language surface lives in three places:
 
 - `core/src/algebra/surface.ts` — `typeofAbs`, `negAbs`, `notAbs`, `strictEqAbs` (unary ops and strict equality, on Abs).
-- `core/src/algebra/arithmetic.ts` — binary arithmetic (`+` `-` `*` `/` `%`) and comparison, on Abs.
-- `service/src/evaluator/abs-route.ts` — `tryAbsBinary` / `tryAbsUnary` / `tryAbsObjectSpread`: the TypeValue ⇄ Abs routing that bridges the projection layer back into the algebra (union members routed member-wise, constraints preserved via term/pred).
+- `core/src/algebra/arithmetic.ts` — binary arithmetic (`add` / `sub` / `mul` / `div` / `mod` / `cmp`): monotonicity + constant folding + constraint propagation, on Abs.
+- `service/src/evaluator/abs-route.ts` — object `join` / φ-merge helpers when branches must merge object shapes.
 
 ```typescript
 // Binary arithmetic routes through the algebra:
-tryAbsBinary("+", left, right)   // number + number, string/template concat
-tryAbsBinary("<", left, right)   // numeric/string comparison
+add(left, right)    // number + number, string/template concat
+cmp("<", left, right)  // numeric/string comparison
 ```
 
 Refined subsets (template strings, numeric ranges) carry their constraints as Preds on terms, not as override tables; the algebra reads those preds during `+`/comparison.
@@ -180,8 +158,7 @@ Refined subsets (template strings, numeric ranges) carry their constraints as Pr
 ```text
 parser ──▶ core
             ├── algebra/     ← type system (Abs / Term / Pred / Φ / check)
-            ├── type-value   ← extensional projection (T factory / dts / serialization)
-            └── bridge       ← Abs ⇄ TypeValue (lossy)
+            └── format       ← extensional rendering (dts / hover / serialization)
                  │
                  ▼
             service/evaluator    ← Abs-native: B-path (transpile+exec) → ast-eval
@@ -196,9 +173,8 @@ parser ──▶ core
 | **Directive Extractor** | Extract `@nudo:*` from comments; refine/import parsed in core |
 | **algebra (Abs)** | Types as computation: eval, check, leq, generalize |
 | **Evaluator (Abs-native)** | B-path transpile+exec; ast-eval fallback for non-B-hosted files |
-| **surface / abs-route** | Arithmetic, comparison, unary, spread routed through algebra |
-| **bridge** | Abs → TypeValue for dts/LSP/serialization |
-| **Environment** | Variable bindings (name → TypeValue or Abs seed) |
+| **surface / arithmetic / abs-route** | Arithmetic, comparison, unary, spread routed through algebra |
+| **Environment** | Variable bindings (name → Abs) |
 
 ### 3.2 Evaluation Rules
 
@@ -206,9 +182,9 @@ The evaluator is an AST walker. For each node type, there is a corresponding rul
 
 **Literals:**
 ```text
-eval(NumericLiteral 42)  →  T.literal(42)
-eval(StringLiteral "hi") →  T.literal("hi")
-eval(NullLiteral)       →  T.null
+eval(NumericLiteral 42)  →  lit(42)
+eval(StringLiteral "hi") →  lit("hi")
+eval(NullLiteral)       →  lit(null)
 ```
 
 **Variables:**
@@ -218,34 +194,34 @@ eval(Identifier "x")  →  env.lookup("x")
 
 **Binary expressions:**
 ```text
-eval(BinaryExpression { left, op, right })  →  tryAbsBinary(op, eval(left), eval(right))
+eval(BinaryExpression { left, op, right })  →  arithmetic(op, eval(left), eval(right))
 ```
 
-**Conditional (if-else):** The engine may **evaluate both branches** with narrowed type values and merge:
+**Conditional (if-else):** The engine may **evaluate both branches** with narrowed values and merge:
 
 ```text
 eval(IfStatement { test, consequent, alternate }) →
   condition = eval(test)
-  if condition === T.literal(true)  → eval(consequent)
-  if condition === T.literal(false) → eval(alternate)
+  if condition === lit(true)   → eval(consequent)
+  if condition === lit(false)  → eval(alternate)
   else:
     [envTrue, envFalse] = narrow(env, test)
     resultTrue  = eval(consequent, envTrue)
     resultFalse = eval(alternate, envFalse)
-    return T.union(resultTrue, resultFalse)
+    return union(resultTrue, resultFalse)
 ```
 
 ### 3.3 Narrowing Rules
 
 | Pattern | True branch | False branch |
 |---------|-------------|--------------|
-| `typeof x === "string"` | `x ∩ T.string` | `x - T.string` |
-| `typeof x === "number"` | `x ∩ T.number` | `x - T.number` |
-| `x === null` | `x ∩ T.null` | `x - T.null` |
-| `x === <literal>` | `x ∩ T.literal(v)` | `x - T.literal(v)` |
-| `Array.isArray(x)` | `x ∩ T.array(T.unknown)` | `x - T.array(T.unknown)` |
-| `x` (truthiness) | `x - T.null - T.undefined - falsy` | complement |
-| `x instanceof C` | `x ∩ T.instanceOf(C)` | `x - T.instanceOf(C)` |
+| `typeof x === "string"` | `x ∩ string` | `x - string` |
+| `typeof x === "number"` | `x ∩ number` | `x - number` |
+| `x === null` | `x ∩ null` | `x - null` |
+| `x === <literal>` | `x ∩ lit(v)` | `x - lit(v)` |
+| `Array.isArray(x)` | `x ∩ array` | `x - array` |
+| `x` (truthiness) | `x - null - undefined - falsy` | complement |
+| `x instanceof C` | `x ∩ instance(C)` | `x - instance(C)` |
 
 ---
 
@@ -266,7 +242,7 @@ A concrete bound accumulates element-wise to a literal. An abstract bound sums t
 
 ### 4.2 Closures and Higher-Order Functions
 
-Functions are first-class type values. When a function is passed as an argument, the engine evaluates calls using the function's type-value representation.
+Functions are first-class Abs values (`fn` shape). When a function is passed as an argument, the engine evaluates calls through its Abs representation (parameters, body, closure environment).
 
 ### 4.3 Recursion
 
@@ -274,7 +250,7 @@ Recursion is bounded by a **call budget** (`MAX_CALL_DEPTH = 64`). A recursive c
 
 ### 4.4 Async / Promise
 
-Promises are modeled as wrapped type values. `await` unwraps the Promise type; `async function` wraps the return value in `T.promise(...)`.
+Promises are modeled as an effect shape (`eff`). `await` unwraps the promise; `async function` wraps the return value in `promise<...>`.
 
 ### 4.5 Exception and throws Tracking
 
@@ -282,7 +258,7 @@ Nudo tracks exceptions as a first-class part of function types. Each function ha
 
 ### 4.6 Mutability (Reference Semantics, Copy-on-Write)
 
-Object type values use **reference semantics**. Assignment copies references. When entering branches, modified objects are deep-copied so each branch has its own copy; merging unions the properties.
+Object Abs values use **reference semantics**. Assignment copies references. When entering branches, modified objects are deep-copied so each branch has its own copy; merging unions the properties.
 
 ---
 
@@ -293,7 +269,7 @@ Directives are structured comments that guide the engine. They use the `@nudo:` 
 | Directive | Purpose |
 |-----------|---------|
 | `@nudo:case` | Provide named execution cases (concrete or symbolic inputs) |
-| `@nudo:mock` | Mock external dependencies with type-value implementations |
+| `@nudo:mock` | Mock external dependencies with Abs-valued stubs |
 | `@nudo:pure` | Mark function as pure for memoization |
 | `@nudo:skip` | Skip evaluation; an optional type expression declares the return type (e.g. `@nudo:skip T.number`) |
 | `@nudo:sample` | Reserved no-op (parsed, not consumed) |
@@ -319,7 +295,7 @@ Arithmetic, regex, and complex string operations are trivial in Nudo's execution
 
 ### 6.3 Third-Party JS Libraries
 
-For libraries with JS source, Nudo can execute the code to derive types. For native or opaque dependencies, `@nudo:mock` provides type-value–aware stubs.
+For libraries with JS source, Nudo can execute the code to derive types. For native or opaque dependencies, `@nudo:mock` provides Abs-aware stubs.
 
 ### 6.4 Dependent Types
 
@@ -331,8 +307,8 @@ function clamp(value, min, max) {
   if (value > max) return max;
   return value;
 }
-// clamp(5, 0, 10) → T.literal(5)
-// clamp(T.number, 0, 10) → T.number
+// clamp(5, 0, 10) → 5
+// clamp(number, 0, 10) → number
 ```
 
 ### 6.5 Precise String Concatenation
@@ -340,11 +316,13 @@ function clamp(value, min, max) {
 Nudo preserves string structure through concatenation, producing template string types:
 
 ```javascript
-const url = "https://api.example.com" + T.string;
-// Nudo: `https://api.example.com${string}`
+function apiUrl(path) {           // path: string
+  return "https://api.example.com" + path;
+}
+// Nudo: template with known prefix `https://api.example.com${string}`
 // TypeScript: string (loses the known prefix)
 
-url.startsWith("https://")  // Nudo: true | TypeScript: boolean
+apiUrl("/x").startsWith("https://")  // Nudo: true | TypeScript: boolean
 ```
 
 ### 6.6 Literal-Level String Method Inference
@@ -370,7 +348,7 @@ for (let i = 0; i < 5; i++) sum += i;
 
 ### 6.8 Declared Refinements (no type syntax)
 
-User-facing contracts are declared with `@nudo:refine` and `*.nudo.js` templates — not `interface` / `type`, and not `T.refine` in source:
+User-facing contracts are declared with `@nudo:refine` and `*.nudo.js` templates — not `interface` / `type`:
 
 ```javascript
 // shapes.nudo.js
@@ -389,7 +367,7 @@ function inc(x) {
 }
 ```
 
-The Pred enters Abs and participates in algebra (`x>0` ⇒ `x+1>1`). `T.refine` is the TypeValue-IR primitive these templates lower to — not the source-level API.
+The Pred enters Abs and participates in algebra (`x>0` ⇒ `x+1>1`). The template's constraint builders lower directly to term/pred constraints on Abs — `T.refine` no longer exists.
 
 ---
 
@@ -408,19 +386,19 @@ function calc(a, b) {
 }
 ```
 
-**Case "concrete" — `calc(T.literal(1), T.literal(2))`:**
-1. Bind: `a = T.literal(1)`, `b = T.literal(2)`
-2. Condition: `a > b` → `T.literal(false)`
-3. Take alternate: `a + b` → `T.literal(3)`
-4. Result: `T.literal(3)`
+**Case "concrete" — `calc(1, 2)`:**
+1. Bind: `a = lit(1)`, `b = lit(2)`
+2. Condition: `a > b` → `lit(false)`
+3. Take alternate: `a + b` → `lit(3)`
+4. Result: `lit(3)`
 
 **Case "symbolic" — `calc(T.number, T.number)`:**
-1. Bind: `a = T.number`, `b = T.number`
-2. Condition: `a > b` → `T.boolean` (abstract)
+1. Bind: `a = number`, `b = number`
+2. Condition: `a > b` → `boolean` (abstract)
 3. Fork both branches:
-   - True: `a - b` → `T.number`
-   - False: `a + b` → `T.number`
-4. Merge: `T.number`
+   - True: `a - b` → `number`
+   - False: `a + b` → `number`
+4. Merge: `number`
 
 **Combined:** `((1, 2) => 3) & ((number, number) => number)`
 
@@ -458,10 +436,10 @@ function calc(a, b) {
 
 | Operator | Literal × Literal | Literal × Abstract | Abstract × Abstract |
 |----------|-------------------|--------------------|---------------------|
-| `+` (numeric) | `T.literal(a + b)` | `T.number` | `T.number` |
-| `+` (string) | `T.literal(a + b)` | `T.string` | `T.string` |
-| `-`, `*`, `/`, `%` | `T.literal(op(a,b))` | `T.number` | `T.number` |
-| `===`, `!==` | `T.literal(a === b)` | `T.boolean` | `T.boolean` |
-| `>`, `<`, `>=`, `<=` | `T.literal(op(a,b))` | `T.boolean` | `T.boolean` |
-| `typeof` | `T.literal("...")` | `T.literal("...")` | `T.string` |
-| `!` | `T.literal(!a)` | `T.boolean` | `T.boolean` |
+| `+` (numeric) | `lit(a + b)` | `number` | `number` |
+| `+` (string) | `lit(a + b)` | `string` | `string` |
+| `-`, `*`, `/`, `%` | `lit(op(a,b))` | `number` | `number` |
+| `===`, `!==` | `lit(a === b)` | `boolean` | `boolean` |
+| `>`, `<`, `>=`, `<=` | `lit(op(a,b))` | `boolean` | `boolean` |
+| `typeof` | `lit("...")` | `lit("...")` | `string` |
+| `!` | `lit(!a)` | `boolean` | `boolean` |

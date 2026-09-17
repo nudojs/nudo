@@ -1,180 +1,100 @@
 ---
 sidebar_position: 1
-description: "Type values — the symbolic sets-of-values abstraction: the TypeValue hierarchy, the full T factory table, and the four design principles."
+description: "Type values — symbolic sets of values as one computable system: the Abs algebra (shape × term × pred × conf), the directive type grammar (constraint expressions + legacy T.*), and the four design principles."
 ---
 
 # Type Values
 
-Type values are the **extensional projection IR** in Nudo. They are symbolic representations of sets of possible JavaScript values — instead of holding a single concrete value like `42` or `"hello"`, a type value represents *all* values that share certain characteristics (e.g., "any number" or "the literal 1").
+Type values are symbolic representations of sets of possible JavaScript values — instead of holding a single concrete value like `42` or `"hello"`, a type value represents *all* values that share certain characteristics (e.g., "any number" or "the literal 1").
 
-The **type system itself is Abs** (`shape × term × pred × conf`) — computable values whose constraints participate in algebra. TypeValue is the **extensional projection** that dts (`Case:` JSDoc rows and the Abs-less fallback), LSP hover surface, serialization, and the `T` factory (`*.nudo.js` templates, `@nudo:mock`/`@nudo:refine` type expressions) consume; production analysis is Abs-native (there is no TypeValue evaluator), and Abs ⇄ TypeValue goes through a lossy bridge. Execution computes with Abs; the result is projected to TypeValue for display.
+The type system is **Abs** — `{ shape, term?, pred?, conf }` — and it is the *only* type system: a computable value whose constraints participate in algebra (`x > 0` ⇒ `x + 1 > 1`). Analysis, display, and projections (`.d.ts` / zod / guards) all consume Abs directly; there is no separate IR and no lossy bridge.
 
-## TypeValue Hierarchy
+## The Four Components
 
-Nudo's type system is built around a discriminated union of type value kinds:
+- **shape** — the extensional carrier: what the value looks like. Kinds: `prim` (with a `lit` term for exact values), `obj`, `arr`, `tuple`, `fn`, `eff` (`promise<…>` / `generator<…>`), `brand` (nominal instances), `sum` (unions), `never`, `unknown`/`any`.
+- **term** — abstract value identity: `lit` (concrete), `var` (symbolic α like `A1`), or `app` (an application like `(x + 2)`).
+- **pred** — constraints relative to the term: `(x + 2) > 3`.
+- **conf** — how exact the abstraction is: `exact` / `path` / `widened` / `mock` / `partial` / `opaque`.
+
+See the [core API](../api/core.md) for constructors (`num()`, `strLit(…)`, `obj({…})`, …) and the core functions (`leqAbs`, `formatAbs`, `checkSource`, …).
+
+### Literals
+
+A `prim` shape with a `lit` term represents exactly one concrete value — what the engine produces from a literal in code or a concrete `@nudo:case` argument:
 
 ```text
-TypeValue
-├── Literal<V>      — single concrete value: 1, "hello", true, null, undefined
-├── Primitive<T>    — all possible values of a primitive: number, string, boolean, bigint, symbol
-├── RefinedType     — a subset of a base type with metadata and custom operation rules
-├── ObjectType      — object with known property types
-├── ArrayType       — array with element type
-├── TupleType       — fixed-length array
-├── FunctionType    — function with params, body, closure (or a signature-only T.fnSig value)
-├── PromiseType     — Promise wrapping a TypeValue
-├── InstanceType    — class instance (e.g. Error) with optional properties
-├── UnionType       — union of type values
-├── NeverType       — empty set (unreachable)
-└── UnknownType     — universal set (any value)
+25  #exact            // the number 25, precisely
+"localhost"  #exact   // one specific string
 ```
 
-### Literal\<V\>
+### Primitives
 
-Represents exactly one concrete value. Used when the engine knows the precise value, e.g. from a literal in code or from a concrete `@nudo:case` argument.
+A `prim` shape without a `lit` term is the whole domain — the value is known to be of that type but not a specific value:
 
-```javascript
-T.literal(1)       // the number 1
-T.literal("hello") // the string "hello"
-T.literal(true)   // the boolean true
+```text
+number   // any number
+string   // any string
+boolean  // true or false
 ```
 
-### Primitive\<T\>
+### Objects, Arrays, Tuples
 
-Represents all possible values of a JavaScript primitive type: `number`, `string`, `boolean`, `bigint`, or `symbol`. Used when the value is known to be of that type but not a specific value.
+`obj` carries known slots (`{ value, optional? }` per key), `arr` one element type, `tuple` a fixed-length per-element list:
 
-```javascript
-T.number   // any number
-T.string   // any string
-T.boolean  // true or false
+```text
+{ host: "localhost", port: 8080, debug: false }
+[2, 4, 6]           // tuple of literals — arr when elements are abstract
+number[]            // abstract element
 ```
 
-### ObjectType
+### Functions and Promises
 
-Represents an object with a known shape — each property has an associated type value.
+`fn` carries parameter names (or a `paramTypes`/`returnType` signature); `eff` wraps async effects and renders lowercase:
 
-```javascript
-T.object({ id: T.number, name: T.string })
-T.object({ x: T.literal(1), y: T.literal(2) })
+```text
+load: (id) => ?                      // function value, unknown return
+promise<{ id: 7, name: "u7" }>       // async result
 ```
 
-### ArrayType
+### Unions
 
-Represents an array whose elements share a common type.
+`sum` is the union of member Abs — a value that could be any of its members:
 
-```javascript
-T.array(T.number)           // number[]
-T.array(T.union(T.string, T.number))  // (string | number)[]
+```text
+25 | 9                // two exact numbers (from two call sites)
+number | string       // heterogeneous union
 ```
 
-### TupleType
-
-Represents a fixed-length array with a specific type for each index.
-
-```javascript
-T.tuple([T.literal(1), T.string, T.boolean])
-```
-
-### FunctionType
-
-Represents a function with its parameter names, body AST, and closure (environment). This is used internally when functions are first-class values. `T.fnSig(paramTypes, returnType)` creates a signature-only variant — used by env files and harvested declarations — that carries `{ paramTypes, returnType, throwsType, impl }` instead of a body (see the [core API](../api/core.md)).
-
-### PromiseType
-
-Represents a `Promise` wrapping another type value — what `async` functions return and `.then` callbacks receive.
-
-```javascript
-T.promise(T.number)   // Promise<number>
-```
-
-### InstanceType
-
-Represents an instance of a named class, with optional known properties.
-
-```javascript
-T.instanceOf("Error", { message: T.string })
-```
-
-### UnionType
-
-Represents the union of multiple type values — a value that could be any of its members.
-
-```javascript
-T.union(T.literal(1), T.literal(2), T.literal(3))
-T.union(T.string, T.number)
-```
-
-### NeverType
-
-The empty set. Represents unreachable code or impossible types (e.g. the result of narrowing that excludes all possibilities).
-
-### UnknownType
-
-The universal set. Represents "any value" when the type cannot be determined.
-
-### RefinedType
-
-Represents a **subset of a base type** with attached metadata and optional custom operation rules. Refined types are the TypeValue-IR mechanism behind template strings and numeric ranges.
-
-```javascript
-// Built-in: template string (created automatically by string concatenation)
-T.literal("0x") + T.string   // → refined(T.string, template { parts: ["0x", T.string] })
-
-// Built-in: numeric range (created by narrowing)
-// if (x >= 0) → x is refined(T.number, range { min: 0 })
-```
-
-A refined type is always a subtype of its base. When an operation is not handled by the refinement's custom rules (or returns `undefined`), the engine falls back to the base type's behavior, recursively until a primitive type is reached.
-
-**User-facing contracts do not use `T.refine`.** Declare them with `@nudo:refine` and `*.nudo.js` templates (`number().gt(0)`, `shape({...})`) — see [Directives](./directives.md#nudorefine--refinement-contract). `T.refine` is the IR primitive those templates lower to.
+`never` is the empty set (unreachable); `unknown` the universal set.
 
 ---
 
-## T Factory API
+## Type Expressions in Directives
 
-In directives and when defining type values in code, you use the `T` factory:
+`@nudo:case` / `@nudo:mock` / `@nudo:refine` arguments are written in the **constraint-expression grammar** — the same builders as `*.nudo.js` templates:
 
-| API | Description |
-|-----|-------------|
-| `T.literal(value)` | Single concrete value: `1`, `"hello"`, `true`, `null`, `undefined` |
-| `T.number` | All numbers |
-| `T.string` | All strings |
-| `T.boolean` | All booleans |
-| `T.bigint` | All bigints |
-| `T.symbol` | All symbols |
-| `T.null` | The value `null` |
-| `T.undefined` | The value `undefined` |
-| `T.unknown` | Any value |
-| `T.never` | Empty set (unreachable) |
-| `T.object({ key: TypeValue })` | Object with known property types |
-| `T.array(element)` | Array with element type |
-| `T.tuple([...])` | Fixed-length array |
-| `T.promise(value)` | Promise wrapping a type value |
-| `T.instanceOf(className, properties?)` | Class instance with optional known properties |
-| `T.union(...)` | Union of type values |
-| `T.fn(params, body, closure)` | Function type (used internally) |
-| `T.fnSig(paramTypes, returnType, throwsType?, impl?)` | Signature-only function type (env files, harvested declarations) |
-| `T.refine(base, refinement)` | IR primitive for refined subsets (used by templates/ranges; prefer `@nudo:refine` in source) |
+| Expression | Meaning | Example |
+|-----|-------------|-------------|
+| `number()` / `string()` / `boolean()` | primitive domain | `@nudo:case "symbolic" (number())` |
+| `lit(v)` | literal domain | `lit(42)` / `lit("ada")` / `lit(true)` |
+| `union(…)` | union of members | `union(lit(1), lit(2))` |
+| `shape({ … })` | object shape (fields recursive) | `shape({ id: number().gt(0) })` |
+| `array(…)` / `record(…)` | array / record domain | `array(number())` |
+| `fn({ … }, …)` | function relation | `fn({ x: number().gt(0) }, number())` |
+| builders | `.gt/.gte/.lt/.lte/.shift/.int…` | `number().gt(0).int()` |
+| bare literals | parsed directly | `42`, `"abc"`, `true`, `[1, 2]` |
 
-### Examples in Directives
+A deprecated `T.*` grammar (`T.number`, `T.string`, `T.literal(…)`, `T.union(…)`, `T.array(…)`, `T.tuple(…)`, `T.object({…})`, `T.unknown`, `T.never`) is still parsed for legacy fixtures — new code uses the constraint builders above. `T.*` constructors are **not** available inside `@nudo:mock` bodies (write plain JavaScript values and closures there).
 
 ```javascript
 /**
  * @nudo:case "concrete" (5, 3)
- * @nudo:case "symbolic" (T.number, T.number)
- * @nudo:case "mixed" (T.literal(0), T.string)
+ * @nudo:case "symbolic" (number(), number())
+ * @nudo:case "mixed" (lit(0), string())
  */
 function combine(a, b) {
   return a + b;
 }
-```
-
-```javascript
-// In @nudo:case or @nudo:mock expressions:
-T.union(T.string, T.number)
-T.object({ id: T.number, name: T.string })
-T.array(T.object({ x: T.number, y: T.number }))
-T.tuple([T.literal(1), T.literal(2), T.literal(3)])
 ```
 
 ---
@@ -188,59 +108,57 @@ Nudo's type value system follows four core principles that govern how operations
 When all inputs are literals, the output is also a literal. The engine computes the concrete result.
 
 ```javascript
-T.literal(1) + T.literal(2)   // → T.literal(3), not T.number
-T.literal("a") + T.literal("b") // → T.literal("ab"), not T.string
+combine(5, 3)   // → 8  #exact, not number
+"ab" + "c"      // → "abc"  #exact
 ```
 
 This keeps inferred types precise when enough information is available.
 
 ### 2. Widening on Abstraction
 
-When any input is abstract (non-literal), the result widens to the appropriate abstract type — but Nudo preserves as much structure as possible through refined types.
+When any input is abstract (non-literal), the result widens to the appropriate domain — but Nudo preserves as much structure as possible.
 
 ```javascript
-T.literal(1) + T.number       // → T.number
-T.literal("xy") + T.string    // → `xy${string}` (template refined type, not just T.string)
-T.string + T.literal("!")     // → `${string}!`
-T.string + T.string           // → T.string (no structure to preserve)
+1 + number        // → number  #path   (displayed as the domain)
+"xy" + string     // → string  #path   (displayed as the domain)
+string + string   // → string          (no structure to preserve)
 ```
 
-When string concatenation involves at least one literal, Nudo produces a **template string** refined type that preserves the known prefix/suffix. This enables precise inference for methods like `startsWith` and `endsWith`.
+When string concatenation involves at least one literal, Nudo tracks a **template string** internally — the known prefix/suffix is preserved, which is what makes `("user-" + x).startsWith("user-")` fold to `true #exact` even for a symbolic `x`.
 
 ### 3. Lazy Union Distribution
 
-Unions propagate as-is through the function. They are only expanded when an operator or method *must* distinguish between members. This avoids combinatorial explosion.
+Unions propagate as-is. An operation over a symbolic value stays symbolic — it is not eagerly expanded into a cross product of members. This avoids combinatorial explosion and preserves correlation:
 
 ```javascript
-const a = T.union(T.literal(1), T.literal(2));
-const b = T.union(T.literal("x"), T.literal("y"));
+function selfAdd(a) {
+  return a + a;   // intension: (A1 + A1) — one symbolic variable, not A1 + A1'
+}
 
-// Not expanded — members don't need to be distinguished
-const arr = [a, b];  // → T.tuple([T.union(1, 2), T.union("x", "y")])
-
-// Expanded — operator must distinguish members
-const sum = a + b;   // → T.union("1x", "1y", "2x", "2y")
+selfAdd(1);       // → 2  #exact  (per call site)
+selfAdd(2);       // → 4  #exact
+// Combined: 2 | 4 — correlation kept, never 1+1 | 1+2 | 2+1 | 2+2
 ```
 
-Lazy distribution preserves correlation: `a + a` is correctly `T.union(2, 4)`, not `1+1, 1+2, 2+1, 2+2`.
+With abstract arguments the result widens to the domain the algebra determines (`sum(number, string)` → `string #path`; `selfAdd(number)` → `number #widened`) — member-wise expansion only happens when an operator or method *must* distinguish members.
 
 ### 4. Guard Narrowing
 
-Type guards narrow type values in branches. When you check `typeof x === "string"` or `x === null`, the engine narrows `x` in the `if` branch and excludes those types in the `else` branch.
+Type guards narrow values in branches. When you check `typeof x === "string"` or `x === null`, the engine narrows `x` in the `if` branch and excludes those values in the `else` branch.
 
 ```javascript
 function process(x) {
   if (typeof x === "string") {
-    // x is T.string here
-    return x.length;  // → T.number
+    // x is string here
+    return x.length;  // → number
   }
   if (x === null) {
-    // x is T.null here
+    // x is null here
     return 0;
   }
-  // x is narrowed (e.g. T.number if input was T.union(T.string, T.number, T.null))
+  // x is narrowed (e.g. number if input was string | number | null)
   return x;
 }
 ```
 
-Narrowing rules support `typeof`, `===`, `!==`, `instanceof`, and truthiness checks.
+Narrowing rules support `typeof`, `===`, `!==`, `instanceof`, `Array.isArray`, and truthiness checks.

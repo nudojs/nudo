@@ -50,7 +50,7 @@ description: 解释 Nudo 如何用符号化类型值执行代码——求值引�
 | **surface / arithmetic / abs-route** | 在 Abs 上定义算术、比较、一元、spread 的运算符语义 |
 | **Environment** | 管理变量作用域和绑定（name → Abs） |
 | **Branch Executor** | 处理条件分支：分叉、窄化、求值、合并 |
-| **Type Emitter** | 序列化最终 TypeValue 结果（可选导出为 TypeScript 类型） |
+| **Type Emitter** | 序列化最终 Abs 结果（可选导出为 TypeScript 类型） |
 
 ---
 
@@ -126,22 +126,22 @@ eval(CallExpression { callee: "foo", args })
 
 ## 窄化规则
 
-窄化根据条件细化类型值。引擎支持以下模式：
+窄化根据条件细化值。引擎支持以下模式：
 
 | 模式 | True 分支 | False 分支 |
 |---------|-------------|--------------|
-| `typeof x === "string"` | `x ∩ T.string` | `x - T.string` |
-| `typeof x === "number"` | `x ∩ T.number` | `x - T.number` |
-| `x === null` | `x ∩ T.null` | `x - T.null` |
-| `x === undefined` | `x ∩ T.undefined` | `x - T.undefined` |
-| `x === <literal>` | `x ∩ T.literal(v)` | `x - T.literal(v)` |
-| `Array.isArray(x)` | `x ∩ T.array(T.unknown)` | `x - T.array(T.unknown)` |
-| `x`（真值检查） | `x - T.null - T.undefined - T.literal(0) - T.literal("") - T.literal(false)` | 补集 |
-| `x instanceof C` | `x ∩ T.instanceOf(C)` | `x - T.instanceOf(C)` |
+| `typeof x === "string"` | `x ∩ string` | `x - string` |
+| `typeof x === "number"` | `x ∩ number` | `x - number` |
+| `x === null` | `x ∩ null` | `x - null` |
+| `x === undefined` | `x ∩ undefined` | `x - undefined` |
+| `x === <literal>` | `x ∩ lit(v)` | `x - lit(v)` |
+| `Array.isArray(x)` | `x ∩ array` | `x - array` |
+| `x`（真值检查） | `x - null - undefined - lit(0) - lit("") - lit(false)` | 补集 |
+| `x instanceof C` | `x ∩ instance(C)` | `x - instance(C)` |
 | `"key" in x` | 含有 `key` 属性的联合成员 | 不含 `key` 属性的联合成员 |
 | `x?.prop` | 正常成员访问（nullish 时短路为 `undefined`） | — |
 | `a ?? b` | 移除 null/undefined 后的 `a` | — |
-| `switch(x) { case v: ... }` | 每个 case 对应 `x ∩ T.literal(v)` | 所有 case 之外的剩余部分 |
+| `switch(x) { case v: ... }` | 每个 case 对应 `x ∩ lit(v)` | 所有 case 之外的剩余部分 |
 | `x.kind === "a"`（可辨识联合） | `kind` 匹配该字面量的联合成员 | `kind` 不同的联合成员 |
 
 其中 `∩` 为类型交集，`-` 为类型减法。
@@ -156,12 +156,12 @@ eval(CallExpression { callee: "foo", args })
 
 ### 闭包与高阶函数
 
-函数是一等的类型值。当函数作为参数传入时，引擎使用其类型值表示来求值调用：
+函数是一等 Abs 值（`fn` shape）。当函数作为参数传入时，引擎经其 Abs 表示（参数、函数体、闭包环境）求值调用：
 
 ```javascript
-map(T.array(T.number), (x) => x + 1)
-// Engine evaluates: fn(T.number) → T.number + T.literal(1) → T.number
-// Result: T.array(T.number)
+map(number[], (x) => x + 1)
+// 引擎求值：fn(number) → number + lit(1) → number
+// 结果：number[]
 ```
 
 ### 递归（调用预算）
@@ -176,9 +176,9 @@ map(T.array(T.number), (x) => x + 1)
 
 ### Async / Promise
 
-Promise 建模为包装后的类型值：
-- `await expr` 将 `T.promise(V)` 解包为 `V`
-- `async function` 将返回值包装在 `T.promise(...)` 中
+Promise 建模为效果形状（`eff`）：
+- `await expr` 将 `promise<V>` 解包为 `V`
+- `async function` 将返回值包装在 `promise<...>` 中
 
 ### 异常与 throws 追踪
 
@@ -189,15 +189,15 @@ function divide(a, b) {
   if (b === 0) throw new Error("Division by zero");
   return a / b;
 }
-// divide(T.number, T.number):
-//   returns: T.number
-//   throws: T.instanceOf(Error)
+// divide(number, number):
+//   returns: number
+//   throws: instance(Error)
 ```
 
-`try-catch` 吸收抛出的类型。catch 参数接收 try 块中所有抛出类型的联合。若函数从不抛出，则 `throws` 为 `T.never`。
+`try-catch` 吸收抛出的类型。catch 参数接收 try 块中所有抛出类型的联合。若函数从不抛出，则 `throws` 为 `never`。
 
 ### 可变性（引用语义、写时复制）
 
-对象类型值使用**引用语义**——赋值复制引用而非值。多个变量可以指向同一对象类型值。
+对象 Abs 值使用**引用语义**——赋值复制引用而非值。多个变量可以指向同一对象 Abs 值。
 
 进入条件分支时，引擎会对被修改对象进行深拷贝，使每个分支拥有自己的副本。合并时，重叠属性变为联合类型。若无分支，则就地应用变更，无额外开销。

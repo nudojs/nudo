@@ -324,7 +324,7 @@ export const double = fn({ x: lit(4) }, lit(8));
 
 ### nudo types
 
-类型即计算视图：展示 Abs 代数中的 term + 约束（不只是外延 TypeValue 形状）。支持单文件或目录（递归）。
+类型即计算视图：展示 Abs 代数中的 term + 约束（不只是外延形状）。支持单文件或目录（递归）。
 
 ```bash
 nudo types <file> [--fn <name>] [--assume <pred...>] [--generalize]
@@ -540,7 +540,7 @@ nudo emit src/user.js --output dist/types
 
 ### nudo guard
 
-从推断结果类型生成运行时类型守卫。有无损 Abs 结果时优先走 Abs 路径（`denoteGuard`：shape + 可判定数值 pred），否则回退 TypeValue 投影。等价于 `nudo generate --format guard`。
+从推断结果类型生成运行时类型守卫。有无损 Abs 结果时优先走 Abs 路径（`denoteGuard`：shape + 可判定数值 pred），否则回退外延投影。等价于 `nudo generate --format guard`。
 
 ```bash
 nudo guard <file> [options]

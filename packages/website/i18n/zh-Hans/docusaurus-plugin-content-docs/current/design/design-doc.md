@@ -1,11 +1,11 @@
 ---
 sidebar_position: 1
-description: "Nudo 设计内幕：Abs = shape × term × pred × conf 作为类型系统，TypeValue 作为外延投影，指令系统与抽象解释。"
+description: "Nudo 设计内幕：Abs = shape × term × pred × conf 作为唯一类型系统、外延投影用于展示、指令系统与抽象解释。"
 ---
 
 # 设计文档
 
-> **Nudo** — 面向 JavaScript 的类型推断引擎。类型系统是 **Abs**（`shape × term × pred × conf`）——类型是可计算值，携带约束并参与代数。**TypeValue** 是外延投影 IR（dts/LSP/序列化与 `*.nudo.js` 模板的 `T` 工厂），不是平行类型系统；生产分析 Abs 原生。Abs ⇄ TypeValue 经有损 bridge。
+> **Nudo** — 面向 JavaScript 的类型推断引擎。类型系统是 **Abs**（`shape × term × pred × conf`）——类型是可计算值，携带约束并参与代数。不存在第二套 IR：dts/LSP/序列化直接消费 Abs，外延视图是单向、有损的渲染。生产分析 Abs 原生。
 
 ---
 
@@ -50,12 +50,12 @@ Nudo：       源代码  +  Abs     →  执行  →  类型 + 约束
 | 方式 | 输入 | 输出 | 完备性 |
 |----------|-------|--------|--------------|
 | 单元测试 | 具体值（`1`、`"hello"`） | 具体结果 | 仅覆盖测试用例 |
-| Nudo | Abs（shape × term × pred） | Abs（展示时投影为 TypeValue） | 覆盖抽象集合中的所有值 |
+| Nudo | Abs（shape × term × pred） | Abs（展示时外延渲染） | 覆盖抽象集合中的所有值 |
 | TypeScript | AST（不执行） | 类型 | 覆盖所有语法路径 |
 
 ---
 
-## 2. 类型系统：Abs 与 TypeValue IR
+## 2. 类型系统：Abs
 
 ### 2.1 Abs —— 类型系统本体
 
@@ -72,97 +72,77 @@ Nudo：       源代码  +  Abs     →  执行  →  类型 + 约束
 
 Abs 上的运算是代数的：单调算术、比较、`leq` 可赋值、谓词蕴含。`nudo check` 是这套代数上的 CI 门禁（金标 recall = precision = 1.0）。
 
-### 2.2 TypeValue —— 外延投影（不是第二套类型系统）
+### 2.2 外延投影（不是第二套类型系统）
 
-TypeValue 供 dts（`Case:` JSDoc 行与无 Abs 回退）、LSP hover 表面、序列化与 `T` 工厂（`*.nudo.js` 模板）消费。它是 Abs 的**投影**（`bridge.ts` 的 `absToTypeValue` / `typeValueToAbs`）。bridge 有损：非字面量 term 与无法 encode 的 pred 会丢；丢信息时不得假装 `exact`。不存在 TypeValue 求值器——生产分析 Abs 原生（B-path 转译+执行，ast-eval 回退）。
-
-```text
-TypeValue
-├── Literal<V>          — 单个具体值
-├── Primitive<T>        — 某基本类型的所有可能值
-├── RefinedType         — 基础类型的精化子集（IR 原语；源码契约用 @nudo:refine）
-├── ObjectType          — 具有已知属性类型的对象
-├── ArrayType / TupleType
-├── FunctionType
-├── UnionType
-├── NeverType / UnknownType
-```
+不存在第二套 IR。dts（`Case:` JSDoc 行）、LSP hover 表面、序列化与 `*.nudo.js` 模板约束都**直接消费 Abs**——外延视图是一种渲染（展示用 `formatShape`，投影用 `absToTSType` / `absToZodSchema` / 守卫生成器）。渲染按设计即有损（`formatShape` 丢弃非字面量 term），但不存在回读：分析从不消费投影。生产分析 Abs 原生（B-path 转译+执行，ast-eval 回退）。
 
 ### 2.3 设计原则
 
 **原则 1：字面量保留。** 当所有输入都是字面量时，结果也应该是字面量。
 
 ```javascript
-T.literal(1) + T.literal(2)  // → T.literal(3)，而非 T.number
+combine(5, 3)   // → 8  #exact，而非 number
+"ab" + "c"      // → "abc"  #exact
 ```
 
-**原则 2：抽象时拓宽。** 当任一输入是抽象的（非字面量），结果拓宽为对应的抽象类型——但通过精化类型尽可能保留结构信息。
+**原则 2：抽象时拓宽。** 当任一输入是抽象的（非字面量），结果拓宽为对应的域——但代数能保留的结构仍保留（模板字符串把已知前缀作为 pred 元数据跟踪）。
 
 ```javascript
-T.literal(1) + T.number       // → T.number
-T.literal("0x") + T.string    // → `0x${string}`（模板精化类型）
+1 + number        // → number  #path
+"0x" + string     // → string  #path，模板元数据内部跟踪
 ```
 
-**原则 3：联合类型懒分配。** 对联合类型的运算分配到每个成员上，但采用**懒求值**策略——联合类型作为整体传播，只在运算符**必须区分成员**时才展开。这避免了笛卡尔积导致的组合爆炸。
+**原则 3：联合类型懒分配。** 联合类型作为整体传播，只在运算符**必须区分成员**时才展开。这避免了笛卡尔积导致的组合爆炸——并保留相关性（`a + a` 保持同一符号变量：`(A1 + A1)`，绝不会变成 `A1 + A1'`）。
 
 ```javascript
-const a = T.union(T.literal(1), T.literal(2));
-const b = T.union(T.literal("x"), T.literal("y"));
-
-// 不展开——成员间无需区分
-const arr = [a, b];  // → T.tuple([T.union(1, 2), T.union("x", "y")])
-
-// 展开——运算需要区分成员
-const sum = a + b;   // → 展开为 1+"x", 1+"y", 等 → 字面量的联合
+function selfAdd(a) { return a + a; }
+selfAdd(1);  // → 2  #exact
+selfAdd(2);  // → 4  #exact
+// 合并：2 | 4 —— 绝不是 1+1 | 1+2 | 2+1 | 2+2
 ```
 
-**原则 4：守卫窄化。** 类型守卫（`typeof`、`instanceof`、真值检查）在分支中窄化类型值。
+**原则 4：守卫窄化。** 类型守卫（`typeof`、`instanceof`、真值检查）在分支中窄化值。
 
 ```javascript
-const x = T.union(T.number, T.string);
-if (typeof x === "string") {
-  // 在此分支中，x 被窄化为 T.string
+function process(x) {          // x: number | string
+  if (typeof x === "string") {
+    // 在此分支中，x 被窄化为 string
+  }
 }
 ```
 
-### 2.4 类型值 API
+### 2.4 Abs API
 
 ```typescript
-// --- 构造 ---
-T.literal(value)              // 字面量类型值
-T.number                      // 抽象 number
-T.string                      // 抽象 string
-T.boolean                     // 抽象 boolean
-T.null                        // 字面量 null
-T.undefined                   // 字面量 undefined
-T.unknown                     // unknown 类型
-T.never                       // never 类型
-
-T.object({ key: TypeValue })  // 对象类型
-T.array(TypeValue)            // 数组类型
-T.tuple([TypeValue, ...])     // 元组类型
-T.union(TypeValue, ...)       // 联合类型
-T.fn(params, body, closure)  // 函数类型
-T.refine(base, refinement)   // 基础类型的精化子集，携带自定义规则
+// --- 构造（分析 / 测试 / env 模块）---
+numLit(value)                 // 精确数值字面量
+strLit(value)                 // 精确字符串字面量
+num() / str() / bool()        // 基本类型域
+never / unknown               // 空集 / 全集（常量）
+obj({ key: { value, optional? } })  // 对象形状
+abs(shape, term, pred, conf)  // 通用构造器
+absFunction(params, { body, env, apply })  // 函数值
 
 // --- 内省 ---
-typeValue.kind                // "literal" | "primitive" | "refined" | "object" | "array" | ...
-typeValueToString(tv)         // 可读表示："number", "1 | 2", "string | number"
-isSubtypeOf(a, b)             // 子类型检查
+formatShape(a)                // 外延渲染："number", "1 | 2", "string | number"
+formatAbs(a)                  // 无损：shape、= term、where pred、#conf
+leqAbs(src, tgt)              // 可赋值性（代数的子类型检查）
 ```
+
+源码级契约用 `@nudo:refine` + `*.nudo.js` 模板（约束构造器）声明，不用裸构造器。
 
 ### 2.5 运算符语义（Abs 原生表面）
 
-算术、比较、一元与 spread 都在 Abs 上代数化——不存在独立的 `Ops` 层。语言表面分三处：
+算术、比较、一元与 spread 都在 Abs 上代数化——不存在独立的 `Ops` 层，也不路由到其他 IR。语言表面分三处：
 
 - `core/src/algebra/surface.ts` — `typeofAbs`、`negAbs`、`notAbs`、`strictEqAbs`（一元运算与严格相等，在 Abs 上）。
-- `core/src/algebra/arithmetic.ts` — 二元算术（`+` `-` `*` `/` `%`）与比较，在 Abs 上。
-- `service/src/evaluator/abs-route.ts` — `tryAbsBinary` / `tryAbsUnary` / `tryAbsObjectSpread`：TypeValue ⇄ Abs 路由，把投影层桥回代数（union 逐成员路由，约束经 term/pred 保留）。
+- `core/src/algebra/arithmetic.ts` — 二元算术（`add` / `sub` / `mul` / `div` / `mod` / `cmp`）：单调性 + 常量折叠 + 约束传播，在 Abs 上。
+- `service/src/evaluator/abs-route.ts` — 分支合并对象形状时的对象 `join` / φ 合并辅助。
 
 ```typescript
 // 二元算术经代数路由：
-tryAbsBinary("+", left, right)   // number + number、string/template 拼接
-tryAbsBinary("<", left, right)   // 数值/字符串比较
+add(left, right)       // number + number、string/template 拼接
+cmp("<", left, right)  // 数值/字符串比较
 ```
 
 精化子集（模板字符串、数值区间）把约束作为 term 上的 Pred 携带，而非覆写表；代数在 `+`/比较时读取这些 pred。
@@ -176,8 +156,7 @@ tryAbsBinary("<", left, right)   // 数值/字符串比较
 ```text
 parser ──▶ core
             ├── algebra/     ← 类型本体（Abs / Term / Pred / Φ / check）
-            ├── type-value   ← 外延投影（T 工厂 / dts / 序列化）
-            └── bridge       ← Abs ⇄ TypeValue（有损）
+            └── format       ← 外延渲染（dts / hover / 序列化）
                  │
                  ▼
             service/evaluator    ← Abs 原生：B-path（转译+执行）→ ast-eval
@@ -192,9 +171,8 @@ parser ──▶ core
 | **Directive Extractor** | 提取 `@nudo:*`；refine/import 在 core 解析 |
 | **algebra (Abs)** | 类型即计算：eval / check / leq / generalize |
 | **Evaluator（Abs 原生）** | B-path 转译+执行；非 B 托管文件走 ast-eval 回退 |
-| **surface / abs-route** | 算术、比较、一元、spread 经代数路由 |
-| **bridge** | Abs → TypeValue（dts/LSP/序列化） |
-| **Environment** | 变量绑定（名称 → TypeValue 或 Abs seed） |
+| **surface / arithmetic / abs-route** | 算术、比较、一元、spread 经代数路由 |
+| **Environment** | 变量绑定（名称 → Abs） |
 
 ### 3.2 求值规则
 
@@ -202,9 +180,9 @@ parser ──▶ core
 
 **字面量：**
 ```text
-eval(NumericLiteral 42)  →  T.literal(42)
-eval(StringLiteral "hi") →  T.literal("hi")
-eval(NullLiteral)       →  T.null
+eval(NumericLiteral 42)  →  lit(42)
+eval(StringLiteral "hi") →  lit("hi")
+eval(NullLiteral)       →  lit(null)
 ```
 
 **变量：**
@@ -214,34 +192,34 @@ eval(Identifier "x")  →  env.lookup("x")
 
 **二元表达式：**
 ```text
-eval(BinaryExpression { left, op, right })  →  tryAbsBinary(op, eval(left), eval(right))
+eval(BinaryExpression { left, op, right })  →  arithmetic(op, eval(left), eval(right))
 ```
 
-**条件语句（if-else）：** 引擎可能**同时求值两个分支**，各自使用窄化后的类型值，再合并：
+**条件语句（if-else）：** 引擎可能**同时求值两个分支**，各自使用窄化后的值，再合并：
 
 ```text
 eval(IfStatement { test, consequent, alternate }) →
   condition = eval(test)
-  if condition === T.literal(true)  → eval(consequent)
-  if condition === T.literal(false) → eval(alternate)
+  if condition === lit(true)   → eval(consequent)
+  if condition === lit(false)  → eval(alternate)
   else:
     [envTrue, envFalse] = narrow(env, test)
     resultTrue  = eval(consequent, envTrue)
     resultFalse = eval(alternate, envFalse)
-    return T.union(resultTrue, resultFalse)
+    return union(resultTrue, resultFalse)
 ```
 
 ### 3.3 窄化规则
 
 | 模式 | True 分支 | False 分支 |
 |---------|-------------|-------------|
-| `typeof x === "string"` | `x ∩ T.string` | `x - T.string` |
-| `typeof x === "number"` | `x ∩ T.number` | `x - T.number` |
-| `x === null` | `x ∩ T.null` | `x - T.null` |
-| `x === <literal>` | `x ∩ T.literal(v)` | `x - T.literal(v)` |
-| `Array.isArray(x)` | `x ∩ T.array(T.unknown)` | `x - T.array(T.unknown)` |
-| `x`（真值检查） | `x - T.null - T.undefined - falsy` | 补集 |
-| `x instanceof C` | `x ∩ T.instanceOf(C)` | `x - T.instanceOf(C)` |
+| `typeof x === "string"` | `x ∩ string` | `x - string` |
+| `typeof x === "number"` | `x ∩ number` | `x - number` |
+| `x === null` | `x ∩ null` | `x - null` |
+| `x === <literal>` | `x ∩ lit(v)` | `x - lit(v)` |
+| `Array.isArray(x)` | `x ∩ array` | `x - array` |
+| `x`（真值检查） | `x - null - undefined - falsy` | 补集 |
+| `x instanceof C` | `x ∩ instance(C)` | `x - instance(C)` |
 
 ---
 
@@ -262,7 +240,7 @@ for (let i = 0; i < arr.length; i++) {
 
 ### 4.2 闭包与高阶函数
 
-函数是一等类型值。当函数作为参数传递时，引擎用函数的类型值表示来求值调用。
+函数是一等 Abs 值（`fn` shape）。当函数作为参数传递时，引擎经其 Abs 表示（参数、函数体、闭包环境）求值调用。
 
 ### 4.3 递归
 
@@ -270,7 +248,7 @@ for (let i = 0; i < arr.length; i++) {
 
 ### 4.4 异步 / Promise
 
-Promise 被建模为包装的类型值。`await` 解包 Promise 类型；`async function` 将返回值包装为 `T.promise(...)`。
+Promise 建模为效果形状（`eff`）。`await` 解包 promise；`async function` 将返回值包装为 `promise<...>`。
 
 ### 4.5 异常与 throws 追踪
 
@@ -278,7 +256,7 @@ Nudo 将异常作为函数类型的一等部分追踪。每个函数不仅有 `r
 
 ### 4.6 可变性（引用语义，写时复制）
 
-对象类型值使用**引用语义**。赋值复制引用。进入分支时，对被修改的对象进行深拷贝，使每个分支拥有自己的副本；合并时对属性做联合。
+对象 Abs 值采用**引用语义**。赋值复制引用。进入分支时，对被修改的对象进行深拷贝，使每个分支拥有自己的副本；合并时对属性做联合。
 
 ---
 
@@ -289,7 +267,7 @@ Nudo 将异常作为函数类型的一等部分追踪。每个函数不仅有 `r
 | 指令 | 用途 |
 |-----------|---------|
 | `@nudo:case` | 提供具名执行用例（具体或符号化输入） |
-| `@nudo:mock` | 用类型值实现 mock 外部依赖 |
+| `@nudo:mock` | 用 Abs 值 stub mock 外部依赖 |
 | `@nudo:pure` | 标记函数为纯函数，启用记忆化 |
 | `@nudo:skip` | 跳过求值；可选的类型表达式直接声明返回类型（如 `@nudo:skip T.number`） |
 | `@nudo:sample` | 保留的无效果指令（已解析，未消费） |
@@ -315,7 +293,7 @@ Nudo 将异常作为函数类型的一等部分追踪。每个函数不仅有 `r
 
 ### 6.3 第三方 JS 库
 
-对有 JS 源码的库，Nudo 可直接执行代码推导类型。对 native 或 opaque 依赖，`@nudo:mock` 提供类型值感知的 stub。
+对有 JS 源码的库，Nudo 可直接执行代码推导类型。对 native 或 opaque 依赖，`@nudo:mock` 提供感知 Abs 的 stub。
 
 ### 6.4 依赖类型
 
@@ -327,8 +305,8 @@ function clamp(value, min, max) {
   if (value > max) return max;
   return value;
 }
-// clamp(5, 0, 10) → T.literal(5)
-// clamp(T.number, 0, 10) → T.number
+// clamp(5, 0, 10) → 5
+// clamp(number, 0, 10) → number
 ```
 
 ### 6.5 更精确的字符串拼接
@@ -336,11 +314,13 @@ function clamp(value, min, max) {
 Nudo 在字符串拼接中保留结构，产生模板字符串类型：
 
 ```javascript
-const url = "https://api.example.com" + T.string;
-// Nudo: `https://api.example.com${string}`
+function apiUrl(path) {           // path: string
+  return "https://api.example.com" + path;
+}
+// Nudo: 带已知前缀的模板 `https://api.example.com${string}`
 // TypeScript: string（丢失已知前缀）
 
-url.startsWith("https://")  // Nudo: true | TypeScript: boolean
+apiUrl("/x").startsWith("https://")  // Nudo: true | TypeScript: boolean
 ```
 
 ### 6.6 字面量级别的字符串方法推导
@@ -366,7 +346,7 @@ for (let i = 0; i < 5; i++) sum += i;
 
 ### 6.8 声明式精化（无需类型语法）
 
-用户侧契约用 `@nudo:refine` 和 `*.nudo.js` 模板声明——不是 `interface` / `type`，也不在源码里写 `T.refine`：
+用户侧契约用 `@nudo:refine` 和 `*.nudo.js` 模板声明——不是 `interface` / `type`：
 
 ```javascript
 // shapes.nudo.js
@@ -385,7 +365,7 @@ function inc(x) {
 }
 ```
 
-Pred 进入 Abs 并参与代数（`x>0` ⇒ `x+1>1`）。`T.refine` 是这些模板 lowering 到的 TypeValue-IR 原语，不是源码级 API。
+Pred 进入 Abs 并参与代数（`x>0` ⇒ `x+1>1`）。模板的约束构造器直接 lowering 为 Abs 上的 term/pred 约束——`T.refine` 已不存在。
 
 ---
 
@@ -404,19 +384,19 @@ function calc(a, b) {
 }
 ```
 
-**Case "concrete" — `calc(T.literal(1), T.literal(2))`：**
-1. 绑定：`a = T.literal(1)`，`b = T.literal(2)`
-2. 条件：`a > b` → `T.literal(false)`
-3. 走 alternate：`a + b` → `T.literal(3)`
-4. 结果：`T.literal(3)`
+**Case "concrete" — `calc(1, 2)`：**
+1. 绑定：`a = lit(1)`，`b = lit(2)`
+2. 条件：`a > b` → `lit(false)`
+3. 走 alternate：`a + b` → `lit(3)`
+4. 结果：`lit(3)`
 
 **Case "symbolic" — `calc(T.number, T.number)`：**
-1. 绑定：`a = T.number`，`b = T.number`
-2. 条件：`a > b` → `T.boolean`（抽象）
-3. 分叉两个分支：
-   - True：`a - b` → `T.number`
-   - False：`a + b` → `T.number`
-4. 合并：`T.number`
+1. 绑定：`a = number`，`b = number`
+2. 条件：`a > b` → `boolean`（抽象）
+3. Fork 两个分支：
+   - True：`a - b` → `number`
+   - False：`a + b` → `number`
+4. 合并：`number`
 
 **组合：** `((1, 2) => 3) & ((number, number) => number)`
 
@@ -454,10 +434,10 @@ function calc(a, b) {
 
 | 运算符 | Literal × Literal | Literal × Abstract | Abstract × Abstract |
 |----------|-------------------|--------------------|---------------------|
-| `+`（数值） | `T.literal(a + b)` | `T.number` | `T.number` |
-| `+`（字符串） | `T.literal(a + b)` | `T.string` | `T.string` |
-| `-`、`*`、`/`、`%` | `T.literal(op(a,b))` | `T.number` | `T.number` |
-| `===`、`!==` | `T.literal(a === b)` | `T.boolean` | `T.boolean` |
-| `>`、`<`、`>=`、`<=` | `T.literal(op(a,b))` | `T.boolean` | `T.boolean` |
-| `typeof` | `T.literal("...")` | `T.literal("...")` | `T.string` |
-| `!` | `T.literal(!a)` | `T.boolean` | `T.boolean` |
+| `+`（数值） | `lit(a + b)` | `number` | `number` |
+| `+`（字符串） | `lit(a + b)` | `string` | `string` |
+| `-`、`*`、`/`、`%` | `lit(op(a,b))` | `number` | `number` |
+| `===`、`!==` | `lit(a === b)` | `boolean` | `boolean` |
+| `>`、`<`、`>=`、`<=` | `lit(op(a,b))` | `boolean` | `boolean` |
+| `typeof` | `lit("...")` | `lit("...")` | `string` |
+| `!` | `lit(!a)` | `boolean` | `boolean` |

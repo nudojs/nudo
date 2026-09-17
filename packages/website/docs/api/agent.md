@@ -27,7 +27,7 @@ Reference for the agent-facing surface of `@nudojs/lsp`. All agent commands live
 - **`file` parameter** — every command takes a `file` string, accepting either a `file://` URI or a bare path. Files that are not open in an editor are read from disk.
 - **Editor-style requests** — the `nudo/selectCase` and `nudo/getActiveCases` requests additionally accept editor-style `{ uri, ... }` params (this is what the VS Code extension's CodeLens uses). Agents should always use `file`.
 - **Type expressions** — see [Type expressions](#type-expressions) below.
-- **Abs-first** — `check` / `infer` / `hover` expose the lossless algebra (Abs). TypeValue strings are extensional projections for compatibility, not the type model.
+- **Abs-first** — `check` / `infer` / `hover` expose the lossless algebra (Abs). Extensional strings (`args` / `result` / `ext`) are lossy projections for compatibility, not the type model.
 
 ---
 
@@ -71,7 +71,7 @@ Whole-file inference — same contract as CLI `nudo infer --json`.
 | `format` | `"text" \| "json"` | `"json"` → InferJson only |
 | `functions` | `string[]?` | Filter to these function names |
 
-**Returns (InferJson v1):** `cases[].intension` carries `abs` / `term` / `pred` / `conf` (lossless); `args` / `result` are TypeValue strings (extensional).
+**Returns (InferJson v1):** `cases[].intension` carries `abs` / `term` / `pred` / `conf` (lossless); `args` / `result` are extensional strings (`formatShape` projections).
 
 ```json
 {
@@ -82,7 +82,7 @@ Whole-file inference — same contract as CLI `nudo infer --json`.
 
 ## nudo.hover
 
-Lossless Abs at a position — same source as editor hover, not a TypeValue bridge.
+Lossless Abs at a position — same source as editor hover, no projection in between.
 
 **Arguments:**
 
@@ -94,7 +94,7 @@ Lossless Abs at a position — same source as editor hover, not a TypeValue brid
 | `source` | `string?` | Pre-read source |
 | `includeInlays` | `boolean?` | Also return all Abs inlays for the file |
 
-**Returns JSON:** `{ file, line, column, abs, absMultiline, intension, ext, inlays? }` — `abs` is lossless; `ext` is the TypeValue projection for comparison only.
+**Returns JSON:** `{ file, line, column, abs, absMultiline, intension, ext, inlays? }` — `abs` is lossless; `ext` is the extensional projection for comparison only.
 
 ## nudo.whatIf
 

@@ -160,7 +160,7 @@ Case "symbolic": (number[]) => number
 Combined: number
 ```
 
-数组方法支持并不均匀——依赖某个方法前先查这条边界。`some` / `every` 在调用点与 `@nudo:case` 两条路径上都折叠为 `boolean`。`forEach` 回调的副作用在两条路径上都写进内部 Abs（`abs: 15 #exact`），但 **case 头**（TypeValue 投影）不同：`@nudo:case` 指令路径报告终值 `15`，调用点路径报告循环前的 `0`：
+数组方法支持并不均匀——依赖某个方法前先查这条边界。`some` / `every` 在调用点与 `@nudo:case` 两条路径上都折叠为 `boolean`。`forEach` 回调的副作用在两条路径上都写进内部 Abs（`abs: 15 #exact`），但 **case 头**（外延投影）不同：`@nudo:case` 指令路径报告终值 `15`，调用点路径报告循环前的 `0`：
 
 ```js
 function forEachSum(arr) {
@@ -202,10 +202,10 @@ async function fetchUser(id) {
 ```text
 === fetchUser ===
 
-Case "user": (1) => Promise<{ id: 1, name: "Alice" }>
+Case "user": (1) => promise<{ id: 1, name: "Alice" }>
 ```
 
-mock 就位后，Nudo 推断 `fetchUser` 返回 `Promise<{ id: 1, name: "Alice" }>`，无需真实网络请求。内联 mock 有两条硬性规则：表达式**必须单行**（多行会被截断并报 `nudo:mock-invalid`）；mock body 内**不可用 `T.*`**——只能写普通 JavaScript 值和闭包。`stub().resolves(...)` helper 只在纯数据上等价：字面量槽位保留（`stub().resolves({ ok: true, id: 1 })` → `Promise<{ ok: true, id: 1 }>`），但 resolved 值里的**闭包槽位不被桥接**——`json` 到达时无 body（`json: () => ?`），于是 `res.json()` 求值为 `unknown`，本示例退化为 `Promise<unknown>`。mock 结果要被调用时，用上面的箭头函数形态。仓库示例（CI 钉住）：[`docs/examples/algebra/f-async-eff.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/f-async-eff.js)——其中 `@nudo:mock` 是**必填**而非可选：没有它，B 路径会执行真实 `fetch` 并以 `ERR_INVALID_URL` 崩溃。
+mock 就位后，Nudo 推断 `fetchUser` 返回 `promise<{ id: 1, name: "Alice" }>`，无需真实网络请求。内联 mock 有两条硬性规则：表达式**必须单行**（多行会被截断并报 `nudo:mock-invalid`）；mock body 内**不可用 `T.*`**——只能写普通 JavaScript 值和闭包。`stub().resolves(...)` helper 只在纯数据上等价：字面量槽位保留（`stub().resolves({ ok: true, id: 1 })` → `promise<{ ok: true, id: 1 }>`），但 resolved 值里的**闭包槽位不被桥接**——`json` 到达时无 body（`json: () => ?`），于是 `res.json()` 求值为 `unknown`，本示例退化为 `promise<unknown>`。mock 结果要被调用时，用上面的箭头函数形态。仓库示例（CI 钉住）：[`docs/examples/algebra/f-async-eff.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/f-async-eff.js)——其中 `@nudo:mock` 是**必填**而非可选：没有它，B 路径会执行真实 `fetch` 并以 `ERR_INVALID_URL` 崩溃。
 
 ---
 
@@ -615,7 +615,7 @@ Diagnostics:
   [warning] env.js:7:0 Function "fetchUser" case "get user" may throw: Error. Consider adding a try-catch block or using @nudo:refine return <constraint> (nudo-may-throw)
 ```
 
-`fetch` 由环境绑定为 `Promise<Response>`——`res.ok`（`boolean`）与 `res.status`（`number`）都能解析，所以 `!res.ok` 的 throw 分支可达，两个 case 都报告 `never throws Error` 并带 `nudo-may-throw` 警告。不过响应体形状仍然很浅：`res.json()` 返回 `Promise<unknown>`，因此要获得精确响应形状仍需 `@nudo:mock fetch = ...` 覆盖（示例 4 推断出 `Promise<{ id: 1, name: "Alice" }>`）。
+`fetch` 由环境绑定为 `promise<Response>`——`res.ok`（`boolean`）与 `res.status`（`number`）都能解析，所以 `!res.ok` 的 throw 分支可达，两个 case 都报告 `never throws Error` 并带 `nudo-may-throw` 警告。不过响应体形状仍然很浅：`res.json()` 返回 `promise<unknown>`，因此要获得精确响应形状仍需 `@nudo:mock fetch = ...` 覆盖（示例 4 推断出 `promise<{ id: 1, name: "Alice" }>`）。
 
 非网络全局对象表现相同：
 
@@ -701,4 +701,4 @@ Case "hash": ("hello world") => string | Buffer { … }
 
 完整指令集——`@nudo:refine` 契约、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:mock-module` 等——见 [指令](../concepts/directives.md)。
 
-关于类型值（`T.number`、`T.object` 等）和抽象解释的更多内容，请参阅 [Type Values](../concepts/type-values.md) 和 [Abstract Interpretation](../concepts/abstract-interpretation.md)。
+关于类型值与抽象解释的更多内容，请参阅 [Type Values](../concepts/type-values.md) 和 [Abstract Interpretation](../concepts/abstract-interpretation.md)。

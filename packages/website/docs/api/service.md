@@ -22,7 +22,7 @@ Runs type inference on a file. Uses `filePath` for module resolution and diagnos
 
 `externalCallRecords` accepts call records harvested by [`collectCallRecords`](#collectcallrecords) from usage-site files (tests, examples, upstream apps). Records that resolve to functions defined in this file are matched and injected as synthesized `call@L` cases — see the [Call-Site Discovery guide](../guides/callsite-discovery.md).
 
-Functions without `@nudo:case` directives are not skipped: whole-program inference synthesizes a `call@L` case for each observed call site, or an `entry@L` case with `T.unknown` parameters when no call site is found (marked `entryOnly` on the [`FunctionAnalysis`](#functionanalysis)).
+Functions without `@nudo:case` directives are not skipped: whole-program inference synthesizes a `call@L` case for each observed call site, or an `entry@L` case with `unknown` parameters when no call site is found (marked `entryOnly` on the [`FunctionAnalysis`](#functionanalysis)).
 
 **Returns:** `AnalysisResult`
 
@@ -68,12 +68,12 @@ getTypeAtPosition(
   line: number,
   column: number,
   activeCases?: Map<string, number>
-): TypeValue | null
+): Abs | null
 ```
 
-Returns the TypeValue at the given source position (1-based line, 0-based column). Uses the active case index per function when position is inside a function with cases.
+Returns the Abs (the lossless `shape × term × pred × conf` value) at the given source position (1-based line, 0-based column). Uses the active case index per function when position is inside a function with cases.
 
-**Returns:** `TypeValue` or `null` if no type at that position.
+**Returns:** `Abs` or `null` if no type at that position.
 
 ---
 
@@ -86,12 +86,12 @@ getTypeAtPositionAsync(
   line: number,
   column: number,
   activeCases?: Map<string, number>
-): Promise<TypeValue | null>
+): Promise<Abs | null>
 ```
 
 Async entry to `getTypeAtPosition` with path-env preloading (see [`analyzeFileAsync`](#analyzefileasync)).
 
-**Returns:** `Promise<TypeValue | null>`
+**Returns:** `Promise<Abs | null>`
 
 ---
 
@@ -214,13 +214,13 @@ for (const file of topoSortDirty(graph.imports, dirty)) {
 
 ---
 
-## typeValueToTSType
+## absToTSType
 
 ```typescript
-typeValueToTSType(tv: TypeValue): string
+absToTSType(a: Abs): string
 ```
 
-Serializes a TypeValue to TypeScript type syntax (e.g. `number`, `string | number`, `{ id: number; name: string }`).
+Serializes an Abs to TypeScript type syntax (e.g. `number`, `string | number`, `{ id: number; name: string }`).
 
 ---
 
@@ -244,17 +244,17 @@ Per-function slice of [`generateDts`](#generatedts) — JSDoc plus one `export d
 
 ---
 
-## typeValueToZodSchema
+## absToZodSchema
 
 ```typescript
-typeValueToZodSchema(tv: TypeValue): string
+absToZodSchema(a: Abs): string
 ```
 
-Converts a TypeValue to a Zod schema string. Handles all type kinds including primitives, literals, objects, arrays, tuples, unions, and more.
+Converts an Abs to a Zod schema string. Handles all shape kinds including primitives, literals, objects, arrays, tuples, unions, and more.
 
 **Example:**
 ```typescript
-typeValueToZodSchema(T.object({ name: T.string, age: T.number }))
+absToZodSchema(obj({ name: str(), age: num() }))
 // → "z.object({ name: z.string(), age: z.number() })"
 ```
 
@@ -263,14 +263,15 @@ typeValueToZodSchema(T.object({ name: T.string, age: T.number }))
 ## generateGuardFunction
 
 ```typescript
-generateGuardFunction(name: string, tv: TypeValue): string
+generateGuardFunction(name: string, abs: Abs): string
+generateGuardFunctionFromAbs(name: string, abs: Abs): string
 ```
 
 Generates a zero-dependency runtime type guard function as a string. The generated function uses `typeof`, `Array.isArray`, and property checks for validation.
 
 **Example:**
 ```typescript
-generateGuardFunction("isUser", T.object({ name: T.string }))
+generateGuardFunction("isUser", obj({ name: str() }))
 // → "function isUser(data) { ... }"
 ```
 
@@ -283,28 +284,28 @@ The case-emitter functions freeze synthesized `call@L` cases into source text. T
 ### serializeCaseArg
 
 ```typescript
-serializeCaseArg(tv: TypeValue): string | null
+serializeCaseArg(a: Abs): string | null
 ```
 
-Serializes a single TypeValue into expression text that the directive grammar (`parseTypeValueExpr`) can read back. Returns `null` for shapes directives cannot express: function, promise, instance, and refined values, `bigint`/`symbol` primitives, and strings/object keys containing structural characters or control characters.
+Serializes a single Abs into expression text that the directive grammar (`parseCaseArgExpr`) can read back. Returns `null` for shapes directives cannot express: function, promise (eff), and brand values, `bigint` literals, non-finite / scientific-notation numbers, and strings/object keys containing structural characters or control characters.
 
 **Example:**
 ```typescript
-serializeCaseArg(T.number)     // → "T.number"
-serializeCaseArg(T.array(T.string)) // → "T.array(T.string)"
+serializeCaseArg(num())     // → "T.number" (legacy T.* spelling round-trips)
+serializeCaseArg(strLit("a")) // → '"a"'
 ```
 
 ### buildCaseDirective
 
 ```typescript
-buildCaseDirective(name: string, args: TypeValue[]): string | null
+buildCaseDirective(name: string, argsAbs: Abs[]): string | null
 ```
 
 Assembles one single-line directive ` * @nudo:case "name" (a, b)` (leading ` *`, no trailing newline) ready to be spliced into a JSDoc block. Returns `null` when any argument fails serialization or the name contains a quote or newline.
 
 **Example:**
 ```typescript
-buildCaseDirective("call@L2", [T.string])
+buildCaseDirective("call@L2", [str()])
 // → ' * @nudo:case "call@L2" (T.string)'
 ```
 
@@ -377,7 +378,7 @@ type AnalysisResult = {
   functions: FunctionAnalysis[];
   diagnostics: Diagnostic[];
   bindings: Map<string, BindingInfo>;
-  nodeTypeMap: Map<Node, TypeValue>;
+  nodeAbsMap: Map<Node, Abs>;
   caseHints: CaseHint[];
   /** functions imported from other modules, synthesized from
       cross-file call sites observed while analyzing this file */
@@ -393,8 +394,8 @@ type FunctionAnalysis = {
   loc: SourceLocation;
   paramNames: string[];        // actual parameter names from AST
   cases: CaseResult[];
-  combined?: TypeValue;        // union of case results
-  entryOnly?: boolean;         // synthesized entry@L case, no call sites found
+  combinedAbs?: Abs;          // join of case-result Abs; source of the d.ts return type
+  entryOnly?: boolean;        // synthesized entry@L case, no call sites found
   skipped?: boolean;
   /** CJS-style binding/assignment functions (exports.X = fn) have no
       declaration-stable name; .d.ts generation skips them while
@@ -411,14 +412,19 @@ type FunctionAnalysis = {
 ```typescript
 type CaseResult = {
   name: string;
-  args: TypeValue[];
-  result: TypeValue;
-  throws: TypeValue;
+  argAbs: Abs[];              // lossless argument Abs
+  abs: Abs;                   // lossless result Abs
+  throwsAbs: Abs;             // lossless thrown Abs (never when no throw)
   throwLoc?: SourceLocation;
   source?: "directive" | "callsite"; // "callsite" = synthesized from an observed call site;
                                      // hand-written cases and entry@ fallbacks leave it unset
-                                     // (the CLI generate path tags directive-evaluated cases "directive")
-  aggregatedFrom?: number;           // additional call sites folded into a symbolic case
+  expected?: Abs;             // `@nudo:case "name" (…) => expected` — presence marks a test assertion
+  aggregatedFrom?: number;    // additional call sites folded into a symbolic case
+  intension?: {               // intensional summary (algebra generalize)
+    display?: string; term?: string; pred?: string; conf?: string;
+    abs?: string;             // lossless Abs, single line (formatAbs)
+    absMultiline?: string;
+  };
 }
 ```
 
@@ -429,9 +435,9 @@ One observed call at a usage site, harvested by [`collectCallRecords`](#collectc
 ```typescript
 type CallRecord = {
   fnName: string;             // callee name observed at the call site
-  argTypes: TypeValue[];      // argument types as observed
-  resultType: TypeValue;      // observed result type
-  throws: TypeValue;          // observed throw type
+  argAbs: Abs[];              // lossless argument Abs as observed
+  resultAbs: Abs;             // observed result Abs (never when the call threw)
+  throwsAbs: Abs;             // observed thrown Abs (never when no throw)
   callLoc?: { line: number; column: number }; // call position; line becomes the call@L case name
   targetModule?: string;      // module the callee was bound from
   targetExport?: string;      // export name the callee was bound as
@@ -497,7 +503,7 @@ type SourceLocation = {
 
 ```typescript
 type BindingInfo = {
-  type: TypeValue;
+  abs: Abs;
   loc?: SourceLocation;
 }
 ```

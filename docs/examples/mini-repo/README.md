@@ -20,7 +20,7 @@ body 推断出的前置（`isPositive: (n: A1) => boolean  where A1 > 0`）；
 
 infer 亮点（每行都是逐调用点/逐 case 真值）：
 
-- `fetchUser(7)` → `Promise<{ id: 7, name: "u7" }>` —— async 效应链跨文件解析 `normalizeId`
+- `fetchUser(7)` → `promise<{ id: 7, name: "u7" }>` —— async 效应链跨文件解析 `normalizeId`
 - `sumAges` case `"ages"` → `60 #exact` —— HOF 回调经 `reduce` 逐元素累加
 - `clamp`（imported）→ `call@L5` 两条记录 `(7, 1, 9999)` / `(5, 1, 9999)` —— 跨文件收窄
 - `score(4)` → `5` —— 字面量算术

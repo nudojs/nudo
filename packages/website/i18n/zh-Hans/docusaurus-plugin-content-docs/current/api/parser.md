@@ -56,13 +56,13 @@ type Directive =
 type CaseDirective = {
   kind: "case";
   name: string;
-  args: TypeValue[];
-  expected?: TypeValue;
+  argsAbs: Abs[];
+  expected?: Abs;
   commentLine?: number;
 }
 ```
 
-具名执行用例，带输入参数。可选 `expected` 用于返回值类型校验。
+具名执行用例，带输入参数（约束表达式优先，兼容 legacy `T.*`）。可选 `expected` 用于返回值类型校验。
 
 ### MockDirective
 
@@ -78,16 +78,16 @@ type MockDirective = {
 }
 ```
 
-将某绑定替换为类型值感知的 mock 实现。行内箭头函数（`@nudo:mock fetch = (url) => ({ ok: true })`）解析进 `arrowFn`；sinon 风格与 `stub()` 风格表达式统一归一化为 `nudoMock`（`@nudojs/core` 的 `MockHelper`）。
+将某绑定替换为感知 Abs 的 mock 实现。行内箭头函数（`@nudo:mock fetch = (url) => ({ ok: true })`）解析进 `arrowFn`；sinon 风格与 `stub()` 风格表达式统一归一化为 `nudoMock`（`@nudojs/core` 的 `MockHelper`）。
 
 ### SinonExpression
 
 ```typescript
 type SinonExpression = {
   type: "stub" | "spy" | "mock";
-  returnValue?: TypeValue;
-  resolvedValue?: TypeValue;
-  rejectedValue?: TypeValue;
+  returnValue?: Abs;
+  resolvedValue?: Abs;
+  rejectedValue?: Abs;
 }
 ```
 
@@ -106,7 +106,7 @@ type PureDirective = { kind: "pure" }
 ```typescript
 type SkipDirective = {
   kind: "skip";
-  returns?: TypeValue;
+  returns?: Abs;
 }
 ```
 
@@ -152,13 +152,13 @@ type InlineDirective = AsDirective | ReplaceDirective;
 
 type AsDirective = {
   kind: "as";
-  typeExpr: TypeValue;     // 假设类型：// @nudo:as T.string
+  typeAbs: Abs;             // 假设类型：// @nudo:as string
 }
 
 type ReplaceDirective = {
   kind: "replace";
   targetSource: string;    // 要覆盖的表达式文本
-  typeExpr: TypeValue;     // 替换类型
+  typeAbs: Abs;            // 替换类型
 }
 ```
 
@@ -225,19 +225,19 @@ const y = f(x);
 
 ---
 
-## parseTypeValueExpr
+## parseCaseArgExpr
 
 ```typescript
-parseTypeValueExpr(expr: string): TypeValue
+parseCaseArgExpr(expr: string): Abs
 ```
 
-将字符串表达式解析为 TypeValue。用于指令参数（如 `@nudo:case` 的 args、`@nudo:as`/`@nudo:replace` 的类型表达式）。
+将字符串表达式解析为 Abs。用于指令参数（如 `@nudo:case` 的实参、`@nudo:as`/`@nudo:replace` 的类型表达式、mock 返回值）。`parseTypeValueExpr` 是同一函数的弃用旧名。
 
-**支持形式：**
-- 基本类型：`T.number`、`T.string`、`T.boolean`、`T.unknown`、`T.never`、`T.null`、`T.undefined`
-- 字面量：`T.literal(...)`、`true`、`false`、`null`、`undefined`、数字、带引号字符串
-- 复合类型：`T.object({...})`、`T.array(...)`、`T.tuple([...])`、`T.union(...)`
-- 函数：箭头表达式（`(x) => x + 1`）与 `function(x) { ... }`——解析为真实的 `T.fn` 值
+**支持形式（按优先级）：**
+- 约束表达式（主文法）：`number()`、`number().gt(0)`、`lit(...)`、`union(…)`、`shape({…})`、`array(…)`、`fn({…}, …)`、`and`、`partial`/`pick`/`omit`/`record`/`required`/`readonly`/`nonNullable`
+- legacy `T.*`：`T.number`、`T.string`、`T.boolean`、`T.unknown`、`T.never`、`T.null`、`T.undefined`、`T.literal(...)`、`T.object({...})`、`T.array(...)`、`T.tuple([...])`、`T.union(...)`
+- 裸字面量：`true`、`false`、`null`、`undefined`、数字、带引号字符串
+- 函数：箭头表达式（`(x) => x + 1`）与 `function(x) { ... }`——解析为真实的函数 Abs
 - JSON 风格：`{ "key": value }`、`[a, b, c]`
 
-**返回：** 解析得到的 TypeValue，无法识别的表达式返回 `T.unknown`。
+**返回：** 解析得到的 Abs，无法识别的表达式返回 `unknown`。

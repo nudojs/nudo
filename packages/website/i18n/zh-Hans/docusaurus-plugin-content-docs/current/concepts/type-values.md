@@ -1,246 +1,164 @@
 ---
 sidebar_position: 1
-description: "类型值 —— 「可能值集合」的符号化抽象：TypeValue 层级结构、完整的 T 工厂表与四条设计原则。"
+description: "类型值——作为单一可计算系统的符号值集合：Abs 代数（shape × term × pred × conf）、指令类型文法（约束表达式 + legacy T.*）与四条设计原则。"
 ---
 
-# 类型值
+# 类型值（Type Values）
 
-类型值是 Nudo 的**外延投影 IR**。它们是可能 JavaScript 值集合的符号化表示——不是持有单个具体值（如 `42` 或 `"hello"`），而是表示具有某类特征的所有值（例如「任意数字」或「字面量 1」）。
+类型值是 JavaScript 可能值的集合的符号表示——它不像具体值 `42` 或 `"hello"` 那样只持有一个值，而是表示共享某些特征的*所有*值（如「任意数字」或「字面量 1」）。
 
-**类型系统本体是 Abs**（`shape × term × pred × conf`）——可求值的抽象值，约束参与代数。TypeValue 是**外延投影**，供 dts（`Case:` JSDoc 行与无 Abs 回退）、LSP hover 表面、序列化与 `T` 工厂（`*.nudo.js` 模板、`@nudo:mock`/`@nudo:refine` 类型表达式）消费；生产分析 Abs 原生（不存在 TypeValue 求值器），Abs ⇄ TypeValue 经有损 bridge。执行以 Abs 计算，结果投影为 TypeValue 用于展示。
+类型系统是 **Abs**——`{ shape, term?, pred?, conf }`——而且它是*唯一*的类型系统：一个可计算的值，其约束参与代数（`x > 0` ⇒ `x + 1 > 1`）。分析、展示与投影（`.d.ts` / zod / guard）全部直接消费 Abs；不存在独立的 IR，也没有有损桥接。
 
-## TypeValue 层级结构
+## 四个组成
 
-Nudo 的类型系统围绕类型值种类的 discriminated union 构建：
+- **shape**——外延载体：值长什么样。种类：`prim`（带 `lit` term 即精确值）、`obj`、`arr`、`tuple`、`fn`、`eff`（`promise<…>` / `generator<…>`）、`brand`（名义实例）、`sum`（联合）、`never`、`unknown`/`any`。
+- **term**——抽象值身份：`lit`（具体值）、`var`（符号 α，如 `A1`）或 `app`（应用表达式，如 `(x + 2)`）。
+- **pred**——相对 term 的约束：`(x + 2) > 3`。
+- **conf**——抽象的精确度：`exact` / `path` / `widened` / `mock` / `partial` / `opaque`。
+
+构造器（`num()`、`strLit(…)`、`obj({…})`…）与核心函数（`leqAbs`、`formatAbs`、`checkSource`…）见 [core API](../api/core.md)。
+
+### 字面量
+
+带 `lit` term 的 `prim` shape 表示恰好一个具体值——引擎从代码字面量或具体 `@nudo:case` 实参产出它：
 
 ```text
-TypeValue
-├── Literal<V>      — 单一具体值: 1, "hello", true, null, undefined
-├── Primitive<T>    — 基本类型的所有可能值: number, string, boolean, bigint, symbol
-├── RefinedType     — 基础类型的精化子集，携带元数据和自定义运算规则
-├── ObjectType      — 具有已知属性类型的对象
-├── ArrayType       — 具有元素类型的数组
-├── TupleType       — 固定长度数组
-├── FunctionType    — 具有参数、函数体和闭包的函数（或仅签名的 T.fnSig 值）
-├── PromiseType     — 包装 TypeValue 的 Promise
-├── InstanceType    — 类实例（如 Error），可选属性
-├── UnionType       — 类型值的联合
-├── NeverType       — 空集（不可达）
-└── UnknownType     — 全集（任意值）
+25  #exact            // 精确的数字 25
+"localhost"  #exact   // 一个特定字符串
 ```
 
-### Literal\<V\>
+### 基本类型
 
-表示恰好一个具体值。当引擎已知精确值时会使用，例如代码中的字面量或具体的 `@nudo:case` 参数。
+不带 `lit` term 的 `prim` shape 是整个域——知道值属于该类型但不知道具体是哪个：
 
-```javascript
-T.literal(1)       // the number 1
-T.literal("hello") // the string "hello"
-T.literal(true)   // the boolean true
+```text
+number   // 任意数字
+string   // 任意字符串
+boolean  // true 或 false
 ```
 
-### Primitive\<T\>
+### 对象、数组、元组
 
-表示 JavaScript 基本类型的所有可能值：`number`、`string`、`boolean`、`bigint` 或 `symbol`。当值已知属于该类型但不是具体值时使用。
+`obj` 携带已知槽位（每键 `{ value, optional? }`），`arr` 单一元素类型，`tuple` 定长逐元素：
 
-```javascript
-T.number   // any number
-T.string   // any string
-T.boolean  // true or false
+```text
+{ host: "localhost", port: 8080, debug: false }
+[2, 4, 6]           // 字面量元组——元素抽象时为 arr
+number[]            // 抽象元素
 ```
 
-### ObjectType
+### 函数与 Promise
 
-表示具有已知结构的对象——每个属性都有关联的类型值。
+`fn` 携带参数名（或 `paramTypes`/`returnType` 签名）；`eff` 包装异步效应，小写渲染：
 
-```javascript
-T.object({ id: T.number, name: T.string })
-T.object({ x: T.literal(1), y: T.literal(2) })
+```text
+load: (id) => ?                      // 函数值，返回未知
+promise<{ id: 7, name: "u7" }>       // 异步结果
 ```
 
-### ArrayType
+### 联合
 
-表示元素共享同一类型的数组。
+`sum` 是成员 Abs 的联合——值可能是任一成员：
 
-```javascript
-T.array(T.number)           // number[]
-T.array(T.union(T.string, T.number))  // (string | number)[]
+```text
+25 | 9                // 两个精确数字（来自两个调用点）
+number | string       // 异构联合
 ```
 
-### TupleType
-
-表示固定长度数组，每个索引有特定类型。
-
-```javascript
-T.tuple([T.literal(1), T.string, T.boolean])
-```
-
-### FunctionType
-
-表示具有参数名、函数体 AST 和闭包（环境）的函数。当函数作为一等公民时在内部使用。`T.fnSig(paramTypes, returnType)` 创建仅签名的变体——env 文件与收割声明使用——它携带 `{ paramTypes, returnType, throwsType, impl }` 而非函数体（见 [core API](../api/core.md)）。
-
-### PromiseType
-
-表示包装另一个类型值的 `Promise`——`async` 函数的返回值、`.then` 回调接收的值。
-
-```javascript
-T.promise(T.number)   // Promise<number>
-```
-
-### InstanceType
-
-表示具名类的实例，可选携带已知属性。
-
-```javascript
-T.instanceOf("Error", { message: T.string })
-```
-
-### UnionType
-
-表示多个类型值的联合——值可以是其任意成员。
-
-```javascript
-T.union(T.literal(1), T.literal(2), T.literal(3))
-T.union(T.string, T.number)
-```
-
-### NeverType
-
-空集。表示不可达代码或不可能的类型（例如 narrowing 排除了所有可能性后的结果）。
-
-### UnknownType
-
-全集。当类型无法确定时表示「任意值」。
-
-### RefinedType
-
-表示**基础类型的子集**，携带元数据和可选的自定义运算规则。精化类型是模板字符串、数值区间背后的 TypeValue-IR 机制。
-
-```javascript
-// 内置：模板字符串（字符串拼接时自动创建）
-T.literal("0x") + T.string   // → refined(T.string, template { parts: ["0x", T.string] })
-
-// 内置：数值区间（窄化时创建）
-// if (x >= 0) → x 被窄化为 refined(T.number, range { min: 0 })
-```
-
-精化类型始终是其基础类型的子类型。当运算未被精化类型的自定义规则处理（或返回 `undefined`）时，引擎回退到基础类型的行为，逐层递归直到原始类型。
-
-**用户侧契约不写 `T.refine`。** 用 `@nudo:refine` 和 `*.nudo.js` 模板（`number().gt(0)`、`shape({...})`）—— 见[指令参考](./directives.md)。`T.refine` 是这些模板 lowering 到的 IR 原语。
+`never` 是空集（不可达）；`unknown` 是全集。
 
 ---
 
-## T Factory API
+## 指令中的类型表达式
 
-在指令和代码中定义类型值时，使用 `T` factory：
+`@nudo:case` / `@nudo:mock` / `@nudo:refine` 的实参用**约束表达式文法**书写——与 `*.nudo.js` 模板相同的构建器：
 
-| API | 描述 |
-|-----|-------------|
-| `T.literal(value)` | 单一具体值：`1`、`"hello"`、`true`、`null`、`undefined` |
-| `T.number` | 所有数字 |
-| `T.string` | 所有字符串 |
-| `T.boolean` | 所有布尔值 |
-| `T.bigint` | 所有 bigint |
-| `T.symbol` | 所有 symbol |
-| `T.null` | 值 `null` |
-| `T.undefined` | 值 `undefined` |
-| `T.unknown` | 任意值 |
-| `T.never` | 空集（不可达） |
-| `T.object({ key: TypeValue })` | 具有已知属性类型的对象 |
-| `T.array(element)` | 具有元素类型的数组 |
-| `T.tuple([...])` | 固定长度数组 |
-| `T.promise(value)` | 包装类型值的 Promise |
-| `T.instanceOf(className, properties?)` | 类实例，可选携带已知属性 |
-| `T.union(...)` | 类型值的联合 |
-| `T.fn(params, body, closure)` | 函数类型（内部使用） |
-| `T.fnSig(paramTypes, returnType, throwsType?, impl?)` | 仅签名的函数类型（env 文件、收割声明） |
-| `T.refine(base, refinement)` | 精化子集的 IR 原语（模板/区间使用；源码里请用 `@nudo:refine`） |
+| 表达式 | 含义 | 示例 |
+|-----|-------------|-------------|
+| `number()` / `string()` / `boolean()` | 基本类型域 | `@nudo:case "symbolic" (number())` |
+| `lit(v)` | 字面量域 | `lit(42)` / `lit("ada")` / `lit(true)` |
+| `union(…)` | 成员联合 | `union(lit(1), lit(2))` |
+| `shape({ … })` | 对象形状（字段递归） | `shape({ id: number().gt(0) })` |
+| `array(…)` / `record(…)` | 数组 / 记录域 | `array(number())` |
+| `fn({ … }, …)` | 函数关系 | `fn({ x: number().gt(0) }, number())` |
+| 构建器链 | `.gt/.gte/.lt/.lte/.shift/.int…` | `number().gt(0).int()` |
+| 裸字面量 | 直接解析 | `42`、`"abc"`、`true`、`[1, 2]` |
 
-### 指令中的示例
+已弃用的 `T.*` 文法（`T.number`、`T.string`、`T.literal(…)`、`T.union(…)`、`T.array(…)`、`T.tuple(…)`、`T.object({…})`、`T.unknown`、`T.never`）仍会被解析以兼容旧 fixture——新代码用上面的约束构建器。`@nudo:mock` body 内**不可用** `T.*`（只能写普通 JavaScript 值和闭包）。
 
 ```javascript
 /**
  * @nudo:case "concrete" (5, 3)
- * @nudo:case "symbolic" (T.number, T.number)
- * @nudo:case "mixed" (T.literal(0), T.string)
+ * @nudo:case "symbolic" (number(), number())
+ * @nudo:case "mixed" (lit(0), string())
  */
 function combine(a, b) {
   return a + b;
 }
 ```
 
-```javascript
-// In @nudo:case or @nudo:mock expressions:
-T.union(T.string, T.number)
-T.object({ id: T.number, name: T.string })
-T.array(T.object({ x: T.number, y: T.number }))
-T.tuple([T.literal(1), T.literal(2), T.literal(3)])
-```
-
 ---
 
 ## 设计原则
 
-Nudo 的类型值系统遵循四个核心原则，支配操作和推断的行为。
+Nudo 的类型值体系遵循四条核心原则，决定运算与推断的行为。
 
-### 1. 字面量保留（Literal Preservation）
+### 1. 字面量保持
 
-当所有输入都是字面量时，输出也是字面量。引擎会计算具体结果。
-
-```javascript
-T.literal(1) + T.literal(2)   // → T.literal(3), not T.number
-T.literal("a") + T.literal("b") // → T.literal("ab"), not T.string
-```
-
-当有足够信息时，这能保持推断类型的精确性。
-
-### 2. 抽象时拓宽（Widening on Abstraction）
-
-当任一输入是抽象的（非字面量），结果拓宽为对应的抽象类型——但 Nudo 会通过精化类型尽可能保留结构信息。
+所有输入都是字面量时，输出也是字面量。引擎计算出具体结果。
 
 ```javascript
-T.literal(1) + T.number       // → T.number
-T.literal("xy") + T.string    // → `xy${string}`（模板精化类型，而非 T.string）
-T.string + T.literal("!")     // → `${string}!`
-T.string + T.string           // → T.string（无结构可保留）
+combine(5, 3)   // → 8  #exact，不是 number
+"ab" + "c"      // → "abc"  #exact
 ```
 
-当字符串拼接涉及至少一个字面量时，Nudo 会产生**模板字符串**精化类型，保留已知的前缀/后缀。这使得 `startsWith` 和 `endsWith` 等方法能够精确推理。
+信息足够时推断类型保持精确。
 
-### 3. 联合类型懒分配（Lazy Union Distribution）
+### 2. 抽象时拓宽
 
-联合类型在函数中按原样传播。仅当运算符或方法*必须*区分成员时才展开。这避免了组合爆炸。
+任一输入抽象（非字面量）时，结果拓宽到相应域——但 Nudo 尽可能保留结构。
 
 ```javascript
-const a = T.union(T.literal(1), T.literal(2));
-const b = T.union(T.literal("x"), T.literal("y"));
-
-// Not expanded — members don't need to be distinguished
-const arr = [a, b];  // → T.tuple([T.union(1, 2), T.union("x", "y")])
-
-// Expanded — operator must distinguish members
-const sum = a + b;   // → T.union("1x", "1y", "2x", "2y")
+1 + number        // → number  #path（展示为域）
+"xy" + string     // → string  #path（展示为域）
+string + string   // → string（无结构可保留）
 ```
 
-懒分配保留了相关性：`a + a` 正确地为 `T.union(2, 4)`，而非 `1+1, 1+2, 2+1, 2+2`。
+字符串拼接涉及至少一个字面量时，Nudo 内部追踪**模板字符串**——已知前后缀被保留，这正是 `("user-" + x).startsWith("user-")` 在符号 `x` 下也能折叠为 `true #exact` 的原因。
 
-### 4. 守卫窄化（Guard Narrowing）
+### 3. 惰性联合分布
 
-类型守卫在分支内窄化类型值。当你检查 `typeof x === "string"` 或 `x === null` 时，引擎会在 `if` 分支内窄化 `x`，并在 `else` 分支中排除这些类型。
+联合按原样传播。符号值上的运算保持符号——不会急切展开成成员笛卡尔积。这避免组合爆炸并保持相关性：
+
+```javascript
+function selfAdd(a) {
+  return a + a;   // intension: (A1 + A1)——一个符号变量，不是 A1 + A1'
+}
+
+selfAdd(1);       // → 2  #exact（逐调用点）
+selfAdd(2);       // → 4  #exact
+// Combined: 2 | 4——相关性保持，绝不会是 1+1 | 1+2 | 2+1 | 2+2
+```
+
+抽象实参下结果拓宽到代数判定的域（`sum(number, string)` → `string #path`；`selfAdd(number)` → `number #widened`）——只有运算符或方法*必须*区分成员时才逐成员展开。
+
+### 4. 守卫窄化
+
+类型守卫在分支中窄化值。检查 `typeof x === "string"` 或 `x === null` 时，引擎在 `if` 分支窄化 `x`，在 `else` 分支排除这些值。
 
 ```javascript
 function process(x) {
   if (typeof x === "string") {
-    // x is T.string here
-    return x.length;  // → T.number
+    // 这里 x 是 string
+    return x.length;  // → number
   }
   if (x === null) {
-    // x is T.null here
+    // 这里 x 是 null
     return 0;
   }
-  // x is narrowed (e.g. T.number if input was T.union(T.string, T.number, T.null))
+  // x 已窄化（如输入为 string | number | null 时是 number）
   return x;
 }
 ```
 
-窄化规则支持 `typeof`、`===`、`!==`、`instanceof` 以及真值检查。
+窄化规则支持 `typeof`、`===`、`!==`、`instanceof`、`Array.isArray` 与真值检查。

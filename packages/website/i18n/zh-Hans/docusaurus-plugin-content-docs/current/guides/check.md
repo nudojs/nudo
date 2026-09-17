@@ -160,7 +160,7 @@ issues
 
 ## 编辑器集成
 
-LSP **优先发布 `nudo-check` 诊断**（带 `actual` / `expected` 的 Abs 违例），然后才是评估器诊断（`source: nudo`）。Hover 与 inlay 读无损 Abs——不走有损 TypeValue bridge。
+LSP **优先发布 `nudo-check` 诊断**（带 `actual` / `expected` 的 Abs 违例），然后才是评估器诊断（`source: nudo`）。Hover 与 inlay 读无损 Abs——中间不经过有损投影。
 
 Agent 通过 **`nudo.check`**（CheckJson v1）使用同一门禁——见 [Agent API](../api/agent.md#nudocheck)。
 

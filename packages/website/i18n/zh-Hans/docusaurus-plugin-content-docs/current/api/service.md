@@ -68,12 +68,12 @@ getTypeAtPosition(
   line: number,
   column: number,
   activeCases?: Map<string, number>
-): TypeValue | null
+): Abs | null
 ```
 
-返回指定源码位置（1-based 行、0-based 列）的 TypeValue。当位置位于带有用例的函数内时，按函数使用对应的激活用例索引。
+返回指定源码位置（1-based 行、0-based 列）的 Abs（无损的 `shape × term × pred × conf` 值）。当位置位于带有用例的函数内时，按函数使用对应的激活用例索引。
 
-**返回：** `TypeValue`，若无类型则返回 `null`。
+**返回：** `Abs`，若无类型则返回 `null`。
 
 ---
 
@@ -86,12 +86,12 @@ getTypeAtPositionAsync(
   line: number,
   column: number,
   activeCases?: Map<string, number>
-): Promise<TypeValue | null>
+): Promise<Abs | null>
 ```
 
 `getTypeAtPosition` 的异步入口，带路径 env 预加载（见 [`analyzeFileAsync`](#analyzefileasync)）。
 
-**返回：** `Promise<TypeValue | null>`
+**返回：** `Promise<Abs | null>`
 
 ---
 
@@ -214,13 +214,13 @@ for (const file of topoSortDirty(graph.imports, dirty)) {
 
 ---
 
-## typeValueToTSType
+## absToTSType
 
 ```typescript
-typeValueToTSType(tv: TypeValue): string
+absToTSType(a: Abs): string
 ```
 
-将 TypeValue 序列化为 TypeScript 类型语法（如 `number`、`string | number`、`{ id: number; name: string }`）。
+将 Abs 序列化为 TypeScript 类型语法（如 `number`、`string | number`、`{ id: number; name: string }`）。
 
 ---
 
@@ -244,17 +244,17 @@ generateFunctionDtsLines(fn: FunctionAnalysis): string[]
 
 ---
 
-## typeValueToZodSchema
+## absToZodSchema
 
 ```typescript
-typeValueToZodSchema(tv: TypeValue): string
+absToZodSchema(a: Abs): string
 ```
 
-将 TypeValue 转换为 Zod schema 字符串。处理所有类型种类，包括原始类型、字面量、对象、数组、元组、联合等。
+将 Abs 转换为 Zod schema 字符串。处理所有 shape 种类，包括原始类型、字面量、对象、数组、元组、联合等。
 
 **示例：**
 ```typescript
-typeValueToZodSchema(T.object({ name: T.string, age: T.number }))
+absToZodSchema(obj({ name: str(), age: num() }))
 // → "z.object({ name: z.string(), age: z.number() })"
 ```
 
@@ -263,14 +263,15 @@ typeValueToZodSchema(T.object({ name: T.string, age: T.number }))
 ## generateGuardFunction
 
 ```typescript
-generateGuardFunction(name: string, tv: TypeValue): string
+generateGuardFunction(name: string, abs: Abs): string
+generateGuardFunctionFromAbs(name: string, abs: Abs): string
 ```
 
 生成零依赖的运行时类型守卫函数字符串。生成的函数使用 `typeof`、`Array.isArray` 和属性检查进行验证。
 
 **示例：**
 ```typescript
-generateGuardFunction("isUser", T.object({ name: T.string }))
+generateGuardFunction("isUser", obj({ name: str() }))
 // → "function isUser(data) { ... }"
 ```
 
@@ -283,28 +284,28 @@ generateGuardFunction("isUser", T.object({ name: T.string }))
 ### serializeCaseArg
 
 ```typescript
-serializeCaseArg(tv: TypeValue): string | null
+serializeCaseArg(a: Abs): string | null
 ```
 
-把单个 TypeValue 序列化为指令文法（`parseTypeValueExpr`）能原样读回的表达式文本。指令表达不了的形状返回 `null`：函数、promise、实例与 refined 值，`bigint`/`symbol` 原始类型，以及含结构字符或控制字符的字符串/对象键。
+把单个 Abs 序列化为指令文法（`parseCaseArgExpr`）能原样读回的表达式文本。指令表达不了的形状返回 `null`：函数、promise（eff）与 brand 值，`bigint` 字面量，非有限/科学计数法数字，以及含结构字符或控制字符的字符串/对象键。
 
 **示例：**
 ```typescript
-serializeCaseArg(T.number)           // → "T.number"
-serializeCaseArg(T.array(T.string))  // → "T.array(T.string)"
+serializeCaseArg(num())       // → "T.number"（沿用 legacy T.* 拼写可回读）
+serializeCaseArg(strLit("a")) // → '"a"'
 ```
 
 ### buildCaseDirective
 
 ```typescript
-buildCaseDirective(name: string, args: TypeValue[]): string | null
+buildCaseDirective(name: string, argsAbs: Abs[]): string | null
 ```
 
 组装单行指令 ` * @nudo:case "name" (a, b)`（带前导 ` *`，无尾换行），可直接拼进 JSDoc 块。任一实参序列化失败、或名字含双引号/换行时整体返回 `null`。
 
 **示例：**
 ```typescript
-buildCaseDirective("call@L2", [T.string])
+buildCaseDirective("call@L2", [str()])
 // → ' * @nudo:case "call@L2" (T.string)'
 ```
 
@@ -377,7 +378,7 @@ type AnalysisResult = {
   functions: FunctionAnalysis[];
   diagnostics: Diagnostic[];
   bindings: Map<string, BindingInfo>;
-  nodeTypeMap: Map<Node, TypeValue>;
+  nodeAbsMap: Map<Node, Abs>;
   caseHints: CaseHint[];
   /** 从其他模块导入的函数，由分析本文件时观测到的
       跨文件调用点合成 */
@@ -393,8 +394,8 @@ type FunctionAnalysis = {
   loc: SourceLocation;
   paramNames: string[];        // AST 中的实际参数名
   cases: CaseResult[];
-  combined?: TypeValue;        // 用例结果的联合
-  entryOnly?: boolean;         // 合成的 entry@L 用例，未找到调用点
+  combinedAbs?: Abs;          // 用例结果 Abs 的 join；dts 返回位来源
+  entryOnly?: boolean;        // 合成的 entry@L 用例，未找到调用点
   skipped?: boolean;
   /** CJS 风格绑定/赋值函数（exports.X = fn）没有声明级稳定的
       名称；.d.ts 生成会跳过它们，但 infer/JSON 输出仍会报告 */
@@ -409,14 +410,19 @@ type FunctionAnalysis = {
 ```typescript
 type CaseResult = {
   name: string;
-  args: TypeValue[];
-  result: TypeValue;
-  throws: TypeValue;
+  argAbs: Abs[];              // 无损实参 Abs
+  abs: Abs;                   // 无损结果 Abs
+  throwsAbs: Abs;             // 无损抛出 Abs（未抛为 never）
   throwLoc?: SourceLocation;
   source?: "directive" | "callsite"; // "callsite" = 由观测到的调用点合成；
                                      // 手写用例与 entry@ 回退不设置该字段
-                                     //（CLI generate 路径会把指令求值的用例标为 "directive"）
-  aggregatedFrom?: number;           // 折叠进符号化用例的额外调用点数
+  expected?: Abs;             // `@nudo:case "name" (…) => expected`——存在即标记为测试断言
+  aggregatedFrom?: number;    // 折叠进符号化用例的额外调用点数
+  intension?: {               // 内涵摘要（代数 generalize）
+    display?: string; term?: string; pred?: string; conf?: string;
+    abs?: string;             // 无损 Abs 单行（formatAbs）
+    absMultiline?: string;
+  };
 }
 ```
 
@@ -427,9 +433,9 @@ type CaseResult = {
 ```typescript
 type CallRecord = {
   fnName: string;             // 调用点观测到的被调函数名
-  argTypes: TypeValue[];      // 观测到的实参类型
-  resultType: TypeValue;      // 观测到的结果类型
-  throws: TypeValue;          // 观测到的抛出类型
+  argAbs: Abs[];              // 观测到的无损实参 Abs
+  resultAbs: Abs;             // 观测到的结果 Abs（调用抛出时为 never）
+  throwsAbs: Abs;             // 观测到的抛出 Abs（未抛为 never）
   callLoc?: { line: number; column: number }; // 调用位置；行号即 call@L 用例名中的 L
   targetModule?: string;      // 被调函数绑定来源的模块
   targetExport?: string;      // 被调函数绑定时使用的导出名
@@ -495,7 +501,7 @@ type SourceLocation = {
 
 ```typescript
 type BindingInfo = {
-  type: TypeValue;
+  abs: Abs;
   loc?: SourceLocation;
 }
 ```
