@@ -187,6 +187,8 @@ describe("abs-native ast-eval", () => {
   it("Date.now and RegExp.test", () => {
     const n = analyzeFn(`function f(){ return Date.now(); }`, "f", []);
     expect(n.shape.k === "prim" && (n.shape as { type: string }).type === "number").toBe(true);
+    // Date.now() 不是编译期常量：不得折叠成具体时间戳 literal（非确定/不 sound）
+    expect(n.term).toBeUndefined();
     const t = analyzeFn(`function f(){ return /a/.test("a"); }`, "f", []);
     // 字面正则：.test 可能走 member 路径；至少 boolean 或 unknown
     expect(t.shape.k === "prim" || t.shape.k === "unknown").toBe(true);

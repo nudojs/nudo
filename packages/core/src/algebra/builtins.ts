@@ -235,7 +235,9 @@ export function evalDateCtor(args: Abs[]): Abs {
 }
 
 export function evalDateStatic(name: string, _args: Abs[]): Abs | undefined {
-  if (name === "now") return numLit(Date.now());
+  // Date.now() 非编译期常量：每次运行值都变，折叠成具体时间戳既不 sound 又
+  // 让分析结果不确定（golden/memo 抖动）。返回 number（未知）。
+  if (name === "now") return numPrim("path");
   return undefined;
 }
 
