@@ -22,11 +22,13 @@ import { type RefineResolveOpts } from "./refine.ts";
 import { constraintToEntryAbs, instantiateConstraint } from "./constraint.ts";
 import {
   effectiveInterface,
+
   sidecarClosureFingerprint,
   sidecarPathOf,
   type EffectiveInterfaceOpts,
 } from "./interface.ts";
 import { generalizeSourceKeyPart, resetFnFpCache } from "./fn-fp.ts";
+import { formalParamsFromNodes, formalParamDisplayNames, type FormalParam } from "./param-surface.ts";
 import { resetHashSourceCache } from "./hash-source.ts";
 import {
   loadModuleDepsFingerprint,
@@ -531,6 +533,11 @@ export type PolyFn = {
   /** 入口契约（@nudo:refine），供签名/inlay 展示 */
   entryReqs?: Array<{ param: string; pred: import("./pred.ts").Pred }>;
   /**
+   * 形参表面（C4.1）：默认/rest/解构的契约可绑定名。
+   * 与 params（求值展示名）并列；检查/侧车匹配走 formals。
+   */
+  formals?: FormalParam[];
+  /**
    * 函数形参的符号外延（与 typeParams 同 α 空间）。
    * symbolic 一次跑正常结束时从 env 快照拷出；instantiate 重跑不写。
    */
@@ -547,9 +554,10 @@ export function extractFn(
   source: string,
   fnName: string,
   fileAst?: ReturnType<typeof babelParse>,
-): { params: string[]; body: Node; env: AstEnv } | undefined {
+): { params: string[]; body: Node; env: AstEnv; formals: FormalParam[] } | undefined {
   const file = fileAst ?? babelParse(source);
   const env = emptyEnv();
+  const formalsByName = new Map<string, FormalParam[]>();
 
   for (const stmt of file.program.body) {
     // export function / export const = fn / export default function
@@ -561,11 +569,13 @@ export function extractFn(
       decl = stmt.declaration;
     }
     if (decl.type === "FunctionDeclaration" && decl.id) {
+      const formals = formalParamsFromNodes(decl.params as never);
       env.fns.set(decl.id.name, {
-        params: decl.params.map((p) => (p.type === "Identifier" ? p.name : "_")),
+        params: formalParamDisplayNames(formals),
         body: decl.body,
         async: decl.async === true,
       });
+      formalsByName.set(decl.id.name, formals);
     }
     if (decl.type === "VariableDeclaration") {
       for (const d of decl.declarations) {
@@ -580,13 +590,13 @@ export function extractFn(
             body: Node;
             async?: boolean;
           };
+          const formals = formalParamsFromNodes(init.params as never);
           env.fns.set(d.id.name, {
-            params: init.params.map((p) =>
-              p.type === "Identifier" ? (p.name ?? "_") : "_",
-            ),
+            params: formalParamDisplayNames(formals),
             body: init.body,
             async: init.async === true,
           });
+          formalsByName.set(d.id.name, formals);
         }
       }
     }
@@ -594,7 +604,7 @@ export function extractFn(
 
   const fn = env.fns.get(fnName);
   if (!fn) return undefined;
-  return { params: fn.params, body: fn.body, env };
+  return { params: fn.params, body: fn.body, env, formals: formalsByName.get(fnName) ?? [] };
 }
 
 export function generalizeFromAst(
@@ -642,7 +652,7 @@ function generalizeFromAstUncached(
 ): PolyFn | undefined {
   const extracted = extractFn(source, fnName, opts.file);
   if (!extracted) return undefined;
-  const { params, body, env } = extracted;
+  const { params, body, env, formals } = extracted;
   const budget = opts.budget ?? defaultLeakBudget;
   const label = opts.label ?? "A";
 
@@ -802,6 +812,7 @@ function generalizeFromAstUncached(
       entryShapes,
       fnRels,
     ),
+    ...(formals.length > 0 ? { formals } : {}),
     ...(entryReqs ? { entryReqs } : {}),
     ...(fnRels ? { fnRels } : {}),
     ...(entryShapes ? { entryShapes } : {}),

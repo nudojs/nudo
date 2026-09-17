@@ -197,7 +197,7 @@ flowchart TB
 
 | ID | 任务 | 验收 | 状态 |
 |---|---|---|---|
-| C4.1 | **默认参数 / rest / 解构形参与 `fn({})` 对齐** | 侧车可表达或显式报「不支持并降级」 | [ ] |
+| C4.1 | **默认参数 / rest / 解构形参与 `fn({})` 对齐** | 侧车可绑默认参名 / rest 裸名 / 解构顶层绑定名；错名仍 `param-mismatch` | [x] |
 | C4.2 | **class 方法侧车绑定**（现只绑 named export binding） | 至少支持 class methods 的同名/命名约定或文档化排除 | [ ] |
 | C4.3 | **CJS `module.exports` 自动绑定** | `module.exports = {a}` / `exports.a` / `module.exports = fn` 进本地导出表 | [x] |
 | C4.4 | **`export default` 绑定约定** | 具名 default 绑本地名 + `"default"`；侧车 `export default fn(…)` 可绑 | [x] |

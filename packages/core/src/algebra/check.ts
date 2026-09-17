@@ -45,6 +45,7 @@ import {
 import { absToConstraint, joinThenProject } from "./projection.ts";
 import { literalMeetsConstraint } from "./domain-membership.ts";
 import { extractFn, generalizeFromAst } from "./generalize.ts";
+import { contractParamNameSet } from "./param-surface.ts";
 import { getSlot } from "./objects.ts";
 import { canSkipLiteralCallScan } from "./fn-fp.ts";
 import { stableAnalyzeKeySource } from "./stable-source-key.ts";
@@ -427,19 +428,32 @@ function checkSourceInner(
     if (hasRefineDirective || (exportedNames?.has(name) ?? false)) {
       const eff = effectiveInterfaceCached(name);
       if (eff?.source === "handwritten") {
-        const formal = new Set(g.params);
+        // C4.1：契约面 = formals（默认参名 / rest 裸名 / 解构顶层绑定名）
+        const contractNames = contractParamNameSet(g.formals ?? []);
+        const formalDisplay = new Set(g.params);
         const conflictNames = new Set(eff.conflict?.params ?? []);
         const unknownParams = eff.params
           .map((p) => p.param)
-          .filter((p) => p && !formal.has(p) && !conflictNames.has(p));
+          .filter(
+            (p) =>
+              p &&
+              !formalDisplay.has(p) &&
+              !contractNames.has(p) &&
+              !conflictNames.has(p),
+          );
         if (unknownParams.length > 0) {
+          const surface = [...contractNames]
+            .filter((n) => !n.startsWith("_p") && n !== "_")
+            .join(", ");
           issues.push({
             severity: "error",
             code: "nudo:interface-param-mismatch",
             message: `${name}: 契约参数名不在形参表（${unknownParams.join(", ")}）`,
             actual: unknownParams.join(", "),
-            expected: g.params.length > 0 ? g.params.join(", ") : "(无参)",
-            suggestion: `把 @nudo:refine / 侧车绑定参数名改成形参之一：${g.params.join(", ") || "（函数无参）"}`,
+            expected: surface || g.params.join(", ") || "(无参)",
+            suggestion: `把 @nudo:refine / 侧车绑定参数名改成形参之一：${
+              surface || g.params.join(", ") || "（函数无参）"
+            }`,
             fn: name,
           });
         }

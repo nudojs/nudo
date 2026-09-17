@@ -6,6 +6,19 @@
 
 ## 一、集合类型推断限制
 
+### 1.0 默认 / rest / 解构形参契约面（已解决·C4.1）
+
+**已实现**：`param-surface.ts` 统一形参表面——
+- 默认参 `f(x=1)` 契约名 = `x`
+- rest `f(...nums)` 契约名 = `nums` / `...nums`
+- 解构 `f({x,y})` 契约名 = 顶层绑定名 `x`/`y`（求值占位 `_p0`）
+- generalize `g.params` 与 analyzer 对齐；`g.formals` 供 check/侧车匹配
+- 错名仍报 `nudo:interface-param-mismatch`；嵌套 pattern 绑定名不进契约面（降级）
+
+测试：`param-surface.test.ts`。
+
+---
+
 ### 1.1 数组方法精度：reduce / forEach / some / 手写循环 push（已解决）
 
 **当前行为：**

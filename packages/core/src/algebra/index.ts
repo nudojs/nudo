@@ -15,6 +15,7 @@ export * from "./leq.ts";
 export * from "./ast-eval.ts";
 export * from "./format.ts";
 export * from "./generalize.ts";
+export * from "./param-surface.ts";
 export * from "./diagnostics.ts";
 export * from "./template.ts";
 export * from "./language.ts";

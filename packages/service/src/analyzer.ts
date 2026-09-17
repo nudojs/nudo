@@ -27,6 +27,8 @@ import {
   strLit,
   boolLit,
   abs as makeAbsVal,
+  formalParamsFromNodes,
+  formalParamDisplayNames,
   type Abs,
   stableAnalyzeKeySource,
   fnFingerprints,
@@ -434,22 +436,12 @@ export function locFromNode(node: Node): SourceLocation {
 function extractParamNames(node: Node): string[] {
   const fn = node.type === "ExportDefaultDeclaration" ? node.declaration : node;
   if (fn.type === "FunctionDeclaration" || fn.type === "FunctionExpression" || fn.type === "ArrowFunctionExpression") {
-    return fn.params.map((p: any) => {
-      if (p.type === "Identifier") return p.name;
-      if (p.type === "AssignmentPattern" && p.left.type === "Identifier") return p.left.name;
-      if (p.type === "RestElement" && p.argument.type === "Identifier") return `...${p.argument.name}`;
-      return "_";
-    });
+    return formalParamDisplayNames(formalParamsFromNodes(fn.params as never));
   }
   if (fn.type === "VariableDeclaration") {
     const decl = fn.declarations[0];
     if (decl.init?.type === "FunctionExpression" || decl.init?.type === "ArrowFunctionExpression") {
-      return decl.init.params.map((p: any) => {
-        if (p.type === "Identifier") return p.name;
-        if (p.type === "AssignmentPattern" && p.left.type === "Identifier") return p.left.name;
-        if (p.type === "RestElement" && p.argument.type === "Identifier") return `...${p.argument.name}`;
-        return "_";
-      });
+      return formalParamDisplayNames(formalParamsFromNodes(decl.init.params as never));
     }
   }
   return [];
