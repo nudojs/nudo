@@ -1,9 +1,16 @@
 # 持久化分析缓存（`.nudo/cache`）
 
-> **状态**：设计稿（未实施）。**实施前提：TypeValue 已完全移除。**
-> 与 [`design-refine-derivation.md`](./design-refine-derivation.md)
+> **状态**：L1 CheckJson 骨架已落地（2026-05）；L2 harvest / effectiveInterface
+> 表缓存仍为设计稿。与 [`design-refine-derivation.md`](./design-refine-derivation.md)
 > §7.4 的「可选 `.nudo/cache`」衔接：契约文件（`*.nudo.js`）仍是用户表面，
 > 缓存是引擎私有、可丢、可重建。
+>
+> **已实现（B3 最小闭环）**：`packages/service/src/disk-cache.ts`
+> - `DiskCache`：sha256 内容键 + `ANALYSIS_ABI` 前缀，fail-open
+> - `nudo check` 在无 `--callsites` 时读写 CheckJson（默认关）
+> - 启用：`package.json#nudo.cache: true`（→ `.nudo/cache`）、
+>   字符串自定义根，或 `NUDO_CACHE_DIR`；`off`/`false` 关闭
+> - B4：`nudo.analysis.callSiteBudget`（默认 3）；超限 symbolic `#widened`
 >
 > **一句话**：把「不变依赖 + 已分析源码」的**可再执行投影**落到磁盘，冷启动
 > 复用；键必须 content-addressable 且相对路径化，失效宁可过杀、不可陈旧命中。

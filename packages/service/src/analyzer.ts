@@ -46,7 +46,7 @@ import {
   widenAbsPrim,
 } from "./evaluator/call-record.ts";
 import { loadEnvs, preloadPathEnvs } from "./evaluator/env-loader.ts";
-import { findProjectConfig, interfaceConfig } from "./evaluator/config.ts";
+import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
 import { resolveNpmNudo } from "./evaluator/resolve-npm.ts";
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
 import { defaultLoadModule } from "./load-module.ts";
@@ -610,7 +610,7 @@ function findSingleModuleExportsFunction(ast: Node): Node | null {
   return found;
 }
 
-const MAX_PRECISE_CALLSITE_CASES = 3;
+const DEFAULT_CALLSITE_BUDGET = 3;
 const COLLAPSE_LITERAL_THRESHOLD = 4;
 
 function dedupeCallRecords(records: CallRecord[]): CallRecord[] {
@@ -677,11 +677,11 @@ function synthesizeExternalFunctions(records: CallRecord[], currentFile: string)
       fromModule: module,
     };
 
-    // Same capping as local synthesis: at most MAX_PRECISE_CALLSITE_CASES
-    // precise cases. The symbolic aggregate cannot re-evaluate the foreign
+    // Same capping as local synthesis: at most budget precise cases.
+    // The symbolic aggregate cannot re-evaluate the foreign
     // function (its AST belongs to another file's analysis), so it unions the
     // observed argument/result/throws Abs of the remaining records instead.
-    const precise = deduped.slice(0, MAX_PRECISE_CALLSITE_CASES);
+    const precise = deduped.slice(0, DEFAULT_CALLSITE_BUDGET);
     for (const rec of precise) {
       analysis.cases.push({
         name: `call@L${rec.callLoc?.line ?? 0}`,
@@ -691,7 +691,7 @@ function synthesizeExternalFunctions(records: CallRecord[], currentFile: string)
         source: "callsite",
       });
     }
-    const remaining = deduped.slice(MAX_PRECISE_CALLSITE_CASES);
+    const remaining = deduped.slice(DEFAULT_CALLSITE_BUDGET);
     if (remaining.length > 0) {
       const symArgsAbs = Array.from({ length: arity }, (_, i) =>
         // 缺参按真实 JS 语义 widen 成 undefined 而非 unknown——可选参守卫
@@ -980,6 +980,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
   const projectConfig = findProjectConfig(dirname(filePath));
   const projectEnvNames = projectConfig?.config.env ?? [];
   const envNames = [...new Set([...projectEnvNames, ...fileEnvNames])];
+  const callSiteBudget = analysisConfig(projectConfig?.config).callSiteBudget;
 
   const callRecords: CallRecord[] = [];
   // Environment 绑定 Abs（BindingInfo.abs）；nodeAbsMap 另走 absBinds
@@ -1661,7 +1662,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
         .map((r, i) => ({ r, i }))
         .sort((a, b) => informativeness(a.r) - informativeness(b.r) || a.i - b.i)
         .map(({ r }) => r);
-      const precise = ordered.slice(0, MAX_PRECISE_CALLSITE_CASES);
+      const precise = ordered.slice(0, callSiteBudget);
       for (const rec of precise) {
         // Abs 重求值仅在更有信息量时覆盖（不破坏 mock/callsite 精确结构）
         let absRaw: Abs | undefined;
@@ -1695,7 +1696,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
       // 剩余聚合——clone 704 条中的 53 条 unknown 实参曾拖垮其余 651 条）。
       // 排除不声明覆盖，sound；全部不可求值时不产 symbolic case（诚实）。
       const remaining = ordered
-        .slice(MAX_PRECISE_CALLSITE_CASES)
+        .slice(callSiteBudget)
         .filter((rec) => !rec.argAbs.some((a) => a.shape.k === "unknown" && !a.term));
       if (remaining.length > 0) {
         const fnNode = resolveFunctionNode(candidate.node);
@@ -1738,7 +1739,10 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
         const symCase: CaseResult = {
           name: "call@symbolic",
           argAbs: widenedArgsAbs,
-          abs: symAbs ?? absUnknown,
+          // B4：超预算聚合必须 #widened（可解释降级）
+          abs: symAbs
+            ? { ...symAbs, conf: symAbs.conf === "exact" ? "widened" : symAbs.conf }
+            : absUnknown,
           throwsAbs: neverAbs,
           source: "callsite",
           aggregatedFrom: remaining.length,

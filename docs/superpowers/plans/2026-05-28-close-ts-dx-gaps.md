@@ -135,9 +135,9 @@ flowchart TB
 |---|---|---|---|---|
 | B1 | **把 micro bench 升格为 CI gate**：cold / warm / LS-invalidated / scaling 曲线；回退阈值失败即红 | `pnpm run benchmark:gate` 进 CI | 现有 bench | [x] |
 | B2 | **编辑路径增量**：按文件脏标记 + 依赖边失效（隐式侧车边已在设计 §4.5）；避免整文件 Full sync 重算 | 单字符编辑 warm 分析 < 5ms（中位文件） | design-persistent-cache | [x] |
-| B3 | **`effectiveInterface` 跨会话缓存落地**（设计 Phase B） | 二次启动契约读取命中磁盘缓存 | design-persistent-cache | [ ] |
-| B4 | **polyvariant 预算**：调用点/实例化上限 + 可配置 widen；超限可预测降级 | 400 函数缩放曲线不劣于 tsc LS 同档；超限有可解释 `#widened` | C 系列 | [ ] |
-| B5 | **LSP 与 CLI 共享 memo**：避免两套缓存；workspace 级 AnalysisSession | IDE 与 `nudo check` 结果一致且不重复算 | B2, B3 | [ ] |
+| B3 | **`effectiveInterface` 跨会话缓存落地**（设计 Phase B） | 二次启动契约读取命中磁盘缓存 | design-persistent-cache | [~] |
+| B4 | **polyvariant 预算**：调用点/实例化上限 + 可配置 widen；超限可预测降级 | 400 函数缩放曲线不劣于 tsc LS 同档；超限有可解释 `#widened` | C 系列 | [x] |
+| B5 | **LSP 与 CLI 共享 memo**：避免两套缓存；workspace 级 AnalysisSession | IDE 与 `nudo check` 结果一致且不重复算 | B2, B3 | [~] |
 | B6 | **真实 monorepo 基准**：挑 1–2 个中型开源 JS 包全量 check/infer 延迟基线 | 有可复现数字写入 baseline.json | B1 | [ ] |
 
 **相关**
@@ -266,7 +266,9 @@ flowchart TB
 
 ### Phase 2 — 缩放与集合完备（4–8 周）
 
-- [ ] **B3–B5** 持久缓存 + polyvariant 预算
+- [~] **B3–B5** 持久缓存骨架 + polyvariant 预算：`disk-cache.ts` CheckJson L1
+  （`nudo.analysis.callSiteBudget` / `package.json#nudo.cache` / `NUDO_CACHE_DIR`）；
+  超预算 symbolic case 强制 `#widened`；effectiveInterface 表缓存仍开放
 - [x] **C1.*** Map/Set 条目表 + 动态 key 槽位并集 + 手写循环 push 重绑
 - [x] **C2.1–C2.2** 循环 return（`$loopReturn`）；catch 形参绑定 thrown Abs（Error name/message）
 - [ ] **A4–A6** 侧车 buffer、导航、quickfix

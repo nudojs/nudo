@@ -21,7 +21,11 @@ export type NudoConfig = {
     mode?: string;
     /** off | errors | default | verbose */
     diagnostics?: string;
+    /** polyvariant：保留的精确调用点 case 上限（默认 3）；超出进 symbolic #widened */
+    callSiteBudget?: number;
   };
+  /** 磁盘缓存（B3）：true → `.nudo/cache`；字符串 → 自定义根；false/省略 → 关 */
+  cache?: boolean | string;
 };
 
 export type InterfaceConfig = {
@@ -38,6 +42,8 @@ export type AnalysisConfig = {
   exclude: string[];
   mode: AnalysisMode;
   diagnostics: DiagnosticsLevel;
+  /** polyvariant 精确调用点上限（B4） */
+  callSiteBudget: number;
 };
 
 const DEFAULT_ANALYSIS_INCLUDE: string[] = [];
@@ -71,6 +77,11 @@ export function analysisConfig(config: NudoConfig | null | undefined): AnalysisC
       : mode === "directives"
         ? "errors"
         : "default";
+  const budgetRaw = raw?.callSiteBudget;
+  const callSiteBudget =
+    typeof budgetRaw === "number" && Number.isFinite(budgetRaw) && budgetRaw >= 1
+      ? Math.min(Math.floor(budgetRaw), 64)
+      : 3;
   return {
     // include 空数组 = 不过滤（与「省略」同义）
     include: toStringArray(raw?.include, []),
@@ -78,7 +89,27 @@ export function analysisConfig(config: NudoConfig | null | undefined): AnalysisC
     exclude: toStringArray(raw?.exclude, DEFAULT_ANALYSIS_EXCLUDE),
     mode,
     diagnostics,
+    callSiteBudget,
   };
+}
+
+/** 磁盘缓存根（B3）：config.cache / NUDO_CACHE_DIR / 默认关 */
+export function diskCacheRoot(
+  config: NudoConfig | null | undefined,
+  projectDir: string | undefined,
+): string | undefined {
+  const raw = config?.cache;
+  if (raw === false) return undefined;
+  if (typeof raw === "string" && raw.length > 0) {
+    return projectDir ? resolve(projectDir, raw) : raw;
+  }
+  if (raw === true) {
+    return projectDir ? resolve(projectDir, ".nudo/cache") : undefined;
+  }
+  const env = process.env.NUDO_CACHE_DIR;
+  if (env === "off" || env === "0") return undefined;
+  if (env && env.length > 0) return env;
+  return undefined;
 }
 
 /**

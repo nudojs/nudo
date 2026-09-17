@@ -116,6 +116,14 @@ export {
   clearAnalysisSessionCaches,
   resetAllAnalysisCaches,
 } from "./session-cache.ts";
+export {
+  DiskCache,
+  checkCacheKey,
+  sha256Hex,
+  relativizePath,
+  ANALYSIS_ABI,
+  type DiskCacheOptions,
+} from "./disk-cache.ts";
 export type { BMemberDiag } from "@nudojs/core";
 
 export {
@@ -171,6 +179,7 @@ export {
   findProjectConfig,
   interfaceConfig,
   analysisConfig,
+  diskCacheRoot,
   matchesEmitAllowlist,
   type NudoConfig,
   type InterfaceConfig,

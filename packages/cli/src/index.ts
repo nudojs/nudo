@@ -361,15 +361,58 @@ async function runCheck(
     defaultLoadModule: loadModule,
     findProjectConfig,
     interfaceConfig,
+    analysisConfig,
+    diskCacheRoot,
+    DiskCache,
+    checkCacheKey,
   } = await import("@nudojs/service");
   // package.json#nudo.interface.autoBind 覆盖 check 执法路径（§2.2「整体
   // 关闭」承诺：不只打印路径——false 时侧车 ambient 绑定整体停用）
-  const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
-  let algebraReport = checkSource(filePath, source, pTrue, {
-    loadModule,
-    fromFile: filePath,
-    ...(autoBind === false ? { autoBind: false } : {}),
-  });
+  const proj = findProjectConfig(dirname(filePath));
+  const autoBind = interfaceConfig(proj?.config).autoBind;
+  const cacheRoot = diskCacheRoot(proj?.config, proj?.projectDir);
+  const disk = new DiskCache({ root: cacheRoot, namespace: "check" });
+  // --callsites 注入路径不做磁盘复用（证据面含调用记录）
+  const useDisk = disk.enabled && !opts.callsites;
+  const cacheKey = useDisk
+    ? checkCacheKey(filePath, source, { autoBind, projectDir: proj?.projectDir })
+    : undefined;
+  const cached = cacheKey ? disk.get<ReturnType<typeof serializeCheckJson>>(cacheKey) : undefined;
+  let algebraReport;
+  if (cached) {
+    // CheckJson → CheckReport 最小回放（issues/ok/summary/signatures display）
+    algebraReport = {
+      file: cached.file,
+      issues: cached.issues.map((i) => ({
+        severity: i.severity as "error" | "warning" | "info",
+        code: i.code,
+        message: i.message,
+        ...(i.fn !== undefined ? { fn: i.fn } : {}),
+        ...(i.line !== undefined ? { line: i.line } : {}),
+        ...(i.column !== undefined ? { column: i.column } : {}),
+        ...(i.actual !== undefined ? { actual: i.actual } : {}),
+        ...(i.expected !== undefined ? { expected: i.expected } : {}),
+        ...(i.suggestion !== undefined ? { suggestion: i.suggestion } : {}),
+      })),
+      ok: cached.ok,
+      signatures: cached.signatures.map((s) => ({
+        name: s.name,
+        params: s.params,
+        // 缓存回放无 Abs 本体：display/detail 供人类/JSON 输出
+        abs: { shape: { k: "unknown" as const }, conf: s.conf as never },
+        display: s.display,
+        detail: s.detail,
+        conf: s.conf as never,
+      })),
+      summary: { ...cached.summary },
+    } as Awaited<ReturnType<typeof checkSource>>;
+  } else {
+    algebraReport = checkSource(filePath, source, pTrue, {
+      loadModule,
+      fromFile: filePath,
+      ...(autoBind === false ? { autoBind: false } : {}),
+    });
+  }
 
   // domain-exceeds：注入调用记录 → analyzeFile 的跨文件证据执法（analyzer
   // 内已解析 autoBind）。只合并该码，避免与 checkSource 诊断双报。
@@ -412,6 +455,15 @@ async function runCheck(
   } else {
     // D2：默认人类短报告；--verbose 展开 term/pred/conf
     console.log(formatCheckReport(algebraReport, { verbose: opts.verbose === true }));
+  }
+
+  // B3：无调用点注入时写盘（失败 fail-open）
+  if (useDisk && cacheKey && !cached) {
+    try {
+      disk.set(cacheKey, serializeCheckJson(algebraReport));
+    } catch {
+      /* ignore */
+    }
   }
 
   if (!algebraReport.ok) {
