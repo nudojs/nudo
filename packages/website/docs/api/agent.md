@@ -13,14 +13,17 @@ Reference for the agent-facing surface of `@nudojs/lsp`. All agent commands live
 |---------|---------------------|---------|
 | `nudo.check` | `nudo/check` | Constraint gate — **CheckJson v1** (Abs signatures + actual ⊭ expected) |
 | `nudo.infer` | `nudo/infer` | Whole-file inference — **InferJson v1** (intension carries lossless Abs) |
-| `nudo.hover` | `nudo/hover` | Lossless Abs at a source position (+ optional inlays) |
+| `nudo.hover` | `nudo/hover` | Lossless Abs at a source position (+ optional inlays + interface tier) |
 | `nudo.whatIf` | `nudo/whatIf` | Apply type assumptions to bindings and read the inferred type of a target |
 | `nudo.suggestCase` | `nudo/suggestCase` | Check `@nudo:case` coverage; when every case is synthesized, return paste-ready directives |
 | `nudo.trace` | `nudo/trace` | List each case's argument types → result type for a function |
+| `nudo.interface` | `nudo/interface` | Print effective interface tiers (`handwritten` / `generated` / `implicit`) |
+| `nudo.interface.draft` | `nudo/interface.draft` | **Code-first draft**: reviewable `*.nudo.draft.js` from existing code (same as CLI `--draft`) |
+| `nudo.interfaceEmit` | `nudo/interface.emit` | Persist call-site domains as `@generated` sidecar segments |
 | `nudo.selectCase` | `nudo/selectCase` | Switch the active case used for hover/diagnostics |
 | `nudo.getActiveCases` | `nudo/getActiveCases` | Read the active case index of every function in a file |
 
-`nudo.check` / `nudo.infer` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` return MCP-style text content — `{ content: [{ type: "text", text }] }`. `nudo.selectCase` returns `{ success: true }`; `nudo.getActiveCases` returns `Record<string, number>`.
+`nudo.check` / `nudo.infer` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` / `nudo.interface*` return MCP-style text content — `{ content: [{ type: "text", text }] }`. `nudo.selectCase` returns `{ success: true }`; `nudo.getActiveCases` returns `Record<string, number>`. Shared sources are pinned by `AGENT_TOOL_SOURCES` (E5) — agent tools and CLI/LSP commands call the same service/core entrypoints.
 
 ## Conventions
 
@@ -201,6 +204,18 @@ Read the active case index of every function in a file.
 | `file` | `string` | `file://` URI or path to the JavaScript file |
 
 **Returns:** `Record<string, number>` mapping function name → active case index, e.g. `{ "parse": 1, "greet": 0 }`.
+
+## nudo.interface / nudo.interface.draft / nudo.interfaceEmit
+
+Interface product surface (same data sources as CLI):
+
+| Command | Args | Behavior |
+|---------|------|----------|
+| `nudo.interface` | `{ file, functionName?, loadModule?, autoBind? }` | Print `fn  [handwritten\|generated\|implicit]  (params) → returns` + JSON |
+| `nudo.interface.draft` | `{ file, functionName?, write?, dryRun?, loadModule?, autoBind? }` | Code-first draft module (`@nudo:draft`); `write: true` lands `*.nudo.draft.js` (not ambient-bound). Body-read fields appear as **suggestions only** |
+| `nudo.interfaceEmit` / `nudo.interface.emit` | `{ file, functionName, mode: "add"\|"update" }` | Persist call-site domains via `emitInterface` |
+
+Handwritten contracts are never overwritten by draft or emit. Accept a draft by copying reviewed exports into `*.nudo.js`.
 
 ## Type expressions
 

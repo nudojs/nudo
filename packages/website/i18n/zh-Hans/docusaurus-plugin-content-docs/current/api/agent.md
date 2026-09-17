@@ -13,14 +13,17 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 |---------|---------------------|---------|
 | `nudo.check` | `nudo/check` | 约束门禁 —— **CheckJson v1**（Abs 签名 + actual ⊭ expected） |
 | `nudo.infer` | `nudo/infer` | 全文件推断 —— **InferJson v1**（intension 携带无损 Abs） |
-| `nudo.hover` | `nudo/hover` | 源码位置上的无损 Abs（可选 inlay） |
+| `nudo.hover` | `nudo/hover` | 源码位置上的无损 Abs（可选 inlay / interface 档） |
 | `nudo.whatIf` | `nudo/whatIf` | 对绑定应用类型假设，读取目标的推断类型 |
 | `nudo.suggestCase` | `nudo/suggestCase` | 检查函数的 `@nudo:case` 覆盖情况；用例全为合成时返回可直接粘贴的指令 |
 | `nudo.trace` | `nudo/trace` | 列出函数每个用例的参数类型 → 结果类型 |
+| `nudo.interface` | `nudo/interface` | 打印有效 interface 分层（handwritten / generated / implicit） |
+| `nudo.interface.draft` | `nudo/interface.draft` | **代码优先草稿**：从已有逻辑生成 `*.nudo.draft.js`（与 CLI `--draft` 同源） |
+| `nudo.interfaceEmit` | `nudo/interface.emit` | 把调用点域固化为侧车 `@generated` 段 |
 | `nudo.selectCase` | `nudo/selectCase` | 切换用于悬停/诊断的活动用例 |
 | `nudo.getActiveCases` | `nudo/getActiveCases` | 读取文件中每个函数的活动用例索引 |
 
-`nudo.check` / `nudo.infer` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` 返回 MCP 风格的文本内容——`{ content: [{ type: "text", text }] }`。`nudo.selectCase` 返回 `{ success: true }`；`nudo.getActiveCases` 返回 `Record<string, number>`。
+`nudo.check` / `nudo.infer` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` / `nudo.interface*` 返回 MCP 风格的文本内容——`{ content: [{ type: "text", text }] }`。`nudo.selectCase` 返回 `{ success: true }`；`nudo.getActiveCases` 返回 `Record<string, number>`。共享数据源由 `AGENT_TOOL_SOURCES`（E5）钉住——agent 工具与 CLI/LSP 命令走同一 service/core 入口。
 
 ## 约定
 
