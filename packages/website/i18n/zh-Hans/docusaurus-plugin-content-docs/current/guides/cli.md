@@ -363,8 +363,29 @@ interface 产品：逐函数精化契约与来源分层。无侧车无注解时�
 ```bash
 nudo interface [paths...]       # 只打印，永不写盘
 nudo interface --emit <file> --fn <name>   # 固化推断域
+nudo interface --draft <file>   # 从已有逻辑生成可审阅契约草稿
 nudo refine                     # nudo interface 的别名
 ```
+
+### `--draft` — 代码优先 / 迁移
+
+从**已有实现**生成可审阅的 interface 草稿。适用于迁移既有 JS 包，或「先写逻辑、后补契约」。
+
+```bash
+nudo interface --draft lib.js           # 打印 *.nudo.draft.js 模块
+nudo interface --draft --write lib.js   # 写入 lib.nudo.draft.js
+nudo interface --draft lib.js --fn greet
+```
+
+草稿中的证据分层（**不发明义务**）：
+
+| 证据 | 含义 |
+|------|------|
+| `callsite` / `directive` | 观察到的实参域（`joinThenProject`） |
+| `symbolic` | 返回位 `generalizeFromAst` 兜底 |
+| 省略的参数槽 | 无证据 — 注释 `/* tighten */`，不是契约 |
+
+规则：手写契约跳过不覆盖；产物 `*.nudo.draft.js` **不** ambient 绑定；审阅后复制进 `*.nudo.js` 才生效。`--emit` 固化调用点事实，`--draft` 是给人审的起点。
 
 文件内有调用点、无侧车：
 
@@ -459,7 +480,9 @@ export const scale = fn({ x: union(lit(42), lit("a")) }, number());
 | 选项 | 说明 |
 |------|------|
 | `--emit` | 写/更新 `@generated` 段而非打印（update 模式：剥离并重写生成段；幂等） |
-| `--fn <name>` | 配 `--emit`：只处理这些导出名（可重复）。可点名 root 推导闭包内的下游导出 |
+| `--draft` | 从已有逻辑生成可审阅契约草稿（打印 `*.nudo.draft.js` 模块） |
+| `--write` | 配 `--draft`：写入/更新 `<file>.nudo.draft.js`（绝不碰手写 `*.nudo.js`） |
+| `--fn <name>` | 配 `--emit`/`--draft`：只处理这些导出名（可重复）。emit 时可点名 root 推导闭包内的下游导出 |
 | `--all` | 配 `--emit`：目标为全部顶层导出（显式 opt-in；优先 `--fn` 保持 diff 可审） |
 | `--dry-run` | 配 `--emit`：打印 unified diff 而非写盘 |
 | `--exit-on-diff` | 配 `--emit` + `--dry-run`：侧车将变更时退出码 `1`（CI 门禁） |

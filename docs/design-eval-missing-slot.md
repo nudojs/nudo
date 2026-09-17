@@ -88,3 +88,4 @@ export const greet = fn({ user: shape({ name: string() }) }, string());
 - `docs/design-limitations.md`
 - `docs/design-analysis-scope.md` — diagnostics noise tiers
 - `packages/core/src/algebra/__tests__/check-recall-gold.test.ts` — `arg-missing-slot-ok` cases stay OK by default
+- **Product path for “code first → contracts”:** `nudo interface --draft` (`packages/service/src/interface-draft.ts`) — reviewable drafts from call-site/symbolic evidence; writes `*.nudo.draft.js` which is **not** ambient-bound. C0.5 diagnostics would only *hint* missing slots; draft generation is the DX deliverable.

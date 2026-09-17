@@ -199,6 +199,19 @@ export {
   type EmitInterfaceSkipReason,
 } from "./interface-emitter.ts";
 
+export {
+  draftInterface,
+  formatDraftModule,
+  formatDraftSummary,
+  sidecarDraftPath,
+  writeInterfaceDraft,
+  type DraftEvidence,
+  type InterfaceDraftEntry,
+  type InterfaceDraftOpts,
+  type InterfaceDraftResult,
+  type WriteDraftResult,
+} from "./interface-draft.ts";
+
 // Phase 2：root 驱动契约下行（design-refine-derivation §4.2 / §7.3）
 export {
   deriveFromRoot,

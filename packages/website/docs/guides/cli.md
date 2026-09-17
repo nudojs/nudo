@@ -363,7 +363,41 @@ The interface product: per-function refinement contracts with their source layer
 ```bash
 nudo interface [paths...]       # print only, never writes
 nudo interface --emit <file> --fn <name>   # persist inferred domains
+nudo interface --draft <file>   # reviewable contract draft from existing code
 nudo refine                     # alias of `nudo interface`
+```
+
+### `--draft` — code-first / migration
+
+Generate a **reviewable** interface draft from what the code already does. Designed for migrating an existing JS package, or for writing logic first and contracts later.
+
+```bash
+nudo interface --draft lib.js           # print a *.nudo.draft.js module
+nudo interface --draft --write lib.js   # write lib.nudo.draft.js
+nudo interface --draft lib.js --fn greet
+```
+
+Evidence layered in the draft (never invents obligations):
+
+| Evidence | Meaning |
+|----------|---------|
+| `callsite` / `directive` | Observed argument domains (`joinThenProject`) |
+| `symbolic` | `generalizeFromAst` fallback for returns |
+| omitted param slots | No evidence — comment `/* tighten */`, not a contract |
+
+Rules:
+
+- **Handwritten** sidecar/refine bindings are skipped (never overwritten).
+- Output file is `*.nudo.draft.js` — **not** auto-bound (loadModule only reads `*.nudo.js`).
+- Accept by copying reviewed exports into `*.nudo.js` (then they become real contracts).
+- `--emit` remains the path that freezes **call-site domains** as `@generated` facts; `--draft` is the human-facing starting point.
+
+```text
+lib.js
+  double  [draft callsite/callsite]  fn({ x: lit(21) }, lit(42))
+  lonely  [draft none/none]  fn({})
+Draft written → lib.nudo.draft.js
+  review, then copy accepted exports into lib.nudo.js
 ```
 
 Given a file with in-file call sites and no sidecar:
@@ -459,7 +493,9 @@ export const scale = fn({ x: union(lit(42), lit("a")) }, number());
 | Option | Description |
 |--------|-------------|
 | `--emit` | Write/update `@generated` segments instead of printing (mode: update — strips and rewrites generated segments; idempotent) |
-| `--fn <name>` | With `--emit`: only these export names (repeatable). May name a downstream export in the root derivation closure |
+| `--draft` | Generate a reviewable contract draft from existing code (prints a `*.nudo.draft.js` module) |
+| `--write` | With `--draft`: write/update `<file>.nudo.draft.js` (never touches handwritten `*.nudo.js`) |
+| `--fn <name>` | With `--emit`/`--draft`: only these export names (repeatable). May name a downstream export in the root derivation closure |
 | `--all` | With `--emit`: target every top-level export (explicit opt-in; prefer `--fn` to keep diffs reviewable) |
 | `--dry-run` | With `--emit`: print a unified diff instead of writing |
 | `--exit-on-diff` | With `--emit` + `--dry-run`: exit `1` when the sidecar would change (CI gate) |

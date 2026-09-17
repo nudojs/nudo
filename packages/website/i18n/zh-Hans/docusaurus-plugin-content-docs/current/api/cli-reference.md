@@ -21,7 +21,7 @@ npx @nudojs/cli infer ./src/utils.js
 |---------|---------|
 | [`nudo infer`](#nudo-infer) | 从文件或目录推断类型 |
 | [`nudo check`](#nudo-check) | 检查文件或目录的类型错误（error 级诊断以退出码 `1` 结束） |
-| [`nudo interface`](#nudo-interface) | 打印/持久化每个函数的有效接口——`[handwritten]` / `[generated]` / `[implicit]` 分层（别名 `nudo refine`） |
+| [`nudo interface`](#nudo-interface) | 打印/持久化/草稿生成每个函数的有效接口——`[handwritten]` / `[generated]` / `[implicit]` 分层；`--draft` 服务代码优先（别名 `nudo refine`） |
 | [`nudo types`](#nudo-types) | 类型即计算视图：展示 Abs 的 term + 约束 |
 | [`nudo test`](#nudo-test) | 把 `@nudo:case` 当断言跑（失败退出码 `1`） |
 | [`nudo doctor`](#nudo-doctor) | 健康检查：调用点固化漂移、分析报错、无用例函数 |
@@ -250,12 +250,49 @@ nudo check src/broken.js
 
 ### nudo interface
 
-打印每个函数的有效接口与来源分层——`[handwritten]`（源码 `@nudo:refine`/`@nudo:interface` ∪ 侧车绑定）、`[generated]`（固化的 `@generated` 段）或 `[implicit]`（调用点推断）。默认只打印；`--emit` 把推断域固化为侧车 `@generated` 段。别名：`nudo refine`。
+打印每个函数的有效接口与来源分层——`[handwritten]`（源码 `@nudo:refine`/`@nudo:interface` ∪ 侧车绑定）、`[generated]`（固化的 `@generated` 段）或 `[implicit]`（调用点推断）。默认只打印；`--emit` 把推断域固化为侧车 `@generated` 段；`--draft` 从已有逻辑生成可审阅契约草稿（代码优先 / 迁移）。别名：`nudo refine`。
 
 ```bash
 nudo interface <paths...> [--callsites <paths...>]
 nudo interface --emit <paths...> [--fn <name>] [--all] [--dry-run] [--exit-on-diff] [--callsites <paths...>]
+nudo interface --draft <paths...> [--write] [--fn <name>] [--dry-run] [--callsites <paths...>]
 ```
+
+**参数：**
+
+| 参数 | 说明 |
+|------|------|
+| `<paths...>` | 文件或目录（至少一个；侧车 `*.nudo.js`/`*.nudo.ts` 与 `*.nudo.draft.js` 会跳过） |
+
+**选项：**
+
+| 选项 | 说明 |
+|------|------|
+| `--emit` | 写/更新 `@generated` 段而非打印（update：剥离并重写，幂等） |
+| `--draft` | 从已有逻辑生成可审阅契约草稿（打印 `*.nudo.draft.js` 模块 — 不 ambient 绑定） |
+| `--write` | 配 `--draft`：写入 `<file>.nudo.draft.js`（绝不覆盖手写 `*.nudo.js`） |
+| `--fn <name>` | 配 `--emit`/`--draft`：只处理这些导出名（可重复） |
+| `--all` | 配 `--emit`：目标为全部顶层导出（显式 opt-in） |
+| `--dry-run` | 配 `--emit` 或 `--draft --write`：只打印不写盘 |
+| `--exit-on-diff` | 配 `--emit`：侧车将变更时退出码 `1`（CI 门禁） |
+| `--callsites <paths...>` | 使用现场文件：其对本文件导出的调用作为域证据 |
+
+**退出码：** `0` — 打印/写盘/草稿成功；`1` — 用法错误（无路径、`--write` 未配 `--draft`、`--emit`+`--draft` 同时用）、`--exit-on-diff` 有非空 diff、或 emit issue 如 `nudo:interface-name-clash`。
+
+**示例（草稿）：**
+
+```bash
+nudo interface --draft double.js --write
+```
+
+```text
+double.js
+  double  [draft callsite/callsite]  fn({ x: lit(21) }, lit(42))
+Draft written → double.nudo.draft.js
+  review, then copy accepted exports into double.nudo.js
+```
+
+**示例（打印）：**
 
 **参数：**
 

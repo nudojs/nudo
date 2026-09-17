@@ -21,7 +21,7 @@ npx @nudojs/cli infer ./src/utils.js
 |---------|---------|
 | [`nudo infer`](#nudo-infer) | Infer types from files or directories |
 | [`nudo check`](#nudo-check) | Check a file or directory for type errors (error-level diagnostics exit `1`) |
-| [`nudo interface`](#nudo-interface) | Print/emit each function's effective interface — `[handwritten]` / `[generated]` / `[implicit]` layers (alias `nudo refine`) |
+| [`nudo interface`](#nudo-interface) | Print/emit/draft each function's effective interface — `[handwritten]` / `[generated]` / `[implicit]` layers; `--draft` for code-first reviewable contracts (alias `nudo refine`) |
 | [`nudo types`](#nudo-types) | Type-as-computation view: term + constraints from Abs algebra |
 | [`nudo test`](#nudo-test) | Run `@nudo:case` directives as assertions (exit `1` on failure) |
 | [`nudo doctor`](#nudo-doctor) | Health-check files: call-site solidification drift, analysis errors, uncovered functions |
@@ -250,31 +250,49 @@ nudo check src/broken.js
 
 ### nudo interface
 
-Print each function's effective interface with its source layer — `[handwritten]` (source `@nudo:refine`/`@nudo:interface` ∪ sidecar binding), `[generated]` (persisted `@generated` segment), or `[implicit]` (call-site inference). Print only by default; `--emit` persists inferred domains as sidecar `@generated` segments. Alias: `nudo refine`.
+Print each function's effective interface with its source layer — `[handwritten]` (source `@nudo:refine`/`@nudo:interface` ∪ sidecar binding), `[generated]` (persisted `@generated` segment), or `[implicit]` (call-site inference). Print only by default; `--emit` persists inferred domains as sidecar `@generated` segments; `--draft` generates a reviewable contract draft from existing code (code-first / migration). Alias: `nudo refine`.
 
 ```bash
 nudo interface <paths...> [--callsites <paths...>]
 nudo interface --emit <paths...> [--fn <name>] [--all] [--dry-run] [--exit-on-diff] [--callsites <paths...>]
+nudo interface --draft <paths...> [--write] [--fn <name>] [--dry-run] [--callsites <paths...>]
 ```
 
 **Arguments:**
 
 | Argument | Description |
 |----------|-------------|
-| `<paths...>` | File(s) or directory(s) — at least one required (sidecar `*.nudo.js`/`*.nudo.ts` targets are skipped) |
+| `<paths...>` | File(s) or directory(s) — at least one required (sidecar `*.nudo.js`/`*.nudo.ts` and `*.nudo.draft.js` targets are skipped) |
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
 | `--emit` | Write/update `@generated` segments instead of printing (update mode: strips and rewrites generated segments, idempotent) |
-| `--fn <name>` | With `--emit`: only these export names (repeatable) |
+| `--draft` | Generate a reviewable interface draft from existing code (prints a `*.nudo.draft.js` module — not auto-bound) |
+| `--write` | With `--draft`: write/update `<file>.nudo.draft.js` (never overwrites handwritten `*.nudo.js`) |
+| `--fn <name>` | With `--emit`/`--draft`: only these export names (repeatable) |
 | `--all` | With `--emit`: target every top-level export (explicit opt-in) |
-| `--dry-run` | With `--emit`: print a unified diff instead of writing to disk |
+| `--dry-run` | With `--emit` or `--draft --write`: print instead of writing to disk |
 | `--exit-on-diff` | With `--emit`: exit `1` when the sidecar would change (CI gate) |
 | `--callsites <paths...>` | Usage-site files (tests/apps): their calls to this file's exports feed the domain evidence (domain roots with no in-file call sites) |
 
-**Exit codes:** `0` — printed/emitted successfully (including "no interface changes"); `1` — usage error (no paths), `--exit-on-diff` with a non-empty diff, or an emit issue such as `nudo:interface-name-clash` (handwritten binding wins, write skipped).
+**Exit codes:** `0` — printed/emitted/drafted successfully (including "no interface changes"); `1` — usage error (no paths, `--write` without `--draft`, `--emit`+`--draft` together), `--exit-on-diff` with a non-empty diff, or an emit issue such as `nudo:interface-name-clash` (handwritten binding wins, write skipped).
+
+**Example (draft — code-first):**
+
+```bash
+nudo interface --draft double.js --write
+```
+
+```text
+double.js
+  double  [draft callsite/callsite]  fn({ x: lit(21) }, lit(42))
+Draft written → double.nudo.draft.js
+  review, then copy accepted exports into double.nudo.js
+```
+
+Handwritten bindings are listed as skipped and never overwritten. The draft file is not ambient-loaded until you copy exports into `*.nudo.js`.
 
 **Example (print):**
 

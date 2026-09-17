@@ -607,9 +607,42 @@ program
   });
 
 /**
+ * `nudo interface --draft`：从已有逻辑生成可审阅的 interface 草稿。
+ * 默认 stdout；`--write` 落盘 `*.nudo.draft.js`（不 ambient 绑定）。
+ */
+async function runInterfaceDraft(
+  file: string,
+  opts: {
+    fnNames: string[];
+    write: boolean;
+    dryRun: boolean;
+    records?: CallRecord[];
+  },
+): Promise<void> {
+  const { draftInterface, formatDraftSummary, writeInterfaceDraft, sidecarDraftPath } =
+    await import("@nudojs/service");
+  const filePath = resolve(file);
+  const rel = relative(process.cwd(), filePath) || filePath;
+  const result = await draftInterface(filePath, {
+    ...(opts.fnNames.length > 0 ? { fnNames: opts.fnNames } : {}),
+    ...(opts.records ? { records: opts.records } : {}),
+  });
+  const draftRel = relative(process.cwd(), sidecarDraftPath(filePath)) || sidecarDraftPath(filePath);
+  if (opts.write) {
+    const write = writeInterfaceDraft(filePath, result.draftSource, {
+      dryRun: opts.dryRun,
+    });
+    for (const line of formatDraftSummary(rel, draftRel, result, write)) console.log(line);
+  } else {
+    for (const line of formatDraftSummary(rel, draftRel, result)) console.log(line);
+  }
+}
+
+/**
  * `nudo interface`（别名 `nudo refine`）：默认只打印每函数有效契约与来源分层
  * （handwritten / generated / implicit）——设计稿 §11 第 0 步。
  * `--emit` 走写盘器（interface-emitter.ts，§7.3/§9）。
+ * `--draft` 生成待审契约草稿（interface-draft.ts，代码优先 / 迁移）。
  */
 async function runInterface(file: string, records?: CallRecord[]): Promise<void> {
   const { interfaceSurface } = await import("@nudojs/service");
@@ -726,13 +759,21 @@ program
   .command("interface")
   .alias("refine")
   .description(
-    "Print each function's effective interface with its source layer (handwritten / generated / implicit); --emit persists inferred call-site domains as @generated sidecar segments",
+    "Print each function's effective interface with its source layer (handwritten / generated / implicit); --emit persists call-site domains; --draft generates a reviewable contract draft from existing code",
   )
   .argument("[paths...]", "File(s) or directory(s); at least one required (with --emit these are the emit targets)")
   .option("--emit", "Write/update @generated sidecar segments instead of printing (mode: update — strips and rewrites generated segments, idempotent)")
   .option(
+    "--draft",
+    "Generate a reviewable interface draft from existing code (code-first / migration); prints a *.nudo.draft.js module — not auto-bound until you copy it into *.nudo.js",
+  )
+  .option(
+    "--write",
+    "With --draft: write/update <file>.nudo.draft.js on disk (never touches handwritten *.nudo.js)",
+  )
+  .option(
     "--fn <name>",
-    "With --emit: only these export names (repeatable). May name a downstream export in the root derivation closure (e.g. --emit lib.js --fn add2 writes add.nudo.js)",
+    "With --emit/--draft: only these export names (repeatable). With --emit may name a downstream export in the root derivation closure",
     (v: string, acc: string[]) => {
       acc.push(v);
       return acc;
@@ -740,14 +781,16 @@ program
     [] as string[],
   )
   .option("--all", "With --emit: target every top-level export of the file (explicit opt-in — prefer --fn to keep diffs reviewable)")
-  .option("--dry-run", "With --emit: print a unified diff instead of writing to disk")
+  .option("--dry-run", "With --emit or --draft --write: print instead of writing to disk")
   .option("--exit-on-diff", "With --emit + --dry-run: exit 1 when the sidecar would change (CI gate; same as infer --emit-cases)")
-  .option("--callsites <paths...>", "Usage-site files (tests/apps): their calls to this file's exports feed the domain evidence for print/emit (domain roots with no in-file call sites)")
+  .option("--callsites <paths...>", "Usage-site files (tests/apps): their calls to this file's exports feed the domain evidence for print/emit/draft (domain roots with no in-file call sites)")
   .action(
     async (
       paths: string[],
       opts: {
         emit?: boolean;
+        draft?: boolean;
+        write?: boolean;
         fn?: string[];
         all?: boolean;
         dryRun?: boolean;
@@ -760,8 +803,20 @@ program
           "Usage error: `nudo interface` needs at least one path. " +
             (opts.emit
               ? "Writing additionally respects filters: --fn <names> / --all (default: only refresh existing @generated segments)."
-              : "Print-only this phase; pass a file or directory."),
+              : opts.draft
+                ? "Draft mode: pass a file or directory to generate reviewable contracts from existing code."
+                : "Print-only this phase; pass a file or directory."),
         );
+        process.exitCode = 1;
+        return;
+      }
+      if (opts.emit && opts.draft) {
+        console.error("Usage error: --emit and --draft are mutually exclusive");
+        process.exitCode = 1;
+        return;
+      }
+      if (opts.write && !opts.draft) {
+        console.error("Usage error: --write requires --draft");
         process.exitCode = 1;
         return;
       }
@@ -770,8 +825,8 @@ program
         process.exitCode = 1;
         return;
       }
-      if (!opts.emit && ((opts.fn?.length ?? 0) > 0 || opts.all)) {
-        console.error("warning: --fn/--all only apply with --emit (ignored for print-only)");
+      if (!opts.emit && !opts.draft && ((opts.fn?.length ?? 0) > 0 || opts.all)) {
+        console.error("warning: --fn/--all only apply with --emit or --draft (ignored for print-only)");
       }
       if (opts.emit && opts.all) {
         console.error(
@@ -783,11 +838,18 @@ program
       const externalRecords = opts.callsites?.length ? collectExternalRecords(opts.callsites) : undefined;
       // 侧车（*.nudo.js / *.nudo.ts）是契约模块不是接口根——显式传入或目录
       // 扫描命中都跳过，避免对契约文件本身打印 "(no top-level functions found)" 噪声
-      const roots = targets.filter((t) => !/\.nudo\.(js|ts)$/.test(t));
+      const roots = targets.filter((t) => !/\.nudo\.(js|ts)$/.test(t) && !/\.nudo\.draft\.(js|ts)$/.test(t));
       if (roots.length === 0) return;
       for (const t of roots) {
         try {
-          if (opts.emit) {
+          if (opts.draft) {
+            await runInterfaceDraft(t, {
+              fnNames: opts.fn ?? [],
+              write: opts.write === true,
+              dryRun: opts.dryRun === true,
+              records: externalRecords,
+            });
+          } else if (opts.emit) {
             await runInterfaceEmit(t, {
               fnNames: opts.fn ?? [],
               all: opts.all === true,
