@@ -2,20 +2,26 @@ import {
   analyzeFileAsync,
   defaultLoadModule as loadModule,
   clearAnalysisSessionCaches,
+  shouldAnalyzeFile,
+  filterDiagnosticsByLevel,
+  findProjectConfig,
   type AnalysisResult,
   type Diagnostic,
+  type DiagnosticsLevel,
 } from "@nudojs/service";
+import { dirname } from "node:path";
 import { checkSource, pTrue } from "@nudojs/core";
 
 export type NudoPluginOptions = {
   include?: string[];
   exclude?: string[];
+  /**
+   * error 级诊断是否让构建失败。
+   * 默认 false：与 A1/A3 一致——构建期诊断先 warn，避免无指令/隐式推断误伤 CI。
+   * 项目可用 `nudo.analysis.diagnostics` 控制噪声档；显式契约 error 仍会打出。
+   */
   failOnError?: boolean;
 };
-
-/** 与 LSP hasNudoDirectives 对齐：含 refine/interface/import，避免漏掉契约文件 */
-const NUDO_DIRECTIVE_RE =
-  /@nudo:(case|mock|pure|skip|sample|refine|interface|import|env|mock-module|as|replace)\b/;
 
 /** Abs check issues → service Diagnostic（与 evaluator 诊断同管道进 vite warn/error） */
 function checkIssuesToDiagnostics(id: string, code: string): Diagnostic[] {
@@ -44,6 +50,25 @@ function checkIssuesToDiagnostics(id: string, code: string): Diagnostic[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * 构建期噪声档：项目显式 `nudo.analysis.diagnostics` 优先；
+ * 否则用 default（error+warning，静音 A3 噪声码）——
+ * 不走 analysisConfig 对 mode=directives 的 errors 隐式默认，
+ * 避免把 may-throw 等 warning 在构建日志里整档抹掉。
+ */
+function viteDiagnosticsLevel(id: string): DiagnosticsLevel {
+  const raw = findProjectConfig(dirname(id))?.config?.analysis?.diagnostics;
+  if (
+    raw === "off" ||
+    raw === "errors" ||
+    raw === "default" ||
+    raw === "verbose"
+  ) {
+    return raw;
+  }
+  return "default";
 }
 
 const DEFAULT_INCLUDE = ["**/*.js", "**/*.mjs", "**/*.ts", "**/*.mts"];
@@ -110,6 +135,8 @@ function compileAnyMatcher(patterns: string[]): Matcher {
 export default function nudoPlugin(options: NudoPluginOptions = {}): any {
   const includeMatch = compileAnyMatcher(options.include ?? DEFAULT_INCLUDE);
   const excludeMatch = compileAnyMatcher(options.exclude ?? DEFAULT_EXCLUDE);
+  // 构建期默认不 fail：A1 无指令/exports 模式打开后，error 误伤面变大；
+  // 要当门禁请显式 failOnError: true（与 nudo check CI 门禁分工）。
   const failOnError = options.failOnError ?? false;
 
   const analysisCache = new Map<string, AnalysisResult>();
@@ -132,13 +159,22 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): any {
     async transform(code: string, id: string) {
       if (excludeMatch(id)) return null;
       if (!includeMatch(id)) return null;
-      if (!NUDO_DIRECTIVE_RE.test(code)) return null;
+      // A1/A2：与 LSP 同门禁——analysis.mode=directives|exports|all，
+      // 不再用硬编码 @nudo 正则挡掉无指令文件。
+      if (!shouldAnalyzeFile(id, code)) return null;
 
       try {
         // async 以便 path 型 @nudo:env 预加载（与 LSP analyzeFileAsync 对齐）
         const result = await analyzeFileAsync(id, code);
         const checkDiags = checkIssuesToDiagnostics(id, code);
-        const merged = { ...result, diagnostics: [...result.diagnostics, ...checkDiags] };
+        const level = viteDiagnosticsLevel(id);
+        const merged = {
+          ...result,
+          diagnostics: filterDiagnosticsByLevel(
+            [...result.diagnostics, ...checkDiags],
+            level,
+          ),
+        };
         analysisCache.set(id, merged);
 
         for (const diag of merged.diagnostics) {

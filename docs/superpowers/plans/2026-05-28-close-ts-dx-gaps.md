@@ -227,7 +227,7 @@ flowchart TB
 |---|---|---|---|
 | E1 | **`.d.ts` 投影质量**：union/tuple/HOF 可编译、可被 tsserver 消费 | 投影文件 `tsc --noEmit` 零错 | [x] |
 | E2 | **与 TS 项目并存指南**：仅对 `src/**/*.js` 开 Nudo；或 JS 包用 Nudo、TS 包用 tsc | 一份可复制 monorepo 配方 | [x] |
-| E3 | **Vite 插件默认策略**：与 A1 对齐（无指令文件、failOnError） | 构建期诊断不误伤 | [ ] |
+| E3 | **Vite 插件默认策略**：与 A1 对齐（无指令文件、failOnError） | 构建期诊断不误伤 | [x] |
 | E4 | **Zed / 其他 LSP 客户端能力对齐表** | 文档矩阵 + 缺口 issue | [ ] |
 | E5 | **MCP / agent 工具与 LSP 命令同源** | `whatIf`/`suggestCase`/`hover` 语义一致、有测试 | [ ] |
 | E6 | **发布与版本策略**：0.x 破坏性变更说明、迁移笔记 | changeset 规范可跟 | [ ] |
@@ -279,7 +279,7 @@ flowchart TB
 - [~] **D5–D6** interface：`--emit --dry-run` / doctor drift 已有；执法分档 CLI 标注部分（handwritten/generated/implicit 在 `nudo interface` 打印）
 - [x] **E2** 与 TS 并存指南（website `guides/coexistence.md`）
 - [x] **E1** dts 投影质量：函数类型在 union/array/optional 处加括号；`paramTypes`/`returnType` 下推；对象键转义；rest/保留字形参清洗（`dts-projection-quality.test.ts` 对投影跑 `tsc --noEmit --strict`）
-- [ ] **E3** Vite 默认策略（E3 与 A1 对齐可后续）
+- [x] **E3** Vite 默认策略对齐 A1：`shouldAnalyzeFile` 替换硬编码指令正则；`failOnError` 默认 false；诊断档项目显式配置优先，否则 default（保留 warning）
 - [ ] **B6** 真实 monorepo 基准（已拍板跳过）
 - [x] **F1–F2** 概念分层（`concepts/layers.md`：Day-0 / Day-1 / Abs）
 
