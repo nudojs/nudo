@@ -5,7 +5,9 @@
  * 规则：
  * - case 集规模变化（增删 case）→ 失败，提示更新基线
  * - exact 数下降 / unknown 数上升 / error 数上升 → 失败，逐 case 列出回退
- * - 平均耗时 > 基线的 1.5x → 失败（共享 runner 噪声余量）
+ * - 平均耗时 > 基线的 3.0x → 失败
+ *   （每 case 冷启动 `pnpm run infer`/tsx；GitHub ubuntu runner 相对本地
+ *    Apple Silicon 常年 ~2.5–3x，1.5x 会把环境噪声当成回归）
  */
 
 import { readFileSync } from "fs";
@@ -72,9 +74,10 @@ if (current.totalCases !== baseline.totalCases) {
   }
 }
 
-if (current.avgMs > baseline.averageTimeMs * 1.5) {
+// 3x 覆盖 CI runner 相对本地的冷启动差；真正引擎回归通常远超此倍数
+if (current.avgMs > baseline.averageTimeMs * 3.0) {
   problems.push(
-    `性能回退：avg ${baseline.averageTimeMs}ms → ${current.avgMs}ms (>1.5x)`,
+    `性能回退：avg ${baseline.averageTimeMs}ms → ${current.avgMs}ms (>3.0x)`,
   );
 }
 
