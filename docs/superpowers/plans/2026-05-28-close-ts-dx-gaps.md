@@ -191,7 +191,7 @@ flowchart TB
 |---|---|---|---|
 | C3.1 | **concrete case 消费关系 Abs**：无 impl 回调不再链式断成 unknown | `processItems(items, transform, filter)` 字面量路径不再 `unknown-recv` | [x] |
 | C3.2 | **闭包状态 / 返回对象方法槽** | `createCounter()` 方法槽有类型；基础状态追踪 | [x] |
-| C3.3 | **HOF dts 投影**（design-hof-relations P5） | 关系签名 `.d.ts` 可读 | [ ] |
+| C3.3 | **HOF dts 投影**（design-hof-relations P5） | 关系签名 `.d.ts` 可读 | [x] |
 
 ### C4. 语言边角（P1–P2）
 
@@ -275,7 +275,7 @@ flowchart TB
 
 ### Phase 3 — 替代门槛冲刺
 
-- [~] **C3.*** HOF concrete 消费（宿主 fn 包 Abs + B 记录优先）/ 闭包方法槽（ObjectMethod→$fnVal）；C3.3 dts 投影仍开放
+- [x] **C3.*** HOF concrete 消费（宿主 fn 包 Abs + B 记录优先）/ 闭包方法槽（ObjectMethod→$fnVal）/ C3.3 dts 泛型投影（`fn.hof` 快照 → `<A1,B_transform>`；有精确 case 时让位 case-widen）
 - [~] **D5–D6** interface：`--emit --dry-run` / doctor drift 已有；执法分档 CLI 标注部分（handwritten/generated/implicit 在 `nudo interface` 打印）
 - [x] **E2** 与 TS 并存指南（website `guides/coexistence.md`）
 - [x] **E1** dts 投影质量：函数类型在 union/array/optional 处加括号；`paramTypes`/`returnType` 下推；对象键转义；rest/保留字形参清洗（`dts-projection-quality.test.ts` 对投影跑 `tsc --noEmit --strict`）

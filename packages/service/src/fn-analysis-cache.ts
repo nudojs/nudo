@@ -55,6 +55,11 @@ export type CachedFnAnalysis = {
     skipped?: boolean;
     noDeclaration?: boolean;
     fromModule?: string;
+    hof?: {
+      fnRels?: Array<{ param: string; abs: Abs }>;
+      entryShapes?: Array<{ param: string; abs: Abs }>;
+      symbolic?: Abs;
+    };
   };
   diagnostics: CachedDiagnostic[];
   caseHints: CachedCaseHint[];

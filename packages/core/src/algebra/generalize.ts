@@ -377,6 +377,13 @@ function collectAbsVars(a: Abs, acc: Set<string>, seen: Set<Abs>): void {
   }
 }
 
+/** 公开：收集 Abs 自由 term 变元（dts 泛型投影 / α 作用域判定复用 L2 基建）。 */
+export function collectAbsFreeVars(a: Abs): Set<string> {
+  const acc = new Set<string>();
+  collectAbsVars(a, acc, new Set());
+  return acc;
+}
+
 function renameTerm(t: Term, map: VarRename): Term {
   if (t.op === "var") {
     const to = map.get(t.id);

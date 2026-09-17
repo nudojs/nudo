@@ -135,6 +135,18 @@ export type FunctionAnalysis = {
   noDeclaration?: boolean;
   /** absolute path of the module this function is imported from (externalFunctions only) */
   fromModule?: string;
+  /**
+   * HOF / entry shape 关系快照（generalizeFromAst），供 dts 泛型投影（C3.3）。
+   * 只存投影所需的 Abs，不挂 PolyFn 本体（缓存可克隆）。
+   */
+  hof?: {
+    /** 函数形参：外延关系 Abs（fn 形状，paramTypes/returnType） */
+    fnRels?: Array<{ param: string; abs: Abs }>;
+    /** 值形参提升快照（如 items → arr(A1)） */
+    entryShapes?: Array<{ param: string; abs: Abs }>;
+    /** 符号返回 Abs（含自由 α / B:param） */
+    symbolic?: Abs;
+  };
 };
 
 export type BindingInfo = {
@@ -916,6 +928,17 @@ function cloneFunctionAnalysis(a: FunctionAnalysis): FunctionAnalysis {
       ...(c.intension ? { intension: { ...c.intension } } : {}),
     })),
     loc: { start: { ...a.loc.start }, end: { ...a.loc.end } },
+    ...(a.hof
+      ? {
+          hof: {
+            ...(a.hof.fnRels ? { fnRels: a.hof.fnRels.map((r) => ({ ...r })) } : {}),
+            ...(a.hof.entryShapes
+              ? { entryShapes: a.hof.entryShapes.map((s) => ({ ...s })) }
+              : {}),
+            ...(a.hof.symbolic ? { symbolic: a.hof.symbolic } : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -1496,6 +1519,8 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
       );
     }
 
+    attachHofSnapshot(analysis, source);
+
     if (fnCacheKey) {
       fnAnalysisCacheSet(fnCacheKey, {
         analysis: cloneFunctionAnalysis(analysis),
@@ -1816,6 +1841,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
     candidate.analysis.cases.push(caseResult);
     candidate.analysis.entryOnly = true;
     candidate.analysis.combinedAbs = entryAbs;
+    attachHofSnapshot(candidate.analysis, source);
   }
 
   if (!bHostedEval) {
@@ -2234,6 +2260,32 @@ function tryAttachIntension(
     caseResult.intension = intension;
   } catch {
     // ignore
+  }
+}
+
+/**
+ * C3.3：把 generalize 的 fnRels / entryShapes / symbolic 挂到 FunctionAnalysis，
+ * 供 dts 泛型投影。无关系时不写 hof（避免空壳噪音）。
+ */
+function attachHofSnapshot(analysis: FunctionAnalysis, source: string): void {
+  if (analysis.hof) return;
+  try {
+    const g = generalizeFromAst(analysis.name, source);
+    if (!g) return;
+    const fnRels = g.fnRels
+      ? [...g.fnRels.entries()].map(([param, rec]) => ({ param, abs: rec.abs }))
+      : undefined;
+    const entryShapes = g.entryShapes
+      ? [...g.entryShapes.entries()].map(([param, rec]) => ({ param, abs: rec.abs }))
+      : undefined;
+    if (!fnRels?.length && !entryShapes?.length) return;
+    analysis.hof = {
+      ...(fnRels?.length ? { fnRels } : {}),
+      ...(entryShapes?.length ? { entryShapes } : {}),
+      symbolic: g.symbolic,
+    };
+  } catch {
+    // ignore — dts 回退到 case widen 路径
   }
 }
 
