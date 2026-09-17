@@ -9,7 +9,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { interfaceSurface } from "../interface-surface.ts";
-import { numLit, abs as makeAbs } from "@nudojs/core";
+import { numLit, strLit, abs as makeAbs } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -151,11 +151,11 @@ describe("interfaceSurface", () => {
   it("cross-file records feed the implicit domain display", async () => {
     const root = makeFixture({ "lib.js": `export function scale(x) {\n  return x * 2;\n}\n` });
     const libPath = join(root, "lib.js");
-    const rec = (arg: string | number | boolean | null | undefined) => ({
+    const rec = (arg: number | string) => ({
       fnName: "scale",
       targetModule: libPath,
       targetExport: "scale",
-      argAbs: [numLit(arg)],
+      argAbs: [typeof arg === "number" ? numLit(arg) : strLit(arg)],
       resultAbs: numLit(84),
       throwsAbs: makeAbs({ k: "never" }, undefined, undefined, "exact"),
       callLoc: { line: 3, column: 0 },

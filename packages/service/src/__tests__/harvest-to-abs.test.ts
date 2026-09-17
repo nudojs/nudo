@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { harvestedValueToAbs, bareSpecToAbsModules, evalAbsModuleGraph } from "@nudojs/service";
-import { T, analyzeFn, numLit, absToString, getFnImpl, relationFn, num, str } from "@nudojs/core";
+import { analyzeFn, numLit, absToString, getFnImpl, relationFn, num, str } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {

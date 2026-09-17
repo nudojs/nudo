@@ -53,7 +53,7 @@ describe("tryAbsJoinObjects", () => {
     expect(r).toBeDefined();
     expect(r!.shape.k).toBe("obj");
     if (r!.shape.k === "obj") {
-      expect(r.shape.slots.x).toBeDefined();
+      expect(r!.shape.slots.x).toBeDefined();
     }
   });
 
