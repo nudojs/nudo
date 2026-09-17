@@ -170,7 +170,7 @@ function flattenSum(xs: Abs[]): Abs[] {
   const seen = new Set<string>();
   const deduped: Abs[] = [];
   for (const x of out) {
-    const key = shapeKey(x);
+    const key = absShapeKey(x);
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(x);
@@ -178,7 +178,7 @@ function flattenSum(xs: Abs[]): Abs[] {
   return deduped;
 }
 
-function shapeKey(a: Abs, seen: Set<object> = new Set()): string {
+export function absShapeKey(a: Abs, seen: Set<object> = new Set()): string {
   if (seen.has(a)) return "cycle";
   seen.add(a);
   try {
@@ -194,37 +194,37 @@ function shapeKey(a: Abs, seen: Set<object> = new Set()): string {
     if (s.k === "never") return "never";
     if (s.k === "any") return "any";
     if (s.k === "unknown") return "unknown";
-    if (s.k === "arr") return `arr(${shapeKey(s.element, seen)})`;
+    if (s.k === "arr") return `arr(${absShapeKey(s.element, seen)})`;
     if (s.k === "tuple") {
-      const els = s.elements.map((e) => shapeKey(e, seen)).join(",");
-      const rest = s.rest ? `...${shapeKey(s.rest, seen)}` : "";
+      const els = s.elements.map((e) => absShapeKey(e, seen)).join(",");
+      const rest = s.rest ? `...${absShapeKey(s.rest, seen)}` : "";
       return `tuple[${els}${rest}]`;
     }
-    if (s.k === "brand") return `brand:${s.name}(${shapeKey(s.shape, seen)})`;
-    if (s.k === "eff") return `eff:${s.eff}<${shapeKey(s.inner, seen)}>`;
+    if (s.k === "brand") return `brand:${s.name}(${absShapeKey(s.shape, seen)})`;
+    if (s.k === "eff") return `eff:${s.eff}<${absShapeKey(s.inner, seen)}>`;
     if (s.k === "obj") {
       const slots = Object.keys(s.slots)
         .sort()
         .map((k) => {
           const slot = s.slots[k]!;
           const flags = (slot.optional ? "?" : "") + (slot.readonly ? "r" : "");
-          return `${k}${flags}:${shapeKey(slot.value, seen)}`;
+          return `${k}${flags}:${absShapeKey(slot.value, seen)}`;
         })
         .join(",");
       const idx = s.index
-        ? `idx(${shapeKey(s.index.key, seen)}→${shapeKey(s.index.value, seen)})`
+        ? `idx(${absShapeKey(s.index.key, seen)}→${absShapeKey(s.index.value, seen)})`
         : "";
       const open = s.open ? "open" : "";
       return `obj{${slots}}${idx}${open}`;
     }
     if (s.k === "fn") {
-      const pts = (s.paramTypes ?? []).map((t) => shapeKey(t, seen)).join(",");
-      const ret = s.returnType ? shapeKey(s.returnType, seen) : "?";
+      const pts = (s.paramTypes ?? []).map((t) => absShapeKey(t, seen)).join(",");
+      const ret = s.returnType ? absShapeKey(s.returnType, seen) : "?";
       const name = s.name ? `#${s.name}` : "";
       return `fn${name}(${s.params.join(",")}|${pts})=>${ret}`;
     }
     if (s.k === "sum") {
-      return `sum(${s.members.map((m) => shapeKey(m, seen)).join("|")})`;
+      return `sum(${s.members.map((m) => absShapeKey(m, seen)).join("|")})`;
     }
     return "other";
   } finally {

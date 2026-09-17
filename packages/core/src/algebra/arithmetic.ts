@@ -33,7 +33,7 @@ import {
   never,
 } from "./abs.ts";
 import { concatString, isTemplateLike } from "./template.ts";
-import { makeSum } from "./objects.ts";
+import { makeSum, absShapeKey } from "./objects.ts";
 import { noteDerivationAdd } from "./derivation.ts";
 
 /**
@@ -123,12 +123,7 @@ function dedupAbsMembers(ms: Abs[]): Abs[] {
   const seen = new Set<string>();
   const out: Abs[] = [];
   for (const m of ms) {
-    const key =
-      m.shape.k === "prim"
-        ? `prim:${m.shape.type}`
-        : m.shape.k === "sum"
-          ? `sum:${m.shape.members.length}`
-          : m.shape.k;
+    const key = absShapeKey(m);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(m);

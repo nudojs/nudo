@@ -8,6 +8,7 @@ import {
   cmp,
   refineAbsForRelTrue,
   and,
+  makeSum,
   numLit,
   numVar,
   strLit,
@@ -226,5 +227,14 @@ describe("bound tightening: strict over non-strict at equal bound", () => {
     const r = add(numVar("x"), numLit(0), and(geNum(x, 5), gtNum(x, 5)));
     expect(r.pred?.op).toBe("gt");
     if (r.pred?.op === "gt") expect(r.pred.b).toEqual(lit(5));
+  });
+});
+
+describe("add sum dispatch dedup", () => {
+  it("does not collapse same-prim members with distinct terms", () => {
+    // number(x) | number(y) + 1 → 两个不同 term 的 number，不能按 prim:number 去重塌缩
+    const r = add(makeSum(numVar("x"), numVar("y")), numLit(1));
+    expect(r.shape.k).toBe("sum");
+    if (r.shape.k === "sum") expect(r.shape.members.length).toBe(2);
   });
 });
