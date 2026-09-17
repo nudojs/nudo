@@ -266,7 +266,8 @@ function collectBoundsFromPred(pred: Pred, term: Term, acc: NumBounds): void {
     }
     if (p.op === "gt" && match(p.a) && p.b.op === "lit" && typeof p.b.value === "number") {
       const n = p.b.value;
-      if (acc.lo === undefined || n > acc.lo.value || (n === acc.lo.value && p.op === "gt")) {
+      // 等值处 strict 胜出（与 lt 对称，保证 le→gt 顺序无关）
+      if (acc.lo === undefined || n > acc.lo.value || (n === acc.lo.value && !acc.lo.strict)) {
         acc.lo = { value: n, strict: true };
       }
       return;

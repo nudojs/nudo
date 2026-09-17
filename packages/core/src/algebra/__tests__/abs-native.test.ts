@@ -143,6 +143,12 @@ describe("abs-native ast-eval", () => {
     expect(show(analyzeFn(`function f(){ return Number.parseInt("0xff"); }`, "f", []))).toBe("255");
   });
 
+  it("parseInt honors explicit radix", () => {
+    expect(show(analyzeFn(`function f(){ return parseInt("ff", 16); }`, "f", []))).toBe("255");
+    expect(show(analyzeFn(`function f(){ return parseInt("10", 2); }`, "f", []))).toBe("2");
+    expect(show(analyzeFn(`function f(){ return parseInt("10", 8); }`, "f", []))).toBe("8");
+  });
+
   it("Array.isArray on any/union is unknown boolean, not a definitive false", () => {
     // any：可能是数组，不能下 false 结论（否则 if (Array.isArray(x)) 剪掉真分支）
     const anyArg = abs({ k: "any" }, v("x"), undefined, "path");
@@ -166,6 +172,22 @@ describe("abs-native ast-eval", () => {
     const r2 = analyzeFn(`function f(x){ return Array.isArray(x); }`, "f", [sumArg]);
     expect(r2.shape).toEqual({ k: "prim", type: "boolean" });
     expect(r2.term).toBeUndefined();
+  });
+
+  it("Array.isArray sees through brand (compile-time tag)", () => {
+    const brandedArr = abs(
+      {
+        k: "brand",
+        name: "MyArr",
+        shape: abs({ k: "arr", element: num() }, undefined, undefined, "path"),
+      },
+      undefined,
+      undefined,
+      "path",
+    );
+    const r = analyzeFn(`function f(x){ return Array.isArray(x); }`, "f", [brandedArr]);
+    expect(r.shape).toEqual({ k: "prim", type: "boolean" });
+    expect(r.term?.op === "lit" && r.term.value).toBe(true);
   });
 
   it("Object.keys of object shape", () => {

@@ -100,6 +100,29 @@ function parseIt(s) {
     expect(formatShape(result.functions[0].cases[0].abs)).toBe("42");
   });
 
+  it("parseInt via es env honors hex prefix (no forced radix 10)", () => {
+    const source = `
+/// @nudo:env es
+
+/**
+ * @nudo:case "hex" ("0x10")
+ */
+function parseHex(s) {
+  return parseInt(s);
+}
+
+/**
+ * @nudo:case "hexr" ("ff", 16)
+ */
+function parseHexR(s, r) {
+  return parseInt(s, r);
+}
+`;
+    const result = analyzeFile("/test/parse-hex.js", source);
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe("16");
+    expect(formatShape(result.functions[1].cases[0].abs)).toBe("255");
+  });
+
   it("Promise.resolve preserves argument type", () => {
     const source = `
 /// @nudo:env es

@@ -104,12 +104,13 @@ export function defineEnv(): EnvDefinition {
 
   const parseIntImplAbs: AbsSigImpl = (args) => {
     const s = absStrLit(args[0]);
-    const radix = args[1] !== undefined ? absNumLit(args[1]) : 10;
-    if (s !== undefined && radix !== undefined) {
-      const result = parseInt(s, radix);
-      return Number.isNaN(result) ? numLit(NaN) : numLit(result);
-    }
-    return undefined;
+    if (s === undefined) return undefined;
+    // 无 radix：遵循 0x/0o/0b 前缀（与 core foldParseInt / 真 JS 对齐，不可默认 10）
+    if (args[1] === undefined) return numLit(parseInt(s));
+    const radix = absNumLit(args[1]);
+    if (radix === undefined) return undefined;
+    if (!Number.isInteger(radix) || radix < 2 || radix > 36) return numLit(NaN);
+    return numLit(parseInt(s, radix));
   };
 
   const parseFloatImplAbs: AbsSigImpl = (args) => {
@@ -157,8 +158,10 @@ export function defineEnv(): EnvDefinition {
   const isArrayImplAbs: AbsSigImpl = (args) => {
     const a = args[0];
     if (!a) return undefined;
-    if (a.shape.k === "arr" || a.shape.k === "tuple") return boolLit(true);
-    if (a.shape.k === "prim" || a.shape.k === "obj") return boolLit(false);
+    let s = a.shape;
+    while (s.k === "brand") s = s.shape.shape;
+    if (s.k === "arr" || s.k === "tuple") return boolLit(true);
+    if (s.k === "prim" || s.k === "obj" || s.k === "eff") return boolLit(false);
     if (a.term?.op === "lit") return boolLit(false);
     return undefined;
   };

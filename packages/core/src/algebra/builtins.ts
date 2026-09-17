@@ -123,6 +123,19 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
   return undefined;
 }
 
+/**
+ * parseInt(s, radix?)：
+ * - 无 radix：遵循 0x/0o/0b 前缀（不可强制 10）
+ * - 有 radix 且为 2–36 整数：按显式进制
+ * - radix 非法（非整数或越界）：运行时为 NaN
+ */
+function foldParseInt(s: string | number, radix: number | undefined): Abs {
+  const str = String(s);
+  if (radix === undefined) return numLit(parseInt(str));
+  if (!Number.isInteger(radix) || radix < 2 || radix > 36) return numLit(NaN);
+  return numLit(parseInt(str, radix));
+}
+
 /** Number.isInteger / isNaN / parseFloat 等 */
 export function evalNumberStatic(name: string, args: Abs[]): Abs | undefined {
   const a0 = args[0] ? litValue(args[0]) : undefined;
@@ -137,12 +150,15 @@ export function evalNumberStatic(name: string, args: Abs[]): Abs | undefined {
       if (typeof a0 === "number") return boolLit(Number.isFinite(a0));
       return boolPrim();
     case "parseInt":
-    case "parseFloat":
       if (typeof a0 === "string" || typeof a0 === "number") {
-        // 不强制 radix 10：全局 parseInt 对 "0x"/"0o"/"0b" 前缀有自己的进制判定
-        const n = name === "parseInt" ? parseInt(String(a0)) : parseFloat(String(a0));
-        return numLit(n);
+        const radix = args[1] ? litValue(args[1]) : undefined;
+        if (radix === undefined) return foldParseInt(a0, undefined);
+        if (typeof radix === "number") return foldParseInt(a0, radix);
+        return numPrim();
       }
+      return numPrim();
+    case "parseFloat":
+      if (typeof a0 === "string" || typeof a0 === "number") return numLit(parseFloat(String(a0)));
       return numPrim();
     case "MAX_SAFE_INTEGER":
       return numLit(Number.MAX_SAFE_INTEGER);
@@ -156,7 +172,12 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
   const a0 = args[0] ? litValue(args[0]) : undefined;
   switch (name) {
     case "parseInt":
-      if (typeof a0 === "string" || typeof a0 === "number") return numLit(parseInt(String(a0)));
+      if (typeof a0 === "string" || typeof a0 === "number") {
+        const radix = args[1] ? litValue(args[1]) : undefined;
+        if (radix === undefined) return foldParseInt(a0, undefined);
+        if (typeof radix === "number") return foldParseInt(a0, radix);
+        return numPrim();
+      }
       return numPrim();
     case "parseFloat":
       if (typeof a0 === "string" || typeof a0 === "number") return numLit(parseFloat(String(a0)));
@@ -180,17 +201,24 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
   }
 }
 
+/** brand 是编译期标签，运行时仍是底层值；isArray 须看穿 */
+function peelBrand(shape: Abs["shape"]): Abs["shape"] {
+  let s = shape;
+  while (s.k === "brand") s = s.shape.shape;
+  return s;
+}
+
 /** Array.isArray / Array.from / Array.of */
 export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
   const a0 = args[0];
   switch (name) {
     case "isArray": {
       if (!a0) return boolLit(false);
-      const k = a0.shape.k;
-      if (k === "arr" || k === "tuple") return boolLit(true);
+      const s = peelBrand(a0.shape);
+      if (s.k === "arr" || s.k === "tuple") return boolLit(true);
       // any/unknown/sum 可能是数组（sum 成员可含 arr/tuple）。下 `false` 结论
       // 会让 `if (Array.isArray(x))` 错误剪掉真分支（soundness bug）→ 诚实 unknown。
-      if (k === "any" || k === "unknown" || k === "sum") return boolPrim();
+      if (s.k === "any" || s.k === "unknown" || s.k === "sum") return boolPrim();
       return boolLit(false);
     }
     case "of":
