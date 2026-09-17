@@ -36,11 +36,16 @@ export const ptypeof = (t: Term, type: PrimName): Pred => ({
 
 export function and(...preds: Pred[]): Pred {
   const flat: Pred[] = [];
+  const pushUnique = (p: Pred): void => {
+    if (flat.some((q) => predEquals(q, p))) return;
+    flat.push(p);
+  };
   for (const p of preds) {
     if (p.op === "true") continue;
     if (p.op === "false") return pFalse;
-    if (p.op === "and") flat.push(...p.args);
-    else flat.push(p);
+    if (p.op === "and") {
+      for (const q of p.args) pushUnique(q);
+    } else pushUnique(p);
   }
   if (flat.length === 0) return pTrue;
   if (flat.length === 1) return flat[0]!;
@@ -49,11 +54,16 @@ export function and(...preds: Pred[]): Pred {
 
 export function or(...preds: Pred[]): Pred {
   const flat: Pred[] = [];
+  const pushUnique = (p: Pred): void => {
+    if (flat.some((q) => predEquals(q, p))) return;
+    flat.push(p);
+  };
   for (const p of preds) {
     if (p.op === "false") continue;
     if (p.op === "true") return pTrue;
-    if (p.op === "or") flat.push(...p.args);
-    else flat.push(p);
+    if (p.op === "or") {
+      for (const q of p.args) pushUnique(q);
+    } else pushUnique(p);
   }
   if (flat.length === 0) return pFalse;
   if (flat.length === 1) return flat[0]!;

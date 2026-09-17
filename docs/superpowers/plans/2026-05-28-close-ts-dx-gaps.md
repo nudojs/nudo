@@ -251,8 +251,8 @@ flowchart TB
 ### Phase 0 — 门槛（1–2 周量级）
 
 - [x] **C0.1–C0.4** 移除 body slot 门禁 + 测试/文档迁移（模型纠偏，优先于一切叙事）
-- [ ] **B1** bench 进 CI
-- [ ] **D3** pred 化简（低成本高观感）
+- [x] **B1** bench 进 CI（待开：现有 `benchmark:gate`，需接到 workflow）
+- [x] **D3** pred 化简（低成本高观感）
 - [x] **D1 + F3** 叙事与示例按 §0.1 纠偏（examples / vs-ts / website check 指南已改；根 README 对比表待 F3 收尾）
 - [ ] **A2** 分析范围配置设计拍板（可先文档后实现）
 
