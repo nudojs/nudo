@@ -133,7 +133,7 @@ flowchart TB
 
 | ID | 任务 | 验收 | 依赖 | 状态 |
 |---|---|---|---|---|
-| B1 | **把 micro bench 升格为 CI gate**：cold / warm / LS-invalidated / scaling 曲线；回退阈值失败即红 | `pnpm run benchmark:gate` 进 CI | 现有 bench | [ ] |
+| B1 | **把 micro bench 升格为 CI gate**：cold / warm / LS-invalidated / scaling 曲线；回退阈值失败即红 | `pnpm run benchmark:gate` 进 CI | 现有 bench | [x] |
 | B2 | **编辑路径增量**：按文件脏标记 + 依赖边失效（隐式侧车边已在设计 §4.5）；避免整文件 Full sync 重算 | 单字符编辑 warm 分析 < 5ms（中位文件） | design-persistent-cache | [ ] |
 | B3 | **`effectiveInterface` 跨会话缓存落地**（设计 Phase B） | 二次启动契约读取命中磁盘缓存 | design-persistent-cache | [ ] |
 | B4 | **polyvariant 预算**：调用点/实例化上限 + 可配置 widen；超限可预测降级 | 400 函数缩放曲线不劣于 tsc LS 同档；超限有可解释 `#widened` | C 系列 | [ ] |
@@ -212,9 +212,9 @@ flowchart TB
 
 | ID | 任务 | 验收 | 依赖 | 状态 |
 |---|---|---|---|---|
-| D1 | **`vs-ts` 示例改为 interface 主路径对照** | structure/constraints 各有「侧车契约」正负例；**删除或改写**「零注解 body 推出 shape」卖点行 | C0 | [ ] |
+| D1 | **`vs-ts` 示例改为 interface 主路径对照** | structure/constraints 各有「侧车契约」正负例；**删除或改写**「零注解 body 推出 shape」卖点行 | C0 | [x] |
 | D2 | **报告默认「人类档」**：一行 code + actual/expected + suggestion；`--verbose` / agent JSON 才吐完整 Abs | CLI 默认可读；`--json` 含 `signatures[].abs` | — | [ ] |
-| D3 | **pred 化简**：`ms > 0 ∧ ms > 0` 等合取去重/幂等 | 金样例无重复谓词 | — | [ ] |
+| D3 | **pred 化简**：`ms > 0 ∧ ms > 0` 等合取去重/幂等 | 金样例无重复谓词；`and`/`or` 用 `predEquals` 去重 | — | [x] |
 | D4 | **诊断码收敛与文案**：`nudo:*` 表与 quickfix 一一对应；`arg-structure` 仅 HOF | 网站 check 指南与 CLI 输出一致 | C0.2 | [ ] |
 | D5 | **`nudo interface` 日用命令打磨**：diff、drift 解释、只刷新已有生成段的 UX | 文档 + 一键 doctor | — | [ ] |
 | D6 | **执法分档可见**：handwritten=义务 / generated=事实+drift / implicit=展示 | CLI/IDE 标注来源层 | — | [ ] |
@@ -240,7 +240,7 @@ flowchart TB
 |---|---|---|---|
 | F1 | **「30 分钟」路径**：infer → IDE hover → 一条侧车契约 → check 红灯 | 网站 getting-started 只含必要概念 | [ ] |
 | F2 | **概念分层文档**：Day-0（零概念）/ Day-1（侧车契约）/ 进阶（Abs、case、mock） | 三份入口互链；Abs 不出现在 Day-0 | [ ] |
-| F3 | **纠偏 README / website 对比表**：与 §0.1 一致；去掉「从 body 零注解推出 shape」作为主卖点；写清「无契约=调用点/any」 | 根 README + website intro + vs-ts README | C0 | [ ] |
+| F3 | **纠偏 README / website 对比表**：与 §0.1 一致；去掉「从 body 零注解推出 shape」作为主卖点；写清「无契约=调用点/any」 | 根 README + website intro + vs-ts README | C0 | [x] |
 | F4 | **「vs TypeScript」定位页**：可替代场景 / 不替代场景 / 共存 | 诚实，不弱化目标 | [ ] |
 | F5 | **学习成本实测脚本**：新人任务计时（可选） | 内部基准，非门禁 | [ ] |
 
@@ -251,9 +251,9 @@ flowchart TB
 ### Phase 0 — 门槛（1–2 周量级）
 
 - [x] **C0.1–C0.4** 移除 body slot 门禁 + 测试/文档迁移（模型纠偏，优先于一切叙事）
-- [x] **B1** bench 进 CI（待开：现有 `benchmark:gate`，需接到 workflow）
+- [x] **B1** bench 进 CI（`benchmark` job：`pnpm run benchmark` + `benchmark:gate`）
 - [x] **D3** pred 化简（低成本高观感）
-- [x] **D1 + F3** 叙事与示例按 §0.1 纠偏（examples / vs-ts / website check 指南已改；根 README 对比表待 F3 收尾）
+- [x] **D1 + F3** 叙事与示例按 §0.1 纠偏（examples / vs-ts / website check / 根 README）
 - [ ] **A2** 分析范围配置设计拍板（可先文档后实现）
 
 ### Phase 1 — IDE 可日用（2–4 周）

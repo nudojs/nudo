@@ -6,10 +6,11 @@ A type inference engine for JavaScript powered by **abstract interpretation** �
 
 | | TypeScript | Nudo |
 |---|---|---|
-| Type annotations | Required everywhere | Optional — `@nudo:case` directives add precision; all functions inferred from call sites without any directives |
+| Type annotations | Required everywhere | Optional — `*.nudo.js` contracts / `@nudo:refine` when you want obligations; call-site facts otherwise |
 | Separate type system | Yes (structural) | No — types derived from execution |
 | Build step | `tsc` compilation | None — works on plain `.js` |
 | Type accuracy | Depends on annotations | Follows actual runtime semantics |
+| Structure without interface | Needs `interface` | Explicit shape contract (`shape({…})`); **no** body-AST slot invention |
 
 Nudo infers types by **running your functions** with symbolic inputs like `T.number` or `T.string`, tracking how values flow through branches, operators, and calls.
 
