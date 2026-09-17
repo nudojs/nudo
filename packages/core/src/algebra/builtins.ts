@@ -186,7 +186,11 @@ export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
     case "isArray": {
       if (!a0) return boolLit(false);
       const k = a0.shape.k;
-      return boolLit(k === "arr" || k === "tuple");
+      if (k === "arr" || k === "tuple") return boolLit(true);
+      // any/unknown/sum 可能是数组（sum 成员可含 arr/tuple）。下 `false` 结论
+      // 会让 `if (Array.isArray(x))` 错误剪掉真分支（soundness bug）→ 诚实 unknown。
+      if (k === "any" || k === "unknown" || k === "sum") return boolPrim();
+      return boolLit(false);
     }
     case "of":
       return abs({ k: "arr", element: a0 ?? unknown }, undefined, undefined, "path");

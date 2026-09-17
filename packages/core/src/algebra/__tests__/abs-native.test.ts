@@ -138,6 +138,31 @@ describe("abs-native ast-eval", () => {
     expect(show(analyzeFn(`function f(){ return Number.isInteger(3); }`, "f", []))).toBe("true");
   });
 
+  it("Array.isArray on any/union is unknown boolean, not a definitive false", () => {
+    // any：可能是数组，不能下 false 结论（否则 if (Array.isArray(x)) 剪掉真分支）
+    const anyArg = abs({ k: "any" }, v("x"), undefined, "path");
+    const r1 = analyzeFn(`function f(x){ return Array.isArray(x); }`, "f", [anyArg]);
+    expect(r1.shape).toEqual({ k: "prim", type: "boolean" });
+    expect(r1.term).toBeUndefined();
+
+    // union：number[] | string —— 可能命中数组成员
+    const sumArg = abs(
+      {
+        k: "sum",
+        members: [
+          abs({ k: "arr", element: num() }, undefined, undefined, "path"),
+          abs({ k: "prim", type: "string" }, undefined, undefined, "path"),
+        ],
+      },
+      undefined,
+      undefined,
+      "path",
+    );
+    const r2 = analyzeFn(`function f(x){ return Array.isArray(x); }`, "f", [sumArg]);
+    expect(r2.shape).toEqual({ k: "prim", type: "boolean" });
+    expect(r2.term).toBeUndefined();
+  });
+
   it("Object.keys of object shape", () => {
     const src = `function f(){ return Object.keys({ a: 1, b: "x" }); }`;
     const r = analyzeFn(src, "f", []);
