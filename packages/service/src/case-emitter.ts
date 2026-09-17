@@ -1,4 +1,4 @@
-import { type Abs, type TypeValue, absToTypeValue } from "@nudojs/core";
+import { type Abs } from "@nudojs/core";
 import { parse, extractDirectives } from "@nudojs/parser";
 import type { CaseDirective } from "@nudojs/parser";
 import type { AnalysisResult } from "./analyzer.ts";
@@ -7,7 +7,7 @@ import type { AnalysisResult } from "./analyzer.ts";
  * 调用点固化（case emission）：把分析产出的合成 case（call@L* / call@symbolic）
  * 序列化为 `@nudo:case` 指令注释文本、从源码剥离已生成指令、把指令插回源码。
  *
- * 指令文法权威是 parser 的 parseTypeValueExpr；它对字符串字面量做的是
+ * 指令文法权威是 parser 的 parseCaseArgExpr；它对字符串字面量做的是
  * 原样 slice（不反转义），因此这里的"转义"策略是：选择一种引号包裹使值
  * 原样保留（含 `"` 的值用单引号包裹，反之亦然），无法原样保留的值一律
  * 返回 null（见 serializeStringLiteral）。
@@ -22,7 +22,7 @@ const GENERATED_CASE_LINE_REGEX = /^\s*\*?\s*@nudo:case\s+"(call@[^"]*)"/;
 /** 合法裸写的对象键：JS 标识符 */
 const IDENT_KEY_REGEX = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
-/** parseTypeValueExpr 能吃回去的数字字面量（科学计数法等不收） */
+/** parseCaseArgExpr 能吃回去的数字字面量（科学计数法等不收） */
 const NUMBER_LITERAL_REGEX = /^-?\d+(\.\d+)?$/;
 
 /** 字符串值中会破坏指令行结构的字符：参数逗号切分 / 括号配对（冒号在值位置安全，键位置才禁） */
@@ -35,7 +35,7 @@ const UNSAFE_KEY_CHARS = /[,()[\]{}:]/;
 const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
 
 /**
- * 字符串字面量 → 可被 parseTypeValueExpr 原样解析回去的带引号文本。
+ * 字符串字面量 → 可被 parseCaseArgExpr 原样解析回去的带引号文本。
  * 两种引号并存、含逗号/括号/冒号等结构字符、控制字符、块注释终止序列
  * （会提前结束 JSDoc 块）时无法安全表达，返回 null。
  */
@@ -60,60 +60,60 @@ function serializeObjectKey(key: string): string | null {
   return `"${key}"`;
 }
 
-/** 单个 TypeValue → parseTypeValueExpr 可解析回去的表达式文本；不可表达返回 null */
-export function serializeCaseArg(tv: TypeValue): string | null {
-  switch (tv.kind) {
-    case "primitive":
-      // bigint / symbol 不在指令文法内
-      if (tv.type === "number" || tv.type === "string" || tv.type === "boolean") {
-        return `T.${tv.type}`;
+/** 单个 Abs → parseCaseArgExpr 可解析回去的表达式文本；不可表达返回 null */
+export function serializeCaseArg(a: Abs): string | null {
+  const s = a.shape;
+  if (a.term?.op === "lit") {
+    const v = a.term.value;
+    if (typeof v === "number") {
+      if (!Number.isFinite(v)) return null;
+      const n = String(v);
+      return NUMBER_LITERAL_REGEX.test(n) ? n : null;
+    }
+    if (typeof v === "boolean") return v ? "true" : "false";
+    if (v === null) return "null";
+    if (v === undefined) return "undefined";
+    if (typeof v === "bigint") return null;
+    if (typeof v === "string") return serializeStringLiteral(v);
+    return null;
+  }
+  switch (s.k) {
+    case "prim":
+      if (s.type === "number" || s.type === "string" || s.type === "boolean") {
+        return `T.${s.type}`;
       }
       return null;
     case "unknown":
+    case "any":
       return "T.unknown";
     case "never":
       return "T.never";
-    case "literal": {
-      const v = tv.value;
-      if (typeof v === "number") {
-        // NaN / Infinity / 1e21 等序列化后文法解析不回同值
-        if (!Number.isFinite(v)) return null;
-        const s = String(v);
-        return NUMBER_LITERAL_REGEX.test(s) ? s : null;
-      }
-      if (typeof v === "boolean") return v ? "true" : "false";
-      if (v === null) return "null";
-      if (v === undefined) return "undefined";
-      // bigint 字面量不可固化：文法无 bigint 字面量支持，序列化会退化成字符串
-      if (typeof v === "bigint") return null;
-      return serializeStringLiteral(v);
-    }
-    case "union": {
+    case "sum": {
       const parts: string[] = [];
-      for (const member of tv.members) {
-        const s = serializeCaseArg(member);
-        if (s === null) return null;
-        parts.push(s);
+      for (const member of s.members) {
+        const ser = serializeCaseArg(member);
+        if (ser === null) return null;
+        parts.push(ser);
       }
       return `T.union(${parts.join(", ")})`;
     }
-    case "array": {
-      const el = serializeCaseArg(tv.element);
+    case "arr": {
+      const el = serializeCaseArg(s.element);
       return el === null ? null : `T.array(${el})`;
     }
     case "tuple": {
       const parts: string[] = [];
-      for (const el of tv.elements) {
-        const s = serializeCaseArg(el);
-        if (s === null) return null;
-        parts.push(s);
+      for (const el of s.elements) {
+        const ser = serializeCaseArg(el);
+        if (ser === null) return null;
+        parts.push(ser);
       }
       return `[${parts.join(", ")}]`;
     }
-    case "object": {
+    case "obj": {
       const parts: string[] = [];
-      for (const [key, value] of Object.entries(tv.properties)) {
-        const vs = serializeCaseArg(value);
+      for (const [key, slot] of Object.entries(s.slots)) {
+        const vs = serializeCaseArg(slot.value);
         if (vs === null) return null;
         const ks = serializeObjectKey(key);
         if (ks === null) return null;
@@ -122,7 +122,7 @@ export function serializeCaseArg(tv: TypeValue): string | null {
       return parts.length === 0 ? "{}" : `{ ${parts.join(", ")} }`;
     }
     default:
-      // function / promise / instance / refined：指令文法不可表达
+      // fn / eff / brand：指令文法不可表达
       return null;
   }
 }
@@ -130,13 +130,12 @@ export function serializeCaseArg(tv: TypeValue): string | null {
 /**
  * 组装单行 ` * @nudo:case "name" (a, b)` 指令文本（无尾换行）。
  * 任一实参不可序列化、或名字含双引号/换行（名字正则 `"([^"]+)"` 承载不了）→ 整体 null。
- * 序列化经 Abs → TypeValue 桥（serializeCaseArg 仍吃 TypeValue 文法）。
  */
 export function buildCaseDirective(name: string, argsAbs: Abs[]): string | null {
   if (name.includes('"') || /[\r\n]/.test(name)) return null;
   const parts: string[] = [];
   for (const arg of argsAbs) {
-    const s = serializeCaseArg(absToTypeValue(arg));
+    const s = serializeCaseArg(arg);
     if (s === null) return null;
     parts.push(s);
   }

@@ -110,7 +110,6 @@ export {
   clearAnalysisSessionCaches,
   resetAllAnalysisCaches,
 } from "./session-cache.ts";
-export { envValueToAbs } from "./env-to-abs.ts";
 export type { BMemberDiag } from "@nudojs/core";
 
 export {
@@ -134,12 +133,12 @@ export {
 } from "./semantic-tokens.ts";
 
 export {
-  typeValueToTSType,
   generateDts,
   generateFunctionDtsLines,
+  absToTSType,
 } from "./dts-generator.ts";
 
-export { typeValueToZodSchema } from "./schema-generator.ts";
+export { absToZodSchema } from "./schema-generator.ts";
 export { generateGuardFunction, generateGuardFunctionFromAbs } from "./guard-generator.ts";
 
 export {

@@ -3,13 +3,7 @@ import { resolve, dirname } from "node:path";
 import type { Node } from "@babel/types";
 import traverse from "@babel/traverse";
 import {
-  type TypeValue,
-  T,
-  typeValueToString,
-  simplifyUnion,
-  collapseLiteralUnion,
   createEnvironment,
-  isSubtypeOf,
   type Environment,
   generalizeFromAst,
   termToString,
@@ -25,9 +19,6 @@ import {
   absFunction,
   checkInjectedDomainEvidence,
   type AbsCallRecord,
-  typeValueToAbs,
-  absToTypeValue,
-  joinAbs,
   formatAbs,
   formatAbsMultiline,
   formatShape,
@@ -619,52 +610,6 @@ function findSingleModuleExportsFunction(ast: Node): Node | null {
   return found;
 }
 
-function typeStructureKey(tv: TypeValue): string {
-  // Self-referential structures (x.y = x surviving a clone) would recurse
-  // infinitely: a seen-set renders revisits as a cycle token.
-  return typeStructureKeyUncached(tv, new Set());
-}
-
-function typeStructureKeyUncached(tv: TypeValue, seen: Set<object>): string {
-  // Path-scoped seen-set (backtracked after each expansion): a node renders
-  // as a cycle token only while its own expansion is on the stack, so
-  // shared singletons keep their full key.
-  const enter = (inner: TypeValue): string => {
-    if (inner && typeof inner === "object") {
-      if (seen.has(inner)) return "«cycle»";
-      seen.add(inner);
-      const out = typeStructureKeyUncached(inner, seen);
-      seen.delete(inner);
-      return out;
-    }
-    return typeStructureKeyUncached(inner, seen);
-  };
-  switch (tv.kind) {
-    case "literal":
-      return `lit(${typeof tv.value}:${String(tv.value)})`;
-    case "primitive":
-      return `prim(${tv.type})`;
-    case "array":
-      return `arr(${enter(tv.element)})`;
-    case "tuple":
-      return `tup(${tv.elements.map(enter).join(",")})`;
-    case "object":
-      return `obj(${Object.keys(tv.properties).sort().map((k) => `${k}:${enter(tv.properties[k])}`).join(",")})`;
-    case "function":
-      return `fn(${tv.params.join(",")})`;
-    case "promise":
-      return `prom(${enter(tv.value)})`;
-    case "instance":
-      return `inst(${tv.className})`;
-    case "refined":
-      return `ref(${enter(tv.base)})`;
-    case "union":
-      return `uni(${tv.members.map(enter).sort().join("|")})`;
-    default:
-      return tv.kind;
-  }
-}
-
 const MAX_PRECISE_CALLSITE_CASES = 3;
 const COLLAPSE_LITERAL_THRESHOLD = 4;
 
@@ -779,27 +724,6 @@ function synthesizeExternalFunctions(records: CallRecord[], currentFile: string)
     out.push(analysis);
   }
   return out;
-}
-
-function receiverTypeToDisplay(tv: TypeValue): string {
-  switch (tv.kind) {
-    case "literal": {
-      const v = tv.value;
-      if (v === null) return "null";
-      if (v === undefined) return "undefined";
-      return typeof v;
-    }
-    case "union":
-      return tv.members.map(receiverTypeToDisplay).join(" | ");
-    default:
-      return typeValueToString(tv);
-  }
-}
-
-function receiverIsConcrete(tv: TypeValue): boolean {
-  if (tv.kind === "unknown") return false;
-  if (tv.kind === "union") return tv.members.every((m) => m.kind !== "unknown");
-  return true;
 }
 
 export function collectEnvNames(filePath: string, source: string, includeProject: boolean): string[] {
@@ -1058,10 +982,10 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
   const envNames = [...new Set([...projectEnvNames, ...fileEnvNames])];
 
   const callRecords: CallRecord[] = [];
-  // TypeValue env 仅作 BindingInfo.type 的外延占位（Abs 绑定另走 absBinds）
+  // Environment 绑定 Abs（BindingInfo.abs）；nodeAbsMap 另走 absBinds
   const globalEnv = createEnvironment();
 
-  /** B 路径已报告的 method/property 名（避免 TypeValue 双报） */
+  /** B 路径已报告的 method/property 名（避免双报） */
   const bMemberDiagNames = new Set<string>();
   const bMemberDiagSeen = new Set<string>();
   const pushBMemberDiag = (d: { kind: string; name: string; receiver: string; line?: number; column?: number; origin?: { line: number; column: number } }, fallbackLine: number) => {
@@ -1745,7 +1669,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
         if (rec.resultAbs.shape.k !== "never" && rec.argAbs.length > 0) {
           absRaw = tryEvalAbsRaw(source, candidate.name, rec.argAbs, filePath, mockSeedsToAbsMocks(seeds));
           if (absRaw) {
-            if (absIsBetter(absToTypeValue(absRaw), safeAbsToTv(rec.resultAbs))) {
+            if (absIsBetter(absRaw, rec.resultAbs)) {
               absResult = absRaw;
             }
           }
@@ -1862,7 +1786,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
         entryAbs = absUnknown;
         entryThrowsAbs = neverAbs;
       } else {
-        const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, argAbsEntry.map(absToTypeValue), filePath, seeds.seedVars);
+        const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, argAbsEntry, filePath, seeds.seedVars);
         if (absEntry) {
           entryAbs = absEntry;
           entryThrowsAbs = neverAbs;
@@ -1987,28 +1911,28 @@ export function buildNodeTypeMap(
 }
 
 /**
- * Abs 是否比 TypeValue 求值结果更有信息量。
- * 仅在 TypeValue 侧 unknown / 裸 number 且 Abs 带约束时替换，
- * 避免用 Abs 的粗结果盖掉 mock/callsite 已精确投影的结构。
+ * Abs 是否比既有结果更有信息量。
+ * 仅在既有侧 unknown / 裸 prim 且新结果带约束时替换，
+ * 避免用粗结果盖掉 mock/callsite 已精确投影的结构。
  */
-function absIsBetter(absTv: TypeValue, prev: TypeValue): boolean {
-  if (prev.kind === "unknown") return absTv.kind !== "unknown";
-  if (absTv.kind === "unknown" || absTv.kind === "never") return false;
-  // 保留结构化结果（object/array/tuple/union/literal）
-  if (
-    prev.kind === "literal" ||
-    prev.kind === "object" ||
-    prev.kind === "array" ||
-    prev.kind === "tuple" ||
-    prev.kind === "union" ||
-    prev.kind === "function" ||
-    prev.kind === "instance" ||
-    prev.kind === "promise"
-  ) {
-    return false;
-  }
-  // Abs refined vs 裸 primitive：约束更有信息
-  if (absTv.kind === "refined" && prev.kind === "primitive") return true;
+function absIsBetter(next: Abs, prev: Abs): boolean {
+  const isBareUnknown = (a: Abs): boolean => a.shape.k === "unknown" && !a.term;
+  const isNever = (a: Abs): boolean => a.shape.k === "never";
+  const isStructured = (a: Abs): boolean =>
+    a.term?.op === "lit" ||
+    a.shape.k === "obj" ||
+    a.shape.k === "arr" ||
+    a.shape.k === "tuple" ||
+    a.shape.k === "sum" ||
+    a.shape.k === "fn" ||
+    a.shape.k === "brand" ||
+    a.shape.k === "eff";
+  const hasPred = (a: Abs): boolean => !!a.pred && a.pred.op !== "true";
+
+  if (isBareUnknown(prev)) return !isBareUnknown(next);
+  if (isBareUnknown(next) || isNever(next)) return false;
+  if (isStructured(prev)) return false;
+  if (hasPred(next) && prev.shape.k === "prim" && !hasPred(prev)) return true;
   return false;
 }
 /**
@@ -2196,7 +2120,7 @@ function resolveImportAbs(spec: string, fromFile: string): string | null {
 function tryEvalAbsRaw(
   source: string,
   fnName: string,
-  args: TypeValue[] | Abs[],
+  args: Abs[],
   filePath?: string,
   mocks?: Record<string, Abs>,
 ): Abs | undefined {
@@ -2210,17 +2134,13 @@ function tryEvalAbsRaw(
 function tryEvalAbsFull(
   source: string,
   fnName: string,
-  args: TypeValue[] | Abs[],
+  args: Abs[],
   filePath?: string,
   mocks?: Record<string, Abs>,
 ): { result: Abs; throws: Abs; throwLoc?: { line: number; column: number } } | undefined {
   if (/\brequire\s*\(/.test(source)) return undefined;
   try {
-    const absArgs: Abs[] = args.map((a) =>
-      a && typeof a === "object" && "shape" in a && "conf" in a
-        ? (a as Abs)
-        : typeValueToAbs(a as TypeValue),
-    );
+    const absArgs = args;
 
     if (filePath) {
       const viaB = tryBPathCallFull(source, filePath, fnName, absArgs, { mocks });
@@ -2271,7 +2191,7 @@ function tryEvalAbsFull(
 function tryEvalEntryAbs(
   source: string,
   fnName: string,
-  args: TypeValue[],
+  args: Abs[],
   filePath?: string,
   mocks?: Record<string, Abs>,
 ): Abs | undefined {
@@ -2325,31 +2245,11 @@ function attachAbsToIntension(
   };
 }
 
-/** TypeValue → Abs（dts / argAbs 用；失败落 opaque unknown，诚实缺口） */
-function safeArgAbs(v: TypeValue): Abs {
-  try {
-    return typeValueToAbs(v);
-  } catch {
-    return { shape: { k: "unknown" }, conf: "opaque" };
-  }
-}
-
 function safeAbsOrUnknown(a: Abs | undefined): Abs {
   if (!a || typeof a !== "object" || !("shape" in a) || !a.shape) {
     return { shape: { k: "unknown" }, conf: "opaque" };
   }
   return a;
-}
-
-function safeAbsToTv(a: Abs | undefined): TypeValue {
-  if (!a || typeof a !== "object" || !("shape" in a) || !a.shape) {
-    return T.unknown;
-  }
-  try {
-    return absToTypeValue(a);
-  } catch {
-    return T.unknown;
-  }
 }
 
 /**
@@ -2382,37 +2282,6 @@ function callRecordFromAbsCall(
     rec.targetExport = imp.exportName;
   }
   return rec;
-}
-
-/** cases 实参 → argAbs（与 args 对齐；缺位不填） */
-function argAbsFromTypeValues(args: TypeValue[]): Abs[] {
-  return args.map(safeArgAbs);
-}
-
-/**
- * combinedAbs：优先 join 全部 case 结果 Abs；否则桥 combined TypeValue。
- * throwing case 的 result 是 never，join 时被吸收（与 TypeValue simplifyUnion 一致）。
- */
-function computeCombinedAbs(
-  cases: CaseResult[],
-  combined: TypeValue | undefined,
-): Abs | undefined {
-  const withAbs = cases.filter((c) => c.abs !== undefined);
-  if (cases.length > 0 && withAbs.length === cases.length) {
-    try {
-      return withAbs.map((c) => c.abs!).reduce((a, b) => joinAbs(a, b));
-    } catch {
-      /* fall through */
-    }
-  }
-  if (combined) {
-    try {
-      return typeValueToAbs(combined);
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
 }
 
 export type { CallRecord } from "./evaluator/evaluator-api.ts";

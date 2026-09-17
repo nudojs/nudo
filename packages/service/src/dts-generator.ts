@@ -1,7 +1,5 @@
-import type { TypeValue, Abs } from "@nudojs/core";
+import type { Abs } from "@nudojs/core";
 import {
-  getFnSig,
-  typeValueToAbs,
   joinAbs,
   litValue,
   abs as makeAbs,
@@ -10,70 +8,12 @@ import {
 } from "@nudojs/core";
 import type { AnalysisResult, CaseResult, FunctionAnalysis } from "./analyzer.ts";
 
-export function typeValueToTSType(tv: TypeValue): string {
-  switch (tv.kind) {
-    case "literal": {
-      const v = tv.value;
-      if (v === null) return "null";
-      if (v === undefined) return "undefined";
-      if (typeof v === "string") return JSON.stringify(v);
-      if (typeof v === "boolean") return String(v);
-      return String(v);
-    }
-    case "primitive":
-      return tv.type;
-    case "refined":
-      // TypeValue template refinements 已删 → base
-      return typeValueToTSType(tv.base);
-    case "object": {
-      const entries = Object.entries(tv.properties);
-      if (entries.length === 0) return "{}";
-      const inner = entries
-        .map(([k, v]) => `${k}: ${typeValueToTSType(v)}`)
-        .join("; ");
-      return `{ ${inner} }`;
-    }
-    case "array":
-      return `${wrapComplexType(tv.element)}[]`;
-    case "tuple": {
-      const inner = tv.elements.map(typeValueToTSType).join(", ");
-      return `[${inner}]`;
-    }
-    case "function": {
-      const params = tv.params
-        .map((p) => `${p}: unknown`)
-        .join(", ");
-      const sig = getFnSig(tv);
-      const retStr = sig?.returnType ? typeValueToTSType(sig.returnType) : "unknown";
-      return `(${params}) => ${retStr}`;
-    }
-    case "promise":
-      return `Promise<${typeValueToTSType(tv.value)}>`;
-    case "instance":
-      return tv.className;
-    case "union":
-      return tv.members.map(typeValueToTSType).join(" | ");
-    case "never":
-      return "never";
-    case "unknown":
-      return "unknown";
-  }
-}
-
-function wrapComplexType(tv: TypeValue): string {
-  const ts = typeValueToTSType(tv);
-  if (tv.kind === "union") return `(${ts})`;
-  return ts;
-}
-
 // ---------------------------------------------------------------------------
 // Abs → TS（dts 主路径）
 //
-// design-refine-derivation §12.1：`.d.ts` 优先源是 refine / Abs，不再经
-// absToTypeValue 再打印。TypeValue 仅作 Case: JSDoc 行的精确展示，以及
-// FunctionAnalysis 尚未挂 Abs 时的桥接源。
+// design-refine-derivation §12.1：`.d.ts` 优先源是 refine / Abs。
 //
-// widen 策略从旧 TypeValue 路径平移（参数逆变 / 返回协变），语义不变：
+// widen 策略（参数逆变 / 返回协变），语义不变：
 //   - 参数位：结构内字面量与收窄 pred 剥到基类型；同构元组 → array
 //   - 返回位：仅顶层（含 sum 成员）标量字面量 → 基类型，嵌套精度保留
 // ---------------------------------------------------------------------------
@@ -160,14 +100,6 @@ export function absToTSType(a: Abs): string {
     }
     default:
       return "unknown";
-  }
-}
-
-function safeTypeValueToAbs(tv: TypeValue): Abs {
-  try {
-    return typeValueToAbs(tv);
-  } catch {
-    return makeAbs({ k: "unknown" }, undefined, undefined, "opaque");
   }
 }
 
@@ -391,7 +323,7 @@ function generateJSDoc(fn: FunctionAnalysis, sig: MainSignature): string {
   // case，逐 case 重载会让声明面爆炸；② throwing case 的 `: never` 重载对
   // 调用方是陷阱（对 never 取属性/运算直接报错）；③ 字面量精度由下面的
   // Case: 行完整保留。与主签名同形的 case（无信息损失）不罗列。
-  // Case: 行仍走 TypeValue 精确展示（字面量台账），不参与主签名计算。
+  // Case: 行走 Abs 精确展示（字面量台账），不参与主签名计算。
   for (const c of fn.cases) {
     const preciseDiffers =
       c.argAbs.length !== sig.paramTypes.length ||

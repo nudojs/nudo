@@ -3,10 +3,10 @@ import { readFileSync, existsSync, watch, readdirSync, statSync, writeFileSync, 
 import { resolve, dirname, relative, join, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
-import { typeValueToString, formatShape, absToTypeValue } from "@nudojs/core";
+import { formatShape } from "@nudojs/core";
 import { extractDirectives } from "@nudojs/parser";
 import {
-  typeValueToZodSchema,
+  absToZodSchema,
   generateGuardFunction,
   generateGuardFunctionFromAbs,
   generateFunctionDtsLines,
@@ -1148,8 +1148,8 @@ async function runGenerate(
     if (format === "zod" || format === "all") {
       const lines: string[] = [`\n// === ${baseName} Zod Schemas ===`];
       for (const c of caseResults) {
-        const inputSchemas = c.argAbs.map((a, i) => `arg${i}: ${typeValueToZodSchema(absToTypeValue(a))}`).join(", ");
-        const outputSchema = typeValueToZodSchema(absToTypeValue(c.abs));
+        const inputSchemas = c.argAbs.map((a, i) => `arg${i}: ${absToZodSchema(a)}`).join(", ");
+        const outputSchema = absToZodSchema(c.abs);
         lines.push(`// Case "${c.name}":`);
         lines.push(`// Input: { ${inputSchemas} }`);
         lines.push(`// Output: ${outputSchema}`);

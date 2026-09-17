@@ -1,64 +1,86 @@
 import { describe, it, expect } from "vitest";
-import { T, typeValueToAbs } from "@nudojs/core";
-import { typeValueToTSType, generateDts } from "../dts-generator.ts";
+import {
+  abs,
+  num,
+  str,
+  bool,
+  numLit,
+  strLit,
+  boolLit,
+  objOf,
+  type Abs,
+} from "@nudojs/core";
+import { absToTSType, generateDts } from "../dts-generator.ts";
 import { analyzeFile } from "../analyzer.ts";
 
-describe("typeValueToTSType", () => {
+const arrOf = (element: Abs): Abs => abs({ k: "arr", element }, undefined, undefined, "exact");
+const tupleOf = (elements: Abs[]): Abs => abs({ k: "tuple", elements }, undefined, undefined, "exact");
+const promiseOf = (inner: Abs): Abs => abs({ k: "eff", eff: "promise", inner }, undefined, undefined, "exact");
+const brandOf = (name: string): Abs => abs({ k: "brand", name, shape: objOf({}) }, undefined, undefined, "path");
+const unionOf = (...members: Abs[]): Abs => abs({ k: "sum", members }, undefined, undefined, "exact");
+const nullLit = (): Abs => abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
+const undefLit = (): Abs => abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
+const unknownAbs = (): Abs => abs({ k: "unknown" }, undefined, undefined, "partial");
+const neverAbs = (): Abs => abs({ k: "never" }, undefined, undefined, "exact");
+
+const bigintPrim = (): Abs => abs({ k: "prim", type: "bigint" }, undefined, undefined, "exact");
+
+describe("absToTSType", () => {
   it("converts literal number", () => {
-    expect(typeValueToTSType(T.literal(42))).toBe("42");
+    expect(absToTSType(numLit(42))).toBe("42");
   });
 
   it("converts literal string", () => {
-    expect(typeValueToTSType(T.literal("hello"))).toBe('"hello"');
+    expect(absToTSType(strLit("hello"))).toBe('"hello"');
   });
 
   it("converts literal boolean", () => {
-    expect(typeValueToTSType(T.literal(true))).toBe("true");
+    expect(absToTSType(boolLit(true))).toBe("true");
   });
 
   it("converts null and undefined", () => {
-    expect(typeValueToTSType(T.null)).toBe("null");
-    expect(typeValueToTSType(T.undefined)).toBe("undefined");
+    expect(absToTSType(nullLit())).toBe("null");
+    expect(absToTSType(undefLit())).toBe("undefined");
   });
 
   it("converts primitive types", () => {
-    expect(typeValueToTSType(T.number)).toBe("number");
-    expect(typeValueToTSType(T.string)).toBe("string");
-    expect(typeValueToTSType(T.boolean)).toBe("boolean");
+    expect(absToTSType(num())).toBe("number");
+    expect(absToTSType(str())).toBe("string");
+    expect(absToTSType(bool())).toBe("boolean");
   });
 
   it("converts object type", () => {
-    const obj = T.object({ x: T.number, y: T.string });
-    expect(typeValueToTSType(obj)).toBe("{ x: number; y: string }");
+    const obj = objOf({ x: { value: num() }, y: { value: str() } });
+    expect(absToTSType(obj)).toBe("{ x: number; y: string }");
   });
 
   it("converts array type", () => {
-    expect(typeValueToTSType(T.array(T.number))).toBe("number[]");
+    expect(absToTSType(arrOf(num()))).toBe("number[]");
   });
 
   it("converts union array type with parens", () => {
-    expect(typeValueToTSType(T.array(T.union(T.number, T.string)))).toBe("(number | string)[]");
+    expect(absToTSType(arrOf(unionOf(num(), str())))).toBe("(number | string)[]");
   });
 
   it("converts tuple type", () => {
-    expect(typeValueToTSType(T.tuple([T.number, T.string]))).toBe("[number, string]");
+    expect(absToTSType(tupleOf([num(), str()]))).toBe("[number, string]");
   });
 
   it("converts promise type", () => {
-    expect(typeValueToTSType(T.promise(T.number))).toBe("Promise<number>");
+    expect(absToTSType(promiseOf(num()))).toBe("Promise<number>");
   });
 
   it("converts instance type", () => {
-    expect(typeValueToTSType(T.instanceOf("Error"))).toBe("Error");
+    expect(absToTSType(brandOf("Error"))).toBe("Error");
   });
 
   it("converts union type", () => {
-    expect(typeValueToTSType(T.union(T.number, T.string))).toBe("number | string");
+    expect(absToTSType(unionOf(num(), str()))).toBe("number | string");
   });
 
   it("converts never and unknown", () => {
-    expect(typeValueToTSType(T.never)).toBe("never");
-    expect(typeValueToTSType(T.unknown)).toBe("unknown");
+    expect(absToTSType(neverAbs())).toBe("never");
+    expect(absToTSType(unknownAbs())).toBe("unknown");
   });
 });
 
@@ -226,9 +248,9 @@ function flag(x) {
       cases: [
         {
           name: "c",
-          argAbs: [typeValueToAbs(T.literal(10n))],
-          abs: typeValueToAbs(T.literal(10n)),
-          throwsAbs: typeValueToAbs(T.never),
+          argAbs: [bigintPrim()],
+          abs: bigintPrim(),
+          throwsAbs: neverAbs(),
         },
       ],
     };
@@ -258,7 +280,7 @@ function either(x, y) {
       loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 9 } },
       paramNames: ["x"],
       cases: [],
-      combinedAbs: typeValueToAbs(T.promise(T.number)),
+      combinedAbs: promiseOf(num()),
     };
     const dts = generateDts({ functions: [fn] } as unknown as Parameters<typeof generateDts>[0]);
     expect(dts).toBe("export declare function entryOnly(...args: unknown[]): Promise<number>;\n");
@@ -351,11 +373,11 @@ function byId(q) {
         {
           name: "c",
           argAbs: [
-            typeValueToAbs(T.object({ a: T.number })),
-            typeValueToAbs(T.object({ b: T.string })),
+            objOf({ a: { value: num() } }),
+            objOf({ b: { value: str() } }),
           ],
-          abs: typeValueToAbs(T.number),
-          throwsAbs: typeValueToAbs(T.never),
+          abs: num(),
+          throwsAbs: neverAbs(),
         },
       ],
     };
@@ -373,8 +395,8 @@ function byId(q) {
         {
           name: "test",
           argAbs: [],
-          abs: typeValueToAbs(T.promise(T.literal(42))),
-          throwsAbs: typeValueToAbs(T.never),
+          abs: promiseOf(numLit(42)),
+          throwsAbs: neverAbs(),
         },
       ],
     };

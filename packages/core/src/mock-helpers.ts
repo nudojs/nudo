@@ -2,7 +2,7 @@
  * Nudo Mock 帮助函数
  *
  * 提供类型安全的 mock 创建，替代 sinon 表达式。
- * 值字段为 Abs（TypeValue 退出后真理源）；parser 经 typeValueToAbs 桥入。
+ * 值字段为 Abs（类型系统真理源）。
  * Abs 路径经 mock-abs.ts / mockDirectivesToAbsSeeds 消费。
  */
 

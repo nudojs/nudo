@@ -1,10 +1,20 @@
 import { readFileSync, statSync } from "node:fs";
 import ts from "typescript";
-import { type Abs, type TypeValue, typeValueToAbs, typeValueEquals, getFnSig, T } from "@nudojs/core";
+import {
+  type Abs,
+  type Slot,
+  abs as makeAbs,
+  lit as termLit,
+  numLit,
+  strLit,
+  boolLit,
+  objOf,
+  joinAbs,
+} from "@nudojs/core";
 
 /**
  * Harvested env：Abs 原生（与 EnvDefinition 同形）。
- * 内部收集仍走 TypeValue 投影（mapType），出口统一 typeValueToAbs。
+ * 收集与物化全程 Abs，不再经 TypeValue 桥。
  */
 export type HarvestedEnv = {
   globals: Record<string, Abs>;
@@ -15,7 +25,7 @@ export type HarvestedEnv = {
 type NamedTypeDecl = ts.InterfaceDeclaration | ts.ClassDeclaration;
 
 /**
- * Runtime symbol collected in phase 1, materialized to a TypeValue in phase 2
+ * Runtime symbol collected in phase 1, materialized to an Abs in phase 2
  * once the whole symbol table is populated (cross-file references resolve
  * regardless of file order).
  */
@@ -27,8 +37,8 @@ type PendingSymbol =
   | { t: "enum"; scope: Scope; name: string };
 
 interface HarvestContext {
-  globals: Record<string, TypeValue>;
-  modules: Record<string, Record<string, TypeValue>>;
+  globals: Record<string, Abs>;
+  modules: Record<string, Record<string, Abs>>;
   /** simple name → interface/class declaration (first wins) */
   interfaces: Map<string, NamedTypeDecl>;
   /** dotted name ("NodeJS.Process") → declaration (first wins) */
@@ -39,7 +49,7 @@ interface HarvestContext {
   qualifiedAliases: Map<string, ts.TypeAliasDeclaration>;
   /** simple name → class declaration (runtime values, for `export { X }` re-exports) */
   classes: Map<string, ts.ClassDeclaration>;
-  instanceCache: Map<string, TypeValue>;
+  instanceCache: Map<string, Abs>;
   expanding: Set<string>;
   /** [aliasModule, targetModule] pairs from `export * from` / `export = x` forms */
   moduleAliases: Array<[alias: string, target: string]>;
@@ -62,6 +72,85 @@ const MAX_ALIAS_DEPTH = 8;
 
 function scopeKey(scope: Scope): string {
   return scope.moduleName ?? "\0global";
+}
+
+// --- Abs construction helpers ---
+
+function absExact(shape: Abs["shape"]): Abs {
+  return makeAbs(shape, undefined, undefined, "exact");
+}
+
+function absNever(): Abs {
+  return absExact({ k: "never" });
+}
+
+function absUnknown(): Abs {
+  // unknown → conf partial
+  return makeAbs({ k: "unknown" }, undefined, undefined, "partial");
+}
+
+function absPrim(type: "number" | "string" | "boolean" | "bigint" | "symbol"): Abs {
+  return absExact({ k: "prim", type });
+}
+
+function absNullLit(): Abs {
+  return makeAbs({ k: "unknown" }, termLit(null), undefined, "exact");
+}
+
+function absUndefLit(): Abs {
+  return makeAbs({ k: "unknown" }, termLit(undefined), undefined, "exact");
+}
+
+function absLit(value: string | number | boolean | bigint | null | undefined): Abs {
+  if (typeof value === "number") return numLit(value);
+  if (typeof value === "string") return strLit(value);
+  if (typeof value === "boolean") return boolLit(value);
+  if (typeof value === "bigint") return absPrim("bigint");
+  if (value === null) return absNullLit();
+  return absUndefLit();
+}
+
+function absArr(element: Abs): Abs {
+  return absExact({ k: "arr", element });
+}
+
+function absTuple(elements: Abs[]): Abs {
+  return absExact({ k: "tuple", elements });
+}
+
+function absPromise(inner: Abs): Abs {
+  return absExact({ k: "eff", eff: "promise", inner });
+}
+
+function absObj(properties: Record<string, Abs>): Abs {
+  const slots: Record<string, Slot> = {};
+  for (const [k, v] of Object.entries(properties)) {
+    slots[k] = { value: v };
+  }
+  return objOf(slots);
+}
+
+function absBrand(name: string, properties: Record<string, Abs>): Abs {
+  return absExact({ k: "brand", name, shape: absObj(properties) });
+}
+
+function absFnSig(paramTypes: Abs[], returnType: Abs): Abs {
+  return absExact({
+    k: "fn",
+    params: paramTypes.map((_, i) => `_arg${i}`),
+    paramTypes,
+    returnType,
+  });
+}
+
+/** multi-member union via binary join (drops never, absorbs lit into prim) */
+function absUnion(members: Abs[]): Abs {
+  if (members.length === 0) return absNever();
+  return members.reduce((acc, m) => joinAbs(acc, m));
+}
+
+function isPlainUnknown(a: Abs): boolean {
+  return a.shape.k === "unknown" && !(a.term?.op === "lit");
 }
 
 // ---------------------------------------------------------------------------
@@ -116,34 +205,12 @@ export function harvestDts(
     parsed++;
   }
 
-  // Phase 2: materialize TypeValues with the complete symbol table available.
+  // Phase 2: materialize Abs with the complete symbol table available.
   materialize(ctx);
 
-  // 出口：TypeValue → Abs（harvest 产物 Abs 原生）
-  // 共享记录（fs/node:fs 别名）只转一次，保持引用同一
-  const convertedByRec = new Map<Record<string, TypeValue>, Record<string, Abs>>();
-  const toAbsRec = (rec: Record<string, TypeValue>): Record<string, Abs> => {
-    const hit = convertedByRec.get(rec);
-    if (hit) return hit;
-    const out: Record<string, Abs> = {};
-    for (const [k, v] of Object.entries(rec)) {
-      try {
-        out[k] = typeValueToAbs(v);
-      } catch {
-        out[k] = { shape: { k: "unknown" }, conf: "opaque" };
-      }
-    }
-    convertedByRec.set(rec, out);
-    return out;
-  };
-  const modules: Record<string, Record<string, Abs>> = {};
-  for (const [mod, rec] of Object.entries(ctx.modules)) {
-    modules[mod] = toAbsRec(rec);
-  }
-
   return {
-    globals: toAbsRec(ctx.globals),
-    modules,
+    globals: ctx.globals,
+    modules: ctx.modules,
     stats: { files: parsed, symbols: ctx.symbols, skipped: ctx.skipped },
   };
 }
@@ -206,7 +273,7 @@ export function emitEnvModule(env: HarvestedEnv, pkgName: string): string {
 // Phase 1: collect declarations
 // ---------------------------------------------------------------------------
 
-function recordFor(ctx: HarvestContext, scope: Scope): Record<string, TypeValue> {
+function recordFor(ctx: HarvestContext, scope: Scope): Record<string, Abs> {
   if (scope.moduleName === undefined) return ctx.globals;
   let rec = ctx.modules[scope.moduleName];
   if (!rec) {
@@ -456,7 +523,7 @@ function registerAlias(ctx: HarvestContext, scope: Scope, stmt: ts.TypeAliasDecl
 }
 
 // ---------------------------------------------------------------------------
-// Phase 2: materialize TypeValues
+// Phase 2: materialize Abs
 // ---------------------------------------------------------------------------
 
 function materialize(ctx: HarvestContext): void {
@@ -465,20 +532,17 @@ function materialize(ctx: HarvestContext): void {
     if (p.t === "fn") {
       if (rec[p.name] !== undefined) continue; // same name already handled (first wins)
       const value = signatureToFnSig(ctx, p.decls[0]!); // first overload's parameter list
-      const sig = getFnSig(value);
+      const sig = value.shape.k === "fn" ? value.shape : undefined;
       if (sig) {
         // Merge return types across overloads; drop unknown members when a
         // known one exists so unresolved references don't erase information.
-        const returns: TypeValue[] = [];
+        const returns: Abs[] = [];
         for (const decl of p.decls) {
           if (!decl.type) continue;
           const ret = mapType(ctx, decl.type, 0);
-          if (ret.kind !== "unknown") returns.push(ret);
+          if (!isPlainUnknown(ret)) returns.push(ret);
         }
-        sig.returnType =
-          returns.length > 0
-            ? returns.reduce((acc, r) => (typeValueEquals(acc, r) ? acc : T.union(acc, r)))
-            : T.unknown;
+        sig.returnType = returns.length > 0 ? absUnion(returns) : absUnknown();
       }
       rec[p.name] = value;
       continue;
@@ -488,8 +552,8 @@ function materialize(ctx: HarvestContext): void {
       case "var": {
         // 映射为 unknown 的声明零信息量，且会遮蔽 evaluator 内置
         // （如 URL/AbortController 的 createXxxType 构造），跳过更优。
-        const mapped = p.typeNode ? mapType(ctx, p.typeNode, 0) : T.unknown;
-        if (mapped.kind === "unknown") {
+        const mapped = p.typeNode ? mapType(ctx, p.typeNode, 0) : absUnknown();
+        if (isPlainUnknown(mapped)) {
           ctx.skipped++;
           break;
         }
@@ -502,22 +566,22 @@ function materialize(ctx: HarvestContext): void {
         const cls = ctx.classes.get(p.lookup ?? p.name);
         if (cls) {
           const ctor = (cls.members as readonly ts.ClassElement[]).find(ts.isConstructorDeclaration);
-          const params: TypeValue[] = [];
+          const params: Abs[] = [];
           if (ctor) {
             for (const param of ctor.parameters) {
-              let type = param.type ? mapType(ctx, param.type, 0) : T.unknown;
-              if (param.questionToken) type = T.union(type, T.undefined);
+              let type = param.type ? mapType(ctx, param.type, 0) : absUnknown();
+              if (param.questionToken) type = absUnion([type, absUndefLit()]);
               params.push(type);
             }
           }
-          rec[p.name] = T.fnSig(params, instanceFor(ctx, p.lookup ?? p.name));
+          rec[p.name] = absFnSig(params, instanceFor(ctx, p.lookup ?? p.name));
         } else {
           rec[p.name] = instanceFor(ctx, p.lookup ?? p.name);
         }
         break;
       }
       case "enum":
-        rec[p.name] = T.unknown;
+        rec[p.name] = absUnknown();
         break;
     }
   }
@@ -547,17 +611,17 @@ function memberName(node: { name?: ts.PropertyName }): string | undefined {
   return undefined; // computed / private names
 }
 
-function instanceFor(ctx: HarvestContext, key: string): TypeValue {
+function instanceFor(ctx: HarvestContext, key: string): Abs {
   const cached = ctx.instanceCache.get(key);
   if (cached !== undefined) return cached;
   const decl = ctx.interfaces.get(key) ?? ctx.qualifiedInterfaces.get(key);
-  if (!decl) return T.unknown;
+  if (!decl) return absUnknown();
   if (ctx.expanding.has(key)) {
     // Recursion guard: reference by name without expanding members.
-    return T.instanceOf(decl.name?.text ?? key, {});
+    return absBrand(decl.name?.text ?? key, {});
   }
   ctx.expanding.add(key);
-  const properties: Record<string, TypeValue> = {};
+  const properties: Record<string, Abs> = {};
   try {
     const members = decl.members as readonly (ts.TypeElement | ts.ClassElement)[];
     for (const member of members) {
@@ -566,8 +630,8 @@ function instanceFor(ctx: HarvestContext, key: string): TypeValue {
       if (ts.isPropertySignature(member) || ts.isPropertyDeclaration(member)) {
         const name = memberName(member);
         if (name === undefined) continue;
-        let type = member.type ? mapType(ctx, member.type, 0) : T.unknown;
-        if (member.questionToken) type = T.union(type, T.undefined);
+        let type = member.type ? mapType(ctx, member.type, 0) : absUnknown();
+        if (member.questionToken) type = absUnion([type, absUndefLit()]);
         properties[name] = type;
       } else if (ts.isMethodSignature(member) || ts.isMethodDeclaration(member)) {
         const name = memberName(member);
@@ -583,39 +647,39 @@ function instanceFor(ctx: HarvestContext, key: string): TypeValue {
   } finally {
     ctx.expanding.delete(key);
   }
-  const value = T.instanceOf(decl.name?.text ?? key, properties);
+  const value = absBrand(decl.name?.text ?? key, properties);
   ctx.instanceCache.set(key, value);
   return value;
 }
 
-function signatureToFnSig(ctx: HarvestContext, sig: ts.SignatureDeclaration): TypeValue {
+function signatureToFnSig(ctx: HarvestContext, sig: ts.SignatureDeclaration): Abs {
   const paramTypes = sig.parameters.map((param) => {
-    let type: TypeValue;
+    let type: Abs;
     if (param.dotDotDotToken) {
       const inner = param.type && ts.isArrayTypeNode(param.type) ? param.type.elementType : param.type;
-      type = inner ? T.array(mapType(ctx, inner, 0)) : T.unknown;
+      type = inner ? absArr(mapType(ctx, inner, 0)) : absUnknown();
     } else {
-      type = param.type ? mapType(ctx, param.type, 0) : T.unknown;
+      type = param.type ? mapType(ctx, param.type, 0) : absUnknown();
     }
-    if (param.questionToken && !param.dotDotDotToken) type = T.union(type, T.undefined);
+    if (param.questionToken && !param.dotDotDotToken) type = absUnion([type, absUndefLit()]);
     return type;
   });
-  const returnType = sig.type ? mapType(ctx, sig.type, 0) : T.unknown;
-  return T.fnSig(paramTypes, returnType);
+  const returnType = sig.type ? mapType(ctx, sig.type, 0) : absUnknown();
+  return absFnSig(paramTypes, returnType);
 }
 
 function mapTypeMembers(
   ctx: HarvestContext,
   members: readonly ts.TypeElement[],
   depth: number,
-): Record<string, TypeValue> {
-  const properties: Record<string, TypeValue> = {};
+): Record<string, Abs> {
+  const properties: Record<string, Abs> = {};
   for (const member of members) {
     if (ts.isPropertySignature(member)) {
       const name = memberName(member);
       if (name === undefined) continue;
-      let type = member.type ? mapType(ctx, member.type, depth) : T.unknown;
-      if (member.questionToken) type = T.union(type, T.undefined);
+      let type = member.type ? mapType(ctx, member.type, depth) : absUnknown();
+      if (member.questionToken) type = absUnion([type, absUndefLit()]);
       properties[name] = type;
     } else if (ts.isMethodSignature(member)) {
       const name = memberName(member);
@@ -627,72 +691,75 @@ function mapTypeMembers(
   return properties;
 }
 
-function mapTypeRef(ctx: HarvestContext, node: ts.TypeReferenceNode, depth: number): TypeValue {
+function mapTypeRef(ctx: HarvestContext, node: ts.TypeReferenceNode, depth: number): Abs {
   const name = typeNameString(node.typeName);
   const args = node.typeArguments ?? [];
   if ((name === "Array" || name === "ReadonlyArray") && args.length >= 1) {
-    return T.array(mapType(ctx, args[0], depth));
+    return absArr(mapType(ctx, args[0], depth));
   }
   if (name === "Promise" && args.length >= 1) {
-    return T.promise(mapType(ctx, args[0], depth));
+    return absPromise(mapType(ctx, args[0], depth));
   }
   if (name === "Record") {
     // Index-signature objects are approximated as an open object type.
-    return T.object({});
+    return absObj({});
   }
   if (ctx.interfaces.has(name) || ctx.qualifiedInterfaces.has(name)) {
     return instanceFor(ctx, name);
   }
   const alias = ctx.aliases.get(name) ?? ctx.qualifiedAliases.get(name);
   if (alias) return mapType(ctx, alias.type, depth + 1);
-  return T.unknown;
+  return absUnknown();
 }
 
-function mapType(ctx: HarvestContext, node: ts.TypeNode | undefined, depth: number): TypeValue {
-  if (!node || depth > MAX_ALIAS_DEPTH) return T.unknown;
+function mapType(ctx: HarvestContext, node: ts.TypeNode | undefined, depth: number): Abs {
+  if (!node || depth > MAX_ALIAS_DEPTH) return absUnknown();
 
   if (ts.isParenthesizedTypeNode(node)) return mapType(ctx, node.type, depth);
   if (ts.isTypeReferenceNode(node)) return mapTypeRef(ctx, node, depth);
 
-  if (ts.isArrayTypeNode(node)) return T.array(mapType(ctx, node.elementType, depth));
+  if (ts.isArrayTypeNode(node)) return absArr(mapType(ctx, node.elementType, depth));
   if (ts.isTupleTypeNode(node)) {
     for (const element of node.elements) {
       const inner = ts.isNamedTupleMember(element) ? element.type : element;
-      return T.array(mapType(ctx, inner, depth)); // approximate by the first element
+      return absArr(mapType(ctx, inner, depth)); // approximate by the first element
     }
-    return T.unknown;
+    return absUnknown();
   }
 
   if (ts.isUnionTypeNode(node)) {
-    return T.union(...node.types.map((t) => mapType(ctx, t, depth)));
+    return absUnion(node.types.map((t) => mapType(ctx, t, depth)));
   }
 
   if (ts.isIntersectionTypeNode(node)) {
     const members = node.types.map((t) => mapType(ctx, t, depth));
-    if (members.length > 0 && members.every((m) => m.kind === "object")) {
-      const properties: Record<string, TypeValue> = {};
+    if (members.length > 0 && members.every((m) => m.shape.k === "obj")) {
+      const properties: Record<string, Abs> = {};
       for (const member of members) {
-        Object.assign(properties, (member as { properties: Record<string, TypeValue> }).properties);
+        if (member.shape.k !== "obj") continue;
+        for (const [k, slot] of Object.entries(member.shape.slots)) {
+          properties[k] = slot.value;
+        }
       }
-      return T.object(properties);
+      return absObj(properties);
     }
-    return members[0] ?? T.unknown;
+    return members[0] ?? absUnknown();
   }
 
   if (ts.isLiteralTypeNode(node)) {
     const lit = node.literal;
-    if (ts.isStringLiteral(lit)) return T.literal(lit.text);
-    if (ts.isNumericLiteral(lit)) return T.literal(Number(lit.text));
-    if (lit.kind === ts.SyntaxKind.TrueKeyword) return T.literal(true);
-    if (lit.kind === ts.SyntaxKind.FalseKeyword) return T.literal(false);
+    if (ts.isStringLiteral(lit)) return absLit(lit.text);
+    if (ts.isNumericLiteral(lit)) return absLit(Number(lit.text));
+    if (lit.kind === ts.SyntaxKind.TrueKeyword) return absLit(true);
+    if (lit.kind === ts.SyntaxKind.FalseKeyword) return absLit(false);
     if (
       ts.isPrefixUnaryExpression(lit) &&
       lit.operator === ts.SyntaxKind.MinusToken &&
       ts.isNumericLiteral(lit.operand)
     ) {
-      return T.literal(-Number(lit.operand.text));
+      return absLit(-Number(lit.operand.text));
     }
-    return T.unknown;
+    return absUnknown();
   }
 
   if (ts.isFunctionTypeNode(node)) return signatureToFnSig(ctx, node);
@@ -702,47 +769,47 @@ function mapType(ctx: HarvestContext, node: ts.TypeNode | undefined, depth: numb
     // 是构造函数形状：new X() 需要 function callee + fnSig 返回实例。
     const ctor = node.members.find(ts.isConstructSignatureDeclaration);
     if (ctor) {
-      const params: TypeValue[] = [];
+      const params: Abs[] = [];
       for (const param of ctor.parameters) {
-        let type = param.type ? mapType(ctx, param.type, depth) : T.unknown;
-        if (param.questionToken) type = T.union(type, T.undefined);
+        let type = param.type ? mapType(ctx, param.type, depth) : absUnknown();
+        if (param.questionToken) type = absUnion([type, absUndefLit()]);
         params.push(type);
       }
-      return T.fnSig(params, ctor.type ? mapType(ctx, ctor.type, depth) : T.unknown);
+      return absFnSig(params, ctor.type ? mapType(ctx, ctor.type, depth) : absUnknown());
     }
-    return T.object(mapTypeMembers(ctx, node.members, depth));
+    return absObj(mapTypeMembers(ctx, node.members, depth));
   }
 
   if (ts.isTypeOperatorNode(node)) {
-    return node.operator === ts.SyntaxKind.ReadonlyKeyword ? mapType(ctx, node.type, depth) : T.unknown;
+    return node.operator === ts.SyntaxKind.ReadonlyKeyword ? mapType(ctx, node.type, depth) : absUnknown();
   }
 
   switch (node.kind) {
     case ts.SyntaxKind.StringKeyword:
-      return T.string;
+      return absPrim("string");
     case ts.SyntaxKind.NumberKeyword:
-      return T.number;
+      return absPrim("number");
     case ts.SyntaxKind.BooleanKeyword:
-      return T.boolean;
+      return absPrim("boolean");
     case ts.SyntaxKind.BigIntKeyword:
-      return T.bigint;
+      return absPrim("bigint");
     case ts.SyntaxKind.SymbolKeyword:
-      return T.symbol;
+      return absPrim("symbol");
     case ts.SyntaxKind.AnyKeyword:
     case ts.SyntaxKind.UnknownKeyword:
     case ts.SyntaxKind.ObjectKeyword:
-      return T.unknown;
+      return absUnknown();
     case ts.SyntaxKind.VoidKeyword:
     case ts.SyntaxKind.UndefinedKeyword:
-      return T.undefined;
+      return absUndefLit();
     case ts.SyntaxKind.NeverKeyword:
-      return T.never;
+      return absNever();
     case ts.SyntaxKind.NullKeyword:
-      return T.null;
+      return absNullLit();
     default:
       // typeof X, keyof, conditional / mapped / indexed / template-literal /
       // import() types and everything else — conservative degradation.
-      return T.unknown;
+      return absUnknown();
   }
 }
 

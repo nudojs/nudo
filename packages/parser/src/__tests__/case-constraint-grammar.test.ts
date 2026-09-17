@@ -1,53 +1,51 @@
 /**
  * case 实参约束表达式文法（design-refine-derivation：T.* → number()/lit()/…）。
- * parseTypeValueExpr 双文法：约束构建器优先，T.* / 字面量 / 箭头函数兼容。
+ * parseCaseArgExpr 双文法：约束构建器优先，T.* / 字面量 / 箭头函数兼容。
  */
 import { describe, it, expect } from "vitest";
 import { extractDirectives, parseTypeValueExpr, parseCaseArgExpr } from "../directives.ts";
-import { typeValueToString, formatAbs, T, typeValueEquals, litValue, type Abs, type TypeValue } from "@nudojs/core";
+import { formatAbs, litValue, type Abs, num, str, bool } from "@nudojs/core";
 import { parse } from "../parse.ts";
 
-describe("parseTypeValueExpr constraint grammar", () => {
+describe("parseCaseArgExpr constraint grammar", () => {
   it("number() → number", () => {
-    expect(typeValueEquals(parseTypeValueExpr("number()"), T.number)).toBe(true);
+    expect(parseTypeValueExpr("number()").shape).toEqual(num().shape);
   });
 
   it("string() / boolean()", () => {
-    expect(typeValueEquals(parseTypeValueExpr("string()"), T.string)).toBe(true);
-    expect(typeValueEquals(parseTypeValueExpr("boolean()"), T.boolean)).toBe(true);
+    expect(parseTypeValueExpr("string()").shape).toEqual(str().shape);
+    expect(parseTypeValueExpr("boolean()").shape).toEqual(bool().shape);
   });
 
   it("lit(42) / lit(\"a\")", () => {
-    expect(typeValueToString(parseTypeValueExpr("lit(42)"))).toBe("42");
-    expect(typeValueToString(parseTypeValueExpr('lit("a")'))).toBe('"a"');
+    expect(litValue(parseTypeValueExpr("lit(42)"))).toBe(42);
+    expect(litValue(parseTypeValueExpr('lit("a")'))).toBe("a");
   });
 
-  it("number().gt(0) carries pred through Abs bridge", () => {
-    const { abs } = parseCaseArgExpr("number().gt(0)");
+  it("number().gt(0) carries pred through Abs", () => {
+    const abs = parseCaseArgExpr("number().gt(0)");
     expect(abs).toBeDefined();
-    expect(formatAbs(abs!)).toContain(">");
-    expect(formatAbs(abs!)).toContain("0");
+    expect(formatAbs(abs)).toContain(">");
+    expect(formatAbs(abs)).toContain("0");
   });
 
   it("union(lit(1), lit(2))", () => {
-    const s = typeValueToString(parseTypeValueExpr("union(lit(1), lit(2))"));
+    const s = formatAbs(parseTypeValueExpr("union(lit(1), lit(2))"));
     expect(s).toContain("1");
     expect(s).toContain("2");
   });
 
   it("shape({ id: number() })", () => {
-    const { abs } = parseCaseArgExpr("shape({ id: number() })");
-    expect(abs?.shape.k).toBe("obj");
+    expect(parseCaseArgExpr("shape({ id: number() })").shape.k).toBe("obj");
   });
 
   it("array(number())", () => {
-    const { abs } = parseCaseArgExpr("array(number())");
-    expect(abs?.shape.k).toBe("arr");
+    expect(parseCaseArgExpr("array(number())").shape.k).toBe("arr");
   });
 
   it("T.* still works (compat)", () => {
-    expect(typeValueEquals(parseTypeValueExpr("T.number"), T.number)).toBe(true);
-    expect(typeValueToString(parseTypeValueExpr("42"))).toBe("42");
+    expect(parseTypeValueExpr("T.number").shape).toEqual(num().shape);
+    expect(litValue(parseTypeValueExpr("42"))).toBe(42);
   });
 
   it("extractDirectives always fills argsAbs (constraint + T.*)", () => {
@@ -87,7 +85,7 @@ function id(x) { return x; }
     expect(c.args).toBeUndefined();
   });
 
-  it("T.* cases produce prim Abs via bridge", () => {
+  it("T.* cases produce prim Abs", () => {
     const src = `
 /**
  * @nudo:case "n" (T.number)

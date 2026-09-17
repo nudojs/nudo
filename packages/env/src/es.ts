@@ -1,6 +1,6 @@
 /**
  * ES env：Abs 原生 globals。
- * EnvDefinition.globals / modules 均为 Abs；TypeValue 投影走 absToTypeValue。
+ * EnvDefinition.globals / modules 均为 Abs。
  */
 
 import {

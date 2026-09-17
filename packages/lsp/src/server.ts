@@ -22,7 +22,7 @@ import {
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { typeValueToString, sidecarPathOf } from "@nudojs/core";
+import { sidecarPathOf } from "@nudojs/core";
 import {
   getTypeAtPosition,
   getHoverAtPosition,
@@ -717,10 +717,10 @@ connection.onSignatureHelp((params) => {
     const callInfo = findEnclosingCall(ast, line, column);
     if (!callInfo) return null;
 
-    const fnType = getTypeAtPosition(filePath, source, callInfo.calleeLine, callInfo.calleeCol, cases);
-    if (!fnType || fnType.kind !== "function") return null;
+    const fnAbs = getTypeAtPosition(filePath, source, callInfo.calleeLine, callInfo.calleeCol, cases);
+    if (!fnAbs || fnAbs.shape.k !== "fn") return null;
 
-    const paramLabels = fnType.params.map((p) => `${p}: unknown`);
+    const paramLabels = fnAbs.shape.params.map((p) => `${p}: unknown`);
     const activeParam = callInfo.currentParamIndex;
 
     return {

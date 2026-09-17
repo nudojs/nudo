@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { emitInterface } from "../interface-emitter.ts";
-import { effectiveInterface, T, typeValueToAbs } from "@nudojs/core";
+import { effectiveInterface, numLit, strLit, abs as makeAbs } from "@nudojs/core";
 
 let dir: string;
 
@@ -135,15 +135,25 @@ describe("emitInterface", () => {
     // 设计验收（§11）：域根导出——本文件无调用点，域证据全部来自 --callsites
     const file = join(dir, "mixed.js");
     writeFileSync(file, `export function scale(x) {\n  return x * 2;\n}\n`);
-    const rec = (arg: string | number | boolean | null | undefined) => ({
-      fnName: "scale",
-      targetModule: file,
-      targetExport: "scale",
-      argAbs: [typeValueToAbs(T.literal(arg))],
-      resultAbs: typeValueToAbs(T.literal(84)),
-      throwsAbs: typeValueToAbs(T.never),
-      callLoc: { line: 3, column: 0 },
-    });
+    const rec = (arg: string | number | boolean | null | undefined) => {
+      const argAbs =
+        typeof arg === "number"
+          ? numLit(arg)
+          : typeof arg === "string"
+            ? strLit(arg)
+            : typeof arg === "boolean"
+              ? makeAbs({ k: "prim", type: "boolean" }, { op: "lit", value: arg }, undefined, "exact")
+              : makeAbs({ k: "unknown" }, { op: "lit", value: arg ?? null }, undefined, "exact");
+      return {
+        fnName: "scale",
+        targetModule: file,
+        targetExport: "scale",
+        argAbs: [argAbs],
+        resultAbs: numLit(84),
+        throwsAbs: makeAbs({ k: "never" }, undefined, undefined, "exact"),
+        callLoc: { line: 3, column: 0 },
+      };
+    };
     const r = await emitInterface(file, {
       fnNames: ["scale"],
       mode: "add",
@@ -213,15 +223,25 @@ describe("emitInterface", () => {
     // 归位，不得被静默删除（默认无 --callsites 的典型场景）。
     const file = join(dir, "mixed.js");
     writeFileSync(file, `export function scale(x) {\n  return x * 2;\n}\n`);
-    const rec = (arg: string | number | boolean | null | undefined) => ({
-      fnName: "scale",
-      targetModule: file,
-      targetExport: "scale",
-      argAbs: [typeValueToAbs(T.literal(arg))],
-      resultAbs: typeValueToAbs(T.literal(84)),
-      throwsAbs: typeValueToAbs(T.never),
-      callLoc: { line: 3, column: 0 },
-    });
+    const rec = (arg: string | number | boolean | null | undefined) => {
+      const argAbs =
+        typeof arg === "number"
+          ? numLit(arg)
+          : typeof arg === "string"
+            ? strLit(arg)
+            : typeof arg === "boolean"
+              ? makeAbs({ k: "prim", type: "boolean" }, { op: "lit", value: arg }, undefined, "exact")
+              : makeAbs({ k: "unknown" }, { op: "lit", value: arg ?? null }, undefined, "exact");
+      return {
+        fnName: "scale",
+        targetModule: file,
+        targetExport: "scale",
+        argAbs: [argAbs],
+        resultAbs: numLit(84),
+        throwsAbs: makeAbs({ k: "never" }, undefined, undefined, "exact"),
+        callLoc: { line: 3, column: 0 },
+      };
+    };
     const first = await emitInterface(file, { fnNames: ["scale"], mode: "add", records: [rec(42)] });
     expect(first.written).toEqual(["scale"]);
     const before = readFileSync(join(dir, "mixed.nudo.js"), "utf-8");

@@ -3,8 +3,7 @@
  *
  * 这里只做「光标位置 → 类型」的查询与渲染：
  * - getTypeAtPosition / getHoverAtPosition：B 路径 Abs 节点表优先；
- *   用例函数体内走 Abs 重放（activeCases 选中 case + evalSource），
- *   失败才 TypeValue evaluateFunctionFull 兜底；
+ *   用例函数体内走 Abs 重放（activeCases 选中 case + evalSource）；
  * - getCompletionsAtPosition 及补全辅助（builtinMemberAbs 微求值、
  *   array/promise/string/union 成员补全）——内置成员唯一真值来源是
  *   evaluator 的 BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS；
@@ -18,18 +17,13 @@ import { dirname } from "node:path";
 import type { Node } from "@babel/types";
 import traverse from "@babel/traverse";
 import {
-  type TypeValue,
   type Abs,
-  type Environment,
-  typeValueToString,
-  typeValueToAbs,
-  createEnvironment,
   generalizeFromAst,
   formatAbs,
   formatAbsMultiline,
+  formatShape,
   collectAbsNodeTypes,
   findAbsAtPosition,
-  absToTypeValue,
   evalSource,
   setAbsNodeCollector,
 } from "@nudojs/core";
@@ -78,7 +72,7 @@ export async function getTypeAtPositionAsync(
   line: number,
   column: number,
   activeCases?: Map<string, number>,
-): Promise<TypeValue | null> {
+): Promise<Abs | null> {
   const envNames = collectEnvNames(filePath, source, false);
   if (envNames.length > 0) {
     await preloadPathEnvs(envNames, dirname(filePath));
@@ -101,7 +95,7 @@ export async function getAbsAtPositionAsync(
   return getAbsAtPosition(filePath, source, line, column, activeCases);
 }
 
-/** 光标是否落在带 @nudo:case 的函数体内（该区域 hover/inlay 须走 TypeValue + activeCases）。 */
+/** 光标是否落在带 @nudo:case 的函数体内（该区域 hover/inlay 须走 Abs + activeCases）。 */
 function positionInsideCaseFunction(
   source: string,
   ast: ReturnType<typeof parse>,
@@ -207,17 +201,8 @@ function absFromCaseReplay(
   return findAbsAtPosition(map, line, column) ?? null;
 }
 
-function safeTypeValueToAbs(tv: TypeValue): Abs {
-  try {
-    return typeValueToAbs(tv);
-  } catch {
-    return { shape: { k: "unknown" }, conf: "opaque" };
-  }
-}
-
 /**
  * 光标处无损 Abs。B-path 节点表优先；用例函数体走 Abs 重放。
- * TypeValue evaluateProgram 已删除——无 Abs 时返回 null。
  */
 export function getAbsAtPosition(
   filePath: string,
@@ -234,7 +219,7 @@ export function getAbsAtPosition(
   const fromB = absFromBPath(filePath, source, line, column, ast, envNames);
   if (fromB) return fromB;
 
-  // 用例函数体：按 activeCases 选中 case 做 Abs 重放（不经 TypeValue）
+  // 用例函数体：按 activeCases 选中 case 做 Abs 重放
   if (positionInsideCaseFunction(source, ast, line)) {
     const fromCase = absFromCaseReplay(filePath, source, line, column, ast, activeCases);
     if (fromCase) return fromCase;
@@ -243,20 +228,19 @@ export function getAbsAtPosition(
   return null;
 }
 
+/** 光标处类型（Abs）。B-path 节点表优先；用例函数体走 Abs 重放。 */
 export function getTypeAtPosition(
   filePath: string,
   source: string,
   line: number,
   column: number,
   activeCases?: Map<string, number>,
-): TypeValue | null {
-  // TypeValue evaluateProgram/evaluateFunctionFull 已删除：统一走 Abs 再 bridge
-  const absVal = getAbsAtPosition(filePath, source, line, column, activeCases);
-  return absVal ? absToTypeValue(absVal) : null;
+): Abs | null {
+  return getAbsAtPosition(filePath, source, line, column, activeCases);
 }
 
 export type HoverInfo = {
-  /** 外延 TypeValue 展示（bridge 有损，仅兜底） */
+  /** 外延展示（formatShape / formatAbs） */
   typeText: string;
   /** 内涵签名（代数 generalize） */
   intension?: string;
@@ -267,12 +251,12 @@ export type HoverInfo = {
 };
 
 /**
- * LSP hover：优先无损 Abs（类型即计算本体），TypeValue 仅作外延对照。
+ * LSP hover：优先无损 Abs（类型即计算本体）。
  * 节点表也是 Abs（collectAbsNodeTypes），不经 bridge。
  *
  * 函数名/调用 callee 位置（design-hof-relations §7）：
  * intension 一律走 generalize/formatPoly（HOF fnRels 在这里）；
- * typeText 仍落 B-path / TypeValue（调用点显示结果类型，不是函数签名）。
+ * typeText 仍落 B-path Abs（调用点显示结果类型，不是函数签名）。
  * 禁止用 B-path 的 arity-only fn Abs 冒充权威关系源。
  */
 export function getHoverAtPosition(
@@ -359,16 +343,13 @@ export function getHoverAtPosition(
     }
   }
 
-  // Abs 兜底（含 case 重放失败后的 TypeValue 桥）
+  // Abs 兜底
   const absFallback = getAbsAtPosition(filePath, source, line, column, activeCases);
   if (absFallback) {
     const absLine = formatAbs(absFallback);
     const absMulti = formatAbsMultiline(absFallback, undefined);
     return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
   }
-
-  const tv = getTypeAtPosition(filePath, source, line, column, activeCases);
-  const info: HoverInfo | null = tv ? { typeText: typeValueToString(tv) } : null;
 
   // 标识符绑定优先（比粗粒度节点表更准）。用例函数体内跳过：
   // B-path 绑定来自调用点，会盖住 activeCases 重放结果。
@@ -386,11 +367,6 @@ export function getHoverAtPosition(
         if (absBound) {
           const absLine = formatAbs(absBound);
           const absMulti = formatAbsMultiline(absBound, ident);
-          if (info) {
-            info.abs = absLine;
-            info.absMultiline = absMulti;
-            return attachIntension(info);
-          }
           return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
         }
       }
@@ -418,19 +394,14 @@ export function getHoverAtPosition(
       if (absAt) {
         const absLine = formatAbs(absAt);
         const absMulti = formatAbsMultiline(absAt, undefined);
-        if (info) {
-          info.abs = absLine;
-          info.absMultiline = absMulti;
-        } else {
-          return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
-        }
+        return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
       }
     }
   } catch {
     // ignore
   }
 
-  return attachIntension(info);
+  return null;
 }
 
 /** 光标处任意标识符（绑定 hover） */
@@ -507,43 +478,6 @@ function findEnclosingFunction(
     }
   }
   return null;
-}
-
-function findBestTypeAtPosition(
-  nodeAbsMap: Map<Node, Abs>,
-  globalEnv: Environment,
-  ast: Node,
-  line: number,
-  column: number,
-): TypeValue | null {
-  let bestMatch: Abs | null = null;
-  let bestSize = Infinity;
-
-  for (const [node, a] of nodeAbsMap) {
-    const loc = node.loc;
-    if (!loc) continue;
-    if (
-      loc.start.line <= line &&
-      loc.end.line >= line &&
-      (loc.start.line < line || loc.start.column <= column) &&
-      (loc.end.line > line || loc.end.column >= column)
-    ) {
-      const size = (loc.end.line - loc.start.line) * 10000 + (loc.end.column - loc.start.column);
-      if (size < bestSize) {
-        bestSize = size;
-        bestMatch = a;
-      }
-    }
-  }
-
-  if (!bestMatch) {
-    const identAtPos = findIdentifierAtPosition(ast, line, column);
-    if (identAtPos && globalEnv.has(identAtPos)) {
-      bestMatch = globalEnv.lookup(identAtPos);
-    }
-  }
-
-  return bestMatch ? absToTypeValue(bestMatch) : null;
 }
 
 function findIdentifierAtPosition(ast: Node, line: number, column: number): string | null {
@@ -683,21 +617,6 @@ function describeMember(label: string, a: Abs | null, fallbackClass: string): st
   return `${label}(…)@${fallbackClass}`;
 }
 
-function getArrayCompletions(tv: TypeValue): CompletionItem[] {
-  const completions: CompletionItem[] = [];
-  for (const m of builtinProtoMembers("Array")) {
-    const detail = describeMember(m, builtinMemberAbs("Array", m), "Array");
-    completions.push({ label: m, kind: "method", detail });
-  }
-  completions.push({
-    label: "length",
-    kind: "property",
-    // tuple 长度是精确字面量；array 是 number（保持原展示语义）
-    detail: tv.kind === "tuple" ? `${tv.elements.length}` : "number",
-  });
-  return completions;
-}
-
 function getPromiseCompletions(): CompletionItem[] {
   return builtinProtoMembers("Promise").map((m) => ({
     label: m,
@@ -719,96 +638,14 @@ function getStringCompletions(): CompletionItem[] {
   return completions;
 }
 
-/**
- * union 接收者：各成员补全取交集（对成员全部「可能存在」的公共键），
- * detail 为各成员该键类型字符串的并集渲染。键序取首个含该键的成员序，
- * 稳定且与成员书写顺序一致。无公共键返回空——打点补全只展示确定可用
- * 的成员，不做「部分成员才有」的投机提示。
- */
-function getUnionCompletions(tv: TypeValue & { kind: "union" }): CompletionItem[] {
-  const members = tv.members;
-  if (members.length === 0) return [];
-
-  const labelsByMember = members.map((m) => getCompletionsForType(m));
-  // 首个非空成员集的键序作基准；对空集成员（无任何已知成员，如 unknown）
-  // 视为「任何键都可能存在」——跳过其过滤而非让交集归零
-  const baseIdx = labelsByMember.findIndex((labels) => labels.length > 0);
-  if (baseIdx === -1) return [];
-
-  const common: CompletionItem[] = [];
-  for (const base of labelsByMember[baseIdx]) {
-    let allPresent = true;
-    const memberTypes: string[] = [base.detail ?? base.label];
-    for (let i = 0; i < members.length; i++) {
-      if (i === baseIdx) continue;
-      const labels = labelsByMember[i];
-      if (labels.length === 0) continue; // 该成员无已知成员集 → 不约束交集
-      const hit = labels.find((l) => l.label === base.label);
-      if (!hit) {
-        allPresent = false;
-        break;
-      }
-      memberTypes.push(hit.detail ?? hit.label);
-    }
-    if (allPresent) {
-      common.push({ ...base, detail: memberTypes.join(" | ") });
-    }
-  }
-  return common;
-}
-
-function getCompletionsForType(tv: TypeValue): CompletionItem[] {
-  const completions: CompletionItem[] = [];
-
-  if (tv.kind === "object") {
-    for (const [key, val] of Object.entries(tv.properties)) {
-      completions.push({
-        label: key,
-        kind: val.kind === "function" ? "method" : "property",
-        detail: typeValueToString(val),
-      });
-    }
-    return completions;
-  }
-
-  if (tv.kind === "instance") {
-    for (const [key, val] of Object.entries(tv.properties)) {
-      completions.push({
-        label: key,
-        kind: val.kind === "function" ? "method" : "property",
-        detail: typeValueToString(val),
-      });
-    }
-    return completions;
-  }
-
-  if (tv.kind === "union") {
-    return getUnionCompletions(tv);
-  }
-
-  if (tv.kind === "array" || tv.kind === "tuple") {
-    return getArrayCompletions(tv);
-  }
-
-  if (tv.kind === "promise") {
-    return getPromiseCompletions();
-  }
-
-  if (tv.kind === "primitive" && tv.type === "string") {
-    return getStringCompletions();
-  }
-
-  return completions;
-}
-
 // ---------------------------------------------------------------------------
-// Abs 接收者补全（TypeValue 退出主路径）
+// Abs 接收者补全
 // ---------------------------------------------------------------------------
 
-/** Abs → 补全 detail：经 TypeValue 桥保持与既有展示口径一致（"1" / "number"） */
+/** Abs → 补全 detail（外延口径："1" / "number"） */
 function absDetail(a: Abs): string {
   try {
-    return typeValueToString(absToTypeValue(a));
+    return formatShape(a);
   } catch {
     return formatAbs(a);
   }

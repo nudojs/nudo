@@ -3,19 +3,35 @@ import { resolve } from "node:path";
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, chmodSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { T, typeValueToString, typeValueToAbs, litValue, type TypeValue, formatShape } from "@nudojs/core";
+import { litValue, formatShape, numLit, strLit, boolLit, str, abs as makeAbs, type Abs } from "@nudojs/core";
 import { analyzeFile, collectCallRecords, buildModuleGraph, type ModuleGraphCache, computeDirtySet, topoSortDirty } from "../analyzer.ts";
 import { getTypeAtPosition, getCompletionsAtPosition } from "../lsp-surface.ts";
 import { generateDts } from "../dts-generator.ts";
 import { resetAllAnalysisCaches } from "../index.ts";
 import type { CallRecord } from "../evaluator/call-record.ts";
 
-/** 测试夹具：TypeValue 字面量 → Abs CallRecord */
+const neverAbs = (): Abs => makeAbs({ k: "never" }, undefined, undefined, "exact");
+const nullLit = (): Abs => makeAbs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
+const undefLit = (): Abs => makeAbs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
+function litAbs(v: string | number | boolean | null | undefined): Abs {
+  if (typeof v === "number") return numLit(v);
+  if (typeof v === "string") return strLit(v);
+  if (typeof v === "boolean") return boolLit(v);
+  if (v === null) return nullLit();
+  return undefLit();
+}
+const objAbs = (props: Record<string, Abs>): Abs => {
+  const slots: Record<string, { value: Abs }> = {};
+  for (const [k, v] of Object.entries(props)) slots[k] = { value: v };
+  return makeAbs({ k: "obj", slots }, undefined, undefined, "exact");
+};
+
+/** 测试夹具：Abs CallRecord */
 function absRec(p: {
   fnName: string;
-  argTypes: TypeValue[];
-  resultType: TypeValue;
-  throws: TypeValue;
+  argAbs: Abs[];
+  resultAbs: Abs;
+  throwsAbs: Abs;
   callLoc?: { line: number; column: number };
   targetModule?: string;
   targetExport?: string;
@@ -23,9 +39,9 @@ function absRec(p: {
 }): CallRecord {
   return {
     fnName: p.fnName,
-    argAbs: p.argTypes.map(typeValueToAbs),
-    resultAbs: typeValueToAbs(p.resultType),
-    throwsAbs: typeValueToAbs(p.throws),
+    argAbs: p.argAbs,
+    resultAbs: p.resultAbs,
+    throwsAbs: p.throwsAbs,
     ...(p.callLoc ? { callLoc: p.callLoc } : {}),
     ...(p.targetModule ? { targetModule: p.targetModule } : {}),
     ...(p.targetExport ? { targetExport: p.targetExport } : {}),
@@ -476,9 +492,9 @@ module.exports = { formatName, shout };
     const external = [
       absRec({
         fnName: "formatName",
-        argTypes: [T.literal("Ada"), T.literal("Lovelace")],
-        resultType: T.literal("Ada Lovelace"),
-        throws: T.never,
+        argAbs: [litAbs("Ada"), litAbs("Lovelace")],
+        resultAbs: litAbs("Ada Lovelace"),
+        throwsAbs: neverAbs(),
         targetModule: "/test/lib/util.js",
         targetExport: "formatName",
       }),
@@ -534,9 +550,9 @@ module.exports = function (a, b) {
     const external = [
       absRec({
         fnName: "renamed",
-        argTypes: [T.literal(1), T.literal(2)],
-        resultType: T.literal(3),
-        throws: T.never,
+        argAbs: [litAbs(1), litAbs(2)],
+        resultAbs: litAbs(3),
+        throwsAbs: neverAbs(),
         callLoc: { line: 3, column: 0 },
         targetModule: "/test/anon-export.js",
         targetExport: "renamed",
@@ -567,9 +583,9 @@ module.exports = { alpha, beta };
     const external = [
       absRec({
         fnName: "gamma",
-        argTypes: [T.literal(1)],
-        resultType: T.literal(1),
-        throws: T.never,
+        argAbs: [litAbs(1)],
+        resultAbs: litAbs(1),
+        throwsAbs: neverAbs(),
         callLoc: { line: 4, column: 0 },
         targetModule: "/test/multi-export.js",
         targetExport: "gamma",
@@ -595,9 +611,9 @@ function parseChunked(emitter) {
     const external = [
       absRec({
         fnName: "parseChunked",
-        argTypes: [T.object({})],
-        resultType: T.never,
-        throws: T.never,
+        argAbs: [objAbs({})],
+        resultAbs: neverAbs(),
+        throwsAbs: neverAbs(),
         callLoc: { line: 5, column: 0 },
         targetModule: "/test/higher-order.js",
         targetExport: "parseChunked",
@@ -622,9 +638,9 @@ function fail(msg) {
     const external = [
       absRec({
         fnName: "fail",
-        argTypes: [T.literal("boom")],
-        resultType: T.never,
-        throws: T.string,
+        argAbs: [litAbs("boom")],
+        resultAbs: neverAbs(),
+        throwsAbs: str(),
         callLoc: { line: 7, column: 0 },
         targetModule: "/test/throwing.js",
         targetExport: "fail",

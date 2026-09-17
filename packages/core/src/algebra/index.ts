@@ -36,7 +36,6 @@ export * from "./denote.ts";
 export * from "./abs-modules.ts";
 export * from "./exec/index.ts";
 // modules/fs/path 属于 host（service/cli），不进代数
-export * from "./bridge.ts";
 export * from "./interface.ts";
 export * from "./projection.ts";
 export * from "./derivation.ts";

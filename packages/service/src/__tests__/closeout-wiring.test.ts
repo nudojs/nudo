@@ -1,9 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { parse, extractDirectives } from "@nudojs/parser";
-import { T } from "@nudojs/core";
+import { num, str, numLit, abs as makeAbs, type Abs } from "@nudojs/core";
 import { phiFromTest } from "../evaluator/phi-from-test.ts";
 import { tryAbsJoinObjects, resetPhi } from "../evaluator/abs-route.ts";
 import { mockDirectivesToAbsSeeds } from "@nudojs/service";
+
+function absObj(properties: Record<string, Abs>): Abs {
+  const slots: Record<string, { value: Abs }> = {};
+  for (const [k, v] of Object.entries(properties)) slots[k] = { value: v };
+  return makeAbs({ k: "obj", slots }, undefined, undefined, "exact");
+}
 
 describe("phiFromTest false branch", () => {
   function testNode(src: string) {
@@ -41,18 +47,18 @@ describe("phiFromTest false branch", () => {
 describe("tryAbsJoinObjects", () => {
   it("joins same-key object slots", () => {
     resetPhi();
-    const a = T.object({ x: T.literal(1) });
-    const b = T.object({ x: T.literal(2) });
+    const a = absObj({ x: numLit(1) });
+    const b = absObj({ x: numLit(2) });
     const r = tryAbsJoinObjects(a, b);
     expect(r).toBeDefined();
-    expect(r!.kind).toBe("object");
-    if (r!.kind === "object") {
-      expect(r.properties.x).toBeDefined();
+    expect(r!.shape.k).toBe("obj");
+    if (r!.shape.k === "obj") {
+      expect(r.shape.slots.x).toBeDefined();
     }
   });
 
   it("returns undefined for non-objects", () => {
-    expect(tryAbsJoinObjects(T.number, T.string)).toBeUndefined();
+    expect(tryAbsJoinObjects(num(), str())).toBeUndefined();
   });
 });
 

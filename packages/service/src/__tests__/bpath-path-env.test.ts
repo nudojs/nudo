@@ -17,11 +17,11 @@ describe("B-path path-based @nudo:env", () => {
     dirs.push(dir);
     writeFileSync(
       join(dir, "custom.env.ts"),
-      `import { T } from "@nudojs/core";
+      `import { numLit } from "@nudojs/core";
 export function defineEnv() {
   return {
     globals: {
-      MAGIC: T.literal(99),
+      MAGIC: numLit(99),
     },
   };
 }

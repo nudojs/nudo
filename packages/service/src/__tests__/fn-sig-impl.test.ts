@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { typeValueToString, formatShape } from "@nudojs/core";
+import { formatShape } from "@nudojs/core";
 import { analyzeFile } from "../analyzer.ts";
 
 describe("fnSig impl: concrete args produce precise values", () => {

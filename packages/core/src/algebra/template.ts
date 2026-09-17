@@ -5,7 +5,7 @@
  *
  * 本模块是模板语义的唯一真理源：前缀/后缀/固定文本/长度/匹配/名称渲染/
  * 相邻合并/谓词判定等纯计算以「中性 part 视图」（TemplatePartView）暴露；
- * TypeValue 侧（refinements/template.ts）与 Abs 方法表（methods.ts）只做薄适配。
+ * Abs 方法表（methods.ts）只做薄适配。
  */
 
 import type { Abs } from "./abs.ts";
@@ -17,7 +17,7 @@ export type TemplateMeta = {
   templateParts: Abs[];
 };
 
-// --- 中性 part 视图：Abs / TypeValue 两侧共享的语义计算 ---
+// --- 中性 part 视图：方法表共享的语义计算 ---
 
 /** 单个 part 的分类：固定文本，或抽象 part（携带展示文本） */
 export type TemplatePartDesc = { fixed: string } | { render: string };
@@ -128,7 +128,7 @@ export function templateMatchesValue(value: string, views: TemplatePartView[]): 
 
 // --- 谓词判定：startsWith / endsWith / includes ---
 
-/** 三值判定；两侧分别把 "unknown" 适配为 boolPrim（Abs）或 undefined（TypeValue） */
+/** 三值判定；Abs 方法表把 "unknown" 适配为 boolPrim */
 export type TemplatePredicateDecision = boolean | "unknown";
 
 export function decideStartsWith(prefix: string, search: string): TemplatePredicateDecision {

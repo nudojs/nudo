@@ -29,7 +29,7 @@ describe("mockSeedFingerprint", () => {
           {
             kind: "mock",
             name: "fetch",
-            sinonExpr: { type: "sinon.stub", returnValue: parseCaseArgExpr("1").abs },
+            sinonExpr: { type: "sinon.stub", returnValue: parseCaseArgExpr("1") },
           } as never,
         ],
       },
@@ -40,7 +40,7 @@ describe("mockSeedFingerprint", () => {
           {
             kind: "mock",
             name: "fetch",
-            sinonExpr: { type: "sinon.stub", returnValue: parseCaseArgExpr("2").abs },
+            sinonExpr: { type: "sinon.stub", returnValue: parseCaseArgExpr("2") },
           } as never,
         ],
       },

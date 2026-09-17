@@ -3,12 +3,10 @@ import { analyzeFn, evalSource } from "../ast-eval.ts";
 import { abs, num, numLit, unknown } from "../abs.ts";
 import { v, lit } from "../term.ts";
 import { gt, pTrue } from "../pred.ts";
-import { typeValueToString } from "../../type-value.ts";
-import { absToTypeValue } from "../bridge.ts";
-import { formatAbs } from "../format.ts";
+import { formatShape } from "../format.ts";
 
 function show(a: ReturnType<typeof analyzeFn>): string {
-  return typeValueToString(absToTypeValue(a));
+  return formatShape(a);
 }
 
 describe("abs-native ast-eval", () => {

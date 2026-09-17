@@ -32,7 +32,6 @@ import {
   sidecarPathOf,
   takeInterfaceDiagsSince,
   takeRefineDiagsSince,
-  typeValueToAbs,
   type Abs,
   type NudoConstraint,
 } from "@nudojs/core";
@@ -391,14 +390,6 @@ function projectFunctionDsl(fn: FunctionAnalysis): string | undefined {
 
   const ret = retConstraint === undefined ? "" : `, ${formatConstraint(retConstraint)}`;
   return `fn({ ${paramParts.join(", ")} }${ret})`;
-}
-
-function safeTypeValueToAbs(v: Parameters<typeof typeValueToAbs>[0]): Abs {
-  try {
-    return typeValueToAbs(v);
-  } catch {
-    return { shape: { k: "unknown" }, conf: "opaque" } as Abs; // 不可桥 → 必然不可投影
-  }
 }
 
 // ---------------------------------------------------------------------------

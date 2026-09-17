@@ -2,13 +2,12 @@
  * `nudo infer --json` 稳定契约 v1（CI / Agent）。
  *
  * 字段只增不改语义：
- * - ext_*：TypeValue 投影字符串（有损，兼容）
+ * - args / result / throws / combined：formatShape 外延投影（有损，兼容）
  * - intension.abs*：无损 Abs 展示（主线）
- * - argsAbs / resultAbs：CaseResult 上的无损 Abs（formatAbs）；有则补齐，
- *   与 TypeValue 外延字段并存——消费者可逐步切到 Abs，不强制 breaking
+ * - argsAbs / resultAbs：CaseResult 上的无损 Abs（formatAbs）；有则补齐
  */
 
-import { typeValueToString, formatAbs, formatShape, type TypeValue, type Abs } from "@nudojs/core";
+import { formatAbs, formatShape, type Abs } from "@nudojs/core";
 import type { AnalysisResult, CaseResult, FunctionAnalysis, SourceLocation } from "./analyzer.ts";
 
 export type InferJsonCase = {

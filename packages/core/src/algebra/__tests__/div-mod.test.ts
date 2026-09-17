@@ -3,9 +3,7 @@ import { div, mod } from "../arithmetic.ts";
 import { numLit, num, abs } from "../abs.ts";
 import { v, lit } from "../term.ts";
 import { ge, pTrue } from "../pred.ts";
-import { typeValueToString } from "../../type-value.ts";
-import { absToTypeValue } from "../bridge.ts";
-import { formatAbs } from "../format.ts";
+import { formatAbs, formatShape } from "../format.ts";
 
 describe("algebra div/mod", () => {
   it("lit div", () => {
@@ -21,8 +19,7 @@ describe("algebra div/mod", () => {
     const x = abs(num().shape, v("x"), ge(v("x"), lit(0)), "path");
     const half = div(x, numLit(2));
     expect(half.pred).toBeDefined();
-    const tv = absToTypeValue(half);
-    expect(typeValueToString(tv)).toContain(">= 0");
+    expect(formatAbs(half)).toContain("≥ 0");
   });
 
   it("lit mod", () => {

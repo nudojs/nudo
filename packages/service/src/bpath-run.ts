@@ -12,7 +12,6 @@ import {
   setBCallCollector,
   setMemberDiagCollector,
   setAbsTruncationCollector,
-  typeValueToAbs,
   createEnvironment,
   type BCallRecord,
   type BMemberDiag,

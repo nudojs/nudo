@@ -27,8 +27,6 @@ import {
   type EffectiveInterfaceOpts,
 } from "./interface.ts";
 import { literalMeetsConstraint } from "./domain-membership.ts";
-import { getTvConfidence } from "./bridge.ts";
-import type { TypeValue } from "../type-value.ts";
 import { resolveDepPath } from "./load-deps-fp.ts";
 import { extractFn, generalizeFromAst, type PolyFn } from "./generalize.ts";
 import { numLit, abs as makeAbs, litValue } from "./abs.ts";
@@ -1599,18 +1597,13 @@ export function scanLiteralCalls(
 // ---------------------------------------------------------------------------
 
 /**
- * 注入记录的最小结构面。Abs 为主（TypeValue 退出后真理源）；
- * argTypes 等外延字段仅兼容旧调用方，证据提取不再依赖。
+ * 注入记录的最小结构面。Abs 为唯一真理源。
  */
 export type InjectedDomainRecord = {
   /** 无损参数 Abs（必填；domain 证据唯一来源） */
   argAbs?: Abs[];
   resultAbs?: Abs;
   throwsAbs?: Abs;
-  /** @deprecated 外延兼容；证据提取已不读 */
-  argTypes?: TypeValue[];
-  resultType?: TypeValue;
-  throws?: TypeValue;
 };
 
 export type InjectedDomainEvidenceOpts = {
@@ -1639,10 +1632,8 @@ function evidenceToString(v: number | string | boolean): string {
  *
  * 证据门槛（§6）：
  * - 只有 plain literal 实参构成证据：union/unknown/primitive/refined 形态
- *   无法归因到确定值，不参与（widened/partial conf 经 absToTypeValue 投影
- *   为非 literal 形态，天然被此条排除；getTvConfidence 再兜一道底）。
- *   **Abs 路径优先**：`argAbs[i]` 有无损 Abs 时直接读 `litValue` + conf
- *   ∈ {exact, path}，不经 TypeValue 桥；
+ *   无法归因到确定值，不参与。Abs 路径直接读 `litValue` + conf
+ *   ∈ {exact, path}。
  * - null 证据预过滤（T4 caveat：lit(null) 编码 prim undefined + eq(self,
  *   null)，对任何约束恒不满足，不过滤必 FP）；undefined/bigint/symbol
  *   不在字面量证据域内，一并跳过；
@@ -1665,7 +1656,7 @@ export function checkInjectedDomainEvidence(
     if (r.resultAbs && r.throwsAbs) {
       return r.resultAbs.shape.k === "never" && r.throwsAbs.shape.k === "never";
     }
-    return r.resultType?.kind === "never" && r.throws?.kind === "never";
+    return false;
   };
   const usable = records.filter((r) => !isLeaked(r));
   if (usable.length === 0) return [];
@@ -1724,7 +1715,7 @@ export function checkInjectedDomainEvidence(
 
 /**
  * 单条记录在参数位 idx 的字面量证据。
- * Abs 为主（无损 lit + conf 门槛）；无 argAbs 时回退 TypeValue literal。
+ * Abs 无损 lit + conf 门槛。
  * 非字面量 / conf 门槛不过 / null·undefined·bigint·symbol → undefined。
  */
 function extractLiteralEvidence(
@@ -1732,21 +1723,11 @@ function extractLiteralEvidence(
   idx: number,
 ): number | string | boolean | undefined {
   const absArg = rec.argAbs?.[idx];
-  if (absArg) {
-    if (absArg.conf !== "exact" && absArg.conf !== "path") return undefined;
-    const lv = litValue(absArg);
-    if (typeof lv === "number" || typeof lv === "string" || typeof lv === "boolean") {
-      return lv;
-    }
-    return undefined;
+  if (!absArg) return undefined;
+  if (absArg.conf !== "exact" && absArg.conf !== "path") return undefined;
+  const lv = litValue(absArg);
+  if (typeof lv === "number" || typeof lv === "string" || typeof lv === "boolean") {
+    return lv;
   }
-  const arg = rec.argTypes?.[idx];
-  if (!arg || arg.kind !== "literal") return undefined;
-  const v = arg.value;
-  if (typeof v !== "number" && typeof v !== "string" && typeof v !== "boolean") {
-    return undefined;
-  }
-  const conf = getTvConfidence(arg);
-  if (conf !== undefined && conf !== "exact" && conf !== "path") return undefined;
-  return v;
+  return undefined;
 }

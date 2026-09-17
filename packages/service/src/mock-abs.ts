@@ -6,19 +6,17 @@
 import type { Node } from "@babel/types";
 import type { FunctionWithDirectives } from "@nudojs/parser";
 import { parseCaseArgExpr } from "@nudojs/parser";
-import type { MockHelper, TypeValue } from "@nudojs/core";
+import type { MockHelper } from "@nudojs/core";
 import {
   type Abs,
   absFunction,
   emptyEnv,
-  typeValueToAbs,
   abs as makeAbs,
   confJoin,
   unknown as absUnknown,
   litValue,
   formatAbs,
   getFnImpl,
-  typeValueToString,
 } from "@nudojs/core";
 
 /**
@@ -271,7 +269,7 @@ export function mockDirectivesToAbsSeeds(
         // B 路径注入只吃 seed → 被当 unknown 全局（nudo:builtin-unknown）。
         // 桥进 seedVars 后两条路径口径一致。
         try {
-          seedVars[d.name] = parseCaseArgExpr(d.expression).abs;
+          seedVars[d.name] = parseCaseArgExpr(d.expression);
         } catch {
           seedVars[d.name] = absUnknown;
         }

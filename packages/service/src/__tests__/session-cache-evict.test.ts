@@ -12,7 +12,7 @@ import {
   clearAnalysisSessionCaches,
   evictAnalysisCachesForFiles,
 } from "@nudojs/service";
-import { typeValueToString, formatShape } from "@nudojs/core";
+import { formatShape } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterEach(() => {

@@ -2,7 +2,20 @@
 // 该模块为新建（调用点固化：序列化合成 case、剥离/插入 @nudo:case 指令、
 // unified diff），此前无既有测试归属文件，故独立成文件。
 import { describe, it, expect } from "vitest";
-import { T, createEnvironment, typeValueEquals, typeValueToAbs, litValue, type TypeValue } from "@nudojs/core";
+import {
+  type Abs,
+  abs as makeAbs,
+  lit as termLit,
+  num,
+  str,
+  bool,
+  numLit,
+  strLit,
+  absFunction,
+  joinAbs,
+  litValue,
+  formatShape,
+} from "@nudojs/core";
 import { parse, extractDirectives, parseTypeValueExpr, type CaseDirective } from "@nudojs/parser";
 import {
   serializeCaseArg,
@@ -13,55 +26,73 @@ import {
 } from "../case-emitter.ts";
 import { analyzeFile, type AnalysisResult, type FunctionAnalysis } from "../analyzer.ts";
 
-/**
- * 结构等价比较：core 的 typeValueEquals 对 object/tuple/array 是引用比较
- * （object 带唯一 symbol id），序列化往返需要按结构比较。
- */
-function structurallyEqual(a: TypeValue, b: TypeValue): boolean {
-  if (a.kind !== b.kind) return false;
-  switch (a.kind) {
-    case "literal": {
-      const bb = b as typeof a;
-      return a.value === bb.value;
-    }
-    case "primitive": {
-      const bb = b as typeof a;
-      return a.type === bb.type;
-    }
-    case "array": {
-      const bb = b as typeof a;
-      return structurallyEqual(a.element, bb.element);
-    }
-    case "tuple": {
-      const bb = b as typeof a;
-      return (
-        a.elements.length === bb.elements.length &&
-        a.elements.every((e, i) => structurallyEqual(e, bb.elements[i]))
-      );
-    }
-    case "object": {
-      const bb = b as typeof a;
-      const ka = Object.keys(a.properties);
-      const kb = Object.keys(bb.properties);
-      return (
-        ka.length === kb.length &&
-        ka.every((k) => k in bb.properties && structurallyEqual(a.properties[k], bb.properties[k]))
-      );
-    }
-    default:
-      // union/never/unknown/refined/promise/instance core 已做结构比较
-      return typeValueEquals(a, b);
-  }
+function absExact(shape: Abs["shape"]): Abs {
+  return makeAbs(shape, undefined, undefined, "exact");
 }
 
-function dummyFn(): TypeValue {
-  return T.fn(["x"], { type: "BlockStatement", body: [] } as any, createEnvironment());
+function absUnknown(): Abs {
+  return makeAbs({ k: "unknown" }, undefined, undefined, "partial");
+}
+
+function absNullLit(): Abs {
+  return makeAbs({ k: "unknown" }, termLit(null), undefined, "exact");
+}
+
+function absUndefLit(): Abs {
+  return makeAbs({ k: "unknown" }, termLit(undefined), undefined, "exact");
+}
+
+function absLit(v: string | number | boolean | null | undefined): Abs {
+  if (typeof v === "number") return numLit(v);
+  if (typeof v === "string") return strLit(v);
+  if (typeof v === "boolean") return makeAbs({ k: "prim", type: "boolean" }, termLit(v), undefined, "exact");
+  if (v === null) return absNullLit();
+  return absUndefLit();
+}
+
+function absUnion(members: Abs[]): Abs {
+  if (members.length === 0) return absExact({ k: "never" });
+  return members.reduce((acc, m) => joinAbs(acc, m));
+}
+
+function absArr(element: Abs): Abs {
+  return absExact({ k: "arr", element });
+}
+
+function absTuple(elements: Abs[]): Abs {
+  return absExact({ k: "tuple", elements });
+}
+
+function absPromise(inner: Abs): Abs {
+  return absExact({ k: "eff", eff: "promise", inner });
+}
+
+function absObj(properties: Record<string, Abs>): Abs {
+  const slots: Record<string, { value: Abs }> = {};
+  for (const [k, v] of Object.entries(properties)) slots[k] = { value: v };
+  return absExact({ k: "obj", slots });
+}
+
+function absBrand(name: string): Abs {
+  return absExact({ k: "brand", name, shape: absObj({}) });
+}
+
+function absPrim(type: "number" | "string" | "boolean" | "bigint" | "symbol"): Abs {
+  return absExact({ k: "prim", type });
+}
+
+function structurallyEqual(a: Abs, b: Abs): boolean {
+  return formatShape(a) === formatShape(b) && Object.is(litValue(a), litValue(b));
+}
+
+function dummyFn(): Abs {
+  return absFunction(["x"], { body: { type: "BlockStatement", body: [] } as never });
 }
 
 function makeFn(
   name: string,
   line: number,
-  cases: Array<{ name: string; args: TypeValue[]; source?: "callsite" }>,
+  cases: Array<{ name: string; args: Abs[]; source?: "callsite" }>,
   flags: { skipped?: boolean; noDeclaration?: boolean; entryOnly?: boolean; column?: number } = {},
 ): FunctionAnalysis {
   return {
@@ -70,10 +101,9 @@ function makeFn(
     paramNames: [],
     cases: cases.map((c) => ({
       name: c.name,
-      args: c.args,
-      argAbs: c.args.map(typeValueToAbs),
-      result: T.unknown,
-      throws: T.never,
+      argAbs: c.args,
+      abs: absUnknown(),
+      throwsAbs: absExact({ k: "never" }),
       source: c.source,
     })),
     skipped: flags.skipped,
@@ -87,55 +117,55 @@ function makeAnalysis(functions: FunctionAnalysis[]): AnalysisResult {
 }
 
 describe("serializeCaseArg", () => {
-  const matrix: Array<{ label: string; value: TypeValue }> = [
-    { label: "number", value: T.number },
-    { label: "string", value: T.string },
-    { label: "boolean", value: T.boolean },
-    { label: "unknown", value: T.unknown },
-    { label: "never", value: T.never },
-    { label: "null literal", value: T.literal(null) },
-    { label: "undefined literal", value: T.literal(undefined) },
-    { label: "true", value: T.literal(true) },
-    { label: "false", value: T.literal(false) },
-    { label: "integer literal", value: T.literal(0) },
-    { label: "negative float literal", value: T.literal(-1.5) },
-    { label: "plain string", value: T.literal("hello") },
-    { label: "string with double quote", value: T.literal('a"b') },
-    { label: "string with single quote", value: T.literal("a'b") },
-    { label: "string with backslash", value: T.literal("a\\b") },
-    { label: "string with colon (value position is safe)", value: T.literal("2024-01-01T10:00:00") },
-    { label: "string with arrow", value: T.literal("a=>b") },
-    { label: "union", value: T.union(T.number, T.string) },
-    { label: "union of literals", value: T.union(T.literal(1), T.literal("x")) },
-    { label: "array", value: T.array(T.number) },
-    { label: "tuple", value: T.tuple([T.literal(1), T.literal("x")]) },
-    { label: "empty tuple", value: T.tuple([]) },
-    { label: "object", value: T.object({ a: T.literal(1), b: T.string }) },
-    { label: "empty object", value: T.object({}) },
-    { label: "non-identifier object key", value: T.object({ "a-b": T.number }) },
-    { label: "space object key", value: T.object({ "a b": T.number }) },
+  const matrix: Array<{ label: string; value: Abs }> = [
+    { label: "number", value: num() },
+    { label: "string", value: str() },
+    { label: "boolean", value: bool() },
+    { label: "unknown", value: absUnknown() },
+    { label: "never", value: absExact({ k: "never" }) },
+    { label: "null literal", value: absLit(null) },
+    { label: "undefined literal", value: absLit(undefined) },
+    { label: "true", value: absLit(true) },
+    { label: "false", value: absLit(false) },
+    { label: "integer literal", value: absLit(0) },
+    { label: "negative float literal", value: absLit(-1.5) },
+    { label: "plain string", value: absLit("hello") },
+    { label: "string with double quote", value: absLit('a"b') },
+    { label: "string with single quote", value: absLit("a'b") },
+    { label: "string with backslash", value: absLit("a\\b") },
+    { label: "string with colon (value position is safe)", value: absLit("2024-01-01T10:00:00") },
+    { label: "string with arrow", value: absLit("a=>b") },
+    { label: "union", value: absUnion([num(), str()]) },
+    { label: "union of literals", value: absUnion([absLit(1), absLit("x")]) },
+    { label: "array", value: absArr(num()) },
+    { label: "tuple", value: absTuple([absLit(1), absLit("x")]) },
+    { label: "empty tuple", value: absTuple([]) },
+    { label: "object", value: absObj({ a: absLit(1), b: str() }) },
+    { label: "empty object", value: absObj({}) },
+    { label: "non-identifier object key", value: absObj({ "a-b": num() }) },
+    { label: "space object key", value: absObj({ "a b": num() }) },
     {
       label: "nested containers",
-      value: T.object({
-        list: T.array(T.union(T.number, T.literal(null))),
-        pair: T.tuple([T.string, T.boolean]),
+      value: absObj({
+        list: absArr(absUnion([num(), absLit(null)])),
+        pair: absTuple([str(), bool()]),
       }),
     },
   ];
 
   it("serializes every shape in the grammar matrix", () => {
-    expect(serializeCaseArg(T.number)).toBe("T.number");
-    expect(serializeCaseArg(T.literal(1))).toBe("1");
-    expect(serializeCaseArg(T.literal("hi"))).toBe('"hi"');
-    expect(serializeCaseArg(T.literal('a"b'))).toBe("'a\"b'");
-    expect(serializeCaseArg(T.literal("a'b"))).toBe('"a\'b"');
-    expect(serializeCaseArg(T.array(T.number))).toBe("T.array(T.number)");
-    expect(serializeCaseArg(T.tuple([T.literal(1), T.literal(2)]))).toBe("[1, 2]");
-    expect(serializeCaseArg(T.tuple([]))).toBe("[]");
-    expect(serializeCaseArg(T.object({ a: T.literal(1) }))).toBe("{ a: 1 }");
-    expect(serializeCaseArg(T.object({}))).toBe("{}");
-    expect(serializeCaseArg(T.object({ "a-b": T.string }))).toBe('{ "a-b": T.string }');
-    expect(serializeCaseArg(T.union(T.number, T.string))).toBe("T.union(T.number, T.string)");
+    expect(serializeCaseArg(num())).toBe("T.number");
+    expect(serializeCaseArg(absLit(1))).toBe("1");
+    expect(serializeCaseArg(absLit("hi"))).toBe('"hi"');
+    expect(serializeCaseArg(absLit('a"b'))).toBe("'a\"b'");
+    expect(serializeCaseArg(absLit("a'b"))).toBe('"a\'b"');
+    expect(serializeCaseArg(absArr(num()))).toBe("T.array(T.number)");
+    expect(serializeCaseArg(absTuple([absLit(1), absLit(2)]))).toBe("[1, 2]");
+    expect(serializeCaseArg(absTuple([]))).toBe("[]");
+    expect(serializeCaseArg(absObj({ a: absLit(1) }))).toBe("{ a: 1 }");
+    expect(serializeCaseArg(absObj({}))).toBe("{}");
+    expect(serializeCaseArg(absObj({ "a-b": str() }))).toBe('{ "a-b": T.string }');
+    expect(serializeCaseArg(absUnion([num(), str()]))).toBe("T.union(T.number, T.string)");
   });
 
   it("round-trips through parseTypeValueExpr: equivalent parse and idempotent serialize", () => {
@@ -145,23 +175,23 @@ describe("serializeCaseArg", () => {
       const parsed = parseTypeValueExpr(s!);
       // 性质 1：serialize(parse(serialize(x))) === serialize(x)
       expect(serializeCaseArg(parsed), label).toBe(s);
-      // 性质 2：parse 结果与原值结构等价（kind / 字面量值 / 成员）
+      // 性质 2：parse 结果与原值结构等价（shape / 字面量值）
       expect(structurallyEqual(parsed, value), label).toBe(true);
     }
   });
 
   it("returns null for kinds the grammar cannot express, including nested", () => {
-    const nulls: Array<{ label: string; value: TypeValue }> = [
-      { label: "bigint", value: T.bigint },
-      { label: "symbol", value: T.symbol },
+    const nulls: Array<{ label: string; value: Abs }> = [
+      { label: "bigint", value: absPrim("bigint") },
+      { label: "symbol", value: absPrim("symbol") },
       { label: "function", value: dummyFn() },
-      { label: "promise", value: T.promise(T.number) },
-      { label: "instance", value: T.instanceOf("Error") },
-      { label: "array of promise", value: T.array(T.promise(T.number)) },
-      { label: "tuple with instance", value: T.tuple([T.instanceOf("Date")]) },
-      { label: "object with bigint", value: T.object({ n: T.bigint }) },
-      { label: "union with symbol", value: T.union(T.number, T.symbol) },
-      { label: "object with function value", value: T.object({ cb: dummyFn() }) },
+      { label: "promise", value: absPromise(num()) },
+      { label: "instance", value: absBrand("Error") },
+      { label: "array of promise", value: absArr(absPromise(num())) },
+      { label: "tuple with instance", value: absTuple([absBrand("Date")]) },
+      { label: "object with bigint", value: absObj({ n: absPrim("bigint") }) },
+      { label: "union with symbol", value: absUnion([num(), absPrim("symbol")]) },
+      { label: "object with function value", value: absObj({ cb: dummyFn() }) },
     ];
     for (const { label, value } of nulls) {
       expect(serializeCaseArg(value), label).toBeNull();
@@ -170,43 +200,44 @@ describe("serializeCaseArg", () => {
 
   it("returns null for string/number literals that cannot survive the round-trip", () => {
     // 两种引号并存：文法无转义机制，无法安全包裹
-    expect(serializeCaseArg(T.literal(`a"b'c`))).toBeNull();
+    expect(serializeCaseArg(absLit(`a"b'c`))).toBeNull();
     // 结构字符：破坏参数切分 / 括号配对 / 对象键冒号定位 / JSDoc 终止
-    expect(serializeCaseArg(T.literal("a,b"))).toBeNull();
-    expect(serializeCaseArg(T.literal("a(b"))).toBeNull();
-    expect(serializeCaseArg(T.literal("a}b"))).toBeNull();
-    expect(serializeCaseArg(T.literal("a*/b"))).toBeNull();
-    expect(serializeCaseArg(T.literal("a\nb"))).toBeNull();
+    expect(serializeCaseArg(absLit("a,b"))).toBeNull();
+    expect(serializeCaseArg(absLit("a(b"))).toBeNull();
+    expect(serializeCaseArg(absLit("a}b"))).toBeNull();
+    expect(serializeCaseArg(absLit("a*/b"))).toBeNull();
+    expect(serializeCaseArg(absLit("a\nb"))).toBeNull();
     // 科学计数法 / 非有限数：文法的数字正则不收
-    expect(serializeCaseArg(T.literal(NaN))).toBeNull();
-    expect(serializeCaseArg(T.literal(Infinity))).toBeNull();
-    expect(serializeCaseArg(T.literal(1e21))).toBeNull();
-    expect(serializeCaseArg(T.literal(1e-7))).toBeNull();
+    expect(serializeCaseArg(absLit(NaN))).toBeNull();
+    expect(serializeCaseArg(absLit(Infinity))).toBeNull();
+    expect(serializeCaseArg(absLit(1e21))).toBeNull();
+    expect(serializeCaseArg(absLit(1e-7))).toBeNull();
     // 对象键含双引号 / 冒号 / 首尾引号
-    expect(serializeCaseArg(T.object({ 'a"b': T.number }))).toBeNull();
-    expect(serializeCaseArg(T.object({ "a:b": T.number }))).toBeNull();
-    expect(serializeCaseArg(T.object({ "'q'": T.number }))).toBeNull();
+    expect(serializeCaseArg(absObj({ 'a"b': num() }))).toBeNull();
+    expect(serializeCaseArg(absObj({ "a:b": num() }))).toBeNull();
+    expect(serializeCaseArg(absObj({ "'q'": num() }))).toBeNull();
   });
 });
 
 describe("buildCaseDirective", () => {
   it("builds a single directive line without trailing newline", () => {
-    expect(buildCaseDirective("call@L3", [typeValueToAbs(T.number), typeValueToAbs(T.literal(1))])).toBe(
+    expect(buildCaseDirective("call@L3", [num(), absLit(1)])).toBe(
       ' * @nudo:case "call@L3" (T.number, 1)',
     );
     expect(buildCaseDirective("x", [])).toBe(' * @nudo:case "x" ()');
   });
 
   it("propagates unserializable args as null", () => {
-    expect(buildCaseDirective("call@L3", [typeValueToAbs(T.number), typeValueToAbs(T.promise(T.string))])).toBeNull();
-    expect(buildCaseDirective("call@L3", [typeValueToAbs(T.instanceOf("Error"))])).toBeNull();
+    expect(buildCaseDirective("call@L3", [num(), absPromise(str())])).toBeNull();
+    expect(buildCaseDirective("call@L3", [absBrand("Error")])).toBeNull();
   });
 
   it("rejects names the case-name regex cannot carry", () => {
-    expect(buildCaseDirective('bad"name', [typeValueToAbs(T.number)])).toBeNull();
-    expect(buildCaseDirective("bad\nname", [typeValueToAbs(T.number)])).toBeNull();
+    expect(buildCaseDirective('bad"name', [num()])).toBeNull();
+    expect(buildCaseDirective("bad\nname", [num()])).toBeNull();
   });
 });
+
 
 describe("stripGeneratedCaseDirectives", () => {
   it("removes call@ case lines and the orphaned empty JSDoc block", () => {
@@ -287,7 +318,7 @@ function add(a, b) {
 `;
     const result = insertGeneratedCaseDirectives(
       source,
-      makeAnalysis([makeFn("add", 4, [{ name: "call@L9", args: [T.number], source: "callsite" }])]),
+      makeAnalysis([makeFn("add", 4, [{ name: "call@L9", args: [num()], source: "callsite" }])]),
     );
     expect(result.changed).toBe(false);
     expect(result.written).toEqual([]);
@@ -305,7 +336,7 @@ function add(a, b) {
 `;
     const result = insertGeneratedCaseDirectives(
       source,
-      makeAnalysis([makeFn("add", 4, [{ name: "call@L9", args: [T.number], source: "callsite" }])]),
+      makeAnalysis([makeFn("add", 4, [{ name: "call@L9", args: [num()], source: "callsite" }])]),
     );
     expect(result.changed).toBe(false);
     expect(result.skipped).toEqual([{ fn: "add", reason: "already-generated" }]);
@@ -318,9 +349,9 @@ function add(a, b) {
     const result = insertGeneratedCaseDirectives(
       source,
       makeAnalysis([
-        makeFn("a", 1, [{ name: "call@L1", args: [T.number], source: "callsite" }], { skipped: true }),
-        makeFn("b", 1, [{ name: "call@L1", args: [T.number], source: "callsite" }], { noDeclaration: true }),
-        makeFn("c", 1, [{ name: "entry@L1", args: [T.unknown] }], { entryOnly: true }),
+        makeFn("a", 1, [{ name: "call@L1", args: [num()], source: "callsite" }], { skipped: true }),
+        makeFn("b", 1, [{ name: "call@L1", args: [num()], source: "callsite" }], { noDeclaration: true }),
+        makeFn("c", 1, [{ name: "entry@L1", args: [absUnknown()] }], { entryOnly: true }),
       ]),
     );
     expect(result.changed).toBe(false);
@@ -340,8 +371,8 @@ function add(a, b) {
       source,
       makeAnalysis([
         makeFn("add", 1, [
-          { name: "call@L2", args: [T.promise(T.number)], source: "callsite" },
-          { name: "call@L3", args: [T.instanceOf("Error")], source: "callsite" },
+          { name: "call@L2", args: [absPromise(num())], source: "callsite" },
+          { name: "call@L3", args: [absBrand("Error")], source: "callsite" },
         ]),
       ]),
     );
@@ -363,8 +394,8 @@ function add(a, b) {
       source,
       makeAnalysis([
         makeFn("add", 1, [
-          { name: "call@L2", args: [T.number, T.literal(2)], source: "callsite" },
-          { name: "call@L3", args: [T.promise(T.number)], source: "callsite" },
+          { name: "call@L2", args: [num(), absLit(2)], source: "callsite" },
+          { name: "call@L3", args: [absPromise(num())], source: "callsite" },
         ]),
       ]),
     );
@@ -406,8 +437,8 @@ function add(a, b) {
       source,
       makeAnalysis([
         makeFn("add", 1, [
-          { name: "call@L4", args: [T.number, T.string], source: "callsite" },
-          { name: "call@L5", args: [T.literal("x")], source: "callsite" },
+          { name: "call@L4", args: [num(), str()], source: "callsite" },
+          { name: "call@L5", args: [absLit("x")], source: "callsite" },
         ]),
       ]),
     );
@@ -432,7 +463,7 @@ function add(a, b) {
 `;
     const result = insertGeneratedCaseDirectives(
       source,
-      makeAnalysis([makeFn("add", 5, [{ name: "call@L9", args: [T.number], source: "callsite" }])]),
+      makeAnalysis([makeFn("add", 5, [{ name: "call@L9", args: [num()], source: "callsite" }])]),
     );
     expect(result.source).toBe(`/**
  * @nudo:case "call@L9" (T.number)
@@ -455,7 +486,7 @@ function add(a, b) {
 `;
     const result = insertGeneratedCaseDirectives(
       source,
-      makeAnalysis([makeFn("inner", 2, [{ name: "call@L5", args: [T.number], source: "callsite" }], { column: 2 })]),
+      makeAnalysis([makeFn("inner", 2, [{ name: "call@L5", args: [num()], source: "callsite" }], { column: 2 })]),
     );
     expect(result.source).toBe(`function outer() {
   /**
@@ -483,8 +514,8 @@ b2("s");
     const result = insertGeneratedCaseDirectives(
       source,
       makeAnalysis([
-        makeFn("a1", 1, [{ name: "call@L4", args: [T.number], source: "callsite" }]),
-        makeFn("b2", 6, [{ name: "call@L9", args: [T.string], source: "callsite" }]),
+        makeFn("a1", 1, [{ name: "call@L4", args: [num()], source: "callsite" }]),
+        makeFn("b2", 6, [{ name: "call@L9", args: [str()], source: "callsite" }]),
       ]),
     );
     expect(result.source).toBe(`/**
@@ -514,11 +545,11 @@ b2("s");
   return a + b;
 }
 `;
-    const argTuple = T.object({ xs: T.array(T.union(T.number, T.literal(null))) });
+    const argTuple = absObj({ xs: absArr(absUnion([num(), absLit(null)])) });
     const result = insertGeneratedCaseDirectives(
       source,
       makeAnalysis([
-        makeFn("add", 1, [{ name: "call@L1", args: [T.literal(1), argTuple], source: "callsite" }]),
+        makeFn("add", 1, [{ name: "call@L1", args: [absLit(1), argTuple], source: "callsite" }]),
       ]),
     );
     const fwd = extractDirectives(parse(result.source)).find((f) => f.name === "add")!;

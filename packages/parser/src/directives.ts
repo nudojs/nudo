@@ -1,35 +1,56 @@
 import type { Node, Comment } from "@babel/types";
 import {
-  type TypeValue,
   type Abs,
   type MockHelper,
   type NudoConstraint,
   type Pred,
-  T,
-
   stub,
   spy,
   mock,
-  absFunction,
-  execNudoModule,
-  isNudoConstraint,
-  constraintToEntryAbs,
-  absToTypeValue,
-  typeValueToAbs,
+  abs as makeAbs,
+  lit as termLit,
+  num,
+  str,
+  bool,
   numLit,
   strLit,
   boolLit,
+  absFunction,
+  joinAbs,
+  execNudoModule,
+  isNudoConstraint,
+  constraintToEntryAbs,
   SELF,
 } from "@nudojs/core";
 import { parse as babelParse } from "./parse.ts";
 
-/** TypeValue → Abs（MockHelper 值字段）；失败落 opaque unknown */
-function tvToAbs(v: TypeValue): Abs {
-  try {
-    return typeValueToAbs(v);
-  } catch {
-    return { shape: { k: "unknown" }, conf: "opaque" };
-  }
+function absExact(shape: Abs["shape"]): Abs {
+  return makeAbs(shape, undefined, undefined, "exact");
+}
+
+function absUnknown(): Abs {
+  return makeAbs({ k: "unknown" }, undefined, undefined, "partial");
+}
+
+function absNullLit(): Abs {
+  return makeAbs({ k: "unknown" }, termLit(null), undefined, "exact");
+}
+
+function absUndefLit(): Abs {
+  return makeAbs({ k: "unknown" }, termLit(undefined), undefined, "exact");
+}
+
+function absLit(v: string | number | boolean | null | undefined): Abs {
+  if (typeof v === "number") return numLit(v);
+  if (typeof v === "string") return strLit(v);
+  if (typeof v === "boolean") return boolLit(v);
+  if (v === null) return absNullLit();
+  return absUndefLit();
+}
+
+function absUnion(members: Abs[]): Abs {
+  if (members.length === 0) return absExact({ k: "never" });
+  return members.reduce((acc, m) => joinAbs(acc, m));
 }
 
 export type CaseDirective = {
@@ -191,136 +212,117 @@ function constraintToCaseArgAbs(c: NudoConstraint): Abs {
   return constraintToEntryAbs(c, "__arg");
 }
 
-export function parseTypeValueExpr(expr: string): TypeValue {
-  // 约束表达式优先：number() / lit(42) / shape({…}) / …
-  const constraint = tryParseConstraint(expr);
-  if (constraint) {
-    try {
-      return absToTypeValue(constraintToCaseArgAbs(constraint));
-    } catch {
-      return T.unknown;
-    }
-  }
-  return parseTypeValueExprLegacy(expr);
-}
-
 /**
  * case 实参主路径：始终产出 Abs；约束表达式优先。
  * `T.*` 文法 **已弃用**，仅为旧 fixture 兼容保留——新代码用 `number()`/`lit()`。
  */
-export function parseCaseArgExpr(expr: string): { typeValue: TypeValue; abs: Abs } {
+export function parseCaseArgExpr(expr: string): Abs {
   const constraint = tryParseConstraint(expr);
   if (constraint) {
     try {
-      const absVal = constraintToCaseArgAbs(constraint);
-      return { typeValue: absToTypeValue(absVal), abs: absVal };
+      return constraintToCaseArgAbs(constraint);
     } catch {
-      return { typeValue: T.unknown, abs: { shape: { k: "unknown" }, conf: "opaque" } };
+      return absUnknown();
     }
   }
-  const tv = parseTypeValueExprLegacy(expr);
-  return { typeValue: tv, abs: tvToAbs(tv) };
+  return parseLegacyTypeExpr(expr);
 }
 
-function parseTypeValueExprLegacy(expr: string): TypeValue {
+/** @deprecated 旧名兼容；等价 parseCaseArgExpr */
+export function parseTypeValueExpr(expr: string): Abs {
+  return parseCaseArgExpr(expr);
+}
+
+/** `T.*` / 字面量 / 箭头函数兼容文法 → Abs */
+function parseLegacyTypeExpr(expr: string): Abs {
   const s = expr.trim();
 
-  if (s === "T.number") return T.number;
-  if (s === "T.string") return T.string;
-  if (s === "T.boolean") return T.boolean;
-  if (s === "T.unknown") return T.unknown;
-  if (s === "T.never") return T.never;
-  if (s === "T.null") return T.null;
-  if (s === "T.undefined") return T.undefined;
+  if (s === "T.number") return num();
+  if (s === "T.string") return str();
+  if (s === "T.boolean") return bool();
+  if (s === "T.unknown") return absUnknown();
+  if (s === "T.never") return absExact({ k: "never" });
+  if (s === "T.null") return absNullLit();
+  if (s === "T.undefined") return absUndefLit();
 
-  if (s === "true") return T.literal(true);
-  if (s === "false") return T.literal(false);
-  if (s === "null") return T.literal(null);
-  if (s === "undefined") return T.literal(undefined);
+  if (s === "true") return absLit(true);
+  if (s === "false") return absLit(false);
+  if (s === "null") return absLit(null);
+  if (s === "undefined") return absLit(undefined);
 
   const literalMatch = s.match(/^T\.literal\((.+)\)$/);
   if (literalMatch) {
-    return T.literal(parsePrimitiveValue(literalMatch[1].trim()));
+    return absLit(parsePrimitiveValue(literalMatch[1].trim()));
   }
 
   if (s.startsWith("T.union(") && s.endsWith(")")) {
     const inner = s.slice("T.union(".length, -1);
     const args = splitTopLevelArgs(inner);
-    return T.union(...args.map(parseTypeValueExprLegacy));
+    return absUnion(args.map(parseLegacyTypeExpr));
   }
 
   if (s.startsWith("T.array(") && s.endsWith(")")) {
     const inner = s.slice("T.array(".length, -1);
-    return T.array(parseTypeValueExprLegacy(inner));
+    return absExact({ k: "arr", element: parseLegacyTypeExpr(inner) });
   }
 
   if (s.startsWith("T.tuple(") && s.endsWith(")")) {
     const inner = s.slice("T.tuple(".length, -1).trim();
     if (inner.startsWith("[") && inner.endsWith("]")) {
       const elements = splitTopLevelArgs(inner.slice(1, -1));
-      return T.tuple(elements.map(parseTypeValueExprLegacy));
+      return absExact({ k: "tuple", elements: elements.map(parseLegacyTypeExpr) });
     }
-    return T.tuple([]);
+    return absExact({ k: "tuple", elements: [] });
   }
 
   if (s.startsWith("T.object(") && s.endsWith(")")) {
     const inner = s.slice("T.object(".length, -1).trim();
     if (inner.startsWith("{") && inner.endsWith("}")) {
-      const content = inner.slice(1, -1).trim();
-      if (!content) return T.object({});
-      const entries = splitTopLevelArgs(content);
-      const props: Record<string, TypeValue> = {};
-      for (const entry of entries) {
-        const colonIdx = entry.indexOf(":");
-        if (colonIdx === -1) continue;
-        const key = entry.slice(0, colonIdx).trim();
-        const val = entry.slice(colonIdx + 1).trim();
-        props[key] = parseTypeValueExprLegacy(val);
-      }
-      return T.object(props);
+      return parseObjectLiteral(inner.slice(1, -1).trim());
     }
-    return T.object({});
+    return absExact({ k: "obj", slots: {} });
   }
 
   // Function literals: (x) => expr, x => expr, (x, y) => expr, function(x) { ... }
   if (findTopLevelArrow(s) !== -1 || /^function\s*[\w$]*\s*\(/.test(s)) {
     const fnExpr = parseArrowFunctionExpr(s);
     if (fnExpr) {
-      const fnType = T.fn(fnExpr.params, fnExpr.body, null);
-      (fnType as any)._paramPatterns = fnExpr.paramPatterns;
-      return fnType;
+      return absFunction(fnExpr.params, { body: fnExpr.body });
     }
   }
 
-  if (/^-?\d+(\.\d+)?$/.test(s)) return T.literal(Number(s));
+  if (/^-?\d+(\.\d+)?$/.test(s)) return absLit(Number(s));
 
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-    return T.literal(s.slice(1, -1));
+    return absLit(s.slice(1, -1));
   }
 
   if (s.startsWith("{") && s.endsWith("}")) {
-    const content = s.slice(1, -1).trim();
-    if (!content) return T.object({});
-    const entries = splitTopLevelArgs(content);
-    const props: Record<string, TypeValue> = {};
-    for (const entry of entries) {
-      const colonIdx = findTopLevelColon(entry);
-      if (colonIdx === -1) continue;
-      const key = entry.slice(0, colonIdx).trim().replace(/^["']|["']$/g, "");
-      const val = entry.slice(colonIdx + 1).trim();
-      props[key] = parseTypeValueExprLegacy(val);
-    }
-    return T.object(props);
+    return parseObjectLiteral(s.slice(1, -1).trim());
   }
 
   if (s.startsWith("[") && s.endsWith("]")) {
     const content = s.slice(1, -1).trim();
-    if (!content) return T.tuple([]);
+    if (!content) return absExact({ k: "tuple", elements: [] });
     const elements = splitTopLevelArgs(content);
-    return T.tuple(elements.map(parseTypeValueExprLegacy));
+    return absExact({ k: "tuple", elements: elements.map(parseLegacyTypeExpr) });
   }
 
-  return T.unknown;
+  return absUnknown();
+}
+
+function parseObjectLiteral(content: string): Abs {
+  if (!content) return absExact({ k: "obj", slots: {} });
+  const entries = splitTopLevelArgs(content);
+  const slots: Record<string, { value: Abs }> = {};
+  for (const entry of entries) {
+    const colonIdx = findTopLevelColon(entry);
+    if (colonIdx === -1) continue;
+    const key = entry.slice(0, colonIdx).trim().replace(/^["']|["']$/g, "");
+    const val = entry.slice(colonIdx + 1).trim();
+    slots[key] = { value: parseLegacyTypeExpr(val) };
+  }
+  return absExact({ k: "obj", slots });
 }
 
 function parsePrimitiveValue(s: string): string | number | boolean | null | undefined {
@@ -427,7 +429,7 @@ function parseArrowFunctionExpr(expr: string): { params: string[]; body: Node; p
 
 /** 实参/期望/mock 返回值文法 → Abs（约束表达式优先，T.* 兼容） */
 function parseAbsExpr(expr: string): Abs {
-  return parseCaseArgExpr(expr).abs;
+  return parseCaseArgExpr(expr);
 }
 
 function parseSinonExpr(expr: string): SinonExpression | null {
@@ -727,13 +729,12 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
         .split("\n")
         .map((line) => line.replace(/^\s*\*\s?/, ""))
         .join("\n");
-      const parsedArgs = splitTopLevelArgs(cleaned).map(parseCaseArgExpr);
-      const argsAbs = parsedArgs.map((p) => p.abs);
+      const argsAbs = splitTopLevelArgs(cleaned).map(parseCaseArgExpr);
 
       const afterParen = parenStart + argsStr.length + 2;
       const restLine = text.slice(afterParen).split("\n")[0].trim();
       const arrowMatch = restLine.match(/^=>\s*(.+)/);
-      const expected = arrowMatch ? parseCaseArgExpr(arrowMatch[1].trim()).abs : undefined;
+      const expected = arrowMatch ? parseCaseArgExpr(arrowMatch[1].trim()) : undefined;
 
       const linesBeforeMatch = text.slice(0, match.index).split("\n").length - 1;
       const commentLine = commentStartLine + linesBeforeMatch;

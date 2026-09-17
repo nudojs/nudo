@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { tryBPathCallFull, analyzeFile, resetAllAnalysisCaches } from "@nudojs/service";
-import { $lit, litValue, typeValueToString, formatShape } from "@nudojs/core";
+import { $lit, litValue, formatShape } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {

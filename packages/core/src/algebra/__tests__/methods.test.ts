@@ -2,8 +2,7 @@ import { describe, it, expect } from "vitest";
 import { callAbsMethod, getAbsProperty } from "../methods.ts";
 import { createTemplateAbs } from "../template.ts";
 import { strLit, numLit, abs } from "../abs.ts";
-import { typeValueToString } from "../../type-value.ts";
-import { absToTypeValue } from "../bridge.ts";
+import { formatShape } from "../format.ts";
 import { analyzeFn } from "../ast-eval.ts";
 
 describe("Abs method table", () => {
@@ -11,9 +10,9 @@ describe("Abs method table", () => {
     // `xy${string}`
     const tmpl = createTemplateAbs([strLit("xy"), abs({ k: "prim", type: "string" }, undefined, undefined, "exact")]);
     const r = callAbsMethod(tmpl, "startsWith", [strLit("x")]);
-    expect(r && typeValueToString(absToTypeValue(r))).toBe("true");
+    expect(r && formatShape(r)).toBe("true");
     const r2 = callAbsMethod(tmpl, "startsWith", [strLit("a")]);
-    expect(r2 && typeValueToString(absToTypeValue(r2))).toBe("false");
+    expect(r2 && formatShape(r2)).toBe("false");
   });
 
   it("template length with all-literal parts", () => {
@@ -32,6 +31,6 @@ describe("Abs method table", () => {
       }
     `;
     const r = analyzeFn(src, "f", [abs({ k: "prim", type: "string" }, undefined, undefined, "exact")]);
-    expect(typeValueToString(absToTypeValue(r))).toBe("true");
+    expect(formatShape(r)).toBe("true");
   });
 });

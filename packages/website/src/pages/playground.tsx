@@ -1,22 +1,23 @@
 import React, { lazy, useRef, useState, useEffect, Suspense } from 'react';
 import Layout from '@theme/Layout';
 import { parse, extractDirectives, type CaseDirective } from '@nudojs/parser';
-import { typeValueToString, type TypeValue, createEnvironment, T } from '@nudojs/core';
 import {
-  evaluateFunctionFull,
-  evaluateProgram,
-  setModuleResolver,
-  setCurrentFileDir,
-  setCallCollector,
-  resetMemo,
-  type CallRecord,
-} from '@nudojs/service/evaluator';
+  formatShape,
+  analyzeFnFull,
+  evalProgramAbs,
+  setAbsCallCollector,
+  abs as makeAbs,
+  type Abs,
+  type AbsCallRecord,
+  type AbsModuleExports,
+} from '@nudojs/core';
+import { analyzeFile } from '@nudojs/service';
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react'));
 
 interface CaseInfo {
   name: string;
-  args: TypeValue[];
+  args: Abs[];
 }
 
 // ---------------------------------------------------------------------------
@@ -274,16 +275,16 @@ interface DiscoveredCall {
   fnName: string;
   line: number | undefined;
   internal: boolean;
-  args: TypeValue[];
-  result: TypeValue;
+  args: Abs[];
+  result: Abs;
 }
 
 interface CallsiteResult {
   records: DiscoveredCall[];
-  beforeArgs: TypeValue[];
-  before: TypeValue | null;
-  afterArgs: TypeValue[] | null;
-  after: TypeValue | null;
+  beforeArgs: Abs[];
+  before: Abs | null;
+  afterArgs: Abs[] | null;
+  after: Abs | null;
   afterSource: string;
   error: string | null;
 }
@@ -317,31 +318,16 @@ function findUsageCallLines(ast: unknown, name: string): Set<number> {
   return lines;
 }
 
-function findExportedFunction(program: any, exportName: string): any | null {
-  for (const stmt of program.body ?? []) {
-    if (
-      stmt.type === 'ExportNamedDeclaration' &&
-      stmt.declaration?.type === 'FunctionDeclaration' &&
-      stmt.declaration.id?.name === exportName
-    ) {
-      return stmt;
-    }
-  }
-  for (const stmt of program.body ?? []) {
-    if (stmt.type === 'FunctionDeclaration' && stmt.id?.name === exportName) return stmt;
-  }
-  return null;
-}
-
 function discoverCallsites(
   libCode: string,
   testCode: string,
   exportName: string,
   paramCount: number,
 ): CallsiteResult {
+  const unknownAbs = (): Abs => makeAbs({ k: "unknown" }, undefined, undefined, "partial");
   const result: CallsiteResult = {
     records: [],
-    beforeArgs: Array.from({ length: paramCount }, () => T.unknown),
+    beforeArgs: Array.from({ length: paramCount }, () => unknownAbs()),
     before: null,
     afterArgs: null,
     after: null,
@@ -349,7 +335,6 @@ function discoverCallsites(
     error: null,
   };
 
-  const records: CallRecord[] = [];
   let libProgram: any;
   try {
     libProgram = parse(libCode).program;
@@ -366,55 +351,66 @@ function discoverCallsites(
     return result;
   }
 
-  // Evaluate the usage site with the library reachable through a module
-  // resolver; every completed call (usage site AND library-internal) is
-  // recorded with argument/result types.
-  resetMemo();
-  setModuleResolver((spec) => {
-    if (spec === './util' || spec === './util.js') {
-      return { ast: libProgram, filePath: '/lib/util.js' };
-    }
-    return null;
-  });
-  setCurrentFileDir('/test');
-  setCallCollector((r) => records.push(r));
+  // Evaluate the library once, inject its exports under './util', then run the
+  // usage site with Abs call collection.
+  const records: AbsCallRecord[] = [];
   try {
-    evaluateProgram(testProgram, createEnvironment());
+    const libEnv = evalProgramAbs(libCode, { file: libProgram as never });
+    const libExports: AbsModuleExports = { named: {} };
+    for (const [name, v] of libEnv.env.vars) libExports.named[name] = v;
+    for (const [name, impl] of libEnv.env.fns) {
+      if (!libExports.named[name]) {
+        libExports.named[name] = makeAbs(
+          { k: "fn", params: impl.params },
+          undefined,
+          undefined,
+          "exact",
+        );
+      }
+    }
+    const modules: Record<string, AbsModuleExports> = {
+      './util': libExports,
+      './util.js': libExports,
+    };
+    const prev = setAbsCallCollector((r) => records.push(r));
+    try {
+      evalProgramAbs(testCode, { file: testProgram as never, modules });
+    } finally {
+      setAbsCallCollector(prev);
+    }
   } catch (e) {
     result.error = e instanceof Error ? e.message : String(e);
-  } finally {
-    setCallCollector(null);
-    setModuleResolver(null);
   }
 
-  const relevant = records.filter(
-    (r) => r.fnName === exportName || r.targetExport === exportName || (r.targetAliases ?? []).includes(exportName),
-  );
+  const relevant = records.filter((r) => r.fnName === exportName);
 
   const usageLines = findUsageCallLines(testProgram, exportName);
   result.records = relevant.map((r) => ({
     fnName: r.fnName,
     line: r.callLoc?.line,
     internal: !(r.callLoc?.line !== undefined && usageLines.has(r.callLoc.line)),
-    args: r.argTypes,
-    result: r.resultType,
+    args: r.args,
+    result: r.threw ? makeAbs({ k: "never" }, undefined, undefined, "exact") : r.result,
   }));
 
   // Signature synthesis: entry-only (all params unknown) vs the injection of
   // the first usage-site record's argument types.
-  const fnDecl = findExportedFunction(libProgram, exportName);
-  if (fnDecl) {
-    result.before = evaluateFunctionFull(fnDecl, result.beforeArgs, createEnvironment()).value;
+  try {
+    result.before = analyzeFnFull(libCode, exportName, result.beforeArgs).result;
     const topRecord = relevant.find(
       (r) => r.callLoc?.line !== undefined && usageLines.has(r.callLoc.line),
     );
     if (topRecord) {
-      result.afterArgs = topRecord.argTypes;
-      result.after = evaluateFunctionFull(fnDecl, topRecord.argTypes, createEnvironment()).value;
+      result.afterArgs = topRecord.args;
+      result.after = analyzeFnFull(libCode, exportName, topRecord.args).result;
       result.afterSource = `call@test.js:${topRecord.callLoc?.line}`;
     }
-  } else {
-    result.error = result.error ?? `export "${exportName}" not found in library code`;
+  } catch (e) {
+    result.error = result.error ?? (e instanceof Error ? e.message : String(e));
+  }
+
+  if (!result.before && !result.error) {
+    result.error = `export "${exportName}" not found in library code`;
   }
 
   return result;
@@ -432,7 +428,7 @@ function extractCases(code: string): CaseInfo[] {
     for (const fn of directives) {
       const caseDirectives = fn.directives.filter((d): d is CaseDirective => d.kind === 'case');
       for (const directive of caseDirectives) {
-        cases.push({ name: directive.name, args: directive.args });
+        cases.push({ name: directive.name, args: directive.argsAbs });
       }
     }
   } catch {}
@@ -456,7 +452,7 @@ export default function Playground() {
   const activeCaseIndexRef = useRef(activeCaseIndex);
   const [copied, setCopied] = useState(false);
   const [singleResults, setSingleResults] = useState<
-    { name: string; fnName: string; args: TypeValue[]; result: TypeValue; throws: TypeValue }[] | null
+    { name: string; fnName: string; args: Abs[]; result: Abs; throws: Abs }[] | null
   >(null);
   const [singleError, setSingleError] = useState<string | null>(null);
   const [callsiteResult, setCallsiteResult] = useState<CallsiteResult | null>(null);
@@ -490,21 +486,16 @@ export default function Playground() {
 
   const runSingle = () => {
     try {
-      const ast = parse(code);
-      const env = createEnvironment();
-      const directives = extractDirectives(ast);
-      const results: { name: string; fnName: string; args: TypeValue[]; result: TypeValue; throws: TypeValue }[] = [];
-
-      for (const fn of directives) {
-        const caseDirectives = fn.directives.filter((d): d is CaseDirective => d.kind === 'case');
-        for (const directive of caseDirectives) {
-          const fullResult = evaluateFunctionFull(fn.node, directive.args, env);
+      const analysis = analyzeFile('/playground.js', code);
+      const results: { name: string; fnName: string; args: Abs[]; result: Abs; throws: Abs }[] = [];
+      for (const fn of analysis.functions) {
+        for (const c of fn.cases) {
           results.push({
-            name: directive.name,
+            name: c.name,
             fnName: fn.name,
-            args: directive.args,
-            result: fullResult.value,
-            throws: fullResult.throws,
+            args: c.argAbs,
+            result: c.abs,
+            throws: c.throwsAbs,
           });
         }
       }
@@ -586,7 +577,7 @@ export default function Playground() {
                     if (i < activeCase.args.length) {
                       return {
                         range: word.range,
-                        contents: [{ value: `**${word.word}**: \`${typeValueToString(activeCase.args[i])}\`` }]
+                        contents: [{ value: `**${word.word}**: \`${formatShape(activeCase.args[i])}\`` }]
                       };
                     }
                   }
@@ -617,7 +608,7 @@ export default function Playground() {
                 hints.push({
                   kind: monaco.languages.InlayHintKind.Type,
                   position: { lineNumber: record.line, column: lineLength + 1 },
-                  label: `=> ${typeValueToString(record.result)}`,
+                  label: `=> ${formatShape(record.result)}`,
                   paddingLeft: true,
                 });
               }
@@ -635,20 +626,23 @@ export default function Playground() {
               }
             }
 
-            // Show inlay hints for ALL cases
-            for (const { fn, directive } of allCases) {
-              const env = createEnvironment();
-              const fullResult = evaluateFunctionFull(fn.node, directive.args, env);
-              const resultStr = typeValueToString(fullResult.value);
-
-              if (directive.commentLine) {
-                const lineLength = model.getLineLength(directive.commentLine);
-                hints.push({
-                  kind: monaco.languages.InlayHintKind.Type,
-                  position: { lineNumber: directive.commentLine, column: lineLength + 1 },
-                  label: `=> ${resultStr}`,
-                  paddingLeft: true,
-                });
+            // Show inlay hints for ALL cases via analyzer
+            const analysis = analyzeFile('/playground.js', source);
+            for (const fn of analysis.functions) {
+              for (const c of fn.cases) {
+                if (!c.name) continue;
+                // Map back to directive comment lines when present
+                const resultStr = formatShape(c.abs);
+                const caseDir = allCases.find((x) => x.directive.name === c.name);
+                if (caseDir?.directive.commentLine) {
+                  const lineLength = model.getLineLength(caseDir.directive.commentLine);
+                  hints.push({
+                    kind: monaco.languages.InlayHintKind.Type,
+                    position: { lineNumber: caseDir.directive.commentLine, column: lineLength + 1 },
+                    label: `=> ${resultStr}`,
+                    paddingLeft: true,
+                  });
+                }
               }
             }
           } catch {}
@@ -725,7 +719,7 @@ export default function Playground() {
             >
               {cases.map((c, i) => (
                 <option key={i} value={i}>
-                  Case {i + 1}: "{c.name}" ({c.args.map(a => typeValueToString(a)).join(', ')})
+                  Case {i + 1}: "{c.name}" ({c.args.map(a => formatShape(a)).join(', ')})
                 </option>
               ))}
             </select>
@@ -804,9 +798,9 @@ export default function Playground() {
                       r.internal
                         ? `internal · util.js:${r.line ?? '?'}`
                         : `call@test.js:${r.line ?? '?'}`,
-                      r.args.map(typeValueToString).join(', '),
-                      typeValueToString(r.result),
-                      isPrecise(typeValueToString(r.result)),
+                      r.args.map(formatShape).join(', '),
+                      formatShape(r.result),
+                      isPrecise(formatShape(r.result)),
                       false,
                     ),
                   )}
@@ -822,9 +816,9 @@ export default function Playground() {
                       {renderCaseCard(
                         'before',
                         preset.exportName,
-                        callsiteResult.beforeArgs.map(typeValueToString).join(', '),
-                        typeValueToString(callsiteResult.before),
-                        isPrecise(typeValueToString(callsiteResult.before)),
+                        callsiteResult.beforeArgs.map(formatShape).join(', '),
+                        formatShape(callsiteResult.before),
+                        isPrecise(formatShape(callsiteResult.before)),
                         false,
                       )}
                     </div>
@@ -837,9 +831,9 @@ export default function Playground() {
                         ? renderCaseCard(
                             'after',
                             preset.exportName,
-                            (callsiteResult.afterArgs ?? []).map(typeValueToString).join(', '),
-                            typeValueToString(callsiteResult.after),
-                            isPrecise(typeValueToString(callsiteResult.after)),
+                            (callsiteResult.afterArgs ?? []).map(formatShape).join(', '),
+                            formatShape(callsiteResult.after),
+                            isPrecise(formatShape(callsiteResult.after)),
                             false,
                           )
                         : <div className="cs-type-unknown">no usage-site call found</div>}
@@ -900,9 +894,9 @@ export default function Playground() {
                         renderCaseCard(
                           `case-${i}`,
                           `case "${r.name}" — ${r.fnName}`,
-                          r.args.map(typeValueToString).join(', '),
-                          typeValueToString(r.result),
-                          isPrecise(typeValueToString(r.result)),
+                          r.args.map(formatShape).join(', '),
+                          formatShape(r.result),
+                          isPrecise(formatShape(r.result)),
                           i === activeCaseIndex,
                         ),
                       )}

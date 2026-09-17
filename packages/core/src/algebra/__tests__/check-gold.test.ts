@@ -387,7 +387,7 @@ function formatIssues(r: { issues: Array<{ severity: string; code: string; messa
 // （analyzer 注入消费区的执法核心），证据以手写 positive 契约 + 注入字面量
 // 记录给出。既有 golds 与 pin 零改动。
 // ---------------------------------------------------------------------------
-import { T, type TypeValue } from "../../type-value.ts";
+import { numLit, strLit, abs as makeAbs, type Abs } from "../abs.ts";
 import { checkInjectedDomainEvidence, type InjectedDomainRecord } from "../scan.ts";
 
 type DomainGold = {
@@ -395,7 +395,7 @@ type DomainGold = {
   /** 被分析文件源码（手写契约所在） */
   source: string;
   /** 注入的使用现场记录实参（每元素一条记录） */
-  argSets: TypeValue[][];
+  argSets: Abs[][];
   /** 期望出现的 issue code；undefined = 期望零 domain-exceeds */
   expectCode?: string;
   /** 期望 issue 数（默认 1） */
@@ -416,7 +416,7 @@ area(5);
 `,
     // 手写 positive 契约；本文件内调用 5 合规（不产生任何 issue），
     // 注入的使用现场证据 "a" 越域 → 恰一条 domain-exceeds error
-    argSets: [[T.literal("a")]],
+    argSets: [[strLit("a")]],
     expectCode: "nudo:interface-domain-exceeds",
   },
   {
@@ -431,17 +431,17 @@ export function area(x) {
 area(5);
 `,
     // 证据 7 / 1 ⊆ positive：零 domain-exceeds（负例）
-    argSets: [[T.literal(7)], [T.literal(1)]],
+    argSets: [[numLit(7)], [numLit(1)]],
   },
 ];
 
 describe("injected domain evidence gold standards", () => {
   for (const g of domainGolds) {
     it(g.name, () => {
-      const records: InjectedDomainRecord[] = g.argSets.map((argTypes) => ({
-        argTypes,
-        resultType: T.literal(1),
-        throws: T.never,
+      const records: InjectedDomainRecord[] = g.argSets.map((argAbs) => ({
+        argAbs,
+        resultAbs: numLit(1),
+        throwsAbs: makeAbs({ k: "never" }, undefined, undefined, "exact"),
       }));
       const issues = checkInjectedDomainEvidence(
         "area",

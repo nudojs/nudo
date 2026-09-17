@@ -7,14 +7,14 @@ import {
   getTypeAtPosition,
   getCompletionsAtPosition,
   getCasesForFile,
-  typeValueToTSType,
+  absToTSType,
   generateDts,
-  typeValueToZodSchema,
+  absToZodSchema,
   generateGuardFunction,
   buildSemanticTokens,
   SEMANTIC_TOKEN_TYPES,
 } from "@nudojs/service";
-import { T, absToTypeValue } from "@nudojs/core";
+import { abs, num, str, numLit, formatShape, type Abs } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
 import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "../symbols.ts";
 import {
@@ -542,7 +542,7 @@ describe("LSP Integration - Type Generation", () => {
     const greetingFn = result.functions.find(f => f.name === "getGreeting");
     expect(greetingFn).toBeDefined();
     if (greetingFn?.combinedAbs) {
-      const schema = typeValueToZodSchema(absToTypeValue(greetingFn.combinedAbs));
+      const schema = absToZodSchema(greetingFn.combinedAbs);
       expect(schema).toBeTruthy();
       expect(schema.length).toBeGreaterThan(0);
     }
@@ -551,9 +551,9 @@ describe("LSP Integration - Type Generation", () => {
   it("generates guard functions for inferred types", () => {
     // Verify the function exists and can be called
     expect(typeof generateGuardFunction).toBe("function");
-    // Test with a mock literal type value
-    const mockLiteral = { kind: "literal", value: 42 };
-    const guard = generateGuardFunction("is42", mockLiteral as any);
+    // Test with a mock literal Abs
+    const mockLiteral = numLit(42);
+    const guard = generateGuardFunction("is42", mockLiteral);
     expect(guard).toContain("function is42");
     expect(guard).toContain("return");
     expect(guard).toContain("42");
@@ -563,7 +563,7 @@ describe("LSP Integration - Type Generation", () => {
     const result = analyzeFile(filePath, testCode);
     for (const fn of result.functions) {
       for (const c of fn.cases) {
-        const tsType = typeValueToTSType(absToTypeValue(c.abs));
+        const tsType = absToTSType(c.abs);
         expect(tsType).toBeTruthy();
         expect(typeof tsType).toBe("string");
       }
@@ -623,28 +623,28 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
   const srcDeps = (src: string): AgentToolDeps => ({ readFile: () => src });
 
   describe("parseTypeExpr (ported from MCP)", () => {
-    it("maps primitive names to T singletons", () => {
-      expect(parseTypeExpr("number")).toEqual(T.number);
-      expect(parseTypeExpr("string")).toEqual(T.string);
-      expect(parseTypeExpr("boolean")).toEqual(T.boolean);
-      expect(parseTypeExpr("bigint")).toEqual(T.bigint);
-      expect(parseTypeExpr("symbol")).toEqual(T.symbol);
-      expect(parseTypeExpr("null")).toEqual(T.null);
-      expect(parseTypeExpr("undefined")).toEqual(T.undefined);
+    it("maps primitive names to Abs prims", () => {
+      expect(parseTypeExpr("number").shape).toEqual(num().shape);
+      expect(parseTypeExpr("string").shape).toEqual(str().shape);
+      expect(parseTypeExpr("boolean").shape.k).toBe("prim");
+      expect(parseTypeExpr("bigint").shape).toEqual(abs({ k: "prim", type: "bigint" }, undefined, undefined, "exact").shape);
+      expect(parseTypeExpr("symbol").shape).toEqual(abs({ k: "prim", type: "symbol" }, undefined, undefined, "exact").shape);
+      expect(parseTypeExpr("null").term?.op).toBe("lit");
+      expect(parseTypeExpr("undefined").term?.op).toBe("lit");
     });
 
     it("builds unions from `|` expressions", () => {
       const u = parseTypeExpr("string | null");
-      expect(u.kind).toBe("union");
-      if (u.kind === "union") {
-        expect(u.members).toHaveLength(2);
-        expect(u.members[0]).toEqual(T.string);
-        expect(u.members[1]).toEqual(T.null);
+      expect(u.shape.k).toBe("sum");
+      if (u.shape.k === "sum") {
+        expect(u.shape.members).toHaveLength(2);
+        expect(u.shape.members[0]!.shape).toEqual(str().shape);
+        expect(u.shape.members[1]!.term?.op).toBe("lit");
       }
     });
 
     it("falls back to unknown for unrecognized names", () => {
-      expect(parseTypeExpr("Date")).toEqual(T.unknown);
+      expect(parseTypeExpr("Date").shape.k).toBe("unknown");
     });
   });
 

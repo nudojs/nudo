@@ -17,15 +17,16 @@ import { join, dirname } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { analyzeFile, collectCallRecords, type CallRecord } from "../analyzer.ts";
-import { T, typeValueToAbs } from "@nudojs/core";
+import { numLit, strLit, abs as makeAbs } from "@nudojs/core";
 
 const DOMAIN = "nudo:interface-domain-exceeds";
+const neverAbs = () => makeAbs({ k: "never" }, undefined, undefined, "exact");
 
 const rec = (over: Partial<CallRecord>): CallRecord => ({
   fnName: "area",
-  argAbs: [typeValueToAbs(T.literal("a"))],
-  resultAbs: typeValueToAbs(T.literal(1)),
-  throwsAbs: typeValueToAbs(T.never),
+  argAbs: [strLit("a")],
+  resultAbs: numLit(1),
+  throwsAbs: neverAbs(),
   ...over,
 });
 
@@ -105,8 +106,8 @@ export function area(x) {
         'import { fn, number } from "@nudojs/core";\nexport const area = fn({ x: number().gt(0) });\n',
       );
       const result = analyzeFile(libPath, libSrc, undefined, [
-        rec({ argAbs: [typeValueToAbs(T.literal(5))], targetModule: libPath, targetExport: "area" }),
-        rec({ argAbs: [typeValueToAbs(T.literal(1))], targetModule: libPath, targetExport: "area" }),
+        rec({ argAbs: [numLit(5)], targetModule: libPath, targetExport: "area" }),
+        rec({ argAbs: [numLit(1)], targetModule: libPath, targetExport: "area" }),
       ]);
       expect(result.diagnostics.filter((d) => d.code === DOMAIN)).toEqual([]);
     } finally {

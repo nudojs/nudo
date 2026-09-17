@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { typeValueToString, formatShape, absToTypeValue } from "@nudojs/core";
+import { formatShape } from "@nudojs/core";
 import {
   analyzeFile,
-  typeValueToZodSchema,
+  absToZodSchema,
   generateGuardFunction,
   generateDts,
-  typeValueToTSType,
+  absToTSType,
   resetAllAnalysisCaches,
 } from "../index.ts";
 
@@ -36,15 +36,15 @@ function process(x) {
     expect(result.functions[0].combinedAbs).toBeDefined();
 
     // Verify Zod generation for each case result
-    const zodSchema0 = typeValueToZodSchema(absToTypeValue(result.functions[0].cases[0].abs));
+    const zodSchema0 = absToZodSchema(result.functions[0].cases[0].abs);
     expect(zodSchema0).toBeTruthy();
     expect(typeof zodSchema0).toBe("string");
 
-    const zodSchema1 = typeValueToZodSchema(absToTypeValue(result.functions[0].cases[1].abs));
+    const zodSchema1 = absToZodSchema(result.functions[0].cases[1].abs);
     expect(zodSchema1).toBeTruthy();
 
     // Verify guard generation
-    const guard = generateGuardFunction("isProcessOutput", absToTypeValue(result.functions[0].cases[0].abs));
+    const guard = generateGuardFunction("isProcessOutput", result.functions[0].cases[0].abs);
     expect(guard).toContain("function isProcessOutput");
     expect(guard).toContain("export function");
 
@@ -73,12 +73,12 @@ function double(x) {
     expect(formatShape(fn.cases[0].abs)).toBe("number");
 
     // Zod schema should produce a valid z.number() call
-    const zod = typeValueToZodSchema(absToTypeValue(fn.cases[0].abs));
+    const zod = absToZodSchema(fn.cases[0].abs);
     expect(zod).toBe("z.number()");
 
     // Guard should check typeof
-    const guard = generateGuardFunction("isDoubleOutput", absToTypeValue(fn.cases[0].abs));
-    expect(guard).toContain("typeof data === 'number'");
+    const guard = generateGuardFunction("isDoubleOutput", fn.cases[0].abs);
+    expect(guard).toContain('typeof data === "number"');
 
     // DTS should have a single declaration line
     const dts = generateDts(result);
@@ -98,7 +98,7 @@ function getUser(config) {
 `;
     const result = analyzeFile("/test/user.js", source);
     const fn = result.functions[0];
-    const zod = typeValueToZodSchema(absToTypeValue(fn.cases[0].abs));
+    const zod = absToZodSchema(fn.cases[0].abs);
 
     expect(zod).toContain("z.object");
     expect(zod).toContain("name");
@@ -120,12 +120,11 @@ function parse(x) {
     const fn = result.functions[0];
 
     // Each case should produce a valid Zod schema
-    expect(typeValueToZodSchema(absToTypeValue(fn.cases[0].abs))).toBe("z.string()");
-    expect(typeValueToZodSchema(absToTypeValue(fn.cases[1].abs))).toBe("z.number()");
+    expect(absToZodSchema(fn.cases[0].abs)).toBe("z.string()");
+    expect(absToZodSchema(fn.cases[1].abs)).toBe("z.number()");
 
     // Combined type should produce a union schema
-    const combined = absToTypeValue(fn.combinedAbs!);
-    const combinedZod = typeValueToZodSchema(combined);
+    const combinedZod = absToZodSchema(fn.combinedAbs!);
     expect(combinedZod).toContain("z.union");
   });
 });
@@ -142,7 +141,7 @@ function identity(x) {
 `;
     const result = analyzeFile("/test/tuple.js", source);
     const fn = result.functions[0];
-    const guard = generateGuardFunction("isTuple", absToTypeValue(fn.cases[0].abs));
+    const guard = generateGuardFunction("isTuple", fn.cases[0].abs);
 
     expect(guard).toContain("export function isTuple");
     expect(guard).toContain("Array.isArray");
@@ -164,10 +163,10 @@ function getRecord(x) {
 `;
     const result = analyzeFile("/test/record.js", source);
     const fn = result.functions[0];
-    const guard = generateGuardFunction("isRecord", absToTypeValue(fn.cases[0].abs));
+    const guard = generateGuardFunction("isRecord", fn.cases[0].abs);
 
     expect(guard).toContain("export function isRecord");
-    expect(guard).toContain("typeof data === 'object'");
+    expect(guard).toContain('typeof data === "object"');
     expect(guard).toContain("data !== null");
     expect(guard).toContain("data.id");
     expect(guard).toContain("data.active");
@@ -205,8 +204,8 @@ function add(a, b) {
     const result = analyzeFile("/test/add.js", source);
     const fn = result.functions[0];
 
-    expect(typeValueToTSType(absToTypeValue(fn.cases[0].abs))).toBe("3");
-    expect(typeValueToTSType(absToTypeValue(fn.cases[1].abs))).toBe("number");
+    expect(absToTSType(fn.cases[0].abs)).toBe("3");
+    expect(absToTSType(fn.cases[1].abs)).toBe("number");
 
     // 行为已修复：多 case 不再逐 case 生成字面量重载（`): 3;` 拦截合法调用），
     // 改为单一 widen 主签名 + JSDoc 保留字面量精度
@@ -268,8 +267,8 @@ function passThrough(x) {
     expect(formatShape(fn.cases[1].abs)).toBe("number");
 
     // Zod should produce valid schemas for both
-    expect(typeValueToZodSchema(absToTypeValue(fn.cases[0].abs))).toBe("z.literal(42)");
-    expect(typeValueToZodSchema(absToTypeValue(fn.cases[1].abs))).toBe("z.number()");
+    expect(absToZodSchema(fn.cases[0].abs)).toBe("z.literal(42)");
+    expect(absToZodSchema(fn.cases[1].abs)).toBe("z.number()");
   });
 });
 

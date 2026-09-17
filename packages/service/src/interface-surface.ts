@@ -3,7 +3,7 @@
  * 逐顶层函数展示有效契约分层——effectiveInterface 命中（手写契约 / 侧车
  * 生成段）时 params/returns 用 formatConstraint 组合式显示；未命中走
  * implicit：优先 CaseResult.argAbs / FunctionAnalysis.combinedAbs（无损
- * Abs 源），展示仍落外延串（typeValueToString，不强求约束式、不带 conf）。
+ * Abs 源），展示用 formatShape（外延口径，不强求约束式、不带 conf）。
  *
  * autoBind 沿 package.json#nudo.interface（findProjectConfig → interfaceConfig）
  * 下传，可用 opts 覆盖（测试 / CLI 显式开关）；读盘用 defaultLoadModule
@@ -15,13 +15,12 @@ import { dirname, resolve } from "node:path";
 import {
   effectiveInterface,
   formatConstraint,
+  formatShape,
   interfaceDiagCount,
   localNamedExports,
   refineDiagCount,
   takeInterfaceDiagsSince,
   takeRefineDiagsSince,
-  typeValueToString,
-  absToTypeValue,
   type Abs,
 } from "@nudojs/core";
 import { analyzeFileAsync } from "./analyzer.ts";
@@ -56,10 +55,10 @@ export function formatInterfaceSurfaceLine(e: InterfaceSurfaceEntry): string {
   return line;
 }
 
-/** Abs → implicit 展示串（外延口径，不带 conf；与 TypeValue 路径同文案） */
+/** Abs → implicit 展示串（外延口径，不带 conf） */
 function absToImplicitDisplay(a: Abs): string {
   try {
-    return typeValueToString(absToTypeValue(a));
+    return formatShape(a);
   } catch {
     return "unknown";
   }

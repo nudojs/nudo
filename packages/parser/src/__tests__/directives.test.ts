@@ -1,92 +1,89 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "../parse.ts";
 import { extractDirectives, parseTypeValueExpr } from "../directives.ts";
-import { T, typeValueEquals, litValue } from "@nudojs/core";
+import { litValue, num, str, bool, getFnImpl } from "@nudojs/core";
 
 describe("parseTypeValueExpr", () => {
   it("parses T.number", () => {
-    expect(typeValueEquals(parseTypeValueExpr("T.number"), T.number)).toBe(true);
+    expect(parseTypeValueExpr("T.number").shape).toEqual(num().shape);
   });
 
   it("parses T.string", () => {
-    expect(typeValueEquals(parseTypeValueExpr("T.string"), T.string)).toBe(true);
+    expect(parseTypeValueExpr("T.string").shape).toEqual(str().shape);
   });
 
   it("parses T.boolean", () => {
-    expect(typeValueEquals(parseTypeValueExpr("T.boolean"), T.boolean)).toBe(true);
+    expect(parseTypeValueExpr("T.boolean").shape).toEqual(bool().shape);
   });
 
   it("parses numeric literals", () => {
-    expect(typeValueEquals(parseTypeValueExpr("42"), T.literal(42))).toBe(true);
-    expect(typeValueEquals(parseTypeValueExpr("-3"), T.literal(-3))).toBe(true);
-    expect(typeValueEquals(parseTypeValueExpr("1.5"), T.literal(1.5))).toBe(true);
+    expect(litValue(parseTypeValueExpr("42"))).toBe(42);
+    expect(litValue(parseTypeValueExpr("-3"))).toBe(-3);
+    expect(litValue(parseTypeValueExpr("1.5"))).toBe(1.5);
   });
 
   it("parses string literals", () => {
-    expect(typeValueEquals(parseTypeValueExpr('"hello"'), T.literal("hello"))).toBe(true);
-    expect(typeValueEquals(parseTypeValueExpr("'world'"), T.literal("world"))).toBe(true);
+    expect(litValue(parseTypeValueExpr('"hello"'))).toBe("hello");
+    expect(litValue(parseTypeValueExpr("'world'"))).toBe("world");
   });
 
   it("parses boolean literals", () => {
-    expect(typeValueEquals(parseTypeValueExpr("true"), T.literal(true))).toBe(true);
-    expect(typeValueEquals(parseTypeValueExpr("false"), T.literal(false))).toBe(true);
+    expect(litValue(parseTypeValueExpr("true"))).toBe(true);
+    expect(litValue(parseTypeValueExpr("false"))).toBe(false);
   });
 
   it("parses null and undefined", () => {
-    expect(typeValueEquals(parseTypeValueExpr("null"), T.literal(null))).toBe(true);
-    expect(typeValueEquals(parseTypeValueExpr("undefined"), T.literal(undefined))).toBe(true);
+    expect(litValue(parseTypeValueExpr("null"))).toBe(null);
+    expect(litValue(parseTypeValueExpr("undefined"))).toBe(undefined);
   });
 
   it("parses T.literal(...)", () => {
-    expect(typeValueEquals(parseTypeValueExpr("T.literal(42)"), T.literal(42))).toBe(true);
-    expect(typeValueEquals(parseTypeValueExpr('T.literal("hi")'), T.literal("hi"))).toBe(true);
+    expect(litValue(parseTypeValueExpr("T.literal(42)"))).toBe(42);
+    expect(litValue(parseTypeValueExpr('T.literal("hi")'))).toBe("hi");
   });
 
   it("parses T.union(...)", () => {
     const result = parseTypeValueExpr("T.union(T.number, T.string)");
-    const expected = T.union(T.number, T.string);
-    expect(typeValueEquals(result, expected)).toBe(true);
+    expect(result.shape.k).toBe("sum");
+    if (result.shape.k === "sum") {
+      expect(result.shape.members).toHaveLength(2);
+    }
   });
 
   it("parses arrow function literal with parenthesized params", () => {
     const result = parseTypeValueExpr("(x) => x * 2");
-    expect(result.kind).toBe("function");
-    if (result.kind === "function") {
-      expect(result.params).toEqual(["x"]);
-      expect(result.body.type).toBe("BinaryExpression");
-      expect(result.closure).toBeDefined();
-      expect((result as any)._paramPatterns).toBeDefined();
-    }
+    expect(result.shape.k).toBe("fn");
+    const impl = getFnImpl(result);
+    expect(impl?.params).toEqual(["x"]);
+    expect(impl?.body?.type).toBe("BinaryExpression");
   });
 
   it("parses arrow function literal without parens", () => {
     const result = parseTypeValueExpr("x => x + 1");
-    expect(result.kind).toBe("function");
-    if (result.kind === "function") {
-      expect(result.params).toEqual(["x"]);
-    }
+    expect(result.shape.k).toBe("fn");
+    expect(getFnImpl(result)?.params).toEqual(["x"]);
   });
 
   it("parses arrow function literal with multiple params", () => {
     const result = parseTypeValueExpr("(a, b) => a + b");
-    expect(result.kind).toBe("function");
-    if (result.kind === "function") {
-      expect(result.params).toEqual(["a", "b"]);
-    }
+    expect(result.shape.k).toBe("fn");
+    expect(getFnImpl(result)?.params).toEqual(["a", "b"]);
   });
 
   it("parses function expression literal", () => {
     const result = parseTypeValueExpr("function(x) { return x * 2; }");
-    expect(result.kind).toBe("function");
-    if (result.kind === "function") {
-      expect(result.params).toEqual(["x"]);
-      expect(result.body.type).toBe("BlockStatement");
-    }
+    expect(result.shape.k).toBe("fn");
+    expect(getFnImpl(result)?.params).toEqual(["x"]);
+    expect(getFnImpl(result)?.body?.type).toBe("BlockStatement");
   });
 
   it("does not treat strings containing => as functions", () => {
     const result = parseTypeValueExpr('"a => b"');
-    expect(result.kind).toBe("literal");
+    expect(litValue(result)).toBe("a => b");
+    expect(result.shape.k).toBe("prim");
+    if (result.shape.k === "prim") {
+      expect(result.shape.type).toBe("string");
+    }
   });
 });
 

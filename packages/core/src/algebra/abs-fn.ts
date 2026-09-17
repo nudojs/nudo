@@ -10,6 +10,9 @@ import type { Term } from "./term.ts";
 import type { Pred } from "./pred.ts";
 import type { AstEnv } from "./ast-env.ts";
 
+/** Abs 原生 env/builtin 实现（B-path 优先） */
+export type AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs | undefined;
+
 export type AbsFnImpl = {
   params: string[];
   /** 可选：无 body 时走 relation（纯关系 fn） */
