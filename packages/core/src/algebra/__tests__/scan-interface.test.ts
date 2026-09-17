@@ -6,7 +6,7 @@
  * - fwd 转发（wrapper→target）在侧车来源下仍工作
  * - conflict（源码 refine × 侧车手写绑定矛盾）→ nudo:interface-conflict 只在
  *   checkSource fn 级报告（scan 调用点级曾双报，已收口）
- * - 手写侧车参数契约优先于 body 结构推断（refinedParams）
+ * - 无侧车时不做 body 必填 slot 门禁（C0.1 契约模型）
  */
 import { describe, it, expect } from "vitest";
 import { scanLiteralCalls, listTopFunctions } from "../scan.ts";
@@ -213,25 +213,38 @@ const b = needsPos(2);
     expect(conflicts[0]!.fn).toBe("needsPos");
   });
 
-  it("手写侧车参数契约优先于 body 结构推断（refinedParams）", () => {
+  it("无侧车时不做 body 必填 slot 门禁（C0.1）；有手写 shape 契约时按契约执法", () => {
     const source = `
 export function readY(p) {
   return p.y;
 }
 const r = readY({ x: 1 });
 `;
-    // 无侧车：body 访问 p.y → arg-structure 报缺字段
+    // 契约模型：无显式契约 → 不从 body AST 发明义务（不再报 arg-structure）
     const without = scanSameFile({}, source);
     expect(
       without.some((i) => i.code === "nudo:arg-structure" && i.message.includes("[p]")),
-    ).toBe(true);
+    ).toBe(false);
 
-    // 手写侧车给 p 一个兼容 shape → 该形参不再走 body 结构推断
-    const withSidecar = scanSameFile(
+    // 手写侧车 shape 作为义务：缺 slot 应由契约路径报，而不是 body 推断
+    const withSidecarMissing = scanSameFile(
+      { "/t/app.nudo.js": `export const readY = fn({ p: shape({ y: number() }) });` },
+      source,
+    );
+    // 实参 {x:1} ⊭ shape({y}) —— 走 constraint/shape 契约，不走 body slot
+    const shapeErr = withSidecarMissing.some(
+      (i) =>
+        i.severity === "error" &&
+        (i.code === "nudo:constraint-violated" || i.code === "nudo:arg-structure"),
+    );
+    expect(shapeErr).toBe(true);
+
+    // 手写侧车给兼容 shape → 通过
+    const withCompatible = scanSameFile(
       { "/t/app.nudo.js": `export const readY = fn({ p: shape({ x: number() }) });` },
       source,
     );
-    expect(withSidecar.filter((i) => i.severity === "error")).toEqual([]);
+    expect(withCompatible.filter((i) => i.severity === "error")).toEqual([]);
   });
 });
 

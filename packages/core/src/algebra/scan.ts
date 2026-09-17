@@ -12,7 +12,6 @@ import { parseSource as parse } from "./parse-source.ts";
 import type { Node } from "@babel/types";
 import { emptyEnv, evalNode, evalProgramAbs } from "./ast-eval.ts";
 import { defaultLeakBudget } from "./leak.ts";
-import { leqAbs } from "./leq.ts";
 import type { RefineEntry } from "./refine.ts";
 import {
   instantiateConstraint,
@@ -28,8 +27,8 @@ import {
 } from "./interface.ts";
 import { literalMeetsConstraint } from "./domain-membership.ts";
 import { resolveDepPath } from "./load-deps-fp.ts";
-import { extractFn, generalizeFromAst, type PolyFn } from "./generalize.ts";
-import { numLit, abs as makeAbs, litValue } from "./abs.ts";
+import { generalizeFromAst, type PolyFn } from "./generalize.ts";
+import { numLit, litValue } from "./abs.ts";
 import type { Abs } from "./abs.ts";
 import { hashSource } from "./hash-source.ts";
 import type { Phi, Pred } from "./pred.ts";
@@ -85,91 +84,6 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
 
 export function absUnknown(): Abs {
   return { shape: { k: "unknown" }, conf: "partial" };
-}
-
-/** 从函数体抽参数必填 slot：`function f(p){ return p.x + p.y }` → {p: {x,y}} */
-function collectParamStructReqs(
-  source: string,
-  fnName: string,
-  fileAst?: ReturnType<typeof parse>,
-): Map<string, Set<string>> {
-  const reqs = new Map<string, Set<string>>();
-  // 只走目标函数自身的 body：走整个文件会把同名参数在兄弟函数里的
-  // 访问（p.y）漏进本函数的必填 slot（p.x），造成跨函数污染。
-  const extracted = extractFn(source, fnName, fileAst);
-  if (!extracted) return reqs;
-  const params = new Set(extracted.params);
-  const body = extracted.body;
-
-  /** 方法名（数组/字符串内置）——`p.some` / `p.replace` 不是数据字段 */
-  const BUILTIN_METHODS = new Set([
-    "map", "filter", "reduce", "flatMap", "forEach", "some", "every", "find",
-    "findIndex", "includes", "indexOf", "lastIndexOf", "join", "slice", "splice",
-    "push", "pop", "shift", "unshift", "sort", "reverse", "concat", "at",
-    "replace", "replaceAll", "split", "trim", "toLowerCase", "toUpperCase",
-    "startsWith", "endsWith", "charAt", "charCodeAt", "padStart", "padEnd",
-    "repeat", "toString", "valueOf", "substring", "match", "search",
-    "hasOwnProperty", "keys", "values", "entries", "then", "catch", "finally",
-  ]);
-
-  const visit = (n: unknown, isMethodCallee = false, guarded = false): void => {
-    if (!n || typeof n !== "object") return;
-    const obj = n as Record<string, unknown> & { type?: string };
-    // 守卫保护的访问不构成必填：`x && x.__esModule && x.default` 里
-    // __esModule/default 只在 x 真值时才读——缺失不应报 arg-structure。
-    if (obj.type === "LogicalExpression") {
-      // 左侧不受本表达式守卫（沿用外层语境），右侧被左侧的真值/假值守卫
-      visit(obj.left, false, guarded);
-      visit(obj.right, false, true);
-      return;
-    }
-    if (obj.type === "ConditionalExpression") {
-      visit(obj.test, false, guarded);
-      visit(obj.consequent, false, true);
-      visit(obj.alternate, false, true);
-      return;
-    }
-    if (obj.type === "IfStatement") {
-      visit(obj.test, false, guarded);
-      visit(obj.consequent, false, true);
-      visit(obj.alternate, false, true);
-      return;
-    }
-    if (obj.type === "MemberExpression" && !obj.computed && !isMethodCallee) {
-      const o = obj.object as { type?: string; name?: string } | undefined;
-      const p = obj.property as { type?: string; name?: string } | undefined;
-      if (o?.type === "Identifier" && o.name && params.has(o.name) && p?.type === "Identifier" && p.name) {
-        // 方法调用（p.some()）或内置方法名 → 不是必填数据字段
-        if (BUILTIN_METHODS.has(p.name)) return;
-        if (guarded) return;
-        let set = reqs.get(o.name);
-        if (!set) {
-          set = new Set();
-          reqs.set(o.name, set);
-        }
-        set.add(p.name);
-      }
-    }
-    if (obj.type === "CallExpression") {
-      // callee 上的 p.method 是方法调用，不进必填 slot
-      visit(obj.callee, true, guarded);
-      for (const key of Object.keys(obj)) {
-        if (key === "loc" || key === "start" || key === "end" || key === "callee") continue;
-        const val = obj[key];
-        if (Array.isArray(val)) val.forEach((v) => visit(v, false, guarded));
-        else if (val && typeof val === "object") visit(val, false, guarded);
-      }
-      return;
-    }
-    for (const key of Object.keys(obj)) {
-      if (key === "loc" || key === "start" || key === "end") continue;
-      const val = obj[key];
-      if (Array.isArray(val)) val.forEach((v) => visit(v, isMethodCallee, guarded));
-      else if (val && typeof val === "object") visit(val, isMethodCallee, guarded);
-    }
-  };
-  visit(body);
-  return reqs;
 }
 
 /** 静态求值实参节点 → Abs（标识符走绑定表；对象/数组字面量内的标识符也走绑定表） */
@@ -1394,7 +1308,7 @@ export function scanLiteralCalls(
   };
 
   /**
-   * 实参结构 ≤ 形参必填 slot（从 `p.foo` 访问推出）。
+   * HOF：实参可调用性 / arity（fnRels）。**不做** body 字段 slot 预扫描。
    * 字面量节点静态求 Abs；标识符用文件绑定表。
    */
   /** P4：HOF 实参 fn 形状检查（§6.3 豁免规则） */
@@ -1446,30 +1360,31 @@ export function scanLiteralCalls(
     }
   };
 
+  /**
+   * 调用点结构检查。
+   *
+   * 契约模型（close-ts-dx-gaps §0.1）：义务只来自显式 interface / HOF 关系；
+   * **不做** body AST → 必填 slot 预扫描（collectParamStructReqs 已移除）。
+   * 本函数仅保留 HOF 实参（回调可调用性 / arity）检查。
+   */
   const checkArgStructures = (
     fnName: string,
     fnSource: string,
     args: Array<Record<string, unknown>>,
     loc?: { start: { line: number; column: number } },
     displayName?: string,
-    /** 跨文件时 ext 定义文件路径（interface 侧车解析基）；同文件忽略 */
-    interfaceFromFile?: string,
+    /** 跨文件时 ext 定义文件路径（保留签名，供未来侧车相关检查）；同文件忽略 */
+    _interfaceFromFile?: string,
   ): void => {
-    let structReqs: Map<string, Set<string>>;
-    let paramNames: string[];
     let gFn: ReturnType<typeof generalizeFromAst>;
     try {
-      // 同文件调用复用预解析 AST；跨文件源码各自 parse
       const sameFile = fnSource === source;
-      structReqs = collectParamStructReqs(fnSource, fnName, sameFile ? file : undefined);
       gFn = generalizeFromAst(
         fnName,
         fnSource,
         sameFile && file ? { file } : {},
       );
-      paramNames = gFn?.params ?? [];
     } catch (e) {
-      // 不再静默放弃：signature 恢复失败进 warning，便于定位侧车/AST 问题
       out.push({
         severity: "warning",
         code: "nudo:no-signature",
@@ -1480,87 +1395,11 @@ export function scanLiteralCalls(
       });
       return;
     }
-    // P4：HOF 实参 arity/shape 检查（依赖 P2 的 fnRels + RelSource）
+    // HOF 实参 arity/shape 检查（fnRels + RelSource；与 body 字段扫描无关）
     if (gFn?.fnRels && gFn.fnRels.size > 0) {
       checkHofFnRelArgs(gFn, args, loc, displayName ?? fnName, (n) =>
         evalArgAbs(n, (x) => varAbs.get(x)),
       );
-    }
-    if (structReqs.size === 0) return;
-    // refine 契约优先：有 handwritten 参数契约的形参不再用 body 方法访问推形状
-    // （§3.3：generated 段是事实快照，不顶替结构推断）
-    let refinedParams: Set<string> | undefined;
-    try {
-      const sameFile = fnSource === source;
-      // 跨文件无定义路径时不 ambient 绑定侧车（防误绑到本文件侧车）
-      const eiOpts: EffectiveInterfaceOpts = sameFile
-        ? {
-            loadModule: opts?.loadModule,
-            fromFile: opts?.fromFile ?? "",
-            ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
-          }
-        : {
-            loadModule: opts?.loadModule,
-            fromFile: interfaceFromFile ?? opts?.fromFile ?? "",
-            ...(interfaceFromFile
-              ? opts?.autoBind !== undefined
-                ? { autoBind: opts.autoBind }
-                : {}
-              : { autoBind: false }),
-          };
-      const ei = effectiveInterfaceOf(fnName, fnSource, eiOpts);
-      if (ei?.source === "handwritten" && ei.params.length > 0) {
-        refinedParams = new Set(ei.params.map((p) => p.param));
-      }
-    } catch {
-      // refine 解析失败时退回 body 结构推断——不静默丢诊断，但也不中断检查
-      out.push({
-        severity: "warning",
-        code: "nudo:no-signature",
-        message: `${displayName ?? fnName}: handwritten interface load failed; falling back to body structure inference`,
-        fn: displayName ?? fnName,
-        line: loc?.start.line,
-        column: loc?.start.column,
-      });
-    }
-    for (let i = 0; i < args.length; i++) {
-      const pname = paramNames[i];
-      if (!pname) continue;
-      if (refinedParams?.has(pname)) continue;
-      const keys = structReqs.get(pname);
-      if (!keys || keys.size === 0) continue;
-      const argNode = args[i];
-      if (!argNode) continue;
-      const absArg = evalArgAbs(argNode, (n) => varAbs.get(n));
-      if (!absArg || absArg.shape.k === "unknown") continue;
-      // 数组/元组天然有 length；string 也有 length
-      const isLeny =
-        absArg.shape.k === "arr" ||
-        absArg.shape.k === "tuple" ||
-        (absArg.shape.k === "prim" &&
-          (absArg.shape as { type: string }).type === "string");
-      const needKeys = isLeny
-        ? [...keys].filter((k) => k !== "length")
-        : [...keys];
-      if (needKeys.length === 0) continue;
-      const slots: Record<string, { value: Abs }> = {};
-      for (const k of needKeys) slots[k] = { value: absUnknown() };
-      const target = makeAbs({ k: "obj", slots }, undefined, undefined, "exact");
-      const leq = leqAbs(absArg, target);
-      if (!leq.ok) {
-        const name = displayName ?? fnName;
-        out.push({
-          severity: "error",
-          code: "nudo:arg-structure",
-          message: `${name}[${pname}]: 实参结构 ⊭ 形参`,
-          actual: formatAbs(absArg),
-          expected: formatAbs(target),
-          suggestion: leq.reason ?? `补全 ${pname} 上被访问的字段`,
-          fn: name,
-          line: loc?.start.line,
-          column: loc?.start.column,
-        });
-      }
     }
   };
 

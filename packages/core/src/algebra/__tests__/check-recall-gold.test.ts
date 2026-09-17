@@ -528,7 +528,7 @@ readX({ x: 1 });
     expect: "ok",
   },
   {
-    id: "arg-missing-slot-violates",
+    id: "arg-missing-slot-ok",
     origin: "传参结构",
     source: `
 function readXY(p) {
@@ -536,8 +536,8 @@ function readXY(p) {
 }
 readXY({ x: 1 });
 `,
-    expect: "violation",
-    note: "缺 y",
+    expect: "ok",
+    note: "C0.1：无显式契约时 body 访问不发明义务；缺字段仅在侧车/手写 shape 契约下报",
   },
   {
     id: "arg-extra-slot-ok",
@@ -567,7 +567,7 @@ readX({ x: 1, z: 9 });
     note: "同名参数在兄弟函数里的访问不得互相污染（曾把 readXY 的 y 漏进 readX 的必填 slot）",
   },
   {
-    id: "arg-ident-missing-slot-violates",
+    id: "arg-ident-missing-slot-ok",
     origin: "传参结构·标识符",
     source: `
 function readXY(p) {
@@ -576,7 +576,8 @@ function readXY(p) {
 const o = { x: 1 };
 readXY(o);
 `,
-    expect: "violation",
+    expect: "ok",
+    note: "C0.1：标识符绑定同样不走 body 必填 slot",
   },
   {
     id: "arg-ident-ok",
