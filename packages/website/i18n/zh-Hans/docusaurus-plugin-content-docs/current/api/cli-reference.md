@@ -294,27 +294,6 @@ Draft written → double.nudo.draft.js
 
 **示例（打印）：**
 
-**参数：**
-
-| 参数 | 说明 |
-|----------|-------------|
-| `<paths...>` | 文件或目录——至少一个（侧车 `*.nudo.js`/`*.nudo.ts` 目标被跳过） |
-
-**选项：**
-
-| 选项 | 说明 |
-|--------|-------------|
-| `--emit` | 写/更新 `@generated` 段而非打印（update 模式：剥离并重写生成段，幂等） |
-| `--fn <name>` | 配 `--emit`：只处理这些导出名（可重复） |
-| `--all` | 配 `--emit`：目标为全部顶层导出（显式 opt-in） |
-| `--dry-run` | 配 `--emit`：打印 unified diff 而非写盘 |
-| `--exit-on-diff` | 配 `--emit`：侧车将变更时退出码 `1`（CI 门禁） |
-| `--callsites <paths...>` | 使用现场文件（测试/应用）：其对本文导出的调用提供域证据（本文件无调用点的域根） |
-
-**退出码：** `0` — 打印/写盘成功（含 `no interface changes`）；`1` — 用法错误（无路径）、`--exit-on-diff` 有非空 diff、或 emit issue 如 `nudo:interface-name-clash`（手写绑定优先，跳过写入）。
-
-**示例（打印）：**
-
 ```bash
 nudo interface calc.js
 ```
