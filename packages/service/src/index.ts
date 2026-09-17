@@ -119,6 +119,7 @@ export {
 export {
   DiskCache,
   checkCacheKey,
+  ifaceCacheKey,
   sha256Hex,
   relativizePath,
   ANALYSIS_ABI,

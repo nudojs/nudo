@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   DiskCache,
   checkCacheKey,
+  ifaceCacheKey,
   sha256Hex,
   relativizePath,
   ANALYSIS_ABI,
@@ -45,6 +46,81 @@ describe("B3 disk cache store", () => {
     expect(sha256Hex("x")).toHaveLength(64);
     expect(ANALYSIS_ABI).toContain("v1");
     expect(relativizePath("/root/src/a.js", "/root")).toBe("src/a.js");
+  });
+});
+
+describe("B3 Phase B iface table cache", () => {
+  const src = "export function add(a, b) { return a + b; }\n";
+  const sidecarA = "export const add = fn({ a: number() }, number());\n";
+  const sidecarB = "export const add = fn({ a: number().gt(0) }, number());\n";
+
+  it("ifaceCacheKey: source / sidecar / autoBind each flip the key", () => {
+    const base = ifaceCacheKey("/p/a.js", src, {
+      autoBind: true,
+      projectDir: "/p",
+      sidecarSource: sidecarA,
+    });
+    expect(base).toHaveLength(64);
+    expect(
+      ifaceCacheKey("/p/a.js", src + "\n", {
+        autoBind: true,
+        projectDir: "/p",
+        sidecarSource: sidecarA,
+      }),
+    ).not.toBe(base);
+    expect(
+      ifaceCacheKey("/p/a.js", src, {
+        autoBind: true,
+        projectDir: "/p",
+        sidecarSource: sidecarB,
+      }),
+    ).not.toBe(base);
+    expect(
+      ifaceCacheKey("/p/a.js", src, {
+        autoBind: false,
+        projectDir: "/p",
+        sidecarSource: sidecarA,
+      }),
+    ).not.toBe(base);
+  });
+
+  it("ifaceCacheKey: no sidecar / autoBind=false share the sc0 segment", () => {
+    const noSc = ifaceCacheKey("/p/a.js", src, { autoBind: false, projectDir: "/p" });
+    const abFalse = ifaceCacheKey("/p/a.js", src, {
+      autoBind: false,
+      projectDir: "/p",
+      sidecarSource: sidecarA,
+    });
+    // autoBind=false 时侧车内容不进键（不 ambient 加载，契约读不到侧车）
+    expect(noSc).toBe(abFalse);
+  });
+
+  it("iface table round-trips through DiskCache namespace", () => {
+    const root = mkdtempSync(join(tmpdir(), "nudo-iface-"));
+    try {
+      const disk = new DiskCache({ root, namespace: "iface" });
+      const key = ifaceCacheKey("/p/a.js", src, { autoBind: true, projectDir: "/p" });
+      expect(disk.get(key)).toBeUndefined();
+      const table = {
+        fns: {
+          add: {
+            fnName: "add",
+            params: [
+              {
+                param: "a",
+                constraint: { __nudoConstraint: true, prim: "number", preds: [] },
+              },
+            ],
+            source: "handwritten" as const,
+          },
+          helper: null,
+        },
+      };
+      disk.set(key, table);
+      expect(disk.get(key)).toEqual(table);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

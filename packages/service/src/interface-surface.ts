@@ -8,9 +8,13 @@
  * autoBind 沿 package.json#nudo.interface（findProjectConfig → interfaceConfig）
  * 下传，可用 opts 覆盖（测试 / CLI 显式开关）；读盘用 defaultLoadModule
  * （与 check 的 refine 解析同一扩展名表）。
+ *
+ * B3 Phase B：`nudo.cache` / NUDO_CACHE_DIR 打开时，整文件 effectiveInterface
+ * 表（含 implicit 负缓存 null）落盘；二次冷启动跳过侧车 exec / 契约合并。
+ * 缓存只服务打印/表面，不加速 B-path 分析（design-persistent-cache §0）。
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
   effectiveInterface,
@@ -19,14 +23,22 @@ import {
   interfaceDiagCount,
   localNamedExports,
   refineDiagCount,
+  sidecarPathOf,
   takeInterfaceDiagsSince,
   takeRefineDiagsSince,
   type Abs,
+  type EffectiveInterface,
+  type NudoConstraint,
 } from "@nudojs/core";
 import { analyzeFileAsync } from "./analyzer.ts";
 import type { CallRecord } from "./evaluator/call-record.ts";
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
-import { findProjectConfig, interfaceConfig } from "./evaluator/config.ts";
+import {
+  findProjectConfig,
+  interfaceConfig,
+  diskCacheRoot,
+} from "./evaluator/config.ts";
+import { DiskCache, ifaceCacheKey } from "./disk-cache.ts";
 
 export type InterfaceSurfaceEntry = {
   fn: string;
@@ -64,6 +76,51 @@ function absToImplicitDisplay(a: Abs): string {
   }
 }
 
+/** 磁盘投影：约束剥 builder 方法后 JSON 化（只存可再执行纯数据） */
+type CachedConstraintJson = {
+  __nudoConstraint: true;
+  prim?: string;
+  preds: unknown[];
+  fields?: Record<string, unknown>;
+  element?: unknown;
+  int?: boolean;
+  isOptional?: boolean;
+  members?: unknown[];
+  fn?: unknown;
+};
+
+type CachedEffectiveInterface = {
+  fnName: string;
+  params: Array<{ param: string; constraint: CachedConstraintJson }>;
+  returns?: { constraint: CachedConstraintJson };
+  source: "handwritten" | "generated";
+  conflict?: { params: string[]; returns?: boolean };
+};
+
+/** null = implicit 负缓存 */
+type IfaceTableJson = {
+  fns: Record<string, CachedEffectiveInterface | null>;
+};
+
+function constraintToJson(c: NudoConstraint): CachedConstraintJson {
+  return JSON.parse(JSON.stringify(c)) as CachedConstraintJson;
+}
+
+function cachedToEffective(e: CachedEffectiveInterface): EffectiveInterface {
+  return {
+    fnName: e.fnName,
+    params: e.params.map((p) => ({
+      param: p.param,
+      constraint: p.constraint as unknown as NudoConstraint,
+    })),
+    ...(e.returns
+      ? { returns: { constraint: e.returns.constraint as unknown as NudoConstraint } }
+      : {}),
+    source: e.source,
+    ...(e.conflict ? { conflict: e.conflict } : {}),
+  };
+}
+
 /**
  * 单文件 interface 表面：analyzer 推断结果给出函数清单与 implicit 展示，
  * effectiveInterface 给出契约命中（手写 > 生成段）。诊断 side-channel
@@ -79,17 +136,68 @@ export async function interfaceSurface(
   // 进程的 await 窗口窃取在途 validateText 待消费诊断（接口/精化两通道同防）
   const ifaceSince = interfaceDiagCount();
   const refineSince = refineDiagCount();
-  const autoBind =
-    opts.autoBind ?? interfaceConfig(findProjectConfig(dirname(abs))?.config).autoBind;
+  const proj = findProjectConfig(dirname(abs));
+  const autoBind = opts.autoBind ?? interfaceConfig(proj?.config).autoBind;
   const loadModule = opts.loadModule ?? defaultLoadModule;
   const exported = localNamedExports(source);
   const kindOf = (fnName: string): "export" | "local" => (exported.has(fnName) ? "export" : "local");
 
   const analysis = await analyzeFileAsync(abs, source, undefined, opts.records);
+
+  // B3：整文件 effectiveInterface 表磁盘缓存（打印路径；不加速 analyze）
+  let disk: DiskCache | undefined;
+  let ifaceKey: string | undefined;
+  let cachedTable: IfaceTableJson | undefined;
+  if (!opts.loadModule && !opts.records) {
+    const cacheRoot = diskCacheRoot(proj?.config, proj?.projectDir);
+    disk = new DiskCache({ root: cacheRoot, namespace: "iface" });
+    if (disk.enabled) {
+      let sidecarSource: string | undefined;
+      try {
+        const sc = sidecarPathOf(abs);
+        if (autoBind !== false && existsSync(sc)) {
+          sidecarSource = readFileSync(sc, "utf-8");
+        }
+      } catch {
+        sidecarSource = undefined;
+      }
+      ifaceKey = ifaceCacheKey(abs, source, {
+        autoBind: autoBind !== false,
+        projectDir: proj?.projectDir,
+        sidecarSource,
+      });
+      cachedTable = disk.get<IfaceTableJson>(ifaceKey);
+    }
+  }
+
   const entries: InterfaceSurfaceEntry[] = [];
+  const freshTable: IfaceTableJson = { fns: {} };
+  const useCache = cachedTable !== undefined;
 
   for (const fn of analysis.functions) {
-    const eff = effectiveInterface(source, fn.name, { loadModule, fromFile: abs, autoBind });
+    let eff: EffectiveInterface | undefined;
+    if (useCache) {
+      const hit = cachedTable!.fns[fn.name];
+      eff = hit === null ? undefined : hit ? cachedToEffective(hit) : undefined;
+    } else {
+      eff = effectiveInterface(source, fn.name, { loadModule, fromFile: abs, autoBind });
+      if (freshTable) {
+        freshTable.fns[fn.name] = eff
+          ? {
+              fnName: eff.fnName,
+              params: eff.params.map((p) => ({
+                param: p.param,
+                constraint: constraintToJson(p.constraint),
+              })),
+              ...(eff.returns
+                ? { returns: { constraint: constraintToJson(eff.returns.constraint) } }
+                : {}),
+              source: eff.source === "implicit" ? "handwritten" : eff.source,
+              ...(eff.conflict ? { conflict: eff.conflict } : {}),
+            }
+          : null;
+      }
+    }
     if (eff) {
       entries.push({
         fn: fn.name,
@@ -120,6 +228,14 @@ export async function interfaceSurface(
       ret = absToImplicitDisplay(last.abs);
     }
     entries.push({ fn: fn.name, kind: kindOf(fn.name), source: "implicit", params, returns: ret });
+  }
+
+  if (disk?.enabled && ifaceKey && !useCache && analysis.functions.length > 0) {
+    try {
+      disk.set(ifaceKey, freshTable);
+    } catch {
+      /* fail-open */
+    }
   }
 
   takeInterfaceDiagsSince(ifaceSince); // 清空本次增量，防跨命令/在途验证互窃

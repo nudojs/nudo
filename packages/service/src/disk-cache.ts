@@ -116,3 +116,36 @@ export function checkCacheKey(
     ].join("\0"),
   );
 }
+
+/**
+ * effectiveInterface 表键（L1 Phase B，design-persistent-cache）。
+ * 维度：相对路径 + 源码 sha256 + autoBind + 侧车内容 sha256。
+ * **不含** emit allowlist（白名单不影响契约读取）。
+ * autoBind=false 或无侧车时侧车段为常量，避免无谓 miss。
+ */
+export function ifaceCacheKey(
+  filePath: string,
+  source: string,
+  opts: {
+    autoBind: boolean;
+    projectDir?: string;
+    /** 侧车源码（已读入）；undefined = 无侧车或 autoBind 关 */
+    sidecarSource?: string | undefined;
+  },
+): string {
+  const rel = relativizePath(filePath, opts.projectDir);
+  const sidecarSeg =
+    opts.autoBind && opts.sidecarSource !== undefined
+      ? `sc:${sha256Hex(opts.sidecarSource)}`
+      : "sc0";
+  return sha256Hex(
+    [
+      ANALYSIS_ABI,
+      "iface",
+      rel,
+      opts.autoBind ? "ab1" : "ab0",
+      sha256Hex(source),
+      sidecarSeg,
+    ].join("\0"),
+  );
+}
