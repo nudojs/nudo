@@ -121,6 +121,16 @@ Nudo 根据推断类型提供语法高亮。函数、变量和死代码的高亮
 
 也可以调用命令面板（`Cmd+Shift+P` / `Ctrl+Shift+P`）并运行 **Nudo: Select Case**。该命令注册为 `nudo.selectCase`，供 CodeLens 用于切换函数的激活 case。
 
+### 命令：Interface / Draft / Persist
+
+| 面板标题 | 命令 | 行为 |
+|----------|------|------|
+| Nudo: Show Interface | `nudo.interface` | 在 **Nudo** 输出通道打印分层（同 `nudo interface`） |
+| Nudo: Draft Interface (code-first) | `nudo.interface.draft` | Output 预览草稿；可选写入 `*.nudo.draft.js` |
+| Nudo: Persist Interface (@generated) | `nudo.interfaceEmit` | 固化调用点域（CodeLens persist/update 共用） |
+
+非手写导出上的 CodeLens 含 `⚡ draft interface`——与 CLI `--draft`、agent `nudo.interface.draft` 同源。
+
 ---
 
 ## 资源占用

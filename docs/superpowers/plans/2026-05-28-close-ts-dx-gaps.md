@@ -243,7 +243,7 @@ flowchart TB
 | F3 | **纠偏 README / website 对比表**：与 §0.1 一致；去掉「从 body 零注解推出 shape」作为主卖点；写清「无契约=调用点/any」 | 根 README + website intro + vs-ts README | C0 | [x] |
 | F4 | **「vs TypeScript」定位页**：可替代场景 / 不替代场景 / 共存 | `guides/vs-typescript.md`（en+zh），诚实，不弱化目标 | [x] |
 | F5 | **学习成本实测脚本**：新人任务计时（可选） | 内部基准，非门禁 | [x] |
-| F6 | **`interface --draft`**：从已有逻辑生成可审阅契约草稿（代码优先 / 迁移） | CLI `--draft`/`--write` → `*.nudo.draft.js`（不 ambient 绑定）；手写不覆盖；body 触达仅建议；agent `nudo.interface.draft` 同源 | [x] |
+| F6 | **`interface --draft`**：从已有逻辑生成可审阅契约草稿（代码优先 / 迁移） | CLI `--draft`/`--write` → `*.nudo.draft.js`；手写不覆盖；body 仅建议；agent + CodeLens + VS Code 输出通道同源；examples 钉扎 | [x] |
 
 ---
 

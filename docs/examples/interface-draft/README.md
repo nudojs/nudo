@@ -1,0 +1,19 @@
+# interface-draft — 代码优先契约草稿
+
+从**已有逻辑**生成可审阅的 `*.nudo.draft.js`（不 ambient 绑定）。审阅后复制进 `*.nudo.js` 才成为契约。
+
+```bash
+pnpm run interface --draft docs/examples/interface-draft/greet.js
+pnpm run interface --draft --write docs/examples/interface-draft/greet.js  # → greet.nudo.draft.js
+```
+
+本目录钉住：
+
+| 证据 | 函数 | 草稿行为 |
+|------|------|----------|
+| callsite | `double` | `fn({ x: … }, …)` 投影 |
+| body-read | `greet.user` | 注释 / suggested shape，**export DSL 不发明义务** |
+
+手写契约永不被 draft 覆盖。IDE：CodeLens `⚡ draft interface`；agent：`nudo.interface.draft`。
+
+可选诊断：`nudo.analysis.evalMissingSlot: "warning"`（默认 off）见 `docs/design-eval-missing-slot.md`。

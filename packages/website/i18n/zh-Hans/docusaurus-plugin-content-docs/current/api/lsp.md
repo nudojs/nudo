@@ -152,7 +152,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 |------------|---------|----------|
 | 悬停 | `onHover` | 通过 `getTypeAtPosition` 获取光标处推断类型；光标落在导出函数名上时，首行为 `● interface / handwritten|generated|implicit`（与 CodeLens 同源），handwritten/generated 另附有效契约展示 |
 | 补全（触发 `.`） | `onCompletion` | 来自 `getCompletionsAtPosition` 的属性/方法/变量项 |
-| CodeLens | `onCodeLens` | interface 档在前：`● interface / handwritten|generated|implicit`（+ persist/update 固化透镜）；case 为 debug 副层——激活 `● case "name"`，其余 `○`。点击发送 `nudo.selectCase` / `nudo.interface` / `nudo.interfaceEmit` 并刷新透镜 |
+| CodeLens | `onCodeLens` | interface 档在前：`● interface / handwritten|generated|implicit`（+ persist/update + 非手写导出上的 `⚡ draft interface`）；case 为 debug 副层——激活 `● case "name"`，其余 `○`。点击发送 `nudo.selectCase` / `nudo.interface` / `nudo.interface.draft` / `nudo.interfaceEmit` 并刷新透镜 |
 | 内联提示 | `languages.inlayHint` | 行尾 case `Type` 提示 + Abs 参数/返回 inlay；implicit 导出带 `· derived` |
 | 定义 | `onDefinition` | `buildSymbolTable` + `findDefinition`（含侧车绑定名） |
 | 引用 | `onReferences` | `buildSymbolTable` + `findReferences` |

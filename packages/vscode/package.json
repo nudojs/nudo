@@ -25,6 +25,18 @@
       {
         "command": "nudo.selectCase",
         "title": "Nudo: Select Case"
+      },
+      {
+        "command": "nudo.interface",
+        "title": "Nudo: Show Interface"
+      },
+      {
+        "command": "nudo.interface.draft",
+        "title": "Nudo: Draft Interface (code-first)"
+      },
+      {
+        "command": "nudo.interfaceEmit",
+        "title": "Nudo: Persist Interface (@generated)"
       }
     ]
   },

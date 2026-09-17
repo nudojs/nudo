@@ -16,6 +16,7 @@
     "infer": "tsx packages/cli/src/index.ts infer",
     "check": "tsx packages/cli/src/index.ts check",
     "types": "tsx packages/cli/src/index.ts types",
+    "interface": "tsx packages/cli/src/index.ts interface",
     "verify:examples": "bash scripts/verify-examples.sh",
     "learning-cost": "node scripts/learning-cost.mjs",
     "docs:dev": "pnpm --filter website run start",

@@ -8,6 +8,7 @@ import {
   type DecorationOptions,
   Range,
   Position,
+  type OutputChannel,
 } from "vscode";
 import {
   LanguageClient,
@@ -17,6 +18,7 @@ import {
 } from "vscode-languageclient/node";
 
 let client: LanguageClient | undefined;
+let output: OutputChannel | undefined;
 
 const activeCaseDecorationType = window.createTextEditorDecorationType({
   backgroundColor: "rgba(255, 200, 50, 0.15)",
@@ -28,6 +30,25 @@ const activeCaseDecorationType = window.createTextEditorDecorationType({
 });
 
 const activeCaseState = new Map<string, Map<string, { caseIndex: number; caseName: string }>>();
+
+/** Agent tool / executeCommand results are `{ content: [{ type, text }] }`. */
+function extractToolText(result: unknown): string {
+  if (result == null) return "";
+  if (typeof result === "string") return result;
+  const r = result as { content?: Array<{ text?: string }>; text?: string };
+  if (Array.isArray(r.content)) {
+    return r.content.map((c) => c?.text ?? "").join("\n");
+  }
+  return r.text ?? JSON.stringify(result, null, 2);
+}
+
+function showNudoOutput(label: string, text: string): void {
+  if (!output) output = window.createOutputChannel("Nudo");
+  output.clear();
+  output.appendLine(`# ${label}`);
+  output.appendLine(text);
+  output.show(true);
+}
 
 export function activate(context: ExtensionContext): void {
   // Bundled by scripts/bundle-server.mjs from @nudojs/lsp dist (self-contained vsix).
@@ -63,6 +84,9 @@ export function activate(context: ExtensionContext): void {
     clientOptions,
   );
 
+  output = window.createOutputChannel("Nudo");
+  context.subscriptions.push(output);
+
   const statusBar = window.createStatusBarItem(StatusBarAlignment.Right, 100);
   statusBar.text = "$(symbol-type-parameter) Nudo";
   statusBar.tooltip = "Nudo Type Inference Engine";
@@ -81,6 +105,75 @@ export function activate(context: ExtensionContext): void {
         updateHighlights();
 
         await client.sendRequest("nudo/selectCase", { uri, functionName, caseIndex });
+      },
+    ),
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand("nudo.interface", async (uri?: string, functionName?: string) => {
+      if (!client) return;
+      const file = uri ?? window.activeTextEditor?.document.uri.toString();
+      if (!file) {
+        void window.showWarningMessage("Nudo: open a JS file or pass a URI");
+        return;
+      }
+      const result = await client.sendRequest("nudo/interface", {
+        file,
+        ...(functionName ? { functionName } : {}),
+      });
+      showNudoOutput(`interface ${functionName ?? file}`, extractToolText(result));
+    }),
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(
+      "nudo.interface.draft",
+      async (uri?: string, functionName?: string) => {
+        if (!client) return;
+        const file = uri ?? window.activeTextEditor?.document.uri.toString();
+        if (!file) {
+          void window.showWarningMessage("Nudo: open a JS file or pass a URI");
+          return;
+        }
+        const params = {
+          file,
+          ...(functionName ? { functionName } : {}),
+        };
+        const preview = await client.sendRequest("nudo/interface.draft", params);
+        showNudoOutput(`draft ${functionName ?? file}`, extractToolText(preview));
+
+        const pick = await window.showInformationMessage(
+          "Nudo draft ready (review in Output). Write *.nudo.draft.js?",
+          "Write draft file",
+          "Dismiss",
+        );
+        if (pick === "Write draft file") {
+          const written = await client.sendRequest("nudo/interface.draft", {
+            ...params,
+            write: true,
+          });
+          showNudoOutput(`draft write ${functionName ?? file}`, extractToolText(written));
+        }
+      },
+    ),
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(
+      "nudo.interfaceEmit",
+      async (uri?: string, functionName?: string, mode?: string) => {
+        if (!client) return;
+        const file = uri ?? window.activeTextEditor?.document.uri.toString();
+        if (!file || !functionName) {
+          void window.showWarningMessage("Nudo: persist needs a function name (use CodeLens)");
+          return;
+        }
+        const result = await client.sendRequest("nudo/interface.emit", {
+          file,
+          functionName,
+          mode: mode === "update" ? "update" : "add",
+        });
+        showNudoOutput(`persist ${functionName}`, extractToolText(result));
       },
     ),
   );
@@ -120,8 +213,8 @@ function findCaseCommentDecorations(
   text: string,
   fileState: Map<string, { caseIndex: number; caseName: string }>,
 ): DecorationOptions[] {
-  const decorations: DecorationOptions[] = [];
   const lines = text.split("\n");
+  const decorations: DecorationOptions[] = [];
 
   type FnBlock = { functionName: string; caseLines: { name: string; lineIndex: number }[] };
   const fnBlocks: FnBlock[] = [];
@@ -139,7 +232,7 @@ function findCaseCommentDecorations(
     if (fnMatch && pendingCases.length > 0) {
       fnBlocks.push({ functionName: fnMatch[1], caseLines: pendingCases });
       pendingCases = [];
-    } else if (!line.match(/^\s*\*/) && !line.match(/^\s*\//) && line.trim() !== "") {
+    } else if (!line.match(/^\s*\*/) && !line.match(/^\s*\/\//) && line.trim() !== "") {
       pendingCases = [];
     }
   }

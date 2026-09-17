@@ -10,6 +10,7 @@
 | [`mini-repo/`](./mini-repo/) | 多文件集成（ESM + class + async） |
 | [`algebra/`](./algebra/) | 类型即计算（spread / HOF / reduce / mixin） |
 | [`interface-derivation/`](./interface-derivation/) | 契约分层推导（手写根 → 下行生成段） |
+| [`interface-draft/`](./interface-draft/) | 代码优先：从逻辑生成可审阅契约草稿 |
 
 主题式浏览（同一引擎）见网站 [Examples 指南](https://nudojs.github.io/nudo/docs/guides/examples)；本目录是 CI 门禁真值（`pnpm run verify:examples`）。
 
@@ -86,8 +87,9 @@ function score(x) { return x + 1; }
 | `pnpm run check docs/examples/mini-repo/user-service.js` | **0** | 多文件集成（check） |
 | `pnpm run infer docs/examples/mini-repo/user-service.js` | **0** | 多文件集成（infer） |
 | `pnpm run infer docs/examples/mini-repo/validators.js` | **0** | 支持文件独立 infer：entry@ 前置推断 |
-| `pnpm run infer docs/examples/mini-repo/store.js` | **0** | class 方法不单独 infer |
+| `pnpm run infer docs/examples/mini-repo/store.js` | **0** | class 方法经 analyzer 枚举：无调用点 → `entry@`（#partial） |
 | `pnpm run check docs/examples/interface-derivation/lib.js` | **0** | 根契约（lib.nudo.js 手写 add4）加载；返回位原始推断 #partial |
 | `pnpm run check docs/examples/interface-derivation/add.js` | **0** | 下行推导契约（add.nudo.js generated）执法：x+2>3 |
+| `pnpm run interface --draft docs/examples/interface-draft/greet.js` | **0** | 代码优先草稿：callsite 投影 + body-read 建议（不发明 check 义务） |
 
 > 负例文件（constraints / structure / vs-ts 的 check）**故意 exit 非 0**——报错行就是它们演示的内容。

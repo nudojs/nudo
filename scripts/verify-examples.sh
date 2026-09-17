@@ -156,7 +156,7 @@ covered=$(sed -n 's/^| `\([^`]*\)` | \*\*\([0-9]*\)\*\*.*$/\1/p' "$matrix" \
   | sed -n 's|.*docs/examples/\([^ ]*\).*|docs/examples/\1|p')
 while read -r f; do
   case "$f" in
-    *.nudo.js | *.d.ts) continue ;;
+    *.nudo.js | *.d.ts | *.nudo.draft.js) continue ;;
   esac
   if ! grep -qxF -- "$f" <<<"$covered"; then
     fail=$((fail + 1))
@@ -284,14 +284,15 @@ pin 'pnpm run infer docs/examples/mini-repo/user-service.js' \
   '(7) => promise<{ id: 7, name: "u7" }>' '(4) => 5' \
   '(7, 1, 9999) => 7' '(5, 1, 9999) => 5' 'Combined: 7 | 5'
 # support files are matrix rows too: validators.js shows body-inferred
-# preconditions at entry; store.js documents that class methods don't
-# produce standalone infer cases.
+# preconditions at entry; store.js documents class methods without call
+# sites falling back to entry@ cases (#partial).
 pin 'pnpm run infer docs/examples/mini-repo/validators.js' \
   'Case "entry@L1": (unknown) => boolean' \
   'isPositive: (n: A1) => boolean  where A1 > 0' \
   'clamp: (n: A1, lo: A2, hi: A3) => A2'
 pin 'pnpm run infer docs/examples/mini-repo/store.js' \
-  'No functions with @nudo:case directives found.'
+  'MemoryStore.set' 'MemoryStore.get' \
+  'Case "entry@'
 
 # interface-derivation/ — layered contract derivation (Phase 2). The root
 # contract (lib.nudo.js handwritten add4) loads for lib.js; the downstream
@@ -302,6 +303,16 @@ pin 'pnpm run check docs/examples/interface-derivation/add.js' \
 pin 'pnpm run check docs/examples/interface-derivation/lib.js' \
   '0 error · 0 warning' \
   'add4(x)  number | string  #partial'
+
+# interface-draft/ — code-first draft promises (F6)
+pin 'pnpm run interface --draft docs/examples/interface-draft/greet.js' \
+  '@nudo:draft' \
+  'double  [draft callsite/' \
+  'greet  [draft body/' \
+  'export const double = ' \
+  'body-read { name }' \
+  'suggested (body-read, not a contract)' \
+  'export const greet = fn({});'
 
 printf -- '--------------------------------------------------------------\n'
 printf 'examples verified: %s checks passed, %s failed\n' "$pass" "$fail"
