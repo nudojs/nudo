@@ -463,13 +463,13 @@ getTheme({ user: { profile: { name: "Bob" } } });
 ```text
 === getTheme ===
 
-Case "call@L4": ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } }) => string
-Case "call@L5": ({ user: { profile: { name: "Bob" } } }) => unknown
+Case "call@L4": ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } }) => "dark"
+Case "call@L5": ({ user: { profile: { name: "Bob" } } }) => "light"
 
 Combined: unknown
 ```
 
-完整路径存在时链式解析成功，`?? "light"` 得到 `string`；链式短路时结果退化为 `unknown`。组合类型是 `unknown`——基类型 `unknown` 成员吸收了 `string`。已知属性上的浅层 `??` 更精确：
+完整路径存在时链式解析到字面量 `"dark"`；链式短路时 `?? "light"` 回退折叠为字面量 `"light"`。每个调用点都报告自己的精确字面量。`Combined:` 仍退化为 `unknown`——聚合值来自符号重跑，无法跟随深层 `?.` 链。已知属性上的浅层 `??` 更精确：
 
 ```javascript
 function getPort(config) {
@@ -479,7 +479,7 @@ function getPort(config) {
 getPort({ port: 8080 });   // → number
 ```
 
-深层 `?.` 链目前给不出精确的**报告结果**：短路调用上回退字面量存活在内部 Abs 里（`abs: unknown | "light"  #exact`），但 case 结果退化为 `unknown` 并被 `Combined:` 吸收。请用 `nudo infer` 验证你自己的链式写法。
+case 头现在把回退折叠为其字面量（`"dark"` / `"light"`），但 `Combined:` 仍报告 `unknown`——组合值来自符号重跑（`intension`），无法跟随深层 `?.` 链。请用 `nudo infer` 验证你自己的链式写法。
 
 ---
 
@@ -538,12 +538,12 @@ validateForm({ name: "Charlie" });
 
 Case "call@L7": ({ name: "Alice", age: "25", email: "alice@example.com" }) => { valid: true, name: "Alice", age: 25, email: "alice@example.com" }
 Case "call@L8": ({ name: "Bob", age: "abc", email: "bob@example.com" }) => { valid: false, error: "Invalid age" }
-Case "call@L9": ({ name: "Charlie" }) => { valid: true, name: "Charlie", age: number, email: unknown }
+Case "call@L9": ({ name: "Charlie" }) => { error: string, valid: false } | { valid: true, name: "Charlie", age: number, email: unknown }
 
-Combined: { valid: true, name: "Alice", age: 25, email: "alice@example.com" } | { valid: false, error: "Invalid age" } | { valid: true, name: "Charlie", age: number, email: unknown }
+Combined: { valid: true, name: "Alice", age: 25, email: "alice@example.com" } | { valid: false, error: "Invalid age" } | { error: string, valid: false } | { valid: true, name: "Charlie", age: number, email: unknown }
 ```
 
-转换被精确求值：`Number("25")` 折叠为 `25`，合法路径胜出；`Number("abc")` 折叠为 `NaN`，`isNaN` 守卫返回 `"Invalid age"` 错误。缺失属性是已知局限：`missing` 输入上的 `data.email` 解析为 `unknown`（而不是 `undefined`），因此 `!data.email` 不是确定的 `true`，报告的是回退分支而不是 `"Missing email"`。
+转换被精确求值：`Number("25")` 折叠为 `25`，合法路径胜出；`Number("abc")` 折叠为 `NaN`，`isNaN` 守卫返回 `"Invalid age"` 错误。缺失属性是已知局限：`missing` 输入上 `data.age` 是 `unknown`，所以 `Number(data.age)` 拓宽为 `number`、`isNaN(number)` 不确定——`"Invalid age"` 错误分支与回退分支都保持可达。`data.email` 也解析为 `unknown`（而不是 `undefined`），因此 `!data.email` 不是确定的 `true`，`"Missing email"` 永不被报告。结果是错误分支与回退分支的并集。
 
 ---
 
@@ -605,19 +605,17 @@ async function fetchUser(id) {
 ```text
 === fetchUser ===
 
-Case "get user": (1) => never throws unknown
-Case "symbolic": (number) => never throws unknown
+Case "get user": (1) => never throws Error
+Case "symbolic": (number) => never throws Error
 
 Combined: never
 
 Diagnostics:
 
-  [warning] env.js:7:0 Cannot resolve 'ok' on unknown value (nudo:unknown-recv)
-  [warning] env.js:7:0 Cannot resolve 'status' on unknown value (nudo:unknown-recv)
-  [warning] env.js:7:0 Function "fetchUser" case "get user" may throw: unknown. Consider adding a try-catch block or using @nudo:refine return <constraint> (nudo-may-throw)
+  [warning] env.js:7:0 Function "fetchUser" case "get user" may throw: Error. Consider adding a try-catch block or using @nudo:refine return <constraint> (nudo-may-throw)
 ```
 
-`fetch` 由环境绑定，但其响应类型是 `unknown`——成员访问报告 `nudo:unknown-recv`，两个 case 都以 `never throws unknown` 告终。要获得精确响应形状，请使用 `@nudo:mock fetch = ...` 覆盖且**不要**同时写 `@nudo:env web`（示例 4 推断出 `Promise<{ id: 1, name: "Alice" }>`）；两者组合目前会把 mock 退化为 `unknown`。
+`fetch` 由环境绑定为 `Promise<Response>`——`res.ok`（`boolean`）与 `res.status`（`number`）都能解析，所以 `!res.ok` 的 throw 分支可达，两个 case 都报告 `never throws Error` 并带 `nudo-may-throw` 警告。不过响应体形状仍然很浅：`res.json()` 返回 `Promise<unknown>`，因此要获得精确响应形状仍需 `@nudo:mock fetch = ...` 覆盖（示例 4 推断出 `Promise<{ id: 1, name: "Alice" }>`）。
 
 非网络全局对象表现相同：
 
@@ -661,10 +659,10 @@ function loadConfig(dir) {
 ```text
 === loadConfig ===
 
-Case "test": (string) => unknown
+Case "test": (string) => null
 ```
 
-`JSON.parse` 返回 `unknown`（提前的 `return null` 会并入其中）。`@nudo:env node` 为 `readFileSync`、`existsSync` 和 `join` 提供类型，因此无需任何 mock。
+符号路径上的 `existsSync(filePath)` 不确定，所以两个分支都保持可达——case 头报告提前的 `return null`（`null`），而内部 Abs 结果是 `unknown`（`JSON.parse` 折叠为 `unknown`）。`@nudo:env node` 为 `readFileSync`、`existsSync` 和 `join` 提供类型，因此无需任何 mock。
 
 ```javascript
 /// @nudo:env node
@@ -686,15 +684,10 @@ function hashContent(data) {
 ```text
 === hashContent ===
 
-Case "hash": ("hello world") => unknown
-
-Diagnostics:
-
-  [warning] env.js:10:2 Cannot resolve 'update' on unknown value (nudo:unknown-recv)
-  [warning] env.js:11:9 Cannot resolve 'digest' on unknown value (nudo:unknown-recv)
+Case "hash": ("hello world") => string | Buffer { … }
 ```
 
-`node:crypto` 尚未建模：`createHash` 解析为 `unknown`，方法调用报告 `nudo:unknown-recv`。node 环境中可靠的部分是上面的 fs/path 示例。
+`node:crypto` 已建模：`createHash` 返回 Hash 对象（`update` / `digest`），`digest("hex")` 折叠为 `string | Buffer`（`Buffer` 分支携带其方法形状）。这里没有 `nudo:unknown-recv` 诊断。
 
 ---
 

@@ -463,13 +463,13 @@ getTheme({ user: { profile: { name: "Bob" } } });
 ```text
 === getTheme ===
 
-Case "call@L4": ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } }) => string
-Case "call@L5": ({ user: { profile: { name: "Bob" } } }) => unknown
+Case "call@L4": ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } }) => "dark"
+Case "call@L5": ({ user: { profile: { name: "Bob" } } }) => "light"
 
 Combined: unknown
 ```
 
-When the full path exists, the chain resolves and `?? "light"` yields `string`; when the chain short-circuits, the result degrades to `unknown`. The combined type is `unknown` — the base `unknown` member absorbs `string`. A shallow `??` on a known property is more precise:
+When the full path exists, the chain resolves to the literal `"dark"`; when the chain short-circuits, the `?? "light"` fallback folds to the literal `"light"`. Each call site reports its exact literal. `Combined:` still degrades to `unknown` — the aggregate is derived from the symbolic re-run, which can't follow the deep `?.` chain. A shallow `??` on a known property is precise:
 
 ```javascript
 function getPort(config) {
@@ -479,7 +479,7 @@ function getPort(config) {
 getPort({ port: 8080 });   // → number
 ```
 
-Deep `?.` chains currently do not yield a precise reported result: on the short-circuit call the fallback literal survives in the internal Abs (`abs: unknown | "light"  #exact`) but the case result degrades to `unknown` and `Combined:` absorbs it. Verify your own chains with `nudo infer`.
+The case headers now fold the fallback to its literal (`"dark"` / `"light"`), but `Combined:` still reports `unknown` because the combined value is computed from the symbolic re-run (`intension`), which can't follow the deep `?.` chain. Verify your own chains with `nudo infer`.
 
 ---
 
@@ -538,12 +538,12 @@ validateForm({ name: "Charlie" });
 
 Case "call@L7": ({ name: "Alice", age: "25", email: "alice@example.com" }) => { valid: true, name: "Alice", age: 25, email: "alice@example.com" }
 Case "call@L8": ({ name: "Bob", age: "abc", email: "bob@example.com" }) => { valid: false, error: "Invalid age" }
-Case "call@L9": ({ name: "Charlie" }) => { valid: true, name: "Charlie", age: number, email: unknown }
+Case "call@L9": ({ name: "Charlie" }) => { error: string, valid: false } | { valid: true, name: "Charlie", age: number, email: unknown }
 
-Combined: { valid: true, name: "Alice", age: 25, email: "alice@example.com" } | { valid: false, error: "Invalid age" } | { valid: true, name: "Charlie", age: number, email: unknown }
+Combined: { valid: true, name: "Alice", age: 25, email: "alice@example.com" } | { valid: false, error: "Invalid age" } | { error: string, valid: false } | { valid: true, name: "Charlie", age: number, email: unknown }
 ```
 
-The conversions are evaluated precisely: `Number("25")` folds to `25` and the valid path wins; `Number("abc")` folds to `NaN`, so the `isNaN` guard returns the `"Invalid age"` error. A missing property is a known limitation: `data.email` on the `missing` input resolves to `unknown` (not `undefined`), so `!data.email` is not a definite `true` and the fallthrough branch is reported instead of `"Missing email"`.
+The conversions are evaluated precisely: `Number("25")` folds to `25` and the valid path wins; `Number("abc")` folds to `NaN`, so the `isNaN` guard returns the `"Invalid age"` error. A missing property is a known limitation: on the `missing` input, `data.age` is `unknown`, so `Number(data.age)` widens to `number` and `isNaN(number)` is indefinite — the `"Invalid age"` error branch and the fallthrough both stay reachable. `data.email` also resolves to `unknown` (not `undefined`), so `!data.email` is not a definite `true` and `"Missing email"` is never reported. The result is the union of the error branch and the fallthrough.
 
 ---
 
@@ -605,19 +605,17 @@ async function fetchUser(id) {
 ```text
 === fetchUser ===
 
-Case "get user": (1) => never throws unknown
-Case "symbolic": (number) => never throws unknown
+Case "get user": (1) => never throws Error
+Case "symbolic": (number) => never throws Error
 
 Combined: never
 
 Diagnostics:
 
-  [warning] env.js:7:0 Cannot resolve 'ok' on unknown value (nudo:unknown-recv)
-  [warning] env.js:7:0 Cannot resolve 'status' on unknown value (nudo:unknown-recv)
-  [warning] env.js:7:0 Function "fetchUser" case "get user" may throw: unknown. Consider adding a try-catch block or using @nudo:refine return <constraint> (nudo-may-throw)
+  [warning] env.js:7:0 Function "fetchUser" case "get user" may throw: Error. Consider adding a try-catch block or using @nudo:refine return <constraint> (nudo-may-throw)
 ```
 
-`fetch` is bound from the environment, but its response type is `unknown` — member access reports `nudo:unknown-recv`, and both cases end in `never throws unknown`. For precise response shapes use an `@nudo:mock fetch = ...` override **without** `@nudo:env web` (example 4 infers `Promise<{ id: 1, name: "Alice" }>`); combining the two currently degrades the mock to `unknown`.
+`fetch` is bound from the environment as `Promise<Response>` — `res.ok` (`boolean`) and `res.status` (`number`) resolve, so the `!res.ok` throw branch is reachable and both cases report `never throws Error` with a `nudo-may-throw` warning. The body shape stays shallow though: `res.json()` returns `Promise<unknown>`, so a precise response shape still requires an `@nudo:mock fetch = ...` override (example 4 infers `Promise<{ id: 1, name: "Alice" }>`).
 
 Non-network globals behave the same way:
 
@@ -661,10 +659,10 @@ function loadConfig(dir) {
 ```text
 === loadConfig ===
 
-Case "test": (string) => unknown
+Case "test": (string) => null
 ```
 
-`JSON.parse` returns `unknown` (the early `return null` collapses into it). `@nudo:env node` types `readFileSync`, `existsSync`, and `join`, so no mocks are needed.
+`existsSync(filePath)` on a symbolic path is indefinite, so both branches stay reachable — the case header reports the early `return null` (`null`), while the internal Abs result is `unknown` (`JSON.parse` folds to `unknown`). `@nudo:env node` types `readFileSync`, `existsSync`, and `join`, so no mocks are needed.
 
 ```javascript
 /// @nudo:env node
@@ -686,15 +684,10 @@ function hashContent(data) {
 ```text
 === hashContent ===
 
-Case "hash": ("hello world") => unknown
-
-Diagnostics:
-
-  [warning] env.js:10:2 Cannot resolve 'update' on unknown value (nudo:unknown-recv)
-  [warning] env.js:11:9 Cannot resolve 'digest' on unknown value (nudo:unknown-recv)
+Case "hash": ("hello world") => string | Buffer { … }
 ```
 
-`node:crypto` is not modeled yet: `createHash` resolves to `unknown`, and method calls report `nudo:unknown-recv`. The simple fs/path example above is the reliable part of the node environment.
+`node:crypto` is modeled: `createHash` returns a Hash object (`update` / `digest`), and `digest("hex")` folds to `string | Buffer` (the `Buffer` arm carries its method shape). No `nudo:unknown-recv` diagnostics here.
 
 ---
 
