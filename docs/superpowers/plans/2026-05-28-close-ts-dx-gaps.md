@@ -110,7 +110,7 @@ flowchart TB
 |---|---|---|---|---|
 | A1 | **默认分析策略**：无指令 `.js` 也可被 LSP 分析（项目级开关，默认 on 或首次提示） | 打开普通 JS 文件有 hover/inlay；无指令诊断可配置静音 | `package.json#nudo.analysis.mode=exports|all` + `shouldAnalyzeFile` | [x] |
 | A2 | **分析范围配置**：`package.json#nudo.analysis`：include/exclude、mode（directives/exports/all）、diagnostics 噪声档 | 设计文档 + `analysisConfig()` 归一化已落地；LSP 接线随 A1 | A1 | [x] |
-| A3 | **无指令文件的噪声控制**：implicit 推断只报 high-confidence；`unknown` 叶子默认不刷屏 | 无指令文件打开 1s 内无 warning 风暴 | A1, A2 | [ ] |
+| A3 | **无指令文件的噪声控制**：implicit 推断只报 high-confidence；`unknown` 叶子默认不刷屏 | 无指令文件打开 1s 内无 warning 风暴 | A1, A2 | [x] |
 | A4 | **侧车未保存 buffer**：LSP 可对打开中的 `*.nudo.js` 生效（设计 §2.2 Phase 1 缺口） | 编辑侧车未保存时 check/hover 同步 | design-refine-derivation | [ ] |
 | A5 | **跨文件导航补齐**：侧车绑定名的 Go-to-Definition（源码 ↔ `*.nudo.js`）、Find References 含契约边 | F12 从 `add2` 到侧车契约可跳 | A1 | [ ] |
 | A6 | **Quickfix / Code Action 扩展**：缺 slot → 插入侧车 shape；refine 违例 → 放宽契约/改实参建议 | 两类一键修复可用 | D2 | [ ] |

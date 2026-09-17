@@ -19,6 +19,8 @@ import {
   evictFnAnalysisCacheForFiles,
   findProjectConfig,
   interfaceConfig,
+  filterDiagnosticsByLevel,
+  diagnosticsLevelForFile,
   type AnalysisResult,
   type Diagnostic as JsDiagnostic,
   type DiagnosticSeverity as JsDiagSeverity,
@@ -394,9 +396,16 @@ export async function validateText(
   knownFiles.add(filePath);
   registerNudoImportDeps(filePath, text);
 
-  // Abs check 主通道 + evaluator 诊断
-  const checkDiags = checkToLspDiagnostics(filePath, text);
-  const evalDiags = result.diagnostics.map((d) => toLspDiagnostic(d, uri));
+  // Abs check 主通道 + evaluator 诊断（A3：按 analysis.diagnostics 档过滤）
+  const level = diagnosticsLevelForFile(filePath);
+  const checkDiags = checkToLspDiagnostics(filePath, text).filter((d) => {
+    // LSP DiagnosticSeverity: Error=1, Warning=2, Information=3
+    if (level === "verbose") return true;
+    if (level === "off" || level === "errors") return d.severity === DiagnosticSeverity.Error;
+    return d.severity === DiagnosticSeverity.Error || d.severity === DiagnosticSeverity.Warning;
+  });
+  const evalJs = filterDiagnosticsByLevel(result.diagnostics, level);
+  const evalDiags = evalJs.map((d) => toLspDiagnostic(d, uri));
   deps.sendDiagnostics({ uri, diagnostics: [...checkDiags, ...evalDiags] });
 
   if (!propagate || !deps.getOpenDocumentByPath) return;

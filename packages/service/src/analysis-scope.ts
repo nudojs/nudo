@@ -11,8 +11,43 @@ import {
   findProjectConfig,
   matchesEmitAllowlist,
   type AnalysisConfig,
+  type DiagnosticsLevel,
 } from "./evaluator/config.ts";
 import { isNudoTargetPath } from "./target-path.ts";
+
+/** 默认档下应静音的 evaluator warning 码（噪声控制，A3） */
+const NOISY_WARNING_CODES = new Set([
+  "nudo:unknown-recv",
+  "nudo:builtin-unknown",
+  "nudo:no-signature",
+]);
+
+/**
+ * 按 analysis.diagnostics 档过滤 evaluator/check 诊断。
+ * - off：不发 implicit 相关；仍保留 error（契约违例等）
+ * - errors：只发 severity=error
+ * - default：error + warning（静音 NOISY_WARNING_CODES）
+ * - verbose：全量
+ */
+export function filterDiagnosticsByLevel<T extends { severity: string; code?: string }>(
+  diags: T[],
+  level: DiagnosticsLevel,
+): T[] {
+  if (level === "verbose") return diags;
+  if (level === "off") return diags.filter((d) => d.severity === "error");
+  if (level === "errors") return diags.filter((d) => d.severity === "error");
+  // default
+  return diags.filter((d) => {
+    if (d.severity === "error") return true;
+    if (d.severity === "info") return false;
+    if (d.severity === "warning" && d.code && NOISY_WARNING_CODES.has(d.code)) return false;
+    return d.severity === "warning";
+  });
+}
+
+export function diagnosticsLevelForFile(filePath: string): DiagnosticsLevel {
+  return analysisConfig(findProjectConfig(dirname(filePath))?.config).diagnostics;
+}
 
 export function hasNudoDirectives(source: string): boolean {
   return /@nudo:(case|mock|pure|skip|sample|refine|interface|import|env|mock-module|as|replace)\b/.test(source);
