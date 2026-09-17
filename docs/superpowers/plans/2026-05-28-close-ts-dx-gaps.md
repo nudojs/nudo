@@ -229,7 +229,7 @@ flowchart TB
 | E2 | **与 TS 项目并存指南**：仅对 `src/**/*.js` 开 Nudo；或 JS 包用 Nudo、TS 包用 tsc | 一份可复制 monorepo 配方 | [x] |
 | E3 | **Vite 插件默认策略**：与 A1 对齐（无指令文件、failOnError） | 构建期诊断不误伤 | [x] |
 | E4 | **Zed / 其他 LSP 客户端能力对齐表** | 文档矩阵 + 缺口 issue | [ ] |
-| E5 | **MCP / agent 工具与 LSP 命令同源** | `whatIf`/`suggestCase`/`hover` 语义一致、有测试 | [ ] |
+| E5 | **MCP / agent 工具与 LSP 命令同源** | `whatIf`/`suggestCase`/`hover` 语义一致、有测试 | [x] |
 | E6 | **发布与版本策略**：0.x 破坏性变更说明、迁移笔记 | changeset 规范可跟 | [ ] |
 
 ---

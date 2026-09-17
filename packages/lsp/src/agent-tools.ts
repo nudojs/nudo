@@ -8,6 +8,10 @@
  * the document/disk readers. Also hosts computeInterfaceLenses — the pure
  * CodeLens computation for the interface tier (design-refine-derivation §8).
  *
+ * **E5 同源契约**：agent 工具与 LSP 命令 / CLI 共享同一底层入口
+ * （`AGENT_TOOL_SOURCES`）；`resolveProjectAutoBind` 保证 autoBind 与
+ * CLI runCheck / LSP validate / CodeLens 同口径。测试钉住语义一致。
+ *
  * Unlike the MCP original, whatIf really applies its bindings: each binding
  * becomes a `// @nudo:as <type>` comment inserted above the declaring
  * statement (source-level injection). The evaluator already honors `as` for
@@ -304,6 +308,37 @@ function analysisError(err: unknown): AgentToolResult {
   return textResult(`Error: ${(err as Error).message}`);
 }
 
+/**
+ * E5：项目级 `package.json#nudo.interface.autoBind`（与 CLI check / LSP
+ * validate / CodeLens 同口径）。客户端不能借 agent 工具把项目关闭的
+ * autoBind 打开——有效值 = 项目配置 AND 客户端请求。
+ */
+export function resolveProjectAutoBind(
+  filePath: string,
+  clientAutoBind?: boolean,
+): boolean {
+  const projectAutoBind = interfaceConfig(
+    findProjectConfig(dirname(filePath))?.config,
+  ).autoBind;
+  return projectAutoBind && (clientAutoBind ?? true);
+}
+
+/**
+ * E5：agent 工具与 LSP 命令 / CLI 共享的数据源表（同源验收钉住此表）。
+ * 任一工具改实现时必须继续消费同一底层入口，禁止旁路第二套语义。
+ */
+export const AGENT_TOOL_SOURCES = {
+  whatIf: "injectBindings + analyzeFile",
+  suggestCase: "analyzeFile + buildCaseDirective",
+  trace: "analyzeFile cases",
+  check: "checkSource + serializeCheckJson",
+  hover: "getHoverAtPosition + interfaceTierOf",
+  infer: "analyzeFile + serializeInferJson",
+  interface: "interfaceSurface + formatInterfaceSurfaceLine",
+  "interface.emit": "emitInterface",
+  codeLens: "computeInterfaceLenses + interfaceTierOf",
+} as const;
+
 export type CheckToolParams = {
   file: string;
   source?: string;
@@ -311,10 +346,13 @@ export type CheckToolParams = {
   format?: "text" | "json";
   /** 解析 @nudo:import 的相对 .nudo.js（测试可注入） */
   loadModule?: (spec: string, fromFile: string) => string | undefined;
+  /** 测试注入；有效值与项目 autoBind AND（客户端不能打开已关闭项） */
+  autoBind?: boolean;
 };
 
 /**
- * Agent 门禁工具：返回 CheckJson v1 契约（与 CLI --json 同构）。
+ * Agent 门禁工具：返回 CheckJson v1 契约（与 CLI `nudo check --json` 同构）。
+ * 数据源：checkSource + serializeCheckJson；autoBind 与 CLI runCheck 同口径。
  */
 export function checkTool(
   params: CheckToolParams,
@@ -323,9 +361,11 @@ export function checkTool(
   try {
     const filePath = normalizeFilePath(params.file);
     const source = params.source ?? readSource(filePath, deps);
+    const autoBind = resolveProjectAutoBind(filePath, params.autoBind);
     const report = checkSource(filePath, source, pTrue, {
       loadModule: params.loadModule ?? lspLoadModule,
       fromFile: filePath,
+      ...(autoBind === false ? { autoBind: false } : {}),
     });
     const json = serializeCheckJson(report);
     if (params.format === "json") {
@@ -367,7 +407,8 @@ export type HoverToolParams = {
 
 /**
  * Agent hover：无损 Abs（不经 TypeValue bridge）。
- * 与 LSP hover 同一信息源；interfaceSource 与 CodeLens `● interface` 同源（A7）。
+ * 与 LSP hover 同一信息源（getHoverAtPosition）；interfaceSource 与
+ * CodeLens `● interface` 同源（A7 / E5）。autoBind 与 CLI/LSP 同口径。
  */
 export function hoverTool(
   params: HoverToolParams,
@@ -377,9 +418,10 @@ export function hoverTool(
     const filePath = normalizeFilePath(params.file);
     const source = params.source ?? readSource(filePath, deps);
     const loadModule = params.loadModule ?? lspLoadModule;
+    const autoBind = resolveProjectAutoBind(filePath, params.autoBind);
     const hover = getHoverAtPosition(filePath, source, params.line, params.column, undefined, {
       loadModule,
-      ...(params.autoBind !== undefined ? { autoBind: params.autoBind } : {}),
+      ...(autoBind === false ? { autoBind: false } : {}),
     });
     const payload: Record<string, unknown> = {
       file: filePath,
@@ -401,7 +443,7 @@ export function hoverTool(
       payload.inlays = collectAbsInlays(source, {
         loadModule,
         fromFile: filePath,
-        ...(params.autoBind !== undefined ? { autoBind: params.autoBind } : {}),
+        ...(autoBind === false ? { autoBind: false } : {}),
       });
     }
     return textResult(JSON.stringify(payload, null, 2));
@@ -657,11 +699,8 @@ export async function interfaceTool(
 ): Promise<AgentToolResult> {
   try {
     const filePath = normalizeFilePath(params.file);
-    // 有效 autoBind = 项目配置 AND 客户端请求——客户端不能把 autoBind:false 打开
-    const projectAutoBind = interfaceConfig(
-      findProjectConfig(dirname(filePath))?.config,
-    ).autoBind;
-    const autoBind = projectAutoBind && (params.autoBind ?? true);
+    // 有效 autoBind = 项目配置 AND 客户端请求（E5 同源 helper）
+    const autoBind = resolveProjectAutoBind(filePath, params.autoBind);
     const entries = await interfaceSurface(filePath, {
       loadModule: params.loadModule ?? lspLoadModule,
       autoBind,
