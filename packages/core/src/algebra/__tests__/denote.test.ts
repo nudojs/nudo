@@ -27,6 +27,12 @@ describe("denoteGuard", () => {
     expect(denoteGuard(strLit("hi"), "x")).toBe('x === "hi"');
   });
 
+  it("NaN / ±Infinity literals render valid guards, not === null", () => {
+    expect(denoteGuard(numLit(NaN), "x")).toBe("Number.isNaN(x)");
+    expect(denoteGuard(numLit(Infinity), "x")).toBe("x === Infinity");
+    expect(denoteGuard(numLit(-Infinity), "x")).toBe("x === -Infinity");
+  });
+
   it("object structure", () => {
     const o = makeAbs(
       { k: "obj", slots: { id: { value: num() }, name: { value: str() } } },
