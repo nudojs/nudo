@@ -8,6 +8,7 @@ import { parse } from "@nudojs/parser";
 import type { SymbolInfo, ReferenceInfo, SymbolTable, SourceLocation } from "@nudojs/service";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { sidecarPathOf } from "@nudojs/core";
 
 function locFromNode(node: Node): SourceLocation {
   return {
@@ -496,10 +497,63 @@ export function findWorkspaceExportDefinition(
   return null;
 }
 
+/** A5：侧车契约绑定（同名 export）位置 */
+function findSidecarContractDefinition(
+  fromFile: string,
+  ident: string,
+  options: { extraFiles?: string[] } = {},
+): { filePath: string; loc: SourceLocation; name: string } | null {
+  try {
+    const sidecar = sidecarPathOf(fromFile);
+    const candidates = [sidecar, ... (options.extraFiles ?? []).filter((f) => f.endsWith(".nudo.js") || f.endsWith(".nudo.ts"))];
+    for (const path of candidates) {
+      if (!path || !existsSync(path)) continue;
+      const src = readFileSync(path, "utf8");
+      const table = buildSymbolTable(parse(src), path);
+      const d = findDefinition(table, ident);
+      if (d) return { filePath: path, loc: d.loc, name: d.name };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/**
+ * A5：可能的定义位（本地定义优先，其次跨文件，再次侧车契约）。
+ * onDefinition 返回 Location[]，便于 F12 跳本地声明，Peek Definition 见侧车。
+ */
+export function resolveDefinitionLocations(
+  fromFile: string,
+  source: string,
+  ident: string,
+  options: { extraFiles?: string[]; workspaceFallback?: boolean } = {},
+): Array<{ filePath: string; loc: SourceLocation; name: string }> {
+  const out: Array<{ filePath: string; loc: SourceLocation; name: string }> = [];
+  const ast = parse(source);
+  const table = buildSymbolTable(ast, fromFile);
+  const local = findDefinition(table, ident);
+  if (local) out.push({ filePath: fromFile, loc: local.loc, name: local.name });
+  const cross = findCrossFileDefinition(fromFile, source, ident);
+  if (cross && !out.some((d) => d.filePath === cross.filePath && d.loc === cross.loc)) {
+    out.push(cross);
+  }
+  const sidecar = findSidecarContractDefinition(fromFile, ident, options);
+  if (sidecar && !out.some((d) => d.filePath === sidecar.filePath)) {
+    out.push(sidecar);
+  }
+  if (out.length === 0 && options.workspaceFallback) {
+    const ws = findWorkspaceExportDefinition(fromFile, ident, { extraFiles: options.extraFiles });
+    if (ws) out.push(ws);
+  }
+  return out;
+}
+
 /**
  * 统一导航入口：
  * - 本地定义命中 → 当前文件
  * - 否则若是 import 绑定 → 跨文件
+ * - 否则侧车同名契约（A5）
  * - 否则（workspaceFallback，仅 definition）→ 同名导出兜底
  */
 export function resolveDefinition(
@@ -508,16 +562,8 @@ export function resolveDefinition(
   ident: string,
   options: { extraFiles?: string[]; workspaceFallback?: boolean } = {},
 ): { filePath: string; loc: SourceLocation; name: string } | null {
-  const ast = parse(source);
-  const table = buildSymbolTable(ast, fromFile);
-  const local = findDefinition(table, ident);
-  if (local) return { filePath: fromFile, loc: local.loc, name: local.name };
-  const cross = findCrossFileDefinition(fromFile, source, ident);
-  if (cross) return cross;
-  if (options.workspaceFallback) {
-    return findWorkspaceExportDefinition(fromFile, ident, { extraFiles: options.extraFiles });
-  }
-  return null;
+  const all = resolveDefinitionLocations(fromFile, source, ident, options);
+  return all[0] ?? null;
 }
 
 /**

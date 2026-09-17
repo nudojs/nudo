@@ -35,7 +35,7 @@ import {
   interfaceConfig,
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
-import { documentSymbols, findIdentifierAtPosition, resolveDefinition, resolveReferences, type DocumentSymbolItem } from "./symbols.ts";
+import { documentSymbols, findIdentifierAtPosition, resolveDefinition, resolveDefinitionLocations, resolveReferences, type DocumentSymbolItem } from "./symbols.ts";
 import { TOKEN_TYPES, TOKEN_MODIFIERS } from "./semantic-tokens.ts";
 import {
   analysisCache,
@@ -45,6 +45,7 @@ import {
   getCachedOrAnalyze,
   handleNudoDepFileChanged,
   lspLoadModule,
+  makeBufferAwareLoadModule,
   registerNudoImportDeps,
   toLspDiagnostic,
   uriToFilePath,
@@ -94,6 +95,12 @@ if (
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
+
+/** A4：打开中的侧车 buffer 优先于磁盘（未保存编辑即时生效） */
+const activeLoadModule = makeBufferAwareLoadModule((filePath: string) => {
+  const doc = documents.all().find((d) => uriToFilePath(d.uri) === filePath);
+  return doc?.getText();
+});
 
 const activeCases = new Map<string, Map<string, number>>();
 
@@ -271,6 +278,7 @@ function validationDeps(): ValidateTextDeps {
     getActiveCases: (uri) => getActiveCasesForUri(uri),
     getOpenDocumentByPath: (filePath) =>
       documents.all().find((doc) => uriToFilePath(doc.uri) === filePath),
+    loadModule: activeLoadModule,
   };
 }
 
@@ -372,7 +380,7 @@ connection.onCodeLens((params) => {
     const lenses: CodeLens[] = [];
     const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
     for (const lens of computeInterfaceLenses(source, filePath, {
-      loadModule: lspLoadModule,
+      loadModule: activeLoadModule,
       activeCases: cases,
       ...(autoBind === false ? { autoBind: false } : {}),
     })) {
@@ -447,7 +455,7 @@ connection.languages.inlayHint.on((params) => {
     // Abs inlay：参数约束 + 返回 term/pred（类型即计算，无损）
     try {
       for (const abs of collectAbsInlays(source, {
-        loadModule: lspLoadModule,
+        loadModule: activeLoadModule,
         fromFile: filePath,
       })) {
         const lineIdx = abs.line - 1;
@@ -554,7 +562,10 @@ connection.onWorkspaceSymbol((params) => {
 connection.onDefinition((params) => {
   const document = documents.get(params.textDocument.uri);
   if (!document) return null;
-  if (!isNudoFile(params.textDocument.uri)) return null;
+  // A5：侧车契约文件本身也可导航（打开的 *.nudo.js）
+  if (!isNudoFile(params.textDocument.uri) && !params.textDocument.uri.endsWith(".nudo.js")) {
+    return null;
+  }
 
   const source = document.getText();
   const filePath = uriToFilePath(params.textDocument.uri);
@@ -566,19 +577,19 @@ connection.onDefinition((params) => {
     const identAtPos = findIdentifierAtPosition(ast, line, column);
     if (!identAtPos) return null;
 
-    const def = resolveDefinition(filePath, source, identAtPos, {
+    // A5：本地声明 + 侧车契约一起返回（Peek 可见契约边）
+    const defs = resolveDefinitionLocations(filePath, source, identAtPos, {
       extraFiles: navigationExtraFiles(filePath),
       workspaceFallback: true,
     });
-    if (!def) return null;
-
-    return {
+    if (defs.length === 0) return null;
+    return defs.map((def) => ({
       uri: filePathToUri(def.filePath),
       range: {
         start: { line: def.loc.start.line - 1, character: def.loc.start.column },
         end: { line: def.loc.end.line - 1, character: def.loc.end.column },
       },
-    };
+    }));
   } catch {
     return null;
   }
@@ -679,6 +690,8 @@ connection.onCodeAction((params) => {
   if (!isNudoFile(params.textDocument.uri)) return [];
 
   const actions = [];
+  const source = document.getText();
+  const lines = source.split("\n");
 
   for (const diag of params.context.diagnostics) {
     if (diag.code === "nudo-unreachable") {
@@ -695,6 +708,47 @@ connection.onCodeAction((params) => {
           },
         },
       });
+    }
+    // A6：缺 slot → 在实参对象字面量插入缺失字段
+    if (diag.code === "nudo:constraint-violated") {
+      const data = (diag.data ?? {}) as { expected?: string; actual?: string; suggestions?: string[] };
+      const missing = typeof data.expected === "string" ? data.expected.match(/missing field\s+([\w.$]+)/) : null;
+      if (missing) {
+        const fieldPath = missing[1]!; // e.g. p.y
+        const field = fieldPath.split(".").pop() ?? fieldPath;
+        const line = diag.range.start.line;
+        const lineText = lines[line] ?? "";
+        // 找该行或附近对象字面量的 `{`，在其后插入 field
+        const braceCol = lineText.indexOf("{");
+        if (braceCol >= 0) {
+          const insertAt = { line, character: braceCol + 1 };
+          const snippet = lineText.slice(braceCol + 1).trimStart().startsWith("}")
+            ? ` ${field}: undefined `
+            : ` ${field}: undefined, `;
+          actions.push({
+            title: `Add missing field '${field}'`,
+            kind: "quickfix",
+            diagnostics: [diag],
+            edit: {
+              changes: {
+                [params.textDocument.uri]: [{
+                  range: { start: insertAt, end: insertAt },
+                  newText: snippet,
+                }],
+              },
+            },
+          });
+        }
+      }
+      // refine 违例：把建议作为 quickfix 标题展示（不自动改契约/实参）
+      if (data.suggestions?.length) {
+        actions.push({
+          title: data.suggestions[0]!,
+          kind: "quickfix",
+          diagnostics: [diag],
+          edit: { changes: {} },
+        });
+      }
     }
   }
 

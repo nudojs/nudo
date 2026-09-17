@@ -266,6 +266,8 @@ export type ValidateTextDeps = {
   getActiveCases?: (uri: string) => Map<string, number>;
   /** Open-document lookup by file path — enables dirty propagation to dependents. */
   getOpenDocumentByPath?: (filePath: string) => OpenDocumentLike | undefined;
+  /** A4：侧车 buffer 优先的 loadModule */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
 };
 
 const severityMap: Record<JsDiagSeverity, DiagnosticSeverity> = {
@@ -307,6 +309,36 @@ export function toLspDiagnostic(d: JsDiagnostic, uri: string): LspDiagnostic {
 /** CLI 与 LSP 共用的相对 require 解析（service defaultLoadModule） */
 export function lspLoadModule(spec: string, fromFile: string): string | undefined {
   return defaultLoadModule(spec, fromFile);
+}
+
+/**
+ * A4：侧车未保存 buffer 优先。
+ * openText(filePath) 返回编辑器内未落盘文本；命中则覆盖磁盘内容。
+ */
+export function makeBufferAwareLoadModule(
+  openText: (filePath: string) => string | undefined,
+): (spec: string, fromFile: string) => string | undefined {
+  return (spec: string, fromFile: string) => {
+    try {
+      if (spec.startsWith(".")) {
+        const abs = resolvePath(dirname(fromFile), spec);
+        const open = openText(abs);
+        if (open !== undefined) return open;
+      }
+      const sidecar = sidecarPathOf(fromFile);
+      if (
+        spec.endsWith(".nudo.js") ||
+        spec.endsWith(".nudo.ts") ||
+        spec === `./${sidecar.slice(sidecar.lastIndexOf("/") + 1)}`
+      ) {
+        const open = openText(sidecar);
+        if (open !== undefined) return open;
+      }
+    } catch {
+      /* fall through to disk */
+    }
+    return defaultLoadModule(spec, fromFile);
+  };
 }
 
 /**
@@ -420,7 +452,7 @@ export async function validateText(
 
   // Abs check 主通道 + evaluator 诊断（A3：按 analysis.diagnostics 档过滤）
   const level = diagnosticsLevelForFile(filePath);
-  const checkDiags = checkToLspDiagnostics(filePath, text).filter((d) => {
+  const checkDiags = checkToLspDiagnostics(filePath, text, deps.loadModule).filter((d) => {
     // LSP DiagnosticSeverity: Error=1, Warning=2, Information=3
     if (level === "verbose") return true;
     if (level === "off" || level === "errors") return d.severity === DiagnosticSeverity.Error;

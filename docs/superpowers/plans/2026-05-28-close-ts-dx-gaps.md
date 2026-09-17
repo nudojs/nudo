@@ -111,9 +111,9 @@ flowchart TB
 | A1 | **默认分析策略**：无指令 `.js` 也可被 LSP 分析（项目级开关，默认 on 或首次提示） | 打开普通 JS 文件有 hover/inlay；无指令诊断可配置静音 | `package.json#nudo.analysis.mode=exports|all` + `shouldAnalyzeFile` | [x] |
 | A2 | **分析范围配置**：`package.json#nudo.analysis`：include/exclude、mode（directives/exports/all）、diagnostics 噪声档 | 设计文档 + `analysisConfig()` 归一化已落地；LSP 接线随 A1 | A1 | [x] |
 | A3 | **无指令文件的噪声控制**：implicit 推断只报 high-confidence；`unknown` 叶子默认不刷屏 | 无指令文件打开 1s 内无 warning 风暴 | A1, A2 | [x] |
-| A4 | **侧车未保存 buffer**：LSP 可对打开中的 `*.nudo.js` 生效（设计 §2.2 Phase 1 缺口） | 编辑侧车未保存时 check/hover 同步 | design-refine-derivation | [ ] |
-| A5 | **跨文件导航补齐**：侧车绑定名的 Go-to-Definition（源码 ↔ `*.nudo.js`）、Find References 含契约边 | F12 从 `add2` 到侧车契约可跳 | A1 | [ ] |
-| A6 | **Quickfix / Code Action 扩展**：缺 slot → 插入侧车 shape；refine 违例 → 放宽契约/改实参建议 | 两类一键修复可用 | D2 | [ ] |
+| A4 | **侧车未保存 buffer**：LSP 可对打开中的 `*.nudo.js` 生效（设计 §2.2 Phase 1 缺口） | 编辑侧车未保存时 check/hover 同步 | design-refine-derivation | [x] |
+| A5 | **跨文件导航补齐**：侧车绑定名的 Go-to-Definition（源码 ↔ `*.nudo.js`）、Find References 含契约边 | F12 从 `add2` 到侧车契约可跳 | A1 | [x] |
+| A6 | **Quickfix / Code Action 扩展**：缺 slot → 插入侧车 shape；refine 违例 → 放宽契约/改实参建议 | 两类一键修复可用 | D2 | [x] |
 | A7 | **语义高亮与 inlay 对齐 interface 档**：default 走 symbolic（设计 Phase 1 已提），与 CodeLens 切换一致 | CodeLens `● interface` 与 hover 同源 | design-refine-derivation | [ ] |
 | A8 | **大文件防抖与取消**：分析可取消；编辑风暴下不排队爆炸 | 快速输入 50 字符无卡死 | B2 | [ ] |
 
@@ -271,7 +271,7 @@ flowchart TB
   超预算 symbolic case 强制 `#widened`；effectiveInterface 表缓存仍开放
 - [x] **C1.*** Map/Set 条目表 + 动态 key 槽位并集 + 手写循环 push 重绑
 - [x] **C2.1–C2.2** 循环 return（`$loopReturn`）；catch 形参绑定 thrown Abs（Error name/message）
-- [ ] **A4–A6** 侧车 buffer、导航、quickfix
+- [x] **A4–A6** 侧车 buffer 优先 loadModule、definition 含侧车契约、missing-field quickfix
 
 ### Phase 3 — 替代门槛冲刺
 
