@@ -28,12 +28,16 @@ import {
   serializeInferJson,
   getCasesForFile,
   interfaceSurface,
+  draftInterface,
   emitInterface,
   formatEmitSummary,
+  formatDraftSummary,
   formatInterfaceSurfaceLine,
   findProjectConfig,
   interfaceConfig,
   isNudoTargetPath,
+  sidecarDraftPath,
+  writeInterfaceDraft,
   type EmitInterfaceResult,
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
@@ -335,6 +339,7 @@ export const AGENT_TOOL_SOURCES = {
   hover: "getHoverAtPosition + interfaceTierOf",
   infer: "analyzeFile + serializeInferJson",
   interface: "interfaceSurface + formatInterfaceSurfaceLine",
+  "interface.draft": "draftInterface + formatDraftSummary",
   "interface.emit": "emitInterface",
   codeLens: "computeInterfaceLenses + interfaceTierOf",
 } as const;
@@ -720,6 +725,49 @@ export async function interfaceTool(
     for (const line of selected.map(formatInterfaceSurfaceLine)) lines.push(line);
     lines.push("");
     lines.push(JSON.stringify(selected, null, 2));
+    return textResult(lines.join("\n"));
+  } catch (err) {
+    return analysisError(err);
+  }
+}
+
+export type InterfaceDraftToolParams = {
+  file: string;
+  functionName?: string;
+  /** true → 写入 *.nudo.draft.js（不碰手写 *.nudo.js） */
+  write?: boolean;
+  dryRun?: boolean;
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
+  autoBind?: boolean;
+};
+
+/**
+ * Agent interface 草稿：与 CLI `nudo interface --draft` 同源（draftInterface）。
+ * 代码优先 / 迁移：返回可审阅 `*.nudo.draft.js` 文本；write 落盘 draft 文件。
+ */
+export async function interfaceDraftTool(
+  params: InterfaceDraftToolParams,
+  _deps: AgentToolDeps = {},
+): Promise<AgentToolResult> {
+  try {
+    const filePath = normalizeFilePath(params.file);
+    const result = await draftInterface(filePath, {
+      ...(params.functionName ? { fnNames: [params.functionName] } : {}),
+      ...(params.loadModule ? { loadModule: params.loadModule } : {}),
+      ...(params.autoBind !== undefined ? { autoBind: params.autoBind } : {}),
+    });
+    const draftRel = sidecarDraftPath(filePath);
+    const lines =
+      params.write
+        ? formatDraftSummary(
+            filePath,
+            draftRel,
+            result,
+            writeInterfaceDraft(filePath, result.draftSource, {
+              dryRun: params.dryRun === true,
+            }),
+          )
+        : formatDraftSummary(filePath, draftRel, result);
     return textResult(lines.join("\n"));
   } catch (err) {
     return analysisError(err);

@@ -61,6 +61,7 @@ import {
   hoverTool,
   inferTool,
   interfaceTool,
+  interfaceDraftTool,
   interfaceEmitTool,
   interfacePositionalArgs,
   interfaceEmitPositionalArgs,
@@ -77,6 +78,7 @@ const NUDO_COMMANDS = [
   "nudo.hover",
   "nudo.infer",
   "nudo.interface",
+  "nudo.interface.draft",
   "nudo.interfaceEmit",
   "nudo.interface.emit",
   "nudo.selectCase",
@@ -1005,6 +1007,9 @@ function dispatchNudoCommand(command: string, arg: Record<string, unknown>) {
       return inferTool(arg as Parameters<typeof inferTool>[0], agentToolDeps);
     case "nudo.interface":
       return interfaceTool(arg as Parameters<typeof interfaceTool>[0], agentToolDeps);
+    case "nudo.interface.draft":
+    case "nudo.interfaceDraft":
+      return interfaceDraftTool(arg as Parameters<typeof interfaceDraftTool>[0], agentToolDeps);
     case "nudo.interfaceEmit":
     case "nudo.interface.emit":
       return handleInterfaceEmit(arg as Parameters<typeof handleInterfaceEmit>[0]);
@@ -1067,7 +1072,7 @@ function dispatchAgentRequest(
 // Request aliases: slash-form (`nudo/check`) is the protocol contract; dot-form
 // (`nudo.check`) mirrors the executeCommand command names that MCP-bridge
 // clients reuse as request methods. Both spellings route to the same handlers.
-for (const name of ["whatIf", "suggestCase", "trace", "check", "hover", "infer", "interface", "interface.emit"] as const) {
+for (const name of ["whatIf", "suggestCase", "trace", "check", "hover", "infer", "interface", "interface.draft", "interface.emit"] as const) {
   const command = `nudo.${name}`;
   const handler = (params: Record<string, unknown>) => dispatchAgentRequest(command, params);
   connection.onRequest(`nudo/${name}`, handler);

@@ -382,6 +382,7 @@ nudo interface --draft lib.js --fn greet
 | 证据 | 含义 |
 |------|------|
 | `callsite` / `directive` | 观察到的实参域（`joinThenProject`） |
+| `body` | 实现里对参数读到的字段 — **仅建议**，永不作为 check 义务 |
 | `symbolic` | 返回位 `generalizeFromAst` 兜底 |
 | 省略的参数槽 | 无证据 — 注释 `/* tighten */`，不是契约 |
 

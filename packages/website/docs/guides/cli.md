@@ -382,6 +382,7 @@ Evidence layered in the draft (never invents obligations):
 | Evidence | Meaning |
 |----------|---------|
 | `callsite` / `directive` | Observed argument domains (`joinThenProject`) |
+| `body` | Fields the implementation reads on a param — **suggestion only**, never a check obligation |
 | `symbolic` | `generalizeFromAst` fallback for returns |
 | omitted param slots | No evidence — comment `/* tighten */`, not a contract |
 

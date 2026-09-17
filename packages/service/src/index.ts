@@ -205,6 +205,7 @@ export {
   formatDraftSummary,
   sidecarDraftPath,
   writeInterfaceDraft,
+  collectParamBodyAccesses,
   type DraftEvidence,
   type InterfaceDraftEntry,
   type InterfaceDraftOpts,

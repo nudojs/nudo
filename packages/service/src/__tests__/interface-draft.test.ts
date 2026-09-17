@@ -13,6 +13,7 @@ import {
   formatDraftSummary,
   sidecarDraftPath,
   writeInterfaceDraft,
+  collectParamBodyAccesses,
 } from "../interface-draft.ts";
 
 let dir: string;
@@ -135,5 +136,37 @@ describe("draftInterface", () => {
     const write = writeInterfaceDraft(file, r.draftSource);
     const text2 = formatDraftSummary("calls.js", "calls.nudo.draft.js", r, write).join("\n");
     expect(text2).toContain("Draft written →");
+  });
+
+  it("body accesses appear as draft suggestions only (not check obligations)", async () => {
+    const file = join(dir, "greet.js");
+    writeFileSync(
+      file,
+      `export function greet(user) {\n  return "hi " + user.name;\n}\n`,
+    );
+    const map = collectParamBodyAccesses(readFileSync(file, "utf-8"));
+    expect(map.get("greet")?.get("user")?.has("name")).toBe(true);
+
+    const r = await draftInterface(file);
+    const entry = r.entries.find((e) => e.fn === "greet");
+    expect(entry!.paramEvidence).toBe("body");
+    expect(entry!.params[0]!.bodyAccesses).toEqual(["name"]);
+    // DSL 不发明 shape({ name }) 义务，仅注释建议
+    expect(entry!.dsl).toBe("fn({})");
+    expect(r.draftSource).toContain("body-read { name }");
+    expect(r.draftSource).toContain("suggested (body-read, not a contract)");
+    expect(r.draftSource).toContain("export const greet = fn({});");
+  });
+
+  it("bodyAccesses:false disables body suggestions", async () => {
+    const file = join(dir, "greet.js");
+    writeFileSync(
+      file,
+      `export function greet(user) {\n  return "hi " + user.name;\n}\n`,
+    );
+    const r = await draftInterface(file, { bodyAccesses: false });
+    const entry = r.entries.find((e) => e.fn === "greet");
+    expect(entry!.paramEvidence).toBe("none");
+    expect(entry!.params[0]!.bodyAccesses).toBeUndefined();
   });
 });
