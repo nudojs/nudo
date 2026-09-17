@@ -139,7 +139,7 @@ Combined: [2, 4, 6] | number[]
 
 Nudo 通过 `map` 跟踪元素类型。具体输入 `[1, 2, 3]` 被逐元素求值为 `[2, 4, 6]`，符号输入 `T.array(T.number)` 产生 `number[]`。仓库示例（CI 钉住）：[`docs/examples/algebra/b-hof-map.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/b-hof-map.js)。
 
-`reduce` 同样精确——字面量数组经累加器逐元素折叠，符号数组经累加器不动点（`acc ⊔ (acc + A)`）收敛：
+`reduce` 同样精确——字面量数组经累加器逐元素折叠，符号数组单次应用回调（`init + element` → `number`）：
 
 ```javascript
 /**

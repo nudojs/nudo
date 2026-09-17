@@ -72,7 +72,7 @@ function score(x) { return x + 1; }
 | `pnpm run infer docs/examples/algebra/a-spread-optional.js` | **0** | spread 配置对象 |
 | `pnpm run infer docs/examples/algebra/a-spread-optional.js --dts` | **0** | `--dts` 投影：单一拓宽签名 + 字面量并返回（`Generated:` 行与签名钉住） |
 | `pnpm run infer docs/examples/algebra/b-hof-map.js` | **0** | HOF 回调传播 |
-| `pnpm run infer docs/examples/algebra/c-reduce-sum.js` | **0** | reduce 不动点 |
+| `pnpm run infer docs/examples/algebra/c-reduce-sum.js` | **0** | reduce 单 pass 累加 |
 | `pnpm run infer docs/examples/algebra/d-mixin-meet.js` | **0** | spread 形状 meet |
 | `pnpm run infer docs/examples/algebra/e-index-proj.js` | **0** | 索引投影 |
 | `pnpm run infer docs/examples/algebra/f-async-eff.js` | **0** | async × `@nudo:mock` |

@@ -9,7 +9,8 @@
 ### 1.1 数组方法精度：reduce / forEach / some 已精确；动态 key 仍 unknown
 
 **当前行为（2026-09 实测）：**
-`reduce` 已在两条路径上精确：字面量数组逐元素累加、符号数组走累加器不动点；
+`reduce` 已在两条路径上精确：字面量数组逐元素累加、符号数组单次应用回调
+（`init + element`）；
 `filter → map → reduce` 链式调用不再逐级丢信息。`forEach` 回调副作用写回、
 `some`/`every` 返回 boolean 也已建模。
 
@@ -49,7 +50,7 @@ function someBig(arr) {
 - 回调形态的集合迭代（手写 for-of / for-i 循环里 `fn(item)` 的返回值不进 push）
 
 **已解决部分：**
-- `Array.reduce()`：字面量路径逐元素求值；符号路径 `acc ⊔ (acc+A)` 收敛（`#widened`）
+- `Array.reduce()`：字面量路径逐元素求值；符号路径单 pass（对 element 一次应用，`#widened`）
 - `filter` + `map` + `reduce` 链式调用：每级保留字面量精度
 - `arr.map(cb)` 回调传播：调用点逐位实例化（`[2,4,6]`）
 - `forEach` 副作用写回、`some`/`every` → boolean
@@ -138,10 +139,13 @@ function unique(arr) {
 
 ## 二、高阶函数推断限制
 
-### 2.1 函数参数类型无法推断
+### 2.1 具名回调形参：关系已归纳，concrete 执行仍退化
 
 **问题描述：**
-当函数作为参数传递时，Nudo 无法推断回调函数的参数类型。
+函数形参本身是回调（`function processItems(items, transform, filter)`）时，
+**关系签名已能归纳**（关系型 Abs，见 `design-hof-relations.md`），但
+concrete case 的逐值执行仍把回调形参绑定为 `unknown`，首级 HOF 方法返回
+`unknown` 后链式断裂。
 
 **失败示例：**
 ```javascript
@@ -152,20 +156,26 @@ function processItems(items, transform, filter) {
   return items.filter(filter).map(transform);
 }
 // Case "higher-order": ([1, 2, 3]) => unknown
+// intension: processItems: (items: arr(A1), transform: (A1) => B:transform,
+//             filter: (A1) => boolean) => arr(B:transform)
 //   [warning] Cannot resolve 'map' on unknown value (nudo:unknown-recv)
-// transform 和 filter 的参数类型为 unknown，且 filter(filter) 结果 unknown，
-// 后续 .map 链直接断掉
+// —— intension 已归纳出回调关系，但 concrete case（filter 无 impl）首级
+//    items.filter(unknown) 仍返回 unknown，后续 .map 链断掉
 ```
 
 **边界（已精确的相邻形态）：**
 - 调用点**内联箭头回调**（`items.map((x) => x * 2)` 字面量传入）逐位实例化
   —— 见 `docs/examples/algebra/b-hof-map.js`（`[2,4,6]` / `["A","B"]`）
-- 缺口在于「具名函数参数当回调用」：回调参数类型未知，且首级方法返回 unknown 后链式断裂
+- 关系 Abs 已落地：intension 能归纳 `transform: (A1) => B:transform`、
+  `filter: (A1) => boolean`（P2 归纳 + P1 消费，见 `design-hof-relations.md`）
+- 剩余缺口：**concrete case 的逐值执行**不消费 intension 的关系——
+  回调形参仍绑定为 `unknown`，case 头退化
 
 **根本原因：**
 - 函数参数在调用时才绑定类型
 - 高阶函数的回调参数类型依赖调用上下文
-- Nudo 没有"泛型函数"的概念来表达 `fn: (T) => U`
+- 关系 Abs 是**归纳签名**（服务于 generalize / check / dts 投影），
+  不参与 concrete case 对「无 impl 回调」的逐值求值
 
 **影响范围：**
 - 所有接受回调的高阶函数
@@ -173,11 +183,12 @@ function processItems(items, transform, filter) {
 - 事件处理器、中间件等模式
 
 **可能的解决方案：**
-1. **调用点推断**：在函数被调用时，从实参推断回调的参数类型
+1. **concrete 路径消费关系**：在首级 HOF 方法对「无 impl 回调」求值时，
+   回退到该形参已归纳的关系（`fn(α) => β`）而非 `unknown`
 2. ~~**泛型支持**：引入类型变量，表达 `fn<T, U>(items: T[], transform: (T) => U): U[]`~~ → 见 **`docs/design-hof-relations.md`**（关系型 Abs，不做 TS 泛型语言）
-3. **上下文传播**：将数组元素类型传播到回调参数
+3. **上下文传播**：将数组元素类型传播到回调参数（关系归纳已部分覆盖）
 
-**难度：** 高
+**难度：** 中（关系归纳已落地；剩余是 concrete 执行路径的消费）
 
 ---
 
@@ -475,7 +486,7 @@ exit 0，全部 case 精确（`compute` → `25 #exact`）。网站
 - [ ] 简单实现 `==` / `!=` 折叠（曾在 TypeValue 求值器实现，求值器删除后回归为 `unknown`，见 3.2）
 
 ### 阶段 2：精度提升（2-4 周）
-- [x] 数组 `reduce` 累加器追踪（字面量逐元素 + 符号不动点，见 1.1）
+- [x] 数组 `reduce` 累加器追踪（字面量逐元素 + 符号单 pass，见 1.1）
 - [ ] Map 字面量 key 追踪（`m.get("k")` 仍 unknown，见 1.2）
 - [ ] 高阶函数：关系型 Abs（P1 消费 + P2 归纳 + P4 检查已落地；P5 dts 投影待做；见 `design-hof-relations.md`）
 

@@ -3,7 +3,7 @@
 // 与 e-index-proj 的动态 key 边界同源（动态 key 仍 unknown）
 //
 // 逐 case 真值（infer 输出）：
-//   sum([1, 2, 3, 4, 5])        → 15      #exact（reduce 累加器不动点）
+//   sum([1, 2, 3, 4, 5])        → 15      #exact（reduce 累加器单 pass）
 //   forEachSum([1, 2, 3, 4, 5]) → 15      #exact（forEach 回调副作用写回 s）
 //   someBig([1, 2, 3, 4, 5])    → boolean #exact（some 建模为 boolean）
 //

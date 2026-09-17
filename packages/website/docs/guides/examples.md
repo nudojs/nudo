@@ -139,7 +139,7 @@ Combined: [2, 4, 6] | number[]
 
 Nudo tracks element types through `map`. The concrete input `[1, 2, 3]` is evaluated element by element to `[2, 4, 6]`, while the symbolic input `T.array(T.number)` yields `number[]`. Repo example (CI-pinned): [`docs/examples/algebra/b-hof-map.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/b-hof-map.js).
 
-`reduce` is just as precise — a literal array folds element by element through the accumulator, and a symbolic array converges through the accumulator fixpoint (`acc ⊔ (acc + A)`):
+`reduce` is just as precise — a literal array folds element by element through the accumulator, and a symbolic array applies the callback once (`init + element` → `number`):
 
 ```javascript
 /**
