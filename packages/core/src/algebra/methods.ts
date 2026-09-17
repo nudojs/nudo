@@ -150,8 +150,9 @@ export function callAbsMethod(
           const parts = lit.split(sep).map((s) => strLit(s));
           return abs({ k: "tuple", elements: parts }, undefined, undefined, "exact");
         }
-        // 非字面分隔符：保守整段
-        return abs({ k: "tuple", elements: [strLit(lit)] }, undefined, undefined, "path");
+        // 非字面分隔符：结果元素数未知（""→逐字符、命中→多段、未命中→1 段），
+        // 不能钉成 1 元 tuple（soundness）；保守 arr<string>
+        return strArr("path");
       }
       return strArr("path");
     }

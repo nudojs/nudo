@@ -23,6 +23,16 @@ describe("Abs method table", () => {
     expect(len!.shape.k).toBe("prim");
   });
 
+  it("split with non-literal separator is arr<string>, not a 1-tuple", () => {
+    const sep = abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+    const r = callAbsMethod(strLit("a,b,c"), "split", [sep]);
+    expect(r).toBeDefined();
+    expect(r!.shape.k).toBe("arr");
+    if (r!.shape.k === "arr") {
+      expect(r!.shape.element.shape).toEqual({ k: "prim", type: "string" });
+    }
+  });
+
   it("analyzeFn uses method table", () => {
     const src = `
       function f(x) {
