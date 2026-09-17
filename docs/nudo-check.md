@@ -25,6 +25,8 @@ pnpm run check path/to/file.js
 | `nudo:assign-mismatch` | 赋值 ⊭ 原有形状（leqAbs） |
 | `nudo:arg-structure` | HOF：实参不是可调用 fn / arity 不匹配（**不再**表示 body 缺 slot） |
 | `nudo:case-inconsistency` | **`@nudo:case` 见证 ⊭ refine** |
+| `nudo:interface-param-mismatch` | 手写契约参数名不在函数形参表（C4.5，不再静默跳过） |
+| `nudo:interface-conflict` | 手写契约合取不可满足（常数界交叉等） |
 
 ```
 nudo check  src/validators.js
