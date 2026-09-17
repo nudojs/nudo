@@ -158,4 +158,5 @@ pnpm run ci:version   # only on a throwaway branch — rewrites package.json ver
 - `.changeset/README.md` — changesets tool docs pointer
 - `docs/superpowers/plans/2026-05-28-close-ts-dx-gaps.md` — E6 task
 - `docs/design-refine-derivation.md` — interface tier semantics
+- `docs/design-eval-missing-slot.md` — C0.5 optional eval-driven diagnostics
 - Website guide: `packages/website/docs/guides/versioning.md`
