@@ -10,6 +10,7 @@ export * from "./builtins.ts";
 export * from "./methods.ts";
 export * from "./leak.ts";
 export * from "./objects.ts";
+export * from "./collections.ts";
 export * from "./leq.ts";
 export * from "./ast-eval.ts";
 export * from "./format.ts";

@@ -447,8 +447,24 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const arg = stmt.argument ? transpileExpression(stmt.argument, opts) : "$lit(undefined)";
       return `${pad}$throw(${arg});`;
     }
-    case "ExpressionStatement":
+    case "ExpressionStatement": {
+      // C1.4：数组可变方法对标识符接收者重绑（push 返回新容器）
+      const expr = stmt.expression as Expression;
+      if (
+        expr.type === "CallExpression" &&
+        expr.callee.type === "MemberExpression" &&
+        !expr.callee.computed &&
+        expr.callee.object.type === "Identifier" &&
+        expr.callee.property.type === "Identifier" &&
+        ["push", "unshift", "splice", "pop", "shift", "reverse", "sort"].includes(
+          (expr.callee.property as { name: string }).name,
+        )
+      ) {
+        const recv = (expr.callee.object as { name: string }).name;
+        return `${pad}${recv} = ${transpileExpression(expr, opts)};`;
+      }
       return `${pad}${transpileExpression(stmt.expression, opts)};`;
+    }
     case "VariableDeclaration": {
       // const → let：成员/下标写经不可变 Abs 更新后需重绑根绑定
       const kw = "let";

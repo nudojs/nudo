@@ -1,16 +1,14 @@
-// 示例 I：Map / Set 精度边界
-// 考察：Map 只记录 K / V 的整体类型，不维护字面量 key → value 的映射——
-// 即使 m.set("k", v) 字面量成对出现，m.get("k") 仍求值为 unknown；
-// Set 的迭代器未建模，for-of 逐元素分发丢失（元素 unknown）。
+// 示例 I：Map / Set 字面量条目追踪（C1）
+// 考察：m.set("k", v) 成对出现后 m.get("k") 精确回查；
+// Set 构造从数组填元素，for-of / Array.from 取到元素联合。
 //
 // 逐 case 真值（infer 输出）：
-//   lookup("alice")      → unknown  #partial（Map.get 字面量 key 不回查）
-//   dedup([1, 2, 2, 3])  → []（case 头）· intension 侧 unknown[]——
-//                          Set for-of 元素 unknown，数组形状保留但为空
+//   lookup("alice")      → { id: "alice", name: "Alice" }  #exact
+//   dedup([1, 2, 2, 3])  → [1, 2, 2, 3]（Set 保元素；未做去重语义）
 //
-// 边界形态（写算法前先查这张表，避免依赖未建模方法）：
-//   已建模：对象字面量的字面量 key 索引投影（见 e-index-proj.js）
-//   未建模：Map.get 字面量回查 / Map.has 收窄 / Set for-of 迭代
+// 边界形态：
+//   已建模：Map 字面量 key → value；Set 元素 from iterable
+//   保守：Map.get 非字面量 key → 已知 value 并集
 
 /**
  * @nudo:case "map-get" ("alice")

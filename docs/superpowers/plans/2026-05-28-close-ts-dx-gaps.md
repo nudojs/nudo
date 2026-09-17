@@ -171,10 +171,10 @@ flowchart TB
 
 | ID | 任务 | 验收 | 状态 |
 |---|---|---|---|
-| C1.1 | **Map 字面量 key 追踪**：`set("a",v)` 成对出现 → `get("a")` 精确 | `i-map-set` 类样例从 `unknown` → 精确形状；真实包 FP=0 | [ ] |
-| C1.2 | **Set 元素联合**：`new Set(arr)` / for-of 元素类型 | `Array.from(set)` 不再恒 `unknown` | [ ] |
-| C1.3 | **动态 key 索引投影**：字面量 key 分支 + 符号 key slot 并集 | `obj[lit]` 精确；`obj[unknown]` 保守并集 | [ ] |
-| C1.4 | **手写循环元素分发**：for-of / for-i 里 `fn(item)` 的返回进 push/累加 | 与 `forEach` 同轨；钉住 `h-array-boundary` | [ ] |
+| C1.1 | **Map 字面量 key 追踪**：`set("a",v)` 成对出现 → `get("a")` 精确 | `i-map-set` 类样例从 `unknown` → 精确形状；真实包 FP=0 | [x] |
+| C1.2 | **Set 元素联合**：`new Set(arr)` / for-of 元素类型 | `Array.from(set)` 不再恒 `unknown` | [x] |
+| C1.3 | **动态 key 索引投影**：字面量 key 分支 + 符号 key slot 并集 | `obj[lit]` 精确；`obj[unknown]` 保守并集 | [x] |
+| C1.4 | **手写循环元素分发**：for-of / for-i 里 `fn(item)` 的返回进 push/累加 | 与 `forEach` 同轨；钉住 `h-array-boundary` | [x] |
 
 ### C2. 控制流与异常（P0–P1）
 
@@ -267,7 +267,7 @@ flowchart TB
 ### Phase 2 — 缩放与集合完备（4–8 周）
 
 - [ ] **B3–B5** 持久缓存 + polyvariant 预算
-- [ ] **C1.*** Map/Set/索引/循环分发
+- [x] **C1.*** Map/Set 条目表 + 动态 key 槽位并集 + 手写循环 push 重绑
 - [x] **C2.1–C2.2** 循环 return（`$loopReturn`）；catch 形参绑定 thrown Abs（Error name/message）
 - [ ] **A4–A6** 侧车 buffer、导航、quickfix
 

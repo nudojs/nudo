@@ -6,6 +6,20 @@
 import type { Abs } from "./abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown, confJoin } from "./abs.ts";
 import { joinAbs, objOf } from "./objects.ts";
+import {
+  collectionElementJoin,
+  isMapAbs,
+  isSetAbs,
+  makeMapAbs,
+  makeSetAbs,
+  mapGetEntry,
+  mapHasEntry,
+  mapSetEntry,
+  mapSizeAbs,
+  setAddEntry,
+  setHasEntry,
+  setSizeAbs,
+} from "./collections.ts";
 
 function numPrim(conf: Abs["conf"] = "path"): Abs {
   return abs({ k: "prim", type: "number" }, undefined, undefined, conf);
@@ -225,9 +239,12 @@ export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
       return abs({ k: "arr", element: a0 ?? unknown }, undefined, undefined, "path");
     case "from": {
       // Array.from(iterable)：取可迭代物的元素，不是把实参整个当元素
-      //（那是 Array.of 的语义）。Set/Map 迭代未建模 → 诚实 unknown
-      //（design-limitations §1.3；此前误给 arr<Set>，benchmark set-01 基线漂移的根因）。
+      //（那是 Array.of 的语义）。C1.2：Map/Set 走条目表。
       if (!a0) return unknown;
+      if (isSetAbs(a0) || isMapAbs(a0)) {
+        const el = collectionElementJoin(a0);
+        return abs({ k: "arr", element: el }, undefined, undefined, "path");
+      }
       const k = a0.shape.k;
       if (k === "arr") return a0;
       if (k === "tuple") {
@@ -413,19 +430,11 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
     case "Promise":
       return evalPromiseCtor(args);
     case "Map":
-      return abs(
-        { k: "brand", name: "Map", shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") },
-        undefined,
-        undefined,
-        "path",
-      );
+      // C1.1：可选 entry 元组列表填充字面量映射
+      return makeMapAbs(args[0]);
     case "Set":
-      return abs(
-        { k: "brand", name: "Set", shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") },
-        undefined,
-        undefined,
-        "path",
-      );
+      // C1.2：从 iterable 填充元素联合
+      return makeSetAbs(args[0]);
     default:
       // C2.2：Error 家族 → name/message 槽
       if (isErrorCtorName(className)) {
@@ -447,13 +456,13 @@ export function evalBuiltinInstanceMethod(
   if (brandName === "Map") {
     switch (method) {
       case "get":
-        return unknown;
+        return mapGetEntry(recv, args[0]);
       case "has":
-        return boolPrim();
+        return mapHasEntry(recv, args[0]);
       case "set":
-        return recv;
+        return mapSetEntry(recv, args[0], args[1] ?? unknown);
       case "size":
-        return numPrim("path");
+        return mapSizeAbs(recv);
       default:
         return undefined;
     }
@@ -461,11 +470,11 @@ export function evalBuiltinInstanceMethod(
   if (brandName === "Set") {
     switch (method) {
       case "has":
-        return boolPrim();
+        return setHasEntry(recv, args[0]);
       case "add":
-        return recv;
+        return setAddEntry(recv, args[0] ?? unknown);
       case "size":
-        return numPrim("path");
+        return setSizeAbs(recv);
       default:
         return undefined;
     }

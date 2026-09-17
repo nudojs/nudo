@@ -10,11 +10,11 @@
 | [`b-hof-map.js`](./b-hof-map.js) | HOF：回调经 `.map` 传播，调用点逐位实例化（`[2,4,6]` / `["A","B"]`） |
 | [`c-reduce-sum.js`](./c-reduce-sum.js) | reduce 累加器单 pass：字面量逐元素累加 → `15`（`#exact`）；符号路径对 element 一次应用 → `number`（`#widened`） |
 | [`d-mixin-meet.js`](./d-mixin-meet.js) | spread 形状 meet：右值覆盖同槽，其余并集，调用点保留字面量 |
-| [`e-index-proj.js`](./e-index-proj.js) | 索引投影：字面量 key 精确取槽（`1` / `"x"` / `"/usr/bin"`）；动态 key 吸收为 `unknown`（`pickDynamic` 的 `@nudo:case "dynamic key" ({ a: 1, b: "x" }, T.string)` → `unknown #partial`） |
+| [`e-index-proj.js`](./e-index-proj.js) | 索引投影：字面量 key 精确取槽（`1` / `"x"` / `"/usr/bin"`）；动态 key → 保守并集所有槽（`1 \| "x"`） |
 | [`f-async-eff.js`](./f-async-eff.js) | async / Promise eff × `@nudo:mock` 替换内置 fetch（mock 必填：无 mock 时 B 路径泄漏真实 fetch，`ERR_INVALID_URL` 崩溃） |
 | [`g-narrow-subtract.js`](./g-narrow-subtract.js) | 守卫窄化：调用点逐位收窄（`3 \| 2 \| -1`） |
 | [`h-array-boundary.js`](./h-array-boundary.js) | 数组方法精度边界：`reduce` / `forEach` 副作用 / `some` 均精确（`15` / `15` / `boolean`） |
-| [`i-map-set.js`](./i-map-set.js) | Map / Set 精度边界：`m.get` 字面量 key → unknown、Set for-of 元素丢失 |
+| [`i-map-set.js`](./i-map-set.js) | Map / Set 字面量条目：`m.set`→`m.get` 精确回查；Set for-of 保元素 |
 | [`j-this-binding.js`](./j-this-binding.js) | this 绑定：成员调用把 receiver 注入 thisVal，`compute(5)` → `25 #exact`；顶层裸成员调用不采集为 call@ case |
 | [`k-try-catch.js`](./k-try-catch.js) | try/catch：try 体确定性 return 折叠（`"inner" #exact`）；catch 形参绑定 thrown Abs，Error 家族 `err.message` → `"boom" #exact` |
 | [`l-primitive-conversion.js`](./l-primitive-conversion.js) | 原始值包装构造与全局数值解析：`String` / `Number` / `Boolean` / `parseInt` / `parseFloat` 在字面量实参上折叠精确（`"5"` / `true` / `42` / `3.14`）；符号实参拓宽目标原语 |

@@ -6,13 +6,14 @@
 
 ## 一、集合类型推断限制
 
-### 1.1 数组方法精度：reduce / forEach / some 已精确；动态 key 仍 unknown
+### 1.1 数组方法精度：reduce / forEach / some / 手写循环 push（已解决）
 
-**当前行为（2026-09 实测）：**
+**当前行为：**
 `reduce` 已在两条路径上精确：字面量数组逐元素累加、符号数组单次应用回调
 （`init + element`）；
 `filter → map → reduce` 链式调用不再逐级丢信息。`forEach` 回调副作用写回、
-`some`/`every` 返回 boolean 也已建模。
+`some`/`every` 返回 boolean 也已建模。**C1.4**：for-of / for-i 内
+`out.push(v)` 对标识符接收者重绑（push 返回新 tuple/arr），累加与收集均精确。
 
 **实测示例：**
 ```javascript
@@ -28,115 +29,85 @@ function sum(arr) {
 
 ```javascript
 /**
- * @nudo:case "forEach" ([1, 2, 3, 4, 5])
+ * @nudo:case "forof-push" ([1, 2, 3])
  */
-function forEachSum(arr) {
-  let s = 0;
-  arr.forEach((x) => { s = s + x; });
-  return s;
+function doubleAll(arr) {
+  const out = [];
+  for (const x of arr) out.push(x * 2);
+  return out;
 }
-// Case "forEach": ([1, 2, 3, 4, 5]) => 15 —— forEach 回调副作用写回 s
-//   abs: 15  #exact（intension 侧仍 0：符号重跑不写回）
-
-/**
- * @nudo:case "some" ([1, 2, 3, 4, 5])
- */
-function someBig(arr) {
-  return arr.some((x) => x > 3);
-}
-// Case "some": ([1, 2, 3, 4, 5]) => boolean
-//   abs: boolean  #exact
+// Case "forof-push": ([1, 2, 3]) => [2, 4, 6]  #exact
 ```
-
-**影响范围（剩余）：**
-- 动态 key 索引投影（`obj[unknownKey]` → `unknown`）
-- 回调形态的集合迭代（手写 for-of / for-i 循环里 `fn(item)` 的返回值不进 push）
-
-**已解决部分：**
-- `Array.reduce()`：字面量路径逐元素求值；符号路径单 pass（对 element 一次应用，`#widened`）
-- `filter` + `map` + `reduce` 链式调用：每级保留字面量精度
-- `arr.map(cb)` 回调传播：调用点逐位实例化（`[2,4,6]`）
-- `forEach` 副作用写回、`some`/`every` → boolean
 
 已建模 / 未建模的边界已固化进示例门禁：
 [`docs/examples/algebra/h-array-boundary.js`](examples/algebra/h-array-boundary.js)
 （CI 钉住：`reduce` → `15 #exact`、`forEach` 副作用 → `15`、`some` → `boolean`）。
 
-**可能的解决方案（剩余部分）：**
-1. **动态 key 收窄**：字面量 key 分支 + 符号 key 的 slot 并集
-2. **手写循环**：for-of / for-i 的元素分发（与 forEach 同轨）
+**剩余限制：** 无（动态 key 见 §1.4 / e-index-proj：槽位并集）。
 
-**难度：** 中（reduce / forEach / some 已实现）
+**难度：** 低
 
 ---
 
-### 1.2 Map 不跟踪 key-value 映射关系
+### 1.2 Map 字面量 key 追踪（已解决·C1.1）
 
-**问题描述：**
-`Map.get(key)` 无法回查字面量 key 的精确映射；即使 `m.set("k", v)` 字面量成对出现，
-`m.get("k")` 目前仍求值为 `unknown`（指令路径与调用点路径一致）。
+~~`Map.get(key)` 无法回查字面量 key 的精确映射。~~
 
-**失败示例：**
+**已实现**：`new Map()` 起条目表（按 Abs 身份 WeakMap）；`set(k, v)` 原地
+更新；字面量 `get`/`has` 精确；非字面量 key → 已知 value 并集。
+
 ```javascript
-/**
- * @nudo:case "map-get" ()
- */
-function test() {
-  const map = new Map();
-  map.set("a", { id: "a", name: "Alice" });
-  map.set("b", { id: "b", name: "Bob" });
-  return map.get("a");
+function lookup(key) {
+  const m = new Map();
+  m.set("alice", { id: "alice", name: "Alice" });
+  return m.get(key);
 }
-// 期望: { id: "a", name: "Alice" }
-// 实际: unknown
+lookup("alice");
+// → { id: "alice", name: "Alice" }  #exact
 ```
 
-**根本原因：**
-- Map 只记录 `K` / `V` 的整体类型，不维护 `key → value` 的具体映射
-- `get()` 无字面量回查表，字面量 key 直接吸收为 `unknown`
-- `Map`/`Set` 的 for-of 迭代同样未建模（元素求值为 `unknown`）
-
-**影响范围：**
-- `Map.get()` 返回值精度
-- `Map.has()` 的类型收窄
-- 基于 Map 的查找表模式
-
-**可能的解决方案：**
-1. **字面量 key 追踪**：当 key 是字符串/数字字面量时，维护精确映射
-2. **Record 类型**：对字面量 key 的 Map 降级为对象类型处理（对象字面量的索引投影已精确，见 `docs/examples/algebra/e-index-proj.js`）
-
-**难度：** 中
+实现：`collections.ts`（`makeMapAbs` / `mapSetEntry` / `mapGetEntry`）+
+`$new(Map)` / `$invoke` / ast-eval `evalBuiltinNew`。
+测试：`collections.test.ts`。示例：`i-map-set.js`。
 
 ---
 
-### 1.3 Set 操作返回值精度
+### 1.3 Set 元素联合（已解决·C1.2）
 
-**问题描述：**
-`Array.from(Set)` 的 Set 迭代器未建模，拿不到元素联合。曾有一段时间
-`Array.from` 把 Set 实例整个当数组元素（`from`/`of` 语义混用），误报
-`Set[]`（2026-09 实测曾三路径一致 `Set[] #path`）；已修复为对未建模
-可迭代物诚实返回 `unknown`（2026-09-15）。
+~~`Array.from(Set)` / Set for-of 元素 unknown。~~
 
-**当前行为：**
+**已实现**：`new Set(arr)` 从 tuple/arr 填元素表；`Array.from` / for-of /
+`$elems` 取到元素联合或逐元素。去重语义未建模（保多副本元素）。
+
 ```javascript
-/**
- * @nudo:case "set-dedup" ([1, 2, 2, 3, 3, 3])
- */
-function unique(arr) {
-  return Array.from(new Set(arr));
+function dedup(arr) {
+  const out = [];
+  for (const v of new Set(arr)) out.push(v);
+  return out;
 }
-// 期望: [1, 2, 3]（或 (1 | 2 | 3)[]）
-// 实际: unknown（Set 构造保留 brand 形状，迭代未建模）
-// 注：Array.from(tuple) 现在按元素分布（join 后 arr），Array.from(string) → string[]
+dedup([1, 2, 2, 3]);
+// → [1, 2, 2, 3]  #exact（元素来自构造实参）
 ```
 
-**分析：**
-- Set 不保证顺序，返回数组而非元组是合理形态
-- 当前拿不到元素联合——`Set` 构造保留 brand 形状、迭代整体未建模；
-  `Set` 的 for-of 迭代元素同样 unknown
-  （已钉进示例门禁：`docs/examples/algebra/i-map-set.js`）
+---
 
-**难度：** 低（先建模 Set 元素类型，再考虑去重语义）
+### 1.4 动态 key 索引投影（已解决·C1.3 保守并集）
+
+~~`obj[unknownKey]` → `unknown`。~~
+
+**已实现**：闭包对象（closed shape）上非字面量 key → **所有槽位并集**
+（open shape 仍并上 unknown）。字面量 key 仍精确。
+
+```javascript
+function pickDynamic(obj, key) {
+  return obj[key];
+}
+pickDynamic({ a: 1, b: "x" }, "c");
+// → 1 | "x"  #exact（miss 时并集；命中槽仍精确）
+```
+
+实现：`$idx` 对 obj/brand-obj 的并集分支。
+示例：`e-index-proj.js`。
 
 ---
 

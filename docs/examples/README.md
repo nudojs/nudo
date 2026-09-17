@@ -74,11 +74,11 @@ function score(x) { return x + 1; }
 | `pnpm run infer docs/examples/algebra/b-hof-map.js` | **0** | HOF 回调传播 |
 | `pnpm run infer docs/examples/algebra/c-reduce-sum.js` | **0** | reduce 单 pass 累加 |
 | `pnpm run infer docs/examples/algebra/d-mixin-meet.js` | **0** | spread 形状 meet |
-| `pnpm run infer docs/examples/algebra/e-index-proj.js` | **0** | 索引投影 |
+| `pnpm run infer docs/examples/algebra/e-index-proj.js` | **0** | 索引投影（字面量精确 / 动态 key 并集） |
 | `pnpm run infer docs/examples/algebra/f-async-eff.js` | **0** | async × `@nudo:mock` |
 | `pnpm run infer docs/examples/algebra/g-narrow-subtract.js` | **0** | 守卫窄化 |
 | `pnpm run infer docs/examples/algebra/h-array-boundary.js` | **0** | 数组方法精度边界（reduce / forEach / some 均精确） |
-| `pnpm run infer docs/examples/algebra/i-map-set.js` | **0** | Map / Set 精度边界（`m.get` 字面量 key → unknown、Set for-of 元素丢失） |
+| `pnpm run infer docs/examples/algebra/i-map-set.js` | **0** | Map / Set 字面量条目追踪（get 回查 / for-of 元素） |
 | `pnpm run infer docs/examples/algebra/j-this-binding.js` | **0** | this 绑定：成员调用 receiver 注入精确（`compute(5)` → `25 #exact`） |
 | `pnpm run infer docs/examples/algebra/k-try-catch.js` | **0** | try/catch：确定性 return 折叠 / catch 形参绑定 Error.message |
 | `pnpm run infer docs/examples/algebra/l-primitive-conversion.js` | **0** | 原始值包装构造（String / Number / Boolean / parseInt / parseFloat 字面量折叠） |

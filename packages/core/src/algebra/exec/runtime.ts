@@ -9,6 +9,7 @@ import { absFunction } from "../abs-fn.ts";
 import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs } from "../surface.ts";
 import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape } from "../objects.ts";
+import { isMapAbs, isSetAbs, setElementsAbs, mapValuesAbs } from "../collections.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf } from "../containers.ts";
 import { leqAbs } from "../leq.ts";
 import { evalNamespaceCall } from "../builtins.ts";
@@ -306,6 +307,23 @@ export function $idx(a: Abs, i: Abs): Abs {
   if (a.shape.k === "sum") {
     return a.shape.members.map((m) => $idx(m, i)).reduce((x, y) => joinAbs(x, y));
   }
+  // C1.3：对象 + 非字面量 key → 保守并集（不再直接 unknown）
+  if (a.shape.k === "obj" || (a.shape.k === "brand" && a.shape.shape.shape.k === "obj")) {
+    const objShape = (a.shape.k === "obj" ? a.shape : a.shape.shape.shape) as ObjShape;
+    const slots = Object.values(objShape.slots).map((s) => s.value);
+    if (slots.length === 0) return objShape.open ? unknown : undef();
+    if (typeof iv === "string" || typeof iv === "number" || typeof iv === "boolean") {
+      const slot = objShape.slots[String(iv)];
+      if (slot) return slot.value;
+      if (objShape.open) return unknown;
+      return slots.reduce((x, y) => joinAbs(x, y));
+    }
+    if (objShape.open && slots.length > 0) {
+      // open shape：已知槽 ∪ unknown
+      return joinAbs(slots.reduce((x, y) => joinAbs(x, y)), unknown);
+    }
+    return slots.reduce((x, y) => joinAbs(x, y));
+  }
   // 字符串下标：s[i] → 第 i 个字符（字面量精确）
   const sv = litValue(a);
   if (typeof sv === "string") {
@@ -422,10 +440,12 @@ export function $concat(a: Abs, b: Abs): Abs {
   return abs({ k: "arr", element: joinAbs(a, b) }, undefined, undefined, "path");
 }
 
-/** 元素列表（tuple 展开；arr 抽象） */
+/** 元素列表（tuple 展开；arr 抽象；C1 Set/Map 逐条目） */
 export function $elems(a: Abs): Abs[] {
   if (a.shape.k === "tuple") return [...a.shape.elements];
   if (a.shape.k === "arr") return [a.shape.element];
+  if (isSetAbs(a)) return setElementsAbs(a);
+  if (isMapAbs(a)) return mapValuesAbs(a);
   return [unknown];
 }
 

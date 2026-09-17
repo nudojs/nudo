@@ -9,7 +9,8 @@ import { objOf, joinAbs } from "../objects.ts";
 import { $get, $set, asAbsVal, namespaceNameOf, $regex } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod } from "../builtins.ts";
+import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin } from "../collections.ts";
 import {
   applyCallbackAbs,
   asAbs,
@@ -124,6 +125,9 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     if (isErrorCtorName(cls.name)) {
       return errorBrandAbs(cls.name, args[0]);
     }
+    // C1.1 / C1.2：Map / Set 条目表
+    if (cls === Map) return makeMapAbs(args[0]);
+    if (cls === Set) return makeSetAbs(args[0]);
     const name = cls.name || "Object";
     const shape = objOf({});
     return abs({ k: "brand", name, shape }, undefined, undefined, "path");
@@ -271,6 +275,11 @@ export function $invoke(
   }
   const brandName = thisVal.shape.k === "brand" ? thisVal.shape.name : undefined;
   if (brandName) {
+    // C1：Map/Set 方法（条目表）
+    if (brandName === "Map" || brandName === "Set") {
+      const viaCol = evalBuiltinInstanceMethod(brandName, method, thisVal, args);
+      if (viaCol !== undefined) return viaCol;
+    }
     const m = findMethod(brandName, method);
     if (m) return m(thisVal, ...args);
     const spec = getBClass(brandName);
@@ -420,6 +429,20 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   }
   if (method === "includes") {
     return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
+  }
+  // C1.4：push 返回新 tuple/arr（transpile 对标识符接收者重绑）
+  if (method === "push") {
+    const v = args[0] ? (asAbs(args[0]) ?? unknown) : undefAbs();
+    if (shape.k === "tuple") {
+      return abs(
+        { k: "tuple", elements: [...shape.elements, v] },
+        undefined,
+        undefined,
+        confJoin(arr.conf, v.conf),
+      );
+    }
+    const el = joinAbs(shape.element, v);
+    return abs({ k: "arr", element: el }, undefined, undefined, confJoin(arr.conf, v.conf));
   }
   if (method === "at" || method === "pop" || method === "shift") {
     if (shape.k === "tuple" && shape.elements.length > 0) {

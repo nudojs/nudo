@@ -9,7 +9,8 @@
 //
 // 边界形态（写算法前先查这张表，避免依赖未建模方法）：
 //   已建模：arr.map(cb) / arr.reduce(cb, init) / forEach 副作用 / some / every
-//   未建模：动态 key 投影 / 手写循环里 fn(item) 返回值
+//   已建模（C1.4）：for-of / for-i 内 push 重绑与累加
+//   未建模：动态 key 投影 → 见 e-index-proj（现为槽位并集）
 
 /**
  * @nudo:case "reduce" ([1, 2, 3, 4, 5])

@@ -243,7 +243,7 @@ pin 'pnpm run infer docs/examples/algebra/d-mixin-meet.js' \
 pin 'pnpm run infer docs/examples/algebra/e-index-proj.js' \
   '({ a: 1, b: "x" }, "a") => 1' \
   '({ PATH: "/usr/bin", HOME: "/root" }, "PATH") => "/usr/bin"' \
-  'Case "dynamic key": ({ a: 1, b: "x" }, string) => unknown' \
+  'Case "dynamic key": ({ a: 1, b: "x" }, string) => 1 | "x"' \
   'Combined: 1 | "x" | "/usr/bin"'
 pin 'pnpm run infer docs/examples/algebra/f-async-eff.js' \
   '(42) => promise<{ id: 1, name: "ada" }>' 'abs: promise<{ id: 1, name: "ada" }>  #path'
@@ -254,9 +254,9 @@ pin 'pnpm run infer docs/examples/algebra/h-array-boundary.js' \
   'Case "forEach": ([1, 2, 3, 4, 5]) => 15' 'abs: 15  #exact' \
   'Case "some": ([1, 2, 3, 4, 5]) => boolean' 'abs: boolean  #exact'
 pin 'pnpm run infer docs/examples/algebra/i-map-set.js' \
-  'Case "map-get": ("alice") => unknown' \
-  'intension: dedup: (arr: A1) => unknown[]' \
-  'Case "set-forof": ([1, 2, 2, 3]) => []'
+  'Case "map-get": ("alice") => { id: "alice", name: "Alice" }' \
+  'abs: { id: "alice", name: "Alice" }  #exact' \
+  'Case "set-forof": ([1, 2, 2, 3]) => [1, 2, 2, 3]'
 pin 'pnpm run infer docs/examples/algebra/j-this-binding.js' \
   '(5) => 25' 'abs: 25  #exact' \
   '(3) => 9' 'abs: 9  #exact' \

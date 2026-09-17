@@ -7,9 +7,8 @@
 //   pick(env, "PATH")            → "/usr/bin" #exact
 //   Combined: 1 | "x" | "/usr/bin"
 //
-// 边界：动态 key（符号 string）无法决定槽位 → 吸收为 unknown
-//   pickDynamic({ a: 1, b: "x" }, T.string) → unknown  #partial
-// 用 @nudo:case 指令 case 演示：case 实参里的符号 key 不落入任何字面量槽
+// 边界：动态 key（符号 string）→ 保守并集所有槽（不再 unknown）
+//   pickDynamic({ a: 1, b: "x" }, T.string) → 1 | "x"  #exact
 
 function pick(obj, key) {
   return obj[key];
