@@ -182,7 +182,7 @@ flowchart TB
 |---|---|---|---|
 | C2.1 | **循环内条件 return 折叠进 Abs**（现 case 头可精确、abs 仍 unknown） | `findFirst([1..5])` abs → `4` 或 `number` 而非 `unknown` | [ ] |
 | C2.2 | **catch 形参绑定**：`catch (e)` → thrown 值 Abs；`e.message` 可解 | 去掉无意义的 `nudo:builtin-unknown` on catch | [ ] |
-| C2.3 | **`==` / `!=` 字面量折叠**（TypeValue 删除后回归 unknown） | `5=="5"` / `null==undefined` 等表驱动；semantics 文档同步 | [ ] |
+| C2.3 | **`==` / `!=` 字面量折叠**（TypeValue 删除后回归 unknown） | `5=="5"` / `null==undefined` 等表驱动；semantics 文档同步 | [x] |
 | C2.4 | **未知条件三元/分支的可解释度**：join 结果标注 `#path` 原因（哪两支） | hover/报告可见分支来源 | [ ] |
 
 ### C3. 高阶与闭包（P1）
@@ -260,7 +260,7 @@ flowchart TB
 
 - [ ] **A1–A3** 无指令分析 + 噪声档
 - [ ] **B2** 编辑增量（至少文件级）
-- [ ] **C2.3** `==` 折叠（快速完备性胜利）
+- [x] **C2.3** `==` 折叠（`looseEqAbs` + B 路径 / ast-eval）
 - [ ] **D2** 默认人类报告
 - [ ] **C0.5**（可选）求值驱动缺槽诊断评估
 

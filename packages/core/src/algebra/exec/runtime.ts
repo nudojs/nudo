@@ -7,7 +7,7 @@ import type { Abs } from "../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, unknown, type Confidence } from "../abs.ts";
 import { absFunction } from "../abs-fn.ts";
 import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
-import { typeofAbs, negAbs, notAbs, strictEqAbs } from "../surface.ts";
+import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs } from "../surface.ts";
 import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape } from "../objects.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf } from "../containers.ts";
 import { leqAbs } from "../leq.ts";
@@ -65,6 +65,15 @@ export function $eq(a: Abs, b: Abs): Abs {
 }
 export function $ne(a: Abs, b: Abs): Abs {
   const r = strictEqAbs(a, b);
+  return r === undefined ? bool() : boolLit(!r);
+}
+/** `==` / `!=`（C2.3）：双字面量 Abstract Equality，否则回落严格判定 */
+export function $eqLoose(a: Abs, b: Abs): Abs {
+  const r = looseEqAbs(a, b);
+  return r === undefined ? bool() : boolLit(r);
+}
+export function $neLoose(a: Abs, b: Abs): Abs {
+  const r = looseEqAbs(a, b);
   return r === undefined ? bool() : boolLit(!r);
 }
 export function $lt(a: Abs, b: Abs): Abs {

@@ -245,16 +245,22 @@ CLI 主路径（B-hosted）的可见行为（2026-09 实测）：
 
 ---
 
-### 3.2 `==` 宽松相等未实现（CLI 主路径）
+### 3.2 `==` / `!=` 宽松相等（已解决·字面量折叠 2026-05）
 
-**当前行为（2026-09 实测）：** `nudo infer` / `nudo check` 主路径（B-hosted）下
-`==` / `!=` 不折叠——即使两操作数均为字面量（`5 == 5`、`"5" == 5`、`null == undefined`）
-也恒为 `unknown`，指令 case 与调用点 case 一致。
+~~`==` / `!=` 不折叠——即使两操作数均为字面量也恒为 `unknown`。~~
+**已实现**：双字面量走 JS Abstract Equality（ToNumber 强转、`null == undefined`、
+`NaN != NaN`）；非字面量回落严格相等判定（`strictEqAbs`）。
 
-（历史注：TypeValue 求值器路径曾实现字面量折叠——ToNumber 强转、`NaN != NaN`、
-`"5" == 5 为 true`，见 `edge-cases.test.ts`；该求值器已删除。当前单一路径上
-`==`/`!=` 不折叠，文档示例与 `packages/website/docs/guides/semantics.md` 的
-「Not Modeled Yet」表按 CLI 可见行为记录。）
+```javascript
+function f() {
+  return [5 == 5, 5 == "5", 0 == false, null == undefined, 0 == "x"];
+}
+f();
+// Case "call@…": () => [true, true, true, true, false]
+```
+
+实现：`looseEqAbs`（`surface.ts`）+ `$eqLoose`/`$neLoose`（B 路径）+ ast-eval
+`==`/`!=` 分支。测试：`surface.test.ts`、`loose-eq-fold.test.ts`。
 
 ---
 
@@ -486,7 +492,7 @@ exit 0，全部 case 精确（`compute` → `25 #exact`）。网站
 ### 阶段 1：快速胜利（1-2 周）
 - [x] 预置全局环境（`Infinity`、`NaN`、`undefined`）
 - [x] 实现 `Number`、`Math`、`JSON` 等内置对象的静态属性
-- [ ] 简单实现 `==` / `!=` 折叠（曾在 TypeValue 求值器实现，求值器删除后回归为 `unknown`，见 3.2）
+- [x] 简单实现 `==` / `!=` 折叠（C2.3：`looseEqAbs`）
 
 ### 阶段 2：精度提升（2-4 周）
 - [x] 数组 `reduce` 累加器追踪（字面量逐元素 + 符号单 pass，见 1.1）

@@ -204,3 +204,30 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
   }
   return undefined;
 }
+
+/** JS Abstract Equality（仅对可判定的字面量；NaN ≠ 一切，null == undefined） */
+function abstractEq(x: unknown, y: unknown): boolean {
+  if (x === y) return true;
+  if (x === null && y === undefined) return true;
+  if (x === undefined && y === null) return true;
+  if (typeof x === "number" && Number.isNaN(x)) return false;
+  if (typeof y === "number" && Number.isNaN(y)) return false;
+  if (typeof x === "boolean") return abstractEq(x ? 1 : 0, y);
+  if (typeof y === "boolean") return abstractEq(x, y ? 1 : 0);
+  if (typeof x === "number" && typeof y === "string") return x === Number(y);
+  if (typeof x === "string" && typeof y === "number") return Number(x) === y;
+  // bigint/symbol/object 字面量：仅引用/同值相等（已在 x===y 处理）
+  return false;
+}
+
+/**
+ * 宽松相等 `==`（C2.3）：双 lit 走 Abstract Equality；否则回落严格相等判定。
+ * 返回 undefined = 无法判定。
+ */
+export function looseEqAbs(a: Abs, b: Abs): boolean | undefined {
+  const bothLit = a.term?.op === "lit" && b.term?.op === "lit";
+  if (bothLit) {
+    return abstractEq(a.term.value, b.term.value);
+  }
+  return strictEqAbs(a, b);
+}

@@ -215,7 +215,7 @@ Combined: 0 | 1 | 3
 
 | 构造 | 当前行为 | 已建模替代 |
 |---|---|---|
-| `==` / `!=` 字面量折叠 | `1 == "1"` → `unknown` | 字面量上的 `===` 比较 |
+| `==` / `!=` 字面量折叠 | `1 == "1"` → `true` | 双字面量 Abstract Equality（C2.3） |
 | 原始值自动装箱 | `"nudo".constructor` → `unknown` | `.length`、上文的字符串方法 |
 | `Object.prototype` 方法 | `({}).hasOwnProperty("key")` → `unknown` | `Object.keys(...)` / 形状检查 |
 | `Symbol.iterator in x` | → `unknown` | `Array.isArray(x)` |

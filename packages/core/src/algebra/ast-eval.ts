@@ -48,7 +48,7 @@ import {
   isStrPrim,
 } from "./abs.ts";
 import { add, sub, mul, div, mod, cmp, trueConstraint, falseConstraint, refineAbsForRelTrue, matchRelIdentLit } from "./arithmetic.ts";
-import { typeofAbs, negAbs, notAbs, strictEqAbs } from "./surface.ts";
+import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs } from "./surface.ts";
 import { leakIfNeeded, defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { spread, joinAbs, getSlot } from "./objects.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf } from "./containers.ts";
@@ -1025,6 +1025,16 @@ function evalBinary(
       const eq = strictEqAbs(l, r);
       if (eq !== undefined) return ok(boolLit(!eq), phi, env);
       return ok(cmp("ne", l, r, phi), phi, env);
+    }
+    case "==": {
+      const eq = looseEqAbs(l, r);
+      if (eq !== undefined) return ok(boolLit(eq), phi, env);
+      return ok(unknown, phi, env);
+    }
+    case "!=": {
+      const eq = looseEqAbs(l, r);
+      if (eq !== undefined) return ok(boolLit(!eq), phi, env);
+      return ok(unknown, phi, env);
     }
     case "/":
       return ok(leakIfNeeded(div(l, r, phi), budget, "div"), phi, env);

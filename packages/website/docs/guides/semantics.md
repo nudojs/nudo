@@ -215,7 +215,7 @@ These constructs currently evaluate to `unknown` (often with a `nudo:unknown-rec
 
 | Construct | Behavior today | Modeled alternative |
 |---|---|---|
-| `==` / `!=` literal folding | `1 == "1"` → `unknown` | `===` comparisons on literals |
+| `==` / `!=` literal folding | `1 == "1"` → `true` | Abstract Equality on double literals (C2.3) |
 | Primitive autoboxing | `"nudo".constructor` → `unknown` | `.length`, string methods above |
 | `Object.prototype` methods | `({}).hasOwnProperty("key")` → `unknown` | `Object.keys(...)` / shape checks |
 | `Symbol.iterator in x` | → `unknown` | `Array.isArray(x)` |
