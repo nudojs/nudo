@@ -113,83 +113,38 @@ pickDynamic({ a: 1, b: "x" }, "c");
 
 ## 二、高阶函数推断限制
 
-### 2.1 具名回调形参：关系已归纳，concrete 执行仍退化
+### 2.1 具名回调形参：关系归纳 + concrete 消费（已解决·C3.1）
 
-**问题描述：**
-函数形参本身是回调（`function processItems(items, transform, filter)`）时，
-**关系签名已能归纳**（关系型 Abs，见 `design-hof-relations.md`），但
-concrete case 的逐值执行仍把回调形参绑定为 `unknown`，首级 HOF 方法返回
-`unknown` 后链式断裂。
+~~concrete case 把无 impl 回调绑成 unknown，首级 HOF 链式断裂。~~
 
-**失败示例：**
+**已实现**：
+1. 调用点实参若是宿主 JS 函数（transpile 导出），`safeAbsOrUnknown` 包成可调用 Abs。
+2. B-hosted 文件顶层 call 记录优先于 Abs 路径。
+
 ```javascript
-/**
- * @nudo:case "higher-order" ([1, 2, 3])
- */
-function processItems(items, transform, filter) {
-  return items.filter(filter).map(transform);
-}
-// Case "higher-order": ([1, 2, 3]) => unknown
-// intension: processItems: (items: arr(A1), transform: (A1) => B:transform,
-//             filter: (A1) => boolean) => arr(B:transform)
-//   [warning] Cannot resolve 'map' on unknown value (nudo:unknown-recv)
-// —— intension 已归纳出回调关系，但 concrete case（filter 无 impl）首级
-//    items.filter(unknown) 仍返回 unknown，后续 .map 链断掉
+processItems([1, 2, 3], double, isPositive);
+// → number[]  #partial（回调实参 (arg0) => ?，不再 unknown）
 ```
 
-**边界（已精确的相邻形态）：**
-- 调用点**内联箭头回调**（`items.map((x) => x * 2)` 字面量传入）逐位实例化
-  —— 见 `docs/examples/algebra/b-hof-map.js`（`[2,4,6]` / `["A","B"]`）
-- 关系 Abs 已落地：intension 能归纳 `transform: (A1) => B:transform`、
-  `filter: (A1) => boolean`（P2 归纳 + P1 消费，见 `design-hof-relations.md`）
-- 剩余缺口：**concrete case 的逐值执行**不消费 intension 的关系——
-  回调形参仍绑定为 `unknown`，case 头退化
+测试：`c3-hof-closure.test.ts`。内联箭头回调本就精确（`b-hof-map.js`）。
 
-**根本原因：**
-- 函数参数在调用时才绑定类型
-- 高阶函数的回调参数类型依赖调用上下文
-- 关系 Abs 是**归纳签名**（服务于 generalize / check / dts 投影），
-  不参与 concrete case 对「无 impl 回调」的逐值求值
-
-**影响范围：**
-- 所有接受回调的高阶函数
-- `Array.map/filter/reduce` 的回调参数
-- 事件处理器、中间件等模式
-
-**可能的解决方案：**
-1. **concrete 路径消费关系**：在首级 HOF 方法对「无 impl 回调」求值时，
-   回退到该形参已归纳的关系（`fn(α) => β`）而非 `unknown`
-2. ~~**泛型支持**：引入类型变量，表达 `fn<T, U>(items: T[], transform: (T) => U): U[]`~~ → 见 **`docs/design-hof-relations.md`**（关系型 Abs，不做 TS 泛型语言）
-3. **上下文传播**：将数组元素类型传播到回调参数（关系归纳已部分覆盖）
-
-**难度：** 中（关系归纳已落地；剩余是 concrete 执行路径的消费）
+**难度：** 中（已落地）
 
 ---
 
-### 2.2 闭包变量追踪
+### 2.2 闭包变量追踪 / 返回对象方法槽（C3.2 方法槽已解决）
 
-**问题描述：**
-闭包捕获的变量在返回后无法正确追踪其类型变化。
+返回对象的**方法槽**已进 shape；闭包多次修改后的跨调用状态合流仍有限。
 
-**当前行为：**
 ```javascript
-/**
- * @nudo:case "closure" ()
- */
-function createCounter() {
-  let count = 0;
-  return {
-    increment() { return ++count; },
-    getCount() { return count; }
-  };
-}
-// Case "closure": () => {} —— 返回对象形状为空：方法槽未写入形状，
-// 更不用说闭包变量 count 的状态追踪
+createCounter();
+// → { increment: () => ?, getCount: () => ? }  #exact
 ```
 
-**分析：**
-- 返回对象的**方法槽**当前丢失（形状为空 `{ }`）
-- 闭包变量的多次修改后的状态追踪也不完整
+实现：B 路径 ObjectMethod → `$fnVal`；ast-eval ObjectMethod → absFunction。
+测试：`c3-hof-closure.test.ts`。
+
+**剩余：** `c.increment(); c.getCount()` 跨调用联动未建模。
 
 **难度：** 中
 

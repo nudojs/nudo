@@ -226,7 +226,7 @@ flowchart TB
 | ID | 任务 | 验收 | 状态 |
 |---|---|---|---|
 | E1 | **`.d.ts` 投影质量**：union/tuple/HOF 可编译、可被 tsserver 消费 | 投影文件 `tsc --noEmit` 零错 | [ ] |
-| E2 | **与 TS 项目并存指南**：仅对 `src/**/*.js` 开 Nudo；或 JS 包用 Nudo、TS 包用 tsc | 一份可复制 monorepo 配方 | [ ] |
+| E2 | **与 TS 项目并存指南**：仅对 `src/**/*.js` 开 Nudo；或 JS 包用 Nudo、TS 包用 tsc | 一份可复制 monorepo 配方 | [x] |
 | E3 | **Vite 插件默认策略**：与 A1 对齐（无指令文件、failOnError） | 构建期诊断不误伤 | [ ] |
 | E4 | **Zed / 其他 LSP 客户端能力对齐表** | 文档矩阵 + 缺口 issue | [ ] |
 | E5 | **MCP / agent 工具与 LSP 命令同源** | `whatIf`/`suggestCase`/`hover` 语义一致、有测试 | [ ] |
@@ -238,8 +238,8 @@ flowchart TB
 
 | ID | 任务 | 验收 | 状态 |
 |---|---|---|---|
-| F1 | **「30 分钟」路径**：infer → IDE hover → 一条侧车契约 → check 红灯 | 网站 getting-started 只含必要概念 | [ ] |
-| F2 | **概念分层文档**：Day-0（零概念）/ Day-1（侧车契约）/ 进阶（Abs、case、mock） | 三份入口互链；Abs 不出现在 Day-0 | [ ] |
+| F1 | **「30 分钟」路径**：infer → IDE hover → 一条侧车契约 → check 红灯 | 网站 getting-started 只含必要概念 | [x] |
+| F2 | **概念分层文档**：Day-0（零概念）/ Day-1（侧车契约）/ 进阶（Abs、case、mock） | 三份入口互链；Abs 不出现在 Day-0 | [x] |
 | F3 | **纠偏 README / website 对比表**：与 §0.1 一致；去掉「从 body 零注解推出 shape」作为主卖点；写清「无契约=调用点/any」 | 根 README + website intro + vs-ts README | C0 | [x] |
 | F4 | **「vs TypeScript」定位页**：可替代场景 / 不替代场景 / 共存 | 诚实，不弱化目标 | [ ] |
 | F5 | **学习成本实测脚本**：新人任务计时（可选） | 内部基准，非门禁 | [ ] |
@@ -276,10 +276,11 @@ flowchart TB
 ### Phase 3 — 替代门槛冲刺
 
 - [~] **C3.*** HOF concrete 消费（宿主 fn 包 Abs + B 记录优先）/ 闭包方法槽（ObjectMethod→$fnVal）；C3.3 dts 投影仍开放
-- [ ] **D5–D6** interface 日用
-- [ ] **E1–E3** dts 与并存
+- [~] **D5–D6** interface：`--emit --dry-run` / doctor drift 已有；执法分档 CLI 标注部分（handwritten/generated/implicit 在 `nudo interface` 打印）
+- [x] **E2** 与 TS 并存指南（website `guides/coexistence.md`）
+- [ ] **E1 / E3** dts 投影质量 / Vite 默认策略（E3 与 A1 对齐可后续）
 - [ ] **B6** 真实 monorepo 基准
-- [ ] **F1–F2** 入门路径重写
+- [x] **F1–F2** 概念分层（`concepts/layers.md`：Day-0 / Day-1 / Abs）
 
 ---
 
