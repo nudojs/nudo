@@ -138,6 +138,11 @@ describe("abs-native ast-eval", () => {
     expect(show(analyzeFn(`function f(){ return Number.isInteger(3); }`, "f", []))).toBe("true");
   });
 
+  it("parseInt honors hex/octal/binary prefixes (no forced radix 10)", () => {
+    expect(show(analyzeFn(`function f(){ return parseInt("0x10"); }`, "f", []))).toBe("16");
+    expect(show(analyzeFn(`function f(){ return Number.parseInt("0xff"); }`, "f", []))).toBe("255");
+  });
+
   it("Array.isArray on any/union is unknown boolean, not a definitive false", () => {
     // any：可能是数组，不能下 false 结论（否则 if (Array.isArray(x)) 剪掉真分支）
     const anyArg = abs({ k: "any" }, v("x"), undefined, "path");

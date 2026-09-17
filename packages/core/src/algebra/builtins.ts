@@ -139,7 +139,8 @@ export function evalNumberStatic(name: string, args: Abs[]): Abs | undefined {
     case "parseInt":
     case "parseFloat":
       if (typeof a0 === "string" || typeof a0 === "number") {
-        const n = name === "parseInt" ? parseInt(String(a0), 10) : parseFloat(String(a0));
+        // 不强制 radix 10：全局 parseInt 对 "0x"/"0o"/"0b" 前缀有自己的进制判定
+        const n = name === "parseInt" ? parseInt(String(a0)) : parseFloat(String(a0));
         return numLit(n);
       }
       return numPrim();
@@ -155,7 +156,7 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
   const a0 = args[0] ? litValue(args[0]) : undefined;
   switch (name) {
     case "parseInt":
-      if (typeof a0 === "string" || typeof a0 === "number") return numLit(parseInt(String(a0), 10));
+      if (typeof a0 === "string" || typeof a0 === "number") return numLit(parseInt(String(a0)));
       return numPrim();
     case "parseFloat":
       if (typeof a0 === "string" || typeof a0 === "number") return numLit(parseFloat(String(a0)));
