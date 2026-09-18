@@ -15,7 +15,7 @@ import {
 } from "@nudojs/core";
 
 function abstractBool() {
-  return abs({ k: "prim", type: "boolean" });
+  return abs({ k: "prim", type: "boolean" } as never, undefined, undefined, "path" as never);
 }
 
 describe("P0 Map fork merge preserves maybeAbsent", () => {
