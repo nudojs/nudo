@@ -52,7 +52,8 @@ import { loadEnvs, preloadPathEnvs } from "./evaluator/env-loader.ts";
 import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
 import { resolveNpmNudo } from "./evaluator/resolve-npm.ts";
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
-import { defaultLoadModule } from "./load-module.ts";
+import { defaultLoadModule, type LoadModule } from "./load-module.ts";
+import { loadModuleDepsFingerprint } from "@nudojs/core";
 import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph, evalProgramAbsWithModules } from "./abs-modules-graph.ts";
 import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, mockSeedFingerprint, collectEnvGlobals, collectEnvModules } from "./bpath-run.ts";
@@ -792,24 +793,30 @@ export function collectEnvNames(filePath: string, source: string, includeProject
   return [...new Set([...projectEnvNames, ...fileEnvNames])];
 }
 
+/** Optional module loader for analysis (sidecar / relative imports). */
+export type AnalyzeLoadModule = (spec: string, fromFile: string) => string | undefined;
+
 /**
  * Async entry to analyzeFile: preloads path-based env files
  * (`/// @nudo:env ./nudo-harvest-node.ts`) via dynamic import — impossible
  * synchronously in ESM — then runs the sync analysis, which picks the
- * preloaded factories up from the env-loader cache. The sync analyzeFile
- * signature is unchanged for existing consumers (LSP, MCP, vite-plugin).
+ * preloaded factories up from the env-loader cache.
+ * `loadModule` is optional; when provided it is used for relative imports /
+ * sidecar ambient bindings (LSP buffer-aware path). Default remains
+ * `defaultLoadModule` (disk).
  */
 export async function analyzeFileAsync(
   filePath: string,
   source: string,
   activeCases?: Map<string, number>,
   externalCallRecords?: CallRecord[],
+  loadModule?: AnalyzeLoadModule,
 ): Promise<AnalysisResult> {
   const envNames = collectEnvNames(filePath, source, true);
   if (envNames.length > 0) {
     await preloadPathEnvs(envNames, dirname(filePath));
   }
-  return analyzeFile(filePath, source, activeCases, externalCallRecords);
+  return analyzeFile(filePath, source, activeCases, externalCallRecords, loadModule);
 }
 
 /**
@@ -920,6 +927,7 @@ function analysisFileCacheKey(
   activeCases?: Map<string, number>,
   externalCallRecords?: CallRecord[],
   analysisCfg?: { mode: string; evalMissingSlot: string; callSiteBudget: number; diagnostics: string },
+  loadModule?: AnalyzeLoadModule,
 ): { filePath: string; source: string; auxKey: string } {
   let cases = "-";
   if (activeCases && activeCases.size > 0) {
@@ -941,11 +949,14 @@ function analysisFileCacheKey(
   const cfg = analysisCfg
     ? `m=${analysisCfg.mode}|e=${analysisCfg.evalMissingSlot}|b=${analysisCfg.callSiteBudget}|d=${analysisCfg.diagnostics}`
     : "-";
+  // custom loadModule (e.g. LSP buffer-aware) can produce different analysis
+  // than the default disk loader — distinguish in the memo key
+  const lm = loadModule !== undefined && loadModule !== defaultLoadModule ? "lm1" : "lm0";
   return {
     filePath,
     // 尾部无 @nudo 注释/空行不进键：comment-only 编辑命中 AnalysisResult
     source: stableAnalyzeKeySource(source),
-    auxKey: `${cases}\0${ext}\0${cfg}`,
+    auxKey: `${cases}\0${ext}\0${cfg}\0${lm}`,
   };
 }
 
@@ -1017,34 +1028,55 @@ function shiftCallRecordLines(r: CallRecord, lineDelta: number): CallRecord {
  * 整文件分析。同 (path, source, cases, external) 命中 memo → O(1)。
  * 不再每次 clearBPathCache：B 路径按本文件 source 键控。
  *
+ * `loadModule`：可选；提供时用于相对 import / 侧车 ambient（LSP
+ * buffer-aware）。未提供时走 defaultLoadModule（磁盘）。
+ *
  * 宿主契约：入口 source 未变但依赖模块内容变了时，必须调用
  * `evictBPathCacheForFiles` / `evictAnalysisFileCacheForFiles` /
  * `evictFnAnalysisCacheForFiles`（LSP 已接好）。非 LSP 宿主
  * （CLI watch / vite-plugin）在 dep 变更时应 `clearBPathCache()` 或上述逐出。
  */
-export function analyzeFile(filePath: string, source: string, activeCases?: Map<string, number>, externalCallRecords?: CallRecord[]): AnalysisResult {
+export function analyzeFile(
+  filePath: string,
+  source: string,
+  activeCases?: Map<string, number>,
+  externalCallRecords?: CallRecord[],
+  loadModule?: AnalyzeLoadModule,
+): AnalysisResult {
   const projectConfig = findProjectConfig(dirname(filePath));
   const cfg = analysisConfig(projectConfig?.config);
-  const k = analysisFileCacheKey(filePath, source, activeCases, externalCallRecords, cfg);
+  const k = analysisFileCacheKey(filePath, source, activeCases, externalCallRecords, cfg, loadModule);
   const hit = analysisCacheGet<AnalysisResult>(k.filePath, k.source, k.auxKey);
   if (hit !== undefined) {
     return cloneAnalysisResult(hit);
   }
-  const result = analyzeFileUncached(filePath, source, activeCases, externalCallRecords);
+  const result = analyzeFileUncached(filePath, source, activeCases, externalCallRecords, loadModule);
   analysisCacheSet(k.filePath, k.source, k.auxKey, result);
   return cloneAnalysisResult(result);
 }
 
-function analyzeFileUncached(filePath: string, source: string, activeCases?: Map<string, number>, externalCallRecords?: CallRecord[]): AnalysisResult {
+function analyzeFileUncached(
+  filePath: string,
+  source: string,
+  activeCases?: Map<string, number>,
+  externalCallRecords?: CallRecord[],
+  loadModule?: AnalyzeLoadModule,
+): AnalysisResult {
   // C0.5：per-analysis 作用域（ALS），禁止分析间 flag 粘滞 / 并发串档
   const projectConfig = findProjectConfig(dirname(filePath));
   const missingSlotOn = analysisConfig(projectConfig?.config).evalMissingSlot === "warning";
   return runWithEvalMissingSlot(missingSlotOn, () =>
-    analyzeFileUncachedInner(filePath, source, activeCases, externalCallRecords),
+    analyzeFileUncachedInner(filePath, source, activeCases, externalCallRecords, loadModule),
   );
 }
 
-function analyzeFileUncachedInner(filePath: string, source: string, activeCases?: Map<string, number>, externalCallRecords?: CallRecord[]): AnalysisResult {
+function analyzeFileUncachedInner(
+  filePath: string,
+  source: string,
+  activeCases?: Map<string, number>,
+  externalCallRecords?: CallRecord[],
+  loadModule?: AnalyzeLoadModule,
+): AnalysisResult {
   const ast = parse(source);
   const functions = extractDirectives(ast);
   const diagnostics: Diagnostic[] = [];
@@ -1177,6 +1209,7 @@ function analyzeFileUncachedInner(filePath: string, source: string, activeCases?
       const g = evalAbsModuleGraph(source, filePath, {
         seedVars: seeds.seedVars,
         seedFns: seeds.seedFns as never,
+        ...(loadModule ? { loadModule } : {}),
       });
       // env modules 必须并入图：@nudo:env 的 node:* / 裸包由 loadEnvs 提供，
       // 模块图只处理相对 import 与 harvest 裸包（跳过 node: 前缀）
@@ -1211,7 +1244,7 @@ function analyzeFileUncachedInner(filePath: string, source: string, activeCases?
     // Abs 程序求值的递归截断（call@ 记录路径）；modules 已预计算时不再重跑模块图
     setAbsTruncationCollector((label) => bTruncatedFns.add(label));
     try {
-      absCallRecords = collectAbsCallRecords(source, seeds, filePath, absGraphModules, envNames);
+      absCallRecords = collectAbsCallRecords(source, seeds, filePath, absGraphModules, envNames, loadModule);
     } finally {
       setAbsTruncationCollector(null);
     }
@@ -1676,7 +1709,7 @@ function analyzeFileUncachedInner(filePath: string, source: string, activeCases?
     const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
     const domainIssues = checkInjectedDomainEvidence(name, source, injected, {
       paramNames: extractParamNames(fnNode),
-      loadModule: defaultLoadModule,
+      loadModule: loadModule ?? defaultLoadModule,
       fromFile: filePath,
       loc: { line: nameLoc.start.line, column: nameLoc.start.column },
       ...(autoBind === false ? { autoBind: false } : {}),
@@ -2081,6 +2114,7 @@ function collectAbsCallRecords(
   filePath?: string,
   precomputedModules?: Record<string, import("@nudojs/core").AbsModuleExports>,
   envNames: string[] = [],
+  loadModule?: AnalyzeLoadModule,
 ): CallRecord[] {
   const absCalls: AbsCallRecord[] = [];
   let modules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined =
@@ -2092,6 +2126,7 @@ function collectAbsCallRecords(
         const graph = evalAbsModuleGraph(source, filePath, {
           seedVars: seeds?.seedVars,
           seedFns: seeds?.seedFns,
+          ...(loadModule ? { loadModule } : {}),
         });
         modules = graph.modules;
       } catch {

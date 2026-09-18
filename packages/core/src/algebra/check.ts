@@ -105,7 +105,7 @@ function checkDepsFingerprint(
   opts: CheckOptions,
 ): LoadDepsFingerprint {
   if (!opts.loadModule || !opts.fromFile) {
-    return { fp: "-", paths: [], truncated: false };
+    return { fp: "-", paths: [], contents: [], truncated: false };
   }
   return loadModuleDepsFingerprint(source, opts.loadModule, opts.fromFile);
 }
@@ -958,10 +958,27 @@ function scanCaseInconsistency(
       if (entry.constraint.fields) continue;
       let arg = absArgs[idx];
       if (!arg) continue;
-      // C4.1：destructure 契约名 → 实参字段投影后再判 pred
+      // C4.1：destructure 契约名 → 实参字段投影后再判 pred；
+      // 缺字段不能静默跳过（与 scan.checkReqs 同口径，报 case 见证违例）
       if (field) {
         const projected = projectCaseArgField(arg, field);
-        if (!projected) continue;
+        if (!projected) {
+          const k = arg.shape.k;
+          if (k !== "unknown" && k !== "any") {
+            const paramName = entry.param || paramNames[idx] || `arg${idx}`;
+            out.push({
+              severity: "error",
+              code: "nudo:case-inconsistency",
+              message: `${fnName} case "${caseName}": 见证 ⊭ 契约`,
+              actual: formatAbs(arg),
+              expected: `missing field ${field}`,
+              suggestion: `case 实参补全字段 ${field}（契约位 ${paramName}）`,
+              fn: fnName,
+              line,
+            });
+          }
+          continue;
+        }
         arg = projected;
       }
       const lv = litValue(arg);

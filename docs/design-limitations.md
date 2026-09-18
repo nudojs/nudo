@@ -98,8 +98,8 @@ lookup("alice");
 
 ~~`Array.from(Set)` / Set for-of 元素 unknown。~~
 
-**已实现**：`new Set(arr)` 从 tuple/arr 填元素表；`Array.from` / for-of /
-`$elems` 取到元素联合或逐元素。去重语义未建模（保多副本元素）。
+**已实现**：`new Set(arr)` 从 tuple/arr 填元素表并按 JS 语义对字面量元素去重；
+`Array.from` / for-of / `$elems` 取到元素联合或逐元素。
 
 ```javascript
 function dedup(arr) {
@@ -108,7 +108,7 @@ function dedup(arr) {
   return out;
 }
 dedup([1, 2, 2, 3]);
-// → [1, 2, 2, 3]  #exact（元素来自构造实参）
+// → [1, 2, 3]  #exact（Set 字面量元素去重）
 ```
 
 ---

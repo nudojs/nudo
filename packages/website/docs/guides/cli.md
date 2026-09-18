@@ -398,7 +398,7 @@ Rules:
 
 ```text
 lib.js
-  double  [draft callsite/callsite]  fn({ x: lit(21) }, lit(42))
+  double  [draft callsite/callsite]  fn({ x: number() }, number())
   lonely  [draft none/none]  fn({})
 Draft written → lib.nudo.draft.js
   review, then copy accepted exports into lib.nudo.js

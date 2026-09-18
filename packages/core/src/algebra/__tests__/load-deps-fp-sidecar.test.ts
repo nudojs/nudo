@@ -110,7 +110,7 @@ describe("loadModuleDepsFingerprint sidecar closure", () => {
 
   it("no specs and no sidecar → empty fingerprint", () => {
     const r = loadModuleDepsFingerprint("function id(x) { return x; }\n", makeLoad({}), "/t/a.js");
-    expect(r).toEqual({ fp: "", paths: [], truncated: false });
+    expect(r).toEqual({ fp: "", paths: [], contents: [], truncated: false });
   });
 
   it("existing sidecar contributes sidecar: entries for root and recursive .nudo deps", () => {

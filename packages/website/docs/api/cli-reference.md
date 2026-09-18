@@ -287,7 +287,7 @@ nudo interface --draft double.js --write
 
 ```text
 double.js
-  double  [draft callsite/callsite]  fn({ x: lit(21) }, lit(42))
+  double  [draft callsite/callsite]  fn({ x: number() }, number())
 Draft written → double.nudo.draft.js
   review, then copy accepted exports into double.nudo.js
 ```

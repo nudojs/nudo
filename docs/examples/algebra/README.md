@@ -14,7 +14,7 @@
 | [`f-async-eff.js`](./f-async-eff.js) | async / Promise eff × `@nudo:mock` 替换内置 fetch（mock 必填：无 mock 时 B 路径泄漏真实 fetch，`ERR_INVALID_URL` 崩溃） |
 | [`g-narrow-subtract.js`](./g-narrow-subtract.js) | 守卫窄化：调用点逐位收窄（`3 \| 2 \| -1`） |
 | [`h-array-boundary.js`](./h-array-boundary.js) | 数组方法精度边界：`reduce` / `forEach` 副作用 / `some` 均精确（`15` / `15` / `boolean`） |
-| [`i-map-set.js`](./i-map-set.js) | Map / Set 字面量条目：`m.set`→`m.get` 精确回查；Set for-of 保元素 |
+| [`i-map-set.js`](./i-map-set.js) | Map / Set 字面量条目：`m.set`→`m.get` 精确回查；Set 字面量元素去重后 for-of |
 | [`j-this-binding.js`](./j-this-binding.js) | this 绑定：成员调用把 receiver 注入 thisVal，`compute(5)` → `25 #exact`；顶层裸成员调用不采集为 call@ case |
 | [`k-try-catch.js`](./k-try-catch.js) | try/catch：try 体确定性 return 折叠（`"inner" #exact`）；catch 形参绑定 thrown Abs，Error 家族 `err.message` → `"boom" #exact` |
 | [`l-primitive-conversion.js`](./l-primitive-conversion.js) | 原始值包装构造与全局数值解析：`String` / `Number` / `Boolean` / `parseInt` / `parseFloat` 在字面量实参上折叠精确（`"5"` / `true` / `42` / `3.14`）；符号实参拓宽目标原语 |

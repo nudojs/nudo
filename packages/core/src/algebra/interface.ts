@@ -156,6 +156,36 @@ export function localNamedExports(source: string): Set<string> {
     if (n.type === "Literal" && typeof n.value === "string") return n.value;
     return undefined;
   };
+  /** P1：本地 ClassDeclaration 表（export { Foo } / export default Foo 解析用） */
+  const localClasses = new Map<string, NodeLike>();
+  for (const stmt of ast.program.body) {
+    const s = stmt as NodeLike;
+    if (s.type !== "ClassDeclaration") continue;
+    const idName = identName(s.id as NodeLike | undefined);
+    if (idName) localClasses.set(idName, s);
+  }
+  const addClassMethodKeys = (out: Set<string>, decl: NodeLike | undefined) => {
+    if (!decl || decl.type !== "ClassDeclaration") return;
+    const idName = identName(decl.id as NodeLike | undefined);
+    if (!idName) return;
+    const body = (decl.body as { body?: NodeLike[] } | undefined)?.body ?? [];
+    for (const m of body) {
+      const mem = m as NodeLike & {
+        kind?: string;
+        static?: boolean;
+        key?: NodeLike;
+      };
+      const isMethod =
+        mem.type === "MethodDefinition" ||
+        mem.type === "ClassMethod" ||
+        mem.type === "TSDeclareMethod";
+      if (!isMethod) continue;
+      if (mem.kind && mem.kind !== "method") continue;
+      if (mem.static) continue;
+      const keyName = identName(mem.key as NodeLike);
+      if (keyName) out.add(`${idName}.${keyName}`);
+    }
+  };
   /** `module.exports` 或 `exports` → true */
   const isExportsTarget = (n: NodeLike | undefined): boolean => {
     if (!n) return false;
@@ -195,10 +225,15 @@ export function localNamedExports(source: string): Set<string> {
           if (name === "default") {
             out.add("default");
             if (localName && !importedLocalNames.has(localName)) out.add(localName);
+            // P1：本地 class 经 export list 导出 → 也登记 Class.method
+            if (localName && !importedLocalNames.has(localName)) {
+              addClassMethodKeys(out, localClasses.get(localName));
+            }
             continue;
           }
           if (localName && importedLocalNames.has(localName)) continue;
           out.add(name);
+          if (localName) addClassMethodKeys(out, localClasses.get(localName));
         }
         continue;
       }
@@ -207,23 +242,7 @@ export function localNamedExports(source: string): Set<string> {
         if (idName) out.add(idName);
         // C4.2：导出 class 的实例方法 → `Class.method` 契约键
         if (d.type === "ClassDeclaration" && idName) {
-          const body = ((d as NodeLike).body as { body?: NodeLike[] } | undefined)?.body ?? [];
-          for (const m of body) {
-            const mem = m as NodeLike & {
-              kind?: string;
-              static?: boolean;
-              key?: NodeLike;
-            };
-            const isMethod =
-              mem.type === "MethodDefinition" ||
-              mem.type === "ClassMethod" ||
-              mem.type === "TSDeclareMethod";
-            if (!isMethod) continue;
-            if (mem.kind && mem.kind !== "method") continue;
-            if (mem.static) continue;
-            const keyName = identName(mem.key as NodeLike);
-            if (keyName) out.add(`${idName}.${keyName}`);
-          }
+          addClassMethodKeys(out, d);
         }
       } else if (d.type === "VariableDeclaration") {
         const decls = (d.declarations as NodeLike[] | undefined) ?? [];
@@ -243,9 +262,15 @@ export function localNamedExports(source: string): Set<string> {
         if ((d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") && d.id) {
           const idName = identName(d.id as NodeLike);
           if (idName) out.add(idName);
+          if (d.type === "ClassDeclaration" && idName) {
+            addClassMethodKeys(out, d);
+          }
         } else if (d.type === "Identifier") {
           const n = identName(d);
-          if (n && !importedLocalNames.has(n)) out.add(n);
+          if (n && !importedLocalNames.has(n)) {
+            out.add(n);
+            addClassMethodKeys(out, localClasses.get(n));
+          }
         }
       }
       continue;

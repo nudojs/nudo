@@ -307,6 +307,8 @@ export function $invoke(
     ? getFnImpl(prop as Abs)
     : undefined;
   if (impl) {
+    // 对象方法（ObjectMethod / 方法型 FunctionExpression）：注入 receiver
+    if (impl.bindThis) return $call(prop as Abs, [thisVal, ...args]);
     return $call(prop as Abs, args);
   }
   // prim 接收者上的未知方法 → no-method；unknown → unknown-recv

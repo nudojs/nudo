@@ -263,6 +263,7 @@ export function getCachedOrAnalyze(
   source: string,
   version: number,
   activeCases?: Map<string, number>,
+  loadModule?: (spec: string, fromFile: string) => string | undefined,
 ): AnalysisResult {
   const cached = analysisCache.get(filePath);
   // 版本 + activeCases 指纹同时命中才复用：case 切换不 bump 文档 version，
@@ -275,7 +276,8 @@ export function getCachedOrAnalyze(
   ) {
     return cached.result;
   }
-  const result = analyzeFile(filePath, source, activeCases);
+  // E5/A4：与 validateText 同源——buffer-aware loadModule 传入 analyzeFile
+  const result = analyzeFile(filePath, source, activeCases, undefined, loadModule);
   analysisCache.set(filePath, {
     version,
     result,
@@ -472,7 +474,9 @@ export async function validateText(
     result = prev.result;
   } else {
     try {
-      result = await analyzeFileAsync(filePath, text, activeCases);
+      // E5：deps.loadModule（buffer-aware）传入 analyzeFileAsync——未保存
+      // 侧车与 validate/hover/check 同源可见
+      result = await analyzeFileAsync(filePath, text, activeCases, undefined, deps.loadModule);
     } catch (err) {
       if (!stillCurrent()) return;
       deps.sendDiagnostics({

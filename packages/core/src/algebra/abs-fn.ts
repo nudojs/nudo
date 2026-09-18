@@ -24,6 +24,12 @@ export type AbsFnImpl = {
   /** 调用时直接派发（mock withArgs 等），优先于 body */
   apply?: (args: Abs[]) => Abs;
   /**
+   * 对象方法（ObjectMethod / 方法型 FunctionExpression）：$invoke 时把
+   * receiver 作为 apply 的**首参**注入。shape.params 仍是用户可见形参
+   * （不含 receiver），自由调用不注入 → this 为 unbound（JS 语义）。
+   */
+  bindThis?: boolean;
+  /**
    * Optional content key for cache fingerprints. formatAbs cannot see
    * WeakMap-side mock semantics (returns/withArgs/callsFake), so hosts that
    * build mocks should stamp a stable fingerprint here.

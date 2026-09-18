@@ -161,6 +161,97 @@ function readPrefix(p: MemberPath, j: number): string {
   return p.layers.slice(0, j + 1).reduce((acc, l) => l.get(acc), p.rootSrc);
 }
 
+const ARR_MUTATOR_NAMES = new Set([
+  "push",
+  "unshift",
+  "splice",
+  "pop",
+  "shift",
+  "reverse",
+  "sort",
+]);
+
+/**
+ * C1.4 / review P1：表达式位置的数组 mutator 也必须重绑容器。
+ * 语句位置只重绑（丢 JS 返回值）；表达式位置先取返回值再重绑：
+ *   const x = a.pop()  ⇒  let x = $invoke(a,"pop",…); a = $arrMutContainer(a,"pop",…);
+ * 不进入函数边界（ObjectMethod / Function* / Arrow），方法体内 mutator
+ * 在调用时才生效。
+ */
+function emitArrMutatorRebinds(
+  expr: Node | null | undefined,
+  opts: TranspileOptions,
+  pad: string,
+): string[] {
+  const lines: string[] = [];
+  if (!expr || typeof expr !== "object") return lines;
+  const visit = (n: unknown): void => {
+    if (!n || typeof n !== "object") return;
+    const node = n as {
+      type?: string;
+      callee?: { type?: string; object?: Node; property?: Node; computed?: boolean };
+      arguments?: unknown[];
+      [k: string]: unknown;
+    };
+    if (
+      node.type === "FunctionExpression" ||
+      node.type === "ArrowFunctionExpression" ||
+      node.type === "ObjectMethod" ||
+      node.type === "ClassMethod"
+    ) {
+      return; // 函数边界：体内 mutator 不在本语句重绑
+    }
+    if (
+      node.type === "CallExpression" &&
+      node.callee?.type === "MemberExpression" &&
+      node.callee.computed !== true &&
+      node.callee.property?.type === "Identifier" &&
+      ARR_MUTATOR_NAMES.has((node.callee.property as { name: string }).name)
+    ) {
+      const methodName = (node.callee.property as { name: string }).name;
+      const argSrcs = (node.arguments ?? [])
+        .map((a) =>
+          (a as { type?: string }).type === "SpreadElement"
+            ? "$lit(undefined)"
+            : isExpression(a as Node)
+              ? transpileExpression(a as Expression, opts)
+              : "$lit(undefined)",
+        )
+        .join(", ");
+      const objNode = node.callee.object as Node;
+      if (objNode.type === "Identifier") {
+        const name = (objNode as { name: string }).name;
+        lines.push(
+          `${pad}${name} = $arrMutContainer(${name}, ${JSON.stringify(methodName)}, [${argSrcs}]);`,
+        );
+      } else if (objNode.type === "MemberExpression" || objNode.type === "ThisExpression") {
+        const path =
+          objNode.type === "MemberExpression"
+            ? memberPathOf(
+                objNode as unknown as { object: Node; property: Node; computed: boolean },
+                opts,
+              )
+            : null;
+        if (path) {
+          const recvSrc = readPathSrc(path);
+          const mutSrc = `$arrMutContainer(${recvSrc}, ${JSON.stringify(methodName)}, [${argSrcs}])`;
+          lines.push(`${pad}${path.rootSrc} = ${setPathSrc(path, mutSrc)};`);
+        }
+      }
+      // 仍要遍历参数内嵌套 mutator（如 a.pop(b.pop())）
+    }
+    for (const key of Object.keys(node)) {
+      if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
+      if (key === "callee" || key === "property") continue; // 已处理 receiver
+      const child = (node as Record<string, unknown>)[key];
+      if (Array.isArray(child)) child.forEach(visit);
+      else if (child && typeof child === "object") visit(child);
+    }
+  };
+  visit(expr);
+  return lines;
+}
+
 export function transpileSource(source: string, opts: TranspileOptions = {}): string {
   const file = parseSource(source);
   return transpileFile(file, { ...opts, source: opts.source ?? source });
@@ -444,7 +535,15 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const prefix = (opts.inLoop ?? 0) > 0 ? "$loopReturn" : "return";
       if (asVar) return `${pad}${prefix}(${asVar});`;
       if (!stmt.argument) return `${pad}${prefix}($lit(undefined));`;
-      return `${pad}${prefix}(${transpileExpression(stmt.argument, opts)});`;
+      const retSrc = transpileExpression(stmt.argument, opts);
+      // P1：return 表达式内的 mutator 先取值再重绑容器
+      const retRebinds = emitArrMutatorRebinds(stmt.argument as Node, opts, pad);
+      if (retRebinds.length === 0) return `${pad}${prefix}(${retSrc});`;
+      return [
+        `${pad}let __mutRet = ${retSrc};`,
+        ...retRebinds,
+        `${pad}${prefix}(__mutRet);`,
+      ].join("\n");
     }
     case "ThrowStatement": {
       const arg = stmt.argument ? transpileExpression(stmt.argument, opts) : "$lit(undefined)";
@@ -508,6 +607,10 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
               ? transpileExpression(d.init, opts)
               : "$lit(undefined)";
           lines.push(`${pad}${kw} ${d.id.name} = ${init};`);
+          // P1：表达式位置 mutator（`const x = a.pop()`）同样重绑容器
+          if (d.init && !asVar) {
+            lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
+          }
           continue;
         }
         // 解构：先绑定 init 到临时，再逐项 $get / $idx
@@ -518,6 +621,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         const initSrc = transpileExpression(d.init, opts);
         const tmp = `_d${tmpSeq++}_${stmt.loc?.start.line ?? 0}`;
         lines.push(`${pad}const ${tmp} = ${initSrc};`);
+        lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
         emitDestructure(d.id as Node, tmp, kw, pad, opts, lines, { n: 0 });
       }
       return lines.join("\n");
@@ -1009,7 +1113,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           acc = acc === null ? arg : `$spread(${acc}, ${arg})`;
           continue;
         }
-        // C3.2：对象方法简写 → $fnVal（方法槽进 shape；闭包捕获外层 let）
+        // C3.2：对象方法简写 → $fnVal（方法槽进 shape；闭包捕获外层 let）。
+        // P1：ObjectMethod 的 this 由 $invoke 注入 receiver（bindThis），与 class 方法同轨。
         if (prop.type === "ObjectMethod") {
           flushProps();
           const mkey =
@@ -1023,12 +1128,13 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             p.type === "Identifier" && p.name ? p.name : "_a",
           );
           // 方法体是新的函数边界：inLoop 必须归零，否则 return 泄漏成 $loopReturn
-          const methodOpts: TranspileOptions = { ...opts, inLoop: 0 };
+          const methodOpts: TranspileOptions = { ...opts, inLoop: 0, thisParam: "__this" };
           const bodySrc =
             prop.body.type === "BlockStatement"
               ? `{\n${prop.body.body.map((s) => transpileStatement(s, 1, methodOpts)).join("\n")}\n}`
               : transpileExpression(prop.body as unknown as Expression, methodOpts);
-          const fnValSrc = `$fnVal([${paramNames.map((p) => JSON.stringify(p)).join(", ")}], (${paramNames.join(", ")}) => ${bodySrc})`;
+          const bindParams = ["__this", ...paramNames];
+          const fnValSrc = `$fnVal([${paramNames.map((p) => JSON.stringify(p)).join(", ")}], (${bindParams.join(", ")}) => ${bodySrc}, { bindThis: true })`;
           props.push(`${mkey}: ${fnValSrc}`);
           continue;
         }
@@ -1049,6 +1155,32 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
               ? JSON.stringify(prop.key.value)
               : null;
         if (key === null) continue;
+        // 方法型 FunctionExpression：与 ObjectMethod 同 this 绑定语义
+        if (
+          prop.value.type === "FunctionExpression" &&
+          !(prop.value as { async?: boolean }).async
+        ) {
+          const fn = prop.value as unknown as {
+            params: Array<{ type: string; name?: string }>;
+            body: Node;
+            generator?: boolean;
+          };
+          if (!fn.generator) {
+            const paramNames = fn.params.map((p) =>
+              p.type === "Identifier" && p.name ? p.name : "_a",
+            );
+            const methodOpts: TranspileOptions = { ...opts, inLoop: 0, thisParam: "__this" };
+            const bodySrc =
+              fn.body.type === "BlockStatement"
+                ? `{\n${(fn.body as { body: Statement[] }).body.map((s) => transpileStatement(s, 1, methodOpts)).join("\n")}\n}`
+                : transpileExpression(fn.body as unknown as Expression, methodOpts);
+            const bindParams = ["__this", ...paramNames];
+            props.push(
+              `${key}: $fnVal([${paramNames.map((p) => JSON.stringify(p)).join(", ")}], (${bindParams.join(", ")}) => ${bodySrc}, { bindThis: true })`,
+            );
+            continue;
+          }
+        }
         const valSrc = transpileExpression(prop.value as Expression, opts);
         props.push(`${key}: ${valSrc}`);
       }
@@ -1146,6 +1278,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         if (compoundFn) {
           return `${expr.left.name} = ${compoundFn}(${expr.left.name}, ${right})`;
         }
+        // P1：`x = a.pop()` 表达式位置 mutator — 由 VariableDeclaration/statement
+        // 侧 emitExprMutatorRebind 处理容器重绑；此处赋值本身只绑返回值。
         return `${expr.left.name} = ${right}`;
       }
       return compoundFn ? `/* assign ${expr.operator} */ $lit(undefined)` : `/* assign */ $lit(undefined)`;
@@ -1285,3 +1419,5 @@ export function transpile(source: string, opts?: TranspileOptions): string {
 function isExpression(n: { type: string }): n is Expression {
   return n.type !== "PrivateName" && !n.type.endsWith("Statement") && !n.type.endsWith("Declaration");
 }
+
+

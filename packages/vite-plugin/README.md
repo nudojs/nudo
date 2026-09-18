@@ -25,13 +25,21 @@ import nudo from 'vite-plugin-nudo'
 export default {
   plugins: [
     nudo({
-      include: '**/*.js',       // default: Default include: `.js` / `.mjs` / `.cjs` / `.ts` / `.cts` (targets accepted by `isNudoTargetPath`; `.mts` is not an analysis target today).
-      exclude: '**/node_modules/**', // default
-      failOnError: false,       // default — contract errors warn, do not fail the build
+      // include / exclude are string[] (not a bare string)
+      include: ['**/*.js', '**/*.mjs', '**/*.ts'], // default — matches isNudoTargetPath (.js/.mjs/.ts)
+      exclude: ['**/node_modules/**', '**/*.d.ts'], // default
+      failOnError: false, // default — contract errors warn, do not fail the build
     }),
   ],
 }
 ```
+
+## Analysis gating
+
+File selection is two-stage:
+
+1. **Path globs** (`include` / `exclude`) — defaults cover `**/*.js`, `**/*.mjs`, `**/*.ts` (the same extensions `isNudoTargetPath` accepts; `.cjs` / `.cts` / `.mts` / `.tsx` / `.d.ts` / `*.nudo.js` are not analysis targets).
+2. **`nudo.analysis.mode`** via `shouldAnalyzeFile` — same gate as the LSP/CLI. Shipped default is `"directives"` (only files with `@nudo:` directives are analyzed). Set `"exports"` or `"all"` in `package.json#nudo.analysis` to opt in to whole-file analysis.
 
 ## Diagnostics & failOnError
 

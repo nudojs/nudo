@@ -77,8 +77,12 @@ function viteDiagnosticsLevel(id: string): DiagnosticsLevel {
   return "default";
 }
 
-/** 与 isNudoTargetPath 对齐（.mts 当前不是分析目标） */
-const DEFAULT_INCLUDE = ["**/*.js", "**/*.mjs", "**/*.cjs", "**/*.ts", "**/*.cts"];
+/**
+ * 与 isNudoTargetPath 对齐：分析目标仅为 `.js` / `.mjs` / `.ts`。
+ * `.cjs` / `.cts` / `.mts` / `.d.ts` / `.tsx` 不是分析目标（exclude
+ * 已挡 `.d.ts` 与 `node_modules`；`*.nudo.js` 由 shouldAnalyzeFile 拒绝）。
+ */
+const DEFAULT_INCLUDE = ["**/*.js", "**/*.mjs", "**/*.ts"];
 const DEFAULT_EXCLUDE = ["**/node_modules/**", "**/*.d.ts"];
 
 type Matcher = (id: string) => boolean;

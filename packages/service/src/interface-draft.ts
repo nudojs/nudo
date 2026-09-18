@@ -22,6 +22,7 @@ import {
   formatConstraint,
   formatShape,
   generalizeFromAst,
+  isIntFlag,
   joinThenProject,
   localNamedExports,
   sidecarPathOf,
@@ -33,7 +34,6 @@ import type { Node } from "@babel/types";
 import { analyzeFileAsync, type FunctionAnalysis } from "./analyzer.ts";
 import type { CallRecord } from "./evaluator/call-record.ts";
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
-import { findProjectConfig, interfaceConfig } from "./evaluator/config.ts";
 
 /**
  * DraftEvidence `body` = 仅来自函数体对形参的成员读取（草稿建议，非义务）。
@@ -65,6 +65,12 @@ export type InterfaceDraftOpts = {
   fnNames?: string[];
   records?: CallRecord[];
   loadModule?: LoadModule;
+  /**
+   * Accepted for API compatibility; **ignored**. The handwritten-contract probe
+   * always uses `effectiveInterface(..., { autoBind: true })` so draft skips
+   * disk sidecars even when ambient autoBind is off (product: draft asks
+   * "does a contract already exist?", not "is ambient binding on?").
+   */
   autoBind?: boolean;
   /** 默认 true：收集 body 成员读取作草稿建议（永不进 check） */
   bodyAccesses?: boolean;
@@ -282,12 +288,13 @@ function widenDraftConstraint(c: NudoConstraint): NudoConstraint | undefined {
   if (c.fn) return undefined; // 草稿 DSL 不写一等函数义务
   const preds = stripEqLits(c.preds ?? []);
   const hasBounds = preds.length > 0;
-  if (!c.prim && !hasBounds) return undefined;
+  if (!c.prim && !hasBounds && !isIntFlag(c)) return undefined;
   return {
     __nudoConstraint: true,
     ...(c.prim ? { prim: c.prim } : {}),
     preds,
-    ...(c.int ? { int: true } : {}),
+    // builder 上 .int 是链式方法，truthy 恒真；必须经 isIntFlag
+    ...(isIntFlag(c) ? { int: true } : {}),
   } as NudoConstraint;
 }
 
@@ -474,8 +481,8 @@ export async function draftInterface(
   opts: InterfaceDraftOpts = {},
 ): Promise<InterfaceDraftResult> {
   const source = opts.source ?? readFileSync(filePath, "utf-8");
-  const projectConfig = findProjectConfig(dirname(filePath));
-  const projectAutoBind = interfaceConfig(projectConfig?.config).autoBind;
+  // 手写契约探测始终 autoBind:true（见下方 effectiveInterface 调用注释）；
+  // 项目 autoBind 只影响 ambient 执法，不影响 draft 是否 skip 已有侧车。
   const loadModule = opts.loadModule ?? defaultLoadModule;
   const sidecarPath = sidecarPathOf(filePath);
   const wantBody = opts.bodyAccesses !== false;
@@ -596,15 +603,19 @@ export function formatDraftModule(
   for (const e of draftable) {
     lines.push(`// ${e.fn} — param: ${e.paramEvidence}, return: ${e.returnEvidence}`);
     for (const p of e.params) {
-      if (!p.projected || (p.display.includes("/*") && p.bodyAccesses?.length)) {
-        if (!p.projected || p.display.includes("body also reads")) {
-          lines.push(`//   ${p.name}: ${p.display}`);
-        }
+      // 未投影槽位、body-read 提示、以及已投影参数上的 `/* observed …` 对照
+      // 都以注释形式进草稿（DSL 行只保留可接受的约束）。
+      if (!p.projected) {
+        lines.push(`//   ${p.name}: ${p.display}`);
+      } else if (p.display.includes("/* observed") || p.display.includes("/* body also reads")) {
+        lines.push(`//   ${p.name}: ${p.display}`);
       }
     }
     const suggested = suggestedBodyDsl(e.fn, e.params);
     if (suggested) lines.push(suggested);
     if (e.returns && !e.returns.projected) {
+      lines.push(`//   returns: ${e.returns.display}`);
+    } else if (e.returns?.display.includes("/* observed")) {
       lines.push(`//   returns: ${e.returns.display}`);
     } else if (e.returnEvidence === "symbolic") {
       lines.push(`//   returns: ${e.returns?.display ?? ""} (symbolic)`);
@@ -625,9 +636,9 @@ export function formatDraftModule(
   return lines.join("\n");
 }
 
-/** `lib.js` → `lib.nudo.draft.js`（不进 ambient sidecar 表） */
+/** `lib.js|ts` → `lib.nudo.draft.js|ts`（不进 ambient sidecar 表） */
 export function sidecarDraftPath(filePath: string): string {
-  return sidecarPathOf(filePath).replace(/\.nudo\.([cm]?js)$/, ".nudo.draft.$1");
+  return sidecarPathOf(filePath).replace(/\.nudo\.([cm]?[jt]s)$/, ".nudo.draft.$1");
 }
 
 export type WriteDraftResult = {
@@ -639,7 +650,8 @@ export type WriteDraftResult = {
 
 /**
  * 写入 `*.nudo.draft.js`（覆盖草稿文件本身；不碰正式 `*.nudo.js`）。
- * 基础路径防护：拒绝 node_modules；拒绝 draft 路径落在源文件目录之外的穿越。
+ * 基础路径防护：拒绝 node_modules；拒绝 draft 路径与正式侧车重合；
+ * 拒绝 draft 路径落在源文件目录之外的穿越。
  */
 export function writeInterfaceDraft(
   filePath: string,
@@ -647,6 +659,12 @@ export function writeInterfaceDraft(
   opts: { dryRun?: boolean; projectDir?: string } = {},
 ): WriteDraftResult {
   const draftPath = sidecarDraftPath(filePath);
+  const formalPath = sidecarPathOf(filePath);
+  if (draftPath === formalPath) {
+    throw new Error(
+      `draft write refused: draft path equals formal sidecar (${formalPath}); never overwrite handwritten contracts`,
+    );
+  }
   if (/[/\\]node_modules[/\\]/.test(draftPath) || /[/\\]node_modules[/\\]/.test(filePath)) {
     throw new Error(`draft write refused: path is inside node_modules (${draftPath})`);
   }
@@ -656,12 +674,19 @@ export function writeInterfaceDraft(
       throw new Error(`draft write refused: outside project root ${opts.projectDir}`);
     }
   }
+  // 无可写 export 的空草稿不落盘（避免覆盖已有 draft 壳 / 误写正式侧车）
+  const draftable = /export const\s+\w+\s*=/.test(draftSource);
   const prev = existsSync(draftPath) ? readFileSync(draftPath, "utf-8") : undefined;
   const changed = prev !== draftSource;
-  if (!opts.dryRun && changed) {
+  if (!opts.dryRun && changed && draftable) {
     writeFileSync(draftPath, draftSource, "utf-8");
   }
-  return { draftPath, written: !opts.dryRun && changed, changed, draftSource };
+  return {
+    draftPath,
+    written: !opts.dryRun && changed && draftable,
+    changed,
+    draftSource,
+  };
 }
 
 export function formatDraftSummary(

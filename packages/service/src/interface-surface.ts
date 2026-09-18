@@ -156,7 +156,7 @@ export async function interfaceSurface(
   const exported = localNamedExports(source);
   const kindOf = (fnName: string): "export" | "local" => (exported.has(fnName) ? "export" : "local");
 
-  const analysis = await analyzeFileAsync(abs, source, undefined, opts.records);
+  const analysis = await analyzeFileAsync(abs, source, undefined, opts.records, loadModule);
 
   // B3：整文件 effectiveInterface 表磁盘缓存（打印路径；不加速 analyze）
   // buffer 源 / 注入 loadModule / callsites 时禁用磁盘缓存（键不含 buffer）

@@ -24,13 +24,16 @@ const tupleAbs = () =>
     "exact" as never,
   );
 
+function toAbsArg(a: unknown): ReturnType<typeof abs> {
+  if (a && typeof a === "object" && "shape" in a && "conf" in a) {
+    return a as ReturnType<typeof abs>;
+  }
+  return abs({ k: "unknown" } as never, { op: "lit", value: a as never } as never, undefined as never, "exact" as never);
+}
+
 function callOuter(src: string, args: unknown[] = []) {
   const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(
-    exports,
-    "outer",
-    args.map((a) => (a && typeof a === "object" && "shape" in a ? a : abs({ k: "unknown" } as never, { op: "lit", value: a as never } as never, undefined as never, "exact" as never))),
-  );
+  return callTranspiledExportFull(exports, "outer", args.map(toAbsArg));
 }
 
 describe("B-path nested call NudoReturn boundary", () => {

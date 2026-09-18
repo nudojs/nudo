@@ -113,9 +113,9 @@ type DepFingerprint = { fp: string; paths: string[]; truncated: boolean };
  * L3：loadModule 可达依赖内容指纹（与 check 整文件 memo 同一套 specs/传递规则）。
  * 仅 @nudo:import 不够——body 求值会经 loadModule 读普通 require/from。
  */
-function refineDepsFingerprint(source: string, refine?: RefineResolveOpts): DepFingerprint {
+function refineDepsFingerprint(source: string, refine?: RefineResolveOpts): LoadDepsFingerprint {
   if (!refine?.loadModule || !refine.fromFile) {
-    return { fp: "-", paths: [], truncated: false };
+    return { fp: "-", paths: [], contents: [], truncated: false };
   }
   return loadModuleDepsFingerprint(source, refine.loadModule, refine.fromFile);
 }
@@ -138,7 +138,7 @@ function generalizeMemoKey(
   const budget = opts.budget ?? defaultLeakBudget;
   const deps =
     opts.depsFp ??
-    (r ? refineDepsFingerprint(source, r) : { fp: "-", paths: [], truncated: false });
+    (r ? refineDepsFingerprint(source, r) : { fp: "-", paths: [], contents: [], truncated: false });
   // ambient 侧车闭包进键：侧车内容变更 → L0 失效；路径登记供定向逐出。
   // 截断前缀（trunc:）→ 键不可信，调用方 fail-open。
   const sc =
@@ -579,6 +579,7 @@ export function extractFn(
     }
     if (decl.type === "ClassDeclaration" && (decl as { id?: { name?: string } }).id?.name) {
       // C4.2：导出 class 实例方法 → `Class.method`
+      // 本地 `class Foo` + `export { Foo }` 也在此登记（decl 未包 export 时同样命中）
       const cname = (decl as { id: { name: string } }).id.name;
       const body = (decl as { body?: { body?: unknown[] } }).body?.body ?? [];
       for (const m of body) {

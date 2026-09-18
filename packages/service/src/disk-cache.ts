@@ -3,11 +3,13 @@
  * - 键：sha256(analysisAbi + relative paths + content hashes + import deps)
  * - fail-open：读写失败/版本不符 → miss，绝不 throw
  * - 不存 Abs；只存可 JSON 再执行投影（如 CheckJson）
+ * - 缓存根解析见 `evaluator/config.ts` 的 `diskCacheRoot`（唯一入口）
  */
 
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { join, dirname, relative, sep } from "node:path";
+import { diskCacheRoot } from "./evaluator/config.ts";
 
 /** 分析 ABI：语义变更时抬版本，整层 miss（含缓存键维度扩展） */
 export const ANALYSIS_ABI = "nudo-check-cache-v2";
@@ -31,18 +33,12 @@ export function relativizePath(p: string, root?: string): string {
   return r.startsWith("..") ? norm : r;
 }
 
-export function resolveCacheRoot(
-  projectDir: string | undefined,
-  explicit?: string | null,
-): string | undefined {
-  if (explicit === null) return undefined; // 显式关闭
-  if (explicit) return explicit;
-  const env = process.env.NUDO_CACHE_DIR;
-  if (env === "off" || env === "0") return undefined;
-  if (env) return env;
-  if (!projectDir) return undefined;
-  // 默认关：只在 NUDO_CACHE_DIR 或 config.cache 路径下启用（Phase C 行为）
-  return undefined;
+/**
+ * namespace 子目录名消毒：只允许 `[a-z0-9_-]`（大小写不敏感）。
+ * 点号/斜杠等路径字符一律替换，避免 `..` / 子路径穿越。
+ */
+export function sanitizeCacheNamespace(ns: string): string {
+  return ns.replace(/[^a-z0-9_-]/gi, "_").replace(/^_+|_+$/g, "") || "cache";
 }
 
 export class DiskCache {
@@ -52,7 +48,7 @@ export class DiskCache {
 
   constructor(opts: DiskCacheOptions) {
     this.root = opts.root;
-    this.ns = opts.namespace;
+    this.ns = sanitizeCacheNamespace(opts.namespace);
     this.enabled = !!opts.root;
   }
 
@@ -102,6 +98,8 @@ export class DiskCache {
 /**
  * check 报告键：abi + 相对路径 + 源码 sha + autoBind + **侧车 sha** +
  * **@nudo:import / 传递契约依赖内容 sha**（依赖变更必须 miss）。
+ * dep 路径同样相对化（`relativizePath`）：绝对路径进键会让同内容在不同
+ * 机器/checkout 上键不同，缓存无法跨环境复用。
  */
 export function checkCacheKey(
   filePath: string,
@@ -116,7 +114,10 @@ export function checkCacheKey(
   const rel = relativizePath(filePath, opts.projectDir);
   const sidecarSha = opts.sidecarContent != null ? sha256Hex(opts.sidecarContent) : "nosidecar";
   const depSeg = (opts.depContents ?? [])
-    .map((d) => `${d.path}\0${d.content != null ? sha256Hex(d.content) : "miss"}`)
+    .map(
+      (d) =>
+        `${relativizePath(d.path, opts.projectDir)}\0${d.content != null ? sha256Hex(d.content) : "miss"}`,
+    )
     .join("\n");
   return sha256Hex(
     [
@@ -132,7 +133,8 @@ export function checkCacheKey(
 
 /**
  * effectiveInterface 表键（L1 Phase B，design-persistent-cache）。
- * 维度：相对路径 + 源码 sha256 + autoBind + 侧车内容 sha256 + import 依赖。
+ * 维度：相对路径 + 源码 sha256 + autoBind + 侧车内容 sha256 + import 依赖
+ * （dep 路径相对化，与 checkCacheKey 同口径）。
  * **不含** emit allowlist（白名单不影响契约读取）。
  */
 export function ifaceCacheKey(
@@ -152,7 +154,10 @@ export function ifaceCacheKey(
       ? `sc:${sha256Hex(opts.sidecarSource)}`
       : "sc0";
   const depSeg = (opts.depContents ?? [])
-    .map((d) => `${d.path}\0${d.content != null ? sha256Hex(d.content) : "miss"}`)
+    .map(
+      (d) =>
+        `${relativizePath(d.path, opts.projectDir)}\0${d.content != null ? sha256Hex(d.content) : "miss"}`,
+    )
     .join("\n");
   return sha256Hex(
     [

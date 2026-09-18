@@ -314,7 +314,15 @@ export function readSource(filePath: string, deps: AgentToolDeps = {}): string {
 }
 
 function analysisError(err: unknown): AgentToolResult {
-  return textResult(`Error: ${(err as Error).message}`);
+  return {
+    content: [{ type: "text", text: `Error: ${(err as Error).message}` }],
+    isError: true,
+  };
+}
+
+/** 入参 / 写盘门禁错误：MCP 风格 isError，客户端可分支处理 */
+function toolError(message: string): AgentToolResult {
+  return { content: [{ type: "text", text: message }], isError: true };
 }
 
 /**
@@ -332,12 +340,17 @@ export function resolveProjectAutoBind(
   return projectAutoBind && (clientAutoBind ?? true);
 }
 
+/** draft 写盘 projectDir：与 CLI runInterfaceDraft 同口径（nudo 配置 → package.json 祖先） */
+function resolveDraftProjectDir(filePath: string): string | undefined {
+  const proj = findProjectConfig(dirname(filePath));
+  return proj?.projectDir;
+}
+
 /**
  * E5：agent 工具与 LSP 命令 / CLI 共享的数据源表（同源验收钉住此表）。
  * 任一工具改实现时必须继续消费同一底层入口，禁止旁路第二套语义。
- * 注：`analyzeFile` 当前走默认 loadModule（磁盘侧车）；check/hover/interface/draft
- * 才注入 buffer-aware loadModule。infer/whatIf/trace/suggestCase 的未保存侧车
- * 对这些工具不可见——矩阵勿标全 Y。
+ * infer/whatIf/trace/suggestCase 现将 deps.loadModule 传入 analyzeFile
+ * （buffer-aware 侧车可见）。validate/pull 的 analyzeFileAsync 同样接线。
  */
 export const AGENT_TOOL_SOURCES = {
   whatIf: "injectBindings + analyzeFile",
@@ -472,11 +485,14 @@ export type InferToolParams = {
   format?: "text" | "json";
   /** 只返回这些函数名（可选过滤） */
   functions?: string[];
+  /** buffer-aware loadModule（E5）；缺省 deps.loadModule */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
 };
 
 /**
  * Agent infer：InferJson v1 契约（与 CLI infer --json 同构）。
  * intension 携带无损 Abs；args/result 为 TypeValue 投影。
+ * E5：deps.loadModule 传入 analyzeFile（buffer-aware 侧车可见）。
  */
 export function inferTool(
   params: InferToolParams,
@@ -485,7 +501,13 @@ export function inferTool(
   try {
     const filePath = normalizeFilePath(params.file);
     const source = params.source ?? readSource(filePath, deps);
-    const result = analyzeFile(filePath, source);
+    const result = analyzeFile(
+      filePath,
+      source,
+      undefined,
+      undefined,
+      params.loadModule ?? deps.loadModule,
+    );
     let json = serializeInferJson(result, filePath);
     if (params.functions && params.functions.length > 0) {
       const keep = new Set(params.functions);
@@ -532,6 +554,8 @@ export type WhatIfParams = {
   target: string;
   /** Pre-read source (tests / callers that already hold the text). */
   source?: string;
+  /** buffer-aware loadModule（E5）；缺省 deps.loadModule */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
 };
 
 /**
@@ -546,7 +570,13 @@ export function whatIf(params: WhatIfParams, deps: AgentToolDeps = {}): AgentToo
     const { source, applied, unapplied } = injectBindings(original, params.bindings ?? []);
     // Direct analysis: the injected source never matches the version-keyed
     // editor cache, so bypass it entirely.
-    const result = analyzeFile(filePath, source);
+    const result = analyzeFile(
+      filePath,
+      source,
+      undefined,
+      undefined,
+      params.loadModule ?? deps.loadModule,
+    );
     const binding = result.bindings.get(params.target);
     // 无损 Abs
     const typeStr = binding ? formatAbs(binding.abs) : "unknown";
@@ -569,6 +599,8 @@ export type FunctionToolParams = {
   functionName: string;
   /** Pre-read source (tests / callers that already hold the text). */
   source?: string;
+  /** buffer-aware loadModule（E5）；缺省 deps.loadModule */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
 };
 
 /** Suggest @nudo:case directives for a function (ported from MCP). */
@@ -576,7 +608,13 @@ export function suggestCase(params: FunctionToolParams, deps: AgentToolDeps = {}
   try {
     const filePath = normalizeFilePath(params.file);
     const source = params.source ?? readSource(filePath, deps);
-    const result = analyzeFile(filePath, source);
+    const result = analyzeFile(
+      filePath,
+      source,
+      undefined,
+      undefined,
+      params.loadModule ?? deps.loadModule,
+    );
     const fn = result.functions.find((f) => f.name === params.functionName);
 
     if (!fn) {
@@ -621,7 +659,13 @@ export function trace(params: FunctionToolParams, deps: AgentToolDeps = {}): Age
   try {
     const filePath = normalizeFilePath(params.file);
     const source = params.source ?? readSource(filePath, deps);
-    const result = analyzeFile(filePath, source);
+    const result = analyzeFile(
+      filePath,
+      source,
+      undefined,
+      undefined,
+      params.loadModule ?? deps.loadModule,
+    );
     const fn = result.functions.find((f) => f.name === params.functionName);
 
     if (!fn) {
@@ -782,6 +826,7 @@ export async function interfaceDraftTool(
       ...(source !== undefined ? { source } : {}),
     });
     const draftRel = sidecarDraftPath(filePath);
+    const projectDir = resolveDraftProjectDir(filePath);
     const lines =
       params.write
         ? formatDraftSummary(
@@ -790,6 +835,7 @@ export async function interfaceDraftTool(
             result,
             writeInterfaceDraft(filePath, result.draftSource, {
               dryRun: params.dryRun === true,
+              ...(projectDir ? { projectDir } : {}),
             }),
           )
         : formatDraftSummary(filePath, draftRel, result);
@@ -845,16 +891,16 @@ export async function interfaceEmitTool(
     // 入参校验：非法 mode / 缺 functionName → 显式错误回报（server.ts 的
     // dispatch 对 JSON 请求体只做 as 强转，不校验会静默降级成 add / skipped）
     if (typeof params.functionName !== "string" || params.functionName.trim() === "") {
-      return textResult("Error: functionName is required for nudo.interface.emit");
+      return toolError("Error: functionName is required for nudo.interface.emit");
     }
     if (params.mode !== "add" && params.mode !== "update") {
-      return textResult(
+      return toolError(
         `Error: invalid mode '${String(params.mode)}' — expected "add" | "update"`,
       );
     }
     const filePath = normalizeFilePath(params.file);
     const err = assertEmitTargetAllowed(filePath, deps.workspaceRoots);
-    if (err) return textResult(err);
+    if (err) return toolError(err);
     const result = await serializedEmit(filePath, [params.functionName], params.mode);
     return textResult(formatEmitResult(filePath, result));
   } catch (err) {

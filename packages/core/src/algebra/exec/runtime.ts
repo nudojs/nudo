@@ -16,7 +16,14 @@ import {
 import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs } from "../surface.ts";
 import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape } from "../objects.ts";
-import { isMapAbs, isSetAbs, setElementsAbs, mapValuesAbs } from "../collections.ts";
+import {
+  isMapAbs,
+  isSetAbs,
+  setElementsAbs,
+  mapEntriesAbs,
+  mapSizeAbs,
+  setSizeAbs,
+} from "../collections.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf } from "../containers.ts";
 import { leqAbs } from "../leq.ts";
 import { evalNamespaceCall } from "../builtins.ts";
@@ -139,11 +146,17 @@ export function callAtFunctionBoundary<T>(body: () => T): T {
   });
 }
 
-/** 函数表达式 → 一等 fn Abs（transpile 侧带真实参数名；异步 body 包 $async） */
-export function $fnVal(params: string[], impl: (...args: Abs[]) => Abs): Abs {
+/** 函数表达式 → 一等 fn Abs（transpile 侧带真实参数名；异步 body 包 $async）
+ *  opts.bindThis：对象方法——$invoke 会把 receiver 作为 impl 首参注入。 */
+export function $fnVal(
+  params: string[],
+  impl: (...args: Abs[]) => Abs,
+  opts?: { bindThis?: boolean },
+): Abs {
   return absFunction(params, {
     body: noBody,
     apply: (args) => callAtFunctionBoundary(() => impl(...args)),
+    ...(opts?.bindThis ? { bindThis: true } : {}),
   });
 }
 
@@ -266,7 +279,13 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
         arms.push(popCollectionArm());
       }
     } else {
-      b = { kind: "val", v: undef() };
+      // 隐式 else：无写也必须占一臂，否则条件写入会被 merge 成必然（P0）
+      pushCollectionArm();
+      try {
+        b = { kind: "val", v: undef() };
+      } finally {
+        arms.push(popCollectionArm());
+      }
     }
   } finally {
     endCollectionFork(arms);
@@ -641,12 +660,13 @@ export function $concat(a: Abs, b: Abs): Abs {
   return abs({ k: "arr", element: joinAbs(a, b) }, undefined, undefined, "path");
 }
 
-/** 元素列表（tuple 展开；arr 抽象；C1 Set/Map 逐条目） */
+/** 元素列表（tuple 展开；arr 抽象；C1 Set/Map 逐条目）。
+ *  Map 迭代语义是 entry `[key, value]` 元组，不是裸 value。 */
 export function $elems(a: Abs): Abs[] {
   if (a.shape.k === "tuple") return [...a.shape.elements];
   if (a.shape.k === "arr") return [a.shape.element];
   if (isSetAbs(a)) return setElementsAbs(a);
-  if (isMapAbs(a)) return mapValuesAbs(a);
+  if (isMapAbs(a)) return mapEntriesAbs(a);
   return [unknown];
 }
 
@@ -741,7 +761,12 @@ export function $get(
     }
     return unknown;
   }
-  if (o.shape.k === "brand") return $get(o.shape.shape, key, opts);
+  if (o.shape.k === "brand") {
+    // JS Map/Set 的 size 是属性不是方法；brand 内层为空 obj，须在 $get 委托
+    if (key === "size" && o.shape.name === "Map") return mapSizeAbs(o);
+    if (key === "size" && o.shape.name === "Set") return setSizeAbs(o);
+    return $get(o.shape.shape, key, opts);
+  }
   if (isObj(o)) {
     const slot = (o.shape as ObjShape).slots[key];
     if (slot) return slot.value;

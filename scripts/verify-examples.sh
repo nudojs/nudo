@@ -256,7 +256,7 @@ pin 'pnpm run infer docs/examples/algebra/h-array-boundary.js' \
 pin 'pnpm run infer docs/examples/algebra/i-map-set.js' \
   'Case "map-get": ("alice") => { id: "alice", name: "Alice" }' \
   'abs: { id: "alice", name: "Alice" }  #exact' \
-  'Case "set-forof": ([1, 2, 2, 3]) => [1, 2, 2, 3]'
+  'Case "set-forof": ([1, 2, 2, 3]) => [1, 2, 3]'
 pin 'pnpm run infer docs/examples/algebra/j-this-binding.js' \
   '(5) => 25' 'abs: 25  #exact' \
   '(3) => 9' 'abs: 9  #exact' \

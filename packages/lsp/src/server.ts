@@ -480,7 +480,13 @@ connection.languages.inlayHint.on((params) => {
   const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
 
   try {
-    const result = getCachedOrAnalyze(filePath, source, document.version, cases);
+    const result = getCachedOrAnalyze(
+      filePath,
+      source,
+      document.version,
+      cases,
+      activeLoadModule,
+    );
     const hints: InlayHint[] = [];
 
     for (const hint of result.caseHints) {
@@ -1243,7 +1249,13 @@ connection.languages.diagnostics.on((params) => {
     } catch {
       /* check 通道失败不影响 evaluator 面 */
     }
-    const result = getCachedOrAnalyze(filePath, text, document.version, getActiveCasesForUri(document.uri));
+    const result = getCachedOrAnalyze(
+      filePath,
+      text,
+      document.version,
+      getActiveCasesForUri(document.uri),
+      validationDeps().loadModule,
+    );
     const filtered = filterDiagnosticsByLevel(result.diagnostics, level);
     for (const d of filtered) {
       items.push(toLspDiagnostic(d, document.uri));

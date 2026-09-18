@@ -5,7 +5,7 @@
  */
 
 import type { Abs } from "./abs.ts";
-import { abs, litValue, unknown } from "./abs.ts";
+import { abs, litValue, unknown, confJoin } from "./abs.ts";
 import { objOf, joinAbs } from "./objects.ts";
 
 type LitKey = string | number | boolean | null | undefined;
@@ -412,6 +412,51 @@ export function mapValuesAbs(mapAbs: Abs): Abs[] {
   return [...t.byLit.values(), ...t.shadowValues];
 }
 
+/** LitKey → key Abs（Map entry 迭代用）；非字面量 key 走 unknown */
+function keyAbsFromLitKey(k: LitKey): Abs {
+  if (k === null) {
+    return abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+  }
+  if (k === undefined) {
+    return abs({ k: "unknown" }, { op: "lit", value: undefined as never }, undefined, "exact");
+  }
+  if (typeof k === "string") return abs({ k: "prim", type: "string" }, { op: "lit", value: k as never }, undefined, "exact");
+  if (typeof k === "number") return abs({ k: "prim", type: "number" }, { op: "lit", value: k as never }, undefined, "exact");
+  return abs({ k: "prim", type: "boolean" }, { op: "lit", value: k as never }, undefined, "exact");
+}
+
+/**
+ * Map 迭代条目：JS `for (const [k,v] of map)` / `Array.from(map)` 产出
+ * `[key, value]` 元组 Abs。字面量 key 精确；shadow 写入 key 为 unknown。
+ */
+export function mapEntriesAbs(mapAbs: Abs): Abs[] {
+  const t = mapTableForRead(mapAbs);
+  if (!t) return [];
+  const entries: Abs[] = [];
+  for (const [k, v] of t.byLit) {
+    entries.push(
+      abs(
+        { k: "tuple", elements: [keyAbsFromLitKey(k), v] },
+        undefined,
+        undefined,
+        confJoin(v.conf, "exact"),
+      ),
+    );
+  }
+  const unkKey = abs({ k: "unknown" }, undefined, undefined, "partial");
+  for (const v of t.shadowValues) {
+    entries.push(
+      abs(
+        { k: "tuple", elements: [unkKey, v] },
+        undefined,
+        undefined,
+        "partial",
+      ),
+    );
+  }
+  return entries;
+}
+
 /** Set#add：fork 内写 overlay；返回同一 Abs */
 export function setAddEntry(setAbs: Abs, value: Abs): Abs {
   const t = setTableForWrite(setAbs);
@@ -461,9 +506,10 @@ export function setElementsAbs(setAbs: Abs): Abs[] {
   return t ? [...t.elements] : [];
 }
 
-/** 元素联合（for-of / Array.from）；无表 → unknown */
+/** 元素联合（for-of / Array.from）；无表 → unknown。
+ *  Map 语义是 entry `[k,v]` 元组联合，不是裸 value。 */
 export function collectionElementJoin(c: Abs): Abs {
-  const els = isSetAbs(c) ? setElementsAbs(c) : isMapAbs(c) ? mapValuesAbs(c) : [];
+  const els = isSetAbs(c) ? setElementsAbs(c) : isMapAbs(c) ? mapEntriesAbs(c) : [];
   if (els.length === 0) return unknown;
   return els.reduce((a, b) => joinAbs(a, b));
 }

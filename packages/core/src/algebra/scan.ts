@@ -55,10 +55,43 @@ function hofFnArgOk(src: Abs, tgt: Abs): boolean {
 }
 
 /** 顶层函数清单：function 声明 + const 箭头/函数表达式（含 export 包装）
- *  + **导出 class 的实例方法**（C4.2，命名 `Class.method`）。 */
+ *  + **导出 class 的实例方法**（C4.2，命名 `Class.method`）。
+ *  P1：本地 `class Foo` 经 `export { Foo }` / `export { Foo as default }` /
+ *  `export default Foo` 导出时同样登记实例方法。 */
 export function listTopFunctions(source: string, file?: ReturnType<typeof parse>): string[] {
   const f = file ?? parse(source);
   const names: string[] = [];
+  /** 本地 ClassDeclaration（含未直接 export 的） */
+  const localClasses = new Map<string, Node>();
+  for (const stmt of f.program.body) {
+    if (stmt.type === "ClassDeclaration") {
+      const cname = (stmt as { id?: { name?: string } }).id?.name;
+      if (cname) localClasses.set(cname, stmt);
+    }
+  }
+  /** 经任意 export 形态暴露的 class 本地名 */
+  const exportedClassNames = new Set<string>();
+  const collectClassMethods = (cname: string, decl: Node) => {
+    const body = (decl as { body?: { body?: unknown[] } }).body?.body ?? [];
+    for (const m of body) {
+      const mem = m as {
+        type?: string;
+        kind?: string;
+        key?: { type?: string; name?: string };
+        static?: boolean;
+      };
+      const isMethod =
+        mem.type === "MethodDefinition" ||
+        mem.type === "ClassMethod" ||
+        mem.type === "TSDeclareMethod";
+      if (!isMethod) continue;
+      if (mem.kind && mem.kind !== "method") continue; // skip ctor/get/set
+      if (mem.static) continue;
+      const keyName =
+        mem.key?.type === "Identifier" ? mem.key.name : undefined;
+      if (keyName) names.push(`${cname}.${keyName}`);
+    }
+  };
   for (const stmt of f.program.body) {
     let decl: Node = stmt;
     if (stmt.type === "ExportNamedDeclaration" && stmt.declaration) {
@@ -87,24 +120,46 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
       (stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration")
     ) {
       const cname = (decl as { id: { name: string } }).id.name;
-      const body = (decl as { body?: { body?: unknown[] } }).body?.body ?? [];
-      for (const m of body) {
-        const mem = m as {
+      exportedClassNames.add(cname);
+      collectClassMethods(cname, decl);
+    }
+  }
+  // P1：export { Foo } / export { Foo as default } / export default Foo
+  for (const stmt of f.program.body) {
+    if (stmt.type === "ExportNamedDeclaration" && !stmt.declaration) {
+      const specs = (stmt as { specifiers?: unknown[] }).specifiers ?? [];
+      for (const spec of specs) {
+        const s = spec as {
           type?: string;
-          kind?: string;
-          key?: { type?: string; name?: string };
-          static?: boolean;
+          local?: { name?: string };
+          exported?: { name?: string; value?: unknown };
         };
-        const isMethod =
-          mem.type === "MethodDefinition" ||
-          mem.type === "ClassMethod" ||
-          mem.type === "TSDeclareMethod";
-        if (!isMethod) continue;
-        if (mem.kind && mem.kind !== "method") continue; // skip ctor/get/set
-        if (mem.static) continue;
-        const keyName =
-          mem.key?.type === "Identifier" ? mem.key.name : undefined;
-        if (keyName) names.push(`${cname}.${keyName}`);
+        if (s.type !== "ExportSpecifier") continue;
+        const localName = s.local?.name;
+        if (!localName || exportedClassNames.has(localName)) continue;
+        const exportedName = s.exported?.name ?? s.exported?.value;
+        const isDefault = exportedName === "default";
+        // 只在「导出到外部」时登记：export { Foo } 或 export { Foo as default }
+        if (!isDefault && exportedName !== localName) {
+          // export { Foo as Bar }：仍导出 class，方法键按本地名
+        }
+        const decl = localClasses.get(localName);
+        if (!decl) continue;
+        exportedClassNames.add(localName);
+        collectClassMethods(localName, decl);
+      }
+    }
+    if (stmt.type === "ExportDefaultDeclaration" && stmt.declaration) {
+      const d = stmt.declaration;
+      if (d.type === "Identifier") {
+        const localName = d.name;
+        if (!exportedClassNames.has(localName)) {
+          const decl = localClasses.get(localName);
+          if (decl) {
+            exportedClassNames.add(localName);
+            collectClassMethods(localName, decl);
+          }
+        }
       }
     }
   }
@@ -760,17 +815,34 @@ export function scanLiteralCalls(
       if (argIdx === undefined) continue;
       let arg = absArgs[argIdx];
       if (!arg) continue;
-      // C4.1：解构契约字段投影后再判 pred
+      // C4.1：解构契约展示名优先用契约面（x），不回落到求值占位 _p0
+      const paramName = contractParam || paramNames[idx] || `arg${idx}`;
+      // C4.1：解构契约字段投影后再判 pred；缺字段不能静默跳过（FN）
       if (field) {
         const projected = projectArgField(arg, field);
-        if (!projected) continue;
+        if (!projected) {
+          const k = arg.shape.k;
+          // unknown/any 无法证明缺字段；其余已知形态（含 obj 缺槽）→ 违例
+          if (k !== "unknown" && k !== "any") {
+            out.push({
+              severity: "error",
+              code: "nudo:constraint-violated",
+              message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+              actual: formatAbs(arg),
+              expected: `missing field ${field}`,
+              suggestion: `补全字段 ${field}`,
+              fn: displayName,
+              line: loc?.start.line,
+              column: loc?.start.column,
+            });
+          }
+          continue;
+        }
         arg = projected;
       }
       const lv = litValue(arg);
       const isStr = arg.shape.k === "prim" && (arg.shape as { type: string }).type === "string";
       const strLen = typeof lv === "string" ? lv.length : undefined;
-      // C4.1：解构契约展示名优先用契约面（x），不回落到求值占位 _p0
-      const paramName = contractParam || paramNames[idx] || `arg${idx}`;
       for (const p of flattenPred(pred)) {
         // typeof 约束（string() / number() / boolean() 裸 prim）
         // 只检查挂在参数自身上的 typeof；字段访问（u.name）交给 shape 路径
@@ -1147,13 +1219,29 @@ export function scanLiteralCalls(
       if (argIdx === undefined) continue;
       let arg = absArgs[argIdx];
       if (!arg) continue;
-      // C4.1：解构契约 → 投影到字段再查
+      const paramName = entry.param || paramNames[idx] || `arg${idx}`;
+      // C4.1：解构契约 → 投影到字段再查；缺字段报 violation（与 checkReqs 同口径）
       if (field) {
         const projected = projectArgField(arg, field);
-        if (!projected) continue;
+        if (!projected) {
+          const k = arg.shape.k;
+          if (k !== "unknown" && k !== "any") {
+            out.push({
+              severity: "error",
+              code: "nudo:constraint-violated",
+              message: `${displayName}[${paramName}]: 实参 ⊭ 前置`,
+              actual: formatAbs(arg),
+              expected: `missing field ${field}`,
+              suggestion: `补全字段 ${field}`,
+              fn: displayName,
+              line: loc?.start.line,
+              column: loc?.start.column,
+            });
+          }
+          continue;
+        }
         arg = projected;
       }
-      const paramName = entry.param || paramNames[idx] || `arg${idx}`;
       // 裸 prim 已由 checkReqs 的 typeof pred 覆盖；此处只处理 shape/array/int
       // shape 字段
       if (c.fields) {

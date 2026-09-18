@@ -14,6 +14,12 @@ export { normPath, resolveDepPath };
 export type LoadDepsFingerprint = {
   fp: string;
   paths: string[];
+  /**
+   * path + loadModule-resolved content（miss → null）。调用方（磁盘缓存键）
+   * 必须优先用这里的 content，不得回读磁盘——否则 buffer-aware loadModule
+   * 与磁盘不一致时键会分叉。
+   */
+  contents: Array<{ path: string; content: string | null }>;
   /** BFS 撞到节点上限：剩余 dep 未进指纹，键不可信 */
   truncated: boolean;
 };
@@ -74,6 +80,7 @@ export function loadModuleDepsFingerprint(
 ): LoadDepsFingerprint {
   const parts: string[] = [];
   const paths: string[] = [];
+  const contents: Array<{ path: string; content: string | null }> = [];
   const seen = new Set<string>();
   const queue: Array<{ spec: string; from: string }> = extractAllLoadSpecs(source).map(
     (spec) => ({ spec, from: fromFile }),
@@ -84,8 +91,8 @@ export function loadModuleDepsFingerprint(
   const finish = (): LoadDepsFingerprint => {
     parts.sort();
     return truncated
-      ? { fp: `trunc:${parts.join(",")}`, paths, truncated: true }
-      : { fp: parts.join(","), paths, truncated: false };
+      ? { fp: `trunc:${parts.join(",")}`, paths, contents, truncated: true }
+      : { fp: parts.join(","), paths, contents, truncated: false };
   };
 
   /** 入口文件的 ambient 侧车 + 递归 .nudo 闭包（fromFile 与各 dep 共用） */
@@ -103,6 +110,7 @@ export function loadModuleDepsFingerprint(
     n++;
     parts.push(`sidecar:${sidecarPath}=${hashSource(sidecarSrc)}`);
     paths.push(sidecarPath);
+    contents.push({ path: sidecarPath, content: sidecarSrc });
     const sidecarQueue: Array<{ spec: string; from: string }> = sidecarSpecsOf(
       sidecarSrc,
     ).map((spec) => ({ spec, from: sidecarPath }));
@@ -119,6 +127,7 @@ export function loadModuleDepsFingerprint(
       const src = loadModule(cur.spec, cur.from);
       parts.push(`sidecar:${path}=${src === undefined ? "miss" : hashSource(src)}`);
       paths.push(path);
+      contents.push({ path, content: src ?? null });
       if (src === undefined) continue;
       for (const next of sidecarSpecsOf(src)) {
         const nextPath = resolveDepPath(path, next);
@@ -140,6 +149,7 @@ export function loadModuleDepsFingerprint(
     const src = loadModule(cur.spec, cur.from);
     parts.push(`${path}=${src === undefined ? "miss" : hashSource(src)}`);
     paths.push(path);
+    contents.push({ path, content: src ?? null });
     if (src === undefined) continue;
     for (const next of extractAllLoadSpecs(src)) {
       const nextPath = resolveDepPath(path, next);

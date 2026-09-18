@@ -715,6 +715,7 @@ async function runInterfaceDraft(
     }
     const write = writeInterfaceDraft(filePath, result.draftSource, {
       dryRun: opts.dryRun,
+      ...(projectRoot ? { projectDir: projectRoot } : {}),
     });
     for (const line of formatDraftSummary(rel, draftRel, result, write)) console.log(line);
   } else {

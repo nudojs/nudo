@@ -88,6 +88,53 @@ export function probe() {
   });
 });
 
+describe("Map iteration yields [k, v] entry tuples", () => {
+  it("Array.from(map) produces entry tuples, not bare values", () => {
+    const src = `
+export function entries() {
+  const m = new Map();
+  m.set("a", 1);
+  m.set("b", 2);
+  return Array.from(m);
+}
+`;
+    const r = call(src, "entries");
+    const s = formatAbs(r.result);
+    // entry 元组：key 与 value 同时可见
+    expect(s).toContain("a");
+    expect(s).toContain("1");
+    expect(s).toContain("b");
+    expect(s).toContain("2");
+  });
+
+  it("for-of over Map destructures [k, v]", () => {
+    const src = `
+export function firstKey() {
+  const m = new Map();
+  m.set("alice", 10);
+  for (const [k, v] of m) return k;
+  return null;
+}
+`;
+    const r = call(src, "firstKey");
+    const s = formatAbs(r.result);
+    expect(s).toContain("alice");
+  });
+
+  it("Set for-of stays element itself (not tuple)", () => {
+    const src = `
+export function firstOfSet() {
+  const s = new Set([7, 8]);
+  for (const v of s) return v;
+  return null;
+}
+`;
+    const r = call(src, "firstOfSet");
+    const s = formatAbs(r.result);
+    expect(s).toContain("7");
+  });
+});
+
 describe("C1.2 Set element union", () => {
   it("Array.from(new Set(arr)) keeps element type", () => {
     const src = `
@@ -116,6 +163,54 @@ export function dedup(arr) {
     const r = callTranspiledExportFull(exports, "dedup", [arr]);
     expect(formatAbs(r.result)).not.toBe("[]");
     expect(formatAbs(r.result)).not.toMatch(/^unknown/);
+  });
+});
+
+describe("C1.2 / P1 Map iteration yields [k,v] entries", () => {
+  it("Array.from(map) is entry tuples, not bare values", () => {
+    const src = `
+export function entries() {
+  const m = new Map();
+  m.set("alice", 1);
+  m.set("bob", 2);
+  return Array.from(m);
+}
+`;
+    const r = call(src, "entries");
+    const s = formatAbs(r.result);
+    // element must be tuple-shaped [key, value]
+    expect(s).toMatch(/\[|tuple/);
+    expect(s).toContain("alice");
+    expect(s).toContain("1");
+  });
+
+  it("for-of over Map destructures to key and value", () => {
+    const src = `
+export function collectKeys() {
+  const m = new Map();
+  m.set("alice", 10);
+  m.set("bob", 20);
+  const keys = [];
+  for (const [k, v] of m) keys.push(k);
+  return keys;
+}
+`;
+    const r = call(src, "collectKeys");
+    const s = formatAbs(r.result);
+    expect(s).toContain("alice");
+    expect(s).toContain("bob");
+  });
+
+  it("Array.from(set) stays element itself (not entry)", () => {
+    const src = `
+export function elems() {
+  return Array.from(new Set([1, 2, 3]));
+}
+`;
+    const r = call(src, "elems");
+    const s = formatAbs(r.result);
+    expect(s).not.toMatch(/^\[|tuple/);
+    expect(s).toContain("number");
   });
 });
 

@@ -4,7 +4,7 @@
 //
 // 逐 case 真值（infer 输出）：
 //   lookup("alice")      → { id: "alice", name: "Alice" }  #exact
-//   dedup([1, 2, 2, 3])  → [1, 2, 2, 3]（Set 保元素；未做去重语义）
+//   dedup([1, 2, 2, 3])  → [1, 2, 3]（Set 字面量元素按 JS 语义去重）
 //
 // 边界形态：
 //   已建模：Map 字面量 key → value；Set 元素 from iterable

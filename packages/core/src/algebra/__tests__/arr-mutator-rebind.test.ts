@@ -115,6 +115,50 @@ export function f() {
     );
     expect(litValue(r.result)).toBe(3);
   });
+
+  it("expression-position pop also rebinds container (P1)", () => {
+    const r = call(
+      `
+export function f() {
+  const a = [1, 2, 3];
+  const x = a.pop();
+  return a;
+}
+`,
+      "f",
+    );
+    const shape = formatShape(r.result);
+    // container must shrink / stay array-like, not become the popped element
+    expect(shape).not.toBe("3");
+    expect(shape).toMatch(/\[|tuple|arr/);
+  });
+
+  it("expression-position push rebinds receiver container (P1)", () => {
+    const r = call(
+      `
+export function f() {
+  const a = [1, 2];
+  const n = a.push(3);
+  return a[2];
+}
+`,
+      "f",
+    );
+    expect(litValue(r.result)).toBe(3);
+  });
+
+  it("return-position pop rebinds container after taking value (P1)", () => {
+    const r = call(
+      `
+export function f() {
+  const a = [1, 2, 3];
+  return a.pop();
+}
+`,
+      "f",
+    );
+    expect(litValue(r.result)).toBe(3);
+  });
 });
 
 describe("NudoReturn × try/catch (P0-2)", () => {
