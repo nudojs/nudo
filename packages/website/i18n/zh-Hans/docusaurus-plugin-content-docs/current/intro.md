@@ -1,72 +1,81 @@
 ---
 sidebar_position: 1
 slug: /intro
-description: 了解 Nudo——用符号化类型值执行 JavaScript 代码来推导类型的类型推断引擎，无需类型标注。
+description: Nudo 是面向 JavaScript 的类型推断引擎——类型系统是 Abs（可计算值）；检查义务只来自 @nudo:refine / *.nudo.js 侧车契约。
 ---
 
 # 简介
 
-**Nudo** 是一个面向 JavaScript 的类型推断引擎，采用**抽象解释**（abstract interpretation）—— 用符号化的「类型值」代替具体值来执行你的代码，从而推导出类型。无需类型标注、无需构建步骤，只需纯 JavaScript 和基于运行时的类型推断。也接受 TypeScript 源码：类型标注会被剥除，代码按纯 JS 语义推断。
+**Nudo** 是面向 JavaScript 的类型推断引擎。类型系统是 **Abs**（`shape × term × pred × conf`）：类型是可计算的值，约束参与代数（`x>0` ⇒ `x+1>1`）。生产分析路径是 Abs 原生——没有第二套 IR。也接受 TypeScript 源码：类型标注会被剥除，代码按纯 JS 语义推断。
 
 ## 工作原理
 
-与静态分析或类型注解不同，Nudo 会实际*执行*你的函数 —— 但使用的是符号输入，例如 `T.number` 或 `T.string`。引擎跟踪值在分支、运算符和调用之间的流动，并生成推断出的返回类型。这让静态分析器难以处理的复杂逻辑也能推断类型。
+Nudo 在抽象解释下**执行**你的代码（B-path transpile+exec，必要时回落 ast-eval）。调用点事实与可选的 `@nudo:case` 见证驱动求值；引擎产出 Abs，按扩展面渲染用于展示（`formatShape`），需要时单向投影到 `.d.ts` / zod。
+
+`nudo check` 的**义务**只来自显式契约：
+
+- 源旁侧车模板 `*.nudo.js`（约束构建器：`number().gt(0)`、`shape({...})`、`fn({...}, …)`）
+- 源内 `@nudo:refine` / `@nudo:interface`（同一约束语法；主产品路径是侧车）
+
+无契约、无调用点证据 → `any` / 诚实的 `unknown`。Nudo **不会**从 body AST 扫描发明必填字段。
 
 ## Nudo 与 TypeScript
 
 | TypeScript | Nudo |
 |------------|------|
-| 事先声明类型，编译器检查使用情况 | 编写普通 JavaScript，引擎通过执行来推断类型 |
-| 需要 `.ts` 文件或 JSDoc 注解 | 可选的 `@nudo:case` 等注释指令——`.js` 或 `.ts` 文件皆可 |
-| 类型描述意图 | 类型从实际行为推导而来 |
+| 事先声明类型，编译器检查使用 | 写普通 JavaScript，引擎执行并推断 Abs |
+| 需要 `.ts` 文件或 JSDoc 注解 | 可选指令（`@nudo:case` 见证）与侧车契约（`*.nudo.js`） |
+| 类型描述意图 | 推断 Abs 描述观察到的行为；契约描述义务 |
 
-**示例：带分支逻辑的函数**
+**示例：见证 + 侧车契约**
 
 ```javascript
+// process.js
 /**
- * @nudo:case "strings" (T.string)
- * @nudo:case "numbers" (T.number)
+ * @nudo:case "numbers" (5)
  */
-function process(x) {
-  if (typeof x === "string") return x.length;
+export function process(x) {
   return x * 2;
 }
 ```
 
-通过 `@nudo:case` 指令，你可以告诉 Nudo 用哪些输入来「执行」。对于 `"strings"`，它用 `T.string` 运行 → 推断出 `number`。对于 `"numbers"`，它用 `T.number` 运行 → 推断出 `number`。Nudo 可以将这些结果合并得到最终类型。
+```javascript
+// process.nudo.js —— 义务（check 门禁）
+import { number, fn } from "@nudojs/core";
+export const process = fn({ x: number().gt(0) }, number());
+```
 
-**使用 TypeScript** 时，你通常需要自己写 `x: string | number` 和 `: number`。Nudo 则通过执行推断出两者。
+`nudo infer` 报告具体 case（`(5) => 10  #exact`）。`nudo check` 执法侧车：`process(0)` 报 `nudo:constraint-violated`（`actual ⊭ expected`）。case 实参也可写符号（`T.number`）做场景调试——那是**指令见证语法**，不是第二套类型系统；分析始终跑在 Abs 上。
 
 ## 超越 TypeScript
 
-Nudo 可以推断出 TypeScript 类型系统无法表达的类型：
+Nudo 可以计算 TypeScript 类型系统难以表达的类型：
 
 ```javascript
 // 字符串拼接保留结构
-"0x" + T.string                // → `0x${string}`（TS: string）
+"0x" + string                   // → `0x${string}`（TS: string）
 
-// 字符串方法对字面量计算精确结果
+// 字面量字符串方法结果精确
 "hello".toUpperCase()          // → "HELLO"（TS: string）
 "hello".slice(1, 3)           // → "el"（TS: string）
 "a,b,c".split(",")            // → ["a", "b", "c"]（TS: string[]）
 
-// 循环在类型层面求值
+// 循环在 Abs 上求值
 let sum = 0;
 for (let i = 0; i < 5; i++) sum += i;
 // sum → 10（TS: number）
 ```
 
-同一套代数也支撑 **[`nudo check`](./guides/check.md)** —— 精化门禁。声明的 `@nudo:refine` 契约以 Pred 进入 Abs，并参与算术（`x>0` ⇒ `x+1>1`）。报告使用 `actual ⊭ expected`，不是 TypeScript 诊断文案。TypeScript `.d.ts` 输出只是生态兼容通道，不是主类型模型。
-
-契约写在 `*.nudo.js` 模板里（`number().gt(0)`、`shape({...})`）—— **不需要 `interface` / `type` 语法**。见[指令参考](./concepts/directives.md)。
+同一套代数也支撑 **[`nudo check`](./guides/check.md)** —— Abs 上的精化门禁。报告使用 `actual ⊭ expected`，不是 TypeScript 诊断文案。TypeScript `.d.ts` 输出只是生态兼容通道，不是主类型模型。
 
 ## 下一步
 
 - **[安装](./getting-started/installation.md)** — 安装 CLI、VS Code 扩展和 Vite 插件
 - **[快速开始](./getting-started/quick-start.md)** — 在第一个文件上运行 `nudo infer`
+- **[概念分层](./concepts/layers.md)** — Day-0 / Day-1 侧车 / 进阶 Abs
 - **[Nudo vs TypeScript](./guides/vs-typescript.md)** — 何时可替代、何时不替代、如何共存
 - **[与 TypeScript 共存](./guides/coexistence.md)** — monorepo 配方（JS=Nudo，TS=tsc）
-- **[核心概念](./concepts/type-values.md)** — 类型值、指令与抽象解释
-- **[调用点发现](./guides/callsite-discovery.md)** — 让 Nudo 从你的测试中挖掘真实调用形状，无需手写 case
+- **[类型值 Abs](./concepts/type-values.md)** — shape × term × pred × conf
+- **[调用点发现](./guides/callsite-discovery.md)** — 让 Nudo 从你的测试中挖掘真实调用形状
 - **[nudo check](./guides/check.md)** — Abs 上的精化门禁
-- **[语言语义](./guides/semantics.md)** — Nudo 精确建模的 JavaScript 行为，从 `this` 绑定到 Promise 解析
+- **[语言语义](./guides/semantics.md)** — Nudo 精确建模的 JavaScript 行为，以及仍会退化为 `unknown` 的构造

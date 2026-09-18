@@ -225,9 +225,10 @@ function abstractEq(x: unknown, y: unknown): boolean {
  * 返回 undefined = 无法判定。
  */
 export function looseEqAbs(a: Abs, b: Abs): boolean | undefined {
-  const bothLit = a.term?.op === "lit" && b.term?.op === "lit";
-  if (bothLit) {
-    return abstractEq(a.term.value, b.term.value);
+  const ta = a.term;
+  const tb = b.term;
+  if (ta?.op === "lit" && tb?.op === "lit") {
+    return abstractEq(ta.value, tb.value);
   }
   return strictEqAbs(a, b);
 }

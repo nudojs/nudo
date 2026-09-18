@@ -307,22 +307,26 @@ export function $idx(a: Abs, i: Abs): Abs {
   if (a.shape.k === "sum") {
     return a.shape.members.map((m) => $idx(m, i)).reduce((x, y) => joinAbs(x, y));
   }
-  // C1.3：对象 + 非字面量 key → 保守并集（不再直接 unknown）
+  // C1.3：对象 + key 投影；闭 shape miss / 未知 key 必须并入 undefined
   if (a.shape.k === "obj" || (a.shape.k === "brand" && a.shape.shape.shape.k === "obj")) {
     const objShape = (a.shape.k === "obj" ? a.shape : a.shape.shape.shape) as ObjShape;
     const slots = Object.values(objShape.slots).map((s) => s.value);
     if (slots.length === 0) return objShape.open ? unknown : undef();
+    const joinSlotsWithUndef = (): Abs =>
+      joinAbs(slots.reduce((x, y) => joinAbs(x, y)), undef());
     if (typeof iv === "string" || typeof iv === "number" || typeof iv === "boolean") {
       const slot = objShape.slots[String(iv)];
       if (slot) return slot.value;
       if (objShape.open) return unknown;
-      return slots.reduce((x, y) => joinAbs(x, y));
+      // 闭 shape 字面量 key miss：slot 不存在，投影含 undefined
+      return joinSlotsWithUndef();
     }
     if (objShape.open && slots.length > 0) {
       // open shape：已知槽 ∪ unknown
       return joinAbs(slots.reduce((x, y) => joinAbs(x, y)), unknown);
     }
-    return slots.reduce((x, y) => joinAbs(x, y));
+    // 闭 shape 未知 key：已知槽 ∪ undefined（键可能不存在）
+    return joinSlotsWithUndef();
   }
   // 字符串下标：s[i] → 第 i 个字符（字面量精确）
   const sv = litValue(a);

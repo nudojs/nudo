@@ -119,27 +119,48 @@ export function mapSetEntry(mapAbs: Abs, key: Abs | undefined, value: Abs): Abs 
   return mapAbs;
 }
 
+function undefAbs(): Abs {
+  return abs({ k: "unknown" }, { op: "lit", value: undefined as never }, undefined, "exact");
+}
+
+function joinAll(els: Abs[]): Abs | undefined {
+  if (els.length === 0) return undefined;
+  return els.reduce((a, b) => joinAbs(a, b));
+}
+
+/** Map#get：命中字面量 key → 精确；miss / 未知 key 必须并入 undefined（存在性） */
 export function mapGetEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   const t = mapTables.get(mapAbs as object);
   if (!t) return unknown;
   const k = litKeyOf(key);
   if (k !== undefined && t.byLit.has(k)) return t.byLit.get(k)!;
-  // 未知 key：已知 value 的并集（保守但比 unknown 有信息）
+  // 字面量 miss：key 不在表中。shadow 可能盖住同名键 → 并 known ∪ undefined；
+  // 无 shadow 时精确 undefined，与 mapHasEntry(…)==false 对齐。
   const known = [...t.byLit.values(), ...t.shadowValues];
-  if (known.length === 0) return unknown;
-  return known.reduce((a, b) => joinAbs(a, b));
+  const joined = joinAll(known);
+  if (k !== undefined && t.shadowValues.length === 0) return undefAbs();
+  if (joined === undefined) {
+    return k !== undefined ? undefAbs() : unknown;
+  }
+  return joinAbs(joined, undefAbs());
 }
 
+/** Map#has：字面量 miss 折 exact false 时，get 必须是 undefined（不可再并 value） */
 export function mapHasEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   const t = mapTables.get(mapAbs as object);
   if (!t) return unknown;
   const k = litKeyOf(key);
   if (k === undefined) {
-    return t.byLit.size > 0
+    // 未知 key：有条目则可能 true/false，无条目 unknown
+    return t.byLit.size > 0 || t.shadowValues.length > 0
       ? abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial")
       : unknown;
   }
   const hit = t.byLit.has(k);
+  // shadow key 可能覆盖该字面量：不能折 exact false
+  if (!hit && t.shadowValues.length > 0) {
+    return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
+  }
   return abs(
     { k: "prim", type: "boolean" },
     { op: "lit", value: hit as never },

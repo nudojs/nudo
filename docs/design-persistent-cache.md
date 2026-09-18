@@ -1,7 +1,13 @@
 # 持久化分析缓存（`.nudo/cache`）
 
-> **状态**：L1 CheckJson 骨架已落地（2026-05）；L2 harvest / effectiveInterface
-> 表缓存仍为设计稿。与 [`design-refine-derivation.md`](./design-refine-derivation.md)
+> **状态**（2026-05 复核）：
+> - **L1 CheckJson** 已落地（`disk-cache.ts`，默认 `nudo.cache` 关）
+> - **L1 effectiveInterface 整文件表（B3）已落地**：`ifaceCacheKey` + `iface` 命名空间
+>   （`packages/service/src/disk-cache.ts`；测试 `disk-cache.test.ts`「B3 Phase B iface table cache」）
+> - **B4** `nudo.analysis.callSiteBudget` 已落地
+> - **L2 harvest / HarvestJson 磁盘层仍为设计稿**（Phase A 未开工）
+>
+> 与 [`design-refine-derivation.md`](./design-refine-derivation.md)
 > §7.4 的「可选 `.nudo/cache`」衔接：契约文件（`*.nudo.js`）仍是用户表面，
 > 缓存是引擎私有、可丢、可重建。
 >
@@ -11,10 +17,11 @@
 > - 启用：`package.json#nudo.cache: true`（→ `.nudo/cache`）、
 >   字符串自定义根，或 `NUDO_CACHE_DIR`；`off`/`false` 关闭
 > - B4：`nudo.analysis.callSiteBudget`（默认 3）；超限 symbolic `#widened`
+> - B3：effectiveInterface 整文件 `fns` 表 + implicit 负缓存（`iface` 键）
 >
 > **一句话**：把「不变依赖 + 已分析源码」的**可再执行投影**落到磁盘，冷启动
 > 复用；键必须 content-addressable 且相对路径化，失效宁可过杀、不可陈旧命中。
-> L1 check 报告默认关闭（投毒面），L2 harvest 是第一优先级。
+> L1 check 报告默认关闭（投毒面），L2 harvest 是第一优先级（尚未落地）。
 >
 > **与 TypeValue 的关系**：本文不再设计 TypeValue 编解码 / `emitEnvModule`
 > 回放。L2 落盘的是 **HarvestJson**（纯 JSON 的导出签名投影），读回后

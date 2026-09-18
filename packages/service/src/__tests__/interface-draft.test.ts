@@ -169,4 +169,47 @@ describe("draftInterface", () => {
     expect(entry!.paramEvidence).toBe("none");
     expect(entry!.params[0]!.bodyAccesses).toBeUndefined();
   });
+
+  it("explicit autoBind:true wins over project autoBind=false", async () => {
+    const dir2 = mkdtempSync(join(tmpdir(), "nudo-draft-ab-"));
+    try {
+      writeFileSync(
+        join(dir2, "package.json"),
+        JSON.stringify({ name: "ab", nudo: { interface: { autoBind: false } } }),
+      );
+      const file = join(dir2, "lib.js");
+      writeFileSync(file, CALLS_JS);
+      writeFileSync(
+        join(dir2, "lib.nudo.js"),
+        `import { fn, number } from "@nudojs/core";\nexport const double = fn({ x: number().gt(0) }, number());\n`,
+      );
+      // project autoBind=false: handwritten sidecar is invisible → not skipped
+      const off = await draftInterface(file);
+      const offEntry = off.entries.find((e) => e.fn === "double");
+      expect(offEntry!.skipped).toBeUndefined();
+
+      // explicit true still allows ambient context for drafting
+      const on = await draftInterface(file, { autoBind: true });
+      const onEntry = on.entries.find((e) => e.fn === "double");
+      // With autoBind true the handwritten sidecar is visible → skipped
+      expect(onEntry!.skipped).toBe("handwritten");
+    } finally {
+      rmSync(dir2, { recursive: true, force: true });
+    }
+  });
+
+  it("returnCases fallback without callsite/directive stays body/none (not directive)", async () => {
+    const file = join(dir, "bodyonly.js");
+    writeFileSync(
+      file,
+      `export function pick(cfg) {\n  return cfg.mode;\n}\n`,
+    );
+    const r = await draftInterface(file);
+    const entry = r.entries.find((e) => e.fn === "pick");
+    expect(entry).toBeDefined();
+    expect(["body", "none", "symbolic"]).toContain(entry!.returnEvidence);
+    expect(entry!.returnEvidence).not.toBe("callsite");
+    expect(entry!.returnEvidence).not.toBe("directive");
+    expect(entry!.paramEvidence).not.toBe("directive");
+  });
 });

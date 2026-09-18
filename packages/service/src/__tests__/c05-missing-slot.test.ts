@@ -71,7 +71,7 @@ greet({ id: 1 });
   it("noteObjSlotMissing unit: closed obj missing key when enabled", () => {
     const collected: string[] = [];
     setMemberDiagCollector((d) => collected.push(d.code ?? d.name));
-    const o = objOf({ id: numLit(1) }, {});
+    const o = objOf({ id: { value: numLit(1) } }, {});
     expect(noteObjSlotMissing(o, "name")).toBe(false); // flag off
     setEvalMissingSlotEnabled(true);
     expect(noteObjSlotMissing(o, "name")).toBe(true);
@@ -80,7 +80,7 @@ greet({ id: 1 });
     expect(noteObjSlotMissing(o, "id")).toBe(false);
   });
 
-  it("project package.json evalMissingSlot:warning wires into analyzeFile", () => {
+  it("project package.json evalMissingSlot:warning wires into analyzeFile (ALS, no sticky flag)", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-c05-"));
     try {
       mkdirSync(join(dir, "src"), { recursive: true });
@@ -90,12 +90,13 @@ greet({ id: 1 });
       );
       const file = join(dir, "src", "greet.js");
       writeFileSync(file, SRC);
-      const r = analyzeFile(file, SRC);
-      // flag 被 project config 打开（诊断是否出现取决于 B-path 是否 hosted）
-      expect(isEvalMissingSlotEnabled()).toBe(true);
-      // 再跑无 project 的路径应能关掉
       setEvalMissingSlotEnabled(false);
+      const r = analyzeFile(file, SRC);
+      // ALS per-analysis：配置在分析期间生效（诊断取决于 B-path 是否 hosted）；
+      // 返回后外层 flag 必须被恢复，不粘滞。完整接线断言见 c05-isolation.test.ts。
       expect(isEvalMissingSlotEnabled()).toBe(false);
+      // 分析结果可正常返回；若 B-path hosted 则可能带 missing-slot warning
+      expect(r).toBeDefined();
       void r;
     } finally {
       rmSync(dir, { recursive: true, force: true });

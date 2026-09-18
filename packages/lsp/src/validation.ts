@@ -49,11 +49,23 @@ import {
   type Diagnostic as LspDiagnostic,
 } from "vscode-languageserver/node";
 
-/** Per-file analysis cache; version comes from TextDocument.version. */
+/**
+ * Per-file analysis cache; version comes from TextDocument.version.
+ * casesHash joins the key so CodeLens case switches invalidate without a
+ * document version bump (B2: activeCases must be part of the fingerprint).
+ */
 export const analysisCache = new Map<
   string,
-  { version: number; result: AnalysisResult; sourceHash?: string }
+  { version: number; result: AnalysisResult; sourceHash?: string; casesHash?: string }
 >();
+
+function casesFingerprint(cases?: Map<string, number>): string {
+  if (!cases || cases.size === 0) return "-";
+  return [...cases.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([k, v]) => `${k}=${v}`)
+    .join(",");
+}
 
 /** Every file analyzed successfully in this session (import-graph nodes for dirty propagation). */
 export const knownFiles = new Set<string>();
@@ -246,13 +258,22 @@ export function getCachedOrAnalyze(
   activeCases?: Map<string, number>,
 ): AnalysisResult {
   const cached = analysisCache.get(filePath);
-  // 版本命中才复用：activeCases（CodeLens 切换）不进指纹，version bump 必须重算
-  if (cached && cached.version === version) return cached.result;
+  // 版本 + activeCases 指纹同时命中才复用：case 切换不 bump 文档 version，
+  // 漏掉 casesHash 会把上一 case 的分析结果/lens 原样吐回（B2）
+  const casesHash = casesFingerprint(activeCases);
+  if (
+    cached &&
+    cached.version === version &&
+    (cached.casesHash ?? "-") === casesHash
+  ) {
+    return cached.result;
+  }
   const result = analyzeFile(filePath, source, activeCases);
   analysisCache.set(filePath, {
     version,
     result,
     sourceHash: sourceFingerprint(source),
+    casesHash,
   });
   return result;
 }
@@ -432,15 +453,19 @@ export async function validateText(
     return;
   }
 
-  // B2：内容未变（undo/redo）且非脏传播 → 复用上次 AnalysisResult
+  // B2：内容未变（undo/redo）且非脏传播 → 复用上次 AnalysisResult。
+  // activeCases 必须进指纹：selectCase 不 bump 文档 version，只比 sourceHash
+  // 会复用上一 case 的诊断/lens。
+  const activeCases = deps.getActiveCases?.(uri);
+  const casesHash = casesFingerprint(activeCases);
   const fp = sourceFingerprint(text);
   const prev = analysisCache.get(filePath);
   let result: AnalysisResult;
-  if (!force && prev?.sourceHash === fp && prev.result) {
+  if (!force && prev?.sourceHash === fp && prev.casesHash === casesHash && prev.result) {
     result = prev.result;
   } else {
     try {
-      result = await analyzeFileAsync(filePath, text, deps.getActiveCases?.(uri));
+      result = await analyzeFileAsync(filePath, text, activeCases);
     } catch (err) {
       if (!stillCurrent()) return;
       deps.sendDiagnostics({
@@ -458,16 +483,19 @@ export async function validateText(
   // await 期间有更新一轮 validate → 本轮作废（防抖已合并；不发布陈旧结果）
   if (!stillCurrent()) return;
 
-  analysisCache.set(filePath, { version, result, sourceHash: fp });
+  analysisCache.set(filePath, { version, result, sourceHash: fp, casesHash });
   knownFiles.add(filePath);
   registerNudoImportDeps(filePath, text);
 
   // Abs check 主通道 + evaluator 诊断（A3：按 analysis.diagnostics 档过滤）
+  // off：显示路径全静音（与 errors 档区分）。check 门禁 CLI `nudo check` /
+  // checkSource 独立，不受 off 影响。
   const level = diagnosticsLevelForFile(filePath);
   const checkDiags = checkToLspDiagnostics(filePath, text, deps.loadModule).filter((d) => {
     // LSP DiagnosticSeverity: Error=1, Warning=2, Information=3
     if (level === "verbose") return true;
-    if (level === "off" || level === "errors") return d.severity === DiagnosticSeverity.Error;
+    if (level === "off") return false;
+    if (level === "errors") return d.severity === DiagnosticSeverity.Error;
     return d.severity === DiagnosticSeverity.Error || d.severity === DiagnosticSeverity.Warning;
   });
   const evalJs = filterDiagnosticsByLevel(result.diagnostics, level);

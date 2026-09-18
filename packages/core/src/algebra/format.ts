@@ -57,8 +57,11 @@ export function formatShape(a: Abs): string {
       return "never";
     case "any":
       return "any";
-    case "unknown":
+    case "unknown": {
+      // lit undefined（缺键 / Map miss）必须展示为 undefined，不能与真 unknown 混淆
+      if (a.term?.op === "lit" && a.term.value === undefined) return "undefined";
       return "unknown";
+    }
     case "prim": {
       const lv = litValue(a);
       // JSON.stringify(NaN|±Infinity) is "null" — keep JS literal spelling.

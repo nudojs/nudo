@@ -20,6 +20,6 @@
 | [`l-primitive-conversion.js`](./l-primitive-conversion.js) | 原始值包装构造与全局数值解析：`String` / `Number` / `Boolean` / `parseInt` / `parseFloat` 在字面量实参上折叠精确（`"5"` / `true` / `42` / `3.14`）；符号实参拓宽目标原语 |
 | [`sample.js`](./sample.js) | 最小合集：无调用点 → 全部 `entry@` 回退签名（参数 `unknown`，intension 是 unknown 形参的泛化签名） |
 
-运行命令与期望退出码见 [../README.md](./README.md) 的命令矩阵；`pnpm run verify:examples` 一次验证全部。
+运行命令与期望退出码见 [../README.md](../README.md) 的命令矩阵；`pnpm run verify:examples` 一次验证全部。
 
 无契约时 `+` 跟真实 JS：`number | string`；有 `@nudo:refine` 才走数值路径。

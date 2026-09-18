@@ -16,7 +16,7 @@ Nudo 不是「另一个类型系统」，是 **少写一门类型语言**：契�
 ## 怎么跑
 
 ```bash
-pnpm run verify:examples   # 验证两侧命令与期望退出码（见 ../README.md 命令矩阵）
+pnpm run verify:examples   # 验证两侧命令与期望退出码（见 [../README.md](../README.md) 命令矩阵）
 ```
 
 > 两侧的退出码非 0 都是预期：这些文件故意放错误调用，

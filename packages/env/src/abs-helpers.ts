@@ -16,6 +16,7 @@ import {
   objOf,
   num,
   str,
+  strLit,
   bool,
   never,
   unknown,
@@ -74,7 +75,7 @@ export function errorBrandOf(name: string): Abs {
       k: "brand",
       name,
       shape: objOf({
-        name: { value: str(name) },
+        name: { value: strLit(name) },
         message: { value: str() },
       }),
     },

@@ -81,6 +81,23 @@ describe("buildSemanticTokens × interface 档 (A7)", () => {
     expect(fnTok!.modifiers).toBe(MOD_DECLARATION);
   });
 
+  it("nested same-name FunctionDeclaration does not inherit export interface tier", () => {
+    const src = `export function add(x) {
+  function add(n) {
+    return n + 1;
+  }
+  return add(x) + 2;
+}
+`;
+    const data = buildSemanticTokens("/t/lib.js", src, { loadModule: loader(HANDWRITTEN) });
+    const fnToks = decode(data).filter((t) => t.typeIndex === TYPE_FUNCTION && t.length === 3);
+    expect(fnToks.length).toBe(2);
+    const top = fnToks.find((t) => t.line === 0)!;
+    const nested = fnToks.find((t) => t.line === 1)!;
+    expect(top.modifiers).toBe(MOD_DECLARATION | MOD_CONTRACT);
+    expect(nested.modifiers).toBe(MOD_DECLARATION);
+  });
+
   it("autoBind:false → derived even with handwritten sidecar", () => {
     const src = `export function add(x) {\n  return x + 2;\n}\n`;
     const data = buildSemanticTokens("/t/lib.js", src, {

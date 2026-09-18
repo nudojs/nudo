@@ -366,6 +366,7 @@ async function runCheck(
     DiskCache,
     checkCacheKey,
   } = await import("@nudojs/service");
+  const { sidecarPathOf } = await import("@nudojs/core");
   // package.json#nudo.interface.autoBind 覆盖 check 执法路径（§2.2「整体
   // 关闭」承诺：不只打印路径——false 时侧车 ambient 绑定整体停用）
   const proj = findProjectConfig(dirname(filePath));
@@ -374,8 +375,22 @@ async function runCheck(
   const disk = new DiskCache({ root: cacheRoot, namespace: "check" });
   // --callsites 注入路径不做磁盘复用（证据面含调用记录）
   const useDisk = disk.enabled && !opts.callsites;
+  // 侧车内容进键：autoBind 下契约变更必须 miss，否则 CI 读到过期结论
+  let sidecarContent: string | null = null;
+  if (autoBind !== false) {
+    try {
+      const scPath = sidecarPathOf(filePath);
+      if (existsSync(scPath)) sidecarContent = readFileSync(scPath, "utf-8");
+    } catch {
+      sidecarContent = null;
+    }
+  }
   const cacheKey = useDisk
-    ? checkCacheKey(filePath, source, { autoBind, projectDir: proj?.projectDir })
+    ? checkCacheKey(filePath, source, {
+        autoBind,
+        projectDir: proj?.projectDir,
+        sidecarContent,
+      })
     : undefined;
   const cached = cacheKey ? disk.get<ReturnType<typeof serializeCheckJson>>(cacheKey) : undefined;
   let algebraReport;

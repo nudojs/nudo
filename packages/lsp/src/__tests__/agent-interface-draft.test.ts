@@ -36,6 +36,31 @@ describe("nudo.interface.draft agent tool", () => {
     expect(existsSync(join(dir, "lib.nudo.js"))).toBe(false);
   });
 
+  it("write outside workspace roots is rejected (fail-closed, same as emit)", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "nudo-draft-outside-"));
+    try {
+      const file = join(outside, "evil.js");
+      writeFileSync(file, `export function f(x) { return x; }\n`);
+      const r = await interfaceDraftTool(
+        { file, write: true },
+        { workspaceRoots: [dir] },
+      );
+      expect(r.isError).toBe(true);
+      expect(r.content[0].text).toContain("outside allowed roots");
+      expect(existsSync(join(outside, "evil.nudo.draft.js"))).toBe(false);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("write of non-target path is rejected", async () => {
+    const file = join(dir, "contract.nudo.js");
+    writeFileSync(file, `export const f = fn({}, unknown());\n`);
+    const r = await interfaceDraftTool({ file, write: true }, { workspaceRoots: [dir] });
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toContain("not an analysis target");
+  });
+
   it("pins shared source table entry", () => {
     expect(AGENT_TOOL_SOURCES["interface.draft"]).toBe(
       "draftInterface + formatDraftSummary",

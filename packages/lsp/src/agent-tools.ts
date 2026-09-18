@@ -68,7 +68,7 @@ import { lspLoadModule } from "./validation.ts";
 export type TypeBinding = { name: string; type: string };
 
 /** MCP-compatible tool result shape — keeps bridge layers zero-rewrite. */
-export type AgentToolResult = { content: [{ type: "text"; text: string }] };
+export type AgentToolResult = { content: [{ type: "text"; text: string }]; isError?: boolean };
 
 export type AgentToolDeps = {
   /** Disk reader for files not open in the editor; defaults to readFileSync. */
@@ -747,10 +747,15 @@ export type InterfaceDraftToolParams = {
  */
 export async function interfaceDraftTool(
   params: InterfaceDraftToolParams,
-  _deps: AgentToolDeps = {},
+  deps: AgentToolDeps = {},
 ): Promise<AgentToolResult> {
   try {
     const filePath = normalizeFilePath(params.file);
+    // 写盘与 emit 同门禁：目标须为分析文件，且在 workspace roots 内
+    if (params.write) {
+      const gate = assertEmitTargetAllowed(filePath, deps.workspaceRoots);
+      if (gate) return { content: [{ type: "text", text: gate }], isError: true };
+    }
     const result = await draftInterface(filePath, {
       ...(params.functionName ? { fnNames: [params.functionName] } : {}),
       ...(params.loadModule ? { loadModule: params.loadModule } : {}),

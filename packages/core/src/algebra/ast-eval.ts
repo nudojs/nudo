@@ -984,12 +984,14 @@ function evalNodeInner(
           pending[key] = { value: fnAbs };
           continue;
         }
-        const keyNode = p.key;
+        if ((p as { type?: string }).type !== "ObjectProperty") continue;
+        const op = p as { key?: Node; value?: Node };
+        const keyNode = op.key;
         let key: string | undefined;
         if (keyNode && keyNode.type === "Identifier") key = (keyNode as Identifier).name;
         if (keyNode && keyNode.type === "StringLiteral") key = (keyNode as StringLiteral).value;
-        if (!key || !p.value) continue;
-        pending[key] = { value: evalNode(p.value, env, phi, budget).value };
+        if (!key || !op.value) continue;
+        pending[key] = { value: evalNode(op.value, env, phi, budget).value };
       }
       acc = flushPending(acc);
       return ok(acc, phi, env);

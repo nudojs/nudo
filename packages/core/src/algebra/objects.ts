@@ -193,7 +193,11 @@ export function absShapeKey(a: Abs, seen: Set<object> = new Set()): string {
     }
     if (s.k === "never") return "never";
     if (s.k === "any") return "any";
-    if (s.k === "unknown") return "unknown";
+    if (s.k === "unknown") {
+      // lit undefined 与真 unknown 不可合并（存在性语义）
+      if (a.term?.op === "lit" && a.term.value === undefined) return "unknown:undefined";
+      return "unknown";
+    }
     if (s.k === "arr") return `arr(${absShapeKey(s.element, seen)})`;
     if (s.k === "tuple") {
       const els = s.elements.map((e) => absShapeKey(e, seen)).join(",");

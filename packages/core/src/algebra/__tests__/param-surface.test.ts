@@ -157,3 +157,28 @@ f(5);
     expect(r2.issues.filter((i) => i.code === "nudo:interface-param-mismatch")).toEqual([]);
   });
 });
+
+describe("C4.1 locateContractParam in case witnesses", () => {
+  it("default-param contract name binds case witness slot", () => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    const { loadModule } = makeFiles({
+      "/t/d.nudo.js": `export const d = fn({ x: number().gt(0) }, number());`,
+    });
+    const src = `
+/**
+ * @nudo:case "neg" (-1)
+ */
+export function d(x = 1) {
+  return x;
+}
+`;
+    const r = checkSource("/t/d.js", src, pTrue, {
+      loadModule,
+      fromFile: "/t/d.js",
+    });
+    const issue = r.issues.find((i) => i.code === "nudo:case-inconsistency");
+    expect(issue).toBeDefined();
+    expect(issue!.fn).toBe("d");
+  });
+});

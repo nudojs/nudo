@@ -27,18 +27,20 @@ That is not an AST pre-scan — it is abstract evaluation running the same code 
 
 So “evaluation saw a miss” is already reportable when eval runs. What C0 forbids is promoting *unexecuted* body reads into interface obligations.
 
-## Optional enhancement (not implemented)
+## Enhancement (implemented, default off)
 
-A dedicated diagnostic code for the narrow case above:
+**Status**: implemented via `nudo.analysis.evalMissingSlot`. Default `"off"`; `"warning"` enables the diagnostic below. Obligations still never come from body AST scans (C0).
 
 | Field | Value |
 |-------|--------|
-| Code | `nudo:missing-slot` (reserved) |
+| Code | `nudo:missing-slot` |
 | Severity | **warning** when enabled; never invents check-gate errors without a contract |
 | Trigger | B-path / ast-eval property read on Abs with `shape.k === "obj"` (or branded object) where key ∉ enumerated fields **and** the access node was actually evaluated |
 | Evidence | Call-site arg Abs + evaluated access location |
 | Config | `package.json#nudo.analysis.evalMissingSlot`: `"off"` (default) \| `"warning"` |
 | Forbidden | Static walk of function bodies to collect member names as required slots; using `missing-slot` as an implicit interface obligation in `check` |
+
+**Isolation**: analysis is wrapped in `runWithEvalMissingSlot` (ALS scope in `core/exec/member-diag.ts`) so concurrent/multi-project hosts do not leak the flag across analyses. After `analyzeFile` returns, the outer flag is restored — the enable state is **per-analysis**, not sticky process-global. (Earlier sticky-flag design is obsolete; some older tests may still assert sticky behavior.)
 
 ### Sample (when enabled)
 
@@ -76,18 +78,13 @@ export const greet = fn({ user: shape({ name: string() }) }, string());
 - Using body member reads as `effectiveInterface` params
 - Auto-emitting `shape({ name })` into sidecars from body scans (emit still uses call-site domains / refine roots)
 
-## Implementation sketch (future)
+### Implementation (landed)
 
-1. During B-path member access, when receiver Abs has enumerated object shape and key is absent **and** conf is not `opaque`/`widened` in a way that hides members → optionally `collectDiag({ code: "nudo:missing-slot", … })`.
-2. Gate on `analysisConfig().evalMissingSlot === "warning"`.
-3. Gold tests: default off = zero new diags on C0 recall cases; on = only eval-hit misses.
-4. Keep `check` recall gold green: no new default-on obligations.
-
-## Implementation (landed)
+See “Enhancement (implemented, default off)” above — not future work.
 
 | Piece | Location |
 |-------|----------|
-| Gate | `setEvalMissingSlotEnabled` / `noteObjSlotMissing` in `core/exec/member-diag.ts` |
+| Gate | `runWithEvalMissingSlot` / `noteObjSlotMissing` in `core/exec/member-diag.ts` (per-analysis ALS scope; outer flag restored after body) |
 | Hook | `$get` closed-obj missing key → note (runtime.ts) |
 | Config | `nudo.analysis.evalMissingSlot` in `service/evaluator/config.ts` |
 | Diagnostic | analyzer `pushBMemberDiag` maps `code === "nudo:missing-slot"` → warning |

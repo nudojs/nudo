@@ -26,6 +26,7 @@ export {
   noteObjSlotMissing,
   setEvalMissingSlotEnabled,
   isEvalMissingSlotEnabled,
+  runWithEvalMissingSlot,
   tagAbsOrigin,
   getAbsOrigin,
 } from "./member-diag.ts";

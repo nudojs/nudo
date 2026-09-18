@@ -1,6 +1,10 @@
 # Nudo 设计限制与待解决问题
 
 > 本文档列出 Nudo 当前的设计限制，是下一步改进的路线图。
+> **状态约定**：每项只保留一个状态。实现已落地写「已解决」并给锚点；
+> 部分落地写「部分」并点名剩余门禁；未开工写「未解决」。与
+> [`superpowers/plans/2026-05-28-close-ts-dx-gaps.md`](superpowers/plans/2026-05-28-close-ts-dx-gaps.md)
+> 冲突时以路线图任务表为准，并回来改本文。
 
 ---
 
@@ -8,14 +12,19 @@
 
 ### 1.0 默认 / rest / 解构形参契约面（已解决·C4.1）
 
-**已实现**：`param-surface.ts` 统一形参表面——
+**已解决**：`param-surface.ts` 统一形参表面——
 - 默认参 `f(x=1)` 契约名 = `x`
 - rest `f(...nums)` 契约名 = `nums` / `...nums`
 - 解构 `f({x,y})` 契约名 = 顶层绑定名 `x`/`y`（求值占位 `_p0`）
 - generalize `g.params` 与 analyzer 对齐；`g.formals` 供 check/侧车匹配
 - 错名仍报 `nudo:interface-param-mismatch`；嵌套 pattern 绑定名不进契约面（降级）
+- effectiveInterface 可绑默认/rest/解构顶层名（测试 `param-surface.test.ts`）
+- **调用点执法**：scan `interfaceToIndexed` 经 `locateContractParam` 把解构契约名
+  映射到 `{index, field}`，`checkReqs`/`checkShapeReqs` 对字段投影后再判约束
+  （金样例 `c41-destructure-enforce.test.ts`）
 
-测试：`param-surface.test.ts`。
+**已删除**：`formalParamsFromSource` 恒 `undefined` 的死导出（仅测试可用的
+AST 路径走 `formalParamsFromNodes`）。
 
 ---
 
@@ -122,9 +131,35 @@ pickDynamic({ a: 1, b: "x" }, "c");
 实现：`$idx` 对 obj/brand-obj 的并集分支。
 示例：`e-index-proj.js`。
 
+**剩余**：符号 key 与分支字面量 key 的更细拆分未做（当前并集即可）；
+未单独加「unknown key 不报 FP」的扩展 gold 时，以 zero-FP 真实包套件为准。
+
 ---
 
 ## 二、高阶函数推断限制
+
+### 2.0 HOF promote（body 用量提升）与 C0 契约模型（诚实边界）
+
+**契约模型（C0 / §0.1 路线图）**：check 义务只来自**显式契约**
+（`*.nudo.js` / `@nudo:refine`）与 harvest `relationFn` 关系。
+**不**从 body AST 预扫描发明必填 slot。
+
+**现状（需与 C0 一并阅读）**：generalize 在无 refine 时仍会从 body 用量
+**promote** 出 `fnRels`（`RelSource === "promote"`，参数被当回调使用 →
+fn/arity 形状）。`checkHofFnRelArgs`（`scan.ts` ~1342–1387）消费这些关系时：
+
+| `fnRels` 来源 | 行为 | 语义 |
+|---|---|---|
+| `promote`（body 用量提升） | **`nudo:arg-structure` warning** | **建议/提示**，不是 check 义务 |
+| `refine` / `relationFn`（显式契约） | error（refine 表达 fn 后才可测） | 真正的检查义务 |
+
+因此：**body-usage promote = suggestion/warning only**。它**不**构成
+「义务只来自显式契约」的反例执法——默认门禁不会因 promote 升 exit code。
+文档/对比表不得把 promote warning 写成「零注解 body 推出的 check 错误」。
+实现锚点：`scan.ts` `const isPromote = rel.source === "promote"`；
+设计细节见 [`design-hof-relations.md`](design-hof-relations.md) §6.3。
+
+---
 
 ### 2.1 具名回调形参：关系归纳 + concrete 消费（已解决·C3.1）
 
@@ -160,6 +195,13 @@ createCounter();
 **剩余：** `c.increment(); c.getCount()` 跨调用联动未建模。
 
 **难度：** 中
+
+---
+
+### 2.3 HOF dts 投影（已解决·C3.3 / P5）
+
+`fn.hof` 快照 → dts 泛型投影（`<A1,B_transform>`；有精确 case 时让位
+case-widen）。路线图 C3.3 = `[x]`。本文旧文「P5 待做」已过期。
 
 ---
 
@@ -200,6 +242,7 @@ f();
 
 实现：`looseEqAbs`（`surface.ts`）+ `$eqLoose`/`$neLoose`（B 路径）+ ast-eval
 `==`/`!=` 分支。测试：`surface.test.ts`、`loose-eq-fold.test.ts`。
+**测试状态**：已覆盖（本文旧表「TypeValue 删除后回归 unknown / 未覆盖」已过期）。
 
 ---
 
@@ -242,8 +285,8 @@ t2(opaque());
 非精度缺口。**C2.4 已补可解释度**：`joinAbs` 对异形两支挂 `pathNote`
 （如 `join(number | string)`），`formatAbs` / hover / `--verbose` 可见
 分支来源；`formatShape` / dts 投影面保持干净。
-与 3.2 的宽松相等同属「条件折叠」家族——`==`/`!=` 运算符
-仍不折叠，三元条件侧已折叠。
+与 3.2 的宽松相等同属「条件折叠」家族——**双字面量 `==`/`!=` 已折叠**
+（§3.2）；符号操作数仍走严格相等回落。
 
 ---
 
@@ -256,7 +299,8 @@ t2(opaque());
 
 **已实现**：循环体内的 `return` transpile 为 `$loopReturn`（NudoReturn 信号），
 `$forOf` / `$whileSeq` / `$for` 冒泡到函数调用方，`callTranspiledExportFull`
-把它当作函数返回值。
+把它当作函数返回值。`inLoop` 对 for-of / while / for-i 递增；**嵌套函数 /
+方法体将 `inLoop` 归零**（避免 return 泄漏成 `$loopReturn`）。
 
 ```javascript
 /**
@@ -271,6 +315,13 @@ function findFirst(arr) {
 // Case "break-loop": ([1, 2, 3, 4, 5]) => 4
 // abs: 4  #exact
 ```
+
+**测试**：
+- `service/src/__tests__/loop-return-fold.test.ts` — for-of 条件 return 折叠
+- `core/src/algebra/__tests__/loop-return-and-presence.test.ts` — for-i / while /
+  嵌套回调 return 不误绑为外层结果
+
+路线图 C2.1 = `[x]`。
 
 ---
 
@@ -364,7 +415,7 @@ exit 0，全部 case 精确（`compute` → `25 #exact`）。网站
 
 ---
 
-## 五、优先级排序
+## 五、优先级排序（与正文单一状态对齐）
 
 ### P0 - 高影响，可实现
 
@@ -377,58 +428,62 @@ exit 0，全部 case 精确（`compute` → `25 #exact`）。网站
 
 ### P1 - 高影响，复杂
 
-| 限制 | 影响 | 方案 |
+| 限制 | 影响 | 状态 |
 |------|------|------|
-| 高阶函数参数推断 | 大量代码模式 | 关系型 Abs（见 `design-hof-relations.md`）+ 调用点推断 |
-| Map 字面量 key 追踪 | 查找表模式 | 字面量 key 精确映射（见 1.2） |
-| 数组动态 key 投影 / 手写循环 fn(item) | 常见代码模式 | key 分发 / 元素分发（见 1.1） |
+| 高阶函数参数推断 | 大量代码模式 | ✅ 关系型 Abs 消费/归纳/dts 已落地（§2.1、§2.3）；promote warning 语义见 §2.0 |
+| Map 字面量 key 追踪 | 查找表模式 | ✅ 已解决（见 1.2） |
+| 数组动态 key 投影 / 手写循环 fn(item) | 常见代码模式 | ✅ 已解决（见 1.1、1.4） |
 
 ### P2 - 中等影响
 
-| 限制 | 影响 | 方案 |
+| 限制 | 影响 | 状态 |
 |------|------|------|
-| 闭包变量追踪 | 状态管理模式 | 闭包环境扩展 |
-| catch 形参绑定（thrown 值类型） | 错误处理 | 异常分析 |
+| 闭包变量追踪 | 状态管理模式 | ⚠️ 部分（方法槽 ✅；跨调用状态合流未做，见 2.2） |
+| catch 形参绑定（thrown 值类型） | 错误处理 | ✅ 已解决（见 4.2） |
 
 ### P3 - 低影响 / 设计选择
 
-| 限制 | 影响 | 方案 |
+| 限制 | 影响 | 状态 |
 |------|------|------|
-| Set 去重语义 | 信息丢失 | 可接受 |
-| 循环细化类型 | 精度 | 可接受 |
+| Set 去重语义 | 信息丢失 | 可接受（不建模） |
+| 循环 return 回归测试完备性 | 门禁 | ✅ 已解决（for-of / for-i / while / nested 均有测试，见 4.1） |
 
 ---
 
 ## 六、测试覆盖情况
 
-每个限制类别对应的测试文件（TypeValue 求值器删除后旧测试文件已移除，下表按当前 Abs 原生测试命名）：
+每个限制类别对应的测试文件（按当前 Abs 原生测试命名）：
 
 | 限制类别 | 测试文件 | 状态 |
 |---------|---------|------|
-| 集合类型（map/reduce/forEach/some） | `core/src/algebra/__tests__/hof.test.ts` | ✅ 已覆盖（记录当前行为） |
-| 高阶函数 | `core/src/algebra/__tests__/hof.test.ts`、`hof-relation*.test.ts`、`hof-p2-generalize.test.ts`、`hof-p4-check.test.ts` | ✅ 已覆盖 |
-| 全局标识符 | `service/src/__tests__/bpath-env.test.ts`（env globals 经 B-path） | ✅ 已覆盖 |
-| 宽松相等 | ——（TypeValue 求值器删除后 `==`/`!=` 折叠回归为 `unknown`，见 3.2，无专门测试） | ⚠️ 未覆盖 |
-| 循环推断 | `core/src/algebra/__tests__/exec-bpath.test.ts`、`exec-spread-forof.test.ts` | ✅ 已覆盖 |
+| 集合类型（map/reduce/forEach/some） | `core/src/algebra/__tests__/hof.test.ts`、`collections.test.ts` | ✅ 已覆盖 |
+| 高阶函数 | `hof.test.ts`、`hof-relation*.test.ts`、`hof-p2-generalize.test.ts`、`hof-p4-check.test.ts` | ✅ 已覆盖 |
+| 全局标识符 | `service/src/__tests__/bpath-env.test.ts` | ✅ 已覆盖 |
+| 宽松相等 `==`/`!=` | `core/src/algebra/__tests__/surface.test.ts`、`loose-eq-fold.test.ts` | ✅ 已覆盖（已实现，非未覆盖） |
+| 循环推断 | `exec-bpath.test.ts`、`exec-spread-forof.test.ts`、`loop-return-fold.test.ts`、`loop-return-and-presence.test.ts` | ✅ 已覆盖（for-of / for-i / while / nested boundary） |
+| 形参表面 C4.1 | `core/src/algebra/__tests__/param-surface.test.ts`、`c41-destructure-enforce.test.ts` | ✅ 已覆盖（surface/绑定 + 调用点解构执法） |
 
 ---
 
-## 七、改进路线图
+## 七、改进路线图（与正文对齐）
 
-### 阶段 1：快速胜利（1-2 周）
-- [x] 预置全局环境（`Infinity`、`NaN`、`undefined`）
-- [x] 实现 `Number`、`Math`、`JSON` 等内置对象的静态属性
-- [x] 简单实现 `==` / `!=` 折叠（C2.3：`looseEqAbs`）
+### 阶段 1：快速胜利
+- [x] 预置全局环境（`Infinity`、`NaN`、`undefined`）——见 3.1
+- [x] 实现 `Number`、`Math`、`JSON` 等内置对象的静态属性——见 3.1
+- [x] 简单实现 `==` / `!=` 折叠（C2.3：`looseEqAbs`）——见 3.2
 
-### 阶段 2：精度提升（2-4 周）
+### 阶段 2：精度提升
 - [x] 数组 `reduce` 累加器追踪（字面量逐元素 + 符号单 pass，见 1.1）
-- [ ] Map 字面量 key 追踪（`m.get("k")` 仍 unknown，见 1.2）
-- [ ] 高阶函数：关系型 Abs（P1 消费 + P2 归纳 + P4 检查已落地；P5 dts 投影待做；见 `design-hof-relations.md`）
+- [x] Map 字面量 key 追踪（见 1.2；**已实现**，非「仍 unknown」）
+- [x] 高阶函数：关系型 Abs P1 消费 + P2 归纳 + P4 检查 + P5 dts（见 2.1/2.3）；promote 仅 warning（§2.0）
 
-### 阶段 3：深度改进（1-2 月）
-- [ ] 闭包变量状态追踪
-- [ ] catch 形参绑定（thrown 值类型，见 4.2）
+### 阶段 3：深度改进
+- [ ] 闭包变量状态追踪（跨调用合流；方法槽已完成，见 2.2）
+- [x] catch 形参绑定（见 4.2；**已实现**）
+- [x] C4.1 调用点解构侧车字段执法（见 1.0；`locateContractParam` 已接入 scan）
 - [ ] ~~泛型函数支持~~ → 由关系型 Abs / PolyFn.fnRels 承担（非 TS 泛型语法）
+- [x] C2.1 循环 return 回归（for-i + nested fn，见 4.1 / `loop-return-and-presence.test.ts`）
+- [x] C4.1 调用点解构侧车字段执法（见 1.0；`locateContractParam` 已接入 scan）
 
 ## 八、调用点发现的已知边界（P7 实测，2026-08）
 
@@ -452,4 +507,3 @@ break/continue 信号、let 每轮绑定、Promise resolve 静态位点扫描、
   （靠本地求值的记录覆盖）。
 - **双入口包变体**：browser/node 双变体同签名函数，变体 A 的执行记录
   不注入变体 B 的分析（归因门按文件判定——正确性优先）。
-

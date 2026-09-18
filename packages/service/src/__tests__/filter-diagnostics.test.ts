@@ -12,10 +12,8 @@ describe("filterDiagnosticsByLevel (A3)", () => {
   it("verbose keeps all", () => {
     expect(filterDiagnosticsByLevel(sample, "verbose")).toHaveLength(4);
   });
-  it("off keeps only errors", () => {
-    const r = filterDiagnosticsByLevel(sample, "off");
-    expect(r).toHaveLength(1);
-    expect(r[0]!.severity).toBe("error");
+  it("off silences display diagnostics entirely (check gate is independent)", () => {
+    expect(filterDiagnosticsByLevel(sample, "off")).toEqual([]);
   });
   it("errors keeps only errors", () => {
     expect(filterDiagnosticsByLevel(sample, "errors")).toHaveLength(1);

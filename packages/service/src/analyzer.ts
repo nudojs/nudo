@@ -29,7 +29,7 @@ import {
   abs as makeAbsVal,
   formalParamsFromNodes,
   formalParamDisplayNames,
-  setEvalMissingSlotEnabled,
+  runWithEvalMissingSlot,
   type Abs,
   stableAnalyzeKeySource,
   fnFingerprints,
@@ -1025,6 +1025,15 @@ export function analyzeFile(filePath: string, source: string, activeCases?: Map<
 }
 
 function analyzeFileUncached(filePath: string, source: string, activeCases?: Map<string, number>, externalCallRecords?: CallRecord[]): AnalysisResult {
+  // C0.5：per-analysis 作用域（ALS），禁止分析间 flag 粘滞 / 并发串档
+  const projectConfig = findProjectConfig(dirname(filePath));
+  const missingSlotOn = analysisConfig(projectConfig?.config).evalMissingSlot === "warning";
+  return runWithEvalMissingSlot(missingSlotOn, () =>
+    analyzeFileUncachedInner(filePath, source, activeCases, externalCallRecords),
+  );
+}
+
+function analyzeFileUncachedInner(filePath: string, source: string, activeCases?: Map<string, number>, externalCallRecords?: CallRecord[]): AnalysisResult {
   const ast = parse(source);
   const functions = extractDirectives(ast);
   const diagnostics: Diagnostic[] = [];
@@ -1043,8 +1052,6 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
   const envNames = [...new Set([...projectEnvNames, ...fileEnvNames])];
   const analysisCfg = analysisConfig(projectConfig?.config);
   const callSiteBudget = analysisCfg.callSiteBudget;
-  // C0.5：求值驱动 missing-slot（默认 off）
-  setEvalMissingSlotEnabled(analysisCfg.evalMissingSlot === "warning");
 
   const callRecords: CallRecord[] = [];
   // Environment 绑定 Abs（BindingInfo.abs）；nodeAbsMap 另走 absBinds
@@ -1058,7 +1065,7 @@ function analyzeFileUncached(filePath: string, source: string, activeCases?: Map
     const key = `${d.kind}:${d.name}:${d.receiver}:${d.line ?? fallbackLine}:${d.column ?? 0}:${d.code ?? ""}`;
     if (bMemberDiagSeen.has(key)) return;
     bMemberDiagSeen.add(key);
-    // C0.5：求值命中闭 shape 缺槽（默认 off；host 已 setEvalMissingSlotEnabled）
+    // C0.5：求值命中闭 shape 缺槽（默认 off；per-analysis ALS 已就绪）
     if (d.code === "nudo:missing-slot") {
       diagnostics.push({
         range: {

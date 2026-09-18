@@ -174,14 +174,3 @@ export function locateContractParam(
   }
   return undefined;
 }
-
-/** 从源码抽顶层函数的 formal 表（errorRecovery parse） */
-export function formalParamsFromSource(
-  source: string,
-  fnName: string,
-): FormalParam[] | undefined {
-  // 轻量 regex 不可靠；由调用方从 AST 传入更稳。此函数供测试/CLI 回退。
-  void source;
-  void fnName;
-  return undefined;
-}

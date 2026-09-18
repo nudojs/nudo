@@ -25,13 +25,19 @@ import nudo from 'vite-plugin-nudo'
 export default {
   plugins: [
     nudo({
-      include: '**/*.js',       // default
+      include: '**/*.js',       // default: js/mjs/ts/mts
       exclude: '**/node_modules/**', // default
-      failOnError: false,       // default
+      failOnError: false,       // default — contract errors warn, do not fail the build
     }),
   ],
 }
 ```
+
+## Diagnostics & failOnError
+
+- **Diagnostics tier** follows `package.json#nudo.analysis.diagnostics` when set. With a project `nudo` config present but no explicit tier, the plugin uses the same `analysisConfig` default as the LSP (`mode=directives` → `errors`; `exports`/`all` → `default`). Without a project config the plugin keeps its historical `default` tier (errors + warnings) so ad-hoc files still surface warnings in build logs.
+- **`failOnError`** defaults to **false** (intentional, E3): build-time diagnostics warn rather than fail, so broad analysis modes do not break CI on false positives. Use `nudo check` as the contract CI gate, or pass `failOnError: true` to block the build on error-severity contract diagnostics.
+- Display filtering via `nudo.analysis.diagnostics: "off"` silences plugin diagnostics; it does **not** replace `nudo check`.
 
 ## License
 

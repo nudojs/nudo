@@ -45,7 +45,7 @@ import {
 import { absToConstraint, joinThenProject } from "./projection.ts";
 import { literalMeetsConstraint } from "./domain-membership.ts";
 import { extractFn, generalizeFromAst } from "./generalize.ts";
-import { contractParamNameSet } from "./param-surface.ts";
+import { contractParamNameSet, locateContractParam } from "./param-surface.ts";
 import { getSlot } from "./objects.ts";
 import { canSkipLiteralCallScan } from "./fn-fp.ts";
 import { stableAnalyzeKeySource } from "./stable-source-key.ts";
@@ -908,12 +908,18 @@ function scanCaseInconsistency(
     });
     if (!eff || eff.source !== "handwritten") return;
     const conflictParams = new Set(eff.conflict?.params ?? []);
+    const formals = g.formals ?? [];
     const reqs: Array<
       [number, { param: string; pred: Pred; constraint: NudoConstraint }]
     > = [];
     for (const p of eff.params) {
       if (conflictParams.has(p.param)) continue;
-      const idx = paramNames.indexOf(p.param);
+      // C4.1：display 名命中失败时用 locateContractParam（默认/rest/解构顶层名）
+      let idx = paramNames.indexOf(p.param);
+      if (idx < 0 && formals.length > 0) {
+        const hit = locateContractParam(formals, p.param);
+        if (hit) idx = hit.index;
+      }
       if (idx < 0) continue;
       reqs.push([
         idx,

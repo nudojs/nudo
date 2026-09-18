@@ -12,6 +12,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Core Concepts",
       items: [
+        "concepts/layers",
         "concepts/type-values",
         "concepts/abstract-interpretation",
         "concepts/directives",
@@ -22,6 +23,7 @@ const sidebars: SidebarsConfig = {
       label: "Guides",
       items: [
         "guides/cli",
+        "guides/check",
         "guides/callsite-discovery",
         "guides/semantics",
         "guides/vscode",
@@ -31,6 +33,11 @@ const sidebars: SidebarsConfig = {
         "guides/mcp-server",
         "guides/vite-plugin",
         "guides/examples",
+        "guides/migrating-js",
+        "guides/lsp-clients",
+        "guides/vs-typescript",
+        "guides/coexistence",
+        "guides/versioning",
       ],
     },
     {

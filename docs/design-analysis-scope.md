@@ -1,6 +1,6 @@
 # Analysis Scope Config — 分析范围与噪声档
 
-> **状态**：设计拍板（A2）。实现跟随 A1（LSP 无指令默认分析）。
+> **状态**：A2 设计 + `analysisConfig()` / `shouldAnalyzeFile` 已落地。A1 的 LSP 接线完成，但**默认 `mode` 仍为 `directives`**（无指令文件默认不分析）。见 §8。
 >
 > **真理源关系**：配置入口沿用 `package.json#nudo`（不引入 `nudo.json`），
 > 与 `nudo.interface.autoBind` 同源。见
@@ -40,7 +40,7 @@
       "mode": "directives",
       // implicit / 无契约诊断的噪声档
       // "off" | "errors" | "default" | "verbose"
-      //   off      — 只报显式契约违例
+      //   off      — 显示路径诊断全关（check 门禁仍独立执法）
       //   errors   — 高置信 error（契约 + assign + HOF）；warning/info 静音
       //   default  — errors + 已知 evaluator warning（推荐 all 模式默认）
       //   verbose  — 全量，含 unknown-recv 等（开发 Nudo 本身时用）
@@ -72,7 +72,7 @@ export function analysisConfig(config: NudoConfig | null | undefined): AnalysisC
 |---|---|---|
 | `include` | `**/*.{js,mjs,cjs,ts}`（经 `isNudoTargetPath` 过滤后） | 与现 target 路径一致 |
 | `exclude` | `node_modules` / `dist` / `coverage` | 安全默认；emitter 已拒绝 node_modules 侧车 |
-| `mode` | `directives` | **A1 落地前不改变行为**；A1 将默认改为 `all` 或 `exports` |
+| `mode` | `directives` | **当前默认仍是 `directives`**（`packages/service/src/evaluator/config.ts`）；`exports`/`all` 可配置。默认切换为 `all`/`exports` **尚未落地**（路线图 A1 仍为 `[~]`） |
 | `diagnostics` | `errors` for `mode=directives`；`default` for `mode=all` | 打开无指令分析时避免刷屏 |
 
 `findProjectConfig` 的「向上找带 `nudo` 键的 package.json」规则不变。
@@ -103,7 +103,7 @@ export function analysisConfig(config: NudoConfig | null | undefined): AnalysisC
 
 | 档 | 发布 |
 |---|---|
-| `off` | 不发 implicit 相关；仍发 `constraint-violated` 等显式契约（若 mode 允许分析） |
+| `off` | 显示路径诊断过滤为空（含 contract error）；`nudo check` 门禁独立、不受影响 |
 
 > C0.5（可选）：`nudo.analysis.evalMissingSlot` 默认 `off`；开启后仅对**求值命中**的已知对象缺字段发 `nudo:missing-slot` warning。禁止 body AST 预扫描。见 `design-eval-missing-slot.md`。草稿产品路径：`nudo interface --draft` / CodeLens `⚡ draft interface`。
 | `errors` | severity=error 的 check 码 + 高置信 evaluator error |
@@ -156,10 +156,13 @@ CLI `nudo check <file>` / `nudo infer <file>` **显式路径始终分析**，
 
 ---
 
-## 8. 验收（实现时）
+## 8. 验收（A2 现状）
 
-- [ ] `analysisConfig(undefined)` 返回上表默认
-- [ ] `package.json#nudo.analysis` 解析与非法值回落
-- [ ] include/exclude glob 与 `matchesEmitAllowlist` 同实现或抽出共享
-- [ ] LSP 在 `mode=directives` 下行为与今日一致（回归）
-- [ ] `mode=exports`：有 `export` 的无指令文件进入 hover/diagnostics
+A2（`analysisConfig()` 归一化）已落地；A1 默认切换 **未** 落地。对照：
+
+- [x] `analysisConfig(undefined)` 返回上表默认（含 `mode: "directives"`、`evalMissingSlot: "off"`、`callSiteBudget: 3`）
+- [x] `package.json#nudo.analysis` 解析与非法值回落（`service/evaluator/config.ts`）
+- [x] include/exclude glob（`matchesEmitAllowlist` 同源 glob 实现；`shouldAnalyzeFile` 消费）
+- [x] LSP/Vite 在 `mode=directives` 下行为与今日一致（默认未变，回归成立）
+- [x] `mode=exports` / `mode=all`：`shouldAnalyzeFile` 单测覆盖（`service/src/__tests__/analysis-scope.test.ts`）
+- [ ] **A1 成功判据**：默认（不配 `package.json`）打开无指令 `.js` 即有 hover/diagnostics——**未达成**，默认仍 `directives`

@@ -140,6 +140,7 @@ export function buildSemanticTokens(
 
   const program = (ast as { program?: Node }).program ?? ast;
   const topLevelDeclarators = new Set<unknown>();
+  const topLevelFnDeclNodes = new Set<unknown>();
   for (const stmt of ((program as { body?: Node[] }).body ?? []) as Node[]) {
     const decl =
       stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
@@ -149,6 +150,11 @@ export function buildSemanticTokens(
       for (const d of (decl as unknown as { declarations: Node[] }).declarations) {
         topLevelDeclarators.add(d);
       }
+    }
+    // Track top-level FunctionDeclaration nodes by identity — nested same-name
+    // functions must not inherit the exported interface tier modifier.
+    if (decl && decl.type === "FunctionDeclaration" && (decl as { id?: Node }).id) {
+      topLevelFnDeclNodes.add(decl);
     }
   }
 
@@ -222,12 +228,12 @@ export function buildSemanticTokens(
         const id = n.id as Node | undefined;
         if (id?.type === "Identifier") {
           const name = (id as { name: string }).name;
+          // Only top-level FunctionDeclarations (Program / ExportNamed /
+          // ExportDefault) get the interface tier modifier. Nested/local
+          // declarations stay declaration-only so same-name inner functions
+          // do not inherit the exported contract tier.
           const isTopLevelFnDecl =
-            n.type === "FunctionDeclaration" &&
-            // FunctionDeclaration 的顶层判定：parent 是 Program 或 ExportNamed
-            // 通过 topLevel 间接：函数声明名总是 TYPE_FUNCTION；导出档用 tierModFor
-            // （非导出返回 0，与 CodeLens 不加 lens 一致）
-            true;
+            n.type === "FunctionDeclaration" && topLevelFnDeclNodes.has(node);
           const extraMod = isTopLevelFnDecl ? tierModFor(name) : 0;
           pushIdentifier(id, TYPE_FUNCTION, extraMod);
         }

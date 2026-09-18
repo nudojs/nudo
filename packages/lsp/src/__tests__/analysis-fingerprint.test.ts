@@ -33,4 +33,19 @@ describe("getCachedOrAnalyze (B2)", () => {
     const ent = analysisCache.get("/t/a.js");
     expect(ent?.sourceHash).toBeTruthy();
   });
+
+  it("reanalyzes when activeCases change without a version bump (B2)", () => {
+    const a = getCachedOrAnalyze("/t/a.js", SRC, 1, new Map([["double", 0]]));
+    const b = getCachedOrAnalyze("/t/a.js", SRC, 1, new Map([["double", 1]]));
+    expect(b).not.toBe(a);
+    const ent = analysisCache.get("/t/a.js");
+    expect(ent?.casesHash).toBe("double=1");
+  });
+
+  it("reuses result when activeCases are unchanged", () => {
+    const cases = new Map([["double", 2]]);
+    const a = getCachedOrAnalyze("/t/a.js", SRC, 1, cases);
+    const b = getCachedOrAnalyze("/t/a.js", SRC, 1, new Map(cases));
+    expect(b).toBe(a);
+  });
 });

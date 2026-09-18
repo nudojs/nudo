@@ -1,5 +1,6 @@
 import {
   analyzeFileAsync,
+  analysisConfig,
   defaultLoadModule as loadModule,
   clearAnalysisSessionCaches,
   shouldAnalyzeFile,
@@ -17,7 +18,8 @@ export type NudoPluginOptions = {
   exclude?: string[];
   /**
    * error 级诊断是否让构建失败。
-   * 默认 false：与 A1/A3 一致——构建期诊断先 warn，避免无指令/隐式推断误伤 CI。
+   * 默认 false（E3 / docs）：构建期诊断先 warn，避免无指令/隐式推断误伤 CI。
+   * 契约门禁请用 `nudo check`（CI gate）或显式 `failOnError: true`。
    * 项目可用 `nudo.analysis.diagnostics` 控制噪声档；显式契约 error 仍会打出。
    */
   failOnError?: boolean;
@@ -53,13 +55,16 @@ function checkIssuesToDiagnostics(id: string, code: string): Diagnostic[] {
 }
 
 /**
- * 构建期噪声档：项目显式 `nudo.analysis.diagnostics` 优先；
- * 否则用 default（error+warning，静音 A3 噪声码）——
- * 不走 analysisConfig 对 mode=directives 的 errors 隐式默认，
- * 避免把 may-throw 等 warning 在构建日志里整档抹掉。
+ * 构建期噪声档：
+ * - 项目显式 `nudo.analysis.diagnostics` 优先（与 LSP 同源）。
+ * - 有 project config 时跟随 `analysisConfig`（与 LSP 默认档对齐：
+ *   mode=directives→errors，exports/all→default）。
+ * - 无 project config 时保留 vite 历史默认 `default`（error+warning），
+ *   避免 ad-hoc 文件构建日志被 directives→errors 整档抹掉 warning。
  */
 function viteDiagnosticsLevel(id: string): DiagnosticsLevel {
-  const raw = findProjectConfig(dirname(id))?.config?.analysis?.diagnostics;
+  const proj = findProjectConfig(dirname(id));
+  const raw = proj?.config?.analysis?.diagnostics;
   if (
     raw === "off" ||
     raw === "errors" ||
@@ -68,6 +73,7 @@ function viteDiagnosticsLevel(id: string): DiagnosticsLevel {
   ) {
     return raw;
   }
+  if (proj) return analysisConfig(proj.config).diagnostics;
   return "default";
 }
 
@@ -135,8 +141,8 @@ function compileAnyMatcher(patterns: string[]): Matcher {
 export default function nudoPlugin(options: NudoPluginOptions = {}): any {
   const includeMatch = compileAnyMatcher(options.include ?? DEFAULT_INCLUDE);
   const excludeMatch = compileAnyMatcher(options.exclude ?? DEFAULT_EXCLUDE);
-  // 构建期默认不 fail：A1 无指令/exports 模式打开后，error 误伤面变大；
-  // 要当门禁请显式 failOnError: true（与 nudo check CI 门禁分工）。
+  // failOnError 默认 false（E3 有意保留）：构建期诊断先 warn；契约 CI 门禁
+  // 走 `nudo check`。要让 error 阻断构建请显式 failOnError: true。
   const failOnError = options.failOnError ?? false;
 
   const analysisCache = new Map<string, AnalysisResult>();

@@ -23,8 +23,9 @@ const NOISY_WARNING_CODES = new Set([
 ]);
 
 /**
- * 按 analysis.diagnostics 档过滤 evaluator/check 诊断。
- * - off：不发 implicit 相关；仍保留 error（契约违例等）
+ * 按 analysis.diagnostics 档过滤 evaluator/check **显示路径**诊断。
+ * - off：显示层全静音（与 errors 档区分）。check 门禁（CLI `nudo check` /
+ *   checkSource）独立于本过滤，不受 off 影响。
  * - errors：只发 severity=error
  * - default：error + warning（静音 NOISY_WARNING_CODES）
  * - verbose：全量
@@ -34,7 +35,8 @@ export function filterDiagnosticsByLevel<T extends { severity: string; code?: st
   level: DiagnosticsLevel,
 ): T[] {
   if (level === "verbose") return diags;
-  if (level === "off") return diags.filter((d) => d.severity === "error");
+  // off ≢ errors：显示路径真正静音；check gate 另走 checkSource
+  if (level === "off") return [];
   if (level === "errors") return diags.filter((d) => d.severity === "error");
   // default
   return diags.filter((d) => {
@@ -102,11 +104,19 @@ export function shouldAnalyzeFile(
   return false;
 }
 
-/** 无 projectDir 时的 exclude 片段匹配（双星段或裸段名） */
+/**
+ * 无 projectDir 时的 exclude 片段匹配（双星段或裸段名）。
+ *
+ * **限制（不假装自定义 glob 生效）**：package.json 自定义 `nudo.analysis.exclude`
+ * 含 `*`/`**` 时无法相对 projectDir 解析，退化为最小安全默认——只拦
+ * node_modules / dist / coverage 路径段；字面量路径片段仍按 contains 匹配。
+ * 完整自定义 exclude 需要 findProjectConfig 命中带 `nudo` 键的 package.json
+ * （从而拿到 projectDir + matchesEmitAllowlist）。
+ */
 function simpleExcludeHit(pattern: string, path: string): boolean {
   const bare = pattern.replace(/^\*\*/, "").replace(/^\//, "").replace(/\/\*\*$/, "").replace(/^\*\//, "");
   if (!bare || bare.includes("*")) {
-    // 退化为：node_modules / dist / coverage 路径段
+    // 退化为：node_modules / dist / coverage 路径段（自定义 glob 不可用）
     return /\/(node_modules|dist|coverage)\//.test("/" + path + "/");
   }
   return path.includes(`/${bare}/`) || path.endsWith(`/${bare}`);

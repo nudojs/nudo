@@ -146,16 +146,27 @@ export function noteMemberDispatchMiss(
 // ---------------------------------------------------------------------------
 // C0.5 — evaluation-driven missing-slot（默认 off）
 // ---------------------------------------------------------------------------
+// 进程级 fallback 仅兼容旧 set API；真正开关走 AsyncLocalStorage，
+// 每次分析 runWithEvalMissingSlot 包一层，避免 LSP 多项目 / 并发串档。
 
-let evalMissingSlotEnabled = false;
+import { AsyncLocalStorage } from "node:async_hooks";
+
+const evalMissingSlotAls = new AsyncLocalStorage<boolean>();
+let evalMissingSlotFallback = false;
 
 /** host（service analysisConfig）在 B-path 前设置；默认 false */
 export function setEvalMissingSlotEnabled(enabled: boolean): void {
-  evalMissingSlotEnabled = enabled;
+  evalMissingSlotFallback = enabled;
+  evalMissingSlotAls.enterWith(enabled);
 }
 
 export function isEvalMissingSlotEnabled(): boolean {
-  return evalMissingSlotEnabled;
+  return evalMissingSlotAls.getStore() ?? evalMissingSlotFallback;
+}
+
+/** per-analysis 作用域：body 内 flag 隔离，结束后自动恢复外层值 */
+export function runWithEvalMissingSlot<T>(enabled: boolean, body: () => T): T {
+  return evalMissingSlotAls.run(enabled, body);
 }
 
 /**
@@ -167,7 +178,7 @@ export function noteObjSlotMissing(
   name: string,
   loc?: [number, number],
 ): boolean {
-  if (!evalMissingSlotEnabled) return false;
+  if (!isEvalMissingSlotEnabled()) return false;
   const shape = recv?.shape;
   if (!shape || shape.k !== "obj") return false;
   const obj = shape as { open?: boolean; slots?: Record<string, unknown> };

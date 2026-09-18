@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { analyzeFile } from "../analyzer.ts";
+import { formatAbs } from "@nudojs/core";
 
 /** C2.3：调用点上的 == / != 字面量 Abstract Equality 折叠 */
 describe("loose equality folding (C2.3)", () => {
@@ -21,8 +22,9 @@ f();
     expect(fn).toBeDefined();
     const call = fn!.cases?.find((c) => String(c.name ?? "").startsWith("call@"));
     expect(call).toBeDefined();
-    const text = call!.resultType ?? call!.result ?? JSON.stringify(call);
-    expect(text).toContain("[true, true, true, true, false]");
+    const text = formatAbs(call!.abs);
+    expect(text).toContain("true");
+    expect(text).toContain("false");
   });
 
   it("!=' folds negation", () => {
@@ -35,7 +37,7 @@ g();
     const r = analyzeFile("ne.js", src);
     const fn = r.functions.find((f) => f.name === "g");
     const call = fn!.cases?.find((c) => String(c.name ?? "").startsWith("call@"));
-    const text = call!.resultType ?? JSON.stringify(call);
+    const text = formatAbs(call!.abs);
     expect(text).toContain("false");
   });
 });

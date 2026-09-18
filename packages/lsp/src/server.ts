@@ -750,9 +750,11 @@ connection.onCodeAction((params) => {
         const field = fieldPath.split(".").pop() ?? fieldPath;
         const line = diag.range.start.line;
         const lineText = lines[line] ?? "";
-        // 找该行或附近对象字面量的 `{`，在其后插入 field
+        // Only offer the insert when the line has exactly one `{` — nested /
+        // multi-brace lines make "insert after first `{`" produce broken code.
+        const braceCount = (lineText.match(/\{/g) ?? []).length;
         const braceCol = lineText.indexOf("{");
-        if (braceCol >= 0) {
+        if (braceCol >= 0 && braceCount === 1) {
           const insertAt = { line, character: braceCol + 1 };
           const snippet = lineText.slice(braceCol + 1).trimStart().startsWith("}")
             ? ` ${field}: undefined `

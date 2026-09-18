@@ -97,22 +97,23 @@ export class DiskCache {
 }
 
 /**
- * check 报告键：abi + 相对文件路径 + 源内容 sha256 + autoBind
- * （侧车内容不进键时宁可 miss——autoBind=false 可缓存；true 时源码变必 miss，
- * 侧车变由宿主 clear。）
+ * check 报告键：abi + 相对路径 + 源码 sha + autoBind + **侧车 sha**
+ * （侧车变更必须 miss，否则 CI 会读到过期契约结论。）
  */
 export function checkCacheKey(
   filePath: string,
   source: string,
-  opts: { autoBind: boolean; projectDir?: string },
+  opts: { autoBind: boolean; projectDir?: string; sidecarContent?: string | null },
 ): string {
   const rel = relativizePath(filePath, opts.projectDir);
+  const sidecarSha = opts.sidecarContent != null ? sha256Hex(opts.sidecarContent) : "nosidecar";
   return sha256Hex(
     [
       ANALYSIS_ABI,
       rel,
       opts.autoBind ? "ab1" : "ab0",
       sha256Hex(source),
+      sidecarSha,
     ].join("\0"),
   );
 }

@@ -180,9 +180,9 @@ export function collectParamBodyAccesses(
       return;
     }
     if (decl.type === "VariableDeclaration") {
-      for (const d of (decl as { declarations?: Node[] }).declarations ?? []) {
-        const id = d.id as Node | undefined;
-        const init = d.init as Node | undefined;
+      for (const d of (decl as { declarations?: Array<{ id?: Node; init?: Node }> }).declarations ?? []) {
+        const id = d.id;
+        const init = d.init;
         if (
           exported &&
           id?.type === "Identifier" &&
@@ -288,11 +288,12 @@ function projectDraftReturn(
   if (retAbs.length > 0) {
     const constraint = joinThenProject(retAbs);
     if (constraint !== undefined) {
+      // 无 callsite/directive 时不得标成 directive：求值投影是 body 证据
       return {
         constraint,
         display: formatConstraint(constraint),
         projected: true,
-        evidence: rawEvidence === "none" ? "directive" : rawEvidence,
+        evidence: rawEvidence === "none" ? "body" : rawEvidence,
       };
     }
     const shapeText = fn.combinedAbs
@@ -369,7 +370,10 @@ export async function draftInterface(
   const projectAutoBind = interfaceConfig(
     findProjectConfig(dirname(filePath))?.config,
   ).autoBind;
-  const autoBind = projectAutoBind && (opts.autoBind ?? true);
+  // Explicit tool param wins: agent/CLI `autoBind: true` may draft with ambient
+  // context even when project autoBind=false (draft is a review artifact, not
+  // ambient enforcement). Undefined opts fall through to the project default.
+  const autoBind = opts.autoBind !== undefined ? opts.autoBind : projectAutoBind;
   const loadModule = opts.loadModule ?? defaultLoadModule;
   const sidecarPath = sidecarPathOf(filePath);
   const wantBody = opts.bodyAccesses !== false;

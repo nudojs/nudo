@@ -96,5 +96,5 @@ function bad() {
 | 违例 | 调用/返回 ⊭ refine | case ⊄ D → `nudo:case-inconsistency` |
 
 ```bash
-pnpm run verify:examples   # 验证本目录全部命令与期望退出码（见 ../README.md 命令矩阵）
+pnpm run verify:examples   # 验证本目录全部命令与期望退出码（见 [../README.md](../README.md) 命令矩阵）
 ```

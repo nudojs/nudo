@@ -430,7 +430,7 @@ function generateJSDoc(fn: FunctionAnalysis, sig: MainSignature): string {
       c.argAbs.some((a, i) => absToTSType(a) !== sig.paramTypes[i]) ||
       absToTSType(c.abs) !== sig.returnType;
     if (!preciseDiffers) continue;
-    const argsStr = c.argAbs.map(absToTSType).join(", ");
+    const argsStr = c.argAbs.map((a) => absToTSType(a)).join(", ");
     lines.push(` * Case: ${c.name} (${argsStr}) => ${absToTSType(c.abs)}`);
   }
   for (let i = 0; i < sig.paramTypes.length; i++) {

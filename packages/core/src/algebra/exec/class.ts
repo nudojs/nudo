@@ -121,16 +121,16 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
       const p = args[0] ? litValue(args[0]) : undefined;
       if (typeof p === "string") return $regex(p, args[1] ? String(litValue(args[1]) ?? "") : "");
     }
+    const clsName = cls.name || "Object";
     // C2.2：Error 家族携带 name/message 槽（catch 形参可读）
-    if (isErrorCtorName(cls.name)) {
-      return errorBrandAbs(cls.name, args[0]);
+    if (isErrorCtorName(clsName)) {
+      return errorBrandAbs(clsName, args[0]);
     }
-    // C1.1 / C1.2：Map / Set 条目表
-    if (cls === Map) return makeMapAbs(args[0]);
-    if (cls === Set) return makeSetAbs(args[0]);
-    const name = cls.name || "Object";
+    // C1.1 / C1.2：Map / Set 条目表（按 ctor 名比对，避开 TS 全局接口无交集）
+    if (clsName === "Map") return makeMapAbs(args[0]);
+    if (clsName === "Set") return makeSetAbs(args[0]);
     const shape = objOf({});
-    return abs({ k: "brand", name, shape }, undefined, undefined, "path");
+    return abs({ k: "brand", name: clsName, shape }, undefined, undefined, "path");
   }
   const spec = specOf(cls);
   if (!spec) {

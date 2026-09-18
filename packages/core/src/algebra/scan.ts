@@ -28,6 +28,7 @@ import {
 import { literalMeetsConstraint } from "./domain-membership.ts";
 import { resolveDepPath } from "./load-deps-fp.ts";
 import { generalizeFromAst, type PolyFn } from "./generalize.ts";
+import { locateContractParam, type FormalParam } from "./param-surface.ts";
 import { numLit, litValue } from "./abs.ts";
 import type { Abs } from "./abs.ts";
 import { hashSource } from "./hash-source.ts";
@@ -648,19 +649,47 @@ export function scanLiteralCalls(
     return r;
   };
 
-  /** effectiveInterface → [paramIdx, RefineEntry]（pred/constraint 与旧 refineToIndexedFull 同构）
+  /** 解构/默认参契约名 → 实参字段投影（C4.1） */
+  const projectArgField = (arg: Abs, field: string): Abs | undefined => {
+    if (!arg) return undefined;
+    if (arg.shape.k === "brand") {
+      return projectArgField(arg.shape.shape as Abs, field);
+    }
+    if (arg.shape.k !== "obj") return undefined;
+    return getSlot(arg.shape.slots, field)?.value;
+  };
+
+  /** effectiveInterface → [paramIdx, RefineEntry, field?]（C4.1：解构契约带 field 投影）
    *  conflict 位跳过：契约本身不可满足时调用点不该被当成违例（§2.1 / interface.ts conflict 注释） */
   const interfaceToIndexed = (
     ei: EffectiveInterface,
     paramNames: string[],
-  ): Array<[number, RefineEntry]> => {
+    formals?: FormalParam[],
+  ): Array<[number, RefineEntry, string | undefined]> => {
     const conflict = new Set(ei.conflict?.params ?? []);
-    const entries: Array<[number, RefineEntry]> = [];
+    const entries: Array<[number, RefineEntry, string | undefined]> = [];
     for (const { param, constraint } of ei.params) {
-      if (conflict.has(param)) continue;
+      if (!param || conflict.has(param)) continue;
       const idx = paramNames.indexOf(param);
       if (idx >= 0) {
-        entries.push([idx, { param, pred: instantiateConstraint(constraint, param), constraint }]);
+        entries.push([
+          idx,
+          { param, pred: instantiateConstraint(constraint, param), constraint },
+          undefined,
+        ]);
+        continue;
+      }
+      // C4.1：契约名不在求值展示名里 → formals / locateContractParam
+      // （解构顶层绑定名、默认参名、rest 裸名）
+      if (formals && formals.length > 0) {
+        const hit = locateContractParam(formals, param);
+        if (hit) {
+          entries.push([
+            hit.index,
+            { param, pred: instantiateConstraint(constraint, param), constraint },
+            hit.field,
+          ]);
+        }
       }
     }
     return entries;
@@ -719,22 +748,29 @@ export function scanLiteralCalls(
 
   const checkReqs = (
     displayName: string,
-    reqs: Array<[number, import("./pred.ts").Pred]>,
+    reqs: Array<[number, import("./pred.ts").Pred, string | undefined, string | undefined]>,
     paramNames: string[],
     absArgs: Abs[],
     /** target 参下标 → 实参下标；缺省恒等 */
     argIndexOf: (reqIdx: number) => number | undefined,
     loc?: { start: { line: number; column: number } },
   ): void => {
-    for (const [idx, pred] of reqs) {
+    for (const [idx, pred, field, contractParam] of reqs) {
       const argIdx = argIndexOf(idx);
       if (argIdx === undefined) continue;
-      const arg = absArgs[argIdx];
+      let arg = absArgs[argIdx];
       if (!arg) continue;
+      // C4.1：解构契约字段投影后再判 pred
+      if (field) {
+        const projected = projectArgField(arg, field);
+        if (!projected) continue;
+        arg = projected;
+      }
       const lv = litValue(arg);
       const isStr = arg.shape.k === "prim" && (arg.shape as { type: string }).type === "string";
       const strLen = typeof lv === "string" ? lv.length : undefined;
-      const paramName = paramNames[idx] ?? `arg${idx}`;
+      // C4.1：解构契约展示名优先用契约面（x），不回落到求值占位 _p0
+      const paramName = contractParam || paramNames[idx] || `arg${idx}`;
       for (const p of flattenPred(pred)) {
         // typeof 约束（string() / number() / boolean() 裸 prim）
         // 只检查挂在参数自身上的 typeof；字段访问（u.name）交给 shape 路径
@@ -829,7 +865,6 @@ export function scanLiteralCalls(
             if (p.op === "lt") ok = strLen < n;
             if (p.op === "le") ok = strLen <= n;
             if (!ok) {
-              const paramName = paramNames[idx] ?? `arg${idx}`;
               out.push({
                 severity: "error",
                 code: "nudo:constraint-violated",
@@ -852,7 +887,6 @@ export function scanLiteralCalls(
           if (p.op === "lt") ok = (lv as number) < n;
           if (p.op === "le") ok = (lv as number) <= n;
           if (!ok) {
-            const paramName = paramNames[idx] ?? `arg${idx}`;
             out.push({
               severity: "error",
               code: "nudo:constraint-violated",
@@ -1100,19 +1134,25 @@ export function scanLiteralCalls(
   /** 对带 shape / array / int / prim 的 refine 做结构检查 */
   const checkShapeReqs = (
     displayName: string,
-    reqs: Array<[number, RefineEntry]>,
+    reqs: Array<[number, RefineEntry, string | undefined]>,
     paramNames: string[],
     absArgs: Abs[],
     argIndexOf: (reqIdx: number) => number | undefined,
     loc?: { start: { line: number; column: number } },
   ): void => {
-    for (const [idx, entry] of reqs) {
+    for (const [idx, entry, field] of reqs) {
       const c = entry.constraint;
       if (!c.fields && !c.element && !isIntFlag(c) && !c.prim) continue;
       const argIdx = argIndexOf(idx);
       if (argIdx === undefined) continue;
-      const arg = absArgs[argIdx];
+      let arg = absArgs[argIdx];
       if (!arg) continue;
+      // C4.1：解构契约 → 投影到字段再查
+      if (field) {
+        const projected = projectArgField(arg, field);
+        if (!projected) continue;
+        arg = projected;
+      }
       const paramName = entry.param || paramNames[idx] || `arg${idx}`;
       // 裸 prim 已由 checkReqs 的 typeof pred 覆盖；此处只处理 shape/array/int
       // shape 字段
@@ -1249,11 +1289,11 @@ export function scanLiteralCalls(
     const ownEi = effectiveInterfaceOf(fnName, source, optsR);
     // §3.3 执法分档：仅 handwritten 执法；generated 段是事实快照（drift 另报）
     if (ownEi?.source === "handwritten") {
-      const ownFull = interfaceToIndexed(ownEi, paramNames);
+      const ownFull = interfaceToIndexed(ownEi, paramNames, g?.formals);
       checkShapeReqs(fnName, ownFull, paramNames, absArgs, (i) => i, loc);
       checkReqs(
         fnName,
-        ownFull.map(([i, e]) => [i, e.pred] as [number, Pred]),
+        ownFull.map(([i, e, f]) => [i, e.pred, f, e.param] as [number, Pred, string | undefined, string | undefined]),
         paramNames,
         absArgs,
         (i) => i,
@@ -1266,7 +1306,7 @@ export function scanLiteralCalls(
       const tg = generalizeFromAst(fwd.target, source, file ? { file } : {});
       const tParams = tg?.params ?? [];
       const tEi = effectiveInterfaceOf(fwd.target, source, optsR);
-      const tFull = tEi?.source === "handwritten" ? interfaceToIndexed(tEi, tParams) : [];
+      const tFull = tEi?.source === "handwritten" ? interfaceToIndexed(tEi, tParams, tg?.formals) : [];
       if (tFull.length > 0) {
         const wrapperArgOfTarget = new Map<number, number>();
         fwd.map.forEach((wrapperIdx, targetIdx) => {
@@ -1276,7 +1316,7 @@ export function scanLiteralCalls(
         checkShapeReqs(`${fnName}→${fwd.target}`, tFull, tParams, absArgs, mapArg, loc);
         checkReqs(
           `${fnName}→${fwd.target}`,
-          tFull.map(([i, e]) => [i, e.pred] as [number, Pred]),
+          tFull.map(([i, e, f]) => [i, e.pred, f, e.param] as [number, Pred, string | undefined, string | undefined]),
           tParams,
           absArgs,
           mapArg,
@@ -1295,7 +1335,7 @@ export function scanLiteralCalls(
     checkArgStructures(ext.fnName, ext.source, args, loc, displayName, ext.fromFile);
     const { absArgs, hasInfo } = parseCallArgs(args);
     if (!hasInfo || absArgs.length === 0) return;
-    let full: Array<[number, RefineEntry]> = [];
+    let full: Array<[number, RefineEntry, string | undefined]> = [];
     let paramNames: string[] = [];
     try {
       const g = generalizeFromAst(ext.fnName, ext.source);
@@ -1310,7 +1350,7 @@ export function scanLiteralCalls(
       const ei = effectiveInterfaceOf(ext.fnName, ext.source, eiOpts);
       // §3.3 执法分档：仅 handwritten 执法；generated 段不执法
       if (ei?.source === "handwritten") {
-        full = interfaceToIndexed(ei, paramNames);
+        full = interfaceToIndexed(ei, paramNames, g?.formals);
       }
     } catch {
       // 外部被调契约解析失败：不再静默放弃执法——报 warning 便于定位
@@ -1327,7 +1367,7 @@ export function scanLiteralCalls(
     checkShapeReqs(displayName, full, paramNames, absArgs, (i) => i, loc);
     checkReqs(
       displayName,
-      full.map(([i, e]) => [i, e.pred] as [number, Pred]),
+      full.map(([i, e, f]) => [i, e.pred, f, e.param] as [number, Pred, string | undefined, string | undefined]),
       paramNames,
       absArgs,
       (i) => i,

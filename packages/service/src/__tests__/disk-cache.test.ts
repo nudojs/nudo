@@ -42,6 +42,28 @@ describe("B3 disk cache store", () => {
     expect(a).not.toBe(c);
   });
 
+  it("checkCacheKey: sidecar content flips the key (CI must miss on contract change)", () => {
+    const src = "export function add(a, b) { return a + b; }\n";
+    const base = checkCacheKey("/p/a.js", src, {
+      autoBind: true,
+      projectDir: "/p",
+      sidecarContent: "export const add = fn({ a: number() }, number());\n",
+    });
+    const changed = checkCacheKey("/p/a.js", src, {
+      autoBind: true,
+      projectDir: "/p",
+      sidecarContent: "export const add = fn({ a: number().gt(0) }, number());\n",
+    });
+    const noSidecar = checkCacheKey("/p/a.js", src, {
+      autoBind: true,
+      projectDir: "/p",
+      sidecarContent: null,
+    });
+    expect(base).not.toBe(changed);
+    expect(base).not.toBe(noSidecar);
+    expect(base).toHaveLength(64);
+  });
+
   it("sha256 and relativizePath are stable", () => {
     expect(sha256Hex("x")).toHaveLength(64);
     expect(ANALYSIS_ABI).toContain("v1");

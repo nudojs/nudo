@@ -518,12 +518,16 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
           : "$lit(undefined)";
       const testSrc = stmt.test ? transpileExpression(stmt.test, opts) : "$lit(true)";
       const updateSrc = stmt.update ? transpileExpression(stmt.update, opts) : `$lit(undefined)`;
+      const forBodyOpts: TranspileOptions = {
+        ...opts,
+        inLoop: (opts.inLoop ?? 0) + 1,
+      };
       const bodyStmts =
         stmt.body.type === "BlockStatement"
           ? stmt.body.body
-              .map((s) => transpileStatement(s, depth + 2, opts))
+              .map((s) => transpileStatement(s, depth + 2, forBodyOpts))
               .join("\n")
-          : transpileStatement(stmt.body, depth + 2, opts);
+          : transpileStatement(stmt.body, depth + 2, forBodyOpts);
       const max = opts.maxLoopIters ?? 8;
       // MVP：经典单变量计数循环（状态 = 计数器 Abs）
       return [
@@ -988,10 +992,12 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           const paramNames = (prop.params as Array<{ type: string; name?: string }>).map((p) =>
             p.type === "Identifier" && p.name ? p.name : "_a",
           );
+          // 方法体是新的函数边界：inLoop 必须归零，否则 return 泄漏成 $loopReturn
+          const methodOpts: TranspileOptions = { ...opts, inLoop: 0 };
           const bodySrc =
             prop.body.type === "BlockStatement"
-              ? `{\n${prop.body.body.map((s) => transpileStatement(s, 1, opts)).join("\n")}\n}`
-              : transpileExpression(prop.body as Expression, opts);
+              ? `{\n${prop.body.body.map((s) => transpileStatement(s, 1, methodOpts)).join("\n")}\n}`
+              : transpileExpression(prop.body as unknown as Expression, methodOpts);
           const fnValSrc = `$fnVal([${paramNames.map((p) => JSON.stringify(p)).join(", ")}], (${paramNames.join(", ")}) => ${bodySrc})`;
           props.push(`${mkey}: ${fnValSrc}`);
           continue;
@@ -1212,18 +1218,20 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         async?: boolean;
       };
       const { sig, rest, prologue } = emitParamBinding(fn.params, indent(1), opts);
+      // 函数边界：return 不是循环提前返回
+      const fnBodyOpts: TranspileOptions = { ...opts, inLoop: 0 };
       const paramParts = rest ? [...sig, `...${rest}`] : sig;
       // 一等 fn Abs：参数名进 shape（bridge/dts 可展示）；
       // 异步 body 包 $async 保持 eff(promise) 语义（裸 JS async 会泄漏 Promise）。
       const nameList = `[${sig.map((p) => JSON.stringify(p)).join(", ")}]`;
       if (fn.body.type === "BlockStatement") {
-        const inner = [...prologue, transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, opts)].join("\n");
+        const inner = [...prologue, transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, fnBodyOpts)].join("\n");
         if (fn.async) {
           return `$fnVal(${nameList}, (${paramParts.join(", ")}) => $async(() => {\n${inner}\n}))`;
         }
         return `$fnVal(${nameList}, (${paramParts.join(", ")}) => {\n${inner}\n})`;
       }
-      const bodySrc = transpileExpression(fn.body as Expression, opts);
+      const bodySrc = transpileExpression(fn.body as Expression, fnBodyOpts);
       if (prologue.length > 0) {
         // 表达式体 + 模式参数：提升为块体以容纳解构 prologue
         const thunk = fn.async ? `$async(() => ${bodySrc})` : bodySrc;
