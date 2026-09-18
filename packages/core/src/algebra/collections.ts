@@ -625,6 +625,30 @@ export function setElementsAbs(setAbs: Abs): Abs[] {
   return t ? [...t.elements] : [];
 }
 
+/**
+ * 确切条目数：Set 无 maybeAbsent / Map 无 shadow+maybeAbsent 时返回长度；
+ * 否则 undefined（for-of 不得假装有界）。
+ */
+export function collectionExactLen(c: Abs): number | undefined {
+  if (isSetAbs(c)) {
+    const t = setTableForRead(c);
+    if (!t) return undefined;
+    if (t.maybeAbsent === true || (t.maybeAbsent instanceof Set && t.maybeAbsent.size > 0)) {
+      return undefined;
+    }
+    return t.elements.length;
+  }
+  if (isMapAbs(c)) {
+    const t = mapTableForRead(c);
+    if (!t) return undefined;
+    if (t.shadowValues.length > 0 || (t.maybeAbsent && t.maybeAbsent.size > 0)) {
+      return undefined;
+    }
+    return t.byLit.size;
+  }
+  return undefined;
+}
+
 /** 元素联合（for-of / Array.from）；无表 → unknown。
  *  Map 语义是 entry `[k,v]` 元组联合，不是裸 value。 */
 export function collectionElementJoin(c: Abs): Abs {

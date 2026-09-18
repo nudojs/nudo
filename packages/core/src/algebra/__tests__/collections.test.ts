@@ -164,8 +164,11 @@ export function dedup(arr) {
     const exports = runTranspiled(src, { mode: "analyze" });
     const arr = $arr([$lit(1), $lit(2), $lit(2), $lit(3)]);
     const r = callTranspiledExportFull(exports, "dedup", [arr]);
-    expect(formatAbs(r.result)).not.toBe("[]");
-    expect(formatAbs(r.result)).not.toMatch(/^unknown/);
+    // Set 去重后 for-of 有界展开 → 精确 [1,2,3]，不是前缀并集
+    const s = formatAbs(r.result);
+    expect(s.startsWith("[1, 2, 3]")).toBe(true);
+    expect(s).not.toContain("[1] |");
+    expect(s).toContain("#exact");
   });
 });
 

@@ -20,6 +20,7 @@ import {
   isMapAbs,
   isSetAbs,
   setElementsAbs,
+  collectionExactLen,
   mapEntriesAbs,
   mapSizeAbs,
   setSizeAbs,
@@ -891,8 +892,10 @@ export function $forOf(
 
   const shape = iterable.shape;
   const items = $elems(iterable);
-  const knownLen = shape.k === "tuple" ? shape.elements.length : undefined;
-  // 非具体 tuple：长度未知（可能空、可能更长）→ 0..max 出口都 join
+  // tuple / 确切 Set·Map 条目数 → 有界展开；抽象 arr 与 maybeAbsent 仍 0..max join
+  const knownLen =
+    shape.k === "tuple" ? shape.elements.length : collectionExactLen(iterable);
+  // 非具体容器：长度未知（可能空、可能更长）→ 0..max 出口都 join
   const unbounded = knownLen === undefined;
 
   if (unbounded) snapExit();
