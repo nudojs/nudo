@@ -117,6 +117,11 @@ export {
   resetAllAnalysisCaches,
 } from "./session-cache.ts";
 export {
+  getAnalysisSession,
+  setAnalysisSession,
+  type AnalysisSession,
+} from "./analysis-session.ts";
+export {
   DiskCache,
   checkCacheKey,
   ifaceCacheKey,

@@ -656,6 +656,8 @@ export type InterfaceToolParams = {
    * 项目配置 AND：`projectAutoBind && (params.autoBind ?? true)`。
    */
   autoBind?: boolean;
+  /** 打开 buffer 源（E5）；缺省 deps.getOpenText */
+  source?: string;
 };
 
 /**
@@ -701,7 +703,7 @@ export function interfaceEmitPositionalArgs(
 /**
  * Agent interface 打印：与 CLI `nudo interface` 同一数据源（interfaceSurface），
  * 逐函数展示有效契约分层 handwritten / generated / implicit。
- * interfaceSurface 以磁盘为真值（与 CLI 一致）；deps 预留给 open-buffer 通道。
+ * E5：优先 open buffer（getOpenText），磁盘回落；loadModule 走 buffer-aware。
  */
 export async function interfaceTool(
   params: InterfaceToolParams,
@@ -711,9 +713,12 @@ export async function interfaceTool(
     const filePath = normalizeFilePath(params.file);
     // 有效 autoBind = 项目配置 AND 客户端请求（E5 同源 helper）
     const autoBind = resolveProjectAutoBind(filePath, params.autoBind);
+    const open = _deps.getOpenText?.(filePath);
+    const source = params.source ?? open?.text;
     const entries = await interfaceSurface(filePath, {
       loadModule: params.loadModule ?? _deps.loadModule ?? lspLoadModule,
       autoBind,
+      ...(source !== undefined ? { source } : {}),
     });
     const selected = params.functionName
       ? entries.filter((e) => e.fn === params.functionName)
@@ -744,6 +749,7 @@ export type InterfaceDraftToolParams = {
   dryRun?: boolean;
   loadModule?: (spec: string, fromFile: string) => string | undefined;
   autoBind?: boolean;
+  source?: string;
 };
 
 /**
@@ -761,6 +767,8 @@ export async function interfaceDraftTool(
       const gate = assertEmitTargetAllowed(filePath, deps.workspaceRoots);
       if (gate) return { content: [{ type: "text", text: gate }], isError: true };
     }
+    const open = deps.getOpenText?.(filePath);
+    const source = params.source ?? open?.text;
     const result = await draftInterface(filePath, {
       ...(params.functionName ? { fnNames: [params.functionName] } : {}),
       // E5：与 validate/hover 同源 loadModule（buffer-aware）；客户端 autoBind
@@ -768,6 +776,7 @@ export async function interfaceDraftTool(
       ...(params.loadModule ?? deps.loadModule
         ? { loadModule: params.loadModule ?? deps.loadModule }
         : {}),
+      ...(source !== undefined ? { source } : {}),
     });
     const draftRel = sidecarDraftPath(filePath);
     const lines =

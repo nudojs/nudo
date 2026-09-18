@@ -21,6 +21,7 @@ import {
   isNudoTargetPath,
   collectDtsFromEntry,
   evictAnalysisCachesForFiles,
+  getAnalysisSession,
   formatEmitSummary,
   formatInterfaceSurfaceLine,
   checkCacheKey,
@@ -1207,7 +1208,8 @@ program
       const t0 = performance.now();
       // 缓存失效：B-path / AnalysisResult / fn-cache 键不含 dep 指纹——
       // 必须按脏集入口文件定向逐出，否则命中陈旧结果。
-      evictAnalysisCachesForFiles(ordered);
+      // B5：与 LSP 同进程时共用 AnalysisSession 失效面
+      getAnalysisSession().evictForDependents(ordered);
       for (const f of ordered) {
         try {
           await runInfer(f, { dts: opts.dts, showLoc: true });

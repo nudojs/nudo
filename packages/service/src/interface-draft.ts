@@ -68,6 +68,8 @@ export type InterfaceDraftOpts = {
   autoBind?: boolean;
   /** 默认 true：收集 body 成员读取作草稿建议（永不进 check） */
   bodyAccesses?: boolean;
+  /** 打开 buffer 源（E5：与 hover/interface 同口径） */
+  source?: string;
 };
 
 export type InterfaceDraftResult = {
@@ -366,7 +368,7 @@ export async function draftInterface(
   filePath: string,
   opts: InterfaceDraftOpts = {},
 ): Promise<InterfaceDraftResult> {
-  const source = readFileSync(filePath, "utf-8");
+  const source = opts.source ?? readFileSync(filePath, "utf-8");
   const projectConfig = findProjectConfig(dirname(filePath));
   const projectAutoBind = interfaceConfig(projectConfig?.config).autoBind;
   const loadModule = opts.loadModule ?? defaultLoadModule;

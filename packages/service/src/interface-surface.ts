@@ -66,6 +66,8 @@ export type InterfaceSurfaceOpts = {
   loadModule?: LoadModule;
   /** 跨文件调用记录（--callsites 采集）：implicit 展示的实参域原料 */
   records?: CallRecord[];
+  /** 打开 buffer 覆盖磁盘源码（E5：agent/LSP 与 hover 同口径） */
+  source?: string;
 };
 
 /** 单条 interface 打印行（CLI runInterface 与 LSP agent 面共用） */
@@ -141,7 +143,8 @@ export async function interfaceSurface(
   opts: InterfaceSurfaceOpts = {},
 ): Promise<InterfaceSurfaceEntry[]> {
   const abs = resolve(filePath);
-  const source = readFileSync(abs, "utf-8");
+  const source = opts.source ?? readFileSync(abs, "utf-8");
+  const fromBuffer = opts.source !== undefined;
   // since 锚：收尾只排干本次打印自身产生的诊断——全量 take 会在 LSP 长驻
   // 进程的 await 窗口窃取在途 validateText 待消费诊断（接口/精化两通道同防）
   const ifaceSince = interfaceDiagCount();
@@ -155,18 +158,22 @@ export async function interfaceSurface(
   const analysis = await analyzeFileAsync(abs, source, undefined, opts.records);
 
   // B3：整文件 effectiveInterface 表磁盘缓存（打印路径；不加速 analyze）
+  // buffer 源 / 注入 loadModule / callsites 时禁用磁盘缓存（键不含 buffer）
   let disk: DiskCache | undefined;
   let ifaceKey: string | undefined;
   let cachedTable: IfaceTableJson | undefined;
-  if (!opts.loadModule && !opts.records) {
+  if (!opts.loadModule && !opts.records && !fromBuffer) {
     const cacheRoot = diskCacheRoot(proj?.config, proj?.projectDir);
     disk = new DiskCache({ root: cacheRoot, namespace: "iface" });
     if (disk.enabled) {
       let sidecarSource: string | undefined;
       try {
         const sc = sidecarPathOf(abs);
-        if (autoBind !== false && existsSync(sc)) {
-          sidecarSource = readFileSync(sc, "utf-8");
+        if (autoBind !== false) {
+          // buffer-aware 侧车优先
+          const openSc = loadModule(`./${sc.slice(sc.lastIndexOf("/") + 1)}`, abs);
+          if (openSc !== undefined) sidecarSource = openSc;
+          else if (existsSync(sc)) sidecarSource = readFileSync(sc, "utf-8");
         }
       } catch {
         sidecarSource = undefined;

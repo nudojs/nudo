@@ -107,8 +107,8 @@ createUser(  // ← signature help shows: (name: string, age: number)
 When Nudo reports diagnostics, quick fix suggestions are available. Click the lightbulb icon or press `Cmd+.` / `Ctrl+.` to see available fixes:
 
 - **Remove unreachable code** — for code after `return`/`throw`
-- **Insert missing field** — code action inserts `field: undefined` into the call-site object when evaluation/check reports a missing slot
-- **Refine mismatch** — currently a placeholder action title only (does not rewrite `@nudo:refine` yet)
+- **Add missing field to call / sidecar shape** — inserts `field: undefined` at the call site and into `*.nudo.js` shape when present
+- **Relax sidecar contract** — rewrites numeric preds (`number().gt(0)` → `number()`) on the handwritten sidecar for refine/domain violations
 
 ### Semantic Tokens
 

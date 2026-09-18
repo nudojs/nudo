@@ -113,7 +113,7 @@ flowchart TB
 | A3 | **无指令文件的噪声控制**：implicit 推断只报 high-confidence；`unknown` 叶子默认不刷屏 | 无指令文件打开 1s 内无 warning 风暴 | A1, A2 | [x] |
 | A4 | **侧车未保存 buffer**：LSP 可对打开中的 `*.nudo.js` 生效（设计 §2.2 Phase 1 缺口） | 编辑侧车未保存时 check/hover 同步 | design-refine-derivation | [x] |
 | A5 | **跨文件导航补齐**：侧车绑定名的 Go-to-Definition（源码 ↔ `*.nudo.js`）、Find References 含契约边 | F12 从 `add2` 到侧车契约可跳 | A1 | [x] |
-| A6 | **Quickfix / Code Action 扩展**：缺 slot → 插入侧车 shape；refine 违例 → 放宽契约/改实参建议 | 两类一键修复可用 | D2 | [~] missing-field → 调用对象插 `field: undefined`；refine fix 仍为占位（未做侧车 shape 插入 / 契约放宽） |
+| A6 | **Quickfix / Code Action 扩展**：缺 slot → 插入侧车 shape；refine 违例 → 放宽契约/改实参建议 | 两类一键修复可用 | D2 | [x] 调用点插字段 + 侧车 shape 补字段 + relax 数值谓词侧车契约（server.ts code actions） |
 | A7 | **语义高亮与 inlay 对齐 interface 档**：default 走 symbolic（设计 Phase 1 已提），与 CodeLens 切换一致 | CodeLens `● interface` 与 hover 同源 | design-refine-derivation | [x] |
 | A8 | **大文件防抖与取消**：分析可取消；编辑风暴下不排队爆炸 | `validateGeneration` 取消 + 大文件防抖 400/800ms | B2 | [x] |
 
@@ -137,7 +137,7 @@ flowchart TB
 | B2 | **编辑路径增量**：按文件脏标记 + 依赖边失效（隐式侧车边已在设计 §4.5）；避免整文件 Full sync 重算 | 单字符编辑 warm 分析 < 5ms（中位文件） | design-persistent-cache | [x] |
 | B3 | **`effectiveInterface` 跨会话缓存落地**（设计 Phase B） | 二次启动契约读取命中磁盘缓存 | design-persistent-cache | [x] |
 | B4 | **polyvariant 预算**：调用点/实例化上限 + 可配置 widen；超限可预测降级 | 400 函数缩放曲线不劣于 tsc LS 同档；超限有可解释 `#widened` | C 系列 | [x] |
-| B5 | **LSP 与 CLI 共享 memo**：避免两套缓存；workspace 级 AnalysisSession | IDE 与 `nudo check` 结果一致且不重复算 | B2, B3 | [~] 未完成；Phase 2 的 B3/B4 已落地，**B5 未** |
+| B5 | **LSP 与 CLI 共享 memo**：避免两套缓存；workspace 级 AnalysisSession | IDE 与 `nudo check` 结果一致且不重复算 | B2, B3 | [x] `getAnalysisSession()` 进程内共享（service/analysis-session.ts）；LSP/agent/CLI 同进程共用 core/service 模块 memo + session 失效面 |
 | B6 | **真实 monorepo 基准**：挑 1–2 个中型开源 JS 包全量 check/infer 延迟基线 | 有可复现数字写入 baseline.json | B1 | [-] cancelled：跳过真实 monorepo 基准（非门禁） |
 
 **相关**
@@ -270,10 +270,10 @@ flowchart TB
 - [x] **B3–B4** 持久缓存：`disk-cache.ts` CheckJson L1 + **effectiveInterface 整文件表**（`iface` 命名空间；键=相对路径+源/侧车 sha256+autoBind，implicit 负缓存 null）；
   `nudo.analysis.callSiteBudget` / `package.json#nudo.cache` / `NUDO_CACHE_DIR`；
   超预算 symbolic case 强制 `#widened`
-- [~] **B5** LSP/CLI 共享 memo / workspace AnalysisSession——**未完成**（见表内 B5）
+- [x] **B5** LSP/CLI 共享 memo / workspace AnalysisSession——`getAnalysisSession()`（service）；同进程 LSP validate / agent tools / CLI 复用同一 memo 与失效 API
 - [x] **C1.*** Map/Set 条目表 + 动态 key 槽位并集 + 手写循环 push 重绑
 - [x] **C2.1–C2.2** 循环 return（`$loopReturn`）；catch 形参绑定 thrown Abs（Error name/message）——C2.1 测试见 `loop-return-and-presence.test.ts`
-- [~] **A4–A6** 侧车 buffer 优先 loadModule、definition 含侧车契约、missing-field quickfix（A4：磁盘侧车 miss 已登记边；**打开 buffer 内编辑侧车尚未自动重检 parent**；A6 refine fix 未完成）
+- [x] **A4–A6** 侧车 buffer 优先 loadModule、definition 含侧车契约、missing-field quickfix；**buffer 编辑/打开侧车触发 parent 重检**；A6 调用点+侧车 shape+契约 relax
 
 ### Phase 3 — 替代门槛冲刺
 

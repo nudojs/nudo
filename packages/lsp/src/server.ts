@@ -176,11 +176,17 @@ let debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 // propagate=true 与编辑防抖路径同语义（含对打开依赖项的一次脏传播）。
 documents.onDidOpen((event) => {
   nudoFileCache.delete(event.document.uri);
+  const openPath = uriToFilePath(event.document.uri);
+  // A4：打开侧车（含新建 buffer）→ 立即尝试重检已登记 parent
+  if (isNudoDepPath(openPath)) {
+    void handleNudoDepFileChanged(openPath, validationDeps()).catch(() => {});
+  }
   validateDocument(event.document, true).catch(() => {});
 });
 
 documents.onDidChangeContent((change) => {
   const uri = change.document.uri;
+  const filePath = uriToFilePath(uri);
   nudoFileCache.delete(uri);
   const existing = debounceTimers.get(uri);
   if (existing) clearTimeout(existing);
@@ -193,6 +199,11 @@ documents.onDidChangeContent((change) => {
     uri,
     setTimeout(() => {
       debounceTimers.delete(uri);
+      // A4：buffer 内编辑侧车 → 定向逐出 + 重检打开中的 parent
+      // （activeLoadModule 会让 parent 分析读到未保存侧车内容）
+      if (isNudoDepPath(filePath)) {
+        void handleNudoDepFileChanged(filePath, validationDeps()).catch(() => {});
+      }
       validateDocument(change.document, true).catch(() => {});
     }, delay),
   );
@@ -726,6 +737,7 @@ connection.onCodeAction((params) => {
   const actions = [];
   const source = document.getText();
   const lines = source.split("\n");
+  const filePath = uriToFilePath(params.textDocument.uri);
 
   for (const diag of params.context.diagnostics) {
     if (diag.code === "nudo-unreachable") {
@@ -743,17 +755,23 @@ connection.onCodeAction((params) => {
         },
       });
     }
-    // A6：缺 slot → 在实参对象字面量插入缺失字段
-    if (diag.code === "nudo:constraint-violated") {
-      const data = (diag.data ?? {}) as { expected?: string; actual?: string; suggestions?: string[] };
-      const missing = typeof data.expected === "string" ? data.expected.match(/missing field\s+([\w.$]+)/) : null;
+    // A6：缺 slot → 调用点插字段 + 侧车 shape 补字段
+    if (diag.code === "nudo:constraint-violated" || diag.code === "nudo:missing-slot") {
+      const data = (diag.data ?? {}) as {
+        expected?: string;
+        actual?: string;
+        suggestions?: string[];
+        fn?: string;
+      };
+      const missing = typeof data.expected === "string"
+        ? data.expected.match(/missing field\s+([\w.$]+)/) ?? data.expected.match(/([\w.$]+)\s*∈/)
+        : null;
       if (missing) {
-        const fieldPath = missing[1]!; // e.g. p.y
+        const fieldPath = missing[1]!;
         const field = fieldPath.split(".").pop() ?? fieldPath;
         const line = diag.range.start.line;
         const lineText = lines[line] ?? "";
-        // Only offer the insert when the line has exactly one `{` — nested /
-        // multi-brace lines make "insert after first `{`" produce broken code.
+        // 调用点：单 `{` 行插入 field: undefined
         const braceCount = (lineText.match(/\{/g) ?? []).length;
         const braceCol = lineText.indexOf("{");
         if (braceCol >= 0 && braceCount === 1) {
@@ -762,7 +780,7 @@ connection.onCodeAction((params) => {
             ? ` ${field}: undefined `
             : ` ${field}: undefined, `;
           actions.push({
-            title: `Add missing field '${field}'`,
+            title: `Add missing field '${field}' to call`,
             kind: "quickfix",
             diagnostics: [diag],
             edit: {
@@ -775,21 +793,137 @@ connection.onCodeAction((params) => {
             },
           });
         }
+        // A6：侧车 shape 补字段（同文件 *.nudo.js）
+        const sidecarUri = filePathToUri(sidecarPathOf(filePath));
+        const sidecarText = agentToolDeps.getOpenText?.(sidecarPathOf(filePath))?.text
+          ?? (() => {
+            try {
+              return readFileSync(sidecarPathOf(filePath), "utf-8");
+            } catch {
+              return undefined;
+            }
+          })();
+        if (sidecarText !== undefined) {
+          const scLines = sidecarText.split("\n");
+          // 在 shape({ / fn({ 的第一个 `{` 后插入字段
+          for (let i = 0; i < scLines.length; i++) {
+            const t = scLines[i]!;
+            if (!/\bshape\s*\(\s*\{|\bfn\s*\(\s*\{/.test(t)) continue;
+            const b = t.indexOf("{");
+            if (b < 0) continue;
+            const insert = t.slice(b + 1).trimStart().startsWith("}")
+              ? ` ${field}: undefined `
+              : ` ${field}: undefined, `;
+            actions.push({
+              title: `Add '${field}' to sidecar shape`,
+              kind: "quickfix",
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  [sidecarUri]: [{
+                    range: {
+                      start: { line: i, character: b + 1 },
+                      end: { line: i, character: b + 1 },
+                    },
+                    newText: insert,
+                  }],
+                },
+              },
+            });
+            break;
+          }
+        } else {
+          actions.push({
+            title: `Create sidecar draft with field '${field}'`,
+            kind: "quickfix",
+            diagnostics: [diag],
+            command: {
+              title: "nudo draft",
+              command: "nudo.interfaceDraft",
+              arguments: [params.textDocument.uri],
+            },
+          });
+        }
       }
-      // refine 违例：把建议作为 quickfix 标题展示（不自动改契约/实参）
-      if (data.suggestions?.length) {
-        actions.push({
-          title: data.suggestions[0]!,
-          kind: "quickfix",
-          diagnostics: [diag],
-          edit: { changes: {} },
-        });
+
+      // A6：refine 违例 → 放宽侧车契约（解析 suggestion 里的 fn/param/constraint）
+      const sug = data.suggestions?.[0] ?? "";
+      const loosen = sug.match(
+        /Loosen the handwritten contract for\s+(\w+)\s*\((\w+):\s*([^)]+)\)/i,
+      ) ?? sug.match(/放宽\s+(\w+)\s*的前置/) ?? sug.match(/改用满足\s+(.+?)\s*的/);
+      if (loosen || data.fn) {
+        const fnName = data.fn ?? (loosen?.[1] || undefined);
+        const param = loosen?.[2];
+        const constraintText = loosen?.[3]?.trim();
+        const sidecarPath = sidecarPathOf(filePath);
+        const scText = agentToolDeps.getOpenText?.(sidecarPath)?.text
+          ?? (() => {
+            try {
+              return readFileSync(sidecarPath, "utf-8");
+            } catch {
+              return undefined;
+            }
+          })();
+        if (scText !== undefined && fnName) {
+          const relaxed = relaxSidecarConstraint(scText, fnName, param, constraintText);
+          if (relaxed && relaxed !== scText) {
+            const scUri = filePathToUri(sidecarPath);
+            const scLines = scText.split("\n");
+            const last = scLines.length - 1;
+            actions.push({
+              title: `Relax sidecar contract for ${fnName}${param ? `.${param}` : ""}`,
+              kind: "quickfix",
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  [scUri]: [{
+                    range: {
+                      start: { line: 0, character: 0 },
+                      end: { line: last, character: scLines[last]?.length ?? 0 },
+                    },
+                    newText: relaxed,
+                  }],
+                },
+              },
+            });
+          }
+        }
       }
     }
   }
 
   return actions;
 });
+
+/**
+ * A6：把侧车里 fn/param 上的数值谓词放宽为基类型（保守文本改写）。
+ * 只动 `number().gt(N)` / `.lt` / `.int` / `.min` / `.max` 等可识别片段。
+ */
+function relaxSidecarConstraint(
+  sidecarSource: string,
+  fnName: string,
+  param?: string,
+  constraintText?: string,
+): string | undefined {
+  let src = sidecarSource;
+  // 优先：整段 constraintText → 基类型
+  if (constraintText && constraintText.length > 0) {
+    const base = constraintText.replace(/\.(gt|ge|lt|le|min|max|int|positive|negative)\s*\([^)]*\)/g, "").replace(/\(\)/g, "()");
+    if (base && base !== constraintText && src.includes(constraintText)) {
+      return src.split(constraintText).join(base);
+    }
+  }
+  // 次选：fnName 附近 param: number().…() → number()
+  if (param) {
+    const re = new RegExp(`(\\b${param}\\s*:\\s*)number(\\(\\)(?:\\.[A-Za-z]+(?:\\([^)]*\\))?)*)`, "g");
+    const next = src.replace(re, (_m, p1) => `${p1}number()`);
+    if (next !== src) return next;
+  }
+  // 兜底：导出绑定名附近的 number().pred()
+  const fnRe = new RegExp(`(\\b${fnName}\\s*=\\s*)number(\\(\\)(?:\\.[A-Za-z]+(?:\\([^)]*\\))?)*)`, "g");
+  const next = src.replace(fnRe, (_m, p1) => `${p1}number()`);
+  return next !== src ? next : undefined;
+}
 
 connection.onSignatureHelp((params) => {
   const document = documents.get(params.textDocument.uri);
