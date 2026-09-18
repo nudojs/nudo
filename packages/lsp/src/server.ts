@@ -323,6 +323,15 @@ function validationDeps(): ValidateTextDeps {
     getActiveCases: (uri) => getActiveCasesForUri(uri),
     getOpenDocumentByPath: (filePath) =>
       documents.all().find((doc) => uriToFilePath(doc.uri) === filePath),
+    listOpenDocuments: () => documents.all().map((doc) => ({
+      uri: doc.uri,
+      version: doc.version,
+      getText: () => doc.getText(),
+    })),
+    onProjectConfigChanged: () => {
+      // analysis.mode 等 gate 结果失效；诊断档也随配置重算
+      nudoFileCache.clear();
+    },
     loadModule: activeLoadModule,
   };
 }
@@ -886,17 +895,23 @@ connection.onCodeAction((params) => {
         "nudo:constraint-violated",
         "nudo:refine-violated",
         "nudo:domain-exceeds",
+        "nudo:interface-domain-exceeds",
         "constraint-violated",
         "refine",
       ]);
+      // missing-slot 只补字段，不挂「放宽侧车」——避免剥掉无关数值谓词
+      const codeStr = String(diag.code ?? "");
+      const isMissingSlot =
+        codeStr === "nudo:missing-slot" || codeStr === "missing-slot";
       const canRelax =
-        loosen !== null ||
-        (typeof data.fn === "string" &&
-          data.fn.length > 0 &&
-          (relaxableCodes.has(String(diag.code ?? "")) ||
-            /constraint|refine|contract/i.test(
-              String(diag.code ?? "") + String((data as { suggestions?: string[] }).suggestions?.join(" ") ?? ""),
-            )));
+        !isMissingSlot &&
+        (loosen !== null ||
+          (typeof data.fn === "string" &&
+            data.fn.length > 0 &&
+            (relaxableCodes.has(codeStr) ||
+              /constraint|refine|contract/i.test(
+                codeStr + String((data as { suggestions?: string[] }).suggestions?.join(" ") ?? ""),
+              ))));
       if (canRelax && (loosen || data.fn)) {
         const fnName = data.fn ?? (loosen?.[1] || undefined);
         const param = loosen?.[2];

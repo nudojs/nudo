@@ -341,13 +341,14 @@ export function resolveProjectAutoBind(
 }
 
 /** draft 写盘 projectDir：与 CLI runInterfaceDraft 同口径
- * （nudo 配置 → package.json 祖先） */
+ * （nudo 配置 → package.json 祖先，上溯到 fs root，无层级上限） */
 function resolveDraftProjectDir(filePath: string): string | undefined {
   const proj = findProjectConfig(dirname(filePath));
   if (proj?.projectDir) return proj.projectDir;
   // package.json 祖先回落（与 CLI 对齐：无 nudo 配置时仍用包根约束写盘）
   let dir = dirname(filePath);
-  for (let i = 0; i < 12; i++) {
+  const fsRoot = resolve("/");
+  while (dir !== fsRoot) {
     const pkg = resolve(dir, "package.json");
     try {
       if (existsSync(pkg)) return dir;

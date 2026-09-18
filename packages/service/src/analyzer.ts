@@ -54,6 +54,7 @@ import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/
 import { resolveNpmNudo } from "./evaluator/resolve-npm.ts";
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
+import { noteEnvPathDeps } from "./env-path-deps.ts";
 import { loadModuleDepsFingerprint, hashSource } from "@nudojs/core";
 import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph, evalProgramAbsWithModules } from "./abs-modules-graph.ts";
@@ -816,6 +817,8 @@ export async function analyzeFileAsync(
   loadModule?: AnalyzeLoadModule,
 ): Promise<AnalysisResult> {
   const envNames = collectEnvNames(filePath, source, true);
+  // path-based @nudo:env / mock-module 反向边（watch 失效）
+  noteEnvPathDeps(filePath, source);
   if (envNames.length > 0) {
     await preloadPathEnvs(envNames, dirname(filePath));
   }

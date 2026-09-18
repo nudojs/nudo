@@ -594,17 +594,38 @@ export function $thisSet(thisVal: Abs, key: string, value: Abs): Abs {
   return unknown;
 }
 
-/** 解构默认值：undefined 时用 default */
+/** 解构默认值：undefined（含 sum 成员 / 可能缺失）时用 default 并入非 undefined 部分 */
 export function $orDefault(v: Abs, dflt: () => Abs): Abs {
   // 实参缺失：transpile 占位参数收到 JS undefined（非 Abs）
   if (v === undefined) return asAbsVal(dflt());
-  if (litValue(v) === undefined && v.shape.k !== "never") {
-    // 明确 undefined 字面量 → 默认值；unknown 保守保留
-    if (v.term?.op === "lit" && v.term.value === undefined) return asAbsVal(dflt());
-    if (v.shape.k === "unknown" && v.term?.op === "lit") return asAbsVal(dflt());
+  if (isDefinitelyUndefinedAbs(v)) return asAbsVal(dflt());
+  // sum / optional 可能含 undefined → JS 用 default 替换该成员，域是 dflt ∪ non-undefined
+  if (v.shape.k === "sum") {
+    const d = asAbsVal(dflt());
+    const parts: Abs[] = [];
+    let sawUndef = false;
+    for (const m of v.shape.members) {
+      if (isDefinitelyUndefinedAbs(m)) {
+        sawUndef = true;
+        continue;
+      }
+      parts.push(m);
+    }
+    if (!sawUndef) return v;
+    if (parts.length === 0) return d;
+    let joined = parts[0]!;
+    for (let i = 1; i < parts.length; i++) joined = joinAbs(joined, parts[i]!);
+    return joinAbs(joined, d);
   }
-  if (v.term?.op === "lit" && v.term.value === undefined) return asAbsVal(dflt());
   return v;
+}
+
+function isDefinitelyUndefinedAbs(v: Abs | undefined): boolean {
+  if (!v) return false;
+  if (v.term?.op === "lit" && v.term.value === undefined) return true;
+  // unknown + lit(undefined) 的历史折叠形
+  if (v.shape.k === "unknown" && v.term?.op === "lit" && litValue(v) === undefined) return true;
+  return false;
 }
 
 function isNullishAbs(v: Abs): boolean {

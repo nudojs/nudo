@@ -23,6 +23,9 @@ import {
   isSidecarPath,
   isProjectConfigPath,
   ambientSourcesOfSidecar,
+  noteEnvPathDeps,
+  envPathDependents,
+  isEnvTemplatePath,
   collectDtsFromEntry,
   evictAnalysisCachesForFiles,
   getAnalysisSession,
@@ -389,6 +392,8 @@ async function runCheck(
   // 关闭」承诺：不只打印路径——false 时侧车 ambient 绑定整体停用）
   const proj = findProjectConfig(dirname(filePath));
   const autoBind = interfaceConfig(proj?.config).autoBind;
+  const aCfg = analysisConfig(proj?.config);
+  const projectEnvNames = proj?.config.env ?? [];
   const cacheRoot = diskCacheRoot(proj?.config, proj?.projectDir);
   const disk = new DiskCache({ root: cacheRoot, namespace: "check" });
   // --callsites 注入路径不做磁盘复用（证据面含调用记录）
@@ -414,6 +419,12 @@ async function runCheck(
           projectDir: proj?.projectDir,
           sidecarContent,
           depContents: dep.depContents,
+          projectEnvNames,
+          analysisCfg: {
+            mode: aCfg.mode,
+            evalMissingSlot: aCfg.evalMissingSlot,
+            callSiteBudget: aCfg.callSiteBudget,
+          },
         })
       : undefined;
   const cached = cacheKey ? disk.get<ReturnType<typeof serializeCheckJson>>(cacheKey) : undefined;
@@ -1260,6 +1271,20 @@ program
         if (isProjectConfigPath(cf)) {
           forceFull = true;
           continue;
+        }
+        // path-based @nudo:env / mock 模板：反向边 → 重析引用方
+        if (isEnvTemplatePath(cf) || !isSidecarPath(cf)) {
+          const envDeps = envPathDependents(cf);
+          if (envDeps.length > 0) {
+            for (const src of envDeps) {
+              if (tracked.has(src)) dirtyUnion.add(src);
+              for (const d of computeDirtySet(graph.dependents, src)) dirtyUnion.add(d);
+            }
+          } else if (isEnvTemplatePath(cf)) {
+            // 无反向登记（首次或未分析过）→ 全量，避免陈旧 env 结果
+            forceFull = true;
+            continue;
+          }
         }
         if (isSidecarPath(cf)) {
           for (const src of ambientSourcesOfSidecar(cf)) {

@@ -21,6 +21,8 @@ import {
   interfaceConfig,
   filterDiagnosticsByLevel,
   diagnosticsLevelForFile,
+  isProjectConfigPath,
+  isNudoTargetPath,
   type AnalysisResult,
   type Diagnostic as JsDiagnostic,
   type DiagnosticSeverity as JsDiagSeverity,
@@ -45,6 +47,26 @@ import { createHash } from "node:crypto";
 function sourceFingerprint(s: string): string {
   return createHash("sha1").update(s).digest("hex");
 }
+
+/**
+ * 项目配置指纹：analysis.mode / diagnostics / autoBind / env / callSiteBudget /
+ * evalMissingSlot 变更必须 miss analysisCache（与 CLI force-full 同口径）。
+ */
+function projectConfigFingerprint(filePath: string): string {
+  try {
+    const proj = findProjectConfig(dirname(filePath));
+    const cfg = proj?.config ?? {};
+    return sourceFingerprint(
+      JSON.stringify({
+        autoBind: cfg.interface?.autoBind ?? true,
+        analysis: cfg.analysis ?? null,
+        env: cfg.env ?? null,
+      }),
+    );
+  } catch {
+    return "-";
+  }
+}
 import {
   DiagnosticSeverity,
   DiagnosticTag,
@@ -58,7 +80,14 @@ import {
  */
 export const analysisCache = new Map<
   string,
-  { version: number; result: AnalysisResult; sourceHash?: string; casesHash?: string; depsHash?: string }
+  {
+    version: number;
+    result: AnalysisResult;
+    sourceHash?: string;
+    casesHash?: string;
+    depsHash?: string;
+    cfgHash?: string;
+  }
 >();
 
 function casesFingerprint(cases?: Map<string, number>): string {
@@ -202,8 +231,9 @@ function registerSidecarClosureFor(entryFile: string, parent: string): void {
 }
 
 /**
- * `*.nudo.js` 创建/变更：定向逐出 L0 memo 中依赖该文件的条目，
+ * `*.nudo.js` / 项目配置创建/变更：定向逐出 L0 memo 中依赖该文件的条目，
  * 并重检打开中的父文件（propagate=false，不级联）。
+ * 项目配置（package.json#nudo.*）没有 parent 边：必须整会话失效 + force 打开文档。
  */
 export async function handleNudoDepFileChanged(
   nudoPath: string,
@@ -212,6 +242,27 @@ export async function handleNudoDepFileChanged(
   const p = normPath(resolvePath(nudoPath));
   evictGeneralizeMemoForPaths([p]);
   evictCheckSourceMemoForPaths([p]);
+  deps.onProjectConfigChanged?.();
+  if (isProjectConfigPath(p)) {
+    // analysis.mode / autoBind / nudo.env / diagnostics 档变更：与 CLI watch 同口径 force full
+    clearAnalysisSessionCaches();
+    analysisCache.clear();
+    const open = deps.listOpenDocuments?.() ?? [];
+    for (const doc of open) {
+      const fp = uriToFilePath(doc.uri);
+      if (!fp || !isNudoTargetPath(fp)) continue;
+      await validateText(
+        fp,
+        doc.uri,
+        doc.getText(),
+        doc.version,
+        deps,
+        false,
+        true,
+      );
+    }
+    return;
+  }
   const parents = nudoDepParents.get(p);
   if (!parents || parents.size === 0) return;
   const parentList = [...parents];
@@ -306,11 +357,13 @@ export function getCachedOrAnalyze(
   // 漏掉 casesHash 会把上一 case 的分析结果/lens 原样吐回（B2）
   const casesHash = casesFingerprint(activeCases);
   const depsHash = depsFingerprint(filePath, loadModule);
+  const cfgHash = projectConfigFingerprint(filePath);
   if (
     cached &&
     cached.version === version &&
     (cached.casesHash ?? "-") === casesHash &&
-    (cached.depsHash ?? "-") === depsHash
+    (cached.depsHash ?? "-") === depsHash &&
+    (cached.cfgHash ?? "-") === cfgHash
   ) {
     return cached.result;
   }
@@ -322,6 +375,7 @@ export function getCachedOrAnalyze(
     sourceHash: sourceFingerprint(source),
     casesHash,
     depsHash,
+    cfgHash,
   });
   return result;
 }
@@ -360,6 +414,10 @@ export type ValidateTextDeps = {
   getOpenDocumentByPath?: (filePath: string) => OpenDocumentLike | undefined;
   /** A4：侧车 buffer 优先的 loadModule */
   loadModule?: (spec: string, fromFile: string) => string | undefined;
+  /** 枚举打开中的文档：package.json 等项目配置变更时 force 全量重检 */
+  listOpenDocuments?: () => OpenDocumentLike[];
+  /** 项目配置变更后宿主侧清理（如 nudoFileCache） */
+  onProjectConfigChanged?: () => void;
 };
 
 const severityMap: Record<JsDiagSeverity, DiagnosticSeverity> = {
@@ -522,12 +580,23 @@ export async function validateText(
   // B2：内容未变（undo/redo）且非脏传播 → 复用上次 AnalysisResult。
   // activeCases 必须进指纹：selectCase 不 bump 文档 version，只比 sourceHash
   // 会复用上一 case 的诊断/lens。
+  // depsHash / 项目配置维：与 getCachedOrAnalyze 同口径，避免 source 未变时
+  // 吃陈旧 autoBind/env/diagnostics 结果。
   const activeCases = deps.getActiveCases?.(uri);
   const casesHash = casesFingerprint(activeCases);
   const fp = sourceFingerprint(text);
+  const cfgHash = projectConfigFingerprint(filePath);
+  const depHash = depsFingerprint(filePath, deps.loadModule);
   const prev = analysisCache.get(filePath);
   let result: AnalysisResult;
-  if (!force && prev?.sourceHash === fp && prev.casesHash === casesHash && prev.result) {
+  if (
+    !force &&
+    prev?.sourceHash === fp &&
+    prev.casesHash === casesHash &&
+    prev.depsHash === depHash &&
+    prev.cfgHash === cfgHash &&
+    prev.result
+  ) {
     result = prev.result;
   } else {
     try {
@@ -556,7 +625,8 @@ export async function validateText(
     result,
     sourceHash: fp,
     casesHash,
-    depsHash: depsFingerprint(filePath, deps.loadModule),
+    depsHash: depHash,
+    cfgHash,
   });
   knownFiles.add(filePath);
   registerNudoImportDeps(filePath, text);

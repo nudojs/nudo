@@ -74,6 +74,24 @@ describe("Map/Set delete/clear unit (collections API)", () => {
     expect(has.conf).not.toBe("exact");
   });
 
+  it("abstract if + set.delete different keys: has not exact (cross-arm equal size)", () => {
+    const s = makeSetAbs();
+    setAddEntry(s, numLit(1));
+    setAddEntry(s, numLit(2));
+    $fork(abstractBool(), () => {
+      setDeleteEntry(s, numLit(1));
+      return unk();
+    }, () => {
+      setDeleteEntry(s, numLit(2));
+      return unk();
+    });
+    // 两臂长度同为 1 但 delete 不同 key：has(1)/has(2) 都不能折 exact true
+    const has1 = setHasEntry(s, numLit(1));
+    const has2 = setHasEntry(s, numLit(2));
+    expect(has1.conf).not.toBe("exact");
+    expect(has2.conf).not.toBe("exact");
+  });
+
   it("nested fork map write is visible to inner read from outer arm", () => {
     const m = makeMapAbs();
     $fork(abstractBool(), () => {

@@ -160,12 +160,14 @@ function checkMemoKey(
 ): string {
   // identity must stay the caller's raw loadModule or every checkSource
   // allocates a new loadModuleId and memo never hits.
+  // autoBind 必须进键：执法档翻转后不得回放另一档报告（disk 键已含）。
   return [
     hashSource(source),
     filePath,
     `${loadModuleId(identityOpts.loadModule)}:${identityOpts.fromFile ?? ""}`,
     deps.fp,
     sidecarFp ?? "-",
+    identityOpts.autoBind === false ? "ab0" : "ab1",
   ].join("|");
 }
 

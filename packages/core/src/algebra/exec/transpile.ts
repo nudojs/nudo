@@ -281,7 +281,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $pushLoopExit } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -373,7 +373,28 @@ function collectPatternNames(id: unknown, acc: Set<string>): void {
  * 嵌套函数参数 / for-of 绑定 / catch 参数不得把外层自由写从 fork
  * 协议里剔除（P0-1）。
  */
+/** AST 节点身份 → free-write / mutator-receiver 扫描结果（热路径去重） */
+const freeAssignedCache = new WeakMap<object, string[]>();
+const mutatorRecvCache = new WeakMap<object, Set<string>>();
+
 function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
+  const cachedParts: string[][] = [];
+  const pending: object[] = [];
+  for (const node of nodes) {
+    if (node && typeof node === "object") {
+      const hit = freeAssignedCache.get(node);
+      if (hit) {
+        cachedParts.push(hit);
+        continue;
+      }
+      pending.push(node);
+    }
+  }
+  if (pending.length === 0) {
+    const merged = new Set<string>();
+    for (const p of cachedParts) for (const n of p) merged.add(n);
+    return [...merged];
+  }
   const free = new Set<string>();
   const markFree = (name: string | undefined, shadowed: Set<string>): void => {
     if (name && name !== "undefined" && !shadowed.has(name)) free.add(name);
@@ -519,11 +540,14 @@ function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
     }
   };
 
-  for (const node of nodes) {
-    if (!node) continue;
+  for (const node of pending) {
     walk(node, new Set());
   }
-  return [...free];
+  const computed = [...free];
+  for (const node of pending) freeAssignedCache.set(node, computed);
+  const merged = new Set<string>(computed);
+  for (const p of cachedParts) for (const n of p) merged.add(n);
+  return [...merged];
 }
 
 /**
@@ -630,11 +654,17 @@ function transpileFnBodyStmts(stmts: Statement[], depth: number, opts: Transpile
       return [
         `() => {`,
         ...names.map((n) => `${padIn}${n} = __fk0_${n};`),
+        `${padIn}let __cont = true;`,
         `${padIn}try {`,
         `${padIn}  return (${thunk})();`,
+        `${padIn}} catch (e) {`,
+        `${padIn}  if ($isForkExit(e)) __cont = false;`,
+        `${padIn}  throw e;`,
         `${padIn}} finally {`,
-        ...names.map((n) => `${padIn}  __${outPrefix}${n} = ${n};`),
-        ...names.map((n) => `${padIn}  __${outPrefix}set_${n} = true;`),
+        `${padIn}  if (__cont) {`,
+        ...names.map((n) => `${padIn}    __${outPrefix}${n} = ${n};`),
+        ...names.map((n) => `${padIn}    __${outPrefix}set_${n} = true;`),
+        `${padIn}  }`,
         `${padIn}}`,
         `}`,
       ].join("\n");
@@ -689,12 +719,19 @@ function emitDestructure(
     return;
   }
   if (pattern.type === "ObjectPattern") {
+    const namedKeys: string[] = [];
+    let restName: string | undefined;
     for (const prop of pattern.properties) {
+      if (prop.type === "RestElement") {
+        if (prop.argument.type === "Identifier") restName = prop.argument.name;
+        continue;
+      }
       if (prop.type !== "ObjectProperty") continue;
       if (prop.key.type !== "Identifier" && prop.key.type !== "StringLiteral") continue;
       const key =
         prop.key.type === "Identifier" ? prop.key.name : String(prop.key.value);
       const keyLit = JSON.stringify(key);
+      namedKeys.push(key);
       if (prop.value.type === "AssignmentPattern") {
         const def = transpileExpression(prop.value.right as Expression, opts);
         const left = prop.value.left;
@@ -720,11 +757,25 @@ function emitDestructure(
         out.push(`${pad}${kw} ${prop.value.name} = $get(${fromSrc}, ${keyLit});`);
       }
     }
+    if (restName) {
+      out.push(
+        `${pad}${kw} ${restName} = $objRest(${fromSrc}, ${JSON.stringify(namedKeys)});`,
+      );
+    }
     return;
   }
   if (pattern.type === "ArrayPattern") {
+    let restName: string | undefined;
+    let restAt = 0;
     pattern.elements.forEach((el, i) => {
       if (!el) return;
+      if (el.type === "RestElement") {
+        if (el.argument.type === "Identifier") {
+          restName = el.argument.name;
+          restAt = i;
+        }
+        return;
+      }
       if (el.type === "AssignmentPattern") {
         const def = transpileExpression(el.right as Expression, opts);
         const idx = `$idx(${fromSrc}, $lit(${i}))`;
@@ -747,6 +798,9 @@ function emitDestructure(
         out.push(`${pad}${kw} ${el.name} = $idx(${fromSrc}, $lit(${i}));`);
       }
     });
+    if (restName) {
+      out.push(`${pad}${kw} ${restName} = $arrRest(${fromSrc}, ${restAt});`);
+    }
   }
 }
 
@@ -802,6 +856,20 @@ function emitParamBinding(
 /** 收集语句/表达式里以 Identifier 为 receiver 的数组 mutator 名 */
 function collectArrMutatorReceivers(node: unknown, acc = new Set<string>()): Set<string> {
   if (!node || typeof node !== "object") return acc;
+  const hit = mutatorRecvCache.get(node as object);
+  if (hit) {
+    for (const n of hit) acc.add(n);
+    return acc;
+  }
+  const local = new Set<string>();
+  collectArrMutatorReceiversUncached(node, local);
+  mutatorRecvCache.set(node as object, local);
+  for (const n of local) acc.add(n);
+  return acc;
+}
+
+function collectArrMutatorReceiversUncached(node: unknown, acc = new Set<string>()): Set<string> {
+  if (!node || typeof node !== "object") return acc;
   const n = node as Record<string, unknown>;
   if (
     n.type === "FunctionExpression" ||
@@ -841,13 +909,13 @@ function collectArrMutatorReceivers(node: unknown, acc = new Set<string>()): Set
   for (const key of Object.keys(n)) {
     if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
     const child = n[key];
-    if (Array.isArray(child)) child.forEach((c) => collectArrMutatorReceivers(c, acc));
-    else if (child && typeof child === "object") collectArrMutatorReceivers(child, acc);
+    if (Array.isArray(child)) child.forEach((c) => collectArrMutatorReceiversUncached(c, acc));
+    else if (child && typeof child === "object") collectArrMutatorReceiversUncached(child, acc);
   }
   return acc;
 }
 
-/** fork 臂 thunk：restore snapshot → 求值 → arm 内重绑 → 保存结束态（带 ran 标志） */
+/** fork 臂 thunk：restore snapshot → 求值 → 仅 continue 臂重绑保存（带 ran 标志） */
 function forkArmThunk(
   bodyLines: string[],
   outPrefix: string,
@@ -856,11 +924,17 @@ function forkArmThunk(
   return [
     `() => {`,
     ...names.map((n) => `  ${n} = __fk0_${n};`),
+    `  let __cont = true;`,
     `  try {`,
     ...bodyLines.map((l) => `    ${l}`),
+    `  } catch (e) {`,
+    `    if ($isForkExit(e)) __cont = false;`,
+    `    throw e;`,
     `  } finally {`,
-    ...names.map((n) => `  __${outPrefix}${n} = ${n};`),
-    ...names.map((n) => `  __${outPrefix}set_${n} = true;`),
+    `    if (__cont) {`,
+    ...names.map((n) => `      __${outPrefix}${n} = ${n};`),
+    ...names.map((n) => `      __${outPrefix}set_${n} = true;`),
+    `    }`,
     `  }`,
     `}`,
   ].join("\n");
@@ -875,7 +949,7 @@ function forkBindingDecls(names: string[], pad = ""): string[] {
   ]);
 }
 
-/** fork 后把各臂结束态 join 回绑定（仅 join 真正跑过的臂） */
+/** fork 后把各臂结束态 join 回绑定（仅 join **未**以 return/throw 退出的臂） */
 function forkJoinBindings(names: string[], pad = ""): string[] {
   return names.map(
     (n) =>
@@ -1190,11 +1264,17 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         return [
           `() => {`,
           ...names.map((n) => `${padIn}${n} = __fk0_${n};`),
+          `${padIn}let __cont = true;`,
           `${padIn}try {`,
           `${padIn}  return (${thunk})();`,
+          `${padIn}} catch (e) {`,
+          `${padIn}  if ($isForkExit(e)) __cont = false;`,
+          `${padIn}  throw e;`,
           `${padIn}} finally {`,
-          ...names.map((n) => `${padIn}  __${outPrefix}${n} = ${n};`),
-          ...names.map((n) => `${padIn}  __${outPrefix}set_${n} = true;`),
+          `${padIn}  if (__cont) {`,
+          ...names.map((n) => `${padIn}    __${outPrefix}${n} = ${n};`),
+          ...names.map((n) => `${padIn}    __${outPrefix}set_${n} = true;`),
+          `${padIn}  }`,
           `${padIn}}`,
           `}`,
         ].join("\n");

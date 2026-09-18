@@ -20,7 +20,12 @@ type MapTable = {
 
 type SetTable = {
   elements: Abs[];
-  maybeAbsent?: boolean;
+  /**
+   * fork 后 membership 不确定。
+   * - `true`：整表不确定（未知 delete / 非字面量元素混杂）
+   * - `Set<LitKey>`：这些字面 key 可能在部分臂缺失（跨臂 delete 不同元素时，长度启发式不够）
+   */
+  maybeAbsent?: true | Set<LitKey>;
 };
 
 const mapTables = new WeakMap<object, MapTable>();
@@ -47,7 +52,22 @@ function cloneMapTable(t: MapTable): MapTable {
 }
 
 function cloneSetTable(t: SetTable): SetTable {
-  return { elements: [...t.elements], maybeAbsent: t.maybeAbsent };
+  return {
+    elements: [...t.elements],
+    maybeAbsent:
+      t.maybeAbsent instanceof Set ? new Set(t.maybeAbsent) : t.maybeAbsent,
+  };
+}
+
+function setAbsentKey(t: SetTable | undefined, k: LitKey): boolean {
+  if (!t) return false;
+  if (t.maybeAbsent === true) return true;
+  return t.maybeAbsent instanceof Set && t.maybeAbsent.has(k);
+}
+
+function setAnyAbsent(t: SetTable | undefined): boolean {
+  if (!t) return false;
+  return t.maybeAbsent === true || (t.maybeAbsent instanceof Set && t.maybeAbsent.size > 0);
 }
 
 /**
@@ -147,21 +167,51 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined>): void {
       });
       const seen = new Set<LitKey>();
       const mergedEls: Abs[] = [];
-      let missing = false;
+      // per-key 臂计数（对齐 Map merge）：跨臂 delete 不同字面 key、长度相同也必须 maybeAbsent
+      const litArmCount = new Map<LitKey, number>();
+      const forcedAbsent = new Set<LitKey>();
+      let wholeUncertain = false;
+      let hasNonLit = false;
       for (const t of perArm) {
+        if (t.maybeAbsent === true) wholeUncertain = true;
+        if (t.maybeAbsent instanceof Set) {
+          for (const k of t.maybeAbsent) forcedAbsent.add(k);
+        }
+        const armLits = new Set<LitKey>();
         for (const el of t.elements) {
           const lk = litKeyOf(el);
           if (lk !== undefined) {
-            if (seen.has(lk)) continue;
-            seen.add(lk);
+            if (!seen.has(lk)) {
+              seen.add(lk);
+              mergedEls.push(el);
+            }
+            armLits.add(lk);
+          } else {
+            hasNonLit = true;
+            mergedEls.push(el);
           }
-          mergedEls.push(el);
+        }
+        for (const k of armLits) {
+          litArmCount.set(k, (litArmCount.get(k) ?? 0) + 1);
         }
       }
-      // 元素数不同（去重前长度）→ 可能有臂未 add
-      const maxLen = Math.max(...perArm.map((t) => t.elements.length), 0);
-      if (perArm.some((t) => t.elements.length < maxLen)) missing = true;
-      commitSet(id, { elements: mergedEls, maybeAbsent: missing || undefined });
+      const maybeKeys = new Set<LitKey>();
+      if (wholeUncertain || hasNonLit) {
+        wholeUncertain = true;
+      } else {
+        for (const [k, count] of litArmCount) {
+          if (count < perArm.length) maybeKeys.add(k);
+        }
+        for (const k of forcedAbsent) maybeKeys.add(k);
+      }
+      commitSet(id, {
+        elements: mergedEls,
+        maybeAbsent: wholeUncertain
+          ? true
+          : maybeKeys.size > 0
+            ? maybeKeys
+            : undefined,
+      });
     }
   }
 }
@@ -536,8 +586,8 @@ export function setHasEntry(setAbs: Abs, value: Abs): Abs {
   const k = litKeyOf(value);
   if (k !== undefined) {
     const hit = t.elements.some((el) => litKeyOf(el) === k);
-    // maybeAbsent：部分臂未 add → hit/miss 都不能折 exact
-    if (t.maybeAbsent) {
+    // 该字面 key 跨臂 membership 不一致 → 不能折 exact
+    if (setAbsentKey(t, k)) {
       return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
     }
     return abs(
@@ -552,7 +602,8 @@ export function setHasEntry(setAbs: Abs, value: Abs): Abs {
 
 export function setSizeAbs(setAbs: Abs): Abs {
   const t = setTableForRead(setAbs);
-  if (!t || t.maybeAbsent) {
+  // 任一字面 key 不确定或整表不确定 → size 不能 exact
+  if (!t || setAnyAbsent(t)) {
     return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
   }
   return abs(

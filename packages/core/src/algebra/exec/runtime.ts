@@ -766,6 +766,46 @@ export function $spread(a: Abs, b: Abs): Abs {
   return spreadObj(asAbsVal(a), asAbsVal(b));
 }
 
+/**
+ * 解构 rest：`const { a, ...rest } = o` → rest = o 去掉 named keys。
+ * closed obj：剩余槽 closed；open / optional 键：rest 仍 open（可能有未知键）。
+ */
+export function $objRest(o: Abs, keys: string[]): Abs {
+  o = asAbsVal(o);
+  if (o.shape.k === "sum") {
+    return o.shape.members
+      .map((m) => $objRest(m, keys))
+      .reduce((a, b) => joinAbs(a, b));
+  }
+  if (!isObj(o)) return unknown;
+  const drop = new Set(keys);
+  const slots: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }> = {};
+  let openRest = o.shape.open === true;
+  for (const [k, s] of Object.entries(o.shape.slots)) {
+    if (drop.has(k)) continue;
+    slots[k] = s;
+    // optional 源键可能仍以 undefined 出现在 rest 的动态面；闭槽无需 open
+  }
+  // 提取的 optional 键：JS rest 会排除该键，但 open 对象上未知键仍可能进 rest
+  if (o.shape.open) openRest = true;
+  const shape: Abs["shape"] = { k: "obj", slots };
+  if (openRest) (shape as { open?: boolean }).open = true;
+  return { shape, conf: o.conf === "exact" ? "exact" : confJoin(o.conf, "partial") };
+}
+
+/** 数组 rest：`const [a, ...rest] = arr` → rest = 从 start 起的尾段 */
+export function $arrRest(a: Abs, start: number): Abs {
+  a = asAbsVal(a);
+  if (a.shape.k === "sum") {
+    return a.shape.members.map((m) => $arrRest(m, start)).reduce((x, y) => joinAbs(x, y));
+  }
+  if (a.shape.k === "tuple") {
+    return tupleOrWiden(a.shape.elements.slice(start), a.conf);
+  }
+  if (a.shape.k === "arr") return a;
+  return unknown;
+}
+
 /** 数组连接 [...a, ...b] / [...a, x]；结果超 cap 时与字面量同策略降 arr */
 export function $concat(a: Abs, b: Abs): Abs {
   a = asAbsVal(a);
@@ -955,7 +995,11 @@ export function $get(
   }
   if (isObj(o)) {
     const slot = (o.shape as ObjShape).slots[key];
-    if (slot) return slot.value;
+    if (slot) {
+      // optional 槽在 JS 中可能缺席 → 读到 undefined，不能报 definite presence
+      if (slot.optional) return joinAbs(slot.value, undef());
+      return slot.value;
+    }
     if ((o.shape as ObjShape).open) return unknown;
     // C0.5：闭 shape 缺槽且求值命中 → 可选 nudo:missing-slot（默认 off）
     noteObjSlotMissing(o, key);
@@ -1125,6 +1169,15 @@ export function $throw(v: Abs): never {
 
 export function isNudoThrow(e: unknown): e is NudoThrow {
   return e instanceof NudoThrow;
+}
+
+/**
+ * fork 臂是否以控制流退出（return / throw）。
+ * 生成代码用此决定 continue-path free-write 标志：退出臂的写
+ * 不得污染 join 后的 continue 绑定。
+ */
+export function $isForkExit(e: unknown): boolean {
+  return isNudoReturn(e) || isNudoThrow(e);
 }
 
 /** catch 参数：从 NudoThrow 取出 Abs；宿主 Error 补 name/message；否则 unknown */

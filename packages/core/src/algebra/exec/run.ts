@@ -17,12 +17,13 @@ import { joinAbs } from "../objects.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
 import { transpile } from "./transpile.ts";
 import { $call } from "./call.ts";
-import { isNudoThrow, isNudoReturn, runWithLoopExits, takeLoopExits, takeThrowExits } from "./runtime.ts";
+import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits } from "./runtime.ts";
 
 const rtAll = { ...runtime, ...classRt, ...callsRt } as Record<string, unknown>;
 // ensure control-flow helpers are present even if a re-export layer omits them
 rtAll.isNudoReturn = isNudoReturn;
 rtAll.isNudoThrow = isNudoThrow;
+rtAll.$isForkExit = $isForkExit;
 rtAll.runWithLoopExits = runWithLoopExits;
 rtAll.takeLoopExits = takeLoopExits;
 

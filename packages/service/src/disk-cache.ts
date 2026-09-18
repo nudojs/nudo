@@ -111,6 +111,10 @@ export function checkCacheKey(
     projectDir?: string;
     sidecarContent?: string | null;
     depContents?: Array<{ path: string; content: string | null }>;
+    /** package.json#nudo.env 等项目维（named env 不在 path-dep 指纹里） */
+    projectEnvNames?: string[];
+    /** analysis knobs that can change check surface */
+    analysisCfg?: { mode?: string; evalMissingSlot?: string; callSiteBudget?: number };
   },
 ): string {
   const rel = relativizePath(filePath, opts.projectDir);
@@ -121,6 +125,12 @@ export function checkCacheKey(
         `${relativizePath(d.path, opts.projectDir)}\0${d.content != null ? sha256Hex(d.content) : "miss"}`,
     )
     .join("\n");
+  const envSeg = (opts.projectEnvNames ?? []).length > 0
+    ? [...(opts.projectEnvNames ?? [])].sort().join(",")
+    : "-";
+  const cfgSeg = opts.analysisCfg
+    ? `${opts.analysisCfg.mode ?? "-"}|${opts.analysisCfg.evalMissingSlot ?? "-"}|${opts.analysisCfg.callSiteBudget ?? "-"}`
+    : "-";
   return sha256Hex(
     [
       ANALYSIS_ABI,
@@ -129,6 +139,8 @@ export function checkCacheKey(
       sha256Hex(source),
       sidecarSha,
       depSeg,
+      envSeg,
+      cfgSeg,
     ].join("\0"),
   );
 }
@@ -148,6 +160,7 @@ export function ifaceCacheKey(
     /** 侧车源码（已读入）；undefined = 无侧车或 autoBind 关 */
     sidecarSource?: string | undefined;
     depContents?: Array<{ path: string; content: string | null }>;
+    projectEnvNames?: string[];
   },
 ): string {
   const rel = relativizePath(filePath, opts.projectDir);
@@ -161,6 +174,9 @@ export function ifaceCacheKey(
         `${relativizePath(d.path, opts.projectDir)}\0${d.content != null ? sha256Hex(d.content) : "miss"}`,
     )
     .join("\n");
+  const envSeg = (opts.projectEnvNames ?? []).length > 0
+    ? [...(opts.projectEnvNames ?? [])].sort().join(",")
+    : "-";
   return sha256Hex(
     [
       ANALYSIS_ABI,
@@ -170,6 +186,7 @@ export function ifaceCacheKey(
       sha256Hex(source),
       sidecarSeg,
       depSeg,
+      envSeg,
     ].join("\0"),
   );
 }

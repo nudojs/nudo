@@ -29,7 +29,8 @@
     "packages/lsp/src",
     "packages/vite-plugin/src",
     "packages/env/src",
-    "packages/harvester/src"
+    "packages/harvester/src",
+    "packages/vscode/src"
   ],
   "exclude": [
     "**/__tests__",

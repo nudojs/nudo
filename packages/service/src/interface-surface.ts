@@ -190,6 +190,7 @@ export async function interfaceSurface(
           projectDir: proj?.projectDir,
           sidecarSource,
           depContents: dep.depContents,
+          projectEnvNames: proj?.config.env ?? [],
         });
         cachedTable = disk.get<IfaceTableJson>(ifaceKey);
       }

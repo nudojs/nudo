@@ -51,6 +51,13 @@ export {
   ambientSourcesOfSidecar,
 } from "./watch-paths.ts";
 export {
+  noteEnvPathDeps,
+  envPathDependents,
+  clearEnvPathDeps,
+  isEnvTemplatePath,
+} from "./env-path-deps.ts";
+export { DEFAULT_ANALYSIS_MODE } from "./evaluator/config.ts";
+export {
   shouldAnalyzeFile,
   hasNudoDirectives as sourceHasNudoDirectives,
   filterDiagnosticsByLevel,

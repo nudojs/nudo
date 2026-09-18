@@ -1,8 +1,9 @@
 /**
- * CLI watch 路径门禁：推断目标之外，侧车契约与项目配置变更也必须让
- * 分析 memo 失效（侧车进 fingerprint/ambient 绑定；配置改 analysis/env）。
+ * CLI watch 路径门禁：推断目标之外，侧车契约、项目配置、path-based
+ * `@nudo:env` 模板变更也必须让分析 memo 失效。
  */
 import { isNudoTargetPath } from "./target-path.ts";
+import { isEnvTemplatePath } from "./env-path-deps.ts";
 
 const PROJECT_CONFIG_BASENAMES = new Set([
   "package.json",
@@ -26,9 +27,14 @@ export function isProjectConfigPath(path: string): boolean {
   return PROJECT_CONFIG_BASENAMES.has(base.toLowerCase());
 }
 
-/** Watch accept gate: analysis targets + sidecar/config invalidators */
+/** Watch accept gate: analysis targets + sidecar/config/env-template invalidators */
 export function isWatchRelevantPath(path: string): boolean {
-  return isNudoTargetPath(path) || isSidecarPath(path) || isProjectConfigPath(path);
+  return (
+    isNudoTargetPath(path) ||
+    isSidecarPath(path) ||
+    isProjectConfigPath(path) ||
+    isEnvTemplatePath(path)
+  );
 }
 
 /** `lib.nudo.js|ts` → candidate ambient sources next to it */

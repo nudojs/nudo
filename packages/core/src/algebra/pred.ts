@@ -309,6 +309,26 @@ function extractBounds(phi: Phi): Bounds {
  * 返回 undefined 表示无法判定。
  */
 function impliesViaBounds(pred: Pred, bounds: Bounds): boolean | undefined {
+  // eq：lo 与 hi 夹逼同一数值（非严格）→ x = n 可 discharge
+  if (pred.op === "eq") {
+    const left = pred.a;
+    const right = pred.b;
+    if (right.op !== "lit" || typeof right.value !== "number") return undefined;
+    const n = right.value;
+    if (left.op === "var") {
+      return eqFromBounds(left.id, n, bounds);
+    }
+    if (left.op === "app" && left.fn === "+" && left.args.length === 2) {
+      const [a, b] = left.args as [Term, Term];
+      if (a.op === "var" && b.op === "lit" && typeof b.value === "number") {
+        return eqFromBounds(a.id, n - b.value, bounds);
+      }
+      if (b.op === "var" && a.op === "lit" && typeof a.value === "number") {
+        return eqFromBounds(b.id, n - a.value, bounds);
+      }
+    }
+    return undefined;
+  }
   if (
     pred.op !== "gt" &&
     pred.op !== "ge" &&
@@ -339,6 +359,24 @@ function impliesViaBounds(pred: Pred, bounds: Bounds): boolean | undefined {
     }
   }
   // 纯字面量已在外层处理
+  return undefined;
+}
+
+function eqFromBounds(id: string, n: number, bounds: Bounds): boolean | undefined {
+  const lo = bounds.lo.get(id);
+  const hi = bounds.hi.get(id);
+  if (!lo || !hi) return undefined;
+  // x ≥ n ∧ x ≤ n（非严格）→ x = n
+  const loCovers = lo.strict ? lo.bound <= n : lo.bound <= n;
+  const hiCovers = hi.strict ? hi.bound >= n : hi.bound >= n;
+  // 严格界：x > n 不能蕴含 x = n；x < n 也不能
+  if (lo.strict && lo.bound >= n) return false; // x > lo≥n ⇒ x≠n
+  if (hi.strict && hi.bound <= n) return false;
+  if (!lo.strict && lo.bound > n) return false; // x ≥ lo>n ⇒ x≠n
+  if (!hi.strict && hi.bound < n) return false;
+  // 夹逼成立当 lo 允许 n 且 hi 允许 n，且界卡死在 n
+  if (!loCovers || !hiCovers) return undefined;
+  if (!lo.strict && !hi.strict && lo.bound === n && hi.bound === n) return true;
   return undefined;
 }
 

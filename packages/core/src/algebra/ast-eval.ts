@@ -2216,10 +2216,22 @@ function evalIf(
     );
     const bothRet = !!a.returned && !!b.returned;
     const eitherRet = !!a.returned || !!b.returned;
+    // continue-path 绑定：仅 join 到达 if 之后的臂；early-return 臂的写
+    // 不得污染 continue env（sound for may-continue，更精确）。
+    const contEnv =
+      a.returned && !b.returned
+        ? b.env
+        : b.returned && !a.returned
+          ? a.env
+          : a.threw && !b.threw
+            ? b.env
+            : b.threw && !a.threw
+              ? a.env
+              : joinEnvs(a.env, b.env, env);
     return {
       value: joinAbs(a.value, b.value),
       phi,
-      env: joinEnvs(a.env, b.env, env),
+      env: contEnv,
       ...(bothRet ? { returned: true } : eitherRet ? { partialReturn: true } : {}),
       ...((a.threw && b.threw) ? { threw: true, throwValue: joinAbs(a.value, b.value) } : {}),
       ...((a.threw || b.threw) && !(a.threw && b.threw)

@@ -223,14 +223,15 @@ type BCacheEntry = {
 const bRunByFile = new Map<string, BCacheEntry>();
 const MAX_B_RUN_CACHE = 32;
 
-/** disk dep fingerprint — B-path always loads via defaultLoadModule */
-function bPathDepKey(source: string, filePath: string): string {
+/** disk dep fingerprint — null = fail-closed（截断/异常时禁止 B-path memo） */
+function bPathDepKey(source: string, filePath: string): string | null {
   try {
     const fp = loadModuleDepsFingerprint(source, defaultLoadModule, filePath);
     // fingerprint is path=hash,… — hash whole blob so long abs paths still flip
-    return fp.truncated ? `trunc:${fp.paths.length}` : hashSource(fp.fp);
+    if (fp.truncated) return null;
+    return hashSource(fp.fp);
   } catch {
-    return "fperr";
+    return null;
   }
 }
 
@@ -286,19 +287,23 @@ export function tryRunBPath(
   // 同 source 引用时 stable 快路径返回原串 → 下方 === 为 O(1)。
   const stable = stableAnalyzeKeySource(source);
   const depKey = bPathDepKey(source, filePath);
-  const cached = bRunByFile.get(filePath);
-  if (
-    cached &&
-    cached.stableSource === stable &&
-    cached.mode === mode &&
-    cached.envKey === envKey &&
-    cached.mockKey === mockKey &&
-    cached.depKey === depKey
-  ) {
-    // LRU：命中移到队尾
-    bRunByFile.delete(filePath);
-    bRunByFile.set(filePath, cached);
-    return cached.value ?? undefined;
+  // 指纹截断/异常 → 禁止读写 memo（fail-closed）
+  const canCache = depKey !== null;
+  if (canCache) {
+    const cached = bRunByFile.get(filePath);
+    if (
+      cached &&
+      cached.stableSource === stable &&
+      cached.mode === mode &&
+      cached.envKey === envKey &&
+      cached.mockKey === mockKey &&
+      cached.depKey === depKey
+    ) {
+      // LRU：命中移到队尾
+      bRunByFile.delete(filePath);
+      bRunByFile.set(filePath, cached);
+      return cached.value ?? undefined;
+    }
   }
   let out: BPathRunResult | null = null;
   try {
@@ -344,7 +349,9 @@ export function tryRunBPath(
   } catch {
     out = null;
   }
-  bPathCacheSet(filePath, stable, mode, envKey, mockKey, depKey, out);
+  if (canCache && depKey !== null) {
+    bPathCacheSet(filePath, stable, mode, envKey, mockKey, depKey, out);
+  }
   return out ?? undefined;
 }
 
