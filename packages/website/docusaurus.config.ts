@@ -88,8 +88,8 @@ const config: Config = {
                 "@nudojs/env/web": resolve(repoRoot, "packages/env/src/web.ts"),
                 "@nudojs/env/node": resolve(repoRoot, "packages/env/src/node.ts"),
               },
-              // 浏览器里不可达的 Node 内建（env-loader 等只在 Node CLI
-              // 用，被 evaluator-api 的 re-export 链拖进 bundle）
+              // 浏览器里不可达的 Node 内建（env-loader / AsyncLocalStorage 等只在
+              // Node CLI 用，被 evaluator / core exec 链拖进 bundle）
               fallback: {
                 fs: false,
                 path: false,
@@ -97,14 +97,25 @@ const config: Config = {
                 os: false,
                 module: false,
                 url: false,
+                async_hooks: false,
+                worker_threads: false,
+                child_process: false,
+                net: false,
+                tls: false,
+                http: false,
+                https: false,
+                stream: false,
+                util: false,
+                buffer: false,
+                events: false,
               },
             },
             plugins: [
               // node: scheme 的 request 在 alias/fallback 之前就被
-              // webpack 以 UnhandledSchemeError 拒绝——解析阶段把
-              // "node:fs" 改写成 "fs"，交给上面的 fallback 置空。
-              new NormalModuleReplacementPlugin(/^node:(fs|path|crypto|os|module|url)$/, (resource) => {
-                resource.request = resource.request.slice(5);
+              // webpack 以 UnhandledSchemeError 拒绝——解析阶段去掉
+              // "node:" 前缀，交给上面的 fallback 置空（含 async_hooks）。
+              new NormalModuleReplacementPlugin(/^node:(.+)$/, (resource) => {
+                resource.request = resource.request.replace(/^node:/, "");
               }),
             ],
           };
