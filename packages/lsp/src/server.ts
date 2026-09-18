@@ -37,6 +37,7 @@ import {
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
 import { documentSymbols, findIdentifierAtPosition, resolveDefinition, resolveDefinitionLocations, resolveReferences, type DocumentSymbolItem } from "./symbols.ts";
+import { findFnContractInsertPos } from "./sidecar-insert.ts";
 import { TOKEN_TYPES, TOKEN_MODIFIERS } from "./semantic-tokens.ts";
 import {
   analysisCache,
@@ -826,68 +827,31 @@ connection.onCodeAction((params) => {
           })();
         if (sidecarText !== undefined) {
           const scLines = sidecarText.split("\n");
-          // A6：只在目标 fn 自身的 `fn({` / 导出绑定附近插入，避免共享
-          // shape 或后续 export 被误改（P1）
+          // A6：只在目标 fn 自身的 `fn(` 调用括号内插入契约 `{`（P1）
           const fnName = typeof data.fn === "string" && data.fn ? data.fn : undefined;
           if (fnName) {
-            const fnLineIdx = scLines.findIndex((l) =>
-              new RegExp(`export\\s+const\\s+${fnName}\\b`).test(l),
-            );
-            if (fnLineIdx >= 0) {
-              // 从目标导出行向后扫，只接受落在同一 `fn(` 字面量内的 `{`
-              let inTargetFn = false;
-              let depth = 0;
-              for (let i = fnLineIdx; i < scLines.length; i++) {
-                const t = scLines[i]!;
-                if (!inTargetFn) {
-                  const fnCall = t.indexOf("fn(");
-                  if (fnCall < 0) continue;
-                  // 外部标识符 / 注释引用不在此插入：仅字面 `fn(`
-                  inTargetFn = true;
-                }
-                for (let col = 0; col < t.length; col++) {
-                  const ch = t[col];
-                  if (ch === "{") {
-                    if (!inTargetFn) continue;
-                    if (depth === 0 && i === fnLineIdx) {
-                      // 同一行 fn( 之后的第一个 { 才是契约对象
-                      const fnCall = t.indexOf("fn(");
-                      if (col <= fnCall) continue;
-                    }
-                    if (depth === 0) {
-                      const insert = t.slice(col + 1).trimStart().startsWith("}")
-                        ? ` ${field}: undefined `
-                        : ` ${field}: undefined, `;
-                      actions.push({
-                        title: `Add '${field}' to ${fnName} contract shape`,
-                        kind: "quickfix",
-                        diagnostics: [diag],
-                        edit: {
-                          changes: {
-                            [sidecarUri]: [{
-                              range: {
-                                start: { line: i, character: col + 1 },
-                                end: { line: i, character: col + 1 },
-                              },
-                              newText: insert,
-                            }],
-                          },
-                        },
-                      });
-                      break;
-                    }
-                    depth++;
-                  } else if (ch === "}") {
-                    if (depth === 0 && inTargetFn) {
-                      // fn 对象已结束且未找到插入点 → 不提供误改 action
-                      break;
-                    }
-                    depth = Math.max(0, depth - 1);
-                  }
-                }
-                if (actions.some((a) => a.title.includes(`Add '${field}' to ${fnName}`))) break;
-                if (inTargetFn && depth === 0 && i > fnLineIdx) break;
-              }
+            const pos = findFnContractInsertPos(scLines, fnName);
+            if (pos) {
+              const t = scLines[pos.line]!;
+              const insert = t.slice(pos.character).trimStart().startsWith("}")
+                ? ` ${field}: undefined `
+                : ` ${field}: undefined, `;
+              actions.push({
+                title: `Add '${field}' to ${fnName} contract shape`,
+                kind: "quickfix",
+                diagnostics: [diag],
+                edit: {
+                  changes: {
+                    [sidecarUri]: [{
+                      range: {
+                        start: { line: pos.line, character: pos.character },
+                        end: { line: pos.line, character: pos.character },
+                      },
+                      newText: insert,
+                    }],
+                  },
+                },
+              });
             }
           }
         } else {

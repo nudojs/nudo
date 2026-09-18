@@ -72,6 +72,37 @@ export function f(n) {
     );
     expect(litValue(r.result)).toBe("one");
   });
+
+  it("abstract mixed return/break keeps early-exit in exits join (P0)", () => {
+    const src = `
+export function f(n) {
+  switch (n) {
+    case 1: return 1;
+    default: break;
+  }
+  return 100;
+}
+`;
+    const r = callWithAbs(src, "f", [absNum]);
+    const s = formatAbs(r.result);
+    // 不得丢掉 case1 早退路径，折成 exact 100
+    expect(s).not.toBe("100");
+    expect(r.result.conf).not.toBe("exact");
+  });
+
+  it("concrete mixed switch still hits the matching arm", () => {
+    const src = `
+export function f(n) {
+  switch (n) {
+    case 1: return 1;
+    default: break;
+  }
+  return 100;
+}
+`;
+    expect(litValue(call(src, "f", 1).result)).toBe(1);
+    expect(litValue(call(src, "f", 2).result)).toBe(100);
+  });
 });
 
 describe("P0.2 abstract switch collection arm isolation", () => {
@@ -91,9 +122,12 @@ export function f(n) {
 `;
     const r = callWithAbs(src, "f", [absNum]);
     const s = formatAbs(r.result);
-    // default 臂真实语义是 undefined；不得只剩 exact 2（可 unknown/undefined/2|undefined）
+    // default 臂真实语义是 undefined；不得只剩 exact 2
     expect(s).not.toBe("2");
-    expect(r.result.conf).not.toBe("exact");
+    expect(s).toContain("2");
+    expect(s).toMatch(/undefined|unknown/);
+    // sum：两臂成员都在（2 与缺省）
+    expect(r.result.shape.k).toBe("sum");
   });
 });
 

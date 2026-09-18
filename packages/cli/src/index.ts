@@ -715,11 +715,10 @@ async function runInterfaceDraft(
         process.exitCode = 1;
         return;
       }
-    } else {
-      // 无 package.json / nudo 配置祖先：仅保留邻接路径约束（draft 由源文件
-      // 推导；node_modules + draft≠formal 已在 writeInterfaceDraft 拒绝）。
-      // fail-open：ad-hoc 临时树允许写 draft；正式门禁请用 `nudo check`。
     }
+    // else：无 package.json / nudo 配置祖先 —— fail-open。邻接路径约束 +
+    // writeInterfaceDraft 的 node_modules / draft≠formal 守卫仍生效；正式
+    // 门禁请用 `nudo check`，不要依赖 draft 写入拒绝。
     const write = writeInterfaceDraft(filePath, result.draftSource, {
       dryRun: opts.dryRun,
       ...(projectRoot ? { projectDir: projectRoot } : {}),

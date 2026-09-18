@@ -1014,7 +1014,8 @@ export function $yield(v: Abs): Abs {
 /**
  * switch：具体 disc 选中匹配 case；抽象 disc 并所有分支。
  * 抽象路径与 $fork 同构：集合 side-table 按臂 overlay，共享 body 只跑一次；
- * 臂内 NudoReturn 不冒泡污染兄弟臂——全 ret 抛 NudoReturn(join)，混合则 join 值。
+ * 臂内 NudoReturn 不冒泡污染兄弟臂——早退值进 loopExits（与 $fork 同），
+ * 全 ret 抛 NudoReturn(join)，混合则只返回 val 臂 join（ret 由函数出口再并）。
  */
 export function $switch(
   disc: Abs,
@@ -1030,6 +1031,7 @@ export function $switch(
     return dflt ? asAbsVal(dflt()) : undef();
   }
 
+  const exits = loopExitsAls.getStore();
   beginCollectionFork();
   const armOverlays: Array<ReturnType<typeof popCollectionArm>> = [];
   const runArm = (fn: () => Abs): { kind: "val" | "ret"; v: Abs } => {
@@ -1038,7 +1040,10 @@ export function $switch(
       try {
         return { kind: "val", v: asAbsVal(fn()) };
       } catch (e) {
-        if (isNudoReturn(e)) return { kind: "ret", v: e.absValue };
+        if (isNudoReturn(e)) {
+          exits?.push(e.absValue);
+          return { kind: "ret", v: e.absValue };
+        }
         throw e;
       }
     } finally {
@@ -1059,7 +1064,11 @@ export function $switch(
     endCollectionFork(armOverlays);
   }
   if (results.length === 0) return undef();
+  const allRet = results.every((r) => r.kind === "ret");
   const joined = results.map((r) => r.v).reduce((a, b) => joinAbs(a, b));
-  if (results.every((r) => r.kind === "ret")) throw new NudoReturn(joined);
-  return joined;
+  if (allRet) throw new NudoReturn(joined);
+  // 混合：ret 臂已进 exits；语句位只携带 val 臂值继续，避免早退路径被覆盖
+  const valParts = results.filter((r) => r.kind === "val").map((r) => r.v);
+  if (valParts.length === 0) return undef();
+  return valParts.reduce((a, b) => joinAbs(a, b));
 }

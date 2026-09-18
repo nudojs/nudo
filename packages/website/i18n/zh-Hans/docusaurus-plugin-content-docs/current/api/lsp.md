@@ -95,7 +95,7 @@ getCachedOrAnalyze(
 
 服务端 `isNudoFile(uri)` **不是**纯指令扫描，而是：
 
-1. `isNudoTargetPath` —— 仅 `.js` / `.mjs` / `.ts`，排除 `.d.ts`、JSX 与 `*.nudo.{js,mjs,ts}` 侧车；
+1. `isNudoTargetPath` —— 仅 `.js` / `.mjs` / `.ts`，排除 `.d.ts`、JSX、`*.nudo.{js,mjs,ts}` 侧车与 `*.nudo.draft.{js,mjs,ts}` draft 产物；
 2. `shouldAnalyzeFile(filePath, text)` —— 路径 + `package.json#nudo.analysis.mode`（directives 为今日默认；`exports`/`all` 打开无指令分析）。
 
 结果按 URI 缓存，open/change/close 时失效。

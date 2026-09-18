@@ -18,5 +18,9 @@ describe("isNudoTargetPath", () => {
     expect(isNudoTargetPath("/a/b.nudo.js")).toBe(false);
     expect(isNudoTargetPath("/a/b.nudo.ts")).toBe(false);
     expect(isNudoTargetPath("/a/b.nudo.mjs")).toBe(false);
+    // draft 产物也不得当实现源码
+    expect(isNudoTargetPath("/a/b.nudo.draft.js")).toBe(false);
+    expect(isNudoTargetPath("/a/b.nudo.draft.ts")).toBe(false);
+    expect(isNudoTargetPath("/a/b.nudo.draft.mjs")).toBe(false);
   });
 });

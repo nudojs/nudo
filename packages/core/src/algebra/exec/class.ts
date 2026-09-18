@@ -256,14 +256,38 @@ export function $invoke(
 ): Abs {
   // Function.prototype.call/apply/bind：fn Abs **或** B 路径 JS 函数（P1）
   if (method === "call" || method === "apply" || method === "bind") {
+    // apply 第二参：tuple 精确展开；JS 数组逐项；Abs arr 长度未知 → 单 element
+    // （类型层欠近似）；null/undefined → 无参（JS 语义）；其它 → unknown 槽位
     const expandApplyArgs = (list: unknown): Abs[] => {
-      const expanded: Abs[] = [];
-      if (list && typeof list === "object" && "shape" in (list as object)) {
-        const s = (list as Abs).shape;
-        if (s.k === "tuple") expanded.push(...s.elements);
-        else if (s.k === "arr") expanded.push(s.element);
+      if (list === null || list === undefined) return [];
+      if (Array.isArray(list)) {
+        return list.map((x) =>
+          x && typeof x === "object" && "shape" in (x as object)
+            ? (x as Abs)
+            : unknown,
+        );
       }
-      return expanded;
+      if (typeof list === "object" && "shape" in (list as object)) {
+        const s = (list as Abs).shape;
+        if (s.k === "tuple") return [...s.elements];
+        if (s.k === "arr") return [s.element];
+      }
+      return [unknown];
+    };
+    /** bind 后剩余形参：尽量保留原 params 面（dts/inlay） */
+    const boundFnParams = (fnVal: unknown, boundCount: number): string[] => {
+      if (fnVal && typeof fnVal === "object" && "shape" in (fnVal as object)) {
+        const s = (fnVal as Abs).shape;
+        if (s.k === "fn" && Array.isArray(s.params)) {
+          return s.params.slice(boundCount);
+        }
+      }
+      if (typeof fnVal === "function") {
+        const arity = (fnVal as { length?: number }).length ?? 0;
+        const rem = Math.max(0, arity - boundCount);
+        return Array.from({ length: rem }, (_, i) => `_a${boundCount + i}`);
+      }
+      return ["_rest"];
     };
     if (typeof thisVal === "function") {
       const fn = thisVal as (...a: Abs[]) => Abs;
@@ -274,7 +298,7 @@ export function $invoke(
         return callAtFunctionBoundary(() => fn(...expandApplyArgs(args[1])));
       }
       const bound = args.slice(1);
-      return absFunction(["_rest"], {
+      return absFunction(boundFnParams(thisVal, bound.length), {
         apply: (callArgs) =>
           callAtFunctionBoundary(() => fn(...bound, ...callArgs)),
       });
@@ -290,7 +314,7 @@ export function $invoke(
           return $call(thisVal, expandApplyArgs(args[1]));
         }
         const bound = args.slice(1);
-        return absFunction(["_rest"], {
+        return absFunction(boundFnParams(thisVal, bound.length), {
           apply: (callArgs) =>
             callAtFunctionBoundary(() => $call(thisVal, [...bound, ...callArgs])),
         });
