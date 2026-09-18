@@ -136,11 +136,7 @@ FAILED
   1 error · 0 warning · 0 info · 1 fn
 
 signatures
-  needsPositive(x)  number  = x  where x > 0  #path
-    number
-    term: x
-    pred: x > 0
-    conf: path
+  needsPositive(x)  number  #path
 
 issues
   [ERROR L12 needsPositive] needsPositive[x]: 实参 ⊭ 前置  (nudo:constraint-violated)
@@ -148,7 +144,7 @@ issues
       expected: x > 0
 ```
 
-Signatures carry the **lossless Abs** (`shape`, `term`, `pred`, `conf`). Optional `.d.ts` emit is a TypeScript-ecosystem **compat side-channel**, not the main line.
+Signatures default to a **one-line summary**. Pass `--verbose` to expand lossless Abs (`shape`, `term`, `pred`, `conf`). Optional `.d.ts` emit is a TypeScript-ecosystem **compat side-channel**, not the main line.
 
 ## Call-site coverage
 

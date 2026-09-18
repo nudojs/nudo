@@ -28,11 +28,9 @@ pnpm run check path/to/file.js
 | `nudo:interface-param-mismatch` | 手写契约参数名不在形参表面（C4.5；默认参名/rest 裸名/解构绑定名合法） |
 | `nudo:interface-conflict` | 手写契约合取不可满足（常数界交叉等） |
 | `nudo:interface-name-clash` | 侧车导出名与源码导出冲突 |
-| `nudo:interface-underivable` | 手写契约无法从源码推导 |
+| `nudo:interface-underivable` | 手写契约无法从源码推导（underivable） |
 | `nudo:interface-load` / `nudo:interface-cycle` | 侧车加载失败 / 侧车环 |
 | `nudo:interface-domain-exceeds` | 跨文件调用证据 ⊄ 手写契约 |
-| `nudo:interface-name-clash` | 侧车导出名与源码导出冲突 |
-| `nudo:interface-underivable` | 手写契约无法从源码推导（underivable） |
 | `nudo:interface-drift` | `@generated` 段 ≠ 今日重算（warning，不挡 exit） |
 | `nudo:no-signature` | 无法归纳符号 Abs |
 | `nudo:opaque-result` / `nudo:eval-error` | 求值不透明 / 求值抛错 |
@@ -45,11 +43,7 @@ FAILED
   1 error · 0 warning · 0 info · 1 fn
 
 signatures
-  needsPositive(x)  number  = x  where x > 0  #path
-    number
-    term: x
-    pred: x > 0
-    conf: path
+  needsPositive(x)  number  #path
 
 issues
   [ERROR L12 needsPositive] needsPositive[x]: 实参 ⊭ 前置  (nudo:constraint-violated)
@@ -58,7 +52,7 @@ issues
       → 改用满足 x > 0 的值，或放宽 x 的前置
 ```
 
-- **signatures**：无损 Abs（verbose 展开 term/pred/conf）
+- **signatures**：默认一行摘要；`--verbose` 才展开 `term:` / `pred:` / `conf:`
 - **actual / expected**：违例是蕴含失败，不是 assignability
 - `--json` 自动带 `signatures[].abs` 与 `summary`
 
@@ -279,7 +273,7 @@ pnpm run infer file.js --json
 ```
 
 - `version: 1` — 字段只增不改语义  
-- **ext**：`args` / `result` 为 TypeValue 字符串（有损兼容）  
+- **ext**：`args` / `result` 为 `formatShape(Abs)` 字符串（有损兼容）  
 - **intension**：无损 Abs（`abs` / `term` / `pred` / `conf`）  
 - 契约测试：`packages/service/src/__tests__/infer-json.test.ts`  
 - 实现：`packages/service/src/infer-json.ts`（`serializeInferJson`）

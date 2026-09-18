@@ -29,7 +29,7 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 | Custom request | `nudo/…` | 与 command 同一 handler（E5）；协议契约用 slash 形式 |
 | Pull diagnostics | `diagnosticProvider` | `interFileDependencies: false` |
 
-**文件检测（A1/A2）：** 目标为 `.js` / `.mjs` / `.ts`。部分旧文档仍写「无指令不分析」；项目级可用 `package.json#nudo.analysis.mode`（`exports` | `all`）打开无指令分析。CodeLens interface 档使用更宽的目标路径——诊断可对无指令文件保持安静，档位仍可见。
+**文件检测（A1/A2）：** 目标为 `.js` / `.mjs` / `.ts`。**出厂默认 `nudo.analysis.mode = "exports"`** — 含 `export` / 侧车 / 指令的文件进 IDE 分析；`"all"` 全量目标路径，`"directives"` 回到保守门禁。CodeLens interface 档使用更宽的目标路径——诊断可对无指令文件保持安静，档位仍可见。
 
 ## 客户端支持矩阵
 

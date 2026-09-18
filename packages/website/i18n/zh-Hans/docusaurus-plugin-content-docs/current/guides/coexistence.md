@@ -68,4 +68,4 @@ npx nudojs check packages/legacy-js/src
 
 在已有 TS server 旁安装 Nudo VS Code 扩展即可共存：TS 处理 `.ts`，Nudo 按 `nudo.analysis.mode` 分析 `.js`。
 
-> **默认注意**：当前 `analysis.mode` 默认仍是 `directives`（仅含 `@nudo:` 指令的文件进引擎）；`exports` / `all` 需在项目 `package.json` 显式配置。
+> **默认注意**：`analysis.mode` 出厂默认为 `exports`（含 `export` / 侧车 / 指令的文件进引擎）；`all` 可全量分析，`directives` 可回到保守门禁。

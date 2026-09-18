@@ -23,7 +23,7 @@ code --install-extension wmzy.nudo-vscode
 
 打开 JavaScript 文件时扩展会激活。它使用 `@nudojs/lsp` 包运行 Language Server Protocol（LSP）服务器，提供所有编辑器功能。
 
-**文件检测**：语言服务器分析 `.js`、`.ts` 与 `.mjs` 文件。指令模式偏保守；项目级可用 `package.json#nudo.analysis.mode`（`exports` | `all`）打开无指令分析。指令（`@nudo:case`、`@nudo:mock`、`@nudo:refine` 等）仍是显式契约面——完整语法见[指令参考](../concepts/directives.md)。跨编辑器能力对比：[LSP 客户端矩阵](./lsp-clients.md)。
+**文件检测**：语言服务器分析 `.js`、`.ts` 与 `.mjs` 文件。出厂默认 `nudo.analysis.mode = "exports"`（含 export / 侧车 / 指令）；可设 `"all"` 或 `"directives"`。指令（`@nudo:case`、`@nudo:mock`、`@nudo:refine` 等）仍是显式契约面——完整语法见[指令参考](../concepts/directives.md)。跨编辑器能力对比：[LSP 客户端矩阵](./lsp-clients.md)。
 
 ## 功能
 

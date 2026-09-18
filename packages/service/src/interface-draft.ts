@@ -180,11 +180,41 @@ export function collectParamBodyAccesses(
     return names;
   };
 
+  const visitClassMethods = (className: string, classNode: Node): void => {
+    const body = (classNode as { body?: { body?: Node[] } }).body?.body ?? [];
+    for (const m of body) {
+      const mem = m as {
+        type?: string;
+        kind?: string;
+        static?: boolean;
+        key?: { type?: string; name?: string };
+        value?: Node;
+        body?: Node;
+      };
+      const isMethod =
+        mem.type === "MethodDefinition" ||
+        mem.type === "ClassMethod" ||
+        mem.type === "TSDeclareMethod";
+      if (!isMethod || mem.static) continue;
+      if (mem.kind && mem.kind !== "method") continue;
+      const keyName = mem.key?.type === "Identifier" ? mem.key.name : undefined;
+      if (!keyName) continue;
+      const methodNode =
+        mem.type === "MethodDefinition" ? (mem.value as Node | undefined) : (mem as unknown as Node);
+      if (!methodNode) continue;
+      visitFn(`${className}.${keyName}`, methodNode, paramSet(methodNode));
+    }
+  };
+
   const considerDecl = (decl: Node | null | undefined, exported: boolean): void => {
     if (!decl) return;
     if (decl.type === "FunctionDeclaration" && (decl as { id?: Node }).id) {
       const id = decl.id as { name: string };
       visitFn(id.name, decl, paramSet(decl));
+      return;
+    }
+    if (decl.type === "ClassDeclaration" && (decl as { id?: { name?: string } }).id?.name) {
+      visitClassMethods((decl.id as { name: string }).name, decl);
       return;
     }
     if (decl.type === "VariableDeclaration") {
@@ -204,11 +234,28 @@ export function collectParamBodyAccesses(
   };
 
   const program = (ast as { program?: { body?: Node[] } }).program;
-  for (const stmt of program?.body ?? []) {
+  const bodyStmts = program?.body ?? [];
+  for (const stmt of bodyStmts) {
     if (stmt.type === "ExportNamedDeclaration") {
       considerDecl((stmt as { declaration?: Node }).declaration, true);
+      // export { Foo } → 本地 class 方法 body
+      for (const spec of (stmt as { specifiers?: Node[] }).specifiers ?? []) {
+        const local = (spec as { local?: { type?: string; name?: string } }).local;
+        if (local?.type !== "Identifier") continue;
+        for (const s2 of bodyStmts) {
+          if (
+            s2.type === "ClassDeclaration" &&
+            (s2 as { id?: { name?: string } }).id?.name === local.name
+          ) {
+            visitClassMethods(local.name!, s2);
+          }
+        }
+      }
     } else if (stmt.type === "ExportDefaultDeclaration") {
       considerDecl((stmt as { declaration?: Node }).declaration, true);
+    } else if (stmt.type === "ClassDeclaration") {
+      const id = (stmt as { id?: { name?: string } }).id;
+      if (id?.name) visitClassMethods(id.name, stmt);
     } else if (stmt.type === "FunctionDeclaration") {
       // 私有函数不进 interface 档，草稿也跳过
     }
@@ -475,6 +522,11 @@ export function toDraftBuilderDsl(display: string): string {
   );
 }
 
+/** 草稿 export 名：`Class.method` → 合法标识符 `Class_method`（C4.2 侧车键） */
+function draftExportName(fnName: string): string {
+  return fnName.includes(".") ? fnName.replace(/\./g, "_") : fnName;
+}
+
 /** 仅把可投影槽写进 DSL；body 建议 / 无证据槽不发明约束 */
 function draftDsl(entry: Pick<InterfaceDraftEntry, "params" | "returns">): string {
   const parts = entry.params
@@ -662,7 +714,10 @@ export function formatDraftModule(
     } else if (e.returnEvidence === "symbolic") {
       lines.push(`//   returns: ${e.returns?.display ?? ""} (symbolic)`);
     }
-    lines.push(`export const ${e.fn} = ${e.dsl};`);
+    lines.push(`export const ${draftExportName(e.fn)} = ${e.dsl};`);
+    if (e.fn.includes(".")) {
+      lines.push(`//   sidecar key may also be written as \`${e.fn}\` / nested { ${e.fn.split(".")[1]}: … }`);
+    }
     lines.push("");
   }
 

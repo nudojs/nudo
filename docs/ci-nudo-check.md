@@ -5,7 +5,7 @@
 > 类型代数在 `@nudojs/core`，无独立 kernel 包。
 >
 > **报告是 Nudo 原生格式**（Abs 优先），不是 tsc 诊断换皮：
-> - `signatures`：无损 Abs（shape / term / pred / conf）
+> - `signatures`：默认一行摘要；`--verbose` 才展开 shape/term/pred/conf
 > - issues：`actual: …` / `expected: …` 写清 ⊭ 关系
 > - dts 是 TS 兼容添头，不是本报告主线
 
@@ -17,11 +17,7 @@ FAILED
   1 error · 0 warning · 0 info · 1 fn
 
 signatures
-  needsPositive(x)  number  = x  where x > 0  #path
-    number
-    term: x
-    pred: x > 0
-    conf: path
+  needsPositive(x)  number  #path
 
 issues
   [ERROR L12 needsPositive] needsPositive[x]: 实参 ⊭ 前置  (nudo:constraint-violated)
@@ -29,6 +25,8 @@ issues
       expected: x > 0
       → 改用满足 x > 0 的值，或放宽 x 的前置
 ```
+
+（`--verbose` 会在 signatures 下展开 `term:` / `pred:` / `conf:` 完整 Abs。）
 
 ## 真实包精度
 

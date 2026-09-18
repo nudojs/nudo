@@ -17,7 +17,7 @@ export type NudoConfig = {
   analysis?: {
     include?: string[] | string;
     exclude?: string[] | string;
-    /** directives（默认，今日行为）| exports | all */
+    /** directives | exports（默认）| all */
     mode?: string;
     /** off | errors | default | verbose */
     diagnostics?: string;
@@ -56,6 +56,8 @@ const DEFAULT_ANALYSIS_EXCLUDE = [
   "**/dist/**",
   "**/coverage/**",
 ];
+/** A1 产品默认：exports — 普通带导出的 .js 进 IDE；directives/all 需显式 */
+export const DEFAULT_ANALYSIS_MODE: AnalysisMode = "exports";
 
 function toStringArray(raw: string[] | string | undefined, fallback: string[]): string[] {
   if (raw === undefined) return fallback;
@@ -65,15 +67,18 @@ function toStringArray(raw: string[] | string | undefined, fallback: string[]): 
 }
 
 /**
- * 归一化 `nudo.analysis`。默认 mode=directives（A1 前不改 IDE 行为）；
- * diagnostics：directives→errors，all/exports→default。
+ * 归一化 `nudo.analysis`。默认 mode=exports（A1：无指令但有 export/侧车的文件
+ * 进 IDE 分析；`all` / `directives` 需显式配置）。
+ * diagnostics：directives→errors，exports/all→default。
  * include 空 = 不按路径过滤（isNudoTargetPath 已管扩展名）。
  */
 export function analysisConfig(config: NudoConfig | null | undefined): AnalysisConfig {
   const raw = config?.analysis;
   const modeRaw = raw?.mode;
   const mode: AnalysisMode =
-    modeRaw === "exports" || modeRaw === "all" ? modeRaw : "directives";
+    modeRaw === "exports" || modeRaw === "all" || modeRaw === "directives"
+      ? modeRaw
+      : DEFAULT_ANALYSIS_MODE;
   const diagRaw = raw?.diagnostics;
   const diagnostics: DiagnosticsLevel =
     diagRaw === "off" || diagRaw === "errors" || diagRaw === "default" || diagRaw === "verbose"

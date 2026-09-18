@@ -223,6 +223,7 @@ nudo check <file> --callsites <usage-sites...>
 | 选项 | 描述 |
 |--------|-------------|
 | `--json` | 输出稳定 CheckJson（CI / Agent 契约；仅单文件） |
+| `--verbose` | signatures 展开完整 Abs（`term`/`pred`/`conf`）；默认一行人类摘要 |
 | `--callsites <paths...>` | 使用现场文件（tests/apps）：注入其调用记录，使跨文件域证据可产出 `nudo:interface-domain-exceeds` |
 
 **示例：**

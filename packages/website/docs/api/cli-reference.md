@@ -223,6 +223,7 @@ nudo check <file> --callsites <usage-sites...>
 | Option | Description |
 |--------|-------------|
 | `--json` | Emit stable CheckJson (CI / Agent contract; single file only) |
+| `--verbose` | Expand signatures to full Abs (`term` / `pred` / `conf`); default is a one-line human summary |
 | `--callsites <paths...>` | Usage-site files (tests/apps): inject their call records so cross-file domain evidence can produce `nudo:interface-domain-exceeds` |
 
 **Example:**

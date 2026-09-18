@@ -17,7 +17,8 @@ function tmpProject(pkg: Record<string, unknown>): string {
   return dir;
 }
 
-const directivesCfg = analysisConfig(undefined);
+const directivesCfg = analysisConfig({ analysis: { mode: "directives" } });
+const defaultCfg = analysisConfig(undefined);
 const allCfg: AnalysisConfig = { ...analysisConfig({ analysis: { mode: "all" } }) };
 const exportsCfg: AnalysisConfig = { ...analysisConfig({ analysis: { mode: "exports" } }) };
 
@@ -25,6 +26,11 @@ describe("shouldAnalyzeFile", () => {
   it("rejects non-target paths", () => {
     expect(shouldAnalyzeFile("/a/b.tsx", "export function f(){}", allCfg)).toBe(false);
     expect(shouldAnalyzeFile("/a/b.nudo.js", "export const x = 1", allCfg)).toBe(false);
+  });
+
+  it("A1 default mode=exports analyzes export-bearing files", () => {
+    expect(defaultCfg.mode).toBe("exports");
+    expect(shouldAnalyzeFile("/proj/a.js", "export function f(){}", defaultCfg)).toBe(true);
   });
 
   it("mode=directives: only files with @nudo:", () => {

@@ -5,7 +5,7 @@ description: "Analyze @nudo: type-inference directives during Vite builds with v
 
 # Vite Plugin
 
-**vite-plugin-nudo** integrates Nudo's type inference into your Vite build. File selection follows `nudo.analysis.mode` (same gate as LSP/CLI via `shouldAnalyzeFile`); the shipped default is `"directives"` (only files with `@nudo:*` directives are analyzed).
+**vite-plugin-nudo** integrates Nudo's type inference into your Vite build. File selection follows `nudo.analysis.mode` (same gate as LSP/CLI via `shouldAnalyzeFile`); the shipped default is `"exports"` (files with `@nudo:*`, `export`, or a sidecar are analyzed).
 
 ## Installation
 

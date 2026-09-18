@@ -136,11 +136,7 @@ FAILED
   1 error · 0 warning · 0 info · 1 fn
 
 signatures
-  needsPositive(x)  number  = x  where x > 0  #path
-    number
-    term: x
-    pred: x > 0
-    conf: path
+  needsPositive(x)  number  #path
 
 issues
   [ERROR L12 needsPositive] needsPositive[x]: 实参 ⊭ 前置  (nudo:constraint-violated)
@@ -148,7 +144,7 @@ issues
       expected: x > 0
 ```
 
-签名携带 **无损 Abs**（`shape` / `term` / `pred` / `conf`）。可选 `.d.ts` 输出是 TypeScript 生态 **兼容侧信道**，不是主线。
+签名默认 **一行摘要**；`--verbose` 才展开无损 Abs（`shape` / `term` / `pred` / `conf`）。可选 `.d.ts` 输出是 TypeScript 生态 **兼容侧信道**，不是主线。
 
 ## 调用点覆盖
 

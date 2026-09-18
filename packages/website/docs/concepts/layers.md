@@ -20,7 +20,7 @@ You get call-site cases: concrete inputs → inferred results. No annotations, n
 
 Open the same file in VS Code with the Nudo extension for hover and inlays.
 
-> **Default analysis mode:** `nudo.analysis.mode` defaults to `"directives"`. Files without `@nudo:` directives are not analyzed by the IDE until you set `"exports"` or `"all"` in `package.json#nudo.analysis` (or open a file that already has directives). CLI `infer` on a named path still analyzes any target file.
+> **Default analysis mode:** `nudo.analysis.mode` defaults to `"exports"`. Files with `export` / sidecar / directives are analyzed by the IDE; set `"all"` for every target path or `"directives"` for the conservative gate. CLI `infer` on a named path still analyzes any target file.
 
 **Stop here** if you only want types for existing JS.
 

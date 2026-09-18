@@ -23,7 +23,7 @@ code --install-extension wmzy.nudo-vscode
 
 The extension activates when you open JavaScript files. It uses the `@nudojs/lsp` package to run a Language Server Protocol (LSP) server that provides all editor features.
 
-**File detection**: The language server analyzes `.js`, `.ts`, and `.mjs` files. Directive-only mode is conservative; project-wide analysis opens via `package.json#nudo.analysis.mode` (`exports` | `all`). Directives (`@nudo:case`, `@nudo:mock`, `@nudo:refine`, …) remain the explicit contract surface — full syntax in the [Directives reference](../concepts/directives.md). Cross-editor capability comparison: [LSP Client Matrix](./lsp-clients.md).
+**File detection**: The language server analyzes `.js`, `.ts`, and `.mjs` files. Shipped default is `nudo.analysis.mode = "exports"` (export / sidecar / directives); set `"all"` or `"directives"` to widen or tighten the gate. Directives (`@nudo:case`, `@nudo:mock`, `@nudo:refine`, …) remain the explicit contract surface — full syntax in the [Directives reference](../concepts/directives.md). Cross-editor capability comparison: [LSP Client Matrix](./lsp-clients.md).
 
 ## Features
 

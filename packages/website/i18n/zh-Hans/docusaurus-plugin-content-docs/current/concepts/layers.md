@@ -22,7 +22,7 @@ npx nudojs infer ./src/app.js
 
 **只想给既有 JS 补类型的话，停在这里即可。**
 
-> 项目级可把 `package.json#nudo.analysis.mode` 设为 `exports` 或 `all`，让 LSP 分析无指令文件；默认仍是 `directives`。
+> 项目级可把 `package.json#nudo.analysis.mode` 设为 `all` 或 `directives`；**出厂默认是 `exports`**（含 export / 侧车 / 指令的文件进 IDE 分析）。
 
 ## Day 1 — 侧车契约
 

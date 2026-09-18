@@ -49,7 +49,7 @@ For a **JS package**, the serious-replacement checklist is:
 
 | Capability | Nudo path |
 |---|---|
-| Open a normal `.js` file, get hover / inlay | LSP + `package.json#nudo.analysis.mode` (default `directives`; `exports` / `all` available) |
+| Open a normal `.js` file, get hover / inlay | LSP + `package.json#nudo.analysis.mode` (default `exports`; `all` / `directives` available) |
 | CI type gate | `nudo check` — exit 1 on `error` issues |
 | Explicit contracts | `*.nudo.js` + `@nudo:refine`; handwritten = obligation |
 | Generated facts | `nudo interface --emit` → `@generated` segments (drift, not silent rewrites of obligations) |

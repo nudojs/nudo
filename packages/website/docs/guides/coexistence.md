@@ -52,7 +52,7 @@ Do **not** run `nudo check` over `apps/web/**/*.ts` unless you intentionally str
 
 `.ts` files stay with tsc. Nudo LSP provides hover/inlays for opened `.js` files that match `include` **only when** `analysis.mode` is `exports` or `all`.
 
-> **Default note:** `nudo.analysis.mode` currently defaults to `"directives"` — plain `.js` files without `@nudo:` are not analyzed by the IDE until you opt in. Named-path CLI commands (`nudo check src/lib.js`) still analyze that file regardless of mode.
+> **Default note:** `nudo.analysis.mode` defaults to `"exports"` — files with `export`/sidecar/directives are analyzed by the IDE. Set `"all"` for every target path, or `"directives"` for the conservative gate. Named-path CLI commands (`nudo check src/lib.js`) still analyze that file regardless of mode.
 
 ## Recipe 3: Gradual contracts
 

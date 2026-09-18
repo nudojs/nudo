@@ -49,7 +49,7 @@ Nudo 的目标是：**在 JavaScript 优先的代码库里，替代 TypeScript �
 
 | 能力 | Nudo 路径 |
 |---|---|
-| 打开普通 `.js` 即有 hover / inlay | LSP + `package.json#nudo.analysis.mode`（默认 `directives`；可 `exports` / `all`） |
+| 打开普通 `.js` 即有 hover / inlay | LSP + `package.json#nudo.analysis.mode`（默认 `exports`；可 `all` / `directives`） |
 | CI 类型门禁 | `nudo check`——`error` 即退出码 1 |
 | 显式契约 | `*.nudo.js` + `@nudo:refine`；手写 = 义务 |
 | 生成事实 | `nudo interface --emit` → `@generated` 段（drift，不静默改写义务） |

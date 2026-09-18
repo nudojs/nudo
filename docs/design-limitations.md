@@ -445,7 +445,7 @@ exit 0，全部 case 精确（`compute` → `25 #exact`）。网站
 
 | 限制 | 影响 | 状态 |
 |------|------|------|
-| Set 去重语义 | 信息丢失 | 可接受（不建模） |
+| Set 去重语义 | 信息丢失 | ✅ 已建模（字面 key 条目表；见 collections.ts / i-map-set） |
 | 循环 return 回归测试完备性 | 门禁 | ✅ 已解决（for-of / for-i / while / nested 均有测试，见 4.1） |
 
 ---

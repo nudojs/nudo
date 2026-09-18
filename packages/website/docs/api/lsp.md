@@ -97,7 +97,7 @@ Synchronous, cache-aware analysis for high-frequency handlers (hover, completion
 Server-side `isNudoFile(uri)` is **not** a pure directive scan. It requires:
 
 1. `isNudoTargetPath` — `.js` / `.mjs` / `.ts`, excluding `.d.ts`, JSX, `*.nudo.{js,mjs,ts}` sidecars, and `*.nudo.draft.{js,mjs,ts}` draft artifacts; and
-2. `shouldAnalyzeFile(filePath, text)` — path + `package.json#nudo.analysis.mode` (directives today; `exports`/`all` opens directive-free analysis).
+2. `shouldAnalyzeFile(filePath, text)` — path + `package.json#nudo.analysis.mode` (shipped default `exports`; `all` / `directives` available).
 
 Results are cached per URI and invalidated on open/change/close.
 

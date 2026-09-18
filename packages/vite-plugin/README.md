@@ -39,7 +39,7 @@ export default {
 File selection is two-stage:
 
 1. **Path globs** (`include` / `exclude`) — defaults cover `**/*.js`, `**/*.mjs`, `**/*.ts` (the same extensions `isNudoTargetPath` accepts; `.cjs` / `.cts` / `.mts` / `.tsx` / `.d.ts` / `*.nudo.js` are not analysis targets).
-2. **`nudo.analysis.mode`** via `shouldAnalyzeFile` — same gate as the LSP/CLI. Shipped default is `"directives"` (only files with `@nudo:` directives are analyzed). Set `"exports"` or `"all"` in `package.json#nudo.analysis` to opt in to whole-file analysis.
+2. **`nudo.analysis.mode`** via `shouldAnalyzeFile` — same gate as the LSP/CLI. Shipped default is `"exports"` (files with `@nudo:`, `export`, or a sidecar are analyzed). Set `"all"` or `"directives"` in `package.json#nudo.analysis` to widen or tighten the gate.
 
 ## Diagnostics & failOnError
 
