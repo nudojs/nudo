@@ -113,7 +113,7 @@ flowchart TB
 | A3 | **无指令文件的噪声控制**：implicit 推断只报 high-confidence；`unknown` 叶子默认不刷屏 | 无指令文件打开 1s 内无 warning 风暴 | A1, A2 | [x] |
 | A4 | **侧车未保存 buffer**：LSP 可对打开中的 `*.nudo.js` 生效（设计 §2.2 Phase 1 缺口） | 编辑侧车未保存时 check/hover 同步 | design-refine-derivation | [x] |
 | A5 | **跨文件导航补齐**：侧车绑定名的 Go-to-Definition（源码 ↔ `*.nudo.js`）、Find References 含契约边 | F12 从 `add2` 到侧车契约可跳 | A1 | [x] |
-| A6 | **Quickfix / Code Action 扩展**：缺 slot → 插入侧车 shape；refine 违例 → 放宽契约/改实参建议 | 两类一键修复可用 | D2 | [x] |
+| A6 | **Quickfix / Code Action 扩展**：缺 slot → 插入侧车 shape；refine 违例 → 放宽契约/改实参建议 | 两类一键修复可用 | D2 | [~] missing-field → 调用对象插 `field: undefined`；refine fix 仍为占位（未做侧车 shape 插入 / 契约放宽） |
 | A7 | **语义高亮与 inlay 对齐 interface 档**：default 走 symbolic（设计 Phase 1 已提），与 CodeLens 切换一致 | CodeLens `● interface` 与 hover 同源 | design-refine-derivation | [x] |
 | A8 | **大文件防抖与取消**：分析可取消；编辑风暴下不排队爆炸 | `validateGeneration` 取消 + 大文件防抖 400/800ms | B2 | [x] |
 
@@ -273,7 +273,7 @@ flowchart TB
 - [~] **B5** LSP/CLI 共享 memo / workspace AnalysisSession——**未完成**（见表内 B5）
 - [x] **C1.*** Map/Set 条目表 + 动态 key 槽位并集 + 手写循环 push 重绑
 - [x] **C2.1–C2.2** 循环 return（`$loopReturn`）；catch 形参绑定 thrown Abs（Error name/message）——C2.1 测试见 `loop-return-and-presence.test.ts`
-- [x] **A4–A6** 侧车 buffer 优先 loadModule、definition 含侧车契约、missing-field quickfix
+- [~] **A4–A6** 侧车 buffer 优先 loadModule、definition 含侧车契约、missing-field quickfix（A4：磁盘侧车 miss 已登记边；**打开 buffer 内编辑侧车尚未自动重检 parent**；A6 refine fix 未完成）
 
 ### Phase 3 — 替代门槛冲刺
 

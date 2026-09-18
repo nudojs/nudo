@@ -203,17 +203,18 @@ describe("autoBind implicit sidecar dep edges (设计 §4.5)", () => {
     expect(revalidated).toBeGreaterThan(0);
   });
 
-  it("without a sidecar file, registration matches the old explicit-import behavior", () => {
+  it("without a sidecar file, missing-sidecar edge is still registered (A4 create → revalidate)", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-no-sidecar-"));
     const parent = join(dir, "a.js");
     const dep = join(dir, "shapes.nudo.js");
+    const missingSidecar = join(dir, "a.nudo.js");
     registerNudoImportDeps(
       parent,
       `/// @nudo:import { positive } from "./shapes.nudo.js"\nfunction f(x){return x;}\n`,
     );
-    // 唯一一条边 = 显式 @nudo:import；a.nudo.js 不存在 → 不登记隐式边
-    expect(nudoDepParents.size).toBe(1);
+    // 显式 import 边 + 入口/依赖的 ambient 侧车路径边（文件尚不存在也登记）
     expect(nudoDepParents.get(norm(dep))).toEqual(new Set([norm(parent)]));
+    expect(nudoDepParents.get(norm(missingSidecar))?.has(norm(parent))).toBe(true);
   });
 
   it("maps .ts parents to .nudo.ts sidecars", () => {

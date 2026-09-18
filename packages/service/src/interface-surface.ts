@@ -38,35 +38,16 @@ import {
   interfaceConfig,
   diskCacheRoot,
 } from "./evaluator/config.ts";
-import { DiskCache, ifaceCacheKey, extractNudoImportSpecs } from "./disk-cache.ts";
+import { DiskCache, ifaceCacheKey } from "./disk-cache.ts";
+import { collectLoadDepContents } from "./dep-contents.ts";
 
-/** @nudo:import 依赖内容（传递）：iface 缓存键维度 */
+/** loadModule 闭包依赖内容：iface 缓存键维度（含 ambient 侧车 / ESM import） */
 function collectDepContents(
   filePath: string,
   source: string,
+  loadModule?: LoadModule,
 ): Array<{ path: string; content: string | null }> {
-  const dir = dirname(filePath);
-  const seen = new Set<string>();
-  const out: Array<{ path: string; content: string | null }> = [];
-  const queue = extractNudoImportSpecs(source).map((spec) => resolve(dir, spec));
-  while (queue.length > 0) {
-    const dep = queue.shift()!;
-    if (seen.has(dep)) continue;
-    seen.add(dep);
-    let content: string | null = null;
-    try {
-      if (existsSync(dep)) {
-        content = readFileSync(dep, "utf-8");
-        for (const spec of extractNudoImportSpecs(content)) {
-          queue.push(resolve(dirname(dep), spec));
-        }
-      }
-    } catch {
-      content = null;
-    }
-    out.push({ path: dep, content });
-  }
-  return out;
+  return collectLoadDepContents(filePath, source, loadModule ?? defaultLoadModule).depContents;
 }
 
 export type InterfaceSurfaceEntry = {
@@ -122,7 +103,7 @@ type CachedEffectiveInterface = {
   fnName: string;
   params: Array<{ param: string; constraint: CachedConstraintJson }>;
   returns?: { constraint: CachedConstraintJson };
-  source: "handwritten" | "generated";
+  source: "handwritten" | "generated" | "implicit";
   conflict?: { params: string[]; returns?: boolean };
 };
 
@@ -190,7 +171,7 @@ export async function interfaceSurface(
       } catch {
         sidecarSource = undefined;
       }
-      const depContents = collectDepContents(abs, source);
+      const depContents = collectDepContents(abs, source, loadModule);
       ifaceKey = ifaceCacheKey(abs, source, {
         autoBind: autoBind !== false,
         projectDir: proj?.projectDir,
@@ -223,7 +204,8 @@ export async function interfaceSurface(
               ...(eff.returns
                 ? { returns: { constraint: constraintToJson(eff.returns.constraint) } }
                 : {}),
-              source: eff.source === "implicit" ? "handwritten" : eff.source,
+              // 磁盘表保留真实分档；implicit 也可序列化（展示层用）
+              source: eff.source,
               ...(eff.conflict ? { conflict: eff.conflict } : {}),
             }
           : null;

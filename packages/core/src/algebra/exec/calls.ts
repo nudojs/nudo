@@ -8,6 +8,7 @@ import type { Abs } from "../abs.ts";
 import { unknown } from "../abs.ts";
 import { evalGlobalFn } from "../builtins.ts";
 import { $call } from "./call.ts";
+import { callAtFunctionBoundary } from "./runtime.ts";
 import {
   tagAbsOrigin,
   pushCallLoc,
@@ -90,7 +91,8 @@ export function $callNamed(
       const g = GLOBAL_FNS.has(name) && fn === (globalThis as Record<string, unknown>)[name]
         ? evalGlobalFn(name, args)
         : undefined;
-      result = g ?? (fn as (...a: Abs[]) => Abs)(...args);
+      // 嵌套 B 路径函数：调用边界收 NudoReturn，不得污染 caller
+      result = g ?? callAtFunctionBoundary(() => (fn as (...a: Abs[]) => Abs)(...args));
     } else if (fn && typeof fn === "object" && "shape" in (fn as object)) {
       result = $call(fn as Abs, args);
     }

@@ -919,6 +919,7 @@ function analysisFileCacheKey(
   source: string,
   activeCases?: Map<string, number>,
   externalCallRecords?: CallRecord[],
+  analysisCfg?: { mode: string; evalMissingSlot: string; callSiteBudget: number; diagnostics: string },
 ): { filePath: string; source: string; auxKey: string } {
   let cases = "-";
   if (activeCases && activeCases.size > 0) {
@@ -936,11 +937,15 @@ function analysisFileCacheKey(
     }
     ext = `n${externalCallRecords.length}#id${id}`;
   }
+  // analysisConfig 维度进键：package.json#nudo.analysis 变更必须 miss
+  const cfg = analysisCfg
+    ? `m=${analysisCfg.mode}|e=${analysisCfg.evalMissingSlot}|b=${analysisCfg.callSiteBudget}|d=${analysisCfg.diagnostics}`
+    : "-";
   return {
     filePath,
     // 尾部无 @nudo 注释/空行不进键：comment-only 编辑命中 AnalysisResult
     source: stableAnalyzeKeySource(source),
-    auxKey: `${cases}\0${ext}`,
+    auxKey: `${cases}\0${ext}\0${cfg}`,
   };
 }
 
@@ -1018,7 +1023,9 @@ function shiftCallRecordLines(r: CallRecord, lineDelta: number): CallRecord {
  * （CLI watch / vite-plugin）在 dep 变更时应 `clearBPathCache()` 或上述逐出。
  */
 export function analyzeFile(filePath: string, source: string, activeCases?: Map<string, number>, externalCallRecords?: CallRecord[]): AnalysisResult {
-  const k = analysisFileCacheKey(filePath, source, activeCases, externalCallRecords);
+  const projectConfig = findProjectConfig(dirname(filePath));
+  const cfg = analysisConfig(projectConfig?.config);
+  const k = analysisFileCacheKey(filePath, source, activeCases, externalCallRecords, cfg);
   const hit = analysisCacheGet<AnalysisResult>(k.filePath, k.source, k.auxKey);
   if (hit !== undefined) {
     return cloneAnalysisResult(hit);

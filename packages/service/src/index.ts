@@ -126,6 +126,7 @@ export {
   ANALYSIS_ABI,
   type DiskCacheOptions,
 } from "./disk-cache.ts";
+export { collectLoadDepContents, type DepContent } from "./dep-contents.ts";
 export type { BMemberDiag } from "@nudojs/core";
 
 export {

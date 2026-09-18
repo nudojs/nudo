@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { readFileSync, existsSync, watch, readdirSync, statSync, writeFileSync, mkdirSync } from "node:fs";
-import { resolve, dirname, relative, join, basename } from "node:path";
+import { readFileSync, existsSync, watch, readdirSync, statSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
+import { resolve, dirname, relative, join, basename, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { formatShape } from "@nudojs/core";
@@ -351,33 +351,14 @@ program
  * `nudo:interface-domain-exceeds`（设计 §6：check 门禁的跨文件用穿证据；
  * checkSource 单文件面无注入通道）。
  */
-/** `@nudo:import` 依赖契约内容（含传递）：进 disk cache key */
-function collectNudoDepContents(
+/** `@nudo:import` / ESM / 侧车闭包依赖内容：进 disk cache key */
+async function collectCheckDepContents(
   filePath: string,
   source: string,
-): Array<{ path: string; content: string | null }> {
-  const dir = dirname(filePath);
-  const seen = new Set<string>();
-  const out: Array<{ path: string; content: string | null }> = [];
-  const queue = extractNudoImportSpecs(source).map((spec) => resolve(dir, spec));
-  while (queue.length > 0) {
-    const dep = queue.shift()!;
-    if (seen.has(dep)) continue;
-    seen.add(dep);
-    let content: string | null = null;
-    try {
-      if (existsSync(dep)) {
-        content = readFileSync(dep, "utf-8");
-        for (const spec of extractNudoImportSpecs(content)) {
-          queue.push(resolve(dirname(dep), spec));
-        }
-      }
-    } catch {
-      content = null;
-    }
-    out.push({ path: dep, content });
-  }
-  return out;
+  loadModule: (spec: string, fromFile: string) => string | undefined,
+): Promise<Array<{ path: string; content: string | null }>> {
+  const { collectLoadDepContents } = await import("@nudojs/service");
+  return collectLoadDepContents(filePath, source, loadModule).depContents;
 }
 
 async function runCheck(
@@ -416,8 +397,8 @@ async function runCheck(
       sidecarContent = null;
     }
   }
-  // @nudo:import 依赖契约进键（传递一层 .nudo.js）
-  const depContents = collectNudoDepContents(filePath, source);
+  // 依赖闭包（ESM/侧车/@nudo:import）进键
+  const depContents = await collectCheckDepContents(filePath, source, loadModule);
   const cacheKey = useDisk
     ? checkCacheKey(filePath, source, {
         autoBind,
@@ -682,6 +663,37 @@ async function runInterfaceDraft(
   });
   const draftRel = relative(process.cwd(), sidecarDraftPath(filePath)) || sidecarDraftPath(filePath);
   if (opts.write) {
+    const draftPath = sidecarDraftPath(filePath);
+    // CLI 写盘边界：与 LSP assertEmitTargetAllowed 同口径的基础防护
+    if (/node_modules/.test(filePath) || /node_modules/.test(draftPath)) {
+      console.error(`Error: '${filePath}' is inside node_modules; draft write refused`);
+      process.exitCode = 1;
+      return;
+    }
+    const { findProjectConfig } = await import("@nudojs/service");
+    const proj = findProjectConfig(dirname(filePath));
+    if (proj?.projectDir) {
+      const rootReal = (() => {
+        try {
+          return realpathSync(proj.projectDir);
+        } catch {
+          return proj.projectDir;
+        }
+      })();
+      const fileReal = (() => {
+        try {
+          return realpathSync(filePath);
+        } catch {
+          return filePath;
+        }
+      })();
+      const relToRoot = relative(rootReal, fileReal);
+      if (relToRoot.startsWith("..") || isAbsolute(relToRoot)) {
+        console.error(`Error: '${filePath}' is outside project root '${proj.projectDir}'; draft write refused`);
+        process.exitCode = 1;
+        return;
+      }
+    }
     const write = writeInterfaceDraft(filePath, result.draftSource, {
       dryRun: opts.dryRun,
     });

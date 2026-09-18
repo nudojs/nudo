@@ -7,6 +7,12 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Abs } from "../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, unknown, type Confidence } from "../abs.ts";
 import { absFunction } from "../abs-fn.ts";
+import {
+  beginCollectionFork,
+  endCollectionFork,
+  popCollectionArm,
+  pushCollectionArm,
+} from "../collections.ts";
 import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs } from "../surface.ts";
 import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape } from "../objects.ts";
@@ -117,9 +123,27 @@ export function asAbsVal(v: unknown): Abs {
   return $lit(v as never);
 }
 
+/**
+ * 函数调用边界：callee 的 loop/early-return 不得冒泡成 caller 结果。
+ * 每个 B 路径调用帧独立 ALS；NudoReturn 收成该调用的返回值。
+ */
+export function callAtFunctionBoundary<T>(body: () => T): T {
+  return runWithLoopExits(() => {
+    try {
+      return body();
+    } catch (e) {
+      if (isNudoReturn(e)) return e.absValue as unknown as T;
+      throw e;
+    }
+  });
+}
+
 /** 函数表达式 → 一等 fn Abs（transpile 侧带真实参数名；异步 body 包 $async） */
 export function $fnVal(params: string[], impl: (...args: Abs[]) => Abs): Abs {
-  return absFunction(params, { body: noBody, apply: (args) => impl(...args) });
+  return absFunction(params, {
+    body: noBody,
+    apply: (args) => callAtFunctionBoundary(() => impl(...args)),
+  });
 }
 
 /** 字面量 → Abs（transpile 侧数字/字符串/布尔/null/undefined） */
@@ -221,16 +245,36 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
   if (isDefinitelyFalse(test)) return alternate ? asAbsVal(alternate()) : undef();
 
   const exits = loopExitsAls.getStore();
-  const a = runForkArm(consequent, exits);
-  const b: ForkArm = alternate
-    ? runForkArm(alternate, exits)
-    : { kind: "val", v: undef() };
+  // 集合 side-table：抽象分支各自 overlay，结束后 join（防身份污染）
+  beginCollectionFork();
+  const arms: Array<ReturnType<typeof popCollectionArm>> = [];
+  let a: ForkArm;
+  let b: ForkArm;
+  try {
+    pushCollectionArm();
+    try {
+      a = runForkArm(consequent, exits);
+    } finally {
+      arms.push(popCollectionArm());
+    }
+    if (alternate) {
+      pushCollectionArm();
+      try {
+        b = runForkArm(alternate, exits);
+      } finally {
+        arms.push(popCollectionArm());
+      }
+    } else {
+      b = { kind: "val", v: undef() };
+    }
+  } finally {
+    endCollectionFork(arms);
+  }
 
   if (a.kind === "ret" && b.kind === "ret") {
     throw new NudoReturn(joinAbs(a.v, b.v));
   }
   if (a.kind === "ret") {
-    // 一侧 early-return（已记入 exits），另一侧继续走函数后续路径
     if (!exits) throw new NudoReturn(a.v);
     return b.kind === "val" ? b.v : undef();
   }
@@ -429,10 +473,10 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
     return arr;
   }
   if (method === "sort") {
-    // 顺序未建模：结构保留（元素多重集不变）；非同质 tuple 降为 arr 更安全
+    // 顺序未建模：位次不可信，tuple 降为 arr（元素 join），避免 a[0] 假精确
     if (shape.k === "tuple") {
       return abs(
-        { k: "tuple", elements: [...shape.elements] },
+        { k: "arr", element: asArrEl(shape.elements) },
         undefined,
         undefined,
         confJoin(arr.conf, "path"),
@@ -470,8 +514,8 @@ export function $idx(a: Abs, i: Abs): Abs {
       const slot = objShape.slots[String(iv)];
       if (slot) return slot.value;
       if (objShape.open) return unknown;
-      // 闭 shape 字面量 key miss：slot 不存在，投影含 undefined
-      return joinSlotsWithUndef();
+      // 闭 shape 字面量 key miss：键确定不存在 → 仅 undefined（与 $get / Map miss 一致）
+      return undef();
     }
     if (objShape.open && slots.length > 0) {
       // open shape：已知槽 ∪ unknown

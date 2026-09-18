@@ -107,7 +107,8 @@ createUser(  // ← signature help shows: (name: string, age: number)
 When Nudo reports diagnostics, quick fix suggestions are available. Click the lightbulb icon or press `Cmd+.` / `Ctrl+.` to see available fixes:
 
 - **Remove unreachable code** — for code after `return`/`throw`
-- **Update @nudo:refine** — when assertion doesn't match inferred type
+- **Insert missing field** — code action inserts `field: undefined` into the call-site object when evaluation/check reports a missing slot
+- **Refine mismatch** — currently a placeholder action title only (does not rewrite `@nudo:refine` yet)
 
 ### Semantic Tokens
 

@@ -26,6 +26,8 @@ import {
   type DiagnosticSeverity as JsDiagSeverity,
   type ModuleGraphCache,
 } from "@nudojs/service";
+
+export { filterDiagnosticsByLevel, diagnosticsLevelForFile };
 import {
   checkSource,
   pTrue,
@@ -136,13 +138,14 @@ const MAX_IMPLICIT_SIDECAR_NODES = 64;
 function registerSidecarClosureFor(entryFile: string, parent: string): void {
   const sidecar = sidecarPathOf(entryFile);
   if (isNodeModulesPath(sidecar)) return;
+  // miss 也登记：磁盘上尚无侧车时创建事件才能触发 parent 重检（A4）
+  addNudoDepParent(sidecar, parent);
   let rootSrc: string;
   try {
     rootSrc = readFileSync(sidecar, "utf8");
   } catch {
-    return; // 无侧车文件：登记与旧完全一致
+    return; // 文件不存在：边已保留，创建即重检
   }
-  addNudoDepParent(sidecar, parent);
   const seen = new Set<string>([sidecar]);
   const queue: string[] = [sidecar];
   let n = 0;

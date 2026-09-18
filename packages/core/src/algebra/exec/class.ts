@@ -6,7 +6,7 @@
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, strLit } from "../abs.ts";
 import { objOf, joinAbs } from "../objects.ts";
-import { $get, $set, asAbsVal, namespaceNameOf, $regex, $arrMutContainer } from "./runtime.ts";
+import { $get, $set, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl } from "../abs-fn.ts";
 import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod } from "../builtins.ts";
@@ -333,7 +333,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   // 统一委托 applyCallbackAbs（不新增 env.fns；Abs 侧 D/E 与 ast-eval 同轨）
   const callFn = (fn: unknown, ...fnArgs: Abs[]): Abs => {
     if (typeof fn === "function") {
-      const r = (fn as (...a: Abs[]) => unknown)(...fnArgs);
+      const r = callAtFunctionBoundary(() => (fn as (...a: Abs[]) => unknown)(...fnArgs));
       if (r && typeof r === "object" && "shape" in (r as object)) return r as Abs;
       return unknown;
     }
@@ -430,11 +430,9 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   if (method === "includes") {
     return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
   }
-  // C1.4：表达式位置返回 **JS 语义值**；语句重绑走 $arrMutContainer（容器）
+  // C1.4：语句重绑走 $arrMutContainer（容器）；表达式位置按 JS 语义返回 length
   if (method === "push" || method === "unshift") {
-    // Abs 设计语言：与语句重绑一致时 push/unshift 表达式也给出新容器
-    // （长度未建模）；更紧的 length 可后续补
-    return $arrMutContainer(arr, method, args);
+    return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
   }
   if (method === "pop") {
     if (shape.k === "tuple") {

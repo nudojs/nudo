@@ -1574,7 +1574,17 @@ export function applyAbsFn(
   if (!enterCall(key, label)) return truncatedAbs();
   try {
     // mock withArgs 等：有 apply 钩子时按实参派发，不经 body
-    if (impl!.apply) return impl!.apply(args);
+    // B 路径 $fnVal / 泄漏 JS 函数的 apply 可能抛 NudoReturn — 调用边界收成返回值
+    if (impl!.apply) {
+      try {
+        return impl!.apply(args);
+      } catch (e) {
+        if (e && typeof e === "object" && (e as { name?: string }).name === "NudoReturn") {
+          return (e as { absValue: Abs }).absValue;
+        }
+        throw e;
+      }
+    }
     const base = impl!.env ?? env;
     let local: AstEnv = { vars: new Map(base.vars), fns: base.fns, hofCollect: env.hofCollect };
     if ((base as { classes?: unknown }).classes) {

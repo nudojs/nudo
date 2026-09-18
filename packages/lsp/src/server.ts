@@ -50,6 +50,8 @@ import {
   toLspDiagnostic,
   uriToFilePath,
   validateText,
+  filterDiagnosticsByLevel,
+  diagnosticsLevelForFile,
   type ValidateTextDeps,
 } from "./validation.ts";
 import {
@@ -1113,9 +1115,12 @@ connection.languages.diagnostics.on((params) => {
   try {
     const filePath = uriToFilePath(document.uri);
     const result = getCachedOrAnalyze(filePath, document.getText(), document.version, getActiveCasesForUri(document.uri));
+    // pull 诊断与 push 路径同口径：A3 analysis.diagnostics 档
+    const level = diagnosticsLevelForFile(filePath);
+    const filtered = filterDiagnosticsByLevel(result.diagnostics, level);
     return {
       kind: "full",
-      items: result.diagnostics.map((d) => toLspDiagnostic(d, document.uri)),
+      items: filtered.map((d) => toLspDiagnostic(d, document.uri)),
     };
   } catch {
     return { kind: "full", items: [] };

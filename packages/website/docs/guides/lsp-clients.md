@@ -50,7 +50,7 @@ Legend: **Y** = works with stock client + this server · **C** = needs a setting
 | Semantic tokens | Y | C (`semantic_tokens: "combined"`) | C (treesitter/semantic tokens plugin) | C | C |
 | Active-case decoration | Y (extension) | N | N | N | N |
 | Agent commands (`nudo.check`, `nudo.hover`, …) | Y (executeCommand / MCP bridge) | Y (agent tooling / custom request) | Y (custom LSP request) | C | Y |
-| Open-buffer sidecar (A4) | Y | Y | Y | Y | Y |
+| Open-buffer sidecar (A4) | Partial | Partial | Partial | Partial | Partial |
 
 ## Setup notes
 

@@ -392,25 +392,28 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     }
     case "FunctionDeclaration": {
       if (!stmt.id) return `${pad}// <anonymous fn skipped>`;
+      // 嵌套函数声明不是 export 面；函数体是新边界，inLoop 必须归零
+      const exportKw = depth === 0 ? "export " : "";
+      const fnOpts: TranspileOptions = { ...opts, inLoop: 0 };
       const { sig, rest, prologue } = emitParamBinding(
         stmt.params as Node[],
         indent(depth + 2),
-        opts,
+        fnOpts,
       );
       const named = sig;
       const paramsSig = rest ? [...named, `...${rest}`] : named;
       const params = paramsSig.join(", ");
       const bodyStmts =
         stmt.body.type === "BlockStatement"
-          ? [...prologue, transpileFnBodyStmts(stmt.body.body, depth + 2, opts)].join("\n")
-          : `${indent(depth + 2)}return ${transpileExpression(stmt.body as unknown as Expression, opts)};`;
+          ? [...prologue, transpileFnBodyStmts(stmt.body.body, depth + 2, fnOpts)].join("\n")
+          : `${indent(depth + 2)}return ${transpileExpression(stmt.body as unknown as Expression, fnOpts)};`;
       const restBind = rest
         ? `${indent(depth + 1)}const ${rest} = arguments.length > ${named.length} ? $arr(Array.from(arguments).slice(${named.length})) : $arr([]);\n`
         : "";
       // function* → $gen 收集 yield
       if (stmt.generator) {
         return [
-          `${pad}export function ${stmt.id.name}(${named.join(", ")}) {`,
+          `${pad}${exportKw}function ${stmt.id.name}(${named.join(", ")}) {`,
           restBind,
           `${indent(depth + 1)}return $gen(() => {`,
           bodyStmts,
@@ -420,7 +423,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       }
       if (stmt.async) {
         return [
-          `${pad}export function ${stmt.id.name}(${named.join(", ")}) {`,
+          `${pad}${exportKw}function ${stmt.id.name}(${named.join(", ")}) {`,
           restBind,
           `${indent(depth + 1)}return $async(() => {`,
           bodyStmts,
@@ -429,7 +432,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         ].join("\n");
       }
       return [
-        `${pad}export function ${stmt.id.name}(${named.join(", ")}) {`,
+        `${pad}${exportKw}function ${stmt.id.name}(${named.join(", ")}) {`,
         restBind,
         bodyStmts,
         `${pad}}`,
@@ -455,20 +458,24 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         expr.type === "CallExpression" &&
         expr.callee.type === "MemberExpression" &&
         !expr.callee.computed &&
-        expr.callee.object.type === "Identifier" &&
         expr.callee.property.type === "Identifier"
       ) {
         const methodName = (expr.callee.property as { name: string }).name;
         if (
           ["push", "unshift", "splice", "pop", "shift", "reverse", "sort"].includes(methodName)
         ) {
-          const recv = (expr.callee.object as { name: string }).name;
+          // 支持标识符与成员路径接收者：this.arr / obj.x.pop 等
+          const recvSrc = transpileExpression(expr.callee.object as Expression, opts);
           const argSrcs = expr.arguments
             .map((a) =>
               a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts),
             )
             .join(", ");
-          return `${pad}${recv} = $arrMutContainer(${recv}, ${JSON.stringify(methodName)}, [${argSrcs}]);`;
+          // 可赋值左值（Identifier / MemberExpression）才重绑；复杂表达式保持调用
+          const objNode = expr.callee.object as { type: string };
+          if (objNode.type === "Identifier" || objNode.type === "MemberExpression" || objNode.type === "ThisExpression") {
+            return `${pad}${recvSrc} = $arrMutContainer(${recvSrc}, ${JSON.stringify(methodName)}, [${argSrcs}]);`;
+          }
         }
       }
       return `${pad}${transpileExpression(stmt.expression, opts)};`;
