@@ -72,8 +72,10 @@ export function activate(context: ExtensionContext): void {
       { scheme: "file", language: "typescript" },
     ],
     synchronize: {
-      // 源码 + 侧车：*.nudo.js 命中 .js，*.nudo.ts 命中 .ts；.mjs 入口一并覆盖
-      fileEvents: workspace.createFileSystemWatcher("**/*.{js,mjs,ts}"),
+      // 源码 + 侧车 + 项目配置：package.json#nudo.* / nudo.json 变更也要进 LSP
+      fileEvents: workspace.createFileSystemWatcher(
+        "**/{*.js,*.mjs,*.ts,package.json,nudo.json,nudo.config.js,nudo.config.mjs,nudo.config.ts,.nudorc,.nudorc.json}",
+      ),
     },
   };
 

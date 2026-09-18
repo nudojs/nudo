@@ -824,32 +824,67 @@ export function $elems(a: Abs): Abs[] {
 /**
  * for-of：对 iterable 每个元素跑 body；有界展开。
  * body(item, i) 可返回 void；状态由外部 JS 变量承接。
+ * - 具体空 tuple：体 0 次（不得用 `length || maxIters` 展开成 maxIters）
+ * - 抽象 arr / 未知长度：0..maxIters 出口与 pack 状态 join
  */
 export function $forOf(
   iterable: Abs,
   body: (item: Abs, index: Abs) => void,
   maxIters: number = DEFAULT_MAX_LOOP_ITERS,
+  opts?: {
+    pack?: () => Abs;
+    unpack?: (s: Abs) => void;
+  },
 ): void {
+  const pack = opts?.pack;
+  const unpack = opts?.unpack;
+  let exitJoin: Abs | undefined;
+  const snapExit = (): void => {
+    if (!pack) return;
+    const s = pack();
+    exitJoin = exitJoin ? joinAbs(exitJoin, s) : s;
+  };
+  const applyExitJoin = (): void => {
+    if (!exitJoin || !pack || !unpack) return;
+    unpack(joinAbs(exitJoin, pack()));
+  };
+
+  const shape = iterable.shape;
   const items = $elems(iterable);
-  const n = Math.min(items.length || maxIters, maxIters);
+  const knownLen = shape.k === "tuple" ? shape.elements.length : undefined;
+  // 非具体 tuple：长度未知（可能空、可能更长）→ 0..max 出口都 join
+  const unbounded = knownLen === undefined;
+
+  if (unbounded) snapExit();
+
+  const n =
+    knownLen !== undefined
+      ? Math.min(knownLen, maxIters)
+      : items.length > 0
+        ? maxIters
+        : 0;
+
   for (let i = 0; i < n; i++) {
     const item =
-      items.length > 0
-        ? items[Math.min(i, items.length - 1)]!
-        : unknown;
+      items.length > 0 ? items[Math.min(i, items.length - 1)]! : unknown;
     try {
-      body(item, abs(
-        { k: "prim", type: "number" },
-        { op: "lit", value: i },
-        pTrue,
-        "exact",
-      ));
+      body(
+        item,
+        abs(
+          { k: "prim", type: "number" },
+          { op: "lit", value: i },
+          pTrue,
+          "exact",
+        ),
+      );
     } catch (e) {
-      // C2.1：循环体内 return → 冒泡到函数调用方
-      if (isNudoReturn(e)) throw e;
+      if (isNudoReturn(e) || isNudoThrow(e)) throw e;
       throw e;
     }
+    if (unbounded) snapExit();
   }
+  if (unbounded && n === 0) snapExit();
+  applyExitJoin();
 }
 
 /**

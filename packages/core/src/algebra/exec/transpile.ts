@@ -326,62 +326,212 @@ function collectAssignedIds(node: unknown, acc: Set<string>): void {
   }
 }
 
-function collectDeclaredNames(node: unknown, acc = new Set<string>()): Set<string> {
-  if (!node || typeof node !== "object") return acc;
-  const n = node as {
-    type?: string;
-    id?: { type?: string; name?: string };
-    params?: unknown[];
-    declarations?: Array<{ id?: { type?: string; name?: string } }>;
-    [k: string]: unknown;
-  };
-  if (
-    n.type === "VariableDeclarator" &&
-    n.id?.type === "Identifier" &&
-    n.id.name
-  ) {
-    acc.add(n.id.name);
-  }
-  if (
-    n.type === "FunctionDeclaration" ||
-    n.type === "FunctionExpression" ||
-    n.type === "ArrowFunctionExpression" ||
-    n.type === "ClassDeclaration"
-  ) {
-    if (n.id?.type === "Identifier" && n.id.name) acc.add(n.id.name);
-    if (Array.isArray(n.params)) {
-      for (const p of n.params) {
-        const pp = p as { type?: string; name?: string; argument?: { name?: string } };
-        if (pp?.type === "Identifier" && pp.name) acc.add(pp.name);
-        if (pp?.type === "RestElement" && pp.argument?.name) acc.add(pp.argument.name);
-      }
+const FUNCTION_SCOPE_TYPES = new Set([
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunctionExpression",
+  "ObjectMethod",
+  "ClassMethod",
+  "ClassPrivateMethod",
+]);
+
+const BINDING_SCOPE_TYPES = new Set([
+  ...FUNCTION_SCOPE_TYPES,
+  "CatchClause",
+  "ForOfStatement",
+  "ForInStatement",
+]);
+
+type IdentNode = {
+  type?: string;
+  name?: string;
+  argument?: { type?: string; name?: string };
+  left?: { type?: string; name?: string };
+  properties?: unknown[];
+  elements?: unknown[];
+};
+
+function collectPatternNames(id: unknown, acc: Set<string>): void {
+  if (!id || typeof id !== "object") return;
+  const n = id as IdentNode;
+  if (n.type === "Identifier" && n.name) acc.add(n.name);
+  else if (n.type === "RestElement") collectPatternNames(n.argument, acc);
+  else if (n.type === "AssignmentPattern") collectPatternNames(n.left, acc);
+  else if (n.type === "ObjectPattern") {
+    for (const p of n.properties ?? []) {
+      const prop = p as { type?: string; value?: unknown; argument?: unknown };
+      if (prop?.type === "RestElement") collectPatternNames(prop.argument, acc);
+      else collectPatternNames(prop?.value, acc);
     }
+  } else if (n.type === "ArrayPattern") {
+    for (const el of n.elements ?? []) collectPatternNames(el, acc);
   }
-  for (const key of Object.keys(n)) {
-    if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
-    if (key === "id" || key === "params") continue;
-    const child = n[key];
-    if (Array.isArray(child)) child.forEach((c) => collectDeclaredNames(c, acc));
-    else if (child && typeof child === "object") collectDeclaredNames(child, acc);
-  }
-  return acc;
 }
 
 /**
- * 抽象臂间需要 snapshot/join 的自由写绑定：
- * 数组 mutator receiver + 普通赋值/Update + 成员写根。
- * 子树内声明的名字（臂内 let）不进协议，避免引用外层不存在的绑定。
+ * 臂内「自由写」绑定：赋值/mutator 标识符在赋值点未被臂内声明遮蔽。
+ * 嵌套函数参数 / for-of 绑定 / catch 参数不得把外层自由写从 fork
+ * 协议里剔除（P0-1）。
  */
-function collectForkBindingNames(...nodes: Array<unknown>): string[] {
-  const assigned = new Set<string>();
-  const declared = new Set<string>();
+function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
+  const free = new Set<string>();
+  const markFree = (name: string | undefined, shadowed: Set<string>): void => {
+    if (name && name !== "undefined" && !shadowed.has(name)) free.add(name);
+  };
+  const walk = (node: unknown, shadowed: Set<string>): void => {
+    if (!node || typeof node !== "object") return;
+    const n = node as {
+      type?: string;
+      operator?: string;
+      left?: unknown;
+      right?: unknown;
+      argument?: unknown;
+      id?: unknown;
+      param?: unknown;
+      params?: unknown[];
+      body?: unknown;
+      declarations?: Array<{ id?: unknown }>;
+      callee?: {
+        type?: string;
+        object?: unknown;
+        property?: { type?: string; name?: string };
+        computed?: boolean;
+      };
+      [k: string]: unknown;
+    };
+
+    let nextShadowed = shadowed;
+    const pushShadow = (names: Iterable<string>): void => {
+      const add: string[] = [];
+      for (const name of names) {
+        if (name && !nextShadowed.has(name)) add.push(name);
+      }
+      if (add.length === 0) return;
+      nextShadowed = new Set(nextShadowed);
+      for (const name of add) nextShadowed.add(name);
+    };
+
+    if (FUNCTION_SCOPE_TYPES.has(n.type as string)) {
+      const bound = new Set<string>();
+      collectPatternNames(n.id, bound);
+      for (const p of n.params ?? []) collectPatternNames(p, bound);
+      pushShadow(bound);
+    } else if (n.type === "CatchClause") {
+      const bound = new Set<string>();
+      collectPatternNames(n.param, bound);
+      pushShadow(bound);
+    } else if (n.type === "ForOfStatement" || n.type === "ForInStatement") {
+      const bound = new Set<string>();
+      const left = n.left as
+        | { type?: string; declarations?: Array<{ id?: unknown }>; name?: string }
+        | undefined;
+      if (left?.type === "VariableDeclaration") {
+        for (const d of left.declarations ?? []) collectPatternNames(d.id, bound);
+      } else {
+        collectPatternNames(left, bound);
+      }
+      pushShadow(bound);
+    }
+
+    if (n.type === "AssignmentExpression") {
+      const left = n.left as
+        | { type?: string; name?: string; object?: unknown }
+        | undefined;
+      if (left?.type === "Identifier") markFree(left.name, nextShadowed);
+      else if (left?.type === "MemberExpression") {
+        let cur: { type?: string; object?: unknown; name?: string } | undefined =
+          left as { type?: string; object?: unknown; name?: string };
+        while (cur?.type === "MemberExpression") {
+          cur = cur.object as { type?: string; object?: unknown; name?: string } | undefined;
+        }
+        if (cur?.type === "Identifier") markFree(cur.name, nextShadowed);
+      }
+    }
+    if (n.type === "UpdateExpression") {
+      const arg = n.argument as { type?: string; name?: string } | undefined;
+      if (arg?.type === "Identifier") markFree(arg.name, nextShadowed);
+    }
+    if (
+      n.type === "CallExpression" &&
+      n.callee?.type === "MemberExpression" &&
+      n.callee.computed !== true &&
+      n.callee.property?.type === "Identifier" &&
+      ARR_MUTATOR_NAMES.has((n.callee.property as { name: string }).name)
+    ) {
+      const obj = n.callee.object as
+        | { type?: string; name?: string; object?: unknown }
+        | undefined;
+      if (obj?.type === "Identifier") markFree(obj.name, nextShadowed);
+      else if (obj?.type === "MemberExpression" || obj?.type === "ThisExpression") {
+        let cur: { type?: string; object?: unknown; name?: string } | undefined = obj as never;
+        while (cur?.type === "MemberExpression") {
+          cur = cur.object as { type?: string; object?: unknown; name?: string } | undefined;
+        }
+        if (cur?.type === "Identifier") markFree(cur.name, nextShadowed);
+      }
+    }
+
+    for (const key of Object.keys(n)) {
+      if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
+      if (key === "callee" || key === "property" || key === "param" || key === "params") continue;
+      const child = n[key];
+      if (Array.isArray(child)) {
+        if (
+          n.type === "BlockStatement" ||
+          n.type === "Program" ||
+          n.type === "StaticBlock" ||
+          n.type === "SwitchCase"
+        ) {
+          let blockShadow = nextShadowed;
+          for (const stmt of child) {
+            walk(stmt, blockShadow);
+            const stmtNode = stmt as {
+              type?: string;
+              declarations?: Array<{ id?: unknown }>;
+              id?: unknown;
+            } | null;
+            if (!stmtNode) continue;
+            const declared = new Set<string>();
+            if (stmtNode.type === "VariableDeclaration") {
+              for (const d of stmtNode.declarations ?? []) collectPatternNames(d.id, declared);
+            } else if (
+              stmtNode.type === "FunctionDeclaration" ||
+              stmtNode.type === "ClassDeclaration"
+            ) {
+              collectPatternNames(stmtNode.id, declared);
+            }
+            if (declared.size > 0) {
+              if (blockShadow === nextShadowed) blockShadow = new Set(blockShadow);
+              for (const name of declared) blockShadow.add(name);
+            }
+          }
+          continue;
+        }
+        for (const item of child) walk(item, nextShadowed);
+      } else if (child && typeof child === "object") {
+        walk(child, nextShadowed);
+      }
+    }
+
+    // 函数参数/体在扩展后的 shadow 下求值
+    if (FUNCTION_SCOPE_TYPES.has(n.type as string) && n.body) {
+      walk(n.body, nextShadowed);
+    }
+  };
+
   for (const node of nodes) {
     if (!node) continue;
-    collectAssignedIds(node, assigned);
-    collectArrMutatorReceivers(node, assigned);
-    collectDeclaredNames(node, declared);
+    walk(node, new Set());
   }
-  return [...assigned].filter((n) => !declared.has(n) && n !== "undefined");
+  return [...free];
+}
+
+/**
+ * 抽象臂间需要 snapshot/join 的自由写绑定。
+ * 仅在赋值点被臂内声明遮蔽的名字不进协议。
+ */
+function collectForkBindingNames(...nodes: Array<unknown>): string[] {
+  return collectFreeAssignedNames(...nodes);
 }
 
 /** 语句是否以 break/return/throw/continue 终止（switch fall-through 用） */
@@ -1429,11 +1579,20 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
           ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, bodyOpts)).join("\n")
           : transpileStatement(stmt.body, depth + 2, bodyOpts);
       const max = opts.maxLoopIters ?? 8;
+      // 与 while/for 同协议：体内外层绑定 pack/unpack，抽象/空迭代出口可 join
+      const assigned = new Set<string>();
+      collectAssignedIds(stmt.body, assigned);
+      collectArrMutatorReceivers(stmt.body, assigned);
+      const names = [...assigned].filter((n) => n !== bindName && n !== "undefined");
+      const optsSrc =
+        names.length === 0
+          ? ""
+          : `, { pack: () => $obj({ ${names.map((n) => `${JSON.stringify(n)}: ${n}`).join(", ")} }), unpack: (__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} } }`;
       return [
         `${pad}$forOf(${iter}, (${bindName}, _i) => {`,
         ...bodyLines,
         bodyStmts,
-        `${pad}}, ${max});`,
+        `${pad}}, ${max}${optsSrc});`,
       ].join("\n");
     }
     case "WhileStatement": {
@@ -1467,6 +1626,43 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         `${pad}$whileSeq(() => ${test}, () => {`,
         body,
         `${pad}}, ${max}, { pack: () => ${packSrc}, unpack: ${unpackSrc} });`,
+      ].join("\n");
+    }
+    case "DoWhileStatement": {
+      // do { body } while (test) ≡ body; while (test) { body }（有界、可 instrument）
+      const test = transpileExpression(stmt.test, opts);
+      const bodyOpts: TranspileOptions = {
+        ...opts,
+        inLoop: (opts.inLoop ?? 0) + 1,
+      };
+      const bodyStmts =
+        stmt.body.type === "BlockStatement"
+          ? stmt.body.body.map((s) => transpileStatement(s, depth + 1, bodyOpts)).join("\n")
+          : transpileStatement(stmt.body, depth + 1, bodyOpts);
+      const max = opts.maxLoopIters ?? 8;
+      const assigned = new Set<string>();
+      collectAssignedIds(stmt.body, assigned);
+      collectAssignedIds(stmt.test, assigned);
+      collectArrMutatorReceivers(stmt.body, assigned);
+      const names = [...assigned].filter((n) => n !== "undefined");
+      const packSrc =
+        names.length === 0
+          ? null
+          : `$obj({ ${names.map((n) => `${JSON.stringify(n)}: ${n}`).join(", ")} })`;
+      const unpackSrc =
+        names.length === 0
+          ? null
+          : `(__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }`;
+      const optsSrc =
+        packSrc && unpackSrc ? `, { pack: () => ${packSrc}, unpack: ${unpackSrc} }` : "";
+      return [
+        `${pad}// do-while → body + $whileSeq (bounded, max=${max})`,
+        `{`,
+        bodyStmts,
+        `${indent(depth + 1)}$whileSeq(() => ${test}, () => {`,
+        bodyStmts,
+        `${indent(depth + 1)}}, ${max}${optsSrc});`,
+        `${pad}}`,
       ].join("\n");
     }
     case "ClassDeclaration": {

@@ -34,6 +34,8 @@ import {
   collectAbsInlays,
   findProjectConfig,
   interfaceConfig,
+  isSidecarPath,
+  isProjectConfigPath,
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
 import { documentSymbols, findIdentifierAtPosition, resolveDefinition, resolveDefinitionLocations, resolveReferences, type DocumentSymbolItem } from "./symbols.ts";
@@ -261,7 +263,8 @@ export function registerWatchedFilesListener(listener: (uris: string[]) => void)
  * 打开中的文件跳过——其内容由编辑流负责，外部删除会被编辑器以 didOpen/didChange 覆盖。
  */
 function isNudoDepPath(filePath: string): boolean {
-  return /\.nudo\.(js|mjs|ts)$/.test(filePath);
+  // 与 CLI watch 同口径：正式侧车 + 项目配置（package.json#nudo.* 变更必须重检）
+  return isSidecarPath(filePath) || isProjectConfigPath(filePath);
 }
 
 function handleWatchedFilesChanges(changes: readonly FileEvent[], isOpen: (uri: string) => boolean): string[] {

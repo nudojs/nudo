@@ -932,6 +932,8 @@ export function analysisFileCacheKey(
   analysisCfg?: { mode: string; evalMissingSlot: string; callSiteBudget: number; diagnostics: string },
   loadModule?: AnalyzeLoadModule,
   projectEnvNames?: string[],
+  /** ambient 侧车绑定：变更必须 miss（dep 指纹故意不编码 autoBind） */
+  autoBind?: boolean,
 ): { filePath: string; source: string; auxKey: string; noCache?: boolean } {
   let cases = "-";
   if (activeCases && activeCases.size > 0) {
@@ -958,6 +960,7 @@ export function analysisFileCacheKey(
   const lm = loadModule !== undefined && loadModule !== defaultLoadModule ? "lm1" : "lm0";
   // project nudo.env 变更必须 miss（fn 级键已有 envNames，文件级对齐）
   const envSeg = projectEnvNames && projectEnvNames.length > 0 ? projectEnvNames.join(",") : "-";
+  const abSeg = autoBind === false ? "ab0" : autoBind === true ? "ab1" : "ab?";
   // dep 内容变更（入口 source 未变）也必须 miss——default loader 同样进指纹。
   // 指纹失败/truncated → 禁用共享命中（fail-closed，见 noCache）。
   const effectiveLoader = loadModule ?? defaultLoadModule;
@@ -980,7 +983,7 @@ export function analysisFileCacheKey(
     filePath,
     // 尾部无 @nudo 注释/空行不进键：comment-only 编辑命中 AnalysisResult
     source: stableAnalyzeKeySource(source),
-    auxKey: `${cases}\0${ext}\0${cfg}\0${lm}\0${envSeg}\0${depSeg}`,
+    auxKey: `${cases}\0${ext}\0${cfg}\0${lm}\0${envSeg}\0${abSeg}\0${depSeg}`,
     noCache,
   };
 }
@@ -1072,6 +1075,7 @@ export function analyzeFile(
   const projectConfig = findProjectConfig(dirname(filePath));
   const cfg = analysisConfig(projectConfig?.config);
   const projectEnvNames = projectConfig?.config.env ?? [];
+  const autoBind = interfaceConfig(projectConfig?.config).autoBind;
   const k = analysisFileCacheKey(
     filePath,
     source,
@@ -1080,6 +1084,7 @@ export function analyzeFile(
     cfg,
     loadModule,
     projectEnvNames,
+    autoBind !== false,
   );
   if (!k.noCache) {
     const hit = analysisCacheGet<AnalysisResult>(k.filePath, k.source, k.auxKey);

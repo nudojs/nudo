@@ -947,7 +947,16 @@ program
       // 统一走 isNudoTargetPath，避免第三份手写 endsWith 漂移
       const { isNudoTargetPath } = await import("@nudojs/service");
       const roots = targets.filter((t) => isNudoTargetPath(t));
-      if (roots.length === 0) return;
+      if (roots.length === 0) {
+        // 过滤后无目标：路径可能全是侧车/draft——CI 不得静默成功
+        if (targets.length > 0) {
+          console.error(
+            `Usage error: no nudo analysis targets in the given paths (sidecars/drafts are skipped): ${paths.join(", ")}`,
+          );
+          process.exitCode = 1;
+        }
+        return;
+      }
       for (const t of roots) {
         try {
           if (opts.draft) {
@@ -1085,9 +1094,13 @@ async function countInterfaceDrift(
   }
   if (!/@generated/.test(scSrc)) return { count: 0 };
   try {
+    const { findProjectConfig, interfaceConfig } = await import("@nudojs/service");
+    const proj = findProjectConfig(dirname(abs));
+    const autoBind = interfaceConfig(proj?.config).autoBind;
     const r = checkSource(abs, rf(abs, "utf-8"), pTrue, {
       loadModule: defaultLoadModule,
       fromFile: abs,
+      ...(autoBind === false ? { autoBind: false } : {}),
     });
     return { count: r.issues.filter((i) => i.code === "nudo:interface-drift").length };
   } catch (e) {

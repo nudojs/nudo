@@ -13,6 +13,14 @@ function stripNumericPreds(text: string): string {
     .replace(/\.int\b/g, "");
 }
 
+/** 只剥数值谓词，保留 optional/lit 等结构方法 */
+function stripNumericPredsKeepStructural(chain: string): string {
+  return chain
+    .replace(/\.(gt|ge|lt|le|min|max|positive|negative)\s*\([^)]*\)/g, "")
+    .replace(/\.int\s*\(\s*\)/g, "")
+    .replace(/\.int\b/g, "");
+}
+
 /** 定位 `export const <fn> = … fn( … )` / `<fn> = fn( … )` 的平衡括号区域 */
 function replaceInFnRegion(
   src: string,
@@ -59,7 +67,8 @@ export function relaxSidecarConstraint(
     if (!constraintText || !region.includes(constraintText)) return undefined;
     const base = stripNumericPreds(constraintText);
     if (!base || base === constraintText) return undefined;
-    return region.split(constraintText).join(base);
+    // 只改首次出现：同 fn 区域内 param/return 同文时，避免把 return 一并放宽
+    return region.replace(constraintText, base);
   };
   const tryParam = (region: string): string | undefined => {
     if (!param) return undefined;
@@ -67,7 +76,10 @@ export function relaxSidecarConstraint(
       `(\\b${escapeRegExp(param)}\\s*:\\s*)number(\\(\\)(?:\\.[A-Za-z]+(?:\\([^)]*\\))?)*)`,
       "g",
     );
-    const next = region.replace(re, (_m, p1) => `${p1}number()`);
+    const next = region.replace(re, (_m, p1, chain: string) => {
+      const stripped = stripNumericPredsKeepStructural(chain);
+      return `${p1}number${stripped}`;
+    });
     return next !== region ? next : undefined;
   };
   const tryFn = (region: string): string | undefined => {
@@ -75,7 +87,10 @@ export function relaxSidecarConstraint(
       `(\\b${escapeRegExp(fnName)}\\s*=\\s*)number(\\(\\)(?:\\.[A-Za-z]+(?:\\([^)]*\\))?)*)`,
       "g",
     );
-    const next = region.replace(re, (_m, p1) => `${p1}number()`);
+    const next = region.replace(re, (_m, p1, chain: string) => {
+      const stripped = stripNumericPredsKeepStructural(chain);
+      return `${p1}number${stripped}`;
+    });
     return next !== region ? next : undefined;
   };
 

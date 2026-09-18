@@ -648,11 +648,42 @@ export function $staticInvoke(cls: Abs, method: string, args: Abs[]): Abs {
   return m(...args);
 }
 
-/** 计算属性写：o[kAbs] = v */
+/** 计算属性写：o[kAbs] = v。非字面量 key → open + index join（不得写成字面槽 "?"） */
 export function $setKey(o: Abs, key: Abs, value: Abs): Abs {
   const k = litValue(key);
   if (typeof k === "string" || typeof k === "number") {
     return $set(o, String(k), value);
   }
-  return $set(o, "?", value);
+  const val = asAbsVal(value);
+  if (o.shape.k === "brand") {
+    const inner = $setKey(o.shape.shape, key, value);
+    return abs(
+      { k: "brand", name: o.shape.name, shape: inner },
+      o.term,
+      o.pred,
+      confJoin(o.conf, value.conf),
+    );
+  }
+  if (o.shape.k !== "obj") {
+    return abs(
+      {
+        k: "obj",
+        slots: {},
+        index: { key: unknown, value: val },
+        open: true,
+      },
+      undefined,
+      undefined,
+      confJoin("path", value.conf),
+    );
+  }
+  const shape = o.shape as { slots: Record<string, { value: Abs; optional?: boolean }>; index?: { key: Abs; value: Abs }; open?: boolean };
+  const prevIndex = shape.index?.value;
+  const indexVal = prevIndex ? joinAbs(prevIndex, val) : val;
+  const next = objOf({ ...shape.slots }, {
+    index: { key: shape.index?.key ?? unknown, value: indexVal },
+    open: true,
+  });
+  next.conf = confJoin(o.conf, value.conf);
+  return next;
 }

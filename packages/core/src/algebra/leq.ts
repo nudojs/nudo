@@ -66,7 +66,16 @@ function leqWithPred(
   const tv = litValue(tgt);
   if (sv !== undefined && tv !== undefined) {
     if (sv === tv) return ok();
+    // 目标是具体字面量而源不是同一值：不得仅因同 prim 放行（P1-5）
+    if (tgt.shape.k === "prim") {
+      return fail(`lit ${String(sv)} ⊭ lit ${String(tv)}`);
+    }
     // 数值字面量可进带 pred 的 number（走 pred 蕴含）
+  } else if (tv !== undefined && sv === undefined) {
+    // 目标是具体字面量，源是 prim/无 term：number ⊄ 1
+    if (tgt.shape.k === "prim") {
+      return fail(`non-lit prim ⊭ lit ${String(tv)}`);
+    }
   }
 
   const shapeR = leqShape(src, tgt, phi, env, depth);
@@ -212,6 +221,17 @@ function leqShape(
       }
       if (srcSlot.optional && !slot.optional) {
         return fail(`slot ${key}: optional ⊭ required`);
+      }
+      // 结构槽位：同 prim 字面量视为可赋（mutable let 拓宽；契约走 pred）
+      const ssv = litValue(srcSlot.value);
+      const stv = litValue(slot.value);
+      if (
+        ssv !== undefined &&
+        stv !== undefined &&
+        primOf(srcSlot.value) !== undefined &&
+        primOf(srcSlot.value) === primOf(slot.value)
+      ) {
+        continue;
       }
       const r = leqWithPred(srcSlot.value, slot.value, phi, env, depth + 1);
       if (!r.ok) return fail(`slot ${key}: ${r.reason}`);

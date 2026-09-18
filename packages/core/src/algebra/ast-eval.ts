@@ -49,7 +49,15 @@ import {
   isStrPrim,
 } from "./abs.ts";
 import { add, sub, mul, div, mod, cmp, trueConstraint, falseConstraint, refineAbsForRelTrue, matchRelIdentLit } from "./arithmetic.ts";
-import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs } from "./surface.ts";
+import {
+  typeofAbs,
+  negAbs,
+  notAbs,
+  strictEqAbs,
+  looseEqAbs,
+  isNullishLitAbs,
+  definitelyNotNullishShape,
+} from "./surface.ts";
 import { leakIfNeeded, defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { spread, joinAbs, getSlot } from "./objects.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf } from "./containers.ts";
@@ -727,8 +735,66 @@ function evalNodeInner(
         left: Node;
         right: Node;
       };
-      if (ae.operator !== "=") return ok(unknown, phi, env);
-      const rhs = evalNode(ae.right, env, phi, budget).value;
+      const op = ae.operator;
+      const applyBin = (binOp: string, lhs: Abs, rhsAbs: Abs): Abs => {
+        switch (binOp) {
+          case "+":
+            return leakIfNeeded(add(lhs, rhsAbs, phi), budget, "add");
+          case "-":
+            return leakIfNeeded(sub(lhs, rhsAbs, phi), budget, "sub");
+          case "*":
+            return leakIfNeeded(mul(lhs, rhsAbs, phi), budget, "mul");
+          case "/":
+            return leakIfNeeded(div(lhs, rhsAbs, phi), budget, "div");
+          case "%":
+            return leakIfNeeded(mod(lhs, rhsAbs, phi), budget, "mod");
+          default:
+            return unknown;
+        }
+      };
+      let rhs: Abs;
+      if (op === "=") {
+        rhs = evalNode(ae.right, env, phi, budget).value;
+      } else if (op === "||=" || op === "&&=" || op === "??=") {
+        const lhs = evalNode(ae.left, env, phi, budget).value;
+        const lv = litValue(lhs);
+        const falsy = lv === false || lv === null || lv === undefined;
+        // litValue(undefined) 也可能是非 lit；用 shape/term 辅助 nullish
+        const nullish =
+          isNullishLitAbs(lhs) ||
+          (lv === null || lv === undefined) &&
+            (lhs.term?.op === "lit" || lhs.shape.k === "unknown" || falsy);
+        const truthy = lv !== undefined && !falsy && !nullish;
+        let assignRhs: Abs | null = null;
+        if (op === "||=") {
+          if (truthy) return ok(lhs, phi, env);
+          if (lv === false || nullish || falsy) assignRhs = evalNode(ae.right, env, phi, budget).value;
+        } else if (op === "&&=") {
+          if (falsy && !truthy) return ok(lhs, phi, env);
+          if (truthy) assignRhs = evalNode(ae.right, env, phi, budget).value;
+        } else {
+          // ??=
+          if (!nullish && lv !== null && lv !== undefined && lhs.term?.op === "lit") {
+            return ok(lhs, phi, env);
+          }
+          if (definitelyNotNullishShape(lhs.shape) && !nullish) return ok(lhs, phi, env);
+          assignRhs = evalNode(ae.right, env, phi, budget).value;
+        }
+        if (assignRhs === null) {
+          // 抽象短路：可能写 RHS 也可能保持 LHS
+          const r = evalNode(ae.right, env, phi, budget).value;
+          rhs = joinAbs(lhs, r);
+        } else {
+          rhs = assignRhs;
+        }
+      } else if (op.endsWith("=")) {
+        const binOp = op.slice(0, -1);
+        const lhs = evalNode(ae.left, env, phi, budget).value;
+        const rhsVal = evalNode(ae.right, env, phi, budget).value;
+        rhs = applyBin(binOp, lhs, rhsVal);
+      } else {
+        return ok(unknown, phi, env);
+      }
       // this.field = v → 更新 env 中的 this
       if (
         ae.left.type === "MemberExpression" &&
@@ -888,8 +954,11 @@ function evalNodeInner(
       const le = node as { operator: string; left: Node; right: Node };
       const l = evalNode(le.left, env, phi, budget);
       const lv = litValue(l.value);
-      const falsy = lv === false || lv === null || lv === undefined;
-      const truthy = lv !== undefined && !falsy;
+      const nullishLit = isNullishLitAbs(l.value);
+      const definitelyNotNullish =
+        definitelyNotNullishShape(l.value.shape) && !nullishLit;
+      const falsy = lv === false || nullishLit || (lv === undefined && l.value.term?.op === "lit" && (l.value.term as { value?: unknown }).value === undefined) || lv === null;
+      const truthy = lv !== undefined && !falsy && !nullishLit;
       if (le.operator === "&&") {
         if (falsy) return ok(l.value, phi, env);
         if (truthy) return evalNode(le.right, env, phi, budget);
@@ -899,6 +968,15 @@ function evalNodeInner(
       if (le.operator === "||") {
         if (truthy) return ok(l.value, phi, env);
         if (falsy) return evalNode(le.right, env, phi, budget);
+        const r = evalNode(le.right, env, phi, budget);
+        return ok(joinAbs(l.value, r.value), phi, env);
+      }
+      if (le.operator === "??") {
+        if (nullishLit || lv === null) return evalNode(le.right, env, phi, budget);
+        if (definitelyNotNullish || (lv !== undefined && lv !== null)) {
+          return ok(l.value, phi, env);
+        }
+        // 抽象：可能走左也可能走右
         const r = evalNode(le.right, env, phi, budget);
         return ok(joinAbs(l.value, r.value), phi, env);
       }
@@ -1935,21 +2013,25 @@ function evalForOf(
     );
     if (promoted) iterVal = promoted;
   }
-  const elements: Abs[] =
-    iterVal.shape.k === "arr"
-      ? [iterVal.shape.element]
-      : iterVal.shape.k === "tuple"
-        ? iterVal.shape.elements
-        : iterVal.shape.k === "sum"
-          ? iterVal.shape.members.flatMap((m) =>
-              m.shape.k === "arr"
-                ? [m.shape.element]
-                : m.shape.k === "tuple"
-                  ? m.shape.elements
-                  : [],
-            )
-          : [unknown];
-  if (elements.length === 0) elements.push(unknown);
+  const shape = iterVal.shape;
+  const isTuple = shape.k === "tuple";
+  const isArr = shape.k === "arr";
+  let elements: Abs[] = [];
+  if (isArr) {
+    elements = [shape.element];
+  } else if (isTuple) {
+    elements = [...shape.elements];
+  } else if (shape.k === "sum") {
+    elements = shape.members.flatMap((m) =>
+      m.shape.k === "arr"
+        ? [m.shape.element]
+        : m.shape.k === "tuple"
+          ? [...m.shape.elements]
+          : [],
+    );
+  } else {
+    elements = [unknown];
+  }
 
   const left = node.left;
   const bindName =
@@ -1959,6 +2041,36 @@ function evalForOf(
         ? ((left as VariableDeclaration).declarations[0]?.id as Identifier | undefined)?.name
         : undefined;
   if (!bindName) return ok(unknown, phi, env);
+
+  // 具体空 tuple：体 0 次（不得发明 unknown 元素再跑一次）
+  if (isTuple && elements.length === 0) {
+    return ok(unknown, phi, env);
+  }
+
+  // 非具体 tuple（arr / unknown / any / sum）：0..MAX 出口 env join（含 0 次）
+  const unbounded = !isTuple;
+  if (unbounded) {
+    let cur = env;
+    let joinedEnv = env;
+    let joinedVal: Abs = unknown;
+    const el = elements.length > 0 ? elements[0]! : unknown;
+    const n = elements.length > 0 || isArr || shape.k === "sum" ? MAX_LOOP_ITERS : 0;
+    for (let i = 0; i < n; i++) {
+      cur = withVar(cur, bindName, el);
+      const bodyR = evalInConditionalFlow(() => evalNode(node.body, cur, phi, budget));
+      if (bodyR.returned || bodyR.threw) return bodyR;
+      if (bodyR.brk) {
+        cur = bodyR.env;
+        joinedEnv = joinEnvs(joinedEnv, cur, env);
+        break;
+      }
+      cur = bodyR.env;
+      joinedEnv = joinEnvs(joinedEnv, cur, env);
+      joinedVal = joinAbs(joinedVal, bodyR.value);
+    }
+    joinedEnv = joinEnvs(joinedEnv, cur, env);
+    return ok(joinedVal, phi, joinedEnv);
+  }
 
   let local = env;
   let acc: Abs = unknown;
