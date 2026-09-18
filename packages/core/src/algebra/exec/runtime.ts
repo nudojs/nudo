@@ -117,7 +117,8 @@ export function asAbsVal(v: unknown): Abs {
     const params = Array.from({ length: n }, (_, i) => `arg${i}`);
     return absFunction(params, {
       body: noBody,
-      apply: (args) => (v as (...a: Abs[]) => Abs)(...args),
+      // 与 $fnVal / $callNamed 同边界：callee 的 NudoReturn 不得冒泡成 caller
+      apply: (args) => callAtFunctionBoundary(() => (v as (...a: Abs[]) => Abs)(...args)),
     });
   }
   return $lit(v as never);

@@ -20,7 +20,7 @@ import {
   InlayHintKind,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { sidecarPathOf } from "@nudojs/core";
 import {
@@ -52,6 +52,7 @@ import {
   validateText,
   filterDiagnosticsByLevel,
   diagnosticsLevelForFile,
+  checkToLspDiagnostics,
   type ValidateTextDeps,
 } from "./validation.ts";
 import {
@@ -895,35 +896,7 @@ connection.onCodeAction((params) => {
   return actions;
 });
 
-/**
- * A6：把侧车里 fn/param 上的数值谓词放宽为基类型（保守文本改写）。
- * 只动 `number().gt(N)` / `.lt` / `.int` / `.min` / `.max` 等可识别片段。
- */
-function relaxSidecarConstraint(
-  sidecarSource: string,
-  fnName: string,
-  param?: string,
-  constraintText?: string,
-): string | undefined {
-  let src = sidecarSource;
-  // 优先：整段 constraintText → 基类型
-  if (constraintText && constraintText.length > 0) {
-    const base = constraintText.replace(/\.(gt|ge|lt|le|min|max|int|positive|negative)\s*\([^)]*\)/g, "").replace(/\(\)/g, "()");
-    if (base && base !== constraintText && src.includes(constraintText)) {
-      return src.split(constraintText).join(base);
-    }
-  }
-  // 次选：fnName 附近 param: number().…() → number()
-  if (param) {
-    const re = new RegExp(`(\\b${param}\\s*:\\s*)number(\\(\\)(?:\\.[A-Za-z]+(?:\\([^)]*\\))?)*)`, "g");
-    const next = src.replace(re, (_m, p1) => `${p1}number()`);
-    if (next !== src) return next;
-  }
-  // 兜底：导出绑定名附近的 number().pred()
-  const fnRe = new RegExp(`(\\b${fnName}\\s*=\\s*)number(\\(\\)(?:\\.[A-Za-z]+(?:\\([^)]*\\))?)*)`, "g");
-  const next = src.replace(fnRe, (_m, p1) => `${p1}number()`);
-  return next !== src ? next : undefined;
-}
+import { relaxSidecarConstraint } from "./a6-relax.ts";
 
 connection.onSignatureHelp((params) => {
   const document = documents.get(params.textDocument.uri);
@@ -1244,18 +1217,38 @@ for (const name of ["whatIf", "suggestCase", "trace", "check", "hover", "infer",
 connection.languages.diagnostics.on((params) => {
   const document = documents.get(params.textDocument.uri);
   if (!document) return { kind: "full", items: [] };
-  if (!isNudoFile(params.textDocument.uri)) return { kind: "full", items: [] };
+  // 与 push 同门禁：零注解 + 磁盘同名侧车（autoBind）也应出诊断
+  const filePath = uriToFilePath(document.uri);
+  const sidecarPath = sidecarPathOf(filePath);
+  const hasSidecar =
+    interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind &&
+    !sidecarPath.replace(/\\/g, "/").includes("/node_modules/") &&
+    existsSync(sidecarPath);
+  if (!isNudoFile(params.textDocument.uri) && !hasSidecar) {
+    return { kind: "full", items: [] };
+  }
 
   try {
-    const filePath = uriToFilePath(document.uri);
-    const result = getCachedOrAnalyze(filePath, document.getText(), document.version, getActiveCasesForUri(document.uri));
-    // pull 诊断与 push 路径同口径：A3 analysis.diagnostics 档
+    const text = document.getText();
     const level = diagnosticsLevelForFile(filePath);
+    const items: ReturnType<typeof toLspDiagnostic>[] = [];
+    // Abs check 通道（与 push checkToLspDiagnostics 同源）
+    try {
+      const checkDiags = checkToLspDiagnostics(filePath, text, validationDeps().loadModule);
+      for (const d of checkDiags) {
+        if (level === "off") continue;
+        if (level === "errors" && d.severity !== 1) continue;
+        items.push(d);
+      }
+    } catch {
+      /* check 通道失败不影响 evaluator 面 */
+    }
+    const result = getCachedOrAnalyze(filePath, text, document.version, getActiveCasesForUri(document.uri));
     const filtered = filterDiagnosticsByLevel(result.diagnostics, level);
-    return {
-      kind: "full",
-      items: filtered.map((d) => toLspDiagnostic(d, document.uri)),
-    };
+    for (const d of filtered) {
+      items.push(toLspDiagnostic(d, document.uri));
+    }
+    return { kind: "full", items };
   } catch {
     return { kind: "full", items: [] };
   }

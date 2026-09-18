@@ -187,6 +187,9 @@ export async function handleNudoDepFileChanged(
   evictAnalysisFileCacheForFiles(parentList);
   evictFnAnalysisCacheForFiles(parentList);
   for (const parent of parentList) {
+    // LSP 本地 analysisCache 按 sourceHash 短路：侧车/dep 变更时源码未变，
+    // 必须清掉并 force 重算，否则 hover/inlay/evaluator 诊断仍吃旧结果
+    analysisCache.delete(parent);
     const doc = deps.getOpenDocumentByPath?.(parent);
     if (!doc) continue;
     await validateText(
@@ -196,6 +199,7 @@ export async function handleNudoDepFileChanged(
       doc.version,
       deps,
       false,
+      true, // force：不可用 sourceHash 短路
     );
   }
 }

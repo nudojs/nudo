@@ -1371,6 +1371,9 @@ function analyzeFileUncachedInner(filePath: string, source: string, activeCases?
     // unsound (sibling body-edit that changes a call to this fn would miss
     // the fingerprint). Case-directive results are self-contained.
     const fp = fnFpMap?.get(fn.name);
+    // analysis 配置维度进 fn 键：evalMissingSlot / budget 等变更必须 miss
+    // （整文件键已含，fn 键不加会陈旧命中 C0.5 诊断）
+    const analysisFnKey = `m=${analysisCfg.mode}|e=${analysisCfg.evalMissingSlot}|b=${analysisCfg.callSiteBudget}`;
     const fnCacheKey =
       fp && caseDirectives.length > 0
         ? [
@@ -1381,6 +1384,7 @@ function analyzeFileUncachedInner(filePath: string, source: string, activeCases?
             caseDirectiveKey(caseDirectives, formatAbs),
             envKeyFn,
             mockKeyFn,
+            analysisFnKey,
           ].join("\0")
         : undefined;
     const dLen0 = diagnostics.length;

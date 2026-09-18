@@ -30,7 +30,12 @@ type AstParam = {
   left?: AstParam;
   right?: unknown;
   argument?: AstParam;
-  properties?: Array<{ key?: AstParam; value?: AstParam; type?: string }>;
+  properties?: Array<{
+    key?: AstParam;
+    value?: AstParam;
+    type?: string;
+    argument?: AstParam;
+  }>;
   elements?: Array<AstParam | null | undefined>;
 };
 
@@ -56,8 +61,24 @@ function collectPatternNames(
   }
   if (p.type === "ObjectPattern") {
     for (const prop of p.properties ?? []) {
+      // RestElement（Babel：{a, ...rest}）字段是 argument，不是 value/key
+      if (prop.type === "RestElement" || prop.argument) {
+        collectPatternNames(prop.argument as AstParam, top, nested, depth);
+        continue;
+      }
+      const keyName =
+        prop.key?.type === "Identifier" && prop.key.name
+          ? prop.key.name
+          : prop.key && "value" in prop.key
+            ? String((prop.key as { value?: unknown }).value ?? "")
+            : undefined;
       const v = (prop.value ?? prop.key) as AstParam | undefined;
       if (!v) continue;
+      // rename（{a: b}）：契约面同时接受属性键 a 与绑定名 b
+      if (keyName && v.type === "Identifier" && v.name && keyName !== v.name) {
+        if (depth === 0) top.push(keyName);
+        else nested.push(keyName);
+      }
       // 属性值是 Identifier → 本层绑定名；嵌套 pattern → depth+1
       if (v.type === "Identifier" && v.name) {
         if (depth === 0) top.push(v.name);

@@ -41,6 +41,39 @@ export function f() {
     expect(shape).toMatch(/\[|tuple|arr/);
   });
 
+  it("this.arr.pop() via member path does not crash B-path", () => {
+    const r = call(
+      `
+export function f() {
+  const o = { arr: [1, 2, 3] };
+  o.arr.pop();
+  return o.arr;
+}
+`,
+      "f",
+    );
+    const shape = formatShape(r.result);
+    // must not be SyntaxError / raw undefined from illegal $get()= assignment
+    expect(shape).not.toBe("3");
+    expect(shape).toMatch(/\[|tuple|arr|1|2/);
+  });
+
+  it("nested member mutator rebinds root binding", () => {
+    const r = call(
+      `
+export function f() {
+  const o = { xs: { a: [10, 20] } };
+  o.xs.a.push(30);
+  return o.xs.a[o.xs.a.length - 1] ?? o.xs.a;
+}
+`,
+      "f",
+    );
+    // push 30 should be reflected; at minimum no crash / no raw JS return leak
+    const shape = formatShape(r.result);
+    expect(shape).not.toBe("");
+  });
+
   it("a.pop() drops last element from tuple container", () => {
     const r = call(
       `

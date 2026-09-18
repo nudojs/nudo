@@ -335,6 +335,9 @@ export function resolveProjectAutoBind(
 /**
  * E5：agent 工具与 LSP 命令 / CLI 共享的数据源表（同源验收钉住此表）。
  * 任一工具改实现时必须继续消费同一底层入口，禁止旁路第二套语义。
+ * 注：`analyzeFile` 当前走默认 loadModule（磁盘侧车）；check/hover/interface/draft
+ * 才注入 buffer-aware loadModule。infer/whatIf/trace/suggestCase 的未保存侧车
+ * 对这些工具不可见——矩阵勿标全 Y。
  */
 export const AGENT_TOOL_SOURCES = {
   whatIf: "injectBindings + analyzeFile",

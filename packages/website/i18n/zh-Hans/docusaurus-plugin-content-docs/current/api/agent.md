@@ -234,7 +234,7 @@ Function "add" has 2 synthesized case(s); suggested directives:
 | 旧 MCP 工具 | 替代方案 |
 |--------------|-------------|
 | `nudo-what-if` | `nudo.whatIf`——`bindings` 现在会真正生效（此前被忽略） |
-| `nudo-check` | 通过 `textDocument/diagnostic` 拉取诊断 |
+| `nudo-check` | `nudo.check`（CheckJson v1，CI/agent 门禁首选）。pull 诊断现已含 Abs check + A3 过滤的 evaluator 诊断（打开 buffer），但不等价于全文件 CI 门禁 |
 | `nudo-type-at` | `bindings` 为空、`target` 指定目标的 `nudo.whatIf`，或 LSP hover |
 | `nudo-suggest-case` | `nudo.suggestCase` |
 | `nudo-trace` | `nudo.trace` |

@@ -74,6 +74,26 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined>): void {
   const touched = forkTouchedStack.pop() ?? new Set();
   const live = arms.filter(Boolean) as ArmOverlay[];
   if (live.length === 0) return;
+  // 嵌套 fork：外层臂 overlay 仍在栈上时，merge 结果只能写入当前臂，
+  // 绝不能落盘全局——否则兄弟臂未写时会读到内层污染。
+  const nested = armOverlays.length > 0;
+  const outerArm = nested ? armOverlays[armOverlays.length - 1]! : undefined;
+  const commitMap = (id: object, merged: MapTable): void => {
+    if (outerArm) {
+      const e = outerArm.get(id) ?? {};
+      outerArm.set(id, { ...e, map: merged });
+    } else {
+      mapTables.set(id, merged);
+    }
+  };
+  const commitSet = (id: object, merged: SetTable): void => {
+    if (outerArm) {
+      const e = outerArm.get(id) ?? {};
+      outerArm.set(id, { ...e, set: merged });
+    } else {
+      setTables.set(id, merged);
+    }
+  };
   for (const id of touched) {
     const armTables: Array<MapTable | undefined> = [];
     const armSetTables: Array<SetTable | undefined> = [];
@@ -94,9 +114,10 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined>): void {
         armSetTables.push(undefined);
       }
     }
-    // 对齐各臂：未写入的臂用基表（或空）
+    // 对齐各臂：未写入的臂用基表（嵌套时优先读外层 overlay，再读全局）
     if (anyMap || armTables.some(Boolean)) {
-      const base = mapTables.get(id) ?? emptyMapTable();
+      const base =
+        (nested ? mapTableForReadBase(outerArm!, id) : mapTables.get(id)) ?? emptyMapTable();
       const perArm: MapTable[] = live.map((arm) => {
         const e = arm.get(id);
         return e?.map ?? cloneMapTable(base);
@@ -115,10 +136,11 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined>): void {
         if (count < perArm.length) merged.maybeAbsent!.add(k);
       }
       if (merged.maybeAbsent!.size === 0) delete merged.maybeAbsent;
-      mapTables.set(id, merged);
+      commitMap(id, merged);
     }
     if (anySet || armSetTables.some(Boolean)) {
-      const base = setTables.get(id) ?? emptySetTable();
+      const base =
+        (nested ? setTableForReadBase(outerArm!, id) : setTables.get(id)) ?? emptySetTable();
       const perArm: SetTable[] = live.map((arm) => {
         const e = arm.get(id);
         return e?.set ?? cloneSetTable(base);
@@ -136,12 +158,20 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined>): void {
           mergedEls.push(el);
         }
       }
-      // 元素数不同 → 可能有臂未 add
+      // 元素数不同（去重前长度）→ 可能有臂未 add
       const maxLen = Math.max(...perArm.map((t) => t.elements.length), 0);
       if (perArm.some((t) => t.elements.length < maxLen)) missing = true;
-      setTables.set(id, { elements: mergedEls, maybeAbsent: missing || undefined });
+      commitSet(id, { elements: mergedEls, maybeAbsent: missing || undefined });
     }
   }
+}
+
+function mapTableForReadBase(arm: ArmOverlay, id: object): MapTable | undefined {
+  return arm.get(id)?.map ?? mapTables.get(id);
+}
+
+function setTableForReadBase(arm: ArmOverlay, id: object): SetTable | undefined {
+  return arm.get(id)?.set ?? setTables.get(id);
 }
 
 function emptyMapTable(): MapTable {
@@ -210,7 +240,15 @@ export function makeMapAbs(iterable?: Abs): Abs {
 export function makeSetAbs(iterable?: Abs): Abs {
   const s = brandOf("Set");
   const table = emptySetTable();
-  table.elements.push(...elementsFrom(iterable));
+  const seen = new Set<LitKey>();
+  for (const el of elementsFrom(iterable)) {
+    const lk = litKeyOf(el);
+    if (lk !== undefined) {
+      if (seen.has(lk)) continue;
+      seen.add(lk);
+    }
+    table.elements.push(el);
+  }
   setTables.set(s as object, table);
   return s;
 }
@@ -301,7 +339,7 @@ function joinAll(els: Abs[]): Abs | undefined {
   return els.reduce((a, b) => joinAbs(a, b));
 }
 
-/** Map#get：命中字面量 key → 精确；miss / 未知 key / maybeAbsent 并 undefined */
+/** Map#get：命中字面量 key → 精确；miss / 未知 key / maybeAbsent / shadow 并 undefined */
 export function mapGetEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   const t = mapTableForRead(mapAbs);
   if (!t) return unknown;
@@ -310,15 +348,17 @@ export function mapGetEntry(mapAbs: Abs, key: Abs | undefined): Abs {
     const v = t.byLit.get(k);
     const absent = t.maybeAbsent?.has(k) === true;
     if (v !== undefined && !absent && t.shadowValues.length === 0) return v;
-    if (v !== undefined && (absent || t.shadowValues.length > 0)) {
-      return joinAbs(v, undefAbs());
+    if (v !== undefined) {
+      // shadow key 可能覆盖同一字面量键；maybeAbsent 表示键可能不存在
+      return joinAll([v, ...t.shadowValues, undefAbs()]) ?? undefAbs();
     }
     if (t.shadowValues.length === 0) return undefAbs();
   }
-  // 字面量 miss / 未知 key：并入 undefined（存在性）
+  // 字面量 miss / 未知 key：并入 undefined（存在性）+ 全部已知值
   const known = [...t.byLit.values(), ...t.shadowValues];
   const joined = joinAll(known);
-  if (k !== undefined && t.shadowValues.length === 0 && t.maybeAbsent?.has(k) !== false) {
+  if (k !== undefined && t.shadowValues.length === 0) {
+    // 纯字面量 miss：值只能是 undefined（shadows 为空时）
     return undefAbs();
   }
   if (joined === undefined) {
@@ -340,11 +380,8 @@ export function mapHasEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   }
   const hit = t.byLit.has(k);
   const maybeAbsent = t.maybeAbsent?.has(k) === true;
-  // shadow key / fork maybeAbsent 不能折 exact false
-  if ((!hit && t.shadowValues.length > 0) || maybeAbsent || (!hit && t.shadowValues.length > 0)) {
-    return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
-  }
-  if (hit && maybeAbsent) {
+  // shadow key / fork maybeAbsent 不能折 exact true/false
+  if (t.shadowValues.length > 0 || maybeAbsent) {
     return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
   }
   return abs(
@@ -356,8 +393,9 @@ export function mapHasEntry(mapAbs: Abs, key: Abs | undefined): Abs {
 }
 
 export function mapSizeAbs(mapAbs: Abs): Abs {
-  const t = mapTables.get(mapAbs as object);
-  if (!t || t.shadowValues.length > 0) {
+  const t = mapTableForRead(mapAbs);
+  // shadow key / maybeAbsent 键 → 真实 size 不确定
+  if (!t || t.shadowValues.length > 0 || (t.maybeAbsent && t.maybeAbsent.size > 0)) {
     return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
   }
   return abs(
@@ -369,7 +407,7 @@ export function mapSizeAbs(mapAbs: Abs): Abs {
 }
 
 export function mapValuesAbs(mapAbs: Abs): Abs[] {
-  const t = mapTables.get(mapAbs as object);
+  const t = mapTableForRead(mapAbs);
   if (!t) return [];
   return [...t.byLit.values(), ...t.shadowValues];
 }
@@ -377,6 +415,10 @@ export function mapValuesAbs(mapAbs: Abs): Abs[] {
 /** Set#add：fork 内写 overlay；返回同一 Abs */
 export function setAddEntry(setAbs: Abs, value: Abs): Abs {
   const t = setTableForWrite(setAbs);
+  const lk = litKeyOf(value);
+  if (lk !== undefined && t.elements.some((el) => litKeyOf(el) === lk)) {
+    return setAbs; // JS Set 语义：重复 add 不增长
+  }
   t.elements.push(value);
   return setAbs;
 }
@@ -387,7 +429,8 @@ export function setHasEntry(setAbs: Abs, value: Abs): Abs {
   const k = litKeyOf(value);
   if (k !== undefined) {
     const hit = t.elements.some((el) => litKeyOf(el) === k);
-    if (t.maybeAbsent && !hit) {
+    // maybeAbsent：部分臂未 add → hit/miss 都不能折 exact
+    if (t.maybeAbsent) {
       return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
     }
     return abs(
@@ -401,8 +444,8 @@ export function setHasEntry(setAbs: Abs, value: Abs): Abs {
 }
 
 export function setSizeAbs(setAbs: Abs): Abs {
-  const t = setTables.get(setAbs as object);
-  if (!t) {
+  const t = setTableForRead(setAbs);
+  if (!t || t.maybeAbsent) {
     return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
   }
   return abs(
@@ -414,7 +457,7 @@ export function setSizeAbs(setAbs: Abs): Abs {
 }
 
 export function setElementsAbs(setAbs: Abs): Abs[] {
-  const t = setTables.get(setAbs as object);
+  const t = setTableForRead(setAbs);
   return t ? [...t.elements] : [];
 }
 

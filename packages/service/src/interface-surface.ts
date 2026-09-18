@@ -41,13 +41,14 @@ import {
 import { DiskCache, ifaceCacheKey } from "./disk-cache.ts";
 import { collectLoadDepContents } from "./dep-contents.ts";
 
-/** loadModule 闭包依赖内容：iface 缓存键维度（含 ambient 侧车 / ESM import） */
+/** loadModule 闭包依赖内容：iface 缓存键维度（含 ambient 侧车 / ESM import）。
+ *  truncated → 禁用磁盘复用（未入键 dep 变更不会 miss）。 */
 function collectDepContents(
   filePath: string,
   source: string,
   loadModule?: LoadModule,
-): Array<{ path: string; content: string | null }> {
-  return collectLoadDepContents(filePath, source, loadModule ?? defaultLoadModule).depContents;
+): { depContents: Array<{ path: string; content: string | null }>; truncated: boolean } {
+  return collectLoadDepContents(filePath, source, loadModule ?? defaultLoadModule);
 }
 
 export type InterfaceSurfaceEntry = {
@@ -178,14 +179,20 @@ export async function interfaceSurface(
       } catch {
         sidecarSource = undefined;
       }
-      const depContents = collectDepContents(abs, source, loadModule);
-      ifaceKey = ifaceCacheKey(abs, source, {
-        autoBind: autoBind !== false,
-        projectDir: proj?.projectDir,
-        sidecarSource,
-        depContents,
-      });
-      cachedTable = disk.get<IfaceTableJson>(ifaceKey);
+      const dep = collectDepContents(abs, source, loadModule);
+      // 闭包截断 → 键不全，禁用磁盘复用
+      if (dep.truncated) {
+        ifaceKey = undefined;
+        cachedTable = undefined;
+      } else {
+        ifaceKey = ifaceCacheKey(abs, source, {
+          autoBind: autoBind !== false,
+          projectDir: proj?.projectDir,
+          sidecarSource,
+          depContents: dep.depContents,
+        });
+        cachedTable = disk.get<IfaceTableJson>(ifaceKey);
+      }
     }
   }
 

@@ -352,14 +352,15 @@ program
  * `nudo:interface-domain-exceeds`（设计 §6：check 门禁的跨文件用穿证据；
  * checkSource 单文件面无注入通道）。
  */
-/** `@nudo:import` / ESM / 侧车闭包依赖内容：进 disk cache key */
+/** `@nudo:import` / ESM / 侧车闭包依赖内容：进 disk cache 键。
+ *  truncated（闭包截断）时必须禁用磁盘复用——未入键的 dep 变更不会 miss。 */
 async function collectCheckDepContents(
   filePath: string,
   source: string,
   loadModule: (spec: string, fromFile: string) => string | undefined,
-): Promise<Array<{ path: string; content: string | null }>> {
+): Promise<{ depContents: Array<{ path: string; content: string | null }>; truncated: boolean }> {
   const { collectLoadDepContents } = await import("@nudojs/service");
-  return collectLoadDepContents(filePath, source, loadModule).depContents;
+  return collectLoadDepContents(filePath, source, loadModule);
 }
 
 async function runCheck(
@@ -387,7 +388,9 @@ async function runCheck(
   const cacheRoot = diskCacheRoot(proj?.config, proj?.projectDir);
   const disk = new DiskCache({ root: cacheRoot, namespace: "check" });
   // --callsites 注入路径不做磁盘复用（证据面含调用记录）
-  const useDisk = disk.enabled && !opts.callsites;
+  // 依赖闭包截断 → paths 不全，键可能陈旧：禁用磁盘复用（对齐 core memo fail-open）
+  const dep = await collectCheckDepContents(filePath, source, loadModule);
+  const useDisk = disk.enabled && !opts.callsites && !dep.truncated;
   // 侧车内容进键：autoBind 下契约变更必须 miss，否则 CI 读到过期结论
   let sidecarContent: string | null = null;
   if (autoBind !== false) {
@@ -398,14 +401,12 @@ async function runCheck(
       sidecarContent = null;
     }
   }
-  // 依赖闭包（ESM/侧车/@nudo:import）进键
-  const depContents = await collectCheckDepContents(filePath, source, loadModule);
   const cacheKey = useDisk
     ? checkCacheKey(filePath, source, {
         autoBind,
         projectDir: proj?.projectDir,
         sidecarContent,
-        depContents,
+        depContents: dep.depContents,
       })
     : undefined;
   const cached = cacheKey ? disk.get<ReturnType<typeof serializeCheckJson>>(cacheKey) : undefined;
@@ -672,13 +673,30 @@ async function runInterfaceDraft(
       return;
     }
     const { findProjectConfig } = await import("@nudojs/service");
+    // 项目根：优先 nudo 配置；否则回退最近 package.json 祖先
+    let projectRoot: string | undefined;
     const proj = findProjectConfig(dirname(filePath));
     if (proj?.projectDir) {
+      projectRoot = proj.projectDir;
+    } else {
+      let dir = dirname(filePath);
+      const fsRoot = resolve("/");
+      while (dir !== fsRoot) {
+        if (existsSync(join(dir, "package.json"))) {
+          projectRoot = dir;
+          break;
+        }
+        const parent = dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+      }
+    }
+    if (projectRoot) {
       const rootReal = (() => {
         try {
-          return realpathSync(proj.projectDir);
+          return realpathSync(projectRoot);
         } catch {
-          return proj.projectDir;
+          return projectRoot;
         }
       })();
       const fileReal = (() => {
@@ -690,7 +708,7 @@ async function runInterfaceDraft(
       })();
       const relToRoot = relative(rootReal, fileReal);
       if (relToRoot.startsWith("..") || isAbsolute(relToRoot)) {
-        console.error(`Error: '${filePath}' is outside project root '${proj.projectDir}'; draft write refused`);
+        console.error(`Error: '${filePath}' is outside project root '${projectRoot}'; draft write refused`);
         process.exitCode = 1;
         return;
       }

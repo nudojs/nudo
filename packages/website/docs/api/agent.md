@@ -256,7 +256,7 @@ The standalone `@nudojs/mcp` package is retired; its tools map onto the commands
 | Old MCP tool | Replacement |
 |--------------|-------------|
 | `nudo-what-if` | `nudo.whatIf` — `bindings` are now actually applied (previously ignored) |
-| `nudo-check` | `nudo.check` (CheckJson v1) or pull diagnostics via `textDocument/diagnostic` |
+| `nudo-check` | `nudo.check` (CheckJson v1) — preferred for CI/agent gates. Pull diagnostics include Abs check + A3-filtered evaluator diags for open buffers, but are not a full-file CI substitute. |
 | `nudo-type-at` | `nudo.hover` (lossless Abs), or `nudo.whatIf` with empty `bindings` and `target` set |
 | `nudo-suggest-case` | `nudo.suggestCase` |
 | `nudo-trace` | `nudo.trace` |

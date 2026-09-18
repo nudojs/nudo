@@ -464,17 +464,30 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         if (
           ["push", "unshift", "splice", "pop", "shift", "reverse", "sort"].includes(methodName)
         ) {
-          // 支持标识符与成员路径接收者：this.arr / obj.x.pop 等
-          const recvSrc = transpileExpression(expr.callee.object as Expression, opts);
           const argSrcs = expr.arguments
             .map((a) =>
               a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts),
             )
             .join(", ");
-          // 可赋值左值（Identifier / MemberExpression）才重绑；复杂表达式保持调用
-          const objNode = expr.callee.object as { type: string };
-          if (objNode.type === "Identifier" || objNode.type === "MemberExpression" || objNode.type === "ThisExpression") {
-            return `${pad}${recvSrc} = $arrMutContainer(${recvSrc}, ${JSON.stringify(methodName)}, [${argSrcs}]);`;
+          const objNode = expr.callee.object as Node;
+          // 标识符：直接重绑绑定名
+          if (objNode.type === "Identifier") {
+            const name = (objNode as { name: string }).name;
+            return `${pad}${name} = $arrMutContainer(${name}, ${JSON.stringify(methodName)}, [${argSrcs}]);`;
+          }
+          // 成员路径（this.arr / obj.x）：读-改-写重绑根，禁止 `$get(...) = …`
+          if (objNode.type === "MemberExpression" || objNode.type === "ThisExpression") {
+            const path =
+              objNode.type === "MemberExpression"
+                ? memberPathOf(objNode as unknown as { object: Node; property: Node; computed: boolean }, opts)
+                : null;
+            if (path) {
+              const recvSrc = readPathSrc(path);
+              const mutSrc = `$arrMutContainer(${recvSrc}, ${JSON.stringify(methodName)}, [${argSrcs}])`;
+              return `${pad}${path.rootSrc} = ${setPathSrc(path, mutSrc)};`;
+            }
+            // 根不可重绑（this 无 thisParam 等）：保持纯调用
+            return `${pad}${transpileExpression(stmt.expression, opts)};`;
           }
         }
       }

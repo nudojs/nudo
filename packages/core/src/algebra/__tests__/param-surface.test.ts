@@ -39,6 +39,24 @@ describe("C4.1 formalParamsFromNodes", () => {
     expect(locateContractParam(formals, "args")).toEqual({ index: 2, rest: true });
     expect(locateContractParam(formals, "x")).toEqual({ index: 3, field: "x" });
   });
+
+  it("object pattern rest + rename key aliases are contract-visible", () => {
+    const formals = formalParamsFromNodes([
+      {
+        type: "ObjectPattern",
+        properties: [
+          { type: "ObjectProperty", key: { type: "Identifier", name: "a" }, value: { type: "Identifier", name: "b" } },
+          { type: "RestElement", argument: { type: "Identifier", name: "rest" } },
+        ],
+      },
+    ] as never);
+    const names = contractParamNameSet(formals[0]!.kind === "pattern" ? formals : formals);
+    expect(names.has("a")).toBe(true); // property key alias
+    expect(names.has("b")).toBe(true); // bound name
+    expect(names.has("rest")).toBe(true); // object rest
+    expect(locateContractParam(formals, "a")).toMatchObject({ index: 0, field: "a" });
+    expect(locateContractParam(formals, "rest")).toMatchObject({ index: 0 });
+  });
 });
 
 describe("C4.1 generalize formals alignment", () => {

@@ -49,9 +49,26 @@ describe("draftInterface", () => {
     expect(entry!.paramEvidence).toBe("callsite");
     expect(entry!.dsl).toContain("fn({");
     expect(entry!.dsl).toContain("x:");
+    // callsite 观测 double(21) 不得变成 lit 硬义务
+    expect(entry!.dsl).not.toContain("21");
     expect(r.draftSource).toContain("@nudo:draft");
     expect(r.draftSource).toContain("export const double = ");
     expect(r.draftSource).toContain("NOT loaded as a sidecar");
+  });
+
+  it("does not write body-evidence return as DSL obligation", async () => {
+    const file = join(dir, "bodyret.js");
+    writeFileSync(
+      file,
+      `export function id(x) { return x; }\n`,
+    );
+    const r = await draftInterface(file);
+    const entry = r.entries.find((e) => e.fn === "id");
+    expect(entry).toBeDefined();
+    // 无 callsite/directive：返回位不得 projected 进 DSL 义务
+    if (entry!.returns) {
+      expect(entry!.returns.projected).toBe(false);
+    }
   });
 
   it("skips handwritten contracts (never overwrite)", async () => {

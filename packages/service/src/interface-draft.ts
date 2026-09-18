@@ -16,7 +16,7 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, isAbsolute, relative } from "node:path";
 import {
   effectiveInterface,
   formatConstraint,
@@ -228,6 +228,83 @@ function caseEvidence(fn: FunctionAnalysis): {
   };
 }
 
+/**
+ * Draft DSL 可复制约束的安全化：callsite 观测是使用下界，不是义务上界。
+ * 去掉纯 eq-lit 字面量约束（lit(21) / union of lits）→ 只保留类型/形状；
+ * bounds/shape 保留（有指导意义）。返回 widened 约束；无实质类型信息则 undefined。
+ */
+function widenDraftConstraint(c: NudoConstraint): NudoConstraint | undefined {
+  const stripEqLits = <T extends { op: string; b?: { op?: string } }>(preds: readonly T[]): T[] =>
+    preds.filter((p) => !(p.op === "eq" && p.b?.op === "lit"));
+  if (c.members && c.members.length > 0) {
+    // union：成员全是 lit → 无法表达联合义务，退化为成员 prim 并集或跳过
+    const widenedMembers = c.members
+      .map(widenDraftConstraint)
+      .filter((m): m is NudoConstraint => m !== undefined);
+    if (widenedMembers.length === 0) {
+      // 全是纯 lit：用 prim 推断（number/string/boolean），不写 eq
+      const prim = litPrimOf(c.members[0]);
+      if (!prim) return undefined;
+      return { __nudoConstraint: true, prim, preds: [] } as NudoConstraint;
+    }
+    const prims = new Set(widenedMembers.map((m) => m.prim).filter(Boolean));
+    if (prims.size === 1 && widenedMembers.every((m) => !m.fields && !m.element && !m.members)) {
+      return { __nudoConstraint: true, prim: [...prims][0], preds: [] } as NudoConstraint;
+    }
+    return {
+      __nudoConstraint: true,
+      ...(c.prim ? { prim: c.prim } : {}),
+      preds: stripEqLits(c.preds ?? []),
+      members: widenedMembers,
+    } as NudoConstraint;
+  }
+  if (c.fields) {
+    const fields: Record<string, { constraint: NudoConstraint; optional?: boolean }> = {};
+    for (const [k, f] of Object.entries(c.fields)) {
+      const w = widenDraftConstraint(f.constraint);
+      if (!w) continue;
+      fields[k] = { constraint: w, ...(f.optional ? { optional: true } : {}) };
+    }
+    return {
+      __nudoConstraint: true,
+      fields,
+      preds: stripEqLits(c.preds ?? []),
+    } as NudoConstraint;
+  }
+  if (c.element) {
+    const el = widenDraftConstraint(c.element);
+    return {
+      __nudoConstraint: true,
+      preds: stripEqLits(c.preds ?? []),
+      ...(el ? { element: el } : {}),
+    } as NudoConstraint;
+  }
+  if (c.fn) return undefined; // 草稿 DSL 不写一等函数义务
+  const preds = stripEqLits(c.preds ?? []);
+  const hasBounds = preds.length > 0;
+  if (!c.prim && !hasBounds) return undefined;
+  return {
+    __nudoConstraint: true,
+    ...(c.prim ? { prim: c.prim } : {}),
+    preds,
+    ...(c.int ? { int: true } : {}),
+  } as NudoConstraint;
+}
+
+function litPrimOf(c: NudoConstraint | undefined): "number" | "string" | "boolean" | undefined {
+  if (!c) return undefined;
+  if (c.prim === "number" || c.prim === "string" || c.prim === "boolean") return c.prim;
+  type PredWithB = { op: string; b?: { op?: string; value?: unknown } };
+  const eq = (c.preds as readonly PredWithB[] | undefined)?.find(
+    (p) => p.op === "eq" && p.b?.op === "lit",
+  );
+  const v = eq && eq.b?.op === "lit" ? eq.b.value : undefined;
+  if (typeof v === "number") return "number";
+  if (typeof v === "string") return "string";
+  if (typeof v === "boolean") return "boolean";
+  return c.members?.[0] ? litPrimOf(c.members[0]) : undefined;
+}
+
 function projectDraftParams(
   fn: FunctionAnalysis,
   paramCases: FunctionAnalysis["cases"],
@@ -253,8 +330,8 @@ function projectDraftParams(
       }
       return { name, display: "/* no evidence — tighten */", projected: false };
     }
-    const constraint = joinThenProject(argAbs);
-    if (constraint === undefined) {
+    const raw = joinThenProject(argAbs);
+    if (raw === undefined) {
       return {
         name,
         display: `/* not projectable: ${argAbs.map((a) => formatShape(a)).join(" | ")} */`,
@@ -262,7 +339,22 @@ function projectDraftParams(
         ...(bodyAccesses ? { bodyAccesses } : {}),
       };
     }
+    // DSL 义务位：widen 字面量观测，避免单点 callsite 成为硬契约
+    const constraint = widenDraftConstraint(raw);
+    if (constraint === undefined) {
+      const observed = formatConstraint(raw);
+      return {
+        name,
+        display: `/* observed: ${observed} — widen/confirm before accepting */`,
+        projected: false,
+        ...(bodyAccesses ? { bodyAccesses } : {}),
+      };
+    }
     let display = formatConstraint(constraint);
+    const observed = formatConstraint(raw);
+    if (observed !== display) {
+      display += `  /* observed: ${observed} */`;
+    }
     if (bodyAccesses && bodyAccesses.length > 0) {
       display += `  /* body also reads: ${bodyAccesses.join(", ")} */`;
     }
@@ -281,6 +373,8 @@ function projectDraftReturn(
   returnCases: FunctionAnalysis["cases"],
   source: string,
   rawEvidence: DraftEvidence,
+  loadModule?: LoadModule,
+  fromFile?: string,
 ): NonNullable<InterfaceDraftEntry["returns"]> & { evidence: DraftEvidence } {
   const retAbs: Abs[] = [];
   for (const c of returnCases) {
@@ -288,14 +382,29 @@ function projectDraftReturn(
     retAbs.push(c.abs);
   }
   if (retAbs.length > 0) {
-    const constraint = joinThenProject(retAbs);
-    if (constraint !== undefined) {
-      // 无 callsite/directive 时不得标成 directive：求值投影是 body 证据
+    const raw = joinThenProject(retAbs);
+    if (raw !== undefined) {
+      // body/none 证据：返回义务不得进 DSL（求值投影是使用事实，不是契约）
+      if (rawEvidence === "none" || rawEvidence === "body") {
+        return {
+          display: `/* observed: ${formatConstraint(raw)} — confirm before accepting */`,
+          projected: false,
+          evidence: rawEvidence === "none" ? "body" : rawEvidence,
+        };
+      }
+      const constraint = widenDraftConstraint(raw);
+      if (constraint === undefined) {
+        return {
+          display: `/* observed: ${formatConstraint(raw)} — widen/confirm */`,
+          projected: false,
+          evidence: rawEvidence,
+        };
+      }
       return {
         constraint,
         display: formatConstraint(constraint),
         projected: true,
-        evidence: rawEvidence === "none" ? "body" : rawEvidence,
+        evidence: rawEvidence,
       };
     }
     const shapeText = fn.combinedAbs
@@ -309,17 +418,14 @@ function projectDraftReturn(
   }
 
   try {
-    const g = generalizeFromAst(fn.name, source);
+    const g = generalizeFromAst(fn.name, source, {
+      refine: {
+        ...(loadModule ? { loadModule } : {}),
+        ...(fromFile ? { fromFile } : {}),
+      },
+    });
     if (g?.symbolic) {
-      const constraint = joinThenProject([g.symbolic]);
-      if (constraint !== undefined) {
-        return {
-          constraint,
-          display: formatConstraint(constraint),
-          projected: true,
-          evidence: "symbolic",
-        };
-      }
+      // symbolic 返回：默认只注释，不写 DSL 义务
       return {
         display: `/* symbolic: ${formatShape(g.symbolic)}${g.display ? ` — ${g.display}` : ""} */`,
         projected: false,
@@ -337,16 +443,15 @@ function draftDsl(entry: Pick<InterfaceDraftEntry, "params" | "returns">): strin
   const parts = entry.params
     .filter((p) => p.projected && p.constraint !== undefined)
     .map((p) => {
-      // 去掉 body also reads 注释尾巴，保持可执行 DSL
       const pure = formatConstraint(p.constraint!).replace(/\s*\/\*[\s\S]*?\*\/\s*/g, "").trim();
       return `${p.name}: ${pure}`;
     });
   const obj = parts.length === 0 ? "{}" : `{ ${parts.join(", ")} }`;
   const ret =
     entry.returns?.projected && entry.returns.constraint !== undefined
-      ? formatConstraint(entry.returns.constraint)
+      ? formatConstraint(entry.returns.constraint).replace(/\s*\/\*[\s\S]*?\*\/\s*/g, "").trim()
       : undefined;
-  return ret === undefined ? `fn(${obj})` : `fn(${obj}, ${ret})`;
+  return ret === undefined || ret === "" ? `fn(${obj})` : `fn(${obj}, ${ret})`;
 }
 
 /** 草稿建议 DSL（注释用，不写入 export 行）：body 字段占位 */
@@ -437,7 +542,7 @@ export async function draftInterface(
     const { paramCases, returnCases, paramEvidence, rawReturnEvidence } = caseEvidence(fn);
     const bodyByParam = bodyMap.get(fn.name);
     const params = projectDraftParams(fn, paramCases, bodyByParam);
-    const ret = projectDraftReturn(fn, returnCases, source, rawReturnEvidence);
+    const ret = projectDraftReturn(fn, returnCases, source, rawReturnEvidence, loadModule, filePath);
     const { evidence: returnEvidence, ...returns } = ret;
 
     let evidence: DraftEvidence = paramEvidence;
@@ -534,13 +639,23 @@ export type WriteDraftResult = {
 
 /**
  * 写入 `*.nudo.draft.js`（覆盖草稿文件本身；不碰正式 `*.nudo.js`）。
+ * 基础路径防护：拒绝 node_modules；拒绝 draft 路径落在源文件目录之外的穿越。
  */
 export function writeInterfaceDraft(
   filePath: string,
   draftSource: string,
-  opts: { dryRun?: boolean } = {},
+  opts: { dryRun?: boolean; projectDir?: string } = {},
 ): WriteDraftResult {
   const draftPath = sidecarDraftPath(filePath);
+  if (/[/\\]node_modules[/\\]/.test(draftPath) || /[/\\]node_modules[/\\]/.test(filePath)) {
+    throw new Error(`draft write refused: path is inside node_modules (${draftPath})`);
+  }
+  if (opts.projectDir) {
+    const rel = relative(opts.projectDir, draftPath);
+    if (rel.startsWith("..") || isAbsolute(rel)) {
+      throw new Error(`draft write refused: outside project root ${opts.projectDir}`);
+    }
+  }
   const prev = existsSync(draftPath) ? readFileSync(draftPath, "utf-8") : undefined;
   const changed = prev !== draftSource;
   if (!opts.dryRun && changed) {

@@ -64,6 +64,16 @@ import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
 import { absUnknown, listTopFunctions, scanLiteralCalls } from "./scan.ts";
 
+/** C4.1：case 见证的解构字段投影（与 scan.projectArgField 同口径） */
+function projectCaseArgField(arg: Abs, field: string): Abs | undefined {
+  if (!arg) return undefined;
+  if (arg.shape.k === "brand") {
+    return projectCaseArgField(arg.shape.shape as Abs, field);
+  }
+  if (arg.shape.k !== "obj") return undefined;
+  return getSlot(arg.shape.slots, field)?.value;
+}
+
 // --- 整文件 CheckReport memo（LSP/CI 重复 check → O(1)） ---
 
 const checkReportMemo = new Map<string, CheckReport>();
@@ -910,15 +920,19 @@ function scanCaseInconsistency(
     const conflictParams = new Set(eff.conflict?.params ?? []);
     const formals = g.formals ?? [];
     const reqs: Array<
-      [number, { param: string; pred: Pred; constraint: NudoConstraint }]
+      [number, { param: string; pred: Pred; constraint: NudoConstraint }, string | undefined]
     > = [];
     for (const p of eff.params) {
       if (conflictParams.has(p.param)) continue;
       // C4.1：display 名命中失败时用 locateContractParam（默认/rest/解构顶层名）
       let idx = paramNames.indexOf(p.param);
+      let field: string | undefined;
       if (idx < 0 && formals.length > 0) {
         const hit = locateContractParam(formals, p.param);
-        if (hit) idx = hit.index;
+        if (hit) {
+          idx = hit.index;
+          field = hit.field;
+        }
       }
       if (idx < 0) continue;
       reqs.push([
@@ -928,6 +942,7 @@ function scanCaseInconsistency(
           pred: instantiateConstraint(p.constraint, p.param),
           constraint: p.constraint,
         },
+        field,
       ]);
     }
     if (reqs.length === 0) return;
@@ -936,10 +951,19 @@ function scanCaseInconsistency(
     // 标量域：eq/union 形态（lit()/union() 契约）走域隶属判定（bounds 分支
     // 判不了 eq/or，此前静默跳过 = 写了等于没写）；纯 bounds 域沿用逐原子
     // 报告（expected 保持 predToString 原文，既有输出契约零改动）
-    for (const [idx, entry] of reqs) {
+    for (const req of reqs) {
+      const idx = req[0];
+      const entry = req[1];
+      const field = req[2];
       if (entry.constraint.fields) continue;
-      const arg = absArgs[idx];
+      let arg = absArgs[idx];
       if (!arg) continue;
+      // C4.1：destructure 契约名 → 实参字段投影后再判 pred
+      if (field) {
+        const projected = projectCaseArgField(arg, field);
+        if (!projected) continue;
+        arg = projected;
+      }
       const lv = litValue(arg);
       if (
         lv === undefined ||
