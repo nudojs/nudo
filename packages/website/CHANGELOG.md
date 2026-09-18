@@ -1,5 +1,14 @@
 # website
 
+## 0.1.7
+
+### Patch Changes
+
+- Updated dependencies [aea83f6]
+  - @nudojs/core@2.0.0
+  - @nudojs/service@2.0.0
+  - @nudojs/parser@0.5.0
+
 ## 0.1.6
 
 ### Patch Changes
