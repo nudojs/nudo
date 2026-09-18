@@ -90,4 +90,22 @@ describe("C2.4 join pathNote", () => {
     expect(noted.shape.k).toBe(plain.shape.k);
     expect(formatShape(noted)).toBe(formatShape(plain));
   });
+
+  it("brand join with different names carries pathNote", () => {
+    const inner = abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+    const a = abs(
+      { k: "brand", name: "Error", shape: inner },
+      undefined,
+      undefined,
+      "path",
+    );
+    const b = abs(
+      { k: "brand", name: "TypeError", shape: inner },
+      undefined,
+      undefined,
+      "path",
+    );
+    const r = joinAbs(a, b);
+    expect(r.pathNote).toBeDefined();
+  });
 });

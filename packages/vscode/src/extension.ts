@@ -168,11 +168,24 @@ export function activate(context: ExtensionContext): void {
           void window.showWarningMessage("Nudo: persist needs a function name (use CodeLens)");
           return;
         }
-        const result = await client.sendRequest("nudo/interface.emit", {
+        const params = {
           file,
           functionName,
           mode: mode === "update" ? "update" : "add",
+        };
+        // 先 dry-run 预览，确认后再写盘（与 draft 同门禁体验）
+        const preview = await client.sendRequest("nudo/interface.emit", {
+          ...params,
+          dryRun: true,
         });
+        showNudoOutput(`persist preview ${functionName}`, extractToolText(preview));
+        const pick = await window.showInformationMessage(
+          `Nudo: persist contract for ${functionName}? (review dry-run in Output)`,
+          "Write sidecar",
+          "Dismiss",
+        );
+        if (pick !== "Write sidecar") return;
+        const result = await client.sendRequest("nudo/interface.emit", params);
         showNudoOutput(`persist ${functionName}`, extractToolText(result));
       },
     ),

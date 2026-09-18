@@ -8,7 +8,7 @@
 
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
-import { join, dirname, relative, sep } from "node:path";
+import { join, dirname, relative, sep, isAbsolute } from "node:path";
 import { diskCacheRoot } from "./evaluator/config.ts";
 
 /** 分析 ABI：语义变更时抬版本，整层 miss（含缓存键维度扩展） */
@@ -25,12 +25,14 @@ export function sha256Hex(data: string | Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-/** 相对化路径，避免绝对路径进磁盘键 */
+/** 相对化路径，避免绝对路径进磁盘键；树外路径用稳定内容 hash */
 export function relativizePath(p: string, root?: string): string {
   const norm = p.split(sep).join("/");
   if (!root) return norm;
   const r = relative(root, p).split(sep).join("/");
-  return r.startsWith("..") ? norm : r;
+  if (!r.startsWith("..") && !isAbsolute(r)) return r;
+  // 树外依赖：hash 而非机器绝对路径，保证跨 checkout/CI 键稳定
+  return `ext:${createHash("sha256").update(norm).digest("hex").slice(0, 16)}`;
 }
 
 /**

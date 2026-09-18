@@ -14,7 +14,7 @@ import {
   pushCollectionArm,
 } from "../collections.ts";
 import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
-import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs } from "../surface.ts";
+import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs, isNullishLitAbs, definitelyNotNullishShape } from "../surface.ts";
 import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape } from "../objects.ts";
 import {
   isMapAbs,
@@ -226,21 +226,104 @@ function undef(): Abs {
  * if：两侧都探索（抽象条件），具体条件短路。
  * 循环/函数体内 early-return：抽象分支把 NudoReturn 记入 loop-exit
  * 侧信道并让另一侧继续，避免只保留「先跑完的那一侧」而低估结果域。
+ * throw 同理：记录 throw-exit，兄弟臂继续探索（P0-4）。
  */
 const loopExitsAls = new AsyncLocalStorage<Abs[]>();
+const throwExitsAls = new AsyncLocalStorage<Abs[]>();
 
-/** 函数求值作用域：收集抽象分支上的 early-return 值，结束时 join */
+/** 函数求值作用域：收集抽象分支上的 early-return / throw 值 */
 export function runWithLoopExits<T>(body: () => T): T {
-  return loopExitsAls.run([], body);
+  return loopExitsAls.run([], () => throwExitsAls.run([], body));
 }
 
 export function takeLoopExits(): Abs[] {
   return loopExitsAls.getStore() ?? [];
 }
 
+export function takeThrowExits(): Abs[] {
+  return throwExitsAls.getStore() ?? [];
+}
+
+export function pushLoopExit(v: Abs): void {
+  loopExitsAls.getStore()?.push(v);
+}
+
+export function pushThrowExit(v: Abs): void {
+  throwExitsAls.getStore()?.push(v);
+}
+
+/** transpile 生成代码用：`$pushLoopExit` */
+export function $pushLoopExit(v: Abs): void {
+  pushLoopExit(v);
+}
+
+const tryMarkStack: number[] = [];
+
+/** try 块开始：压栈并返回当前 throwExits 长度 */
+export function $tryMark(): number {
+  const store = throwExitsAls.getStore();
+  const m = store?.length ?? 0;
+  tryMarkStack.push(m);
+  return m;
+}
+
+/** 当前最内层 try 的 mark（return 时 drain 用） */
+export function $tryCurrentMark(): number {
+  return tryMarkStack[tryMarkStack.length - 1] ?? 0;
+}
+
+export function $tryPopMark(): void {
+  tryMarkStack.pop();
+}
+
+/** 取出 mark 之后新记录的 throw（try 吸收 / catch 合并） */
+export function $tryTakeSince(mark: number): Abs[] {
+  const store = throwExitsAls.getStore();
+  if (!store) return [];
+  return store.splice(Math.min(mark, store.length));
+}
+
 type ForkArm =
   | { kind: "val"; v: Abs }
-  | { kind: "ret"; v: Abs };
+  | { kind: "ret"; v: Abs }
+  | { kind: "throw"; v: Abs };
+
+/** 生成器 yield 收集：抽象分支时标记路径敏感，禁止 exact 元组出货 */
+let yieldStack: Abs[][] = [];
+let genPathSensitive = 0;
+let genJoinOverride: Abs | null = null;
+
+function withIsolatedYields<T>(fn: () => T): { v: T; ys: Abs[] | null } {
+  const top = yieldStack[yieldStack.length - 1];
+  if (!top) return { v: fn(), ys: null };
+  const armYs: Abs[] = [];
+  yieldStack[yieldStack.length - 1] = armYs;
+  try {
+    return { v: fn(), ys: armYs };
+  } finally {
+    yieldStack[yieldStack.length - 1] = top;
+  }
+}
+
+function mergeArmYields(armYsList: Array<Abs[] | null>): void {
+  const top = yieldStack[yieldStack.length - 1];
+  if (!top || armYsList.length === 0) return;
+  const concrete = armYsList.filter((x): x is Abs[] => x !== null);
+  if (concrete.length === 0) return;
+  if (concrete.length === 1) {
+    top.push(...concrete[0]!);
+    return;
+  }
+  // 多臂：join 各臂 yield 序列，并标记路径敏感
+  let joined: Abs | null = null;
+  for (const ys of concrete) {
+    joined = joined ? joinAbs(joined, $arr(ys)) : $arr(ys);
+  }
+  genPathSensitive++;
+  if (joined) genJoinOverride = joined;
+  // 父收集器仍并入全部臂元素（过近似），conf 由 genJoinOverride/path 敏感性压低
+  for (const ys of concrete) top.push(...ys);
+}
 
 function runForkArm(arm: () => Abs, exits: Abs[] | undefined): ForkArm {
   try {
@@ -250,8 +333,43 @@ function runForkArm(arm: () => Abs, exits: Abs[] | undefined): ForkArm {
       exits?.push(e.absValue);
       return { kind: "ret", v: e.absValue };
     }
+    if (isNudoThrow(e)) {
+      pushThrowExit(e.absValue);
+      return { kind: "throw", v: e.absValue };
+    }
     throw e;
   }
+}
+
+function settleForkArms(a: ForkArm, b: ForkArm, exits: Abs[] | undefined): Abs {
+  const throws = [a, b].filter((r): r is { kind: "throw"; v: Abs } => r.kind === "throw");
+  const nonThrow = [a, b].filter((r) => r.kind !== "throw");
+  if (nonThrow.length === 0) {
+    // 全 throw：兄弟臂已探索完，再抛 join（调用边界收成 throws）
+    throw new NudoThrow(throws.map((t) => t.v).reduce((x, y) => joinAbs(x, y)));
+  }
+  // 混合 throw + val/ret：throws 已在 throwExits；继续处理非 throw 臂
+  const first = nonThrow[0]!;
+  const second = nonThrow[1] ?? first;
+  if (first.kind === "ret" && second.kind === "ret") {
+    throw new NudoReturn(joinAbs(first.v, second.v));
+  }
+  if (nonThrow.length === 1) {
+    if (first.kind === "ret") {
+      if (!exits) throw new NudoReturn(first.v);
+      return undef();
+    }
+    return first.v;
+  }
+  if (first.kind === "ret") {
+    if (!exits) throw new NudoReturn(first.v);
+    return second.kind === "val" ? second.v : undef();
+  }
+  if (second.kind === "ret") {
+    if (!exits) throw new NudoReturn(second.v);
+    return first.v;
+  }
+  return joinAbs(first.v, second.v);
 }
 
 export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs {
@@ -262,19 +380,24 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
   // 集合 side-table：抽象分支各自 overlay，结束后 join（防身份污染）
   beginCollectionFork();
   const arms: Array<ReturnType<typeof popCollectionArm>> = [];
+  const armYsList: Array<Abs[] | null> = [];
   let a: ForkArm;
   let b: ForkArm;
   try {
     pushCollectionArm();
     try {
-      a = runForkArm(consequent, exits);
+      const r = withIsolatedYields(() => runForkArm(consequent, exits));
+      a = r.v;
+      armYsList.push(r.ys);
     } finally {
       arms.push(popCollectionArm());
     }
     if (alternate) {
       pushCollectionArm();
       try {
-        b = runForkArm(alternate, exits);
+        const r = withIsolatedYields(() => runForkArm(alternate, exits));
+        b = r.v;
+        armYsList.push(r.ys);
       } finally {
         arms.push(popCollectionArm());
       }
@@ -283,26 +406,17 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
       pushCollectionArm();
       try {
         b = { kind: "val", v: undef() };
+        armYsList.push(null);
       } finally {
         arms.push(popCollectionArm());
       }
     }
   } finally {
     endCollectionFork(arms);
+    if (yieldStack.length > 0) mergeArmYields(armYsList);
   }
 
-  if (a.kind === "ret" && b.kind === "ret") {
-    throw new NudoReturn(joinAbs(a.v, b.v));
-  }
-  if (a.kind === "ret") {
-    if (!exits) throw new NudoReturn(a.v);
-    return b.kind === "val" ? b.v : undef();
-  }
-  if (b.kind === "ret") {
-    if (!exits) throw new NudoReturn(b.v);
-    return a.v;
-  }
-  return joinAbs(a.v, b.v);
+  return settleForkArms(a, b, exits);
 }
 
 export const DEFAULT_MAX_LOOP_ITERS = 8;
@@ -848,24 +962,50 @@ export function $while(
 
 /**
  * 顺序 while（具体/可变闭包）：body 内对 JS 变量赋值。
- * 适合 transpile `let i; while (…) { i = … }`；抽象条件仍靠预算截断，
- * 不保证 exit-join 健全——健全路径用 $while/$for + 状态对象。
+ * 提供 pack/unpack 时，抽象条件的可能出口会 join 回绑定（P0 健全）；
+ * 未 instrument 的调用保持旧语义（预算截断，文档已声明）。
  */
 export function $whileSeq(
   test: () => Abs,
   body: () => void,
   maxIters: number = DEFAULT_MAX_LOOP_ITERS,
+  opts?: {
+    /** 把当前绑定收成 Abs 状态（transpile 注入） */
+    pack?: () => Abs;
+    /** 把 join 后的状态写回绑定 */
+    unpack?: (s: Abs) => void;
+  },
 ): void {
+  const pack = opts?.pack;
+  const unpack = opts?.unpack;
+  let exitJoin: Abs | undefined;
+  const snapExit = (): void => {
+    if (!pack) return;
+    const s = pack();
+    exitJoin = exitJoin ? joinAbs(exitJoin, s) : s;
+  };
+  const applyExitJoin = (): void => {
+    if (!exitJoin || !pack || !unpack) return;
+    unpack(joinAbs(exitJoin, pack()));
+  };
   for (let i = 0; i < maxIters; i++) {
     const t = test();
-    if (isDefinitelyFalse(t)) return;
+    if (isDefinitelyFalse(t)) {
+      applyExitJoin();
+      return;
+    }
+    // 抽象条件：当前绑定是合法出口之一，先 snapshot 再进 body
+    if (!isDefinitelyTrue(t)) snapExit();
     try {
       body();
     } catch (e) {
-      if (isNudoReturn(e)) throw e;
+      if (isNudoReturn(e) || isNudoThrow(e)) throw e;
       throw e;
     }
   }
+  // 预算耗尽：最后一轮条件仍可能为真 → 当前态也是出口
+  snapExit();
+  applyExitJoin();
 }
 
 // --- early return from loop bodies (C2.1) ---
@@ -989,19 +1129,31 @@ export function $asyncReturn(v: Abs): Abs {
 }
 
 // --- 生成器 ---
+// yieldStack / genPathSensitive / genJoinOverride 在文件前部（fork 隔离用）
 
-let yieldStack: Abs[][] = [];
-
-/** function* 体：收集所有 yield 值为 tuple Abs */
+/** function* 体：收集所有 yield 值为 tuple Abs；抽象分支时降 conf（P0-6） */
 export function $gen(body: () => void): Abs {
   const ys: Abs[] = [];
+  const marker = genPathSensitive;
+  const prevOverride = genJoinOverride;
+  genJoinOverride = null;
   yieldStack.push(ys);
   try {
     body();
   } finally {
     yieldStack.pop();
   }
-  return $arr(ys);
+  if (genJoinOverride) {
+    const joined: Abs = genJoinOverride;
+    genJoinOverride = prevOverride;
+    return { ...joined, conf: joined.conf === "exact" ? ("path" as Confidence) : joined.conf };
+  }
+  genJoinOverride = prevOverride;
+  const arr = $arr(ys);
+  if (genPathSensitive > marker) {
+    return { ...arr, conf: arr.conf === "exact" ? ("path" as Confidence) : arr.conf };
+  }
+  return arr;
 }
 
 /** yield v：压入当前生成器收集器；表达式值用 unknown */
@@ -1014,8 +1166,8 @@ export function $yield(v: Abs): Abs {
 /**
  * switch：具体 disc 选中匹配 case；抽象 disc 并所有分支。
  * 抽象路径与 $fork 同构：集合 side-table 按臂 overlay，共享 body 只跑一次；
- * 臂内 NudoReturn 不冒泡污染兄弟臂——早退值进 loopExits（与 $fork 同），
- * 全 ret 抛 NudoReturn(join)，混合则只返回 val 臂 join（ret 由函数出口再并）。
+ * 臂内 NudoReturn/NudoThrow 不冒泡污染兄弟臂。
+ * **无 default 时必须隐式 fall-through 臂（undef）**，否则无匹配路径被丢掉（P0-2）。
  */
 export function $switch(
   disc: Abs,
@@ -1034,23 +1186,18 @@ export function $switch(
   const exits = loopExitsAls.getStore();
   beginCollectionFork();
   const armOverlays: Array<ReturnType<typeof popCollectionArm>> = [];
-  const runArm = (fn: () => Abs): { kind: "val" | "ret"; v: Abs } => {
+  const armYsList: Array<Abs[] | null> = [];
+  const runArm = (fn: () => Abs): ForkArm => {
     pushCollectionArm();
     try {
-      try {
-        return { kind: "val", v: asAbsVal(fn()) };
-      } catch (e) {
-        if (isNudoReturn(e)) {
-          exits?.push(e.absValue);
-          return { kind: "ret", v: e.absValue };
-        }
-        throw e;
-      }
+      const r = withIsolatedYields(() => runForkArm(fn, exits));
+      armYsList.push(r.ys);
+      return r.v;
     } finally {
       armOverlays.push(popCollectionArm());
     }
   };
-  const results: Array<{ kind: "val" | "ret"; v: Abs }> = [];
+  const results: ForkArm[] = [];
   try {
     // 共享 body（case 1: case 2: …）只执行一次，避免非幂等副作用被放大
     const seenRuns = new Set<() => Abs>();
@@ -1059,16 +1206,44 @@ export function $switch(
       seenRuns.add(c.run);
       results.push(runArm(c.run));
     }
-    if (dflt && !seenRuns.has(dflt)) results.push(runArm(dflt));
+    if (dflt) {
+      if (!seenRuns.has(dflt)) results.push(runArm(dflt));
+    } else {
+      // 隐式 no-match 臂：全 case 不命中时 fall-through（P0-2）
+      pushCollectionArm();
+      try {
+        results.push({ kind: "val", v: undef() });
+        armYsList.push(null);
+      } finally {
+        armOverlays.push(popCollectionArm());
+      }
+    }
   } finally {
     endCollectionFork(armOverlays);
+    if (yieldStack.length > 0) mergeArmYields(armYsList);
   }
   if (results.length === 0) return undef();
-  const allRet = results.every((r) => r.kind === "ret");
-  const joined = results.map((r) => r.v).reduce((a, b) => joinAbs(a, b));
-  if (allRet) throw new NudoReturn(joined);
-  // 混合：ret 臂已进 exits；语句位只携带 val 臂值继续，避免早退路径被覆盖
-  const valParts = results.filter((r) => r.kind === "val").map((r) => r.v);
+
+  const throws = results.filter((r): r is { kind: "throw"; v: Abs } => r.kind === "throw");
+  const nonThrow = results.filter((r) => r.kind !== "throw");
+  if (nonThrow.length === 0) {
+    throw new NudoThrow(throws.map((t) => t.v).reduce((x, y) => joinAbs(x, y)));
+  }
+  const allRet = nonThrow.every((r) => r.kind === "ret");
+  if (allRet) {
+    throw new NudoReturn(nonThrow.map((r) => r.v).reduce((a, b) => joinAbs(a, b)));
+  }
+  // 混合：ret/throw 臂已进 exits；语句位只携带 val 臂值继续
+  const valParts = nonThrow.filter((r) => r.kind === "val").map((r) => r.v);
   if (valParts.length === 0) return undef();
   return valParts.reduce((a, b) => joinAbs(a, b));
+}
+
+/** `??` / `??=` 测试：null/undefined → true；确定非 nullish → false；否则抽象 boolean */
+export function $nullishTest(v: Abs): Abs {
+  if (isNullishLitAbs(v)) return boolLit(true);
+  const lv = litValue(v);
+  if (lv !== undefined && lv !== null) return boolLit(false);
+  if (definitelyNotNullishShape(v.shape)) return boolLit(false);
+  return bool();
 }

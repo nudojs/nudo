@@ -7,6 +7,12 @@ export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** 去掉行注释，避免 `// fn({` 被误定位 */
+function stripLineComment(line: string): string {
+  const idx = line.indexOf("//");
+  return idx >= 0 ? line.slice(0, idx) : line;
+}
+
 export type SidecarInsertPos = { line: number; character: number };
 
 /**
@@ -29,7 +35,7 @@ export function findFnContractInsertPos(
     if (i > fnLineIdx && /\bexport\s+(?:const|let|var|function|default)\b/.test(sidecarLines[i]!)) {
       break;
     }
-    const line = sidecarLines[i]!;
+    const line = stripLineComment(sidecarLines[i]!);
     const col = line.indexOf("fn(");
     if (col >= 0) {
       // 导出行上：只接受绑定名之后的 fn(

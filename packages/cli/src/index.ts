@@ -715,8 +715,16 @@ async function runInterfaceDraft(
         process.exitCode = 1;
         return;
       }
+    } else {
+      // 无 package.json / nudo 配置祖先：与 LSP 对齐 fail-closed（可用 --force 放开）
+      if (!process.env.NUDO_DRAFT_FORCE) {
+        console.error(
+          `Error: no project root found for '${filePath}'; draft --write refused (set NUDO_DRAFT_FORCE=1 to override)`,
+        );
+        process.exitCode = 1;
+        return;
+      }
     }
-    // else：无 package.json / nudo 配置祖先 —— fail-open。邻接路径约束 +
     // writeInterfaceDraft 的 node_modules / draft≠formal 守卫仍生效；正式
     // 门禁请用 `nudo check`，不要依赖 draft 写入拒绝。
     const write = writeInterfaceDraft(filePath, result.draftSource, {
@@ -856,11 +864,11 @@ program
   .option("--emit", "Write/update @generated sidecar segments instead of printing (mode: update — strips and rewrites generated segments, idempotent)")
   .option(
     "--draft",
-    "Generate a reviewable interface draft from existing code (code-first / migration); prints a *.nudo.draft.js module — not auto-bound until you copy it into *.nudo.js",
+    "Generate a reviewable interface draft from existing code (code-first / migration); prints a *.nudo.draft.js|ts module — not auto-bound until you copy it into *.nudo.js|ts",
   )
   .option(
     "--write",
-    "With --draft: write/update <file>.nudo.draft.js on disk (never touches handwritten *.nudo.js)",
+    "With --draft: write/update <file>.nudo.draft.js|ts on disk (never touches handwritten *.nudo.js|ts; refuses without project root unless NUDO_DRAFT_FORCE=1)",
   )
   .option(
     "--fn <name>",
@@ -929,7 +937,10 @@ program
       const externalRecords = opts.callsites?.length ? collectExternalRecords(opts.callsites) : undefined;
       // 侧车（*.nudo.js / *.nudo.ts）是契约模块不是接口根——显式传入或目录
       // 扫描命中都跳过，避免对契约文件本身打印 "(no top-level functions found)" 噪声
-      const roots = targets.filter((t) => !/\.nudo\.(js|ts)$/.test(t) && !/\.nudo\.draft\.(js|ts)$/.test(t));
+      // 侧车（*.nudo.js / *.nudo.ts / *.nudo.mjs…）是契约模块不是接口根——
+      // 统一走 isNudoTargetPath，避免第三份手写 endsWith 漂移
+      const { isNudoTargetPath } = await import("@nudojs/service");
+      const roots = targets.filter((t) => isNudoTargetPath(t));
       if (roots.length === 0) return;
       for (const t of roots) {
         try {

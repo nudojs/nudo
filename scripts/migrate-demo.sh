@@ -16,7 +16,7 @@ cd "$(dirname "$0")/.."
 KEEP=0
 if [ "${1:-}" = "--keep" ]; then KEEP=1; fi
 
-NIDO_RUN() {
+NUDO_RUN() {
   # Prefer workspace CLI so draft/check share the same build as tests.
   pnpm exec tsx packages/cli/src/index.ts "$@"
 }
@@ -44,13 +44,13 @@ EOF
 step() { printf '\n== %s ==\n' "$1"; }
 
 step "1. inventory (implicit / no sidecar yet)"
-NIDO_RUN interface "$lib"
+NUDO_RUN interface "$lib"
 
 step "2. draft from existing code"
-NIDO_RUN interface --draft "$lib"
+NUDO_RUN interface --draft "$lib"
 
 step "3. write draft file (not ambient-bound)"
-NIDO_RUN interface --draft --write "$lib"
+NUDO_RUN interface --draft --write "$lib"
 draft="$dir/lib.nudo.draft.js"
 test -f "$draft"
 test ! -f "$dir/lib.nudo.js"
@@ -67,12 +67,12 @@ export const greet = fn({ user: shape({ name: string() }) }, string());
 EOF
 
 step "5. inventory after accept (handwritten)"
-NIDO_RUN interface "$lib"
+NUDO_RUN interface "$lib"
 
 step "6. check gate (handwritten obligations)"
 # greet({ id: 1 }) would violate shape name; current file only calls double(21)
 set +e
-NIDO_RUN check "$lib"
+NUDO_RUN check "$lib"
 check_ok=$?
 set -e
 echo "check exit: $check_ok (expect 0 — only double(21) is called)"
@@ -83,7 +83,7 @@ cat >>"$lib" <<'EOF'
 greet({ id: 1 });
 EOF
 set +e
-NIDO_RUN check "$lib"
+NUDO_RUN check "$lib"
 check_bad=$?
 set -e
 echo "check exit after greet({ id: 1 }): $check_bad (expect non-zero)"

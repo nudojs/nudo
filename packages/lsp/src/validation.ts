@@ -58,7 +58,7 @@ import {
  */
 export const analysisCache = new Map<
   string,
-  { version: number; result: AnalysisResult; sourceHash?: string; casesHash?: string }
+  { version: number; result: AnalysisResult; sourceHash?: string; casesHash?: string; depsHash?: string }
 >();
 
 function casesFingerprint(cases?: Map<string, number>): string {
@@ -257,6 +257,9 @@ export function uriToFilePath(uri: string): string {
  * result when the document version matches, otherwise falls back to sync
  * analyzeFile (path-based `@nudo:env` files degrade here — the async preload
  * only runs on the validation path).
+ *
+ * Cache hit also requires sidecar/deps fingerprint match（P1：pull 不得混用
+ * 侧车变更后的陈旧 evaluator 结果）。
  */
 export function getCachedOrAnalyze(
   filePath: string,
@@ -269,10 +272,12 @@ export function getCachedOrAnalyze(
   // 版本 + activeCases 指纹同时命中才复用：case 切换不 bump 文档 version，
   // 漏掉 casesHash 会把上一 case 的分析结果/lens 原样吐回（B2）
   const casesHash = casesFingerprint(activeCases);
+  const depsHash = depsFingerprint(filePath, loadModule);
   if (
     cached &&
     cached.version === version &&
-    (cached.casesHash ?? "-") === casesHash
+    (cached.casesHash ?? "-") === casesHash &&
+    (cached.depsHash ?? "-") === depsHash
   ) {
     return cached.result;
   }
@@ -283,8 +288,28 @@ export function getCachedOrAnalyze(
     result,
     sourceHash: sourceFingerprint(source),
     casesHash,
+    depsHash,
   });
   return result;
+}
+
+/** 侧车/依赖内容指纹：loadModule 可见的 sidecar 文本 hash */
+function depsFingerprint(
+  filePath: string,
+  loadModule?: (spec: string, fromFile: string) => string | undefined,
+): string {
+  if (!loadModule) return "-";
+  try {
+    const sp = sidecarPathOf(filePath);
+    const base = normPath(filePath).replace(/\\/g, "/");
+    const dir = base.slice(0, base.lastIndexOf("/"));
+    const leaf = sp.slice(sp.lastIndexOf("/") + 1);
+    const spec = `./${leaf}`;
+    const text = loadModule(spec, filePath) ?? loadModule(spec, `${dir}/`);
+    return sourceFingerprint(text ?? "");
+  } catch {
+    return "-";
+  }
 }
 
 export type OpenDocumentLike = {
@@ -494,7 +519,13 @@ export async function validateText(
   // await 期间有更新一轮 validate → 本轮作废（防抖已合并；不发布陈旧结果）
   if (!stillCurrent()) return;
 
-  analysisCache.set(filePath, { version, result, sourceHash: fp, casesHash });
+  analysisCache.set(filePath, {
+    version,
+    result,
+    sourceHash: fp,
+    casesHash,
+    depsHash: depsFingerprint(filePath, deps.loadModule),
+  });
   knownFiles.add(filePath);
   registerNudoImportDeps(filePath, text);
 

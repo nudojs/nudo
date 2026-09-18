@@ -227,7 +227,7 @@ Interface product surface (same data sources as CLI):
 
 `loadModule` and effective `autoBind` are **server-injected** (buffer-aware sidecar loader + project `package.json#nudo.interface.autoBind` AND client request). They are not JSON-serializable request parameters — do not send them from agents.
 
-Handwritten contracts are never overwritten by draft or emit. Accept a draft by copying reviewed exports into `*.nudo.js` / `*.nudo.ts`.
+Handwritten contracts are never overwritten by draft or emit. Accept a draft by copying reviewed exports into `*.nudo.js` / `*.nudo.ts`. Tool errors carry `isError: true`.
 
 ## Type expressions
 

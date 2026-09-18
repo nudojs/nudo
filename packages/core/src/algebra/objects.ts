@@ -346,6 +346,27 @@ function sameShapeJoinNote(a: Abs, b: Abs): string | undefined {
     if (la === lb) return undefined;
     return `len ${la}|${lb}`;
   }
+  if (a.shape.k === "brand" && b.shape.k === "brand") {
+    const an = (a.shape as { name: string }).name;
+    const bn = (b.shape as { name: string }).name;
+    if (an !== bn) return `brand ${an}|${bn}`;
+    // 同 brand（Map/Set/Error…）：下钻内层 Abs 差集
+    const ai = (a.shape as { shape: Abs }).shape;
+    const bi = (b.shape as { shape: Abs }).shape;
+    return sameShapeJoinNote(ai, bi);
+  }
+  if (a.shape.k === "sum" && b.shape.k === "sum") {
+    const am = (a.shape as { members: Abs[] }).members
+      .map((m) => shapeBrief(m))
+      .sort()
+      .join(",");
+    const bm = (b.shape as { members: Abs[] }).members
+      .map((m) => shapeBrief(m))
+      .sort()
+      .join(",");
+    if (am === bm) return undefined;
+    return `sum ${am}|${bm}`;
+  }
   return undefined;
 }
 

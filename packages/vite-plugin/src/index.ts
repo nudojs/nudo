@@ -15,8 +15,8 @@ import { dirname } from "node:path";
 import { checkSource, pTrue } from "@nudojs/core";
 
 export type NudoPluginOptions = {
-  include?: string[];
-  exclude?: string[];
+  include?: string[] | string;
+  exclude?: string[] | string;
   /**
    * error 级诊断是否让构建失败。
    * 默认 false（E3 / docs）：构建期诊断先 warn，避免无指令/隐式推断误伤 CI。
@@ -146,8 +146,9 @@ function compilePattern(pattern: string): Matcher {
 }
 
 /** Compile a pattern list into a matcher that is true when any pattern matches. */
-function compileAnyMatcher(patterns: string[]): Matcher {
-  const matchers = patterns.map(compilePattern);
+function compileAnyMatcher(patterns: string[] | string): Matcher {
+  const list = Array.isArray(patterns) ? patterns : [patterns];
+  const matchers = list.map(compilePattern);
   return (id) => matchers.some((match) => match(id));
 }
 
@@ -158,6 +159,7 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): any {
   // 走 `nudo check`。要让 error 阻断构建请显式 failOnError: true。
   const failOnError = options.failOnError ?? false;
 
+  // buildEnd 汇总统计用（诊断计数）；分析复用走 service 会话缓存，不读本表
   const analysisCache = new Map<string, AnalysisResult>();
 
   return {

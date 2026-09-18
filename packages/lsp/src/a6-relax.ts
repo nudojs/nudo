@@ -79,7 +79,18 @@ export function relaxSidecarConstraint(
     return next !== region ? next : undefined;
   };
 
-  for (const replacer of [tryText, tryParam, tryFn]) {
+  const tryReturnSlot = (region: string): string | undefined => {
+    // 返回槽：fn({ ... }, number().gt(40)) 的第二顶层实参
+    const re = /(fn\s*\(\s*\{[\s\S]*?\}\s*,\s*)(number(?:\(\)(?:\.[A-Za-z]+(?:\([^)]*\))?)*)+)/;
+    if (!re.test(region)) return undefined;
+    const next = region.replace(re, (_m, prefix, slot) => {
+      const base = stripNumericPreds(slot);
+      return base && base !== slot ? `${prefix}${base}` : _m;
+    });
+    return next !== region ? next : undefined;
+  };
+
+  for (const replacer of [tryText, tryParam, tryReturnSlot, tryFn]) {
     const next = replaceInFnRegion(sidecarSource, fnName, replacer);
     if (next !== undefined) return next;
   }

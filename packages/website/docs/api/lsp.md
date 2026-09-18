@@ -34,6 +34,7 @@ validateText(
   version: number,
   deps: ValidateTextDeps,
   propagate?: boolean,           // default false
+  force?: boolean,               // default false — 脏传播时禁用 sourceHash 短路
 ): Promise<void>
 ```
 
@@ -89,7 +90,7 @@ getCachedOrAnalyze(
 ): AnalysisResult
 ```
 
-Synchronous, cache-aware analysis for high-frequency handlers (hover, completion, pull diagnostics). Reuses the cached `AnalysisResult` when document `version` **and** `casesHash` match; otherwise runs sync `analyzeFile` (with optional buffer-aware `loadModule`) and refreshes the cache. Path-based `@nudo:env` files degrade on this path — the async preload only happens inside `validateText`. Sidecar/dep changes invalidate via `handleNudoDepFileChanged` (cache delete + force revalidate + `workspace/diagnostic/refresh`).
+Synchronous, cache-aware analysis for high-frequency handlers (hover, completion, pull diagnostics). Reuses the cached `AnalysisResult` when document `version`, `casesHash`, **and sidecar/deps fingerprint** match; otherwise runs sync `analyzeFile` (with optional buffer-aware `loadModule`) and refreshes the cache. Path-based `@nudo:env` files degrade on this path — the async preload only happens inside `validateText`. Sidecar/dep changes also invalidate via `handleNudoDepFileChanged` (cache delete + force revalidate + `workspace/diagnostic/refresh`).
 
 ### isNudoFile gate
 
@@ -158,7 +159,7 @@ What the server registers on `connection.onInitialize` (`src/server.ts`):
 | Completion (trigger `.`) | `onCompletion` | Property/method/variable items from `getCompletionsAtPosition` |
 | CodeLens | `onCodeLens` | Interface tier first: `● interface / handwritten|generated|implicit` (+ persist/update emit lenses + `⚡ draft interface` for non-handwritten exports); case lenses are the debug sub-layer — `● case "name"` active, `○` otherwise. Clicking sends `nudo.selectCase` / `nudo.interface` / `nudo.interface.draft` / `nudo.interfaceEmit` and refreshes lenses |
 | Inlay hints | `languages.inlayHint` | End-of-line case `Type` hints + Abs param/return inlays; implicit exports carry `· derived` |
-| Definition | `onDefinition` | `buildSymbolTable` + `findDefinition` (sidecar names included) |
+| Definition | `onDefinition` | `resolveDefinitionLocations` (local + cross-file + sidecar + workspace fallback) |
 | References | `onReferences` | `buildSymbolTable` + `findReferences` |
 | Rename | `onRenameRequest` | Workspace edit over the definition plus all references |
 | Code actions (`quickfix`) | `onCodeAction` | *Remove unreachable code* for `nudo-unreachable`; contract/param fixes |
@@ -189,7 +190,7 @@ Everything the server holds for the lifetime of a session:
 | `documents` | open documents (`TextDocuments`) | one entry per open editor document | removed on close |
 | `analysisCache` | `Map<filePath, { version, result }>` | one versioned entry per analyzed file | its document closes, or the file is deleted on disk (`forgetValidatedFile`) |
 | `knownFiles` | `Set<filePath>` | one path string per file analyzed this session | file deleted on disk (`forgetValidatedFile`) |
-| `activeCases` | `Map<uri, Map<functionName, index>>` | case selections, keyed by uri and function name | survives close/reopen so a selection is not lost; dropped when the file is deleted on disk |
+| `activeCases` | `Map<uri, Map<functionName, index>>` | case selections, keyed by uri and function name | dropped when the document closes or the file is deleted on disk |
 | `nudoFileCache` | `Map<uri, boolean>` — Nudo-file detection memo | one boolean per open document | invalidated on every open/change/close/delete of its uri |
 | `moduleGraphCache` | `Map<filePath, { mtimeMs, size, edges }>` | one entry per file that ever entered the import graph; edges are path strings | `mtimeMs`+`size` mismatch re-reads from disk and backfills; deletion evicts |
 | `debounceTimers` | `Map<uri, timer>` | one pending timer per edited document | fires after 300 ms or is cancelled on close |

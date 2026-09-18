@@ -286,6 +286,8 @@ describe("draftInterface", () => {
     const file = join(dir, "imp.js");
     writeFileSync(file, `export function id(x) { return x; }\nid(1);\n`);
     const r = await draftInterface(file);
-    expect(r.draftSource).toContain("any,");
+    // 只 import 实际用到的 builder（不恒注入 any/shape/…）
+    expect(r.draftSource).toMatch(/import \{ fn, number \} from "@nudojs\/core";/);
+    expect(r.draftSource).not.toContain("any,");
   });
 });

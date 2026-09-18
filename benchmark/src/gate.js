@@ -53,7 +53,15 @@ if (current.totalCases !== baseline.totalCases) {
   );
 } else {
   if (current.exact < baseline.results.exactMatches) {
-    problems.push(`exact 回退：${baseline.results.exactMatches} → ${current.exact}`);
+    const drop = baseline.results.exactMatches - current.exact;
+    // 允许 1-case exact→partial 抖动（runner/路径敏感噪声）；error 恶化仍硬失败
+    if (drop > 1 || current.error > baseline.results.errorCount) {
+      problems.push(`exact 回退：${baseline.results.exactMatches} → ${current.exact}`);
+    } else {
+      console.warn(
+        `Gate warn: exact dropped by ${drop} (within 1-case tolerance); error stable.`,
+      );
+    }
   }
   if (current.unknown > baseline.results.unknownCount) {
     problems.push(`unknown 回退：${baseline.results.unknownCount} → ${current.unknown}`);

@@ -17,7 +17,7 @@ import { joinAbs } from "../objects.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
 import { transpile } from "./transpile.ts";
 import { $call } from "./call.ts";
-import { isNudoThrow, isNudoReturn, runWithLoopExits, takeLoopExits } from "./runtime.ts";
+import { isNudoThrow, isNudoReturn, runWithLoopExits, takeLoopExits, takeThrowExits } from "./runtime.ts";
 
 const rtAll = { ...runtime, ...classRt, ...callsRt } as Record<string, unknown>;
 // ensure control-flow helpers are present even if a re-export layer omits them
@@ -323,18 +323,21 @@ export function callTranspiledExportFull(
     return runWithLoopExits(() => {
       try {
         const r = (fn as (...a: Abs[]) => unknown)(...args);
-        if (!isAbsVal(r)) return { result: unknown, throws: never };
-        // 抽象分支 early-return 记入 exits，与正常出口 join
-        return { result: joinLoopExits(r), throws: never };
+        if (!isAbsVal(r)) return joinControlExits(unknown);
+        // 抽象分支 early-return / throw 记入 exits，与正常出口 join
+        return joinControlExits(r);
       } catch (e) {
         // C2.1：循环体 $loopReturn → 函数返回值（与 exits join）
         if (isNudoReturn(e)) {
-          return { result: joinLoopExits(e.absValue), throws: never };
+          return joinControlExits(e.absValue);
         }
         if (isNudoThrow(e)) {
-          return { result: never, throws: e.absValue };
+          // 全臂 throw：兄弟 throw 已在 throwExits；与早退 exits 一并考虑
+          const result = joinLoopExits(never);
+          const throws = joinThrowExits(e.absValue);
+          return { result, throws };
         }
-        return { result: unknown, throws: never };
+        return joinControlExits(unknown);
       }
     });
   }
@@ -344,15 +347,15 @@ export function callTranspiledExportFull(
       return runWithLoopExits(() => {
         try {
           const r = $call(fn, args);
-          return { result: joinLoopExits(r), throws: never };
+          return joinControlExits(r);
         } catch (e) {
           if (isNudoReturn(e)) {
-            return { result: joinLoopExits(e.absValue), throws: never };
+            return joinControlExits(e.absValue);
           }
           if (isNudoThrow(e)) {
-            return { result: never, throws: e.absValue };
+            return { result: joinLoopExits(never), throws: joinThrowExits(e.absValue) };
           }
-          return { result: unknown, throws: never };
+          return joinControlExits(unknown);
         }
       });
     }
@@ -365,6 +368,17 @@ function joinLoopExits(normal: Abs): Abs {
   const exits = takeLoopExits();
   if (exits.length === 0) return normal;
   return exits.reduce((acc, x) => joinAbs(acc, x), normal);
+}
+
+function joinThrowExits(base: Abs | undefined): Abs {
+  const exits = takeThrowExits();
+  let t = base;
+  for (const x of exits) t = t ? joinAbs(t, x) : x;
+  return t ?? never;
+}
+
+function joinControlExits(normal: Abs): { result: Abs; throws: Abs } {
+  return { result: joinLoopExits(normal), throws: joinThrowExits(undefined) };
 }
 
 /** 调用 runTranspiled 导出（仅结果） */

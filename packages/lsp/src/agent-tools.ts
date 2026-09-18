@@ -521,7 +521,7 @@ export function inferTool(
       source,
       undefined,
       undefined,
-      params.loadModule ?? deps.loadModule,
+      params.loadModule ?? deps.loadModule ?? lspLoadModule,
     );
     let json = serializeInferJson(result, filePath);
     if (params.functions && params.functions.length > 0) {
@@ -590,7 +590,7 @@ export function whatIf(params: WhatIfParams, deps: AgentToolDeps = {}): AgentToo
       source,
       undefined,
       undefined,
-      params.loadModule ?? deps.loadModule,
+      params.loadModule ?? deps.loadModule ?? lspLoadModule,
     );
     const binding = result.bindings.get(params.target);
     // 无损 Abs
@@ -628,7 +628,7 @@ export function suggestCase(params: FunctionToolParams, deps: AgentToolDeps = {}
       source,
       undefined,
       undefined,
-      params.loadModule ?? deps.loadModule,
+      params.loadModule ?? deps.loadModule ?? lspLoadModule,
     );
     const fn = result.functions.find((f) => f.name === params.functionName);
 
@@ -679,7 +679,7 @@ export function trace(params: FunctionToolParams, deps: AgentToolDeps = {}): Age
       source,
       undefined,
       undefined,
-      params.loadModule ?? deps.loadModule,
+      params.loadModule ?? deps.loadModule ?? lspLoadModule,
     );
     const fn = result.functions.find((f) => f.name === params.functionName);
 

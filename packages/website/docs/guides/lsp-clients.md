@@ -15,7 +15,7 @@ Declared on `initialize` (see [@nudojs/lsp API](../api/lsp.md)):
 
 | Capability | Server handler | Notes |
 |------------|----------------|-------|
-| Diagnostics | `validateText` (push) | Adaptive debounce 300/400/800 ms; cancel-stale generations (A8) |
+| Diagnostics | `validateText` (push) + `diagnosticProvider` (pull) | Adaptive debounce 300/400/800 ms; cancel-stale generations (A8); pull hits cache only when version + casesHash + depsHash match |
 | Hover | `onHover` | Abs / intension; exported fn name shows `● interface / handwritten\|generated\|implicit` (A7) |
 | Completion (`.`) | `onCompletion` | Inferred property/method members |
 | CodeLens | `onCodeLens` | **Interface tier first**: `● interface / <source>` + persist/update; case lenses are the debug sub-layer |
@@ -115,7 +115,7 @@ These surfaces always share one computation (pinned by tests):
 | Hover first line + contract display | `interfaceTierOf` + `getHoverAtPosition` |
 | Inlay `interfaceSource` / `derived` | `collectAbsInlays` + `interfaceTierOf` |
 | Semantic token modifiers | `buildSemanticTokens` + `interfaceTierOf` |
-| Agent `nudo.check` / `nudo.hover` / `nudo.interface` | `checkSource` / `getHoverAtPosition` / `interfaceSurface` (E5 `AGENT_TOOL_SOURCES`) |
+| Agent `nudo.check` / `nudo.hover` / `nudo.interface` / infer/whatIf/trace | Same service/core entrypoints + buffer-aware `loadModule` (E5 `AGENT_TOOL_SOURCES`); tool errors carry `isError: true` |
 | CLI `nudo check` / `nudo interface` | Same service/core entrypoints |
 
 ## See also

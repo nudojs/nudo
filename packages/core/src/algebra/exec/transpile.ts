@@ -29,6 +29,8 @@ export type TranspileOptions = {
   asOverrides?: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
   /** 循环嵌套深度（>0 时 return → $loopReturn，C2.1） */
   inLoop?: number;
+  /** try 嵌套深度（>0 时 return 前 drain throwExits，使 catch 能吸收抽象 throw） */
+  inTry?: number;
 };
 
 function matchAsOverride(stmt: Node, opts: TranspileOptions): string | null {
@@ -210,6 +212,14 @@ function emitArrMutatorRebinds(
       return; // 短路臂：由表达式级 $fork + arm snapshot 负责
     }
     if (
+      node.type === "AssignmentExpression" &&
+      (node.operator === "||=" || node.operator === "&&=" || node.operator === "??=")
+    ) {
+      // 逻辑赋值 RHS 由短路 fork 隔离；语句级不得再无条件 rebind（P0-5）
+      visit((node as { left?: unknown }).left);
+      return;
+    }
+    if (
       node.type === "CallExpression" &&
       node.callee?.type === "MemberExpression" &&
       node.callee.computed !== true &&
@@ -269,7 +279,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $pushLoopExit } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -282,6 +292,29 @@ function indent(n: number): string {
   return "  ".repeat(n);
 }
 
+/** 收集赋值/Update 左值标识符（while pack/unpack 用） */
+function collectAssignedIds(node: unknown, acc: Set<string>): void {
+  if (!node || typeof node !== "object") return;
+  const n = node as {
+    type?: string;
+    left?: { type?: string; name?: string };
+    argument?: { type?: string; name?: string };
+    [k: string]: unknown;
+  };
+  if (n.type === "AssignmentExpression" && n.left?.type === "Identifier" && n.left.name) {
+    acc.add(n.left.name);
+  }
+  if (n.type === "UpdateExpression" && n.argument?.type === "Identifier" && n.argument.name) {
+    acc.add(n.argument.name);
+  }
+  for (const key of Object.keys(n)) {
+    if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
+    const child = n[key];
+    if (Array.isArray(child)) child.forEach((c) => collectAssignedIds(c, acc));
+    else if (child && typeof child === "object") collectAssignedIds(child, acc);
+  }
+}
+
 /** 语句或块内是否出现 return/throw（决定 if 是否提升为 return $fork） */
 function stmtReturns(stmt: Statement): boolean {
   if (stmt.type === "ReturnStatement" || stmt.type === "ThrowStatement") return true;
@@ -289,7 +322,8 @@ function stmtReturns(stmt: Statement): boolean {
   if (stmt.type === "IfStatement") {
     return stmtReturns(stmt.consequent) && stmt.alternate != null && stmtReturns(stmt.alternate);
   }
-  // switch：所有可达臂均 return/throw 才视为终止（与 Switch 转译 allReturn 同口径）
+  // switch：所有可达臂均 return/throw 且 **存在 default** 才视为终止
+  // （无 default 时 no-match 会 fall-through，不得当终止 — P0-1）
   if (stmt.type === "SwitchStatement") {
     type Arm = { stmts: Statement[]; isDefault: boolean };
     const arms: Arm[] = [];
@@ -314,11 +348,8 @@ function stmtReturns(stmt: Statement): boolean {
     const armOk = (a: Arm): boolean => a.stmts.length > 0 && a.stmts.every(stmtReturns);
     const nonDefault = arms.filter((a) => !a.isDefault);
     const dflt = arms.find((a) => a.isDefault);
-    return (
-      nonDefault.length > 0 &&
-      nonDefault.every(armOk) &&
-      (dflt === undefined || armOk(dflt))
-    );
+    if (dflt === undefined) return false; // 无 default：必然 fall-through
+    return nonDefault.length > 0 && nonDefault.every(armOk) && armOk(dflt);
   }
   return false;
 }
@@ -352,6 +383,7 @@ function transpileFnBodyStmts(stmts: Statement[], depth: number, opts: Transpile
     const names = [...recvSet];
     const pad = indent(depth);
     const padIn = indent(depth + 1);
+    // 与 IfStatement 同协议：set-flag 哨兵 + forkJoinBindings
     const wrapArm = (thunk: string, outPrefix: string): string => {
       if (names.length === 0) return thunk;
       return [
@@ -361,6 +393,7 @@ function transpileFnBodyStmts(stmts: Statement[], depth: number, opts: Transpile
         `${padIn}  return (${thunk})();`,
         `${padIn}} finally {`,
         ...names.map((n) => `${padIn}  __${outPrefix}${n} = ${n};`),
+        ...names.map((n) => `${padIn}  __${outPrefix}set_${n} = true;`),
         `${padIn}}`,
         `}`,
       ].join("\n");
@@ -370,20 +403,30 @@ function transpileFnBodyStmts(stmts: Statement[], depth: number, opts: Transpile
       ? emitArrMutatorRebinds(stmt.test as Node, opts, pad)
       : [];
     const cons = wrapArm(transpileBlockAsThunk(stmt.consequent, depth, opts), "fk1_");
-    const altBody = transpileFnBodyStmts(rest, depth + 1, opts);
+    const altBody = transpileFnBodyStmts(rest, depth + 1, { ...opts, inLoop: opts.inLoop });
     const altThunk = `() => {\n${altBody}\n${pad}}`;
     const alt = wrapArm(altThunk, "fk2_");
-    const joinLines = names.length
-      ? [
-          ...testRebinds,
-          ...names.map((n) => `${pad}let __fk0_${n} = ${n};`),
-          ...names.map((n) => `${pad}let __fk1_${n}; let __fk2_${n};`),
-        ]
-      : testRebinds;
-    // 两臂都 return：$fork 抛 NudoReturn(join(早退, 余下))；臂内已 restore snapshot
+    const inCtrl = (opts.inLoop ?? 0) > 0 || (opts.inTry ?? 0) > 0;
+    const applyJoin = names.length ? forkJoinBindings(names, pad).join("\n") : "";
+    if (names.length === 0) {
+      const promoted = [
+        ...testRebinds,
+        inCtrl
+          ? `${pad}$loopReturn($fork(${test}, ${cons}, ${alt}));`
+          : `${pad}return $fork(${test}, ${cons}, ${alt});`,
+      ].join("\n");
+      return head ? `${head}\n${promoted}` : promoted;
+    }
     const promoted = [
-      ...joinLines,
-      `${pad}return $fork(${test}, ${cons}, ${alt});`,
+      `${pad}{`,
+      ...testRebinds,
+      ...forkBindingDecls(names, padIn),
+      `${padIn}const __fkR = $fork(${test}, ${cons}, ${alt});`,
+      applyJoin.split("\n").map((l) => l.replace(/^\s*/, padIn)).join("\n"),
+      inCtrl
+        ? `${padIn}$loopReturn(__fkR);`
+        : `${padIn}return __fkR;`,
+      `${pad}}`,
     ].join("\n");
     return head ? `${head}\n${promoted}` : promoted;
   }
@@ -617,6 +660,8 @@ function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   /** alt 臂表达式源；null 表示复用 __test */
   altSrc: string;
   altNodes: Array<Node | null | undefined>;
+  /** 覆盖 $fork 测试表达式（?? 用 $nullishTest(left)） */
+  testSrc?: string;
 }): string {
   const alwaysNames = new Set<string>();
   for (const n of parts.alwaysNodes) collectArrMutatorReceivers(n, alwaysNames);
@@ -640,10 +685,11 @@ function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   }
 
   if (alwaysNames.size === 0 && branchNames.size === 0) {
-    // 无 mutator：保持简单 $fork（__test 槽位回填 alwaysSrc）
+    // 无 mutator：保持简单 $fork（__test 槽位回填 alwaysSrc；testSrc 可覆盖）
+    const forkTest = parts.testSrc ?? parts.alwaysSrc;
     const consExpr = parts.consSrc === "__test" ? parts.alwaysSrc : parts.consSrc;
     const altExpr = parts.altSrc === "__test" ? parts.alwaysSrc : parts.altSrc;
-    return `$fork(${parts.alwaysSrc}, () => ${consExpr}, () => ${altExpr})`;
+    return `$fork(${forkTest}, () => ${consExpr}, () => ${altExpr})`;
   }
 
   const consLines =
@@ -659,12 +705,13 @@ function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
         ? [`return (${parts.altSrc});`]
         : [`const __v = (${parts.altSrc});`, ...altRebinds, `return __v;`];
 
+  const forkTest = parts.testSrc ?? "__test";
   return [
     `(() => {`,
     `  const __test = (${parts.alwaysSrc});`,
     ...alwaysRebinds.map((l) => `  ${l}`),
     ...(names.length ? forkBindingDecls(names, "  ") : []),
-    `  const __r = $fork(__test, ${forkArmThunk(consLines, "fk1_", names)}, ${forkArmThunk(altLines, "fk2_", names)});`,
+    `  const __r = $fork(${forkTest}, ${forkArmThunk(consLines, "fk1_", names)}, ${forkArmThunk(altLines, "fk2_", names)});`,
     ...forkJoinBindings(names, "  "),
     `  return __r;`,
     `})()`,
@@ -763,18 +810,35 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     case "ReturnStatement": {
       const asVar = matchAsOverride(stmt as Node, opts);
       // C2.1：循环体内 return 不是「回调返回」，而是函数提前返回
+      // try 内：先 drain 抽象 throwExits，有则 rethrow 让 catch 吸收；正常返回值进 loopExits 后由出口 join
       const prefix = (opts.inLoop ?? 0) > 0 ? "$loopReturn" : "return";
-      if (asVar) return `${pad}${prefix}(${asVar});`;
-      if (!stmt.argument) return `${pad}${prefix}($lit(undefined));`;
+      const emitRet = (src: string, mutNodes?: Node | null): string => {
+        const retRebinds = mutNodes ? emitArrMutatorRebinds(mutNodes, opts, pad) : [];
+        if ((opts.inTry ?? 0) > 0) {
+          return [
+            `${pad}const __nudoRet = ${src};`,
+            ...retRebinds,
+            `${pad}{`,
+            `${indent(depth + 1)}const __xs = $tryTakeSince($tryCurrentMark());`,
+            `${indent(depth + 1)}if (__xs.length) {`,
+            `${indent(depth + 2)}$pushLoopExit(__nudoRet);`,
+            `${indent(depth + 2)}$throw(__xs.reduce((a, b) => $join(a, b)));`,
+            `${indent(depth + 1)}}`,
+            `${pad}}`,
+            `${pad}${prefix}(__nudoRet);`,
+          ].join("\n");
+        }
+        if (retRebinds.length === 0) return `${pad}${prefix}(${src});`;
+        return [
+          `${pad}let __mutRet = ${src};`,
+          ...retRebinds,
+          `${pad}${prefix}(__mutRet);`,
+        ].join("\n");
+      };
+      if (asVar) return emitRet(asVar);
+      if (!stmt.argument) return emitRet(`$lit(undefined)`);
       const retSrc = transpileExpression(stmt.argument, opts);
-      // P1：return 表达式内的 mutator 先取值再重绑容器
-      const retRebinds = emitArrMutatorRebinds(stmt.argument as Node, opts, pad);
-      if (retRebinds.length === 0) return `${pad}${prefix}(${retSrc});`;
-      return [
-        `${pad}let __mutRet = ${retSrc};`,
-        ...retRebinds,
-        `${pad}${prefix}(__mutRet);`,
-      ].join("\n");
+      return emitRet(retSrc, stmt.argument as Node);
     }
     case "ThrowStatement": {
       const arg = stmt.argument ? transpileExpression(stmt.argument, opts) : "$lit(undefined)";
@@ -1024,10 +1088,12 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         arm.stmts.length > 0 && arm.stmts.every(stmtReturns);
       const nonDefaultArms = merged.filter((a) => !a.isDefault);
       const defaultArm = merged.find((a) => a.isDefault);
+      // P0-1：无 default 不得当终止语句（no-match fall-through）
       const allReturn =
+        defaultArm !== undefined &&
         nonDefaultArms.length > 0 &&
         nonDefaultArms.every(armReturns) &&
-        (defaultArm === undefined || armReturns(defaultArm));
+        armReturns(defaultArm);
       const caseLines: string[] = [];
       const sharedBodyDecls: string[] = [];
       let defaultSrc: string | null = null;
@@ -1035,18 +1101,40 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const bodyIdxBase = switchBodySeq;
       let bodyIdx = 0;
       // switch 臂是控制流上下文：臂内 return = 函数早退 → $loopReturn
-      // （与循环同）。否则语句位 $switch 会丢掉 return 值、继续执行后续语句。
       const armOpts: TranspileOptions = {
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
       };
+      // P0-3：臂间数组 mutator 隔离（与 if+$fork 同协议；多臂用 sw 槽位）
+      const recvSet = new Set<string>([
+        ...merged.flatMap((a) => a.stmts.flatMap((s) => [...collectArrMutatorReceivers(s)])),
+        ...collectArrMutatorReceivers(stmt.discriminant as Node),
+      ]);
+      const names = [...recvSet];
+      const nArms = merged.length + 1; // +隐式 fall-through 槽（default 缺失时 runtime 占位，这里多声明无害）
+      const wrapArmThunk = (thunk: string, outIdx: number): string => {
+        if (names.length === 0) return thunk;
+        return [
+          `() => {`,
+          ...names.map((n) => `${indent(depth + 1)}${n} = __sw0_${n};`),
+          `${indent(depth + 1)}try {`,
+          `${indent(depth + 2)}return (${thunk})();`,
+          `${indent(depth + 1)}} finally {`,
+          ...names.map((n) => `${indent(depth + 2)}__sw${outIdx + 1}_${n} = ${n};`),
+          ...names.map((n) => `${indent(depth + 2)}__sw${outIdx + 1}set_${n} = true;`),
+          `${indent(depth + 1)}}`,
+          `}`,
+        ].join("\n");
+      };
+      let armSeq = 0;
       for (const arm of merged) {
         const body =
           arm.stmts.length === 0
-            ? "" // 空体：语句位 no-op；表达式位 $switch 自会 undef
+            ? ""
             : arm.stmts.map((s) => transpileStatement(s, depth + 2, armOpts)).join("\n");
-        const thunk = `() => {\n${body}\n${indent(depth + 1)}}`;
-        // 多 test 共享体：绑定同一函数引用，抽象 $switch 只跑一次
+        const rawThunk = `() => {\n${body}\n${indent(depth + 1)}}`;
+        const thunk = wrapArmThunk(rawThunk, armSeq);
+        armSeq++;
         const shared = arm.tests.length > 1 && !arm.isDefault;
         const runRef = shared ? `__swBody${bodyIdxBase + bodyIdx++}` : thunk;
         if (shared) {
@@ -1062,22 +1150,59 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       }
       switchBodySeq += Math.max(bodyIdx, 1);
       const dflt = defaultSrc ? `, ${defaultSrc}` : "";
+      const discRebinds = collectArrMutatorReceivers(stmt.discriminant as Node).size
+        ? emitArrMutatorRebinds(stmt.discriminant as Node, opts, pad)
+        : [];
       const switchCall = `$switch(${disc}, [\n${caseLines.map((l) => indent(depth + 1) + l).join("\n")}\n${indent(depth + 1)}]${dflt})`;
+      if (names.length === 0) {
+        return [
+          ...discRebinds,
+          ...sharedBodyDecls,
+          allReturn
+            ? `${pad}return ${switchCall};`
+            : `${pad}${switchCall};`,
+        ].join("\n");
+      }
+      const decls = names.flatMap((n) => [
+        `${pad}const __sw0_${n} = ${n};`,
+        ...Array.from({ length: nArms }, (_, i) =>
+          `${pad}let __sw${i + 1}_${n}; let __sw${i + 1}set_${n} = false;`,
+        ),
+      ]);
+      const joins = names.map((n) => {
+        const slots = Array.from(
+          { length: nArms },
+          (_, i) => `(__sw${i + 1}set_${n} ? __sw${i + 1}_${n} : null)`,
+        );
+        // 收集所有跑过的臂槽位并 join
+        return `${pad}${n} = (() => { const __p = [${slots.join(",")}].filter((x) => x !== null); return __p.length === 0 ? ${n} : __p.reduce((a, b) => $join(a, b)); })();`;
+      });
       return [
+        ...discRebinds,
         ...sharedBodyDecls,
-        // 全臂 return：return $switch（抽象路径 $switch 抛 NudoReturn(join)）
-        // 混合：语句位 $switch；早退经 $loopReturn 进 loopExits，函数出口再 join
-        allReturn
-          ? `${pad}return ${switchCall};`
-          : `${pad}${switchCall};`,
-      ].join("\n");
+        `${pad}{`,
+        ...decls,
+        `${pad}const __swR = ${switchCall};`,
+        ...joins,
+        allReturn ? `${pad}return __swR;` : null,
+        `${pad}}`,
+      ]
+        .filter((l): l is string => l !== null)
+        .join("\n");
     }
     case "TryStatement": {
+      const tryOpts: TranspileOptions = { ...opts, inTry: (opts.inTry ?? 0) + 1 };
       const tryBody =
         stmt.block.type === "BlockStatement"
-          ? stmt.block.body.map((s) => transpileStatement(s, depth + 1, opts)).join("\n")
-          : transpileStatement(stmt.block, depth + 1, opts);
-      const lines = [`${pad}try {`, tryBody, `${pad}}`];
+          ? stmt.block.body.map((s) => transpileStatement(s, depth + 1, tryOpts)).join("\n")
+          : transpileStatement(stmt.block as unknown as Statement, depth + 1, tryOpts);
+      const markName = `__nudoTm_${stmt.loc?.start.line ?? 0}`;
+      const lines = [
+        `${pad}const ${markName} = $tryMark();`,
+        `${pad}try {`,
+        tryBody,
+        `${pad}}`,
+      ];
       if (stmt.handler) {
         const param =
           stmt.handler.param?.type === "Identifier" ? stmt.handler.param.name : "e";
@@ -1087,23 +1212,58 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
             ? stmt.handler.body.body
                 .map((s) => transpileStatement(s, depth + 1, opts))
                 .join("\n")
-            : transpileStatement(stmt.handler.body, depth + 1, opts);
+            : transpileStatement(stmt.handler.body as unknown as Statement, depth + 1, opts);
         lines.push(`${pad}catch (${catchTmp}) {`);
         // 控制流信号：NudoReturn 不是 catch 绑定，必须透传
         lines.push(`${indent(depth + 1)}$rethrowIfNudoReturn(${catchTmp});`);
-        lines.push(`${indent(depth + 1)}const ${param} = $catchVal(${catchTmp});`);
+        // 合并 try 内已记录的抽象 throw + 本次 JS throw
+        lines.push(`${indent(depth + 1)}const __xs_${markName} = $tryTakeSince(${markName});`);
+        lines.push(`${indent(depth + 1)}__xs_${markName}.push($catchVal(${catchTmp}));`);
+        lines.push(
+          `${indent(depth + 1)}const ${param} = __xs_${markName}.reduce((a, b) => $join(a, b));`,
+        );
         lines.push(catchBody);
         lines.push(`${pad}}`);
       }
       if (stmt.finalizer) {
         const finBody =
           stmt.finalizer.type === "BlockStatement"
-            ? stmt.finalizer.body.map((s) => transpileStatement(s, depth + 1, opts)).join("\n")
-            : transpileStatement(stmt.finalizer, depth + 1, opts);
+            ? stmt.finalizer.body
+                .map((s) => transpileStatement(s, depth + 1, opts))
+                .join("\n")
+            : transpileStatement(stmt.finalizer as unknown as Statement, depth + 1, opts);
         lines.push(`${pad}finally {`);
         lines.push(finBody);
         lines.push(`${pad}}`);
       }
+      // try/catch/finally 之后再 drain 未吸收的抽象 throw（不打断 finally 语法）
+      if (stmt.handler) {
+        const param =
+          stmt.handler.param?.type === "Identifier" ? stmt.handler.param.name : "e";
+        const catchBody =
+          stmt.handler.body.type === "BlockStatement"
+            ? stmt.handler.body.body
+                .map((s) => transpileStatement(s, depth + 1, opts))
+                .join("\n")
+            : transpileStatement(stmt.handler.body as unknown as Statement, depth + 1, opts);
+        lines.push(`${pad}{`);
+        lines.push(`${indent(depth + 1)}const __post_${markName} = $tryTakeSince(${markName});`);
+        lines.push(`${indent(depth + 1)}if (__post_${markName}.length) {`);
+        lines.push(
+          `${indent(depth + 2)}const ${param} = __post_${markName}.reduce((a, b) => $join(a, b));`,
+        );
+        lines.push(catchBody.split("\n").map((l) => (l ? `${indent(depth + 2)}${l.trimStart()}` : l)).join("\n"));
+        lines.push(`${indent(depth + 1)}}`);
+        lines.push(`${pad}}`);
+      } else {
+        lines.push(`${pad}{`);
+        lines.push(`${indent(depth + 1)}const __post_${markName} = $tryTakeSince(${markName});`);
+        lines.push(`${indent(depth + 1)}if (__post_${markName}.length) {`);
+        lines.push(`${indent(depth + 2)}$throw(__post_${markName}.reduce((a, b) => $join(a, b)));`);
+        lines.push(`${indent(depth + 1)}}`);
+        lines.push(`${pad}}`);
+      }
+      lines.push(`${pad}$tryPopMark();`);
       return lines.join("\n");
     }
     case "ForOfStatement": {
@@ -1164,12 +1324,26 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
           ? stmt.body.body.map((s) => transpileStatement(s, depth + 1, bodyOpts)).join("\n")
           : transpileStatement(stmt.body, depth + 1, bodyOpts);
       const max = opts.maxLoopIters ?? 8;
-      // 顺序形态：body 内对 JS let 赋值即状态；抽象条件靠预算
+      // body/test 内被赋值的标识符 → pack/unpack，抽象条件出口可 join（P0 健全）
+      const assigned = new Set<string>();
+      collectAssignedIds(stmt.body, assigned);
+      collectAssignedIds(stmt.test, assigned);
+      const names = [...assigned].filter((n) => n !== "undefined");
+      if (names.length === 0) {
+        return [
+          `${pad}// while → $whileSeq (bounded, max=${max})`,
+          `${pad}$whileSeq(() => ${test}, () => {`,
+          body,
+          `${pad}}, ${max});`,
+        ].join("\n");
+      }
+      const packSrc = `$obj({ ${names.map((n) => `${JSON.stringify(n)}: ${n}`).join(", ")} })`;
+      const unpackSrc = `(s) => { ${names.map((n) => `${n} = $get(s, ${JSON.stringify(n)});`).join(" ")} }`;
       return [
-        `${pad}// while → $whileSeq (bounded, max=${max})`,
+        `${pad}// while → $whileSeq (instrumented bindings: ${names.join(", ")})`,
         `${pad}$whileSeq(() => ${test}, () => {`,
         body,
-        `${pad}}, ${max});`,
+        `${pad}}, ${max}, { pack: () => ${packSrc}, unpack: ${unpackSrc} });`,
       ].join("\n");
     }
     case "ClassDeclaration": {
@@ -1218,6 +1392,8 @@ function transpileClass(
 
   const methodOpts: TranspileOptions = {
     ...opts,
+    inLoop: 0,
+    inTry: 0,
     thisParam: "__this",
     className: name,
   };
@@ -1365,6 +1541,19 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       const rNode = expr.right as Node;
       const l = transpileExpression(expr.left, opts);
       const r = transpileExpression(expr.right, opts);
+      if (op === "??") {
+        // nullish 合并：test = left 是否 nullish（不是 truthiness）
+        return transpileShortCircuitExpr(opts, {
+          alwaysNodes: [lNode],
+          alwaysSrc: l,
+          // 测试用 nullish；返回侧：nullish → right，否则 → left
+          consSrc: r,
+          consNodes: [rNode],
+          altSrc: l,
+          altNodes: [lNode],
+          testSrc: `$nullishTest(${l})`,
+        });
+      }
       // && : test=left, cons=right, alt=left(已算)  || : test=left, cons=left, alt=right
       return op === "&&"
         ? transpileShortCircuitExpr(opts, {
@@ -1486,8 +1675,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           const paramNames = (prop.params as Array<{ type: string; name?: string }>).map((p) =>
             p.type === "Identifier" && p.name ? p.name : "_a",
           );
-          // 方法体是新的函数边界：inLoop 必须归零，否则 return 泄漏成 $loopReturn
-          const methodOpts: TranspileOptions = { ...opts, inLoop: 0, thisParam: "__this" };
+          // 方法体是新的函数边界：inLoop/inTry 必须归零
+          const methodOpts: TranspileOptions = { ...opts, inLoop: 0, inTry: 0, thisParam: "__this" };
           const bodySrc =
             prop.body.type === "BlockStatement"
               ? `{\n${prop.body.body.map((s) => transpileStatement(s, 1, methodOpts)).join("\n")}\n}`
@@ -1597,8 +1786,68 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     case "AssignmentExpression": {
       // obj.field = v → $set；标识符赋值保持 JS 绑定（值是 Abs）
       // 复合赋值 s += v → s = $add(s, v)；成员/下标写以「读-改-写」链重绑根绑定
+      // 逻辑赋值 ||= / &&= / ??= → 短路协议（P0-5）
       const compoundFn = COMPOUND_OPS[expr.operator];
       const right = transpileExpression(expr.right, opts);
+      const op = expr.operator;
+      if (op === "||=" || op === "&&=" || op === "??=") {
+        const rNode = expr.right as Node;
+        const emitLogicalAssign = (targetSrc: string, setSrc: (val: string) => string): string => {
+          if (op === "||=") {
+            // truthy → keep left；falsy → rhs
+            const sc = transpileShortCircuitExpr(opts, {
+              alwaysNodes: [],
+              alwaysSrc: targetSrc,
+              consSrc: "__test",
+              consNodes: [],
+              altSrc: right,
+              altNodes: [rNode],
+            });
+            return setSrc(sc);
+          }
+          if (op === "&&=") {
+            // truthy → rhs；falsy → keep left
+            const sc = transpileShortCircuitExpr(opts, {
+              alwaysNodes: [],
+              alwaysSrc: targetSrc,
+              consSrc: right,
+              consNodes: [rNode],
+              altSrc: "__test",
+              altNodes: [],
+            });
+            return setSrc(sc);
+          }
+          // ??= : nullish → rhs；否则 keep left
+          const sc = transpileShortCircuitExpr(opts, {
+            alwaysNodes: [],
+            alwaysSrc: targetSrc,
+            consSrc: right,
+            consNodes: [rNode],
+            altSrc: targetSrc,
+            altNodes: [],
+            testSrc: `$nullishTest(${targetSrc})`,
+          });
+          return setSrc(sc);
+        };
+        if (expr.left.type === "Identifier") {
+          return emitLogicalAssign(expr.left.name, (val) => `${expr.left.type === "Identifier" ? (expr.left as { name: string }).name : ""} = ${val}`);
+        }
+        if (expr.left.type === "MemberExpression") {
+          const m = expr.left as unknown as {
+            object: Node;
+            property: Node;
+            computed: boolean;
+          };
+          const path = memberPathOf(m, opts);
+          if (path) {
+            return emitLogicalAssign(readPathSrc(path), (val) => {
+              const writeSrc = setPathSrc(path, val);
+              return `${path.rootSrc} = ${writeSrc}`;
+            });
+          }
+        }
+        return `/* assign ${op} */ $lit(undefined)`;
+      }
       if (expr.left.type === "MemberExpression") {
         const m = expr.left as unknown as {
           object: Node;

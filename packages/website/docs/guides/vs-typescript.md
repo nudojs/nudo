@@ -54,7 +54,7 @@ For a **JS package**, the serious-replacement checklist is:
 | Explicit contracts | `*.nudo.js` + `@nudo:refine`; handwritten = obligation |
 | Generated facts | `nudo interface --emit` → `@generated` segments (drift, not silent rewrites of obligations) |
 | npm / editor types | `nudo emit` / infer `--dts` — projection only |
-| Performance story | `benchmark` CI gate (`cold` / `warm` / LS-invalidated) |
+| Performance story | `benchmark` + `benchmark:gate`：case 集规模一致；exact 回退超过 1-case 抖动 / unknown·error 上升 / 逐 case 顺序变差 / avg > 基线 3.0× → fail |
 
 What is **not** claimed: one-click migration of a large TS monorepo; full structural typing as the primary model; a second IR.
 

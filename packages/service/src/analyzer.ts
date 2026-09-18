@@ -1444,17 +1444,25 @@ function analyzeFileUncachedInner(
     // （整文件键已含，fn 键不加会陈旧命中 C0.5 诊断）
     const analysisFnKey = `m=${analysisCfg.mode}|e=${analysisCfg.evalMissingSlot}|b=${analysisCfg.callSiteBudget}`;
     // P1#13：custom loadModule 下 dep 内容进 fn 键，避免入口文本未变时旧诊断命中
-    let fnDepSeg = "-";
+    // truncated / fingerprint 失败：与整文件 noCache 同口径 fail-closed
+    let fnDepSeg: string | null = "-";
+    let fnDepFailClosed = false;
     if (loadModule !== undefined && loadModule !== defaultLoadModule) {
       try {
         const dfp = loadModuleDepsFingerprint(source, loadModule, filePath);
-        fnDepSeg = dfp.truncated ? `trunc:${dfp.paths.length}` : dfp.fp.slice(0, 64);
+        if (dfp.truncated) {
+          fnDepFailClosed = true;
+          fnDepSeg = null;
+        } else {
+          fnDepSeg = dfp.fp.slice(0, 64);
+        }
       } catch {
-        fnDepSeg = "fperr";
+        fnDepFailClosed = true;
+        fnDepSeg = null;
       }
     }
     const fnCacheKey =
-      fp && caseDirectives.length > 0
+      !fnDepFailClosed && fp && caseDirectives.length > 0
         ? [
             filePath,
             fp.own,
@@ -1464,7 +1472,7 @@ function analyzeFileUncachedInner(
             envKeyFn,
             mockKeyFn,
             analysisFnKey,
-            fnDepSeg,
+            fnDepSeg ?? "-",
           ].join("\0")
         : undefined;
     const dLen0 = diagnostics.length;
