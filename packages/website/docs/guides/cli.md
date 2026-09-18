@@ -360,6 +360,8 @@ Hint lines, error-level assertions, and the exit-code rules are covered in the [
 
 The interface product: per-function refinement contracts with their source layer. With no sidecar and no annotation, every export still gets its **implicit** interface from call-site inference; sidecar bindings and `@nudo:refine` lift it to **handwritten**; `--emit`-persisted segments show as **generated**.
 
+**Sidecar keys for classes / aliases:** exported class instance methods bind as `Class.method` / `Class_method` (constructor, static, get/set excluded). For `export { Local as Public }`, analysis and sidecars use the **local declaration name** (`Local`, `Local.method`) — `Public` is only the public export name, not a contract key.
+
 ```bash
 nudo interface [paths...]       # print only, never writes
 nudo interface --emit <file> --fn <name>   # persist inferred domains

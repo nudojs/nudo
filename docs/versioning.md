@@ -6,7 +6,11 @@ How Nudo packages are versioned, what counts as a breaking change, and how to fo
 
 > **Source of truth for Current versions:** each `packages/*/package.json`. This policy doc does not pin patch numbers.
 >
-> **Intentional breaking (fix-2 / C0.1):** body-AST required-slot inference removed. Obligations come only from explicit contracts or call-site facts — list this in release notes as intentional, not a regression. Flipping `analysis.mode` default without an escape hatch is a **major**.
+> **Intentional behavior changes (fix-2) — release notes, not regressions:**
+> 1. **C0.1:** body-AST required-slot inference removed. Obligations come only from explicit contracts or call-site facts.
+> 2. **A1:** `analysis.mode` shipped default flipped `directives` → `exports` (`DEFAULT_ANALYSIS_MODE` in `@nudojs/service`). Escape hatch: `package.json#nudo.analysis.mode = "directives"` (old silence) or `"all"` (every target path). On **1.x** packages this is a **default-behavior flip that can invent diagnostics** on previously unanalyzed export-bearing files → treat as **major** in changesets/release notes unless the team ships a documented minor with the escape hatch called out.
+>
+> `@nudojs/core` / `@nudojs/service` / `@nudojs/cli` are already on the **1.x** line (see each package.json). The monorepo root version is private and is not a publish unit.
 
 | Package | Current | Line | Policy |
 |---------|---------|------|--------|
@@ -129,7 +133,7 @@ pnpm run ci:version   # only on a throwaway branch — rewrites package.json ver
 | Change | Migration |
 |--------|-----------|
 | `T.*` directive grammar deprecated | Prefer `@nudo:refine` + `*.nudo.js` constraint builders; `T.*` still parses |
-| Class methods / CJS / `export default` sidecar keys | Use `Class.method`, `Class_method`, nested objects, or local export names — see `design-refine-derivation.md` |
+| Class methods / CJS / `export default` sidecar keys | Use `Class.method` (**local declaration name**, not export alias), `Class_method`, nested objects, or local export names — `export { Local as Public }` binds `Local.method`, not `Public.method`. See `design-refine-derivation.md` |
 | `nudo.interface` product name | `nudo refine` is an alias; prefer `nudo interface` |
 
 ### IDE / agent surface

@@ -232,6 +232,8 @@ export function localNamedExports(source: string): Set<string> {
             continue;
           }
           if (localName && importedLocalNames.has(localName)) continue;
+          // export { Local as Public }：导出名 Public 进集合；
+          // class 方法契约键仍按**本地声明名** Local.method / Local_method（见 design-refine-derivation）
           out.add(name);
           if (localName) addClassMethodKeys(out, localClasses.get(localName));
         }

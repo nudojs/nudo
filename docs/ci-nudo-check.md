@@ -106,7 +106,7 @@ jobs:
 |---|---|---|
 | 赋值/结构检查 | 完备 | 部分：Abs leq（`nudo:assign-mismatch`）+ 显式 shape 契约；HOF `arg-structure` 仅回调；宽度子类型无 excess 检查 |
 | 约束（`x>0`）+ 字面量调用 | 做不到 | **做** |
-| 零注解 JS | 需 checkJs | CLI 点名路径默认；IDE 需 `analysis.mode=exports\|all` |
+| 零注解 JS | 需 checkJs | CLI 点名路径默认分析；IDE 出厂默认 `analysis.mode=exports`（export/侧车/指令）；无 export 脚本需 `mode=all` |
 | 建议 | 大 TS 仓仍用 tsc | JS 仓 / 存量代码 / Agent 流水线 |
 
 **推荐双跑**：TS 项目继续 tsc；纯 JS 或渐进迁移目录用 `nudo check` 作补充门禁。

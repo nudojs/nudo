@@ -68,4 +68,4 @@ Do **not** run `nudo check` over `apps/web/**/*.ts` unless you intentionally str
 
 ## IDE
 
-Install the Nudo VS Code extension alongside the built-in TS server. They coexist: TS handles `.ts`, Nudo analyzes `.js` according to `nudo.analysis.mode`. **Shipped default is `"directives"`** — set `"exports"` or `"all"` to analyze unannotated `.js` in the IDE.
+Install the Nudo VS Code extension alongside the built-in TS server. They coexist: TS handles `.ts`, Nudo analyzes `.js` according to `nudo.analysis.mode`. **Shipped default is `"exports"`** — files with `export` / sidecar / directives are analyzed in the IDE; set `"all"` for every target path, or `"directives"` to restore the conservative gate.

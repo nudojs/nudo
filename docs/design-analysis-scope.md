@@ -1,6 +1,9 @@
 # Analysis Scope Config — 分析范围与噪声档
 
-> **状态**：A2 设计 + `analysisConfig()` / `shouldAnalyzeFile` 已落地。A1 的 LSP 接线完成，但**默认 `mode` 仍为 `directives`**（无指令文件默认不分析）。见 §8。
+> **状态**：A2 设计 + `analysisConfig()` / `shouldAnalyzeFile` + A1 LSP 接线已落地。
+> **出厂默认 `mode = exports`**（`DEFAULT_ANALYSIS_MODE`，`packages/service/src/evaluator/config.ts`）：
+> 含 `export` / 侧车 / `@nudo:` 指令的文件进 IDE 分析；**无 export、无侧车**的脚本仍需显式 `mode=all`。
+> Escape hatch：`package.json#nudo.analysis.mode = "directives" | "exports" | "all"`。见 §8。
 >
 > **真理源关系**：配置入口沿用 `package.json#nudo`（不引入 `nudo.json`），
 > 与 `nudo.interface.autoBind` 同源。见
@@ -72,8 +75,8 @@ export function analysisConfig(config: NudoConfig | null | undefined): AnalysisC
 |---|---|---|
 | `include` | `**/*.{js,mjs,cjs,ts}`（经 `isNudoTargetPath` 过滤后） | 与现 target 路径一致 |
 | `exclude` | `node_modules` / `dist` / `coverage` | 安全默认；emitter 已拒绝 node_modules 侧车 |
-| `mode` | `directives` | **当前默认仍是 `directives`**（`packages/service/src/evaluator/config.ts`）；`exports`/`all` 可配置。默认切换为 `all`/`exports` **尚未落地**（路线图 A1 仍为 `[~]`） |
-| `diagnostics` | `errors` for `mode=directives`；`default` for `mode=all` | 打开无指令分析时避免刷屏 |
+| `mode` | `exports` | **出厂默认**（`DEFAULT_ANALYSIS_MODE`）：指令 \| export \| 同名侧车进分析。`directives` 回到保守门禁；`all` 覆盖全部目标路径 |
+| `diagnostics` | `errors` for `mode=directives`；`default` for `mode=exports`/`all` | 打开无指令分析时避免刷屏 |
 
 `findProjectConfig` 的「向上找带 `nudo` 键的 package.json」规则不变。
 
@@ -142,9 +145,9 @@ CLI `nudo check <file>` / `nudo infer <file>` **显式路径始终分析**，
 
 ## 6. 迁移
 
-1. **Phase A2 实现**：只加 `analysisConfig()` + 解析 + 测试；LSP 行为不变（默认 `directives`）。
-2. **A1**：LSP `isNudoFile` 改读 `mode`；文档把「无指令不分析」改为「按 mode」。
-3. **默认切换**（可选后续）：major/minor note — `mode` 默认 `all` + `diagnostics: default`。
+1. **Phase A2 实现**：`analysisConfig()` + 解析 + 测试。
+2. **A1**：LSP `isNudoFile` → `shouldAnalyzeFile(mode)`；文档按 mode 描述文件检测。
+3. **默认切换（已落地）**：出厂 `mode=exports` + `diagnostics=default`。**1.x 发布须在 changeset/release notes 写明 intentional default flip**（见 `docs/versioning.md`）；回退配置 `"mode": "directives"`。
 
 ---
 
@@ -156,13 +159,13 @@ CLI `nudo check <file>` / `nudo infer <file>` **显式路径始终分析**，
 
 ---
 
-## 8. 验收（A2 现状）
+## 8. 验收（A2 + A1 现状）
 
-A2（`analysisConfig()` 归一化）已落地；A1 默认切换 **未** 落地。对照：
+A2（`analysisConfig()` 归一化）与 A1（默认 `mode=exports`）均已落地：
 
-- [x] `analysisConfig(undefined)` 返回上表默认（含 `mode: "directives"`、`evalMissingSlot: "off"`、`callSiteBudget: 3`）
+- [x] `analysisConfig(undefined)` 返回上表默认（`mode: "exports"`、`evalMissingSlot: "off"`、`callSiteBudget: 3`）
 - [x] `package.json#nudo.analysis` 解析与非法值回落（`service/evaluator/config.ts`）
 - [x] include/exclude glob（`matchesEmitAllowlist` 同源 glob 实现；`shouldAnalyzeFile` 消费）
-- [x] LSP/Vite 在 `mode=directives` 下行为与今日一致（默认未变，回归成立）
-- [x] `mode=exports` / `mode=all`：`shouldAnalyzeFile` 单测覆盖（`service/src/__tests__/analysis-scope.test.ts`）
-- [ ] **A1 成功判据**：默认（不配 `package.json`）打开无指令 `.js` 即有 hover/diagnostics——**未达成**，默认仍 `directives`
+- [x] `mode=directives` / `exports` / `all`：`shouldAnalyzeFile` 单测覆盖（`analysis-scope.test.ts`）
+- [x] **A1（exports 默认）**：不配 `package.json` 时，带 `export` / 侧车 / `@nudo:` 的 `.js` 进 IDE 分析
+- [x] **A1 边界（有意）**：无 export、无侧车、无指令的脚本默认不分析——需 `mode=all`；CLI 点名路径不受 mode 限制

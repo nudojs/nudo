@@ -125,7 +125,8 @@ export const add2 = fn({ x }, x.shift(2)); // body x+2
 | `export default` | **C4.4**：具名 `export default function add` 绑本地名 `add` + 登记 `"default"`；侧车可 `export const add = fn(…)` 或 `export default fn(…)`。匿名 default 仅 `"default"` |
 | re-export / barrel（`export { add2 } from "./add.js"`、`export *`） | 不算本地导出、不参与同名绑定——re-export 的契约**永远跟随定义文件**的侧车；`lib.nudo.js` 里的 `add2` 只是 import 引用，不构成第二绑定 |
 | CJS（`module.exports = {...}`） | **C4.3**：静态可解析形态参与绑定——`module.exports = { a, b }`、`exports.a = …`、`module.exports.a = …`、`module.exports = localFn`（登记 localFn 名）。动态计算导出名仍不猜 |
-| class 实例方法 | **C4.2**：导出 class 的普通方法契约键 = `Class.method`；侧车可 `export const Class_method = fn(…)` 或 `export const Class = { method: fn(…) }`。constructor / static / get / set 不绑 |
+| class 实例方法 | **C4.2**：导出 class 的普通方法契约键 = **本地声明名** `Class.method`（不是 export 别名）；侧车可 `export const Class_method = fn(…)` 或 `export const Class = { method: fn(…) }`。constructor / static / get / set 不绑 |
+| `export { Local as Public }` | 侧车/分析按**声明名**：函数键 `Local`（若导出）；class 方法键 `Local.method` / `Local_method`。`Public` 仅是对外 export 名，**不是**契约键。`export { Local as default }` 额外登记 `"default"` 与本地名 `Local` |
 
 **私有函数不绑定、不落盘。**
 

@@ -37,7 +37,9 @@ Full policy (what Nudo treats as breaking): [`docs/versioning.md`](https://githu
 - `CheckJson` / `InferJson` / generated `.d.ts` schema or shape changes
 - Renaming diagnostic codes or flipping default severity
 - Removing CLI flags or changing analysis defaults without an escape hatch
+- **Default `analysis.mode` flip** (`directives` → `exports` in fix-2): intentional on 1.x service/cli — escape hatch `package.json#nudo.analysis.mode`; treat as **major** in release notes
 - Directive grammar / sidecar binding-key changes
+- Class-method / export-alias sidecar keys use the **local declaration name** (`Local.method` for `export { Local as Public }`), not the public export alias
 - Removing LSP `nudo.*` commands or custom requests
 
 **Non-breaking:** new diagnostic codes, new optional `package.json#nudo` keys, more precise inference, new CLI flags with safe defaults.

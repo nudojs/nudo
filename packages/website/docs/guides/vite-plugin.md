@@ -63,7 +63,7 @@ Glob patterns support any file extension (`**/*.js`, `**/*.mjs`, `**/*.ts`, …)
 ## Behavior
 
 - **File matching**: The plugin processes files that match `include` and do not match `exclude`; `exclude` always wins. The default `include` of `["**/*.js", "**/*.mjs", "**/*.ts"]` matches `isNudoTargetPath` (`.cjs`/`.cts`/`.mts`/`.tsx` are not analysis targets).
-- **Analysis gate**: After globs, files pass `shouldAnalyzeFile` (`package.json#nudo.analysis.mode`). Shipped default is `"directives"` — only files with `@nudo:*` directives are analyzed. Set `"exports"` or `"all"` to opt in to broader analysis.
+- **Analysis gate**: After globs, files pass `shouldAnalyzeFile` (`package.json#nudo.analysis.mode`). Shipped default is `"exports"` — files with `@nudo:*`, `export`, or a sidecar are analyzed. Set `"all"` for every target path, or `"directives"` for the conservative gate.
 - **Analysis**: Matching files use `analyzeFileAsync` from `@nudojs/service` to run type inference.
 - **Refinement gate**: Matching files also pass through the Abs refinement gate (`checkSource` from `@nudojs/core`): `nudo:constraint-violated`, `nudo:assign-mismatch`, and `nudo:arg-structure` issues are merged into the same diagnostics pipeline and reported alongside evaluator diagnostics.
 - **Caching**: Analysis results are cached per file. The cache is cleared at `buildStart`.

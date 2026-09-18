@@ -50,6 +50,23 @@ describe("shouldAnalyzeFile", () => {
     expect(shouldAnalyzeFile("/proj/a.js", "function f(){}", exportsCfg)).toBe(false);
   });
 
+  it("mode=exports: comment/string mention of export is not an export", () => {
+    expect(shouldAnalyzeFile("/proj/a.js", "// export later\nfunction f(){}", exportsCfg)).toBe(
+      false,
+    );
+    expect(shouldAnalyzeFile("/proj/a.js", "/* export x */\nfunction f(){}", exportsCfg)).toBe(
+      false,
+    );
+    expect(shouldAnalyzeFile("/proj/a.js", 'const s = "export";\nfunction f(){}', exportsCfg)).toBe(
+      false,
+    );
+    expect(shouldAnalyzeFile("/proj/a.js", "export function f(){}", exportsCfg)).toBe(true);
+    expect(shouldAnalyzeFile("/proj/a.js", "export default function f(){}", exportsCfg)).toBe(true);
+    expect(shouldAnalyzeFile("/proj/a.js", "module.exports = function f(){}", exportsCfg)).toBe(
+      true,
+    );
+  });
+
   it("mode=exports: sidecar presence without export in source", () => {
     const dir = tmpProject({ name: "fx", nudo: { analysis: { mode: "exports" } } });
     const src = join(dir, "lib.js");

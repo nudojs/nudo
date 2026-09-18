@@ -65,4 +65,4 @@ export default defineConfig({
 });
 ```
 
-该插件会在构建过程中分析带有 `@nudo:` 指令的文件，并将 Nudo 诊断——求值器问题加精化门禁违例（`nudo:constraint-violated`、`nudo:assign-mismatch`、`nudo:arg-structure`）——报告为构建警告；设置 `failOnError` 后变为构建错误。参见 [Vite 插件指南](../guides/vite-plugin.md)。
+构建过程中，插件按 `nudo.analysis.mode` 筛选文件（出厂默认 `"exports"`：含 `@nudo:*` / `export` / 侧车），并将 Nudo 诊断——求值器问题加精化门禁违例（`nudo:constraint-violated`、`nudo:assign-mismatch`、`nudo:arg-structure`）——报告为构建警告；设置 `failOnError` 后变为构建错误。参见 [Vite 插件指南](../guides/vite-plugin.md)。

@@ -55,14 +55,24 @@ export function hasNudoDirectives(source: string): boolean {
   return /@nudo:(case|mock|pure|skip|sample|refine|interface|import|env|mock-module|as|replace)\b/.test(source);
 }
 
+/** 去掉注释与字符串字面量，避免 `// export …` 等散文触发 exports 门禁 */
+function stripCommentsAndStrings(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/\/\/[^\n]*/g, " ")
+    .replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`/g, '""');
+}
+
 function hasExport(source: string): boolean {
   // 与 core localNamedExports 的 CJS 面对齐：exports.x / exports["x"] /
   // module.exports.x / module.exports["x"] / Object.assign(exports
+  // 先剥注释/字符串：`// export` 不是导出。
+  const s = stripCommentsAndStrings(source);
   return (
-    /\bexport\b/.test(source) ||
-    /\bmodule\.exports\b/.test(source) ||
-    /\bexports\s*[.[]/.test(source) ||
-    /Object\.assign\s*\(\s*(module\.)?exports\b/.test(source)
+    /(^|[\s;}])export\b/.test(s) ||
+    /\bmodule\.exports\b/.test(s) ||
+    /\bexports\s*[.[]/.test(s) ||
+    /Object\.assign\s*\(\s*(module\.)?exports\b/.test(s)
   );
 }
 

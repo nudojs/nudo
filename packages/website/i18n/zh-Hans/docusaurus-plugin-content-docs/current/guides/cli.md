@@ -360,6 +360,8 @@ nudo check src/broken.js
 
 interface 产品：逐函数精化契约与来源分层。无侧车无注解时，每个导出也因其调用点推断获得**隐式**（implicit）接口；侧车绑定与 `@nudo:refine` 提升为**手写**（handwritten）；`--emit` 固化段显示为**生成**（generated）。
 
+**class / 别名侧车键：** 导出 class 的实例方法绑定为 `Class.method` / `Class_method`（constructor、static、get/set 不绑）。`export { Local as Public }` 时分析与侧车使用**本地声明名**（`Local`、`Local.method`）——`Public` 只是对外 export 名，不是契约键。
+
 ```bash
 nudo interface [paths...]       # 只打印，永不写盘
 nudo interface --emit <file> --fn <name>   # 固化推断域

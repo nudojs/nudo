@@ -68,4 +68,4 @@ export default defineConfig({
 });
 ```
 
-The plugin analyzes files with `@nudo:` directives during the build and reports Nudo diagnostics — evaluator issues plus refinement-gate violations (`nudo:constraint-violated`, `nudo:assign-mismatch`, `nudo:arg-structure`) — as build warnings, or as errors with `failOnError`. See the [Vite plugin guide](../guides/vite-plugin.md).
+During the build the plugin analyzes files that pass `nudo.analysis.mode` (shipped default `"exports"`: `@nudo:*`, `export`, or a sidecar) and reports Nudo diagnostics — evaluator issues plus refinement-gate violations (`nudo:constraint-violated`, `nudo:assign-mismatch`, `nudo:arg-structure`) — as build warnings, or as errors with `failOnError`. See the [Vite plugin guide](../guides/vite-plugin.md).
