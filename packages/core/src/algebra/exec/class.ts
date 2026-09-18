@@ -6,7 +6,7 @@
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, strLit } from "../abs.ts";
 import { objOf, joinAbs } from "../objects.ts";
-import { $get, $set, asAbsVal, namespaceNameOf, $regex } from "./runtime.ts";
+import { $get, $set, asAbsVal, namespaceNameOf, $regex, $arrMutContainer } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl } from "../abs-fn.ts";
 import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod } from "../builtins.ts";
@@ -430,25 +430,27 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   if (method === "includes") {
     return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
   }
-  // C1.4：push 返回新 tuple/arr（transpile 对标识符接收者重绑）
-  if (method === "push") {
-    const v = args[0] ? (asAbs(args[0]) ?? unknown) : undefAbs();
-    if (shape.k === "tuple") {
-      return abs(
-        { k: "tuple", elements: [...shape.elements, v] },
-        undefined,
-        undefined,
-        confJoin(arr.conf, v.conf),
-      );
-    }
-    const el = joinAbs(shape.element, v);
-    return abs({ k: "arr", element: el }, undefined, undefined, confJoin(arr.conf, v.conf));
+  // C1.4：表达式位置返回 **JS 语义值**；语句重绑走 $arrMutContainer（容器）
+  if (method === "push" || method === "unshift") {
+    // Abs 设计语言：与语句重绑一致时 push/unshift 表达式也给出新容器
+    // （长度未建模）；更紧的 length 可后续补
+    return $arrMutContainer(arr, method, args);
   }
-  if (method === "at" || method === "pop" || method === "shift") {
+  if (method === "pop") {
+    if (shape.k === "tuple") {
+      return shape.elements.length > 0
+        ? (shape.elements[shape.elements.length - 1] ?? unknown)
+        : undefAbs();
+    }
+    if (shape.k === "arr") return joinAbs(shape.element, undefAbs());
+  }
+  if (method === "shift" || method === "at") {
     if (shape.k === "tuple" && shape.elements.length > 0) {
       return shape.elements[0] ?? unknown;
     }
-    if (shape.k === "arr") return shape.element;
+    if (shape.k === "arr") {
+      return method === "at" ? shape.element : joinAbs(shape.element, undefAbs());
+    }
   }
   return undefined;
 }

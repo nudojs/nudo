@@ -299,12 +299,15 @@ export const add2 = fn({ x: number().lt(99) });
     const { loadModule } = makeFiles({
       "/t/add.nudo.js": `export default fn({ x: number().int() });`,
     });
-    // C4.4：default 进导出表；侧车 export default fn(…) 可绑
+    // C4.4：default 进导出表；本地名 add2 也登记（check/scan 按本地名消费）
     expect(localNamedExports(src).has("default")).toBe(true);
-    expect(localNamedExports(src).has("add2")).toBe(false); // 只导出 default
+    expect(localNamedExports(src).has("add2")).toBe(true);
     const r = effectiveInterface(src, "default", { loadModule, fromFile: "/t/add.js" });
     expect(r).toBeDefined();
     expect(formatConstraint(r!.params[0]!.constraint)).toBe("number().int()");
+    // 生产路径按本地声明名查：同样能绑上
+    const byLocal = effectiveInterface(src, "add2", { loadModule, fromFile: "/t/add.js" });
+    expect(byLocal).toBeDefined();
   });
 
   it("does not execute transitive sidecar import into node_modules", () => {

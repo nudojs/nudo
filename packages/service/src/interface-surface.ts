@@ -38,7 +38,36 @@ import {
   interfaceConfig,
   diskCacheRoot,
 } from "./evaluator/config.ts";
-import { DiskCache, ifaceCacheKey } from "./disk-cache.ts";
+import { DiskCache, ifaceCacheKey, extractNudoImportSpecs } from "./disk-cache.ts";
+
+/** @nudo:import 依赖内容（传递）：iface 缓存键维度 */
+function collectDepContents(
+  filePath: string,
+  source: string,
+): Array<{ path: string; content: string | null }> {
+  const dir = dirname(filePath);
+  const seen = new Set<string>();
+  const out: Array<{ path: string; content: string | null }> = [];
+  const queue = extractNudoImportSpecs(source).map((spec) => resolve(dir, spec));
+  while (queue.length > 0) {
+    const dep = queue.shift()!;
+    if (seen.has(dep)) continue;
+    seen.add(dep);
+    let content: string | null = null;
+    try {
+      if (existsSync(dep)) {
+        content = readFileSync(dep, "utf-8");
+        for (const spec of extractNudoImportSpecs(content)) {
+          queue.push(resolve(dirname(dep), spec));
+        }
+      }
+    } catch {
+      content = null;
+    }
+    out.push({ path: dep, content });
+  }
+  return out;
+}
 
 export type InterfaceSurfaceEntry = {
   fn: string;
@@ -161,10 +190,12 @@ export async function interfaceSurface(
       } catch {
         sidecarSource = undefined;
       }
+      const depContents = collectDepContents(abs, source);
       ifaceKey = ifaceCacheKey(abs, source, {
         autoBind: autoBind !== false,
         projectDir: proj?.projectDir,
         sidecarSource,
+        depContents,
       });
       cachedTable = disk.get<IfaceTableJson>(ifaceKey);
     }

@@ -77,7 +77,8 @@ function viteDiagnosticsLevel(id: string): DiagnosticsLevel {
   return "default";
 }
 
-const DEFAULT_INCLUDE = ["**/*.js", "**/*.mjs", "**/*.ts", "**/*.mts"];
+/** 与 isNudoTargetPath 对齐（.mts 当前不是分析目标） */
+const DEFAULT_INCLUDE = ["**/*.js", "**/*.mjs", "**/*.cjs", "**/*.ts", "**/*.cts"];
 const DEFAULT_EXCLUDE = ["**/node_modules/**", "**/*.d.ts"];
 
 type Matcher = (id: string) => boolean;

@@ -25,7 +25,7 @@ import nudo from 'vite-plugin-nudo'
 export default {
   plugins: [
     nudo({
-      include: '**/*.js',       // default: js/mjs/ts/mts
+      include: '**/*.js',       // default: Default include: `.js` / `.mjs` / `.cjs` / `.ts` / `.cts` (targets accepted by `isNudoTargetPath`; `.mts` is not an analysis target today).
       exclude: '**/node_modules/**', // default
       failOnError: false,       // default — contract errors warn, do not fail the build
     }),

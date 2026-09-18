@@ -3,6 +3,7 @@
  * 与 AST 解释器语义同构；TypeValue 不再是求值载体。
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { Abs } from "../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, unknown, type Confidence } from "../abs.ts";
 import { absFunction } from "../abs-fn.ts";
@@ -185,14 +186,59 @@ function undef(): Abs {
 
 /**
  * if：两侧都探索（抽象条件），具体条件短路。
+ * 循环/函数体内 early-return：抽象分支把 NudoReturn 记入 loop-exit
+ * 侧信道并让另一侧继续，避免只保留「先跑完的那一侧」而低估结果域。
  */
+const loopExitsAls = new AsyncLocalStorage<Abs[]>();
+
+/** 函数求值作用域：收集抽象分支上的 early-return 值，结束时 join */
+export function runWithLoopExits<T>(body: () => T): T {
+  return loopExitsAls.run([], body);
+}
+
+export function takeLoopExits(): Abs[] {
+  return loopExitsAls.getStore() ?? [];
+}
+
+type ForkArm =
+  | { kind: "val"; v: Abs }
+  | { kind: "ret"; v: Abs };
+
+function runForkArm(arm: () => Abs, exits: Abs[] | undefined): ForkArm {
+  try {
+    return { kind: "val", v: asAbsVal(arm()) };
+  } catch (e) {
+    if (isNudoReturn(e)) {
+      exits?.push(e.absValue);
+      return { kind: "ret", v: e.absValue };
+    }
+    throw e;
+  }
+}
+
 export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs {
   if (isDefinitelyTrue(test)) return asAbsVal(consequent());
   if (isDefinitelyFalse(test)) return alternate ? asAbsVal(alternate()) : undef();
 
-  const a = asAbsVal(consequent());
-  const b = alternate ? asAbsVal(alternate()) : undef();
-  return joinAbs(a, b);
+  const exits = loopExitsAls.getStore();
+  const a = runForkArm(consequent, exits);
+  const b: ForkArm = alternate
+    ? runForkArm(alternate, exits)
+    : { kind: "val", v: undef() };
+
+  if (a.kind === "ret" && b.kind === "ret") {
+    throw new NudoReturn(joinAbs(a.v, b.v));
+  }
+  if (a.kind === "ret") {
+    // 一侧 early-return（已记入 exits），另一侧继续走函数后续路径
+    if (!exits) throw new NudoReturn(a.v);
+    return b.kind === "val" ? b.v : undef();
+  }
+  if (b.kind === "ret") {
+    if (!exits) throw new NudoReturn(b.v);
+    return a.v;
+  }
+  return joinAbs(a.v, b.v);
 }
 
 export const DEFAULT_MAX_LOOP_ITERS = 8;
@@ -289,6 +335,112 @@ function tupleOrWiden(els: Abs[], conf: Confidence): Abs {
 /** 数组字面量 → ≤cap tuple（逐元素精确）/ >cap arr；策略与 ast-eval 同源（containers.ts） */
 export function $arr(items: Abs[]): Abs {
   return tupleOrWiden(items.map(asAbsVal), "exact");
+}
+
+const ARR_MUTATORS = new Set([
+  "push",
+  "unshift",
+  "pop",
+  "shift",
+  "splice",
+  "reverse",
+  "sort",
+]);
+
+export function isArrMutator(name: string): boolean {
+  return ARR_MUTATORS.has(name);
+}
+
+/**
+ * C1.4 语句重绑：返回**变更后容器** Abs（不是 JS 返回值）。
+ * `a.pop()` 语句应把 `a` 绑成去掉末元的 tuple，而不是被移除的元素。
+ */
+export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
+  const shape = arr.shape;
+  if (shape.k !== "tuple" && shape.k !== "arr") return arr;
+  const vals = args.map((a) => asAbsVal(a));
+  const asArrEl = (els: Abs[]): Abs =>
+    els.length > 0 ? els.reduce((x, y) => joinAbs(x, y)) : unknown;
+
+  if (method === "push" || method === "unshift") {
+    if (shape.k === "tuple") {
+      const els =
+        method === "push"
+          ? [...shape.elements, ...vals]
+          : [...vals, ...shape.elements];
+      const conf = vals.reduce(
+        (acc, v) => confJoin(acc, v.conf),
+        arr.conf as Confidence,
+      );
+      return abs(
+        { k: "tuple", elements: els },
+        undefined,
+        undefined,
+        conf,
+      );
+    }
+    const el = vals.reduce((acc, v) => joinAbs(acc, v), shape.element);
+    return abs({ k: "arr", element: el }, undefined, undefined, confJoin(arr.conf, "path"));
+  }
+  if (method === "pop") {
+    if (shape.k === "tuple") {
+      if (shape.elements.length === 0) return arr;
+      return abs(
+        { k: "tuple", elements: shape.elements.slice(0, -1) },
+        undefined,
+        undefined,
+        arr.conf,
+      );
+    }
+    return arr;
+  }
+  if (method === "shift") {
+    if (shape.k === "tuple") {
+      if (shape.elements.length === 0) return arr;
+      return abs(
+        { k: "tuple", elements: shape.elements.slice(1) },
+        undefined,
+        undefined,
+        arr.conf,
+      );
+    }
+    return arr;
+  }
+  if (method === "splice") {
+    if (shape.k === "tuple") {
+      return abs(
+        { k: "arr", element: asArrEl(shape.elements) },
+        undefined,
+        undefined,
+        confJoin(arr.conf, "path"),
+      );
+    }
+    return arr;
+  }
+  if (method === "reverse") {
+    if (shape.k === "tuple") {
+      return abs(
+        { k: "tuple", elements: [...shape.elements].reverse() },
+        undefined,
+        undefined,
+        arr.conf,
+      );
+    }
+    return arr;
+  }
+  if (method === "sort") {
+    // 顺序未建模：结构保留（元素多重集不变）；非同质 tuple 降为 arr 更安全
+    if (shape.k === "tuple") {
+      return abs(
+        { k: "tuple", elements: [...shape.elements] },
+        undefined,
+        undefined,
+        confJoin(arr.conf, "path"),
+      );
+    }
+    return arr;
+  }
+  return arr;
 }
 
 /** 下标读 a[i]；字面量 i 走 tuple 精确投影，否则并所有元素；string[i] → 单字符 */
@@ -665,6 +817,11 @@ export function $loopReturn(v: Abs): never {
 
 export function isNudoReturn(e: unknown): e is NudoReturn {
   return e instanceof NudoReturn;
+}
+
+/** catch 转译辅助：控制流信号透传（生成代码只注入 `$` 前缀符号） */
+export function $rethrowIfNudoReturn(e: unknown): void {
+  if (isNudoReturn(e)) throw e;
 }
 
 // --- throws ---

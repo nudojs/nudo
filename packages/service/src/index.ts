@@ -122,6 +122,7 @@ export {
   ifaceCacheKey,
   sha256Hex,
   relativizePath,
+  extractNudoImportSpecs,
   ANALYSIS_ABI,
   type DiskCacheOptions,
 } from "./disk-cache.ts";

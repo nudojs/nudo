@@ -188,13 +188,15 @@ export function localNamedExports(source: string): Set<string> {
         for (const spec of specs) {
           if (spec.type !== "ExportSpecifier") continue;
           const name = identName(spec.exported as NodeLike);
-          // C4.4：`export { local as default }` 登记 default
           if (!name) continue;
+          const localName = identName(spec.local as NodeLike);
+          // C4.4：`export { local as default }` 同时登记 default 与本地名
+          // （check/scan/LSP 按本地声明名消费；侧车键可以是 default）
           if (name === "default") {
             out.add("default");
+            if (localName && !importedLocalNames.has(localName)) out.add(localName);
             continue;
           }
-          const localName = identName(spec.local as NodeLike);
           if (localName && importedLocalNames.has(localName)) continue;
           out.add(name);
         }
@@ -391,6 +393,20 @@ type SidecarBinding =
     }
   | { ok: false };
 
+/** 本地声明名是否以 default 形态导出（C4.4：`export { x as default }` / `export default function x`） */
+function isDefaultExportLocal(source: string, localName: string): boolean {
+  const reList = new RegExp(
+    `export\\s*\\{[^}]*\\b${localName}\\s+as\\s+default\\b[^}]*\\}`,
+    "m",
+  );
+  const reDefaultFn = new RegExp(
+    `export\\s+default\\s+(?:async\\s+)?function\\s+${localName}\\b`,
+    "m",
+  );
+  const reDefaultId = new RegExp(`export\\s+default\\s+${localName}\\b`, "m");
+  return reList.test(source) || reDefaultFn.test(source) || reDefaultId.test(source);
+}
+
 function loadSidecarBinding(
   source: string,
   fnName: string,
@@ -421,7 +437,11 @@ function loadSidecarBinding(
   // C4.2 绑定键解析：
   // 1. 平铺 `Class.method` / `Class_method`
   // 2. 嵌套对象 `export const Class = { method: fn(…) }`
+  // 3. C4.4：`export { local as default }` + 侧车 `export default`
   let binding: unknown = exports[fnName];
+  if (binding === undefined && exports.default !== undefined && isDefaultExportLocal(source, fnName)) {
+    binding = exports.default;
+  }
   if (binding === undefined && fnName.includes(".")) {
     const [cls, method] = fnName.split(".", 2);
     binding = exports[`${cls}_${method}`];

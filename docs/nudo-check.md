@@ -27,8 +27,12 @@ pnpm run check path/to/file.js
 | `nudo:case-inconsistency` | **`@nudo:case` 见证 ⊭ refine** |
 | `nudo:interface-param-mismatch` | 手写契约参数名不在形参表面（C4.5；默认参名/rest 裸名/解构绑定名合法） |
 | `nudo:interface-conflict` | 手写契约合取不可满足（常数界交叉等） |
+| `nudo:interface-name-clash` | 侧车导出名与源码导出冲突 |
+| `nudo:interface-underivable` | 手写契约无法从源码推导 |
 | `nudo:interface-load` / `nudo:interface-cycle` | 侧车加载失败 / 侧车环 |
 | `nudo:interface-domain-exceeds` | 跨文件调用证据 ⊄ 手写契约 |
+| `nudo:interface-name-clash` | 侧车导出名与源码导出冲突 |
+| `nudo:interface-underivable` | 手写契约无法从源码推导（underivable） |
 | `nudo:interface-drift` | `@generated` 段 ≠ 今日重算（warning，不挡 exit） |
 | `nudo:no-signature` | 无法归纳符号 Abs |
 | `nudo:opaque-result` / `nudo:eval-error` | 求值不透明 / 求值抛错 |

@@ -367,13 +367,8 @@ export async function draftInterface(
   opts: InterfaceDraftOpts = {},
 ): Promise<InterfaceDraftResult> {
   const source = readFileSync(filePath, "utf-8");
-  const projectAutoBind = interfaceConfig(
-    findProjectConfig(dirname(filePath))?.config,
-  ).autoBind;
-  // Explicit tool param wins: agent/CLI `autoBind: true` may draft with ambient
-  // context even when project autoBind=false (draft is a review artifact, not
-  // ambient enforcement). Undefined opts fall through to the project default.
-  const autoBind = opts.autoBind !== undefined ? opts.autoBind : projectAutoBind;
+  const projectConfig = findProjectConfig(dirname(filePath));
+  const projectAutoBind = interfaceConfig(projectConfig?.config).autoBind;
   const loadModule = opts.loadModule ?? defaultLoadModule;
   const sidecarPath = sidecarPathOf(filePath);
   const wantBody = opts.bodyAccesses !== false;
@@ -405,10 +400,12 @@ export async function draftInterface(
       continue;
     }
 
+    // draft 探测「契约是否已存在」：不依赖 ambient autoBind 执法开关。
+    // autoBind=false 项目下磁盘侧车仍应 skip，避免草稿覆盖手写契约。
     const eff = effectiveInterface(source, fn.name, {
       loadModule,
       fromFile: filePath,
-      ...(autoBind === false ? { autoBind: false } : {}),
+      autoBind: true,
     });
     if (eff?.source === "handwritten") {
       entries.push({

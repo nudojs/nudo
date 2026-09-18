@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, develop, ci]
   pull_request:
-    branches: [main, ci]
+    branches: [main, develop, ci]
 
 permissions:
   contents: read
@@ -114,6 +114,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/coverage-final.json
           flags: unittests
+          fail_ci_if_error: false
 
   # B1: accuracy/perf gate vs benchmark/baseline.json
   # runner noise is absorbed by the 3.0x threshold in gate.js

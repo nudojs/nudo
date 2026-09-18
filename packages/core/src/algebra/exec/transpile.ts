@@ -170,7 +170,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -448,20 +448,28 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       return `${pad}$throw(${arg});`;
     }
     case "ExpressionStatement": {
-      // C1.4：数组可变方法对标识符接收者重绑（push 返回新容器）
+      // C1.4：数组 mutator 语句重绑到**变更后容器**（$arrMutContainer），
+      // 不得绑到 JS 返回值（pop 返回元素，会污染 receiver Abs）
       const expr = stmt.expression as Expression;
       if (
         expr.type === "CallExpression" &&
         expr.callee.type === "MemberExpression" &&
         !expr.callee.computed &&
         expr.callee.object.type === "Identifier" &&
-        expr.callee.property.type === "Identifier" &&
-        ["push", "unshift", "splice", "pop", "shift", "reverse", "sort"].includes(
-          (expr.callee.property as { name: string }).name,
-        )
+        expr.callee.property.type === "Identifier"
       ) {
-        const recv = (expr.callee.object as { name: string }).name;
-        return `${pad}${recv} = ${transpileExpression(expr, opts)};`;
+        const methodName = (expr.callee.property as { name: string }).name;
+        if (
+          ["push", "unshift", "splice", "pop", "shift", "reverse", "sort"].includes(methodName)
+        ) {
+          const recv = (expr.callee.object as { name: string }).name;
+          const argSrcs = expr.arguments
+            .map((a) =>
+              a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts),
+            )
+            .join(", ");
+          return `${pad}${recv} = $arrMutContainer(${recv}, ${JSON.stringify(methodName)}, [${argSrcs}]);`;
+        }
       }
       return `${pad}${transpileExpression(stmt.expression, opts)};`;
     }
@@ -625,6 +633,8 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
                 .join("\n")
             : transpileStatement(stmt.handler.body, depth + 1, opts);
         lines.push(`${pad}catch (${catchTmp}) {`);
+        // 控制流信号：NudoReturn 不是 catch 绑定，必须透传
+        lines.push(`${indent(depth + 1)}$rethrowIfNudoReturn(${catchTmp});`);
         lines.push(`${indent(depth + 1)}const ${param} = $catchVal(${catchTmp});`);
         lines.push(catchBody);
         lines.push(`${pad}}`);

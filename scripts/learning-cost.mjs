@@ -30,12 +30,12 @@ const SAMPLE = `export function double(x) {
 double(21);
 `;
 
-const SIDECAR_BAD = `import { fn, number } from "@nudojs/core";
+const SIDECAR_BAD = `import { fn, number, string } from "@nudojs/core";
 
 export const double = fn({ x: number().gt(0) }, string());
 `;
 
-const SIDECAR_OK = `import { fn, number } from "@nudojs/core";
+const SIDECAR_OK = `import { fn, number, string } from "@nudojs/core";
 
 export const double = fn({ x: number().gt(0) }, number().gt(40));
 `;

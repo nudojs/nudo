@@ -994,6 +994,8 @@ const agentToolDeps: AgentToolDeps = {
     const doc = documents.all().find((d) => uriToFilePath(d.uri) === filePath);
     return doc ? { text: doc.getText() } : undefined;
   },
+  // E5：与 validate/hover 同一 buffer-aware 侧车装载，未保存 *.nudo.js 对 agent 可见
+  loadModule: activeLoadModule,
   get workspaceRoots() {
     return workspaceRoots;
   },

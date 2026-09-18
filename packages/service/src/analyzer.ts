@@ -701,7 +701,11 @@ function locFromCallLoc(loc: { line: number; column: number } | undefined): Sour
  * evaluator; `import * as ns` member calls go through the method path and
  * never reach this synthesis.
  */
-function synthesizeExternalFunctions(records: CallRecord[], currentFile: string): FunctionAnalysis[] {
+function synthesizeExternalFunctions(
+  records: CallRecord[],
+  currentFile: string,
+  callSiteBudget: number = DEFAULT_CALLSITE_BUDGET,
+): FunctionAnalysis[] {
   const groups = new Map<string, { module: string; exportName: string; records: CallRecord[] }>();
   for (const rec of records) {
     if (!rec.targetModule || !rec.targetExport) continue;
@@ -731,7 +735,7 @@ function synthesizeExternalFunctions(records: CallRecord[], currentFile: string)
     // The symbolic aggregate cannot re-evaluate the foreign
     // function (its AST belongs to another file's analysis), so it unions the
     // observed argument/result/throws Abs of the remaining records instead.
-    const precise = deduped.slice(0, DEFAULT_CALLSITE_BUDGET);
+    const precise = deduped.slice(0, callSiteBudget);
     for (const rec of precise) {
       analysis.cases.push({
         name: `call@L${rec.callLoc?.line ?? 0}`,
@@ -741,7 +745,7 @@ function synthesizeExternalFunctions(records: CallRecord[], currentFile: string)
         source: "callsite",
       });
     }
-    const remaining = deduped.slice(DEFAULT_CALLSITE_BUDGET);
+    const remaining = deduped.slice(callSiteBudget);
     if (remaining.length > 0) {
       const symArgsAbs = Array.from({ length: arity }, (_, i) =>
         // 缺参按真实 JS 语义 widen 成 undefined 而非 unknown——可选参守卫
@@ -1910,7 +1914,11 @@ function analyzeFileUncachedInner(filePath: string, source: string, activeCases?
     buildNodeTypeMap(ast, globalEnv, nodeAbsMap);
   }
 
-  const externalFunctions = synthesizeExternalFunctions(callRecords, filePath);
+  const externalFunctions = synthesizeExternalFunctions(
+    callRecords,
+    filePath,
+    analysisConfig(projectConfig?.config).callSiteBudget,
+  );
 
   return {
     functions: functionResults,

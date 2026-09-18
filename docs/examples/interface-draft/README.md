@@ -25,4 +25,4 @@ pnpm run migrate-demo          # bash scripts/migrate-demo.sh
 pnpm run migrate-demo -- --keep
 ```
 
-指南：[`guides/migrating-js.md`](../../packages/website/docs/guides/migrating-js.md)。
+指南：[`guides/migrating-js.md`](../../../packages/website/docs/guides/migrating-js.md)。

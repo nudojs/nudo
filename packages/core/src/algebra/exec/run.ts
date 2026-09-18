@@ -13,12 +13,18 @@ import * as classRt from "./class.ts";
 import * as callsRt from "./calls.ts";
 import type { Abs } from "../abs.ts";
 import { never, unknown } from "../abs.ts";
+import { joinAbs } from "../objects.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
 import { transpile } from "./transpile.ts";
 import { $call } from "./call.ts";
-import { isNudoThrow, isNudoReturn } from "./runtime.ts";
+import { isNudoThrow, isNudoReturn, runWithLoopExits, takeLoopExits } from "./runtime.ts";
 
 const rtAll = { ...runtime, ...classRt, ...callsRt } as Record<string, unknown>;
+// ensure control-flow helpers are present even if a re-export layer omits them
+rtAll.isNudoReturn = isNudoReturn;
+rtAll.isNudoThrow = isNudoThrow;
+rtAll.runWithLoopExits = runWithLoopExits;
+rtAll.takeLoopExits = takeLoopExits;
 
 export type RunTranspiledOptions = {
   /** 说明符 → 依赖导出（host 模块图或 runTranspiled 产物） */
@@ -314,40 +320,51 @@ export function callTranspiledExportFull(
 ): TranspiledCallResult {
   const fn = exports[name];
   if (typeof fn === "function") {
-    try {
-      const r = (fn as (...a: Abs[]) => unknown)(...args);
-      if (!isAbsVal(r)) return { result: unknown, throws: never };
-      return { result: r, throws: never };
-    } catch (e) {
-      // C2.1：循环体 $loopReturn → 函数返回值
-      if (isNudoReturn(e)) {
-        return { result: e.absValue, throws: never };
-      }
-      if (isNudoThrow(e)) {
-        return { result: never, throws: e.absValue };
-      }
-      return { result: unknown, throws: never };
-    }
-  }
-  if (isAbsVal(fn)) {
-    // export const f = (x) => …：导出值是一等 fn Abs —— 按调用语义 apply
-    if (fn.shape.k === "fn") {
+    return runWithLoopExits(() => {
       try {
-        const r = $call(fn, args);
-        return { result: r, throws: never };
+        const r = (fn as (...a: Abs[]) => unknown)(...args);
+        if (!isAbsVal(r)) return { result: unknown, throws: never };
+        // 抽象分支 early-return 记入 exits，与正常出口 join
+        return { result: joinLoopExits(r), throws: never };
       } catch (e) {
+        // C2.1：循环体 $loopReturn → 函数返回值（与 exits join）
         if (isNudoReturn(e)) {
-          return { result: e.absValue, throws: never };
+          return { result: joinLoopExits(e.absValue), throws: never };
         }
         if (isNudoThrow(e)) {
           return { result: never, throws: e.absValue };
         }
         return { result: unknown, throws: never };
       }
+    });
+  }
+  if (isAbsVal(fn)) {
+    // export const f = (x) => …：导出值是一等 fn Abs —— 按调用语义 apply
+    if (fn.shape.k === "fn") {
+      return runWithLoopExits(() => {
+        try {
+          const r = $call(fn, args);
+          return { result: joinLoopExits(r), throws: never };
+        } catch (e) {
+          if (isNudoReturn(e)) {
+            return { result: joinLoopExits(e.absValue), throws: never };
+          }
+          if (isNudoThrow(e)) {
+            return { result: never, throws: e.absValue };
+          }
+          return { result: unknown, throws: never };
+        }
+      });
     }
     return { result: fn, throws: never };
   }
   return { result: unknown, throws: never };
+}
+
+function joinLoopExits(normal: Abs): Abs {
+  const exits = takeLoopExits();
+  if (exits.length === 0) return normal;
+  return exits.reduce((acc, x) => joinAbs(acc, x), normal);
 }
 
 /** 调用 runTranspiled 导出（仅结果） */

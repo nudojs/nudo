@@ -29,7 +29,7 @@ Declared on `initialize` (see [@nudojs/lsp API](../api/lsp.md)):
 | Custom requests | `nudo/…` | Same handlers as commands (E5); slash-form is the protocol contract |
 | Pull diagnostics | `diagnosticProvider` | `interFileDependencies: false` |
 
-**File detection (A1/A2):** targets are `.js` / `.mjs` / `.ts`. Directive-only mode is the conservative default in some docs; project-wide analysis can be opened via `package.json#nudo.analysis.mode` (`exports` | `all`). CodeLens interface tier uses the broader target path even when diagnostics stay quiet for directive-less files.
+**File detection (A1/A2):** targets are `.js` / `.mjs` / `.ts`. Shipped default is `nudo.analysis.mode = "directives"` — unannotated `.js` is **not** analyzed by the IDE until the project sets `"exports"` or `"all"` in `package.json#nudo.analysis`. CodeLens interface tier uses the broader target path even when diagnostics stay quiet for directive-less files.
 
 ## Client support matrix
 

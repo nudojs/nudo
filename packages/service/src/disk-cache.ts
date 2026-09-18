@@ -1,6 +1,6 @@
 /**
  * 磁盘内容寻址缓存（B3，design-persistent-cache.md L1 骨架）。
- * - 键：sha256(analysisAbi + relative paths + content hashes)
+ * - 键：sha256(analysisAbi + relative paths + content hashes + import deps)
  * - fail-open：读写失败/版本不符 → miss，绝不 throw
  * - 不存 Abs；只存可 JSON 再执行投影（如 CheckJson）
  */
@@ -9,8 +9,8 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { join, dirname, relative, sep } from "node:path";
 
-/** 分析 ABI：语义变更时抬版本，整层 miss */
-export const ANALYSIS_ABI = "nudo-check-cache-v1";
+/** 分析 ABI：语义变更时抬版本，整层 miss（含缓存键维度扩展） */
+export const ANALYSIS_ABI = "nudo-check-cache-v2";
 
 export type DiskCacheOptions = {
   /** 缓存根目录；undefined = 禁用 */
@@ -57,7 +57,10 @@ export class DiskCache {
   }
 
   private pathFor(key: string): string {
-    // 两级前缀摊平目录
+    // 两级前缀摊平目录；key 必须是 hex sha，拒绝路径穿越
+    if (!/^[a-f0-9]{16,128}$/i.test(key)) {
+      throw new Error("DiskCache key must be a hex digest");
+    }
     return join(this.root!, this.ns, key.slice(0, 2), `${key}.json`);
   }
 
@@ -97,16 +100,24 @@ export class DiskCache {
 }
 
 /**
- * check 报告键：abi + 相对路径 + 源码 sha + autoBind + **侧车 sha**
- * （侧车变更必须 miss，否则 CI 会读到过期契约结论。）
+ * check 报告键：abi + 相对路径 + 源码 sha + autoBind + **侧车 sha** +
+ * **@nudo:import / 传递契约依赖内容 sha**（依赖变更必须 miss）。
  */
 export function checkCacheKey(
   filePath: string,
   source: string,
-  opts: { autoBind: boolean; projectDir?: string; sidecarContent?: string | null },
+  opts: {
+    autoBind: boolean;
+    projectDir?: string;
+    sidecarContent?: string | null;
+    depContents?: Array<{ path: string; content: string | null }>;
+  },
 ): string {
   const rel = relativizePath(filePath, opts.projectDir);
   const sidecarSha = opts.sidecarContent != null ? sha256Hex(opts.sidecarContent) : "nosidecar";
+  const depSeg = (opts.depContents ?? [])
+    .map((d) => `${d.path}\0${d.content != null ? sha256Hex(d.content) : "miss"}`)
+    .join("\n");
   return sha256Hex(
     [
       ANALYSIS_ABI,
@@ -114,15 +125,15 @@ export function checkCacheKey(
       opts.autoBind ? "ab1" : "ab0",
       sha256Hex(source),
       sidecarSha,
+      depSeg,
     ].join("\0"),
   );
 }
 
 /**
  * effectiveInterface 表键（L1 Phase B，design-persistent-cache）。
- * 维度：相对路径 + 源码 sha256 + autoBind + 侧车内容 sha256。
+ * 维度：相对路径 + 源码 sha256 + autoBind + 侧车内容 sha256 + import 依赖。
  * **不含** emit allowlist（白名单不影响契约读取）。
- * autoBind=false 或无侧车时侧车段为常量，避免无谓 miss。
  */
 export function ifaceCacheKey(
   filePath: string,
@@ -132,6 +143,7 @@ export function ifaceCacheKey(
     projectDir?: string;
     /** 侧车源码（已读入）；undefined = 无侧车或 autoBind 关 */
     sidecarSource?: string | undefined;
+    depContents?: Array<{ path: string; content: string | null }>;
   },
 ): string {
   const rel = relativizePath(filePath, opts.projectDir);
@@ -139,6 +151,9 @@ export function ifaceCacheKey(
     opts.autoBind && opts.sidecarSource !== undefined
       ? `sc:${sha256Hex(opts.sidecarSource)}`
       : "sc0";
+  const depSeg = (opts.depContents ?? [])
+    .map((d) => `${d.path}\0${d.content != null ? sha256Hex(d.content) : "miss"}`)
+    .join("\n");
   return sha256Hex(
     [
       ANALYSIS_ABI,
@@ -147,6 +162,18 @@ export function ifaceCacheKey(
       opts.autoBind ? "ab1" : "ab0",
       sha256Hex(source),
       sidecarSeg,
+      depSeg,
     ].join("\0"),
   );
+}
+
+/** 从源码提取 `@nudo:import` / `@nudo:import * as` 的 specifier */
+export function extractNudoImportSpecs(source: string): string[] {
+  const specs = new Set<string>();
+  const named = /@nudo:import\s*\{[^}]*\}\s*from\s*["']([^"']+)["']/g;
+  const ns = /@nudo:import\s+\*\s+as\s+\w+\s+from\s*["']([^"']+)["']/g;
+  let m: RegExpExecArray | null;
+  while ((m = named.exec(source))) specs.add(m[1]!);
+  while ((m = ns.exec(source))) specs.add(m[1]!);
+  return [...specs];
 }

@@ -134,7 +134,7 @@ CLI `nudo check <file>` / `nudo infer <file>` **显式路径始终分析**，
 | 入口 | include/exclude | mode |
 |---|---|---|
 | `nudo check path` | 忽略（点名路径） | 忽略 |
-| `nudo watch src` | 应用 include/exclude | 应用 mode |
+| `nudo watch src` | 应用 include/exclude | **不**应用 mode（与 CLI 目标扫描同规则；mode 只约束 IDE `shouldAnalyzeFile`） |
 | vite-plugin | 应用 include/exclude | 应用 mode；`failOnError` 仍看 severity |
 | LSP validate | 应用 | 应用；默认档从 config 读 |
 

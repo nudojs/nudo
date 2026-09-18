@@ -138,7 +138,7 @@ flowchart TB
 | B3 | **`effectiveInterface` 跨会话缓存落地**（设计 Phase B） | 二次启动契约读取命中磁盘缓存 | design-persistent-cache | [x] |
 | B4 | **polyvariant 预算**：调用点/实例化上限 + 可配置 widen；超限可预测降级 | 400 函数缩放曲线不劣于 tsc LS 同档；超限有可解释 `#widened` | C 系列 | [x] |
 | B5 | **LSP 与 CLI 共享 memo**：避免两套缓存；workspace 级 AnalysisSession | IDE 与 `nudo check` 结果一致且不重复算 | B2, B3 | [~] 未完成；Phase 2 的 B3/B4 已落地，**B5 未** |
-| B6 | **真实 monorepo 基准**：挑 1–2 个中型开源 JS 包全量 check/infer 延迟基线 | 有可复现数字写入 baseline.json | B1 | [x] 跳过 |
+| B6 | **真实 monorepo 基准**：挑 1–2 个中型开源 JS 包全量 check/infer 延迟基线 | 有可复现数字写入 baseline.json | B1 | [-] cancelled：跳过真实 monorepo 基准（非门禁） |
 
 **相关**
 

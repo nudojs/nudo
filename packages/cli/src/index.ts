@@ -23,6 +23,8 @@ import {
   evictAnalysisCachesForFiles,
   formatEmitSummary,
   formatInterfaceSurfaceLine,
+  checkCacheKey,
+  extractNudoImportSpecs,
   type CallRecord,
   type CaseResult,
   type FunctionAnalysis,
@@ -349,6 +351,35 @@ program
  * `nudo:interface-domain-exceeds`（设计 §6：check 门禁的跨文件用穿证据；
  * checkSource 单文件面无注入通道）。
  */
+/** `@nudo:import` 依赖契约内容（含传递）：进 disk cache key */
+function collectNudoDepContents(
+  filePath: string,
+  source: string,
+): Array<{ path: string; content: string | null }> {
+  const dir = dirname(filePath);
+  const seen = new Set<string>();
+  const out: Array<{ path: string; content: string | null }> = [];
+  const queue = extractNudoImportSpecs(source).map((spec) => resolve(dir, spec));
+  while (queue.length > 0) {
+    const dep = queue.shift()!;
+    if (seen.has(dep)) continue;
+    seen.add(dep);
+    let content: string | null = null;
+    try {
+      if (existsSync(dep)) {
+        content = readFileSync(dep, "utf-8");
+        for (const spec of extractNudoImportSpecs(content)) {
+          queue.push(resolve(dirname(dep), spec));
+        }
+      }
+    } catch {
+      content = null;
+    }
+    out.push({ path: dep, content });
+  }
+  return out;
+}
+
 async function runCheck(
   file: string,
   opts: { json?: boolean; callsites?: CallRecord[]; verbose?: boolean } = {},
@@ -385,17 +416,24 @@ async function runCheck(
       sidecarContent = null;
     }
   }
+  // @nudo:import 依赖契约进键（传递一层 .nudo.js）
+  const depContents = collectNudoDepContents(filePath, source);
   const cacheKey = useDisk
     ? checkCacheKey(filePath, source, {
         autoBind,
         projectDir: proj?.projectDir,
         sidecarContent,
+        depContents,
       })
     : undefined;
   const cached = cacheKey ? disk.get<ReturnType<typeof serializeCheckJson>>(cacheKey) : undefined;
+  /** 缓存命中时的 CheckJson 原样（signatures[].abs 已是 formatAbs 字符串） */
+  let cachedJson: ReturnType<typeof serializeCheckJson> | undefined;
   let algebraReport;
   if (cached) {
+    cachedJson = cached;
     // CheckJson → CheckReport 最小回放（issues/ok/summary/signatures display）
+    // abs 本体不在 JSON 里：display/detail 供人类输出；JSON 直接透传 cachedJson
     algebraReport = {
       file: cached.file,
       issues: cached.issues.map((i) => ({
@@ -413,7 +451,7 @@ async function runCheck(
       signatures: cached.signatures.map((s) => ({
         name: s.name,
         params: s.params,
-        // 缓存回放无 Abs 本体：display/detail 供人类/JSON 输出
+        // 占位 Abs：JSON 路径不走这里；人类路径用 display
         abs: { shape: { k: "unknown" as const }, conf: s.conf as never },
         display: s.display,
         detail: s.detail,
@@ -465,8 +503,8 @@ async function runCheck(
   }
 
   if (opts.json) {
-    // 稳定契约：只输出 check JSON
-    console.log(JSON.stringify(serializeCheckJson(algebraReport), null, 2));
+    // 稳定契约：缓存命中直接透传 CheckJson（signatures[].abs 保真）
+    console.log(JSON.stringify(cachedJson ?? serializeCheckJson(algebraReport), null, 2));
   } else {
     // D2：默认人类短报告；--verbose 展开 term/pred/conf
     console.log(formatCheckReport(algebraReport, { verbose: opts.verbose === true }));

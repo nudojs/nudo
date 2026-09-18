@@ -1,6 +1,6 @@
 # Nudo
 
-A type inference engine for JavaScript powered by **abstract interpretation** — execute your code with symbolic type values instead of concrete values, and get precise type information without TypeScript.
+A type inference engine for JavaScript powered by **abstract interpretation** — execute your code with abstract type values (`Abs` = shape × term × pred × conf) instead of concrete values, and get precise type information without TypeScript.
 
 ## Why Nudo?
 
@@ -12,7 +12,7 @@ A type inference engine for JavaScript powered by **abstract interpretation** �
 | Type accuracy | Depends on annotations | Follows actual runtime semantics |
 | Structure without interface | Needs `interface` | Explicit shape contract (`shape({…})`); **no** body-AST slot invention |
 
-Nudo infers types by **running your functions** with symbolic inputs like `T.number` or `T.string`, tracking how values flow through branches, operators, and calls.
+Nudo infers types by **running your functions** with abstract Abs values (number/string/shape constraints), tracking how values flow through branches, operators, and calls.
 
 ## Quick Start
 
@@ -27,7 +27,6 @@ Add directives to your JavaScript functions:
 /**
  * @nudo:case "positive numbers" (5, 3)
  * @nudo:case "negative result" (1, 10)
- * @nudo:case "symbolic" (T.number, T.number)
  */
 function subtract(a, b) {
   return a - b;
@@ -47,9 +46,6 @@ Output:
 
 Case "positive numbers": (5, 3) => 2
 Case "negative result": (1, 10) => -9
-Case "symbolic": (number, number) => number
-
-Combined: number
 ```
 
 Output blocks show the **case headers and `Combined:` lines** — the per-call-site ground truth. A full run also prints `intension:` / `abs:` lines per case; those re-evaluate the function with `unknown` parameters (a generalized signature), and for multi-branch functions they show only the fallback path — which is why they are omitted here.
@@ -134,12 +130,10 @@ This is a monorepo managed with [pnpm workspaces](https://pnpm.io/workspaces).
 ### Dependency Graph
 
 ```
-core
- └─ parser
-     └─ cli
-         └─ service
-             ├─ lsp
-             └─ vite-plugin
+core → parser → service → cli → nudojs
+                 │
+                 ├→ lsp
+                 └→ vite-plugin
 ```
 
 ## Directives
@@ -169,7 +163,7 @@ See [`docs/examples/`](./docs/examples/) for runnable examples.
 ## How It Works
 
 1. **Parse** — Babel parses your `.js` file and extracts `@nudo:` directives
-2. **Execute** — The evaluator runs each function with abstract interpretation, tracking **Abs values** through all code paths (capable files are transpiled and executed directly with Abs values; the TypeValue evaluator is the fallback)
+2. **Execute** — The evaluator runs each function with abstract interpretation, tracking **Abs values** through all code paths (production analysis is Abs-native via B-path transpile+exec / ast-eval; there is no separate TypeValue evaluator)
 3. **Combine** — Results from multiple cases are merged into a unified type via union simplification
 4. **Emit** — Inferred types are displayed or written as `.d.ts` declarations
 
@@ -188,7 +182,7 @@ With `@nudo:refine x positive`, `scale` gets the term `(x + 1)` **and** the deri
 
 ### Type Values — the evaluation IR
 
-TypeValue is the **evaluation IR** (environment bindings, `.d.ts` projection, LSP extensional views) — not a parallel type system; Abs ⇄ TypeValue goes through a lossy bridge. Its kinds:
+TypeValue is **not** the production evaluation IR. Production analysis is Abs-native; extensional TS/Zod/dts projections (`formatShape`, `absToTSType`, `absToZodSchema`) are one-way lossy views of Abs. Historical TypeValue kinds remain only as documentation of the old IR.
 
 | Kind | Represents |
 |---|---|
@@ -209,7 +203,7 @@ TypeValue is the **evaluation IR** (environment bindings, `.d.ts` projection, LS
 
 ### Prerequisites
 
-- To **run the published CLI** (`npm install -g @nudojs/cli`): Node.js >= 23.6（或 22.18 LTS）— packages ship as source `.ts` and run via native type stripping
+- To **run the published CLI** (`npm install -g @nudojs/cli`): Node.js >= 20（packages ship as source `.ts` and run via native type stripping on supported Node）
 - To **develop this repo**: Node.js >= 18 and pnpm 9.1.0 (pinned in `packageManager`)
 
 ### Setup

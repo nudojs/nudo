@@ -80,6 +80,11 @@ export type AgentToolDeps = {
    * （fail-closed，realpath 比较）；undefined = 无 bound（CLI/测试）。
    */
   workspaceRoots?: string[];
+  /**
+   * E5：与 validate/hover 同源的侧车装载（server 注入 buffer-aware loadModule）。
+   * 缺省回落 lspLoadModule 读盘。
+   */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
 };
 
 export function textResult(text: string): AgentToolResult {
@@ -368,7 +373,7 @@ export function checkTool(
     const source = params.source ?? readSource(filePath, deps);
     const autoBind = resolveProjectAutoBind(filePath, params.autoBind);
     const report = checkSource(filePath, source, pTrue, {
-      loadModule: params.loadModule ?? lspLoadModule,
+      loadModule: params.loadModule ?? deps.loadModule ?? lspLoadModule,
       fromFile: filePath,
       ...(autoBind === false ? { autoBind: false } : {}),
     });
@@ -422,7 +427,7 @@ export function hoverTool(
   try {
     const filePath = normalizeFilePath(params.file);
     const source = params.source ?? readSource(filePath, deps);
-    const loadModule = params.loadModule ?? lspLoadModule;
+    const loadModule = params.loadModule ?? deps.loadModule ?? lspLoadModule;
     const autoBind = resolveProjectAutoBind(filePath, params.autoBind);
     const hover = getHoverAtPosition(filePath, source, params.line, params.column, undefined, {
       loadModule,
@@ -707,7 +712,7 @@ export async function interfaceTool(
     // 有效 autoBind = 项目配置 AND 客户端请求（E5 同源 helper）
     const autoBind = resolveProjectAutoBind(filePath, params.autoBind);
     const entries = await interfaceSurface(filePath, {
-      loadModule: params.loadModule ?? lspLoadModule,
+      loadModule: params.loadModule ?? _deps.loadModule ?? lspLoadModule,
       autoBind,
     });
     const selected = params.functionName
@@ -758,8 +763,11 @@ export async function interfaceDraftTool(
     }
     const result = await draftInterface(filePath, {
       ...(params.functionName ? { fnNames: [params.functionName] } : {}),
-      ...(params.loadModule ? { loadModule: params.loadModule } : {}),
-      ...(params.autoBind !== undefined ? { autoBind: params.autoBind } : {}),
+      // E5：与 validate/hover 同源 loadModule（buffer-aware）；客户端 autoBind
+      // 不再用来打开项目关闭项——draft 内部按侧车是否存在探测 handwritten
+      ...(params.loadModule ?? deps.loadModule
+        ? { loadModule: params.loadModule ?? deps.loadModule }
+        : {}),
     });
     const draftRel = sidecarDraftPath(filePath);
     const lines =

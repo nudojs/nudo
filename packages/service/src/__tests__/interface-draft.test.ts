@@ -170,7 +170,7 @@ describe("draftInterface", () => {
     expect(entry!.params[0]!.bodyAccesses).toBeUndefined();
   });
 
-  it("explicit autoBind:true wins over project autoBind=false", async () => {
+  it("skips handwritten sidecar even when project autoBind=false", async () => {
     const dir2 = mkdtempSync(join(tmpdir(), "nudo-draft-ab-"));
     try {
       writeFileSync(
@@ -183,15 +183,13 @@ describe("draftInterface", () => {
         join(dir2, "lib.nudo.js"),
         `import { fn, number } from "@nudojs/core";\nexport const double = fn({ x: number().gt(0) }, number());\n`,
       );
-      // project autoBind=false: handwritten sidecar is invisible → not skipped
+      // 产品语义：draft 探测「契约是否存在」，不跟 ambient autoBind 走
       const off = await draftInterface(file);
       const offEntry = off.entries.find((e) => e.fn === "double");
-      expect(offEntry!.skipped).toBeUndefined();
+      expect(offEntry!.skipped).toBe("handwritten");
 
-      // explicit true still allows ambient context for drafting
       const on = await draftInterface(file, { autoBind: true });
       const onEntry = on.entries.find((e) => e.fn === "double");
-      // With autoBind true the handwritten sidecar is visible → skipped
       expect(onEntry!.skipped).toBe("handwritten");
     } finally {
       rmSync(dir2, { recursive: true, force: true });

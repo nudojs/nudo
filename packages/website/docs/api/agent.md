@@ -46,13 +46,23 @@ Constraint gate on **Abs** (type-as-computation). Same contract as CLI `nudo che
 | `source` | `string?` | Pre-read source (bypasses disk/editor) |
 | `format` | `"text" \| "json"` | `"json"` → CheckJson only; default human summary + JSON |
 
-**Returns (CheckJson v1):** `{ version: 1, file, ok, summary, signatures[], issues[] }` where each issue may carry `actual` / `expected`. Issue codes:
+**Returns (CheckJson v1):** `{ version: 1, file, ok, summary, signatures[], issues[] }` where each issue may carry `actual` / `expected`. Issue codes (full table: [check guide](../guides/check.md)):
 
 | Code | Meaning |
 |------|---------|
-| `nudo:constraint-violated` | Call argument ⊭ precondition |
-| `nudo:assign-mismatch` | Assignment ⊭ previous binding shape |
-| `nudo:arg-structure` | HOF: argument is not a callable `fn` / arity mismatch |
+| `nudo:constraint-violated` | Call argument or return ⊭ precondition |
+| `nudo:assign-mismatch` | Assignment ⊭ existing shape |
+| `nudo:arg-structure` | HOF argument not callable / arity mismatch |
+| `nudo:case-inconsistency` | `@nudo:case` witness ⊭ refine |
+| `nudo:interface-param-mismatch` | Handwritten contract param name not on formal surface |
+| `nudo:interface-conflict` | Handwritten contract conjunction unsatisfiable |
+| `nudo:interface-load` / `nudo:interface-cycle` | Sidecar load failure / cycle |
+| `nudo:interface-domain-exceeds` | Cross-file call evidence ⊄ handwritten contract |
+| `nudo:interface-name-clash` | Sidecar export name clashes with source export |
+| `nudo:interface-underivable` | Handwritten contract cannot be derived from source |
+| `nudo:interface-drift` | `@generated` segment ≠ recomputed (warning) |
+| `nudo:no-signature` | No symbolic Abs signature |
+| `nudo:opaque-result` / `nudo:eval-error` | Opaque evaluation / evaluation threw |
 
 ```json
 {

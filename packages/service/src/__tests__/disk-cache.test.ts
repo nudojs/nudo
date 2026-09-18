@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   DiskCache,
   checkCacheKey,
+  extractNudoImportSpecs,
   ifaceCacheKey,
   sha256Hex,
   relativizePath,
@@ -66,7 +67,7 @@ describe("B3 disk cache store", () => {
 
   it("sha256 and relativizePath are stable", () => {
     expect(sha256Hex("x")).toHaveLength(64);
-    expect(ANALYSIS_ABI).toContain("v1");
+    expect(ANALYSIS_ABI).toContain("v2");
     expect(relativizePath("/root/src/a.js", "/root")).toBe("src/a.js");
   });
 });
@@ -164,5 +165,28 @@ describe("B3/B4 config", () => {
     expect(analysisConfig({ analysis: { callSiteBudget: 10 } }).callSiteBudget).toBe(10);
     expect(analysisConfig({ analysis: { callSiteBudget: 0 } }).callSiteBudget).toBe(3);
     expect(analysisConfig({ analysis: { callSiteBudget: 999 } }).callSiteBudget).toBe(64);
+  });
+
+  it("extractNudoImportSpecs parses named and namespace forms", () => {
+    expect(
+      extractNudoImportSpecs(
+        `/// @nudo:import { positive } from "./std.nudo.js"\n/// @nudo:import * as helpers from "./h.nudo.js"\n`,
+      ),
+    ).toEqual(["./std.nudo.js", "./h.nudo.js"]);
+  });
+
+  it("checkCacheKey: @nudo:import dep content flips the key", () => {
+    const src = `/// @nudo:import { positive } from "./std.nudo.js"\nexport function f(x){return x;}\n`;
+    const a = checkCacheKey("/p/a.js", src, {
+      autoBind: true,
+      projectDir: "/p",
+      depContents: [{ path: "/p/std.nudo.js", content: "export const positive = 1;\n" }],
+    });
+    const b = checkCacheKey("/p/a.js", src, {
+      autoBind: true,
+      projectDir: "/p",
+      depContents: [{ path: "/p/std.nudo.js", content: "export const positive = 2;\n" }],
+    });
+    expect(a).not.toBe(b);
   });
 });

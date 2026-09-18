@@ -4,11 +4,15 @@ How Nudo packages are versioned, what counts as a breaking change, and how to fo
 
 ## Package maturity
 
+> **Source of truth for Current versions:** each `packages/*/package.json`. This policy doc does not pin patch numbers.
+>
+> **Intentional breaking (fix-2 / C0.1):** body-AST required-slot inference removed. Obligations come only from explicit contracts or call-site facts — list this in release notes as intentional, not a regression. Flipping `analysis.mode` default without an escape hatch is a **major**.
+
 | Package | Current | Line | Policy |
 |---------|---------|------|--------|
-| `@nudojs/core` | 1.0.x | stable | SemVer 1.x — breaking = **major** |
-| `@nudojs/service` | 1.0.x | stable | SemVer 1.x — breaking = **major** |
-| `@nudojs/cli` | 1.0.x | stable | SemVer 1.x — breaking = **major** |
+| `@nudojs/core` | see package.json | stable | SemVer 1.x — breaking = **major** |
+| `@nudojs/service` | see package.json | stable | SemVer 1.x — breaking = **major** |
+| `@nudojs/cli` | see package.json | stable | SemVer 1.x — breaking = **major** |
 | `@nudojs/parser` | 0.4.x | pre-1.0 | Minor may break; patch is additive/fix |
 | `@nudojs/lsp` | 0.7.x | pre-1.0 | Minor may break; patch is additive/fix |
 | `@nudojs/env` | 0.2.x | pre-1.0 | Minor may break |
