@@ -28,6 +28,10 @@ export function evictAnalysisCachesForFiles(files: string[]): void {
   evictAnalysisFileCacheForFiles(files);
   evictFnAnalysisCacheForFiles(files);
   evictAbsModuleCacheFiles(files);
+  // path-env factory 进程全局且 sync analyze 不 mtime 失效：定向逐出若不
+  // 清它，新 dep-hash 键会被旧 defineEnv 投毒（只 follow evictForDependents
+  // 的宿主契约必须安全）。下次 async preload 会按 mtime 重建。
+  clearPathEnvCaches();
 }
 
 /**

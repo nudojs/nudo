@@ -174,6 +174,9 @@ export function registerNudoImportDeps(filePath: string, source: string): void {
   for (const spec of extractAllLoadSpecs(source)) {
     if (!spec.startsWith(".") && !spec.startsWith("/")) continue;
     const dep = normPath(resolvePath(dirname(filePath), spec));
+    // 相对 load-module 本身也是分析依赖：变更必须触发 parent 重检
+    // （只登记其侧车不够——实现文件内容进 dep 指纹）
+    if (!isNodeModulesPath(dep)) addNudoDepParent(dep, parent);
     registerSidecarClosureFor(dep, parent);
   }
 }
@@ -264,8 +267,21 @@ export async function handleNudoDepFileChanged(
     return;
   }
   const parents = nudoDepParents.get(p);
-  if (!parents || parents.size === 0) return;
-  const parentList = [...parents];
+  const parentSet = new Set<string>(parents ?? []);
+  // 普通 import/实现文件：从 module graph 取 transitive dependents
+  // （外部编辑 utils.js 时打开中的 parent 必须失效）
+  if (isNudoTargetPath(p)) {
+    try {
+      const { dependents } = buildModuleGraph([...knownFiles], moduleGraphCache);
+      for (const d of computeDirtySet(dependents, p)) {
+        parentSet.add(normPath(resolvePath(d)));
+      }
+    } catch {
+      /* graph rebuild failure → fall back to nudoDepParents only */
+    }
+  }
+  if (parentSet.size === 0) return;
+  const parentList = [...parentSet];
   // 父文件源码未变但依赖内容变了：整文件 check / B-path / AnalysisResult / fn-cache 都可能陈旧
   evictBPathCacheForFiles(parentList);
   evictAnalysisFileCacheForFiles(parentList);
@@ -468,20 +484,31 @@ export function lspLoadModule(spec: string, fromFile: string): string | undefine
 export function makeBufferAwareLoadModule(
   openText: (filePath: string) => string | undefined,
 ): (spec: string, fromFile: string) => string | undefined {
+  const tryOpen = (p: string): string | undefined => {
+    const open = openText(p);
+    return open;
+  };
   return (spec: string, fromFile: string) => {
     try {
+      // 只在解析结果等于候选路径时用 buffer；禁止「任意 .nudo.js spec → 父侧车」
+      // （否则 @nudo:import ./std.nudo.js 会串到打开中的 lib.nudo.js）
+      const candidates: string[] = [];
       if (spec.startsWith(".")) {
         const abs = resolvePath(dirname(fromFile), spec);
-        const open = openText(abs);
-        if (open !== undefined) return open;
+        candidates.push(abs, `${abs}.js`, `${abs}.mjs`, `${abs}.ts`);
+        if (!/\.(js|mjs|ts)$/.test(abs)) {
+          candidates.push(`${abs}.nudo.js`, `${abs}.nudo.ts`);
+        }
       }
       const sidecar = sidecarPathOf(fromFile);
-      if (
-        spec.endsWith(".nudo.js") ||
-        spec.endsWith(".nudo.ts") ||
-        spec === `./${sidecar.slice(sidecar.lastIndexOf("/") + 1)}`
-      ) {
-        const open = openText(sidecar);
+      const leaf = `./${sidecar.slice(sidecar.lastIndexOf("/") + 1)}`;
+      if (spec === leaf || spec === sidecar) {
+        candidates.push(sidecar);
+      } else if (spec.startsWith(".") && resolvePath(dirname(fromFile), spec) === sidecar) {
+        candidates.push(sidecar);
+      }
+      for (const c of candidates) {
+        const open = tryOpen(c);
         if (open !== undefined) return open;
       }
     } catch {

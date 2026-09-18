@@ -555,7 +555,14 @@ function computeHofSignature(
 export function generateFunctionDtsLines(fn: FunctionAnalysis): string[] {
   // CJS-style binding/assignment functions have no declaration-stable
   // export name; they stay in infer/JSON output only.
-  if (fn.noDeclaration) return [];
+  // Class.method：投影为 Class_method（core 侧车可绑定同名），不再静默丢弃
+  let emitFn = fn;
+  if (fn.noDeclaration) {
+    const m = /^([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)$/.exec(fn.name);
+    if (!m) return [];
+    emitFn = { ...fn, name: `${m[1]}_${m[2]}`, noDeclaration: false };
+  }
+  fn = emitFn;
 
   const hofSig = computeHofSignature(fn);
   if (hofSig) {

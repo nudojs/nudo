@@ -19,6 +19,11 @@ export type FormalParam =
       placeholder: string;
       /** 顶层可表达绑定名（侧车契约面） */
       bound: string[];
+      /**
+       * 契约名 → 对象属性键。rename `{a: b}` 时契约可写 a 或 b，
+       * 投影必须用属性键 a（Abs 对象只有 slot a）。
+       */
+      propKey: Record<string, string>;
       /** 仅嵌套内出现、顶层不可单独表达的名（降级用） */
       nested: string[];
       index: number;
@@ -44,6 +49,7 @@ function collectPatternNames(
   top: string[],
   nested: string[],
   depth: number,
+  propKey?: Record<string, string>,
 ): void {
   if (!p) return;
   if (p.type === "Identifier" && p.name) {
@@ -52,18 +58,18 @@ function collectPatternNames(
     return;
   }
   if (p.type === "AssignmentPattern") {
-    collectPatternNames(p.left as AstParam, top, nested, depth);
+    collectPatternNames(p.left as AstParam, top, nested, depth, propKey);
     return;
   }
   if (p.type === "RestElement") {
-    collectPatternNames(p.argument as AstParam, top, nested, depth);
+    collectPatternNames(p.argument as AstParam, top, nested, depth, propKey);
     return;
   }
   if (p.type === "ObjectPattern") {
     for (const prop of p.properties ?? []) {
       // RestElement（Babel：{a, ...rest}）字段是 argument，不是 value/key
       if (prop.type === "RestElement" || prop.argument) {
-        collectPatternNames(prop.argument as AstParam, top, nested, depth);
+        collectPatternNames(prop.argument as AstParam, top, nested, depth, propKey);
         continue;
       }
       const keyName =
@@ -78,13 +84,16 @@ function collectPatternNames(
       if (keyName && v.type === "Identifier" && v.name && keyName !== v.name) {
         if (depth === 0) top.push(keyName);
         else nested.push(keyName);
+        if (propKey && depth === 0) propKey[keyName] = keyName;
       }
       // 属性值是 Identifier → 本层绑定名；嵌套 pattern → depth+1
       if (v.type === "Identifier" && v.name) {
-        if (depth === 0) top.push(v.name);
-        else nested.push(v.name);
+        if (depth === 0) {
+          top.push(v.name);
+          if (propKey && keyName) propKey[v.name] = keyName;
+        } else nested.push(v.name);
       } else {
-        collectPatternNames(v, top, nested, depth + 1);
+        collectPatternNames(v, top, nested, depth + 1, propKey);
       }
     }
     return;
@@ -96,7 +105,7 @@ function collectPatternNames(
         if (depth === 0) top.push(el.name);
         else nested.push(el.name);
       } else {
-        collectPatternNames(el, top, nested, depth + 1);
+        collectPatternNames(el, top, nested, depth + 1, propKey);
       }
     }
   }
@@ -116,8 +125,16 @@ export function formalParamsFromNodes(params: AstParam[] | undefined | null): Fo
       // 默认 + pattern：按 pattern 处理，占位 `_p{i}`
       const top: string[] = [];
       const nested: string[] = [];
-      if (left) collectPatternNames(left, top, nested, 0);
-      return { kind: "pattern", placeholder: `_p${index}`, bound: top, nested, index };
+      const propKey: Record<string, string> = {};
+      if (left) collectPatternNames(left, top, nested, 0, propKey);
+      return {
+        kind: "pattern",
+        placeholder: `_p${index}`,
+        bound: top,
+        propKey,
+        nested,
+        index,
+      };
     }
     if (p?.type === "RestElement") {
       const arg = p.argument as AstParam | undefined;
@@ -127,8 +144,16 @@ export function formalParamsFromNodes(params: AstParam[] | undefined | null): Fo
     }
     const top: string[] = [];
     const nested: string[] = [];
-    if (p) collectPatternNames(p, top, nested, 0);
-    return { kind: "pattern", placeholder: `_p${index}`, bound: top, nested, index };
+    const propKey: Record<string, string> = {};
+    if (p) collectPatternNames(p, top, nested, 0, propKey);
+    return {
+      kind: "pattern",
+      placeholder: `_p${index}`,
+      bound: top,
+      propKey,
+      nested,
+      index,
+    };
   });
 }
 
@@ -189,7 +214,8 @@ export function locateContractParam(
         return { index: f.index };
       }
       if (f.bound.includes(contractName)) {
-        return { index: f.index, field: contractName };
+        // rename `{a: b}`：投影必须用属性键 a，不是绑定名 b
+        return { index: f.index, field: f.propKey?.[contractName] ?? contractName };
       }
     }
   }

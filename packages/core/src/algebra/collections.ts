@@ -144,6 +144,7 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined>): void {
       });
       const merged: MapTable = { byLit: new Map(), shadowValues: [], maybeAbsent: new Set() };
       const keyArms = new Map<LitKey, number>();
+      const forcedAbsent = new Set<LitKey>();
       for (const t of perArm) {
         for (const [k, v] of t.byLit) {
           const prev = merged.byLit.get(k);
@@ -151,10 +152,15 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined>): void {
           keyArms.set(k, (keyArms.get(k) ?? 0) + 1);
         }
         for (const sv of t.shadowValues) merged.shadowValues.push(sv);
+        // 未知 key delete 只标 maybeAbsent、byLit 仍保留：键计数不够，必须并集
+        if (t.maybeAbsent) {
+          for (const k of t.maybeAbsent) forcedAbsent.add(k);
+        }
       }
       for (const [k, count] of keyArms) {
         if (count < perArm.length) merged.maybeAbsent!.add(k);
       }
+      for (const k of forcedAbsent) merged.maybeAbsent!.add(k);
       if (merged.maybeAbsent!.size === 0) delete merged.maybeAbsent;
       commitMap(id, merged);
     }

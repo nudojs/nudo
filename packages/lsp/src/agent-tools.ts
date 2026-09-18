@@ -858,6 +858,7 @@ export async function interfaceDraftTool(
             result,
             writeInterfaceDraft(filePath, result.draftSource, {
               dryRun: params.dryRun === true,
+              entries: result.entries,
               ...(projectDir ? { projectDir } : {}),
             }),
           )

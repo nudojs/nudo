@@ -7,12 +7,36 @@
  */
 
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { join, dirname, relative, sep, isAbsolute } from "node:path";
 import { diskCacheRoot } from "./evaluator/config.ts";
 
 /** 分析 ABI：语义变更时抬版本，整层 miss（含缓存键维度扩展） */
-export const ANALYSIS_ABI = "nudo-check-cache-v2";
+function readServiceVersion(): string {
+  try {
+    const require = createRequire(import.meta.url);
+    // dist/ 与 src/ 两种布局都能解析到 package.json
+    for (const p of ["../package.json", "./package.json", "../../package.json"]) {
+      try {
+        const pkg = require(p) as { name?: string; version?: string };
+        if (pkg?.name === "@nudojs/service" && pkg.version) return pkg.version;
+        if (pkg?.version && p.includes("service")) return pkg.version;
+      } catch {
+        /* try next */
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return "0";
+}
+
+/**
+ * 带包版本：升级 @nudojs/* 后旧 CheckJson 不得继续命中。
+ * 语义大改仍可手工再抬 major（`nudo-check-cache-v3`）。
+ */
+export const ANALYSIS_ABI = `nudo-check-cache-v2+${readServiceVersion()}`;
 
 export type DiskCacheOptions = {
   /** 缓存根目录；undefined = 禁用 */

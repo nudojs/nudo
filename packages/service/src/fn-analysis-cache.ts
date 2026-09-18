@@ -60,6 +60,17 @@ export type CachedFnAnalysis = {
       entryShapes?: Array<{ param: string; abs: Abs }>;
       symbolic?: Abs;
     };
+    /** C4.1 formal param surface（draft 解构槽依赖；与 cloneFunctionAnalysis 同步） */
+    formals?: Array<{
+      kind: string;
+      name?: string;
+      display?: string;
+      placeholder?: string;
+      bound?: string[];
+      propKey?: Record<string, string>;
+      nested?: string[];
+      index: number;
+    }>;
   };
   diagnostics: CachedDiagnostic[];
   caseHints: CachedCaseHint[];

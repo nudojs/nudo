@@ -55,6 +55,8 @@ describe("C4.1 formalParamsFromNodes", () => {
     expect(names.has("b")).toBe(true); // bound name
     expect(names.has("rest")).toBe(true); // object rest
     expect(locateContractParam(formals, "a")).toMatchObject({ index: 0, field: "a" });
+    // rename `{a: b}`：契约写绑定名 b 时，投影必须落到属性键 a
+    expect(locateContractParam(formals, "b")).toMatchObject({ index: 0, field: "a" });
     expect(locateContractParam(formals, "rest")).toMatchObject({ index: 0 });
   });
 });

@@ -180,8 +180,9 @@ export async function interfaceSurface(
         sidecarSource = undefined;
       }
       const dep = collectDepContents(abs, source, loadModule);
-      // 闭包截断 → 键不全，禁用磁盘复用
-      if (dep.truncated) {
+      // 闭包截断 / bare-spec miss → 键不全，禁用磁盘复用
+      const hasBareMiss = (dep.depContents ?? []).some((d) => d.content == null);
+      if (dep.truncated || hasBareMiss) {
         ifaceKey = undefined;
         cachedTable = undefined;
       } else {

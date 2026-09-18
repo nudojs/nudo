@@ -568,7 +568,88 @@ function assignmentChainName(expr: Node): string | null {
 function collectTopLevelFunctions(ast: Node): { name: string; node: Node; stmt: Node; noDeclaration: boolean }[] {
   const results: { name: string; node: Node; stmt: Node; noDeclaration: boolean }[] = [];
   if (ast.type !== "File") return results;
-  for (const stmt of (ast as any).program.body) {
+  const body = (ast as any).program.body as Node[];
+
+  // C4.2：class 导出面与 core localNamedExports 同口径——
+  // export class / class+export list / export default Class/Identifier
+  const classDecls = new Map<string, { node: any; stmt: Node }>();
+  const exportedClassNames = new Set<string>();
+  const collectClassMethods = (cname: string, decl: any, stmt: Node): void => {
+    const members = decl?.body?.body ?? [];
+    for (const m of members) {
+      const mem = m as {
+        type?: string;
+        kind?: string;
+        static?: boolean;
+        key?: { type?: string; name?: string };
+        value?: Node;
+      };
+      const isMethod =
+        mem.type === "MethodDefinition" ||
+        mem.type === "ClassMethod" ||
+        mem.type === "TSDeclareMethod";
+      if (!isMethod) continue;
+      if (mem.kind && mem.kind !== "method") continue;
+      if (mem.static) continue;
+      const keyName = mem.key?.type === "Identifier" ? mem.key.name : undefined;
+      if (!keyName) continue;
+      const methodNode =
+        mem.type === "MethodDefinition" ? (mem.value as Node | undefined) : (mem as unknown as Node);
+      if (!methodNode) continue;
+      results.push({
+        name: `${cname}.${keyName}`,
+        node: methodNode,
+        stmt,
+        noDeclaration: true,
+      });
+    }
+  };
+
+  for (const stmt of body) {
+    if (stmt.type === "ClassDeclaration" && (stmt as any).id?.name) {
+      const n = (stmt as any).id.name as string;
+      classDecls.set(n, { node: stmt, stmt });
+      continue;
+    }
+    if (stmt.type === "ExportNamedDeclaration") {
+      const d = (stmt as any).declaration;
+      if (d?.type === "ClassDeclaration" && d.id?.name) {
+        const n = d.id.name as string;
+        classDecls.set(n, { node: d, stmt });
+        exportedClassNames.add(n);
+        continue;
+      }
+      if (!d && (stmt as any).specifiers) {
+        for (const spec of (stmt as any).specifiers as any[]) {
+          if (spec?.type !== "ExportSpecifier") continue;
+          const local = spec.local?.name as string | undefined;
+          const exported = spec.exported?.name ?? spec.exported?.value;
+          if (!local) continue;
+          // export { Local as Public } / export { Foo }：按本地声明名收集
+          if (classDecls.has(local) || body.some(
+            (s) => s.type === "ClassDeclaration" && (s as any).id?.name === local,
+          )) {
+            exportedClassNames.add(local);
+          }
+          if (exported === "default") exportedClassNames.add(local);
+        }
+        continue;
+      }
+    }
+    if (stmt.type === "ExportDefaultDeclaration") {
+      const d = (stmt as any).declaration;
+      if (d?.type === "ClassDeclaration" && d.id?.name) {
+        const n = d.id.name as string;
+        classDecls.set(n, { node: d, stmt });
+        exportedClassNames.add(n);
+      } else if (d?.type === "Identifier" && typeof d.name === "string") {
+        exportedClassNames.add(d.name);
+      }
+      continue;
+    }
+  }
+
+  for (const stmt of body) {
     const decl = resolveFunctionNode(stmt);
     if (decl.type === "FunctionDeclaration" && decl.id) {
       results.push({ name: decl.id.name, node: decl, stmt, noDeclaration: false });
@@ -576,36 +657,26 @@ function collectTopLevelFunctions(ast: Node): { name: string; node: Node; stmt: 
     }
     // C4.2/D6：导出 class 实例方法 → `Class.method`（dts 无稳定声明形态，noDeclaration）
     if (decl.type === "ClassDeclaration" && decl.id?.name) {
-      const cname = decl.id.name as string;
-      const isExported =
-        stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration";
-      if (!isExported) continue;
-      const body = (decl as any).body?.body ?? [];
-      for (const m of body) {
-        const mem = m as {
-          type?: string;
-          kind?: string;
-          static?: boolean;
-          key?: { type?: string; name?: string };
-          value?: Node;
-          params?: unknown[];
-          body?: Node;
-        };
-        const isMethod =
-          mem.type === "MethodDefinition" ||
-          mem.type === "ClassMethod" ||
-          mem.type === "TSDeclareMethod";
-        if (!isMethod) continue;
-        if (mem.kind && mem.kind !== "method") continue;
-        if (mem.static) continue;
-        const keyName = mem.key?.type === "Identifier" ? mem.key.name : undefined;
-        if (!keyName) continue;
-        const methodNode =
-          mem.type === "MethodDefinition" ? (mem.value as Node | undefined) : (mem as unknown as Node);
-        if (!methodNode) continue;
+      continue; // 已在导出扫描后统一收集
+    }
+    if (stmt.type === "ExportNamedDeclaration") {
+      const d = resolveFunctionNode(stmt);
+      if (d.type === "FunctionDeclaration" && d.id) {
+        results.push({ name: d.id.name, node: d, stmt, noDeclaration: false });
+      }
+      if (d.type === "ClassDeclaration" && d.id?.name) {
+        // 交给下方 exportedClassNames 循环
+      }
+      continue;
+    }
+    if (stmt.type === "ExportDefaultDeclaration") {
+      const d = (stmt as any).declaration;
+      if (d?.type === "FunctionDeclaration" && d.id) {
+        results.push({ name: d.id.name, node: d, stmt, noDeclaration: false });
+      } else if (d && (isFnExprValue(d) || (d.type === "FunctionDeclaration" && !d.id))) {
         results.push({
-          name: `${cname}.${keyName}`,
-          node: methodNode,
+          name: "default",
+          node: d as Node,
           stmt,
           noDeclaration: true,
         });
@@ -628,6 +699,12 @@ function collectTopLevelFunctions(ast: Node): { name: string; node: Node; stmt: 
         results.push({ name, node: fn, stmt, noDeclaration: true });
       }
     }
+  }
+
+  for (const cname of exportedClassNames) {
+    const hit = classDecls.get(cname);
+    if (!hit) continue;
+    collectClassMethods(cname, hit.node, hit.stmt);
   }
   return results;
 }

@@ -399,7 +399,9 @@ async function runCheck(
   // --callsites 注入路径不做磁盘复用（证据面含调用记录）
   // 依赖闭包截断 → paths 不全，键可能陈旧：禁用磁盘复用（对齐 core memo fail-open）
   const dep = await collectCheckDepContents(filePath, source, loadModule);
-  const useDisk = disk.enabled && !opts.callsites && !dep.truncated;
+  // bare/harvest 依赖 loadModule miss 时内容未进键：与 truncated 同口径 fail-closed
+  const hasBareMiss = (dep.depContents ?? []).some((d) => d.content == null);
+  const useDisk = disk.enabled && !opts.callsites && !dep.truncated && !hasBareMiss;
   // 侧车内容进键：autoBind 下契约变更必须 miss，否则 CI 读到过期结论
   let sidecarContent: string | null = null;
   if (autoBind !== false) {
@@ -1336,7 +1338,18 @@ program
       const fullPath = isDir ? join(watchTarget, filename) : resolved;
       // targets + sidecar/config：侧车进 ambient/fingerprint，配置进 env/analysis
       if (!isWatchRelevantPath(fullPath)) return;
-      if (!existsSync(fullPath)) return; // deleted
+      // 删除也必须进脏集：侧车/config/env 模板消失后 ambient/mode 仍可能被复用
+      if (!existsSync(fullPath)) {
+        pendingChanged.add(fullPath);
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          const changedFiles = [...pendingChanged];
+          pendingChanged.clear();
+          getAnalysisSession().clear();
+          runIncremental(changedFiles).catch(() => {});
+        }, 200);
+        return;
+      }
 
       pendingChanged.add(fullPath);
 

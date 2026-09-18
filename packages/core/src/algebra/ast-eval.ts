@@ -756,29 +756,39 @@ function evalNodeInner(
       if (op === "=") {
         rhs = evalNode(ae.right, env, phi, budget).value;
       } else if (op === "||=" || op === "&&=" || op === "??=") {
+        // 与 LogicalExpression 同口径：非 lit LHS 真值未知 → join，不可把
+        // litValue===undefined 当 falsy（抽象 number/obj 会命中该分支）
         const lhs = evalNode(ae.left, env, phi, budget).value;
         const lv = litValue(lhs);
-        const falsy = lv === false || lv === null || lv === undefined;
-        // litValue(undefined) 也可能是非 lit；用 shape/term 辅助 nullish
-        const nullish =
-          isNullishLitAbs(lhs) ||
-          (lv === null || lv === undefined) &&
-            (lhs.term?.op === "lit" || lhs.shape.k === "unknown" || falsy);
-        const truthy = lv !== undefined && !falsy && !nullish;
+        const nullishLit = isNullishLitAbs(lhs);
+        const definitelyNotNullish = definitelyNotNullishShape(lhs.shape) && !nullishLit;
+        const falsy =
+          lv === false ||
+          nullishLit ||
+          lv === null ||
+          (lv === undefined &&
+            lhs.term?.op === "lit" &&
+            (lhs.term as { value?: unknown }).value === undefined);
+        const truthy = lv !== undefined && !falsy && !nullishLit;
         let assignRhs: Abs | null = null;
         if (op === "||=") {
           if (truthy) return ok(lhs, phi, env);
-          if (lv === false || nullish || falsy) assignRhs = evalNode(ae.right, env, phi, budget).value;
+          if (falsy || nullishLit) {
+            assignRhs = evalNode(ae.right, env, phi, budget).value;
+          }
         } else if (op === "&&=") {
-          if (falsy && !truthy) return ok(lhs, phi, env);
-          if (truthy) assignRhs = evalNode(ae.right, env, phi, budget).value;
+          if (falsy) return ok(lhs, phi, env);
+          if (truthy) {
+            assignRhs = evalNode(ae.right, env, phi, budget).value;
+          }
         } else {
           // ??=
-          if (!nullish && lv !== null && lv !== undefined && lhs.term?.op === "lit") {
+          if (definitelyNotNullish || (lv !== undefined && lv !== null && !nullishLit)) {
             return ok(lhs, phi, env);
           }
-          if (definitelyNotNullishShape(lhs.shape) && !nullish) return ok(lhs, phi, env);
-          assignRhs = evalNode(ae.right, env, phi, budget).value;
+          if (nullishLit || lv === null || (lv === undefined && lhs.term?.op === "lit")) {
+            assignRhs = evalNode(ae.right, env, phi, budget).value;
+          }
         }
         if (assignRhs === null) {
           // 抽象短路：可能写 RHS 也可能保持 LHS

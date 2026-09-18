@@ -105,7 +105,8 @@ export function relaxSidecarConstraint(
     return next !== region ? next : undefined;
   };
 
-  for (const replacer of [tryText, tryParam, tryReturnSlot, tryFn]) {
+  // 精确定位优先于裸文本首次替换，避免 return 槽 / 同文契约改错位
+  for (const replacer of [tryParam, tryReturnSlot, tryFn, tryText]) {
     const next = replaceInFnRegion(sidecarSource, fnName, replacer);
     if (next !== undefined) return next;
   }

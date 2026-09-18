@@ -1453,14 +1453,21 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const nArms = merged.filter((a) => !a.isDefault).length + (defaultArm ? 1 : 0) + (defaultArm ? 0 : 1);
       const wrapArmThunk = (thunk: string, outIdx: number): string => {
         if (names.length === 0) return thunk;
+        // 与 if-fork 同口径：return/throw 臂不写 continue 路径绑定
         return [
           `() => {`,
           ...names.map((n) => `${indent(depth + 1)}${n} = __sw0_${n};`),
+          `${indent(depth + 1)}let __cont = true;`,
           `${indent(depth + 1)}try {`,
           `${indent(depth + 2)}return (${thunk})();`,
+          `${indent(depth + 1)}} catch (e) {`,
+          `${indent(depth + 2)}if ($isForkExit(e)) __cont = false;`,
+          `${indent(depth + 2)}throw e;`,
           `${indent(depth + 1)}} finally {`,
-          ...names.map((n) => `${indent(depth + 2)}__sw${outIdx + 1}_${n} = ${n};`),
-          ...names.map((n) => `${indent(depth + 2)}__sw${outIdx + 1}set_${n} = true;`),
+          `${indent(depth + 2)}if (__cont) {`,
+          ...names.map((n) => `${indent(depth + 3)}__sw${outIdx + 1}_${n} = ${n};`),
+          ...names.map((n) => `${indent(depth + 3)}__sw${outIdx + 1}set_${n} = true;`),
+          `${indent(depth + 2)}}`,
           `${indent(depth + 1)}}`,
           `}`,
         ].join("\n");

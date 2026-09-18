@@ -23,7 +23,10 @@ export function isSidecarPath(path: string): boolean {
 }
 
 export function isProjectConfigPath(path: string): boolean {
-  const base = path.replace(/\\/g, "/").split("/").pop() ?? path;
+  const norm = path.replace(/\\/g, "/");
+  // node_modules 里的 package.json 不是项目配置（避免 npm install 全量失效风暴）
+  if (/\/node_modules\//.test(`/${norm}`)) return false;
+  const base = norm.split("/").pop() ?? path;
   return PROJECT_CONFIG_BASENAMES.has(base.toLowerCase());
 }
 

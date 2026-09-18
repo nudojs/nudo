@@ -56,7 +56,14 @@ export function hasNudoDirectives(source: string): boolean {
 }
 
 function hasExport(source: string): boolean {
-  return /\bexport\b|\bmodule\.exports\b|\bexports\./.test(source);
+  // 与 core localNamedExports 的 CJS 面对齐：exports.x / exports["x"] /
+  // module.exports.x / module.exports["x"] / Object.assign(exports
+  return (
+    /\bexport\b/.test(source) ||
+    /\bmodule\.exports\b/.test(source) ||
+    /\bexports\s*[.[]/.test(source) ||
+    /Object\.assign\s*\(\s*(module\.)?exports\b/.test(source)
+  );
 }
 
 /**

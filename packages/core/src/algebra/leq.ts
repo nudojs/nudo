@@ -222,7 +222,8 @@ function leqShape(
       if (srcSlot.optional && !slot.optional) {
         return fail(`slot ${key}: optional ⊭ required`);
       }
-      // 结构槽位：同 prim 字面量视为可赋（mutable let 拓宽；契约走 pred）
+      // 结构槽位：同 prim 字面量视为可赋（mutable let 拓宽；契约走 pred）。
+      // gold assign-compatible/wider 依赖该口径——精确 lit 不等仍放行于对象槽。
       const ssv = litValue(srcSlot.value);
       const stv = litValue(slot.value);
       if (

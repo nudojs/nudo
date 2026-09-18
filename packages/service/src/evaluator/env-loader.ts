@@ -51,7 +51,7 @@ const pathEnvCache = new Map<string, () => EnvDefinition>();
 // resolvedPath → factory; looked up by trying the directive spelling as-is and
 // resolved against every baseDir seen during preload (covers `./env.ts`,
 // `../env.ts`, and bare `env.ts` spellings from different analyzed files).
-const pathEnvByPath = new Map<string, () => EnvDefinition>();
+const pathEnvByPath = new Map<string, { factory: () => EnvDefinition; mtimeMs: number }>();
 const pathEnvBaseDirs = new Set<string>();
 
 function isPathEnvName(name: string, baseDir: string): boolean {
@@ -113,7 +113,10 @@ async function importPathEnv(resolvedPath: string, mtimeMs: number): Promise<voi
 
   if (mod && typeof mod.defineEnv === "function") {
     pathEnvCache.set(cacheKey, mod.defineEnv as () => EnvDefinition);
-    pathEnvByPath.set(resolvedPath, mod.defineEnv as () => EnvDefinition);
+    pathEnvByPath.set(resolvedPath, {
+      factory: mod.defineEnv as () => EnvDefinition,
+      mtimeMs,
+    });
   }
 }
 
@@ -124,7 +127,19 @@ function lookupPathEnv(name: string): (() => EnvDefinition) | undefined {
     : [name, ...[...pathEnvBaseDirs].map((d) => resolvePath(d, name))];
   for (const candidate of candidates) {
     const hit = pathEnvByPath.get(candidate);
-    if (hit) return hit;
+    if (!hit) continue;
+    // mtime 变了 → 丢弃陈旧 factory（下次 preload 会重 import）
+    try {
+      const { mtimeMs } = statSync(candidate);
+      if (mtimeMs !== hit.mtimeMs) {
+        pathEnvByPath.delete(candidate);
+        return undefined;
+      }
+    } catch {
+      pathEnvByPath.delete(candidate);
+      return undefined;
+    }
+    return hit.factory;
   }
   return undefined;
 }
