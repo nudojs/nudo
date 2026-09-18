@@ -230,10 +230,13 @@ function undef(): Abs {
  */
 const loopExitsAls = new AsyncLocalStorage<Abs[]>();
 const throwExitsAls = new AsyncLocalStorage<Abs[]>();
+const tryMarksAls = new AsyncLocalStorage<number[]>();
 
-/** 函数求值作用域：收集抽象分支上的 early-return / throw 值 */
+/** 函数求值作用域：收集抽象分支上的 early-return / throw 值；try 标记栈同边界 */
 export function runWithLoopExits<T>(body: () => T): T {
-  return loopExitsAls.run([], () => throwExitsAls.run([], body));
+  return loopExitsAls.run([], () =>
+    throwExitsAls.run([], () => tryMarksAls.run([], body)),
+  );
 }
 
 export function takeLoopExits(): Abs[] {
@@ -257,23 +260,22 @@ export function $pushLoopExit(v: Abs): void {
   pushLoopExit(v);
 }
 
-const tryMarkStack: number[] = [];
-
 /** try 块开始：压栈并返回当前 throwExits 长度 */
 export function $tryMark(): number {
   const store = throwExitsAls.getStore();
   const m = store?.length ?? 0;
-  tryMarkStack.push(m);
+  tryMarksAls.getStore()?.push(m);
   return m;
 }
 
-/** 当前最内层 try 的 mark（return 时 drain 用） */
+/** 当前最内层 try 的 mark（return 时 drain 用；嵌套调用不串栈） */
 export function $tryCurrentMark(): number {
-  return tryMarkStack[tryMarkStack.length - 1] ?? 0;
+  const stack = tryMarksAls.getStore();
+  return stack && stack.length > 0 ? stack[stack.length - 1]! : 0;
 }
 
 export function $tryPopMark(): void {
-  tryMarkStack.pop();
+  tryMarksAls.getStore()?.pop();
 }
 
 /** 取出 mark 之后新记录的 throw（try 吸收 / catch 合并） */
@@ -455,30 +457,58 @@ export function $for(
   step: (s: Abs) => Abs,
   body: (s: Abs) => Abs,
   maxIters: number = DEFAULT_MAX_LOOP_ITERS,
+  opts?: {
+    pack?: () => Abs;
+    unpack?: (s: Abs) => void;
+  },
 ): Abs {
   let state = init;
   let exitJoin: Abs | undefined;
+  let extJoin: Abs | undefined;
+  const pack = opts?.pack;
+  const unpack = opts?.unpack;
+  const snapCounter = (): void => {
+    exitJoin = exitJoin ? joinAbs(exitJoin, state) : state;
+  };
+  const snapExt = (): void => {
+    if (!pack) return;
+    const p = pack();
+    extJoin = extJoin ? joinAbs(extJoin, p) : p;
+  };
+  const applyExtJoin = (): void => {
+    if (!extJoin || !pack || !unpack) return;
+    unpack(joinAbs(extJoin, pack()));
+  };
 
   for (let i = 0; i < maxIters; i++) {
     const t = test(state);
     if (isDefinitelyFalse(t)) {
-      return exitJoin ? joinAbs(exitJoin, state) : state;
+      snapCounter();
+      snapExt();
+      applyExtJoin();
+      return exitJoin ?? state;
     }
 
-    if (!isDefinitelyTrue(t)) {
-      exitJoin = exitJoin ? joinAbs(exitJoin, state) : state;
+    const abstractTest = !isDefinitelyTrue(t);
+    if (abstractTest) {
+      snapCounter();
+      snapExt();
     }
 
     let afterBody: Abs;
     try {
       afterBody = body(state);
     } catch (e) {
-      if (isNudoReturn(e)) throw e;
+      if (isNudoReturn(e) || isNudoThrow(e)) throw e;
       throw e;
     }
     const next = step(afterBody);
+    // 抽象条件：本轮 body 完成后的绑定也是合法出口（下一轮 test 可能为假）
+    if (abstractTest) {
+      state = afterBody;
+      snapExt();
+    }
 
-    // 不动点：字面量不变，或两侧皆非字面量且 next ≤ state
     if (i > 0) {
       const nv = litValue(next);
       const sv = litValue(state);
@@ -486,13 +516,20 @@ export function $for(
         (nv !== undefined && sv !== undefined && nv === sv) ||
         (nv === undefined && sv === undefined && leqAbs(next, state).ok);
       if (stuck) {
-        return exitJoin ? joinAbs(exitJoin, next) : next;
+        state = next;
+        snapCounter();
+        snapExt();
+        applyExtJoin();
+        return exitJoin ?? next;
       }
     }
     state = next;
   }
 
-  return exitJoin ? joinAbs(exitJoin, state) : state;
+  snapCounter();
+  snapExt();
+  applyExtJoin();
+  return exitJoin ?? state;
 }
 
 // --- 数组 ---
@@ -1239,11 +1276,11 @@ export function $switch(
   return valParts.reduce((a, b) => joinAbs(a, b));
 }
 
-/** `??` / `??=` 测试：null/undefined → true；确定非 nullish → false；否则抽象 boolean */
+/** `??` / `??=` 测试：确定非 nullish → false；lit nullish → true；否则抽象 boolean */
 export function $nullishTest(v: Abs): Abs {
-  if (isNullishLitAbs(v)) return boolLit(true);
-  const lv = litValue(v);
-  if (lv !== undefined && lv !== null) return boolLit(false);
   if (definitelyNotNullishShape(v.shape)) return boolLit(false);
+  if (isNullishLitAbs(v)) return boolLit(true);
+  const t = v.term;
+  if (t?.op === "lit" && t.value !== null && t.value !== undefined) return boolLit(false);
   return bool();
 }

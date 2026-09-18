@@ -55,6 +55,8 @@ import {
   filterDiagnosticsByLevel,
   diagnosticsLevelForFile,
   checkToLspDiagnostics,
+  filterCheckLspByLevel,
+  bumpValidateGeneration,
   type ValidateTextDeps,
 } from "./validation.ts";
 import {
@@ -228,8 +230,12 @@ documents.onDidClose((event) => {
   if (timer) clearTimeout(timer);
   debounceTimers.delete(event.document.uri);
   nudoFileCache.delete(event.document.uri);
-  analysisCache.delete(uriToFilePath(event.document.uri));
+  const filePath = uriToFilePath(event.document.uri);
+  analysisCache.delete(filePath);
   activeCases.delete(event.document.uri);
+  // P2：关闭即 bump validateGeneration——在途 validate 的 stillCurrent 门
+  // 失效，陈旧结果不会在文件已关闭后再 publish
+  bumpValidateGeneration(filePath);
   connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
 });
 
@@ -1070,7 +1076,9 @@ function handleGetActiveCases(params: { uri?: string; file?: string }) {
 
 /**
  * `nudo.interfaceEmit`：与 CLI `nudo interface --emit` 同一写盘器固化单个
- * 导出（design-refine-derivation §7.5）。写盘后：
+ * 导出（design-refine-derivation §7.5）。`dryRun: true` 时只预览（与 CLI
+ * `--dry-run` 同源），不写盘、不跑写盘后的失效链。
+ * 真实写盘后：
  * 1. 重登记隐式侧车边（新建侧车在上次验证时不存在，边未登记）并定向
  *    逐出依赖 memo、重检打开中的父文件（handleNudoDepFileChanged）；
  * 2. 该文件若打开则重验证（validateDocument，侧车新内容进诊断/缓存）；
@@ -1081,10 +1089,12 @@ async function handleInterfaceEmit(params: {
   file?: string;
   functionName: string;
   mode: "add" | "update";
+  dryRun?: boolean;
 }): Promise<AgentToolResult> {
   const filePath = params.uri
     ? uriToFilePath(params.uri)
     : normalizeFilePath(params.file ?? "");
+  const dryRun = params.dryRun === true;
   // 必须传 agentToolDeps：workspaceRoots 来自 onInitialize 注入，emit 写盘
   // 边界（assertEmitTargetAllowed）依赖它。漏传会让边界静默失效。
   const toolResult = await interfaceEmitTool(
@@ -1092,6 +1102,7 @@ async function handleInterfaceEmit(params: {
       file: filePath,
       functionName: params.functionName,
       mode: params.mode,
+      ...(dryRun ? { dryRun: true } : {}),
     },
     agentToolDeps,
   );
@@ -1101,6 +1112,11 @@ async function handleInterfaceEmit(params: {
   const emitText = toolResult.content[0]?.text ?? "";
   if (emitText.startsWith("Error:")) {
     connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {});
+    return toolResult;
+  }
+
+  // dry-run：侧车未写盘 → 跳过失效/重验证；结果文本已是 [dry-run] 预览
+  if (dryRun) {
     return toolResult;
   }
 
@@ -1272,9 +1288,8 @@ connection.languages.diagnostics.on((params) => {
     // Abs check 通道（与 push checkToLspDiagnostics 同源）
     try {
       const checkDiags = checkToLspDiagnostics(filePath, text, validationDeps().loadModule);
-      for (const d of checkDiags) {
-        if (level === "off") continue;
-        if (level === "errors" && d.severity !== 1) continue;
+      // P2：与 push（validateText）同一档过滤 helper，避免 pull/push 诊断面不一致
+      for (const d of filterCheckLspByLevel(checkDiags, level)) {
         items.push(d);
       }
     } catch {

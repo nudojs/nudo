@@ -10,6 +10,11 @@ import { AGENT_TOOL_SOURCES, interfaceDraftTool } from "../agent-tools.ts";
 let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "nudo-agent-draft-"));
+  // 写盘路径与 CLI 对齐：需要项目根（package.json / nudo 配置祖先）
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({ name: "nudo-draft-fixture", version: "1.0.0", nudo: {} }),
+  );
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
@@ -36,9 +41,34 @@ describe("nudo.interface.draft agent tool", () => {
     expect(existsSync(join(dir, "lib.nudo.js"))).toBe(false);
   });
 
+  it("write without project root is fail-closed (CLI-aligned)", async () => {
+    const isolated = mkdtempSync(join(tmpdir(), "nudo-draft-noroot-"));
+    const prevForce = process.env.NUDO_DRAFT_FORCE;
+    delete process.env.NUDO_DRAFT_FORCE;
+    try {
+      const file = join(isolated, "lib.js");
+      writeFileSync(file, `export function double(x) {\n  return x * 2;\n}\n\ndouble(21);\n`);
+      const r = await interfaceDraftTool(
+        { file, write: true },
+        { workspaceRoots: [isolated] },
+      );
+      expect(r.isError).toBe(true);
+      expect(r.content[0].text).toContain("no project root found");
+      expect(r.content[0].text).toContain("NUDO_DRAFT_FORCE=1");
+      expect(existsSync(join(isolated, "lib.nudo.draft.js"))).toBe(false);
+    } finally {
+      if (prevForce !== undefined) process.env.NUDO_DRAFT_FORCE = prevForce;
+      rmSync(isolated, { recursive: true, force: true });
+    }
+  });
+
   it("write outside workspace roots is rejected (fail-closed, same as emit)", async () => {
     const outside = mkdtempSync(join(tmpdir(), "nudo-draft-outside-"));
     try {
+      writeFileSync(
+        join(outside, "package.json"),
+        JSON.stringify({ name: "outside", version: "1.0.0" }),
+      );
       const file = join(outside, "evil.js");
       writeFileSync(file, `export function f(x) { return x; }\n`);
       const r = await interfaceDraftTool(

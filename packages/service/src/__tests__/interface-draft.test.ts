@@ -270,6 +270,58 @@ describe("draftInterface", () => {
     expect(text).toContain("nothing written");
   });
 
+  it("writes draft for Unicode export names (parse-layer / Unicode-aware draftable)", async () => {
+    const file = join(dir, "unicode.js");
+    writeFileSync(
+      file,
+      `export function 计算(x) {\n  return x * 2;\n}\n\n计算(21);\n`,
+    );
+    const r = await draftInterface(file);
+    const entry = r.entries.find((e) => e.fn === "计算");
+    expect(entry).toBeDefined();
+    expect(entry!.dsl).toBeDefined();
+    expect(r.draftSource).toContain("export const 计算 = ");
+
+    // entries path (CLI/LSP preferred)
+    const viaEntries = writeInterfaceDraft(file, r.draftSource, { entries: r.entries });
+    expect(viaEntries.draftable).toBe(true);
+    expect(viaEntries.written).toBe(true);
+    const draftPath = join(dir, "unicode.nudo.draft.js");
+    expect(existsSync(draftPath)).toBe(true);
+    expect(readFileSync(draftPath, "utf-8")).toContain("export const 计算 = ");
+
+    // fallback regex (no entries) must also accept Unicode IDs
+    const viaRegex = writeInterfaceDraft(file, r.draftSource, {
+      dryRun: true,
+      draftable: undefined,
+      entries: undefined,
+    });
+    expect(viaRegex.draftable).toBe(true);
+  });
+
+  it("skipped-only draft summary is not claimed as empty", async () => {
+    const file = join(dir, "lib.js");
+    writeFileSync(file, CALLS_JS);
+    writeFileSync(join(dir, "lib.nudo.js"), HANDWRITTEN);
+    const r = await draftInterface(file);
+    expect(r.entries.some((e) => e.skipped === "handwritten")).toBe(true);
+    const write = writeInterfaceDraft(file, r.draftSource, { entries: r.entries, dryRun: true });
+    expect(write.draftable).toBe(false);
+    const text = formatDraftSummary("lib.js", "lib.nudo.draft.js", r, write).join("\n");
+    expect(text).not.toContain("Draft empty (no draftable exports)");
+    expect(text).toContain("nothing written");
+    expect(text).toContain("skipped");
+  });
+
+  it("projectDir containment realpaths both sides (macOS /tmp vs /private/var)", async () => {
+    const file = join(dir, "lib.js");
+    writeFileSync(file, CALLS_JS);
+    const r = await draftInterface(file);
+    const w = writeInterfaceDraft(file, r.draftSource, { projectDir: dir });
+    expect(w.draftable).toBe(true);
+    expect(w.written).toBe(true);
+  });
+
   it("draft import list includes any(); optional shape fields become .optional()", async () => {
     const { toDraftBuilderDsl } = await import("../interface-draft.ts");
     // formatConstraint 显示层允许 `email?:`；落盘 draft DSL 必须合法 builder JS

@@ -470,13 +470,13 @@ describe("joinThenProject（§4.2 先 join 再投影）", () => {
     ).toBeUndefined();
   });
 
-  it("同形对象聚合 → 槽位级 join 投影", () => {
+  it("同形对象聚合 → 槽位级 join 投影为字面量枚举", () => {
     const c = joinThenProject([
       obj({ x: { value: numLit(1) } }),
       obj({ x: { value: numLit(2) } }),
     ]);
     expect(c).toBeDefined();
-    expect(inst(c!, "u")).toBe(inst(shape({ x: number() }), "u"));
+    expect(inst(c!, "u")).toBe("(u.x = 1 ∨ u.x = 2)");
   });
 });
 

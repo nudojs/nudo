@@ -173,14 +173,21 @@ export function activate(context: ExtensionContext): void {
           functionName,
           mode: mode === "update" ? "update" : "add",
         };
-        // 先 dry-run 预览，确认后再写盘（与 draft 同门禁体验）
+        // 先 dry-run 预览，确认后再写盘（与 draft 同门禁体验）。
+        // 服务端 dryRun:true 只分析不写盘；响应含 [dry-run] would update / 诊断。
         const preview = await client.sendRequest("nudo/interface.emit", {
           ...params,
           dryRun: true,
         });
-        showNudoOutput(`persist preview ${functionName}`, extractToolText(preview));
+        const previewText = extractToolText(preview);
+        showNudoOutput(`persist dry-run preview ${functionName}`, previewText);
+        // dry-run 失败（入参/门禁）时不提供写盘选项，避免用户确认后二次失败
+        const previewIsError =
+          previewText.startsWith("Error:") ||
+          (preview as { isError?: boolean } | null)?.isError === true;
+        if (previewIsError) return;
         const pick = await window.showInformationMessage(
-          `Nudo: persist contract for ${functionName}? (review dry-run in Output)`,
+          `Nudo: persist contract for ${functionName}? (review dry-run in Output — no sidecar written yet)`,
           "Write sidecar",
           "Dismiss",
         );

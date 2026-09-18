@@ -3,9 +3,9 @@ import {
   validateText,
   clearValidationState,
   validateGeneration,
+  bumpValidateGeneration,
   type ValidateTextDeps,
 } from "../validation.ts";
-import { DiagnosticSeverity } from "vscode-languageserver/node.js";
 
 function makeDeps(): ValidateTextDeps & { sent: Array<{ uri: string; n: number }> } {
   const sent: Array<{ uri: string; n: number }> = [];
@@ -30,6 +30,25 @@ describe("A8 validateGeneration cancel", () => {
     expect(validateGeneration.get("/t/a.js")).toBe(1);
     await validateText("/t/a.js", "file:///t/a.js", "function id(x){return x;}\n", 2, deps);
     expect(validateGeneration.get("/t/a.js")).toBe(2);
+  });
+
+  it("bumpValidateGeneration (onDidClose path) discards in-flight publish", async () => {
+    const deps = makeDeps();
+    const path = "/t/closed.js";
+    const uri = "file:///t/closed.js";
+    // 启动 validate，不 await；关闭文档时 bump generation
+    const p = validateText(
+      path,
+      uri,
+      "export function f(){return 1;}\n",
+      1,
+      deps,
+    );
+    const closedGen = bumpValidateGeneration(path);
+    await p;
+    expect(validateGeneration.get(path)).toBe(closedGen);
+    // 关闭后不得再 publish 陈旧诊断
+    expect(deps.sent.length).toBe(0);
   });
 
   it("older overlapping validate does not publish after a newer one starts", async () => {

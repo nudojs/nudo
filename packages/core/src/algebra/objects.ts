@@ -119,7 +119,7 @@ export function joinObjects(a: Abs, b: Abs): Abs {
   return { shape: { k: "obj", slots }, conf };
 }
 
-/** 值级 join：字面量保留为… Phase A 对 prim 做 term 保留策略 */
+/** 值级 join：同型双字面量保留为枚举 sum；其余 prim 同型收成 path */
 export function joinValues(a: Abs, b: Abs): Abs {
   if (a.shape.k === "never") return b;
   if (b.shape.k === "never") return a;
@@ -134,15 +134,14 @@ export function joinValues(a: Abs, b: Abs): Abs {
     b.shape.k === "prim" &&
     a.shape.type === b.shape.type
   ) {
-    // 双字面量：保留 term 为「丢失」，shape 仍 prim；置信度 path
-    // （完整 sum-of-literals 需要 Abs.sum members — Phase B 可扩）
+    // 双字面量：枚举 sum（1|2）；NaN 不可满足，不得进枚举 → 收成 path
     if (va !== undefined && vb !== undefined) {
-      return abs(
-        a.shape,
-        undefined,
-        undefined,
-        confJoin(a.conf, "path"),
-      );
+      const nanA = typeof va === "number" && Number.isNaN(va);
+      const nanB = typeof vb === "number" && Number.isNaN(vb);
+      if (nanA || nanB) {
+        return abs(a.shape, undefined, undefined, confJoin(confJoin(a.conf, b.conf), "path"));
+      }
+      return makeSum(a, b);
     }
     return abs(a.shape, undefined, undefined, confJoin(confJoin(a.conf, b.conf), "path"));
   }
@@ -153,6 +152,21 @@ export function joinValues(a: Abs, b: Abs): Abs {
 export function makeSum(a: Abs, b: Abs): Abs {
   const members = flattenSum([a, b]);
   if (members.length === 1) return members[0]!;
+  // 过长同 prim 字面量枚举收成 path，避免 sum 成员爆炸（循环 unroll / reduce）
+  if (members.length > 16) {
+    const first = members[0]!;
+    const samePrimLit =
+      first.shape.k === "prim" &&
+      members.every(
+        (m) =>
+          m.shape.k === "prim" &&
+          (m.shape as { type: string }).type === (first.shape as { type: string }).type &&
+          litValue(m) !== undefined,
+      );
+    if (samePrimLit) {
+      return abs(first.shape, undefined, undefined, "path");
+    }
+  }
   return {
     shape: { k: "sum", members },
     conf: confJoin(a.conf, b.conf),

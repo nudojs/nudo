@@ -740,6 +740,20 @@ export function applyCallbackAbs(
   phi: unknown,
   budget: unknown,
 ): Abs {
+  // sum 实参按成员分发再 join（joinAbs 字面量枚举后 map/filter 元素常为 sum）
+  const sumIdx = args.findIndex(
+    (a) => a && typeof a === "object" && "shape" in (a as object) && (a as Abs).shape.k === "sum",
+  );
+  if (sumIdx >= 0) {
+    const members = (args[sumIdx] as Abs & { shape: { k: "sum"; members: Abs[] } }).shape.members;
+    let acc: Abs | undefined;
+    for (const m of members) {
+      const nextArgs = args.map((a, i) => (i === sumIdx ? m : a));
+      const r = applyCallbackAbs(cb, nextArgs, env, phi, budget);
+      acc = acc === undefined ? r : joinAbs(acc, r);
+    }
+    return acc ?? unknown;
+  }
   if (!applyCallbackHost) {
     // fallback：纯 Abs 关系路径（测试/无宿主）
     if (cb && typeof cb === "object" && "shape" in cb) {

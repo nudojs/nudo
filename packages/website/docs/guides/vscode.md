@@ -123,10 +123,10 @@ You can also invoke the command palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and run
 | Palette title | Command | Behavior |
 |---------------|---------|----------|
 | Nudo: Show Interface | `nudo.interface` | Print tiers in the **Nudo** output channel (same as `nudo interface`) |
-| Nudo: Draft Interface (code-first) | `nudo.interface.draft` | Preview draft in Output; optional **Write draft file** → `*.nudo.draft.js` / `*.nudo.draft.ts` |
-| Nudo: Persist Interface (@generated) | `nudo.interfaceEmit` | Freeze call-site domains (CodeLens persist/update uses this) |
+| Nudo: Draft Interface (code-first) | `nudo.interface.draft` | Preview draft in Output; optional **Write draft file** → `*.nudo.draft.js` / `*.nudo.draft.ts` (write is fail-closed without a project root) |
+| Nudo: Persist Interface (@generated) | `nudo.interfaceEmit` | **Dry-run first** (`dryRun: true`, no write) → Output preview → confirm → real sidecar write. CodeLens persist/update uses the same confirm flow |
 
-CodeLens on non-handwritten exports includes `⚡ draft interface` — same path as CLI `--draft` and agent `nudo.interface.draft`.
+CodeLens on non-handwritten exports includes `⚡ draft interface` — same path as CLI `--draft` and agent `nudo.interface.draft`. Persist/update CodeLens never writes before the dry-run confirm dialog is accepted.
 
 ---
 

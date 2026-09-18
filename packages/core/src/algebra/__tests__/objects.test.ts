@@ -66,14 +66,15 @@ describe("objects: spread", () => {
 });
 
 describe("objects: join", () => {
-  it("same keys, different literal values → join drops term, keeps prim", () => {
+  it("same keys, different literal values → slot join enumerates lits", () => {
     const a = objOf({ a: { value: numLit(1) } });
     const b = objOf({ a: { value: numLit(2) } });
     const r = joinObjects(a, b);
     expect(isObj(r)).toBe(true);
     if (!isObj(r)) return;
-    expect(r.shape.slots.a!.value.shape).toEqual({ k: "prim", type: "number" });
-    expect(r.shape.slots.a!.value.term).toBeUndefined();
+    expect(r.shape.slots.a!.value.shape.k).toBe("sum");
+    expect(formatShape(r.shape.slots.a!.value)).toContain("1");
+    expect(formatShape(r.shape.slots.a!.value)).toContain("2");
   });
 
   it("different key sets → sum, NOT optional collapse", () => {

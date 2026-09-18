@@ -45,12 +45,20 @@ export {
 
 export { isNudoTargetPath } from "./target-path.ts";
 export {
+  isSidecarPath,
+  isProjectConfigPath,
+  isWatchRelevantPath,
+  ambientSourcesOfSidecar,
+} from "./watch-paths.ts";
+export {
   shouldAnalyzeFile,
   hasNudoDirectives as sourceHasNudoDirectives,
   filterDiagnosticsByLevel,
   diagnosticsLevelForFile,
 } from "./analysis-scope.ts";
 export { defaultLoadModule, type LoadModule } from "./load-module.ts";
+export { clearPathEnvCaches } from "./evaluator/env-loader.ts";
+export { analysisFileCacheKey } from "./analyzer.ts";
 export {
   collectStaticImports,
   analyzeExportsFromSource,
@@ -213,6 +221,7 @@ export {
   sidecarDraftPath,
   writeInterfaceDraft,
   collectParamBodyAccesses,
+  isDraftableEntry,
   type DraftEvidence,
   type InterfaceDraftEntry,
   type InterfaceDraftOpts,

@@ -125,6 +125,8 @@ describe("absToTSType legality (E1)", () => {
   });
 
   it("keeps brand | primitive unions legal", () => {
+    // Brand names are extensional projections (e.g. "Error"); tsc-clean checks
+    // run with --skipLibCheck and do not assert ambient brand declarations exist.
     const ts = absToTSType(unionOf(brandOf("Error"), num(), arrOf(unionOf(num(), str()))));
     const check = tscNoEmit(`export type T = ${ts};`);
     expect(check.ok, check.stderr).toBe(true);

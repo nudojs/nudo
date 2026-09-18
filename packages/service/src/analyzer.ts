@@ -54,7 +54,7 @@ import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/
 import { resolveNpmNudo } from "./evaluator/resolve-npm.ts";
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
-import { loadModuleDepsFingerprint } from "@nudojs/core";
+import { loadModuleDepsFingerprint, hashSource } from "@nudojs/core";
 import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph, evalProgramAbsWithModules } from "./abs-modules-graph.ts";
 import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, mockSeedFingerprint, collectEnvGlobals, collectEnvModules } from "./bpath-run.ts";
@@ -924,13 +924,14 @@ const TEST_CALLBACK_NAMES = new Set(["it", "test", "describe"]);
 const externalRecordIds = new WeakMap<object, number>();
 let nextExternalRecordId = 1;
 
-function analysisFileCacheKey(
+export function analysisFileCacheKey(
   filePath: string,
   source: string,
   activeCases?: Map<string, number>,
   externalCallRecords?: CallRecord[],
   analysisCfg?: { mode: string; evalMissingSlot: string; callSiteBudget: number; diagnostics: string },
   loadModule?: AnalyzeLoadModule,
+  projectEnvNames?: string[],
 ): { filePath: string; source: string; auxKey: string; noCache?: boolean } {
   let cases = "-";
   if (activeCases && activeCases.size > 0) {
@@ -955,29 +956,31 @@ function analysisFileCacheKey(
   // custom loadModule (e.g. LSP buffer-aware) can produce different analysis
   // than the default disk loader — distinguish in the memo key
   const lm = loadModule !== undefined && loadModule !== defaultLoadModule ? "lm1" : "lm0";
-  // buffer-aware / 自定义 loader：dep 内容变更（入口 source 未变）也必须 miss。
+  // project nudo.env 变更必须 miss（fn 级键已有 envNames，文件级对齐）
+  const envSeg = projectEnvNames && projectEnvNames.length > 0 ? projectEnvNames.join(",") : "-";
+  // dep 内容变更（入口 source 未变）也必须 miss——default loader 同样进指纹。
   // 指纹失败/truncated → 禁用共享命中（fail-closed，见 noCache）。
+  const effectiveLoader = loadModule ?? defaultLoadModule;
   let depSeg = "-";
   let noCache = false;
-  if (lm === "lm1" && loadModule) {
-    try {
-      const fp = loadModuleDepsFingerprint(source, loadModule, filePath);
-      if (fp.truncated) {
-        noCache = true;
-        depSeg = `trunc:${fp.paths.length}`;
-      } else {
-        depSeg = fp.fp.slice(0, 64);
-      }
-    } catch {
+  try {
+    const fp = loadModuleDepsFingerprint(source, effectiveLoader, filePath);
+    if (fp.truncated) {
       noCache = true;
-      depSeg = "fperr";
+      depSeg = `trunc:${fp.paths.length}`;
+    } else {
+      // fingerprint is path=hash,… — hash the whole blob so long abs paths still flip
+      depSeg = hashSource(fp.fp);
     }
+  } catch {
+    noCache = true;
+    depSeg = "fperr";
   }
   return {
     filePath,
     // 尾部无 @nudo 注释/空行不进键：comment-only 编辑命中 AnalysisResult
     source: stableAnalyzeKeySource(source),
-    auxKey: `${cases}\0${ext}\0${cfg}\0${lm}\0${depSeg}`,
+    auxKey: `${cases}\0${ext}\0${cfg}\0${lm}\0${envSeg}\0${depSeg}`,
     noCache,
   };
 }
@@ -1068,7 +1071,16 @@ export function analyzeFile(
 ): AnalysisResult {
   const projectConfig = findProjectConfig(dirname(filePath));
   const cfg = analysisConfig(projectConfig?.config);
-  const k = analysisFileCacheKey(filePath, source, activeCases, externalCallRecords, cfg, loadModule);
+  const projectEnvNames = projectConfig?.config.env ?? [];
+  const k = analysisFileCacheKey(
+    filePath,
+    source,
+    activeCases,
+    externalCallRecords,
+    cfg,
+    loadModule,
+    projectEnvNames,
+  );
   if (!k.noCache) {
     const hit = analysisCacheGet<AnalysisResult>(k.filePath, k.source, k.auxKey);
     if (hit !== undefined) {
@@ -1443,23 +1455,21 @@ function analyzeFileUncachedInner(
     // analysis 配置维度进 fn 键：evalMissingSlot / budget 等变更必须 miss
     // （整文件键已含，fn 键不加会陈旧命中 C0.5 诊断）
     const analysisFnKey = `m=${analysisCfg.mode}|e=${analysisCfg.evalMissingSlot}|b=${analysisCfg.callSiteBudget}`;
-    // P1#13：custom loadModule 下 dep 内容进 fn 键，避免入口文本未变时旧诊断命中
+    // dep 内容进 fn 键（default 与 custom loader 同口径），避免入口文本未变时旧诊断命中
     // truncated / fingerprint 失败：与整文件 noCache 同口径 fail-closed
     let fnDepSeg: string | null = "-";
     let fnDepFailClosed = false;
-    if (loadModule !== undefined && loadModule !== defaultLoadModule) {
-      try {
-        const dfp = loadModuleDepsFingerprint(source, loadModule, filePath);
-        if (dfp.truncated) {
-          fnDepFailClosed = true;
-          fnDepSeg = null;
-        } else {
-          fnDepSeg = dfp.fp.slice(0, 64);
-        }
-      } catch {
+    try {
+      const dfp = loadModuleDepsFingerprint(source, loadModule ?? defaultLoadModule, filePath);
+      if (dfp.truncated) {
         fnDepFailClosed = true;
         fnDepSeg = null;
+      } else {
+        fnDepSeg = hashSource(dfp.fp);
       }
+    } catch {
+      fnDepFailClosed = true;
+      fnDepSeg = null;
     }
     const fnCacheKey =
       !fnDepFailClosed && fp && caseDirectives.length > 0

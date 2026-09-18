@@ -4,7 +4,7 @@ import {
   callTranspiledExportFull,
   $lit,
   litValue,
-  absToString,
+  formatAbs,
   transpile,
 } from "@nudojs/core";
 
@@ -63,8 +63,10 @@ export function go(n) {
     const r = callTranspiledExportFull(exports, "go", [
       { shape: { k: "prim", type: "number" }, conf: "exact" },
     ]);
-    // 抽象 number → join(10, 20) → number #path
-    expect(absToString(r.result)).toContain("number");
+    // 抽象 number → join(10, 20) → 枚举 10 | 20
+    const fmt = formatAbs(r.result);
+    expect(fmt).toContain("10");
+    expect(fmt).toContain("20");
   });
 
   it("transpiles switch to $switch", () => {

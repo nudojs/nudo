@@ -401,6 +401,20 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     | { k: "tuple"; elements: Abs[] };
   // 统一委托 applyCallbackAbs（不新增 env.fns；Abs 侧 D/E 与 ast-eval 同轨）
   const callFn = (fn: unknown, ...fnArgs: Abs[]): Abs => {
+    const sumIdx = fnArgs.findIndex(
+      (a) => a && typeof a === "object" && "shape" in (a as object) && (a as Abs).shape.k === "sum",
+    );
+    if (sumIdx >= 0) {
+      const members = (fnArgs[sumIdx] as Abs & { shape: { k: "sum"; members: Abs[] } }).shape
+        .members;
+      let acc: Abs | undefined;
+      for (const m of members) {
+        const next = fnArgs.map((a, i) => (i === sumIdx ? m : a));
+        const r = callFn(fn, ...next);
+        acc = acc === undefined ? r : joinAbs(acc, r);
+      }
+      return acc ?? unknown;
+    }
     if (typeof fn === "function") {
       const r = callAtFunctionBoundary(() => (fn as (...a: Abs[]) => unknown)(...fnArgs));
       if (r && typeof r === "object" && "shape" in (r as object)) return r as Abs;

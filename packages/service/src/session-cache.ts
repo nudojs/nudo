@@ -15,6 +15,7 @@ import { clearAbsModuleCache, evictAbsModuleCacheFiles } from "./abs-modules-gra
 import { clearBPathCache, evictBPathCacheForFiles } from "./bpath-run.ts";
 import { clearAnalysisFileCache, evictAnalysisFileCacheForFiles } from "./analysis-file-cache.ts";
 import { clearFnAnalysisCache, evictFnAnalysisCacheForFiles } from "./fn-analysis-cache.ts";
+import { clearPathEnvCaches } from "./evaluator/env-loader.ts";
 
 /**
  * 依赖内容变更后：按入口文件定向逐出 service 层缓存。
@@ -38,6 +39,7 @@ export function evictAnalysisCachesForFiles(files: string[]): void {
 export function clearAnalysisSessionCaches(): void {
   clearBPathCache(); // cascades analysis-file + fn-analysis
   clearAbsModuleCache();
+  clearPathEnvCaches();
   resetGeneralizeMemo();
   resetCheckSourceMemo();
   resetNudoModuleExecCache();

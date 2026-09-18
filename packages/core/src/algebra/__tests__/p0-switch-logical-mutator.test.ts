@@ -85,9 +85,10 @@ export function f(n) {
 `;
     const r = callWithAbs(src, "f", [absNum]);
     const s = formatAbs(r.result);
-    // 不得丢掉 case1 早退路径，折成 exact 100
+    // 不得丢掉 case1 早退路径，折成 exact 单成员 100
     expect(s).not.toBe("100");
-    expect(r.result.conf).not.toBe("exact");
+    expect(s).toContain("1");
+    expect(s).toContain("100");
   });
 
   it("concrete mixed switch still hits the matching arm", () => {

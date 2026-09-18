@@ -38,7 +38,7 @@ function go(n) {
 }
 `;
 
-  it("without eviction, parent analysis hits stale result after dep change", () => {
+  it("default-loader analysisFileCacheKey includes dep fingerprint (no stale hit)", () => {
     clearAnalysisSessionCaches();
     const dir = mkdtempSync(join(tmpdir(), "nudo-stale-"));
     dirs.push(dir);
@@ -50,13 +50,13 @@ function go(n) {
     const r1 = analyzeFile(mainPath, MAIN);
     expect(caseResultOf(r1, "go", "t")).toBe("2");
 
-    // dep 变了，parent source 不变；不逐出 → 整文件缓存命中
+    // dep 变了，parent source 不变：default loader 指纹进 memo 键 → 不陈旧命中
     writeFileSync(depPath, `export function inc(x) { return x + 99; }\n`);
     const r2 = analyzeFile(mainPath, MAIN);
-    expect(caseResultOf(r2, "go", "t")).toBe("2"); // 陈旧——正是契约要防的
+    expect(caseResultOf(r2, "go", "t")).toBe("100");
   });
 
-  it("evictAnalysisCachesForFiles makes parent see dep change", () => {
+  it("evictAnalysisCachesForFiles still refreshes after dep change", () => {
     clearAnalysisSessionCaches();
     const dir = mkdtempSync(join(tmpdir(), "nudo-evict-"));
     dirs.push(dir);

@@ -19,6 +19,10 @@ import {
   insertGeneratedCaseDirectives,
   unifiedDiff,
   isNudoTargetPath,
+  isWatchRelevantPath,
+  isSidecarPath,
+  isProjectConfigPath,
+  ambientSourcesOfSidecar,
   collectDtsFromEntry,
   evictAnalysisCachesForFiles,
   getAnalysisSession,
@@ -727,8 +731,10 @@ async function runInterfaceDraft(
     }
     // writeInterfaceDraft 的 node_modules / draft≠formal 守卫仍生效；正式
     // 门禁请用 `nudo check`，不要依赖 draft 写入拒绝。
+    // entries：解析层 draftable（Unicode/`$` 导出名不靠源码正则）
     const write = writeInterfaceDraft(filePath, result.draftSource, {
       dryRun: opts.dryRun,
+      entries: result.entries,
       ...(projectRoot ? { projectDir: projectRoot } : {}),
     });
     for (const line of formatDraftSummary(rel, draftRel, result, write)) console.log(line);
@@ -1230,10 +1236,29 @@ program
 
       // 合并多文件变更的脏集（union）：每个变更文件的脏集 = 自身 + 传递依赖方
       const dirtyUnion = new Set<string>();
+      let forceFull = false;
       for (const cf of changedFiles) {
-        for (const d of computeDirtySet(graph.dependents, cf)) dirtyUnion.add(d);
+        if (isNudoTargetPath(cf)) {
+          for (const d of computeDirtySet(graph.dependents, cf)) dirtyUnion.add(d);
+          continue;
+        }
+        // 侧车 / 项目配置：memo 不含完整失效语义 → 清空 + 尽量定位依赖方
+        getAnalysisSession().clear();
+        if (isProjectConfigPath(cf)) {
+          forceFull = true;
+          continue;
+        }
+        if (isSidecarPath(cf)) {
+          for (const src of ambientSourcesOfSidecar(cf)) {
+            if (tracked.has(src)) dirtyUnion.add(src);
+            for (const d of computeDirtySet(graph.dependents, src)) dirtyUnion.add(d);
+          }
+          for (const d of computeDirtySet(graph.dependents, cf)) dirtyUnion.add(d);
+          // ambient 绑定可跨文件生效；图边缺失时全量重析
+          if (![...dirtyUnion].some((f) => tracked.has(f))) forceFull = true;
+        }
       }
-      const dirty = [...dirtyUnion].filter((f) => tracked.has(f));
+      const dirty = forceFull ? files : [...dirtyUnion].filter((f) => tracked.has(f));
       if (dirty.length === 0) return;
 
       // 依赖先析：moduleCache 中未重析依赖的类型可被复用
@@ -1271,7 +1296,8 @@ program
     watch(watchTarget, { recursive: isDir }, (_event, filename) => {
       if (!filename) return;
       const fullPath = isDir ? join(watchTarget, filename) : resolved;
-      if (!isNudoTargetPath(fullPath)) return; // .js/.mjs/.ts（排除 .d.ts/.tsx）
+      // targets + sidecar/config：侧车进 ambient/fingerprint，配置进 env/analysis
+      if (!isWatchRelevantPath(fullPath)) return;
       if (!existsSync(fullPath)) return; // deleted
 
       pendingChanged.add(fullPath);

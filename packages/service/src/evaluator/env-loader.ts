@@ -129,6 +129,13 @@ function lookupPathEnv(name: string): (() => EnvDefinition) | undefined {
   return undefined;
 }
 
+/** Host cache-clear hooks (CLI watch / vite / tests) must drop path-env modules too */
+export function clearPathEnvCaches(): void {
+  pathEnvCache.clear();
+  pathEnvByPath.clear();
+  pathEnvBaseDirs.clear();
+}
+
 export async function preloadPathEnvs(envNames: string[], baseDir: string): Promise<void> {
   pathEnvBaseDirs.add(baseDir);
   for (const name of envNames) {

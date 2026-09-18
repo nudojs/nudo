@@ -168,7 +168,7 @@ What the server registers on `connection.onInitialize` (`src/server.ts`):
 
 Cross-editor support matrix: [LSP Client Matrix](../guides/lsp-clients.md).
 
-Text synchronization is `Full`. Opening a document validates it immediately, and content changes are debounced 300 ms — both paths trigger `validateText` with `propagate = true` (the only propagation entry points); closing a document cancels its timer, drops its cache entry, and clears its diagnostics. Watched-file deletions are handled out-of-band, and everything the session keeps in memory is bounded — see [Memory and Isolation Model](#memory-and-isolation-model).
+Text synchronization is `Full`. Opening a document validates it immediately, and content changes are debounced adaptively by buffer size (300 ms under 50k chars, 400 ms under 200k, 800 ms above) — both paths trigger `validateText` with `propagate = true` (the only propagation entry points); closing a document cancels its timer, drops its cache entry, bumps the per-file validate generation (so in-flight results are discarded), and clears its diagnostics. Watched-file deletions are handled out-of-band, and everything the session keeps in memory is bounded — see [Memory and Isolation Model](#memory-and-isolation-model).
 
 ### Custom requests
 
@@ -193,7 +193,7 @@ Everything the server holds for the lifetime of a session:
 | `activeCases` | `Map<uri, Map<functionName, index>>` | case selections, keyed by uri and function name | dropped when the document closes or the file is deleted on disk |
 | `nudoFileCache` | `Map<uri, boolean>` — Nudo-file detection memo | one boolean per open document | invalidated on every open/change/close/delete of its uri |
 | `moduleGraphCache` | `Map<filePath, { mtimeMs, size, edges }>` | one entry per file that ever entered the import graph; edges are path strings | `mtimeMs`+`size` mismatch re-reads from disk and backfills; deletion evicts |
-| `debounceTimers` | `Map<uri, timer>` | one pending timer per edited document | fires after 300 ms or is cancelled on close |
+| `debounceTimers` | `Map<uri, timer>` | one pending timer per edited document | fires after the adaptive delay (300/400/800 ms by buffer size) or is cancelled on close |
 
 Every entry is a path, a function name, a small integer, or a boolean — string-level bookkeeping, never parsed representation. `AnalysisResult` objects exist only inside `analysisCache` and leave with their entry.
 

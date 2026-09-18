@@ -22,12 +22,14 @@ import {
   formatAbs,
   hashSource,
   getFnImpl,
+  loadModuleDepsFingerprint,
 } from "@nudojs/core";
 import { parse, extractInlineDirectives } from "@nudojs/parser";
 import { loadEnvs } from "./evaluator/evaluator-api.ts";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
 import { clearAnalysisFileCache } from "./analysis-file-cache.ts";
 import { clearFnAnalysisCache } from "./fn-analysis-cache.ts";
+import { defaultLoadModule } from "./load-module.ts";
 
 /** Content part for one Abs mock seed. */
 function absSeedPart(a: Abs): string {
@@ -215,10 +217,22 @@ type BCacheEntry = {
   mode: string;
   envKey: string;
   mockKey: string;
+  depKey: string;
   value: BPathRunResult | null;
 };
 const bRunByFile = new Map<string, BCacheEntry>();
 const MAX_B_RUN_CACHE = 32;
+
+/** disk dep fingerprint — B-path always loads via defaultLoadModule */
+function bPathDepKey(source: string, filePath: string): string {
+  try {
+    const fp = loadModuleDepsFingerprint(source, defaultLoadModule, filePath);
+    // fingerprint is path=hash,… — hash whole blob so long abs paths still flip
+    return fp.truncated ? `trunc:${fp.paths.length}` : hashSource(fp.fp);
+  } catch {
+    return "fperr";
+  }
+}
 
 export function clearBPathCache(): void {
   bRunByFile.clear();
@@ -242,13 +256,14 @@ function bPathCacheSet(
   mode: string,
   envKey: string,
   mockKey: string,
+  depKey: string,
   value: BPathRunResult | null,
 ): void {
   if (bRunByFile.size >= MAX_B_RUN_CACHE && !bRunByFile.has(filePath)) {
     const oldest = bRunByFile.keys().next().value;
     if (oldest !== undefined) bRunByFile.delete(oldest);
   }
-  bRunByFile.set(filePath, { stableSource, mode, envKey, mockKey, value });
+  bRunByFile.set(filePath, { stableSource, mode, envKey, mockKey, depKey, value });
 }
 
 /** 模块图 + runTranspiled（默认 analyze 模式） */
@@ -270,13 +285,15 @@ export function tryRunBPath(
   // 尾部无 @nudo 注释不参与：comment-only 编辑命中 B-path。
   // 同 source 引用时 stable 快路径返回原串 → 下方 === 为 O(1)。
   const stable = stableAnalyzeKeySource(source);
+  const depKey = bPathDepKey(source, filePath);
   const cached = bRunByFile.get(filePath);
   if (
     cached &&
     cached.stableSource === stable &&
     cached.mode === mode &&
     cached.envKey === envKey &&
-    cached.mockKey === mockKey
+    cached.mockKey === mockKey &&
+    cached.depKey === depKey
   ) {
     // LRU：命中移到队尾
     bRunByFile.delete(filePath);
@@ -327,7 +344,7 @@ export function tryRunBPath(
   } catch {
     out = null;
   }
-  bPathCacheSet(filePath, stable, mode, envKey, mockKey, out);
+  bPathCacheSet(filePath, stable, mode, envKey, mockKey, depKey, out);
   return out ?? undefined;
 }
 

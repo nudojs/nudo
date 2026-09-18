@@ -179,11 +179,11 @@ export function definitelyNotNullishShape(s: Shape): boolean {
   }
 }
 
+/** 仅当 term 确为 lit null/undefined 时为 true；非 lit 的 litValue===undefined 不得当 nullish */
 export function isNullishLitAbs(a: Abs): boolean {
-  const v = litValue(a);
-  if (v === null || v === undefined) return true;
-  // shape 层：无 lit 的 unknown 不判 nullish
-  return false;
+  const t = a.term;
+  if (!t || t.op !== "lit") return false;
+  return t.value === null || t.value === undefined;
 }
 
 /**

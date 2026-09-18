@@ -15,8 +15,8 @@
  * sidecar 自动绑定（loadModule 只认 `*.nudo.js`）。审阅后复制进正式侧车。
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, relative } from "node:path";
+import { existsSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import {
   effectiveInterface,
   formatConstraint,
@@ -691,15 +691,41 @@ export type WriteDraftResult = {
   draftSource: string;
 };
 
+/** realpath both sides so /tmp vs /private/var (macOS) cannot fail projectDir containment */
+function safeRealpath(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    try {
+      return join(realpathSync(dirname(p)), basename(p));
+    } catch {
+      return p;
+    }
+  }
+}
+
+/** Parse-layer draftable: at least one entry has generated DSL and was not skipped */
+export function isDraftableEntry(entries: ReadonlyArray<Pick<InterfaceDraftEntry, "dsl" | "skipped">>): boolean {
+  return entries.some((e) => e.dsl !== undefined && e.skipped === undefined);
+}
+
 /**
  * 写入 `*.nudo.draft.js`（覆盖草稿文件本身；不碰正式 `*.nudo.js`）。
  * 基础路径防护：拒绝 node_modules；拒绝 draft 路径与正式侧车重合；
  * 拒绝 draft 路径落在源文件目录之外的穿越。
+ *
+ * `opts.entries` / `opts.draftable`：解析层判定（优先）。缺省时用 Unicode
+ * 感知 export 正则兜底——`\w` 会静默丢掉 `计算` 这类标识符。
  */
 export function writeInterfaceDraft(
   filePath: string,
   draftSource: string,
-  opts: { dryRun?: boolean; projectDir?: string } = {},
+  opts: {
+    dryRun?: boolean;
+    projectDir?: string;
+    entries?: ReadonlyArray<Pick<InterfaceDraftEntry, "dsl" | "skipped">>;
+    draftable?: boolean;
+  } = {},
 ): WriteDraftResult {
   const draftPath = sidecarDraftPath(filePath);
   const formalPath = sidecarPathOf(filePath);
@@ -712,14 +738,20 @@ export function writeInterfaceDraft(
     throw new Error(`draft write refused: path is inside node_modules (${draftPath})`);
   }
   if (opts.projectDir) {
-    const rel = relative(opts.projectDir, draftPath);
+    const rootReal = safeRealpath(opts.projectDir);
+    const draftReal = safeRealpath(draftPath);
+    const rel = relative(rootReal, draftReal);
     if (rel.startsWith("..") || isAbsolute(rel)) {
       throw new Error(`draft write refused: outside project root ${opts.projectDir}`);
     }
   }
   // 无可写 export 的空草稿不落盘（避免覆盖已有 draft 壳 / 误写正式侧车）
-  // 用 draftableEntries（解析层）而非源码正则：`$`/Unicode 导出名不得静默丢弃
-  const draftable = /export\s+const\s+[A-Za-z_$][\w$]*\s*=/.test(draftSource);
+  const draftable =
+    opts.draftable !== undefined
+      ? opts.draftable
+      : opts.entries !== undefined
+        ? isDraftableEntry(opts.entries)
+        : /export\s+const\s+[\p{ID_Start}$_][\p{ID_Continue}$]*\s*=/u.test(draftSource);
   const prev = existsSync(draftPath) ? readFileSync(draftPath, "utf-8") : undefined;
   const changed = prev !== draftSource;
   const written = !opts.dryRun && changed && draftable;
@@ -757,7 +789,17 @@ export function formatDraftSummary(
         write.written ? `Draft written → ${draftRel}` : `[dry-run] would write → ${draftRel}`,
       );
     } else if (write.changed && !write.draftable) {
-      lines.push(`Draft empty (no draftable exports); nothing written → ${draftRel}`);
+      // attempted entries (skipped/handwritten) must not be reported as "empty"
+      if (result.entries.length > 0) {
+        const skipped = result.entries.filter((e) => e.skipped !== undefined).length;
+        lines.push(
+          skipped > 0
+            ? `Draft not written (${skipped} skipped, no writeable exports); nothing written → ${draftRel}`
+            : `Draft not written (no writeable exports); nothing written → ${draftRel}`,
+        );
+      } else {
+        lines.push(`Draft empty (no draftable exports); nothing written → ${draftRel}`);
+      }
     } else {
       lines.push(`${draftRel}: draft unchanged`);
     }

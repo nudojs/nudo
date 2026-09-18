@@ -222,8 +222,8 @@ Interface product surface (same data sources as CLI):
 | Command | Args | Behavior |
 |---------|------|----------|
 | `nudo.interface` | `{ file, functionName?, source? }` | Print `fn  [handwritten\|generated\|implicit]  (params) → returns` + JSON |
-| `nudo.interface.draft` | `{ file, functionName?, source?, write?, dryRun? }` | Code-first draft module (`@nudo:draft`); `write: true` lands `*.nudo.draft.js` / `*.nudo.draft.ts` (never ambient-bound). Body-read fields appear as **suggestions only** |
-| `nudo.interfaceEmit` / `nudo.interface.emit` | `{ file, functionName, mode: "add"\|"update" }` | Persist call-site domains via `emitInterface` |
+| `nudo.interface.draft` | `{ file, functionName?, source?, write?, dryRun? }` | Code-first draft module (`@nudo:draft`); `write: true` lands `*.nudo.draft.js` / `*.nudo.draft.ts` (never ambient-bound). Body-read fields appear as **suggestions only**. `write: true` is **fail-closed** without a project root (nudo config / `package.json` ancestor) — same as CLI `--draft --write` (override: `NUDO_DRAFT_FORCE=1`) |
+| `nudo.interfaceEmit` / `nudo.interface.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean }` | Persist call-site domains via `emitInterface`. `dryRun: true` previews without writing: same result shape (paths, would-change, unifiedDiff) with `[dry-run] would update …` text; no sidecar file is created or modified. VS Code Persist/CodeLens confirm sends `dryRun: true` first, then a real write on confirm |
 
 `loadModule` and effective `autoBind` are **server-injected** (buffer-aware sidecar loader + project `package.json#nudo.interface.autoBind` AND client request). They are not JSON-serializable request parameters — do not send them from agents.
 

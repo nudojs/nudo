@@ -90,6 +90,39 @@ export const nudoDepParents = new Map<string, Set<string>>();
 /** 每文件校验代数（A8）：新 validate 启动即 bump；await 返回后代数不一致 → 放弃发布 */
 export const validateGeneration = new Map<string, number>();
 
+/**
+ * Bump (or initialize) the per-file validate generation.
+ * Used by validateText on start and by server onDidClose so in-flight
+ * results for a closed/superseded document are discarded.
+ */
+export function bumpValidateGeneration(filePath: string): number {
+  const gen = (validateGeneration.get(filePath) ?? 0) + 1;
+  validateGeneration.set(filePath, gen);
+  return gen;
+}
+
+/**
+ * Abs-check LSP diagnostics by `analysis.diagnostics` level.
+ * Shared by push (`validateText`) and pull (`languages.diagnostics`) so both
+ * channels filter identically:
+ * - off → silent; errors → Error only; default → Error+Warning; verbose → all.
+ */
+export function filterCheckLspByLevel(
+  diags: LspDiagnostic[],
+  level: "off" | "errors" | "default" | "verbose",
+): LspDiagnostic[] {
+  if (level === "verbose") return diags;
+  if (level === "off") return [];
+  if (level === "errors") {
+    return diags.filter((d) => d.severity === DiagnosticSeverity.Error);
+  }
+  return diags.filter(
+    (d) =>
+      d.severity === DiagnosticSeverity.Error ||
+      d.severity === DiagnosticSeverity.Warning,
+  );
+}
+
 function normPath(p: string): string {
   return p.replace(/\\/g, "/");
 }
@@ -470,8 +503,7 @@ export async function validateText(
   force = false,
 ): Promise<void> {
   // A8：编辑风暴取消——同文件新一轮 validate 启动后，旧 await 不得发布陈旧诊断
-  const gen = (validateGeneration.get(filePath) ?? 0) + 1;
-  validateGeneration.set(filePath, gen);
+  const gen = bumpValidateGeneration(filePath);
   const stillCurrent = (): boolean => validateGeneration.get(filePath) === gen;
 
   // 零注解文件 gate 放行例外：磁盘上存在同名侧车（interface 档主场景——
@@ -533,13 +565,11 @@ export async function validateText(
   // off：显示路径全静音（与 errors 档区分）。check 门禁 CLI `nudo check` /
   // checkSource 独立，不受 off 影响。
   const level = diagnosticsLevelForFile(filePath);
-  const checkDiags = checkToLspDiagnostics(filePath, text, deps.loadModule).filter((d) => {
-    // LSP DiagnosticSeverity: Error=1, Warning=2, Information=3
-    if (level === "verbose") return true;
-    if (level === "off") return false;
-    if (level === "errors") return d.severity === DiagnosticSeverity.Error;
-    return d.severity === DiagnosticSeverity.Error || d.severity === DiagnosticSeverity.Warning;
-  });
+  // P2：与 pull（server.languages.diagnostics）共用同一 helper
+  const checkDiags = filterCheckLspByLevel(
+    checkToLspDiagnostics(filePath, text, deps.loadModule),
+    level,
+  );
   const evalJs = filterDiagnosticsByLevel(result.diagnostics, level);
   const evalDiags = evalJs.map((d) => toLspDiagnostic(d, uri));
   // P2：发布前再确认 generation，避免 check 路径上的 await 竞态覆盖更新 push

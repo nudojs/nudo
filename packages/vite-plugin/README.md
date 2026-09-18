@@ -25,7 +25,7 @@ import nudo from 'vite-plugin-nudo'
 export default {
   plugins: [
     nudo({
-      // include / exclude are string[] (not a bare string)
+      // include / exclude accept `string | string[]` (normalized to string[] at runtime)
       include: ['**/*.js', '**/*.mjs', '**/*.ts'], // default — matches isNudoTargetPath (.js/.mjs/.ts)
       exclude: ['**/node_modules/**', '**/*.d.ts'], // default
       failOnError: false, // default — contract errors warn, do not fail the build

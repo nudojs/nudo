@@ -126,10 +126,10 @@ Nudo 根据推断类型提供语法高亮。函数、变量和死代码的高亮
 | 面板标题 | 命令 | 行为 |
 |----------|------|------|
 | Nudo: Show Interface | `nudo.interface` | 在 **Nudo** 输出通道打印分层（同 `nudo interface`） |
-| Nudo: Draft Interface (code-first) | `nudo.interface.draft` | Output 预览草稿；可选写入 `*.nudo.draft.js` / `*.nudo.draft.ts` |
-| Nudo: Persist Interface (@generated) | `nudo.interfaceEmit` | 固化调用点域（CodeLens persist/update 共用） |
+| Nudo: Draft Interface (code-first) | `nudo.interface.draft` | Output 预览草稿；可选写入 `*.nudo.draft.js` / `*.nudo.draft.ts`（无项目根时写盘 fail-closed） |
+| Nudo: Persist Interface (@generated) | `nudo.interfaceEmit` | **先 dry-run**（`dryRun: true`，不写盘）→ Output 预览 → 确认 → 真实写入侧车。CodeLens persist/update 共用同一确认流程 |
 
-非手写导出上的 CodeLens 含 `⚡ draft interface`——与 CLI `--draft`、agent `nudo.interface.draft` 同源。
+非手写导出上的 CodeLens 含 `⚡ draft interface`——与 CLI `--draft`、agent `nudo.interface.draft` 同源。persist/update CodeLens 在确认对话框接受前绝不会写盘。
 
 ---
 

@@ -27,6 +27,7 @@ import type {
   DoWhileStatement,
   ForOfStatement,
   TryStatement,
+  SwitchStatement,
 } from "@babel/types";
 
 import type { Term } from "./term.ts";
@@ -111,6 +112,30 @@ export function withVar(env: AstEnv, name: string, value: Abs): AstEnv {
   const vars = new Map(env.vars);
   vars.set(name, value);
   return { vars, fns: env.fns, classes: env.classes, hofCollect: env.hofCollect };
+}
+
+/** 抽象分支 env 合流：任一侧写过的键与 base 做 join */
+function joinEnvs(a: AstEnv, b: AstEnv, base: AstEnv): AstEnv {
+  const vars = new Map(base.vars);
+  const keys = new Set<string>([...a.vars.keys(), ...b.vars.keys()]);
+  for (const k of keys) {
+    const va = a.vars.get(k);
+    const vb = b.vars.get(k);
+    const baseV = base.vars.get(k);
+    if (va !== undefined && vb !== undefined) {
+      vars.set(k, va === vb ? va : joinAbs(va, vb));
+    } else if (va !== undefined) {
+      vars.set(k, baseV !== undefined ? joinAbs(baseV, va) : va);
+    } else if (vb !== undefined) {
+      vars.set(k, baseV !== undefined ? joinAbs(baseV, vb) : vb);
+    }
+  }
+  return {
+    vars,
+    fns: a.fns ?? b.fns,
+    classes: a.classes ?? b.classes,
+    hofCollect: a.hofCollect ?? b.hofCollect,
+  };
 }
 
 export type EvalOptions = {
@@ -332,6 +357,9 @@ export type EvalResult = {
    * 假分支 fall-through 仍可能走后续语句。evalBlock 需与后续结果 join。
    */
   partialReturn?: boolean;
+  /** 抽象分支可能 throw（另一侧继续）— try 需并 catch 路径 */
+  partialThrow?: boolean;
+  throwValue?: Abs;
 };
 
 // --- 源码入口 ---
@@ -744,6 +772,36 @@ function evalNodeInner(
         recordAbsAssign(name, prev, rhs, loc);
         return { value: rhs, phi, env: withVar(env, name, rhs) };
       }
+      // obj.field = v → 更新 env 中根绑定（与 B-path $set 重绑同口径）
+      if (ae.left.type === "MemberExpression") {
+        const m = ae.left as unknown as {
+          object: Node;
+          property: Node;
+          computed?: boolean;
+        };
+        if (m.object.type === "Identifier") {
+          const root = (m.object as Identifier).name;
+          const prev = env.vars.get(root);
+          const key = !m.computed
+            ? m.property.type === "Identifier"
+              ? (m.property as Identifier).name
+              : m.property.type === "StringLiteral"
+                ? (m.property as StringLiteral).value
+                : undefined
+            : undefined;
+          if (prev && key && prev.shape.k === "obj") {
+            const slots = { ...(prev.shape as { slots: Record<string, { value: Abs }> }).slots };
+            slots[key] = { value: rhs };
+            const updated = abs(
+              { k: "obj", slots } as never,
+              undefined,
+              undefined,
+              prev.conf === "exact" ? "path" : prev.conf,
+            );
+            return { value: rhs, phi, env: withVar(env, root, updated) };
+          }
+        }
+      }
       return ok(rhs, phi, env);
     }
     case "AwaitExpression": {
@@ -775,7 +833,7 @@ function evalNodeInner(
       if (tv === false) return evalNode(cond.alternate, env, phi, budget);
       const a = evalNode(cond.consequent, env, phi, budget);
       const b = evalNode(cond.alternate, env, phi, budget);
-      return { value: joinAbs(a.value, b.value), phi, env };
+      return { value: joinAbs(a.value, b.value), phi, env: joinEnvs(a.env, b.env, env) };
     }
     case "ForStatement":
       return evalFor(node as ForStatement, env, phi, budget);
@@ -807,6 +865,8 @@ function evalNodeInner(
     }
     case "IfStatement":
       return evalIf(node as IfStatement, env, phi, budget);
+    case "SwitchStatement":
+      return evalSwitch(node as SwitchStatement, env, phi, budget);
     case "ExpressionStatement":
       return evalNode((node as ExpressionStatement).expression, env, phi, budget);
     case "VariableDeclaration":
@@ -1752,18 +1812,29 @@ function evalFor(
     const r = evalNode(node.init as Node, local, phi, budget);
     local = r.env;
   }
+  const entry = local;
   let acc: Abs = unknown;
+  let exitEnv: AstEnv | undefined;
+  let sawAbstractTest = false;
   for (let i = 0; i < MAX_LOOP_ITERS; i++) {
     if (node.test) {
       const t = evalNode(node.test, local, phi, budget);
       const lv = litValue(t.value);
-      if (lv === false || lv === null || lv === undefined) break;
+      if (lv === false || lv === null || lv === undefined) {
+        exitEnv = exitEnv ? joinEnvs(exitEnv, local, entry) : local;
+        break;
+      }
+      if (lv !== true) {
+        sawAbstractTest = true;
+        exitEnv = exitEnv ? joinEnvs(exitEnv, local, entry) : local;
+      }
     }
     const bodyR = evalInConditionalFlow(() => evalNode(node.body, local, phi, budget));
     if (bodyR.returned) return bodyR;
     if (bodyR.threw) return bodyR;
     if (bodyR.brk) {
       local = bodyR.env;
+      exitEnv = exitEnv ? joinEnvs(exitEnv, local, entry) : local;
       break;
     }
     local = bodyR.env;
@@ -1773,7 +1844,10 @@ function evalFor(
       local = u.env;
     }
   }
-  return ok(acc, phi, local);
+  if (sawAbstractTest) {
+    exitEnv = exitEnv ? joinEnvs(exitEnv, local, entry) : local;
+  }
+  return ok(acc, phi, exitEnv ?? local);
 }
 
 function evalWhile(
@@ -1783,21 +1857,35 @@ function evalWhile(
   budget: LeakBudget,
 ): EvalResult {
   let local = env;
+  const entry = local;
   let acc: Abs = unknown;
+  let exitEnv: AstEnv | undefined;
+  let sawAbstractTest = false;
   for (let i = 0; i < MAX_LOOP_ITERS; i++) {
     const t = evalNode(node.test, local, phi, budget);
     const lv = litValue(t.value);
-    if (lv === false || lv === null || lv === undefined) break;
+    if (lv === false || lv === null || lv === undefined) {
+      exitEnv = exitEnv ? joinEnvs(exitEnv, local, entry) : local;
+      break;
+    }
+    if (lv !== true) {
+      sawAbstractTest = true;
+      exitEnv = exitEnv ? joinEnvs(exitEnv, local, entry) : local;
+    }
     const bodyR = evalInConditionalFlow(() => evalNode(node.body, local, phi, budget));
     if (bodyR.returned || bodyR.threw) return bodyR;
     if (bodyR.brk) {
       local = bodyR.env;
+      exitEnv = exitEnv ? joinEnvs(exitEnv, local, entry) : local;
       break;
     }
     local = bodyR.env;
     acc = joinAbs(acc, bodyR.value);
   }
-  return ok(acc, phi, local);
+  if (sawAbstractTest) {
+    exitEnv = exitEnv ? joinEnvs(exitEnv, local, entry) : local;
+  }
+  return ok(acc, phi, exitEnv ?? local);
 }
 
 function evalDoWhile(
@@ -1919,6 +2007,24 @@ function evalTry(
       if (node.finalizer) evalNode(node.finalizer, local, curPhi, budget);
       return { value: catchR.value, phi: curPhi, env: local, threw: true };
     }
+  } else if (tryR.partialThrow && node.handler) {
+    // 抽象：try 可能 throw 也可能继续 → catch 路径与 continue 路径 join
+    const param =
+      node.handler.param && node.handler.param.type === "Identifier"
+        ? (node.handler.param as Identifier).name
+        : undefined;
+    let catchEnv = env;
+    if (param) catchEnv = withVar(env, param, tryR.throwValue ?? tryR.value);
+    const catchR = evalNode(node.handler.body, catchEnv, phi, budget);
+    value = joinAbs(tryR.value, catchR.value);
+    local = joinEnvs(tryR.env, catchR.env, env);
+    curPhi = catchR.phi;
+    if (catchR.returned && tryR.returned) {
+      return { value, phi: curPhi, env: local, returned: true };
+    }
+    if (catchR.threw && tryR.threw) {
+      return { value, phi: curPhi, env: local, threw: true };
+    }
   } else if (tryR.returned) {
     if (node.finalizer) evalNode(node.finalizer, local, curPhi, budget);
     return tryR;
@@ -1932,7 +2038,13 @@ function evalTry(
     if (fR.returned || fR.threw) return fR;
     local = fR.env;
   }
-  return { value, phi: curPhi, env: local, returned: tryR.returned };
+  return {
+    value,
+    phi: curPhi,
+    env: local,
+    returned: tryR.returned,
+    ...(tryR.partialReturn || tryR.partialThrow ? { partialReturn: tryR.partialReturn } : {}),
+  };
 }
 
 function evalVarDecl(
@@ -1990,15 +2102,178 @@ function evalIf(
     const b = evalInConditionalFlow(() =>
       evalNode(alt, env, fCons ? and(phi, fCons) : phi, budget),
     );
-    return { value: joinAbs(a.value, b.value), phi, env, returned: a.returned || b.returned };
+    const bothRet = !!a.returned && !!b.returned;
+    const eitherRet = !!a.returned || !!b.returned;
+    return {
+      value: joinAbs(a.value, b.value),
+      phi,
+      env: joinEnvs(a.env, b.env, env),
+      ...(bothRet ? { returned: true } : eitherRet ? { partialReturn: true } : {}),
+      ...((a.threw && b.threw) ? { threw: true, throwValue: joinAbs(a.value, b.value) } : {}),
+      ...((a.threw || b.threw) && !(a.threw && b.threw)
+        ? { partialThrow: true, throwValue: a.threw ? a.value : b.value }
+        : {}),
+    };
   }
-  // if 无 else：与 fall-through join。
-  // consequent 若 return/throw，真分支已退出、假分支 fall-through——
-  // 标记 partialReturn，由 evalBlock 与后续语句结果 join（不得覆盖）。
-  if (a.returned || a.threw) {
+  // if 无 else：真分支退出时假分支 fall-through（base env）；两侧都继续则 join
+  if (a.returned && a.threw) {
     return { value: a.value, phi, env, partialReturn: true };
   }
-  return { value: unknown, phi, env };
+  if (a.returned || a.threw) {
+    return {
+      value: a.value,
+      phi,
+      env,
+      ...(a.returned ? { partialReturn: true } : {}),
+      ...(a.threw ? { partialThrow: true, throwValue: a.value } : {}),
+    };
+  }
+  return { value: unknown, phi, env: joinEnvs(a.env, env, env) };
+}
+
+function evalSwitch(
+  node: SwitchStatement,
+  env: AstEnv,
+  phi: Phi,
+  budget: LeakBudget,
+): EvalResult {
+  type NormArm = { tests: Array<Node | null>; body: Statement[]; isDefault: boolean };
+  const stmtCompletes = (s: Statement | undefined | null): boolean => {
+    if (!s) return false;
+    switch (s.type) {
+      case "BreakStatement":
+      case "ReturnStatement":
+      case "ThrowStatement":
+      case "ContinueStatement":
+        return true;
+      case "BlockStatement":
+        return stmtCompletes((s as BlockStatement).body[(s as BlockStatement).body.length - 1] as Statement);
+      case "IfStatement": {
+        const ifs = s as IfStatement;
+        return (
+          ifs.alternate != null &&
+          stmtCompletes(ifs.consequent as Statement) &&
+          stmtCompletes(ifs.alternate as Statement)
+        );
+      }
+      default:
+        return false;
+    }
+  };
+
+  const pre: NormArm[] = [];
+  let pending: Array<Node | null> = [];
+  for (const c of node.cases) {
+    if (c.test == null) {
+      if (pending.length > 0 && c.consequent.length > 0) {
+        pre.push({ tests: pending, body: [...c.consequent], isDefault: false });
+        pending = [];
+      }
+      pre.push({ tests: [], body: [...c.consequent], isDefault: true });
+      continue;
+    }
+    if (c.consequent.length === 0) {
+      pending.push(c.test);
+      continue;
+    }
+    pre.push({ tests: [...pending, c.test], body: [...c.consequent], isDefault: false });
+    pending = [];
+  }
+  if (pending.length > 0) pre.push({ tests: pending, body: [], isDefault: false });
+
+  const arms: NormArm[] = pre.map((a) => ({ ...a, tests: [...a.tests], body: [...a.body] }));
+  for (let i = 0; i < arms.length; i++) {
+    const arm = arms[i]!;
+    const body = [...arm.body];
+    let j = i + 1;
+    while (j < arms.length && !stmtCompletes(body[body.length - 1] as Statement)) {
+      body.push(...arms[j]!.body);
+      if (stmtCompletes(body[body.length - 1] as Statement)) break;
+      j++;
+    }
+    arm.body = body;
+  }
+
+  const runBody = (body: Statement[], e: AstEnv): EvalResult => {
+    let local = e;
+    let value: Abs = unknown;
+    for (const s of body) {
+      const r = evalInConditionalFlow(() => evalNode(s, local, phi, budget));
+      local = r.env;
+      value = r.value;
+      if (r.returned || r.threw || r.brk) return { ...r, env: local, value };
+    }
+    return { value, phi, env: local };
+  };
+
+  const disc = evalNode(node.discriminant, env, phi, budget).value;
+  const dlv = litValue(disc);
+  const hasDefault = arms.some((a) => a.isDefault);
+
+  const testLit = (t: Node | null): unknown => {
+    if (t == null) return null;
+    return litValue(evalNode(t, env, phi, budget).value);
+  };
+
+  if (dlv !== undefined) {
+    let matched: NormArm | null | undefined = null;
+    let sawAbstractTest = false;
+    for (const arm of arms) {
+      if (arm.isDefault) continue;
+      let hit = false;
+      for (const t of arm.tests) {
+        const tv = testLit(t);
+        if (tv === null) continue;
+        if (tv === undefined) {
+          sawAbstractTest = true;
+          continue;
+        }
+        if (tv === dlv) {
+          hit = true;
+          break;
+        }
+      }
+      if (hit) {
+        matched = arm;
+        break;
+      }
+    }
+    if (!sawAbstractTest) {
+      if (matched) return runBody(matched.body, env);
+      const dflt = arms.find((a) => a.isDefault);
+      if (dflt) return runBody(dflt.body, env);
+      return ok(unknown, phi, env);
+    }
+  }
+
+  // 抽象 disc / 抽象 case 测试：并所有臂 +（无 default 时）no-match
+  const results: EvalResult[] = [];
+  if (!hasDefault) results.push(ok(unknown, phi, env));
+  for (const arm of arms) {
+    if (arm.body.length === 0 && !arm.isDefault) continue;
+    results.push(runBody(arm.body, env));
+  }
+  if (results.length === 0) return ok(unknown, phi, env);
+  let value = results[0]!.value;
+  let envOut = results[0]!.env;
+  let allRet = !!results[0]!.returned;
+  let anyRet = !!results[0]!.returned;
+  let anyThrew = !!results[0]!.threw;
+  for (let i = 1; i < results.length; i++) {
+    const r = results[i]!;
+    value = joinAbs(value, r.value);
+    envOut = joinEnvs(envOut, r.env, env);
+    allRet = allRet && !!r.returned;
+    anyRet = anyRet || !!r.returned;
+    anyThrew = anyThrew || !!r.threw;
+  }
+  return {
+    value,
+    phi,
+    env: envOut,
+    ...(allRet ? { returned: true } : anyRet ? { partialReturn: true } : {}),
+    ...(anyThrew ? { partialThrow: true } : {}),
+  };
 }
 
 // --- 便捷 API ---

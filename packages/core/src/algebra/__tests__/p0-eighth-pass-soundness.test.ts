@@ -43,7 +43,8 @@ describe("P0-1 no-default switch is not terminating", () => {
     const r = callAbs(src, "f", [absNum]);
     const s = formatAbs(r.result);
     expect(s).not.toBe('"one"');
-    expect(r.result.conf).not.toBe("exact");
+    expect(s).toContain("after");
+    expect(r.result.shape.k).toBe("sum");
   });
 });
 
@@ -55,7 +56,12 @@ describe("P0-2 $switch implicit fall-through arm", () => {
   });
   it("abstract includes fall-through, not exact 1|2 only", () => {
     const r = callAbs(src, "f", [absNum]);
-    expect(r.result.conf).not.toBe("exact");
+    // 完整枚举：除 1|2 外还须含 no-match 出口（undef/unknown）
+    const s = formatAbs(r.result);
+    expect(s).toContain("1");
+    expect(s).toContain("2");
+    expect(s === "1 | 2  #exact").toBe(false);
+    expect(r.result.shape.k).toBe("sum");
   });
 });
 
@@ -118,7 +124,8 @@ export function f(n) {
 `;
     const absNumGt = { shape: { k: "prim", type: "number" }, conf: "path" } as never;
     const r = callAbs(src, "f", [absNumGt]);
-    // 可能 0 次迭代出口与 body 后状态 join；不得 exact 单成员
-    expect(r.result.conf).not.toBe("exact");
+    // 可能 0 次迭代出口与 body 后状态 join；不得只剩 exact 单成员 last state
+    expect(formatShape(r.result)).not.toBe("8");
+    expect(r.result.shape.k).toBe("sum");
   });
 });

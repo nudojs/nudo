@@ -842,6 +842,13 @@ export async function interfaceDraftTool(
     });
     const draftRel = sidecarDraftPath(filePath);
     const projectDir = resolveDraftProjectDir(filePath);
+    // P2：write 路径与 CLI 对齐 fail-closed——无项目根时拒绝写盘
+    // （CLI `nudo interface --draft --write`；可用已存在的 NUDO_DRAFT_FORCE=1 放开）
+    if (params.write && !projectDir && !process.env.NUDO_DRAFT_FORCE) {
+      return toolError(
+        `Error: no project root found for '${filePath}'; draft write refused (set NUDO_DRAFT_FORCE=1 to override)`,
+      );
+    }
     const lines =
       params.write
         ? formatDraftSummary(
@@ -864,6 +871,13 @@ export type InterfaceEmitToolParams = {
   file: string;
   functionName: string;
   mode: "add" | "update";
+  /**
+   * Preview without writing: same result shape as a real emit (paths,
+   * would-change, optional unifiedDiff) but `emitInterface` is called with
+   * `dryRun: true` — no sidecar write, no invalidation-as-if-written.
+   * VS Code persist command sends this first, then a real write on confirm.
+   */
+  dryRun?: boolean;
 };
 
 /** 每侧车路径写盘串行化：emitInterface 的读-分析-写之间有 await 边界，
@@ -875,7 +889,11 @@ function serializedEmit(
   filePath: string,
   fnNames: string[],
   mode: "add" | "update",
-  extra: { source?: string; loadModule?: (spec: string, fromFile: string) => string | undefined } = {},
+  extra: {
+    source?: string;
+    loadModule?: (spec: string, fromFile: string) => string | undefined;
+    dryRun?: boolean;
+  } = {},
 ): Promise<EmitInterfaceResult> {
   const prev = emitChains.get(filePath) ?? Promise.resolve();
   const run = () => emitInterface(filePath, { fnNames, mode, ...extra });
@@ -933,19 +951,52 @@ export async function interfaceEmitTool(
         );
       }
     }
+    const dryRun = params.dryRun === true;
     const result = await serializedEmit(filePath, [params.functionName], params.mode, {
+      ...(dryRun ? { dryRun: true } : {}),
       ...(openSource !== undefined ? { source: openSource } : {}),
       ...(deps.loadModule ? { loadModule: deps.loadModule } : {}),
     });
-    return textResult(formatEmitResult(filePath, result));
+    return textResult(formatEmitResult(filePath, result, dryRun));
   } catch (err) {
     return analysisError(err);
   }
 }
 
-/** emit 结果文本（与 CLI runInterfaceEmit 共用 formatEmitSummary 骨架；
- *  本包装传绝对路径口径） */
-export function formatEmitResult(filePath: string, result: EmitInterfaceResult): string {
+/**
+ * emit 结果文本（与 CLI runInterfaceEmit 共用 formatEmitSummary 骨架；
+ * 本包装传绝对路径口径）。
+ * dryRun：与 CLI `--emit --dry-run` 同口径的 `[dry-run] would update` 预览
+ * （含 unifiedDiff / would-write），绝不声称已写盘。
+ */
+export function formatEmitResult(
+  filePath: string,
+  result: EmitInterfaceResult,
+  dryRun = false,
+): string {
+  if (dryRun) {
+    const lines: string[] = [];
+    if (result.changed) {
+      lines.push(`[dry-run] would update ${filePath} → ${result.sidecarPath}`);
+      lines.push(`  would write: ${result.written.join(", ") || "(none)"}`);
+      if (result.diff) lines.push(result.diff);
+    } else {
+      lines.push(`${filePath}: no interface changes`);
+      if (result.emptyDefaultTargets) {
+        lines.push(
+          `  tip: default emit only refreshes existing @generated segments; pass functionName to create new ones`,
+        );
+      }
+    }
+    for (const s of result.skipped.filter((x) => x.reason !== "no-change")) {
+      lines.push(`  skipped ${s.fn} (${s.reason})`);
+    }
+    for (const i of result.issues) {
+      lines.push(`  [${i.severity}] ${i.code}: ${i.message}`);
+    }
+    lines.push("  (dry-run: no sidecar written)");
+    return lines.join("\n");
+  }
   return formatEmitSummary(filePath, result.sidecarPath, result).join("\n");
 }
 

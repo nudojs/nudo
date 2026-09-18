@@ -167,7 +167,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 
 跨编辑器支持矩阵：[LSP 客户端矩阵](../guides/lsp-clients.md)。
 
-文本同步方式为 `Full`。打开文档会立即验证，内容变更则防抖 300 ms —— 两条路径都以 `propagate = true` 触发 `validateText`（仅有的传播入口）；关闭文档会取消其计时器、丢弃缓存条目并清除诊断。被监视文件的删除事件在带外处理，且会话常驻的全部状态都是有界的 —— 见[内存与隔离模型](#内存与隔离模型)。
+文本同步方式为 `Full`。打开文档会立即验证，内容变更则按缓冲区大小自适应防抖（5 万字符内 300 ms、20 万内 400 ms、更大 800 ms）—— 两条路径都以 `propagate = true` 触发 `validateText`（仅有的传播入口）；关闭文档会取消其计时器、丢弃缓存条目、bump 该文件的 validate generation（使在途结果作废）并清除诊断。被监视文件的删除事件在带外处理，且会话常驻的全部状态都是有界的 —— 见[内存与隔离模型](#内存与隔离模型)。
 
 ### 自定义请求
 
@@ -192,7 +192,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 | `activeCases` | `Map<uri, Map<函数名, index>>` | 用例选择，按 uri 与函数名键控 | 关闭/重开之间保留（选择不丢失）；文件被从磁盘删除时丢弃 |
 | `nudoFileCache` | `Map<uri, boolean>` —— Nudo 文件检测记忆 | 每个打开的文档一个布尔值 | 其 uri 每次打开/变更/关闭/删除时失效 |
 | `moduleGraphCache` | `Map<filePath, { mtimeMs, size, edges }>` | 进入过 import 图的每个文件一条；edges 为路径字符串 | `mtimeMs`+`size` 不一致时重读磁盘并回填；删除时逐出 |
-| `debounceTimers` | `Map<uri, timer>` | 每个被编辑的文档一个待触发计时器 | 300 ms 后触发，或关闭时取消 |
+| `debounceTimers` | `Map<uri, timer>` | 每个被编辑的文档一个待触发计时器 | 按缓冲区大小自适应延迟（300/400/800 ms）后触发，或关闭时取消 |
 
 每一条都是路径、函数名、小整数或布尔值 —— 字符串级簿记，绝不是解析后的表示。`AnalysisResult` 对象只存在于 `analysisCache` 内，随其条目一起离开。
 

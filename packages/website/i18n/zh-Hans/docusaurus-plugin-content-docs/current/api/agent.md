@@ -205,6 +205,20 @@ Function "add" has 2 synthesized case(s); suggested directives:
 
 **返回：** `Record<string, number>`，函数名 → 活动用例索引，例如 `{ "parse": 1, "greet": 0 }`。
 
+## nudo.interface / nudo.interface.draft / nudo.interfaceEmit
+
+Interface 产品面（与 CLI 同一数据源）：
+
+| 命令 | 参数 | 行为 |
+|---------|------|----------|
+| `nudo.interface` | `{ file, functionName?, source? }` | 打印 `fn  [handwritten\|generated\|implicit]  (params) → returns` + JSON |
+| `nudo.interface.draft` | `{ file, functionName?, source?, write?, dryRun? }` | 代码优先草稿模块（`@nudo:draft`）；`write: true` 落盘 `*.nudo.draft.js` / `*.nudo.draft.ts`（从不碰 ambient 绑定）。body 读字段仅作**建议**。`write: true` **无项目根时 fail-closed**（nudo 配置 / `package.json` 祖先）——与 CLI `--draft --write` 同口径（覆盖：`NUDO_DRAFT_FORCE=1`） |
+| `nudo.interfaceEmit` / `nudo.interface.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean }` | 通过 `emitInterface` 固化调用点域。`dryRun: true` 只预览不写盘：返回同形结果（路径、would-change、unifiedDiff）与 `[dry-run] would update …` 文本；不会新建/修改侧车文件。VS Code Persist/CodeLens 确认流程先发 `dryRun: true`，确认后再真实写盘 |
+
+`loadModule` 与有效 `autoBind` 由**服务端注入**（buffer-aware 侧车装载 + 项目 `package.json#nudo.interface.autoBind` AND 客户端请求）。它们不是可 JSON 序列化的请求参数——agent 不要发送。
+
+手写契约永不被 draft 或 emit 覆盖。接受草稿时请将审阅过的导出拷入 `*.nudo.js` / `*.nudo.ts`。工具错误携带 `isError: true`。
+
 ## 类型表达式
 
 `nudo.whatIf` 绑定的 `type` 字段接受基本类型或以 `|` 分隔的基本类型联合：

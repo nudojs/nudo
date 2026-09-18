@@ -150,6 +150,32 @@ describe("nudo.interface.emit agent tool", () => {
     // 手写绑定原样保留，不被生成段覆盖
     expect(readFileSync(sidecarPath, "utf-8")).toContain("fn({ x: number().int() })");
   });
+
+  it("dryRun:true does not modify sidecar on disk (preview only)", async () => {
+    const file = join(dir, "dry.js");
+    writeFileSync(file, ADD_JS);
+    const sidecar = join(dir, "dry.nudo.js");
+    expect(existsSync(sidecar)).toBe(false);
+
+    const r = await interfaceEmitTool({
+      file,
+      functionName: "add2",
+      mode: "add",
+      dryRun: true,
+    });
+    const text = r.content[0].text;
+    expect(text).toContain("[dry-run]");
+    expect(text).toContain("would write: add2");
+    expect(text).toContain("no sidecar written");
+    expect(text).not.toContain("sidecar written but");
+    // P0：dry-run 绝不写盘
+    expect(existsSync(sidecar)).toBe(false);
+
+    // 确认后的真实写盘仍然可用
+    const real = await interfaceEmitTool({ file, functionName: "add2", mode: "add" });
+    expect(real.content[0].text).toContain("written: add2");
+    expect(existsSync(sidecar)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

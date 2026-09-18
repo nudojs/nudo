@@ -146,7 +146,10 @@ export function unique(arr) {
     const arr = $arr([$lit(1), $lit(2), $lit(2), $lit(3)]);
     const r = callTranspiledExportFull(exports, "unique", [arr]);
     const s = formatAbs(r.result);
-    expect(s).toContain("number");
+    // 元素为字面量枚举 1|2|3（比塌缩成 number 更精确）
+    expect(s).toContain("1");
+    expect(s).toContain("2");
+    expect(s).toContain("3");
     expect(s).not.toMatch(/^unknown/);
   });
 
@@ -210,7 +213,9 @@ export function elems() {
     const r = call(src, "elems");
     const s = formatAbs(r.result);
     expect(s).not.toMatch(/^\[|tuple/);
-    expect(s).toContain("number");
+    // 字面量枚举元素，而非 entry 元组
+    expect(s).toContain("1");
+    expect(s).toContain("3");
   });
 });
 
