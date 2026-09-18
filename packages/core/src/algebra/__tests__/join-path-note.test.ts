@@ -16,9 +16,52 @@ describe("C2.4 join pathNote", () => {
     expect(fmt).toContain("join(number | string)");
   });
 
-  it("same-shape join does not annotate", () => {
+  it("same-shape join does not annotate plain lit nums", () => {
     const r = joinAbs(numLit(1), numLit(2));
     expect(r.pathNote).toBeUndefined();
+  });
+
+  it("same-shape obj join with slot diff carries pathNote (P1)", () => {
+    const a = abs(
+      { k: "obj", slots: { a: { value: num() } } },
+      undefined,
+      undefined,
+      "path",
+    );
+    const b = abs(
+      { k: "obj", slots: { b: { value: num() } } },
+      undefined,
+      undefined,
+      "path",
+    );
+    const r = joinAbs(a, b);
+    expect(r.pathNote).toBeDefined();
+    expect(r.pathNote).toContain("join(");
+  });
+
+  it("same-length tuple join stays unannotated; different length annotates", () => {
+    const t2a = abs(
+      { k: "tuple", elements: [num(), num()] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const t2b = abs(
+      { k: "tuple", elements: [num(), str()] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const same = joinAbs(t2a, t2b);
+    expect(same.pathNote).toBeUndefined();
+    const t3 = abs(
+      { k: "tuple", elements: [num(), num(), num()] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const diff = joinAbs(t2a, t3);
+    expect(diff.pathNote).toContain("join(");
   });
 
   it("formatShape stays clean (dts/projection surface)", () => {

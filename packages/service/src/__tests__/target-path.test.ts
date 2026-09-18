@@ -17,5 +17,6 @@ describe("isNudoTargetPath", () => {
     // 侧车契约模块不是源码推断目标（目录级 check/infer/doctor 不得收进）
     expect(isNudoTargetPath("/a/b.nudo.js")).toBe(false);
     expect(isNudoTargetPath("/a/b.nudo.ts")).toBe(false);
+    expect(isNudoTargetPath("/a/b.nudo.mjs")).toBe(false);
   });
 });

@@ -14,6 +14,7 @@ import {
   MarkupKind,
   type CodeLens,
   CodeLensRefreshRequest,
+  DiagnosticRefreshRequest,
   FileChangeType,
   type FileEvent,
   type InlayHint,
@@ -175,12 +176,21 @@ let debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 // 打开即验证：didOpen 不会触发 onDidChangeContent，若不在此主动验证，
 // 新打开的文件要等到首次编辑（300ms 防抖后）或客户端 pull 诊断才有结果。
 // propagate=true 与编辑防抖路径同语义（含对打开依赖项的一次脏传播）。
+/** pull 诊断客户端：依赖/侧车变更后广播 workspace/diagnostic/refresh */
+function refreshPullDiagnostics(): void {
+  connection
+    .sendRequest(DiagnosticRefreshRequest.type)
+    .catch(() => {});
+}
+
 documents.onDidOpen((event) => {
   nudoFileCache.delete(event.document.uri);
   const openPath = uriToFilePath(event.document.uri);
   // A4：打开侧车（含新建 buffer）→ 立即尝试重检已登记 parent
   if (isNudoDepPath(openPath)) {
-    void handleNudoDepFileChanged(openPath, validationDeps()).catch(() => {});
+    void handleNudoDepFileChanged(openPath, validationDeps())
+      .then(() => refreshPullDiagnostics())
+      .catch(() => {});
   }
   validateDocument(event.document, true).catch(() => {});
 });
@@ -203,7 +213,9 @@ documents.onDidChangeContent((change) => {
       // A4：buffer 内编辑侧车 → 定向逐出 + 重检打开中的 parent
       // （activeLoadModule 会让 parent 分析读到未保存侧车内容）
       if (isNudoDepPath(filePath)) {
-        void handleNudoDepFileChanged(filePath, validationDeps()).catch(() => {});
+        void handleNudoDepFileChanged(filePath, validationDeps())
+          .then(() => refreshPullDiagnostics())
+          .catch(() => {});
       }
       validateDocument(change.document, true).catch(() => {});
     }, delay),
@@ -278,7 +290,9 @@ function handleWatchedFilesChanges(changes: readonly FileEvent[], isOpen: (uri: 
   if (nudoTouched.length > 0) {
     const deps = validationDeps();
     for (const p of nudoTouched) {
-      void handleNudoDepFileChanged(p, deps).catch(() => {});
+      void handleNudoDepFileChanged(p, deps)
+        .then(() => refreshPullDiagnostics())
+        .catch(() => {});
     }
   }
   return gone;
@@ -812,38 +826,69 @@ connection.onCodeAction((params) => {
           })();
         if (sidecarText !== undefined) {
           const scLines = sidecarText.split("\n");
-          // A6：优先在目标 fn 导出绑定附近的 shape/fn 插入，避免多 fn 侧车插错契约
+          // A6：只在目标 fn 自身的 `fn({` / 导出绑定附近插入，避免共享
+          // shape 或后续 export 被误改（P1）
           const fnName = typeof data.fn === "string" && data.fn ? data.fn : undefined;
-          const fnLineIdx = fnName
-            ? scLines.findIndex((l) => new RegExp(`export\\s+const\\s+${fnName}\\b`).test(l))
-            : -1;
-          // 在 shape({ / fn({ 的第一个 `{` 后插入字段（fn 优先，否则首个 shape/fn）
-          for (let i = 0; i < scLines.length; i++) {
-            const t = scLines[i]!;
-            if (!/\bshape\s*\(\s*\{|\bfn\s*\(\s*\{/.test(t)) continue;
-            if (fnName && fnLineIdx >= 0 && i < fnLineIdx) continue;
-            const b = t.indexOf("{");
-            if (b < 0) continue;
-            const insert = t.slice(b + 1).trimStart().startsWith("}")
-              ? ` ${field}: undefined `
-              : ` ${field}: undefined, `;
-            actions.push({
-              title: `Add '${field}' to sidecar shape`,
-              kind: "quickfix",
-              diagnostics: [diag],
-              edit: {
-                changes: {
-                  [sidecarUri]: [{
-                    range: {
-                      start: { line: i, character: b + 1 },
-                      end: { line: i, character: b + 1 },
-                    },
-                    newText: insert,
-                  }],
-                },
-              },
-            });
-            break; // 只改目标 fn 附近第一处 shape/fn
+          if (fnName) {
+            const fnLineIdx = scLines.findIndex((l) =>
+              new RegExp(`export\\s+const\\s+${fnName}\\b`).test(l),
+            );
+            if (fnLineIdx >= 0) {
+              // 从目标导出行向后扫，只接受落在同一 `fn(` 字面量内的 `{`
+              let inTargetFn = false;
+              let depth = 0;
+              for (let i = fnLineIdx; i < scLines.length; i++) {
+                const t = scLines[i]!;
+                if (!inTargetFn) {
+                  const fnCall = t.indexOf("fn(");
+                  if (fnCall < 0) continue;
+                  // 外部标识符 / 注释引用不在此插入：仅字面 `fn(`
+                  inTargetFn = true;
+                }
+                for (let col = 0; col < t.length; col++) {
+                  const ch = t[col];
+                  if (ch === "{") {
+                    if (!inTargetFn) continue;
+                    if (depth === 0 && i === fnLineIdx) {
+                      // 同一行 fn( 之后的第一个 { 才是契约对象
+                      const fnCall = t.indexOf("fn(");
+                      if (col <= fnCall) continue;
+                    }
+                    if (depth === 0) {
+                      const insert = t.slice(col + 1).trimStart().startsWith("}")
+                        ? ` ${field}: undefined `
+                        : ` ${field}: undefined, `;
+                      actions.push({
+                        title: `Add '${field}' to ${fnName} contract shape`,
+                        kind: "quickfix",
+                        diagnostics: [diag],
+                        edit: {
+                          changes: {
+                            [sidecarUri]: [{
+                              range: {
+                                start: { line: i, character: col + 1 },
+                                end: { line: i, character: col + 1 },
+                              },
+                              newText: insert,
+                            }],
+                          },
+                        },
+                      });
+                      break;
+                    }
+                    depth++;
+                  } else if (ch === "}") {
+                    if (depth === 0 && inTargetFn) {
+                      // fn 对象已结束且未找到插入点 → 不提供误改 action
+                      break;
+                    }
+                    depth = Math.max(0, depth - 1);
+                  }
+                }
+                if (actions.some((a) => a.title.includes(`Add '${field}' to ${fnName}`))) break;
+                if (inTargetFn && depth === 0 && i > fnLineIdx) break;
+              }
+            }
           }
         } else {
           actions.push({
@@ -859,12 +904,27 @@ connection.onCodeAction((params) => {
         }
       }
 
-      // A6：refine 违例 → 放宽侧车契约（解析 suggestion 里的 fn/param/constraint）
+      // A6：refine 违例 → 放宽侧车契约（仅 constraint 类诊断 + suggestion 命中）
       const sug = data.suggestions?.[0] ?? "";
       const loosen = sug.match(
         /Loosen the handwritten contract for\s+(\w+)\s*\((\w+):\s*([^)]+)\)/i,
       ) ?? sug.match(/放宽\s+(\w+)\s*的前置/) ?? sug.match(/改用满足\s+(.+?)\s*的/);
-      if (loosen || data.fn) {
+      const relaxableCodes = new Set([
+        "nudo:constraint-violated",
+        "nudo:refine-violated",
+        "nudo:domain-exceeds",
+        "constraint-violated",
+        "refine",
+      ]);
+      const canRelax =
+        loosen !== null ||
+        (typeof data.fn === "string" &&
+          data.fn.length > 0 &&
+          (relaxableCodes.has(String(diag.code ?? "")) ||
+            /constraint|refine|contract/i.test(
+              String(diag.code ?? "") + String((data as { suggestions?: string[] }).suggestions?.join(" ") ?? ""),
+            )));
+      if (canRelax && (loosen || data.fn)) {
         const fnName = data.fn ?? (loosen?.[1] || undefined);
         const param = loosen?.[2];
         const constraintText = loosen?.[3]?.trim();
@@ -1086,6 +1146,7 @@ async function handleInterfaceEmit(params: {
     const openDoc = documents.all().find((d) => uriToFilePath(d.uri) === filePath);
     registerNudoImportDeps(filePath, openDoc ? openDoc.getText() : readFileSync(filePath, "utf-8"));
     await handleNudoDepFileChanged(sidecarPathOf(filePath), validationDeps());
+    refreshPullDiagnostics();
     if (openDoc) {
       analysisCache.delete(filePath); // version 键未变，逐出防 getCachedOrAnalyze 命中陈旧结果
       await validateDocument(openDoc);

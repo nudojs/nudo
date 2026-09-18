@@ -143,7 +143,7 @@ export function activate(context: ExtensionContext): void {
         showNudoOutput(`draft ${functionName ?? file}`, extractToolText(preview));
 
         const pick = await window.showInformationMessage(
-          "Nudo draft ready (review in Output). Write *.nudo.draft.js?",
+          "Nudo draft ready (review in Output). Write *.nudo.draft.js / *.nudo.draft.ts?",
           "Write draft file",
           "Dismiss",
         );

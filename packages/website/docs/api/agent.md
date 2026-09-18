@@ -221,11 +221,13 @@ Interface product surface (same data sources as CLI):
 
 | Command | Args | Behavior |
 |---------|------|----------|
-| `nudo.interface` | `{ file, functionName?, loadModule?, autoBind? }` | Print `fn  [handwritten\|generated\|implicit]  (params) → returns` + JSON |
-| `nudo.interface.draft` | `{ file, functionName?, write?, dryRun?, loadModule?, autoBind? }` | Code-first draft module (`@nudo:draft`); `write: true` lands `*.nudo.draft.js` (not ambient-bound). Body-read fields appear as **suggestions only** |
+| `nudo.interface` | `{ file, functionName?, source? }` | Print `fn  [handwritten\|generated\|implicit]  (params) → returns` + JSON |
+| `nudo.interface.draft` | `{ file, functionName?, source?, write?, dryRun? }` | Code-first draft module (`@nudo:draft`); `write: true` lands `*.nudo.draft.js` / `*.nudo.draft.ts` (never ambient-bound). Body-read fields appear as **suggestions only** |
 | `nudo.interfaceEmit` / `nudo.interface.emit` | `{ file, functionName, mode: "add"\|"update" }` | Persist call-site domains via `emitInterface` |
 
-Handwritten contracts are never overwritten by draft or emit. Accept a draft by copying reviewed exports into `*.nudo.js`.
+`loadModule` and effective `autoBind` are **server-injected** (buffer-aware sidecar loader + project `package.json#nudo.interface.autoBind` AND client request). They are not JSON-serializable request parameters — do not send them from agents.
+
+Handwritten contracts are never overwritten by draft or emit. Accept a draft by copying reviewed exports into `*.nudo.js` / `*.nudo.ts`.
 
 ## Type expressions
 

@@ -1,13 +1,13 @@
 {
-  "updatedAt": "2026-09-17T10:26:42.192Z",
+  "updatedAt": "2026-09-18T13:19:08.303Z",
   "totalCases": 24,
   "results": {
-    "exactMatches": 13,
-    "partialMatches": 5,
-    "unknownCount": 3,
+    "exactMatches": 14,
+    "partialMatches": 7,
+    "unknownCount": 2,
     "errorCount": 0
   },
-  "averageTimeMs": 651.9,
+  "averageTimeMs": 814.2,
   "cases": [
     {
       "id": "basic-01",
@@ -92,12 +92,12 @@
     {
       "id": "map-01",
       "name": "Map operations",
-      "comparison": "mismatch"
+      "comparison": "exact"
     },
     {
       "id": "set-01",
       "name": "Set operations",
-      "comparison": "unknown"
+      "comparison": "partial"
     },
     {
       "id": "complex-01",
@@ -107,7 +107,7 @@
     {
       "id": "complex-02",
       "name": "Error handling with retries",
-      "comparison": "mismatch"
+      "comparison": "exact"
     },
     {
       "id": "complex-03",
@@ -122,7 +122,7 @@
     {
       "id": "real-02",
       "name": "Configuration validator",
-      "comparison": "exact"
+      "comparison": "partial"
     },
     {
       "id": "real-03",

@@ -1013,6 +1013,8 @@ export function $yield(v: Abs): Abs {
 
 /**
  * switch：具体 disc 选中匹配 case；抽象 disc 并所有分支。
+ * 抽象路径与 $fork 同构：集合 side-table 按臂 overlay，共享 body 只跑一次；
+ * 臂内 NudoReturn 不冒泡污染兄弟臂——全 ret 抛 NudoReturn(join)，混合则 join 值。
  */
 export function $switch(
   disc: Abs,
@@ -1027,8 +1029,37 @@ export function $switch(
     }
     return dflt ? asAbsVal(dflt()) : undef();
   }
-  const parts = cases.map((c) => asAbsVal(c.run()));
-  if (dflt) parts.push(asAbsVal(dflt()));
-  if (parts.length === 0) return undef();
-  return parts.reduce((a, b) => joinAbs(a, b));
+
+  beginCollectionFork();
+  const armOverlays: Array<ReturnType<typeof popCollectionArm>> = [];
+  const runArm = (fn: () => Abs): { kind: "val" | "ret"; v: Abs } => {
+    pushCollectionArm();
+    try {
+      try {
+        return { kind: "val", v: asAbsVal(fn()) };
+      } catch (e) {
+        if (isNudoReturn(e)) return { kind: "ret", v: e.absValue };
+        throw e;
+      }
+    } finally {
+      armOverlays.push(popCollectionArm());
+    }
+  };
+  const results: Array<{ kind: "val" | "ret"; v: Abs }> = [];
+  try {
+    // 共享 body（case 1: case 2: …）只执行一次，避免非幂等副作用被放大
+    const seenRuns = new Set<() => Abs>();
+    for (const c of cases) {
+      if (seenRuns.has(c.run)) continue;
+      seenRuns.add(c.run);
+      results.push(runArm(c.run));
+    }
+    if (dflt && !seenRuns.has(dflt)) results.push(runArm(dflt));
+  } finally {
+    endCollectionFork(armOverlays);
+  }
+  if (results.length === 0) return undef();
+  const joined = results.map((r) => r.v).reduce((a, b) => joinAbs(a, b));
+  if (results.every((r) => r.kind === "ret")) throw new NudoReturn(joined);
+  return joined;
 }

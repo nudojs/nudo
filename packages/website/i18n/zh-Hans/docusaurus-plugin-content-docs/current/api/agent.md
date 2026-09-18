@@ -18,7 +18,7 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 | `nudo.suggestCase` | `nudo/suggestCase` | 检查函数的 `@nudo:case` 覆盖情况；用例全为合成时返回可直接粘贴的指令 |
 | `nudo.trace` | `nudo/trace` | 列出函数每个用例的参数类型 → 结果类型 |
 | `nudo.interface` | `nudo/interface` | 打印有效 interface 分层（handwritten / generated / implicit） |
-| `nudo.interface.draft` | `nudo/interface.draft` | **代码优先草稿**：从已有逻辑生成 `*.nudo.draft.js`（与 CLI `--draft` 同源） |
+| `nudo.interface.draft` | `nudo/interface.draft` | **代码优先草稿**：从已有逻辑生成 `*.nudo.draft.js` / `*.nudo.draft.ts`（与 CLI `--draft` 同源） |
 | `nudo.interfaceEmit` | `nudo/interface.emit` | 把调用点域固化为侧车 `@generated` 段 |
 | `nudo.selectCase` | `nudo/selectCase` | 切换用于悬停/诊断的活动用例 |
 | `nudo.getActiveCases` | `nudo/getActiveCases` | 读取文件中每个函数的活动用例索引 |

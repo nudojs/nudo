@@ -53,6 +53,8 @@ type ValidateTextDeps = {
   isNudoUri?: (uri: string) => boolean;
   getActiveCases?: (uri: string) => Map<string, number>;
   getOpenDocumentByPath?: (filePath: string) => OpenDocumentLike | undefined;
+  /** buffer-aware 模块装载器（A4/E5）；缺省走磁盘 defaultLoadModule */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
 };
 
 type OpenDocumentLike = {
@@ -83,18 +85,20 @@ getCachedOrAnalyze(
   source: string,
   version: number,
   activeCases?: Map<string, number>,
+  loadModule?: (spec: string, fromFile: string) => string | undefined,
 ): AnalysisResult
 ```
 
-面向高频 handler（悬停、补全）的同步、带缓存分析。文档版本匹配时返回缓存的 `AnalysisResult`；否则运行同步 `analyzeFile` 并刷新缓存。基于路径的 `@nudo:env` 文件在这条路径上会降级 —— 异步预加载只发生在 `validateText` 内部。
+面向高频 handler（悬停、补全、pull 诊断）的同步、带缓存分析。文档 `version` **与** `casesHash` 同时命中时复用缓存的 `AnalysisResult`；否则运行同步 `analyzeFile`（可传 buffer-aware `loadModule`）并刷新缓存。基于路径的 `@nudo:env` 文件在这条路径上会降级 —— 异步预加载只发生在 `validateText` 内部。侧车/依赖变更经 `handleNudoDepFileChanged` 失效（删缓存 + force 重验 + `workspace/diagnostic/refresh`）。
 
-### hasNudoDirectives
+### isNudoFile 门控
 
-```typescript
-hasNudoDirectives(source: string): boolean
-```
+服务端 `isNudoFile(uri)` **不是**纯指令扫描，而是：
 
-源码包含任一 Nudo 指令时返回 `true`：`@nudo:case`、`@nudo:mock`、`@nudo:pure`、`@nudo:skip`、`@nudo:sample`、`@nudo:refine`、`@nudo:import`、`@nudo:env`、`@nudo:mock-module`、`@nudo:as`、`@nudo:replace`。服务器将它（加上 `.js` / `.ts` / `.mjs` 扩展名检查）用作 `isNudoFile` 门控 —— 下文的每个功能 handler 对未通过门控的文件都是空操作。
+1. `isNudoTargetPath` —— 仅 `.js` / `.mjs` / `.ts`，排除 `.d.ts`、JSX 与 `*.nudo.{js,mjs,ts}` 侧车；
+2. `shouldAnalyzeFile(filePath, text)` —— 路径 + `package.json#nudo.analysis.mode`（directives 为今日默认；`exports`/`all` 打开无指令分析）。
+
+结果按 URI 缓存，open/change/close 时失效。
 
 ### toLspDiagnostic
 

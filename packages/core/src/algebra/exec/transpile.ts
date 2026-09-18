@@ -177,6 +177,8 @@ const ARR_MUTATOR_NAMES = new Set([
  *   const x = a.pop()  ⇒  let x = $invoke(a,"pop",…); a = $arrMutContainer(a,"pop",…);
  * 不进入函数边界（ObjectMethod / Function* / Arrow），方法体内 mutator
  * 在调用时才生效。
+ * 逻辑/三元短路臂内的 mutator **不得**在此无条件重绑（P0）：由
+ * transpileExpression 的 arm-snapshot 路径处理。
  */
 function emitArrMutatorRebinds(
   expr: Node | null | undefined,
@@ -200,6 +202,9 @@ function emitArrMutatorRebinds(
       node.type === "ClassMethod"
     ) {
       return; // 函数边界：体内 mutator 不在本语句重绑
+    }
+    if (node.type === "LogicalExpression" || node.type === "ConditionalExpression") {
+      return; // 短路臂：由表达式级 $fork + arm snapshot 负责
     }
     if (
       node.type === "CallExpression" &&
@@ -504,7 +509,6 @@ function collectArrMutatorReceivers(node: unknown, acc = new Set<string>()): Set
       if (obj?.type === "Identifier") {
         acc.add((obj as { name: string }).name);
       } else if (obj?.type === "MemberExpression") {
-        // 成员路径 mutator 会重绑 root 绑定（o.arr.pop → o），一并 snapshot
         let cur: { type?: string; object?: { type?: string } } | undefined =
           obj as { type?: string; object?: { type?: string } };
         while (cur?.type === "MemberExpression") {
@@ -523,6 +527,109 @@ function collectArrMutatorReceivers(node: unknown, acc = new Set<string>()): Set
     else if (child && typeof child === "object") collectArrMutatorReceivers(child, acc);
   }
   return acc;
+}
+
+/** fork 臂 thunk：restore snapshot → 求值 → arm 内重绑 → 保存结束态 */
+function forkArmThunk(
+  bodyLines: string[],
+  outPrefix: string,
+  names: string[],
+): string {
+  return [
+    `() => {`,
+    ...names.map((n) => `  ${n} = __fk0_${n};`),
+    `  try {`,
+    ...bodyLines.map((l) => `    ${l}`),
+    `  } finally {`,
+    ...names.map((n) => `  __${outPrefix}${n} = ${n};`),
+    `  }`,
+    `}`,
+  ].join("\n");
+}
+
+/** fork 后把各臂结束态 join 回绑定 */
+function forkJoinBindings(names: string[]): string[] {
+  return names.map(
+    (n) =>
+      `${n} = (__fk1_${n} !== undefined && __fk2_${n} !== undefined) ? $join(__fk1_${n}, __fk2_${n}) : (__fk1_${n} !== undefined ? __fk1_${n} : (__fk2_${n} !== undefined ? __fk2_${n} : ${n}));`,
+  );
+}
+
+/**
+ * && / || / ?: 的表达式转译：test/left 恒求值；短路臂内的数组 mutator
+ * 必须 arm 隔离（P0）。无 mutator 时退化为裸 $fork。
+ *
+ * shape:
+ *   __test = <always-eval>;
+ *   <always rebinds>;
+ *   snapshot; $fork(__test, consArm, altArm); join bindings; return __r
+ */
+function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
+  alwaysNodes: Array<Node | null | undefined>;
+  alwaysSrc: string;
+  /** cons 臂表达式源；null 表示复用 __test（&&/|| 的短路返回侧） */
+  consSrc: string;
+  consNodes: Array<Node | null | undefined>;
+  /** alt 臂表达式源；null 表示复用 __test */
+  altSrc: string;
+  altNodes: Array<Node | null | undefined>;
+}): string {
+  const alwaysNames = new Set<string>();
+  for (const n of parts.alwaysNodes) collectArrMutatorReceivers(n, alwaysNames);
+  const branchNames = new Set<string>(alwaysNames);
+  for (const n of parts.consNodes) collectArrMutatorReceivers(n, branchNames);
+  for (const n of parts.altNodes) collectArrMutatorReceivers(n, branchNames);
+  const names = [...branchNames];
+  const alwaysRebinds: string[] = [];
+  for (const n of parts.alwaysNodes) {
+    alwaysRebinds.push(...emitArrMutatorRebinds(n, opts, ""));
+  }
+  const consRebinds: string[] = [];
+  for (const n of parts.consNodes) {
+    if (parts.alwaysNodes.includes(n)) continue;
+    consRebinds.push(...emitArrMutatorRebinds(n, opts, ""));
+  }
+  const altRebinds: string[] = [];
+  for (const n of parts.altNodes) {
+    if (parts.alwaysNodes.includes(n)) continue;
+    altRebinds.push(...emitArrMutatorRebinds(n, opts, ""));
+  }
+
+  if (alwaysNames.size === 0 && branchNames.size === 0) {
+    // 无 mutator：保持简单 $fork（__test 槽位回填 alwaysSrc）
+    const consExpr = parts.consSrc === "__test" ? parts.alwaysSrc : parts.consSrc;
+    const altExpr = parts.altSrc === "__test" ? parts.alwaysSrc : parts.altSrc;
+    return `$fork(${parts.alwaysSrc}, () => ${consExpr}, () => ${altExpr})`;
+  }
+
+  const consLines =
+    parts.consSrc === "__test"
+      ? [`return __test;`]
+      : consRebinds.length === 0
+        ? [`return (${parts.consSrc});`]
+        : [`const __v = (${parts.consSrc});`, ...consRebinds, `return __v;`];
+  const altLines =
+    parts.altSrc === "__test"
+      ? [`return __test;`]
+      : altRebinds.length === 0
+        ? [`return (${parts.altSrc});`]
+        : [`const __v = (${parts.altSrc});`, ...altRebinds, `return __v;`];
+
+  return [
+    `(() => {`,
+    `  const __test = (${parts.alwaysSrc});`,
+    ...alwaysRebinds.map((l) => `  ${l}`),
+    ...(names.length
+      ? [
+          ...names.map((n) => `  const __fk0_${n} = ${n};`),
+          ...names.map((n) => `  let __fk1_${n}; let __fk2_${n};`),
+        ]
+      : []),
+    `  const __r = $fork(__test, ${forkArmThunk(consLines, "fk1_", names)}, ${forkArmThunk(altLines, "fk2_", names)});`,
+    ...forkJoinBindings(names).map((l) => `  ${l}`),
+    `  return __r;`,
+    `})()`,
+  ].join("\n");
 }
 
 function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptions): string {
@@ -636,9 +743,9 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     }
     case "ExpressionStatement": {
       // C1.4：数组 mutator 语句重绑到**变更后容器**（$arrMutContainer），
-      // 不得绑到 JS 返回值（pop 返回元素，会污染 receiver Abs）
+      // 不得绑到 JS 返回值（pop 返回元素，会污染 receiver Abs）。
+      // 表达式内 mutator：先求值（$invoke 只读容器），再重绑（P0 顺序）。
       const expr = stmt.expression as Expression;
-      // P1：任意表达式语句（含 assignment / if-test / call args）都先补 mutator 重绑
       const exprRebinds = emitArrMutatorRebinds(expr, opts, pad);
       if (
         expr.type === "CallExpression" &&
@@ -679,8 +786,8 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       }
       if (exprRebinds.length > 0) {
         return [
-          ...exprRebinds,
           `${pad}${transpileExpression(expr, opts)};`,
+          ...exprRebinds,
         ].join("\n");
       }
       return `${pad}${transpileExpression(stmt.expression, opts)};`;
@@ -837,8 +944,9 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       return transpileFnBodyStmts(stmt.body, depth, opts);
     case "SwitchStatement": {
       // switch (d) { case 1: … case 2: … default: … } → $switch
+      // 仅当所有 case 体均 return/throw 时才 `return $switch`；语句位
+      // switch 不得截断后续控制流（P0）。
       const disc = transpileExpression(stmt.discriminant as Expression, opts);
-      // 合并 fall-through：无语句的 case 与下一有语句 case 同体
       type Arm = { tests: string[]; stmts: Statement[]; isDefault: boolean };
       const arms: Arm[] = [];
       for (const c of stmt.cases) {
@@ -852,7 +960,6 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
           !arms[arms.length - 1]!.isDefault &&
           arms[arms.length - 1]!.stmts.length === 0
         ) {
-          // fall-through：把 test 并入空臂，并填入本 case 的语句
           const last = arms[arms.length - 1]!;
           last.tests.push(testSrc);
           last.stmts = c.consequent;
@@ -860,7 +967,6 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
           arms.push({ tests: [testSrc], stmts: c.consequent, isDefault: false });
         }
       }
-      // 再合并：连续 case 测试共享同一语句列表（case 2: case 3: body）
       const merged: Arm[] = [];
       for (const arm of arms) {
         if (
@@ -873,27 +979,45 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
           merged.push({ ...arm, tests: [...arm.tests] });
         }
       }
+      const armReturns = (arm: Arm): boolean =>
+        arm.stmts.length > 0 && arm.stmts.every(stmtReturns);
+      const nonDefaultArms = merged.filter((a) => !a.isDefault);
+      const defaultArm = merged.find((a) => a.isDefault);
+      const allReturn =
+        nonDefaultArms.length > 0 &&
+        nonDefaultArms.every(armReturns) &&
+        (defaultArm === undefined || armReturns(defaultArm));
       const caseLines: string[] = [];
+      const sharedBodyDecls: string[] = [];
       let defaultSrc: string | null = null;
+      let bodyIdx = 0;
       for (const arm of merged) {
         const body =
-          arm.stmts.map((s) => transpileStatement(s, depth + 2, opts)).join("\n") ||
-          `${indent(depth + 2)}return $lit(undefined);`;
+          arm.stmts.length === 0
+            ? "" // 空体：语句位 no-op；表达式位 $switch 自会 undef
+            : arm.stmts.map((s) => transpileStatement(s, depth + 2, opts)).join("\n");
         const thunk = `() => {\n${body}\n${indent(depth + 1)}}`;
+        // 多 test 共享体：绑定同一函数引用，抽象 $switch 只跑一次
+        const shared = arm.tests.length > 1 && !arm.isDefault;
+        const runRef = shared ? `__swBody${bodyIdx++}` : thunk;
+        if (shared) {
+          sharedBodyDecls.push(`${pad}const ${runRef} = ${thunk};`);
+        }
         if (arm.isDefault) {
           defaultSrc = thunk;
         } else {
-          // 多 test 共享体：任一命中（具体值）；抽象时 $switch 会跑全部 case 体并 join
           for (const t of arm.tests) {
-            caseLines.push(`{ test: ${t}, run: ${thunk} },`);
+            caseLines.push(`{ test: ${t}, run: ${runRef} },`);
           }
         }
       }
       const dflt = defaultSrc ? `, ${defaultSrc}` : "";
+      const switchCall = `$switch(${disc}, [\n${caseLines.map((l) => indent(depth + 1) + l).join("\n")}\n${indent(depth + 1)}]${dflt})`;
       return [
-        `${pad}return $switch(${disc}, [`,
-        ...caseLines.map((l) => indent(depth + 1) + l),
-        `${indent(depth + 1)}]${dflt});`,
+        ...sharedBodyDecls,
+        allReturn
+          ? `${pad}return ${switchCall};`
+          : `${pad}${switchCall};`,
       ].join("\n");
     }
     case "TryStatement": {
@@ -1185,17 +1309,44 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     }
     case "LogicalExpression": {
       const op = expr.operator;
+      const lNode = expr.left as Node;
+      const rNode = expr.right as Node;
       const l = transpileExpression(expr.left, opts);
       const r = transpileExpression(expr.right, opts);
+      // && : test=left, cons=right, alt=left(已算)  || : test=left, cons=left, alt=right
       return op === "&&"
-        ? `$fork(${l}, () => ${r}, () => ${l})`
-        : `$fork(${l}, () => ${l}, () => ${r})`;
+        ? transpileShortCircuitExpr(opts, {
+            alwaysNodes: [lNode],
+            alwaysSrc: l,
+            consSrc: r,
+            consNodes: [rNode],
+            altSrc: "__test",
+            altNodes: [],
+          })
+        : transpileShortCircuitExpr(opts, {
+            alwaysNodes: [lNode],
+            alwaysSrc: l,
+            consSrc: "__test",
+            consNodes: [],
+            altSrc: r,
+            altNodes: [rNode],
+          });
     }
     case "ConditionalExpression": {
+      const testNode = expr.test as Node;
+      const consNode = expr.consequent as Node;
+      const altNode = expr.alternate as Node;
       const test = transpileExpression(expr.test, opts);
       const c = transpileExpression(expr.consequent, opts);
       const a = transpileExpression(expr.alternate, opts);
-      return `$fork(${test}, () => ${c}, () => ${a})`;
+      return transpileShortCircuitExpr(opts, {
+        alwaysNodes: [testNode],
+        alwaysSrc: test,
+        consSrc: c,
+        consNodes: [consNode],
+        altSrc: a,
+        altNodes: [altNode],
+      });
     }
     case "RegExpLiteral": {
       return `$regex(${JSON.stringify(expr.pattern)}${expr.flags ? `, ${JSON.stringify(expr.flags)}` : ""})`;

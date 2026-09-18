@@ -123,7 +123,7 @@ You can also invoke the command palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and run
 | Palette title | Command | Behavior |
 |---------------|---------|----------|
 | Nudo: Show Interface | `nudo.interface` | Print tiers in the **Nudo** output channel (same as `nudo interface`) |
-| Nudo: Draft Interface (code-first) | `nudo.interface.draft` | Preview draft in Output; optional **Write draft file** → `*.nudo.draft.js` |
+| Nudo: Draft Interface (code-first) | `nudo.interface.draft` | Preview draft in Output; optional **Write draft file** → `*.nudo.draft.js` / `*.nudo.draft.ts` |
 | Nudo: Persist Interface (@generated) | `nudo.interfaceEmit` | Freeze call-site domains (CodeLens persist/update uses this) |
 
 CodeLens on non-handwritten exports includes `⚡ draft interface` — same path as CLI `--draft` and agent `nudo.interface.draft`.

@@ -131,9 +131,9 @@ const MAX_IMPLICIT_SIDECAR_NODES = 64;
 /**
  * autoBind 隐式依赖边（设计 §4.5）：入口文件的旁路侧车与其递归 .nudo 依赖
  * 登记 deps → parent——侧车不被 @nudo:import 声明，不登记则侧车（或其依赖）
- * 变更不触发 parent 重检（陈旧缓存）。侧车文件不存在 → 不登记（与旧行为
- * 完全一致）；node_modules 不登记。递归依赖边与 loadModuleDepsFingerprint
- * 的 sidecar 闭包同口径（miss 也登记：创建事件即重检）。
+ * 变更不触发 parent 重检（陈旧缓存）。node_modules 不登记。
+ * 磁盘上尚无侧车时**也登记**边：创建事件即触发 parent 重检（A4）。
+ * 递归依赖边与 loadModuleDepsFingerprint 的 sidecar 闭包同口径。
  */
 function registerSidecarClosureFor(entryFile: string, parent: string): void {
   const sidecar = sidecarPathOf(entryFile);

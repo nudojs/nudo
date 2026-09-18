@@ -309,23 +309,56 @@ function shapeBrief(a: Abs): string {
 /**
  * C2.4：给 join 结果挂可解释路径注释。
  * 两支同形 → 不加注；结果仍是一侧原值（never 吸收）→ 不加注。
+ * 同形 obj/tuple：用 slot/元素差集生成 note（P1：对象域可解释性）。
  */
 function annotateJoinPath(a: Abs, b: Abs, result: Abs): Abs {
   if (result === a || result === b) return result;
   const sa = shapeBrief(a);
   const sb = shapeBrief(b);
-  if (sa === sb && result.shape.k === a.shape.k) return result;
+  if (sa === sb) {
+    // 同形：无 slot/长度差则不注（避免 `[2]|[2]` 噪声）；有差则写进 note
+    const extra = sameShapeJoinNote(a, b);
+    if (!extra) return result;
+    const note = `join(${sa}: ${extra})`;
+    if (result.pathNote === note) return result;
+    return { ...result, pathNote: note };
+  }
   const note = `join(${sa} | ${sb})`;
   if (result.pathNote === note) return result;
   return { ...result, pathNote: note };
+}
+
+function sameShapeJoinNote(a: Abs, b: Abs): string | undefined {
+  if (a.shape.k === "obj" && b.shape.k === "obj") {
+    const ak = Object.keys((a.shape as { slots: Record<string, unknown> }).slots ?? {});
+    const bk = Object.keys((b.shape as { slots: Record<string, unknown> }).slots ?? {});
+    const onlyA = ak.filter((k) => !bk.includes(k));
+    const onlyB = bk.filter((k) => !ak.includes(k));
+    if (onlyA.length === 0 && onlyB.length === 0) return undefined;
+    const parts: string[] = [];
+    if (onlyA.length > 0) parts.push(`+${onlyA.join(",")}`);
+    if (onlyB.length > 0) parts.push(`+${onlyB.join(",")}`);
+    return parts.join(" ");
+  }
+  if (a.shape.k === "tuple" && b.shape.k === "tuple") {
+    const la = (a.shape as { elements: unknown[] }).elements.length;
+    const lb = (b.shape as { elements: unknown[] }).elements.length;
+    if (la === lb) return undefined;
+    return `len ${la}|${lb}`;
+  }
+  return undefined;
 }
 
 /** 通用 join：分派到对象/函数/值 */
 export function joinAbs(a: Abs, b: Abs): Abs {
   if (a.shape.k === "never") return b;
   if (b.shape.k === "never") return a;
-  if (isObj(a) && isObj(b)) return joinObjects(a, b);
-  if (a.shape.k === "fn" && b.shape.k === "fn") return joinFunctions(a, b);
+  if (isObj(a) && isObj(b)) {
+    return annotateJoinPath(a, b, joinObjects(a, b));
+  }
+  if (a.shape.k === "fn" && b.shape.k === "fn") {
+    return annotateJoinPath(a, b, joinFunctions(a, b));
+  }
   const result = joinValues(a, b);
   // 推导图打点：任一侧有标签时结果挂 join 边（工件聚合；check 分轨不依赖）
   noteDerivationJoin([a, b], result);

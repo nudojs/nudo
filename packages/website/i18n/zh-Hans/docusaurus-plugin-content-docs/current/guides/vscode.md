@@ -126,7 +126,7 @@ Nudo 根据推断类型提供语法高亮。函数、变量和死代码的高亮
 | 面板标题 | 命令 | 行为 |
 |----------|------|------|
 | Nudo: Show Interface | `nudo.interface` | 在 **Nudo** 输出通道打印分层（同 `nudo interface`） |
-| Nudo: Draft Interface (code-first) | `nudo.interface.draft` | Output 预览草稿；可选写入 `*.nudo.draft.js` |
+| Nudo: Draft Interface (code-first) | `nudo.interface.draft` | Output 预览草稿；可选写入 `*.nudo.draft.js` / `*.nudo.draft.ts` |
 | Nudo: Persist Interface (@generated) | `nudo.interfaceEmit` | 固化调用点域（CodeLens persist/update 共用） |
 
 非手写导出上的 CodeLens 含 `⚡ draft interface`——与 CLI `--draft`、agent `nudo.interface.draft` 同源。

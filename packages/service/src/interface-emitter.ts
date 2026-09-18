@@ -65,6 +65,10 @@ export type EmitInterfaceOpts = {
    * 外部使用现场记录）的投影原料；缺省时仅用本文件调用点证据。
    */
   records?: CallRecord[];
+  /** 缓冲源（E5：agent/LSP 与 validate 同源）；缺省读盘 */
+  source?: string;
+  /** 模块装载器（buffer-aware 侧车可见）；缺省 defaultLoadModule */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
 };
 
 export type EmitInterfaceResult = {
@@ -121,12 +125,14 @@ export async function emitInterface(
       sidecarPath: sidecarPathOf(abs),
     };
   }
-  const source = readFileSync(abs, "utf-8");
+  const source = opts.source ?? readFileSync(abs, "utf-8");
   // since 锚：emit 只排干自身 round-trip 自检产生的诊断（全量 take 会在 LSP
   // 长驻进程的 await 窗口窃取在途 validateText 的待消费诊断）
   const ifaceSince = interfaceDiagCount();
   const refineSince = refineDiagCount();
   const sidecarPath = sidecarPathOf(abs);
+  // 侧车 open buffer 与磁盘不一致时由调用方拒绝写盘（防 save 覆盖 emit）；
+  // 此处仍以磁盘为合并基（调用方保证 dirty 时不会走到这里）。
   const sidecarSrc = existsSync(sidecarPath) ? readFileSync(sidecarPath, "utf-8") : "";
   // 源路径锚定侧车自身目录（与 cwd 无关）：monorepo 子包/仓库根两处跑 emit
   // 不再因 `// source:` 行漂移把 no-change 判成 rewrite
@@ -143,7 +149,13 @@ export async function emitInterface(
   for (const n of generatedNames) declared.delete(n); // 手写绑定 = 顶层声明 − 生成段
 
   // ---- 分析（与 interfaceSurface 同一管道：analyzer 现成 case/abs 推断）----
-  const analysis = await analyzeFileAsync(abs, source, undefined, opts.records);
+  const analysis = await analyzeFileAsync(
+    abs,
+    source,
+    undefined,
+    opts.records,
+    opts.loadModule,
+  );
   const exported = localNamedExports(source);
   const fnByName = new Map<string, FunctionAnalysis>();
   for (const f of analysis.functions) {

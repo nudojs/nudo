@@ -83,11 +83,16 @@ export function relaxSidecarConstraint(
     const next = replaceInFnRegion(sidecarSource, fnName, replacer);
     if (next !== undefined) return next;
   }
-  // 无 fn 区域时，仅对 constraintText 做「首次出现」替换（不再全局 split/join）
+  // 无 fn 区域时：constraintText 在全文唯一才做首次替换（P1：多 export
+  // 共用同文约束时全局替换会放宽错误导出）
   if (constraintText && sidecarSource.includes(constraintText)) {
-    const base = stripNumericPreds(constraintText);
-    if (base && base !== constraintText) {
-      return sidecarSource.replace(constraintText, base);
+    const first = sidecarSource.indexOf(constraintText);
+    const second = sidecarSource.indexOf(constraintText, first + constraintText.length);
+    if (second === -1) {
+      const base = stripNumericPreds(constraintText);
+      if (base && base !== constraintText) {
+        return sidecarSource.replace(constraintText, base);
+      }
     }
   }
   return undefined;

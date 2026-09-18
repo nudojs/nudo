@@ -495,11 +495,24 @@ function loadSidecarBinding(
     });
     return { ok: false };
   }
+  // generated 判定与绑定键解析同构：`Class.method` / `Class_method` / 嵌套对象
+  const generatedNames = generatedExportNames(sidecarSrc);
+  const isGenerated =
+    generatedNames.has(fnName) ||
+    (fnName.includes(".")
+      ? (() => {
+          const [cls, method] = fnName.split(".", 2);
+          return (
+            generatedNames.has(`${cls}_${method}`) ||
+            generatedNames.has(cls!)
+          );
+        })()
+      : false);
   return {
     ok: true,
     sidecarPath,
     constraint: binding as NudoConstraint & { fn: NonNullable<NudoConstraint["fn"]> },
-    generated: generatedExportNames(sidecarSrc).has(fnName),
+    generated: isGenerated,
   };
 }
 

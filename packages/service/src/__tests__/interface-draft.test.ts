@@ -127,6 +127,35 @@ describe("draftInterface", () => {
     expect(eff).toBeUndefined();
   });
 
+  it("sidecarDraftPath for .ts/.mts never collides with formal sidecar (P0 regression)", () => {
+    expect(sidecarDraftPath(join(dir, "lib.ts"))).toBe(join(dir, "lib.nudo.draft.ts"));
+    expect(sidecarDraftPath(join(dir, "lib.mts"))).toBe(join(dir, "lib.nudo.draft.ts"));
+    expect(sidecarDraftPath(join(dir, "lib.mjs"))).toBe(join(dir, "lib.nudo.draft.js"));
+    const formalTs = join(dir, "lib.nudo.ts");
+    expect(sidecarDraftPath(join(dir, "lib.ts"))).not.toBe(formalTs);
+    // write 守卫：draft 路径撞正式侧车时拒绝
+    expect(() =>
+      writeInterfaceDraft(join(dir, "lib.ts"), "export const x = 1;\n", { dryRun: false }),
+    ).not.toThrow();
+    expect(existsSync(join(dir, "lib.nudo.ts"))).toBe(false);
+  });
+
+  it("TS draft write lands *.nudo.draft.ts and preserves handwritten *.nudo.ts", async () => {
+    const file = join(dir, "lib.ts");
+    writeFileSync(file, CALLS_JS.replace("export function", "export function"));
+    writeFileSync(
+      join(dir, "lib.nudo.ts"),
+      `import { fn, number } from "@nudojs/core";\nexport const double = fn({ x: number().gt(0) }, number());\n// HANDWRITTEN MARKER MUST SURVIVE\n`,
+    );
+    const r = await draftInterface(file);
+    // handwritten skip → 不写 draft 覆盖侧车
+    const w = writeInterfaceDraft(file, r.draftSource);
+    const formal = readFileSync(join(dir, "lib.nudo.ts"), "utf-8");
+    expect(formal).toContain("HANDWRITTEN MARKER MUST SURVIVE");
+    expect(w.draftPath).toBe(join(dir, "lib.nudo.draft.ts"));
+    expect(w.draftPath).not.toBe(join(dir, "lib.nudo.ts"));
+  });
+
   it("write is idempotent; dryRun does not write", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, CALLS_JS);

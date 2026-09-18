@@ -875,12 +875,11 @@ function serializedEmit(
   filePath: string,
   fnNames: string[],
   mode: "add" | "update",
+  extra: { source?: string; loadModule?: (spec: string, fromFile: string) => string | undefined } = {},
 ): Promise<EmitInterfaceResult> {
   const prev = emitChains.get(filePath) ?? Promise.resolve();
-  const next = prev.then(
-    () => emitInterface(filePath, { fnNames, mode }),
-    () => emitInterface(filePath, { fnNames, mode }), // 前次失败不阻塞后续
-  );
+  const run = () => emitInterface(filePath, { fnNames, mode, ...extra });
+  const next = prev.then(run, run); // 前次失败不阻塞后续
   const settled = next.then(
     () => {},
     () => {},
@@ -916,7 +915,28 @@ export async function interfaceEmitTool(
     const filePath = normalizeFilePath(params.file);
     const err = assertEmitTargetAllowed(filePath, deps.workspaceRoots);
     if (err) return toolError(err);
-    const result = await serializedEmit(filePath, [params.functionName], params.mode);
+    // E5：分析与 validate 同源（open buffer + buffer-aware loadModule）
+    const openSource = deps.getOpenText?.(filePath)?.text;
+    // 侧车 open buffer 脏：emit 写盘后 save 会覆盖 @generated 段 → 拒绝
+    const sidecarPath = sidecarPathOf(filePath);
+    const openSidecar = deps.getOpenText?.(sidecarPath)?.text;
+    if (openSidecar !== undefined) {
+      let diskSidecar: string | undefined;
+      try {
+        diskSidecar = readFileSync(sidecarPath, "utf-8");
+      } catch {
+        diskSidecar = undefined;
+      }
+      if (diskSidecar !== undefined && openSidecar !== diskSidecar) {
+        return toolError(
+          `Error: sidecar ${sidecarPath} has unsaved buffer changes; save or discard them before emit (otherwise save would overwrite @generated sections)`,
+        );
+      }
+    }
+    const result = await serializedEmit(filePath, [params.functionName], params.mode, {
+      ...(openSource !== undefined ? { source: openSource } : {}),
+      ...(deps.loadModule ? { loadModule: deps.loadModule } : {}),
+    });
     return textResult(formatEmitResult(filePath, result));
   } catch (err) {
     return analysisError(err);

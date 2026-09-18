@@ -8,7 +8,7 @@ import { abs, unknown, confJoin, litValue, bool, boolLit, strLit } from "../abs.
 import { objOf, joinAbs } from "../objects.ts";
 import { $get, $set, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary } from "./runtime.ts";
 import { $call } from "./call.ts";
-import { getFnImpl } from "../abs-fn.ts";
+import { getFnImpl, absFunction } from "../abs-fn.ts";
 import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod } from "../builtins.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin } from "../collections.ts";
 import {
@@ -254,6 +254,49 @@ export function $invoke(
   args: Abs[],
   loc?: [number, number],
 ): Abs {
+  // Function.prototype.call/apply/bind：fn Abs **或** B 路径 JS 函数（P1）
+  if (method === "call" || method === "apply" || method === "bind") {
+    const expandApplyArgs = (list: unknown): Abs[] => {
+      const expanded: Abs[] = [];
+      if (list && typeof list === "object" && "shape" in (list as object)) {
+        const s = (list as Abs).shape;
+        if (s.k === "tuple") expanded.push(...s.elements);
+        else if (s.k === "arr") expanded.push(s.element);
+      }
+      return expanded;
+    };
+    if (typeof thisVal === "function") {
+      const fn = thisVal as (...a: Abs[]) => Abs;
+      if (method === "call") {
+        return callAtFunctionBoundary(() => fn(...args.slice(1)));
+      }
+      if (method === "apply") {
+        return callAtFunctionBoundary(() => fn(...expandApplyArgs(args[1])));
+      }
+      const bound = args.slice(1);
+      return absFunction(["_rest"], {
+        apply: (callArgs) =>
+          callAtFunctionBoundary(() => fn(...bound, ...callArgs)),
+      });
+    }
+    if (thisVal && typeof thisVal === "object" && "shape" in thisVal) {
+      const fnImpl = getFnImpl(thisVal);
+      const isCallable = thisVal.shape.k === "fn" || fnImpl !== undefined;
+      if (isCallable) {
+        if (method === "call") {
+          return $call(thisVal, args.slice(1));
+        }
+        if (method === "apply") {
+          return $call(thisVal, expandApplyArgs(args[1]));
+        }
+        const bound = args.slice(1);
+        return absFunction(["_rest"], {
+          apply: (callArgs) =>
+            callAtFunctionBoundary(() => $call(thisVal, [...bound, ...callArgs])),
+        });
+      }
+    }
+  }
   // 宿主 JS 命名空间对象（Math/Number/JSON…）→ Abs builtin 表
   if (!thisVal || typeof thisVal !== "object" || !("shape" in thisVal)) {
     const ns = namespaceNameOf(thisVal);

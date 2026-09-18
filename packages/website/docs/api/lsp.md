@@ -53,6 +53,8 @@ type ValidateTextDeps = {
   isNudoUri?: (uri: string) => boolean;
   getActiveCases?: (uri: string) => Map<string, number>;
   getOpenDocumentByPath?: (filePath: string) => OpenDocumentLike | undefined;
+  /** Buffer-aware module loader (A4/E5); omitted → disk `defaultLoadModule` */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
 };
 
 type OpenDocumentLike = {
@@ -83,18 +85,20 @@ getCachedOrAnalyze(
   source: string,
   version: number,
   activeCases?: Map<string, number>,
+  loadModule?: (spec: string, fromFile: string) => string | undefined,
 ): AnalysisResult
 ```
 
-Synchronous, cache-aware analysis for high-frequency handlers (hover, completion). Returns the cached `AnalysisResult` when the document version matches; otherwise runs the sync `analyzeFile` and refreshes the cache. Path-based `@nudo:env` files degrade on this path — the async preload only happens inside `validateText`.
+Synchronous, cache-aware analysis for high-frequency handlers (hover, completion, pull diagnostics). Reuses the cached `AnalysisResult` when document `version` **and** `casesHash` match; otherwise runs sync `analyzeFile` (with optional buffer-aware `loadModule`) and refreshes the cache. Path-based `@nudo:env` files degrade on this path — the async preload only happens inside `validateText`. Sidecar/dep changes invalidate via `handleNudoDepFileChanged` (cache delete + force revalidate + `workspace/diagnostic/refresh`).
 
-### hasNudoDirectives
+### isNudoFile gate
 
-```typescript
-hasNudoDirectives(source: string): boolean
-```
+Server-side `isNudoFile(uri)` is **not** a pure directive scan. It requires:
 
-Returns `true` when the source contains any Nudo directive: `@nudo:case`, `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:refine`, `@nudo:import`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, or `@nudo:replace`. The server uses it (plus a `.js` / `.ts` / `.mjs` extension check) as the `isNudoFile` gate — every feature handler below is a no-op for files that fail it.
+1. `isNudoTargetPath` — `.js` / `.mjs` / `.ts`, excluding `.d.ts`, JSX, and `*.nudo.{js,mjs,ts}` sidecars; and
+2. `shouldAnalyzeFile(filePath, text)` — path + `package.json#nudo.analysis.mode` (directives today; `exports`/`all` opens directive-free analysis).
+
+Results are cached per URI and invalidated on open/change/close.
 
 ### toLspDiagnostic
 
