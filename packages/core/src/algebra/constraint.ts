@@ -215,6 +215,11 @@ export function boolean(): ConstraintBuilder {
   return makeBuilder("boolean", []);
 }
 
+/** any() —— 无约束；formatConstraint / draft import 与显示同源 */
+export function any(): ConstraintBuilder {
+  return makeBuilder(undefined, []);
+}
+
 /** array(item) —— 数组，元素满足 item */
 export function array(item: NudoConstraint | ConstraintBuilder): ConstraintBuilder {
   if (!isConstraint(item))

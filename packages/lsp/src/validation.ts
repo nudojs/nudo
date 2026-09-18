@@ -511,6 +511,8 @@ export async function validateText(
   });
   const evalJs = filterDiagnosticsByLevel(result.diagnostics, level);
   const evalDiags = evalJs.map((d) => toLspDiagnostic(d, uri));
+  // P2：发布前再确认 generation，避免 check 路径上的 await 竞态覆盖更新 push
+  if (!stillCurrent()) return;
   deps.sendDiagnostics({ uri, diagnostics: [...checkDiags, ...evalDiags] });
 
   if (!propagate || !deps.getOpenDocumentByPath) return;

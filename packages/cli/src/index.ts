@@ -401,14 +401,17 @@ async function runCheck(
       sidecarContent = null;
     }
   }
-  const cacheKey = useDisk
-    ? checkCacheKey(filePath, source, {
-        autoBind,
-        projectDir: proj?.projectDir,
-        sidecarContent,
-        depContents: dep.depContents,
-      })
-    : undefined;
+  // --verbose 需要完整 Abs（term/pred/conf）；缓存只存 CheckJson，命中时
+  // signatures[].abs 是占位，verbose 不得回放缓存。
+  const cacheKey =
+    useDisk && !opts.verbose
+      ? checkCacheKey(filePath, source, {
+          autoBind,
+          projectDir: proj?.projectDir,
+          sidecarContent,
+          depContents: dep.depContents,
+        })
+      : undefined;
   const cached = cacheKey ? disk.get<ReturnType<typeof serializeCheckJson>>(cacheKey) : undefined;
   /** 缓存命中时的 CheckJson 原样（signatures[].abs 已是 formatAbs 字符串） */
   let cachedJson: ReturnType<typeof serializeCheckJson> | undefined;

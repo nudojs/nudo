@@ -272,11 +272,16 @@ function setTableOf(a: Abs): SetTable {
 function mapTableForWrite(a: Abs): MapTable {
   noteCollectionWrite(a as object);
   if (armOverlays.length > 0) {
+    let base: MapTable | undefined;
+    for (let i = 0; i < armOverlays.length; i++) {
+      const e = armOverlays[i]!.get(a as object);
+      if (e?.map) base = e.map;
+    }
+    if (!base) base = mapTables.get(a as object);
     const top = armOverlays[armOverlays.length - 1]!;
     let entry = top.get(a as object);
     if (!entry?.map) {
-      const base = mapTables.get(a as object) ?? emptyMapTable();
-      const cloned = cloneMapTable(base);
+      const cloned = cloneMapTable(base ?? emptyMapTable());
       entry = { ...(entry ?? {}), map: cloned };
       top.set(a as object, entry);
       return cloned;
@@ -287,9 +292,8 @@ function mapTableForWrite(a: Abs): MapTable {
 }
 
 function mapTableForRead(a: Abs): MapTable | undefined {
-  if (armOverlays.length > 0) {
-    const top = armOverlays[armOverlays.length - 1]!;
-    const entry = top.get(a as object);
+  for (let i = armOverlays.length - 1; i >= 0; i--) {
+    const entry = armOverlays[i]!.get(a as object);
     if (entry?.map) return entry.map;
   }
   return mapTables.get(a as object);
@@ -298,11 +302,16 @@ function mapTableForRead(a: Abs): MapTable | undefined {
 function setTableForWrite(a: Abs): SetTable {
   noteCollectionWrite(a as object);
   if (armOverlays.length > 0) {
+    let base: SetTable | undefined;
+    for (let i = 0; i < armOverlays.length; i++) {
+      const e = armOverlays[i]!.get(a as object);
+      if (e?.set) base = e.set;
+    }
+    if (!base) base = setTables.get(a as object);
     const top = armOverlays[armOverlays.length - 1]!;
     let entry = top.get(a as object);
     if (!entry?.set) {
-      const base = setTables.get(a as object) ?? emptySetTable();
-      const cloned = cloneSetTable(base);
+      const cloned = cloneSetTable(base ?? emptySetTable());
       entry = { ...(entry ?? {}), set: cloned };
       top.set(a as object, entry);
       return cloned;
@@ -313,9 +322,8 @@ function setTableForWrite(a: Abs): SetTable {
 }
 
 function setTableForRead(a: Abs): SetTable | undefined {
-  if (armOverlays.length > 0) {
-    const top = armOverlays[armOverlays.length - 1]!;
-    const entry = top.get(a as object);
+  for (let i = armOverlays.length - 1; i >= 0; i--) {
+    const entry = armOverlays[i]!.get(a as object);
     if (entry?.set) return entry.set;
   }
   return setTables.get(a as object);
@@ -328,6 +336,35 @@ export function mapSetEntry(mapAbs: Abs, key: Abs | undefined, value: Abs): Abs 
   if (k !== undefined) t.byLit.set(k, value);
   else if (value) t.shadowValues.push(value);
   return mapAbs;
+}
+
+/** Map#delete：fork overlay 内移除字面量键；未知 key 仅标 shadow 不确定 */
+export function mapDeleteEntry(mapAbs: Abs, key: Abs | undefined): Abs {
+  const t = mapTableForWrite(mapAbs);
+  const k = litKeyOf(key);
+  if (k !== undefined) {
+    t.byLit.delete(k);
+    t.maybeAbsent?.delete(k);
+    // 删除后若仍有 shadow 写入，get/has 仍须保守
+  } else if (t.shadowValues.length === 0 && t.byLit.size > 0) {
+    // 未知 key 可能删掉任一已知键 → 全部键 maybeAbsent
+    t.maybeAbsent = new Set(t.byLit.keys());
+  }
+  return abs(
+    { k: "prim", type: "boolean" },
+    undefined,
+    undefined,
+    "path",
+  );
+}
+
+/** Map#clear：清空条目；fork 下仍走 overlay */
+export function mapClearEntries(mapAbs: Abs): Abs {
+  const t = mapTableForWrite(mapAbs);
+  t.byLit.clear();
+  t.shadowValues.length = 0;
+  delete t.maybeAbsent;
+  return undefAbs();
 }
 
 function undefAbs(): Abs {
@@ -466,6 +503,31 @@ export function setAddEntry(setAbs: Abs, value: Abs): Abs {
   }
   t.elements.push(value);
   return setAbs;
+}
+
+/** Set#delete：按字面量元素移除；fork overlay 内生效。
+ * 字面量删除且无残留非字面量元素 → 该臂可精确 miss；
+ * 臂间分歧由 endCollectionFork 按元素数差标 maybeAbsent。 */
+export function setDeleteEntry(setAbs: Abs, value: Abs): Abs {
+  const t = setTableForWrite(setAbs);
+  const lk = litKeyOf(value);
+  if (lk !== undefined) {
+    t.elements = t.elements.filter((el) => litKeyOf(el) !== lk);
+    const hasUnknown = t.elements.some((el) => litKeyOf(el) === undefined);
+    if (hasUnknown) t.maybeAbsent = true;
+    else delete t.maybeAbsent;
+  } else {
+    t.maybeAbsent = true;
+  }
+  return abs({ k: "prim", type: "boolean" }, undefined, undefined, "path");
+}
+
+/** Set#clear */
+export function setClearEntries(setAbs: Abs): Abs {
+  const t = setTableForWrite(setAbs);
+  t.elements = [];
+  delete t.maybeAbsent;
+  return undefAbs();
 }
 
 export function setHasEntry(setAbs: Abs, value: Abs): Abs {

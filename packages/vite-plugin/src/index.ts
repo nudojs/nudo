@@ -6,6 +6,7 @@ import {
   shouldAnalyzeFile,
   filterDiagnosticsByLevel,
   findProjectConfig,
+  interfaceConfig,
   type AnalysisResult,
   type Diagnostic,
   type DiagnosticsLevel,
@@ -28,7 +29,14 @@ export type NudoPluginOptions = {
 /** Abs check issues → service Diagnostic（与 evaluator 诊断同管道进 vite warn/error） */
 function checkIssuesToDiagnostics(id: string, code: string): Diagnostic[] {
   try {
-    const report = checkSource(id, code, pTrue, { loadModule, fromFile: id });
+    // 与 CLI/LSP/agent 同源：package.json#nudo.interface.autoBind=false 时
+    // 不得强制 ambient 手写契约（避免构建期误报）。
+    const autoBind = interfaceConfig(findProjectConfig(dirname(id))?.config).autoBind;
+    const report = checkSource(id, code, pTrue, {
+      loadModule,
+      fromFile: id,
+      ...(autoBind === false ? { autoBind: false } : {}),
+    });
     return report.issues
       .filter((i) => i.severity === "error" || i.severity === "warning")
       .map((i) => {

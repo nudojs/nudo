@@ -227,4 +227,36 @@ describe("draftInterface", () => {
     expect(entry!.returnEvidence).not.toBe("directive");
     expect(entry!.paramEvidence).not.toBe("directive");
   });
+
+  it("P1#12 empty draft dry-run does not claim would-write", async () => {
+    const file = join(dir, "empty.js");
+    writeFileSync(file, `const x = 1;\nexport { x };\n`);
+    const r = await draftInterface(file);
+    const draftable = r.entries.filter((e) => e.dsl !== undefined && e.skipped === undefined);
+    expect(draftable.length).toBe(0);
+    const write = writeInterfaceDraft(file, r.draftSource, { dryRun: true });
+    expect(write.draftable).toBe(false);
+    const text = formatDraftSummary("empty.js", "empty.nudo.draft.js", r, write).join("\n");
+    expect(text).not.toContain("would write");
+    expect(text).toContain("nothing written");
+  });
+
+  it("draft import list includes any(); optional shape fields become .optional()", async () => {
+    const { toDraftBuilderDsl } = await import("../interface-draft.ts");
+    // formatConstraint 显示层允许 `email?:`；落盘 draft DSL 必须合法 builder JS
+    const display = `shape({ email?: string(), age: number() })`;
+    const dsl = toDraftBuilderDsl(display);
+    expect(dsl).not.toMatch(/\w\?:/);
+    expect(dsl).toContain("email: string().optional()");
+    expect(dsl).toContain("age: number()");
+    // 已有 .optional() 时不重复追加
+    expect(toDraftBuilderDsl(`shape({ email?: string().optional() })`)).toContain(
+      "email: string().optional()",
+    );
+
+    const file = join(dir, "imp.js");
+    writeFileSync(file, `export function id(x) { return x; }\nid(1);\n`);
+    const r = await draftInterface(file);
+    expect(r.draftSource).toContain("any,");
+  });
 });

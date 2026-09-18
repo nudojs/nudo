@@ -16,6 +16,10 @@ export default defineConfig({
       // 无需先 build；与 CI「lint / build / test 独立」一致。
       "@nudojs/core": new URL("./packages/core/src", import.meta.url)
         .pathname,
+      // B-path transpile 注入 `@nudojs/core/exec` —— 测试必须走 src，否则
+      // 与 dist 旧 runtime 分叉（mutator/fork 修复对测试不可见）。
+      "@nudojs/core/exec": new URL("./packages/core/src/algebra/exec/index.ts", import.meta.url)
+        .pathname,
       "@nudojs/parser": new URL("./packages/parser/src", import.meta.url)
         .pathname,
       "@nudojs/service/evaluator": new URL(

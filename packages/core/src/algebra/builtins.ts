@@ -15,9 +15,13 @@ import {
   mapGetEntry,
   mapHasEntry,
   mapSetEntry,
+  mapDeleteEntry,
+  mapClearEntries,
   mapSizeAbs,
   setAddEntry,
   setHasEntry,
+  setDeleteEntry,
+  setClearEntries,
   setSizeAbs,
 } from "./collections.ts";
 
@@ -461,6 +465,10 @@ export function evalBuiltinInstanceMethod(
         return mapHasEntry(recv, args[0]);
       case "set":
         return mapSetEntry(recv, args[0], args[1] ?? unknown);
+      case "delete":
+        return mapDeleteEntry(recv, args[0]);
+      case "clear":
+        return mapClearEntries(recv);
       case "size":
         return mapSizeAbs(recv);
       default:
@@ -473,6 +481,10 @@ export function evalBuiltinInstanceMethod(
         return setHasEntry(recv, args[0]);
       case "add":
         return setAddEntry(recv, args[0] ?? unknown);
+      case "delete":
+        return setDeleteEntry(recv, args[0]);
+      case "clear":
+        return setClearEntries(recv);
       case "size":
         return setSizeAbs(recv);
       default:

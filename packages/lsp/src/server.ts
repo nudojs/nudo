@@ -812,10 +812,16 @@ connection.onCodeAction((params) => {
           })();
         if (sidecarText !== undefined) {
           const scLines = sidecarText.split("\n");
-          // 在 shape({ / fn({ 的第一个 `{` 后插入字段
+          // A6：优先在目标 fn 导出绑定附近的 shape/fn 插入，避免多 fn 侧车插错契约
+          const fnName = typeof data.fn === "string" && data.fn ? data.fn : undefined;
+          const fnLineIdx = fnName
+            ? scLines.findIndex((l) => new RegExp(`export\\s+const\\s+${fnName}\\b`).test(l))
+            : -1;
+          // 在 shape({ / fn({ 的第一个 `{` 后插入字段（fn 优先，否则首个 shape/fn）
           for (let i = 0; i < scLines.length; i++) {
             const t = scLines[i]!;
             if (!/\bshape\s*\(\s*\{|\bfn\s*\(\s*\{/.test(t)) continue;
+            if (fnName && fnLineIdx >= 0 && i < fnLineIdx) continue;
             const b = t.indexOf("{");
             if (b < 0) continue;
             const insert = t.slice(b + 1).trimStart().startsWith("}")
@@ -837,7 +843,7 @@ connection.onCodeAction((params) => {
                 },
               },
             });
-            break;
+            break; // 只改目标 fn 附近第一处 shape/fn
           }
         } else {
           actions.push({
@@ -1260,9 +1266,9 @@ connection.languages.diagnostics.on((params) => {
     for (const d of filtered) {
       items.push(toLspDiagnostic(d, document.uri));
     }
-    return { kind: "full", items };
+    return { kind: "full", items, version: document.version };
   } catch {
-    return { kind: "full", items: [] };
+    return { kind: "full", items: [], version: document?.version };
   }
 });
 

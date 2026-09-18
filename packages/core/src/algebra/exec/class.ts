@@ -444,13 +444,26 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     }
     if (shape.k === "arr") return joinAbs(shape.element, undefAbs());
   }
-  if (method === "shift" || method === "at") {
+  if (method === "shift") {
     if (shape.k === "tuple" && shape.elements.length > 0) {
       return shape.elements[0] ?? unknown;
     }
-    if (shape.k === "arr") {
-      return method === "at" ? shape.element : joinAbs(shape.element, undefAbs());
+    if (shape.k === "arr") return joinAbs(shape.element, undefAbs());
+  }
+  if (method === "at") {
+    const raw = args[0] !== undefined ? litValue(args[0]) : undefined;
+    const iv = typeof raw === "number" && Number.isInteger(raw) ? raw : undefined;
+    if (shape.k === "tuple") {
+      const els = shape.elements;
+      if (iv === undefined) {
+        if (els.length === 0) return undefAbs();
+        return joinAbs(els.reduce((a, b) => joinAbs(a, b)), undefAbs());
+      }
+      const idx = iv < 0 ? els.length + iv : iv;
+      if (idx >= 0 && idx < els.length) return els[idx] ?? unknown;
+      return undefAbs();
     }
+    if (shape.k === "arr") return joinAbs(shape.element, undefAbs());
   }
   return undefined;
 }

@@ -29,6 +29,7 @@ import {
   abs as makeAbsVal,
   formalParamsFromNodes,
   formalParamDisplayNames,
+  type FormalParam,
   runWithEvalMissingSlot,
   type Abs,
   stableAnalyzeKeySource,
@@ -125,6 +126,8 @@ export type FunctionAnalysis = {
   name: string;
   loc: SourceLocation;
   paramNames: string[];
+  /** C4.1 形参表面：draft/契约对齐（解构 placeholder + bound 名） */
+  formals?: FormalParam[];
   cases: CaseResult[];
   /** cases 结果 Abs 的 join；dts 返回位源 */
   combinedAbs?: Abs;
@@ -928,7 +931,7 @@ function analysisFileCacheKey(
   externalCallRecords?: CallRecord[],
   analysisCfg?: { mode: string; evalMissingSlot: string; callSiteBudget: number; diagnostics: string },
   loadModule?: AnalyzeLoadModule,
-): { filePath: string; source: string; auxKey: string } {
+): { filePath: string; source: string; auxKey: string; noCache?: boolean } {
   let cases = "-";
   if (activeCases && activeCases.size > 0) {
     cases = [...activeCases.entries()]
@@ -952,11 +955,30 @@ function analysisFileCacheKey(
   // custom loadModule (e.g. LSP buffer-aware) can produce different analysis
   // than the default disk loader — distinguish in the memo key
   const lm = loadModule !== undefined && loadModule !== defaultLoadModule ? "lm1" : "lm0";
+  // buffer-aware / 自定义 loader：dep 内容变更（入口 source 未变）也必须 miss。
+  // 指纹失败/truncated → 禁用共享命中（fail-closed，见 noCache）。
+  let depSeg = "-";
+  let noCache = false;
+  if (lm === "lm1" && loadModule) {
+    try {
+      const fp = loadModuleDepsFingerprint(source, loadModule, filePath);
+      if (fp.truncated) {
+        noCache = true;
+        depSeg = `trunc:${fp.paths.length}`;
+      } else {
+        depSeg = fp.fp.slice(0, 64);
+      }
+    } catch {
+      noCache = true;
+      depSeg = "fperr";
+    }
+  }
   return {
     filePath,
     // 尾部无 @nudo 注释/空行不进键：comment-only 编辑命中 AnalysisResult
     source: stableAnalyzeKeySource(source),
-    auxKey: `${cases}\0${ext}\0${cfg}\0${lm}`,
+    auxKey: `${cases}\0${ext}\0${cfg}\0${lm}\0${depSeg}`,
+    noCache,
   };
 }
 
@@ -980,6 +1002,7 @@ function cloneFunctionAnalysis(a: FunctionAnalysis): FunctionAnalysis {
   return {
     ...a,
     paramNames: [...a.paramNames],
+    ...(a.formals ? { formals: a.formals.map((f) => ({ ...f })) } : {}),
     cases: a.cases.map((c) => ({
       ...c,
       argAbs: [...c.argAbs],
@@ -1046,12 +1069,16 @@ export function analyzeFile(
   const projectConfig = findProjectConfig(dirname(filePath));
   const cfg = analysisConfig(projectConfig?.config);
   const k = analysisFileCacheKey(filePath, source, activeCases, externalCallRecords, cfg, loadModule);
-  const hit = analysisCacheGet<AnalysisResult>(k.filePath, k.source, k.auxKey);
-  if (hit !== undefined) {
-    return cloneAnalysisResult(hit);
+  if (!k.noCache) {
+    const hit = analysisCacheGet<AnalysisResult>(k.filePath, k.source, k.auxKey);
+    if (hit !== undefined) {
+      return cloneAnalysisResult(hit);
+    }
   }
   const result = analyzeFileUncached(filePath, source, activeCases, externalCallRecords, loadModule);
-  analysisCacheSet(k.filePath, k.source, k.auxKey, result);
+  if (!k.noCache) {
+    analysisCacheSet(k.filePath, k.source, k.auxKey, result);
+  }
   return cloneAnalysisResult(result);
 }
 
@@ -1383,7 +1410,16 @@ function analyzeFileUncachedInner(
 
     const fnLoc = locFromNode(fn.node);
     const paramNames = extractParamNames(fn.node);
-    const analysis: FunctionAnalysis = { name: fn.name, loc: fnLoc, paramNames, cases: [] };
+    const formals = formalParamsFromNodes(
+      ((fn.node as { params?: unknown[] }).params ?? []) as never,
+    );
+    const analysis: FunctionAnalysis = {
+      name: fn.name,
+      loc: fnLoc,
+      paramNames,
+      ...(formals.length > 0 ? { formals } : {}),
+      cases: [],
+    };
 
     if (skipDirective && skipDirective.kind === "skip") {
       analysis.skipped = true;
@@ -1407,6 +1443,16 @@ function analyzeFileUncachedInner(
     // analysis 配置维度进 fn 键：evalMissingSlot / budget 等变更必须 miss
     // （整文件键已含，fn 键不加会陈旧命中 C0.5 诊断）
     const analysisFnKey = `m=${analysisCfg.mode}|e=${analysisCfg.evalMissingSlot}|b=${analysisCfg.callSiteBudget}`;
+    // P1#13：custom loadModule 下 dep 内容进 fn 键，避免入口文本未变时旧诊断命中
+    let fnDepSeg = "-";
+    if (loadModule !== undefined && loadModule !== defaultLoadModule) {
+      try {
+        const dfp = loadModuleDepsFingerprint(source, loadModule, filePath);
+        fnDepSeg = dfp.truncated ? `trunc:${dfp.paths.length}` : dfp.fp.slice(0, 64);
+      } catch {
+        fnDepSeg = "fperr";
+      }
+    }
     const fnCacheKey =
       fp && caseDirectives.length > 0
         ? [
@@ -1418,6 +1464,7 @@ function analyzeFileUncachedInner(
             envKeyFn,
             mockKeyFn,
             analysisFnKey,
+            fnDepSeg,
           ].join("\0")
         : undefined;
     const dLen0 = diagnostics.length;

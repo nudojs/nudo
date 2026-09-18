@@ -304,12 +304,48 @@ function transpileFnBodyStmts(stmts: Statement[], depth: number, opts: Transpile
       .map((s) => transpileStatement(s, depth, opts))
       .join("\n");
     const test = transpileExpression(stmt.test, opts);
-    const cons = transpileBlockAsThunk(stmt.consequent, depth, opts);
+    // P0.1：早退提升同样必须隔离臂间 mutator receiver
+    const recvSet = new Set<string>([
+      ...collectArrMutatorReceivers(stmt.consequent),
+      ...collectArrMutatorReceivers(stmt.test),
+      ...rest.flatMap((r) => [...collectArrMutatorReceivers(r)]),
+    ]);
+    const names = [...recvSet];
+    const pad = indent(depth);
+    const padIn = indent(depth + 1);
+    const wrapArm = (thunk: string, outPrefix: string): string => {
+      if (names.length === 0) return thunk;
+      return [
+        `() => {`,
+        ...names.map((n) => `${padIn}${n} = __fk0_${n};`),
+        `${padIn}try {`,
+        `${padIn}  return (${thunk})();`,
+        `${padIn}} finally {`,
+        ...names.map((n) => `${padIn}  __${outPrefix}${n} = ${n};`),
+        `${padIn}}`,
+        `}`,
+      ].join("\n");
+    };
+    const testRecvs = collectArrMutatorReceivers(stmt.test);
+    const testRebinds = testRecvs.size
+      ? emitArrMutatorRebinds(stmt.test as Node, opts, pad)
+      : [];
+    const cons = wrapArm(transpileBlockAsThunk(stmt.consequent, depth, opts), "fk1_");
     const altBody = transpileFnBodyStmts(rest, depth + 1, opts);
-    const promoted =
-      `${indent(depth)}return $fork(${test}, ${cons}, () => {\n` +
-      `${altBody}\n` +
-      `${indent(depth)}});`;
+    const altThunk = `() => {\n${altBody}\n${pad}}`;
+    const alt = wrapArm(altThunk, "fk2_");
+    const joinLines = names.length
+      ? [
+          ...testRebinds,
+          ...names.map((n) => `${pad}let __fk0_${n} = ${n};`),
+          ...names.map((n) => `${pad}let __fk1_${n}; let __fk2_${n};`),
+        ]
+      : testRebinds;
+    // 两臂都 return：$fork 抛 NudoReturn(join(早退, 余下))；臂内已 restore snapshot
+    const promoted = [
+      ...joinLines,
+      `${pad}return $fork(${test}, ${cons}, ${alt});`,
+    ].join("\n");
     return head ? `${head}\n${promoted}` : promoted;
   }
   return stmts.map((s) => transpileStatement(s, depth, opts)).join("\n");
@@ -440,6 +476,55 @@ function emitParamBinding(
   return { sig, rest, prologue };
 }
 
+/** 收集语句/表达式里以 Identifier 为 receiver 的数组 mutator 名 */
+function collectArrMutatorReceivers(node: unknown, acc = new Set<string>()): Set<string> {
+  if (!node || typeof node !== "object") return acc;
+  const n = node as Record<string, unknown>;
+  if (
+    n.type === "FunctionExpression" ||
+    n.type === "ArrowFunctionExpression" ||
+    n.type === "ObjectMethod" ||
+    n.type === "ClassMethod" ||
+    n.type === "FunctionDeclaration"
+  ) {
+    return acc;
+  }
+  if (
+    n.type === "CallExpression" &&
+    (n.callee as { type?: string; object?: Node; property?: Node; computed?: boolean } | undefined)
+      ?.type === "MemberExpression"
+  ) {
+    const callee = n.callee as { object?: Node; property?: Node; computed?: boolean };
+    const propName =
+      !callee.computed && callee.property?.type === "Identifier"
+        ? (callee.property as { name: string }).name
+        : undefined;
+    if (propName && ARR_MUTATOR_NAMES.has(propName)) {
+      const obj = callee.object;
+      if (obj?.type === "Identifier") {
+        acc.add((obj as { name: string }).name);
+      } else if (obj?.type === "MemberExpression") {
+        // 成员路径 mutator 会重绑 root 绑定（o.arr.pop → o），一并 snapshot
+        let cur: { type?: string; object?: { type?: string } } | undefined =
+          obj as { type?: string; object?: { type?: string } };
+        while (cur?.type === "MemberExpression") {
+          cur = cur.object;
+        }
+        if (cur?.type === "Identifier") {
+          acc.add((cur as unknown as { name: string }).name);
+        }
+      }
+    }
+  }
+  for (const key of Object.keys(n)) {
+    if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
+    const child = n[key];
+    if (Array.isArray(child)) child.forEach((c) => collectArrMutatorReceivers(c, acc));
+    else if (child && typeof child === "object") collectArrMutatorReceivers(child, acc);
+  }
+  return acc;
+}
+
 function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptions): string {
   const pad = indent(depth);
   switch (stmt.type) {
@@ -553,6 +638,8 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       // C1.4：数组 mutator 语句重绑到**变更后容器**（$arrMutContainer），
       // 不得绑到 JS 返回值（pop 返回元素，会污染 receiver Abs）
       const expr = stmt.expression as Expression;
+      // P1：任意表达式语句（含 assignment / if-test / call args）都先补 mutator 重绑
+      const exprRebinds = emitArrMutatorRebinds(expr, opts, pad);
       if (
         expr.type === "CallExpression" &&
         expr.callee.type === "MemberExpression" &&
@@ -589,6 +676,12 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
             return `${pad}${transpileExpression(stmt.expression, opts)};`;
           }
         }
+      }
+      if (exprRebinds.length > 0) {
+        return [
+          ...exprRebinds,
+          `${pad}${transpileExpression(expr, opts)};`,
+        ].join("\n");
       }
       return `${pad}${transpileExpression(stmt.expression, opts)};`;
     }
@@ -628,8 +721,54 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     }
     case "IfStatement": {
       const test = transpileExpression(stmt.test, opts);
-      const cons = transpileBlockAsThunk(stmt.consequent, depth, opts);
-      const alt = stmt.alternate ? transpileBlockAsThunk(stmt.alternate, depth, opts) : "undefined";
+      // P0：抽象分支内数组 mutator 重绑共享 let 会泄漏臂间状态。
+      // 收集 receiver，fork 前 snapshot，每臂 restore + 结束时保存，fork 后 join。
+      const recvSet = new Set<string>([
+        ...collectArrMutatorReceivers(stmt.consequent),
+        ...collectArrMutatorReceivers(stmt.alternate),
+      ]);
+      const testRecvs = collectArrMutatorReceivers(stmt.test);
+      const testRebinds = testRecvs.size
+        ? emitArrMutatorRebinds(stmt.test as Node, opts, pad)
+        : [];
+      const names = [...recvSet];
+      const padIn = indent(depth + 1);
+      const wrapArm = (thunk: string, outPrefix: string): string => {
+        if (names.length === 0) return thunk;
+        return [
+          `() => {`,
+          ...names.map((n) => `${padIn}${n} = __fk0_${n};`),
+          `${padIn}try {`,
+          `${padIn}  return (${thunk})();`,
+          `${padIn}} finally {`,
+          ...names.map((n) => `${padIn}  __${outPrefix}${n} = ${n};`),
+          `${padIn}}`,
+          `}`,
+        ].join("\n");
+      };
+      const consRaw = transpileBlockAsThunk(stmt.consequent, depth, opts);
+      const altRaw = stmt.alternate
+        ? transpileBlockAsThunk(stmt.alternate, depth, opts)
+        : "undefined";
+      const cons = wrapArm(consRaw, "fk1_");
+      const alt = names.length
+        ? wrapArm(altRaw === "undefined" ? "() => $lit(undefined)" : altRaw, "fk2_")
+        : altRaw;
+      const joinLines = names.length
+        ? [
+            ...testRebinds,
+            ...names.map((n) => `${pad}let __fk0_${n} = ${n};`),
+            ...names.map((n) => `${pad}let __fk1_${n}; let __fk2_${n};`),
+          ]
+        : testRebinds;
+      const applyJoin = names.length
+        ? names
+            .map(
+              (n) =>
+                `${pad}${n} = (__fk1_${n} !== undefined && __fk2_${n} !== undefined) ? $join(__fk1_${n}, __fk2_${n}) : (__fk1_${n} !== undefined ? __fk1_${n} : (__fk2_${n} !== undefined ? __fk2_${n} : ${n}));`,
+            )
+            .join("\n")
+        : "";
       // 两分支都以 return/throw 退出时，$fork 即函数返回值
       if (
         stmtReturns(stmt.consequent) &&
@@ -637,9 +776,26 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         stmt.alternate !== null &&
         stmtReturns(stmt.alternate)
       ) {
-        return `${pad}return $fork(${test}, ${cons}, ${alt});`;
+        if (names.length === 0) {
+          return [
+            ...joinLines,
+            `${pad}return $fork(${test}, ${cons}, ${alt});`,
+          ].join("\n");
+        }
+        return [
+          ...joinLines,
+          `${pad}const __fkR = $fork(${test}, ${cons}, ${alt});`,
+          applyJoin,
+          `${pad}return __fkR;`,
+        ].join("\n");
       }
-      return `${pad}$fork(${test}, ${cons}, ${alt});`;
+      return [
+        ...joinLines,
+        `${pad}$fork(${test}, ${cons}, ${alt});`,
+        applyJoin,
+      ]
+        .filter(Boolean)
+        .join("\n");
     }
     case "ForStatement": {
       const initName = extractForInitName(stmt.init);

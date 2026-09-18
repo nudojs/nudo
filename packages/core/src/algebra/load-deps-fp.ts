@@ -35,6 +35,26 @@ const MAX_LOAD_DEP_NODES = 64;
 export function extractAllLoadSpecs(source: string): string[] {
   const specs = new Set<string>();
   for (const imp of extractNudoImports(source)) specs.add(imp.spec);
+  // @nudo:env 路径模板（/// @nudo:env ./custom.env.ts）与
+  // @nudo:mock-module "mod" from "./mock.js" 的 from 路径会改变分析结果。
+  // 命名 env（es/node/web）不是 loadModule 可解析文件，只收 path-like。
+  const isPathLikeSpec = (spec: string): boolean =>
+    spec.startsWith("./") ||
+    spec.startsWith("../") ||
+    spec.startsWith("/") ||
+    /\.(ts|js|mjs|cjs|tsx|jsx)$/.test(spec);
+  const envRe = /@nudo:env\s+([^\n*]+)/g;
+  let envM: RegExpExecArray | null;
+  while ((envM = envRe.exec(source))) {
+    for (const part of envM[1]!.split(",")) {
+      const spec = part.trim().replace(/^['"]|['"]$/g, "");
+      if (spec && isPathLikeSpec(spec)) specs.add(spec);
+    }
+  }
+  const mockFromRe =
+    /@nudo:mock-module\s+"[^"]+"\s+(?:\{[^}]*\}\s+)?from\s+["']([^"']+)["']/g;
+  let mockM: RegExpExecArray | null;
+  while ((mockM = mockFromRe.exec(source))) specs.add(mockM[1]!);
   const patterns = [
     /\bfrom\s*['"]([^'"]+)['"]/g,
     /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g,

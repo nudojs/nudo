@@ -18,7 +18,7 @@
  * variable declarations, expression statements and returns, so the assumed
  * type flows through the whole program like any other directive.
  */
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve, relative, isAbsolute } from "node:path";
 import {
   analyzeFile,
@@ -340,10 +340,25 @@ export function resolveProjectAutoBind(
   return projectAutoBind && (clientAutoBind ?? true);
 }
 
-/** draft 写盘 projectDir：与 CLI runInterfaceDraft 同口径（nudo 配置 → package.json 祖先） */
+/** draft 写盘 projectDir：与 CLI runInterfaceDraft 同口径
+ * （nudo 配置 → package.json 祖先） */
 function resolveDraftProjectDir(filePath: string): string | undefined {
   const proj = findProjectConfig(dirname(filePath));
-  return proj?.projectDir;
+  if (proj?.projectDir) return proj.projectDir;
+  // package.json 祖先回落（与 CLI 对齐：无 nudo 配置时仍用包根约束写盘）
+  let dir = dirname(filePath);
+  for (let i = 0; i < 12; i++) {
+    const pkg = resolve(dir, "package.json");
+    try {
+      if (existsSync(pkg)) return dir;
+    } catch {
+      /* ignore */
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return undefined;
 }
 
 /**

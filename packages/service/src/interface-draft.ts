@@ -316,10 +316,25 @@ function projectDraftParams(
   fn: FunctionAnalysis,
   paramCases: FunctionAnalysis["cases"],
   bodyByParam?: Map<string, Set<string>>,
+  formals?: FunctionAnalysis["formals"],
 ): InterfaceDraftEntry["params"] {
+  const bodyFor = (name: string, index: number): Set<string> | undefined => {
+    if (!bodyByParam) return undefined;
+    const hit = bodyByParam.get(name);
+    if (hit) return hit;
+    // destructure 形参 display 名是 `_p{i}`，body map 键是顶层绑定名
+    const formal = formals?.[index];
+    if (formal && formal.kind === "pattern") {
+      for (const b of formal.bound) {
+        const boundHit = bodyByParam.get(b);
+        if (boundHit) return boundHit;
+      }
+    }
+    return bodyByParam.get(`_p${index}`);
+  };
   return fn.paramNames.map((name, i) => {
-    const bodyAccesses = bodyByParam?.has(name)
-      ? [...bodyByParam.get(name)!].sort()
+    const bodyAccesses = bodyFor(name, i)
+      ? [...bodyFor(name, i)!].sort()
       : undefined;
     const argAbs: Abs[] = [];
     for (const c of paramCases) {
@@ -445,18 +460,33 @@ function projectDraftReturn(
   return { display: "/* no evidence */", projected: false, evidence: "none" };
 }
 
+/** draft 用 builder JS：shape 字段可选写成 `k: T.optional()`，不用非法的 `k?: T`。
+ * 导出供单测：formatConstraint 显示层可吐 `email?:`，落盘 DSL 不得非法。 */
+export function toDraftBuilderDsl(display: string): string {
+  const s = display.replace(/\s*\/\*[\s\S]*?\*\/\s*/g, "").trim();
+  // 仅改写带 ? 的字段：email?: string() → email: string().optional()
+  return s.replace(
+    /([A-Za-z_$][\w$]*)\?\s*:\s*([^,}\n]+)/g,
+    (_m, name: string, val: string) => {
+      const v = val.trim();
+      if (v.includes(".optional()")) return `${name}: ${v}`;
+      return `${name}: ${v}.optional()`;
+    },
+  );
+}
+
 /** 仅把可投影槽写进 DSL；body 建议 / 无证据槽不发明约束 */
 function draftDsl(entry: Pick<InterfaceDraftEntry, "params" | "returns">): string {
   const parts = entry.params
     .filter((p) => p.projected && p.constraint !== undefined)
     .map((p) => {
-      const pure = formatConstraint(p.constraint!).replace(/\s*\/\*[\s\S]*?\*\/\s*/g, "").trim();
+      const pure = toDraftBuilderDsl(formatConstraint(p.constraint!));
       return `${p.name}: ${pure}`;
     });
   const obj = parts.length === 0 ? "{}" : `{ ${parts.join(", ")} }`;
   const ret =
     entry.returns?.projected && entry.returns.constraint !== undefined
-      ? formatConstraint(entry.returns.constraint).replace(/\s*\/\*[\s\S]*?\*\/\s*/g, "").trim()
+      ? toDraftBuilderDsl(formatConstraint(entry.returns.constraint))
       : undefined;
   return ret === undefined || ret === "" ? `fn(${obj})` : `fn(${obj}, ${ret})`;
 }
@@ -487,7 +517,8 @@ export async function draftInterface(
   const sidecarPath = sidecarPathOf(filePath);
   const wantBody = opts.bodyAccesses !== false;
 
-  const analysis = await analyzeFileAsync(filePath, source, undefined, opts.records);
+  // E5：draft 分析与 hover/interface 同口径（buffer-aware loadModule）
+  const analysis = await analyzeFileAsync(filePath, source, undefined, opts.records, loadModule);
   const exported = localNamedExports(source);
   const selected =
     opts.fnNames && opts.fnNames.length > 0 ? new Set(opts.fnNames) : exported;
@@ -548,7 +579,7 @@ export async function draftInterface(
 
     const { paramCases, returnCases, paramEvidence, rawReturnEvidence } = caseEvidence(fn);
     const bodyByParam = bodyMap.get(fn.name);
-    const params = projectDraftParams(fn, paramCases, bodyByParam);
+    const params = projectDraftParams(fn, paramCases, bodyByParam, fn.formals);
     const ret = projectDraftReturn(fn, returnCases, source, rawReturnEvidence, loadModule, filePath);
     const { evidence: returnEvidence, ...returns } = ret;
 
@@ -590,7 +621,7 @@ export function formatDraftModule(
     "// symbolic = generalize; omitted params = no evidence.",
     "// Handwritten contracts are never overwritten.",
     "",
-    'import { fn, number, string, boolean, shape, array, lit, union } from "@nudojs/core";',
+    'import { fn, number, string, boolean, any, shape, array, lit, union } from "@nudojs/core";',
     "",
   ];
 
@@ -645,6 +676,7 @@ export type WriteDraftResult = {
   draftPath: string;
   written: boolean;
   changed: boolean;
+  draftable: boolean;
   draftSource: string;
 };
 
@@ -678,13 +710,15 @@ export function writeInterfaceDraft(
   const draftable = /export const\s+\w+\s*=/.test(draftSource);
   const prev = existsSync(draftPath) ? readFileSync(draftPath, "utf-8") : undefined;
   const changed = prev !== draftSource;
-  if (!opts.dryRun && changed && draftable) {
+  const written = !opts.dryRun && changed && draftable;
+  if (written) {
     writeFileSync(draftPath, draftSource, "utf-8");
   }
   return {
     draftPath,
-    written: !opts.dryRun && changed && draftable,
+    written,
     changed,
+    draftable,
     draftSource,
   };
 }
@@ -706,10 +740,12 @@ export function formatDraftSummary(
     }
   }
   if (write) {
-    if (write.changed) {
+    if (write.changed && write.draftable) {
       lines.push(
         write.written ? `Draft written → ${draftRel}` : `[dry-run] would write → ${draftRel}`,
       );
+    } else if (write.changed && !write.draftable) {
+      lines.push(`Draft empty (no draftable exports); nothing written → ${draftRel}`);
     } else {
       lines.push(`${draftRel}: draft unchanged`);
     }

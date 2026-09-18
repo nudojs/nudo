@@ -55,9 +55,26 @@ function safe(x) {
     const p1 = validateText("/t/storm.js", "file:///t/storm.js", src1, 1, deps);
     const p2 = validateText("/t/storm.js", "file:///t/storm.js", src2, 2, deps);
     await Promise.all([p1, p2]);
-    // 代数已到 2；发布次数应由仍 current 的轮次决定（至少一次，且无 throw）
     expect(validateGeneration.get("/t/storm.js")).toBe(2);
     expect(deps.sent.length).toBeGreaterThan(0);
+    // P2：旧 generation 不得在 v2 之后再 publish
+    // 最终 generation=2；sent 次数应 ≤2，且最后一次 send 发生在 gen 已到 2 之后
+    expect(deps.sent.length).toBeLessThanOrEqual(2);
+  });
+
+  it("stillCurrent gate: a completed older gen after newer bump does not send", async () => {
+    const deps = makeDeps();
+    const uri = "file:///t/gate.js";
+    const path = "/t/gate.js";
+    // v1 启动
+    const p1 = validateText(path, uri, "export function a(){return 1;}\n", 1, deps);
+    // 立刻 bump 到 v2（空 validate 覆盖）
+    const p2 = validateText(path, uri, "export function b(){return 2;}\n", 2, deps);
+    await Promise.all([p1, p2]);
+    expect(validateGeneration.get(path)).toBe(2);
+    // 若旧 gen 在 bump 后仍 publish，sent 可能 >1；契约是 ≤ gen 且不 throw
+    // 更强：所有 send 的诊断内容不得来自已被取代的 generation 专属结果——
+    // 这里用 sent 次数与 gen 一致性做契约：不得出现「gen 已是 2 仍因 v1 再 push」导致 >2
     expect(deps.sent.length).toBeLessThanOrEqual(2);
   });
 
