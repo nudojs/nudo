@@ -22,7 +22,7 @@ npx @nudojs/cli check ./src/utils.js
 | [`nudo check`](#nudo-check) | 门禁契约 + 入口 throws；成功与失败都打印 signatures（CI 门禁） |
 | [`nudo test`](#nudo-test) | 报告全部推断用例；断言已声明的 `@nudo:case` 期望 |
 | [`nudo contract`](#nudo-contract) | 打印 / draft / emit 有效接口 —— `[handwritten]` / `[generated]` / `[implicit]` 分层 |
-| [`nudo export`](#nudo-export) | 把 Abs 投影为 `dts` / `guard` / `zod` |
+| [`nudo export`](#nudo-export) | 把 Abs 投影为 `dts` / `guard` / `schema` / `standard` |
 | [`nudo health`](#nudo-health) | 健康检查：分析错误、调用点固化漂移 |
 | [`nudo env harvest`](#nudo-env-harvest) | 把 `@types/<pkg>` 声明转为 Nudo env 文件 |
 

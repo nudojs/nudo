@@ -22,7 +22,7 @@ npx @nudojs/cli check ./src/utils.js
 | [`nudo check`](#nudo-check) | Gate contracts + entry throws; print signatures on success and failure (CI gate) |
 | [`nudo test`](#nudo-test) | Report every inferred case; assert declared `@nudo:case` expectations |
 | [`nudo contract`](#nudo-contract) | Print / draft / emit effective interfaces — `[handwritten]` / `[generated]` / `[implicit]` layers |
-| [`nudo export`](#nudo-export) | Project Abs into `dts` / `guard` / `zod` artifacts |
+| [`nudo export`](#nudo-export) | Project Abs into `dts` / `guard` / `schema` / `standard` artifacts |
 | [`nudo health`](#nudo-health) | Health-check files: analysis errors, call-site solidification drift |
 | [`nudo env harvest`](#nudo-env-harvest) | Convert `@types/<pkg>` declarations into a Nudo env file |
 

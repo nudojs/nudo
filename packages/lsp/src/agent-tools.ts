@@ -913,7 +913,7 @@ function serializedEmit(
 }
 
 /**
- * Agent interface 固化：与 CLI `nudo interface --emit` 同一写盘器
+ * Agent interface 固化：与 CLI `nudo contract --emit` 同一写盘器
  * （emitInterface），把调用点域固化为侧车 `@generated` 段。结果文本含
  * written / skipped(reason) / issues；name-clash（手写优先）明确呈现。
  */

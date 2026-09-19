@@ -192,6 +192,7 @@ export {
   absToSchemaSource,
   absToSchemaNode,
   absToZodSchema,
+  constraintToSchemaNode,
   projectAbsToSchema,
   schemaNodeToZod,
   type SchemaDialect,

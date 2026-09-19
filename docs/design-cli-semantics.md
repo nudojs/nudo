@@ -42,7 +42,7 @@ nudo — JavaScript types, computed
   nudo check <path> [--watch|-w]   # 门禁 + 签名表（Day 0/CI 唯一终端入口）
   nudo test <path> [--watch|-w]    # 逐 case 调用点真值 + 可选断言（debug）
   nudo contract <path>             # 契约：打印 / draft / emit 侧车接口
-  nudo export <path>               # 投影：dts | guard | zod
+  nudo export <path>               # 投影：dts | guard | schema | standard
   nudo health [paths] [--watch]    # 体检：分析错误 + 固化漂移
   nudo env harvest <pkg>           # 环境：@types → env 模块
 ```

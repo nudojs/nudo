@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { abs, num, str, numLit, numVar, obj, type Abs } from "@nudojs/core";
-import { and, gt, ge } from "@nudojs/core";
+import { and, gt, ge, eq } from "@nudojs/core";
 import { lit, v } from "@nudojs/core";
 import { absToSchemaNode } from "../schema-generator.ts";
 import {
@@ -80,6 +80,20 @@ describe("absToStandardSchemaModule", () => {
     const node = JSON.parse(m![1]!) as Parameters<typeof validateSchemaNode>[0];
     expect(validateSchemaNode(node, 1)).toEqual({ value: 1 });
     expect(validateSchemaNode(node, 0).issues).toBeDefined();
+  });
+
+  it("projects literal contract domain for standard validators", () => {
+    const { node } = absToSchemaNode(numLit(42));
+    expect(validateSchemaNode(node, 42)).toEqual({ value: 42 });
+    expect(validateSchemaNode(node, 41).issues?.[0]?.message).toContain("42");
+  });
+
+  it("projects union of literals from or-pred", () => {
+    const u = numVar("x", { op: "or", args: [eq(v("x"), lit(1)), eq(v("x"), lit(2))] }, "exact");
+    const { node } = absToSchemaNode(u);
+    expect(validateSchemaNode(node, 1)).toEqual({ value: 1 });
+    expect(validateSchemaNode(node, 2)).toEqual({ value: 2 });
+    expect(validateSchemaNode(node, 3).issues).toBeDefined();
   });
 
   it("multi-export module lists names", () => {

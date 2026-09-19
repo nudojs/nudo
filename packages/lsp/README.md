@@ -6,7 +6,7 @@ Language Server Protocol implementation for the [Nudo](https://github.com/nudojs
 
 Nudo is a type inference engine for JavaScript. The type system is Abs (`shape × term × pred × conf`); production analysis is Abs-native. Inference executes observed call sites via abstract interpretation — no TypeScript, no build step. Contracts come from `*.nudo.js` sidecars + `@nudo:refine` / `@nudo:interface`.
 
-Primary CLI verbs for agents/CI: `nudo check` (signatures + gate), `nudo test` (case report), `nudo contract` (interfaces), `nudo export` (dts/guard/zod), `nudo health` (drift). Observation is check/test/IDE hover — there is no `nudo infer` primary verb.
+Primary CLI verbs for agents/CI: `nudo check` (signatures + gate), `nudo test` (case report), `nudo contract` (interfaces), `nudo export` (dts/guard/schema/standard), `nudo health` (drift). Observation is check/test/IDE hover — there is no `nudo infer` primary verb.
 
 ## This package
 

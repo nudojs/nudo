@@ -2,7 +2,8 @@
 
 > Design source: [`design-cli-semantics.md`](./design-cli-semantics.md)（rev: **无观察动词** — 观察在 check signatures + test case 报告 + IDE）  
 > Marker tag: **`DESIGN-CONFLICT:cli-semantics`**  
-> Scope: full worktree scan (docs + packages + scripts), excluding `node_modules` / `dist` / CHANGELOG noise where noted.
+> Scope: full worktree scan (docs + packages + scripts), excluding `node_modules` / `dist` / CHANGELOG noise where noted.  
+> **Status (post-implementation):** CLI verbs + L2 `entry-may-throw` + any≠unknown **landed** on this branch (see `11704d4` + review fixes). This inventory below largely describes the **pre-fix** tree — treat rows as historical conflict evidence, not as current defects. Remaining work: next-major verb deletion, website historical sketches, export schema/standard narrative polish.
 
 图例：
 

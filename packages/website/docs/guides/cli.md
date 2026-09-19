@@ -291,15 +291,16 @@ Old verbs remain temporarily with **stderr deprecation warnings** and map to the
 | `nudo infer <path>` | Signatures → `nudo check <path>`; case report → `nudo test <path>`; dts → `nudo export --format dts` |
 | `nudo types <path>` | `nudo check --abs` |
 | `nudo interface` / `nudo refine` | `nudo contract` |
-| `nudo generate` / `nudo emit` / `nudo guard` | `nudo export --format dts\|guard\|zod\|all` |
+| `nudo generate` / `nudo emit` / `nudo guard` | `nudo export --format dts\|guard\|schema\|standard\|all` |
 | `nudo doctor` | `nudo health` |
 | `nudo watch` | `nudo check --watch` / `nudo test --watch` |
 | `nudo harvest <pkg>` | `nudo env harvest <pkg>` |
 | `--callsites` | `--from` |
 | `--emit-cases[=update]` | `nudo test --freeze[=update]` |
 | `infer --dts` | `nudo export --format dts` |
+| `infer --format zod` / `export --format zod` | `nudo export --format schema --dialect zod` |
 
-`infer --json` splits by consumer: diagnostics/signatures → `check --json`; cases → `test --json`. There is **no** `check --cases` flag — observation and enforcement stay separate.
+`infer --json` is deprecated: **stdout carries `test --json` cases only** (one JSON document). Run `nudo check --json` separately for gate/signatures. There is **no** `check --cases` flag — observation and enforcement stay separate.
 
 ---
 

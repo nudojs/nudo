@@ -266,7 +266,7 @@ nudo env harvest node
 | `nudo infer <path>` | 签名 → `nudo check <path>`；用例报告 → `nudo test <path>`；dts → `nudo export --format dts` |
 | `nudo types <path>` | `nudo check --abs` |
 | `nudo interface` / `nudo refine` | `nudo contract` |
-| `nudo generate` / `nudo emit` / `nudo guard` | `nudo export --format dts\|guard\|zod\|all` |
+| `nudo generate` / `nudo emit` / `nudo guard` | `nudo export --format dts\|guard\|schema\|standard\|all` |
 | `nudo doctor` | `nudo health` |
 | `nudo watch` | `nudo check --watch` / `nudo test --watch` |
 | `nudo harvest <pkg>` | `nudo env harvest <pkg>` |

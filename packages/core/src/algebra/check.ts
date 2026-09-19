@@ -1500,7 +1500,7 @@ function interfaceDriftIssues(
         message: `${cand.fnName}[${param}]: 固化生成段 ≠ 今日调用点域`,
         actual: formatAbs(today),
         expected: formatConstraint(constraint),
-        suggestion: `重跑 nudo interface --emit 刷新生成段，或核对 ${param} 的调用点`,
+        suggestion: `重跑 nudo contract --emit 刷新生成段，或核对 ${param} 的调用点`,
         fn: cand.fnName,
         line: evidence[0]!.line,
       });
@@ -1527,7 +1527,7 @@ function interfaceDriftIssues(
       message: `${cand.fnName}[return]: 固化生成段 ≠ 今日推断返回`,
       actual: formatAbs(today),
       expected: formatConstraint(retC),
-      suggestion: `重跑 nudo interface --emit 刷新生成段，或核对返回值`,
+      suggestion: `重跑 nudo contract --emit 刷新生成段，或核对返回值`,
       fn: cand.fnName,
       line: retEvidence[0]!.line,
     });

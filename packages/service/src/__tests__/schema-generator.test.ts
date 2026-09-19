@@ -83,6 +83,18 @@ describe("pred → zod refinements", () => {
     expect(absToSchemaSource(a)).toBe("z.number().gt(0)");
   });
 
+  it("projects eq(self, lit) as z.literal (core projection parity)", () => {
+    const a = numWith(eq(v("x"), lit(42)));
+    expect(absToSchemaSource(a)).toBe("z.literal(42)");
+    const s = absToSchemaSource(strWith(eq(v("s"), lit("ada"))));
+    expect(s).toBe('z.literal("ada")');
+  });
+
+  it("projects or-pred literal unions", () => {
+    const a = numWith({ op: "or", args: [eq(v("x"), lit(1)), eq(v("x"), lit(2))] });
+    expect(absToSchemaSource(a)).toBe("z.union([z.literal(1), z.literal(2)])");
+  });
+
   it("projects ge/lt/le with zod gte/lte names", () => {
     expect(absToSchemaSource(numWith(ge(v("x"), lit(0))))).toBe("z.number().gte(0)");
     expect(absToSchemaSource(numWith(le(v("x"), lit(100))))).toBe("z.number().lte(100)");

@@ -1,17 +1,13 @@
 /**
  * Abs → 生态 schema 投影（单向有损）。
  *
- * 中间层：SchemaNode（基形态 + refinements + dropped）。
- * Dialect 只负责 Node → 源码字符串；Abs 才是真理源，投影不回读。
- *
- * Pred 可表达子集（与 core projection 同口径）：
- *   number 常数界 / int（`x % 1 === 0`）/ string 长度界 / eq lit
- * 不可表达（符号界、or/not、length 于 number…）→ 基类型 + dropped 注记。
+ * 优先走 core `absToConstraint`（与 interface/check 同一投影语义），
+ * 再转成中间层 SchemaNode；投影失败时退回 shape 尽力提取并记 dropped。
+ * Dialect 只负责 Node → 源码字符串；Abs 才是真理源。
  */
 
-import type { Abs, Pred, Term } from "@nudojs/core";
-import { predToString } from "@nudojs/core";
-import { SELF } from "@nudojs/core";
+import type { Abs, NudoConstraint, Pred, Term } from "@nudojs/core";
+import { absToConstraint, isIntFlag, predToString } from "@nudojs/core";
 
 export type SchemaDialect = "zod";
 
@@ -19,8 +15,7 @@ export type SchemaRefinement =
   | { kind: "numBound"; op: "gt" | "ge" | "lt" | "le"; n: number }
   | { kind: "int" }
   | { kind: "strMin"; n: number }
-  | { kind: "strMax"; n: number }
-  | { kind: "dropped"; note: string };
+  | { kind: "strMax"; n: number };
 
 export type SchemaNode =
   | { k: "lit"; value: string | number | boolean | null | undefined }
@@ -33,17 +28,13 @@ export type SchemaNode =
   | { k: "promise"; inner: SchemaNode }
   | { k: "brand"; name: string }
   | { k: "never" }
-  | { k: "unknown" }
-  | { k: "summarized"; source: string }; // dialect 前置兜底（当前未用，预留）
+  | { k: "unknown" };
 
 export type SchemaProjection = {
   source: string;
   dialect: SchemaDialect;
-  /** 未能落入 dialect 的 pred 注记（展示用，不进 source 字符串） */
   dropped: string[];
 };
-
-// --- term helpers（与 core projection 同口径，本地副本避免 service→core 深路径）---
 
 function termEq(a: Term | undefined, b: Term | undefined): boolean {
   if (!a || !b) return false;
@@ -75,82 +66,101 @@ function predLeaves(p: Pred | undefined): Pred[] | "unexpressible" {
   return [p];
 }
 
-function isSelfOrSelfPlaceholder(t: Term): boolean {
-  return t.op === "var" && (t.id === "self" || t.id === SELF || t.id.startsWith("__nudo"));
+function isSelfVar(t: Term | undefined): boolean {
+  return !!t && t.op === "var";
 }
 
-function numericBoundOn(
-  p: Pred,
-  anchors: Term[],
-): { op: "gt" | "ge" | "lt" | "le"; n: number } | undefined {
-  if (p.op !== "gt" && p.op !== "ge" && p.op !== "lt" && p.op !== "le") return undefined;
-  if (p.b.op !== "lit" || typeof p.b.value !== "number") return undefined;
-  for (const anchor of anchors) {
-    if (termEq(p.a, anchor) || (isSelfOrSelfPlaceholder(p.a) && isSelfOrSelfPlaceholder(anchor))) {
-      return { op: p.op, n: p.b.value };
-    }
-  }
-  return undefined;
+function litOf(t: Term | undefined): string | number | boolean | null | undefined {
+  return t && t.op === "lit" ? t.value : undefined;
 }
 
-function lengthBoundOn(
-  p: Pred,
-  self: Term | undefined,
-): { dir: "min" | "max"; n: number } | undefined {
-  const anchors: Term[] = [];
-  if (self) anchors.push({ op: "app", fn: "length", args: [self] });
-  anchors.push({ op: "app", fn: "length", args: [{ op: "var", id: SELF }] });
-  for (const anchor of anchors) {
-    const b = numericBoundOn(p, [anchor]);
-    if (!b) continue;
-    if (b.op === "ge") return { dir: "min", n: Math.ceil(b.n) };
-    if (b.op === "gt") return { dir: "min", n: Math.floor(b.n) + 1 };
-    if (b.op === "le") return { dir: "max", n: Math.floor(b.n) };
-    if (b.op === "lt") return { dir: "max", n: Math.ceil(b.n) - 1 };
-  }
-  return undefined;
+/** eq 的字面量端（任一侧为 lit 即可）；锚定要求另一侧是 var 或 length(var) 等简单项 */
+function eqLitValue(p: Pred): string | number | boolean | null | undefined | "unanchored" {
+  if (p.op !== "eq") return "unanchored";
+  const aLit = litOf(p.a);
+  const bLit = litOf(p.b);
+  if (aLit !== undefined && (isSelfVar(p.b) || p.b.op === "app")) return aLit;
+  if (bLit !== undefined && (isSelfVar(p.a) || p.a.op === "app")) return bLit;
+  // 允许 eq(lit, lit) 不常见形态
+  if (aLit !== undefined && bLit !== undefined) return aLit === bLit ? aLit : "unanchored";
+  return "unanchored";
 }
 
-function isIntModOne(p: Pred, _self: Term | undefined): boolean {
+function isIntModOne(p: Pred): boolean {
   if (p.op !== "eq") return false;
-  const zero = (t: Term): boolean => t.op === "lit" && t.value === 0;
-  const isModOne = (t: Term): boolean =>
-    t.op === "app" && t.fn === "%" && t.args.length === 2 && t.args[1]?.op === "lit" && t.args[1].value === 1;
+  const zero = (t: Term | undefined): boolean => !!t && t.op === "lit" && t.value === 0;
+  const isModOne = (t: Term | undefined): boolean =>
+    !!t &&
+    t.op === "app" &&
+    t.fn === "%" &&
+    t.args.length === 2 &&
+    t.args[1]?.op === "lit" &&
+    t.args[1].value === 1 &&
+    (isSelfVar(t.args[0]) || t.args[0]!.op === "app");
   return (isModOne(p.a) && zero(p.b)) || (isModOne(p.b) && zero(p.a));
 }
 
-function extractPrimRefinements(a: Abs): {
-  refinements: SchemaRefinement[];
-  dropped: string[];
-} {
+function numericBound(p: Pred, allowSelfVar: boolean): { op: "gt" | "ge" | "lt" | "le"; n: number } | "skip" | "drop" {
+  if (p.op !== "gt" && p.op !== "ge" && p.op !== "lt" && p.op !== "le") return "drop";
+  const n = litOf(p.b);
+  if (typeof n !== "number") return "drop";
+  if (p.a.op === "app" && p.a.fn === "length") return "skip"; // 交给长度路径
+  if (allowSelfVar && isSelfVar(p.a)) return { op: p.op, n };
+  if (p.a.op === "app" && (p.a.fn === "get" || p.a.fn === "length")) return "skip";
+  return "drop";
+}
+
+function lengthBound(p: Pred): { dir: "min" | "max"; n: number } | undefined {
+  if (p.op !== "gt" && p.op !== "ge" && p.op !== "lt" && p.op !== "le") return undefined;
+  if (p.a.op !== "app" || p.a.fn !== "length") return undefined;
+  const n = litOf(p.b);
+  if (typeof n !== "number") return undefined;
+  if (p.op === "ge") return { dir: "min", n: Math.ceil(n) };
+  if (p.op === "gt") return { dir: "min", n: Math.floor(n) + 1 };
+  if (p.op === "le") return { dir: "max", n: Math.floor(n) };
+  return { dir: "max", n: Math.ceil(n) - 1 };
+}
+
+function primOfType(type: string): SchemaNode["k"] extends never ? never : Extract<SchemaNode, { k: "prim" }>["type"] {
+  if (type === "number" || type === "string" || type === "boolean" || type === "bigint" || type === "symbol") {
+    return type;
+  }
+  return "unknown" as never;
+}
+
+function refinementsFromPreds(
+  preds: readonly Pred[],
+  opts: { kind: "number" | "string" | "boolean" | "other" },
+): { refinements: SchemaRefinement[]; eqLit?: string | number | boolean | null | undefined; dropped: string[] } {
   const refinements: SchemaRefinement[] = [];
   const dropped: string[] = [];
-  const leaves = predLeaves(a.pred);
-  if (leaves === "unexpressible") {
-    if (a.pred && a.pred.op !== "true") {
-      dropped.push(`pred not projected: ${predToString(a.pred)}`);
-    }
-    return { refinements, dropped };
-  }
-  const self = a.term;
-  const shapeType = a.shape.k === "prim" ? a.shape.type : undefined;
-
-  for (const p of leaves) {
-    if (p.op === "typeof") continue; // 与 shape 冗余
+  let eqLit: string | number | boolean | null | undefined;
+  for (const p of preds) {
+    if (p.op === "typeof") continue;
     if (p.op === "eq") {
-      if (shapeType === "number" && isIntModOne(p, self)) {
+      if (opts.kind === "number" && isIntModOne(p)) {
         if (!refinements.some((r) => r.kind === "int")) refinements.push({ kind: "int" });
         continue;
       }
-      // eq(self, lit) 由 lit term 路径处理；无 term 时丢弃注记
-      if (self && p.b.op === "lit" && termEq(p.a, self)) continue;
-      if (self && p.a.op === "lit" && termEq(p.b, self)) continue;
-      dropped.push(`pred not projected: ${predToString(p)}`);
+      const v = eqLitValue(p);
+      if (v === "unanchored") {
+        dropped.push(`pred not projected: ${predToString(p)}`);
+        continue;
+      }
+      if (typeof v === "number" && Number.isNaN(v)) {
+        dropped.push(`pred not projected (NaN): ${predToString(p)}`);
+        continue;
+      }
+      if (eqLit !== undefined && eqLit !== v) {
+        dropped.push(`conflicting eq preds: ${predToString(p)}`);
+        continue;
+      }
+      eqLit = v;
       continue;
     }
     if (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") {
-      if (shapeType === "string") {
-        const lb = lengthBoundOn(p, self);
+      if (opts.kind === "string") {
+        const lb = lengthBound(p);
         if (lb) {
           refinements.push(lb.dir === "min" ? { kind: "strMin", n: lb.n } : { kind: "strMax", n: lb.n });
           continue;
@@ -158,12 +168,13 @@ function extractPrimRefinements(a: Abs): {
         dropped.push(`pred not projected: ${predToString(p)}`);
         continue;
       }
-      const anchors: Term[] = [];
-      if (self) anchors.push(self);
-      // constraint 模板占位：SELF 上的数值界（instantiate 前）
-      anchors.push({ op: "var", id: SELF });
-      const b = numericBoundOn(p, anchors);
-      if (b && (shapeType === "number" || shapeType === undefined)) {
+      const b = numericBound(p, opts.kind === "number" || opts.kind === "other");
+      if (b === "skip") continue;
+      if (b === "drop") {
+        dropped.push(`pred not projected: ${predToString(p)}`);
+        continue;
+      }
+      if (opts.kind === "number" || opts.kind === "other") {
         refinements.push({ kind: "numBound", op: b.op, n: b.n });
         continue;
       }
@@ -172,17 +183,104 @@ function extractPrimRefinements(a: Abs): {
     }
     dropped.push(`pred not projected: ${predToString(p)}`);
   }
-  return { refinements, dropped };
+  return { refinements, ...(eqLit !== undefined ? { eqLit } : {}), dropped };
 }
 
-/** Abs → SchemaNode + dropped 注记（尽力投影，不因单点 pred 失败而丢整个 shape） */
+/** NudoConstraint → SchemaNode（与 absToConstraint 投影语义对齐） */
+export function constraintToSchemaNode(c: NudoConstraint): SchemaNode {
+  if (c.fn) return { k: "fn" };
+  if (c.members) {
+    return { k: "union", members: c.members.map(constraintToSchemaNode) };
+  }
+  if (c.fields) {
+    return {
+      k: "obj",
+      slots: Object.entries(c.fields).map(([key, field]) => ({
+        key,
+        node: constraintToSchemaNode(field.constraint),
+        ...(field.optional || field.constraint.isOptional ? { optional: true } : {}),
+      })),
+    };
+  }
+  if (c.element) {
+    return { k: "arr", element: constraintToSchemaNode(c.element) };
+  }
+
+  const preds = c.preds ?? [];
+  const kind =
+    c.prim === "number"
+      ? "number"
+      : c.prim === "string"
+        ? "string"
+        : c.prim === "boolean"
+          ? "boolean"
+          : c.prim
+            ? "other"
+            : "other";
+
+  const { refinements, eqLit, dropped } = refinementsFromPreds(preds, { kind: kind as "number" | "string" | "boolean" | "other" });
+  // eq 主导 → lit 节点（与 core projectNumber/projectString 一致）
+  if (eqLit !== undefined && (kind === "number" || kind === "string" || kind === "boolean" || !c.prim)) {
+    return { k: "lit", value: eqLit };
+  }
+  if (isIntFlag(c) && !refinements.some((r) => r.kind === "int")) {
+    refinements.push({ kind: "int" });
+  }
+  // 不可表达 pred 不进 node；调用方用 fallback dropped
+  void dropped;
+
+  if (!c.prim) {
+    // 无 prim 且无 eq：可能是 shape({}) 空字段已在 fields 分支；否则 unknown
+    if (Object.keys(c.fields ?? {}).length === 0 && !c.element && !c.members) {
+      return { k: "unknown" };
+    }
+  }
+  const type = c.prim === "number" || c.prim === "string" || c.prim === "boolean" || c.prim === "bigint" || c.prim === "symbol"
+    ? c.prim
+    : "unknown";
+  if (type === "unknown") return { k: "unknown" };
+  return { k: "prim", type, refinements };
+}
+
+/** 约束投影路径下未表达的 pred（尽力收集） */
+function constraintDropped(c: NudoConstraint, prefix = ""): string[] {
+  const out: string[] = [];
+  const visit = (n: NudoConstraint, path: string): void => {
+    if (n.fields) {
+      for (const [k, f] of Object.entries(n.fields)) visit(f.constraint, path ? `${path}.${k}` : k);
+      return;
+    }
+    if (n.members) {
+      n.members.forEach((m, i) => visit(m, `${path}[${i}]`));
+      return;
+    }
+    if (n.element) {
+      visit(n.element, `${path}[]`);
+      return;
+    }
+    if (n.fn) return;
+    const kind =
+      n.prim === "number" ? "number" : n.prim === "string" ? "string" : n.prim === "boolean" ? "boolean" : "other";
+    const { eqLit, dropped } = refinementsFromPreds(n.preds ?? [], { kind: kind as "number" | "string" | "boolean" | "other" });
+    for (const d of dropped) out.push(path ? `${path}: ${d}` : d);
+    if (eqLit === undefined && n.preds?.some((p) => p.op === "eq") && !isIntFlag(n)) {
+      // eq 已在 refinementsFromPreds 处理
+    }
+  };
+  visit(c, prefix);
+  return out;
+}
+
+/** Abs → SchemaNode + dropped（优先 core absToConstraint；失败则 shape 尽力） */
 export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] } {
   const dropped: string[] = [];
 
-  // lit 优先
+  // lit term 优先（与 projection 一致；NaN 不产 lit）
   if (a.term?.op === "lit") {
     const v = a.term.value;
-    if (
+    if (typeof v === "number" && Number.isNaN(v)) {
+      dropped.push("lit NaN not projected");
+    } else if (
       v === null ||
       v === undefined ||
       typeof v === "string" ||
@@ -190,14 +288,29 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
       typeof v === "boolean"
     ) {
       return { node: { k: "lit", value: v }, dropped };
-    }
-    if (typeof v === "bigint") {
-      // dialect 侧可能无法字面量表达；仍记为 unknown + dropped
+    } else if (typeof v === "bigint") {
       dropped.push(`lit bigint not projected: ${String(v)}`);
       return { node: { k: "unknown" }, dropped };
     }
   }
 
+  // conf 门槛：与 core PROJECTABLE_CONF 对齐；widened 等仍尽量给 shape，但记 dropped
+  const conf = a.conf;
+  const lowConf = conf !== "exact" && conf !== "path";
+
+  // 主路径：core 契约投影（eq-lit / or-lit union / bounds / shape 字段）
+  const projected = absToConstraint(a);
+  if (projected) {
+    const node = constraintToSchemaNode(projected);
+    dropped.push(...constraintDropped(projected));
+    return { node, dropped };
+  }
+
+  if (lowConf) {
+    dropped.push(`conf=${conf}: contract projection skipped; shape-only fallback`);
+  }
+
+  // fallback：shape 尽力 + pred 提取
   const s = a.shape;
   switch (s.k) {
     case "never":
@@ -206,24 +319,40 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
     case "unknown":
       return { node: { k: "unknown" }, dropped };
     case "prim": {
-      const { refinements, dropped: d } = extractPrimRefinements(a);
+      const kind = s.type === "number" ? "number" : s.type === "string" ? "string" : s.type === "boolean" ? "boolean" : "other";
+      const leaves = predLeaves(a.pred);
+      if (leaves === "unexpressible") {
+        if (a.pred && a.pred.op !== "true") {
+          dropped.push(`pred not projected: ${predToString(a.pred)}`);
+        }
+        return { node: { k: "prim", type: s.type, refinements: [] }, dropped };
+      }
+      const { refinements, eqLit, dropped: d } = refinementsFromPreds(leaves, { kind: kind as "number" | "string" | "boolean" | "other" });
       dropped.push(...d);
+      if (eqLit !== undefined && !Number.isNaN(eqLit as number)) {
+        return { node: { k: "lit", value: eqLit }, dropped };
+      }
       return { node: { k: "prim", type: s.type, refinements }, dropped };
     }
     case "obj": {
+      if (s.open || s.index) {
+        dropped.push("open/index object not fully projected (known slots only)");
+      }
+      if (a.pred && a.pred.op !== "true") {
+        dropped.push(`obj pred not projected: ${predToString(a.pred)}`);
+      }
       const slots: Array<{ key: string; node: SchemaNode; optional?: boolean }> = [];
       for (const [key, slot] of Object.entries(s.slots)) {
         const sub = absToSchemaNode(slot.value);
         dropped.push(...sub.dropped.map((n) => `${key}: ${n}`));
-        slots.push({
-          key,
-          node: sub.node,
-          ...(slot.optional ? { optional: true } : {}),
-        });
+        slots.push({ key, node: sub.node, ...(slot.optional ? { optional: true } : {}) });
       }
       return { node: { k: "obj", slots }, dropped };
     }
     case "arr": {
+      if (a.pred && a.pred.op !== "true") {
+        dropped.push(`arr pred not projected: ${predToString(a.pred)}`);
+      }
       const sub = absToSchemaNode(s.element);
       dropped.push(...sub.dropped);
       return { node: { k: "arr", element: sub.node }, dropped };
@@ -247,14 +376,12 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
     case "fn":
       return { node: { k: "fn" }, dropped };
     case "eff": {
-      if (s.eff === "promise") {
-        const sub = absToSchemaNode(s.inner);
-        dropped.push(...sub.dropped);
-        return { node: { k: "promise", inner: sub.node }, dropped };
-      }
-      const sub = absToSchemaNode(s.inner);
-      dropped.push(...sub.dropped);
-      return { node: sub.node, dropped };
+      const inner = absToSchemaNode(s.inner);
+      dropped.push(...inner.dropped);
+      return {
+        node: s.eff === "promise" ? { k: "promise", inner: inner.node } : inner.node,
+        dropped,
+      };
     }
     case "brand":
       return { node: { k: "brand", name: s.name }, dropped };
@@ -267,8 +394,7 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
 
 function zodApplyRefinements(base: string, refinements: SchemaRefinement[]): string {
   let out = base;
-  const int = refinements.some((r) => r.kind === "int");
-  if (int) out += ".int()";
+  if (refinements.some((r) => r.kind === "int")) out += ".int()";
   for (const r of refinements) {
     switch (r.kind) {
       case "numBound":
@@ -283,9 +409,7 @@ function zodApplyRefinements(base: string, refinements: SchemaRefinement[]): str
       case "strMax":
         out += `.max(${r.n})`;
         break;
-      case "int":
-        break; // already applied
-      case "dropped":
+      default:
         break;
     }
   }
@@ -303,10 +427,8 @@ export function schemaNodeToZod(node: SchemaNode): string {
       if (typeof v === "number") return `z.literal(${v})`;
       return "z.unknown()";
     }
-    case "prim": {
-      const base = `z.${node.type}()`;
-      return zodApplyRefinements(base, node.refinements);
-    }
+    case "prim":
+      return zodApplyRefinements(`z.${node.type}()`, node.refinements);
     case "obj": {
       const entries = node.slots
         .map((slot) => {
@@ -331,7 +453,6 @@ export function schemaNodeToZod(node: SchemaNode): string {
     case "never":
       return "z.never()";
     case "unknown":
-    case "summarized":
     default:
       return "z.unknown()";
   }
@@ -341,26 +462,22 @@ const DIALECT_RENDERERS: Record<SchemaDialect, (n: SchemaNode) => string> = {
   zod: schemaNodeToZod,
 };
 
-export function projectAbsToSchema(
-  a: Abs,
-  opts?: { dialect?: SchemaDialect },
-): SchemaProjection {
+export function projectAbsToSchema(a: Abs, opts?: { dialect?: SchemaDialect }): SchemaProjection {
   const dialect: SchemaDialect = opts?.dialect ?? "zod";
   const { node, dropped } = absToSchemaNode(a);
   const render = DIALECT_RENDERERS[dialect] ?? schemaNodeToZod;
   return { source: render(node), dialect, dropped };
 }
 
-/** Abs → dialect schema 源码字符串（默认 zod）。 */
 export function absToSchemaSource(a: Abs, opts?: { dialect?: SchemaDialect }): string {
   return projectAbsToSchema(a, opts).source;
 }
 
 /**
- * Abs → zod schema 源码。
- * @deprecated 请用 `absToSchemaSource(a, { dialect: "zod" })`；本别名保留至 next major。
+ * @deprecated 请用 `absToSchemaSource(a, { dialect: "zod" })`；保留至 next major。
  */
 export function absToZodSchema(a: Abs): string {
   return absToSchemaSource(a, { dialect: "zod" });
 }
 
+export { termEq };

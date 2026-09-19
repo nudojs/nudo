@@ -156,7 +156,12 @@ export function filterCheckLspByLevel(
   ]);
   const isGate = (d: LspDiagnostic): boolean => {
     const code = (d as { code?: string | number }).code;
-    return typeof code === "string" && ALWAYS_KEEP.has(code) && d.severity === DiagnosticSeverity.Error;
+    // 门禁码：Error 与 Warning 都保留（对齐 CLI：entryThrows=warning 时 IDE 不得静默丢 L2）
+    return (
+      typeof code === "string" &&
+      ALWAYS_KEEP.has(code) &&
+      (d.severity === DiagnosticSeverity.Error || d.severity === DiagnosticSeverity.Warning)
+    );
   };
   if (level === "verbose") return diags;
   if (level === "off") return diags.filter(isGate);

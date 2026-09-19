@@ -1083,7 +1083,7 @@ function handleGetActiveCases(params: { uri?: string; file?: string }) {
 }
 
 /**
- * `nudo.interfaceEmit`：与 CLI `nudo interface --emit` 同一写盘器固化单个
+ * `nudo.interfaceEmit`：与 CLI `nudo contract --emit` 同一写盘器固化单个
  * 导出（design-refine-derivation §7.5）。`dryRun: true` 时只预览（与 CLI
  * `--dry-run` 同源），不写盘、不跑写盘后的失效链。
  * 真实写盘后：

@@ -81,9 +81,9 @@ function checkNode(
 ): void {
   switch (node.k) {
     case "unknown":
-    case "summarized":
     case "fn":
     case "brand":
+    case "promise":
       // Phase C：不执法这些形态（fn/brand 无可靠运行时判据；unknown 放行）
       return;
     case "never":

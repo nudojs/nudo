@@ -57,4 +57,30 @@ describe("export --format standard module is loadable", () => {
     expect(bad.issues?.length).toBeGreaterThan(0);
     expect(String(bad.issues?.[0]?.message ?? bad.issues)).toContain("gt 0");
   });
+
+  it("literal contract projects as lit validator (not bare number)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-standard-lit-"));
+    writeFileSync(
+      join(dir, "pin.js"),
+      `export function pin(x) {\n  return x;\n}\npin(42);\n`,
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "pin.nudo.js"),
+      `import { lit, fn } from "@nudojs/core";\nexport const pin = fn({ x: lit(42) }, lit(42));\n`,
+      "utf-8",
+    );
+    const out = join(dir, "out");
+    const r = runCli(["export", join(dir, "pin.js"), "--format", "standard", "--out", out]);
+    expect(r.status).toBe(0);
+    const body = readFileSync(join(out, "pin.nudo.standard.ts"), "utf-8");
+    expect(body).toContain("pin_x");
+    expect(body).toContain('"k":"lit"');
+    const mod = await import(pathToFileURL(join(out, "pin.nudo.standard.ts")).href);
+    const pinX = mod.pin_x as {
+      "~standard": { validate: (v: unknown) => { value?: unknown; issues?: unknown[] } };
+    };
+    expect(pinX["~standard"].validate(42).issues).toBeUndefined();
+    expect(pinX["~standard"].validate(0).issues?.length).toBeGreaterThan(0);
+  });
 });
