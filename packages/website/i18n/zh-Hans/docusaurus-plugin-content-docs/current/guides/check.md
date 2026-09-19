@@ -63,7 +63,7 @@ issues
 | `nudo:interface-conflict` | L1 | error | 手写契约合取不可满足 |
 | **`nudo:entry-may-throw`** | **L2** | **error**（默认） | 入口/导出函数有未消化 may-throw |
 | `nudo:may-throw` | test / L2 线索 | warning | case 路径可能抛（含内部）；L2 可升格入口 throws |
-| `nudo:unknown-inference` | 引擎债 | warning/error | 导出/签名出现真 `unknown`（推导失败） |
+| `nudo:unknown-inference` | 引擎债 | warning | 签名出现真 `unknown`（推导失败）——入口无约束参数是 `any`，不走此码 |
 | `nudo:unknown-recv` | 引擎债 | warning | `unknown` 接收者成员访问 —— **不得**替代 L2 throws 建模 |
 | `nudo:no-signature` | 引擎/L1 | warning | 函数无法泛化为符号 Abs（CJS/匿名形态仍走入口 fallback 执法 L2） |
 | `nudo:opaque-result` | 引擎 | warning | 求值返回 opaque / 无信息 Abs |

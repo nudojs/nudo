@@ -547,6 +547,19 @@ function checkSourceInner(
       ...(isEntry ? { entry: true } : {}),
     });
 
+    // 真 unknown = 推导失败（design §2 / §5）；入口无约束展示 any，不在此报
+    if (g.symbolic?.shape?.k === "unknown") {
+      issues.push({
+        severity: "warning",
+        code: "nudo:unknown-inference",
+        message: `${name}: signature is true unknown (inference failed)`,
+        actual: `${name} => unknown`,
+        expected: "computable Abs (any = unconstrained, unknown = engine debt)",
+        suggestion: "补 @nudo:case / env mock / refine，或确认 body 可代数求值",
+        fn: name,
+      });
+    }
+
     // 有效契约（源码 @nudo:refine/@nudo:interface ∪ 侧车同名手写绑定）：
     // - conflict（常数界交叉矛盾）→ nudo:interface-conflict，fn 级一次
     // - 参数名对不上形参表 → nudo:interface-param-mismatch（C4.5；不再静默跳过）

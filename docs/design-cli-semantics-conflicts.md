@@ -245,7 +245,8 @@ rg -l '义务只来自|obligations come only|Contracts only from|No evidence' \
 > **Note:** 本清单是对 **main 基线** 的冲突扫描；website 主 guides / cli-reference / check / service / agent 已按本分支语义校正（test 样例去掉假 entry@+call@ 并存、test --json assertions 摘要、no-signature=warning、check --json 单文件）。
 > **Docs:** root CLAUDE.md / README / docs/* / examples / verify-examples 已对齐；website en+zh 抽样已修。
 > **Known pre-existing failures to re-gate under L2:** check-real-packages* zero-FP suites stay on `entryThrows:"off"` baseline; L2-on expectations live in check-recall-gold L2 suite + `packages/cli/src/__tests__/cli-semantics-gate.test.ts`.
-> **Review P0 status after this fix pass:** (1) L2 export-form false-negatives — fixed + gold/CLI tests; (2) `test --json` exit — fixed; (3) LSP `package.json#nudo.check` — wired. P1: changeset present; `check --abs` gate restored; website honesty pass done; CLI gold added. Remaining P2 (formatThrowsAbs granularity, B-path try frames, nudo:unknown-inference code, website harvester entry@ honesty wording) tracked as non-blocking.
+> **Review P0 status after this fix pass:** (1) L2 export-form false-negatives — fixed + gold/CLI tests; (2) `test --json` exit — fixed; (3) LSP `package.json#nudo.check` — wired. P1: changeset present; `check --abs` gate restored; website honesty pass done; CLI gold added.
+> **P2 after follow-up commit:** `formatThrowsAbs` shape-precise (brand/sum/prim/any/unknown); B-path `$tryMark` pushes soft may-throw frames (digest in catch / release without handler, synthetic finally keeps JS legal); ast-eval try-catch **rethrow no longer digests** soft effects; `nudo:unknown-inference` emitted as warning on true-unknown signatures; website check/harvester wording aligned. Remaining non-blocking: root package.json still exposes deprecated infer/types/interface scripts (intentional transition).
 
 | 类别 | 约计 |
 |------|------|

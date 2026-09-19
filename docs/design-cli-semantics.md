@@ -190,7 +190,8 @@ L2 **只执法入口函数**，不对每个内部 helper 无差别报 may-throw�
 | `null` / `undefined` 成员 | `x.prop` | **throws `TypeError`**（设计稿 §4.5.4 已写明，实现需对齐） |
 | 对象缺槽 | `obj.missing` | 返回 `undefined`（或 optional），**不**一律 throws |
 | 条件 throw 且条件不可判定 | `if (c) throw …` | case 带 may-throw |
-| try-catch 消化 | | throws 从出口效果中移除 |
+| try-catch 消化 | | throws 从出口效果中移除；**catch rethrow 则不消化**（soft/hard 均上浮） |
+| 无 handler 的 try | | soft may-throw 上浮至 L2 |
 | 显式 refine 将参数收成 shape | | 操作落在已约束形状上；L2 消失或降为 L1 |
 
 **L2 失败示意（`getName`）：**

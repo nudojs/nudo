@@ -33,6 +33,8 @@ export type TranspileOptions = {
   inTry?: number;
   /** 当前 try 的 mark 变量名（return drain 用；避免全局栈顶污染） */
   tryMarkName?: string;
+  /** 当前 try 是否带 catch handler（soft may-throw digest/release 分支） */
+  hasTryHandler?: boolean;
 };
 
 function matchAsOverride(stmt: Node, opts: TranspileOptions): string | null {
@@ -281,7 +283,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -1139,6 +1141,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
             `${indent(depth + 2)}$pushLoopExit(__nudoRet);`,
             `${indent(depth + 2)}$throw(__xs.reduce((a, b) => $join(a, b)));`,
             `${indent(depth + 1)}}`,
+            `${indent(depth + 1)}${opts.hasTryHandler === false ? "$tryReleaseSoftOut();" : "$tryDigestSoftCatch();"}`,
             `${pad}}`,
             `${pad}${prefix}(__nudoRet);`,
           ].join("\n");
@@ -1549,6 +1552,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         ...opts,
         inTry: (opts.inTry ?? 0) + 1,
         tryMarkName: markName,
+        hasTryHandler: !!stmt.handler,
       };
       const tryBody =
         stmt.block.type === "BlockStatement"
@@ -1576,6 +1580,8 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         lines.push(`${pad}catch (${catchTmp}) {`);
         // NudoReturn 是控制流信号，不是 catch 绑定
         lines.push(`${indent(depth + 1)}$rethrowIfNudoReturn(${catchTmp});`);
+        // soft may-throw：catch 消化 try 内效果（rethrow 走 hard throw 路径）
+        lines.push(`${indent(depth + 1)}$tryDigestSoftCatch();`);
         lines.push(`${indent(depth + 1)}const __xs_${markName} = $tryTakeSince(${markName});`);
         lines.push(`${indent(depth + 1)}__xs_${markName}.push($catchVal(${catchTmp}));`);
         lines.push(
@@ -1584,6 +1590,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         lines.push(catchBody);
         lines.push(`${pad}}`);
       }
+      const softExit = stmt.handler ? "$tryDigestSoftCatch();" : "$tryReleaseSoftOut();";
       if (stmt.finalizer) {
         const finBody =
           stmt.finalizer.type === "BlockStatement"
@@ -1593,11 +1600,16 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
             : transpileStatement(stmt.finalizer as unknown as Statement, depth + 1, opts);
         lines.push(`${pad}finally {`);
         lines.push(finBody);
-        lines.push(`${pad}$tryPopMark();`);
+        // finally 内收口 soft + mark（catch 与 finally 之间不得插入语句）
+        lines.push(`${indent(depth + 1)}${softExit}`);
+        lines.push(`${indent(depth + 1)}$tryPopMark();`);
         lines.push(`${pad}}`);
       } else {
-        // 无 finally 时用 try/catch 后的 pop；return/throw 路径靠 ALS 边界重置
-        lines.push(`${pad}$tryPopMark();`);
+        // 合成 finally：保证 try 合法，并在此收口 soft/mark
+        lines.push(`${pad}finally {`);
+        lines.push(`${indent(depth + 1)}${softExit}`);
+        lines.push(`${indent(depth + 1)}$tryPopMark();`);
+        lines.push(`${pad}}`);
       }
       // try/catch/finally 之后再 drain 未吸收的抽象 throw
       if (stmt.handler) {

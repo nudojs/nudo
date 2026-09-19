@@ -172,6 +172,6 @@ Still **recommended** for handwritten mock (aligned with `docs/design-limitation
 - Dynamic `require` / computed module graphs
 - Stream machine callbacks (Node Transform internals driven by the runtime)
 - Dual-entry browser/node variants — call-site records do not cross files
-- Functions with **no call-site usage** — `entry@` fallback is honest, not a defect
+- Functions with **no call-site usage** — `entry@` fallback is an honest observation with **unconstrained `any`** params; entry may-throw on that surface is still L2 (`nudo:entry-may-throw`), not a free pass.
 
 See also [Language Semantics — mock boundary](../guides/semantics.md#mock-boundary-still-recommended).

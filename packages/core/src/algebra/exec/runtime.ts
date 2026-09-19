@@ -37,7 +37,7 @@ import {
   noteNullishMemberThrows,
   anyMemberResult,
 } from "./calls.ts";
-import { errorTypeAbs } from "./may-throw.ts";
+import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft } from "./may-throw.ts";
 
 /** 当前路径前提 Φ（transpile 后的 fork 会压栈） */
 let phi: Phi = pTrue;
@@ -239,11 +239,15 @@ function undef(): Abs {
 const loopExitsAls = new AsyncLocalStorage<Abs[]>();
 const throwExitsAls = new AsyncLocalStorage<Abs[]>();
 const tryMarksAls = new AsyncLocalStorage<number[]>();
+/** 每个 try 是否仍有未消化的 soft may-throw 帧（digest/release 幂等） */
+const softFrameActiveAls = new AsyncLocalStorage<boolean[]>();
 
 /** 函数求值作用域：收集抽象分支上的 early-return / throw 值；try 标记栈同边界 */
 export function runWithLoopExits<T>(body: () => T): T {
   return loopExitsAls.run([], () =>
-    throwExitsAls.run([], () => tryMarksAls.run([], body)),
+    throwExitsAls.run([], () =>
+      tryMarksAls.run([], () => softFrameActiveAls.run([], body)),
+    ),
   );
 }
 
@@ -268,8 +272,10 @@ export function $pushLoopExit(v: Abs): void {
   pushLoopExit(v);
 }
 
-/** try 块开始：压栈并返回当前 throwExits 长度 */
+/** try 块开始：压栈 hard/soft 标记 */
 export function $tryMark(): number {
+  $tryMarkSoft();
+  softFrameActiveAls.getStore()?.push(true);
   const store = throwExitsAls.getStore();
   const m = store?.length ?? 0;
   tryMarksAls.getStore()?.push(m);
@@ -284,6 +290,11 @@ export function $tryCurrentMark(): number {
 
 export function $tryPopMark(): void {
   tryMarksAls.getStore()?.pop();
+  const soft = softFrameActiveAls.getStore();
+  if (soft && soft.length > 0) {
+    if (soft[soft.length - 1]) $tryReleaseSoftOut();
+    soft.pop();
+  }
 }
 
 /** 取出 mark 之后新记录的 throw（try 吸收 / catch 合并） */
@@ -291,6 +302,22 @@ export function $tryTakeSince(mark: number): Abs[] {
   const store = throwExitsAls.getStore();
   if (!store) return [];
   return store.splice(Math.min(mark, store.length));
+}
+
+/** catch 入口：消化 try 内 soft may-throw（幂等；design §3.3） */
+export function $tryDigestSoftCatch(): void {
+  const soft = softFrameActiveAls.getStore();
+  if (!soft || soft.length === 0 || !soft[soft.length - 1]) return;
+  $tryDigestSoft();
+  soft[soft.length - 1] = false;
+}
+
+/** 无 handler / 出口：上浮未消化 soft may-throw（幂等） */
+export function $tryReleaseSoftOut(): void {
+  const soft = softFrameActiveAls.getStore();
+  if (!soft || soft.length === 0 || !soft[soft.length - 1]) return;
+  $tryReleaseSoft();
+  soft[soft.length - 1] = false;
 }
 
 type ForkArm =

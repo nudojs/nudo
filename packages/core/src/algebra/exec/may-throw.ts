@@ -69,6 +69,23 @@ export function popMayThrowFrame(discard: boolean): MayThrowEffect[] {
   return discard ? [] : frame;
 }
 
+/** B-path：try 开始时压 soft 帧（与 ast-eval evalTry 同口径） */
+export function $tryMarkSoft(): void {
+  pushMayThrowFrame();
+}
+
+/** B-path catch：消化 try 内 soft may-throw */
+export function $tryDigestSoft(): void {
+  popMayThrowFrame(true);
+}
+
+/** B-path 无 handler / 出口：上浮未消化 soft may-throw */
+export function $tryReleaseSoft(): MayThrowEffect[] {
+  const effects = popMayThrowFrame(false);
+  flushMayThrowEffects(effects);
+  return effects;
+}
+
 export function flushMayThrowEffects(effects: MayThrowEffect[]): void {
   const collector = ctx().collector;
   if (!collector || effects.length === 0) return;
@@ -125,17 +142,40 @@ export function mayThrowEffectsToAbs(effects: MayThrowEffect[]): Abs {
   );
 }
 
-/** throws Abs → 展示名（TypeError / TypeError | RangeError） */
+/**
+ * throws Abs → 展示名（TypeError / TypeError | RangeError）。
+ * 非 brand/sum 时按 Abs 形状给出可运行时名，不再一律 "Error"。
+ */
 export function formatThrowsAbs(t: Abs | undefined): string | undefined {
   if (!t || t.shape.k === "never") return undefined;
   if (t.shape.k === "brand") return t.shape.name;
   if (t.shape.k === "sum") {
-    return t.shape.members.map((m) => formatThrowsAbs(m) ?? "unknown").join(" | ");
+    const names = t.shape.members.map((m) => formatThrowsAbs(m) ?? "Error");
+    const concrete = names.filter((n) => n !== "any" && n !== "unknown");
+    const list = concrete.length > 0 ? concrete : names;
+    return [...new Set(list)].join(" | ");
   }
-  if (t.shape.k === "prim" && t.shape.type === "string") {
-    return "Error";
+  if (t.shape.k === "prim") {
+    // throw "x" / throw 1：诚实显示被抛值的运行时类型名
+    return t.shape.type === "string"
+      ? "string"
+      : t.shape.type === "number"
+        ? "number"
+        : t.shape.type === "boolean"
+          ? "boolean"
+          : t.shape.type === "bigint"
+            ? "bigint"
+            : "Error";
   }
-  // 字面量/其它：尽量给出可读名
+  if (t.shape.k === "any") return "any";
+  if (t.shape.k === "unknown") return "unknown";
+  if (t.shape.k === "fn") return "function";
+  if (t.shape.k === "arr" || t.shape.k === "tuple") return "Array";
+  if (t.shape.k === "obj") return "object";
+  if (t.term && t.term.op === "lit") {
+    const v = (t.term as { value?: unknown }).value;
+    if (v instanceof Error) return v.constructor.name;
+  }
   return "Error";
 }
 

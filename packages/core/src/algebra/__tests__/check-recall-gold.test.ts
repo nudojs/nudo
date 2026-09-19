@@ -1088,6 +1088,28 @@ export function getName(user) {
       expect: "ok",
     },
     {
+      id: "export-try-catch-rethrow-keeps-l2",
+      source: `
+export function getName(user) {
+  try {
+    return user.name;
+  } catch (e) {
+    throw e;
+  }
+}
+`,
+      expect: "entry-may-throw",
+    },
+    {
+      id: "export-throw-string-shows-string",
+      source: `
+export function boom() {
+  throw "oops";
+}
+`,
+      expect: "entry-may-throw",
+    },
+    {
       id: "export-refine-shape-pending-l2-suppress",
       source: `
 /**
@@ -1172,8 +1194,14 @@ needsPositive(-1);
         (i) => i.severity === "error" && i.code !== "nudo:entry-may-throw",
       );
       if (c.expect === "entry-may-throw") {
-        const okL2OrL1 = hasL2 || hasL1 || r.issues.some((i) => i.severity === "error");
-        expect(okL2OrL1, r.issues.map((i) => `${i.code}:${i.message}`).join("; ") || "ok").toBe(true);
+        const requireL2 =
+          !c.id.startsWith("ignore-throws") && !c.id.startsWith("export-refine");
+        if (requireL2) {
+          expect(hasL2, r.issues.map((i) => `${i.code}:${i.message}`).join("; ") || "ok").toBe(true);
+        } else {
+          const okL2OrL1 = hasL2 || hasL1 || r.issues.some((i) => i.severity === "error");
+          expect(okL2OrL1, r.issues.map((i) => `${i.code}:${i.message}`).join("; ") || "ok").toBe(true);
+        }
         expect(r.ok).toBe(false);
       } else {
         expect(hasL2, r.issues.map((i) => `${i.code}:${i.message}`).join("; ") || "ok").toBe(false);

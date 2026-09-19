@@ -2288,65 +2288,107 @@ function evalTry(
   phi: Phi,
   budget: LeakBudget,
 ): EvalResult {
-  // soft may-throw：try 有 handler 时消化；无 handler 上浮（design §3.3）
+  // soft may-throw：先取帧，再按 catch 是否 rethrow 决定消化/上浮（design §3.3）
   pushMayThrowFrame();
   const tryR = evalNode(node.block, env, phi, budget);
-  const tryEffects = popMayThrowFrame(!!node.handler);
-  if (tryEffects.length > 0) flushMayThrowEffects(tryEffects);
+  const softEffects = popMayThrowFrame(false);
+  let softDigested = false;
   let value = tryR.value;
   let local = tryR.env;
   let curPhi = tryR.phi;
 
-  if (tryR.threw && node.handler) {
-    const param =
-      node.handler.param && node.handler.param.type === "Identifier"
-        ? (node.handler.param as Identifier).name
-        : undefined;
-    let catchEnv = local;
-    if (param) catchEnv = withVar(local, param, tryR.value);
-    const catchR = evalNode(node.handler.body, catchEnv, curPhi, budget);
+  const catchParam =
+    node.handler?.param && node.handler.param.type === "Identifier"
+      ? (node.handler.param as Identifier).name
+      : undefined;
+
+  const runCatch = (baseEnv: AstEnv, basePhi: Phi, bindAbs: Abs): EvalResult =>
+    evalNode(
+      node.handler!.body,
+      catchParam ? withVar(baseEnv, catchParam, bindAbs) : baseEnv,
+      basePhi,
+      budget,
+    );
+
+  // soft 路径：运行时可能进 catch（any/nullish 危险操作），须观察 catch 是否 rethrow
+  if (node.handler && softEffects.length > 0 && !tryR.threw && !tryR.partialThrow && !tryR.returned) {
+    const catchR = runCatch(env, phi, tryR.value);
+    if (catchR.threw) {
+      // catch rethrow：soft 不消化，上浮；并携带 catch 的 hard throw
+      flushMayThrowEffects(softEffects);
+      if (node.finalizer) evalNode(node.finalizer, catchR.env, catchR.phi, budget);
+      return { value: catchR.value, phi: catchR.phi, env: catchR.env, threw: true };
+    }
+    softDigested = true;
+    value = joinAbs(tryR.value, catchR.value);
+    local = joinEnvs(tryR.env, catchR.env, env);
+    curPhi = catchR.phi;
+  } else if (tryR.threw && node.handler) {
+    const catchR = runCatch(local, curPhi, tryR.value);
     value = catchR.value;
     local = catchR.env;
     curPhi = catchR.phi;
     if (catchR.returned) {
       if (node.finalizer) evalNode(node.finalizer, local, curPhi, budget);
+      softDigested = true;
       return { ...catchR, env: local };
     }
     if (catchR.threw) {
+      // catch rethrow：保留 try soft + catch hard
+      flushMayThrowEffects(softEffects);
       if (node.finalizer) evalNode(node.finalizer, local, curPhi, budget);
       return { value: catchR.value, phi: curPhi, env: local, threw: true };
     }
+    softDigested = true;
   } else if (tryR.partialThrow && node.handler) {
-    // 抽象：try 可能 throw 也可能继续 → catch 路径与 continue 路径 join
-    const param =
-      node.handler.param && node.handler.param.type === "Identifier"
-        ? (node.handler.param as Identifier).name
-        : undefined;
-    let catchEnv = env;
-    if (param) catchEnv = withVar(env, param, tryR.throwValue ?? tryR.value);
-    const catchR = evalNode(node.handler.body, catchEnv, phi, budget);
+    const catchR = runCatch(env, phi, tryR.throwValue ?? tryR.value);
     value = joinAbs(tryR.value, catchR.value);
     local = joinEnvs(tryR.env, catchR.env, env);
     curPhi = catchR.phi;
     if (catchR.returned && tryR.returned) {
+      softDigested = true;
       return { value, phi: curPhi, env: local, returned: true };
     }
     if (catchR.threw && tryR.threw) {
+      flushMayThrowEffects(softEffects);
       return { value, phi: curPhi, env: local, threw: true };
     }
+    if (catchR.threw) {
+      flushMayThrowEffects(softEffects);
+      return { value: catchR.value, phi: curPhi, env: local, threw: true };
+    }
+    softDigested = true;
   } else if (tryR.returned) {
+    // try 内 return 仍可能在运行时因 soft may-throw 进入 catch
+    if (node.handler && softEffects.length > 0) {
+      const catchR = runCatch(env, phi, tryR.value);
+      if (catchR.threw) {
+        flushMayThrowEffects(softEffects);
+        if (node.finalizer) evalNode(node.finalizer, tryR.env, tryR.phi, budget);
+        return { ...tryR, threw: true, partialThrow: true, throwValue: catchR.value };
+      }
+      softDigested = true;
+    } else {
+      softDigested = !!node.handler;
+    }
     if (node.finalizer) evalNode(node.finalizer, local, curPhi, budget);
+    if (!softDigested) flushMayThrowEffects(softEffects);
     return tryR;
   } else if (tryR.threw && !node.handler) {
     if (node.finalizer) evalNode(node.finalizer, local, curPhi, budget);
+    flushMayThrowEffects(softEffects);
     return tryR;
   }
 
   if (node.finalizer) {
     const fR = evalNode(node.finalizer, local, curPhi, budget);
-    if (fR.returned || fR.threw) return fR;
+    if (fR.returned || fR.threw) {
+      if (!softDigested) flushMayThrowEffects(softEffects);
+      return fR;
+    }
     local = fR.env;
   }
+  if (!softDigested) flushMayThrowEffects(softEffects);
   return {
     value,
     phi: curPhi,

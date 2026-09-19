@@ -63,7 +63,7 @@ issues
 | `nudo:interface-conflict` | L1 | error | Handwritten contract conjunction unsatisfiable |
 | **`nudo:entry-may-throw`** | **L2** | **error** (default) | Entry/export function has undigested may-throw |
 | `nudo:may-throw` | test / L2 clue | warning | Case path may throw (internal included); L2 can elevate entry throws |
-| `nudo:unknown-inference` | engine debt | warning/error | True `unknown` on an export/signature (inference failed) |
+| `nudo:unknown-inference` | engine debt | warning | True `unknown` on a signature (inference failed) — unconstrained entry params are `any`, not this code |
 | `nudo:unknown-recv` | engine debt | warning | Member access on `unknown` receiver — does **not** replace L2 throws modeling |
 | `nudo:no-signature` | engine/L1 | warning | Function could not be generalized (CJS/anon forms still get L2 via entry fallback) |
 | `nudo:opaque-result` | engine | warning | Evaluation returned opaque / uninformative Abs |

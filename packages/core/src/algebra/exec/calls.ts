@@ -48,6 +48,9 @@ export {
   formatThrowsAbs,
   isThrowsIgnored,
   filterIgnoredThrows,
+  $tryMarkSoft,
+  $tryDigestSoft,
+  $tryReleaseSoft,
   type MayThrowEffect,
 } from "./may-throw.ts";
 
