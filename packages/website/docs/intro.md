@@ -67,7 +67,7 @@ In the IDE, the same Abs surfaces as inlay hints on intermediates — not only a
 |-------|----------------|--------------|
 | **Day 0** | Plain JS + call sites | `nudo check` signatures · `nudo test` cases |
 | **Day 1** | `*.nudo.js` / `@nudo:refine` | `nudo check` L1 obligations (`actual ⊭ expected`) |
-| **Ecosystem** | nothing extra | `nudo export` dts/guard/zod |
+| **Ecosystem** | nothing extra | `nudo export` dts/guard/schema/standard |
 | **Advanced** | Abs algebra, envs, mocks | String/number algebra, HOFs, module graphs |
 
 `@nudo:case` remains available as a **debug witness** for scenario runs (`nudo test`, LSP case switching) — it is not the contract product.

@@ -250,13 +250,52 @@ Per-function slice of [`generateDts`](#generatedts) — JSDoc plus one `export d
 
 ---
 
+## absToSchemaSource
+
+```typescript
+absToSchemaSource(a: Abs, opts?: { dialect?: SchemaDialect }): string
+projectAbsToSchema(a: Abs, opts?: { dialect?: SchemaDialect }): {
+  source: string;
+  dialect: SchemaDialect;
+  dropped: string[];
+}
+absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
+```
+
+Abs → dialect schema **source** (one-way, lossy). Intermediate `SchemaNode` carries refinements from Abs preds (numeric bounds, `int`, string length) plus `dropped` notes for unprojectable preds. Default dialect is `zod`.
+
+**Example:**
+```typescript
+absToSchemaSource(numVar("x", gt(v("x"), lit(0))))
+// → "z.number().gt(0)"
+```
+
+---
+
+## absToStandardSchema / absToStandardSchemaModule
+
+```typescript
+absToStandardSchema(a: Abs, opts?: { name?: string }): { source: string; dropped: string[] }
+absToStandardSchemaModule(
+  exports: Record<string, Abs>,
+  opts?: { banner?: string },
+): { source: string; dropped: string[] }
+validateSchemaNode(node: SchemaNode, value: unknown): StandardSchemaResult
+```
+
+Abs → **Standard Schema v1** runtime module source (`~standard`, `vendor: "nudo"`). Zero third-party validator dependency. `validate` walks the same SchemaNode refinements as schema dialect projection (bounds / int / string length). This is an ecosystem runtime path — **not** a replacement for `nudo check`.
+
+`validateSchemaNode` is the testable semantic core; generated modules inline the same check.
+
+---
+
 ## absToZodSchema
 
 ```typescript
 absToZodSchema(a: Abs): string
 ```
 
-Converts an Abs to a Zod schema string. Handles all shape kinds including primitives, literals, objects, arrays, tuples, unions, and more.
+**Deprecated alias** of `absToSchemaSource(a, { dialect: "zod" })`. Prefer `absToSchemaSource`; the alias remains until the next major.
 
 **Example:**
 ```typescript

@@ -188,7 +188,25 @@ export {
   absToTSType,
 } from "./dts-generator.ts";
 
-export { absToZodSchema } from "./schema-generator.ts";
+export {
+  absToSchemaSource,
+  absToSchemaNode,
+  absToZodSchema,
+  projectAbsToSchema,
+  schemaNodeToZod,
+  type SchemaDialect,
+  type SchemaNode,
+  type SchemaProjection,
+  type SchemaRefinement,
+} from "./schema-generator.ts";
+export {
+  absToStandardSchema,
+  absToStandardSchemaModule,
+  validateSchemaNode,
+  type StandardSchemaIssue,
+  type StandardSchemaModuleProjection,
+  type StandardSchemaResult,
+} from "./standard-schema.ts";
 export { generateGuardFunction, generateGuardFunctionFromAbs } from "./guard-generator.ts";
 
 export {

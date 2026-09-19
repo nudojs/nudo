@@ -1,6 +1,6 @@
 ---
 sidebar_position: 7
-description: Generate Zod schemas, zero-dependency type guards, and TypeScript declarations from Nudo's inferred types with `nudo export`.
+description: Generate schema projections, zero-dependency type guards, and TypeScript declarations from Nudo's inferred types with `nudo export`.
 ---
 
 # Runtime Type Generation
@@ -18,27 +18,28 @@ All generated output is printed to stdout by default. Pass `--out <dir>` to writ
 ## The `nudo export` Command
 
 ```bash
-nudo export <file> [--format dts|guard|zod|all] [--out dir]
+nudo export <file> [--format dts|guard|schema|zod|all] [--dialect zod] [--out dir]
 ```
 
 | Option | Description |
 |---|---|
-| `--format <format>` | Output format: `dts`, `guard`, `zod`, `all` (default: `dts`) |
-| `--out <dir>` | Write artifacts to this directory (`<name>.nudo.zod.ts`, `<name>.nudo.guard.ts`, `<name>.d.ts`). Omit for stdout. |
+| `--format <format>` | Output format: `dts`, `guard`, `schema`, `zod` (deprecated alias of schema dialect zod), `all` (default: `dts`) |
+| `--dialect <dialect>` | Schema dialect; currently `zod` |
+| `--out <dir>` | Write artifacts to this directory (`<name>.nudo.schema.<dialect>.ts`, `<name>.nudo.guard.ts`, `<name>.d.ts`). Omit for stdout. |
 
-`nudo export` is the **only** CLI path for `.d.ts` / guards / Zod. Deprecated verbs `nudo generate` / `nudo emit` / `nudo guard` and `infer --dts` map here.
+`nudo export` is the **only** CLI path for `.d.ts` / guards / schema projections. Deprecated verbs `nudo generate` / `nudo emit` / `nudo guard` and `infer --dts` map here. Abs remains the source of truth — schema / dts / guard are one-way projections.
 
 ### Basic Usage
 
 ```bash
-# Print all formats (zod, guard, dts)
+# Print all formats (schema, guard, dts)
 nudo export src/api/users.js --format all
 
-# Print only Zod schemas
-nudo export src/api/users.js --format zod
+# Print schema source for the default dialect (zod)
+nudo export src/api/users.js --format schema --dialect zod
 
 # Capture stdout into a file yourself
-nudo export src/api/users.js --format zod > users.schema.txt
+nudo export src/api/users.js --format schema --dialect zod > users.schema.txt
 ```
 
 ## Example Source
@@ -54,18 +55,20 @@ function createUser(input) {
 }
 ```
 
-## Zod Schema Generation
+## Schema generation (dialect source)
 
-With `--format zod`, Nudo prints [Zod](https://zod.dev) schema expressions for each case's input and output types. The schemas are emitted as comments -- copy the expressions out of them and assemble your own schema module.
+With `--format schema --dialect zod`, Nudo prints [Zod](https://zod.dev) schema expressions for each case's input and output types. Schemas are emitted as comments -- copy the expressions out of them and assemble your own schema module. Constant numeric bounds / `int` / string length preds from Abs are projected when expressible; unprojectable preds appear under `dropped preds`.
+
+`--format zod` is a **deprecated alias** of this path (removed next major).
 
 ```bash
-nudo export src/api/users.js --format zod
+nudo export src/api/users.js --format schema --dialect zod
 ```
 
 Output (stdout):
 
 ```js
-// === createUser Zod Schemas ===
+// === createUser Schema (zod) ===
 // debug "input":
 // Input: { arg0: z.object({ name: z.string(), age: z.number() }) }
 // Output: z.object({ id: z.literal(123), name: z.string(), age: z.number() })
@@ -284,7 +287,7 @@ Print validators as part of your build and capture stdout into your project:
 ```json
 {
   "scripts": {
-    "generate": "nudo export src/api/users.js --format zod > src/api/users.schema.txt",
+    "generate": "nudo export src/api/users.js --format schema --dialect zod > src/api/users.schema.txt",
     "build": "npm run generate && tsc && vite build"
   }
 }
@@ -319,7 +322,7 @@ nudo export src/api/products.js --format all
 Output (stdout):
 
 ```text
-// === createProduct Zod Schemas ===
+// === createProduct Schema (zod) ===
 // debug "input":
 // Input: { arg0: z.object({ name: z.string(), price: z.number(), tags: z.array(z.string()) }) }
 // Output: z.object({ id: z.literal(456), name: z.string(), price: z.number(), tags: z.array(z.string()) })
@@ -328,6 +331,9 @@ Output (stdout):
 export function iscreateProductInputOutput(data) {
   return typeof data === "object" && data !== null && data.id === 456 && typeof data.name === "string" && typeof data.price === "number" && Array.isArray(data.tags) && data.tags.every((item) => typeof item === "string");
 }
+
+// === createProduct Standard Schema ===
+// export const createProductOutput = { "~standard": { version: 1, vendor: "nudo", … } }
 
 // === createProduct TypeScript Declarations ===
 /**
@@ -347,10 +353,18 @@ export function iscreateProductInputOutput(data) {
 ```
 
 ```js
-// src/api/products.schema.js -- assembled from the Zod lines above
+// src/api/products.schema.js -- assembled from the schema (zod dialect) lines above
 import { z } from "zod";
 
 export const createProductInput = z.object({ name: z.string(), price: z.number(), tags: z.array(z.string()) });
+```
+
+Or consume the **Standard Schema** module directly (`--format standard` / `all`) — no Zod import required:
+
+```js
+import { createProductOutput } from "./api/createProduct.nudo.standard.js";
+const r = createProductOutput["~standard"].validate(body);
+if (r.issues) return Response.json({ errors: r.issues }, { status: 400 });
 ```
 
 ```js
@@ -362,7 +376,7 @@ if (!iscreateProductInputOutput(body)) {
   throw new ValidationError("Invalid product data");
 }
 
-// Or use Zod for detailed error messages
+// Or use a zod-dialect schema for detailed error messages
 const result = createProductInput.safeParse(body);
 if (!result.success) {
   return Response.json({ errors: result.error.issues }, { status: 400 });

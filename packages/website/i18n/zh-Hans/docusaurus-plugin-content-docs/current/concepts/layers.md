@@ -39,14 +39,18 @@ export function add2(x) {
 ```
 
 ```javascript
-// math.nudo.js
-export const add2 = number().gt(0);
+// math.nudo.js — 函数绑定必须是 fn({ 参数 }, 返回?)
+import { number, fn } from "@nudojs/core";
+
+export const add2 = fn({ x: number().gt(0) }, number());
 ```
 
 ```bash
 npx nudojs contract --draft ./src/math.js   # 可选：代码优先草稿
 npx nudojs check ./src/math.js
 ```
+
+侧车**函数**绑定必须是一等 `fn({ … }, …)` 契约。裸的 `number().gt(0)` 是**值级模板**（例如共享 `*.nudo.js` 里的 `export const positive = number().gt(0)`）——经 `@nudo:refine` 引用，或作为 `fn` 的参数槽；不能直接当函数契约导出。非 `fn` 形态的函数侧车绑定会被拒绝（`nudo:interface-load`）。
 
 显式契约只来自：
 - 侧车（`*.nudo.js`）/ `@nudo:refine` / `@nudo:interface`

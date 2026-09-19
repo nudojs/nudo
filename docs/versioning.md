@@ -69,6 +69,7 @@ Treat as **non-breaking** (patch/minor):
 - New diagnostic codes (opt-in visibility)
 - New optional config keys under `package.json#nudo`
 - New CLI flags with safe defaults
+- Adding `nudo export --format schema` / `--dialect` (`zod` remains a deprecated alias until next major)
 - Inference precision improvements (more precise types)
 - Removing **undocumented** internal modules not listed in package `exports`
 - Docs / website / private packages

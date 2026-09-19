@@ -247,19 +247,20 @@ Handwritten bindings always win; emit refuses to overwrite them (`nudo:interface
 
 ### nudo export
 
-Project Abs into ecosystem artifacts. The **only** CLI path for `.d.ts`, guards, and Zod.
+Project Abs into ecosystem artifacts. The **only** CLI path for `.d.ts`, guards, and schema projections.
 
 Replaces `nudo generate` / `nudo emit` / `nudo guard` and `infer --dts` (deprecated).
 
 ```bash
-nudo export <path> [--format dts|guard|zod|all] [--out dir]
+nudo export <path> [--format dts|guard|schema|standard|zod|all] [--dialect zod] [--out dir]
 ```
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
-| `--format` | `dts` (default) \| `guard` \| `zod` \| `all` |
+| `--format` | `dts` (default) \| `guard` \| `schema` \| `standard` \| `zod` (deprecated alias) \| `all` |
+| `--dialect` | Schema dialect; currently `zod`. Valid with `schema` / `all` / `zod` |
 | `--out <dir>` | Write artifacts under this directory instead of stdout |
 
 **Formats:**
@@ -268,15 +269,20 @@ nudo export <path> [--format dts|guard|zod|all] [--out dir]
 |--------|----------|
 | `dts` | TypeScript declarations — one widened signature per function; case precision preserved in JSDoc |
 | `guard` | Runtime type-guards (prefer lossless Abs path when available) |
-| `zod` | Zod schemas |
-| `all` | All of the above |
+| `schema` | Schema source for `--dialect` (default zod) → `*.nudo.schema.<dialect>.ts` |
+| `standard` | Standard Schema v1 modules (`~standard`, vendor `nudo`) → `<fn>.nudo.standard.ts` |
+| `zod` | Deprecated alias of `schema --dialect zod` |
+| `all` | dts + guard + schema + standard |
 
-`.d.ts` is a one-way, lossy projection of Abs. Export does not take `--watch`.
+Schema projections carry Abs pred fidelity when expressible (`gt/ge/lt/le`, `int`, string length); symbolic preds are reported as `dropped preds` comments. `standard` enforces the same refinements at runtime via `validate` and remains a one-way projection — `nudo check` is still the CI gate.
+
+`.d.ts` / schema projections are one-way, lossy views of Abs. Export does not take `--watch`.
 
 **Examples:**
 
 ```bash
-nudo export src/user.js --format zod
+nudo export src/user.js --format schema --dialect zod
+nudo export src/user.js --format standard --out dist
 nudo export src/user.js --format dts --out dist/types
 nudo export src/api.js --format all --out dist
 ```

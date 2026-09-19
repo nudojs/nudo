@@ -15,7 +15,7 @@ Primary surface (no observation verb):
 nudo check <path> [--json] [--abs] [--from paths…] [--ignore-throws names]
 nudo test <path> [--json] [--from paths…] [--freeze[=update]]
 nudo contract <path> [--emit] [--draft] [--write] [--fn name]
-nudo export <path> [--format dts|guard|zod|all] [--out dir]
+nudo export <path> [--format dts|guard|schema|standard|zod|all] [--dialect zod] [--out dir]
 nudo health [paths] [--from paths…] [--json]
 nudo env harvest <pkg>
 ```
@@ -111,4 +111,4 @@ Bindings only match **top-level declarations** (`const`/`let`/`var`/`function`) 
 - **Unopened files use disk state.** If the file is not open in a connected editor, analysis runs on the on-disk content; edits the user has not saved are invisible.
 - Commands that report types reflect Nudo's inference, which follows runtime semantics (e.g. `Number("")` is `0`, not an error) — trust them over guesswork, but remember they describe the current code, not the user's intent.
 - Whole-program inference means every function with inferable call sites already has observations. When all of them are call-site synthesized, `suggestCase` returns ready-to-paste `@nudo:case` **debug** directive text (paste it above the function for `nudo test` / LSP scenarios — not the contract product); `already has N case(s)` is the normal report for the rest, not an error.
-- For CI/type truth prefer CLI `nudo check` (signatures + gate) and `nudo test` (cases). For contract persistence use `nudo contract`. For `.d.ts`/zod/guard use `nudo export`.
+- For CI/type truth prefer CLI `nudo check` (signatures + gate) and `nudo test` (cases). For contract persistence use `nudo contract`. For `.d.ts`/schema/standard/guard use `nudo export`.

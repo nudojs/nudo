@@ -250,13 +250,52 @@ generateFunctionDtsLines(fn: FunctionAnalysis): string[]
 
 ---
 
+## absToSchemaSource
+
+```typescript
+absToSchemaSource(a: Abs, opts?: { dialect?: SchemaDialect }): string
+projectAbsToSchema(a: Abs, opts?: { dialect?: SchemaDialect }): {
+  source: string;
+  dialect: SchemaDialect;
+  dropped: string[];
+}
+absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
+```
+
+Abs → dialect schema **源码**（单向、有损）。中间层 `SchemaNode` 承载 Abs pred 可表达的 refinement（数值界、`int`、字符串长度）以及不可投影 pred 的 `dropped` 注记。默认 dialect 为 `zod`。
+
+**示例：**
+```typescript
+absToSchemaSource(numVar("x", gt(v("x"), lit(0))))
+// → "z.number().gt(0)"
+```
+
+---
+
+## absToStandardSchema / absToStandardSchemaModule
+
+```typescript
+absToStandardSchema(a: Abs, opts?: { name?: string }): { source: string; dropped: string[] }
+absToStandardSchemaModule(
+  exports: Record<string, Abs>,
+  opts?: { banner?: string },
+): { source: string; dropped: string[] }
+validateSchemaNode(node: SchemaNode, value: unknown): StandardSchemaResult
+```
+
+Abs → **Standard Schema v1** 运行时模块源码（`~standard`，`vendor: "nudo"`）。零第三方校验库依赖。`validate` 与 schema dialect 投影共用同一套 SchemaNode refinement（数值界 / int / 字符串长度）。这是生态运行时路径，**不能**替代 `nudo check`。
+
+`validateSchemaNode` 是可测语义核心；生成模块内联同一套检查逻辑。
+
+---
+
 ## absToZodSchema
 
 ```typescript
 absToZodSchema(a: Abs): string
 ```
 
-将 Abs 转换为 Zod schema 字符串。处理所有 shape 种类，包括原始类型、字面量、对象、数组、元组、联合等。
+**废弃别名**，等价于 `absToSchemaSource(a, { dialect: "zod" })`。请改用 `absToSchemaSource`；别名保留至下个 major。
 
 **示例：**
 ```typescript

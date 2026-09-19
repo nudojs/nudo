@@ -1,6 +1,6 @@
 ---
 sidebar_position: 7
-description: 用 `nudo export` 从 Nudo 推断的类型生成 Zod schema、零依赖类型守卫与 TypeScript 声明，可写入文件或输出到 stdout。
+description: 用 `nudo export` 从 Nudo 推断的类型生成 schema 投影、零依赖类型守卫与 TypeScript 声明，可写入文件或输出到 stdout。
 ---
 
 # 运行时类型生成
@@ -8,37 +8,38 @@ description: 用 `nudo export` 从 Nudo 推断的类型生成 Zod schema、零�
 Nudo 的类型推断不仅止于静态分析。你可以直接从推断的类型生成运行时验证器，在开发时推断和生产时验证之间建立无缝桥梁。
 
 ```text
-JS code → Nudo infers types → Generate validators → Runtime validation
+JS code → Nudo infers Abs → nudo export → Runtime validation
 ```
 
 这意味着你编写纯 JavaScript，让 Nudo 推断类型，然后生成完整的运行时类型检查——无需手写验证器，无需重复的类型定义。
 
-所有生成结果默认打印到 stdout。可传 `--output <dir>` 写入文件。
+所有生成结果默认打印到 stdout。可传 `--out <dir>` 写入文件。
 
 ## `nudo export` 命令
 
 ```bash
-nudo export <file> [--format dts|guard|zod|all] [--out dir]
+nudo export <file> [--format dts|guard|schema|zod|all] [--dialect zod] [--out dir]
 ```
 
 | 选项 | 描述 |
 |---|---|
-| `--format <format>` | 输出格式：`zod`、`guard`、`dts`、`all`（默认：`all`） |
-| `--output <dir>` | 把校验器文件写入该目录（`<name>.nudo.zod.ts`、`<name>.nudo.guard.ts`、`<name>.d.ts`）。省略则打印到 stdout。 |
+| `--format <format>` | 输出格式：`dts`、`guard`、`schema`、`zod`（废弃别名，等价 schema dialect zod）、`all`（默认：`dts`） |
+| `--dialect <dialect>` | schema dialect；当前为 `zod` |
+| `--out <dir>` | 把产物写入该目录（`<name>.nudo.schema.<dialect>.ts`、`<name>.nudo.guard.ts`、`<name>.d.ts`）。省略则打印到 stdout。 |
 
-`nudo export` 是 CLI 上 `.d.ts` / guard / Zod 的**唯一**路径。废弃动词 `nudo generate` / `nudo emit` / `nudo guard` 与 `infer --dts` 映射到这里。
+`nudo export` 是 CLI 上 `.d.ts` / guard / schema 投影的**唯一**路径。废弃动词 `nudo generate` / `nudo emit` / `nudo guard` 与 `infer --dts` 映射到这里。Abs 才是真理源——schema / dts / guard 都是单向投影。
 
 ### 基本用法
 
 ```bash
-# 打印所有格式（zod、guard、dts）
-nudo export src/api/users.js
+# 打印所有格式（schema、guard、dts）
+nudo export src/api/users.js --format all
 
-# 仅打印 Zod schema
-nudo export src/api/users.js --format zod
+# 打印默认 dialect（zod）的 schema 源码
+nudo export src/api/users.js --format schema --dialect zod
 
 # 自行把 stdout 捕获到文件
-nudo export src/api/users.js --format zod > users.schema.txt
+nudo export src/api/users.js --format schema --dialect zod > users.schema.txt
 ```
 
 ## 示例源码
@@ -54,18 +55,20 @@ function createUser(input) {
 }
 ```
 
-## Zod Schema 生成
+## Schema 生成（dialect 源码）
 
-使用 `--format zod` 时，Nudo 会为每个 case 的输入和输出类型打印 [Zod](https://zod.dev) schema 表达式。schema 以注释形式输出——把其中的表达式复制出来，组装成你自己的 schema 模块。
+使用 `--format schema --dialect zod` 时，Nudo 会为每个 case 的输入和输出类型打印 [Zod](https://zod.dev) schema 表达式。schema 以注释形式输出——把其中的表达式复制出来，组装成你自己的 schema 模块。Abs 上可表达的常数界 / `int` / 字符串长度会落入 schema；落不了的列在 `dropped preds`。
+
+`--format zod` 是本路径的**废弃别名**（下个 major 移除）。
 
 ```bash
-nudo export src/api/users.js --format zod
+nudo export src/api/users.js --format schema --dialect zod
 ```
 
 输出（stdout）：
 
 ```js
-// === createUser Zod Schemas ===
+// === createUser Schema (zod) ===
 // debug "input":
 // Input: { arg0: z.object({ name: z.string(), age: z.number() }) }
 // Output: z.object({ id: z.literal(123), name: z.string(), age: z.number() })
@@ -281,7 +284,7 @@ nudo check src/api/users.js --json | jq '.diagnostics | length == 0'
 ```json
 {
   "scripts": {
-    "generate": "nudo export src/api/users.js --format zod > src/api/users.schema.txt",
+    "generate": "nudo export src/api/users.js --format schema --dialect zod > src/api/users.schema.txt",
     "build": "npm run generate && tsc && vite build"
   }
 }
@@ -316,7 +319,7 @@ nudo export src/api/products.js --format all
 输出（stdout）：
 
 ```text
-// === createProduct Zod Schemas ===
+// === createProduct Schema (zod) ===
 // debug "input":
 // Input: { arg0: z.object({ name: z.string(), price: z.number(), tags: z.array(z.string()) }) }
 // Output: z.object({ id: z.literal(456), name: z.string(), price: z.number(), tags: z.array(z.string()) })
@@ -344,7 +347,7 @@ export function iscreateProductInputOutput(data) {
 ```
 
 ```js
-// src/api/products.schema.js -- 由上面的 Zod 行组装
+// src/api/products.schema.js -- 由上面的 schema（zod dialect）行组装
 import { z } from "zod";
 
 export const createProductInput = z.object({ name: z.string(), price: z.number(), tags: z.array(z.string()) });

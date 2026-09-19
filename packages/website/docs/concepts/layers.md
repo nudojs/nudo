@@ -39,14 +39,18 @@ export function add2(x) {
 ```
 
 ```javascript
-// math.nudo.js
-export const add2 = number().gt(0);
+// math.nudo.js — function binding must be fn({ params }, returns?)
+import { number, fn } from "@nudojs/core";
+
+export const add2 = fn({ x: number().gt(0) }, number());
 ```
 
 ```bash
 npx nudojs contract --draft ./src/math.js   # optional code-first draft
 npx nudojs check ./src/math.js
 ```
+
+Sidecar **function** bindings must be first-class `fn({ … }, …)` contracts. Bare `number().gt(0)` is a **value-level template** (e.g. `export const positive = number().gt(0)` in a shared `*.nudo.js`) — used via `@nudo:refine` or as a parameter slot inside `fn`, never as a function export contract. Non-`fn` sidecar bindings for functions are rejected (`nudo:interface-load`).
 
 Explicit contracts come from:
 - sidecars (`*.nudo.js`) / `@nudo:refine` / `@nudo:interface`

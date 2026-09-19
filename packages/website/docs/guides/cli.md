@@ -21,7 +21,7 @@ nudo — JavaScript types, computed
   nudo check <path> [--watch|-w]   # gate contracts + entry throws; print signatures
   nudo test <path> [--watch|-w]    # report every inferred case; assert declared expectations
   nudo contract <path>             # draft / emit interfaces
-  nudo export <path>               # project dts / guard / zod
+  nudo export <path>               # project dts / guard / schema / standard
   nudo health [paths]              # project health & drift
   nudo env harvest <pkg>           # harvest @types into an env
 ```
@@ -210,15 +210,16 @@ nudo contract --emit src/lib.js --all --dry-run --exit-on-diff  # CI drift gate
 
 ## `nudo export`
 
-Project Abs into ecosystem artifacts. This is the **only** CLI path for `.d.ts`, guards, and Zod schemas.
+Project Abs into ecosystem artifacts. This is the **only** CLI path for `.d.ts`, guards, and schema projections.
 
 ```bash
-nudo export <path> [--format dts|guard|zod|all] [--out dir]
+nudo export <path> [--format dts|guard|schema|standard|zod|all] [--dialect zod] [--out dir]
 ```
 
 ```bash
 nudo export src/user.js --format dts --out dist/types
-nudo export src/user.js --format zod
+nudo export src/user.js --format schema --dialect zod
+nudo export src/user.js --format standard --out dist
 nudo export src/user.js --format all --out dist
 ```
 
@@ -226,10 +227,16 @@ nudo export src/user.js --format all --out dist
 |--------|----------|
 | `dts` | TypeScript declarations (one widened signature per function; case precision in JSDoc) |
 | `guard` | Runtime type-guard functions |
-| `zod` | Zod schemas |
-| `all` | All three |
+| `schema` | Schema **source** projection for a dialect (default dialect: `zod`) → `*.nudo.schema.<dialect>.ts` |
+| `standard` | **Standard Schema v1** runtime modules (`~standard`, vendor `nudo`) → `<fn>.nudo.standard.ts` |
+| `zod` | **Deprecated alias** of `schema --dialect zod` (removed next major) |
+| `all` | dts + guard + schema + standard |
 
-`.d.ts` is a **one-way, lossy projection** — Abs is the source of truth. Export is a one-shot shipping command; it does not take `--watch`.
+`--dialect` currently accepts `zod`. Constant numeric bounds / `int` / string length bounds from Abs preds are projected when expressible; unprojectable preds stay on the base shape and are listed under `dropped preds`.
+
+`standard` is the ecosystem interop path: generated modules implement [Standard Schema](https://standardschema.dev) `validate` without depending on Zod/Valibot. When a sidecar / `@nudo:refine` contract exists, parameter validators use **contract domains** (`<fn>_<param>` via `constraintToEntryAbs`); without a contract, args are the **join of observed call-site Abs** (not a single literal). It is a runtime gate — not a replacement for `nudo check`.
+
+`.d.ts` and schema projections are **one-way and lossy** — Abs is the source of truth. Export is a one-shot shipping command; it does not take `--watch`.
 
 ---
 

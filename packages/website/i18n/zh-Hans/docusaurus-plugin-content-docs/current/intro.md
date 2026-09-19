@@ -67,7 +67,7 @@ npx nudojs test:
 |------|----------|------------|
 | **Day 0** | 普通 JS + 调用点 | `nudo check` 签名 · `nudo test` 用例 |
 | **Day 1** | `*.nudo.js` / `@nudo:refine` | `nudo check` L1 义务（`actual ⊭ expected`） |
-| **生态** | 无需额外 | `nudo export` dts/guard/zod |
+| **生态** | 无需额外 | `nudo export` dts/guard/schema/standard |
 | **进阶** | Abs 代数、env、mock | 字符串/数字代数、高阶函数、模块图 |
 
 `@nudo:case` 仍可用于**调试见证**（场景执行、`nudo test`、LSP 用例切换）——它不是契约产品。符号化的 `T.*` case 实参属于遗留语法，已不进入产品叙事。

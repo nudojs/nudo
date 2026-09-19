@@ -13,7 +13,16 @@ import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { formatShape } from "@nudojs/core";
 import {
-  absToZodSchema,
+  effectiveInterface,
+  constraintToEntryAbs,
+  joinAbs,
+  type Abs,
+} from "@nudojs/core";
+import {
+  projectAbsToSchema,
+  absToStandardSchemaModule,
+  defaultLoadModule,
+  type SchemaDialect,
   generateGuardFunctionFromAbs,
   generateFunctionDtsLines,
   analyzeFileAsync,
@@ -64,7 +73,7 @@ program
 Day 0   nudo check <path>   (signatures + L1/L2 gate)
         nudo test <path>    (every inferred case)
 Day 1   nudo contract + check
-Ecosystem  nudo export (dts / guard / zod)
+Ecosystem  nudo export (dts / guard / schema / standard)
 Ops     nudo health [paths] · nudo env harvest <pkg>
 
 No observation verb: signatures come from check, cases from test, hover from IDE.
@@ -789,13 +798,44 @@ async function runContractEmit(
 }
 
 // ---------------------------------------------------------------------------
-// export — 投影：dts | guard | zod（原 generate / emit / guard）
+// export — 投影：dts | guard | schema（dialect；`zod` 为 schema 的兼容别名）
 // ---------------------------------------------------------------------------
+
+type ExportFormat = "schema" | "zod" | "standard" | "guard" | "dts" | "all";
+const EXPORT_FORMATS: ExportFormat[] = ["schema", "zod", "standard", "guard", "dts", "all"];
+const SCHEMA_DIALECTS: SchemaDialect[] = ["zod"];
+
+function normalizeExportFormat(raw: string): ExportFormat | undefined {
+  return EXPORT_FORMATS.includes(raw as ExportFormat) ? (raw as ExportFormat) : undefined;
+}
+
+function normalizeDialect(raw: string | undefined): SchemaDialect | undefined {
+  if (raw === undefined) return undefined;
+  return SCHEMA_DIALECTS.includes(raw as SchemaDialect) ? (raw as SchemaDialect) : undefined;
+}
+
+function wantsSchema(format: ExportFormat): boolean {
+  return format === "schema" || format === "zod" || format === "all";
+}
+
+function wantsStandard(format: ExportFormat): boolean {
+  return format === "standard" || format === "all";
+}
+
+function schemaDialectOf(format: ExportFormat, dialect: SchemaDialect | undefined): SchemaDialect {
+  if (format === "zod") return "zod";
+  return dialect ?? "zod";
+}
+
+function schemaFileName(stem: string, dialect: SchemaDialect): string {
+  return `${stem}.nudo.schema.${dialect}.ts`;
+}
 
 async function runExport(
   file: string,
-  format: "zod" | "guard" | "dts" | "all",
+  format: ExportFormat,
   output?: string,
+  dialect?: SchemaDialect,
 ): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
@@ -807,27 +847,86 @@ async function runExport(
     return;
   }
 
-  const zodChunks: string[] = [];
+  const effectiveDialect = schemaDialectOf(format, dialect);
+  const schemaChunks: string[] = [];
+  const standardChunks: string[] = [];
   const guardChunks: string[] = [];
   const dtsChunks: string[] = [];
+  const droppedNotes: string[] = [];
 
   for (const fn of functions) {
     const caseResults: CaseResult[] = fn.cases;
     const baseName = fn.name;
 
-    if (format === "zod" || format === "all") {
-      const lines: string[] = [`\n// === ${baseName} Zod Schemas ===`];
+    if (wantsSchema(format)) {
+      const lines: string[] = [
+        `\n// === ${baseName} Schema (${effectiveDialect}) ===`,
+      ];
       for (const c of caseResults) {
-        const inputSchemas = c.argAbs.map((a, i) => `arg${i}: ${absToZodSchema(a)}`).join(", ");
-        const outputSchema = absToZodSchema(c.abs);
+        const inputParts: string[] = [];
+        const outputProj = projectAbsToSchema(c.abs, { dialect: effectiveDialect });
+        for (const [i, a] of c.argAbs.entries()) {
+          const p = projectAbsToSchema(a, { dialect: effectiveDialect });
+          inputParts.push(`arg${i}: ${p.source}`);
+          for (const note of p.dropped) {
+            droppedNotes.push(`${baseName} arg${i}: ${note}`);
+          }
+        }
+        for (const note of outputProj.dropped) {
+          droppedNotes.push(`${baseName} output: ${note}`);
+        }
         const label = c.name.startsWith("call@") || c.name.startsWith("entry@")
           ? c.name
           : `debug "${c.name}"`;
         lines.push(`// ${label}:`);
-        lines.push(`// Input: { ${inputSchemas} }`);
-        lines.push(`// Output: ${outputSchema}`);
+        lines.push(`// Input: { ${inputParts.join(", ")} }`);
+        lines.push(`// Output: ${outputProj.source}`);
       }
-      zodChunks.push(lines.join("\n"));
+      schemaChunks.push(lines.join("\n"));
+    }
+
+    if (wantsStandard(format)) {
+      // 运行时校验器应尽量反映**契约域**，而不是单次调用点字面量。
+      const eff = effectiveInterface(source, baseName, {
+        loadModule: defaultLoadModule,
+        fromFile: filePath,
+      });
+      const exports: Record<string, Abs> = {};
+      if (eff) {
+        for (const p of eff.params) {
+          exports[`${baseName}_${p.param}`] = constraintToEntryAbs(p.constraint, p.param);
+        }
+        if (eff.returns) {
+          exports[`${baseName}Return`] = constraintToEntryAbs(eff.returns.constraint, "return");
+        }
+      }
+      if (Object.keys(exports).length === 0) {
+        // 无显式契约：输出用 combinedAbs；参数位对各 case 同槽 argAbs 做 join，
+        // 避免把某一次 call@ 字面量钉成 validator 定义域。
+        const outAbs = fn.combinedAbs ?? caseResults[0]?.abs;
+        if (outAbs) exports[`${baseName}Output`] = outAbs;
+        const arity = Math.max(0, ...caseResults.map((c) => c.argAbs.length));
+        for (let i = 0; i < arity; i++) {
+          const parts = caseResults.map((c) => c.argAbs[i]).filter((a): a is Abs => !!a);
+          if (parts.length === 0) continue;
+          const joined = parts.reduce((a, b) => joinAbs(a, b));
+          const name = fn.paramNames[i] ?? `arg${i}`;
+          exports[`${baseName}_${name}`] = joined;
+        }
+      } else if (!exports[`${baseName}Output`] && !exports[`${baseName}Return`]) {
+        const outAbs = fn.combinedAbs ?? caseResults[0]?.abs;
+        if (outAbs) exports[`${baseName}Output`] = outAbs;
+      } else if (exports[`${baseName}Return`] && fn.combinedAbs) {
+        // 契约 returns 优先；仍可另导出观察到的 combined 输出便于对照
+        exports[`${baseName}Output`] = fn.combinedAbs;
+      }
+      if (Object.keys(exports).length > 0) {
+        const mod = absToStandardSchemaModule(exports);
+        standardChunks.push(`\n// === ${baseName} Standard Schema ===\n${mod.source}`);
+        for (const note of mod.dropped) {
+          droppedNotes.push(`${baseName} ${note}`);
+        }
+      }
     }
 
     if (format === "guard" || format === "all") {
@@ -849,10 +948,31 @@ async function runExport(
     const outDir = resolve(output);
     mkdirSync(outDir, { recursive: true });
     const written: string[] = [];
-    if (zodChunks.length > 0) {
-      const p = join(outDir, `${stem}.nudo.zod.ts`);
-      writeFileSync(p, zodChunks.join("\n") + "\n", "utf-8");
+    if (schemaChunks.length > 0) {
+      const p = join(outDir, schemaFileName(stem, effectiveDialect));
+      let body = schemaChunks.join("\n") + "\n";
+      if (droppedNotes.length > 0 && !wantsStandard(format)) {
+        body += `\n// dropped preds (not projected into ${effectiveDialect}):\n`;
+        body += droppedNotes.map((n) => `//   ${n}`).join("\n") + "\n";
+      }
+      writeFileSync(p, body, "utf-8");
       written.push(p);
+    }
+    if (standardChunks.length > 0) {
+      // 每个函数块各自含 CHECK_FN；合并文件时只保留一份 runtime helper
+      // —— 简单策略：standard 单独成文件时每函数独立模块亦可；这里合并写一个文件、
+      // 去重 helper：首次出现后后续块去掉重复 CHECK 定义由生成器保证（每块都带）。
+      // Phase C：按函数拆文件更干净。
+      for (const chunk of standardChunks) {
+        const m = chunk.match(/\/\/ === (\S+) Standard Schema ===/);
+        const fnStem = m?.[1] ?? stem;
+        const p = join(outDir, `${fnStem}.nudo.standard.ts`);
+        const header = `// @generated by nudo export --format standard — Standard Schema v1 (vendor: nudo)\n`;
+        const body = chunk.startsWith("\n") ? chunk.slice(1) : chunk;
+        // 去掉重复 banner 若生成器已写
+        writeFileSync(p, body.includes("@generated") ? body + "\n" : header + body + "\n", "utf-8");
+        written.push(p);
+      }
     }
     if (guardChunks.length > 0) {
       const p = join(outDir, `${stem}.nudo.guard.ts`);
@@ -870,8 +990,12 @@ async function runExport(
     return;
   }
 
-  for (const chunk of [...zodChunks, ...guardChunks, ...dtsChunks]) {
+  for (const chunk of [...schemaChunks, ...standardChunks, ...guardChunks, ...dtsChunks]) {
     console.log(chunk);
+  }
+  if (droppedNotes.length > 0) {
+    console.log(`\n// dropped preds (not projected into ${effectiveDialect}):`);
+    for (const n of droppedNotes) console.log(`//   ${n}`);
   }
 }
 
@@ -1394,24 +1518,53 @@ program
 
 program
   .command("export")
-  .description("Project inferred types: dts | guard | zod (one path, not three verbs)")
+  .description("Project inferred types: dts | guard | schema | standard")
   .argument("<file>", "JavaScript/TypeScript file to analyze")
-  .option("--format <format>", "Output format: dts, guard, zod, all", "dts")
+  .option(
+    "--format <format>",
+    "Output format: dts, guard, schema, standard, zod (deprecated alias of schema --dialect zod), all",
+    "dts",
+  )
+  .option("--dialect <dialect>", "Schema dialect (currently: zod). Applies to --format schema|all")
   .option("--out <dir>", "Write projection files to this directory (omit for stdout)")
   .option("--output <dir>", "Deprecated alias of --out")
-  .action(async (file: string, options: { format: string; out?: string; output?: string }) => {
-    const format = options.format;
-    if (!["zod", "guard", "dts", "all"].includes(format)) {
-      console.error(`Unknown --format ${format}; expected dts | guard | zod | all`);
-      process.exitCode = 1;
-      return;
-    }
-    const out = options.out ?? options.output;
-    if (options.output && !options.out) {
-      deprecateVerb("export --output", "use `nudo export --out <dir>`");
-    }
-    await runExport(file, format as "zod" | "guard" | "dts" | "all", out);
-  });
+  .action(
+    async (
+      file: string,
+      options: { format: string; dialect?: string; out?: string; output?: string },
+    ) => {
+      const format = normalizeExportFormat(options.format);
+      if (!format) {
+        console.error(
+          `Unknown --format ${options.format}; expected dts | guard | schema | standard | zod | all`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const dialect = normalizeDialect(options.dialect);
+      if (options.dialect !== undefined && dialect === undefined) {
+        console.error(`Unknown --dialect ${options.dialect}; expected ${SCHEMA_DIALECTS.join(" | ")}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (format === "zod") {
+        deprecateVerb(
+          "export --format zod",
+          "use `nudo export <path> --format schema --dialect zod` (writes *.nudo.schema.zod.ts)",
+        );
+      }
+      if (dialect !== undefined && !wantsSchema(format)) {
+        console.error(`--dialect is only valid with --format schema|all|zod (got ${format})`);
+        process.exitCode = 1;
+        return;
+      }
+      const out = options.out ?? options.output;
+      if (options.output && !options.out) {
+        deprecateVerb("export --output", "use `nudo export --out <dir>`");
+      }
+      await runExport(file, format, out, dialect);
+    },
+  );
 
 program
   .command("health")
@@ -1637,11 +1790,18 @@ program
   .command("generate")
   .description("[deprecated] use `nudo export --format …`")
   .argument("<file>", "JavaScript file to analyze")
-  .option("--format <format>", "zod, guard, dts, all", "all")
+  .option("--format <format>", "schema|zod|guard|dts|all", "all")
   .option("--output <dir>", "Write validator files to this directory")
   .action(async (file: string, options: { format: string; output?: string }) => {
-    deprecateVerb("generate", "use `nudo export <path> --format zod|guard|dts|all --out <dir>`");
-    await runExport(file, options.format as "zod" | "guard" | "dts" | "all", options.output);
+    deprecateVerb(
+      "generate",
+      "use `nudo export <path> --format schema|guard|dts|all --out <dir>`",
+    );
+    const format = normalizeExportFormat(options.format) ?? "all";
+    if (format === "zod") {
+      deprecateVerb("generate --format zod", "use `nudo export --format schema --dialect zod`");
+    }
+    await runExport(file, format, options.output);
   });
 
 program

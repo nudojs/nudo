@@ -278,7 +278,7 @@ nudo check src/ --ignore-throws TypeError,RangeError
 nudo check <path> [--watch]  Gate contracts + entry throws; print signatures (CI)
 nudo test <path> [--watch]   Report every inferred case; assert declared expectations
 nudo contract <path>         Draft / emit interfaces
-nudo export <path>           Project dts / guard / zod
+nudo export <path>           Project dts / guard / schema / standard
 nudo health [paths]          Project health & drift
 nudo env harvest pkg         Harvest @types into an env
 

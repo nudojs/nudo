@@ -21,7 +21,7 @@ nudo — JavaScript types, computed
   nudo check <path> [--watch|-w]   # 门禁契约 + 入口 throws；打印 signatures
   nudo test <path> [--watch|-w]    # 报告全部推断用例；断言已声明期望
   nudo contract <path>             # 契约：打印 / draft / emit 侧车接口
-  nudo export <path>               # 投影：dts / guard / zod
+  nudo export <path>               # 投影：dts / guard / schema / standard
   nudo health [paths]              # 体检：分析错误 + 固化漂移
   nudo env harvest <pkg>           # 环境：@types → env 模块
 ```
@@ -185,15 +185,16 @@ nudo contract --emit src/lib.js --all --dry-run --exit-on-diff  # CI 漂移门�
 
 ## `nudo export`
 
-把 Abs 投影为生态产物。这是 CLI 上 `.d.ts` / guard / Zod 的**唯一**路径。
+把 Abs 投影为生态产物。这是 CLI 上 `.d.ts` / guard / schema 投影的**唯一**路径。
 
 ```bash
-nudo export <path> [--format dts|guard|zod|all] [--out dir]
+nudo export <path> [--format dts|guard|schema|standard|zod|all] [--dialect zod] [--out dir]
 ```
 
 ```bash
 nudo export src/user.js --format dts --out dist/types
-nudo export src/user.js --format zod
+nudo export src/user.js --format schema --dialect zod
+nudo export src/user.js --format standard --out dist
 nudo export src/user.js --format all --out dist
 ```
 
@@ -201,10 +202,16 @@ nudo export src/user.js --format all --out dist
 |------|------|
 | `dts` | TypeScript 声明（每函数一条拓宽签名；case 精度保留在 JSDoc） |
 | `guard` | 运行时类型守卫 |
-| `zod` | Zod schema |
-| `all` | 以上全部 |
+| `schema` | 某 dialect 的 schema **源码**投影（默认 dialect：`zod`）→ `*.nudo.schema.<dialect>.ts` |
+| `standard` | **Standard Schema v1** 运行时模块（`~standard`，vendor `nudo`）→ `<fn>.nudo.standard.ts` |
+| `zod` | **废弃别名**，等价于 `schema --dialect zod`（下个 major 移除） |
+| `all` | dts + guard + schema + standard |
 
-`.d.ts` 是**单向、有损投影** —— Abs 才是真理源。export 是一次性出货命令，不接受 `--watch`。
+`--dialect` 当前接受 `zod`。Abs 上可表达的常数界 / `int` / 字符串长度界会落入 schema；落不了的 pred 保留在基类型上，并列在 `dropped preds` 注释里。
+
+`standard` 是生态互操作出口：生成模块实现 [Standard Schema](https://standardschema.dev) 的 `validate`，不依赖 Zod/Valibot。存在侧车 / `@nudo:refine` 契约时，参数校验器使用**契约域**（`<fn>_<param>`）；无契约时参数位取各调用点 Abs 的 **join**（不钉死单次字面量）。它是运行时挡板，**不能**替代 `nudo check`。
+
+`.d.ts` 与 schema 都是**单向、有损投影** —— Abs 才是真理源。export 是一次性出货命令，不接受 `--watch`。
 
 ---
 

@@ -230,19 +230,20 @@ nudo contract --emit lib.js --fn add2
 
 ### nudo export
 
-把 Abs 投影为生态产物。CLI 上 `.d.ts` / guard / Zod 的**唯一**路径。
+把 Abs 投影为生态产物。CLI 上 `.d.ts` / guard / schema 投影的**唯一**路径。
 
 取代 `nudo generate` / `nudo emit` / `nudo guard` 与 `infer --dts`（已废弃）。
 
 ```bash
-nudo export <path> [--format dts|guard|zod|all] [--out dir]
+nudo export <path> [--format dts|guard|schema|standard|zod|all] [--dialect zod] [--out dir]
 ```
 
 **选项：**
 
 | 选项 | 说明 |
 |------|------|
-| `--format` | `dts`（默认）\| `guard` \| `zod` \| `all` |
+| `--format` | `dts`（默认）\| `guard` \| `schema` \| `standard` \| `zod`（废弃别名）\| `all` |
+| `--dialect` | schema dialect；当前为 `zod`。仅对 `schema` / `all` / `zod` 有意义 |
 | `--out <dir>` | 把产物写入该目录，而非 stdout |
 
 **格式：**
@@ -251,10 +252,14 @@ nudo export <path> [--format dts|guard|zod|all] [--out dir]
 |------|------|
 | `dts` | TypeScript 声明 —— 每函数一条拓宽签名；case 精度保留在 JSDoc |
 | `guard` | 运行时类型守卫（有无损 Abs 路径时优先） |
-| `zod` | Zod schema |
-| `all` | 以上全部 |
+| `schema` | `--dialect` 对应的 schema 源码 → `*.nudo.schema.<dialect>.ts` |
+| `standard` | Standard Schema v1 模块（`~standard`，vendor `nudo`）→ `<fn>.nudo.standard.ts` |
+| `zod` | 废弃别名，等价于 `schema --dialect zod` |
+| `all` | dts + guard + schema + standard |
 
-`.d.ts` 是 Abs 的单向有损投影。export 不接受 `--watch`。
+可表达的 Abs pred（常数界 / `int` / 字符串长度）会进入 schema；符号 pred 落在基类型上并在 `dropped preds` 注释列出。`standard` 在运行时 `validate` 中执法同一 refinement 集合——仍是单向投影，**CI 门禁仍是 `nudo check`**。
+
+`.d.ts` / schema 是 Abs 的单向有损投影。export 不接受 `--watch`。
 
 **退出码：**
 

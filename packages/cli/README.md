@@ -45,7 +45,7 @@ Primary verbs:
 nudo check <path> [--watch]     # gate + signatures (CI)
 nudo test <path> [--watch]      # case report + declared assertions
 nudo contract <path>            # draft / emit interfaces
-nudo export <path>              # dts | guard | zod
+nudo export <path>              # dts | guard | schema | standard
 nudo health [paths]             # drift + analysis errors
 nudo env harvest <pkg>          # @types → env
 ```
