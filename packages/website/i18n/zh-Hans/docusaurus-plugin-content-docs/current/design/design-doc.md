@@ -269,7 +269,7 @@ Nudo 将异常作为函数类型的一等部分追踪。每个函数不仅有 `r
 | `@nudo:case` | 提供具名执行用例（具体或符号化输入） |
 | `@nudo:mock` | 用 Abs 值 stub mock 外部依赖 |
 | `@nudo:pure` | 标记函数为纯函数，启用记忆化 |
-| `@nudo:skip` | 跳过求值；可选的类型表达式直接声明返回类型（如 `@nudo:skip T.number`） |
+| `@nudo:skip` | 跳过求值；可选的约束构建器表达式直接声明返回类型（如 `@nudo:skip number()`） |
 | `@nudo:sample` | 保留的无效果指令（已解析，未消费） |
 | `@nudo:refine` | 精化契约：`@nudo:refine param name` / `@nudo:refine return name`（Pred 进入 Abs） |
 | `@nudo:env` | 声明运行时环境 API（文件级 `///` 注释） |
@@ -365,7 +365,7 @@ function inc(x) {
 }
 ```
 
-Pred 进入 Abs 并参与代数（`x>0` ⇒ `x+1>1`）。模板的约束构造器直接 lowering 为 Abs 上的 term/pred 约束——`T.refine` 已不存在。
+Pred 进入 Abs 并参与代数（`x>0` ⇒ `x+1>1`）。模板的约束构造器直接 lowering 为 Abs 上的 term/pred 约束。
 
 ---
 
@@ -376,7 +376,7 @@ Pred 进入 Abs 并参与代数（`x>0` ⇒ `x+1>1`）。模板的约束构造�
 ```javascript
 /**
  * @nudo:case "concrete" (1, 2)
- * @nudo:case "symbolic" (T.number, T.number)
+ * @nudo:case "symbolic" (number(), number())
  */
 function calc(a, b) {
   if (a > b) return a - b;
@@ -384,13 +384,13 @@ function calc(a, b) {
 }
 ```
 
-**Case "concrete" — `calc(1, 2)`：**
+**debug "concrete" — `calc(1, 2)`：**
 1. 绑定：`a = lit(1)`，`b = lit(2)`
 2. 条件：`a > b` → `lit(false)`
 3. 走 alternate：`a + b` → `lit(3)`
 4. 结果：`lit(3)`
 
-**Case "symbolic" — `calc(T.number, T.number)`：**
+**debug "symbolic" — `calc(number(), number())`：**
 1. 绑定：`a = number`，`b = number`
 2. 条件：`a > b` → `boolean`（抽象）
 3. Fork 两个分支：
@@ -405,7 +405,7 @@ function calc(a, b) {
 ## 8. 实现路线图
 
 ### 已完成
-- **求值器 MVP** — Babel、TypeValue IR、ops、窄化、`@nudo:case`、CLI `infer`。
+- **求值器 MVP** — Babel、Abs 求值、ops、窄化、调用点观测 + 调试 `@nudo:case`、CLI `infer`。
 - **对象/数组** — 对象、数组、元组、Array 方法、`@nudo:mock`。
 - **高级语言特性** — 闭包、递归预算、async/Promise、try-catch、类。
 - **工具链** — LSP、watch、`.d.ts`、Vite 插件、VS Code 扩展。

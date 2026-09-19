@@ -121,7 +121,7 @@ async function runInfer(
   }
 
   if (result.functions.length === 0 && !(result.externalFunctions?.length)) {
-    console.log("No functions with @nudo:case directives found.");
+    console.log("No functions found to analyze.");
     return;
   }
 
@@ -151,7 +151,11 @@ async function runInfer(
 
     for (const c of fn.cases) {
       const argsStr = c.argAbs.map(formatShape).join(", ");
-      let line = `Case "${c.name}": (${argsStr}) => ${formatShape(c.abs)}`;
+      // call@ / entry@ = observed call-site facts; named witnesses = debug (`nudo test`)
+      const label = c.name.startsWith("call@") || c.name.startsWith("entry@")
+        ? c.name
+        : `debug "${c.name}"`;
+      let line = `${label}: (${argsStr}) => ${formatShape(c.abs)}`;
       if (c.throwsAbs.shape.k !== "never") line += ` throws ${formatShape(c.throwsAbs)}`;
       console.log(line);
       // M3：内涵摘要（term/pred/conf）+ 无损 Abs
@@ -174,7 +178,7 @@ async function runInfer(
     }
 
     if (fn.cases.length > 1 && fn.combinedAbs) {
-      console.log(`\nCombined: ${formatShape(fn.combinedAbs)}`);
+      console.log(`\nObserved: ${formatShape(fn.combinedAbs)}`);
     }
 
     console.log();
@@ -198,12 +202,15 @@ async function runInfer(
         console.log(`=== ${fn.name} ===\n`);
         for (const c of fn.cases) {
           const argsStr = c.argAbs.map(formatShape).join(", ");
-          let line = `Case "${c.name}": (${argsStr}) => ${formatShape(c.abs)}`;
+          const label = c.name.startsWith("call@") || c.name.startsWith("entry@")
+            ? c.name
+            : `debug "${c.name}"`;
+          let line = `${label}: (${argsStr}) => ${formatShape(c.abs)}`;
           if (c.throwsAbs.shape.k !== "never") line += ` throws ${formatShape(c.throwsAbs)}`;
           console.log(line);
         }
         if (fn.cases.length > 1 && fn.combinedAbs) {
-          console.log(`\nCombined: ${formatShape(fn.combinedAbs)}`);
+          console.log(`\nObserved: ${formatShape(fn.combinedAbs)}`);
         }
         console.log();
       }
@@ -271,13 +278,13 @@ async function runInferJson(file: string, externalRecords?: CallRecord[]): Promi
 
 program
   .command("infer")
-  .description("Infer types from a JS/TS file (or a directory of them) — functions with @nudo:case directives use them; all other functions are inferred from call sites (whole-program analysis)")
+  .description("Infer types from a JS/TS file (or a directory) by executing observed call sites; optional @nudo:case witnesses are for debug / nudo test only")
   .argument("<file>", "Path to the JS/TS file (or directory)")
   .option("--dts", "Generate .d.ts file")
   .option("--loc", "Show source locations in output")
   .option("--json", "Output as JSON")
   .option("--callsites <paths...>", "Usage-site files (tests/apps) to harvest real call shapes from; their calls to this file's exports become synthesized cases")
-  .option("--emit-cases [mode]", "Write synthesized call-site cases back into the source as @nudo:case directives (call@ prefix); mode: update (default: add)")
+  .option("--emit-cases [mode]", "Debug solidification: write synthesized call-site witnesses back as @nudo:case directives (call@ prefix); not the interface product path. mode: update (default: add)")
   .option("--dry-run", "With --emit-cases: print a unified diff instead of writing to disk")
   .option("--exit-on-diff", "With --dry-run: exit with code 1 when the diff is non-empty")
   .action(
@@ -1000,7 +1007,7 @@ program
 
 program
   .command("test")
-  .description("Run @nudo:case directives as assertions (case-as-test); exit 1 on failure")
+  .description("Run @nudo:case directives as debug assertions (case-as-test); exit 1 on failure")
   .argument("<file>", "Path to the JS/TS file or a directory of them")
   .action(async (file: string) => {
     const targets = resolveTargets(file);
@@ -1191,12 +1198,12 @@ async function runDoctor(paths: string[], opts: { callsites?: string[]; json?: b
       const entryInfo = r.entryOnly > 0 ? `, ${r.entryOnly} entry-only` : "";
       console.log(`  · ${r.functions} function(s)${entryInfo}`);
       if (r.uncovered.length > 0) {
-        console.log(`  ⚠ uncovered (no cases): ${r.uncovered.join(", ")}`);
+        console.log(`  ⚠ uncovered (no call-site evidence): ${r.uncovered.join(", ")}`);
       }
       if (r.drift) {
         const refresh = `nudo infer ${r.file} --callsites ${(opts.callsites ?? []).join(" ")} --emit-cases=update`;
         console.log(
-          `  ✗ drift: ${r.drift.added + r.drift.removed} directive(s) changed (+${r.drift.added} new, -${r.drift.removed} removed) — refresh with: ${refresh.trim()}`,
+          `  ✗ drift: ${r.drift.added + r.drift.removed} debug witness directive(s) changed (+${r.drift.added} new, -${r.drift.removed} removed) — optional refresh: ${refresh.trim()}`,
         );
       }
       if ((r.interfaceDrift ?? 0) > 0) {
@@ -1424,12 +1431,11 @@ async function runGenerate(
   const source = readFileSync(filePath, "utf-8");
   // 与 infer/check 同一分析管道（Abs 优先 + refine + env preload）
   const result = await analyzeFileAsync(filePath, source);
-  const functions = result.functions.filter(
-    (f) => f.cases.some((c) => c.source === "directive"),
-  );
+  // Product path: any observed function (call-site or debug witness) can emit validators
+  const functions = result.functions.filter((f) => f.cases.length > 0);
 
   if (functions.length === 0) {
-    console.log("No functions with @nudo:case directives found.");
+    console.log("No analyzed functions found.");
     return;
   }
 
@@ -1438,7 +1444,7 @@ async function runGenerate(
   const dtsChunks: string[] = [];
 
   for (const fn of functions) {
-    const caseResults: CaseResult[] = fn.cases.filter((c) => c.source === "directive");
+    const caseResults: CaseResult[] = fn.cases;
     const baseName = fn.name;
 
     if (format === "zod" || format === "all") {
@@ -1446,7 +1452,10 @@ async function runGenerate(
       for (const c of caseResults) {
         const inputSchemas = c.argAbs.map((a, i) => `arg${i}: ${absToZodSchema(a)}`).join(", ");
         const outputSchema = absToZodSchema(c.abs);
-        lines.push(`// Case "${c.name}":`);
+        const label = c.name.startsWith("call@") || c.name.startsWith("entry@")
+          ? c.name
+          : `debug "${c.name}"`;
+        lines.push(`// ${label}:`);
         lines.push(`// Input: { ${inputSchemas} }`);
         lines.push(`// Output: ${outputSchema}`);
       }
@@ -1455,9 +1464,9 @@ async function runGenerate(
 
     if (format === "guard" || format === "all") {
       const lines: string[] = [`\n// === ${baseName} Type Guards ===`];
-      for (const c of caseResults) {
-        const guardName = `is${baseName}${c.name.charAt(0).toUpperCase() + c.name.slice(1)}Output`;
-        lines.push(generateGuardFunctionFromAbs(guardName, c.abs));
+      const absForGuard = fn.combinedAbs ?? caseResults[0]?.abs;
+      if (absForGuard) {
+        lines.push(generateGuardFunctionFromAbs(`is${baseName}Output`, absForGuard));
       }
       guardChunks.push(lines.join("\n"));
     }
@@ -1596,7 +1605,7 @@ function runHarvest(pkg: string, outOpt?: string): void {
 
 program
   .command("harvest")
-  .description("Convert @types/<pkg> .d.ts declarations into a Nudo env file (TS source using T.* constructors)")
+  .description("Convert @types/<pkg> .d.ts declarations into a Nudo env file (constraint builders, not T.*)")
   .argument("[pkg]", "Package name under @types (e.g. node)")
   .option("--out <file>", "Output .ts env file (default: ./nudo-harvest-<pkg>.ts)")
   .option("--auto [dir]", "Scan directory (default .) for bare imports and report auto-harvestable @types packages")

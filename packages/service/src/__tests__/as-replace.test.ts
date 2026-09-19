@@ -8,10 +8,10 @@ describe("@nudo:as directive", () => {
 /// @nudo:env es
 
 /**
- * @nudo:case "test" (T.string)
+ * @nudo:case "test" (string())
  */
 function loadConfig(path) {
-  // @nudo:as T.object({ port: T.number, host: T.string })
+  // @nudo:as shape({ port: number(), host: string() })
   const config = JSON.parse(path);
   return config;
 }
@@ -27,10 +27,10 @@ function loadConfig(path) {
 /// @nudo:env es
 
 /**
- * @nudo:case "test" (T.string)
+ * @nudo:case "test" (string())
  */
 function loadConfig(path) {
-  // @nudo:as T.object({ name: T.string, age: T.number })
+  // @nudo:as shape({ name: string(), age: number() })
   return JSON.parse(path);
 }
 `;
@@ -48,7 +48,7 @@ function loadConfig(path) {
  * @nudo:case "test" (5)
  */
 function add(x) {
-  // @nudo:as T.string
+  // @nudo:as string()
   const a = x + 1;
   const b = x + 2;
   return b;
@@ -65,10 +65,10 @@ describe("@nudo:replace directive", () => {
 /// @nudo:env es
 
 /**
- * @nudo:case "test" (T.string)
+ * @nudo:case "test" (string())
  */
 function process(input) {
-  // @nudo:replace JSON.parse(input) T.object({ id: T.number })
+  // @nudo:replace JSON.parse(input) shape({ id: number() })
   const data = JSON.parse(input);
   return data.id;
 }
@@ -83,7 +83,7 @@ function process(input) {
  * @nudo:case "test" (5, 10)
  */
 function compute(a, b) {
-  // @nudo:replace a T.literal(100)
+  // @nudo:replace a lit(100)
   const result = a + b;
   return result;
 }
@@ -100,7 +100,7 @@ function compute(a, b) {
 function test() {
   const aa = 1;
   const a = 2;
-  // @nudo:replace a T.literal(99)
+  // @nudo:replace a lit(99)
   const result = aa + a;
   return result;
 }
@@ -112,10 +112,10 @@ function test() {
   it("supports member expression replacement", () => {
     const source = `
 /**
- * @nudo:case "test" (T.object({ data: T.unknown }))
+ * @nudo:case "test" (shape({ data: any() }))
  */
 function process(res) {
-  // @nudo:replace res.data T.array(T.object({ id: T.number, name: T.string }))
+  // @nudo:replace res.data array(shape({ id: number(), name: string() }))
   const items = res.data;
   return items;
 }
@@ -132,7 +132,7 @@ function process(res) {
  * @nudo:case "test" (5, 10)
  */
 function compute(a, b) {
-  // @nudo:replace a T.literal(100)
+  // @nudo:replace a lit(100)
   const x = a + b;
   const y = a + b;
   return y;
@@ -149,12 +149,12 @@ describe("@nudo:as and @nudo:replace coexistence", () => {
 /// @nudo:env es
 
 /**
- * @nudo:case "test" (T.string)
+ * @nudo:case "test" (string())
  */
 function process(input) {
-  // @nudo:as T.object({ name: T.string, score: T.number })
+  // @nudo:as shape({ name: string(), score: number() })
   const data = JSON.parse(input);
-  // @nudo:replace data.score T.literal(100)
+  // @nudo:replace data.score lit(100)
   const result = data.score;
   return result;
 }

@@ -152,7 +152,7 @@ In `@nudo:mock` expressions you write the sinon-style chain `stub().…` — the
 ```javascript
 /**
  * @nudo:mock fetch = stub().resolves({ ok: true })
- * @nudo:mock parse = stub().withArgs(T.string).returns(T.number)
+ * @nudo:mock parse = stub().withArgs(string()).returns(number())
  */
 ```
 

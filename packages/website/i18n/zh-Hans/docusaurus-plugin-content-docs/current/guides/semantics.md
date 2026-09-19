@@ -27,7 +27,7 @@ sli();                                // → "el"
 ```text
 === upper ===
 
-Case "call@L2": () => "HELLO"
+call@L2: () => "HELLO"
 ```
 
 `toUpperCase`、`toLowerCase`、`slice`、`.length` 与 `split`（字面量接收者 + 字面量分隔符）产生精确结果——`"a,b,c".split(",")` 在调用点路径折叠为 `["a", "b", "c"]`，无逗号的接收者如 `"abc".split("b")` 在 `@nudo:case` 指令路径折叠为 `["a", "c"]`。指令路径无法表达含逗号的接收者：指令解析器按逗号拆分用例实参，`@nudo:case "split" ("a,b,c")` 会变成三个 `unknown` 形参而非一个字符串。前缀/后缀/包含检查——`startsWith`、`endsWith`、`includes`——对字面量接收者折叠为确定的布尔值。`indexOf` 只得 `number` 原语，丢字面量下标。
@@ -50,7 +50,7 @@ sumTo(5);
 ```text
 === sumTo ===
 
-Case "call@L8": (5) => 10
+call@L8: (5) => 10
 ```
 
 具体数组上的 `for...of` 同样精确：
@@ -87,7 +87,7 @@ findBig();
 ```text
 === findBig ===
 
-Case "call@L11": () => 3
+call@L11: () => 3
 ```
 
 结果是字面量 `3`——循环跳出时绑定的值。
@@ -104,7 +104,7 @@ keysOf();
 ```text
 === keysOf ===
 
-Case "call@L2": () => ["port", "host"]
+call@L2: () => ["port", "host"]
 ```
 
 ### Math 方法
@@ -119,7 +119,7 @@ root(9);
 ```text
 === root ===
 
-Case "call@L2": (9) => 3
+call@L2: (9) => 3
 ```
 
 `sqrt`、`pow`、`abs`、`floor`、`ceil`、`round`、`sign`、`min`、`max` 都在字面量实参上折叠为精确数值结果；符号实参拓宽为 `number`。
@@ -148,7 +148,7 @@ floatOf("3.14");                     // → 3.14
 ```text
 === strOf ===
 
-Case "call@L2": (5) => "5"
+call@L2: (5) => "5"
 ```
 
 `String(x)`、`Number(x)`、`Boolean(x)` 把 number/string/boolean 字面量折叠为精确强转结果；`parseInt(s)` / `parseFloat(s)` 把 string/number 字面量折叠为精确数值前缀/解析结果。符号实参拓宽为目标原语（`string` / `number` / `boolean`）。仓库示例（CI 钉住）：[`docs/examples/algebra/l-primitive-conversion.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/l-primitive-conversion.js)。
@@ -173,7 +173,7 @@ compute(5);
 ```text
 === compute ===
 
-Case "call@L11": (5) => 25
+call@L11: (5) => 25
 ```
 
 指令路径在实参为字面量时同样精确（对 `compute` 写 `@nudo:case "member" (5)` → `(5) => 25`）；空实参表 `()` 时形参是 `unknown`，结果退化为 `unknown #partial`。剩下的缺口在调用点**采集**而非求值：顶层裸成员调用（`circle.area()` 作语句）不产生 `call@` case——成员被调者不会被采集为调用点。把成员调用包进函数里即可看到。
@@ -196,11 +196,11 @@ walk(2);
 ```text
 === walk ===
 
-Case "call@L6": (0) => 0
-Case "call@L7": (1) => 1
-Case "call@L8": (2) => 3
+call@L6: (0) => 0
+call@L7: (1) => 1
+call@L8: (2) => 3
 
-Combined: 0 | 1 | 3
+Observed: 0 | 1 | 3
 ```
 
 超过精确 case 上限的更多调用会聚合为一个实参拓宽的 `call@symbolic` case。

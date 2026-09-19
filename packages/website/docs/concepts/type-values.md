@@ -1,6 +1,6 @@
 ---
 sidebar_position: 1
-description: "Type values — symbolic sets of values as one computable system: the Abs algebra (shape × term × pred × conf), the directive type grammar (constraint expressions + legacy T.*), and the four design principles."
+description: "Type values — symbolic sets of values as one computable system: the Abs algebra (shape × term × pred × conf), the directive constraint-builder grammar, and the four design principles."
 ---
 
 # Type Values
@@ -84,7 +84,7 @@ number | string       // heterogeneous union
 | builders | `.gt/.gte/.lt/.lte/.shift/.int…` | `number().gt(0).int()` |
 | bare literals | parsed directly | `42`, `"abc"`, `true`, `[1, 2]` |
 
-A deprecated `T.*` grammar (`T.number`, `T.string`, `T.literal(…)`, `T.union(…)`, `T.array(…)`, `T.tuple(…)`, `T.object({…})`, `T.unknown`, `T.never`) is still parsed for legacy fixtures — new code uses the constraint builders above. `T.*` constructors are **not** available inside `@nudo:mock` bodies (write plain JavaScript values and closures there).
+Directive type expressions use the constraint builders above plus concrete literals. The old `T.*` product grammar is removed. Inside `@nudo:mock` bodies write plain JavaScript values and closures — not builder calls as return payloads.
 
 ```javascript
 /**
@@ -137,7 +137,7 @@ function selfAdd(a) {
 
 selfAdd(1);       // → 2  #exact  (per call site)
 selfAdd(2);       // → 4  #exact
-// Combined: 2 | 4 — correlation kept, never 1+1 | 1+2 | 2+1 | 2+2
+// Observed: 2 | 4 — correlation kept, never 1+1 | 1+2 | 2+1 | 2+2
 ```
 
 With abstract arguments the result widens to the domain the algebra determines (`sum(number, string)` → `string #path`; `selfAdd(number)` → `number #widened`) — member-wise expansion only happens when an operator or method *must* distinguish members.

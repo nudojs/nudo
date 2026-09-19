@@ -12,10 +12,10 @@ description: 解释 Nudo 如何用符号化类型值执行代码——求值引�
 | 方法 | 输入 | 输出 | 完备性 |
 |----------|-------|--------|--------------|
 | 单元测试 | 具体值（`1`、`"hello"`） | 具体结果 | 仅覆盖测试用例 |
-| Nudo | 类型值（`T.number`、`T.string`） | 类型值 | 类型集合中的所有值 |
+| Nudo | 类型值（`number()`、`string()`） | 类型值 | 类型集合中的所有值 |
 | TypeScript | AST（不执行） | 类型 | 所有语法路径 |
 
-当 Nudo 执行 `transform(T.string)` 时，引擎会将 `T.string` 在函数体中传播。在 `typeof x === "string"` 处，引擎知道该分支会被执行。在 `x.toUpperCase()` 处，引擎知道结果是 `T.string`。结果不是具体值——而是**类型**。
+当 Nudo 执行 `transform(string())` 时，引擎会将 `string()` 在函数体中传播。在 `typeof x === "string"` 处，引擎知道该分支会被执行。在 `x.toUpperCase()` 处，引擎知道结果是 `string()`。结果不是具体值——而是**类型**。
 
 ---
 

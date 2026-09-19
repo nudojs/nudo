@@ -62,7 +62,7 @@ type CaseDirective = {
 }
 ```
 
-具名执行用例，带输入参数（约束表达式优先，兼容 legacy `T.*`）。可选 `expected` 用于返回值类型校验。
+调试见证用例，带输入参数（约束构建器 + 具体字面量）。可选 `expected` 用于 `nudo test` 返回类型断言。
 
 ### MockDirective
 
@@ -219,7 +219,7 @@ extractInlineDirectives(node: Node): InlineDirective[]
 
 **示例：**
 ```javascript
-// @nudo:as T.string
+// @nudo:as string()
 const y = f(x);
 ```
 
@@ -231,11 +231,10 @@ const y = f(x);
 parseCaseArgExpr(expr: string): Abs
 ```
 
-将字符串表达式解析为 Abs。用于指令参数（如 `@nudo:case` 的实参、`@nudo:as`/`@nudo:replace` 的类型表达式、mock 返回值）。`parseTypeValueExpr` 是同一函数的弃用旧名。
+把指令类型表达式解析为 Abs——产品文法是约束构建器 + 具体字面量 + 结构字面量。用于 `@nudo:case` 实参、`@nudo:as`/`@nudo:replace`、mock 返回值与 `@nudo:skip` 返回表达式。
 
 **支持形式（按优先级）：**
 - 约束表达式（主文法）：`number()`、`number().gt(0)`、`lit(...)`、`union(…)`、`shape({…})`、`array(…)`、`fn({…}, …)`、`and`、`partial`/`pick`/`omit`/`record`/`required`/`readonly`/`nonNullable`
-- legacy `T.*`：`T.number`、`T.string`、`T.boolean`、`T.unknown`、`T.never`、`T.null`、`T.undefined`、`T.literal(...)`、`T.object({...})`、`T.array(...)`、`T.tuple([...])`、`T.union(...)`
 - 裸字面量：`true`、`false`、`null`、`undefined`、数字、带引号字符串
 - 函数：箭头表达式（`(x) => x + 1`）与 `function(x) { ... }`——解析为真实的函数 Abs
 - JSON 风格：`{ "key": value }`、`[a, b, c]`

@@ -9,9 +9,6 @@ import {
   mock,
   abs as makeAbs,
   lit as termLit,
-  num,
-  str,
-  bool,
   numLit,
   strLit,
   boolLit,
@@ -56,7 +53,7 @@ function absUnion(members: Abs[]): Abs {
 export type CaseDirective = {
   kind: "case";
   name: string;
-  /** 无损参数 Abs（case 文法唯一真理源；约束表达式与 T.* 均产出） */
+  /** 无损参数 Abs（case 文法唯一真理源：约束构建器 / 具体字面量） */
   argsAbs: Abs[];
   /** `=> expected` 断言 Abs */
   expected?: Abs;
@@ -139,11 +136,11 @@ const SAMPLE_REGEX = /@nudo:sample\s+(\d+)/g;
 /**
  * 约束表达式（design-refine-derivation：case 实参主文法）。
  * 识别 `number()` / `number().gt(0)` / `lit(42)` / `union(…)` / `shape({…})` /
- * `array(…)` / `fn({…}, …)` / `partial` / `pick` / `omit` / `and` 等构建器。
- * 不匹配 `T.*`（TypeValue 兼容文法）与裸字面量 / 箭头函数。
+ * `array(…)` / `fn({…}, …)` / `any()` / `partial` / `pick` / `omit` / `and` 等构建器。
+ * 不匹配裸字面量 / 箭头函数；`T.*` 文法已删除。
  */
 const CONSTRAINT_EXPR_RE =
-  /^(number|string|boolean|array|shape|lit|union|fn|partial|pick|omit|record|required|readonly|nonNullable|and)\s*\(/;
+  /^(number|string|boolean|any|array|shape|lit|union|fn|partial|pick|omit|record|required|readonly|nonNullable|and)\s*\(/;
 
 /** 约束表达式 → NudoConstraint；非约束文法或执行失败 → undefined */
 function tryParseConstraint(expr: string): NudoConstraint | undefined {
@@ -175,27 +172,29 @@ function flattenPreds(preds: Pred[]): Pred[] {
 }
 
 /** lit(42) 形态：唯一 eq(self, v)；非字面量 → undefined */
+/** self-eq 字面量探测：用 found 区分「无 lit」与「lit 值 === undefined」 */
 function constraintSelfEqLit(
   c: NudoConstraint,
   selfIds: string[],
-): number | string | boolean | null | undefined {
+): { found: true; value: number | string | boolean | null | undefined } | { found: false } {
   const leaves = flattenPreds(c.preds);
   const eqs = leaves.filter((p) => p.op === "eq");
-  if (eqs.length !== 1) return undefined;
+  if (eqs.length !== 1) return { found: false };
   const p = eqs[0]!;
-  if (p.op !== "eq") return undefined;
+  if (p.op !== "eq") return { found: false };
   const isSelf = (t: { op: string; id?: string }): boolean =>
     t.op === "var" && typeof t.id === "string" && selfIds.includes(t.id);
   const a = p.a;
   const b = p.b;
-  if (isSelf(a) && b.op === "lit") return b.value as number | string | boolean | null;
-  if (isSelf(b) && a.op === "lit") return a.value as number | string | boolean | null;
-  return undefined;
+  if (isSelf(a) && b.op === "lit") return { found: true, value: b.value };
+  if (isSelf(b) && a.op === "lit") return { found: true, value: a.value };
+  return { found: false };
 }
 
 /**
  * case 实参约束 → Abs。lit 优先成字面量 Abs（term=lit，不是 var+eq）；
  * union 成员递归再拼 sum（同 prim 双 lit 不经 joinValues 急切塌缩）；
+ * array/shape 递归展开 element/fields 以保留嵌套字面量身份；
  * 其余走 constraintToEntryAbs（var 项 + pred）。
  */
 function constraintToCaseArgAbs(c: NudoConstraint): Abs {
@@ -205,16 +204,42 @@ function constraintToCaseArgAbs(c: NudoConstraint): Abs {
     return { shape: { k: "sum", members: parts }, conf: "path" };
   }
   const selfIds = [SELF, "__arg", "__nudo_self__"];
-  const lv = constraintSelfEqLit(c, selfIds);
-  if (typeof lv === "number" && !Number.isNaN(lv)) return numLit(lv);
-  if (typeof lv === "string") return strLit(lv);
-  if (typeof lv === "boolean") return boolLit(lv);
+  const litRes = constraintSelfEqLit(c, selfIds);
+  if (litRes.found) {
+    const lv = litRes.value;
+    if (typeof lv === "number" && !Number.isNaN(lv)) return numLit(lv);
+    if (typeof lv === "string") return strLit(lv);
+    if (typeof lv === "boolean") return boolLit(lv);
+    if (lv === null) return absNullLit();
+    return absUndefLit();
+  }
+  if (c.element) {
+    return absExact({ k: "arr", element: constraintToCaseArgAbs(c.element) });
+  }
+  if (c.fields) {
+    const slots: Record<string, { value: Abs }> = {};
+    for (const [key, field] of Object.entries(c.fields)) {
+      slots[key] = { value: constraintToCaseArgAbs(field.constraint) };
+    }
+    return absExact({ k: "obj", slots });
+  }
+  // 裸构建器（无 pred / 结构）：number()/string()/boolean() → 干净 prim；
+  // any() → unknown。带 pred（number().gt(0)）仍走 entry Abs 以保留约束。
+  // 注意：builder 上 int 是链式方法，不能用 !c.int 判断；只认数据标志 int === true。
+  const bareScalar =
+    !c.fields && !c.element && !c.members && !c.fn && c.int !== true && c.preds.length === 0;
+  if (bareScalar) {
+    if (c.prim === "number" || c.prim === "string" || c.prim === "boolean") {
+      return absExact({ k: "prim", type: c.prim });
+    }
+    if (!c.prim) return absUnknown();
+  }
   return constraintToEntryAbs(c, "__arg");
 }
 
 /**
- * case 实参主路径：始终产出 Abs；约束表达式优先。
- * `T.*` 文法 **已弃用**，仅为旧 fixture 兼容保留——新代码用 `number()`/`lit()`。
+ * case 实参 / 指令类型表达式唯一文法：约束构建器优先，其余为具体字面量、
+ * 结构字面量与箭头函数。`T.*` 文法已物理删除。
  */
 export function parseCaseArgExpr(expr: string): Abs {
   const constraint = tryParseConstraint(expr);
@@ -225,63 +250,19 @@ export function parseCaseArgExpr(expr: string): Abs {
       return absUnknown();
     }
   }
-  return parseLegacyTypeExpr(expr);
+  return parseLiteralOrStructure(expr);
 }
 
-/** @deprecated 旧名兼容；等价 parseCaseArgExpr */
-export function parseTypeValueExpr(expr: string): Abs {
-  return parseCaseArgExpr(expr);
-}
-
-/** `T.*` / 字面量 / 箭头函数兼容文法 → Abs */
-function parseLegacyTypeExpr(expr: string): Abs {
+/** 具体字面量 / 对象数组字面量 / 箭头函数 → Abs；无法识别 → unknown */
+function parseLiteralOrStructure(expr: string): Abs {
   const s = expr.trim();
-
-  if (s === "T.number") return num();
-  if (s === "T.string") return str();
-  if (s === "T.boolean") return bool();
-  if (s === "T.unknown") return absUnknown();
-  if (s === "T.never") return absExact({ k: "never" });
-  if (s === "T.null") return absNullLit();
-  if (s === "T.undefined") return absUndefLit();
 
   if (s === "true") return absLit(true);
   if (s === "false") return absLit(false);
   if (s === "null") return absLit(null);
   if (s === "undefined") return absLit(undefined);
-
-  const literalMatch = s.match(/^T\.literal\((.+)\)$/);
-  if (literalMatch) {
-    return absLit(parsePrimitiveValue(literalMatch[1].trim()));
-  }
-
-  if (s.startsWith("T.union(") && s.endsWith(")")) {
-    const inner = s.slice("T.union(".length, -1);
-    const args = splitTopLevelArgs(inner);
-    return absUnion(args.map(parseLegacyTypeExpr));
-  }
-
-  if (s.startsWith("T.array(") && s.endsWith(")")) {
-    const inner = s.slice("T.array(".length, -1);
-    return absExact({ k: "arr", element: parseLegacyTypeExpr(inner) });
-  }
-
-  if (s.startsWith("T.tuple(") && s.endsWith(")")) {
-    const inner = s.slice("T.tuple(".length, -1).trim();
-    if (inner.startsWith("[") && inner.endsWith("]")) {
-      const elements = splitTopLevelArgs(inner.slice(1, -1));
-      return absExact({ k: "tuple", elements: elements.map(parseLegacyTypeExpr) });
-    }
-    return absExact({ k: "tuple", elements: [] });
-  }
-
-  if (s.startsWith("T.object(") && s.endsWith(")")) {
-    const inner = s.slice("T.object(".length, -1).trim();
-    if (inner.startsWith("{") && inner.endsWith("}")) {
-      return parseObjectLiteral(inner.slice(1, -1).trim());
-    }
-    return absExact({ k: "obj", slots: {} });
-  }
+  if (s === "unknown" || s === "any") return absUnknown();
+  if (s === "never") return absExact({ k: "never" });
 
   // Function literals: (x) => expr, x => expr, (x, y) => expr, function(x) { ... }
   if (findTopLevelArrow(s) !== -1 || /^function\s*[\w$]*\s*\(/.test(s)) {
@@ -305,9 +286,10 @@ function parseLegacyTypeExpr(expr: string): Abs {
     const content = s.slice(1, -1).trim();
     if (!content) return absExact({ k: "tuple", elements: [] });
     const elements = splitTopLevelArgs(content);
-    return absExact({ k: "tuple", elements: elements.map(parseLegacyTypeExpr) });
+    return absExact({ k: "tuple", elements: elements.map((e) => parseCaseArgExpr(e)) });
   }
 
+  // `T.*` 及其它未知标识符：明确不再解析
   return absUnknown();
 }
 
@@ -320,7 +302,7 @@ function parseObjectLiteral(content: string): Abs {
     if (colonIdx === -1) continue;
     const key = entry.slice(0, colonIdx).trim().replace(/^["']|["']$/g, "");
     const val = entry.slice(colonIdx + 1).trim();
-    slots[key] = { value: parseLegacyTypeExpr(val) };
+    slots[key] = { value: parseCaseArgExpr(val) };
   }
   return absExact({ k: "obj", slots });
 }
@@ -427,7 +409,7 @@ function parseArrowFunctionExpr(expr: string): { params: string[]; body: Node; p
   }
 }
 
-/** 实参/期望/mock 返回值文法 → Abs（约束表达式优先，T.* 兼容） */
+/** 实参/期望/mock 返回值文法 → Abs（约束构建器 / 具体字面量） */
 function parseAbsExpr(expr: string): Abs {
   return parseCaseArgExpr(expr);
 }
@@ -858,10 +840,24 @@ function findReplaceSeparator(raw: string): number {
     if (ch === ")" || ch === "]" || ch === "}") { depth--; continue; }
     if (ch === " " && depth === 0) {
       const rest = raw.slice(i + 1).trimStart();
-      if (rest.startsWith("T.") || rest.startsWith("{") || rest.startsWith("[") ||
-          rest.startsWith('"') || rest.startsWith("'") ||
-          /^-?\d/.test(rest) || rest === "true" || rest === "false" ||
-          rest === "null" || rest === "undefined") {
+      // type side: constraint builders / concrete literals / structure / never
+      if (
+        CONSTRAINT_EXPR_RE.test(rest) ||
+        rest.startsWith("{") ||
+        rest.startsWith("[") ||
+        rest.startsWith('"') ||
+        rest.startsWith("'") ||
+        rest === "true" ||
+        rest === "false" ||
+        rest === "null" ||
+        rest === "undefined" ||
+        rest === "unknown" ||
+        rest === "any" ||
+        rest === "never" ||
+        /^-?\d+(\.\d+)?$/.test(rest) ||
+        rest.includes("=>") ||
+        /^function\s*[\w$]*\s*\(/.test(rest)
+      ) {
         return i;
       }
     }

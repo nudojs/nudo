@@ -52,19 +52,19 @@ const GROUP_CALLSITE = 'Call-Site Discovery';
 const GROUP_SEMANTICS = 'New Semantics';
 
 const presets: Preset[] = [
-  { mode: 'single', group: GROUP_BASIC, id: 'basic-subtract', name: 'Basic Subtraction', code: `// @nudo:case "positive numbers" (5, 3)
-// @nudo:case "negative result" (1, 10)
-// @nudo:case "symbolic" (T.number, T.number)
+  { mode: 'single', group: GROUP_BASIC, id: 'basic-subtract', name: 'Basic Subtraction', code: `// call sites are evidence (contract product = *.nudo.js / @nudo:refine)
 function subtract(a, b) {
   return a - b;
-}` },
-  { mode: 'single', group: GROUP_BASIC, id: 'string-transform', name: 'String Transform', code: `// @nudo:case "strings" (T.string)
-// @nudo:case "numbers" (T.number)
-function transform(x) {
+}
+subtract(5, 3);
+subtract(1, 10);` },
+  { mode: 'single', group: GROUP_BASIC, id: 'string-transform', name: 'String Transform', code: `function transform(x) {
   if (typeof x === "string") return x.toUpperCase();
   if (typeof x === "number") return x + 1;
   return null;
-}` },
+}
+transform("hi");
+transform(1);` },
   { mode: 'single', group: GROUP_BASIC, id: 'array-map', name: 'Array Map', code: `// @nudo:case "empty" ([])
 // @nudo:case "single" ([1])
 // @nudo:case "multiple" ([1, 2, 3])
@@ -882,7 +882,7 @@ export default function Playground() {
                   )}
                   {!singleError && singleResults && singleResults.length === 0 && (
                     <div className="cs-hint">
-                      No @nudo:case directives found. Add cases to see type inference results.
+                      No call sites or @nudo:case debug witnesses found. Add call sites (or optional debug cases) to see type inference results.
                     </div>
                   )}
                   {!singleError && singleResults && singleResults.length > 0 && (

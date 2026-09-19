@@ -8,12 +8,17 @@
 > **接口表面**——约束如何落在同名 `*.nudo.js` 并与源码自动绑定，以及
 > case 在新模型中的位置。
 >
-> **一句话**：interface = 接口（泛化域 / 契约）；case = 特例（debug / 断言）。
+> **一句话**：interface = 接口（泛化域 / 契约）；case = **仅**调试见证
+> （场景执行 / `nudo test` / LSP 切场景），**不是**接口产品。
 > `foo.nudo.js` 同名导出自动绑定 `foo.js`；顶层手写契约向下推导；
 > 调用点观察向上沉淀；手写不覆盖，冲突即检查。
 >
 > **命名**（见 §0）：产品面用 **interface**；机制层「精化约束 / Abs pred」
 > 仍可称 refinement。现行 `@nudo:refine` 作兼容别名保留。
+>
+> **文法终态**：指令类型表达式只保留 **constraint builders**（`number()` /
+> `lit()` / `shape()` / `union()` / …）与 **具体字面量**。`T.*` 文法已
+> **物理删除**（parser / emit / agent-tools / 文档 / CLI help）。
 
 ---
 
@@ -79,13 +84,14 @@ case（特例，可选，debug / nudo test）
 
 | | refine | case |
 |---|---|---|
-| 角色 | 接口 | 特例 / 见证 |
-| 来源 | 手写契约；调用点域；分层推导 | 手写；`--emit-cases` 固化 |
+| 角色 | 接口 | **仅**调试见证 |
+| 来源 | 手写契约；调用点域；分层推导 | 手写 debug；`--emit-cases` 可选固化 |
 | 用途 | check 门禁（仅手写，见 §3.3）、代数推导、dts/IDE 默认表面 | `nudo test`、CodeLens 切场景、what-if |
-| 是否生成 | 是（生成物可再生成） | 可选（debug 固化），非接口主产物 |
+| 是否生成 | 是（生成物可再生成） | **否**——非接口主产物；产品叙事不出现 |
 
-case **不删除**。`nudo:case-inconsistency`（见证 ⊭ 契约）仍依赖 case 作为
-refine 的对账对象。
+case **机制保留**（诊断 `nudo:case-inconsistency`、`nudo test` 依赖），
+但 **产品面降级**：CLI infer 输出不再以 `Case "` 作为产品报告格式；
+`T.*` case 实参 **已删除**，见证实参只写具体值或 constraint builders。
 
 ---
 
@@ -1017,7 +1023,7 @@ dts 是公共接口的兼容出口；接口表面已是 refine，dts 应投影�
 |---|---|---|
 | dts 源 | **能**（本设计）改走 refine / Abs 投影 | ✅ 已落地：主签名 Abs → TS；TypeValue 仅剩 `Case:` JSDoc 行与无 Abs 回退（`dts-generator.ts`） |
 | LSP hover / inlay 外延显示 | 部分：B-path 已优先 Abs；`@nudo:case` 区走 TypeValue | 未变：B-path Abs；case 区仍 TypeValue + activeCases |
-| `@nudo:case` 实参文法 | 否：`parseTypeValueExpr` / `T.*` 是指令表面 | 未变：`T.*` 仍是指令表面，保留 |
+| `@nudo:case` 实参文法 | **T.\* 已删除** | ✅ parser 只收 constraint builders + 具体字面量；`serializeCaseArg` 产 `number()`/`union()`/… |
 | TypeValue evaluator（非 capable 源） | 否：兜底求值 IR | ✅ 已删除：生产 Abs 原生（B-path transpile+exec，回退 ast-eval/evalProgramAbs） |
 | `infer --json` / agent 序列化 | 可迁：schema 换 Abs/refine，属 breaking | 未迁：仍 TypeValue 投影（`infer-json.ts` 的 `ext_*` 字段；`abs_*` 字段已并存） |
 | 调用点 `CallRecord.argTypes` | 可迁：现为 TypeValue | ✅ 已改 Abs：`CallRecord` 仅 `argAbs`/`resultAbs`/`throwsAbs` |

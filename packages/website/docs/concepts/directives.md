@@ -40,11 +40,9 @@ Both forms are parsed identically — in particular, the single-line rule for mo
 
 ---
 
-## @nudo:case — Named Execution Cases
+## @nudo:case — Debug Witnesses
 
-Cases are **debug witnesses**: concrete or symbolic inputs Nudo executes the function with. They are not the interface product — refinement contracts live in `*.nudo.js` sidecars (see [@nudo:refine](#nudorefine--refinement-contract)). `@nudo:case` remains fully supported for scenario testing, `nudo test` assertions, and LSP scenario switching.
-
-Provide named execution cases. Each case defines inputs (concrete or symbolic) for Nudo to run the function with.
+`@nudo:case` is **debug / `nudo test` only** — scenario witnesses Nudo executes for named inputs. It is **not** the contract/interface product. Contracts live in `*.nudo.js` sidecars and in-source `@nudo:refine` / `@nudo:interface` (see [@nudo:refine](#nudorefine--refinement-contract)). LSP scenario switching and `nudo test` assertions remain fully supported.
 
 ### Syntax
 
@@ -54,8 +52,8 @@ Provide named execution cases. Each case defines inputs (concrete or symbolic) f
 ```
 
 - **name** — A string identifier for the case (e.g. `"positive numbers"`).
-- **args** — Comma-separated arguments: concrete values (`5`, `"hello"`) or type expressions (`T.number`, `T.union(T.string, T.number)`).
-- **expected** (optional) — After `=>`, a type value expression for the expected return type (used for validation).
+- **args** — Comma-separated arguments: concrete values (`5`, `"hello"`) or type expressions (`number()`, `union(string(), number())`).
+- **expected** (optional) — After `=>`, a constraint-builder / concrete expression for the expected return type (used by `nudo test`).
 
 ### Examples
 
@@ -63,7 +61,7 @@ Provide named execution cases. Each case defines inputs (concrete or symbolic) f
 /**
  * @nudo:case "positive numbers" (5, 3)
  * @nudo:case "negative result" (1, 10)
- * @nudo:case "symbolic" (T.number, T.number)
+ * @nudo:case "symbolic" (number(), number())
  */
 function subtract(a, b) {
   return a - b;
@@ -72,9 +70,9 @@ function subtract(a, b) {
 
 ```javascript
 /**
- * @nudo:case "strings" (T.string)
- * @nudo:case "numbers" (T.number)
- * @nudo:case "array" (T.array(T.number))
+ * @nudo:case "strings" (string())
+ * @nudo:case "numbers" (number())
+ * @nudo:case "array" (array(number()))
  */
 function process(x) {
   if (typeof x === "string") return x.length;
@@ -87,8 +85,8 @@ With expected return type:
 
 ```javascript
 /**
- * @nudo:case "basic" (T.string) => T.number
- * @nudo:case "empty" ("") => T.literal(0)
+ * @nudo:case "basic" (string()) => number()
+ * @nudo:case "empty" ("") => lit(0)
  */
 function len(s) {
   return s.length;
@@ -123,10 +121,11 @@ Five forms are supported. **Every inline expression must fit on a single line** 
 @nudo:mock name = sinon.stub().returns(value)
 ```
 
-**4. Type value expression:**
+**4. Constraint-builder expression** (or a concrete value):
 
 ```text
-@nudo:mock name = T.number
+@nudo:mock name = number()
+@nudo:mock retries = 3
 ```
 
 **5. From module** — the module must define a binding with the same name as the mock:
@@ -141,20 +140,19 @@ Five forms are supported. **Every inline expression must fit on a single line** 
 **Warning: the expression must be a single line.** The parser only reads up to the end of the line, so a multi-line expression is truncated at its first line and reported as `nudo:mock-invalid`. The following does **not** work:
 
 ```text
-@nudo:mock fetch = (url) => T.promise(T.object({
-  ok: T.boolean,
-  json: T.fn({ params: [], returns: T.object({ ... }) })
-}))
+@nudo:mock fetch = (url) => ({ ok: true,
+  json: () => ({ id: 1 })
+})
 ```
 
 The real diagnostics for the truncated line:
 
 ```text
-[warning] example.js:0:0 Mock expression "(url) => T.promise(T.object({" could not be parsed as a known pattern (nudo:mock-invalid)
+[warning] example.js:0:0 Mock expression "(url) => ({ ok: true," could not be parsed as a known pattern (nudo:mock-invalid)
 [warning] example.js:10:9 Cannot resolve 'json' on unknown value (nudo:unknown-recv)
 ```
 
-**Warning: no `T.*` inside an arrow-function body.** `T` exists only in directive expressions (case arguments, `= T.string`, ...). Inside a mock body write plain JavaScript — plain objects and closures — or use `stub().returns(...)` / `stub().resolves(...)` helpers instead.
+**Warning: no builder calls inside an arrow-function mock body.** Constraint builders exist only in directive type expressions (case args, `@nudo:skip`, `@nudo:as`, …). Inside a mock body write plain JavaScript — plain objects and closures — or use `stub().returns(...)` / `stub().resolves(...)` helpers instead.
 
 **Warning: an unmocked global is executed for real on the B path.** For B-hosted files (the default for sources without top-level `this.`), the transpiled code calls the actual Node runtime global when no mock binds the name. A built-in like `fetch` therefore receives an abstract value as its URL and crashes the run (`ERR_INVALID_URL`, exit `1`) instead of evaluating to `unknown`. Mock any global your analyzed code calls: `@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ ... }) })`.
 
@@ -178,7 +176,7 @@ async function fetchUser(id) {
 ```text
 === fetchUser ===
 
-Case "user": (1) => promise<{ id: 1, name: "Alice" }>
+debug "user": (1) => promise<{ id: 1, name: "Alice" }>
 ```
 
 A mock helper for resolved promises — `stub().resolves(value)` makes every call return `promise<value>`:
@@ -211,14 +209,14 @@ function readPort() {
 ```text
 === readPort ===
 
-Case "default": () => 8080
+debug "default": () => 8080
 ```
 
-A type value expression binds the name to a type value directly:
+A constraint-builder expression binds the name to an abstract domain directly:
 
 ```javascript
 /**
- * @nudo:mock retries = T.number
+ * @nudo:mock retries = number()
  * @nudo:case "plan" ()
  */
 function plan() {
@@ -231,7 +229,7 @@ function plan() {
 ```text
 === plan ===
 
-Case "plan": () => number
+debug "plan": () => number
 ```
 
 From a module — the module must define a binding with the mocked name:
@@ -239,7 +237,7 @@ From a module — the module must define a binding with the mocked name:
 ```javascript
 /**
  * @nudo:mock fs from "./mocks/fs.js"
- * @nudo:case "read" (T.string)
+ * @nudo:case "read" (string())
  */
 function readConfig(path) {
   return fs.readFileSync(path, "utf-8");
@@ -256,7 +254,7 @@ const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
 ```text
 === readConfig ===
 
-Case "read": (string) => unknown
+debug "read": (string) => unknown
 
 [warning] read-config.js:6:9 Built-in API "fs" is not covered by Nudo's type inference (nudo:builtin-unknown)
 ```
@@ -280,7 +278,7 @@ Mark a function as pure so the engine can memoize results. Same Abs inputs produ
 ```javascript
 /**
  * @nudo:pure
- * @nudo:case "add" (T.number, T.number)
+ * @nudo:case "add" (number(), number())
  */
 function add(a, b) {
   return a + b;
@@ -291,7 +289,7 @@ function add(a, b) {
 
 ## @nudo:skip — Skip Evaluation
 
-Skip abstract interpretation. The engine does not evaluate the function body. Without a return type expression, the function is reported as `Skipped (no return type declared)`; add a type value expression after the directive to declare one.
+Skip abstract interpretation. The engine does not evaluate the function body. Without a return type expression, the function is reported as `Skipped (no return type declared)`; add a constraint-builder expression after the directive to declare one.
 
 ### Syntax
 
@@ -300,7 +298,7 @@ Skip abstract interpretation. The engine does not evaluate the function body. Wi
 @nudo:skip returnsExpr
 ```
 
-- **returnsExpr** (optional) — A type value expression used as the return type.
+- **returnsExpr** (optional) — A constraint-builder / concrete expression used as the return type.
 
 ### Examples
 
@@ -324,7 +322,7 @@ Skipped (no return type declared)
 
 ```javascript
 /**
- * @nudo:skip T.number
+ * @nudo:skip number()
  */
 function unannotatedHeavy(x) {
   // Explicit return type via the directive
@@ -539,7 +537,7 @@ Declare which runtime environment APIs are available in the file. This is a **fi
 /// @nudo:env web
 
 /**
- * @nudo:case "test" (T.number)
+ * @nudo:case "test" (number())
  */
 async function fetchUser(id) {
   const res = await fetch(`/api/users/${id}`);
@@ -554,7 +552,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * @nudo:case "test" (T.string)
+ * @nudo:case "test" (string())
  */
 function loadConfig(dir) {
   const content = readFileSync(join(dir, "config.json"), "utf-8");
@@ -652,13 +650,13 @@ Override the type of the next statement's value. Similar to TypeScript's `as` ke
 ### Examples
 
 ```javascript
-// @nudo:as T.object({ port: T.number, host: T.string })
+// @nudo:as shape({ port: number(), host: string() })
 const config = JSON.parse(content);
 // config is now { port: number, host: string } instead of unknown
 ```
 
 ```javascript
-// @nudo:as T.array(T.object({ id: T.number, name: T.string }))
+// @nudo:as array(shape({ id: number(), name: string() }))
 return JSON.parse(response);
 ```
 
@@ -680,26 +678,26 @@ Replace a specific sub-expression's type within the next statement. The target e
 ### Examples
 
 ```javascript
-// @nudo:replace a T.number
+// @nudo:replace a number()
 const x = a + b;
 // only `a` is replaced; `b` evaluates normally
 ```
 
 ```javascript
-// @nudo:replace res.data T.array(T.object({ id: T.number }))
+// @nudo:replace res.data array(shape({ id: number() }))
 const items = res.data;
 ```
 
 ```javascript
-// @nudo:replace JSON.parse(input) T.object({ name: T.string })
+// @nudo:replace JSON.parse(input) shape({ name: string() })
 const data = JSON.parse(input);
 ```
 
 Multiple replacements can be stacked:
 
 ```javascript
-// @nudo:replace a T.number
-// @nudo:replace b T.string
+// @nudo:replace a number()
+// @nudo:replace b string()
 const result = a + b;
 ```
 
@@ -711,7 +709,7 @@ const result = a + b;
 
 | Directive | Syntax | Purpose |
 |-----------|--------|---------|
-| `@nudo:case` | `"name" (args...)` or `"name" (args) => type` | Provide named execution cases |
+| `@nudo:case` | `"name" (args...)` or `"name" (args) => type` | Debug / `nudo test` witnesses (not the contract product) |
 | `@nudo:mock` | `name = expr` or `name from "path"` | Mock external dependencies |
 | `@nudo:pure` | (no args) | Mark function as pure for memoization |
 | `@nudo:skip` | `[returnsExpr]` | Skip evaluation, use existing type info |

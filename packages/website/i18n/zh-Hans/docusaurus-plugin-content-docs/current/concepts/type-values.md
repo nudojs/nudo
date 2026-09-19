@@ -1,6 +1,6 @@
 ---
 sidebar_position: 1
-description: "类型值——作为单一可计算系统的符号值集合：Abs 代数（shape × term × pred × conf）、指令类型文法（约束表达式 + legacy T.*）与四条设计原则。"
+description: "类型值——作为单一可计算系统的符号值集合：Abs 代数（shape × term × pred × conf）、指令约束构建器文法与四条设计原则。"
 ---
 
 # 类型值（Type Values）
@@ -84,7 +84,7 @@ number | string       // 异构联合
 | 构建器链 | `.gt/.gte/.lt/.lte/.shift/.int…` | `number().gt(0).int()` |
 | 裸字面量 | 直接解析 | `42`、`"abc"`、`true`、`[1, 2]` |
 
-已弃用的 `T.*` 文法（`T.number`、`T.string`、`T.literal(…)`、`T.union(…)`、`T.array(…)`、`T.tuple(…)`、`T.object({…})`、`T.unknown`、`T.never`）仍会被解析以兼容旧 fixture——新代码用上面的约束构建器。`@nudo:mock` body 内**不可用** `T.*`（只能写普通 JavaScript 值和闭包）。
+指令类型表达式使用上面的约束构建器加具体字面量。旧的 `T.*` 产品文法已移除。`@nudo:mock` body 内写普通 JavaScript 值和闭包，不要把构建器调用当作返回负载。
 
 ```javascript
 /**
@@ -137,7 +137,7 @@ function selfAdd(a) {
 
 selfAdd(1);       // → 2  #exact（逐调用点）
 selfAdd(2);       // → 4  #exact
-// Combined: 2 | 4——相关性保持，绝不会是 1+1 | 1+2 | 2+1 | 2+2
+// Observed: 2 | 4——相关性保持，绝不会是 1+1 | 1+2 | 2+1 | 2+2
 ```
 
 抽象实参下结果拓宽到代数判定的域（`sum(number, string)` → `string #path`；`selfAdd(number)` → `number #widened`）——只有运算符或方法*必须*区分成员时才逐成员展开。

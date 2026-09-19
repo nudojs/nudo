@@ -9,7 +9,7 @@
 //   intOf("42px")  → 42     #exact（parseInt 前缀解析）
 //   floatOf("3.14") → 3.14  #exact（parseFloat）
 //
-// 符号实参（T.string / T.number）拓宽为目标原语（string / number），
+// 符号实参（string() / number()）拓宽为目标原语（string / number），
 // 不折叠（见 intension 行）。String(undefined) 拓宽为 string（非 "undefined"）。
 
 /**

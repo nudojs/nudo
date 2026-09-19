@@ -168,9 +168,10 @@ describe("union(...cs)：成员析取", () => {
     ]);
   });
 
-  it("空参 throw；非约束成员 throw", () => {
+  it("空参 throw；非约束成员 throw；字面量成员合法", () => {
     expect(() => union()).toThrow();
-    expect(() => union(42 as never)).toThrow();
+    expect(() => union({} as never)).toThrow();
+    expect(() => union(42)).not.toThrow();
   });
 
   it("成员归一化为纯数据（builder 方法剥除）", () => {
@@ -398,12 +399,19 @@ describe("既有构建器回归（新形态不改变原语义）", () => {
 });
 
 describe("非法成员不再静默丢弃", () => {
-  it("shape 非约束字段 throw", () => {
-    expect(() => shape({ id: 42 as never })).toThrow(/shape/);
+  it("shape 非约束字段 throw（对象/函数等非字面量）", () => {
+    expect(() => shape({ id: {} as never })).toThrow(/shape/);
+    expect(() => shape({ id: (() => 1) as never })).toThrow(/shape/);
+  });
+
+  it("shape/array 接受具体字面量（指令文法）", () => {
+    expect(() => shape({ id: 42 })).not.toThrow();
+    expect(() => array(42)).not.toThrow();
   });
 
   it("array 非约束元素 throw", () => {
-    expect(() => array(42 as never)).toThrow(/array/);
+    expect(() => array({} as never)).toThrow(/array/);
+    expect(() => array((() => 1) as never)).toThrow(/array/);
   });
 
   it("optional 字段不进 instantiate 硬 pred（与 Abs 路径 slot.optional 对齐）", () => {

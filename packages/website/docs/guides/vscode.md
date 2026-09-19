@@ -23,7 +23,7 @@ code --install-extension wmzy.nudo-vscode
 
 The extension activates when you open JavaScript files. It uses the `@nudojs/lsp` package to run a Language Server Protocol (LSP) server that provides all editor features.
 
-**File detection**: The language server analyzes `.js`, `.ts`, and `.mjs` files. Shipped default is `nudo.analysis.mode = "exports"` (export / sidecar / directives); set `"all"` or `"directives"` to widen or tighten the gate. Directives (`@nudo:case`, `@nudo:mock`, `@nudo:refine`, …) remain the explicit contract surface — full syntax in the [Directives reference](../concepts/directives.md). Cross-editor capability comparison: [LSP Client Matrix](./lsp-clients.md).
+**File detection**: The language server analyzes `.js`, `.ts`, and `.mjs` files. Shipped default is `nudo.analysis.mode = "exports"` (export / sidecar / directives); set `"all"` or `"directives"` to widen or tighten the gate. Contracts live in `*.nudo.js` sidecars and in-source `@nudo:refine` / `@nudo:interface`; `@nudo:case` is a debug / `nudo test` sub-layer. Full syntax: [Directives reference](../concepts/directives.md). Cross-editor capability comparison: [LSP Client Matrix](./lsp-clients.md).
 
 **Activation vs analysis gate**: `activationEvents` (`onLanguage:javascript` / `onLanguage:typescript`) only *starts* the client. Whether a buffer is *analyzed* is the server-side `shouldAnalyzeFile` gate (target path + `nudo.analysis.mode`). JSX/tsx languages may activate the extension but are not Nudo analysis targets.
 
@@ -109,7 +109,7 @@ When typing inside a function call's parentheses, Nudo shows parameter hints. Th
 
 ```javascript
 /**
- * @nudo:case "test" (T.string, T.number)
+ * @nudo:case "test" (string(), number())
  */
 function createUser(name, age) { ... }
 

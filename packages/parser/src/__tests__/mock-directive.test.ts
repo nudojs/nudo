@@ -59,7 +59,7 @@ function double(arr, fn) {
   describe("Regular expression support", () => {
     it("parses type expression", () => {
       const code = `
-// @nudo:mock data = T.string
+// @nudo:mock data = string()
 function foo(data) {
   return data;
 }
@@ -70,7 +70,7 @@ function foo(data) {
         (d): d is MockDirective => d.kind === "mock"
       );
       expect(mockDirectives[0].name).toBe("data");
-      expect(mockDirectives[0].expression).toBe("T.string");
+      expect(mockDirectives[0].expression).toBe("string()");
       expect(mockDirectives[0].arrowFn).toBeUndefined();
     });
 

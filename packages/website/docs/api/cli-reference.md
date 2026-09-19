@@ -53,17 +53,17 @@ nudo infer <file> [options]
 | `--loc` | Show source locations (`file:line:column`) in the output |
 | `--json` | Output results as structured JSON — requires a single file; a directory target is an error |
 | `--callsites <paths...>` | Usage-site files or directories (tests/apps) to harvest real call shapes from; their calls to this file's exports become synthesized `call@L` cases — see [Call-Site Discovery](../guides/callsite-discovery.md) |
-| `--emit-cases [mode]` | Write the synthesized call-site cases back into the analyzed file as `@nudo:case` directives (reserved `call@` name prefix). Omit the value for `add` (only fills in functions that have no case directives yet) or pass `=update` to re-synchronize previously generated directives — see [Persisting cases as directives](../guides/cli.md#persisting-cases-as-directives) |
+| `--emit-cases [mode]` | **Debug only** — write the synthesized call-site cases back into the analyzed file as `@nudo:case` directives (reserved `call@` name prefix). Not the contract product (that is `*.nudo.js` / `nudo interface`). Omit the value for `add` (only fills in functions that have no case directives yet) or pass `=update` to re-synchronize previously generated directives — see [Persisting cases as directives](../guides/cli.md#persisting-cases-as-directives) |
 | `--dry-run` | With `--emit-cases`: print a unified diff instead of writing to disk |
 | `--exit-on-diff` | With `--dry-run`: exit with code `1` when the diff is non-empty — a CI gate for usage-site drift |
 
 **Output format:**
 
 - One section per function (`=== name ===`); functions from imported modules are shown under a `--- path (imported) ---` header
-- Each case: `Case "name": (arg1, arg2, ...) => result`
-- Functions without `@nudo:case` directives still get cases: synthesized `call@L` cases from observed calls, or an `entry@L` case with `unknown` parameters plus a `# no call sites found` note when nothing calls them
+- Observed call sites: `call@L<line>: (arg1, arg2, ...) => result`; `@nudo:case` debug witnesses print as `debug "name": (…) => …`
+- Functions without call sites still get an `entry@L` observation with `unknown` parameters plus a `# no call sites found` note
 - Optional `throws type` when the case may throw
-- If multiple cases: combined type printed as `Combined: type`, simplified by absorption — a literal whose base type is already in the union is absorbed (e.g. `2 | -9 | number` collapses to `number`); pure-literal unions keep all members
+- If multiple cases: observed type printed as `Observed: type`, simplified by absorption — a literal whose base type is already in the union is absorbed (e.g. `2 | -9 | number` collapses to `number`); pure-literal unions keep all members
 - Diagnostics, if any, are printed in a trailing `Diagnostics:` section as `[severity] path:line:column message (code)`
 - With `--dts`: writes `<basename>.d.ts` in the same directory and prints `Generated: <basename>.d.ts`
 - With `--emit-cases`: a trailing emission summary — `Emitted cases → <file> (N directive(s) across M function(s))` after writing to disk, `Would emit cases → <file> (dry run)` followed by a unified diff with `--dry-run`, or `No changes.` when the source is already in sync — each followed by per-function lines: `fn: case names` for written functions, `fn: reason` for skipped ones (e.g. `already-generated`)
@@ -77,11 +77,10 @@ nudo infer math.js
 ```text
 === subtract ===
 
-Case "positive numbers": (5, 3) => 2
-Case "negative result": (1, 10) => -9
-Case "symbolic": (number, number) => number
+call@L6: (5, 3) => 2
+call@L7: (1, 10) => -9
 
-Combined: number
+Observed: 2 | -9
 ```
 
 ```bash
@@ -89,13 +88,12 @@ nudo infer math.js --dts --loc
 ```
 
 ```text
-=== subtract (math.js:6:0) ===
+=== subtract (math.js:1:0) ===
 
-Case "positive numbers": (5, 3) => 2
-Case "negative result": (1, 10) => -9
-Case "symbolic": (number, number) => number
+call@L6: (5, 3) => 2
+call@L7: (1, 10) => -9
 
-Combined: number
+Observed: 2 | -9
 
 Generated: math.d.ts
 ```
@@ -522,7 +520,7 @@ nudo generate src/user.js --format zod
 
 ```text
 // === createUser Zod Schemas ===
-// Case "input":
+// debug "input":
 // Input: { arg0: z.object({ name: z.string(), age: z.number() }) }
 // Output: z.object({ id: z.literal(123), name: z.string(), age: z.number() })
 ```
@@ -618,7 +616,7 @@ nudo watch src/utils.js --dts
 
 ### nudo harvest
 
-Convert installed `@types/<pkg>` `.d.ts` declarations into a Nudo env file — TypeScript source that rebuilds those types with `T.*` constructors, loaded via the `/// @nudo:env` directive. The `@types` package must be installed first.
+Convert installed `@types/<pkg>` `.d.ts` declarations into a Nudo env file — TypeScript source that rebuilds those types with Nudo env constructors, loaded via the `/// @nudo:env` directive. The `@types` package must be installed first.
 
 ```bash
 nudo harvest <pkg> [options]

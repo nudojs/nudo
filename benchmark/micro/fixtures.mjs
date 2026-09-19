@@ -35,8 +35,8 @@ export const _ = add;
 /** W2 — typeof branch, 2 cases */
 export function w2Nudo() {
   return `/**
- * @nudo:case "str" (T.string)
- * @nudo:case "num" (T.number)
+ * @nudo:case "str" (string())
+ * @nudo:case "num" (number())
  */
 function process(x) {
   if (typeof x === "string") return x.length;
@@ -115,7 +115,7 @@ export const _ = double;
 /** W5 — union distribution pressure */
 export function w5Nudo() {
   return `/**
- * @nudo:case "u" (T.union(1, 2, 3, 4, 5))
+ * @nudo:case "u" (union(1, 2, 3, 4, 5))
  */
 function widen(x) {
   return x + 1;

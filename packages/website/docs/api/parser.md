@@ -62,7 +62,7 @@ type CaseDirective = {
 }
 ```
 
-Named execution case with input arguments (constraint expressions first, legacy `T.*` accepted). Optional `expected` for return type validation.
+Debug witness case with input arguments (constraint builders + concrete literals). Optional `expected` for `nudo test` return-type assertions.
 
 ### MockDirective
 
@@ -219,7 +219,7 @@ Extracts `@nudo:as` and `@nudo:replace` directives from the **line comments** at
 
 **Example:**
 ```javascript
-// @nudo:as T.string
+// @nudo:as string()
 const y = f(x);
 ```
 
@@ -231,11 +231,10 @@ const y = f(x);
 parseCaseArgExpr(expr: string): Abs
 ```
 
-Parses a string expression into an Abs. Used for directive arguments (e.g. `@nudo:case` args, `@nudo:as`/`@nudo:replace` type expressions, mock return values). `parseTypeValueExpr` is the deprecated old name for the same function.
+Parses a directive type expression into an Abs — the product grammar is constraint builders + concrete literals + structural literals. Used for `@nudo:case` args, `@nudo:as`/`@nudo:replace`, mock return values, and `@nudo:skip` return expressions.
 
 **Supported forms (in precedence order):**
 - Constraint expressions (primary grammar): `number()`, `number().gt(0)`, `lit(...)`, `union(…)`, `shape({…})`, `array(…)`, `fn({…}, …)`, `and`, `partial`/`pick`/`omit`/`record`/`required`/`readonly`/`nonNullable`
-- Legacy `T.*`: `T.number`, `T.string`, `T.boolean`, `T.unknown`, `T.never`, `T.null`, `T.undefined`, `T.literal(...)`, `T.object({...})`, `T.array(...)`, `T.tuple([...])`, `T.union(...)`
 - Bare literals: `true`, `false`, `null`, `undefined`, numbers, quoted strings
 - Functions: arrow expressions (`(x) => x + 1`) and `function(x) { ... }` — parsed into a real function Abs
 - JSON-like: `{ "key": value }`, `[a, b, c]`

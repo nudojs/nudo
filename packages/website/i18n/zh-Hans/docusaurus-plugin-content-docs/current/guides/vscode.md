@@ -23,7 +23,7 @@ code --install-extension wmzy.nudo-vscode
 
 打开 JavaScript 文件时扩展会激活。它使用 `@nudojs/lsp` 包运行 Language Server Protocol（LSP）服务器，提供所有编辑器功能。
 
-**文件检测**：语言服务器分析 `.js`、`.ts` 与 `.mjs` 文件。出厂默认 `nudo.analysis.mode = "exports"`（含 export / 侧车 / 指令）；可设 `"all"` 或 `"directives"`。指令（`@nudo:case`、`@nudo:mock`、`@nudo:refine` 等）仍是显式契约面——完整语法见[指令参考](../concepts/directives.md)。跨编辑器能力对比：[LSP 客户端矩阵](./lsp-clients.md)。
+**文件检测**：语言服务器分析 `.js`、`.ts` 与 `.mjs` 文件。出厂默认 `nudo.analysis.mode = "exports"`（含 export / 侧车 / 指令）；可设 `"all"` 或 `"directives"`。契约写在 `*.nudo.js` 侧车与源内 `@nudo:refine` / `@nudo:interface`；`@nudo:case` 是调试 / `nudo test` 子层。完整语法见[指令参考](../concepts/directives.md)。跨编辑器能力对比：[LSP 客户端矩阵](./lsp-clients.md)。
 
 **激活 vs 分析门**：`activationEvents`（`onLanguage:javascript` / `onLanguage:typescript`）只负责*启动*客户端。缓冲区是否*被分析*由服务端 `shouldAnalyzeFile` 门决定（目标路径 + `nudo.analysis.mode`）。JSX/tsx 可激活扩展，但不是 Nudo 分析目标。
 
@@ -114,7 +114,7 @@ function process(data) {
 
 ```javascript
 /**
- * @nudo:case "test" (T.string, T.number)
+ * @nudo:case "test" (string(), number())
  */
 function createUser(name, age) { ... }
 

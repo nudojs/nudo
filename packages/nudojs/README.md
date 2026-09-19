@@ -12,12 +12,12 @@ nudo infer file.js
 npx nudojs infer file.js
 ```
 
-Nudo infers types by executing your code with symbolic type values (`T.number`, `T.string`, …) — see the monorepo packages for the actual engine:
+Nudo infers types by executing your code under abstract interpretation on **Abs** (`shape × term × pred × conf`) — constraints participate in algebra. There is no `T.*` type-value IR. Contracts come from `*.nudo.js` / `@nudo:refine`; call sites are evidence. See the monorepo packages for the actual engine:
 
 - [`@nudojs/cli`](https://github.com/nudojs/nudo/tree/main/packages/cli) — CLI (`infer`, `check`, `types`, `watch`, `generate`, `interface`, …)
 - [`@nudojs/core`](https://github.com/nudojs/nudo/tree/main/packages/core) — the Abs type system (shape × term × pred × conf)
 - [`@nudojs/parser`](https://github.com/nudojs/nudo/tree/main/packages/parser) — Babel-based parser and `@nudo:` directive extraction
-- [`@nudojs/service`](https://github.com/nudojs/nudo/tree/main/packages/service) — analyzer orchestration, TypeValue evaluator API (`@nudojs/service/evaluator`), dts generation, harvest
+- [`@nudojs/service`](https://github.com/nudojs/nudo/tree/main/packages/service) — analyzer orchestration, Abs-native evaluator API (`@nudojs/service/evaluator`), dts generation, harvest
 - [`@nudojs/env`](https://github.com/nudojs/nudo/tree/main/packages/env) — ES / Web / Node API type definitions
 
 > Installing both `nudojs` and `@nudojs/cli` globally is redundant; pick one. This package only re-exports the CLI entry under the short `nudo` bin.

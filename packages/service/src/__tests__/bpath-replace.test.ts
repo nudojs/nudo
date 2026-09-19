@@ -9,7 +9,7 @@ describe("@nudo:replace on B path", () => {
  * @nudo:case "test" (5, 10)
  */
 function compute(a, b) {
-  // @nudo:replace a T.literal(100)
+  // @nudo:replace a lit(100)
   const result = a + b;
   return result;
 }
@@ -26,7 +26,7 @@ function compute(a, b) {
 function test() {
   const aa = 1;
   const a = 2;
-  // @nudo:replace a T.literal(99)
+  // @nudo:replace a lit(99)
   const result = aa + a;
   return result;
 }
@@ -41,7 +41,7 @@ function test() {
  * @nudo:case "test" ("{\"id\":1}")
  */
 function process(input) {
-  // @nudo:replace JSON.parse(input) T.object({ id: T.number })
+  // @nudo:replace JSON.parse(input) shape({ id: number() })
   const data = JSON.parse(input);
   return data.id;
 }

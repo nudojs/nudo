@@ -49,12 +49,12 @@ Output — one section per function, files in scan order:
 ```text
 === note ===
 
-Case "entry@L1": (unknown) => unknown
+entry@L1: (unknown) => unknown
 # no call sites found; parameters default to unknown
 
 === slugify ===
 
-Case "call@L4": ("Hello World") => string
+call@L4: ("Hello World") => string
 ```
 
 `slugify` gets a `call@L4` case from the top-level call — `toLowerCase()` folds to the literal, then `.replace(...)` widens to `string`, so the result is `string`. When one analyzed file imports a function from another, the imported function's cases appear in an `--- <path> (imported) ---` section instead.
@@ -67,7 +67,7 @@ Case "call@L4": ("Hello World") => string
 | `--loc` | Show source locations (file:line:column) in the output |
 | `--json` | Output results as structured JSON — requires a single file (see the [JSON example](../api/cli-reference.md#nudo-infer)) |
 | `--callsites <paths...>` | Mine usage sites (tests, examples, apps) for real argument shapes and synthesize cases from them — see [Call-Site Discovery](./callsite-discovery.md) |
-| `--emit-cases [mode]` | Write the synthesized cases back into the source file as `@nudo:case` directives — see [Persisting cases as directives](#persisting-cases-as-directives) |
+| `--emit-cases [mode]` | **Debug only** — write synthesized call-site cases back as `@nudo:case` directives — see [Persisting cases as directives](#persisting-cases-as-directives) |
 | `--dry-run` | With `--emit-cases`: print a unified diff instead of writing to disk |
 | `--exit-on-diff` | With `--dry-run`: exit with code `1` when the diff is non-empty |
 
@@ -76,17 +76,15 @@ Case "call@L4": ("Hello World") => string
 Given `math.js`:
 
 ```js
-/**
- * @nudo:case "positive numbers" (5, 3)
- * @nudo:case "negative result" (1, 10)
- * @nudo:case "symbolic" (T.number, T.number)
- */
 export function subtract(a, b) {
   return a - b;
 }
+
+subtract(5, 3);
+subtract(1, 10);
 ```
 
-Basic inference:
+Basic inference (call-site first):
 
 ```bash
 nudo infer math.js
@@ -97,14 +95,13 @@ Output:
 ```text
 === subtract ===
 
-Case "positive numbers": (5, 3) => 2
-Case "negative result": (1, 10) => -9
-Case "symbolic": (number, number) => number
+call@L6: (5, 3) => 2
+call@L7: (1, 10) => -9
 
-Combined: number
+Observed: 2 | -9
 ```
 
-The combined type is simplified by absorption: since the symbolic case already contributes `number`, the literal results `2 | -9` are absorbed into it. Pure-literal unions without a base-type member keep every literal.
+Each `call@L…` line is an observed call-site fact. `Observed:` joins the results (absorption simplifies when a base type is present; pure-literal unions keep every literal). Optional `@nudo:case` witnesses print as `debug "name": …` — debug / `nudo test` only.
 
 Generate TypeScript declaration file:
 
@@ -123,13 +120,12 @@ nudo infer src/math.js --loc
 Output includes location information:
 
 ```text
-=== subtract (src/math.js:6:0) ===
+=== subtract (src/math.js:1:0) ===
 
-Case "positive numbers": (5, 3) => 2
-Case "negative result": (1, 10) => -9
-Case "symbolic": (number, number) => number
+call@L6: (5, 3) => 2
+call@L7: (1, 10) => -9
 
-Combined: number
+Observed: 2 | -9
 ```
 
 ### Functions without directives
@@ -150,7 +146,7 @@ nudo infer src/plain.js
 ```text
 === add ===
 
-Case "entry@L1": (unknown, unknown) => number | string
+entry@L1: (unknown, unknown) => number | string
 # no call sites found; parameters default to unknown
 ```
 
@@ -173,17 +169,19 @@ nudo infer src/main.js
 
 === add ===
 
-Case "call@L3": (2, 3) => 5
-Case "call@L4": ("2", "3") => "23"
+call@L3: (2, 3) => 5
+call@L4: ("2", "3") => "23"
 
-Combined: 5 | "23"
+Observed: 5 | "23"
 ```
 
 To harvest argument shapes from separate usage-site files (tests, examples, apps), pass them with `--callsites` — see [Call-Site Discovery](./callsite-discovery.md).
 
 ### Persisting cases as directives
 
-Synthesized `call@L` cases live only inside the analysis run — run `nudo infer lib.js` again without `--callsites` and they are gone. `--emit-cases` freezes them into the source file as real `@nudo:case` directives, which makes the file self-contained: later runs (and other tools — `check`, `watch`, `.d.ts` generation) see the same shapes without re-evaluating the usage sites, and the harvested shapes become reviewable, version-controlled input just like hand-written directives.
+`--emit-cases` is a **debug / self-containment** tool, not the contract product — obligations live in `*.nudo.js` sidecars / `@nudo:refine` / `@nudo:interface` (see [`nudo interface`](#nudo-interface)).
+
+Synthesized `call@L` cases live only inside the analysis run — run `nudo infer lib.js` again without `--callsites` and they are gone. `--emit-cases` freezes them into the source file as real `@nudo:case` directives, which makes the file self-contained for later debug / `nudo test` runs: other tools (`check`, `watch`, `.d.ts` generation) can re-read the same shapes without re-evaluating the usage sites.
 
 #### Bootstrap: harvest once, write back
 
@@ -214,17 +212,17 @@ nudo infer lib.js --callsites test.js --emit-cases
 ```text
 === add ===
 
-Case "call@L3": (1, 2) => 3
-Case "call@L4": ("x", "y") => "xy"
+call@L3: (1, 2) => 3
+call@L4: ("x", "y") => "xy"
 
-Combined: 3 | "xy"
+Observed: 3 | "xy"
 
 === greet ===
 
-Case "call@L2": ("ada") => "hi ada"
-Case "call@L3": ("bob") => "hi bob"
+call@L2: ("ada") => "hi ada"
+call@L3: ("bob") => "hi bob"
 
-Combined: "hi ada" | "hi bob"
+Observed: "hi ada" | "hi bob"
 
 Emitted cases → lib.js (4 directive(s) across 2 function(s))
   add: call@L3, call@L4
@@ -277,14 +275,14 @@ nudo infer lib.js --callsites test.js --emit-cases=update --dry-run --exit-on-di
 ```text
 === add ===
 
-Case "call@L3": (1, 2) => 3
-Case "call@L4": ("x", "y") => "xy"
+call@L3: (1, 2) => 3
+call@L4: ("x", "y") => "xy"
 
-Combined: 3 | "xy"
+Observed: 3 | "xy"
 
 === greet ===
 
-Case "call@L2": (42) => "hi 42"
+call@L2: (42) => "hi 42"
 
 Would emit cases → lib.js (dry run)
   add: call@L3, call@L4
@@ -314,14 +312,14 @@ nudo infer lib.js --callsites test.js --emit-cases=update
 ```text
 === add ===
 
-Case "call@L3": (1, 2) => 3
-Case "call@L4": ("x", "y") => "xy"
+call@L3: (1, 2) => 3
+call@L4: ("x", "y") => "xy"
 
-Combined: 3 | "xy"
+Observed: 3 | "xy"
 
 === greet ===
 
-Case "call@L2": (42) => "hi 42"
+call@L2: (42) => "hi 42"
 
 Emitted cases → lib.js (3 directive(s) across 2 function(s))
   add: call@L3, call@L4
@@ -560,7 +558,7 @@ twice(number)
 
 ## `nudo harvest`
 
-Convert installed `@types/<pkg>` TypeScript declarations into a Nudo env file — TypeScript source that rebuilds those types with `T.*` constructors. The `@types` package must be installed first:
+Convert installed `@types/<pkg>` TypeScript declarations into a Nudo env file — TypeScript source that rebuilds those types with Nudo env constructors. The `@types` package must be installed first:
 
 ```bash
 pnpm add -D @types/node

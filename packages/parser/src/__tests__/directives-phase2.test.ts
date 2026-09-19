@@ -1,19 +1,19 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "../parse.ts";
-import { extractDirectives, parseTypeValueExpr } from "../directives.ts";
+import { extractDirectives, parseCaseArgExpr } from "../directives.ts";
 import { num, str } from "@nudojs/core";
 
-describe("parseTypeValueExpr: Phase 2 enhancements", () => {
-  it("parses T.array(T.number)", () => {
-    const result = parseTypeValueExpr("T.array(T.number)");
+describe("parseCaseArgExpr: structural builders", () => {
+  it("parses array(number())", () => {
+    const result = parseCaseArgExpr("array(number())");
     expect(result.shape.k).toBe("arr");
     if (result.shape.k === "arr") {
       expect(result.shape.element.shape).toEqual(num().shape);
     }
   });
 
-  it("parses T.tuple([T.number, T.string])", () => {
-    const result = parseTypeValueExpr("T.tuple([T.number, T.string])");
+  it("parses tuple literal [number(), string()]", () => {
+    const result = parseCaseArgExpr("[number(), string()]");
     expect(result.shape.k).toBe("tuple");
     if (result.shape.k === "tuple") {
       expect(result.shape.elements).toHaveLength(2);
@@ -22,8 +22,8 @@ describe("parseTypeValueExpr: Phase 2 enhancements", () => {
     }
   });
 
-  it("parses T.object({ x: T.number, y: T.string })", () => {
-    const result = parseTypeValueExpr("T.object({ x: T.number, y: T.string })");
+  it("parses shape({ x: number(), y: string() })", () => {
+    const result = parseCaseArgExpr("shape({ x: number(), y: string() })");
     expect(result.shape.k).toBe("obj");
     if (result.shape.k === "obj") {
       expect(result.shape.slots.x?.value.shape).toEqual(num().shape);
@@ -31,28 +31,43 @@ describe("parseTypeValueExpr: Phase 2 enhancements", () => {
     }
   });
 
-  it("parses nested T.object with T.array", () => {
-    const result = parseTypeValueExpr("T.object({ items: T.array(T.number) })");
+  it("parses object literal { x: number(), y: string() }", () => {
+    const result = parseCaseArgExpr("{ x: number(), y: string() }");
+    expect(result.shape.k).toBe("obj");
+    if (result.shape.k === "obj") {
+      expect(result.shape.slots.x?.value.shape).toEqual(num().shape);
+      expect(result.shape.slots.y?.value.shape).toEqual(str().shape);
+    }
+  });
+
+  it("parses nested shape with array", () => {
+    const result = parseCaseArgExpr("shape({ items: array(number()) })");
     expect(result.shape.k).toBe("obj");
     if (result.shape.k === "obj") {
       expect(result.shape.slots.items?.value.shape.k).toBe("arr");
     }
   });
 
-  it("parses T.object({})", () => {
-    const result = parseTypeValueExpr("T.object({})");
+  it("parses empty object literal {}", () => {
+    const result = parseCaseArgExpr("{}");
     expect(result.shape.k).toBe("obj");
     if (result.shape.k === "obj") {
       expect(Object.keys(result.shape.slots)).toHaveLength(0);
     }
   });
 
-  it("parses T.tuple([])", () => {
-    const result = parseTypeValueExpr("T.tuple([])");
+  it("parses empty tuple literal []", () => {
+    const result = parseCaseArgExpr("[]");
     expect(result.shape.k).toBe("tuple");
     if (result.shape.k === "tuple") {
       expect(result.shape.elements).toHaveLength(0);
     }
+  });
+
+  it("parses nested concrete literals inside builders", () => {
+    expect(parseCaseArgExpr("union(number(), null)").shape.k).toBe("sum");
+    expect(parseCaseArgExpr("array(null)").shape.k).toBe("arr");
+    expect(parseCaseArgExpr("shape({ port: number() })").shape.k).toBe("obj");
   });
 });
 
@@ -60,7 +75,7 @@ describe("extractDirectives: @nudo:mock", () => {
   it("extracts inline mock directive", () => {
     const source = `
 /**
- * @nudo:mock fetch = T.unknown
+ * @nudo:mock fetch = any()
  * @nudo:case "test" (1)
  */
 function foo(x) { return x; }
@@ -73,7 +88,7 @@ function foo(x) { return x; }
     expect(mocks[0].kind).toBe("mock");
     if (mocks[0].kind === "mock") {
       expect(mocks[0].name).toBe("fetch");
-      expect(mocks[0].expression).toBe("T.unknown");
+      expect(mocks[0].expression).toBe("any()");
     }
   });
 
@@ -98,8 +113,8 @@ function foo(x) { return x; }
   it("extracts both mock and case directives", () => {
     const source = `
 /**
- * @nudo:mock helper = T.number
- * @nudo:case "test" (T.number)
+ * @nudo:mock helper = number()
+ * @nudo:case "test" (number())
  */
 function foo(x) { return x; }
 `;

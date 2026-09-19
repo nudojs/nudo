@@ -8,7 +8,7 @@
 //   Combined: 1 | "x" | "/usr/bin"
 //
 // 边界：动态 key（符号 string）→ 保守并集所有槽（不再 unknown）
-//   pickDynamic({ a: 1, b: "x" }, T.string) → 1 | "x"  #exact
+//   pickDynamic({ a: 1, b: "x" }, string()) → 1 | "x"  #exact
 
 function pick(obj, key) {
   return obj[key];
@@ -21,7 +21,7 @@ const env = { PATH: "/usr/bin", HOME: "/root" };
 pick(env, "PATH");
 
 /**
- * @nudo:case "dynamic key" ({ a: 1, b: "x" }, T.string)
+ * @nudo:case "dynamic key" ({ a: 1, b: "x" }, string())
  */
 function pickDynamic(obj, key) {
   return obj[key];

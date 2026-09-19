@@ -1,13 +1,11 @@
 # Nudo 设计文档
 
-> **Superseded / historical.** 本文是 Abs 单轨合并前的原始设计：以 TypeValue
-> 为「整个系统的基础抽象」（§2）的视图已被推翻——当前类型本体是
-> **Abs = shape × term × pred × conf**，TypeValue 只是外延投影（dts /
-> LSP / 序列化消费的格式与 `T` 工厂），Abs ⇄ TypeValue 经 `bridge.ts` 有损投影。
-> 现行真理源见 [`design-kernel-merge.md`](./design-kernel-merge.md)，重构设计
-> 与实施状态见 [`design-typevalue-algebra.md`](./design-typevalue-algebra.md)，
-> 对外英文版见网站 `packages/website/docs/design/design-doc.md`。本文保留为
-> 演进记录（T.* 构造器 API 的原始动机仍适用）。
+> **Superseded / historical — do not treat as product truth.**
+> 本文是 TypeValue 时代原始设计。当前类型本体是 **Abs = shape × term × pred × conf**；
+> TypeValue IR **已物理删除**；指令文法 **`T.*` 已物理删除**（constraint builders + 具体字面量）；
+> `@nudo:case` **仅调试 / `nudo test`**。现行真理源见
+> [`design-kernel-merge.md`](./design-kernel-merge.md) 与
+> [`design-refine-derivation.md`](./design-refine-derivation.md)。
 
 > **Nudo** — 一个 JS 超集求值引擎，通过对符号化的"类型值"执行代码来推导精确类型。
 

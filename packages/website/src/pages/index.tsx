@@ -12,7 +12,7 @@ const features = [
     titleDefault: "Execute, Don't Analyze",
     descId: "homepage.feature.executeDesc",
     descDefault:
-      "Nudo runs your JavaScript code with symbolic type values instead of concrete values. The execution itself produces types — no separate type language needed.",
+      "Nudo executes your JavaScript under abstract interpretation on Abs (shape × term × pred × conf). Call sites are evidence; contracts come from *.nudo.js sidecars — no separate type language needed.",
   },
   {
     icon: "🎯",
@@ -28,7 +28,7 @@ const features = [
     titleDefault: "Directive-Driven",
     descId: "homepage.feature.directivesDesc",
     descDefault:
-      "Use simple comment directives like @nudo:case and @nudo:mock to guide type inference. No new syntax to learn — just annotated JavaScript.",
+      "Contracts live in *.nudo.js sidecars and @nudo:refine / @nudo:interface (constraint builders). @nudo:mock stubs dependencies; @nudo:case is debug / nudo test only.",
   },
   {
     icon: "🔌",
@@ -56,13 +56,14 @@ const features = [
   },
 ];
 
-const nudoExample = `// @nudo:case "strings" (T.string)
-// @nudo:case "numbers" (T.number)
+const nudoExample = `// plain JS — call sites are evidence
 function transform(x) {
   if (typeof x === "string") return x.toUpperCase();
   if (typeof x === "number") return x + 1;
   return null;
-}`;
+}
+transform("hi");
+transform(1);`;
 
 const tsExample = `function transform(x: string): string;
 function transform(x: number): number;
@@ -121,7 +122,7 @@ function HeroSection() {
         <p className="hero-subtitle">
           <Translate id="homepage.hero.subtitle">
             A type inference engine for JavaScript that executes your code with
-            symbolic type values to derive precise types — no type gymnastics
+            Abs values under abstract interpretation to derive precise types — no type gymnastics
             required.
           </Translate>
         </p>

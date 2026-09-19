@@ -12,10 +12,10 @@ Abstract interpretation is the theoretical foundation of Nudo. Instead of runnin
 | Approach | Input | Output | Completeness |
 |----------|-------|--------|--------------|
 | Unit tests | Concrete values (`1`, `"hello"`) | Concrete result | Only test cases |
-| Nudo | Type values (`T.number`, `T.string`) | Type values | All values in the type set |
+| Nudo | Type values (`number()`, `string()`) | Type values | All values in the type set |
 | TypeScript | AST (no execution) | Types | All syntactic paths |
 
-When Nudo executes `transform(T.string)`, the engine propagates `T.string` through the function body. At `typeof x === "string"`, the engine knows that branch is taken. At `x.toUpperCase()`, the engine knows the result is `T.string`. The result is not a concrete value — it is a **type**.
+When Nudo executes `transform(string())`, the engine propagates `string()` through the function body. At `typeof x === "string"`, the engine knows that branch is taken. At `x.toUpperCase()`, the engine knows the result is `string()`. The result is not a concrete value — it is a **type**.
 
 ---
 

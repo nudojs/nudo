@@ -650,10 +650,13 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
 
   describe("typeExprToDirective / injectBindings", () => {
     it("translates agent type expressions to @nudo:as directive syntax", () => {
-      expect(typeExprToDirective("string")).toBe("T.string");
-      expect(typeExprToDirective("string | null")).toBe("T.union(T.string, null)");
-      expect(typeExprToDirective("T.object({ port: T.number })")).toBe("T.object({ port: T.number })");
-      expect(typeExprToDirective("Date")).toBe("T.unknown");
+      expect(typeExprToDirective("string")).toBe("string()");
+      expect(typeExprToDirective("string | null")).toBe("union(string(), null)");
+      expect(typeExprToDirective("shape({ port: number() })")).toBe("shape({ port: number() })");
+      expect(typeExprToDirective("{ port: number() }")).toBe("{ port: number() }");
+      expect(typeExprToDirective("Date")).toBe("any()");
+      // legacy T.* is removed — collapsed to any()
+      expect(typeExprToDirective("T.object({ port: T.number })")).toBe("any()");
     });
 
     it("inserts an @nudo:as line above the declaring statement", () => {
@@ -662,7 +665,7 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
       ]);
       expect(applied).toEqual(["x: string | null"]);
       expect(unapplied).toEqual([]);
-      expect(source).toBe("// @nudo:as T.union(T.string, null)\nconst x = 1;\nconst y = x + 1;\n");
+      expect(source).toBe("// @nudo:as union(string(), null)\nconst x = 1;\nconst y = x + 1;\n");
     });
 
     it("reports bindings with no matching top-level declaration as unapplied", () => {

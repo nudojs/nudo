@@ -9,7 +9,7 @@ describe("fnSig impl: concrete args produce precise values", () => {
 
 /**
  * @nudo:case "concrete" (3.7)
- * @nudo:case "symbolic" (T.number)
+ * @nudo:case "symbolic" (number())
  */
 function floorIt(x) {
   return Math.floor(x);
@@ -170,7 +170,7 @@ function parseUrl(raw) {
 /// @nudo:env web
 
 /**
- * @nudo:case "test" (T.string)
+ * @nudo:case "test" (string())
  */
 function parseUrl(raw) {
   const url = new URL(raw);
@@ -267,7 +267,7 @@ function getDir(p) {
 import { join } from "node:path";
 
 /**
- * @nudo:case "test" (T.string, T.string)
+ * @nudo:case "test" (string(), string())
  */
 function buildPath(a, b) {
   return join(a, b);

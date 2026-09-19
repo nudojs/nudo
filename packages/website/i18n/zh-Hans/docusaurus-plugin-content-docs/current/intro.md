@@ -10,7 +10,7 @@ description: Nudo 是面向 JavaScript 的类型推断引擎——类型系统�
 
 ## 工作原理
 
-Nudo 在抽象解释下**执行**你的代码（B-path transpile+exec，必要时回落 ast-eval）。调用点事实与可选的 `@nudo:case` 见证驱动求值；引擎产出 Abs，按扩展面渲染用于展示（`formatShape`），需要时单向投影到 `.d.ts` / zod。
+Nudo 在抽象解释下**执行**你的代码（B-path transpile+exec，必要时回落 ast-eval）。调用点事实驱动求值；可选的 `@nudo:case` 见证仅用于调试 / `nudo test`；引擎产出 Abs，按扩展面渲染用于展示（`formatShape`），需要时单向投影到 `.d.ts` / zod。
 
 `nudo check` 的**义务**只来自显式契约：
 
@@ -24,19 +24,18 @@ Nudo 在抽象解释下**执行**你的代码（B-path transpile+exec，必要�
 | TypeScript | Nudo |
 |------------|------|
 | 事先声明类型，编译器检查使用 | 写普通 JavaScript，引擎执行并推断 Abs |
-| 需要 `.ts` 文件或 JSDoc 注解 | 可选指令（`@nudo:case` 见证）与侧车契约（`*.nudo.js`） |
+| 需要 `.ts` 文件或 JSDoc 注解 | 侧车契约（`*.nudo.js` / `@nudo:refine` / `@nudo:interface`）可选；`@nudo:case` 仅调试 |
 | 类型描述意图 | 推断 Abs 描述观察到的行为；契约描述义务 |
 
-**示例：见证 + 侧车契约**
+**示例：调用点 + 侧车契约**
 
 ```javascript
 // process.js
-/**
- * @nudo:case "numbers" (5)
- */
 export function process(x) {
   return x * 2;
 }
+
+process(5);
 ```
 
 ```javascript
@@ -45,7 +44,7 @@ import { number, fn } from "@nudojs/core";
 export const process = fn({ x: number().gt(0) }, number());
 ```
 
-`nudo infer` 报告具体 case（`(5) => 10  #exact`）。`nudo check` 执法侧车：`process(0)` 报 `nudo:constraint-violated`（`actual ⊭ expected`）。case 实参也可写符号（`T.number`）做场景调试——那是**指令见证语法**，不是第二套类型系统；分析始终跑在 Abs 上。
+`nudo infer` 报告观测到的调用点（`call@L5: (5) => 10`）。`nudo check` 执法侧车：`process(0)` 报 `nudo:constraint-violated`（`actual ⊭ expected`）。可选的 `@nudo:case` 见证（`number()` 等约束构建器）**仅用于调试 / `nudo test`**——不是契约产品；分析始终跑在 Abs 上。
 
 ## 超越 TypeScript
 

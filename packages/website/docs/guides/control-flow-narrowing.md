@@ -5,9 +5,9 @@ description: See how Nudo narrows types per call site — equality guards, discr
 
 # Control Flow Narrowing
 
-Nudo narrows types when it can decide a condition for the **concrete argument of a call site**. Each `Case "call@L…" => …` line in the output reports the result of one call, evaluated with that call's exact argument — branches eliminated by narrowing never contribute to that case's result, and `Combined:` is the union of all per-call results.
+Nudo narrows types when it can decide a condition for the **concrete argument of a call site**. Each `call@L… => …` line in the output reports the result of one call, evaluated with that call's exact argument — branches eliminated by narrowing never contribute to that case's result, and `Observed: ` is the union of all per-call results.
 
-Narrowing is precise on the **call-site path** (functions called at the top level, reported as `call@` cases) and on `@nudo:case` directives with **concrete** arguments. Symbolic arguments (`T.number`, `T.union(...)`) cannot decide a condition, so their branches join instead of narrowing. Every output block below is a real `nudo infer` run of the code above it.
+Narrowing is precise on the **call-site path** (functions called at the top level, reported as `call@` cases) and on `@nudo:case` directives with **concrete** arguments. Symbolic arguments (`number()`, `union(...)`) cannot decide a condition, so their branches join instead of narrowing. Every output block below is a real `nudo infer` run of the code above it.
 
 ## Comparison Guards
 
@@ -25,10 +25,10 @@ pickAdult(12);
 ```text
 === pickAdult ===
 
-Case "call@L5": (25) => 25
-Case "call@L6": (12) => -1
+call@L5: (25) => 25
+call@L6: (12) => -1
 
-Combined: 25 | -1
+Observed: 25 | -1
 ```
 
 `pickAdult(25)` satisfies `age >= 18` and returns `25`; `pickAdult(12)` falls through to `-1`. The combined type keeps both literal results.
@@ -51,10 +51,10 @@ area({ kind: "square", side: 3 });
 ```text
 === area ===
 
-Case "call@L7": ({ kind: "circle", radius: 2 }) => 6.28318
-Case "call@L8": ({ kind: "square", side: 3 }) => 9
+call@L7: ({ kind: "circle", radius: 2 }) => 6.28318
+call@L8: ({ kind: "square", side: 3 }) => 9
 
-Combined: 6.28318 | 9
+Observed: 6.28318 | 9
 ```
 
 The circle call takes the `if` branch and computes `6.28318`; the square call falls through to `side * side` and yields `9`.
@@ -77,11 +77,11 @@ len(5);
 ```text
 === len ===
 
-Case "call@L7": ("abc") => 3
-Case "call@L8": ([1, 2]) => 2
-Case "call@L9": (5) => -1
+call@L7: ("abc") => 3
+call@L8: ([1, 2]) => 2
+call@L9: (5) => -1
 
-Combined: 3 | 2 | -1
+Observed: 3 | 2 | -1
 ```
 
 The string call reaches `x.length` on a narrowed string (`3`), the array call on a narrowed array (`2`), and the number call falls through both guards to `-1`. The narrowed branch keeps the value itself: indexing a narrowed array (`x[0]`) resolves to its element type — a literal for a literal array, the element type for an abstract array — just like `.length` does.
@@ -110,12 +110,12 @@ function handleState(state) {
 ```text
 === handleState ===
 
-Case "idle": ({ status: "idle" }) => "Waiting..."
-Case "loading": ({ status: "loading", requestId: "abc" }) => "Loading abc..."
-Case "success": ({ status: "success", data: { name: "test" } }) => "test"
-Case "error": ({ status: "error", message: "fail" }) => "fail"
+debug "idle": ({ status: "idle" }) => "Waiting..."
+debug "loading": ({ status: "loading", requestId: "abc" }) => "Loading abc..."
+debug "success": ({ status: "success", data: { name: "test" } }) => "test"
+debug "error": ({ status: "error", message: "fail" }) => "fail"
 
-Combined: "Waiting..." | "Loading abc..." | "test" | "fail"
+Observed: "Waiting..." | "Loading abc..." | "test" | "fail"
 ```
 
 Each clause receives its matching object shape, so `state.requestId` and `state.data.name` resolve inside their branches.
@@ -127,7 +127,7 @@ These patterns currently do **not** fork on the call-site path — each one degr
 | Pattern | Current behavior |
 |---|---|
 | Ternary with an `unknown` condition | `flag ? "a" : "b"` with a symbolic condition joins both branches (`string`). Definite conditions fork precisely on both paths — `pick(true)` → `"a"`, `x === 5 ? "five" : "other"` with `5` → `"five"` — so no `if`-guard workaround is needed anymore. |
-| Symbolic inputs | `@nudo:case` with symbolic arguments (`T.number`, `T.union(...)`) do not fork conditions — the branches join; concrete arguments narrow on both paths. |
+| Symbolic inputs | `@nudo:case` with symbolic arguments (`number()`, `union(...)`) do not fork conditions — the branches join; concrete arguments narrow on both paths. |
 | `in` operator | `if ("toJSON" in value)` narrows for object arguments, but method results widen (`string` instead of the closure's `"serialized"`); non-object arguments also report `nudo:no-method`. |
 | `?.` / `??` | Shallow `config.port ?? 3000` with a known property yields `number`; deep chains and short-circuiting members degrade to `unknown`. |
 

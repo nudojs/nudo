@@ -71,7 +71,7 @@ function caller(y) {
       "map2(['a', 'b'], (s) => s.toUpperCase());",
       "",
       "/**",
-      ' * @nudo:case "unrelated" (T.number)',
+      ' * @nudo:case "unrelated" (number())',
       " */",
       "function unrelated(x) { return x + 1; }",
     ].join("\n");

@@ -6,7 +6,7 @@ const ROOT = join(import.meta.dirname, "..", "..");
 const { tryRunBPath, tryBPathCallFull, clearBPathCache } = await import(
   join(ROOT, "packages/service/src/index.ts")
 );
-const { typeValueToAbs, T } = await import(join(ROOT, "packages/core/src/index.ts"));
+const { num } = await import(join(ROOT, "packages/core/src/index.ts"));
 const { w3Nudo } = await import("./fixtures.mjs");
 
 const base = w3Nudo(400);
@@ -27,14 +27,14 @@ const one: number[] = [];
 const all: number[] = [];
 for (let i = 0; i < 5; i++) {
   let t = performance.now();
-  tryBPathCallFull(base, path, "f399", [typeValueToAbs(T.number)], {
+  tryBPathCallFull(base, path, "f399", [num()], {
     collectCalls: true,
   });
   one.push(performance.now() - t);
 
   t = performance.now();
   for (let f = 0; f < 400; f++) {
-    tryBPathCallFull(base, path, `f${f}`, [typeValueToAbs(T.number)], {
+    tryBPathCallFull(base, path, `f${f}`, [num()], {
       collectCalls: true,
     });
   }
@@ -47,7 +47,7 @@ const all2: number[] = [];
 for (let i = 0; i < 5; i++) {
   const t = performance.now();
   for (let f = 0; f < 400; f++) {
-    tryBPathCallFull(base, path, `f${f}`, [typeValueToAbs(T.number)], {});
+    tryBPathCallFull(base, path, `f${f}`, [num()], {});
   }
   all2.push(performance.now() - t);
 }
