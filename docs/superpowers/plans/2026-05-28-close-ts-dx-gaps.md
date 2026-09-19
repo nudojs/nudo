@@ -1,5 +1,10 @@
 # Close TS DX Gaps — 技术缺口任务列表
 
+> **Superseded in part (2026-09-19).** 主体 A–F 已交付。**剩余** IDE/LSP 产品化收口与
+> 生态（Node/`@types`）覆盖任务迁至
+> [`2026-09-19-close-remaining-dx-gaps.md`](./2026-09-19-close-remaining-dx-gaps.md)——
+> 冲突时以新文为准。本文保留为 fix-2 交付记录与任务证据源。
+>
 > **状态**：路线图主体已交付（fix-2）。本文把「Nudo vs TypeScript 开发体验对比」讨论中
 > **可补齐的技术缺口**收敛成可执行任务，不复述已实现设计。
 >

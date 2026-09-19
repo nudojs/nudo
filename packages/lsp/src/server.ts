@@ -79,22 +79,9 @@ import {
   type AgentToolDeps,
   type AgentToolResult,
 } from "./agent-tools.ts";
+import { NUDO_EXECUTE_COMMANDS } from "./public-api.ts";
 
-const NUDO_COMMANDS = [
-  "nudo.whatIf",
-  "nudo.suggestCase",
-  "nudo.trace",
-  "nudo.check",
-  "nudo.hover",
-  "nudo.infer",
-  "nudo.interface",
-  "nudo.interface.draft",
-  "nudo.interfaceDraft",
-  "nudo.interfaceEmit",
-  "nudo.interface.emit",
-  "nudo.selectCase",
-  "nudo.getActiveCases",
-] as const;
+const NUDO_COMMANDS = NUDO_EXECUTE_COMMANDS;
 
 // Default to stdio when the host did not pick a transport (Zed, MCP bridges,
 // `nudo-lsp` with no args). VS Code passes --node-ipc via vscode-languageclient.

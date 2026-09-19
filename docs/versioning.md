@@ -11,6 +11,8 @@ How Nudo packages are versioned, what counts as a breaking change, and how to fo
 > 2. **A1:** `analysis.mode` shipped default flipped `directives` → `exports` (`DEFAULT_ANALYSIS_MODE` in `@nudojs/service`). Escape hatch: `package.json#nudo.analysis.mode = "directives"` (old silence) or `"all"` (every target path). On **1.x** packages this is a **default-behavior flip that can invent diagnostics** on previously unanalyzed export-bearing files → treat as **major** in changesets/release notes unless the team ships a documented minor with the escape hatch called out.
 >
 > `@nudojs/core` / `@nudojs/service` / `@nudojs/cli` are already on the **1.x** line (see each package.json). The monorepo root version is private and is not a publish unit.
+>
+> **Current package.json facts (do not invent bumps here):** `@nudojs/lsp@0.8.0`, `@nudojs/env@0.3.0`, `@nudojs/harvester@0.2.5`, `nudo-vscode@0.3.5` (private). Policy doc never pins patch numbers as a release action.
 
 | Package | Current | Line | Policy |
 |---------|---------|------|--------|
@@ -18,12 +20,12 @@ How Nudo packages are versioned, what counts as a breaking change, and how to fo
 | `@nudojs/service` | see package.json | stable | SemVer 1.x — breaking = **major** |
 | `@nudojs/cli` | see package.json | stable | SemVer 1.x — breaking = **major** |
 | `@nudojs/parser` | 0.4.x | pre-1.0 | Minor may break; patch is additive/fix |
-| `@nudojs/lsp` | 0.7.x | pre-1.0 | Minor may break; patch is additive/fix |
-| `@nudojs/env` | 0.2.x | pre-1.0 | Minor may break |
-| `@nudojs/harvester` | 0.2.x | pre-1.0 | Minor may break |
+| `@nudojs/lsp` | **0.8.0** | pre-1.0 | Minor may break; patch is additive/fix. **1.x gate (A1/A2):** observe freeze via [`packages/lsp/PUBLIC_API.md`](../packages/lsp/PUBLIC_API.md) for ≥1 minor cycle with no unplanned stable-surface breaks; **no automatic version bump** — cut 1.0 only with an explicit major changeset |
+| `@nudojs/env` | **0.3.0** | pre-1.0 | Minor may break. **B8 coordination:** service/cli/env consumers pin a **minor** deliberately; coverage numbers optional in release notes; not on the core 1.x timetable |
+| `@nudojs/harvester` | **0.2.5** | pre-1.0 | Minor may break. Same B8 rhythm as `@nudojs/env` (harvest products remain a side channel, never Abs truth) |
 | `nudojs` (shell) | 0.2.x | pre-1.0 | Tracks `@nudojs/cli`; prefer depending on `@nudojs/*` directly |
 | `vite-plugin-nudo` | 0.3.x | pre-1.0 | Minor may break |
-| `nudo-vscode` | 0.3.x | private | Marketplace release notes; not npm-semver for consumers |
+| `nudo-vscode` | 0.3.5 | private | Marketplace / Open VSX release notes; not npm-semver for consumers. Bundled `@nudojs/lsp` must match the monorepo lsp dist at package time (see `packages/vscode/RELEASE_CHECKLIST.md`) |
 
 The monorepo root (`nudo-monorepo@0.3.0`) is private and is **not** a publish unit. Published versions are per-package.
 
@@ -138,11 +140,31 @@ pnpm run ci:version   # only on a throwaway branch — rewrites package.json ver
 
 ### IDE / agent surface
 
+Inventory: [`packages/lsp/PUBLIC_API.md`](../packages/lsp/PUBLIC_API.md)
+(executeCommand dot form, slash-form `nudo/…` protocol contract,
+`AGENT_TOOL_SOURCES`, initialize capabilities, CheckJson/InferJson pointers).
+Regression pin: `packages/lsp/src/__tests__/public-api-surface.test.ts`.
+
 | Change | Migration |
 |--------|-----------|
 | CodeLens is interface-first | Case lenses still work as the debug sub-layer |
 | Hover/inlay/tokens share `interfaceTierOf` (A7) | Clients must render new semantic modifiers `contract`/`generated`/`derived` or ignore unknown modifiers |
 | Agent tools honor project `autoBind` (E5) | Clients cannot re-enable sidecars when `nudo.interface.autoBind: false` |
+| Slash-form `nudo/…` is the protocol contract | Dot-form `nudo.*` remains valid for executeCommand + MCP bridges; do not invent a third spelling |
+| executeCommand aliases `nudo.interfaceDraft` / `nudo.interfaceEmit` | Prefer `nudo.interface.draft` / `nudo.interface.emit`; aliases stay through 1.x — removal after 1.0 is **major** |
+| CheckJson / InferJson v1 schema | Field add-only; removals/renames are **major** on 1.x core/service (lsp surfaces them unchanged) |
+| Default `analysis.mode=exports` + `diagnostics=default` | Escape hatch `package.json#nudo.analysis.mode`; flipping defaults that invent/silence diagnostics is **major** on 1.x |
+| lsp 1.x cut | Only after PUBLIC_API stable rows sit through ≥1 0.x minor with no unplanned break; changeset template mirrors core 1.0 `**BREAKING**:` table |
+
+### env / harvester (B8 coordination)
+
+`@nudojs/env` (0.3.0) and `@nudojs/harvester` (0.2.5) stay **pre-1.0** while
+coverage baselines land. Consumers that need bit-stable IDE/CI analysis pin an
+exact or tilde minor (`"@nudojs/env": "~0.3.0"`). Harvest output remains a
+side channel: handwritten project `@nudo:env` / mocks win over harvested
+modules; conflicts warn, they do not silently replace Abs truth. When these
+packages later cut 1.x, use the same freeze-observation gate as lsp — no
+automatic major from coverage-report growth alone.
 
 ## Consumer pinning guide
 
@@ -169,3 +191,29 @@ pnpm run ci:version   # only on a throwaway branch — rewrites package.json ver
 - `docs/design-eval-missing-slot.md` — C0.5 optional eval-driven diagnostics
 - Website: `guides/migrating-js.md` — code-first migration walkthrough
 - Website guide: `packages/website/docs/guides/versioning.md`
+
+## Ecosystem packages (env / harvester)
+
+> Added for P0-B (2026-09-19). Agent B owns this subsection; do not duplicate
+> under a different heading.
+
+`@nudojs/env` and `@nudojs/harvester` are **pre-1.0** sidecar packages consumed
+by `@nudojs/service` / `@nudojs/cli`. They do **not** carry their own SemVer
+1.x freeze; service/cli pin them via workspace/release versions.
+
+| Package | Pin style | When to bump minor | Release-notes suggestion |
+|---------|-----------|--------------------|---------------------------|
+| `@nudojs/env` | workspace / caret on 0.x | New Abs env modules or signature-level APIs that service CLI/tests depend on (e.g. `events` / `stream` / `querystring` slots) | Optional **Coverage** section: `node resolved N/M (unknown=…, mock-required=…)` from `pnpm run coverage:env` / `docs/reports/env-coverage-baseline.json` |
+| `@nudojs/harvester` | workspace / caret on 0.x | Harvest result shape changes (`HarvestedEnv.stats`, module key aliases) or emit format changes that break generated `defineEnv` files | Note harvest budget defaults if changed (`maxFiles` / `maxMs`); regenerate CLI harvest samples |
+
+Rules:
+
+- **0.x**: patch = additive env signatures / harvest fixes; minor **may** break
+  generated env consumers — always ship a changeset that names the migration.
+- Handwritten `@nudojs/env` **wins** over harvest when both supply the same
+  builtin module (priority documented in website harvester API). Changing that
+  priority is **breaking** for service analysis results → minor on 0.x + callout.
+- Coverage report numbers are **optional release-notes content**, not a
+  soundness gate. Do not promise completeness from resolved-ratio.
+- `NUDO_HARVEST_NODE=off` and harvest cache helpers (`clearNodeHarvestCache`)
+  are public service API surface — treat removals as service 1.x **major**.

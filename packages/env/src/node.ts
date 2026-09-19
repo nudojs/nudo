@@ -162,6 +162,19 @@ export function defineEnv(): EnvDefinition {
       promiseOf(arrOf(prim.unknown)),
     ),
     access: envFn([prim.str(), prim.num()], promiseOf(undef())),
+    // Common thin fs.promises methods (signature level; complement harvest).
+    appendFile: envFn(
+      [prim.str(), unionOf(prim.str(), bufferBrand)],
+      promiseOf(undef()),
+    ),
+    unlink: envFn([prim.str()], promiseOf(undef())),
+    rename: envFn([prim.str(), prim.str()], promiseOf(undef())),
+    copyFile: envFn([prim.str(), prim.str()], promiseOf(undef())),
+    realpath: envFn([prim.str()], promiseOf(prim.str())),
+    readlink: envFn([prim.str()], promiseOf(prim.str())),
+    symlink: envFn([prim.str(), prim.str()], promiseOf(undef())),
+    chmod: envFn([prim.str(), prim.num()], promiseOf(undef())),
+    open: envFn([prim.str(), prim.str()], promiseOf(prim.unknown)),
   };
 
   const strImpl1Abs = (fn: (a: string) => string): AbsSigImpl => (args) => {
@@ -408,15 +421,23 @@ export function defineEnv(): EnvDefinition {
   };
 
   const utilModule: Record<string, Abs> = {
-    promisify: envFn([prim.unknown], prim.unknown),
+    // Signature-level: promisify preserves fn-ness only as unknown (no generic).
+    promisify: envFn([prim.unknown], prim.unknown, undefined, { name: "util.promisify" }),
     inspect: envFn([prim.unknown, prim.unknown], prim.str()),
     format: envFn([prim.str()], prim.str()),
+    callbackify: envFn([prim.unknown], prim.unknown),
+    deprecate: envFn([prim.unknown, prim.str()], prim.unknown),
+    inherits: envFn([prim.unknown, prim.unknown], undef()),
+    isDeepStrictEqual: envFn([prim.unknown, prim.unknown], prim.bool()),
     types: objAbs({
       isDate: envFn([prim.unknown], prim.bool()),
       isRegExp: envFn([prim.unknown], prim.bool()),
       isPromise: envFn([prim.unknown], prim.bool()),
       isArrayBuffer: envFn([prim.unknown], prim.bool()),
       isTypedArray: envFn([prim.unknown], prim.bool()),
+      isNativeError: envFn([prim.unknown], prim.bool()),
+      isAsyncFunction: envFn([prim.unknown], prim.bool()),
+      isGeneratorFunction: envFn([prim.unknown], prim.bool()),
     }),
     TextEncoder: envFn(
       [],
@@ -426,6 +447,74 @@ export function defineEnv(): EnvDefinition {
       [prim.str()],
       objAbs({ decode: envFn([prim.unknown], prim.str()) }),
     ),
+  };
+
+  /** EventEmitter instance brand: on/once/emit/off at signature level. */
+  const eventEmitterShape = objAbs({
+    on: envFn([prim.str(), prim.unknown], prim.unknown),
+    once: envFn([prim.str(), prim.unknown], prim.unknown),
+    off: envFn([prim.str(), prim.unknown], prim.unknown),
+    emit: envFn([prim.str()], prim.bool()),
+    addListener: envFn([prim.str(), prim.unknown], prim.unknown),
+    removeListener: envFn([prim.str(), prim.unknown], prim.unknown),
+    removeAllListeners: envFn([prim.str()], prim.unknown),
+    listeners: envFn([prim.str()], arrOf(prim.unknown)),
+    listenerCount: envFn([prim.str()], prim.num()),
+    eventNames: envFn([], arrOf(prim.str())),
+  });
+  const eventEmitterInstance = brandOf("EventEmitter", eventEmitterShape);
+  /** Constructor signature: `new EventEmitter()` / `new events.EventEmitter()`. */
+  const EventEmitterCtor = envFn([], eventEmitterInstance);
+
+  const eventsModule: Record<string, Abs> = {
+    EventEmitter: EventEmitterCtor,
+    once: envFn(
+      [prim.unknown, prim.str()],
+      promiseOf(arrOf(prim.unknown)),
+    ),
+    on: envFn([prim.unknown, prim.str()], prim.unknown),
+    listenerCount: envFn([prim.unknown, prim.str()], prim.num()),
+  };
+
+  const streamIoMethods = {
+    on: envFn([prim.str(), prim.unknown], prim.unknown),
+    once: envFn([prim.str(), prim.unknown], prim.unknown),
+    off: envFn([prim.str(), prim.unknown], prim.unknown),
+    emit: envFn([prim.str()], prim.bool()),
+    pipe: envFn([prim.unknown], prim.unknown),
+    destroy: envFn([prim.unknown], undef()),
+    read: envFn([prim.num()], prim.unknown),
+    write: envFn([unionOf(prim.str(), bufferBrand)], prim.bool()),
+    end: envFn([prim.unknown], undef()),
+    pause: envFn([], prim.unknown),
+    resume: envFn([], prim.unknown),
+    setEncoding: envFn([prim.str()], prim.unknown),
+  };
+
+  /**
+   * stream skeleton: brand + pipe only. Machine-driven callbacks remain
+   * mock-recommended (design-limitations §八).
+   */
+  const streamModule: Record<string, Abs> = {
+    Readable: envFn([], brandOf("Readable", objAbs(streamIoMethods))),
+    Writable: envFn([], brandOf("Writable", objAbs(streamIoMethods))),
+    Duplex: envFn([], brandOf("Duplex", objAbs(streamIoMethods))),
+    Transform: envFn([], brandOf("Transform", objAbs(streamIoMethods))),
+    pipeline: envFn([prim.unknown], prim.unknown),
+    finished: envFn([prim.unknown], promiseOf(undef())),
+  };
+
+  const querystringModule: Record<string, Abs> = {
+    parse: envFn(
+      [prim.str(), prim.str(), prim.str(), prim.unknown],
+      brandOf("ParsedQueryString"),
+    ),
+    stringify: envFn(
+      [prim.unknown, prim.str(), prim.str(), prim.unknown],
+      prim.str(),
+    ),
+    escape: envFn([prim.str()], prim.str()),
+    unescape: envFn([prim.str()], prim.str()),
   };
 
   const nodeGlobals: Record<string, Abs> = {
@@ -510,6 +599,15 @@ export function defineEnv(): EnvDefinition {
       stat: fsModule.stat!,
       readdir: fsModule.readdir!,
       access: fsModule.access!,
+      appendFile: fsModule.appendFile!,
+      unlink: fsModule.unlink!,
+      rename: fsModule.rename!,
+      copyFile: fsModule.copyFile!,
+      realpath: fsModule.realpath!,
+      readlink: fsModule.readlink!,
+      symlink: fsModule.symlink!,
+      chmod: fsModule.chmod!,
+      open: fsModule.open!,
     },
     path: pathModule,
     "node:path": pathModule,
@@ -523,6 +621,12 @@ export function defineEnv(): EnvDefinition {
     "node:child_process": childProcessModule,
     util: utilModule,
     "node:util": utilModule,
+    events: eventsModule,
+    "node:events": eventsModule,
+    stream: streamModule,
+    "node:stream": streamModule,
+    querystring: querystringModule,
+    "node:querystring": querystringModule,
   };
 
   return {

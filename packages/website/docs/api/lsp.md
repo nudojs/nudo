@@ -7,6 +7,25 @@ description: "@nudojs/lsp API — the language server over @nudojs/service: vali
 
 API reference for the Nudo Language Server Protocol package. `@nudojs/lsp` wraps the [service layer](./service.md) into a language server that editors can consume: diagnostics, hover types, completions, case-switching CodeLens, inlay hints, and symbol navigation. The [nudo-vscode extension](../guides/vscode.md) launches this server over IPC; the [Zed extension](../guides/zed.md) launches the same server over stdio.
 
+## Public API freeze surface (A1/A2)
+
+`@nudojs/lsp` is **0.8.0, pre-1.x**. The freeze inventory — what must stay stable when the package later cuts 1.0 — lives in the monorepo:
+
+**[`packages/lsp/PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)**
+
+| Freeze row | Summary |
+|------------|---------|
+| npm surface | `exports["."]` → `dist/server.js`; `bin.nudo-lsp`; `files: ["dist"]`; importing the entry **starts** the server |
+| initialize capabilities | `textDocumentSync` (Full), hover, completion (trigger `.`), codeLens, inlayHint, definition/references/rename, document/workspace symbols, code actions (`quickfix`), signatureHelp, semanticTokens (full), executeCommand, pull `diagnosticProvider` |
+| executeCommand | **dot form** `nudo.check`, `nudo.infer`, `nudo.hover`, `nudo.whatIf`, `nudo.suggestCase`, `nudo.trace`, `nudo.interface`, `nudo.interface.draft` (+ alias `nudo.interfaceDraft`), `nudo.interface.emit` (+ alias `nudo.interfaceEmit`), `nudo.selectCase`, `nudo.getActiveCases` |
+| custom requests | **slash form is the protocol contract**: `nudo/check`, `nudo/infer`, `nudo/hover`, `nudo/whatIf`, `nudo/suggestCase`, `nudo/trace`, `nudo/interface`, `nudo/interface.draft`, `nudo/interface.emit`, `nudo/selectCase`, `nudo/getActiveCases` — each has a matching executeCommand (`nudo/X` ↔ `nudo.X`) |
+| agent tools | `AGENT_TOOL_SOURCES` keys: `whatIf`, `suggestCase`, `trace`, `check`, `hover`, `infer`, `interface`, `interface.draft`, `interface.emit`, `codeLens` (server-only) |
+| CheckJson / InferJson | v1 schemas owned by core/service (`check-report.ts`, `infer-json.ts`); lsp surfaces them unchanged; field add-only |
+| analysis defaults | `DEFAULT_ANALYSIS_MODE = "exports"`; null config → diagnostics `default`, `evalMissingSlot` `off` |
+| experimental | `src/*` test modules, caches/debounce, free-text hover/CodeLens wording — not npm/protocol contracts |
+
+Regression pins: `packages/lsp/src/public-api.ts` + `packages/lsp/src/__tests__/public-api-surface.test.ts` (protocol consistency) and service defaults tests (see PUBLIC_API.md §7–§8). Versioning gate: [`docs/versioning.md`](https://github.com/nudojs/nudo/blob/main/docs/versioning.md).
+
 ## Package Layout
 
 The package entry point (`main`) is `dist/server.js` (built from `src/server.ts`). **Importing it starts the server**: it calls `createConnection(ProposedFeatures.all)` and `connection.listen()` as a module side effect, speaking LSP over stdio/IPC. There is no `createServer()`-style factory. The package also exposes a `nudo-lsp` bin (`dist/server.js` with a shebang) for editors that launch a bare command — the [Zed extension](../guides/zed.md) and agent bridges use this path.

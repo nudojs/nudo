@@ -229,6 +229,21 @@ These constructs currently evaluate to `unknown` (often with a `nudo:unknown-rec
 | `String.fromCharCode` | → `unknown` | string literals |
 | Exponentiation `**` | → `unknown` | `x * x` |
 
+## Mock boundary (still recommended)
+
+Env modules and the `@types` harvester cover a large slice of common Node/Web APIs. They do **not** remove the need for mocks everywhere. Categories that are still **recommended for handwritten mock** (or that remain honest `unknown` / `entry@` results) — aligned with the call-site ceiling in `docs/design-limitations.md` §八:
+
+| Category | Why mock / why unknown | Workaround |
+|---|---|---|
+| Native bindings | `child_process.spawn`, native addons — env may hold a signature, not side effects | `@nudo:mock` or treat return as opaque |
+| Dynamic `require` | Computed module graphs are not statically resolved | `@nudo:mock-module` / static import |
+| Stream machine callbacks | Node Transform internals are driven by the runtime; no call-site record to harvest | Mock the stream factory; do not expect internal callbacks to infer |
+| Dual-entry browser/node variants | Call-site records do not cross files (attribution is file-scoped) | Analyze the entry you ship; mock the other |
+| No call-site functions | `entry@` fallback when tests never touch an internal helper | Add a call site, or accept `entry@` as the honest result |
+| Promise executor internals | `new Promise((r) => r(...))` → `promise<unknown>` without mock | `@nudo:mock` + async wrappers |
+
+Coverage baselines (`pnpm run coverage:env` → `docs/reports/env-coverage-baseline.md`) report **resolution rate**, not completeness. Do not read a high resolved ratio as a soundness guarantee — see the mock boundary in the [harvester API](../api/harvester.md#mock-boundary-honest) as well.
+
 ## Summary
 
 | Capability | Example | Result |

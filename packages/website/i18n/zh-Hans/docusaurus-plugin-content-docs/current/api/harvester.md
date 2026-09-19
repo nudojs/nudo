@@ -135,3 +135,41 @@ Case "call@L9": ("docs", "readme") => `${string}.md`
 ```
 
 基于路径的 env 文件通过动态 import 加载，因此异步消费方（`nudo infer`、`analyzeFileAsync`、LSP 验证路径）会预加载它们；同步的 `analyzeFile` 在文件声明了路径 env 时会降级。异步工具链应优先使用 [`analyzeFileAsync`](./service.md)。
+
+## 自动 harvest 路径（三态）
+
+分析遇到裸 import（`import x from "commander"`）时，Nudo **不会**凭空发明类型。自动路径（`@nudojs/service` 的 `autoHarvestModules`）遵循三态：
+
+| Import 目标 | 行为 | 产品路径 |
+|---|---|---|
+| **JS 源码包**含可用 `.js`/`.mjs`（如 `commander`、`ms`、`debug`） | 通过 Abs 求值器 / `checkSource` **执行**源码 | `nudo check` / `nudo infer` / LSP —— zero-FP 门禁 **无需手写 mock** |
+| **类型包**——已装 `@types/*` 或包自带 `.d.ts` | **harvest** 声明（`harvestPackage` / `harvestNodeTypes` → env modules） | `nudo harvest`、进程内 `autoHarvestModules`；内建 API 仍以手写 `@nudojs/env` 为主 |
+| **两者皆无** | 自动路径返回**空 modules** | 使用 `@nudo:mock`、路径 `/// @nudo:env` 或侧车提示——见下方 mock 边界 |
+
+`barePackageName("lodash/fp")` → `lodash`；相对 / 绝对 / `node:` 说明符永远不会成为 harvest 目标（内建走手写 env）。
+
+## 性能预算（`@types/node`）
+
+`@nudojs/service` 的 `harvestNodeTypes` 有预算保护，避免巨大 `.d.ts` 图拖垮 IDE 启动：
+
+| 预算 | 默认 | 说明 |
+|---|---|---|
+| `maxFiles` | **12** | 入口优先收集 `node_modules/@types/node` 下声明 |
+| `maxMs` | **2500** | 传给 `harvestDts`；超预算文件计入 `stats.skipped` |
+| 关闭 | `NUDO_HARVEST_NODE=off` | 返回 `{ ok: false, reason: "disabled" }` —— 显式而非静默 |
+
+结果在进程内缓存（键：包根 + `package.json` mtime/size + 预算）。`@types/node` 在 watch/测试中变更后应调用 `clearNodeHarvestCache()`。harvest 不可用时，手写 `@nudojs/env/node` 仍是回退——**不要**把 harvest 产物当作类型系统真相源。
+
+覆盖基线（resolved / unknown / mock-required）由 `pnpm run coverage:env` 生成到 `docs/reports/env-coverage-baseline.{json,md}`。解析率**不是**完备性承诺。
+
+## Mock 边界（诚实清单）
+
+仍**建议**手写 mock 的类别（与 `docs/design-limitations.md` §八 调用点天花板对齐）：
+
+- Native bindings（`child_process.spawn`、原生 addon）—— env 可有签名，无副作用模拟
+- 动态 `require` / 计算模块图
+- 流机器回调（Node Transform 运行时驱动的内部回调）
+- browser/node 双入口变体——调用点记录不跨文件注入
+- **无调用现场**的函数—— `entry@` 兜底是诚实结果，不是缺陷
+
+另见[语言语义 — mock 边界](../guides/semantics.md#mock-边界仍建议)。

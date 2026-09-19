@@ -229,6 +229,21 @@ Combined: 0 | 1 | 3
 | `String.fromCharCode` | → `unknown` | 字符串字面量 |
 | 指数运算符 `**` | → `unknown` | `x * x` |
 
+## Mock 边界（仍建议）
+
+env 模块与 `@types` harvester 覆盖了大量常见 Node/Web API，但**并不**消除对 mock 的需要。下列类别仍**建议手写 mock**（或保持诚实的 `unknown` / `entry@` 结果）——与 `docs/design-limitations.md` §八 调用点天花板对齐：
+
+| 类别 | 为何 mock / 为何 unknown | 可用办法 |
+|---|---|---|
+| Native bindings | `child_process.spawn`、原生 addon —— env 可有签名，无副作用模拟 | `@nudo:mock`，或把返回值当 opaque |
+| 动态 `require` | 计算模块图无法静态解析 | `@nudo:mock-module` / 静态 import |
+| 流机器回调 | Node Transform 内部由运行时驱动，无调用点记录可 harvest | mock 流工厂；不要期望内部回调被推断 |
+| browser/node 双入口变体 | 调用点记录不跨文件（归因按文件） | 分析实际发布的入口；另一入口 mock |
+| 无调用现场的函数 | 测试未触达的内部 helper → `entry@` 兜底 | 补调用现场，或接受 `entry@` 为诚实结果 |
+| Promise executor 内部 | `new Promise((r) => r(...))` → `promise<unknown>` | `@nudo:mock` + async 包装 |
+
+覆盖基线（`pnpm run coverage:env` → `docs/reports/env-coverage-baseline.md`）报告的是**解析率**，不是完备性。不要把高解析率当成 soundness 保证——另见 [harvester API](../api/harvester.md#mock-边界诚实清单) 中的 mock 边界。
+
 ## 小结
 
 | 能力 | 示例 | 结果 |

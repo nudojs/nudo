@@ -20,6 +20,7 @@
     "migrate-demo": "bash scripts/migrate-demo.sh",
     "verify:examples": "bash scripts/verify-examples.sh",
     "learning-cost": "node scripts/learning-cost.mjs",
+    "coverage:env": "tsx scripts/env-coverage-baseline.ts",
     "docs:dev": "pnpm --filter website run start",
     "docs:build": "pnpm --filter website run build",
     "benchmark": "node benchmark/src/runner.js",

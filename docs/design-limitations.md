@@ -507,3 +507,19 @@ break/continue 信号、let 每轮绑定、Promise resolve 静态位点扫描、
   （靠本地求值的记录覆盖）。
 - **双入口包变体**：browser/node 双变体同签名函数，变体 A 的执行记录
   不注入变体 B 的分析（归因门按文件判定——正确性优先）。
+
+### 仍建议 mock 的类别（与 website semantics 对齐）
+
+以下类别与本节天花板一致，**env 覆盖 / harvest 不能替代 mock**；详见
+website `guides/semantics.md`「Mock boundary」与 `api/harvester.md`
+「Mock boundary（诚实）」：
+
+| 类别 | 说明 |
+|------|------|
+| Native bindings | `child_process.spawn`、原生 addon —— env 可有签名，无副作用模拟 |
+| 动态 `require` | 计算模块图无法静态解析 |
+| 流机器回调 | Node Transform 运行时回调（本节 json-ext stringify-stream） |
+| 双入口 browser/node | 调用点记录不跨文件 |
+| 无调用现场函数 | `entry@` 兜底是诚实结果 |
+
+覆盖报告（`docs/reports/env-coverage-baseline.md`）的解析率**不是**完备性承诺。

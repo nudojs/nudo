@@ -158,7 +158,13 @@ export {
 export {
   harvestNodeTypes,
   summarizeNodeEnv,
+  clearNodeHarvestCache,
+  getNodeHarvestCacheSize,
+  isHarvestNodeDisabled,
+  HARVEST_NODE_DEFAULT_MAX_FILES,
+  HARVEST_NODE_DEFAULT_MAX_MS,
   type NodeEnvResult,
+  type HarvestNodeStats,
 } from "./harvest-node.ts";
 
 export {

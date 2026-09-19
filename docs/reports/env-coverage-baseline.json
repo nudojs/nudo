@@ -1,0 +1,678 @@
+{
+  "generatedAt": "2026-09-18T20:33:49.140Z",
+  "note": "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design-limitations.md §八 and website semantics mock-boundary section.",
+  "budgets": {
+    "harvestNodeTypes": {
+      "maxFiles": 12,
+      "maxMs": 2500,
+      "disableEnvVar": "NUDO_HARVEST_NODE=off"
+    }
+  },
+  "envModuleKeys": {
+    "es": 29,
+    "web": 62,
+    "nodeGlobals": 41,
+    "nodeModules": [
+      "child_process",
+      "crypto",
+      "events",
+      "fs",
+      "node:child_process",
+      "node:crypto",
+      "node:events",
+      "node:fs",
+      "node:fs/promises",
+      "node:os",
+      "node:path",
+      "node:querystring",
+      "node:stream",
+      "node:url",
+      "node:util",
+      "os",
+      "path",
+      "querystring",
+      "stream",
+      "url",
+      "util"
+    ]
+  },
+  "nodeProbes": {
+    "counts": {
+      "resolved": 48,
+      "unknown": 0,
+      "mock-required": 2
+    },
+    "total": 50,
+    "results": [
+      {
+        "id": "fs.readFileSync",
+        "module": "fs",
+        "path": [
+          "readFileSync"
+        ],
+        "status": "resolved",
+        "format": "(string, string | {  }) => string | Buffer",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "fs.writeFileSync",
+        "module": "fs",
+        "path": [
+          "writeFileSync"
+        ],
+        "status": "resolved",
+        "format": "(string, string | Buffer) => undefined",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "fs.existsSync",
+        "module": "fs",
+        "path": [
+          "existsSync"
+        ],
+        "status": "resolved",
+        "format": "(string) => boolean",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "fs.statSync",
+        "module": "fs",
+        "path": [
+          "statSync"
+        ],
+        "status": "resolved",
+        "format": "(string) => { isFile: () => boolean, isDirectory: () => boolean, isSymbolicLink: () => boolean, size: number, mtime: unknown, ctime: unknown, atime: unknown, birthtime: unknown, mode: number, uid: number, gid: number }",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "fs.promises.readFile",
+        "module": "fs",
+        "path": [
+          "readFile"
+        ],
+        "status": "resolved",
+        "format": "(string, unknown) => promise<string | Buffer>",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "fs.promises.writeFile",
+        "module": "fs",
+        "path": [
+          "writeFile"
+        ],
+        "status": "resolved",
+        "format": "(string, string | Buffer) => promise<undefined>",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "fs.promises.mkdir",
+        "module": "fs",
+        "path": [
+          "mkdir"
+        ],
+        "status": "resolved",
+        "format": "(string, unknown) => promise<string | undefined>",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "node:fs/promises.readFile",
+        "module": "node:fs/promises",
+        "path": [
+          "readFile"
+        ],
+        "status": "resolved",
+        "format": "(string, unknown) => promise<string | Buffer>",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "node:fs/promises.appendFile",
+        "module": "node:fs/promises",
+        "path": [
+          "appendFile"
+        ],
+        "status": "resolved",
+        "format": "(string, string | Buffer) => promise<undefined>",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "node:fs/promises.unlink",
+        "module": "node:fs/promises",
+        "path": [
+          "unlink"
+        ],
+        "status": "resolved",
+        "format": "(string) => promise<undefined>",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "node:fs/promises.rename",
+        "module": "node:fs/promises",
+        "path": [
+          "rename"
+        ],
+        "status": "resolved",
+        "format": "(string, string) => promise<undefined>",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "node:fs/promises.copyFile",
+        "module": "node:fs/promises",
+        "path": [
+          "copyFile"
+        ],
+        "status": "resolved",
+        "format": "(string, string) => promise<undefined>",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "node:fs/promises.chmod",
+        "module": "node:fs/promises",
+        "path": [
+          "chmod"
+        ],
+        "status": "resolved",
+        "format": "(string, number) => promise<undefined>",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "path.join",
+        "module": "path",
+        "path": [
+          "join"
+        ],
+        "status": "resolved",
+        "format": "(string, string) => string",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "path.resolve",
+        "module": "path",
+        "path": [
+          "resolve"
+        ],
+        "status": "resolved",
+        "format": "(string) => string",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "path.dirname",
+        "module": "path",
+        "path": [
+          "dirname"
+        ],
+        "status": "resolved",
+        "format": "(string) => string",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "path.basename",
+        "module": "path",
+        "path": [
+          "basename"
+        ],
+        "status": "resolved",
+        "format": "(string, string) => string",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "path.extname",
+        "module": "path",
+        "path": [
+          "extname"
+        ],
+        "status": "resolved",
+        "format": "(string) => string",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "path.relative",
+        "module": "path",
+        "path": [
+          "relative"
+        ],
+        "status": "resolved",
+        "format": "(string, string) => string",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "path.parse",
+        "module": "path",
+        "path": [
+          "parse"
+        ],
+        "status": "resolved",
+        "format": "(string) => { root: string, dir: string, base: string, ext: string, name: string }",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "path.isAbsolute",
+        "module": "path",
+        "path": [
+          "isAbsolute"
+        ],
+        "status": "resolved",
+        "format": "(string) => boolean",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "url.URL",
+        "module": "url",
+        "path": [
+          "URL"
+        ],
+        "status": "resolved",
+        "format": "(string, string) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, hash: string, toString: () => string, toJSON: () => string }",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "url.URLSearchParams",
+        "module": "url",
+        "path": [
+          "URLSearchParams"
+        ],
+        "status": "resolved",
+        "format": "(unknown) => { get: (string) => string | unknown, has: (string) => boolean, set: (string, string) => undefined, append: (string, string) => undefined, delete: (string) => undefined, toString: () => string }",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "url.fileURLToPath",
+        "module": "url",
+        "path": [
+          "fileURLToPath"
+        ],
+        "status": "resolved",
+        "format": "(string) => string",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "url.pathToFileURL",
+        "module": "url",
+        "path": [
+          "pathToFileURL"
+        ],
+        "status": "resolved",
+        "format": "(string) => { href: string }",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "events.EventEmitter",
+        "module": "events",
+        "path": [
+          "EventEmitter"
+        ],
+        "status": "resolved",
+        "format": "() => EventEmitter",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "events.once",
+        "module": "events",
+        "path": [
+          "once"
+        ],
+        "status": "resolved",
+        "format": "(unknown, string) => promise<unknown[]>",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "events.on",
+        "module": "events",
+        "path": [
+          "on"
+        ],
+        "status": "resolved",
+        "format": "(unknown, string) => unknown",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "node:events.EventEmitter",
+        "module": "node:events",
+        "path": [
+          "EventEmitter"
+        ],
+        "status": "resolved",
+        "format": "() => EventEmitter",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "util.promisify",
+        "module": "util",
+        "path": [
+          "promisify"
+        ],
+        "status": "resolved",
+        "format": "(unknown) => unknown",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "util.inspect",
+        "module": "util",
+        "path": [
+          "inspect"
+        ],
+        "status": "resolved",
+        "format": "(unknown, unknown) => string",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "util.format",
+        "module": "util",
+        "path": [
+          "format"
+        ],
+        "status": "resolved",
+        "format": "(string) => string",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "util.types.isDate",
+        "module": "util",
+        "path": [
+          "types",
+          "isDate"
+        ],
+        "status": "resolved",
+        "format": "(unknown) => boolean",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "stream.Readable",
+        "module": "stream",
+        "path": [
+          "Readable"
+        ],
+        "status": "resolved",
+        "format": "() => Readable",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "stream.Writable",
+        "module": "stream",
+        "path": [
+          "Writable"
+        ],
+        "status": "resolved",
+        "format": "() => Writable",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "stream.Duplex",
+        "module": "stream",
+        "path": [
+          "Duplex"
+        ],
+        "status": "resolved",
+        "format": "() => Duplex",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "stream.Transform",
+        "module": "stream",
+        "path": [
+          "Transform"
+        ],
+        "status": "resolved",
+        "format": "() => Transform",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "stream.pipeline",
+        "module": "stream",
+        "path": [
+          "pipeline"
+        ],
+        "status": "resolved",
+        "format": "(unknown) => unknown",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "stream.machine-callbacks",
+        "module": "stream",
+        "path": [
+          "Transform"
+        ],
+        "forceMock": true,
+        "note": "Node stream machine drives internal callbacks — design-limitations §八",
+        "status": "mock-required",
+        "format": "() => Transform",
+        "reason": "Node stream machine drives internal callbacks — design-limitations §八"
+      },
+      {
+        "id": "querystring.parse",
+        "module": "querystring",
+        "path": [
+          "parse"
+        ],
+        "status": "resolved",
+        "format": "(string, string, string, unknown) => ParsedQueryString",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "querystring.stringify",
+        "module": "querystring",
+        "path": [
+          "stringify"
+        ],
+        "status": "resolved",
+        "format": "(unknown, string, string, unknown) => string",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "crypto.randomUUID",
+        "module": "crypto",
+        "path": [
+          "randomUUID"
+        ],
+        "status": "resolved",
+        "format": "() => string",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "crypto.createHash",
+        "module": "crypto",
+        "path": [
+          "createHash"
+        ],
+        "status": "resolved",
+        "format": "(string) => { update: (string | Buffer) => unknown, digest: (string) => string | Buffer }",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "crypto.randomBytes",
+        "module": "crypto",
+        "path": [
+          "randomBytes"
+        ],
+        "status": "resolved",
+        "format": "(number) => Buffer",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "process.env",
+        "path": [
+          "process",
+          "env"
+        ],
+        "status": "resolved",
+        "format": "{  }",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "process.cwd",
+        "path": [
+          "process",
+          "cwd"
+        ],
+        "status": "resolved",
+        "format": "() => string",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "process.argv",
+        "path": [
+          "process",
+          "argv"
+        ],
+        "status": "resolved",
+        "format": "string[]",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "os.platform",
+        "module": "os",
+        "path": [
+          "platform"
+        ],
+        "status": "resolved",
+        "format": "() => string",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "Buffer.from",
+        "path": [
+          "Buffer",
+          "from"
+        ],
+        "status": "resolved",
+        "format": "(string | number[]) => Buffer",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "child_process.spawn-native",
+        "module": "child_process",
+        "path": [
+          "spawn"
+        ],
+        "forceMock": true,
+        "note": "native process spawn — mock or env signature only; no side-effect simulation",
+        "status": "mock-required",
+        "format": "(string, string[], unknown) => unknown",
+        "reason": "native process spawn — mock or env signature only; no side-effect simulation"
+      }
+    ]
+  },
+  "esProbes": {
+    "counts": {
+      "resolved": 4,
+      "unknown": 0,
+      "mock-required": 0
+    },
+    "total": 4,
+    "results": [
+      {
+        "id": "Array.isArray",
+        "path": [
+          "Array",
+          "isArray"
+        ],
+        "status": "resolved",
+        "format": "(unknown) => boolean",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "JSON.stringify",
+        "path": [
+          "JSON",
+          "stringify"
+        ],
+        "status": "resolved",
+        "format": "(unknown) => string | undefined",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "Math.max",
+        "path": [
+          "Math",
+          "max"
+        ],
+        "status": "resolved",
+        "format": "(number, number) => number",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "Promise",
+        "path": [
+          "Promise"
+        ],
+        "status": "resolved",
+        "format": "{ resolve: (unknown) => promise<unknown>, reject: (unknown) => promise<never>, all: (promise<unknown>[]) => promise<unknown[]>, allSettled: (promise<unknown>[]) => promise<unknown[]>, race: (promise<unknown>[]) => promise<unknown>, any: (promise<unknown>[]) => promise<unknown> }",
+        "reason": "present in handwritten env with concrete Abs shape"
+      }
+    ]
+  },
+  "webProbes": {
+    "counts": {
+      "resolved": 3,
+      "unknown": 0,
+      "mock-required": 0
+    },
+    "total": 3,
+    "results": [
+      {
+        "id": "fetch",
+        "path": [
+          "fetch"
+        ],
+        "status": "resolved",
+        "format": "(string | { json: () => promise<unknown>, text: () => promise<string>, arrayBuffer: () => promise<unknown>, blob: () => promise<unknown>, formData: () => promise<unknown>, clone: () => unknown, ok: boolean, status: number, statusText: string, headers: { append: (string, string) => undefined, delete: (string) => undefined, get: (string) => string | unknown, has: (string) => boolean, set: (string, string) => undefined, forEach: (unknown) => undefined, entries: () => unknown, keys: () => unknown, values: () => unknown }, url: string, redirected: boolean, type: string, bodyUsed: boolean, method: string, body: unknown | unknown, mode: string, credentials: string, cache: string, redirect: string, referrer: string, integrity: string, signal: unknown }) => promise<{ json: () => promise<unknown>, text: () => promise<string>, arrayBuffer: () => promise<unknown>, blob: () => promise<unknown>, formData: () => promise<unknown>, clone: () => unknown, ok: boolean, status: number, statusText: string, headers: { append: (string, string) => undefined, delete: (string) => undefined, get: (string) => string | unknown, has: (string) => boolean, set: (string, string) => undefined, forEach: (unknown) => undefined, entries: () => unknown, keys: () => unknown, values: () => unknown }, url: string, redirected: boolean, type: string, bodyUsed: boolean }>",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "URL",
+        "path": [
+          "URL"
+        ],
+        "status": "resolved",
+        "format": "(string, string) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, searchParams: { append: (string, string) => undefined, delete: (string) => undefined, get: (string) => string | unknown, getAll: (string) => string[], has: (string) => boolean, set: (string, string) => undefined, sort: () => undefined, toString: () => string, entries: () => unknown, keys: () => unknown, values: () => unknown, forEach: (unknown) => undefined, size: number }, hash: string, toString: () => string, toJSON: () => string }",
+        "reason": "present in handwritten env with concrete Abs shape"
+      },
+      {
+        "id": "AbortController",
+        "path": [
+          "AbortController"
+        ],
+        "status": "resolved",
+        "format": "() => { signal: unknown, abort: () => undefined }",
+        "reason": "present in handwritten env with concrete Abs shape"
+      }
+    ]
+  },
+  "libraryProbes": [
+    {
+      "id": "commander",
+      "package": "commander",
+      "kind": "js-source",
+      "note": "JS source present — analysis via execution / checkSource, not d.ts harvest",
+      "installed": true,
+      "status": "resolved",
+      "reason": "JS source present — analysis via execution / checkSource, not d.ts harvest"
+    },
+    {
+      "id": "ms",
+      "package": "ms",
+      "kind": "js-source",
+      "note": "JS source — infer/check without handwritten mock",
+      "installed": true,
+      "status": "resolved",
+      "reason": "JS source — infer/check without handwritten mock"
+    },
+    {
+      "id": "@types/node",
+      "package": "@types/node",
+      "kind": "types",
+      "note": ".d.ts harvest via harvestNodeTypes / nudo harvest node",
+      "installed": true,
+      "status": "resolved",
+      "reason": ".d.ts harvest via harvestNodeTypes / nudo harvest node"
+    },
+    {
+      "id": "no-types-example",
+      "package": "left-pad",
+      "kind": "none",
+      "note": "if installed without types and no JS eval path → mock/hint required",
+      "installed": false,
+      "status": "absent",
+      "reason": "package not on Node resolution path in this worktree"
+    }
+  ]
+}

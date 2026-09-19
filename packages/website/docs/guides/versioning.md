@@ -15,8 +15,8 @@ Nudo is a pnpm monorepo that publishes **per-package** versions via [changesets]
 | `@nudojs/service` | **1.x** | SemVer: breaking → major |
 | `@nudojs/cli` | **1.x** | SemVer: breaking → major |
 | `@nudojs/parser` | 0.x | **Minor may break** — read CHANGELOG |
-| `@nudojs/lsp` | 0.x | **Minor may break** |
-| `@nudojs/env` / `@nudojs/harvester` | 0.x | Minor may break |
+| `@nudojs/lsp` | 0.x (**0.8.0** pre-1.x) | **Minor may break**. 1.x gate: observe freeze via `packages/lsp/PUBLIC_API.md` — no automatic bump |
+| `@nudojs/env` / `@nudojs/harvester` | 0.x (**0.3.0** / **0.2.5**) | Minor may break; pin a minor for stable IDE/CI analysis (B8) |
 | `nudojs` (npm shell) | 0.x | Prefer `@nudojs/cli` / `@nudojs/core` directly |
 | `vite-plugin-nudo` | 0.x | Minor may break |
 | `nudo-vscode` | Marketplace | Follow extension release notes |
@@ -82,12 +82,12 @@ Pick packages + bump type, then write a short **who breaks / how to migrate** su
 { "dependencies": { "@nudojs/core": "^1.0.1" } }
 
 // 0.x: only take patches automatically
-{ "dependencies": { "@nudojs/lsp": "~0.7.1" } }
+{ "dependencies": { "@nudojs/lsp": "~0.8.0" } }
 ```
 
 ## IDE extensions
 
-VS Code (`wmzy.nudo-vscode`) and Zed (`nudojs/nudo-zed`) bundle or resolve `@nudojs/lsp`. Extension release notes are the source of truth for editor-facing changes; the language server still follows the 0.x table above.
+VS Code (`wmzy.nudo-vscode`) and Zed (`nudojs/nudo-zed`) bundle or resolve `@nudojs/lsp`. Extension release notes are the source of truth for editor-facing changes; the language server still follows the 0.x table above. VS Code packaging checklist: repo `packages/vscode/RELEASE_CHECKLIST.md`. LSP freeze inventory: repo `packages/lsp/PUBLIC_API.md`.
 
 ## See also
 
@@ -95,3 +95,5 @@ VS Code (`wmzy.nudo-vscode`) and Zed (`nudojs/nudo-zed`) bundle or resolve `@nud
 - [VS Code Extension](./vscode.md)
 - [Zed Extension](./zed.md)
 - [Agent Integration](./mcp-server.md)
+- [Coexistence with TypeScript](./coexistence.md)
+- [@nudojs/lsp API](../api/lsp.md)
