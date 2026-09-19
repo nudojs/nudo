@@ -23,7 +23,7 @@
   - **C0.1 contract model:** body-AST required-slot inference removed. `nudo:arg-structure` now means HOF argument not callable / arity mismatch only. Obligations come from explicit `*.nudo.js` / `@nudo:refine` contracts or call-site facts; no evidence → any. Migration: add a sidecar shape contract where you need structure checks.
   - **A1 analysis default:** `package.json#nudo.analysis.mode` shipped default is now `exports` (was `directives`). Files with `export` / sidecar / `@nudo:` directives are analyzed by IDE/build. Escape hatch: `"mode": "directives"` (previous silence) or `"all"` (every target path). Named-path CLI commands still analyze the named file regardless of mode.
 
-  Release notes / policy: `docs/versioning.md`. Scope defaults: `docs/design-cli-semantics.md`.
+  Release notes / policy: `docs/versioning.md`. Scope defaults: `docs/design/cli-semantics.md`.
 
   Feature highlights (after accepting the defaults above):
 

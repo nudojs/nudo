@@ -5,7 +5,7 @@
 >
 > **Honest boundary:** resolution rate is *not* a soundness guarantee.
 > Categories still recommended for mock are listed below and aligned with
-> `docs/design-limitations.md` §八 (call-site ceiling).
+> `docs/design/limitations.md` §2 (call-site ceiling).
 
 - Generated at: `2026-09-19T02:48:47.229Z`
 - Harvest budgets: maxFiles=`12`, maxMs=`2500`, disable=`NUDO_HARVEST_NODE=off`
@@ -66,7 +66,7 @@ Leaf-clean ratio (format has no unknown/any token / total): **51%**
 | `stream.Duplex` | resolved | mentions-unknown | `(options?: unknown) => Duplex` | present in env; signature-level — format still mentions unknown/any leaves |
 | `stream.Transform` | resolved | mentions-unknown | `(options?: unknown) => Transform` | present in env; signature-level — format still mentions unknown/any leaves |
 | `stream.pipeline` | resolved | mentions-unknown | `(...streams: unknown) => promise<undefined>` | present in env; signature-level — format still mentions unknown/any leaves |
-| `stream.machine-callbacks` | mock-required | — | `(options?: unknown) => Transform` | Node stream machine drives internal callbacks — design-limitations §八 |
+| `stream.machine-callbacks` | mock-required | — | `(options?: unknown) => Transform` | Node stream machine drives internal callbacks — limitations §2 |
 | `querystring.parse` | resolved | mentions-unknown | `(string, sep?: string, eq?: string, options?: unknown) => ParsedQueryString` | present in env; signature-level — format still mentions unknown/any leaves |
 | `querystring.stringify` | resolved | mentions-unknown | `(unknown, sep?: string, eq?: string, options?: unknown) => string` | present in env; signature-level — format still mentions unknown/any leaves |
 | `crypto.randomUUID` | resolved | clean | `() => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
@@ -105,7 +105,7 @@ Leaf-clean ratio (format has no unknown/any token / total): **51%**
 
 - Native bindings (process spawn, native addons)
 - Dynamic `require` / computed module graphs
-- Stream machine callbacks (Node Transform internals) — design-limitations §八
+- Stream machine callbacks (Node Transform internals) — limitations §2
 - Dual-entry browser/node variants (call-site records do not cross files)
 - Functions with no call-site usage (entry@ fallback is honest)
 

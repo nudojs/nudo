@@ -231,7 +231,7 @@ These constructs currently evaluate to `unknown` (often with a `nudo:unknown-rec
 
 ## Mock boundary (still recommended)
 
-Env modules and the `@types` harvester cover a large slice of common Node/Web APIs. They do **not** remove the need for mocks everywhere. Categories that are still **recommended for handwritten mock** (or that remain honest `unknown` / `entry@` results) — aligned with the call-site ceiling in `docs/design-limitations.md` §八:
+Env modules and the `@types` harvester cover a large slice of common Node/Web APIs. They do **not** remove the need for mocks everywhere. Categories that are still **recommended for handwritten mock** (or that remain honest `unknown` / `entry@` results) — aligned with the call-site ceiling in `docs/design/limitations.md` §2:
 
 | Category | Why mock / why unknown | Workaround |
 |---|---|---|

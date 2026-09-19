@@ -11,7 +11,7 @@
  *   - mock-required:  category still recommended for handwritten mock
  *                     (native bindings / stream machine / dynamic require /
  *                      dual-entry variants / no call-site functions) —
- *                     aligned with docs/design-limitations.md §八
+ *                     aligned with docs/design/limitations.md §2
  *
  * Usage (from monorepo root):
  *   pnpm run coverage:env
@@ -160,7 +160,7 @@ const NODE_PROBES: Probe[] = [
     module: "stream",
     path: ["Transform"],
     forceMock: true,
-    note: "Node stream machine drives internal callbacks — design-limitations §八",
+    note: "Node stream machine drives internal callbacks — limitations §2",
   },
 
   // querystring
@@ -415,7 +415,7 @@ function main(): void {
   const report = {
     generatedAt,
     note:
-      "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design-limitations.md §八 and website semantics mock-boundary section.",
+      "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design/limitations.md §2 and website semantics mock-boundary section.",
     budgets: {
       harvestNodeTypes: { maxFiles: 12, maxMs: 2500, disableEnvVar: "NUDO_HARVEST_NODE=off" },
     },
@@ -500,7 +500,7 @@ function main(): void {
   md.push(">");
   md.push("> **Honest boundary:** resolution rate is *not* a soundness guarantee.");
   md.push("> Categories still recommended for mock are listed below and aligned with");
-  md.push("> `docs/design-limitations.md` §八 (call-site ceiling).");
+  md.push("> `docs/design/limitations.md` §2 (call-site ceiling).");
   md.push("");
   md.push(`- Generated at: \`${generatedAt}\``);
   md.push(`- Harvest budgets: maxFiles=\`${report.budgets.harvestNodeTypes.maxFiles}\`, maxMs=\`${report.budgets.harvestNodeTypes.maxMs}\`, disable=\`NUDO_HARVEST_NODE=off\``);
@@ -563,7 +563,7 @@ function main(): void {
   md.push("");
   md.push("- Native bindings (process spawn, native addons)");
   md.push("- Dynamic `require` / computed module graphs");
-  md.push("- Stream machine callbacks (Node Transform internals) — design-limitations §八");
+  md.push("- Stream machine callbacks (Node Transform internals) — limitations §2");
   md.push("- Dual-entry browser/node variants (call-site records do not cross files)");
   md.push("- Functions with no call-site usage (entry@ fallback is honest)");
   md.push("");

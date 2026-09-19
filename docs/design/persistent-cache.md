@@ -1,7 +1,7 @@
 # 持久化分析缓存（`.nudo/cache`）
 
 > **状态**：**部分落地**——L1 磁盘基建与 CheckJson / effectiveInterface 整文件表已实现（CheckJson 默认关）；**L2 harvest / HarvestJson 磁盘层仍为设计稿，未实施**。
-> **真源**：架构 → design-kernel-merge.md；命令面/any/unknown/check → design-cli-semantics.md
+> **真源**：架构 → kernel-merge.md；命令面/any/unknown/check → cli-semantics.md
 >
 > 产品动词：`check` / `test` / `contract` / `export` / `health` / `env harvest`。
 > 相关配置：`package.json#nudo.cache.*`、`package.json#nudo.contract.*`、`package.json#nudo.check.*`；env `NUDO_CACHE*`。
@@ -58,7 +58,7 @@
 - 不做远程/共享缓存。
 - 不替代进程内 L0 / check memo——磁盘是冷路径。
 - 不为 `--from` 注入路径做整报告复用。
-- 不序列化 TypeValue、不做 emit 模块回放。
+- 不序列化求值 IR、不做 emit 模块回放。
 
 ---
 
@@ -77,7 +77,7 @@ L2 依赖磁盘      ~/.cache/nudo/deps/   node_modules 投影  ← 跨项目（
 | L1 check | `CheckJson`（`serializeCheckJson`） | **`false`**，需显式开 |
 | L2 harvest | **HarvestJson**（纯 JSON 签名投影；读回 materialize 为 mock Abs 导出表） | **未实施** |
 
-前提（L2 开工门槛，仍有效）：harvest 出口稳定为可 JSON 化签名表，不再依赖已删除的评估用 TypeValue 回放路径。
+前提（L2 开工门槛，仍有效）：harvest 出口稳定为可 JSON 化签名表；磁盘层只缓存签名投影，不缓存 Abs 本体。
 
 ---
 

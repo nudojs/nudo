@@ -1,4 +1,4 @@
-<!-- DESIGN-CONFLICT:cli-semantics → docs/design-cli-semantics.md §2 / design-cli-semantics-conflicts.md
+<!-- DESIGN-CONFLICT:cli-semantics → docs/design/cli-semantics.md §2
      C-ANY: unknown/any 并格（zh 镜像）。已按 §2 拆开。 -->
 ---
 sidebar_position: 1

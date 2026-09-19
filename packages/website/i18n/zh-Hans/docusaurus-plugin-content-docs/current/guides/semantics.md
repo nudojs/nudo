@@ -231,7 +231,7 @@ Observed: 0 | 1 | 3
 
 ## Mock 边界（仍建议）
 
-env 模块与 `@types` harvester 覆盖了大量常见 Node/Web API，但**并不**消除对 mock 的需要。下列类别仍**建议手写 mock**（或保持诚实的 `unknown` / `entry@` 结果）——与 `docs/design-limitations.md` §八 调用点天花板对齐：
+env 模块与 `@types` harvester 覆盖了大量常见 Node/Web API，但**并不**消除对 mock 的需要。下列类别仍**建议手写 mock**（或保持诚实的 `unknown` / `entry@` 结果）——与 `docs/design/limitations.md` §2 调用点天花板对齐：
 
 | 类别 | 为何 mock / 为何 unknown | 可用办法 |
 |---|---|---|

@@ -1,4 +1,4 @@
-<!-- CLI semantics: docs/design-cli-semantics.md — primary verbs check/test/contract/export/health/env harvest.
+<!-- CLI semantics: docs/design/cli-semantics.md — primary verbs check/test/contract/export/health/env harvest.
      L1 explicit contracts + L2 entry may-throw. -->
 # Versioning & Release Policy (E6)
 
@@ -189,9 +189,8 @@ Regression pin: `packages/lsp/src/__tests__/public-api-surface.test.ts`.
 ## See also
 
 - `.changeset/README.md` — changesets tool docs pointer
-- `docs/superpowers/plans/2026-05-28-close-ts-dx-gaps.md` — E6 task
-- `docs/design-refine-derivation.md` — interface tier semantics
-- `docs/design-limitations.md` §1.0b — C0.5 optional eval-driven diagnostics (`nudo.analysis.evalMissingSlot`)
+- `docs/design/refine-derivation.md` — interface tier semantics
+- `docs/design/limitations.md` §1.0b — C0.5 optional eval-driven diagnostics (`nudo.analysis.evalMissingSlot`)
 - Website: `guides/migrating-js.md` — code-first migration walkthrough
 - Website guide: `packages/website/docs/guides/versioning.md`
 

@@ -166,7 +166,7 @@ Coverage baseline (`resolved` / **leaf-clean** / `unknown` / `mock-required`) is
 
 ## Mock boundary (honest)
 
-Still **recommended** for handwritten mock (aligned with `docs/design-limitations.md` §八 call-site ceiling):
+Still **recommended** for handwritten mock (aligned with `docs/design/limitations.md` §2 call-site ceiling):
 
 - Native bindings (`child_process.spawn`, native addons) — env may hold a signature, not side effects
 - Dynamic `require` / computed module graphs

@@ -1,4 +1,4 @@
-<!-- CLI semantics: docs/design-cli-semantics.md — verbs check/test/contract/export/health/env harvest. -->
+<!-- CLI semantics: docs/design/cli-semantics.md — verbs check/test/contract/export/health/env harvest. -->
 # Nudo
 
 > **欢迎重回 JS 世界.** — Nudo 不限制你的 JS 表达，只忠实反映中间量与结果，并提供比类型更精确的契约校验。  
@@ -217,7 +217,7 @@ With `@nudo:refine x positive`, `scale` gets the term `(x + 1)` **and** the deri
 
 ### Abs projections
 
-Production analysis is **Abs-native**. Extensional TS/schema/dts projections (`formatShape`, `absToTSType`, `absToSchemaSource`) are one-way lossy views of Abs — nothing reads a projection back. Design: [`docs/design-kernel-merge.md`](./docs/design-kernel-merge.md) and the [docs site Abs page](https://nudojs.github.io/nudo/docs/concepts/type-values).
+Production analysis is **Abs-native**. Extensional TS/schema/dts projections (`formatShape`, `absToTSType`, `absToSchemaSource`) are one-way lossy views of Abs — nothing reads a projection back. Design: [`docs/design/kernel-merge.md`](./docs/design/kernel-merge.md) and the [docs site Abs page](https://nudojs.github.io/nudo/docs/concepts/type-values).
 
 ## Development
 
@@ -256,7 +256,7 @@ Full documentation is available at the [Nudo docs site](https://nudojs.github.io
 - [Core Concepts](https://nudojs.github.io/nudo/docs/concepts/type-values)
 - [API Reference](https://nudojs.github.io/nudo/docs/api/core)
 - [Design Document](https://nudojs.github.io/nudo/docs/design/design-doc)
-- CLI semantics: [`docs/design-cli-semantics.md`](./docs/design-cli-semantics.md)
+- CLI semantics: [`docs/design/cli-semantics.md`](./docs/design/cli-semantics.md)
 
 ## License
 

@@ -4,7 +4,7 @@
 > 位置：`@nudojs/core/src/algebra`。
 >
 > 产品命令面 / any·unknown / check 门禁语义见
-> [`design-cli-semantics.md`](./design-cli-semantics.md)。
+> [`cli-semantics.md`](./cli-semantics.md)。
 >
 > **无第二套 IR**：生产求值 Abs 原生（B-path transpile+exec → ast-eval 回退）。
 > dts / schema / guard / LSP hover / 序列化都是 **Abs 的单向外延投影**

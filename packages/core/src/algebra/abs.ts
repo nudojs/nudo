@@ -1,5 +1,5 @@
 /** 抽象值 Abs = 形状 × 项 × 约束 × 置信度 */
-// ALIGN:cli-semantics → docs/design-cli-semantics.md §2
+// ALIGN:cli-semantics → docs/design/cli-semantics.md §2
 // 本文件 any/unknown 定义是产品语义锚点：any=无约束并集；unknown=推导失败。
 // CLI/文档展示与 check L2 应对齐此处，而不是改掉此处。
 

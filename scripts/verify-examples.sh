@@ -13,7 +13,7 @@
 # every runnable *.js/*.ts under docs/examples must be covered by at least
 # one row (*.nudo.js templates excepted — imported via @nudo:import).
 #
-# CLI product face (docs/design-cli-semantics.md):
+# CLI product face (docs/design/cli-semantics.md):
 #   Day0  pnpm run check      — gate + signatures (any ≠ unknown)
 #         pnpm run test:cli   — case reports (call@/entry@ + debug)
 #   Day1  pnpm run contract   — draft/emit/print sidecars

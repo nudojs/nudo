@@ -622,7 +622,7 @@ export function defineEnv(): EnvDefinition {
 
   /**
    * stream skeleton: brand + pipe/finished. Machine-driven callbacks remain
-   * mock-recommended (design-limitations §八).
+   * mock-recommended (limitations §2).
    */
   const streamModule: Record<string, Abs> = {
     Readable: streamCtor("Readable"),

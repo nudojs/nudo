@@ -1,7 +1,7 @@
 # Interface 分层推导与契约生成
 
 > **状态**：主体已实施——三层有效契约、侧车自动绑定、`contract` 打印/`--draft`/`--emit`、drift/domain 冲突码、隐式依赖边、组合式生成。宿主层「项目根内」边界、LSP open-buffer 侧车执行、`.nudo/cache` 跨会话缓存仍未闭环。
-> **真源**：架构 → design-kernel-merge.md；命令面/any/unknown/check → design-cli-semantics.md
+> **真源**：架构 → kernel-merge.md；命令面/any/unknown/check → cli-semantics.md
 >
 > 产品动词：`check` / `test` / `contract` / `export` / `health` / `env harvest`。
 > 配置键：`package.json#nudo.contract.*`（`autoBind` / `emit`）。
@@ -57,17 +57,19 @@
 
 ### 诊断码（执法面）
 
+完整码表见 [`cli-semantics.md`](./cli-semantics.md) §5.2。与契约层直接相关的：
+
 | code | severity | 触发 |
 |---|---|---|
-| `nudo:constraint-violated` | error | 推断 ⊭ **手写**契约（既有） |
-| `nudo:interface-domain-exceeds` | error | **跨文件**注入的观察域 ⊄ 手写契约（证据 conf ∈ {exact,path} 且无截断才触发） |
-| `nudo:interface-drift` | warning | 已落盘生成段 ≠ 今日重算；域 ⊄ 生成段 |
+| `nudo:constraint-violated` | error | 推断 ⊭ **手写**契约 |
+| `nudo:interface-domain-exceeds` | error | 跨文件注入域 ⊄ 手写契约（conf ∈ {exact,path} 且无截断） |
+| `nudo:interface-drift` | warning | 已落盘生成段 ≠ 今日重算 |
 | `nudo:interface-name-clash` | error | 生成段与手写同名（手写优先，跳过写入） |
 | `nudo:interface-conflict` | error | 源码注解与侧车合取不可满足 |
 | `nudo:interface-load` / `nudo:interface-cycle` | error | 侧车加载失败 / 导出形式不识别 / import 环 |
 | `nudo:interface-underivable` | info | 约束传不下来（opaque / 循环） |
 
-分析文件内的调用点违例仍走 `nudo:constraint-violated`，与 domain-exceeds **按证据来源分流**，不对同一违例竞争。
+分析文件内调用点违例仍走 `constraint-violated`，与 domain-exceeds **按证据来源分流**。
 
 ---
 
@@ -94,11 +96,10 @@
 
 - **项目根内**自动绑定边界：core 无 projectDir 概念，属宿主层判定，未实现。
 - LSP **open-buffer** 侧车内容作为自动绑定真值：未实现；当前以磁盘为准。
-- `.nudo/cache` 跨会话隐式契约缓存：仅部分（见 design-persistent-cache.md）；用户契约文件与引擎缓存严格分离。
+- `.nudo/cache` 跨会话隐式契约缓存：仅部分（见 [`persistent-cache.md`](./persistent-cache.md)）；用户契约文件与引擎缓存严格分离。
 - `nudo:interface-entry-only`（导出无根且无域）诊断码：设计已命名，代码侧未形成稳定消费面。
-- 工件 join 后组合式曾退回展开式（已知降级）；分场景契约名（侧车模板不绑源码）仍是工件精度选项，非 check 正确性前置。
+- 工件 join 后组合式曾退回展开式（已知降级）；分场景契约名仍是工件精度选项，非 check 正确性前置。
 - 形参名对齐 / rest·解构 / class 方法侧车键等文法缺口：按「名字对不上不静默错绑」原则收紧时，需同步评估既有静默跳过行为。
-- TypeValue 从评估路径已退出；剩余出口（dts `Case:` 行、部分序列化）是另一条退出轨，不绑本设计交付。
 
 ---
 

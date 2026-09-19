@@ -1,6 +1,6 @@
 {
   "generatedAt": "2026-09-19T02:48:47.229Z",
-  "note": "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design-limitations.md §八 and website semantics mock-boundary section.",
+  "note": "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design/limitations.md §2 and website semantics mock-boundary section.",
   "budgets": {
     "harvestNodeTypes": {
       "maxFiles": 12,
@@ -486,10 +486,10 @@
           "Transform"
         ],
         "forceMock": true,
-        "note": "Node stream machine drives internal callbacks — design-limitations §八",
+        "note": "Node stream machine drives internal callbacks — limitations §2",
         "status": "mock-required",
         "format": "(options?: unknown) => Transform",
-        "reason": "Node stream machine drives internal callbacks — design-limitations §八"
+        "reason": "Node stream machine drives internal callbacks — limitations §2"
       },
       {
         "id": "querystring.parse",

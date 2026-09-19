@@ -1,10 +1,10 @@
-# design-cli-semantics — CLI 产品命令面与 any/unknown/入口 throws 语义
+# cli-semantics — CLI 产品命令面与 any/unknown/入口 throws 语义
 
 > Status: **landed** — product CLI verbs, L2 entry-may-throw, any≠unknown display, test case reports, check JSON.
 > Primary verbs: `check` / `test` / `contract` / `export` / `health` / `env harvest`.
 > Product flags: `--from`, `test --freeze`, `export --format dts|guard|schema|standard|all` + `--dialect zod` + `export --out`.
-> Abs 架构真源：[`design-kernel-merge.md`](./design-kernel-merge.md)。
-> 限制与路线图：[`design-limitations.md`](./design-limitations.md)。
+> Abs 架构真源：[`kernel-merge.md`](./kernel-merge.md)。
+> 限制与路线图：[`limitations.md`](./limitations.md)。
 
 本文是**产品语义与 CLI 命令面**的唯一设计源。
 
@@ -264,7 +264,7 @@ pnpm run nudo -- check path/to/file.js
 | `nudo:may-throw` / `nudo:unreachable` | 路径可能抛出（case 线索 / warning）/ 不可达代码 |
 | `nudo:unknown-inference` | 引擎债：出口或签名出现真 `unknown` |
 | `nudo:unknown-recv` | 引擎债：unknown 接收者成员访问；**不得**替代 L2 throws 建模 |
-| `nudo:missing-slot` | C0.5 可选：求值命中已知对象缺字段（默认 off，见 limitations） |
+| `nudo:missing-slot` | C0.5 可选：求值命中已知对象缺字段（默认 off，见 limitations §1.3） |
 
 **L2 入口 throws 是独立、默认 error、可 ignore 的码**，不得与「内部 may-throw warning」共用一个永不挡 CI 的码。
 
@@ -490,7 +490,7 @@ npx tsx scripts/scan-real-packages.ts commander
 
 出厂默认 `mode=exports`：含 `export` / 侧车 / `@nudo:` 的文件进 IDE 分析；无 export、无侧车的脚本需显式 `mode=all`。1.x 默认切换属 intentional major note（见 `docs/versioning.md`）。
 
-**C0.5 `evalMissingSlot`**：默认 `off`。`"warning"` 时对**求值命中**的已知对象缺字段发 `nudo:missing-slot` warning。禁止 body AST 预扫描发明义务；草稿产品路径仍是 `nudo contract --draft`。详见 [`design-limitations.md`](./design-limitations.md)。
+**C0.5 `evalMissingSlot`**：默认 `off`。`"warning"` 时对**求值命中**的已知对象缺字段发 `nudo:missing-slot` warning。禁止 body AST 预扫描发明义务；草稿产品路径仍是 `nudo contract --draft`。详见 [`limitations.md`](./limitations.md)。
 
 ---
 
@@ -509,18 +509,7 @@ Day 0   check（读签名）/ test（看 case） · Day 1   contract + check · 
 
 ---
 
-## 9. 实现状态
-
-1. **展示层**：`formatShape` / CLI / CaseJson / LSP inlay —— 入口 `any` vs `unknown` 拆开；throws 上屏；check 默认 signatures；test 默认全量 case。 **[done]**
-2. **Abs throws**：`any`/`nullish` 成员访问与危险操作写入 `throwsAbs` 或 may-throw 标记；nested try soft 上浮到外层帧。 **[done]**
-3. **check L2**：仅入口；`nudo:entry-may-throw` 默认 error；`--ignore-throws` + 配置；export 形态矩阵覆盖。 **[done]**
-4. **命令面**：`check` / `test` / `contract` / `export` / `health` / `env harvest`；schema 用 `--dialect zod`；`--from` / `test --freeze` / `export --out`。 **[done]**
-5. **文档与 gold**：guides/gold/examples 对齐当前命令面；zero-FP 套件区分 L2 off/on；verify:examples 0 fail。 **[done]**
-6. **分析范围**：`analysisConfig` + `mode=exports` 出厂默认 + 诊断噪声档。 **[done]**
-
----
-
-## 10. 非目标
+## 9. 非目标
 
 - 不在 body AST 上发明「必填 slot」义务（C0 仍成立；L2 是运行时效果，不是 shape 必填）。
 - 不把 `.d.ts` 投影当真理源。
@@ -531,14 +520,14 @@ Day 0   check（读签名）/ test（看 case） · Day 1   contract + check · 
 
 ---
 
-## 11. 参考（现仓锚点）
+## 10. 参考（现仓锚点）
 
 | 片段 | 位置 |
 |------|------|
-| Abs 架构 | [`design-kernel-merge.md`](./design-kernel-merge.md) |
-| 限制 / 路线图 / C0.5 | [`design-limitations.md`](./design-limitations.md) |
-| CI 用法 | [`ci-nudo-check.md`](./ci-nudo-check.md) |
-| 示例矩阵 | [`examples/README.md`](./examples/README.md) |
+| Abs 架构 | [`kernel-merge.md`](./kernel-merge.md) |
+| 限制 / 未决 / C0.5 | [`limitations.md`](./limitations.md) |
+| CI 接线 | [`../ci-nudo-check.md`](../ci-nudo-check.md) |
+| 示例矩阵 | [`../examples/README.md`](../examples/README.md) |
 | 门禁核心 | `packages/core/src/algebra/check.ts` |
 | 金标 | `packages/core/src/algebra/__tests__/check-recall-gold.test.ts` 等 |
 | CLI | `packages/cli/src/index.ts` |

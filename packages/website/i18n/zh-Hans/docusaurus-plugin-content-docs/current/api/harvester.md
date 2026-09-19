@@ -166,7 +166,7 @@ call@L9: ("docs", "readme") => `${string}.md`
 
 ## Mock 边界（诚实清单）
 
-仍**建议**手写 mock 的类别（与 `docs/design-limitations.md` §八 调用点天花板对齐）：
+仍**建议**手写 mock 的类别（与 `docs/design/limitations.md` §2 调用点天花板对齐）：
 
 - Native bindings（`child_process.spawn`、原生 addon）—— env 可有签名，无副作用模拟
 - 动态 `require` / 计算模块图

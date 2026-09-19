@@ -1,7 +1,7 @@
 # 设计：HOF 关系 Abs（不是 TS 泛型语言）
 
 > **状态**：主路径已实施——关系原语与双路径消费、generalize 使用驱动提升（`fnRels` / `entryShapes`）、check 实参检查挂钩、dts 投影侧信道有实现与测试。**未实施**：调用点经验泛化（P3，独立设计，明确暂缓）；跨文件自动归纳（范围外）。
-> **真源**：架构 → design-kernel-merge.md；命令面/any/unknown/check → design-cli-semantics.md
+> **真源**：架构 → kernel-merge.md；命令面/any/unknown/check → cli-semantics.md
 >
 > 产品面观察仍走 `nudo check` / `nudo test` / IDE；序列化 `CaseJson` 的 `intension` 携带无损 Abs。`export` 投影（含 schema `absToSchemaSource`）与 dts 都是 Abs 的单向外延渲染。
 
@@ -107,7 +107,7 @@ impl.apply → impl.body → impl.relation → isRelFn(shape-only) → unknown
 - **调用点经验泛化（P3）**：anti-unification、样本停机、过拟合防护与 memo 交互未设计评审，**不实现**。
 - **跨文件 generalize 图**：范围外；`extractFn` 只收同文件顶层函数。
 - **constraint 表达 fn 形状**的文法与 refine→error 单测：待约束语言扩展后再补；在此之前只有 promote→warning 为已合入可测行为。
-- dts 泛型投影与 LSP hover 读 intension 的纪律以实现与测试为准；外延侧 TypeValue 形状**不作**权威关系源。
+- dts 泛型投影与 LSP hover 读 intension 的纪律以实现与测试为准；**权威关系源是 Abs / PolyFn**，不是外延投影。
 - 同签名 `relationFn` 共享 fingerprint → 共享 budget 键：已知限制，不为此加 identity 字段。
 
 ---

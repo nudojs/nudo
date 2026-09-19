@@ -1,4 +1,4 @@
-<!-- DESIGN-CONFLICT:cli-semantics → docs/design-cli-semantics.md §2 / design-cli-semantics-conflicts.md
+<!-- DESIGN-CONFLICT:cli-semantics → docs/design/cli-semantics.md §2
      C-ANY: 将 unknown/any 并为同一语义格与设计冲突。 -->
 ---
 sidebar_position: 1

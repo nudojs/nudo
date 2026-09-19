@@ -1,4 +1,4 @@
-// DESIGN-CONFLICT:cli-semantics → docs/design-cli-semantics.md §3 / design-cli-semantics-conflicts.md E2
+// DESIGN-CONFLICT:cli-semantics → docs/design/cli-semantics.md §3
 // C-OBL C-ANY: gold 以「无 L2」执法面为基线；L2 入口 throws 落地时需拆 any-param 等期望。
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue, type CheckReport } from "../index.ts";
