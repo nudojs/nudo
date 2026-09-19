@@ -29,6 +29,7 @@ import {
   formatInterfaceSurfaceLine,
   findProjectConfig,
   interfaceConfig,
+  checkConfig,
   isNudoTargetPath,
   sidecarDraftPath,
   writeInterfaceDraft,
@@ -399,10 +400,14 @@ export function checkTool(
     const filePath = normalizeFilePath(params.file);
     const source = params.source ?? readSource(filePath, deps);
     const autoBind = resolveProjectAutoBind(filePath, params.autoBind);
+    // 与 CLI runCheck 同源读取 package.json#nudo.check（L2）
+    const cCfg = checkConfig(findProjectConfig(dirname(filePath))?.config);
     const report = checkSource(filePath, source, pTrue, {
       loadModule: params.loadModule ?? deps.loadModule ?? lspLoadModule,
       fromFile: filePath,
       ...(autoBind === false ? { autoBind: false } : {}),
+      entryThrows: cCfg.entryThrows,
+      ...(cCfg.ignoreThrows.length > 0 ? { ignoreThrows: cCfg.ignoreThrows } : {}),
     });
     const json = serializeCheckJson(report);
     if (params.format === "json") {
@@ -538,7 +543,7 @@ export function inferTool(
       return textResult(JSON.stringify(json, null, 2));
     }
     const lines: string[] = [
-      `nudo infer  ${json.file}`,
+      `nudo test  ${json.file}`,
       `${json.summary.functions} fn · ${json.summary.cases} case · ${json.summary.diagnostics} diag`,
     ];
     for (const f of json.functions) {

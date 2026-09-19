@@ -18,6 +18,8 @@ import {
   unknown as absUnknown,
   anyAbs,
   setMayThrowCollector,
+  runWithMayThrowSession,
+  filterIgnoredThrows,
   mayThrowEffectsToAbs,
   formatThrowsAbs,
   type MayThrowEffect,
@@ -2142,9 +2144,11 @@ function analyzeFileUncachedInner(
         } else {
           const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, argAbsEntry, filePath, seeds.seedVars);
           if (absEntry) {
+            // 任何成功求值（含 any 入参透传）都不回落 unknown（design §2）
             entryAbs = absEntry;
             entryThrowsAbs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
           } else {
+            // 求值失败才是真 unknown（推导失败），不是入口无约束 any
             entryAbs = absUnknown;
             entryThrowsAbs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
           }

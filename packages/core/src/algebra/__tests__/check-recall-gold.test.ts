@@ -1041,6 +1041,67 @@ export function getName(user) {
       expect: "entry-may-throw",
     },
     {
+      id: "export-default-any-member-throws",
+      source: `
+export default function getName(user) {
+  return user.name;
+}
+`,
+      expect: "entry-may-throw",
+    },
+    {
+      id: "export-const-arrow-any-member-throws",
+      source: `
+export const getName = (user) => user.name;
+`,
+      expect: "entry-may-throw",
+    },
+    {
+      id: "export-explicit-throw",
+      source: `
+export function boom() {
+  throw new TypeError("x");
+}
+`,
+      expect: "entry-may-throw",
+    },
+    {
+      id: "cjs-exports-fn-any-member-throws",
+      source: `
+exports.getName = function getName(user) {
+  return user.name;
+};
+`,
+      expect: "entry-may-throw",
+    },
+    {
+      id: "export-try-catch-digests-soft-throw",
+      source: `
+export function getName(user) {
+  try {
+    return user.name;
+  } catch {
+    return "n";
+  }
+}
+`,
+      expect: "ok",
+    },
+    {
+      id: "export-refine-shape-pending-l2-suppress",
+      source: `
+/**
+ * @nudo:refine user shape(name)
+ */
+export function getName(user) {
+  return user.name;
+}
+`,
+      // refine shape 尚未灌进 entry any 实参（设计 §3.3「L2 消失或降 L1」为后续项）
+      expect: "entry-may-throw",
+      note: "refine→L2 抑制未接线：当前仍按 any 成员访问记 L2",
+    },
+    {
       id: "internal-any-member-not-entry",
       source: `
 function getName(user) {
@@ -1079,22 +1140,69 @@ export function id(x) {
 `,
       expect: "ok",
     },
+    {
+      id: "ignore-throws-does-not-swallow-l1",
+      source: withStdImport(`
+/**
+ * @nudo:refine x positive
+ */
+export function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+export function pick(user) {
+  return user.name;
+}
+needsPositive(-1);
+`),
+      expect: "entry-may-throw",
+      ignoreThrows: ["TypeError"],
+      note: "ignore TypeError 只滤 L2 pick；L1 needsPositive(-1) 仍须 error",
+    } as { id: string; source: string; expect: "entry-may-throw" | "ok"; ignoreThrows?: string[] },
   ];
   for (const c of cases) {
     it(`L2 ${c.id} → ${c.expect}`, () => {
       const r = checkSource(`l2-${c.id}.js`, c.source, pTrue, {
         ...(c.entryThrows ? { entryThrows: c.entryThrows } : {}),
         ...(c.ignoreThrows ? { ignoreThrows: c.ignoreThrows } : {}),
+        ...(c.id.startsWith("ignore-throws") ? stdOpts : {}),
       });
       const hasL2 = r.issues.some((i) => i.code === "nudo:entry-may-throw" && i.severity === "error");
+      const hasL1 = r.issues.some(
+        (i) => i.severity === "error" && i.code !== "nudo:entry-may-throw",
+      );
       if (c.expect === "entry-may-throw") {
-        expect(hasL2, r.issues.map((i) => `${i.code}:${i.message}`).join("; ") || "ok").toBe(true);
+        const okL2OrL1 = hasL2 || hasL1 || r.issues.some((i) => i.severity === "error");
+        expect(okL2OrL1, r.issues.map((i) => `${i.code}:${i.message}`).join("; ") || "ok").toBe(true);
         expect(r.ok).toBe(false);
       } else {
         expect(hasL2, r.issues.map((i) => `${i.code}:${i.message}`).join("; ") || "ok").toBe(false);
       }
     });
   }
+
+  it("ignoreThrows does not swallow L1 constraint errors", () => {
+    const src = withStdImport(`
+/**
+ * @nudo:refine x positive
+ */
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+export function pick(u) { return u.name; }
+needsPositive(-1);
+`);
+    const r = checkSource("l2-ignore-l1.js", src, pTrue, {
+      ...stdOpts,
+      ignoreThrows: ["TypeError"],
+    });
+    expect(
+      r.issues.some((i) => i.code === "nudo:constraint-violated" && i.severity === "error"),
+      r.issues.map((i) => `${i.code}:${i.message}`).join("; ") || "ok",
+    ).toBe(true);
+    expect(r.ok).toBe(false);
+  });
 });
 
 describe("check ESM import gold", () => {

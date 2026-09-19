@@ -292,6 +292,7 @@ async function runCheck(
     from?: CallRecord[];
     verbose?: boolean;
     abs?: boolean;
+    absView?: { fn?: string; assume?: string[]; generalize?: boolean };
     ignoreThrows?: string[];
     entryThrows?: "error" | "warning" | "off";
   } = {},
@@ -370,7 +371,8 @@ async function runCheck(
         name: s.name,
         params: s.params,
         ...(s.paramTypes ? { paramTypes: s.paramTypes } : {}),
-        abs: { shape: { k: "unknown" as const }, conf: s.conf as never },
+        // CheckJson abs 是 formatAbs 字符串；重建时不要伪造成 unknown（§2）
+        abs: { shape: { k: "any" as const }, conf: s.conf as never },
         display: s.display,
         detail: s.detail,
         conf: s.conf as never,
@@ -426,7 +428,13 @@ async function runCheck(
     console.log(JSON.stringify(cachedJson ?? serializeCheckJson(algebraReport), null, 2));
   } else if (opts.abs) {
     // 代数面：原 types 观察能力，挂在 check --abs
-    await runAbsView(filePath, {});
+    // 门禁不因 --abs 关闭：L1/L2 error 仍 exit 1（design：check 永远是门禁）
+    await runAbsView(filePath, opts.absView ?? {});
+    if (!algebraReport.ok) {
+      // abs 仍计算 report：错误上屏，避免 exit 1 却无可见诊断
+      console.log("");
+      console.log(formatCheckReport(algebraReport, { verbose: false }));
+    }
   } else {
     console.log(formatCheckReport(algebraReport, { verbose: opts.verbose === true }));
   }
@@ -439,7 +447,7 @@ async function runCheck(
     }
   }
 
-  if (!algebraReport.ok && !opts.abs) {
+  if (!algebraReport.ok) {
     process.exitCode = 1;
   }
 }
@@ -524,10 +532,21 @@ async function runTest(
   }
 
   if (opts.json) {
+    const report = buildTestReport(filePath, result);
     const { serializeInferJson } = await import("@nudojs/service");
-    console.log(JSON.stringify(serializeInferJson(result, filePath), null, 2));
+    const json = serializeInferJson(result, filePath) as Record<string, unknown>;
+    json.assertions = {
+      passed: report.passed,
+      failed: report.failed,
+      unchecked: report.unchecked,
+    };
+    console.log(JSON.stringify(json, null, 2));
+    if (report.failed > 0) process.exitCode = 1;
   } else if (opts.abs) {
+    // 观察面仍走 abs，但声明断言失败必须挡 exit（design §1.3）
+    const report = buildTestReport(filePath, result);
     await runAbsView(filePath, {});
+    if (report.failed > 0) process.exitCode = 1;
   } else {
     const report = buildTestReport(filePath, result);
     console.log(formatTestReport(report));
@@ -1117,24 +1136,39 @@ program
       }
       const externalRecords = fromPaths?.length ? collectExternalRecords(fromPaths) : undefined;
       const ignoreThrows = parseIgnoreThrows(opts.ignoreThrows);
+      if (
+        opts.entryThrows !== undefined &&
+        opts.entryThrows !== "off" &&
+        opts.entryThrows !== "warning" &&
+        opts.entryThrows !== "error"
+      ) {
+        console.error(
+          `Invalid --entry-throws value: ${opts.entryThrows} (expected: error | warning | off)`,
+        );
+        process.exitCode = 1;
+        return;
+      }
       const entryThrows =
         opts.entryThrows === "off" || opts.entryThrows === "warning" || opts.entryThrows === "error"
           ? opts.entryThrows
           : undefined;
 
       const runOne = async (t: string): Promise<void> => {
-        if (opts.abs) {
-          await runAbsView(t, {
-            ...(opts.fn ? { fn: opts.fn } : {}),
-            assume: opts.assume ?? [],
-            generalize: opts.generalize === true,
-          });
-          return;
-        }
+        // --abs 仍走 runCheck：代数观察 + L1/L2 门禁（design §1.3）
         await runCheck(t, {
           json: opts.json,
           from: externalRecords,
           verbose: opts.verbose,
+          ...(opts.abs
+            ? {
+                abs: true,
+                absView: {
+                  ...(opts.fn ? { fn: opts.fn } : {}),
+                  assume: opts.assume ?? [],
+                  generalize: opts.generalize === true,
+                },
+              }
+            : {}),
           ...(ignoreThrows ? { ignoreThrows } : {}),
           ...(entryThrows ? { entryThrows } : {}),
         });
@@ -1511,7 +1545,15 @@ program
     deprecateVerb("types", "use `nudo check <path> --abs`");
     const targets = resolveTargets(file);
     for (const t of targets) {
-      await runAbsView(t, opts);
+      // 与 check --abs 同口径：代数观察 + L1/L2 门禁
+      await runCheck(t, {
+        abs: true,
+        absView: {
+          ...(opts.fn ? { fn: opts.fn } : {}),
+          assume: opts.assume ?? [],
+          generalize: opts.generalize === true,
+        },
+      });
       if (targets.length > 1) console.log("");
     }
   });

@@ -105,5 +105,7 @@ function score(x) { return x + 1; }
 | `pnpm run check docs/examples/interface-derivation/lib.js` | **0** | 根契约（lib.nudo.js 手写 add4）加载 |
 | `pnpm run check docs/examples/interface-derivation/add.js` | **0** | 下行推导契约（add.nudo.js generated）执法 |
 | `pnpm run contract --draft docs/examples/interface-draft/greet.js` | **0** | 代码优先草稿：callsite 投影 + body-read 建议（不发明 check 义务） |
+| `pnpm run check docs/examples/l2-export-any.js` | **1** | L2：export any 成员访问 → `nudo:entry-may-throw` |
+| `pnpm run check docs/examples/l2-export-any.js --ignore-throws TypeError` | **0** | L2 迁移开关：ignore TypeError 后不挡 exit |
 
 > 负例文件（constraints / structure / vs-ts 的 check）**故意 exit 非 0**——报错行就是它们演示的内容。

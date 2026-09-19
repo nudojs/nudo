@@ -65,7 +65,7 @@ issues
 | `nudo:may-throw` | test / L2 线索 | warning | case 路径可能抛（含内部）；L2 可升格入口 throws |
 | `nudo:unknown-inference` | 引擎债 | warning/error | 导出/签名出现真 `unknown`（推导失败） |
 | `nudo:unknown-recv` | 引擎债 | warning | `unknown` 接收者成员访问 —— **不得**替代 L2 throws 建模 |
-| `nudo:no-signature` | 引擎/L1 | error | 函数无法泛化为符号 Abs |
+| `nudo:no-signature` | 引擎/L1 | warning | 函数无法泛化为符号 Abs（CJS/匿名形态仍走入口 fallback 执法 L2） |
 | `nudo:opaque-result` | 引擎 | warning | 求值返回 opaque / 无信息 Abs |
 | `nudo:eval-error` | 引擎 | error | 分析期间 body 求值抛出 |
 | `nudo:recursion-truncated` | 引擎 | warning | 递归预算用尽；结果拓宽 |
@@ -190,11 +190,11 @@ nudo check src/ --entry-throws off
 nudo check src/
 # 任一 error 级诊断 exit 1
 
-# 机器可读
-nudo check src/ --json
+# 机器可读（仅单文件）
+nudo check src/lib.js --json
 ```
 
-`nudo check` 是契约与入口 throws 的 CI 门禁 —— 与 `tsc --noEmit` 对齐，但 check **成功时仍打印 signatures**。
+`nudo check` 是契约与入口 throws 的 CI 门禁 —— 与 `tsc --noEmit` 对齐，但 check **成功时仍打印 signatures**。`--abs` 仍是观察面，但 L1/L2 error 仍门禁。
 
 ## 下一步
 

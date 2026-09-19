@@ -65,7 +65,7 @@ issues
 | `nudo:may-throw` | test / L2 clue | warning | Case path may throw (internal included); L2 can elevate entry throws |
 | `nudo:unknown-inference` | engine debt | warning/error | True `unknown` on an export/signature (inference failed) |
 | `nudo:unknown-recv` | engine debt | warning | Member access on `unknown` receiver — does **not** replace L2 throws modeling |
-| `nudo:no-signature` | engine/L1 | error | Function could not be generalized |
+| `nudo:no-signature` | engine/L1 | warning | Function could not be generalized (CJS/anon forms still get L2 via entry fallback) |
 | `nudo:opaque-result` | engine | warning | Evaluation returned opaque / uninformative Abs |
 | `nudo:eval-error` | engine | error | Body evaluation threw during analysis |
 | `nudo:recursion-truncated` | engine | warning | Recursion budget hit; result widened |
@@ -190,11 +190,11 @@ Violations written **in the analyzed file** report `nudo:constraint-violated`. `
 nudo check src/
 # exit 1 on any error-level diagnostic
 
-# machine-readable
-nudo check src/ --json
+# machine-readable (single file only)
+nudo check src/lib.js --json
 ```
 
-`nudo check` is the CI gate for contracts and entry throws — aligned with `tsc --noEmit`, except check **still prints signatures on success**.
+`nudo check` is the CI gate for contracts and entry throws — aligned with `tsc --noEmit`, except check **still prints signatures on success**. `--abs` remains observation but still gates on L1/L2 errors.
 
 ## Next
 

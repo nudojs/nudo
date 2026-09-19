@@ -241,9 +241,11 @@ rg -l '义务只来自|obligations come only|Contracts only from|No evidence' \
 
 ## I. 统计摘要
 
-> **Status (this branch):** code/CLI **implemented** — primary verbs `check`/`test`/`contract`/`export`/`health`/`env harvest`; L2 `nudo:entry-may-throw` default error + `--ignore-throws` / `package.json#nudo.check.ignoreThrows`; entry unconstrained params display as `any` (true `unknown` = inference failure); `test` prints full case reports; old verbs kept as stderr deprecations until next major.  
-> **Docs:** being rewritten on this branch (root CLAUDE.md / README / docs/* / examples READMEs / `scripts/verify-examples.sh`). Website (`packages/website/**`) + remaining design notes still list old verbs — tracked as remaining sweep.  
-> **Known pre-existing failures to re-gate under L2 (do not invent new goldens):** `check-recall-gold` any-param no-report rows, `check-real-packages*` zero-FP suites when L2 is on without ignore, and any example pin still using old `infer`/`types`/`interface` strings — those are expected to move to `check`/`test`/`contract` labels rather than stay green as-is.
+> **Status (this branch):** code/CLI **implemented** — primary verbs `check`/`test`/`contract`/`export`/`health`/`env harvest`; L2 `nudo:entry-may-throw` default error + `--ignore-throws` / `package.json#nudo.check.{ignoreThrows,entryThrows}` (CLI **and** LSP); entry unconstrained params display as `any` (true `unknown` = inference failure); `test` prints full case reports and `--json` carries assertion summary + exit 1 on declared failures; old verbs kept as stderr deprecations until next major. **`check --abs` still gates** on L1/L2 errors (observation face, not a CI bypass). L2 collection covers export function / export default / export const arrow / CJS `exports.f=` / explicit throw; try/catch digests soft throws. Invalid `--entry-throws` is rejected; invalid `package.json#nudo.check.entryThrows` warns and stays on `error`.
+> **Note:** 本清单是对 **main 基线** 的冲突扫描；website 主 guides / cli-reference / check / service / agent 已按本分支语义校正（test 样例去掉假 entry@+call@ 并存、test --json assertions 摘要、no-signature=warning、check --json 单文件）。
+> **Docs:** root CLAUDE.md / README / docs/* / examples / verify-examples 已对齐；website en+zh 抽样已修。
+> **Known pre-existing failures to re-gate under L2:** check-real-packages* zero-FP suites stay on `entryThrows:"off"` baseline; L2-on expectations live in check-recall-gold L2 suite + `packages/cli/src/__tests__/cli-semantics-gate.test.ts`.
+> **Review P0 status after this fix pass:** (1) L2 export-form false-negatives — fixed + gold/CLI tests; (2) `test --json` exit — fixed; (3) LSP `package.json#nudo.check` — wired. P1: changeset present; `check --abs` gate restored; website honesty pass done; CLI gold added. Remaining P2 (formatThrowsAbs granularity, B-path try frames, nudo:unknown-inference code, website harvester entry@ honesty wording) tracked as non-blocking.
 
 | 类别 | 约计 |
 |------|------|

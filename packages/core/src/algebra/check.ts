@@ -60,15 +60,17 @@ import {
 } from "./load-deps-fp.ts";
 import { boolLit, litValue, numLit, strLit } from "./abs.ts";
 import type { Abs } from "./abs.ts";
+import { abs } from "./abs.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { pTrue, predToString } from "./pred.ts";
 import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
 import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
-import { absUnknown, listTopFunctions, scanLiteralCalls } from "./scan.ts";
+import { listTopFunctions, scanLiteralCalls } from "./scan.ts";
 import { analyzeFnFull } from "./ast-eval.ts";
 import {
   setMayThrowCollector,
+  runWithMayThrowSession,
   filterIgnoredThrows,
   mayThrowEffectsToAbs,
   formatThrowsAbs,
@@ -438,6 +440,53 @@ function checkSourceInner(
       sidecarFp,
     });
     if (!g) {
+      const isEntryCandidate =
+        entryNames.has(name) ||
+        name === "default" ||
+        (entryNames.has("default") && isDefaultExportName(source, name));
+      if (isEntryCandidate && entryThrowsMode !== "off") {
+        const paramCount = estimateEntryParamCount(source, name, file);
+        const anyParams = Array.from({ length: paramCount }, () =>
+          abs({ k: "any" }, undefined, undefined, "path"),
+        );
+        const synthetic = {
+          params: Array.from({ length: paramCount }, (_, i) => `_p${i}`),
+          typeParams: anyParams.map((value) => ({ value })),
+          symbolic: abs({ k: "any" }, undefined, undefined, "path"),
+          formals: [],
+        } as unknown as PolyFn;
+        const effects = collectEntryMayThrows(source, name, synthetic, file, phi);
+        const remaining = filterIgnoredThrows(effects, ignoreThrows);
+        const throwsDisplayFallback = formatThrowsAbs(mayThrowEffectsToAbs(remaining));
+        if (throwsDisplayFallback && remaining.length > 0) {
+          const first = remaining[0]!;
+          issues.push({
+            severity: entryThrowsMode === "warning" ? "warning" : "error",
+            code: "nudo:entry-may-throw",
+            message: `${name} (export): may throw ${throwsDisplayFallback}`,
+            actual: `${name}(…)    throws ${throwsDisplayFallback}`,
+            expected: "entry total, or declare/catch throws",
+            suggestion: first.cause
+              ? `${first.cause} → refine / guard / try-catch / --ignore-throws ${first.kind}`
+              : `refine / guard / try-catch / --ignore-throws ${first.kind}`,
+            fn: name,
+          });
+        }
+        signatures.push({
+          name,
+          params: synthetic.params,
+          paramTypes: synthetic.params.map(() => "any"),
+          abs: synthetic.symbolic,
+          display: throwsDisplayFallback
+            ? `any throws ${throwsDisplayFallback}`
+            : "any",
+          detail: `${name}: any`,
+          conf: "path",
+          ...(throwsDisplayFallback ? { throws: throwsDisplayFallback } : {}),
+          entry: true,
+        });
+        continue;
+      }
       issues.push({
         severity: "warning",
         code: "nudo:no-signature",
@@ -447,7 +496,11 @@ function checkSourceInner(
       });
       continue;
     }
-    const isEntry = entryNames.has(name) || entryNames.has("default") && isDefaultExportName(source, name);
+    const isEntry =
+      entryNames.has(name) ||
+      name === "default" ||
+      (entryNames.has("default") && isDefaultExportName(source, name)) ||
+      (name.includes(".") && entryNames.has(name));
     // L2 入口 throws：any/nullish 危险操作的效果（design-cli-semantics §3）
     let throwsDisplay: string | undefined;
     if (isEntry && entryThrowsMode !== "off") {
@@ -477,7 +530,9 @@ function checkSourceInner(
 
     // L0 命中时 symbolic 是稳定对象：格式化结果可 WeakMap 复用
     const fmt = formatSigCached(g.symbolic, name);
-    const paramTypes = g.typeParams.map((t) => formatShape(t.value));
+    const paramTypes = g.typeParams.map((t) =>
+      !t.value || t.value.shape.k === "unknown" ? "any" : formatShape(t.value),
+    );
     signatures.push({
       name,
       params: g.params,
@@ -689,6 +744,78 @@ function checkSourceInner(
 /** L0 命中的 symbolic 对象稳定：display/detail 按 Abs 身份缓存 */
 const sigFormatCache = new WeakMap<Abs, { display: string; detail: string }>();
 
+/** 入口形参个数估计（CJS / generalize 失败时喂 any 实参） */
+function estimateEntryParamCount(
+  source: string,
+  fnName: string,
+  file: ReturnType<typeof parse>,
+): number {
+  try {
+    for (const stmt of file.program.body) {
+      const nodes: unknown[] = [stmt];
+      if (
+        stmt.type === "ExportNamedDeclaration" ||
+        stmt.type === "ExportDefaultDeclaration"
+      ) {
+        nodes.push((stmt as { declaration?: unknown }).declaration);
+      }
+      if (stmt.type === "ExpressionStatement") {
+        const expr = (stmt as { expression?: { right?: unknown } }).expression;
+        nodes.push(expr?.right);
+      }
+      for (const n of nodes) {
+        const node = n as {
+          type?: string;
+          id?: { name?: string };
+          params?: unknown[];
+          properties?: Array<{
+            key?: { type?: string; name?: string; value?: unknown };
+            value?: unknown;
+          }>;
+        };
+        if (!node) continue;
+        const isFn =
+          node.type === "FunctionDeclaration" ||
+          node.type === "FunctionExpression" ||
+          node.type === "ArrowFunctionExpression";
+        if (isFn && (node.id?.name === fnName || !node.id)) {
+          return node.params?.length ?? 0;
+        }
+        if (node.type === "ObjectExpression") {
+          for (const p of node.properties ?? []) {
+            const keyName =
+              p.key?.type === "Identifier"
+                ? (p.key as { name?: string }).name
+                : p.key && (p.key.type === "StringLiteral" || p.key.type === "NumericLiteral")
+                  ? String(p.key.value)
+                  : undefined;
+            if (String(keyName) !== fnName) continue;
+            const v = p.value as { type?: string; params?: unknown[] };
+            if (
+              v &&
+              (v.type === "FunctionExpression" || v.type === "ArrowFunctionExpression")
+            ) {
+              return v.params?.length ?? 0;
+            }
+          }
+        }
+      }
+    }
+  } catch {
+    /* fallthrough */
+  }
+  const re = new RegExp(
+    `(?:function\\s+${fnName}\\s*\\(([^)]*)\\)|${fnName}\\s*=\\s*(?:async\\s*)?function(?:\\s+${fnName})?\\s*\\(([^)]*)\\)|${fnName}\\s*=\\s*(?:async\\s*)?\\(([^)]*)\\)\\s*=>)`,
+  );
+  const m = re.exec(source);
+  if (m) {
+    const args = (m[1] ?? m[2] ?? m[3] ?? "").trim();
+    if (!args) return 0;
+    return args.split(",").filter((s) => s.trim().length > 0).length;
+  }
+  return 1;
+}
+
 /** export default 是否绑定到该本地函数名 */
 function isDefaultExportName(source: string, fnName: string): boolean {
   // export default function fn / export default fn / export default () =>
@@ -700,7 +827,12 @@ function isDefaultExportName(source: string, fnName: string): boolean {
 
 function formatEntrySigLine(name: string, g: PolyFn, throws: string): string {
   const ps = g.params
-    .map((p, i) => `${p}: ${formatShape(g.typeParams[i]?.value ?? absUnknown)}`)
+    .map((p, i) => {
+      const t = g.typeParams[i]?.value;
+      // 入口无约束参数展示 any，不得回落 unknown（design §2）
+      const shown = !t || t.shape.k === "unknown" ? "any" : formatShape(t);
+      return `${p}: ${shown}`;
+    })
     .join(", ");
   return `${name}(${ps}) => ${formatShape(g.symbolic)}    throws ${throws}`;
 }
@@ -718,25 +850,27 @@ function collectEntryMayThrows(
 ): MayThrowEffect[] {
   const effects: MayThrowEffect[] = [];
   const entryArgs = g.typeParams.map((t) => t.value);
-  setMayThrowCollector((e) => effects.push(e));
-  try {
-    const full = analyzeFnFull(source, fnName, entryArgs, { phi, file });
-    // 显式 throw（未被 try 消化）也进 L2
-    if (full.throws && full.throws.shape.k !== "never") {
-      const tName = formatThrowsAbs(full.throws) ?? "Error";
-      if (!effects.some((e) => e.kind === tName && e.cause.startsWith("throw"))) {
-        effects.push({
-          kind: tName === "Error" && full.throws.term?.op === "lit" ? "Error" : tName,
-          cause: `throw ${formatShape(full.throws)}`,
-        });
+  return runWithMayThrowSession(() => {
+    setMayThrowCollector((e) => effects.push(e));
+    try {
+      const full = analyzeFnFull(source, fnName, entryArgs, { phi, file });
+      // 显式 throw（未被 try 消化）也进 L2
+      if (full.throws && full.throws.shape.k !== "never") {
+        const tName = formatThrowsAbs(full.throws) ?? "Error";
+        if (!effects.some((e) => e.kind === tName && e.cause.startsWith("throw"))) {
+          effects.push({
+            kind: tName === "Error" && full.throws.term?.op === "lit" ? "Error" : tName,
+            cause: `throw ${formatShape(full.throws)}`,
+          });
+        }
       }
+    } catch {
+      /* 求值失败：已有 nudo:eval-error；L2 不叠报 */
+    } finally {
+      setMayThrowCollector(null);
     }
-  } catch {
-    /* 求值失败：已有 nudo:eval-error；L2 不叠报 */
-  } finally {
-    setMayThrowCollector(null);
-  }
-  return effects;
+    return effects;
+  });
 }
 
 function formatSigCached(absVal: Abs, name: string): { display: string; detail: string } {
@@ -1058,7 +1192,7 @@ function scanCaseInconsistency(
     }
     if (reqs.length === 0) return;
 
-    const absArgs = args.map((a) => parseLitArg(a) ?? absUnknown());
+    const absArgs = args.map((a) => parseLitArg(a) ?? abs({ k: "unknown" }, undefined, undefined, "partial"));
     // 标量域：eq/union 形态（lit()/union() 契约）走域隶属判定（bounds 分支
     // 判不了 eq/or，此前静默跳过 = 写了等于没写）；纯 bounds 域沿用逐原子
     // 报告（expected 保持 predToString 原文，既有输出契约零改动）

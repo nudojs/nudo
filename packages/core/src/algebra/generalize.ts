@@ -925,30 +925,60 @@ export function generalizeAll(
   return out;
 }
 
-/** 列出源码中的顶层函数名 */
+/**
+ * 列出源码中的顶层函数名。
+ * 与 scan.listTopFunctions 对齐：解 export default / export const 箭头与函数表达式。
+ * （不 import scan：scan 依赖本文件，避免环。完整 CJS/class 面用 listTopFunctions。）
+ */
 export function listFunctionNames(source: string): string[] {
   const file = babelParse(source);
   const names: string[] = [];
-  for (const stmt of file.program.body) {
-    if (stmt.type === "FunctionDeclaration" && stmt.id) names.push(stmt.id.name);
-    if (stmt.type === "VariableDeclaration") {
-      for (const d of stmt.declarations) {
+  const push = (n: string | undefined): void => {
+    if (n && !names.includes(n)) names.push(n);
+  };
+  const walk = (decl: Node | null | undefined, stmtType: string): void => {
+    if (!decl) return;
+    if (decl.type === "FunctionDeclaration") {
+      const id = (decl as { id?: { name?: string } }).id;
+      if (id?.name) push(id.name);
+      else if (stmtType === "ExportDefaultDeclaration") push("default");
+      return;
+    }
+    if (decl.type === "VariableDeclaration") {
+      for (const d of (decl as { declarations: Array<{ id?: Node; init?: Node }> }).declarations) {
         if (
-          d.id.type === "Identifier" &&
+          d.id?.type === "Identifier" &&
           d.init &&
           (d.init.type === "ArrowFunctionExpression" ||
             d.init.type === "FunctionExpression")
         ) {
-          names.push(d.id.name);
+          push((d.id as { name: string }).name);
         }
       }
+      return;
+    }
+    if (decl.type === "ArrowFunctionExpression" || decl.type === "FunctionExpression") {
+      push("default");
+    }
+  };
+  for (const stmt of file.program.body) {
+    if (stmt.type === "FunctionDeclaration" || stmt.type === "VariableDeclaration") {
+      walk(stmt as Node, stmt.type);
+      continue;
+    }
+    if (
+      stmt.type === "ExportNamedDeclaration" ||
+      stmt.type === "ExportDefaultDeclaration"
+    ) {
+      walk((stmt as { declaration?: Node }).declaration, stmt.type);
     }
   }
   return names;
 }
 
 /**
- * 按 assume 集合构造实参：被 assume 的参数给带约束的符号，其余 unknown。
+ * 按 assume 集合构造实参：被 assume 的参数给带约束的符号，其余 any
+ * （design-cli-semantics §2：入口无约束 = any，不是 unknown）。
  */
 export function buildArgsFromAssume(
   source: string,
@@ -967,6 +997,6 @@ export function buildArgsFromAssume(
         "path",
       );
     }
-    return abs({ k: "unknown" }, undefined, undefined, "partial");
+    return abs({ k: "any" }, undefined, undefined, "path");
   });
 }

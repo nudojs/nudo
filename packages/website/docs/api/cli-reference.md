@@ -102,7 +102,12 @@ nudo check user.js
 ```
 
 ```bash
-nudo check src/ --ignore-throws TypeError --from tests/
+nudo check src/lib.js --ignore-throws TypeError --from tests/
+```
+
+```bash
+# --json is single-file only; directory targets use the human report face
+nudo check src/lib.js --json
 ```
 
 **Exit codes:**
@@ -110,7 +115,7 @@ nudo check src/ --ignore-throws TypeError --from tests/
 | Code | Meaning |
 |------|---------|
 | `0` | No error-level diagnostics |
-| `1` | Any error-level diagnostic (L1 or non-ignored L2) |
+| `1` | Any error-level diagnostic (L1 or non-ignored L2). `--abs` still gates. |
 
 ---
 
@@ -138,16 +143,24 @@ nudo test <path> [options]
 
 ```text
 === getName ===
-  entry@L1  (any) => any   throws TypeError
   call@L42  ({ name: "Ada" }) => "Ada"
   debug "empty"  ({}) => undefined
 assertions
-  ✓ 2 passed · 0 failed · 1 unchecked
+  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
+```
+
+When no usage-site call is found for an entry export:
+
+```text
+=== getName ===
+  entry@L6  (any) => any   throws TypeError
 ```
 
 - Synthetic `call@` / `entry@` cases **print by default** — this is call-site observation.
+- When usage-site `call@` cases exist, the analyzer does **not** also synthesize `entry@` for that function.
 - Only `@nudo:case` with `=> expected` enter pass/fail.
 - Failures of declared assertions set exit `1`; synthetic cases do not.
+- `test --json` includes an `assertions` summary (`passed` / `failed` / `unchecked`) and still exits 1 on declared assertion failure.
 
 **Example:**
 
@@ -157,11 +170,10 @@ nudo test math.js
 
 ```text
 === subtract ===
-  entry@L1  (any, any) => any
   call@L6  (5, 3) => 2
   call@L7  (1, 10) => -9
 assertions
-  ✓ 0 passed · 0 failed · 2 unchecked
+  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
 ```
 
 ```bash
@@ -359,7 +371,8 @@ nudo env harvest node
 `check --json` and `test --json` are the machine-readable faces.
 
 - **check --json** — signatures (including `any` entry params and throws), diagnostics with codes such as `nudo:entry-may-throw`, and summary counts.
-- **test --json** — per-function cases (`entry@` / `call@` / directive), assertion results, and optional Abs intension blocks.
+- **test --json** — per-function cases (`entry@` / `call@` / directive), an `assertions` summary (`passed`/`failed`/`unchecked`), diagnostics, and optional Abs intension blocks. Declared assertion failures still exit 1.
+- **check --json** — single file only (`--json requires a single file` on directory targets).
 
 There is no `infer --json` as a primary command; consumers that still receive it during the deprecation window should migrate to `check --json` or `test --json`.
 

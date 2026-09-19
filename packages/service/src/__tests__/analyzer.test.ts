@@ -408,7 +408,8 @@ exports.applyToDefaults = function _apply(src, opts) {
     const fn = result.functions.find((f) => f.name === "_apply");
     expect(fn).toBeDefined();
     expect(fn!.noDeclaration).toBe(true);
-    expect(fn!.cases[0].abs.shape.k).toBe("unknown");
+    // 入口无约束参数展示 any，不是 unknown（design-cli-semantics §2）
+    expect(fn!.cases[0].abs.shape.k).toBe("any");
   });
 
   it("collects exports.X assignment functions", () => {
@@ -424,7 +425,8 @@ exports.applyToDefaults = function (a, b) {
     expect(fn!.entryOnly).toBe(true);
     expect(fn!.noDeclaration).toBe(true);
     expect(fn!.cases).toHaveLength(1);
-    expect(fn!.cases[0].abs.shape.k).toBe("unknown");
+    // 入口无约束参数展示 any，不是 unknown（design-cli-semantics §2）
+    expect(fn!.cases[0].abs.shape.k).toBe("any");
   });
 
   it("synthesizes callsite cases for const-declared arrow functions", () => {

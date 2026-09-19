@@ -22,7 +22,7 @@ Runs type inference on a file. Uses `filePath` for module resolution and diagnos
 
 `externalCallRecords` accepts call records harvested by [`collectCallRecords`](#collectcallrecords) from usage-site files (tests, examples, upstream apps). Records that resolve to functions defined in this file are matched and injected as synthesized `call@L` cases — see the [Call-Site Discovery guide](../guides/callsite-discovery.md).
 
-Functions without `@nudo:case` directives are not skipped: whole-program inference synthesizes a `call@L` case for each observed call site, or an `entry@L` case with `unknown` parameters when no call site is found (marked `entryOnly` on the [`FunctionAnalysis`](#functionanalysis)).
+Functions without `@nudo:case` directives are not skipped: whole-program inference synthesizes a `call@L` case for each observed call site, or an `entry@L` case with **`any`** parameters when no call site is found (marked `entryOnly` on the [`FunctionAnalysis`](#functionanalysis)). Unconstrained entry params are `any`; true `unknown` means inference failed.
 
 **Returns:** `AnalysisResult`
 

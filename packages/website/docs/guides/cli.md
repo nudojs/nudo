@@ -145,18 +145,18 @@ nudo test math.js
 
 ```text
 === subtract ===
-  entry@L1  (any, any) => any
   call@L6  (5, 3) => 2
   call@L7  (1, 10) => -9
 assertions
-  ✓ 0 passed · 0 failed · 2 unchecked
+  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
 ```
 
 - Synthetic `call@` / `entry@` cases **print by default** — that is the call-site observation surface.
+- When usage-site `call@` cases exist, the analyzer does **not** also synthesize `entry@` for that function.
 - Only `@nudo:case` directives **with `=> expected`** enter pass/fail; failures affect the exit code.
 - `--from <paths…>` harvest usage-site call shapes (formerly `--callsites`).
 - `--freeze[=update]` solidifies synthesized cases as directives (formerly `infer --emit-cases`).
-- `--json` / `--abs` mirror `check`.
+- `--json` / `--abs` mirror `check`; `test --json` also carries an `assertions` summary (`passed`/`failed`/`unchecked`) and still exits 1 when a declared assertion fails.
 
 ### Example with declared assertions
 
@@ -175,8 +175,10 @@ nudo test file.js
 
 ```text
 === double ===
-  entry@L4  (any) => any
   debug "double"  (2) => 4
+assertions
+  ✓ 1 passed · 0 failed · 0 unchecked
+  [ok]   double  case "double" → 4
 assertions
   ✓ 1 passed · 0 failed · 1 unchecked
 ```

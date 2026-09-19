@@ -67,10 +67,15 @@ export type CheckConfig = {
 /** package.json#nudo.check → 执法选项 */
 export function checkConfig(config: NudoConfig | null | undefined): CheckConfig {
   const raw = config?.check;
-  const entryThrows =
-    raw?.entryThrows === "off" || raw?.entryThrows === "warning"
-      ? raw.entryThrows
-      : "error";
+  const rawEntry = raw?.entryThrows;
+  let entryThrows: CheckConfig["entryThrows"] = "error";
+  if (rawEntry === "off" || rawEntry === "warning" || rawEntry === "error") {
+    entryThrows = rawEntry;
+  } else if (rawEntry !== undefined) {
+    process.stderr?.write?.(
+      `nudo.check.entryThrows: invalid value ${JSON.stringify(rawEntry)} (expected error|warning|off); using error\n`,
+    );
+  }
   const ignore = Array.isArray(raw?.ignoreThrows)
     ? raw.ignoreThrows.filter((s): s is string => typeof s === "string" && s.length > 0)
     : [];

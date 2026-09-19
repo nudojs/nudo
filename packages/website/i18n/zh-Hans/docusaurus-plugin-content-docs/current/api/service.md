@@ -22,7 +22,7 @@ analyzeFile(
 
 `externalCallRecords` 接收由 [`collectCallRecords`](#collectcallrecords) 从使用现场文件（测试、示例、上层应用）收集的调用记录。能解析到本文件所定义函数的记录会被匹配并注入为合成的 `call@L` 用例——参见[调用点发现指南](../guides/callsite-discovery.md)。
 
-没有 `@nudo:case` 指令的函数也不会被跳过：全程序推断会为每个观测到的调用点合成一个 `call@L` 用例；找不到调用点时合成参数为 `unknown` 的 `entry@L` 用例（并在 [`FunctionAnalysis`](#functionanalysis) 上标记 `entryOnly`）。
+没有 `@nudo:case` 指令的函数也不会被跳过：全程序推断会为每个观测到的调用点合成一个 `call@L` 用例；找不到调用点时合成参数为 **`any`** 的 `entry@L` 用例（并在 [`FunctionAnalysis`](#functionanalysis) 上标记 `entryOnly`）。入口无约束参数是 `any`；真 `unknown` 表示推导失败。
 
 **返回：** `AnalysisResult`
 

@@ -358,6 +358,8 @@ export type EvalResult = {
   value: Abs;
   phi: Phi;
   env: AstEnv;
+  /** 未捕获 throws 域（never = 无）；threw 时 value 通常是 never */
+  throws?: Abs;
   /** 函数已通过 return 跳出，块内后续语句不可达 */
   returned?: boolean;
   /** break 跳出最近循环 */
@@ -415,48 +417,164 @@ export function evalSource(
     }
   }
 
-  // 第一遍：注册函数与 class（class 必须在调用前登记 methods）
+  // 第一遍：注册函数与 class（与 generalize / listTopFunctions 对齐）
   for (const stmt of file.program.body) {
-    if (stmt.type === "ImportDeclaration") continue;
-    if (stmt.type === "FunctionDeclaration" && stmt.id) {
-      registerFunction(env, stmt);
-    }
-    if (stmt.type === "ClassDeclaration") {
-      registerClassDecl(env, stmt);
-    }
-    if (stmt.type === "ExportNamedDeclaration" && stmt.declaration) {
-      const d = stmt.declaration;
-      if (d.type === "FunctionDeclaration" && d.id) registerFunction(env, d);
-      if (d.type === "ClassDeclaration") registerClassDecl(env, d);
-    }
-    if (stmt.type === "VariableDeclaration") {
-      // const add = (a,b) => a+b
-      for (const d of stmt.declarations) {
-        if (
-          d.id.type === "Identifier" &&
-          (d.init?.type === "ArrowFunctionExpression" ||
-            d.init?.type === "FunctionExpression")
-        ) {
-          const init = d.init as ArrowFunctionExpression;
-          env.fns.set(d.id.name, {
-            params: init.params.map(paramName),
-            body: init.body,
-            async: init.async === true,
-          });
-        }
-      }
-    }
+    registerTopLevelCallable(env, stmt);
   }
 
   const full = callFunctionFull(env, entry.fn, entry.args, phi, opts.budget);
   return {
     value: full.result,
+    throws: full.throws,
     phi,
     env,
     ...(full.throws.shape.k !== "never"
       ? { threw: true, ...(full.throwLoc ? { throwLoc: full.throwLoc } : {}) }
       : {}),
   };
+}
+
+/** 把 arrow/function 表达式绑到 env.fns；具名 FunctionExpression 同时登记 id（analyzer 优先 id） */
+function bindFnInit(env: AstEnv, name: string, init: Node): void {
+  if (
+    init.type !== "ArrowFunctionExpression" &&
+    init.type !== "FunctionExpression"
+  ) {
+    return;
+  }
+  const fn = init as ArrowFunctionExpression;
+  const entry = {
+    params: fn.params.map(paramName),
+    body: fn.body,
+    async: fn.async === true,
+  };
+  env.fns.set(name, entry);
+  if (init.type === "FunctionExpression") {
+    const idName = (init as { id?: { name?: string } }).id?.name;
+    if (idName && idName !== name && !env.fns.has(idName)) {
+      env.fns.set(idName, entry);
+    }
+  }
+}
+
+/**
+ * 注册顶层可调用绑定（与 generalize/listTopFunctions 对齐）：
+ * 函数/class 声明、export default、export const/let/var 的函数初始化、
+ * 以及 CJS `exports.f = fn` / `module.exports.f = fn` / `module.exports = fn`。
+ */
+function registerTopLevelCallable(env: AstEnv, stmt: Node): void {
+  if (stmt.type === "ImportDeclaration") return;
+
+  const walkDecl = (d: Node | undefined | null): void => {
+    if (!d) return;
+    if (d.type === "FunctionDeclaration") {
+      const id = (d as FunctionDeclaration).id;
+      if (id?.name) registerFunction(env, d as FunctionDeclaration);
+      else env.fns.set("default", {
+        params: (d as FunctionDeclaration).params.map(paramName),
+        body: (d as FunctionDeclaration).body,
+        async: (d as FunctionDeclaration).async === true,
+      });
+      return;
+    }
+    if (d.type === "ClassDeclaration") {
+      registerClassDecl(env, d);
+      return;
+    }
+    if (d.type === "VariableDeclaration") {
+      for (const decl of (d as { declarations: Array<{ id?: Node; init?: Node }> }).declarations) {
+        if (decl.id?.type === "Identifier" && decl.init) {
+          bindFnInit(env, (decl.id as { name: string }).name, decl.init);
+        }
+      }
+      return;
+    }
+    // export default Identifier / expression：若已是本地 fn 则无需重绑
+    if (d.type === "ArrowFunctionExpression" || d.type === "FunctionExpression") {
+      bindFnInit(env, "default", d);
+    }
+  };
+
+  if (stmt.type === "FunctionDeclaration" || stmt.type === "ClassDeclaration" || stmt.type === "VariableDeclaration") {
+    walkDecl(stmt);
+    return;
+  }
+  if (stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration") {
+    walkDecl((stmt as { declaration?: Node }).declaration);
+    return;
+  }
+
+  // CJS：exports.name = fn | module.exports.name = fn | module.exports = fn | exports = fn
+  if (stmt.type === "ExpressionStatement") {
+    const expr = (stmt as { expression?: Node }).expression;
+    if (expr?.type !== "AssignmentExpression") return;
+    const left = (expr as { left?: Node }).left;
+    const right = (expr as { right?: Node }).right;
+    if (!left || !right) return;
+
+    const isExportsIdent = (n: Node | undefined): boolean =>
+      !!n && n.type === "Identifier" && (n as { name?: string }).name === "exports";
+    const isModuleExports = (n: Node | undefined): boolean => {
+      if (!n || n.type !== "MemberExpression") return false;
+      const obj = (n as { object?: Node }).object;
+      const prop = (n as { property?: Node }).property;
+      return (
+        !!obj &&
+        obj.type === "Identifier" &&
+        (obj as { name?: string }).name === "module" &&
+        !!prop &&
+        ((prop as { name?: string }).name === "exports" ||
+          (prop as { value?: unknown }).value === "exports")
+      );
+    };
+
+    if (left.type === "Identifier" && (left as { name?: string }).name === "module" ) {
+      return; // bare `module = …` not an export binding
+    }
+
+    // module.exports = fn
+    if (isModuleExports(left)) {
+      if (right.type === "FunctionExpression" || right.type === "ArrowFunctionExpression") {
+        const idName =
+          right.type === "FunctionExpression"
+            ? (right as { id?: { name?: string } }).id?.name
+            : undefined;
+        bindFnInit(env, idName ?? "default", right);
+      }
+      if (right.type === "ObjectExpression") {
+        for (const prop of (right as { properties?: Node[] }).properties ?? []) {
+          if ((prop as { type?: string }).type !== "ObjectProperty" && (prop as { type?: string }).type !== "Property") continue;
+          const key = (prop as { key?: Node }).key;
+          const value = (prop as { value?: Node }).value;
+          const keyName =
+            key?.type === "Identifier"
+              ? (key as { name?: string }).name
+              : key && (key.type === "StringLiteral" || key.type === "NumericLiteral")
+                ? String((key as { value?: unknown }).value)
+                : undefined;
+          if (keyName && value) bindFnInit(env, keyName, value);
+        }
+      }
+      return;
+    }
+
+    // exports.f = fn / module.exports.f = fn
+    if (left.type === "MemberExpression") {
+      const obj = (left as { object?: Node }).object;
+      const prop = (left as { property?: Node }).property;
+      const computed = (left as { computed?: boolean }).computed === true;
+      if (computed) return;
+      if (!isExportsIdent(obj) && !isModuleExports(obj)) return;
+      const name =
+        prop?.type === "Identifier"
+          ? (prop as { name?: string }).name
+          : prop && (prop.type === "StringLiteral" || prop.type === "NumericLiteral")
+            ? String((prop as { value?: unknown }).value)
+            : undefined;
+      if (!name) return;
+      bindFnInit(env, name, right);
+    }
+  }
 }
 
 /** 注册 ClassDeclaration 到 env.classes 与 env.vars */
@@ -863,6 +981,25 @@ function evalNodeInner(
           property: Node;
           computed?: boolean;
         };
+        // any/nullish 接收者上的成员写 → may-throw（design §3.3）
+        {
+          const recv = evalNode(m.object, env, phi, budget).value;
+          const key =
+            !m.computed && m.property.type === "Identifier"
+              ? (m.property as Identifier).name
+              : m.property.type === "StringLiteral"
+                ? (m.property as StringLiteral).value
+                : m.computed
+                  ? "[computed]"
+                  : undefined;
+          if (key !== undefined) {
+            const loc = node.loc
+              ? ([node.loc.start.line, node.loc.start.column] as [number, number])
+              : undefined;
+            noteNullishMemberThrows(recv, key, "property", loc);
+            noteAnyMemberMayThrow(recv, key, "property", loc);
+          }
+        }
         if (m.object.type === "Identifier") {
           const root = (m.object as Identifier).name;
           const prev = env.vars.get(root);
@@ -1076,21 +1213,32 @@ function evalNodeInner(
         }
       }
       // any / nullish / unknown 成员读（design-cli-semantics §3.3）
-      if (!m.computed && m.property.type === "Identifier") {
-        const propName = (m.property as Identifier).name;
+      // computed 与静态属性统一记 may-throw
+      const propNameForThrows = m.computed
+        ? (() => {
+            const k = evalNode(m.property, env, phi, budget).value;
+            const kl = litValue(k);
+            return typeof kl === "string" ? kl : "[computed]";
+          })()
+        : m.property.type === "Identifier"
+          ? (m.property as Identifier).name
+          : m.property.type === "StringLiteral" || m.property.type === "NumericLiteral"
+            ? String((m.property as { value?: unknown }).value)
+            : undefined;
+      if (propNameForThrows !== undefined) {
         const loc = node.loc
           ? ([node.loc.start.line, node.loc.start.column] as [number, number])
           : undefined;
-        // nullish → 记 may-throw TypeError（soft：不中断求值，throws 域仍上屏）
-        if (noteNullishMemberThrows(obj, propName, "property", loc)) {
-          return ok(unknown, phi, env);
+        // nullish → may-throw TypeError；结果是 never（操作未产生值），不是 unknown
+        if (noteNullishMemberThrows(obj, propNameForThrows, "property", loc)) {
+          return ok(abs({ k: "never" }, undefined, undefined, "exact"), phi, env);
         }
         // any（无约束）→ 记 may-throw，结果保持 any（不是 unknown）
-        if (noteAnyMemberMayThrow(obj, propName, "property", loc)) {
+        if (noteAnyMemberMayThrow(obj, propNameForThrows, "property", loc)) {
           return ok(anyMemberResult(), phi, env);
         }
         // unknown（推导失败）→ unknown-recv 引擎债
-        noteUnknownMemberMissing(obj, propName, "property", loc);
+        noteUnknownMemberMissing(obj, propNameForThrows, "property", loc);
       }
       return ok(unknown, phi, env);
     }
@@ -2031,6 +2179,17 @@ function evalForOf(
   budget: LeakBudget,
 ): EvalResult {
   let iterVal = evalNode(node.right, env, phi, budget).value;
+  // any/nullish 迭代协议 → may-throw TypeError（design §3.3）
+  {
+    const loc = node.right.loc
+      ? ([node.right.loc.start.line, node.right.loc.start.column] as [number, number])
+      : undefined;
+    if (noteNullishMemberThrows(iterVal, "Symbol.iterator", "method", loc)) {
+      // 无值可迭代
+    } else if (noteAnyMemberMayThrow(iterVal, "Symbol.iterator", "method", loc)) {
+      // 仍继续按 any 元素分发
+    }
+  }
   // 挂载点（for-of）：形参 any 上的迭代 → 提升 arr，再按元素分发
   if (
     node.right.type === "Identifier" &&
@@ -2205,12 +2364,47 @@ function evalVarDecl(
 ): EvalResult {
   let local = env;
   for (const d of node.declarations) {
-    if (d.id.type !== "Identifier" || !d.init) continue;
+    if (!d.init) continue;
     const r = evalNode(d.init, local, phi, budget);
-    // Hover/inlay on the binding name must see the init Abs, not the
-    // statement's `unknown` (which would otherwise win via loc overlap).
-    recordAbsNode(d.id, r.value);
-    local = withVar(local, d.id.name, r.value);
+    if (d.id.type === "Identifier") {
+      // Hover/inlay on the binding name must see the init Abs, not the
+      // statement's `unknown` (which would otherwise win via loc overlap).
+      recordAbsNode(d.id, r.value);
+      local = withVar(local, d.id.name, r.value);
+      continue;
+    }
+    // 解构：any/nullish 接收者上的属性读 → may-throw（design §3.3）
+    if (d.id.type === "ObjectPattern") {
+      const loc = d.init.loc
+        ? ([d.init.loc.start.line, d.init.loc.start.column] as [number, number])
+        : undefined;
+      const props = (d.id as { properties?: Array<{ key?: Node; value?: Node }> }).properties ?? [];
+      for (const p of props) {
+        const key = p.key;
+        const propName =
+          key?.type === "Identifier"
+            ? (key as Identifier).name
+            : key && (key.type === "StringLiteral" || key.type === "NumericLiteral")
+              ? String((key as { value?: unknown }).value)
+              : "[destructure]";
+        if (noteNullishMemberThrows(r.value, propName, "property", loc)) continue;
+        if (noteAnyMemberMayThrow(r.value, propName, "property", loc)) {
+          // 绑定保持 any（JS 读到的值仍无约束）
+          if (p.value?.type === "Identifier") {
+            local = withVar(local, (p.value as Identifier).name, anyMemberResult());
+          }
+          continue;
+        }
+        const slot =
+          r.value.shape.k === "obj"
+            ? getSlot((r.value.shape as { slots: Record<string, { value: Abs }> }).slots, propName)
+            : undefined;
+        const bound = slot?.value ?? (r.value.shape.k === "any" ? anyMemberResult() : unknown);
+        if (p.value?.type === "Identifier") {
+          local = withVar(local, (p.value as Identifier).name, bound);
+        }
+      }
+    }
   }
   return { value: unknown, phi, env: local };
 }
@@ -2472,16 +2666,13 @@ export function analyzeFnFull(
   opts: EvalOptions = {},
 ): { result: Abs; throws: Abs; throwLoc?: { line: number; column: number } } {
   const r = evalSource(source, { fn: fnName, args }, opts);
-  if (r.threw) {
-    return {
-      result: abs({ k: "never" }, undefined, undefined, "exact"),
-      throws: r.value,
-      ...(r.throwLoc ? { throwLoc: r.throwLoc } : {}),
-    };
-  }
+  const neverAbs = abs({ k: "never" }, undefined, undefined, "exact");
+  // evalSource 在 threw 时 value=never；真实 throws 域在 r.throws
+  const throwsAbs = r.throws ?? (r.threw ? r.value : neverAbs);
   return {
-    result: r.value,
-    throws: abs({ k: "never" }, undefined, undefined, "exact"),
+    result: r.threw ? neverAbs : r.value,
+    throws: throwsAbs,
+    ...(r.throwLoc ? { throwLoc: r.throwLoc } : {}),
   };
 }
 
@@ -2523,49 +2714,9 @@ export function evalProgramAbs(
   let last: Abs = unknown;
   const budget = opts.budget ?? defaultLeakBudget;
 
-  // 第一遍：函数与 class
+  // 第一遍：函数与 class（与 evalSource / listTopFunctions 同一注册面）
   for (const stmt of file.program.body) {
-    if (stmt.type === "FunctionDeclaration" && stmt.id) {
-      registerFunction(env, stmt);
-    }
-    if (stmt.type === "ClassDeclaration") {
-      registerClassDecl(env, stmt);
-    }
-    if (stmt.type === "ExportNamedDeclaration" && stmt.declaration) {
-      const d = stmt.declaration;
-      if (d.type === "FunctionDeclaration" && d.id) registerFunction(env, d);
-      if (d.type === "ClassDeclaration") registerClassDecl(env, d);
-    }
-    if (stmt.type === "ExportDefaultDeclaration" && stmt.declaration) {
-      const d = stmt.declaration;
-      if (d.type === "FunctionDeclaration") {
-        if (d.id) registerFunction(env, d);
-        else {
-          env.fns.set("default", {
-            params: d.params.map(paramName),
-            body: d.body,
-            async: d.async === true,
-          });
-        }
-      }
-      if (d.type === "ClassDeclaration") registerClassDecl(env, d);
-    }
-    if (stmt.type === "VariableDeclaration") {
-      for (const d of stmt.declarations) {
-        if (
-          d.id.type === "Identifier" &&
-          (d.init?.type === "ArrowFunctionExpression" ||
-            d.init?.type === "FunctionExpression")
-        ) {
-          const init = d.init as ArrowFunctionExpression;
-          env.fns.set(d.id.name, {
-            params: init.params.map(paramName),
-            body: init.body,
-            async: init.async === true,
-          });
-        }
-      }
-    }
+    registerTopLevelCallable(env, stmt);
   }
 
   // 第二遍：执行顶层语句（跳过已注册的声明）

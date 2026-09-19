@@ -19,6 +19,7 @@ import {
   evictFnAnalysisCacheForFiles,
   findProjectConfig,
   interfaceConfig,
+  checkConfig,
   filterDiagnosticsByLevel,
   diagnosticsLevelForFile,
   isProjectConfigPath,
@@ -61,6 +62,7 @@ function projectConfigFingerprint(filePath: string): string {
         autoBind: cfg.interface?.autoBind ?? true,
         analysis: cfg.analysis ?? null,
         env: cfg.env ?? null,
+        check: cfg.check ?? null,
       }),
     );
   } catch {
@@ -527,13 +529,17 @@ export function checkToLspDiagnostics(
   loadModule?: (spec: string, fromFile: string) => string | undefined,
 ): LspDiagnostic[] {
   try {
-    // package.json#nudo.interface.autoBind 覆盖 LSP 执法路径（§2.2「整体
-    // 关闭」承诺——false 时侧车 ambient 绑定停用，与 CLI runCheck 同口径）
-    const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
+    // package.json#nudo.interface.autoBind 与 nudo.check（L2）覆盖 LSP 执法路径
+    // —— 与 CLI runCheck 同源（design-cli-semantics §3.4）
+    const proj = findProjectConfig(dirname(filePath));
+    const autoBind = interfaceConfig(proj?.config).autoBind;
+    const cCfg = checkConfig(proj?.config);
     const report = checkSource(filePath, source, pTrue, {
       loadModule: loadModule ?? lspLoadModule,
       fromFile: filePath,
       ...(autoBind === false ? { autoBind: false } : {}),
+      entryThrows: cCfg.entryThrows,
+      ...(cCfg.ignoreThrows.length > 0 ? { ignoreThrows: cCfg.ignoreThrows } : {}),
     });
     return report.issues
       .filter((i) => i.severity === "error" || i.severity === "warning")

@@ -5,7 +5,7 @@
 > Worktree: `nudo-cli-semantics-redesign`  
 > Companion conflict inventory: [`design-cli-semantics-conflicts.md`](./design-cli-semantics-conflicts.md)  
 > Revision: **无观察动词** — 观察是 `check`/`test`/IDE 的输出能力，不是一级命令。  
-> Landed: Abs may-throw（any/nullish）、check L2 `nudo:entry-may-throw` + `--ignore-throws`、CLI 正门 verbs + deprecation、test 全量 case 报告 + `--freeze`、gold L2 用例、zero-FP L2 off 基线。
+> Landed: Abs may-throw（any/nullish）、check L2 `nudo:entry-may-throw` + `--ignore-throws`、CLI 正门 verbs + deprecation、test 全量 case 报告 + `--freeze`、gold L2 用例、zero-FP L2 off 基线、LSP 读 `package.json#nudo.check`、`test --json` 断言失败 exit 1、`check --abs` 仍门禁。
 
 本文取代下列遗留心智作为**产品语义与 CLI 命令面**的唯一设计源：
 
@@ -115,10 +115,10 @@ assertions
 | 命令 | exit 1 |
 |------|--------|
 | `export` / `contract`（只读） | 仅用法 / IO 错误 |
-| `check` | 任一 error 级诊断（L1 或未 ignore 的 L2） |
-| `test` | 任一**声明断言**失败（合成 case / entry@ 不挡 exit） |
+| `check`（含 `--abs` / `--json`） | 任一 error 级诊断（L1 或未 ignore 的 L2）；`--abs` 是观察面，**不是**关 CI 的旁路 |
+| `test`（含 `--json` / `--abs`） | 任一**声明断言**失败（合成 case / entry@ 不挡 exit） |
 | `health` | drift 或 analysis error |
-| `contract --emit --exit-on-diff` | 将写盘且有 diff |
+| `contract --emit --exit-on-diff` | 将写盘且有 diff（须同时 `--dry-run`；无 dry-run 时为 usage error） |
 
 CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。
 

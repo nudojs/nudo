@@ -61,7 +61,7 @@ Constraint gate on **Abs** (type-as-computation). Same contract as CLI `nudo che
 | `nudo:interface-name-clash` | Sidecar export name clashes with source export |
 | `nudo:interface-underivable` | Handwritten contract cannot be derived from source |
 | `nudo:interface-drift` | `@generated` segment ≠ recomputed (warning) |
-| `nudo:no-signature` | No symbolic Abs signature |
+| `nudo:no-signature` | No symbolic Abs signature (**warning**; L2 may still apply via entry fallback) |
 | `nudo:opaque-result` / `nudo:eval-error` | Opaque evaluation / evaluation threw |
 
 ```json

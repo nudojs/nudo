@@ -145,18 +145,18 @@ nudo test math.js
 
 ```text
 === subtract ===
-  entry@L1  (any, any) => any
   call@L6  (5, 3) => 2
   call@L7  (1, 10) => -9
 assertions
-  ✓ 0 passed · 0 failed · 2 unchecked
+  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
 ```
 
 - 合成 `call@` / `entry@` **默认打印** —— 这就是调用点观察面。
+- 已有使用处 `call@` 时，分析器**不会**再合成 `entry@`。
 - 仅 `@nudo:case` 且带 `=> expected` 的进入 pass/fail；失败影响退出码。
 - `--from <paths…>` 挖掘使用处调用形状（原 `--callsites`）。
 - `--freeze[=update]` 把合成用例固化为指令（原 `infer --emit-cases`）。
-- `--json` / `--abs` 与 `check` 对齐。
+- `--json` / `--abs` 与 `check` 对齐；`test --json` 含 `assertions` 摘要，声明断言失败仍 exit 1。
 
 ---
 

@@ -140,7 +140,12 @@ export function formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = 
           ? s.params.map((p, i) => `${p}: ${s.paramTypes![i] ?? "any"}`).join(", ")
           : s.params.join(", ");
       const throwsStr = s.throws ? `  throws ${s.throws}` : "";
-      const retStr = formatShape(s.abs);
+      // display 是 formatAbs 单行（含 => 返回）；磁盘缓存路径可能没有可还原的 Abs 本体
+      const retFromDisplay = (() => {
+        const m = s.display.match(/=>\s*([\s\S]+?)(?:\s+throws\s+[\s\S]+)?$/);
+        return m?.[1]?.trim();
+      })();
+      const retStr = retFromDisplay || formatShape(s.abs);
       lines.push(`  ${s.name}(${paramStr}) => ${retStr}${throwsStr}`);
       if (opts.verbose) {
         for (const ln of s.detail.split("\n").slice(1)) {

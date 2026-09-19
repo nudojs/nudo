@@ -1,9 +1,11 @@
 /**
  * may-throw 效果收集（design-cli-semantics §3.3）。
  * any/nullish 成员访问等危险操作记录 throws 域，不立刻 hard-fail 求值。
+ * Collector/tryFrames 经 AsyncLocalStorage 会话隔离，避免 LSP 并发串档。
  */
 import type { Abs } from "../abs.ts";
 import { abs } from "../abs.ts";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 export type MayThrowEffect = {
   /** throws 类型名，如 TypeError */
@@ -18,33 +20,57 @@ export type MayThrowEffect = {
   column?: number;
 };
 
-let collector: ((e: MayThrowEffect) => void) | null = null;
-/** try 帧：内层 soft may-throw 先入帧，handler 消化时丢弃 */
-const tryFrames: MayThrowEffect[][] = [];
+type MayThrowCtx = {
+  collector: ((e: MayThrowEffect) => void) | null;
+  tryFrames: MayThrowEffect[][];
+};
+
+const mayThrowAls = new AsyncLocalStorage<MayThrowCtx>();
+/** 同步 fallback：未 enter ALS 时的进程级上下文 */
+let syncCtx: MayThrowCtx = { collector: null, tryFrames: [] };
+
+function ctx(): MayThrowCtx {
+  return mayThrowAls.getStore() ?? syncCtx;
+}
+
+/** 隔离一次分析的 may-throw 收集（check / analyzer 入口包一层） */
+export function runWithMayThrowSession<T>(body: () => T): T {
+  const session: MayThrowCtx = { collector: null, tryFrames: [] };
+  return mayThrowAls.run(session, () => {
+    const prev = syncCtx;
+    syncCtx = session;
+    try {
+      return body();
+    } finally {
+      syncCtx = prev;
+    }
+  });
+}
 
 export function setMayThrowCollector(
   c: ((e: MayThrowEffect) => void) | null,
 ): void {
-  collector = c;
+  ctx().collector = c;
 }
 
 export function getMayThrowCollector(): ((e: MayThrowEffect) => void) | null {
-  return collector;
+  return ctx().collector;
 }
 
 export function pushMayThrowFrame(): void {
-  tryFrames.push([]);
+  ctx().tryFrames.push([]);
 }
 
 /**
  * 弹出 try 帧。discard=true（catch 消化）时返回空；否则返回帧内效果供上浮。
  */
 export function popMayThrowFrame(discard: boolean): MayThrowEffect[] {
-  const frame = tryFrames.pop() ?? [];
+  const frame = ctx().tryFrames.pop() ?? [];
   return discard ? [] : frame;
 }
 
 export function flushMayThrowEffects(effects: MayThrowEffect[]): void {
+  const collector = ctx().collector;
   if (!collector || effects.length === 0) return;
   for (const e of effects) {
     try {
@@ -56,14 +82,15 @@ export function flushMayThrowEffects(effects: MayThrowEffect[]): void {
 }
 
 export function recordMayThrow(e: MayThrowEffect): void {
-  const frame = tryFrames[tryFrames.length - 1];
+  const c = ctx();
+  const frame = c.tryFrames[c.tryFrames.length - 1];
   if (frame) {
     frame.push(e);
     return;
   }
-  if (!collector) return;
+  if (!c.collector) return;
   try {
-    collector(e);
+    c.collector(e);
   } catch {
     /* ignore collector errors */
   }

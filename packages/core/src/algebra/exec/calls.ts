@@ -38,6 +38,7 @@ export {
 export {
   setMayThrowCollector,
   getMayThrowCollector,
+  runWithMayThrowSession,
   recordMayThrow,
   pushMayThrowFrame,
   popMayThrowFrame,

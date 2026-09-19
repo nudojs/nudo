@@ -99,7 +99,9 @@ L2 **不**门禁内部 helper。`try`/`catch` 与 refine 可清除 L2。
 
 ```bash
 nudo check user.js
-nudo check src/ --ignore-throws TypeError --from tests/
+nudo check src/lib.js --ignore-throws TypeError --from tests/
+# --json 仅支持单文件；目录目标走人类可读报告
+nudo check src/lib.js --json
 ```
 
 **退出码：**
@@ -135,16 +137,24 @@ nudo test <path> [options]
 
 ```text
 === getName ===
-  entry@L1  (any) => any   throws TypeError
   call@L42  ({ name: "Ada" }) => "Ada"
   debug "empty"  ({}) => undefined
 assertions
-  ✓ 2 passed · 0 failed · 1 unchecked
+  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
+```
+
+找不到使用处调用的入口导出时：
+
+```text
+=== getName ===
+  entry@L6  (any) => any   throws TypeError
 ```
 
 - 合成 `call@` / `entry@` **默认打印** —— 这就是调用点观察。
+- 已有使用处 `call@` 时，分析器**不会**再为该函数合成 `entry@`。
 - 仅 `@nudo:case` 且带 `=> expected` 的进入 pass/fail。
 - 声明断言失败 → exit `1`；合成用例不影响。
+- `test --json` 含 `assertions` 摘要（`passed`/`failed`/`unchecked`），声明断言失败仍 exit 1。
 
 **示例：**
 
@@ -335,8 +345,8 @@ nudo env harvest node
 
 `check --json` 与 `test --json` 是机器可读面。
 
-- **check --json** —— 签名（含 `any` 入口参数与 throws）、诊断码（如 `nudo:entry-may-throw`）、汇总计数。
-- **test --json** —— 逐函数用例（`entry@` / `call@` / 指令）、断言结果、可选 Abs intension 块。
+- **check --json** —— 签名（含 `any` 入口参数与 throws）、诊断码（如 `nudo:entry-may-throw`）、汇总计数。仅支持单文件；`--abs` 仍门禁。
+- **test --json** —— 逐函数用例（`entry@` / `call@` / 指令）、`assertions` 摘要（`passed`/`failed`/`unchecked`）、诊断、可选 Abs intension 块；声明断言失败仍 exit 1。
 
 没有一级 `infer --json`；弃用窗口内仍收到该输出的消费者应迁移到 `check --json` 或 `test --json`。
 
@@ -346,7 +356,7 @@ nudo env harvest node
 
 | 命令 | exit `1` |
 |------|----------|
-| `check` | 任一 error 级诊断（L1 或未 ignore 的 L2） |
+| `check` | 任一 error 级诊断（L1 或未 ignore 的 L2）；`--abs` 仍门禁 |
 | `test` | 任一**声明**断言失败 |
 | `contract` / `export`（只读） | 用法 / IO 错误 |
 | `contract --emit --exit-on-diff` | 将写盘且有 diff |

@@ -101,6 +101,13 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
       decl = stmt.declaration;
     }
     if (decl.type === "FunctionDeclaration" && decl.id) names.push(decl.id.name);
+    if (
+      decl.type === "FunctionDeclaration" &&
+      !decl.id &&
+      stmt.type === "ExportDefaultDeclaration"
+    ) {
+      if (!names.includes("default")) names.push("default");
+    }
     if (decl.type === "VariableDeclaration") {
       for (const d of decl.declarations) {
         if (
@@ -161,6 +168,72 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
           }
         }
       }
+    }
+  }
+  // CJS：exports.f = fn / module.exports.f = fn / module.exports = { f: fn }
+  for (const stmt of f.program.body) {
+    if (stmt.type !== "ExpressionStatement") continue;
+    const expr = (stmt as { expression?: unknown }).expression as
+      | { type?: string; left?: unknown; right?: unknown }
+      | undefined;
+    if (!expr || expr.type !== "AssignmentExpression") continue;
+    const left = expr.left as {
+      type?: string;
+      object?: { type?: string; name?: string; object?: { name?: string }; property?: { name?: string } };
+      property?: { type?: string; name?: string; value?: unknown };
+      computed?: boolean;
+    } | undefined;
+    const right = expr.right;
+    if (!left || left.type !== "MemberExpression" || left.computed) continue;
+    const obj = left.object;
+    const prop = left.property;
+    const propName =
+      prop?.type === "Identifier"
+        ? prop.name
+        : prop?.type === "StringLiteral" || prop?.type === "NumericLiteral"
+          ? String(prop.value)
+          : undefined;
+    const isExportsIdent = !!obj && obj.type === "Identifier" && obj.name === "exports";
+    const isModuleExportsMember =
+      !!obj &&
+      obj.type === "MemberExpression" &&
+      obj.object?.name === "module" &&
+      obj.property?.name === "exports";
+    const isModuleExportsIdent =
+      !!obj && obj.type === "Identifier" && obj.name === "module" && propName === "exports";
+
+    const pushFnFromInit = (fallbackName: string | undefined, init: unknown): void => {
+      const r = init as { type?: string; id?: { name?: string } } | undefined;
+      if (!r) return;
+      if (r.type !== "FunctionExpression" && r.type !== "ArrowFunctionExpression") return;
+      const n = r.id?.name ?? fallbackName;
+      if (n && !names.includes(n)) names.push(n);
+    };
+
+    if (isModuleExportsIdent) {
+      pushFnFromInit(undefined, right);
+      const objLit = right as { type?: string; properties?: unknown[] } | undefined;
+      if (objLit?.type === "ObjectExpression") {
+        for (const p of objLit.properties ?? []) {
+          const prop2 = p as {
+            type?: string;
+            key?: { type?: string; name?: string; value?: unknown };
+            value?: unknown;
+          };
+          if (prop2.type !== "ObjectProperty" && prop2.type !== "Property") continue;
+          const keyName =
+            prop2.key?.type === "Identifier"
+              ? prop2.key.name
+              : prop2.key?.type === "StringLiteral" || prop2.key?.type === "NumericLiteral"
+                ? String(prop2.key.value)
+                : undefined;
+          if (keyName) pushFnFromInit(keyName, prop2.value);
+        }
+      }
+      continue;
+    }
+    if ((isExportsIdent || isModuleExportsMember) && propName) {
+      pushFnFromInit(propName, right);
     }
   }
   return names;
