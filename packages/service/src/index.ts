@@ -117,7 +117,9 @@ export {
   collectEnvModules,
   mergeHarvestUnderEnv,
   setEnvHarvestConflictCollector,
+  getEnvHarvestConflictCollector,
   type EnvHarvestConflict,
+  type MergeHarvestOptions,
   type BPathRunResult,
 } from "./bpath-run.ts";
 export {

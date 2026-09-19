@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-19T02:24:55.373Z",
+  "generatedAt": "2026-09-19T02:48:47.229Z",
   "note": "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design-limitations.md §八 and website semantics mock-boundary section.",
   "budgets": {
     "harvestNodeTypes": {
@@ -44,8 +44,8 @@
       "mock-required": 2
     },
     "leaf": {
-      "clean": 33,
-      "mentionsUnknown": 16
+      "clean": 26,
+      "mentionsUnknown": 23
     },
     "total": 51,
     "results": [
@@ -243,7 +243,7 @@
           "basename"
         ],
         "status": "resolved",
-        "format": "(string, ext?) => string",
+        "format": "(string, ext?: string) => string",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -298,7 +298,7 @@
           "URL"
         ],
         "status": "resolved",
-        "format": "(string, base?) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, hash: string, toString: () => string, toJSON: () => string }",
+        "format": "(string, base?: string) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, hash: string, toString: () => string, toJSON: () => string }",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -342,9 +342,9 @@
           "EventEmitter"
         ],
         "status": "resolved",
-        "format": "(options?) => EventEmitter",
-        "leaf": "clean",
-        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+        "format": "(options?: unknown) => EventEmitter",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },
       {
         "id": "events.once",
@@ -375,9 +375,9 @@
           "EventEmitter"
         ],
         "status": "resolved",
-        "format": "(options?) => EventEmitter",
-        "leaf": "clean",
-        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+        "format": "(options?: unknown) => EventEmitter",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },
       {
         "id": "util.promisify",
@@ -431,9 +431,9 @@
           "Readable"
         ],
         "status": "resolved",
-        "format": "(options?) => Readable",
-        "leaf": "clean",
-        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+        "format": "(options?: unknown) => Readable",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },
       {
         "id": "stream.Writable",
@@ -442,9 +442,9 @@
           "Writable"
         ],
         "status": "resolved",
-        "format": "(options?) => Writable",
-        "leaf": "clean",
-        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+        "format": "(options?: unknown) => Writable",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },
       {
         "id": "stream.Duplex",
@@ -453,9 +453,9 @@
           "Duplex"
         ],
         "status": "resolved",
-        "format": "(options?) => Duplex",
-        "leaf": "clean",
-        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+        "format": "(options?: unknown) => Duplex",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },
       {
         "id": "stream.Transform",
@@ -464,9 +464,9 @@
           "Transform"
         ],
         "status": "resolved",
-        "format": "(options?) => Transform",
-        "leaf": "clean",
-        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+        "format": "(options?: unknown) => Transform",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },
       {
         "id": "stream.pipeline",
@@ -488,7 +488,7 @@
         "forceMock": true,
         "note": "Node stream machine drives internal callbacks — design-limitations §八",
         "status": "mock-required",
-        "format": "(options?) => Transform",
+        "format": "(options?: unknown) => Transform",
         "reason": "Node stream machine drives internal callbacks — design-limitations §八"
       },
       {
@@ -498,9 +498,9 @@
           "parse"
         ],
         "status": "resolved",
-        "format": "(string, sep?, eq?, options?) => ParsedQueryString",
-        "leaf": "clean",
-        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+        "format": "(string, sep?: string, eq?: string, options?: unknown) => ParsedQueryString",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },
       {
         "id": "querystring.stringify",
@@ -509,7 +509,7 @@
           "stringify"
         ],
         "status": "resolved",
-        "format": "(unknown, sep?, eq?, options?) => string",
+        "format": "(unknown, sep?: string, eq?: string, options?: unknown) => string",
         "leaf": "mentions-unknown",
         "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },

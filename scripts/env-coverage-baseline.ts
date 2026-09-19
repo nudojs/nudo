@@ -38,11 +38,11 @@ const jsonMode = process.argv.includes("--json");
 const checkMode = process.argv.includes("--check");
 const generatedAt = new Date().toISOString();
 
-/** Stable payload for drift checks — ignores timestamps. */
+/** Stable payload for drift checks — ignores timestamps. Pins node + es/web probes. */
 function coverageStablePayload(report: {
   nodeProbes: { counts: unknown; leaf: unknown; total: unknown; results: unknown };
-  esProbes?: unknown;
-  webProbes?: unknown;
+  esProbes?: { counts: unknown; leaf: unknown; total: unknown; results: unknown };
+  webProbes?: { counts: unknown; leaf: unknown; total: unknown; results: unknown };
   libraryProbes?: unknown;
   envModuleKeys?: unknown;
 }): string {
@@ -54,6 +54,22 @@ function coverageStablePayload(report: {
       total: report.nodeProbes.total,
       results: report.nodeProbes.results,
     },
+    esProbes: report.esProbes
+      ? {
+          counts: report.esProbes.counts,
+          leaf: report.esProbes.leaf,
+          total: report.esProbes.total,
+          results: report.esProbes.results,
+        }
+      : undefined,
+    webProbes: report.webProbes
+      ? {
+          counts: report.webProbes.counts,
+          leaf: report.webProbes.leaf,
+          total: report.webProbes.total,
+          results: report.webProbes.results,
+        }
+      : undefined,
   });
 }
 

@@ -268,8 +268,14 @@ export function isRelFn(a: Abs | undefined | null): a is Abs {
   if (s.returnType === undefined) return false;   // 至少有输出槽
   // paramTypes 缺失：仅当零参（如 fn()=>B1）才视为完整关系
   if (s.paramTypes === undefined) return s.params.length === 0;
-  // paramTypes 存在：必须与 arity 对齐，否则是半截展示槽，保持 unknown
-  return s.paramTypes.length === s.params.length;
+  // paramTypes 存在：与全 arity 对齐，或与 required arity 对齐
+  // （labels 可用 `x?` / `...rest` 标 optional/rest；types 描述有类型的前缀）
+  if (s.paramTypes.length === s.params.length) return true;
+  let required = 0;
+  for (const p of s.params) {
+    if (p && !p.startsWith("...") && !p.endsWith("?")) required++;
+  }
+  return s.paramTypes.length === required;
 }
 
 export function applyCallbackAbs(
@@ -818,10 +824,10 @@ processItems(xs, notAFunction, g)
        actual:   number  #exact
 ```
 
-目标形状用 `leqAbs` 思路：`src ≤ fn(paramTypes, returnType)`（逆变参数、协变返回，
-已有骨架，`leq.ts:247`）。但 **arity 严格相等**（`leq.ts:250`）对 JS 太严——JS 允许
-多余实参。此检查用自定义放宽比较（`src.params.length >= tgt.params.length`），
-不直接喂 `leqAbs`。
+目标形状用 `leqAbs` 思路：`src ≤ fn(paramTypes, returnType)`（逆变参数、协变返回）。
+`leqAbs` fn arity 用 **required slots**（`requiredFnArity` 跳过 `...rest` / `name?`）：
+`src.required ≤ tgt.required` 才可赋（TS-like：rest src ⊑ required tgt；required src ⊭ rest tgt）。
+check 对 HOF 实参的 shape 检查另有零误报豁免，见下——不直接把弱信息 Abs 喂 `leqAbs`。
 
 **零误报豁免规则（设计约束，不是实现细节）**——JS 生态 `string | fn` 多态 API
 （commander / express 遍地）会让此检查大面积误报：

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { defineEnv } from "../node.ts";
 import { formatShape } from "@nudojs/core";
+import { requiredFnArity } from "@nudojs/core";
 import type { Abs } from "@nudojs/core";
 
 /**
@@ -146,24 +147,27 @@ describe("node env high-frequency gaps (B3)", () => {
     const path = lookupModule(env, "path");
     expect(shapeOf(path.join)).toBe("(string, ...paths: string) => string");
     expect(shapeOf(path.resolve)).toBe("(...paths: string) => string");
-    // basename: ext optional — format shows label; required slot is path
-    expect(shapeOf(path.basename)).toContain("ext?");
-    expect(shapeOf(path.basename)).not.toMatch(/\(string, string\)/);
+    // basename: ext optional — typed label; required slot is path only
+    expect(shapeOf(path.basename)).toBe("(string, ext?: string) => string");
     const util = lookupModule(env, "util");
     // util.format() is valid with zero args in Node
     expect(shapeOf(util.format)).toBe("(...args: unknown) => string");
     const events = lookupModule(env, "events");
-    expect(shapeOf(events.EventEmitter)).toContain("options?");
-    expect(shapeOf(events.EventEmitter)).toContain("EventEmitter");
-    // 0 required ctor params
-    expect(events.EventEmitter!.shape.k === "fn"
-      ? events.EventEmitter!.shape.paramTypes?.length ?? 0
-      : 1).toBe(0);
+    expect(shapeOf(events.EventEmitter)).toBe("(options?: unknown) => EventEmitter");
+    // required arity 0 via labels (paramTypes still carries the optional slot type)
+    const ee = events.EventEmitter!;
+    expect(ee.shape.k).toBe("fn");
+    if (ee.shape.k === "fn") {
+      expect(requiredFnArity(ee.shape.params)).toBe(0);
+      expect(ee.shape.paramTypes?.length).toBe(ee.shape.params.length);
+    }
     const url = lookupModule(env, "url");
-    expect(shapeOf(url.URL)).toContain("base?");
+    expect(shapeOf(url.URL)).toContain("base?: string");
     const qs = lookupModule(env, "querystring");
-    expect(shapeOf(qs.parse)).toContain("sep?");
+    expect(shapeOf(qs.parse)).toBe(
+      "(string, sep?: string, eq?: string, options?: unknown) => ParsedQueryString",
+    );
     const stream = lookupModule(env, "stream");
-    expect(shapeOf(stream.Readable)).toContain("options?");
+    expect(shapeOf(stream.Readable)).toBe("(options?: unknown) => Readable");
   });
 });

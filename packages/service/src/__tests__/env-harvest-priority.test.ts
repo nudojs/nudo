@@ -80,7 +80,7 @@ describe("mergeHarvestUnderEnv — handwritten env wins (B8)", () => {
 
   it("notifies conflict collector when env overwrites harvest exports", () => {
     const seen: Array<{ module: string; exports: string[]; defaultOverwritten: boolean }> = [];
-    setEnvHarvestConflictCollector((c) => seen.push(c));
+    const prev = setEnvHarvestConflictCollector((c) => seen.push(c));
     try {
       const harvest: Record<string, AbsModuleExports> = {
         path: { named: { join: absTag("harvest.join") }, default: absTag("h.def") },
@@ -94,7 +94,44 @@ describe("mergeHarvestUnderEnv — handwritten env wins (B8)", () => {
       expect(seen[0]!.exports).toEqual(["join"]);
       expect(seen[0]!.defaultOverwritten).toBe(true);
     } finally {
-      setEnvHarvestConflictCollector(null);
+      setEnvHarvestConflictCollector(prev);
+    }
+  });
+
+  it("setEnvHarvestConflictCollector returns previous for nested restore", () => {
+    const outer: string[] = [];
+    const inner: string[] = [];
+    const prev0 = setEnvHarvestConflictCollector((c) => outer.push(c.module));
+    try {
+      const harvest = { path: { named: { join: absTag("h.j") } } };
+      const env = { path: { named: { join: absTag("e.j") } } };
+      const prev1 = setEnvHarvestConflictCollector((c) => inner.push(c.module));
+      mergeHarvestUnderEnv(harvest, env);
+      setEnvHarvestConflictCollector(prev1);
+      mergeHarvestUnderEnv({ fs: { named: { read: absTag("h.r") } } }, {
+        fs: { named: { read: absTag("e.r") } },
+      });
+      expect(inner).toEqual(["path"]);
+      expect(outer).toEqual(["fs"]);
+    } finally {
+      setEnvHarvestConflictCollector(prev0);
+    }
+  });
+
+  it("per-call onConflict overrides the global collector", () => {
+    const globalSeen: string[] = [];
+    const callSeen: string[] = [];
+    const prev = setEnvHarvestConflictCollector((c) => globalSeen.push(c.module));
+    try {
+      mergeHarvestUnderEnv(
+        { path: { named: { join: absTag("h.j") } } },
+        { path: { named: { join: absTag("e.j") } } },
+        { onConflict: (c) => callSeen.push(c.module) },
+      );
+      expect(callSeen).toEqual(["path"]);
+      expect(globalSeen).toEqual([]);
+    } finally {
+      setEnvHarvestConflictCollector(prev);
     }
   });
 });

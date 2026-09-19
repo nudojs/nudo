@@ -84,7 +84,17 @@ function scanInfer(pkgName: string, maxFiles = 4): InferOutcome[] {
   const out: InferOutcome[] = [];
 
   const candidates: string[] = [];
-  const entryTries = ["index.js", "index.mjs", "index.cjs", "ms.js", "debug.js"];
+  const entryTries = [
+    "index.js",
+    "index.mjs",
+    "index.cjs",
+    "ms.js",
+    "debug.js",
+    "src/index.js",
+    "lib/index.js",
+    "lib/ms.js",
+    "lib/debug.js",
+  ];
   for (const name of entryTries) {
     const p = join(pkgRoot, name);
     if (existsSync(p)) candidates.push(p);

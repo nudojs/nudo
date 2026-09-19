@@ -7,21 +7,21 @@
 > Categories still recommended for mock are listed below and aligned with
 > `docs/design-limitations.md` §八 (call-site ceiling).
 
-- Generated at: `2026-09-19T02:24:55.373Z`
+- Generated at: `2026-09-19T02:48:47.229Z`
 - Harvest budgets: maxFiles=`12`, maxMs=`2500`, disable=`NUDO_HARVEST_NODE=off`
 
 ## Summary — Node env probes
 
 | Status | Count |
 |---|---:|
-| resolved (leaf-clean format) | 33 |
-| resolved (signature-level; format still mentions unknown/any) | 16 |
+| resolved (leaf-clean format) | 26 |
+| resolved (signature-level; format still mentions unknown/any) | 23 |
 | unknown | 0 |
 | mock-required | 2 |
 | **total** | 51 |
 
 Resolved ratio (resolved / total): **96.1%**
-Leaf-clean ratio (format has no unknown/any token / total): **64.7%**
+Leaf-clean ratio (format has no unknown/any token / total): **51%**
 
 ### Probe detail (node)
 
@@ -44,31 +44,31 @@ Leaf-clean ratio (format has no unknown/any token / total): **64.7%**
 | `path.join` | resolved | clean | `(string, ...paths: string) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `path.resolve` | resolved | clean | `(...paths: string) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `path.dirname` | resolved | clean | `(string) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
-| `path.basename` | resolved | clean | `(string, ext?) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `path.basename` | resolved | clean | `(string, ext?: string) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `path.extname` | resolved | clean | `(string) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `path.relative` | resolved | clean | `(string, string) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `path.parse` | resolved | clean | `(string) => { root: string, dir: string, base: string, ext: string, name: string }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `path.isAbsolute` | resolved | clean | `(string) => boolean` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
-| `url.URL` | resolved | clean | `(string, base?) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, hash: string, toString: () => string, toJSON: () => string }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `url.URL` | resolved | clean | `(string, base?: string) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, hash: string, toString: () => string, toJSON: () => string }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `url.URLSearchParams` | resolved | mentions-unknown | `(unknown) => { get: (string) => string \| unknown, has: (string) => boolean, set: (string, string) => undefined, append: (string, string) => undefined, delete: (string) => undefined, toString: () => string }` | present in env; signature-level — format still mentions unknown/any leaves |
 | `url.fileURLToPath` | resolved | clean | `(string) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `url.pathToFileURL` | resolved | clean | `(string) => { href: string }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
-| `events.EventEmitter` | resolved | clean | `(options?) => EventEmitter` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `events.EventEmitter` | resolved | mentions-unknown | `(options?: unknown) => EventEmitter` | present in env; signature-level — format still mentions unknown/any leaves |
 | `events.once` | resolved | mentions-unknown | `(unknown, string) => promise<unknown[]>` | present in env; signature-level — format still mentions unknown/any leaves |
 | `events.on` | resolved | mentions-unknown | `(unknown, string) => unknown` | present in env; signature-level — format still mentions unknown/any leaves |
-| `node:events.EventEmitter` | resolved | clean | `(options?) => EventEmitter` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `node:events.EventEmitter` | resolved | mentions-unknown | `(options?: unknown) => EventEmitter` | present in env; signature-level — format still mentions unknown/any leaves |
 | `util.promisify` | resolved | mentions-unknown | `(unknown) => unknown` | present in env; signature-level — format still mentions unknown/any leaves |
 | `util.inspect` | resolved | mentions-unknown | `(unknown, unknown) => string` | present in env; signature-level — format still mentions unknown/any leaves |
 | `util.format` | resolved | mentions-unknown | `(...args: unknown) => string` | present in env; signature-level — format still mentions unknown/any leaves |
 | `util.types.isDate` | resolved | mentions-unknown | `(unknown) => boolean` | present in env; signature-level — format still mentions unknown/any leaves |
-| `stream.Readable` | resolved | clean | `(options?) => Readable` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
-| `stream.Writable` | resolved | clean | `(options?) => Writable` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
-| `stream.Duplex` | resolved | clean | `(options?) => Duplex` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
-| `stream.Transform` | resolved | clean | `(options?) => Transform` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `stream.Readable` | resolved | mentions-unknown | `(options?: unknown) => Readable` | present in env; signature-level — format still mentions unknown/any leaves |
+| `stream.Writable` | resolved | mentions-unknown | `(options?: unknown) => Writable` | present in env; signature-level — format still mentions unknown/any leaves |
+| `stream.Duplex` | resolved | mentions-unknown | `(options?: unknown) => Duplex` | present in env; signature-level — format still mentions unknown/any leaves |
+| `stream.Transform` | resolved | mentions-unknown | `(options?: unknown) => Transform` | present in env; signature-level — format still mentions unknown/any leaves |
 | `stream.pipeline` | resolved | mentions-unknown | `(...streams: unknown) => promise<undefined>` | present in env; signature-level — format still mentions unknown/any leaves |
-| `stream.machine-callbacks` | mock-required | — | `(options?) => Transform` | Node stream machine drives internal callbacks — design-limitations §八 |
-| `querystring.parse` | resolved | clean | `(string, sep?, eq?, options?) => ParsedQueryString` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
-| `querystring.stringify` | resolved | mentions-unknown | `(unknown, sep?, eq?, options?) => string` | present in env; signature-level — format still mentions unknown/any leaves |
+| `stream.machine-callbacks` | mock-required | — | `(options?: unknown) => Transform` | Node stream machine drives internal callbacks — design-limitations §八 |
+| `querystring.parse` | resolved | mentions-unknown | `(string, sep?: string, eq?: string, options?: unknown) => ParsedQueryString` | present in env; signature-level — format still mentions unknown/any leaves |
+| `querystring.stringify` | resolved | mentions-unknown | `(unknown, sep?: string, eq?: string, options?: unknown) => string` | present in env; signature-level — format still mentions unknown/any leaves |
 | `crypto.randomUUID` | resolved | clean | `() => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `crypto.createHash` | resolved | mentions-unknown | `(string) => { update: (string \| Buffer) => unknown, digest: (string) => string \| Buffer }` | present in env; signature-level — format still mentions unknown/any leaves |
 | `crypto.randomBytes` | resolved | clean | `(number) => Buffer` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |

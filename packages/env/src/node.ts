@@ -322,8 +322,8 @@ export function defineEnv(): EnvDefinition {
       restName: "...paths",
     }),
     dirname: envFn([prim.str()], prim.str(), strImpl1Abs(nodePath.dirname)),
-    // ext is optional in Node — required slot is path only; label shows ext?.
-    basename: envFn([prim.str()], prim.str(), pathBasenameAbs, {
+    // ext is optional in Node — required arity 1; label+type render `ext?: string`.
+    basename: envFn([prim.str(), prim.str()], prim.str(), pathBasenameAbs, {
       params: ["path", "ext?"],
     }),
     extname: envFn([prim.str()], prim.str(), strImpl1Abs(nodePath.extname)),
@@ -406,9 +406,9 @@ export function defineEnv(): EnvDefinition {
   });
 
   const urlModule: Record<string, Abs> = {
-    // base is optional in Node — required slot is href only.
+    // base is optional in Node — required arity 1; label+type render `base?: string`.
     URL: envFn(
-      [prim.str()],
+      [prim.str(), prim.str()],
       nodeUrlObj,
       (args) => {
         const href = absStr(args[0]);
@@ -584,9 +584,9 @@ export function defineEnv(): EnvDefinition {
   const eventEmitterInstance = brandOf("EventEmitter", eventEmitterShape);
   /**
    * Constructor: `new EventEmitter()` / `new EventEmitter(options)`.
-   * Options is optional — required arity 0; formatShape shows `options?`.
+   * Options optional — required arity 0; format shows `options?: unknown`.
    */
-  const EventEmitterCtor = envFn([], eventEmitterInstance, undefined, {
+  const EventEmitterCtor = envFn([prim.unknown], eventEmitterInstance, undefined, {
     params: ["options?"],
   });
 
@@ -616,7 +616,7 @@ export function defineEnv(): EnvDefinition {
   };
 
   const streamCtor = (brandName: string): Abs =>
-    envFn([], brandOf(brandName, objAbs(streamIoMethods)), undefined, {
+    envFn([prim.unknown], brandOf(brandName, objAbs(streamIoMethods)), undefined, {
       params: ["options?"],
     });
 
@@ -642,15 +642,15 @@ export function defineEnv(): EnvDefinition {
   );
 
   const querystringModule: Record<string, Abs> = {
-    // sep/eq/options optional in Node — required slots only; labels show `?`.
+    // sep/eq/options optional — required arity 1; labels+types render `sep?: string` etc.
     parse: envFn(
-      [prim.str()],
+      [prim.str(), prim.str(), prim.str(), prim.unknown],
       parsedQueryString,
       undefined,
       { params: ["str", "sep?", "eq?", "options?"] },
     ),
     stringify: envFn(
-      [prim.unknown],
+      [prim.unknown, prim.str(), prim.str(), prim.unknown],
       prim.str(),
       undefined,
       { params: ["obj", "sep?", "eq?", "options?"] },

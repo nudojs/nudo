@@ -90,10 +90,14 @@ export function errorBrandOf(name: string): Abs {
  * shape.paramTypes/returnType 同步写入（format/leq 读这里）。
  *
  * `opts.params` labels:
- * - `...name` — rest slot; formatShape renders `...name: <last/typed slot>`
+ * - `...name` — rest slot; formatShape renders `...name: <type>`
  * - `name?`  — optional slot; formatShape renders `name?: <type>`
- * Keep `params.length === paramTypes.length` when paramTypes is present
- * (relation fingerprint / isRelFn alignment).
+ *
+ * Prefer `params.length === paramTypes.length` when paramTypes is present:
+ * optional/rest slots still carry a type (unknown if needed) so hover shows
+ * `ext?: string` rather than a bare `ext?`. Required arity is label-driven
+ * (`requiredFnArity` skips `...` / `?`); `isRelFn` accepts equal lengths or
+ * `paramTypes.length === required` when labels trail with markers.
  */
 export function envFn(
   paramTypes: Abs[],

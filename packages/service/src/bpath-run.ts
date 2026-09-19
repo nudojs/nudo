@@ -125,28 +125,50 @@ let envHarvestConflictCollector:
   | ((c: EnvHarvestConflict) => void)
   | null = null;
 
-/** Diagnostics/tests observe env-vs-harvest priority conflicts. */
+/**
+ * Install conflict collector; returns the previous one so nested/concurrent
+ * analyzeFile callers can save/restore (module-global is not re-entrant).
+ */
 export function setEnvHarvestConflictCollector(
   collector: ((c: EnvHarvestConflict) => void) | null,
-): void {
+): ((c: EnvHarvestConflict) => void) | null {
+  const prev = envHarvestConflictCollector;
   envHarvestConflictCollector = collector;
+  return prev;
 }
+
+/** Read-only peek for tests / nested restore. */
+export function getEnvHarvestConflictCollector():
+  | ((c: EnvHarvestConflict) => void)
+  | null {
+  return envHarvestConflictCollector;
+}
+
+export type MergeHarvestOptions = {
+  /**
+   * Per-call conflict sink. Takes precedence over the module-global collector
+   * installed via `setEnvHarvestConflictCollector`.
+   */
+  onConflict?: (c: EnvHarvestConflict) => void;
+};
 
 /**
  * Handwritten `@nudojs/env` wins over harvest / graph modules on overlapping
  * module keys and overlapping export names (docs/versioning.md B8 + website
  * harvester API). Harvest-only modules/exports are kept as fill-in.
- * Overwrites notify `setEnvHarvestConflictCollector` (plan risk: warn on conflict).
+ * Overwrites notify `opts.onConflict` or the global collector.
  */
 export function mergeHarvestUnderEnv(
   harvestModules: Record<string, AbsModuleExports>,
   envModules: Record<string, AbsModuleExports>,
+  opts?: MergeHarvestOptions,
 ): Record<string, AbsModuleExports> {
   const out: Record<string, AbsModuleExports> = {};
   for (const [mod, exports] of Object.entries(harvestModules)) {
     const named = { ...exports.named };
     out[mod] = exports.default !== undefined ? { named, default: exports.default } : { named };
   }
+  const notify = opts?.onConflict ?? envHarvestConflictCollector;
   for (const [mod, envExports] of Object.entries(envModules)) {
     const existing = out[mod];
     if (!existing) {
@@ -161,12 +183,9 @@ export function mergeHarvestUnderEnv(
     }
     const defaultOverwritten =
       envExports.default !== undefined && existing.default !== undefined;
-    if (
-      envHarvestConflictCollector &&
-      (overwritten.length > 0 || defaultOverwritten)
-    ) {
+    if (notify && (overwritten.length > 0 || defaultOverwritten)) {
       try {
-        envHarvestConflictCollector({
+        notify({
           module: mod,
           exports: overwritten,
           defaultOverwritten,

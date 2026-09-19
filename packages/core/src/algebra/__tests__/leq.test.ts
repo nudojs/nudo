@@ -114,4 +114,64 @@ describe("leqAbs structural assignability", () => {
     expect(requiredFnArity(["a", "b"])).toBe(2);
     expect(requiredFnArity(undefined)).toBe(0);
   });
+
+  describe("fn arity assignability (rest / optional labels)", () => {
+    function fn(params: string[]) {
+      const strT = str();
+      return abs(
+        {
+          k: "fn" as const,
+          params,
+          paramTypes: params.map(() => strT),
+          returnType: strT,
+        },
+        undefined,
+        undefined,
+        "exact",
+      );
+    }
+
+    it("rest source → required target is assignable", () => {
+      // (...paths: string) ⊑ (a, b) — TS allows
+      expect(leqAbs(fn(["...paths"]), fn(["a", "b"])).ok).toBe(true);
+    });
+
+    it("required source → rest target is not assignable when source requires args", () => {
+      // (a, b) ⊭ (...paths) — TS rejects (target may be called with 0 args)
+      expect(leqAbs(fn(["a", "b"]), fn(["...paths"])).ok).toBe(false);
+    });
+
+    it("zero-arg source → rest target is assignable", () => {
+      expect(leqAbs(fn([]), fn(["...paths"])).ok).toBe(true);
+    });
+
+    it("fewer required source → more required target is assignable", () => {
+      // (a) ⊑ (a, b) — extra target args ignored
+      expect(leqAbs(fn(["a"]), fn(["a", "b"])).ok).toBe(true);
+    });
+
+    it("more required source → fewer required target is not assignable", () => {
+      expect(leqAbs(fn(["a", "b"]), fn(["a"])).ok).toBe(false);
+    });
+
+    it("optional label on target lowers required arity", () => {
+      // (path) ⊑ (path, ext?) — ext not required on target
+      expect(leqAbs(fn(["path"]), fn(["path", "ext?"])).ok).toBe(true);
+      // (path, ext) ⊭ (path, ext?) — source still requires ext
+      expect(leqAbs(fn(["path", "ext"]), fn(["path", "ext?"])).ok).toBe(false);
+    });
+
+    it("optional label on source does not raise required arity", () => {
+      // (path, ext?) ⊑ (path) — source required=1, target required=1
+      expect(leqAbs(fn(["path", "ext?"]), fn(["path"])).ok).toBe(true);
+      // (path, ext?) ⊑ (path, ext) — source required=1 ≤ target required=2
+      expect(leqAbs(fn(["path", "ext?"]), fn(["path", "ext"])).ok).toBe(true);
+    });
+
+    it("equal required arity stays assignable regardless of rest labels", () => {
+      // (x0, ...paths) required=1 ⊑ (path) required=1
+      expect(leqAbs(fn(["x0", "...paths"]), fn(["path"])).ok).toBe(true);
+      expect(leqAbs(fn(["path"]), fn(["x0", "...paths"])).ok).toBe(true);
+    });
+  });
 });

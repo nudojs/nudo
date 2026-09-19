@@ -280,12 +280,16 @@ function leqShape(
   // 函数：参数逆变、返回协变
   if (t.k === "fn") {
     if (s.k !== "fn") return fail(`shape ${s.k} ⊭ fn`);
-    // rest (`...x`) / optional (`x?`) labels are display-layer; arity uses
-    // required slots only. JS allows extra params on the source side.
+    // Arity uses required slots only (rest `...x` / optional `x?` are labels).
+    // TS-like: source assignable iff it does not require more params than the
+    // target always provides. Rest src → required tgt is OK; required src →
+    // rest tgt fails when source.required > 0 (target may be called with 0 args).
     const sReq = requiredFnArity(s.params);
     const tReq = requiredFnArity(t.params);
-    if (sReq < tReq && s.params.length < t.params.length) {
-      return fail(`fn arity ${s.params.length} ⊭ ${t.params.length}`);
+    if (sReq > tReq) {
+      return fail(
+        `fn arity required ${sReq} ⊭ target required ${tReq} (params ${s.params.length} / ${t.params.length})`,
+      );
     }
     if (t.returnType !== undefined) {
       const sr = s.returnType;

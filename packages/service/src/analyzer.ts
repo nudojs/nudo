@@ -1193,6 +1193,29 @@ function analyzeFileUncached(
   );
 }
 
+/** 0-based loc of the first import/require specifier for `module` (or null). */
+function findModuleImportLoc(
+  source: string,
+  module: string,
+): { line: number; column: number; length: number } | null {
+  const bare = module.startsWith("node:") ? module.slice("node:".length) : module;
+  const alts = [...new Set([module, bare, `node:${bare}`])];
+  const lines = source.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    for (const alt of alts) {
+      const re = new RegExp(
+        `["'\`]${alt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["'\`]`,
+      );
+      const m = re.exec(line);
+      if (m && m.index !== undefined) {
+        return { line: i, column: m.index, length: m[0].length };
+      }
+    }
+  }
+  return null;
+}
+
 function analyzeFileUncachedInner(
   filePath: string,
   source: string,
@@ -1208,7 +1231,8 @@ function analyzeFileUncachedInner(
   const functionResults: FunctionAnalysis[] = [];
   const caseHints: CaseHint[] = [];
   const envHarvestConflicts: EnvHarvestConflict[] = [];
-  setEnvHarvestConflictCollector((c) => {
+  // Save/restore so nested analyzeFile calls do not clobber each other's sink.
+  const prevHarvestConflictCollector = setEnvHarvestConflictCollector((c) => {
     if (!envHarvestConflicts.some((x) => x.module === c.module)) {
       envHarvestConflicts.push(c);
     } else {
@@ -2126,17 +2150,21 @@ function analyzeFileUncachedInner(
     analysisConfig(projectConfig?.config).callSiteBudget,
   );
 
-  setEnvHarvestConflictCollector(null);
+  setEnvHarvestConflictCollector(prevHarvestConflictCollector);
   for (const c of envHarvestConflicts) {
     const parts: string[] = [];
     if (c.exports.length > 0) parts.push(`export(s) ${c.exports.join(", ")}`);
     if (c.defaultOverwritten) parts.push("default");
     const detail = parts.length > 0 ? ` — ${parts.join("; ")}` : "";
+    const loc = findModuleImportLoc(source, c.module);
+    const range = loc
+      ? {
+          start: { line: loc.line, column: loc.column },
+          end: { line: loc.line, column: loc.column + loc.length },
+        }
+      : { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } };
     diagnostics.push({
-      range: {
-        start: { line: 1, column: 0 },
-        end: { line: 1, column: 0 },
-      },
+      range,
       severity: "warning",
       message:
         `handwritten @nudo:env wins over harvest on module "${c.module}"${detail}; ` +
