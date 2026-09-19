@@ -16,6 +16,13 @@ describe("formatThrowsAbs shape coverage", () => {
     ]);
     expect(formatThrowsAbs(sum)).toBe("RangeError | TypeError");
   });
+  it("sum keeps any/unknown arms honest (no silent filter)", () => {
+    const mixed = mayThrowEffectsToAbs([
+      { kind: "TypeError", cause: "a" },
+      { kind: "any", cause: "b" },
+    ]);
+    expect(formatThrowsAbs(mixed)).toBe("TypeError | any");
+  });
   it("prim / any / unknown are honest, not invented Error", () => {
     expect(formatThrowsAbs(abs({ k: "prim", type: "string" }))).toBe("string");
     expect(formatThrowsAbs(abs({ k: "prim", type: "number" }))).toBe("number");

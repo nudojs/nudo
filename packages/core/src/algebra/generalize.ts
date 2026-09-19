@@ -580,8 +580,7 @@ export function extractFn(
       formalsByName.set(decl.id.name, formals);
     }
     if (decl.type === "ClassDeclaration" && (decl as { id?: { name?: string } }).id?.name) {
-      // C4.2：导出 class 实例方法 → `Class.method`
-      // 本地 `class Foo` + `export { Foo }` 也在此登记（decl 未包 export 时同样命中）
+      // C4.2：导出 class 实例/静态方法 → `Class.method`
       const cname = (decl as { id: { name: string } }).id.name;
       const body = (decl as { body?: { body?: unknown[] } }).body?.body ?? [];
       for (const m of body) {
@@ -600,7 +599,6 @@ export function extractFn(
           mem.type === "TSDeclareMethod";
         if (!isMethod || !mem.body) continue;
         if (mem.kind && mem.kind !== "method") continue;
-        if (mem.static) continue;
         const keyName = mem.key?.type === "Identifier" ? mem.key.name : undefined;
         if (!keyName) continue;
         const fullName = `${cname}.${keyName}`;
@@ -635,6 +633,121 @@ export function extractFn(
           formalsByName.set(d.id.name, formals);
         }
       }
+    }
+    // export default (…) => … / function (…)：本地键 default
+    if (
+      stmt.type === "ExportDefaultDeclaration" &&
+      (decl.type === "ArrowFunctionExpression" || decl.type === "FunctionExpression")
+    ) {
+      const init = decl as unknown as {
+        params: unknown[];
+        body: Node;
+        async?: boolean;
+      };
+      const formals = formalParamsFromNodes(init.params as never);
+      env.fns.set("default", {
+        params: formalParamDisplayNames(formals),
+        body: init.body,
+        async: init.async === true,
+      });
+      formalsByName.set("default", formals);
+    }
+  }
+
+  // CJS：exports.f = fn / module.exports = { f(){} } / module.exports = fn
+  const registerFnNode = (
+    key: string,
+    node: {
+      type?: string;
+      id?: { name?: string };
+      params?: unknown[];
+      body?: Node;
+      async?: boolean;
+    },
+  ): void => {
+    if (!node?.body) return;
+    if (node.type !== "FunctionExpression" && node.type !== "ArrowFunctionExpression" && node.type !== "ObjectMethod" && node.type !== "ClassMethod" && node.type !== "FunctionDeclaration") {
+      return;
+    }
+    const formals = formalParamsFromNodes((node.params ?? []) as never);
+    env.fns.set(key, {
+      params: formalParamDisplayNames(formals),
+      body: node.body,
+      async: node.async === true,
+    });
+    formalsByName.set(key, formals);
+  };
+  const ident = (n: unknown): string | undefined => {
+    const id = n as { type?: string; name?: string; value?: unknown } | undefined;
+    if (!id) return undefined;
+    if (id.type === "Identifier" && typeof id.name === "string") return id.name;
+    if (id.type === "StringLiteral" || id.type === "NumericLiteral") return String(id.value);
+    return undefined;
+  };
+  const isExportsTarget = (n: unknown): boolean => {
+    const id = n as { type?: string; name?: string; object?: { name?: string }; property?: { name?: string } } | undefined;
+    if (!id) return false;
+    if (id.type === "Identifier") return id.name === "exports" || id.name === "module";
+    if (id.type === "MemberExpression") {
+      return id.object?.name === "module" && id.property?.name === "exports";
+    }
+    return false;
+  };
+  for (const stmt of file.program.body) {
+    if (stmt.type !== "ExpressionStatement") continue;
+    const expr = (stmt as { expression?: unknown }).expression as
+      | { type?: string; operator?: string; left?: unknown; right?: unknown }
+      | undefined;
+    if (!expr || expr.type !== "AssignmentExpression" || expr.operator !== "=") continue;
+    const left = expr.left as {
+      type?: string;
+      name?: string;
+      object?: { type?: string; name?: string; object?: { name?: string }; property?: { name?: string } };
+      property?: { type?: string; name?: string; value?: unknown };
+      computed?: boolean;
+    } | undefined;
+    const right = expr.right as
+      | { type?: string; properties?: unknown[]; id?: { name?: string }; params?: unknown[]; body?: Node; async?: boolean }
+      | undefined;
+    if (!left || !right) continue;
+    const propName = left.property ? ident(left.property) : undefined;
+    // module.exports = … / exports = …
+    const isModuleExportsIdent =
+      (left.type === "MemberExpression" &&
+        left.object?.name === "module" &&
+        left.property?.name === "exports") ||
+      (left.type === "Identifier" && left.name === "exports");
+    // exports.f = … / module.exports.f = …
+    const isExportsMember =
+      left.type === "MemberExpression" &&
+      left.object &&
+      (left.object.name === "exports" ||
+        (left.object.object?.name === "module" && left.object.property?.name === "exports"));
+    if (isModuleExportsIdent) {
+      if (right.type === "ObjectExpression") {
+        for (const p of right.properties ?? []) {
+          const prop = p as { type?: string; key?: unknown; value?: unknown };
+          const keyName = ident(prop.key);
+          if (!keyName) continue;
+          if (prop.type === "ObjectMethod" || prop.type === "ClassMethod") {
+            registerFnNode(keyName, prop as never);
+          } else {
+            registerFnNode(keyName, prop.value as never);
+          }
+        }
+      } else if (right.type === "Identifier") {
+        const n = ident(right);
+        // module.exports = localFn：键用本地名（localNamedExports 同口径）
+        if (n) {
+          // 若已是顶层声明，extract 已登记；此处仅补 CJS 赋值形态
+        }
+      } else {
+        registerFnNode("default", right);
+      }
+      continue;
+    }
+    if (isExportsMember && propName) {
+      registerFnNode(propName, right);
     }
   }
 

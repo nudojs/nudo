@@ -1811,7 +1811,7 @@ function analyzeFileUncachedInner(
             range: throwRange,
             severity: "warning",
             message: `Function "${fn.name}" case "${directive.name}" may throw: ${formatShape(caseThrowsAbs)}. Consider adding a try-catch block or using @nudo:refine return <constraint>`,
-            code: "nudo-may-throw",
+            code: "nudo:may-throw",
           });
         }
 

@@ -2,7 +2,8 @@
 // 形态：@nudo:refine <param> <constraint>
 // 运行：
 //   pnpm run check docs/examples/constraints/add-pred.js
-//   pnpm run infer docs/examples/constraints/add-pred.js
+//   pnpm run check docs/examples/constraints/add-pred.js
+//   pnpm run test:cli docs/examples/constraints/add-pred.js
 
 /// @nudo:import { positive } from "./delay.nudo.js"
 

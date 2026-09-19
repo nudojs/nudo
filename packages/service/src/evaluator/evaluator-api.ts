@@ -17,9 +17,12 @@ export {
   findProjectConfig,
   interfaceConfig,
   analysisConfig,
+  checkConfig,
+  diskCacheRoot,
   type NudoConfig,
   type InterfaceConfig,
   type AnalysisConfig,
+  type CheckConfig,
   type AnalysisMode,
   type DiagnosticsLevel,
 } from "./config.ts";

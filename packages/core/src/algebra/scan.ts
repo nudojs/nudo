@@ -86,7 +86,7 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
         mem.type === "TSDeclareMethod";
       if (!isMethod) continue;
       if (mem.kind && mem.kind !== "method") continue; // skip ctor/get/set
-      if (mem.static) continue;
+      // static 与实例方法同为入口可见（design §3.2）
       const keyName =
         mem.key?.type === "Identifier" ? mem.key.name : undefined;
       if (keyName) names.push(`${cname}.${keyName}`);
@@ -99,6 +99,13 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
     }
     if (stmt.type === "ExportDefaultDeclaration" && stmt.declaration) {
       decl = stmt.declaration;
+      // export default (…) => … / function (…)：本地键 default
+      if (
+        decl.type === "ArrowFunctionExpression" ||
+        decl.type === "FunctionExpression"
+      ) {
+        if (!names.includes("default")) names.push("default");
+      }
     }
     if (decl.type === "FunctionDeclaration" && decl.id) names.push(decl.id.name);
     if (
@@ -219,7 +226,21 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
             type?: string;
             key?: { type?: string; name?: string; value?: unknown };
             value?: unknown;
+            params?: unknown[];
+            body?: unknown;
+            async?: boolean;
+            id?: { name?: string };
           };
+          if (prop2.type === "ObjectMethod" || prop2.type === "ClassMethod") {
+            const keyName =
+              prop2.key?.type === "Identifier"
+                ? prop2.key.name
+                : prop2.key?.type === "StringLiteral" || prop2.key?.type === "NumericLiteral"
+                  ? String(prop2.key.value)
+                  : undefined;
+            if (keyName && !names.includes(keyName)) names.push(keyName);
+            continue;
+          }
           if (prop2.type !== "ObjectProperty" && prop2.type !== "Property") continue;
           const keyName =
             prop2.key?.type === "Identifier"

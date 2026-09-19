@@ -1,5 +1,5 @@
 <!-- DESIGN-CONFLICT:cli-semantics → docs/design-cli-semantics.md §2 / design-cli-semantics-conflicts.md
-     C-ANY: unknown/any 并格（zh 镜像）。 -->
+     C-ANY: unknown/any 并格（zh 镜像）。已按 §2 拆开。 -->
 ---
 sidebar_position: 1
 description: "类型值——作为单一可计算系统的符号值集合：Abs 代数（shape × term × pred × conf）、指令约束构建器文法与四条设计原则。"
@@ -13,7 +13,7 @@ description: "类型值——作为单一可计算系统的符号值集合：Abs
 
 ## 四个组成
 
-- **shape**——外延载体：值长什么样。种类：`prim`（带 `lit` term 即精确值）、`obj`、`arr`、`tuple`、`fn`、`eff`（`promise<…>` / `generator<…>`）、`brand`（名义实例）、`sum`（联合）、`never`、`unknown`/`any`。
+- **shape**——外延载体：值长什么样。种类：`prim`（带 `lit` term 即精确值）、`obj`、`arr`、`tuple`、`fn`、`eff`（`promise<…>` / `generator<…>`）、`brand`（名义实例）、`sum`（联合）、`never`、**`any`**（无约束：JS 值并集，开发者细化）、**`unknown`**（推导失败 / 引擎无信息，Nudo 负责修）。
 - **term**——抽象值身份：`lit`（具体值）、`var`（符号 α，如 `A1`）或 `app`（应用表达式，如 `(x + 2)`）。
 - **pred**——相对 term 的约束：`(x + 2) > 3`。
 - **conf**——抽象的精确度：`exact` / `path` / `widened` / `mock` / `partial` / `opaque`。

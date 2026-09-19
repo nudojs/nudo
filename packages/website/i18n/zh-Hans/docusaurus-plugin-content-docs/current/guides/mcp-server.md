@@ -7,14 +7,14 @@ description: "将 AI 编码代理接入 Nudo 语言服务器：LSP→MCP 桥、�
 
 AI 编码代理——Claude Code、Cursor、Copilot、Zed 等——通过 Nudo 的**语言服务器** [`@nudojs/lsp`](../api/lsp.md) 访问推断能力。驱动 VS Code 扩展的同一个服务器，同时通过标准的 `workspace/executeCommand` 调用暴露五个 agent 命令，外加拉取式诊断。不需要安装或维持独立的 MCP 服务器进程：一个服务器同时服务编辑器*和* agent。
 
-面向 agent 的 Abs-first 工具：
+面向 agent 的 Abs-first 工具（wire 名本 major **协议冻结**，映射到 CLI 动词）：
 
-| 命令 | 返回 |
-|------|------|
-| `nudo.check` | **CheckJson v1**——签名 + `actual ⊭ expected` |
-| `nudo.infer` | **InferJson v1**——带无损 `intension.abs` 的 case |
-| `nudo.hover` | 指定位置的无损 Abs（+ 可选 inlay） |
-| `nudo.whatIf` / `suggestCase` / `trace` | 类型探索与 case 覆盖 |
+| 命令 | CLI 映射 | 返回 |
+|------|----------|------|
+| `nudo.check` | `nudo check`（签名 + L1/L2 门禁） | **CheckJson v1**——签名 + `actual ⊭ expected` |
+| `nudo.infer` | `nudo test`（case 报告；签名看 `check`） | **InferJson v1**——带无损 `intension.abs` 的 case |
+| `nudo.hover` | IDE hover | 指定位置的无损 Abs（+ 可选 inlay） |
+| `nudo.whatIf` / `suggestCase` / `trace` | 探索 | 类型探索与 case 覆盖 |
 
 完整的命令参考（参数、返回形状、类型表达式语法）见 [Agent API](../api/agent.md) 页面。面向 agent 的现成 skill 文件发布在 [`packages/lsp/agent-skill/SKILL.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/agent-skill/SKILL.md)。
 

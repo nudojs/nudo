@@ -52,6 +52,8 @@ All commands are available as `workspace/executeCommand` (dot form) and as custo
 
 | Command (request alias) | Arguments (JSON) | Returns |
 |---|---|---|
+| `nudo.check` (`nudo/check`) | `{ "file": "src/app.js", "format": "json"? }` | CheckJson v1 — same as CLI `nudo check` (signatures + L1/L2; reads `package.json#nudo.check`) |
+| `nudo.infer` (`nudo/infer`) | `{ "file": "src/app.js", "functions"?: ["parse"] }` | InferJson v1 — case report face (CLI `nudo test`); wire name frozen this major |
 | `nudo.whatIf` (`nudo/whatIf`) | `{ "file": "src/config.js", "bindings": [{ "name": "raw", "type": "string" }], "target": "size" }` | Text: the inferred type of `target` **under the assumed bindings** — e.g. `Type of "size": number`; bindings match top-level declarations only |
 | `nudo.trace` (`nudo/trace`) | `{ "file": "src/app.js", "functionName": "parse" }` | Text: one line per case, e.g. `Input: (string()) => Output: number` |
 | `nudo.suggestCase` (`nudo/suggestCase`) | `{ "file": "src/app.js", "functionName": "parse" }` | Text: paste-ready `@nudo:case` directives when every case is call-site synthesized; otherwise the current case count or a suggested directive |

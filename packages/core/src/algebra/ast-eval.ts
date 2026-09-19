@@ -93,7 +93,7 @@ import {
   noteNullishMemberThrows,
   anyMemberResult,
 } from "./exec/member-diag.ts";
-import { errorTypeAbs, pushMayThrowFrame, popMayThrowFrame, flushMayThrowEffects } from "./exec/may-throw.ts";
+import { errorTypeAbs, pushMayThrowFrame, popMayThrowFrame, orphanMayThrowEffects } from "./exec/may-throw.ts";
 import { NudoThrow } from "./exec/runtime.ts";
 import { registerBClass } from "./exec/class-registry.ts";
 import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
@@ -436,21 +436,27 @@ export function evalSource(
 
 /** 把 arrow/function 表达式绑到 env.fns；具名 FunctionExpression 同时登记 id（analyzer 优先 id） */
 function bindFnInit(env: AstEnv, name: string, init: Node): void {
-  if (
-    init.type !== "ArrowFunctionExpression" &&
-    init.type !== "FunctionExpression"
-  ) {
-    return;
-  }
-  const fn = init as ArrowFunctionExpression;
+  const asFn = init as {
+    type?: string;
+    params?: Node[];
+    body?: Node;
+    async?: boolean;
+    id?: { name?: string };
+  };
+  const isCallable =
+    init.type === "ArrowFunctionExpression" ||
+    init.type === "FunctionExpression" ||
+    init.type === "ObjectMethod" ||
+    init.type === "ClassMethod";
+  if (!isCallable || !asFn.body) return;
   const entry = {
-    params: fn.params.map(paramName),
-    body: fn.body,
-    async: fn.async === true,
+    params: (asFn.params ?? []).map(paramName),
+    body: asFn.body,
+    async: asFn.async === true,
   };
   env.fns.set(name, entry);
   if (init.type === "FunctionExpression") {
-    const idName = (init as { id?: { name?: string } }).id?.name;
+    const idName = asFn.id?.name;
     if (idName && idName !== name && !env.fns.has(idName)) {
       env.fns.set(idName, entry);
     }
@@ -543,7 +549,15 @@ function registerTopLevelCallable(env: AstEnv, stmt: Node): void {
       }
       if (right.type === "ObjectExpression") {
         for (const prop of (right as { properties?: Node[] }).properties ?? []) {
-          if ((prop as { type?: string }).type !== "ObjectProperty" && (prop as { type?: string }).type !== "Property") continue;
+          const ptype = (prop as { type?: string }).type;
+          if (
+            ptype !== "ObjectProperty" &&
+            ptype !== "Property" &&
+            ptype !== "ObjectMethod" &&
+            ptype !== "ClassMethod"
+          ) {
+            continue;
+          }
           const key = (prop as { key?: Node }).key;
           const value = (prop as { value?: Node }).value;
           const keyName =
@@ -552,7 +566,12 @@ function registerTopLevelCallable(env: AstEnv, stmt: Node): void {
               : key && (key.type === "StringLiteral" || key.type === "NumericLiteral")
                 ? String((key as { value?: unknown }).value)
                 : undefined;
-          if (keyName && value) bindFnInit(env, keyName, value);
+          if (!keyName) continue;
+          if (ptype === "ObjectMethod" || ptype === "ClassMethod") {
+            bindFnInit(env, keyName, prop as Node);
+          } else if (value) {
+            bindFnInit(env, keyName, value);
+          }
         }
       }
       return;
@@ -617,6 +636,26 @@ function registerClassDecl(env: AstEnv, node: Node): void {
   }
   const def = classFromMethods(name, methods, superName, superShape);
   defineClass(env, def);
+  // L2 / check 按 `Class.method` 名求值：实例与 static 方法都绑进 env.fns
+  for (const m of cls.body.body) {
+    if (m.type !== "ClassMethod" && m.type !== "ObjectMethod" && m.type !== "MethodDefinition") {
+      continue;
+    }
+    if (m.kind && m.kind !== "method") continue;
+    if (!m.body) continue;
+    const keyName =
+      m.key?.type === "Identifier"
+        ? (m.key as Identifier).name
+        : m.key?.type === "StringLiteral"
+          ? (m.key as StringLiteral).value
+          : undefined;
+    if (!keyName) continue;
+    env.fns.set(`${name}.${keyName}`, {
+      params: (m.params ?? []).map(paramName),
+      body: m.body as Node,
+      async: m.async === true,
+    });
+  }
   // 桥接进 B classRegistry：import 后的 `new C(...)` 走 $new 能找到 ctor
   {
     const callM = (m: MethodDef) => (thisVal: Abs, ...args: Abs[]) =>
@@ -2315,7 +2354,7 @@ function evalTry(
     const catchR = runCatch(env, phi, tryR.value);
     if (catchR.threw) {
       // catch rethrow：soft 不消化，上浮；并携带 catch 的 hard throw
-      flushMayThrowEffects(softEffects);
+      orphanMayThrowEffects(softEffects);
       if (node.finalizer) evalNode(node.finalizer, catchR.env, catchR.phi, budget);
       return { value: catchR.value, phi: catchR.phi, env: catchR.env, threw: true };
     }
@@ -2335,7 +2374,7 @@ function evalTry(
     }
     if (catchR.threw) {
       // catch rethrow：保留 try soft + catch hard
-      flushMayThrowEffects(softEffects);
+      orphanMayThrowEffects(softEffects);
       if (node.finalizer) evalNode(node.finalizer, local, curPhi, budget);
       return { value: catchR.value, phi: curPhi, env: local, threw: true };
     }
@@ -2350,11 +2389,11 @@ function evalTry(
       return { value, phi: curPhi, env: local, returned: true };
     }
     if (catchR.threw && tryR.threw) {
-      flushMayThrowEffects(softEffects);
+      orphanMayThrowEffects(softEffects);
       return { value, phi: curPhi, env: local, threw: true };
     }
     if (catchR.threw) {
-      flushMayThrowEffects(softEffects);
+      orphanMayThrowEffects(softEffects);
       return { value: catchR.value, phi: curPhi, env: local, threw: true };
     }
     softDigested = true;
@@ -2363,7 +2402,7 @@ function evalTry(
     if (node.handler && softEffects.length > 0) {
       const catchR = runCatch(env, phi, tryR.value);
       if (catchR.threw) {
-        flushMayThrowEffects(softEffects);
+        orphanMayThrowEffects(softEffects);
         if (node.finalizer) evalNode(node.finalizer, tryR.env, tryR.phi, budget);
         return { ...tryR, threw: true, partialThrow: true, throwValue: catchR.value };
       }
@@ -2372,23 +2411,23 @@ function evalTry(
       softDigested = !!node.handler;
     }
     if (node.finalizer) evalNode(node.finalizer, local, curPhi, budget);
-    if (!softDigested) flushMayThrowEffects(softEffects);
+    if (!softDigested) orphanMayThrowEffects(softEffects);
     return tryR;
   } else if (tryR.threw && !node.handler) {
     if (node.finalizer) evalNode(node.finalizer, local, curPhi, budget);
-    flushMayThrowEffects(softEffects);
+    orphanMayThrowEffects(softEffects);
     return tryR;
   }
 
   if (node.finalizer) {
     const fR = evalNode(node.finalizer, local, curPhi, budget);
     if (fR.returned || fR.threw) {
-      if (!softDigested) flushMayThrowEffects(softEffects);
+      if (!softDigested) orphanMayThrowEffects(softEffects);
       return fR;
     }
     local = fR.env;
   }
-  if (!softDigested) flushMayThrowEffects(softEffects);
+  if (!softDigested) orphanMayThrowEffects(softEffects);
   return {
     value,
     phi: curPhi,

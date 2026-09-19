@@ -136,21 +136,38 @@ export function bumpValidateGeneration(filePath: string): number {
  * Abs-check LSP diagnostics by `analysis.diagnostics` level.
  * Shared by push (`validateText`) and pull (`languages.diagnostics`) so both
  * channels filter identically:
- * - off → silent; errors → Error only; default → Error+Warning; verbose → all.
+ * - off → silent for analyzer noise, but **check product errors stay visible**
+ *   (`nudo:entry-may-throw` + L1 error codes) so IDE matches CLI gate;
+ * - errors → Error only; default → Error+Warning; verbose → all.
  */
 export function filterCheckLspByLevel(
   diags: LspDiagnostic[],
   level: "off" | "errors" | "default" | "verbose",
 ): LspDiagnostic[] {
+  /** CLI check 永远门禁的码：analysis.diagnostics=off 也不得静默 */
+  const ALWAYS_KEEP = new Set([
+    "nudo:entry-may-throw",
+    "nudo:constraint-violated",
+    "nudo:assign-mismatch",
+    "nudo:arg-structure",
+    "nudo:case-inconsistency",
+    "nudo:interface-param-mismatch",
+    "nudo:interface-conflict",
+  ]);
+  const isGate = (d: LspDiagnostic): boolean => {
+    const code = (d as { code?: string | number }).code;
+    return typeof code === "string" && ALWAYS_KEEP.has(code) && d.severity === DiagnosticSeverity.Error;
+  };
   if (level === "verbose") return diags;
-  if (level === "off") return [];
+  if (level === "off") return diags.filter(isGate);
   if (level === "errors") {
-    return diags.filter((d) => d.severity === DiagnosticSeverity.Error);
+    return diags.filter((d) => d.severity === DiagnosticSeverity.Error || isGate(d));
   }
   return diags.filter(
     (d) =>
       d.severity === DiagnosticSeverity.Error ||
-      d.severity === DiagnosticSeverity.Warning,
+      d.severity === DiagnosticSeverity.Warning ||
+      isGate(d),
   );
 }
 

@@ -1101,6 +1101,57 @@ export function getName(user) {
       expect: "entry-may-throw",
     },
     {
+      id: "export-nested-try-outer-catch-digests",
+      source: `
+export function getName(user) {
+  try {
+    try {
+      return user.name;
+    } finally {
+    }
+  } catch {
+    return "n";
+  }
+}
+`,
+      expect: "ok",
+    },
+    {
+      id: "cjs-object-method-any-member-throws",
+      source: `
+module.exports = {
+  getName(user) {
+    return user.name;
+  }
+};
+`,
+      expect: "entry-may-throw",
+    },
+    {
+      id: "export-alias-local-function-throws",
+      source: `
+function getName(user) { return user.name; }
+export { getName as publicName };
+`,
+      expect: "entry-may-throw",
+    },
+    {
+      id: "export-default-anon-arrow-throws",
+      source: `
+export default (user) => user.name;
+`,
+      expect: "entry-may-throw",
+    },
+    {
+      id: "export-class-static-method-throws",
+      source: `
+export class Foo {
+  static bar(u) { return u.name; }
+}
+`,
+      expect: "entry-may-throw",
+    },
+    {
       id: "export-throw-string-shows-string",
       source: `
 export function boom() {
@@ -1119,9 +1170,10 @@ export function getName(user) {
   return user.name;
 }
 `,
-      // refine shape 尚未灌进 entry any 实参（设计 §3.3「L2 消失或降 L1」为后续项）
+      // 内联 shape(name) 非合法 refine 语法；合法 *.nudo.js sidecar 可抑制 L2。
+      // 本用例钉「refine 解析失败 → 仍按 any 成员访问报 L2」
       expect: "entry-may-throw",
-      note: "refine→L2 抑制未接线：当前仍按 any 成员访问记 L2",
+      note: "invalid inline refine grammar: L2 still fires (valid sidecar suppresses)",
     },
     {
       id: "internal-any-member-not-entry",

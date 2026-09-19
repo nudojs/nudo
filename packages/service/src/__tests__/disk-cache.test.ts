@@ -43,6 +43,29 @@ describe("B3 disk cache store", () => {
     expect(a).not.toBe(c);
   });
 
+  it("key flips on entryThrows / ignoreThrows (L2 config must not stale-cache)", () => {
+    const src = "export function getName(u){ return u.name; }\n";
+    const base = checkCacheKey("/p/a.js", src, {
+      autoBind: true,
+      analysisCfg: { entryThrows: "error", ignoreThrows: "-" },
+    });
+    const off = checkCacheKey("/p/a.js", src, {
+      autoBind: true,
+      analysisCfg: { entryThrows: "off", ignoreThrows: "-" },
+    });
+    const ignored = checkCacheKey("/p/a.js", src, {
+      autoBind: true,
+      analysisCfg: { entryThrows: "error", ignoreThrows: "TypeError" },
+    });
+    const emptyIgnore = checkCacheKey("/p/a.js", src, {
+      autoBind: true,
+      analysisCfg: { entryThrows: "error", ignoreThrows: "" },
+    });
+    expect(base).not.toBe(off);
+    expect(base).not.toBe(ignored);
+    expect(ignored).not.toBe(emptyIgnore);
+  });
+
   it("checkCacheKey: sidecar content flips the key (CI must miss on contract change)", () => {
     const src = "export function add(a, b) { return a + b; }\n";
     const base = checkCacheKey("/p/a.js", src, {

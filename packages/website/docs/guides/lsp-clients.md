@@ -172,7 +172,7 @@ Track these when adopting a non-VS Code client. Server-side semantics are shared
 | Secondary-server diagnostics may compete with tsserver noise | All | Scope `package.json#nudo.analysis.include` / `exclude`; or `mode: "directives"` — full recipe in [Coexistence](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | Config, not a bug — tracking doc: [coexistence recipe](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
 | File-detection docs lag analysis-mode default | Docs | Prefer `package.json#nudo.analysis` + [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) as the source of truth | Docs sync — this page + PUBLIC_API.md |
 | Pull diagnostics unused by some clients | Older clients | Push path still works; open/validate on didOpen; clients may ignore `diagnosticProvider` | Protocol age — no tracking issue (server keeps push) |
-| Completion trigger / signature help thin in some UIs | Helix (varies by build) | Use hover + `nudo.infer` / CLI for full signatures; VS Code/Zed for signature help UI | Client limitation — no tracking issue |
+| Completion trigger / signature help thin in some UIs | Helix (varies by build) | Use hover + `nudo.check` (CLI) / `nudo test` for full signatures; VS Code/Zed for signature help UI | Client limitation — no tracking issue |
 
 ## Same-source guarantee
 

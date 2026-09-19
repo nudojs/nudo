@@ -69,20 +69,35 @@ export function popMayThrowFrame(discard: boolean): MayThrowEffect[] {
   return discard ? [] : frame;
 }
 
+/**
+ * 孤儿 soft 效果上浮：若仍有外层 try 帧则并入外层（nested try + outer catch）；
+ * 否则交给 collector。不得在栈非空时直接 flush，否则 outer catch 被旁路。
+ */
+export function orphanMayThrowEffects(effects: MayThrowEffect[]): void {
+  if (effects.length === 0) return;
+  const c = ctx();
+  const outer = c.tryFrames[c.tryFrames.length - 1];
+  if (outer) {
+    for (const e of effects) outer.push(e);
+    return;
+  }
+  flushMayThrowEffects(effects);
+}
+
 /** B-path：try 开始时压 soft 帧（与 ast-eval evalTry 同口径） */
 export function $tryMarkSoft(): void {
   pushMayThrowFrame();
 }
 
-/** B-path catch：消化 try 内 soft may-throw */
+/** B-path catch 消化 try 内 soft may-throw */
 export function $tryDigestSoft(): void {
   popMayThrowFrame(true);
 }
 
-/** B-path 无 handler / 出口：上浮未消化 soft may-throw */
+/** B-path 无 handler / 出口 / rethrow：上浮未消化 soft may-throw（外层 try 可再消化） */
 export function $tryReleaseSoft(): MayThrowEffect[] {
   const effects = popMayThrowFrame(false);
-  flushMayThrowEffects(effects);
+  orphanMayThrowEffects(effects);
   return effects;
 }
 
@@ -150,10 +165,9 @@ export function formatThrowsAbs(t: Abs | undefined): string | undefined {
   if (!t || t.shape.k === "never") return undefined;
   if (t.shape.k === "brand") return t.shape.name;
   if (t.shape.k === "sum") {
+    // 诚实展示全部臂（含 any/unknown），不因有 concrete 就吞掉引擎债/无约束臂
     const names = t.shape.members.map((m) => formatThrowsAbs(m) ?? "Error");
-    const concrete = names.filter((n) => n !== "any" && n !== "unknown");
-    const list = concrete.length > 0 ? concrete : names;
-    return [...new Set(list)].join(" | ");
+    return [...new Set(names)].join(" | ");
   }
   if (t.shape.k === "prim") {
     // throw "x" / throw 1：诚实显示被抛值的运行时类型名

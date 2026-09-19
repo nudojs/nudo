@@ -456,20 +456,24 @@ function checkSourceInner(
           formals: [],
         } as unknown as PolyFn;
         const effects = collectEntryMayThrows(source, name, synthetic, file, phi);
+        const throwsDisplayFallback = formatThrowsAbs(mayThrowEffectsToAbs(effects));
         const remaining = filterIgnoredThrows(effects, ignoreThrows);
-        const throwsDisplayFallback = formatThrowsAbs(mayThrowEffectsToAbs(remaining));
-        if (throwsDisplayFallback && remaining.length > 0) {
+        const gateDisplay = formatThrowsAbs(mayThrowEffectsToAbs(remaining));
+        if (gateDisplay && remaining.length > 0) {
           const first = remaining[0]!;
+          const loc = findFnLoc(file, name);
           issues.push({
             severity: entryThrowsMode === "warning" ? "warning" : "error",
             code: "nudo:entry-may-throw",
-            message: `${name} (export): may throw ${throwsDisplayFallback}`,
-            actual: `${name}(…)    throws ${throwsDisplayFallback}`,
+            message: `${name} (export): may throw ${gateDisplay}`,
+            actual: `${name}(…)    throws ${gateDisplay}`,
             expected: "entry total, or declare/catch throws",
             suggestion: first.cause
               ? `${first.cause} → refine / guard / try-catch / --ignore-throws ${first.kind}`
               : `refine / guard / try-catch / --ignore-throws ${first.kind}`,
             fn: name,
+            ...(loc.line !== undefined ? { line: loc.line } : {}),
+            ...(loc.column !== undefined ? { column: loc.column } : {}),
           });
         }
         signatures.push({
@@ -505,21 +509,25 @@ function checkSourceInner(
     let throwsDisplay: string | undefined;
     if (isEntry && entryThrowsMode !== "off") {
       const effects = collectEntryMayThrows(source, name, g, file, phi);
+      // 展示层始终上屏未过滤 throws（门禁过滤 ≠ 藏事实）
+      throwsDisplay = formatThrowsAbs(mayThrowEffectsToAbs(effects));
       const remaining = filterIgnoredThrows(effects, ignoreThrows);
-      const throwsAbs = mayThrowEffectsToAbs(remaining);
-      throwsDisplay = formatThrowsAbs(throwsAbs);
-      if (throwsDisplay && remaining.length > 0) {
+      const gateDisplay = formatThrowsAbs(mayThrowEffectsToAbs(remaining));
+      if (gateDisplay && remaining.length > 0) {
         const first = remaining[0]!;
+        const loc = findFnLoc(file, name);
         issues.push({
           severity: entryThrowsMode === "warning" ? "warning" : "error",
           code: "nudo:entry-may-throw",
-          message: `${name} (export): may throw ${throwsDisplay}`,
-          actual: `${formatEntrySigLine(name, g, throwsDisplay)}`,
+          message: `${name} (export): may throw ${gateDisplay}`,
+          actual: `${formatEntrySigLine(name, g, gateDisplay)}`,
           expected: "entry total, or declare/catch throws",
           suggestion: first.cause
             ? `${first.cause} → refine / guard / try-catch / --ignore-throws ${first.kind}`
             : `refine / guard / try-catch / --ignore-throws ${first.kind}`,
           fn: name,
+          ...(loc.line !== undefined ? { line: loc.line } : {}),
+          ...(loc.column !== undefined ? { column: loc.column } : {}),
         });
       }
     } else if (isEntry) {
@@ -530,9 +538,12 @@ function checkSourceInner(
 
     // L0 命中时 symbolic 是稳定对象：格式化结果可 WeakMap 复用
     const fmt = formatSigCached(g.symbolic, name);
-    const paramTypes = g.typeParams.map((t) =>
-      !t.value || t.value.shape.k === "unknown" ? "any" : formatShape(t.value),
-    );
+    // design §2：无约束 = any（缺 value 或真 any）；真 unknown = 引擎债，不得伪装成 any
+    const paramTypes = g.typeParams.map((t) => {
+      if (!t.value) return "any";
+      if (t.value.shape.k === "unknown") return "unknown";
+      return formatShape(t.value);
+    });
     signatures.push({
       name,
       params: g.params,
@@ -547,13 +558,20 @@ function checkSourceInner(
       ...(isEntry ? { entry: true } : {}),
     });
 
-    // 真 unknown = 推导失败（design §2 / §5）；入口无约束展示 any，不在此报
-    if (g.symbolic?.shape?.k === "unknown") {
+    // 真 unknown = 推导失败（design §2 / §5）：返回位或参数位都要报引擎债
+    const unknownParamIdx = g.typeParams.findIndex(
+      (t) => t.value && t.value.shape.k === "unknown",
+    );
+    if (g.symbolic?.shape?.k === "unknown" || unknownParamIdx >= 0) {
+      const where =
+        g.symbolic?.shape?.k === "unknown"
+          ? `${name} => unknown`
+          : `${name} param ${g.params[unknownParamIdx] ?? `#${unknownParamIdx}`}: unknown`;
       issues.push({
         severity: "warning",
         code: "nudo:unknown-inference",
-        message: `${name}: signature is true unknown (inference failed)`,
-        actual: `${name} => unknown`,
+        message: `${name}: signature has true unknown (inference failed)`,
+        actual: where,
         expected: "computable Abs (any = unconstrained, unknown = engine debt)",
         suggestion: "补 @nudo:case / env mock / refine，或确认 body 可代数求值",
         fn: name,
@@ -842,8 +860,8 @@ function formatEntrySigLine(name: string, g: PolyFn, throws: string): string {
   const ps = g.params
     .map((p, i) => {
       const t = g.typeParams[i]?.value;
-      // 入口无约束参数展示 any，不得回落 unknown（design §2）
-      const shown = !t || t.shape.k === "unknown" ? "any" : formatShape(t);
+      // design §2：无约束 any；真 unknown 不得伪装
+      const shown = !t ? "any" : t.shape.k === "unknown" ? "unknown" : formatShape(t);
       return `${p}: ${shown}`;
     })
     .join(", ");
@@ -854,6 +872,52 @@ function formatEntrySigLine(name: string, g: PolyFn, throws: string): string {
  * 入口 L2 may-throw 收集：用 any 入口实参求值函数体，
  * 捕获 any/nullish 成员访问等 throws 效果；显式 throw 也进 throws 域。
  */
+/** 入口函数节点位置（L2 诊断定位；找不到则省略） */
+function findFnLoc(
+  file: ReturnType<typeof parse>,
+  name: string,
+): { line?: number; column?: number } {
+  type LocNode = { loc?: { start?: { line?: number; column?: number } }; type?: string };
+  const startOf = (n: LocNode | null | undefined) => n?.loc?.start;
+  try {
+    for (const stmt of file.program.body as unknown as LocNode[]) {
+      let decl: LocNode | null | undefined = stmt;
+      const s = stmt as unknown as {
+        type?: string;
+        declaration?: LocNode | null;
+      };
+      if (s.type === "ExportNamedDeclaration" && s.declaration) decl = s.declaration;
+      if (s.type === "ExportDefaultDeclaration" && s.declaration) decl = s.declaration;
+      if (!decl) continue;
+      if (decl.type === "FunctionDeclaration" || decl.type === "ClassDeclaration") {
+        const id = (decl as unknown as { id?: { name?: string } }).id;
+        if (id?.name === name) {
+          const st = startOf(decl);
+          return { line: st?.line, column: st?.column };
+        }
+      }
+      if (decl.type === "VariableDeclaration") {
+        const decls =
+          (decl as unknown as { declarations?: Array<LocNode & { id?: { name?: string } }> })
+            .declarations ?? [];
+        for (const d of decls) {
+          if (d.id?.name === name) {
+            const st = startOf(d);
+            return { line: st?.line, column: st?.column };
+          }
+        }
+      }
+      if (name === "default" && s.type === "ExportDefaultDeclaration") {
+        const st = startOf(s.declaration) ?? startOf(stmt);
+        return { line: st?.line, column: st?.column };
+      }
+    }
+  } catch {
+    /* loc is best-effort */
+  }
+  return {};
+}
+
 function collectEntryMayThrows(
   source: string,
   fnName: string,

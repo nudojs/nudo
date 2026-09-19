@@ -237,7 +237,7 @@ debug "negative": (-1) => never throws RangeError
 Observed: 5
 ```
 
-Nudo models control flow: the `valid` case returns `5`, the `negative` case throws `RangeError` and never returns — its result is `never` with the thrown value tracked alongside. The combined value type is `5`. A statically decided throw like this one emits no extra diagnostic — `never throws RangeError` is the whole story. A **conditional** throw (the throwing branch guarded by an unknown condition, as in example 15) additionally reports `nudo-may-throw` for that case.
+Nudo models control flow: the `valid` case returns `5`, the `negative` case throws `RangeError` and never returns — its result is `never` with the thrown value tracked alongside. The combined value type is `5`. A statically decided throw like this one emits no extra diagnostic — `never throws RangeError` is the whole story. A **conditional** throw (the throwing branch guarded by an unknown condition, as in example 15) additionally reports `nudo:may-throw` for that case.
 
 ---
 
@@ -612,10 +612,10 @@ Observed: never
 
 Diagnostics:
 
-  [warning] env.js:7:0 Function "fetchUser" case "get user" may throw: Error. Consider adding a try-catch block or using @nudo:refine return <constraint> (nudo-may-throw)
+  [warning] env.js:7:0 Function "fetchUser" case "get user" may throw: Error. Consider adding a try-catch block or using @nudo:refine return <constraint> (nudo:may-throw)
 ```
 
-`fetch` is bound from the environment as `promise<Response>` — `res.ok` (`boolean`) and `res.status` (`number`) resolve, so the `!res.ok` throw branch is reachable and both cases report `never throws Error` with a `nudo-may-throw` warning. The body shape stays shallow though: `res.json()` returns `promise<unknown>`, so a precise response shape still requires an `@nudo:mock fetch = ...` override (example 4 infers `promise<{ id: 1, name: "Alice" }>`).
+`fetch` is bound from the environment as `promise<Response>` — `res.ok` (`boolean`) and `res.status` (`number`) resolve, so the `!res.ok` throw branch is reachable and both cases report `never throws Error` with a `nudo:may-throw` warning. The body shape stays shallow though: `res.json()` returns `promise<unknown>`, so a precise response shape still requires an `@nudo:mock fetch = ...` override (example 4 infers `promise<{ id: 1, name: "Alice" }>`).
 
 Non-network globals behave the same way:
 

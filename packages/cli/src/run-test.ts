@@ -136,7 +136,8 @@ export function buildTestReport(file: string, result: AnalysisResult): TestRepor
     file,
     passed: declared.filter((o) => o.ok && !o.unchecked).length,
     failed: declared.filter((o) => !o.ok).length,
-    unchecked: outcomes.filter((o) => o.unchecked).length,
+    // 只计声明 case 的 unchecked；合成 call@/entry@ 不进断言面
+    unchecked: declared.filter((o) => o.unchecked).length,
     outcomes,
     caseLines,
   };
@@ -152,9 +153,12 @@ export function formatTestReport(r: TestReport): string {
     lines.push("No functions found to analyze.");
   }
   const declared = r.outcomes.filter((o) => !o.synthetic);
+  const syntheticCount = r.outcomes.length - declared.length;
   lines.push("assertions");
   if (declared.length === 0) {
-    lines.push(`  — 0 passed · 0 failed · ${r.unchecked} unchecked (no declared @nudo:case expectations)`);
+    lines.push(
+      `  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations${syntheticCount > 0 ? `; ${syntheticCount} synthetic case(s) printed above` : ""})`,
+    );
   } else {
     const mark = r.failed === 0 ? "✓" : "✗";
     lines.push(`  ${mark} ${r.passed} passed · ${r.failed} failed · ${r.unchecked} unchecked`);

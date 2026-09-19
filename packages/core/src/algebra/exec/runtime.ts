@@ -37,7 +37,7 @@ import {
   noteNullishMemberThrows,
   anyMemberResult,
 } from "./calls.ts";
-import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft } from "./may-throw.ts";
+import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, type MayThrowEffect } from "./may-throw.ts";
 
 /** 当前路径前提 Φ（transpile 后的 fork 会压栈） */
 let phi: Phi = pTrue;
@@ -310,6 +310,28 @@ export function $tryDigestSoftCatch(): void {
   if (!soft || soft.length === 0 || !soft[soft.length - 1]) return;
   $tryDigestSoft();
   soft[soft.length - 1] = false;
+}
+
+/**
+ * catch 入口摘下 soft 效果（不消化）。catch 正常落出口再 discard；
+ * catch rethrow 时 orphan 上浮（外层 try 可再消化）。
+ */
+export function $tryDetachSoftCatch(): MayThrowEffect[] {
+  const soft = softFrameActiveAls.getStore();
+  if (!soft || soft.length === 0 || !soft[soft.length - 1]) return [];
+  const effects = popMayThrowFrame(false);
+  soft[soft.length - 1] = false;
+  return effects;
+}
+
+/** catch 无 rethrow 落出口：丢弃已摘下的 soft（design：catch 消化） */
+export function $tryDiscardSoft(_effects: MayThrowEffect[]): void {
+  /* digest */
+}
+
+/** catch rethrow：摘下的 soft 上浮（嵌套 try 归外层帧） */
+export function $tryOrphanSoft(effects: MayThrowEffect[]): void {
+  orphanMayThrowEffects(effects);
 }
 
 /** 无 handler / 出口：上浮未消化 soft may-throw（幂等） */

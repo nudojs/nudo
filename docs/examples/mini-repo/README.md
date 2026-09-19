@@ -24,7 +24,8 @@ pnpm run verify:examples   # 验证本目录命令（见 [../README.md](../READM
 - `store.js`：class 方法经 analyzer 枚举——**会**产生 `MemoryStore.set` / `MemoryStore.get`
   的 `entry@` case（无调用点），**不是**「No functions with @nudo:case directives found.」。
 - `user-service.js`：`check` signatures 含 `createService() => { store: MemoryStore, load: (id) => ? }`——
-  `MemoryStore` 形状经 import 图进入服务对象。
+  `MemoryStore` 形状经 import 图进入服务对象。`normalizeId` 可能带 `nudo:unknown-inference`
+  warning（真 unknown 返回 = 引擎债，不是 L2）。
 
 `test:cli` 亮点（每行都是逐调用点/逐 case 真值）：
 

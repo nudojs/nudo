@@ -89,8 +89,9 @@ export default function d() {}
 function helper() {}
 `;
     // C4.4：具名 export default 同时登记本地名 d 与 "default"
+    // export { q as renamed }：导出名 renamed + 本地名 q（L2 isEntry 按本地名）
     expect(localNamedExports(src)).toEqual(
-      new Set(["f", "g", "h", "C", "v", "p", "renamed", "default", "d"]),
+      new Set(["f", "g", "h", "C", "v", "p", "renamed", "q", "default", "d"]),
     );
   });
 

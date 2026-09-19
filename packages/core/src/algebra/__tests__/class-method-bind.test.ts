@@ -40,12 +40,13 @@ export class MemoryStore {
 `;
 
 describe("C4.2 class method surface", () => {
-  it("listTopFunctions includes exported Class.method, skips ctor/static/get", () => {
+  it("listTopFunctions includes exported Class.method, skips ctor/get; static included", () => {
     const names = listTopFunctions(STORE);
     expect(names).toContain("MemoryStore.set");
     expect(names).toContain("MemoryStore.get");
     expect(names.filter((n) => n.includes("constructor"))).toEqual([]);
-    expect(names.filter((n) => n.includes("create"))).toEqual([]);
+    // static methods are consumer-visible entry keys (design §3.2)
+    expect(names.filter((n) => n.includes("create"))).toEqual(["MemoryStore.create"]);
   });
 
   it("localNamedExports registers Class.method keys", () => {
@@ -87,7 +88,8 @@ export { Local as Public };
   it("listTopFunctions includes Class.method for export { Foo }", () => {
     const names = listTopFunctions(LOCAL_EXPORT_LIST);
     expect(names).toContain("Foo.bar");
-    expect(names.filter((n) => n.includes("make"))).toEqual([]);
+    // static methods are consumer-visible entry keys (design §3.2)
+    expect(names.filter((n) => n.includes("make"))).toEqual(["Foo.make"]);
     expect(names.filter((n) => n.includes("hidden"))).toEqual([]);
   });
 

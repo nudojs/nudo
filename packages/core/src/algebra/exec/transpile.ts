@@ -283,7 +283,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -1577,17 +1577,24 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
             : transpileStatement(stmt.handler.body as unknown as Statement, d, o);
       if (stmt.handler) {
         const catchBody = transpileCatchBody(depth + 1, opts);
+        const softVar = `__soft_${markName}`;
         lines.push(`${pad}catch (${catchTmp}) {`);
         // NudoReturn 是控制流信号，不是 catch 绑定
         lines.push(`${indent(depth + 1)}$rethrowIfNudoReturn(${catchTmp});`);
-        // soft may-throw：catch 消化 try 内效果（rethrow 走 hard throw 路径）
-        lines.push(`${indent(depth + 1)}$tryDigestSoftCatch();`);
+        // soft：入口摘下、不立刻消化；catch 落出口 discard，rethrow orphan 上浮
+        lines.push(`${indent(depth + 1)}const ${softVar} = $tryDetachSoftCatch();`);
         lines.push(`${indent(depth + 1)}const __xs_${markName} = $tryTakeSince(${markName});`);
         lines.push(`${indent(depth + 1)}__xs_${markName}.push($catchVal(${catchTmp}));`);
         lines.push(
           `${indent(depth + 1)}const ${catchParam} = __xs_${markName}.reduce((a, b) => $join(a, b));`,
         );
+        lines.push(`${indent(depth + 1)}try {`);
         lines.push(catchBody);
+        lines.push(`${indent(depth + 1)}} catch (__rethrow_${markName}) {`);
+        lines.push(`${indent(depth + 2)}$tryOrphanSoft(${softVar});`);
+        lines.push(`${indent(depth + 2)}throw __rethrow_${markName};`);
+        lines.push(`${indent(depth + 1)}}`);
+        lines.push(`${indent(depth + 1)}$tryDiscardSoft(${softVar});`);
         lines.push(`${pad}}`);
       }
       const softExit = stmt.handler ? "$tryDigestSoftCatch();" : "$tryReleaseSoftOut();";

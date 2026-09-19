@@ -108,7 +108,7 @@ call@L6: ({ PATH: "/usr/bin", HOME: "/root" }, "PATH") => "/usr/bin"
 Observed: 1 | "/usr/bin"
 ```
 
-符号 key（`string()`）无法选定槽位，退化为 `unknown`——仓库示例（CI 钉住）：[`docs/examples/algebra/e-index-proj.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/e-index-proj.js)。spread meet 钉在 [`docs/examples/algebra/d-mixin-meet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/d-mixin-meet.js)；`--dts` 投影（单一拓宽签名、字面量并返回）由[示例矩阵](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md)的 `a-spread-optional.js --dts` 行钉住——生成的 `a-spread-optional.d.ts` 即真值输出。
+符号 key（`string()`）无法选定槽位，退化为 `unknown`——仓库示例（CI 钉住）：[`docs/examples/algebra/e-index-proj.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/e-index-proj.js)。spread meet 钉在 [`docs/examples/algebra/d-mixin-meet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/d-mixin-meet.js)；`export --format dts` 投影（单一拓宽签名、字面量并返回）由[示例矩阵](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md)的 `a-spread-optional.js` dts 行钉住——生成的 `a-spread-optional.d.ts` 即真值输出。
 
 ---
 
@@ -237,7 +237,7 @@ debug "negative": (-1) => never throws RangeError
 Observed: 5
 ```
 
-Nudo 建模控制流：`valid` case 返回 `5`，`negative` case 抛出 `RangeError` 且永不返回——其结果为 `never`，同时追踪抛出的值。合并后的值类型为 `5`。像这样静态可判定的 throw 不会产生额外诊断——`never throws RangeError` 就是全部信息。只有**条件性** throw（抛出分支由 unknown 条件守卫，如示例 15）才会为对应 case 追加报告 `nudo-may-throw`。
+Nudo 建模控制流：`valid` case 返回 `5`，`negative` case 抛出 `RangeError` 且永不返回——其结果为 `never`，同时追踪抛出的值。合并后的值类型为 `5`。像这样静态可判定的 throw 不会产生额外诊断——`never throws RangeError` 就是全部信息。只有**条件性** throw（抛出分支由 unknown 条件守卫，如示例 15）才会为对应 case 追加报告 `nudo:may-throw`。
 
 ---
 
@@ -612,10 +612,10 @@ Observed: never
 
 Diagnostics:
 
-  [warning] env.js:7:0 Function "fetchUser" case "get user" may throw: Error. Consider adding a try-catch block or using @nudo:refine return <constraint> (nudo-may-throw)
+  [warning] env.js:7:0 Function "fetchUser" case "get user" may throw: Error. Consider adding a try-catch block or using @nudo:refine return <constraint> (nudo:may-throw)
 ```
 
-`fetch` 由环境绑定为 `promise<Response>`——`res.ok`（`boolean`）与 `res.status`（`number`）都能解析，所以 `!res.ok` 的 throw 分支可达，两个 case 都报告 `never throws Error` 并带 `nudo-may-throw` 警告。不过响应体形状仍然很浅：`res.json()` 返回 `promise<unknown>`，因此要获得精确响应形状仍需 `@nudo:mock fetch = ...` 覆盖（示例 4 推断出 `promise<{ id: 1, name: "Alice" }>`）。
+`fetch` 由环境绑定为 `promise<Response>`——`res.ok`（`boolean`）与 `res.status`（`number`）都能解析，所以 `!res.ok` 的 throw 分支可达，两个 case 都报告 `never throws Error` 并带 `nudo:may-throw` 警告。不过响应体形状仍然很浅：`res.json()` 返回 `promise<unknown>`，因此要获得精确响应形状仍需 `@nudo:mock fetch = ...` 覆盖（示例 4 推断出 `promise<{ id: 1, name: "Alice" }>`）。
 
 非网络全局对象表现相同：
 

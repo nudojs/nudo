@@ -171,7 +171,7 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 | 次要 server 诊断可能与 tsserver 噪声叠加 | 全部 | 收窄 `package.json#nudo.analysis.include` / `exclude`，或 `mode: "directives"` — 完整步骤见 [共存](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | 配置问题，非 bug — 跟踪文档即 [共存配方](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
 | 文档中的文件检测滞后于 analysis-mode 默认 | 文档 | 以 `package.json#nudo.analysis` + [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) 为准 | 文档同步 — 本页 + PUBLIC_API.md |
 | 部分客户端不用 pull diagnostics | 较旧客户端 | push 路径仍有效；didOpen 即 validate | 协议代差 — 无 tracking issue（服务器保留 push） |
-| 部分客户端补全触发 / signature help 偏弱 | Helix（视版本） | 用 hover + `nudo.infer` / CLI；signature help UI 用 VS Code / Zed | 客户端限制 — 无 tracking issue |
+| 部分客户端补全触发 / signature help 偏弱 | Helix（视版本） | 用 hover + `nudo check` / `nudo test`（CLI）；signature help UI 用 VS Code / Zed | 客户端限制 — 无 tracking issue |
 
 ## 同源保证
 

@@ -1,7 +1,8 @@
 // 示例 0：类型即计算（定义性示例）
 // add 的类型是函数本身 (a,b)=>a+b，不是 (number,number)=>number。
 // 运行（仓库根）：
-//   pnpm run infer docs/examples/algebra/0-add-intensional.js   # 外延视图：字面量 #exact
+//   pnpm run check docs/examples/algebra/0-add-intensional.js   # 签名 + 门禁
+//   pnpm run test:cli docs/examples/algebra/0-add-intensional.js # case 报告
 //   pnpm run check docs/examples/algebra/0-add-intensional.js   # 内包式 Abs：term/pred 签名 #path
 //   pnpm run types docs/examples/algebra/0-add-intensional.js --assume "x>0"  # 代数视图（term/pred/conf）
 //

@@ -1,11 +1,12 @@
 # design-cli-semantics — CLI 统一命令面与 any/unknown/入口 throws 语义
 
-> Status: **design accepted; implementation landed on this branch** (CLI verbs, L2 entry-may-throw, any≠unknown display, test case reports)  
-> Remaining: website/docs sweep + next-major verb deletion  
+> Status: **design accepted; implementation landed + review fixes on this branch** (CLI verbs, L2 entry-may-throw, any≠unknown display, test case reports)  
+> Remaining: next-major verb deletion; website historical sketches  
 > Worktree: `nudo-cli-semantics-redesign`  
 > Companion conflict inventory: [`design-cli-semantics-conflicts.md`](./design-cli-semantics-conflicts.md)  
 > Revision: **无观察动词** — 观察是 `check`/`test`/IDE 的输出能力，不是一级命令。  
-> Landed: Abs may-throw（any/nullish）、check L2 `nudo:entry-may-throw` + `--ignore-throws`、CLI 正门 verbs + deprecation、test 全量 case 报告 + `--freeze`、gold L2 用例、zero-FP L2 off 基线、LSP 读 `package.json#nudo.check`、`test --json` 断言失败 exit 1、`check --abs` 仍门禁。
+> Landed: Abs may-throw（any/nullish）、check L2 `nudo:entry-may-throw` + `--ignore-throws`、CLI 正门 verbs + deprecation、test 全量 case 报告 + `--freeze`、gold L2 用例、zero-FP L2 off 基线、LSP 读 `package.json#nudo.check`、`test --json` 断言失败 exit 1、`check --abs` 仍门禁。  
+> Review follow-up: nested-try soft re-home（外层 catch 消化）、export 形态矩阵（alias / anon default / CJS ObjectMethod / class static）、B-path rethrow 不消化 soft、check 签名展示不再用 `=>` regex 误截 HOF、真 unknown 参数展示 + `nudo:unknown-inference`、`--ignore-throws` 只滤门禁不藏 throws、`infer`→test+check、`--json`⊕`--abs`、LSP off 仍保留门禁诊断。
 
 本文取代下列遗留心智作为**产品语义与 CLI 命令面**的唯一设计源：
 
@@ -289,10 +290,10 @@ Day 0   check（读签名）/ test（看 case） · Day 1   contract + check · 
 ## 8. 实现顺序（建议）
 
 1. **展示层**：`formatShape` / CLI / InferJson / LSP inlay —— 入口 `any` vs `unknown` 拆开；throws 上屏；check 默认 signatures；test 默认全量 case。 **[done]**
-2. **Abs throws**：`any`/`nullish` 成员访问与危险操作写入 `throwsAbs` 或 may-throw 标记。 **[done — soft may-throw + throws 域；不中断求值]**
-3. **check L2**：仅入口；`nudo:entry-may-throw` 默认 error；`--ignore-throws` + 配置。 **[done]**
+2. **Abs throws**：`any`/`nullish` 成员访问与危险操作写入 `throwsAbs` 或 may-throw 标记；nested try soft 上浮到外层帧。 **[done]**
+3. **check L2**：仅入口；`nudo:entry-may-throw` 默认 error；`--ignore-throws` + 配置；export 形态矩阵覆盖。 **[done]**
 4. **命令面**：删除 infer/types/generate/emit/guard/**watch** 一级动词；`export` 三合一；`--emit-cases` → `test --freeze`；watch → `check/test --watch`；**不**做 `check --cases` / `show`。 **[done — 旧动词保留 deprecation，major 再删]**
-5. **文档与 gold**：按 conflicts 清单改写；「跑 infer 看真值」改为 `nudo test`；zero-FP 套件区分 L2 off/on。 **[in progress — gold/zero-FP done；website/docs  sweep 进行中]**
+5. **文档与 gold**：按 conflicts 清单改写；「跑 infer 看真值」改为 `nudo test`；zero-FP 套件区分 L2 off/on；verify:examples 0 fail。 **[done — 主 guides/gold/examples 对齐]**
 6. **major**：删除旧动词与旧旗标。 **[pending]**
 
 ---

@@ -7,14 +7,14 @@ description: "Connect AI coding agents to Nudo's language server: LSP→MCP brid
 
 AI coding agents — Claude Code, Cursor, Copilot, Zed, and friends — access Nudo through its **language server**, [`@nudojs/lsp`](../api/lsp.md). The same server that powers the VS Code extension also exposes agent commands over standard `workspace/executeCommand` calls, plus pull diagnostics. There is no separate MCP server process to install or keep alive: one server serves the editor *and* the agent.
 
-Abs-first tools for agents:
+Abs-first tools for agents (wire names are **protocol-stable** this major; map to CLI verbs):
 
-| Command | Returns |
-|---------|---------|
-| `nudo.check` | **CheckJson v1** — signatures + `actual ⊭ expected` |
-| `nudo.infer` | **InferJson v1** — cases with lossless `intension.abs` |
-| `nudo.hover` | Lossless Abs at a position (+ optional inlays) |
-| `nudo.whatIf` / `suggestCase` / `trace` | Exploration and case coverage |
+| Command | CLI mapping | Returns |
+|---------|-------------|---------|
+| `nudo.check` | `nudo check` (signatures + L1/L2 gate) | **CheckJson v1** — signatures + `actual ⊭ expected` |
+| `nudo.infer` | `nudo test` (case reports; also see `check` for signatures) | **InferJson v1** — cases with lossless `intension.abs` |
+| `nudo.hover` | IDE hover | Lossless Abs at a position (+ optional inlays) |
+| `nudo.whatIf` / `suggestCase` / `trace` | exploration | Exploration and case coverage |
 
 Full command reference (parameters, return shapes, type-expression syntax): the [Agent API](../api/agent.md) page. A ready-made skill file for agents is published at [`packages/lsp/agent-skill/SKILL.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/agent-skill/SKILL.md).
 

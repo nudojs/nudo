@@ -181,7 +181,7 @@ export function localNamedExports(source: string): Set<string> {
         mem.type === "TSDeclareMethod";
       if (!isMethod) continue;
       if (mem.kind && mem.kind !== "method") continue;
-      if (mem.static) continue;
+      // static 与实例方法同为消费者可见入口键（design §3.2）
       const keyName = identName(mem.key as NodeLike);
       if (keyName) out.add(`${idName}.${keyName}`);
     }
@@ -232,10 +232,13 @@ export function localNamedExports(source: string): Set<string> {
             continue;
           }
           if (localName && importedLocalNames.has(localName)) continue;
-          // export { Local as Public }：导出名 Public 进集合；
-          // class 方法契约键仍按**本地声明名** Local.method / Local_method（见 design-refine-derivation）
+          // export { Local as Public }：导出名 + 本地名都进集合
+          // （L2 isEntry 按本地声明名匹配；侧车可用导出名绑定）
           out.add(name);
-          if (localName) addClassMethodKeys(out, localClasses.get(localName));
+          if (localName) {
+            out.add(localName);
+            addClassMethodKeys(out, localClasses.get(localName));
+          }
         }
         continue;
       }
@@ -267,6 +270,11 @@ export function localNamedExports(source: string): Set<string> {
           if (d.type === "ClassDeclaration" && idName) {
             addClassMethodKeys(out, d);
           }
+        } else if (
+          d.type === "ArrowFunctionExpression" ||
+          d.type === "FunctionExpression"
+        ) {
+          // export default (…) => …：本地名即 "default"（已在上方登记）
         } else if (d.type === "Identifier") {
           const n = identName(d);
           if (n && !importedLocalNames.has(n)) {
@@ -295,10 +303,17 @@ export function localNamedExports(source: string): Set<string> {
         if (right.type === "ObjectExpression") {
           const props = (right.properties as NodeLike[] | undefined) ?? [];
           for (const p of props) {
-            if (p.type !== "ObjectProperty" && p.type !== "Property") continue;
+            // Babel 8 对象方法是 ObjectMethod，不是 ObjectProperty
+            if (
+              p.type !== "ObjectProperty" &&
+              p.type !== "Property" &&
+              p.type !== "ObjectMethod"
+            ) {
+              continue;
+            }
             const keyName = identName(p.key as NodeLike);
             if (keyName && keyName !== "default") out.add(keyName);
-            else {
+            else if (p.type !== "ObjectMethod") {
               const valName = identName(p.value as NodeLike);
               if (valName) out.add(valName);
             }

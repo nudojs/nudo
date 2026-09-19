@@ -65,6 +65,7 @@ Day 0   nudo check <path>   (signatures + L1/L2 gate)
         nudo test <path>    (every inferred case)
 Day 1   nudo contract + check
 Ecosystem  nudo export (dts / guard / zod)
+Ops     nudo health [paths] · nudo env harvest <pkg>
 
 No observation verb: signatures come from check, cases from test, hover from IDE.
 `,
@@ -425,6 +426,11 @@ async function runCheck(
   }
 
   if (opts.json) {
+    if (opts.abs) {
+      console.error("error: --json cannot be combined with --abs");
+      process.exitCode = 1;
+      return;
+    }
     console.log(JSON.stringify(cachedJson ?? serializeCheckJson(algebraReport), null, 2));
   } else if (opts.abs) {
     // 代数面：原 types 观察能力，挂在 check --abs
@@ -434,6 +440,13 @@ async function runCheck(
       // abs 仍计算 report：错误上屏，避免 exit 1 却无可见诊断
       console.log("");
       console.log(formatCheckReport(algebraReport, { verbose: false }));
+    } else {
+      console.log("");
+      console.log(`nudo check  ${basename(filePath)}`);
+      console.log("OK");
+      console.log(
+        `  ${algebraReport.summary.errors} error · ${algebraReport.summary.warnings} warning · ${algebraReport.summary.infos} info · ${algebraReport.summary.functions} fn`,
+      );
     }
   } else {
     console.log(formatCheckReport(algebraReport, { verbose: opts.verbose === true }));
@@ -532,6 +545,11 @@ async function runTest(
   }
 
   if (opts.json) {
+    if (opts.abs) {
+      console.error("error: --json cannot be combined with --abs");
+      process.exitCode = 1;
+      return;
+    }
     const report = buildTestReport(filePath, result);
     const { serializeInferJson } = await import("@nudojs/service");
     const json = serializeInferJson(result, filePath) as Record<string, unknown>;
@@ -543,9 +561,11 @@ async function runTest(
     console.log(JSON.stringify(json, null, 2));
     if (report.failed > 0) process.exitCode = 1;
   } else if (opts.abs) {
-    // 观察面仍走 abs，但声明断言失败必须挡 exit（design §1.3）
+    // 观察面仍走 abs，但声明断言失败必须可见 + 挡 exit（design §1.3 / §0）
     const report = buildTestReport(filePath, result);
     await runAbsView(filePath, {});
+    console.log("");
+    console.log(formatTestReport(report));
     if (report.failed > 0) process.exitCode = 1;
   } else {
     const report = buildTestReport(filePath, result);
@@ -717,7 +737,8 @@ async function runContractEmit(
       }
       for (const i of sc.issues) {
         console.log(`  [${i.severity}] ${i.code}: ${i.message}`);
-        if (i.severity === "error") process.exitCode = 1;
+        // design §1.3：contract 只读/emit 不因分析诊断挡 CI；
+        // 仅 usage/IO 与 --exit-on-diff（且须 --dry-run）影响 exit
       }
       if (sc.written) derivedChanged = true;
     }
@@ -755,7 +776,10 @@ async function runContractEmit(
     for (const line of formatEmitSummary(rel, sc, result)) console.log(line);
   }
   for (const i of result.issues) {
-    if (i.severity === "error") process.exitCode = 1;
+    if (i.severity === "error") {
+      // 仅打印；contract --emit 的 exit 由 usage/IO 与 --exit-on-diff 决定
+      console.log(`[${i.severity}] ${i.code}: ${i.message}`);
+    }
   }
   const anyChanged = result.changed || derivedChanged;
   if (opts.exitOnDiff && anyChanged) process.exitCode = 1;
@@ -1517,20 +1541,26 @@ program
         }
         const externalRecords = opts.callsites?.length ? collectExternalRecords(opts.callsites) : undefined;
         await runTest(file, {
-          ...(externalRecords ? { from: externalRecords } : {}),
           freeze: {
             mode,
             dryRun: opts.dryRun === true,
             exitOnDiff: opts.exitOnDiff === true,
           },
+          from: externalRecords,
         });
+        // 过渡：infer 原观察面 = case 报告 + 签名；一并跑 check
+        await runCheck(file, { from: externalRecords });
         return;
       }
-      const externalRecords = opts.callsites?.length ? collectExternalRecords(opts.callsites) : undefined;
-      await runTest(file, {
-        ...(externalRecords ? { from: externalRecords } : {}),
-        json: opts.json,
-      });
+      const from = opts.callsites?.length ? collectExternalRecords(opts.callsites) : undefined;
+      // design §1.2：infer → test（case）+ check（签名/门禁）
+      await runTest(file, { from, json: opts.json === true });
+      if (!opts.json) {
+        console.log("");
+        await runCheck(file, { from });
+      } else {
+        await runCheck(file, { from, json: true });
+      }
     },
   );
 

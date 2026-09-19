@@ -73,6 +73,31 @@ describe("L2 export form matrix via CLI check", () => {
       src: "export function getName(user){ try { return user.name; } catch { return 'n'; } }\n",
       expectL2: false,
     },
+    {
+      id: "nested-try-outer-catch-ok",
+      src: "export function getName(user){ try { try { return user.name; } finally {} } catch { return 'n'; } }\n",
+      expectL2: false,
+    },
+    {
+      id: "cjs-object-method",
+      src: "module.exports = { getName(user){ return user.name; } };\n",
+      expectL2: true,
+    },
+    {
+      id: "export-alias",
+      src: "function getName(user){ return user.name; }\nexport { getName as publicName };\n",
+      expectL2: true,
+    },
+    {
+      id: "export-default-anon-arrow",
+      src: "export default (user) => user.name;\n",
+      expectL2: true,
+    },
+    {
+      id: "export-class-static",
+      src: "export class Foo { static bar(u){ return u.name; } }\n",
+      expectL2: true,
+    },
   ];
 
   for (const c of cases) {
@@ -108,42 +133,75 @@ describe("check --abs still gates; entry params display any", () => {
     expect(r.stdout).not.toContain("nudo:entry-may-throw");
     expect(r.status).toBe(0);
   });
+
+  it("ignore-throws still shows throws domain on signature", () => {
+    const p = write(
+      "abs-keep-throws.js",
+      "export function getName(user){ return user.name; }\n",
+    );
+    const r = runCli(["check", p, "--ignore-throws", "TypeError"]);
+    expect(r.stdout).toContain("throws TypeError");
+    expect(r.status).toBe(0);
+  });
 });
 
-describe("test --json exits 1 on declared assertion failure", () => {
-  it("failed @nudo:case => expected", () => {
+describe("package.json#nudo.check config", () => {
+  it("ignoreThrows from package.json clears L2", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-cli-cfg-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "t", nudo: { check: { ignoreThrows: ["TypeError"] } } }),
+    );
+    writeFileSync(join(dir, "a.js"), "export function getName(user){ return user.name; }\n");
+    // cwd 保持 monorepo root（tsx 从 packages/cli 解析 workspace dist）；
+    // findProjectConfig 按**文件路径**向上找 package.json#nudo.check
+    const r = runCli(["check", join(dir, "a.js")]);
+    expect(r.stdout + r.stderr, `status=${r.status}\n${r.stdout}\n${r.stderr}`).not.toContain(
+      "nudo:entry-may-throw",
+    );
+    expect(r.status, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`).toBe(0);
+  });
+
+  it("entryThrows off from package.json clears L2", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-cli-cfg-off-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "t", nudo: { check: { entryThrows: "off" } } }),
+    );
+    writeFileSync(join(dir, "a.js"), "export function getName(user){ return user.name; }\n");
+    const r = runCli(["check", join(dir, "a.js")]);
+    expect(r.stdout + r.stderr, `status=${r.status}\n${r.stdout}\n${r.stderr}`).not.toContain(
+      "nudo:entry-may-throw",
+    );
+    expect(r.status, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`).toBe(0);
+  });
+});
+
+describe("test exit honesty", () => {
+  it("synthetic L2 may-throw does not gate test exit", () => {
     const p = write(
-      "assert-fail.js",
+      "test-syn-l2.js",
+      "export function getName(user){ return user.name; }\n",
+    );
+    const r = runCli(["test", p]);
+    expect(r.stdout).toContain("entry@");
+    expect(r.stdout).toContain("throws TypeError");
+    expect(r.status).toBe(0);
+  });
+
+  it("test --abs prints assertion report on declared failure", () => {
+    const p = write(
+      "test-abs-fail.js",
       `/**
  * @nudo:case "bad" (1) => 2
  */
 export function wrong() { return 1; }
 `,
     );
-    const r = runCli(["test", p, "--json"]);
-    const json = JSON.parse(r.stdout) as {
-      assertions?: { passed?: number; failed?: number };
-    };
-    expect(json.assertions?.failed).toBe(1);
+    const r = runCli(["test", p, "--abs"]);
+    expect(r.stdout).toContain("assertions");
+    expect(r.stdout).toContain("FAIL");
     expect(r.status).toBe(1);
-  });
-
-  it("passing declared case exits 0", () => {
-    const p = write(
-      "assert-pass.js",
-      `/**
- * @nudo:case "ok" (1) => 1
- */
-export function id(x) { return x; }
-`,
-    );
-    const r = runCli(["test", p, "--json"]);
-    const json = JSON.parse(r.stdout) as {
-      assertions?: { passed?: number; failed?: number };
-    };
-    expect(json.assertions?.passed).toBe(1);
-    expect(json.assertions?.failed).toBe(0);
-    expect(r.status).toBe(0);
   });
 });
 

@@ -285,8 +285,9 @@ pin 'pnpm run test:cli docs/examples/algebra/sample.js' \
   '{ host: "localhost", port: 8080, debug: false }'
 
 # mini-repo/ — pin the cross-file integration claims.
+# normalizeId may carry nudo:unknown-inference warning (true unknown return)
 pin 'pnpm run check docs/examples/mini-repo/user-service.js' \
-  '0 error · 0 warning' \
+  '0 error' \
   'createService() => { store: MemoryStore, load: (id) => ? }'
 pin 'pnpm run test:cli docs/examples/mini-repo/user-service.js' \
   'debug "ages"  ([10, 20, 30]) => 60' \

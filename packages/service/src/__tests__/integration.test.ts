@@ -300,7 +300,7 @@ function safeSqrt(x) {
     // Diagnostics should contain a may-throw warning for the active (first) case
     // if its branch can throw, or for the negative case
     const throwDiags = result.diagnostics.filter(
-      (d) => d.code === "nudo-may-throw",
+      (d) => d.code === "nudo:may-throw",
     );
     // At least one throw diagnostic should exist since the function has a throw path
     expect(throwDiags.length).toBeGreaterThanOrEqual(0);
@@ -330,7 +330,7 @@ function alwaysFails(x) {
 
     // A throw diagnostic should be generated
     const throwDiags = result.diagnostics.filter(
-      (d) => d.code === "nudo-may-throw",
+      (d) => d.code === "nudo:may-throw",
     );
     expect(throwDiags.length).toBeGreaterThanOrEqual(1);
     expect(throwDiags[0].message).toContain("alwaysFails");
