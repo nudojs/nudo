@@ -8,9 +8,14 @@ description: "nudo CLI 参考 —— check、test、contract、export、health�
 `nudo` CLI 对 `.js` / `.mjs` / `.ts` 运行类型推断。全局安装或 `npx` 使用：
 
 ```bash
-pnpm add -g @nudojs/cli
-# 或
-npx @nudojs/cli check ./src/utils.js
+# 薄壳包（发布名为 `nudojs`；安装后得到 `nudo` 命令）
+npm install -g nudojs
+# 或完整 CLI 包
+npm install -g @nudojs/cli
+# 然后
+npx nudojs check ./src/utils.js
+# 全局安装后也可直接：
+nudo check ./src/utils.js
 ```
 
 ---

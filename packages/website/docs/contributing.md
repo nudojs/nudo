@@ -39,7 +39,7 @@ The monorepo uses pnpm workspaces. Key packages:
 |---------|-------------|
 | `@nudojs/core` | Type system (Abs algebra), extensional rendering (format), Environment |
 | `@nudojs/parser` | Babel parse, directive extraction, `parseCaseArgExpr` |
-| `@nudojs/cli` | CLI commands only (`infer`, `check`, `types`, `watch`, `generate`, `harvest`, `test`, `interface`) |
+| `@nudojs/cli` | CLI commands only (`check`, `test`, `contract`, `export`, `health`, `env harvest`) |
 | `@nudojs/service` | High-level API: `analyzeFile`, `getTypeAtPosition`, `getCompletionsAtPosition` |
 | `@nudojs/lsp` | Language Server Protocol implementation, including AI-agent `executeCommand`/custom requests (see the [Agent guide](./guides/mcp-server.md)) |
 | `@nudojs/harvester` | Converts `@types/*.d.ts` declarations into Nudo env files (powers `nudo env harvest`) |
@@ -68,7 +68,7 @@ pnpm run build
 ### Run CLI locally
 
 ```bash
-pnpm exec tsx packages/cli/src/index.ts infer path/to/file.js
+pnpm exec tsx packages/cli/src/index.ts check path/to/file.js
 # or
 pnpm exec nudo check path/to/file.js
 pnpm exec nudo test path/to/file.js

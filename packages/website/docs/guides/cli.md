@@ -8,6 +8,9 @@ description: "Drive Nudo from the terminal: check signatures, report cases, draf
 The `nudo` CLI is the product surface for type inference on `.js`, `.mjs`, and `.ts` files. Install it globally or via `npx`:
 
 ```bash
+# thin shell (published as `nudojs`; installs the `nudo` command)
+npm install -g nudojs
+# or the full CLI package
 npm install -g @nudojs/cli
 # or
 pnpm add -g @nudojs/cli

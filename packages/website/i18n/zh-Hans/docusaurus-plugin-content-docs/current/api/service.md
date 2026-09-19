@@ -427,7 +427,7 @@ type FunctionAnalysis = {
   entryOnly?: boolean;        // 合成的 entry@L 用例，未找到调用点
   skipped?: boolean;
   /** CJS 风格绑定/赋值函数（exports.X = fn）没有声明级稳定的
-      名称；.d.ts 生成会跳过它们，但 infer/JSON 输出仍会报告 */
+      名称；.d.ts 生成会跳过它们，但 check/test JSON 输出仍会报告 */
   noDeclaration?: boolean;
   /** 该函数所属导入模块的绝对路径（仅 externalFunctions） */
   fromModule?: string;

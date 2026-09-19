@@ -375,7 +375,7 @@
     "message": "看一个值如何穿过引擎"
   },
   "homepage.proof.lead": {
-    "message": "同一个模块，四个界面：JS 源码、侧车契约、调用点观测，以及 IDE / check 呈现的内容。"
+    "message": "同一个模块，四个界面：JS 源码、侧车契约、`nudo test` 调用点用例，以及 `nudo check` / IDE 呈现的内容。"
   },
   "homepage.proof.quickStart": {
     "message": "完整快速开始 →"
@@ -405,22 +405,40 @@
     "message": "侧车 *.nudo.js 与 @nudo:refine / @nudo:interface 把关参数与返回。没有契约时保持诚实：any / unknown，不发明字段。"
   },
   "homepage.trial.eyebrow": {
-    "message": "真实库试炼"
+    "message": "真实代码上的效果"
   },
   "homepage.trial.title": {
-    "message": "在无标注真实库上验证"
+    "message": "不写标注，也能得到精确签名"
   },
   "homepage.trial.lead": {
-    "message": "我们对真实、未标注的库反复加固引擎，直到观测到的签名与运行时行为一致——没有给库补任何标注。"
+    "message": "把 Nudo 指向真实 JS 及其使用方式。它会观测代码实际算出了什么——不改库、不补类型标注。"
   },
-  "homepage.trial.ladderCaption": {
-    "message": "@hapi/hoek 上的精确观测覆盖率——每一波只增加一项引擎能力。"
+  "homepage.trial.step1.title": {
+    "message": "保持你的 JS"
+  },
+  "homepage.trial.step1.desc": {
+    "message": "不改写、不迁 TypeScript，现有代码原样用。"
+  },
+  "homepage.trial.step2.title": {
+    "message": "指向真实用法"
+  },
+  "homepage.trial.step2.desc": {
+    "message": "连同测试与调用点一起分析你的库。"
+  },
+  "homepage.trial.step3.title": {
+    "message": "得到可信任的签名"
+  },
+  "homepage.trial.step3.desc": {
+    "message": "签名来自真实调用。需要门禁时，再加侧车契约。"
   },
   "homepage.trial.cardsTitle": {
-    "message": "从无证据到调用点事实"
+    "message": "你会得到什么"
   },
   "homepage.trial.source": {
-    "message": "实测于 @hapi/hoek v9.3.0 与 @discoveryjs/json-ext v0.5.7——每个签名都来自 Nudo 的抽象解释器，零类型标注。"
+    "message": "实测于 @hapi/hoek v9.3.0 与 @discoveryjs/json-ext v0.5.7——签名全部来自 Nudo 抽象解释器，库内零标注。"
+  },
+  "homepage.trial.detail": {
+    "message": "调用点发现如何工作 →"
   },
   "homepage.cta.title": {
     "message": "准备重回 JS 了吗？"
@@ -450,12 +468,12 @@
     "message": "看到结果背后的代数——如 (x + 1) 这样的 term，如 (x + 1) > 1 这样的 pred，以及 exact / path / partial 置信度。"
   },
   "homepage.trial.stat1": {
-    "message": "精确观测签名"
+    "message": "@hapi/hoek 精确签名覆盖"
   },
   "homepage.trial.stat2": {
-    "message": "check 失败已修复"
+    "message": "需要手写的类型标注"
   },
   "homepage.trial.stat3": {
-    "message": "引擎加固波次"
+    "message": "契约检查失败清零"
   }
 }

@@ -8,9 +8,14 @@ description: "Reference every nudo CLI command — check, test, contract, export
 The `nudo` CLI runs type inference on `.js`, `.mjs`, and `.ts` files. Install globally or run via `npx`:
 
 ```bash
-pnpm add -g @nudojs/cli
-# or
-npx @nudojs/cli check ./src/utils.js
+# thin shell (published as `nudojs`; installs the `nudo` command)
+npm install -g nudojs
+# or the full CLI package
+npm install -g @nudojs/cli
+# then
+npx nudojs check ./src/utils.js
+# or, after global install:
+nudo check ./src/utils.js
 ```
 
 ---

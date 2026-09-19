@@ -39,7 +39,7 @@ pnpm run build
 |---------|-------------|
 | `@nudojs/core` | 类型系统（Abs 代数）、外延渲染（format）、Environment |
 | `@nudojs/parser` | Babel 解析、指令提取、`parseCaseArgExpr` |
-| `@nudojs/cli` | 仅 CLI 命令（`infer`、`check`、`types`、`watch`、`generate`、`harvest`、`test`、`interface`） |
+| `@nudojs/cli` | 仅 CLI 命令（`check`、`test`、`contract`、`export`、`health`、`env harvest`） |
 | `@nudojs/service` | 高层 API：`analyzeFile`、`getTypeAtPosition`、`getCompletionsAtPosition` |
 | `@nudojs/lsp` | Language Server Protocol 实现，含面向 AI agent 的 executeCommand/自定义请求（见 [Agent 集成指南](./guides/mcp-server.md)） |
 | `@nudojs/harvester` | 把 `@types/*.d.ts` 声明转换为 Nudo env 文件（`nudo env harvest` 的底层引擎） |
@@ -68,7 +68,7 @@ pnpm run build
 ### 本地运行 CLI
 
 ```bash
-pnpm exec tsx packages/cli/src/index.ts infer path/to/file.js
+pnpm exec tsx packages/cli/src/index.ts check path/to/file.js
 # 或
 pnpm exec nudo check path/to/file.js
 pnpm exec nudo test path/to/file.js

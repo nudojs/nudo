@@ -270,7 +270,7 @@ nudo check src/api/users.js --json
 
 ### CI/CD 集成
 
-在管道中使用 JSON 输出来强制类型契约。`infer` 接受文件路径，不接受目录：
+在管道中使用 JSON 输出来强制类型契约。`check` / `test` 接受文件路径或目录：
 
 ```bash
 # 如果报告了任何诊断则失败

@@ -8,6 +8,9 @@ description: "从终端驱动 Nudo：check 签名、test 用例、contract 契�
 `nudo` CLI 是对 `.js` / `.mjs` / `.ts` 运行类型推断的产品命令面。全局安装或通过 `npx` 使用：
 
 ```bash
+# 薄壳包（发布名为 `nudojs`；安装后得到 `nudo` 命令）
+npm install -g nudojs
+# 或完整 CLI 包
 npm install -g @nudojs/cli
 # 或
 pnpm add -g @nudojs/cli

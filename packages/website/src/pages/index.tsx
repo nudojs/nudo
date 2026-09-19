@@ -56,15 +56,11 @@ import { number, fn } from "@nudojs/core";
 
 export const scale = fn({ x: number().gt(0) }, number());`;
 
-const proofInfer = `=== formatName ===
-
-Case "call@L9": ("Ada", "Lovelace") => "Ada Lovelace"
-Combined: \`Ada Lovelace\`
+const proofTest = `=== formatName ===
+  call@L11  ("Ada", "Lovelace") => "Ada Lovelace"
 
 === scale ===
-
-Case "call@L0": (5) => 6  #exact
-Combined: number`;
+  call@L12  (5) => 6  #exact`;
 
 const proofObserve = `scale(5)
   result : 6  #exact
@@ -123,55 +119,64 @@ export function scale(x: number): number {
 // x > 0 is not expressible as a plain number type;
 // you need branded types / custom guards / runtime checks.`;
 
-const trialWaves = [
-  { name: "Baseline", pct: 54.8, fix: "Directive-only" },
-  { name: "Wave 1", pct: 71.7, fix: "Call-site discovery" },
-  { name: "Wave 2", pct: 80, fix: "Export match chain" },
-  { name: "Wave 3", pct: 85.8, fix: "Builtin prototypes" },
-  { name: "Wave 4", pct: 89.4, fix: "Dynamic key access" },
-  { name: "Wave 5", pct: 90.8, fix: "Promise & iterable" },
-  { name: "Wave 6", pct: 98.6, fix: "Closure & collector" },
+const trialSteps = [
+  {
+    titleId: "homepage.trial.step1.title",
+    titleDefault: "Keep your JS",
+    descId: "homepage.trial.step1.desc",
+    descDefault: "No rewrite. No TypeScript migration. Your code stays as-is.",
+  },
+  {
+    titleId: "homepage.trial.step2.title",
+    titleDefault: "Point at real usage",
+    descId: "homepage.trial.step2.desc",
+    descDefault: "Analyze the library together with its tests and call sites.",
+  },
+  {
+    titleId: "homepage.trial.step3.title",
+    titleDefault: "Get signatures you can trust",
+    descId: "homepage.trial.step3.desc",
+    descDefault:
+      "Observed facts from actual calls. Add a sidecar contract only when you want a check gate.",
+  },
 ];
 
 const trialStats = [
   {
-    value: "54.8% → 98.6%",
+    value: "98.6%",
     labelId: "homepage.trial.stat1",
-    labelDefault: "precise observations",
+    labelDefault: "precise signatures on @hapi/hoek",
+  },
+  {
+    value: "0",
+    labelId: "homepage.trial.stat2",
+    labelDefault: "type annotations you write",
   },
   {
     value: "291 → 0",
-    labelId: "homepage.trial.stat2",
-    labelDefault: "check failures fixed",
-  },
-  {
-    value: "6",
     labelId: "homepage.trial.stat3",
-    labelDefault: "engine hardening waves",
+    labelDefault: "contract check failures cleared",
   },
 ];
 
 const signatureCards = [
   {
     fn: "formatName",
-    capability: "Call-site discovery",
-    origin: "call collected from test.js:12",
+    evidence: "from test.js call site",
     before: "no evidence → unknown params",
-    after: 'call site: ("Ada", "Lovelace") => "Ada Lovelace"',
+    after: '("Ada", "Lovelace") => "Ada Lovelace"',
   },
   {
     fn: "deepEqual",
-    capability: "Literal object arguments",
-    origin: "@hapi/hoek — nested equality walk",
+    evidence: "from @hapi/hoek usage",
     before: "no evidence → unknown params",
-    after: "call site: ({a:1,b:{c:2}}, {a:1,b:{c:2}}) => boolean",
+    after: "({a:1,b:{c:2}}, {a:1,b:{c:2}}) => boolean",
   },
   {
     fn: "flatten",
-    capability: "Recursion & iteration",
-    origin: "recursive call + for-of tracking",
+    evidence: "from recursive + loop usage",
     before: "no evidence → unknown",
-    after: "call site: ([1,[2,[3,4]]]) => [1,2,3,4]",
+    after: "([1,[2,[3,4]]]) => [1,2,3,4]",
   },
 ];
 
@@ -284,8 +289,8 @@ function ProofSection() {
         </h2>
         <p className="section-lead">
           <Translate id="homepage.proof.lead">
-            One module, four surfaces: the JS, the sidecar contract, call-site observations, and
-            what the IDE / check surface shows.
+            One module, four surfaces: the JS, the sidecar contract, `nudo test` call-site
+            cases, and what `nudo check` / the IDE show.
           </Translate>
         </p>
 
@@ -309,14 +314,14 @@ function ProofSection() {
         <div className="proof-grid proof-grid-2">
           <div className="proof-panel">
             <div className="proof-panel-head">
-              <span>npx nudojs infer</span>
+              <span>npx nudojs test</span>
               <span className="proof-tag proof-tag-out">call sites</span>
             </div>
-            <CodeBlock language="text">{proofInfer}</CodeBlock>
+            <CodeBlock language="text">{proofTest}</CodeBlock>
           </div>
           <div className="proof-panel">
             <div className="proof-panel-head">
-              <span>observe</span>
+              <span>npx nudojs check --abs</span>
               <span className="proof-tag proof-tag-out">Abs</span>
             </div>
             <CodeBlock language="text">{proofObserve}</CodeBlock>
@@ -459,17 +464,39 @@ function TrialSection() {
     <section className="rw-section">
       <div className="container">
         <p className="section-eyebrow">
-          <Translate id="homepage.trial.eyebrow">Real-World Trial</Translate>
+          <Translate id="homepage.trial.eyebrow">Real code, real results</Translate>
         </p>
         <h2 className="section-title">
-          <Translate id="homepage.trial.title">Proven on unannotated libraries</Translate>
+          <Translate id="homepage.trial.title">Precise signatures without annotating anything</Translate>
         </h2>
         <p className="rw-lead">
           <Translate id="homepage.trial.lead">
-            We ran Nudo against real, unannotated libraries and hardened the engine wave by wave
-            until observed signatures matched runtime behavior — no library annotations added.
+            Point Nudo at real JavaScript and how it is used. It observes what the code actually
+            computes — no type annotations, no rewriting the library.
           </Translate>
         </p>
+
+        <div className="rw-steps">
+          {trialSteps.map((step, index) => (
+            <div className="rw-step" key={step.titleId}>
+              <span className="rw-step-num" aria-hidden="true">
+                {index + 1}
+              </span>
+              <div className="rw-step-body">
+                <h3 className="rw-step-title">
+                  <Translate id={step.titleId}>{step.titleDefault}</Translate>
+                </h3>
+                <p className="rw-step-desc">
+                  <Translate id={step.descId}>{step.descDefault}</Translate>
+                </p>
+                {index === 1 && (
+                  <code className="rw-step-cli">npx nudojs test lib/ --from test/</code>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
         <div className="rw-stats">
           {trialStats.map((stat) => (
             <div className="rw-stat" key={stat.labelId}>
@@ -480,53 +507,16 @@ function TrialSection() {
             </div>
           ))}
         </div>
-        <div
-          className="rw-ladder"
-          role="img"
-          aria-label="Precise observation coverage on @hapi/hoek climbing from 54.8 percent to 98.6 percent across six waves of engine fixes"
-        >
-          {trialWaves.map((wave) => {
-            const isFinal = wave.name === "Wave 6";
-            return (
-              <div className="rw-bar" key={wave.name}>
-                <div className="rw-bar-track">
-                  <div
-                    className={
-                      isFinal
-                        ? "rw-bar-fill rw-bar-fill-final"
-                        : wave.name === "Baseline"
-                          ? "rw-bar-fill rw-bar-fill-baseline"
-                          : "rw-bar-fill"
-                    }
-                    style={{ height: `${wave.pct}%` }}
-                  />
-                  <span
-                    className={isFinal ? "rw-bar-value rw-bar-value-final" : "rw-bar-value"}
-                    style={{ bottom: `calc(${wave.pct}% + 0.4rem)` }}
-                  >
-                    {wave.pct}%
-                  </span>
-                </div>
-                <span className="rw-bar-name">{wave.name}</span>
-                <span className="rw-bar-fix">{wave.fix}</span>
-              </div>
-            );
-          })}
-        </div>
-        <p className="rw-caption">
-          <Translate id="homepage.trial.ladderCaption">
-            Precise-signature coverage on @hapi/hoek — each wave ships one engine capability.
-          </Translate>
-        </p>
+
         <h3 className="rw-cards-title">
-          <Translate id="homepage.trial.cardsTitle">From no evidence to call-site fact</Translate>
+          <Translate id="homepage.trial.cardsTitle">What you get back</Translate>
         </h3>
         <div className="rw-cards">
           {signatureCards.map((card) => (
             <div className="rw-card" key={card.fn}>
               <div className="rw-card-head">
                 <code className="rw-card-fn">{card.fn}</code>
-                <span className="rw-card-chip">{card.capability}</span>
+                <span className="rw-card-chip">{card.evidence}</span>
               </div>
               <div className="rw-sig rw-sig-before">
                 <span className="rw-sig-label">before</span>
@@ -536,16 +526,20 @@ function TrialSection() {
                 <span className="rw-sig-label">nudo</span>
                 <code>{card.after}</code>
               </div>
-              <div className="rw-card-origin">{card.origin}</div>
             </div>
           ))}
         </div>
-        <p className="rw-source">
-          <Translate id="homepage.trial.source">
-            Measured on @hapi/hoek v9.3.0 and @discoveryjs/json-ext v0.5.7 — every signature
-            produced by Nudo&apos;s abstract interpreter, zero type annotations.
-          </Translate>
-        </p>
+        <div className="rw-footer">
+          <p className="rw-source">
+            <Translate id="homepage.trial.source">
+              Measured on @hapi/hoek v9.3.0 and @discoveryjs/json-ext v0.5.7 — every signature
+              produced by Nudo&apos;s abstract interpreter, zero type annotations in the libraries.
+            </Translate>
+          </p>
+          <Link className="proof-link" to="/docs/guides/callsite-discovery">
+            <Translate id="homepage.trial.detail">How call-site discovery works →</Translate>
+          </Link>
+        </div>
       </div>
     </section>
   );

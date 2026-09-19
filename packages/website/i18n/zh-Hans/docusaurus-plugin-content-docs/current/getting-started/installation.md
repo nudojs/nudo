@@ -17,19 +17,25 @@ description: 安装 Nudo 的 CLI、VS Code 扩展与 Vite 插件，支持 npm、
 ## CLI
 
 ```bash
+# 薄壳包（发布名为 `nudojs`；安装后得到 `nudo` 命令）
+npm install -g nudojs
+# 或完整 CLI 包
 npm install @nudojs/cli
-# or
+# 或
 pnpm add @nudojs/cli
-# or
+# 或
 yarn add @nudojs/cli
 ```
 
-然后运行类型推断：
+然后观察并门禁你的代码：
 
 ```bash
-npx nudojs infer path/to/file.js
-# 若已全局安装 `@nudojs/cli` 或 `nudojs`，命令为 `nudo`
+npx nudojs check path/to/file.js   # 签名 + 契约门禁
+npx nudojs test path/to/file.js    # 调用点 case 报告
+# 若已全局安装，命令就是 `nudo`
 ```
+
+一级动词：`check` / `test` / `contract` / `export` / `health` / `env harvest`。**没有** `infer` 动词——观察来自 `check` 签名、`test` 用例与 IDE hover。
 
 ## VS Code 扩展
 

@@ -405,7 +405,7 @@ function calc(a, b) {
 ## 8. 实现路线图
 
 ### 已完成
-- **求值器 MVP** — Babel、Abs 求值、ops、窄化、调用点观测 + 调试 `@nudo:case`、CLI `infer`。
+- **求值器 MVP** — Babel、Abs 求值、ops、窄化、调用点观测 + 调试 `@nudo:case`。（原 `infer` CLI 动词已删除；观察面现为 `nudo check` / `nudo test`。）
 - **对象/数组** — 对象、数组、元组、Array 方法、`@nudo:mock`。
 - **高级语言特性** — 闭包、递归预算、async/Promise、try-catch、类。
 - **工具链** — LSP、watch、`.d.ts`、Vite 插件、VS Code 扩展。

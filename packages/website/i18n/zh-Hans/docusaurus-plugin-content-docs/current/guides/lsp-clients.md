@@ -183,7 +183,7 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 | Hover 首行 + 契约展示 | `interfaceTierOf` + `getHoverAtPosition` |
 | Inlay `interfaceSource` / `derived` | `collectAbsInlays` + `interfaceTierOf` |
 | Semantic token modifiers | `buildSemanticTokens` + `interfaceTierOf` |
-| Agent `nudo.check` / `nudo.hover` / `nudo.contract` / infer/whatIf/trace | 同一 service/core 入口 + buffer-aware `loadModule`（E5 `AGENT_TOOL_SOURCES`）；工具错误带 `isError: true` |
+| Agent `nudo.check` / `nudo.hover` / `nudo.contract` / test/whatIf/trace | 同一 service/core 入口 + buffer-aware `loadModule`（E5 `AGENT_TOOL_SOURCES`）；工具错误带 `isError: true` |
 | CLI `nudo check` / `nudo contract` | 同一 service/core 入口 |
 | executeCommand `nudo.*` ↔ slash `nudo/…` | 同一 dispatch 表；清单钉在 `packages/lsp/PUBLIC_API.md` + `public-api-surface.test.ts` |
 

@@ -407,7 +407,7 @@ function calc(a, b) {
 ## 8. Implementation Roadmap
 
 ### Done
-- **Evaluator MVP** — Babel, Abs evaluation, ops, narrowing, call-site observations + debug `@nudo:case`, CLI `infer`.
+- **Evaluator MVP** — Babel, Abs evaluation, ops, narrowing, call-site observations + debug `@nudo:case`. (The original `infer` CLI verb was removed; observation is now `nudo check` / `nudo test`.)
 - **Objects/arrays** — objects, arrays, tuples, Array methods, `@nudo:mock`.
 - **Advanced language** — closures, recursion budget, async/Promise, try-catch, classes.
 - **Tooling** — LSP, watch, `.d.ts`, Vite plugin, VS Code extension.

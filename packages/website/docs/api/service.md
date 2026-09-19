@@ -428,7 +428,7 @@ type FunctionAnalysis = {
   skipped?: boolean;
   /** CJS-style binding/assignment functions (exports.X = fn) have no
       declaration-stable name; .d.ts generation skips them while
-      infer/JSON output still reports them */
+      check/test JSON output still reports them */
   noDeclaration?: boolean;
   /** absolute path of the module this function is imported from
       (externalFunctions only) */
