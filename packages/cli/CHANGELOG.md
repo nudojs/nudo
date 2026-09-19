@@ -1,5 +1,16 @@
 # nudo
 
+## 2.0.1
+
+### Patch Changes
+
+- Updated dependencies [9731238]
+  - @nudojs/core@2.0.1
+  - @nudojs/env@0.4.0
+  - @nudojs/service@3.0.0
+  - @nudojs/harvester@0.2.6
+  - @nudojs/parser@0.5.1
+
 ## 2.0.0
 
 ### Major Changes

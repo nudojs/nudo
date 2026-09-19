@@ -1,5 +1,12 @@
 # @nudojs/harvester
 
+## 0.2.6
+
+### Patch Changes
+
+- Updated dependencies [9731238]
+  - @nudojs/core@2.0.1
+
 ## 0.2.5
 
 ### Patch Changes
