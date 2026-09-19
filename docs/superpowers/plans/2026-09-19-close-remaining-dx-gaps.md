@@ -2,7 +2,8 @@
 
 > **状态**：**P0-A A1–A8 + P0-B B1–B8 主体已交付**（2026-09-19；同日 review 修复已合入本分支）。
 > 证据见各任务表；门禁：`pnpm run lint` / `lint:tests` / `coverage:env` /
-> 相关 vitest 均绿。**未完全闭合项**（标 `[~]`）：B2 磁盘缓存与「harvest 失败自动降级注入」；
+> 相关 vitest 均绿。CI lint job 产出 `env-coverage-baseline` artifact。
+> **未完全闭合项**（标 `[~]`）：B2 磁盘缓存与「harvest 失败自动降级注入」；
 > A3 `vsce package` dry-run 需 release 机执行；A6 为 service 层冒烟（无 live editor / 中型目录延迟基线）。
 > Backlog S1–S5 未开工（按拍板押后）。承接
 > [`2026-05-28-close-ts-dx-gaps.md`](./2026-05-28-close-ts-dx-gaps.md)
@@ -39,7 +40,7 @@
 | 与 tsserver 共存噪声可控 | 文档给出 `analysis.include/exclude` 默认配方；打开 mixed JS/TS 仓不出现「双重错误风暴」的可复现步骤 |
 | Node API 可解析率上升 | fixture 套件上：`@nudo:env node` + harvest 后，高频 API `unknown` 叶子占比有基线数字并可回归 |
 | 常见库无 mock 可分析 | zero-FP 套件扩展后，至少 N 个 JS 库在 **无手写 mock** 下 infer/check 可跑通且 error 误报仍为 0 |
-| 覆盖率可被客观看见 | CI 产出 env/harvest 覆盖报告（resolved / unknown / mock-required） |
+| 覆盖率可被客观看见 | CI 产出 env/harvest 覆盖报告 artifact（resolved / leaf-clean / unknown / mock-required）；`docs/reports/` 同步入库 |
 
 ---
 
@@ -119,14 +120,14 @@ A1 ──► A2
 
 | ID | 任务 | 验收 | 依赖 | 状态 |
 |----|------|------|------|------|
-| **B1** | **覆盖基线报告**：定义 fixture 套件（Node 高频 API + 已有 zero-FP 库 + 若干无 `@types` 的 JS 库）；输出 resolved / unknown / mock-required 比例 | 脚本 + 机器可读 JSON/Markdown 进 CI artifact；首份基线入库 `docs/` 报告目录约定（报告态，脚本生成） | — | [x] evidence: `scripts/env-coverage-baseline.ts` + `pnpm run coverage:env` → `docs/reports/env-coverage-baseline.{json,md}`。报告同时给出 **resolved** 与 **leaf-clean**（format 无 unknown/any token）计数，避免 headline 高估 |
+| **B1** | **覆盖基线报告**：定义 fixture 套件（Node 高频 API + 已有 zero-FP 库 + 若干无 `@types` 的 JS 库）；输出 resolved / unknown / mock-required 比例 | 脚本 + 机器可读 JSON/Markdown 进 CI artifact；首份基线入库 `docs/` 报告目录约定（报告态，脚本生成） | — | [x] evidence: `scripts/env-coverage-baseline.ts` + `pnpm run coverage:env` → `docs/reports/env-coverage-baseline.{json,md}`；CI lint job 运行 `coverage:env` 并 `upload-artifact`（`env-coverage-baseline`）。报告同时给出 **resolved** 与 **leaf-clean**（format 无 unknown/any token）计数，避免 headline 高估 |
 | **B2** | **`@types/node` harvest 产品化**：稳定入口（CLI 或 service API）；磁盘缓存（避免每次预算截断）；失败时降级到手写 `env/node`；**有 `@types/node` 的 CI 必须跑 hard gate**，无则 skip 并标记 | `harvest-node` 测试从 soft-skip 变为条件 hard；文档写清安装 `@types/node` 后的行为 | B1 | [~] evidence: `harvest-node.ts` **进程内**缓存 + `clearNodeHarvestCache`/`stats`/`NUDO_HARVEST_NODE=off`；`harvest-node.test.ts` HARD when `@types/node` present / graceful skip when absent；website 性能节如实写 in-process。**未做**：磁盘缓存；harvest 失败时 analyzer 自动注入手写 env 的降级链路（手写 env 在重叠键 wins 已由 `mergeHarvestUnderEnv` 钉住） |
-| **B3** | **手写 node env 补齐高频缺口**（与 harvest 互补，不互相覆盖冲突）：优先 `path`/`url`/`querystring`/`events`/`util`/`stream` 骨架、`fs.promises` 常用方法、`process.env` 槽位 | 以 B1 报告中 top unknown 为 backlog；每项有 Abs 测试；zero-FP 不回归 | B1 | [x] evidence: `packages/env/src/node.ts` + events/util/stream/querystring/fs.promises（EE/stream ctor 接受 options；path.join/resolve/util.format 变参近似；querystring.parse brand 带说明 shape）；tests `packages/env/src/__tests__/node-env-gaps.test.ts` |
+| **B3** | **手写 node env 补齐高频缺口**（与 harvest 互补，不互相覆盖冲突）：优先 `path`/`url`/`querystring`/`events`/`util`/`stream` 骨架、`fs.promises` 常用方法、`process.env` 槽位 | 以 B1 报告中 top unknown 为 backlog；每项有 Abs 测试；zero-FP 不回归 | B1 | [x] evidence: `packages/env/src/node.ts` + events/util/stream/querystring/fs.promises；变参/可选 API 用 **min arity + rest/optional 标签**（`formatShape` 渲染 `...paths` / `options?`，不再把 `path.join` 画成 5 个必填 string）；tests `packages/env/src/__tests__/node-env-gaps.test.ts` + `format.test.ts` |
 | **B4** | **harvest 自动路径**：import 的 npm 包有 JS 源码 → 直接求值；有 `.d.ts` → harvest；两者皆无 → 明确 mock 提示 | fixture：`commander`（源码）/ 典型 `@types` 包 / 纯 JS 无 types 包 三态文档化 + 测试 | B2 | [x] evidence: 三态 helper `harvest-auto.ts` + 测试；生产注入经 `abs-modules-graph`/`harvest-to-abs`（不再保留 analyzer 上的死 import）；docs EN/zh `api/harvester.md`「Automatic harvest path (three states)」 |
-| **B5** | **常见库无 mock 可分析门禁**：在现有 real-packages 精度套件上增加 **infer 可跑通**（不仅 check 零误报）——调用点/entry 签名可归纳、关键 API 不整页 `unknown` | 扩展 `check-real-packages` / 新增 coverage 用例；FP 仍锁 0 | B1, B4 | [x] evidence: `packages/service/src/__tests__/infer-real-packages.test.ts` — ms/commander/escape-string-regexp/debug：checkSource FP=0 + analyzeFile 不抛错；**ms** 锁 ≥1 个非整页 unknown 的 case format（`parse → number|undefined` 等）；commander/esr/debug 锁结构化运行（cases>0 / 不崩溃）——无 call-site 时 `entry@` unknown 是诚实上限（design-limitations §八）；套件级要求至少一个已安装包产出有用叶子。既有 gold 仍绿 |
+| **B5** | **常见库无 mock 可分析门禁**：在现有 real-packages 精度套件上增加 **infer 可跑通**（不仅 check 零误报）——调用点/entry 签名可归纳；至少一个已安装包产出非整页 `unknown` 的 case format | 扩展 `check-real-packages` / 新增 coverage 用例；FP 仍锁 0；无 call-site 时 `entry@`/unknown 仍是诚实上限 | B1, B4 | [x] evidence: `packages/service/src/__tests__/infer-real-packages.test.ts` — ms/commander/escape-string-regexp/debug：checkSource FP=0 + analyzeFile 不抛错；**ms** 锁 ≥1 个非整页 unknown 的 case format；commander/esr/debug 锁结构化运行（cases>0 / 不崩溃）——无 call-site 时 `entry@` unknown 是 design-limitations §八 诚实上限，**不是**「常见库已高质量 infer」的承诺；套件级要求至少一个已安装包产出有用叶子。既有 gold 仍绿 |
 | **B6** | **手写 mock 文档诚实边界**：website semantics / env 指南列出「仍建议 mock」清单（native、动态导出、流机器回调等） | 与 `design-limitations.md` §八 调用点天花板对齐，不超前吹 | B1 | [x] evidence: semantics EN/zh「Mock boundary」；harvester API mock 边界节；`design-limitations.md` §八 指针表 |
 | **B7** | **harvest 性能护栏**：大 `.d.ts`（typescript 本体量级）不拖垮 IDE 启动；预算超时可解释（warning 码），不静默半截 | bench 或集成测试；产品路径默认预算文档化 | B2 | [x] evidence: defaults `HARVEST_NODE_DEFAULT_MAX_FILES=12`/`MAX_MS=2500`；test maxFiles budget + maxMs=0 no-throw；website harvester「Performance budgets」 |
-| **B8** | **env/harvester 版本与发布**：`@nudojs/env` / `@nudojs/harvester` 进入「可被 service/cli 钉住的 minor」节奏；覆盖报告数字进 release notes 可选节 | changeset 流程；versioning.md 点名两包策略 | B2, B3 | [x] evidence: `docs/versioning.md` → **Ecosystem packages (env / harvester)** 为唯一权威节（成熟度表/IDE 节只链过去）；手写 env wins 由 `mergeHarvestUnderEnv` + `env-harvest-priority.test.ts` 钉住；未 bump package.json versions |
+| **B8** | **env/harvester 版本与发布**：`@nudojs/env` / `@nudojs/harvester` 进入「可被 service/cli 钉住的 minor」节奏；覆盖报告数字进 release notes 可选节 | changeset 流程；versioning.md 点名两包策略 | B2, B3 | [x] evidence: `docs/versioning.md` → **Ecosystem packages (env / harvester)** 为唯一权威节；website en/zh `guides/versioning.md` 有消费者摘要节；手写 env wins 由 `mergeHarvestUnderEnv` + `env-harvest-priority.test.ts` 钉住；changeset `.changeset/ide-eco-dx-gaps-review-fixes.md` 点名 service minor（B8 行为）+ env minor + core/lsp patch |
 
 ### P0-B 依赖链
 

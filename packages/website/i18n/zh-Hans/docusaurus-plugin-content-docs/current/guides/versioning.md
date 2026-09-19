@@ -31,6 +31,21 @@ patch 修健全性（结果可能变得*更正确*）；minor 增 API / 诊断�
 
 完整策略（Nudo 何为 breaking）：仓库内 [`docs/versioning.md`](https://github.com/nudojs/nudo/blob/main/docs/versioning.md)。
 
+## 生态包（`@nudojs/env` / `@nudojs/harvester`）
+
+> 完整权威文本在仓库 `docs/versioning.md` § Ecosystem packages；本节是面向消费者的摘要。
+
+| 包 | 当前 | 锁定方式 | 说明 |
+|----|------|----------|------|
+| `@nudojs/env` | 0.3.0（pre-1.0） | workspace / IDE·CI 稳定可锁 `~0.3.0` | 新 Abs 模块（如 `events` / `stream` / `querystring`）以 **minor** 发布；签名展示可能变化。手写 env 在重叠模块/导出上 **wins**。 |
+| `@nudojs/harvester` | 0.2.5（pre-1.0） | workspace / `~0.2.5` | Harvest 是**旁路信道**，不是类型系统真理源。预算默认：`maxFiles=12`、`maxMs=2500`，`NUDO_HARVEST_NODE=off` 显式关闭。 |
+
+规则：
+
+- **手写 `@nudojs/env` wins** 覆盖 harvest / 自动 harvest 在相同模块键或导出名上的结果。分析经 `@nudojs/service` 的 `mergeHarvestUnderEnv` 注入；harvest 只补缺失槽。改变该优先级对 service 分析结果是破坏性变更。
+- 覆盖报告（`pnpm run coverage:env` → `docs/reports/env-coverage-baseline.*`）是**可选 release-notes 内容**，不是 soundness 门禁。优先看 **leaf-clean**，不要只看 resolved 比例。
+- 生产路径上的裸 import harvest 经 `abs-modules-graph` / `harvest-to-abs`（`bareSpecToAbsModules`）注入。`autoHarvestModules` 是程序化 harvest 库 helper，不是第二条分析注入路径。
+
 ## 常见破坏面
 
 - 删除包导出子路径

@@ -79,7 +79,7 @@ import {
   type AgentToolDeps,
   type AgentToolResult,
 } from "./agent-tools.ts";
-import { NUDO_EXECUTE_COMMANDS } from "./public-api.ts";
+import { NUDO_EXECUTE_COMMANDS, NUDO_AGENT_TOOL_NAMES } from "./public-api.ts";
 
 const NUDO_COMMANDS = NUDO_EXECUTE_COMMANDS;
 
@@ -1268,7 +1268,8 @@ function dispatchAgentRequest(
 // Request aliases: slash-form (`nudo/check`) is the protocol contract; dot-form
 // (`nudo.check`) mirrors the executeCommand command names that MCP-bridge
 // clients reuse as request methods. Both spellings route to the same handlers.
-for (const name of ["whatIf", "suggestCase", "trace", "check", "hover", "infer", "interface", "interface.draft", "interface.emit"] as const) {
+// Names come from the public-api freeze inventory (A7) — no second hardcoded list.
+for (const name of NUDO_AGENT_TOOL_NAMES) {
   const command = `nudo.${name}`;
   const handler = (params: Record<string, unknown>) => dispatchAgentRequest(command, params);
   connection.onRequest(`nudo/${name}`, handler);

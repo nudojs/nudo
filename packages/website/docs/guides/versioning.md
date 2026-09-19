@@ -31,6 +31,21 @@ Patches fix soundness (results may get *more correct*); minors add APIs/codes/fl
 
 Full policy (what Nudo treats as breaking): [`docs/versioning.md`](https://github.com/nudojs/nudo/blob/main/docs/versioning.md) in the repo.
 
+## Ecosystem packages (`@nudojs/env` / `@nudojs/harvester`)
+
+> Authoritative long form lives in repo `docs/versioning.md` § Ecosystem packages. This section is the consumer-facing summary.
+
+| Package | Current | Pin style | Notes |
+|---------|---------|-----------|-------|
+| `@nudojs/env` | 0.3.0 (pre-1.0) | workspace / `~0.3.0` for bit-stable IDE/CI analysis | New Abs modules (e.g. `events` / `stream` / `querystring`) ship as **minor**; signature display may change. Handwritten env **wins** over harvest on overlapping modules/exports. |
+| `@nudojs/harvester` | 0.2.5 (pre-1.0) | workspace / `~0.2.5` | Harvest is a **side channel** — not the type-system source of truth. Budget defaults: `maxFiles=12`, `maxMs=2500`, disable via `NUDO_HARVEST_NODE=off`. |
+
+Rules:
+
+- **Handwritten `@nudojs/env` wins** over harvest / auto-harvest when both supply the same module key or export name. Analysis injects via `mergeHarvestUnderEnv` in `@nudojs/service`; harvest only fills missing slots. Changing that priority is service-breaking.
+- Coverage reports (`pnpm run coverage:env` → `docs/reports/env-coverage-baseline.*`) are **optional release-notes content**, not a soundness gate. Prefer **leaf-clean** counts over raw resolved ratios.
+- Production bare-import harvest injects through `abs-modules-graph` / `harvest-to-abs` (`bareSpecToAbsModules`). `autoHarvestModules` remains a library helper for programmatic harvest, not a second analysis path.
+
 ## What usually breaks
 
 - Removing package export subpaths

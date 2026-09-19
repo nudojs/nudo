@@ -88,6 +88,12 @@ export function errorBrandOf(name: string): Abs {
 /**
  * env 声明函数：无 apply 时 relationFn；有 apply 时 absFunction + shape 签名槽。
  * shape.paramTypes/returnType 同步写入（format/leq 读这里）。
+ *
+ * `opts.params` labels:
+ * - `...name` — rest slot; formatShape renders `...name: <last/typed slot>`
+ * - `name?`  — optional slot; formatShape renders `name?: <type>`
+ * Keep `params.length === paramTypes.length` when paramTypes is present
+ * (relation fingerprint / isRelFn alignment).
  */
 export function envFn(
   paramTypes: Abs[],
@@ -134,13 +140,32 @@ export function envFn(
   return a;
 }
 
-/** 变参声明（path.join 等）：参数类型用 rest 近似为 string × n */
+/**
+ * Variadic env fn (path.join / util.format / stream.pipeline).
+ * `restType` is the element type of the trailing rest slot; optional
+ * `required` prefix params stay required. formatShape shows `...restName`.
+ */
 export function envFnVariadic(
-  paramTypes: Abs[],
+  restType: Abs,
   returnType: Abs,
-  apply?: AbsSigImpl,
+  opts?: {
+    apply?: AbsSigImpl;
+    required?: Abs[];
+    restName?: string;
+    name?: string;
+  },
 ): Abs {
-  return envFn(paramTypes, returnType, apply);
+  const required = opts?.required ?? [];
+  const restName = opts?.restName ?? "...rest";
+  const paramTypes = [...required, restType];
+  const params = [
+    ...required.map((_, i) => `x${i}`),
+    restName,
+  ];
+  return envFn(paramTypes, returnType, opts?.apply, {
+    params,
+    ...(opts?.name ? { name: opts.name } : {}),
+  });
 }
 
 export function slotsOf(

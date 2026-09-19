@@ -211,8 +211,12 @@ Rules:
   service analysis results → service 1.x **major** on 1.x / minor on 0.x + callout.
 - Coverage report numbers are **optional release-notes content**, not a
   soundness gate. Do not promise completeness from resolved-ratio. Prefer
-  **leaf-clean** counts over raw resolved counts.
+  **leaf-clean** counts over raw resolved counts. CI lint job regenerates
+  `docs/reports/env-coverage-baseline.*` and uploads the `env-coverage-baseline`
+  artifact.
 - `NUDO_HARVEST_NODE=off` and harvest cache helpers (`clearNodeHarvestCache`)
   are public service API surface — treat removals as service 1.x **major**.
 - When these packages later cut 1.x, use the same freeze-observation gate as
   lsp — no automatic major from coverage-report growth alone.
+- Consumer-facing summary: website `guides/versioning.md` § Ecosystem packages
+  (en + zh). This file remains the single long-form authority.

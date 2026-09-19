@@ -4,6 +4,8 @@
  *
  * Productization (P0-B B2/B7):
  * - In-process cache keyed by package root + package.json mtime/size.
+ * - Terminal failures (`not-found`/`no-dts`/`failed`) also cache — no retry storm.
+ *   `disabled` is never cached (env var can flip mid-process).
  * - `clearNodeHarvestCache()` for tests / watch invalidation.
  * - `NUDO_HARVEST_NODE=off` disables harvest (explicit skip, not silent).
  * - Defaults stay IDE-budgeted: maxFiles=12, maxMs=2500.
@@ -34,10 +36,21 @@ export type NodeEnvResult =
       /** true when this result came from the in-process cache */
       cached: boolean;
     }
-  | { ok: false; error: string; reason: "disabled" | "not-found" | "no-dts" | "failed" };
+  | {
+      ok: false;
+      error: string;
+      reason: "disabled" | "not-found" | "no-dts" | "failed";
+      /** true when this failure came from the in-process cache */
+      cached?: boolean;
+    };
 
 /** Process-level harvest cache (documented first step; disk cache is follow-up). */
 const nodeHarvestCache = new Map<string, NodeEnvResult>();
+
+/** Cache key for "root not resolvable" — avoids re-walking node_modules on every analysis. */
+function notFoundCacheKey(fromDir: string | undefined): string {
+  return `not-found|@types/node|${fromDir ?? ""}`;
+}
 
 /** Stable cache key: root + budgets + package.json mtime/size signature. */
 function nodeHarvestCacheKey(
@@ -75,7 +88,10 @@ export function isHarvestNodeDisabled(env: NodeJS.ProcessEnv = process.env): boo
 
 /**
  * harvest @types/node（限制文件数 + 时间预算，避免拖垮启动）。
- * Results are cached in-process per (root, budgets, package.json fingerprint).
+ * Success **and** terminal failures (`not-found` / `no-dts` / `failed`) are
+ * cached in-process so IDE analysis does not re-walk / re-timeout every file.
+ * `disabled` is never cached — the env var can flip mid-process.
+ * Call `clearNodeHarvestCache()` after `@types/node` changes.
  */
 export function harvestNodeTypes(
   fromDir?: string,
@@ -94,17 +110,34 @@ export function harvestNodeTypes(
     resolvePackageRoot("@types/node", fromDir) ??
     resolvePackageRoot("node", fromDir);
   if (!root || !existsSync(root)) {
-    return { ok: false, error: "@types/node not found", reason: "not-found" };
+    const missKey = notFoundCacheKey(fromDir);
+    const miss = nodeHarvestCache.get(missKey);
+    if (miss && !miss.ok && miss.reason === "not-found") {
+      return { ...miss, cached: true };
+    }
+    const result: NodeEnvResult = {
+      ok: false,
+      error: "@types/node not found",
+      reason: "not-found",
+    };
+    nodeHarvestCache.set(missKey, result);
+    return result;
   }
   const key = nodeHarvestCacheKey(root, maxFiles, maxMs);
   const hit = nodeHarvestCache.get(key);
-  if (hit && hit.ok) {
-    return { ...hit, cached: true };
+  if (hit) {
+    return hit.ok ? { ...hit, cached: true } : { ...hit, cached: true };
   }
   // 优先 index.d.ts 等入口
   const dts = collectDtsFiles(root, maxFiles);
   if (dts.length === 0) {
-    return { ok: false, error: `no .d.ts under ${root}`, reason: "no-dts" };
+    const result: NodeEnvResult = {
+      ok: false,
+      error: `no .d.ts under ${root}`,
+      reason: "no-dts",
+    };
+    nodeHarvestCache.set(key, result);
+    return result;
   }
   try {
     const env = harvestDts(dts, { maxMs });
@@ -124,11 +157,13 @@ export function harvestNodeTypes(
     nodeHarvestCache.set(key, result);
     return result;
   } catch (e) {
-    return {
+    const result: NodeEnvResult = {
       ok: false,
       error: `harvest failed: ${(e as Error).message}`,
       reason: "failed",
     };
+    nodeHarvestCache.set(key, result);
+    return result;
   }
 }
 

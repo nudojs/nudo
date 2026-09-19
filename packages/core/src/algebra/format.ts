@@ -86,15 +86,44 @@ export function formatShape(a: Abs): string {
     case "tuple":
       return `[${s.elements.map(formatShape).join(", ")}]`;
     case "fn": {
-      if (s.paramTypes && s.paramTypes.length > 0) {
-        const ps = s.paramTypes.map((p) => formatShapeSlot(p));
-        const ret =
-          s.returnType !== undefined ? formatShapeSlot(s.returnType) : "?";
-        return `(${ps.join(", ")}) => ${ret}`;
-      }
       const ret =
         s.returnType !== undefined ? formatShapeSlot(s.returnType) : "?";
-      return `(${s.params.join(", ")}) => ${ret}`;
+      const labels = s.params ?? [];
+      const paramTypes = s.paramTypes;
+      const hasMarkers = labels.some(
+        (p) => p.startsWith("...") || p.endsWith("?"),
+      );
+
+      // Rest (`...paths`) / optional (`options?`) labels win over raw paramTypes
+      // so env signatures do not over-declare Node variadic/optional arity.
+      const renderLabeled = (): string[] => {
+        const ps: string[] = [];
+        const n = paramTypes ? Math.max(paramTypes.length, labels.length) : labels.length;
+        for (let i = 0; i < n; i++) {
+          const label = labels[i];
+          const type = paramTypes?.[i];
+          const typeText = type !== undefined ? formatShapeSlot(type) : undefined;
+          if (label?.startsWith("...")) {
+            ps.push(typeText ? `...${label.slice(3)}: ${typeText}` : label);
+          } else if (label?.endsWith("?")) {
+            ps.push(typeText ? `${label.slice(0, -1)}?: ${typeText}` : label);
+          } else if (typeText !== undefined) {
+            ps.push(typeText);
+          } else if (label) {
+            ps.push(label);
+          }
+        }
+        return ps;
+      };
+
+      if (hasMarkers) {
+        return `(${renderLabeled().join(", ")}) => ${ret}`;
+      }
+      if (paramTypes && paramTypes.length > 0) {
+        const ps = paramTypes.map((p) => formatShapeSlot(p));
+        return `(${ps.join(", ")}) => ${ret}`;
+      }
+      return `(${labels.join(", ")}) => ${ret}`;
     }
     case "brand":
       return `${s.name}`;

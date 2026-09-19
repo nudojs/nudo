@@ -118,25 +118,27 @@ describe("A7 server.ts dispatch/request registration matches inventory", () => {
     }
   });
 
-  it("agent slash requests are registered (loop + explicit editor commands)", () => {
+  it("agent slash requests are registered via public-api inventory", () => {
     // Editor commands registered explicitly
     for (const slash of ["nudo/selectCase", "nudo/getActiveCases"]) {
       expect(serverTs, `server.ts missing onRequest("${slash}")`).toContain(
         `onRequest("${slash}"`,
       );
     }
-    // Agent tools registered via the shared loop over NUDO_AGENT_TOOL_NAMES
+    // Agent tools must register from NUDO_AGENT_TOOL_NAMES (not a second hardcoded list)
+    expect(serverTs).toMatch(
+      /import \{ NUDO_EXECUTE_COMMANDS, NUDO_AGENT_TOOL_NAMES \} from "\.\/public-api\.ts"/,
+    );
+    expect(serverTs).toMatch(/for \(const name of NUDO_AGENT_TOOL_NAMES\)/);
+    // Inventory names still exist and map to executeCommand + slash spellings
+    const commands = new Set<string>(NUDO_EXECUTE_COMMANDS);
     for (const name of NUDO_AGENT_TOOL_NAMES) {
-      expect(serverTs, `server.ts registration loop must cover agent tool "${name}"`).toMatch(
-        new RegExp(
-          String.raw`for \(const name of \[[^\]]*"${name.replace(/\./g, "\\.")}"[^\]]*\]`,
-        ),
-      );
+      expect(commands.has(`nudo.${name}` as (typeof NUDO_EXECUTE_COMMANDS)[number])).toBe(true);
     }
   });
 
   it("NUDO_COMMANDS is sourced from public-api inventory", () => {
-    expect(serverTs).toMatch(/import \{ NUDO_EXECUTE_COMMANDS \} from "\.\/public-api\.ts"/);
+    expect(serverTs).toMatch(/import \{ NUDO_EXECUTE_COMMANDS[^}]*\} from "\.\/public-api\.ts"/);
     expect(serverTs).toMatch(/const NUDO_COMMANDS = NUDO_EXECUTE_COMMANDS/);
   });
 });

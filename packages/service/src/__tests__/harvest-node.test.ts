@@ -138,10 +138,19 @@ describe("harvest @types/node performance guardrails (B7)", () => {
     expect(r.files).toBeLessThanOrEqual(4);
   });
 
-  it("missing @types/node yields reason=not-found (not a crash)", () => {
-    // Unresolvable from a path with no node_modules upward chain.
-    const r = harvestNodeTypes("/tmp/nudo-harvest-missing-xyz");
+  it("missing @types/node yields reason=not-found and caches the miss", () => {
+    const missDir = "/tmp/nudo-harvest-missing-xyz";
+    const r = harvestNodeTypes(missDir);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe("not-found");
+    if (!r.ok) {
+      expect(r.reason).toBe("not-found");
+      expect(r.cached).toBeUndefined();
+    }
+    const r2 = harvestNodeTypes(missDir);
+    expect(r2.ok).toBe(false);
+    if (!r2.ok) {
+      expect(r2.reason).toBe("not-found");
+      expect(r2.cached).toBe(true);
+    }
   });
 });

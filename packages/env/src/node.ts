@@ -13,6 +13,7 @@ import {
   arrOf,
   brandOf,
   envFn,
+  envFnVariadic,
   nullLit,
   objAbs,
   promiseOf,
@@ -209,19 +210,16 @@ export function defineEnv(): EnvDefinition {
   };
 
   const pathModule: Record<string, Abs> = {
-    // Variadic in Node — rest slots approximate `(...paths: string[]) => string`.
-    join: envFn(
-      [prim.str(), prim.str(), prim.str(), prim.str(), prim.str()],
-      prim.str(),
-      pathJoinAbs,
-      { params: ["p0", "p1", "...paths"] },
-    ),
-    resolve: envFn(
-      [prim.str(), prim.str(), prim.str(), prim.str()],
-      prim.str(),
-      pathResolveAbs,
-      { params: ["p0", "...paths"] },
-    ),
+    // Node variadic: declare min required arity + rest label (not n fixed slots).
+    join: envFnVariadic(prim.str(), prim.str(), {
+      apply: pathJoinAbs,
+      required: [prim.str()],
+      restName: "...paths",
+    }),
+    resolve: envFnVariadic(prim.str(), prim.str(), {
+      apply: pathResolveAbs,
+      restName: "...paths",
+    }),
     dirname: envFn([prim.str()], prim.str(), strImpl1Abs(nodePath.dirname)),
     basename: envFn([prim.str(), prim.str()], prim.str(), pathBasenameAbs),
     extname: envFn([prim.str()], prim.str(), strImpl1Abs(nodePath.extname)),
@@ -435,12 +433,11 @@ export function defineEnv(): EnvDefinition {
     // Signature-level: promisify preserves fn-ness only as unknown (no generic).
     promisify: envFn([prim.unknown], prim.unknown, undefined, { name: "util.promisify" }),
     inspect: envFn([prim.unknown, prim.unknown], prim.str()),
-    format: envFn(
-      [prim.str(), prim.unknown, prim.unknown, prim.unknown],
-      prim.str(),
-      undefined,
-      { params: ["fmt", "...args"] },
-    ),
+    format: envFnVariadic(prim.unknown, prim.str(), {
+      required: [prim.str()],
+      restName: "...args",
+      name: "util.format",
+    }),
     callbackify: envFn([prim.unknown], prim.unknown),
     deprecate: envFn([prim.unknown, prim.str()], prim.unknown),
     inherits: envFn([prim.unknown, prim.unknown], undef()),
@@ -481,10 +478,10 @@ export function defineEnv(): EnvDefinition {
   const eventEmitterInstance = brandOf("EventEmitter", eventEmitterShape);
   /**
    * Constructor signature: `new EventEmitter()` / `new EventEmitter(options)`.
-   * Options slot is structural only (captureRejections etc. stay signature-level).
+   * Options is optional — formatShape shows `options?`.
    */
   const EventEmitterCtor = envFn([objAbs({})], eventEmitterInstance, undefined, {
-    params: ["options"],
+    params: ["options?"],
   });
 
   const eventsModule: Record<string, Abs> = {
@@ -514,7 +511,7 @@ export function defineEnv(): EnvDefinition {
 
   const streamCtor = (brandName: string): Abs =>
     envFn([objAbs({})], brandOf(brandName, objAbs(streamIoMethods)), undefined, {
-      params: ["options"],
+      params: ["options?"],
     });
 
   /**
@@ -526,12 +523,9 @@ export function defineEnv(): EnvDefinition {
     Writable: streamCtor("Writable"),
     Duplex: streamCtor("Duplex"),
     Transform: streamCtor("Transform"),
-    pipeline: envFn(
-      [prim.unknown, prim.unknown, prim.unknown],
-      promiseOf(undef()),
-      undefined,
-      { params: ["...streams"] },
-    ),
+    pipeline: envFnVariadic(prim.unknown, promiseOf(undef()), {
+      restName: "...streams",
+    }),
     finished: envFn([prim.unknown], promiseOf(undef())),
   };
 
@@ -542,17 +536,18 @@ export function defineEnv(): EnvDefinition {
   );
 
   const querystringModule: Record<string, Abs> = {
+    // sep/eq/options optional in Node — label with `?` for formatShape.
     parse: envFn(
       [prim.str(), prim.str(), prim.str(), prim.unknown],
       parsedQueryString,
       undefined,
-      { params: ["str", "sep", "eq", "options"] },
+      { params: ["str", "sep?", "eq?", "options?"] },
     ),
     stringify: envFn(
       [prim.unknown, prim.str(), prim.str(), prim.unknown],
       prim.str(),
       undefined,
-      { params: ["obj", "sep", "eq", "options"] },
+      { params: ["obj", "sep?", "eq?", "options?"] },
     ),
     escape: envFn([prim.str()], prim.str()),
     unescape: envFn([prim.str()], prim.str()),

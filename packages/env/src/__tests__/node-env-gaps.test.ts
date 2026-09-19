@@ -118,7 +118,14 @@ describe("node env high-frequency gaps (B3)", () => {
 
   it("path / url / crypto / process high-frequency slots stay resolved", () => {
     const path = lookupModule(env, "path");
-    expect(shapeOf(path.join)).toContain("=>");
+    const joinFmt = shapeOf(path.join);
+    expect(joinFmt).toContain("=>");
+    // rest label — not five required strings
+    expect(joinFmt).toContain("...paths");
+    expect(joinFmt).not.toMatch(/\(string, string, string, string, string\)/);
+    const resolveFmt = shapeOf(path.resolve);
+    expect(resolveFmt).toContain("...paths");
+    expect(path.parse).toBeTruthy();
     expect(shapeOf(path.parse)).toContain("{");
     const url = lookupModule(env, "url");
     expect(url.URL).toBeTruthy();
@@ -129,5 +136,20 @@ describe("node env high-frequency gaps (B3)", () => {
     expect(process).toBeTruthy();
     const cwd = walk(process!, "cwd");
     expect(shapeOf(cwd)).toContain("=>");
+  });
+
+  it("variadic/optional Node APIs do not over-declare required arity", () => {
+    const path = lookupModule(env, "path");
+    expect(shapeOf(path.join)).toBe("(string, ...paths: string) => string");
+    expect(shapeOf(path.resolve)).toBe("(...paths: string) => string");
+    const util = lookupModule(env, "util");
+    expect(shapeOf(util.format)).toBe("(string, ...args: unknown) => string");
+    const events = lookupModule(env, "events");
+    expect(shapeOf(events.EventEmitter)).toContain("options?");
+    expect(shapeOf(events.EventEmitter)).toContain("EventEmitter");
+    const qs = lookupModule(env, "querystring");
+    expect(shapeOf(qs.parse)).toContain("sep?");
+    const stream = lookupModule(env, "stream");
+    expect(shapeOf(stream.Readable)).toContain("options?");
   });
 });
