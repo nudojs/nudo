@@ -19,8 +19,8 @@ describe("integration: full pipeline", () => {
   it("infers types through the complete analyze → generate pipeline", () => {
     const source = `
 /**
- * @nudo:case "strings" (T.string)
- * @nudo:case "numbers" (T.number)
+ * @nudo:case "strings" (string())
+ * @nudo:case "numbers" (number())
  */
 function process(x) {
   if (typeof x === "string") return x.toUpperCase();
@@ -58,7 +58,7 @@ function process(x) {
   it("handles a single-case function end-to-end", () => {
     const source = `
 /**
- * @nudo:case "test" (T.number)
+ * @nudo:case "test" (number())
  */
 function double(x) {
   return x * 2;
@@ -108,8 +108,8 @@ function getUser(config) {
   it("generates Zod schemas for union return types", () => {
     const source = `
 /**
- * @nudo:case "string" (T.string)
- * @nudo:case "number" (T.number)
+ * @nudo:case "string" (string())
+ * @nudo:case "number" (number())
  */
 function parse(x) {
   if (typeof x === "string") return x;
@@ -195,7 +195,7 @@ function makePoint(config) {
     const source = `
 /**
  * @nudo:case "concrete" (1, 2)
- * @nudo:case "symbolic" (T.number, T.number)
+ * @nudo:case "symbolic" (number(), number())
  */
 function add(a, b) {
   return a + b;
@@ -219,9 +219,9 @@ describe("integration: multiple cases", () => {
   it("resolves combined type from multiple @nudo:case directives", () => {
     const source = `
 /**
- * @nudo:case "string-input" (T.string)
- * @nudo:case "number-input" (T.number)
- * @nudo:case "boolean-input" (T.boolean)
+ * @nudo:case "string-input" (string())
+ * @nudo:case "number-input" (number())
+ * @nudo:case "boolean-input" (boolean())
  */
 function stringify(x) {
   if (typeof x === "string") return x;
@@ -253,7 +253,7 @@ function stringify(x) {
     const source = `
 /**
  * @nudo:case "literal" (42)
- * @nudo:case "symbolic" (T.number)
+ * @nudo:case "symbolic" (number())
  */
 function passThrough(x) {
   return x;
@@ -313,7 +313,7 @@ function safeSqrt(x) {
   it("handles a function that always throws", () => {
     const source = `
 /**
- * @nudo:case "test" (T.string)
+ * @nudo:case "test" (string())
  */
 function alwaysFails(x) {
   throw new Error("always fails");
@@ -352,13 +352,13 @@ import type { Gone } from "./no-such-module";
 
 /**
  * @nudo:case "nums" (1, 2)
- * @nudo:case "syms" (T.number, T.number)
+ * @nudo:case "syms" (number(), number())
  */
 function add(a: number, b: number): number {
   return a + b;
 }
 
-/** @nudo:case "cast" (T.string) */
+/** @nudo:case "cast" (string()) */
 function cast(s: string) {
   const v = s as unknown as { n: number };
   const w = v!;
@@ -372,13 +372,13 @@ export { add, cast };
     const jsSource = `
 /**
  * @nudo:case "nums" (1, 2)
- * @nudo:case "syms" (T.number, T.number)
+ * @nudo:case "syms" (number(), number())
  */
 function add(a, b) {
   return a + b;
 }
 
-/** @nudo:case "cast" (T.string) */
+/** @nudo:case "cast" (string()) */
 function cast(s) {
   const v = s;
   const w = v;

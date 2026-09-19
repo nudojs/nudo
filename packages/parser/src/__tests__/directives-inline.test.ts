@@ -15,7 +15,7 @@ function getFirstStmtDirectives(source: string) {
 describe("extractInlineDirectives", () => {
   it("extracts @nudo:as directive", () => {
     const source = `
-// @nudo:as T.object({ port: T.number })
+// @nudo:as shape({ port: number() })
 const config = JSON.parse(text);
 `;
     const directives = getFirstStmtDirectives(source);
@@ -26,9 +26,21 @@ const config = JSON.parse(text);
     }
   });
 
+  it("extracts @nudo:as with object literal", () => {
+    const source = `
+// @nudo:as { port: number() }
+const config = JSON.parse(text);
+`;
+    const directives = getFirstStmtDirectives(source);
+    expect(directives).toHaveLength(1);
+    if (directives[0].kind === "as") {
+      expect(directives[0].typeAbs.shape.k).toBe("obj");
+    }
+  });
+
   it("extracts @nudo:replace directive with identifier target", () => {
     const source = `
-// @nudo:replace a T.number
+// @nudo:replace a number()
 const x = a + b;
 `;
     const directives = getFirstStmtDirectives(source);
@@ -42,7 +54,7 @@ const x = a + b;
 
   it("extracts @nudo:replace directive with member expression target", () => {
     const source = `
-// @nudo:replace res.data T.array(T.number)
+// @nudo:replace res.data array(number())
 const items = res.data;
 `;
     const directives = getFirstStmtDirectives(source);
@@ -54,7 +66,7 @@ const items = res.data;
 
   it("extracts @nudo:replace with call expression target", () => {
     const source = `
-// @nudo:replace JSON.parse(input) T.object({ id: T.number })
+// @nudo:replace JSON.parse(input) shape({ id: number() })
 const data = JSON.parse(input);
 `;
     const directives = getFirstStmtDirectives(source);
@@ -66,8 +78,8 @@ const data = JSON.parse(input);
 
   it("extracts multiple directives on the same statement", () => {
     const source = `
-// @nudo:replace a T.number
-// @nudo:replace b T.string
+// @nudo:replace a number()
+// @nudo:replace b string()
 const x = a + b;
 `;
     const directives = getFirstStmtDirectives(source);
@@ -86,7 +98,7 @@ const x = 1 + 2;
 
   it("ignores block comments", () => {
     const source = `
-/* @nudo:as T.number */
+/* @nudo:as number() */
 const x = 1;
 `;
     const directives = getFirstStmtDirectives(source);

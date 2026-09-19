@@ -1,31 +1,26 @@
 ---
 sidebar_position: 2
-description: "几分钟上手：给 JavaScript 文件添加 @nudo:case 指令并运行 npx nudojs infer。"
+description: "几分钟上手：写带调用点的纯 JavaScript，运行 npx nudojs infer。契约写在 *.nudo.js 侧车。"
 ---
 
 # 快速开始
 
-本指南将带你通过 Nudo 指令和 CLI 从 JavaScript 文件推断类型。
+本指南带你从 JavaScript 文件推断类型。Nudo 是 Abs 原生的：生产分析在抽象解释下执行**观测到的调用点**。契约来自 `*.nudo.js` 侧车与 `@nudo:refine` / `@nudo:interface`。`@nudo:case` 是调试 / `nudo test` 子层——不是契约产品。
 
 ## 1. 创建 JavaScript 文件
 
-创建 `math.js`，包含一个函数和 `@nudo:case` 指令：
+创建 `math.js`，包含一个函数和调用点（不需要指令）：
 
 ```javascript
-/**
- * @nudo:case "positive numbers" (5, 3)
- * @nudo:case "negative result" (1, 10)
- * @nudo:case "symbolic" (T.number, T.number)
- */
-function subtract(a, b) {
+export function subtract(a, b) {
   return a - b;
 }
+
+subtract(5, 3);
+subtract(1, 10);
 ```
 
-每个 `@nudo:case` 为 Nudo 提供一个具名输入用于执行。你可以使用：
-
-- **具体值**，如 `(5, 3)` 或 `("hello")`
-- **符号类型值**，如 `(T.number, T.number)` 或 `T.union(T.string, T.number)`
+调用点是 Nudo 执行的证据。可选的契约与调试见证是另一层表面——见下文。
 
 ## 2. 运行推断
 
@@ -40,14 +35,13 @@ npx nudojs infer math.js
 ```text
 === subtract ===
 
-Case "positive numbers": (5, 3) => 2
-Case "negative result": (1, 10) => -9
-Case "symbolic": (number, number) => number
+call@L6: (5, 3) => 2
+call@L7: (1, 10) => -9
 
-Combined: number
+Observed: 2 | -9
 ```
 
-Nudo 对该函数执行了三次——两次使用具体输入，一次使用符号化的 `T.number` 作为两个参数。`Combined` 是所有用例结果的联合，并按吸收律化简：符号化用例已贡献 `number`，因此字面量结果 `2`、`-9` 被吸收——`2 | -9 | number` 坍缩为 `number`。不含基类型成员的纯字面量联合会保留每个字面量。
+每一行 `call@L…` 是一条观测到的调用点事实（调用所在行）。函数有多条观测时，`Observed:` 打印结果的并集，并按吸收律化简——基类型已在并集中的字面量会被吸收（例如 `2 | -9 | number` 坍缩为 `number`）；纯字面量并集保留每个字面量。
 
 ## 选项
 
@@ -63,12 +57,12 @@ Nudo 对该函数执行了三次——两次使用具体输入，一次使用符
   Generated: math.d.ts
   ```
 
-  生成的 `math.d.ts` 中每个函数对应一条拓宽后的单一签名，具体用例保留在 JSDoc 中：
+  生成的 `math.d.ts` 中每个函数对应一条拓宽后的单一签名，具体观测保留在 JSDoc 中：
 
   ```typescript
   /**
-   * Case: positive numbers (5, 3) => 2
-   * Case: negative result (1, 10) => -9
+   * Case: call@L6 (5, 3) => 2
+   * Case: call@L7 (1, 10) => -9
    * @param a - number
    * @param b - number
    * @returns number
@@ -83,69 +77,81 @@ Nudo 对该函数执行了三次——两次使用具体输入，一次使用符
   ```
 
   ```text
-  === subtract (math.js:6:0) ===
+  === subtract (math.js:1:0) ===
 
-  Case "positive numbers": (5, 3) => 2
-  Case "negative result": (1, 10) => -9
-  Case "symbolic": (number, number) => number
+  call@L6: (5, 3) => 2
+  call@L7: (1, 10) => -9
 
-  Combined: number
+  Observed: 2 | -9
   ```
 
-## 监听模式
+## Watch 模式
 
-在文件变更时重新运行推断：
+文件变更时重新运行推断：
 
 ```bash
 npx nudojs watch .
 ```
 
-配合 `--dts` 可在每次变更时生成 `.d.ts` 文件：
+用 `--dts` 在每次变更时生成 `.d.ts`：
 
 ```bash
 npx nudojs watch . --dts
 ```
 
-watch 会递归扫描目录下的所有 `.js`、`.mjs`、`.ts` 文件（排除 `node_modules`）——包括没有指令的文件。
+Watch 递归扫描目录下每个 `.js`、`.mjs`、`.ts` 文件（排除 `node_modules`）——包括没有指令的文件。
 
-## 没有指令的函数
+## 没有调用点的函数
 
-没有 `@nudo:case` 指令的函数同样不会被跳过。CLI 会做全程序推断：在被分析代码某处被调用的函数，会从调用点合成一个用例，携带调用点实际观测到的实参类型。
-
-创建 `utils.js`——全程没有任何 `@nudo:` 指令：
-
-```javascript
-function formatPrice(cents) {
-  return "$" + (cents / 100).toFixed(2);
-}
-
-console.log(formatPrice(1999));
-```
-
-```bash
-npx nudojs infer utils.js
-```
-
-```text
-=== formatPrice ===
-
-Case "call@L5": (1999) => unknown
-```
-
-用例以调用所在行命名为 `call@L5`——`console.log(formatPrice(1999))` 位于 `utils.js` 的第 5 行。除法 `cents / 100` 得到 `number`，而 `toFixed` 尚未建模，因此结果为 `unknown`。没有被任何已分析代码调用的函数仍会得到一个 `entry@L` 用例以保证签名被输出，参数默认为 `unknown`：
+没有任何被分析代码调用的函数仍会得到一条 `entry@L` 观测，以便输出其签名，参数默认为 `unknown`：
 
 ```text
 === addPrefix ===
 
-Case "entry@L1": (unknown, unknown) => unknown
+entry@L1: (unknown, unknown) => unknown
 # no call sites found; parameters default to unknown
 ```
 
-要让没有指令的代码获得真实调用形态，可用 `--callsites` 从测试中收集用例——参见[调用点发现指南](../guides/callsite-discovery.md)。
+要把无指令代码升级为真实调用形状，用 `--callsites` 从测试中收割——见[调用点发现指南](../guides/callsite-discovery.md)。
 
-## 精化契约（无需类型语法）
+## 调试见证（`@nudo:case`）
 
-除了推断，还可以声明进入 Abs、参与代数的**精化**。不需要 `interface` / `type` —— 契约写在 `*.nudo.js` 模板里。
+`@nudo:case` **仅用于调试 / `nudo test`**——手工场景或 CI 断言的见证，不是接口产品。实参是具体值或约束构建器（`number()`、`lit(42)`、`shape({...})`、`union(...)`、`array(...)`）：
+
+```javascript
+/**
+ * @nudo:case "positive numbers" (5, 3)
+ * @nudo:case "negative result" (1, 10)
+ * @nudo:case "symbolic" (number(), number())
+ */
+function subtract(a, b) {
+  return a - b;
+}
+```
+
+```text
+=== subtract ===
+
+debug "positive numbers": (5, 3) => 2
+debug "negative result": (1, 10) => -9
+debug "symbolic": (number, number) => number
+
+Observed: number
+```
+
+具名见证打印为 `debug "name": (…) => …`。符号见证贡献基类型（`number`），会在 `Observed:` 中吸收字面量结果。
+
+## 发生了什么？
+
+1. **解析** — Nudo 解析文件，找到 `subtract` 函数（以及任何调用点 / 指令）。
+2. **执行** — 对每条观测，用抽象解释执行函数体：`a - b` 等操作数用 Abs 值求值。
+3. **合并** — 多条观测合并为 `Observed:`，并按吸收律化简。
+
+关于 Abs、指令与抽象解释的深入细节，见[核心概念](../concepts/type-values.md)。
+
+## 精化契约（无类型语法）
+
+推断之外，可声明进入 Abs 并参与代数的**精化**。没有 `interface` / `type`——契约写在 `*.nudo.js` 模板里。
 
 创建 `shapes.nudo.js`：
 
@@ -185,28 +191,20 @@ register({ id: 1, name: "ada" });    // ok
 // register({ id: -1, name: "a" }); // error: u.id ⊭ > 0
 ```
 
-门禁：
+用下面的命令执法：
 
 ```bash
 npx nudojs check app.js
 ```
 
-报告使用 `actual ⊭ expected`。精化也会流入推断：带 `@nudo:refine x positive` 的 `inc` 会推断出 `number = (x + 1) where (x + 1) > 1`。
+报告使用 `actual ⊭ expected`。精化也会流入推断：带 `@nudo:refine x positive` 的 `inc` 推断出 `number = (x + 1) where (x + 1) > 1`。
 
-详见 [nudo check](../guides/check.md) 与[指令参考](../concepts/directives.md)。
+见 [nudo check](../guides/check.md) 与[指令](../concepts/directives.md#nudorefine--refinement-contract)。
 
 ## 已有 JavaScript 包
 
-若实现已经存在、没有注解，不要从指令起步——先从代码草稿契约，再收紧：
+如果逻辑已经存在且没有标注，不要从指令开始——先从代码起草契约，再收紧：
 
 - 指南：[迁移已有 JS](../guides/migrating-js.md)
 - 样例：[`docs/examples/interface-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/interface-draft)
 - 仓库演示：`pnpm run migrate-demo`
-
-## 发生了什么？
-
-1. **解析** — Nudo 解析文件，找到带有 `@nudo:case` 指令的 `subtract` 函数。
-2. **执行** — 对每个 case，它使用抽象解释运行函数体：像 `a - b` 这样的操作数会用类型值而非具体数字进行计算。
-3. **合并** — 有多个 case 时，Nudo 将推断出的返回类型合并为联合类型，再按吸收律化简：字面量 `2`、`-9` 被符号化用例贡献的 `number` 吸收，得到 `number`。不含基类型成员的纯字面量联合会保留每个字面量。
-
-想进一步了解类型值、指令和抽象解释，请参阅 [核心概念](../concepts/type-values.md)。

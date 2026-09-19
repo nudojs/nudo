@@ -44,7 +44,7 @@ Output:
 ```text
 === slugify ===
 
-Case "call@L4": ("Hello World") => string
+call@L4: ("Hello World") => string
 ```
 
 The case was not written by anyone — it was harvested from line 4 of the test file, which is why it is named `call@L4`. Every recorded call site becomes one synthesized case; multiple call sites to the same function union into the combined type, exactly like hand-written `@nudo:case` directives do.
@@ -79,7 +79,7 @@ The harvested records are matched against functions defined in the analyzed file
 2. **Function name** — the record's callee name matches a declared function in the target file.
 3. **Single-export module path** — a file whose only export is the function itself (`module.exports = function f() {}`) is matched by module path, because every such module's export name is the same (`default`) and name matching alone would collide across files.
 
-Matched records are injected into `analyzeFile` as synthesized `call@L` cases, where `L` is the line of the call in the usage-site file. Functions that receive no records at all still get an `entry@L` case with `T.unknown` parameters so their signature is emitted — they are marked as entry-only.
+Matched records are injected into `analyzeFile` as synthesized `call@L` cases, where `L` is the line of the call in the usage-site file. Functions that receive no records at all still get an `entry@L` case with `unknown` parameters so their signature is emitted — they are marked as entry-only.
 
 ## Safety Design
 
@@ -102,7 +102,7 @@ No directives were written for either library — every case in the second colum
 
 ## Known Boundaries
 
-- **Entry-only fallback.** Functions that no usage site calls still produce an `entry@L` case, but with `T.unknown` parameters — the signature exists, the types do not.
+- **Entry-only fallback.** Functions that no usage site calls still produce an `entry@L` case, but with `unknown` parameters — the signature exists, the types do not.
 - **Nested functions.** The matching chain resolves top-level and hoisted declarations. Function expressions defined *inside* another function body do not currently participate in name matching.
 - **Dual-entry variants.** When the same behavior is reachable through two entry shapes (exported directly and re-wrapped, for example), each entry contributes its own recorded cases; the combined type is the union of both entries, which can be wider than either entry alone.
 
@@ -130,7 +130,7 @@ Emission never touches hand-written work; it only manages its own `call@` direct
 
 ### Limitations
 
-- **Serializable shapes only.** Directive text can express primitives (`T.number`/`T.string`/`T.boolean`/`T.unknown`/`T.never`), literals, plain objects, arrays, tuples, and unions. Cases whose arguments contain functions, Promises, class instances, `bigint`, or `symbol` values cannot be frozen — they are skipped and reported as `no-serializable-cases` (the function's remaining serializable cases are still written).
+- **Serializable shapes only.** Directive text can express primitives (`number()`/`string()`/`boolean()`/`unknown`/`never`), literals, plain objects, arrays, tuples, and unions. Cases whose arguments contain functions, Promises, class instances, `bigint`, or `symbol` values cannot be frozen — they are skipped and reported as `no-serializable-cases` (the function's remaining serializable cases are still written).
 - **`call@` is a reserved prefix.** Any `@nudo:case` whose name starts with `call@` is treated as generated: `update` may rewrite or delete it. Don't name hand-written cases `call@…`.
 
 End-to-end workflow examples (bootstrap and drift detection) are in the [CLI guide — Persisting cases as directives](./cli.md#persisting-cases-as-directives); the programmatic flow over these functions is documented under [service API — Case Emission](../api/service.md#case-emission).

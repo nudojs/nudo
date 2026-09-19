@@ -5,7 +5,7 @@ authors: [default]
 tags: [nudo, type-inference, ai, mcp]
 ---
 
-> **Superseded.** This post describes the pre-`@nudo:refine` architecture (including the retired `@nudo:returns` directive). Current contracts use `@nudo:refine` + `*.nudo.js` templates — see [nudo check](/guides/check) and [Directives](/concepts/directives#nudorefine--refinement-contract).
+> **Superseded.** This post describes the pre-`@nudo:refine` architecture (including the retired `@nudo:returns` directive) and the removed `T.*` product grammar. Current contracts use `@nudo:refine` / `@nudo:interface` + `*.nudo.js` constraint builders (`number()`, `lit(42)`, `shape({...})`). `@nudo:case` is debug / `nudo test` only. See [nudo check](/guides/check) and [Directives](/concepts/directives#nudorefine--refinement-contract).
 
 Nudo infers types for JavaScript by executing your code with symbolic type values instead of concrete ones. No TypeScript annotations, no `.d.ts` files -- just plain JS with lightweight `@nudo:` directives and runtime-based type inference that understands what your code actually does.
 
@@ -23,7 +23,7 @@ When a value appears in a boolean context, Nudo removes falsy types (`null`, `un
 
 ```js
 /**
- * @nudo:case "nullable name" (T.union(T.string, T.null, T.undefined))
+ * @nudo:case "nullable name" (union(string(), null, undefined))
  */
 function greet(name) {
   if (name) {
@@ -42,7 +42,7 @@ function greet(name) {
 ```text
 === greet ===
 
-Case "nullable name": (string | null | undefined) => string | "unknown"
+debug "nullable name": (string | null | undefined) => string | "unknown"
 ```
 
 ### Optional Chaining (`?.`)
@@ -51,8 +51,8 @@ Optional chaining now short-circuits correctly. When the receiver evaluates to `
 
 ```js
 /**
- * @nudo:case "object present" (T.object({ length: T.number }))
- * @nudo:case "null" (T.null)
+ * @nudo:case "object present" (shape({ length: number() }))
+ * @nudo:case "null" (null)
  */
 function getLength(maybeBox) {
   return maybeBox?.length ?? 0;
@@ -66,10 +66,10 @@ function getLength(maybeBox) {
 ```text
 === getLength ===
 
-Case "object present": ({ length: number }) => number
-Case "null": (null) => 0
+debug "object present": ({ length: number }) => number
+debug "null": (null) => 0
 
-Combined: number | 0
+Observed: number | 0
 ```
 
 ### Nullish Coalescing (`??`)
@@ -78,7 +78,7 @@ The `??` operator now removes `null` and `undefined` from the left operand's typ
 
 ```js
 /**
- * @nudo:case "config object" (T.object({ port: T.union(T.number, T.null, T.undefined) }))
+ * @nudo:case "config object" (shape({ port: union(number(), null, undefined) }))
  */
 function getPort(config) {
   const port = config.port ?? 3000;
@@ -94,7 +94,7 @@ function getPort(config) {
 ```text
 === getPort ===
 
-Case "config object": ({ port: number | null | undefined }) => number
+debug "config object": ({ port: number | null | undefined }) => number
 ```
 
 ### Discriminated Union Narrowing
@@ -103,7 +103,7 @@ When you compare a property against a string literal, Nudo filters the union to 
 
 ```js
 /**
- * @nudo:case "shape" (T.union(T.object({ kind: T.literal("circle"), radius: T.number }), T.object({ kind: T.literal("square"), side: T.number })))
+ * @nudo:case "shape" (union(shape({ kind: lit("circle"), radius: number() }), shape({ kind: lit("square"), side: number() })))
  */
 function area(shape) {
   if (shape.kind === "circle") {
@@ -122,7 +122,7 @@ function area(shape) {
 ```text
 === area ===
 
-Case "shape": ({ kind: "circle", radius: number } | { kind: "square", side: number }) => number
+debug "shape": ({ kind: "circle", radius: number } | { kind: "square", side: number }) => number
 ```
 
 This is the pattern that makes real-world API response handling safe.
@@ -133,7 +133,7 @@ Using `"key" in obj` in a condition now narrows the object type to include only 
 
 ```js
 /**
- * @nudo:case "value" (T.union(T.object({ toJSON: () => "serialized" }), T.number))
+ * @nudo:case "value" (union(shape({ toJSON: () => "serialized" }), number()))
  */
 function serialize(value) {
   if ("toJSON" in value) {
@@ -151,7 +151,7 @@ function serialize(value) {
 ```text
 === serialize ===
 
-Case "value": ({ toJSON: () => ... } | number) => "serialized" | string
+debug "value": ({ toJSON: () => ... } | number) => "serialized" | string
 ```
 
 ### Switch Statement Narrowing
@@ -160,7 +160,7 @@ Nudo now narrows the discriminant per `case` clause. Each case branch gets the t
 
 ```js
 /**
- * @nudo:case "status" (T.union(T.literal("active"), T.literal("paused"), T.literal("stopped")))
+ * @nudo:case "status" (union(lit("active"), lit("paused"), lit("stopped")))
  */
 function describe(status) {
   switch (status) {
@@ -183,7 +183,7 @@ function describe(status) {
 ```text
 === describe ===
 
-Case "status": ("active" | "paused" | "stopped") => "Running" | "On hold" | "Shut down" | "Unknown"
+debug "status": ("active" | "paused" | "stopped") => "Running" | "On hold" | "Shut down" | "Unknown"
 ```
 
 ### `Array.isArray()` Narrowing
@@ -192,7 +192,7 @@ Calling `Array.isArray(value)` in a condition now splits the type into array and
 
 ```js
 /**
- * @nudo:case "input" (T.union(T.array(T.number), T.string))
+ * @nudo:case "input" (union(array(number()), string()))
  */
 function flatten(input) {
   if (Array.isArray(input)) {
@@ -211,7 +211,7 @@ function flatten(input) {
 ```text
 === flatten ===
 
-Case "input": (number[] | string) => number | string
+debug "input": (number[] | string) => number | string
 ```
 
 ### Summary Table
@@ -254,7 +254,7 @@ When typing inside a function call's parentheses, Nudo shows parameter hints bas
 
 ```js
 /**
- * @nudo:case "test" (T.string, T.number)
+ * @nudo:case "test" (string(), number())
  */
 function createUser(name, age) { ... }
 
@@ -354,7 +354,7 @@ Given this source file:
 
 ```js
 /**
- * @nudo:case "input" (T.object({ name: T.string, age: T.number }))
+ * @nudo:case "input" (shape({ name: string(), age: number() }))
  */
 function createUser(input) {
   return { id: 123, name: input.name, age: input.age };
@@ -365,7 +365,7 @@ Running `nudo generate src/api/users.js --format zod` prints:
 
 ```text
 // === createUser Zod Schemas ===
-// Case "input":
+// debug "input":
 // Input: { arg0: z.object({ name: z.string(), age: z.number() }) }
 // Output: z.object({ id: z.literal(123), name: z.string(), age: z.number() })
 ```

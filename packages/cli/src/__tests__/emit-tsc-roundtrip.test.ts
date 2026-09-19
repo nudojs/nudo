@@ -31,7 +31,7 @@ describe("emit ↔ tsc roundtrip", () => {
     const srcPath = join(dir, "sample.js");
     const source = `/**
  * @nudo:case "add" (5, 3)
- * @nudo:case "sym" (T.number, T.number)
+ * @nudo:case "sym" (number(), number())
  */
 function add(a, b) {
   return a + b;

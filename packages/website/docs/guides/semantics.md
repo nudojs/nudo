@@ -27,7 +27,7 @@ sli();                                // → "el"
 ```text
 === upper ===
 
-Case "call@L2": () => "HELLO"
+call@L2: () => "HELLO"
 ```
 
 `toUpperCase`, `toLowerCase`, `slice`, `.length`, and `split` (literal receiver and separator) produce exact results — `"a,b,c".split(",")` folds to `["a", "b", "c"]` at the call site, and a comma-free receiver like `"abc".split("b")` folds to `["a", "c"]` under an `@nudo:case` directive. The directive path cannot express a comma-containing receiver: the directive parser splits case arguments on commas, so `@nudo:case "split" ("a,b,c")` arrives as three `unknown` parameters rather than one string. Prefix/suffix/membership checks — `startsWith`, `endsWith`, `includes` — fold to a definite boolean on literal receivers. `indexOf` yields the `number` primitive without the literal index.
@@ -50,7 +50,7 @@ sumTo(5);
 ```text
 === sumTo ===
 
-Case "call@L8": (5) => 10
+call@L8: (5) => 10
 ```
 
 `for...of` over a concrete array evaluates the same way:
@@ -87,7 +87,7 @@ findBig();
 ```text
 === findBig ===
 
-Case "call@L11": () => 3
+call@L11: () => 3
 ```
 
 The result is the literal `3` — the value bound when the loop broke.
@@ -104,7 +104,7 @@ keysOf();
 ```text
 === keysOf ===
 
-Case "call@L2": () => ["port", "host"]
+call@L2: () => ["port", "host"]
 ```
 
 ### Math Methods
@@ -119,7 +119,7 @@ root(9);
 ```text
 === root ===
 
-Case "call@L2": (9) => 3
+call@L2: (9) => 3
 ```
 
 `sqrt`, `pow`, `abs`, `floor`, `ceil`, `round`, `sign`, `min`, and `max` all fold to their exact numeric result on literal arguments; symbolic arguments widen to `number`.
@@ -148,7 +148,7 @@ floatOf("3.14");                     // → 3.14
 ```text
 === strOf ===
 
-Case "call@L2": (5) => "5"
+call@L2: (5) => "5"
 ```
 
 `String(x)`, `Number(x)`, and `Boolean(x)` fold number/string/boolean literals to the exact coerced literal; `parseInt(s)` / `parseFloat(s)` fold string/number literals to the exact numeric prefix/parse. Symbolic arguments widen to the target primitive (`string` / `number` / `boolean`). Repo example (CI-pinned): [`docs/examples/algebra/l-primitive-conversion.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/l-primitive-conversion.js).
@@ -173,7 +173,7 @@ compute(5);
 ```text
 === compute ===
 
-Case "call@L11": (5) => 25
+call@L11: (5) => 25
 ```
 
 The directive path is equally precise when the argument is a literal (`@nudo:case "member" (5)` → `(5) => 25`); with an empty argument list (`()`) the parameter is `unknown`, so the result degrades to `unknown #partial`. The remaining gap is call-site *collection*, not evaluation: a bare top-level member call (`circle.area()` as a statement) produces no `call@` case — member callees are not collected as call sites. Wrap the member call in a function to see it.
@@ -196,11 +196,11 @@ walk(2);
 ```text
 === walk ===
 
-Case "call@L6": (0) => 0
-Case "call@L7": (1) => 1
-Case "call@L8": (2) => 3
+call@L6: (0) => 0
+call@L7: (1) => 1
+call@L8: (2) => 3
 
-Combined: 0 | 1 | 3
+Observed: 0 | 1 | 3
 ```
 
 More calls than the precise-case cap aggregate into a `call@symbolic` case with widened arguments instead.

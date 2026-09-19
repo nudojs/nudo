@@ -1,25 +1,33 @@
 /**
- * case 实参约束表达式文法（design-refine-derivation：T.* → number()/lit()/…）。
- * parseCaseArgExpr 双文法：约束构建器优先，T.* / 字面量 / 箭头函数兼容。
+ * case 实参约束表达式文法（design-refine-derivation：唯一文法）。
+ * parseCaseArgExpr：约束构建器优先，其余为具体字面量 / 结构字面量 / 箭头函数。
+ * `T.*` 文法已物理删除。
  */
 import { describe, it, expect } from "vitest";
-import { extractDirectives, parseTypeValueExpr, parseCaseArgExpr } from "../directives.ts";
+import { extractDirectives, parseCaseArgExpr } from "../directives.ts";
 import { formatAbs, litValue, type Abs, num, str, bool } from "@nudojs/core";
 import { parse } from "../parse.ts";
 
 describe("parseCaseArgExpr constraint grammar", () => {
   it("number() → number", () => {
-    expect(parseTypeValueExpr("number()").shape).toEqual(num().shape);
+    expect(parseCaseArgExpr("number()").shape).toEqual(num().shape);
   });
 
   it("string() / boolean()", () => {
-    expect(parseTypeValueExpr("string()").shape).toEqual(str().shape);
-    expect(parseTypeValueExpr("boolean()").shape).toEqual(bool().shape);
+    expect(parseCaseArgExpr("string()").shape).toEqual(str().shape);
+    expect(parseCaseArgExpr("boolean()").shape).toEqual(bool().shape);
   });
 
   it("lit(42) / lit(\"a\")", () => {
-    expect(litValue(parseTypeValueExpr("lit(42)"))).toBe(42);
-    expect(litValue(parseTypeValueExpr('lit("a")'))).toBe("a");
+    expect(litValue(parseCaseArgExpr("lit(42)"))).toBe(42);
+    expect(litValue(parseCaseArgExpr('lit("a")'))).toBe("a");
+  });
+
+  it("concrete literals parse without builders", () => {
+    expect(litValue(parseCaseArgExpr("42"))).toBe(42);
+    expect(litValue(parseCaseArgExpr("null"))).toBe(null);
+    expect(litValue(parseCaseArgExpr("undefined"))).toBe(undefined);
+    expect(parseCaseArgExpr("never").shape.k).toBe("never");
   });
 
   it("number().gt(0) carries pred through Abs", () => {
@@ -30,9 +38,17 @@ describe("parseCaseArgExpr constraint grammar", () => {
   });
 
   it("union(lit(1), lit(2))", () => {
-    const s = formatAbs(parseTypeValueExpr("union(lit(1), lit(2))"));
+    const s = formatAbs(parseCaseArgExpr("union(lit(1), lit(2))"));
     expect(s).toContain("1");
     expect(s).toContain("2");
+  });
+
+  it("union accepts concrete literal members", () => {
+    const abs = parseCaseArgExpr("union(number(), null)");
+    expect(abs.shape.k).toBe("sum");
+    if (abs.shape.k === "sum") {
+      expect(abs.shape.members).toHaveLength(2);
+    }
   });
 
   it("shape({ id: number() })", () => {
@@ -43,17 +59,22 @@ describe("parseCaseArgExpr constraint grammar", () => {
     expect(parseCaseArgExpr("array(number())").shape.k).toBe("arr");
   });
 
-  it("T.* still works (compat)", () => {
-    expect(parseTypeValueExpr("T.number").shape).toEqual(num().shape);
-    expect(litValue(parseTypeValueExpr("42"))).toBe(42);
+  it("object / tuple literals", () => {
+    expect(parseCaseArgExpr("{ id: number() }").shape.k).toBe("obj");
+    expect(parseCaseArgExpr("[number(), string()]").shape.k).toBe("tuple");
   });
 
-  it("extractDirectives always fills argsAbs (constraint + T.*)", () => {
+  it("T.* is no longer accepted", () => {
+    expect(parseCaseArgExpr("T.number").shape.k).toBe("unknown");
+  });
+
+  it("extractDirectives always fills argsAbs (constraint + literals)", () => {
     const src = `
 /**
  * @nudo:case "n" (number())
  * @nudo:case "lit" (lit(7))
- * @nudo:case "tv" (T.number)
+ * @nudo:case "bare" (42)
+ * @nudo:case "shape" (shape({ x: number() }))
  */
 function id(x) { return x; }
 `;
@@ -62,7 +83,7 @@ function id(x) { return x; }
       name: string;
       argsAbs: Abs[];
     }>;
-    expect(cases).toHaveLength(3);
+    expect(cases).toHaveLength(4);
     for (const c of cases) {
       expect(c.argsAbs).toBeDefined();
       expect(c.argsAbs).toHaveLength(1);
@@ -85,10 +106,10 @@ function id(x) { return x; }
     expect(c.args).toBeUndefined();
   });
 
-  it("T.* cases produce prim Abs", () => {
+  it("number() cases produce prim Abs", () => {
     const src = `
 /**
- * @nudo:case "n" (T.number)
+ * @nudo:case "n" (number())
  */
 function id(x) { return x; }
 `;

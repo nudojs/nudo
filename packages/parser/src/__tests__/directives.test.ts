@@ -1,49 +1,50 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "../parse.ts";
-import { extractDirectives, parseTypeValueExpr } from "../directives.ts";
+import { extractDirectives, parseCaseArgExpr } from "../directives.ts";
 import { litValue, num, str, bool, getFnImpl } from "@nudojs/core";
 
-describe("parseTypeValueExpr", () => {
-  it("parses T.number", () => {
-    expect(parseTypeValueExpr("T.number").shape).toEqual(num().shape);
-  });
-
-  it("parses T.string", () => {
-    expect(parseTypeValueExpr("T.string").shape).toEqual(str().shape);
-  });
-
-  it("parses T.boolean", () => {
-    expect(parseTypeValueExpr("T.boolean").shape).toEqual(bool().shape);
+describe("parseCaseArgExpr", () => {
+  it("parses number() / string() / boolean()", () => {
+    expect(parseCaseArgExpr("number()").shape).toEqual(num().shape);
+    expect(parseCaseArgExpr("string()").shape).toEqual(str().shape);
+    expect(parseCaseArgExpr("boolean()").shape).toEqual(bool().shape);
   });
 
   it("parses numeric literals", () => {
-    expect(litValue(parseTypeValueExpr("42"))).toBe(42);
-    expect(litValue(parseTypeValueExpr("-3"))).toBe(-3);
-    expect(litValue(parseTypeValueExpr("1.5"))).toBe(1.5);
+    expect(litValue(parseCaseArgExpr("42"))).toBe(42);
+    expect(litValue(parseCaseArgExpr("-3"))).toBe(-3);
+    expect(litValue(parseCaseArgExpr("1.5"))).toBe(1.5);
   });
 
   it("parses string literals", () => {
-    expect(litValue(parseTypeValueExpr('"hello"'))).toBe("hello");
-    expect(litValue(parseTypeValueExpr("'world'"))).toBe("world");
+    expect(litValue(parseCaseArgExpr('"hello"'))).toBe("hello");
+    expect(litValue(parseCaseArgExpr("'world'"))).toBe("world");
   });
 
   it("parses boolean literals", () => {
-    expect(litValue(parseTypeValueExpr("true"))).toBe(true);
-    expect(litValue(parseTypeValueExpr("false"))).toBe(false);
+    expect(litValue(parseCaseArgExpr("true"))).toBe(true);
+    expect(litValue(parseCaseArgExpr("false"))).toBe(false);
   });
 
   it("parses null and undefined", () => {
-    expect(litValue(parseTypeValueExpr("null"))).toBe(null);
-    expect(litValue(parseTypeValueExpr("undefined"))).toBe(undefined);
+    expect(litValue(parseCaseArgExpr("null"))).toBe(null);
+    expect(litValue(parseCaseArgExpr("undefined"))).toBe(undefined);
   });
 
-  it("parses T.literal(...)", () => {
-    expect(litValue(parseTypeValueExpr("T.literal(42)"))).toBe(42);
-    expect(litValue(parseTypeValueExpr('T.literal("hi")'))).toBe("hi");
+  it("parses bare unknown / any / never", () => {
+    expect(parseCaseArgExpr("unknown").shape.k).toBe("unknown");
+    expect(parseCaseArgExpr("any").shape.k).toBe("unknown");
+    expect(parseCaseArgExpr("never").shape.k).toBe("never");
+    expect(parseCaseArgExpr("any()").shape.k).toBe("unknown");
   });
 
-  it("parses T.union(...)", () => {
-    const result = parseTypeValueExpr("T.union(T.number, T.string)");
+  it("parses lit(...)", () => {
+    expect(litValue(parseCaseArgExpr("lit(42)"))).toBe(42);
+    expect(litValue(parseCaseArgExpr('lit("hi")'))).toBe("hi");
+  });
+
+  it("parses union(...)", () => {
+    const result = parseCaseArgExpr("union(number(), string())");
     expect(result.shape.k).toBe("sum");
     if (result.shape.k === "sum") {
       expect(result.shape.members).toHaveLength(2);
@@ -51,7 +52,7 @@ describe("parseTypeValueExpr", () => {
   });
 
   it("parses arrow function literal with parenthesized params", () => {
-    const result = parseTypeValueExpr("(x) => x * 2");
+    const result = parseCaseArgExpr("(x) => x * 2");
     expect(result.shape.k).toBe("fn");
     const impl = getFnImpl(result);
     expect(impl?.params).toEqual(["x"]);
@@ -59,31 +60,35 @@ describe("parseTypeValueExpr", () => {
   });
 
   it("parses arrow function literal without parens", () => {
-    const result = parseTypeValueExpr("x => x + 1");
+    const result = parseCaseArgExpr("x => x + 1");
     expect(result.shape.k).toBe("fn");
     expect(getFnImpl(result)?.params).toEqual(["x"]);
   });
 
   it("parses arrow function literal with multiple params", () => {
-    const result = parseTypeValueExpr("(a, b) => a + b");
+    const result = parseCaseArgExpr("(a, b) => a + b");
     expect(result.shape.k).toBe("fn");
     expect(getFnImpl(result)?.params).toEqual(["a", "b"]);
   });
 
   it("parses function expression literal", () => {
-    const result = parseTypeValueExpr("function(x) { return x * 2; }");
+    const result = parseCaseArgExpr("function(x) { return x * 2; }");
     expect(result.shape.k).toBe("fn");
     expect(getFnImpl(result)?.params).toEqual(["x"]);
     expect(getFnImpl(result)?.body?.type).toBe("BlockStatement");
   });
 
   it("does not treat strings containing => as functions", () => {
-    const result = parseTypeValueExpr('"a => b"');
+    const result = parseCaseArgExpr('"a => b"');
     expect(litValue(result)).toBe("a => b");
     expect(result.shape.k).toBe("prim");
     if (result.shape.k === "prim") {
       expect(result.shape.type).toBe("string");
     }
+  });
+
+  it("does not parse deleted T.* grammar (unknown)", () => {
+    expect(parseCaseArgExpr("T.number").shape.k).toBe("unknown");
   });
 });
 
@@ -92,7 +97,7 @@ describe("extractDirectives", () => {
     const source = `
 /**
  * @nudo:case "concrete" (1, 2)
- * @nudo:case "symbolic" (T.number, T.number)
+ * @nudo:case "symbolic" (number(), number())
  */
 function calc(a, b) {
   return a + b;
@@ -144,7 +149,7 @@ function bar(s) { return s; }
 function noDirective(x) { return x; }
 
 /**
- * @nudo:case "test" (T.number)
+ * @nudo:case "test" (number())
  */
 function withDirective(x) { return x + 1; }
 `;
@@ -377,7 +382,7 @@ function kept() {}
   });
 
   it("纯 JS 源码剥除为 no-op 且返回同一棵 AST", () => {
-    const js = "/** @nudo:case \"a\" (T.number) */\nfunction f(x) { return x; }\n";
+    const js = "/** @nudo:case \"a\" (number()) */\nfunction f(x) { return x; }\n";
     const once = parse(js);
     const snapshot = JSON.stringify(normalize(once));
     expect(stripTypes(once)).toBe(once);
@@ -388,7 +393,7 @@ function kept() {}
     const ts = `interface Ctx { id: number }
 /**
  * @nudo:case "ints" (1, 2)
- * @nudo:case "syms" (T.number, T.number)
+ * @nudo:case "syms" (number(), number())
  */
 function add(a: number, b: number): number { return a + b; }
 `;

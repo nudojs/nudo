@@ -240,7 +240,7 @@ The `type` field of `nudo.whatIf` bindings accepts a primitive or a `|`-separate
 | `bigint` \| `symbol` | The remaining primitives |
 | `string \| null` | Union — "string or null" |
 
-Forms already in `T.*` syntax and structural expressions (object/array literals, `=>` functions) pass through to the directive grammar (`parseTypeValueExpr`); any other name becomes `T.unknown`.
+Constraint-builder forms (`number()`, `lit(...)`, `shape({...})`, `union(...)`, `array(...)`) and structural expressions (object/array literals, `=>` functions) parse through the directive grammar (`parseCaseArgExpr`); any other name becomes `unknown`.
 
 ## Diagnostics
 

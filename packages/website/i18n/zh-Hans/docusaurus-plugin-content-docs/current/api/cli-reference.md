@@ -53,17 +53,17 @@ nudo infer <file> [options]
 | `--loc` | 在输出中显示源码位置（`file:line:column`） |
 | `--json` | 以结构化 JSON 输出结果——仅支持单文件；与目录目标组合会报错 |
 | `--callsites <paths...>` | 使用处文件或目录（测试/应用），从中挖掘真实调用形状；它们对本文件导出的调用会合成为 `call@L` 用例——参见[调用点发现](../guides/callsite-discovery.md) |
-| `--emit-cases [mode]` | 把合成的调用点用例写回被分析文件，成为 `@nudo:case` 指令（保留名前缀 `call@`）。省略值即 `add`（只补尚无用例指令的函数）；传 `=update` 则全量重新同步已生成的指令——参见[固化 case 指令](../guides/cli.md#固化-case-指令) |
+| `--emit-cases [mode]` | **仅调试**——把合成的调用点用例写回被分析文件，成为 `@nudo:case` 指令（保留名前缀 `call@`）。不是契约产品（契约是 `*.nudo.js` / `nudo interface`）。省略值即 `add`（只补尚无用例指令的函数）；传 `=update` 则全量重新同步已生成的指令——参见[固化 case 指令](../guides/cli.md#固化-case-指令) |
 | `--dry-run` | 搭配 `--emit-cases`：打印 unified diff 而不写盘 |
 | `--exit-on-diff` | 搭配 `--dry-run`：diff 非空时以退出码 `1` 结束——可作使用处漂移的 CI 门禁 |
 
 **输出格式：**
 
 - 每个函数一个区块（`=== 名称 ===`）；来自导入模块的函数显示在 `--- 路径 (imported) ---` 标头下
-- 每个用例：`Case "name": (arg1, arg2, ...) => result`
-- 没有 `@nudo:case` 指令的函数同样会有用例：观察到的调用合成为 `call@L` 用例；没有调用时产出带 `unknown` 参数的 `entry@L` 用例并附 `# no call sites found` 注释
+- 观测到的调用点：`call@L<line>: (arg1, arg2, ...) => result`；`@nudo:case` 调试见证打印为 `debug "name": (…) => …`
+- 没有调用点的函数仍会得到参数为 `unknown` 的 `entry@L` 观测，并附 `# no call sites found` 注释
 - 用例可能抛出时显示 `throws type`
-- 多个用例时：组合类型显示为 `Combined: type`，并按吸收律化简——基类型已在联合中的字面量会被吸收（如 `2 | -9 | number` 坍缩为 `number`）；纯字面量联合保留全部成员
+- 多条观测时：观测类型显示为 `Observed: type`，并按吸收律化简——基类型已在联合中的字面量会被吸收（如 `2 | -9 | number` 坍缩为 `number`）；纯字面量联合保留全部成员
 - 有诊断时，末尾输出 `Diagnostics:` 区块，条目格式为 `[severity] 路径:行:列 消息 (错误码)`
 - 使用 `--dts`：在同一目录写入 `<basename>.d.ts` 并打印 `Generated: <basename>.d.ts`
 - 使用 `--emit-cases`：末尾输出固化摘要——写盘后为 `Emitted cases → <file> (N directive(s) across M function(s))`；搭配 `--dry-run` 为 `Would emit cases → <file> (dry run)` 并附 unified diff；源码已同步时为 `No changes.`。摘要后跟逐函数行：写入的函数为 `fn: 用例名列表`，跳过的为 `fn: 原因`（如 `already-generated`）
@@ -77,11 +77,10 @@ nudo infer math.js
 ```text
 === subtract ===
 
-Case "positive numbers": (5, 3) => 2
-Case "negative result": (1, 10) => -9
-Case "symbolic": (number, number) => number
+call@L6: (5, 3) => 2
+call@L7: (1, 10) => -9
 
-Combined: number
+Observed: 2 | -9
 ```
 
 ```bash
@@ -89,13 +88,12 @@ nudo infer math.js --dts --loc
 ```
 
 ```text
-=== subtract (math.js:6:0) ===
+=== subtract (math.js:1:0) ===
 
-Case "positive numbers": (5, 3) => 2
-Case "negative result": (1, 10) => -9
-Case "symbolic": (number, number) => number
+call@L6: (5, 3) => 2
+call@L7: (1, 10) => -9
 
-Combined: number
+Observed: 2 | -9
 
 Generated: math.d.ts
 ```
@@ -520,7 +518,7 @@ nudo generate src/user.js --format zod
 
 ```text
 // === createUser Zod Schemas ===
-// Case "input":
+// debug "input":
 // Input: { arg0: z.object({ name: z.string(), age: z.number() }) }
 // Output: z.object({ id: z.literal(123), name: z.string(), age: z.number() })
 ```
@@ -616,7 +614,7 @@ nudo watch src/utils.js --dts
 
 ### nudo harvest
 
-把已安装的 `@types/<pkg>` 的 `.d.ts` 声明转成 Nudo env 文件——用 `T.*` 构造器重建这些类型的 TypeScript 源码，通过 `/// @nudo:env` 指令加载。`@types` 包必须先安装。
+把已安装的 `@types/<pkg>` 的 `.d.ts` 声明转成 Nudo env 文件——用 Nudo env 构造器重建这些类型的 TypeScript 源码，通过 `/// @nudo:env` 指令加载。`@types` 包必须先安装。
 
 ```bash
 nudo harvest <pkg> [options]

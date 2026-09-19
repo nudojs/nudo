@@ -21,16 +21,15 @@ npm install -g @nudojs/cli
 # or via the thin `nudojs` shell package: npm install -g nudojs / npx nudojs
 ```
 
-Add directives to your JavaScript functions:
+Write plain JavaScript. Call sites are evidence:
 
 ```javascript
-/**
- * @nudo:case "positive numbers" (5, 3)
- * @nudo:case "negative result" (1, 10)
- */
-function subtract(a, b) {
+export function subtract(a, b) {
   return a - b;
 }
+
+subtract(5, 3);
+subtract(1, 10);
 ```
 
 Run inference:
@@ -44,15 +43,17 @@ Output:
 ```
 === subtract ===
 
-Case "positive numbers": (5, 3) => 2
-Case "negative result": (1, 10) => -9
+call@L7: (5, 3) => 2
+call@L8: (1, 10) => -9
 ```
 
-Output blocks show the **case headers and `Combined:` lines** — the per-call-site ground truth. A full run also prints `intension:` / `abs:` lines per case; those re-evaluate the function with `unknown` parameters (a generalized signature), and for multi-branch functions they show only the fallback path — which is why they are omitted here.
+Output shows **observed call-site facts** (`call@<line>`) and, when several sites exist, an `Observed:` join — the ground truth from execution. A full run also prints `intension:` / `abs:` lines that re-evaluate with `unknown` parameters (a generalized signature).
+
+Optional contracts live in sidecars (`*.nudo.js`) or `@nudo:refine` — that is the interface product. Optional `@nudo:case` witnesses are **debug / `nudo test` only** (concrete args or constraint builders such as `number()` / `lit(42)`; **`T.*` is gone**).
 
 ### Whole-program inference (no directives needed)
 
-Functions without `@nudo:case` directives are inferred from their call sites — every call with inferable arguments becomes a synthetic case (`call@<line>`). Functions with no call sites get an `entry@` case with unknown parameters.
+Functions without any directives are inferred from their call sites — every call with inferable arguments becomes a synthesized `call@<line>` observation. Functions with no call sites get an `entry@` observation with unknown parameters.
 
 ```javascript
 function double(x) { return x * 2; }
@@ -67,11 +68,11 @@ nudo infer plain.js
 ```
 === double ===
 
-Case "call@L3": (5) => 10
+call@L3: (5) => 10
 
 === helper ===
 
-Case "entry@L2": (unknown) => unknown
+entry@L2: (unknown) => unknown
 # no call sites found; parameters default to unknown
 ```
 
@@ -90,10 +91,10 @@ processItems(["a"], (s) => s.toUpperCase());
 ```
 === processItems ===
 
-Case "call@L4": ([1, 2, 3], (x) => ...) => [2, 4, 6]
-Case "call@L5": (["a"], (s) => ...) => ["A"]
+call@L4: ([1, 2, 3], (x) => ...) => [2, 4, 6]
+call@L5: (["a"], (s) => ...) => ["A"]
 
-Combined: [2, 4, 6] | ["A"]
+Observed: [2, 4, 6] | ["A"]
 ```
 
 Generate TypeScript declarations:
@@ -138,21 +139,23 @@ core → parser → service → cli → nudojs
 
 ## Directives
 
-Nudo uses structured JSDoc comments to guide inference:
+Nudo uses structured JSDoc comments to guide analysis. Contracts are the product surface; cases are debug/test only.
 
 | Directive | Purpose |
 |---|---|
-| `@nudo:case` | Define named execution cases with concrete or symbolic arguments |
-| `@nudo:refine` | Attach a refinement contract (`@nudo:refine x positive` / `@nudo:refine return delay`) |
-| `@nudo:mock` | Provide mock implementations for external dependencies |
+| `@nudo:refine` | Attach a refinement / interface contract (`@nudo:refine x positive`) — main path is `*.nudo.js` sidecar binding |
+| `@nudo:as` | Override the next statement's inferred type (`// @nudo:as shape({ port: number() })`) |
+| `@nudo:replace` | Replace a sub-expression's type (`// @nudo:replace JSON.parse(x) shape({ id: number() })`) |
+| `@nudo:mock` | Provide mock implementations for external dependencies (plain JS / `stub().returns(...)` / constraint builders) |
+| `@nudo:case` | **Debug witnesses only** — named inputs for `nudo test` / LSP scenarios; not the interface product |
 | `@nudo:pure` | Mark functions as pure for memoized evaluation |
-| `@nudo:skip` | Skip inference and use manually declared types |
+| `@nudo:skip` | Skip inference and use manually declared types (`@nudo:skip number()`) |
 | `@nudo:sample` | Control loop iteration sampling |
 | `@nudo:import` | Import constraint templates from `*.nudo.js` (`/// @nudo:import { positive } from "./shapes.nudo.js"`) |
 | `@nudo:env` | Declare runtime environment APIs (`/// @nudo:env web` — built-in `es` / `web` / `node`) |
 | `@nudo:mock-module` | Replace a whole imported module with mocks (`/// @nudo:mock-module "pkg" from "./mock.js"`) |
-| `@nudo:as` | Override the next statement's inferred type (`// @nudo:as T.object({ port: T.number })`) |
-| `@nudo:replace` | Replace a sub-expression's type in the next statement (`// @nudo:replace JSON.parse(x) T.object(...)`) |
+
+Directive type expressions use **constraint builders** (`number()`, `lit(42)`, `shape({...})`, `union(...)`, `array(...)`) or **concrete literals**. The legacy `T.*` grammar has been removed.
 
 Full directive reference: [Core Concepts → Directives](https://nudojs.github.io/nudo/docs/concepts/directives).
 
@@ -180,24 +183,19 @@ scale(x)  number  = (x + 1)  where (x + 1) > 1  #path
 
 With `@nudo:refine x positive`, `scale` gets the term `(x + 1)` **and** the derived predicate `(x + 1) > 1` — `x > 0` propagates through `x + 1`, not just through call-site gates. Assignability is structural (`leqAbs`); `nudo check` reports implication failures (`actual ⊭ expected`).
 
-### Type Values — the evaluation IR
+### Type system notes
 
-TypeValue is **not** the production evaluation IR. Production analysis is Abs-native; extensional TS/Zod/dts projections (`formatShape`, `absToTSType`, `absToZodSchema`) are one-way lossy views of Abs. Historical TypeValue kinds remain only as documentation of the old IR.
+Production analysis is Abs-native. Extensional TS/Zod/dts projections (`formatShape`, `absToTSType`, `absToZodSchema`) are one-way lossy views of Abs — nothing reads them back. The legacy TypeValue IR and the `T.*` directive grammar have been removed.
 
-| Kind | Represents |
+| Abs shape | Represents |
 |---|---|
-| `literal` | Exactly one concrete value (`42`, `"hello"`, `true`) |
-| `primitive` | All values of a primitive type (`T.number`, `T.string`, …) |
-| `refined` | Primitive plus a constraint (`x > 0`) that participates in algebra |
-| `object` | Object with known property types |
-| `array` | Array with a common element type |
-| `tuple` | Fixed-length array with per-index types |
-| `function` | Function with parameters, body, and closure |
-| `promise` | Promise effect over a body type |
-| `instance` | Class instance with its property shapes |
-| `union` | One of several possible types |
-| `never` | Unreachable / impossible |
-| `unknown` | Any value (type unknown) |
+| lit / prim | Concrete literals (`42`, `"hello"`) or primitive domains (`number`, `string`) |
+| sum | Union of Abs members |
+| obj / arr / tuple | Structural shapes |
+| fn / eff | Function / async effect |
+| unknown / never | Uninformed / unreachable |
+
+Constraint builders (`number().gt(0)`, `shape({...})`) produce Preds that enter Abs and participate in algebra.
 
 ## Development
 

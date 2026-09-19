@@ -43,12 +43,12 @@ nudo generate src/api/users.js --format zod > users.schema.txt
 
 ## 示例源码
 
-本页所有示例都使用下面的文件。注意真实的指令语法：`@nudo:case "<名字>" (<类型表达式>)`——case 名字必须带引号，类型表达式必须包在括号里，并使用 `T.*` 构造器。
+本页所有示例都使用下面的文件。指令类型表达式使用约束构建器（`number()`、`string()`、`shape({...})`、`array(...)`）或具体字面量——不是已移除的 `T.*` 文法。`@nudo:case` 见证仅用于调试。
 
 ```js
 // src/api/users.js
 
-// @nudo:case "input" (T.object({ name: T.string, age: T.number }))
+// @nudo:case "input" (shape({ name: string(), age: number() }))
 function createUser(input) {
   return { id: 123, name: input.name, age: input.age };
 }
@@ -66,7 +66,7 @@ nudo generate src/api/users.js --format zod
 
 ```js
 // === createUser Zod Schemas ===
-// Case "input":
+// debug "input":
 // Input: { arg0: z.object({ name: z.string(), age: z.number() }) }
 // Output: z.object({ id: z.literal(123), name: z.string(), age: z.number() })
 ```
@@ -296,7 +296,7 @@ nudo infer src/api/users.js --json | jq '.diagnostics | length == 0'
 ```js
 // src/api/products.js
 
-// @nudo:case "input" (T.object({ name: T.string, price: T.number, tags: T.array(T.string) }))
+// @nudo:case "input" (shape({ name: string(), price: number(), tags: array(string()) }))
 function createProduct(input) {
   return {
     id: 456,
@@ -317,7 +317,7 @@ nudo generate src/api/products.js --format all
 
 ```text
 // === createProduct Zod Schemas ===
-// Case "input":
+// debug "input":
 // Input: { arg0: z.object({ name: z.string(), price: z.number(), tags: z.array(z.string()) }) }
 // Output: z.object({ id: z.literal(456), name: z.string(), price: z.number(), tags: z.array(z.string()) })
 

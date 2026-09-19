@@ -44,7 +44,7 @@ nudo infer lib/ --callsites test/
 ```text
 === slugify ===
 
-Case "call@L4": ("Hello World") => string
+call@L4: ("Hello World") => string
 ```
 
 这个 case 不是任何人写的——它采集自测试文件的第 4 行，因此被命名为 `call@L4`。每个被记录的调用点都会成为一个合成的 case；对同一函数的多个调用点会合并为联合类型（combined type），与手写 `@nudo:case` 指令的行为完全一致。
@@ -79,7 +79,7 @@ Case "call@L4": ("Hello World") => string
 2. **函数名** —— 记录的被调函数名与目标文件中声明的某个函数同名。
 3. **单导出模块路径** —— 唯一导出就是函数本身的文件（`module.exports = function f() {}`）按模块路径匹配，因为这类模块的导出名全都相同（`default`），仅靠名字匹配会跨文件冲突。
 
-匹配到的记录会作为合成的 `call@L` case 注入 `analyzeFile`，其中 `L` 是该调用在使用方文件中的行号。完全没有收到任何记录的函数仍会得到一个参数为 `T.unknown` 的 `entry@L` case，以便输出其签名——这些函数会被标记为仅入口（entry-only）。
+匹配到的记录会作为合成的 `call@L` case 注入 `analyzeFile`，其中 `L` 是该调用在使用方文件中的行号。完全没有收到任何记录的函数仍会得到一个参数为 `unknown` 的 `entry@L` case，以便输出其签名——这些函数会被标记为仅入口（entry-only）。
 
 ## 安全性设计
 
@@ -102,7 +102,7 @@ Case "call@L4": ("Hello World") => string
 
 ## 已知边界
 
-- **仅入口回退。** 没有任何使用方调用的函数仍会产出 `entry@L` case，但参数是 `T.unknown`——签名存在，类型不存在。
+- **仅入口回退。** 没有任何使用方调用的函数仍会产出 `entry@L` case，但参数是 `unknown`——签名存在，类型不存在。
 - **嵌套函数。** 匹配链解析的是顶层声明与提升（hoisted）声明。定义在另一个函数体*内部*的函数表达式目前不参与名字匹配。
 - **双入口变体。** 当同一行为可以通过两种入口形状触达（例如直接导出与再包装导出）时，每个入口各自贡献自己记录到的 case；组合类型是两个入口的并集，可能比任何单一入口都更宽。
 
@@ -130,7 +130,7 @@ nudo infer lib/ --callsites test/ --emit-cases=update  # update：重新同步�
 
 ### 限制
 
-- **只支持可序列化的形状。** 指令文本能表达原始类型（`T.number`/`T.string`/`T.boolean`/`T.unknown`/`T.never`）、字面量、普通对象、数组、元组与联合。实参含函数、Promise、类实例、`bigint` 或 `symbol` 值的用例无法固化——会被跳过并报告 `no-serializable-cases`（函数其余可序列化的用例仍会写入）。
+- **只支持可序列化的形状。** 指令文本能表达原始类型（`number()`/`string()`/`boolean()`/`unknown`/`never`）、字面量、普通对象、数组、元组与联合。实参含函数、Promise、类实例、`bigint` 或 `symbol` 值的用例无法固化——会被跳过并报告 `no-serializable-cases`（函数其余可序列化的用例仍会写入）。
 - **`call@` 是保留前缀。** 名字以 `call@` 开头的 `@nudo:case` 一律视为生成物：`update` 可能改写或删除它。不要把手写用例命名为 `call@…`。
 
 端到端工作流示例（引导与漂移检测）见 [CLI 使用指南 —— 固化 case 指令](./cli.md#固化-case-指令)；基于这些函数的编程接口见 [service API —— 用例固化](../api/service.md#用例固化)。

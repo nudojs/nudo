@@ -62,7 +62,7 @@ const FIXTURE_PATH = resolve(import.meta.dirname, "fixtures", "sample.js");
 const SAMPLE_SOURCE = `
 /**
  * @nudo:case "concrete" (1, 2)
- * @nudo:case "symbolic" (T.number, T.number)
+ * @nudo:case "symbolic" (number(), number())
  */
 function add(a, b) {
   return a + b;
@@ -93,7 +93,7 @@ const OBJ_SOURCE = `
 const obj = { x: 1, y: "hello", z: true };
 
 /**
- * @nudo:case "test" (T.number)
+ * @nudo:case "test" (number())
  */
 function identity(x) {
   return x;

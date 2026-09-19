@@ -4,7 +4,7 @@ Language Server Protocol implementation for the [Nudo](https://github.com/nudojs
 
 ## What is Nudo?
 
-Nudo is a type inference engine for JavaScript. Instead of a separate type system, it runs your code with symbolic type values via abstract interpretation — no TypeScript, no build step.
+Nudo is a type inference engine for JavaScript. The type system is Abs (`shape × term × pred × conf`); production analysis is Abs-native. Inference executes observed call sites via abstract interpretation — no TypeScript, no build step. Contracts come from `*.nudo.js` sidecars + `@nudo:refine` / `@nudo:interface`.
 
 ## This package
 
@@ -13,7 +13,7 @@ Nudo is a type inference engine for JavaScript. Instead of a separate type syste
 - Hover type information
 - Completions based on inferred types
 - Diagnostics from abstract interpretation
-- Case navigation for `@nudo:case` directives
+- Debug scenario navigation for `@nudo:case` witnesses (interface CodeLens first; case is the debug sub-layer)
 - Go-to-Definition
 - Find References
 - Rename Symbol

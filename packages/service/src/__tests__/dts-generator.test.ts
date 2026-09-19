@@ -89,7 +89,7 @@ describe("generateDts", () => {
     const source = `
 /**
  * @nudo:case "concrete" (1, 2)
- * @nudo:case "symbolic" (T.number, T.number)
+ * @nudo:case "symbolic" (number(), number())
  */
 function add(a, b) {
   return a + b;
@@ -110,7 +110,7 @@ function add(a, b) {
   it("generates single overload for single case", () => {
     const source = `
 /**
- * @nudo:case "test" (T.number)
+ * @nudo:case "test" (number())
  */
 function identity(x) {
   return x;
@@ -125,7 +125,7 @@ function identity(x) {
   it("uses actual parameter names from AST", () => {
     const source = `
 /**
- * @nudo:case "numbers" (T.number, T.number)
+ * @nudo:case "numbers" (number(), number())
  */
 function add(a, b) {
   return a + b;
@@ -142,7 +142,7 @@ function add(a, b) {
   it("generates JSDoc comments", () => {
     const source = `
 /**
- * @nudo:case "test" (T.string)
+ * @nudo:case "test" (string())
  */
 function greet(name) {
   return "hello " + name;
@@ -159,8 +159,8 @@ function greet(name) {
   it("generates JSDoc with case names for multiple overloads", () => {
     const source = `
 /**
- * @nudo:case "str" (T.string) => T.number
- * @nudo:case "num" (T.number) => T.string
+ * @nudo:case "str" (string()) => number()
+ * @nudo:case "num" (number()) => string()
  */
 function convert(x) {
   return typeof x === "string" ? Number(x) : String(x);
@@ -175,7 +175,7 @@ function convert(x) {
   it("handles rest parameters", () => {
     const source = `
 /**
- * @nudo:case "test" (T.array(T.number))
+ * @nudo:case "test" (array(number()))
  */
 function sum(...nums) {
   return nums;
@@ -261,8 +261,8 @@ function flag(x) {
   it("marks mixed-arity tail params optional", () => {
     const source = `
 /**
- * @nudo:case "one" (T.number)
- * @nudo:case "two" (T.number, T.string)
+ * @nudo:case "one" (number())
+ * @nudo:case "two" (number(), string())
  */
 function either(x, y) {
   return y === undefined ? x : y;

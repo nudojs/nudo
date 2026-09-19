@@ -40,11 +40,9 @@ async function fetchUser(id) {
 
 ---
 
-## @nudo:case — 具名执行用例
+## @nudo:case — 调试见证
 
-case 是 **debug 见证**：Nudo 用具体或符号输入执行函数。它不是 interface 产品——精化契约住在 `*.nudo.js` 侧车（见 [@nudo:refine](#nudorefine--refinement-contract)）。`@nudo:case` 在场景测试、`nudo test` 断言与 LSP 场景切换中保持完整支持。
-
-提供具名执行用例。每个用例定义输入（具体值或符号值），供 Nudo 执行函数时使用。
+`@nudo:case` **仅用于调试 / `nudo test`**——Nudo 用具名输入执行的场景见证。它**不是**契约 / interface 产品。契约住在 `*.nudo.js` 侧车与源内 `@nudo:refine` / `@nudo:interface`（见 [@nudo:refine](#nudorefine--refinement-contract)）。LSP 场景切换与 `nudo test` 断言保持完整支持。
 
 ### 语法
 
@@ -54,8 +52,8 @@ case 是 **debug 见证**：Nudo 用具体或符号输入执行函数。它不�
 ```
 
 - **name** — 用例的字符串标识符（如 `"positive numbers"`）。
-- **args** — 逗号分隔的参数：具体值（`5`、`"hello"`）或类型表达式（`T.number`、`T.union(T.string, T.number)`）。
-- **expected**（可选）— `=>` 之后的类型值表达式，用于验证预期返回类型。
+- **args** — 逗号分隔的参数：具体值（`5`、`"hello"`）或类型表达式（`number()`、`union(string(), number())`）。
+- **expected**（可选）— `=>` 之后的约束构建器 / 具体表达式，供 `nudo test` 校验预期返回类型。
 
 ### 示例
 
@@ -63,7 +61,7 @@ case 是 **debug 见证**：Nudo 用具体或符号输入执行函数。它不�
 /**
  * @nudo:case "positive numbers" (5, 3)
  * @nudo:case "negative result" (1, 10)
- * @nudo:case "symbolic" (T.number, T.number)
+ * @nudo:case "symbolic" (number(), number())
  */
 function subtract(a, b) {
   return a - b;
@@ -72,9 +70,9 @@ function subtract(a, b) {
 
 ```javascript
 /**
- * @nudo:case "strings" (T.string)
- * @nudo:case "numbers" (T.number)
- * @nudo:case "array" (T.array(T.number))
+ * @nudo:case "strings" (string())
+ * @nudo:case "numbers" (number())
+ * @nudo:case "array" (array(number()))
  */
 function process(x) {
   if (typeof x === "string") return x.length;
@@ -87,8 +85,8 @@ function process(x) {
 
 ```javascript
 /**
- * @nudo:case "basic" (T.string) => T.number
- * @nudo:case "empty" ("") => T.literal(0)
+ * @nudo:case "basic" (string()) => number()
+ * @nudo:case "empty" ("") => lit(0)
  */
 function len(s) {
   return s.length;
@@ -123,10 +121,11 @@ function len(s) {
 @nudo:mock name = sinon.stub().returns(value)
 ```
 
-**4. 类型值表达式：**
+**4. 约束构建器表达式**（或具体值）：
 
 ```text
-@nudo:mock name = T.number
+@nudo:mock name = number()
+@nudo:mock retries = 3
 ```
 
 **5. 从模块导入** — 模块中必须定义与 mock 同名的绑定：
@@ -141,20 +140,19 @@ function len(s) {
 **警告：表达式必须单行。** 解析器只读取到行尾，多行表达式会在第一行被截断并报 `nudo:mock-invalid`。以下写法**不**可用：
 
 ```text
-@nudo:mock fetch = (url) => T.promise(T.object({
-  ok: T.boolean,
-  json: T.fn({ params: [], returns: T.object({ ... }) })
-}))
+@nudo:mock fetch = (url) => ({ ok: true,
+  json: () => ({ id: 1 })
+})
 ```
 
 截断行的真实诊断：
 
 ```text
-[warning] example.js:0:0 Mock expression "(url) => T.promise(T.object({" could not be parsed as a known pattern (nudo:mock-invalid)
+[warning] example.js:0:0 Mock expression "(url) => ({ ok: true," could not be parsed as a known pattern (nudo:mock-invalid)
 [warning] example.js:10:9 Cannot resolve 'json' on unknown value (nudo:unknown-recv)
 ```
 
-**警告：箭头函数 body 内不可用 `T.*`。** `T` 只存在于指令表达式中（case 参数、`= T.string` 等）。mock body 内只能写普通 JavaScript——普通对象和闭包——或改用 `stub().returns(...)` / `stub().resolves(...)` helper。
+**警告：箭头函数 mock body 内不要写构建器调用。** 约束构建器只出现在指令类型表达式中（case 参数、`@nudo:skip`、`@nudo:as` 等）。mock body 内只能写普通 JavaScript——普通对象和闭包——或改用 `stub().returns(...)` / `stub().resolves(...)` helper。
 
 ### 示例
 
@@ -176,7 +174,7 @@ async function fetchUser(id) {
 ```text
 === fetchUser ===
 
-Case "user": (1) => promise<{ id: 1, name: "Alice" }>
+debug "user": (1) => promise<{ id: 1, name: "Alice" }>
 ```
 
 决议 Promise 的 mock helper——`stub().resolves(value)` 让每次调用返回 `promise<value>`：
@@ -209,14 +207,14 @@ function readPort() {
 ```text
 === readPort ===
 
-Case "default": () => 8080
+debug "default": () => 8080
 ```
 
 类型值表达式直接把名称绑定到类型值：
 
 ```javascript
 /**
- * @nudo:mock retries = T.number
+ * @nudo:mock retries = number()
  * @nudo:case "plan" ()
  */
 function plan() {
@@ -229,7 +227,7 @@ function plan() {
 ```text
 === plan ===
 
-Case "plan": () => number
+debug "plan": () => number
 ```
 
 从模块导入——模块中必须定义与 mock 同名的绑定：
@@ -237,7 +235,7 @@ Case "plan": () => number
 ```javascript
 /**
  * @nudo:mock fs from "./mocks/fs.js"
- * @nudo:case "read" (T.string)
+ * @nudo:case "read" (string())
  */
 function readConfig(path) {
   return fs.readFileSync(path, "utf-8");
@@ -254,7 +252,7 @@ const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
 ```text
 === readConfig ===
 
-Case "read": (string) => unknown
+debug "read": (string) => unknown
 
 [warning] read-config.js:6:9 Built-in API "fs" is not covered by Nudo's type inference (nudo:builtin-unknown)
 ```
@@ -278,7 +276,7 @@ Case "read": (string) => unknown
 ```javascript
 /**
  * @nudo:pure
- * @nudo:case "add" (T.number, T.number)
+ * @nudo:case "add" (number(), number())
  */
 function add(a, b) {
   return a + b;
@@ -322,7 +320,7 @@ Skipped (no return type declared)
 
 ```javascript
 /**
- * @nudo:skip T.number
+ * @nudo:skip number()
  */
 function unannotatedHeavy(x) {
   // 通过指令显式指定返回类型
@@ -537,7 +535,7 @@ function inc(x) {
 /// @nudo:env web
 
 /**
- * @nudo:case "test" (T.number)
+ * @nudo:case "test" (number())
  */
 async function fetchUser(id) {
   const res = await fetch(`/api/users/${id}`);
@@ -552,7 +550,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * @nudo:case "test" (T.string)
+ * @nudo:case "test" (string())
  */
 function loadConfig(dir) {
   const content = readFileSync(join(dir, "config.json"), "utf-8");
@@ -650,13 +648,13 @@ import { debounce, throttle } from "lodash";
 ### 示例
 
 ```javascript
-// @nudo:as T.object({ port: T.number, host: T.string })
+// @nudo:as shape({ port: number(), host: string() })
 const config = JSON.parse(content);
 // config 现在是 { port: number, host: string } 而不是 unknown
 ```
 
 ```javascript
-// @nudo:as T.array(T.object({ id: T.number, name: T.string }))
+// @nudo:as array(shape({ id: number(), name: string() }))
 return JSON.parse(response);
 ```
 
@@ -678,26 +676,26 @@ return JSON.parse(response);
 ### 示例
 
 ```javascript
-// @nudo:replace a T.number
+// @nudo:replace a number()
 const x = a + b;
 // 只有 `a` 被替换；`b` 正常求值
 ```
 
 ```javascript
-// @nudo:replace res.data T.array(T.object({ id: T.number }))
+// @nudo:replace res.data array(shape({ id: number() }))
 const items = res.data;
 ```
 
 ```javascript
-// @nudo:replace JSON.parse(input) T.object({ name: T.string })
+// @nudo:replace JSON.parse(input) shape({ name: string() })
 const data = JSON.parse(input);
 ```
 
 可以叠加多个替换：
 
 ```javascript
-// @nudo:replace a T.number
-// @nudo:replace b T.string
+// @nudo:replace a number()
+// @nudo:replace b string()
 const result = a + b;
 ```
 

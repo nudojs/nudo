@@ -230,7 +230,7 @@ Interface 产品面（与 CLI 同一数据源）：
 | `bigint` \| `symbol` | 其余基本类型 |
 | `string \| null` | 联合——“string 或 null” |
 
-已是 `T.*` 语法的形式与结构化表达式（对象/数组字面量、`=>` 函数）原样透传给指令文法（`parseTypeValueExpr`）；其他名字一律变为 `T.unknown`。
+约束构建器形式（`number()`、`lit(...)`、`shape({...})`、`union(...)`、`array(...)`）与结构化表达式（对象/数组字面量、`=>` 函数）透传给指令文法（`parseCaseArgExpr`）；其他名字一律变为 `unknown`。
 
 ## 诊断
 

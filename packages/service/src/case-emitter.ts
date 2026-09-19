@@ -79,15 +79,15 @@ export function serializeCaseArg(a: Abs): string | null {
   }
   switch (s.k) {
     case "prim":
-      if (s.type === "number" || s.type === "string" || s.type === "boolean") {
-        return `T.${s.type}`;
-      }
+      if (s.type === "number") return "number()";
+      if (s.type === "string") return "string()";
+      if (s.type === "boolean") return "boolean()";
       return null;
     case "unknown":
     case "any":
-      return "T.unknown";
+      return "any()";
     case "never":
-      return "T.never";
+      return "never";
     case "sum": {
       const parts: string[] = [];
       for (const member of s.members) {
@@ -95,11 +95,11 @@ export function serializeCaseArg(a: Abs): string | null {
         if (ser === null) return null;
         parts.push(ser);
       }
-      return `T.union(${parts.join(", ")})`;
+      return `union(${parts.join(", ")})`;
     }
     case "arr": {
       const el = serializeCaseArg(s.element);
-      return el === null ? null : `T.array(${el})`;
+      return el === null ? null : `array(${el})`;
     }
     case "tuple": {
       const parts: string[] = [];

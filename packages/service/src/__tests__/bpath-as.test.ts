@@ -9,7 +9,7 @@ describe("@nudo:as on B path", () => {
  * @nudo:case "test" ("{}")
  */
 function loadConfig(path) {
-  // @nudo:as T.object({ port: T.number, host: T.string })
+  // @nudo:as shape({ port: number(), host: string() })
   const config = JSON.parse(path);
   return config;
 }
@@ -26,7 +26,7 @@ function loadConfig(path) {
  * @nudo:case "test" ("{}")
  */
 function loadConfig(path) {
-  // @nudo:as T.object({ name: T.string, age: T.number })
+  // @nudo:as shape({ name: string(), age: number() })
   return JSON.parse(path);
 }
 `;
@@ -42,7 +42,7 @@ function loadConfig(path) {
  * @nudo:case "test" (5)
  */
 function add(x) {
-  // @nudo:as T.literal(99)
+  // @nudo:as lit(99)
   const y = x + 1;
   const z = x + 2;
   return z;

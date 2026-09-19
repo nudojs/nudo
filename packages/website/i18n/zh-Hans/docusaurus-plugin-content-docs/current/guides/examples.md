@@ -7,7 +7,7 @@ description: 按主题浏览 Nudo 推断的实用示例——函数与对象、�
 
 本指南展示 Nudo 类型推断的实用示例，按主题分组。每个示例包含带指令的输入代码和推断出的类型。
 
-下方所有输出块都是对上面代码真实运行 `nudo infer` 的结果。输出块只展示 **case 头与 `Combined:` 行**——它们是逐调用点的真实精度。完整输出里的 `intension:` / `abs:` 行是用 `unknown` 形参重估的泛化签名，对多分支函数只会显示回退路径的结果；分支级精度请以 case 头与 `Combined:` 为准。当调用点路径更精确时示例使用调用点（`call@L…`）形态，否则使用 `@nudo:case` 指令。
+下方所有输出块都是对上面代码真实运行 `nudo infer` 的结果。输出块只展示 **case 头与 `Observed: ` 行**——它们是逐调用点的真实精度。完整输出里的 `intension:` / `abs:` 行是用 `unknown` 形参重估的泛化签名，对多分支函数只会显示回退路径的结果；分支级精度请以 case 头与 `Observed: ` 为准。当调用点路径更精确时示例使用调用点（`call@L…`）形态，否则使用 `@nudo:case` 指令。
 
 > 仓库内 CI 自验证的示例套件在 [`docs/examples/`](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md)：其中每条命令与承诺的退出码都由 `pnpm run verify:examples` 校验，并有逐示例的输出钉对照文档声称的输出行。本指南按主题浏览同一引擎；仓库套件是真值门禁。
 
@@ -23,7 +23,7 @@ description: 按主题浏览 Nudo 推断的实用示例——函数与对象、�
 /**
  * @nudo:case "positive numbers" (5, 3)
  * @nudo:case "negative result" (1, 10)
- * @nudo:case "symbolic" (T.number, T.number)
+ * @nudo:case "symbolic" (number(), number())
  */
 function subtract(a, b) {
   return a - b;
@@ -35,14 +35,14 @@ function subtract(a, b) {
 ```text
 === subtract ===
 
-Case "positive numbers": (5, 3) => 2
-Case "negative result": (1, 10) => -9
-Case "symbolic": (number, number) => number
+debug "positive numbers": (5, 3) => 2
+debug "negative result": (1, 10) => -9
+debug "symbolic": (number, number) => number
 
-Combined: number
+Observed: number
 ```
 
-具体 case 保留其字面量结果（`2`、`-9`），符号 case `(T.number, T.number)` 产生 `number`。合并类型是所有 case 结果的并集，并按吸收律化简——字面量被基类型 `number` 吸收，得到 `number`。
+具体 case 保留其字面量结果（`2`、`-9`），符号 case `(number(), number())` 产生 `number`。合并类型是所有 case 结果的并集，并按吸收律化简——字面量被基类型 `number` 吸收，得到 `number`。
 
 ---
 
@@ -62,7 +62,7 @@ greet({ name: "Alice", age: 30 });
 ```text
 === greet ===
 
-Case "call@L4": ({ name: "Alice", age: 30 }) => "Alice is 30"
+call@L4: ({ name: "Alice", age: 30 }) => "Alice is 30"
 ```
 
 Nudo 用具体形状求值该调用：`user.name` 与 `user.age` 解析为字面量值，`+` 拼接产生精确结果 `"Alice is 30"`——而不是被拍平的 `string`。
@@ -82,10 +82,10 @@ mixin({ id: 1 }, { name: "ada" });
 ```text
 === mixin ===
 
-Case "call@L4": ({ host: "localhost", port: 8080 }, { port: 3000, debug: true }) => { host: "localhost", port: 3000, debug: true }
-Case "call@L5": ({ id: 1 }, { name: "ada" }) => { id: 1, name: "ada" }
+call@L4: ({ host: "localhost", port: 8080 }, { port: 3000, debug: true }) => { host: "localhost", port: 3000, debug: true }
+call@L5: ({ id: 1 }, { name: "ada" }) => { id: 1, name: "ada" }
 
-Combined: { host: "localhost", port: 3000, debug: true } | { id: 1, name: "ada" }
+Observed: { host: "localhost", port: 3000, debug: true } | { id: 1, name: "ada" }
 ```
 
 字面量 key 的索引投影会精确取出对应槽位——对扮演 "env" 角色的对象同样精确：
@@ -102,13 +102,13 @@ pick(env, "PATH");
 ```text
 === pick ===
 
-Case "call@L4": ({ a: 1, b: "x" }, "a") => 1
-Case "call@L6": ({ PATH: "/usr/bin", HOME: "/root" }, "PATH") => "/usr/bin"
+call@L4: ({ a: 1, b: "x" }, "a") => 1
+call@L6: ({ PATH: "/usr/bin", HOME: "/root" }, "PATH") => "/usr/bin"
 
-Combined: 1 | "/usr/bin"
+Observed: 1 | "/usr/bin"
 ```
 
-符号 key（`T.string`）无法选定槽位，退化为 `unknown`——仓库示例（CI 钉住）：[`docs/examples/algebra/e-index-proj.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/e-index-proj.js)。spread meet 钉在 [`docs/examples/algebra/d-mixin-meet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/d-mixin-meet.js)；`--dts` 投影（单一拓宽签名、字面量并返回）由[示例矩阵](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md)的 `a-spread-optional.js --dts` 行钉住——生成的 `a-spread-optional.d.ts` 即真值输出。
+符号 key（`string()`）无法选定槽位，退化为 `unknown`——仓库示例（CI 钉住）：[`docs/examples/algebra/e-index-proj.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/e-index-proj.js)。spread meet 钉在 [`docs/examples/algebra/d-mixin-meet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/d-mixin-meet.js)；`--dts` 投影（单一拓宽签名、字面量并返回）由[示例矩阵](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md)的 `a-spread-optional.js --dts` 行钉住——生成的 `a-spread-optional.d.ts` 即真值输出。
 
 ---
 
@@ -119,7 +119,7 @@ Combined: 1 | "/usr/bin"
 ```javascript
 /**
  * @nudo:case "concrete" ([1, 2, 3])
- * @nudo:case "symbolic" (T.array(T.number))
+ * @nudo:case "symbolic" (array(number()))
  */
 function doubleAll(arr) {
   return arr.map((x) => x * 2);
@@ -131,20 +131,20 @@ function doubleAll(arr) {
 ```text
 === doubleAll ===
 
-Case "concrete": ([1, 2, 3]) => [2, 4, 6]
-Case "symbolic": (number[]) => number[]
+debug "concrete": ([1, 2, 3]) => [2, 4, 6]
+debug "symbolic": (number[]) => number[]
 
-Combined: [2, 4, 6] | number[]
+Observed: [2, 4, 6] | number[]
 ```
 
-Nudo 通过 `map` 跟踪元素类型。具体输入 `[1, 2, 3]` 被逐元素求值为 `[2, 4, 6]`，符号输入 `T.array(T.number)` 产生 `number[]`。仓库示例（CI 钉住）：[`docs/examples/algebra/b-hof-map.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/b-hof-map.js)。
+Nudo 通过 `map` 跟踪元素类型。具体输入 `[1, 2, 3]` 被逐元素求值为 `[2, 4, 6]`，符号输入 `array(number())` 产生 `number[]`。仓库示例（CI 钉住）：[`docs/examples/algebra/b-hof-map.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/b-hof-map.js)。
 
 `reduce` 同样精确——字面量数组经累加器逐元素折叠，符号数组单次应用回调（`init + element` → `number`）：
 
 ```javascript
 /**
  * @nudo:case "literal" ([1, 2, 3, 4, 5])
- * @nudo:case "symbolic" (T.array(T.number))
+ * @nudo:case "symbolic" (array(number()))
  */
 function sum(numbers) {
   return numbers.reduce((acc, n) => acc + n, 0);
@@ -154,10 +154,10 @@ function sum(numbers) {
 ```text
 === sum ===
 
-Case "literal": ([1, 2, 3, 4, 5]) => 15
-Case "symbolic": (number[]) => number
+debug "literal": ([1, 2, 3, 4, 5]) => 15
+debug "symbolic": (number[]) => number
 
-Combined: number
+Observed: number
 ```
 
 数组方法支持并不均匀——依赖某个方法前先查这条边界。`some` / `every` 在调用点与 `@nudo:case` 两条路径上都折叠为 `boolean`。`forEach` 回调的副作用在两条路径上都写进内部 Abs（`abs: 15 #exact`），但 **case 头**（外延投影）不同：`@nudo:case` 指令路径报告终值 `15`，调用点路径报告循环前的 `0`：
@@ -202,10 +202,10 @@ async function fetchUser(id) {
 ```text
 === fetchUser ===
 
-Case "user": (1) => promise<{ id: 1, name: "Alice" }>
+debug "user": (1) => promise<{ id: 1, name: "Alice" }>
 ```
 
-mock 就位后，Nudo 推断 `fetchUser` 返回 `promise<{ id: 1, name: "Alice" }>`，无需真实网络请求。内联 mock 有两条硬性规则：表达式**必须单行**（多行会被截断并报 `nudo:mock-invalid`）；mock body 内**不可用 `T.*`**——只能写普通 JavaScript 值和闭包。`stub().resolves(...)` helper 只在纯数据上等价：字面量槽位保留（`stub().resolves({ ok: true, id: 1 })` → `promise<{ ok: true, id: 1 }>`），但 resolved 值里的**闭包槽位不被桥接**——`json` 到达时无 body（`json: () => ?`），于是 `res.json()` 求值为 `unknown`，本示例退化为 `promise<unknown>`。mock 结果要被调用时，用上面的箭头函数形态。仓库示例（CI 钉住）：[`docs/examples/algebra/f-async-eff.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/f-async-eff.js)——其中 `@nudo:mock` 是**必填**而非可选：没有它，B 路径会执行真实 `fetch` 并以 `ERR_INVALID_URL` 崩溃。
+mock 就位后，Nudo 推断 `fetchUser` 返回 `promise<{ id: 1, name: "Alice" }>`，无需真实网络请求。内联 mock 有两条硬性规则：表达式**必须单行**（多行会被截断并报 `nudo:mock-invalid`）；mock body 内**不可用约束构建器**——只能写普通 JavaScript 值和闭包。`stub().resolves(...)` helper 只在纯数据上等价：字面量槽位保留（`stub().resolves({ ok: true, id: 1 })` → `promise<{ ok: true, id: 1 }>`），但 resolved 值里的**闭包槽位不被桥接**——`json` 到达时无 body（`json: () => ?`），于是 `res.json()` 求值为 `unknown`，本示例退化为 `promise<unknown>`。mock 结果要被调用时，用上面的箭头函数形态。仓库示例（CI 钉住）：[`docs/examples/algebra/f-async-eff.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/f-async-eff.js)——其中 `@nudo:mock` 是**必填**而非可选：没有它，B 路径会执行真实 `fetch` 并以 `ERR_INVALID_URL` 崩溃。
 
 ---
 
@@ -231,10 +231,10 @@ function half(x) {
 ```text
 === half ===
 
-Case "valid": (10) => 5
-Case "negative": (-1) => never throws RangeError
+debug "valid": (10) => 5
+debug "negative": (-1) => never throws RangeError
 
-Combined: 5
+Observed: 5
 ```
 
 Nudo 建模控制流：`valid` case 返回 `5`，`negative` case 抛出 `RangeError` 且永不返回——其结果为 `never`，同时追踪抛出的值。合并后的值类型为 `5`。像这样静态可判定的 throw 不会产生额外诊断——`never throws RangeError` 就是全部信息。只有**条件性** throw（抛出分支由 unknown 条件守卫，如示例 15）才会为对应 case 追加报告 `nudo-may-throw`。
@@ -249,7 +249,7 @@ Nudo 在字符串拼接中保留结构信息，实现 TypeScript 无法达到的
 
 ```javascript
 /**
- * @nudo:case "symbolic" (T.string)
+ * @nudo:case "symbolic" (string())
  */
 function makeApiUrl(path) {
   return "https://api.example.com" + path;
@@ -283,7 +283,7 @@ checkUrl("https://api.example.com/users");
 ```text
 === checkUrl ===
 
-Case "call@L4": ("https://api.example.com/users") => true
+call@L4: ("https://api.example.com/users") => true
 ```
 
 `startsWith`、`endsWith` 与 `includes` 在字面量接收者上折叠为确定的布尔值——调用点路径与 `@nudo:case` 指令路径同样精确。但并非所有方法都保留完整精度——`"hello".indexOf("l")` 只得 `number` 原语，丢字面量下标（见示例 7）。
@@ -309,7 +309,7 @@ stringDemo();
 ```text
 === stringDemo ===
 
-Case "call@L7": () => { upper: "HELLO", sliced: "el", len: 5 }
+call@L7: () => { upper: "HELLO", sliced: "el", len: 5 }
 ```
 
 `toUpperCase`、`slice`、`.length` 与 `split`（字面量接收者 + 字面量分隔符）在调用点折叠为精确结果，TypeScript 对这些操作只能推断出 `string`、`number` 或 `string[]`。`indexOf` 目前只得 `number` 原语（丢字面量下标），依赖具体方法前请先跑 `nudo infer` 确认。
@@ -342,7 +342,7 @@ floatOf("3.14");                     // → 3.14
 ```text
 === strOf ===
 
-Case "call@L2": (5) => "5"
+call@L2: (5) => "5"
 ```
 
 `String`、`Number`、`Boolean` 把 number/string/boolean 字面量折叠为精确强转结果；`parseInt` / `parseFloat` 把 string/number 字面量折叠为精确数值前缀/解析结果。符号实参拓宽为目标原语。仓库示例（CI 钉住）：[`docs/examples/algebra/l-primitive-conversion.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/l-primitive-conversion.js)。
@@ -371,10 +371,10 @@ sumTo(5);
 ```text
 === sumTo ===
 
-Case "call@L8": (5) => 10
+call@L8: (5) => 10
 ```
 
-输入具体值 `5` 时，Nudo 执行循环并产生精确结果 `10`。输入抽象边界（`T.number`）时，守卫 `i < n` 永远不会确定地为假，循环会跑到有界展开上限（8 次）——累加器求和 `0…7`，case 报告 `28 #exact`。这个上限是抽象条件无法诚实终止时的兜底预算，不是不动点合并。
+输入具体值 `5` 时，Nudo 执行循环并产生精确结果 `10`。输入抽象边界（`number()`）时，守卫 `i < n` 永远不会确定地为假，循环会跑到有界展开上限（8 次）——累加器求和 `0…7`，case 报告 `28 #exact`。这个上限是抽象条件无法诚实终止时的兜底预算，不是不动点合并。
 
 ---
 
@@ -396,13 +396,13 @@ pickAdult(12);
 ```text
 === pickAdult ===
 
-Case "call@L5": (25) => 25
-Case "call@L6": (12) => -1
+call@L5: (25) => 25
+call@L6: (12) => -1
 
-Combined: 25 | -1
+Observed: 25 | -1
 ```
 
-`pickAdult(25)` 走 `age >= 18` 分支返回 `25`；`pickAdult(12)` 落到回退分支返回 `-1`。合并类型保留两个字面量结果。（对抽象 `T.number` 实参，守卫无法分叉，两个分支合并——`age | -1` 吸收为 `number`，case 报告 `number`。）仓库示例（CI 钉住）：[`docs/examples/algebra/g-narrow-subtract.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/g-narrow-subtract.js)。
+`pickAdult(25)` 走 `age >= 18` 分支返回 `25`；`pickAdult(12)` 落到回退分支返回 `-1`。合并类型保留两个字面量结果。（对抽象 `number()` 实参，守卫无法分叉，两个分支合并——`age | -1` 吸收为 `number`，case 报告 `number`。）仓库示例（CI 钉住）：[`docs/examples/algebra/g-narrow-subtract.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/g-narrow-subtract.js)。
 
 ---
 
@@ -434,12 +434,12 @@ function handleState(state) {
 ```text
 === handleState ===
 
-Case "idle": ({ status: "idle" }) => "Waiting..."
-Case "loading": ({ status: "loading", requestId: "abc" }) => "Loading abc..."
-Case "success": ({ status: "success", data: { name: "test" } }) => "test"
-Case "error": ({ status: "error", message: "fail" }) => "fail"
+debug "idle": ({ status: "idle" }) => "Waiting..."
+debug "loading": ({ status: "loading", requestId: "abc" }) => "Loading abc..."
+debug "success": ({ status: "success", data: { name: "test" } }) => "test"
+debug "error": ({ status: "error", message: "fail" }) => "fail"
 
-Combined: "Waiting..." | "Loading abc..." | "test" | "fail"
+Observed: "Waiting..." | "Loading abc..." | "test" | "fail"
 ```
 
 Nudo 根据判别字段在每个 `case` 分支内收窄 `state`。`"loading"` case 中 `state.requestId` 是可用的字面量 `"abc"`，模板被完整求值为 `"Loading abc..."`；`"success"` case 中 `state.data.name` 解析为 `"test"`。合并类型保留所有字面量结果。
@@ -463,13 +463,13 @@ getTheme({ user: { profile: { name: "Bob" } } });
 ```text
 === getTheme ===
 
-Case "call@L4": ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } }) => "dark"
-Case "call@L5": ({ user: { profile: { name: "Bob" } } }) => "light"
+call@L4: ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } }) => "dark"
+call@L5: ({ user: { profile: { name: "Bob" } } }) => "light"
 
-Combined: unknown
+Observed: unknown
 ```
 
-完整路径存在时链式解析到字面量 `"dark"`；链式短路时 `?? "light"` 回退折叠为字面量 `"light"`。每个调用点都报告自己的精确字面量。`Combined:` 仍退化为 `unknown`——聚合值来自符号重跑，无法跟随深层 `?.` 链。已知属性上的浅层 `??` 更精确：
+完整路径存在时链式解析到字面量 `"dark"`；链式短路时 `?? "light"` 回退折叠为字面量 `"light"`。每个调用点都报告自己的精确字面量。`Observed: ` 仍退化为 `unknown`——聚合值来自符号重跑，无法跟随深层 `?.` 链。已知属性上的浅层 `??` 更精确：
 
 ```javascript
 function getPort(config) {
@@ -479,7 +479,7 @@ function getPort(config) {
 getPort({ port: 8080 });   // → number
 ```
 
-case 头现在把回退折叠为其字面量（`"dark"` / `"light"`），但 `Combined:` 仍报告 `unknown`——组合值来自符号重跑（`intension`），无法跟随深层 `?.` 链。请用 `nudo infer` 验证你自己的链式写法。
+case 头现在把回退折叠为其字面量（`"dark"` / `"light"`），但 `Observed: ` 仍报告 `unknown`——组合值来自符号重跑（`intension`），无法跟随深层 `?.` 链。请用 `nudo infer` 验证你自己的链式写法。
 
 ---
 
@@ -503,10 +503,10 @@ parseResponse({ status: 404, error: "Not found" });
 ```text
 === parseResponse ===
 
-Case "call@L7": ({ status: 200, data: { id: 1, name: "Alice", email: "alice@example.com" } }) => { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } }
-Case "call@L8": ({ status: 404, error: "Not found" }) => { success: false, error: "Not found" }
+call@L7: ({ status: 200, data: { id: 1, name: "Alice", email: "alice@example.com" } }) => { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } }
+call@L8: ({ status: 404, error: "Not found" }) => { success: false, error: "Not found" }
 
-Combined: { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } } | { success: false, error: "Not found" }
+Observed: { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } } | { success: false, error: "Not found" }
 ```
 
 `status === 200` 检查按调用点收窄：success 调用走 `if` 分支，`response.data` 完整可用；404 调用落到错误分支。合并类型是两个具体形状的并集。
@@ -536,11 +536,11 @@ validateForm({ name: "Charlie" });
 ```text
 === validateForm ===
 
-Case "call@L7": ({ name: "Alice", age: "25", email: "alice@example.com" }) => { valid: true, name: "Alice", age: 25, email: "alice@example.com" }
-Case "call@L8": ({ name: "Bob", age: "abc", email: "bob@example.com" }) => { valid: false, error: "Invalid age" }
-Case "call@L9": ({ name: "Charlie" }) => { error: string, valid: false } | { valid: true, name: "Charlie", age: number, email: unknown }
+call@L7: ({ name: "Alice", age: "25", email: "alice@example.com" }) => { valid: true, name: "Alice", age: 25, email: "alice@example.com" }
+call@L8: ({ name: "Bob", age: "abc", email: "bob@example.com" }) => { valid: false, error: "Invalid age" }
+call@L9: ({ name: "Charlie" }) => { error: string, valid: false } | { valid: true, name: "Charlie", age: number, email: unknown }
 
-Combined: { valid: true, name: "Alice", age: 25, email: "alice@example.com" } | { valid: false, error: "Invalid age" } | { error: string, valid: false } | { valid: true, name: "Charlie", age: number, email: unknown }
+Observed: { valid: true, name: "Alice", age: 25, email: "alice@example.com" } | { valid: false, error: "Invalid age" } | { error: string, valid: false } | { valid: true, name: "Charlie", age: number, email: unknown }
 ```
 
 转换被精确求值：`Number("25")` 折叠为 `25`，合法路径胜出；`Number("abc")` 折叠为 `NaN`，`isNaN` 守卫返回 `"Invalid age"` 错误。缺失属性是已知局限：`missing` 输入上 `data.age` 是 `unknown`，所以 `Number(data.age)` 拓宽为 `number`、`isNaN(number)` 不确定——`"Invalid age"` 错误分支与回退分支都保持可达。`data.email` 也解析为 `unknown`（而不是 `undefined`），因此 `!data.email` 不是确定的 `true`，`"Missing email"` 永不被报告。结果是错误分支与回退分支的并集。
@@ -567,11 +567,11 @@ function isString(value) {
 ```text
 === isString ===
 
-Case "string": ("hello") => true
-Case "number": (42) => false
-Case "object": ({ type: "user", name: "Alice" }) => false
+debug "string": ("hello") => true
+debug "number": (42) => false
+debug "object": ({ type: "user", name: "Alice" }) => false
 
-Combined: true | false
+Observed: true | false
 ```
 
 Nudo 在类型层面对每个字面量输入求值 `typeof`。`"hello"` 的 `typeof` 是 `"string"`，比较结果为 `true`。数字和对象产生 `false`。合并类型是并集 `true | false`。
@@ -589,7 +589,7 @@ Nudo 在类型层面对每个字面量输入求值 `typeof`。`"hello"` 的 `typ
 
 /**
  * @nudo:case "get user" (1)
- * @nudo:case "symbolic" (T.number)
+ * @nudo:case "symbolic" (number())
  */
 async function fetchUser(id) {
   const res = await fetch(`/api/users/${id}`);
@@ -605,10 +605,10 @@ async function fetchUser(id) {
 ```text
 === fetchUser ===
 
-Case "get user": (1) => never throws Error
-Case "symbolic": (number) => never throws Error
+debug "get user": (1) => never throws Error
+debug "symbolic": (number) => never throws Error
 
-Combined: never
+Observed: never
 
 Diagnostics:
 
@@ -644,7 +644,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * @nudo:case "test" (T.string)
+ * @nudo:case "test" (string())
  */
 function loadConfig(dir) {
   const filePath = join(dir, "config.json");
@@ -659,7 +659,7 @@ function loadConfig(dir) {
 ```text
 === loadConfig ===
 
-Case "test": (string) => null
+debug "test": (string) => null
 ```
 
 符号路径上的 `existsSync(filePath)` 不确定，所以两个分支都保持可达——case 头报告提前的 `return null`（`null`），而内部 Abs 结果是 `unknown`（`JSON.parse` 折叠为 `unknown`）。`@nudo:env node` 为 `readFileSync`、`existsSync` 和 `join` 提供类型，因此无需任何 mock。
@@ -684,7 +684,7 @@ function hashContent(data) {
 ```text
 === hashContent ===
 
-Case "hash": ("hello world") => string | Buffer { … }
+debug "hash": ("hello world") => string | Buffer { … }
 ```
 
 `node:crypto` 已建模：`createHash` 返回 Hash 对象（`update` / `digest`），`digest("hex")` 折叠为 `string | Buffer`（`Buffer` 分支携带其方法形状）。这里没有 `nudo:unknown-recv` 诊断。

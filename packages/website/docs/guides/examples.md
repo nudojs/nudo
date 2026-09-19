@@ -7,7 +7,7 @@ description: Browse practical Nudo inference examples grouped by theme — funct
 
 This guide shows practical examples of Nudo type inference, grouped by theme. Each example includes the input code with directives and the inferred types.
 
-Every output block below is a real `nudo infer` run of the code above it. Output blocks show the **case headers and `Combined:` lines** — the per-call-site ground truth. The `intension:` / `abs:` lines of a full run re-evaluate the function with `unknown` parameters (a generalized signature), which for multi-branch functions shows only the fallback path; read the case headers and `Combined:` for branch-by-branch precision. Functions here use call sites (`call@L…`) when the call-site path is the precise one, and `@nudo:case` directives when they are.
+Every output block below is a real `nudo infer` run of the code above it. Output blocks show the **case headers and `Observed: ` lines** — the per-call-site ground truth. The `intension:` / `abs:` lines of a full run re-evaluate the function with `unknown` parameters (a generalized signature), which for multi-branch functions shows only the fallback path; read the case headers and `Observed: ` for branch-by-branch precision. Functions here use call sites (`call@L…`) when the call-site path is the precise one, and `@nudo:case` directives when they are.
 
 > The repo's CI-verified example suite lives in [`docs/examples/`](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md): every command and promised exit code there is checked by `pnpm run verify:examples`, with per-example output pins mirroring the documented output lines. This guide browses the same engine by theme; the repo suite is the ground-truth gate.
 
@@ -17,13 +17,13 @@ Every output block below is a real `nudo infer` run of the code above it. Output
 
 ### 1. Basic Function with Literal and Symbolic Cases
 
-A function with multiple cases: concrete values and symbolic type values. Nudo combines the results.
+A function with multiple observations: concrete call sites and optional debug witnesses (constraint builders). Nudo joins the results.
 
 ```javascript
 /**
  * @nudo:case "positive numbers" (5, 3)
  * @nudo:case "negative result" (1, 10)
- * @nudo:case "symbolic" (T.number, T.number)
+ * @nudo:case "symbolic" (number(), number())
  */
 function subtract(a, b) {
   return a - b;
@@ -35,14 +35,14 @@ function subtract(a, b) {
 ```text
 === subtract ===
 
-Case "positive numbers": (5, 3) => 2
-Case "negative result": (1, 10) => -9
-Case "symbolic": (number, number) => number
+debug "positive numbers": (5, 3) => 2
+debug "negative result": (1, 10) => -9
+debug "symbolic": (number, number) => number
 
-Combined: number
+Observed: number
 ```
 
-Concrete cases keep their literal results (`2`, `-9`), and the symbolic case `(T.number, T.number)` produces `number`. The combined type is the union of all case results, simplified by absorption — the literals are absorbed by the base type `number`, yielding `number`.
+Concrete cases keep their literal results (`2`, `-9`), and the symbolic case `(number(), number())` produces `number`. The combined type is the union of all case results, simplified by absorption — the literals are absorbed by the base type `number`, yielding `number`.
 
 ---
 
@@ -62,7 +62,7 @@ greet({ name: "Alice", age: 30 });
 ```text
 === greet ===
 
-Case "call@L4": ({ name: "Alice", age: 30 }) => "Alice is 30"
+call@L4: ({ name: "Alice", age: 30 }) => "Alice is 30"
 ```
 
 Nudo evaluates the call with the concrete shape: `user.name` and `user.age` resolve to their literal values, and `+` concatenation produces the exact result `"Alice is 30"` — not a flattened `string`.
@@ -82,10 +82,10 @@ mixin({ id: 1 }, { name: "ada" });
 ```text
 === mixin ===
 
-Case "call@L4": ({ host: "localhost", port: 8080 }, { port: 3000, debug: true }) => { host: "localhost", port: 3000, debug: true }
-Case "call@L5": ({ id: 1 }, { name: "ada" }) => { id: 1, name: "ada" }
+call@L4: ({ host: "localhost", port: 8080 }, { port: 3000, debug: true }) => { host: "localhost", port: 3000, debug: true }
+call@L5: ({ id: 1 }, { name: "ada" }) => { id: 1, name: "ada" }
 
-Combined: { host: "localhost", port: 3000, debug: true } | { id: 1, name: "ada" }
+Observed: { host: "localhost", port: 3000, debug: true } | { id: 1, name: "ada" }
 ```
 
 Index projection with a literal key resolves the exact slot — and stays precise for objects playing an "env" role:
@@ -102,13 +102,13 @@ pick(env, "PATH");
 ```text
 === pick ===
 
-Case "call@L4": ({ a: 1, b: "x" }, "a") => 1
-Case "call@L6": ({ PATH: "/usr/bin", HOME: "/root" }, "PATH") => "/usr/bin"
+call@L4: ({ a: 1, b: "x" }, "a") => 1
+call@L6: ({ PATH: "/usr/bin", HOME: "/root" }, "PATH") => "/usr/bin"
 
-Combined: 1 | "/usr/bin"
+Observed: 1 | "/usr/bin"
 ```
 
-A symbolic (`T.string`) key cannot select a slot and degrades to `unknown` — repo example (CI-pinned): [`docs/examples/algebra/e-index-proj.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/e-index-proj.js). Spread meet is pinned in [`docs/examples/algebra/d-mixin-meet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/d-mixin-meet.js); the `--dts` projection (one widened signature, literal-union return) is pinned by the `a-spread-optional.js --dts` row of the [examples matrix](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md) — the generated `a-spread-optional.d.ts` is the ground-truth output.
+A symbolic (`string()`) key cannot select a slot and degrades to `unknown` — repo example (CI-pinned): [`docs/examples/algebra/e-index-proj.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/e-index-proj.js). Spread meet is pinned in [`docs/examples/algebra/d-mixin-meet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/d-mixin-meet.js); the `--dts` projection (one widened signature, literal-union return) is pinned by the `a-spread-optional.js --dts` row of the [examples matrix](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md) — the generated `a-spread-optional.d.ts` is the ground-truth output.
 
 ---
 
@@ -119,7 +119,7 @@ Arrays and higher-order functions. Nudo tracks element types through `map` and `
 ```javascript
 /**
  * @nudo:case "concrete" ([1, 2, 3])
- * @nudo:case "symbolic" (T.array(T.number))
+ * @nudo:case "symbolic" (array(number()))
  */
 function doubleAll(arr) {
   return arr.map((x) => x * 2);
@@ -131,20 +131,20 @@ function doubleAll(arr) {
 ```text
 === doubleAll ===
 
-Case "concrete": ([1, 2, 3]) => [2, 4, 6]
-Case "symbolic": (number[]) => number[]
+debug "concrete": ([1, 2, 3]) => [2, 4, 6]
+debug "symbolic": (number[]) => number[]
 
-Combined: [2, 4, 6] | number[]
+Observed: [2, 4, 6] | number[]
 ```
 
-Nudo tracks element types through `map`. The concrete input `[1, 2, 3]` is evaluated element by element to `[2, 4, 6]`, while the symbolic input `T.array(T.number)` yields `number[]`. Repo example (CI-pinned): [`docs/examples/algebra/b-hof-map.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/b-hof-map.js).
+Nudo tracks element types through `map`. The concrete input `[1, 2, 3]` is evaluated element by element to `[2, 4, 6]`, while the symbolic input `array(number())` yields `number[]`. Repo example (CI-pinned): [`docs/examples/algebra/b-hof-map.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/b-hof-map.js).
 
 `reduce` is just as precise — a literal array folds element by element through the accumulator, and a symbolic array applies the callback once (`init + element` → `number`):
 
 ```javascript
 /**
  * @nudo:case "literal" ([1, 2, 3, 4, 5])
- * @nudo:case "symbolic" (T.array(T.number))
+ * @nudo:case "symbolic" (array(number()))
  */
 function sum(numbers) {
   return numbers.reduce((acc, n) => acc + n, 0);
@@ -154,10 +154,10 @@ function sum(numbers) {
 ```text
 === sum ===
 
-Case "literal": ([1, 2, 3, 4, 5]) => 15
-Case "symbolic": (number[]) => number
+debug "literal": ([1, 2, 3, 4, 5]) => 15
+debug "symbolic": (number[]) => number
 
-Combined: number
+Observed: number
 ```
 
 Array-method support is not uniform — check this boundary before relying on a method. `some` / `every` fold to `boolean` on both the call-site and `@nudo:case` paths. `forEach` callback side effects land in the internal Abs on both paths (`abs: 15 #exact`), but the **case header** (extensional projection) differs: under an `@nudo:case` directive it reports the final `15`, while the call-site path reports the pre-loop `0`:
@@ -202,10 +202,10 @@ async function fetchUser(id) {
 ```text
 === fetchUser ===
 
-Case "user": (1) => promise<{ id: 1, name: "Alice" }>
+debug "user": (1) => promise<{ id: 1, name: "Alice" }>
 ```
 
-With the mock in place, Nudo infers that `fetchUser` returns `promise<{ id: 1, name: "Alice" }>` without real network calls. Two rules for inline mocks: the expression **must fit on one line** (multi-line expressions are truncated and reported as `nudo:mock-invalid`), and `T.*` constructors are **not available inside the mock body** — write plain JavaScript values and closures. The `stub().resolves(...)` helper is only equivalent for plain data: it keeps literal slots (`stub().resolves({ ok: true, id: 1 })` → `promise<{ ok: true, id: 1 }>`), but closure slots in the resolved value are **not bridged** — `json` arrives body-less (`json: () => ?`), so `res.json()` evaluates to `unknown` and this example degrades to `promise<unknown>`. When the mock result gets called, use the arrow-function form above. Repo example (CI-pinned): [`docs/examples/algebra/f-async-eff.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/f-async-eff.js) — `@nudo:mock` is required there, not optional: without it, the B path executes the real `fetch` and crashes with `ERR_INVALID_URL`.
+With the mock in place, Nudo infers that `fetchUser` returns `promise<{ id: 1, name: "Alice" }>` without real network calls. Two rules for inline mocks: the expression **must fit on one line** (multi-line expressions are truncated and reported as `nudo:mock-invalid`), and constraint builders are **not available inside the mock body** — write plain JavaScript values and closures. The `stub().resolves(...)` helper is only equivalent for plain data: it keeps literal slots (`stub().resolves({ ok: true, id: 1 })` → `promise<{ ok: true, id: 1 }>`), but closure slots in the resolved value are **not bridged** — `json` arrives body-less (`json: () => ?`), so `res.json()` evaluates to `unknown` and this example degrades to `promise<unknown>`. When the mock result gets called, use the arrow-function form above. Repo example (CI-pinned): [`docs/examples/algebra/f-async-eff.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/f-async-eff.js) — `@nudo:mock` is required there, not optional: without it, the B path executes the real `fetch` and crashes with `ERR_INVALID_URL`.
 
 ---
 
@@ -231,10 +231,10 @@ function half(x) {
 ```text
 === half ===
 
-Case "valid": (10) => 5
-Case "negative": (-1) => never throws RangeError
+debug "valid": (10) => 5
+debug "negative": (-1) => never throws RangeError
 
-Combined: 5
+Observed: 5
 ```
 
 Nudo models control flow: the `valid` case returns `5`, the `negative` case throws `RangeError` and never returns — its result is `never` with the thrown value tracked alongside. The combined value type is `5`. A statically decided throw like this one emits no extra diagnostic — `never throws RangeError` is the whole story. A **conditional** throw (the throwing branch guarded by an unknown condition, as in example 15) additionally reports `nudo-may-throw` for that case.
@@ -249,7 +249,7 @@ Nudo preserves string structure through concatenation, enabling precise inferenc
 
 ```javascript
 /**
- * @nudo:case "symbolic" (T.string)
+ * @nudo:case "symbolic" (string())
  */
 function makeApiUrl(path) {
   return "https://api.example.com" + path;
@@ -283,7 +283,7 @@ checkUrl("https://api.example.com/users");
 ```text
 === checkUrl ===
 
-Case "call@L4": ("https://api.example.com/users") => true
+call@L4: ("https://api.example.com/users") => true
 ```
 
 `startsWith`, `endsWith`, and `includes` fold to a definite boolean on literal receivers — on the call-site path and under an `@nudo:case` directive alike. Not every method keeps full precision though — `"hello".indexOf("l")` yields the `number` primitive without the literal index (see example 7).
@@ -309,7 +309,7 @@ stringDemo();
 ```text
 === stringDemo ===
 
-Case "call@L7": () => { upper: "HELLO", sliced: "el", len: 5 }
+call@L7: () => { upper: "HELLO", sliced: "el", len: 5 }
 ```
 
 `toUpperCase`, `slice`, `.length`, and `split` (literal receiver and separator) fold to precise results at the call site. TypeScript can only infer `string`, `number`, or `string[]` for these operations. `indexOf` still yields the `number` primitive without the literal index, so check with `nudo infer` before relying on a specific method.
@@ -342,7 +342,7 @@ floatOf("3.14");                     // → 3.14
 ```text
 === strOf ===
 
-Case "call@L2": (5) => "5"
+call@L2: (5) => "5"
 ```
 
 `String`, `Number`, and `Boolean` fold number/string/boolean literals to the exact coerced literal; `parseInt` / `parseFloat` fold string/number literals to the exact numeric prefix/parse. Symbolic arguments widen to the target primitive. Repo example (CI-pinned): [`docs/examples/algebra/l-primitive-conversion.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/l-primitive-conversion.js).
@@ -371,10 +371,10 @@ sumTo(5);
 ```text
 === sumTo ===
 
-Case "call@L8": (5) => 10
+call@L8: (5) => 10
 ```
 
-With concrete input `5`, Nudo evaluates the loop and produces the exact result `10`. With an abstract bound (`T.number`), the guard `i < n` is never definitely false, so the loop runs to its bounded-iteration cap (8) — the accumulator sums `0…7` and the case reports `28 #exact`. The cap is a termination guard for abstract conditions, not a fixed-point join.
+With concrete input `5`, Nudo evaluates the loop and produces the exact result `10`. With an abstract bound (`number()`), the guard `i < n` is never definitely false, so the loop runs to its bounded-iteration cap (8) — the accumulator sums `0…7` and the case reports `28 #exact`. The cap is a termination guard for abstract conditions, not a fixed-point join.
 
 ---
 
@@ -396,13 +396,13 @@ pickAdult(12);
 ```text
 === pickAdult ===
 
-Case "call@L5": (25) => 25
-Case "call@L6": (12) => -1
+call@L5: (25) => 25
+call@L6: (12) => -1
 
-Combined: 25 | -1
+Observed: 25 | -1
 ```
 
-`pickAdult(25)` takes the `age >= 18` branch and returns `25`; `pickAdult(12)` falls through to `-1`. The combined type keeps both literal results. (For an abstract `T.number` argument the guard cannot fork, and the two branches join — `age | -1` absorbs into `number`, so the case reports `number`.) Repo example (CI-pinned): [`docs/examples/algebra/g-narrow-subtract.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/g-narrow-subtract.js).
+`pickAdult(25)` takes the `age >= 18` branch and returns `25`; `pickAdult(12)` falls through to `-1`. The combined type keeps both literal results. (For an abstract `number()` argument the guard cannot fork, and the two branches join — `age | -1` absorbs into `number`, so the case reports `number`.) Repo example (CI-pinned): [`docs/examples/algebra/g-narrow-subtract.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/g-narrow-subtract.js).
 
 ---
 
@@ -434,12 +434,12 @@ function handleState(state) {
 ```text
 === handleState ===
 
-Case "idle": ({ status: "idle" }) => "Waiting..."
-Case "loading": ({ status: "loading", requestId: "abc" }) => "Loading abc..."
-Case "success": ({ status: "success", data: { name: "test" } }) => "test"
-Case "error": ({ status: "error", message: "fail" }) => "fail"
+debug "idle": ({ status: "idle" }) => "Waiting..."
+debug "loading": ({ status: "loading", requestId: "abc" }) => "Loading abc..."
+debug "success": ({ status: "success", data: { name: "test" } }) => "test"
+debug "error": ({ status: "error", message: "fail" }) => "fail"
 
-Combined: "Waiting..." | "Loading abc..." | "test" | "fail"
+Observed: "Waiting..." | "Loading abc..." | "test" | "fail"
 ```
 
 Nudo narrows `state` inside each `case` branch based on the discriminant. In the `"loading"` case, `state.requestId` is available as `"abc"` (literal) and the template is fully evaluated to `"Loading abc..."`; in the `"success"` case, `state.data.name` resolves to `"test"`. The combined type keeps every literal result.
@@ -463,13 +463,13 @@ getTheme({ user: { profile: { name: "Bob" } } });
 ```text
 === getTheme ===
 
-Case "call@L4": ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } }) => "dark"
-Case "call@L5": ({ user: { profile: { name: "Bob" } } }) => "light"
+call@L4: ({ user: { profile: { name: "Alice", settings: { theme: "dark" } } } }) => "dark"
+call@L5: ({ user: { profile: { name: "Bob" } } }) => "light"
 
-Combined: unknown
+Observed: unknown
 ```
 
-When the full path exists, the chain resolves to the literal `"dark"`; when the chain short-circuits, the `?? "light"` fallback folds to the literal `"light"`. Each call site reports its exact literal. `Combined:` still degrades to `unknown` — the aggregate is derived from the symbolic re-run, which can't follow the deep `?.` chain. A shallow `??` on a known property is precise:
+When the full path exists, the chain resolves to the literal `"dark"`; when the chain short-circuits, the `?? "light"` fallback folds to the literal `"light"`. Each call site reports its exact literal. `Observed: ` still degrades to `unknown` — the aggregate is derived from the symbolic re-run, which can't follow the deep `?.` chain. A shallow `??` on a known property is precise:
 
 ```javascript
 function getPort(config) {
@@ -479,7 +479,7 @@ function getPort(config) {
 getPort({ port: 8080 });   // → number
 ```
 
-The case headers now fold the fallback to its literal (`"dark"` / `"light"`), but `Combined:` still reports `unknown` because the combined value is computed from the symbolic re-run (`intension`), which can't follow the deep `?.` chain. Verify your own chains with `nudo infer`.
+The case headers now fold the fallback to its literal (`"dark"` / `"light"`), but `Observed: ` still reports `unknown` because the combined value is computed from the symbolic re-run (`intension`), which can't follow the deep `?.` chain. Verify your own chains with `nudo infer`.
 
 ---
 
@@ -503,10 +503,10 @@ parseResponse({ status: 404, error: "Not found" });
 ```text
 === parseResponse ===
 
-Case "call@L7": ({ status: 200, data: { id: 1, name: "Alice", email: "alice@example.com" } }) => { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } }
-Case "call@L8": ({ status: 404, error: "Not found" }) => { success: false, error: "Not found" }
+call@L7: ({ status: 200, data: { id: 1, name: "Alice", email: "alice@example.com" } }) => { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } }
+call@L8: ({ status: 404, error: "Not found" }) => { success: false, error: "Not found" }
 
-Combined: { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } } | { success: false, error: "Not found" }
+Observed: { success: true, user: { id: 1, name: "Alice", email: "alice@example.com" } } | { success: false, error: "Not found" }
 ```
 
 The `status === 200` check narrows per call: the success call takes the `if` branch with `response.data` fully available; the 404 call falls through to the error branch. The combined type is the union of both concrete shapes.
@@ -536,11 +536,11 @@ validateForm({ name: "Charlie" });
 ```text
 === validateForm ===
 
-Case "call@L7": ({ name: "Alice", age: "25", email: "alice@example.com" }) => { valid: true, name: "Alice", age: 25, email: "alice@example.com" }
-Case "call@L8": ({ name: "Bob", age: "abc", email: "bob@example.com" }) => { valid: false, error: "Invalid age" }
-Case "call@L9": ({ name: "Charlie" }) => { error: string, valid: false } | { valid: true, name: "Charlie", age: number, email: unknown }
+call@L7: ({ name: "Alice", age: "25", email: "alice@example.com" }) => { valid: true, name: "Alice", age: 25, email: "alice@example.com" }
+call@L8: ({ name: "Bob", age: "abc", email: "bob@example.com" }) => { valid: false, error: "Invalid age" }
+call@L9: ({ name: "Charlie" }) => { error: string, valid: false } | { valid: true, name: "Charlie", age: number, email: unknown }
 
-Combined: { valid: true, name: "Alice", age: 25, email: "alice@example.com" } | { valid: false, error: "Invalid age" } | { error: string, valid: false } | { valid: true, name: "Charlie", age: number, email: unknown }
+Observed: { valid: true, name: "Alice", age: 25, email: "alice@example.com" } | { valid: false, error: "Invalid age" } | { error: string, valid: false } | { valid: true, name: "Charlie", age: number, email: unknown }
 ```
 
 The conversions are evaluated precisely: `Number("25")` folds to `25` and the valid path wins; `Number("abc")` folds to `NaN`, so the `isNaN` guard returns the `"Invalid age"` error. A missing property is a known limitation: on the `missing` input, `data.age` is `unknown`, so `Number(data.age)` widens to `number` and `isNaN(number)` is indefinite — the `"Invalid age"` error branch and the fallthrough both stay reachable. `data.email` also resolves to `unknown` (not `undefined`), so `!data.email` is not a definite `true` and `"Missing email"` is never reported. The result is the union of the error branch and the fallthrough.
@@ -567,11 +567,11 @@ function isString(value) {
 ```text
 === isString ===
 
-Case "string": ("hello") => true
-Case "number": (42) => false
-Case "object": ({ type: "user", name: "Alice" }) => false
+debug "string": ("hello") => true
+debug "number": (42) => false
+debug "object": ({ type: "user", name: "Alice" }) => false
 
-Combined: true | false
+Observed: true | false
 ```
 
 Nudo evaluates `typeof` on each literal input at the type level. `"hello"` has `typeof "string"`, so the comparison yields `true`. Numbers and objects yield `false`. The combined type is the union `true | false`.
@@ -589,7 +589,7 @@ Use `@nudo:env web` to load built-in type definitions for Web globals. For netwo
 
 /**
  * @nudo:case "get user" (1)
- * @nudo:case "symbolic" (T.number)
+ * @nudo:case "symbolic" (number())
  */
 async function fetchUser(id) {
   const res = await fetch(`/api/users/${id}`);
@@ -605,10 +605,10 @@ async function fetchUser(id) {
 ```text
 === fetchUser ===
 
-Case "get user": (1) => never throws Error
-Case "symbolic": (number) => never throws Error
+debug "get user": (1) => never throws Error
+debug "symbolic": (number) => never throws Error
 
-Combined: never
+Observed: never
 
 Diagnostics:
 
@@ -644,7 +644,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * @nudo:case "test" (T.string)
+ * @nudo:case "test" (string())
  */
 function loadConfig(dir) {
   const filePath = join(dir, "config.json");
@@ -659,7 +659,7 @@ function loadConfig(dir) {
 ```text
 === loadConfig ===
 
-Case "test": (string) => null
+debug "test": (string) => null
 ```
 
 `existsSync(filePath)` on a symbolic path is indefinite, so both branches stay reachable — the case header reports the early `return null` (`null`), while the internal Abs result is `unknown` (`JSON.parse` folds to `unknown`). `@nudo:env node` types `readFileSync`, `existsSync`, and `join`, so no mocks are needed.
@@ -684,7 +684,7 @@ function hashContent(data) {
 ```text
 === hashContent ===
 
-Case "hash": ("hello world") => string | Buffer { … }
+debug "hash": ("hello world") => string | Buffer { … }
 ```
 
 `node:crypto` is modeled: `createHash` returns a Hash object (`update` / `digest`), and `digest("hex")` folds to `string | Buffer` (the `Buffer` arm carries its method shape). No `nudo:unknown-recv` diagnostics here.

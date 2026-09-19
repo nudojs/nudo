@@ -100,7 +100,7 @@ combine(5, 3)   // → 8  #exact, not number
 function selfAdd(a) { return a + a; }
 selfAdd(1);  // → 2  #exact
 selfAdd(2);  // → 4  #exact
-// Combined: 2 | 4 — never 1+1 | 1+2 | 2+1 | 2+2
+// Observed: 2 | 4 — never 1+1 | 1+2 | 2+1 | 2+2
 ```
 
 **Principle 4: Guard narrowing.** Type guards (`typeof`, `instanceof`, truthiness checks) narrow values in branches.
@@ -271,7 +271,7 @@ Directives are structured comments that guide the engine. They use the `@nudo:` 
 | `@nudo:case` | Provide named execution cases (concrete or symbolic inputs) |
 | `@nudo:mock` | Mock external dependencies with Abs-valued stubs |
 | `@nudo:pure` | Mark function as pure for memoization |
-| `@nudo:skip` | Skip evaluation; an optional type expression declares the return type (e.g. `@nudo:skip T.number`) |
+| `@nudo:skip` | Skip evaluation; an optional constraint-builder expression declares the return type (e.g. `@nudo:skip number()`) |
 | `@nudo:sample` | Reserved no-op (parsed, not consumed) |
 | `@nudo:refine` | Refinement contract: `@nudo:refine param name` / `@nudo:refine return name` (Pred enters Abs) |
 | `@nudo:env` | Declare runtime environment APIs (file-level `///` comment) |
@@ -367,7 +367,7 @@ function inc(x) {
 }
 ```
 
-The Pred enters Abs and participates in algebra (`x>0` ⇒ `x+1>1`). The template's constraint builders lower directly to term/pred constraints on Abs — `T.refine` no longer exists.
+The Pred enters Abs and participates in algebra (`x>0` ⇒ `x+1>1`). The template's constraint builders lower directly to term/pred constraints on Abs.
 
 ---
 
@@ -378,7 +378,7 @@ The Pred enters Abs and participates in algebra (`x>0` ⇒ `x+1>1`). The templat
 ```javascript
 /**
  * @nudo:case "concrete" (1, 2)
- * @nudo:case "symbolic" (T.number, T.number)
+ * @nudo:case "symbolic" (number(), number())
  */
 function calc(a, b) {
   if (a > b) return a - b;
@@ -386,13 +386,13 @@ function calc(a, b) {
 }
 ```
 
-**Case "concrete" — `calc(1, 2)`:**
+**debug "concrete" — `calc(1, 2)`:**
 1. Bind: `a = lit(1)`, `b = lit(2)`
 2. Condition: `a > b` → `lit(false)`
 3. Take alternate: `a + b` → `lit(3)`
 4. Result: `lit(3)`
 
-**Case "symbolic" — `calc(T.number, T.number)`:**
+**debug "symbolic" — `calc(number(), number())`:**
 1. Bind: `a = number`, `b = number`
 2. Condition: `a > b` → `boolean` (abstract)
 3. Fork both branches:
@@ -400,14 +400,14 @@ function calc(a, b) {
    - False: `a + b` → `number`
 4. Merge: `number`
 
-**Combined:** `((1, 2) => 3) & ((number, number) => number)`
+**Observed: ** `((1, 2) => 3) & ((number, number) => number)`
 
 ---
 
 ## 8. Implementation Roadmap
 
 ### Done
-- **Evaluator MVP** — Babel, TypeValue IR, ops, narrowing, `@nudo:case`, CLI `infer`.
+- **Evaluator MVP** — Babel, Abs evaluation, ops, narrowing, call-site observations + debug `@nudo:case`, CLI `infer`.
 - **Objects/arrays** — objects, arrays, tuples, Array methods, `@nudo:mock`.
 - **Advanced language** — closures, recursion budget, async/Promise, try-catch, classes.
 - **Tooling** — LSP, watch, `.d.ts`, Vite plugin, VS Code extension.

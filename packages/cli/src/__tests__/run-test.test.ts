@@ -6,7 +6,7 @@ describe("nudo test — case as test", () => {
   it("passes when case expected matches", async () => {
     const source = `
       /**
-       * @nudo:case "num" (1) => T.number
+       * @nudo:case "num" (1) => number()
        */
       function id(x) { return x; }
     `;
@@ -20,7 +20,7 @@ describe("nudo test — case as test", () => {
   it("fails when case expected does not match", async () => {
     const source = `
       /**
-       * @nudo:case "wrong" (1) => T.string
+       * @nudo:case "wrong" (1) => string()
        */
       function id(x) { return x; }
     `;

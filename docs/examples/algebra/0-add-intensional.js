@@ -24,7 +24,7 @@ add(1, 3);
 
 /**
  * @nudo:refine x positive
- * @nudo:case "symbolic" (T.number)
+ * @nudo:case "symbolic" (number())
  */
 function scale(x) {
   // 前置条件：x > 0（来自 @nudo:refine）
@@ -34,7 +34,7 @@ function scale(x) {
 
 /**
  * @nudo:refine x positive
- * @nudo:case "symbolic" (T.number)
+ * @nudo:case "symbolic" (number())
  */
 function twice(x) {
   // 前置条件：x > 0（来自 @nudo:refine）

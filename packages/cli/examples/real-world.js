@@ -1,7 +1,7 @@
 /**
  * @nudo:case "success" ({ status: 200, data: { name: "Alice", email: "alice@example.com" } })
  * @nudo:case "not-found" ({ status: 404, error: "User not found" })
- * @nudo:case "symbolic" (T.object)
+ * @nudo:case "symbolic" (shape({ status: number(), data: any(), error: any() }))
  */
 function handleUserResponse(response) {
   if (response.status === 200) {
@@ -33,7 +33,7 @@ function checkAccess(user) {
 /**
  * @nudo:case "complete" ({ name: "Task 1", dueDate: "2025-01-01", priority: "high" })
  * @nudo:case "no-date" ({ name: "Task 2", priority: "low" })
- * @nudo:case "symbolic" (T.object)
+ * @nudo:case "symbolic" (shape({ role: string(), permissions: array(string()) }))
  */
 function formatTask(task) {
   const name = task.name ?? "Untitled";

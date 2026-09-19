@@ -42,7 +42,7 @@ describe("@nudo:skip directive", () => {
   it("parses @nudo:skip with return type", () => {
     const fns = getDirectives(`
       /**
-       * @nudo:skip T.number
+       * @nudo:skip number()
        */
       function external() {}
     `);
@@ -63,7 +63,7 @@ describe("@nudo:sample directive", () => {
     const fns = getDirectives(`
       /**
        * @nudo:sample 5
-       * @nudo:case "test" (T.number)
+       * @nudo:case "test" (number())
        */
       function loop(n) { return n; }
     `);

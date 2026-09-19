@@ -85,7 +85,7 @@ export function go() { return a(); }
     // 抽象参数触发调用预算截断；B Abs 路径与 TypeValue 都可能记 recursion:*
     const src = `
 /**
- * @nudo:case "n" (T.number)
+ * @nudo:case "n" (number())
  */
 export function deep(n) {
   if (n <= 0) return 0;

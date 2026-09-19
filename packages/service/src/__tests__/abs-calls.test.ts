@@ -43,8 +43,8 @@ describe("self-contained Abs call records", () => {
   it("directive expected is carried on CaseResult", () => {
     const source = `
       /**
-       * @nudo:case "ok" (1) => T.number
-       * @nudo:case "bad" (1) => T.string
+       * @nudo:case "ok" (1) => number()
+       * @nudo:case "bad" (1) => string()
        */
       function id(x) { return x; }
     `;

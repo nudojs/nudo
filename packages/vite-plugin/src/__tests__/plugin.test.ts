@@ -106,7 +106,7 @@ function safeSqrt(x) {
     // case 期望返回类型与推断不符 → error 级诊断
     const source = `
 /**
- * @nudo:case "test" (1) => T.string
+ * @nudo:case "test" (1) => string()
  */
 function identity(x) {
   return x;

@@ -297,7 +297,7 @@ Serializes a single Abs into expression text that the directive grammar (`parseC
 
 **Example:**
 ```typescript
-serializeCaseArg(num())     // → "T.number" (legacy T.* spelling round-trips)
+serializeCaseArg(num())     // → "number()"
 serializeCaseArg(strLit("a")) // → '"a"'
 ```
 
@@ -312,7 +312,7 @@ Assembles one single-line directive ` * @nudo:case "name" (a, b)` (leading ` *`,
 **Example:**
 ```typescript
 buildCaseDirective("call@L2", [str()])
-// → ' * @nudo:case "call@L2" (T.string)'
+// → ' * @nudo:case "call@L2" (string())'
 ```
 
 ### stripGeneratedCaseDirectives

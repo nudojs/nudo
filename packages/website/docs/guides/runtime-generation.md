@@ -43,12 +43,12 @@ nudo generate src/api/users.js --format zod > users.schema.txt
 
 ## Example Source
 
-All examples on this page use the file below. Note the real directive syntax: `@nudo:case "<name>" (<type expression>)` -- the case name is quoted and the type expression is wrapped in parentheses, using `T.*` constructors.
+All examples on this page use the file below. Directive type expressions use constraint builders (`number()`, `string()`, `shape({...})`, `array(...)`) or concrete literals — not the removed `T.*` grammar. `@nudo:case` witnesses are debug-only.
 
 ```js
 // src/api/users.js
 
-// @nudo:case "input" (T.object({ name: T.string, age: T.number }))
+// @nudo:case "input" (shape({ name: string(), age: number() }))
 function createUser(input) {
   return { id: 123, name: input.name, age: input.age };
 }
@@ -66,7 +66,7 @@ Output (stdout):
 
 ```js
 // === createUser Zod Schemas ===
-// Case "input":
+// debug "input":
 // Input: { arg0: z.object({ name: z.string(), age: z.number() }) }
 // Output: z.object({ id: z.literal(123), name: z.string(), age: z.number() })
 ```
@@ -298,7 +298,7 @@ Here is an end-to-end example from source code to runtime validation.
 ```js
 // src/api/products.js
 
-// @nudo:case "input" (T.object({ name: T.string, price: T.number, tags: T.array(T.string) }))
+// @nudo:case "input" (shape({ name: string(), price: number(), tags: array(string()) }))
 function createProduct(input) {
   return {
     id: 456,
@@ -319,7 +319,7 @@ Output (stdout):
 
 ```text
 // === createProduct Zod Schemas ===
-// Case "input":
+// debug "input":
 // Input: { arg0: z.object({ name: z.string(), price: z.number(), tags: z.array(z.string()) }) }
 // Output: z.object({ id: z.literal(456), name: z.string(), price: z.number(), tags: z.array(z.string()) })
 

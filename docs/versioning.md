@@ -134,7 +134,8 @@ pnpm run ci:version   # only on a throwaway branch — rewrites package.json ver
 
 | Change | Migration |
 |--------|-----------|
-| `T.*` directive grammar deprecated | Prefer `@nudo:refine` + `*.nudo.js` constraint builders; `T.*` still parses |
+| **`T.*` directive grammar removed (breaking)** | Use constraint builders (`number()`, `lit()`, `shape()`, `union()`, …) or concrete literals in `@nudo:case` / `@nudo:as` / `@nudo:replace` / `@nudo:mock` / `@nudo:skip`. `parseTypeValueExpr` export removed — use `parseCaseArgExpr`. `serializeCaseArg` emits builders, not `T.*`. |
+| `@nudo:case` product role | **Debug / `nudo test` / LSP scenario only.** Contracts live in `*.nudo.js` / `@nudo:refine`. CLI `infer` prints call-site observations (`call@L…`) and `debug "name"` witnesses — not `Case "…"` as the type product. |
 | Class methods / CJS / `export default` sidecar keys | Use `Class.method` (**local declaration name**, not export alias), `Class_method`, nested objects, or local export names — `export { Local as Public }` binds `Local.method`, not `Public.method`. See `design-refine-derivation.md` |
 | `nudo.interface` product name | `nudo refine` is an alias; prefer `nudo interface` |
 

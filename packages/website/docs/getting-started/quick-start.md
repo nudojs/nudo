@@ -1,31 +1,26 @@
 ---
 sidebar_position: 2
-description: "Infer your first types in minutes: add @nudo:case directives to a JavaScript file and run npx nudojs infer."
+description: "Infer your first types in minutes: write plain JavaScript with call sites and run npx nudojs infer. Contracts live in *.nudo.js sidecars."
 ---
 
 # Quick Start
 
-This guide walks through inferring types from a JavaScript file using Nudo directives and the CLI.
+This guide walks through inferring types from a JavaScript file. Nudo is Abs-native: production analysis executes **observed call sites** under abstract interpretation. Contracts come from `*.nudo.js` sidecars and `@nudo:refine` / `@nudo:interface`. `@nudo:case` is a debug / `nudo test` sub-layer — not the contract product.
 
 ## 1. Create a JavaScript file
 
-Create `math.js` with a function and `@nudo:case` directives:
+Create `math.js` with a function and call sites (no directives required):
 
 ```javascript
-/**
- * @nudo:case "positive numbers" (5, 3)
- * @nudo:case "negative result" (1, 10)
- * @nudo:case "symbolic" (T.number, T.number)
- */
-function subtract(a, b) {
+export function subtract(a, b) {
   return a - b;
 }
+
+subtract(5, 3);
+subtract(1, 10);
 ```
 
-Each `@nudo:case` provides a named input for Nudo to execute with. You can use:
-
-- **Concrete values** like `(5, 3)` or `("hello")`
-- **Symbolic type values** like `(T.number, T.number)` or `T.union(T.string, T.number)`
+Call sites are the evidence Nudo executes. Optional contracts and debug witnesses are separate surfaces — see below.
 
 ## 2. Run inference
 
@@ -40,14 +35,13 @@ npx nudojs infer math.js
 ```text
 === subtract ===
 
-Case "positive numbers": (5, 3) => 2
-Case "negative result": (1, 10) => -9
-Case "symbolic": (number, number) => number
+call@L6: (5, 3) => 2
+call@L7: (1, 10) => -9
 
-Combined: number
+Observed: 2 | -9
 ```
 
-Nudo executed the function three times — twice with concrete inputs, once with symbolic `T.number` for both arguments. `Combined` is the union of all case results, simplified by absorption: the symbolic case already contributes `number`, so the literal results `2` and `-9` are absorbed — `2 | -9 | number` collapses to `number`. Pure-literal unions without a base-type member keep every literal.
+Each `call@L…` line is one observed call-site fact (line of the call). When a function has more than one observation, `Observed:` prints the join of the results, simplified by absorption — a literal whose base type is already in the union is absorbed (e.g. `2 | -9 | number` collapses to `number`); pure-literal unions keep every literal.
 
 ## Options
 
@@ -63,12 +57,12 @@ Nudo executed the function three times — twice with concrete inputs, once with
   Generated: math.d.ts
   ```
 
-  The generated `math.d.ts` contains a single widened signature per function, with the concrete cases preserved in the JSDoc:
+  The generated `math.d.ts` contains a single widened signature per function, with concrete observations preserved in the JSDoc:
 
   ```typescript
   /**
-   * Case: positive numbers (5, 3) => 2
-   * Case: negative result (1, 10) => -9
+   * Case: call@L6 (5, 3) => 2
+   * Case: call@L7 (1, 10) => -9
    * @param a - number
    * @param b - number
    * @returns number
@@ -83,13 +77,12 @@ Nudo executed the function three times — twice with concrete inputs, once with
   ```
 
   ```text
-  === subtract (math.js:6:0) ===
+  === subtract (math.js:1:0) ===
 
-  Case "positive numbers": (5, 3) => 2
-  Case "negative result": (1, 10) => -9
-  Case "symbolic": (number, number) => number
+  call@L6: (5, 3) => 2
+  call@L7: (1, 10) => -9
 
-  Combined: number
+  Observed: 2 | -9
   ```
 
 ## Watch mode
@@ -108,48 +101,53 @@ npx nudojs watch . --dts
 
 Watch recursively scans every `.js`, `.mjs`, and `.ts` file under the directory (excluding `node_modules`) — including files without directives.
 
-## Functions without directives
+## Functions without call sites
 
-Functions without `@nudo:case` directives are not skipped either. The CLI runs whole-program inference: a function that is called somewhere in the analyzed code gets a synthesized case from the call site, carrying the argument types actually observed there.
-
-Create `utils.js` — no `@nudo:` directives anywhere:
-
-```javascript
-function formatPrice(cents) {
-  return "$" + (cents / 100).toFixed(2);
-}
-
-console.log(formatPrice(1999));
-```
-
-```bash
-npx nudojs infer utils.js
-```
-
-```text
-=== formatPrice ===
-
-Case "call@L5": (1999) => unknown
-```
-
-The case is named `call@L5` after the line of the call — `console.log(formatPrice(1999))` sits on line 5 of `utils.js`. The division `cents / 100` yields `number` and `toFixed` is not modeled yet, so the result is `unknown`. A function that no analyzed code calls still gets an `entry@L` case so its signature is emitted, with parameters defaulting to `unknown`:
+A function that no analyzed code calls still gets an `entry@L` observation so its signature is emitted, with parameters defaulting to `unknown`:
 
 ```text
 === addPrefix ===
 
-Case "entry@L1": (unknown, unknown) => unknown
+entry@L1: (unknown, unknown) => unknown
 # no call sites found; parameters default to unknown
 ```
 
 To upgrade directive-free code to real call shapes, harvest cases from your tests with `--callsites` — see the [Call-Site Discovery guide](../guides/callsite-discovery.md).
 
+## Debug witnesses (`@nudo:case`)
+
+`@nudo:case` is **debug / `nudo test` only** — scenario witnesses you execute by hand or assert in CI. It is not the interface product. Args are concrete values or constraint builders (`number()`, `lit(42)`, `shape({...})`, `union(...)`, `array(...)`):
+
+```javascript
+/**
+ * @nudo:case "positive numbers" (5, 3)
+ * @nudo:case "negative result" (1, 10)
+ * @nudo:case "symbolic" (number(), number())
+ */
+function subtract(a, b) {
+  return a - b;
+}
+```
+
+```text
+=== subtract ===
+
+debug "positive numbers": (5, 3) => 2
+debug "negative result": (1, 10) => -9
+debug "symbolic": (number, number) => number
+
+Observed: number
+```
+
+Named witnesses print as `debug "name": (…) => …`. A symbolic witness contributes a base type (`number`), which absorbs the literal results in `Observed:`.
+
 ## What happened?
 
-1. **Parse** — Nudo parsed the file and found the `subtract` function with `@nudo:case` directives.
-2. **Execute** — For each case, it ran the function body using abstract interpretation: operands like `a - b` were evaluated with type values instead of concrete numbers.
-3. **Combine** — With multiple cases, Nudo merged the inferred return types into a union, then simplified it by absorption: the literals `2` and `-9` are absorbed by the `number` contributed by the symbolic case, yielding `number`. Pure-literal unions without a base-type member keep every literal.
+1. **Parse** — Nudo parsed the file and found the `subtract` function (and any call sites / directives).
+2. **Execute** — For each observation, it ran the function body under abstract interpretation: operands like `a - b` were evaluated with Abs values.
+3. **Join** — Multiple observations are joined into `Observed:`, simplified by absorption.
 
-For deeper detail on type values, directives, and abstract interpretation, see [Core Concepts](../concepts/type-values.md).
+For deeper detail on Abs, directives, and abstract interpretation, see [Core Concepts](../concepts/type-values.md).
 
 ## Refinement contracts (no type syntax)
 

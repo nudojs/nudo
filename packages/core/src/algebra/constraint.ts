@@ -220,30 +220,34 @@ export function any(): ConstraintBuilder {
   return makeBuilder(undefined, []);
 }
 
-/** array(item) —— 数组，元素满足 item */
-export function array(item: NudoConstraint | ConstraintBuilder): ConstraintBuilder {
-  if (!isConstraint(item))
-    throw new Error("nudo: array(item) 期望约束值（number()/string()/…或其组合子）");
-  return makeBuilder(undefined, [], { element: item });
+/** array(item) —— 数组，元素满足 item；item 亦可为具体字面量（指令文法） */
+export function array(
+  item: NudoConstraint | ConstraintBuilder | number | string | boolean | null | undefined,
+): ConstraintBuilder {
+  return makeBuilder(undefined, [], {
+    element: asNestedConstraint(item, "array(item)"),
+  });
 }
 
 /**
  * object 形状约束（契约规范形状，无需 interface）：
  *
  *   shape({ id: number().gt(0), name: string() })
+ *
+ * 字段值亦可为具体字面量（指令文法）。
  */
 export function shape(
-  fields: Record<string, NudoConstraint | ConstraintBuilder>,
+  fields: Record<
+    string,
+    NudoConstraint | ConstraintBuilder | number | string | boolean | null | undefined
+  >,
 ): ConstraintBuilder {
   const mapped: Record<string, NudoField> = {};
   for (const [k, v] of Object.entries(fields)) {
-    if (!isConstraint(v))
-      throw new Error(
-        `nudo: shape 字段 '${k}' 期望约束值（number()/string()/…或其组合子），收到非约束`,
-      );
+    const constraint = asNestedConstraint(v, `shape 字段 '${k}'`);
     mapped[k] = {
-      constraint: v,
-      ...(v.isOptional ? { optional: true } : {}),
+      constraint,
+      ...(constraint.isOptional ? { optional: true } : {}),
     };
   }
   return makeBuilder(undefined, [], { fields: mapped });
@@ -268,7 +272,7 @@ function toPlainConstraint(c: NudoConstraint): NudoConstraint {
 }
 
 /** lit(v)：字面量契约——prim 按 v 类型、eq(self, v) pred 编码（不开新字段） */
-export function lit(v: number | string | boolean | null): ConstraintBuilder {
+export function lit(v: number | string | boolean | null | undefined): ConstraintBuilder {
   const prim: PrimName | undefined =
     typeof v === "number" ? "number"
     : typeof v === "string" ? "string"
@@ -277,13 +281,35 @@ export function lit(v: number | string | boolean | null): ConstraintBuilder {
   return makeBuilder(prim, [eq(selfTerm(), termLit(v))]);
 }
 
+/**
+ * union/array/shape/fn 嵌套位接受：约束构建器，或指令文法的具体字面量
+ * （5 / "hi" / true / null / undefined）。字面量归一为 lit(v) 约束。
+ */
+function asNestedConstraint(x: unknown, ctx: string): NudoConstraint {
+  if (isConstraint(x)) return toPlainConstraint(x);
+  if (
+    x === null ||
+    x === undefined ||
+    typeof x === "number" ||
+    typeof x === "string" ||
+    typeof x === "boolean"
+  ) {
+    return toPlainConstraint(lit(x));
+  }
+  throw new Error(
+    `nudo: ${ctx} 期望约束值（number()/string()/…）或具体字面量，收到非约束`,
+  );
+}
+
 /** union(...cs)：成员析取；instantiate 为 or(...)，entry Abs 为成员 joinAbs。空参 throw */
 export function union(
-  ...cs: (NudoConstraint | ConstraintBuilder)[]
+  ...cs: (NudoConstraint | ConstraintBuilder | number | string | boolean | null | undefined)[]
 ): ConstraintBuilder {
   if (cs.length === 0)
     throw new Error("nudo union(): 至少需要一个成员约束");
-  return makeBuilder(undefined, [], { members: cs.map(toPlainConstraint) });
+  return makeBuilder(undefined, [], {
+    members: cs.map((c) => asNestedConstraint(c, "union 成员")),
+  });
 }
 
 /**
@@ -292,17 +318,23 @@ export function union(
  * 逐参约束经 fnConstraintToEntryReqs 消费。
  */
 export function fn(
-  params: Record<string, NudoConstraint | ConstraintBuilder>,
-  returns?: NudoConstraint | ConstraintBuilder,
-  opts?: { throws?: NudoConstraint | ConstraintBuilder },
+  params: Record<string, NudoConstraint | ConstraintBuilder | number | string | boolean | null | undefined>,
+  returns?: NudoConstraint | ConstraintBuilder | number | string | boolean | null | undefined,
+  opts?: { throws?: NudoConstraint | ConstraintBuilder | number | string | boolean | null | undefined },
 ): ConstraintBuilder {
   const normalized: Record<string, NudoConstraint> = {};
-  for (const [k, v] of Object.entries(params)) normalized[k] = toPlainConstraint(v);
+  for (const [k, v] of Object.entries(params)) {
+    normalized[k] = asNestedConstraint(v, `fn 参数 '${k}'`);
+  }
   return makeBuilder(undefined, [], {
     fn: {
       params: normalized,
-      ...(returns !== undefined ? { returns: toPlainConstraint(returns) } : {}),
-      ...(opts?.throws !== undefined ? { throws: toPlainConstraint(opts.throws) } : {}),
+      ...(returns !== undefined
+        ? { returns: asNestedConstraint(returns, "fn 返回值") }
+        : {}),
+      ...(opts?.throws !== undefined
+        ? { throws: asNestedConstraint(opts.throws, "fn throws") }
+        : {}),
     },
   });
 }

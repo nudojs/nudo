@@ -392,7 +392,21 @@ function validateMockDirectives(
   for (const d of directives) {
     if (d.kind !== "mock" || !d.expression) continue;
     const expr = d.expression.trim();
-    if (expr.includes("(") && expr.includes(")") && !expr.startsWith("T.")) {
+    // constraint builders / literals / structure are valid raw mock RHS
+    const isTypeExpr =
+      /^(number|string|boolean|any|array|shape|lit|union|fn|partial|pick|omit|record|required|readonly|nonNullable|and)\s*\(/.test(expr) ||
+      expr === "unknown" ||
+      expr === "any" ||
+      expr === "never" ||
+      expr === "true" ||
+      expr === "false" ||
+      expr === "null" ||
+      expr === "undefined" ||
+      /^-?\d+(\.\d+)?$/.test(expr) ||
+      ((expr.startsWith('"') && expr.endsWith('"')) || (expr.startsWith("'") && expr.endsWith("'"))) ||
+      expr.startsWith("{") ||
+      expr.startsWith("[");
+    if (expr.includes("(") && expr.includes(")") && !isTypeExpr && !expr.includes("=>")) {
       // 已被 parser 识别为 nudoMock/sinon/arrow 时不会带 raw expression
       diagnostics.push({
         range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
@@ -402,6 +416,7 @@ function validateMockDirectives(
         suggestions: [
           "Supported formats: stub(), stub().returns(value), spy(), mock()",
           "Arrow functions: (args) => expression or (args) => { statements; return value; }",
+          "Type expressions: number(), string(), shape({...}), union(...), or concrete literals",
         ],
       });
     }
@@ -1770,7 +1785,7 @@ function analyzeFileUncachedInner(
             diagnostics.push({
               range: { start: { line: directive.commentLine, column: 0 }, end: { line: directive.commentLine, column: 999 } },
               severity: "error",
-              message: `Case "${directive.name}": expected ${formatShape(directive.expected)}, got ${formatShape(caseAbs)}. The inferred return type does not match the expected type declared in the @nudo:case directive`,
+              message: `debug "${directive.name}": expected ${formatShape(directive.expected)}, got ${formatShape(caseAbs)}. The inferred return type does not match the expected type declared in the @nudo:case witness`,
               code: "nudo:case-expected",
             });
           }

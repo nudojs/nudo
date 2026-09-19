@@ -10,7 +10,7 @@ description: Nudo is a type inference engine for JavaScript powered by abstract 
 
 ## How It Works
 
-Nudo **executes** your code under abstract interpretation (B-path transpile+exec, with an ast-eval fallback). Call-site facts and optional `@nudo:case` witnesses drive evaluation; the engine produces Abs results, rendered extensionally for display (`formatShape`) and projected one-way to `.d.ts` / zod when needed.
+Nudo **executes** your code under abstract interpretation (B-path transpile+exec, with an ast-eval fallback). Call-site facts drive evaluation; optional `@nudo:case` witnesses are debug / `nudo test` only; the engine produces Abs results, rendered extensionally for display (`formatShape`) and projected one-way to `.d.ts` / zod when needed.
 
 Obligations — what `nudo check` enforces — come **only** from explicit contracts:
 
@@ -24,19 +24,18 @@ No contract and no call-site evidence → `any` / honest `unknown`. Nudo does **
 | TypeScript | Nudo |
 |------------|------|
 | Declare types up front; compiler checks usage | Write plain JavaScript; engine infers Abs by executing it |
-| Requires `.ts` files or JSDoc annotations | Optional directives (`@nudo:case` witnesses) and sidecar contracts (`*.nudo.js`) |
+| Requires `.ts` files or JSDoc annotations | Sidecar contracts (`*.nudo.js` / `@nudo:refine` / `@nudo:interface`) optional; `@nudo:case` is debug-only |
 | Types describe intent | Inferred Abs describes observed behavior; contracts describe obligations |
 
-**Example: witnesses + a sidecar contract**
+**Example: call site + a sidecar contract**
 
 ```javascript
 // process.js
-/**
- * @nudo:case "numbers" (5)
- */
 export function process(x) {
   return x * 2;
 }
+
+process(5);
 ```
 
 ```javascript
@@ -45,7 +44,7 @@ import { number, fn } from "@nudojs/core";
 export const process = fn({ x: number().gt(0) }, number());
 ```
 
-`nudo infer` reports the concrete case (`(5) => 10  #exact`). `nudo check` enforces the sidecar: `process(0)` fails with `nudo:constraint-violated` (`actual ⊭ expected`). Case args may also be symbolic (`T.number`) for scenario debugging — that grammar is a **directive witness syntax**, not a second type system; analysis always runs on Abs.
+`nudo infer` reports the observed call site (`call@L5: (5) => 10`). `nudo check` enforces the sidecar: `process(0)` fails with `nudo:constraint-violated` (`actual ⊭ expected`). Optional `@nudo:case` witnesses (constraint builders such as `number()`) are **debug / `nudo test` only** — not the contract product; analysis always runs on Abs.
 
 ## Beyond TypeScript
 

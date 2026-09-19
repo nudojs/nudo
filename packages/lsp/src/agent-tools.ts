@@ -175,8 +175,6 @@ export function assertEmitTargetAllowed(
   return undefined;
 }
 
-const BARE_PRIMITIVES = new Set(["number", "string", "boolean", "bigint", "symbol"]);
-
 /** Split a type expression on top-level `|`, respecting nesting and strings. */
 function splitTopLevelUnion(expr: string): string[] {
   const members: string[] = [];
@@ -212,22 +210,25 @@ function splitTopLevelUnion(expr: string): string[] {
 
 /**
  * Translate an agent-facing type expression into `@nudo:as` directive syntax
- * (parser's parseTypeValueExpr language). Bare primitives gain a `T.` prefix;
- * unions become `T.union(...)`; structural forms pass through untouched.
+ * (parser's parseCaseArgExpr language: constraint builders + concrete literals).
+ * Bare primitives become `number()` / `string()` / `boolean()`; unions become
+ * `union(...)`; structural forms pass through untouched.
  */
 export function typeExprToDirective(expr: string): string {
   const members = splitTopLevelUnion(expr);
-  if (members.length === 0) return "T.unknown";
+  if (members.length === 0) return "any()";
   const mapped = members.map((m) => {
-    if (m.startsWith("T.")) return m;
-    if (BARE_PRIMITIVES.has(m)) return `T.${m}`;
+    if (m.startsWith("T.")) return "any()"; // legacy T.* removed
+    if (m === "number" || m === "string" || m === "boolean") return `${m}()`;
+    if (m === "unknown" || m === "any") return "any()";
     if (m === "null" || m === "undefined" || m === "true" || m === "false") return m;
     if (/^-?\d+(\.\d+)?$/.test(m)) return m;
     if (/^["']/.test(m)) return m;
-    if (/[([{]|=>/.test(m)) return m;
-    return "T.unknown";
+    if (/[([{]|=>/.test(m) && !m.startsWith("T.")) return m;
+    if (/^(number|string|boolean|any|array|shape|lit|union|fn)\s*\(/.test(m)) return m;
+    return "any()";
   });
-  return mapped.length === 1 ? mapped[0] : `T.union(${mapped.join(", ")})`;
+  return mapped.length === 1 ? mapped[0] : `union(${mapped.join(", ")})`;
 }
 
 /** Collect the names a top-level statement declares (descends into exports). */

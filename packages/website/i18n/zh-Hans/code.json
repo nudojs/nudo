@@ -24,19 +24,19 @@
     "message": "执行，而非分析"
   },
   "homepage.feature.executeDesc": {
-    "message": "Nudo 使用符号化的类型值而非具体值来执行你的 JavaScript 代码。执行过程本身就产生了类型——无需独立的类型语言。"
+    "message": "Nudo 在 Abs（shape × term × pred × conf）上以抽象解释执行你的 JavaScript。调用点是证据；契约来自 *.nudo.js 侧车——无需独立的类型语言。"
   },
   "homepage.feature.preciseTitle": {
     "message": "精确推导"
   },
   "homepage.feature.preciseDesc": {
-    "message": "通过抽象解释，Nudo 精确追踪字面量类型、类型窄化和控制流，推导结果与代码的实际运行时行为一致。"
+    "message": "通过抽象解释，Nudo 在 Abs 上精确追踪字面量、窄化与控制流，推导结果与代码的实际运行时行为一致。"
   },
   "homepage.feature.directivesTitle": {
     "message": "指令驱动"
   },
   "homepage.feature.directivesDesc": {
-    "message": "使用简单的注释指令（如 @nudo:case 和 @nudo:mock）来引导类型推导。无需学习新语法——只是带注释的 JavaScript。"
+    "message": "契约写在 *.nudo.js 侧车与 @nudo:refine / @nudo:interface（约束构建器）。@nudo:mock 打桩依赖；@nudo:case 仅用于调试 / nudo test。"
   },
   "homepage.feature.integrationsTitle": {
     "message": "IDE 与构建工具集成"

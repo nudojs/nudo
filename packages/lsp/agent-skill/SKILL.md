@@ -5,7 +5,7 @@ description: Query precise JavaScript types by abstract interpretation — use w
 
 # Nudo — type inference for JavaScript
 
-Nudo is a comment-driven type inference engine for plain JavaScript. It derives types by **executing** code with symbolic type values (`T.number`, `T.string`) instead of requiring TypeScript annotations: functions marked with `@nudo:case` directives are run under abstract interpretation, and unmarked functions get cases synthesized from their call sites (whole-program inference). Ask Nudo instead of guessing what a refactor does to types.
+Nudo is a comment-driven type inference engine for plain JavaScript. The type system is **Abs** (`shape × term × pred × conf`); production analysis is Abs-native. It derives types by **executing** observed call sites under abstract interpretation (whole-program inference). Contracts live in `*.nudo.js` sidecars and `@nudo:refine` / `@nudo:interface` (constraint builders such as `number()`, `lit(42)`, `shape({...})`). `@nudo:case` is debug / `nudo test` only — not the contract product. Ask Nudo instead of guessing what a refactor does to types.
 
 ## Install and connect
 
@@ -35,7 +35,7 @@ All commands are available as `workspace/executeCommand` (dot form) and as custo
 | Command (request alias) | Arguments (JSON) | Returns |
 |---|---|---|
 | `nudo.whatIf` (`nudo/whatIf`) | `{ "file": "src/config.js", "bindings": [{ "name": "raw", "type": "string" }], "target": "size" }` | Text: the inferred type of `target` **under the assumed bindings** — e.g. `Type of "size": number`; bindings match top-level declarations only |
-| `nudo.trace` (`nudo/trace`) | `{ "file": "src/app.js", "functionName": "parse" }` | Text: one line per case, e.g. `Input: (T.string) => Output: number` |
+| `nudo.trace` (`nudo/trace`) | `{ "file": "src/app.js", "functionName": "parse" }` | Text: one line per case, e.g. `Input: (string()) => Output: number` |
 | `nudo.suggestCase` (`nudo/suggestCase`) | `{ "file": "src/app.js", "functionName": "parse" }` | Text: paste-ready `@nudo:case` directives when every case is call-site synthesized, e.g. `Function "parse" has 2 synthesized case(s); suggested directives:`; otherwise the current case count, e.g. `Function "parse" already has 3 case(s)`, or a suggested `@nudo:case` directive |
 | `nudo.selectCase` (`nudo/selectCase`) | `{ "file": "src/app.js", "functionName": "parse", "caseIndex": 1 }` | `{ "success": true }` — switches the active case (affects hover/diagnostics until changed back) |
 | `nudo.getActiveCases` (`nudo/getActiveCases`) | `{ "file": "src/app.js" }` | `{ "parse": 1, "greet": 0 }` — active case index per function |
@@ -90,4 +90,4 @@ Bindings only match **top-level declarations** (`const`/`let`/`var`/`function`) 
 
 - **Unopened files use disk state.** If the file is not open in a connected editor, analysis runs on the on-disk content; edits the user has not saved are invisible.
 - Commands that report types reflect Nudo's inference, which follows runtime semantics (e.g. `Number("")` is `0`, not an error) — trust them over guesswork, but remember they describe the current code, not the user's intent.
-- Whole-program inference means every function with inferable call sites already has cases. When all of them are call-site synthesized, `suggestCase` returns ready-to-paste `@nudo:case` directive text (paste it above the function); `already has N case(s)` (handwritten or entry-only cases) is the normal report for the rest, not an error.
+- Whole-program inference means every function with inferable call sites already has observations. When all of them are call-site synthesized, `suggestCase` returns ready-to-paste `@nudo:case` **debug** directive text (paste it above the function for `nudo test` / LSP scenarios — not the contract product); `already has N case(s)` is the normal report for the rest, not an error.

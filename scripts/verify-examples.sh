@@ -235,43 +235,43 @@ pin 'pnpm run infer docs/examples/algebra/b-hof-map.js' \
   '([1, 2, 3], (x) => ?) => [2, 4, 6]' \
   '(["a", "b"], (s) => ?) => ["A", "B"]'
 pin 'pnpm run infer docs/examples/algebra/c-reduce-sum.js' \
-  'Case "literal": ([1, 2, 3, 4, 5]) => 15' 'abs: 15  #exact' \
-  'Case "symbolic": (number[]) => number'
+  'debug "literal": ([1, 2, 3, 4, 5]) => 15' 'abs: 15  #exact' \
+  'debug "symbolic": (number[]) => number'
 pin 'pnpm run infer docs/examples/algebra/d-mixin-meet.js' \
   '({ host: "localhost", port: 8080 }, { port: 3000, debug: true }) => { host: "localhost", port: 3000, debug: true }' \
   '({ id: 1 }, { name: "ada" }) => { id: 1, name: "ada" }'
 pin 'pnpm run infer docs/examples/algebra/e-index-proj.js' \
   '({ a: 1, b: "x" }, "a") => 1' \
   '({ PATH: "/usr/bin", HOME: "/root" }, "PATH") => "/usr/bin"' \
-  'Case "dynamic key": ({ a: 1, b: "x" }, string) => 1 | "x"' \
-  'Combined: 1 | "x" | "/usr/bin"'
+  'debug "dynamic key": ({ a: 1, b: "x" }, string) => 1 | "x"' \
+  'Observed: 1 | "x" | "/usr/bin"'
 pin 'pnpm run infer docs/examples/algebra/f-async-eff.js' \
   '(42) => promise<{ id: 1, name: "ada" }>' 'abs: promise<{ id: 1, name: "ada" }>  #path'
 pin 'pnpm run infer docs/examples/algebra/g-narrow-subtract.js' \
-  '("abc") => 3' '([1, 2]) => 2' '(5) => -1' 'Combined: 3 | 2 | -1'
+  '("abc") => 3' '([1, 2]) => 2' '(5) => -1' 'Observed: 3 | 2 | -1'
 pin 'pnpm run infer docs/examples/algebra/h-array-boundary.js' \
-  'Case "reduce": ([1, 2, 3, 4, 5]) => 15' 'abs: 15  #exact' \
-  'Case "forEach": ([1, 2, 3, 4, 5]) => 15' 'abs: 15  #exact' \
-  'Case "some": ([1, 2, 3, 4, 5]) => boolean' 'abs: boolean  #exact'
+  'debug "reduce": ([1, 2, 3, 4, 5]) => 15' 'abs: 15  #exact' \
+  'debug "forEach": ([1, 2, 3, 4, 5]) => 15' 'abs: 15  #exact' \
+  'debug "some": ([1, 2, 3, 4, 5]) => boolean' 'abs: boolean  #exact'
 pin 'pnpm run infer docs/examples/algebra/i-map-set.js' \
-  'Case "map-get": ("alice") => { id: "alice", name: "Alice" }' \
+  'debug "map-get": ("alice") => { id: "alice", name: "Alice" }' \
   'abs: { id: "alice", name: "Alice" }  #exact' \
-  'Case "set-forof": ([1, 2, 2, 3]) => [1, 2, 3]'
+  'debug "set-forof": ([1, 2, 2, 3]) => [1, 2, 3]'
 pin 'pnpm run infer docs/examples/algebra/j-this-binding.js' \
   '(5) => 25' 'abs: 25  #exact' \
   '(3) => 9' 'abs: 9  #exact' \
-  'Combined: 25 | 9'
+  'Observed: 25 | 9'
 pin 'pnpm run infer docs/examples/algebra/k-try-catch.js' \
-  'Case "fold": () => "inner"' 'abs: "inner"  #exact' \
-  'Case "caught": () => "boom"' 'abs: "boom"  #exact'
+  'debug "fold": () => "inner"' 'abs: "inner"  #exact' \
+  'debug "caught": () => "boom"' 'abs: "boom"  #exact'
 pin 'pnpm run infer docs/examples/algebra/l-primitive-conversion.js' \
-  'Case "str": (5) => "5"' 'abs: "5"  #exact' \
-  'Case "bool": ("hi") => true' 'abs: true  #exact' \
-  'Case "num": ("42") => 42' 'abs: 42  #exact' \
-  'Case "int": ("42px") => 42' 'abs: 42  #exact' \
-  'Case "float": ("3.14") => 3.14' 'abs: 3.14  #exact'
+  'debug "str": (5) => "5"' 'abs: "5"  #exact' \
+  'debug "bool": ("hi") => true' 'abs: true  #exact' \
+  'debug "num": ("42") => 42' 'abs: 42  #exact' \
+  'debug "int": ("42px") => 42' 'abs: 42  #exact' \
+  'debug "float": ("3.14") => 3.14' 'abs: 3.14  #exact'
 pin 'pnpm run infer docs/examples/algebra/sample.js' \
-  'Case "entry@' '# no call sites found; parameters default to unknown' \
+  'entry@' '# no call sites found; parameters default to unknown' \
   'add: (a: A1, b: A2) => number | string = (A1 + A2)' \
   '{ host: "localhost", port: 8080, debug: false }'
 
@@ -280,19 +280,19 @@ pin 'pnpm run check docs/examples/mini-repo/user-service.js' \
   '0 error · 0 warning' \
   'createService()  { store: MemoryStore, load: (id) => ? }  #exact'
 pin 'pnpm run infer docs/examples/mini-repo/user-service.js' \
-  'Case "ages": ([10, 20, 30]) => 60' \
+  'debug "ages": ([10, 20, 30]) => 60' \
   '(7) => promise<{ id: 7, name: "u7" }>' '(4) => 5' \
-  '(7, 1, 9999) => 7' '(5, 1, 9999) => 5' 'Combined: 7 | 5'
+  '(7, 1, 9999) => 7' '(5, 1, 9999) => 5' 'Observed: 7 | 5'
 # support files are matrix rows too: validators.js shows body-inferred
 # preconditions at entry; store.js documents class methods without call
 # sites falling back to entry@ cases (#partial).
 pin 'pnpm run infer docs/examples/mini-repo/validators.js' \
-  'Case "entry@L1": (unknown) => boolean' \
+  'entry@L1: (unknown) => boolean' \
   'isPositive: (n: A1) => boolean  where A1 > 0' \
   'clamp: (n: A1, lo: A2, hi: A3) => A2'
 pin 'pnpm run infer docs/examples/mini-repo/store.js' \
   'MemoryStore.set' 'MemoryStore.get' \
-  'Case "entry@'
+  'entry@'
 
 # interface-derivation/ — layered contract derivation (Phase 2). The root
 # contract (lib.nudo.js handwritten add4) loads for lib.js; the downstream

@@ -16,7 +16,7 @@ import {
   litValue,
   formatShape,
 } from "@nudojs/core";
-import { parse, extractDirectives, parseTypeValueExpr, type CaseDirective } from "@nudojs/parser";
+import { parse, extractDirectives, parseCaseArgExpr, type CaseDirective } from "@nudojs/parser";
 import {
   serializeCaseArg,
   buildCaseDirective,
@@ -154,25 +154,27 @@ describe("serializeCaseArg", () => {
   ];
 
   it("serializes every shape in the grammar matrix", () => {
-    expect(serializeCaseArg(num())).toBe("T.number");
+    expect(serializeCaseArg(num())).toBe("number()");
     expect(serializeCaseArg(absLit(1))).toBe("1");
     expect(serializeCaseArg(absLit("hi"))).toBe('"hi"');
     expect(serializeCaseArg(absLit('a"b'))).toBe("'a\"b'");
     expect(serializeCaseArg(absLit("a'b"))).toBe('"a\'b"');
-    expect(serializeCaseArg(absArr(num()))).toBe("T.array(T.number)");
+    expect(serializeCaseArg(absArr(num()))).toBe("array(number())");
     expect(serializeCaseArg(absTuple([absLit(1), absLit(2)]))).toBe("[1, 2]");
     expect(serializeCaseArg(absTuple([]))).toBe("[]");
     expect(serializeCaseArg(absObj({ a: absLit(1) }))).toBe("{ a: 1 }");
     expect(serializeCaseArg(absObj({}))).toBe("{}");
-    expect(serializeCaseArg(absObj({ "a-b": str() }))).toBe('{ "a-b": T.string }');
-    expect(serializeCaseArg(absUnion([num(), str()]))).toBe("T.union(T.number, T.string)");
+    expect(serializeCaseArg(absObj({ "a-b": str() }))).toBe('{ "a-b": string() }');
+    expect(serializeCaseArg(absUnion([num(), str()]))).toBe("union(number(), string())");
+    expect(serializeCaseArg(absUnknown())).toBe("any()");
+    expect(serializeCaseArg(absExact({ k: "never" }))).toBe("never");
   });
 
-  it("round-trips through parseTypeValueExpr: equivalent parse and idempotent serialize", () => {
+  it("round-trips through parseCaseArgExpr: equivalent parse and idempotent serialize", () => {
     for (const { label, value } of matrix) {
       const s = serializeCaseArg(value);
       expect(s, label).not.toBeNull();
-      const parsed = parseTypeValueExpr(s!);
+      const parsed = parseCaseArgExpr(s!);
       // 性质 1：serialize(parse(serialize(x))) === serialize(x)
       expect(serializeCaseArg(parsed), label).toBe(s);
       // 性质 2：parse 结果与原值结构等价（shape / 字面量值）
@@ -222,7 +224,7 @@ describe("serializeCaseArg", () => {
 describe("buildCaseDirective", () => {
   it("builds a single directive line without trailing newline", () => {
     expect(buildCaseDirective("call@L3", [num(), absLit(1)])).toBe(
-      ' * @nudo:case "call@L3" (T.number, 1)',
+      ' * @nudo:case "call@L3" (number(), 1)',
     );
     expect(buildCaseDirective("x", [])).toBe(' * @nudo:case "x" ()');
   });
@@ -243,7 +245,7 @@ describe("stripGeneratedCaseDirectives", () => {
   it("removes call@ case lines and the orphaned empty JSDoc block", () => {
     const source = `/**
  * @nudo:case "call@L3" (1, 2)
- * @nudo:case "call@L4" (T.string)
+ * @nudo:case "call@L4" (string())
  */
 function add(a, b) {
   return a + b;
@@ -282,7 +284,7 @@ function add(a, b) {}
 function add(a, b) {}
 
 /* plain block comment */
-// @nudo:case "other" (T.number)
+// @nudo:case "other" (number())
 const x = 1;
 `;
     const { source: out, removed } = stripGeneratedCaseDirectives(source);
@@ -405,7 +407,7 @@ function add(a, b) {
       { fn: "add", reason: "no-serializable-cases", detail: "case call@L3 not serializable" },
     ]);
     expect(result.source).toBe(`/**
- * @nudo:case "call@L2" (T.number, 2)
+ * @nudo:case "call@L2" (number(), 2)
  */
 function add(a, b) {
   return a + b;
@@ -443,7 +445,7 @@ function add(a, b) {
       ]),
     );
     expect(result.source).toBe(`/**
- * @nudo:case "call@L4" (T.number, T.string)
+ * @nudo:case "call@L4" (number(), string())
  * @nudo:case "call@L5" ("x")
  */
 function add(a, b) {
@@ -466,7 +468,7 @@ function add(a, b) {
       makeAnalysis([makeFn("add", 5, [{ name: "call@L9", args: [num()], source: "callsite" }])]),
     );
     expect(result.source).toBe(`/**
- * @nudo:case "call@L9" (T.number)
+ * @nudo:case "call@L9" (number())
  * Adds numbers.
  * @nudo:pure
  */
@@ -490,7 +492,7 @@ function add(a, b) {
     );
     expect(result.source).toBe(`function outer() {
   /**
-   * @nudo:case "call@L5" (T.number)
+   * @nudo:case "call@L5" (number())
    */
   function inner(x) {
     return x;
@@ -519,7 +521,7 @@ b2("s");
       ]),
     );
     expect(result.source).toBe(`/**
- * @nudo:case "call@L4" (T.number)
+ * @nudo:case "call@L4" (number())
  */
 function a1(x) {
   return x;
@@ -527,7 +529,7 @@ function a1(x) {
 a1(1);
 
 /**
- * @nudo:case "call@L9" (T.string)
+ * @nudo:case "call@L9" (string())
  */
 function b2(x) {
   return x;

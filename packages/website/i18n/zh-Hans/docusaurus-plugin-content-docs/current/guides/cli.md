@@ -49,12 +49,12 @@ nudo infer lib/
 ```text
 === note ===
 
-Case "entry@L1": (unknown) => unknown
+entry@L1: (unknown) => unknown
 # no call sites found; parameters default to unknown
 
 === slugify ===
 
-Case "call@L4": ("Hello World") => string
+call@L4: ("Hello World") => string
 ```
 
 `slugify` 从顶层调用得到 `call@L4` 用例——`toLowerCase()` 折叠为字面量，`.replace(...)` 再拓宽为 `string`，因此结果为 `string`。当一个被分析文件从另一个文件导入函数时，被导入函数的用例会出现在 `--- <路径> (imported) ---` 区块中。
@@ -67,7 +67,7 @@ Case "call@L4": ("Hello World") => string
 | `--loc` | 在输出中显示源码位置（file:line:column） |
 | `--json` | 以结构化 JSON 输出结果——仅支持单文件（示例见 [CLI 参考](../api/cli-reference.md#nudo-infer)） |
 | `--callsites <paths...>` | 从使用处文件（测试、示例、应用）挖掘真实参数形状并合成用例——参见[调用点发现](./callsite-discovery.md) |
-| `--emit-cases [mode]` | 把合成的用例写回源文件，成为 `@nudo:case` 指令——参见[固化 case 指令](#固化-case-指令) |
+| `--emit-cases [mode]` | **仅调试**——把合成的用例写回源文件，成为 `@nudo:case` 指令——参见[固化 case 指令](#固化-case-指令) |
 | `--dry-run` | 搭配 `--emit-cases`：打印 unified diff 而不写盘 |
 | `--exit-on-diff` | 搭配 `--dry-run`：diff 非空时以退出码 `1` 结束 |
 
@@ -76,17 +76,15 @@ Case "call@L4": ("Hello World") => string
 给定 `math.js`：
 
 ```js
-/**
- * @nudo:case "positive numbers" (5, 3)
- * @nudo:case "negative result" (1, 10)
- * @nudo:case "symbolic" (T.number, T.number)
- */
 export function subtract(a, b) {
   return a - b;
 }
+
+subtract(5, 3);
+subtract(1, 10);
 ```
 
-基本推断：
+基本推断（调用点优先）：
 
 ```bash
 nudo infer math.js
@@ -97,14 +95,13 @@ nudo infer math.js
 ```text
 === subtract ===
 
-Case "positive numbers": (5, 3) => 2
-Case "negative result": (1, 10) => -9
-Case "symbolic": (number, number) => number
+call@L6: (5, 3) => 2
+call@L7: (1, 10) => -9
 
-Combined: number
+Observed: 2 | -9
 ```
 
-组合类型按吸收律化简：符号化用例已贡献 `number`，字面量结果 `2 | -9` 被吸收。不含基类型成员的纯字面量联合会保留每个字面量。
+每一行 `call@L…` 是一条观测到的调用点事实。`Observed:` 合并结果（有基类型时按吸收律化简；纯字面量并集保留每个字面量）。可选的 `@nudo:case` 见证打印为 `debug "name": …`——仅调试 / `nudo test`。
 
 生成 TypeScript 声明文件：
 
@@ -123,13 +120,12 @@ nudo infer src/math.js --loc
 输出包含位置信息：
 
 ```text
-=== subtract (src/math.js:6:0) ===
+=== subtract (src/math.js:1:0) ===
 
-Case "positive numbers": (5, 3) => 2
-Case "negative result": (1, 10) => -9
-Case "symbolic": (number, number) => number
+call@L6: (5, 3) => 2
+call@L7: (1, 10) => -9
 
-Combined: number
+Observed: 2 | -9
 ```
 
 ### 无指令的函数
@@ -150,7 +146,7 @@ nudo infer src/plain.js
 ```text
 === add ===
 
-Case "entry@L1": (unknown, unknown) => number | string
+entry@L1: (unknown, unknown) => number | string
 # no call sites found; parameters default to unknown
 ```
 
@@ -173,17 +169,19 @@ nudo infer src/main.js
 
 === add ===
 
-Case "call@L3": (2, 3) => 5
-Case "call@L4": ("2", "3") => "23"
+call@L3: (2, 3) => 5
+call@L4: ("2", "3") => "23"
 
-Combined: 5 | "23"
+Observed: 5 | "23"
 ```
 
 要从独立的使用处文件（测试、示例、应用）挖掘参数形状，请用 `--callsites` 传入——参见[调用点发现](./callsite-discovery.md)。
 
 ### 固化 case 指令
 
-合成的 `call@L` 用例只存在于当次分析运行中——不带 `--callsites` 再跑一次 `nudo infer lib.js`，它们就没了。`--emit-cases` 把它们固化进源文件，成为真正的 `@nudo:case` 指令，文件因此自包含：后续运行（以及其他工具——`check`、`watch`、`.d.ts` 生成）无需重新求值使用处文件即可看到同样的形状，且采集到的形状像手写指令一样可评审、可进版本库。
+`--emit-cases` 是**调试 / 自包含**工具，不是契约产品——义务住在 `*.nudo.js` 侧车 / `@nudo:refine` / `@nudo:interface`（见 [`nudo interface`](#nudo-interface)）。
+
+合成的 `call@L` 用例只存在于当次分析运行中——不带 `--callsites` 再跑一次 `nudo infer lib.js`，它们就没了。`--emit-cases` 把它们固化进源文件，成为真正的 `@nudo:case` 指令，文件因此对后续调试 / `nudo test` 自包含：其他工具（`check`、`watch`、`.d.ts` 生成）无需重新求值使用处文件即可读到同样形状。
 
 #### 引导：采集一次，写回
 
@@ -214,17 +212,17 @@ nudo infer lib.js --callsites test.js --emit-cases
 ```text
 === add ===
 
-Case "call@L3": (1, 2) => 3
-Case "call@L4": ("x", "y") => "xy"
+call@L3: (1, 2) => 3
+call@L4: ("x", "y") => "xy"
 
-Combined: 3 | "xy"
+Observed: 3 | "xy"
 
 === greet ===
 
-Case "call@L2": ("ada") => "hi ada"
-Case "call@L3": ("bob") => "hi bob"
+call@L2: ("ada") => "hi ada"
+call@L3: ("bob") => "hi bob"
 
-Combined: "hi ada" | "hi bob"
+Observed: "hi ada" | "hi bob"
 
 Emitted cases → lib.js (4 directive(s) across 2 function(s))
   add: call@L3, call@L4
@@ -277,14 +275,14 @@ nudo infer lib.js --callsites test.js --emit-cases=update --dry-run --exit-on-di
 ```text
 === add ===
 
-Case "call@L3": (1, 2) => 3
-Case "call@L4": ("x", "y") => "xy"
+call@L3: (1, 2) => 3
+call@L4: ("x", "y") => "xy"
 
-Combined: 3 | "xy"
+Observed: 3 | "xy"
 
 === greet ===
 
-Case "call@L2": (42) => "hi 42"
+call@L2: (42) => "hi 42"
 
 Would emit cases → lib.js (dry run)
   add: call@L3, call@L4
@@ -314,14 +312,14 @@ nudo infer lib.js --callsites test.js --emit-cases=update
 ```text
 === add ===
 
-Case "call@L3": (1, 2) => 3
-Case "call@L4": ("x", "y") => "xy"
+call@L3: (1, 2) => 3
+call@L4: ("x", "y") => "xy"
 
-Combined: 3 | "xy"
+Observed: 3 | "xy"
 
 === greet ===
 
-Case "call@L2": (42) => "hi 42"
+call@L2: (42) => "hi 42"
 
 Emitted cases → lib.js (3 directive(s) across 2 function(s))
   add: call@L3, call@L4
@@ -544,7 +542,7 @@ twice(number)
 
 ## `nudo harvest`
 
-把已安装的 `@types/<pkg>` TypeScript 声明转成 Nudo env 文件——用 `T.*` 构造器重建这些类型的 TypeScript 源码。`@types` 包必须先安装：
+把已安装的 `@types/<pkg>` TypeScript 声明转成 Nudo env 文件——用 Nudo env 构造器重建这些类型的 TypeScript 源码。`@types` 包必须先安装：
 
 ```bash
 pnpm add -D @types/node
