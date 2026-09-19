@@ -205,32 +205,11 @@ export function wrong() { return 1; }
   });
 });
 
-describe("CLI flag / deprecation contract", () => {
+describe("CLI flag contract", () => {
   it("rejects invalid --entry-throws", () => {
     const p = write("bogus.js", "export function id(x){ return x; }\n");
     const r = runCli(["check", p, "--entry-throws", "bogus"]);
     expect(r.stderr + r.stdout).toContain("Invalid --entry-throws");
-    expect(r.status).toBe(1);
-  });
-
-  it("infer prints deprecation and still runs", () => {
-    const p = write(
-      "dep-infer.js",
-      "export function getName(user){ return user.name; }\n",
-    );
-    const r = runCli(["infer", p]);
-    expect(r.stderr + r.stdout).toContain("deprecated");
-    expect(r.stderr + r.stdout).toContain("nudo check");
-  });
-
-  it("types deprecates and maps to check --abs with gate", () => {
-    const p = write(
-      "dep-types.js",
-      "export function getName(user){ return user.name; }\n",
-    );
-    const r = runCli(["types", p]);
-    expect(r.stderr + r.stdout).toContain("deprecated");
-    expect(r.stdout).toContain("getName(any)");
     expect(r.status).toBe(1);
   });
 

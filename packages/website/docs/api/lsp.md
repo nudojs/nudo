@@ -17,10 +17,10 @@ API reference for the Nudo Language Server Protocol package. `@nudojs/lsp` wraps
 |------------|---------|
 | npm surface | `exports["."]` → `dist/server.js`; `bin.nudo-lsp`; `files: ["dist"]`; importing the entry **starts** the server |
 | initialize capabilities | `textDocumentSync` (Full), hover, completion (trigger `.`), codeLens, inlayHint, definition/references/rename, document/workspace symbols, code actions (`quickfix`), signatureHelp, semanticTokens (full), executeCommand, pull `diagnosticProvider` |
-| executeCommand | **dot form** `nudo.check`, `nudo.infer`, `nudo.hover`, `nudo.whatIf`, `nudo.suggestCase`, `nudo.trace`, `nudo.interface`, `nudo.interface.draft` (+ alias `nudo.interfaceDraft`), `nudo.interface.emit` (+ alias `nudo.interfaceEmit`), `nudo.selectCase`, `nudo.getActiveCases` |
-| custom requests | **slash form is the protocol contract**: `nudo/check`, `nudo/infer`, `nudo/hover`, `nudo/whatIf`, `nudo/suggestCase`, `nudo/trace`, `nudo/interface`, `nudo/interface.draft`, `nudo/interface.emit`, `nudo/selectCase`, `nudo/getActiveCases` — each has a matching executeCommand (`nudo/X` ↔ `nudo.X`) |
-| agent tools | `AGENT_TOOL_SOURCES` keys: `whatIf`, `suggestCase`, `trace`, `check`, `hover`, `infer`, `interface`, `interface.draft`, `interface.emit`, `codeLens` (server-only) |
-| CheckJson / InferJson | v1 schemas owned by core/service (`check-report.ts`, `infer-json.ts`); lsp surfaces them unchanged; field add-only |
+| executeCommand | **dot form** `nudo.check`, `nudo.test`, `nudo.hover`, `nudo.whatIf`, `nudo.suggestCase`, `nudo.trace`, `nudo.contract`, `nudo.contract.draft`, `nudo.contract.emit`, `nudo.selectCase`, `nudo.getActiveCases` |
+| custom requests | **slash form is the protocol contract**: `nudo/check`, `nudo/test`, `nudo/hover`, `nudo/whatIf`, `nudo/suggestCase`, `nudo/trace`, `nudo/contract`, `nudo/contract.draft`, `nudo/contract.emit`, `nudo/selectCase`, `nudo/getActiveCases` — each has a matching executeCommand (`nudo/X` ↔ `nudo.X`) |
+| agent tools | `AGENT_TOOL_SOURCES` keys: `whatIf`, `suggestCase`, `trace`, `check`, `hover`, `test`, `contract`, `contract.draft`, `contract.emit`, `codeLens` (server-only) |
+| CheckJson / CaseJson | v1 schemas owned by core/service (`check-report.ts`, `case-json.ts`); lsp surfaces them unchanged; field add-only |
 | analysis defaults | `DEFAULT_ANALYSIS_MODE = "exports"`; null config → diagnostics `default`, `evalMissingSlot` `off` |
 | experimental | `src/*` test modules, caches/debounce, free-text hover/CodeLens wording — not npm/protocol contracts |
 
@@ -176,7 +176,7 @@ What the server registers on `connection.onInitialize` (`src/server.ts`):
 |------------|---------|----------|
 | Hover | `onHover` | Inferred type at cursor via `getTypeAtPosition`; when the cursor is on an exported function name, the first line is `● interface / handwritten|generated|implicit` (same source as CodeLens) plus the effective contract display for handwritten/generated |
 | Completion (trigger `.`) | `onCompletion` | Property/method/variable items from `getCompletionsAtPosition` |
-| CodeLens | `onCodeLens` | Interface tier first: `● interface / handwritten|generated|implicit` (+ persist/update emit lenses + `⚡ draft interface` for non-handwritten exports); case lenses are the debug sub-layer — `● case "name"` active, `○` otherwise. Clicking sends `nudo.selectCase` / `nudo.interface` / `nudo.interface.draft` / `nudo.interfaceEmit` and refreshes lenses |
+| CodeLens | `onCodeLens` | Interface tier first: `● interface / handwritten|generated|implicit` (+ persist/update emit lenses + `⚡ draft interface` for non-handwritten exports); case lenses are the debug sub-layer — `● case "name"` active, `○` otherwise. Clicking sends `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit` and refreshes lenses |
 | Inlay hints | `languages.inlayHint` | End-of-line case `Type` hints + Abs param/return inlays; implicit exports carry `· derived` |
 | Definition | `onDefinition` | `resolveDefinitionLocations` (local + cross-file + sidecar + workspace fallback) |
 | References | `onReferences` | `buildSymbolTable` + `findReferences` |

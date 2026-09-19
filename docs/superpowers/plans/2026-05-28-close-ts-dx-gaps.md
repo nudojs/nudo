@@ -66,7 +66,7 @@
 重新引入 body → 必填 slot。
 
 **迁移面**：`scan.ts` 实现、`structure/arg-structure.js`、`vs-ts/structure`、gold /
-zero-FP、`nudo-check.md` / website / README 对比表。见 **C0**、**D1**、**F3**。
+zero-FP、`design-cli-semantics.md` §5 / website / README 对比表。见 **C0**、**D1**、**F3**。
 
 ### 成功判据（总览）
 
@@ -113,7 +113,7 @@ flowchart TB
 
 | ID | 任务 | 验收 | 依赖 | 状态 |
 |---|---|---|---|---|
-| A1 | **默认分析策略**：无指令 `.js` 也可被 LSP 分析（项目级开关，默认 on 或首次提示） | 打开带 export/侧车的 JS 有 hover/inlay；无指令诊断可配置静音；全量脚本用 `mode=all` | `package.json#nudo.analysis.mode=exports|all|directives` + `shouldAnalyzeFile` | [x] 出厂默认 `DEFAULT_ANALYSIS_MODE=exports`（`packages/service/src/evaluator/config.ts`）：指令 \| export \| 侧车进 IDE。**无 export/侧车/指令**的脚本仍需显式 `mode=all`（有意边界，见 design-analysis-scope §8） |
+| A1 | **默认分析策略**：无指令 `.js` 也可被 LSP 分析（项目级开关，默认 on 或首次提示） | 打开带 export/侧车的 JS 有 hover/inlay；无指令诊断可配置静音；全量脚本用 `mode=all` | `package.json#nudo.analysis.mode=exports|all|directives` + `shouldAnalyzeFile` | [x] 出厂默认 `DEFAULT_ANALYSIS_MODE=exports`（`packages/service/src/evaluator/config.ts`）：指令 \| export \| 侧车进 IDE。**无 export/侧车/指令**的脚本仍需显式 `mode=all`（有意边界，见 design-cli-semantics §7） |
 | A2 | **分析范围配置**：`package.json#nudo.analysis`：include/exclude、mode（directives/exports/all）、diagnostics 噪声档 | 设计文档 + `analysisConfig()` 归一化已落地；LSP 接线随 A1 | A1 | [x] |
 | A3 | **无指令文件的噪声控制**：implicit 推断只报 high-confidence；`unknown` 叶子默认不刷屏 | 无指令文件打开 1s 内无 warning 风暴 | A1, A2 | [x] |
 | A4 | **侧车未保存 buffer**：LSP 可对打开中的 `*.nudo.js` 生效（设计 §2.2 Phase 1 缺口） | 编辑侧车未保存时 check/hover 同步 | design-refine-derivation | [x] |
@@ -165,7 +165,7 @@ flowchart TB
 | ID | 任务 | 验收 | 依赖 | 状态 |
 |---|---|---|---|---|
 | C0.1 | **删除 `collectParamStructReqs` 及其实参 slot 执法**（`scan.ts` 中 body 访问 → 必填字段 → `arg-structure` 的路径） | 无侧车时 `readXY({x:1})` **不再**因 body 读 `p.y` 报 error；HOF `checkHofFnRelArgs` 与 `assign-mismatch` 行为不变 | — | [x] |
-| C0.2 | **HOF `arg-structure` 语义收窄**：码名/文案只描述「实参不是可调用 fn / arity」，不再暗示「缺 body slot」 | `nudo-check.md`、agent 文档、CLI help 一致 | C0.1 | [x] |
+| C0.2 | **HOF `arg-structure` 语义收窄**：码名/文案只描述「实参不是可调用 fn / arity」，不再暗示「缺 body slot」 | `design-cli-semantics.md` §5、agent 文档、CLI help 一致 | C0.1 | [x] |
 | C0.3 | **测试与金样例迁移**：`structure/arg-structure.js`、`vs-ts/structure`、recall-gold、scan-interface 用例改为「侧车契约报」或「无契约不报」 | `pnpm test` 绿；`verify:examples` 矩阵更新 | C0.1 | [x] |
 | C0.4 | **zero-FP / 真实包回归**：确认 commander 等在删掉 body `arg-structure` 后 FP 不升、该报的仍由契约/求值覆盖 | `check-real-packages` 仍零 error | C0.1 | [x] |
 | C0.5 | **（可选后续）求值驱动缺槽诊断**：实参绑定后 `p.name` 求值失败时的 `missing-slot` 类报告——**禁止**回到 AST 预扫描 | 有设计短文 + 样例；默认 off 或 warning | C0.1 | [x] |
@@ -220,8 +220,8 @@ flowchart TB
 | D1 | **`vs-ts` 示例改为 interface 主路径对照** | structure/constraints 各有「侧车契约」正负例；**删除或改写**「零注解 body 推出 shape」卖点行 | C0 | [x] |
 | D2 | **报告默认「人类档」**：一行 code + actual/expected + suggestion；`--verbose` / agent JSON 才吐完整 Abs | CLI 默认可读；`--json` 含 `signatures[].abs` | [x] |
 | D3 | **pred 化简**：`ms > 0 ∧ ms > 0` 等合取去重/幂等 | 金样例无重复谓词；`and`/`or` 用 `predEquals` 去重 | — | [x] |
-| D4 | **诊断码收敛与文案**：`nudo:*` 表与 CLI 一致；`arg-structure` 仅 HOF | 网站 check 指南（en/zh）与 `nudo-check.md` 同表 | C0.2 | [x] |
-| D5 | **`nudo interface` 日用命令打磨**：diff、drift 解释、只刷新已有生成段的 UX | `--emit --dry-run --exit-on-diff` + `nudo doctor` | — | [x] |
+| D4 | **诊断码收敛与文案**：`nudo:*` 表与 CLI 一致；`arg-structure` 仅 HOF | 网站 check 指南（en/zh）与 `design-cli-semantics.md` §5 同表 | C0.2 | [x] |
+| D5 | **`nudo contract` 日用命令打磨**：diff、drift 解释、只刷新已有生成段的 UX | `--emit --dry-run --exit-on-diff` + `nudo health` | — | [x] |
 | D6 | **执法分档可见**：handwritten=义务 / generated=事实+drift / implicit=展示 | CLI `interface` 打印 `[handwritten\|generated\|implicit]`（含 `Class.method`） | — | [x] |
 
 ---
@@ -260,7 +260,7 @@ flowchart TB
 - [x] **B1** bench 进 CI（`benchmark` job：`pnpm run benchmark` + `benchmark:gate`）
 - [x] **D3** pred 化简（低成本高观感）
 - [x] **D1 + F3** 叙事与示例按 §0.1 纠偏（examples / vs-ts / website check / 根 README）
-- [x] **A2** 分析范围配置设计拍板（`design-analysis-scope.md` + `analysisConfig()`）
+- [x] **A2** 分析范围配置设计拍板（`design-cli-semantics.md` §7 + `analysisConfig()`）
 
 ### Phase 1 — IDE 可日用（2–4 周）
 
@@ -283,7 +283,7 @@ flowchart TB
 ### Phase 3 — 替代门槛冲刺
 
 - [x] **C3.*** HOF concrete 消费（宿主 fn 包 Abs + B 记录优先）/ 闭包方法槽（ObjectMethod→$fnVal）/ C3.3 dts 泛型投影（`fn.hof` 快照 → `<A1,B_transform>`；有精确 case 时让位 case-widen）
-- [x] **D4–D6** 诊断码表（en/zh + nudo-check.md）；interface `--dry-run`/`doctor`；执法分档 CLI 标注（含 class 方法）
+- [x] **D4–D6** 诊断码表（en/zh + design-cli-semantics §5）；contract `--dry-run`；执法分档 CLI 标注（含 class 方法）
 - [x] **E2** 与 TS 并存指南（website `guides/coexistence.md`）
 - [x] **E1** dts 投影质量：函数类型在 union/array/optional 处加括号；`paramTypes`/`returnType` 下推；对象键转义；rest/保留字形参清洗（`dts-projection-quality.test.ts` 对投影跑 `tsc --noEmit --strict`）
 - [x] **E3** Vite 默认策略对齐 A1：`shouldAnalyzeFile` 替换硬编码指令正则；`failOnError` 默认 false；诊断档项目显式配置优先，否则 default（保留 warning）

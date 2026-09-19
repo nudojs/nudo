@@ -1,18 +1,18 @@
 ---
 sidebar_position: 6
-description: "Connect AI coding agents to Nudo's language server: LSP→MCP bridges, native LSP clients, agent commands (check/infer/hover/whatIf/…), and pull diagnostics."
+description: "Connect AI coding agents to Nudo's language server: LSP→MCP bridges, native LSP clients, agent commands (check/test/contract/hover/whatIf/…), and pull diagnostics."
 ---
 
 # Agent Integration Guide
 
 AI coding agents — Claude Code, Cursor, Copilot, Zed, and friends — access Nudo through its **language server**, [`@nudojs/lsp`](../api/lsp.md). The same server that powers the VS Code extension also exposes agent commands over standard `workspace/executeCommand` calls, plus pull diagnostics. There is no separate MCP server process to install or keep alive: one server serves the editor *and* the agent.
 
-Abs-first tools for agents (wire names are **protocol-stable** this major; map to CLI verbs):
+Abs-first tools for agents (wire names match CLI product verbs):
 
 | Command | CLI mapping | Returns |
 |---------|-------------|---------|
 | `nudo.check` | `nudo check` (signatures + L1/L2 gate) | **CheckJson v1** — signatures + `actual ⊭ expected` |
-| `nudo.infer` | `nudo test` (case reports; also see `check` for signatures) | **InferJson v1** — cases with lossless `intension.abs` |
+| `nudo.test` | `nudo test` (case reports; also see `check` for signatures) | **CaseJson v1** — cases with lossless `intension.abs` |
 | `nudo.hover` | IDE hover | Lossless Abs at a position (+ optional inlays) |
 | `nudo.whatIf` / `suggestCase` / `trace` | exploration | Exploration and case coverage |
 
@@ -104,10 +104,10 @@ Each example is a complete `workspace/executeCommand` payload — copy, adjust t
 { "command": "nudo.check", "arguments": [{ "file": "src/validators.js", "format": "json" }] }
 ```
 
-**`nudo.infer`** — InferJson v1 (optional `functions` filter):
+**`nudo.test`** — CaseJson v1 (optional `functions` filter):
 
 ```json
-{ "command": "nudo.infer", "arguments": [{ "file": "src/app.js", "functions": ["normalize"], "format": "json" }] }
+{ "command": "nudo.test", "arguments": [{ "file": "src/app.js", "functions": ["normalize"], "format": "json" }] }
 ```
 
 **`nudo.hover`** — lossless Abs at a position:

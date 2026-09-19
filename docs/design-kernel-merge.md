@@ -3,10 +3,13 @@
 > **唯一真理源**：`Abs = shape × term × pred × conf`（类型即计算）。
 > 位置：`@nudojs/core/src/algebra`。
 >
-> **TypeValue** 是外延投影——dts/LSP/序列化消费的格式与 `T` 工厂
-> （`*.nudo.js` 模板约束），**不是**平行类型系统，也不再是评估 IR
-> （TypeValue AST 解释器已删除，生产求值 Abs 原生）。Abs ⇄ TypeValue
-> 经 `bridge.ts` 有损投影。
+> 产品命令面 / any·unknown / check 门禁语义见
+> [`design-cli-semantics.md`](./design-cli-semantics.md)。
+>
+> **无第二套 IR**：生产求值 Abs 原生（B-path transpile+exec → ast-eval 回退）。
+> dts / schema / guard / LSP hover / 序列化都是 **Abs 的单向外延投影**
+> （`formatShape` / `absToTSType` / `absToSchemaSource` / 守卫生成器）。
+> 约束构建器（`number()` / `shape({...})` 等，`*.nudo.js` 模板）进入 Abs 作为 Pred。
 >
 > 无 `NUDO_KERNEL` 开关、无 `packages/kernel`、无双矩阵。
 
@@ -17,14 +20,14 @@
 ```
 parser ──▶ core
             ├── algebra/     ← 类型本体（Abs / Term / Pred / Φ / check / surface）
-            ├── type-value   ← 外延投影（T 工厂 / dts / 序列化）
-            └── bridge       ← Abs ⇄ TypeValue（有损）
+            ├── format       ← 外延投影（formatShape / formatAbs / absToTSType）
+            └── refinements  ← *.nudo.js 约束构建器 → Pred
                  │
                  ▼
             service/evaluator    ← Abs 原生：B-path（transpile+exec）→ ast-eval
                  │
                  ▼
-            service / lsp / vscode / dts
+            service / lsp / vscode / dts / schema
 ```
 
 ## 运算路径
@@ -45,7 +48,7 @@ parser ──▶ core
 
 ## 约束如何传播
 
-1. 调用点参数 `tagParamArg` 挂 `var(name)` 项身份（WeakMap 旁路，不污染 TypeValue）。
+1. 调用点参数 `tagParamArg` 挂 `var(name)` 项身份（WeakMap 旁路）。
 2. `if (x > 5)` → `phiFromTest` 提取 Pred，`pushPhi` 进路径前提 Φ。
 3. 分支内 `x+1` / `x>=3` 读 Φ 与自身 pred，单调性推出新约束。
 4. narrow 产生的 range refined 保留 term，`toAbsWithTerms` 编码成 `ge/le` Pred。
@@ -60,7 +63,7 @@ parser ──▶ core
 | widened | 丢失结构后的保守外延 |
 | partial / opaque | 未知或不可投影 |
 
-`absToTypeValue` 丢 term/pred 时禁止假装 exact。
+外延投影丢 term/pred 时不得假装 exact。
 
 ## 模块边界
 
@@ -68,7 +71,14 @@ parser ──▶ core
 - **scripts 不进 `packages/*/src`**。
 - **core 不依赖 parser 包**（`parseSource` 用 `@babel/parser` + `stripTypes`）。
 
-## 回滚与历史
+## 不变量（跨产品）
 
-历史上的 kernel 独立包与 `NUDO_KERNEL` 域开关已删除。
-迁移记录见 git：`feat/typevalue-algebra` → `feat/mimo`。
+- 检查的是 Abs 上的 **Pred 蕴含**，不是 TS 式类型匹配。
+- 投影单向：分析从不读回 dts/schema/guard。
+- 入口无约束参数产品展示为 **`any`**；**`unknown` = 推导失败**（见 cli-semantics §2）。
+- L2 入口 may-throw 是运行时效果门禁，不是 body AST 必填 slot（C0）。
+
+## 历史
+
+历史上的 kernel 独立包、`NUDO_KERNEL` 开关、TypeValue 求值 IR 均已删除。
+迁移见 git：`feat/typevalue-algebra` → `feat/mimo`。

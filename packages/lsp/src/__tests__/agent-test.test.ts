@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { inferTool } from "../agent-tools.ts";
+import { testTool } from "../agent-tools.ts";
 
-describe("nudo.infer agent tool", () => {
+describe("nudo.test agent tool", () => {
   const src = `function scale(x) { return x + 1; }\n`;
 
-  it("returns InferJson v1 with abs intension", () => {
-    const r = inferTool(
+  it("returns CaseJson v1 with abs intension", () => {
+    const r = testTool(
       { file: "/t/scale.js", source: src, format: "json" },
       { readFile: () => src },
     );
@@ -16,7 +16,7 @@ describe("nudo.infer agent tool", () => {
   });
 
   it("text format lists abs lines", () => {
-    const r = inferTool({ file: "/t/scale.js", source: src }, { readFile: () => src });
+    const r = testTool({ file: "/t/scale.js", source: src }, { readFile: () => src });
     const text = r.content[0].text;
     expect(text).toContain("scale");
     expect(text).toContain("abs:");
@@ -28,7 +28,7 @@ describe("nudo.infer agent tool", () => {
 function a(x) { return x; }
 function b(x) { return x + 1; }
 `;
-    const r = inferTool(
+    const r = testTool(
       { file: "/t/m.js", source: multi, format: "json", functions: ["b"] },
       { readFile: () => multi },
     );

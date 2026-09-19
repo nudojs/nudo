@@ -102,7 +102,7 @@ git clone https://github.com/nudojs/nudo-zed
 | CodeLens | 需打开 `code_lens: "on"`——**interface 档在前**（`● interface`、persist/update、`⚡ draft interface`），case 副层在后 |
 | Semantic tokens | 默认关闭，设 `semantic_tokens: "combined"`——含 `contract`/`generated`/`derived` modifier |
 | Code actions / Signature help | 标准 LSP quickfix 与 signature help |
-| Agent 命令（`nudo.check` / `nudo.interface.draft` / …） | 经任意 LSP 客户端或 Zed agent 工具可达 |
+| Agent 命令（`nudo.check` / `nudo.contract.draft` / …） | 经任意 LSP 客户端或 Zed agent 工具可达 |
 
 CodeLens `⚡ draft interface` 与 CLI `nudo contract --draft` 同源（仅客户端显式 `write: true` 时写 `*.nudo.draft.js`）。迁移步骤：[迁移已有 JS](./migrating-js.md)。
 

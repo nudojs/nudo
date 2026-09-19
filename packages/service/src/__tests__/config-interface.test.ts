@@ -15,7 +15,7 @@ afterAll(() => {
 });
 
 describe("interfaceConfig", () => {
-  it("defaults when config is null/undefined or lacks the interface key", () => {
+  it("defaults when config is null/undefined or lacks the contract key", () => {
     expect(interfaceConfig(undefined)).toEqual({ autoBind: true, emit: [] });
     expect(interfaceConfig(null)).toEqual({ autoBind: true, emit: [] });
     expect(interfaceConfig({})).toEqual({ autoBind: true, emit: [] });
@@ -23,32 +23,32 @@ describe("interfaceConfig", () => {
     expect(interfaceConfig(legacy)).toEqual({ autoBind: true, emit: [] });
   });
 
-  it("defaults when interface key is present but empty", () => {
-    expect(interfaceConfig({ interface: {} })).toEqual({ autoBind: true, emit: [] });
+  it("defaults when contract key is present but empty", () => {
+    expect(interfaceConfig({ contract: {} })).toEqual({ autoBind: true, emit: [] });
   });
 
   it("reads explicit autoBind", () => {
-    const config: NudoConfig = { interface: { autoBind: false } };
+    const config: NudoConfig = { contract: { autoBind: false } };
     expect(interfaceConfig(config)).toEqual({ autoBind: false, emit: [] });
   });
 
   it("reads emit allowlist as string or array (Phase 3 §7.3)", () => {
-    expect(interfaceConfig({ interface: { emit: "src/api/**" } })).toEqual({
+    expect(interfaceConfig({ contract: { emit: "src/api/**" } })).toEqual({
       autoBind: true,
       emit: ["src/api/**"],
     });
-    expect(interfaceConfig({ interface: { emit: ["src/api/**", "lib/*.js"] } })).toEqual({
+    expect(interfaceConfig({ contract: { emit: ["src/api/**", "lib/*.js"] } })).toEqual({
       autoBind: true,
       emit: ["src/api/**", "lib/*.js"],
     });
-    expect(interfaceConfig({ interface: { emit: [] } })).toEqual({
+    expect(interfaceConfig({ contract: { emit: [] } })).toEqual({
       autoBind: true,
       emit: [],
     });
   });
 
-  it("ignores unknown keys in the interface section", () => {
-    const malformed = { interface: { ignore: ["dist/**"] } } as unknown as NudoConfig;
+  it("ignores unknown keys in the contract section", () => {
+    const malformed = { contract: { ignore: ["dist/**"] } } as unknown as NudoConfig;
     expect(interfaceConfig(malformed)).toEqual({ autoBind: true, emit: [] });
   });
 });
@@ -82,15 +82,15 @@ describe("matchesEmitAllowlist", () => {
   });
 });
 
-describe("findProjectConfig with interface key", () => {
-  it("finds package.json upward across directory levels and reads its interface section", () => {
+describe("findProjectConfig with contract key", () => {
+  it("finds package.json upward across directory levels and reads its contract section", () => {
     const root = mkdtempSync(join(tmpdir(), "nudo-iface-cfg-"));
     dirs.push(root);
     writeFileSync(
       join(root, "package.json"),
       JSON.stringify({
         name: "iface-fixture",
-        nudo: { interface: { autoBind: false, emit: ["src/**"] } },
+        nudo: { contract: { autoBind: false, emit: ["src/**"] } },
       }),
     );
     const deep = join(root, "packages", "lib", "src");
@@ -101,7 +101,7 @@ describe("findProjectConfig with interface key", () => {
     expect(interfaceConfig(found?.config)).toEqual({ autoBind: false, emit: ["src/**"] });
   });
 
-  it("package.json without a nudo key yields null config and default interface settings", () => {
+  it("package.json without a nudo key yields null config and default contract settings", () => {
     const root = mkdtempSync(join(tmpdir(), "nudo-iface-plain-"));
     dirs.push(root);
     writeFileSync(join(root, "package.json"), JSON.stringify({ name: "plain", version: "1.0.0" }));
@@ -121,7 +121,7 @@ describe("findProjectConfig with interface key", () => {
       JSON.stringify({
         name: "mono-root",
         private: true,
-        nudo: { interface: { autoBind: false } },
+        nudo: { contract: { autoBind: false } },
       }),
     );
     const child = join(root, "packages", "lib");

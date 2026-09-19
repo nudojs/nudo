@@ -1,5 +1,5 @@
 /**
- * `nudo interface --draft`（service/interface-draft.ts）：
+ * `nudo contract --draft`（service/interface-draft.ts）：
  * 从已有逻辑生成可审阅契约草稿——callsite 投影 / symbolic 兜底 /
  * handwritten 跳过 / *.nudo.draft.js 不 ambient 绑定。
  */
@@ -221,7 +221,7 @@ describe("draftInterface", () => {
     try {
       writeFileSync(
         join(dir2, "package.json"),
-        JSON.stringify({ name: "ab", nudo: { interface: { autoBind: false } } }),
+        JSON.stringify({ name: "ab", nudo: { contract: { autoBind: false } } }),
       );
       const file = join(dir2, "lib.js");
       writeFileSync(file, CALLS_JS);

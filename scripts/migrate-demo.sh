@@ -2,14 +2,14 @@
 # migrate-demo — runnable walkthrough of the code-first migration path
 # documented in packages/website/docs/guides/migrating-js.md.
 #
-#   inventory (interface) → draft → review snippet → accept sidecar → check
+#   inventory (contract) → draft → review snippet → accept sidecar → check
 #
 # Usage (from monorepo root):
 #   pnpm run migrate-demo
 #   bash scripts/migrate-demo.sh --keep   # leave the temp dir for inspection
 #
 # Not a CI gate (unlike verify:examples); safe to run locally after changes
-# to `nudo interface --draft` / check.
+# to `nudo contract --draft` / check.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -44,13 +44,13 @@ EOF
 step() { printf '\n== %s ==\n' "$1"; }
 
 step "1. inventory (implicit / no sidecar yet)"
-NUDO_RUN interface "$lib"
+NUDO_RUN contract "$lib"
 
 step "2. draft from existing code"
-NUDO_RUN interface --draft "$lib"
+NUDO_RUN contract --draft "$lib"
 
 step "3. write draft file (not ambient-bound)"
-NUDO_RUN interface --draft --write "$lib"
+NUDO_RUN contract --draft --write "$lib"
 draft="$dir/lib.nudo.draft.js"
 test -f "$draft"
 test ! -f "$dir/lib.nudo.js"
@@ -67,7 +67,7 @@ export const greet = fn({ user: shape({ name: string() }) }, string());
 EOF
 
 step "5. inventory after accept (handwritten)"
-NUDO_RUN interface "$lib"
+NUDO_RUN contract "$lib"
 
 step "6. check gate (handwritten obligations)"
 # greet({ id: 1 }) would violate shape name; current file only calls double(21)

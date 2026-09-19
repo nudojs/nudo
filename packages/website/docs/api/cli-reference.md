@@ -26,7 +26,7 @@ npx @nudojs/cli check ./src/utils.js
 | [`nudo health`](#nudo-health) | Health-check files: analysis errors, call-site solidification drift |
 | [`nudo env harvest`](#nudo-env-harvest) | Convert `@types/<pkg>` declarations into a Nudo env file |
 
-There is **no** observation verb (`infer` / `show` / `types`). Observation is `check` signatures, `test` case reports, and IDE hover.
+There is **no** observation verb. Observation is `check` signatures, `test` case reports, and IDE hover.
 
 **Day 0:** `check` / `test`. **Day 1:** `contract` + `check`. **Ecosystem:** `export`.
 
@@ -54,7 +54,7 @@ nudo check <path> [options]
 | `--json` | Structured diagnostics + signatures |
 | `--verbose` | Extra diagnosis detail |
 | `--abs` | Print the Abs algebra face (term / pred / conf) |
-| `--from <paths…>` | Usage-site files (tests/apps); their call records join the analysis — formerly `--callsites` |
+| `--from <paths…>` | Usage-site files (tests/apps); their call records join the analysis |
 | `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (e.g. `TypeError,RangeError`). Does not swallow L1 contract violations. |
 | `--entry-throws error\|warning\|off` | Severity for L2 entry may-throw (default `error`) |
 
@@ -132,8 +132,8 @@ nudo test <path> [options]
 | Option | Description |
 |--------|-------------|
 | `--watch` / `-w` | Re-run on file changes |
-| `--from <paths…>` | Usage-site files whose calls become `call@L` cases — formerly `--callsites` |
-| `--freeze[=update]` | Write synthesized cases back as `@nudo:case` directives (formerly `infer --emit-cases`). `=update` re-synchronizes previously generated directives. |
+| `--from <paths…>` | Usage-site files whose calls become `call@L` cases |
+| `--freeze[=update]` | Write synthesized cases back as `@nudo:case` directives. `=update` re-synchronizes previously generated directives. |
 | `--json` | Structured case report |
 | `--abs` | Print Abs algebra for cases |
 | `--dry-run` | With `--freeze`: print a unified diff instead of writing |
@@ -193,8 +193,6 @@ nudo test lib.js --from test.js --freeze=update
 
 Print, draft, or emit each function's effective interface with its source layer.
 
-Replaces `nudo interface` / `nudo refine` (deprecated).
-
 ```bash
 nudo contract <paths...> [--from <paths...>]
 nudo contract --emit <paths...> [--fn <name>] [--all] [--dry-run] [--exit-on-diff] [--from <paths...>]
@@ -249,18 +247,16 @@ Handwritten bindings always win; emit refuses to overwrite them (`nudo:interface
 
 Project Abs into ecosystem artifacts. The **only** CLI path for `.d.ts`, guards, and schema projections.
 
-Replaces `nudo generate` / `nudo emit` / `nudo guard` and `infer --dts` (deprecated).
-
 ```bash
-nudo export <path> [--format dts|guard|schema|standard|zod|all] [--dialect zod] [--out dir]
+nudo export <path> [--format dts|guard|schema|standard|all] [--dialect zod] [--out dir]
 ```
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
-| `--format` | `dts` (default) \| `guard` \| `schema` \| `standard` \| `zod` (deprecated alias) \| `all` |
-| `--dialect` | Schema dialect; currently `zod`. Valid with `schema` / `all` / `zod` |
+| `--format` | `dts` (default) \| `guard` \| `schema` \| `standard` \| `all` |
+| `--dialect` | Schema dialect; currently `zod`. Valid with `schema` / `all` |
 | `--out <dir>` | Write artifacts under this directory instead of stdout |
 
 **Formats:**
@@ -271,7 +267,6 @@ nudo export <path> [--format dts|guard|schema|standard|zod|all] [--dialect zod] 
 | `guard` | Runtime type-guards (prefer lossless Abs path when available) |
 | `schema` | Schema source for `--dialect` (default zod) → `*.nudo.schema.<dialect>.ts` |
 | `standard` | Standard Schema v1 modules (`~standard`, vendor `nudo`) → `<fn>.nudo.standard.ts` |
-| `zod` | Deprecated alias of `schema --dialect zod` |
 | `all` | dts + guard + schema + standard |
 
 Schema projections carry Abs pred fidelity when expressible (`gt/ge/lt/le`, `int`, string length); symbolic preds are reported as `dropped preds` comments. `standard` enforces the same refinements at runtime via `validate` and remains a one-way projection — `nudo check` is still the CI gate.
@@ -299,8 +294,6 @@ nudo export src/api.js --format all --out dist
 ### nudo health
 
 Health-check source files: analysis errors and call-site solidification drift.
-
-Replaces `nudo doctor` (deprecated).
 
 ```bash
 nudo health [paths...] [--watch] [--from <paths...>] [--json]
@@ -340,8 +333,6 @@ src/lib.js
 
 Convert `@types/<pkg>` declarations into a Nudo env module.
 
-Replaces top-level `nudo harvest` (deprecated).
-
 ```bash
 nudo env harvest <pkg> [options]
 ```
@@ -380,8 +371,6 @@ nudo env harvest node
 - **test --json** — per-function cases (`entry@` / `call@` / directive), an `assertions` summary (`passed`/`failed`/`unchecked`), diagnostics, and optional Abs intension blocks. Declared assertion failures still exit 1.
 - **check --json** — single file only (`--json requires a single file` on directory targets).
 
-There is no `infer --json` as a primary command; consumers that still receive it during the deprecation window should migrate to `check --json` or `test --json`.
-
 ---
 
 ## Exit codes summary
@@ -394,24 +383,3 @@ There is no `infer --json` as a primary command; consumers that still receive it
 | `contract --emit --exit-on-diff` | Would write and a diff exists |
 | `health` | Drift or analysis errors |
 | `env harvest` | Missing `@types` package or no declarations |
-
----
-
-## Deprecated commands
-
-These verbs print stderr deprecation warnings and map to the new surface. They are removed in the next major — not permanent aliases.
-
-| Deprecated | Replacement |
-|------------|-------------|
-| `nudo infer <path>` | `nudo check` (signatures/gate) + `nudo test` (cases); dts → `nudo export --format dts` |
-| `nudo types <path>` | `nudo check --abs` |
-| `nudo interface` / `nudo refine` | `nudo contract` |
-| `nudo generate` / `nudo emit` / `nudo guard` | `nudo export --format …` |
-| `nudo doctor` | `nudo health` |
-| `nudo watch` | `nudo check --watch` / `nudo test --watch` |
-| `nudo harvest <pkg>` | `nudo env harvest <pkg>` |
-| `--callsites` | `--from` |
-| `--emit-cases[=update]` | `nudo test --freeze[=update]` |
-| `infer --dts` | `nudo export --format dts` |
-
-See the [CLI guide — Migration](../guides/cli.md#migration--deprecated-verbs).

@@ -739,10 +739,10 @@
       "id": "@types/node",
       "package": "@types/node",
       "kind": "types",
-      "note": ".d.ts harvest via harvestNodeTypes / nudo harvest node",
+      "note": ".d.ts harvest via harvestNodeTypes / nudo env harvest node",
       "installed": true,
       "status": "resolved",
-      "reason": ".d.ts harvest via harvestNodeTypes / nudo harvest node"
+      "reason": ".d.ts harvest via harvestNodeTypes / nudo env harvest node"
     },
     {
       "id": "no-types-example",

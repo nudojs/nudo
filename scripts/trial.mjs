@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// 真实项目试炼 harness：对目录内所有 .js 逐文件跑 nudo infer --json，汇总指标
-import { readdirSync, readFileSync } from "node:fs";
+// 真实项目试炼 harness：对目录内所有 .js 逐文件跑 nudo test --json，汇总指标
+import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { performance } from "node:perf_hooks";
@@ -20,8 +20,8 @@ const agg = {
 for (const file of files) {
   const t0 = performance.now();
   try {
-    const args = ["packages/cli/src/index.ts", "infer", file, "--json"];
-    if (process.env.TRIAL_CALLSITES) args.push("--callsites", process.env.TRIAL_CALLSITES);
+    const args = ["packages/cli/src/index.ts", "test", file, "--json"];
+    if (process.env.TRIAL_FROM) args.push("--from", process.env.TRIAL_FROM);
     const out = execFileSync("node_modules/.bin/tsx", args, { encoding: "utf8", timeout: 60000, maxBuffer: 128 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
     const wall = performance.now() - t0;
     agg.walls.push(wall);

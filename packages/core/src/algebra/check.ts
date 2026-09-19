@@ -226,7 +226,7 @@ export type CheckOptions = {
   /** 当前文件路径（供 loadModule 解析相对 spec） */
   fromFile?: string;
   /**
-   * 侧车 ambient 绑定开关（host 从 package.json#nudo.interface.autoBind
+   * 侧车 ambient 绑定开关（host 从 package.json#nudo.contract.autoBind
    * 解析后下传；默认 true）。false = check/LSP 执法路径不自动加载侧车
    * （§2.2「整体关闭」承诺覆盖 CI 门禁，不只是打印路径）。
    */
@@ -409,7 +409,7 @@ function checkSourceInner(
   // generalize L0 用调用方原始 loadModule 身份；opts 可能是 per-call I/O wrapper
   const refineLoad = identityOpts.loadModule ?? opts.loadModule;
   const refineFrom = identityOpts.fromFile ?? opts.fromFile ?? filePath;
-  // autoBind（package.json#nudo.interface）统一透传：effectiveInterface /
+  // autoBind（package.json#nudo.contract）统一透传：effectiveInterface /
   // generalize L0 / scan 执法 / case 对账同一开关口径
   const autoBind = opts.autoBind;
   // effectiveInterface 文件内 memo：localNamedExports 走 errorRecovery 解析

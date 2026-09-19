@@ -34,7 +34,7 @@ Full checklist: [`packages/vscode/RELEASE_CHECKLIST.md`](https://github.com/nudo
 1. **Bundled server align** — extension ships `server/server.js` copied from `@nudojs/lsp` `dist` via `scripts/bundle-server.mjs`. Build the monorepo first; record the bundled lsp version in the extension CHANGELOG. The vsix is self-contained (no monorepo sibling path at runtime).
 2. **Analysis default + escape hatch** — default `nudo.analysis.mode = "exports"`. Escape hatch in project `package.json#nudo.analysis.mode`: `"directives"` (conservative; diagnostics tier `errors`) or `"all"`. Release notes must state this default; a flip that invents diagnostics is a breaking default change.
 3. **tsserver coexistence** — Nudo runs beside the built-in TS server. Mixed repos should scope `nudo.analysis.include` / `exclude` — see [Coexistence](./coexistence.md). Do not point both tools at the same `.ts` sources with conflicting severities.
-4. **Packaging dry-run** — `pnpm --filter nudo-vscode run build && pnpm --filter nudo-vscode run package`; install the `.vsix` locally; confirm hover/diagnostics on an export-bearing `.js` without editing; confirm palette commands `nudo.selectCase` / `nudo.interface` / `nudo.interface.draft` / `nudo.interfaceEmit`.
+4. **Packaging dry-run** — `pnpm --filter nudo-vscode run build && pnpm --filter nudo-vscode run package`; install the `.vsix` locally; confirm hover/diagnostics on an export-bearing `.js` without editing; confirm palette commands `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit`.
 5. **Marketplace / Open VS X notes template** — extension version, bundled lsp version, analysis default, coexistence blurb, protocol surface pointer ([PUBLIC_API](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)), known issues. Both targets in `release.yml` or an explicit skip.
 
 Service-level daily smoke (no live VS Code): `packages/lsp/src/__tests__/ide-daily-smoke.test.ts`. Public freeze inventory: `@nudojs/lsp` [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) / [API page](../api/lsp.md).
@@ -136,11 +136,11 @@ You can also invoke the command palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and run
 
 | Palette title | Command | Behavior |
 |---------------|---------|----------|
-| Nudo: Show Interface | `nudo.interface` | Print tiers in the **Nudo** output channel (same as `nudo contract`) |
-| Nudo: Draft Interface (code-first) | `nudo.interface.draft` | Preview draft in Output; optional **Write draft file** → `*.nudo.draft.js` / `*.nudo.draft.ts` (write is fail-closed without a project root) |
-| Nudo: Persist Interface (@generated) | `nudo.interfaceEmit` | **Dry-run first** (`dryRun: true`, no write) → Output preview → confirm → real sidecar write. CodeLens persist/update uses the same confirm flow |
+| Nudo: Show Contract | `nudo.contract` | Print tiers in the **Nudo** output channel (same as `nudo contract`) |
+| Nudo: Draft Contract (code-first) | `nudo.contract.draft` | Preview draft in Output; optional **Write draft file** → `*.nudo.draft.js` / `*.nudo.draft.ts` (write is fail-closed without a project root) |
+| Nudo: Persist Contract (@generated) | `nudo.contract.emit` | **Dry-run first** (`dryRun: true`, no write) → Output preview → confirm → real sidecar write. CodeLens persist/update uses the same confirm flow |
 
-CodeLens on non-handwritten exports includes `⚡ draft interface` — same path as CLI `--draft` and agent `nudo.interface.draft`. Persist/update CodeLens never writes before the dry-run confirm dialog is accepted.
+CodeLens on non-handwritten exports includes `⚡ draft interface` — same path as CLI `--draft` and agent `nudo.contract.draft`. Persist/update CodeLens never writes before the dry-run confirm dialog is accepted.
 
 ---
 
@@ -169,6 +169,6 @@ The Nudo language server is designed to stay small next to your other tooling:
 | Code Actions      | Quick fixes for diagnostics                              |
 | Semantic Tokens   | Type-aware highlighting + interface-tier modifiers       |
 | Status bar        | "Nudo" indicator when active                             |
-| Command           | `nudo.selectCase` / `nudo.interface` / `nudo.interfaceEmit` |
+| Command           | `nudo.selectCase` / `nudo.contract` / `nudo.contract.emit` |
 
 See also: [LSP Client Matrix](./lsp-clients.md) for other editors.

@@ -49,7 +49,7 @@ Rules:
 ## What usually breaks
 
 - Removing package export subpaths
-- `CheckJson` / `InferJson` / generated `.d.ts` schema or shape changes
+- `CheckJson` / `CaseJson` / generated `.d.ts` schema or shape changes
 - Renaming diagnostic codes or flipping default severity
 - Removing CLI flags or changing analysis defaults without an escape hatch
 - **Default `analysis.mode` flip** (`directives` → `exports` in fix-2): intentional on 1.x service/cli — escape hatch `package.json#nudo.analysis.mode`; treat as **major** in release notes

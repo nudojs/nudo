@@ -289,22 +289,6 @@ Abs → **Standard Schema v1** 运行时模块源码（`~standard`，`vendor: "n
 
 ---
 
-## absToZodSchema
-
-```typescript
-absToZodSchema(a: Abs): string
-```
-
-**废弃别名**，等价于 `absToSchemaSource(a, { dialect: "zod" })`。请改用 `absToSchemaSource`；别名保留至下个 major。
-
-**示例：**
-```typescript
-absToZodSchema(obj({ name: str(), age: num() }))
-// → "z.object({ name: z.string(), age: z.number() })"
-```
-
----
-
 ## generateGuardFunction
 
 ```typescript

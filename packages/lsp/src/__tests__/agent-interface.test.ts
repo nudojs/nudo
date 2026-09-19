@@ -1,7 +1,7 @@
 /**
- * interface 档 LSP 表面（design-refine-derivation §7.5/§8 / Phase 1 T11）：
- * - nudo.interface 打印三来源（handwritten / generated / implicit）+ functionName 过滤
- * - nudo.interface.emit add/update 两模式 + name-clash 文本（与 CLI 同一写盘器）
+ * contract 档 LSP 表面（design-refine-derivation §7.5/§8 / Phase 1 T11）：
+ * - nudo.contract 打印三来源（handwritten / generated / implicit）+ functionName 过滤
+ * - nudo.contract.emit add/update 两模式 + name-clash 文本（与 CLI 同一写盘器）
  * - computeInterfaceLenses：默认层 / 固化动作 / case 副层排序 / 私有与无 interface 不加
  *
  * server.ts 在 vitest 下不可 import（createConnection 副作用），全部走
@@ -13,10 +13,10 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  interfaceTool,
-  interfaceEmitTool,
-  interfacePositionalArgs,
-  interfaceEmitPositionalArgs,
+  contractTool,
+  contractEmitTool,
+  contractPositionalArgs,
+  contractEmitPositionalArgs,
   computeInterfaceLenses,
 } from "../agent-tools.ts";
 
@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// nudo.interface 打印（interfaceSurface 数据源）
+// nudo.contract 打印（interfaceSurface 数据源）
 // ---------------------------------------------------------------------------
 
 const SRC_JS = `
@@ -61,12 +61,12 @@ export function double(x) {
 double(21);
 `;
 
-describe("nudo.interface agent tool", () => {
+describe("nudo.contract agent tool", () => {
   it("prints handwritten source with formatConstraint display", async () => {
     writeFileSync(join(dir, "src.js"), SRC_JS);
     writeFileSync(join(dir, "src.nudo.js"), HANDWRITTEN_SIDECAR);
 
-    const r = await interfaceTool({ file: join(dir, "src.js") });
+    const r = await contractTool({ file: join(dir, "src.js") });
     const text = r.content[0].text;
     expect(text).toContain("add  [handwritten]  (x: number().gt(0)) → number().gt(2)");
     expect(text).toContain(JSON.stringify("handwritten")); // JSON tail 可机读
@@ -76,31 +76,31 @@ describe("nudo.interface agent tool", () => {
     writeFileSync(join(dir, "src.js"), SRC_JS);
     writeFileSync(join(dir, "src.nudo.js"), GENERATED_SIDECAR);
 
-    const r = await interfaceTool({ file: join(dir, "src.js") });
+    const r = await contractTool({ file: join(dir, "src.js") });
     expect(r.content[0].text).toContain("add  [generated]  (x: number())");
   });
 
   it("prints implicit source from call-site evidence without a sidecar", async () => {
     writeFileSync(join(dir, "calls.js"), CALLS_JS);
 
-    const r = await interfaceTool({ file: join(dir, "calls.js") });
+    const r = await contractTool({ file: join(dir, "calls.js") });
     expect(r.content[0].text).toContain("double  [implicit]  (x: 21) → 42");
   });
 
   it("filters by functionName and reports unknown names", async () => {
     writeFileSync(join(dir, "calls.js"), CALLS_JS);
 
-    const hit = await interfaceTool({ file: join(dir, "calls.js"), functionName: "double" });
+    const hit = await contractTool({ file: join(dir, "calls.js"), functionName: "double" });
     expect(hit.content[0].text).toContain("double  [implicit]");
     expect(hit.content[0].text).not.toContain("no interface found");
 
-    const miss = await interfaceTool({ file: join(dir, "calls.js"), functionName: "nope" });
+    const miss = await contractTool({ file: join(dir, "calls.js"), functionName: "nope" });
     expect(miss.content[0].text).toContain("no interface found for 'nope'");
   });
 });
 
 // ---------------------------------------------------------------------------
-// nudo.interface.emit 固化（emitInterface 同一写盘器）
+// nudo.contract.emit 固化（emitInterface 同一写盘器）
 // ---------------------------------------------------------------------------
 
 const ADD_JS = `export function add2(x) {\n  return x + 2;\n}\n\nadd2(42);\n`;
@@ -111,12 +111,12 @@ import { fn, number } from "@nudojs/core";
 export const add2 = fn({ x: number().int() });
 `;
 
-describe("nudo.interface.emit agent tool", () => {
+describe("nudo.contract.emit agent tool", () => {
   it("add mode writes an @generated sidecar segment", async () => {
     const file = join(dir, "add.js");
     writeFileSync(file, ADD_JS);
 
-    const r = await interfaceEmitTool({ file, functionName: "add2", mode: "add" });
+    const r = await contractEmitTool({ file, functionName: "add2", mode: "add" });
     const text = r.content[0].text;
     expect(text).toContain("written: add2");
     expect(text).not.toContain("nudo:interface-name-clash");
@@ -130,8 +130,8 @@ describe("nudo.interface.emit agent tool", () => {
     const file = join(dir, "add.js");
     writeFileSync(file, ADD_JS);
 
-    await interfaceEmitTool({ file, functionName: "add2", mode: "add" });
-    const again = await interfaceEmitTool({ file, functionName: "add2", mode: "update" });
+    await contractEmitTool({ file, functionName: "add2", mode: "add" });
+    const again = await contractEmitTool({ file, functionName: "add2", mode: "update" });
     expect(again.content[0].text).toContain("no interface changes");
   });
 
@@ -141,7 +141,7 @@ describe("nudo.interface.emit agent tool", () => {
     const sidecarPath = join(dir, "clash.nudo.js");
     writeFileSync(sidecarPath, CLASH_SIDECAR);
 
-    const r = await interfaceEmitTool({ file, functionName: "add2", mode: "add" });
+    const r = await contractEmitTool({ file, functionName: "add2", mode: "add" });
     const text = r.content[0].text;
     expect(text).toContain("skipped add2 (name-clash)");
     expect(text).toContain("[error] nudo:interface-name-clash");
@@ -157,7 +157,7 @@ describe("nudo.interface.emit agent tool", () => {
     const sidecar = join(dir, "dry.nudo.js");
     expect(existsSync(sidecar)).toBe(false);
 
-    const r = await interfaceEmitTool({
+    const r = await contractEmitTool({
       file,
       functionName: "add2",
       mode: "add",
@@ -172,7 +172,7 @@ describe("nudo.interface.emit agent tool", () => {
     expect(existsSync(sidecar)).toBe(false);
 
     // 确认后的真实写盘仍然可用
-    const real = await interfaceEmitTool({ file, functionName: "add2", mode: "add" });
+    const real = await contractEmitTool({ file, functionName: "add2", mode: "add" });
     expect(real.content[0].text).toContain("written: add2");
     expect(existsSync(sidecar)).toBe(true);
   });
@@ -292,9 +292,9 @@ function helper(n) {
   });
 });
 
-describe("interfaceEmitTool 入参校验（非法输入显式报错，不静默降级）", () => {
+describe("contractEmitTool 入参校验（非法输入显式报错，不静默降级）", () => {
   it("invalid mode → explicit error text", async () => {
-    const r = await interfaceEmitTool({
+    const r = await contractEmitTool({
       file: "/t/x.js",
       functionName: "f",
       mode: "Add" as unknown as "add",
@@ -303,7 +303,7 @@ describe("interfaceEmitTool 入参校验（非法输入显式报错，不静默�
   });
 
   it("missing functionName → explicit error text", async () => {
-    const r = await interfaceEmitTool({
+    const r = await contractEmitTool({
       file: "/t/x.js",
       functionName: "",
       mode: "add",
@@ -314,12 +314,12 @@ describe("interfaceEmitTool 入参校验（非法输入显式报错，不静默�
   it("valid params still reach the emitter (no sidecar file → clean no-change)", async () => {
     const file = join(dir, "ok.js");
     writeFileSync(file, `export function f(x) {\n  return x;\n}\n`);
-    const r = await interfaceEmitTool({ file, functionName: "f", mode: "add" });
+    const r = await contractEmitTool({ file, functionName: "f", mode: "add" });
     expect(r.content[0]!.text).toContain("no interface changes");
   });
 
   it("rejects sidecar contract modules as emit targets", async () => {
-    const r = await interfaceEmitTool({
+    const r = await contractEmitTool({
       file: join(dir, "lib.nudo.js"),
       functionName: "f",
       mode: "add",
@@ -335,7 +335,7 @@ describe("interfaceEmitTool 入参校验（非法输入显式报错，不静默�
     const outside = join(dir, "..", `nudo-outside-${process.pid}.js`);
     writeFileSync(outside, `export function f(x) {\n  return x;\n}\n`);
     try {
-      const r = await interfaceEmitTool(
+      const r = await contractEmitTool(
         { file: outside, functionName: "f", mode: "add" },
         { workspaceRoots: [dir] },
       );
@@ -348,7 +348,7 @@ describe("interfaceEmitTool 入参校验（非法输入显式报错，不静默�
   it("allows emit inside workspace roots", async () => {
     const file = join(dir, "inside.js");
     writeFileSync(file, `export function f(x) {\n  return x;\n}\nf(1);\n`);
-    const r = await interfaceEmitTool(
+    const r = await contractEmitTool(
       { file, functionName: "f", mode: "add" },
       { workspaceRoots: [dir] },
     );
@@ -358,7 +358,7 @@ describe("interfaceEmitTool 入参校验（非法输入显式报错，不静默�
   it("fail-closed when workspaceRoots is empty array", async () => {
     const file = join(dir, "orphan.js");
     writeFileSync(file, `export function f(x) {\n  return x;\n}\n`);
-    const r = await interfaceEmitTool(
+    const r = await contractEmitTool(
       { file, functionName: "f", mode: "add" },
       { workspaceRoots: [] },
     );
@@ -370,7 +370,7 @@ describe("interfaceEmitTool 入参校验（非法输入显式报错，不静默�
     mkdirSync(nm, { recursive: true });
     const file = join(nm, "index.js");
     writeFileSync(file, `export function f(x) {\n  return x;\n}\n`);
-    const r = await interfaceEmitTool(
+    const r = await contractEmitTool(
       { file, functionName: "f", mode: "add" },
       { workspaceRoots: [dir] },
     );
@@ -379,23 +379,23 @@ describe("interfaceEmitTool 入参校验（非法输入显式报错，不静默�
 });
 
 describe("executeCommand 位置参数桥接（server.ts 特判的纯函数形态）", () => {
-  it("interfacePositionalArgs: [uri] → 全量；[uri, fn] → 过滤", () => {
-    expect(interfacePositionalArgs(["file:///t/a.js"])).toEqual({ file: "file:///t/a.js" });
-    expect(interfacePositionalArgs(["file:///t/a.js", "scale"])).toEqual({
+  it("contractPositionalArgs: [uri] → 全量；[uri, fn] → 过滤", () => {
+    expect(contractPositionalArgs(["file:///t/a.js"])).toEqual({ file: "file:///t/a.js" });
+    expect(contractPositionalArgs(["file:///t/a.js", "scale"])).toEqual({
       file: "file:///t/a.js",
       functionName: "scale",
     });
-    expect(interfacePositionalArgs([])).toBeUndefined();
-    expect(interfacePositionalArgs([42])).toBeUndefined();
+    expect(contractPositionalArgs([])).toBeUndefined();
+    expect(contractPositionalArgs([42])).toBeUndefined();
   });
 
-  it("interfaceEmitPositionalArgs: [uri, fn, mode] 三串；非法形态 undefined", () => {
-    expect(interfaceEmitPositionalArgs(["file:///t/a.js", "f", "update"])).toEqual({
+  it("contractEmitPositionalArgs: [uri, fn, mode] 三串；非法形态 undefined", () => {
+    expect(contractEmitPositionalArgs(["file:///t/a.js", "f", "update"])).toEqual({
       file: "file:///t/a.js",
       functionName: "f",
       mode: "update",
     });
-    expect(interfaceEmitPositionalArgs(["file:///t/a.js", "f"])).toBeUndefined();
-    expect(interfaceEmitPositionalArgs(["file:///t/a.js", "f", 7])).toBeUndefined();
+    expect(contractEmitPositionalArgs(["file:///t/a.js", "f"])).toBeUndefined();
+    expect(contractEmitPositionalArgs(["file:///t/a.js", "f", 7])).toBeUndefined();
   });
 });

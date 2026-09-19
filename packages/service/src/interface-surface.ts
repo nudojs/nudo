@@ -1,11 +1,11 @@
 /**
- * `nudo interface` 的打印数据源（design-refine-derivation §11 第 0 步）：
+ * `nudo contract` 的打印数据源（design-refine-derivation §11 第 0 步）：
  * 逐顶层函数展示有效契约分层——effectiveInterface 命中（手写契约 / 侧车
  * 生成段）时 params/returns 用 formatConstraint 组合式显示；未命中走
  * implicit：优先 CaseResult.argAbs / FunctionAnalysis.combinedAbs（无损
  * Abs 源），展示用 formatShape（外延口径，不强求约束式、不带 conf）。
  *
- * autoBind 沿 package.json#nudo.interface（findProjectConfig → interfaceConfig）
+ * autoBind 沿 package.json#nudo.contract（findProjectConfig → interfaceConfig）
  * 下传，可用 opts 覆盖（测试 / CLI 显式开关）；读盘用 defaultLoadModule
  * （与 check 的 refine 解析同一扩展名表）。
  *
@@ -65,7 +65,7 @@ export type InterfaceSurfaceOpts = {
   autoBind?: boolean;
   /** 模块源码装载器（测试注入）；默认 defaultLoadModule 真实读盘 */
   loadModule?: LoadModule;
-  /** 跨文件调用记录（--callsites 采集）：implicit 展示的实参域原料 */
+  /** 跨文件调用记录（--from 采集）：implicit 展示的实参域原料 */
   records?: CallRecord[];
   /** 打开 buffer 覆盖磁盘源码（E5：agent/LSP 与 hover 同口径） */
   source?: string;

@@ -13,8 +13,6 @@ pnpm run verify:examples   # 验证本目录命令（见 [../README.md](../READM
 ```
 
 观察命令：`pnpm run check <file>`（签名）· `pnpm run test:cli <file>`（case 报告）。
-旧动词 `infer` 已 deprecated。
-
 两个支持文件在矩阵里也有独立 test 行（与 `scripts/verify-examples.sh` 钉住的输出一致）：
 
 - `validators.js`：`check` signatures 为 `isPositive(n: any) => boolean` /

@@ -74,7 +74,7 @@ Abs 上的运算是代数的：单调算术、比较、`leq` 可赋值、谓词�
 
 ### 2.2 外延投影（不是第二套类型系统）
 
-不存在第二套 IR。dts（`Case:` JSDoc 行）、LSP hover 表面、序列化与 `*.nudo.js` 模板约束都**直接消费 Abs**——外延视图是一种渲染（展示用 `formatShape`，投影用 `absToTSType` / `absToZodSchema` / 守卫生成器）。渲染按设计即有损（`formatShape` 丢弃非字面量 term），但不存在回读：分析从不消费投影。生产分析 Abs 原生（B-path 转译+执行，ast-eval 回退）。
+不存在第二套 IR。dts（`Case:` JSDoc 行）、LSP hover 表面、序列化与 `*.nudo.js` 模板约束都**直接消费 Abs**——外延视图是一种渲染（展示用 `formatShape`，投影用 `absToTSType` / `absToSchemaSource` / `projectAbsToSchema` / 守卫生成器）。渲染按设计即有损（`formatShape` 丢弃非字面量 term），但不存在回读：分析从不消费投影。生产分析 Abs 原生（B-path 转译+执行，ast-eval 回退）。
 
 ### 2.3 设计原则
 

@@ -1,6 +1,6 @@
 # nudo check 在 CI 中的用法
 
-> 产品能力与边界见 [nudo-check.md](./nudo-check.md)。  
+> 产品能力与边界见 [`design-cli-semantics.md`](./design-cli-semantics.md)（§5 check 执法面）。  
 > CLI 语义权威：[`design-cli-semantics.md`](./design-cli-semantics.md)。  
 > 门禁语义：L1 精化蕴含（`@nudo:refine` / 侧车）+ L2 入口 may-throw（`nudo:entry-may-throw`）；有 `error` 则退出码 1。  
 > 类型代数在 `@nudojs/core`，无独立 kernel 包。

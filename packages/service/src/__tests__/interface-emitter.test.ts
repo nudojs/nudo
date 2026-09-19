@@ -132,7 +132,7 @@ describe("emitInterface", () => {
   });
 
   it("cross-file records project a domain-root export to a union contract", async () => {
-    // 设计验收（§11）：域根导出——本文件无调用点，域证据全部来自 --callsites
+    // 设计验收（§11）：域根导出——本文件无调用点，域证据全部来自 --from
     const file = join(dir, "mixed.js");
     writeFileSync(file, `export function scale(x) {\n  return x * 2;\n}\n`);
     const rec = (arg: string | number | boolean | null | undefined) => {
@@ -220,7 +220,7 @@ describe("emitInterface", () => {
 
   it("update without evidence preserves persisted segments (no data loss)", async () => {
     // 回归：update 剥离生成段后若重投影失败（证据缺失），既有段必须原样
-    // 归位，不得被静默删除（默认无 --callsites 的典型场景）。
+    // 归位，不得被静默删除（默认无 --from 的典型场景）。
     const file = join(dir, "mixed.js");
     writeFileSync(file, `export function scale(x) {\n  return x * 2;\n}\n`);
     const rec = (arg: string | number | boolean | null | undefined) => {

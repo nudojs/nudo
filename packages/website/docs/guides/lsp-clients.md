@@ -25,7 +25,7 @@ Declared on `initialize` (see [@nudojs/lsp API](../api/lsp.md)):
 | Signature help | `onSignatureHelp` | Triggers `(`, `,` |
 | Code actions (`quickfix`) | `onCodeAction` | Unreachable cleanup; contract/param fixes (A6) |
 | Semantic tokens (full) | `languages.semanticTokens` | Legend includes `contract` / `generated` / `derived` interface modifiers (A7) |
-| Execute command | `nudo.*` | `selectCase`, `interface`, `interfaceEmit`, agent tools |
+| Execute command | `nudo.*` | `selectCase`, `contract`, `contract.draft`, `contract.emit`, agent tools |
 | Custom requests | `nudo/…` | Same handlers as commands (E5); slash-form is the protocol contract |
 | Pull diagnostics | `diagnosticProvider` | `interFileDependencies: false` |
 
@@ -167,7 +167,7 @@ Track these when adopting a non-VS Code client. Server-side semantics are shared
 | Gap | Affected clients | Workaround | Tracking |
 |-----|------------------|------------|----------|
 | Active-case visual decoration (highlights the selected case body) | Zed, Neovim, Helix | CodeLens `●`/`○` still switches the active case when the client renders CodeLens; hover follows. Without CodeLens UI: CLI `nudo check` / agent `nudo.hover` after selectCase via custom request | Client limitation — no tracking issue (Zed has no decoration API; Neovim needs a custom plugin) |
-| CodeLens not rendered | Helix, some minimal Neovim setups | CLI `nudo contract` / `nudo check`; agent `nudo.interface` / `nudo.interface.draft`; VS Code/Zed for UI CodeLens | Client limitation — no tracking issue (Helix CodeLens UI absent) |
+| CodeLens not rendered | Helix, some minimal Neovim setups | CLI `nudo contract` / `nudo check`; agent `nudo.contract` / `nudo.contract.draft`; VS Code/Zed for UI CodeLens | Client limitation — no tracking issue (Helix CodeLens UI absent) |
 | Semantic tokens off by default | Zed, Neovim, Helix | Set client settings from Setup notes above (Zed `semantic_tokens: "combined"`; Neovim treesitter/semantic-tokens plugin; Helix `editor.semantic-tokens`) | Documented per client on this page — no separate issue |
 | Secondary-server diagnostics may compete with tsserver noise | All | Scope `package.json#nudo.analysis.include` / `exclude`; or `mode: "directives"` — full recipe in [Coexistence](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | Config, not a bug — tracking doc: [coexistence recipe](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
 | File-detection docs lag analysis-mode default | Docs | Prefer `package.json#nudo.analysis` + [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) as the source of truth | Docs sync — this page + PUBLIC_API.md |
@@ -184,7 +184,7 @@ These surfaces always share one computation (pinned by tests):
 | Hover first line + contract display | `interfaceTierOf` + `getHoverAtPosition` |
 | Inlay `interfaceSource` / `derived` | `collectAbsInlays` + `interfaceTierOf` |
 | Semantic token modifiers | `buildSemanticTokens` + `interfaceTierOf` |
-| Agent `nudo.check` / `nudo.hover` / `nudo.interface` / infer/whatIf/trace | Same service/core entrypoints + buffer-aware `loadModule` (E5 `AGENT_TOOL_SOURCES`); tool errors carry `isError: true` |
+| Agent `nudo.check` / `nudo.hover` / `nudo.contract` / test/whatIf/trace | Same service/core entrypoints + buffer-aware `loadModule` (E5 `AGENT_TOOL_SOURCES`); tool errors carry `isError: true` |
 | CLI `nudo check` / `nudo contract` | Same service/core entrypoints |
 | executeCommand `nudo.*` ↔ slash `nudo/…` | Same dispatch table; inventory pinned in `packages/lsp/PUBLIC_API.md` + `public-api-surface.test.ts` |
 

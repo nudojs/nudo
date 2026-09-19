@@ -419,7 +419,7 @@ function generateJSDoc(fn: FunctionAnalysis, sig: MainSignature): string {
   // （tsc 5.9.3，最小 .d.ts + 调用文件 + tsc --noEmit）：字面量参数重载其实
   // 可达——「宽主签名在前则后置精确重载永不命中」不成立，新鲜与非新鲜
   // （as const 传入）字面量实参都会优先命中字面量参数重载，与声明顺序无关。
-  // 即便如此仍只生成单一主签名：① --callsites 场景单个函数可合成几十个
+  // 即便如此仍只生成单一主签名：① --from 场景单个函数可合成几十个
   // case，逐 case 重载会让声明面爆炸；② throwing case 的 `: never` 重载对
   // 调用方是陷阱（对 never 取属性/运算直接报错）；③ 字面量精度由下面的
   // Case: 行完整保留。与主签名同形的 case（无信息损失）不罗列。

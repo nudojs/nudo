@@ -18,9 +18,7 @@
 
 - **Day 0**：`pnpm run check <file>`（门禁 + 签名）· `pnpm run test:cli <file>`（逐 case 报告）
 - **Day 1**：`pnpm run contract` / `pnpm run nudo -- contract` · 继续 `check`
-- **Ecosystem**：`pnpm run export:nudo … --format dts|guard|schema|standard`
-
-旧动词 `infer` / `types` / `interface` / `generate` / `emit` / `guard` / `doctor` / `watch` **已 deprecated**（stderr 提示，下一 major 删除）。
+- **Ecosystem**：`pnpm run export:nudo … --format dts|guard|schema|standard|all`（schema 用 `--dialect zod`）
 
 ## 精化模型
 

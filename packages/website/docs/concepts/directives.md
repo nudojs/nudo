@@ -42,7 +42,7 @@ Both forms are parsed identically — in particular, the single-line rule for mo
 
 ## @nudo:case — Debug Witnesses
 
-Cases are **debug witnesses**: concrete inputs Nudo executes the function with for scenario runs. They are not the interface product — refinement contracts live in `*.nudo.js` sidecars (see [@nudo:refine](#nudorefine--refinement-contract)). `@nudo:case` remains supported for `nudo test` assertions and LSP scenario switching. Prefer **concrete** arguments; legacy symbolic `T.*` case args are deprecated and not used in product examples.
+Cases are **debug witnesses**: concrete inputs Nudo executes the function with for scenario runs. They are not the interface product — refinement contracts live in `*.nudo.js` sidecars (see [@nudo:refine](#nudorefine--refinement-contract)). `@nudo:case` remains supported for `nudo test` assertions and LSP scenario switching. Cases use concrete arguments or constraint builders.
 
 Provide named execution cases. Each case defines inputs (concrete or symbolic) for Nudo to run the function with.
 
@@ -54,7 +54,7 @@ Provide named execution cases. Each case defines inputs (concrete or symbolic) f
 ```
 
 - **name** — A string identifier for the case (e.g. `"double digits"`).
-- **args** — Comma-separated **concrete** arguments (`5`, `"hello"`, `{…}`). Legacy symbolic `T.*` expressions are deprecated.
+- **args** — Comma-separated **concrete** arguments (`5`, `"hello"`, `{…}`) or constraint-builder expressions.
 - **expected** (optional) — After `=>`, a concrete expected result used for validation.
 
 ### Examples

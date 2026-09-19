@@ -170,7 +170,7 @@ nudo check src/ --entry-throws off
 | `--json` | 机器可读签名 + 诊断 |
 | `--verbose` | 额外细节 |
 | `--abs` | 打印 Abs 代数面（term / pred / conf） |
-| `--from <paths…>` | 使用处文件注入调用记录（由 `--callsites` 更名） |
+| `--from <paths…>` | 使用处文件注入调用记录 |
 | `--ignore-throws <names>` | 逗号分隔、可忽略的 L2 throws 类型 |
 | `--entry-throws error\|warning\|off` | L2 严重级别（默认 `error`） |
 

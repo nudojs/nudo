@@ -17,10 +17,9 @@
 #   Day0  pnpm run check      — gate + signatures (any ≠ unknown)
 #         pnpm run test:cli   — case reports (call@/entry@ + debug)
 #   Day1  pnpm run contract   — draft/emit/print sidecars
-#         pnpm run export:nudo — dts | guard | zod
-# Old verbs (infer/types/interface/generate/emit/guard/doctor/watch) are
-# deprecated; this script pins the new verbs and labels that the CLI prints
-# today. Do not invent golden strings that the CLI does not emit.
+#         pnpm run export:nudo — dts | guard | schema | standard | all
+# This script pins current product verbs and the labels the CLI prints.
+# Do not invent golden strings that the CLI does not emit.
 #
 # Output pins (below) mirror the promises in the example files' header
 # comments and the per-directory READMEs: fixed strings that MUST appear in
@@ -227,7 +226,7 @@ pin 'pnpm run check docs/examples/algebra/0-add-intensional.js' \
   'twice(x: number) => number'
 pin 'pnpm run test:cli docs/examples/algebra/0-add-intensional.js' \
   '(1, 3) => 4' '(number, 1) => number' 'debug "symbolic"'
-# check --abs = algebra face (was `nudo types`). Unconstrained analyze-args
+# check --abs = algebra face. Unconstrained analyze-args
 # may still print `unknown` in this view; entry unconstrained params on the
 # check signatures face print as `any`.
 pin 'pnpm run check docs/examples/algebra/0-add-intensional.js --abs --assume "x>0"' \

@@ -1,8 +1,7 @@
 /**
- * Case facts JSON（`nudo test --json` / `nudo check --json` 同源序列化）。
- * 曾用名 InferJson v1（`nudo infer --json`）；字段只增不改语义。
+ * Case facts JSON（`nudo test --json` 序列化）。
  *
- * - args / result / throws / combined：formatShape 外延投影（有损，兼容）
+ * - args / result / throws / combined：formatShape 外延投影（有损）
  *   入口无约束参数展示为 any；unknown 仅表示推导失败
  * - intension.abs*：无损 Abs 展示（主线）
  * - argsAbs / resultAbs：CaseResult 上的无损 Abs（formatAbs）；有则补齐
@@ -11,9 +10,9 @@
 import { formatAbs, formatShape, type Abs } from "@nudojs/core";
 import type { AnalysisResult, CaseResult, FunctionAnalysis, SourceLocation } from "./analyzer.ts";
 
-export type InferJsonCase = {
+export type CaseJsonCase = {
   name: string;
-  /** TypeValue 投影（有损外延） */
+  /** formatShape 外延投影（有损） */
   args: string[];
   result: string;
   throws: string | null;
@@ -34,18 +33,18 @@ export type InferJsonCase = {
   };
 };
 
-export type InferJsonFunction = {
+export type CaseJsonFunction = {
   name: string;
   loc: SourceLocation;
   entryOnly: boolean;
   noDeclaration?: boolean;
-  cases: InferJsonCase[];
+  cases: CaseJsonCase[];
   combined?: string;
   /** 无损 combined Abs 展示 */
   combinedAbs?: string;
 };
 
-export type InferJson = {
+export type CaseJson = {
   version: 1;
   file: string;
   summary: {
@@ -54,11 +53,11 @@ export type InferJson = {
     cases: number;
     diagnostics: number;
   };
-  functions: InferJsonFunction[];
+  functions: CaseJsonFunction[];
   externalFunctions?: Array<{
     name: string;
     fromModule?: string;
-    cases: InferJsonCase[];
+    cases: CaseJsonCase[];
   }>;
   diagnostics: Array<{
     range: SourceLocation;
@@ -71,8 +70,8 @@ export type InferJson = {
   }>;
 };
 
-function mapCase(c: CaseResult): InferJsonCase {
-  const out: InferJsonCase = {
+function mapCase(c: CaseResult): CaseJsonCase {
+  const out: CaseJsonCase = {
     name: c.name,
     args: c.argAbs.map((a: Abs) => formatShape(a)),
     result: formatShape(c.abs),
@@ -108,8 +107,8 @@ function mapCase(c: CaseResult): InferJsonCase {
   return out;
 }
 
-function mapFunction(f: FunctionAnalysis): InferJsonFunction {
-  const out: InferJsonFunction = {
+function mapFunction(f: FunctionAnalysis): CaseJsonFunction {
+  const out: CaseJsonFunction = {
     name: f.name,
     loc: f.loc,
     entryOnly: f.entryOnly ?? false,
@@ -127,10 +126,10 @@ function mapFunction(f: FunctionAnalysis): InferJsonFunction {
   return out;
 }
 
-export function serializeInferJson(
+export function serializeCaseJson(
   result: AnalysisResult,
   file: string,
-): InferJson {
+): CaseJson {
   const functions = result.functions.map(mapFunction);
   const external = result.externalFunctions?.map((f) => ({
     name: f.name,
@@ -141,7 +140,7 @@ export function serializeInferJson(
     functions.reduce((n, f) => n + f.cases.length, 0) +
     (external ?? []).reduce((n, f) => n + f.cases.length, 0);
 
-  const json: InferJson = {
+  const json: CaseJson = {
     version: 1,
     file,
     summary: {

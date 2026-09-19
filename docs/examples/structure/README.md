@@ -91,6 +91,6 @@ issues
 ## 关联文档
 
 - 精化契约（值约束）：[`../constraints/README.md`](../constraints/README.md)
-- `nudo check` 全貌：[`../../nudo-check.md`](../../nudo-check.md)
+- `nudo check` 全貌：[`../../design-cli-semantics.md`](../../design-cli-semantics.md)
 - tsc 同逻辑对照：[`../vs-ts/README.md`](../vs-ts/README.md)
 - 契约模型：[`../../superpowers/plans/2026-05-28-close-ts-dx-gaps.md`](../../superpowers/plans/2026-05-28-close-ts-dx-gaps.md) §0.1

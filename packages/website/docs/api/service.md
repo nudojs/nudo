@@ -289,22 +289,6 @@ Abs → **Standard Schema v1** runtime module source (`~standard`, `vendor: "nud
 
 ---
 
-## absToZodSchema
-
-```typescript
-absToZodSchema(a: Abs): string
-```
-
-**Deprecated alias** of `absToSchemaSource(a, { dialect: "zod" })`. Prefer `absToSchemaSource`; the alias remains until the next major.
-
-**Example:**
-```typescript
-absToZodSchema(obj({ name: str(), age: num() }))
-// → "z.object({ name: z.string(), age: z.number() })"
-```
-
----
-
 ## generateGuardFunction
 
 ```typescript

@@ -102,7 +102,7 @@ The extension's `language_server_command` tries, in order:
 | CodeLens | Enable `code_lens: "on"` — **interface tier first** (`● interface`, persist/update, `⚡ draft interface`), case lenses behind |
 | Semantic tokens | Default off; set `semantic_tokens: "combined"` — includes `contract`/`generated`/`derived` modifiers |
 | Code actions / Signature help | Standard LSP quickfix + signature help |
-| Agent commands (`nudo.check` / `nudo.interface.draft` / …) | Reachable via any LSP client or Zed agent tooling |
+| Agent commands (`nudo.check` / `nudo.contract.draft` / …) | Reachable via any LSP client or Zed agent tooling |
 
 CodeLens `⚡ draft interface` runs the same code-first draft path as CLI `nudo contract --draft` (writes `*.nudo.draft.js` only when the client requests `write: true`). Migration walkthrough: [Migrating existing JS](./migrating-js.md).
 

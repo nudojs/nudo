@@ -12,7 +12,7 @@ AI 编码代理——Claude Code、Cursor、Copilot、Zed 等——通过 Nudo �
 | 命令 | CLI 映射 | 返回 |
 |------|----------|------|
 | `nudo.check` | `nudo check`（签名 + L1/L2 门禁） | **CheckJson v1**——签名 + `actual ⊭ expected` |
-| `nudo.infer` | `nudo test`（case 报告；签名看 `check`） | **InferJson v1**——带无损 `intension.abs` 的 case |
+| `nudo.test` | `nudo test`（case 报告；签名看 `check`） | **CaseJson v1**——带无损 `intension.abs` 的 case |
 | `nudo.hover` | IDE hover | 指定位置的无损 Abs（+ 可选 inlay） |
 | `nudo.whatIf` / `suggestCase` / `trace` | 探索 | 类型探索与 case 覆盖 |
 
@@ -104,10 +104,10 @@ file_patterns = ["**/*.js", "**/*.mjs", "**/*.ts"]
 { "command": "nudo.check", "arguments": [{ "file": "src/validators.js", "format": "json" }] }
 ```
 
-**`nudo.infer`** —— InferJson v1（可选 `functions` 过滤）：
+**`nudo.test`** —— CaseJson v1（可选 `functions` 过滤）：
 
 ```json
-{ "command": "nudo.infer", "arguments": [{ "file": "src/app.js", "functions": ["normalize"], "format": "json" }] }
+{ "command": "nudo.test", "arguments": [{ "file": "src/app.js", "functions": ["normalize"], "format": "json" }] }
 ```
 
 **`nudo.hover`** —— 指定位置的无损 Abs：

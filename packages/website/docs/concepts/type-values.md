@@ -101,7 +101,7 @@ These are **not** the same product concept and must never be collapsed in docs o
 | builders | `.gt/.gte/.lt/.lte/.shift/.int…` | `number().gt(0).int()` |
 | bare literals | parsed directly | `42`, `"abc"`, `true`, `[1, 2]` |
 
-Directive type expressions use the constraint builders above plus concrete literals. The old `T.*` product grammar is removed. Inside `@nudo:mock` bodies write plain JavaScript values and closures — not builder calls as return payloads.
+Directive type expressions use the constraint builders above plus concrete literals. Inside `@nudo:mock` bodies write plain JavaScript values and closures — not builder calls as return payloads.
 
 ```javascript
 /**

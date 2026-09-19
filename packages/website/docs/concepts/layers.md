@@ -25,7 +25,7 @@ Open the same file in VS Code with the Nudo extension for hover and inlays.
 
 > **Default analysis mode:** `nudo.analysis.mode` defaults to `"exports"`. Files with `export` / sidecar / directives are analyzed by the IDE; set `"all"` for every target path or `"directives"` for the conservative gate. CLI `check`/`test` on a named path still analyzes any target file.
 
-**Day 0 takeaway:** read types from `check` signatures and `test` cases. There is no `nudo infer` observation verb.
+**Day 0 takeaway:** read types from `check` signatures and `test` cases.
 
 ## Day 1 — Sidecar contracts
 

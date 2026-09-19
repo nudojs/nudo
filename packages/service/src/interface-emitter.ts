@@ -46,7 +46,7 @@ export type EmitInterfaceSkipReason =
   | "not-projectable"
   | "not-an-export"
   | "no-change"
-  /** package.json#nudo.interface.emit 白名单拒绝 */
+  /** package.json#nudo.contract.emit 白名单拒绝 */
   | "emit-denied"
   /** 手工合并的多声明符 @generated 段：按段原子保留，不拆不重写 */
   | "multi-declarator";
@@ -61,7 +61,7 @@ export type EmitInterfaceOpts = {
   /** 不写盘，返回 unifiedDiff */
   dryRun?: boolean;
   /**
-   * 跨文件调用记录（--callsites 采集）：域根导出（本文件无调用点、仅有
+   * 跨文件调用记录（--from 采集）：域根导出（本文件无调用点、仅有
    * 外部使用现场记录）的投影原料；缺省时仅用本文件调用点证据。
    */
   records?: CallRecord[];
@@ -106,7 +106,7 @@ export async function emitInterface(
       `emit target '${abs}' is inside node_modules; contract sidecars are never written there`,
     );
   }
-  // package.json#nudo.interface.emit 白名单（Phase 3 §7.3）：显式动作也尊重包级门禁
+  // package.json#nudo.contract.emit 白名单（Phase 3 §7.3）：显式动作也尊重包级门禁
   // （匹配的是**源文件**路径，不是侧车路径）
   const proj = findProjectConfig(dirname(abs));
   const allow = interfaceConfig(proj?.config).emit;
@@ -119,7 +119,7 @@ export async function emitInterface(
         {
           code: "nudo:interface-emit-denied",
           severity: "warning",
-          message: `emit target '${relative(process.cwd(), abs) || abs}' is outside package.json#nudo.interface.emit allowlist`,
+          message: `emit target '${relative(process.cwd(), abs) || abs}' is outside package.json#nudo.contract.emit allowlist`,
         },
       ],
       sidecarPath: sidecarPathOf(abs),
@@ -253,7 +253,7 @@ export async function emitInterface(
     if (plan.dsl === undefined || !plan.roundTrip) {
       skipped.push({ fn: name, reason: "not-projectable" });
       if (prevText !== undefined) {
-        // 既有生成段但今日证据不可得（如 update 未带 --callsites）：
+        // 既有生成段但今日证据不可得（如 update 未带 --from）：
         // 保留原段不删（update 剥离后归位原文本），绝不因证据缺失删契约
         accepted.push({ fn: name, text: prevText, prevText });
       }

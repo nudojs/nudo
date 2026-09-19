@@ -495,7 +495,7 @@ function shout(msg) {
 }
 module.exports = { formatName, shout };
 `;
-    // 模拟 CLI --callsites 从使用现场（测试/上层应用）收集的记录：
+    // 模拟 CLI --from 从使用现场（测试/上层应用）收集的记录：
     // targetExport 命中导出名 formatName，fnName 形态也会被匹配
     const external = [
       absRec({

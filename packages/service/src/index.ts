@@ -37,11 +37,11 @@ export {
 export { collectAbsInlays, type AbsInlay } from "@nudojs/core";
 
 export {
-  serializeInferJson,
-  type InferJson,
-  type InferJsonCase,
-  type InferJsonFunction,
-} from "./infer-json.ts";
+  serializeCaseJson,
+  type CaseJson,
+  type CaseJsonCase,
+  type CaseJsonFunction,
+} from "./case-json.ts";
 
 export { isNudoTargetPath } from "./target-path.ts";
 export {
@@ -191,7 +191,6 @@ export {
 export {
   absToSchemaSource,
   absToSchemaNode,
-  absToZodSchema,
   constraintToSchemaNode,
   projectAbsToSchema,
   schemaNodeToZod,

@@ -1,11 +1,11 @@
 /**
- * E5/F6：agent `nudo.interface.draft` 与 CLI `--draft` 同源。
+ * E5/F6：agent `nudo.contract.draft` 与 CLI `--draft` 同源。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AGENT_TOOL_SOURCES, interfaceDraftTool } from "../agent-tools.ts";
+import { AGENT_TOOL_SOURCES, contractDraftTool } from "../agent-tools.ts";
 
 let dir: string;
 beforeEach(() => {
@@ -20,11 +20,11 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("nudo.interface.draft agent tool", () => {
+describe("nudo.contract.draft agent tool", () => {
   it("prints draft module text (same source as CLI --draft)", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, `export function double(x) {\n  return x * 2;\n}\n\ndouble(21);\n`);
-    const r = await interfaceDraftTool({ file });
+    const r = await contractDraftTool({ file });
     const text = r.content[0].text;
     expect(text).toContain("double");
     expect(text).toContain("draft callsite/");
@@ -35,7 +35,7 @@ describe("nudo.interface.draft agent tool", () => {
   it("write lands *.nudo.draft.js only", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, `export function double(x) {\n  return x * 2;\n}\n\ndouble(21);\n`);
-    const r = await interfaceDraftTool({ file, write: true });
+    const r = await contractDraftTool({ file, write: true });
     expect(r.content[0].text).toContain("Draft written →");
     expect(existsSync(join(dir, "lib.nudo.draft.js"))).toBe(true);
     expect(existsSync(join(dir, "lib.nudo.js"))).toBe(false);
@@ -48,7 +48,7 @@ describe("nudo.interface.draft agent tool", () => {
     try {
       const file = join(isolated, "lib.js");
       writeFileSync(file, `export function double(x) {\n  return x * 2;\n}\n\ndouble(21);\n`);
-      const r = await interfaceDraftTool(
+      const r = await contractDraftTool(
         { file, write: true },
         { workspaceRoots: [isolated] },
       );
@@ -71,7 +71,7 @@ describe("nudo.interface.draft agent tool", () => {
       );
       const file = join(outside, "evil.js");
       writeFileSync(file, `export function f(x) { return x; }\n`);
-      const r = await interfaceDraftTool(
+      const r = await contractDraftTool(
         { file, write: true },
         { workspaceRoots: [dir] },
       );
@@ -86,13 +86,13 @@ describe("nudo.interface.draft agent tool", () => {
   it("write of non-target path is rejected", async () => {
     const file = join(dir, "contract.nudo.js");
     writeFileSync(file, `export const f = fn({}, unknown());\n`);
-    const r = await interfaceDraftTool({ file, write: true }, { workspaceRoots: [dir] });
+    const r = await contractDraftTool({ file, write: true }, { workspaceRoots: [dir] });
     expect(r.isError).toBe(true);
     expect(r.content[0].text).toContain("not an analysis target");
   });
 
   it("pins shared source table entry", () => {
-    expect(AGENT_TOOL_SOURCES["interface.draft"]).toBe(
+    expect(AGENT_TOOL_SOURCES["contract.draft"]).toBe(
       "draftInterface + formatDraftSummary",
     );
   });

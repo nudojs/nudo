@@ -76,7 +76,7 @@ Operations on Abs are algebraic: monotonic arithmetic, comparison, `leq` assigna
 
 ### 2.2 Extensional projection (not a second type system)
 
-There is no second IR. dts (`Case:` JSDoc rows), the LSP hover surface, serialization, and the `*.nudo.js` template constraints all consume **Abs directly** — the extensional view is a rendering (`formatShape` for display, `absToTSType` / `absToZodSchema` / guard generators for projections). Rendering is lossy by design (`formatShape` drops non-literal terms), but nothing round-trips: analysis never reads a projection back. Production analysis runs Abs natively (B-path transpile+exec, ast-eval fallback).
+There is no second IR. dts (`Case:` JSDoc rows), the LSP hover surface, serialization, and the `*.nudo.js` template constraints all consume **Abs directly** — the extensional view is a rendering (`formatShape` for display, `absToTSType` / `absToSchemaSource` / `projectAbsToSchema` / guard generators for projections). Rendering is lossy by design (`formatShape` drops non-literal terms), but nothing round-trips: analysis never reads a projection back. Production analysis runs Abs natively (B-path transpile+exec, ast-eval fallback).
 
 ### 2.3 Design Principles
 

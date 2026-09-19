@@ -1,6 +1,6 @@
 # Nudo AI Agent Optimization Design
 
-> **Superseded / historical.** Written before the `@nudo:returns` → `@nudo:refine` rename and the Abs single-track merge. Current diagnostics use `@nudo:refine` contracts and Nudo-native `nudo:constraint-violated` reports — see `docs/nudo-check.md` and `docs/design-kernel-merge.md`.
+> **Superseded / historical.** Written before the `@nudo:returns` → `@nudo:refine` rename and the Abs single-track merge. Current diagnostics use `@nudo:refine` contracts and Nudo-native `nudo:constraint-violated` reports — see `docs/design-cli-semantics.md` and `docs/design-kernel-merge.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

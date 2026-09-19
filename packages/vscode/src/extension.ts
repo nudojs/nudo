@@ -112,24 +112,24 @@ export function activate(context: ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    commands.registerCommand("nudo.interface", async (uri?: string, functionName?: string) => {
+    commands.registerCommand("nudo.contract", async (uri?: string, functionName?: string) => {
       if (!client) return;
       const file = uri ?? window.activeTextEditor?.document.uri.toString();
       if (!file) {
         void window.showWarningMessage("Nudo: open a JS file or pass a URI");
         return;
       }
-      const result = await client.sendRequest("nudo/interface", {
+      const result = await client.sendRequest("nudo/contract", {
         file,
         ...(functionName ? { functionName } : {}),
       });
-      showNudoOutput(`interface ${functionName ?? file}`, extractToolText(result));
+      showNudoOutput(`contract ${functionName ?? file}`, extractToolText(result));
     }),
   );
 
   context.subscriptions.push(
     commands.registerCommand(
-      "nudo.interface.draft",
+      "nudo.contract.draft",
       async (uri?: string, functionName?: string) => {
         if (!client) return;
         const file = uri ?? window.activeTextEditor?.document.uri.toString();
@@ -141,7 +141,7 @@ export function activate(context: ExtensionContext): void {
           file,
           ...(functionName ? { functionName } : {}),
         };
-        const preview = await client.sendRequest("nudo/interface.draft", params);
+        const preview = await client.sendRequest("nudo/contract.draft", params);
         showNudoOutput(`draft ${functionName ?? file}`, extractToolText(preview));
 
         const pick = await window.showInformationMessage(
@@ -150,7 +150,7 @@ export function activate(context: ExtensionContext): void {
           "Dismiss",
         );
         if (pick === "Write draft file") {
-          const written = await client.sendRequest("nudo/interface.draft", {
+          const written = await client.sendRequest("nudo/contract.draft", {
             ...params,
             write: true,
           });
@@ -162,7 +162,7 @@ export function activate(context: ExtensionContext): void {
 
   context.subscriptions.push(
     commands.registerCommand(
-      "nudo.interfaceEmit",
+      "nudo.contract.emit",
       async (uri?: string, functionName?: string, mode?: string) => {
         if (!client) return;
         const file = uri ?? window.activeTextEditor?.document.uri.toString();
@@ -177,7 +177,7 @@ export function activate(context: ExtensionContext): void {
         };
         // 先 dry-run 预览，确认后再写盘（与 draft 同门禁体验）。
         // 服务端 dryRun:true 只分析不写盘；响应含 [dry-run] would update / 诊断。
-        const preview = await client.sendRequest("nudo/interface.emit", {
+        const preview = await client.sendRequest("nudo/contract.emit", {
           ...params,
           dryRun: true,
         });
@@ -194,7 +194,7 @@ export function activate(context: ExtensionContext): void {
           "Dismiss",
         );
         if (pick !== "Write sidecar") return;
-        const result = await client.sendRequest("nudo/interface.emit", params);
+        const result = await client.sendRequest("nudo/contract.emit", params);
         showNudoOutput(`persist ${functionName}`, extractToolText(result));
       },
     ),

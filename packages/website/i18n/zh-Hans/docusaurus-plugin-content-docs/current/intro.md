@@ -14,7 +14,7 @@ description: Nudo 执行 JavaScript，在 check/test 上打印签名，并门禁
 
 ## 读完你能带走
 
-- 观察 vs 义务：`nudo check` 签名 + `nudo test` 用例（没有 `nudo infer` 动词）
+- 观察 vs 义务：`nudo check` 签名 + `nudo test` 用例
 - Day-0 / Day-1 分层：先 check/test，需要更强门禁时再 contract
 - 可直接跑的命令，以及 Playground 入口
 
@@ -70,7 +70,7 @@ npx nudojs test:
 | **生态** | 无需额外 | `nudo export` dts/guard/schema/standard |
 | **进阶** | Abs 代数、env、mock | 字符串/数字代数、高阶函数、模块图 |
 
-`@nudo:case` 仍可用于**调试见证**（场景执行、`nudo test`、LSP 用例切换）——它不是契约产品。符号化的 `T.*` case 实参属于遗留语法，已不进入产品叙事。
+`@nudo:case` 仍可用于**调试见证**（场景执行、`nudo test`、LSP 用例切换）——它不是契约产品。case 实参使用具体值或约束构建器。
 
 ## 为什么不只是 TypeScript
 
@@ -81,7 +81,7 @@ npx nudojs test:
 | 义务 | 类型语言 + 赋值兼容 | L1 显式契约 + L2 入口 throws + Abs 上的 Pred 蕴含 |
 | 可观测性 | 悬停显示声明类型 | check 签名 / test 用例 / 悬停可显示 term / pred / conf |
 | CI 门禁 | `tsc --noEmit` | `nudo check`（成功时也打印 signatures） |
-| 观察命令 | （无 —— hover） | 没有 `nudo infer`；观察是 check/test/IDE 输出 |
+| 观察命令 | （无 —— hover） | 观察是 check/test/IDE 输出 |
 
 `"a,b,c".split(",")` → `["a", "b", "c"]`。声明 `x > 0` 后，`scale` 会带上 `(x + 1) > 1`。这是校验 + 可观测，不是第二套类型语言。
 

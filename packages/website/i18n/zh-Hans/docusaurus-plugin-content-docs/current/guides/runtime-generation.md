@@ -18,16 +18,16 @@ JS code → Nudo infers Abs → nudo export → Runtime validation
 ## `nudo export` 命令
 
 ```bash
-nudo export <file> [--format dts|guard|schema|zod|all] [--dialect zod] [--out dir]
+nudo export <file> [--format dts|guard|schema|standard|all] [--dialect zod] [--out dir]
 ```
 
 | 选项 | 描述 |
 |---|---|
-| `--format <format>` | 输出格式：`dts`、`guard`、`schema`、`zod`（废弃别名，等价 schema dialect zod）、`all`（默认：`dts`） |
+| `--format <format>` | 输出格式：`dts`、`guard`、`schema`、`standard`、`all`（默认：`dts`） |
 | `--dialect <dialect>` | schema dialect；当前为 `zod` |
 | `--out <dir>` | 把产物写入该目录（`<name>.nudo.schema.<dialect>.ts`、`<name>.nudo.guard.ts`、`<name>.d.ts`）。省略则打印到 stdout。 |
 
-`nudo export` 是 CLI 上 `.d.ts` / guard / schema 投影的**唯一**路径。废弃动词 `nudo generate` / `nudo emit` / `nudo guard` 与 `infer --dts` 映射到这里。Abs 才是真理源——schema / dts / guard 都是单向投影。
+`nudo export` 是 CLI 上 `.d.ts` / guard / schema 投影的**唯一**路径。Abs 才是真理源——schema / dts / guard 都是单向投影。
 
 ### 基本用法
 
@@ -44,7 +44,7 @@ nudo export src/api/users.js --format schema --dialect zod > users.schema.txt
 
 ## 示例源码
 
-本页所有示例都使用下面的文件。指令类型表达式使用约束构建器（`number()`、`string()`、`shape({...})`、`array(...)`）或具体字面量——不是已移除的 `T.*` 文法。`@nudo:case` 见证仅用于调试。
+本页所有示例都使用下面的文件。指令类型表达式使用约束构建器（`number()`、`string()`、`shape({...})`、`array(...)`）或具体字面量。`@nudo:case` 见证仅用于调试。
 
 ```js
 // src/api/users.js
@@ -58,8 +58,6 @@ function createUser(input) {
 ## Schema 生成（dialect 源码）
 
 使用 `--format schema --dialect zod` 时，Nudo 会为每个 case 的输入和输出类型打印 [Zod](https://zod.dev) schema 表达式。schema 以注释形式输出——把其中的表达式复制出来，组装成你自己的 schema 模块。Abs 上可表达的常数界 / `int` / 字符串长度会落入 schema；落不了的列在 `dropped preds`。
-
-`--format zod` 是本路径的**废弃别名**（下个 major 移除）。
 
 ```bash
 nudo export src/api/users.js --format schema --dialect zod
@@ -207,7 +205,7 @@ export declare function formatValue(value: string | number): string;
 
 ## JSON 输出
 
-用于程序化消费和 CI/CD 集成时，使用 `nudo check --json`（签名 + 诊断）或 `nudo test --json`（用例）。没有一级 `nudo infer --json` 动词。
+用于程序化消费和 CI/CD 集成时，使用 `nudo check --json`（签名 + 诊断）或 `nudo test --json`（用例）。
 
 ```bash
 nudo check src/api/users.js --json

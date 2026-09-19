@@ -946,7 +946,7 @@ export function emitDerivedFromRoot(
     return { sidecars: [], hasRoot: false, roots: [], entryOnly: true };
   }
 
-  // package.json#nudo.interface.emit 白名单（Phase 3 §7.3）
+  // package.json#nudo.contract.emit 白名单（Phase 3 §7.3）
   const proj = findProjectConfig(dirname(abs));
   const allow = interfaceConfig(proj?.config).emit;
   const projectDir = proj?.projectDir;

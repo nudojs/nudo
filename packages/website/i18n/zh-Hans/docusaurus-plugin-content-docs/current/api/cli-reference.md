@@ -26,7 +26,7 @@ npx @nudojs/cli check ./src/utils.js
 | [`nudo health`](#nudo-health) | 健康检查：分析错误、调用点固化漂移 |
 | [`nudo env harvest`](#nudo-env-harvest) | 把 `@types/<pkg>` 声明转为 Nudo env 文件 |
 
-**没有**观察动词（`infer` / `show` / `types`）。观察 = `check` 签名 + `test` 用例报告 + IDE hover。
+观察 = `check` 签名 + `test` 用例报告 + IDE hover。
 
 **Day 0：** `check` / `test`。**Day 1：** `contract` + `check`。**生态：** `export`。
 
@@ -54,7 +54,7 @@ nudo check <path> [options]
 | `--json` | 结构化诊断 + 签名 |
 | `--verbose` | 额外诊断细节 |
 | `--abs` | 打印 Abs 代数面（term / pred / conf） |
-| `--from <paths…>` | 使用处文件（tests/apps）；其调用记录并入分析 —— 原 `--callsites` |
+| `--from <paths…>` | 使用处文件（tests/apps）；其调用记录并入分析 |
 | `--ignore-throws <names>` | 逗号分隔、可忽略的 L2 throws 类型（如 `TypeError,RangeError`）。不吞 L1 契约违例。 |
 | `--entry-throws error\|warning\|off` | L2 入口 may-throw 严重级别（默认 `error`） |
 
@@ -126,8 +126,8 @@ nudo test <path> [options]
 | 选项 | 说明 |
 |------|------|
 | `--watch` / `-w` | 变更时重跑 |
-| `--from <paths…>` | 使用处文件，其调用合成为 `call@L` 用例 —— 原 `--callsites` |
-| `--freeze[=update]` | 把合成用例写回为 `@nudo:case` 指令（原 `infer --emit-cases`）。`=update` 重新同步已生成指令。 |
+| `--from <paths…>` | 使用处文件，其调用合成为 `call@L` 用例 |
+| `--freeze[=update]` | 把合成用例写回为 `@nudo:case` 指令。`=update` 重新同步已生成指令。 |
 | `--json` | 结构化用例报告 |
 | `--abs` | 打印用例的 Abs 代数 |
 | `--dry-run` | 搭配 `--freeze`：打印 unified diff 而不写盘 |
@@ -175,8 +175,6 @@ nudo test lib.js --from test.js --freeze=update
 ### nudo contract
 
 打印、草稿或固化每个函数的有效接口及其来源分层。
-
-取代 `nudo interface` / `nudo refine`（已废弃）。
 
 ```bash
 nudo contract <paths...> [--from <paths...>]
@@ -232,18 +230,16 @@ nudo contract --emit lib.js --fn add2
 
 把 Abs 投影为生态产物。CLI 上 `.d.ts` / guard / schema 投影的**唯一**路径。
 
-取代 `nudo generate` / `nudo emit` / `nudo guard` 与 `infer --dts`（已废弃）。
-
 ```bash
-nudo export <path> [--format dts|guard|schema|standard|zod|all] [--dialect zod] [--out dir]
+nudo export <path> [--format dts|guard|schema|standard|all] [--dialect zod] [--out dir]
 ```
 
 **选项：**
 
 | 选项 | 说明 |
 |------|------|
-| `--format` | `dts`（默认）\| `guard` \| `schema` \| `standard` \| `zod`（废弃别名）\| `all` |
-| `--dialect` | schema dialect；当前为 `zod`。仅对 `schema` / `all` / `zod` 有意义 |
+| `--format` | `dts`（默认）\| `guard` \| `schema` \| `standard` \| `all` |
+| `--dialect` | schema dialect；当前为 `zod`。仅对 `schema` / `all` 有意义 |
 | `--out <dir>` | 把产物写入该目录，而非 stdout |
 
 **格式：**
@@ -254,7 +250,6 @@ nudo export <path> [--format dts|guard|schema|standard|zod|all] [--dialect zod] 
 | `guard` | 运行时类型守卫（有无损 Abs 路径时优先） |
 | `schema` | `--dialect` 对应的 schema 源码 → `*.nudo.schema.<dialect>.ts` |
 | `standard` | Standard Schema v1 模块（`~standard`，vendor `nudo`）→ `<fn>.nudo.standard.ts` |
-| `zod` | 废弃别名，等价于 `schema --dialect zod` |
 | `all` | dts + guard + schema + standard |
 
 可表达的 Abs pred（常数界 / `int` / 字符串长度）会进入 schema；符号 pred 落在基类型上并在 `dropped preds` 注释列出。`standard` 在运行时 `validate` 中执法同一 refinement 集合——仍是单向投影，**CI 门禁仍是 `nudo check`**。
@@ -273,8 +268,6 @@ nudo export <path> [--format dts|guard|schema|standard|zod|all] [--dialect zod] 
 ### nudo health
 
 健康检查：分析错误与调用点固化漂移。
-
-取代 `nudo doctor`（已废弃）。
 
 ```bash
 nudo health [paths...] [--watch] [--from <paths...>] [--json]
@@ -314,8 +307,6 @@ src/lib.js
 
 把 `@types/<pkg>` 声明转换为 Nudo env 模块。
 
-取代一级动词 `nudo harvest`（已废弃）。
-
 ```bash
 nudo env harvest <pkg> [options]
 ```
@@ -353,8 +344,6 @@ nudo env harvest node
 - **check --json** —— 签名（含 `any` 入口参数与 throws）、诊断码（如 `nudo:entry-may-throw`）、汇总计数。仅支持单文件；`--abs` 仍门禁。
 - **test --json** —— 逐函数用例（`entry@` / `call@` / 指令）、`assertions` 摘要（`passed`/`failed`/`unchecked`）、诊断、可选 Abs intension 块；声明断言失败仍 exit 1。
 
-没有一级 `infer --json`；弃用窗口内仍收到该输出的消费者应迁移到 `check --json` 或 `test --json`。
-
 ---
 
 ## 退出码汇总
@@ -367,24 +356,3 @@ nudo env harvest node
 | `contract --emit --exit-on-diff` | 将写盘且有 diff |
 | `health` | 漂移或分析错误 |
 | `env harvest` | 缺少 `@types` 包或无声明 |
-
----
-
-## 废弃命令
-
-下列动词打印 stderr deprecation 警告并映射到新命令面。下一 major 删除 —— 不是永久别名。
-
-| 废弃 | 替代 |
-|------|------|
-| `nudo infer <path>` | `nudo check`（签名/门禁）+ `nudo test`（用例）；dts → `nudo export --format dts` |
-| `nudo types <path>` | `nudo check --abs` |
-| `nudo interface` / `nudo refine` | `nudo contract` |
-| `nudo generate` / `nudo emit` / `nudo guard` | `nudo export --format …` |
-| `nudo doctor` | `nudo health` |
-| `nudo watch` | `nudo check --watch` / `nudo test --watch` |
-| `nudo harvest <pkg>` | `nudo env harvest <pkg>` |
-| `--callsites` | `--from` |
-| `--emit-cases[=update]` | `nudo test --freeze[=update]` |
-| `infer --dts` | `nudo export --format dts` |
-
-详见 [CLI 使用指南 — 迁移](../guides/cli.md#迁移--废弃动词)。

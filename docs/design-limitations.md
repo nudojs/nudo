@@ -30,6 +30,22 @@ AST 路径走 `formalParamsFromNodes`）。
 
 ---
 
+### 1.0b C0.5 求值缺槽（默认 off）
+
+**状态**：已实现，**默认关闭**。不恢复 body AST slot 扫描。
+
+| 项 | 内容 |
+|----|------|
+| 配置 | `package.json#nudo.analysis.evalMissingSlot`: `"off"`（默认）\| `"warning"` |
+| 码 | `nudo:missing-slot`（warning；不发明 check 门禁 error） |
+| 触发 | B-path / ast-eval **实际求值**到已知对象 shape 缺 key |
+| 禁止 | 静态扫 body 成员名当必填义务；用 missing-slot 当隐式 interface 契约 |
+| 草稿路径 | `nudo contract --draft`（代码优先草稿，不 ambient 绑定） |
+
+隔离：`runWithEvalMissingSlot`（ALS，`core/exec/member-diag.ts`）按次分析生效。
+手写契约仍走 `nudo:constraint-violated`，与该开关无关。
+配置与命令面见 [`design-cli-semantics.md`](./design-cli-semantics.md) §7。
+
 ### 1.1 数组方法精度：reduce / forEach / some / 手写循环 push（已解决）
 
 **当前行为：**
@@ -392,7 +408,7 @@ caught();
 以裸 `Maximum call stack size exceeded` 崩溃（exit 1，无文件/行号诊断），
 与声明顺序无关，class 不必被实例化。~~ 已修复：2026-09 复测两个原触发
 变体与合体文件均 exit 0，调用点逐位精确。今日验证命令：`nudo test` /
-`nudo check`（旧动词 `infer` 已 deprecated）。
+`nudo check`。
 
 ```javascript
 // 原触发形态 A：顶层调用 Object.keys(具体形状) —— 现已正常
@@ -498,7 +514,7 @@ exit 0，全部 case 精确（`compute` → `25 #exact`）。网站
 
 ## 八、调用点发现的已知边界（P7 实测，2026-08）
 
-调用点注入（`nudo test/check --from`，原 `infer --callsites`）在 hoek 98.6% / json-ext 91.8% 后的
+调用点注入（`nudo test/check --from`）在 hoek 98.6% / json-ext 91.8% 后的
 诚实天花板项（阶段 3 循环/闭包语义波已落地：for-of union 分发、
 break/continue 信号、let 每轮绑定、Promise resolve 静态位点扫描、
 递归截断观测回退、usage-site 执行泄漏标记）：

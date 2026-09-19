@@ -1,5 +1,5 @@
 <!-- CLI semantics: docs/design-cli-semantics.md — primary verbs check/test/contract/export/health/env harvest.
-     L1 explicit contracts + L2 entry may-throw; old verbs deprecated until next major. -->
+     L1 explicit contracts + L2 entry may-throw. -->
 # Versioning & Release Policy (E6)
 
 How Nudo packages are versioned, what counts as a breaking change, and how to follow the changeset workflow.
@@ -11,7 +11,7 @@ How Nudo packages are versioned, what counts as a breaking change, and how to fo
 > **Intentional behavior changes (fix-2) — release notes, not regressions:**
 > 1. **C0.1:** body-AST required-slot inference removed. Shape-slot obligations come only from explicit contracts or call-site facts. **L2 is different:** entry may-throw (`nudo:entry-may-throw`) is a runtime-boundary obligation on export/entry functions — default **error**, filterable via `--ignore-throws` / `package.json#nudo.check.ignoreThrows`. It does **not** invent body slots.
 > 2. **A1:** `analysis.mode` shipped default flipped `directives` → `exports` (`DEFAULT_ANALYSIS_MODE` in `@nudojs/service`). Escape hatch: `package.json#nudo.analysis.mode = "directives"` (old silence) or `"all"` (every target path). On **1.x** packages this is a **default-behavior flip that can invent diagnostics** on previously unanalyzed export-bearing files → treat as **major** in changesets/release notes unless the team ships a documented minor with the escape hatch called out.
-> 3. **CLI semantics (this branch):** primary verbs are `check` / `test` / `contract` / `export` / `health` / `env harvest`. Observation is check signatures + test case reports — **no** `infer`/`show`/`types` primary verb; `watch` is `--watch` on check/test. Old verbs keep stderr deprecation until **next major** (then delete; not permanent silent synonyms). Entry unconstrained params display as **`any`**; true `unknown` = inference failure.
+> 3. **CLI semantics:** primary verbs are `check` / `test` / `contract` / `export` / `health` / `env harvest`. Observation is check signatures + test case reports + IDE hover; `watch` is `--watch` on check/test. Flags: `--from`, `test --freeze`, `export --format dts|guard|schema|standard|all` with `--dialect zod` for schema, `export --out`. Entry unconstrained params display as **`any`**; true `unknown` = inference failure.
 >
 > `@nudojs/core` / `@nudojs/service` / `@nudojs/cli` are on the **stable SemVer line** (currently 2.x — see each package.json). The monorepo root version is private and is not a publish unit.
 >
@@ -55,11 +55,11 @@ Treat as **breaking** (major on 1.x, minor on 0.x):
 | Surface | Examples |
 |---------|----------|
 | Public package exports | Removing a subpath (`@nudojs/cli/evaluator` → `@nudojs/service/evaluator` was a 1.0.0 major) |
-| `CheckJson` / `InferJson` schema | Field removal/rename; `version` bump without dual-read |
+| `CheckJson` / `CaseJson` schema | Field removal/rename; `version` bump without dual-read |
 | `.d.ts` projection shape | Signature text changes that break `tsc --noEmit` consumers of generated types |
 | Diagnostic codes | Renaming codes; removing codes; changing severity of existing codes by default |
 | CLI flags / defaults | Removing flags; flipping default `analysis.mode` / `autoBind` / L2 `entry-throws` without a config escape |
-| **CLI primary verbs** | Removing `check`/`test`/`contract`/`export`/`health`/`env harvest`; deleting deprecated verbs (`infer`/`types`/`generate`/`emit`/`guard`/`interface`/`doctor`/`watch`) is **major** |
+| **CLI primary verbs** | Removing `check`/`test`/`contract`/`export`/`health`/`env harvest` is **major** |
 | Directive grammar | Removing `@nudo:*` kinds; changing accepted refine / builder syntax (`T.*` already removed) |
 | LSP protocol contracts | Removing `nudo.*` commands or `nudo/…` requests; changing positional CodeLens args |
 | Sidecar semantics | Changing binding keys, `@generated` markers, or handwritten-wins rules |
@@ -69,7 +69,7 @@ Treat as **non-breaking** (patch/minor):
 - New diagnostic codes (opt-in visibility)
 - New optional config keys under `package.json#nudo`
 - New CLI flags with safe defaults
-- Adding `nudo export --format schema` / `--dialect` (`zod` remains a deprecated alias until next major)
+- Adding `nudo export --format schema` / `--dialect` / `--format standard` (additive)
 - Inference precision improvements (more precise types)
 - Removing **undocumented** internal modules not listed in package `exports`
 - Docs / website / private packages
@@ -134,7 +134,7 @@ pnpm run ci:version   # only on a throwaway branch — rewrites package.json ver
 | `CallRecord` is Abs-only (`argAbs` / `resultAbs` / `throwsAbs`) | Stop reading `argTypes` TypeValue fields |
 | Body-slot “implicit shape” obligations removed (C0) | No evidence → `any` / call-site facts. **L1** contracts from `*.nudo.js` / `@nudo:refine` / call sites; **L2** entry may-throw still gates export boundaries |
 | Interface tiers | `handwritten` = obligation · `generated` = fact + drift · `implicit` = display only |
-| **CLI verbs (this branch)** | `infer` → `check` (signatures) + `test` (cases) + `export` (dts); `types` → `check --abs`; `interface`/`refine` → `contract`; `generate`/`emit`/`guard` → `export --format …`; `doctor` → `health`; `watch` → `check`/`test --watch`; `harvest` → `env harvest`. Old names deprecated until next major. |
+| **CLI verbs** | Current product surface: `check` (signatures/gate), `test` (cases), `contract` (print/draft/emit), `export` (`dts|guard|schema|standard|all`), `health`, `env harvest`. Flags: `--from`, `test --freeze`, `export --out`, schema `--dialect zod`. |
 | Entry display | Unconstrained params = **`any`**; `unknown` = inference failure (not the unconstrained default) |
 | L2 entry may-throw | Default **error** on export/entry undigested throws (`nudo:entry-may-throw`). Escape: `--ignore-throws TypeError` / `package.json#nudo.check.ignoreThrows` / `--entry-throws off\|warning`. Does not swallow L1. |
 
@@ -145,23 +145,23 @@ pnpm run ci:version   # only on a throwaway branch — rewrites package.json ver
 | **`T.*` directive grammar removed (breaking)** | Use constraint builders (`number()`, `lit(42)`, `shape({...})`, `union(...)`, …) or concrete literals in `@nudo:case` / `@nudo:as` / `@nudo:replace` / `@nudo:mock` / `@nudo:skip`. `parseTypeValueExpr` export removed — use `parseCaseArgExpr`. `serializeCaseArg` emits builders, not `T.*`. |
 | `@nudo:case` product role | **Debug / `nudo test` / LSP scenario only.** Contracts live in `*.nudo.js` / `@nudo:refine`. CLI **`test`** prints call-site observations (`call@L…`) and `debug "name"` witnesses — not `Case "…"` as the type product. |
 | Class methods / CJS / `export default` sidecar keys | Use `Class.method` (**local declaration name**, not export alias), `Class_method`, nested objects, or local export names — `export { Local as Public }` binds `Local.method`, not `Public.method`. See `design-refine-derivation.md` |
-| Contract product name | **`nudo contract`** is the primary verb (print / `--draft` / `--emit`). `nudo interface` and alias `refine` are deprecated. |
+| Contract product name | **`nudo contract`** is the primary verb (print / `--draft` / `--emit`). |
 
 ### IDE / agent surface
 
 Inventory: [`packages/lsp/PUBLIC_API.md`](../packages/lsp/PUBLIC_API.md)
 (executeCommand dot form, slash-form `nudo/…` protocol contract,
-`AGENT_TOOL_SOURCES`, initialize capabilities, CheckJson/InferJson pointers).
+`AGENT_TOOL_SOURCES`, initialize capabilities, CheckJson/CaseJson pointers).
 Regression pin: `packages/lsp/src/__tests__/public-api-surface.test.ts`.
 
 | Change | Migration |
 |--------|-----------|
 | CodeLens is interface-first | Case lenses still work as the debug sub-layer |
 | Hover/inlay/tokens share `interfaceTierOf` (A7) | Clients must render new semantic modifiers `contract`/`generated`/`derived` or ignore unknown modifiers |
-| Agent tools honor project `autoBind` (E5) | Clients cannot re-enable sidecars when `nudo.interface.autoBind: false` |
+| Agent tools honor project `autoBind` (E5) | Clients cannot re-enable sidecars when `nudo.contract.autoBind: false` |
 | Slash-form `nudo/…` is the protocol contract | Dot-form `nudo.*` remains valid for executeCommand + MCP bridges; do not invent a third spelling |
-| executeCommand aliases `nudo.interfaceDraft` / `nudo.interfaceEmit` | Prefer `nudo.interface.draft` / `nudo.interface.emit`; aliases stay through 1.x — removal after 1.0 is **major** |
-| CheckJson / InferJson v1 schema | Field add-only; removals/renames are **major** on 1.x core/service (lsp surfaces them unchanged) |
+| Agent executeCommand names | Product names: `nudo.test`, `nudo.contract`, `nudo.contract.draft`, `nudo.contract.emit`; slash-form `nudo/test`, `nudo/contract`, `nudo/contract.draft`, `nudo/contract.emit` |
+| CheckJson / CaseJson v1 schema | Field add-only; removals/renames are **major** on 1.x core/service (lsp surfaces them unchanged) |
 | Default `analysis.mode=exports` + `diagnostics=default` | Escape hatch `package.json#nudo.analysis.mode`; flipping defaults that invent/silence diagnostics is **major** on 1.x |
 | lsp 1.x cut | Only after PUBLIC_API stable rows sit through ≥1 0.x minor with no unplanned break; changeset template mirrors core 1.0 `**BREAKING**:` table |
 
@@ -191,7 +191,7 @@ Regression pin: `packages/lsp/src/__tests__/public-api-surface.test.ts`.
 - `.changeset/README.md` — changesets tool docs pointer
 - `docs/superpowers/plans/2026-05-28-close-ts-dx-gaps.md` — E6 task
 - `docs/design-refine-derivation.md` — interface tier semantics
-- `docs/design-eval-missing-slot.md` — C0.5 optional eval-driven diagnostics
+- `docs/design-limitations.md` §1.0b — C0.5 optional eval-driven diagnostics (`nudo.analysis.evalMissingSlot`)
 - Website: `guides/migrating-js.md` — code-first migration walkthrough
 - Website guide: `packages/website/docs/guides/versioning.md`
 

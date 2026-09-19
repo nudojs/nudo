@@ -60,22 +60,6 @@ describe("nudo export --format schema", () => {
     expect(body).toContain("Schema (zod)");
   });
 
-  it("keeps --format zod as deprecated alias", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-export-schema-"));
-    const file = writeFixture(
-      dir,
-      "scale.js",
-      `export function scale(x) {\n  return x + 1;\n}\n`,
-    );
-    const out = join(dir, "out");
-    const r = runCli(["export", file, "--format", "zod", "--out", out]);
-    expect(r.status).toBe(0);
-    expect(r.stderr + r.stdout).toMatch(/deprecated|zod/i);
-    // deprecation goes to stderr
-    expect(r.stderr).toContain("deprecated");
-    expect(existsSync(join(out, "scale.nudo.schema.zod.ts"))).toBe(true);
-  });
-
   it("emits Standard Schema module with --format standard", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-export-schema-"));
     const file = writeFixture(

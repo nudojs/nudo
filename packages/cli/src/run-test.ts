@@ -3,7 +3,7 @@
  *
  * - 默认打印全部 case（含合成 call@/entry@）——这就是调用点观察
  * - 仅 `@nudo:case` 且带 `=> expected` 进入 pass/fail；失败才影响 exit
- * - `--freeze[=update]`：见证固化（原 infer --emit-cases），仍在 test 名下
+ * - `--freeze[=update]`：见证固化，仍在 test 名下
  */
 
 import { formatShape, leqAbs, type Abs } from "@nudojs/core";

@@ -4,8 +4,8 @@ import { resolve, dirname, relative, sep } from "node:path";
 export type NudoConfig = {
   env?: string[];
   mocks?: Record<string, string>;
-  interface?: {
-    /** 侧车 ambient 绑定总开关（check/LSP 执法与 interface 打印共用） */
+  contract?: {
+    /** 侧车 ambient 绑定总开关（check/LSP 执法与 contract 打印共用） */
     autoBind?: boolean;
     /**
      * emit 白名单（Phase 3，§7.3）：glob 数组，相对 projectDir。
@@ -13,7 +13,7 @@ export type NudoConfig = {
      */
     emit?: string[] | string;
   };
-  /** 分析范围与噪声档（design-analysis-scope.md / A2） */
+  /** 分析范围与噪声档（design-cli-semantics.md §7） */
   analysis?: {
     include?: string[] | string;
     exclude?: string[] | string;
@@ -155,12 +155,12 @@ export function diskCacheRoot(
 }
 
 /**
- * 归一化 `nudo.interface` 配置段。
+ * 归一化 `nudo.contract` 配置段。
  * - autoBind 默认 true
  * - emit：string | string[] → string[]（空 = 不限制路径）
  */
 export function interfaceConfig(config: NudoConfig | null | undefined): InterfaceConfig {
-  const raw = config?.interface?.emit;
+  const raw = config?.contract?.emit;
   const emit =
     raw === undefined
       ? []
@@ -170,7 +170,7 @@ export function interfaceConfig(config: NudoConfig | null | undefined): Interfac
           ? [raw]
           : [];
   return {
-    autoBind: config?.interface?.autoBind ?? true,
+    autoBind: config?.contract?.autoBind ?? true,
     emit,
   };
 }
@@ -236,7 +236,7 @@ export function findProjectConfig(
   const root = resolve("/");
 
   // 向上查找带 `nudo` 键的 package.json。子包自有 package.json（monorepo
-  // packages/*）时**不**在此停步——否则仓库根的 nudo.interface.autoBind
+  // packages/*）时**不**在此停步——否则仓库根的 nudo.contract.autoBind
   // 对该子包完全不可见。
   while (dir !== root) {
     const pkgPath = resolve(dir, "package.json");

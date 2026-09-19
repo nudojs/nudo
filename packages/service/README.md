@@ -4,7 +4,7 @@ Shared inference service for [Nudo](https://github.com/nudojs/nudo) IDE integrat
 
 ## What is Nudo?
 
-Nudo is a type inference engine for JavaScript. Instead of a separate type system, it runs your code with symbolic type values via abstract interpretation — no TypeScript, no build step.
+Nudo is a type inference engine for JavaScript. The type system is Abs (`shape × term × pred × conf`); production analysis is Abs-native via abstract interpretation — no TypeScript, no build step.
 
 ## This package
 
@@ -12,8 +12,8 @@ Nudo is a type inference engine for JavaScript. Instead of a separate type syste
 
 - **File analysis** — `analyzeFile` returns diagnostics, function analyses, and case results
 - **IDE features** — `getTypeAtPosition`, `getCompletionsAtPosition`, `getCasesForFile`
-- **DTS generation** — `generateDts` and `typeValueToTSType` for producing `.d.ts` output
-- **Zod schema generation** — `typeValueToZodSchema` converts inferred types to Zod schema strings
+- **DTS generation** — `generateDts` / `absToTSType` for producing `.d.ts` output from Abs
+- **Schema projection** — `absToSchemaSource` / `projectAbsToSchema` produce dialect schema source
 - **Guard generation** — `generateGuardFunction` produces zero-dependency runtime type guards
 
 ## Install

@@ -83,8 +83,8 @@ pnpm --filter nudo-vscode run package # vsce package --no-dependencies
       (see `packages/vscode/.vscodeignore`).
 - [ ] Install the `.vsix` locally (`code --install-extension …`) and smoke:
       open an export-bearing `.js` → diagnostics/hover without editing.
-- [ ] Command palette lists `nudo.selectCase` / `nudo.interface` /
-      `nudo.interface.draft` / `nudo.interfaceEmit`.
+- [ ] Command palette lists `nudo.selectCase` / `nudo.contract` /
+      `nudo.contract.draft` / `nudo.contract.emit`.
 - [ ] IDE daily path also covered by vitest (no live VS Code required):
       `pnpm vitest run packages/lsp/src/__tests__/ide-daily-smoke.test.ts`
 

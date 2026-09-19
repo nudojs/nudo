@@ -3,8 +3,8 @@
  * - AGENT_TOOL_SOURCES 表钉住共享数据源
  * - check ↔ checkSource+serializeCheckJson（CLI --json 同构）
  * - hover ↔ getHoverAtPosition + interfaceTierOf（CodeLens 同源）
- * - infer ↔ analyzeFile + serializeInferJson
- * - interface ↔ interfaceSurface + formatInterfaceSurfaceLine
+ * - test ↔ analyzeFile + serializeCaseJson
+ * - contract ↔ interfaceSurface + formatInterfaceSurfaceLine
  * - whatIf / suggestCase 真注入 / 真分析，不旁路
  * - autoBind：项目配置 AND 客户端（客户端不能打开已关闭项）
  */
@@ -17,7 +17,7 @@ import {
   getHoverAtPosition,
   interfaceSurface,
   formatInterfaceSurfaceLine,
-  serializeInferJson,
+  serializeCaseJson,
 } from "@nudojs/service";
 import {
   checkSource,
@@ -31,10 +31,10 @@ import {
   resolveProjectAutoBind,
   checkTool,
   hoverTool,
-  inferTool,
+  testTool,
   whatIf,
   suggestCase,
-  interfaceTool,
+  contractTool,
   computeInterfaceLenses,
 } from "../agent-tools.ts";
 
@@ -67,13 +67,13 @@ describe("E5 AGENT_TOOL_SOURCES 共享数据源表", () => {
   it("pins the shared-source contract for every agent tool", () => {
     expect(AGENT_TOOL_SOURCES.check).toBe("checkSource + serializeCheckJson");
     expect(AGENT_TOOL_SOURCES.hover).toBe("getHoverAtPosition + interfaceTierOf");
-    expect(AGENT_TOOL_SOURCES.infer).toBe("analyzeFile + serializeInferJson");
-    expect(AGENT_TOOL_SOURCES.interface).toBe(
+    expect(AGENT_TOOL_SOURCES.test).toBe("analyzeFile + serializeCaseJson");
+    expect(AGENT_TOOL_SOURCES.contract).toBe(
       "interfaceSurface + formatInterfaceSurfaceLine",
     );
     expect(AGENT_TOOL_SOURCES.whatIf).toBe("injectBindings + analyzeFile");
     expect(AGENT_TOOL_SOURCES.suggestCase).toBe("analyzeFile + buildCaseDirective");
-    expect(AGENT_TOOL_SOURCES["interface.emit"]).toBe("emitInterface");
+    expect(AGENT_TOOL_SOURCES["contract.emit"]).toBe("emitInterface");
     expect(AGENT_TOOL_SOURCES.codeLens).toBe(
       "computeInterfaceLenses + interfaceTierOf",
     );
@@ -164,15 +164,15 @@ describe("E5 hoverTool ↔ getHoverAtPosition / CodeLens", () => {
   });
 });
 
-describe("E5 inferTool ↔ analyzeFile + serializeInferJson", () => {
-  it("JSON tail matches serializeInferJson of the same analyzeFile", () => {
+describe("E5 testTool ↔ analyzeFile + serializeCaseJson", () => {
+  it("JSON tail matches serializeCaseJson of the same analyzeFile", () => {
     const src = `export function scale(x) { return x + 1; }\n`;
-    const r = inferTool(
+    const r = testTool(
       { file: "/t/scale.js", source: src, format: "json" },
       { readFile: () => src },
     );
     const fromAgent = JSON.parse(r.content[0].text);
-    const direct = serializeInferJson(analyzeFile("/t/scale.js", src), "/t/scale.js");
+    const direct = serializeCaseJson(analyzeFile("/t/scale.js", src), "/t/scale.js");
     expect(fromAgent.version).toBe(direct.version);
     expect(fromAgent.functions.map((f: { name: string }) => f.name)).toEqual(
       direct.functions.map((f) => f.name),
@@ -184,7 +184,7 @@ describe("E5 inferTool ↔ analyzeFile + serializeInferJson", () => {
   });
 });
 
-describe("E5 interfaceTool ↔ interfaceSurface / CodeLens / interfaceTierOf", () => {
+describe("E5 contractTool ↔ interfaceSurface / CodeLens / interfaceTierOf", () => {
   let dir: string;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "nudo-e5-"));
@@ -198,7 +198,7 @@ describe("E5 interfaceTool ↔ interfaceSurface / CodeLens / interfaceTierOf", (
     writeFileSync(file, ADD_SRC);
     writeFileSync(join(dir, "lib.nudo.js"), HANDWRITTEN);
 
-    const r = await interfaceTool({ file });
+    const r = await contractTool({ file });
     const text = r.content[0].text;
     const entries = await interfaceSurface(file, { loadModule: undefined });
     // disk truth: default loadModule reads real sidecar
@@ -207,13 +207,13 @@ describe("E5 interfaceTool ↔ interfaceSurface / CodeLens / interfaceTierOf", (
     }
   });
 
-  it("interfaceTool source equals CodeLens lens source (same tier)", async () => {
+  it("contractTool source equals CodeLens lens source (same tier)", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, ADD_SRC);
     writeFileSync(join(dir, "lib.nudo.js"), HANDWRITTEN);
     const loadModule = loader(HANDWRITTEN);
 
-    const r = await interfaceTool({ file, functionName: "add", loadModule });
+    const r = await contractTool({ file, functionName: "add", loadModule });
     const payloadLine = r.content[0].text
       .split("\n")
       .find((l) => l.includes("[handwritten]") || l.includes("[generated]") || l.includes("[implicit]"));
@@ -278,13 +278,13 @@ describe("E5 resolveProjectAutoBind", () => {
     expect(resolveProjectAutoBind("/tmp/nudo-e5-no-pkg/x.js", false)).toBe(false);
   });
 
-  it("package.json nudo.interface.autoBind:false wins over client true", () => {
+  it("package.json nudo.contract.autoBind:false wins over client true", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-e5-pkg-"));
     try {
       mkdirSync(join(dir, "src"), { recursive: true });
       writeFileSync(
         join(dir, "package.json"),
-        JSON.stringify({ name: "t", nudo: { interface: { autoBind: false } } }),
+        JSON.stringify({ name: "t", nudo: { contract: { autoBind: false } } }),
       );
       writeFileSync(join(dir, "src", "lib.js"), ADD_SRC);
       expect(resolveProjectAutoBind(join(dir, "src", "lib.js"), true)).toBe(false);

@@ -1,5 +1,4 @@
-<!-- CLI semantics aligned with docs/design-cli-semantics.md — primary verbs check/test/contract/export/health/env harvest.
-     Old verbs (infer/types/generate/emit/guard/interface/doctor/watch) are deprecated until next major. -->
+<!-- CLI semantics: docs/design-cli-semantics.md — verbs check/test/contract/export/health/env harvest. -->
 # Nudo
 
 > **欢迎重回 JS 世界.** — Nudo 不限制你的 JS 表达，只忠实反映中间量与结果，并提供比类型更精确的契约校验。  
@@ -27,7 +26,7 @@ TypeScript sources are also accepted: annotations are stripped and the code is a
 
 Beyond what TypeScript can express: `"0x" + id` → `` `0x${string}` ``, `"a,b,c".split(",")` → `["a", "b", "c"]`, loop sums stay literal — same Abs algebra powers `nudo check`.
 
-**Product CLI face** (no observation verb): Day0 = `check` + `test`; Day1 = `contract` + `check`; ecosystem = `export`. Entry unconstrained params display as **`any`**; true **`unknown`** means inference failure.
+**Product CLI face**: Day0 = `check` + `test`; Day1 = `contract` + `check`; ecosystem = `export`. Observation is check signatures + test cases + IDE. Entry unconstrained params display as **`any`**; true **`unknown`** means inference failure.
 
 ## Quick Start
 
@@ -76,7 +75,7 @@ assertions
   — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
 ```
 
-Call-site facts (`call@<line>`) are the ground truth from execution. Optional contracts live in sidecars (`*.nudo.js`) or `@nudo:refine` — that is the interface product. Optional `@nudo:case` witnesses are **debug / `nudo test` only** (concrete args or constraint builders such as `number()` / `lit(42)`; **`T.*` is gone**).
+Call-site facts (`call@<line>`) are the ground truth from execution. Optional contracts live in sidecars (`*.nudo.js`) or `@nudo:refine` — that is the interface product. Optional `@nudo:case` witnesses are **debug / `nudo test` only** (concrete args or constraint builders such as `number()` / `lit(42)`).
 
 ### Whole-program analysis (no directives needed)
 
@@ -128,7 +127,7 @@ processItems(["a"], (s) => s.toUpperCase());
 
 ```bash
 nudo contract src/          # print / --draft / --emit sidecar contracts
-nudo export math.js --format dts --out dist/   # dts | guard | zod (one verb)
+nudo export math.js --format dts --out dist/   # dts | guard | schema | standard | all
 nudo health src/            # analysis errors + contract drift
 nudo env harvest node       # @types → env module
 nudo check src/ --watch     # watch is a flag, not a verb
@@ -142,8 +141,6 @@ nudo check src/ --ignore-throws TypeError
 ```
 
 Try the same ideas in the browser: [Playground](https://nudojs.github.io/nudo/playground).
-
-> **Deprecated verbs:** `nudo infer` / `types` / `generate` / `emit` / `guard` / `interface` / `doctor` / `watch` still print a stderr deprecation and map to the verbs above; they are removed in the next major. Signatures → `check`; call-site cases → `test`; dts/guard/zod → `export`.
 
 ## Packages
 
@@ -190,7 +187,7 @@ Nudo uses structured JSDoc comments to guide analysis. Contracts are the product
 | `@nudo:env` | Declare runtime environment APIs (`/// @nudo:env web` — built-in `es` / `web` / `node`) |
 | `@nudo:mock-module` | Replace a whole imported module with mocks (`/// @nudo:mock-module "pkg" from "./mock.js"`) |
 
-Directive type expressions use **constraint builders** (`number()`, `lit(42)`, `shape({...})`, `union(...)`, `array(...)`) or **concrete literals**. The legacy `T.*` grammar has been removed.
+Directive type expressions use **constraint builders** (`number()`, `lit(42)`, `shape({...})`, `union(...)`, `array(...)`) or **concrete literals**.
 
 Full directive reference: [Core Concepts → Directives](https://nudojs.github.io/nudo/docs/concepts/directives).
 
@@ -201,9 +198,9 @@ See [`docs/examples/`](./docs/examples/) for runnable examples.
 ## How It Works
 
 1. **Parse** — Babel parses your `.js` file and extracts `@nudo:` directives
-2. **Execute** — The evaluator runs each function with abstract interpretation, tracking **Abs values** through all code paths (production analysis is Abs-native via B-path transpile+exec / ast-eval; there is no separate evaluation IR)
+2. **Execute** — The evaluator runs each function with abstract interpretation, tracking **Abs values** through all code paths (production analysis is Abs-native via B-path transpile+exec / ast-eval)
 3. **Combine** — Results from multiple cases are merged into a unified type via union simplification
-4. **Report** — `nudo check` prints signatures + gate issues; `nudo test` prints case reports; `nudo export` projects dts / guard / zod
+4. **Report** — `nudo check` prints signatures + gate issues; `nudo test` prints case reports; `nudo export` projects dts / guard / schema / standard
 
 ### Abs — the type system
 
@@ -218,11 +215,9 @@ scale(x)  number  = (x + 1)  where (x + 1) > 1  #path
 
 With `@nudo:refine x positive`, `scale` gets the term `(x + 1)` **and** the derived predicate `(x + 1) > 1` — `x > 0` propagates through `x + 1`, not just through call-site gates. Assignability is structural (`leqAbs`); `nudo check` reports implication failures (`actual ⊭ expected`).
 
-### TypeValue — historical evaluation vocabulary
+### Abs projections
 
-Production analysis is **Abs-native**. Extensional TS/Zod/dts projections (`formatShape`, `absToTSType`, `absToZodSchema`) are one-way lossy views of Abs — nothing reads a projection back.
-
-Older docs and the design archive sometimes list TypeValue *kinds* (`literal`, `primitive`, `refined`, `object`, `array`, `tuple`, `function`, `promise`, `instance`, `union`, `never`, `unknown`). Treat that list as **historical vocabulary** for describing abstract values, not as a second runtime IR. Current truth: [`docs/design-kernel-merge.md`](./docs/design-kernel-merge.md) and the [docs site Abs page](https://nudojs.github.io/nudo/docs/concepts/type-values).
+Production analysis is **Abs-native**. Extensional TS/schema/dts projections (`formatShape`, `absToTSType`, `absToSchemaSource`) are one-way lossy views of Abs — nothing reads a projection back. Design: [`docs/design-kernel-merge.md`](./docs/design-kernel-merge.md) and the [docs site Abs page](https://nudojs.github.io/nudo/docs/concepts/type-values).
 
 ## Development
 
@@ -250,8 +245,6 @@ pnpm run nudo -- <args> # Full CLI (contract / export / health / …)
 pnpm run docs:dev       # Start docs dev server
 pnpm run docs:build     # Build docs for production
 ```
-
-`pnpm run infer` remains as a deprecated alias of the old observation verb — prefer `check` / `test:cli`.
 
 ## Documentation
 

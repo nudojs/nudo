@@ -69,12 +69,12 @@ import {
   whatIf,
   checkTool,
   hoverTool,
-  inferTool,
-  interfaceTool,
-  interfaceDraftTool,
-  interfaceEmitTool,
-  interfacePositionalArgs,
-  interfaceEmitPositionalArgs,
+  testTool,
+  contractTool,
+  contractDraftTool,
+  contractEmitTool,
+  contractPositionalArgs,
+  contractEmitPositionalArgs,
   computeInterfaceLenses,
   type AgentToolDeps,
   type AgentToolResult,
@@ -447,10 +447,10 @@ connection.onCodeLens((params) => {
       if (lens.kind === "interface") {
         lenses.push({
           range,
-          // 只读打印当前 interface（点击即 `nudo.interface`，无写盘）
+          // 只读打印当前 contract（点击即 `nudo.contract`，无写盘）
           command: {
             title: `● interface / ${lens.source}`,
-            command: "nudo.interface",
+            command: "nudo.contract",
             arguments: [params.textDocument.uri, lens.fn],
           },
         });
@@ -459,7 +459,7 @@ connection.onCodeLens((params) => {
           range,
           command: {
             title: lens.mode === "add" ? "⚡ persist interface" : "↻ update interface",
-            command: "nudo.interfaceEmit",
+            command: "nudo.contract.emit",
             arguments: [params.textDocument.uri, lens.fn, lens.mode],
           },
         });
@@ -468,7 +468,7 @@ connection.onCodeLens((params) => {
           range,
           command: {
             title: "⚡ draft interface",
-            command: "nudo.interface.draft",
+            command: "nudo.contract.draft",
             arguments: [params.textDocument.uri, lens.fn],
           },
         });
@@ -869,7 +869,7 @@ connection.onCodeAction((params) => {
             diagnostics: [diag],
             command: {
               title: "nudo draft",
-              command: "nudo.interfaceDraft",
+              command: "nudo.contract.draft",
               arguments: [params.textDocument.uri],
             },
           });
@@ -1083,7 +1083,7 @@ function handleGetActiveCases(params: { uri?: string; file?: string }) {
 }
 
 /**
- * `nudo.interfaceEmit`：与 CLI `nudo contract --emit` 同一写盘器固化单个
+ * `nudo.contract.emit`：与 CLI `nudo contract --emit` 同一写盘器固化单个
  * 导出（design-refine-derivation §7.5）。`dryRun: true` 时只预览（与 CLI
  * `--dry-run` 同源），不写盘、不跑写盘后的失效链。
  * 真实写盘后：
@@ -1092,7 +1092,7 @@ function handleGetActiveCases(params: { uri?: string; file?: string }) {
  * 2. 该文件若打开则重验证（validateDocument，侧车新内容进诊断/缓存）；
  * 3. 广播 CodeLensRefresh（固化后 persist → update 档切换）。
  */
-async function handleInterfaceEmit(params: {
+async function handleContractEmit(params: {
   uri?: string;
   file?: string;
   functionName: string;
@@ -1105,7 +1105,7 @@ async function handleInterfaceEmit(params: {
   const dryRun = params.dryRun === true;
   // 必须传 agentToolDeps：workspaceRoots 来自 onInitialize 注入，emit 写盘
   // 边界（assertEmitTargetAllowed）依赖它。漏传会让边界静默失效。
-  const toolResult = await interfaceEmitTool(
+  const toolResult = await contractEmitTool(
     {
       file: filePath,
       functionName: params.functionName,
@@ -1142,7 +1142,7 @@ async function handleInterfaceEmit(params: {
   } catch (e) {
     // 写盘已成功；失效/重验证失败须可见——否则用户看到 written 但诊断/lens 仍是旧契约
     invalidateError = e instanceof Error ? e.message : String(e);
-    connection.console.error(`nudo.interfaceEmit: sidecar written but cache invalidation failed: ${invalidateError}`);
+    connection.console.error(`nudo.contract.emit: sidecar written but cache invalidation failed: ${invalidateError}`);
   }
 
   connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {});
@@ -1187,16 +1187,14 @@ function dispatchNudoCommand(command: string, arg: Record<string, unknown>) {
       return checkTool(arg as Parameters<typeof checkTool>[0], agentToolDeps);
     case "nudo.hover":
       return hoverTool(arg as Parameters<typeof hoverTool>[0], agentToolDeps);
-    case "nudo.infer":
-      return inferTool(arg as Parameters<typeof inferTool>[0], agentToolDeps);
-    case "nudo.interface":
-      return interfaceTool(arg as Parameters<typeof interfaceTool>[0], agentToolDeps);
-    case "nudo.interface.draft":
-    case "nudo.interfaceDraft":
-      return interfaceDraftTool(arg as Parameters<typeof interfaceDraftTool>[0], agentToolDeps);
-    case "nudo.interfaceEmit":
-    case "nudo.interface.emit":
-      return handleInterfaceEmit(arg as Parameters<typeof handleInterfaceEmit>[0]);
+    case "nudo.test":
+      return testTool(arg as Parameters<typeof testTool>[0], agentToolDeps);
+    case "nudo.contract":
+      return contractTool(arg as Parameters<typeof contractTool>[0], agentToolDeps);
+    case "nudo.contract.draft":
+      return contractDraftTool(arg as Parameters<typeof contractDraftTool>[0], agentToolDeps);
+    case "nudo.contract.emit":
+      return handleContractEmit(arg as Parameters<typeof handleContractEmit>[0]);
     case "nudo.selectCase":
       return handleSelectCase(arg as Parameters<typeof handleSelectCase>[0]);
     case "nudo.getActiveCases":
@@ -1222,15 +1220,15 @@ connection.onExecuteCommand((params) => {
       caseIndex: args[2] as number,
     });
   }
-  // CodeLens passes interface print positionally: [uri, functionName?]
-  if (params.command === "nudo.interface") {
-    const bridged = interfacePositionalArgs(args);
-    if (bridged) return interfaceTool(bridged, agentToolDeps);
+  // CodeLens passes contract print positionally: [uri, functionName?]
+  if (params.command === "nudo.contract") {
+    const bridged = contractPositionalArgs(args);
+    if (bridged) return contractTool(bridged, agentToolDeps);
   }
-  // CodeLens ⚡ draft interface: [uri, functionName]
-  if (params.command === "nudo.interface.draft" || params.command === "nudo.interfaceDraft") {
+  // CodeLens ⚡ draft contract: [uri, functionName]
+  if (params.command === "nudo.contract.draft") {
     if (typeof args[0] === "string") {
-      return interfaceDraftTool(
+      return contractDraftTool(
         {
           file: args[0],
           ...(typeof args[1] === "string" ? { functionName: args[1] } : {}),
@@ -1239,11 +1237,11 @@ connection.onExecuteCommand((params) => {
       );
     }
   }
-  // CodeLens passes interfaceEmit positionally: [uri, functionName, mode]
-  if (params.command === "nudo.interfaceEmit") {
-    const bridged = interfaceEmitPositionalArgs(args);
+  // CodeLens passes contract.emit positionally: [uri, functionName, mode]
+  if (params.command === "nudo.contract.emit") {
+    const bridged = contractEmitPositionalArgs(args);
     if (bridged) {
-      return handleInterfaceEmit({
+      return handleContractEmit({
         file: bridged.file,
         functionName: bridged.functionName,
         mode: bridged.mode,
@@ -1324,7 +1322,7 @@ connection.languages.diagnostics.on((params) => {
 const nudoFileCache = new Map<string, boolean>();
 
 function isNudoFile(uri: string): boolean {
-  // 路径目标 + analysis.mode（design-analysis-scope）：directives=今日行为；
+  // 路径目标 + analysis.mode（design-cli-semantics §7）：directives=今日行为；
   // exports/all 由 package.json#nudo.analysis 打开无指令分析
   if (!isNudoTargetPath(uriToFilePath(uri))) return false;
   const filePath = uriToFilePath(uri);

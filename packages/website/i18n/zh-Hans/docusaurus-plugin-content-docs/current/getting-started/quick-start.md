@@ -48,7 +48,7 @@ signatures
   call@L12  (5) => 6
 ```
 
-Nudo 用实际看到的实参执行了这些函数。无约束入口参数显示为 **`any`**（不是 `unknown`）。没有 `nudo infer` 观察动词 —— 观察 = `check` 签名 + `test` 用例 + IDE hover。
+Nudo 用实际看到的实参执行了这些函数。无约束入口参数显示为 **`any`**（不是 `unknown`）。观察 = `check` 签名 + `test` 用例 + IDE hover。
 
 ## 3. 加上显式契约（Day 1）
 
@@ -108,7 +108,7 @@ export function scale(x) {
 }
 ```
 
-case 实参请用具体值。符号化 `T.*` 属遗留语法，现行示例不再使用。
+case 实参请用具体值或约束构建器。
 
 ## 下一步
 

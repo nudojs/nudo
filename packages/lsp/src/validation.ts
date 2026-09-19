@@ -59,7 +59,7 @@ function projectConfigFingerprint(filePath: string): string {
     const cfg = proj?.config ?? {};
     return sourceFingerprint(
       JSON.stringify({
-        autoBind: cfg.interface?.autoBind ?? true,
+        autoBind: cfg.contract?.autoBind ?? true,
         analysis: cfg.analysis ?? null,
         env: cfg.env ?? null,
         check: cfg.check ?? null,
@@ -551,7 +551,7 @@ export function checkToLspDiagnostics(
   loadModule?: (spec: string, fromFile: string) => string | undefined,
 ): LspDiagnostic[] {
   try {
-    // package.json#nudo.interface.autoBind 与 nudo.check（L2）覆盖 LSP 执法路径
+    // package.json#nudo.contract.autoBind 与 nudo.check（L2）覆盖 LSP 执法路径
     // —— 与 CLI runCheck 同源（design-cli-semantics §3.4）
     const proj = findProjectConfig(dirname(filePath));
     const autoBind = interfaceConfig(proj?.config).autoBind;

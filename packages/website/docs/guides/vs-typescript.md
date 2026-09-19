@@ -28,7 +28,7 @@ The goal is not “TS syntax on JS.” The goal is: **JS stays JS**, obligations
 | Types written in source / IDE hover | Day 0: `nudo check` prints signatures; `nudo test` prints cases |
 | `tsc --noEmit` | `nudo check` (still prints signatures on success) |
 | `any.prop` does not error | Dangerous ops on `any` at entry enter the **throws** domain; L2 can error |
-| No `tsc show` | **No** `nudo show` / `nudo infer` observation verb |
+| No `tsc show` | Observation is check/test/IDE output |
 
 ## When Nudo is the right replacement
 

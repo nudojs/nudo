@@ -23,7 +23,7 @@ pnpm add -D @nudojs/cli @nudojs/lsp   # or npx @nudojs/cli
       "diagnostics": "default",
       "evalMissingSlot": "off"
     },
-    "interface": { "autoBind": true }
+    "contract": { "autoBind": true }
   }
 }
 ```
@@ -52,7 +52,7 @@ Prints every top-level export with its tier:
 ```bash
 nudo contract --draft src/lib.js
 nudo contract --draft --write src/lib.js --fn greet --fn double
-# or IDE: CodeLens ⚡ draft contract / VS Code “Nudo: Draft Interface”
+# or IDE: CodeLens ⚡ draft contract / VS Code “Nudo: Draft Contract”
 ```
 
 Evidence in the draft module (never invents check obligations):
@@ -130,7 +130,7 @@ nudo contract --emit src/lib.js --dry-run --exit-on-diff   # CI drift gate
 | Hover tier | `● interface / handwritten\|generated\|implicit` |
 | CodeLens | persist / update / **draft** |
 | VS Code | Output channel commands |
-| Agent | `nudo.interface`, `nudo.interface.draft`, `nudo.check` |
+| Agent | `nudo.contract`, `nudo.contract.draft`, `nudo.check` |
 | CLI | `nudo contract` (`--draft` / `--emit`), `nudo check`, `nudo health`, `nudo test --freeze` |
 
 ## 7. Ongoing health

@@ -19,7 +19,7 @@ Nudo 的目标是：**在 JavaScript 优先的代码库里，替代 TypeScript �
 | **契约** | `interface` / `type` 语言 | `*.nudo.js` 构建器（`fn` / `shape` / `number().gt(0)`）+ 可选 `@nudo:refine` + L2 入口 throws |
 | **推断** | 标注 + 局部推断 | **在符号 Abs 上执行代码**（B-path / ast-eval） |
 | **CI 门禁** | `tsc --noEmit` | `nudo check`（Abs 上的 `actual ⊭ expected`；成功也打印 signatures） |
-| **观察命令** | （无 —— hover） | **无** `nudo show` / `nudo infer`；观察是 check/test/IDE 输出 |
+| **观察命令** | （无 —— hover） | 观察是 check/test/IDE 输出 |
 | **生态出口** | `.d.ts` 即模型 | `.d.ts` 是**有损投影**（`absToTSType`），不是真理源 |
 
 目标不是「在 JS 上写 TS 语法」，而是：**JS 保持 JS**；义务来自显式契约（L1）加上 JS 运行时导出边界（L2 入口 throws）；引擎用求值推理，而不是第二门类型语言。
@@ -29,7 +29,7 @@ Nudo 的目标是：**在 JavaScript 优先的代码库里，替代 TypeScript �
 | 类型写在源里 / IDE hover | Day 0：`nudo check` 打印 signatures；`nudo test` 打印用例 |
 | `tsc --noEmit` | `nudo check`（成功时仍打印 signatures） |
 | `any.prop` 不报错 | 入口上对 `any` 的危险操作进入 **throws 域**；L2 可 error |
-| 无 `tsc show` | **无** `nudo show` / `nudo infer` 观察动词；观察是 check/test/IDE 输出 |
+| 无 `tsc show` | 观察是 check/test/IDE 输出 |
 
 ## 何时 Nudo 是正确的替代
 

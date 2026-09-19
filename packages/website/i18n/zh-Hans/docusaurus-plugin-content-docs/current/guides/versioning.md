@@ -49,7 +49,7 @@ patch 修健全性（结果可能变得*更正确*）；minor 增 API / 诊断�
 ## 常见破坏面
 
 - 删除包导出子路径
-- `CheckJson` / `InferJson` / 生成 `.d.ts` 的 schema 或形态变化
+- `CheckJson` / `CaseJson` / 生成 `.d.ts` 的 schema 或形态变化
 - 重命名诊断码，或默认 severity 翻转
 - 删除 CLI 旗标，或无逃生舱地改分析默认值
 - **fix-2 默认 `analysis.mode` 翻转**（`directives` → `exports`）：1.x service/cli 上的 intentional change；逃生舱 `package.json#nudo.analysis.mode`；release notes 按 **major** 处理

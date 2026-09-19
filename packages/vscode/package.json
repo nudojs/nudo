@@ -28,16 +28,16 @@
         "title": "Nudo: Select Case"
       },
       {
-        "command": "nudo.interface",
-        "title": "Nudo: Show Interface"
+        "command": "nudo.contract",
+        "title": "Nudo: Show Contract"
       },
       {
-        "command": "nudo.interface.draft",
-        "title": "Nudo: Draft Interface (code-first)"
+        "command": "nudo.contract.draft",
+        "title": "Nudo: Draft Contract (code-first)"
       },
       {
-        "command": "nudo.interfaceEmit",
-        "title": "Nudo: Persist Interface (@generated)"
+        "command": "nudo.contract.emit",
+        "title": "Nudo: Persist Contract (@generated)"
       }
     ]
   },

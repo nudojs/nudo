@@ -4,8 +4,6 @@
 与 `constraints/` 的精化互补——这里看 **推断本身**，不是门禁。
 
 Day 0 观察：`pnpm run test:cli <file>`（逐 case）· `pnpm run check <file>`（签名）。
-旧命令 `pnpm run infer` / `types` 已 deprecated。
-
 | 文件 | 考察点 |
 |------|--------|
 | [`0-add-intensional.js`](./0-add-intensional.js) | 类型即计算：`test:cli` 看字面量 case；`check` 看签名；`check --abs` 看 term/pred 参与代数（`(x+1)>1`） |

@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { analyzeFile, serializeInferJson } from "../index.ts";
+import { analyzeFile, serializeCaseJson } from "../index.ts";
 
-describe("InferJson contract v1", () => {
+describe("CaseJson contract v1", () => {
   it("self-contained function has abs in intension", () => {
     const src = `function scale(x) { return x + 1; }\n`;
     const result = analyzeFile("/t/scale.js", src);
-    const json = serializeInferJson(result, "/t/scale.js");
+    const json = serializeCaseJson(result, "/t/scale.js");
     expect(json.version).toBe(1);
     expect(json.file).toBe("/t/scale.js");
     expect(json.summary.functions).toBeGreaterThan(0);
@@ -26,7 +26,7 @@ function add(a, b) { return a + b; }
 const r = add(2, 3);
 `;
     const result = analyzeFile("/t/add.js", src);
-    const json = serializeInferJson(result, "/t/add.js");
+    const json = serializeCaseJson(result, "/t/add.js");
     const add = json.functions.find((f) => f.name === "add");
     expect(add!.cases.length).toBeGreaterThan(0);
     expect(add!.cases[0]!.args.length).toBe(2);

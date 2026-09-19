@@ -170,7 +170,7 @@ An uncaught exception makes a Node process exit non-zero. Likewise, undeclared/u
 | `--json` | Machine-readable signatures + diagnostics |
 | `--verbose` | Extra detail |
 | `--abs` | Print Abs algebra face (term / pred / conf) |
-| `--from <paths…>` | Usage-site files injecting call records (renamed from `--callsites`) |
+| `--from <paths…>` | Usage-site files injecting call records |
 | `--ignore-throws <names>` | Comma-separated L2 throw types to ignore |
 | `--entry-throws error\|warning\|off` | L2 severity (default `error`) |
 

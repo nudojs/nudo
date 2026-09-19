@@ -18,16 +18,16 @@ All generated output is printed to stdout by default. Pass `--out <dir>` to writ
 ## The `nudo export` Command
 
 ```bash
-nudo export <file> [--format dts|guard|schema|zod|all] [--dialect zod] [--out dir]
+nudo export <file> [--format dts|guard|schema|standard|all] [--dialect zod] [--out dir]
 ```
 
 | Option | Description |
 |---|---|
-| `--format <format>` | Output format: `dts`, `guard`, `schema`, `zod` (deprecated alias of schema dialect zod), `all` (default: `dts`) |
+| `--format <format>` | Output format: `dts`, `guard`, `schema`, `standard`, `all` (default: `dts`) |
 | `--dialect <dialect>` | Schema dialect; currently `zod` |
 | `--out <dir>` | Write artifacts to this directory (`<name>.nudo.schema.<dialect>.ts`, `<name>.nudo.guard.ts`, `<name>.d.ts`). Omit for stdout. |
 
-`nudo export` is the **only** CLI path for `.d.ts` / guards / schema projections. Deprecated verbs `nudo generate` / `nudo emit` / `nudo guard` and `infer --dts` map here. Abs remains the source of truth — schema / dts / guard are one-way projections.
+`nudo export` is the **only** CLI path for `.d.ts` / guards / schema projections. Abs remains the source of truth — schema / dts / guard are one-way projections.
 
 ### Basic Usage
 
@@ -44,7 +44,7 @@ nudo export src/api/users.js --format schema --dialect zod > users.schema.txt
 
 ## Example Source
 
-All examples on this page use the file below. Directive type expressions use constraint builders (`number()`, `string()`, `shape({...})`, `array(...)`) or concrete literals — not the removed `T.*` grammar. `@nudo:case` witnesses are debug-only.
+All examples on this page use the file below. Directive type expressions use constraint builders (`number()`, `string()`, `shape({...})`, `array(...)`) or concrete literals. `@nudo:case` witnesses are debug-only.
 
 ```js
 // src/api/users.js
@@ -58,8 +58,6 @@ function createUser(input) {
 ## Schema generation (dialect source)
 
 With `--format schema --dialect zod`, Nudo prints [Zod](https://zod.dev) schema expressions for each case's input and output types. Schemas are emitted as comments -- copy the expressions out of them and assemble your own schema module. Constant numeric bounds / `int` / string length preds from Abs are projected when expressible; unprojectable preds appear under `dropped preds`.
-
-`--format zod` is a **deprecated alias** of this path (removed next major).
 
 ```bash
 nudo export src/api/users.js --format schema --dialect zod
@@ -207,7 +205,7 @@ To write a `.d.ts` file under a directory, use `nudo export <file> --format dts 
 
 ## JSON Output
 
-For programmatic consumption and CI/CD integration, use `nudo check --json` (signatures + diagnostics) or `nudo test --json` (cases). There is no primary `nudo infer --json` verb.
+For programmatic consumption and CI/CD integration, use `nudo check --json` (signatures + diagnostics) or `nudo test --json` (cases).
 
 ```bash
 nudo check src/api/users.js --json

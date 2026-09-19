@@ -48,7 +48,7 @@ signatures
   call@L12  (5) => 6
 ```
 
-Nudo executed the functions with the arguments it actually saw. Unconstrained entry params display as **`any`** (not `unknown`). There is no `nudo infer` observation verb — observation is `check` signatures + `test` cases + IDE hover.
+Nudo executed the functions with the arguments it actually saw. Unconstrained entry params display as **`any`** (not `unknown`). Observation is `check` signatures + `test` cases + IDE hover.
 
 ## 3. Add an explicit contract (Day 1)
 
@@ -108,7 +108,7 @@ export function scale(x) {
 }
 ```
 
-Prefer concrete values in cases. Symbolic `T.*` arguments are legacy and not used in current examples.
+Prefer concrete values or constraint builders in cases.
 
 ## Next
 

@@ -212,7 +212,7 @@ const LIB_PROBES: LibProbe[] = [
     id: "@types/node",
     package: "@types/node",
     kind: "types",
-    note: ".d.ts harvest via harvestNodeTypes / nudo harvest node",
+    note: ".d.ts harvest via harvestNodeTypes / nudo env harvest node",
   },
   {
     id: "no-types-example",
@@ -556,7 +556,7 @@ function main(): void {
   md.push("| Import target | Analysis path |");
   md.push("|---|---|");
   md.push("| JS source package (e.g. `commander`, `ms`) | Execute/analyze source — `checkSource` / `analyzeFile`; no handwritten mock required for zero-FP gate |");
-  md.push("| `@types/*` / package ships `.d.ts` | `harvestDts` / `harvestNodeTypes` / `nudo harvest` → env injection |");
+  md.push("| `@types/*` / package ships `.d.ts` | `harvestDts` / `harvestNodeTypes` / `nudo env harvest` → env injection |");
   md.push("| Neither JS analysis path nor types | **mock-required** — use `@nudo:mock` / path `@nudo:env` / sidecar hint |");
   md.push("");
   md.push("## Still mock-recommended categories");

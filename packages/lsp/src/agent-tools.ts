@@ -1,7 +1,6 @@
 /**
- * Agent-facing tool implementations. Protocol names still use the transition
- * inventory (`nudo.infer` / `nudo.interface*`); product guidance for users is
- * the CLI surface from design-cli-semantics.md:
+ * Agent-facing tool implementations. Wire/protocol names match the CLI
+ * product surface from design-cli-semantics.md:
  *   signatures → `nudo check` · cases → `nudo test` · contracts → `nudo contract`
  *   projections → `nudo export` · health → `nudo health`
  * Like validation.ts, this module holds pure logic with injected readers so
@@ -19,7 +18,7 @@ import {
   buildCaseDirective,
   getHoverAtPosition,
   collectAbsInlays,
-  serializeInferJson,
+  serializeCaseJson,
   getCasesForFile,
   interfaceSurface,
   draftInterface,
@@ -322,7 +321,7 @@ function toolError(message: string): AgentToolResult {
 }
 
 /**
- * E5：项目级 `package.json#nudo.interface.autoBind`（与 CLI check / LSP
+ * E5：项目级 `package.json#nudo.contract.autoBind`（与 CLI check / LSP
  * validate / CodeLens 同口径）。客户端不能借 agent 工具把项目关闭的
  * autoBind 打开——有效值 = 项目配置 AND 客户端请求。
  */
@@ -361,7 +360,7 @@ function resolveDraftProjectDir(filePath: string): string | undefined {
 /**
  * E5：agent 工具与 LSP 命令 / CLI 共享的数据源表（同源验收钉住此表）。
  * 任一工具改实现时必须继续消费同一底层入口，禁止旁路第二套语义。
- * infer/whatIf/trace/suggestCase 现将 deps.loadModule 传入 analyzeFile
+ * test/whatIf/trace/suggestCase 将 deps.loadModule 传入 analyzeFile
  * （buffer-aware 侧车可见）。validate/pull 的 analyzeFileAsync 同样接线。
  */
 export const AGENT_TOOL_SOURCES = {
@@ -370,10 +369,10 @@ export const AGENT_TOOL_SOURCES = {
   trace: "analyzeFile cases",
   check: "checkSource + serializeCheckJson",
   hover: "getHoverAtPosition + interfaceTierOf",
-  infer: "analyzeFile + serializeInferJson",
-  interface: "interfaceSurface + formatInterfaceSurfaceLine",
-  "interface.draft": "draftInterface + formatDraftSummary",
-  "interface.emit": "emitInterface",
+  test: "analyzeFile + serializeCaseJson",
+  contract: "interfaceSurface + formatInterfaceSurfaceLine",
+  "contract.draft": "draftInterface + formatDraftSummary",
+  "contract.emit": "emitInterface",
   codeLens: "computeInterfaceLenses + interfaceTierOf",
 } as const;
 
@@ -494,10 +493,10 @@ export function hoverTool(
   }
 }
 
-export type InferToolParams = {
+export type TestToolParams = {
   file: string;
   source?: string;
-  /** "json" → InferJson only；缺省摘要 + JSON */
+  /** "json" → CaseJson only；缺省摘要 + JSON */
   format?: "text" | "json";
   /** 只返回这些函数名（可选过滤） */
   functions?: string[];
@@ -506,12 +505,12 @@ export type InferToolParams = {
 };
 
 /**
- * Agent infer：InferJson v1 契约（与 CLI infer --json 同构）。
+ * Agent test：CaseJson v1 契约（与 CLI `nudo test --json` 同构）。
  * intension 携带无损 Abs；args/result 为 TypeValue 投影。
  * E5：deps.loadModule 传入 analyzeFile（buffer-aware 侧车可见）。
  */
-export function inferTool(
-  params: InferToolParams,
+export function testTool(
+  params: TestToolParams,
   deps: AgentToolDeps = {},
 ): AgentToolResult {
   try {
@@ -524,7 +523,7 @@ export function inferTool(
       undefined,
       params.loadModule ?? deps.loadModule ?? lspLoadModule,
     );
-    let json = serializeInferJson(result, filePath);
+    let json = serializeCaseJson(result, filePath);
     if (params.functions && params.functions.length > 0) {
       const keep = new Set(params.functions);
       const filtered = json.functions.filter((f) => keep.has(f.name));
@@ -704,11 +703,11 @@ export function trace(params: FunctionToolParams, deps: AgentToolDeps = {}): Age
 }
 
 // ---------------------------------------------------------------------------
-// interface 档（design-refine-derivation §7.5/§8）：agent 打印/固化工具 +
-// CodeLens 计算纯函数。产品名 interface；case 是 debug 副层。
+// contract 档（design-refine-derivation §7.5/§8）：agent 打印/固化工具 +
+// CodeLens 计算纯函数。产品名 contract；case 是 debug 副层。
 // ---------------------------------------------------------------------------
 
-export type InterfaceToolParams = {
+export type ContractToolParams = {
   file: string;
   /** 省略 → 打印该文件全部顶层函数 */
   functionName?: string;
@@ -725,11 +724,11 @@ export type InterfaceToolParams = {
 
 /**
  * executeCommand 位置参数桥接（server.ts onExecuteCommand 特判移出的纯函数
- * 形态，供请求面测试）：`nudo.interface [uri, functionName?]`。
+ * 形态，供请求面测试）：`nudo.contract [uri, functionName?]`。
  */
-export function interfacePositionalArgs(
+export function contractPositionalArgs(
   args: unknown[],
-): InterfaceToolParams | undefined {
+): ContractToolParams | undefined {
   if (args.length >= 1 && typeof args[0] === "string") {
     return {
       file: args[0],
@@ -742,10 +741,10 @@ export function interfacePositionalArgs(
 }
 
 /**
- * executeCommand 位置参数桥接：`nudo.interfaceEmit [uri, functionName, mode]`。
- * 非法 mode 由 interfaceEmitTool 校验（显式错误文本，不静默降级）。
+ * executeCommand 位置参数桥接：`nudo.contract.emit [uri, functionName, mode]`。
+ * 非法 mode 由 contractEmitTool 校验（显式错误文本，不静默降级）。
  */
-export function interfaceEmitPositionalArgs(
+export function contractEmitPositionalArgs(
   args: unknown[],
 ): { file: string; functionName: string; mode: "add" | "update" } | undefined {
   if (
@@ -764,12 +763,12 @@ export function interfaceEmitPositionalArgs(
 }
 
 /**
- * Agent interface 打印：与 CLI `nudo interface` 同一数据源（interfaceSurface），
+ * Agent contract 打印：与 CLI `nudo contract` 同一数据源（interfaceSurface），
  * 逐函数展示有效契约分层 handwritten / generated / implicit。
  * E5：优先 open buffer（getOpenText），磁盘回落；loadModule 走 buffer-aware。
  */
-export async function interfaceTool(
-  params: InterfaceToolParams,
+export async function contractTool(
+  params: ContractToolParams,
   _deps: AgentToolDeps = {},
 ): Promise<AgentToolResult> {
   try {
@@ -804,7 +803,7 @@ export async function interfaceTool(
   }
 }
 
-export type InterfaceDraftToolParams = {
+export type ContractDraftToolParams = {
   file: string;
   functionName?: string;
   /** true → 写入 *.nudo.draft.js（不碰手写 *.nudo.js） */
@@ -816,11 +815,11 @@ export type InterfaceDraftToolParams = {
 };
 
 /**
- * Agent interface 草稿：与 CLI `nudo interface --draft` 同源（draftInterface）。
+ * Agent contract 草稿：与 CLI `nudo contract --draft` 同源（draftInterface）。
  * 代码优先 / 迁移：返回可审阅 `*.nudo.draft.js` 文本；write 落盘 draft 文件。
  */
-export async function interfaceDraftTool(
-  params: InterfaceDraftToolParams,
+export async function contractDraftTool(
+  params: ContractDraftToolParams,
   deps: AgentToolDeps = {},
 ): Promise<AgentToolResult> {
   try {
@@ -844,7 +843,7 @@ export async function interfaceDraftTool(
     const draftRel = sidecarDraftPath(filePath);
     const projectDir = resolveDraftProjectDir(filePath);
     // P2：write 路径与 CLI 对齐 fail-closed——无项目根时拒绝写盘
-    // （CLI `nudo interface --draft --write`；可用已存在的 NUDO_DRAFT_FORCE=1 放开）
+    // （CLI `nudo contract --draft --write`；可用已存在的 NUDO_DRAFT_FORCE=1 放开）
     if (params.write && !projectDir && !process.env.NUDO_DRAFT_FORCE) {
       return toolError(
         `Error: no project root found for '${filePath}'; draft write refused (set NUDO_DRAFT_FORCE=1 to override)`,
@@ -869,7 +868,7 @@ export async function interfaceDraftTool(
   }
 }
 
-export type InterfaceEmitToolParams = {
+export type ContractEmitToolParams = {
   file: string;
   functionName: string;
   mode: "add" | "update";
@@ -913,19 +912,19 @@ function serializedEmit(
 }
 
 /**
- * Agent interface 固化：与 CLI `nudo contract --emit` 同一写盘器
+ * Agent contract 固化：与 CLI `nudo contract --emit` 同一写盘器
  * （emitInterface），把调用点域固化为侧车 `@generated` 段。结果文本含
  * written / skipped(reason) / issues；name-clash（手写优先）明确呈现。
  */
-export async function interfaceEmitTool(
-  params: InterfaceEmitToolParams,
+export async function contractEmitTool(
+  params: ContractEmitToolParams,
   deps: AgentToolDeps = {},
 ): Promise<AgentToolResult> {
   try {
     // 入参校验：非法 mode / 缺 functionName → 显式错误回报（server.ts 的
     // dispatch 对 JSON 请求体只做 as 强转，不校验会静默降级成 add / skipped）
     if (typeof params.functionName !== "string" || params.functionName.trim() === "") {
-      return toolError("Error: functionName is required for nudo.interface.emit");
+      return toolError("Error: functionName is required for nudo.contract.emit");
     }
     if (params.mode !== "add" && params.mode !== "update") {
       return toolError(
@@ -1003,7 +1002,7 @@ export function formatEmitResult(
 }
 
 // ---------------------------------------------------------------------------
-// CodeLens interface 档计算（design-refine-derivation §8）
+// CodeLens contract 档计算（design-refine-derivation §8）
 // ---------------------------------------------------------------------------
 
 /** 默认层 lens：`● interface / handwritten|generated|implicit` */
@@ -1131,7 +1130,7 @@ export function computeInterfaceLenses(
           line: fn.line,
           mode: persisted.has(fn.name) ? "update" : "add",
         });
-        // F6：代码优先草稿（与 CLI --draft / agent nudo.interface.draft 同源）
+        // F6：代码优先草稿（与 CLI --draft / agent nudo.contract.draft 同源）
         lenses.push({ kind: "draft", fn: fn.name, line: fn.line });
       }
     }

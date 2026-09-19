@@ -473,11 +473,4 @@ export function absToSchemaSource(a: Abs, opts?: { dialect?: SchemaDialect }): s
   return projectAbsToSchema(a, opts).source;
 }
 
-/**
- * @deprecated 请用 `absToSchemaSource(a, { dialect: "zod" })`；保留至 next major。
- */
-export function absToZodSchema(a: Abs): string {
-  return absToSchemaSource(a, { dialect: "zod" });
-}
-
 export { termEq };

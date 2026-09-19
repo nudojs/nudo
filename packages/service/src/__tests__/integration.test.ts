@@ -2,10 +2,10 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { formatShape } from "@nudojs/core";
 import {
   analyzeFile,
-  absToZodSchema,
   generateGuardFunction,
   generateDts,
   absToTSType,
+  absToSchemaSource,
   resetAllAnalysisCaches,
 } from "../index.ts";
 
@@ -36,11 +36,11 @@ function process(x) {
     expect(result.functions[0].combinedAbs).toBeDefined();
 
     // Verify Zod generation for each case result
-    const zodSchema0 = absToZodSchema(result.functions[0].cases[0].abs);
+    const zodSchema0 = absToSchemaSource(result.functions[0].cases[0].abs);
     expect(zodSchema0).toBeTruthy();
     expect(typeof zodSchema0).toBe("string");
 
-    const zodSchema1 = absToZodSchema(result.functions[0].cases[1].abs);
+    const zodSchema1 = absToSchemaSource(result.functions[0].cases[1].abs);
     expect(zodSchema1).toBeTruthy();
 
     // Verify guard generation
@@ -73,7 +73,7 @@ function double(x) {
     expect(formatShape(fn.cases[0].abs)).toBe("number");
 
     // Zod schema should produce a valid z.number() call
-    const zod = absToZodSchema(fn.cases[0].abs);
+    const zod = absToSchemaSource(fn.cases[0].abs);
     expect(zod).toBe("z.number()");
 
     // Guard should check typeof
@@ -98,7 +98,7 @@ function getUser(config) {
 `;
     const result = analyzeFile("/test/user.js", source);
     const fn = result.functions[0];
-    const zod = absToZodSchema(fn.cases[0].abs);
+    const zod = absToSchemaSource(fn.cases[0].abs);
 
     expect(zod).toContain("z.object");
     expect(zod).toContain("name");
@@ -120,11 +120,11 @@ function parse(x) {
     const fn = result.functions[0];
 
     // Each case should produce a valid Zod schema
-    expect(absToZodSchema(fn.cases[0].abs)).toBe("z.string()");
-    expect(absToZodSchema(fn.cases[1].abs)).toBe("z.number()");
+    expect(absToSchemaSource(fn.cases[0].abs)).toBe("z.string()");
+    expect(absToSchemaSource(fn.cases[1].abs)).toBe("z.number()");
 
     // Combined type should produce a union schema
-    const combinedZod = absToZodSchema(fn.combinedAbs!);
+    const combinedZod = absToSchemaSource(fn.combinedAbs!);
     expect(combinedZod).toContain("z.union");
   });
 });
@@ -267,8 +267,8 @@ function passThrough(x) {
     expect(formatShape(fn.cases[1].abs)).toBe("number");
 
     // Zod should produce valid schemas for both
-    expect(absToZodSchema(fn.cases[0].abs)).toBe("z.literal(42)");
-    expect(absToZodSchema(fn.cases[1].abs)).toBe("z.number()");
+    expect(absToSchemaSource(fn.cases[0].abs)).toBe("z.literal(42)");
+    expect(absToSchemaSource(fn.cases[1].abs)).toBe("z.number()");
   });
 });
 

@@ -4,8 +4,6 @@
  *
  * 正门：check / test / contract / export / health / env harvest
  * 观察是 check signatures + test case 报告 + IDE，不是一级动词。
- * 旧动词（infer/types/interface/generate/emit/guard/doctor/watch/harvest）
- * 保留 stderr deprecation，下一 major 删除。
  */
 import { readFileSync, existsSync, watch, readdirSync, statSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
 import { resolve, dirname, relative, join, basename, isAbsolute } from "node:path";
@@ -81,16 +79,6 @@ No observation verb: signatures come from check, cases from test, hover from IDE
   );
 
 // ---------------------------------------------------------------------------
-// deprecation
-// ---------------------------------------------------------------------------
-
-function deprecateVerb(oldVerb: string, hint: string): void {
-  console.error(
-    `warning: \`nudo ${oldVerb}\` is deprecated and will be removed in the next major.\n  → ${hint}`,
-  );
-}
-
-// ---------------------------------------------------------------------------
 // shared helpers
 // ---------------------------------------------------------------------------
 
@@ -99,15 +87,15 @@ type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOnDiff: b
 async function reemitUpdate(
   filePath: string,
   source: string,
-  callsites?: CallRecord[],
+  from?: CallRecord[],
 ): Promise<{ result: AnalysisResult; emitOut: EmitResult; removed: string[] }> {
   const stripped = stripGeneratedCaseDirectives(source);
-  const result = await analyzeFileAsync(filePath, stripped.source, undefined, callsites);
+  const result = await analyzeFileAsync(filePath, stripped.source, undefined, from);
   const emitOut = insertGeneratedCaseDirectives(stripped.source, result);
   return { result, emitOut, removed: stripped.removed };
 }
 
-/** --from / --callsites 公共采集（更名后的正门是 --from） */
+/** --from 公共采集 */
 function collectExternalRecords(sites: string[]): CallRecord[] | undefined {
   const records: CallRecord[] = [];
   for (const site of sites) {
@@ -446,8 +434,7 @@ async function runCheck(
     }
     console.log(JSON.stringify(cachedJson ?? serializeCheckJson(algebraReport), null, 2));
   } else if (opts.abs) {
-    // 代数面：原 types 观察能力，挂在 check --abs
-    // 门禁不因 --abs 关闭：L1/L2 error 仍 exit 1（design：check 永远是门禁）
+    // 代数观察面（term/pred/conf）；门禁不因 --abs 关闭：L1/L2 error 仍 exit 1
     await runAbsView(filePath, opts.absView ?? {});
     if (!algebraReport.ok) {
       // abs 仍计算 report：错误上屏，避免 exit 1 却无可见诊断
@@ -478,7 +465,7 @@ async function runCheck(
   }
 }
 
-/** check --abs：代数 term/pred/conf 观察（原 nudo types） */
+/** check --abs：代数 term/pred/conf 观察 */
 async function runAbsView(
   filePath: string,
   opts: { fn?: string; assume?: string[]; generalize?: boolean },
@@ -564,8 +551,8 @@ async function runTest(
       return;
     }
     const report = buildTestReport(filePath, result);
-    const { serializeInferJson } = await import("@nudojs/service");
-    const json = serializeInferJson(result, filePath) as Record<string, unknown>;
+    const { serializeCaseJson } = await import("@nudojs/service");
+    const json = serializeCaseJson(result, filePath) as Record<string, unknown>;
     json.assertions = {
       passed: report.passed,
       failed: report.failed,
@@ -622,7 +609,7 @@ async function runTest(
 }
 
 // ---------------------------------------------------------------------------
-// contract — 契约：打印 / draft / emit（原 interface / refine）
+// contract — 契约：打印 / draft / emit
 // ---------------------------------------------------------------------------
 
 async function runContractPrint(file: string, records?: CallRecord[]): Promise<void> {
@@ -802,11 +789,11 @@ async function runContractEmit(
 }
 
 // ---------------------------------------------------------------------------
-// export — 投影：dts | guard | schema（dialect；`zod` 为 schema 的兼容别名）
+// export — 投影：dts | guard | schema (dialect) | standard
 // ---------------------------------------------------------------------------
 
-type ExportFormat = "schema" | "zod" | "standard" | "guard" | "dts" | "all";
-const EXPORT_FORMATS: ExportFormat[] = ["schema", "zod", "standard", "guard", "dts", "all"];
+type ExportFormat = "schema" | "standard" | "guard" | "dts" | "all";
+const EXPORT_FORMATS: ExportFormat[] = ["schema", "standard", "guard", "dts", "all"];
 const SCHEMA_DIALECTS: SchemaDialect[] = ["zod"];
 
 function normalizeExportFormat(raw: string): ExportFormat | undefined {
@@ -819,15 +806,14 @@ function normalizeDialect(raw: string | undefined): SchemaDialect | undefined {
 }
 
 function wantsSchema(format: ExportFormat): boolean {
-  return format === "schema" || format === "zod" || format === "all";
+  return format === "schema" || format === "all";
 }
 
 function wantsStandard(format: ExportFormat): boolean {
   return format === "standard" || format === "all";
 }
 
-function schemaDialectOf(format: ExportFormat, dialect: SchemaDialect | undefined): SchemaDialect {
-  if (format === "zod") return "zod";
+function schemaDialectOf(_format: ExportFormat, dialect: SchemaDialect | undefined): SchemaDialect {
   return dialect ?? "zod";
 }
 
@@ -997,7 +983,7 @@ async function runExport(
 }
 
 // ---------------------------------------------------------------------------
-// health — 体检（原 doctor）
+// health — 体检
 // ---------------------------------------------------------------------------
 
 type HealthReport = {
@@ -1233,17 +1219,13 @@ program
   .option("--watch, -w", "Watch files and re-run check on change")
   .option("--json", "Emit stable CheckJson (CI / Agent; single file only)")
   .option("--verbose", "Expand Abs signatures (term/pred/conf detail)")
-  .option("--abs", "Algebra face: term/pred/conf per function (was `nudo types`)")
+  .option("--abs", "Algebra face: term/pred/conf per function")
   .option("--fn <name>", "With --abs: only this function")
   .option("--assume <pred...>", "With --abs: assume constraints, e.g. x>0 y>=1")
   .option("--generalize", "With --abs: polymorphic signatures via symbolic execution")
   .option(
     "--from <paths...>",
-    "Usage-site files: inject call records for cross-file domain evidence (was --callsites)",
-  )
-  .option(
-    "--callsites <paths...>",
-    "Deprecated alias of --from",
+    "Usage-site files: inject call records for cross-file domain evidence",
   )
   .option(
     "--ignore-throws <names>",
@@ -1262,7 +1244,6 @@ program
         assume?: string[];
         generalize?: boolean;
         from?: string[];
-        callsites?: string[];
         ignoreThrows?: string;
         entryThrows?: string;
       },
@@ -1275,11 +1256,7 @@ program
         process.exitCode = 1;
         return;
       }
-      const fromPaths = opts.from ?? opts.callsites;
-      if (opts.callsites && !opts.from) {
-        deprecateVerb("check --callsites", "use `nudo check --from <paths…>`");
-      }
-      const externalRecords = fromPaths?.length ? collectExternalRecords(fromPaths) : undefined;
+      const externalRecords = opts.from?.length ? collectExternalRecords(opts.from) : undefined;
       const ignoreThrows = parseIgnoreThrows(opts.ignoreThrows);
       if (
         opts.entryThrows !== undefined &&
@@ -1332,8 +1309,7 @@ program
   .description("Report every inferred case (call@/entry@ + debug witnesses); assert declared expectations")
   .argument("<paths...>", "File(s) or directory(s)")
   .option("--watch, -w", "Watch files and re-run test on change")
-  .option("--from <paths...>", "Usage-site files whose calls become synthesized cases (was --callsites)")
-  .option("--callsites <paths...>", "Deprecated alias of --from")
+  .option("--from <paths...>", "Usage-site files whose calls become synthesized cases")
   .option("--freeze [mode]", "Solidify call-site witnesses as @nudo:case (mode: update | omit=add)")
   .option("--dry-run", "With --freeze: print a unified diff instead of writing")
   .option("--exit-on-diff", "With --freeze --dry-run: exit 1 when the diff is non-empty")
@@ -1345,7 +1321,6 @@ program
       opts: {
         watch?: boolean;
         from?: string[];
-        callsites?: string[];
         freeze?: boolean | string;
         dryRun?: boolean;
         exitOnDiff?: boolean;
@@ -1361,11 +1336,7 @@ program
         process.exitCode = 1;
         return;
       }
-      const fromPaths = opts.from ?? opts.callsites;
-      if (opts.callsites && !opts.from) {
-        deprecateVerb("test --callsites", "use `nudo test --from <paths…>`");
-      }
-      const externalRecords = fromPaths?.length ? collectExternalRecords(fromPaths) : undefined;
+      const externalRecords = opts.from?.length ? collectExternalRecords(opts.from) : undefined;
 
       let freeze: EmitCasesOptions | undefined;
       if (opts.freeze !== undefined) {
@@ -1426,8 +1397,7 @@ program
   .option("--all", "With --emit: target every top-level export (prefer --fn)")
   .option("--dry-run", "With --emit or --draft --write: print instead of writing")
   .option("--exit-on-diff", "With --emit + --dry-run: exit 1 when the sidecar would change")
-  .option("--from <paths...>", "Usage-site files feeding domain evidence (was --callsites)")
-  .option("--callsites <paths...>", "Deprecated alias of --from")
+  .option("--from <paths...>", "Usage-site files feeding domain evidence")
   .action(
     async (
       paths: string[],
@@ -1440,7 +1410,6 @@ program
         dryRun?: boolean;
         exitOnDiff?: boolean;
         from?: string[];
-        callsites?: string[];
       },
     ) => {
       if (paths.length === 0) {
@@ -1470,11 +1439,7 @@ program
         process.exitCode = 1;
         return;
       }
-      const fromPaths = opts.from ?? opts.callsites;
-      if (opts.callsites && !opts.from) {
-        deprecateVerb("contract --callsites", "use `nudo contract --from <paths…>`");
-      }
-      const externalRecords = fromPaths?.length ? collectExternalRecords(fromPaths) : undefined;
+      const externalRecords = opts.from?.length ? collectExternalRecords(opts.from) : undefined;
       const targets: string[] = [];
       for (const p of paths) targets.push(...resolveTargets(p));
       const roots = targets.filter((t) => isNudoTargetPath(t));
@@ -1519,21 +1484,20 @@ program
   .argument("<file>", "JavaScript/TypeScript file to analyze")
   .option(
     "--format <format>",
-    "Output format: dts, guard, schema, standard, zod (deprecated alias of schema --dialect zod), all",
+    "Output format: dts, guard, schema, standard, all",
     "dts",
   )
   .option("--dialect <dialect>", "Schema dialect (currently: zod). Applies to --format schema|all")
   .option("--out <dir>", "Write projection files to this directory (omit for stdout)")
-  .option("--output <dir>", "Deprecated alias of --out")
   .action(
     async (
       file: string,
-      options: { format: string; dialect?: string; out?: string; output?: string },
+      options: { format: string; dialect?: string; out?: string },
     ) => {
       const format = normalizeExportFormat(options.format);
       if (!format) {
         console.error(
-          `Unknown --format ${options.format}; expected dts | guard | schema | standard | zod | all`,
+          `Unknown --format ${options.format}; expected dts | guard | schema | standard | all`,
         );
         process.exitCode = 1;
         return;
@@ -1544,22 +1508,12 @@ program
         process.exitCode = 1;
         return;
       }
-      if (format === "zod") {
-        deprecateVerb(
-          "export --format zod",
-          "use `nudo export <path> --format schema --dialect zod` (writes *.nudo.schema.zod.ts)",
-        );
-      }
       if (dialect !== undefined && !wantsSchema(format)) {
-        console.error(`--dialect is only valid with --format schema|all|zod (got ${format})`);
+        console.error(`--dialect is only valid with --format schema|all (got ${format})`);
         process.exitCode = 1;
         return;
       }
-      const out = options.out ?? options.output;
-      if (options.output && !options.out) {
-        deprecateVerb("export --output", "use `nudo export --out <dir>`");
-      }
-      await runExport(file, format, out, dialect);
+      await runExport(file, format, options.out, dialect);
     },
   );
 
@@ -1568,14 +1522,10 @@ program
   .description("Project health & drift: uncovered functions, witness drift, contract drift, analysis errors")
   .argument("[paths...]", "File(s) or directory(s) (default: current directory)")
   .option("--watch, -w", "Watch and re-run health on change")
-  .option("--from <paths...>", "Usage-site files for freeze-drift detection (was --callsites)")
-  .option("--callsites <paths...>", "Deprecated alias of --from")
+  .option("--from <paths...>", "Usage-site files for freeze-drift detection")
   .option("--json", "Output as JSON")
-  .action(async (paths: string[], opts: { watch?: boolean; from?: string[]; callsites?: string[]; json?: boolean }) => {
-    const fromPaths = opts.from ?? opts.callsites;
-    if (opts.callsites && !opts.from) {
-      deprecateVerb("health --callsites", "use `nudo health --from <paths…>`");
-    }
+  .action(async (paths: string[], opts: { watch?: boolean; from?: string[]; json?: boolean }) => {
+    const fromPaths = opts.from;
     const runOneDir = async (): Promise<void> => {
       await runHealth(paths, { ...(fromPaths ? { from: fromPaths } : {}), json: opts.json });
     };
@@ -1634,250 +1584,6 @@ env
       console.log(`auto harvest candidates under ${relative(process.cwd(), dir) || "."}:\n`);
       for (const line of report) console.log(line);
       console.log(`\nAnalysis injects these automatically; use \`nudo env harvest <pkg>\` to write a persistent env file.`);
-      return;
-    }
-    if (!pkg) {
-      console.error("Error: <pkg> is required (or use --auto).");
-      process.exitCode = 1;
-      return;
-    }
-    runHarvest(pkg, opts.out);
-  });
-
-// ===========================================================================
-// DEPRECATED VERBS (transition minor; delete in next major)
-// ===========================================================================
-
-program
-  .command("infer")
-  .description("[deprecated] signatures → check; cases → test; dts → export")
-  .argument("<file>", "Path to the JS/TS file (or directory)")
-  .option("--dts", "Deprecated: use `nudo export --format dts`")
-  .option("--loc", "Show source locations")
-  .option("--json", "Deprecated: use `nudo test --json` / `nudo check --json`")
-  .option("--callsites <paths...>", "Deprecated: use `--from`")
-  .option("--emit-cases [mode]", "Deprecated: use `nudo test --freeze[=update]`")
-  .option("--dry-run", "With --emit-cases/--freeze")
-  .option("--exit-on-diff", "With --dry-run")
-  .action(
-    async (
-      file: string,
-      opts: {
-        dts?: boolean;
-        loc?: boolean;
-        json?: boolean;
-        callsites?: string[];
-        emitCases?: boolean | string;
-        dryRun?: boolean;
-        exitOnDiff?: boolean;
-      },
-    ) => {
-      deprecateVerb(
-        "infer",
-        "signatures → `nudo check <path>`; call-site cases → `nudo test <path>`; dts → `nudo export <path> --format dts`",
-      );
-      if (opts.dts) {
-        await runExport(file, "dts");
-        return;
-      }
-      if (opts.emitCases !== undefined) {
-        let mode: "add" | "update";
-        if (opts.emitCases === true) mode = "add";
-        else if (opts.emitCases === "update") mode = "update";
-        else {
-          console.error(`Invalid --emit-cases value: ${opts.emitCases}`);
-          process.exitCode = 1;
-          return;
-        }
-        const externalRecords = opts.callsites?.length ? collectExternalRecords(opts.callsites) : undefined;
-        await runTest(file, {
-          freeze: {
-            mode,
-            dryRun: opts.dryRun === true,
-            exitOnDiff: opts.exitOnDiff === true,
-          },
-          from: externalRecords,
-        });
-        // 过渡：infer 原观察面 = case 报告 + 签名；一并跑 check
-        await runCheck(file, { from: externalRecords });
-        return;
-      }
-      const from = opts.callsites?.length ? collectExternalRecords(opts.callsites) : undefined;
-      // design §1.2：infer → test（case）+ check（签名/门禁）
-      // --json：stdout 只允许一份 JSON（test 用例报告）；门禁/签名请显式跑 check --json
-      if (opts.json) {
-        console.error(
-          "warning: `nudo infer --json` is deprecated; stdout carries test cases only.\n  → gate/signatures: `nudo check <path> --json`",
-        );
-        await runTest(file, { from, json: true });
-        return;
-      }
-      await runTest(file, { from });
-      console.log("");
-      await runCheck(file, { from });
-    },
-  );
-
-program
-  .command("types")
-  .description("[deprecated] use `nudo check --abs`")
-  .argument("<file>", "Path to the JS/TS file or a directory")
-  .option("--fn <name>", "Only analyze this function")
-  .option("--assume <pred...>", "Assume constraints, e.g. x>0 y>=1")
-  .option("--generalize", "Show polymorphic signatures")
-  .action(async (file: string, opts: { fn?: string; assume?: string[]; generalize?: boolean }) => {
-    deprecateVerb("types", "use `nudo check <path> --abs`");
-    const targets = resolveTargets(file);
-    for (const t of targets) {
-      // 与 check --abs 同口径：代数观察 + L1/L2 门禁
-      await runCheck(t, {
-        abs: true,
-        absView: {
-          ...(opts.fn ? { fn: opts.fn } : {}),
-          assume: opts.assume ?? [],
-          generalize: opts.generalize === true,
-        },
-      });
-      if (targets.length > 1) console.log("");
-    }
-  });
-
-program
-  .command("interface")
-  .alias("refine")
-  .description("[deprecated] use `nudo contract`")
-  .argument("[paths...]", "File(s) or directory(s)")
-  .option("--emit", "Write/update @generated segments")
-  .option("--draft", "Generate reviewable contract draft")
-  .option("--write", "With --draft: write draft on disk")
-  .option("--fn <name>", "Filter export names", (v: string, acc: string[]) => {
-    acc.push(v);
-    return acc;
-  }, [] as string[])
-  .option("--all", "Target every export")
-  .option("--dry-run", "Print instead of writing")
-  .option("--exit-on-diff", "Exit 1 when sidecar would change")
-  .option("--callsites <paths...>", "Usage-site files")
-  .action(
-    async (
-      paths: string[],
-      opts: {
-        emit?: boolean;
-        draft?: boolean;
-        write?: boolean;
-        fn?: string[];
-        all?: boolean;
-        dryRun?: boolean;
-        exitOnDiff?: boolean;
-        callsites?: string[];
-      },
-    ) => {
-      deprecateVerb("interface", "use `nudo contract` (same flags); refine alias is also deprecated");
-      // 委托给 contract 逻辑
-      const argv = ["contract", ...(paths ?? [])];
-      if (opts.emit) argv.push("--emit");
-      if (opts.draft) argv.push("--draft");
-      if (opts.write) argv.push("--write");
-      if (opts.all) argv.push("--all");
-      if (opts.dryRun) argv.push("--dry-run");
-      if (opts.exitOnDiff) argv.push("--exit-on-diff");
-      for (const n of opts.fn ?? []) argv.push("--fn", n);
-      if (opts.callsites?.length) argv.push("--from", ...opts.callsites);
-      await program.parseAsync(argv, { from: "user" });
-    },
-  );
-
-program
-  .command("generate")
-  .description("[deprecated] use `nudo export --format …`")
-  .argument("<file>", "JavaScript file to analyze")
-  .option("--format <format>", "schema|zod|guard|dts|all", "all")
-  .option("--output <dir>", "Write validator files to this directory")
-  .action(async (file: string, options: { format: string; output?: string }) => {
-    deprecateVerb(
-      "generate",
-      "use `nudo export <path> --format schema|guard|dts|all --out <dir>`",
-    );
-    const format = normalizeExportFormat(options.format) ?? "all";
-    if (format === "zod") {
-      deprecateVerb("generate --format zod", "use `nudo export --format schema --dialect zod`");
-    }
-    await runExport(file, format, options.output);
-  });
-
-program
-  .command("emit")
-  .description("[deprecated] use `nudo export --format dts`")
-  .argument("<file>", "JavaScript file to analyze")
-  .option("--output <dir>", "Write <stem>.d.ts to this directory")
-  .action(async (file: string, options: { output?: string }) => {
-    deprecateVerb("emit", "use `nudo export <path> --format dts --out <dir>`");
-    await runExport(file, "dts", options.output);
-  });
-
-program
-  .command("guard")
-  .description("[deprecated] use `nudo export --format guard`")
-  .argument("<file>", "JavaScript file to analyze")
-  .option("--output <dir>", "Write <stem>.nudo.guard.ts to this directory")
-  .action(async (file: string, options: { output?: string }) => {
-    deprecateVerb("guard", "use `nudo export <path> --format guard --out <dir>`");
-    await runExport(file, "guard", options.output);
-  });
-
-program
-  .command("doctor")
-  .description("[deprecated] use `nudo health`")
-  .argument("[paths...]", "File(s) or directory(s)")
-  .option("--callsites <paths...>", "Usage-site files")
-  .option("--json", "Output as JSON")
-  .action(async (paths: string[], opts: { callsites?: string[]; json?: boolean }) => {
-    deprecateVerb("doctor", "use `nudo health`");
-    await runHealth(paths, { ...(opts.callsites ? { from: opts.callsites } : {}), json: opts.json });
-  });
-
-program
-  .command("watch")
-  .description("[deprecated] watch is a flag: `nudo check --watch` / `nudo test --watch`")
-  .argument("<path>", "File or directory")
-  .option("--dts", "Deprecated: use `nudo export` on save via vite-plugin/IDE")
-  .action(async (watchPath: string, _opts: { dts?: boolean }) => {
-    deprecateVerb("watch", "use `nudo check <path> --watch` or `nudo test <path> --watch`");
-    startWatch([watchPath], async (f) => {
-      await runTest(f, {});
-    }, "test");
-  });
-
-program
-  .command("harvest")
-  .description("[deprecated] use `nudo env harvest`")
-  .argument("[pkg]", "Package name under @types")
-  .option("--out <file>", "Output .ts env file")
-  .option("--auto [dir]", "Scan for bare imports")
-  .action(async (pkg: string | undefined, opts: { out?: string; auto?: boolean | string }) => {
-    deprecateVerb("harvest", "use `nudo env harvest <pkg>`");
-    if (opts.auto !== undefined) {
-      const dir = resolve(typeof opts.auto === "string" ? opts.auto : ".");
-      const files = existsSync(dir) && statSync(dir).isDirectory() ? collectNudoFiles(dir) : [];
-      const { collectBarePackages, harvestPackageCached, formatHarvestSummary } = await import("@nudojs/service");
-      const seen = new Set<string>();
-      const report: string[] = [];
-      for (const f of files) {
-        let src: string;
-        try {
-          src = readFileSync(f, "utf-8");
-        } catch {
-          continue;
-        }
-        for (const p of collectBarePackages(src)) {
-          if (seen.has(p)) continue;
-          seen.add(p);
-          const h = harvestPackageCached(p, dirname(f));
-          if (h) report.push(formatHarvestSummary(h));
-          else report.push(`${p}: no .d.ts / @types (skipped)`);
-        }
-      }
-      for (const line of report) console.log(line);
       return;
     }
     if (!pkg) {

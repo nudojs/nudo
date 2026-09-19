@@ -14,7 +14,7 @@ Write plain `.js`. Optional sidecar contracts (`*.nudo.js` / `@nudo:refine` / `@
 
 ## You'll leave with
 
-- Observation vs obligation: `nudo check` signatures + `nudo test` cases (no `nudo infer` verb)
+- Observation vs obligation: `nudo check` signatures + `nudo test` cases
 - The Day-0 / Day-1 split: check/test first, contract when you need stronger gates
 - Commands to run on your own file, and a Playground link
 
@@ -81,7 +81,7 @@ In the IDE, the same Abs surfaces as inlay hints on intermediates — not only a
 | Obligations | Type language + assignability | L1 explicit contracts + L2 entry throws + Pred implication on Abs |
 | Observability | Hover shows declared type | `check` signatures / `test` cases / hover show term / pred / conf |
 | CI gate | `tsc --noEmit` | `nudo check` (prints signatures on success too) |
-| Observation command | (none — hover) | No `nudo infer`; observation is check/test/IDE output |
+| Observation command | (none — hover) | Observation is check/test/IDE output |
 
 `"a,b,c".split(",")` → `["a", "b", "c"]`. `scale` carries `(x + 1) > 1` when `x > 0` is declared. That is validation + observability, not a second type language.
 

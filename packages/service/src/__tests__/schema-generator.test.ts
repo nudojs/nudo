@@ -15,7 +15,6 @@ import { and, eq, ge, gt, le, ptypeof } from "@nudojs/core";
 import { app, lit, v } from "@nudojs/core";
 import {
   absToSchemaSource,
-  absToZodSchema,
   projectAbsToSchema,
 } from "../schema-generator.ts";
 
@@ -29,22 +28,22 @@ const strWith = (pred: Pred): Abs =>
 
 describe("schema-generator", () => {
   it("generates z.string() for string type", () => {
-    expect(absToZodSchema(str())).toBe("z.string()");
+    expect(absToSchemaSource(str())).toBe("z.string()");
   });
 
   it("generates z.number() for number type", () => {
-    expect(absToZodSchema(num())).toBe("z.number()");
+    expect(absToSchemaSource(num())).toBe("z.number()");
   });
 
   it("generates z.literal() for literal types", () => {
-    expect(absToZodSchema(strLit("hello"))).toBe('z.literal("hello")');
-    expect(absToZodSchema(numLit(42))).toBe("z.literal(42)");
-    expect(absToZodSchema(boolLit(true))).toBe("z.literal(true)");
+    expect(absToSchemaSource(strLit("hello"))).toBe('z.literal("hello")');
+    expect(absToSchemaSource(numLit(42))).toBe("z.literal(42)");
+    expect(absToSchemaSource(boolLit(true))).toBe("z.literal(true)");
   });
 
   it("generates z.object() for object types", () => {
     const o = obj({ name: { value: str() }, age: { value: num() } });
-    expect(absToZodSchema(o)).toBe("z.object({ name: z.string(), age: z.number() })");
+    expect(absToSchemaSource(o)).toBe("z.object({ name: z.string(), age: z.number() })");
   });
 
   it("generates optional object slots", () => {
@@ -60,20 +59,20 @@ describe("schema-generator", () => {
       undefined,
       "exact",
     );
-    expect(absToZodSchema(o)).toBe("z.object({ name: z.string(), nick: z.string().optional() })");
+    expect(absToSchemaSource(o)).toBe("z.object({ name: z.string(), nick: z.string().optional() })");
   });
 
   it("generates z.array() for array types", () => {
-    expect(absToZodSchema(arrOf(str()))).toBe("z.array(z.string())");
+    expect(absToSchemaSource(arrOf(str()))).toBe("z.array(z.string())");
   });
 
   it("generates z.union() for union types", () => {
-    expect(absToZodSchema(unionOf(str(), num()))).toBe("z.union([z.string(), z.number()])");
+    expect(absToSchemaSource(unionOf(str(), num()))).toBe("z.union([z.string(), z.number()])");
   });
 
   it("generates z.null() and z.undefined()", () => {
-    expect(absToZodSchema(nullLit())).toBe("z.null()");
-    expect(absToZodSchema(undefLit())).toBe("z.undefined()");
+    expect(absToSchemaSource(nullLit())).toBe("z.null()");
+    expect(absToSchemaSource(undefLit())).toBe("z.undefined()");
   });
 });
 
@@ -136,9 +135,9 @@ describe("pred → zod refinements", () => {
 });
 
 describe("absToSchemaSource / dialect", () => {
-  it("defaults to zod and matches absToZodSchema", () => {
+  it("defaults to zod dialect", () => {
     const a = numWith(gt(v("x"), lit(0)));
-    expect(absToSchemaSource(a)).toBe(absToZodSchema(a));
+    expect(absToSchemaSource(a)).toBe(absToSchemaSource(a, { dialect: "zod" }));
     expect(absToSchemaSource(a, { dialect: "zod" })).toBe("z.number().gt(0)");
   });
 

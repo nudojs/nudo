@@ -23,7 +23,7 @@ npx nudojs test ./src/app.js    # 全部推断用例
 
 用装了 Nudo 扩展的 VS Code 打开同一文件，可获得 hover 与 inlay。
 
-**Day 0 要点：** 从 `check` 签名与 `test` 用例读类型。没有 `nudo infer` 观察动词。
+**Day 0 要点：** 从 `check` 签名与 `test` 用例读类型。
 
 > 项目级可把 `package.json#nudo.analysis.mode` 设为 `all` 或 `directives`；**出厂默认是 `exports`**（含 export / 侧车 / 指令的文件进 IDE 分析）。
 

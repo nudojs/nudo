@@ -8,8 +8,8 @@ import {
   getCompletionsAtPosition,
   getCasesForFile,
   absToTSType,
+  absToSchemaSource,
   generateDts,
-  absToZodSchema,
   generateGuardFunction,
   buildSemanticTokens,
   SEMANTIC_TOKEN_TYPES,
@@ -542,7 +542,7 @@ describe("LSP Integration - Type Generation", () => {
     const greetingFn = result.functions.find(f => f.name === "getGreeting");
     expect(greetingFn).toBeDefined();
     if (greetingFn?.combinedAbs) {
-      const schema = absToZodSchema(greetingFn.combinedAbs);
+      const schema = absToSchemaSource(greetingFn.combinedAbs);
       expect(schema).toBeTruthy();
       expect(schema.length).toBeGreaterThan(0);
     }

@@ -42,7 +42,7 @@ async function fetchUser(id) {
 
 ## @nudo:case — 调试见证
 
-case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它不是 interface 产品——精化契约住在 `*.nudo.js` 侧车（见 [@nudo:refine](#nudorefine--refinement-contract)）。`@nudo:case` 仍支持 `nudo test` 断言与 LSP 场景切换。请优先使用**具体**实参；遗留的符号化 `T.*` 已弃用，产品示例不再使用。
+case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它不是 interface 产品——精化契约住在 `*.nudo.js` 侧车（见 [@nudo:refine](#nudorefine--refinement-contract)）。`@nudo:case` 仍支持 `nudo test` 断言与 LSP 场景切换。case 实参使用具体值或约束构建器。
 
 提供具名执行用例。每个用例定义**具体**输入，供 Nudo 调试场景执行函数时使用。
 
@@ -54,7 +54,7 @@ case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它�
 ```
 
 - **name** — 用例的字符串标识符（如 `"double digits"`）。
-- **args** — 逗号分隔的**具体**参数（`5`、`"hello"`、`{…}`）。遗留的符号化 `T.*` 已弃用。
+- **args** — 逗号分隔的**具体**参数（`5`、`"hello"`、`{…}`）。
 - **expected**（可选）— `=>` 之后的期望结果，用于校验。
 
 ### 示例

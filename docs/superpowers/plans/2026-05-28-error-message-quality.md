@@ -1,6 +1,6 @@
 # Error Message Quality Implementation Plan
 
-> **Superseded / historical.** References the retired `@nudo:returns` directive. Current contract syntax is `@nudo:refine` — see `docs/nudo-check.md`.
+> **Superseded / historical.** References the retired `@nudo:returns` directive. Current contract syntax is `@nudo:refine` — see `docs/design-cli-semantics.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -346,20 +346,20 @@ git commit -m "feat: add nudo:builtin-unknown diagnostic for uncovered APIs"
 
 **Files:**
 - Modify: `packages/cli/src/index.ts`
-- Test: Manual verification with `nudo infer --json`
+- Test: Manual verification with `nudo test --json`
 
 - [ ] **Step 1: Verify current JSON output includes code/suggestions**
 
-The `runInferJson` function in `packages/cli/src/index.ts` already outputs diagnostics. Check if it passes through `code` and `suggestions` from the analyzer result.
+The `runCaseJson` function in `packages/cli/src/index.ts` already outputs diagnostics. Check if it passes through `code` and `suggestions` from the analyzer result.
 
-Read the `runInferJson` function (around line 225) to see how diagnostics are serialized.
+Read the `runCaseJson` function (around line 225) to see how diagnostics are serialized.
 
 - [ ] **Step 2: Update JSON serialization if needed**
 
 If the JSON output doesn't include `code` and `suggestions`, update the diagnostic serialization:
 
 ```typescript
-// In runInferJson, where diagnostics are mapped:
+// In runCaseJson, where diagnostics are mapped:
 diagnostics: result.diagnostics.map(d => ({
   range: d.range,
   severity: d.severity,

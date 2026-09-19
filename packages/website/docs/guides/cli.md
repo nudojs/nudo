@@ -26,7 +26,7 @@ nudo — JavaScript types, computed
   nudo env harvest <pkg>           # harvest @types into an env
 ```
 
-There is **no** observation verb: no `nudo infer`, no `nudo show`, no `nudo types` as a primary command, and no top-level `nudo watch`. Observation lives in the output of `check` / `test` and in IDE hover.
+Observation lives in the output of `check` / `test` and in IDE hover — not a separate primary command.
 
 **Day 0:** `nudo check` (signatures) and `nudo test` (cases).  
 **Day 1:** `nudo contract` + `nudo check`.  
@@ -97,7 +97,7 @@ Without an explicit contract, the contract degrades to the JS runtime boundary: 
 | `--json` | Machine-readable diagnostics + signatures |
 | `--verbose` | Extra detail for diagnosis |
 | `--abs` | Print the Abs algebra face (term / pred / conf) |
-| `--from <paths…>` | Usage-site files (tests/apps) that inject call records — renamed from `--callsites` |
+| `--from <paths…>` | Usage-site files (tests/apps) that inject call records |
 | `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (e.g. `TypeError`); does **not** swallow L1 contract violations |
 | `--entry-throws error\|warning\|off` | Severity for L2 entry may-throw (default `error`) |
 
@@ -116,7 +116,7 @@ Without an explicit contract, the contract degrades to the JS runtime boundary: 
 
 Exit code `1` on any error-level diagnostic (L1 or non-ignored L2).
 
-`nudo check` is the CI gate. Prefer it over legacy observation commands.
+`nudo check` is the CI gate.
 
 ---
 
@@ -154,8 +154,8 @@ assertions
 - Synthetic `call@` / `entry@` cases **print by default** — that is the call-site observation surface.
 - When usage-site `call@` cases exist, the analyzer does **not** also synthesize `entry@` for that function.
 - Only `@nudo:case` directives **with `=> expected`** enter pass/fail; failures affect the exit code.
-- `--from <paths…>` harvest usage-site call shapes (formerly `--callsites`).
-- `--freeze[=update]` solidifies synthesized cases as directives (formerly `infer --emit-cases`).
+- `--from <paths…>` harvest usage-site call shapes.
+- `--freeze[=update]` solidifies synthesized cases as directives.
 - `--json` / `--abs` mirror `check`; `test --json` also carries an `assertions` summary (`passed`/`failed`/`unchecked`) and still exits 1 when a declared assertion fails.
 
 ### Example with declared assertions
@@ -187,7 +187,7 @@ assertions
 
 ## `nudo contract`
 
-Draft, print, or emit effective interfaces (handwritten / generated / implicit layers). Replaces the old `nudo interface` / `nudo refine` verbs.
+Draft, print, or emit effective interfaces (handwritten / generated / implicit layers).
 
 ```bash
 nudo contract <path> [--emit] [--draft] [--write] [--fn name] [--all]
@@ -213,7 +213,7 @@ nudo contract --emit src/lib.js --all --dry-run --exit-on-diff  # CI drift gate
 Project Abs into ecosystem artifacts. This is the **only** CLI path for `.d.ts`, guards, and schema projections.
 
 ```bash
-nudo export <path> [--format dts|guard|schema|standard|zod|all] [--dialect zod] [--out dir]
+nudo export <path> [--format dts|guard|schema|standard|all] [--dialect zod] [--out dir]
 ```
 
 ```bash
@@ -229,7 +229,6 @@ nudo export src/user.js --format all --out dist
 | `guard` | Runtime type-guard functions |
 | `schema` | Schema **source** projection for a dialect (default dialect: `zod`) → `*.nudo.schema.<dialect>.ts` |
 | `standard` | **Standard Schema v1** runtime modules (`~standard`, vendor `nudo`) → `<fn>.nudo.standard.ts` |
-| `zod` | **Deprecated alias** of `schema --dialect zod` (removed next major) |
 | `all` | dts + guard + schema + standard |
 
 `--dialect` currently accepts `zod`. Constant numeric bounds / `int` / string length bounds from Abs preds are projected when expressible; unprojectable preds stay on the base shape and are listed under `dropped preds`.
@@ -242,7 +241,7 @@ nudo export src/user.js --format all --out dist
 
 ## `nudo health`
 
-Project health: analysis errors and solidification drift. Renamed from `nudo doctor`.
+Project health: analysis errors and solidification drift.
 
 ```bash
 nudo health [paths…] [--watch] [--from paths…] [--json]
@@ -279,28 +278,6 @@ Then reference the generated env from source:
 ```ts
 /// @nudo:env ./nudo-harvest-node.ts
 ```
-
----
-
-## Migration / deprecated verbs
-
-Old verbs remain temporarily with **stderr deprecation warnings** and map to the new surface. They will be removed in the next major; they are not permanent silent synonyms.
-
-| Deprecated | Use instead |
-|------------|-------------|
-| `nudo infer <path>` | Signatures → `nudo check <path>`; case report → `nudo test <path>`; dts → `nudo export --format dts` |
-| `nudo types <path>` | `nudo check --abs` |
-| `nudo interface` / `nudo refine` | `nudo contract` |
-| `nudo generate` / `nudo emit` / `nudo guard` | `nudo export --format dts\|guard\|schema\|standard\|all` |
-| `nudo doctor` | `nudo health` |
-| `nudo watch` | `nudo check --watch` / `nudo test --watch` |
-| `nudo harvest <pkg>` | `nudo env harvest <pkg>` |
-| `--callsites` | `--from` |
-| `--emit-cases[=update]` | `nudo test --freeze[=update]` |
-| `infer --dts` | `nudo export --format dts` |
-| `infer --format zod` / `export --format zod` | `nudo export --format schema --dialect zod` |
-
-`infer --json` is deprecated: **stdout carries `test --json` cases only** (one JSON document). Run `nudo check --json` separately for gate/signatures. There is **no** `check --cases` flag — observation and enforcement stay separate.
 
 ---
 

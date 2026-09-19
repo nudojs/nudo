@@ -35,7 +35,7 @@ npx nudojs test src/utils.js
 npx nudojs contract --draft src/utils.js --write
 npx nudojs check src/utils.js
 
-# Ecosystem — .d.ts / guard / zod projection
+# Ecosystem — dts / guard / schema / standard projection
 npx nudojs export src/utils.js --format dts --out dist/types
 ```
 
@@ -45,12 +45,10 @@ Primary verbs:
 nudo check <path> [--watch]     # gate + signatures (CI)
 nudo test <path> [--watch]      # case report + declared assertions
 nudo contract <path>            # draft / emit interfaces
-nudo export <path>              # dts | guard | schema | standard
+nudo export <path>              # dts | guard | schema | standard | all
 nudo health [paths]             # drift + analysis errors
 nudo env harvest <pkg>          # @types → env
 ```
-
-Deprecated (stderr warning; removed next major): `infer`, `types`, `interface`/`refine`, `generate`/`emit`/`guard`, `doctor`, `watch`, top-level `harvest`. Use the verbs above instead.
 
 ## License
 

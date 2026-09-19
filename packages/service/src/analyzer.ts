@@ -1947,7 +1947,7 @@ function analyzeFileUncachedInner(
   for (const candidate of synthCandidates) {
     // 调用点来源有两路：本文件求值中观察到的调用，以及外部注入的
     // （使用现场文件——如测试——对本文导出函数的真实调用，CLI 经
-    // --callsites 收集后传入）。带 targetModule 的记录先判归属：只有
+    // --from 收集后传入）。带 targetModule 的记录先判归属：只有
     // 指向本文件的记录才允许参与匹配——导出名/别名离开模块单独无意义
     // （单导出文件的 targetExport 全是 "default"，不判模块会跨文件误染，
     // 如 clone.js 的记录命中 applyToDefaults.js 的 "default" candidate）。

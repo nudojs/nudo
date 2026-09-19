@@ -1,5 +1,5 @@
 /**
- * 分析范围判定（A1/A2，design-analysis-scope.md）。
+ * 分析范围判定（design-cli-semantics.md §7）。
  * CLI 显式路径不受 mode 限制；本模块供 LSP/watch 自动验证使用。
  */
 

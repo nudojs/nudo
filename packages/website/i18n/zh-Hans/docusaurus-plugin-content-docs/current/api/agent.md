@@ -1,6 +1,6 @@
 ---
 sidebar_position: 5
-description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs 门禁）、infer、hover、whatIf、suggestCase、trace、selectCase、getActiveCases。"
+description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs 门禁）、test、contract、hover、whatIf、suggestCase、trace、selectCase、getActiveCases。"
 ---
 
 # Agent API
@@ -12,25 +12,25 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 | 命令 | 自定义请求别名 | 用途 |
 |---------|---------------------|---------|
 | `nudo.check` | `nudo/check` | 约束门禁 —— **CheckJson v1**（Abs 签名 + actual ⊭ expected） |
-| `nudo.infer` | `nudo/infer` | 全文件推断 —— **InferJson v1**（intension 携带无损 Abs） |
+| `nudo.test` | `nudo/test` | 全文件推断 —— **CaseJson v1**（intension 携带无损 Abs） |
 | `nudo.hover` | `nudo/hover` | 源码位置上的无损 Abs（可选 inlay / interface 档） |
 | `nudo.whatIf` | `nudo/whatIf` | 对绑定应用类型假设，读取目标的推断类型 |
 | `nudo.suggestCase` | `nudo/suggestCase` | 检查函数的 `@nudo:case` 覆盖情况；用例全为合成时返回可直接粘贴的指令 |
 | `nudo.trace` | `nudo/trace` | 列出函数每个用例的参数类型 → 结果类型 |
-| `nudo.interface` | `nudo/interface` | 打印有效 interface 分层（handwritten / generated / implicit） |
-| `nudo.interface.draft` | `nudo/interface.draft` | **代码优先草稿**：从已有逻辑生成 `*.nudo.draft.js` / `*.nudo.draft.ts`（与 CLI `--draft` 同源） |
-| `nudo.interfaceEmit` | `nudo/interface.emit` | 把调用点域固化为侧车 `@generated` 段 |
+| `nudo.contract` | `nudo/contract` | 打印有效 interface 分层（handwritten / generated / implicit） |
+| `nudo.contract.draft` | `nudo/contract.draft` | **代码优先草稿**：从已有逻辑生成 `*.nudo.draft.js` / `*.nudo.draft.ts`（与 CLI `--draft` 同源） |
+| `nudo.contract.emit` | `nudo/contract.emit` | 把调用点域固化为侧车 `@generated` 段 |
 | `nudo.selectCase` | `nudo/selectCase` | 切换用于悬停/诊断的活动用例 |
 | `nudo.getActiveCases` | `nudo/getActiveCases` | 读取文件中每个函数的活动用例索引 |
 
-`nudo.check` / `nudo.infer` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` / `nudo.interface*` 返回 MCP 风格的文本内容——`{ content: [{ type: "text", text }] }`。`nudo.selectCase` 返回 `{ success: true }`；`nudo.getActiveCases` 返回 `Record<string, number>`。共享数据源由 `AGENT_TOOL_SOURCES`（E5）钉住——agent 工具与 CLI/LSP 命令走同一 service/core 入口。
+`nudo.check` / `nudo.test` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` / `nudo.contract*` 返回 MCP 风格的文本内容——`{ content: [{ type: "text", text }] }`。`nudo.selectCase` 返回 `{ success: true }`；`nudo.getActiveCases` 返回 `Record<string, number>`。共享数据源由 `AGENT_TOOL_SOURCES`（E5）钉住——agent 工具与 CLI/LSP 命令走同一 service/core 入口。
 
 ## 约定
 
 - **`file` 参数**——每个命令都接收字符串 `file`，接受 `file://` URI 或裸路径。未在编辑器中打开的文件从磁盘读取。
 - **编辑器风格请求**——`nudo/selectCase` 与 `nudo/getActiveCases` 请求额外接受编辑器风格的 `{ uri, ... }` 参数（VS Code 扩展的 CodeLens 使用）。Agent 应始终使用 `file`。
 - **类型表达式**——见下方[类型表达式](#类型表达式)。
-- **Abs 优先**——`check` / `infer` / `hover` 暴露无损代数（Abs）。外延字符串（`args` / `result` / `ext`）是兼容用的有损投影，不是类型模型本身。
+- **Abs 优先**——`check` / `test` / `hover` 暴露无损代数（Abs）。外延字符串（`args` / `result` / `ext`）是兼容用的有损投影，不是类型模型本身。
 
 ---
 
@@ -61,7 +61,7 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 }
 ```
 
-## nudo.infer
+## nudo.test
 
 全文件用例报告 —— 数据与 CLI `nudo test --json` 一致。CI 优先 CLI `nudo check` / `nudo test`；本工具名为遗留，映射到 test/check 观察面。
 
@@ -71,14 +71,14 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 |------|------|-------------|
 | `file` | `string` | 路径或 URI |
 | `source` | `string?` | 预读源码 |
-| `format` | `"text" \| "json"` | `"json"` → 只返回 InferJson |
+| `format` | `"text" \| "json"` | `"json"` → 只返回 CaseJson |
 | `functions` | `string[]?` | 过滤到这些函数名 |
 
-**返回（InferJson v1）：** `cases[].intension` 携带 `abs` / `term` / `pred` / `conf`（无损）；`args` / `result` 是外延字符串（`formatShape` 投影）。
+**返回（CaseJson v1）：** `cases[].intension` 携带 `abs` / `term` / `pred` / `conf`（无损）；`args` / `result` 是外延字符串（`formatShape` 投影）。
 
 ```json
 {
-  "command": "nudo.infer",
+  "command": "nudo.test",
   "arguments": [{ "file": "src/app.js", "functions": ["scale"], "format": "json" }]
 }
 ```
@@ -205,17 +205,17 @@ Function "add" has 2 synthesized case(s); suggested directives:
 
 **返回：** `Record<string, number>`，函数名 → 活动用例索引，例如 `{ "parse": 1, "greet": 0 }`。
 
-## nudo.interface / nudo.interface.draft / nudo.interfaceEmit
+## nudo.contract / nudo.contract.draft / nudo.contract.emit
 
 Interface 产品面（与 CLI 同一数据源）：
 
 | 命令 | 参数 | 行为 |
 |---------|------|----------|
-| `nudo.interface` | `{ file, functionName?, source? }` | 打印 `fn  [handwritten\|generated\|implicit]  (params) → returns` + JSON |
-| `nudo.interface.draft` | `{ file, functionName?, source?, write?, dryRun? }` | 代码优先草稿模块（`@nudo:draft`）；`write: true` 落盘 `*.nudo.draft.js` / `*.nudo.draft.ts`（从不碰 ambient 绑定）。body 读字段仅作**建议**。`write: true` **无项目根时 fail-closed**（nudo 配置 / `package.json` 祖先）——与 CLI `--draft --write` 同口径（覆盖：`NUDO_DRAFT_FORCE=1`） |
-| `nudo.interfaceEmit` / `nudo.interface.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean }` | 通过 `emitInterface` 固化调用点域。`dryRun: true` 只预览不写盘：返回同形结果（路径、would-change、unifiedDiff）与 `[dry-run] would update …` 文本；不会新建/修改侧车文件。VS Code Persist/CodeLens 确认流程先发 `dryRun: true`，确认后再真实写盘 |
+| `nudo.contract` | `{ file, functionName?, source? }` | 打印 `fn  [handwritten\|generated\|implicit]  (params) → returns` + JSON |
+| `nudo.contract.draft` | `{ file, functionName?, source?, write?, dryRun? }` | 代码优先草稿模块（`@nudo:draft`）；`write: true` 落盘 `*.nudo.draft.js` / `*.nudo.draft.ts`（从不碰 ambient 绑定）。body 读字段仅作**建议**。`write: true` **无项目根时 fail-closed**（nudo 配置 / `package.json` 祖先）——与 CLI `--draft --write` 同口径（覆盖：`NUDO_DRAFT_FORCE=1`） |
+| `nudo.contract.emit` / `nudo.contract.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean }` | 通过 `emitInterface` 固化调用点域。`dryRun: true` 只预览不写盘：返回同形结果（路径、would-change、unifiedDiff）与 `[dry-run] would update …` 文本；不会新建/修改侧车文件。VS Code Persist/CodeLens 确认流程先发 `dryRun: true`，确认后再真实写盘 |
 
-`loadModule` 与有效 `autoBind` 由**服务端注入**（buffer-aware 侧车装载 + 项目 `package.json#nudo.interface.autoBind` AND 客户端请求）。它们不是可 JSON 序列化的请求参数——agent 不要发送。
+`loadModule` 与有效 `autoBind` 由**服务端注入**（buffer-aware 侧车装载 + 项目 `package.json#nudo.contract.autoBind` AND 客户端请求）。它们不是可 JSON 序列化的请求参数——agent 不要发送。
 
 手写契约永不被 draft 或 emit 覆盖。接受草稿时请将审阅过的导出拷入 `*.nudo.js` / `*.nudo.ts`。工具错误携带 `isError: true`。
 

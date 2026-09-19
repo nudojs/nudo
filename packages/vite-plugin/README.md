@@ -4,7 +4,7 @@ Vite plugin for build-time JavaScript type inference with [Nudo](https://github.
 
 ## What is Nudo?
 
-Nudo is a type inference engine for JavaScript. Instead of a separate type system, it runs your code with symbolic type values via abstract interpretation — no TypeScript, no build step.
+Nudo is a type inference engine for JavaScript. The type system is Abs (`shape × term × pred × conf`); analysis runs Abs-native via abstract interpretation — no TypeScript, no build step.
 
 ## This package
 

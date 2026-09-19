@@ -1,6 +1,6 @@
 /**
- * interfaceSurface：`nudo interface` 打印数据源——分层展示（handwritten /
- * generated / implicit）、autoBind 配置链（opts 覆盖 + package.json#nudo.interface）、
+ * interfaceSurface：`nudo contract` 打印数据源——分层展示（handwritten /
+ * generated / implicit）、autoBind 配置链（opts 覆盖 + package.json#nudo.contract）、
  * kind（export/local 按自动绑定口径 localNamedExports）。
  * 真实临时目录夹具（defaultLoadModule 真实读盘，与 CLI 路径一致）。
  */
@@ -128,9 +128,9 @@ describe("interfaceSurface", () => {
     expect(add!.source).toBe("implicit");
   });
 
-  it("autoBind flows from package.json#nudo.interface (config wiring)", async () => {
+  it("autoBind flows from package.json#nudo.contract (config wiring)", async () => {
     const off = makeFixture({
-      "package.json": JSON.stringify({ name: "fx", nudo: { interface: { autoBind: false } } }),
+      "package.json": JSON.stringify({ name: "fx", nudo: { contract: { autoBind: false } } }),
       "lib.js": LIB_JS,
       "lib.nudo.js": LIB_NUDO_JS,
       "std.nudo.js": STD_NUDO_JS,
@@ -139,7 +139,7 @@ describe("interfaceSurface", () => {
     expect(offAdd!.source).toBe("implicit"); // 配置关掉自动绑定 → 侧车不读
 
     const on = makeFixture({
-      "package.json": JSON.stringify({ name: "fx", nudo: { interface: {} } }),
+      "package.json": JSON.stringify({ name: "fx", nudo: { contract: {} } }),
       "lib.js": LIB_JS,
       "lib.nudo.js": LIB_NUDO_JS,
       "std.nudo.js": STD_NUDO_JS,

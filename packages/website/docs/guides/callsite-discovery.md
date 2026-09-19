@@ -55,8 +55,8 @@ The case was not written by anyone — it was harvested from line 4 of the test 
 | Argument | Description |
 |----------|-------------|
 | `<target>` | File or directory to analyze — `.js`, `.mjs`, or `.ts`; directories are scanned recursively for inference targets |
-| `--from <paths...>` | One or more usage-site files or directories (tests, examples, apps). Renamed from `--callsites`. Directories are scanned recursively. |
-| `--freeze[=update]` | Write the harvested cases back into the analyzed file as `@nudo:case` directives (`freeze` fills in functions without case directives; `=update` re-synchronizes generated ones) — formerly `--emit-cases` |
+| `--from <paths...>` | One or more usage-site files or directories (tests, examples, apps). Directories are scanned recursively. |
+| `--freeze[=update]` | Write the harvested cases back into the analyzed file as `@nudo:case` directives (`freeze` fills in functions without case directives; `=update` re-synchronizes generated ones) |
 
 ## How It Works
 

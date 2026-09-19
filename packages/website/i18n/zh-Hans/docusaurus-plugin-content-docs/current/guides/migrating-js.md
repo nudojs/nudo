@@ -19,7 +19,7 @@ pnpm add -D @nudojs/cli @nudojs/lsp
 {
   "nudo": {
     "analysis": { "mode": "exports", "diagnostics": "default", "evalMissingSlot": "off" },
-    "interface": { "autoBind": true }
+    "contract": { "autoBind": true }
   }
 }
 ```
@@ -44,7 +44,7 @@ nudo check src/
 ```bash
 nudo contract --draft src/lib.js
 nudo contract --draft --write src/lib.js --fn greet --fn double
-# IDE：CodeLens ⚡ draft interface / VS Code「Nudo: Draft Interface」
+# IDE：CodeLens ⚡ draft interface / VS Code「Nudo: Draft Contract」
 ```
 
 草稿证据（**不发明** check 义务）：
@@ -111,7 +111,7 @@ nudo contract --emit src/lib.js --dry-run --exit-on-diff
 | Hover 档位 | `● interface / handwritten\|generated\|implicit` |
 | CodeLens | persist / update / **draft** |
 | VS Code | Nudo Output 通道命令 |
-| Agent | `nudo.interface` / `nudo.interface.draft` / `nudo.check` |
+| Agent | `nudo.contract` / `nudo.contract.draft` / `nudo.check` |
 | CLI | `nudo contract`（`--draft` / `--emit`）、`nudo check`、`nudo health`、`nudo test --freeze` |
 
 ## 7. 持续健康

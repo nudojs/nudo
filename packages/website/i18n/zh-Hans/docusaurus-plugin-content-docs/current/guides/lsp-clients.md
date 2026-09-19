@@ -25,7 +25,7 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 | Signature help | `onSignatureHelp` | 触发 `(`、`,` |
 | Code actions（`quickfix`） | `onCodeAction` | 不可达代码清理；契约/参数修复（A6） |
 | Semantic tokens（full） | `languages.semanticTokens` | 图例含 `contract` / `generated` / `derived` interface modifier（A7） |
-| Execute command | `nudo.*` | `selectCase`、`interface`、`interfaceEmit`、agent 工具 |
+| Execute command | `nudo.*` | `selectCase`、`contract`、`contract.draft`、`contract.emit`、agent 工具 |
 | Custom request | `nudo/…` | 与 command 同一 handler（E5）；协议契约用 slash 形式 |
 | Pull diagnostics | `diagnosticProvider` | `interFileDependencies: false` |
 
@@ -166,7 +166,7 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 | 缺口 | 影响客户端 | 权宜 | 跟踪 |
 |------|------------|------|------|
 | Active-case 装饰（高亮当前 case 函数体） | Zed、Neovim、Helix | 客户端渲染 CodeLens 时仍可用 `●`/`○` 切换 case，hover 跟随；无 CodeLens UI 时用 CLI `nudo check` / agent `nudo.hover` | 客户端限制 — 无 tracking issue（Zed 无 decoration API；Neovim 需自写插件） |
-| 不渲染 CodeLens | Helix、部分精简 Neovim | CLI `nudo contract` / `nudo check`；agent `nudo.interface` / `nudo.interface.draft`；需要 UI 时用 VS Code / Zed | 客户端限制 — 无 tracking issue（Helix 无 CodeLens UI） |
+| 不渲染 CodeLens | Helix、部分精简 Neovim | CLI `nudo contract` / `nudo check`；agent `nudo.contract` / `nudo.contract.draft`；需要 UI 时用 VS Code / Zed | 客户端限制 — 无 tracking issue（Helix 无 CodeLens UI） |
 | Semantic tokens 默认关闭 | Zed、Neovim、Helix | 按上文 Setup notes 打开客户端设置（Zed `semantic_tokens: "combined"`；Neovim treesitter/semantic-tokens 插件；Helix `editor.semantic-tokens`） | 已按客户端记录在本页 — 无独立 issue |
 | 次要 server 诊断可能与 tsserver 噪声叠加 | 全部 | 收窄 `package.json#nudo.analysis.include` / `exclude`，或 `mode: "directives"` — 完整步骤见 [共存](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | 配置问题，非 bug — 跟踪文档即 [共存配方](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
 | 文档中的文件检测滞后于 analysis-mode 默认 | 文档 | 以 `package.json#nudo.analysis` + [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) 为准 | 文档同步 — 本页 + PUBLIC_API.md |
@@ -183,7 +183,7 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 | Hover 首行 + 契约展示 | `interfaceTierOf` + `getHoverAtPosition` |
 | Inlay `interfaceSource` / `derived` | `collectAbsInlays` + `interfaceTierOf` |
 | Semantic token modifiers | `buildSemanticTokens` + `interfaceTierOf` |
-| Agent `nudo.check` / `nudo.hover` / `nudo.interface` / infer/whatIf/trace | 同一 service/core 入口 + buffer-aware `loadModule`（E5 `AGENT_TOOL_SOURCES`）；工具错误带 `isError: true` |
+| Agent `nudo.check` / `nudo.hover` / `nudo.contract` / infer/whatIf/trace | 同一 service/core 入口 + buffer-aware `loadModule`（E5 `AGENT_TOOL_SOURCES`）；工具错误带 `isError: true` |
 | CLI `nudo check` / `nudo contract` | 同一 service/core 入口 |
 | executeCommand `nudo.*` ↔ slash `nudo/…` | 同一 dispatch 表；清单钉在 `packages/lsp/PUBLIC_API.md` + `public-api-surface.test.ts` |
 
