@@ -1,5 +1,8 @@
 # nudo check — 精化门禁
 
+> CLI 语义权威：[`design-cli-semantics.md`](./design-cli-semantics.md)（本分支已实现 CLI verbs + L2 + any≠unknown 展示）。  
+> 产品命令面：`check` / `test` / `contract` / `export` / `health` / `env harvest`；观察无独立动词。
+
 > **类型即计算**：检查的是 Abs 上的 Pred 蕴含，不是 TS 式「类型是否匹配」。
 > 精化会进入 Abs 并参与代数；dts 只是 TS 生态兼容侧信道。
 
@@ -8,14 +11,38 @@
 对 JS 源码做代数分析（**严格 Abs-only**：CLI 不再叠加 TypeValue 外延诊断）：
 
 1. 每个顶层函数归纳**符号 Abs**（shape × term × pred × conf）
-2. 扫描调用点 / 返回值，检查是否满足 `@nudo:refine` 声明
-3. 输出 **Nudo 原生报告**：`signatures` + `actual ⊭ expected`
+2. **L1**：扫描调用点 / 返回值，检查是否满足 `@nudo:refine` / 侧车声明
+3. **L2**：入口（export / CJS 导出）函数上未消化的 may-throw → 默认 **error**
+4. 输出 **Nudo 原生报告**：`signatures`（成功也打印）+ `actual ⊭ expected`
 
 ```bash
 pnpm run check path/to/file.js
+# 或
+pnpm run nudo -- check path/to/file.js
 ```
 
 退出码：有 `error` → `1`（CI 可直接当门禁）。
+
+### any ≠ unknown（展示契约）
+
+| | `any` | `unknown` |
+|---|-------|-----------|
+| 含义 | 无约束：入口未标注参数的默认契约 | 推导失败 / 引擎无信息 |
+| 谁负责 | 开发者细化（refine / guard / 窄化） | Nudo 修推导 / 补 env·mock |
+| CLI 展示 | `f(user: any) => any` | 签名或 case 上出现 `unknown` + conf 标注 |
+
+**禁止**把入口无约束参数打印或叙述成 `unknown`。
+
+### 义务分层
+
+| 层 | 来源 | check 行为 |
+|----|------|------------|
+| **L1 显式契约** | `*.nudo.js` / `@nudo:refine` / 侧车；调用点证据可作 domain | 违例 → **error** |
+| **L2 默认 JS 契约** | 未显式收窄时的入口运行时语义 | 入口未消化 may-throw → **error**（`nudo:entry-may-throw`） |
+
+无显式契约 ≠ 无契约：契约退化为 JS 运行时边界——入口参数为 `any`，对 `any` 的危险操作进入 throws 域；导出函数不得静默携带未声明、未捕获的 throws。**不**从 body AST 发明必填 slot（C0 仍成立）。
+
+L2 **只执法入口**（export / `exports.x` / `module.exports`）；内部 helper 允许 throw，check 默认不因内部 may-throw 失败。
 
 ## 报告格式（非 TS 换皮）
 
@@ -35,7 +62,8 @@ pnpm run check path/to/file.js
 | `nudo:no-signature` | 无法归纳符号 Abs |
 | `nudo:opaque-result` / `nudo:eval-error` | 求值不透明 / 求值抛错 |
 | `nudo:recursion-truncated` | 递归预算截断（结果 widen） |
-| `nudo:may-throw` / `nudo:unreachable` | 路径可能抛出 / 不可达代码 |
+| **`nudo:entry-may-throw`** | **L2：入口未消化 may-throw（默认 error）** |
+| `nudo:may-throw` / `nudo:unreachable` | 路径可能抛出（case 线索 / warning）/ 不可达代码 |
 
 ```
 nudo check  src/validators.js
@@ -43,7 +71,7 @@ FAILED
   1 error · 0 warning · 0 info · 1 fn
 
 signatures
-  needsPositive(x)  number  #path
+  needsPositive(x: number) => number
 
 issues
   [ERROR L12 needsPositive] needsPositive[x]: 实参 ⊭ 前置  (nudo:constraint-violated)
@@ -52,9 +80,43 @@ issues
       → 改用满足 x > 0 的值，或放宽 x 的前置
 ```
 
-- **signatures**：默认一行摘要；`--verbose` 才展开 `term:` / `pred:` / `conf:`
+L2 入口 may-throw 示意：
+
+```
+nudo check  getName.js
+signatures
+  getName(user: any) => any  throws TypeError
+
+issues
+  [ERROR getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or declare/catch throws
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
+```
+
+- **signatures**：默认一行摘要且**成功也打印**；`--verbose` 才展开 `term:` / `pred:` / `conf:`；代数面用 `check --abs`
 - **actual / expected**：违例是蕴含失败，不是 assignability
+- **throws 域**上屏；入口无约束参数显示 **`any`**
 - `--json` 自动带 `signatures[].abs` 与 `summary`
+
+### 旗标
+
+| 旗标 | 作用 |
+|------|------|
+| `--watch` / `-w` | 持续重跑（原一级 `nudo watch`） |
+| `--json` | CheckJson v1（单文件） |
+| `--verbose` | 展开 Abs 签名 |
+| `--abs` | 代数 term/pred/conf 观察（原 `nudo types`） |
+| `--from <paths…>` | 使用处调用记录（原 `--callsites`） |
+| `--ignore-throws <names>` | L2：忽略这些入口 may-throw 类型名（`TypeError,RangeError`） |
+| `--entry-throws <mode>` | L2：`error` \| `warning` \| `off`（默认 `error`） |
+
+`--ignore-throws` / `package.json#nudo.check.ignoreThrows` **只**作用于 L2 入口 throws，**不**吞 L1 契约违例。
+
+```jsonc
+// package.json
+"nudo": { "check": { "ignoreThrows": ["TypeError"] } }
+```
 
 ## 能扫描什么
 
@@ -77,6 +139,8 @@ issues
 
 不用 JSDoc `@param`/`@return`：那是类型注解。  
 不叫 requires：那只是「校验挡板」；refine 表示 Pred 进入 Abs，参与代数（x>0 ⇒ x+1>1）。
+
+L2 入口 throws **不是** shape 必填义务，而是运行时效果门禁；与 C0（不从 body 发明 slot）正交。
 
 ```js
 /// @nudo:import { delay, percent } from "./delay.nudo.js"
@@ -139,16 +203,16 @@ pct(150);           // error
 let a = { x: 1 };
 a = { y: 2 };       // error: missing slot x（nudo:assign-mismatch）
 
-// ✓ 传参结构：义务来自显式 shape 契约（C0.1：不从 body 扫 slot）
+// ✓ 传参结构：L1 义务来自显式 shape 契约（C0.1：不从 body 扫 slot）
 /// @nudo:import { xy } from "./shapes.nudo.js"
 /**
  * @nudo:refine p xy
  */
 function readXY(p) { return p.x + p.y; }
 readXY({ x: 1 });   // error: missing field p.y（nudo:constraint-violated）
-// 无 refine 时同调用不报（调用点事实 / any）
+// 无 refine 时同调用不报 shape 缺字段（调用点事实 / any）；入口 may-throw 仍属 L2
 
-// ✗ if 分支不是精化；无 refine 则不检查
+// ✗ if 分支不是精化；无 refine 则不检查该精化
 function clamp(n, lo, hi) {
   if (n < lo) return lo;
   if (n > hi) return hi;
@@ -159,6 +223,18 @@ clamp(-5, 0, 10);   // ok
 
 示例目录：`docs/examples/constraints/`
 
+## 观察落在哪里（无观察动词）
+
+| 想知道什么 | 跑什么 |
+|------------|--------|
+| 入口签名 / any / unknown / throws | `nudo check <path>`（默认打印 signatures） |
+| 逐调用点真值 / 窄化结果 | `nudo test <path>`（打印全部 case，含合成 `call@`/`entry@`） |
+| 使用处实参形态 | `nudo check/test/contract --from <paths…>` |
+| 代数面 term/pred/conf | `nudo check --abs` |
+| 机器可读 | `nudo check --json` / `nudo test --json` |
+| 契约打印/draft/emit | `nudo contract` |
+| dts / guard / zod 投影 | `nudo export --format …` |
+
 ## 金标与精度（CI）
 
 | 门禁 | 文件 | 要求 |
@@ -167,6 +243,8 @@ clamp(-5, 0, 10);   // ok
 | **shape 精化** | `check-shape-gold.test.ts` | 字段 / 可选 / 边界 |
 | **case ⊆ refine** | `check-case-consistency.test.ts` | 见证 ⊆ 定义域 |
 | **真实包精度** | `check-real-commander.test.ts` / `check-real-packages.test.ts` | 10 个真实包上**零** error 级误报（`constraint-violated` / `assign-mismatch` / `arg-structure` 三类）：commander / escape-string-regexp / is-plain-obj / debug / yocto-queue / p-limit / kleur / eventemitter3 / ms / lodash |
+
+L2 开启后，any-param / 入口 may-throw 相关金标需按 L2 off/on **分套件**；本分支 zero-FP 基线以 L2 off 叙述保留，L2 on 期望不在此文档虚构。
 
 ```bash
 # 真实包扫描报告
@@ -180,10 +258,11 @@ npx tsx scripts/scan-real-packages.ts commander
 |---|---|---|
 | 赋值/结构 | 完备（显式注解下） | 部分：推断 Abs 上的 leq（`nudo:assign-mismatch`）+ 显式 shape 契约；HOF `arg-structure` 仅回调形态；宽度子类型无 excess 检查 |
 | 约束（`x>0`）+ 字面量调用 | 做不到 | **做** |
-| 报告形态 | TS 诊断 | Abs / actual ⊭ expected |
+| 入口 `any.prop` | 通常不报 | 进入 **throws 域**；L2 可 error |
+| 报告形态 | TS 诊断 | Abs / actual ⊭ expected；成功仍打印 signatures |
 | 零注解 JS | 需 checkJs | 默认 |
 
-**建议**：TS 大仓继续 tsc；纯 JS / 渐进迁移 / Agent 流水线用 `nudo check` 作约束门禁。dts 生成可选，用于生态兼容。
+**建议**：TS 大仓继续 tsc；纯 JS / 渐进迁移 / Agent 流水线用 `nudo check` 作约束门禁。dts 经 `nudo export` 生成，用于生态兼容。
 
 ## `--json` 契约（v1）
 
@@ -222,11 +301,11 @@ pnpm run check file.js --json
 | LSP command | `nudo.check`（`{ file, source?, format? }`） |
 | LSP request | `nudo/check` |
 | Hover Abs | `nudo.hover` / `nudo/hover`（`{ file, line, column, includeInlays? }`） |
-| Infer Abs | `nudo.infer` / `nudo/infer`（`{ file, source?, format?, functions? }`）→ InferJson v1 |
+| Case / InferJson | `nudo.infer` / `nudo/infer`（服务 API 名，对应 CLI `nudo test --json`） |
 
 `format: "json"` 只返回 CheckJson / InferJson；缺省为人类摘要 + JSON。  
 `nudo.hover` 返回无损 `abs` / `absMultiline` / `intension`，`ext` 仅作对照。  
-`nudo.infer` 与 CLI `infer --json` 同构；`functions: ["scale"]` 可过滤。
+服务层 `nudo.infer` 与 CLI **`test --json`** 同构（旧 `infer --json` 已 deprecated）；`functions: ["scale"]` 可过滤。
 
 ## 实现入口
 
@@ -236,12 +315,13 @@ pnpm run check file.js --json
 | 结构可赋值 | `packages/core/src/algebra/leq.ts`（`leqAbs`） |
 | 金标 | `packages/core/src/algebra/__tests__/check-recall-gold.test.ts` |
 | CI 用法 | `docs/ci-nudo-check.md` |
-| CLI | `nudo check` |
+| CLI | `nudo check`（`packages/cli/src/index.ts`） |
+| case 报告 | `nudo test`（`packages/cli/src/run-test.ts`） |
 
-## `nudo infer --json` 契约（v1）
+## `nudo test --json` 契约（v1，原 infer-json）
 
 ```bash
-pnpm run infer file.js --json
+pnpm run test:cli file.js --json
 ```
 
 ```jsonc
@@ -255,7 +335,7 @@ pnpm run infer file.js --json
     "entryOnly": true,
     "cases": [{
       "name": "entry@L1",
-      "args": ["unknown"],
+      "args": ["any"],
       "result": "number | string",
       "throws": null,
       "source": null,
@@ -273,7 +353,7 @@ pnpm run infer file.js --json
 ```
 
 - `version: 1` — 字段只增不改语义  
-- **ext**：`args` / `result` 为 `formatShape(Abs)` 字符串（有损兼容）  
+- **ext**：`args` / `result` 为 `formatShape(Abs)` 字符串（有损兼容）；入口无约束参数序列化为 **`any`**  
 - **intension**：无损 Abs（`abs` / `term` / `pred` / `conf`）  
 - 契约测试：`packages/service/src/__tests__/infer-json.test.ts`  
 - 实现：`packages/service/src/infer-json.ts`（`serializeInferJson`）

@@ -1,3 +1,5 @@
+<!-- DESIGN-CONFLICT:cli-semantics → docs/design-cli-semantics.md §2 / design-cli-semantics-conflicts.md
+     C-ANY: unknown/any 同格（zh 镜像）。 -->
 ---
 sidebar_position: 1
 description: "@nudojs/core API —— Abs 类型体系（shape × term × pred × conf）、构造器、可赋值性与格式化、运算符语义、模板字符串、mock 帮助函数与 Environment。"
@@ -29,7 +31,10 @@ core 包提供 Abs 类型体系、运算符语义以及环境抽象，是 Nudo �
 | `brand` | 名义类实例（如 `MemoryStore`、`Error`） |
 | `sum` | 成员 Abs 的联合 |
 | `never` | 空集（不可达） |
-| `unknown` / `any` | 全集 / 任意值 |
+| `any` | 无约束 JS 值并集 —— 未标注入口参数的默认；开发者负责细化 |
+| `unknown` | 推导失败 / 引擎无信息 —— **不是** `any` 的同义词；Nudo 负责修 |
+
+详见 [Type Values — any vs unknown](../concepts/type-values.md#any-vs-unknown)。
 
 ---
 
@@ -55,6 +60,9 @@ numVar(id: string, pred?, conf?): Abs
 
 // 常量
 never: Abs            // { shape: { k: "never" }, conf: "exact" }
+// any / unknown 是不同产品概念：
+//   any     —— 无约束（未标注入口的默认）
+//   unknown —— 推导失败（引擎债），conf 通常为 partial/opaque
 unknown: Abs          // { shape: { k: "unknown" }, conf: "partial" }
 
 // 通用构造器（pred=true 会被丢弃）

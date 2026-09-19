@@ -8,7 +8,7 @@ Nudo 不是「另一个类型系统」，是 **少写一门类型语言**：契�
 | **结构缺属性** `greet({id})` | **报**（shape 契约 `@nudo:refine u user`） | 报（需 `interface User`） |
 | **excess property** | ok（宽度子类型） | **报**（对象字面量） |
 | **赋值缺字段** | **报** `nudo:assign-mismatch` | 报（inferred 形状） |
-| 零契约 JS | 不发明义务（调用点事实 / `any`） | 需 checkJs 或迁 TS |
+| 零契约 JS | 不发明 **shape** 义务（调用点事实 / `any`）；入口 may-throw 属 L2 | 需 checkJs 或迁 TS |
 | 无契约 `x+1` | `number \| string`（真实 JS） | 常被钉成 `number` |
 | 报告 | Abs：`actual ⊭ expected` | TS 诊断文案 |
 | 形状契约 | `shape({...})` 模板 / 侧车 | `interface` / `type` |
@@ -40,4 +40,5 @@ pnpm run verify:examples   # 验证两侧命令与期望退出码（见 [../READ
   （模板一行 `number().gt(0)`）在调用点报 `actual: 0 #exact ⊭ ms > 0`。
 
 价值不在「少打字」，而在 **不用维护第二份真相**（契约只写一次，参与代数）。
-无契约时 Nudo **不**从 body 静态发明必填字段（与「有 interface 才报」的 TS 同侧）。
+无契约时 Nudo **不**从 body 静态发明必填字段（与「有 interface 才报」的 TS 同侧）；
+入口无约束参数显示为 **`any`**，不是 `unknown`。

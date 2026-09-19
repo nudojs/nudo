@@ -21,7 +21,14 @@ Nudo is built to **replace TypeScript as the day-to-day type gate for JavaScript
 | **CI gate** | `tsc --noEmit` | `nudo check` (`actual ⊭ expected` on Abs) |
 | **Ecosystem exit** | `.d.ts` is the model | `.d.ts` is a **lossy projection** (`absToTSType`) — not the source of truth |
 
-The goal is not “TS syntax on JS.” The goal is: **JS stays JS**, obligations come from explicit interfaces or call-site facts, and the engine reasons by evaluation rather than by a second type language.
+The goal is not “TS syntax on JS.” The goal is: **JS stays JS**, obligations come from explicit contracts (L1) plus the JS runtime export boundary (L2 entry throws), and the engine reasons by evaluation rather than by a second type language.
+
+| TS | Nudo |
+|----|------|
+| Types written in source / IDE hover | Day 0: `nudo check` prints signatures; `nudo test` prints cases |
+| `tsc --noEmit` | `nudo check` (still prints signatures on success) |
+| `any.prop` does not error | Dangerous ops on `any` at entry enter the **throws** domain; L2 can error |
+| No `tsc show` | **No** `nudo show` / `nudo infer` observation verb |
 
 ## When Nudo is the right replacement
 
@@ -29,7 +36,7 @@ Prefer Nudo when **all** of these are true:
 
 1. **The package is JavaScript-first.** You do not want a second IR (`.ts` + annotations) just to get types.
 2. **Behavior beats declared shape.** Branching, string algebra, loops, and refinements matter more than “does this object structurally match an interface.”
-3. **Contracts are product requirements.** You want `nudo check` in CI: bounds, shape obligations, HOF arity — enforced from sidecars, not from body AST scans.
+3. **Contracts are product requirements.** You want `nudo check` in CI: L1 bounds/shape obligations from sidecars + L2 entry may-throw on exports — not body AST slot scans.
 4. **You refuse a second type language.** Contracts are JSON-like builders, not `interface` / mapped / conditional types.
 
 Typical fits: tooling CLIs, script layers, plugin hosts, data pipelines in plain JS, repos that already have rich tests (call-site mining works well there).
@@ -52,10 +59,11 @@ For a **JS package**, the serious-replacement checklist is:
 | Capability | Nudo path |
 |---|---|
 | Open a normal `.js` file, get hover / inlay | LSP + `package.json#nudo.analysis.mode` (default `exports`; `all` / `directives` available) |
-| CI type gate | `nudo check` — exit 1 on `error` issues |
-| Explicit contracts | `*.nudo.js` + `@nudo:refine`; handwritten = obligation |
-| Generated facts | `nudo interface --emit` → `@generated` segments (drift, not silent rewrites of obligations) |
-| npm / editor types | `nudo emit` / infer `--dts` — projection only |
+| Day-0 observation | `nudo check` signatures + `nudo test` cases (no `infer` verb) |
+| CI type gate | `nudo check` — exit 1 on error issues (L1 + non-ignored L2) |
+| Explicit contracts | `*.nudo.js` + `@nudo:refine`; handwritten = L1 obligation |
+| Generated facts | `nudo contract --emit` → `@generated` segments (drift, not silent rewrites of obligations) |
+| npm / editor types | `nudo export --format dts` — one-way projection only |
 | Performance story | `benchmark` + `benchmark:gate`：case 集规模一致；exact 回退超过 1-case 抖动 / unknown·error 上升 / 逐 case 顺序变差 / avg > 基线 3.0× → fail |
 
 What is **not** claimed: one-click migration of a large TS monorepo; full structural typing as the primary model; a second IR.

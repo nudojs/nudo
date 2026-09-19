@@ -1,11 +1,11 @@
 ---
 sidebar_position: 2
-description: "Observe execution and enforce sidecar contracts on a plain JavaScript file — npx nudojs infer / check."
+description: "Gate signatures and cases on a plain JavaScript file — npx nudojs check / test."
 ---
 
 # Quick Start
 
-**You'll leave with:** call-site observations from plain JS, a sidecar contract, and a `nudo check` failure you can read.
+**You'll leave with:** signatures from `nudo check`, cases from `nudo test`, a sidecar contract, and a `nudo check` failure you can read.
 
 Prefer the browser? Open the [Playground](/playground).
 
@@ -31,22 +31,24 @@ No annotations. Call sites are evidence.
 ## 2. Observe (Day 0)
 
 ```bash
-npx nudojs infer calc.js
+npx nudojs check calc.js
+npx nudojs test calc.js
+```
+
+```text
+signatures
+  formatName(first: any, last: any) => any
+  scale(x: any) => any
 ```
 
 ```text
 === formatName ===
-
-Case "call@L9": ("Ada", "Lovelace") => "Ada Lovelace"
-Combined: `Ada Lovelace`
-
+  call@L9  ("Ada", "Lovelace") => "Ada Lovelace"
 === scale ===
-
-Case "call@L0": (5) => 6  #exact
-Combined: number
+  call@L12  (5) => 6
 ```
 
-Nudo executed the functions with the arguments it actually saw. A generalized view also reports algebra on intermediates (`term` / `pred` / `conf`) — that is the observability layer, not a second type language.
+Nudo executed the functions with the arguments it actually saw. Unconstrained entry params display as **`any`** (not `unknown`). There is no `nudo infer` observation verb — observation is `check` signatures + `test` cases + IDE hover.
 
 ## 3. Add an explicit contract (Day 1)
 
@@ -76,20 +78,21 @@ Add a bad call to see it:
 scale(0); // fails the sidecar — x must be > 0
 ```
 
-`if` guards are **not** refinements. Contracts come only from sidecars / `@nudo:refine` / `@nudo:interface`.
+`if` guards are **not** refinements. Explicit contracts come from sidecars / `@nudo:refine` / `@nudo:interface`. Without them, L2 still gates undigested may-throw on exports (entry params are `any`).
 
 ## Options
 
-- **`--dts`** — emit a lossy `.d.ts` projection for ecosystem bridges:
+- **`.d.ts` projection** — ecosystem bridge (one-way, lossy; Abs is the truth):
 
   ```bash
-  npx nudojs infer calc.js --dts
+  npx nudojs export calc.js --format dts --out dist/types
   ```
 
-- **Watch mode**
+- **Watch mode** (flag, not a verb)
 
   ```bash
-  npx nudojs watch src/ --dts
+  npx nudojs check src/ --watch
+  npx nudojs test src/ --watch
   ```
 
 ## Debug witnesses (optional)

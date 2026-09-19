@@ -71,7 +71,7 @@ function upper(s) {
 
 CodeLens faces the **interface tier** first (design §8):
 
-- **● interface / handwritten|generated|implicit** — effective contract source for each exported function; click prints the same surface as `nudo interface`
+- **● interface / handwritten|generated|implicit** — effective contract source for each exported function; click prints the same surface as `nudo contract`
 - **⚡ persist interface** / **↻ update interface** — freeze call-site domains into the `*.nudo.js` sidecar
 - **● / ○ case "name"** — debug sub-layer; click selects the active case for type replay
 
@@ -136,7 +136,7 @@ You can also invoke the command palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and run
 
 | Palette title | Command | Behavior |
 |---------------|---------|----------|
-| Nudo: Show Interface | `nudo.interface` | Print tiers in the **Nudo** output channel (same as `nudo interface`) |
+| Nudo: Show Interface | `nudo.interface` | Print tiers in the **Nudo** output channel (same as `nudo contract`) |
 | Nudo: Draft Interface (code-first) | `nudo.interface.draft` | Preview draft in Output; optional **Write draft file** → `*.nudo.draft.js` / `*.nudo.draft.ts` (write is fail-closed without a project root) |
 | Nudo: Persist Interface (@generated) | `nudo.interfaceEmit` | **Dry-run first** (`dryRun: true`, no write) → Output preview → confirm → real sidecar write. CodeLens persist/update uses the same confirm flow |
 

@@ -1,10 +1,13 @@
+// IMPLEMENTED:cli-semantics — L2 入口 may-throw（nudo:entry-may-throw）+
+//   --ignore-throws / entryThrows；C0 body-slot 义务禁令仍正交成立。
 /**
  * nudo check 门禁：对源码跑代数分析，产出 error/warning。
  *
  * 报告是 **Nudo 原生格式**（Abs 优先），不是 TS 诊断的换皮：
- * - 签名表给出无损 Abs（shape/term/pred/conf）
- * - 违例写清 actual ⊭ expected（实参 Abs vs 前置 Pred）
- * - dts/TS 兼容不是本报告的职责
+ * - 签名表给出无损 Abs（shape/term/pred/conf）+ throws 域
+ * - L1：显式契约 / 调用点证据违例
+ * - L2：export/default/CJS 入口未消化 may-throw → nudo:entry-may-throw
+ * - 违例写清 actual ⊭ expected；成功也打印 signatures
  */
 
 import { parseSource as parse } from "./parse-source.ts";
@@ -59,10 +62,18 @@ import { boolLit, litValue, numLit, strLit } from "./abs.ts";
 import type { Abs } from "./abs.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { pTrue, predToString } from "./pred.ts";
-import { formatAbs, formatAbsMultiline } from "./format.ts";
+import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
 import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
 import { absUnknown, listTopFunctions, scanLiteralCalls } from "./scan.ts";
+import { analyzeFnFull } from "./ast-eval.ts";
+import {
+  setMayThrowCollector,
+  filterIgnoredThrows,
+  mayThrowEffectsToAbs,
+  formatThrowsAbs,
+  type MayThrowEffect,
+} from "./exec/may-throw.ts";
 
 /** C4.1：case 见证的解构字段投影（与 scan.projectArgField 同口径） */
 function projectCaseArgField(arg: Abs, field: string): Abs | undefined {
@@ -146,6 +157,7 @@ function cloneCheckReport(r: CheckReport): CheckReport {
     signatures: r.signatures.map((s) => ({
       ...s,
       params: [...s.params],
+      ...(s.paramTypes ? { paramTypes: [...s.paramTypes] } : {}),
     })),
     summary: { ...r.summary },
   };
@@ -168,6 +180,8 @@ function checkMemoKey(
     deps.fp,
     sidecarFp ?? "-",
     identityOpts.autoBind === false ? "ab0" : "ab1",
+    identityOpts.entryThrows ?? "error",
+    (identityOpts.ignoreThrows ?? []).join(",") || "-",
   ].join("|");
 }
 
@@ -215,6 +229,13 @@ export type CheckOptions = {
    * （§2.2「整体关闭」承诺覆盖 CI 门禁，不只是打印路径）。
    */
   autoBind?: boolean;
+  /**
+   * L2 入口 may-throw 执法档（design-cli-semantics §3）。
+   * error（默认）| warning | off。仅作用于 export/default/CJS 入口函数。
+   */
+  entryThrows?: "error" | "warning" | "off";
+  /** L2 --ignore-throws：按 throws 类型名过滤；不吞 L1 */
+  ignoreThrows?: string[];
 };
 
 /**
@@ -377,6 +398,10 @@ function checkSourceInner(
   // ambient 侧车存在时预取本地导出表（一次 parse）：侧车同名绑定只落本地 named export
   const exportedNames =
     sidecarFp !== undefined ? localNamedExports(source) : undefined;
+  // L2：模块边界入口表（export / default / CJS exports）— 只执法这些函数
+  const entryNames = localNamedExports(source);
+  const entryThrowsMode = opts.entryThrows ?? "error";
+  const ignoreThrows = opts.ignoreThrows;
   // T10a：generated 事实快照的 drift 候选（每函数级，统一在拿到 varAbs 后判定）
   const driftCandidates: DriftCandidate[] = [];
   // generalize L0 用调用方原始 loadModule 身份；opts 可能是 per-call I/O wrapper
@@ -422,15 +447,49 @@ function checkSourceInner(
       });
       continue;
     }
+    const isEntry = entryNames.has(name) || entryNames.has("default") && isDefaultExportName(source, name);
+    // L2 入口 throws：any/nullish 危险操作的效果（design-cli-semantics §3）
+    let throwsDisplay: string | undefined;
+    if (isEntry && entryThrowsMode !== "off") {
+      const effects = collectEntryMayThrows(source, name, g, file, phi);
+      const remaining = filterIgnoredThrows(effects, ignoreThrows);
+      const throwsAbs = mayThrowEffectsToAbs(remaining);
+      throwsDisplay = formatThrowsAbs(throwsAbs);
+      if (throwsDisplay && remaining.length > 0) {
+        const first = remaining[0]!;
+        issues.push({
+          severity: entryThrowsMode === "warning" ? "warning" : "error",
+          code: "nudo:entry-may-throw",
+          message: `${name} (export): may throw ${throwsDisplay}`,
+          actual: `${formatEntrySigLine(name, g, throwsDisplay)}`,
+          expected: "entry total, or declare/catch throws",
+          suggestion: first.cause
+            ? `${first.cause} → refine / guard / try-catch / --ignore-throws ${first.kind}`
+            : `refine / guard / try-catch / --ignore-throws ${first.kind}`,
+          fn: name,
+        });
+      }
+    } else if (isEntry) {
+      // 展示层仍上屏 throws（off 只关执法，不藏事实）
+      const effects = collectEntryMayThrows(source, name, g, file, phi);
+      throwsDisplay = formatThrowsAbs(mayThrowEffectsToAbs(effects));
+    }
+
     // L0 命中时 symbolic 是稳定对象：格式化结果可 WeakMap 复用
     const fmt = formatSigCached(g.symbolic, name);
+    const paramTypes = g.typeParams.map((t) => formatShape(t.value));
     signatures.push({
       name,
       params: g.params,
+      paramTypes,
       abs: g.symbolic,
-      display: fmt.display,
+      display: throwsDisplay
+        ? `${fmt.display} throws ${throwsDisplay}`
+        : fmt.display,
       detail: fmt.detail,
       conf: g.symbolic.conf,
+      ...(throwsDisplay ? { throws: throwsDisplay } : {}),
+      ...(isEntry ? { entry: true } : {}),
     });
 
     // 有效契约（源码 @nudo:refine/@nudo:interface ∪ 侧车同名手写绑定）：
@@ -629,6 +688,56 @@ function checkSourceInner(
 
 /** L0 命中的 symbolic 对象稳定：display/detail 按 Abs 身份缓存 */
 const sigFormatCache = new WeakMap<Abs, { display: string; detail: string }>();
+
+/** export default 是否绑定到该本地函数名 */
+function isDefaultExportName(source: string, fnName: string): boolean {
+  // export default function fn / export default fn / export default () =>
+  const re = new RegExp(
+    `export\\s+default\\s+(?:async\\s+)?(?:function\\s+${fnName}\\b|${fnName}\\b)`,
+  );
+  return re.test(source);
+}
+
+function formatEntrySigLine(name: string, g: PolyFn, throws: string): string {
+  const ps = g.params
+    .map((p, i) => `${p}: ${formatShape(g.typeParams[i]?.value ?? absUnknown)}`)
+    .join(", ");
+  return `${name}(${ps}) => ${formatShape(g.symbolic)}    throws ${throws}`;
+}
+
+/**
+ * 入口 L2 may-throw 收集：用 any 入口实参求值函数体，
+ * 捕获 any/nullish 成员访问等 throws 效果；显式 throw 也进 throws 域。
+ */
+function collectEntryMayThrows(
+  source: string,
+  fnName: string,
+  g: PolyFn,
+  file: ReturnType<typeof parse>,
+  phi: Phi,
+): MayThrowEffect[] {
+  const effects: MayThrowEffect[] = [];
+  const entryArgs = g.typeParams.map((t) => t.value);
+  setMayThrowCollector((e) => effects.push(e));
+  try {
+    const full = analyzeFnFull(source, fnName, entryArgs, { phi, file });
+    // 显式 throw（未被 try 消化）也进 L2
+    if (full.throws && full.throws.shape.k !== "never") {
+      const tName = formatThrowsAbs(full.throws) ?? "Error";
+      if (!effects.some((e) => e.kind === tName && e.cause.startsWith("throw"))) {
+        effects.push({
+          kind: tName === "Error" && full.throws.term?.op === "lit" ? "Error" : tName,
+          cause: `throw ${formatShape(full.throws)}`,
+        });
+      }
+    }
+  } catch {
+    /* 求值失败：已有 nudo:eval-error；L2 不叠报 */
+  } finally {
+    setMayThrowCollector(null);
+  }
+  return effects;
+}
 
 function formatSigCached(absVal: Abs, name: string): { display: string; detail: string } {
   const hit = sigFormatCache.get(absVal);

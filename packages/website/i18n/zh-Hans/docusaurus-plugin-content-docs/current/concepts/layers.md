@@ -12,23 +12,24 @@ Nudo 的设计是：你只学当下需要的那一层。
 
 ## Day 0 — 零概念
 
-写普通 JavaScript，跑推断：
+写普通 JavaScript，跑 Day-0 两条命令：
 
 ```bash
-npx nudojs infer ./src/app.js
+npx nudojs check ./src/app.js   # 签名 + L2 入口 throws
+npx nudojs test ./src/app.js    # 全部推断用例
 ```
 
-得到调用点 case：具体输入 → 推断结果。无注解、无配置。
+`check` 成功时也打印 signatures。无约束入口参数显示为 `any`。`test` 打印合成 `call@` / `entry@` 用例 —— 这就是调用点观察面。无注解、无配置。
 
 用装了 Nudo 扩展的 VS Code 打开同一文件，可获得 hover 与 inlay。
 
-**只想给既有 JS 补类型的话，停在这里即可。**
+**Day 0 要点：** 从 `check` 签名与 `test` 用例读类型。没有 `nudo infer` 观察动词。
 
 > 项目级可把 `package.json#nudo.analysis.mode` 设为 `all` 或 `directives`；**出厂默认是 `exports`**（含 export / 侧车 / 指令的文件进 IDE 分析）。
 
 ## Day 1 — 侧车契约
 
-需要**义务**（CI 门禁）时，在源文件旁加侧车：
+需要**更强义务**（CI 显式契约）时，在源文件旁加侧车：
 
 ```javascript
 // math.js
@@ -43,18 +44,19 @@ export const add2 = number().gt(0);
 ```
 
 ```bash
+npx nudojs contract --draft ./src/math.js   # 可选：代码优先草稿
 npx nudojs check ./src/math.js
 ```
 
-契约只来自：
-- 显式侧车（`*.nudo.js`）/ `@nudo:refine`（约束构建器模板）
-- 分析器观察到的调用点事实
+显式契约只来自：
+- 侧车（`*.nudo.js`）/ `@nudo:refine` / `@nudo:interface`
+- 分析器观察到的调用点事实（域证据）
 
-无证据 → `any`/`unknown`。Nudo **不会**从 body AST 扫描发明必填 slot。
+无显式契约时，契约退化为 JS 运行时边界：入口参数为 `any`，导出函数不得携带未消化 may-throw（L2）。Nudo **不会**从 body AST 扫描发明必填 slot。
 
 ## 进阶 — Abs
 
-内部类型是 **Abs**（`shape × term × pred × conf`）：类型是可计算的值。`nudo check --verbose` 会展示无损 Abs 面。日常开发很少需要直接接触。
+内部类型是 **Abs**（`shape × term × pred × conf`）：类型是可计算的值。`nudo check --abs` 会展示无损 Abs 面。日常开发很少需要直接接触。
 
 ## 下一步
 

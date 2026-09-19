@@ -1,77 +1,132 @@
 ---
 sidebar_position: 1
-description: "用 nudo 命令行驱动类型推断：对文件或目录运行 infer、把调用点用例固化为指令、在 CI 中做漂移门禁。"
+description: "从终端驱动 Nudo：check 签名、test 用例、contract 契约、export 投影 —— 六个一级动词。"
 ---
 
 # CLI 使用指南
 
-`nudo` CLI 是在 `.js`、`.mjs`、`.ts` 文件上运行类型推断的主要方式。可通过全局安装或 `npx` 使用：
+`nudo` CLI 是对 `.js` / `.mjs` / `.ts` 运行类型推断的产品命令面。全局安装或通过 `npx` 使用：
 
 ```bash
 npm install -g @nudojs/cli
-# or
+# 或
 pnpm add -g @nudojs/cli
 ```
 
-## `nudo infer`
-
-从单个文件推断类型——也可以一次推断目录下的全部推断目标。带 `@nudo:case` 指令的函数使用指令；其余函数也会被分析（全程序推断）——观察到的调用合成为 `call@L` 用例，没有任何调用证据的函数则产出 `entry@L` 用例，参数默认为 `unknown`。
-
-```bash
-nudo infer <file-or-directory>
-```
-
-目标可以是 `.js`、`.mjs` 或 `.ts` 文件（TypeScript 类型标注在 parser 层剥除，按 JS 语义推断），也可以是目录——目录会递归收集推断目标文件（`.js`/`.mjs`/`.ts`，排除 `.d.ts`），每个文件各自运行一次分析。`--json` 仅支持单文件。
-
-给定 `lib/`：
-
-```js
-// lib/slug.js
-export function slugify(title) {
-  return title.toLowerCase().replace(/ /g, "-");
-}
-console.log(slugify("Hello World"));
-```
-
-```ts
-// lib/note.ts
-export function note(text) {
-  return "note: " + text;
-}
-```
-
-```bash
-nudo infer lib/
-```
-
-输出——每个函数一个区块，文件按扫描顺序出现：
+## 一级动词
 
 ```text
-=== note ===
+nudo — JavaScript types, computed
 
-entry@L1: (unknown) => unknown
-# no call sites found; parameters default to unknown
-
-=== slugify ===
-
-call@L4: ("Hello World") => string
+  nudo check <path> [--watch|-w]   # 门禁契约 + 入口 throws；打印 signatures
+  nudo test <path> [--watch|-w]    # 报告全部推断用例；断言已声明期望
+  nudo contract <path>             # 契约：打印 / draft / emit 侧车接口
+  nudo export <path>               # 投影：dts / guard / zod
+  nudo health [paths]              # 体检：分析错误 + 固化漂移
+  nudo env harvest <pkg>           # 环境：@types → env 模块
 ```
 
-`slugify` 从顶层调用得到 `call@L4` 用例——`toLowerCase()` 折叠为字面量，`.replace(...)` 再拓宽为 `string`，因此结果为 `string`。当一个被分析文件从另一个文件导入函数时，被导入函数的用例会出现在 `--- <路径> (imported) ---` 区块中。
+**没有**观察动词：没有 `nudo infer` / `nudo show` / `nudo types` 一级命令，也**没有**一级 `nudo watch`。观察落在 `check` / `test` 的输出与 IDE hover。
+
+**Day 0：** `nudo check`（签名）与 `nudo test`（用例）。  
+**Day 1：** `nudo contract` + `nudo check`。  
+**生态：** `nudo export`。
+
+| 想知道什么 | 跑什么 |
+|------------|--------|
+| 入口签名 / any / unknown / throws | `nudo check <path>`（成功也打印 `signatures`） |
+| 逐调用点真值 / 窄化结果 | `nudo test <path>`（打印全部 case，含合成 `call@` / `entry@`） |
+| 使用处实参形态 | `nudo check` / `test` / `contract` `--from <paths…>` |
+| 代数面 term/pred/conf | `nudo check --abs`（或 `test --abs`） |
+| 机器可读 | `nudo check --json` / `nudo test --json` |
+| 交互 | IDE hover / inlay |
+
+---
+
+## `nudo check`
+
+门禁契约与入口 throws。成功与失败都会打印 signatures —— **不是静默**。
+
+```bash
+nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
+           [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
+```
+
+给定 `user.js`：
+
+```js
+export function getName(user) {
+  return user.name;
+}
+
+export function subtract(a, b) {
+  return a - b;
+}
+```
+
+```bash
+nudo check user.js
+```
+
+```text
+signatures
+  getName(user: any) => any  throws TypeError
+  subtract(a: any, b: any) => any
+issues
+  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+```
+
+无约束入口参数显示为 **`any`**。`unknown` 表示推导失败（引擎债）—— 绝不是无约束入口参数的默认值。
+
+### 义务分层
+
+| 层 | 来源 | `check` 行为 |
+|----|------|--------------|
+| **L1 显式** | `*.nudo.js` / `@nudo:refine` / `@nudo:interface`；调用点证据可作 domain | 违例 → **error** |
+| **L2 默认 JS 契约** | 未收窄时的运行时边界语义 | **入口/导出**函数未消化 may-throw → **error**（`nudo:entry-may-throw`） |
+
+无显式契约时，契约退化为 JS 运行时边界：入口参数为 `any`，对 `any`/可空值的操作可能抛，导出函数不得静默携带未声明、未捕获的 throws。
+
+**L2 只门禁入口/导出函数。** 内部 helper 允许 throw；`check` 不因内部 may-throw 失败。`try`/`catch` 与 refine 可清除路径上的 L2。
 
 ### 选项
 
-| 选项 | 描述 |
-|--------|-------------|
-| `--dts` | 在源文件旁生成 `.d.ts` 声明文件 |
-| `--loc` | 在输出中显示源码位置（file:line:column） |
-| `--json` | 以结构化 JSON 输出结果——仅支持单文件（示例见 [CLI 参考](../api/cli-reference.md#nudo-infer)） |
-| `--callsites <paths...>` | 从使用处文件（测试、示例、应用）挖掘真实参数形状并合成用例——参见[调用点发现](./callsite-discovery.md) |
-| `--emit-cases [mode]` | **仅调试**——把合成的用例写回源文件，成为 `@nudo:case` 指令——参见[固化 case 指令](#固化-case-指令) |
-| `--dry-run` | 搭配 `--emit-cases`：打印 unified diff 而不写盘 |
-| `--exit-on-diff` | 搭配 `--dry-run`：diff 非空时以退出码 `1` 结束 |
+| 选项 | 说明 |
+|------|------|
+| `--watch` / `-w` | 变更时重跑（watch 是**旗标**，不是动词） |
+| `--json` | 机器可读诊断 + 签名 |
+| `--verbose` | 额外诊断细节 |
+| `--abs` | 打印 Abs 代数面（term / pred / conf） |
+| `--from <paths…>` | 使用处文件（测试/应用），注入调用记录 —— 由 `--callsites` 更名 |
+| `--ignore-throws <names>` | 逗号分隔、可忽略的 L2 throws 类型（如 `TypeError`）；**不**吞 L1 契约违例 |
+| `--entry-throws error\|warning\|off` | L2 入口 may-throw 严重级别（默认 `error`） |
 
-### 示例
+`package.json` 配置：
+
+```json
+{
+  "nudo": {
+    "check": {
+      "ignoreThrows": ["TypeError"],
+      "entryThrows": "error"
+    }
+  }
+}
+```
+
+任一 error 级诊断（L1 或未 ignore 的 L2）时退出码为 `1`。
+
+`nudo check` 是 CI 门禁。优先于遗留观察命令。
+
+---
+
+## `nudo test`
+
+报告全部推断用例，并运行已声明的 `@nudo:case` 断言。
+
+```bash
+nudo test <path> [--watch|-w] [--from paths…] [--freeze[=update]] [--json] [--abs]
+```
 
 给定 `math.js`：
 
@@ -84,576 +139,199 @@ subtract(5, 3);
 subtract(1, 10);
 ```
 
-基本推断（调用点优先）：
-
 ```bash
-nudo infer math.js
+nudo test math.js
 ```
-
-输出：
 
 ```text
 === subtract ===
-
-call@L6: (5, 3) => 2
-call@L7: (1, 10) => -9
-
-Observed: 2 | -9
+  entry@L1  (any, any) => any
+  call@L6  (5, 3) => 2
+  call@L7  (1, 10) => -9
+assertions
+  ✓ 0 passed · 0 failed · 2 unchecked
 ```
 
-每一行 `call@L…` 是一条观测到的调用点事实。`Observed:` 合并结果（有基类型时按吸收律化简；纯字面量并集保留每个字面量）。可选的 `@nudo:case` 见证打印为 `debug "name": …`——仅调试 / `nudo test`。
-
-生成 TypeScript 声明文件：
-
-```bash
-nudo infer math.js --dts
-```
-
-这会在源文件旁创建 `math.d.ts`，包含推断出的函数签名。
-
-显示源码位置：
-
-```bash
-nudo infer src/math.js --loc
-```
-
-输出包含位置信息：
-
-```text
-=== subtract (src/math.js:1:0) ===
-
-call@L6: (5, 3) => 2
-call@L7: (1, 10) => -9
-
-Observed: 2 | -9
-```
-
-### 无指令的函数
-
-没有 `@nudo:case` 指令的函数同样会根据其使用方式推断。没有记录到调用时，参数默认为 `unknown`，用例命名为 `entry@<行号>`：
-
-```js
-// src/plain.js
-export function add(a, b) {
-  return a + b;
-}
-```
-
-```bash
-nudo infer src/plain.js
-```
-
-```text
-=== add ===
-
-entry@L1: (unknown, unknown) => number | string
-# no call sites found; parameters default to unknown
-```
-
-当被分析的文件调用某个导入函数时，每次观察到的调用都会合成为一个带真实参数形状的 `call@<行号>` 用例：
-
-```js
-// src/main.js
-import { add } from "./plain.js";
-
-console.log(add(2, 3));
-console.log(add("2", "3"));
-```
-
-```bash
-nudo infer src/main.js
-```
-
-```text
---- src/plain.js (imported) ---
-
-=== add ===
-
-call@L3: (2, 3) => 5
-call@L4: ("2", "3") => "23"
-
-Observed: 5 | "23"
-```
-
-要从独立的使用处文件（测试、示例、应用）挖掘参数形状，请用 `--callsites` 传入——参见[调用点发现](./callsite-discovery.md)。
-
-### 固化 case 指令
-
-`--emit-cases` 是**调试 / 自包含**工具，不是契约产品——义务住在 `*.nudo.js` 侧车 / `@nudo:refine` / `@nudo:interface`（见 [`nudo interface`](#nudo-interface)）。
-
-合成的 `call@L` 用例只存在于当次分析运行中——不带 `--callsites` 再跑一次 `nudo infer lib.js`，它们就没了。`--emit-cases` 把它们固化进源文件，成为真正的 `@nudo:case` 指令，文件因此对后续调试 / `nudo test` 自包含：其他工具（`check`、`watch`、`.d.ts` 生成）无需重新求值使用处文件即可读到同样形状。
-
-#### 引导：采集一次，写回
-
-给定一个库和一个调用它的测试：
-
-```js
-// lib.js
-function add(a, b) { return a + b; }
-function greet(name) { return "hi " + name; }
-console.log(add(1, 2));
-add("x", "y");
-module.exports = { add, greet };
-```
-
-```js
-// test.js
-const { greet } = require("./lib.js");
-greet("ada");
-greet("bob");
-```
-
-以测试作为使用处运行推断，并把合成的用例写回：
-
-```bash
-nudo infer lib.js --callsites test.js --emit-cases
-```
-
-```text
-=== add ===
-
-call@L3: (1, 2) => 3
-call@L4: ("x", "y") => "xy"
-
-Observed: 3 | "xy"
-
-=== greet ===
-
-call@L2: ("ada") => "hi ada"
-call@L3: ("bob") => "hi bob"
-
-Observed: "hi ada" | "hi bob"
-
-Emitted cases → lib.js (4 directive(s) across 2 function(s))
-  add: call@L3, call@L4
-  greet: call@L2, call@L3
-
-```
-
-`lib.js` 从此携带这些指令（插入在每个函数声明上方的 JSDoc 块中）：
-
-```js
-/**
- * @nudo:case "call@L3" (1, 2)
- * @nudo:case "call@L4" ("x", "y")
- */
-function add(a, b) { return a + b; }
-/**
- * @nudo:case "call@L2" ("ada")
- * @nudo:case "call@L3" ("bob")
- */
-function greet(name) { return "hi " + name; }
-console.log(add(1, 2));
-add("x", "y");
-module.exports = { add, greet };
-```
-
-再跑一遍同一命令是幂等的——末尾摘要变为：
-
-```text
-No changes.
-  add: already-generated
-  greet: already-generated
-```
-
-#### 漂移检测：`update` 模式
-
-使用处会演进，由它们固化的指令也会过期。`=update` 全量重新同步已生成的指令：先从源码剥离所有 `call@` 指令，在剥离后的源码上重新分析，再回写刷新后的指令集——使用处的增加、修改*和删除*都会体现出来。假设测试漂移成了另一个调用：
-
-```js
-// test.js —— 使用处漂移
-const { greet } = require("./lib.js");
-greet(42);
-```
-
-把 `update` 与 `--dry-run`、`--exit-on-diff` 组合，即可用作 CI 门禁：
-
-```bash
-nudo infer lib.js --callsites test.js --emit-cases=update --dry-run --exit-on-diff
-```
-
-```text
-=== add ===
-
-call@L3: (1, 2) => 3
-call@L4: ("x", "y") => "xy"
-
-Observed: 3 | "xy"
-
-=== greet ===
-
-call@L2: (42) => "hi 42"
-
-Would emit cases → lib.js (dry run)
-  add: call@L3, call@L4
-  greet: call@L2
-
---- a/lib.js
-+++ b/lib.js
-@@ -4,8 +4,7 @@
-  */
- function add(a, b) { return a + b; }
- /**
-- * @nudo:case "call@L2" ("ada")
-- * @nudo:case "call@L3" ("bob")
-+ * @nudo:case "call@L2" (42)
-  */
- function greet(name) { return "hi " + name; }
- console.log(add(1, 2));
-
-```
-
-diff 非空，命令以退出码 `1` 结束。去掉 `--dry-run`（和 `--exit-on-diff`）即可写盘：
-
-```bash
-nudo infer lib.js --callsites test.js --emit-cases=update
-```
-
-```text
-=== add ===
-
-call@L3: (1, 2) => 3
-call@L4: ("x", "y") => "xy"
-
-Observed: 3 | "xy"
-
-=== greet ===
-
-call@L2: (42) => "hi 42"
-
-Emitted cases → lib.js (3 directive(s) across 2 function(s))
-  add: call@L3, call@L4
-  greet: call@L2
-
-```
-
-`update` 同样幂等——再跑一遍输出 `No changes.`
-
-要在不阅读 diff 的情况下检查整个项目的过期指令，参见[健康检查与 CI 漂移门禁](#健康检查与-ci-漂移门禁)——`nudo doctor` 一次运行即可报告多文件的漂移。
-
-#### 固化会动哪些内容
-
-固化绝不触碰手写内容，只管理自己的 `call@` 指令：手写用例一律不改；已有生成指令的函数在 `add` 模式下报告 `already-generated`、在 `update` 模式下全量重新同步；entry-only 函数不写入；不可序列化的用例会被跳过。完整的合并策略表见[调用点发现 —— 合并策略](./callsite-discovery.md#合并策略)；编程接口见 [service API —— 用例固化](../api/service.md#用例固化)。
+- 合成 `call@` / `entry@` **默认打印** —— 这就是调用点观察面。
+- 仅 `@nudo:case` 且带 `=> expected` 的进入 pass/fail；失败影响退出码。
+- `--from <paths…>` 挖掘使用处调用形状（原 `--callsites`）。
+- `--freeze[=update]` 把合成用例固化为指令（原 `infer --emit-cases`）。
+- `--json` / `--abs` 与 `check` 对齐。
 
 ---
 
-## `nudo check`
+## `nudo contract`
 
-检查单个文件的类型错误。`check` 每条诊断输出一行，格式为 `[severity] 路径:行:列 消息 (错误码)`；存在 error 级诊断时以退出码 `1` 结束——仅有 warning 时退出码保持 `0`，因此适合在 CI 中使用。
+打印、草稿或固化有效接口（handwritten / generated / implicit 分层）。取代旧的 `nudo interface` / `nudo refine`。
 
 ```bash
-nudo check src/broken.js
+nudo contract <path> [--emit] [--draft] [--write] [--fn name] [--all]
+              [--dry-run] [--exit-on-diff] [--from paths…]
 ```
 
-```text
-[warning] src/broken.js:2:9 Cannot resolve 'name' on unknown value (nudo:unknown-recv)
-[warning] src/broken.js:2:9 Cannot resolve 'toUpperCase' on unknown value (nudo:unknown-recv)
+```bash
+nudo contract src/lib.js                     # 打印有效接口
+nudo contract --draft src/lib.js             # 可审阅的 *.nudo.draft.js
+nudo contract --draft --write src/lib.js     # 写盘草稿
+nudo contract --emit src/lib.js --fn add2    # 持久化 @generated 侧车段
+nudo contract --emit src/lib.js --all --dry-run --exit-on-diff  # CI 漂移门禁
 ```
 
-提示行、error 级断言与退出码规则参见 [`nudo check` 参考](../api/cli-reference.md#nudo-check)。
+- 手写侧车绑定始终优先于生成段。
+- `--emit --exit-on-diff`：将写盘且有 diff 时退出 `1`。
+- 使用处证据：`--from <paths…>`。
 
 ---
 
-## `nudo interface`
+## `nudo export`
 
-interface 产品：逐函数精化契约与来源分层。无侧车无注解时，每个导出也因其调用点推断获得**隐式**（implicit）接口；侧车绑定与 `@nudo:refine` 提升为**手写**（handwritten）；`--emit` 固化段显示为**生成**（generated）。
-
-**class / 别名侧车键：** 导出 class 的实例方法绑定为 `Class.method` / `Class_method`（constructor、static、get/set 不绑）。`export { Local as Public }` 时分析与侧车使用**本地声明名**（`Local`、`Local.method`）——`Public` 只是对外 export 名，不是契约键。
+把 Abs 投影为生态产物。这是 CLI 上 `.d.ts` / guard / Zod 的**唯一**路径。
 
 ```bash
-nudo interface [paths...]       # 只打印，永不写盘
-nudo interface --emit <file> --fn <name>   # 固化推断域
-nudo interface --draft <file>   # 从已有逻辑生成可审阅契约草稿
-nudo refine                     # nudo interface 的别名
+nudo export <path> [--format dts|guard|zod|all] [--out dir]
 ```
-
-### `--draft` — 代码优先 / 迁移
-
-从**已有实现**生成可审阅的 interface 草稿。适用于迁移既有 JS 包，或「先写逻辑、后补契约」。
 
 ```bash
-nudo interface --draft lib.js           # 打印 *.nudo.draft.js 模块
-nudo interface --draft --write lib.js   # 写入 lib.nudo.draft.js
-nudo interface --draft lib.js --fn greet
+nudo export src/user.js --format dts --out dist/types
+nudo export src/user.js --format zod
+nudo export src/user.js --format all --out dist
 ```
 
-草稿中的证据分层（**不发明义务**）：
-
-| 证据 | 含义 |
+| 格式 | 产物 |
 |------|------|
-| `callsite` / `directive` | 观察到的实参域（`joinThenProject`） |
-| `body` | 实现里对参数读到的字段 — **仅建议**，永不作为 check 义务 |
-| `symbolic` | 返回位 `generalizeFromAst` 兜底 |
-| 省略的参数槽 | 无证据 — 注释 `/* tighten */`，不是契约 |
+| `dts` | TypeScript 声明（每函数一条拓宽签名；case 精度保留在 JSDoc） |
+| `guard` | 运行时类型守卫 |
+| `zod` | Zod schema |
+| `all` | 以上全部 |
 
-规则：手写契约跳过不覆盖；产物 `*.nudo.draft.js` **不** ambient 绑定；审阅后复制进 `*.nudo.js` 才生效。`--emit` 固化调用点事实，`--draft` 是给人审的起点。IDE 侧 CodeLens `⚡ draft interface` 与 agent `nudo.interface.draft` 同源。可选 `nudo.analysis.evalMissingSlot: "warning"` 打开求值命中缺字段提示（默认 off）。完整迁移路径见 [迁移已有 JS](./migrating-js.md)。
+`.d.ts` 是**单向、有损投影** —— Abs 才是真理源。export 是一次性出货命令，不接受 `--watch`。
 
-文件内有调用点、无侧车：
+---
 
-```js
-// lone.js
-export function scale(x) {
-  return x * 2;
-}
+## `nudo health`
 
-scale(3);
-scale(5);
+项目体检：分析错误与固化漂移。由 `nudo doctor` 更名。
+
+```bash
+nudo health [paths…] [--watch] [--from paths…] [--json]
+```
+
+漂移或分析错误时退出 `1`。uncovered 函数仅为信息级。
+
+```bash
+nudo health src/ --from tests/
+```
+
+生成的 `call@` 指令会变化时，health 报告漂移并建议：
+
+```text
+nudo test lib.js --from test.js --freeze=update
+```
+
+---
+
+## `nudo env harvest`
+
+把 `@types/<pkg>` 收割为 Nudo env 模块。
+
+```bash
+nudo env harvest <pkg> [--out dir]
 ```
 
 ```bash
-nudo interface lone.js
+nudo env harvest node
 ```
 
-```text
-lone.js
-  scale  [implicit]  (x: 3 | 5) → 6 | 10
+在源码中引用生成的 env：
+
+```ts
+/// @nudo:env ./nudo-harvest-node.ts
 ```
 
-有手写侧车（`calc.nudo.js` 引入 `std.nudo.js`）：
+---
 
-```bash
-nudo interface calc.js
-```
+## 迁移 / 废弃动词
 
-```text
-calc.js
-  addTax  [handwritten]  (x: number().gt(1)) → number()
-  greet  [handwritten]  (name: union(lit("ada"), lit("bob"))) → string()
-```
+旧动词在过渡期保留，stderr 打印 **deprecation 警告**，映射到新命令面。下一 major 删除，**不是**永久静默同义词。
 
-### 写盘
-
-`--emit` 按目标文件角色分两条路径（设计 §7.3）：
-
-1. **Root 驱动下行**——文件含手写契约根时，`--fn` 可点名推导闭包内的**下游**导出。`nudo interface --emit lib.js --fn add2` 写入 `add.nudo.js` 的组合式段（`const x = positive.shift(1); export const add2 = fn({ x }, x.shift(2))`），含 `derived-from: lib.js:add4` 标注与 `import { positive } from "./std.nudo.js"`（与根侧车同构）。
-2. **调用点域**——对目标文件自身导出，把观察到的调用点域投影为侧车 `@generated` 段。域根（本文件无调用点的导出）需要 `--callsites <paths...>`。
-
-```bash
-# 从手写根推导下游契约
-nudo interface --emit lib.js --fn add2
-
-# 本文件调用点域
-nudo interface --emit double.js --fn double
-```
-
-```text
-Updated double.js → double.nudo.js
-  written: double
-  re-run `nudo check double.js` to see the persisted interfaces in action
-```
-
-```javascript
-// double.nudo.js
-// @generated by nudo — do not edit; regenerate with `nudo interface --emit`
-// source: double.js:double
-export const double = fn({ x: lit(4) }, lit(8));
-```
-
-```javascript
-// add.nudo.js（由 lib.js:add4 下行）
-// @generated by nudo — do not edit; regenerate with `nudo interface --emit`
-// source: add.js:add2
-// derived-from: lib.js:add4
-import { positive } from "./std.nudo.js";
-
-const x = positive.shift(1);
-export const add2 = fn({ x }, x.shift(2));
-```
-
-```bash
-nudo interface double.js
-```
-
-```text
-double.js
-  double  [generated]  (x: lit(4)) → lit(8)
-```
-
-跨原始类型字面量域固化为 union（设计形态）：
-
-```javascript
-// mixed.nudo.js
-export const scale = fn({ x: union(lit(42), lit("a")) }, number());
-```
-
-### 选项
-
-| 选项 | 说明 |
+| 废弃 | 改用 |
 |------|------|
-| `--emit` | 写/更新 `@generated` 段而非打印（update 模式：剥离并重写生成段；幂等） |
-| `--draft` | 从已有逻辑生成可审阅契约草稿（打印 `*.nudo.draft.js` 模块） |
-| `--write` | 配 `--draft`：写入/更新 `<file>.nudo.draft.js`（绝不碰手写 `*.nudo.js`） |
-| `--fn <name>` | 配 `--emit`/`--draft`：只处理这些导出名（可重复）。emit 时可点名 root 推导闭包内的下游导出 |
-| `--all` | 配 `--emit`：目标为全部顶层导出（显式 opt-in；优先 `--fn` 保持 diff 可审） |
-| `--dry-run` | 配 `--emit`：打印 unified diff 而非写盘 |
-| `--exit-on-diff` | 配 `--emit` + `--dry-run`：侧车将变更时退出码 `1`（CI 门禁） |
-| `--callsites <paths...>` | 使用现场文件，为打印/写盘提供域证据 |
+| `nudo infer <path>` | 签名 → `nudo check <path>`；用例报告 → `nudo test <path>`；dts → `nudo export --format dts` |
+| `nudo types <path>` | `nudo check --abs` |
+| `nudo interface` / `nudo refine` | `nudo contract` |
+| `nudo generate` / `nudo emit` / `nudo guard` | `nudo export --format dts\|guard\|zod\|all` |
+| `nudo doctor` | `nudo health` |
+| `nudo watch` | `nudo check --watch` / `nudo test --watch` |
+| `nudo harvest <pkg>` | `nudo env harvest <pkg>` |
+| `--callsites` | `--from` |
+| `--emit-cases[=update]` | `nudo test --freeze[=update]` |
+| `infer --dts` | `nudo export --format dts` |
 
-退出码：`0` 正常；`1` 用于用法错误、`--exit-on-diff` 有变更、以及 emit issue（`nudo:interface-name-clash`——手写绑定优先，跳过写入）。
-
-```text
-$ nudo interface --emit calc.js --fn addTax
-calc.js: no interface changes
-  skipped addTax (name-clash)
-  [error] nudo:interface-name-clash: sidecar already has a handwritten binding 'addTax' (calc.js); handwritten wins — skipping emit for it
-# exit 1
-```
-
-证据不变时重跑 `--emit` 是 no-op（`no interface changes`）；证据消失时（如 update 未带 `--callsites`），已固化段**原样保留**，绝不静默删除。侧车自动绑定可用 `package.json` → `"nudo": { "interface": { "autoBind": false } }` 在项目级整体关闭——开关同样接线到 `nudo check` 与 LSP 执法路径，不只打印路径。
-
-**emit 白名单（Phase 3）。** `package.json` → `"nudo": { "interface": { "emit": ["src/api/**"] } }` 限制可写的**源文件**路径（侧车写在源文件旁）。省略/空 = 不按路径过滤。模式为相对项目根的 glob（`**` 跨目录，`*` 不跨）。未带 `--fn`/`--all` 时，root 驱动 emit 只刷新已有下游 `@generated` 段，不发明新契约。
-
-固化段是快照：`nudo check` 对其做语义比较，源码演进时报 `nudo:interface-drift` warning——见 [check](../guides/check.md#interface-诊断)。`nudo doctor` 对侧车已含 `@generated` 的文件把同一 drift 作为 CI 门禁。
+`infer --json` 按消费者拆分：诊断/签名 → `check --json`；用例 → `test --json`。**没有** `check --cases` —— 观察与执法保持分离。
 
 ---
 
-## `nudo types`
+## 典型工作流
 
-类型即计算视图：展示每个函数在 Abs 代数上的**内涵**——形状、`term`、`pred` 与置信度——而不是 `infer` 汇报的外延形状。精化参与代数运算，所以声明的前置条件会出现在推断出的 term 内部：
+### Day 0 —— 从现有 JS 读类型
 
 ```bash
-nudo types docs/examples/algebra/0-add-intensional.js --assume "x>0"
+nudo check src/app.js          # 签名 + L2 入口 throws
+nudo test src/app.js           # 全部调用点用例
 ```
 
-```text
-nudo types  0-add-intensional.js
-assume: x > 0
-
-add(unknown, unknown)
-  number | string
-  conf: partial
-
-scale(number)
-  number
-  term: (x + 1)
-  pred: (x + 1) > 1
-  conf: path
-
-twice(number)
-  number
-  term: ((x + 1) + 1)
-  pred: ((x + 1) + 1) > 2
-  conf: path
-```
-
-`scale` 的签名是 `number`，`term: (x + 1)`、`pred: (x + 1) > 1`——`@nudo:refine x positive` 的前置条件（`x > 0`）参与了运算并推出更强的后置。`add` 没有约束，其 `number | string` 结果为 `conf: partial`。选项（`--fn`、`--assume`、`--generalize`）见 [`nudo types` 参考](../api/cli-reference.md#nudo-types)；这个文件的同一命令已被 CI 钉在[示例矩阵](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md)里。
-
----
-
-## `nudo harvest`
-
-把已安装的 `@types/<pkg>` TypeScript 声明转成 Nudo env 文件——用 Nudo env 构造器重建这些类型的 TypeScript 源码。`@types` 包必须先安装：
+### Day 1 —— 显式契约
 
 ```bash
-pnpm add -D @types/node
-nudo harvest node
+nudo contract --draft src/lib.js --write   # 可审阅草稿
+nudo check src/lib.js                      # L1 + L2 门禁
 ```
 
-在需要这些环境类型的文件中引用生成的 `nudo-harvest-node.ts`：
-
-```js
-/// @nudo:env nudo-harvest-node.ts
-```
-
-选项（`--out`）与输出格式参见 [`nudo harvest` 参考](../api/cli-reference.md#nudo-harvest)。
-
----
-
-## `nudo watch`
-
-监听文件或目录，在变更时重新运行推断：
+### CI
 
 ```bash
-nudo watch .            # 当前目录
-nudo watch src/math.js  # 单个文件
-nudo watch . --dts      # 同时生成 .d.ts
+nudo check src/ --json
+# 迁移期可忽略噪声 L2 类型
+nudo check src/ --ignore-throws TypeError
 ```
 
-目录会递归收集推断目标文件（`.js`/`.mjs`/`.ts`，排除 `node_modules`）；变更防抖 200ms，每次运行只重新分析变更文件及其依赖方。完整行为参见 [`nudo watch` 参考](../api/cli-reference.md#nudo-watch)。
-
----
-
-## 运行时校验器生成
-
-`nudo generate` 把推断出的类型转成运行时产物——Zod schema、类型守卫函数与 `.d.ts` 声明——依据同一份 `@nudo:case` 证据：
+### 生态类型
 
 ```bash
-nudo generate src/user.js               # zod + guard + dts 输出到 stdout
-nudo generate src/user.js --format zod  # 只要 zod
-nudo generate src/user.js --output dist # 写出 dist/user.nudo.zod.ts、user.nudo.guard.ts、user.d.ts
+nudo export src/api.js --format dts --out dist/types
 ```
 
-`nudo emit` 是仅 `.d.ts` 的别名（`generate --format dts`），`nudo guard` 是仅守卫函数的别名（`--format guard`）；守卫优先走无损 Abs 路径（形状 + 可判定的数值 Pred），失败时回退到外延投影。选项与输出格式参见 [`nudo generate` 参考](../api/cli-reference.md#nudo-generate)。
-
----
-
-## 健康检查与 CI 漂移门禁
-
-[`nudo doctor`](../api/cli-reference.md#nudo-doctor) 一条命令复查整个项目：分析报错，以及——搭配 `--callsites`——[`--emit-cases`](#固化-case-指令) 固化的 `call@` 指令是否仍与使用处如今会产出的调用形状一致。漂移或报错以退出码 `1` 结束，因此 `doctor` 可以作为固化漂移的 CI 门禁。
-
-典型生命周期：
-
-1. **固化一次**——从使用处引导指令（参见[固化 case 指令](#固化-case-指令)）：
-
-   ```bash
-   nudo infer lib.js --callsites test.js --emit-cases
-   ```
-
-2. **使用处演进**——测试的调用形状变了，固化的指令随之过期。
-
-3. **`doctor` 报告漂移**：
-
-   ```bash
-   nudo doctor lib.js --callsites test.js
-   ```
-
-   ```text
-   lib.js
-     · 3 function(s), 1 entry-only
-     ✗ drift: 5 directive(s) changed (+3 new, -2 removed) — refresh with: nudo infer lib.js --callsites test.js --emit-cases=update
-
-   Summary: 1 file(s) · 1 drift · 0 error(s) · 0 uncovered function(s)
-   Result: FAIL (drift or errors found)
-   ```
-
-4. **按提示刷新**——命令可原样复制：
-
-   ```bash
-   nudo infer lib.js --callsites test.js --emit-cases=update
-   ```
-
-5. **复检**——再次运行 `doctor`，恢复绿色：`Result: OK (uncovered function(s) are informational only)`。
-
-CI 中一行命令即可让整个源码树对照测试套件做检查——任一漂移即构建失败：
+### 持续开发
 
 ```bash
-nudo doctor src/ --callsites tests/
+nudo check src/ --watch
+# 或
+nudo test src/ --watch
 ```
-
-退出码：漂移或分析报错 → `1`；uncovered 函数仅为信息级，绝不会导致失败。全部选项与 `--json` 输出参见 [`nudo doctor` 参考](../api/cli-reference.md#nudo-doctor)。
 
 ---
 
-## 实用工作流
+## `any` 与 `unknown`
 
-1. **使用监听模式开发**：编辑时在终端运行 `nudo watch . --dts`。每次保存都会触发重新推断和 `.d.ts` 生成。
+| | `any` | `unknown` |
+|---|-------|-----------|
+| 含义 | 无约束：JS 值的并集；**开发者**负责细化 | **推导失败** / 引擎无信息；**Nudo** 负责修 |
+| 来源 | 未标注入口参数、显式 `any()`、refine 解析失败回退 | 求值失败、native 未建模、截断、泄漏、opaque |
+| 展示 | `any`（可带 type-var 如 `A1`） | `unknown` + conf 标注 |
+| 产品话术 | 「未写契约 ⇒ 默认约束为 any + JS 运行时效果」 | 「Nudo 遇到无法处理的场景」 |
 
-2. **CI / 提交前检查**：`nudo check` 在存在 error 级诊断时以退出码 `1` 结束，可用于 CI 门禁。传目录即可一次检查其下全部推断目标（`nudo check` 递归扫描目录并跳过 `node_modules`）：
+**绝不**把无约束入口参数叙述为 `unknown`。详见 [Type Values](../concepts/type-values.md#any-vs-unknown)。
 
-   ```bash
-   nudo check src/
-   ```
+---
 
-   需要排除特定路径（如生成文件）时，再显式遍历要门禁的文件：
+## 退出码
 
-   ```bash
-   find src \( -name "*.js" -o -name "*.mjs" -o -name "*.ts" \) \
-     -not -name "*.d.ts" -not -path "*/node_modules/*" -print0 |
-     xargs -0 -n1 nudo check
-   ```
+| 命令 | exit `1` |
+|------|----------|
+| `check` | 任一 error 级诊断（L1 或未 ignore 的 L2） |
+| `test` | 任一**已声明**断言失败（合成 `call@`/`entry@` 不挡 exit） |
+| `contract`（只读）/ `export` | 仅用法 / IO 错误 |
+| `contract --emit --exit-on-diff` | 将写盘且有 diff |
+| `health` | 漂移或分析错误 |
 
-3. **生成声明文件**：使用 `nudo infer src/ --dts`（或单个文件）为需要 TypeScript 定义的使用方生成 `.d.ts`。
-
-4. **复用环境类型**：每个 `@types` 包运行一次 `nudo harvest <pkg>`，在需要它的文件里用 `/// @nudo:env ./nudo-harvest-<pkg>.ts` 引用生成的 env 文件。
-
-5. **查看代数视图**：精化签名表现异常时，读它的内涵——`nudo types src/math.js --assume "x>0"` 展示推断类型背后的 `term` / `pred` / `conf`（见 [`nudo types`](#nudo-types)）。
+CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。

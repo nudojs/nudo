@@ -59,7 +59,7 @@ describe("real package precision (commander)", () => {
     let scanned = 0;
     for (const f of files) {
       const source = readFileSync(join(commanderLib, f), "utf8");
-      const r = checkSource(`commander/${f}`, source);
+      const r = checkSource(`commander/${f}`, source, undefined, { entryThrows: "off" });
       scanned++;
       for (const i of r.issues) {
         if (i.severity === "error" && (ERROR_CODES as readonly string[]).includes(i.code)) {

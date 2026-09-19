@@ -7,7 +7,7 @@ description: 按主题浏览 Nudo 推断的实用示例——函数与对象、�
 
 本指南展示 Nudo 类型推断的实用示例，按主题分组。每个示例包含带指令的输入代码和推断出的类型。
 
-下方所有输出块都是对上面代码真实运行 `nudo infer` 的结果。输出块只展示 **case 头与 `Observed: ` 行**——它们是逐调用点的真实精度。完整输出里的 `intension:` / `abs:` 行是用 `unknown` 形参重估的泛化签名，对多分支函数只会显示回退路径的结果；分支级精度请以 case 头与 `Observed: ` 为准。当调用点路径更精确时示例使用调用点（`call@L…`）形态，否则使用 `@nudo:case` 指令。
+下方所有输出块都是对上面代码真实运行 `nudo test` 的结果。输出块只展示 **case 头与 `Observed: ` 行**——它们是逐调用点的真实精度。完整输出里的 `intension:` / `abs:` 行是用无约束（`any`）形参重估的泛化签名，对多分支函数只会显示回退路径的结果；分支级精度请以 case 头与 `Observed: ` 为准。当调用点路径更精确时示例使用调用点（`call@L…`）形态，否则使用 `@nudo:case` 指令。
 
 > 仓库内 CI 自验证的示例套件在 [`docs/examples/`](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md)：其中每条命令与承诺的退出码都由 `pnpm run verify:examples` 校验，并有逐示例的输出钉对照文档声称的输出行。本指南按主题浏览同一引擎；仓库套件是真值门禁。
 
@@ -312,7 +312,7 @@ stringDemo();
 call@L7: () => { upper: "HELLO", sliced: "el", len: 5 }
 ```
 
-`toUpperCase`、`slice`、`.length` 与 `split`（字面量接收者 + 字面量分隔符）在调用点折叠为精确结果，TypeScript 对这些操作只能推断出 `string`、`number` 或 `string[]`。`indexOf` 目前只得 `number` 原语（丢字面量下标），依赖具体方法前请先跑 `nudo infer` 确认。
+`toUpperCase`、`slice`、`.length` 与 `split`（字面量接收者 + 字面量分隔符）在调用点折叠为精确结果，TypeScript 对这些操作只能推断出 `string`、`number` 或 `string[]`。`indexOf` 目前只得 `number` 原语（丢字面量下标），依赖具体方法前请先跑 `nudo test` 确认。
 
 ---
 
@@ -479,7 +479,7 @@ function getPort(config) {
 getPort({ port: 8080 });   // → number
 ```
 
-case 头现在把回退折叠为其字面量（`"dark"` / `"light"`），但 `Observed: ` 仍报告 `unknown`——组合值来自符号重跑（`intension`），无法跟随深层 `?.` 链。请用 `nudo infer` 验证你自己的链式写法。
+case 头现在把回退折叠为其字面量（`"dark"` / `"light"`），但 `Observed: ` 仍报告 `unknown`——组合值来自符号重跑（`intension`），无法跟随深层 `?.` 链；这是引擎债（`unknown` = 推导失败），不是无约束的 `any` 入口。请用 `nudo test` 验证你自己的链式写法。
 
 ---
 

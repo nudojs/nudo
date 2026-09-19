@@ -7,7 +7,7 @@ description: "全部 @nudo: 指令（case、mock、pure、skip、sample、refine
 
 指令是控制 Nudo 如何分析代码的结构化注释。它们使用 `@nudo:` 命名空间以避免与 JSDoc 和其他工具冲突。将指令放在函数上方的块注释中。
 
-**interface 产品**（精化契约）主路径在侧车文件——`*.nudo.js` 模块自动绑定源码同名导出，`@nudo:refine` / `@nudo:interface` 是其兼容的源码内形态。见 [@nudo:refine](#nudorefine--refinement-contract) 与 [`nudo interface`](../guides/cli.md#nudo-interface) 命令。
+**interface 产品**（精化契约）主路径在侧车文件——`*.nudo.js` 模块自动绑定源码同名导出，`@nudo:refine` / `@nudo:interface` 是其兼容的源码内形态。见 [@nudo:refine](#nudorefine--refinement-contract) 与 [`nudo contract`](../guides/cli.md#nudo-contract) 命令。
 
 ## 指令语法
 
@@ -389,7 +389,7 @@ export const greet = fn({ name: union(lit("ada"), lit("bob")) }, string());
 ```
 
 ```bash
-$ nudo interface calc.js
+$ nudo contract calc.js
 calc.js
   addTax  [handwritten]  (x: number().gt(1)) → number()
   greet  [handwritten]  (name: union(lit("ada"), lit("bob"))) → string()
@@ -420,7 +420,7 @@ calc.js
 - 只绑定源码文件**同名本地 named export**（`export function` / `export const`）。re-export、`export default`、CJS 不参与。
 - `node_modules/` 下的侧车永不自动加载。
 - 源码注解与侧车对同参的约束**合取**；矛盾合取（如 `x > 0` ∧ `x < 0`）报 `nudo:interface-conflict`。
-- 合并序：手写（源码注解 ∪ 侧车绑定）> 生成段 > 隐式推导。`nudo interface` 按层标注（`[handwritten]` / `[generated]` / `[implicit]`）。
+- 合并序：手写（源码注解 ∪ 侧车绑定）> 生成段 > 隐式推导。`nudo contract` 按层标注（`[handwritten]` / `[generated]` / `[implicit]`）。
 
 ### 源码内形态
 

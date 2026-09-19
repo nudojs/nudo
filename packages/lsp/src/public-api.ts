@@ -9,6 +9,11 @@
  * - executeCommand uses **dot** form: `nudo.check`
  * - custom requests use **slash** form: `nudo/check` (canonical protocol)
  * - every slash-form agent request has a matching executeCommand name
+ *
+ * CLI semantics (design-cli-semantics): observation is check signatures +
+ * test case reports, not a dedicated infer verb. Agent tool names below are
+ * the transition surface — prefer documenting check/test/contract/export to
+ * users; `nudo.infer` / `nudo.interface*` remain as protocol aliases.
  */
 
 /** workspace/executeCommand names (dot form) — declared on initialize */

@@ -107,7 +107,7 @@ npx nudojs check packages/legacy-js/src
 
 - 不要指望 Nudo 理解 TypeScript 类型语法（条件类型、`infer` 等）。
 - 不要让两个工具在冲突严重级别下扫同一 `.ts` 源——请拆路径。
-- 不要把 `.d.ts` 投影（`nudo emit`）当真理源——Abs 才是；`.d.ts` 是单向兼容通道。
+- 不要把 `.d.ts` 投影（`nudo export --format dts`）当真理源——Abs 才是；`.d.ts` 是单向兼容通道。
 - 不要在没有 `include` 的混合 monorepo 上对 IDE 开 `mode: "all"`——双重错误风暴多半由此而来。
 
 ## IDE

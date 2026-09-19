@@ -1,3 +1,5 @@
+<!-- CLI semantics: docs/design-cli-semantics.md — primary verbs check/test/contract/export/health/env harvest.
+     L1 explicit contracts + L2 entry may-throw; old verbs deprecated until next major. -->
 # Versioning & Release Policy (E6)
 
 How Nudo packages are versioned, what counts as a breaking change, and how to follow the changeset workflow.
@@ -7,8 +9,9 @@ How Nudo packages are versioned, what counts as a breaking change, and how to fo
 > **Source of truth for Current versions:** each `packages/*/package.json`. This policy doc does not pin patch numbers.
 >
 > **Intentional behavior changes (fix-2) — release notes, not regressions:**
-> 1. **C0.1:** body-AST required-slot inference removed. Obligations come only from explicit contracts or call-site facts.
+> 1. **C0.1:** body-AST required-slot inference removed. Shape-slot obligations come only from explicit contracts or call-site facts. **L2 is different:** entry may-throw (`nudo:entry-may-throw`) is a runtime-boundary obligation on export/entry functions — default **error**, filterable via `--ignore-throws` / `package.json#nudo.check.ignoreThrows`. It does **not** invent body slots.
 > 2. **A1:** `analysis.mode` shipped default flipped `directives` → `exports` (`DEFAULT_ANALYSIS_MODE` in `@nudojs/service`). Escape hatch: `package.json#nudo.analysis.mode = "directives"` (old silence) or `"all"` (every target path). On **1.x** packages this is a **default-behavior flip that can invent diagnostics** on previously unanalyzed export-bearing files → treat as **major** in changesets/release notes unless the team ships a documented minor with the escape hatch called out.
+> 3. **CLI semantics (this branch):** primary verbs are `check` / `test` / `contract` / `export` / `health` / `env harvest`. Observation is check signatures + test case reports — **no** `infer`/`show`/`types` primary verb; `watch` is `--watch` on check/test. Old verbs keep stderr deprecation until **next major** (then delete; not permanent silent synonyms). Entry unconstrained params display as **`any`**; true `unknown` = inference failure.
 >
 > `@nudojs/core` / `@nudojs/service` / `@nudojs/cli` are on the **stable SemVer line** (currently 2.x — see each package.json). The monorepo root version is private and is not a publish unit.
 >
@@ -55,8 +58,9 @@ Treat as **breaking** (major on 1.x, minor on 0.x):
 | `CheckJson` / `InferJson` schema | Field removal/rename; `version` bump without dual-read |
 | `.d.ts` projection shape | Signature text changes that break `tsc --noEmit` consumers of generated types |
 | Diagnostic codes | Renaming codes; removing codes; changing severity of existing codes by default |
-| CLI flags / defaults | Removing flags; flipping default `analysis.mode` / `autoBind` without a config escape |
-| Directive grammar | Removing `@nudo:*` kinds; changing accepted `T.*` / refine syntax |
+| CLI flags / defaults | Removing flags; flipping default `analysis.mode` / `autoBind` / L2 `entry-throws` without a config escape |
+| **CLI primary verbs** | Removing `check`/`test`/`contract`/`export`/`health`/`env harvest`; deleting deprecated verbs (`infer`/`types`/`generate`/`emit`/`guard`/`interface`/`doctor`/`watch`) is **major** |
+| Directive grammar | Removing `@nudo:*` kinds; changing accepted refine / builder syntax (`T.*` already removed) |
 | LSP protocol contracts | Removing `nudo.*` commands or `nudo/…` requests; changing positional CodeLens args |
 | Sidecar semantics | Changing binding keys, `@generated` markers, or handwritten-wins rules |
 
@@ -127,17 +131,20 @@ pnpm run ci:version   # only on a throwaway branch — rewrites package.json ver
 | `@nudojs/cli/evaluator` removed | `import { … } from "@nudojs/service/evaluator"` |
 | TypeValue evaluator IR removed from production analysis | Consume Abs (`shape × term × pred × conf`); do not reintroduce TypeValue as a second IR |
 | `CallRecord` is Abs-only (`argAbs` / `resultAbs` / `throwsAbs`) | Stop reading `argTypes` TypeValue fields |
-| Body-slot “implicit shape” obligations removed (C0) | No evidence → `any` / call-site facts. Contracts only from `*.nudo.js` / `@nudo:refine` / call sites |
+| Body-slot “implicit shape” obligations removed (C0) | No evidence → `any` / call-site facts. **L1** contracts from `*.nudo.js` / `@nudo:refine` / call sites; **L2** entry may-throw still gates export boundaries |
 | Interface tiers | `handwritten` = obligation · `generated` = fact + drift · `implicit` = display only |
+| **CLI verbs (this branch)** | `infer` → `check` (signatures) + `test` (cases) + `export` (dts); `types` → `check --abs`; `interface`/`refine` → `contract`; `generate`/`emit`/`guard` → `export --format …`; `doctor` → `health`; `watch` → `check`/`test --watch`; `harvest` → `env harvest`. Old names deprecated until next major. |
+| Entry display | Unconstrained params = **`any`**; `unknown` = inference failure (not the unconstrained default) |
+| L2 entry may-throw | Default **error** on export/entry undigested throws (`nudo:entry-may-throw`). Escape: `--ignore-throws TypeError` / `package.json#nudo.check.ignoreThrows` / `--entry-throws off\|warning`. Does not swallow L1. |
 
 ### Directive / contract surface
 
 | Change | Migration |
 |--------|-----------|
-| **`T.*` directive grammar removed (breaking)** | Use constraint builders (`number()`, `lit()`, `shape()`, `union()`, …) or concrete literals in `@nudo:case` / `@nudo:as` / `@nudo:replace` / `@nudo:mock` / `@nudo:skip`. `parseTypeValueExpr` export removed — use `parseCaseArgExpr`. `serializeCaseArg` emits builders, not `T.*`. |
-| `@nudo:case` product role | **Debug / `nudo test` / LSP scenario only.** Contracts live in `*.nudo.js` / `@nudo:refine`. CLI `infer` prints call-site observations (`call@L…`) and `debug "name"` witnesses — not `Case "…"` as the type product. |
+| **`T.*` directive grammar removed (breaking)** | Use constraint builders (`number()`, `lit(42)`, `shape({...})`, `union(...)`, …) or concrete literals in `@nudo:case` / `@nudo:as` / `@nudo:replace` / `@nudo:mock` / `@nudo:skip`. `parseTypeValueExpr` export removed — use `parseCaseArgExpr`. `serializeCaseArg` emits builders, not `T.*`. |
+| `@nudo:case` product role | **Debug / `nudo test` / LSP scenario only.** Contracts live in `*.nudo.js` / `@nudo:refine`. CLI **`test`** prints call-site observations (`call@L…`) and `debug "name"` witnesses — not `Case "…"` as the type product. |
 | Class methods / CJS / `export default` sidecar keys | Use `Class.method` (**local declaration name**, not export alias), `Class_method`, nested objects, or local export names — `export { Local as Public }` binds `Local.method`, not `Public.method`. See `design-refine-derivation.md` |
-| `nudo.interface` product name | `nudo refine` is an alias; prefer `nudo interface` |
+| Contract product name | **`nudo contract`** is the primary verb (print / `--draft` / `--emit`). `nudo interface` and alias `refine` are deprecated. |
 
 ### IDE / agent surface
 

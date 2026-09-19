@@ -1,3 +1,5 @@
+<!-- CLI semantics aligned with docs/design-cli-semantics.md — primary verbs check/test/contract/export/health/env harvest.
+     Old verbs (infer/types/generate/emit/guard/interface/doctor/watch) are deprecated until next major. -->
 # Nudo
 
 > **欢迎重回 JS 世界.** — Nudo 不限制你的 JS 表达，只忠实反映中间量与结果，并提供比类型更精确的契约校验。  
@@ -21,8 +23,11 @@ TypeScript sources are also accepted: annotations are stripped and the code is a
 | Build step | `tsc` compilation | None — works on plain `.js` |
 | Type accuracy | Depends on annotations | Follows actual runtime semantics |
 | Structure without interface | Needs `interface` | Explicit shape contract (`shape({…})`); **no** body-AST slot invention |
+| CI gate | `tsc --noEmit` | `nudo check` (prints signatures even on success) |
 
 Beyond what TypeScript can express: `"0x" + id` → `` `0x${string}` ``, `"a,b,c".split(",")` → `["a", "b", "c"]`, loop sums stay literal — same Abs algebra powers `nudo check`.
+
+**Product CLI face** (no observation verb): Day0 = `check` + `test`; Day1 = `contract` + `check`; ecosystem = `export`. Entry unconstrained params display as **`any`**; true **`unknown`** means inference failure.
 
 ## Quick Start
 
@@ -31,7 +36,8 @@ npm install -g @nudojs/cli
 # or via the thin `nudojs` shell package:
 npm install -g nudojs
 # or without installing:
-npx nudojs infer math.js
+npx nudojs check math.js
+npx nudojs test math.js
 ```
 
 Write plain JavaScript. Call sites are evidence:
@@ -45,51 +51,62 @@ subtract(5, 3);
 subtract(1, 10);
 ```
 
-Run inference:
+### Day 0 — check (gate + signatures) and test (case reports)
 
 ```bash
-nudo infer math.js
+nudo check math.js
+nudo test math.js
 ```
 
-Output:
+`check` always prints signatures (success is not silent) and is the CI gate — L1 explicit contracts + L2 entry may-throw (`nudo:entry-may-throw`, default error). Unconstrained entry params print as **`any`**.
 
+```text
+signatures
+  subtract(a: any, b: any) => number
 ```
+
+`test` prints every inferred case — synthesized `call@`/`entry@` plus `@nudo:case` debug witnesses. Only declared `@nudo:case` rows with expected values enter pass/fail.
+
+```text
 === subtract ===
+  call@L6  (5, 3) => 2
+  call@L7  (1, 10) => -9
 
-call@L7: (5, 3) => 2
-call@L8: (1, 10) => -9
+assertions
+  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
 ```
 
-Output shows **observed call-site facts** (`call@<line>`) and, when several sites exist, an `Observed:` join — the ground truth from execution. A full run also prints `intension:` / `abs:` lines that re-evaluate with `unknown` parameters (a generalized signature).
+Call-site facts (`call@<line>`) are the ground truth from execution. Optional contracts live in sidecars (`*.nudo.js`) or `@nudo:refine` — that is the interface product. Optional `@nudo:case` witnesses are **debug / `nudo test` only** (concrete args or constraint builders such as `number()` / `lit(42)`; **`T.*` is gone**).
 
-Optional contracts live in sidecars (`*.nudo.js`) or `@nudo:refine` — that is the interface product. Optional `@nudo:case` witnesses are **debug / `nudo test` only** (concrete args or constraint builders such as `number()` / `lit(42)`; **`T.*` is gone**).
+### Whole-program analysis (no directives needed)
 
-### Whole-program inference (no directives needed)
-
-Functions without any directives are inferred from their call sites — every call with inferable arguments becomes a synthesized `call@<line>` observation. Functions with no call sites get an `entry@` observation with unknown parameters.
+Functions without directives are still analyzed: every call with inferable arguments becomes a synthesized `call@<line>` observation. Exported functions with no call sites get an `entry@` observation; unconstrained params display as **`any`** (not `unknown`). Dangerous operations on entry `any` can surface as L2 `nudo:entry-may-throw`.
 
 ```javascript
 function double(x) { return x * 2; }
-function helper(x) { return String(x); }
+export function helper(x) { return x.name; }
 double(5);
 ```
 
 ```bash
-nudo infer plain.js
+nudo test plain.js
+nudo check plain.js
 ```
 
-```
+```text
 === double ===
-
-call@L3: (5) => 10
+  call@L3  (5) => 10
 
 === helper ===
-
-entry@L2: (unknown) => unknown
-# no call sites found; parameters default to unknown
+  entry@L2  (any) => any
 ```
 
-Even with no call sites, the generalized signature is still computed (`helper: (x: A1) => string`).
+```text
+signatures
+  helper(x: any) => any  throws TypeError
+issues
+  [error] helper: entry may throw TypeError  (nudo:entry-may-throw)
+```
 
 Callbacks passed at call sites propagate precisely (polyvariant evaluation):
 
@@ -101,29 +118,32 @@ processItems([1, 2, 3], (x) => x * 2);
 processItems(["a"], (s) => s.toUpperCase());
 ```
 
-```
+```text
 === processItems ===
-
-call@L4: ([1, 2, 3], (x) => ...) => [2, 4, 6]
-call@L5: (["a"], (s) => ...) => ["A"]
-
-Observed: [2, 4, 6] | ["A"]
+  call@L4  ([1, 2, 3], (x) => ?) => [2, 4, 6]
+  call@L5  (["a"], (s) => ?) => ["A"]
 ```
 
-Generate TypeScript declarations:
+### Day 1 / ecosystem
 
 ```bash
-nudo infer math.js --dts
-# Creates math.d.ts
+nudo contract src/          # print / --draft / --emit sidecar contracts
+nudo export math.js --format dts --out dist/   # dts | guard | zod (one verb)
+nudo health src/            # analysis errors + contract drift
+nudo env harvest node       # @types → env module
+nudo check src/ --watch     # watch is a flag, not a verb
 ```
 
-Watch mode:
+Ignore specific entry may-throws when intentional:
 
 ```bash
-nudo watch src/ --dts
+nudo check src/ --ignore-throws TypeError
+# package.json: "nudo": { "check": { "ignoreThrows": ["TypeError"] } }
 ```
 
 Try the same ideas in the browser: [Playground](https://nudojs.github.io/nudo/playground).
+
+> **Deprecated verbs:** `nudo infer` / `types` / `generate` / `emit` / `guard` / `interface` / `doctor` / `watch` still print a stderr deprecation and map to the verbs above; they are removed in the next major. Signatures → `check`; call-site cases → `test`; dts/guard/zod → `export`.
 
 ## Packages
 
@@ -133,7 +153,7 @@ This is a monorepo managed with [pnpm workspaces](https://pnpm.io/workspaces).
 |---|---|
 | [`@nudojs/core`](./packages/core) | Abs type system (`shape × term × pred × conf`) |
 | [`@nudojs/parser`](./packages/parser) | Babel-based parser and directive extraction |
-| [`@nudojs/cli`](./packages/cli) | CLI tool and evaluator API |
+| [`@nudojs/cli`](./packages/cli) | CLI tool and evaluator API (check / test / contract / export / health / env harvest) |
 | [`@nudojs/service`](./packages/service) | Shared inference service for IDE integrations |
 | [`@nudojs/lsp`](./packages/lsp) | Language Server Protocol server, with AI-agent `executeCommand` support |
 | [`@nudojs/env`](./packages/env) | Built-in API environments (ES globals, Node, Web) loaded by `@nudo:env` |
@@ -183,11 +203,11 @@ See [`docs/examples/`](./docs/examples/) for runnable examples.
 1. **Parse** — Babel parses your `.js` file and extracts `@nudo:` directives
 2. **Execute** — The evaluator runs each function with abstract interpretation, tracking **Abs values** through all code paths (production analysis is Abs-native via B-path transpile+exec / ast-eval; there is no separate evaluation IR)
 3. **Combine** — Results from multiple cases are merged into a unified type via union simplification
-4. **Emit** — Inferred types are displayed or written as `.d.ts` declarations
+4. **Report** — `nudo check` prints signatures + gate issues; `nudo test` prints case reports; `nudo export` projects dts / guard / zod
 
 ### Abs — the type system
 
-Nudo's type system is **Abs** (`shape × term × pred × conf`): types are computable values whose constraints participate in algebra. `nudo check` prints the lossless signature:
+Nudo's type system is **Abs** (`shape × term × pred × conf`): types are computable values whose constraints participate in algebra. `nudo check` prints the lossless signature (one-line by default; `--verbose` / `--abs` expands term/pred/conf):
 
 ```
 scale(x)  number  = (x + 1)  where (x + 1) > 1  #path
@@ -221,18 +241,17 @@ pnpm run build
 ### Scripts
 
 ```bash
-pnpm run test          # Run tests
-pnpm run test:watch    # Run tests in watch mode
-pnpm run build         # Build all packages
-pnpm run docs:dev      # Start docs dev server
-pnpm run docs:build    # Build docs for production
+pnpm run test           # vitest package tests
+pnpm run test:watch     # vitest watch mode
+pnpm run build          # Build all packages
+pnpm run check <file>   # CLI: gate + signatures
+pnpm run test:cli <file> # CLI: case reports
+pnpm run nudo -- <args> # Full CLI (contract / export / health / …)
+pnpm run docs:dev       # Start docs dev server
+pnpm run docs:build     # Build docs for production
 ```
 
-### Quick Inference
-
-```bash
-pnpm run infer <file.js>
-```
+`pnpm run infer` remains as a deprecated alias of the old observation verb — prefer `check` / `test:cli`.
 
 ## Documentation
 
@@ -240,10 +259,11 @@ Full documentation is available at the [Nudo docs site](https://nudojs.github.io
 
 - [Getting Started](https://nudojs.github.io/nudo/docs/intro) — Welcome back to JavaScript
 - [Quick Start](https://nudojs.github.io/nudo/docs/getting-started/quick-start)
-- [Playground](https://nudojs.github.io/nudo/playground)
+- [Playground](https://nudojs.github.io/nudo/docs/playground)
 - [Core Concepts](https://nudojs.github.io/nudo/docs/concepts/type-values)
 - [API Reference](https://nudojs.github.io/nudo/docs/api/core)
 - [Design Document](https://nudojs.github.io/nudo/docs/design/design-doc)
+- CLI semantics: [`docs/design-cli-semantics.md`](./docs/design-cli-semantics.md)
 
 ## License
 

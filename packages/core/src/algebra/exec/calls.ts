@@ -22,15 +22,33 @@ export {
   setMemberDiagCollector,
   recordMemberDiag,
   notePrimMemberMissing,
+  noteAnyMemberMayThrow,
+  noteNullishMemberThrows,
   noteUnknownMemberMissing,
   noteMemberDispatchMiss,
   noteObjSlotMissing,
+  isNullishAbs,
+  anyMemberResult,
   setEvalMissingSlotEnabled,
   isEvalMissingSlotEnabled,
   runWithEvalMissingSlot,
   tagAbsOrigin,
   getAbsOrigin,
 } from "./member-diag.ts";
+export {
+  setMayThrowCollector,
+  getMayThrowCollector,
+  recordMayThrow,
+  pushMayThrowFrame,
+  popMayThrowFrame,
+  flushMayThrowEffects,
+  errorTypeAbs,
+  mayThrowEffectsToAbs,
+  formatThrowsAbs,
+  isThrowsIgnored,
+  filterIgnoredThrows,
+  type MayThrowEffect,
+} from "./may-throw.ts";
 
 export type BCallRecord = {
   fnName: string;

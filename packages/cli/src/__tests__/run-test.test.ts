@@ -14,7 +14,9 @@ describe("nudo test — case as test", () => {
     const report = buildTestReport("/t/pass.js", result);
     expect(report.passed).toBe(1);
     expect(report.failed).toBe(0);
-    expect(formatTestReport(report)).toContain("PASS");
+    const text = formatTestReport(report);
+    expect(text).toContain("assertions");
+    expect(text).toContain("1 passed");
   });
 
   it("fails when case expected does not match", async () => {
@@ -27,7 +29,9 @@ describe("nudo test — case as test", () => {
     const result = analyzeFile("/t/fail.js", source);
     const report = buildTestReport("/t/fail.js", result);
     expect(report.failed).toBe(1);
-    expect(formatTestReport(report)).toContain("FAILED");
+    const text = formatTestReport(report);
+    expect(text).toContain("[FAIL]");
+    expect(text).toContain("1 failed");
   });
 
   it("reports unchecked when no expected type", async () => {
@@ -41,5 +45,16 @@ describe("nudo test — case as test", () => {
     const report = buildTestReport("/t/free.js", result);
     expect(report.unchecked).toBe(1);
     expect(report.failed).toBe(0);
+  });
+
+  it("prints synthetic entry@/call@ cases by default (observation)", async () => {
+    const source = `
+      function id(x) { return x; }
+      id(1);
+    `;
+    const result = analyzeFile("/t/obs.js", source);
+    const report = buildTestReport("/t/obs.js", result);
+    const text = formatTestReport(report);
+    expect(text).toContain("call@");
   });
 });

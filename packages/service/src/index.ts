@@ -210,16 +210,18 @@ export {
   type InterfaceSurfaceOpts,
 } from "./interface-surface.ts";
 
-// check/LSP 执法路径的 autoBind 接线（package.json#nudo.interface → checkSource）
+// check/LSP 执法路径的 autoBind / L2 entry-throws 接线
 export {
   findProjectConfig,
   interfaceConfig,
   analysisConfig,
+  checkConfig,
   diskCacheRoot,
   matchesEmitAllowlist,
   type NudoConfig,
   type InterfaceConfig,
   type AnalysisConfig,
+  type CheckConfig,
   type AnalysisMode,
   type DiagnosticsLevel,
 } from "./evaluator/config.ts";

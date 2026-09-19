@@ -8,12 +8,14 @@
 
 import type { Diagnostic } from "./diagnostics.ts";
 import type { Abs, Confidence } from "./abs.ts";
-import { formatAbs } from "./format.ts";
+import { formatAbs, formatShape } from "./format.ts";
 
 /** 无损函数签名（类型即计算） */
 export type NudoSig = {
   name: string;
   params: string[];
+  /** 形参类型展示（入口无约束 = any） */
+  paramTypes?: string[];
   /** 符号 Abs 本体 */
   abs: Abs;
   /** formatAbs 单行 */
@@ -21,6 +23,10 @@ export type NudoSig = {
   /** formatAbsMultiline */
   detail: string;
   conf: Confidence;
+  /** throws 域展示（如 TypeError）；省略 = 无 may-throw */
+  throws?: string;
+  /** 模块边界入口（export / default / CJS exports） */
+  entry?: boolean;
 };
 
 export type CheckIssue = Diagnostic & {
@@ -60,10 +66,13 @@ export type CheckJson = {
   signatures: Array<{
     name: string;
     params: string[];
+    paramTypes?: string[];
     display: string;
     detail: string;
     conf: string;
     abs: string;
+    throws?: string;
+    entry?: boolean;
   }>;
   issues: Array<{
     severity: string;
@@ -87,10 +96,13 @@ export function serializeCheckJson(r: CheckReport): CheckJson {
     signatures: r.signatures.map((s) => ({
       name: s.name,
       params: [...s.params],
+      ...(s.paramTypes ? { paramTypes: [...s.paramTypes] } : {}),
       display: s.display,
       detail: s.detail,
       conf: s.conf,
       abs: formatAbs(s.abs),
+      ...(s.throws ? { throws: s.throws } : {}),
+      ...(s.entry ? { entry: true } : {}),
     })),
     issues: r.issues.map((i) => ({
       severity: i.severity,
@@ -118,12 +130,18 @@ export function formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = 
     `  ${r.summary.errors} error · ${r.summary.warnings} warning · ${r.summary.infos} info · ${r.summary.functions} fn`,
   );
 
-  // D2：默认人类档——签名始终一行摘要；term/pred/conf 细节仅 --verbose
+  // 签名始终上屏（成功也不静默）；入口 any 不得打成 unknown（design §1.1）
   if (r.signatures.length > 0) {
     lines.push("");
     lines.push("signatures");
     for (const s of r.signatures) {
-      lines.push(`  ${s.name}(${s.params.join(", ")})  ${s.display}`);
+      const paramStr =
+        s.paramTypes && s.paramTypes.length > 0
+          ? s.params.map((p, i) => `${p}: ${s.paramTypes![i] ?? "any"}`).join(", ")
+          : s.params.join(", ");
+      const throwsStr = s.throws ? `  throws ${s.throws}` : "";
+      const retStr = formatShape(s.abs);
+      lines.push(`  ${s.name}(${paramStr}) => ${retStr}${throwsStr}`);
       if (opts.verbose) {
         for (const ln of s.detail.split("\n").slice(1)) {
           lines.push(`  ${ln}`);

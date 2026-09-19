@@ -1,3 +1,5 @@
+// DESIGN-CONFLICT:cli-semantics → docs/design-cli-semantics.md §3 / design-cli-semantics-conflicts.md E2
+// C-OBL C-ANY: gold 以「无 L2」执法面为基线；L2 入口 throws 落地时需拆 any-param 等期望。
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue, type CheckReport } from "../index.ts";
 import { withStdImport, stdOpts, STD_NUDO_SRC } from "./nudo-constraints.ts";
@@ -1016,6 +1018,80 @@ describe("check require cross-file gold", () => {
         ).toBe(true);
       } else {
         expect(r.ok, r.issues.map((i) => i.message).join("; ")).toBe(true);
+      }
+    });
+  }
+});
+
+describe("check L2 entry may-throw gold", () => {
+  const cases: Array<{
+    id: string;
+    source: string;
+    expect: "entry-may-throw" | "ok";
+    ignoreThrows?: string[];
+    entryThrows?: "error" | "warning" | "off";
+  }> = [
+    {
+      id: "export-any-member-throws",
+      source: `
+export function getName(user) {
+  return user.name;
+}
+`,
+      expect: "entry-may-throw",
+    },
+    {
+      id: "internal-any-member-not-entry",
+      source: `
+function getName(user) {
+  return user.name;
+}
+getName({});
+`,
+      expect: "ok",
+    },
+    {
+      id: "export-any-member-ignore-throws",
+      source: `
+export function getName(user) {
+  return user.name;
+}
+`,
+      expect: "ok",
+      ignoreThrows: ["TypeError"],
+    },
+    {
+      id: "export-any-member-l2-off",
+      source: `
+export function getName(user) {
+  return user.name;
+}
+`,
+      expect: "ok",
+      entryThrows: "off",
+    },
+    {
+      id: "export-identity-no-throw",
+      source: `
+export function id(x) {
+  return x;
+}
+`,
+      expect: "ok",
+    },
+  ];
+  for (const c of cases) {
+    it(`L2 ${c.id} → ${c.expect}`, () => {
+      const r = checkSource(`l2-${c.id}.js`, c.source, pTrue, {
+        ...(c.entryThrows ? { entryThrows: c.entryThrows } : {}),
+        ...(c.ignoreThrows ? { ignoreThrows: c.ignoreThrows } : {}),
+      });
+      const hasL2 = r.issues.some((i) => i.code === "nudo:entry-may-throw" && i.severity === "error");
+      if (c.expect === "entry-may-throw") {
+        expect(hasL2, r.issues.map((i) => `${i.code}:${i.message}`).join("; ") || "ok").toBe(true);
+        expect(r.ok).toBe(false);
+      } else {
+        expect(hasL2, r.issues.map((i) => `${i.code}:${i.message}`).join("; ") || "ok").toBe(false);
       }
     });
   }

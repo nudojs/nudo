@@ -1,3 +1,5 @@
+// ALIGN:cli-semantics → docs/design-cli-semantics.md §2
+// 入口无约束参数已是 any（非 unknown）。展示层/文档仍常写 unknown——冲突在消费者，不在本文件。
 /**
  * 真·generalize：在新鲜类型变量 α 上执行用户函数，归纳多态签名，
  * 并支持调用点实例化。

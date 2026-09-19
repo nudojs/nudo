@@ -1,11 +1,11 @@
 ---
 sidebar_position: 2
-description: "在普通 JavaScript 上观测执行，并用侧车契约做校验——npx nudojs infer / check。"
+description: "在普通 JavaScript 上门禁签名与用例——npx nudojs check / test。"
 ---
 
 # 快速开始
 
-**读完你能带走：** 来自调用点的观测结果、一份侧车契约，以及一条可读的 `nudo check` 失败信息。
+**读完你能带走：** `nudo check` 的签名、`nudo test` 的用例、一份侧车契约，以及一条可读的 `nudo check` 失败信息。
 
 更想在浏览器里试？打开 [Playground](/playground)。
 
@@ -28,25 +28,27 @@ scale(5);
 
 没有标注。调用点就是证据。
 
-## 2. 观测（Day 0）
+## 2. 观察（Day 0）
 
 ```bash
-npx nudojs infer calc.js
+npx nudojs check calc.js
+npx nudojs test calc.js
+```
+
+```text
+signatures
+  formatName(first: any, last: any) => any
+  scale(x: any) => any
 ```
 
 ```text
 === formatName ===
-
-Case "call@L9": ("Ada", "Lovelace") => "Ada Lovelace"
-Combined: `Ada Lovelace`
-
+  call@L9  ("Ada", "Lovelace") => "Ada Lovelace"
 === scale ===
-
-Case "call@L0": (5) => 6  #exact
-Combined: number
+  call@L12  (5) => 6
 ```
 
-Nudo 用实际看到的实参执行了这些函数。泛化视图还会给出中间量上的代数（`term` / `pred` / `conf`）——那是可观测层，不是第二套类型语言。
+Nudo 用实际看到的实参执行了这些函数。无约束入口参数显示为 **`any`**（不是 `unknown`）。没有 `nudo infer` 观察动词 —— 观察 = `check` 签名 + `test` 用例 + IDE hover。
 
 ## 3. 加上显式契约（Day 1）
 
@@ -76,20 +78,21 @@ scale(0)  actual: 1  #exact
 scale(0); // 违反侧车 —— x 必须 > 0
 ```
 
-`if` 守卫**不是** refinement。契约只来自侧车 / `@nudo:refine` / `@nudo:interface`。
+`if` 守卫**不是** refinement。显式契约只来自侧车 / `@nudo:refine` / `@nudo:interface`。没有它们时，L2 仍门禁导出上的未消化 may-throw（入口参数为 `any`）。
 
 ## 选项
 
-- **`--dts`** — 生成有损的 `.d.ts` 投影以对接生态：
+- **`.d.ts` 投影** —— 生态桥（单向有损；Abs 才是真理源）：
 
   ```bash
-  npx nudojs infer calc.js --dts
+  npx nudojs export calc.js --format dts --out dist/types
   ```
 
-- **Watch 模式**
+- **Watch 模式**（旗标，不是动词）
 
   ```bash
-  npx nudojs watch src/ --dts
+  npx nudojs check src/ --watch
+  npx nudojs test src/ --watch
   ```
 
 ## 调试见证（可选）

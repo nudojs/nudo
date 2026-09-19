@@ -1,5 +1,8 @@
 # CLAUDE.md
 
+<!-- CLI semantics: docs/design-cli-semantics.md — primary verbs check/test/contract/export/health/env harvest.
+     Old verbs (infer/types/generate/emit/guard/interface/doctor/watch) are deprecated on this branch. -->
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What is Nudo
@@ -8,21 +11,27 @@ Nudo is a type inference engine for JavaScript powered by abstract interpretatio
 
 Users annotate JS with `@nudo:` directives. Source-level contracts use `@nudo:refine` + `*.nudo.js` templates (constraint-builder grammar: `number()`, `lit()`, `shape()`, `union()`, …). **`T.*` directive grammar is removed.** `@nudo:case` is debug / `nudo test` / LSP scenario only — not the interface product.
 
+Product CLI face (`docs/design-cli-semantics.md`): Day0 = `check` + `test`; Day1 = `contract` + `check`; ecosystem = `export`. Observation is check signatures + test case reports + IDE — there is no `infer`/`show`/`types` observation verb. Entry unconstrained params display as **`any`**; true **`unknown`** means inference failure.
+
 ## Development Commands
 
 ```bash
-pnpm install          # Install dependencies (requires pnpm@9.1.0)
-pnpm run build        # Build all packages with tsup
-pnpm run test         # Run all tests (vitest run)
-pnpm run test:watch   # Run tests in watch mode
-pnpm run lint         # Type-check all packages (tsc --noEmit -p tsconfig.lint.json)
-pnpm run infer <file> # Run inference on a JS file
-pnpm run docs:dev     # Docs dev (en) — http://localhost:3000/nudo/
-pnpm run docs:dev:zh  # Docs dev (zh-Hans) — http://localhost:3000/nudo/zh-Hans/
-pnpm run docs:build   # Docs production build (en + zh-Hans)
-pnpm run docs:serve   # Serve production build (both locales)
+pnpm install            # Install dependencies (requires pnpm@9.1.0)
+pnpm run build          # Build all packages with tsup
+pnpm run test           # Run all tests (vitest run)
+pnpm run test:watch     # Run tests in watch mode
+pnpm run lint           # Type-check all packages (tsc --noEmit -p tsconfig.lint.json)
+pnpm run check <file>   # gate + signatures (Day 0 / CI)
+pnpm run test:cli <file>  # case reports (call@/entry@ + debug witnesses)
+pnpm run nudo -- <args>  # full CLI (contract / export / health / env harvest / …)
+pnpm run docs:dev       # Docs dev (en) — http://localhost:3000/nudo/
+pnpm run docs:dev:zh    # Docs dev (zh-Hans) — http://localhost:3000/nudo/zh-Hans/
+pnpm run docs:build     # Docs production build (en + zh-Hans)
+pnpm run docs:serve     # Serve production build (both locales)
 ```
 
+> **Deprecated verbs** (`pnpm run infer` / `types` / `interface` / `generate` / …): still present as stderr deprecations until next major. Prefer `check`, `test:cli`, and `pnpm run nudo -- contract|export|health|env harvest`. `pnpm run test` remains **vitest** (package tests), not the CLI case reporter — that is `test:cli`.
+>
 > Docusaurus `start` serves **one locale per process**. Default `docs:dev` is English only, so `/nudo/zh-Hans/` will 404 until you run `docs:dev:zh` (or `docs:build` + `docs:serve`).
 
 Run a single test file: `pnpm vitest run packages/core/src/algebra/__tests__/check-gold.test.ts`
@@ -42,7 +51,7 @@ core → parser → service → cli → nudo (thin shell)
 |---|---|
 | `packages/core` | **Type system**: algebra/Abs (term, pred, check, leq, ast-eval, surface, arithmetic), format (extensional rendering), environment, refinements, interface (sidecar/effectiveInterface/projection) |
 | `packages/parser` | Babel-based parser; extracts function-scoped `@nudo:` directives from JSDoc |
-| `packages/cli` | CLI commands only (`infer`, `check`, `types`, `watch`, `generate`, `harvest`, `test`, `interface`) |
+| `packages/cli` | CLI commands only: check/test/contract/export/health/env harvest (deprecated: infer/types/generate/emit/guard/interface/doctor/watch) |
 | `packages/service` | Analyzer orchestration, Abs-native evaluator (B-path + ast-eval), dts-generator, harvest, infer-json, interface emitter/surface/derivation |
 | `packages/nudojs` | Thin npm shell `nudojs` (`nudo` bin) that re-exports `@nudojs/cli` |
 | `packages/lsp` | LSP server (check diagnostics, completions, code lens, inlay hints, agent tools) |
@@ -62,9 +71,9 @@ core → parser → service → cli → nudo (thin shell)
 
 **Evaluator** (`service/src/evaluator`): Abs-native. The TypeValue AST interpreter (`evaluator.ts`, `narrowing.ts`, `eval-binary.ts`, most `builtins/`) was removed — production evaluation runs Abs directly. Primary analysis path is **B-path** (`bpath-run.ts` + `core/algebra/exec`: transpile → `new Function` with Abs values); fallback is `ast-eval`/`evalProgramAbs`. Arithmetic/compare/unary/spread route through the algebra (`surface.ts`, `abs-route.ts`). `CallRecord` is Abs-only (`resultAbs`/`argsAbs`). Public API: `@nudojs/service/evaluator`.
 
-**Service** (`service`): `analyzer.ts` orchestrates parse → directives → evaluate → diagnostics. Evaluation is **Abs-native** — there is no TypeValue `evaluateProgram` fallback. **B-hosted** files (`tryRunBPath` succeeds) use transpile+exec for diagnostics, call@ synthesis, nodeTypeMap, and optional debug-witness evaluation; otherwise `ast-eval`/`evalProgramAbs` evaluate Abs directly. Modules via `evalAbsModuleGraph`（named/default/namespace、re-export/`export *`、require、harvest、@nudo:env）。Class bridge: Abs-eval `registerClassDecl` → `exec/class-registry` → B `$new`. `dts-generator.ts` projects Abs → TypeScript (`Case:` JSDoc rows are debug extensional notes, not the interface product). CLI infer prints call-site facts (`call@L…`) and `debug "name"` witnesses; Combined/Observed is the join.
+**Service** (`service`): `analyzer.ts` orchestrates parse → directives → evaluate → diagnostics. Evaluation is **Abs-native** — there is no TypeValue `evaluateProgram` fallback. **B-hosted** files (`tryRunBPath` succeeds) use transpile+exec for diagnostics, call@ synthesis, nodeTypeMap, and optional debug-witness evaluation; otherwise `ast-eval`/`evalProgramAbs` evaluate Abs directly. Modules via `evalAbsModuleGraph`（named/default/namespace、re-export/`export *`、require、harvest、@nudo:env）。Class bridge: Abs-eval `registerClassDecl` → `exec/class-registry` → B `$new`. `dts-generator.ts` projects Abs → TypeScript (`Case:` JSDoc rows are debug extensional notes, not the interface product). CLI `test` prints call@/entry@ cases and `debug "name"` witnesses; `check` prints signatures (always, even on success).
 
-**Check product**: `nudo check` is the CI gate — Pred implication on Abs, Nudo-native reports (`actual ⊭ expected`). Gold gates: recall=precision=1.0 and real-package zero-FP tests in `core/src/algebra/__tests__/`.
+**Check product**: `nudo check` is the CI gate — Pred implication on Abs, Nudo-native reports (`actual ⊭ expected`); L1 = explicit contracts (`*.nudo.js` / `@nudo:refine`); L2 = entry may-throw (`nudo:entry-may-throw`, default error; `--ignore-throws` / `package.json#nudo.check.ignoreThrows`). Signatures always printed; unconstrained entry params display as **`any`**, not `unknown`. Gold gates: recall=precision=1.0 and real-package zero-FP tests in `core/src/algebra/__tests__/` (L2 suites need split expectations when ignore is off).
 
 ## Code Conventions
 

@@ -96,5 +96,10 @@ function bad() {
 | 违例 | 调用/返回 ⊭ refine | case ⊄ D → `nudo:case-inconsistency` |
 
 ```bash
+pnpm run check docs/examples/constraints/set-delay.js      # L1 门禁
+pnpm run test:cli docs/examples/constraints/add-pred.js    # case 报告（Pred 流入代数）
 pnpm run verify:examples   # 验证本目录全部命令与期望退出码（见 [../README.md](../README.md) 命令矩阵）
 ```
+
+入口无约束参数在 check/test 上显示为 **`any`**；`unknown` 表示推导失败。
+入口 may-throw 属 L2（`nudo:entry-may-throw`），与本目录 L1 refine 互补。

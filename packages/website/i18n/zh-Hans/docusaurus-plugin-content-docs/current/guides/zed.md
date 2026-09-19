@@ -104,7 +104,7 @@ git clone https://github.com/nudojs/nudo-zed
 | Code actions / Signature help | 标准 LSP quickfix 与 signature help |
 | Agent 命令（`nudo.check` / `nudo.interface.draft` / …） | 经任意 LSP 客户端或 Zed agent 工具可达 |
 
-CodeLens `⚡ draft interface` 与 CLI `nudo interface --draft` 同源（仅客户端显式 `write: true` 时写 `*.nudo.draft.js`）。迁移步骤：[迁移已有 JS](./migrating-js.md)。
+CodeLens `⚡ draft interface` 与 CLI `nudo contract --draft` 同源（仅客户端显式 `write: true` 时写 `*.nudo.draft.js`）。迁移步骤：[迁移已有 JS](./migrating-js.md)。
 
 VS Code 扩展里 active case 的 decoration 在 Zed 无对应 API，请改用 CodeLens 的 case 选择。
 

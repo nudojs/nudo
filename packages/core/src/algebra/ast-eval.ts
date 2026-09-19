@@ -86,7 +86,15 @@ import {
   evalBuiltinInstanceMethod,
 } from "./builtins.ts";
 import { callAbsMethod, getAbsProperty } from "./methods.ts";
-import { noteMemberDispatchMiss, noteUnknownMemberMissing } from "./exec/member-diag.ts";
+import {
+  noteMemberDispatchMiss,
+  noteUnknownMemberMissing,
+  noteAnyMemberMayThrow,
+  noteNullishMemberThrows,
+  anyMemberResult,
+} from "./exec/member-diag.ts";
+import { errorTypeAbs, pushMayThrowFrame, popMayThrowFrame, flushMayThrowEffects } from "./exec/may-throw.ts";
+import { NudoThrow } from "./exec/runtime.ts";
 import { registerBClass } from "./exec/class-registry.ts";
 import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
 import {
@@ -1067,12 +1075,22 @@ function evalNodeInner(
           }
         }
       }
-      // unknown 上的裸属性 → unknown-recv（$get 同口径；obj open 不记）
+      // any / nullish / unknown 成员读（design-cli-semantics §3.3）
       if (!m.computed && m.property.type === "Identifier") {
+        const propName = (m.property as Identifier).name;
         const loc = node.loc
           ? ([node.loc.start.line, node.loc.start.column] as [number, number])
           : undefined;
-        noteUnknownMemberMissing(obj, (m.property as Identifier).name, "property", loc);
+        // nullish → 记 may-throw TypeError（soft：不中断求值，throws 域仍上屏）
+        if (noteNullishMemberThrows(obj, propName, "property", loc)) {
+          return ok(unknown, phi, env);
+        }
+        // any（无约束）→ 记 may-throw，结果保持 any（不是 unknown）
+        if (noteAnyMemberMayThrow(obj, propName, "property", loc)) {
+          return ok(anyMemberResult(), phi, env);
+        }
+        // unknown（推导失败）→ unknown-recv 引擎债
+        noteUnknownMemberMissing(obj, propName, "property", loc);
       }
       return ok(unknown, phi, env);
     }
@@ -1625,11 +1643,17 @@ function evalCall(
         applyUnaryCallback(fnNode, elem, env, phi, budget);
         return ok(joinAbs(elem, undefAbs()), phi, env);
       }
-      // 分派失败：prim/unknown 上记 method-missing（跨文件 import 函数体走此路径）
+      // 分派失败：prim/any/nullish/unknown 记账（design-cli-semantics §3.3）
       {
         const loc = node.loc
           ? ([node.loc.start.line, node.loc.start.column] as [number, number])
           : undefined;
+        if (noteNullishMemberThrows(obj, method, "method", loc)) {
+          return ok(unknown, phi, env);
+        }
+        if (noteAnyMemberMayThrow(obj, method, "method", loc)) {
+          return ok(anyMemberResult(), phi, env);
+        }
         noteMemberDispatchMiss(obj, method, "method", loc);
       }
     }
@@ -2105,7 +2129,11 @@ function evalTry(
   phi: Phi,
   budget: LeakBudget,
 ): EvalResult {
+  // soft may-throw：try 有 handler 时消化；无 handler 上浮（design §3.3）
+  pushMayThrowFrame();
   const tryR = evalNode(node.block, env, phi, budget);
+  const tryEffects = popMayThrowFrame(!!node.handler);
+  if (tryEffects.length > 0) flushMayThrowEffects(tryEffects);
   let value = tryR.value;
   let local = tryR.env;
   let curPhi = tryR.phi;

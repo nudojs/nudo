@@ -42,7 +42,7 @@ pnpm run build
 | `@nudojs/cli` | 仅 CLI 命令（`infer`、`check`、`types`、`watch`、`generate`、`harvest`、`test`、`interface`） |
 | `@nudojs/service` | 高层 API：`analyzeFile`、`getTypeAtPosition`、`getCompletionsAtPosition` |
 | `@nudojs/lsp` | Language Server Protocol 实现，含面向 AI agent 的 executeCommand/自定义请求（见 [Agent 集成指南](./guides/mcp-server.md)） |
-| `@nudojs/harvester` | 把 `@types/*.d.ts` 声明转换为 Nudo env 文件（`nudo harvest` 的底层引擎） |
+| `@nudojs/harvester` | 把 `@types/*.d.ts` 声明转换为 Nudo env 文件（`nudo env harvest` 的底层引擎） |
 | `@nudojs/env` | 内置环境类型定义（`/// @nudo:env es\|web\|node`，子路径导出 `/es` `/web` `/node`） |
 | `vite-plugin-nudo` | 开发阶段的类型推断 Vite 插件 |
 | `nudo-vscode` | VS Code / Cursor 扩展 |
@@ -70,7 +70,8 @@ pnpm run build
 ```bash
 pnpm exec tsx packages/cli/src/index.ts infer path/to/file.js
 # 或
-pnpm exec nudo infer path/to/file.js
+pnpm exec nudo check path/to/file.js
+pnpm exec nudo test path/to/file.js
 ```
 
 ---

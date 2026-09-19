@@ -1,6 +1,6 @@
 ---
 sidebar_position: 7
-description: 用 `nudo generate` 从 Nudo 推断的类型生成 Zod schema、零依赖类型守卫与 TypeScript 声明，可写入文件或输出到 stdout。
+description: 用 `nudo export` 从 Nudo 推断的类型生成 Zod schema、零依赖类型守卫与 TypeScript 声明，可写入文件或输出到 stdout。
 ---
 
 # 运行时类型生成
@@ -15,10 +15,10 @@ JS code → Nudo infers types → Generate validators → Runtime validation
 
 所有生成结果默认打印到 stdout。可传 `--output <dir>` 写入文件。
 
-## `nudo generate` 命令
+## `nudo export` 命令
 
 ```bash
-nudo generate <file> [options]
+nudo export <file> [--format dts|guard|zod|all] [--out dir]
 ```
 
 | 选项 | 描述 |
@@ -26,19 +26,19 @@ nudo generate <file> [options]
 | `--format <format>` | 输出格式：`zod`、`guard`、`dts`、`all`（默认：`all`） |
 | `--output <dir>` | 把校验器文件写入该目录（`<name>.nudo.zod.ts`、`<name>.nudo.guard.ts`、`<name>.d.ts`）。省略则打印到 stdout。 |
 
-运行 `nudo generate` 会读取源文件的推断类型，并以指定格式打印验证器。
+`nudo export` 是 CLI 上 `.d.ts` / guard / Zod 的**唯一**路径。废弃动词 `nudo generate` / `nudo emit` / `nudo guard` 与 `infer --dts` 映射到这里。
 
 ### 基本用法
 
 ```bash
 # 打印所有格式（zod、guard、dts）
-nudo generate src/api/users.js
+nudo export src/api/users.js
 
 # 仅打印 Zod schema
-nudo generate src/api/users.js --format zod
+nudo export src/api/users.js --format zod
 
 # 自行把 stdout 捕获到文件
-nudo generate src/api/users.js --format zod > users.schema.txt
+nudo export src/api/users.js --format zod > users.schema.txt
 ```
 
 ## 示例源码
@@ -59,7 +59,7 @@ function createUser(input) {
 使用 `--format zod` 时，Nudo 会为每个 case 的输入和输出类型打印 [Zod](https://zod.dev) schema 表达式。schema 以注释形式输出——把其中的表达式复制出来，组装成你自己的 schema 模块。
 
 ```bash
-nudo generate src/api/users.js --format zod
+nudo export src/api/users.js --format zod
 ```
 
 输出（stdout）：
@@ -135,7 +135,7 @@ export async function POST(request) {
 Guard 的命名为 `is` + 函数名 + case 名 + `Output`（每个 case 一个 guard，校验该 case 的输出类型）：
 
 ```bash
-nudo generate src/api/users.js --format guard
+nudo export src/api/users.js --format guard
 ```
 
 输出（stdout）：
@@ -155,13 +155,13 @@ Guard 函数执行一系列 `typeof` 检查，没有 schema 解释开销。在�
 
 ## TypeScript 声明
 
-使用 `--format dts` 时，Nudo 为每个函数打印一条拓宽后的单一签名——与 `nudo infer <file> --dts` 输出一致。有三点需要了解：
+使用 `--format dts` 时，Nudo 为每个函数打印一条拓宽后的单一签名——与 `nudo export --format dts` 输出一致。有三点需要了解：
 
 - 参数名来自源码（如 `input`）；只有声明节点无法恢复名称时才回退为按位置的 `arg0`、`arg1`。
 - 参数位置（逆变位）会被拓宽：字面量参数坍缩为基类型（`"hello"` → `string`、`[1, 2, 3]` → `number[]`），调用方可以传入任意兼容值。返回类型保留推断精度，包括嵌套字面量。
 
 ```bash
-nudo generate src/api/users.js --format dts
+nudo export src/api/users.js --format dts
 ```
 
 输出（stdout）：
@@ -186,7 +186,7 @@ function formatValue(value) {
 ```
 
 ```bash
-nudo generate src/api/format.js --format dts
+nudo export src/api/format.js --format dts
 ```
 
 ```ts
@@ -200,14 +200,14 @@ nudo generate src/api/format.js --format dts
 export declare function formatValue(value: string | number): string;
 ```
 
-如果想把 `.d.ts` 文件直接写到源码旁边而不是打印，可使用 `nudo infer <file> --dts`。
+如果想把 `.d.ts` 写入目录，可使用 `nudo export <file> --format dts --out <dir>`。
 
 ## JSON 输出
 
-用于程序化消费和 CI/CD 集成时，使用 `nudo infer --json` 获取机器可读的输出。
+用于程序化消费和 CI/CD 集成时，使用 `nudo check --json`（签名 + 诊断）或 `nudo test --json`（用例）。没有一级 `nudo infer --json` 动词。
 
 ```bash
-nudo infer src/api/users.js --json
+nudo check src/api/users.js --json
 ```
 
 输出结构：
@@ -273,7 +273,7 @@ nudo infer src/api/users.js --json
 
 ```bash
 # 如果报告了任何诊断则失败
-nudo infer src/api/users.js --json | jq '.diagnostics | length == 0'
+nudo check src/api/users.js --json | jq '.diagnostics | length == 0'
 ```
 
 在构建中打印验证器，并把 stdout 捕获进项目：
@@ -281,7 +281,7 @@ nudo infer src/api/users.js --json | jq '.diagnostics | length == 0'
 ```json
 {
   "scripts": {
-    "generate": "nudo generate src/api/users.js --format zod > src/api/users.schema.txt",
+    "generate": "nudo export src/api/users.js --format zod > src/api/users.schema.txt",
     "build": "npm run generate && tsc && vite build"
   }
 }
@@ -310,7 +310,7 @@ function createProduct(input) {
 **2. 打印所有验证器格式：**
 
 ```bash
-nudo generate src/api/products.js --format all
+nudo export src/api/products.js --format all
 ```
 
 输出（stdout）：

@@ -9,8 +9,10 @@
 | [`assign.js`](./assign.js) | `nudo:assign-mismatch` | 赋值 ⊭ 原有形状 |
 | [`arg-structure.js`](./arg-structure.js) | `nudo:constraint-violated` | 实参 ⊭ 显式 shape 契约 |
 
-> **契约模型（C0.1）**：无显式契约时**不**从 body 访问发明必填 slot。
-> 无契约 → 调用点事实 / `any`；有契约 → 按契约执法。
+> **契约模型（C0.1 + L2）**：无显式契约时**不**从 body 访问发明必填 slot。
+> 无契约 → 调用点事实 / **`any`**（不是 unknown）；有 L1 契约 → 按契约执法。
+> 入口 export 上未消化的 may-throw 是 **L2**（`nudo:entry-may-throw`，默认 error），
+> 与 body-slot 义务正交。
 
 运行命令与期望退出码见 [../README.md](../README.md) 的命令矩阵；
 `pnpm run verify:examples` 一次验证全部。
@@ -81,8 +83,9 @@ issues
 
 要点：
 
-- **义务只来自声明**（`@nudo:refine` / 侧车），不是 body AST 扫描；
-- **无契约不发明义务**：`readXY({x:1})` 在无 refine 时合法；
+- **L1 shape 义务只来自声明**（`@nudo:refine` / 侧车），不是 body AST 扫描；
+- **无契约不发明 shape 义务**：`readXY({x:1})` 在无 refine 时合法（调用点事实 / `any`）；
+- **L2 仍可能执法**：export 入口对 `any` 的危险操作可报 `nudo:entry-may-throw`；
 - **宽度子类型**：契约外的多余字段放行。
 
 ## 关联文档

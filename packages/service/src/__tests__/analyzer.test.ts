@@ -276,18 +276,22 @@ const ok = bad("hello");
     expect(methodDiags).toHaveLength(0);
   });
 
-  it("downgrades unknown-receiver method failures to warnings", () => {
+  it("entry unconstrained param is any; method on any is throws, not unknown-recv", () => {
     const source = `
 function lonely(u) {
   return u.toUpperCase();
 }
 `;
     const result = analyzeFile("/test/lonely-unknown.js", source);
-    const diag = result.diagnostics.find((d) => d.code === "nudo:unknown-recv");
-    expect(diag).toBeDefined();
-    expect(diag!.severity).toBe("warning");
-    expect(diag!.message).toContain("toUpperCase");
-    expect(result.diagnostics.some((d) => d.code === "nudo:no-method" && d.message.includes("toUpperCase"))).toBe(false);
+    // design-cli-semantics §2–3: 无约束入口参数 = any；成员访问进 throws 域
+    const unknownRecv = result.diagnostics.filter((d) => d.code === "nudo:unknown-recv");
+    expect(unknownRecv).toHaveLength(0);
+    const fn = result.functions.find((f) => f.name === "lonely");
+    expect(fn).toBeDefined();
+    const entry = fn!.cases.find((c) => c.name.startsWith("entry@"));
+    expect(entry).toBeDefined();
+    expect(formatShape(entry!.argAbs[0]!)).toBe("any");
+    expect(formatShape(entry!.throwsAbs)).toContain("TypeError");
   });
 
   it("attaches callsite argument provenance to no-method diagnostics", () => {
@@ -307,17 +311,18 @@ const boom = badNum(42);
     expect(diag!.origin!.column).toBeLessThan(30);
   });
 
-  it("omits provenance for unknown receivers without callsite origin", () => {
+  it("entry any member access records may-throw without unknown-recv", () => {
     const source = `
 function lonely(u) {
   return u.toUpperCase();
 }
 `;
     const result = analyzeFile("/test/lonely-origin.js", source);
-    const diag = result.diagnostics.find((d) => d.code === "nudo:unknown-recv");
-    expect(diag).toBeDefined();
-    expect(diag!.origin).toBeUndefined();
-    expect(diag!.message).toBe("Cannot resolve 'toUpperCase' on unknown value");
+    // 无约束参数 = any → throws 域，不是 unknown-recv 引擎债
+    expect(result.diagnostics.filter((d) => d.code === "nudo:unknown-recv")).toHaveLength(0);
+    const entry = result.functions.find((f) => f.name === "lonely")?.cases.find((c) => c.name.startsWith("entry@"));
+    expect(entry).toBeDefined();
+    expect(formatShape(entry!.throwsAbs)).toContain("TypeError");
   });
 
   it("aggregates cross-file call sites of imported functions into externalFunctions", () => {
@@ -355,7 +360,7 @@ function lonely(u) {
     expect(result.externalFunctions ?? []).toHaveLength(0);
   });
 
-  it("collects chained CJS exports as named functions with entry fallback", () => {
+  it("collects chained CJS exports as named functions with entry any params", () => {
     const source = `
 const internals = {};
 module.exports = internals.clone = function (obj, options = {}) {
@@ -369,12 +374,13 @@ module.exports = internals.clone = function (obj, options = {}) {
     expect(clone!.noDeclaration).toBe(true);
     expect(clone!.entryOnly).toBe(true);
     expect(clone!.cases).toHaveLength(1);
-    // entry fallback: parameters enter as unknown, so returning obj propagates unknown
+    // design-cli-semantics §2: 入口无约束参数 = any（不是 unknown）
     expect(clone!.cases[0].argAbs).toHaveLength(2);
-    expect(formatShape(clone!.cases[0].argAbs[0]!)).toBe("unknown");
-    expect(formatShape(clone!.cases[0].argAbs[1]!)).toBe("unknown");
+    expect(formatShape(clone!.cases[0].argAbs[0]!)).toBe("any");
+    expect(formatShape(clone!.cases[0].argAbs[1]!)).toBe("any");
     expect(clone!.cases[0].name).toMatch(/^entry@L\d+$/);
-    expect(clone!.cases[0].abs.shape.k).toBe("unknown");
+    // CJS 赋值导出：具名求值可能拿不到绑定 → 结果 unknown 是「推导失败」，与 any 区分
+    expect(formatShape(clone!.cases[0].abs)).toBe("unknown");
   });
 
   it("names chained exports after the first non-module.exports property", () => {

@@ -1,3 +1,4 @@
+// IMPLEMENTED:cli-semantics — entry@ 参数 = any；throws 上屏；观察在 check/test。
 import { readFileSync, existsSync, statSync, realpathSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import type { Node } from "@babel/types";
@@ -15,6 +16,11 @@ import {
   setBCallCollector,
   getBCallCollector,
   unknown as absUnknown,
+  anyAbs,
+  setMayThrowCollector,
+  mayThrowEffectsToAbs,
+  formatThrowsAbs,
+  type MayThrowEffect,
   setAbsNodeCollector,
   absFunction,
   checkInjectedDomainEvidence,
@@ -2102,42 +2108,66 @@ function analyzeFileUncachedInner(
     }
 
     const fnNode = resolveFunctionNode(candidate.node);
-    const argAbsEntry = extractParamNames(fnNode).map(() => absUnknown);
+    // 入口无约束参数 = any（design-cli-semantics §2）；不是 unknown（推导失败）
+    const argAbsEntry = extractParamNames(fnNode).map(() => anyAbs);
     // B 路径主求值（capable）；失败再 Abs ast-eval
     let entryAbs: Abs | undefined;
-    let entryThrowsAbs: Abs = neverAbs;
-    if (isBPathCapable(source, envNames) && filePath) {
-      const bEntryFull = tryBPathCallFull(
-        source,
-        filePath,
-        candidate.analysis.name,
-        argAbsEntry,
-        { envNames, mocks: mockSeedsToAbsMocks(seeds), collectMemberDiags: true },
-      );
-      if (bEntryFull?.memberDiags?.length) {
-        for (const d of bEntryFull.memberDiags) {
-          pushBMemberDiag(d, candidate.analysis.loc.start.line);
+    let entryThrowsAbs: Abs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
+    const entryEffects: MayThrowEffect[] = [];
+    setMayThrowCollector((e) => entryEffects.push(e));
+    try {
+      if (isBPathCapable(source, envNames) && filePath) {
+        const bEntryFull = tryBPathCallFull(
+          source,
+          filePath,
+          candidate.analysis.name,
+          argAbsEntry,
+          { envNames, mocks: mockSeedsToAbsMocks(seeds), collectMemberDiags: true },
+        );
+        if (bEntryFull?.memberDiags?.length) {
+          for (const d of bEntryFull.memberDiags) {
+            pushBMemberDiag(d, candidate.analysis.loc.start.line);
+          }
+        }
+        const bEntry = bEntryFull?.result;
+        if (bEntry && (bHostedEval || !(bEntry.shape.k === "unknown" && !bEntry.term))) {
+          entryAbs = bEntry;
+          if (bEntryFull?.throws) entryThrowsAbs = bEntryFull.throws;
         }
       }
-      const bEntry = bEntryFull?.result;
-      if (bEntry && (bHostedEval || !(bEntry.shape.k === "unknown" && !bEntry.term))) {
-        entryAbs = bEntry;
-        if (bEntryFull?.throws) entryThrowsAbs = bEntryFull.throws;
-      }
-    }
-    if (!entryAbs) {
-      if (bHostedEval) {
-        entryAbs = absUnknown;
-        entryThrowsAbs = neverAbs;
-      } else {
-        const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, argAbsEntry, filePath, seeds.seedVars);
-        if (absEntry) {
-          entryAbs = absEntry;
-          entryThrowsAbs = neverAbs;
-        } else {
+      if (!entryAbs) {
+        if (bHostedEval) {
           entryAbs = absUnknown;
-          entryThrowsAbs = neverAbs;
+          entryThrowsAbs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
+        } else {
+          const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, argAbsEntry, filePath, seeds.seedVars);
+          if (absEntry) {
+            entryAbs = absEntry;
+            entryThrowsAbs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
+          } else {
+            entryAbs = absUnknown;
+            entryThrowsAbs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
+          }
         }
+      }
+    } finally {
+      setMayThrowCollector(null);
+    }
+    // throws 域 = hard throw ∪ soft may-throw（any/nullish 成员访问等）
+    const softThrows = mayThrowEffectsToAbs(entryEffects);
+    if (entryThrowsAbs.shape.k === "never" && softThrows.shape.k !== "never") {
+      entryThrowsAbs = softThrows;
+    } else if (entryThrowsAbs.shape.k !== "never" && softThrows.shape.k !== "never") {
+      // 已有 hard throws 时并入 soft（展示层取并集名）
+      const hard = formatThrowsAbs(entryThrowsAbs);
+      const soft = formatThrowsAbs(softThrows);
+      if (hard && soft && hard !== soft) {
+        entryThrowsAbs = makeAbsVal(
+          { k: "sum", members: [entryThrowsAbs, softThrows] },
+          undefined,
+          undefined,
+          "exact",
+        );
       }
     }
     const caseResult: CaseResult = {

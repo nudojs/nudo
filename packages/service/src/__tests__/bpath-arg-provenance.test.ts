@@ -1,5 +1,6 @@
 import { it, expect, describe, afterAll } from "vitest";
 import { analyzeFile, clearBPathCache } from "@nudojs/service";
+import { formatShape } from "@nudojs/core";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -72,33 +73,35 @@ const boom = f();
     expect(globals.filter((d) => d.message.includes("WeakRef"))).toHaveLength(0);
   });
 
-  it("B reports unknown-recv for method on unknown param (no TypeValue double)", () => {
+  it("entry unconstrained param: method on any → throws TypeError (not unknown-recv)", () => {
     const src = `function lonely(u) {
   return u.toUpperCase();
 }
 `;
     const r = analyze(src);
+    // design-cli-semantics: 无约束参数 = any；成员访问进 throws 域
     const unknownRecv = r.diagnostics.filter(
       (d) => d.code === "nudo:unknown-recv" && d.message.includes("toUpperCase"),
     );
-    expect(unknownRecv.length).toBe(1);
-    expect(unknownRecv[0]!.severity).toBe("warning");
-    // B 已报则不应再有 no-method 同名
-    expect(
-      r.diagnostics.filter((d) => d.code === "nudo:no-method" && d.message.includes("toUpperCase")),
-    ).toHaveLength(0);
+    expect(unknownRecv).toHaveLength(0);
+    const entry = r.functions.find((f) => f.name === "lonely")?.cases.find((c) => c.name.startsWith("entry@"));
+    expect(entry).toBeDefined();
+    expect(formatShape(entry!.argAbs[0]!)).toBe("any");
+    expect(formatShape(entry!.throwsAbs)).toContain("TypeError");
   });
 
-  it("B reports unknown-recv for property on unknown", () => {
+  it("entry unconstrained param: property on any → throws, not unknown-recv", () => {
     const src = `function lonely(u) {
   return u.foo;
 }
 `;
     const r = analyze(src);
-    const diags = r.diagnostics.filter(
-      (d) => (d.code === "nudo:unknown-recv" || d.code === "nudo:no-method") && d.message.includes("foo"),
+    const unknownRecv = r.diagnostics.filter(
+      (d) => d.code === "nudo:unknown-recv" && d.message.includes("foo"),
     );
-    expect(diags.length).toBeGreaterThanOrEqual(1);
-    expect(diags.some((d) => d.code === "nudo:unknown-recv")).toBe(true);
+    expect(unknownRecv).toHaveLength(0);
+    const entry = r.functions.find((f) => f.name === "lonely")?.cases.find((c) => c.name.startsWith("entry@"));
+    expect(entry).toBeDefined();
+    expect(formatShape(entry!.throwsAbs)).toContain("TypeError");
   });
 });

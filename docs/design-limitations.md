@@ -1,3 +1,5 @@
+<!-- CLI semantics: docs/design-cli-semantics.md — L1 explicit contracts + L2 entry may-throw.
+     C0 body-slot prohibition remains; entry unconstrained params = any; observation via check/test. -->
 # Nudo 设计限制与待解决问题
 
 > 本文档列出 Nudo 当前的设计限制，是下一步改进的路线图。
@@ -140,9 +142,15 @@ pickDynamic({ a: 1, b: "x" }, "c");
 
 ### 2.0 HOF promote（body 用量提升）与 C0 契约模型（诚实边界）
 
-**契约模型（C0 / §0.1 路线图）**：check 义务只来自**显式契约**
-（`*.nudo.js` / `@nudo:refine`）与 harvest `relationFn` 关系。
-**不**从 body AST 预扫描发明必填 slot。
+**契约模型（C0 / design-cli-semantics §3）**：check 义务分两层——
+
+- **L1** 显式契约：`*.nudo.js` / `@nudo:refine` / harvest `relationFn`。
+  **不**从 body AST 预扫描发明必填 slot（C0 仍成立）。
+- **L2** 入口 may-throw：export/entry 函数上未消化的 throws → 默认 **error**
+  （`nudo:entry-may-throw`；`--ignore-throws` / `package.json#nudo.check.ignoreThrows` 可滤）。
+  这是 JS 运行时边界语义，不是 shape 必填义务。
+
+入口无约束参数显示为 **`any`**；`unknown` 表示推导失败，不与 any 混用。
 
 **现状（需与 C0 一并阅读）**：generalize 在无 refine 时仍会从 body 用量
 **promote** 出 `fnRels`（`RelSource === "promote"`，参数被当回调使用 →
@@ -154,10 +162,12 @@ fn/arity 形状）。`checkHofFnRelArgs`（`scan.ts` ~1342–1387）消费这些
 | `refine` / `relationFn`（显式契约） | error（refine 表达 fn 后才可测） | 真正的检查义务 |
 
 因此：**body-usage promote = suggestion/warning only**。它**不**构成
-「义务只来自显式契约」的反例执法——默认门禁不会因 promote 升 exit code。
+L1 义务的反例执法——默认门禁不会因 promote 升 exit code。
 文档/对比表不得把 promote warning 写成「零注解 body 推出的 check 错误」。
+（与之相对，L2 入口 may-throw **会**升 exit code，但是运行时效果门禁，不是 promote。）
 实现锚点：`scan.ts` `const isPromote = rel.source === "promote"`；
-设计细节见 [`design-hof-relations.md`](design-hof-relations.md) §6.3。
+设计细节见 [`design-hof-relations.md`](design-hof-relations.md) §6.3 与
+[`design-cli-semantics.md`](design-cli-semantics.md) §3。
 
 ---
 
@@ -376,12 +386,13 @@ caught();
 
 ---
 
-### 4.3 `infer` 崩溃：class 声明 × 顶层调用点（已解决·2026-09 复测）
+### 4.3 CLI 崩溃：class 声明 × 顶层调用点（已解决·2026-09 复测）
 
-~~文件同时包含 class 声明与特定形态的顶层调用点时，`nudo infer`
+~~文件同时包含 class 声明与特定形态的顶层调用点时，CLI 分析
 以裸 `Maximum call stack size exceeded` 崩溃（exit 1，无文件/行号诊断），
 与声明顺序无关，class 不必被实例化。~~ 已修复：2026-09 复测两个原触发
-变体与合体文件均 exit 0，调用点逐位精确。
+变体与合体文件均 exit 0，调用点逐位精确。今日验证命令：`nudo test` /
+`nudo check`（旧动词 `infer` 已 deprecated）。
 
 ```javascript
 // 原触发形态 A：顶层调用 Object.keys(具体形状) —— 现已正常
@@ -424,7 +435,7 @@ exit 0，全部 case 精确（`compute` → `25 #exact`）。网站
 | 全局标识符未解析 | 常见代码模式 | ✅ 已解决（见 3.1） |
 | `this` 绑定语义 | 方法调用 | ✅ 已解决（见 3.0） |
 | 数组 `reduce` 累加 | 链式调用 | ✅ 已解决（见 1.1） |
-| `infer` class × 顶层调用点裸栈溢出 | 崩溃：目录扫描整体失败 | ✅ 已解决（见 4.3） |
+| CLI class × 顶层调用点裸栈溢出 | 崩溃：目录扫描整体失败 | ✅ 已解决（见 4.3） |
 
 ### P1 - 高影响，复杂
 
@@ -487,7 +498,7 @@ exit 0，全部 case 精确（`compute` → `25 #exact`）。网站
 
 ## 八、调用点发现的已知边界（P7 实测，2026-08）
 
-调用点注入（`infer --callsites`）在 hoek 98.6% / json-ext 91.8% 后的
+调用点注入（`nudo test/check --from`，原 `infer --callsites`）在 hoek 98.6% / json-ext 91.8% 后的
 诚实天花板项（阶段 3 循环/闭包语义波已落地：for-of union 分发、
 break/continue 信号、let 每轮绑定、Promise resolve 静态位点扫描、
 递归截断观测回退、usage-site 执行泄漏标记）：

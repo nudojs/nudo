@@ -71,7 +71,7 @@ function upper(s) {
 
 CodeLens 面向 **interface 档**（设计 §8）：
 
-- **● interface / handwritten|generated|implicit** —— 每个导出函数的有效契约来源；点击打印与 `nudo interface` 同一表面
+- **● interface / handwritten|generated|implicit** —— 每个导出函数的有效契约来源；点击打印与 `nudo contract` 同一表面
 - **⚡ persist interface** / **↻ update interface** —— 把调用点域固化进 `*.nudo.js` 侧车
 - **● / ○ case "name"** —— debug 副层；点击选择类型重放的激活 case
 
@@ -139,7 +139,7 @@ Nudo 根据推断类型提供语法高亮。函数、变量和死代码的高亮
 
 | 面板标题 | 命令 | 行为 |
 |----------|------|------|
-| Nudo: Show Interface | `nudo.interface` | 在 **Nudo** 输出通道打印分层（同 `nudo interface`） |
+| Nudo: Show Interface | `nudo.interface` | 在 **Nudo** 输出通道打印分层（同 `nudo contract`） |
 | Nudo: Draft Interface (code-first) | `nudo.interface.draft` | Output 预览草稿；可选写入 `*.nudo.draft.js` / `*.nudo.draft.ts`（无项目根时写盘 fail-closed） |
 | Nudo: Persist Interface (@generated) | `nudo.interfaceEmit` | **先 dry-run**（`dryRun: true`，不写盘）→ Output 预览 → 确认 → 真实写入侧车。CodeLens persist/update 共用同一确认流程 |
 

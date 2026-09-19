@@ -412,7 +412,7 @@ function calc(a, b) {
 - **Advanced language** — closures, recursion budget, async/Promise, try-catch, classes.
 - **Tooling** — LSP, watch, `.d.ts`, Vite plugin, VS Code extension.
 - **Refined IR** — template/range refinements; source contracts via `@nudo:refine`.
-- **Abs algebra (single-track)** — Term/Pred/Abs, arithmetic kernel, `leqAbs`, generalize, `nudo check` / `nudo types` / `nudo test`, CheckJson, gold gates (recall = precision = 1.0).
+- **Abs algebra (single-track)** — Term/Pred/Abs, arithmetic kernel, `leqAbs`, generalize, `nudo check` / `nudo test` / `nudo contract` / `nudo export`, CheckJson, gold gates (recall = precision = 1.0).
 - **Call budget** — depth/cycle/total guards so recursive check never stack-overflows.
 
 ### Open

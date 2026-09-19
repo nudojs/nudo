@@ -1,3 +1,5 @@
+<!-- DESIGN-CONFLICT:cli-semantics → docs/design-cli-semantics.md §2 / design-cli-semantics-conflicts.md
+     C-ANY: unknown/any 并格（zh 镜像）。 -->
 ---
 sidebar_position: 1
 description: "类型值——作为单一可计算系统的符号值集合：Abs 代数（shape × term × pred × conf）、指令约束构建器文法与四条设计原则。"
@@ -65,7 +67,22 @@ promise<{ id: 7, name: "u7" }>       // 异步结果
 number | string       // 异构联合
 ```
 
-`never` 是空集（不可达）；`unknown` 是全集。
+`never` 是空集（不可达）。
+
+### any 与 unknown
+
+二者在**产品语义上永不混用**：
+
+| | `any` | `unknown` |
+|---|-------|-----------|
+| 含义 | 无约束：JS 值的并集；**开发者**负责细化 | **推导失败** / 引擎无信息；**Nudo** 负责修 |
+| 来源 | 未标注入口参数、显式 `any()`、refine 解析失败回退 | 求值失败、native 未建模、截断、泄漏、opaque |
+| 运算 | 按真实 JS 语义取并集；不是「分析失败」 | 不得假装成合法契约；应触发引擎债诊断 |
+| 窄化 | 条件语句可窄化（`typeof` / `===` / `Array.isArray` / `switch` / 真值 / 判别字段） | 用户条件不能「合法化」；先修推导或补 env/mock/refine |
+| 展示 | `any`（可带 type-var 如 `A1`） | `unknown` + conf 标注 |
+| 产品话术 | 「未写契约 ⇒ 默认约束为 any + JS 运行时效果」 | 「Nudo 遇到无法处理的场景」 |
+
+**规则：** 无约束入口参数显示为 **`any`**，绝不显示为 `unknown`。CLI / `check` 签名遵循此契约。
 
 ---
 

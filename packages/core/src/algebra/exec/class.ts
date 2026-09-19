@@ -23,7 +23,15 @@ import {
 import { emptyEnv } from "../ast-eval.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { pTrue } from "../pred.ts";
-import { notePrimMemberMissing, noteUnknownMemberMissing } from "./calls.ts";
+import {
+  notePrimMemberMissing,
+  noteUnknownMemberMissing,
+  noteAnyMemberMayThrow,
+  noteNullishMemberThrows,
+  anyMemberResult,
+} from "./calls.ts";
+import { errorTypeAbs } from "./may-throw.ts";
+import { NudoThrow } from "./runtime.ts";
 import { callAbsMethod } from "../methods.ts";
 import {
   registerBClass,
@@ -378,8 +386,16 @@ export function $invoke(
     if (impl.bindThis) return $call(prop as Abs, [thisVal, ...args]);
     return $call(prop as Abs, args);
   }
-  // prim 接收者上的未知方法 → no-method；unknown → unknown-recv
+  // prim 接收者上的未知方法 → no-method
   if (notePrimMemberMissing(thisVal, method, "method", loc)) return unknown;
+  // nullish → may-throw TypeError（soft）；any → may-throw + 结果 any
+  if (noteNullishMemberThrows(thisVal, method, "method", loc)) {
+    return unknown;
+  }
+  if (noteAnyMemberMayThrow(thisVal, method, "method", loc)) {
+    return anyMemberResult();
+  }
+  // unknown（推导失败）→ unknown-recv 引擎债
   noteUnknownMemberMissing(thisVal, method, "method", loc);
   return unknown;
 }

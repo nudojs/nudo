@@ -63,7 +63,7 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 
 ## nudo.infer
 
-全文件推断 —— 契约与 CLI `nudo infer --json` 一致。
+全文件用例报告 —— 数据与 CLI `nudo test --json` 一致。CI 优先 CLI `nudo check` / `nudo test`；本工具名为遗留，映射到 test/check 观察面。
 
 **参数：**
 

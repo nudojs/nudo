@@ -1,6 +1,6 @@
 ---
 sidebar_position: 11
-description: "Migrate an existing JavaScript package to Nudo: draft contracts from code, review, persist, then gate with check/doctor."
+description: "Migrate an existing JavaScript package to Nudo: draft contracts from code, review, persist, then gate with check/health."
 ---
 
 # Migrating existing JS
@@ -8,7 +8,7 @@ description: "Migrate an existing JavaScript package to Nudo: draft contracts fr
 Nudo does **not** require annotations up front. The migration path is **code-first**: keep the implementation, generate reviewable contracts, tighten by hand, then lock CI.
 
 ```text
-existing JS  →  --draft  →  human review  →  *.nudo.js  →  check / doctor / IDE
+existing JS  →  contract --draft  →  human review  →  *.nudo.js  →  check / health / IDE
 ```
 
 ## 0. Prerequisites
@@ -33,8 +33,11 @@ See [Coexistence with TypeScript](./coexistence.md) if the repo already has `tsc
 ## 1. Inventory
 
 ```bash
-nudo interface src/
+nudo contract src/
+nudo check src/
 ```
+
+`contract` prints every top-level export with its tier; `check` prints signatures (including L2 entry throws).
 
 Prints every top-level export with its tier:
 
@@ -47,9 +50,9 @@ Prints every top-level export with its tier:
 ## 2. Draft contracts from code
 
 ```bash
-nudo interface --draft src/lib.js
-nudo interface --draft --write src/lib.js --fn greet --fn double
-# or IDE: CodeLens ⚡ draft interface / VS Code “Nudo: Draft Interface”
+nudo contract --draft src/lib.js
+nudo contract --draft --write src/lib.js --fn greet --fn double
+# or IDE: CodeLens ⚡ draft contract / VS Code “Nudo: Draft Interface”
 ```
 
 Evidence in the draft module (never invents check obligations):
@@ -98,7 +101,8 @@ nudo check src/
 nudo check src/lib.js --json   # CI
 ```
 
-- Violations on **handwritten** contracts fail the build.
+- Violations on **handwritten** contracts fail the build (L1).
+- **L2** entry may-throw on exports is an error by default — refine, catch, or `--ignore-throws` while migrating.
 - **generated** segments report drift as warnings (facts + refresh), not as new obligations.
 - **implicit** display never invents errors by itself.
 
@@ -113,11 +117,11 @@ Surfaces `nudo:missing-slot` when evaluation hits a closed object shape without 
 ## 5. Freeze call-site domains (optional)
 
 ```bash
-nudo interface --emit src/lib.js --fn double --callsites test/
-nudo interface --emit src/lib.js --dry-run --exit-on-diff   # CI drift gate
+nudo contract --emit src/lib.js --fn double --from test/
+nudo contract --emit src/lib.js --dry-run --exit-on-diff   # CI drift gate
 ```
 
-`--emit` writes `@generated` segments from **observed** arguments. Use it for usage sites you trust; keep handwritten contracts for API surface you want enforced.
+`contract --emit` writes `@generated` segments from **observed** arguments. Use it for usage sites you trust; keep handwritten contracts for API surface you want enforced.
 
 ## 6. IDE / agents
 
@@ -127,13 +131,13 @@ nudo interface --emit src/lib.js --dry-run --exit-on-diff   # CI drift gate
 | CodeLens | persist / update / **draft** |
 | VS Code | Output channel commands |
 | Agent | `nudo.interface`, `nudo.interface.draft`, `nudo.check` |
-| CLI | `nudo interface`, `--draft`, `--emit`, `nudo check`, `nudo doctor` |
+| CLI | `nudo contract` (`--draft` / `--emit`), `nudo check`, `nudo health`, `nudo test --freeze` |
 
 ## 7. Ongoing health
 
 ```bash
-nudo doctor src/                    # uncovered fns, drift, analysis errors
-nudo infer src/lib.js --callsites test/ --emit-cases=update
+nudo health src/                         # uncovered fns, drift, analysis errors
+nudo test src/lib.js --from test/ --freeze=update
 ```
 
 Pin package versions per [Versioning & Releases](./versioning.md) (0.x minors may break; 1.x core/service/cli follow SemVer).
@@ -146,7 +150,7 @@ Pin package versions per [Versioning & Releases](./versioning.md) (0.x minors ma
 
 ## See also
 
-- [CLI — `nudo interface --draft`](./cli.md#--draft--code-first--migration)
+- [CLI — `nudo contract --draft`](./cli.md#nudo-contract)
 - [Check guide](./check.md)
 - [Coexistence with TypeScript](./coexistence.md)
 - [vs TypeScript](./vs-typescript.md)

@@ -1,4 +1,7 @@
 /** 抽象值 Abs = 形状 × 项 × 约束 × 置信度 */
+// ALIGN:cli-semantics → docs/design-cli-semantics.md §2
+// 本文件 any/unknown 定义是产品语义锚点：any=无约束并集；unknown=推导失败。
+// CLI/文档展示与 check L2 应对齐此处，而不是改掉此处。
 
 import type { Term, LiteralValue } from "./term.ts";
 import { lit, simplifyTerm, termEquals, termToString } from "./term.ts";
@@ -54,6 +57,11 @@ export type Abs = {
 export const never: Abs = { shape: { k: "never" }, conf: "exact" };
 /** 分析无信息 */
 export const unknown: Abs = { shape: { k: "unknown" }, conf: "partial" };
+/**
+ * 无约束 JS 值（未标注入口参数 / 显式 any()）。
+ * ≠ unknown：unknown 表示引擎推导失败，any 表示开发者未写契约。
+ */
+export const anyAbs: Abs = { shape: { k: "any" }, conf: "path" };
 
 /** 带 term 的 any（generalize type-var） */
 export function anyVar(id: string, conf: Confidence = "path"): Abs {

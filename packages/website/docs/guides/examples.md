@@ -7,7 +7,7 @@ description: Browse practical Nudo inference examples grouped by theme — funct
 
 This guide shows practical examples of Nudo type inference, grouped by theme. Each example includes the input code with directives and the inferred types.
 
-Every output block below is a real `nudo infer` run of the code above it. Output blocks show the **case headers and `Observed: ` lines** — the per-call-site ground truth. The `intension:` / `abs:` lines of a full run re-evaluate the function with `unknown` parameters (a generalized signature), which for multi-branch functions shows only the fallback path; read the case headers and `Observed: ` for branch-by-branch precision. Functions here use call sites (`call@L…`) when the call-site path is the precise one, and `@nudo:case` directives when they are.
+Every output block below is a real `nudo test` run of the code above it. Output blocks show the **case headers and `Observed: ` lines** — the per-call-site ground truth. The `intension:` / `abs:` lines of a full run re-evaluate the function with unconstrained (`any`) parameters (a generalized signature), which for multi-branch functions shows only the fallback path; read the case headers and `Observed: ` for branch-by-branch precision. Functions here use call sites (`call@L…`) when the call-site path is the precise one, and `@nudo:case` directives when they are.
 
 > The repo's CI-verified example suite lives in [`docs/examples/`](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md): every command and promised exit code there is checked by `pnpm run verify:examples`, with per-example output pins mirroring the documented output lines. This guide browses the same engine by theme; the repo suite is the ground-truth gate.
 
@@ -108,7 +108,7 @@ call@L6: ({ PATH: "/usr/bin", HOME: "/root" }, "PATH") => "/usr/bin"
 Observed: 1 | "/usr/bin"
 ```
 
-A symbolic (`string()`) key cannot select a slot and degrades to `unknown` — repo example (CI-pinned): [`docs/examples/algebra/e-index-proj.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/e-index-proj.js). Spread meet is pinned in [`docs/examples/algebra/d-mixin-meet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/d-mixin-meet.js); the `--dts` projection (one widened signature, literal-union return) is pinned by the `a-spread-optional.js --dts` row of the [examples matrix](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md) — the generated `a-spread-optional.d.ts` is the ground-truth output.
+A symbolic (`string()`) key cannot select a slot and degrades to `unknown` — repo example (CI-pinned): [`docs/examples/algebra/e-index-proj.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/e-index-proj.js). Spread meet is pinned in [`docs/examples/algebra/d-mixin-meet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/d-mixin-meet.js); the `export --format dts` projection (one widened signature, literal-union return) is pinned by the `a-spread-optional.js` dts row of the [examples matrix](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md) — the generated `a-spread-optional.d.ts` is the ground-truth output.
 
 ---
 
@@ -312,7 +312,7 @@ stringDemo();
 call@L7: () => { upper: "HELLO", sliced: "el", len: 5 }
 ```
 
-`toUpperCase`, `slice`, `.length`, and `split` (literal receiver and separator) fold to precise results at the call site. TypeScript can only infer `string`, `number`, or `string[]` for these operations. `indexOf` still yields the `number` primitive without the literal index, so check with `nudo infer` before relying on a specific method.
+`toUpperCase`, `slice`, `.length`, and `split` (literal receiver and separator) fold to precise results at the call site. TypeScript can only infer `string`, `number`, or `string[]` for these operations. `indexOf` still yields the `number` primitive without the literal index, so check with `nudo test` before relying on a specific method.
 
 ---
 
@@ -479,7 +479,7 @@ function getPort(config) {
 getPort({ port: 8080 });   // → number
 ```
 
-The case headers now fold the fallback to its literal (`"dark"` / `"light"`), but `Observed: ` still reports `unknown` because the combined value is computed from the symbolic re-run (`intension`), which can't follow the deep `?.` chain. Verify your own chains with `nudo infer`.
+The case headers now fold the fallback to its literal (`"dark"` / `"light"`), but `Observed: ` still reports `unknown` because the combined value is computed from the symbolic re-run (`intension`), which can't follow the deep `?.` chain — that is engine debt (`unknown` = inference failed), not an unconstrained `any` entry. Verify your own chains with `nudo test`.
 
 ---
 

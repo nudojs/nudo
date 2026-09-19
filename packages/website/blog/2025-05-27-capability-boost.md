@@ -17,7 +17,9 @@ Let's walk through what's new.
 
 ## Control Flow Narrowing
 
-The evaluator now tracks how types change as code flows through branches, guards, and operators. When you test a value with a condition, Nudo narrows the type in the branch where the condition is true and keeps the complement in the false branch. This works across seven patterns. You can watch each one by feeding a union through `@nudo:case` and running `nudo infer` -- every output block below is a real run of the code above it.
+> **Historical note (2026 CLI redesign):** this post uses the former `nudo infer` / `nudo generate` verbs. Current primary surface is `nudo check` / `nudo test` (observation) and `nudo export` (projections) — see [CLI Usage](/docs/guides/cli).
+
+The evaluator now tracks how types change as code flows through branches, guards, and operators. When you test a value with a condition, Nudo narrows the type in the branch where the condition is true and keeps the complement in the false branch. This works across seven patterns. You can watch each one by feeding a union through `@nudo:case` and running `nudo test` (historically `nudo infer`) -- every output block below is a real run of the code above it.
 
 ### Truthiness Narrowing
 

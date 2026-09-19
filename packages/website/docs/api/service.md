@@ -246,7 +246,7 @@ Generates TypeScript declaration content (`.d.ts`) from an analysis result. Prod
 generateFunctionDtsLines(fn: FunctionAnalysis): string[]
 ```
 
-Per-function slice of [`generateDts`](#generatedts) — JSDoc plus one `export declare function` line. The CLI's `infer --dts` / `watch --dts` share this exact function with `generateDts`, so both paths emit byte-identical declarations. Functions without cases emit nothing (or a rest-args `(...args: unknown[])` line when only `combined` is known); `noDeclaration` functions (CJS `exports.X = fn`) emit nothing and stay in infer/JSON output only.
+Per-function slice of [`generateDts`](#generatedts) — JSDoc plus one `export declare function` line. The CLI's `nudo export --format dts` shares this exact function with `generateDts`, so both paths emit byte-identical declarations. Functions without cases emit nothing (or a rest-args `(...args: unknown[])` line when only `combined` is known); `noDeclaration` functions (CJS `exports.X = fn`) emit nothing and stay in check/test JSON output only.
 
 ---
 
@@ -285,7 +285,7 @@ generateGuardFunction("isUser", obj({ name: str() }))
 
 ## Case Emission
 
-The case-emitter functions freeze synthesized `call@L` cases into source text. The CLI's `--emit-cases` is a thin orchestration over them — see the [CLI guide — Persisting cases as directives](../guides/cli.md#persisting-cases-as-directives) for the workflows and merge policy.
+The case-emitter functions freeze synthesized `call@L` cases into source text. The CLI's `nudo test --freeze[=update]` is a thin orchestration over them — see the [CLI guide](../guides/cli.md#nudo-test) for the workflows and merge policy.
 
 ### serializeCaseArg
 

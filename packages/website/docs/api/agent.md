@@ -73,7 +73,7 @@ Constraint gate on **Abs** (type-as-computation). Same contract as CLI `nudo che
 
 ## nudo.infer
 
-Whole-file inference — same contract as CLI `nudo infer --json`.
+Whole-file case report — same data as CLI `nudo test --json`. Prefer CLI `nudo check` / `nudo test` for CI; this tool name is legacy and maps to the test/check observation faces.
 
 **Arguments:**
 
@@ -84,7 +84,7 @@ Whole-file inference — same contract as CLI `nudo infer --json`.
 | `format` | `"text" \| "json"` | `"json"` → InferJson only |
 | `functions` | `string[]?` | Filter to these function names |
 
-**Returns (InferJson v1):** `cases[].intension` carries `abs` / `term` / `pred` / `conf` (lossless); `args` / `result` are extensional strings (`formatShape` projections).
+**Returns (InferJson v1):** `cases[].intension` carries `abs` / `term` / `pred` / `conf` (lossless); `args` / `result` are extensional strings (`formatShape` projections). Entry params without constraints are `any`; `unknown` means inference failed.
 
 ```json
 {

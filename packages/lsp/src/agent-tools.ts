@@ -1,22 +1,16 @@
 /**
- * Agent-facing tool implementations (`nudo.whatIf` / `nudo.suggestCase` /
- * `nudo.trace` / `nudo.interface` / `nudo.interface.emit`), ported from the
- * MCP server (packages/mcp/src/tools.ts) and wired into both LSP channels in
- * server.ts: executeCommand commands (`nudo.*`) and custom requests
- * (`nudo/…`). Like validation.ts, this module holds pure logic with injected
- * readers so tests exercise it without a live connection; server.ts supplies
- * the document/disk readers. Also hosts computeInterfaceLenses — the pure
- * CodeLens computation for the interface tier (design-refine-derivation §8).
+ * Agent-facing tool implementations. Protocol names still use the transition
+ * inventory (`nudo.infer` / `nudo.interface*`); product guidance for users is
+ * the CLI surface from design-cli-semantics.md:
+ *   signatures → `nudo check` · cases → `nudo test` · contracts → `nudo contract`
+ *   projections → `nudo export` · health → `nudo health`
+ * Like validation.ts, this module holds pure logic with injected readers so
+ * tests exercise it without a live connection; server.ts supplies the
+ * document/disk readers. Also hosts computeInterfaceLenses.
  *
  * **E5 同源契约**：agent 工具与 LSP 命令 / CLI 共享同一底层入口
  * （`AGENT_TOOL_SOURCES`）；`resolveProjectAutoBind` 保证 autoBind 与
  * CLI runCheck / LSP validate / CodeLens 同口径。测试钉住语义一致。
- *
- * Unlike the MCP original, whatIf really applies its bindings: each binding
- * becomes a `// @nudo:as <type>` comment inserted above the declaring
- * statement (source-level injection). The evaluator already honors `as` for
- * variable declarations, expression statements and returns, so the assumed
- * type flows through the whole program like any other directive.
  */
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve, relative, isAbsolute } from "node:path";

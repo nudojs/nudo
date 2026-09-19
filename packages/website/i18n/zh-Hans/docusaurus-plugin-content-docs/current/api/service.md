@@ -246,7 +246,7 @@ generateDts(result: AnalysisResult): string
 generateFunctionDtsLines(fn: FunctionAnalysis): string[]
 ```
 
-[`generateDts`](#generatedts) 的按函数切片——JSDoc 加一行 `export declare function`。CLI 的 `infer --dts` / `watch --dts` 与 `generateDts` 共用本函数，两条路径的声明输出字节级一致。无用例的函数不产出（或仅 `combined` 已知时产出一行 rest-args 的 `(...args: unknown[])` 声明）；`noDeclaration` 函数（CJS `exports.X = fn`）不产出，只留在 infer/JSON 输出中。
+[`generateDts`](#generatedts) 的按函数切片——JSDoc 加一行 `export declare function`。CLI 的 `nudo export --format dts` 与 `generateDts` 共用本函数，两条路径的声明输出字节级一致。无用例的函数不产出（或仅 `combined` 已知时产出一行 rest-args 的 `(...args: unknown[])` 声明）；`noDeclaration` 函数（CJS `exports.X = fn`）不产出，只留在 check/test JSON 输出中。
 
 ---
 
@@ -285,7 +285,7 @@ generateGuardFunction("isUser", obj({ name: str() }))
 
 ## 用例固化
 
-用例固化（case emission）这组函数把合成的 `call@L` 用例写回源码文本。CLI 的 `--emit-cases` 只是对它们的薄封装——工作流与合并策略见 [CLI 使用指南 —— 固化 case 指令](../guides/cli.md#固化-case-指令)。
+用例固化（case emission）这组函数把合成的 `call@L` 用例写回源码文本。CLI 的 `nudo test --freeze[=update]` 只是对它们的薄封装——工作流与合并策略见 [CLI 使用指南](../guides/cli.md#nudo-test)。
 
 ### serializeCaseArg
 

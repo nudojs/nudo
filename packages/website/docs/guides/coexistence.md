@@ -107,7 +107,7 @@ Client matrix Known gaps row that points here: [lsp-clients.md](./lsp-clients.md
 
 - Do not expect Nudo to understand TypeScript type syntax (conditional types, `infer`, etc.).
 - Do not point both tools at the same `.ts` sources with conflicting severity without splitting paths.
-- Do not treat `.d.ts` projection (`nudo emit`) as the source of truth — Abs is; `.d.ts` is a one-way compatibility channel.
+- Do not treat `.d.ts` projection (`nudo export --format dts`) as the source of truth — Abs is; `.d.ts` is a one-way compatibility channel.
 - Do not run the IDE on `mode: "all"` across a whole mixed monorepo without `include` — that is how double storms start.
 
 ## IDE

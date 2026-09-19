@@ -410,7 +410,7 @@ function calc(a, b) {
 - **高级语言特性** — 闭包、递归预算、async/Promise、try-catch、类。
 - **工具链** — LSP、watch、`.d.ts`、Vite 插件、VS Code 扩展。
 - **精化 IR** — 模板/区间精化；源码契约 `@nudo:refine`。
-- **Abs 代数（单轨）** — Term/Pred/Abs、算术核、`leqAbs`、generalize、`nudo check` / `nudo types` / `nudo test`、CheckJson、金标（recall = precision = 1.0）。
+- **Abs 代数（单轨）** — Term/Pred/Abs、算术核、`leqAbs`、generalize、`nudo check` / `nudo test` / `nudo contract` / `nudo export`、CheckJson、金标（recall = precision = 1.0）。
 - **调用预算** — depth/cycle/total 守卫，递归 check 不再栈溢出。
 
 ### 待做

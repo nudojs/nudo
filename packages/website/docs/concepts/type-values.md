@@ -1,3 +1,5 @@
+<!-- DESIGN-CONFLICT:cli-semantics → docs/design-cli-semantics.md §2 / design-cli-semantics-conflicts.md
+     C-ANY: 将 unknown/any 并为同一语义格与设计冲突。 -->
 ---
 sidebar_position: 1
 description: "Type values — symbolic sets of values as one computable system: the Abs algebra (shape × term × pred × conf), the directive constraint-builder grammar, and the four design principles."
@@ -11,7 +13,7 @@ The type system is **Abs** — `{ shape, term?, pred?, conf }` — and it is the
 
 ## The Four Components
 
-- **shape** — the extensional carrier: what the value looks like. Kinds: `prim` (with a `lit` term for exact values), `obj`, `arr`, `tuple`, `fn`, `eff` (`promise<…>` / `generator<…>`), `brand` (nominal instances), `sum` (unions), `never`, `unknown`/`any`.
+- **shape** — the extensional carrier: what the value looks like. Kinds: `prim` (with a `lit` term for exact values), `obj`, `arr`, `tuple`, `fn`, `eff` (`promise<…>` / `generator<…>`), `brand` (nominal instances), `sum` (unions), `never`, `any` (unconstrained), `unknown` (inference failed — see [any vs unknown](#any-vs-unknown)).
 - **term** — abstract value identity: `lit` (concrete), `var` (symbolic α like `A1`), or `app` (an application like `(x + 2)`).
 - **pred** — constraints relative to the term: `(x + 2) > 3`.
 - **conf** — how exact the abstraction is: `exact` / `path` / `widened` / `mock` / `partial` / `opaque`.
@@ -52,7 +54,7 @@ number[]            // abstract element
 `fn` carries parameter names (or a `paramTypes`/`returnType` signature); `eff` wraps async effects and renders lowercase:
 
 ```text
-load: (id) => ?                      // function value, unknown return
+load: (id) => ?                      // function value, result not yet precise
 promise<{ id: 7, name: "u7" }>       // async result
 ```
 
@@ -65,7 +67,22 @@ promise<{ id: 7, name: "u7" }>       // async result
 number | string       // heterogeneous union
 ```
 
-`never` is the empty set (unreachable); `unknown` the universal set.
+`never` is the empty set (unreachable).
+
+### any vs unknown
+
+These are **not** the same product concept and must never be collapsed in docs or CLI output:
+
+| | `any` | `unknown` |
+|---|-------|-----------|
+| Meaning | Unconstrained: the union of JS values; **developer** refines | **Inference failed** / engine has no information; **Nudo** must fix |
+| Source | Unannotated entry params, explicit `any()`, refine parse fallback | Evaluation failure, unmodeled native, truncation, leak, opaque |
+| Operations | Real JS union semantics; not “analysis failed” | Must not pretend to be a legal contract; trigger engine-debt diagnostics |
+| Narrowing | Conditionals can narrow (`typeof` / `===` / `Array.isArray` / `switch` / truthiness / discriminant) | User conditions cannot “legalize” it; fix inference or add env/mock/refine |
+| Display | `any` (optionally with a type-var like `A1`) | `unknown` + conf annotation |
+| Product story | “No written contract ⇒ default constraint is `any` + JS runtime effects” | “Nudo hit a case it cannot handle” |
+
+**Rule:** unconstrained entry parameters display as **`any`**, never as `unknown`. CLI/`check` signatures follow this contract.
 
 ---
 

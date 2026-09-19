@@ -5,7 +5,25 @@ description: Query precise JavaScript types by abstract interpretation — use w
 
 # Nudo — type inference for JavaScript
 
-Nudo is a comment-driven type inference engine for plain JavaScript. The type system is **Abs** (`shape × term × pred × conf`); production analysis is Abs-native. It derives types by **executing** observed call sites under abstract interpretation (whole-program inference). Contracts live in `*.nudo.js` sidecars and `@nudo:refine` / `@nudo:interface` (constraint builders such as `number()`, `lit(42)`, `shape({...})`). `@nudo:case` is debug / `nudo test` only — not the contract product. Ask Nudo instead of guessing what a refactor does to types.
+Nudo is a comment-driven type inference engine for plain JavaScript. The type system is **Abs** (`shape × term × pred × conf`); production analysis is Abs-native. It derives types by **executing** observed call sites under abstract interpretation (whole-program inference). Contracts live in `*.nudo.js` sidecars and `@nudo:refine` / `@nudo:interface` (constraint builders such as `number()`, `lit(42)`, `shape({...})`). `@nudo:case` is debug / `nudo test` only — not the contract product.
+
+## CLI verbs agents should use
+
+Primary surface (no observation verb):
+
+```bash
+nudo check <path> [--json] [--abs] [--from paths…] [--ignore-throws names]
+nudo test <path> [--json] [--from paths…] [--freeze[=update]]
+nudo contract <path> [--emit] [--draft] [--write] [--fn name]
+nudo export <path> [--format dts|guard|zod|all] [--out dir]
+nudo health [paths] [--from paths…] [--json]
+nudo env harvest <pkg>
+```
+
+- **Observation** = `check` signatures (printed on success too) + `test` case report + IDE hover. There is no `nudo infer` / `nudo show` / `nudo types` primary verb.
+- Unconstrained entry params display as **`any`**. `unknown` means inference failed (engine debt).
+- L2: undigested may-throw on **entry/export** functions is an error (`nudo:entry-may-throw`). Internal helpers are not gated. Filter with `--ignore-throws TypeError`.
+- Deprecated (stderr warning): `infer`, `types`, `interface`/`refine`, `generate`/`emit`/`guard`, `doctor`, `watch`, top-level `harvest`. Map: interface→contract, doctor→health, infer→check/test, emit-cases→test --freeze, callsites→from.
 
 ## Install and connect
 
@@ -36,21 +54,21 @@ All commands are available as `workspace/executeCommand` (dot form) and as custo
 |---|---|---|
 | `nudo.whatIf` (`nudo/whatIf`) | `{ "file": "src/config.js", "bindings": [{ "name": "raw", "type": "string" }], "target": "size" }` | Text: the inferred type of `target` **under the assumed bindings** — e.g. `Type of "size": number`; bindings match top-level declarations only |
 | `nudo.trace` (`nudo/trace`) | `{ "file": "src/app.js", "functionName": "parse" }` | Text: one line per case, e.g. `Input: (string()) => Output: number` |
-| `nudo.suggestCase` (`nudo/suggestCase`) | `{ "file": "src/app.js", "functionName": "parse" }` | Text: paste-ready `@nudo:case` directives when every case is call-site synthesized, e.g. `Function "parse" has 2 synthesized case(s); suggested directives:`; otherwise the current case count, e.g. `Function "parse" already has 3 case(s)`, or a suggested `@nudo:case` directive |
+| `nudo.suggestCase` (`nudo/suggestCase`) | `{ "file": "src/app.js", "functionName": "parse" }` | Text: paste-ready `@nudo:case` directives when every case is call-site synthesized; otherwise the current case count or a suggested directive |
 | `nudo.selectCase` (`nudo/selectCase`) | `{ "file": "src/app.js", "functionName": "parse", "caseIndex": 1 }` | `{ "success": true }` — switches the active case (affects hover/diagnostics until changed back) |
 | `nudo.getActiveCases` (`nudo/getActiveCases`) | `{ "file": "src/app.js" }` | `{ "parse": 1, "greet": 0 }` — active case index per function |
-| `nudo.interface` (`nudo/interface`) | `{ "file": "src/lib.js", "functionName": "add4"? }` | Text: each export's effective contract (handwritten / generated / implicit) |
-| `nudo.interface.emit` (`nudo/interfaceEmit`) | `{ "file": "src/lib.js", "functionName": "add4", "mode": "update" }` | Persist the inferred contract as an `@generated` segment in `*.nudo.js` |
+| `nudo.interface` (`nudo/interface`) | `{ "file": "src/lib.js", "functionName": "add4"? }` | Text: each export's effective contract (handwritten / generated / implicit) — same data as CLI `nudo contract` |
+| `nudo.interface.emit` (`nudo/interfaceEmit`) | `{ "file": "src/lib.js", "functionName": "add4", "mode": "update" }` | Persist the inferred contract as an `@generated` segment in `*.nudo.js` — same as CLI `nudo contract --emit` |
 
-Diagnostics (failed `@nudo:refine` assertions, unreachable code, …) are available as LSP diagnostics — push (`textDocument/publishDiagnostics`) and pull (`textDocument/diagnostic`). Persisted-contract drift surfaces as `nudo:interface-drift` warnings.
+Diagnostics (failed `@nudo:refine` assertions, L2 entry may-throw, unreachable code, …) are available as LSP diagnostics — push (`textDocument/publishDiagnostics`) and pull (`textDocument/diagnostic`). Persisted-contract drift surfaces as `nudo:interface-drift` warnings.
 
-## Interface contracts (`*.nudo.js`)
+## Contract sidecars (`*.nudo.js`)
 
-- **Handwritten root** in `lib.nudo.js` (e.g. `export const add4 = fn({ x: positive }, positive4)`) drives **downstream derivation**: `nudo interface --emit lib.js --fn add2` writes a compositional `@generated` segment into `add.nudo.js` (`fn({ x }, x.shift(2))`), not an expanded dump.
+- **Handwritten root** in `lib.nudo.js` (e.g. `export const add4 = fn({ x: positive }, positive4)`) drives **downstream derivation**: `nudo contract --emit lib.js --fn add2` writes a compositional `@generated` segment into `add.nudo.js` (`fn({ x }, x.shift(2))`), not an expanded dump.
 - Without `--fn`/`--all`, emit only **refreshes existing** `@generated` segments — it does not invent new contracts.
 - Handwritten sidecar bindings always win; emit refuses to overwrite them (`nudo:interface-name-clash`).
 - **Package allowlist**: `package.json` → `"nudo": { "interface": { "emit": ["src/api/**"] } }`. Empty/omitted = no path filter. Paths outside the allowlist are denied (`nudo:interface-emit-denied`).
-- `nudo doctor` fails CI when a file with `@generated` sidecar segments has persisted-contract drift (`nudo:interface-drift`).
+- `nudo health` fails CI when a file with `@generated` sidecar segments has persisted-contract drift (`nudo:interface-drift`).
 
 ## What-if workflow
 
@@ -75,7 +93,7 @@ Assume `raw` is a string, ask what `size` is:
 }
 ```
 
-→ `Type of "size": number`. Then flip the hypothesis (`"type": "string | null"`) and re-ask: the same `size` now reports `unknown`, because the null arm can propagate through `.length`. Use this to preview refactors, validate an API's return type before calling it, or compare how alternative type assumptions ripple through downstream code.
+→ `Type of "size": number`. Then flip the hypothesis (`"type": "string | null"`) and re-ask: the same `size` now reports `unknown` (inference under that hypothesis has no precise result for `.length` on null). Use this to preview refactors, validate an API's return type before calling it, or compare how alternative type assumptions ripple through downstream code.
 
 Bindings only match **top-level declarations** (`const`/`let`/`var`/`function`) in the file. A function parameter name does not resolve — you get `Type of "...": unknown` plus `Bindings not applied (no top-level declaration found): x` in the reply.
 
@@ -91,3 +109,4 @@ Bindings only match **top-level declarations** (`const`/`let`/`var`/`function`) 
 - **Unopened files use disk state.** If the file is not open in a connected editor, analysis runs on the on-disk content; edits the user has not saved are invisible.
 - Commands that report types reflect Nudo's inference, which follows runtime semantics (e.g. `Number("")` is `0`, not an error) — trust them over guesswork, but remember they describe the current code, not the user's intent.
 - Whole-program inference means every function with inferable call sites already has observations. When all of them are call-site synthesized, `suggestCase` returns ready-to-paste `@nudo:case` **debug** directive text (paste it above the function for `nudo test` / LSP scenarios — not the contract product); `already has N case(s)` is the normal report for the rest, not an error.
+- For CI/type truth prefer CLI `nudo check` (signatures + gate) and `nudo test` (cases). For contract persistence use `nudo contract`. For `.d.ts`/zod/guard use `nudo export`.

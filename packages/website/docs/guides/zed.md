@@ -104,7 +104,7 @@ The extension's `language_server_command` tries, in order:
 | Code actions / Signature help | Standard LSP quickfix + signature help |
 | Agent commands (`nudo.check` / `nudo.interface.draft` / …) | Reachable via any LSP client or Zed agent tooling |
 
-CodeLens `⚡ draft interface` runs the same code-first draft path as CLI `nudo interface --draft` (writes `*.nudo.draft.js` only when the client requests `write: true`). Migration walkthrough: [Migrating existing JS](./migrating-js.md).
+CodeLens `⚡ draft interface` runs the same code-first draft path as CLI `nudo contract --draft` (writes `*.nudo.draft.js` only when the client requests `write: true`). Migration walkthrough: [Migrating existing JS](./migrating-js.md).
 
 VS Code-only decorations for the active case are not available; use the CodeLens case picker instead.
 

@@ -7,7 +7,7 @@ description: "Syntax reference for all @nudo: directives — case, mock, pure, s
 
 Directives are structured comments that control how Nudo analyzes your code. They use the `@nudo:` namespace to avoid conflicts with JSDoc and other tools. Place directives in block comments immediately above the function they apply to.
 
-The **interface product** (refinement contracts) lives primarily in sidecar files — `*.nudo.js` modules auto-bound to same-name exports of your source file — with `@nudo:refine` / `@nudo:interface` as the compatible in-source form. See [@nudo:refine](#nudorefine--refinement-contract) and the [`nudo interface`](../guides/cli.md#nudo-interface) command.
+The **interface product** (refinement contracts) lives primarily in sidecar files — `*.nudo.js` modules auto-bound to same-name exports of your source file — with `@nudo:refine` / `@nudo:interface` as the compatible in-source form. See [@nudo:refine](#nudorefine--refinement-contract) and the [`nudo contract`](../guides/cli.md#nudo-contract) command.
 
 ## Directive Syntax
 
@@ -393,7 +393,7 @@ export const greet = fn({ name: union(lit("ada"), lit("bob")) }, string());
 ```
 
 ```bash
-$ nudo interface calc.js
+$ nudo contract calc.js
 calc.js
   addTax  [handwritten]  (x: number().gt(1)) → number()
   greet  [handwritten]  (name: union(lit("ada"), lit("bob"))) → string()
@@ -424,7 +424,7 @@ Sidecars are real JS modules: they may import builders from `@nudojs/core` and c
 - Binds only **same-name local named exports** of the source file (`export function` / `export const`). Re-exports, `export default`, and CJS are out of scope.
 - Sidecars under `node_modules/` are never auto-loaded.
 - Same-parameter annotations from source and sidecar are **conjoined**; a contradictory conjunction (e.g. `x > 0` ∧ `x < 0`) reports `nudo:interface-conflict`.
-- A sidecar binding wins over nothing else — merge order is: handwritten (source annotation ∪ sidecar binding) > generated segment > implicit inference. The layer is shown by `nudo interface` (`[handwritten]` / `[generated]` / `[implicit]`).
+- A sidecar binding wins over nothing else — merge order is: handwritten (source annotation ∪ sidecar binding) > generated segment > implicit inference. The layer is shown by `nudo contract` (`[handwritten]` / `[generated]` / `[implicit]`).
 
 ### In-source form
 

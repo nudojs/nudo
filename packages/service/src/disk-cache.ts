@@ -138,7 +138,13 @@ export function checkCacheKey(
     /** package.json#nudo.env 等项目维（named env 不在 path-dep 指纹里） */
     projectEnvNames?: string[];
     /** analysis knobs that can change check surface */
-    analysisCfg?: { mode?: string; evalMissingSlot?: string; callSiteBudget?: number };
+    analysisCfg?: {
+      mode?: string;
+      evalMissingSlot?: string;
+      callSiteBudget?: number;
+      entryThrows?: string;
+      ignoreThrows?: string;
+    };
   },
 ): string {
   const rel = relativizePath(filePath, opts.projectDir);
@@ -153,7 +159,7 @@ export function checkCacheKey(
     ? [...(opts.projectEnvNames ?? [])].sort().join(",")
     : "-";
   const cfgSeg = opts.analysisCfg
-    ? `${opts.analysisCfg.mode ?? "-"}|${opts.analysisCfg.evalMissingSlot ?? "-"}|${opts.analysisCfg.callSiteBudget ?? "-"}`
+    ? `${opts.analysisCfg.mode ?? "-"}|${opts.analysisCfg.evalMissingSlot ?? "-"}|${opts.analysisCfg.callSiteBudget ?? "-"}|${opts.analysisCfg.entryThrows ?? "-"}|${opts.analysisCfg.ignoreThrows ?? "-"}`
     : "-";
   return sha256Hex(
     [

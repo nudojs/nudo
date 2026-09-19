@@ -1,6 +1,6 @@
 ---
 sidebar_position: 7
-description: Generate Zod schemas, zero-dependency type guards, and TypeScript declarations from Nudo's inferred types with `nudo generate`.
+description: Generate Zod schemas, zero-dependency type guards, and TypeScript declarations from Nudo's inferred types with `nudo export`.
 ---
 
 # Runtime Type Generation
@@ -8,37 +8,37 @@ description: Generate Zod schemas, zero-dependency type guards, and TypeScript d
 Nudo's type inference doesn't stop at static analysis. You can generate runtime validators directly from inferred types, creating a seamless bridge between development-time inference and production-time validation.
 
 ```text
-JS code → Nudo infers types → Generate validators → Runtime validation
+JS code → Nudo infers Abs → nudo export → Runtime validation
 ```
 
 This means you write plain JavaScript, let Nudo figure out the types, and then produce fully typed runtime checks -- no hand-written validators, no duplicate type definitions.
 
-All generated output is printed to stdout by default. Pass `--output <dir>` to write files instead.
+All generated output is printed to stdout by default. Pass `--out <dir>` to write files instead.
 
-## The `nudo generate` Command
+## The `nudo export` Command
 
 ```bash
-nudo generate <file> [options]
+nudo export <file> [--format dts|guard|zod|all] [--out dir]
 ```
 
 | Option | Description |
 |---|---|
-| `--format <format>` | Output format: `zod`, `guard`, `dts`, `all` (default: `all`) |
-| `--output <dir>` | Write validator files to this directory (`<name>.nudo.zod.ts`, `<name>.nudo.guard.ts`, `<name>.d.ts`). Omit for stdout. |
+| `--format <format>` | Output format: `dts`, `guard`, `zod`, `all` (default: `dts`) |
+| `--out <dir>` | Write artifacts to this directory (`<name>.nudo.zod.ts`, `<name>.nudo.guard.ts`, `<name>.d.ts`). Omit for stdout. |
 
-Running `nudo generate` reads the inferred types from a source file and prints validators in the requested format.
+`nudo export` is the **only** CLI path for `.d.ts` / guards / Zod. Deprecated verbs `nudo generate` / `nudo emit` / `nudo guard` and `infer --dts` map here.
 
 ### Basic Usage
 
 ```bash
 # Print all formats (zod, guard, dts)
-nudo generate src/api/users.js
+nudo export src/api/users.js --format all
 
 # Print only Zod schemas
-nudo generate src/api/users.js --format zod
+nudo export src/api/users.js --format zod
 
 # Capture stdout into a file yourself
-nudo generate src/api/users.js --format zod > users.schema.txt
+nudo export src/api/users.js --format zod > users.schema.txt
 ```
 
 ## Example Source
@@ -59,7 +59,7 @@ function createUser(input) {
 With `--format zod`, Nudo prints [Zod](https://zod.dev) schema expressions for each case's input and output types. The schemas are emitted as comments -- copy the expressions out of them and assemble your own schema module.
 
 ```bash
-nudo generate src/api/users.js --format zod
+nudo export src/api/users.js --format zod
 ```
 
 Output (stdout):
@@ -135,7 +135,7 @@ With `--format guard`, Nudo prints zero-dependency runtime type guard functions.
 Guards are named `is` + function name + case name + `Output` (one guard per case, validating the case's output type):
 
 ```bash
-nudo generate src/api/users.js --format guard
+nudo export src/api/users.js --format guard
 ```
 
 Output (stdout):
@@ -155,13 +155,13 @@ Guard functions execute a sequence of `typeof` checks with no schema interpretat
 
 ## TypeScript Declarations
 
-With `--format dts`, Nudo prints one widened signature per function — the same output as `nudo infer <file> --dts`. Three things to know:
+With `--format dts`, Nudo prints one widened signature per function — the same output as `nudo export --format dts`. Three things to know:
 
 - Parameter names come from your source (e.g. `input`); positional `arg0`, `arg1` fallbacks only appear when the declaration node has no recoverable name.
 - Parameter positions (contravariant) are widened: literal parameters collapse to their base types (`"hello"` → `string`, `[1, 2, 3]` → `number[]`), so callers can pass any compatible value. Return types keep their inferred precision, including nested literals.
 
 ```bash
-nudo generate src/api/users.js --format dts
+nudo export src/api/users.js --format dts
 ```
 
 Output (stdout):
@@ -186,7 +186,7 @@ function formatValue(value) {
 ```
 
 ```bash
-nudo generate src/api/format.js --format dts
+nudo export src/api/format.js --format dts
 ```
 
 ```ts
@@ -200,14 +200,15 @@ nudo generate src/api/format.js --format dts
 export declare function formatValue(value: string | number): string;
 ```
 
-To write a `.d.ts` file next to the source instead of printing it, use `nudo infer <file> --dts`.
+To write a `.d.ts` file under a directory, use `nudo export <file> --format dts --out <dir>`.
 
 ## JSON Output
 
-For programmatic consumption and CI/CD integration, use `nudo infer --json` to get machine-readable output.
+For programmatic consumption and CI/CD integration, use `nudo check --json` (signatures + diagnostics) or `nudo test --json` (cases). There is no primary `nudo infer --json` verb.
 
 ```bash
-nudo infer src/api/users.js --json
+nudo check src/api/users.js --json
+nudo test src/api/users.js --json
 ```
 
 Output structure:
@@ -263,19 +264,19 @@ Output structure:
 Each entry in `functions` contains:
 
 - `name` and `loc` -- the function name and its source location.
-- `cases` -- one entry per case. `args` lists the argument types, `result` is the return type, `throws` is the thrown type or `null`. `source` is `"directive"` for `@nudo:case` directives, `"callsite"` for cases synthesized from whole-program call-site discovery, or `null` for `entry@L` fallback cases (no call sites found). Each case also carries an `intension` object with the lossless Abs signature.
+- `cases` -- one entry per case. `args` lists the argument types, `result` is the return type, `throws` is the thrown type or `null`. `source` is `"directive"` for `@nudo:case` directives, `"callsite"` for cases synthesized from whole-program call-site discovery, or `null` for `entry@L` fallback cases (no call sites; params default to `any`). Each case also carries an `intension` object with the lossless Abs signature.
 - `combined` -- the union of all case results, simplified by absorption.
 - `entryOnly` -- `true` when the function had no call sites anywhere in the program.
 
-The full field reference is in [CLI Reference — nudo infer](../api/cli-reference.md#nudo-infer).
+The full field reference is in [CLI Reference — nudo test](../api/cli-reference.md#nudo-test).
 
 ### CI/CD Integration
 
-Use JSON output in pipelines to enforce type contracts. `infer` takes file paths, not directories:
+Use JSON output in pipelines to enforce type contracts. `check` / `test` take file paths or directories:
 
 ```bash
-# Fail if any diagnostics are reported
-nudo infer src/api/users.js --json | jq '.diagnostics | length == 0'
+# Fail if any error-level diagnostics are reported
+nudo check src/api/users.js --json | jq '.diagnostics | length == 0'
 ```
 
 Print validators as part of your build and capture stdout into your project:
@@ -283,7 +284,7 @@ Print validators as part of your build and capture stdout into your project:
 ```json
 {
   "scripts": {
-    "generate": "nudo generate src/api/users.js --format zod > src/api/users.schema.txt",
+    "generate": "nudo export src/api/users.js --format zod > src/api/users.schema.txt",
     "build": "npm run generate && tsc && vite build"
   }
 }
@@ -312,7 +313,7 @@ function createProduct(input) {
 **2. Print all validator formats:**
 
 ```bash
-nudo generate src/api/products.js --format all
+nudo export src/api/products.js --format all
 ```
 
 Output (stdout):

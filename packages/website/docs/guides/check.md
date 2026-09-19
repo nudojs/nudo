@@ -1,34 +1,79 @@
 ---
 sidebar_position: 8
 slug: /guides/check
-description: nudo check — refinement, assign, and HOF arg-structure gate on Abs (type-as-computation).
+description: nudo check — L1 refinement gate + L2 entry throws on Abs; prints signatures; CI command.
 ---
 
 # nudo check
 
-`nudo check` is Nudo's **refinement gate on Abs** (type-as-computation). Refinements are declared with `@nudo:refine` — Preds that enter Abs and participate in algebra. The report is **Nudo-native** (`actual ⊭ expected`), not a TypeScript diagnostic in disguise.
+`nudo check` is Nudo's **gate on Abs**. It enforces:
+
+1. **L1 explicit contracts** — refinements from `@nudo:refine` / `*.nudo.js` / `@nudo:interface` (Pred implication on Abs)
+2. **L2 default JS contracts** — undigested may-throw on **entry/export** functions
+
+The report is **Nudo-native** (`actual ⊭ expected`), not a TypeScript diagnostic in disguise. On success **and** failure, `check` prints signatures — it is not silent.
 
 ```bash
 npx nudojs check path/to/file.js
 # exit 1 if any error
 ```
 
+```bash
+nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
+           [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
+```
+
+## Default output (signatures + issues)
+
+```js
+export function getName(user) {
+  return user.name;
+}
+
+export function subtract(a, b) {
+  return a - b;
+}
+```
+
+```bash
+nudo check user.js
+```
+
+```text
+signatures
+  getName(user: any) => any  throws TypeError
+  subtract(a: any, b: any) => any
+issues
+  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+```
+
+- Unconstrained entry parameters display as **`any`**.
+- **`unknown` means inference failed** (engine debt) — never the default for unconstrained entry params.
+- Throws always appear on the signature line when present.
+
 ## What it checks
 
-| Code | Meaning |
-|------|---------|
-| `nudo:constraint-violated` | Call/return ⊭ `@nudo:refine` (scalar bounds / shape fields) |
-| `nudo:assign-mismatch` | Assignment ⊭ previous binding shape (`leqAbs`) |
-| `nudo:arg-structure` | HOF: argument is not a callable `fn` / arity mismatch (**not** body slot inference) |
-| `nudo:case-inconsistency` | `@nudo:case` witness ⊭ refine |
-| `nudo:interface-param-mismatch` | Handwritten contract param name is not on the formal surface (default/rest/destructure-aware) |
-| `nudo:interface-conflict` | Handwritten contract conjunction unsatisfiable (e.g. `x > 0 ∧ x < 0`) |
-| `nudo:no-signature` | Function could not be generalized to a symbolic Abs |
-| `nudo:opaque-result` | Evaluation returned opaque / uninformative Abs |
-| `nudo:eval-error` | Body evaluation threw during analysis |
-| `nudo:recursion-truncated` | Recursion budget hit; result widened |
-| `nudo:may-throw` | Case path may throw (warning) |
-| `nudo:unreachable` | Code after return/throw (info) |
+| Code | Layer | Severity | Meaning |
+|------|-------|----------|---------|
+| `nudo:constraint-violated` | L1 | error | Call/return ⊭ `@nudo:refine` (scalar bounds / shape fields) |
+| `nudo:assign-mismatch` | L1 | error | Assignment ⊭ previous binding shape (`leqAbs`) |
+| `nudo:arg-structure` | L1 | error | HOF: argument is not a callable `fn` / arity mismatch |
+| `nudo:case-inconsistency` | L1 | error | `@nudo:case` witness ⊭ refine |
+| `nudo:interface-param-mismatch` | L1 | error | Handwritten contract param name is not on the formal surface |
+| `nudo:interface-conflict` | L1 | error | Handwritten contract conjunction unsatisfiable |
+| **`nudo:entry-may-throw`** | **L2** | **error** (default) | Entry/export function has undigested may-throw |
+| `nudo:may-throw` | test / L2 clue | warning | Case path may throw (internal included); L2 can elevate entry throws |
+| `nudo:unknown-inference` | engine debt | warning/error | True `unknown` on an export/signature (inference failed) |
+| `nudo:unknown-recv` | engine debt | warning | Member access on `unknown` receiver — does **not** replace L2 throws modeling |
+| `nudo:no-signature` | engine/L1 | error | Function could not be generalized |
+| `nudo:opaque-result` | engine | warning | Evaluation returned opaque / uninformative Abs |
+| `nudo:eval-error` | engine | error | Body evaluation threw during analysis |
+| `nudo:recursion-truncated` | engine | warning | Recursion budget hit; result widened |
+| `nudo:unreachable` | info | info | Code after return/throw |
+
+## L1 — explicit contracts
+
+Refinements are declared with `@nudo:refine` — Preds that enter Abs and participate in algebra.
 
 ```js
 /// @nudo:import { positive } from "./shapes.nudo.js"
@@ -41,26 +86,12 @@ function needsPositive(x) {
 }
 
 needsPositive(-1);
-// [ERROR] needsPositive[x]: 实参 ⊭ 前置
+// [error] needsPositive[x]: 实参 ⊭ 前置  (nudo:constraint-violated)
 //   actual:   -1  #exact
 //   expected: x > 0
-
-let a = { x: 1 };
-a = { y: 2 };
-// [ERROR] a: 赋值 ⊭ 原有形状  (nudo:assign-mismatch)
-
-// Structure obligations come from declared shape contracts, not body AST scans.
-/// @nudo:import { xy } from "./shapes.nudo.js"
-/**
- * @nudo:refine p xy
- */
-function readXY(p) { return p.x + p.y; }
-readXY({ x: 1 });
-// [ERROR] readXY[p]: 实参 ⊭ 前置  (nudo:constraint-violated)
-// Without the refine, the same call is legal (call-site fact / any).
 ```
 
-**`if` is not a refinement.** Clamp-style guards accept out-of-range input:
+**`if` is not a refinement.** Clamp-style guards accept out-of-range input when no refine is declared:
 
 ```js
 function clamp(n, lo, hi) {
@@ -71,115 +102,102 @@ function clamp(n, lo, hi) {
 clamp(-5, 0, 10);  // OK — no @nudo:refine declared
 ```
 
-It does **not** replace `tsc` for full structural completeness. It does what tsc cannot on unannotated JS: **declared refinements that participate in algebra**, plus **Abs leq** for assignments and call arguments.
+Nudo does **not** invent required slots from body AST scans.
+
+## L2 — entry throws
+
+Without an explicit contract, the contract degrades to the **JS runtime boundary**:
+
+> Entry parameters are `any`. Operations on `any`/nullish values may throw. Exported functions must not silently carry undeclared, uncaptured throws.
+
+```js
+export function getName(user) {
+  return user.name;  // property access on unconstrained `user`
+}
+```
+
+```text
+[error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  cause:    property 'name' on any (unconstrained param `user`)
+  actual:   (user: any) => any    throws TypeError
+  expected: entry total, or declare/catch throws
+```
+
+### What L2 gates
+
+- **Only entry/export functions** — `export` / `export default`, CJS `exports.x =` / `module.exports`.
+- **Internal helpers are not gated.** They may throw; observe them in `nudo test`.
+- `try`/`catch` digests throws on a path (removed from exit effects).
+- Refine narrowing the param to a shape removes or downgrades L2 (becomes L1).
+
+### Filtering L2
+
+```bash
+nudo check src/ --ignore-throws TypeError
+nudo check src/ --ignore-throws TypeError,RangeError
+nudo check src/ --entry-throws warning   # demote L2 while migrating
+nudo check src/ --entry-throws off
+```
+
+`package.json`:
+
+```json
+{
+  "nudo": {
+    "check": {
+      "ignoreThrows": ["TypeError"],
+      "entryThrows": "error"
+    }
+  }
+}
+```
+
+Semantics:
+
+- `--ignore-throws` **only** filters L2 entry throws — never L1 contract violations.
+- Default: **do not ignore** any throws.
+- Filters the throws type/shape, not the whole check.
+
+### Node analogy
+
+An uncaught exception makes a Node process exit non-zero. Likewise, undeclared/uncaptured throws on the **export boundary** fail `nudo check`. Throws inside an internal call stack are implementation details, handled by the caller or by L1.
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--watch` / `-w` | Re-run on changes (flag, not a verb) |
+| `--json` | Machine-readable signatures + diagnostics |
+| `--verbose` | Extra detail |
+| `--abs` | Print Abs algebra face (term / pred / conf) |
+| `--from <paths…>` | Usage-site files injecting call records (renamed from `--callsites`) |
+| `--ignore-throws <names>` | Comma-separated L2 throw types to ignore |
+| `--entry-throws error\|warning\|off` | L2 severity (default `error`) |
 
 ## Interface diagnostics
 
-Contracts in `*.nudo.js` sidecars (and generated `@generated` segments) get their own diagnostic family, split by **enforcement tier**: handwritten contracts are obligations (**error**); generated segments are fact snapshots that drift (**warning**); the observed call-site domain is never enforced on its own.
-
-| Code | Severity | Trigger |
+| Code | Severity | Meaning |
 |------|----------|---------|
-| `nudo:interface-cycle` | error | Sidecars importing each other in a cycle |
-| `nudo:interface-load` | error | Sidecar fails to load/evaluate, or uses an unrecognized export form |
-| `nudo:interface-param-mismatch` | error | Contract param name ∉ formal surface (C4.5; default left name, rest bare name, destructure bound names are valid) |
-| `nudo:interface-conflict` | error | Source `@nudo:refine` and sidecar binding for the same parameter (or the return position) are contradictory (`x > 0 ∧ x < 0`); a contradicted position skips enforcement rather than blaming the function body |
-| `nudo:interface-domain-exceeds` | error | **Cross-file** injected call evidence ⊄ **handwritten** contract (the interface is being used past its contract) |
-| `nudo:interface-drift` | warning | Persisted `@generated` segment ≠ today's recomputed interface (semantic comparison, param and return positions). Also surfaced by `nudo doctor` as a CI gate for files whose sidecar already has `@generated` segments |
-| `nudo:interface-name-clash` | error | `nudo interface --emit` target is already a handwritten sidecar binding (handwritten wins, write skipped) |
-| `nudo:interface-underivable` | info | Root-driven derivation cannot project a downstream contract (opaque / truncated / no evidence) — emitted only as a skip, never as garbage |
+| `nudo:interface-drift` | warning | Persisted `@generated` segment ≠ today's recomputed interface. Also surfaced by `nudo health` as a CI gate |
+| `nudo:interface-name-clash` | error | `nudo contract --emit` target is already a handwritten sidecar binding (handwritten wins, write skipped) |
+| `nudo:interface-domain-exceeds` | error | Call records injected via `--from` exceed the declared domain |
 
-Source split for violations: a violating call **written in the analyzed file** keeps reporting `nudo:constraint-violated` exactly as before; `nudo:interface-domain-exceeds` covers only the previously unchecked path — call records **injected from usage-site files** (`nudo check --callsites <paths...>`). Evidence gates: literal arguments with confidence `#exact`/`#path`, non-truncated records.
+Violations written **in the analyzed file** report `nudo:constraint-violated`. `nudo:interface-domain-exceeds` covers call records injected from usage-site files (`nudo check --from <paths...>`).
 
-Examples (each run in its own fixture directory):
+## CI
 
-```text
-issues
-  [ERROR] sidecar './cyc.nudo.js' for 'f' failed: sidecar import cycle: /tmp/…/cyc.nudo.js → /tmp/…/cyc2.nudo.js → /tmp/…/cyc.nudo.js  (nudo:interface-cycle)
+```bash
+nudo check src/
+# exit 1 on any error-level diagnostic
+
+# machine-readable
+nudo check src/ --json
 ```
 
-```text
-issues
-  [ERROR] sidecar './broken.nudo.js' for 'broken' failed: Unexpected token, expected "," (2:0)  (nudo:interface-load)
-```
+`nudo check` is the CI gate for contracts and entry throws — aligned with `tsc --noEmit`, except check **still prints signatures on success**.
 
-```text
-issues
-  [ERROR f] f: 手写契约合取不可满足（x）  (nudo:interface-conflict)
-      → 检查源码 @nudo:refine 与侧车同名绑定的常数界是否矛盾
-```
+## Next
 
-```text
-Diagnostics:
-
-  [error] lib.js:1:7 clamp[x]: cross-file call-site domain evidence "hot" exceeds handwritten contract (nudo:interface-domain-exceeds)
-```
-
-```text
-issues
-  [WARNING L5 half] half[n]: 固化生成段 ≠ 今日调用点域  (nudo:interface-drift)
-      actual:   number  = n  where n = 12  #path
-      expected: lit(10)
-      → 重跑 nudo interface --emit 刷新生成段，或核对 n 的调用点
-  [WARNING L5 half] half[return]: 固化生成段 ≠ 今日推断返回  (nudo:interface-drift)
-      actual:   number  = return  where return = 6  #path
-      expected: lit(5)
-      → 重跑 nudo interface --emit 刷新生成段，或核对返回值
-```
-
-Drift warnings do not fail `nudo check` (exit `0`). Coverage by code: `nudo:interface-drift` and `nudo:interface-domain-exceeds` are pinned in the check-gold fixtures; `nudo:interface-load` / `nudo:interface-cycle` / `nudo:interface-conflict` are covered by the wiring, loader and emitter suites (`check-interface-wiring`, `refine-loader`, `interface-emitter`); `nudo:interface-name-clash` lives in the emitter/agent suites. See [@nudo:refine](../concepts/directives.md#nudorefine--refinement-contract) for the contract forms.
-
-## Report shape (Abs-first)
-
-```
-nudo check  file.js
-FAILED
-  1 error · 0 warning · 0 info · 1 fn
-
-signatures
-  needsPositive(x)  number  #path
-
-issues
-  [ERROR L12 needsPositive] needsPositive[x]: 实参 ⊭ 前置  (nudo:constraint-violated)
-      actual:   -1  #exact
-      expected: x > 0
-```
-
-Signatures default to a **one-line summary**. Pass `--verbose` to expand lossless Abs (`shape`, `term`, `pred`, `conf`). Optional `.d.ts` emit is a TypeScript-ecosystem **compat side-channel**, not the main line.
-
-## Call-site coverage
-
-| Pattern | Example |
-|---------|---------|
-| Direct | `needsPositive(-1)` |
-| Alias | `const f = needsPositive; f(-1)` |
-| Object property | `const api = { needsPositive }; api.needsPositive(-1)` |
-| Unconditional forward | `function w(a) { return target(a); }` → `w(lit)` |
-| CJS require | `const { fn } = require('./m')` |
-| ESM import | `import { fn as x } from './m'` |
-| Dynamic import | `const { fn } = await import('./m')` |
-| Barrel (one hop) | `export { fn } from './v.js'` |
-| Arg structure (HOF) | callback argument must be callable `fn` with matching arity |
-| Shape contract | declared `shape({…})` vs literal / identifier argument |
-
-## Quality gates
-
-| Gate | Where | Bar |
-|------|--------|-----|
-| Human-labeled recall | `check-recall-gold.test.ts` | recall = precision = **1.0** |
-| Shape refinements | `check-shape-gold.test.ts` | field / optional / bounds |
-| Case vs refine | `check-case-consistency.test.ts` | witness ⊆ D |
-| Real-package precision | `check-real-packages.test.ts` | zero false errors on commander / escape-string-regexp / is-plain-obj / debug / yocto-queue / p-limit / kleur / eventemitter3 / ms / lodash |
-
-## Editor integration
-
-LSP publishes **`nudo-check` diagnostics first** (Abs violations with `actual` / `expected`), then evaluator diagnostics (`source: nudo`). Hover and inlay hints read lossless Abs — no lossy projection in between.
-
-Agents use the same gate via **`nudo.check`** (CheckJson v1) — see [Agent API](../api/agent.md#nudocheck).
-
-## Service Abs path boundary
-
-`nudo check` (and `checkSource`) always analyzes on Abs, including cross-file require/import forwarding. The CLI is **strictly Abs-only** — there is no other evaluation path to run for extra diagnostics.
-
-The **service evaluation path** (`infer` case output, `call@` synthesis, JSON `intension`) runs Abs for the analyzed file's own functions even when the file has imports — every local function's case carries `intension:` / `abs:` lines (see [`docs/examples/mini-repo/user-service.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/mini-repo/user-service.js): a file with imports whose `fetchUser(7)` case reports `abs: promise<{ id: 7, name: "u7" }>  #path`). Cases of functions from **imported modules** (`externalFunctions`, the `--- path (imported) ---` sections) carry call evidence only — case headers without `intension`. `@nudo:mock` does **not** disable Abs — mocks compile to Abs seeds. Contract violations are always caught by `nudo check`.
-
-See also: monorepo `docs/nudo-check.md` and `docs/ci-nudo-check.md`.
+- [CLI Usage](./cli.md) — all primary verbs
+- [Type Values](../concepts/type-values.md) — `any` vs `unknown`
+- [Concept Layers](../concepts/layers.md) — Day 0 / Day 1

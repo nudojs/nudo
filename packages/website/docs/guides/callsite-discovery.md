@@ -1,6 +1,6 @@
 ---
 sidebar_position: 8
-description: "Harvest real argument shapes from your tests and apps with --callsites, synthesize call@L cases from them, and persist them as directives."
+description: "Harvest real argument shapes from your tests and apps with --from, synthesize call@L cases from them, and freeze them as directives with test --freeze."
 ---
 
 # Call-Site Discovery
@@ -8,7 +8,8 @@ description: "Harvest real argument shapes from your tests and apps with --calls
 `@nudo:case` directives give you precise control over inference, but writing them for every exported function in a real library is a lot of manual work — and hand-written cases rarely match how a function is *actually* used. Call-site discovery flips the direction: instead of you describing inputs to Nudo, Nudo reads your existing usage sites — tests, examples, upstream applications — harvests the real argument shapes and results, and synthesizes cases from them.
 
 ```bash
-nudo infer lib/ --callsites test/
+nudo test lib/ --from test/
+nudo check lib/ --from test/
 ```
 
 ## Quick Start
@@ -33,29 +34,29 @@ it("slugifies titles", () => {
 });
 ```
 
-Run inference over the library with the tests as usage sites:
+Run case reporting over the library with the tests as usage sites:
 
 ```bash
-nudo infer lib/ --callsites test/
+nudo test lib/ --from test/
 ```
 
 Output:
 
 ```text
 === slugify ===
-
-call@L4: ("Hello World") => string
+  entry@L1  (any) => any
+  call@L4  ("Hello World") => string
 ```
 
-The case was not written by anyone — it was harvested from line 4 of the test file, which is why it is named `call@L4`. Every recorded call site becomes one synthesized case; multiple call sites to the same function union into the combined type, exactly like hand-written `@nudo:case` directives do.
+The case was not written by anyone — it was harvested from line 4 of the test file, which is why it is named `call@L4`. Every recorded call site becomes one synthesized case; multiple call sites to the same function union into the combined type, exactly like hand-written `@nudo:case` directives do. Unconstrained entry params display as `any`.
 
 ### Options
 
 | Argument | Description |
 |----------|-------------|
 | `<target>` | File or directory to analyze — `.js`, `.mjs`, or `.ts`; directories are scanned recursively for inference targets |
-| `--callsites <paths...>` | One or more usage-site files or directories (tests, examples, apps). Directories are scanned recursively. |
-| `--emit-cases [mode]` | Write the harvested cases back into the analyzed file as `@nudo:case` directives (`add` fills in functions without case directives; `=update` re-synchronizes generated ones) — see [Persisting harvested results](#persisting-harvested-results) |
+| `--from <paths...>` | One or more usage-site files or directories (tests, examples, apps). Renamed from `--callsites`. Directories are scanned recursively. |
+| `--freeze[=update]` | Write the harvested cases back into the analyzed file as `@nudo:case` directives (`freeze` fills in functions without case directives; `=update` re-synchronizes generated ones) — formerly `--emit-cases` |
 
 ## How It Works
 
@@ -79,7 +80,7 @@ The harvested records are matched against functions defined in the analyzed file
 2. **Function name** — the record's callee name matches a declared function in the target file.
 3. **Single-export module path** — a file whose only export is the function itself (`module.exports = function f() {}`) is matched by module path, because every such module's export name is the same (`default`) and name matching alone would collide across files.
 
-Matched records are injected into `analyzeFile` as synthesized `call@L` cases, where `L` is the line of the call in the usage-site file. Functions that receive no records at all still get an `entry@L` case with `unknown` parameters so their signature is emitted — they are marked as entry-only.
+Matched records are injected into analysis as synthesized `call@L` cases, where `L` is the line of the call in the usage-site file. Functions that receive no records at all still get an `entry@L` case whose parameters default to **`any`** (unconstrained) so their signature is emitted — they are marked as entry-only. True `unknown` means inference failed, not “no call sites”.
 
 ## Safety Design
 
@@ -102,26 +103,26 @@ No directives were written for either library — every case in the second colum
 
 ## Known Boundaries
 
-- **Entry-only fallback.** Functions that no usage site calls still produce an `entry@L` case, but with `unknown` parameters — the signature exists, the types do not.
+- **Entry-only fallback.** Functions that no usage site calls still produce an `entry@L` case, but with `any` parameters — the signature exists, the constraint is unconstrained until refined.
 - **Nested functions.** The matching chain resolves top-level and hoisted declarations. Function expressions defined *inside* another function body do not currently participate in name matching.
 - **Dual-entry variants.** When the same behavior is reachable through two entry shapes (exported directly and re-wrapped, for example), each entry contributes its own recorded cases; the combined type is the union of both entries, which can be wider than either entry alone.
 
 ## Persisting Harvested Results
 
-Harvested cases exist only within the run that harvested them — the records are matched, injected as `call@L` cases, printed, and then discarded. `--emit-cases` persists them: it writes the synthesized cases back into the analyzed file as real `@nudo:case` directives, so the shapes survive outside the harvesting run.
+Harvested cases exist only within the run that harvested them — the records are matched, injected as `call@L` cases, printed, and then discarded. `nudo test --freeze` persists them: it writes the synthesized cases back into the analyzed file as real `@nudo:case` directives, so the shapes survive outside the harvesting run.
 
 ```bash
-nudo infer lib/ --callsites test/ --emit-cases         # add: fill in functions that have no case directives
-nudo infer lib/ --callsites test/ --emit-cases=update  # update: re-synchronize previously generated directives
+nudo test lib/ --from test/ --freeze           # fill in functions that have no case directives
+nudo test lib/ --from test/ --freeze=update    # re-synchronize previously generated directives
 ```
 
-`add` only fills in functions with no case directives at all. `update` goes further: it strips the previously generated `call@` directives, re-analyzes the stripped source, and writes the refreshed set back — which is why it also surfaces *drift* at the usage sites. A test that changed its arguments shows up as a diff; `--emit-cases=update --dry-run --exit-on-diff` turns that into a CI gate that exits `1` on any non-empty diff. Both modes are idempotent (`No changes.` on a synced file).
+The default `freeze` mode only fills in functions with no case directives at all. `=update` goes further: it strips the previously generated `call@` directives, re-analyzes the stripped source, and writes the refreshed set back — which is why it also surfaces *drift* at the usage sites. A test that changed its arguments shows up as a diff; `--freeze=update --dry-run --exit-on-diff` turns that into a CI gate that exits `1` on any non-empty diff. Both modes are idempotent (`No changes.` on a synced file).
 
 ### Merge policy
 
 Emission never touches hand-written work; it only manages its own `call@` directives:
 
-| Function's existing cases | `--emit-cases` (add) | `--emit-cases=update` |
+| Function's existing cases | `test --freeze` (default) | `test --freeze=update` |
 |---------------------------|----------------------|------------------------|
 | Hand-written `@nudo:case` (name not starting with `call@`) | never touched | never touched |
 | Generated `call@` directives | not touched — reported `already-generated` | fully re-synchronized: added, changed, or deleted to match current call evidence (JSDoc blocks left empty are removed) |
@@ -133,9 +134,9 @@ Emission never touches hand-written work; it only manages its own `call@` direct
 - **Serializable shapes only.** Directive text can express primitives (`number()`/`string()`/`boolean()`/`unknown`/`never`), literals, plain objects, arrays, tuples, and unions. Cases whose arguments contain functions, Promises, class instances, `bigint`, or `symbol` values cannot be frozen — they are skipped and reported as `no-serializable-cases` (the function's remaining serializable cases are still written).
 - **`call@` is a reserved prefix.** Any `@nudo:case` whose name starts with `call@` is treated as generated: `update` may rewrite or delete it. Don't name hand-written cases `call@…`.
 
-End-to-end workflow examples (bootstrap and drift detection) are in the [CLI guide — Persisting cases as directives](./cli.md#persisting-cases-as-directives); the programmatic flow over these functions is documented under [service API — Case Emission](../api/service.md#case-emission).
+End-to-end workflow examples are in the [CLI guide](./cli.md#nudo-test); the programmatic flow over these functions is documented under [service API — Case Emission](../api/service.md#case-emission).
 
-To detect this drift proactively — in CI or before a release — run [`nudo doctor`](./cli.md#health-checks-and-ci-drift-gating): it re-runs the same re-solidify chain across your files and exits `1` as soon as any generated directives would change.
+To detect this drift proactively — in CI or before a release — run [`nudo health`](./cli.md#nudo-health): it re-runs the same re-solidify chain across your files and exits `1` as soon as any generated directives would change.
 
 ## Programmatic API
 
@@ -161,4 +162,4 @@ See the [service API reference](../api/service.md) for the full `AnalysisResult`
 ## Next Steps
 
 - **[Language Semantics](./semantics.md)** — what the evaluator can do with the shapes call-site discovery hands it: literal string methods, concrete-bound loops, recursion, and narrowing guards (plus the constructs that still degrade to `unknown`).
-- **[CLI Usage](./cli.md)** — all `nudo infer` and `nudo watch` options.
+- **[CLI Usage](./cli.md)** — all `nudo check` / `nudo test` options.

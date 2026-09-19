@@ -1,9 +1,17 @@
+// IMPLEMENTED:cli-semantics — any 成员访问记 may-throw；unknown-recv 仅引擎债。
 /**
  * 成员缺失诊断（B 路径 + Abs ast-eval 共用）。
  * 无 $call / transpile 依赖，避免 ast-eval ↔ calls 循环。
+ *
+ * any vs unknown（design-cli-semantics §2–3）：
+ * - any：无约束接收者 → 成员访问记入 throws 域（may-throw TypeError），结果保持 any
+ * - unknown：推导失败 → nudo:unknown-recv（引擎债），不得替代 L2 throws 建模
+ * - null/undefined：成员访问 hard-throw TypeError（§3.3 / design.md §4.5）
  */
 
 import type { Abs } from "../abs.ts";
+import { abs } from "../abs.ts";
+import { recordMayThrow } from "./may-throw.ts";
 
 export type BMemberDiag = {
   kind: "method" | "property";
@@ -107,9 +115,66 @@ export function notePrimMemberMissing(
   return false;
 }
 
+/** null / undefined（term lit null/undefined；shape unknown 兜底） */
+export function isNullishAbs(a: Abs | undefined): boolean {
+  if (!a) return false;
+  if (a.term?.op === "lit" && (a.term.value === null || a.term.value === undefined)) return true;
+  return false;
+}
+
 /**
- * unknown 接收者上的成员访问 → unknown-recv（与 TypeValue 口径对齐：
- * object/instance/refined/promise 静默；其余记一条）。
+ * any（无约束）接收者上的成员访问 → may-throw TypeError。
+ * 结果保持 any（JS 语义：属性值仍无约束），不是 unknown（分析失败）。
+ */
+export function noteAnyMemberMayThrow(
+  recv: Abs | undefined,
+  name: string,
+  kind: "method" | "property",
+  loc?: [number, number],
+): boolean {
+  if (recv?.shape?.k !== "any") return false;
+  const origin = getAbsOrigin(recv);
+  recordMayThrow({
+    kind: "TypeError",
+    cause: `${kind} '${name}' on any (unconstrained value)`,
+    recv: "any",
+    name,
+    line: loc?.[0] ?? origin?.line,
+    column: loc?.[1] ?? origin?.column,
+  });
+  return true;
+}
+
+/**
+ * nullish 接收者上的成员访问 → hard may-throw TypeError（设计 §3.3）。
+ * 返回 true 表示已记入 throws 域；调用方可据此抛 NudoThrow。
+ */
+export function noteNullishMemberThrows(
+  recv: Abs | undefined,
+  name: string,
+  kind: "method" | "property",
+  loc?: [number, number],
+): boolean {
+  if (!isNullishAbs(recv)) return false;
+  const recvName =
+    recv?.term?.op === "lit"
+      ? recv.term.value === null
+        ? "null"
+        : "undefined"
+      : "nullish";
+  recordMayThrow({
+    kind: "TypeError",
+    cause: `${kind} '${name}' on ${recvName}`,
+    recv: recvName,
+    name,
+    line: loc?.[0],
+    column: loc?.[1],
+  });
+  return true;
+}
+
+/**
+ * unknown 接收者上的成员访问 → unknown-recv（引擎债；与 any 的 throws 域分离）。
  */
 export function noteUnknownMemberMissing(
   recv: Abs | undefined,
@@ -131,7 +196,12 @@ export function noteUnknownMemberMissing(
   return true;
 }
 
-/** 方法分派失败时的统一记账（prim / unknown；obj/brand/promise 静默） */
+/** any 接收者成员访问的默认结果：any（不是 unknown） */
+export function anyMemberResult(): Abs {
+  return abs({ k: "any" }, undefined, undefined, "path");
+}
+
+/** 方法分派失败时的统一记账（prim / any / nullish / unknown） */
 export function noteMemberDispatchMiss(
   recv: Abs | undefined,
   name: string,
@@ -139,6 +209,8 @@ export function noteMemberDispatchMiss(
   loc?: [number, number],
 ): void {
   if (notePrimMemberMissing(recv, name, kind, loc)) return;
+  if (noteAnyMemberMayThrow(recv, name, kind, loc)) return;
+  if (noteNullishMemberThrows(recv, name, kind, loc)) return;
   if (noteUnknownMemberMissing(recv, name, kind, loc)) return;
   noteObjSlotMissing(recv, name, loc);
 }

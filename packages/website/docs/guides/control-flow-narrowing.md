@@ -7,7 +7,7 @@ description: See how Nudo narrows types per call site — equality guards, discr
 
 Nudo narrows types when it can decide a condition for the **concrete argument of a call site**. Each `call@L… => …` line in the output reports the result of one call, evaluated with that call's exact argument — branches eliminated by narrowing never contribute to that case's result, and `Observed: ` is the union of all per-call results.
 
-Narrowing is precise on the **call-site path** (functions called at the top level, reported as `call@` cases) and on `@nudo:case` directives with **concrete** arguments. Symbolic arguments (`number()`, `union(...)`) cannot decide a condition, so their branches join instead of narrowing. Every output block below is a real `nudo infer` run of the code above it.
+Narrowing is precise on the **call-site path** (functions called at the top level, reported as `call@` cases) and on `@nudo:case` directives with **concrete** arguments. Symbolic arguments (`number()`, `union(...)`) cannot decide a condition, so their branches join instead of narrowing. Every output block below is a real `nudo test` run of the code above it.
 
 ## Comparison Guards
 
@@ -122,7 +122,7 @@ Each clause receives its matching object shape, so `state.requestId` and `state.
 
 ## Not Narrowed Yet
 
-These patterns currently do **not** fork on the call-site path — each one degrades to a single branch or to `unknown`, so guard against them explicitly or verify with `nudo infer` before relying on them:
+These patterns currently do **not** fork on the call-site path — each one degrades to a single branch or to `unknown` (inference failed / engine debt), so guard against them explicitly or verify with `nudo test` before relying on them:
 
 | Pattern | Current behavior |
 |---|---|

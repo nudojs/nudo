@@ -85,7 +85,7 @@ describe("interfaceSurface", () => {
     expect(helper).toBeDefined();
     expect(helper!.kind).toBe("local");
     expect(helper!.source).toBe("implicit");
-    expect(helper!.params).toEqual([{ name: "n", display: "unknown" }]); // entry@ 回退
+    expect(helper!.params).toEqual([{ name: "n", display: "any" }]); // 入口无约束 = any
     expect(helper!.returns).toBe("number");
   });
 

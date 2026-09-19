@@ -1,6 +1,6 @@
 ---
 sidebar_position: 8
-description: "用 --callsites 从测试与应用中采集真实实参形状，合成 call@L 用例并固化为指令。"
+description: "用 --from 从测试与应用中采集真实实参形状，合成 call@L 用例，并用 test --freeze 固化为指令。"
 ---
 
 # 调用点发现
@@ -8,7 +8,8 @@ description: "用 --callsites 从测试与应用中采集真实实参形状，�
 `@nudo:case` 指令让你可以精确控制推断，但要为真实库里的每个导出函数手写指令，工作量非常可观——而且手写的 case 很少与函数*实际上*被使用的方式吻合。调用点发现把这个方向反过来：不是你向 Nudo 描述输入，而是 Nudo 阅读你已有的使用方代码——测试、示例、上游应用——采集真实的参数形状与结果，并据此合成 case。
 
 ```bash
-nudo infer lib/ --callsites test/
+nudo test lib/ --from test/
+# 或 check --from：nudo check lib/ --from test/
 ```
 
 ## 快速开始
@@ -36,26 +37,27 @@ it("slugifies titles", () => {
 以测试作为使用方代码，对库运行推断：
 
 ```bash
-nudo infer lib/ --callsites test/
+nudo test lib/ --from test/
+# 或 check --from：nudo check lib/ --from test/
 ```
 
 输出：
 
 ```text
 === slugify ===
-
-call@L4: ("Hello World") => string
+  entry@L1  (any) => any
+  call@L4  ("Hello World") => string
 ```
 
-这个 case 不是任何人写的——它采集自测试文件的第 4 行，因此被命名为 `call@L4`。每个被记录的调用点都会成为一个合成的 case；对同一函数的多个调用点会合并为联合类型（combined type），与手写 `@nudo:case` 指令的行为完全一致。
+这个 case 不是任何人写的——它采集自测试文件的第 4 行，因此被命名为 `call@L4`。每个被记录的调用点都会成为一个合成的 case；对同一函数的多个调用点会合并为联合类型（combined type），与手写 `@nudo:case` 指令的行为完全一致。无约束入口参数显示为 `any`。
 
 ### 选项
 
 | 参数 | 描述 |
 |----------|-------------|
 | `<target>` | 要分析的文件或目录——`.js`、`.mjs` 或 `.ts`；目录会递归收集推断目标文件 |
-| `--callsites <paths...>` | 一个或多个使用方文件或目录（测试、示例、应用）。目录会递归扫描。 |
-| `--emit-cases [mode]` | 把采集到的用例写回被分析文件，成为 `@nudo:case` 指令（`add` 只补没有用例指令的函数；`=update` 重新同步已生成的指令）——参见[持久化采集结果](#持久化采集结果) |
+| `--from <paths...>` | 一个或多个使用方文件或目录（测试、示例、应用）。由 `--callsites` 更名。目录会递归扫描。 |
+| `--freeze[=update]` | 把采集到的用例写回被分析文件，成为 `@nudo:case` 指令（默认只补没有用例指令的函数；`=update` 重新同步已生成的指令）——由 `--emit-cases` 更名 |
 
 ## 工作原理
 
@@ -102,26 +104,26 @@ call@L4: ("Hello World") => string
 
 ## 已知边界
 
-- **仅入口回退。** 没有任何使用方调用的函数仍会产出 `entry@L` case，但参数是 `unknown`——签名存在，类型不存在。
+- **仅入口回退。** 没有任何使用方调用的函数仍会产出 `entry@L` case，但参数是 `any`（无约束）——签名存在，约束待 refine。真 `unknown` 表示推导失败，不是「无调用点」。
 - **嵌套函数。** 匹配链解析的是顶层声明与提升（hoisted）声明。定义在另一个函数体*内部*的函数表达式目前不参与名字匹配。
 - **双入口变体。** 当同一行为可以通过两种入口形状触达（例如直接导出与再包装导出）时，每个入口各自贡献自己记录到的 case；组合类型是两个入口的并集，可能比任何单一入口都更宽。
 
 ## 持久化采集结果
 
-采集到的用例只存在于采集它的那次运行中——记录被匹配、注入为 `call@L` 用例、打印，然后就丢弃了。`--emit-cases` 把它们持久化：将合成的用例写回被分析文件，成为真正的 `@nudo:case` 指令，使这些形状在采集运行之外依然存在。
+采集到的用例只存在于采集它的那次运行中——记录被匹配、注入为 `call@L` 用例、打印，然后就丢弃了。`nudo test --freeze` 把它们持久化：将合成的用例写回被分析文件，成为真正的 `@nudo:case` 指令，使这些形状在采集运行之外依然存在。
 
 ```bash
-nudo infer lib/ --callsites test/ --emit-cases         # add：补齐尚无用例指令的函数
-nudo infer lib/ --callsites test/ --emit-cases=update  # update：重新同步已生成的指令
+nudo test lib/ --from test/ --freeze           # 补齐尚无用例指令的函数
+nudo test lib/ --from test/ --freeze=update    # 重新同步已生成的指令
 ```
 
-`add` 只补齐完全没有用例指令的函数。`update` 更进一步：先剥离此前生成的 `call@` 指令，在剥离后的源码上重新分析，再回写刷新后的指令集——因此它还能暴露使用处的*漂移*。测试改了实参，就会以 diff 的形式显现；`--emit-cases=update --dry-run --exit-on-diff` 把它变成 CI 门禁——diff 非空即以 `1` 退出。两种模式都幂等（已同步的文件输出 `No changes.`）。
+默认 `freeze` 只补齐完全没有用例指令的函数。`=update` 更进一步：先剥离此前生成的 `call@` 指令，在剥离后的源码上重新分析，再回写刷新后的指令集——因此它还能暴露使用处的*漂移*。测试改了实参，就会以 diff 的形式显现；`--freeze=update --dry-run --exit-on-diff` 把它变成 CI 门禁——diff 非空即以 `1` 退出。两种模式都幂等（已同步的文件输出 `No changes.`）。
 
 ### 合并策略
 
 固化绝不触碰手写内容；它只管理自己的 `call@` 指令：
 
-| 函数已有用例状态 | `--emit-cases`（add） | `--emit-cases=update` |
+| 函数已有用例状态 | `test --freeze`（默认） | `test --freeze=update` |
 |------------------|------------------------|------------------------|
 | 手写 `@nudo:case`（名字不以 `call@` 开头） | 一律不动 | 一律不动 |
 | 已有生成指令（`call@` 前缀） | 不动——报告 `already-generated` | 全量重新同步：按当前调用证据增/改/删（只剩空 JSDoc 块时整块删除） |
@@ -135,7 +137,7 @@ nudo infer lib/ --callsites test/ --emit-cases=update  # update：重新同步�
 
 端到端工作流示例（引导与漂移检测）见 [CLI 使用指南 —— 固化 case 指令](./cli.md#固化-case-指令)；基于这些函数的编程接口见 [service API —— 用例固化](../api/service.md#用例固化)。
 
-要主动检测这种漂移——在 CI 中或发版前——运行 [`nudo doctor`](./cli.md#健康检查与-ci-漂移门禁)：它对你的文件重跑同一条重新固化链路，任一生成指令会变化即以退出码 `1` 结束。
+要主动检测这种漂移——在 CI 中或发版前——运行 [`nudo health`](./cli.md#nudo-health)：它对你的文件重跑同一条重新固化链路，任一生成指令会变化即以退出码 `1` 结束。
 
 ## 编程接口
 
@@ -161,4 +163,4 @@ const result = analyzeFile(filePath, source, activeCases, records);
 ## 下一步
 
 - **[语言语义](./semantics.md)** —— 求值器能对调用点发现交给它的形状做些什么：`this` 绑定、Promise、可迭代对象等。
-- **[CLI 使用指南](./cli.md)** —— 所有 `nudo infer` 与 `nudo watch` 选项。
+- **[CLI 使用指南](./cli.md)** —— 所有 `nudo check` / `nudo test` 选项。

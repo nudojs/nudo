@@ -1,8 +1,9 @@
 /**
- * `nudo infer --json` 稳定契约 v1（CI / Agent）。
+ * Case facts JSON（`nudo test --json` / `nudo check --json` 同源序列化）。
+ * 曾用名 InferJson v1（`nudo infer --json`）；字段只增不改语义。
  *
- * 字段只增不改语义：
  * - args / result / throws / combined：formatShape 外延投影（有损，兼容）
+ *   入口无约束参数展示为 any；unknown 仅表示推导失败
  * - intension.abs*：无损 Abs 展示（主线）
  * - argsAbs / resultAbs：CaseResult 上的无损 Abs（formatAbs）；有则补齐
  */

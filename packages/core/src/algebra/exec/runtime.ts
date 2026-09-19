@@ -30,7 +30,14 @@ import { leqAbs } from "../leq.ts";
 import { evalNamespaceCall } from "../builtins.ts";
 import type { Phi } from "../pred.ts";
 import { pTrue } from "../pred.ts";
-import { noteUnknownMemberMissing, noteObjSlotMissing } from "./calls.ts";
+import {
+  noteUnknownMemberMissing,
+  noteObjSlotMissing,
+  noteAnyMemberMayThrow,
+  noteNullishMemberThrows,
+  anyMemberResult,
+} from "./calls.ts";
+import { errorTypeAbs } from "./may-throw.ts";
 
 /** 当前路径前提 Φ（transpile 后的 fork 会压栈） */
 let phi: Phi = pTrue;
@@ -996,6 +1003,14 @@ export function $get(
     if (key === "size" && o.shape.name === "Set") return setSizeAbs(o);
     return $get(o.shape.shape, key, opts);
   }
+  // any / nullish：throws 域（design-cli-semantics §3.3）
+  if (noteNullishMemberThrows(o, key, "property")) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  if (o.shape.k === "any") {
+    if (!opts?.silent) noteAnyMemberMayThrow(o, key, "property");
+    return anyMemberResult();
+  }
   if (isObj(o)) {
     const slot = (o.shape as ObjShape).slots[key];
     if (slot) {
@@ -1013,7 +1028,15 @@ export function $get(
     return parts.reduce((a, b) => joinAbs(a, b));
   }
   if (!opts?.silent) {
-    // 裸属性访问落在 unknown 上 → unknown-recv（$invoke 自己报 method）
+    // nullish → may-throw TypeError（soft，不中断求值）
+    if (noteNullishMemberThrows(o, key, "property")) {
+      return unknown;
+    }
+    // any（无约束）→ may-throw TypeError；结果保持 any
+    if (noteAnyMemberMayThrow(o, key, "property")) {
+      return anyMemberResult();
+    }
+    // unknown（推导失败）→ unknown-recv 引擎债（$invoke 自己报 method）
     noteUnknownMemberMissing(o, key, "property");
     noteObjSlotMissing(o, key);
   }

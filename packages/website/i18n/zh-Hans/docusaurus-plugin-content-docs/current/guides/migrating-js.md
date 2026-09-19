@@ -29,7 +29,8 @@ pnpm add -D @nudojs/cli @nudojs/lsp
 ## 1. 盘点
 
 ```bash
-nudo interface src/
+nudo contract src/
+nudo check src/
 ```
 
 | 档位 | 含义 | 迁移动作 |
@@ -41,8 +42,8 @@ nudo interface src/
 ## 2. 从逻辑生成草稿
 
 ```bash
-nudo interface --draft src/lib.js
-nudo interface --draft --write src/lib.js --fn greet --fn double
+nudo contract --draft src/lib.js
+nudo contract --draft --write src/lib.js --fn greet --fn double
 # IDE：CodeLens ⚡ draft interface / VS Code「Nudo: Draft Interface」
 ```
 
@@ -99,8 +100,8 @@ nudo check src/lib.js --json
 ## 5. 固化调用点域（可选）
 
 ```bash
-nudo interface --emit src/lib.js --fn double --callsites test/
-nudo interface --emit src/lib.js --dry-run --exit-on-diff
+nudo contract --emit src/lib.js --fn double --from test/
+nudo contract --emit src/lib.js --dry-run --exit-on-diff
 ```
 
 ## 6. IDE / agent
@@ -111,13 +112,13 @@ nudo interface --emit src/lib.js --dry-run --exit-on-diff
 | CodeLens | persist / update / **draft** |
 | VS Code | Nudo Output 通道命令 |
 | Agent | `nudo.interface` / `nudo.interface.draft` / `nudo.check` |
-| CLI | `nudo interface` / `--draft` / `--emit` / `check` / `doctor` |
+| CLI | `nudo contract`（`--draft` / `--emit`）、`nudo check`、`nudo health`、`nudo test --freeze` |
 
 ## 7. 持续健康
 
 ```bash
-nudo doctor src/
-nudo infer src/lib.js --callsites test/ --emit-cases=update
+nudo health src/                         # uncovered fns, drift, analysis errors
+nudo test src/lib.js --from test/ --freeze=update
 ```
 
 版本锁定见 [版本与发布](./versioning.md)。
@@ -130,7 +131,7 @@ nudo infer src/lib.js --callsites test/ --emit-cases=update
 
 ## 参见
 
-- [CLI — `--draft`](./cli.md#--draft--代码优先--迁移)
+- [CLI — `nudo contract --draft`](./cli.md#nudo-contract)
 - [Check 指南](./check.md)
 - [与 TypeScript 并存](./coexistence.md)
 - [vs TypeScript](./vs-typescript.md)

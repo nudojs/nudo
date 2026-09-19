@@ -28,6 +28,13 @@ export type NudoConfig = {
   };
   /** 磁盘缓存（B3）：true → `.nudo/cache`；字符串 → 自定义根；false/省略 → 关 */
   cache?: boolean | string;
+  /** check 门禁（design-cli-semantics §3） */
+  check?: {
+    /** L2 入口 may-throw：error | warning | off（默认 error） */
+    entryThrows?: "error" | "warning" | "off";
+    /** L2 --ignore-throws 类型名列表 */
+    ignoreThrows?: string[];
+  };
 };
 
 export type InterfaceConfig = {
@@ -49,6 +56,26 @@ export type AnalysisConfig = {
   /** C0.5 evaluation-driven missing-slot；默认 off */
   evalMissingSlot: "off" | "warning";
 };
+
+export type CheckConfig = {
+  /** L2 入口 may-throw 执法档；默认 error */
+  entryThrows: "error" | "warning" | "off";
+  /** L2 ignoreThrows 类型名；默认空 */
+  ignoreThrows: string[];
+};
+
+/** package.json#nudo.check → 执法选项 */
+export function checkConfig(config: NudoConfig | null | undefined): CheckConfig {
+  const raw = config?.check;
+  const entryThrows =
+    raw?.entryThrows === "off" || raw?.entryThrows === "warning"
+      ? raw.entryThrows
+      : "error";
+  const ignore = Array.isArray(raw?.ignoreThrows)
+    ? raw.ignoreThrows.filter((s): s is string => typeof s === "string" && s.length > 0)
+    : [];
+  return { entryThrows, ignoreThrows: ignore };
+}
 
 const DEFAULT_ANALYSIS_INCLUDE: string[] = [];
 const DEFAULT_ANALYSIS_EXCLUDE = [

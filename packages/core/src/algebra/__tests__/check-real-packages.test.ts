@@ -5,14 +5,16 @@ import { createRequire } from "node:module";
 import { checkSource } from "../index.ts";
 
 /**
- * 真实包精度门禁：error 级误报必须为 0。
+ * 真实包精度门禁：L1 error 级误报必须为 0。
+ *
+ * 分层（design-cli-semantics §3 / conflicts E3）：
+ * - **L2 off 基线**：本套件 `entryThrows: "off"`，只锁显式契约/调用点证据的
+ *   zero-FP（ERROR_CODES）。入口 may-throw 不进此表。
+ * - **L2 on**：`nudo:entry-may-throw` 默认 error，真实包上常见；由
+ *   check-recall-gold L2 用例与 CLI `--ignore-throws` 覆盖，不在此 zero-FP 内。
  *
  * 门禁必须响：任一包解析失败、文件读取失败、checkSource 抛错或候选
- * 文件数为 0 都直接红——不再 runIf 静默 skip、不再 try-catch 静默
- * continue（历史上两者会让整批包免检而门禁仍然绿灯）。
- * 包定位沿用 check-real-commander.test.ts 的 createRequire 方案按
- * Node 解析规则走；fixture 包保持可解析（commander 是本包 devDependency，
- * 其余为工作区可解析依赖）。
+ * 文件数为 0 都直接红。
  */
 
 const require = createRequire(import.meta.url);
@@ -96,7 +98,8 @@ function scanPackage(pkgName: string): ScanOutcome {
   for (const { label, source } of files) {
     let r;
     try {
-      r = checkSource(label, source);
+      // L2 off：本套件只锁 L1 zero-FP（见文件头分层说明）
+      r = checkSource(label, source, undefined, { entryThrows: "off" });
     } catch (e) {
       errors.push(`${label}: checkSource 抛错 — ${(e as Error).message}`);
       continue;

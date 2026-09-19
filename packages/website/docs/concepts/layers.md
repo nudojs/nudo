@@ -12,23 +12,24 @@ Nudo is designed so you only learn what you need.
 
 ## Day 0 — Zero concepts
 
-Write plain JavaScript. Run inference:
+Write plain JavaScript. Run the two Day-0 commands:
 
 ```bash
-npx nudojs infer ./src/app.js
+npx nudojs check ./src/app.js   # signatures + L2 entry throws
+npx nudojs test ./src/app.js    # every inferred case
 ```
 
-You get call-site cases: concrete inputs → inferred results. No annotations, no config.
+`check` prints signatures even on success. Unconstrained entry params display as `any`. `test` prints synthetic `call@` / `entry@` cases — that is the call-site observation surface. No annotations, no config.
 
 Open the same file in VS Code with the Nudo extension for hover and inlays.
 
-> **Default analysis mode:** `nudo.analysis.mode` defaults to `"exports"`. Files with `export` / sidecar / directives are analyzed by the IDE; set `"all"` for every target path or `"directives"` for the conservative gate. CLI `infer` on a named path still analyzes any target file.
+> **Default analysis mode:** `nudo.analysis.mode` defaults to `"exports"`. Files with `export` / sidecar / directives are analyzed by the IDE; set `"all"` for every target path or `"directives"` for the conservative gate. CLI `check`/`test` on a named path still analyzes any target file.
 
-**Stop here** if you only want types for existing JS.
+**Day 0 takeaway:** read types from `check` signatures and `test` cases. There is no `nudo infer` observation verb.
 
 ## Day 1 — Sidecar contracts
 
-When you need *obligations* (check gates in CI), add a sidecar next to the source:
+When you need *stronger obligations* (explicit contracts in CI), add a sidecar next to the source:
 
 ```javascript
 // math.js
@@ -43,18 +44,19 @@ export const add2 = number().gt(0);
 ```
 
 ```bash
+npx nudojs contract --draft ./src/math.js   # optional code-first draft
 npx nudojs check ./src/math.js
 ```
 
-Contracts come only from:
-- explicit sidecars (`*.nudo.js`) / `@nudo:refine`
-- call-site facts observed by the analyzer
+Explicit contracts come from:
+- sidecars (`*.nudo.js`) / `@nudo:refine` / `@nudo:interface`
+- call-site facts observed by the analyzer (domain evidence)
 
-No evidence → `any`/`unknown`. Nudo does **not** invent required slots from body AST scans.
+Without an explicit contract, the contract degrades to the JS runtime boundary: entry params are `any`, and export functions must not carry undigested may-throw (L2). Nudo does **not** invent required slots from body AST scans.
 
 ## Advanced — Abs
 
-The internal type is **Abs** (`shape × term × pred × conf`): types are computable values. `nudo check --verbose` shows the lossless Abs face. You rarely need this for day-to-day work.
+The internal type is **Abs** (`shape × term × pred × conf`): types are computable values. `nudo check --abs` shows the lossless Abs face. You rarely need this for day-to-day work.
 
 ## Next
 
