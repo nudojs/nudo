@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { leqAbs } from "../leq.ts";
+import { leqAbs, requiredFnArity } from "../leq.ts";
 import { abs, numLit, strLit, boolLit, num, str, unknown, never } from "../abs.ts";
 import { v, lit } from "../term.ts";
 import { gt, ge, pTrue } from "../pred.ts";
@@ -105,5 +105,13 @@ describe("leqAbs structural assignability", () => {
     const r = leqAbs(numLit(1), str());
     expect(r.ok).toBe(false);
     expect(r.reason).toContain("prim");
+  });
+
+  it("requiredFnArity skips rest and optional labels", () => {
+    expect(requiredFnArity(["x0", "...paths"])).toBe(1);
+    expect(requiredFnArity(["options?"])).toBe(0);
+    expect(requiredFnArity(["path", "ext?"])).toBe(1);
+    expect(requiredFnArity(["a", "b"])).toBe(2);
+    expect(requiredFnArity(undefined)).toBe(0);
   });
 });

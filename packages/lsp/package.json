@@ -23,6 +23,10 @@
     ".": {
       "types": "./dist/server.d.ts",
       "default": "./dist/server.js"
+    },
+    "./public-api": {
+      "types": "./dist/public-api.d.ts",
+      "default": "./dist/public-api.js"
     }
   },
   "files": [

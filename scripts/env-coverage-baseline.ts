@@ -16,13 +16,14 @@
  * Usage (from monorepo root):
  *   pnpm run coverage:env
  *   pnpm run coverage:env --json   # stdout JSON only
+ *   pnpm run coverage:env -- --check  # CI: fail if committed baseline drifted
  *
  * Output:
  *   docs/reports/env-coverage-baseline.json
  *   docs/reports/env-coverage-baseline.md
  */
 
-import { mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
@@ -34,7 +35,27 @@ import { defineEnv as defineNodeEnv } from "../packages/env/src/node.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const jsonMode = process.argv.includes("--json");
+const checkMode = process.argv.includes("--check");
 const generatedAt = new Date().toISOString();
+
+/** Stable payload for drift checks — ignores timestamps. */
+function coverageStablePayload(report: {
+  nodeProbes: { counts: unknown; leaf: unknown; total: unknown; results: unknown };
+  esProbes?: unknown;
+  webProbes?: unknown;
+  libraryProbes?: unknown;
+  envModuleKeys?: unknown;
+}): string {
+  return JSON.stringify({
+    envModuleKeys: report.envModuleKeys,
+    nodeProbes: {
+      counts: report.nodeProbes.counts,
+      leaf: report.nodeProbes.leaf,
+      total: report.nodeProbes.total,
+      results: report.nodeProbes.results,
+    },
+  });
+}
 
 type EnvDef = {
   globals: Record<string, Abs>;
@@ -73,9 +94,10 @@ const NODE_PROBES: Probe[] = [
   { id: "fs.writeFileSync", module: "fs", path: ["writeFileSync"] },
   { id: "fs.existsSync", module: "fs", path: ["existsSync"] },
   { id: "fs.statSync", module: "fs", path: ["statSync"] },
-  { id: "fs.promises.readFile", module: "fs", path: ["readFile"] },
-  { id: "fs.promises.writeFile", module: "fs", path: ["writeFile"] },
-  { id: "fs.promises.mkdir", module: "fs", path: ["mkdir"] },
+  { id: "fs.readFile-callback", module: "fs", path: ["readFile"] },
+  { id: "fs.promises.readFile", module: "fs/promises", path: ["readFile"] },
+  { id: "fs.promises.writeFile", module: "fs/promises", path: ["writeFile"] },
+  { id: "fs.promises.mkdir", module: "fs/promises", path: ["mkdir"] },
   { id: "node:fs/promises.readFile", module: "node:fs/promises", path: ["readFile"] },
   { id: "node:fs/promises.appendFile", module: "node:fs/promises", path: ["appendFile"] },
   { id: "node:fs/promises.unlink", module: "node:fs/promises", path: ["unlink"] },
@@ -206,7 +228,15 @@ function formatMentionsUnknown(fmt: string | undefined): boolean {
   return /(^|[^\w])(unknown|any)([^\w]|$)/.test(fmt);
 }
 
+/** Empty object bags (`process.env` → `{  }`) are not leaf-clean. */
+function isEmptyObjFormat(fmt: string | undefined): boolean {
+  if (!fmt) return false;
+  return /^\{\s*\}$/.test(fmt.replace(/\s+/g, " ").trim());
+}
+
 function leafOf(format: string | undefined): "clean" | "mentions-unknown" {
+  if (!format) return "mentions-unknown";
+  if (isEmptyObjFormat(format)) return "mentions-unknown";
   return formatMentionsUnknown(format) ? "mentions-unknown" : "clean";
 }
 
@@ -404,6 +434,46 @@ function main(): void {
   mkdirSync(outDir, { recursive: true });
   const jsonPath = join(outDir, "env-coverage-baseline.json");
   const mdPath = join(outDir, "env-coverage-baseline.md");
+
+  if (checkMode) {
+    let committed: string | null = null;
+    try {
+      committed = readFileSync(jsonPath, "utf8");
+    } catch {
+      committed = null;
+    }
+    if (!committed) {
+      process.stderr.write(
+        `env-coverage-baseline --check: missing ${jsonPath}; run \`pnpm run coverage:env\` and commit\n`,
+      );
+      process.exit(1);
+    }
+    let committedPayload = "";
+    try {
+      committedPayload = coverageStablePayload(JSON.parse(committed));
+    } catch {
+      process.stderr.write(
+        `env-coverage-baseline --check: unparseable ${jsonPath}; run \`pnpm run coverage:env\` and commit\n`,
+      );
+      process.exit(1);
+    }
+    const freshPayload = coverageStablePayload(report);
+    if (committedPayload !== freshPayload) {
+      process.stderr.write(
+        `env-coverage-baseline --check: docs/reports/env-coverage-baseline.* is stale.\n` +
+          `Run \`pnpm run coverage:env\` and commit the regenerated reports.\n` +
+          `Fresh: node resolved ${nodeCounts.resolved}/${report.nodeProbes.total} ` +
+          `(leaf-clean=${nodeLeaf.clean}, unknown=${nodeCounts.unknown}, ` +
+          `mock-required=${nodeCounts["mock-required"]})\n`,
+      );
+      process.exit(1);
+    }
+    process.stdout.write(
+      `env-coverage-baseline --check: committed baseline matches (node resolved ${nodeCounts.resolved}/${report.nodeProbes.total})\n`,
+    );
+    return;
+  }
+
   writeFileSync(jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 
   const md: string[] = [];

@@ -94,26 +94,30 @@ describe("node env high-frequency gaps (B3)", () => {
     expect(shapeOf(qs.escape)).toContain("=>");
   });
 
-  it("fs.promises common methods present under fs and node:fs/promises", () => {
+  it("fs.promises methods live under fs/promises — not Promise-typed on callback fs", () => {
     const fs = lookupModule(env, "fs");
-    for (const name of [
-      "readFile",
-      "writeFile",
-      "mkdir",
-      "rm",
-      "appendFile",
-      "unlink",
-      "rename",
-      "copyFile",
-      "chmod",
-    ] as const) {
-      expect(fs[name], `fs.${name}`).toBeTruthy();
-      expect(shapeOf(fs[name])).toContain("promise");
+    expect(fs.readFileSync).toBeTruthy();
+    expect(shapeOf(fs.readFileSync)).not.toContain("promise");
+    // callback-style async on fs: returns undefined, not promise
+    expect(shapeOf(fs.readFile)).toContain("undefined");
+    expect(shapeOf(fs.readFile)).not.toContain("promise");
+    for (const mod of ["fs/promises", "node:fs/promises"] as const) {
+      const promises = lookupModule(env, mod);
+      for (const name of [
+        "readFile",
+        "writeFile",
+        "mkdir",
+        "rm",
+        "appendFile",
+        "unlink",
+        "rename",
+        "copyFile",
+        "chmod",
+      ] as const) {
+        expect(promises[name], `${mod}.${name}`).toBeTruthy();
+        expect(shapeOf(promises[name]), `${mod}.${name}`).toContain("promise");
+      }
     }
-    const promises = lookupModule(env, "node:fs/promises");
-    expect(promises.readFile).toBeTruthy();
-    expect(promises.unlink).toBeTruthy();
-    expect(promises.copyFile).toBeTruthy();
   });
 
   it("path / url / crypto / process high-frequency slots stay resolved", () => {
@@ -138,15 +142,25 @@ describe("node env high-frequency gaps (B3)", () => {
     expect(shapeOf(cwd)).toContain("=>");
   });
 
-  it("variadic/optional Node APIs do not over-declare required arity", () => {
+  it("variadic/optional Node APIs declare required arity only + optional labels", () => {
     const path = lookupModule(env, "path");
     expect(shapeOf(path.join)).toBe("(string, ...paths: string) => string");
     expect(shapeOf(path.resolve)).toBe("(...paths: string) => string");
+    // basename: ext optional — format shows label; required slot is path
+    expect(shapeOf(path.basename)).toContain("ext?");
+    expect(shapeOf(path.basename)).not.toMatch(/\(string, string\)/);
     const util = lookupModule(env, "util");
-    expect(shapeOf(util.format)).toBe("(string, ...args: unknown) => string");
+    // util.format() is valid with zero args in Node
+    expect(shapeOf(util.format)).toBe("(...args: unknown) => string");
     const events = lookupModule(env, "events");
     expect(shapeOf(events.EventEmitter)).toContain("options?");
     expect(shapeOf(events.EventEmitter)).toContain("EventEmitter");
+    // 0 required ctor params
+    expect(events.EventEmitter!.shape.k === "fn"
+      ? events.EventEmitter!.shape.paramTypes?.length ?? 0
+      : 1).toBe(0);
+    const url = lookupModule(env, "url");
+    expect(shapeOf(url.URL)).toContain("base?");
     const qs = lookupModule(env, "querystring");
     expect(shapeOf(qs.parse)).toContain("sep?");
     const stream = lookupModule(env, "stream");

@@ -57,7 +57,7 @@ import { defaultLoadModule, type LoadModule } from "./load-module.ts";
 import { noteEnvPathDeps } from "./env-path-deps.ts";
 import { loadModuleDepsFingerprint, hashSource } from "@nudojs/core";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph, evalProgramAbsWithModules } from "./abs-modules-graph.ts";
-import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, mockSeedFingerprint, collectEnvGlobals, collectEnvModules, mergeHarvestUnderEnv } from "./bpath-run.ts";
+import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, mockSeedFingerprint, collectEnvGlobals, collectEnvModules, mergeHarvestUnderEnv, setEnvHarvestConflictCollector, type EnvHarvestConflict } from "./bpath-run.ts";
 import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
 import { setAbsTruncationCollector } from "@nudojs/core";
 import {
@@ -1207,6 +1207,18 @@ function analyzeFileUncachedInner(
   const nodeAbsMap = new Map<Node, Abs>();
   const functionResults: FunctionAnalysis[] = [];
   const caseHints: CaseHint[] = [];
+  const envHarvestConflicts: EnvHarvestConflict[] = [];
+  setEnvHarvestConflictCollector((c) => {
+    if (!envHarvestConflicts.some((x) => x.module === c.module)) {
+      envHarvestConflicts.push(c);
+    } else {
+      const prev = envHarvestConflicts.find((x) => x.module === c.module)!;
+      for (const e of c.exports) {
+        if (!prev.exports.includes(e)) prev.exports.push(e);
+      }
+      prev.defaultOverwritten ||= c.defaultOverwritten;
+    }
+  });
 
   const fileDirectives = extractFileDirectives(ast);
   const fileEnvNames = fileDirectives
@@ -2113,6 +2125,25 @@ function analyzeFileUncachedInner(
     filePath,
     analysisConfig(projectConfig?.config).callSiteBudget,
   );
+
+  setEnvHarvestConflictCollector(null);
+  for (const c of envHarvestConflicts) {
+    const parts: string[] = [];
+    if (c.exports.length > 0) parts.push(`export(s) ${c.exports.join(", ")}`);
+    if (c.defaultOverwritten) parts.push("default");
+    const detail = parts.length > 0 ? ` — ${parts.join("; ")}` : "";
+    diagnostics.push({
+      range: {
+        start: { line: 1, column: 0 },
+        end: { line: 1, column: 0 },
+      },
+      severity: "warning",
+      message:
+        `handwritten @nudo:env wins over harvest on module "${c.module}"${detail}; ` +
+        `harvest only fills missing slots (B8). code=nudo:env-harvest-conflict`,
+      code: "nudo:env-harvest-conflict",
+    });
+  }
 
   return {
     functions: functionResults,

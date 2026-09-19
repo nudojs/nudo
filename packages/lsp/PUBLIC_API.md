@@ -7,6 +7,7 @@
 > breaks of the stable rows below (see [`docs/versioning.md`](../../docs/versioning.md)).
 >
 > Machine-readable twins: [`src/public-api.ts`](./src/public-api.ts) ·
+> npm export `@nudojs/lsp/public-api` (constants only; no server side effect) ·
 > regression pin: [`src/__tests__/public-api-surface.test.ts`](./src/__tests__/public-api-surface.test.ts)
 >
 > Website summary: [api/lsp.md](../website/docs/api/lsp.md) · client matrix:
@@ -19,6 +20,7 @@
 | Package name | `@nudojs/lsp` | **stable** |
 | `bin` | `nudo-lsp` → `./dist/server.js` | **stable** |
 | `exports["."]` | types `./dist/server.d.ts`, default `./dist/server.js` | **stable** |
+| `exports["./public-api"]` | types `./dist/public-api.d.ts`, default `./dist/public-api.js` — freeze inventory constants, importable without starting the server | **stable** (additive) |
 | `files` | `["dist"]` — no `src/*` published | **stable** |
 | Entry side effect | importing `.` starts the LSP (stdio/IPC) | **stable** (documented contract) |
 | Engines | Node `>=20` | **stable** |
@@ -93,8 +95,8 @@ to the same handlers (`AGENT_TOOL_SOURCES` same-source pin).
 | `nudo/interface` | `nudo.interface` | tier lines |
 | `nudo/interface.draft` | `nudo.interface.draft` | draft summary |
 | `nudo/interface.emit` | `nudo.interface.emit` / `nudo.interfaceEmit` | emit summary |
-| `nudo/selectCase` | `nudo.selectCase` | `{ success: true }` |
-| `nudo/getActiveCases` | `nudo.getActiveCases` | `Record<string, number>` |
+| `nudo/selectCase` | `nudo.selectCase` | `{ success: true }` — editor-only (slash + executeCommand; no dot-form custom request) |
+| `nudo/getActiveCases` | `nudo.getActiveCases` | `Record<string, number>` — editor-only (slash + executeCommand; no dot-form custom request) |
 
 **Consistency invariant (A7):** every slash-form request must have a matching
 executeCommand name (`nudo/X` ↔ `nudo.X`). Pinned by
@@ -122,7 +124,8 @@ documented agent tool names; values are the shared computation (E5 same-source).
 | `codeLens` | `computeInterfaceLenses + interfaceTierOf` | **server-only** (no command) |
 
 `selectCase` / `getActiveCases` are editor commands, not agent tools — they are
-still on the protocol inventory (§3–§4).
+still on the protocol inventory (§3–§4) but **not** registered as dot-form
+custom request methods (`nudo.selectCase` request ≠ executeCommand).
 
 Stability: **stable** tool *names* after 1.x. Implementations may change as long
 as they keep consuming the same service/core entrypoints (E5). Bypassing

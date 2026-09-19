@@ -14,12 +14,13 @@ import { defineConfig } from "tsup";
  * Shebang is preserved from src/server.ts.
  */
 export default defineConfig({
-  entry: ["src/server.ts"],
+  entry: ["src/server.ts", "src/public-api.ts"],
   format: ["esm"],
   dts: true,
   clean: true,
   tsconfig: "tsconfig.build.json",
   splitting: false,
+  // public-api is pure constants — keep it external-free and side-effect free
   noExternal: [/^@nudojs\//, /^vscode-languageserver/, /^vscode-languageserver-textdocument$/],
   // dts uses the same src paths so types match the bundled sources; the
   // emitted d.ts keeps @nudojs/* imports external (declared deps).

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-19T01:57:59.006Z",
+  "generatedAt": "2026-09-19T02:24:55.373Z",
   "note": "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design-limitations.md §八 and website semantics mock-boundary section.",
   "budgets": {
     "harvestNodeTypes": {
@@ -17,6 +17,7 @@
       "crypto",
       "events",
       "fs",
+      "fs/promises",
       "node:child_process",
       "node:crypto",
       "node:events",
@@ -38,15 +39,15 @@
   },
   "nodeProbes": {
     "counts": {
-      "resolved": 48,
+      "resolved": 49,
       "unknown": 0,
       "mock-required": 2
     },
     "leaf": {
       "clean": 33,
-      "mentionsUnknown": 15
+      "mentionsUnknown": 16
     },
-    "total": 50,
+    "total": 51,
     "results": [
       {
         "id": "fs.readFileSync",
@@ -93,8 +94,19 @@
         "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },
       {
-        "id": "fs.promises.readFile",
+        "id": "fs.readFile-callback",
         "module": "fs",
+        "path": [
+          "readFile"
+        ],
+        "status": "resolved",
+        "format": "(string, options?: unknown, unknown) => undefined",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
+      },
+      {
+        "id": "fs.promises.readFile",
+        "module": "fs/promises",
         "path": [
           "readFile"
         ],
@@ -105,7 +117,7 @@
       },
       {
         "id": "fs.promises.writeFile",
-        "module": "fs",
+        "module": "fs/promises",
         "path": [
           "writeFile"
         ],
@@ -116,7 +128,7 @@
       },
       {
         "id": "fs.promises.mkdir",
-        "module": "fs",
+        "module": "fs/promises",
         "path": [
           "mkdir"
         ],
@@ -231,7 +243,7 @@
           "basename"
         ],
         "status": "resolved",
-        "format": "(string, string) => string",
+        "format": "(string, ext?) => string",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -286,7 +298,7 @@
           "URL"
         ],
         "status": "resolved",
-        "format": "(string, string) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, hash: string, toString: () => string, toJSON: () => string }",
+        "format": "(string, base?) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, hash: string, toString: () => string, toJSON: () => string }",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -330,7 +342,7 @@
           "EventEmitter"
         ],
         "status": "resolved",
-        "format": "(options?: {  }) => EventEmitter",
+        "format": "(options?) => EventEmitter",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -363,7 +375,7 @@
           "EventEmitter"
         ],
         "status": "resolved",
-        "format": "(options?: {  }) => EventEmitter",
+        "format": "(options?) => EventEmitter",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -396,7 +408,7 @@
           "format"
         ],
         "status": "resolved",
-        "format": "(string, ...args: unknown) => string",
+        "format": "(...args: unknown) => string",
         "leaf": "mentions-unknown",
         "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },
@@ -419,7 +431,7 @@
           "Readable"
         ],
         "status": "resolved",
-        "format": "(options?: {  }) => Readable",
+        "format": "(options?) => Readable",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -430,7 +442,7 @@
           "Writable"
         ],
         "status": "resolved",
-        "format": "(options?: {  }) => Writable",
+        "format": "(options?) => Writable",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -441,7 +453,7 @@
           "Duplex"
         ],
         "status": "resolved",
-        "format": "(options?: {  }) => Duplex",
+        "format": "(options?) => Duplex",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -452,7 +464,7 @@
           "Transform"
         ],
         "status": "resolved",
-        "format": "(options?: {  }) => Transform",
+        "format": "(options?) => Transform",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -476,7 +488,7 @@
         "forceMock": true,
         "note": "Node stream machine drives internal callbacks — design-limitations §八",
         "status": "mock-required",
-        "format": "(options?: {  }) => Transform",
+        "format": "(options?) => Transform",
         "reason": "Node stream machine drives internal callbacks — design-limitations §八"
       },
       {
@@ -486,9 +498,9 @@
           "parse"
         ],
         "status": "resolved",
-        "format": "(string, sep?: string, eq?: string, options?: unknown) => ParsedQueryString",
-        "leaf": "mentions-unknown",
-        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
+        "format": "(string, sep?, eq?, options?) => ParsedQueryString",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
       {
         "id": "querystring.stringify",
@@ -497,7 +509,7 @@
           "stringify"
         ],
         "status": "resolved",
-        "format": "(unknown, sep?: string, eq?: string, options?: unknown) => string",
+        "format": "(unknown, sep?, eq?, options?) => string",
         "leaf": "mentions-unknown",
         "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },
@@ -542,8 +554,8 @@
         ],
         "status": "resolved",
         "format": "{  }",
-        "leaf": "clean",
-        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },
       {
         "id": "process.cwd",

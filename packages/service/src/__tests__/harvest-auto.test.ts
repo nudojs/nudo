@@ -37,16 +37,19 @@ describe("barePackageName", () => {
     expect(barePackageName("@babel/parser")).toBe("@babel/parser");
   });
 
-  it("rejects relative / absolute / node builtins", () => {
+  it("rejects relative / absolute / node builtins / bare builtins", () => {
     expect(barePackageName("./a.js")).toBeUndefined();
     expect(barePackageName("../b")).toBeUndefined();
     expect(barePackageName("/abs/path")).toBeUndefined();
     expect(barePackageName("node:fs")).toBeUndefined();
+    expect(barePackageName("path")).toBeUndefined();
+    expect(barePackageName("fs")).toBeUndefined();
+    expect(barePackageName("events")).toBeUndefined();
   });
 });
 
 describe("collectBarePackages", () => {
-  it("extracts import and require specs", () => {
+  it("extracts import and require specs; skips Node builtins", () => {
     const src = `
 import ms from "ms";
 import { join } from "path";
@@ -56,9 +59,10 @@ import local from "./local.js";
 `;
     const pkgs = collectBarePackages(src);
     expect(pkgs).toContain("ms");
-    expect(pkgs).toContain("path");
+    expect(pkgs).not.toContain("path");
     expect(pkgs).toContain("lodash");
     expect(pkgs).not.toContain("node:fs");
+    expect(pkgs).not.toContain("fs");
     expect(pkgs).not.toContain("./local.js");
   });
 

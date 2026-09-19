@@ -10,15 +10,15 @@ How Nudo packages are versioned, what counts as a breaking change, and how to fo
 > 1. **C0.1:** body-AST required-slot inference removed. Obligations come only from explicit contracts or call-site facts.
 > 2. **A1:** `analysis.mode` shipped default flipped `directives` → `exports` (`DEFAULT_ANALYSIS_MODE` in `@nudojs/service`). Escape hatch: `package.json#nudo.analysis.mode = "directives"` (old silence) or `"all"` (every target path). On **1.x** packages this is a **default-behavior flip that can invent diagnostics** on previously unanalyzed export-bearing files → treat as **major** in changesets/release notes unless the team ships a documented minor with the escape hatch called out.
 >
-> `@nudojs/core` / `@nudojs/service` / `@nudojs/cli` are already on the **1.x** line (see each package.json). The monorepo root version is private and is not a publish unit.
+> `@nudojs/core` / `@nudojs/service` / `@nudojs/cli` are on the **stable SemVer line** (currently 2.x — see each package.json). The monorepo root version is private and is not a publish unit.
 >
 > **Current package.json facts (do not invent bumps here):** `@nudojs/lsp@0.8.0`, `@nudojs/env@0.3.0`, `@nudojs/harvester@0.2.5`, `nudo-vscode@0.3.5` (private). Policy doc never pins patch numbers as a release action.
 
 | Package | Current | Line | Policy |
 |---------|---------|------|--------|
-| `@nudojs/core` | see package.json | stable | SemVer 1.x — breaking = **major** |
-| `@nudojs/service` | see package.json | stable | SemVer 1.x — breaking = **major** |
-| `@nudojs/cli` | see package.json | stable | SemVer 1.x — breaking = **major** |
+| `@nudojs/core` | see package.json | stable | SemVer — breaking = **major** |
+| `@nudojs/service` | see package.json | stable | SemVer — breaking = **major** |
+| `@nudojs/cli` | see package.json | stable | SemVer — breaking = **major** |
 | `@nudojs/parser` | 0.4.x | pre-1.0 | Minor may break; patch is additive/fix |
 | `@nudojs/lsp` | **0.8.0** | pre-1.0 | Minor may break; patch is additive/fix. **1.x gate (A1/A2):** observe freeze via [`packages/lsp/PUBLIC_API.md`](../packages/lsp/PUBLIC_API.md) for ≥1 minor cycle with no unplanned stable-surface breaks; **no automatic version bump** — cut 1.0 only with an explicit major changeset |
 | `@nudojs/env` | **0.3.0** | pre-1.0 | Minor may break. Policy authority: [Ecosystem packages](#ecosystem-packages-env--harvester) |

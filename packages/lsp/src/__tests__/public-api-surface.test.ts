@@ -102,6 +102,7 @@ describe("A7 package surface + initialize keys", () => {
     expect(lspPkg.bin[NUDO_LSP_PACKAGE_SURFACE.bin]).toBe(NUDO_LSP_PACKAGE_SURFACE.entryPath);
     expect(lspPkg.files).toEqual([...NUDO_LSP_PACKAGE_SURFACE.files]);
     expect(lspPkg.exports["."]).toBeDefined();
+    expect(lspPkg.exports[NUDO_LSP_PACKAGE_SURFACE.publicApiExport]).toBeDefined();
   });
 
   it("initialize capability keys are documented", () => {

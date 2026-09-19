@@ -11,9 +11,9 @@ Nudo 是 pnpm monorepo，经 [changesets](https://github.com/changesets/changese
 
 | 包 | 版本线 | 升级规则 |
 |----|--------|----------|
-| `@nudojs/core` | **1.x** | SemVer：破坏性 → major |
-| `@nudojs/service` | **1.x** | SemVer：破坏性 → major |
-| `@nudojs/cli` | **1.x** | SemVer：破坏性 → major |
+| `@nudojs/core` | **2.x**（稳定 SemVer 线） | SemVer：破坏性 → major |
+| `@nudojs/service` | **2.x**（稳定 SemVer 线） | SemVer：破坏性 → major |
+| `@nudojs/cli` | **2.x**（稳定 SemVer 线） | SemVer：破坏性 → major |
 | `@nudojs/parser` | 0.x | **minor 可能破坏** — 先读 CHANGELOG |
 | `@nudojs/lsp` | 0.x（**0.8.0** pre-1.x） | **minor 可能破坏**。1.x 门槛：经 `packages/lsp/PUBLIC_API.md` 观察冻结面，**不自动 bump** |
 | `@nudojs/env` / `@nudojs/harvester` | 0.x（**0.3.0** / **0.2.5**） | minor 可能破坏；为 IDE/CI 分析稳定可锁 minor（如 `~0.3.0`）。手写 env 在重叠模块/导出上 wins（service `mergeHarvestUnderEnv`） |
@@ -25,9 +25,9 @@ Nudo 是 pnpm monorepo，经 [changesets](https://github.com/changesets/changese
 
 `0.x.y` 的 patch 可放心升；`0.(x+1).0` 的 minor **可能**含破坏性变更。CI 需要诊断结果完全稳定时请锁死精确版本。
 
-### 1.x 一句话
+### 稳定线（1.x / 2.x）一句话
 
-patch 修健全性（结果可能变得*更正确*）；minor 增 API / 诊断码 / 旗标；major 删除或重命名公共面。
+patch 修健全性（结果可能变得*更正确*）；minor 增 API / 诊断码 / 旗标；major 删除或重命名公共面。手写 env wins 优先级变更属 **major**。
 
 完整策略（Nudo 何为 breaking）：仓库内 [`docs/versioning.md`](https://github.com/nudojs/nudo/blob/main/docs/versioning.md)。
 

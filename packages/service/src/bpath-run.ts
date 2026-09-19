@@ -113,10 +113,30 @@ export function collectEnvModules(envNames: string[]): Record<string, AbsModuleE
   return out;
 }
 
+/** Conflict when handwritten env overwrote a harvest module/export (B8). */
+export type EnvHarvestConflict = {
+  module: string;
+  /** export names where env replaced a harvest binding (empty + defaulted = default only) */
+  exports: string[];
+  defaultOverwritten: boolean;
+};
+
+let envHarvestConflictCollector:
+  | ((c: EnvHarvestConflict) => void)
+  | null = null;
+
+/** Diagnostics/tests observe env-vs-harvest priority conflicts. */
+export function setEnvHarvestConflictCollector(
+  collector: ((c: EnvHarvestConflict) => void) | null,
+): void {
+  envHarvestConflictCollector = collector;
+}
+
 /**
  * Handwritten `@nudojs/env` wins over harvest / graph modules on overlapping
  * module keys and overlapping export names (docs/versioning.md B8 + website
  * harvester API). Harvest-only modules/exports are kept as fill-in.
+ * Overwrites notify `setEnvHarvestConflictCollector` (plan risk: warn on conflict).
  */
 export function mergeHarvestUnderEnv(
   harvestModules: Record<string, AbsModuleExports>,
@@ -134,6 +154,26 @@ export function mergeHarvestUnderEnv(
       out[mod] =
         envExports.default !== undefined ? { named, default: envExports.default } : { named };
       continue;
+    }
+    const overwritten: string[] = [];
+    for (const key of Object.keys(envExports.named)) {
+      if (existing.named[key] !== undefined) overwritten.push(key);
+    }
+    const defaultOverwritten =
+      envExports.default !== undefined && existing.default !== undefined;
+    if (
+      envHarvestConflictCollector &&
+      (overwritten.length > 0 || defaultOverwritten)
+    ) {
+      try {
+        envHarvestConflictCollector({
+          module: mod,
+          exports: overwritten,
+          defaultOverwritten,
+        });
+      } catch {
+        /* collector must not break analysis */
+      }
     }
     const named = { ...existing.named, ...envExports.named };
     const defaultAbs =

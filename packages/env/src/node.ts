@@ -144,6 +144,108 @@ export function defineEnv(): EnvDefinition {
     chmodSync: envFn([prim.str(), prim.num()], undef()),
     chownSync: envFn([prim.str(), prim.num(), prim.num()], undef()),
     accessSync: envFn([prim.str(), prim.num()], undef()),
+    // Callback-style async on `fs` / `node:fs` (Node actual API).
+    // Promise APIs live only under fs.promises / node:fs/promises.
+    readFile: envFn(
+      [prim.str(), prim.unknown, prim.unknown],
+      undef(),
+      undefined,
+      { params: ["path", "options?", "callback"] },
+    ),
+    writeFile: envFn(
+      [prim.str(), unionOf(prim.str(), bufferBrand), prim.unknown],
+      undef(),
+      undefined,
+      { params: ["path", "data", "callback"] },
+    ),
+    mkdir: envFn(
+      [prim.str(), prim.unknown, prim.unknown],
+      undef(),
+      undefined,
+      { params: ["path", "options?", "callback"] },
+    ),
+    rm: envFn(
+      [prim.str(), prim.unknown, prim.unknown],
+      undef(),
+      undefined,
+      { params: ["path", "options?", "callback"] },
+    ),
+    stat: envFn(
+      [prim.str(), prim.unknown, prim.unknown],
+      undef(),
+      undefined,
+      { params: ["path", "options?", "callback"] },
+    ),
+    readdir: envFn(
+      [prim.str(), prim.unknown, prim.unknown],
+      undef(),
+      undefined,
+      { params: ["path", "options?", "callback"] },
+    ),
+    access: envFn(
+      [prim.str(), prim.unknown, prim.unknown],
+      undef(),
+      undefined,
+      { params: ["path", "mode?", "callback"] },
+    ),
+    appendFile: envFn(
+      [prim.str(), unionOf(prim.str(), bufferBrand), prim.unknown],
+      undef(),
+      undefined,
+      { params: ["path", "data", "callback"] },
+    ),
+    unlink: envFn(
+      [prim.str(), prim.unknown, prim.unknown],
+      undef(),
+      undefined,
+      { params: ["path", "options?", "callback"] },
+    ),
+    rename: envFn(
+      [prim.str(), prim.str(), prim.unknown],
+      undef(),
+      undefined,
+      { params: ["oldPath", "newPath", "callback"] },
+    ),
+    copyFile: envFn(
+      [prim.str(), prim.str(), prim.unknown],
+      undef(),
+      undefined,
+      { params: ["src", "dest", "callback"] },
+    ),
+    realpath: envFn(
+      [prim.str(), prim.unknown, prim.unknown],
+      undef(),
+      undefined,
+      { params: ["path", "options?", "callback"] },
+    ),
+    readlink: envFn(
+      [prim.str(), prim.unknown, prim.unknown],
+      undef(),
+      undefined,
+      { params: ["path", "options?", "callback"] },
+    ),
+    symlink: envFn(
+      [prim.str(), prim.str(), prim.unknown, prim.unknown],
+      undef(),
+      undefined,
+      { params: ["target", "path", "type?", "callback"] },
+    ),
+    chmod: envFn(
+      [prim.str(), prim.num(), prim.unknown],
+      undef(),
+      undefined,
+      { params: ["path", "mode", "callback"] },
+    ),
+    open: envFn(
+      [prim.str(), prim.unknown, prim.unknown],
+      undef(),
+      undefined,
+      { params: ["path", "flags?", "callback"] },
+    ),
+  };
+
+  /** fs.promises / node:fs/promises — Promise-returning slots only here. */
+  const fsPromisesModule: Record<string, Abs> = {
     readFile: envFn(
       [prim.str(), prim.unknown],
       promiseOf(unionOf(prim.str(), bufferBrand)),
@@ -163,7 +265,6 @@ export function defineEnv(): EnvDefinition {
       promiseOf(arrOf(prim.unknown)),
     ),
     access: envFn([prim.str(), prim.num()], promiseOf(undef())),
-    // Common thin fs.promises methods (signature level; complement harvest).
     appendFile: envFn(
       [prim.str(), unionOf(prim.str(), bufferBrand)],
       promiseOf(undef()),
@@ -221,7 +322,10 @@ export function defineEnv(): EnvDefinition {
       restName: "...paths",
     }),
     dirname: envFn([prim.str()], prim.str(), strImpl1Abs(nodePath.dirname)),
-    basename: envFn([prim.str(), prim.str()], prim.str(), pathBasenameAbs),
+    // ext is optional in Node — required slot is path only; label shows ext?.
+    basename: envFn([prim.str()], prim.str(), pathBasenameAbs, {
+      params: ["path", "ext?"],
+    }),
     extname: envFn([prim.str()], prim.str(), strImpl1Abs(nodePath.extname)),
     relative: envFn([prim.str(), prim.str()], prim.str(), pathRelativeAbs),
     normalize: envFn([prim.str()], prim.str(), strImpl1Abs(nodePath.normalize)),
@@ -302,8 +406,9 @@ export function defineEnv(): EnvDefinition {
   });
 
   const urlModule: Record<string, Abs> = {
+    // base is optional in Node — required slot is href only.
     URL: envFn(
-      [prim.str(), prim.str()],
+      [prim.str()],
       nodeUrlObj,
       (args) => {
         const href = absStr(args[0]);
@@ -330,6 +435,7 @@ export function defineEnv(): EnvDefinition {
           return undefined;
         }
       },
+      { params: ["href", "base?"] },
     ),
     URLSearchParams: envFn(
       [prim.unknown],
@@ -434,7 +540,7 @@ export function defineEnv(): EnvDefinition {
     promisify: envFn([prim.unknown], prim.unknown, undefined, { name: "util.promisify" }),
     inspect: envFn([prim.unknown, prim.unknown], prim.str()),
     format: envFnVariadic(prim.unknown, prim.str(), {
-      required: [prim.str()],
+      // util.format() with zero args is valid in Node.
       restName: "...args",
       name: "util.format",
     }),
@@ -477,10 +583,10 @@ export function defineEnv(): EnvDefinition {
   });
   const eventEmitterInstance = brandOf("EventEmitter", eventEmitterShape);
   /**
-   * Constructor signature: `new EventEmitter()` / `new EventEmitter(options)`.
-   * Options is optional — formatShape shows `options?`.
+   * Constructor: `new EventEmitter()` / `new EventEmitter(options)`.
+   * Options is optional — required arity 0; formatShape shows `options?`.
    */
-  const EventEmitterCtor = envFn([objAbs({})], eventEmitterInstance, undefined, {
+  const EventEmitterCtor = envFn([], eventEmitterInstance, undefined, {
     params: ["options?"],
   });
 
@@ -510,7 +616,7 @@ export function defineEnv(): EnvDefinition {
   };
 
   const streamCtor = (brandName: string): Abs =>
-    envFn([objAbs({})], brandOf(brandName, objAbs(streamIoMethods)), undefined, {
+    envFn([], brandOf(brandName, objAbs(streamIoMethods)), undefined, {
       params: ["options?"],
     });
 
@@ -536,15 +642,15 @@ export function defineEnv(): EnvDefinition {
   );
 
   const querystringModule: Record<string, Abs> = {
-    // sep/eq/options optional in Node — label with `?` for formatShape.
+    // sep/eq/options optional in Node — required slots only; labels show `?`.
     parse: envFn(
-      [prim.str(), prim.str(), prim.str(), prim.unknown],
+      [prim.str()],
       parsedQueryString,
       undefined,
       { params: ["str", "sep?", "eq?", "options?"] },
     ),
     stringify: envFn(
-      [prim.unknown, prim.str(), prim.str(), prim.unknown],
+      [prim.unknown],
       prim.str(),
       undefined,
       { params: ["obj", "sep?", "eq?", "options?"] },
@@ -627,24 +733,8 @@ export function defineEnv(): EnvDefinition {
   const modules: Record<string, Record<string, Abs>> = {
     fs: fsModule,
     "node:fs": fsModule,
-    "node:fs/promises": {
-      readFile: fsModule.readFile!,
-      writeFile: fsModule.writeFile!,
-      mkdir: fsModule.mkdir!,
-      rm: fsModule.rm!,
-      stat: fsModule.stat!,
-      readdir: fsModule.readdir!,
-      access: fsModule.access!,
-      appendFile: fsModule.appendFile!,
-      unlink: fsModule.unlink!,
-      rename: fsModule.rename!,
-      copyFile: fsModule.copyFile!,
-      realpath: fsModule.realpath!,
-      readlink: fsModule.readlink!,
-      symlink: fsModule.symlink!,
-      chmod: fsModule.chmod!,
-      open: fsModule.open!,
-    },
+    "fs/promises": fsPromisesModule,
+    "node:fs/promises": fsPromisesModule,
     path: pathModule,
     "node:path": pathModule,
     os: osModule,

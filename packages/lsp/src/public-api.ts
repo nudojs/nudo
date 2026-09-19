@@ -100,4 +100,7 @@ export const NUDO_LSP_PACKAGE_SURFACE = {
   entry: ".",
   entryPath: "./dist/server.js",
   files: ["dist"],
+  /** Machine-readable freeze inventory (no server side effects). */
+  publicApiExport: "./public-api",
+  publicApiPath: "./dist/public-api.js",
 } as const;

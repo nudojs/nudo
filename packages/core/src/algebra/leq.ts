@@ -36,6 +36,17 @@ function fail(reason: string): LeqResult {
  * src 可赋给 tgt。
  * phi：路径前提（可选）；env：用于 brand 继承链。
  */
+/** Required arity from fn param labels — skips rest (`...`) and optional (`?`). */
+export function requiredFnArity(params: readonly string[] | undefined): number {
+  if (!params) return 0;
+  let n = 0;
+  for (const p of params) {
+    if (!p || p.startsWith("...") || p.endsWith("?")) continue;
+    n++;
+  }
+  return n;
+}
+
 export function leqAbs(
   src: Abs,
   tgt: Abs,
@@ -269,7 +280,11 @@ function leqShape(
   // 函数：参数逆变、返回协变
   if (t.k === "fn") {
     if (s.k !== "fn") return fail(`shape ${s.k} ⊭ fn`);
-    if (s.params.length !== t.params.length) {
+    // rest (`...x`) / optional (`x?`) labels are display-layer; arity uses
+    // required slots only. JS allows extra params on the source side.
+    const sReq = requiredFnArity(s.params);
+    const tReq = requiredFnArity(t.params);
+    if (sReq < tReq && s.params.length < t.params.length) {
       return fail(`fn arity ${s.params.length} ⊭ ${t.params.length}`);
     }
     if (t.returnType !== undefined) {

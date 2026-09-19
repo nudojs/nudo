@@ -1,13 +1,17 @@
 # Close Remaining DX Gaps — IDE/LSP 收口 + 生态覆盖
 
 > **状态**：**P0-A A1–A8 + P0-B B1–B8 主体已交付**（2026-09-19；同日 review 修复已合入本分支）。
-> 证据见各任务表；门禁：`pnpm run lint` / `lint:tests` / `coverage:env` /
-> 相关 vitest 均绿。CI lint job 产出 `env-coverage-baseline` artifact。
+> 证据见各任务表；门禁：`pnpm run lint` / `lint:tests` / `coverage:env -- --check` /
+> 相关 vitest 均绿。CI lint job **check committed coverage baseline** then upload artifact。
 > **未完全闭合项**（标 `[~]`）：B2 磁盘缓存与「harvest 失败自动降级注入」；
 > A3 `vsce package` dry-run 需 release 机执行；A6 为 service 层冒烟（无 live editor / 中型目录延迟基线）。
 > Backlog S1–S5 未开工（按拍板押后）。承接
 > [`2026-05-28-close-ts-dx-gaps.md`](./2026-05-28-close-ts-dx-gaps.md)
 > 主体已交付后的**剩余挑战项**——不是重述已实现设计。
+>
+> **Review-fix（本分支后续）**：service changeset 升为 **major**（手写 env wins = documented B8 但结果会变）；
+> `fs` Promise 只在 `fs/promises`；optional 参数不进必填槽；`mergeHarvestUnderEnv` 冲突 → `nudo:env-harvest-conflict`；
+> `barePackageName` 滤 Node 内建；lsp `exports["./public-api"]`；leaf-clean 不计 empty `{  }`。
 >
 > **节奏假设**：**无固定周期**。只排优先级与依赖；按 capacity 拉取任务。
 > 与旧路线图冲突时**以本文为准**，并在旧文加指针。

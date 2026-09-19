@@ -48,8 +48,13 @@ jobs:
       - name: Verify docs examples
         run: pnpm run verify:examples
 
-      # B1 — env/harvest coverage baseline (script-generated report, not a soundness gate)
-      - name: Env coverage baseline
+      # B1 — fail when committed docs/reports baseline drifted from env sources
+      - name: Env coverage baseline check
+        run: pnpm run coverage:env -- --check
+
+      # Regenerate for artifact upload (does not gate)
+      - name: Env coverage baseline regenerate
+        if: always()
         run: pnpm run coverage:env
 
       - name: Upload env coverage report

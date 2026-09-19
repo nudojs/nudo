@@ -70,8 +70,10 @@ function nodeHarvestCacheKey(
 
 /**
  * Clear the in-process @types/node harvest cache.
- * Tests and watch-mode dep-hash invalidation should call this when
- * node_modules/@types/node changes underneath the process.
+ * Drops **success and terminal-failure** entries (including `not-found`), so
+ * a mid-session `@types/node` install becomes visible without process restart.
+ * Tests, watch-mode dep-hash invalidation, and package-manager hooks should
+ * call this when `node_modules/@types/node` changes underneath the process.
  */
 export function clearNodeHarvestCache(): void {
   nodeHarvestCache.clear();

@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import type { Abs, AbsModuleExports } from "@nudojs/core";
 import { abs, unknown } from "@nudojs/core";
-import { mergeHarvestUnderEnv, collectEnvModules } from "../bpath-run.ts";
+import { mergeHarvestUnderEnv, collectEnvModules, setEnvHarvestConflictCollector } from "../bpath-run.ts";
 
 function absTag(tag: string): Abs {
   return abs({ k: "brand", name: tag, shape: unknown }, undefined, undefined, "path");
@@ -75,6 +75,26 @@ describe("mergeHarvestUnderEnv — handwritten env wins (B8)", () => {
     }
     if (envMods["path"]) {
       expect(merged.path!.named.join).toBe(envMods["path"]!.named.join);
+    }
+  });
+
+  it("notifies conflict collector when env overwrites harvest exports", () => {
+    const seen: Array<{ module: string; exports: string[]; defaultOverwritten: boolean }> = [];
+    setEnvHarvestConflictCollector((c) => seen.push(c));
+    try {
+      const harvest: Record<string, AbsModuleExports> = {
+        path: { named: { join: absTag("harvest.join") }, default: absTag("h.def") },
+      };
+      const env: Record<string, AbsModuleExports> = {
+        path: { named: { join: absTag("env.join") }, default: absTag("e.def") },
+      };
+      mergeHarvestUnderEnv(harvest, env);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.module).toBe("path");
+      expect(seen[0]!.exports).toEqual(["join"]);
+      expect(seen[0]!.defaultOverwritten).toBe(true);
+    } finally {
+      setEnvHarvestConflictCollector(null);
     }
   });
 });

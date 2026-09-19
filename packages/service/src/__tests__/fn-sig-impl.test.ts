@@ -217,7 +217,7 @@ function getExt(f) {
     expect(formatShape(result.functions[0].cases[0].abs)).toBe('".ts"');
   });
 
-  it("path.basename with literal returns exact name", () => {
+  it("path.basename with literal returns exact name (optional ext omitted)", () => {
     const source = `
 /// @nudo:env node
 
@@ -229,9 +229,18 @@ import { basename } from "node:path";
 function getName(p) {
   return basename(p);
 }
+
+/**
+ * @nudo:case "withExt" ("/home/user/file.txt", ".txt")
+ */
+function getNameExt(p, ext) {
+  return basename(p, ext);
+}
 `;
     const result = analyzeFile("/test/path.js", source);
-    expect(formatShape(result.functions[0].cases[0].abs)).toBe('"file.txt"');
+    const byName = Object.fromEntries(result.functions.map((f) => [f.name, f]));
+    expect(formatShape(byName.getName!.cases[0].abs)).toBe('"file.txt"');
+    expect(formatShape(byName.getNameExt!.cases[0].abs)).toBe('"file"');
   });
 
   it("path.dirname with literal returns exact dir", () => {

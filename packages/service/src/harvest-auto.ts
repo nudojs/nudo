@@ -8,7 +8,20 @@ import type { Abs } from "@nudojs/core";
 import { collectDependencySpecs } from "./static-imports.ts";
 import { harvestPackage, type PackageHarvest } from "./harvest-package.ts";
 
-/** 裸说明符 → 包名（含 scope）；相对/绝对/node: 内建返回 undefined */
+/**
+ * Node builtin module names (with or without `node:` prefix). Bare imports of
+ * these are not npm packages — never harvest them as package roots.
+ */
+const NODE_BUILTINS = new Set([
+  "assert", "async_hooks", "buffer", "child_process", "cluster", "console",
+  "constants", "crypto", "dgram", "diagnostics_channel", "dns", "domain",
+  "events", "fs", "http", "http2", "https", "inspector", "module", "net",
+  "os", "path", "perf_hooks", "process", "punycode", "querystring", "readline",
+  "repl", "stream", "string_decoder", "timers", "tls", "trace_events", "tty",
+  "url", "util", "v8", "vm", "wasi", "worker_threads", "zlib",
+]);
+
+/** 裸说明符 → 包名（含 scope）；相对/绝对/node: 与裸 Node 内建返回 undefined */
 export function barePackageName(spec: string): string | undefined {
   if (!spec) return undefined;
   if (spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("node:")) return undefined;
@@ -16,7 +29,9 @@ export function barePackageName(spec: string): string | undefined {
   if (spec.startsWith("@")) {
     return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : undefined;
   }
-  return parts[0];
+  const name = parts[0]!;
+  if (NODE_BUILTINS.has(name)) return undefined;
+  return name;
 }
 
 export function collectBarePackages(source: string): string[] {

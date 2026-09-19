@@ -366,7 +366,15 @@ export function isRelFn(a: Abs | undefined | null): boolean {
   if (!s || s.k !== "fn") return false;
   if (s.returnType === undefined) return false;
   if (s.paramTypes === undefined) return s.params.length === 0;
-  return s.paramTypes.length === s.params.length;
+  // Display labels may trail required slots with `x?` / `...rest`; types
+  // describe the typed prefix (required + rest element). Align on required
+  // count OR full length (legacy exact shapes).
+  if (s.paramTypes.length === s.params.length) return true;
+  let required = 0;
+  for (const p of s.params) {
+    if (p && !p.startsWith("...") && !p.endsWith("?")) required++;
+  }
+  return s.paramTypes.length === required;
 }
 
 // --- pred 归约 ---
