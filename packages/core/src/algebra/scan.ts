@@ -249,9 +249,16 @@ function dynamicImportSpec(node: Record<string, unknown>): string | undefined {
   if (n?.type === "AwaitExpression") {
     n = n.argument as Record<string, unknown> | undefined;
   }
-  if (n?.type !== "CallExpression") return undefined;
+  if (!n) return undefined;
+  // Babel 8：ImportExpression { source: StringLiteral }
+  if (n.type === "ImportExpression") {
+    const src = n.source as { type?: string; value?: unknown } | undefined;
+    if (src?.type === "StringLiteral" && typeof src.value === "string") return String(src.value);
+    return undefined;
+  }
+  // Babel 7 / legacy：CallExpression + callee.type === "Import"
+  if (n.type !== "CallExpression") return undefined;
   const callee = n.callee as { type?: string } | undefined;
-  // Babel: dynamic import callee.type === "Import"
   if (callee?.type !== "Import") return undefined;
   const args = n.arguments as Array<{ type?: string; value?: unknown }> | undefined;
   if (args?.[0]?.type === "StringLiteral") return String(args[0].value);

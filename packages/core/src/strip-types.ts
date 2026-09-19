@@ -29,8 +29,9 @@ import type { Node } from "@babel/types";
  *    全部为 type 时整个声明删除
  *  - 类成员：TSIndexSignature / TSDeclareMethod（含 abstract 方法）/ declare·abstract
  *    的 ClassProperty 删除；implements / superTypeParameters 字段删除
- *  - 求值器不读的类型字段：typeParameters（声明与调用点 TSTypeParameterInstantiation，
- *    即 foo<string>(1)）、typeAnnotation、returnType（含 TSTypePredicate）、
+ *  - 求值器不读的类型字段：typeParameters / typeArguments（声明与调用点
+ *    TSTypeParameterInstantiation，即 foo<string>(1)；Babel 8 调用点字段名为
+ *    typeArguments）、typeAnnotation、returnType（含 TSTypePredicate）、
  *    参数 Identifier/ObjectPattern/ArrayPattern/RestElement 上的 optional 一律 delete
  *
  * 已知不处理（会以 unknown 求值，不崩溃）：非 declare 的 namespace（运行时语义）、
@@ -163,6 +164,11 @@ function deleteTypeSyntaxFields(node: Node & Record<string, unknown>): void {
     // 即 foo<string>(1) / new Foo<string>()）一并删除
     delete node.typeParameters;
   }
+  // Babel 8：CallExpression / NewExpression 的类型实参字段名为 typeArguments
+  const taArgs = node.typeArguments as { type?: string } | undefined;
+  if (taArgs && typeof taArgs.type === "string" && taArgs.type.startsWith("TSTypeParameter")) {
+    delete node.typeArguments;
+  }
   const ta = node.typeAnnotation as { type?: string } | undefined;
   if (ta && ta.type === "TSTypeAnnotation") delete node.typeAnnotation;
   const rt = node.returnType as { type?: string } | undefined;
@@ -178,6 +184,8 @@ function deleteTypeSyntaxFields(node: Node & Record<string, unknown>): void {
   // 类的 implements 子句与继承泛型实参
   if ("implements" in node) delete node.implements;
   if ("superTypeParameters" in node) delete node.superTypeParameters;
+  // Babel 8 可能把继承泛型写在 typeArguments 上
+  if ("superTypeArguments" in node) delete node.superTypeArguments;
 }
 
 /** 表达式级解包：类型断言/满足断言/非空断言/裸泛型引用 → 内层表达式 */

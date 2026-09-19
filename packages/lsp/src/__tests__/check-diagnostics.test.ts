@@ -5,7 +5,7 @@ import {
   filterCheckLspByLevel,
   validateText,
 } from "../validation.ts";
-import { DiagnosticSeverity } from "vscode-languageserver/node.js";
+import { DiagnosticSeverity } from "vscode-languageserver/node";
 
 const STD = `
 export const positive = number().gt(0);
