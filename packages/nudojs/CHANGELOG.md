@@ -1,5 +1,13 @@
 # nudojs
 
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [22baf33]
+- Updated dependencies [5a5e167]
+  - @nudojs/cli@4.0.0
+
 ## 0.3.2
 
 ### Patch Changes

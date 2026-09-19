@@ -1,5 +1,53 @@
 # @nudojs/service
 
+## 5.0.0
+
+### Major Changes
+
+- 22baf33: feat!: unify CLI around check/test/contract/export/health + L2 entry may-throw
+  
+  - Primary verbs: `check` / `test` / `contract` / `export` / `health` / `env harvest`. Observation is check signatures + test case reports (no `infer`/`show`/`types` verbs). Old verbs (`infer`/`types`/`generate`/`emit`/`guard`/`interface`/`doctor`/`watch`/`harvest`) print stderr deprecations and are removed in the next major. Thin shell `@nudojs/nudojs` follows `@nudojs/cli` majors.
+  - L2: undigested may-throw on entry/export functions is `nudo:entry-may-throw` (default **error**). Covers export function/default/const arrow, `export { f as g }`, anonymous `export default` fn/arrow, CJS `exports.f=` / `module.exports={ f(){} }` ObjectMethod, and exported class static methods. Configure with `--ignore-throws` / `--entry-throws error|warning|off` or `package.json#nudo.check.{ignoreThrows,entryThrows}`. LSP/agent check paths read the same `nudo.check` config; analysis.diagnostics=off still surfaces gate errors in IDE.
+  - Nested try: soft may-throw from an inner try re-homes to the enclosing try frame (outer catch digests). Catch rethrow does not digest soft effects on either ast-eval or B-path.
+  - `check` always prints signatures on success; unconstrained entry params display as **`any`** (true `unknown` = inference failure + `nudo:unknown-inference`). `check --abs` remains observation but still gates on L1/L2 errors. `--ignore-throws` filters the gate but signature still shows throws domain.
+  - `test` prints every case including synthetic `call@`/`entry@`; only declared `@nudo:case` expectations affect exit (including `--json` / `--abs`). `--freeze[=update]` replaces `infer --emit-cases`. Assertion summary counts declared cases only.
+  - Flag renames: `--callsites` → `--from`; `infer --dts` → `export --format dts`; `types` → `check --abs`. `--json` cannot combine with `--abs`.
+  - Public API: `@nudojs/service` and `@nudojs/service/evaluator` export `checkConfig` / `CheckConfig`. CheckJson signatures carry `paramTypes` / `throws` / `entry`.
+  - Agent/LSP wire names `nudo.infer` / `nudo.interface*` stay **protocol-stable** this major; docs map them to CLI `check`/`test`/`contract`.
+  - Breaking for CI scripts that assumed silent check-on-success, or that relied on `nudo infer` as the primary observation verb.
+
+### Minor Changes
+
+- 5a5e167: **feat(export)+review P0–P2**: dialect-aware schema export, Standard Schema path, CLI/LSP honesty fixes.
+  
+  Service / schema:
+  - `absToSchemaSource` / `projectAbsToSchema` / `absToSchemaNode` — SchemaNode carries refinements and `dropped` notes.
+  - Projection prefers core `absToConstraint` (parity for `eq(self,lit)` → `z.literal`, or-literal unions, int/bounds/string length).
+  - `absToZodSchema` remains a deprecated alias → `absToSchemaSource(a, { dialect: "zod" })`.
+  - New `absToStandardSchemaModule` / `validateSchemaNode` — Standard Schema v1 modules (`~standard`, vendor `nudo`).
+  
+  CLI:
+  - `nudo export --format schema [--dialect zod]` → `*.nudo.schema.<dialect>.ts`
+  - `nudo export --format standard` → `<fn>.nudo.standard.ts` (contract-first domains; joinAbs when no contract)
+  - `--format zod` remains a deprecated alias of `schema --dialect zod`
+  - Deprecated `infer --json`: stdout is **one** JSON document (test cases only); check --json stays a separate command
+  - `--ignore-throws` now **merges** with `package.json#nudo.check.ignoreThrows` (additive)
+  
+  LSP:
+  - Gate codes (`nudo:entry-may-throw` etc.) keep Error **and Warning** under `analysis.diagnostics=off|errors` so IDE matches CLI when `entryThrows=warning`
+  
+  Docs/product copy:
+  - Day1 sidecar example uses `fn({ params }, returns?)` (not bare `number().gt(0)` on a function export)
+  - Migration tables / help / generated markers use `schema`/`standard` and `nudo contract --emit`
+
+### Patch Changes
+
+- Updated dependencies [22baf33]
+  - @nudojs/core@3.0.0
+  - @nudojs/env@0.4.2
+  - @nudojs/harvester@0.2.8
+  - @nudojs/parser@1.0.1
+
 ## 4.0.0
 
 ### Major Changes
