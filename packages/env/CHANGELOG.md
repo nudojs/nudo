@@ -1,5 +1,12 @@
 # @nudojs/env
 
+## 0.4.1
+
+### Patch Changes
+
+- Updated dependencies [69ebbf6]
+  - @nudojs/core@2.1.0
+
 ## 0.4.0
 
 ### Minor Changes
