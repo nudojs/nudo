@@ -115,6 +115,7 @@ export {
   collectBPathReplacements,
   collectEnvGlobals,
   collectEnvModules,
+  mergeHarvestUnderEnv,
   type BPathRunResult,
 } from "./bpath-run.ts";
 export {

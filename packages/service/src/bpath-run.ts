@@ -113,6 +113,36 @@ export function collectEnvModules(envNames: string[]): Record<string, AbsModuleE
   return out;
 }
 
+/**
+ * Handwritten `@nudojs/env` wins over harvest / graph modules on overlapping
+ * module keys and overlapping export names (docs/versioning.md B8 + website
+ * harvester API). Harvest-only modules/exports are kept as fill-in.
+ */
+export function mergeHarvestUnderEnv(
+  harvestModules: Record<string, AbsModuleExports>,
+  envModules: Record<string, AbsModuleExports>,
+): Record<string, AbsModuleExports> {
+  const out: Record<string, AbsModuleExports> = {};
+  for (const [mod, exports] of Object.entries(harvestModules)) {
+    const named = { ...exports.named };
+    out[mod] = exports.default !== undefined ? { named, default: exports.default } : { named };
+  }
+  for (const [mod, envExports] of Object.entries(envModules)) {
+    const existing = out[mod];
+    if (!existing) {
+      const named = { ...envExports.named };
+      out[mod] =
+        envExports.default !== undefined ? { named, default: envExports.default } : { named };
+      continue;
+    }
+    const named = { ...existing.named, ...envExports.named };
+    const defaultAbs =
+      envExports.default !== undefined ? envExports.default : existing.default;
+    out[mod] = defaultAbs !== undefined ? { named, default: defaultAbs } : { named };
+  }
+  return out;
+}
+
 /** 收集 @nudo:replace + @nudo:as → transpile 注入表 */
 export function collectBPathReplacements(source: string): {
   targets: Array<{
@@ -317,7 +347,7 @@ export function tryRunBPath(
     try {
       const { modules: graphMods, issues } = evalAbsModuleGraph(source, filePath);
       const envMods = collectEnvModules(opts.envNames ?? []);
-      const modules = { ...envMods, ...graphMods };
+      const modules = mergeHarvestUnderEnv(graphMods, envMods);
       const { targets, values, asTargets, asValues } = collectBPathReplacements(source);
       const envGlobals = {
         ...collectEnvGlobals(opts.envNames ?? []),

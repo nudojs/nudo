@@ -21,6 +21,7 @@ import { AGENT_TOOL_SOURCES } from "../agent-tools.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const publicApiMd = readFileSync(join(here, "..", "..", "PUBLIC_API.md"), "utf-8");
+const serverTs = readFileSync(join(here, "..", "server.ts"), "utf-8");
 const lspPkg = JSON.parse(
   readFileSync(join(here, "..", "..", "package.json"), "utf-8"),
 ) as {
@@ -107,5 +108,35 @@ describe("A7 package surface + initialize keys", () => {
     for (const key of NUDO_INITIALIZE_CAPABILITIES) {
       expect(publicApiMd).toContain(key);
     }
+  });
+});
+
+describe("A7 server.ts dispatch/request registration matches inventory", () => {
+  it("every executeCommand name appears as a dispatch case in server.ts", () => {
+    for (const cmd of NUDO_EXECUTE_COMMANDS) {
+      expect(serverTs, `server.ts missing dispatch case for ${cmd}`).toContain(`case "${cmd}"`);
+    }
+  });
+
+  it("agent slash requests are registered (loop + explicit editor commands)", () => {
+    // Editor commands registered explicitly
+    for (const slash of ["nudo/selectCase", "nudo/getActiveCases"]) {
+      expect(serverTs, `server.ts missing onRequest("${slash}")`).toContain(
+        `onRequest("${slash}"`,
+      );
+    }
+    // Agent tools registered via the shared loop over NUDO_AGENT_TOOL_NAMES
+    for (const name of NUDO_AGENT_TOOL_NAMES) {
+      expect(serverTs, `server.ts registration loop must cover agent tool "${name}"`).toMatch(
+        new RegExp(
+          String.raw`for \(const name of \[[^\]]*"${name.replace(/\./g, "\\.")}"[^\]]*\]`,
+        ),
+      );
+    }
+  });
+
+  it("NUDO_COMMANDS is sourced from public-api inventory", () => {
+    expect(serverTs).toMatch(/import \{ NUDO_EXECUTE_COMMANDS \} from "\.\/public-api\.ts"/);
+    expect(serverTs).toMatch(/const NUDO_COMMANDS = NUDO_EXECUTE_COMMANDS/);
   });
 });

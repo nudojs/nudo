@@ -15,11 +15,11 @@ Nudo 是 pnpm monorepo，经 [changesets](https://github.com/changesets/changese
 | `@nudojs/service` | **1.x** | SemVer：破坏性 → major |
 | `@nudojs/cli` | **1.x** | SemVer：破坏性 → major |
 | `@nudojs/parser` | 0.x | **minor 可能破坏** — 先读 CHANGELOG |
-| `@nudojs/lsp` | 0.x | **minor 可能破坏** |
-| `@nudojs/env` / `@nudojs/harvester` | 0.x | minor 可能破坏 |
+| `@nudojs/lsp` | 0.x（**0.8.0** pre-1.x） | **minor 可能破坏**。1.x 门槛：经 `packages/lsp/PUBLIC_API.md` 观察冻结面，**不自动 bump** |
+| `@nudojs/env` / `@nudojs/harvester` | 0.x（**0.3.0** / **0.2.5**） | minor 可能破坏；为 IDE/CI 分析稳定可锁 minor（如 `~0.3.0`）。手写 env 在重叠模块/导出上 wins（service `mergeHarvestUnderEnv`） |
 | `nudojs`（npm 壳） | 0.x | 优先直接依赖 `@nudojs/cli` / `@nudojs/core` |
 | `vite-plugin-nudo` | 0.x | minor 可能破坏 |
-| `nudo-vscode` | Marketplace | 以扩展发行说明为准 |
+| `nudo-vscode` | Marketplace | 以扩展发行说明为准；打包前对齐 bundled lsp 版本（见 `packages/vscode/RELEASE_CHECKLIST.md`） |
 
 ### 0.x 一句话
 
@@ -82,12 +82,12 @@ pnpm exec changeset
 { "dependencies": { "@nudojs/core": "^1.0.1" } }
 
 // 0.x：只自动吃 patch
-{ "dependencies": { "@nudojs/lsp": "~0.7.1" } }
+{ "dependencies": { "@nudojs/lsp": "~0.8.0" } }
 ```
 
 ## IDE 扩展
 
-VS Code（`wmzy.nudo-vscode`）与 Zed（`nudojs/nudo-zed`）捆绑或解析 `@nudojs/lsp`。编辑器侧变更以扩展发行说明为准；语言服务器仍遵循上表 0.x / 1.x 规则。
+VS Code（`wmzy.nudo-vscode`）与 Zed（`nudojs/nudo-zed`）捆绑或解析 `@nudojs/lsp`。编辑器侧变更以扩展发行说明为准；语言服务器仍遵循上表 0.x / 1.x 规则。VS Code 打包清单：仓库 `packages/vscode/RELEASE_CHECKLIST.md`。LSP 冻结清单：仓库 `packages/lsp/PUBLIC_API.md`。
 
 ## 参见
 
@@ -95,3 +95,5 @@ VS Code（`wmzy.nudo-vscode`）与 Zed（`nudojs/nudo-zed`）捆绑或解析 `@n
 - [VS Code 扩展](./vscode.md)
 - [Zed 扩展](./zed.md)
 - [Agent 集成](./mcp-server.md)
+- [与 TypeScript 共存](./coexistence.md)
+- [@nudojs/lsp API](../api/lsp.md)

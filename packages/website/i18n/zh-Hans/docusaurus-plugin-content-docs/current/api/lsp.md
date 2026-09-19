@@ -7,6 +7,25 @@ description: "@nudojs/lsp API —— 基于 @nudojs/service 的语言服务器�
 
 Nudo 语言服务器协议（LSP）包的 API 参考。`@nudojs/lsp` 把[服务层](./service.md)封装为编辑器可消费的语言服务器：诊断、悬停类型、补全、用例切换 CodeLens、内联提示和符号导航。[nudo-vscode 扩展](../guides/vscode.md)通过 IPC 启动这个服务器；[Zed 扩展](../guides/zed.md)通过 stdio 启动同一服务器。
 
+## Public API 冻结面（A1/A2）
+
+`@nudojs/lsp` 当前为 **0.8.0，pre-1.x**。1.0 之前必须保持稳定的清单在 monorepo：
+
+**[`packages/lsp/PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)**
+
+| 冻结行 | 摘要 |
+|--------|------|
+| npm 表面 | `exports["."]` → `dist/server.js`；`bin.nudo-lsp`；`files: ["dist"]`；导入入口 **会启动** 服务器 |
+| initialize capabilities | `textDocumentSync` (Full)、hover、completion（触发 `.`）、codeLens、inlayHint、definition/references/rename、document/workspace symbols、code actions（`quickfix`）、signatureHelp、semanticTokens（full）、executeCommand、pull `diagnosticProvider` |
+| executeCommand | **点号形** `nudo.check` / `nudo.infer` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` / `nudo.interface` / `nudo.interface.draft`（+ 别名 `nudo.interfaceDraft`）/ `nudo.interface.emit`（+ 别名 `nudo.interfaceEmit`）/ `nudo.selectCase` / `nudo.getActiveCases` |
+| custom requests | **斜杠形是协议契约**：`nudo/check`、`nudo/infer`、`nudo/hover`、`nudo/whatIf`、`nudo/suggestCase`、`nudo/trace`、`nudo/interface`、`nudo/interface.draft`、`nudo/interface.emit`、`nudo/selectCase`、`nudo/getActiveCases` — 均有匹配的 executeCommand（`nudo/X` ↔ `nudo.X`） |
+| agent tools | `AGENT_TOOL_SOURCES` 键：`whatIf`、`suggestCase`、`trace`、`check`、`hover`、`infer`、`interface`、`interface.draft`、`interface.emit`、`codeLens`（仅 server） |
+| CheckJson / InferJson | v1 schema 归 core/service；lsp 原样透出；字段只增不删 |
+| analysis 默认 | `DEFAULT_ANALYSIS_MODE = "exports"`；null 配置 → diagnostics `default`，`evalMissingSlot` `off` |
+| experimental | `src/*` 测试模块、缓存/防抖、hover/CodeLens 人类可读文案 — 不是 npm/协议契约 |
+
+回归钉：`packages/lsp/src/public-api.ts` + `packages/lsp/src/__tests__/public-api-surface.test.ts`（协议一致性 + server 注册对齐）。版本门槛见 [`docs/versioning.md`](https://github.com/nudojs/nudo/blob/main/docs/versioning.md)。
+
 ## 包结构
 
 包的入口点（`main`）是 `dist/server.js`（由 `src/server.ts` 构建）。**导入它就会启动服务器**：它以模块副作用调用 `createConnection(ProposedFeatures.all)` 和 `connection.listen()`，通过 stdio/IPC 讲 LSP。不存在 `createServer()` 之类的工厂函数。包还提供带 shebang 的 `nudo-lsp` bin（指向 `dist/server.js`），供以裸命令拉起服务器的编辑器使用——[Zed 扩展](../guides/zed.md)与 agent 桥接走这条路径。

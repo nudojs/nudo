@@ -7,74 +7,76 @@
 > Categories still recommended for mock are listed below and aligned with
 > `docs/design-limitations.md` §八 (call-site ceiling).
 
-- Generated at: `2026-09-18T20:33:49.140Z`
+- Generated at: `2026-09-19T01:34:53.733Z`
 - Harvest budgets: maxFiles=`12`, maxMs=`2500`, disable=`NUDO_HARVEST_NODE=off`
 
 ## Summary — Node env probes
 
 | Status | Count |
 |---|---:|
-| resolved | 48 |
+| resolved (leaf-clean format) | 33 |
+| resolved (signature-level; format still mentions unknown/any) | 15 |
 | unknown | 0 |
 | mock-required | 2 |
 | **total** | 50 |
 
 Resolved ratio (resolved / total): **96%**
+Leaf-clean ratio (format has no unknown/any token / total): **66%**
 
 ### Probe detail (node)
 
-| Probe | Status | Format | Reason |
-|---|---|---|---|
-| `fs.readFileSync` | resolved | `(string, string \| {  }) => string \| Buffer` | present in handwritten env with concrete Abs shape |
-| `fs.writeFileSync` | resolved | `(string, string \| Buffer) => undefined` | present in handwritten env with concrete Abs shape |
-| `fs.existsSync` | resolved | `(string) => boolean` | present in handwritten env with concrete Abs shape |
-| `fs.statSync` | resolved | `(string) => { isFile: () => boolean, isDirectory: () => boolean, isSymbolicLink: () => boolean, size: number, mtime: unknown, ctime: unknown, atime: unknown, birthtime: unknown, mode: number, uid: number, gid: number }` | present in handwritten env with concrete Abs shape |
-| `fs.promises.readFile` | resolved | `(string, unknown) => promise<string \| Buffer>` | present in handwritten env with concrete Abs shape |
-| `fs.promises.writeFile` | resolved | `(string, string \| Buffer) => promise<undefined>` | present in handwritten env with concrete Abs shape |
-| `fs.promises.mkdir` | resolved | `(string, unknown) => promise<string \| undefined>` | present in handwritten env with concrete Abs shape |
-| `node:fs/promises.readFile` | resolved | `(string, unknown) => promise<string \| Buffer>` | present in handwritten env with concrete Abs shape |
-| `node:fs/promises.appendFile` | resolved | `(string, string \| Buffer) => promise<undefined>` | present in handwritten env with concrete Abs shape |
-| `node:fs/promises.unlink` | resolved | `(string) => promise<undefined>` | present in handwritten env with concrete Abs shape |
-| `node:fs/promises.rename` | resolved | `(string, string) => promise<undefined>` | present in handwritten env with concrete Abs shape |
-| `node:fs/promises.copyFile` | resolved | `(string, string) => promise<undefined>` | present in handwritten env with concrete Abs shape |
-| `node:fs/promises.chmod` | resolved | `(string, number) => promise<undefined>` | present in handwritten env with concrete Abs shape |
-| `path.join` | resolved | `(string, string) => string` | present in handwritten env with concrete Abs shape |
-| `path.resolve` | resolved | `(string) => string` | present in handwritten env with concrete Abs shape |
-| `path.dirname` | resolved | `(string) => string` | present in handwritten env with concrete Abs shape |
-| `path.basename` | resolved | `(string, string) => string` | present in handwritten env with concrete Abs shape |
-| `path.extname` | resolved | `(string) => string` | present in handwritten env with concrete Abs shape |
-| `path.relative` | resolved | `(string, string) => string` | present in handwritten env with concrete Abs shape |
-| `path.parse` | resolved | `(string) => { root: string, dir: string, base: string, ext: string, name: string }` | present in handwritten env with concrete Abs shape |
-| `path.isAbsolute` | resolved | `(string) => boolean` | present in handwritten env with concrete Abs shape |
-| `url.URL` | resolved | `(string, string) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, hash: string, toString: () => string, toJSON: () => string }` | present in handwritten env with concrete Abs shape |
-| `url.URLSearchParams` | resolved | `(unknown) => { get: (string) => string \| unknown, has: (string) => boolean, set: (string, string) => undefined, append: (string, string) => undefined, delete: (string) => undefined, toString: () => string }` | present in handwritten env with concrete Abs shape |
-| `url.fileURLToPath` | resolved | `(string) => string` | present in handwritten env with concrete Abs shape |
-| `url.pathToFileURL` | resolved | `(string) => { href: string }` | present in handwritten env with concrete Abs shape |
-| `events.EventEmitter` | resolved | `() => EventEmitter` | present in handwritten env with concrete Abs shape |
-| `events.once` | resolved | `(unknown, string) => promise<unknown[]>` | present in handwritten env with concrete Abs shape |
-| `events.on` | resolved | `(unknown, string) => unknown` | present in handwritten env with concrete Abs shape |
-| `node:events.EventEmitter` | resolved | `() => EventEmitter` | present in handwritten env with concrete Abs shape |
-| `util.promisify` | resolved | `(unknown) => unknown` | present in handwritten env with concrete Abs shape |
-| `util.inspect` | resolved | `(unknown, unknown) => string` | present in handwritten env with concrete Abs shape |
-| `util.format` | resolved | `(string) => string` | present in handwritten env with concrete Abs shape |
-| `util.types.isDate` | resolved | `(unknown) => boolean` | present in handwritten env with concrete Abs shape |
-| `stream.Readable` | resolved | `() => Readable` | present in handwritten env with concrete Abs shape |
-| `stream.Writable` | resolved | `() => Writable` | present in handwritten env with concrete Abs shape |
-| `stream.Duplex` | resolved | `() => Duplex` | present in handwritten env with concrete Abs shape |
-| `stream.Transform` | resolved | `() => Transform` | present in handwritten env with concrete Abs shape |
-| `stream.pipeline` | resolved | `(unknown) => unknown` | present in handwritten env with concrete Abs shape |
-| `stream.machine-callbacks` | mock-required | `() => Transform` | Node stream machine drives internal callbacks — design-limitations §八 |
-| `querystring.parse` | resolved | `(string, string, string, unknown) => ParsedQueryString` | present in handwritten env with concrete Abs shape |
-| `querystring.stringify` | resolved | `(unknown, string, string, unknown) => string` | present in handwritten env with concrete Abs shape |
-| `crypto.randomUUID` | resolved | `() => string` | present in handwritten env with concrete Abs shape |
-| `crypto.createHash` | resolved | `(string) => { update: (string \| Buffer) => unknown, digest: (string) => string \| Buffer }` | present in handwritten env with concrete Abs shape |
-| `crypto.randomBytes` | resolved | `(number) => Buffer` | present in handwritten env with concrete Abs shape |
-| `process.env` | resolved | `{  }` | present in handwritten env with concrete Abs shape |
-| `process.cwd` | resolved | `() => string` | present in handwritten env with concrete Abs shape |
-| `process.argv` | resolved | `string[]` | present in handwritten env with concrete Abs shape |
-| `os.platform` | resolved | `() => string` | present in handwritten env with concrete Abs shape |
-| `Buffer.from` | resolved | `(string \| number[]) => Buffer` | present in handwritten env with concrete Abs shape |
-| `child_process.spawn-native` | mock-required | `(string, string[], unknown) => unknown` | native process spawn — mock or env signature only; no side-effect simulation |
+| Probe | Status | Leaf | Format | Reason |
+|---|---|---|---|---|
+| `fs.readFileSync` | resolved | clean | `(string, string \| {  }) => string \| Buffer` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `fs.writeFileSync` | resolved | clean | `(string, string \| Buffer) => undefined` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `fs.existsSync` | resolved | clean | `(string) => boolean` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `fs.statSync` | resolved | mentions-unknown | `(string) => { isFile: () => boolean, isDirectory: () => boolean, isSymbolicLink: () => boolean, size: number, mtime: unknown, ctime: unknown, atime: unknown, birthtime: unknown, mode: number, uid: number, gid: number }` | present in env; signature-level — format still mentions unknown/any leaves |
+| `fs.promises.readFile` | resolved | mentions-unknown | `(string, unknown) => promise<string \| Buffer>` | present in env; signature-level — format still mentions unknown/any leaves |
+| `fs.promises.writeFile` | resolved | clean | `(string, string \| Buffer) => promise<undefined>` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `fs.promises.mkdir` | resolved | mentions-unknown | `(string, unknown) => promise<string \| undefined>` | present in env; signature-level — format still mentions unknown/any leaves |
+| `node:fs/promises.readFile` | resolved | mentions-unknown | `(string, unknown) => promise<string \| Buffer>` | present in env; signature-level — format still mentions unknown/any leaves |
+| `node:fs/promises.appendFile` | resolved | clean | `(string, string \| Buffer) => promise<undefined>` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `node:fs/promises.unlink` | resolved | clean | `(string) => promise<undefined>` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `node:fs/promises.rename` | resolved | clean | `(string, string) => promise<undefined>` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `node:fs/promises.copyFile` | resolved | clean | `(string, string) => promise<undefined>` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `node:fs/promises.chmod` | resolved | clean | `(string, number) => promise<undefined>` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `path.join` | resolved | clean | `(string, string, string, string, string) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `path.resolve` | resolved | clean | `(string, string, string, string) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `path.dirname` | resolved | clean | `(string) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `path.basename` | resolved | clean | `(string, string) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `path.extname` | resolved | clean | `(string) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `path.relative` | resolved | clean | `(string, string) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `path.parse` | resolved | clean | `(string) => { root: string, dir: string, base: string, ext: string, name: string }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `path.isAbsolute` | resolved | clean | `(string) => boolean` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `url.URL` | resolved | clean | `(string, string) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, hash: string, toString: () => string, toJSON: () => string }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `url.URLSearchParams` | resolved | mentions-unknown | `(unknown) => { get: (string) => string \| unknown, has: (string) => boolean, set: (string, string) => undefined, append: (string, string) => undefined, delete: (string) => undefined, toString: () => string }` | present in env; signature-level — format still mentions unknown/any leaves |
+| `url.fileURLToPath` | resolved | clean | `(string) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `url.pathToFileURL` | resolved | clean | `(string) => { href: string }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `events.EventEmitter` | resolved | clean | `({  }) => EventEmitter` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `events.once` | resolved | mentions-unknown | `(unknown, string) => promise<unknown[]>` | present in env; signature-level — format still mentions unknown/any leaves |
+| `events.on` | resolved | mentions-unknown | `(unknown, string) => unknown` | present in env; signature-level — format still mentions unknown/any leaves |
+| `node:events.EventEmitter` | resolved | clean | `({  }) => EventEmitter` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `util.promisify` | resolved | mentions-unknown | `(unknown) => unknown` | present in env; signature-level — format still mentions unknown/any leaves |
+| `util.inspect` | resolved | mentions-unknown | `(unknown, unknown) => string` | present in env; signature-level — format still mentions unknown/any leaves |
+| `util.format` | resolved | mentions-unknown | `(string, unknown, unknown, unknown) => string` | present in env; signature-level — format still mentions unknown/any leaves |
+| `util.types.isDate` | resolved | mentions-unknown | `(unknown) => boolean` | present in env; signature-level — format still mentions unknown/any leaves |
+| `stream.Readable` | resolved | clean | `({  }) => Readable` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `stream.Writable` | resolved | clean | `({  }) => Writable` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `stream.Duplex` | resolved | clean | `({  }) => Duplex` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `stream.Transform` | resolved | clean | `({  }) => Transform` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `stream.pipeline` | resolved | mentions-unknown | `(unknown, unknown, unknown) => promise<undefined>` | present in env; signature-level — format still mentions unknown/any leaves |
+| `stream.machine-callbacks` | mock-required | — | `({  }) => Transform` | Node stream machine drives internal callbacks — design-limitations §八 |
+| `querystring.parse` | resolved | mentions-unknown | `(string, string, string, unknown) => ParsedQueryString` | present in env; signature-level — format still mentions unknown/any leaves |
+| `querystring.stringify` | resolved | mentions-unknown | `(unknown, string, string, unknown) => string` | present in env; signature-level — format still mentions unknown/any leaves |
+| `crypto.randomUUID` | resolved | clean | `() => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `crypto.createHash` | resolved | mentions-unknown | `(string) => { update: (string \| Buffer) => unknown, digest: (string) => string \| Buffer }` | present in env; signature-level — format still mentions unknown/any leaves |
+| `crypto.randomBytes` | resolved | clean | `(number) => Buffer` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `process.env` | resolved | clean | `{  }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `process.cwd` | resolved | clean | `() => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `process.argv` | resolved | clean | `string[]` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `os.platform` | resolved | clean | `() => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `Buffer.from` | resolved | clean | `(string \| number[]) => Buffer` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `child_process.spawn-native` | mock-required | — | `(string, string[], unknown) => unknown` | native process spawn — mock or env signature only; no side-effect simulation |
 
 ### ES / web sample
 

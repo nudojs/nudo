@@ -57,6 +57,8 @@ type Probe = {
 type ProbeResult = Probe & {
   status: ProbeStatus;
   format?: string;
+  /** clean = format string has no unknown/any token; mentions-unknown = signature-level only */
+  leaf?: "clean" | "mentions-unknown";
   reason: string;
 };
 
@@ -198,6 +200,16 @@ function isWeakFormat(fmt: string | undefined): boolean {
   return fmt === "unknown" || fmt === "any" || fmt === "·";
 }
 
+/** True when the format string itself still carries an unknown/any leaf token. */
+function formatMentionsUnknown(fmt: string | undefined): boolean {
+  if (!fmt) return true;
+  return /(^|[^\w])(unknown|any)([^\w]|$)/.test(fmt);
+}
+
+function leafOf(format: string | undefined): "clean" | "mentions-unknown" {
+  return formatMentionsUnknown(format) ? "mentions-unknown" : "clean";
+}
+
 function lookupProbe(env: EnvDef, probe: Probe): { found?: Abs; format?: string } {
   if (probe.module) {
     const mod = env.modules?.[probe.module];
@@ -242,14 +254,20 @@ function classify(env: EnvDef, probe: Probe): ProbeResult {
       ...probe,
       status: "unknown",
       format,
+      leaf: "mentions-unknown",
       reason: "present but formatShape is unknown/any (signature only, no leaf shape)",
     };
   }
+  const leaf = leafOf(format);
   return {
     ...probe,
     status: "resolved",
     format,
-    reason: "present in handwritten env with concrete Abs shape",
+    leaf,
+    reason:
+      leaf === "clean"
+        ? "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+        : "present in env; signature-level — format still mentions unknown/any leaves",
   };
 }
 
@@ -261,6 +279,17 @@ function countByStatus(results: ProbeResult[]): Record<ProbeStatus, number> {
   };
   for (const r of results) out[r.status]++;
   return out;
+}
+
+function countLeaf(results: ProbeResult[]): { clean: number; mentionsUnknown: number } {
+  let clean = 0;
+  let mentionsUnknown = 0;
+  for (const r of results) {
+    if (r.status !== "resolved") continue;
+    if (r.leaf === "clean") clean++;
+    else mentionsUnknown++;
+  }
+  return { clean, mentionsUnknown };
 }
 
 function tryResolvePkg(pkg: string): boolean {
@@ -298,6 +327,7 @@ function main(): void {
 
   const nodeResults = NODE_PROBES.map((p) => classify(envs.node!, p));
   const nodeCounts = countByStatus(nodeResults);
+  const nodeLeaf = countLeaf(nodeResults);
 
   // ES / web globals sample (small control set)
   const ES_PROBES: Probe[] = [
@@ -313,6 +343,8 @@ function main(): void {
   ];
   const esResults = ES_PROBES.map((p) => classify(envs.es!, p));
   const webResults = WEB_PROBES.map((p) => classify(envs.web!, p));
+  const esLeaf = countLeaf(esResults);
+  const webLeaf = countLeaf(webResults);
 
   const libResults = LIB_PROBES.map((lib) => {
     const installed = tryResolvePkg(lib.package);
@@ -349,16 +381,19 @@ function main(): void {
     },
     nodeProbes: {
       counts: nodeCounts,
+      leaf: nodeLeaf,
       total: nodeResults.length,
       results: nodeResults,
     },
     esProbes: {
       counts: countByStatus(esResults),
+      leaf: esLeaf,
       total: esResults.length,
       results: esResults,
     },
     webProbes: {
       counts: countByStatus(webResults),
+      leaf: webLeaf,
       total: webResults.length,
       results: webResults,
     },
@@ -388,7 +423,8 @@ function main(): void {
   md.push("");
   md.push(`| Status | Count |`);
   md.push(`|---|---:|`);
-  md.push(`| resolved | ${nodeCounts.resolved} |`);
+  md.push(`| resolved (leaf-clean format) | ${nodeLeaf.clean} |`);
+  md.push(`| resolved (signature-level; format still mentions unknown/any) | ${nodeLeaf.mentionsUnknown} |`);
   md.push(`| unknown | ${nodeCounts.unknown} |`);
   md.push(`| mock-required | ${nodeCounts["mock-required"]} |`);
   md.push(`| **total** | ${report.nodeProbes.total} |`);
@@ -397,15 +433,20 @@ function main(): void {
     report.nodeProbes.total === 0
       ? 0
       : Math.round((nodeCounts.resolved / report.nodeProbes.total) * 1000) / 10;
+  const cleanPct =
+    report.nodeProbes.total === 0
+      ? 0
+      : Math.round((nodeLeaf.clean / report.nodeProbes.total) * 1000) / 10;
   md.push(`Resolved ratio (resolved / total): **${resolvedPct}%**`);
+  md.push(`Leaf-clean ratio (format has no unknown/any token / total): **${cleanPct}%**`);
   md.push("");
   md.push("### Probe detail (node)");
   md.push("");
-  md.push("| Probe | Status | Format | Reason |");
-  md.push("|---|---|---|---|");
+  md.push("| Probe | Status | Leaf | Format | Reason |");
+  md.push("|---|---|---|---|---|");
   for (const r of nodeResults) {
     md.push(
-      `| \`${r.id}\` | ${r.status} | ${r.format ? `\`${r.format.replace(/\|/g, "\\|")}\`` : "—"} | ${r.reason} |`,
+      `| \`${r.id}\` | ${r.status} | ${r.leaf ?? "—"} | ${r.format ? `\`${r.format.replace(/\|/g, "\\|")}\`` : "—"} | ${r.reason} |`,
     );
   }
   md.push("");
@@ -456,7 +497,8 @@ function main(): void {
   } else {
     process.stdout.write(
       `env-coverage-baseline: node resolved ${nodeCounts.resolved}/${report.nodeProbes.total} ` +
-        `(unknown=${nodeCounts.unknown}, mock-required=${nodeCounts["mock-required"]})\n` +
+        `(leaf-clean=${nodeLeaf.clean}, signature-level=${nodeLeaf.mentionsUnknown}, ` +
+        `unknown=${nodeCounts.unknown}, mock-required=${nodeCounts["mock-required"]})\n` +
         `wrote ${jsonPath}\nwrote ${mdPath}\n`,
     );
   }

@@ -1,11 +1,3 @@
-import { describe, it, expect } from "vitest";
-import { readFileSync, existsSync, readdirSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
-import { checkSource, formatShape } from "@nudojs/core";
-import { analyzeFile } from "@nudojs/service";
-
 /**
  * B5 — common library no-mock / infer coverage gate.
  *
@@ -13,13 +5,23 @@ import { analyzeFile } from "@nudojs/service";
  * **without handwritten mocks**:
  * 1. checkSource scans their JS sources with FP=0 (same ERROR_CODES as
  *    check-real-packages — that suite remains the precision lock).
- * 2. analyzeFile does not crash and produces a structured result
- *    (functions/cases may be empty when exports-default analysis mode
- *    finds no exported call sites — that is still a successful run).
+ * 2. analyzeFile does not crash and produces structured output.
+ * 3. At least one scanned file yields a case whose formatShape is **not**
+ *    a whole-page `unknown` — signatures must be inductively useful, not
+ *    merely "did not throw".
  *
  * Resolution uses packages/core's node_modules (pnpm isolated layout)
  * because those fixture packages are core devDependencies.
+ * `analyzeFile` is imported via the vitest alias → service src (not dist).
  */
+
+import { describe, it, expect } from "vitest";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+import { checkSource, formatShape } from "@nudojs/core";
+import { analyzeFile } from "../index.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const monorepoRoot = resolveUp(here, 4);
@@ -42,6 +44,7 @@ type InferOutcome = {
   fnCount?: number;
   caseCount?: number;
   sampleFormat?: string;
+  formats: string[];
   violations: string[];
 };
 
@@ -69,19 +72,23 @@ function resolvePkgRoot(pkgName: string): string | undefined {
   return undefined;
 }
 
+function isUsefulFormat(fmt: string | undefined): boolean {
+  if (!fmt) return false;
+  const t = fmt.trim();
+  return t !== "unknown" && t !== "any" && t !== "·" && t !== "";
+}
+
 function scanInfer(pkgName: string, maxFiles = 4): InferOutcome[] {
   const pkgRoot = resolvePkgRoot(pkgName);
   if (!pkgRoot) return [];
   const out: InferOutcome[] = [];
 
-  // Prefer a small single entry file for analyzeFile; fall back to lib walk.
   const candidates: string[] = [];
   const entryTries = ["index.js", "index.mjs", "index.cjs", "ms.js", "debug.js"];
   for (const name of entryTries) {
     const p = join(pkgRoot, name);
     if (existsSync(p)) candidates.push(p);
   }
-  // Also pick a few shallow .js files
   const libDir = join(pkgRoot, "lib");
   if (existsSync(libDir) && candidates.length === 0) {
     try {
@@ -125,6 +132,7 @@ function scanInfer(pkgName: string, maxFiles = 4): InferOutcome[] {
         file: label,
         scanned: false,
         analyzeThrew: `checkSource: ${(e as Error).message}`,
+        formats: [],
         violations,
       });
       continue;
@@ -134,13 +142,16 @@ function scanInfer(pkgName: string, maxFiles = 4): InferOutcome[] {
     let fnCount = 0;
     let caseCount = 0;
     let sampleFormat: string | undefined;
+    const formats: string[] = [];
     try {
       const result = analyzeFile(file, source);
       fnCount = result.functions?.length ?? 0;
       for (const fn of result.functions ?? []) {
         caseCount += fn.cases?.length ?? 0;
-        if (!sampleFormat && fn.cases && fn.cases.length > 0) {
-          sampleFormat = formatShape(fn.cases[0]!.abs);
+        for (const c of fn.cases ?? []) {
+          const fmt = formatShape(c.abs);
+          formats.push(fmt);
+          if (!sampleFormat) sampleFormat = fmt;
         }
       }
     } catch (e) {
@@ -155,6 +166,7 @@ function scanInfer(pkgName: string, maxFiles = 4): InferOutcome[] {
       fnCount,
       caseCount,
       sampleFormat,
+      formats,
       violations,
     });
   }
@@ -162,15 +174,23 @@ function scanInfer(pkgName: string, maxFiles = 4): InferOutcome[] {
 }
 
 describe("real package no-mock infer gate (B5)", () => {
+  /**
+   * requireUsefulSignature: at least one case format is not whole-page `unknown`.
+   * `ms` has call-site-ish surface that inducts concrete leaves without mocks.
+   * `commander` / `escape-string-regexp` / `debug` currently yield honest
+   * `entry@`/`unknown` under default exports-mode with no call sites — that is
+   * a design-limitations ceiling, not a crash; B5 still locks FP=0 + structured run.
+   * The suite-level pin requires *at least one* installed package to show useful leaves.
+   */
   const packages = [
-    { name: "ms", minFiles: 1 },
-    { name: "commander", minFiles: 1 },
-    { name: "escape-string-regexp", minFiles: 1 },
-    { name: "debug", minFiles: 1 },
+    { name: "ms", minFiles: 1, requireUsefulSignature: true, requireCases: true },
+    { name: "commander", minFiles: 1, requireUsefulSignature: false, requireCases: true },
+    { name: "escape-string-regexp", minFiles: 1, requireUsefulSignature: false, requireCases: true },
+    { name: "debug", minFiles: 1, requireUsefulSignature: false, requireCases: false },
   ];
 
-  for (const { name, minFiles } of packages) {
-    it(`${name}: checkSource + analyzeFile run without mocks; FP=0`, () => {
+  for (const { name, minFiles, requireUsefulSignature, requireCases } of packages) {
+    it(`${name}: checkSource + analyzeFile run without mocks; FP=0; structured`, () => {
       const root = resolvePkgRoot(name);
       if (!root) {
         console.info(`[infer-real] SKIP ${name}: not on packages/core node_modules path`);
@@ -181,26 +201,34 @@ describe("real package no-mock infer gate (B5)", () => {
       expect(scanned.length, `${name}: expected ≥${minFiles} scanned files`).toBeGreaterThan(
         minFiles - 1,
       );
-      // FP lock
       const allViolations = outcomes.flatMap((o) => o.violations);
       expect(allViolations, allViolations.join("\n").slice(0, 2000)).toEqual([]);
-      // Infer must not crash — throwing analyzeFile is a gate failure
       const threw = outcomes.filter((o) => o.analyzeThrew);
       expect(
         threw,
         threw.map((t) => t.analyzeThrew).join("\n").slice(0, 2000),
       ).toEqual([]);
-      // Record signatures when present (not a hard recall lock — B5 is “runs + no FP”)
-      const withCases = outcomes.filter((o) => (o.caseCount ?? 0) > 0);
+
+      if (requireCases) {
+        const caseSum = outcomes.reduce((s, o) => s + (o.caseCount ?? 0), 0);
+        expect(caseSum, `${name}: expected structured analyzeFile cases`).toBeGreaterThan(0);
+      }
+
+      const allFormats = outcomes.flatMap((o) => o.formats);
+      const useful = allFormats.filter(isUsefulFormat);
       console.info(
-        `[infer-real] ${name}: scanned=${scanned.length} fnSum=${outcomes.reduce((s, o) => s + (o.fnCount ?? 0), 0)} casesSum=${outcomes.reduce((s, o) => s + (o.caseCount ?? 0), 0)} sample=${withCases[0]?.sampleFormat ?? "—"}`,
+        `[infer-real] ${name}: scanned=${scanned.length} formats=${allFormats.length} useful=${useful.length} sample=${allFormats[0] ?? "—"}`,
       );
+      if (requireUsefulSignature) {
+        expect(
+          useful.length,
+          `${name}: expected ≥1 case format that is not whole-page unknown; got ${JSON.stringify(allFormats.slice(0, 8))}`,
+        ).toBeGreaterThan(0);
+      }
     });
   }
 
-  it("records at least one package producing structured analyzeFile output", () => {
-    // Soft signal: in a healthy tree, some package yields functions or cases.
-    // If every package is missing from node_modules we still pass (skipped above).
+  it("records at least one installed package producing a useful (non-unknown) signature", () => {
     const installed = ["ms", "commander", "debug", "escape-string-regexp"].filter(
       (n) => !!resolvePkgRoot(n),
     );
@@ -208,15 +236,15 @@ describe("real package no-mock infer gate (B5)", () => {
       console.info("[infer-real] no fixture packages installed — skip signature signal");
       return;
     }
-    let sawStructure = false;
+    let sawUseful = false;
     for (const name of installed) {
       for (const o of scanInfer(name, 2)) {
-        if ((o.fnCount ?? 0) > 0 || (o.caseCount ?? 0) > 0) sawStructure = true;
+        if (o.formats.some(isUsefulFormat)) sawUseful = true;
       }
     }
-    // Do not hard-fail when exports-mode finds no call sites — only crash/FP are gates.
-    // Structure is recorded for the coverage baseline narrative.
-    expect(typeof sawStructure).toBe("boolean");
-    console.info(`[infer-real] saw structured analyzeFile output: ${sawStructure}`);
+    console.info(`[infer-real] saw useful analyzeFile signature: ${sawUseful}`);
+    // Soft when every fixture is missing useful leaves would be a product regression —
+    // hard-fail when any fixture package is installed (ms currently supplies the pin).
+    expect(sawUseful, "at least one real package must yield non-unknown case formats").toBe(true);
   });
 });

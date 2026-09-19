@@ -56,9 +56,8 @@ import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
 import { noteEnvPathDeps } from "./env-path-deps.ts";
 import { loadModuleDepsFingerprint, hashSource } from "@nudojs/core";
-import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph, evalProgramAbsWithModules } from "./abs-modules-graph.ts";
-import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, mockSeedFingerprint, collectEnvGlobals, collectEnvModules } from "./bpath-run.ts";
+import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, mockSeedFingerprint, collectEnvGlobals, collectEnvModules, mergeHarvestUnderEnv } from "./bpath-run.ts";
 import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
 import { setAbsTruncationCollector } from "@nudojs/core";
 import {
@@ -1336,8 +1335,9 @@ function analyzeFileUncachedInner(
         ...(loadModule ? { loadModule } : {}),
       });
       // env modules 必须并入图：@nudo:env 的 node:* / 裸包由 loadEnvs 提供，
-      // 模块图只处理相对 import 与 harvest 裸包（跳过 node: 前缀）
-      absGraphModules = { ...collectEnvModules(envNames), ...g.modules };
+      // 模块图只处理相对 import 与 harvest 裸包（跳过 node: 前缀）。
+      // 手写 env 在重叠模块/导出上 wins（B8）；harvest 只补洞。
+      absGraphModules = mergeHarvestUnderEnv(g.modules, collectEnvModules(envNames));
       pushBModuleIssues(g.issues);
     } catch {
       /* 模块图失败交还 TypeValue */
@@ -2283,9 +2283,10 @@ function collectAbsCallRecords(
         modules = undefined;
       }
     }
-    // 无预计算 modules 时也要并入 env（@nudo:env node / es / web）
+    // 无预计算 modules 时也要并入 env（@nudo:env node / es / web）。
+    // 手写 env wins over harvest/graph（B8）。
     if (envNames.length > 0) {
-      modules = { ...collectEnvModules(envNames), ...(modules ?? {}) };
+      modules = mergeHarvestUnderEnv(modules ?? {}, collectEnvModules(envNames));
     }
     try {
       importLocals = buildAbsImportLocalMap(source, filePath);

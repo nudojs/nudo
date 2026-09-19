@@ -21,8 +21,8 @@ How Nudo packages are versioned, what counts as a breaking change, and how to fo
 | `@nudojs/cli` | see package.json | stable | SemVer 1.x — breaking = **major** |
 | `@nudojs/parser` | 0.4.x | pre-1.0 | Minor may break; patch is additive/fix |
 | `@nudojs/lsp` | **0.8.0** | pre-1.0 | Minor may break; patch is additive/fix. **1.x gate (A1/A2):** observe freeze via [`packages/lsp/PUBLIC_API.md`](../packages/lsp/PUBLIC_API.md) for ≥1 minor cycle with no unplanned stable-surface breaks; **no automatic version bump** — cut 1.0 only with an explicit major changeset |
-| `@nudojs/env` | **0.3.0** | pre-1.0 | Minor may break. **B8 coordination:** service/cli/env consumers pin a **minor** deliberately; coverage numbers optional in release notes; not on the core 1.x timetable |
-| `@nudojs/harvester` | **0.2.5** | pre-1.0 | Minor may break. Same B8 rhythm as `@nudojs/env` (harvest products remain a side channel, never Abs truth) |
+| `@nudojs/env` | **0.3.0** | pre-1.0 | Minor may break. Policy authority: [Ecosystem packages](#ecosystem-packages-env--harvester) |
+| `@nudojs/harvester` | **0.2.5** | pre-1.0 | Minor may break. Policy authority: [Ecosystem packages](#ecosystem-packages-env--harvester) |
 | `nudojs` (shell) | 0.2.x | pre-1.0 | Tracks `@nudojs/cli`; prefer depending on `@nudojs/*` directly |
 | `vite-plugin-nudo` | 0.3.x | pre-1.0 | Minor may break |
 | `nudo-vscode` | 0.3.5 | private | Marketplace / Open VSX release notes; not npm-semver for consumers. Bundled `@nudojs/lsp` must match the monorepo lsp dist at package time (see `packages/vscode/RELEASE_CHECKLIST.md`) |
@@ -158,13 +158,7 @@ Regression pin: `packages/lsp/src/__tests__/public-api-surface.test.ts`.
 
 ### env / harvester (B8 coordination)
 
-`@nudojs/env` (0.3.0) and `@nudojs/harvester` (0.2.5) stay **pre-1.0** while
-coverage baselines land. Consumers that need bit-stable IDE/CI analysis pin an
-exact or tilde minor (`"@nudojs/env": "~0.3.0"`). Harvest output remains a
-side channel: handwritten project `@nudo:env` / mocks win over harvested
-modules; conflicts warn, they do not silently replace Abs truth. When these
-packages later cut 1.x, use the same freeze-observation gate as lsp — no
-automatic major from coverage-report growth alone.
+**Authoritative policy lives in [Ecosystem packages (env / harvester)](#ecosystem-packages-env--harvester) below.** Short form: both packages stay pre-1.0; consumers that need bit-stable IDE/CI analysis pin a minor (`"@nudojs/env": "~0.3.0"`). Harvest is a side channel — handwritten env / project `@nudo:env` wins on overlapping modules/exports (enforced by `mergeHarvestUnderEnv` in `@nudojs/service`). Changing that priority is service-breaking.
 
 ## Consumer pinning guide
 
@@ -194,8 +188,8 @@ automatic major from coverage-report growth alone.
 
 ## Ecosystem packages (env / harvester)
 
-> Added for P0-B (2026-09-19). Agent B owns this subsection; do not duplicate
-> under a different heading.
+> **Single authority** for `@nudojs/env` / `@nudojs/harvester` policy (P0-B B8).
+> Maturity table and the IDE section above only point here.
 
 `@nudojs/env` and `@nudojs/harvester` are **pre-1.0** sidecar packages consumed
 by `@nudojs/service` / `@nudojs/cli`. They do **not** carry their own SemVer
@@ -203,17 +197,22 @@ by `@nudojs/service` / `@nudojs/cli`. They do **not** carry their own SemVer
 
 | Package | Pin style | When to bump minor | Release-notes suggestion |
 |---------|-----------|--------------------|---------------------------|
-| `@nudojs/env` | workspace / caret on 0.x | New Abs env modules or signature-level APIs that service CLI/tests depend on (e.g. `events` / `stream` / `querystring` slots) | Optional **Coverage** section: `node resolved N/M (unknown=…, mock-required=…)` from `pnpm run coverage:env` / `docs/reports/env-coverage-baseline.json` |
-| `@nudojs/harvester` | workspace / caret on 0.x | Harvest result shape changes (`HarvestedEnv.stats`, module key aliases) or emit format changes that break generated `defineEnv` files | Note harvest budget defaults if changed (`maxFiles` / `maxMs`); regenerate CLI harvest samples |
+| `@nudojs/env` | workspace / tilde on 0.x (`~0.3.0`) for bit-stable CI | New Abs env modules or signature-level APIs that service CLI/tests depend on (e.g. `events` / `stream` / `querystring` slots) | Optional **Coverage** section: `node resolved N/M (leaf-clean=…, unknown=…, mock-required=…)` from `pnpm run coverage:env` / `docs/reports/env-coverage-baseline.json` |
+| `@nudojs/harvester` | workspace / tilde on 0.x (`~0.2.5`) | Harvest result shape changes (`HarvestedEnv.stats`, module key aliases) or emit format changes that break generated `defineEnv` files | Note harvest budget defaults if changed (`maxFiles` / `maxMs`); regenerate CLI harvest samples |
 
 Rules:
 
 - **0.x**: patch = additive env signatures / harvest fixes; minor **may** break
   generated env consumers — always ship a changeset that names the migration.
-- Handwritten `@nudojs/env` **wins** over harvest when both supply the same
-  builtin module (priority documented in website harvester API). Changing that
-  priority is **breaking** for service analysis results → minor on 0.x + callout.
+- **Handwritten `@nudojs/env` wins** over harvest when both supply the same
+  module key or the same export name. Analysis injects via
+  `mergeHarvestUnderEnv` (`@nudojs/service` `bpath-run.ts`) — harvest only
+  fills missing modules/exports. Changing that priority is **breaking** for
+  service analysis results → service 1.x **major** on 1.x / minor on 0.x + callout.
 - Coverage report numbers are **optional release-notes content**, not a
-  soundness gate. Do not promise completeness from resolved-ratio.
+  soundness gate. Do not promise completeness from resolved-ratio. Prefer
+  **leaf-clean** counts over raw resolved counts.
 - `NUDO_HARVEST_NODE=off` and harvest cache helpers (`clearNodeHarvestCache`)
   are public service API surface — treat removals as service 1.x **major**.
+- When these packages later cut 1.x, use the same freeze-observation gate as
+  lsp — no automatic major from coverage-report growth alone.

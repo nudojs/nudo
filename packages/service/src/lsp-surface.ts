@@ -40,7 +40,6 @@ import {
   builtinProtoMemberNames,
 } from "./evaluator/evaluator-api.ts";
 import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
-import { autoHarvestModules } from "./harvest-auto.ts";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph } from "./abs-modules-graph.ts";
 import { isBPathCapable } from "./bpath-run.ts";
 import {

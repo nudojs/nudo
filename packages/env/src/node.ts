@@ -209,8 +209,19 @@ export function defineEnv(): EnvDefinition {
   };
 
   const pathModule: Record<string, Abs> = {
-    join: envFn([prim.str(), prim.str()], prim.str(), pathJoinAbs),
-    resolve: envFn([prim.str()], prim.str(), pathResolveAbs),
+    // Variadic in Node — rest slots approximate `(...paths: string[]) => string`.
+    join: envFn(
+      [prim.str(), prim.str(), prim.str(), prim.str(), prim.str()],
+      prim.str(),
+      pathJoinAbs,
+      { params: ["p0", "p1", "...paths"] },
+    ),
+    resolve: envFn(
+      [prim.str(), prim.str(), prim.str(), prim.str()],
+      prim.str(),
+      pathResolveAbs,
+      { params: ["p0", "...paths"] },
+    ),
     dirname: envFn([prim.str()], prim.str(), strImpl1Abs(nodePath.dirname)),
     basename: envFn([prim.str(), prim.str()], prim.str(), pathBasenameAbs),
     extname: envFn([prim.str()], prim.str(), strImpl1Abs(nodePath.extname)),
@@ -424,7 +435,12 @@ export function defineEnv(): EnvDefinition {
     // Signature-level: promisify preserves fn-ness only as unknown (no generic).
     promisify: envFn([prim.unknown], prim.unknown, undefined, { name: "util.promisify" }),
     inspect: envFn([prim.unknown, prim.unknown], prim.str()),
-    format: envFn([prim.str()], prim.str()),
+    format: envFn(
+      [prim.str(), prim.unknown, prim.unknown, prim.unknown],
+      prim.str(),
+      undefined,
+      { params: ["fmt", "...args"] },
+    ),
     callbackify: envFn([prim.unknown], prim.unknown),
     deprecate: envFn([prim.unknown, prim.str()], prim.unknown),
     inherits: envFn([prim.unknown, prim.unknown], undef()),
@@ -463,8 +479,13 @@ export function defineEnv(): EnvDefinition {
     eventNames: envFn([], arrOf(prim.str())),
   });
   const eventEmitterInstance = brandOf("EventEmitter", eventEmitterShape);
-  /** Constructor signature: `new EventEmitter()` / `new events.EventEmitter()`. */
-  const EventEmitterCtor = envFn([], eventEmitterInstance);
+  /**
+   * Constructor signature: `new EventEmitter()` / `new EventEmitter(options)`.
+   * Options slot is structural only (captureRejections etc. stay signature-level).
+   */
+  const EventEmitterCtor = envFn([objAbs({})], eventEmitterInstance, undefined, {
+    params: ["options"],
+  });
 
   const eventsModule: Record<string, Abs> = {
     EventEmitter: EventEmitterCtor,
@@ -491,27 +512,47 @@ export function defineEnv(): EnvDefinition {
     setEncoding: envFn([prim.str()], prim.unknown),
   };
 
+  const streamCtor = (brandName: string): Abs =>
+    envFn([objAbs({})], brandOf(brandName, objAbs(streamIoMethods)), undefined, {
+      params: ["options"],
+    });
+
   /**
-   * stream skeleton: brand + pipe only. Machine-driven callbacks remain
+   * stream skeleton: brand + pipe/finished. Machine-driven callbacks remain
    * mock-recommended (design-limitations §八).
    */
   const streamModule: Record<string, Abs> = {
-    Readable: envFn([], brandOf("Readable", objAbs(streamIoMethods))),
-    Writable: envFn([], brandOf("Writable", objAbs(streamIoMethods))),
-    Duplex: envFn([], brandOf("Duplex", objAbs(streamIoMethods))),
-    Transform: envFn([], brandOf("Transform", objAbs(streamIoMethods))),
-    pipeline: envFn([prim.unknown], prim.unknown),
+    Readable: streamCtor("Readable"),
+    Writable: streamCtor("Writable"),
+    Duplex: streamCtor("Duplex"),
+    Transform: streamCtor("Transform"),
+    pipeline: envFn(
+      [prim.unknown, prim.unknown, prim.unknown],
+      promiseOf(undef()),
+      undefined,
+      { params: ["...streams"] },
+    ),
     finished: envFn([prim.unknown], promiseOf(undef())),
   };
+
+  /** querystring.parse returns a dynamic key bag — slots are not statically known. */
+  const parsedQueryString = brandOf(
+    "ParsedQueryString",
+    objAbs({}),
+  );
 
   const querystringModule: Record<string, Abs> = {
     parse: envFn(
       [prim.str(), prim.str(), prim.str(), prim.unknown],
-      brandOf("ParsedQueryString"),
+      parsedQueryString,
+      undefined,
+      { params: ["str", "sep", "eq", "options"] },
     ),
     stringify: envFn(
       [prim.unknown, prim.str(), prim.str(), prim.unknown],
       prim.str(),
+      undefined,
+      { params: ["obj", "sep", "eq", "options"] },
     ),
     escape: envFn([prim.str()], prim.str()),
     unescape: envFn([prim.str()], prim.str()),

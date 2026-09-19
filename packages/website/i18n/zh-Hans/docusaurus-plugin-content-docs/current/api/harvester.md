@@ -158,7 +158,7 @@ Case "call@L9": ("docs", "readme") => `${string}.md`
 | `maxMs` | **2500** | 传给 `harvestDts`；超预算文件计入 `stats.skipped` |
 | 关闭 | `NUDO_HARVEST_NODE=off` | 返回 `{ ok: false, reason: "disabled" }` —— 显式而非静默 |
 
-结果在进程内缓存（键：包根 + `package.json` mtime/size + 预算）。`@types/node` 在 watch/测试中变更后应调用 `clearNodeHarvestCache()`。harvest 不可用时，手写 `@nudojs/env/node` 仍是回退——**不要**把 harvest 产物当作类型系统真相源。
+结果在进程内缓存（键：包根 + `package.json` mtime/size + 预算）。`@types/node` 在 watch/测试中变更后应调用 `clearNodeHarvestCache()`。**手写 `@nudojs/env` 在重叠模块键 / 导出名上 wins**——分析路径经 `@nudojs/service` 的 `mergeHarvestUnderEnv` 注入（harvest 只补缺失槽）。**不要**把 harvest 产物当作类型系统真相源。
 
 覆盖基线（resolved / unknown / mock-required）由 `pnpm run coverage:env` 生成到 `docs/reports/env-coverage-baseline.{json,md}`。解析率**不是**完备性承诺。
 
