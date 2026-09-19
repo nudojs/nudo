@@ -17,7 +17,13 @@ pnpm run test         # Run all tests (vitest run)
 pnpm run test:watch   # Run tests in watch mode
 pnpm run lint         # Type-check all packages (tsc --noEmit -p tsconfig.lint.json)
 pnpm run infer <file> # Run inference on a JS file
+pnpm run docs:dev     # Docs dev (en) — http://localhost:3000/nudo/
+pnpm run docs:dev:zh  # Docs dev (zh-Hans) — http://localhost:3000/nudo/zh-Hans/
+pnpm run docs:build   # Docs production build (en + zh-Hans)
+pnpm run docs:serve   # Serve production build (both locales)
 ```
+
+> Docusaurus `start` serves **one locale per process**. Default `docs:dev` is English only, so `/nudo/zh-Hans/` will 404 until you run `docs:dev:zh` (or `docs:build` + `docs:serve`).
 
 Run a single test file: `pnpm vitest run packages/core/src/algebra/__tests__/check-gold.test.ts`
 

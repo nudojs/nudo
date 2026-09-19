@@ -42,18 +42,20 @@ async function fetchUser(id) {
 
 ## @nudo:case — 调试见证
 
-`@nudo:case` **仅用于调试 / `nudo test`**——Nudo 用具名输入执行的场景见证。它**不是**契约 / interface 产品。契约住在 `*.nudo.js` 侧车与源内 `@nudo:refine` / `@nudo:interface`（见 [@nudo:refine](#nudorefine--refinement-contract)）。LSP 场景切换与 `nudo test` 断言保持完整支持。
+case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它不是 interface 产品——精化契约住在 `*.nudo.js` 侧车（见 [@nudo:refine](#nudorefine--refinement-contract)）。`@nudo:case` 仍支持 `nudo test` 断言与 LSP 场景切换。请优先使用**具体**实参；遗留的符号化 `T.*` 已弃用，产品示例不再使用。
+
+提供具名执行用例。每个用例定义**具体**输入，供 Nudo 调试场景执行函数时使用。
 
 ### 语法
 
 ```text
 @nudo:case "name" (arg1, arg2, ...)
-@nudo:case "name" (arg1, arg2) => expectedType
+@nudo:case "name" (arg1, arg2) => expected
 ```
 
-- **name** — 用例的字符串标识符（如 `"positive numbers"`）。
-- **args** — 逗号分隔的参数：具体值（`5`、`"hello"`）或类型表达式（`number()`、`union(string(), number())`）。
-- **expected**（可选）— `=>` 之后的约束构建器 / 具体表达式，供 `nudo test` 校验预期返回类型。
+- **name** — 用例的字符串标识符（如 `"double digits"`）。
+- **args** — 逗号分隔的**具体**参数（`5`、`"hello"`、`{…}`）。遗留的符号化 `T.*` 已弃用。
+- **expected**（可选）— `=>` 之后的期望结果，用于校验。
 
 ### 示例
 
@@ -61,7 +63,6 @@ async function fetchUser(id) {
 /**
  * @nudo:case "positive numbers" (5, 3)
  * @nudo:case "negative result" (1, 10)
- * @nudo:case "symbolic" (number(), number())
  */
 function subtract(a, b) {
   return a - b;
@@ -70,9 +71,9 @@ function subtract(a, b) {
 
 ```javascript
 /**
- * @nudo:case "strings" (string())
- * @nudo:case "numbers" (number())
- * @nudo:case "array" (array(number()))
+ * @nudo:case "strings" ("hello")
+ * @nudo:case "numbers" (42)
+ * @nudo:case "array" ([1, 2, 3])
  */
 function process(x) {
   if (typeof x === "string") return x.length;
@@ -81,19 +82,17 @@ function process(x) {
 }
 ```
 
-带有预期返回类型：
+带有预期结果：
 
 ```javascript
 /**
- * @nudo:case "basic" (string()) => number()
- * @nudo:case "empty" ("") => lit(0)
+ * @nudo:case "basic" ("hello") => 5
+ * @nudo:case "empty" ("") => 0
  */
-function len(s) {
+function lengthOf(s) {
   return s.length;
 }
 ```
-
----
 
 ## @nudo:mock — Mock 外部依赖 {#nudo--mock-external-dependencies}
 

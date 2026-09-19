@@ -1,80 +1,96 @@
 ---
 sidebar_position: 1
 slug: /intro
-description: Nudo is a type inference engine for JavaScript powered by abstract interpretation on Abs — types are computable values; contracts come from @nudo:refine / *.nudo.js sidecars.
+description: Nudo executes JavaScript and exposes intermediate values and algebra, then gates parameters with explicit contracts — stricter than types.
 ---
 
 # Introduction
 
-**Nudo** is a type inference engine for JavaScript. The type system is **Abs** (`shape × term × pred × conf`): types are computable values whose constraints participate in algebra (`x>0` ⇒ `x+1>1`). Production analysis is Abs-native — there is no second IR. TypeScript sources are also accepted: type annotations are stripped and the code is inferred with plain JS semantics.
+**Welcome back to JavaScript.**
 
-## How It Works
+Your JS stays JS. **Nudo** does not restrict how you write JavaScript — it faithfully observes intermediate values and results, and enforces contracts sharper than ordinary TypeScript types.
 
-Nudo **executes** your code under abstract interpretation (B-path transpile+exec, with an ast-eval fallback). Call-site facts drive evaluation; optional `@nudo:case` witnesses are debug / `nudo test` only; the engine produces Abs results, rendered extensionally for display (`formatShape`) and projected one-way to `.d.ts` / zod when needed.
+Write plain `.js`. Optional sidecar contracts (`*.nudo.js` / `@nudo:refine` / `@nudo:interface`) when you need obligations. Call sites carry facts even without contracts.
 
-Obligations — what `nudo check` enforces — come **only** from explicit contracts:
+## You'll leave with
 
-- sidecar templates in `*.nudo.js` (constraint builders such as `number().gt(0)`, `shape({...})`, `fn({...}, …)`)
-- in-source `@nudo:refine` / `@nudo:interface` (same grammar; sidecar is the main product path)
+- A concrete picture of **observation** (infer / IDE inlays) vs **obligation** (`nudo check`)
+- The Day-0 / Day-1 split: no contracts first, sidecars when you need gates
+- Commands to run on your own file, and a Playground link
 
-No contract and no call-site evidence → `any` / honest `unknown`. Nudo does **not** invent required fields from body AST scans.
-
-## Nudo vs TypeScript
-
-| TypeScript | Nudo |
-|------------|------|
-| Declare types up front; compiler checks usage | Write plain JavaScript; engine infers Abs by executing it |
-| Requires `.ts` files or JSDoc annotations | Sidecar contracts (`*.nudo.js` / `@nudo:refine` / `@nudo:interface`) optional; `@nudo:case` is debug-only |
-| Types describe intent | Inferred Abs describes observed behavior; contracts describe obligations |
-
-**Example: call site + a sidecar contract**
+## From source to gate
 
 ```javascript
-// process.js
-export function process(x) {
-  return x * 2;
+// calc.js
+export function scale(x) {
+  return x + 1;
 }
 
-process(5);
+export function formatName(first, last) {
+  return first + " " + last;
+}
+
+formatName("Ada", "Lovelace");
+scale(5);
 ```
 
 ```javascript
-// process.nudo.js — obligation (check gate)
+// calc.nudo.js — explicit obligation
 import { number, fn } from "@nudojs/core";
-export const process = fn({ x: number().gt(0) }, number());
+export const scale = fn({ x: number().gt(0) }, number());
 ```
 
-`nudo infer` reports the observed call site (`call@L5: (5) => 10`). `nudo check` enforces the sidecar: `process(0)` fails with `nudo:constraint-violated` (`actual ⊭ expected`). Optional `@nudo:case` witnesses (constraint builders such as `number()`) are **debug / `nudo test` only** — not the contract product; analysis always runs on Abs.
-
-## Beyond TypeScript
-
-Nudo can compute types that TypeScript’s type system cannot express:
-
-```javascript
-// String concatenation preserves structure
-"0x" + string                   // → `0x${string}` (TS: string)
-
-// Literal string methods compute precisely
-"hello".toUpperCase()          // → "HELLO" (TS: string)
-"hello".slice(1, 3)           // → "el" (TS: string)
-"a,b,c".split(",")            // → ["a", "b", "c"] (TS: string[])
-
-// Loops evaluate on Abs
-let sum = 0;
-for (let i = 0; i < 5; i++) sum += i;
-// sum → 10 (TS: number)
+```bash
+npx nudojs infer calc.js
+npx nudojs check calc.js
 ```
 
-The same algebra powers **[`nudo check`](./guides/check.md)** — a refinement gate on Abs. Reports use `actual ⊭ expected`, not TypeScript diagnostic prose. TypeScript `.d.ts` emit is an ecosystem compatibility channel, not the primary type model.
+```text
+=== formatName ===
+Case "call@L9": ("Ada", "Lovelace") => "Ada Lovelace"
 
-## What's Next
+=== scale ===
+Case "call@L0": (5) => 6  #exact
+# observe generalization:
+#   term: (x + 1)    pred: (x + 1) > 1    #path
 
-- **[Installation](./getting-started/installation.md)** — Install the CLI, VS Code extension, and Vite plugin
-- **[Quick Start](./getting-started/quick-start.md)** — Run `nudo infer` on your first file
-- **[Concept Layers](./concepts/layers.md)** — Day-0 / Day-1 sidecars / advanced Abs
-- **[Nudo vs TypeScript](./guides/vs-typescript.md)** — Where replacement is real, where TS stays, coexistence
-- **[Coexistence](./guides/coexistence.md)** — Monorepo recipes (JS=Nudo, TS=tsc)
-- **[Type Values (Abs)](./concepts/type-values.md)** — shape × term × pred × conf
-- **[Call-Site Discovery](./guides/callsite-discovery.md)** — Let Nudo mine your tests for real call shapes
-- **[nudo check](./guides/check.md)** — Refinement gate on Abs
-- **[Language Semantics](./guides/semantics.md)** — What Nudo models precisely, and what still degrades to `unknown`
+npx nudojs check:
+scale(0) → actual 1 #exact ⊭ expected x > 0
+           nudo:constraint-violated
+```
+
+In the IDE, the same Abs surfaces as inlay hints on intermediates — not only a return “type”.
+
+## Day 0 vs Day 1
+
+| Layer | What you write | What you get |
+|-------|----------------|--------------|
+| **Day 0** | Plain JS + call sites | Observed signatures and intermediate values |
+| **Day 1** | `*.nudo.js` / `@nudo:refine` | `nudo check` obligations (`actual ⊭ expected`) |
+| **Advanced** | Abs algebra, envs, mocks | String/number algebra, HOFs, module graphs |
+
+`@nudo:case` remains available as a **debug witness** for scenario runs (`nudo test`, LSP case switching) — it is not the contract product. Symbolic `T.*` case args are legacy and no longer part of the product story.
+
+## Why not “just TypeScript”
+
+| | TypeScript | Nudo |
+|---|---|---|
+| Primary artifact | Declared types on `.ts` | Observed Abs from executing `.js` |
+| Precision | Often widens (`string`, `number`) | Can keep literals, template structure, loop sums |
+| Obligations | Type language + assignability | Explicit contracts + Pred implication on Abs |
+| Observability | Hover shows declared type | Hover/check can show term / pred / conf |
+
+`"a,b,c".split(",")` → `["a", "b", "c"]`. `scale` carries `(x + 1) > 1` when `x > 0` is declared. That is validation + observability, not a second type language.
+
+Honest replacement map: [Nudo vs TypeScript](./guides/vs-typescript.md).
+
+## What's next
+
+- **[Installation](./getting-started/installation.md)** — CLI, VS Code extension, Vite plugin
+- **[Quick Start](./getting-started/quick-start.md)** — first observe + check run
+- **[Playground](/playground)** — browser execution
+- **[Concept Layers](./concepts/layers.md)** — Day-0 / Day-1 / advanced
+- **[nudo check](./guides/check.md)** — refinement gate on Abs
+- **[Directives](./concepts/directives.md)** — `@nudo:refine` / `@nudo:interface` / sidecar
+- **[Type Values (Abs)](./concepts/type-values.md)** — `shape × term × pred × conf`
+- **[Language Semantics](./guides/semantics.md)** — what is precise, what degrades to `unknown`

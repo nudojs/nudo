@@ -6,6 +6,8 @@ description: Day-0 zero concepts, Day-1 sidecar contracts, advanced Abs — pick
 
 # Concept Layers
 
+**You'll leave with:** which Nudo layer you need today — Day 0 (types from execution), Day 1 (sidecar contracts + `nudo check`), or advanced Abs.
+
 Nudo is designed so you only learn what you need.
 
 ## Day 0 — Zero concepts

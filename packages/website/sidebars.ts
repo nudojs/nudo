@@ -20,21 +20,39 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: "category",
-      label: "Guides",
+      label: "Workflows",
       items: [
         "guides/cli",
         "guides/check",
         "guides/callsite-discovery",
-        "guides/semantics",
+        "guides/examples",
+        "guides/runtime-generation",
+      ],
+    },
+    {
+      type: "category",
+      label: "Editors & Agents",
+      items: [
         "guides/vscode",
         "guides/zed",
-        "guides/control-flow-narrowing",
-        "guides/runtime-generation",
         "guides/mcp-server",
-        "guides/vite-plugin",
-        "guides/examples",
-        "guides/migrating-js",
         "guides/lsp-clients",
+        "guides/vite-plugin",
+      ],
+    },
+    {
+      type: "category",
+      label: "Semantics & Advanced",
+      items: [
+        "guides/semantics",
+        "guides/control-flow-narrowing",
+      ],
+    },
+    {
+      type: "category",
+      label: "Migrating & Coexistence",
+      items: [
+        "guides/migrating-js",
         "guides/vs-typescript",
         "guides/coexistence",
         "guides/versioning",

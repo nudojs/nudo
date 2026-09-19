@@ -6,6 +6,8 @@ description: Nudo 何时替代 TypeScript、何时不替代、以及两者如何
 
 # Nudo vs TypeScript
 
+**读完你能带走：** 何时 Nudo 可以替代 TypeScript 作为 JS 优先仓库的类型门禁、何时 TS 应当继续主导，以及两者如何共仓。
+
 Nudo 的目标是：**在 JavaScript 优先的代码库里，替代 TypeScript 作为日常类型门禁**——而不是重写一遍 tsc。本文说明何时这种替代成立、何时不成立，以及两者如何共仓。
 
 ## 定位

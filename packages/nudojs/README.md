@@ -1,5 +1,8 @@
 # nudojs
 
+> **欢迎重回 JS 世界.** — Nudo 不限制你的 JS 表达，只忠实反映中间量与结果，并提供比类型更精确的契约校验。  
+> Welcome back to JavaScript. Your JS stays JS — observe intermediates, enforce contracts sharper than types.
+
 Thin installer shell for the **`nudo`** command — it exists so that `npm i -g nudojs` (or `npx nudojs`) gives you the `nudo` CLI directly. Everything is delegated to [`@nudojs/cli`](https://www.npmjs.com/package/@nudojs/cli), the CLI of the Nudo type inference engine for JavaScript.
 
 > The bare npm name `nudo` was unavailable, so this package is published as **`nudojs`**. The installed command is still `nudo`.
@@ -12,7 +15,7 @@ nudo infer file.js
 npx nudojs infer file.js
 ```
 
-Nudo infers types by executing your code under abstract interpretation on **Abs** (`shape × term × pred × conf`) — constraints participate in algebra. There is no `T.*` type-value IR. Contracts come from `*.nudo.js` / `@nudo:refine`; call sites are evidence. See the monorepo packages for the actual engine:
+Nudo infers types by **executing** your code on Abs (`shape × term × pred × conf`) — see the monorepo packages for the actual engine:
 
 - [`@nudojs/cli`](https://github.com/nudojs/nudo/tree/main/packages/cli) — CLI (`infer`, `check`, `types`, `watch`, `generate`, `interface`, …)
 - [`@nudojs/core`](https://github.com/nudojs/nudo/tree/main/packages/core) — the Abs type system (shape × term × pred × conf)
@@ -22,4 +25,5 @@ Nudo infers types by executing your code under abstract interpretation on **Abs*
 
 > Installing both `nudojs` and `@nudojs/cli` globally is redundant; pick one. This package only re-exports the CLI entry under the short `nudo` bin.
 
-Full documentation (English + 中文): <https://nudojs.github.io/nudo/>
+Full documentation (English + 中文): <https://nudojs.github.io/nudo/><br/>
+Playground: <https://nudojs.github.io/nudo/playground>

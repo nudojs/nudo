@@ -1,0 +1,5 @@
+default:
+  name: Nudo Contributors
+  title: Nudo maintainers
+  url: https://github.com/nudojs/nudo
+  image_url: https://github.com/nudojs.png

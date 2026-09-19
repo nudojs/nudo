@@ -79,9 +79,9 @@ export function collectAbsExports(
         if (mod) {
           for (const spec of stmt.specifiers) {
             if (spec.type !== "ExportSpecifier") continue;
-            const local = spec.local.name;
+            const local = spec.local.type === "Identifier" ? spec.local.name : spec.local.value;
             const exported =
-              spec.exported.type === "Identifier" ? spec.exported.name : String(spec.exported);
+              spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value;
             const v = local === "default" ? mod.default : mod.named[local];
             if (v === undefined) continue;
             if (exported === "default") defaultExport = v;
@@ -109,9 +109,9 @@ export function collectAbsExports(
       }
       for (const spec of stmt.specifiers) {
         if (spec.type !== "ExportSpecifier") continue;
-        const local = spec.local.name;
+        const local = spec.local.type === "Identifier" ? spec.local.name : spec.local.value;
         const exported =
-          spec.exported.type === "Identifier" ? spec.exported.name : String(spec.exported);
+          spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value;
         const v = lookupExport(env, local);
         if (v) named[exported] = v;
       }

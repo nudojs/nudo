@@ -1,4 +1,8 @@
 {
+  "link.title.Start": {
+    "message": "开始",
+    "description": "The title of the footer links column with title=Start in the footer"
+  },
   "link.title.Docs": {
     "message": "文档",
     "description": "The title of the footer links column with title=Docs in the footer"
@@ -7,17 +11,37 @@
     "message": "更多",
     "description": "The title of the footer links column with title=More in the footer"
   },
+  "link.item.label.Playground": {
+    "message": "Playground",
+    "description": "The label of footer link with label=Playground linking to /playground"
+  },
   "link.item.label.Getting Started": {
     "message": "快速开始",
     "description": "The label of footer link with label=Getting Started linking to /docs/intro"
+  },
+  "link.item.label.Quick Start": {
+    "message": "快速上手",
+    "description": "The label of footer link with label=Quick Start"
   },
   "link.item.label.Core Concepts": {
     "message": "核心概念",
     "description": "The label of footer link with label=Core Concepts linking to /docs/concepts/type-values"
   },
+  "link.item.label.Nudo vs TypeScript": {
+    "message": "Nudo vs TypeScript",
+    "description": "The label of footer link with label=Nudo vs TypeScript"
+  },
+  "link.item.label.nudo check": {
+    "message": "nudo check",
+    "description": "The label of footer link with label=nudo check"
+  },
   "link.item.label.API Reference": {
     "message": "API 参考",
     "description": "The label of footer link with label=API Reference linking to /docs/api/core"
+  },
+  "link.item.label.Blog": {
+    "message": "博客",
+    "description": "The label of footer link with label=Blog"
   },
   "link.item.label.GitHub": {
     "message": "GitHub",
@@ -28,7 +52,7 @@
     "description": "The label of footer link with label=Design Document linking to /docs/design/design-doc"
   },
   "copyright": {
-    "message": "Copyright © 2026 Nudo 贡献者。使用 Docusaurus 构建。",
+    "message": "欢迎重回 JS 世界. — JS 仍是 JS；契约比类型更精确。<br/>Copyright © 2026 Nudo 贡献者。使用 Docusaurus 构建。",
     "description": "The footer copyright"
   }
 }

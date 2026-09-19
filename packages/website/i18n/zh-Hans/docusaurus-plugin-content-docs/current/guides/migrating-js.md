@@ -130,7 +130,7 @@ nudo infer src/lib.js --callsites test/ --emit-cases=update
 
 ## 参见
 
-- [CLI — `--draft`](./cli.md#draft--代码优先--迁移)
+- [CLI — `--draft`](./cli.md#--draft--代码优先--迁移)
 - [Check 指南](./check.md)
 - [与 TypeScript 并存](./coexistence.md)
 - [vs TypeScript](./vs-typescript.md)

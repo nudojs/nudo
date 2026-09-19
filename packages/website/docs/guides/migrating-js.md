@@ -146,7 +146,7 @@ Pin package versions per [Versioning & Releases](./versioning.md) (0.x minors ma
 
 ## See also
 
-- [CLI — `nudo interface --draft`](./cli.md#draft--code-first--migration)
+- [CLI — `nudo interface --draft`](./cli.md#--draft--code-first--migration)
 - [Check guide](./check.md)
 - [Coexistence with TypeScript](./coexistence.md)
 - [vs TypeScript](./vs-typescript.md)

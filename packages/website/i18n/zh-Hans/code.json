@@ -1,6 +1,6 @@
 {
   "homepage.hero.subtitle": {
-    "message": "一个 JavaScript 类型推导引擎，通过符号化的类型值执行你的代码来推导精确类型——无需类型体操。"
+    "message": "Nudo 不限制你的 JS 表达，只忠实反映中间量与结果，并提供比类型更精确的契约校验。"
   },
   "homepage.hero.getStarted": {
     "message": "快速开始"
@@ -9,40 +9,28 @@
     "message": "了解更多"
   },
   "homepage.comparison.title": {
-    "message": "写 JavaScript，得类型。"
+    "message": "JS 仍是 JS，义务保持显式。"
   },
   "homepage.comparison.nudo": {
-    "message": "使用 Nudo — 纯 JavaScript"
+    "message": "Nudo — JS + 侧车契约"
   },
   "homepage.comparison.typescript": {
-    "message": "使用 TypeScript — 需要重载"
+    "message": "TypeScript — 只有语言表面"
   },
   "homepage.title": {
     "message": "首页"
   },
   "homepage.feature.executeTitle": {
-    "message": "执行，而非分析"
+    "message": "执行，而非声明"
   },
   "homepage.feature.executeDesc": {
-    "message": "Nudo 在 Abs（shape × term × pred × conf）上以抽象解释执行你的 JavaScript。调用点是证据；契约来自 *.nudo.js 侧车——无需独立的类型语言。"
-  },
-  "homepage.feature.preciseTitle": {
-    "message": "精确推导"
-  },
-  "homepage.feature.preciseDesc": {
-    "message": "通过抽象解释，Nudo 在 Abs 上精确追踪字面量、窄化与控制流，推导结果与代码的实际运行时行为一致。"
-  },
-  "homepage.feature.directivesTitle": {
-    "message": "指令驱动"
-  },
-  "homepage.feature.directivesDesc": {
-    "message": "契约写在 *.nudo.js 侧车与 @nudo:refine / @nudo:interface（约束构建器）。@nudo:mock 打桩依赖；@nudo:case 仅用于调试 / nudo test。"
+    "message": "Nudo 用抽象值执行你的 JavaScript。执行过程本身产出关于参数、返回值以及每个中间步骤的事实。"
   },
   "homepage.feature.integrationsTitle": {
-    "message": "IDE 与构建工具集成"
+    "message": "IDE inlay、CLI 门禁、AI 上下文"
   },
   "homepage.feature.integrationsDesc": {
-    "message": "功能完备的 VS Code 扩展，支持悬停类型、跳转定义、查找引用、重命名、签名帮助和 CodeLens。Vite 插件实现构建时类型检查。CLI 适用于脚本和 CI。"
+    "message": "中间值的悬停与 inlay 提示，CI 里的 nudo check，以及让 agent 看清代码实际算什么的 LSP/MCP。"
   },
   "theme.ErrorPageContent.title": {
     "message": "页面已崩溃。",
@@ -371,16 +359,103 @@
     "message": "标签",
     "description": "The title of the tag list page"
   },
-  "homepage.feature.aiTitle": {
-    "message": "AI 代理集成"
+  "homepage.hero.slogan": {
+    "message": "欢迎重回 JS 世界。"
   },
-  "homepage.feature.aiDesc": {
-    "message": "Nudo 语言服务器让 AI 编程代理直接使用类型推断——假设分析、类型追踪和诊断，可通过原生 LSP 或任意 LSP→MCP 桥接入，为 AI 提供编写正确 JavaScript 所需的类型上下文。"
+  "homepage.hero.ctaPlayground": {
+    "message": "打开 Playground"
   },
-  "homepage.feature.runtimeTitle": {
-    "message": "运行时类型生成"
+  "homepage.hero.ctaDocs": {
+    "message": "阅读文档"
   },
-  "homepage.feature.runtimeDesc": {
-    "message": "连接静态推导与运行时验证。从推导类型生成 Zod schema、原生类型守卫和 TypeScript 声明——一条命令，零手写验证器。"
+  "homepage.proof.eyebrow": {
+    "message": "从源码到门禁"
+  },
+  "homepage.proof.title": {
+    "message": "看一个值如何穿过引擎"
+  },
+  "homepage.proof.lead": {
+    "message": "同一个模块，四个界面：JS 源码、侧车契约、调用点观测，以及 IDE / check 呈现的内容。"
+  },
+  "homepage.proof.quickStart": {
+    "message": "完整快速开始 →"
+  },
+  "homepage.features.eyebrow": {
+    "message": "为什么是 Nudo"
+  },
+  "homepage.features.title": {
+    "message": "不改写你的 JS。忠实观测，并提供比类型更精确的契约校验。"
+  },
+  "homepage.comparison.eyebrow": {
+    "message": "并排对比"
+  },
+  "homepage.beyond.eyebrow": {
+    "message": "超越声明式类型"
+  },
+  "homepage.beyond.title": {
+    "message": "TypeScript 会加宽掉的值"
+  },
+  "homepage.beyond.lead": {
+    "message": "Nudo 在 Abs 上求值，结果跟随真实计算——字面量字符串、split、循环求和——不是声明的上界。"
+  },
+  "homepage.feature.contractsTitle": {
+    "message": "比类型更严的契约"
+  },
+  "homepage.feature.contractsDesc": {
+    "message": "侧车 *.nudo.js 与 @nudo:refine / @nudo:interface 把关参数与返回。没有契约时保持诚实：any / unknown，不发明字段。"
+  },
+  "homepage.trial.eyebrow": {
+    "message": "真实库试炼"
+  },
+  "homepage.trial.title": {
+    "message": "在无标注真实库上验证"
+  },
+  "homepage.trial.lead": {
+    "message": "我们对真实、未标注的库反复加固引擎，直到观测到的签名与运行时行为一致——没有给库补任何标注。"
+  },
+  "homepage.trial.ladderCaption": {
+    "message": "@hapi/hoek 上的精确观测覆盖率——每一波只增加一项引擎能力。"
+  },
+  "homepage.trial.cardsTitle": {
+    "message": "从无证据到调用点事实"
+  },
+  "homepage.trial.source": {
+    "message": "实测于 @hapi/hoek v9.3.0 与 @discoveryjs/json-ext v0.5.7——每个签名都来自 Nudo 的抽象解释器，零类型标注。"
+  },
+  "homepage.cta.title": {
+    "message": "准备重回 JS 了吗？"
+  },
+  "homepage.cta.sub": {
+    "message": "JS 仍是 JS——在浏览器里观测中间量，或用 CLI 在自己的文件上做更精确的契约校验。"
+  },
+  "homepage.cta.install": {
+    "message": "安装"
+  },
+  "homepage.hero.storyJs": {
+    "message": "函数"
+  },
+  "homepage.hero.storyContract": {
+    "message": "契约"
+  },
+  "homepage.hero.storyObserve": {
+    "message": "观测 + 校验"
+  },
+  "homepage.proof.playground": {
+    "message": "在 Playground 试 →"
+  },
+  "homepage.feature.observeTitle": {
+    "message": "观测中间值"
+  },
+  "homepage.feature.observeDesc": {
+    "message": "看到结果背后的代数——如 (x + 1) 这样的 term，如 (x + 1) > 1 这样的 pred，以及 exact / path / partial 置信度。"
+  },
+  "homepage.trial.stat1": {
+    "message": "精确观测签名"
+  },
+  "homepage.trial.stat2": {
+    "message": "check 失败已修复"
+  },
+  "homepage.trial.stat3": {
+    "message": "引擎加固波次"
   }
 }

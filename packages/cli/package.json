@@ -42,7 +42,7 @@
     "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
-    "commander": "^13.0.0",
+    "commander": "^15.0.0",
     "@nudojs/core": "workspace:*",
     "@nudojs/parser": "workspace:*",
     "@nudojs/service": "workspace:*",

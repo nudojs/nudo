@@ -1,80 +1,96 @@
 ---
 sidebar_position: 1
 slug: /intro
-description: Nudo 是面向 JavaScript 的类型推断引擎——类型系统是 Abs（可计算值）；检查义务只来自 @nudo:refine / *.nudo.js 侧车契约。
+description: Nudo 执行 JavaScript，暴露中间值与代数，并用显式契约做比类型更精确的校验。
 ---
 
 # 简介
 
-**Nudo** 是面向 JavaScript 的类型推断引擎。类型系统是 **Abs**（`shape × term × pred × conf`）：类型是可计算的值，约束参与代数（`x>0` ⇒ `x+1>1`）。生产分析路径是 Abs 原生——没有第二套 IR。也接受 TypeScript 源码：类型标注会被剥除，代码按纯 JS 语义推断。
+**欢迎重回 JS 世界。**
 
-## 工作原理
+**Nudo 不限制你的 JS 表达，只忠实反映中间量与结果，并提供比类型更精确的契约校验。**
 
-Nudo 在抽象解释下**执行**你的代码（B-path transpile+exec，必要时回落 ast-eval）。调用点事实驱动求值；可选的 `@nudo:case` 见证仅用于调试 / `nudo test`；引擎产出 Abs，按扩展面渲染用于展示（`formatShape`），需要时单向投影到 `.d.ts` / zod。
+写普通 `.js`。需要义务时再补侧车契约（`*.nudo.js` / `@nudo:refine` / `@nudo:interface`）。即使没有契约，调用点也会携带事实。
 
-`nudo check` 的**义务**只来自显式契约：
+## 读完你能带走
 
-- 源旁侧车模板 `*.nudo.js`（约束构建器：`number().gt(0)`、`shape({...})`、`fn({...}, …)`）
-- 源内 `@nudo:refine` / `@nudo:interface`（同一约束语法；主产品路径是侧车）
+- **观测**（infer / IDE inlay）与**义务**（`nudo check`）的分界
+- Day-0 / Day-1 分层：先无契约，需要门禁再上侧车
+- 可直接跑的命令，以及 Playground 入口
 
-无契约、无调用点证据 → `any` / 诚实的 `unknown`。Nudo **不会**从 body AST 扫描发明必填字段。
-
-## Nudo 与 TypeScript
-
-| TypeScript | Nudo |
-|------------|------|
-| 事先声明类型，编译器检查使用 | 写普通 JavaScript，引擎执行并推断 Abs |
-| 需要 `.ts` 文件或 JSDoc 注解 | 侧车契约（`*.nudo.js` / `@nudo:refine` / `@nudo:interface`）可选；`@nudo:case` 仅调试 |
-| 类型描述意图 | 推断 Abs 描述观察到的行为；契约描述义务 |
-
-**示例：调用点 + 侧车契约**
+## 从源码到门禁
 
 ```javascript
-// process.js
-export function process(x) {
-  return x * 2;
+// calc.js
+export function scale(x) {
+  return x + 1;
 }
 
-process(5);
+export function formatName(first, last) {
+  return first + " " + last;
+}
+
+formatName("Ada", "Lovelace");
+scale(5);
 ```
 
 ```javascript
-// process.nudo.js —— 义务（check 门禁）
+// calc.nudo.js — 显式义务
 import { number, fn } from "@nudojs/core";
-export const process = fn({ x: number().gt(0) }, number());
+export const scale = fn({ x: number().gt(0) }, number());
 ```
 
-`nudo infer` 报告观测到的调用点（`call@L5: (5) => 10`）。`nudo check` 执法侧车：`process(0)` 报 `nudo:constraint-violated`（`actual ⊭ expected`）。可选的 `@nudo:case` 见证（`number()` 等约束构建器）**仅用于调试 / `nudo test`**——不是契约产品；分析始终跑在 Abs 上。
-
-## 超越 TypeScript
-
-Nudo 可以计算 TypeScript 类型系统难以表达的类型：
-
-```javascript
-// 字符串拼接保留结构
-"0x" + string                   // → `0x${string}`（TS: string）
-
-// 字面量字符串方法结果精确
-"hello".toUpperCase()          // → "HELLO"（TS: string）
-"hello".slice(1, 3)           // → "el"（TS: string）
-"a,b,c".split(",")            // → ["a", "b", "c"]（TS: string[]）
-
-// 循环在 Abs 上求值
-let sum = 0;
-for (let i = 0; i < 5; i++) sum += i;
-// sum → 10（TS: number）
+```bash
+npx nudojs infer calc.js
+npx nudojs check calc.js
 ```
 
-同一套代数也支撑 **[`nudo check`](./guides/check.md)** —— Abs 上的精化门禁。报告使用 `actual ⊭ expected`，不是 TypeScript 诊断文案。TypeScript `.d.ts` 输出只是生态兼容通道，不是主类型模型。
+```text
+=== formatName ===
+Case "call@L9": ("Ada", "Lovelace") => "Ada Lovelace"
+
+=== scale ===
+Case "call@L0": (5) => 6  #exact
+# 观测泛化：
+#   term: (x + 1)    pred: (x + 1) > 1    #path
+
+npx nudojs check:
+scale(0) → actual 1 #exact ⊭ expected x > 0
+           nudo:constraint-violated
+```
+
+在 IDE 里，同一套 Abs 会以 inlay 形式出现在中间值上——不只是返回“类型”。
+
+## Day 0 与 Day 1
+
+| 层级 | 你写什么 | 你得到什么 |
+|------|----------|------------|
+| **Day 0** | 普通 JS + 调用点 | 观测到的签名与中间值 |
+| **Day 1** | `*.nudo.js` / `@nudo:refine` | `nudo check` 义务（`actual ⊭ expected`） |
+| **进阶** | Abs 代数、env、mock | 字符串/数字代数、高阶函数、模块图 |
+
+`@nudo:case` 仍可用于**调试见证**（场景执行、`nudo test`、LSP 用例切换）——它不是契约产品。符号化的 `T.*` case 实参属于遗留语法，已不进入产品叙事。
+
+## 为什么不只是 TypeScript
+
+| | TypeScript | Nudo |
+|---|---|---|
+| 主产物 | `.ts` 上的声明类型 | 执行 `.js` 得到的观测 Abs |
+| 精度 | 常被加宽（`string` / `number`） | 可保留字面量、模板结构、循环求和 |
+| 义务 | 类型语言 + 赋值兼容 | 显式契约 + Abs 上的 Pred 蕴含 |
+| 可观测性 | 悬停显示声明类型 | 悬停/check 可显示 term / pred / conf |
+
+`"a,b,c".split(",")` → `["a", "b", "c"]`。声明 `x > 0` 后，`scale` 会带上 `(x + 1) > 1`。这是校验 + 可观测，不是第二套类型语言。
+
+诚实的替代边界：[Nudo vs TypeScript](./guides/vs-typescript.md)。
 
 ## 下一步
 
-- **[安装](./getting-started/installation.md)** — 安装 CLI、VS Code 扩展和 Vite 插件
-- **[快速开始](./getting-started/quick-start.md)** — 在第一个文件上运行 `nudo infer`
-- **[概念分层](./concepts/layers.md)** — Day-0 / Day-1 侧车 / 进阶 Abs
-- **[Nudo vs TypeScript](./guides/vs-typescript.md)** — 何时可替代、何时不替代、如何共存
-- **[与 TypeScript 共存](./guides/coexistence.md)** — monorepo 配方（JS=Nudo，TS=tsc）
-- **[类型值 Abs](./concepts/type-values.md)** — shape × term × pred × conf
-- **[调用点发现](./guides/callsite-discovery.md)** — 让 Nudo 从你的测试中挖掘真实调用形状
+- **[安装](./getting-started/installation.md)** — CLI、VS Code 扩展、Vite 插件
+- **[快速开始](./getting-started/quick-start.md)** — 第一次 observe + check
+- **[Playground](/playground)** — 浏览器里执行
+- **[概念分层](./concepts/layers.md)** — Day-0 / Day-1 / 进阶
 - **[nudo check](./guides/check.md)** — Abs 上的精化门禁
-- **[语言语义](./guides/semantics.md)** — Nudo 精确建模的 JavaScript 行为，以及仍会退化为 `unknown` 的构造
+- **[指令](./concepts/directives.md)** — `@nudo:refine` / `@nudo:interface` / 侧车
+- **[类型值 Abs](./concepts/type-values.md)** — `shape × term × pred × conf`
+- **[语言语义](./guides/semantics.md)** — 精确建模与仍会 `unknown` 的构造

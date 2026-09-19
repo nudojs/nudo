@@ -1,17 +1,19 @@
 import { themes as prismThemes } from "prism-react-renderer";
 import type { Config } from "@docusaurus/types";
 import type { Configuration, Plugin } from "webpack";
-import { NormalModuleReplacementPlugin } from "webpack";
+import { DefinePlugin, NormalModuleReplacementPlugin } from "webpack";
 import type * as Preset from "@docusaurus/preset-classic";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const websiteRoot = resolve(dirname(fileURLToPath(import.meta.url)));
 
 const config: Config = {
   title: "Nudo",
-  tagline: "Type inference for JavaScript through abstract interpretation",
-  // favicon: "img/favicon.ico",
+  tagline:
+    "Welcome back to JavaScript — Your JS stays JS: observe intermediates, enforce contracts sharper than types.",
+  favicon: "img/favicon.svg",
 
   url: "https://nudojs.github.io",
   baseUrl: "/nudo/",
@@ -40,7 +42,10 @@ const config: Config = {
           sidebarPath: "./sidebars.ts",
           editUrl: "https://github.com/nudojs/nudo/tree/main/packages/website/",
         },
-        blog: false,
+        blog: {
+          showReadingTime: true,
+          editUrl: "https://github.com/nudojs/nudo/tree/main/packages/website/",
+        },
         theme: {
           customCss: "./src/css/custom.css",
         },
@@ -87,17 +92,25 @@ const config: Config = {
                 "@nudojs/env/es": resolve(repoRoot, "packages/env/src/es.ts"),
                 "@nudojs/env/web": resolve(repoRoot, "packages/env/src/web.ts"),
                 "@nudojs/env/node": resolve(repoRoot, "packages/env/src/node.ts"),
+                // Browser ALS stub — core exec/member-diag instantiate
+                // AsyncLocalStorage at module load; empty fallbacks crash.
+                async_hooks: resolve(
+                  repoRoot,
+                  "packages/website/src/polyfills/async-hooks.ts",
+                ),
+                // @babel/types reads process.env.* at module load in the
+                // playground bundle; a false/empty fallback throws.
+                process: resolve(websiteRoot, "src/polyfills/process.ts"),
+                // Analyzer/parser call path.dirname on virtual filenames.
+                path: resolve(websiteRoot, "src/polyfills/path.ts"),
               },
-              // 浏览器里不可达的 Node 内建（env-loader / AsyncLocalStorage 等只在
-              // Node CLI 用，被 evaluator / core exec 链拖进 bundle）
+              // 浏览器里不可达的 Node 内建（env-loader / fs 等只在 Node CLI 用）
               fallback: {
                 fs: false,
-                path: false,
                 crypto: false,
                 os: false,
                 module: false,
                 url: false,
-                async_hooks: false,
                 worker_threads: false,
                 child_process: false,
                 net: false,
@@ -111,9 +124,21 @@ const config: Config = {
               },
             },
             plugins: [
+              // Exact free-variable replacements for Babel/webpack env probes.
+              new DefinePlugin({
+                "process.env.NODE_ENV": JSON.stringify(
+                  process.env.NODE_ENV ?? "development",
+                ),
+                "process.env.BABEL_TYPES_8_BREAKING": "undefined",
+                "process.env.BABEL_8_BREAKING": "undefined",
+                "process.env.IS_PUBLISH": "undefined",
+                "process.browser": "true",
+                "process.platform": JSON.stringify("browser"),
+                "process.version": JSON.stringify("v0.0.0-browser"),
+              }),
               // node: scheme 的 request 在 alias/fallback 之前就被
               // webpack 以 UnhandledSchemeError 拒绝——解析阶段去掉
-              // "node:" 前缀，交给上面的 fallback 置空（含 async_hooks）。
+              // "node:" 前缀，交给上面的 alias/fallback 处理。
               new NormalModuleReplacementPlugin(/^node:(.+)$/, (resource) => {
                 resource.request = resource.request.replace(/^node:/, "");
               }),
@@ -125,6 +150,10 @@ const config: Config = {
   ],
 
   themeConfig: {
+    image: "img/nudo-og.svg",
+    colorMode: {
+      respectPrefersColorScheme: true,
+    },
     navbar: {
       title: "Nudo",
       items: [
@@ -137,6 +166,11 @@ const config: Config = {
         {
           to: "/playground",
           label: "Playground",
+          position: "left",
+        },
+        {
+          to: "/blog",
+          label: "Blog",
           position: "left",
         },
         {
@@ -154,22 +188,31 @@ const config: Config = {
       style: "dark",
       links: [
         {
+          title: "Start",
+          items: [
+            { label: "Playground", to: "/playground" },
+            { label: "Getting Started", to: "/docs/intro" },
+            { label: "Quick Start", to: "/docs/getting-started/quick-start" },
+          ],
+        },
+        {
           title: "Docs",
           items: [
-            { label: "Getting Started", to: "/docs/intro" },
             { label: "Core Concepts", to: "/docs/concepts/type-values" },
-            { label: "API Reference", to: "/docs/api/core" },
+            { label: "Nudo vs TypeScript", to: "/docs/guides/vs-typescript" },
+            { label: "nudo check", to: "/docs/guides/check" },
           ],
         },
         {
           title: "More",
           items: [
+            { label: "Blog", to: "/blog" },
             { label: "GitHub", href: "https://github.com/nudojs/nudo" },
             { label: "Design Document", to: "/docs/design/design-doc" },
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Nudo Contributors. Built with Docusaurus.`,
+      copyright: `欢迎重回 JS 世界. — Your JS stays JS; contracts sharper than types.<br/>Copyright © ${new Date().getFullYear()} Nudo Contributors. Built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.github,

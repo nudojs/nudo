@@ -6,6 +6,8 @@ description: Where Nudo replaces TypeScript, where it does not, and how the two 
 
 # Nudo vs TypeScript
 
+**You'll leave with:** an honest map of when Nudo can replace TypeScript as a JS-first type gate, when TypeScript should stay primary, and how the two coexist in one repo.
+
 Nudo is built to **replace TypeScript as the day-to-day type gate for JavaScript-first codebases** — not to reimplement the TypeScript compiler. This page is the honest map: when that replacement is real, when it is not, and how the two tools share a repo.
 
 ## Positioning

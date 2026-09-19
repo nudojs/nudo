@@ -47,8 +47,8 @@
     "@nudojs/parser": "workspace:*",
     "@nudojs/env": "workspace:*",
     "@nudojs/harvester": "workspace:*",
-    "@babel/traverse": "^7.29.0",
-    "@babel/types": "^7.29.0"
+    "@babel/traverse": "^8.0.6",
+    "@babel/types": "^8.0.6"
   },
   "scripts": {
     "build": "tsup src/index.ts src/evaluator/evaluator-api.ts --format esm --dts",

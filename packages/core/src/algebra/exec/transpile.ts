@@ -1913,10 +1913,13 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
   // @nudo:replace：节点源码文本匹配则换成注入变量
   const rep = matchReplacement(expr as Node, opts);
   if (rep) return rep;
-  // ChainExpression 不在 Expression 联合里，先剥一层
+  // ChainExpression 不在 Expression 联合里，先剥一层；Babel 8 将 Super 移出 Expression
   const anyExpr = expr as unknown as { type: string; expression?: Expression };
   if (anyExpr.type === "ChainExpression" && anyExpr.expression) {
     return transpileExpression(anyExpr.expression, opts);
+  }
+  if (anyExpr.type === "Super") {
+    return `/* super */`;
   }
   switch (expr.type) {
     case "NumericLiteral":
@@ -1930,8 +1933,6 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return expr.name;
     case "ThisExpression":
       return opts.thisParam ?? "$lit(undefined)";
-    case "Super":
-      return `/* super */`;
     case "NewExpression": {
       const callee = expr.callee;
       const cname =

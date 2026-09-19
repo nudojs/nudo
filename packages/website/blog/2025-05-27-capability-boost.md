@@ -5,11 +5,13 @@ authors: [default]
 tags: [nudo, type-inference, ai, mcp]
 ---
 
-> **Superseded.** This post describes the pre-`@nudo:refine` architecture (including the retired `@nudo:returns` directive) and the removed `T.*` product grammar. Current contracts use `@nudo:refine` / `@nudo:interface` + `*.nudo.js` constraint builders (`number()`, `lit(42)`, `shape({...})`). `@nudo:case` is debug / `nudo test` only. See [nudo check](/guides/check) and [Directives](/concepts/directives#nudorefine--refinement-contract).
+> **Superseded.** This post describes the pre-`@nudo:refine` architecture (including the retired `@nudo:returns` directive). Current contracts use `@nudo:refine` + `*.nudo.js` templates — see [nudo check](/docs/guides/check) and [Directives](/docs/concepts/directives#nudorefine--refinement-contract).
 
 Nudo infers types for JavaScript by executing your code with symbolic type values instead of concrete ones. No TypeScript annotations, no `.d.ts` files -- just plain JS with lightweight `@nudo:` directives and runtime-based type inference that understands what your code actually does.
 
 This release is the biggest capability jump since Nudo's initial launch. We are shipping smarter control flow narrowing, a full-featured LSP server, an MCP server for AI agent integration, and a runtime type generation pipeline. Together, these changes make Nudo viable for real-world codebases and AI-assisted development workflows.
+
+<!-- truncate -->
 
 Let's walk through what's new.
 

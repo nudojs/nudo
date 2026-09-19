@@ -1,8 +1,12 @@
 import React, { lazy, useRef, useState, useEffect, Suspense } from 'react';
 import Layout from '@theme/Layout';
+import BrowserOnly from '@docusaurus/BrowserOnly';
 import { parse, extractDirectives, type CaseDirective } from '@nudojs/parser';
 import {
   formatShape,
+  formatAbs,
+  effectiveInterface,
+  formatConstraint,
   analyzeFnFull,
   evalProgramAbs,
   setAbsCallCollector,
@@ -11,7 +15,9 @@ import {
   type AbsCallRecord,
   type AbsModuleExports,
 } from '@nudojs/core';
-import { analyzeFile } from '@nudojs/service';
+import { analyzeFile, getHoverAtPosition, collectAbsInlays } from '@nudojs/service';
+import type { HoverInfo } from '@nudojs/service';
+import type { AbsInlay } from '@nudojs/core';
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react'));
 
@@ -47,116 +53,177 @@ interface CallsitePreset {
 
 type Preset = SinglePreset | CallsitePreset;
 
+const GROUP_CONTRACTS = 'Contracts & Observe';
 const GROUP_BASIC = 'Basic Examples';
 const GROUP_CALLSITE = 'Call-Site Discovery';
 const GROUP_SEMANTICS = 'New Semantics';
 
 const presets: Preset[] = [
-  { mode: 'single', group: GROUP_BASIC, id: 'basic-subtract', name: 'Basic Subtraction', code: `// call sites are evidence (contract product = *.nudo.js / @nudo:refine)
-function subtract(a, b) {
+  {
+    mode: 'single',
+    group: GROUP_CONTRACTS,
+    id: 'refine-positive',
+    name: 'Refine — @nudo:refine positive',
+    code: `/// @nudo:import { positive } from "./shapes.nudo.js"
+// virtual template: positive = number().gt(0)
+
+/**
+ * @nudo:refine x positive
+ */
+export function needsPositive(x) {
+  return x;
+}
+
+needsPositive(3);
+needsPositive(-1);
+// Hover x: contract is x > 0; -1 is call-site evidence that violates check`,
+  },
+  {
+    mode: 'single',
+    group: GROUP_CONTRACTS,
+    id: 'observe-scale',
+    name: 'Observe — scale intermediate algebra',
+    code: `export function scale(x) {
+  return x + 1;
+}
+
+scale(5);
+scale(0);`,
+  },
+  {
+    mode: 'single',
+    group: GROUP_CONTRACTS,
+    id: 'debug-case',
+    name: 'Debug case — concrete witness only',
+    code: `/**
+ * @nudo:case "double digits" (10)
+ * @nudo:case "zero" (0)
+ */
+export function scale(x) {
+  return x + 1;
+}`,
+  },
+  { mode: 'single', group: GROUP_BASIC, id: 'basic-subtract', name: 'Call-site subtraction', code: `export function subtract(a, b) {
   return a - b;
 }
+
 subtract(5, 3);
 subtract(1, 10);` },
-  { mode: 'single', group: GROUP_BASIC, id: 'string-transform', name: 'String Transform', code: `function transform(x) {
+  { mode: 'single', group: GROUP_BASIC, id: 'string-transform', name: 'String Transform', code: `export function transform(x) {
   if (typeof x === "string") return x.toUpperCase();
   if (typeof x === "number") return x + 1;
   return null;
 }
+
 transform("hi");
-transform(1);` },
-  { mode: 'single', group: GROUP_BASIC, id: 'array-map', name: 'Array Map', code: `// @nudo:case "empty" ([])
-// @nudo:case "single" ([1])
-// @nudo:case "multiple" ([1, 2, 3])
-function double(arr) {
+transform(41);
+transform(null);` },
+  { mode: 'single', group: GROUP_BASIC, id: 'array-map', name: 'Array Map', code: `export function double(arr) {
   return arr.map(x => x * 2);
-}` },
-  { mode: 'single', group: GROUP_BASIC, id: 'object-property', name: 'Object Property', code: `// @nudo:case "simple" ({ name: "test" })
-// @nudo:case "with-age" ({ name: "john", age: 30 })
-function getName(obj) {
+}
+
+double([]);
+double([1]);
+double([1, 2, 3]);` },
+  { mode: 'single', group: GROUP_BASIC, id: 'object-property', name: 'Object Property', code: `export function getName(obj) {
   return obj.name;
-}` },
-  { mode: 'single', group: GROUP_BASIC, id: 'conditional-return', name: 'Conditional Return', code: `// @nudo:case "true" (true)
-// @nudo:case "false" (false)
-function getValue(flag) {
+}
+
+getName({ name: "test" });
+getName({ name: "john", age: 30 });` },
+  { mode: 'single', group: GROUP_BASIC, id: 'conditional-return', name: 'Conditional Return', code: `export function getValue(flag) {
   if (flag) return "yes";
   return "no";
-}` },
-  { mode: 'single', group: GROUP_BASIC, id: 'function-compose', name: 'Function Composition', code: `// @nudo:case "simple" (5)
-function addOne(x) { return x + 1; }
+}
+
+getValue(true);
+getValue(false);` },
+  { mode: 'single', group: GROUP_BASIC, id: 'function-compose', name: 'Function Composition', code: `function addOne(x) { return x + 1; }
 function double(x) { return x * 2; }
 
-function composed(n) {
+export function composed(n) {
   return double(addOne(n));
-}` },
-  { mode: 'single', group: GROUP_BASIC, id: 'null-handling', name: 'Null Handling', code: `// @nudo:case "with-value" ("hello")
-// @nudo:case "null" (null)
-function greet(name) {
+}
+
+composed(5);` },
+  { mode: 'single', group: GROUP_BASIC, id: 'null-handling', name: 'Null Handling', code: `export function greet(name) {
   return "Hello, " + (name || "World");
-}` },
-  { mode: 'single', group: GROUP_BASIC, id: 'type-guard', name: 'Type Guard', code: `// @nudo:case "string" ("test")
-// @nudo:case "number" (42)
-function isString(value) {
+}
+
+greet("hello");
+greet(null);` },
+  { mode: 'single', group: GROUP_BASIC, id: 'type-guard', name: 'Type Guard', code: `export function isString(value) {
   return typeof value === "string";
-}` },
-  { mode: 'single', group: GROUP_BASIC, id: 'recursion', name: 'Recursion', code: `// @nudo:case "factorial" (5)
-// @nudo:case "zero" (0)
-function factorial(n) {
+}
+
+isString("test");
+isString(42);` },
+  { mode: 'single', group: GROUP_BASIC, id: 'recursion', name: 'Recursion', code: `export function factorial(n) {
   if (n <= 1) return 1;
   return n * factorial(n - 1);
-}` },
-  { mode: 'single', group: GROUP_BASIC, id: 'spread-operator', name: 'Spread Operator', code: `// @nudo:case "merge" ([1, 2], [3, 4])
-function merge(a, b) {
+}
+
+factorial(5);
+factorial(0);` },
+  { mode: 'single', group: GROUP_BASIC, id: 'spread-operator', name: 'Spread Operator', code: `export function merge(a, b) {
   return [...a, ...b];
-}` },
-  { mode: 'single', group: GROUP_BASIC, id: 'ternary-operator', name: 'Ternary Operator', code: `// @nudo:case "positive" (5)
-// @nudo:case "negative" (-3)
-// @nudo:case "zero" (0)
-function classify(n) {
+}
+
+merge([1, 2], [3, 4]);` },
+  { mode: 'single', group: GROUP_BASIC, id: 'ternary-operator', name: 'Ternary Operator', code: `export function classify(n) {
   return n > 0 ? "positive" : n < 0 ? "negative" : "zero";
-}` },
-  { mode: 'single', group: GROUP_BASIC, id: 'default-param', name: 'Default Parameter', code: `// @nudo:case "with-param" ("world")
-// @nudo:case "default" ()
-function greet(name = "World") {
+}
+
+classify(5);
+classify(-3);
+classify(0);` },
+  { mode: 'single', group: GROUP_BASIC, id: 'default-param', name: 'Default Parameter', code: `export function greet(name = "World") {
   return "Hello, " + name + "!";
-}` },
-  { mode: 'single', group: GROUP_BASIC, id: 'discriminated-union', name: 'Discriminated Union', code: `// @nudo:case "circle" ({ kind: "circle", radius: 5 })
-// @nudo:case "rect" ({ kind: "rect", width: 10, height: 20 })
-function area(shape) {
+}
+
+greet("world");
+greet();` },
+  { mode: 'single', group: GROUP_BASIC, id: 'discriminated-union', name: 'Discriminated Union', code: `export function area(shape) {
   switch (shape.kind) {
     case "circle":
       return Math.PI * shape.radius ** 2;
     case "rect":
       return shape.width * shape.height;
   }
-}` },
-  { mode: 'single', group: GROUP_BASIC, id: 'optional-chaining', name: 'Optional Chaining', code: `// @nudo:case "full" ({ user: { profile: { name: "Alice" } } })
-// @nudo:case "missing" ({})
-function getName(config) {
+}
+
+area({ kind: "circle", radius: 5 });
+area({ kind: "rect", width: 10, height: 20 });` },
+  { mode: 'single', group: GROUP_BASIC, id: 'optional-chaining', name: 'Optional Chaining', code: `export function getName(config) {
   return config.user?.profile?.name ?? "Anonymous";
-}` },
-  { mode: 'single', group: GROUP_BASIC, id: 'truthiness-narrowing', name: 'Truthiness Narrowing', code: `// @nudo:case "value" ("hello")
-// @nudo:case "null" (null)
-// @nudo:case "zero" (0)
-function process(val) {
+}
+
+getName({ user: { profile: { name: "Alice" } } });
+getName({});` },
+  { mode: 'single', group: GROUP_BASIC, id: 'truthiness-narrowing', name: 'Truthiness Narrowing', code: `export function process(val) {
   if (!val) return "empty";
   return val.toUpperCase();
-}` },
-  { mode: 'single', group: GROUP_BASIC, id: 'isarray-narrowing', name: 'Array.isArray Narrowing', code: `// @nudo:case "array" ([1, 2, 3])
-// @nudo:case "string" ("hello")
-function first(x) {
+}
+
+process("hello");
+process(null);
+process(0);` },
+  { mode: 'single', group: GROUP_BASIC, id: 'isarray-narrowing', name: 'Array.isArray Narrowing', code: `export function first(x) {
   if (Array.isArray(x)) return x[0];
   return x;
-}` },
-  { mode: 'single', group: GROUP_BASIC, id: 'in-operator', name: 'in Operator Narrowing', code: `// @nudo:case "dog" ({ name: "Rex", bark: true })
-// @nudo:case "cat" ({ name: "Whiskers", purr: true })
-function sound(animal) {
+}
+
+first([1, 2, 3]);
+first("hello");` },
+  { mode: 'single', group: GROUP_BASIC, id: 'in-operator', name: 'in Operator Narrowing', code: `export function sound(animal) {
   if ("bark" in animal) return "Woof!";
   if ("purr" in animal) return "Purr~";
   return "...";
-}` },
+}
 
-  // --- Call-Site Discovery: dual-pane, records collected from the usage site ---
+sound({ name: "Rex", bark: true });
+sound({ name: "Whiskers", purr: true });` },
+
   {
     mode: 'callsite',
     group: GROUP_CALLSITE,
@@ -232,38 +299,41 @@ const f = flat([1, [2, [3, 4]]]);`,
     paramCount: 2,
   },
 
-  // --- New semantics: single-pane, exercised via @nudo:case + inlay hints ---
-  { mode: 'single', group: GROUP_SEMANTICS, id: 'promise-resolve-scan', name: 'Promise Resolve Scan', code: `// @nudo:case "resolves literal" (() => "done", 100)
-// @nudo:case "default timeout" (() => 42)
-function wait(fn, timeout = 0) {
+  { mode: 'single', group: GROUP_SEMANTICS, id: 'promise-resolve-scan', name: 'Promise Resolve Scan', code: `export function wait(fn, timeout = 0) {
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(fn()), timeout);
   });
-}` },
-  { mode: 'single', group: GROUP_SEMANTICS, id: 'set-iteration', name: 'Set Iteration (for-of)', code: `// @nudo:case "numbers" ([1, 2, 2, 3])
-// @nudo:case "strings" (["a", "a", "b"])
-function uniq(arr) {
+}
+
+wait(() => "done", 100);
+wait(() => 42);` },
+  { mode: 'single', group: GROUP_SEMANTICS, id: 'set-iteration', name: 'Set Iteration (for-of)', code: `export function uniq(arr) {
   const s = new Set(arr);
   const out = [];
   for (const v of s) out.push(v);
   return out;
-}` },
-  { mode: 'single', group: GROUP_SEMANTICS, id: 'recursive-flatten', name: 'Recursive Flatten', code: `// @nudo:case "nested" ([1, [2, [3, 4]]])
-// @nudo:case "already flat" ([5, 6])
-function flat(a, t) {
+}
+
+uniq([1, 2, 2, 3]);
+uniq(["a", "a", "b"]);` },
+  { mode: 'single', group: GROUP_SEMANTICS, id: 'recursive-flatten', name: 'Recursive Flatten', code: `export function flat(a, t) {
   const r = t || [];
   for (const e of a) {
     if (Array.isArray(e)) flat(e, r);
     else r.push(e);
   }
   return r;
-}` },
-  { mode: 'single', group: GROUP_SEMANTICS, id: 'in-brand-check', name: 'in-operator Brand Check', code: `// @nudo:case "branded" ({ __nudo: "real", value: 1 })
-// @nudo:case "unbranded" ({ value: 2 })
-function check(x) {
+}
+
+flat([1, [2, [3, 4]]]);
+flat([5, 6]);` },
+  { mode: 'single', group: GROUP_SEMANTICS, id: 'in-brand-check', name: 'in-operator Brand Check', code: `export function check(x) {
   if ("__nudo" in x) return x.__nudo;
   return "unbranded";
-}` },
+}
+
+check({ __nudo: "real", value: 1 });
+check({ value: 2 });` },
 ];
 
 // ---------------------------------------------------------------------------
@@ -439,12 +509,349 @@ function isPrecise(typeStr: string): boolean {
   return !/\bunknown\b/.test(typeStr);
 }
 
+const PLAYGROUND_FILE = '/playground.js';
+
+const VIRTUAL_NUDO_MODULES: Record<string, string> = {
+  'shapes.nudo.js': `import { number } from "@nudojs/core";
+export const positive = number().gt(0);
+export const nonNeg = number().ge(0);
+export const negative = number().lt(0);
+export const percent = number().ge(0).le(100);
+export const atLeast1 = number().ge(1);
+export const delay = number().ge(0);
+`,
+  'std.nudo.js': `import { number } from "@nudojs/core";
+export const positive = number().gt(0);
+export const nonNeg = number().ge(0);
+export const negative = number().lt(0);
+export const percent = number().ge(0).le(100);
+export const atLeast1 = number().ge(1);
+export const delay = number().ge(0);
+`,
+  'playground.nudo.js': `import { number, fn } from "@nudojs/core";
+export const needsPositive = fn({ x: number().gt(0) }, number());
+export const scale = fn({ x: number().gt(0) }, number());
+`,
+};
+
+function playgroundLoadModule(spec: string, _fromFile: string): string | undefined {
+  const base = spec.split(/[\\/]/).pop() ?? spec;
+  if (VIRTUAL_NUDO_MODULES[base]) return VIRTUAL_NUDO_MODULES[base];
+  if (VIRTUAL_NUDO_MODULES[spec]) return VIRTUAL_NUDO_MODULES[spec];
+  if (base.endsWith('.nudo.js') || base.endsWith('.nudo.ts')) {
+    return VIRTUAL_NUDO_MODULES['shapes.nudo.js'];
+  }
+  return undefined;
+}
+
+const PLAYGROUND_LOAD_OPTS = {
+  loadModule: playgroundLoadModule,
+  fromFile: PLAYGROUND_FILE,
+};
+
+const KNOWN_TEMPLATE_DISPLAY: Record<string, string> = {
+  positive: 'number().gt(0)   // x > 0',
+  nonNeg: 'number().ge(0)   // x >= 0',
+  negative: 'number().lt(0)   // x < 0',
+  percent: 'number().ge(0).le(100)',
+  atLeast1: 'number().ge(1)',
+  delay: 'number().ge(0)',
+};
+
+function contractMarkdownForWord(source: string, word: string): string[] {
+  const raw = [
+    ...source.matchAll(/@nudo:(?:refine|interface)\s+(\w+)\s+([\w.]+)/g),
+  ].filter((m) => m[1] === word);
+
+  for (const m of raw) {
+    const cName = m[2]!;
+    const display = KNOWN_TEMPLATE_DISPLAY[cName];
+    if (display) {
+      return [
+        `**contract** · \`@nudo:refine\` · virtual template \`${cName}\``,
+        '```nudo',
+        `${word}: ${display}`,
+        '```',
+        '_obligation — not the last call-site value_',
+      ];
+    }
+  }
+
+  try {
+    if (typeof effectiveInterface === 'function' && typeof formatConstraint === 'function') {
+      const fns = extractDirectives(parse(source));
+      for (const fn of fns) {
+        const eff = effectiveInterface(source, fn.name, PLAYGROUND_LOAD_OPTS);
+        if (!eff) continue;
+        const hit = eff.params.find((p) => p.param === word);
+        if (!hit) continue;
+        return [
+          `**contract** · \`${eff.source}\` · fn \`${eff.fnName}\``,
+          '```nudo',
+          `${word}: ${formatConstraint(hit.constraint)}`,
+          '```',
+          '_obligation from `@nudo:refine` / sidecar — not the last call-site value_',
+        ];
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  if (raw.length) {
+    return [
+      `**contract** · \`@nudo:refine\``,
+      ...raw.map((m) => `- \`${m[1]}\` ← template \`${m[2]}\``),
+    ];
+  }
+  return [];
+}
+
+function maybeViolationNote(contractLines: string[], absText: string | undefined): string[] {
+  if (!absText || !contractLines.length) return [];
+  const contractBlob = contractLines.join('\n');
+  const mentionsPositive = /positive|number\(\)\.gt\(0\)|x > 0|x>0/.test(contractBlob);
+  const observedNegative = /(^|\s)-\d/.test(absText);
+  if (mentionsPositive && observedNegative) {
+    return [
+      '',
+      '_call-site Abs includes a non-positive value — `nudo check` would report `actual ⊭ expected`_',
+    ];
+  }
+  return [];
+}
+
+function buildActiveCases(source: string, caseIndex: number): Map<string, number> {
+  const map = new Map<string, number>();
+  try {
+    for (const fn of extractDirectives(parse(source))) {
+      if (fn.directives.some((d) => d.kind === 'case')) {
+        map.set(fn.name, caseIndex);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return map;
+}
+
+function hoverToMarkdown(hover: HoverInfo, word?: string): string {
+  const lines: string[] = [];
+  if (word) lines.push(`**${word}**`);
+  if (hover.interfaceSource) {
+    lines.push(`\`● interface / ${hover.interfaceSource}\``);
+    if (hover.interfaceDisplay && hover.interfaceSource !== 'implicit') {
+      lines.push('```nudo', hover.interfaceDisplay, '```');
+    }
+  }
+  if (hover.absMultiline) {
+    lines.push('```nudo', hover.absMultiline, '```');
+  } else if (hover.abs) {
+    lines.push('```nudo', hover.abs, '```');
+  }
+  if (hover.intension && hover.intension !== hover.abs) {
+    lines.push('```nudo', hover.intension, '```');
+  }
+  if (hover.typeText && hover.typeText !== hover.intension && hover.typeText !== hover.abs) {
+    lines.push('```nudo', `ext: ${hover.typeText}`, '```');
+  }
+  return lines.join('\n');
+}
+
+function absInlayToMonaco(abs: AbsInlay, monaco: any) {
+  return {
+    kind:
+      abs.kind === 'parameter'
+        ? monaco.languages.InlayHintKind.Parameter
+        : monaco.languages.InlayHintKind.Type,
+    position: { lineNumber: abs.line, column: abs.character + 1 },
+    label: abs.label,
+    paddingLeft: true,
+  };
+}
+
+function collectLspInlays(source: string, monaco: any): any[] {
+  try {
+    return collectAbsInlays(source, PLAYGROUND_LOAD_OPTS).map((a) =>
+      absInlayToMonaco(a, monaco),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function readSharedCode(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = new URLSearchParams(window.location.search).get('code');
+    if (!raw) return null;
+    return decodeURIComponent(atob(raw));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Self-contained Monarch for `nudo-js` — JS syntax colors without the
+ * TypeScript language service (`parameter x: any` noise).
+ */
+const NUDO_JS_MONARCH = {
+  defaultToken: '',
+  tokenPostfix: '.js',
+  ignoreCase: false,
+  keywords: [
+    'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger',
+    'default', 'delete', 'do', 'else', 'export', 'extends', 'false',
+    'finally', 'for', 'function', 'if', 'import', 'in', 'instanceof',
+    'let', 'new', 'null', 'return', 'super', 'switch', 'this', 'throw',
+    'true', 'try', 'typeof', 'undefined', 'var', 'void', 'while', 'with',
+    'yield', 'async', 'await', 'of', 'static', 'get', 'set', 'from', 'as',
+  ],
+  typeKeywords: [
+    'any', 'boolean', 'number', 'object', 'string', 'symbol', 'unknown',
+    'void', 'never', 'Array', 'Promise', 'Map', 'Set',
+  ],
+  operators: [
+    '=', '>', '<', '!', '~', '?', ':', '==', '<=', '>=', '!=', '&&', '||',
+    '++', '--', '+', '-', '*', '/', '&', '|', '^', '%', '<<', '>>', '>>>',
+    '+=', '-=', '*=', '/=', '&=', '|=', '^=', '%=', '<<=', '>>=', '>>>=',
+    '=>', '...',
+  ],
+  symbols: /[=><!~?:&|+\-*/^%]+/,
+  escapes: /\\(?:[abfnrtv\\"'\n]|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|u\{[0-9A-Fa-f]+\}|[0-7]{1,3})/,
+  tokenizer: {
+    root: [
+      [/\/\*\*(?!\/)/, 'comment.doc', '@jsdoc'],
+      [/\/\*/, 'comment', '@comment'],
+      [/\/\/.*$/, 'comment'],
+      [/[{}()\[\]]/, '@brackets'],
+      [/[;,.]/, 'delimiter'],
+      [
+        /[a-zA-Z_$][\w$]*/,
+        {
+          cases: {
+            '@keywords': 'keyword',
+            '@typeKeywords': 'type',
+            '@default': 'identifier',
+          },
+        },
+      ],
+      { include: '@whitespace' },
+      [/@symbols/, { cases: { '@operators': 'operator', '@default': '' } }],
+      [/\d+\.\d*([eE][-+]?\d+)?/, 'number.float'],
+      [/0[xX][0-9a-fA-F]+/, 'number.hex'],
+      [/\d+/, 'number'],
+      [/[()]/, '@brackets'],
+      [/"([^"\\]|\\.)*$/, 'string.invalid'],
+      [/'([^'\\]|\\.)*$/, 'string.invalid'],
+      [/"/, 'string', '@string_double'],
+      [/'/, 'string', '@string_single'],
+      [/`/, 'string', '@string_template'],
+    ],
+    whitespace: [[/[ \t\r\n]+/, '']],
+    comment: [
+      [/[^/*]+/, 'comment'],
+      [/\*\//, 'comment', '@pop'],
+      [/[/*]/, 'comment'],
+    ],
+    jsdoc: [
+      [/[^/*]+/, 'comment.doc'],
+      [/\*\//, 'comment.doc', '@pop'],
+      [/[/*]/, 'comment.doc'],
+    ],
+    string_double: [
+      [/[^\\"]+/, 'string'],
+      [/@escapes/, 'string.escape'],
+      [/\\./, 'string.escape.invalid'],
+      [/"/, 'string', '@pop'],
+    ],
+    string_single: [
+      [/[^\\']+/, 'string'],
+      [/@escapes/, 'string.escape'],
+      [/\\./, 'string.escape.invalid'],
+      [/'/, 'string', '@pop'],
+    ],
+    string_template: [
+      [/[^\\`$]+/, 'string'],
+      [/\$\{/, { token: 'delimiter', next: '@templateExpression' }],
+      [/@escapes/, 'string.escape'],
+      [/\\./, 'string.escape.invalid'],
+      [/`/, 'string', '@pop'],
+    ],
+    templateExpression: [
+      [/}/, { token: 'delimiter', next: '@pop' }],
+      { include: 'root' },
+    ],
+  },
+} as const;
+
+const NUDO_JS_LANG_CONFIG = {
+  comments: { lineComment: '//', blockComment: ['/*', '*/'] },
+  brackets: [
+    ['{', '}'],
+    ['[', ']'],
+    ['(', ')'],
+  ],
+  autoClosingPairs: [
+    { open: '{', close: '}' },
+    { open: '[', close: ']' },
+    { open: '(', close: ')' },
+    { open: '"', close: '"', notIn: ['string'] },
+    { open: "'", close: "'", notIn: ['string', 'comment'] },
+    { open: '`', close: '`', notIn: ['string', 'comment'] },
+  ],
+  surroundingPairs: [
+    { open: '{', close: '}' },
+    { open: '[', close: ']' },
+    { open: '(', close: ')' },
+    { open: '"', close: '"' },
+    { open: "'", close: "'" },
+    { open: '`', close: '`' },
+  ],
+} as const;
+
+/** Register `nudo-js` with a built-in tokenizer (before models are created). */
+function registerNudoJsLanguage(monaco: any): void {
+  const LANG = 'nudo-js';
+  const exists = monaco.languages
+    .getLanguages()
+    .some((l: { id: string }) => l.id === LANG);
+  if (!exists) {
+    monaco.languages.register({ id: LANG });
+  }
+  // Prefer a built-in tokenizer so highlighting never depends on JS LSP
+  monaco.languages.setMonarchTokensProvider(LANG, NUDO_JS_MONARCH);
+  try {
+    monaco.languages.setLanguageConfiguration(LANG, NUDO_JS_LANG_CONFIG as any);
+  } catch {
+    // optional
+  }
+  // If the stock JS Monarch is available, merge its tokenizer as a richer base
+  try {
+    const jsMonarch = monaco.languages.getMonarchTokenProvider?.('javascript');
+    if (jsMonarch?.tokenizer && jsMonarch !== NUDO_JS_MONARCH) {
+      monaco.languages.setMonarchTokensProvider(LANG, {
+        ...jsMonarch,
+        tokenPostfix: jsMonarch.tokenPostfix ?? '.js',
+      } as any);
+    }
+  } catch {
+    // keep embedded monarch
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function Playground() {
-  const [code, setCode] = useState(presets[0].mode === 'single' ? presets[0].code : '');
+function readSharedCode2() { return readSharedCode(); }
+
+function PlaygroundApp() {
+  const [code, setCode] = useState(() => {
+    const shared = readSharedCode();
+    if (shared !== null && shared !== '') return shared;
+    return presets[0].mode === 'single' ? presets[0].code : '';
+  });
   const [testCode, setTestCode] = useState('');
   const [selectedPreset, setSelectedPreset] = useState(presets[0].id);
   const [isRunning, setIsRunning] = useState(false);
@@ -469,6 +876,10 @@ export default function Playground() {
     activeCaseIndexRef.current = activeCaseIndex;
   }, [activeCaseIndex]);
   useEffect(() => {
+    const shared = readSharedCode();
+    if (shared) setCode(shared);
+  }, []);
+  useEffect(() => {
     modeRef.current = isCallsiteMode;
   }, [isCallsiteMode]);
   useEffect(() => {
@@ -486,7 +897,7 @@ export default function Playground() {
 
   const runSingle = () => {
     try {
-      const analysis = analyzeFile('/playground.js', code);
+      const analysis = analyzeFile(PLAYGROUND_FILE, code, undefined, undefined, playgroundLoadModule);
       const results: { name: string; fnName: string; args: Abs[]; result: Abs; throws: Abs }[] = [];
       for (const fn of analysis.functions) {
         for (const c of fn.cases) {
@@ -549,107 +960,166 @@ export default function Playground() {
     window.history.replaceState({}, '', url.toString());
   };
 
-  const handleEditorDidMount = (_editor: any, monaco: any) => {
+  const handleEditorBeforeMount = (monaco: any) => {
     try {
-      // Hover provider - show parameter types on hover
-      monaco.languages.registerHoverProvider('javascript', {
-        provideHover: (model: any, position: any) => {
-          const currentCaseIndex = activeCaseIndexRef.current;
-          const currentCases = extractCases(model.getValue());
-          const activeCase = currentCases[currentCaseIndex];
+      registerNudoJsLanguage(monaco);
+    } catch (e) {
+      console.error('Failed to register nudo-js language', e);
+    }
+  };
 
-          if (!activeCase) return null;
+  const handleEditorDidMount = (editor: any, monaco: any) => {
+    try {
+      const LANG = 'nudo-js';
+      registerNudoJsLanguage(monaco);
+      try {
+        const model = editor?.getModel?.();
+        if (model) monaco.editor.setModelLanguage(model, LANG);
+      } catch {
+        // keep whatever language Monaco already assigned
+      }
 
-          const word = model.getWordAtPosition(position);
-          if (!word) return null;
+      // Mute TS/JS language service — Monarch on nudo-js still colors tokens
+      const ts = monaco.languages?.typescript;
+      const mute = {
+        noSemanticValidation: true,
+        noSyntaxValidation: true,
+        noSuggestionDiagnostics: true,
+      };
+      try {
+        ts?.javascriptDefaults?.setDiagnosticsOptions?.(mute);
+        ts?.typescriptDefaults?.setDiagnosticsOptions?.(mute);
+      } catch { /* ignore */ }
+      try {
+        editor?.updateOptions?.({
+          parameterHints: { enabled: false },
+          quickSuggestions: false,
+          suggestOnTriggerCharacters: false,
+          acceptSuggestionOnEnter: 'off',
+        });
+      } catch { /* ignore */ }
 
-          try {
-            const ast = parse(model.getValue());
-            const functions = extractDirectives(ast);
+      const provideHover = (model: any, position: any) => {
+        const source = model.getValue();
+        const word = model.getWordAtPosition(position);
+        const currentCaseIndex = activeCaseIndexRef.current;
+        const contractLines = word?.word ? contractMarkdownForWord(source, word.word) : [];
 
-            for (const fn of functions) {
-              const node = fn.node as any;
-              if (node.type === "FunctionDeclaration" || node.type === "FunctionExpression") {
-                const params = node.params || [];
-                for (let i = 0; i < params.length; i++) {
-                  const param = params[i];
-                  if (param.type === "Identifier" && param.name === word.word) {
-                    if (i < activeCase.args.length) {
-                      return {
-                        range: word.range,
-                        contents: [{ value: `**${word.word}**: \`${formatShape(activeCase.args[i])}\`` }]
-                      };
-                    }
-                  }
+        try {
+          const hover = getHoverAtPosition(
+            PLAYGROUND_FILE,
+            source,
+            position.lineNumber,
+            Math.max(0, position.column - 1),
+            buildActiveCases(source, currentCaseIndex),
+            PLAYGROUND_LOAD_OPTS,
+          );
+          if (hover) {
+            const body = hoverToMarkdown(hover, word?.word);
+            const parts = [
+              ...contractLines,
+              contractLines.length ? '**observed**' : '',
+              contractLines.length ? body.replace(/^\*\*[^*]+\*\*\n/, '') : body,
+              ...maybeViolationNote(contractLines, hover.abs ?? hover.typeText),
+            ].filter(Boolean);
+            return { contents: [{ value: parts.join('\n') }] };
+          }
+          if (contractLines.length && word?.word) {
+            return {
+              contents: [{ value: [`**${word.word}**`, ...contractLines].join('\n') }],
+            };
+          }
+        } catch { /* fallback */ }
+
+        const currentCases = extractCases(source);
+        const activeCase = currentCases[currentCaseIndex];
+        if (!activeCase || !word) return null;
+        try {
+          const functions = extractDirectives(parse(source));
+          for (const fn of functions) {
+            const node = fn.node as any;
+            if (
+              node.type === 'FunctionDeclaration' ||
+              node.type === 'FunctionExpression' ||
+              node.type === 'ArrowFunctionExpression'
+            ) {
+              const params = node.params || [];
+              for (let i = 0; i < params.length; i++) {
+                const param = params[i];
+                if (param.type === 'Identifier' && param.name === word.word && i < activeCase.args.length) {
+                  const arg = activeCase.args[i];
+                  return {
+                    contents: [
+                      {
+                        value: [
+                          `**${word.word}** — active case \`${activeCase.name}\``,
+                          '```nudo',
+                          formatAbs(arg),
+                          '```',
+                        ].join('\n'),
+                      },
+                    ],
+                  };
                 }
               }
             }
-          } catch {}
+          }
+        } catch {}
+        return null;
+      };
 
-          return null;
-        }
-      });
-
-      // Inlay hints: `=> result` after @nudo:case lines (single mode) and
-      // after discovered usage-site call lines (call-site mode).
-      monaco.languages.registerInlayHintsProvider('javascript', {
-        provideInlayHints: (model: any) => {
-          const hints: any[] = [];
-
-          try {
-            const source = model.getValue();
-
-            // Call-site mode: annotate the usage-site editor at each
-            // discovered call line with the harvested result type.
-            if (modeRef.current && source === testCodeRef.current) {
-              for (const record of usageRecordsRef.current) {
-                if (record.line === undefined) continue;
-                const lineLength = model.getLineLength(record.line);
-                hints.push({
-                  kind: monaco.languages.InlayHintKind.Type,
-                  position: { lineNumber: record.line, column: lineLength + 1 },
-                  label: `=> ${formatShape(record.result)}`,
-                  paddingLeft: true,
-                });
-              }
-              return { hints };
+      const provideInlayHints = (model: any) => {
+        const hints: any[] = [];
+        const source = model.getValue();
+        try {
+          if (modeRef.current && source === testCodeRef.current) {
+            hints.push(...collectLspInlays(source, monaco));
+            for (const record of usageRecordsRef.current) {
+              if (record.line === undefined) continue;
+              const lineLength = model.getLineLength(record.line);
+              hints.push({
+                kind: monaco.languages.InlayHintKind.Type,
+                position: { lineNumber: record.line, column: lineLength + 1 },
+                label: `=> ${formatAbs(record.result)}`,
+                paddingLeft: true,
+              });
             }
-
-            const ast = parse(source);
-            const functions = extractDirectives(ast);
-            const allCases: { fn: typeof functions[0], directive: CaseDirective }[] = [];
-
-            for (const fn of functions) {
-              const caseDirectives = fn.directives.filter((d): d is CaseDirective => d.kind === 'case');
-              for (const directive of caseDirectives) {
-                allCases.push({ fn, directive });
+            return { hints, dispose() {} };
+          }
+          hints.push(...collectLspInlays(source, monaco));
+          const ast = parse(source);
+          const functions = extractDirectives(ast);
+          const caseLines = new Map<string, number>();
+          for (const fn of functions) {
+            for (const d of fn.directives) {
+              if (d.kind === 'case' && d.commentLine !== undefined) {
+                caseLines.set(d.name, d.commentLine);
               }
             }
-
-            // Show inlay hints for ALL cases via analyzer
-            const analysis = analyzeFile('/playground.js', source);
-            for (const fn of analysis.functions) {
-              for (const c of fn.cases) {
-                if (!c.name) continue;
-                // Map back to directive comment lines when present
-                const resultStr = formatShape(c.abs);
-                const caseDir = allCases.find((x) => x.directive.name === c.name);
-                if (caseDir?.directive.commentLine) {
-                  const lineLength = model.getLineLength(caseDir.directive.commentLine);
-                  hints.push({
-                    kind: monaco.languages.InlayHintKind.Type,
-                    position: { lineNumber: caseDir.directive.commentLine, column: lineLength + 1 },
-                    label: `=> ${resultStr}`,
-                    paddingLeft: true,
-                  });
-                }
-              }
+          }
+          const analysis = analyzeFile(PLAYGROUND_FILE, source, undefined, undefined, playgroundLoadModule);
+          for (const fn of analysis.functions) {
+            for (const c of fn.cases) {
+              if (!c.name) continue;
+              const line = caseLines.get(c.name) ?? c.line;
+              if (line === undefined) continue;
+              const lineLength = model.getLineLength(line);
+              hints.push({
+                kind: monaco.languages.InlayHintKind.Type,
+                position: { lineNumber: line, column: lineLength + 1 },
+                label: `=> ${formatAbs(c.abs)}`,
+                paddingLeft: true,
+              });
             }
-          } catch {}
+          }
+        } catch {}
+        return { hints, dispose() {} };
+      };
 
-          return { hints };
-        }
-      });
+      for (const lang of [LANG, 'javascript']) {
+        monaco.languages.registerHoverProvider(lang, { provideHover });
+        monaco.languages.registerInlayHintsProvider(lang, { provideInlayHints });
+      }
     } catch (error) {
       console.error('Failed to register providers:', error);
     }
@@ -686,12 +1156,11 @@ export default function Playground() {
   );
 
   return (
-    <Layout title="Playground" description="Nudo Playground">
-      <div className="cs-playground">
+    <div className="cs-playground">
         <h1>Nudo Playground</h1>
         <p className="cs-subtitle">
-          Write JavaScript with <code>@nudo</code> directives — or switch to a Call-Site Discovery
-          preset to watch types get harvested from real usage and injected back into library analysis.
+          欢迎重回 JS 世界 — Nudo 不限制你的 JS 表达，只忠实反映中间量与结果，并提供比类型更精确的契约校验。
+          Hover for Abs + refine contracts.
         </p>
 
         <div className="cs-controls">
@@ -700,7 +1169,7 @@ export default function Playground() {
             onChange={(e) => handlePresetChange(e.target.value)}
             className="preset-select"
           >
-            {[GROUP_BASIC, GROUP_CALLSITE, GROUP_SEMANTICS].map((group) => (
+            {[GROUP_CONTRACTS, GROUP_BASIC, GROUP_CALLSITE, GROUP_SEMANTICS].map((group) => (
               <optgroup key={group} label={group}>
                 {presets
                   .filter((p) => p.group === group)
@@ -751,34 +1220,38 @@ export default function Playground() {
                   <span className="cs-pane-file">{preset.libFile}</span>
                   <span className="cs-pane-tag">library · read-only</span>
                 </div>
-                <MonacoEditor
-                  height="260px"
-                  defaultLanguage="javascript"
-                  value={preset.libCode}
-                  theme="vs-light"
-                  options={editorOptions(true)}
-                />
+                <Suspense fallback={<div className="editor-loading">Loading editor…</div>}>
+                  <MonacoEditor
+                    height="min(420px, calc(100vh - 320px))"
+                    defaultLanguage="nudo-js"
+                    beforeMount={handleEditorBeforeMount}
+                    value={preset.libCode}
+                    theme="vs-light"
+                    options={editorOptions(true)}
+                  />
+                </Suspense>
               </div>
               <div className="cs-pane">
                 <div className="cs-pane-header">
                   <span className="cs-pane-file">{preset.testFile}</span>
                   <span className="cs-pane-tag">usage site · editable</span>
                 </div>
-                <MonacoEditor
-                  height="260px"
-                  defaultLanguage="javascript"
-                  value={testCode}
-                  onChange={(value) => {
-                    const next = value || '';
-                    setTestCode(next);
-                    // Small programs: re-collect call records synchronously so
-                    // inlay hints and result cards track every keystroke.
-                    runCallsiteDiscovery(next, preset);
-                  }}
-                  onMount={handleEditorDidMount}
-                  theme="vs-light"
-                  options={editorOptions(false)}
-                />
+                <Suspense fallback={<div className="editor-loading">Loading editor…</div>}>
+                  <MonacoEditor
+                    height="min(420px, calc(100vh - 320px))"
+                    defaultLanguage="nudo-js"
+                    beforeMount={handleEditorBeforeMount}
+                    value={testCode}
+                    onChange={(value) => {
+                      const next = value || '';
+                      setTestCode(next);
+                      runCallsiteDiscovery(next, preset);
+                    }}
+                    onMount={handleEditorDidMount}
+                    theme="vs-light"
+                    options={editorOptions(false)}
+                  />
+                </Suspense>
               </div>
             </div>
 
@@ -854,21 +1327,24 @@ export default function Playground() {
 
         {!isCallsiteMode && (
           <>
-            <div className="cs-dual">
+            <div className="cs-dual cs-dual-editor-out">
               <div className="cs-pane">
                 <div className="cs-pane-header">
                   <span className="cs-pane-file">source.js</span>
                   <span className="cs-pane-tag">editable</span>
                 </div>
-                <MonacoEditor
-                  height="420px"
-                  defaultLanguage="javascript"
-                  value={code}
-                  onChange={(value) => setCode(value || '')}
-                  onMount={handleEditorDidMount}
-                  theme="vs-light"
-                  options={editorOptions(false)}
-                />
+                <Suspense fallback={<div className="editor-loading">Loading editor…</div>}>
+                  <MonacoEditor
+                    height="min(640px, calc(100vh - 220px))"
+                    defaultLanguage="nudo-js"
+                    beforeMount={handleEditorBeforeMount}
+                    value={code}
+                    onChange={(value) => setCode(value || '')}
+                    onMount={handleEditorDidMount}
+                    theme="vs-light"
+                    options={editorOptions(false)}
+                  />
+                </Suspense>
               </div>
               <div className="cs-pane">
                 <div className="cs-pane-header">
@@ -882,7 +1358,7 @@ export default function Playground() {
                   )}
                   {!singleError && singleResults && singleResults.length === 0 && (
                     <div className="cs-hint">
-                      No call sites or @nudo:case debug witnesses found. Add call sites (or optional debug cases) to see type inference results.
+                      No call sites or cases found. Add a call site, or pick a Contracts & Observe preset.
                     </div>
                   )}
                   {!singleError && singleResults && singleResults.length > 0 && (
@@ -907,7 +1383,31 @@ export default function Playground() {
             </div>
           </>
         )}
-      </div>
+    </div>
+  );
+}
+
+/**
+ * Client-only shell: Monaco + analyzer must not SSR-hydrate (React #426).
+ */
+export default function Playground(): JSX.Element {
+  return (
+    <Layout
+      title="Playground"
+      description="Nudo Playground — execute JavaScript and observe intermediates"
+    >
+      <BrowserOnly
+        fallback={
+          <div className="playground-container">
+            <div className="playground-header">
+              <h1>Nudo Playground</h1>
+              <p>Loading playground…</p>
+            </div>
+          </div>
+        }
+      >
+        {() => <PlaygroundApp />}
+      </BrowserOnly>
     </Layout>
   );
 }

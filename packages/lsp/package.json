@@ -48,8 +48,10 @@
     "@nudojs/service": "workspace:*",
     "@nudojs/core": "workspace:*",
     "@nudojs/parser": "workspace:*",
-    "vscode-languageserver": "^9.0.0",
-    "vscode-languageserver-textdocument": "^1.0.0"
+    "@babel/traverse": "^8.0.6",
+    "@babel/types": "^8.0.6",
+    "vscode-languageserver": "^10.1.1",
+    "vscode-languageserver-textdocument": "^1.0.14"
   },
   "scripts": {
     "build": "tsup",

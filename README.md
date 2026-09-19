@@ -1,6 +1,16 @@
 # Nudo
 
-A type inference engine for JavaScript powered by **abstract interpretation** — execute your code with abstract type values (`Abs` = shape × term × pred × conf) instead of concrete values, and get precise type information without TypeScript.
+> **欢迎重回 JS 世界.** — Nudo 不限制你的 JS 表达，只忠实反映中间量与结果，并提供比类型更精确的契约校验。  
+> Welcome back to JavaScript. Your JS stays JS — observe intermediates, enforce contracts sharper than types.
+
+[![Docs](https://img.shields.io/badge/docs-nudojs.github.io%2Fnudo-5b4bd4)](https://nudojs.github.io/nudo/)
+[![Playground](https://img.shields.io/badge/playground-try%20online-a29bfe)](https://nudojs.github.io/nudo/playground)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
+
+Nudo does not restrict how you write JavaScript. It executes your code on Abs (`shape × term × pred × conf`) so you can **faithfully observe** intermediate values and results — and **validate** them with explicit contracts sharper than ordinary TypeScript types.
+
+TypeScript sources are also accepted: annotations are stripped and the code is analyzed with plain JS semantics.
 
 ## Why Nudo?
 
@@ -12,13 +22,16 @@ A type inference engine for JavaScript powered by **abstract interpretation** �
 | Type accuracy | Depends on annotations | Follows actual runtime semantics |
 | Structure without interface | Needs `interface` | Explicit shape contract (`shape({…})`); **no** body-AST slot invention |
 
-Nudo infers types by **running your functions** with abstract Abs values (number/string/shape constraints), tracking how values flow through branches, operators, and calls.
+Beyond what TypeScript can express: `"0x" + id` → `` `0x${string}` ``, `"a,b,c".split(",")` → `["a", "b", "c"]`, loop sums stay literal — same Abs algebra powers `nudo check`.
 
 ## Quick Start
 
 ```bash
 npm install -g @nudojs/cli
-# or via the thin `nudojs` shell package: npm install -g nudojs / npx nudojs
+# or via the thin `nudojs` shell package:
+npm install -g nudojs
+# or without installing:
+npx nudojs infer math.js
 ```
 
 Write plain JavaScript. Call sites are evidence:
@@ -110,13 +123,15 @@ Watch mode:
 nudo watch src/ --dts
 ```
 
+Try the same ideas in the browser: [Playground](https://nudojs.github.io/nudo/playground).
+
 ## Packages
 
 This is a monorepo managed with [pnpm workspaces](https://pnpm.io/workspaces).
 
 | Package | Description |
 |---|---|
-| [`@nudojs/core`](./packages/core) | Type value primitives and type system core |
+| [`@nudojs/core`](./packages/core) | Abs type system (`shape × term × pred × conf`) |
 | [`@nudojs/parser`](./packages/parser) | Babel-based parser and directive extraction |
 | [`@nudojs/cli`](./packages/cli) | CLI tool and evaluator API |
 | [`@nudojs/service`](./packages/service) | Shared inference service for IDE integrations |
@@ -166,7 +181,7 @@ See [`docs/examples/`](./docs/examples/) for runnable examples.
 ## How It Works
 
 1. **Parse** — Babel parses your `.js` file and extracts `@nudo:` directives
-2. **Execute** — The evaluator runs each function with abstract interpretation, tracking **Abs values** through all code paths (production analysis is Abs-native via B-path transpile+exec / ast-eval; there is no separate TypeValue evaluator)
+2. **Execute** — The evaluator runs each function with abstract interpretation, tracking **Abs values** through all code paths (production analysis is Abs-native via B-path transpile+exec / ast-eval; there is no separate evaluation IR)
 3. **Combine** — Results from multiple cases are merged into a unified type via union simplification
 4. **Emit** — Inferred types are displayed or written as `.d.ts` declarations
 
@@ -183,19 +198,11 @@ scale(x)  number  = (x + 1)  where (x + 1) > 1  #path
 
 With `@nudo:refine x positive`, `scale` gets the term `(x + 1)` **and** the derived predicate `(x + 1) > 1` — `x > 0` propagates through `x + 1`, not just through call-site gates. Assignability is structural (`leqAbs`); `nudo check` reports implication failures (`actual ⊭ expected`).
 
-### Type system notes
+### TypeValue — historical evaluation vocabulary
 
-Production analysis is Abs-native. Extensional TS/Zod/dts projections (`formatShape`, `absToTSType`, `absToZodSchema`) are one-way lossy views of Abs — nothing reads them back. The legacy TypeValue IR and the `T.*` directive grammar have been removed.
+Production analysis is **Abs-native**. Extensional TS/Zod/dts projections (`formatShape`, `absToTSType`, `absToZodSchema`) are one-way lossy views of Abs — nothing reads a projection back.
 
-| Abs shape | Represents |
-|---|---|
-| lit / prim | Concrete literals (`42`, `"hello"`) or primitive domains (`number`, `string`) |
-| sum | Union of Abs members |
-| obj / arr / tuple | Structural shapes |
-| fn / eff | Function / async effect |
-| unknown / never | Uninformed / unreachable |
-
-Constraint builders (`number().gt(0)`, `shape({...})`) produce Preds that enter Abs and participate in algebra.
+Older docs and the design archive sometimes list TypeValue *kinds* (`literal`, `primitive`, `refined`, `object`, `array`, `tuple`, `function`, `promise`, `instance`, `union`, `never`, `unknown`). Treat that list as **historical vocabulary** for describing abstract values, not as a second runtime IR. Current truth: [`docs/design-kernel-merge.md`](./docs/design-kernel-merge.md) and the [docs site Abs page](https://nudojs.github.io/nudo/docs/concepts/type-values).
 
 ## Development
 
@@ -231,7 +238,9 @@ pnpm run infer <file.js>
 
 Full documentation is available at the [Nudo docs site](https://nudojs.github.io/nudo/), with support for English and Chinese.
 
-- [Getting Started](https://nudojs.github.io/nudo/docs/getting-started/installation)
+- [Getting Started](https://nudojs.github.io/nudo/docs/intro) — Welcome back to JavaScript
+- [Quick Start](https://nudojs.github.io/nudo/docs/getting-started/quick-start)
+- [Playground](https://nudojs.github.io/nudo/playground)
 - [Core Concepts](https://nudojs.github.io/nudo/docs/concepts/type-values)
 - [API Reference](https://nudojs.github.io/nudo/docs/api/core)
 - [Design Document](https://nudojs.github.io/nudo/docs/design/design-doc)

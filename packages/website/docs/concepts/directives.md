@@ -42,7 +42,9 @@ Both forms are parsed identically — in particular, the single-line rule for mo
 
 ## @nudo:case — Debug Witnesses
 
-`@nudo:case` is **debug / `nudo test` only** — scenario witnesses Nudo executes for named inputs. It is **not** the contract/interface product. Contracts live in `*.nudo.js` sidecars and in-source `@nudo:refine` / `@nudo:interface` (see [@nudo:refine](#nudorefine--refinement-contract)). LSP scenario switching and `nudo test` assertions remain fully supported.
+Cases are **debug witnesses**: concrete inputs Nudo executes the function with for scenario runs. They are not the interface product — refinement contracts live in `*.nudo.js` sidecars (see [@nudo:refine](#nudorefine--refinement-contract)). `@nudo:case` remains supported for `nudo test` assertions and LSP scenario switching. Prefer **concrete** arguments; legacy symbolic `T.*` case args are deprecated and not used in product examples.
+
+Provide named execution cases. Each case defines inputs (concrete or symbolic) for Nudo to run the function with.
 
 ### Syntax
 
@@ -51,9 +53,9 @@ Both forms are parsed identically — in particular, the single-line rule for mo
 @nudo:case "name" (arg1, arg2) => expectedType
 ```
 
-- **name** — A string identifier for the case (e.g. `"positive numbers"`).
-- **args** — Comma-separated arguments: concrete values (`5`, `"hello"`) or type expressions (`number()`, `union(string(), number())`).
-- **expected** (optional) — After `=>`, a constraint-builder / concrete expression for the expected return type (used by `nudo test`).
+- **name** — A string identifier for the case (e.g. `"double digits"`).
+- **args** — Comma-separated **concrete** arguments (`5`, `"hello"`, `{…}`). Legacy symbolic `T.*` expressions are deprecated.
+- **expected** (optional) — After `=>`, a concrete expected result used for validation.
 
 ### Examples
 
@@ -61,7 +63,6 @@ Both forms are parsed identically — in particular, the single-line rule for mo
 /**
  * @nudo:case "positive numbers" (5, 3)
  * @nudo:case "negative result" (1, 10)
- * @nudo:case "symbolic" (number(), number())
  */
 function subtract(a, b) {
   return a - b;
@@ -70,9 +71,9 @@ function subtract(a, b) {
 
 ```javascript
 /**
- * @nudo:case "strings" (string())
- * @nudo:case "numbers" (number())
- * @nudo:case "array" (array(number()))
+ * @nudo:case "strings" ("hello")
+ * @nudo:case "numbers" (42)
+ * @nudo:case "array" ([1, 2, 3])
  */
 function process(x) {
   if (typeof x === "string") return x.length;

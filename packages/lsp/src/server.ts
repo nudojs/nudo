@@ -297,9 +297,9 @@ function handleWatchedFilesChanges(changes: readonly FileEvent[], isOpen: (uri: 
   return gone;
 }
 
-connection.onDidChangeWatchedFiles((event) =>
-  handleWatchedFilesChanges(event.changes, (uri) => documents.get(uri) !== undefined),
-);
+connection.onDidChangeWatchedFiles((event) => {
+  void handleWatchedFilesChanges(event.changes, (uri) => documents.get(uri) !== undefined);
+});
 
 // 模块图边缓存逐出：收到被清理 uri 时逐出 moduleGraphCache 对应 filePath 的条目。
 // 会话级常驻注册，无需持有注销函数。
