@@ -46,8 +46,8 @@
     "prepublishOnly": "tsup"
   },
   "dependencies": {
-    "@babel/parser": "^7.29.0",
-    "@babel/types": "^7.29.0"
+    "@babel/parser": "^7.29.8",
+    "@babel/types": "^7.29.8"
   },
   "devDependencies": {
     "commander": "^13.0.0",
