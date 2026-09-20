@@ -380,6 +380,12 @@ export function isNullishLitAbs(a: Abs): boolean {
  * 返回 undefined = 无法判定（交给 boolean + 调用方）。
  */
 export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
+  // 双字面量折叠必须先看 term.op === "lit"：litValue 无法区分
+  //「字面量 undefined」与「非字面量」（两者都返回 undefined），
+  // undefined === undefined / null === null 此前落无法判定。
+  if (a.term?.op === "lit" && b.term?.op === "lit") {
+    return a.term.value === b.term.value;
+  }
   const va = litValue(a);
   const vb = litValue(b);
   if (va !== undefined && vb !== undefined) return va === vb;

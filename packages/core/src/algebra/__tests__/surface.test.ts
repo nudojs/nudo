@@ -38,6 +38,18 @@ describe("algebra surface ops", () => {
     expect(strictEqAbs(numLit(1), numLit(1))).toBe(true);
   });
 
+  it("strictEq folds double literals including undefined", () => {
+    const undef = abs({ k: "unknown" }, lit(undefined), pTrue, "exact");
+    const nul = abs({ k: "unknown" }, lit(null), pTrue, "exact");
+    // litValue 无法区分「字面量 undefined」与「非字面量」——必须折叠为 true
+    expect(strictEqAbs(undef, undef)).toBe(true);
+    expect(strictEqAbs(nul, nul)).toBe(true);
+    expect(strictEqAbs(undef, nul)).toBe(false);
+    expect(strictEqAbs(undef, numLit(0))).toBe(false);
+    const nan = abs(num().shape, lit(NaN), pTrue, "exact");
+    expect(strictEqAbs(nan, nan)).toBe(false);
+  });
+
   it("looseEq folds Abstract Equality on literals (C2.3)", () => {
     expect(looseEqAbs(numLit(5), numLit(5))).toBe(true);
     expect(looseEqAbs(numLit(5), strLit("5"))).toBe(true);
