@@ -1501,6 +1501,15 @@ export function $arrRest(a: Abs, start: number): Abs {
 export function $concat(a: Abs, b: Abs): Abs {
   a = asAbsVal(a);
   b = asAbsVal(b);
+  // 字符串 spread：按 code points 拆（surrogate pair 合并；原生迭代语义）
+  const av = litValue(a);
+  if (typeof av === "string") {
+    return $concat($arr([...av].map((c) => $lit(c))), b);
+  }
+  const bv = litValue(b);
+  if (typeof bv === "string") {
+    return $concat(a, $arr([...bv].map((c) => $lit(c))));
+  }
   const as = a.shape;
   const bs = b.shape;
   if (as.k === "tuple" && bs.k === "tuple") {
@@ -1542,13 +1551,15 @@ export function $concat(a: Abs, b: Abs): Abs {
   return abs({ k: "arr", element: joinAbs(a, b) }, undefined, undefined, "path");
 }
 
-/** 元素列表（tuple 展开；arr 抽象；C1 Set/Map 逐条目）。
+/** 元素列表（tuple 展开；arr 抽象；C1 Set/Map 逐条目；字符串按 code points）。
  *  Map 迭代语义是 entry `[key, value]` 元组，不是裸 value。 */
 export function $elems(a: Abs): Abs[] {
   if (a.shape.k === "tuple") return [...a.shape.elements];
   if (a.shape.k === "arr") return [a.shape.element];
   if (isSetAbs(a)) return setElementsAbs(a);
   if (isMapAbs(a)) return mapEntriesAbs(a);
+  const sv = litValue(a);
+  if (typeof sv === "string") return [...sv].map((c) => $lit(c));
   return [unknown];
 }
 
@@ -1629,9 +1640,15 @@ export function $forOf(
 
   const shape = iterable.shape;
   const items = $elems(iterable);
-  // tuple / 确切 Set·Map 条目数 → 有界展开；抽象 arr 与 maybeAbsent 仍 0..max join
+  const sv = litValue(iterable);
+  // tuple / 确切 Set·Map 条目数 / 字符串字面量 code points → 有界展开；
+  // 抽象 arr 与 maybeAbsent 仍 0..max join
   const knownLen =
-    shape.k === "tuple" ? shape.elements.length : collectionExactLen(iterable);
+    shape.k === "tuple"
+      ? shape.elements.length
+      : typeof sv === "string"
+        ? [...sv].length
+        : collectionExactLen(iterable);
   // 非具体容器：长度未知（可能空、可能更长）→ 0..max 出口都 join
   const unbounded = knownLen === undefined;
 

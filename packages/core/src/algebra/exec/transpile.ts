@@ -2574,7 +2574,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         if (!el) continue;
         let piece: string;
         if (el.type === "SpreadElement") {
-          piece = transpileExpression(el.argument as Expression, opts);
+          // 经 $concat 归一：字符串按 code points 拆、单元素 spread 也是数组
+          piece = `$concat(${transpileExpression(el.argument as Expression, opts)}, $arr([]))`;
         } else {
           piece = `$arr([${transpileExpression(el, opts)}])`;
         }
