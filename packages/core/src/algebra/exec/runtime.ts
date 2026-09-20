@@ -1819,7 +1819,9 @@ export function $forOf(
       : typeof sv === "string"
         ? [...sv].length
         : collectionExactLen(iterable);
-  // 非具体容器：长度未知（可能空、可能更长）→ 0..max 出口都 join
+  // 非具体容器：长度未知（可能空、可能更长）→ 单代表元素只跑一次
+  // （同一元素重复 join 幂等，maxIters 次展开只会让索引假精确 + 大数组
+  // 反复深拷贝把分析拖死）；0 次出口由下方 snapExit join，保持 sound。
   const unbounded = knownLen === undefined;
 
   if (unbounded) snapExit();
@@ -1828,7 +1830,7 @@ export function $forOf(
     knownLen !== undefined
       ? Math.min(knownLen, maxIters)
       : items.length > 0
-        ? maxIters
+        ? 1
         : 0;
 
   for (let i = 0; i < n; i++) {
@@ -1837,12 +1839,14 @@ export function $forOf(
     try {
       body(
         item,
-        abs(
-          { k: "prim", type: "number" },
-          { op: "lit", value: i },
-          pTrue,
-          "exact",
-        ),
+        unbounded
+          ? abs({ k: "prim", type: "number" }, undefined, undefined, "partial")
+          : abs(
+              { k: "prim", type: "number" },
+              { op: "lit", value: i },
+              pTrue,
+              "exact",
+            ),
       );
     } catch (e) {
       if (isNudoBreak(e, opts?.label)) {

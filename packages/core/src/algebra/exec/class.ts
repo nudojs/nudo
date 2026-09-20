@@ -788,6 +788,75 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   if (method === "join") {
     return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
   }
+  if (method === "keys") {
+    if (shape.k === "tuple") {
+      const holes = arr.shape.holes ?? [];
+      return abs(
+        {
+          k: "tuple",
+          elements: shape.elements
+            .map((el, i) => ({ el, i }))
+            .filter(({ i }) => !holes.includes(i))
+            .map(({ i }) => strLit(String(i))),
+        },
+        undefined,
+        undefined,
+        "exact",
+      );
+    }
+    return abs({ k: "arr", element: strLit("0") }, undefined, undefined, "partial");
+  }
+  if (method === "values") {
+    if (shape.k === "tuple") {
+      const holes = arr.shape.holes ?? [];
+      return abs(
+        {
+          k: "tuple",
+          elements: shape.elements
+            .map((el, i) => ({ el, i }))
+            .filter(({ i }) => !holes.includes(i))
+            .map(({ el }) => el),
+        },
+        undefined,
+        undefined,
+        arr.conf,
+      );
+    }
+    return arr;
+  }
+  if (method === "entries") {
+    if (shape.k === "tuple") {
+      const holes = arr.shape.holes ?? [];
+      return abs(
+        {
+          k: "tuple",
+          elements: shape.elements
+            .map((el, i) => ({ el, i }))
+            .filter(({ i }) => !holes.includes(i))
+            .map(({ el, i }) =>
+              abs({ k: "tuple", elements: [strLit(String(i)), el] }, undefined, undefined, "exact"),
+            ),
+        },
+        undefined,
+        undefined,
+        "exact",
+      );
+    }
+    return abs(
+      {
+        k: "arr",
+        element: abs(
+          { k: "tuple", elements: [strLit("0"), shape.element] },
+          undefined,
+          undefined,
+          "partial",
+        ),
+      },
+      undefined,
+      undefined,
+      "partial",
+    );
+  }
   if (method === "fill" && args.length >= 1) {
     // 表达式值 = 变更后数组本身；start/end 折叠复用语句级 fillTuple
     // （字面量精确窗口；抽象边界 join 回退；Symbol 等非法参数保守）
