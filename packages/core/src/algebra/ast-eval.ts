@@ -57,6 +57,15 @@ import {
   looseEqAbs,
   isNullishLitAbs,
   definitelyNotNullishShape,
+  bitandAbs,
+  bitorAbs,
+  bitxorAbs,
+  bitnotAbs,
+  shlAbs,
+  shrAbs,
+  ushrAbs,
+  powAbs,
+  toNumberAbs,
 } from "./surface.ts";
 import { leakIfNeeded, defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { spread, joinAbs, getSlot } from "./objects.ts";
@@ -1137,11 +1146,8 @@ function evalNodeInner(
       if (u.operator === "-") return ok(negAbs(a, phi), phi, env);
       if (u.operator === "!") return ok(notAbs(a), phi, env);
       if (u.operator === "typeof") return ok(typeofAbs(a), phi, env);
-      if (u.operator === "+") {
-        const lv = litValue(a);
-        if (typeof lv === "number") return ok(numLit(lv), phi, env);
-        return ok(unknown, phi, env);
-      }
+      if (u.operator === "+") return ok(toNumberAbs(a), phi, env);
+      if (u.operator === "~") return ok(bitnotAbs(a), phi, env);
       return ok(unknown, phi, env);
     }
     case "LogicalExpression": {
@@ -1422,6 +1428,20 @@ function evalBinary(
       return ok(leakIfNeeded(div(l, r, phi), budget, "div"), phi, env);
     case "%":
       return ok(leakIfNeeded(mod(l, r, phi), budget, "mod"), phi, env);
+    case "&":
+      return ok(bitandAbs(l, r), phi, env);
+    case "|":
+      return ok(bitorAbs(l, r), phi, env);
+    case "^":
+      return ok(bitxorAbs(l, r), phi, env);
+    case "<<":
+      return ok(shlAbs(l, r), phi, env);
+    case ">>":
+      return ok(shrAbs(l, r), phi, env);
+    case ">>>":
+      return ok(ushrAbs(l, r), phi, env);
+    case "**":
+      return ok(powAbs(l, r), phi, env);
     case "instanceof": {
       if (node.right.type !== "Identifier") return ok(unknown, phi, env);
       const className = (node.right as Identifier).name;

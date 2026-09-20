@@ -66,6 +66,8 @@ export function formatShape(a: Abs): string {
       const lv = litValue(a);
       // JSON.stringify(NaN|±Infinity) is "null" — keep JS literal spelling.
       if (typeof lv === "number" && !Number.isFinite(lv)) return String(lv);
+      // JSON.stringify(bigint) throws；按 JS 字面量拼法展示
+      if (typeof lv === "bigint") return `${String(lv)}n`;
       if (lv !== undefined) return JSON.stringify(lv);
       return s.type;
     }

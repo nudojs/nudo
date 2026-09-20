@@ -14,7 +14,7 @@ import {
   pushCollectionArm,
 } from "../collections.ts";
 import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
-import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs, isNullishLitAbs, definitelyNotNullishShape } from "../surface.ts";
+import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs, isNullishLitAbs, definitelyNotNullishShape, bitandAbs, bitorAbs, bitxorAbs, bitnotAbs, shlAbs, shrAbs, ushrAbs, powAbs, toNumberAbs } from "../surface.ts";
 import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape } from "../objects.ts";
 import {
   isMapAbs,
@@ -72,6 +72,33 @@ export function $div(a: Abs, b: Abs): Abs {
 }
 export function $mod(a: Abs, b: Abs): Abs {
   return mod(a, b, phi);
+}
+export function $bitand(a: Abs, b: Abs): Abs {
+  return bitandAbs(a, b);
+}
+export function $bitor(a: Abs, b: Abs): Abs {
+  return bitorAbs(a, b);
+}
+export function $bitxor(a: Abs, b: Abs): Abs {
+  return bitxorAbs(a, b);
+}
+export function $bitnot(a: Abs): Abs {
+  return bitnotAbs(a);
+}
+export function $shl(a: Abs, b: Abs): Abs {
+  return shlAbs(a, b);
+}
+export function $shr(a: Abs, b: Abs): Abs {
+  return shrAbs(a, b);
+}
+export function $ushr(a: Abs, b: Abs): Abs {
+  return ushrAbs(a, b);
+}
+export function $pow(a: Abs, b: Abs): Abs {
+  return powAbs(a, b);
+}
+export function $toNumber(a: Abs): Abs {
+  return toNumberAbs(a);
 }
 export function $neg(a: Abs): Abs {
   return negAbs(a);

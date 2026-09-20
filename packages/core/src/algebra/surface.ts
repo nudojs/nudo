@@ -19,6 +19,189 @@ import {
 } from "./pred.ts";
 import { implies } from "./pred.ts";
 
+// --- 位运算 / 移位 / 幂 / ToNumber（B-path $bitand 等与 ast-eval 同口径） ---
+
+/** 数值可被 JS ToNumeric/ToNumber 折叠的字面量（null/undefined 亦属 ToNumber 域） */
+function coercibleNumberLit(v: ReturnType<typeof litValue>): v is number | string | boolean | null | undefined {
+  return (
+    v !== undefined &&
+    (typeof v === "number" ||
+      typeof v === "string" ||
+      typeof v === "boolean" ||
+      v === null)
+  );
+}
+
+/**
+ * 双字面量二元折叠：双方 bigint → bigint 算子；其余走 number 算子
+ * （JS 位运算/移位自身完成 ToInt32/ToUint32&31）。混合 bigint⊗number
+ * 原生恒抛 TypeError，不可折叠。不可折叠返回 undefined。
+ */
+function foldNumericBinOp(
+  a: Abs,
+  b: Abs,
+  numOp: (x: number, y: number) => number,
+  bigOp?: (x: bigint, y: bigint) => bigint,
+): Abs | undefined {
+  const va = litValue(a);
+  const vb = litValue(b);
+  if (typeof va === "bigint" || typeof vb === "bigint") {
+    if (typeof va === "bigint" && typeof vb === "bigint" && bigOp) {
+      try {
+        return abs(
+          { k: "prim", type: "bigint" },
+          lit(bigOp(va, vb) as never),
+          pTrue,
+          "exact",
+        );
+      } catch {
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+  if (coercibleNumberLit(va) && coercibleNumberLit(vb)) {
+    return abs(
+      { k: "prim", type: "number" },
+      lit(numOp(Number(va), Number(vb))),
+      pTrue,
+      "exact",
+    );
+  }
+  return undefined;
+}
+
+/** 一元数值折叠（~ / 一元 + 的结果 Abs） */
+function foldNumericUnOp(
+  a: Abs,
+  numOp: (x: number) => number,
+  bigOp?: (x: bigint) => bigint,
+): Abs | undefined {
+  const v = litValue(a);
+  if (typeof v === "bigint") {
+    if (!bigOp) return undefined;
+    try {
+      return abs({ k: "prim", type: "bigint" }, lit(bigOp(v) as never), pTrue, "exact");
+    } catch {
+      return undefined;
+    }
+  }
+  if (coercibleNumberLit(v)) {
+    return abs({ k: "prim", type: "number" }, lit(numOp(Number(v))), pTrue, "exact");
+  }
+  return undefined;
+}
+
+/** 位运算结果的抽象形状：双方 bigint → bigint；含任一 bigint（混合）→ unknown；否则 number */
+function bitwiseResultShape(a: Abs, b: Abs): Abs {
+  const numLike = (x: Abs): boolean =>
+    x.shape.k === "prim" &&
+    (x.shape.type === "number" || x.shape.type === "string" || x.shape.type === "boolean");
+  const bigLike = (x: Abs): boolean => x.shape.k === "prim" && x.shape.type === "bigint";
+  if (bigLike(a) || bigLike(b)) {
+    return bigLike(a) && bigLike(b)
+      ? abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf))
+      : abs({ k: "unknown" }, undefined, undefined, "partial");
+  }
+  if (numLike(a) && numLike(b)) {
+    return abs({ k: "prim", type: "number" }, undefined, undefined, confJoin(a.conf, b.conf));
+  }
+  return abs({ k: "unknown" }, undefined, undefined, "partial");
+}
+
+/** & —— ToInt32 两侧后按位与 */
+export function bitandAbs(a: Abs, b: Abs): Abs {
+  return (
+    foldNumericBinOp(a, b, (x, y) => x & y, (x, y) => x & y) ??
+    bitwiseResultShape(a, b)
+  );
+}
+
+/** | —— ToInt32 两侧后按位或 */
+export function bitorAbs(a: Abs, b: Abs): Abs {
+  return (
+    foldNumericBinOp(a, b, (x, y) => x | y, (x, y) => x | y) ??
+    bitwiseResultShape(a, b)
+  );
+}
+
+/** ^ —— ToInt32 两侧后按位异或 */
+export function bitxorAbs(a: Abs, b: Abs): Abs {
+  return (
+    foldNumericBinOp(a, b, (x, y) => x ^ y, (x, y) => x ^ y) ??
+    bitwiseResultShape(a, b)
+  );
+}
+
+/** ~ —— ToInt32 后按位取反（bigint 无符号截断） */
+export function bitnotAbs(a: Abs): Abs {
+  const folded = foldNumericUnOp(a, (x) => ~x, (x) => ~x);
+  if (folded) return folded;
+  if (a.shape.k === "prim") {
+    if (a.shape.type === "bigint") {
+      return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, "widened"));
+    }
+    if (a.shape.type === "number" || a.shape.type === "string" || a.shape.type === "boolean") {
+      return abs({ k: "prim", type: "number" }, undefined, undefined, confJoin(a.conf, "widened"));
+    }
+  }
+  return abs({ k: "unknown" }, undefined, undefined, "partial");
+}
+
+/** << —— 左移（rhs ToUint32 & 31；bigint 不限位宽） */
+export function shlAbs(a: Abs, b: Abs): Abs {
+  return (
+    foldNumericBinOp(a, b, (x, y) => x << y, (x, y) => x << y) ??
+    bitwiseResultShape(a, b)
+  );
+}
+
+/** >> —— 算术右移（rhs ToUint32 & 31；bigint 不限位宽） */
+export function shrAbs(a: Abs, b: Abs): Abs {
+  return (
+    foldNumericBinOp(a, b, (x, y) => x >> y, (x, y) => x >> y) ??
+    bitwiseResultShape(a, b)
+  );
+}
+
+/** >>> —— 逻辑右移（rhs ToUint32 & 31；bigint 无此运算符 → 不可折叠） */
+export function ushrAbs(a: Abs, b: Abs): Abs {
+  return (
+    foldNumericBinOp(a, b, (x, y) => x >>> y) ?? bitwiseResultShape(a, b)
+  );
+}
+
+/** ** —— 幂（右结合由 AST 保证）；负指数 bigint 原生 RangeError → 不可折叠 */
+export function powAbs(a: Abs, b: Abs): Abs {
+  return (
+    foldNumericBinOp(a, b, (x, y) => x ** y, (x, y) => x ** y) ??
+    bitwiseResultShape(a, b)
+  );
+}
+
+/** 一元 + —— ToNumber 折叠；bigint 原生恒抛 TypeError → 不可折叠 */
+export function toNumberAbs(a: Abs): Abs {
+  const v = litValue(a);
+  if (typeof v === "bigint") {
+    // +5n 原生抛 TypeError，不得折出数值
+    return abs({ k: "unknown" }, undefined, undefined, "partial");
+  }
+  if (coercibleNumberLit(v)) {
+    return abs({ k: "prim", type: "number" }, lit(Number(v)), pTrue, "exact");
+  }
+  if (a.shape.k === "prim") {
+    if (a.shape.type === "number") return a;
+    if (a.shape.type === "string" || a.shape.type === "boolean") {
+      return abs({ k: "prim", type: "number" }, undefined, undefined, confJoin(a.conf, "widened"));
+    }
+  }
+  // obj/arr/tuple/brand：ToPrimitive 后恒为 number（或自定义 valueOf 抛——partial 近似）
+  if (a.shape.k === "obj" || a.shape.k === "arr" || a.shape.k === "tuple" || a.shape.k === "brand") {
+    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
+  }
+  return abs({ k: "unknown" }, undefined, undefined, "partial");
+}
+
 /** JS typeof：结果域永远是 string */
 export function typeofAbs(a: Abs): Abs {
   const v = litValue(a);
