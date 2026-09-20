@@ -1583,14 +1583,25 @@ function evalCall(
         if (typeof sv === "string") {
           switch (method) {
             case "startsWith":
-              if (typeof a0 === "string") return ok(boolLit(sv.startsWith(a0)), phi, env);
-              break;
             case "endsWith":
-              if (typeof a0 === "string") return ok(boolLit(sv.endsWith(a0)), phi, env);
+            case "includes": {
+              // 可选位置参数与 methods.ts 同口径：number 字面量/缺省 → 原生折叠；
+              // 非字面量位置 → 落抽象 boolean 分支
+              if (typeof a0 === "string") {
+                const a1Abs = rawArgs[1]
+                  ? evalNode(rawArgs[1], env, phi, budget).value
+                  : undefined;
+                const a1 = a1Abs ? litValue(a1Abs) : undefined;
+                if (a1Abs === undefined || a1Abs.term?.op === "lit") {
+                  return ok(
+                    boolLit(sv[method](a0, a1 as number | undefined) as boolean),
+                    phi,
+                    env,
+                  );
+                }
+              }
               break;
-            case "includes":
-              if (typeof a0 === "string") return ok(boolLit(sv.includes(a0)), phi, env);
-              break;
+            }
             case "charAt":
               if (typeof a0 === "number") return ok(strLit(sv.charAt(a0)), phi, env);
               break;
