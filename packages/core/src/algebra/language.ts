@@ -7,7 +7,8 @@
 
 import type { Node } from "@babel/types";
 import type { Abs } from "./abs.ts";
-import { abs, confJoin, unknown } from "./abs.ts";
+import { abs, confJoin, litValue, unknown } from "./abs.ts";
+import { isNullishLitAbs } from "./surface.ts";
 import { getSlot } from "./objects.ts";
 import type { AstEnv } from "./ast-env.ts";
 
@@ -150,33 +151,99 @@ function mergeInstanceFields(instance: Abs, fields: Abs, className: string): Abs
 }
 
 /**
- * instanceof：沿继承链匹配 brand 名。
+ * instanceof：沿继承链匹配 brand 名；数组/对象/函数/Promise/prim 按
+ * JS 真实语义判定（arr instanceof Array → true、5 instanceof Number → false）。
+ * 左侧为 null/undefined 字面量时原生抛 TypeError → 不可判定。
  */
+const BUILTIN_ERROR_SUPER: Record<string, string> = {
+  Error: "",
+  RangeError: "Error",
+  TypeError: "Error",
+  ReferenceError: "Error",
+  SyntaxError: "Error",
+  URIError: "Error",
+  EvalError: "Error",
+  AggregateError: "Error",
+};
+
+/** 品牌沿注册/内建层级上溯的父名序列（含自身；限深防环） */
+export function classChainNames(name: string, env?: AstEnv): string[] {
+  const out = [name];
+  let cur: string | undefined = name;
+  let depth = 0;
+  while (cur && depth++ < 32) {
+    const parent: string | undefined = env
+      ? getClass(env, cur)?.superClass
+      : BUILTIN_ERROR_SUPER[cur];
+    if (!parent || out.includes(parent)) break;
+    out.push(parent);
+    cur = parent;
+  }
+  return out;
+}
+
 export function instanceOf(
   left: Abs,
   rightClassName: string,
   env?: AstEnv,
 ): Abs {
-  if (left.shape.k === "brand") {
-    const chainNames = env
-      ? getClassChain(env, left.shape.name).map((c) => c.name)
-      : [left.shape.name];
-    if (chainNames.includes(rightClassName) || left.shape.name === rightClassName) {
-      return { shape: { k: "prim", type: "boolean" }, term: litTrue(), conf: "exact" };
-    }
-    return { shape: { k: "prim", type: "boolean" }, term: litFalse(), conf: "exact" };
-  }
-  if (left.shape.k === "unknown") {
+  // null/undefined instanceof X：原生抛 TypeError（litValue 无 lit 的抽象值不得误判）
+  if (litValue(left) === null || isNullishLitAbs(left)) {
     return { shape: { k: "prim", type: "boolean" }, conf: "partial" };
   }
-  return { shape: { k: "prim", type: "boolean" }, term: litFalse(), conf: "path" };
-}
-
-function litTrue() {
-  return { op: "lit" as const, value: true };
-}
-function litFalse() {
-  return { op: "lit" as const, value: false };
+  const t = (v: boolean): Abs => ({
+    shape: { k: "prim", type: "boolean" },
+    term: { op: "lit", value: v },
+    conf: "exact",
+  });
+  switch (left.shape.k) {
+    case "brand": {
+      if (rightClassName === "Object") return t(true);
+      return t(classChainNames(left.shape.name, env).includes(rightClassName));
+    }
+    case "arr":
+    case "tuple":
+      return t(rightClassName === "Array" || rightClassName === "Object");
+    case "obj":
+      return t(rightClassName === "Object");
+    case "fn":
+      return t(rightClassName === "Function" || rightClassName === "Object");
+    case "eff":
+      return t(
+        (left.shape.eff === "promise" &&
+          (rightClassName === "Promise" || rightClassName === "Object")) ||
+          (left.shape.eff === "generator" && rightClassName === "Object"),
+      );
+    case "prim":
+      return t(false); // 原始值无装箱
+    case "sum": {
+      const parts = left.shape.members.map((m) => instanceOf(m, rightClassName, env));
+      let decided: boolean | undefined;
+      let undecided = false;
+      for (const p of parts) {
+        const pv = p.term?.op === "lit" ? p.term.value : undefined;
+        if (typeof pv !== "boolean") {
+          undecided = true;
+          continue;
+        }
+        if (decided === undefined) decided = pv;
+        else if (decided !== pv) {
+          // 成员结论冲突 → 不可判定
+          return { shape: { k: "prim", type: "boolean" }, conf: "partial" };
+        }
+      }
+      if (decided === undefined) {
+        return { shape: { k: "prim", type: "boolean" }, conf: "partial" };
+      }
+      return {
+        shape: { k: "prim", type: "boolean" },
+        term: { op: "lit", value: decided },
+        conf: undecided ? "path" : "exact",
+      };
+    }
+    default:
+      return { shape: { k: "prim", type: "boolean" }, conf: "partial" };
+  }
 }
 
 export function projectBrand(self: Abs, key: string): Abs {

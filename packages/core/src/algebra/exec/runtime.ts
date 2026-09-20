@@ -6,6 +6,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Abs } from "../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, unknown, type Confidence } from "../abs.ts";
+import { lit } from "../term.ts";
 import { absFunction } from "../abs-fn.ts";
 import {
   beginCollectionFork,
@@ -15,7 +16,7 @@ import {
 } from "../collections.ts";
 import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs, isNullishLitAbs, definitelyNotNullishShape, bitandAbs, bitorAbs, bitxorAbs, bitnotAbs, shlAbs, shrAbs, ushrAbs, powAbs, toNumberAbs } from "../surface.ts";
-import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape } from "../objects.ts";
+import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape, type Slot } from "../objects.ts";
 import {
   isMapAbs,
   isSetAbs,
@@ -38,6 +39,7 @@ import {
   anyMemberResult,
 } from "./calls.ts";
 import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, type MayThrowEffect } from "./may-throw.ts";
+import { getBClass } from "./class-registry.ts";
 
 /** 当前路径前提 Φ（transpile 后的 fork 会压栈） */
 let phi: Phi = pTrue;
@@ -99,6 +101,238 @@ export function $pow(a: Abs, b: Abs): Abs {
 }
 export function $toNumber(a: Abs): Abs {
   return toNumberAbs(a);
+}
+
+// --- in / instanceof / delete（transpile 运算符路由；与 ast-eval 同口径） ---
+
+/** Object.prototype 上的恒有成员（`in` 判定：闭对象缺自有槽仍可能经原型命中） */
+const OBJECT_PROTO_NAMES = new Set([
+  "constructor",
+  "toString",
+  "valueOf",
+  "toLocaleString",
+  "hasOwnProperty",
+  "isPrototypeOf",
+  "propertyIsEnumerable",
+  "__proto__",
+]);
+
+/** ES 规范数组下标（无前导零、< 2^32-1）；非规范键返回 undefined */
+function canonicalArrayIndex(v: unknown): number | undefined {
+  if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 4294967295) {
+    return v;
+  }
+  if (typeof v === "string" && /^(0|[1-9]\d*)$/.test(v)) {
+    const n = Number(v);
+    if (n < 4294967295) return n;
+  }
+  return undefined;
+}
+
+/**
+ * `key in obj`：闭形状精确判定（含 Object.prototype 名与数组下标/length）；
+ * prim/nullish 接收者原生抛 TypeError → unknown；抽象键/开形状 → boolean。
+ */
+export function $in(key: Abs, o: Abs): Abs {
+  if (o.shape.k === "sum") {
+    return o.shape.members.map((m) => $in(key, m)).reduce((a, b) => joinAbs(a, b));
+  }
+  // 原生：prim/nullish 接收者抛 TypeError（'a' in 5 → TypeError）
+  if (o.shape.k === "prim" || o.shape.k === "never" || isNullishLitAbs(o)) {
+    return unknown;
+  }
+  // null/undefined 键原生抛 TypeError；非字面量键 → boolean 近似
+  const kv = key.term?.op === "lit" ? key.term.value : undefined;
+  if (kv === null || kv === undefined) {
+    return isNullishLitAbs(key) ? unknown : bool();
+  }
+  if (o.shape.k === "tuple") {
+    if (kv === "length") return boolLit(true);
+    const idx = canonicalArrayIndex(kv);
+    if (idx !== undefined) return boolLit(idx < o.shape.elements.length);
+    return boolLit(false);
+  }
+  if (o.shape.k === "arr") return bool(); // 抽象数组：索引域未知
+  const keyStr =
+    typeof kv === "number" ? String(kv) : typeof kv === "string" ? kv : undefined;
+  if (keyStr === undefined) return bool(); // symbol 键：抽象
+  if (o.shape.k === "obj" || o.shape.k === "brand") {
+    const objShape: ObjShape | undefined =
+      o.shape.k === "brand"
+        ? o.shape.shape.shape.k === "obj"
+          ? o.shape.shape.shape
+          : undefined
+        : o.shape;
+    if (!objShape) return bool();
+    if (keyStr in objShape.slots) {
+      const slot = objShape.slots[keyStr];
+      if (!slot || slot.optional) return bool(); // optional 槽可能缺席
+      return boolLit(true);
+    }
+    if (objShape.open) return bool();
+    return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
+  }
+  // fn/eff：无自有数据槽
+  return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
+}
+
+/** 内建错误层级（Error 为根，registry 无 superName 时回退） */
+const BUILTIN_ERROR_SUPER: Record<string, string> = {
+  Error: "",
+  RangeError: "Error",
+  TypeError: "Error",
+  ReferenceError: "Error",
+  SyntaxError: "Error",
+  URIError: "Error",
+  EvalError: "Error",
+  AggregateError: "Error",
+};
+
+/** B-path 品牌链：registry extends 优先，内建错误层级回退（限深防环） */
+function bClassChain(name: string): string[] {
+  const out = [name];
+  let cur: string | undefined = name;
+  let depth = 0;
+  while (cur && depth++ < 32) {
+    const spec = getBClass(cur);
+    const parent: string | undefined = spec?.superName ?? BUILTIN_ERROR_SUPER[cur];
+    if (!parent || out.includes(parent)) break;
+    out.push(parent);
+    cur = parent;
+  }
+  return out;
+}
+
+/**
+ * `x instanceof Right`（Right 为标识符名）：按左值形状精确判定。
+ * nullish 左侧原生抛 TypeError → unknown；抽象形状 → boolean。
+ */
+export function $instanceof(left: Abs, rightName: string): Abs {
+  // null/undefined instanceof X：原生抛 TypeError
+  if (isNullishLitAbs(left)) return unknown;
+  switch (left.shape.k) {
+    case "brand":
+      return boolLit(
+        rightName === "Object" || bClassChain(left.shape.name).includes(rightName),
+      );
+    case "arr":
+    case "tuple":
+      return boolLit(rightName === "Array" || rightName === "Object");
+    case "obj":
+      return boolLit(rightName === "Object");
+    case "fn":
+      return boolLit(rightName === "Function" || rightName === "Object");
+    case "eff":
+      return boolLit(
+        (left.shape.eff === "promise" &&
+          (rightName === "Promise" || rightName === "Object")) ||
+          (left.shape.eff === "generator" && rightName === "Object"),
+      );
+    case "prim":
+      return boolLit(false); // 原始值无装箱
+    case "sum": {
+      const parts = left.shape.members.map((m) => $instanceof(m, rightName));
+      let decided: boolean | undefined;
+      let undecided = false;
+      for (const p of parts) {
+        const pv = litValue(p);
+        if (typeof pv !== "boolean") {
+          undecided = true;
+          continue;
+        }
+        if (decided === undefined) decided = pv;
+        else if (decided !== pv) return bool();
+      }
+      if (decided === undefined) return bool();
+      return undecided
+        ? abs(bool().shape, lit(decided), pTrue, "path")
+        : boolLit(decided);
+    }
+    default:
+      return bool();
+  }
+}
+
+/**
+ * `delete obj[key]` 的结果判定（只读，不写回）。
+ * closed 目标恒 true（不建模 non-configurable/freeze）；
+ * prim/nullish 接收者原生抛 TypeError → unknown。
+ */
+export function $delRes(o: Abs, _key: Abs): Abs {
+  if (o.shape.k === "prim" || o.shape.k === "never" || isNullishLitAbs(o)) {
+    return unknown;
+  }
+  if (o.shape.k === "sum") {
+    return o.shape.members.map((m) => $delRes(m, _key)).reduce((a, b) => joinAbs(a, b));
+  }
+  if (o.shape.k === "obj" || o.shape.k === "brand") {
+    const objShape: ObjShape | undefined =
+      o.shape.k === "brand"
+        ? o.shape.shape.shape.k === "obj"
+          ? o.shape.shape.shape
+          : undefined
+        : o.shape;
+    if (objShape?.open) return bool();
+    return boolLit(true);
+  }
+  // tuple/arr/fn/eff：delete 任意键恒 true（数组洞为 undefined 槽，不影响结果）
+  if (
+    o.shape.k === "tuple" ||
+    o.shape.k === "arr" ||
+    o.shape.k === "fn" ||
+    o.shape.k === "eff"
+  ) {
+    return boolLit(true);
+  }
+  return bool();
+}
+
+/**
+ * `delete obj[key]` 的写入（不可变更新）：返回删键后的新容器。
+ * 闭对象删自有槽；tuple 规范下标置 undefined（对齐原生空洞读值）；
+ * 抽象 arr 元素并入 undefined；无法表达的形态原样返回。
+ */
+export function $del(o: Abs, key: Abs): Abs {
+  const kv = litValue(key);
+  if (o.shape.k === "sum") {
+    return abs(
+      { k: "sum", members: o.shape.members.map((m) => $del(m, key)) },
+      undefined,
+      undefined,
+      "partial",
+    );
+  }
+  if (o.shape.k === "brand") {
+    const inner = $del(o.shape.shape, key);
+    if (inner === o.shape.shape) return o;
+    return abs({ k: "brand", name: o.shape.name, shape: inner }, undefined, undefined, o.conf);
+  }
+  const keyStr =
+    typeof kv === "number" ? String(kv) : typeof kv === "string" ? kv : undefined;
+  if (o.shape.k === "obj" && keyStr !== undefined) {
+    if (o.shape.open) return o;
+    if (!(keyStr in o.shape.slots)) return o; // 无此槽：no-op
+    const slots: Record<string, Slot> = {};
+    for (const [k, slot] of Object.entries(o.shape.slots)) {
+      if (k !== keyStr) slots[k] = slot;
+    }
+    return abs({ k: "obj", slots }, undefined, undefined, o.conf);
+  }
+  if (o.shape.k === "tuple") {
+    const idx = canonicalArrayIndex(kv);
+    if (idx === undefined) return o;
+    const els = o.shape.elements.map((e, i) => (i === idx ? $lit(undefined) : e));
+    return abs({ k: "tuple", elements: els }, undefined, undefined, o.conf);
+  }
+  if (o.shape.k === "arr") {
+    return abs(
+      { k: "arr", element: joinAbs(o.shape.element, $lit(undefined)) },
+      undefined,
+      undefined,
+      "partial",
+    );
+  }
+  return o;
 }
 export function $neg(a: Abs): Abs {
   return negAbs(a);

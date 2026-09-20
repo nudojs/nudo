@@ -58,6 +58,11 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
       return strLitResult(String(va) + String(vb));
     }
   }
+  // boolean/null 字面量与数字混合：ToNumber 折叠（与 sub/mul/div/mod 同口径；
+  // native 10 + true = 11、2 + null = 2；undefined 参与恒 NaN 不折）
+  if (coercibleLit(va) && coercibleLit(vb)) {
+    return numLit(Number(va) + Number(vb));
+  }
 
   // 字符串拼接（含 template parts）—— JS + 优先走 string
   if (isStrPrim(a) || isStrPrim(b) || isTemplateLike(a) || isTemplateLike(b)) {

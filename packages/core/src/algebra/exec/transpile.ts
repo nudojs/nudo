@@ -88,6 +88,7 @@ const BIN_OPS: Record<string, string> = {
   ">>": "$shr",
   ">>>": "$ushr",
   "**": "$pow",
+  in: "$in",
 };
 
 /** 复合赋值 → 二元运行时（标识符与成员路径统一走读-改-写） */
@@ -175,6 +176,17 @@ function setPathSrc(p: MemberPath, valSrc: string): string {
 /** 前 j 层的读取源 */
 function readPrefix(p: MemberPath, j: number): string {
   return p.layers.slice(0, j + 1).reduce((acc, l) => l.get(acc), p.rootSrc);
+}
+
+/** 路径「去掉最后一层」的写回源：delete o.a.b ⇒ o = $set(o, "a", $del($get(o,"a"), "b")) */
+function setParentPathSrc(p: MemberPath, valSrc: string): string {
+  let acc = valSrc;
+  for (let i = p.layers.length - 2; i >= 0; i--) {
+    const l = p.layers[i]!;
+    const base = i === 0 ? p.rootSrc : readPrefix(p, i - 1);
+    acc = l.set(base, acc);
+  }
+  return acc;
 }
 
 const ARR_MUTATOR_NAMES = new Set([
@@ -269,6 +281,32 @@ function emitArrMutatorRebinds(
       }
       // 仍要遍历参数内嵌套 mutator（如 a.pop(b.pop())）
     }
+    // delete obj[key]：语句位置把删键后的容器写回绑定（表达式值 $delRes 由 transpile 负责）
+    if (
+      node.type === "UnaryExpression" &&
+      (node as { operator?: string }).operator === "delete" &&
+      (node as { argument?: unknown }).argument &&
+      ((node as { argument?: unknown }).argument as { type?: string }).type === "MemberExpression"
+    ) {
+      const m = (node as { argument: unknown }).argument as unknown as {
+        object: Node;
+        property: Node;
+        computed: boolean;
+      };
+      const path = memberPathOf(m, opts);
+      if (path) {
+        const parentRead =
+          path.layers.length >= 2 ? readPrefix(path, path.layers.length - 2) : path.rootSrc;
+        // 注意：computed key 在此二次求值（副作用型 key 表达式会重复；
+        // 与数组 mutator 参数的重绑口径一致，罕见形态接受）
+        const keySrc = m.computed
+          ? transpileExpression(m.property as Expression, opts)
+          : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
+        lines.push(
+          `${pad}${path.rootSrc} = ${setParentPathSrc(path, `$del(${parentRead}, ${keySrc})`)};`,
+        );
+      }
+    }
     for (const key of Object.keys(node)) {
       if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
       if (key === "callee" || key === "property") continue; // 已处理 receiver
@@ -290,7 +328,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $del, $delRes, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -2026,6 +2064,14 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return `$regex(${JSON.stringify(expr.pattern)}${expr.flags ? `, ${JSON.stringify(expr.flags)}` : ""})`;
     }
     case "BinaryExpression": {
+      // instanceof 需右操作数的**类名**（不是值）：右操作数必须是标识符
+      if (expr.operator === "instanceof") {
+        const l = isExpression(expr.left) ? transpileExpression(expr.left, opts) : "$lit(undefined)";
+        if (expr.right.type === "Identifier") {
+          return `$instanceof(${l}, ${JSON.stringify(expr.right.name)})`;
+        }
+        return `/* instanceof non-ident */ $lit(undefined)`;
+      }
       const fn = BIN_OPS[expr.operator];
       if (!fn) return `/* unsupported ${expr.operator} */ $lit(undefined)`;
       const l = isExpression(expr.left) ? transpileExpression(expr.left, opts) : "$lit(undefined)";
@@ -2033,6 +2079,29 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return `${fn}(${l}, ${r})`;
     }
     case "UnaryExpression": {
+      if (expr.operator === "delete") {
+        // delete 的表达式值是布尔结果；容器写回由语句级 emitDeleteRebinds 负责
+        const arg = expr.argument as Expression;
+        if (arg.type === "MemberExpression") {
+          const m = arg as unknown as {
+            object: Node;
+            property: Node;
+            computed: boolean;
+          };
+          const keySrc = m.computed
+            ? transpileExpression(m.property as Expression, opts)
+            : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
+          const path = memberPathOf(m, opts);
+          const parentRead =
+            path && path.layers.length >= 2
+              ? readPrefix(path, path.layers.length - 2)
+              : path
+                ? path.rootSrc
+                : transpileExpression(m.object as Expression, opts);
+          return `$delRes(${parentRead}, ${keySrc})`;
+        }
+        return `/* delete ${(arg as { type?: string }).type ?? ""} */ $lit(undefined)`;
+      }
       const arg = transpileExpression(expr.argument as Expression, opts);
       if (expr.operator === "-") return `$neg(${arg})`;
       if (expr.operator === "!") return `$not(${arg})`;
