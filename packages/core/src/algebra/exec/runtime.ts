@@ -1738,25 +1738,56 @@ export function $concat(a: Abs, b: Abs): Abs {
         : b;
     return abs({ k: "arr", element: joinAbs(ea, eb) }, undefined, undefined, "path");
   }
+  // 剩余：至少一侧非 tuple/arr/string 字面量。
+  // 字面量不可迭代值 spread → 原生 TypeError（[...5]/[...null]/[...true]）
+  const throwIfNonIterable = (x: Abs): void => {
+    if (x.term?.op !== "lit") return;
+    const v = x.term.value;
+    if (
+      typeof v === "number" ||
+      typeof v === "boolean" ||
+      typeof v === "bigint" ||
+      typeof v === "symbol" ||
+      v === null ||
+      v === undefined
+    ) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+  };
+  throwIfNonIterable(a);
+  throwIfNonIterable(b);
+  // Set/Map：条目精确展开（Map 是 entry 元组）；其余非容器（unknown/any/
+  // brand/obj/抽象字符串）长度未知——必须 arr join，不得折单元素 tuple
+  // （[...x].length 假精确 1 的根因）
+  const expand = (x: Abs): Abs[] | null => {
+    if (isSetAbs(x)) return setElementsAbs(x);
+    if (isMapAbs(x)) return mapEntriesAbs(x);
+    return null;
+  };
   if (as.k === "tuple") {
-    // [...a, x]：非数组 x 作单元素
+    const be = expand(b);
+    if (be) {
+      return tupleOrWiden([...as.elements, ...be], confJoin(a.conf, b.conf));
+    }
+    // b 可能可迭代（元素域未知）：spread 并入的是 b 的元素而非 b 本身
     return abs(
-      { k: "tuple", elements: [...as.elements, b] },
+      { k: "arr", element: [...as.elements, unknown].reduce((x, y) => joinAbs(x, y)) },
       undefined,
       undefined,
-      confJoin(a.conf, b.conf),
+      "path",
     );
   }
-  if (bs.k === "tuple") {
-    return abs(
-      { k: "tuple", elements: [a, ...bs.elements] },
-      undefined,
-      undefined,
-      confJoin(a.conf, b.conf),
-    );
+  const ae = expand(a);
+  if (ae && bs.k === "tuple") {
+    return tupleOrWiden([...ae, ...bs.elements], confJoin(a.conf, b.conf));
   }
-  // 双侧皆非容器：元素 join
-  return abs({ k: "arr", element: joinAbs(a, b) }, undefined, undefined, "path");
+  // 双侧皆非精确容器：元素 join（Set∪Set / Set∪unknown / unknown∪unknown…）
+  return abs(
+    { k: "arr", element: joinAbs(ae ? ae.reduce((x, y) => joinAbs(x, y)) : unknown, expand(b) ? expand(b)!.reduce((x, y) => joinAbs(x, y)) : unknown) },
+    undefined,
+    undefined,
+    "path",
+  );
 }
 
 /** 元素列表（tuple 展开；arr 抽象；C1 Set/Map 逐条目；字符串按 code points）。
