@@ -197,6 +197,8 @@ const ARR_MUTATOR_NAMES = new Set([
   "shift",
   "reverse",
   "sort",
+  "copyWithin",
+  "fill",
 ]);
 
 /**
@@ -2066,6 +2068,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     case "StringLiteral":
     case "BooleanLiteral":
       return `$lit(${JSON.stringify(expr.value)})`;
+    case "BigIntLiteral":
+      // JSON.stringify(bigint) 会抛；按字面量拼法输出（$lit(5n)）
+      return `$lit(${String((expr as { value: bigint }).value)}n)`;
     case "NullLiteral":
       return `$lit(null)`;
     case "Identifier":

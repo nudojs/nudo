@@ -948,6 +948,8 @@ const ARR_MUTATORS = new Set([
   "splice",
   "reverse",
   "sort",
+  "copyWithin",
+  "fill",
 ]);
 
 export function isArrMutator(name: string): boolean {
@@ -958,6 +960,112 @@ export function isArrMutator(name: string): boolean {
  * C1.4 语句重绑：返回**变更后容器** Abs（不是 JS 返回值）。
  * `a.pop()` 语句应把 `a` 绑成去掉末元的 tuple，而不是被移除的元素。
  */
+/** ToIntegerOrInfinity（±Infinity 保持）；返回：数字=可折叠 / null=实参不可判定 / undefined=缺省或显式 undefined（取默认值） */
+function toIOI(v: Abs | undefined): number | null | undefined {
+  if (v === undefined) return undefined; // 实参缺省（数组越界）
+  const lv = litValue(v);
+  if (lv === undefined) {
+    // 显式 undefined 字面量 → 按缺省（copyWithin/fill 规范：undefined end 取 len）
+    return v.term?.op === "lit" ? undefined : null;
+  }
+  if (lv === null) return 0;
+  if (typeof lv === "number") {
+    if (Number.isNaN(lv)) return 0;
+    return Math.trunc(lv);
+  }
+  if (typeof lv === "string" || typeof lv === "boolean") {
+    return Math.trunc(Number(lv));
+  }
+  return null; // bigint/symbol/抽象 → 不可判定
+}
+
+/** 规范窗口（len 相对化 + clamp）；target≥len 或空窗 → null（no-op） */
+function clampWindow(
+  len: number,
+  target: number,
+  start: number,
+  end: number,
+): { t: number; s: number; e: number } | null {
+  const t = target < 0 ? Math.max(len + target, 0) : Math.min(target, len);
+  const s = start < 0 ? Math.max(len + start, 0) : Math.min(start, len);
+  const e = end < 0 ? Math.max(len + end, 0) : Math.min(end, len);
+  if (t >= len || s >= len) return null;
+  const count = Math.min(e - s, len - t);
+  if (count <= 0) return null;
+  return { t, s, e: s + count };
+}
+
+function copyWithinTuple(
+  shape: { k: "tuple"; elements: Abs[] } | { k: "arr"; element: Abs },
+  vals: Abs[],
+): Abs {
+  const t = toIOI(vals[0]);
+  const s = toIOI(vals[1]);
+  const e = toIOI(vals[2]);
+  if (shape.k === "tuple") {
+    if (t === null || s === null || e === null) {
+      // 不可判定边界：任一槽可能被写 → 元素 join 回退（sound）
+      const joined = shape.elements.length
+        ? shape.elements.reduce((x, y) => joinAbs(x, y))
+        : unknown;
+      return abs({ k: "arr", element: joined }, undefined, undefined, "partial");
+    }
+    const len = shape.elements.length;
+    const win = clampWindow(len, t ?? 0, s ?? 0, e ?? len);
+    if (win) {
+      const els = [...shape.elements];
+      // 重叠且源在目标之后（s < t）：按规范倒序复制
+      const backwards = (s ?? 0) < (t ?? 0) && win.s + (win.e - win.s) > win.t;
+      const count = win.e - win.s;
+      if (backwards) {
+        for (let k = count - 1; k >= 0; k--) els[win.t + k] = els[win.s + k]!;
+      } else {
+        for (let k = 0; k < count; k++) els[win.t + k] = els[win.s + k]!;
+      }
+      return abs({ k: "tuple", elements: els }, undefined, undefined, "path");
+    }
+    // 合法边界但 no-op（如 target≥len）：保持 tuple
+    return abs({ k: "tuple", elements: [...shape.elements] }, undefined, undefined, "path");
+  }
+  // 抽象 arr：copyWithin 保持元素类型（sound）
+  return abs({ k: "arr", element: shape.element }, undefined, undefined, "partial");
+}
+
+function fillTuple(
+  shape: { k: "tuple"; elements: Abs[] } | { k: "arr"; element: Abs },
+  vals: Abs[],
+  arr: Abs,
+): Abs {
+  const v = vals[0] ?? unknown;
+  const s = toIOI(vals[1]);
+  const e = toIOI(vals[2]);
+  if (shape.k === "tuple") {
+    const len = shape.elements.length;
+    if (s === null || e === null) {
+      // 不可判定边界：任一槽可能被写 → 元素 join 回退（sound）
+      return abs(
+        { k: "tuple", elements: shape.elements.map((el) => joinAbs(el, v)) },
+        undefined,
+        undefined,
+        "partial",
+      );
+    }
+    const start = Math.max(Math.min((s ?? 0) < 0 ? len + (s ?? 0) : (s ?? 0), len), 0);
+    const end = Math.max(Math.min((e ?? len) < 0 ? len + (e ?? len) : (e ?? len), len), 0);
+    if (end <= start) {
+      return abs({ k: "tuple", elements: [...shape.elements] }, undefined, undefined, "path");
+    }
+    const els = shape.elements.map((el, i) => (i >= start && i < end ? v : el));
+    return abs({ k: "tuple", elements: els }, undefined, undefined, "path");
+  }
+  return abs(
+    { k: "arr", element: joinAbs(shape.element, v) },
+    undefined,
+    undefined,
+    confJoin(arr.conf, "path"),
+  );
+}
+
 export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   const shape = arr.shape;
   if (shape.k !== "tuple" && shape.k !== "arr") return arr;
@@ -1030,6 +1138,12 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
       );
     }
     return arr;
+  }
+  if (method === "copyWithin") {
+    return copyWithinTuple(shape, vals);
+  }
+  if (method === "fill") {
+    return fillTuple(shape, vals, arr);
   }
   if (method === "sort") {
     // 顺序未建模：位次不可信，tuple 降为 arr（元素 join），避免 a[0] 假精确
