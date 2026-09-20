@@ -1080,7 +1080,7 @@ function evalNodeInner(
             const v = litValue(rhs);
             if (typeof v === "number" && (!Number.isInteger(v) || v < 0 || v > 4294967295)) {
               // threw 结果：evalTry 把 RangeError brand 绑进 catch 形参
-              return { value: errorBrandAbs("RangeError"), phi, env, threw: true };
+              return { value: errorBrandAbs("RangeError", []), phi, env, threw: true };
             }
             if (prev.shape.k === "tuple" && typeof v === "number" && v <= TUPLE_MATERIALIZE_CAP) {
               const els = prev.shape.elements.slice(0, v);

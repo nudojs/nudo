@@ -154,7 +154,7 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     const clsName = cls.name || "Object";
     // C2.2：Error 家族携带 name/message 槽（catch 形参可读）
     if (isErrorCtorName(clsName)) {
-      return errorBrandAbs(clsName, args[0]);
+      return errorBrandAbs(clsName, args);
     }
     // C1.1 / C1.2：Map / Set 条目表（按 ctor 名比对，避开 TS 全局接口无交集）
     if (clsName === "Map") return makeMapAbs(args[0]);

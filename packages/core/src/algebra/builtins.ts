@@ -658,20 +658,56 @@ export function isErrorCtorName(name: string | undefined): boolean {
   return !!name && ERROR_CTOR_NAMES.has(name);
 }
 
+/** Error 构造器 message 槽：原生恒为字符串（缺省/undefined → ""；非字符串
+ *  字面量 → ToString）。非字面量保守（字符串保持、其余 strPrim）。 */
+function errorMessageSlot(messageArg: Abs | undefined): Abs {
+  if (!messageArg) return strLit(""); // new Error() → ""
+  if (messageArg.term?.op === "lit") {
+    const v = messageArg.term.value;
+    if (typeof v === "string") return messageArg;
+    if (typeof v === "number" || typeof v === "boolean" || typeof v === "bigint") {
+      return strLit(String(v));
+    }
+    if (v === null) return strLit("null");
+    if (v === undefined) return strLit(""); // new Error(undefined) → ""
+    // symbol 等：原生 ToString 抛 TypeError——保守 unknown，不折精确值
+    return strPrim();
+  }
+  if (messageArg.shape.k === "prim" && messageArg.shape.type === "string") {
+    return messageArg;
+  }
+  return strPrim();
+}
+
 /**
  * Error brand：shape 带 name/message（字面量 message 保精确）。
+ * AggregateError(errors, message[, options])：message 在第二实参，errors
+ * 挂 .errors（原生是实参数组副本）；options.cause 挂 .cause（闭槽 miss
+ * 会折 undefined 假精确——原生 .cause 可能有值）。
  * $new 与 ast-eval 的 new Error 共用——catch 形参成员访问可解。
  */
-export function errorBrandAbs(name: string, messageArg?: Abs): Abs {
-  const message = messageArg ?? strPrim();
+export function errorBrandAbs(name: string, args: Abs[]): Abs {
+  const messageArg = name === "AggregateError" ? args[1] : args[0];
+  const slots: Record<string, { value: Abs }> = {
+    name: { value: strLit(name) },
+    message: { value: errorMessageSlot(messageArg) },
+  };
+  if (name === "AggregateError") {
+    // errors：字面量 tuple 保留精确；抽象/缺省（原生 []）保守 unknown
+    slots["errors"] = { value: args[0] ?? unknown };
+  }
+  const optionsArg = name === "AggregateError" ? args[2] : args[1];
+  if (optionsArg && optionsArg.shape.k === "obj") {
+    const cause = Object.prototype.hasOwnProperty.call(optionsArg.shape.slots, "cause")
+      ? optionsArg.shape.slots["cause"]!.value
+      : undefAbs();
+    slots["cause"] = { value: cause };
+  }
   return abs(
     {
       k: "brand",
       name,
-      shape: objOf({
-        name: { value: strLit(name) },
-        message: { value: message },
-      }),
+      shape: objOf(slots),
     },
     undefined,
     undefined,
@@ -697,7 +733,7 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
     default:
       // C2.2：Error 家族 → name/message 槽
       if (isErrorCtorName(className)) {
-        return errorBrandAbs(className, args[0]);
+        return errorBrandAbs(className, args);
       }
       return undefined;
   }
