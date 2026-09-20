@@ -741,6 +741,28 @@ export function setApplyCallbackHost(fn: ApplyCallbackHost): void {
   applyCallbackHost = fn;
 }
 
+/**
+ * 通用回调实参调用（exec/class invokeArrMethod 与 builtins Array.from 共用）：
+ * 原始 JS 函数直调（展开实参）；Abs fn 走 applyCallbackAbs（sum 分发/宿主）。
+ * B 路径 transpile 的箭头回调是 $fnVal Abs——$fnVal.apply 自带调用边界。
+ */
+export function applyCallbackValue(
+  fn: unknown,
+  args: Abs[],
+  env: unknown,
+  phi: unknown,
+  budget: unknown,
+): Abs {
+  if (typeof fn === "function") {
+    const r = (fn as (...a: Abs[]) => unknown)(...args);
+    if (r && typeof r === "object" && "shape" in (r as object)) return r as Abs;
+    return unknown;
+  }
+  const absFn = asAbs(fn);
+  if (absFn) return applyCallbackAbs(absFn, args, env, phi, budget);
+  return unknown;
+}
+
 export function applyCallbackAbs(
   cb: Abs | { type: string },
   args: Abs[],
