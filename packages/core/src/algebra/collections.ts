@@ -255,6 +255,12 @@ function litKeyOf(a: Abs | undefined): LitKey | undefined {
   return v;
 }
 
+/** SameValueZero（JS Set/Map 键语义）：NaN 相等、+0/-0 相等 */
+function sameValueZeroKey(a: LitKey | undefined, b: LitKey | undefined): boolean {
+  if (a === b) return true;
+  return typeof a === "number" && typeof b === "number" && Number.isNaN(a) && Number.isNaN(b);
+}
+
 export function isMapAbs(a: Abs | undefined): boolean {
   return !!a && a.shape.k === "brand" && a.shape.name === "Map";
 }
@@ -554,8 +560,8 @@ export function mapEntriesAbs(mapAbs: Abs): Abs[] {
 export function setAddEntry(setAbs: Abs, value: Abs): Abs {
   const t = setTableForWrite(setAbs);
   const lk = litKeyOf(value);
-  if (lk !== undefined && t.elements.some((el) => litKeyOf(el) === lk)) {
-    return setAbs; // JS Set 语义：重复 add 不增长
+  if (lk !== undefined && t.elements.some((el) => sameValueZeroKey(litKeyOf(el), lk))) {
+    return setAbs; // JS Set 语义：重复 add 不增长（SameValueZero）
   }
   t.elements.push(value);
   return setAbs;
@@ -568,7 +574,7 @@ export function setDeleteEntry(setAbs: Abs, value: Abs): Abs {
   const t = setTableForWrite(setAbs);
   const lk = litKeyOf(value);
   if (lk !== undefined) {
-    t.elements = t.elements.filter((el) => litKeyOf(el) !== lk);
+    t.elements = t.elements.filter((el) => !sameValueZeroKey(litKeyOf(el), lk));
     const hasUnknown = t.elements.some((el) => litKeyOf(el) === undefined);
     if (hasUnknown) t.maybeAbsent = true;
     else delete t.maybeAbsent;
@@ -591,7 +597,7 @@ export function setHasEntry(setAbs: Abs, value: Abs): Abs {
   if (!t) return unknown;
   const k = litKeyOf(value);
   if (k !== undefined) {
-    const hit = t.elements.some((el) => litKeyOf(el) === k);
+    const hit = t.elements.some((el) => sameValueZeroKey(litKeyOf(el), k));
     // 该字面 key 跨臂 membership 不一致 → 不能折 exact
     if (setAbsentKey(t, k)) {
       return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");

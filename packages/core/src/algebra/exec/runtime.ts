@@ -40,6 +40,7 @@ import {
 } from "./calls.ts";
 import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, recordMayThrow, type MayThrowEffect } from "./may-throw.ts";
 import { getBClass, classNameOfValue, markClassValue } from "./class-registry.ts";
+import { $call } from "./call.ts";
 
 /** 当前路径前提 Φ（transpile 后的 fork 会压栈） */
 let phi: Phi = pTrue;
@@ -1733,10 +1734,17 @@ export function $get(
     return unknown;
   }
   if (o.shape.k === "brand") {
+    const isClassVal = classNameOfValue(o as object) === o.shape.name;
+    // 内建 brand 原型方法读取（typeof m.forEach / m[Symbol.iterator]）：
+    // 方法实现由 $invoke 派发，此处给可 typeof 的 fn 形状
+    // （class 声明值同名内建时不误伤：类方法走 registry）
+    const builtinM = BUILTIN_BRAND_METHODS[o.shape.name];
+    if (builtinM && !isClassVal && (key === "@@iterator" || builtinM.has(key))) {
+      return absFunction([], { body: noBody });
+    }
     // JS Map/Set 的 size 是属性不是方法；brand 内层为空 obj，须在 $get 委托
     if (key === "size" && o.shape.name === "Map") return mapSizeAbs(o);
     if (key === "size" && o.shape.name === "Set") return setSizeAbs(o);
-    const isClassVal = classNameOfValue(o as object) === o.shape.name;
     const inner = o.shape.shape;
     // 自有数据属性优先于原型访问器（原生属性查找：own → prototype）
     if (inner?.shape.k === "obj") {
@@ -1800,6 +1808,42 @@ export function $get(
     noteObjSlotMissing(o, key);
   }
   return unknown;
+}
+
+/**
+ * Map/Set forEach：条目表逐条调用回调（value, key, recv）。
+ * 回调是 B 路径 JS 函数（transpile 内联箭头）直接调用；Abs fn 走 $call。
+ * 回调返回值丢弃；forEach 表达式值恒 undefined。
+ */
+export function $collectionForEach(recv: Abs, cb: unknown): Abs | undefined {
+  const invokeCb = (args: Abs[]): void => {
+    if (typeof cb === "function") {
+      callAtFunctionBoundary(() => {
+        (cb as (...a: Abs[]) => unknown)(...args);
+      });
+      return;
+    }
+    if (cb && typeof cb === "object" && "shape" in (cb as object)) {
+      $call(cb as Abs, args);
+    }
+  };
+  if (isMapAbs(recv)) {
+    for (const entry of mapEntriesAbs(recv)) {
+      if (entry.shape.k === "tuple" && entry.shape.elements.length >= 2) {
+        const key = entry.shape.elements[0]!;
+        const value = entry.shape.elements[1]!;
+        invokeCb([value, key, recv]);
+      }
+    }
+    return undef();
+  }
+  if (isSetAbs(recv)) {
+    for (const el of setElementsAbs(recv)) {
+      invokeCb([el, el, recv]);
+    }
+    return undef();
+  }
+  return undefined;
 }
 
 /** 成员写：返回新 obj/brand（不可变更新）；frozen/sealed/只读目标按 sloppy 静默失败 */

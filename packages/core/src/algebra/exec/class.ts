@@ -31,7 +31,7 @@ import {
   anyMemberResult,
 } from "./calls.ts";
 import { errorTypeAbs } from "./may-throw.ts";
-import { NudoThrow } from "./runtime.ts";
+import { NudoThrow, $collectionForEach } from "./runtime.ts";
 import { callAbsMethod } from "../methods.ts";
 import {
   registerBClass,
@@ -455,6 +455,10 @@ export function $invoke(
     if (brandName === "Map" || brandName === "Set") {
       const viaCol = evalBuiltinInstanceMethod(brandName, method, thisVal, args);
       if (viaCol !== undefined) return viaCol;
+      if (method === "forEach") {
+        const r = $collectionForEach(thisVal, args[0]);
+        if (r !== undefined) return r;
+      }
     }
     const m = findMethod(brandName, method);
     if (m) return m(thisVal, ...args);

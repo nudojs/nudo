@@ -2524,6 +2524,18 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             ? `$optionalGet(${obj}, ${JSON.stringify(String(key.value))})`
             : `$idx(${obj}, $lit(${key.value}))`;
         }
+        // 宿主 Symbol 常量键（m[Symbol.iterator]）：投影为 "@@name" 字符串键，
+        // runtime $get 对内建 brand 解析为可 typeof 的方法形状
+        if (
+          key.type === "MemberExpression" &&
+          key.computed !== true &&
+          key.object.type === "Identifier" &&
+          key.object.name === "Symbol" &&
+          key.property.type === "Identifier"
+        ) {
+          const symKey = JSON.stringify(`@@${key.property.name}`);
+          return optional ? `$optionalGet(${obj}, ${symKey})` : `$get(${obj}, ${symKey})`;
+        }
         if (isExpression(key)) {
           const k = transpileExpression(key, opts);
           return `$idx(${obj}, ${k})`;
