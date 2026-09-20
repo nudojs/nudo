@@ -5,7 +5,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Abs } from "../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, unknown, type Confidence } from "../abs.ts";
+import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../abs.ts";
 import { lit } from "../term.ts";
 import { absFunction } from "../abs-fn.ts";
 import {
@@ -1563,7 +1563,7 @@ export function namespaceNameOf(v: unknown): string | undefined {
   return undefined;
 }
 
-/** 正则字面量 → RegExp brand（source/flags 进 slots，供 exec/test 精确执行） */
+/** 正则字面量 → RegExp brand（source/flags/lastIndex 进 slots，供 exec/test 精确执行） */
 export function $regex(pattern: string, flags = ""): Abs {
   const litStr = (v: string): Abs =>
     abs({ k: "prim", type: "string" }, { op: "lit", value: v as never }, pTrue, "exact");
@@ -1574,6 +1574,7 @@ export function $regex(pattern: string, flags = ""): Abs {
       shape: objOf({
         source: { value: litStr(pattern) },
         flags: { value: litStr(flags) },
+        lastIndex: { value: numLit(0) },
       }),
     },
     undefined,

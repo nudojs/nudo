@@ -201,6 +201,13 @@ const ARR_MUTATOR_NAMES = new Set([
   "fill",
 ]);
 
+/** RegExp 有状态方法：语句/表达式位置都要把 lastIndex 更新后的 receiver 重绑 */
+const REGEX_STATEFUL_NAMES = new Set(["test", "exec"]);
+
+function isStatefulMethodName(name: string): boolean {
+  return ARR_MUTATOR_NAMES.has(name) || REGEX_STATEFUL_NAMES.has(name);
+}
+
 /**
  * C1.4 / review P1：表达式位置的数组 mutator 也必须重绑容器。
  * 语句位置只重绑（丢 JS 返回值）；表达式位置先取返回值再重绑：
@@ -261,6 +268,8 @@ function emitArrMutatorRebinds(
               : "$lit(undefined)",
         )
         .join(", ");
+      // 注：RegExp test/exec 的状态写回在表达式内部联 IIFE 完成（顺序副作用
+      // 需要），此处不重复写回（$reStateCall 重复执行会推进 lastIndex 两次）
       const objNode = node.callee.object as Node;
       if (objNode.type === "Identifier") {
         const name = (objNode as { name: string }).name;
@@ -358,7 +367,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -562,7 +571,7 @@ function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
       n.callee?.type === "MemberExpression" &&
       n.callee.computed !== true &&
       n.callee.property?.type === "Identifier" &&
-      ARR_MUTATOR_NAMES.has((n.callee.property as { name: string }).name)
+      isStatefulMethodName((n.callee.property as { name: string }).name)
     ) {
       const obj = n.callee.object as
         | { type?: string; name?: string; object?: unknown }
@@ -975,7 +984,7 @@ function collectArrMutatorReceiversUncached(node: unknown, acc = new Set<string>
       !callee.computed && callee.property?.type === "Identifier"
         ? (callee.property as { name: string }).name
         : undefined;
-    if (propName && ARR_MUTATOR_NAMES.has(propName)) {
+    if (propName && isStatefulMethodName(propName)) {
       const obj = callee.object;
       if (obj?.type === "Identifier") {
         acc.add((obj as { name: string }).name);
@@ -2593,6 +2602,17 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
         const loc = expr.loc;
         const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
+        // RegExp test/exec 的状态写回必须发生在**表达式内部**（元素顺序副作用：
+        // [r.test(s), r.lastIndex] 原生第二个元素读到更新后的位置）。receiver 是
+        // 本地绑定时内联「求值 + 写回」IIFE；语句级 emit 不再重复写回。
+        if (
+          !opt &&
+          REGEX_STATEFUL_NAMES.has(callee.property.name) &&
+          callee.object.type === "Identifier"
+        ) {
+          const recvName = (callee.object as { name: string }).name;
+          return `(() => { const __v = $invoke(${recvName}, ${name}, [${args}]${locArg}); ${recvName} = $reStateCall(${recvName}, ${name}, [${args}]); return __v; })()`;
+        }
         return opt
           ? `$optionalInvoke(${recv}, ${name}, [${args}])`
           : `$invoke(${recv}, ${name}, [${args}]${locArg})`;
