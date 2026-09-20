@@ -29,6 +29,10 @@ export type TranspileOptions = {
   asOverrides?: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
   /** 循环嵌套深度（>0 时 return → $loopReturn，C2.1） */
   inLoop?: number;
+  /** 循环体/switch 臂内：无标签 break 语义分别为跳出循环信号 / 臂结束 return */
+  inSwitchArm?: boolean;
+  /** 标签循环名（`outer: for …`）：传给 $for/$whileSeq/$forOf 供信号匹配 */
+  loopLabel?: string;
   /** try 嵌套深度（>0 时 return 前 drain throwExits，使 catch 能吸收抽象 throw） */
   inTry?: number;
   /** 当前 try 的 mark 变量名（return drain 用；避免全局栈顶污染） */
@@ -392,7 +396,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -405,17 +409,44 @@ function indent(n: number): string {
   return "  ".repeat(n);
 }
 
-/** 收集赋值/Update 左值标识符（while pack/unpack 用） */
-function collectAssignedIds(node: unknown, acc: Set<string>): void {
+/** 收集赋值/Update 左值标识符（while/for pack/unpack 用）。
+ *  循环 init 声明的名字在整个循环结构内 shadow 外层绑定，不得收集
+ *  （否则外层 pack 会引用内层循环变量——闭包作用域外，ReferenceError）。 */
+function collectAssignedIds(node: unknown, acc: Set<string>, shadowed?: Set<string>): void {
   if (!node || typeof node !== "object") return;
+  const sh = shadowed ?? new Set<string>();
   const n = node as {
     type?: string;
     left?: { type?: string; name?: string; object?: unknown };
+    init?: unknown;
     argument?: { type?: string; name?: string };
     [k: string]: unknown;
   };
+  if (n.type === "ForStatement" || n.type === "ForOfStatement" || n.type === "ForInStatement") {
+    const declNode =
+      n.type === "ForStatement" ? n.init : (n as { left?: unknown }).left;
+    const loopNames = new Set<string>();
+    if (
+      declNode &&
+      typeof declNode === "object" &&
+      (declNode as { type?: string }).type === "VariableDeclaration"
+    ) {
+      for (const d of (declNode as { declarations?: Array<{ id?: unknown }> }).declarations ?? []) {
+        collectPatternNames(d.id, loopNames);
+      }
+    }
+    const next = new Set(sh);
+    for (const name of loopNames) next.add(name);
+    for (const key of Object.keys(n)) {
+      if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
+      const child = n[key];
+      if (Array.isArray(child)) child.forEach((c) => collectAssignedIds(c, acc, next));
+      else if (child && typeof child === "object") collectAssignedIds(child, acc, next);
+    }
+    return;
+  }
   if (n.type === "AssignmentExpression" && n.left?.type === "Identifier" && n.left.name) {
-    acc.add(n.left.name);
+    if (!sh.has(n.left.name)) acc.add(n.left.name);
   }
   if (
     n.type === "AssignmentExpression" &&
@@ -424,16 +455,16 @@ function collectAssignedIds(node: unknown, acc: Set<string>): void {
     let cur: { type?: string; object?: { type?: string; name?: string }; name?: string } | undefined =
       n.left as { type?: string; object?: { type?: string; name?: string }; name?: string };
     while (cur?.type === "MemberExpression") cur = cur.object;
-    if (cur?.type === "Identifier" && cur.name) acc.add(cur.name);
+    if (cur?.type === "Identifier" && cur.name && !sh.has(cur.name)) acc.add(cur.name);
   }
   if (n.type === "UpdateExpression" && n.argument?.type === "Identifier" && n.argument.name) {
-    acc.add(n.argument.name);
+    if (!sh.has(n.argument.name)) acc.add(n.argument.name);
   }
   for (const key of Object.keys(n)) {
     if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
     const child = n[key];
-    if (Array.isArray(child)) child.forEach((c) => collectAssignedIds(c, acc));
-    else if (child && typeof child === "object") collectAssignedIds(child, acc);
+    if (Array.isArray(child)) child.forEach((c) => collectAssignedIds(c, acc, sh));
+    else if (child && typeof child === "object") collectAssignedIds(child, acc, sh);
   }
 }
 
@@ -1469,6 +1500,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const forBodyOpts: TranspileOptions = {
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
+        loopLabel: undefined, // 标签属于本循环；体 opts 不得传给嵌套循环
       };
       const bodyStmts =
         stmt.body.type === "BlockStatement"
@@ -1491,8 +1523,15 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         names.length === 0
           ? null
           : `(__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }`;
-      const optsSrc =
-        packSrc && unpackSrc ? `, { pack: () => ${packSrc}, unpack: ${unpackSrc} }` : "";
+      const optsSrc = (() => {
+        const extra = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
+        if (!extra) return packSrc && unpackSrc
+          ? `, { pack: () => ${packSrc}, unpack: ${unpackSrc} }`
+          : "";
+        return packSrc && unpackSrc
+          ? `, { pack: () => ${packSrc}, unpack: ${unpackSrc}, ${extra} }`
+          : `, { ${extra} }`;
+      })();
       return [
         `${pad}// for → $for (bounded unroll, max=${max})`,
         `${pad}$for(`,
@@ -1571,6 +1610,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const armOpts: TranspileOptions = {
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
+        inSwitchArm: true,
       };
       const recvSet = new Set<string>([
         ...merged.flatMap((a) => collectForkBindingNames(...a.stmts)),
@@ -1804,6 +1844,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const bodyOpts: TranspileOptions = {
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
+        loopLabel: undefined,
       };
       const bodyStmts =
         stmt.body.type === "BlockStatement"
@@ -1815,10 +1856,13 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       collectAssignedIds(stmt.body, assigned);
       collectArrMutatorReceivers(stmt.body, assigned);
       const names = [...assigned].filter((n) => n !== bindName && n !== "undefined");
+      const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
       const optsSrc =
         names.length === 0
-          ? ""
-          : `, { pack: () => $obj({ ${names.map((n) => `${JSON.stringify(n)}: ${n}`).join(", ")} }), unpack: (__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} } }`;
+          ? loopOpts
+            ? `, { ${loopOpts} }`
+            : ""
+          : `, { pack: () => $obj({ ${names.map((n) => `${JSON.stringify(n)}: ${n}`).join(", ")} }), unpack: (__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }${loopOpts ? `, ${loopOpts}` : ""} }`;
       return [
         `${pad}$forOf(${iter}, (${bindName}, _i) => {`,
         ...bodyLines,
@@ -1831,6 +1875,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const bodyOpts: TranspileOptions = {
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
+        loopLabel: undefined,
       };
       const body =
         stmt.body.type === "BlockStatement"
@@ -1842,12 +1887,13 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       collectAssignedIds(stmt.body, assigned);
       collectAssignedIds(stmt.test, assigned);
       const names = [...assigned].filter((n) => n !== "undefined");
+      const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
       if (names.length === 0) {
         return [
           `${pad}// while → $whileSeq (bounded, max=${max})`,
           `${pad}$whileSeq(() => ${test}, () => {`,
           body,
-          `${pad}}, ${max});`,
+          `${pad}}, ${max}${loopOpts ? `, { ${loopOpts} }` : ""});`,
         ].join("\n");
       }
       const packSrc = `$obj({ ${names.map((n) => `${JSON.stringify(n)}: ${n}`).join(", ")} })`;
@@ -1856,7 +1902,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         `${pad}// while → $whileSeq (instrumented bindings: ${names.join(", ")})`,
         `${pad}$whileSeq(() => ${test}, () => {`,
         body,
-        `${pad}}, ${max}, { pack: () => ${packSrc}, unpack: ${unpackSrc} });`,
+        `${pad}}, ${max}, { pack: () => ${packSrc}, unpack: ${unpackSrc}${loopOpts ? `, ${loopOpts}` : ""} });`,
       ].join("\n");
     }
     case "DoWhileStatement": {
@@ -1865,6 +1911,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const bodyOpts: TranspileOptions = {
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
+        loopLabel: undefined,
       };
       const bodyStmts =
         stmt.body.type === "BlockStatement"
@@ -1884,8 +1931,13 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         names.length === 0
           ? null
           : `(__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }`;
+      const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
       const optsSrc =
-        packSrc && unpackSrc ? `, { pack: () => ${packSrc}, unpack: ${unpackSrc} }` : "";
+        packSrc && unpackSrc
+          ? `, { pack: () => ${packSrc}, unpack: ${unpackSrc}${loopOpts ? `, ${loopOpts}` : ""} }`
+          : loopOpts
+            ? `, { ${loopOpts} }`
+            : "";
       return [
         `${pad}// do-while → body + $whileSeq (bounded, max=${max})`,
         `{`,
@@ -1898,6 +1950,34 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     }
     case "ClassDeclaration": {
       return transpileClass(stmt, depth, opts);
+    }
+    case "BreakStatement": {
+      // switch 臂内无标签 break = 臂结束（fall-through 合并已按结构吸收）
+      if (opts.inSwitchArm && !stmt.label) return `${pad}return;`;
+      if ((opts.inLoop ?? 0) > 0) {
+        return `${pad}$loopBreak(${stmt.label ? JSON.stringify(stmt.label.name) : ""});`;
+      }
+      return `${pad}/* skip break (outside loop) */`;
+    }
+    case "ContinueStatement": {
+      if ((opts.inLoop ?? 0) > 0) {
+        return `${pad}$loopContinue(${stmt.label ? JSON.stringify(stmt.label.name) : ""});`;
+      }
+      return `${pad}/* skip continue (outside loop) */`;
+    }
+    case "LabeledStatement": {
+      // 标签包循环：把标签传给内层循环的 $for/$whileSeq/$forOf（信号匹配）
+      if (
+        stmt.body.type === "ForStatement" ||
+        stmt.body.type === "WhileStatement" ||
+        stmt.body.type === "DoWhileStatement" ||
+        stmt.body.type === "ForOfStatement" ||
+        stmt.body.type === "ForInStatement"
+      ) {
+        return transpileStatement(stmt.body, depth, { ...opts, loopLabel: stmt.label.name });
+      }
+      // 非循环标签块（break label 跳出块）不建模：按普通块转译，标签丢弃
+      return transpileStatement(stmt.body, depth, opts);
     }
     default:
       return `${pad}/* skip ${stmt.type} */`;

@@ -947,8 +947,17 @@ export function* $forIter(
       yield { state: s, test: t, afterBody: s };
       return;
     }
-    const afterBody = body(s);
+    let afterBody: Abs = s;
+    let broke = false;
+    try {
+      afterBody = body(s);
+    } catch (e) {
+      if (isNudoBreak(e)) broke = true;
+      else if (isNudoContinue(e)) afterBody = s; // 体提前结束
+      else throw e;
+    }
     yield { state: s, test: t, afterBody };
+    if (broke) return;
     s = step(afterBody);
   }
 }
@@ -966,6 +975,8 @@ export function $for(
   opts?: {
     pack?: () => Abs;
     unpack?: (s: Abs) => void;
+    /** 标签循环（`outer: for …`）：仅吸收同标签 break/continue 信号 */
+    label?: string;
   },
 ): Abs {
   let state = init;
@@ -1005,8 +1016,23 @@ export function $for(
     try {
       afterBody = body(state);
     } catch (e) {
-      if (isNudoReturn(e) || isNudoThrow(e)) throw e;
-      throw e;
+      // break 吸收 → 本轮为最终态后退出；continue 吸收 → 体提前完成，
+      // 用 pack 收集已发生的绑定写（continue 前语句的副作用保留）
+      if (isNudoBreak(e, opts?.label)) {
+        snapCounter();
+        snapExt();
+        applyExtJoin();
+        return exitJoin ?? state;
+      }
+      if (isNudoContinue(e, opts?.label)) {
+        // 体未走完 return；循环变量已发生的写无法从调用点闭包读取
+        // （init 以字面量入参，JS 作用域无该绑定）——以 state 近似
+        afterBody = state;
+      } else if (isNudoReturn(e) || isNudoThrow(e)) {
+        throw e;
+      } else {
+        throw e;
+      }
     }
     const next = step(afterBody);
     // 抽象条件：本轮 body 完成后的绑定也是合法出口（下一轮 test 可能为假）
@@ -1538,6 +1564,8 @@ export function $forOf(
   opts?: {
     pack?: () => Abs;
     unpack?: (s: Abs) => void;
+    /** 标签循环：仅吸收同标签 break/continue 信号 */
+    label?: string;
   },
 ): void {
   const pack = opts?.pack;
@@ -1584,6 +1612,11 @@ export function $forOf(
         ),
       );
     } catch (e) {
+      if (isNudoBreak(e, opts?.label)) {
+        applyExitJoin();
+        return;
+      }
+      if (isNudoContinue(e, opts?.label)) continue; // 下一个元素；已发生副作用保留
       if (isNudoReturn(e) || isNudoThrow(e)) throw e;
       throw e;
     }
@@ -1864,6 +1897,8 @@ export function $whileSeq(
     pack?: () => Abs;
     /** 把 join 后的状态写回绑定 */
     unpack?: (s: Abs) => void;
+    /** 标签循环：仅吸收同标签 break/continue 信号 */
+    label?: string;
   },
 ): void {
   const pack = opts?.pack;
@@ -1889,6 +1924,11 @@ export function $whileSeq(
     try {
       body();
     } catch (e) {
+      if (isNudoBreak(e, opts?.label)) {
+        applyExitJoin();
+        return;
+      }
+      if (isNudoContinue(e, opts?.label)) continue; // 体提前结束，副作用已在绑定
       if (isNudoReturn(e) || isNudoThrow(e)) throw e;
       throw e;
     }
@@ -1910,13 +1950,50 @@ export class NudoReturn extends Error {
   }
 }
 
+export function isNudoReturn(e: unknown): e is NudoReturn {
+  return e instanceof NudoReturn;
+}
+
 /** transpile `return x` inside for/while → `$loopReturn(x)` */
 export function $loopReturn(v: Abs): never {
   throw new NudoReturn(v);
 }
 
-export function isNudoReturn(e: unknown): e is NudoReturn {
-  return e instanceof NudoReturn;
+/**
+ * break/continue 信号：transpile 在循环体内生成 $loopBreak/$loopContinue，
+ * $for/$whileSeq/$forOf 在 body 调用点捕获。带标签信号只被同标签循环吸收，
+ * 不匹配继续冒泡到外层循环（`break outer` / `continue outer` 语义）。
+ */
+export class NudoLoopSignal extends Error {
+  readonly kind: "break" | "continue";
+  readonly label: string | undefined;
+  constructor(kind: "break" | "continue", label?: string) {
+    super("nudo:loop");
+    this.name = "NudoLoopSignal";
+    this.kind = kind;
+    this.label = label;
+  }
+}
+
+export function $loopBreak(label?: string): never {
+  throw new NudoLoopSignal("break", label || undefined);
+}
+
+export function $loopContinue(label?: string): never {
+  throw new NudoLoopSignal("continue", label || undefined);
+}
+
+/** 无标签信号匹配任何循环；带标签信号仅匹配同名循环 */
+function loopSignalMatches(e: NudoLoopSignal, label: string | undefined): boolean {
+  return e.label === undefined || e.label === label;
+}
+
+export function isNudoBreak(e: unknown, label?: string): boolean {
+  return e instanceof NudoLoopSignal && e.kind === "break" && loopSignalMatches(e, label);
+}
+
+export function isNudoContinue(e: unknown, label?: string): boolean {
+  return e instanceof NudoLoopSignal && e.kind === "continue" && loopSignalMatches(e, label);
 }
 
 /** catch 转译辅助：控制流信号透传（生成代码只注入 `$` 前缀符号） */
