@@ -1157,7 +1157,7 @@ function clampWindow(
 }
 
 function copyWithinTuple(
-  shape: { k: "tuple"; elements: Abs[] } | { k: "arr"; element: Abs },
+  shape: { k: "tuple"; elements: Abs[]; holes?: number[] } | { k: "arr"; element: Abs },
   vals: Abs[],
 ): Abs {
   const t = toIOI(vals[0]);
@@ -1173,27 +1173,54 @@ function copyWithinTuple(
     }
     const len = shape.elements.length;
     const win = clampWindow(len, t ?? 0, s ?? 0, e ?? len);
+    const origHoles = shape.holes ?? [];
     if (win) {
       const els = [...shape.elements];
+      const holesSet = new Set(origHoles);
       // 重叠且源在目标之后（s < t）：按规范倒序复制
       const backwards = (s ?? 0) < (t ?? 0) && win.s + (win.e - win.s) > win.t;
       const count = win.e - win.s;
-      if (backwards) {
-        for (let k = count - 1; k >= 0; k--) els[win.t + k] = els[win.s + k]!;
-      } else {
-        for (let k = 0; k < count; k++) els[win.t + k] = els[win.s + k]!;
+      // 源存在性按**原始** holes 快照判定（集合在循环中会变）
+      for (let kk = 0; kk < count; kk++) {
+        const k = backwards ? count - 1 - kk : kk;
+        const from = win.s + k;
+        const to = win.t + k;
+        const present = from < len && !origHoles.includes(from);
+        if (present) {
+          els[to] = els[from]!;
+          holesSet.delete(to);
+        } else {
+          // 源 hole/越界：删除目标槽（ES2023 DeletePropertyOrThrow）
+          els[to] = $lit(undefined);
+          holesSet.add(to);
+        }
       }
-      return abs({ k: "tuple", elements: els }, undefined, undefined, "path");
+      const holes = [...holesSet];
+      return abs(
+        { k: "tuple", elements: els, holes: holes.length > 0 ? holes : undefined },
+        undefined,
+        undefined,
+        "path",
+      );
     }
-    // 合法边界但 no-op（如 target≥len）：保持 tuple
-    return abs({ k: "tuple", elements: [...shape.elements] }, undefined, undefined, "path");
+    // 合法边界但 no-op（如 target≥len）：保持 tuple 与 holes
+    return abs(
+      {
+        k: "tuple",
+        elements: [...shape.elements],
+        holes: origHoles.length > 0 ? [...origHoles] : undefined,
+      },
+      undefined,
+      undefined,
+      "path",
+    );
   }
   // 抽象 arr：copyWithin 保持元素类型（sound）
   return abs({ k: "arr", element: shape.element }, undefined, undefined, "partial");
 }
 
 function fillTuple(
-  shape: { k: "tuple"; elements: Abs[] } | { k: "arr"; element: Abs },
+  shape: { k: "tuple"; elements: Abs[]; holes?: number[] } | { k: "arr"; element: Abs },
   vals: Abs[],
   arr: Abs,
 ): Abs {
@@ -1203,7 +1230,8 @@ function fillTuple(
   if (shape.k === "tuple") {
     const len = shape.elements.length;
     if (s === null || e === null) {
-      // 不可判定边界：任一槽可能被写 → 元素 join 回退（sound）
+      // 不可判定边界：任一槽可能被写 → 元素 join 回退；hole 可能被写实，
+      // 保守清空 holes（`in` 不得折 false 而原生已写实）
       return abs(
         { k: "tuple", elements: shape.elements.map((el) => joinAbs(el, v)) },
         undefined,
@@ -1213,11 +1241,22 @@ function fillTuple(
     }
     const start = Math.max(Math.min((s ?? 0) < 0 ? len + (s ?? 0) : (s ?? 0), len), 0);
     const end = Math.max(Math.min((e ?? len) < 0 ? len + (e ?? len) : (e ?? len), len), 0);
+    const holes = (shape.holes ?? []).filter((h) => h < start || h >= end);
     if (end <= start) {
-      return abs({ k: "tuple", elements: [...shape.elements] }, undefined, undefined, "path");
+      return abs(
+        { k: "tuple", elements: [...shape.elements], holes: holes.length > 0 ? holes : undefined },
+        undefined,
+        undefined,
+        "path",
+      );
     }
     const els = shape.elements.map((el, i) => (i >= start && i < end ? v : el));
-    return abs({ k: "tuple", elements: els }, undefined, undefined, "path");
+    return abs(
+      { k: "tuple", elements: els, holes: holes.length > 0 ? holes : undefined },
+      undefined,
+      undefined,
+      "path",
+    );
   }
   return abs(
     { k: "arr", element: joinAbs(shape.element, v) },
@@ -1250,12 +1289,16 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
         method === "push"
           ? [...shape.elements, ...vals]
           : [...vals, ...shape.elements];
+      // holes 迁移：push 原下标不变；unshift 整体右移 vals.length
+      const holes = shape.holes
+        ? shape.holes.map((h) => (method === "push" ? h : h + vals.length))
+        : undefined;
       const conf = vals.reduce(
         (acc, v) => confJoin(acc, v.conf),
         arr.conf as Confidence,
       );
       return abs(
-        { k: "tuple", elements: els },
+        { k: "tuple", elements: els, holes },
         undefined,
         undefined,
         conf,
@@ -1267,8 +1310,13 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   if (method === "pop") {
     if (shape.k === "tuple") {
       if (shape.elements.length === 0) return arr;
+      const newLen = shape.elements.length - 1;
+      // 弹出末槽：holes 截断到新长度（末位是 hole 则随之消失）
+      const holes = shape.holes
+        ? shape.holes.filter((h) => h < newLen)
+        : undefined;
       return abs(
-        { k: "tuple", elements: shape.elements.slice(0, -1) },
+        { k: "tuple", elements: shape.elements.slice(0, -1), holes: holes && holes.length > 0 ? holes : undefined },
         undefined,
         undefined,
         arr.conf,
@@ -1279,8 +1327,12 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   if (method === "shift") {
     if (shape.k === "tuple") {
       if (shape.elements.length === 0) return arr;
+      // 移除首槽：holes 整体左移 1（0 号 hole 随之消失）
+      const holes = shape.holes
+        ? shape.holes.map((h) => h - 1).filter((h) => h >= 0)
+        : undefined;
       return abs(
-        { k: "tuple", elements: shape.elements.slice(1) },
+        { k: "tuple", elements: shape.elements.slice(1), holes: holes && holes.length > 0 ? holes : undefined },
         undefined,
         undefined,
         arr.conf,
@@ -1301,8 +1353,13 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   }
   if (method === "reverse") {
     if (shape.k === "tuple") {
+      // holes 随元素镜像翻转：新下标 = len - 1 - 原下标
+      const len = shape.elements.length;
+      const holes = shape.holes
+        ? shape.holes.map((h) => len - 1 - h)
+        : undefined;
       return abs(
-        { k: "tuple", elements: [...shape.elements].reverse() },
+        { k: "tuple", elements: [...shape.elements].reverse(), holes },
         undefined,
         undefined,
         arr.conf,
@@ -1400,9 +1457,21 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
       return a; // 不可扩展：越界写（新下标）静默失败
     }
     const els = [...a.shape.elements];
-    while (els.length < iv) els.push(undef());
+    const holes = [...(a.shape.holes ?? [])];
+    while (els.length < iv) {
+      holes.push(els.length); // 越界写增长段是 hole（原生 [1].x=3 中间槽不存在）
+      els.push(undef());
+    }
     els[iv] = asAbsVal(value);
-    const next = abs({ k: "tuple", elements: els }, undefined, undefined, a.conf);
+    // 写 hole 位置：槽被填实，清除 hole 标记
+    const hi = holes.indexOf(iv);
+    if (hi >= 0) holes.splice(hi, 1);
+    const next = abs(
+      { k: "tuple", elements: els, holes: holes.length > 0 ? holes : undefined },
+      undefined,
+      undefined,
+      a.conf,
+    );
     return next;
   }
   return a;
@@ -1928,7 +1997,10 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 4294967295) {
       const els = o.shape.elements.slice(0, v);
       while (els.length < v) els.push($lit(undefined));
+      // 截断过滤 + 延长新增：延长部分（[oldLen, v)）全是 hole
+      const oldLen = o.shape.elements.length;
       const holes = (o.shape.holes ?? []).filter((h) => h < v);
+      for (let h = oldLen; h < v; h++) holes.push(h);
       return abs(
         { k: "tuple", elements: els, holes: holes.length > 0 ? holes : undefined },
         undefined,

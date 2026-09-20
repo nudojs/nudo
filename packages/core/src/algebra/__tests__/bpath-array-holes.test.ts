@@ -68,3 +68,122 @@ describe("B-path array holes", () => {
     expect(litValue(r.result)).toBe(false);
   });
 });
+
+describe("B-path array holes: mutator migration", () => {
+  it("push keeps existing holes", () => {
+    const r = call(`export function f() { const a = [1,,3]; a.push(4); return 1 in a; }`);
+    expect(litValue(r.result)).toBe(false);
+    const r2 = call(`export function f() { const a = [1,,3]; a.push(4); return 2 in a; }`);
+    expect(litValue(r2.result)).toBe(true);
+  });
+
+  it("unshift shifts hole indices by count", () => {
+    const r = call(`export function f() { const a = [1,,3]; a.unshift(0); return 2 in a; }`);
+    expect(litValue(r.result)).toBe(false);
+    const r2 = call(`export function f() { const a = [1,,3]; a.unshift(0); return 3 in a; }`);
+    expect(litValue(r2.result)).toBe(true);
+    const r3 = call(`export function f() { const a = [1,,3]; a.unshift(0, 9); return 4 in a; }`);
+    expect(litValue(r3.result)).toBe(true);
+    const r4 = call(`export function f() { const a = [1,,3]; a.unshift(0, 9); return 3 in a; }`);
+    expect(litValue(r4.result)).toBe(false);
+  });
+
+  it("pop truncates the hole list", () => {
+    const r = call(`export function f() { const a = [1,,3]; a.pop(); return 1 in a; }`);
+    expect(litValue(r.result)).toBe(false);
+    const r2 = call(`export function f() { const a = [1,,3]; a.pop(); return a.length; }`);
+    expect(litValue(r2.result)).toBe(2);
+    const r3 = call(`export function f() { const a = [1,,]; a.pop(); return 1 in a; }`);
+    expect(litValue(r3.result)).toBe(false);
+    const r4 = call(`export function f() { const a = [1,,]; a.pop(); return a.length; }`);
+    expect(litValue(r4.result)).toBe(1);
+  });
+
+  it("shift shifts hole indices down", () => {
+    const r = call(`export function f() { const a = [1,,3]; a.shift(); return 0 in a; }`);
+    expect(litValue(r.result)).toBe(false);
+    const r2 = call(`export function f() { const a = [1,,3]; a.shift(); return 1 in a; }`);
+    expect(litValue(r2.result)).toBe(true);
+    const r3 = call(`export function f() { const a = [1,,3]; a.shift(); return a[0]; }`);
+    expect(litValue(r3.result)).toBe(undefined);
+  });
+
+  it("reverse mirrors hole indices", () => {
+    const r = call(`export function f() { const a = [1,,3]; a.reverse(); return 1 in a; }`);
+    expect(litValue(r.result)).toBe(false);
+    const r2 = call(`export function f() { const a = [1,,3]; a.reverse(); return 0 in a; }`);
+    expect(litValue(r2.result)).toBe(true);
+    const r3 = call(`export function f() { const a = [1,,3]; a.reverse(); return a[0]; }`);
+    expect(litValue(r3.result)).toBe(3);
+  });
+
+  it("length extension appends holes", () => {
+    const r = call(`export function f() { const a = [1,,3]; a.length = 5; return 4 in a; }`);
+    expect(litValue(r.result)).toBe(false);
+    const r2 = call(`export function f() { const a = [1,,3]; a.length = 5; return 3 in a; }`);
+    expect(litValue(r2.result)).toBe(false);
+    const r3 = call(`export function f() { const a = [1,,3]; a.length = 5; return 1 in a; }`);
+    expect(litValue(r3.result)).toBe(false);
+    const r4 = call(`export function f() { const a = [1,,3]; a.length = 5; return 2 in a; }`);
+    expect(litValue(r4.result)).toBe(true);
+    const r5 = call(`export function f() { const a = [1,,3]; a.length = 5; return a.length; }`);
+    expect(litValue(r5.result)).toBe(5);
+  });
+
+  it("length shrink drops holes past the end", () => {
+    const r = call(`export function f() { const a = [1,,3]; a.length = 1; return 1 in a; }`);
+    expect(litValue(r.result)).toBe(false);
+    const r2 = call(`export function f() { const a = [1,,3]; a.length = 1; return a.length; }`);
+    expect(litValue(r2.result)).toBe(1);
+  });
+
+  it("out-of-bounds index write fills the gap with holes", () => {
+    const r = call(`export function f() { const a = [1,,3]; a[4] = 9; return 3 in a; }`);
+    expect(litValue(r.result)).toBe(false);
+    const r2 = call(`export function f() { const a = [1,,3]; a[4] = 9; return 4 in a; }`);
+    expect(litValue(r2.result)).toBe(true);
+    const r3 = call(`export function f() { const a = [1,,3]; a[4] = 9; return a[3]; }`);
+    expect(litValue(r3.result)).toBe(undefined);
+  });
+
+  it("index write into a literal hole clears it", () => {
+    const r = call(`export function f() { const a = [1,,3]; a[1] = 5; return 1 in a; }`);
+    expect(litValue(r.result)).toBe(true);
+    const r2 = call(`export function f() { const a = [1,,3]; a[1] = 5; return a[1]; }`);
+    expect(litValue(r2.result)).toBe(5);
+  });
+
+  it("fill clears holes in range and keeps them on no-op window", () => {
+    const r = call(`export function f() { const a = [1,,3]; a.fill(9, 1, 2); return 1 in a; }`);
+    expect(litValue(r.result)).toBe(true);
+    const r2 = call(`export function f() { const a = [1,,3]; a.fill(9, 1, 2); return 0 in a; }`);
+    expect(litValue(r2.result)).toBe(true);
+    const r3 = call(`export function f() { const a = [1,,3]; a.fill(9, 2, 1); return 1 in a; }`);
+    expect(litValue(r3.result)).toBe(false);
+    const r4 = call(`export function f() { const a = [1,,3]; a.fill(9); return 1 in a; }`);
+    expect(litValue(r4.result)).toBe(true);
+  });
+
+  it("copyWithin source hole deletes the target slot", () => {
+    const r = call(`export function f() { const a = [1,,3]; a.copyWithin(1, 0, 2); return 2 in a; }`);
+    expect(litValue(r.result)).toBe(false);
+    const r2 = call(`export function f() { const a = [1,,3]; a.copyWithin(1, 0, 2); return a[1]; }`);
+    expect(litValue(r2.result)).toBe(1);
+    const r3 = call(`export function f() { const a = [1,,3]; a.copyWithin(1, 0, 2); return a[2]; }`);
+    expect(litValue(r3.result)).toBe(undefined);
+  });
+
+  it("copyWithin untouched holes stay holes", () => {
+    const r = call(`export function f() { const a = [1,,3]; a.copyWithin(2, 0, 1); return 1 in a; }`);
+    expect(litValue(r.result)).toBe(false);
+    const r2 = call(`export function f() { const a = [1,,3]; a.copyWithin(2, 0, 1); return a[2]; }`);
+    expect(litValue(r2.result)).toBe(1);
+  });
+
+  it("copyWithin zero count is a no-op", () => {
+    const r = call(`export function f() { const a = [1,2,3]; a.copyWithin(0, 5); return a[0]; }`);
+    expect(litValue(r.result)).toBe(1);
+    const r2 = call(`export function f() { const a = [1,2,3]; a.copyWithin(0, 5); return 0 in a; }`);
+    expect(litValue(r2.result)).toBe(true);
+  });
+});
