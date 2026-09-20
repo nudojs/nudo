@@ -4,7 +4,7 @@
  */
 
 import type { Abs, Shape, Confidence } from "./abs.ts";
-import { abs, litValue, confJoin, num, bool, boolLit, strLit } from "./abs.ts";
+import { abs, litValue, confJoin, num, bool, boolLit, strLit, bigintLit } from "./abs.ts";
 import type { Term } from "./term.ts";
 import { lit, simplifyTerm, app } from "./term.ts";
 import type { Pred } from "./pred.ts";
@@ -255,6 +255,7 @@ function typeofName(s: Shape): string {
 export function negAbs(a: Abs, _phi: Phi = pTrue): Abs {
   const v = litValue(a);
   if (typeof v === "number") return numLitAbs(-v);
+  if (typeof v === "bigint") return bigintLit(-(v as bigint));
   if (a.shape.k === "prim" && a.shape.type === "number") {
     if (!a.term) {
       return abs(num().shape, undefined, undefined, confJoin(a.conf, "widened"));
@@ -389,7 +390,7 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
 }
 
 /** JS Abstract Equality（仅对可判定的字面量；NaN ≠ 一切，null == undefined） */
-function abstractEq(x: unknown, y: unknown): boolean {
+function abstractEq(x: unknown, y: unknown): boolean | undefined {
   if (x === y) return true;
   if (x === null && y === undefined) return true;
   if (x === undefined && y === null) return true;
@@ -399,6 +400,28 @@ function abstractEq(x: unknown, y: unknown): boolean {
   if (typeof y === "boolean") return abstractEq(x, y ? 1 : 0);
   if (typeof x === "number" && typeof y === "string") return x === Number(y);
   if (typeof x === "string" && typeof y === "number") return Number(x) === y;
+  // number ⊗ bigint：数学值比较（number 须为整数；BigInt(非整数) 抛）
+  if (typeof x === "number" && typeof y === "bigint") {
+    return Number.isInteger(x) && BigInt(x) === y;
+  }
+  if (typeof x === "bigint" && typeof y === "number") {
+    return Number.isInteger(y) && x === BigInt(y);
+  }
+  // string ⊗ bigint：StringToBigInt（失败即 false；解析歧义不折）
+  if (typeof x === "string" && typeof y === "bigint") {
+    try {
+      return BigInt(x) === y;
+    } catch {
+      return undefined;
+    }
+  }
+  if (typeof x === "bigint" && typeof y === "string") {
+    try {
+      return x === BigInt(y);
+    } catch {
+      return undefined;
+    }
+  }
   // bigint/symbol/object 字面量：仅引用/同值相等（已在 x===y 处理）
   return false;
 }

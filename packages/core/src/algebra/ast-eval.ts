@@ -42,6 +42,7 @@ import {
   numVar,
   strLit,
   boolLit,
+  bigintLit,
   bool,
   unknown,
   litValue,
@@ -857,6 +858,8 @@ function evalNodeInner(
       return ok(strLit((node as StringLiteral).value), phi, env);
     case "BooleanLiteral":
       return ok(boolLit((node as BooleanLiteral).value), phi, env);
+    case "BigIntLiteral":
+      return ok(bigintLit((node as { value: bigint }).value), phi, env);
     case "NullLiteral":
       return ok(abs({ k: "unknown" }, lit(null), pTrue, "exact"), phi, env);
     case "Identifier": {

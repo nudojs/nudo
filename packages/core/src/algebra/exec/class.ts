@@ -390,6 +390,31 @@ export function $invoke(  thisVal: Abs,
     const sm = spec?.staticMethods?.[method];
     if (sm) return sm(...args);
   }
+  // bigint 字面量：toString(radix)/valueOf 精确折叠（非法 radix 原生 RangeError → unknown）
+  if (thisVal.shape.k === "prim" && thisVal.shape.type === "bigint") {
+    const bv = litValue(thisVal) as bigint | undefined;
+    if (typeof bv === "bigint") {
+      if (method === "valueOf") return thisVal;
+      if (method === "toString") {
+        const rad = args[0] ? litValue(args[0]) : undefined;
+        const r =
+          rad === undefined
+            ? 10
+            : typeof rad === "number" && Number.isInteger(rad) && rad >= 2 && rad <= 36
+              ? rad
+              : undefined;
+        if (r !== undefined) {
+          try {
+            return strLit(bv.toString(r));
+          } catch {
+            return unknown;
+          }
+        }
+        return unknown; // 非法/符号 radix：原生 RangeError
+      }
+    }
+    return unknown;
+  }
   // 数组/元组方法（与 ast-eval 口径对齐）
   if (thisVal.shape.k === "arr" || thisVal.shape.k === "tuple") {
     const arrR = invokeArrMethod(thisVal, method, args);
