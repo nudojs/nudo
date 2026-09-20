@@ -2101,6 +2101,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return `$classExpr()`;
     case "Identifier":
       if (expr.name === "undefined") return "$lit(undefined)";
+      if (expr.name === "NaN") return "$lit(NaN)";
+      if (expr.name === "Infinity") return "$lit(Infinity)";
       return expr.name;
     case "ThisExpression":
       return opts.thisParam ?? "$lit(undefined)";
