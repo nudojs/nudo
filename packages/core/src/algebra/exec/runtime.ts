@@ -369,6 +369,9 @@ export function $instanceof(left: Abs, rightName: string): Abs {
       if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
       return bool(); // 可能是 Array 子类
     case "obj":
+      // Object.create(null)：原型链 null 终止——任何构造器的 instanceof 恒 false
+      //（含 Object 与内建/自定义构造器）。标记随 $set/$del 迁移（objects.ts 侧表）。
+      if (isNullProtoObj(left)) return boolLit(false);
       if (rightName === "Object") return boolLit(true);
       if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
       return bool(); // Object.create(C.prototype)

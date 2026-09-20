@@ -57,3 +57,51 @@ describe("B-path Object.create(null)", () => {
     expect(litValue(r.result)).toBe(true);
   });
 });
+
+describe("B-path Object.create(null) instanceof", () => {
+  it("instanceof Object is false (null-terminated chain)", () => {
+    const r = call(`export function f() { const o = Object.create(null); return o instanceof Object; }`);
+    expect(litValue(r.result)).toBe(false);
+  });
+
+  it("instanceof builtin ctors is false", () => {
+    const r = call(`export function f() { const o = Object.create(null); return o instanceof Array; }`);
+    expect(litValue(r.result)).toBe(false);
+    const r2 = call(`export function f() { const o = Object.create(null); return o instanceof Date; }`);
+    expect(litValue(r2.result)).toBe(false);
+  });
+
+  it("instanceof user class is false", () => {
+    const r = call(
+      `export function f() { class C {} const o = Object.create(null); return o instanceof C; }`,
+    );
+    expect(litValue(r.result)).toBe(false);
+  });
+
+  it("stays false after writes migrate the nullProto mark", () => {
+    const r = call(
+      `export function f() { const o = Object.create(null); o.x = 1; return o instanceof Object; }`,
+    );
+    expect(litValue(r.result)).toBe(false);
+  });
+
+  it("stays false after delete", () => {
+    const r = call(
+      `export function f() { const o = Object.create(null); o.x = 1; delete o.x; return o instanceof Object; }`,
+    );
+    expect(litValue(r.result)).toBe(false);
+  });
+
+  it("regression: plain object is instanceof Object", () => {
+    const r = call(`export function f() { const o = {}; return o instanceof Object; }`);
+    expect(litValue(r.result)).toBe(true);
+  });
+
+  it("regression: Object.create(C.prototype) is not falsely decided", () => {
+    const r = call(
+      `export function f() { class C {} const o = Object.create(C.prototype); return o instanceof Object; }`,
+    );
+    // 对象原型实参不建模（保守 unknown 路径）：不得折成 false
+    expect([true, undefined]).toContain(litValue(r.result));
+  });
+});
