@@ -1784,6 +1784,10 @@ export function $get(
       if (acc) return acc.get ? acc.get(o) : undef();
       // 实例上读静态访问器键 → 原生 undefined（属性在构造器上）
       if (findStaticClassAccessor(o.shape.name, key)) return undef();
+      // 实例方法读取（typeof a.m / 一等值）：沿继承链在 registry 找方法
+      for (const n of bClassChain(o.shape.name)) {
+        if (getBClass(n)?.methods?.[key]) return absFunction([], { body: noBody });
+      }
     }
     return $get(inner, key, opts);
   }
@@ -1889,6 +1893,18 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
           recv: o.shape.name,
           name: key,
         });
+        return o;
+      }
+      // 类实例字段就地突变：原生引用共享语义——方法内 this.n = v 对
+      // 调用点持有的同一实例 Abs 可见（不可变更新会只改局部绑定）
+      const inner = o.shape.shape;
+      if (inner.shape.k === "obj") {
+        const st = extStateOf(o);
+        if ((st === "sealed" || st === "nonext") && !getSlot(inner.shape.slots, key)) {
+          return o; // 不可扩展：新键写静默失败
+        }
+        if (getPropFlags(o)?.get(key)?.writable === false) return o;
+        inner.shape.slots[key] = { value: asAbsVal(value) };
         return o;
       }
     }
