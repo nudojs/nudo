@@ -1557,6 +1557,51 @@ export function $elems(a: Abs): Abs[] {
  * - 具体空 tuple：体 0 次（不得用 `length || maxIters` 展开成 maxIters）
  * - 抽象 arr / 未知长度：0..maxIters 出口与 pack 状态 join
  */
+/**
+ * for-in 键序列：原生顺序为整数键升序 → 其余键按插入序；
+ * 数组 hole 槽不出键（读值为 undefined 但不可枚举）。仅自有可枚举键。
+ */
+export function $forInKeys(o: Abs): Abs {
+  const shape = o.shape;
+  if (shape.k === "sum") {
+    const members = shape.members.map((m) => $forInKeys(m));
+    return members.reduce((a, b) => joinAbs(a, b));
+  }
+  const isArrayIndexKey = (k: string): boolean => {
+    const n = Number(k);
+    return (
+      k !== "" &&
+      String(n) === k &&
+      Number.isInteger(n) &&
+      n >= 0 &&
+      n < 4294967295
+    );
+  };
+  if (shape.k === "obj") {
+    const keys = Object.keys(shape.slots);
+    const intKeys = keys.filter(isArrayIndexKey).sort((a, b) => Number(a) - Number(b));
+    const strKeys = keys.filter((k) => !isArrayIndexKey(k));
+    return $arr([...intKeys, ...strKeys].map((k) => $lit(k)));
+  }
+  if (shape.k === "tuple") {
+    const idxs: number[] = [];
+    for (let i = 0; i < shape.elements.length; i++) {
+      if (shape.holes?.includes(i)) continue;
+      idxs.push(i);
+    }
+    return $arr(idxs.map((i) => $lit(String(i))));
+  }
+  if (shape.k === "arr") {
+    // 抽象数组：索引域未知，单代表元素迭代（与 $forOf 抽象近似同口径）
+    return abs({ k: "arr", element: $lit("0") }, undefined, undefined, "partial");
+  }
+  const sv = litValue(o);
+  if (typeof sv === "string") {
+    return $arr(Array.from({ length: sv.length }, (_, i) => $lit(String(i))));
+  }
+  return $arr([]);
+}
+
 export function $forOf(
   iterable: Abs,
   body: (item: Abs, index: Abs) => void,

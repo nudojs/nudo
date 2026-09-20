@@ -396,7 +396,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -407,6 +407,15 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
 
 function indent(n: number): string {
   return "  ".repeat(n);
+}
+
+/** 对象键 → 字符串（Identifier/StringLiteral/NumericLiteral；其余 null）。
+ *  { 10: "a" } 的键是 NumericLiteral，与 "10" 同键（原生 ToPropertyKey）。 */
+function staticKeyOf(key: { type?: string; name?: string; value?: unknown } | null | undefined): string | null {
+  if (!key || typeof key !== "object") return null;
+  if (key.type === "Identifier") return key.name ?? null;
+  if (key.type === "StringLiteral" || key.type === "NumericLiteral") return String(key.value);
+  return null;
 }
 
 /** 收集赋值/Update 左值标识符（while/for pack/unpack 用）。
@@ -877,9 +886,8 @@ function emitDestructure(
         continue;
       }
       if (prop.type !== "ObjectProperty") continue;
-      if (prop.key.type !== "Identifier" && prop.key.type !== "StringLiteral") continue;
-      const key =
-        prop.key.type === "Identifier" ? prop.key.name : String(prop.key.value);
+      const key = staticKeyOf(prop.key as { type?: string; name?: string; value?: unknown });
+      if (key === null) continue;
       const keyLit = JSON.stringify(key);
       namedKeys.push(key);
       if (prop.value.type === "AssignmentPattern") {
@@ -1810,8 +1818,13 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       }
       return lines.join("\n");
     }
-    case "ForOfStatement": {
-      const iter = transpileExpression(stmt.right as Expression, opts);
+    case "ForOfStatement":
+    case "ForInStatement": {
+      const isIn = stmt.type === "ForInStatement";
+      // for-in：键序列由 $forInKeys 投影（整数键升序/字符串插入序/hole 跳过）
+      const iter = isIn
+        ? `$forInKeys(${transpileExpression(stmt.right as Expression, opts)})`
+        : transpileExpression(stmt.right as Expression, opts);
       // for (const x of xs) / for (const [a,b] of xs)
       let bindName = "_item";
       if (stmt.left.type === "VariableDeclaration") {
@@ -2406,12 +2419,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         // P1：ObjectMethod 的 this 由 $invoke 注入 receiver（bindThis），与 class 方法同轨。
         if (prop.type === "ObjectMethod") {
           flushProps();
-          const mkey =
-            prop.key.type === "Identifier"
-              ? JSON.stringify(prop.key.name)
-              : prop.key.type === "StringLiteral"
-                ? JSON.stringify(prop.key.value)
-                : null;
+          const mkey = (() => {
+            const k = staticKeyOf(prop.key as { type?: string; name?: string; value?: unknown });
+            return k === null ? null : JSON.stringify(k);
+          })();
           if (mkey === null) continue;
           const paramNames = (prop.params as Array<{ type: string; name?: string }>).map((p) =>
             p.type === "Identifier" && p.name ? p.name : "_a",
@@ -2456,12 +2467,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           acc = `$setKey(${base}, ${k}, ${v})`;
           continue;
         }
-        const key =
-          prop.key.type === "Identifier"
-            ? JSON.stringify(prop.key.name)
-            : prop.key.type === "StringLiteral"
-              ? JSON.stringify(prop.key.value)
-              : null;
+        const key = (() => {
+          const k = staticKeyOf(prop.key as { type?: string; name?: string; value?: unknown });
+          return k === null ? null : JSON.stringify(k);
+        })();
         if (key === null) continue;
         // 方法型 FunctionExpression：与 ObjectMethod 同 this 绑定语义
         if (
