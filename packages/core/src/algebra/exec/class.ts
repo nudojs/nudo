@@ -298,14 +298,17 @@ export function $reStateCall(re: Abs, method: string, args: Abs[]): Abs {
   }
 }
 
-/** string.match(/re/) / string.search(/re/)：双字面量 → 真执行 */
+/** string.match(/re/) / string.search(/re/) / string.matchAll(/re/g)：双字面量 → 真执行 */
 function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs | undefined {
-  if (method !== "match" && method !== "search") return undefined;
+  if (method !== "match" && method !== "search" && method !== "matchAll") return undefined;
   const re = args[0];
-  if (!re || re.shape.k !== "brand" || re.shape.name !== "RegExp") return undefined;
-  const inner = re.shape.shape;
-  const patAbs = inner.shape.k === "obj" ? inner.shape.slots["source"]?.value : undefined;
-  const flagsAbs = inner.shape.k === "obj" ? inner.shape.slots["flags"]?.value : undefined;
+  const reBrand =
+    !!re && re.shape.k === "brand" && re.shape.name === "RegExp"
+      ? (re as Abs & { shape: Extract<Abs["shape"], { k: "brand" }> })
+      : undefined;
+  const inner = reBrand?.shape.shape;
+  const patAbs = inner && inner.shape.k === "obj" ? inner.shape.slots["source"]?.value : undefined;
+  const flagsAbs = inner && inner.shape.k === "obj" ? inner.shape.slots["flags"]?.value : undefined;
   const pat = patAbs ? litValue(patAbs) : undefined;
   const sv = litValue(recv);
   if (typeof pat !== "string" || typeof sv !== "string") return undefined;
@@ -321,17 +324,37 @@ function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs | undefi
     const idx = sv.search(reReal);
     return abs({ k: "prim", type: "number" }, { op: "lit", value: idx as never }, undefined, "exact");
   }
-  // 非 global match ≡ exec；global → 全部命中串
-  if (flags.includes("g")) {
-    const all = sv.match(reReal) ?? [];
-    return abs({ k: "tuple", elements: all.map((s) => strLit(s)) }, undefined, undefined, "exact");
+  if (method === "match") {
+    // 非 global match ≡ exec；global → 全部命中串；无命中 → null（不是 []）
+    if (flags.includes("g")) {
+      const all = sv.match(reReal);
+      if (all === null) {
+        return abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+      }
+      return abs({ k: "tuple", elements: all.map((s) => strLit(s)) }, undefined, undefined, "exact");
+    }
+    const m = reReal.exec(sv);
+    if (!m) {
+      return abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+    }
+    const els: Abs[] = m.map((g) => (g === undefined ? undefAbs() : strLit(g)));
+    return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
   }
-  const m = reReal.exec(sv);
-  if (!m) {
-    return abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+  // matchAll：非全局正则原生 TypeError（hard throw，catch 可吸收）；
+  // 全局（brand /g）→ 真执行迭代，每项 [full, ...groups] 元组
+  if (!reBrand) return undefined; // 非 brand 参数（如字符串模式）：保守回落
+  if (!flags.includes("g")) {
+    throw new NudoThrow(
+      errorTypeAbs("TypeError"),
+    );
   }
-  const els: Abs[] = m.map((g) => (g === undefined ? undefAbs() : strLit(g)));
-  return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
+  const ms = sv.matchAll(reReal);
+  const matchEls: Abs[] = [];
+  for (const m of ms) {
+    const els: Abs[] = m.map((g) => (g === undefined ? undefAbs() : strLit(g)));
+    matchEls.push(abs({ k: "tuple", elements: els }, undefined, undefined, "exact"));
+  }
+  return abs({ k: "tuple", elements: matchEls }, undefined, undefined, "exact");
 }
 
 /**
