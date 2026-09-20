@@ -5,7 +5,8 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Abs } from "../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, unknown, type Confidence } from "../abs.ts";
+import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../abs.ts";
+import { lit } from "../term.ts";
 import { absFunction } from "../abs-fn.ts";
 import {
   beginCollectionFork,
@@ -14,8 +15,8 @@ import {
   pushCollectionArm,
 } from "../collections.ts";
 import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
-import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs, isNullishLitAbs, definitelyNotNullishShape } from "../surface.ts";
-import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape } from "../objects.ts";
+import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs, isNullishLitAbs, definitelyNotNullishShape, bitandAbs, bitorAbs, bitxorAbs, bitnotAbs, shlAbs, shrAbs, ushrAbs, powAbs, toNumberAbs } from "../surface.ts";
+import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape, type Slot } from "../objects.ts";
 import {
   isMapAbs,
   isSetAbs,
@@ -27,7 +28,7 @@ import {
 } from "../collections.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf } from "../containers.ts";
 import { leqAbs } from "../leq.ts";
-import { evalNamespaceCall } from "../builtins.ts";
+import { evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants } from "../builtins.ts";
 import type { Phi } from "../pred.ts";
 import { pTrue } from "../pred.ts";
 import {
@@ -37,7 +38,8 @@ import {
   noteNullishMemberThrows,
   anyMemberResult,
 } from "./calls.ts";
-import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, type MayThrowEffect } from "./may-throw.ts";
+import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, recordMayThrow, type MayThrowEffect } from "./may-throw.ts";
+import { getBClass, classNameOfValue, markClassValue } from "./class-registry.ts";
 
 /** 当前路径前提 Φ（transpile 后的 fork 会压栈） */
 let phi: Phi = pTrue;
@@ -72,6 +74,448 @@ export function $div(a: Abs, b: Abs): Abs {
 }
 export function $mod(a: Abs, b: Abs): Abs {
   return mod(a, b, phi);
+}
+export function $bitand(a: Abs, b: Abs): Abs {
+  return bitandAbs(a, b);
+}
+export function $bitor(a: Abs, b: Abs): Abs {
+  return bitorAbs(a, b);
+}
+export function $bitxor(a: Abs, b: Abs): Abs {
+  return bitxorAbs(a, b);
+}
+export function $bitnot(a: Abs): Abs {
+  return bitnotAbs(a);
+}
+export function $shl(a: Abs, b: Abs): Abs {
+  return shlAbs(a, b);
+}
+export function $shr(a: Abs, b: Abs): Abs {
+  return shrAbs(a, b);
+}
+export function $ushr(a: Abs, b: Abs): Abs {
+  return ushrAbs(a, b);
+}
+export function $pow(a: Abs, b: Abs): Abs {
+  return powAbs(a, b);
+}
+// --- 访问器（get/set）运行时 ---
+
+/** 对象字面量访问器侧表（Abs 不可存裸 JS 闭包；键为对象 Abs 身份） */
+const accessorTable = new WeakMap<
+  object,
+  Map<string, { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs }>
+>();
+
+/** 注册对象字面量访问器（transpile 调用；返回原 obj 以便链式包裹） */
+export function $objAccessor(
+  o: Abs,
+  key: string,
+  get: ((t: Abs) => Abs) | null,
+  set: ((t: Abs, v: Abs) => Abs) | null,
+): Abs {
+  if (!get && !set) return o;
+  let m = accessorTable.get(o);
+  if (!m) {
+    m = new Map();
+    accessorTable.set(o, m);
+  }
+  const def = m.get(key) ?? {};
+  if (get) def.get = get;
+  if (set) def.set = set;
+  m.set(key, def);
+  return o;
+}
+
+/** 对象字面量访问器查询（供 $get/$set/$spread/Object.assign 共用） */
+export function lookupObjAccessor(
+  o: Abs,
+  key: string,
+): { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs } | undefined {
+  return accessorTable.get(o)?.get(key);
+}
+
+/** 不可变更新产生新 Abs 时迁移侧表；omitKey=delete 目标键（对象字面量自有访问器随键删除） */
+function migrateAccessors(from: Abs, to: Abs, omitKey?: string): void {
+  if (to === from) return;
+  const m = accessorTable.get(from);
+  if (!m) return;
+  if (omitKey === undefined) {
+    accessorTable.set(to, m);
+    return;
+  }
+  const copy = new Map(m);
+  copy.delete(omitKey);
+  if (copy.size === 0) accessorTable.delete(to);
+  else accessorTable.set(to, copy);
+}
+
+type ClassAccessor = { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs };
+
+/** 沿继承链找实例 class get/set 访问器 */
+function findClassAccessor(
+  startName: string,
+  key: string,
+): ClassAccessor | undefined {
+  let cur: string | undefined = startName;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const acc = getBClass(cur)?.accessors?.[key];
+    if (acc) return acc;
+    cur = getBClass(cur)?.superName;
+  }
+  return undefined;
+}
+
+/** 静态访问器（挂在类构造器上；继承链上溯） */
+function findStaticClassAccessor(
+  startName: string,
+  key: string,
+): ClassAccessor | undefined {
+  let cur: string | undefined = startName;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const acc = getBClass(cur)?.staticAccessors?.[key];
+    if (acc) return acc;
+    cur = getBClass(cur)?.superName;
+  }
+  return undefined;
+}
+
+/** JS 访问器派发（$get/$set 共用）：obj 走侧表，brand 走 class 注册表 */
+function findAccessor(
+  o: Abs,
+  key: string,
+): { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs } | undefined {
+  if (o.shape.k === "brand") return findClassAccessor(o.shape.name, key);
+  return lookupObjAccessor(o, key);
+}
+
+export function $toNumber(a: Abs): Abs {
+  return toNumberAbs(a);
+}
+
+// --- in / instanceof / delete（transpile 运算符路由；与 ast-eval 同口径） ---
+
+/** Object.prototype 上的恒有成员（`in` 判定：闭对象缺自有槽仍可能经原型命中） */
+const OBJECT_PROTO_NAMES = new Set([
+  "constructor",
+  "toString",
+  "valueOf",
+  "toLocaleString",
+  "hasOwnProperty",
+  "isPrototypeOf",
+  "propertyIsEnumerable",
+  "__proto__",
+]);
+
+/** ES 规范数组下标（无前导零、< 2^32-1）；非规范键返回 undefined */
+function canonicalArrayIndex(v: unknown): number | undefined {
+  if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 4294967295) {
+    return v;
+  }
+  if (typeof v === "string" && /^(0|[1-9]\d*)$/.test(v)) {
+    const n = Number(v);
+    if (n < 4294967295) return n;
+  }
+  return undefined;
+}
+
+/**
+ * `key in obj`：闭形状精确判定（含 Object.prototype 名、数组下标/length、
+ * class 方法/访问器与内建 brand 方法）；prim/nullish 接收者原生抛 TypeError →
+ * unknown；抽象键/开形状 → boolean。
+ */
+export function $in(key: Abs, o: Abs): Abs {
+  if (o.shape.k === "sum") {
+    return o.shape.members.map((m) => $in(key, m)).reduce((a, b) => joinAbs(a, b));
+  }
+  // 原生：prim/nullish 接收者抛 TypeError（'a' in 5 → TypeError）
+  if (o.shape.k === "prim" || o.shape.k === "never" || isNullishLitAbs(o)) {
+    return unknown;
+  }
+  // null/undefined 键原生抛 TypeError；非字面量键 → boolean 近似
+  const kv = key.term?.op === "lit" ? key.term.value : undefined;
+  if (kv === null || kv === undefined) {
+    return isNullishLitAbs(key) ? unknown : bool();
+  }
+  if (o.shape.k === "tuple") {
+    if (kv === "length") return boolLit(true);
+    const idx = canonicalArrayIndex(kv);
+    if (idx !== undefined) return boolLit(idx < o.shape.elements.length);
+    return boolLit(false);
+  }
+  if (o.shape.k === "arr") return bool(); // 抽象数组：索引域未知
+  const keyStr =
+    typeof kv === "number" ? String(kv) : typeof kv === "string" ? kv : undefined;
+  if (keyStr === undefined) return bool(); // symbol 键：抽象
+  if (o.shape.k === "obj" || o.shape.k === "brand") {
+    const objShape: ObjShape | undefined =
+      o.shape.k === "brand"
+        ? o.shape.shape.shape.k === "obj"
+          ? o.shape.shape.shape
+          : undefined
+        : o.shape;
+    if (!objShape) return bool();
+    if (keyStr in objShape.slots) {
+      const slot = objShape.slots[keyStr];
+      if (!slot || slot.optional) return bool(); // optional 槽可能缺席
+      return boolLit(true);
+    }
+    // class 实例：原型链上的方法/访问器/内建 brand 方法
+    if (o.shape.k === "brand" && brandHasProtoMember(o.shape.name, keyStr)) {
+      return boolLit(true);
+    }
+    if (objShape.open) return bool();
+    return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
+  }
+  if (o.shape.k === "fn") {
+    return boolLit(OBJECT_PROTO_NAMES.has(keyStr) || FUNCTION_PROTO_NAMES.has(keyStr));
+  }
+  // eff：Promise/Generator 原型方法
+  if (o.shape.k === "eff") {
+    if (o.shape.eff === "promise" && PROMISE_PROTO_NAMES.has(keyStr)) return boolLit(true);
+    return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
+  }
+  return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
+}
+
+/** Function.prototype / 函数自有面常见名 */
+const FUNCTION_PROTO_NAMES = new Set(["call", "apply", "bind", "length", "name", "prototype"]);
+const PROMISE_PROTO_NAMES = new Set(["then", "catch", "finally"]);
+
+/** 内建 brand 原型方法名（$in 精确判定用；不必穷尽，未知名仍回落 false/proto） */
+const BUILTIN_BRAND_METHODS: Record<string, ReadonlySet<string>> = {
+  Date: new Set(["getTime", "valueOf", "toISOString", "toString", "getMilliseconds", "getSeconds", "getMinutes", "getHours", "getDate", "getDay", "getMonth", "getFullYear"]),
+  RegExp: new Set(["test", "exec", "toString"]),
+  Map: new Set(["get", "set", "has", "delete", "clear", "forEach", "keys", "values", "entries"]),
+  Set: new Set(["has", "add", "delete", "clear", "forEach", "keys", "values", "entries"]),
+  Error: new Set(["toString"]),
+  Promise: new Set(["then", "catch", "finally"]),
+};
+
+function brandHasProtoMember(brandName: string, key: string): boolean {
+  for (const name of bClassChain(brandName)) {
+    const spec = getBClass(name);
+    if (spec?.methods?.[key]) return true;
+    if (spec?.accessors?.[key]) return true;
+    const builtin = BUILTIN_BRAND_METHODS[name];
+    if (builtin?.has(key)) return true;
+  }
+  return false;
+}
+
+/** 内建错误层级（Error 为根，registry 无 superName 时回退） */
+const BUILTIN_ERROR_SUPER: Record<string, string> = {
+  Error: "",
+  RangeError: "Error",
+  TypeError: "Error",
+  ReferenceError: "Error",
+  SyntaxError: "Error",
+  URIError: "Error",
+  EvalError: "Error",
+  AggregateError: "Error",
+};
+
+/** B-path 品牌链：registry extends 优先，内建错误层级回退（限深防环） */
+function bClassChain(name: string): string[] {
+  const out = [name];
+  let cur: string | undefined = name;
+  let depth = 0;
+  while (cur && depth++ < 32) {
+    const spec = getBClass(cur);
+    const parent: string | undefined = spec?.superName ?? BUILTIN_ERROR_SUPER[cur];
+    if (!parent || out.includes(parent)) break;
+    out.push(parent);
+    cur = parent;
+  }
+  return out;
+}
+
+/** 内建构造器名：对其 exact false / true 可判定；未知用户构造器名 → boolean */
+const BUILTIN_CTOR_NAMES = new Set([
+  "Array", "Object", "Function", "Date", "RegExp", "Error", "TypeError", "RangeError",
+  "ReferenceError", "SyntaxError", "URIError", "EvalError", "AggregateError",
+  "Map", "Set", "WeakMap", "WeakSet", "Promise", "String", "Number", "Boolean",
+  "Symbol", "ArrayBuffer", "DataView",
+]);
+
+/**
+ * `x instanceof Right`（Right 为标识符名）：按左值形状精确判定。
+ * nullish 左侧原生抛 TypeError → unknown；未知用户构造器名 → boolean（不得 exact false）。
+ */
+export function $instanceof(left: Abs, rightName: string): Abs {
+  // null/undefined instanceof X：原生抛 TypeError
+  if (isNullishLitAbs(left)) return unknown;
+  switch (left.shape.k) {
+    case "brand":
+      return boolLit(
+        rightName === "Object" || bClassChain(left.shape.name).includes(rightName),
+      );
+    case "arr":
+    case "tuple":
+      if (rightName === "Array" || rightName === "Object") return boolLit(true);
+      if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
+      return bool(); // 可能是 Array 子类
+    case "obj":
+      if (rightName === "Object") return boolLit(true);
+      if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
+      return bool(); // Object.create(C.prototype)
+    case "fn":
+      if (rightName === "Function" || rightName === "Object") return boolLit(true);
+      if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
+      return bool();
+    case "eff":
+      if (left.shape.eff === "promise") {
+        if (rightName === "Promise" || rightName === "Object") return boolLit(true);
+        if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
+        return bool();
+      }
+      if (left.shape.eff === "generator") {
+        if (rightName === "Generator" || rightName === "Object") return boolLit(true);
+        if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
+        return bool();
+      }
+      return bool();
+    case "prim":
+      return boolLit(false); // 原始值无装箱
+    case "sum": {
+      const parts = left.shape.members.map((m) => $instanceof(m, rightName));
+      let decided: boolean | undefined;
+      let undecided = false;
+      for (const p of parts) {
+        const pv = litValue(p);
+        if (typeof pv !== "boolean") {
+          undecided = true;
+          continue;
+        }
+        if (decided === undefined) decided = pv;
+        else if (decided !== pv) return bool();
+      }
+      if (decided === undefined) return bool();
+      return undecided
+        ? abs(bool().shape, lit(decided), pTrue, "path")
+        : boolLit(decided);
+    }
+    default:
+      return bool();
+  }
+}
+
+/** instanceof 右操作数非标识符（表达式/成员路径）：构造器值未知 → 抽象 boolean */
+export function $instanceofNonIdent(_left: Abs): Abs {
+  return bool();
+}
+
+/** ClassExpression 值：构造器函数形状，不得折成精确 undefined */
+export function $classExpr(): Abs {
+  return absFunction(["_rest"], {
+    body: noBody,
+    apply: () => unknown,
+  });
+}
+
+/**
+ * `delete obj[key]` 的结果判定（只读，不写回）。
+ * frozen/sealed 或 configurable:false 键 → false；preventExtensions 可删；
+ * closed 目标恒 true（其余 non-configurable 形态不建模）；
+ * prim/nullish 接收者原生抛 TypeError → unknown。
+ */
+export function $delRes(o: Abs, _key: Abs): Abs {
+  if (o.shape.k === "prim" || o.shape.k === "never" || isNullishLitAbs(o)) {
+    return unknown;
+  }
+  if (o.shape.k === "sum") {
+    return o.shape.members.map((m) => $delRes(m, _key)).reduce((a, b) => joinAbs(a, b));
+  }
+  const st = extStateOf(o);
+  const kv = litValue(_key);
+  const flags =
+    kv !== undefined ? getPropFlags(o)?.get(String(kv)) : undefined;
+  if (st === "frozen" || st === "sealed") return boolLit(false);
+  if (flags?.configurable === false) return boolLit(false);
+  if (st === "nonext") return boolLit(true); // 属性仍可删（仅不可加）
+  if (o.shape.k === "obj" || o.shape.k === "brand") {
+    const objShape: ObjShape | undefined =
+      o.shape.k === "brand"
+        ? o.shape.shape.shape.k === "obj"
+          ? o.shape.shape.shape
+          : undefined
+        : o.shape;
+    if (objShape?.open) return bool();
+    return boolLit(true);
+  }
+  // tuple/arr/fn/eff：delete 任意键恒 true（数组洞为 undefined 槽，不影响结果）
+  if (
+    o.shape.k === "tuple" ||
+    o.shape.k === "arr" ||
+    o.shape.k === "fn" ||
+    o.shape.k === "eff"
+  ) {
+    return boolLit(true);
+  }
+  return bool();
+}
+
+/**
+ * `delete obj[key]` 的写入（不可变更新）：返回删键后的新容器。
+ * 闭对象删自有槽；tuple 规范下标置 undefined（对齐原生空洞读值）；
+ * 抽象 arr 元素并入 undefined；无法表达的形态原样返回。
+ */
+export function $del(o: Abs, key: Abs): Abs {
+  const kv = litValue(key);
+  if (o.shape.k === "sum") {
+    return abs(
+      { k: "sum", members: o.shape.members.map((m) => $del(m, key)) },
+      undefined,
+      undefined,
+      "partial",
+    );
+  }
+  const st = extStateOf(o);
+  // frozen/sealed：删静默失败（delete 返回 false，容器不变）
+  if (st === "frozen" || st === "sealed") return o;
+  if (o.shape.k === "brand") {
+    const inner = $del(o.shape.shape, key);
+    if (inner === o.shape.shape) return o;
+    const next = abs({ k: "brand", name: o.shape.name, shape: inner }, undefined, undefined, o.conf);
+    const clsName = classNameOfValue(o as object);
+    if (clsName) markClassValue(next as object, clsName);
+    return next;
+  }
+  const keyStr =
+    typeof kv === "number" ? String(kv) : typeof kv === "string" ? kv : undefined;
+  if (o.shape.k === "obj" && keyStr !== undefined) {
+    if (getPropFlags(o)?.get(keyStr)?.configurable === false) return o;
+    if (o.shape.open) return o;
+    if (!(keyStr in o.shape.slots) && !lookupObjAccessor(o, keyStr)) return o; // 无此槽且无访问器：no-op
+    const slots: Record<string, Slot> = {};
+    for (const [k, slot] of Object.entries(o.shape.slots)) {
+      if (k !== keyStr) slots[k] = slot;
+    }
+    const next = abs({ k: "obj", slots }, undefined, undefined, o.conf);
+    // 对象字面量自有访问器随 delete 移除（原生 own accessor 是自有属性）
+    migrateAccessors(o, next, keyStr);
+    migrateInvariants(o, next);
+    return next;
+  }
+  if (o.shape.k === "tuple") {
+    const idx = canonicalArrayIndex(kv);
+    if (idx === undefined) return o;
+    const els = o.shape.elements.map((e, i) => (i === idx ? $lit(undefined) : e));
+    return abs({ k: "tuple", elements: els }, undefined, undefined, o.conf);
+  }
+  if (o.shape.k === "arr") {
+    return abs(
+      { k: "arr", element: joinAbs(o.shape.element, $lit(undefined)) },
+      undefined,
+      undefined,
+      "partial",
+    );
+  }
+  return o;
 }
 export function $neg(a: Abs): Abs {
   return negAbs(a);
@@ -617,6 +1061,8 @@ const ARR_MUTATORS = new Set([
   "splice",
   "reverse",
   "sort",
+  "copyWithin",
+  "fill",
 ]);
 
 export function isArrMutator(name: string): boolean {
@@ -627,9 +1073,125 @@ export function isArrMutator(name: string): boolean {
  * C1.4 语句重绑：返回**变更后容器** Abs（不是 JS 返回值）。
  * `a.pop()` 语句应把 `a` 绑成去掉末元的 tuple，而不是被移除的元素。
  */
+/** ToIntegerOrInfinity（±Infinity 保持）；返回：数字=可折叠 / null=实参不可判定 / undefined=缺省或显式 undefined（取默认值） */
+function toIOI(v: Abs | undefined): number | null | undefined {
+  if (v === undefined) return undefined; // 实参缺省（数组越界）
+  const lv = litValue(v);
+  if (lv === undefined) {
+    // 显式 undefined 字面量 → 按缺省（copyWithin/fill 规范：undefined end 取 len）
+    return v.term?.op === "lit" ? undefined : null;
+  }
+  if (lv === null) return 0;
+  if (typeof lv === "number") {
+    if (Number.isNaN(lv)) return 0;
+    return Math.trunc(lv);
+  }
+  if (typeof lv === "string" || typeof lv === "boolean") {
+    return Math.trunc(Number(lv));
+  }
+  return null; // bigint/symbol/抽象 → 不可判定
+}
+
+/** 规范窗口（len 相对化 + clamp）；target≥len 或空窗 → null（no-op） */
+function clampWindow(
+  len: number,
+  target: number,
+  start: number,
+  end: number,
+): { t: number; s: number; e: number } | null {
+  const t = target < 0 ? Math.max(len + target, 0) : Math.min(target, len);
+  const s = start < 0 ? Math.max(len + start, 0) : Math.min(start, len);
+  const e = end < 0 ? Math.max(len + end, 0) : Math.min(end, len);
+  if (t >= len || s >= len) return null;
+  const count = Math.min(e - s, len - t);
+  if (count <= 0) return null;
+  return { t, s, e: s + count };
+}
+
+function copyWithinTuple(
+  shape: { k: "tuple"; elements: Abs[] } | { k: "arr"; element: Abs },
+  vals: Abs[],
+): Abs {
+  const t = toIOI(vals[0]);
+  const s = toIOI(vals[1]);
+  const e = toIOI(vals[2]);
+  if (shape.k === "tuple") {
+    if (t === null || s === null || e === null) {
+      // 不可判定边界：任一槽可能被写 → 元素 join 回退（sound）
+      const joined = shape.elements.length
+        ? shape.elements.reduce((x, y) => joinAbs(x, y))
+        : unknown;
+      return abs({ k: "arr", element: joined }, undefined, undefined, "partial");
+    }
+    const len = shape.elements.length;
+    const win = clampWindow(len, t ?? 0, s ?? 0, e ?? len);
+    if (win) {
+      const els = [...shape.elements];
+      // 重叠且源在目标之后（s < t）：按规范倒序复制
+      const backwards = (s ?? 0) < (t ?? 0) && win.s + (win.e - win.s) > win.t;
+      const count = win.e - win.s;
+      if (backwards) {
+        for (let k = count - 1; k >= 0; k--) els[win.t + k] = els[win.s + k]!;
+      } else {
+        for (let k = 0; k < count; k++) els[win.t + k] = els[win.s + k]!;
+      }
+      return abs({ k: "tuple", elements: els }, undefined, undefined, "path");
+    }
+    // 合法边界但 no-op（如 target≥len）：保持 tuple
+    return abs({ k: "tuple", elements: [...shape.elements] }, undefined, undefined, "path");
+  }
+  // 抽象 arr：copyWithin 保持元素类型（sound）
+  return abs({ k: "arr", element: shape.element }, undefined, undefined, "partial");
+}
+
+function fillTuple(
+  shape: { k: "tuple"; elements: Abs[] } | { k: "arr"; element: Abs },
+  vals: Abs[],
+  arr: Abs,
+): Abs {
+  const v = vals[0] ?? unknown;
+  const s = toIOI(vals[1]);
+  const e = toIOI(vals[2]);
+  if (shape.k === "tuple") {
+    const len = shape.elements.length;
+    if (s === null || e === null) {
+      // 不可判定边界：任一槽可能被写 → 元素 join 回退（sound）
+      return abs(
+        { k: "tuple", elements: shape.elements.map((el) => joinAbs(el, v)) },
+        undefined,
+        undefined,
+        "partial",
+      );
+    }
+    const start = Math.max(Math.min((s ?? 0) < 0 ? len + (s ?? 0) : (s ?? 0), len), 0);
+    const end = Math.max(Math.min((e ?? len) < 0 ? len + (e ?? len) : (e ?? len), len), 0);
+    if (end <= start) {
+      return abs({ k: "tuple", elements: [...shape.elements] }, undefined, undefined, "path");
+    }
+    const els = shape.elements.map((el, i) => (i >= start && i < end ? v : el));
+    return abs({ k: "tuple", elements: els }, undefined, undefined, "path");
+  }
+  return abs(
+    { k: "arr", element: joinAbs(shape.element, v) },
+    undefined,
+    undefined,
+    confJoin(arr.conf, "path"),
+  );
+}
+
 export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   const shape = arr.shape;
   if (shape.k !== "tuple" && shape.k !== "arr") return arr;
+  const st = extStateOf(arr);
+  // frozen：任何 mutator 静默失败（原生 push/pop 等抛 TypeError，值保持）；
+  // sealed/nonext：结构性扩展（push/unshift/splice 加元素）静默失败
+  if (st === "frozen") return arr;
+  if (
+    (st === "sealed" || st === "nonext") &&
+    (method === "push" || method === "unshift" || method === "splice")
+  ) {
+    return arr;
+  }
   const vals = args.map((a) => asAbsVal(a));
   const asArrEl = (els: Abs[]): Abs =>
     els.length > 0 ? els.reduce((x, y) => joinAbs(x, y)) : unknown;
@@ -699,6 +1261,12 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
       );
     }
     return arr;
+  }
+  if (method === "copyWithin") {
+    return copyWithinTuple(shape, vals);
+  }
+  if (method === "fill") {
+    return fillTuple(shape, vals, arr);
   }
   if (method === "sort") {
     // 顺序未建模：位次不可信，tuple 降为 arr（元素 join），避免 a[0] 假精确
@@ -775,6 +1343,14 @@ export function $idx(a: Abs, i: Abs): Abs {
 export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
   const iv = litValue(i);
   if (a.shape.k === "tuple" && typeof iv === "number" && Number.isInteger(iv) && iv >= 0) {
+    const st = extStateOf(a);
+    if (st === "frozen") return a; // frozen 数组：下标写静默失败（sloppy）
+    if (
+      (st === "sealed" || st === "nonext") &&
+      iv >= a.shape.elements.length
+    ) {
+      return a; // 不可扩展：越界写（新下标）静默失败
+    }
     const els = [...a.shape.elements];
     while (els.length < iv) els.push(undef());
     els[iv] = asAbsVal(value);
@@ -820,7 +1396,23 @@ export function $obj(slots: Record<string, Abs>): Abs {
 
 /** 对象展开 { ...a, b } */
 export function $spread(a: Abs, b: Abs): Abs {
-  return spreadObj(asAbsVal(a), asAbsVal(b));
+  let bb = asAbsVal(b);
+  // 原生展开会**调用**源对象 getter 并把结果作为数据槽拷入
+  const acc = bb && typeof bb === "object" ? accessorTable.get(bb as object) : undefined;
+  if (acc && bb.shape.k === "obj") {
+    let changed = false;
+    const slots = { ...(bb.shape as ObjShape).slots };
+    for (const [k, fn] of acc) {
+      if (fn.get && slots[k]) {
+        slots[k] = { value: fn.get(bb) };
+        changed = true;
+      }
+    }
+    if (changed) {
+      bb = abs({ k: "obj", slots }, undefined, undefined, bb.conf);
+    }
+  }
+  return spreadObj(asAbsVal(a), bb);
 }
 
 /**
@@ -1002,7 +1594,7 @@ export function namespaceNameOf(v: unknown): string | undefined {
   return undefined;
 }
 
-/** 正则字面量 → RegExp brand（source/flags 进 slots，供 exec/test 精确执行） */
+/** 正则字面量 → RegExp brand（source/flags/lastIndex 进 slots，供 exec/test 精确执行） */
 export function $regex(pattern: string, flags = ""): Abs {
   const litStr = (v: string): Abs =>
     abs({ k: "prim", type: "string" }, { op: "lit", value: v as never }, pTrue, "exact");
@@ -1013,6 +1605,7 @@ export function $regex(pattern: string, flags = ""): Abs {
       shape: objOf({
         source: { value: litStr(pattern) },
         flags: { value: litStr(flags) },
+        lastIndex: { value: numLit(0) },
       }),
     },
     undefined,
@@ -1050,7 +1643,29 @@ export function $get(
     // JS Map/Set 的 size 是属性不是方法；brand 内层为空 obj，须在 $get 委托
     if (key === "size" && o.shape.name === "Map") return mapSizeAbs(o);
     if (key === "size" && o.shape.name === "Set") return setSizeAbs(o);
-    return $get(o.shape.shape, key, opts);
+    const isClassVal = classNameOfValue(o as object) === o.shape.name;
+    const inner = o.shape.shape;
+    // 自有数据属性优先于原型访问器（原生属性查找：own → prototype）
+    if (inner?.shape.k === "obj") {
+      const slot = inner.shape.slots[key];
+      if (slot && !slot.optional) return slot.value;
+    }
+    if (isClassVal) {
+      const sacc = findStaticClassAccessor(o.shape.name, key);
+      if (sacc) return sacc.get ? sacc.get(o) : undef();
+      // 类值上读实例访问器键 → 原生 undefined
+      if (findClassAccessor(o.shape.name, key)) return undef();
+    } else {
+      const acc = findClassAccessor(o.shape.name, key);
+      if (acc) return acc.get ? acc.get(o) : undef();
+      // 实例上读静态访问器键 → 原生 undefined（属性在构造器上）
+      if (findStaticClassAccessor(o.shape.name, key)) return undef();
+    }
+    return $get(inner, key, opts);
+  }
+  // 数组 length：成员路径（a.length += 1 等复合写）与 a.length 读同源
+  if ((o.shape.k === "tuple" || o.shape.k === "arr") && key === "length") {
+    return $len(o);
   }
   // any / nullish：throws 域（design-cli-semantics §3.3）
   if (noteNullishMemberThrows(o, key, "property")) {
@@ -1061,6 +1676,8 @@ export function $get(
     return anyMemberResult();
   }
   if (isObj(o)) {
+    const acc = lookupObjAccessor(o, key);
+    if (acc) return acc.get ? acc.get(o) : undef();
     const slot = (o.shape as ObjShape).slots[key];
     if (slot) {
       // optional 槽在 JS 中可能缺席 → 读到 undefined，不能报 definite presence
@@ -1092,25 +1709,86 @@ export function $get(
   return unknown;
 }
 
-/** 成员写：返回新 obj/brand（不可变更新） */
+/** 成员写：返回新 obj/brand（不可变更新）；frozen/sealed/只读目标按 sloppy 静默失败 */
 export function $set(o: Abs, key: string, value: Abs): Abs {
   if (o.shape.k === "brand") {
+    if (extStateOf(o) === "frozen") return o; // frozen brand：全写静默失败
+    const isClassVal = classNameOfValue(o as object) === o.shape.name;
+    if (isClassVal) {
+      const sacc = findStaticClassAccessor(o.shape.name, key);
+      if (sacc) return sacc.set ? sacc.set(o, value) : o;
+      if (findClassAccessor(o.shape.name, key)) return o;
+    } else {
+      const acc = findClassAccessor(o.shape.name, key);
+      if (acc) {
+        if (acc.set) return acc.set(o, value);
+        // getter-only：class 体在原生是 strict → TypeError；记录 soft may-throw，写不生效
+        recordMayThrow({
+          kind: "TypeError",
+          cause: `property '${key}' has only a getter`,
+          recv: o.shape.name,
+          name: key,
+        });
+        return o;
+      }
+    }
     const inner = $set(o.shape.shape, key, value);
-    return abs(
+    const next = abs(
       { k: "brand", name: o.shape.name, shape: inner },
       o.term,
       o.pred,
       confJoin(o.conf, value.conf),
     );
+    // 类 Abs 不可变更新后仍是类值（静态访问器派发依赖身份）
+    const clsName = classNameOfValue(o as object);
+    if (clsName) markClassValue(next as object, clsName);
+    return next;
+  }
+  // a.length = n：非负整数 < 2^32-1 就地截断/延长（延长槽读 undefined 对齐空洞）；
+  // 其余值按 sound 回退：元素与 undefined 取并、长度未知
+  if (o.shape.k === "tuple" && key === "length") {
+    if (extStateOf(o) === "frozen") return o;
+    const v = litValue(value);
+    if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 4294967295) {
+      const els = o.shape.elements.slice(0, v);
+      while (els.length < v) els.push($lit(undefined));
+      return abs({ k: "tuple", elements: els }, undefined, undefined, o.conf);
+    }
+    const joined =
+      o.shape.elements.length > 0
+        ? o.shape.elements.reduce((a, b) => joinAbs(a, b))
+        : unknown;
+    return abs(
+      { k: "arr", element: joinAbs(joined, $lit(undefined)) },
+      undefined,
+      undefined,
+      "partial",
+    );
+  }
+  if (o.shape.k === "arr" && key === "length") {
+    return abs({ k: "arr", element: o.shape.element }, undefined, undefined, "partial");
   }
   if (!isObj(o)) return $obj({ [key]: value });
   const shape = o.shape as ObjShape;
+  const st = extStateOf(o);
+  const hasKey = Object.prototype.hasOwnProperty.call(shape.slots, key);
+  // frozen：全写静默失败；sealed/nonext：新键静默失败
+  if (st === "frozen") return o;
+  if ((st === "sealed" || st === "nonext") && !hasKey) return o;
+  // defineProperty writable:false：写静默失败
+  if (getPropFlags(o)?.get(key)?.writable === false) return o;
+  const acc = lookupObjAccessor(o, key);
+  if (acc) {
+    return acc.set ? acc.set(o, value) : o;
+  }
   const slots = { ...shape.slots, [key]: { value: asAbsVal(value) } };
   const next = objOf(slots, {
     index: shape.index,
     open: shape.open,
   });
   next.conf = confJoin(o.conf, value.conf);
+  migrateAccessors(o, next);
+  migrateInvariants(o, next);
   return next;
 }
 

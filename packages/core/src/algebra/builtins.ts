@@ -4,7 +4,7 @@
  */
 
 import type { Abs } from "./abs.ts";
-import { abs, litValue, numLit, strLit, boolLit, unknown, confJoin } from "./abs.ts";
+import { abs, litValue, numLit, strLit, boolLit, unknown, confJoin, isExactLit } from "./abs.ts";
 import { joinAbs, objOf } from "./objects.ts";
 import {
   collectionElementJoin,
@@ -35,6 +35,51 @@ function strPrim(conf: Abs["conf"] = "path"): Abs {
 
 function boolPrim(conf: Abs["conf"] = "partial"): Abs {
   return abs({ k: "prim", type: "boolean" }, undefined, undefined, conf);
+}
+
+// --- 对象不变性侧表（freeze/seal/preventExtensions/defineProperty） ---
+// WeakMap 侧表（同 exec accessorTable 模式）：Abs 不可变，写路径（$set/$del/
+// $idxSet/$arrMutContainer/runtimeAssignObject）读侧表复现 sloppy 静默失败；
+// 产生新副本的写路径负责迁移（$set/$del 里 migrateInvariants）。
+
+export type ExtState = "nonext" | "sealed" | "frozen";
+export type PropFlags = {
+  writable?: boolean;
+  enumerable?: boolean;
+  configurable?: boolean;
+};
+
+const extStateTable = new WeakMap<Abs, ExtState>();
+const propFlagsTable = new WeakMap<Abs, Map<string, PropFlags>>();
+
+export function markExtState(o: Abs, s: ExtState): Abs {
+  extStateTable.set(o, s);
+  return o;
+}
+
+export function extStateOf(o: Abs): ExtState | undefined {
+  return extStateTable.get(o);
+}
+
+export function getPropFlags(o: Abs): Map<string, PropFlags> | undefined {
+  return propFlagsTable.get(o);
+}
+
+export function setPropFlags(o: Abs, key: string, f: PropFlags): void {
+  let m = propFlagsTable.get(o);
+  if (!m) {
+    m = new Map();
+    propFlagsTable.set(o, m);
+  }
+  m.set(key, f);
+}
+
+/** 写路径产生新副本时迁移不变性侧表（同 migrateAccessors 模式） */
+export function migrateInvariants(from: Abs, to: Abs): void {
+  const s = extStateTable.get(from);
+  if (s !== undefined) extStateTable.set(to, s);
+  const f = propFlagsTable.get(from);
+  if (f) propFlagsTable.set(to, f);
 }
 
 /** Math.* — 字面量可折叠的返回精确值，否则 number */
@@ -79,20 +124,35 @@ export function evalMathMethod(name: string, args: Abs[]): Abs | undefined {
     case "sign":
       if (typeof a0 === "number") return numLit(Math.sign(a0));
       return numPrim();
+    case "atan2":
+      if (typeof a0 === "number" && typeof a1 === "number") {
+        return numLit(Math.atan2(a0, a1));
+      }
+      return numPrim();
     default:
       return undefined;
   }
 }
 
-/** Object.keys/values/entries/assign */
+/** Object.keys/values/entries/assign + 不变性方法 */
 export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
   const a0 = args[0];
+
+  /** enumerable:false（defineProperty 记录）的键从枚举视图剔除 */
+  const enumKeys = (slots: Record<string, unknown>, target: Abs): string[] => {
+    const flags = getPropFlags(target);
+    return Object.keys(slots).filter(
+      (k) => flags?.get(k)?.enumerable !== false,
+    );
+  };
+
   switch (name) {
     case "keys": {
       if (a0?.shape.k === "obj") {
-        const keys = Object.keys((a0.shape as { slots: Record<string, unknown> }).slots).map((k) =>
-          strLit(k),
-        );
+        const keys = enumKeys(
+          (a0.shape as { slots: Record<string, unknown> }).slots,
+          a0,
+        ).map((k) => strLit(k));
         return abs({ k: "tuple", elements: keys }, undefined, undefined, "exact");
       }
       return abs({ k: "arr", element: strPrim("path") }, undefined, undefined, "partial");
@@ -100,7 +160,7 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
     case "values": {
       if (a0?.shape.k === "obj") {
         const slots = (a0.shape as { slots: Record<string, { value: Abs }> }).slots;
-        const vals = Object.values(slots).map((s) => s.value);
+        const vals = enumKeys(slots, a0).map((k) => slots[k]!.value);
         return abs({ k: "tuple", elements: vals }, undefined, undefined, "exact");
       }
       return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
@@ -108,8 +168,8 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
     case "entries": {
       if (a0?.shape.k === "obj") {
         const slots = (a0.shape as { slots: Record<string, { value: Abs }> }).slots;
-        const entries = Object.entries(slots).map(([, s]) =>
-          abs({ k: "tuple", elements: [strPrim("exact"), s.value] }, undefined, undefined, "exact"),
+        const entries = enumKeys(slots, a0).map((k) =>
+          abs({ k: "tuple", elements: [strPrim("exact"), slots[k]!.value] }, undefined, undefined, "exact"),
         );
         return abs({ k: "tuple", elements: entries }, undefined, undefined, "exact");
       }
@@ -128,6 +188,107 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         }
       }
       return acc;
+    }
+    case "is": {
+      // SameValue：±0 区分、NaN 自等（与 -0 语义同族入口）
+      const a0 = args[0];
+      const a1 = args[1];
+      if (a0 && a1 && isExactLit(a0) && isExactLit(a1)) {
+        const va = (a0.term as { op: "lit"; value: unknown }).value;
+        const vb = (a1.term as { op: "lit"; value: unknown }).value;
+        return boolLit(Object.is(va, vb));
+      }
+      return boolPrim();
+    }
+    case "freeze": {
+      if (a0) return markExtState(a0, "frozen");
+      return undefined;
+    }
+    case "seal": {
+      if (a0) return markExtState(a0, "sealed");
+      return undefined;
+    }
+    case "preventExtensions": {
+      if (a0) return markExtState(a0, "nonext");
+      return undefined;
+    }
+    case "isFrozen": {
+      if (!a0) return boolLit(false);
+      return boolLit(extStateOf(a0) === "frozen");
+    }
+    case "isSealed": {
+      if (!a0) return boolLit(false);
+      const s = extStateOf(a0);
+      return boolLit(s === "sealed" || s === "frozen");
+    }
+    case "isExtensible": {
+      if (!a0) return boolLit(false);
+      return boolLit(extStateOf(a0) === undefined);
+    }
+    case "defineProperty": {
+      const kv = args[1] ? litValue(args[1]) : undefined;
+      if (!a0 || (typeof kv !== "string" && typeof kv !== "number")) return a0;
+      const key = String(kv);
+      const descAbs = args[2];
+      if (!descAbs || descAbs.shape.k !== "obj") return a0; // desc 非字面量：保守不动
+      const dslots = descAbs.shape.slots;
+      const dv = (k: string): unknown => {
+        const s = dslots[k]?.value;
+        return s ? litValue(s) : undefined;
+      };
+      const value = dv("value");
+      const writable = dv("writable");
+      const enumerable = dv("enumerable");
+      const configurable = dv("configurable");
+      // 描述符字段语义：**新建属性**未指定字段默认 false；**已有属性**
+      // （对象字面量属性默认可写/可枚举/可配置）未指定字段保持原状，
+      // 仅显式 false 才收紧。原生对已有 configurable:false 属性改描述符
+      // 抛 TypeError 的形态不建模。
+      const innerForExists =
+        a0.shape.k === "brand" ? a0.shape.shape : a0;
+      const exists =
+        innerForExists.shape.k === "obj" &&
+        Object.prototype.hasOwnProperty.call(innerForExists.shape.slots, key);
+      const flags: PropFlags = {};
+      if (exists) {
+        if (writable === false) flags.writable = false;
+        if (enumerable === false) flags.enumerable = false;
+        if (configurable === false) flags.configurable = false;
+      } else {
+        if (writable !== true) flags.writable = false;
+        if (enumerable !== true) flags.enumerable = false;
+        if (configurable !== true) flags.configurable = false;
+      }
+      // value 进 slots（defineProperty 返回接收者本身；语句级写回由 transpile 负责）
+      const litOf = (v: unknown): Abs | undefined => {
+        if (v === undefined) return undefined; // 无 value 描述符：不动槽
+        if (typeof v === "number") return numLit(v);
+        if (typeof v === "string") return strLit(v);
+        if (typeof v === "boolean") return boolLit(v);
+        if (v === null) return abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+        return undefined;
+      };
+      let out = a0;
+      const putSlots = (inner: Abs): Abs => {
+        if (inner.shape.k !== "obj") return inner;
+        const lit = litOf(value);
+        const slots = lit
+          ? { ...inner.shape.slots, [key]: { value: lit } }
+          : { ...inner.shape.slots };
+        const next = abs({ k: "obj", slots }, undefined, undefined, inner.conf);
+        migrateInvariants(inner, next);
+        return next;
+      };
+      if (out.shape.k === "obj") {
+        out = putSlots(out);
+      } else if (out.shape.k === "brand") {
+        const inner = putSlots(out.shape.shape);
+        if (inner !== out.shape.shape) {
+          out = abs({ k: "brand", name: out.shape.name, shape: inner }, out.term, out.pred, out.conf);
+        }
+      }
+      setPropFlags(out, key, flags);
+      return out;
     }
     default:
       return undefined;

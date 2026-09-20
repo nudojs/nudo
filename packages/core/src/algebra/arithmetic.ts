@@ -24,6 +24,8 @@ import {
   confJoin,
   isNumPrim,
   isStrPrim,
+  isBigPrim,
+  bigintLit,
   litValue,
   num,
   numLit,
@@ -57,6 +59,16 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     if (typeof va === "string" || typeof vb === "string") {
       return strLitResult(String(va) + String(vb));
     }
+  }
+  // boolean/null 字面量与数字混合：ToNumber 折叠（与 sub/mul/div/mod 同口径；
+  // native 10 + true = 11、2 + null = 2；undefined 参与恒 NaN 不折）
+  if (coercibleLit(va) && coercibleLit(vb)) {
+    return numLit(Number(va) + Number(vb));
+  }
+  const big = foldBigintBinOp(a, b, (x, y) => x + y);
+  if (big) return big;
+  if (isBigPrim(a) && isBigPrim(b)) {
+    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
   }
 
   // 字符串拼接（含 template parts）—— JS + 优先走 string
@@ -116,6 +128,29 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     return abs({ k: "sum", members: uniq }, term, undefined, "partial");
   }
 
+  return abs({ k: "unknown" }, undefined, undefined, "partial");
+}
+
+/** 双方 bigint 字面量折叠（÷0n 原生 RangeError → unknown）；混合 bigint⊗非 bigint 原生抛 TypeError → unknown */
+function foldBigintBinOp(
+  a: Abs,
+  b: Abs,
+  op: (x: bigint, y: bigint) => bigint,
+): Abs | undefined {
+  const va = litValue(a);
+  const vb = litValue(b);
+  if (typeof va !== "bigint" && typeof vb !== "bigint") return undefined;
+  if (typeof va === "bigint" && typeof vb === "bigint") {
+    try {
+      return bigintLit(op(va, vb));
+    } catch {
+      return abs({ k: "unknown" }, undefined, undefined, "partial");
+    }
+  }
+  // 一侧 bigint 字面量：另一侧为 bigint prim（无字面量）→ 交抽象回退；
+  // 其余（number/string/bool/…）混合原生抛 TypeError → unknown
+  const other = typeof va === "bigint" ? b : a;
+  if (isBigPrim(other)) return undefined;
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
@@ -331,6 +366,11 @@ function collectBoundsFromPhi(phi: Phi, id: string, acc: NumBounds): void {
 export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   const va = litValue(a);
   const vb = litValue(b);
+  const big = foldBigintBinOp(a, b, (x, y) => x - y);
+  if (big) return big;
+  if (isBigPrim(a) && isBigPrim(b)) {
+    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
+  }
   if (typeof va === "number" && typeof vb === "number") {
     return numLit(va - vb);
   }
@@ -373,6 +413,11 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
 export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   const va = litValue(a);
   const vb = litValue(b);
+  const big = foldBigintBinOp(a, b, (x, y) => x * y);
+  if (big) return big;
+  if (isBigPrim(a) && isBigPrim(b)) {
+    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
+  }
   if (typeof va === "number" && typeof vb === "number") {
     return numLit(va * vb);
   }
@@ -451,6 +496,11 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
 export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   const va = litValue(a);
   const vb = litValue(b);
+  const big = foldBigintBinOp(a, b, (x, y) => x / y);
+  if (big) return big;
+  if (isBigPrim(a) && isBigPrim(b)) {
+    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
+  }
   if (typeof va === "number" && typeof vb === "number") {
     if (vb === 0) {
       // JS：0/0=NaN，n/0=±Infinity —— 保留字面量语义
@@ -502,6 +552,11 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
 export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   const va = litValue(a);
   const vb = litValue(b);
+  const big = foldBigintBinOp(a, b, (x, y) => x % y);
+  if (big) return big;
+  if (isBigPrim(a) && isBigPrim(b)) {
+    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
+  }
   if (typeof va === "number" && typeof vb === "number") {
     if (vb === 0) {
       return abs(num().shape, undefined, undefined, "path");

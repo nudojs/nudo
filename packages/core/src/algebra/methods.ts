@@ -66,16 +66,19 @@ export function callAbsMethod(
     const suffix = knownSuffixOfViews(views);
     switch (name) {
       case "startsWith": {
+        if (args[1] && litValue(args[1]) !== undefined) return boolPrim();
         if (typeof a0 !== "string") return boolPrim();
         const d = decideStartsWith(prefix, a0);
         return d === "unknown" ? boolPrim() : boolLit(d);
       }
       case "endsWith": {
+        if (args[1] && litValue(args[1]) !== undefined) return boolPrim();
         if (typeof a0 !== "string") return boolPrim();
         const d = decideEndsWith(suffix, a0);
         return d === "unknown" ? boolPrim() : boolLit(d);
       }
       case "includes": {
+        if (args[1] && litValue(args[1]) !== undefined) return boolPrim();
         if (typeof a0 !== "string") return boolPrim();
         const d = decideIncludes(allFixedTextOfViews(views), a0);
         return d === "unknown" ? boolPrim() : boolLit(d);
@@ -100,13 +103,20 @@ export function callAbsMethod(
   switch (name) {
     case "startsWith":
     case "endsWith":
-    case "includes":
+    case "includes": {
+      // 可选位置参数（startsWith/includes 的 position、endsWith 的 length）：
+      // number 字面量或缺省（undefined）→ 按原生折叠；非字面量 → boolPrim
+      const a1Abs = args[1];
+      const a1 = a1Abs ? litValue(a1Abs) : undefined;
+      const a1Unknown = a1Abs !== undefined && a1Abs.term?.op !== "lit";
+      if (a1Unknown) return boolPrim();
       if (lit !== undefined && typeof a0 === "string") {
-        if (name === "startsWith") return boolLit(lit.startsWith(a0));
-        if (name === "endsWith") return boolLit(lit.endsWith(a0));
-        return boolLit(lit.includes(a0));
+        if (name === "startsWith") return boolLit(lit.startsWith(a0, a1 as number | undefined));
+        if (name === "endsWith") return boolLit(lit.endsWith(a0, a1 as number | undefined));
+        return boolLit(lit.includes(a0, a1 as number | undefined));
       }
       return boolPrim();
+    }
     case "toUpperCase":
     case "toLowerCase":
     case "trim":
@@ -146,8 +156,12 @@ export function callAbsMethod(
     case "split": {
       if (lit !== undefined) {
         const sep = typeof a0 === "string" ? a0 : undefined;
+        // limit：number 字面量或缺省按原生截断；非字面量 → 元素数未知，保守 arr<string>
+        const a1Abs = args[1];
+        const a1 = a1Abs ? litValue(a1Abs) : undefined;
+        if (a1Abs !== undefined && a1Abs.term?.op !== "lit") return strArr("path");
         if (sep !== undefined) {
-          const parts = lit.split(sep).map((s) => strLit(s));
+          const parts = lit.split(sep, a1 as number | undefined).map((s) => strLit(s));
           return abs({ k: "tuple", elements: parts }, undefined, undefined, "exact");
         }
         // 非字面分隔符：结果元素数未知（""→逐字符、命中→多段、未命中→1 段），

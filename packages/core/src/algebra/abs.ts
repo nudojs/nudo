@@ -107,6 +107,15 @@ export function boolLit(value: boolean): Abs {
   };
 }
 
+export function bigintLit(value: bigint): Abs {
+  return {
+    shape: { k: "prim", type: "bigint" },
+    term: lit(value as never),
+    pred: pTrue,
+    conf: "exact",
+  };
+}
+
 /** 带项的符号数，例如参数 x */
 export function numVar(id: string, pred?: Pred, conf: Confidence = "path"): Abs {
   return {
@@ -207,6 +216,10 @@ export function isNumPrim(a: Abs): boolean {
 
 export function isStrPrim(a: Abs): boolean {
   return a.shape.k === "prim" && a.shape.type === "string";
+}
+
+export function isBigPrim(a: Abs): boolean {
+  return a.shape.k === "prim" && a.shape.type === "bigint";
 }
 
 /** 置信度：字面量全确定 */

@@ -42,6 +42,7 @@ import {
   numVar,
   strLit,
   boolLit,
+  bigintLit,
   bool,
   unknown,
   litValue,
@@ -57,6 +58,15 @@ import {
   looseEqAbs,
   isNullishLitAbs,
   definitelyNotNullishShape,
+  bitandAbs,
+  bitorAbs,
+  bitxorAbs,
+  bitnotAbs,
+  shlAbs,
+  shrAbs,
+  ushrAbs,
+  powAbs,
+  toNumberAbs,
 } from "./surface.ts";
 import { leakIfNeeded, defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { spread, joinAbs, getSlot } from "./objects.ts";
@@ -848,6 +858,8 @@ function evalNodeInner(
       return ok(strLit((node as StringLiteral).value), phi, env);
     case "BooleanLiteral":
       return ok(boolLit((node as BooleanLiteral).value), phi, env);
+    case "BigIntLiteral":
+      return ok(bigintLit((node as { value: bigint }).value), phi, env);
     case "NullLiteral":
       return ok(abs({ k: "unknown" }, lit(null), pTrue, "exact"), phi, env);
     case "Identifier": {
@@ -1137,11 +1149,8 @@ function evalNodeInner(
       if (u.operator === "-") return ok(negAbs(a, phi), phi, env);
       if (u.operator === "!") return ok(notAbs(a), phi, env);
       if (u.operator === "typeof") return ok(typeofAbs(a), phi, env);
-      if (u.operator === "+") {
-        const lv = litValue(a);
-        if (typeof lv === "number") return ok(numLit(lv), phi, env);
-        return ok(unknown, phi, env);
-      }
+      if (u.operator === "+") return ok(toNumberAbs(a), phi, env);
+      if (u.operator === "~") return ok(bitnotAbs(a), phi, env);
       return ok(unknown, phi, env);
     }
     case "LogicalExpression": {
@@ -1422,6 +1431,20 @@ function evalBinary(
       return ok(leakIfNeeded(div(l, r, phi), budget, "div"), phi, env);
     case "%":
       return ok(leakIfNeeded(mod(l, r, phi), budget, "mod"), phi, env);
+    case "&":
+      return ok(bitandAbs(l, r), phi, env);
+    case "|":
+      return ok(bitorAbs(l, r), phi, env);
+    case "^":
+      return ok(bitxorAbs(l, r), phi, env);
+    case "<<":
+      return ok(shlAbs(l, r), phi, env);
+    case ">>":
+      return ok(shrAbs(l, r), phi, env);
+    case ">>>":
+      return ok(ushrAbs(l, r), phi, env);
+    case "**":
+      return ok(powAbs(l, r), phi, env);
     case "instanceof": {
       if (node.right.type !== "Identifier") return ok(unknown, phi, env);
       const className = (node.right as Identifier).name;
@@ -1560,14 +1583,25 @@ function evalCall(
         if (typeof sv === "string") {
           switch (method) {
             case "startsWith":
-              if (typeof a0 === "string") return ok(boolLit(sv.startsWith(a0)), phi, env);
-              break;
             case "endsWith":
-              if (typeof a0 === "string") return ok(boolLit(sv.endsWith(a0)), phi, env);
+            case "includes": {
+              // 可选位置参数与 methods.ts 同口径：number 字面量/缺省 → 原生折叠；
+              // 非字面量位置 → 落抽象 boolean 分支
+              if (typeof a0 === "string") {
+                const a1Abs = rawArgs[1]
+                  ? evalNode(rawArgs[1], env, phi, budget).value
+                  : undefined;
+                const a1 = a1Abs ? litValue(a1Abs) : undefined;
+                if (a1Abs === undefined || a1Abs.term?.op === "lit") {
+                  return ok(
+                    boolLit(sv[method](a0, a1 as number | undefined) as boolean),
+                    phi,
+                    env,
+                  );
+                }
+              }
               break;
-            case "includes":
-              if (typeof a0 === "string") return ok(boolLit(sv.includes(a0)), phi, env);
-              break;
+            }
             case "charAt":
               if (typeof a0 === "number") return ok(strLit(sv.charAt(a0)), phi, env);
               break;

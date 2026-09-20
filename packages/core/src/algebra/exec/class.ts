@@ -4,12 +4,12 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { abs, unknown, confJoin, litValue, bool, boolLit, strLit } from "../abs.ts";
-import { objOf, joinAbs } from "../objects.ts";
-import { $get, $set, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary } from "./runtime.ts";
+import { abs, unknown, confJoin, litValue, bool, boolLit, strLit, numLit } from "../abs.ts";
+import { objOf, joinAbs, isObj } from "../objects.ts";
+import { $get, $set, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags } from "../builtins.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin } from "../collections.ts";
 import {
   applyCallbackAbs,
@@ -35,6 +35,7 @@ import { NudoThrow } from "./runtime.ts";
 import { callAbsMethod } from "../methods.ts";
 import {
   registerBClass,
+  markClassValue,
   getBClass,
   type BClassSpec,
 } from "./class-registry.ts";
@@ -56,6 +57,8 @@ export function $class(
     methods: spec.methods,
     staticMethods: spec.staticMethods,
     statics: spec.statics,
+    accessors: spec.accessors,
+    staticAccessors: spec.staticAccessors,
   };
   registerBClass(full);
   const slots: Record<string, { value: Abs }> = {};
@@ -69,6 +72,7 @@ export function $class(
     "exact",
   );
   classImpl.set(val as object, full);
+  markClassValue(val as object, name);
   return val;
 }
 
@@ -184,18 +188,58 @@ export function $super(thisVal: Abs, childName: string, args: Abs[]): Abs {
   return after ?? thisVal;
 }
 
-/** RegExp brand 上的 exec/test：pattern 与 subject 都是字面量 → 真执行 */
-function execRegexBrand(re: Abs, method: string, args: Abs[]): Abs | undefined {
+/** RegExp brand 内部 source/flags/lastIndex 提取（exec/test 共用） */
+function regexParts(re: Abs): { pat: string; flags: string; lastIndex: number } | undefined {
   if (re.shape.k !== "brand" || re.shape.name !== "RegExp") return undefined;
-  if (method !== "exec" && method !== "test" && method !== "toString") return undefined;
   const inner = re.shape.shape;
-  const patAbs = inner.shape.k === "obj" ? inner.shape.slots["source"]?.value : undefined;
-  const flagsAbs = inner.shape.k === "obj" ? inner.shape.slots["flags"]?.value : undefined;
+  if (!isObj(inner)) return undefined;
+  const slots = inner.shape.slots;
+  const patAbs = slots["source"]?.value;
+  const flagsAbs = slots["flags"]?.value;
+  const lastAbs = slots["lastIndex"]?.value;
   const pat = patAbs ? litValue(patAbs) : undefined;
   if (typeof pat !== "string") return undefined;
   const flagsV = flagsAbs ? litValue(flagsAbs) : undefined;
   const flags = typeof flagsV === "string" ? flagsV : "";
-  if (method === "toString") return strLit(`/${pat}/${flags}`);
+  const lv = lastAbs ? litValue(lastAbs) : undefined;
+  const lastIndex = typeof lv === "number" ? lv : 0;
+  return { pat, flags, lastIndex };
+}
+
+/** 带 receiver lastIndex 的真实执行：返回结果 Abs 与执行后的 lastIndex */
+function regexExecWithState(
+  re: Abs,
+  method: "test" | "exec",
+  subject: string,
+): { result: Abs; lastIndex: number } {
+  const parts = regexParts(re)!;
+  const reReal = new RegExp(parts.pat, parts.flags);
+  reReal.lastIndex = parts.lastIndex;
+  if (method === "test") {
+    const ok = reReal.test(subject);
+    return { result: boolLit(ok), lastIndex: reReal.lastIndex };
+  }
+  const m = reReal.exec(subject);
+  if (!m) {
+    return {
+      result: abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact"),
+      lastIndex: reReal.lastIndex,
+    };
+  }
+  // m[i] 按下标可读：tuple；未参与捕获的组是 undefined 字面量（?? 默认值可用）
+  const els: Abs[] = m.map((g) => (g === undefined ? undefAbs() : strLit(g)));
+  return {
+    result: abs({ k: "tuple", elements: els }, undefined, undefined, "exact"),
+    lastIndex: reReal.lastIndex,
+  };
+}
+
+/** RegExp brand 上的 exec/test：pattern 与 subject 都是字面量 → 真执行 */
+function execRegexBrand(re: Abs, method: string, args: Abs[]): Abs | undefined {
+  if (method !== "exec" && method !== "test" && method !== "toString") return undefined;
+  const parts = regexParts(re);
+  if (!parts) return undefined;
+  if (method === "toString") return strLit(`/${parts.pat}/${parts.flags}`);
   const subject = args[0] ? litValue(args[0]) : undefined;
   if (typeof subject !== "string") {
     // subject 非字面量：保持抽象（test → boolean，exec → null|tuple 的保守并）
@@ -203,20 +247,37 @@ function execRegexBrand(re: Abs, method: string, args: Abs[]): Abs | undefined {
       ? abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial")
       : undefined;
   }
-  let reReal: RegExp;
   try {
-    reReal = new RegExp(pat, flags);
+    return regexExecWithState(re, method, subject).result;
   } catch {
     return undefined;
   }
-  const m = reReal.exec(subject);
-  if (method === "test") return boolLit(reReal.test(subject));
-  if (!m) {
-    return abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+}
+
+/**
+ * 语句级 RegExp 状态写回（test/exec）：执行并把 lastIndex 更新后的 brand
+ * 返回给 transpile 重绑（$reStateCall 与 $arrMutContainer 同模式）。
+ * 表达式位置不写回（$invoke 只读执行，调用方按 JS 语义先取值）。
+ */
+export function $reStateCall(re: Abs, method: string, args: Abs[]): Abs {
+  const parts = regexParts(re);
+  if (!parts || (method !== "test" && method !== "exec")) return re;
+  const subject = args[0] ? litValue(args[0]) : undefined;
+  if (typeof subject !== "string") return re; // 抽象 subject：状态不可判定，保守不动
+  try {
+    const { lastIndex } = regexExecWithState(re, method, subject);
+    const inner = (re.shape as { k: "brand"; name: string; shape: Abs }).shape;
+    if (!isObj(inner)) return re;
+    const slots = { ...inner.shape.slots, lastIndex: { value: numLit(lastIndex) } };
+    return abs(
+      { k: "brand", name: "RegExp", shape: objOf(slots, { open: inner.shape.open }) },
+      re.term,
+      re.pred,
+      re.conf,
+    );
+  } catch {
+    return re;
   }
-  // m[i] 按下标可读：tuple；未参与捕获的组是 undefined 字面量（?? 默认值可用）
-  const els: Abs[] = m.map((g) => (g === undefined ? undefAbs() : strLit(g)));
-  return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
 }
 
 /** string.match(/re/) / string.search(/re/)：双字面量 → 真执行 */
@@ -253,6 +314,43 @@ function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs | undefi
   }
   const els: Abs[] = m.map((g) => (g === undefined ? undefAbs() : strLit(g)));
   return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
+}
+
+/**
+ * Object.assign（B-path 专用，accessor 感知）：与 builtins 的槽位合并对齐，
+ * 但拷贝源访问器时**调用 getter**（原生语义），结果槽存 getter 返回值。
+ */
+function runtimeAssignObject(args: Abs[]): Abs {
+  if (!args.length) return unknown;
+  let acc = args[0]!;
+  for (let i = 1; i < args.length; i++) {
+    acc = asAbsVal(acc);
+    const st = extStateOf(acc);
+    if (st === "frozen") continue; // sloppy：assign 到 frozen 目标静默失败
+    const src = asAbsVal(args[i]!);
+    if (acc.shape.k === "obj" && src.shape.k === "obj") {
+      const base = { ...acc.shape.slots };
+      const flags = getPropFlags(acc);
+      for (const [k, s] of Object.entries(src.shape.slots)) {
+        // sealed/nonext 目标：新键静默跳过；writable:false 键静默跳过
+        if (
+          (st === "sealed" || st === "nonext") &&
+          !Object.prototype.hasOwnProperty.call(base, k)
+        ) {
+          continue;
+        }
+        if (flags?.get(k)?.writable === false) continue;
+        const a = lookupObjAccessor(src, k);
+        base[k] = a?.get ? { value: a.get(src) } : s;
+      }
+      acc = objOf(base, {
+        index: acc.shape.index,
+        open: acc.shape.open || src.shape.open,
+      });
+      acc.conf = confJoin(acc.conf, src.conf);
+    }
+  }
+  return acc;
 }
 
 /** 实例方法调用：沿继承链；类 Abs 上回落 staticMethods；obj 上回落属性函数 */
@@ -332,6 +430,9 @@ export function $invoke(
   // 宿主 JS 命名空间对象（Math/Number/JSON…）→ Abs builtin 表
   if (!thisVal || typeof thisVal !== "object" || !("shape" in thisVal)) {
     const ns = namespaceNameOf(thisVal);
+    if (ns === "Object" && method === "assign") {
+      return runtimeAssignObject(args);
+    }
     return (ns ? evalNamespaceCall(ns, method, args) : undefined) ?? unknown;
   }
   // union：只在「声称支持」该方法的成员上派发，再 join（string|Buffer.split
@@ -360,6 +461,31 @@ export function $invoke(
     const spec = getBClass(brandName);
     const sm = spec?.staticMethods?.[method];
     if (sm) return sm(...args);
+  }
+  // bigint 字面量：toString(radix)/valueOf 精确折叠（非法 radix 原生 RangeError → unknown）
+  if (thisVal.shape.k === "prim" && thisVal.shape.type === "bigint") {
+    const bv = litValue(thisVal) as bigint | undefined;
+    if (typeof bv === "bigint") {
+      if (method === "valueOf") return thisVal;
+      if (method === "toString") {
+        const rad = args[0] ? litValue(args[0]) : undefined;
+        const r =
+          rad === undefined
+            ? 10
+            : typeof rad === "number" && Number.isInteger(rad) && rad >= 2 && rad <= 36
+              ? rad
+              : undefined;
+        if (r !== undefined) {
+          try {
+            return strLit(bv.toString(r));
+          } catch {
+            return unknown;
+          }
+        }
+        return unknown; // 非法/符号 radix：原生 RangeError
+      }
+    }
+    return unknown;
   }
   // 数组/元组方法（与 ast-eval 口径对齐）
   if (thisVal.shape.k === "arr" || thisVal.shape.k === "tuple") {

@@ -81,6 +81,14 @@ const BIN_OPS: Record<string, string> = {
   "!==": "$ne",
   "==": "$eqLoose",
   "!=": "$neLoose",
+  "&": "$bitand",
+  "|": "$bitor",
+  "^": "$bitxor",
+  "<<": "$shl",
+  ">>": "$shr",
+  ">>>": "$ushr",
+  "**": "$pow",
+  in: "$in",
 };
 
 /** 复合赋值 → 二元运行时（标识符与成员路径统一走读-改-写） */
@@ -170,6 +178,17 @@ function readPrefix(p: MemberPath, j: number): string {
   return p.layers.slice(0, j + 1).reduce((acc, l) => l.get(acc), p.rootSrc);
 }
 
+/** 路径「去掉最后一层」的写回源：delete o.a.b ⇒ o = $set(o, "a", $del($get(o,"a"), "b")) */
+function setParentPathSrc(p: MemberPath, valSrc: string): string {
+  let acc = valSrc;
+  for (let i = p.layers.length - 2; i >= 0; i--) {
+    const l = p.layers[i]!;
+    const base = i === 0 ? p.rootSrc : readPrefix(p, i - 1);
+    acc = l.set(base, acc);
+  }
+  return acc;
+}
+
 const ARR_MUTATOR_NAMES = new Set([
   "push",
   "unshift",
@@ -178,7 +197,16 @@ const ARR_MUTATOR_NAMES = new Set([
   "shift",
   "reverse",
   "sort",
+  "copyWithin",
+  "fill",
 ]);
+
+/** RegExp 有状态方法：语句/表达式位置都要把 lastIndex 更新后的 receiver 重绑 */
+const REGEX_STATEFUL_NAMES = new Set(["test", "exec"]);
+
+function isStatefulMethodName(name: string): boolean {
+  return ARR_MUTATOR_NAMES.has(name) || REGEX_STATEFUL_NAMES.has(name);
+}
 
 /**
  * C1.4 / review P1：表达式位置的数组 mutator 也必须重绑容器。
@@ -240,6 +268,8 @@ function emitArrMutatorRebinds(
               : "$lit(undefined)",
         )
         .join(", ");
+      // 注：RegExp test/exec 的状态写回在表达式内部联 IIFE 完成（顺序副作用
+      // 需要），此处不重复写回（$reStateCall 重复执行会推进 lastIndex 两次）
       const objNode = node.callee.object as Node;
       if (objNode.type === "Identifier") {
         const name = (objNode as { name: string }).name;
@@ -262,6 +292,85 @@ function emitArrMutatorRebinds(
       }
       // 仍要遍历参数内嵌套 mutator（如 a.pop(b.pop())）
     }
+    // Object.defineProperty(o, "k", desc)：返回值是新容器（value 进 slots），
+    // 语句位置必须写回第一实参（freeze/seal/preventExtensions 就地标记无需写回）
+    if (
+      node.type === "CallExpression" &&
+      node.callee?.type === "MemberExpression" &&
+      node.callee.computed !== true &&
+      node.callee.object?.type === "Identifier" &&
+      (node.callee.object as { name: string }).name === "Object" &&
+      node.callee.property?.type === "Identifier" &&
+      (node.callee.property as { name: string }).name === "defineProperty" &&
+      node.arguments?.[0] &&
+      (node.arguments[0] as { type?: string }).type === "Identifier"
+    ) {
+      const argSrcs = (node.arguments as unknown as Expression[])
+        .map((a) =>
+          (a as { type?: string }).type === "SpreadElement"
+            ? "$lit(undefined)"
+            : transpileExpression(a, opts),
+        )
+        .join(", ");
+      const targetName = (node.arguments[0] as { name: string }).name;
+      lines.push(
+        `${pad}${targetName} = $invoke(Object, "defineProperty", [${argSrcs}]);`,
+      );
+    }
+    // delete obj[key]：语句位置把删键后的容器写回绑定（表达式值 $delRes 由 transpile 负责）
+    if (
+      node.type === "UnaryExpression" &&
+      (node as { operator?: string }).operator === "delete" &&
+      (node as { argument?: unknown }).argument &&
+      ((node as { argument?: unknown }).argument as { type?: string }).type === "MemberExpression"
+    ) {
+      const m = (node as { argument: unknown }).argument as unknown as {
+        object: Node;
+        property: Node;
+        computed: boolean;
+      };
+      const path = memberPathOf(m, opts);
+      if (path) {
+        const parentRead =
+          path.layers.length >= 2 ? readPrefix(path, path.layers.length - 2) : path.rootSrc;
+        // 注意：computed key 在此二次求值（副作用型 key 表达式会重复；
+        // 与数组 mutator 参数的重绑口径一致，罕见形态接受）
+        const keySrc = m.computed
+          ? transpileExpression(m.property as Expression, opts)
+          : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
+        lines.push(
+          `${pad}${path.rootSrc} = ${setParentPathSrc(path, `$del(${parentRead}, ${keySrc})`)};`,
+        );
+      }
+    }
+    // 自增/自减：标识符前缀自包含（n = $add(n,1)），后缀表达式值为旧值需补写回；
+    // 成员目标（o.n++/++o.n）前后缀表达式值均由本 pass 之外的表达式给出，写回在此统一补
+    if (
+      node.type === "UpdateExpression" &&
+      (node as { argument?: unknown }).argument
+    ) {
+      const arg = (node as { argument: unknown }).argument as {
+        type?: string;
+        name?: string;
+        object?: Node;
+        property?: Node;
+        computed?: boolean;
+      };
+      const fn = (node as { operator?: string }).operator === "++" ? "$add" : "$sub";
+      const isPostfix = (node as { prefix?: boolean }).prefix !== true;
+      if (arg.type === "Identifier" && arg.name) {
+        if (isPostfix) lines.push(`${pad}${arg.name} = ${fn}(${arg.name}, $lit(1));`);
+      } else if (arg.type === "MemberExpression") {
+        const path = memberPathOf(
+          arg as unknown as { object: Node; property: Node; computed: boolean },
+          opts,
+        );
+        if (path) {
+          const readSrc = readPathSrc(path);
+          lines.push(`${pad}${path.rootSrc} = ${setPathSrc(path, `${fn}(${readSrc}, $lit(1))`)};`);
+        }
+      }
+    }
     for (const key of Object.keys(node)) {
       if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
       if (key === "callee" || key === "property") continue; // 已处理 receiver
@@ -283,7 +392,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -471,15 +580,23 @@ function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
       }
     }
     if (n.type === "UpdateExpression") {
-      const arg = n.argument as { type?: string; name?: string } | undefined;
+      const arg = n.argument as { type?: string; name?: string; object?: unknown } | undefined;
       if (arg?.type === "Identifier") markFree(arg.name, nextShadowed);
+      else if (arg?.type === "MemberExpression") {
+        let cur: { type?: string; object?: unknown; name?: string } | undefined =
+          arg as { type?: string; object?: unknown; name?: string };
+        while (cur?.type === "MemberExpression") {
+          cur = cur.object as { type?: string; object?: unknown; name?: string } | undefined;
+        }
+        if (cur?.type === "Identifier") markFree(cur.name, nextShadowed);
+      }
     }
     if (
       n.type === "CallExpression" &&
       n.callee?.type === "MemberExpression" &&
       n.callee.computed !== true &&
       n.callee.property?.type === "Identifier" &&
-      ARR_MUTATOR_NAMES.has((n.callee.property as { name: string }).name)
+      isStatefulMethodName((n.callee.property as { name: string }).name)
     ) {
       const obj = n.callee.object as
         | { type?: string; name?: string; object?: unknown }
@@ -892,7 +1009,7 @@ function collectArrMutatorReceiversUncached(node: unknown, acc = new Set<string>
       !callee.computed && callee.property?.type === "Identifier"
         ? (callee.property as { name: string }).name
         : undefined;
-    if (propName && ARR_MUTATOR_NAMES.has(propName)) {
+    if (propName && isStatefulMethodName(propName)) {
       const obj = callee.object;
       if (obj?.type === "Identifier") {
         acc.add((obj as { name: string }).name);
@@ -1340,7 +1457,15 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
           ? transpileExpression(stmt.init.declarations[0].init, opts)
           : "$lit(undefined)";
       const testSrc = stmt.test ? transpileExpression(stmt.test, opts) : "$lit(true)";
-      const updateSrc = stmt.update ? transpileExpression(stmt.update, opts) : `$lit(undefined)`;
+      // for 步进闭包需要**自增后的新值**作状态线程；不能走 UpdateExpression 的
+      // 后置旧值语义（那会丢自增副作用）
+      const updateSrc =
+        stmt.update && stmt.update.type === "UpdateExpression" &&
+        stmt.update.argument.type === "Identifier"
+          ? `${stmt.update.argument.name} = ${stmt.update.operator === "++" ? "$add" : "$sub"}(${stmt.update.argument.name}, $lit(1))`
+          : stmt.update
+            ? transpileExpression(stmt.update, opts)
+            : `$lit(undefined)`;
       const forBodyOpts: TranspileOptions = {
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
@@ -1808,6 +1933,8 @@ function transpileClass(
   const methodParts: string[] = [];
   const staticMethodParts: string[] = [];
   const staticFieldParts: string[] = [];
+  const accessorDefs = new Map<string, { get?: string; set?: string }>();
+  const staticAccessorDefs = new Map<string, { get?: string; set?: string }>();
 
   const paramsOf = (m: { params?: unknown[] }): string[] =>
     (m.params ?? []).map((p) => {
@@ -1836,9 +1963,33 @@ function transpileClass(
     }
     if (m.type !== "ClassMethod" && m.type !== "ObjectMethod") continue;
     const mname =
-      m.key?.type === "Identifier" ? m.key.name : m.key?.type === "StringLiteral" ? String(m.key.value) : "method";
+      (m.key?.type === "Identifier"
+        ? m.key.name
+        : m.key?.type === "StringLiteral"
+          ? String(m.key.value)
+          : undefined) ?? "method";
     const params = paramsOf(m);
     const paramList = params.filter((p) => p !== "_").join(", ");
+    // get/set 访问器：实例进 spec.accessors，静态进 spec.staticAccessors
+    if (m.kind === "get" || m.kind === "set") {
+      const accBodyOpts: TranspileOptions = { ...opts, inLoop: 0, inTry: 0, thisParam: "__this" };
+      const accBodyStmts =
+        m.body?.type === "BlockStatement"
+          ? (m.body.body as Statement[])
+              .map((s) => transpileStatement(s, depth + 3, accBodyOpts))
+              .join("\n")
+          : "";
+      const target = m.static ? staticAccessorDefs : accessorDefs;
+      const def = target.get(mname) ?? {};
+      if (m.kind === "get") {
+        def.get = `(__this) => {\n${accBodyStmts}\n${indent(depth + 3)}}`;
+      } else {
+        const vname = params.length > 0 && params[0] !== "_" ? params[0]! : "__v";
+        def.set = `(__this, ${vname}) => {\n${accBodyStmts}\n${indent(depth + 4)}return __this;\n${indent(depth + 3)}}`;
+      }
+      target.set(mname, def);
+      continue;
+    }
     const bodyStmts =
       m.body?.type === "BlockStatement"
         ? (m.body.body as Statement[])
@@ -1897,9 +2048,38 @@ function transpileClass(
   if (methodParts.length) {
     specLines.push(`${indent(depth + 2)}methods: {`, ...methodParts, `${indent(depth + 2)}},`);
   }
+  if (accessorDefs.size > 0) {
+    const accParts: string[] = [];
+    for (const [k, def] of accessorDefs) {
+      const members: string[] = [];
+      if (def.get) members.push(`${indent(depth + 4)}get: ${def.get},`);
+      if (def.set) members.push(`${indent(depth + 4)}set: ${def.set},`);
+      accParts.push(`${indent(depth + 3)}${JSON.stringify(k)}: {`, ...members, `${indent(depth + 3)}},`);
+    }
+    specLines.push(
+      `${indent(depth + 2)}accessors: {`,
+      ...accParts,
+      `${indent(depth + 2)}},`,
+    );
+  }
+  if (staticAccessorDefs.size > 0) {
+    const accParts: string[] = [];
+    for (const [k, def] of staticAccessorDefs) {
+      const members: string[] = [];
+      if (def.get) members.push(`${indent(depth + 4)}get: ${def.get},`);
+      if (def.set) members.push(`${indent(depth + 4)}set: ${def.set},`);
+      accParts.push(`${indent(depth + 3)}${JSON.stringify(k)}: {`, ...members, `${indent(depth + 3)}},`);
+    }
+    specLines.push(
+      `${indent(depth + 2)}staticAccessors: {`,
+      ...accParts,
+      `${indent(depth + 2)}},`,
+    );
+  }
 
   return [
-    `${pad}const ${name} = $class(${JSON.stringify(name)}, {`,
+    // let：静态成员写 A.x = v 经 $set 不可变更新后需重绑类绑定
+    `${pad}let ${name} = $class(${JSON.stringify(name)}, {`,
     ...specLines,
     `${pad}});`,
   ].join("\n");
@@ -1945,10 +2125,18 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     case "StringLiteral":
     case "BooleanLiteral":
       return `$lit(${JSON.stringify(expr.value)})`;
+    case "BigIntLiteral":
+      // JSON.stringify(bigint) 会抛；按字面量拼法输出（$lit(5n)）
+      return `$lit(${String((expr as { value: bigint }).value)}n)`;
     case "NullLiteral":
       return `$lit(null)`;
+    case "ClassExpression":
+      // 类表达式值是构造器；类体未建模时给 fn 形状，不得折精确 undefined
+      return `$classExpr()`;
     case "Identifier":
       if (expr.name === "undefined") return "$lit(undefined)";
+      if (expr.name === "NaN") return "$lit(NaN)";
+      if (expr.name === "Infinity") return "$lit(Infinity)";
       return expr.name;
     case "ThisExpression":
       return opts.thisParam ?? "$lit(undefined)";
@@ -2019,6 +2207,15 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return `$regex(${JSON.stringify(expr.pattern)}${expr.flags ? `, ${JSON.stringify(expr.flags)}` : ""})`;
     }
     case "BinaryExpression": {
+      // instanceof 需右操作数的**类名**（不是值）：右操作数必须是标识符
+      if (expr.operator === "instanceof") {
+        const l = isExpression(expr.left) ? transpileExpression(expr.left, opts) : "$lit(undefined)";
+        if (expr.right.type === "Identifier") {
+          return `$instanceof(${l}, ${JSON.stringify(expr.right.name)})`;
+        }
+        // 非标识符右操作数（表达式/成员路径）：构造器值未知 → 抽象 boolean
+        return `$instanceofNonIdent(${l})`;
+      }
       const fn = BIN_OPS[expr.operator];
       if (!fn) return `/* unsupported ${expr.operator} */ $lit(undefined)`;
       const l = isExpression(expr.left) ? transpileExpression(expr.left, opts) : "$lit(undefined)";
@@ -2026,19 +2223,55 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return `${fn}(${l}, ${r})`;
     }
     case "UnaryExpression": {
+      if (expr.operator === "delete") {
+        // delete 的表达式值是布尔结果；容器写回由语句级 emitDeleteRebinds 负责
+        const arg = expr.argument as Expression;
+        if (arg.type === "MemberExpression") {
+          const m = arg as unknown as {
+            object: Node;
+            property: Node;
+            computed: boolean;
+          };
+          const keySrc = m.computed
+            ? transpileExpression(m.property as Expression, opts)
+            : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
+          const path = memberPathOf(m, opts);
+          const parentRead =
+            path && path.layers.length >= 2
+              ? readPrefix(path, path.layers.length - 2)
+              : path
+                ? path.rootSrc
+                : transpileExpression(m.object as Expression, opts);
+          return `$delRes(${parentRead}, ${keySrc})`;
+        }
+        return `/* delete ${(arg as { type?: string }).type ?? ""} */ $lit(undefined)`;
+      }
       const arg = transpileExpression(expr.argument as Expression, opts);
       if (expr.operator === "-") return `$neg(${arg})`;
       if (expr.operator === "!") return `$not(${arg})`;
       if (expr.operator === "typeof") return `$typeof(${arg})`;
-      if (expr.operator === "+") return arg;
+      if (expr.operator === "+") return `$toNumber(${arg})`;
+      if (expr.operator === "~") return `$bitnot(${arg})`;
       return `/* unary ${expr.operator} */ $lit(undefined)`;
     }
     case "UpdateExpression": {
-      // i++/++i/i--/--i：按前缀语义重绑（$for step 只取副作用；表达值场景罕见）
+      // i++/++i/i--/--i：前缀 = 新值；后缀表达式值为旧值，写回由语句级 rebind pass 完成
       const arg = expr.argument as Expression;
+      const fn = expr.operator === "++" ? "$add" : "$sub";
       if (arg.type === "Identifier") {
-        const fn = expr.operator === "++" ? "$add" : "$sub";
-        return `${arg.name} = ${fn}(${arg.name}, $lit(1))`;
+        if (expr.prefix) return `${arg.name} = ${fn}(${arg.name}, $lit(1))`;
+        return arg.name;
+      }
+      if (arg.type === "MemberExpression") {
+        const m = arg as unknown as { object: Node; property: Node; computed: boolean };
+        const path = memberPathOf(m, opts);
+        if (path) {
+          const readSrc = readPathSrc(path);
+          // 前缀表达式的值是**新值**；容器写回由语句级 rebind pass 完成
+          // （标识符前缀自包含 `n = $add(n, 1)`，值即新值，无此问题）
+          if (expr.prefix) return `${fn}(${readSrc}, $lit(1))`;
+          return readSrc;
+        }
       }
       return `/* update ${expr.operator} */ $lit(undefined)`;
     }
@@ -2074,6 +2307,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       // 支持 { ...a, b: 1 } → $spread($spread(a, $obj({b:1})), ...)
       let acc: string | null = null;
       const props: string[] = [];
+      const accRegs: Array<{ key: string; get?: string; set?: string }> = [];
       const flushProps = () => {
         if (props.length === 0) return;
         const obj = `$obj({ ${props.join(", ")} })`;
@@ -2103,6 +2337,25 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           );
           // 方法体是新的函数边界：inLoop/inTry 必须归零
           const methodOpts: TranspileOptions = { ...opts, inLoop: 0, inTry: 0, thisParam: "__this" };
+          // get/set 访问器：注册进运行时侧表（$get/$set 派发；展开/assign 时调用）
+          if (prop.kind === "get" || prop.kind === "set") {
+            // 占位槽保键存在性（'x' in o / keys / assign 拷贝目标）；读写在 $get/$set 层派发
+            props.push(`${mkey}: $lit(undefined)`);
+            const bodySrc =
+              prop.body.type === "BlockStatement"
+                ? `{\n${prop.body.body.map((s) => transpileStatement(s, 1, methodOpts)).join("\n")}\n}`
+                : transpileExpression(prop.body as unknown as Expression, methodOpts);
+            if (prop.kind === "get") {
+              accRegs.push({ key: mkey, get: `(__this) => ${bodySrc}` });
+            } else {
+              const vname = paramNames.length > 0 && paramNames[0] !== "_a" ? paramNames[0]! : "__v";
+              accRegs.push({
+                key: mkey,
+                set: `(__this, ${vname}) => {\n${bodySrc}\nreturn __this;\n}`,
+              });
+            }
+            continue;
+          }
           const bodySrc =
             prop.body.type === "BlockStatement"
               ? `{\n${prop.body.body.map((s) => transpileStatement(s, 1, methodOpts)).join("\n")}\n}`
@@ -2159,7 +2412,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         props.push(`${key}: ${valSrc}`);
       }
       flushProps();
-      return acc ?? `$obj({})`;
+      let result = acc ?? `$obj({})`;
+      for (const r of accRegs) {
+        result = `$objAccessor(${result}, ${r.key}, ${r.get ?? "null"}, ${r.set ?? "null"})`;
+      }
+      return result;
     }
     case "MemberExpression":
     case "OptionalMemberExpression": {
@@ -2213,6 +2470,13 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       // obj.field = v → $set；标识符赋值保持 JS 绑定（值是 Abs）
       // 复合赋值 s += v → s = $add(s, v)；成员/下标写以「读-改-写」链重绑根绑定
       // 逻辑赋值 ||= / &&= / ??= → 短路协议（P0-5）
+      // 解构赋值 [a, b] = [b, a] / ({ p: x } = o)：RHS 先求值，逐项写回（IIFE 保表达式值 = RHS）
+      if (expr.operator === "=" && (expr.left.type === "ArrayPattern" || expr.left.type === "ObjectPattern")) {
+        const right = transpileExpression(expr.right, opts);
+        const out: string[] = [];
+        emitDestructure(expr.left as Node, "__d", "", "", opts, out, { n: 0 });
+        return `((__d) => { ${out.join(" ")} return __d; })(${right})`;
+      }
       const compoundFn = COMPOUND_OPS[expr.operator];
       const right = transpileExpression(expr.right, opts);
       const op = expr.operator;
@@ -2363,6 +2627,17 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
         const loc = expr.loc;
         const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
+        // RegExp test/exec 的状态写回必须发生在**表达式内部**（元素顺序副作用：
+        // [r.test(s), r.lastIndex] 原生第二个元素读到更新后的位置）。receiver 是
+        // 本地绑定时内联「求值 + 写回」IIFE；语句级 emit 不再重复写回。
+        if (
+          !opt &&
+          REGEX_STATEFUL_NAMES.has(callee.property.name) &&
+          callee.object.type === "Identifier"
+        ) {
+          const recvName = (callee.object as { name: string }).name;
+          return `(() => { const __v = $invoke(${recvName}, ${name}, [${args}]${locArg}); ${recvName} = $reStateCall(${recvName}, ${name}, [${args}]); return __v; })()`;
+        }
         return opt
           ? `$optionalInvoke(${recv}, ${name}, [${args}])`
           : `$invoke(${recv}, ${name}, [${args}]${locArg})`;
