@@ -2527,7 +2527,9 @@ export function $switch(
   if (dv !== undefined) {
     for (const c of cases) {
       const tv = litValue(c.test);
-      if (tv !== undefined && Object.is(tv, dv)) return asAbsVal(c.run());
+      // switch case 匹配是严格相等（===）：NaN 不匹配 NaN case；0 与 -0 互配。
+      // Object.is 是 SameValue（NaN 相等），会假匹配 NaN case（假精确）。
+      if (tv !== undefined && tv === dv) return asAbsVal(c.run());
     }
     return dflt ? asAbsVal(dflt()) : undef();
   }
