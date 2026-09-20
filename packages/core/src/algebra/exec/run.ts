@@ -18,6 +18,7 @@ import type { AbsModuleExports } from "../abs-modules.ts";
 import { transpile } from "./transpile.ts";
 import { $call } from "./call.ts";
 import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits } from "./runtime.ts";
+import { errorTypeAbs } from "./may-throw.ts";
 
 const rtAll = { ...runtime, ...classRt, ...callsRt } as Record<string, unknown>;
 // ensure control-flow helpers are present even if a re-export layer omits them
@@ -337,6 +338,13 @@ export function callTranspiledExportFull(
           const result = joinLoopExits(never);
           const throws = joinThrowExits(e.absValue);
           return { result, throws };
+        }
+        // 原生 ReferenceError：class TDZ / 未声明引用——原生必抛，记入 throws
+        if (e instanceof ReferenceError) {
+          return {
+            result: joinLoopExits(never),
+            throws: joinThrowExits(errorTypeAbs("ReferenceError")),
+          };
         }
         return joinControlExits(unknown);
       }

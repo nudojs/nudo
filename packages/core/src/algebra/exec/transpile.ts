@@ -2123,7 +2123,9 @@ function transpileClass(
 
   const specLines: string[] = [];
   if (superName) {
-    specLines.push(`${indent(depth + 2)}extends: ${JSON.stringify(superName)},`);
+    // 活引用而非名字字符串：class B extends A {} 在 A 声明前求值时
+    // 触发 let TDZ ReferenceError（原生语义）；宿主全局（extends Map）按名解析
+    specLines.push(`${indent(depth + 2)}extends: ${superName},`);
   }
   if (staticFieldParts.length) {
     specLines.push(`${indent(depth + 2)}statics: {`, ...staticFieldParts, `${indent(depth + 2)}},`);

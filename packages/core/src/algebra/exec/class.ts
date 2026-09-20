@@ -48,11 +48,21 @@ const classImpl = new WeakMap<object, BClassSpec>();
 /** 定义类 → 可 new 的 Abs（brand 标记；静态字段挂在 slots） */
 export function $class(
   name: string,
-  spec: Omit<BClassSpec, "name"> & { extends?: string },
+  spec: Omit<BClassSpec, "name"> & { extends?: string | Abs | unknown },
 ): Abs {
+  // extends 是活引用：类值取 brand 名、宿主 ctor 取 .name、字符串向后兼容
+  const ext = spec.extends;
+  let superName: string | undefined;
+  if (typeof ext === "string") superName = ext;
+  else if (ext && typeof ext === "object" && "shape" in (ext as object)) {
+    const s = (ext as Abs).shape;
+    superName = s.k === "brand" ? s.name : undefined;
+  } else if (typeof ext === "function") {
+    superName = (ext as { name?: string }).name;
+  }
   const full: BClassSpec = {
     name,
-    superName: spec.extends,
+    superName,
     ctor: spec.ctor,
     methods: spec.methods,
     staticMethods: spec.staticMethods,
