@@ -2252,6 +2252,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (expr.operator === "typeof") return `$typeof(${arg})`;
       if (expr.operator === "+") return `$toNumber(${arg})`;
       if (expr.operator === "~") return `$bitnot(${arg})`;
+      if (expr.operator === "void") return `((${arg}), $lit(undefined))`;
       return `/* unary ${expr.operator} */ $lit(undefined)`;
     }
     case "UpdateExpression": {
