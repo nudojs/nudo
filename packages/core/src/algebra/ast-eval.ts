@@ -106,7 +106,7 @@ import {
 } from "./exec/member-diag.ts";
 import { errorTypeAbs, pushMayThrowFrame, popMayThrowFrame, orphanMayThrowEffects } from "./exec/may-throw.ts";
 import { NudoThrow } from "./exec/runtime.ts";
-import { registerBClass } from "./exec/class-registry.ts";
+import { registerBClass, markClassValue } from "./exec/class-registry.ts";
 import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
 import {
   defineClass,
@@ -690,6 +690,8 @@ function registerClassDecl(env: AstEnv, node: Node): void {
     undefined,
     "exact",
   );
+  // 类值本身是 constructor 函数：typeof/instanceof 按函数形态折
+  markClassValue(classVal as object, name);
   env.vars.set(name, classVal);
 }
 

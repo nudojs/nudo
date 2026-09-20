@@ -360,6 +360,10 @@ export function $instanceof(left: Abs, rightName: string): Abs {
   if (isNullishLitAbs(left)) return unknown;
   switch (left.shape.k) {
     case "brand":
+      // 类值本身是 constructor 函数：instanceof Function/Object 恒 true
+      if (classNameOfValue(left as object) !== undefined) {
+        return boolLit(rightName === "Function" || rightName === "Object");
+      }
       return boolLit(
         rightName === "Object" || bClassChain(left.shape.name).includes(rightName),
       );
@@ -2016,6 +2020,17 @@ export function $get(
       if (sacc) return sacc.get ? sacc.get(o) : undef();
       // 类值上读实例访问器键 → 原生 undefined
       if (findClassAccessor(o.shape.name, key)) return undef();
+      // 静态方法一等读取（typeof A.m / 高阶传递）：沿继承链在 registry 找
+      for (const n of bClassChain(o.shape.name)) {
+        if (getBClass(n)?.staticMethods?.[key]) return absFunction([], { body: noBody });
+      }
+      // 类值是 constructor 函数：prototype 对象与 Function.prototype 成员
+      if (key === "prototype") {
+        return abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+      }
+      if (key === "call" || key === "apply" || key === "bind") {
+        return absFunction([], { body: noBody });
+      }
     } else {
       const acc = findClassAccessor(o.shape.name, key);
       if (acc) return acc.get ? acc.get(o) : undef();

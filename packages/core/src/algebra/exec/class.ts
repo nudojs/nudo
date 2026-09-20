@@ -76,6 +76,8 @@ export function $class(
   if (spec.statics) {
     for (const [k, v] of Object.entries(spec.statics)) slots[k] = { value: asAbsVal(v) };
   }
+  // 类值自有 name 属性（原生 Function.name；类表达式/声明均可读）
+  slots["name"] = { value: strLit(name) };
   const val = abs(
     { k: "brand", name, shape: objOf(slots) },
     undefined,

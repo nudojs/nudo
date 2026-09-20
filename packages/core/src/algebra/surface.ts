@@ -5,6 +5,7 @@
 
 import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, litValue, confJoin, num, bool, boolLit, strLit, bigintLit } from "./abs.ts";
+import { classNameOfValue } from "./exec/class-registry.ts";
 import type { Term } from "./term.ts";
 import { lit, simplifyTerm, app } from "./term.ts";
 import type { Pred } from "./pred.ts";
@@ -214,6 +215,10 @@ export function typeofAbs(a: Abs): Abs {
   // lit(undefined) 与「无 lit」在 litValue 上都是 undefined，须看 term
   if (a.term?.op === "lit" && a.term.value === undefined) {
     return strLit("undefined");
+  }
+  // class 声明值本身是 constructor 函数（标记见 exec/class-registry）
+  if ((a as object) && classNameOfValue(a as object) !== undefined) {
+    return strLit("function");
   }
   if (a.shape.k === "any" || a.shape.k === "unknown") {
     // any/unknown：typeof 只能确定是 string，具体名未知
