@@ -6,7 +6,7 @@
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, strLit, numLit } from "../abs.ts";
 import { objOf, joinAbs, isObj } from "../objects.ts";
-import { $get, $set, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor } from "./runtime.ts";
+import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
 import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags } from "../builtins.ts";
@@ -555,6 +555,19 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   const shape = arr.shape as
     | { k: "arr"; element: Abs }
     | { k: "tuple"; elements: Abs[] };
+  const holes = shape.k === "tuple" ? ((arr.shape as { holes?: number[] }).holes ?? []) : [];
+  const isHole = (i: number): boolean => holes.includes(i);
+  /** 抽象数组（长度未知）回调收到的索引是未知 number，不得折字面量 0 */
+  const unknownIdx = (): Abs =>
+    abs({ k: "prim", type: "number" }, undefined, undefined, "path");
+  /** 回调结果具体 truthy：true / falsy / undefined=非具体（按 JS ToBoolean） */
+  const callbackTruth = (r: Abs): boolean | undefined => {
+    if (r.term?.op !== "lit") return undefined;
+    const v = litValue(r);
+    if (v === undefined || v === null || v === false || v === "" || (v as unknown) === 0n) return false;
+    if (typeof v === "number" && (v === 0 || Number.isNaN(v))) return false;
+    return true;
+  };
   // 统一委托 applyCallbackAbs（不新增 env.fns；Abs 侧 D/E 与 ast-eval 同轨）
   const callFn = (fn: unknown, ...fnArgs: Abs[]): Abs => {
     const sumIdx = fnArgs.findIndex(
@@ -591,10 +604,17 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   };
   if (method === "map" && args[0]) {
     if (shape.k === "tuple") {
-      const mapped = shape.elements.map((el) => callFn(args[0], el));
-      return abs({ k: "tuple", elements: mapped }, undefined, undefined, "path");
+      const mapped = shape.elements.map((el, i) =>
+        isHole(i) ? el : callFn(args[0], el, $lit(i)),
+      );
+      return abs(
+        { k: "tuple", elements: mapped, holes: holes.length > 0 ? [...holes] : undefined },
+        undefined,
+        undefined,
+        "path",
+      );
     }
-    const out = callFn(args[0], shape.element);
+    const out = callFn(args[0], shape.element, unknownIdx());
     const el = mapElementFallback(asAbs(args[0]), shape.element, out);
     // 与 ast-eval map 同轨：fallback 强制 partial，否则 confJoin(arr, out)
     const conf =
@@ -609,47 +629,136 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       const d = instantiateReturn(fn, [acc, shape.element]);
       return joinAbs(acc, d);
     }
-    const list = shape.k === "tuple" ? shape.elements : [shape.element];
-    for (const el of list) {
-      acc = callFn(fn, acc, el);
+    if (shape.k === "tuple") {
+      for (let i = 0; i < shape.elements.length; i++) {
+        if (isHole(i)) continue;
+        acc = callFn(fn, acc, shape.elements[i]!, $lit(i));
+      }
+      return acc;
     }
-    return acc;
+    return callFn(fn, acc, shape.element, unknownIdx());
+  }
+  if (method === "reduceRight" && args.length >= 1) {
+    const fn = args[0]!;
+    let acc = args[1] ?? unknown;
+    if (shape.k === "tuple") {
+      for (let i = shape.elements.length - 1; i >= 0; i--) {
+        if (isHole(i)) continue;
+        acc = callFn(fn, acc, shape.elements[i]!, $lit(i));
+      }
+      return acc;
+    }
+    return callFn(fn, acc, shape.element, unknownIdx());
   }
   if (method === "filter" && args[0]) {
-    // 长度不保留：定长 tuple 经 filter 后最多是子序列，谓词不逐位证明时
-    // 必须降为 arr（元素 join），否则 length/索引会假精确。
+    // 逐位谓词：具体 true 保留、具体 false 丢弃、不确定并入（side effect 计数精确）。
+    // hole 跳过谓词且不出现在结果里（原生 filter 收紧数组）。
     if (shape.k === "tuple") {
-      const el =
-        shape.elements.length > 0
-          ? shape.elements.reduce((a, b) => joinAbs(a, b))
-          : unknown;
+      const kept: Abs[] = [];
+      let anyUncertain = false;
+      shape.elements.forEach((el, i) => {
+        if (isHole(i)) return;
+        const p = callFn(args[0], el, $lit(i));
+        const t = callbackTruth(p);
+        if (t === false) return;
+        if (t === undefined) anyUncertain = true;
+        kept.push(el);
+      });
+      if (kept.length === 0) {
+        return abs({ k: "arr", element: unknown }, undefined, undefined, "path");
+      }
+      // 谓词全具体 → 精确子序列保留 tuple 字面量精度
+      if (!anyUncertain) {
+        return abs({ k: "tuple", elements: kept }, undefined, undefined, confJoin(arr.conf, "path"));
+      }
+      const el = kept.reduce((a, b) => joinAbs(a, b));
       return abs({ k: "arr", element: el }, undefined, undefined, confJoin(arr.conf, "path"));
     }
+    // arr：filter 保持元素类型（不传播回调 pred）
     return arr;
   }
   if (method === "flatMap" && args[0]) {
     if (shape.k === "tuple") {
-      const mapped = shape.elements.map((el) => callFn(args[0], el));
+      const mapped = shape.elements.map((el, i) =>
+        isHole(i) ? abs({ k: "tuple", elements: [] }, undefined, undefined, "exact") : callFn(args[0], el, $lit(i)),
+      );
       return projectFlatMapResult(arr.conf, mapped);
     }
-    const out = callFn(args[0], shape.element);
+    const out = callFn(args[0], shape.element, unknownIdx());
     return projectFlatMapResult(arr.conf, [out]);
   }
   if (method === "forEach" && args[0]) {
-    const list = shape.k === "tuple" ? shape.elements : [shape.element];
-    for (const el of list) callFn(args[0], el);
+    if (shape.k === "tuple") {
+      shape.elements.forEach((el, i) => {
+        if (!isHole(i)) callFn(args[0], el, $lit(i));
+      });
+    } else {
+      callFn(args[0], shape.element, unknownIdx());
+    }
     return undefAbs();
   }
   if ((method === "some" || method === "every") && args[0]) {
-    const list = shape.k === "tuple" ? shape.elements : [shape.element];
-    for (const el of list) callFn(args[0], el);
-    return bool();
+    // 逐位短路：具体命中即停（some: truthy / every: falsy），副作用计数与原生一致。
+    // 规范 some/every 检查 HasProperty：hole 位置跳过回调（与 find/findIndex 相反）。
+    let undecided = false;
+    if (shape.k === "tuple") {
+      for (let i = 0; i < shape.elements.length; i++) {
+        if (isHole(i)) continue;
+        const t = callbackTruth(callFn(args[0], shape.elements[i]!, $lit(i)));
+        if (t === undefined) {
+          undecided = true;
+          continue;
+        }
+        if (method === "some" && t) return boolLit(true);
+        if (method === "every" && !t) return boolLit(false);
+      }
+    } else {
+      const t = callbackTruth(callFn(args[0], shape.element, unknownIdx()));
+      // 抽象 arr 长度未知（可能空）：单代表元素无法下结论
+      if (t === undefined) return bool();
+      if (method === "some" && t) return boolLit(true);
+      if (method === "every" && !t) return boolLit(false);
+      return bool();
+    }
+    if (undecided) return bool();
+    return boolLit(method === "some" ? false : true);
   }
   if (method === "find" && args[0]) {
-    // 不证明命中元素：tuple 只对首元素应用回调；结果 element ∪ undefined
-    const el = shape.k === "tuple" ? (shape.elements[0] ?? unknown) : shape.element;
-    callFn(args[0], el);
+    if (shape.k === "tuple") {
+      let undecided = false;
+      for (let i = 0; i < shape.elements.length; i++) {
+        const el = shape.elements[i]!;
+        const t = callbackTruth(callFn(args[0], el, $lit(i)));
+        if (t === true) return el;
+        if (t === undefined) undecided = true;
+      }
+      if (undecided) {
+        const joined = shape.elements.reduce((a, b) => joinAbs(a, b));
+        return joinAbs(joined, undefAbs());
+      }
+      return undefAbs();
+    }
+    const el = shape.element;
+    const t = callbackTruth(callFn(args[0], el, unknownIdx()));
+    if (t === true) return el;
+    if (t === false) return undefAbs();
     return joinAbs(el, undefAbs());
+  }
+  if (method === "findIndex" && args[0]) {
+    if (shape.k === "tuple") {
+      let undecided = false;
+      for (let i = 0; i < shape.elements.length; i++) {
+        const t = callbackTruth(callFn(args[0], shape.elements[i]!, $lit(i)));
+        if (t === true) return $lit(i);
+        if (t === undefined) undecided = true;
+      }
+      if (undecided) return joinAbs(unknownIdx(), $lit(-1));
+      return $lit(-1);
+    }
+    const t = callbackTruth(callFn(args[0], shape.element, unknownIdx()));
+    if (t === true) return unknownIdx();
+    if (t === false) return $lit(-1);
+    return joinAbs(unknownIdx(), $lit(-1));
   }
   if (method === "join") {
     return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
