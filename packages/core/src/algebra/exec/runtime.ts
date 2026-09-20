@@ -503,32 +503,31 @@ export function $del(o: Abs, key: Abs): Abs {
     if (getPropFlags(o)?.get(keyStr)?.configurable === false) return o;
     if (o.shape.open) return o;
     if (!getSlot(o.shape.slots, keyStr) && !lookupObjAccessor(o, keyStr)) return o; // 无此槽且无访问器：no-op
-    const slots: Record<string, Slot> = {};
-    for (const [k, slot] of Object.entries(o.shape.slots)) {
-      if (k !== keyStr) slots[k] = slot;
+    // 就地删槽（引用语义：别名同步）；identity 不变故侧表免迁移，
+    // 对象字面量自有访问器随键删除（原生 own accessor 是自有属性）
+    delete o.shape.slots[keyStr];
+    const am = accessorTable.get(o);
+    if (am) {
+      am.delete(keyStr);
+      if (am.size === 0) accessorTable.delete(o);
     }
-    const next = abs({ k: "obj", slots }, undefined, undefined, o.conf);
-    // 对象字面量自有访问器随 delete 移除（原生 own accessor 是自有属性）
-    migrateAccessors(o, next, keyStr);
-    migrateInvariants(o, next);
-    migrateNullProto(o, next);
-    return next;
+    return o;
   }
   if (o.shape.k === "tuple") {
     const idx = canonicalArrayIndex(kv);
     if (idx === undefined || idx >= o.shape.elements.length) return o; // 越界 delete 不影响数组
-    const els = o.shape.elements.map((e, i) => (i === idx ? $lit(undefined) : e));
-    const holes = o.shape.holes ? [...o.shape.holes] : [];
-    if (!holes.includes(idx)) holes.push(idx);
-    return abs({ k: "tuple", elements: els, holes }, undefined, undefined, o.conf);
+    o.shape.elements[idx] = $lit(undefined);
+    if (!o.shape.holes) o.shape.holes = [];
+    if (!o.shape.holes.includes(idx)) o.shape.holes.push(idx);
+    return o;
   }
   if (o.shape.k === "arr") {
-    return abs(
-      { k: "arr", element: joinAbs(o.shape.element, $lit(undefined)) },
-      undefined,
-      undefined,
-      "partial",
-    );
+    o.shape = {
+      k: "arr",
+      element: joinAbs(o.shape.element, $lit(undefined)),
+    };
+    o.conf = "partial";
+    return o;
   }
   return o;
 }
@@ -1269,6 +1268,62 @@ function fillTuple(
   );
 }
 
+/**
+ * 深拷贝可变容器（fork/switch 快照与循环 pack 用）。
+ * 容器写就地进行后（引用语义），分析分支/迭代的状态分离必须靠拷贝——
+ * 浅引用快照会让臂间/迭代间互相污染。
+ */
+export function $copy(a: Abs): Abs {
+  const s = a.shape;
+  if (s.k === "tuple") {
+    return abs(
+      {
+        k: "tuple",
+        elements: s.elements.map($copy),
+        holes: s.holes ? [...s.holes] : undefined,
+      },
+      a.term,
+      a.pred,
+      a.conf,
+    );
+  }
+  if (s.k === "arr") {
+    return abs({ k: "arr", element: $copy(s.element) }, a.term, a.pred, a.conf);
+  }
+  if (s.k === "obj") {
+    const slots: Record<string, Slot> = {};
+    for (const [k, v] of Object.entries(s.slots)) {
+      slots[k] = { ...v, value: $copy(v.value) };
+    }
+    const next = objOf(slots, {
+      index: s.index ? { key: $copy(s.index.key), value: $copy(s.index.value) } : undefined,
+      open: s.open,
+    });
+    next.conf = a.conf;
+    migrateAccessors(a, next);
+    migrateInvariants(a, next);
+    migrateNullProto(a, next);
+    return next;
+  }
+  if (s.k === "brand") {
+    const inner = $copy(s.shape);
+    const next = abs({ k: "brand", name: s.name, shape: inner }, a.term, a.pred, a.conf);
+    const clsName = classNameOfValue(a as object);
+    if (clsName) markClassValue(next as object, clsName);
+    return next;
+  }
+  if (s.k === "eff") {
+    return abs({ k: "eff", eff: s.eff, inner: $copy(s.inner) }, a.term, a.pred, a.conf);
+  }
+  if (s.k === "sum") {
+    return abs({ k: "sum", members: s.members.map($copy) }, a.term, a.pred, a.conf);
+  }
+  return a;
+}
+
+/** 数组/元组方法（push/pop/shift/unshift/splice/reverse/sort/copyWithin/fill）
+ *  的就地 mutator：Abs 身份不变（JS 引用语义——`const b = a; b.push(4)` 对 a
+ *  可见）；transpile 重绑 `a = $arrMutContainer(a, …)` 仍写回同一对象。 */
 export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   const shape = arr.shape;
   if (shape.k !== "tuple" && shape.k !== "arr") return arr;
@@ -1285,6 +1340,12 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   const vals = args.map((a) => asAbsVal(a));
   const asArrEl = (els: Abs[]): Abs =>
     els.length > 0 ? els.reduce((x, y) => joinAbs(x, y)) : unknown;
+  // 就地写回：shape/conf 替换但 Abs 身份不变 → 别名（const b=a / 实参）同步
+  const writeBack = (next: Abs): Abs => {
+    arr.shape = next.shape;
+    arr.conf = next.conf;
+    return arr;
+  };
 
   if (method === "push" || method === "unshift") {
     if (shape.k === "tuple") {
@@ -1300,15 +1361,14 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
         (acc, v) => confJoin(acc, v.conf),
         arr.conf as Confidence,
       );
-      return abs(
-        { k: "tuple", elements: els, holes },
-        undefined,
-        undefined,
-        conf,
+      return writeBack(
+        abs({ k: "tuple", elements: els, holes }, undefined, undefined, conf),
       );
     }
     const el = vals.reduce((acc, v) => joinAbs(acc, v), shape.element);
-    return abs({ k: "arr", element: el }, undefined, undefined, confJoin(arr.conf, "path"));
+    return writeBack(
+      abs({ k: "arr", element: el }, undefined, undefined, confJoin(arr.conf, "path")),
+    );
   }
   if (method === "pop") {
     if (shape.k === "tuple") {
@@ -1318,11 +1378,13 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
       const holes = shape.holes
         ? shape.holes.filter((h) => h < newLen)
         : undefined;
-      return abs(
-        { k: "tuple", elements: shape.elements.slice(0, -1), holes: holes && holes.length > 0 ? holes : undefined },
-        undefined,
-        undefined,
-        arr.conf,
+      return writeBack(
+        abs(
+          { k: "tuple", elements: shape.elements.slice(0, -1), holes: holes && holes.length > 0 ? holes : undefined },
+          undefined,
+          undefined,
+          arr.conf,
+        ),
       );
     }
     return arr;
@@ -1334,22 +1396,26 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
       const holes = shape.holes
         ? shape.holes.map((h) => h - 1).filter((h) => h >= 0)
         : undefined;
-      return abs(
-        { k: "tuple", elements: shape.elements.slice(1), holes: holes && holes.length > 0 ? holes : undefined },
-        undefined,
-        undefined,
-        arr.conf,
+      return writeBack(
+        abs(
+          { k: "tuple", elements: shape.elements.slice(1), holes: holes && holes.length > 0 ? holes : undefined },
+          undefined,
+          undefined,
+          arr.conf,
+        ),
       );
     }
     return arr;
   }
   if (method === "splice") {
     if (shape.k === "tuple") {
-      return abs(
-        { k: "arr", element: asArrEl(shape.elements) },
-        undefined,
-        undefined,
-        confJoin(arr.conf, "path"),
+      return writeBack(
+        abs(
+          { k: "arr", element: asArrEl(shape.elements) },
+          undefined,
+          undefined,
+          confJoin(arr.conf, "path"),
+        ),
       );
     }
     return arr;
@@ -1361,29 +1427,33 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
       const holes = shape.holes
         ? shape.holes.map((h) => len - 1 - h)
         : undefined;
-      return abs(
-        { k: "tuple", elements: [...shape.elements].reverse(), holes },
-        undefined,
-        undefined,
-        arr.conf,
+      return writeBack(
+        abs(
+          { k: "tuple", elements: [...shape.elements].reverse(), holes },
+          undefined,
+          undefined,
+          arr.conf,
+        ),
       );
     }
     return arr;
   }
   if (method === "copyWithin") {
-    return copyWithinTuple(shape, vals);
+    return writeBack(copyWithinTuple(shape, vals));
   }
   if (method === "fill") {
-    return fillTuple(shape, vals, arr);
+    return writeBack(fillTuple(shape, vals, arr));
   }
   if (method === "sort") {
     // 顺序未建模：位次不可信，tuple 降为 arr（元素 join），避免 a[0] 假精确
     if (shape.k === "tuple") {
-      return abs(
-        { k: "arr", element: asArrEl(shape.elements) },
-        undefined,
-        undefined,
-        confJoin(arr.conf, "path"),
+      return writeBack(
+        abs(
+          { k: "arr", element: asArrEl(shape.elements) },
+          undefined,
+          undefined,
+          confJoin(arr.conf, "path"),
+        ),
       );
     }
     return arr;
@@ -1469,13 +1539,9 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     // 写 hole 位置：槽被填实，清除 hole 标记
     const hi = holes.indexOf(iv);
     if (hi >= 0) holes.splice(hi, 1);
-    const next = abs(
-      { k: "tuple", elements: els, holes: holes.length > 0 ? holes : undefined },
-      undefined,
-      undefined,
-      a.conf,
-    );
-    return next;
+    // 就地写回：别名（const b=a）同步（JS 引用语义）
+    a.shape = { k: "tuple", elements: els, holes: holes.length > 0 ? holes : undefined };
+    return a;
   }
   return a;
 }
@@ -1491,6 +1557,16 @@ export function $len(a: Abs): Abs {
     );
   }
   if (a.shape.k === "arr") {
+    return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
+  }
+  if (a.shape.k === "sum") {
+    // 全成员长度同字面量 → 折叠（fork join 后 a.length 常见场景）；
+    // 否则 number（成员长度可能不同）
+    const lens = a.shape.members.map((m) => $len(m));
+    const lits = lens.map(litValue);
+    if (lits.length > 0 && lits.every((v) => v !== undefined && v === lits[0])) {
+      return lens[0]!;
+    }
     return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
   }
   const sv = litValue(a);
@@ -2004,26 +2080,25 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
       const oldLen = o.shape.elements.length;
       const holes = (o.shape.holes ?? []).filter((h) => h < v);
       for (let h = oldLen; h < v; h++) holes.push(h);
-      return abs(
-        { k: "tuple", elements: els, holes: holes.length > 0 ? holes : undefined },
-        undefined,
-        undefined,
-        o.conf,
-      );
+      // 就地写回（引用语义：别名同步）
+      o.shape = {
+        k: "tuple",
+        elements: els,
+        holes: holes.length > 0 ? holes : undefined,
+      };
+      return o;
     }
     const joined =
       o.shape.elements.length > 0
         ? o.shape.elements.reduce((a, b) => joinAbs(a, b))
         : unknown;
-    return abs(
-      { k: "arr", element: joinAbs(joined, $lit(undefined)) },
-      undefined,
-      undefined,
-      "partial",
-    );
+    o.shape = { k: "arr", element: joinAbs(joined, $lit(undefined)) };
+    o.conf = "partial";
+    return o;
   }
   if (o.shape.k === "arr" && key === "length") {
-    return abs({ k: "arr", element: o.shape.element }, undefined, undefined, "partial");
+    o.conf = "partial";
+    return o;
   }
   if (!isObj(o)) return $obj({ [key]: value });
   const shape = o.shape as ObjShape;
@@ -2038,16 +2113,10 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
   if (acc) {
     return acc.set ? acc.set(o, value) : o;
   }
-  const slots = { ...shape.slots, [key]: { value: asAbsVal(value) } };
-  const next = objOf(slots, {
-    index: shape.index,
-    open: shape.open,
-  });
-  next.conf = confJoin(o.conf, value.conf);
-  migrateAccessors(o, next);
-  migrateInvariants(o, next);
-  migrateNullProto(o, next);
-  return next;
+  // 就地写槽（引用语义：const b = o; b.x = v 对 o 可见）——Abs 身份不变
+  shape.slots[key] = { value: asAbsVal(value) };
+  o.conf = confJoin(o.conf, value.conf);
+  return o;
 }
 
 /**

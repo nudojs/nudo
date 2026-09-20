@@ -396,7 +396,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -812,7 +812,7 @@ function transpileFnBodyStmts(stmts: Statement[], depth: number, opts: Transpile
       if (names.length === 0) return thunk;
       return [
         `() => {`,
-        ...names.map((n) => `${padIn}${n} = __fk0_${n};`),
+        ...names.map((n) => `${padIn}${n} = $copy(__fk0_${n});`),
         `${padIn}let __cont = true;`,
         `${padIn}try {`,
         `${padIn}  return (${thunk})();`,
@@ -1081,7 +1081,7 @@ function forkArmThunk(
 ): string {
   return [
     `() => {`,
-    ...names.map((n) => `  ${n} = __fk0_${n};`),
+    ...names.map((n) => `  ${n} = $copy(__fk0_${n});`),
     `  let __cont = true;`,
     `  try {`,
     ...bodyLines.map((l) => `    ${l}`),
@@ -1098,10 +1098,10 @@ function forkArmThunk(
   ].join("\n");
 }
 
-/** fork 绑定声明：snapshot + 两臂槽位 + ran 标志（不用 undefined 当哨兵） */
+/** fork 绑定声明：snapshot（深拷贝——容器写已就地化，臂间必须状态隔离）+ 两臂槽位 + ran 标志 */
 function forkBindingDecls(names: string[], pad = ""): string[] {
   return names.flatMap((n) => [
-    `${pad}const __fk0_${n} = ${n};`,
+    `${pad}const __fk0_${n} = $copy(${n});`,
     `${pad}let __fk1_${n}; let __fk2_${n};`,
     `${pad}let __fk1_set_${n} = false; let __fk2_set_${n} = false;`,
   ]);
@@ -1422,7 +1422,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         if (names.length === 0) return thunk;
         return [
           `() => {`,
-          ...names.map((n) => `${padIn}${n} = __fk0_${n};`),
+          ...names.map((n) => `${padIn}${n} = $copy(__fk0_${n});`),
           `${padIn}let __cont = true;`,
           `${padIn}try {`,
           `${padIn}  return (${thunk})();`,
@@ -1526,7 +1526,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const packSrc =
         names.length === 0
           ? null
-          : `$obj({ ${names.map((n) => `${JSON.stringify(n)}: ${n}`).join(", ")} })`;
+          : `$obj({ ${names.map((n) => `${JSON.stringify(n)}: $copy(${n})`).join(", ")} })`;
       const unpackSrc =
         names.length === 0
           ? null
@@ -1632,7 +1632,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         // 与 if-fork 同口径：return/throw 臂不写 continue 路径绑定
         return [
           `() => {`,
-          ...names.map((n) => `${indent(depth + 1)}${n} = __sw0_${n};`),
+          ...names.map((n) => `${indent(depth + 1)}${n} = $copy(__sw0_${n});`),
           `${indent(depth + 1)}let __cont = true;`,
           `${indent(depth + 1)}try {`,
           `${indent(depth + 2)}return (${thunk})();`,
@@ -1690,7 +1690,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         ].join("\n");
       }
       const decls = names.flatMap((n) => [
-        `${pad}const __sw0_${n} = ${n};`,
+        `${pad}const __sw0_${n} = $copy(${n});`,
         ...Array.from({ length: Math.max(nArms, armSeq + (defaultArm ? 0 : 1)) }, (_, i) =>
           `${pad}let __sw${i + 1}_${n}; let __sw${i + 1}set_${n} = false;`,
         ),
@@ -1875,7 +1875,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
           ? loopOpts
             ? `, { ${loopOpts} }`
             : ""
-          : `, { pack: () => $obj({ ${names.map((n) => `${JSON.stringify(n)}: ${n}`).join(", ")} }), unpack: (__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }${loopOpts ? `, ${loopOpts}` : ""} }`;
+          : `, { pack: () => $obj({ ${names.map((n) => `${JSON.stringify(n)}: $copy(${n})`).join(", ")} }), unpack: (__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }${loopOpts ? `, ${loopOpts}` : ""} }`;
       return [
         `${pad}$forOf(${iter}, (${bindName}, _i) => {`,
         ...bodyLines,
@@ -1909,7 +1909,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
           `${pad}}, ${max}${loopOpts ? `, { ${loopOpts} }` : ""});`,
         ].join("\n");
       }
-      const packSrc = `$obj({ ${names.map((n) => `${JSON.stringify(n)}: ${n}`).join(", ")} })`;
+      const packSrc = `$obj({ ${names.map((n) => `${JSON.stringify(n)}: $copy(${n})`).join(", ")} })`;
       const unpackSrc = `(__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }`;
       return [
         `${pad}// while → $whileSeq (instrumented bindings: ${names.join(", ")})`,
@@ -1939,7 +1939,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const packSrc =
         names.length === 0
           ? null
-          : `$obj({ ${names.map((n) => `${JSON.stringify(n)}: ${n}`).join(", ")} })`;
+          : `$obj({ ${names.map((n) => `${JSON.stringify(n)}: $copy(${n})`).join(", ")} })`;
       const unpackSrc =
         names.length === 0
           ? null
