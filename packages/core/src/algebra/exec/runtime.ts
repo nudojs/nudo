@@ -1402,6 +1402,10 @@ export function $get(
     if (acc) return acc.get ? acc.get(o) : undef();
     return $get(o.shape.shape, key, opts);
   }
+  // 数组 length：成员路径（a.length += 1 等复合写）与 a.length 读同源
+  if ((o.shape.k === "tuple" || o.shape.k === "arr") && key === "length") {
+    return $len(o);
+  }
   // any / nullish：throws 域（design-cli-semantics §3.3）
   if (noteNullishMemberThrows(o, key, "property")) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -1459,6 +1463,29 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
       o.pred,
       confJoin(o.conf, value.conf),
     );
+  }
+  // a.length = n：非负整数 < 2^32-1 就地截断/延长（延长槽读 undefined 对齐空洞）；
+  // 其余值按 sound 回退：元素与 undefined 取并、长度未知
+  if (o.shape.k === "tuple" && key === "length") {
+    const v = litValue(value);
+    if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 4294967295) {
+      const els = o.shape.elements.slice(0, v);
+      while (els.length < v) els.push($lit(undefined));
+      return abs({ k: "tuple", elements: els }, undefined, undefined, o.conf);
+    }
+    const joined =
+      o.shape.elements.length > 0
+        ? o.shape.elements.reduce((a, b) => joinAbs(a, b))
+        : unknown;
+    return abs(
+      { k: "arr", element: joinAbs(joined, $lit(undefined)) },
+      undefined,
+      undefined,
+      "partial",
+    );
+  }
+  if (o.shape.k === "arr" && key === "length") {
+    return abs({ k: "arr", element: o.shape.element }, undefined, undefined, "partial");
   }
   if (!isObj(o)) return $obj({ [key]: value });
   const acc = lookupObjAccessor(o, key);

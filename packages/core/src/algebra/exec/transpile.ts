@@ -307,6 +307,34 @@ function emitArrMutatorRebinds(
         );
       }
     }
+    // 自增/自减：标识符前缀自包含（n = $add(n,1)），后缀表达式值为旧值需补写回；
+    // 成员目标（o.n++/++o.n）前后缀表达式值均由本 pass 之外的表达式给出，写回在此统一补
+    if (
+      node.type === "UpdateExpression" &&
+      (node as { argument?: unknown }).argument
+    ) {
+      const arg = (node as { argument: unknown }).argument as {
+        type?: string;
+        name?: string;
+        object?: Node;
+        property?: Node;
+        computed?: boolean;
+      };
+      const fn = (node as { operator?: string }).operator === "++" ? "$add" : "$sub";
+      const isPostfix = (node as { prefix?: boolean }).prefix !== true;
+      if (arg.type === "Identifier" && arg.name) {
+        if (isPostfix) lines.push(`${pad}${arg.name} = ${fn}(${arg.name}, $lit(1));`);
+      } else if (arg.type === "MemberExpression") {
+        const path = memberPathOf(
+          arg as unknown as { object: Node; property: Node; computed: boolean },
+          opts,
+        );
+        if (path) {
+          const readSrc = readPathSrc(path);
+          lines.push(`${pad}${path.rootSrc} = ${setPathSrc(path, `${fn}(${readSrc}, $lit(1))`)};`);
+        }
+      }
+    }
     for (const key of Object.keys(node)) {
       if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
       if (key === "callee" || key === "property") continue; // 已处理 receiver
@@ -516,8 +544,16 @@ function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
       }
     }
     if (n.type === "UpdateExpression") {
-      const arg = n.argument as { type?: string; name?: string } | undefined;
+      const arg = n.argument as { type?: string; name?: string; object?: unknown } | undefined;
       if (arg?.type === "Identifier") markFree(arg.name, nextShadowed);
+      else if (arg?.type === "MemberExpression") {
+        let cur: { type?: string; object?: unknown; name?: string } | undefined =
+          arg as { type?: string; object?: unknown; name?: string };
+        while (cur?.type === "MemberExpression") {
+          cur = cur.object as { type?: string; object?: unknown; name?: string } | undefined;
+        }
+        if (cur?.type === "Identifier") markFree(cur.name, nextShadowed);
+      }
     }
     if (
       n.type === "CallExpression" &&
@@ -1385,7 +1421,15 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
           ? transpileExpression(stmt.init.declarations[0].init, opts)
           : "$lit(undefined)";
       const testSrc = stmt.test ? transpileExpression(stmt.test, opts) : "$lit(true)";
-      const updateSrc = stmt.update ? transpileExpression(stmt.update, opts) : `$lit(undefined)`;
+      // for 步进闭包需要**自增后的新值**作状态线程；不能走 UpdateExpression 的
+      // 后置旧值语义（那会丢自增副作用）
+      const updateSrc =
+        stmt.update && stmt.update.type === "UpdateExpression" &&
+        stmt.update.argument.type === "Identifier"
+          ? `${stmt.update.argument.name} = ${stmt.update.operator === "++" ? "$add" : "$sub"}(${stmt.update.argument.name}, $lit(1))`
+          : stmt.update
+            ? transpileExpression(stmt.update, opts)
+            : `$lit(undefined)`;
       const forBodyOpts: TranspileOptions = {
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
@@ -2143,11 +2187,23 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return `/* unary ${expr.operator} */ $lit(undefined)`;
     }
     case "UpdateExpression": {
-      // i++/++i/i--/--i：按前缀语义重绑（$for step 只取副作用；表达值场景罕见）
+      // i++/++i/i--/--i：前缀 = 新值；后缀表达式值为旧值，写回由语句级 rebind pass 完成
       const arg = expr.argument as Expression;
+      const fn = expr.operator === "++" ? "$add" : "$sub";
       if (arg.type === "Identifier") {
-        const fn = expr.operator === "++" ? "$add" : "$sub";
-        return `${arg.name} = ${fn}(${arg.name}, $lit(1))`;
+        if (expr.prefix) return `${arg.name} = ${fn}(${arg.name}, $lit(1))`;
+        return arg.name;
+      }
+      if (arg.type === "MemberExpression") {
+        const m = arg as unknown as { object: Node; property: Node; computed: boolean };
+        const path = memberPathOf(m, opts);
+        if (path) {
+          const readSrc = readPathSrc(path);
+          // 前缀表达式的值是**新值**；容器写回由语句级 rebind pass 完成
+          // （标识符前缀自包含 `n = $add(n, 1)`，值即新值，无此问题）
+          if (expr.prefix) return `${fn}(${readSrc}, $lit(1))`;
+          return readSrc;
+        }
       }
       return `/* update ${expr.operator} */ $lit(undefined)`;
     }
@@ -2346,6 +2402,13 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       // obj.field = v → $set；标识符赋值保持 JS 绑定（值是 Abs）
       // 复合赋值 s += v → s = $add(s, v)；成员/下标写以「读-改-写」链重绑根绑定
       // 逻辑赋值 ||= / &&= / ??= → 短路协议（P0-5）
+      // 解构赋值 [a, b] = [b, a] / ({ p: x } = o)：RHS 先求值，逐项写回（IIFE 保表达式值 = RHS）
+      if (expr.operator === "=" && (expr.left.type === "ArrayPattern" || expr.left.type === "ObjectPattern")) {
+        const right = transpileExpression(expr.right, opts);
+        const out: string[] = [];
+        emitDestructure(expr.left as Node, "__d", "", "", opts, out, { n: 0 });
+        return `((__d) => { ${out.join(" ")} return __d; })(${right})`;
+      }
       const compoundFn = COMPOUND_OPS[expr.operator];
       const right = transpileExpression(expr.right, opts);
       const op = expr.operator;
