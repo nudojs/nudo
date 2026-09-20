@@ -244,7 +244,10 @@ export function $in(key: Abs, o: Abs): Abs {
   if (o.shape.k === "tuple") {
     if (kv === "length") return boolLit(true);
     const idx = canonicalArrayIndex(kv);
-    if (idx !== undefined) return boolLit(idx < o.shape.elements.length);
+    if (idx !== undefined) {
+      if (o.shape.holes?.includes(idx)) return boolLit(false);
+      return boolLit(idx < o.shape.elements.length);
+    }
     return boolLit(false);
   }
   if (o.shape.k === "arr") return bool(); // 抽象数组：索引域未知
@@ -503,9 +506,11 @@ export function $del(o: Abs, key: Abs): Abs {
   }
   if (o.shape.k === "tuple") {
     const idx = canonicalArrayIndex(kv);
-    if (idx === undefined) return o;
+    if (idx === undefined || idx >= o.shape.elements.length) return o; // 越界 delete 不影响数组
     const els = o.shape.elements.map((e, i) => (i === idx ? $lit(undefined) : e));
-    return abs({ k: "tuple", elements: els }, undefined, undefined, o.conf);
+    const holes = o.shape.holes ? [...o.shape.holes] : [];
+    if (!holes.includes(idx)) holes.push(idx);
+    return abs({ k: "tuple", elements: els, holes }, undefined, undefined, o.conf);
   }
   if (o.shape.k === "arr") {
     return abs(
@@ -1051,6 +1056,16 @@ function tupleOrWiden(els: Abs[], conf: Confidence): Abs {
 /** 数组字面量 → ≤cap tuple（逐元素精确）/ >cap arr；策略与 ast-eval 同源（containers.ts） */
 export function $arr(items: Abs[]): Abs {
   return tupleOrWiden(items.map(asAbsVal), "exact");
+}
+
+/**
+ * 带空洞的数组字面量（[1,,3]）：hole 槽位置为 undefined 值但 `in` 判定 false。
+ * 超 cap 退化 arr 时丢弃 hole 精度（元素 join，长度语义已由 arr 承接）。
+ */
+export function $arrWithHoles(items: Abs[], holes: number[]): Abs {
+  const base = $arr(items);
+  if (holes.length === 0 || base.shape.k !== "tuple") return base;
+  return abs({ k: "tuple", elements: base.shape.elements, holes }, undefined, undefined, base.conf);
 }
 
 const ARR_MUTATORS = new Set([
@@ -1752,7 +1767,13 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 4294967295) {
       const els = o.shape.elements.slice(0, v);
       while (els.length < v) els.push($lit(undefined));
-      return abs({ k: "tuple", elements: els }, undefined, undefined, o.conf);
+      const holes = (o.shape.holes ?? []).filter((h) => h < v);
+      return abs(
+        { k: "tuple", elements: els, holes: holes.length > 0 ? holes : undefined },
+        undefined,
+        undefined,
+        o.conf,
+      );
     }
     const joined =
       o.shape.elements.length > 0

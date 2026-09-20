@@ -34,7 +34,13 @@ export type Shape =
       open?: boolean;
     }
   | { k: "arr"; element: Abs }
-  | { k: "tuple"; elements: Abs[]; rest?: Abs }
+  | {
+      k: "tuple";
+      elements: Abs[];
+      rest?: Abs;
+      /** 已删除下标（delete a[i] / 字面量空洞）：读值为 undefined，`in` 判定 false */
+      holes?: number[];
+    }
   | { k: "fn"; params: string[]; name?: string; paramTypes?: Abs[]; returnType?: Abs }
   | { k: "brand"; name: string; shape: Abs }
   | { k: "eff"; eff: "promise" | "generator"; inner: Abs }
