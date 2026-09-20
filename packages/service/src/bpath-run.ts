@@ -282,9 +282,58 @@ export function collectBPathReplacements(source: string): {
 /** 可走 transpile+exec：env 经 loadEnvs（内置 + 已 preload 的路径型） */
 export function isBPathCapable(source: string, envNames: string[] = []): boolean {
   void envNames;
-  // 顶层 this. 仍不支持（方法内 this 由 transpile 处理）
-  if (/(^|[^.\w$])this\s*\./.test(source) && !/\bclass\s+/.test(source)) return false;
-  return true;
+  // 顶层 this：memberPathOf 对无 thisParam 的 this 根返回 null（写入不可重绑）。
+  // 函数/方法体内的 this 由 transpile 处理（方法注入 thisParam，普通函数/箭头
+  // 降级为 $lit(undefined) + may-throw），不得关掉整文件的 B 路径。
+  try {
+    const ast = parse(source) as unknown as { program?: { body?: unknown[] } };
+    return !hasTopLevelThis(ast);
+  } catch {
+    // 语法错误交上层诊断，不额外关闭 B 路径（原正则在坏语法上恒真，保持）
+    return true;
+  }
+}
+
+/** 函数/方法边界：其体内 this 由 transpile 处理（thisParam 注入 / $lit(undefined) 降级） */
+const FN_BOUNDARY_TYPES = new Set([
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunctionExpression",
+  "ObjectMethod",
+  "ClassMethod",
+  "ClassPrivateMethod",
+]);
+
+/** 顶层语句作用域是否出现裸 this（不下探函数体/类体） */
+function hasTopLevelThis(ast: { program?: { body?: unknown[] } }): boolean {
+  const scan = (node: unknown): boolean => {
+    if (!node || typeof node !== "object") return false;
+    const n = node as { type?: string };
+    if (FN_BOUNDARY_TYPES.has(n.type ?? "")) return false;
+    if (n.type === "ClassDeclaration" || n.type === "ClassExpression") return false;
+    if (n.type === "ThisExpression") return true;
+    for (const key of Object.keys(node)) {
+      if (
+        key === "loc" ||
+        key === "start" ||
+        key === "end" ||
+        key === "range" ||
+        key === "comments" ||
+        key === "tokens" ||
+        key === "errors"
+      ) {
+        continue;
+      }
+      const child = (node as Record<string, unknown>)[key];
+      if (Array.isArray(child)) {
+        if (child.some((c) => scan(c))) return true;
+      } else if (child && typeof child === "object" && scan(child)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  return (ast.program?.body ?? []).some((s) => scan(s));
 }
 
 export type BPathRunResult = {
