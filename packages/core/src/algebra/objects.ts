@@ -399,3 +399,23 @@ export function joinAbs(a: Abs, b: Abs): Abs {
   noteDerivationJoin([a, b], result);
   return annotateJoinPath(a, b, result);
 }
+
+// --- Object.create(null) 无原型标记 ---
+
+/** null-proto 对象侧表（按 Abs 对象身份）：`in` 不得回退 Object.prototype */
+const nullProtoMarks = new WeakMap<object, true>();
+
+export function markNullProtoObj(o: Abs): Abs {
+  nullProtoMarks.set(o as object, true);
+  return o;
+}
+
+export function isNullProtoObj(o: Abs): boolean {
+  return nullProtoMarks.has(o as object);
+}
+
+/** 同一对象的不可变更新（$set/$del）迁移 nullProto 标记 */
+export function migrateNullProto(from: Abs, to: Abs): Abs {
+  if (nullProtoMarks.has(from as object)) nullProtoMarks.set(to as object, true);
+  return to;
+}

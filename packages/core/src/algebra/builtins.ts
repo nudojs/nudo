@@ -5,7 +5,7 @@
 
 import type { Abs } from "./abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown, confJoin, isExactLit } from "./abs.ts";
-import { joinAbs, objOf } from "./objects.ts";
+import { joinAbs, objOf, markNullProtoObj } from "./objects.ts";
 import {
   collectionElementJoin,
   isMapAbs,
@@ -147,6 +147,14 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
   };
 
   switch (name) {
+    case "create": {
+      // null 原型：空闭对象 + nullProto 标记（in 不回退 Object.prototype）。
+      // 对象原型实参的动态继承不建模，保守空闭对象。
+      const protoV = a0 ? litValue(a0) : undefined;
+      if (protoV === null) return markNullProtoObj(abs({ k: "obj", slots: {} }, undefined, undefined, "exact"));
+      if (protoV === undefined) return undefined;
+      return abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+    }
     case "keys": {
       if (a0?.shape.k === "obj") {
         const keys = enumKeys(

@@ -255,7 +255,7 @@ export function noteObjSlotMissing(
   if (!shape || shape.k !== "obj") return false;
   const obj = shape as { open?: boolean; slots?: Record<string, unknown> };
   if (obj.open) return false;
-  if (obj.slots && name in obj.slots) return false;
+  if (obj.slots && Object.prototype.hasOwnProperty.call(obj.slots, name)) return false;
   // opaque / widened conf：成员可能被藏住，不报
   const conf = recv?.conf;
   if (conf === "opaque" || conf === "widened") return false;

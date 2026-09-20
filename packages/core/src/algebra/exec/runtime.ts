@@ -16,7 +16,7 @@ import {
 } from "../collections.ts";
 import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs, isNullishLitAbs, definitelyNotNullishShape, bitandAbs, bitorAbs, bitxorAbs, bitnotAbs, shlAbs, shrAbs, ushrAbs, powAbs, toNumberAbs } from "../surface.ts";
-import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape, type Slot } from "../objects.ts";
+import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape, type Slot, isNullProtoObj, migrateNullProto, getSlot } from "../objects.ts";
 import {
   isMapAbs,
   isSetAbs,
@@ -263,9 +263,9 @@ export function $in(key: Abs, o: Abs): Abs {
           : undefined
         : o.shape;
     if (!objShape) return bool();
-    if (keyStr in objShape.slots) {
-      const slot = objShape.slots[keyStr];
-      if (!slot || slot.optional) return bool(); // optional 槽可能缺席
+    const slot = getSlot(objShape.slots, keyStr);
+    if (slot) {
+      if (slot.optional) return bool(); // optional 槽可能缺席
       return boolLit(true);
     }
     // class 实例：原型链上的方法/访问器/内建 brand 方法
@@ -273,6 +273,8 @@ export function $in(key: Abs, o: Abs): Abs {
       return boolLit(true);
     }
     if (objShape.open) return bool();
+    // Object.create(null)：无 Object.prototype 可回退，缺自有槽即缺席
+    if (o.shape.k === "obj" && isNullProtoObj(o)) return boolLit(false);
     return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
   }
   if (o.shape.k === "fn") {
@@ -283,6 +285,9 @@ export function $in(key: Abs, o: Abs): Abs {
     if (o.shape.eff === "promise" && PROMISE_PROTO_NAMES.has(keyStr)) return boolLit(true);
     return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
   }
+  // unknown/any：无信息，不得按 Object.prototype 成员误判（Object.create 未建模时
+  // "toString" in o 曾折 true）
+  if (o.shape.k === "unknown" || o.shape.k === "any") return bool();
   return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
 }
 
@@ -494,7 +499,7 @@ export function $del(o: Abs, key: Abs): Abs {
   if (o.shape.k === "obj" && keyStr !== undefined) {
     if (getPropFlags(o)?.get(keyStr)?.configurable === false) return o;
     if (o.shape.open) return o;
-    if (!(keyStr in o.shape.slots) && !lookupObjAccessor(o, keyStr)) return o; // 无此槽且无访问器：no-op
+    if (!getSlot(o.shape.slots, keyStr) && !lookupObjAccessor(o, keyStr)) return o; // 无此槽且无访问器：no-op
     const slots: Record<string, Slot> = {};
     for (const [k, slot] of Object.entries(o.shape.slots)) {
       if (k !== keyStr) slots[k] = slot;
@@ -503,6 +508,7 @@ export function $del(o: Abs, key: Abs): Abs {
     // 对象字面量自有访问器随 delete 移除（原生 own accessor 是自有属性）
     migrateAccessors(o, next, keyStr);
     migrateInvariants(o, next);
+    migrateNullProto(o, next);
     return next;
   }
   if (o.shape.k === "tuple") {
@@ -1949,6 +1955,7 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
   next.conf = confJoin(o.conf, value.conf);
   migrateAccessors(o, next);
   migrateInvariants(o, next);
+  migrateNullProto(o, next);
   return next;
 }
 
