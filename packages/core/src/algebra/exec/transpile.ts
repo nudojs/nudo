@@ -2532,8 +2532,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           const path = memberPathOf(m, opts);
           if (path) {
             return emitLogicalAssign(readPathSrc(path), (val) => {
-              const writeSrc = setPathSrc(path, val);
-              return `${path.rootSrc} = ${writeSrc}`;
+              // 表达式值 = 写入的值；$set 返回容器不是 JS 语义
+              return `((__v) => { ${path.rootSrc} = ${setPathSrc(path, "__v")}; return __v; })(${val})`;
             });
           }
         }
@@ -2550,25 +2550,26 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           const valSrc = compoundFn
             ? `${compoundFn}(${readPathSrc(path)}, ${right})`
             : right;
-          const writeSrc = setPathSrc(path, valSrc);
-          return `${path.rootSrc} = ${writeSrc}`;
+          // 表达式值 = 写入的值（JS 语义）；写回仍走不可变更新链
+          return `((__v) => { ${path.rootSrc} = ${setPathSrc(path, "__v")}; return __v; })(${valSrc})`;
         }
-        // 根不可重绑（如 foo().x = v）：保留旧纯表达式形态
+        // 根不可重绑（如 foo().x = v）：保留旧纯表达式形态；
+        // 表达式值 = 写入的值（$set/$idxSet 返回容器不是 JS 语义）
         if (!m.computed && m.property.type === "Identifier") {
           const obj = transpileExpression(m.object as Expression, opts);
-          return `$set(${obj}, ${JSON.stringify(m.property.name)}, ${right})`;
+          return `((__v) => (($set(${obj}, ${JSON.stringify(m.property.name)}, __v)), __v))(${right})`;
         }
         if (m.computed) {
           const obj = transpileExpression(m.object as Expression, opts);
           const k = m.property;
           if (k.type === "NumericLiteral") {
-            return `$idxSet(${obj}, $lit(${k.value}), ${right})`;
+            return `((__v) => (($idxSet(${obj}, $lit(${k.value}), __v)), __v))(${right})`;
           }
           if (k.type === "StringLiteral") {
-            return `$set(${obj}, ${JSON.stringify(k.value)}, ${right})`;
+            return `((__v) => (($set(${obj}, ${JSON.stringify(k.value)}, __v)), __v))(${right})`;
           }
           if (isExpression(k)) {
-            return `$idxSet(${obj}, ${transpileExpression(k, opts)}, ${right})`;
+            return `((__v) => (($idxSet(${obj}, ${transpileExpression(k, opts)}, __v)), __v))(${right})`;
           }
         }
         return `/* assign */ $lit(undefined)`;
