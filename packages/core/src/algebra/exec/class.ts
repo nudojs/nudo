@@ -337,6 +337,11 @@ function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs | undefi
  * Object.assign（B-path 专用，accessor 感知）：与 builtins 的槽位合并对齐，
  * 但拷贝源访问器时**调用 getter**（原生语义），结果槽存 getter 返回值。
  */
+/** strict：Object.assign 到不可变/不可扩展/不可写目标 → TypeError（同 $set 口径） */
+function throwStrictAssign(): never {
+  throw new NudoThrow(errorTypeAbs("TypeError"));
+}
+
 function runtimeAssignObject(args: Abs[]): Abs {
   if (!args.length) return unknown;
   // target 字面量：null/undefined → TypeError；prim → 装箱语义未建模。
@@ -347,20 +352,20 @@ function runtimeAssignObject(args: Abs[]): Abs {
   for (let i = 1; i < args.length; i++) {
     acc = asAbsVal(acc);
     const st = extStateOf(acc);
-    if (st === "frozen") continue; // sloppy：assign 到 frozen 目标静默失败
+    if (st === "frozen") throwStrictAssign(); // strict：assign 到 frozen 目标 TypeError
     const src = asAbsVal(args[i]!);
     if (acc.shape.k === "obj" && src.shape.k === "obj") {
       const base = { ...acc.shape.slots };
       const flags = getPropFlags(acc);
       for (const [k, s] of Object.entries(src.shape.slots)) {
-        // sealed/nonext 目标：新键静默跳过；writable:false 键静默跳过
+        // sealed/nonext 目标新键 / writable:false 键覆写：strict TypeError
         if (
           (st === "sealed" || st === "nonext") &&
           !Object.prototype.hasOwnProperty.call(base, k)
         ) {
-          continue;
+          throwStrictAssign();
         }
-        if (flags?.get(k)?.writable === false) continue;
+        if (flags?.get(k)?.writable === false) throwStrictAssign();
         const a = lookupObjAccessor(src, k);
         base[k] = a?.get ? { value: a.get(src) } : s;
       }
@@ -579,7 +584,7 @@ function memberLikelyHasMethod(m: Abs, method: string): boolean {
 function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined {
   const shape = arr.shape as
     | { k: "arr"; element: Abs }
-    | { k: "tuple"; elements: Abs[] };
+    | { k: "tuple"; elements: Abs[]; holes?: number[] };
   const holes = shape.k === "tuple" ? ((arr.shape as { holes?: number[] }).holes ?? []) : [];
   const isHole = (i: number): boolean => holes.includes(i);
   /** 抽象数组（长度未知）回调收到的索引是未知 number，不得折字面量 0 */
@@ -790,7 +795,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   }
   if (method === "keys") {
     if (shape.k === "tuple") {
-      const holes = arr.shape.holes ?? [];
+      const holes = shape.holes ?? [];
       return abs(
         {
           k: "tuple",
@@ -808,7 +813,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   }
   if (method === "values") {
     if (shape.k === "tuple") {
-      const holes = arr.shape.holes ?? [];
+      const holes = shape.holes ?? [];
       return abs(
         {
           k: "tuple",
@@ -826,7 +831,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   }
   if (method === "entries") {
     if (shape.k === "tuple") {
-      const holes = arr.shape.holes ?? [];
+      const holes = shape.holes ?? [];
       return abs(
         {
           k: "tuple",

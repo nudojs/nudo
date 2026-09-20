@@ -446,8 +446,9 @@ export function $delRes(o: Abs, _key: Abs): Abs {
   const kv = litValue(_key);
   const flags =
     kv !== undefined ? getPropFlags(o)?.get(String(kv)) : undefined;
-  if (st === "frozen" || st === "sealed") return boolLit(false);
-  if (flags?.configurable === false) return boolLit(false);
+  // strict：frozen/sealed/non-configurable 删除 TypeError（表达式与语句同口径）
+  if (st === "frozen" || st === "sealed") throwStrictWrite();
+  if (flags?.configurable === false) throwStrictWrite();
   if (st === "nonext") return boolLit(true); // 属性仍可删（仅不可加）
   if (o.shape.k === "obj" || o.shape.k === "brand") {
     const objShape: ObjShape | undefined =
@@ -487,8 +488,8 @@ export function $del(o: Abs, key: Abs): Abs {
     );
   }
   const st = extStateOf(o);
-  // frozen/sealed：删静默失败（delete 返回 false，容器不变）
-  if (st === "frozen" || st === "sealed") return o;
+  // frozen/sealed：删除 TypeError（strict 硬抛；表达式 delete 走 $delRes 返回 false）
+  if (st === "frozen" || st === "sealed") throwStrictWrite();
   if (o.shape.k === "brand") {
     const inner = $del(o.shape.shape, key);
     if (inner === o.shape.shape) return o;
@@ -500,7 +501,7 @@ export function $del(o: Abs, key: Abs): Abs {
   const keyStr =
     typeof kv === "number" ? String(kv) : typeof kv === "string" ? kv : undefined;
   if (o.shape.k === "obj" && keyStr !== undefined) {
-    if (getPropFlags(o)?.get(keyStr)?.configurable === false) return o;
+    if (getPropFlags(o)?.get(keyStr)?.configurable === false) throwStrictWrite();
     if (o.shape.open) return o;
     if (!getSlot(o.shape.slots, keyStr) && !lookupObjAccessor(o, keyStr)) return o; // 无此槽且无访问器：no-op
     // 就地删槽（引用语义：别名同步）；identity 不变故侧表免迁移，
@@ -640,6 +641,16 @@ export function $rawThis(v: unknown): Abs {
   if (v === undefined || v === globalThis) return $lit(undefined);
   if (v && typeof v === "object" && "shape" in (v as object)) return v as Abs;
   return $lit(v as never);
+}
+
+/**
+ * strict 模块语义下写不可变目标（frozen/sealed 新键/nonext 新键/
+ * writable:false/getter-only/non-configurable 删）→ hard TypeError。
+ * 抛 NudoThrow 由 catch 转译吸收为 TypeError 绑定；无 catch 时函数中断
+ * （never + throws），callTranspiledExportFull 上报 L2 entry-may-throw。
+ */
+function throwStrictWrite(): never {
+  throw new NudoThrow(errorTypeAbs("TypeError"));
 }
 
 /** 字面量 → Abs（transpile 侧数字/字符串/布尔/null/undefined） */
@@ -1344,14 +1355,14 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   const shape = arr.shape;
   if (shape.k !== "tuple" && shape.k !== "arr") return arr;
   const st = extStateOf(arr);
-  // frozen：任何 mutator 静默失败（原生 push/pop 等抛 TypeError，值保持）；
-  // sealed/nonext：结构性扩展（push/unshift/splice 加元素）静默失败
-  if (st === "frozen") return arr;
+  // frozen：任何 mutator 原生 TypeError（strict 硬抛）；
+  // sealed/nonext：结构性扩展（push/unshift/splice 加元素）TypeError
+  if (st === "frozen") throwStrictWrite();
   if (
     (st === "sealed" || st === "nonext") &&
     (method === "push" || method === "unshift" || method === "splice")
   ) {
-    return arr;
+    throwStrictWrite();
   }
   const vals = args.map((a) => asAbsVal(a));
   const asArrEl = (els: Abs[]): Abs =>
@@ -1538,12 +1549,12 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
   const iv = litValue(i);
   if (a.shape.k === "tuple" && typeof iv === "number" && Number.isInteger(iv) && iv >= 0) {
     const st = extStateOf(a);
-    if (st === "frozen") return a; // frozen 数组：下标写静默失败（sloppy）
+    if (st === "frozen") throwStrictWrite(); // frozen 数组：下标写 TypeError
     if (
       (st === "sealed" || st === "nonext") &&
       iv >= a.shape.elements.length
     ) {
-      return a; // 不可扩展：越界写（新下标）静默失败
+      throwStrictWrite(); // 不可扩展：越界写（新下标）TypeError
     }
     const els = [...a.shape.elements];
     const holes = [...(a.shape.holes ?? [])];
@@ -2044,7 +2055,7 @@ export function $collectionForEach(recv: Abs, cb: unknown): Abs | undefined {
 /** 成员写：返回新 obj/brand（不可变更新）；frozen/sealed/只读目标按 sloppy 静默失败 */
 export function $set(o: Abs, key: string, value: Abs): Abs {
   if (o.shape.k === "brand") {
-    if (extStateOf(o) === "frozen") return o; // frozen brand：全写静默失败
+    if (extStateOf(o) === "frozen") throwStrictWrite();
     const isClassVal = classNameOfValue(o as object) === o.shape.name;
     if (isClassVal) {
       const sacc = findStaticClassAccessor(o.shape.name, key);
@@ -2054,14 +2065,8 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
       const acc = findClassAccessor(o.shape.name, key);
       if (acc) {
         if (acc.set) return acc.set(o, value);
-        // getter-only：class 体在原生是 strict → TypeError；记录 soft may-throw，写不生效
-        recordMayThrow({
-          kind: "TypeError",
-          cause: `property '${key}' has only a getter`,
-          recv: o.shape.name,
-          name: key,
-        });
-        return o;
+        // getter-only：strict → TypeError（硬抛，catch 可吸收）
+        throwStrictWrite();
       }
       // 类实例字段就地突变：原生引用共享语义——方法内 this.n = v 对
       // 调用点持有的同一实例 Abs 可见（不可变更新会只改局部绑定）
@@ -2069,9 +2074,9 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
       if (inner.shape.k === "obj") {
         const st = extStateOf(o);
         if ((st === "sealed" || st === "nonext") && !getSlot(inner.shape.slots, key)) {
-          return o; // 不可扩展：新键写静默失败
+          throwStrictWrite(); // 不可扩展：新键写 TypeError
         }
-        if (getPropFlags(o)?.get(key)?.writable === false) return o;
+        if (getPropFlags(o)?.get(key)?.writable === false) throwStrictWrite();
         inner.shape.slots[key] = { value: asAbsVal(value) };
         return o;
       }
@@ -2091,7 +2096,7 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
   // a.length = n：非负整数 < 2^32-1 就地截断/延长（延长槽读 undefined 对齐空洞）；
   // 其余值按 sound 回退：元素与 undefined 取并、长度未知
   if (o.shape.k === "tuple" && key === "length") {
-    if (extStateOf(o) === "frozen") return o;
+    if (extStateOf(o) === "frozen") throwStrictWrite();
     const v = litValue(value);
     if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 4294967295) {
       const els = o.shape.elements.slice(0, v);
@@ -2124,14 +2129,15 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
   const shape = o.shape as ObjShape;
   const st = extStateOf(o);
   const hasKey = Object.prototype.hasOwnProperty.call(shape.slots, key);
-  // frozen：全写静默失败；sealed/nonext：新键静默失败
-  if (st === "frozen") return o;
-  if ((st === "sealed" || st === "nonext") && !hasKey) return o;
-  // defineProperty writable:false：写静默失败
-  if (getPropFlags(o)?.get(key)?.writable === false) return o;
+  // frozen：全写 TypeError；sealed/nonext：新键 TypeError（strict 硬抛）
+  if (st === "frozen") throwStrictWrite();
+  if ((st === "sealed" || st === "nonext") && !hasKey) throwStrictWrite();
+  // defineProperty writable:false：写 TypeError
+  if (getPropFlags(o)?.get(key)?.writable === false) throwStrictWrite();
   const acc = lookupObjAccessor(o, key);
   if (acc) {
-    return acc.set ? acc.set(o, value) : o;
+    if (!acc.set) throwStrictWrite(); // getter-only：写 TypeError
+    return acc.set(o, value);
   }
   // 就地写槽（引用语义：const b = o; b.x = v 对 o 可见）——Abs 身份不变
   shape.slots[key] = { value: asAbsVal(value) };

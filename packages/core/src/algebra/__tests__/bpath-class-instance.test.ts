@@ -62,7 +62,7 @@ describe("B-path class instance state", () => {
     expect(litValue(r.result)).toBe("function");
   });
 
-  it("field write respects frozen instance", () => {
+  it("field write on frozen instance throws TypeError", () => {
     const r = call(
       `export function f() {
         class A { constructor() { this.n = 1; } }
@@ -72,7 +72,8 @@ describe("B-path class instance state", () => {
         return a.n;
       }`,
     );
-    expect(litValue(r.result)).toBe(1);
+    expect(r.result.shape.k).toBe("never");
+    expect((r.throws as { shape?: { name?: string } }).shape?.name).toBe("TypeError");
   });
 
   it("two instances keep independent state", () => {

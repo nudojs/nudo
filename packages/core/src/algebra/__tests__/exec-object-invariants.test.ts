@@ -1,10 +1,10 @@
 /**
- * B-path 对象不变性差分回归（sloppy mode 值语义）。
+ * B-path 对象不变性差分回归（strict ESM 语义）。
  * 回归背景：Object.freeze/seal/preventExtensions/defineProperty 完全未建模——
- * freeze 后 o.a=2 静默失败（原生 o.a 仍 1）而 B-path 写入成功；seal 后加新键
- * 静默失败而 B-path 写入；defineProperty 默认 writable:false 的写静默失败。
- * 每条值断言与 Node sloppy mode 真实执行对齐（vm 复核）；throw 建模差异
- * （如 frozen 数组 push 原生 TypeError）不在此断言。
+ * freeze 后 o.a=2 静默失败（原生 o.a 仍 1）而 B-path 写入成功。
+ * 现按 strict 模块语义建模：不可变/不可扩展/不可写目标的写与删抛
+ * TypeError（NudoThrow → never + throws），catch 可吸收；
+ * 可写路径（seal 已有键、preventExtensions 已有键、writable:true）照常写入。
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -22,24 +22,34 @@ function str(src: string) {
   return litValue(call(src, "run").result);
 }
 
-function tupleOf(src: string) {
-  const r = call(src, "run").result;
-  if (r.shape.k !== "tuple") return undefined;
-  return r.shape.elements.map((e) => litValue(e));
+function isNever(r: unknown): boolean {
+  const a = r as { shape?: { k?: string } };
+  return !!a && typeof a === "object" && a.shape?.k === "never";
+}
+
+function throwsTypeError(t: unknown): boolean {
+  const a = t as { shape?: { k?: string; name?: string } };
+  return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === "TypeError";
 }
 
 describe("B-path object invariants", () => {
-  it("freeze blocks writes to existing slots", () => {
-    expect(str(`export function run() { let o = {a: 1}; Object.freeze(o); o.a = 2; return o.a; }`)).toBe(1);
+  it("freeze writes to existing slots throw TypeError", () => {
+    const r = call(`export function run() { let o = {a: 1}; Object.freeze(o); o.a = 2; return o.a; }`, "run");
+    expect(isNever(r.result)).toBe(true);
+    expect(throwsTypeError(r.throws)).toBe(true);
   });
 
-  it("freeze blocks adding new slots", () => {
-    expect(str(`export function run() { let o = {a: 1}; Object.freeze(o); o.b = 2; return o.b; }`)).toBe(undefined);
+  it("freeze adding new slots throws TypeError", () => {
+    const r = call(`export function run() { let o = {a: 1}; Object.freeze(o); o.b = 2; return o.b; }`, "run");
+    expect(isNever(r.result)).toBe(true);
+    expect(throwsTypeError(r.throws)).toBe(true);
   });
 
-  it("freeze blocks delete", () => {
-    expect(str(`export function run() { let o = {a: 1}; Object.freeze(o); delete o.a; return o.a; }`)).toBe(1);
-    expect(str(`export function run() { let o = {a: 1}; Object.freeze(o); return delete o.a; }`)).toBe(false);
+  it("freeze delete throws TypeError", () => {
+    const r = call(`export function run() { let o = {a: 1}; Object.freeze(o); delete o.a; return o.a; }`, "run");
+    expect(isNever(r.result)).toBe(true);
+    const r2 = call(`export function run() { let o = {a: 1}; Object.freeze(o); return delete o.a; }`, "run");
+    expect(isNever(r2.result)).toBe(true);
   });
 
   it("isFrozen reflects freeze", () => {
@@ -47,23 +57,23 @@ describe("B-path object invariants", () => {
     expect(str(`export function run() { let o = {a: 1}; return Object.isFrozen(o); }`)).toBe(false);
   });
 
-  it("seal allows existing-slot writes but blocks new slots and delete", () => {
+  it("seal allows existing-slot writes; new slots and delete throw", () => {
     expect(str(`export function run() { let o = {a: 1}; Object.seal(o); o.a = 2; return o.a; }`)).toBe(2);
-    expect(str(`export function run() { let o = {a: 1}; Object.seal(o); o.b = 2; return o.b; }`)).toBe(undefined);
-    expect(str(`export function run() { let o = {a: 1}; Object.seal(o); return delete o.a; }`)).toBe(false);
+    expect(isNever(call(`export function run() { let o = {a: 1}; Object.seal(o); o.b = 2; return o.b; }`, "run").result)).toBe(true);
+    expect(isNever(call(`export function run() { let o = {a: 1}; Object.seal(o); return delete o.a; }`, "run").result)).toBe(true);
     expect(str(`export function run() { let o = {a: 1}; Object.seal(o); return Object.isSealed(o); }`)).toBe(true);
   });
 
-  it("preventExtensions blocks new slots only", () => {
-    expect(str(`export function run() { let o = {a: 1}; Object.preventExtensions(o); o.b = 2; return o.b; }`)).toBe(undefined);
+  it("preventExtensions new slots throw; existing writes and delete ok", () => {
+    expect(isNever(call(`export function run() { let o = {a: 1}; Object.preventExtensions(o); o.b = 2; return o.b; }`, "run").result)).toBe(true);
     expect(str(`export function run() { let o = {a: 1}; Object.preventExtensions(o); o.a = 2; return o.a; }`)).toBe(2);
     expect(str(`export function run() { let o = {a: 1}; Object.preventExtensions(o); return delete o.a; }`)).toBe(true);
     expect(str(`export function run() { let o = {a: 1}; Object.preventExtensions(o); return Object.isExtensible(o); }`)).toBe(false);
     expect(str(`export function run() { let o = {a: 1}; return Object.isExtensible(o); }`)).toBe(true);
   });
 
-  it("defineProperty default writable:false blocks writes", () => {
-    expect(str(`export function run() { let o = {}; Object.defineProperty(o, "p", {value: 1}); o.p = 2; return o.p; }`)).toBe(1);
+  it("defineProperty default writable:false writes throw TypeError", () => {
+    expect(isNever(call(`export function run() { let o = {}; Object.defineProperty(o, "p", {value: 1}); o.p = 2; return o.p; }`, "run").result)).toBe(true);
     expect(str(`export function run() { let o = {}; Object.defineProperty(o, "p", {value: 1}); return o.p; }`)).toBe(1);
     expect(str(`export function run() { let o = {}; Object.defineProperty(o, "p", {value: 1, writable: true}); o.p = 2; return o.p; }`)).toBe(2);
   });
@@ -79,8 +89,10 @@ describe("B-path object invariants", () => {
     }
   });
 
-  it("frozen arrays keep elements on index write", () => {
-    expect(tupleOf(`export function run() { let a = [1, 2]; Object.freeze(a); a[0] = 9; return a; }`)).toEqual([1, 2]);
+  it("frozen arrays index write throws TypeError", () => {
+    const r = call(`export function run() { let a = [1, 2]; Object.freeze(a); a[0] = 9; return a; }`, "run");
+    expect(isNever(r.result)).toBe(true);
+    expect(throwsTypeError(r.throws)).toBe(true);
     expect(str(`export function run() { let a = [1, 2]; Object.freeze(a); return Object.isFrozen(a); }`)).toBe(true);
   });
 
