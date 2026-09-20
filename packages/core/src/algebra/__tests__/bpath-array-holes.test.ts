@@ -187,3 +187,33 @@ describe("B-path array holes: mutator migration", () => {
     expect(litValue(r2.result)).toBe(true);
   });
 });
+
+describe("B-path new Array(n) holes", () => {
+  it("new Array(3) is all holes", () => {
+    const r = call(`export function f() { const a = new Array(3); return 0 in a; }`);
+    expect(litValue(r.result)).toBe(false);
+    const r2 = call(`export function f() { const a = new Array(3); return 2 in a; }`);
+    expect(litValue(r2.result)).toBe(false);
+    const r3 = call(`export function f() { const a = new Array(3); return a[0]; }`);
+    expect(litValue(r3.result)).toBe(undefined);
+    const r4 = call(`export function f() { const a = new Array(3); return a.length; }`);
+    expect(litValue(r4.result)).toBe(3);
+  });
+
+  it("writing into a hole restores presence", () => {
+    const r = call(`export function f() { const a = new Array(3); a[1] = 5; return 1 in a; }`);
+    expect(litValue(r.result)).toBe(true);
+    const r2 = call(`export function f() { const a = new Array(3); a[1] = 5; return 0 in a; }`);
+    expect(litValue(r2.result)).toBe(false);
+  });
+
+  it("new Array(0) is empty", () => {
+    const r = call(`export function f() { const a = new Array(0); return a.length; }`);
+    expect(litValue(r.result)).toBe(0);
+  });
+
+  it("new Array(1,2,3) is a dense literal", () => {
+    const r = call(`export function f() { const a = new Array(1,2,3); return 1 in a; }`);
+    expect(litValue(r.result)).toBe(true);
+  });
+});

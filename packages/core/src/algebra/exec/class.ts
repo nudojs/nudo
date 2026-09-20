@@ -131,8 +131,15 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
       if (args.length === 1) {
         const n = litValue(args[0]!);
         if (typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= 4096) {
+          // new Array(n)：全空洞（无自有槽；读值 undefined、in 判定 false）
           const els = Array.from({ length: n }, () => undefAbs());
-          return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
+          const holes = Array.from({ length: n }, (_, i) => i);
+          return abs(
+            { k: "tuple", elements: els, holes: n > 0 ? holes : undefined },
+            undefined,
+            undefined,
+            "exact",
+          );
         }
         return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
       }
