@@ -292,6 +292,31 @@ function emitArrMutatorRebinds(
       }
       // 仍要遍历参数内嵌套 mutator（如 a.pop(b.pop())）
     }
+    // Object.defineProperty(o, "k", desc)：返回值是新容器（value 进 slots），
+    // 语句位置必须写回第一实参（freeze/seal/preventExtensions 就地标记无需写回）
+    if (
+      node.type === "CallExpression" &&
+      node.callee?.type === "MemberExpression" &&
+      node.callee.computed !== true &&
+      node.callee.object?.type === "Identifier" &&
+      (node.callee.object as { name: string }).name === "Object" &&
+      node.callee.property?.type === "Identifier" &&
+      (node.callee.property as { name: string }).name === "defineProperty" &&
+      node.arguments?.[0] &&
+      (node.arguments[0] as { type?: string }).type === "Identifier"
+    ) {
+      const argSrcs = (node.arguments as unknown as Expression[])
+        .map((a) =>
+          (a as { type?: string }).type === "SpreadElement"
+            ? "$lit(undefined)"
+            : transpileExpression(a, opts),
+        )
+        .join(", ");
+      const targetName = (node.arguments[0] as { name: string }).name;
+      lines.push(
+        `${pad}${targetName} = $invoke(Object, "defineProperty", [${argSrcs}]);`,
+      );
+    }
     // delete obj[key]：语句位置把删键后的容器写回绑定（表达式值 $delRes 由 transpile 负责）
     if (
       node.type === "UnaryExpression" &&

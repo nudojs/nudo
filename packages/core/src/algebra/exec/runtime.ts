@@ -28,7 +28,7 @@ import {
 } from "../collections.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf } from "../containers.ts";
 import { leqAbs } from "../leq.ts";
-import { evalNamespaceCall } from "../builtins.ts";
+import { evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants } from "../builtins.ts";
 import type { Phi } from "../pred.ts";
 import { pTrue } from "../pred.ts";
 import {
@@ -419,7 +419,8 @@ export function $classExpr(): Abs {
 
 /**
  * `delete obj[key]` 的结果判定（只读，不写回）。
- * closed 目标恒 true（不建模 non-configurable/freeze）；
+ * frozen/sealed 或 configurable:false 键 → false；preventExtensions 可删；
+ * closed 目标恒 true（其余 non-configurable 形态不建模）；
  * prim/nullish 接收者原生抛 TypeError → unknown。
  */
 export function $delRes(o: Abs, _key: Abs): Abs {
@@ -429,6 +430,13 @@ export function $delRes(o: Abs, _key: Abs): Abs {
   if (o.shape.k === "sum") {
     return o.shape.members.map((m) => $delRes(m, _key)).reduce((a, b) => joinAbs(a, b));
   }
+  const st = extStateOf(o);
+  const kv = litValue(_key);
+  const flags =
+    kv !== undefined ? getPropFlags(o)?.get(String(kv)) : undefined;
+  if (st === "frozen" || st === "sealed") return boolLit(false);
+  if (flags?.configurable === false) return boolLit(false);
+  if (st === "nonext") return boolLit(true); // 属性仍可删（仅不可加）
   if (o.shape.k === "obj" || o.shape.k === "brand") {
     const objShape: ObjShape | undefined =
       o.shape.k === "brand"
@@ -466,6 +474,9 @@ export function $del(o: Abs, key: Abs): Abs {
       "partial",
     );
   }
+  const st = extStateOf(o);
+  // frozen/sealed：删静默失败（delete 返回 false，容器不变）
+  if (st === "frozen" || st === "sealed") return o;
   if (o.shape.k === "brand") {
     const inner = $del(o.shape.shape, key);
     if (inner === o.shape.shape) return o;
@@ -477,6 +488,7 @@ export function $del(o: Abs, key: Abs): Abs {
   const keyStr =
     typeof kv === "number" ? String(kv) : typeof kv === "string" ? kv : undefined;
   if (o.shape.k === "obj" && keyStr !== undefined) {
+    if (getPropFlags(o)?.get(keyStr)?.configurable === false) return o;
     if (o.shape.open) return o;
     if (!(keyStr in o.shape.slots) && !lookupObjAccessor(o, keyStr)) return o; // 无此槽且无访问器：no-op
     const slots: Record<string, Slot> = {};
@@ -486,6 +498,7 @@ export function $del(o: Abs, key: Abs): Abs {
     const next = abs({ k: "obj", slots }, undefined, undefined, o.conf);
     // 对象字面量自有访问器随 delete 移除（原生 own accessor 是自有属性）
     migrateAccessors(o, next, keyStr);
+    migrateInvariants(o, next);
     return next;
   }
   if (o.shape.k === "tuple") {
@@ -1169,6 +1182,16 @@ function fillTuple(
 export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   const shape = arr.shape;
   if (shape.k !== "tuple" && shape.k !== "arr") return arr;
+  const st = extStateOf(arr);
+  // frozen：任何 mutator 静默失败（原生 push/pop 等抛 TypeError，值保持）；
+  // sealed/nonext：结构性扩展（push/unshift/splice 加元素）静默失败
+  if (st === "frozen") return arr;
+  if (
+    (st === "sealed" || st === "nonext") &&
+    (method === "push" || method === "unshift" || method === "splice")
+  ) {
+    return arr;
+  }
   const vals = args.map((a) => asAbsVal(a));
   const asArrEl = (els: Abs[]): Abs =>
     els.length > 0 ? els.reduce((x, y) => joinAbs(x, y)) : unknown;
@@ -1320,6 +1343,14 @@ export function $idx(a: Abs, i: Abs): Abs {
 export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
   const iv = litValue(i);
   if (a.shape.k === "tuple" && typeof iv === "number" && Number.isInteger(iv) && iv >= 0) {
+    const st = extStateOf(a);
+    if (st === "frozen") return a; // frozen 数组：下标写静默失败（sloppy）
+    if (
+      (st === "sealed" || st === "nonext") &&
+      iv >= a.shape.elements.length
+    ) {
+      return a; // 不可扩展：越界写（新下标）静默失败
+    }
     const els = [...a.shape.elements];
     while (els.length < iv) els.push(undef());
     els[iv] = asAbsVal(value);
@@ -1678,9 +1709,10 @@ export function $get(
   return unknown;
 }
 
-/** 成员写：返回新 obj/brand（不可变更新） */
+/** 成员写：返回新 obj/brand（不可变更新）；frozen/sealed/只读目标按 sloppy 静默失败 */
 export function $set(o: Abs, key: string, value: Abs): Abs {
   if (o.shape.k === "brand") {
+    if (extStateOf(o) === "frozen") return o; // frozen brand：全写静默失败
     const isClassVal = classNameOfValue(o as object) === o.shape.name;
     if (isClassVal) {
       const sacc = findStaticClassAccessor(o.shape.name, key);
@@ -1715,6 +1747,7 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
   // a.length = n：非负整数 < 2^32-1 就地截断/延长（延长槽读 undefined 对齐空洞）；
   // 其余值按 sound 回退：元素与 undefined 取并、长度未知
   if (o.shape.k === "tuple" && key === "length") {
+    if (extStateOf(o) === "frozen") return o;
     const v = litValue(value);
     if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 4294967295) {
       const els = o.shape.elements.slice(0, v);
@@ -1736,11 +1769,18 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     return abs({ k: "arr", element: o.shape.element }, undefined, undefined, "partial");
   }
   if (!isObj(o)) return $obj({ [key]: value });
+  const shape = o.shape as ObjShape;
+  const st = extStateOf(o);
+  const hasKey = Object.prototype.hasOwnProperty.call(shape.slots, key);
+  // frozen：全写静默失败；sealed/nonext：新键静默失败
+  if (st === "frozen") return o;
+  if ((st === "sealed" || st === "nonext") && !hasKey) return o;
+  // defineProperty writable:false：写静默失败
+  if (getPropFlags(o)?.get(key)?.writable === false) return o;
   const acc = lookupObjAccessor(o, key);
   if (acc) {
     return acc.set ? acc.set(o, value) : o;
   }
-  const shape = o.shape as ObjShape;
   const slots = { ...shape.slots, [key]: { value: asAbsVal(value) } };
   const next = objOf(slots, {
     index: shape.index,
@@ -1748,6 +1788,7 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
   });
   next.conf = confJoin(o.conf, value.conf);
   migrateAccessors(o, next);
+  migrateInvariants(o, next);
   return next;
 }
 

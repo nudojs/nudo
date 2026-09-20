@@ -9,7 +9,7 @@ import { objOf, joinAbs, isObj } from "../objects.ts";
 import { $get, $set, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags } from "../builtins.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin } from "../collections.ts";
 import {
   applyCallbackAbs,
@@ -325,10 +325,21 @@ function runtimeAssignObject(args: Abs[]): Abs {
   let acc = args[0]!;
   for (let i = 1; i < args.length; i++) {
     acc = asAbsVal(acc);
+    const st = extStateOf(acc);
+    if (st === "frozen") continue; // sloppy：assign 到 frozen 目标静默失败
     const src = asAbsVal(args[i]!);
     if (acc.shape.k === "obj" && src.shape.k === "obj") {
       const base = { ...acc.shape.slots };
+      const flags = getPropFlags(acc);
       for (const [k, s] of Object.entries(src.shape.slots)) {
+        // sealed/nonext 目标：新键静默跳过；writable:false 键静默跳过
+        if (
+          (st === "sealed" || st === "nonext") &&
+          !Object.prototype.hasOwnProperty.call(base, k)
+        ) {
+          continue;
+        }
+        if (flags?.get(k)?.writable === false) continue;
         const a = lookupObjAccessor(src, k);
         base[k] = a?.get ? { value: a.get(src) } : s;
       }
