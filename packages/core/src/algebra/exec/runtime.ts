@@ -1221,7 +1221,7 @@ function copyWithinTuple(
   return abs({ k: "arr", element: shape.element }, undefined, undefined, "partial");
 }
 
-function fillTuple(
+export function fillTuple(
   shape: { k: "tuple"; elements: Abs[]; holes?: number[] } | { k: "arr"; element: Abs },
   vals: Abs[],
   arr: Abs,

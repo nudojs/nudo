@@ -1606,6 +1606,14 @@ function evalCall(
               if (typeof a0 === "number") return ok(strLit(sv.charAt(a0)), phi, env);
               break;
             case "slice": {
+              // 与 methods.ts 同口径：位置参数 number 字面量/缺省才折叠，
+              // Symbol/抽象实参原生 THROW → 保守 strPrim
+              const numOrMissing = (x: Abs | undefined): boolean =>
+                x === undefined ||
+                (x.term?.op === "lit" && (x.term.value === undefined || typeof x.term.value === "number"));
+              if (!numOrMissing(arg0) || !numOrMissing(rawArgs[1] ? evalNode(rawArgs[1], env, phi, budget).value : undefined)) {
+                return ok(abs({ k: "prim", type: "string" }, undefined, undefined, "path"), phi, env);
+              }
               const a1 = rawArgs[1] ? litValue(evalNode(rawArgs[1], env, phi, budget).value) : undefined;
               return ok(strLit(sv.slice(a0 as number | undefined, a1 as number | undefined)), phi, env);
             }
@@ -1619,8 +1627,13 @@ function evalCall(
             case "valueOf":
               return ok(strLit(sv), phi, env);
             case "concat": {
-              const rest = rawArgs.map((a) => litValue(evalNode(a, env, phi, budget).value));
-              return ok(strLit(sv + rest.map((x) => String(x)).join("")), phi, env);
+              // 与 methods.ts 同口径：全字面量且非 Symbol 才折叠
+              const restAbs = rawArgs.map((a) => evalNode(a, env, phi, budget).value);
+              if (restAbs.some((r) => r.term?.op !== "lit" || typeof r.term.value === "symbol")) {
+                return ok(abs({ k: "prim", type: "string" }, undefined, undefined, "path"), phi, env);
+              }
+              const rest = restAbs.map((r) => String(litValue(r)));
+              return ok(strLit(sv + rest.join("")), phi, env);
             }
           }
         }

@@ -6,7 +6,7 @@
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, strLit, numLit } from "../abs.ts";
 import { objOf, joinAbs, isObj } from "../objects.ts";
-import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor } from "./runtime.ts";
+import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
 import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags } from "../builtins.ts";
@@ -771,16 +771,9 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
   }
   if (method === "fill" && args.length >= 1) {
-    const v = asAbs(args[0]!) ?? unknown;
-    if (shape.k === "tuple") {
-      return abs(
-        { k: "tuple", elements: shape.elements.map(() => v) },
-        undefined,
-        undefined,
-        confJoin(arr.conf, v.conf),
-      );
-    }
-    return abs({ k: "arr", element: v }, undefined, undefined, confJoin(arr.conf, v.conf));
+    // 表达式值 = 变更后数组本身；start/end 折叠复用语句级 fillTuple
+    // （字面量精确窗口；抽象边界 join 回退；Symbol 等非法参数保守）
+    return fillTuple(shape, args, arr);
   }
   if (method === "includes") {
     return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");

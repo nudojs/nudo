@@ -126,6 +126,12 @@ export function callAbsMethod(
     case "slice":
     case "substring":
       if (lit !== undefined) {
+        // 位置参数：number 字面量或缺省（显式 undefined 字面量 ≡ 缺省）才折叠；
+        // Symbol/抽象实参原生 THROW（Cannot convert a symbol to a number）→ 保守
+        const numOrMissing = (x: Abs | undefined): boolean =>
+          x === undefined ||
+          (x.term?.op === "lit" && (x.term.value === undefined || typeof x.term.value === "number"));
+        if (!numOrMissing(args[0]) || !numOrMissing(args[1])) return strPrim("path");
         const a1 = args[1] ? litValue(args[1]) : undefined;
         if (name === "slice") {
           return strLit(lit.slice(a0 as number | undefined, a1 as number | undefined));
@@ -142,8 +148,10 @@ export function callAbsMethod(
       if (lit !== undefined) {
         let s = lit;
         for (const a of args) {
-          const av = litValue(a);
-          s += av === undefined ? "" : String(av);
+          // 抽象实参（term 非 lit）→ 拼接结果未知，保守；
+          // Symbol 字面量 → 隐式 ToString 原生 THROW，保守
+          if (a.term?.op !== "lit" || typeof a.term.value === "symbol") return strPrim("path");
+          s += String(a.term.value);
         }
         return strLit(s);
       }
