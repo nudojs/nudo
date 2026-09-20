@@ -35,6 +35,7 @@ import { NudoThrow } from "./runtime.ts";
 import { callAbsMethod } from "../methods.ts";
 import {
   registerBClass,
+  markClassValue,
   getBClass,
   type BClassSpec,
 } from "./class-registry.ts";
@@ -57,6 +58,7 @@ export function $class(
     staticMethods: spec.staticMethods,
     statics: spec.statics,
     accessors: spec.accessors,
+    staticAccessors: spec.staticAccessors,
   };
   registerBClass(full);
   const slots: Record<string, { value: Abs }> = {};
@@ -70,6 +72,7 @@ export function $class(
     "exact",
   );
   classImpl.set(val as object, full);
+  markClassValue(val as object, name);
   return val;
 }
 
@@ -283,7 +286,8 @@ function runtimeAssignObject(args: Abs[]): Abs {
 }
 
 /** 实例方法调用：沿继承链；类 Abs 上回落 staticMethods；obj 上回落属性函数 */
-export function $invoke(  thisVal: Abs,
+export function $invoke(
+  thisVal: Abs,
   method: string,
   args: Abs[],
   loc?: [number, number],

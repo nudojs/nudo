@@ -172,15 +172,23 @@ export function classChainNames(name: string, env?: AstEnv): string[] {
   let cur: string | undefined = name;
   let depth = 0;
   while (cur && depth++ < 32) {
-    const parent: string | undefined = env
-      ? getClass(env, cur)?.superClass
-      : BUILTIN_ERROR_SUPER[cur];
+    // env 注册类优先；内建错误层级始终回退（ast-eval 总是传 env，不能丢掉 RangeError→Error）
+    const parent: string | undefined =
+      (env ? getClass(env, cur)?.superClass : undefined) ?? BUILTIN_ERROR_SUPER[cur];
     if (!parent || out.includes(parent)) break;
     out.push(parent);
     cur = parent;
   }
   return out;
 }
+
+/** 内建构造器名：对其 exact false / true 可判定；未知用户构造器名 → boolean */
+const BUILTIN_CTOR_NAMES = new Set([
+  "Array", "Object", "Function", "Date", "RegExp", "Error", "TypeError", "RangeError",
+  "ReferenceError", "SyntaxError", "URIError", "EvalError", "AggregateError",
+  "Map", "Set", "WeakMap", "WeakSet", "Promise", "String", "Number", "Boolean",
+  "Symbol", "ArrayBuffer", "DataView",
+]);
 
 export function instanceOf(
   left: Abs,
@@ -196,6 +204,7 @@ export function instanceOf(
     term: { op: "lit", value: v },
     conf: "exact",
   });
+  const partial = (): Abs => ({ shape: { k: "prim", type: "boolean" }, conf: "partial" });
   switch (left.shape.k) {
     case "brand": {
       if (rightClassName === "Object") return t(true);
@@ -203,17 +212,29 @@ export function instanceOf(
     }
     case "arr":
     case "tuple":
-      return t(rightClassName === "Array" || rightClassName === "Object");
+      if (rightClassName === "Array" || rightClassName === "Object") return t(true);
+      if (BUILTIN_CTOR_NAMES.has(rightClassName)) return t(false);
+      return partial(); // 可能是 Array 子类
     case "obj":
-      return t(rightClassName === "Object");
+      if (rightClassName === "Object") return t(true);
+      if (BUILTIN_CTOR_NAMES.has(rightClassName)) return t(false);
+      return partial();
     case "fn":
-      return t(rightClassName === "Function" || rightClassName === "Object");
+      if (rightClassName === "Function" || rightClassName === "Object") return t(true);
+      if (BUILTIN_CTOR_NAMES.has(rightClassName)) return t(false);
+      return partial();
     case "eff":
-      return t(
-        (left.shape.eff === "promise" &&
-          (rightClassName === "Promise" || rightClassName === "Object")) ||
-          (left.shape.eff === "generator" && rightClassName === "Object"),
-      );
+      if (left.shape.eff === "promise") {
+        if (rightClassName === "Promise" || rightClassName === "Object") return t(true);
+        if (BUILTIN_CTOR_NAMES.has(rightClassName)) return t(false);
+        return partial();
+      }
+      if (left.shape.eff === "generator") {
+        if (rightClassName === "Generator" || rightClassName === "Object") return t(true);
+        if (BUILTIN_CTOR_NAMES.has(rightClassName)) return t(false);
+        return partial();
+      }
+      return partial();
     case "prim":
       return t(false); // 原始值无装箱
     case "sum": {

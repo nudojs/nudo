@@ -358,7 +358,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -1900,6 +1900,7 @@ function transpileClass(
   const staticMethodParts: string[] = [];
   const staticFieldParts: string[] = [];
   const accessorDefs = new Map<string, { get?: string; set?: string }>();
+  const staticAccessorDefs = new Map<string, { get?: string; set?: string }>();
 
   const paramsOf = (m: { params?: unknown[] }): string[] =>
     (m.params ?? []).map((p) => {
@@ -1935,6 +1936,26 @@ function transpileClass(
           : undefined) ?? "method";
     const params = paramsOf(m);
     const paramList = params.filter((p) => p !== "_").join(", ");
+    // get/set 访问器：实例进 spec.accessors，静态进 spec.staticAccessors
+    if (m.kind === "get" || m.kind === "set") {
+      const accBodyOpts: TranspileOptions = { ...opts, inLoop: 0, inTry: 0, thisParam: "__this" };
+      const accBodyStmts =
+        m.body?.type === "BlockStatement"
+          ? (m.body.body as Statement[])
+              .map((s) => transpileStatement(s, depth + 3, accBodyOpts))
+              .join("\n")
+          : "";
+      const target = m.static ? staticAccessorDefs : accessorDefs;
+      const def = target.get(mname) ?? {};
+      if (m.kind === "get") {
+        def.get = `(__this) => {\n${accBodyStmts}\n${indent(depth + 3)}}`;
+      } else {
+        const vname = params.length > 0 && params[0] !== "_" ? params[0]! : "__v";
+        def.set = `(__this, ${vname}) => {\n${accBodyStmts}\n${indent(depth + 4)}return __this;\n${indent(depth + 3)}}`;
+      }
+      target.set(mname, def);
+      continue;
+    }
     const bodyStmts =
       m.body?.type === "BlockStatement"
         ? (m.body.body as Statement[])
@@ -1947,19 +1968,6 @@ function transpileClass(
         bodyStmts,
         `${indent(depth + 3)}},`,
       );
-      continue;
-    }
-    // get/set 访问器：进 spec.accessors（$get/$set 在 brand 上沿继承链派发）
-    if (m.kind === "get" || m.kind === "set") {
-      const def = accessorDefs.get(mname) ?? {};
-      if (m.kind === "get") {
-        def.get = `(__this) => {\n${bodyStmts}\n${indent(depth + 3)}}`;
-      } else {
-        // setter：值参数 v；副作用落在 this 上，返回更新后的 thisVal
-        const vname = params.length > 0 && params[0] !== "_" ? params[0]! : "__v";
-        def.set = `(__this, ${vname}) => {\n${bodyStmts}\n${indent(depth + 4)}return __this;\n${indent(depth + 3)}}`;
-      }
-      accessorDefs.set(mname, def);
       continue;
     }
     if (m.kind === "constructor" || mname === "constructor") {
@@ -2020,9 +2028,24 @@ function transpileClass(
       `${indent(depth + 2)}},`,
     );
   }
+  if (staticAccessorDefs.size > 0) {
+    const accParts: string[] = [];
+    for (const [k, def] of staticAccessorDefs) {
+      const members: string[] = [];
+      if (def.get) members.push(`${indent(depth + 4)}get: ${def.get},`);
+      if (def.set) members.push(`${indent(depth + 4)}set: ${def.set},`);
+      accParts.push(`${indent(depth + 3)}${JSON.stringify(k)}: {`, ...members, `${indent(depth + 3)}},`);
+    }
+    specLines.push(
+      `${indent(depth + 2)}staticAccessors: {`,
+      ...accParts,
+      `${indent(depth + 2)}},`,
+    );
+  }
 
   return [
-    `${pad}const ${name} = $class(${JSON.stringify(name)}, {`,
+    // let：静态成员写 A.x = v 经 $set 不可变更新后需重绑类绑定
+    `${pad}let ${name} = $class(${JSON.stringify(name)}, {`,
     ...specLines,
     `${pad}});`,
   ].join("\n");
@@ -2073,6 +2096,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return `$lit(${String((expr as { value: bigint }).value)}n)`;
     case "NullLiteral":
       return `$lit(null)`;
+    case "ClassExpression":
+      // 类表达式值是构造器；类体未建模时给 fn 形状，不得折精确 undefined
+      return `$classExpr()`;
     case "Identifier":
       if (expr.name === "undefined") return "$lit(undefined)";
       return expr.name;
@@ -2151,7 +2177,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         if (expr.right.type === "Identifier") {
           return `$instanceof(${l}, ${JSON.stringify(expr.right.name)})`;
         }
-        return `/* instanceof non-ident */ $lit(undefined)`;
+        // 非标识符右操作数（表达式/成员路径）：构造器值未知 → 抽象 boolean
+        return `$instanceofNonIdent(${l})`;
       }
       const fn = BIN_OPS[expr.operator];
       if (!fn) return `/* unsupported ${expr.operator} */ $lit(undefined)`;

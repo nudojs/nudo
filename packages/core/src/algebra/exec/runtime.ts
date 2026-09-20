@@ -38,8 +38,8 @@ import {
   noteNullishMemberThrows,
   anyMemberResult,
 } from "./calls.ts";
-import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, type MayThrowEffect } from "./may-throw.ts";
-import { getBClass } from "./class-registry.ts";
+import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, recordMayThrow, type MayThrowEffect } from "./may-throw.ts";
+import { getBClass, classNameOfValue, markClassValue } from "./class-registry.ts";
 
 /** 当前路径前提 Φ（transpile 后的 fork 会压栈） */
 let phi: Phi = pTrue;
@@ -135,25 +135,51 @@ export function lookupObjAccessor(
   return accessorTable.get(o)?.get(key);
 }
 
-/** 不可变更新产生新 Abs 时迁移侧表（同源副本共享同一访问器集） */
-function migrateAccessors(from: Abs, to: Abs): void {
+/** 不可变更新产生新 Abs 时迁移侧表；omitKey=delete 目标键（对象字面量自有访问器随键删除） */
+function migrateAccessors(from: Abs, to: Abs, omitKey?: string): void {
+  if (to === from) return;
   const m = accessorTable.get(from);
-  if (m && to !== from) accessorTable.set(to, m);
+  if (!m) return;
+  if (omitKey === undefined) {
+    accessorTable.set(to, m);
+    return;
+  }
+  const copy = new Map(m);
+  copy.delete(omitKey);
+  if (copy.size === 0) accessorTable.delete(to);
+  else accessorTable.set(to, copy);
 }
 
-/** 沿继承链找 class get/set 访问器 */
+type ClassAccessor = { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs };
+
+/** 沿继承链找实例 class get/set 访问器 */
 function findClassAccessor(
   startName: string,
   key: string,
-): { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs } | undefined {
+): ClassAccessor | undefined {
   let cur: string | undefined = startName;
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    const spec = getBClass(cur);
-    const acc = spec?.accessors?.[key];
+    const acc = getBClass(cur)?.accessors?.[key];
     if (acc) return acc;
-    cur = spec?.superName;
+    cur = getBClass(cur)?.superName;
+  }
+  return undefined;
+}
+
+/** 静态访问器（挂在类构造器上；继承链上溯） */
+function findStaticClassAccessor(
+  startName: string,
+  key: string,
+): ClassAccessor | undefined {
+  let cur: string | undefined = startName;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const acc = getBClass(cur)?.staticAccessors?.[key];
+    if (acc) return acc;
+    cur = getBClass(cur)?.superName;
   }
   return undefined;
 }
@@ -198,8 +224,9 @@ function canonicalArrayIndex(v: unknown): number | undefined {
 }
 
 /**
- * `key in obj`：闭形状精确判定（含 Object.prototype 名与数组下标/length）；
- * prim/nullish 接收者原生抛 TypeError → unknown；抽象键/开形状 → boolean。
+ * `key in obj`：闭形状精确判定（含 Object.prototype 名、数组下标/length、
+ * class 方法/访问器与内建 brand 方法）；prim/nullish 接收者原生抛 TypeError →
+ * unknown；抽象键/开形状 → boolean。
  */
 export function $in(key: Abs, o: Abs): Abs {
   if (o.shape.k === "sum") {
@@ -237,11 +264,47 @@ export function $in(key: Abs, o: Abs): Abs {
       if (!slot || slot.optional) return bool(); // optional 槽可能缺席
       return boolLit(true);
     }
+    // class 实例：原型链上的方法/访问器/内建 brand 方法
+    if (o.shape.k === "brand" && brandHasProtoMember(o.shape.name, keyStr)) {
+      return boolLit(true);
+    }
     if (objShape.open) return bool();
     return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
   }
-  // fn/eff：无自有数据槽
+  if (o.shape.k === "fn") {
+    return boolLit(OBJECT_PROTO_NAMES.has(keyStr) || FUNCTION_PROTO_NAMES.has(keyStr));
+  }
+  // eff：Promise/Generator 原型方法
+  if (o.shape.k === "eff") {
+    if (o.shape.eff === "promise" && PROMISE_PROTO_NAMES.has(keyStr)) return boolLit(true);
+    return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
+  }
   return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
+}
+
+/** Function.prototype / 函数自有面常见名 */
+const FUNCTION_PROTO_NAMES = new Set(["call", "apply", "bind", "length", "name", "prototype"]);
+const PROMISE_PROTO_NAMES = new Set(["then", "catch", "finally"]);
+
+/** 内建 brand 原型方法名（$in 精确判定用；不必穷尽，未知名仍回落 false/proto） */
+const BUILTIN_BRAND_METHODS: Record<string, ReadonlySet<string>> = {
+  Date: new Set(["getTime", "valueOf", "toISOString", "toString", "getMilliseconds", "getSeconds", "getMinutes", "getHours", "getDate", "getDay", "getMonth", "getFullYear"]),
+  RegExp: new Set(["test", "exec", "toString"]),
+  Map: new Set(["get", "set", "has", "delete", "clear", "forEach", "keys", "values", "entries"]),
+  Set: new Set(["has", "add", "delete", "clear", "forEach", "keys", "values", "entries"]),
+  Error: new Set(["toString"]),
+  Promise: new Set(["then", "catch", "finally"]),
+};
+
+function brandHasProtoMember(brandName: string, key: string): boolean {
+  for (const name of bClassChain(brandName)) {
+    const spec = getBClass(name);
+    if (spec?.methods?.[key]) return true;
+    if (spec?.accessors?.[key]) return true;
+    const builtin = BUILTIN_BRAND_METHODS[name];
+    if (builtin?.has(key)) return true;
+  }
+  return false;
 }
 
 /** 内建错误层级（Error 为根，registry 无 superName 时回退） */
@@ -271,9 +334,17 @@ function bClassChain(name: string): string[] {
   return out;
 }
 
+/** 内建构造器名：对其 exact false / true 可判定；未知用户构造器名 → boolean */
+const BUILTIN_CTOR_NAMES = new Set([
+  "Array", "Object", "Function", "Date", "RegExp", "Error", "TypeError", "RangeError",
+  "ReferenceError", "SyntaxError", "URIError", "EvalError", "AggregateError",
+  "Map", "Set", "WeakMap", "WeakSet", "Promise", "String", "Number", "Boolean",
+  "Symbol", "ArrayBuffer", "DataView",
+]);
+
 /**
  * `x instanceof Right`（Right 为标识符名）：按左值形状精确判定。
- * nullish 左侧原生抛 TypeError → unknown；抽象形状 → boolean。
+ * nullish 左侧原生抛 TypeError → unknown；未知用户构造器名 → boolean（不得 exact false）。
  */
 export function $instanceof(left: Abs, rightName: string): Abs {
   // null/undefined instanceof X：原生抛 TypeError
@@ -285,17 +356,29 @@ export function $instanceof(left: Abs, rightName: string): Abs {
       );
     case "arr":
     case "tuple":
-      return boolLit(rightName === "Array" || rightName === "Object");
+      if (rightName === "Array" || rightName === "Object") return boolLit(true);
+      if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
+      return bool(); // 可能是 Array 子类
     case "obj":
-      return boolLit(rightName === "Object");
+      if (rightName === "Object") return boolLit(true);
+      if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
+      return bool(); // Object.create(C.prototype)
     case "fn":
-      return boolLit(rightName === "Function" || rightName === "Object");
+      if (rightName === "Function" || rightName === "Object") return boolLit(true);
+      if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
+      return bool();
     case "eff":
-      return boolLit(
-        (left.shape.eff === "promise" &&
-          (rightName === "Promise" || rightName === "Object")) ||
-          (left.shape.eff === "generator" && rightName === "Object"),
-      );
+      if (left.shape.eff === "promise") {
+        if (rightName === "Promise" || rightName === "Object") return boolLit(true);
+        if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
+        return bool();
+      }
+      if (left.shape.eff === "generator") {
+        if (rightName === "Generator" || rightName === "Object") return boolLit(true);
+        if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
+        return bool();
+      }
+      return bool();
     case "prim":
       return boolLit(false); // 原始值无装箱
     case "sum": {
@@ -319,6 +402,19 @@ export function $instanceof(left: Abs, rightName: string): Abs {
     default:
       return bool();
   }
+}
+
+/** instanceof 右操作数非标识符（表达式/成员路径）：构造器值未知 → 抽象 boolean */
+export function $instanceofNonIdent(_left: Abs): Abs {
+  return bool();
+}
+
+/** ClassExpression 值：构造器函数形状，不得折成精确 undefined */
+export function $classExpr(): Abs {
+  return absFunction(["_rest"], {
+    body: noBody,
+    apply: () => unknown,
+  });
 }
 
 /**
@@ -373,19 +469,23 @@ export function $del(o: Abs, key: Abs): Abs {
   if (o.shape.k === "brand") {
     const inner = $del(o.shape.shape, key);
     if (inner === o.shape.shape) return o;
-    return abs({ k: "brand", name: o.shape.name, shape: inner }, undefined, undefined, o.conf);
+    const next = abs({ k: "brand", name: o.shape.name, shape: inner }, undefined, undefined, o.conf);
+    const clsName = classNameOfValue(o as object);
+    if (clsName) markClassValue(next as object, clsName);
+    return next;
   }
   const keyStr =
     typeof kv === "number" ? String(kv) : typeof kv === "string" ? kv : undefined;
   if (o.shape.k === "obj" && keyStr !== undefined) {
     if (o.shape.open) return o;
-    if (!(keyStr in o.shape.slots)) return o; // 无此槽：no-op
+    if (!(keyStr in o.shape.slots) && !lookupObjAccessor(o, keyStr)) return o; // 无此槽且无访问器：no-op
     const slots: Record<string, Slot> = {};
     for (const [k, slot] of Object.entries(o.shape.slots)) {
       if (k !== keyStr) slots[k] = slot;
     }
     const next = abs({ k: "obj", slots }, undefined, undefined, o.conf);
-    migrateAccessors(o, next);
+    // 对象字面量自有访问器随 delete 移除（原生 own accessor 是自有属性）
+    migrateAccessors(o, next, keyStr);
     return next;
   }
   if (o.shape.k === "tuple") {
@@ -1511,10 +1611,25 @@ export function $get(
     // JS Map/Set 的 size 是属性不是方法；brand 内层为空 obj，须在 $get 委托
     if (key === "size" && o.shape.name === "Map") return mapSizeAbs(o);
     if (key === "size" && o.shape.name === "Set") return setSizeAbs(o);
-    // get/set 访问器：读时调用 getter；仅 setter 的键读取恒 undefined
-    const acc = findClassAccessor(o.shape.name, key);
-    if (acc) return acc.get ? acc.get(o) : undef();
-    return $get(o.shape.shape, key, opts);
+    const isClassVal = classNameOfValue(o as object) === o.shape.name;
+    const inner = o.shape.shape;
+    // 自有数据属性优先于原型访问器（原生属性查找：own → prototype）
+    if (inner?.shape.k === "obj") {
+      const slot = inner.shape.slots[key];
+      if (slot && !slot.optional) return slot.value;
+    }
+    if (isClassVal) {
+      const sacc = findStaticClassAccessor(o.shape.name, key);
+      if (sacc) return sacc.get ? sacc.get(o) : undef();
+      // 类值上读实例访问器键 → 原生 undefined
+      if (findClassAccessor(o.shape.name, key)) return undef();
+    } else {
+      const acc = findClassAccessor(o.shape.name, key);
+      if (acc) return acc.get ? acc.get(o) : undef();
+      // 实例上读静态访问器键 → 原生 undefined（属性在构造器上）
+      if (findStaticClassAccessor(o.shape.name, key)) return undef();
+    }
+    return $get(inner, key, opts);
   }
   // 数组 length：成员路径（a.length += 1 等复合写）与 a.length 读同源
   if ((o.shape.k === "tuple" || o.shape.k === "arr") && key === "length") {
@@ -1565,18 +1680,36 @@ export function $get(
 /** 成员写：返回新 obj/brand（不可变更新） */
 export function $set(o: Abs, key: string, value: Abs): Abs {
   if (o.shape.k === "brand") {
-    const acc = findClassAccessor(o.shape.name, key);
-    if (acc) {
-      // setter 收到 (thisVal, v) 返回更新后的 thisVal；仅 getter 的槽按 sloppy 静默 no-op
-      return acc.set ? acc.set(o, value) : o;
+    const isClassVal = classNameOfValue(o as object) === o.shape.name;
+    if (isClassVal) {
+      const sacc = findStaticClassAccessor(o.shape.name, key);
+      if (sacc) return sacc.set ? sacc.set(o, value) : o;
+      if (findClassAccessor(o.shape.name, key)) return o;
+    } else {
+      const acc = findClassAccessor(o.shape.name, key);
+      if (acc) {
+        if (acc.set) return acc.set(o, value);
+        // getter-only：class 体在原生是 strict → TypeError；记录 soft may-throw，写不生效
+        recordMayThrow({
+          kind: "TypeError",
+          cause: `property '${key}' has only a getter`,
+          recv: o.shape.name,
+          name: key,
+        });
+        return o;
+      }
     }
     const inner = $set(o.shape.shape, key, value);
-    return abs(
+    const next = abs(
       { k: "brand", name: o.shape.name, shape: inner },
       o.term,
       o.pred,
       confJoin(o.conf, value.conf),
     );
+    // 类 Abs 不可变更新后仍是类值（静态访问器派发依赖身份）
+    const clsName = classNameOfValue(o as object);
+    if (clsName) markClassValue(next as object, clsName);
+    return next;
   }
   // a.length = n：非负整数 < 2^32-1 就地截断/延长（延长槽读 undefined 对齐空洞）；
   // 其余值按 sound 回退：元素与 undefined 取并、长度未知

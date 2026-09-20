@@ -21,21 +21,25 @@ import { implies } from "./pred.ts";
 
 // --- 位运算 / 移位 / 幂 / ToNumber（B-path $bitand 等与 ast-eval 同口径） ---
 
-/** 数值可被 JS ToNumeric/ToNumber 折叠的字面量（null/undefined 亦属 ToNumber 域） */
-function coercibleNumberLit(v: ReturnType<typeof litValue>): v is number | string | boolean | null | undefined {
+/** 数值可被 JS ToNumber/ToNumeric 折叠的字面量；undefined 字面量不在此列（+undefined → unknown/NaN 不折） */
+function coercibleNumberLit(v: ReturnType<typeof litValue>): v is number | string | boolean | null {
   return (
-    v !== undefined &&
-    (typeof v === "number" ||
-      typeof v === "string" ||
-      typeof v === "boolean" ||
-      v === null)
+    typeof v === "number" ||
+    typeof v === "string" ||
+    typeof v === "boolean" ||
+    v === null
   );
+}
+
+function unknownPartial(): Abs {
+  return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
 /**
  * 双字面量二元折叠：双方 bigint → bigint 算子；其余走 number 算子
  * （JS 位运算/移位自身完成 ToInt32/ToUint32&31）。混合 bigint⊗number
- * 原生恒抛 TypeError，不可折叠。不可折叠返回 undefined。
+ * 原生恒抛 TypeError；bigint 上未定义的算子（如 >>>）或抛错（如 2n**-1n）
+ * 一律返回 unknown，不得回落成 bigint 形状。number 侧不可折叠返回 undefined。
  */
 function foldNumericBinOp(
   a: Abs,
@@ -46,7 +50,8 @@ function foldNumericBinOp(
   const va = litValue(a);
   const vb = litValue(b);
   if (typeof va === "bigint" || typeof vb === "bigint") {
-    if (typeof va === "bigint" && typeof vb === "bigint" && bigOp) {
+    if (typeof va === "bigint" && typeof vb === "bigint") {
+      if (!bigOp) return unknownPartial();
       try {
         return abs(
           { k: "prim", type: "bigint" },
@@ -55,10 +60,10 @@ function foldNumericBinOp(
           "exact",
         );
       } catch {
-        return undefined;
+        return unknownPartial();
       }
     }
-    return undefined;
+    return unknownPartial();
   }
   if (coercibleNumberLit(va) && coercibleNumberLit(vb)) {
     return abs(
@@ -79,11 +84,11 @@ function foldNumericUnOp(
 ): Abs | undefined {
   const v = litValue(a);
   if (typeof v === "bigint") {
-    if (!bigOp) return undefined;
+    if (!bigOp) return unknownPartial();
     try {
       return abs({ k: "prim", type: "bigint" }, lit(bigOp(v) as never), pTrue, "exact");
     } catch {
-      return undefined;
+      return unknownPartial();
     }
   }
   if (coercibleNumberLit(v)) {
