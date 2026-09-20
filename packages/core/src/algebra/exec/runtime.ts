@@ -99,6 +99,74 @@ export function $ushr(a: Abs, b: Abs): Abs {
 export function $pow(a: Abs, b: Abs): Abs {
   return powAbs(a, b);
 }
+// --- 访问器（get/set）运行时 ---
+
+/** 对象字面量访问器侧表（Abs 不可存裸 JS 闭包；键为对象 Abs 身份） */
+const accessorTable = new WeakMap<
+  object,
+  Map<string, { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs }>
+>();
+
+/** 注册对象字面量访问器（transpile 调用；返回原 obj 以便链式包裹） */
+export function $objAccessor(
+  o: Abs,
+  key: string,
+  get: ((t: Abs) => Abs) | null,
+  set: ((t: Abs, v: Abs) => Abs) | null,
+): Abs {
+  if (!get && !set) return o;
+  let m = accessorTable.get(o);
+  if (!m) {
+    m = new Map();
+    accessorTable.set(o, m);
+  }
+  const def = m.get(key) ?? {};
+  if (get) def.get = get;
+  if (set) def.set = set;
+  m.set(key, def);
+  return o;
+}
+
+/** 对象字面量访问器查询（供 $get/$set/$spread/Object.assign 共用） */
+export function lookupObjAccessor(
+  o: Abs,
+  key: string,
+): { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs } | undefined {
+  return accessorTable.get(o)?.get(key);
+}
+
+/** 不可变更新产生新 Abs 时迁移侧表（同源副本共享同一访问器集） */
+function migrateAccessors(from: Abs, to: Abs): void {
+  const m = accessorTable.get(from);
+  if (m && to !== from) accessorTable.set(to, m);
+}
+
+/** 沿继承链找 class get/set 访问器 */
+function findClassAccessor(
+  startName: string,
+  key: string,
+): { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs } | undefined {
+  let cur: string | undefined = startName;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const spec = getBClass(cur);
+    const acc = spec?.accessors?.[key];
+    if (acc) return acc;
+    cur = spec?.superName;
+  }
+  return undefined;
+}
+
+/** JS 访问器派发（$get/$set 共用）：obj 走侧表，brand 走 class 注册表 */
+function findAccessor(
+  o: Abs,
+  key: string,
+): { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs } | undefined {
+  if (o.shape.k === "brand") return findClassAccessor(o.shape.name, key);
+  return lookupObjAccessor(o, key);
+}
+
 export function $toNumber(a: Abs): Abs {
   return toNumberAbs(a);
 }
@@ -316,7 +384,9 @@ export function $del(o: Abs, key: Abs): Abs {
     for (const [k, slot] of Object.entries(o.shape.slots)) {
       if (k !== keyStr) slots[k] = slot;
     }
-    return abs({ k: "obj", slots }, undefined, undefined, o.conf);
+    const next = abs({ k: "obj", slots }, undefined, undefined, o.conf);
+    migrateAccessors(o, next);
+    return next;
   }
   if (o.shape.k === "tuple") {
     const idx = canonicalArrayIndex(kv);
@@ -1081,7 +1151,23 @@ export function $obj(slots: Record<string, Abs>): Abs {
 
 /** 对象展开 { ...a, b } */
 export function $spread(a: Abs, b: Abs): Abs {
-  return spreadObj(asAbsVal(a), asAbsVal(b));
+  let bb = asAbsVal(b);
+  // 原生展开会**调用**源对象 getter 并把结果作为数据槽拷入
+  const acc = bb && typeof bb === "object" ? accessorTable.get(bb as object) : undefined;
+  if (acc && bb.shape.k === "obj") {
+    let changed = false;
+    const slots = { ...(bb.shape as ObjShape).slots };
+    for (const [k, fn] of acc) {
+      if (fn.get && slots[k]) {
+        slots[k] = { value: fn.get(bb) };
+        changed = true;
+      }
+    }
+    if (changed) {
+      bb = abs({ k: "obj", slots }, undefined, undefined, bb.conf);
+    }
+  }
+  return spreadObj(asAbsVal(a), bb);
 }
 
 /**
@@ -1311,6 +1397,9 @@ export function $get(
     // JS Map/Set 的 size 是属性不是方法；brand 内层为空 obj，须在 $get 委托
     if (key === "size" && o.shape.name === "Map") return mapSizeAbs(o);
     if (key === "size" && o.shape.name === "Set") return setSizeAbs(o);
+    // get/set 访问器：读时调用 getter；仅 setter 的键读取恒 undefined
+    const acc = findClassAccessor(o.shape.name, key);
+    if (acc) return acc.get ? acc.get(o) : undef();
     return $get(o.shape.shape, key, opts);
   }
   // any / nullish：throws 域（design-cli-semantics §3.3）
@@ -1322,6 +1411,8 @@ export function $get(
     return anyMemberResult();
   }
   if (isObj(o)) {
+    const acc = lookupObjAccessor(o, key);
+    if (acc) return acc.get ? acc.get(o) : undef();
     const slot = (o.shape as ObjShape).slots[key];
     if (slot) {
       // optional 槽在 JS 中可能缺席 → 读到 undefined，不能报 definite presence
@@ -1356,6 +1447,11 @@ export function $get(
 /** 成员写：返回新 obj/brand（不可变更新） */
 export function $set(o: Abs, key: string, value: Abs): Abs {
   if (o.shape.k === "brand") {
+    const acc = findClassAccessor(o.shape.name, key);
+    if (acc) {
+      // setter 收到 (thisVal, v) 返回更新后的 thisVal；仅 getter 的槽按 sloppy 静默 no-op
+      return acc.set ? acc.set(o, value) : o;
+    }
     const inner = $set(o.shape.shape, key, value);
     return abs(
       { k: "brand", name: o.shape.name, shape: inner },
@@ -1365,6 +1461,10 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     );
   }
   if (!isObj(o)) return $obj({ [key]: value });
+  const acc = lookupObjAccessor(o, key);
+  if (acc) {
+    return acc.set ? acc.set(o, value) : o;
+  }
   const shape = o.shape as ObjShape;
   const slots = { ...shape.slots, [key]: { value: asAbsVal(value) } };
   const next = objOf(slots, {
@@ -1372,6 +1472,7 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     open: shape.open,
   });
   next.conf = confJoin(o.conf, value.conf);
+  migrateAccessors(o, next);
   return next;
 }
 

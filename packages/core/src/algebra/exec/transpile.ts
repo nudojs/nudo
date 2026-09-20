@@ -328,7 +328,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $del, $delRes, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $class, $new, $invoke, $invokeSuper, $super, $async, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -1853,6 +1853,7 @@ function transpileClass(
   const methodParts: string[] = [];
   const staticMethodParts: string[] = [];
   const staticFieldParts: string[] = [];
+  const accessorDefs = new Map<string, { get?: string; set?: string }>();
 
   const paramsOf = (m: { params?: unknown[] }): string[] =>
     (m.params ?? []).map((p) => {
@@ -1881,7 +1882,11 @@ function transpileClass(
     }
     if (m.type !== "ClassMethod" && m.type !== "ObjectMethod") continue;
     const mname =
-      m.key?.type === "Identifier" ? m.key.name : m.key?.type === "StringLiteral" ? String(m.key.value) : "method";
+      (m.key?.type === "Identifier"
+        ? m.key.name
+        : m.key?.type === "StringLiteral"
+          ? String(m.key.value)
+          : undefined) ?? "method";
     const params = paramsOf(m);
     const paramList = params.filter((p) => p !== "_").join(", ");
     const bodyStmts =
@@ -1896,6 +1901,19 @@ function transpileClass(
         bodyStmts,
         `${indent(depth + 3)}},`,
       );
+      continue;
+    }
+    // get/set 访问器：进 spec.accessors（$get/$set 在 brand 上沿继承链派发）
+    if (m.kind === "get" || m.kind === "set") {
+      const def = accessorDefs.get(mname) ?? {};
+      if (m.kind === "get") {
+        def.get = `(__this) => {\n${bodyStmts}\n${indent(depth + 3)}}`;
+      } else {
+        // setter：值参数 v；副作用落在 this 上，返回更新后的 thisVal
+        const vname = params.length > 0 && params[0] !== "_" ? params[0]! : "__v";
+        def.set = `(__this, ${vname}) => {\n${bodyStmts}\n${indent(depth + 4)}return __this;\n${indent(depth + 3)}}`;
+      }
+      accessorDefs.set(mname, def);
       continue;
     }
     if (m.kind === "constructor" || mname === "constructor") {
@@ -1941,6 +1959,20 @@ function transpileClass(
   }
   if (methodParts.length) {
     specLines.push(`${indent(depth + 2)}methods: {`, ...methodParts, `${indent(depth + 2)}},`);
+  }
+  if (accessorDefs.size > 0) {
+    const accParts: string[] = [];
+    for (const [k, def] of accessorDefs) {
+      const members: string[] = [];
+      if (def.get) members.push(`${indent(depth + 4)}get: ${def.get},`);
+      if (def.set) members.push(`${indent(depth + 4)}set: ${def.set},`);
+      accParts.push(`${indent(depth + 3)}${JSON.stringify(k)}: {`, ...members, `${indent(depth + 3)}},`);
+    }
+    specLines.push(
+      `${indent(depth + 2)}accessors: {`,
+      ...accParts,
+      `${indent(depth + 2)}},`,
+    );
   }
 
   return [
@@ -2151,6 +2183,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       // 支持 { ...a, b: 1 } → $spread($spread(a, $obj({b:1})), ...)
       let acc: string | null = null;
       const props: string[] = [];
+      const accRegs: Array<{ key: string; get?: string; set?: string }> = [];
       const flushProps = () => {
         if (props.length === 0) return;
         const obj = `$obj({ ${props.join(", ")} })`;
@@ -2180,6 +2213,25 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           );
           // 方法体是新的函数边界：inLoop/inTry 必须归零
           const methodOpts: TranspileOptions = { ...opts, inLoop: 0, inTry: 0, thisParam: "__this" };
+          // get/set 访问器：注册进运行时侧表（$get/$set 派发；展开/assign 时调用）
+          if (prop.kind === "get" || prop.kind === "set") {
+            // 占位槽保键存在性（'x' in o / keys / assign 拷贝目标）；读写在 $get/$set 层派发
+            props.push(`${mkey}: $lit(undefined)`);
+            const bodySrc =
+              prop.body.type === "BlockStatement"
+                ? `{\n${prop.body.body.map((s) => transpileStatement(s, 1, methodOpts)).join("\n")}\n}`
+                : transpileExpression(prop.body as unknown as Expression, methodOpts);
+            if (prop.kind === "get") {
+              accRegs.push({ key: mkey, get: `(__this) => ${bodySrc}` });
+            } else {
+              const vname = paramNames.length > 0 && paramNames[0] !== "_a" ? paramNames[0]! : "__v";
+              accRegs.push({
+                key: mkey,
+                set: `(__this, ${vname}) => {\n${bodySrc}\nreturn __this;\n}`,
+              });
+            }
+            continue;
+          }
           const bodySrc =
             prop.body.type === "BlockStatement"
               ? `{\n${prop.body.body.map((s) => transpileStatement(s, 1, methodOpts)).join("\n")}\n}`
@@ -2236,7 +2288,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         props.push(`${key}: ${valSrc}`);
       }
       flushProps();
-      return acc ?? `$obj({})`;
+      let result = acc ?? `$obj({})`;
+      for (const r of accRegs) {
+        result = `$objAccessor(${result}, ${r.key}, ${r.get ?? "null"}, ${r.set ?? "null"})`;
+      }
+      return result;
     }
     case "MemberExpression":
     case "OptionalMemberExpression": {

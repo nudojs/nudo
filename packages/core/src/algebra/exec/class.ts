@@ -6,7 +6,7 @@
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, strLit } from "../abs.ts";
 import { objOf, joinAbs } from "../objects.ts";
-import { $get, $set, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary } from "./runtime.ts";
+import { $get, $set, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
 import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod } from "../builtins.ts";
@@ -56,6 +56,7 @@ export function $class(
     methods: spec.methods,
     staticMethods: spec.staticMethods,
     statics: spec.statics,
+    accessors: spec.accessors,
   };
   registerBClass(full);
   const slots: Record<string, { value: Abs }> = {};
@@ -255,9 +256,34 @@ function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs | undefi
   return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
 }
 
+/**
+ * Object.assign（B-path 专用，accessor 感知）：与 builtins 的槽位合并对齐，
+ * 但拷贝源访问器时**调用 getter**（原生语义），结果槽存 getter 返回值。
+ */
+function runtimeAssignObject(args: Abs[]): Abs {
+  if (!args.length) return unknown;
+  let acc = args[0]!;
+  for (let i = 1; i < args.length; i++) {
+    acc = asAbsVal(acc);
+    const src = asAbsVal(args[i]!);
+    if (acc.shape.k === "obj" && src.shape.k === "obj") {
+      const base = { ...acc.shape.slots };
+      for (const [k, s] of Object.entries(src.shape.slots)) {
+        const a = lookupObjAccessor(src, k);
+        base[k] = a?.get ? { value: a.get(src) } : s;
+      }
+      acc = objOf(base, {
+        index: acc.shape.index,
+        open: acc.shape.open || src.shape.open,
+      });
+      acc.conf = confJoin(acc.conf, src.conf);
+    }
+  }
+  return acc;
+}
+
 /** 实例方法调用：沿继承链；类 Abs 上回落 staticMethods；obj 上回落属性函数 */
-export function $invoke(
-  thisVal: Abs,
+export function $invoke(  thisVal: Abs,
   method: string,
   args: Abs[],
   loc?: [number, number],
@@ -332,6 +358,9 @@ export function $invoke(
   // 宿主 JS 命名空间对象（Math/Number/JSON…）→ Abs builtin 表
   if (!thisVal || typeof thisVal !== "object" || !("shape" in thisVal)) {
     const ns = namespaceNameOf(thisVal);
+    if (ns === "Object" && method === "assign") {
+      return runtimeAssignObject(args);
+    }
     return (ns ? evalNamespaceCall(ns, method, args) : undefined) ?? unknown;
   }
   // union：只在「声称支持」该方法的成员上派发，再 join（string|Buffer.split

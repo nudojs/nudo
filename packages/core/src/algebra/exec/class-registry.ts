@@ -12,6 +12,8 @@ export type BClassSpec = {
   methods?: Record<string, (thisVal: Abs, ...args: Abs[]) => Abs>;
   staticMethods?: Record<string, (...args: Abs[]) => Abs>;
   statics?: Record<string, Abs>;
+  /** get/set 访问器：get 无参返回 Abs；set 收到 (thisVal, v) 返回更新后的 thisVal */
+  accessors?: Record<string, { get?: (thisVal: Abs) => Abs; set?: (thisVal: Abs, v: Abs) => Abs }>;
 };
 
 const classRegistry = new Map<string, BClassSpec>();
