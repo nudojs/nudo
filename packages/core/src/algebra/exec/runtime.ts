@@ -26,7 +26,7 @@ import {
   mapSizeAbs,
   setSizeAbs,
 } from "../collections.ts";
-import { shouldWidenArrayLiteral, widenedArrayConf } from "../containers.ts";
+import { shouldWidenArrayLiteral, widenedArrayConf, TUPLE_MATERIALIZE_CAP } from "../containers.ts";
 import { leqAbs } from "../leq.ts";
 import { evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants } from "../builtins.ts";
 import type { Phi } from "../pred.ts";
@@ -1544,6 +1544,19 @@ export function $idx(a: Abs, i: Abs): Abs {
   return unknown;
 }
 
+/** 巨下标/巨 length 写入：不物化稀疏段（原生稀疏数组），就地降 arr 形状。
+ *  元素域 = 已知元素 ∪ undefined（hole/延长槽读 undefined）∪ 写入值。 */
+function widenTupleToArr(
+  els: Abs[],
+  holes: number[] | undefined,
+  value: Abs | undefined,
+): { k: "arr"; element: Abs } {
+  let joined: Abs = els.length > 0 ? els.reduce((x, y) => joinAbs(x, y)) : unknown;
+  if (holes && holes.length > 0) joined = joinAbs(joined, undef());
+  if (value !== undefined) joined = joinAbs(joined, value);
+  return { k: "arr", element: joined };
+}
+
 /** 下标写 a[i]=v → 新 tuple（越界写按 JS 语义增长，空洞为 undefined） */
 export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
   const iv = litValue(i);
@@ -1555,6 +1568,20 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
       iv >= a.shape.elements.length
     ) {
       throwStrictWrite(); // 不可扩展：越界写（新下标）TypeError
+    }
+    // i ≥ 2^32-1：非数组下标，原生是 expando 属性（length 不变、`i in a` 可见）。
+    // 数组模型无 expando 槽：就地降 arr（读/keys/in 全保守），不得假精确
+    if (iv >= 4294967295) {
+      a.shape = widenTupleToArr(a.shape.elements, a.shape.holes, value);
+      a.conf = confJoin(a.conf, "path");
+      return a;
+    }
+    // 巨大合法下标：原生 length 增长到 iv+1 的稀疏数组；
+    // 分析不物化巨 tuple（OOM/DoS），就地降 arr
+    if (iv + 1 > TUPLE_MATERIALIZE_CAP) {
+      a.shape = widenTupleToArr(a.shape.elements, a.shape.holes, value);
+      a.conf = confJoin(a.conf, "path");
+      return a;
     }
     const els = [...a.shape.elements];
     const holes = [...(a.shape.holes ?? [])];
@@ -2093,12 +2120,23 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     if (clsName) markClassValue(next as object, clsName);
     return next;
   }
-  // a.length = n：非负整数 < 2^32-1 就地截断/延长（延长槽读 undefined 对齐空洞）；
-  // 其余值按 sound 回退：元素与 undefined 取并、长度未知
+  // a.length = n：合法域是非负整数 ≤ 2^32-1（4294967295），其余原生 RangeError；
+  // 合法且巨大（原生稀疏数组）不物化——就地降 arr（元素 ∪ undefined、长度未知）。
+  // 抽象值按 sound 回退：元素与 undefined 取并、长度未知
   if (o.shape.k === "tuple" && key === "length") {
     if (extStateOf(o) === "frozen") throwStrictWrite();
     const v = litValue(value);
-    if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 4294967295) {
+    if (typeof v === "number") {
+      // 负数/小数/NaN/Infinity/≥2^32：原生 hard RangeError（catch 可吸收）
+      if (!Number.isInteger(v) || v < 0 || v > 4294967295) {
+        throw new NudoThrow(errorTypeAbs("RangeError"));
+      }
+      if (v > TUPLE_MATERIALIZE_CAP) {
+        // 合法但巨大：不物化巨 tuple
+        o.shape = widenTupleToArr(o.shape.elements, o.shape.holes, undefined);
+        o.conf = confJoin(o.conf, "path");
+        return o;
+      }
       const els = o.shape.elements.slice(0, v);
       while (els.length < v) els.push($lit(undefined));
       // 截断过滤 + 延长新增：延长部分（[oldLen, v)）全是 hole
@@ -2122,6 +2160,11 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     return o;
   }
   if (o.shape.k === "arr" && key === "length") {
+    const v = litValue(value);
+    // 抽象数组也是数组：非法 length 字面量同样原生 RangeError
+    if (typeof v === "number" && (!Number.isInteger(v) || v < 0 || v > 4294967295)) {
+      throw new NudoThrow(errorTypeAbs("RangeError"));
+    }
     o.conf = "partial";
     return o;
   }

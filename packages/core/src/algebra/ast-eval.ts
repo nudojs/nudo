@@ -70,7 +70,7 @@ import {
 } from "./surface.ts";
 import { leakIfNeeded, defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { spread, joinAbs, getSlot } from "./objects.ts";
-import { shouldWidenArrayLiteral, widenedArrayConf } from "./containers.ts";
+import { shouldWidenArrayLiteral, widenedArrayConf, TUPLE_MATERIALIZE_CAP } from "./containers.ts";
 import { absFunction, attachFnImpl, getFnImpl } from "./abs-fn.ts";
 import {
   applyCallbackAbs,
@@ -94,6 +94,7 @@ import {
   evalNamespaceCall,
   evalBuiltinNew,
   evalBuiltinInstanceMethod,
+  errorBrandAbs,
 } from "./builtins.ts";
 import { callAbsMethod, getAbsProperty } from "./methods.ts";
 import {
@@ -1069,6 +1070,43 @@ function evalNodeInner(
               undefined,
               undefined,
               prev.conf === "exact" ? "path" : prev.conf,
+            );
+            return { value: rhs, phi, env: withVar(env, root, updated) };
+          }
+          // tuple/arr 的 length 写：与 B-path $set 同口径——
+          // 非法值（负数/小数/NaN/Infinity/≥2^32）原生 hard RangeError；
+          // 合法巨大值不物化（稀疏数组），降 arr 保 sound
+          if (prev && key === "length" && (prev.shape.k === "tuple" || prev.shape.k === "arr")) {
+            const v = litValue(rhs);
+            if (typeof v === "number" && (!Number.isInteger(v) || v < 0 || v > 4294967295)) {
+              // threw 结果：evalTry 把 RangeError brand 绑进 catch 形参
+              return { value: errorBrandAbs("RangeError"), phi, env, threw: true };
+            }
+            if (prev.shape.k === "tuple" && typeof v === "number" && v <= TUPLE_MATERIALIZE_CAP) {
+              const els = prev.shape.elements.slice(0, v);
+              while (els.length < v) els.push(undefAbs());
+              const holes = (prev.shape.holes ?? []).filter((h) => h < v);
+              for (let h = prev.shape.elements.length; h < v; h++) holes.push(h);
+              const updated = abs(
+                { k: "tuple", elements: els, holes: holes.length > 0 ? holes : undefined },
+                undefined,
+                undefined,
+                "path",
+              );
+              return { value: rhs, phi, env: withVar(env, root, updated) };
+            }
+            // 抽象/巨大：元素 ∪ undefined、长度未知（sound 回退）
+            const joined =
+              prev.shape.k === "tuple"
+                ? prev.shape.elements.length > 0
+                  ? prev.shape.elements.reduce((a, b) => joinAbs(a, b))
+                  : unknown
+                : prev.shape.element;
+            const updated = abs(
+              { k: "arr", element: joinAbs(joined, undefAbs()) },
+              undefined,
+              undefined,
+              "path",
             );
             return { value: rhs, phi, env: withVar(env, root, updated) };
           }

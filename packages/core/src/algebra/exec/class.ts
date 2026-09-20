@@ -11,6 +11,7 @@ import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
 import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags } from "../builtins.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin } from "../collections.ts";
+import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
 import {
   applyCallbackAbs,
   asAbs,
@@ -130,7 +131,7 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     if (cls === Array) {
       if (args.length === 1) {
         const n = litValue(args[0]!);
-        if (typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= 4096) {
+        if (typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= TUPLE_MATERIALIZE_CAP) {
           // new Array(n)：全空洞（无自有槽；读值 undefined、in 判定 false）
           const els = Array.from({ length: n }, () => undefAbs());
           const holes = Array.from({ length: n }, (_, i) => i);
