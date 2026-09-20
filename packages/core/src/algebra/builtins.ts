@@ -324,8 +324,12 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
 function foldParseInt(s: string | number, radix: number | undefined): Abs {
   const str = String(s);
   if (radix === undefined) return numLit(parseInt(str));
-  if (!Number.isInteger(radix) || radix < 2 || radix > 36) return numLit(NaN);
-  return numLit(parseInt(str, radix));
+  // 原生对 radix 做 ToInt32 截断：2.9 → 2、NaN → 0；
+  // 截断后为 0 视为「未提供」（0x 前缀生效），越界 → NaN
+  const r = radix | 0;
+  if (r === 0) return numLit(parseInt(str));
+  if (r < 2 || r > 36) return numLit(NaN);
+  return numLit(parseInt(str, r));
 }
 
 /** Number.isInteger / isNaN / parseFloat 等 */
