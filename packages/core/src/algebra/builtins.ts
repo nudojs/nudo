@@ -155,10 +155,14 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
     case "create": {
       // null 原型：空闭对象 + nullProto 标记（in 不回退 Object.prototype）。
       // 对象原型实参的动态继承不建模，保守空闭对象。
+      // 原始值 proto（number/string/bool/bigint/symbol）原生 TypeError → unknown。
       const protoV = a0 ? litValue(a0) : undefined;
       if (protoV === null) return markNullProtoObj(abs({ k: "obj", slots: {} }, undefined, undefined, "exact"));
       if (protoV === undefined) return undefined;
-      return abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+      if (typeof protoV === "object") {
+        return abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+      }
+      return unknown;
     }
     case "keys": {
       if (a0?.shape.k === "obj") {
@@ -191,6 +195,11 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
     case "assign": {
       // Object.assign(a, b) ≈ spread
       if (!args.length) return unknown;
+      // target null/undefined 字面量：原生 TypeError → unknown（假精确 null 的根因）
+      const t0 = args[0];
+      if (t0 && t0.term?.op === "lit" && (t0.term.value === null || t0.term.value === undefined)) {
+        return unknown;
+      }
       let acc = args[0]!;
       for (let i = 1; i < args.length; i++) {
         acc = { ...acc }; // 保持结构；细粒度 spread 在 evalCall 侧
@@ -241,18 +250,52 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
     case "defineProperty": {
       const kv = args[1] ? litValue(args[1]) : undefined;
       if (!a0 || (typeof kv !== "string" && typeof kv !== "number")) return a0;
+      // prim/null 字面量 target：原生 TypeError（Properties can only be defined on Objects）
+      if (a0.term?.op === "lit") return unknown;
       const key = String(kv);
       const descAbs = args[2];
-      if (!descAbs || descAbs.shape.k !== "obj") return a0; // desc 非字面量：保守不动
+      // 缺描述符：原生 TypeError（Property description must be an object）
+      if (!descAbs || descAbs.shape.k !== "obj") return unknown;
       const dslots = descAbs.shape.slots;
+      /**
+       * 描述符字段读取：区分「缺省」「显式 undefined」「字面量值」「函数/抽象」。
+       * litValue 看不到函数字段（term 非 lit），但 get/set 字段存在性决定
+       * 数据/访问器冲突判定，必须读 slot 本身。
+       */
+      const field = (k: string): { present: boolean; v: unknown } => {
+        const s = dslots[k]?.value;
+        if (!s) return { present: false, v: undefined };
+        const lv = litValue(s);
+        if (lv !== undefined) return { present: true, v: lv };
+        if (s.term?.op === "lit" && s.term.value === undefined) return { present: true, v: undefined };
+        return { present: true, v: "fn-or-abstract" };
+      };
+      const getF = field("get");
+      const setF = field("set");
+      const valueF = field("value");
+      // get/set 非函数且非 undefined → TypeError（Getter must be a function）
+      const invalidAccessor = (f: { present: boolean; v: unknown }): boolean =>
+        f.present && f.v !== undefined && f.v !== "fn-or-abstract";
+      if (invalidAccessor(getF) || invalidAccessor(setF)) return unknown;
+      // value 与访问器共存 → TypeError（Invalid property. 'value' present on …）
+      const accessorPresent =
+        (getF.present && getF.v !== undefined) || (setF.present && setF.v !== undefined);
+      if (accessorPresent && valueF.present && valueF.v !== undefined) return unknown;
       const dv = (k: string): unknown => {
         const s = dslots[k]?.value;
         return s ? litValue(s) : undefined;
       };
       const value = dv("value");
-      const writable = dv("writable");
-      const enumerable = dv("enumerable");
-      const configurable = dv("configurable");
+      /** ToBoolean：非 undefined 描述符值按 truthiness（writable: 5 → true）；
+       *  抽象值保守不收紧 */
+      const toBool = (k: string): boolean | undefined => {
+        const f = field(k);
+        if (!f.present || f.v === undefined || f.v === "fn-or-abstract") return undefined;
+        return Boolean(f.v);
+      };
+      const writable = toBool("writable");
+      const enumerable = toBool("enumerable");
+      const configurable = toBool("configurable");
       // 描述符字段语义：**新建属性**未指定字段默认 false；**已有属性**
       // （对象字面量属性默认可写/可枚举/可配置）未指定字段保持原状，
       // 仅显式 false 才收紧。原生对已有 configurable:false 属性改描述符

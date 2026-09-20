@@ -339,6 +339,11 @@ function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs | undefi
  */
 function runtimeAssignObject(args: Abs[]): Abs {
   if (!args.length) return unknown;
+  // target null/undefined 字面量：原生 TypeError（与 builtins 表同口径）
+  const t0 = asAbsVal(args[0]!);
+  if (t0.term?.op === "lit" && (t0.term.value === null || t0.term.value === undefined)) {
+    return unknown;
+  }
   let acc = args[0]!;
   for (let i = 1; i < args.length; i++) {
     acc = asAbsVal(acc);
