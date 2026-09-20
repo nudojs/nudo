@@ -339,11 +339,10 @@ function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs | undefi
  */
 function runtimeAssignObject(args: Abs[]): Abs {
   if (!args.length) return unknown;
-  // target null/undefined 字面量：原生 TypeError（与 builtins 表同口径）
+  // target 字面量：null/undefined → TypeError；prim → 装箱语义未建模。
+  // 两者都不该折出精确值（假精确 null 的根因）
   const t0 = asAbsVal(args[0]!);
-  if (t0.term?.op === "lit" && (t0.term.value === null || t0.term.value === undefined)) {
-    return unknown;
-  }
+  if (t0.term?.op === "lit") return unknown;
   let acc = args[0]!;
   for (let i = 1; i < args.length; i++) {
     acc = asAbsVal(acc);
@@ -419,32 +418,46 @@ export function $invoke(
     };
     if (typeof thisVal === "function") {
       const fn = thisVal as (...a: Abs[]) => Abs;
+      // thisArg（Abs）作为宿主 this 传入；函数体 prologue $rawThis(this) 承接。
+      // 缺 thisArg（call() 无实参）→ 宿主 undefined ≡ strict this undefined。
       if (method === "call") {
-        return callAtFunctionBoundary(() => fn(...args.slice(1)));
+        return callAtFunctionBoundary(() => fn.apply(args[0] as never, args.slice(1)));
       }
       if (method === "apply") {
-        return callAtFunctionBoundary(() => fn(...expandApplyArgs(args[1])));
+        return callAtFunctionBoundary(() => fn.apply(args[0] as never, expandApplyArgs(args[1])));
       }
+      const boundThis = args[0];
       const bound = args.slice(1);
       return absFunction(boundFnParams(thisVal, bound.length), {
         apply: (callArgs) =>
-          callAtFunctionBoundary(() => fn(...bound, ...callArgs)),
+          callAtFunctionBoundary(() => fn.apply(boundThis as never, [...bound, ...callArgs])),
       });
     }
     if (thisVal && typeof thisVal === "object" && "shape" in thisVal) {
       const fnImpl = getFnImpl(thisVal);
       const isCallable = thisVal.shape.k === "fn" || fnImpl !== undefined;
       if (isCallable) {
+        // bindThis（对象方法）：thisArg 注入首参；普通 fn：thisVal 经 apply 钩子传入
+        const bindThis = !!fnImpl?.bindThis;
         if (method === "call") {
-          return $call(thisVal, args.slice(1));
+          return bindThis
+            ? $call(thisVal, [args[0] ?? $lit(undefined), ...args.slice(1)])
+            : $call(thisVal, args.slice(1), args[0]);
         }
         if (method === "apply") {
-          return $call(thisVal, expandApplyArgs(args[1]));
+          return bindThis
+            ? $call(thisVal, [args[0] ?? $lit(undefined), ...expandApplyArgs(args[1])])
+            : $call(thisVal, expandApplyArgs(args[1]), args[0]);
         }
+        const boundThis = args[0];
         const bound = args.slice(1);
         return absFunction(boundFnParams(thisVal, bound.length), {
           apply: (callArgs) =>
-            callAtFunctionBoundary(() => $call(thisVal, [...bound, ...callArgs])),
+            callAtFunctionBoundary(() =>
+              bindThis
+                ? $call(thisVal, [boundThis ?? $lit(undefined), ...bound, ...callArgs])
+                : $call(thisVal, [...bound, ...callArgs], boundThis),
+            ),
         });
       }
     }

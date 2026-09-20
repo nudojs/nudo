@@ -22,7 +22,7 @@ export type AbsFnImpl = {
   env?: AstEnv;
   kind?: string;
   /** 调用时直接派发（mock withArgs 等），优先于 body */
-  apply?: (args: Abs[]) => Abs;
+  apply?: (args: Abs[], thisVal?: Abs) => Abs;
   /**
    * 对象方法（ObjectMethod / 方法型 FunctionExpression）：$invoke 时把
    * receiver 作为 apply 的**首参**注入。shape.params 仍是用户可见形参

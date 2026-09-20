@@ -2061,11 +2061,12 @@ export function applyAbsFn(
   env: AstEnv,
   phi: Phi,
   budget: LeakBudget,
+  thisVal?: Abs,
 ): Abs {
   // 函数 union：对每个 member 按统一顺序求值后 join
   if (fnVal?.shape?.k === "sum") {
     const results = fnVal.shape.members.map((m) =>
-      applyAbsFn(m, args, env, phi, budget),
+      applyAbsFn(m, args, env, phi, budget, thisVal),
     );
     if (results.every((r) => r.shape.k === "unknown")) return unknown;
     return results.reduce((a, b) => joinAbs(a, b));
@@ -2089,7 +2090,7 @@ export function applyAbsFn(
     // B 路径 $fnVal / 泄漏 JS 函数的 apply 可能抛 NudoReturn — 调用边界收成返回值
     if (impl!.apply) {
       try {
-        return impl!.apply(args);
+        return impl!.apply(args, thisVal);
       } catch (e) {
         if (e && typeof e === "object" && (e as { name?: string }).name === "NudoReturn") {
           return (e as { absValue: Abs }).absValue;

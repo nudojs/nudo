@@ -27,6 +27,7 @@ rtAll.isNudoThrow = isNudoThrow;
 rtAll.$isForkExit = $isForkExit;
 rtAll.runWithLoopExits = runWithLoopExits;
 rtAll.takeLoopExits = takeLoopExits;
+rtAll.$call = $call;
 
 export type RunTranspiledOptions = {
   /** 说明符 → 依赖导出（host 模块图或 runTranspiled 产物） */

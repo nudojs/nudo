@@ -621,9 +621,25 @@ export function $fnVal(
 ): Abs {
   return absFunction(params, {
     body: noBody,
-    apply: (args) => callAtFunctionBoundary(() => impl(...args)),
+    // bindThis（对象方法）：receiver 走首参注入，无宿主 this；
+    // 非方法 fn：宿主 this 传递（call/apply/bind 的 thisArg 经 $rawThis 进入函数体）
+    apply: opts?.bindThis
+      ? (args) => callAtFunctionBoundary(() => impl(...args))
+      : (args, thisVal) => callAtFunctionBoundary(() => impl.apply(thisVal as never, args)),
     ...(opts?.bindThis ? { bindThis: true } : {}),
   });
+}
+
+/**
+ * 宿主 this → Abs：函数体 prologue 用它承接 call/apply/bind 传入的 thisArg。
+ * Abs 原样返回；宿主 undefined（普通调用/call 缺 thisArg）→ $lit(undefined)。
+ * B 路径产物是 new Function 拼接（sloppy），裸调用的宿主 this 泄漏为
+ * globalThis——归一到 $lit(undefined)（strict 模块语义下的 this）。
+ */
+export function $rawThis(v: unknown): Abs {
+  if (v === undefined || v === globalThis) return $lit(undefined);
+  if (v && typeof v === "object" && "shape" in (v as object)) return v as Abs;
+  return $lit(v as never);
 }
 
 /** 字面量 → Abs（transpile 侧数字/字符串/布尔/null/undefined） */

@@ -195,11 +195,9 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
     case "assign": {
       // Object.assign(a, b) ≈ spread
       if (!args.length) return unknown;
-      // target null/undefined 字面量：原生 TypeError → unknown（假精确 null 的根因）
+      // target 字面量：null/undefined → TypeError；prim → 装箱语义未建模
       const t0 = args[0];
-      if (t0 && t0.term?.op === "lit" && (t0.term.value === null || t0.term.value === undefined)) {
-        return unknown;
-      }
+      if (t0 && t0.term?.op === "lit") return unknown;
       let acc = args[0]!;
       for (let i = 1; i < args.length; i++) {
         acc = { ...acc }; // 保持结构；细粒度 spread 在 evalCall 侧

@@ -50,6 +50,37 @@ function matchAsOverride(stmt: Node, opts: TranspileOptions): string | null {
   return null;
 }
 
+/**
+ * 函数体是否含 this：B 路径默认把函数声明/表达式转成无宿主 this 的调用，
+ * 只有 body 引用 this 的函数才需要宿主 this 注入（$rawThis）。
+ * 嵌套函数声明/表达式有自己的 this 边界，不下降；箭头函数词法 this 下降。
+ */
+function fnBodyHasThis(fn: { body?: Node | null }): boolean {
+  const body = fn.body;
+  if (!body) return false;
+  const seen = new Set<Node>();
+  const walk = (n: Node): boolean => {
+    if (n.type === "ThisExpression") return true;
+    if (n.type === "FunctionDeclaration" || n.type === "FunctionExpression") return false;
+    if (seen.has(n)) return false;
+    seen.add(n);
+    for (const [k, v] of Object.entries(n)) {
+      if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments") continue;
+      if (Array.isArray(v)) {
+        for (const item of v) {
+          if (item && typeof item === "object" && "type" in (item as object)) {
+            if (walk(item as Node)) return true;
+          }
+        }
+      } else if (v && typeof v === "object" && "type" in (v as object)) {
+        if (walk(v as Node)) return true;
+      }
+    }
+    return false;
+  };
+  return walk(body);
+}
+
 function normWs(s: string): string {
   return s.replace(/\s+/g, "");
 }
@@ -396,7 +427,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit, $rawThis } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -1235,7 +1266,12 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       if (!stmt.id) return `${pad}// <anonymous fn skipped>`;
       // 嵌套函数声明不是 export 面；函数体是新边界，inLoop 必须归零
       const exportKw = depth === 0 ? "export " : "";
-      const fnOpts: TranspileOptions = { ...opts, inLoop: 0 };
+      const hasThis = fnBodyHasThis(stmt as { body?: Node | null });
+      const fnOpts: TranspileOptions = {
+        ...opts,
+        inLoop: 0,
+        ...(hasThis ? { thisParam: "__this" } : {}),
+      };
       const { sig, rest, prologue } = emitParamBinding(
         stmt.params as Node[],
         indent(depth + 2),
@@ -1244,10 +1280,15 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const named = sig;
       const paramsSig = rest ? [...named, `...${rest}`] : named;
       const params = paramsSig.join(", ");
+      const thisPrologue = hasThis
+        ? `${indent(depth + 2)}const __this = $rawThis(this);\n`
+        : "";
       const bodyStmts =
         stmt.body.type === "BlockStatement"
-          ? [...prologue, transpileFnBodyStmts(stmt.body.body, depth + 2, fnOpts)].join("\n")
-          : `${indent(depth + 2)}return ${transpileExpression(stmt.body as unknown as Expression, fnOpts)};`;
+          ? [...prologue, thisPrologue, transpileFnBodyStmts(stmt.body.body, depth + 2, fnOpts)]
+              .filter(Boolean)
+              .join("\n")
+          : `${indent(depth + 2)}${thisPrologue.trim()}return ${transpileExpression(stmt.body as unknown as Expression, fnOpts)};`;
       const restBind = rest
         ? `${indent(depth + 1)}const ${rest} = arguments.length > ${named.length} ? $arr(Array.from(arguments).slice(${named.length})) : $arr([]);\n`
         : "";
@@ -2801,6 +2842,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           : isExpression(callee)
             ? transpileExpression(callee, opts)
             : "/* callee */";
+      // 表达式 callee（add.bind(…)() / IIFE）：结果是 Abs fn，宿主裸调用无效——
+      // 走 $call（Abs 一等函数调用）。Identifier 仍走宿主调用（函数声明/绑定）。
+      if (callee.type !== "Identifier") {
+        return `$call(${c}, [${args}])`;
+      }
       return `${c}(${args})`;
     }
     case "ArrowFunctionExpression":
@@ -2810,29 +2856,49 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         body: Node;
         async?: boolean;
       };
+      const isArrow = expr.type === "ArrowFunctionExpression";
+      // 函数声明/表达式有独立 this；箭头词法继承外层。仅非箭头且 body 含 this
+      // 时注入宿主 this（$rawThis），并用 function 包装替代箭头（宿主 this 动态）
+      const hasThis = !isArrow && fnBodyHasThis(fn);
       const { sig, rest, prologue } = emitParamBinding(fn.params, indent(1), opts);
       // 函数边界：return 不是循环提前返回
-      const fnBodyOpts: TranspileOptions = { ...opts, inLoop: 0 };
+      const fnBodyOpts: TranspileOptions = {
+        ...opts,
+        inLoop: 0,
+        ...(hasThis ? { thisParam: "__this" } : {}),
+      };
       const paramParts = rest ? [...sig, `...${rest}`] : sig;
       // 一等 fn Abs：参数名进 shape（bridge/dts 可展示）；
       // 异步 body 包 $async 保持 eff(promise) 语义（裸 JS async 会泄漏 Promise）。
       const nameList = `[${sig.map((p) => JSON.stringify(p)).join(", ")}]`;
+      const thisPrologue = hasThis ? [`const __this = $rawThis(this);`] : [];
       if (fn.body.type === "BlockStatement") {
-        const inner = [...prologue, transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, fnBodyOpts)].join("\n");
+        const inner = [...prologue, ...thisPrologue, transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, fnBodyOpts)].join("\n");
+        if (hasThis) {
+          const wrap = fn.async
+            ? `function (${paramParts.join(", ")}) { return $async(() => {\n${inner}\n}); }`
+            : `function (${paramParts.join(", ")}) {\n${inner}\n}`;
+          return `$fnVal(${nameList}, ${wrap})`;
+        }
         if (fn.async) {
           return `$fnVal(${nameList}, (${paramParts.join(", ")}) => $async(() => {\n${inner}\n}))`;
         }
         return `$fnVal(${nameList}, (${paramParts.join(", ")}) => {\n${inner}\n})`;
       }
       const bodySrc = transpileExpression(fn.body as Expression, fnBodyOpts);
-      if (prologue.length > 0) {
-        // 表达式体 + 模式参数：提升为块体以容纳解构 prologue
+      if (prologue.length > 0 || hasThis) {
+        // 表达式体 + 模式参数/this 注入：提升为块体以容纳 prologue
         const rebinds = emitArrMutatorRebinds(fn.body as Expression, fnBodyOpts, "  ");
         const inner = [
           ...prologue,
+          ...thisPrologue,
           ...rebinds.map((l) => `  ${l}`),
           `  return ${fn.async ? `$async(() => ${bodySrc})` : bodySrc};`,
         ].join("\n");
+        if (hasThis) {
+          const wrap = `function (${paramParts.join(", ")}) {\n${inner}\n}`;
+          return `$fnVal(${nameList}, ${wrap})`;
+        }
         return `$fnVal(${nameList}, (${paramParts.join(", ")}) => {\n${inner}\n})`;
       }
       // 表达式体：块体包裹跑语句级 rebind pass——`()=>n++` / `()=>a.push(1)`

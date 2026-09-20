@@ -14,6 +14,6 @@ import { applyAbsFn, emptyEnv } from "../ast-eval.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { pTrue } from "../pred.ts";
 
-export function $call(fn: Abs, args: Abs[]): Abs {
-  return applyAbsFn(fn, args, emptyEnv(), pTrue, defaultLeakBudget);
+export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
+  return applyAbsFn(fn, args, emptyEnv(), pTrue, defaultLeakBudget, thisVal);
 }
