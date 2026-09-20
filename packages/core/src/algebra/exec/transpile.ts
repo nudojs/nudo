@@ -2827,8 +2827,23 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       const bodySrc = transpileExpression(fn.body as Expression, fnBodyOpts);
       if (prologue.length > 0) {
         // 表达式体 + 模式参数：提升为块体以容纳解构 prologue
-        const thunk = fn.async ? `$async(() => ${bodySrc})` : bodySrc;
-        return `$fnVal(${nameList}, (${paramParts.join(", ")}) => {\n${prologue.join("\n")}\n  return ${thunk};\n})`;
+        const rebinds = emitArrMutatorRebinds(fn.body as Expression, fnBodyOpts, "  ");
+        const inner = [
+          ...prologue,
+          ...rebinds.map((l) => `  ${l}`),
+          `  return ${fn.async ? `$async(() => ${bodySrc})` : bodySrc};`,
+        ].join("\n");
+        return `$fnVal(${nameList}, (${paramParts.join(", ")}) => {\n${inner}\n})`;
+      }
+      // 表达式体：块体包裹跑语句级 rebind pass——`()=>n++` / `()=>a.push(1)`
+      // 的写回此前静默丢失（表达式上下文无语句级扫描）
+      const rebinds = emitArrMutatorRebinds(fn.body as Expression, fnBodyOpts, "  ");
+      if (rebinds.length > 0) {
+        const inner = [
+          ...rebinds.map((l) => `  ${l}`),
+          `  return ${fn.async ? `$async(() => ${bodySrc})` : bodySrc};`,
+        ].join("\n");
+        return `$fnVal(${nameList}, (${paramParts.join(", ")}) => {\n${inner}\n})`;
       }
       if (fn.async) {
         return `$fnVal(${nameList}, (${paramParts.join(", ")}) => $async(() => ${bodySrc}))`;
