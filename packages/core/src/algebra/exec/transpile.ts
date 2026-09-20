@@ -1531,7 +1531,88 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     }
     case "ForStatement": {
       const initName = extractForInitName(stmt.init);
-      if (!initName) return `${pad}// unsupported for-init; use \`let i = …\``;
+      if (!initName) {
+        // 回退：非 `let i = …` 形态（空 init / 赋值表达式 / 逗号序列）。
+        // 此前整条循环被丢弃（unsupported for-init）——循环体零次执行。
+        // 修复：init 就地求值（副作用写真实绑定），$for 以合成计数器作状态
+        // 线程，test/update/body 闭包读真实绑定；计数器恒前进，不触发
+        // 不动点早停（外部绑定经 pack/unpack 收口）。
+        const initSrc =
+          stmt.init == null
+            ? null
+            : stmt.init.type === "VariableDeclaration"
+              ? transpileStatement(stmt.init as Statement, depth, opts)
+              : `${pad}${transpileExpression(stmt.init as Expression, opts)};`;
+        const testSrc = stmt.test ? transpileExpression(stmt.test, opts) : "$lit(true)";
+        // 步进表达式只取副作用（写真实绑定）；状态线程是合成计数器。
+        // i++/i-- 的后置值语义会丢自增写回（步进闭包内无语句级 rebind pass），
+        // 与主路径同口径：标识符 Update 强制 `name = $add/$sub(name, 1)`。
+        const stepPart = (u: Node): string => {
+          const upd = u as { type?: string; operator?: string; argument?: { type?: string; name?: string }; expressions?: unknown[] };
+          if (upd.type === "UpdateExpression" && upd.argument?.type === "Identifier" && upd.argument.name) {
+            return `${upd.argument.name} = ${upd.operator === "++" ? "$add" : "$sub"}(${upd.argument.name}, $lit(1))`;
+          }
+          if (upd.type === "SequenceExpression") {
+            return (upd.expressions ?? []).map((e) => stepPart(e as Node)).join(", ");
+          }
+          return transpileExpression(u as Expression, opts);
+        };
+        const updateSrc = stmt.update ? stepPart(stmt.update as Node) : null;
+        const forBodyOpts: TranspileOptions = {
+          ...opts,
+          inLoop: (opts.inLoop ?? 0) + 1,
+          loopLabel: undefined, // 标签属于本循环；体 opts 不得传给嵌套循环
+        };
+        const bodyStmts =
+          stmt.body.type === "BlockStatement"
+            ? stmt.body.body
+                .map((s) => transpileStatement(s, depth + 2, forBodyOpts))
+                .join("\n")
+            : transpileStatement(stmt.body, depth + 2, forBodyOpts);
+        const max = opts.maxLoopIters ?? 8;
+        const assigned = new Set<string>();
+        collectAssignedIds(stmt.body, assigned);
+        collectAssignedIds(stmt.test, assigned);
+        collectAssignedIds(stmt.update, assigned);
+        collectArrMutatorReceivers(stmt.body, assigned);
+        const names = [...assigned].filter((n) => n !== "undefined");
+        const packSrc =
+          names.length === 0
+            ? null
+            : `$obj({ ${names.map((n) => `${JSON.stringify(n)}: $copy(${n})`).join(", ")} })`;
+        const unpackSrc =
+          names.length === 0
+            ? null
+            : `(__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }`;
+        const optsSrc = (() => {
+          const extra = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
+          if (!extra) return packSrc && unpackSrc
+            ? `, { pack: () => ${packSrc}, unpack: ${unpackSrc} }`
+            : "";
+          return packSrc && unpackSrc
+            ? `, { pack: () => ${packSrc}, unpack: ${unpackSrc}, ${extra} }`
+            : `, { ${extra} }`;
+        })();
+        const stepSrc = updateSrc
+          ? `(__n) => { ${updateSrc}; return $add(__n, $lit(1)); }`
+          : `(__n) => $add(__n, $lit(1))`;
+        return [
+          initSrc,
+          `${pad}// for (fallback: non-declaration init) → $for (bounded unroll, max=${max})`,
+          `${pad}$for(`,
+          `${indent(depth + 1)}$lit(0),`,
+          `${indent(depth + 1)}(__n) => ${testSrc},`,
+          `${indent(depth + 1)}${stepSrc},`,
+          `${indent(depth + 1)}(__n) => {`,
+          bodyStmts,
+          `${indent(depth + 1)}  return __n;`,
+          `${indent(depth + 1)}},`,
+          `${indent(depth + 1)}${max}${optsSrc}`,
+          `${pad});`,
+        ]
+          .filter((l) => l !== null && l !== "")
+          .join("\n");
+      }
       const initExpr =
         stmt.init && stmt.init.type === "VariableDeclaration" && stmt.init.declarations[0]?.init
           ? transpileExpression(stmt.init.declarations[0].init, opts)
