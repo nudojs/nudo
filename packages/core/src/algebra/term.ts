@@ -9,8 +9,9 @@ export type Term =
 
 export const lit = (value: LiteralValue): Term => ({
   op: "lit",
-  // -0 与 0 在约束语义上等价，统一为 +0
-  value: typeof value === "number" && value === 0 ? 0 : value,
+  // -0 保留：约束语义（===、>、+）与 0 等价（JS 自身），但
+  // 除法/Math.sign/atan2/Object.is 上有可观察差异，折叠必须保真。
+  value,
 });
 export const v = (id: string): Term => ({ op: "var", id });
 export const app = (fn: string, args: Term[]): Term => ({ op: "app", fn, args });

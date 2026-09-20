@@ -4,7 +4,7 @@
  */
 
 import type { Abs } from "./abs.ts";
-import { abs, litValue, numLit, strLit, boolLit, unknown, confJoin } from "./abs.ts";
+import { abs, litValue, numLit, strLit, boolLit, unknown, confJoin, isExactLit } from "./abs.ts";
 import { joinAbs, objOf } from "./objects.ts";
 import {
   collectionElementJoin,
@@ -79,6 +79,11 @@ export function evalMathMethod(name: string, args: Abs[]): Abs | undefined {
     case "sign":
       if (typeof a0 === "number") return numLit(Math.sign(a0));
       return numPrim();
+    case "atan2":
+      if (typeof a0 === "number" && typeof a1 === "number") {
+        return numLit(Math.atan2(a0, a1));
+      }
+      return numPrim();
     default:
       return undefined;
   }
@@ -128,6 +133,15 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         }
       }
       return acc;
+    }
+    case "is": {
+      // SameValue：±0 区分、NaN 自等（与 -0 语义同族入口）
+      const a0 = args[0];
+      const a1 = args[1];
+      if (a0 && a1 && isExactLit(a0) && isExactLit(a1)) {
+        return boolLit(Object.is(a0.term!.value, a1.term!.value));
+      }
+      return boolPrim();
     }
     default:
       return undefined;
