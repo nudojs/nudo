@@ -82,6 +82,63 @@ export function go(x) { return twice(x); }
     expect(litValue(result)).toBe(2);
   });
 
+  it("default export flows through the graph (B-path bridge)", () => {
+    const dir = tmpProject({
+      "inc.js": `export default function(x) { return x + 1; }`,
+      "main.js": `
+import inc from "./inc.js";
+export function go(x) { return inc(inc(x)); }
+`,
+    });
+    const mainSrc = `import inc from "./inc.js";
+export function go(x) { return inc(inc(x)); }
+`;
+    const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
+    expect(modules["./inc.js"]!.default).toBeDefined();
+    const result = analyzeFn(
+      mainSrc,
+      "go",
+      [numLit(0)],
+      undefined,
+      undefined,
+      undefined,
+      modules,
+    );
+    expect(litValue(result)).toBe(2);
+  });
+
+  it("barrel re-exports (export * + default re-export) resolve", () => {
+    const dir = tmpProject({
+      "base.js": `export function inc(x) { return x + 1; }
+export default function dec(x) { return x - 1; }`,
+      "barrel.js": `export * from "./base.js";
+export { default } from "./base.js";`,
+      "main.js": `
+import { inc } from "./barrel.js";
+import dec from "./barrel.js";
+export function go(x) { return inc(dec(x)); }
+`,
+    });
+    const mainSrc = `import { inc } from "./barrel.js";
+import dec from "./barrel.js";
+export function go(x) { return inc(dec(x)); }
+`;
+    const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
+    expect(modules["./barrel.js"]!.named.inc).toBeDefined();
+    expect(modules["./barrel.js"]!.default).toBeDefined();
+    const result = analyzeFn(
+      mainSrc,
+      "go",
+      [numLit(5)],
+      undefined,
+      undefined,
+      undefined,
+      modules,
+    );
+    // dec(5)=4, inc(4)=5
+    expect(litValue(result)).toBe(5);
+  });
+
   it("cycle does not hang", () => {
     const dir = tmpProject({
       "a.js": `

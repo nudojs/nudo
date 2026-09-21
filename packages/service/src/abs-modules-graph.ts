@@ -10,6 +10,9 @@ import {
   evalProgramAbs,
   collectAbsExports,
   absFunction,
+  runTranspiled,
+  callTranspiledExportFull,
+  unknown,
   type Abs,
   type AbsModuleExports,
   type AstEnv,
@@ -197,6 +200,95 @@ function moduleLabel(p: string): string {
   return parts[parts.length - 1] || p;
 }
 
+function isAbsVal(v: unknown): v is Abs {
+  return !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);
+}
+
+type ParamNodeLike = {
+  type?: string;
+  name?: string;
+  argument?: { type?: string; name?: string };
+};
+
+function paramNameOf(p: ParamNodeLike, i: number): string {
+  if (p.type === "Identifier" && p.name) return p.name;
+  if (p.type === "RestElement" && p.argument?.type === "Identifier" && p.argument.name) {
+    return `...${p.argument.name}`;
+  }
+  return `arg${i}`;
+}
+
+/**
+ * 顶层函数声明/导出的形参表（B-path JS 函数 → Abs fn 桥接用）：
+ * key 为「导出名」——named 用声明名、default 用 "default"。
+ */
+function topLevelFnParams(file: Node): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  const body = ((file as { program?: { body?: unknown[] } }).program?.body ?? []) as Array<{
+    type?: string;
+    id?: { name: string } | null;
+    params?: ParamNodeLike[];
+    declaration?: { type?: string; id?: { name: string } | null; params?: ParamNodeLike[] } | null;
+  }>;
+  for (const stmt of body) {
+    if (stmt.type === "FunctionDeclaration" && stmt.id && stmt.params) {
+      out.set(stmt.id.name, stmt.params.map(paramNameOf));
+    }
+    if (stmt.type === "ExportDefaultDeclaration") {
+      const d = stmt.declaration as
+        | { type?: string; id?: { name: string } | null; params?: ParamNodeLike[] }
+        | null;
+      if (d && (d.type === "FunctionDeclaration" || d.type === "ArrowFunctionExpression") && d.params) {
+        out.set("default", d.params.map(paramNameOf));
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * B-path 执行产出的导出表 → AbsModuleExports。
+ * run 表的键 = 导出名（P1-a：specifier/re-export/star/default 全量收进
+ * __nudoExport 动态表）；JS 函数经 absFunction(apply) 桥接成 Abs fn——
+ * apply 优先于 body 派发（callFunctionUnchecked 第三路径），跨边界调用
+ * 由 callTranspiledExportFull 回进 B-path 函数执行。
+ */
+function bPathExportsToModuleExports(
+  run: Record<string, unknown>,
+  file: Node,
+  fingerprintPrefix: string,
+): AbsModuleExports {
+  const named: Record<string, Abs> = {};
+  let def: Abs | undefined;
+  const paramTable = topLevelFnParams(file);
+  for (const [k, v] of Object.entries(run)) {
+    if (v === undefined || v === null) continue;
+    let absVal: Abs;
+    if (isAbsVal(v)) {
+      absVal = v;
+    } else if (typeof v === "function") {
+      const params =
+        paramTable.get(k) ??
+        Array.from({ length: (v as { length?: number }).length ?? 0 }, (_, i) => `arg${i}`);
+      absVal = absFunction(params, {
+        apply: (args: Abs[]) => callTranspiledExportFull(run, k, args).result,
+        kind: "bpath-export",
+        // 无 body 的桥接 fn 预算键 = fingerprint ?? anon#N——缺省会让所有
+        // 桥接导出共享 anon#1，嵌套跨模块调用（a 调 b 调 a'）撞
+        // _activeCallKeys 递归守卫被误截断为 opaque。按 模块#导出 唯一化。
+        fingerprint: `${fingerprintPrefix}#${k}`,
+      });
+    } else {
+      absVal = unknown;
+    }
+    if (k === "default") def = absVal;
+    else named[k] = absVal;
+  }
+  const out: AbsModuleExports = { named };
+  if (def) out.default = def;
+  return out;
+}
+
 /**
  * 递归求值相对依赖 + 裸包 harvest，产出入口可用的 modules 表。
  * 循环依赖：先放空表再回填（与 TypeValue 路径 partial 口径一致），
@@ -297,10 +389,19 @@ export function evalAbsModuleGraph(
     let exports: AbsModuleExports;
     try {
       const file = parse(source);
-      const { env } = evalProgramAbs(source, { file, modules });
-      exports = collectAbsExports(file, env, modules);
+      // P1：B-path 优先——转译执行收集导出（specifier/re-export/star/default
+      // 全量进 __nudoExport 动态表）；失败回落 Abs 解释路径（保持既有
+      // 覆盖面：顶层 this 等 B 不可托管源仍产出导出）。
+      const run = runTranspiled(source, { mode: "analyze", modules });
+      exports = bPathExportsToModuleExports(run, file, `bpath:${absPath}`);
     } catch {
-      exports = { named: {} };
+      try {
+        const file = parse(source);
+        const { env } = evalProgramAbs(source, { file, modules });
+        exports = collectAbsExports(file, env, modules);
+      } catch {
+        exports = { named: {} };
+      }
     } finally {
       loading.pop();
     }
