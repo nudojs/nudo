@@ -160,16 +160,25 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
     case "create": {
       // null 原型：空闭对象 + nullProto 标记（in 不回退 Object.prototype）。
       // 对象原型实参的动态继承不建模，保守空闭对象。
-      // 原始值 proto（number/string/bool/bigint/symbol）原生 TypeError → unknown。
-      const protoV = a0 ? litValue(a0) : undefined;
+      // create()/create(undefined)/prim 字面量 proto：原生 TypeError 硬抛
+      if (a0 === undefined || (a0.term?.op === "lit" && a0.term.value === undefined)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      const protoV = litValue(a0);
       if (protoV === null) return markNullProtoObj(abs({ k: "obj", slots: {} }, undefined, undefined, "exact"));
-      if (protoV === undefined) return undefined;
       if (typeof protoV === "object") {
         return abs({ k: "obj", slots: {} }, undefined, undefined, "path");
       }
-      return unknown;
+      if (a0.term?.op === "lit") {
+        // number/string/bool/bigint/symbol 字面量 proto：原生 TypeError
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      return undefined; // 抽象实参保守
     }
     case "keys": {
+      if (a0 && a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
       if (a0?.shape.k === "obj") {
         const keys = enumKeys(
           (a0.shape as { slots: Record<string, unknown> }).slots,
@@ -177,32 +186,138 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         ).map((k) => strLit(k));
         return abs({ k: "tuple", elements: keys }, undefined, undefined, "exact");
       }
+      if (a0?.shape.k === "tuple") {
+        // 数组：索引键（hole 槽无键）
+        const holes = (a0.shape as { holes?: number[] }).holes ?? [];
+        const keys = a0.shape.elements
+          .map((_, i) => i)
+          .filter((i) => !holes.includes(i))
+          .map((i) => strLit(String(i)));
+        return abs({ k: "tuple", elements: keys }, undefined, undefined, "exact");
+      }
+      if (a0?.term?.op === "lit" && typeof a0.term.value === "string") {
+        // 字符串装箱：code unit 索引键
+        const s = a0.term.value;
+        return abs(
+          { k: "tuple", elements: Array.from({ length: s.length }, (_, i) => strLit(String(i))) },
+          undefined,
+          undefined,
+          "exact",
+        );
+      }
+      if (a0?.term?.op === "lit" && typeof a0.term.value === "number") {
+        return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
+      }
       return abs({ k: "arr", element: strPrim("path") }, undefined, undefined, "partial");
     }
     case "values": {
+      if (a0 && a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
       if (a0?.shape.k === "obj") {
         const slots = (a0.shape as { slots: Record<string, { value: Abs }> }).slots;
         const vals = enumKeys(slots, a0).map((k) => slots[k]!.value);
         return abs({ k: "tuple", elements: vals }, undefined, undefined, "exact");
       }
+      if (a0?.shape.k === "tuple") {
+        const holes = (a0.shape as { holes?: number[] }).holes ?? [];
+        return abs(
+          {
+            k: "tuple",
+            elements: a0.shape.elements.filter((_, i) => !holes.includes(i)),
+          },
+          undefined,
+          undefined,
+          a0.conf,
+        );
+      }
+      if (a0?.term?.op === "lit" && typeof a0.term.value === "string") {
+        return abs(
+          { k: "tuple", elements: Array.from(a0.term.value, (c) => strLit(c)) },
+          undefined,
+          undefined,
+          "exact",
+        );
+      }
+      if (a0?.term?.op === "lit" && typeof a0.term.value === "number") {
+        return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
+      }
       return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
     }
     case "entries": {
+      if (a0 && a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
       if (a0?.shape.k === "obj") {
         const slots = (a0.shape as { slots: Record<string, { value: Abs }> }).slots;
         const entries = enumKeys(slots, a0).map((k) =>
-          abs({ k: "tuple", elements: [strPrim("exact"), slots[k]!.value] }, undefined, undefined, "exact"),
+          abs({ k: "tuple", elements: [strLit(k), slots[k]!.value] }, undefined, undefined, "exact"),
         );
         return abs({ k: "tuple", elements: entries }, undefined, undefined, "exact");
       }
+      if (a0?.shape.k === "tuple") {
+        const holes = (a0.shape as { holes?: number[] }).holes ?? [];
+        const entries = a0.shape.elements
+          .map((el, i) => ({ el, i }))
+          .filter(({ i }) => !holes.includes(i))
+          .map(({ el, i }) =>
+            abs({ k: "tuple", elements: [strLit(String(i)), el] }, undefined, undefined, "exact"),
+          );
+        return abs({ k: "tuple", elements: entries }, undefined, undefined, "exact");
+      }
+      if (a0?.term?.op === "lit" && typeof a0.term.value === "string") {
+        return abs(
+          {
+            k: "tuple",
+            elements: Array.from(a0.term.value, (c, i) =>
+              abs({ k: "tuple", elements: [strLit(String(i)), strLit(c)] }, undefined, undefined, "exact"),
+            ),
+          },
+          undefined,
+          undefined,
+          "exact",
+        );
+      }
+      if (a0?.term?.op === "lit" && typeof a0.term.value === "number") {
+        return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
+      }
       return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
+    }
+    case "hasOwn": {
+      if (!a0) return boolPrim();
+      if (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      const key = args[1] ? litValue(args[1]) : undefined;
+      if (typeof key !== "string") return boolPrim();
+      if (a0.shape.k === "obj") {
+        const shape = a0.shape as { slots: Record<string, unknown>; open?: boolean };
+        if (Object.prototype.hasOwnProperty.call(shape.slots, key)) return boolLit(true);
+        // 闭 exact 对象确定无槽 → false；open/非 exact conf → 保守
+        if (!shape.open && a0.conf === "exact") return boolLit(false);
+        return boolPrim();
+      }
+      return boolPrim();
+    }
+    case "getPrototypeOf": {
+      if (!a0) return unknown;
+      if (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      // 具体 prototype 对象建模成本高——值域保守 unknown，仅 nullish 硬抛
+      return unknown;
     }
     case "assign": {
       // Object.assign(a, b) ≈ spread
       if (!args.length) return unknown;
-      // target 字面量：null/undefined → TypeError；prim → 装箱语义未建模
+      // target 字面量：null/undefined → TypeError 硬抛；prim → 装箱语义未建模
       const t0 = args[0];
-      if (t0 && t0.term?.op === "lit") return unknown;
+      if (t0 && t0.term?.op === "lit") {
+        if (t0.term.value === null || t0.term.value === undefined) {
+          throw new NudoThrow(errorTypeAbs("TypeError"));
+        }
+        return unknown;
+      }
       let acc = args[0]!;
       for (let i = 1; i < args.length; i++) {
         acc = { ...acc }; // 保持结构；细粒度 spread 在 evalCall 侧
@@ -299,8 +414,9 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
     case "defineProperty": {
       const kv = args[1] ? litValue(args[1]) : undefined;
       if (!a0 || (typeof kv !== "string" && typeof kv !== "number")) return a0;
-      // prim/null 字面量 target：原生 TypeError（Properties can only be defined on Objects）
-      if (a0.term?.op === "lit") return unknown;
+      // prim/null 字面量 target：原生 TypeError 硬抛（Properties can only be
+      // defined on Objects）
+      if (a0.term?.op === "lit") throw new NudoThrow(errorTypeAbs("TypeError"));
       const key = String(kv);
       const descAbs = args[2];
       // 缺描述符：原生 TypeError（Property description must be an object）

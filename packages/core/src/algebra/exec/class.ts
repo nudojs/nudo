@@ -379,10 +379,15 @@ function throwStrictAssign(): never {
 
 function runtimeAssignObject(args: Abs[]): Abs {
   if (!args.length) return unknown;
-  // target 字面量：null/undefined → TypeError；prim → 装箱语义未建模。
+  // target 字面量：null/undefined → TypeError 硬抛；prim → 装箱语义未建模。
   // 两者都不该折出精确值（假精确 null 的根因）
   const t0 = asAbsVal(args[0]!);
-  if (t0.term?.op === "lit") return unknown;
+  if (t0.term?.op === "lit") {
+    if (t0.term.value === null || t0.term.value === undefined) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    return unknown;
+  }
   let acc = args[0]!;
   for (let i = 1; i < args.length; i++) {
     acc = asAbsVal(acc);
@@ -635,18 +640,19 @@ export function $invoke(
       method === "toExponential" ||
       method === "toPrecision"
     ) {
+      const nv = litValue(thisVal);
+      if (typeof nv !== "number") return strPrim("path");
       const argAbs = args[0];
-      if (argAbs !== undefined && argAbs.term?.op !== "lit") return unknown;
+      if (argAbs !== undefined && argAbs.term?.op !== "lit") return strPrim("path");
       const av = argAbs === undefined ? undefined : litValue(argAbs);
       try {
         return strLit((nv as never)[method](av as never));
       } catch (e) {
         if (e instanceof TypeError) throw new NudoThrow(errorTypeAbs("TypeError"));
         if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
-        return unknown;
+        return strPrim("path");
       }
     }
-    return unknown;
   }
   // 数组/元组方法（与 ast-eval 口径对齐）
   if (thisVal.shape.k === "arr" || thisVal.shape.k === "tuple") {
