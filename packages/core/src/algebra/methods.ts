@@ -265,8 +265,25 @@ export function callAbsMethod(
     }
     case "padStart":
     case "padEnd":
-    case "repeat":
-      return strPrim("path");
+    case "repeat": {
+      if (lit === undefined) return strPrim("path");
+      // 任一实参抽象（term 非 lit）→ 保守；缺省 fill=" "
+      const a0Abs = args[0];
+      const a1Abs = args[1];
+      if (a0Abs !== undefined && a0Abs.term?.op !== "lit") return strPrim("path");
+      if (a1Abs !== undefined && a1Abs.term?.op !== "lit") return strPrim("path");
+      const a0 = a0Abs === undefined ? undefined : litValue(a0Abs);
+      const a1 = a1Abs === undefined ? " " : litValue(a1Abs);
+      try {
+        return strLit((lit as never)[name](a0 as never, a1 as never));
+      } catch (e) {
+        // repeat 负/Infinity → RangeError；符号实参（ToIntegerOrInfinity/
+        // ToLength 抛）→ TypeError。硬抛，catch 经 $catchVal 吸收
+        if (e instanceof TypeError) throw new NudoThrow(errorTypeAbs("TypeError"));
+        if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
+        return strPrim("path");
+      }
+    }
   }
   return undefined;
 }
