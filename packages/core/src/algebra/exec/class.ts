@@ -10,7 +10,7 @@ import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, 
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
 import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags } from "../builtins.ts";
-import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin } from "../collections.ts";
+import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid } from "../collections.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
 import {
   applyCallbackAbs,
@@ -159,8 +159,19 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
       return errorBrandAbs(clsName, args);
     }
     // C1.1 / C1.2：Map / Set 条目表（按 ctor 名比对，避开 TS 全局接口无交集）
-    if (clsName === "Map") return makeMapAbs(args[0]);
-    if (clsName === "Set") return makeSetAbs(args[0]);
+    // 确定非法实参（非可迭代字面量 / Map prim 条目）→ 原生 TypeError hard throw
+    if (clsName === "Map") {
+      if (ctorArgDefinitelyInvalid("Map", args[0])) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      return makeMapAbs(args[0]);
+    }
+    if (clsName === "Set") {
+      if (ctorArgDefinitelyInvalid("Set", args[0])) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      return makeSetAbs(args[0]);
+    }
     const shape = objOf({});
     return abs({ k: "brand", name: clsName, shape }, undefined, undefined, "path");
   }

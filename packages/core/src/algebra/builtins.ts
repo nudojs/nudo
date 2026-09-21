@@ -24,6 +24,7 @@ import {
   setSizeAbs,
   setElementsAbs,
   mapEntriesAbs,
+  ctorArgDefinitelyInvalid,
 } from "./collections.ts";
 import { applyCallbackValue, undefAbs } from "./hof.ts";
 import { pTrue } from "./pred.ts";
@@ -783,10 +784,13 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
     case "Promise":
       return evalPromiseCtor(args);
     case "Map":
-      // C1.1：可选 entry 元组列表填充字面量映射
+      // C1.1：可选 entry 元组列表填充字面量映射；
+      // 确定非法实参（prim 条目/非可迭代）→ THROW 域折 unknown（ast-eval 口径）
+      if (ctorArgDefinitelyInvalid("Map", args[0])) return unknown;
       return makeMapAbs(args[0]);
     case "Set":
       // C1.2：从 iterable 填充元素联合
+      if (ctorArgDefinitelyInvalid("Set", args[0])) return unknown;
       return makeSetAbs(args[0]);
     default:
       // C2.2：Error 家族 → name/message 槽

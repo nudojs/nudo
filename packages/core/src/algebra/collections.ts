@@ -5,7 +5,7 @@
  */
 
 import type { Abs } from "./abs.ts";
-import { abs, litValue, unknown, confJoin } from "./abs.ts";
+import { abs, litValue, unknown, confJoin, strLit } from "./abs.ts";
 import { objOf, joinAbs } from "./objects.ts";
 
 type LitKey = string | number | boolean | null | undefined;
@@ -269,7 +269,7 @@ export function isSetAbs(a: Abs | undefined): boolean {
   return !!a && a.shape.k === "brand" && a.shape.name === "Set";
 }
 
-/** 从可迭代 Abs 填充元素（tuple/arr）；其它形态忽略 */
+/** 从可迭代 Abs 填充元素（tuple/arr/string/Set/Map）；其它形态忽略 */
 function elementsFrom(iterable: Abs | undefined): Abs[] {
   if (!iterable) return [];
   if (iterable.shape.k === "tuple") return [...iterable.shape.elements];
@@ -280,7 +280,50 @@ function elementsFrom(iterable: Abs | undefined): Abs[] {
   if (iterable.shape.k === "sum") {
     return iterable.shape.members.flatMap(elementsFrom);
   }
+  // 字符串字面量：按 code point 迭代（new Set('aab') → {a,b}）
+  const sv = litValue(iterable);
+  if (typeof sv === "string") {
+    return [...sv].map((c) => strLit(c));
+  }
+  // Set/Map 拷贝：条目表（Map 条目是 [k,v] 元组）
+  if (isSetAbs(iterable)) return [...setElementsAbs(iterable)];
+  if (isMapAbs(iterable)) return [...mapEntriesAbs(iterable)];
   return [];
+}
+
+/**
+ * 构造器实参**确定**非法（原生 TypeError 域）：
+ * - 非可迭代字面量（number/boolean/symbol/bigint、闭对象字面量）→ Set/Map 都抛
+ * - Map 条目必须是对象：外层 iterable 出现 lit prim 条目（含字符串实参的
+ *   每个字符、tuple/Set 元素）→ TypeError（空串例外：零条目合法）
+ * 抽象形态不确定 → false（保守）。
+ */
+export function ctorArgDefinitelyInvalid(
+  name: "Map" | "Set",
+  iterable: Abs | undefined,
+): boolean {
+  if (!iterable) return false; // null/undefined → 空容器
+  // nullish 字面量：空容器（new Set(null) 合法）
+  if (iterable.term?.op === "lit" && iterable.term.value === null) return false;
+  if (iterable.term?.op === "lit" && iterable.term.value === undefined) return false;
+  const nonIterableLit = (a: Abs): boolean => {
+    if (a.shape.k === "prim") {
+      const v = litValue(a);
+      if (typeof v === "string") return false; // 字符串可迭代
+      return true; // number/bool/symbol/bigint 字面量不可迭代
+    }
+    if (a.shape.k === "obj" && a.shape.open !== true) return true; // 闭对象字面量
+    return false;
+  };
+  if (nonIterableLit(iterable)) return true;
+  if (name !== "Map") return false;
+  // Map：外层 iterable 的每个条目必须是对象；lit prim 条目（含字符串字符）→ TypeError
+  const primEntry = (a: Abs): boolean => a.shape.k === "prim";
+  const sv = litValue(iterable);
+  if (typeof sv === "string") return sv.length > 0;
+  if (iterable.shape.k === "tuple") return iterable.shape.elements.some(primEntry);
+  if (isSetAbs(iterable)) return setElementsAbs(iterable).some(primEntry);
+  return false;
 }
 
 export function makeMapAbs(iterable?: Abs): Abs {
