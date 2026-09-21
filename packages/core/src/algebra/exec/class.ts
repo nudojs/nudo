@@ -162,6 +162,33 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
       }
       return makeSetAbs(args[0]);
     }
+    // new String(prim)：包装箱带 length/下标槽（与 evalGlobalFn Object 装箱
+    // 同口径）——此前通用空箱 branch 折 new String('ab')['0'] === undefined、
+    // .length === undefined、Object.assign({}, boxed) === {} 假精确。
+    if (clsName === "String") {
+      const a0 = args[0] ? litValue(args[0]) : undefined;
+      if (typeof a0 === "string") {
+        const slots: Record<string, { value: Abs }> = {
+          length: { value: numLit(a0.length) },
+        };
+        for (let i = 0; i < a0.length; i++) {
+          slots[String(i)] = { value: strLit(a0[i]!) };
+        }
+        return abs(
+          { k: "brand", name: "String", shape: objOf(slots) },
+          undefined,
+          undefined,
+          "exact",
+        );
+      }
+      // 非字面量实参：open 空箱保守（成员读非具体，不折假精确 undefined）
+      return abs(
+        { k: "brand", name: "String", shape: objOf({}, { open: true }) },
+        undefined,
+        undefined,
+        "path",
+      );
+    }
     const shape = objOf({});
     return abs({ k: "brand", name: clsName, shape }, undefined, undefined, "path");
   }

@@ -171,6 +171,21 @@ export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | un
     for (let i = 0; i < v.length; i++) slots[String(i)] = { value: strLit(v[i]!) };
     return slots;
   }
+  if (s.k === "brand" && s.name === "String") {
+    // String 包装（new String / Object('ab')）：下标槽可枚举、length 不可枚举
+    //（原生 assign 不复制 length）；open 空箱键集未知 → undefined。
+    // brand.shape 是内层 Abs（objOf 产物），槽在 inner.shape.slots。
+    const inner = s.shape;
+    if (inner.shape.k === "obj") {
+      const slots: Record<string, { value: Abs }> = {};
+      for (const [k, v] of Object.entries(inner.shape.slots)) {
+        if (k === "length") continue;
+        slots[k] = v;
+      }
+      if (Object.keys(slots).length > 0 || !inner.shape.open) return slots;
+    }
+    return undefined;
+  }
   if (s.k === "prim") return s.type === "string" ? undefined : {};
   if (s.k === "eff" || s.k === "never") return {}; // Promise 无自有可枚举键
   return undefined; // arr/brand/sum/fn/any/unknown…：键集未知
