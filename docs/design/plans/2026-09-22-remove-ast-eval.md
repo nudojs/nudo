@@ -35,16 +35,24 @@
   的 `**=` 映射，recent 门禁精确报出 3 条 `x **= 3` 假精确 MISMATCH，恢复后清零。
 - 门禁：全语料零 mismatch + compared 下限（basic>150 / edge>200 / recent>300）。
 
-### P1：模块图 B 化
-`evalAbsModuleGraph` 换 per-file transpile+exec 收集导出。
-- 必须重实现协议：ESM 环 partial 命名空间、CJS 导出失败 open+path 保守、
-  mock-module 替换、harvest（@types→env）合并、seedVars/seedFns 注入。
-- **P0 后新发现的前置条件**：transpile 不覆盖 export specifier 面——
-  `export { a, b as c }`、`export { x } from "mod"`、`export * from "mod"`
-  全被跳过（transpile.ts:1252 `/* export specifiers skipped */`，ExportAll
-  无 case）。B-path 执行产不出完整 ESM 导出表，P1 必须先补转译器导出面。
-- 门禁：abs-modules-graph 全测试绿 + module-cycle/depth/missing 诊断不变 +
-  real-package 零 FP。
+### P1：模块图 B 化 ✅ 已完成（2026-09-22，P1-a ed3486d + P1-b 6ec148a）
+- **P1-a（前置，ed3486d）**：transpile 导出面补齐——export default 全形态
+  （函数/类/表达式/匿名合成名字）、`export { a, b as c }`、
+  `export { x } from "mod"`、`export * from "mod"` 保留合法 ESM 形态，
+  run.ts 后处理改写为 __nudoExport/__nudoExportStar（modules 表注入绑定），
+  返回对象合并动态导出 + 静态声明名（显式导出压过 export *，与
+  collectAbsExports 顺序口径一致）。此前 default 全形态 SyntaxError、
+  specifier/star 静默丢失——B-path 对带默认导出/重导出的模块完全不可用。
+  测试先行 10 红→绿（bpath-export-surface.test.ts）。
+- **P1-b（6ec148a）**：evalDep 求值步换 runTranspiled（B 优先），JS 函数
+  导出经 absFunction(apply) 桥接成 Abs fn（apply 优先派发）；失败回落旧
+  Abs 路径（顶层 this 等 B 不可托管源覆盖面不变）。桥接预算键坑：
+  fingerprint ?? anon#N 会让所有导出共享 anon#1，嵌套跨模块调用撞
+  _activeCallKeys 递归守卫误截断——按 `bpath:模块#导出` 唯一化。
+  新增测试：default 过图、barrel（export * + default 重导出）过图。
+- 门禁达成：abs-modules-graph/abs-module-cache/bpath-module-diags/
+  harvest-to-abs 全绿；环/深度/缺失诊断语义不变（原测试全过）；
+  lint 绿；差分 suite 155 绿。
 
 ### P2：checkSource 与 instantiate 换引擎
 - check.ts 三入口（signatures/violations/drift/L2 throws）→ runTranspiled
