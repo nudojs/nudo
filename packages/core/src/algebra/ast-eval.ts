@@ -943,6 +943,20 @@ function evalNodeInner(
             return leakIfNeeded(div(lhs, rhsAbs, phi), budget, "div");
           case "%":
             return leakIfNeeded(mod(lhs, rhsAbs, phi), budget, "mod");
+          case "**":
+            return leakIfNeeded(powAbs(lhs, rhsAbs), budget, "pow");
+          case "<<":
+            return leakIfNeeded(shlAbs(lhs, rhsAbs), budget, "shl");
+          case ">>":
+            return leakIfNeeded(shrAbs(lhs, rhsAbs), budget, "shr");
+          case ">>>":
+            return leakIfNeeded(ushrAbs(lhs, rhsAbs), budget, "ushr");
+          case "&":
+            return leakIfNeeded(bitandAbs(lhs, rhsAbs), budget, "bitand");
+          case "|":
+            return leakIfNeeded(bitorAbs(lhs, rhsAbs), budget, "bitor");
+          case "^":
+            return leakIfNeeded(bitxorAbs(lhs, rhsAbs), budget, "bitxor");
           default:
             return unknown;
         }

@@ -133,6 +133,13 @@ const COMPOUND_OPS: Record<string, string> = {
   "*=": "$mul",
   "/=": "$div",
   "%=": "$mod",
+  "**=": "$pow",
+  "<<=": "$shl",
+  ">>=": "$shr",
+  ">>>=": "$ushr",
+  "&=": "$bitand",
+  "|=": "$bitor",
+  "^=": "$bitxor",
 };
 
 type MemberLayer = { get: (base: string) => string; set: (base: string, v: string) => string };

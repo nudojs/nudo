@@ -19,6 +19,7 @@ import {
   num,
   type Abs,
 } from "@nudojs/core";
+import { analyzeFn } from "../index.ts";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -88,6 +89,52 @@ describe("B-path member compound assignment", () => {
   });
 });
 
+describe("B-path compound assignment bitwise/shift/pow operators", () => {
+  // COMPOUND_OPS 表只登记 += -= *= /= %=——**= <<= >>= >>>= &= |= ^=
+  // 落「x = rhs」路径（x >>= 1 折 1、x **= 3 折 3），读-改-写整体丢失。
+  it("identifier targets fold the operator, not the rhs", async () => {
+    const run = await execTranspiled(
+      `export function run() {
+  let x = 7; x >>= 1;
+  let y = 1; y <<= 3;
+  let z = -7; z >>>= 1;
+  let a = 5; a &= 3;
+  let b = 5; b |= 3;
+  let c = 5; c ^= 3;
+  let p = 2; p **= 10;
+  return '' + x + ',' + y + ',' + z + ',' + a + ',' + b + ',' + c + ',' + p;
+}`,
+      "run",
+    );
+    expect(litValue(run())).toBe("3,8,2147483644,1,7,6,1024");
+  });
+
+  it("member targets read-modify-write the current slot", async () => {
+    const run = await execTranspiled(
+      `export function run(o) { o.n >>= 1; o.m **= 3; o.k &= 3; return o.n * 100 + o.m * 10 + o.k; }`,
+      "run",
+    );
+    // 7>>1=3, 2**3=8, 5&3=1 → 381
+    expect(litValue(run($obj({ n: $lit(7), m: $lit(2), k: $lit(5) })))).toBe(381);
+  });
+
+  it("element targets read-modify-write in place (aliases see it)", async () => {
+    const run = await execTranspiled(
+      `export function run() { let a = [1,2]; const b = a; b[0] |= 4; return a[0] * 10 + a[1]; }`,
+      "run",
+    );
+    expect(litValue(run())).toBe(52);
+  });
+
+  it("assignment expression value is the written value", async () => {
+    const run = await execTranspiled(
+      `export function run() { let x = 7; return (x >>= 1); }`,
+      "run",
+    );
+    expect(litValue(run())).toBe(3);
+  });
+});
+
 describe("B-path member update expressions", () => {
   it("o.n++ returns old value and writes back", async () => {
     const run = await execTranspiled(
@@ -133,6 +180,34 @@ describe("B-path member update expressions", () => {
     );
     const r = run($obj({ n: num() }));
     expect(formatShape(r)).toBe("number");
+  });
+});
+
+describe("ast-eval compound assignment bitwise/shift/pow parity", () => {
+  // ast-eval applyBin 只折叠 + - * / %——位运算/移位/幂复合赋值落 unknown。
+  // 与 B-path COMPOUND_OPS 同轨修复后折叠。
+  it("identifier targets fold", () => {
+    expect(
+      litValue(analyzeFn(`function f() { let x = 7; x >>= 1; return x; }`, "f", [])),
+    ).toBe(3);
+    expect(
+      litValue(analyzeFn(`function f() { let x = 2; x **= 10; return x; }`, "f", [])),
+    ).toBe(1024);
+    expect(
+      litValue(analyzeFn(`function f() { let x = -7; x >>>= 1; return x; }`, "f", [])),
+    ).toBe(2147483644);
+  });
+
+  it("member targets fold", () => {
+    expect(
+      litValue(analyzeFn(`function f() { const o = {n: 5}; o.n &= 3; return o.n; }`, "f", [])),
+    ).toBe(1);
+  });
+
+  it("assignment expression value is the written value", () => {
+    expect(
+      litValue(analyzeFn(`function f() { let x = 7; return (x <<= 2); }`, "f", [])),
+    ).toBe(28);
   });
 });
 
