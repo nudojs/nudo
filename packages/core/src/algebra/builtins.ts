@@ -404,7 +404,7 @@ export function evalNumberStatic(name: string, args: Abs[]): Abs | undefined {
   }
 }
 
-/** 全局 parseInt / parseFloat / isNaN / Number / String / Boolean */
+/** 全局 parseInt / parseFloat / isNaN / Number / String / Boolean / Object */
 export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
   const a0 = args[0] ? litValue(args[0]) : undefined;
   switch (name) {
@@ -433,6 +433,49 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
     case "Boolean":
       if (a0 !== undefined) return boolLit(Boolean(a0));
       return boolPrim();
+    case "Object": {
+      // ToObject：prim 字面量装箱为包装 brand（String 箱带 length/下标槽，
+      // 读 .length/[i] 与原生一致）；null/undefined/无参 → 空对象；
+      // 对象形态恒等；抽象 prim → open 对象（成员读保持非具体）。
+      const arg = args[0];
+      if (!arg) return objOf({});
+      if (arg.term?.op === "lit" && (arg.term.value === undefined || arg.term.value === null)) {
+        return objOf({});
+      }
+      if (arg.shape.k === "prim") {
+        const primType = arg.shape.type;
+        if (typeof a0 === "string") {
+          const slots: Record<string, { value: Abs }> = {
+            length: { value: numLit(a0.length) },
+          };
+          for (let i = 0; i < a0.length; i++) {
+            slots[String(i)] = { value: strLit(a0[i]!) };
+          }
+          return abs(
+            { k: "brand", name: "String", shape: objOf(slots) },
+            undefined,
+            undefined,
+            "exact",
+          );
+        }
+        const boxName =
+          primType === "number"
+            ? "Number"
+            : primType === "boolean"
+              ? "Boolean"
+              : primType === "bigint"
+                ? "BigInt"
+                : "Symbol";
+        return abs(
+          { k: "brand", name: boxName, shape: objOf({}) },
+          undefined,
+          undefined,
+          "path",
+        );
+      }
+      // obj/brand/arr/tuple/fn/eff/sum：ToObject 恒等
+      return arg;
+    }
     default:
       return undefined;
   }

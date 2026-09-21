@@ -73,6 +73,7 @@ const GLOBAL_FNS = new Set([
   "Number",
   "String",
   "Boolean",
+  "Object",
 ]);
 
 export function setBCallCollector(

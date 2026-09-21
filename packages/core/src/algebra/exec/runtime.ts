@@ -1636,6 +1636,14 @@ export function $len(a: Abs): Abs {
       "exact",
     );
   }
+  // String 包装对象（Object('ab') / new String）：内层 length 槽
+  if (a.shape.k === "brand" && a.shape.name === "String") {
+    const inner = a.shape.shape;
+    if (inner.shape.k === "obj") {
+      const lenSlot = inner.shape.slots["length"];
+      if (lenSlot && !lenSlot.optional) return lenSlot.value;
+    }
+  }
   return unknown;
 }
 
