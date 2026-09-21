@@ -641,16 +641,19 @@ export function $invoke(
       method === "toPrecision"
     ) {
       const nv = litValue(thisVal);
-      if (typeof nv !== "number") return strPrim("path");
+      if (typeof nv !== "number") return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
       const argAbs = args[0];
-      if (argAbs !== undefined && argAbs.term?.op !== "lit") return strPrim("path");
+      if (argAbs !== undefined && argAbs.term?.op !== "lit") {
+        return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+      }
       const av = argAbs === undefined ? undefined : litValue(argAbs);
       try {
-        return strLit((nv as never)[method](av as never));
+        const impl = Number.prototype as unknown as Record<string, (...a: unknown[]) => string>;
+        return strLit(impl[method]!.call(nv, av));
       } catch (e) {
         if (e instanceof TypeError) throw new NudoThrow(errorTypeAbs("TypeError"));
         if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
-        return strPrim("path");
+        return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
       }
     }
   }

@@ -275,7 +275,8 @@ export function callAbsMethod(
       const a0 = a0Abs === undefined ? undefined : litValue(a0Abs);
       const a1 = a1Abs === undefined ? " " : litValue(a1Abs);
       try {
-        return strLit((lit as never)[name](a0 as never, a1 as never));
+        const impl = String.prototype as unknown as Record<string, (...a: unknown[]) => string>;
+        return strLit(impl[name]!.call(lit, a0, a1));
       } catch (e) {
         // repeat 负/Infinity → RangeError；符号实参（ToIntegerOrInfinity/
         // ToLength 抛）→ TypeError。硬抛，catch 经 $catchVal 吸收

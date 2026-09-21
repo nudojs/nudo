@@ -1754,7 +1754,8 @@ function evalCall(
           }
           const av = argAbs === undefined ? undefined : litValue(argAbs);
           try {
-            return ok(strLit((nv as never)[method](av as never)), phi, env);
+            const impl = Number.prototype as unknown as Record<string, (...a: unknown[]) => string>;
+            return ok(strLit(impl[method]!.call(nv, av)), phi, env);
           } catch (e) {
             if (e instanceof TypeError) {
               return { value: errorTypeAbs("TypeError"), phi, env, threw: true };
