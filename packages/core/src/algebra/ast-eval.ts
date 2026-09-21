@@ -1427,17 +1427,62 @@ function evalNodeInner(
     }
     case "ArrayExpression": {
       const a = node as { elements: Array<Node | null> };
-      const els = a.elements
-        .filter((e): e is Node => e != null && e.type !== "SpreadElement")
-        .map((e) => evalNode(e, env, phi, budget).value);
-      if (els.length === 0) {
+      // 逐位建模：hole → undefined 槽 + holes 记录（下标保留，Get 语义）；
+      // spread 就地展开（tuple 逐元素/字符串码点折叠，源 hole 位产出
+      // undefined 实槽而非 hole；未知长度 iterable 整体降 arr partial）。
+      // 此前 filter 掉 hole 与 spread——[7,,9] 折 [7,9]（下标左移）、
+      // [...[1,2],3] 折 [3]（spread 丢弃），双假精确。
+      const elements: Abs[] = [];
+      const holes: number[] = [];
+      for (const e of a.elements) {
+        if (e === null) {
+          elements.push(undefAbs());
+          holes.push(elements.length - 1);
+          continue;
+        }
+        if (e.type === "SpreadElement") {
+          const sp = evalNode((e as { argument: Node }).argument, env, phi, budget).value;
+          if (sp.shape.k === "tuple") {
+            const sholes = sp.shape.holes ?? [];
+            for (let i = 0; i < sp.shape.elements.length; i++) {
+              const el = sp.shape.elements[i];
+              elements.push(sholes.includes(i) || el === undefined ? undefAbs() : el);
+            }
+          } else if (sp.term?.op === "lit" && typeof sp.term.value === "string") {
+            // 字符串按码点展开（surrogate pair 合并，与原生迭代器一致）
+            for (const ch of sp.term.value) elements.push(strLit(ch));
+          } else {
+            // 未知长度 iterable（arr/strPrim 非字面量/sum…）：已知元素 ∪ unknown
+            const known = elements.length
+              ? elements.reduce((x, y) => joinAbs(x, y))
+              : unknown;
+            return ok(
+              abs({ k: "arr", element: joinAbs(known, unknown) }, undefined, undefined, "partial"),
+              phi,
+              env,
+            );
+          }
+          continue;
+        }
+        elements.push(evalNode(e, env, phi, budget).value);
+      }
+      if (elements.length === 0) {
         return ok(abs({ k: "arr", element: unknown }, undefined, undefined, "exact"), phi, env);
       }
       // 容器策略单点（containers.ts）：≤cap tuple / >cap arr，与 B 路径 $arr 同源
-      if (!shouldWidenArrayLiteral(els.length)) {
-        return ok(abs({ k: "tuple", elements: els }, undefined, undefined, "exact"), phi, env);
+      if (!shouldWidenArrayLiteral(elements.length)) {
+        return ok(
+          abs(
+            { k: "tuple", elements, holes: holes.length > 0 ? holes : undefined },
+            undefined,
+            undefined,
+            "exact",
+          ),
+          phi,
+          env,
+        );
       }
-      const elem = els.reduce((x, y) => joinAbs(x, y));
+      const elem = elements.reduce((x, y) => joinAbs(x, y));
       return ok(abs({ k: "arr", element: elem }, undefined, undefined, widenedArrayConf()), phi, env);
     }
     default:
