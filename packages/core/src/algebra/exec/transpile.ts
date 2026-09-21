@@ -2536,7 +2536,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         if (prop.type === "SpreadElement") {
           flushProps();
           const arg = transpileExpression(prop.argument as Expression, opts);
-          acc = acc === null ? arg : `$spread(${acc}, ${arg})`;
+          // 首个 spread 也必须产新对象：{...o} 别名 o 会泄漏 frozen/sealed
+          // 不变性（Object.isFrozen({...frozen}) 假 true）、跳过 getter 调用、
+          // 且 c={...o} 后 c.x=… 误写源对象（原生新对象互不影响）。
+          acc = acc === null ? `$spread($obj({}), ${arg})` : `$spread(${acc}, ${arg})`;
           continue;
         }
         // C3.2：对象方法简写 → $fnVal（方法槽进 shape；闭包捕获外层 let）。

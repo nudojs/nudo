@@ -233,17 +233,22 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       return undefined;
     }
     case "isFrozen": {
-      if (!a0) return boolLit(false);
-      return boolLit(extStateOf(a0) === "frozen");
+      const t = args[0];
+      // ES：非对象（prim/null/undefined，含无实参）恒 frozen——不抛
+      if (isPrimLike(t)) return boolLit(true);
+      return boolLit(extStateOf(t!) === "frozen");
     }
     case "isSealed": {
-      if (!a0) return boolLit(false);
-      const s = extStateOf(a0);
+      const t = args[0];
+      if (isPrimLike(t)) return boolLit(true);
+      const s = extStateOf(t!);
       return boolLit(s === "sealed" || s === "frozen");
     }
     case "isExtensible": {
-      if (!a0) return boolLit(false);
-      return boolLit(extStateOf(a0) === undefined);
+      const t = args[0];
+      // ES：非对象恒不可扩展——不抛
+      if (isPrimLike(t)) return boolLit(false);
+      return boolLit(extStateOf(t!) === undefined);
     }
     case "defineProperty": {
       const kv = args[1] ? litValue(args[1]) : undefined;
@@ -402,6 +407,16 @@ export function evalNumberStatic(name: string, args: Abs[]): Abs | undefined {
     default:
       return undefined;
   }
+}
+
+/** 非对象形态（prim/never/null/undefined 字面量）→ ES 不变性自省恒真/假 */
+function isPrimLike(a: Abs | undefined): boolean {
+  if (!a) return true; // 无实参 → undefined
+  if (a.shape.k === "prim" || a.shape.k === "never") return true;
+  if (a.term?.op === "lit" && (a.term.value === null || a.term.value === undefined)) {
+    return true;
+  }
+  return false;
 }
 
 /** 全局 parseInt / parseFloat / isNaN / Number / String / Boolean / Object */
