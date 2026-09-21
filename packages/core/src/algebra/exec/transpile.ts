@@ -449,6 +449,22 @@ function staticKeyOf(key: { type?: string; name?: string; value?: unknown } | nu
   return null;
 }
 
+/** 计算键 [Symbol.X] → 已引号化的 "@@X" 投影（对象字面量/访问器）；
+ *  其余计算键 → null。镜像成员访问 m[Symbol.iterator] 的投影口径。 */
+function symbolKeyOf(key: { type?: string; computed?: boolean; object?: { type?: string; name?: string }; property?: { type?: string; name?: string } } | null | undefined): string | null {
+  if (!key || typeof key !== "object") return null;
+  if (
+    key.type === "MemberExpression" &&
+    key.computed !== true &&
+    key.object?.type === "Identifier" &&
+    key.object.name === "Symbol" &&
+    key.property?.type === "Identifier"
+  ) {
+    return JSON.stringify(`@@${key.property.name}`);
+  }
+  return null;
+}
+
 /** 收集赋值/Update 左值标识符（while/for pack/unpack 用）。
  *  循环 init 声明的名字在整个循环结构内 shadow 外层绑定，不得收集
  *  （否则外层 pack 会引用内层循环变量——闭包作用域外，ReferenceError）。 */
@@ -2428,7 +2444,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (expr.operator === "instanceof") {
         const l = isExpression(expr.left) ? transpileExpression(expr.left, opts) : "$lit(undefined)";
         if (expr.right.type === "Identifier") {
-          return `$instanceof(${l}, ${JSON.stringify(expr.right.name)})`;
+          // 第三参传 RHS 值：@@hasInstance 派发需要（类名派发不读第三参）
+          return `$instanceof(${l}, ${JSON.stringify(expr.right.name)}, ${expr.right.name})`;
         }
         // 非标识符右操作数（表达式/成员路径）：构造器值未知 → 抽象 boolean
         return `$instanceofNonIdent(${l})`;
@@ -2548,7 +2565,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           flushProps();
           const mkey = (() => {
             const k = staticKeyOf(prop.key as { type?: string; name?: string; value?: unknown });
-            return k === null ? null : JSON.stringify(k);
+            if (k !== null) return JSON.stringify(k);
+            // 计算键 [Symbol.X] → "@@X" 投影（镜像成员访问 m[Symbol.iterator]）
+            return symbolKeyOf(prop.key as never);
           })();
           if (mkey === null) continue;
           const paramNames = (prop.params as Array<{ type: string; name?: string }>).map((p) =>
@@ -2585,12 +2604,17 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           continue;
         }
         if (prop.type !== "ObjectProperty") continue;
-        // 计算属性 { [expr]: v } → $setKey
+        // 计算属性 { [expr]: v } → $setKey；[Symbol.X] 投影为 "@@X" 字符串槽
         if (prop.computed) {
           flushProps();
-          const k = transpileExpression(prop.key as Expression, opts);
+          const symK = symbolKeyOf(prop.key as never);
           const v = transpileExpression(prop.value as Expression, opts);
           const base = acc === null ? `$obj({})` : acc;
+          if (symK !== null) {
+            acc = `$set(${base}, ${symK}, ${v})`;
+            continue;
+          }
+          const k = transpileExpression(prop.key as Expression, opts);
           acc = `$setKey(${base}, ${k}, ${v})`;
           continue;
         }

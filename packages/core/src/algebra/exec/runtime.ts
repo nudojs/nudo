@@ -7,7 +7,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Abs } from "../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../abs.ts";
 import { lit } from "../term.ts";
-import { absFunction } from "../abs-fn.ts";
+import { absFunction, getFnImpl } from "../abs-fn.ts";
 import {
   beginCollectionFork,
   endCollectionFork,
@@ -356,9 +356,29 @@ const BUILTIN_CTOR_NAMES = new Set([
  * `x instanceof Right`（Right 为标识符名）：按左值形状精确判定。
  * nullish 左侧原生抛 TypeError → unknown；未知用户构造器名 → boolean（不得 exact false）。
  */
-export function $instanceof(left: Abs, rightName: string): Abs {
+export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
   // null/undefined instanceof X：原生抛 TypeError
   if (isNullishLitAbs(left)) return unknown;
+  // 自定义 @@hasInstance：RHS 值带可调用槽则调用并布尔化结果
+  // （v instanceof o ≡ o[Symbol.hasInstance](v)）；槽在但不可调用 → 抽象
+  if (rightVal) {
+    const rv = asAbsVal(rightVal);
+    if (rv.shape.k === "obj") {
+      const slot = rv.shape.slots["@@hasInstance"];
+      if (slot && !slot.optional) {
+        // 槽在但不可调用 → 原生 TypeError；保守折抽象 boolean
+        if (slot.value.shape.k !== "fn" && getFnImpl(slot.value) === undefined) {
+          return bool();
+        }
+        // 与 $invoke bindThis 同口径：receiver 注入首参（impl 首参是 __this）
+        const r = $call(slot.value, [rv, left]);
+        const bv = litValue(r);
+        // 原生把返回值 ToBoolean（return 0 → false、'yes' → true）
+        if (bv !== undefined) return boolLit(Boolean(bv));
+        return bool();
+      }
+    }
+  }
   switch (left.shape.k) {
     case "brand":
       // 类值本身是 constructor 函数：instanceof Function/Object 恒 true

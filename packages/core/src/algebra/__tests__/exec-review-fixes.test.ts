@@ -106,9 +106,11 @@ describe("review-fix: instanceof non-ident / generator / unknown ctor", () => {
   });
 
   it("B-path generator call value is not exact undefined/false for instanceof", async () => {
-    // B-path $gen 收集 yield 值而非 Iterator 对象；不得折精确 undefined/false
+    // B-path $gen 收集 yield 值而非 Iterator 对象；不得折精确 undefined/false。
+    // 注意：Node 无 Generator 全局（原生 g() instanceof Generator 是
+    // ReferenceError）；RHS 用局部类，保持"生成器值不是类实例"的判定场景。
     const run = await execTranspiled(
-      `export function run(){ function* g(){ yield 1; } return g() instanceof Generator; }`,
+      `export function run(){ function* g(){ yield 1; } class Gen {} return g() instanceof Gen; }`,
     );
     const r = run();
     expect(formatShape(r)).toBe("boolean");
