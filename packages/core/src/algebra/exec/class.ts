@@ -615,27 +615,49 @@ export function $invoke(
     const sm = spec?.staticMethods?.[method];
     if (sm) return sm(...args);
   }
-  // bigint 字面量：toString(radix)/valueOf 精确折叠（非法 radix 原生 RangeError → unknown）
+  // bigint 字面量：toString(radix)/valueOf 精确折叠——字面量实参真执行，
+  // 非法 radix 原生 RangeError / 符号实参 TypeError 硬抛（catch 可吸收）
   if (thisVal.shape.k === "prim" && thisVal.shape.type === "bigint") {
     const bv = litValue(thisVal) as bigint | undefined;
     if (typeof bv === "bigint") {
       if (method === "valueOf") return thisVal;
       if (method === "toString") {
-        const rad = args[0] ? litValue(args[0]) : undefined;
-        const r =
-          rad === undefined
-            ? 10
-            : typeof rad === "number" && Number.isInteger(rad) && rad >= 2 && rad <= 36
-              ? rad
-              : undefined;
-        if (r !== undefined) {
-          try {
-            return strLit(bv.toString(r));
-          } catch {
-            return unknown;
-          }
+        const argAbs = args[0];
+        if (argAbs !== undefined && argAbs.term?.op !== "lit") return unknown;
+        const av = argAbs === undefined ? undefined : litValue(argAbs);
+        try {
+          return strLit(bv.toString(av as never));
+        } catch (e) {
+          if (e instanceof TypeError) throw new NudoThrow(errorTypeAbs("TypeError"));
+          if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
+          return unknown;
         }
-        return unknown; // 非法/符号 radix：原生 RangeError
+      }
+    }
+    return unknown;
+  }
+  // number 字面量：toString(radix)/toFixed/toExponential/toPrecision/valueOf
+  // 精确折叠——字面量实参真执行（ToIntegerOrInfinity 截断、NaN→缺省等由原生
+  // 处理），非法参数硬抛 RangeError、符号实参硬抛 TypeError；抽象实参保守
+  if (thisVal.shape.k === "prim" && thisVal.shape.type === "number") {
+    const nv = litValue(thisVal);
+    if (typeof nv !== "number") return unknown;
+    if (method === "valueOf") return thisVal;
+    if (
+      method === "toString" ||
+      method === "toFixed" ||
+      method === "toExponential" ||
+      method === "toPrecision"
+    ) {
+      const argAbs = args[0];
+      if (argAbs !== undefined && argAbs.term?.op !== "lit") return unknown;
+      const av = argAbs === undefined ? undefined : litValue(argAbs);
+      try {
+        return strLit((nv as never)[method](av as never));
+      } catch (e) {
+        if (e instanceof TypeError) throw new NudoThrow(errorTypeAbs("TypeError"));
+        if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
+        return unknown;
       }
     }
     return unknown;

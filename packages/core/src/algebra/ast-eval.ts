@@ -1732,6 +1732,38 @@ function evalCall(
         }
       }
 
+      // number prim 方法（与 exec/class $invoke number 分支同口径）：
+      // 字面量折叠 toString/toFixed/toExponential/toPrecision/valueOf，
+      // 非法参数硬抛 RangeError、符号实参硬抛 TypeError（吸收为 EvalResult{threw}）
+      if (obj.shape.k === "prim" && obj.shape.type === "number") {
+        const nv = litValue(obj);
+        if (typeof nv === "number") {
+          if (method === "valueOf") return ok(obj, phi, env);
+          if (
+            method === "toString" ||
+            method === "toFixed" ||
+            method === "toExponential" ||
+            method === "toPrecision"
+          ) {
+            const argAbs = rawArgs[0] ? evalNode(rawArgs[0], env, phi, budget).value : undefined;
+            if (argAbs !== undefined && argAbs.term?.op !== "lit") return ok(unknown, phi, env);
+            const av = argAbs === undefined ? undefined : litValue(argAbs);
+            try {
+              return ok(strLit((nv as never)[method](av as never)), phi, env);
+            } catch (e) {
+              if (e instanceof TypeError) {
+                return { value: errorTypeAbs("TypeError"), phi, env, threw: true };
+              }
+              if (e instanceof RangeError) {
+                return { value: errorTypeAbs("RangeError"), phi, env, threw: true };
+              }
+              return ok(unknown, phi, env);
+            }
+          }
+          return ok(unknown, phi, env);
+        }
+      }
+
       // 数组 join / at / includes
       if (obj.shape.k === "arr" || obj.shape.k === "tuple") {
         if (method === "join") {
