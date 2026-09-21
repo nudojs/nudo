@@ -716,6 +716,10 @@ function isPrimLike(a: Abs | undefined): boolean {
 export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
   const a0 = args[0] ? litValue(args[0]) : undefined;
   switch (name) {
+    case "eval":
+      // 动态代码语义不可静态建模：保守 unknown。宿主 eval 对非字符串实参
+      // 原样返回——直接调用会把 strLit Abs 对象原样传回并折成字符串假精确。
+      return unknown;
     case "Array":
       // Array(n)/Array(a,b)/Array() 与 new Array 同语义（共享 makeArrayCtorAbs）
       return makeArrayCtorAbs(args);

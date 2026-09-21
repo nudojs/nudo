@@ -77,6 +77,7 @@ const GLOBAL_FNS = new Set([
   "Boolean",
   "Object",
   "Array",
+  "eval",
 ]);
 
 export function setBCallCollector(
