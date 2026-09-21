@@ -5,7 +5,7 @@
 
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, strLit, numLit } from "../abs.ts";
-import { objOf, joinAbs, isObj } from "../objects.ts";
+import { objOf, joinAbs, isObj, canonicalArrayIndex } from "../objects.ts";
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
@@ -422,9 +422,70 @@ function runtimeAssignObject(args: Abs[]): Abs {
         open: acc.shape.open || src.shape.open,
       });
       acc.conf = confJoin(acc.conf, src.conf);
+    } else if (acc.shape.k === "tuple" && src.shape.k === "obj") {
+      // 数组 target：数字键按下标写（扩展 length）、"length" 键截断/延长
+      // （延长段 hole；非法 length 原生 RangeError）、非规范键 expando 忽略。
+      // 源键序 = 原生 [[OwnPropertyKeys]] 序（整数键升序 → 字符串插入序）。
+      acc = assignArrayTarget(acc, src, st);
     }
   }
   return acc;
+}
+
+/**
+ * Object.assign 数组 target 的逐键写（B-path）：
+ * 与原生同序处理 length 键与下标键（先写后截断可抹掉写入）。
+ * getter 源键调用 getter；frozen/sealed 新下标 strict TypeError。
+ */
+function assignArrayTarget(target: Abs, src: Abs, st: "nonext" | "sealed" | "frozen" | undefined): Abs {
+  const ts = target.shape as Extract<Abs["shape"], { k: "tuple" }>;
+  const ss = src.shape as Extract<Abs["shape"], { k: "obj" }>;
+  let elements = [...ts.elements];
+  let holes = [...(ts.holes ?? [])];
+  let len = elements.length;
+  const origLen = len;
+  for (const [k, s] of Object.entries(ss.slots)) {
+    if (k === "length") {
+      const a = lookupObjAccessor(src, k);
+      const vAbs = a?.get ? a.get(src) : s.value;
+      const lv = vAbs.term?.op === "lit" ? vAbs.term.value : undefined;
+      if (typeof lv !== "number" || !Number.isInteger(lv) || lv < 0) {
+        // 非法/非字面量 length 写：原生 RangeError（"Invalid array length"）
+        throw new NudoThrow(errorTypeAbs("RangeError"));
+      }
+      if (lv > TUPLE_MATERIALIZE_CAP) {
+        // 合法但巨大：不物化巨 tuple，保守降 arr
+        const el = elements.length ? elements.reduce((x, y) => joinAbs(x, y)) : unknown;
+        return abs({ k: "arr", element: el }, undefined, undefined, "partial");
+      }
+      if (lv < len) {
+        elements.length = lv;
+        holes = holes.filter((h) => h < lv);
+      } else {
+        for (let j = len; j < lv; j++) holes.push(j);
+      }
+      len = lv;
+      continue;
+    }
+    const idx = canonicalArrayIndex(k);
+    if (idx === undefined) continue; // expando：Abs 数组不存（length 不受影响）
+    if (idx >= origLen && (st === "sealed" || st === "nonext")) {
+      throwStrictAssign();
+    }
+    const a = lookupObjAccessor(src, k);
+    const vAbs = a?.get ? a.get(src) : s.value;
+    if (idx >= len) len = idx + 1;
+    if (idx >= elements.length) elements.length = idx + 1;
+    elements[idx] = vAbs;
+    holes = holes.filter((h) => h !== idx);
+  }
+  elements.length = len;
+  return abs(
+    { k: "tuple", elements, holes: holes.length > 0 ? holes : undefined },
+    undefined,
+    undefined,
+    confJoin(target.conf, src.conf),
+  );
 }
 
 /** 实例方法调用：沿继承链；类 Abs 上回落 staticMethods；obj 上回落属性函数 */

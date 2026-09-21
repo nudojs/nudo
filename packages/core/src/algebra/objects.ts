@@ -13,6 +13,18 @@ import { noteDerivationJoin } from "./derivation.ts";
 
 export type Slot = { value: Abs; optional?: boolean; readonly?: boolean };
 
+/** ES 规范数组下标（无前导零、< 2^32-1）；非规范键返回 undefined */
+export function canonicalArrayIndex(v: unknown): number | undefined {
+  if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 4294967295) {
+    return v;
+  }
+  if (typeof v === "string" && /^(0|[1-9]\d*)$/.test(v)) {
+    const n = Number(v);
+    if (n < 4294967295) return n;
+  }
+  return undefined;
+}
+
 export type ObjShape = {
   k: "obj";
   slots: Record<string, Slot>;

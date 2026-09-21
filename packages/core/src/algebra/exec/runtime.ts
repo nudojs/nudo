@@ -16,7 +16,7 @@ import {
 } from "../collections.ts";
 import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs, isNullishLitAbs, definitelyNotNullishShape, bitandAbs, bitorAbs, bitxorAbs, bitnotAbs, shlAbs, shrAbs, ushrAbs, powAbs, toNumberAbs } from "../surface.ts";
-import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape, type Slot, isNullProtoObj, migrateNullProto, getSlot } from "../objects.ts";
+import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape, type Slot, isNullProtoObj, migrateNullProto, getSlot, canonicalArrayIndex } from "../objects.ts";
 import {
   isMapAbs,
   isSetAbs,
@@ -201,18 +201,6 @@ export function $toNumber(a: Abs): Abs {
 }
 
 // --- in / instanceof / delete（transpile 运算符路由；与 ast-eval 同口径） ---
-
-/** ES 规范数组下标（无前导零、< 2^32-1）；非规范键返回 undefined */
-function canonicalArrayIndex(v: unknown): number | undefined {
-  if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 4294967295) {
-    return v;
-  }
-  if (typeof v === "string" && /^(0|[1-9]\d*)$/.test(v)) {
-    const n = Number(v);
-    if (n < 4294967295) return n;
-  }
-  return undefined;
-}
 
 /**
  * `key in obj`：闭形状精确判定（含 Object.prototype 名、数组下标/length、

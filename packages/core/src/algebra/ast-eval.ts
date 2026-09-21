@@ -1376,6 +1376,8 @@ function evalNodeInner(
           let key: string | undefined;
           if (keyNode && keyNode.type === "Identifier") key = (keyNode as Identifier).name;
           if (keyNode && keyNode.type === "StringLiteral") key = (keyNode as StringLiteral).value;
+          // 数字键 {1: ...} → "1"（与 B-path staticKeyOf 同口径；此前被丢）
+          if (keyNode && keyNode.type === "NumericLiteral") key = String((keyNode as { value: number }).value);
           if (!key || !om.body) continue;
           const paramNames = (om.params ?? []).map((pp, i) =>
             pp.type === "Identifier" ? (pp as Identifier).name : `_a${i}`,
@@ -1401,6 +1403,8 @@ function evalNodeInner(
         let key: string | undefined;
         if (keyNode && keyNode.type === "Identifier") key = (keyNode as Identifier).name;
         if (keyNode && keyNode.type === "StringLiteral") key = (keyNode as StringLiteral).value;
+        // 数字键 {1: ...} → "1"（与 B-path staticKeyOf 同口径；此前被丢）
+        if (keyNode && keyNode.type === "NumericLiteral") key = String((keyNode as { value: number }).value);
         if (!key || !op.value) continue;
         pending[key] = { value: evalNode(op.value, env, phi, budget).value };
       }

@@ -5,7 +5,8 @@
 
 import type { Abs } from "./abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown, confJoin, isExactLit } from "./abs.ts";
-import { joinAbs, objOf, markNullProtoObj } from "./objects.ts";
+import { joinAbs, objOf, markNullProtoObj, canonicalArrayIndex } from "./objects.ts";
+import { TUPLE_MATERIALIZE_CAP } from "./containers.ts";
 import {
   isMapAbs,
   isSetAbs,
@@ -205,10 +206,51 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       let acc = args[0]!;
       for (let i = 1; i < args.length; i++) {
         acc = { ...acc }; // 保持结构；细粒度 spread 在 evalCall 侧
-        if (acc.shape.k === "obj" && args[i]!.shape.k === "obj") {
+        const src = args[i]!;
+        if (acc.shape.k === "obj" && src.shape.k === "obj") {
           const base = (acc.shape as { slots: Record<string, { value: Abs }> }).slots;
-          const over = (args[i]!.shape as { slots: Record<string, { value: Abs }> }).slots;
-          acc = abs({ k: "obj", slots: { ...base, ...over } }, undefined, undefined, confJoin(acc.conf, args[i]!.conf));
+          const over = (src.shape as { slots: Record<string, { value: Abs }> }).slots;
+          acc = abs({ k: "obj", slots: { ...base, ...over } }, undefined, undefined, confJoin(acc.conf, src.conf));
+        } else if (acc.shape.k === "tuple" && src.shape.k === "obj") {
+          // 数组 target：与 B-path runtimeAssignObject 同口径——数字键按下标写
+          // （扩展 length）、length 键截断/延长（延长段 hole、非法原生
+          // RangeError）、非规范键 expando 忽略；源键序 = 原生属性序
+          const slots = (src.shape as { slots: Record<string, { value: Abs }> }).slots;
+          let elements = [...acc.shape.elements];
+          let holes = [...(acc.shape.holes ?? [])];
+          let len = elements.length;
+          for (const [k, s] of Object.entries(slots)) {
+            if (k === "length") {
+              const lv = s.value.term?.op === "lit" ? s.value.term.value : undefined;
+              if (typeof lv !== "number" || !Number.isInteger(lv) || lv < 0) {
+                throw new NudoThrow(errorTypeAbs("RangeError"));
+              }
+              if (lv > TUPLE_MATERIALIZE_CAP) {
+                return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
+              }
+              if (lv < len) {
+                elements.length = lv;
+                holes = holes.filter((h) => h < lv);
+              } else {
+                for (let j = len; j < lv; j++) holes.push(j);
+              }
+              len = lv;
+              continue;
+            }
+            const idx = canonicalArrayIndex(k);
+            if (idx === undefined) continue;
+            if (idx >= len) len = idx + 1;
+            if (idx >= elements.length) elements.length = idx + 1;
+            elements[idx] = s.value;
+            holes = holes.filter((h) => h !== idx);
+          }
+          elements.length = len;
+          acc = abs(
+            { k: "tuple", elements, holes: holes.length > 0 ? holes : undefined },
+            undefined,
+            undefined,
+            confJoin(acc.conf, src.conf),
+          );
         }
       }
       return acc;
