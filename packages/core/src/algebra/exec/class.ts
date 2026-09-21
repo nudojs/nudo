@@ -9,7 +9,7 @@ import { objOf, joinAbs, isObj } from "../objects.ts";
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags, tryMakeRegexAbs } from "../builtins.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid } from "../collections.ts";
 import { registerMatchIter } from "./match-iter.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
@@ -149,10 +149,11 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
       }
       return abs({ k: "tuple", elements: args.map((a) => asAbs(a) ?? unknown) }, undefined, undefined, "exact");
     }
-    // new RegExp(pattern) → 可精确 exec/test 的 RegExp brand
+    // new RegExp(pattern, flags)：字面量真构造验证——非法 pattern/flags 硬抛
+    // SyntaxError/TypeError；合法折叠精确 brand；抽象/RegExp 实例保守（下方 path brand）
     if (cls === RegExp) {
-      const p = args[0] ? litValue(args[0]) : undefined;
-      if (typeof p === "string") return $regex(p, args[1] ? String(litValue(args[1]) ?? "") : "");
+      const m = tryMakeRegexAbs(args);
+      if (m) return m;
     }
     const clsName = cls.name || "Object";
     // C2.2：Error 家族携带 name/message 槽（catch 形参可读）

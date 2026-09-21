@@ -760,7 +760,12 @@ export function evalDateMethod(name: string, _recv: Abs, _args: Abs[]): Abs | un
 }
 
 /** new RegExp / regexp.test / exec */
-export function evalRegExpCtor(_args: Abs[]): Abs {
+export function evalRegExpCtor(args: Abs[]): Abs {
+  // 字面量实参真构造验证（非法 pattern/flags 硬抛）；抽象/RegExp 实例保守
+  return tryMakeRegexAbs(args) ?? pathRegExpBrand();
+}
+
+function pathRegExpBrand(): Abs {
   return abs(
     { k: "brand", name: "RegExp", shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") },
     undefined,
@@ -769,15 +774,82 @@ export function evalRegExpCtor(_args: Abs[]): Abs {
   );
 }
 
-export function evalRegExpMethod(name: string, _recv: Abs, _args: Abs[]): Abs | undefined {
-  switch (name) {
-    case "test":
-      return boolPrim();
-    case "exec":
-      return unknown;
-    default:
-      return undefined;
+/** RegExp brand：source/flags/lastIndex 进 slots（B-path 与 ast-eval 共用） */
+export function regexBrandAbsFrom(pattern: string, flags: string): Abs {
+  return abs(
+    {
+      k: "brand",
+      name: "RegExp",
+      shape: objOf({
+        source: { value: strLit(pattern) },
+        flags: { value: strLit(flags) },
+        lastIndex: { value: numLit(0) },
+      }),
+    },
+    undefined,
+    undefined,
+    "exact",
+  );
+}
+
+/**
+ * new RegExp(pattern, flags) 字面量真构造验证（$new 与 evalRegExpCtor 共用）：
+ * - 无参 → /(?:)/（原生 source 归一）
+ * - pattern 非字面量（抽象/RegExp 实例）→ undefined（调用方保守）
+ * - symbol pattern / flags → TypeError（ToString 抛）
+ * - 非法 pattern / 非法 flags（含 number/null/boolean flags 的 ToString）
+ *   → SyntaxError；合法 → 精确 brand（source/flags 取真构造结果）
+ */
+export function tryMakeRegexAbs(args: Abs[]): Abs | undefined {
+  const a0 = args[0];
+  if (!a0) return regexBrandAbsFrom("(?:)", "");
+  if (a0.term?.op !== "lit") return undefined;
+  const pv = a0.term.value;
+  if (typeof pv === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
+  const fAbs = args[1];
+  if (fAbs && fAbs.term?.op !== "lit") return undefined; // 抽象 flags：保守
+  const fv = fAbs ? litValue(fAbs) : undefined;
+  if (typeof fv === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
+  const flags = fv === undefined ? "" : String(fv);
+  try {
+    const r = new RegExp(String(pv), flags);
+    return regexBrandAbsFrom(r.source, r.flags);
+  } catch (e) {
+    if (e instanceof SyntaxError) throw new NudoThrow(errorTypeAbs("SyntaxError"));
+    throw new NudoThrow(errorTypeAbs("TypeError"));
   }
+}
+
+export function evalRegExpMethod(name: string, recv: Abs, args: Abs[]): Abs | undefined {
+  if (name === "test" || name === "exec") {
+    // 字面量 brand（source/flags 槽）+ 字面量 subject → 真执行（与 B-path 同轨）
+    const inner =
+      recv.shape.k === "brand" && recv.shape.name === "RegExp"
+        ? recv.shape.shape
+        : undefined;
+    const slots = inner && inner.shape.k === "obj" ? inner.shape.slots : undefined;
+    const pat = slots ? litValue(slots["source"]?.value) : undefined;
+    const flagsV = slots ? litValue(slots["flags"]?.value) : undefined;
+    const subject = args[0] ? litValue(args[0]) : undefined;
+    if (typeof pat === "string" && typeof subject === "string") {
+      try {
+        const re = new RegExp(pat, typeof flagsV === "string" ? flagsV : "");
+        if (name === "test") return boolLit(re.test(subject));
+        const m = re.exec(subject);
+        if (!m) return abs({ k: "unknown" }, { op: "lit", value: null }, pTrue, "exact");
+        return abs(
+          { k: "tuple", elements: m.map((g) => (g === undefined ? undefAbs() : strLit(g))) },
+          undefined,
+          undefined,
+          "exact",
+        );
+      } catch {
+        return undefined;
+      }
+    }
+    return name === "test" ? boolPrim() : unknown;
+  }
+  return undefined;
 }
 
 /** Promise：new Promise / Promise.resolve / reject / all */
@@ -927,12 +999,17 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
       return evalPromiseCtor(args);
     case "Map":
       // C1.1：可选 entry 元组列表填充字面量映射；
-      // 确定非法实参（prim 条目/非可迭代）→ THROW 域折 unknown（ast-eval 口径）
-      if (ctorArgDefinitelyInvalid("Map", args[0])) return unknown;
+      // 确定非法实参（prim 条目/非可迭代）→ NudoThrow(TypeError)
+      // （与 B-path $new 同口径；ast-eval NewExpression 吸收为 EvalResult{threw}）
+      if (ctorArgDefinitelyInvalid("Map", args[0])) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
       return makeMapAbs(args[0]);
     case "Set":
       // C1.2：从 iterable 填充元素联合
-      if (ctorArgDefinitelyInvalid("Set", args[0])) return unknown;
+      if (ctorArgDefinitelyInvalid("Set", args[0])) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
       return makeSetAbs(args[0]);
     default:
       // C2.2：Error 家族 → name/message 槽

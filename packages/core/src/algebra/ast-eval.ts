@@ -902,7 +902,15 @@ function evalNodeInner(
       const className = (ne.callee as Identifier).name;
       const args = ne.arguments.map((a) => evalNode(a, env, phi, budget).value);
       // 内置构造
-      const builtin = evalBuiltinNew(className, args);
+      let builtin: Abs | undefined;
+      try {
+        builtin = evalBuiltinNew(className, args);
+      } catch (e) {
+        // hard throw（RegExp 非法 pattern/flags、Map/Set 非法 iterable）：
+        // 吸收为 EvalResult{threw}，evalTry 把抛出 Abs 绑进 catch 形参
+        if (isNudoThrow(e)) return { value: e.absValue, phi, env, threw: true };
+        throw e;
+      }
       if (builtin) return ok(builtin, phi, env);
       const inst = instantiateClass(env, className, args, (ctor, cargs, thisVal, e) =>
         evalMethodBody(ctor, cargs, thisVal, e, phi, budget),

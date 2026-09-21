@@ -29,7 +29,7 @@ import {
 import { shouldWidenArrayLiteral, widenedArrayConf, TUPLE_MATERIALIZE_CAP } from "../containers.ts";
 import { registerMatchIter, matchIterElements } from "./match-iter.ts";
 import { leqAbs } from "../leq.ts";
-import { evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants } from "../builtins.ts";
+import { evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants, regexBrandAbsFrom } from "../builtins.ts";
 import type { Phi } from "../pred.ts";
 import { pTrue } from "../pred.ts";
 import {
@@ -1991,22 +1991,7 @@ export function namespaceNameOf(v: unknown): string | undefined {
 
 /** 正则字面量 → RegExp brand（source/flags/lastIndex 进 slots，供 exec/test 精确执行） */
 export function $regex(pattern: string, flags = ""): Abs {
-  const litStr = (v: string): Abs =>
-    abs({ k: "prim", type: "string" }, { op: "lit", value: v as never }, pTrue, "exact");
-  return abs(
-    {
-      k: "brand",
-      name: "RegExp",
-      shape: objOf({
-        source: { value: litStr(pattern) },
-        flags: { value: litStr(flags) },
-        lastIndex: { value: numLit(0) },
-      }),
-    },
-    undefined,
-    undefined,
-    "exact",
-  );
+  return regexBrandAbsFrom(pattern, flags);
 }
 
 /** 成员读：obj.slots[key]；缺失 → undefined 字面量；brand 解包内层 */
