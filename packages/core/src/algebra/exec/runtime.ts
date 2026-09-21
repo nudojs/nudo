@@ -2428,23 +2428,12 @@ export function $rethrowIfNudoReturn(e: unknown): void {
 
 // --- throws ---
 
-/** B 路径 throw 载荷：携带 Abs 抛出值 */
-export class NudoThrow extends Error {
-  readonly absValue: Abs;
-  constructor(absValue: Abs) {
-    super("nudo:throw");
-    this.name = "NudoThrow";
-    this.absValue = absValue;
-  }
-}
+import { NudoThrow, isNudoThrow } from "./nudo-throw.ts";
+export { NudoThrow, isNudoThrow };
 
 /** transpile `throw x` → `$throw(x)` */
 export function $throw(v: Abs): never {
   throw new NudoThrow(v);
-}
-
-export function isNudoThrow(e: unknown): e is NudoThrow {
-  return e instanceof NudoThrow;
 }
 
 /**

@@ -105,7 +105,7 @@ import {
   anyMemberResult,
 } from "./exec/member-diag.ts";
 import { errorTypeAbs, pushMayThrowFrame, popMayThrowFrame, orphanMayThrowEffects } from "./exec/may-throw.ts";
-import { NudoThrow } from "./exec/runtime.ts";
+import { NudoThrow, isNudoThrow } from "./exec/runtime.ts";
 import { registerBClass, markClassValue } from "./exec/class-registry.ts";
 import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
 import {
@@ -1563,8 +1563,15 @@ function evalCall(
       if (m.object.type === "Identifier") {
         const ns = (m.object as Identifier).name;
         const margs = rawArgs.map((a) => evalNode(a, env, phi, budget).value);
-        const r = evalNamespaceCall(ns, method, margs);
-        if (r) return ok(r, phi, env);
+        try {
+          const r = evalNamespaceCall(ns, method, margs);
+          if (r) return ok(r, phi, env);
+        } catch (e) {
+          // hard throw（JSON.parse SyntaxError / JSON.stringify TypeError 等）：
+          // 吸收为 EvalResult{threw}，evalTry 把抛出 Abs 绑进 catch 形参
+          if (isNudoThrow(e)) return { value: e.absValue, phi, env, threw: true };
+          throw e;
+        }
       }
 
       // Abs 方法表（template startsWith 等）
