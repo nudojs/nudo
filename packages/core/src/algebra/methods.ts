@@ -6,7 +6,12 @@
  */
 
 import type { Abs } from "./abs.ts";
-import { abs, litValue, numLit, strLit, boolLit } from "./abs.ts";
+import { abs, litValue, numLit, strLit, boolLit, unknown } from "./abs.ts";
+import { applyCallbackAbs, undefAbs } from "./hof.ts";
+import { NudoThrow } from "./exec/nudo-throw.ts";
+import { errorTypeAbs } from "./exec/may-throw.ts";
+import { pTrue } from "./pred.ts";
+import { defaultLeakBudget } from "./leak.ts";
 import {
   isTemplateLike,
   templatePartsOf,
@@ -35,6 +40,15 @@ function numPrim(conf: Abs["conf"] = "path"): Abs {
 
 function strArr(conf: Abs["conf"] = "path"): Abs {
   return abs({ k: "arr", element: strPrim("path") }, undefined, undefined, conf);
+}
+
+/**
+ * replace 回调桥接的最小环境：宿主 applyCallbackHost 由 ast-eval 模块
+ * 注册（B-path 经 ast-eval 的 emptyEnv import 已触发加载）；fn Abs 的
+ * impl.env（闭包）优先，此 env 仅作 hofCollect 等字段兜底。
+ */
+function callbackEnv(): unknown {
+  return { vars: new Map(), fns: new Map(), hofCollect: undefined };
 }
 
 function isStrRecv(recv: Abs): boolean {
@@ -179,7 +193,76 @@ export function callAbsMethod(
       return strArr("path");
     }
     case "replace":
-    case "replaceAll":
+    case "replaceAll": {
+      if (lit !== undefined) {
+        const patAbs = args[0];
+        const repAbs = args[1];
+        if (patAbs && repAbs) {
+          // pattern：字符串字面量 / RegExp brand（source/flags 槽）
+          let patSrc: string | undefined;
+          let patRe: RegExp | undefined;
+          const pv = patAbs.term?.op === "lit" ? patAbs.term.value : undefined;
+          if (typeof pv === "string") {
+            patSrc = pv;
+          } else if (patAbs.shape.k === "brand" && patAbs.shape.name === "RegExp") {
+            const inner = patAbs.shape.shape;
+            const slots = inner.shape.k === "obj" ? inner.shape.slots : undefined;
+            const src = slots ? litValue(slots["source"]?.value) : undefined;
+            const flags = slots ? litValue(slots["flags"]?.value) : undefined;
+            if (typeof src === "string" && (flags === undefined || typeof flags === "string")) {
+              try {
+                patRe = new RegExp(src, flags ?? "");
+              } catch {
+                return strPrim("path");
+              }
+            }
+          }
+          if (patSrc === undefined && patRe === undefined) return strPrim("path");
+          // replaceAll + 非全局正则 → 原生 TypeError（hard throw，catch 可吸收）
+          if (name === "replaceAll" && patRe && !patRe.global) {
+            throw new NudoThrow(errorTypeAbs("TypeError"));
+          }
+          const pat = (patSrc ?? patRe)!;
+          // repl 字符串字面量：$ 模式展开真执行
+          const rv = repAbs.term?.op === "lit" ? repAbs.term.value : undefined;
+          if (typeof rv === "string") {
+            return strLit(name === "replaceAll" ? lit.replaceAll(pat as never, rv) : lit.replace(pat as never, rv));
+          }
+          // repl fn Abs：原生回调语义——逐命中桥接 Abs 回调（副作用真实执行）
+          if (repAbs.shape.k === "fn") {
+            let anyUnknown = false;
+            const replWrapper = (...caps: unknown[]): string => {
+              const groups = caps.slice(1, -2);
+              const offset = caps[caps.length - 2];
+              const whole = caps[caps.length - 1];
+              const callArgs: Abs[] = [
+                strLit(String(caps[0])),
+                ...groups.map((g) => (g === undefined ? undefAbs() : strLit(String(g)))),
+                typeof offset === "number" ? numLit(offset) : unknown,
+                typeof whole === "string" ? strLit(whole) : unknown,
+              ];
+              const r = applyCallbackAbs(repAbs, callArgs, callbackEnv(), pTrue, defaultLeakBudget);
+              const lv = litValue(r);
+              if (lv === undefined) {
+                anyUnknown = true;
+                return "";
+              }
+              return String(lv); // ToString：99→"99"、null→"null"
+            };
+            try {
+              const out =
+                name === "replaceAll"
+                  ? lit.replaceAll(pat as never, replWrapper as never)
+                  : lit.replace(pat as never, replWrapper as never);
+              return anyUnknown ? strPrim("path") : strLit(out);
+            } catch {
+              return strPrim("path");
+            }
+          }
+        }
+      }
+      return strPrim("path");
+    }
     case "padStart":
     case "padEnd":
     case "repeat":

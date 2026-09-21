@@ -95,6 +95,7 @@ import {
   evalBuiltinNew,
   evalBuiltinInstanceMethod,
   errorBrandAbs,
+  regexBrandAbsFrom,
 } from "./builtins.ts";
 import { callAbsMethod, getAbsProperty } from "./methods.ts";
 import {
@@ -864,6 +865,11 @@ function evalNodeInner(
       return ok(boolLit((node as BooleanLiteral).value), phi, env);
     case "BigIntLiteral":
       return ok(bigintLit((node as { value: bigint }).value), phi, env);
+    case "RegExpLiteral": {
+      // 正则字面量 → RegExp brand（source/flags 槽，test/exec/replace 折叠用）
+      const re = node as { pattern: string; flags?: string };
+      return ok(regexBrandAbsFrom(re.pattern, re.flags ?? ""), phi, env);
+    }
     case "NullLiteral":
       return ok(abs({ k: "unknown" }, lit(null), pTrue, "exact"), phi, env);
     case "Identifier": {
@@ -1590,8 +1596,15 @@ function evalCall(
       // Abs 方法表（template startsWith 等）
       {
         const margs = rawArgs.map((a) => evalNode(a, env, phi, budget).value);
-        const viaTable = callAbsMethod(obj, method, margs);
-        if (viaTable) return ok(viaTable, phi, env);
+        try {
+          const viaTable = callAbsMethod(obj, method, margs);
+          if (viaTable) return ok(viaTable, phi, env);
+        } catch (e) {
+          // hard throw（replaceAll 非全局正则 TypeError 等）：吸收为
+          // EvalResult{threw}，evalTry 把抛出 Abs 绑进 catch 形参
+          if (isNudoThrow(e)) return { value: e.absValue, phi, env, threw: true };
+          throw e;
+        }
       }
 
       if (obj.shape.k === "brand") {
