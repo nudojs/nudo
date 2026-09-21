@@ -6,7 +6,7 @@
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, str, strLit, numLit } from "../abs.ts";
 import { objOf, joinAbs, isObj, canonicalArrayIndex } from "../objects.ts";
-import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple } from "./runtime.ts";
+import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple, clearStaleTermPred } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
 import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots } from "../builtins.ts";
@@ -388,8 +388,9 @@ function runtimeAssignObject(args: Abs[]): Abs {
     }
     return unknown;
   }
-  const mergeObj = (accObj: Abs, srcAbs: Abs, st: "nonext" | "sealed" | "frozen" | undefined): Abs => {
-    const base = { ...(accObj.shape as Extract<Abs["shape"], { k: "obj" }>).slots };
+  const mergeObj = (accObj: Abs, srcAbs: Abs, st: "nonext" | "sealed" | "frozen" | undefined): void => {
+    // 就地写槽（同 $set 引用语义：语句位置无需重绑、别名同步、Abs 身份不变）
+    const base = (accObj.shape as Extract<Abs["shape"], { k: "obj" }>).slots;
     const flags = getPropFlags(accObj);
     for (const [k, s] of Object.entries((srcAbs.shape as Extract<Abs["shape"], { k: "obj" }>).slots)) {
       // sealed/nonext 目标新键 / writable:false 键覆写：strict TypeError
@@ -403,10 +404,9 @@ function runtimeAssignObject(args: Abs[]): Abs {
       const a = lookupObjAccessor(srcAbs, k);
       base[k] = a?.get ? { value: a.get(srcAbs) } : s;
     }
-    return objOf(base, {
-      index: (accObj.shape as Extract<Abs["shape"], { k: "obj" }>).index,
-      open: (accObj.shape as Extract<Abs["shape"], { k: "obj" }>).open || (srcAbs.shape as Extract<Abs["shape"], { k: "obj" }>).open,
-    });
+    if ((srcAbs.shape as Extract<Abs["shape"], { k: "obj" }>).open) {
+      (accObj.shape as Extract<Abs["shape"], { k: "obj" }>).open = true;
+    }
   };
   let acc = args[0]!;
   for (let i = 1; i < args.length; i++) {
@@ -416,13 +416,14 @@ function runtimeAssignObject(args: Abs[]): Abs {
     const src = asAbsVal(args[i]!);
     if (src.shape.k === "obj") {
       if (acc.shape.k === "obj") {
-        acc = mergeObj(acc, src, st);
+        mergeObj(acc, src, st);
         acc.conf = confJoin(acc.conf, src.conf);
+        clearStaleTermPred(acc);
       } else if (acc.shape.k === "tuple") {
         // 数组 target：数字键按下标写（扩展 length）、"length" 键截断/延长
         // （延长段 hole；非法 length 原生 RangeError）、非规范键 expando 忽略。
         // 源键序 = 原生 [[OwnPropertyKeys]] 序（整数键升序 → 字符串插入序）。
-        acc = assignArrayTarget(acc, src, st);
+        assignArrayTarget(acc, src, st);
       }
       continue;
     }
@@ -431,11 +432,13 @@ function runtimeAssignObject(args: Abs[]): Abs {
       // 键集未知（strPrim 非字面量 / arr / brand / sum / fn…）：保守降级，
       // 不得折「无变化」假精确
       if (acc.shape.k === "obj") {
-        acc = objOf({ ...acc.shape.slots }, { index: acc.shape.index, open: true });
+        acc.shape.open = true;
       } else if (acc.shape.k === "tuple") {
         const els = acc.shape.elements;
         const joined = els.length ? els.reduce((x, y) => joinAbs(x, y)) : str();
-        acc = abs({ k: "arr", element: joinAbs(joined, str()) }, undefined, undefined, "partial");
+        acc.shape = { k: "arr", element: joinAbs(joined, str()) };
+        acc.conf = "partial";
+        clearStaleTermPred(acc);
       }
       continue;
     }
@@ -443,10 +446,11 @@ function runtimeAssignObject(args: Abs[]): Abs {
       // tuple / 字符串字面量源：合成 obj 源走同一逐键写链（无 getter/length 键）
       const srcObj = abs({ k: "obj", slots: srcSlots }, undefined, undefined, "exact");
       if (acc.shape.k === "obj") {
-        acc = mergeObj(acc, srcObj, st);
+        mergeObj(acc, srcObj, st);
         acc.conf = confJoin(acc.conf, src.conf);
+        clearStaleTermPred(acc);
       } else {
-        acc = assignArrayTarget(acc, srcObj, st);
+        assignArrayTarget(acc, srcObj, st);
       }
     }
   }
@@ -458,11 +462,12 @@ function runtimeAssignObject(args: Abs[]): Abs {
  * 与原生同序处理 length 键与下标键（先写后截断可抹掉写入）。
  * getter 源键调用 getter；frozen/sealed 新下标 strict TypeError。
  */
-function assignArrayTarget(target: Abs, src: Abs, st: "nonext" | "sealed" | "frozen" | undefined): Abs {
+function assignArrayTarget(target: Abs, src: Abs, st: "nonext" | "sealed" | "frozen" | undefined): void {
   const ts = target.shape as Extract<Abs["shape"], { k: "tuple" }>;
   const ss = src.shape as Extract<Abs["shape"], { k: "obj" }>;
-  let elements = [...ts.elements];
-  let holes = [...(ts.holes ?? [])];
+  // 就地改槽（同 $set 引用语义：语句位置无需重绑、别名同步）
+  const elements = ts.elements;
+  let holes = ts.holes ?? [];
   let len = elements.length;
   const origLen = len;
   for (const [k, s] of Object.entries(ss.slots)) {
@@ -475,9 +480,12 @@ function assignArrayTarget(target: Abs, src: Abs, st: "nonext" | "sealed" | "fro
         throw new NudoThrow(errorTypeAbs("RangeError"));
       }
       if (lv > TUPLE_MATERIALIZE_CAP) {
-        // 合法但巨大：不物化巨 tuple，保守降 arr
+        // 合法但巨大：不物化巨 tuple，就地降 arr
         const el = elements.length ? elements.reduce((x, y) => joinAbs(x, y)) : unknown;
-        return abs({ k: "arr", element: el }, undefined, undefined, "partial");
+        target.shape = { k: "arr", element: el };
+        target.conf = "partial";
+        clearStaleTermPred(target);
+        return;
       }
       if (lv < len) {
         elements.length = lv;
@@ -501,12 +509,8 @@ function assignArrayTarget(target: Abs, src: Abs, st: "nonext" | "sealed" | "fro
     holes = holes.filter((h) => h !== idx);
   }
   elements.length = len;
-  return abs(
-    { k: "tuple", elements, holes: holes.length > 0 ? holes : undefined },
-    undefined,
-    undefined,
-    confJoin(target.conf, src.conf),
-  );
+  target.shape = { k: "tuple", elements, holes: holes.length > 0 ? holes : undefined };
+  clearStaleTermPred(target);
 }
 
 /** 实例方法调用：沿继承链；类 Abs 上回落 staticMethods；obj 上回落属性函数 */

@@ -58,7 +58,7 @@ function writeInPlace(target: Abs, next: Abs): Abs {
 }
 
 /** 调用方已直接改 shape 时的 term/pred 清理 */
-function clearStaleTermPred(v: Abs): void {
+export function clearStaleTermPred(v: Abs): void {
   v.term = undefined;
   v.pred = undefined;
 }

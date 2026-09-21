@@ -1208,8 +1208,33 @@ function evalNodeInner(
       return evalIf(node as IfStatement, env, phi, budget);
     case "SwitchStatement":
       return evalSwitch(node as SwitchStatement, env, phi, budget);
-    case "ExpressionStatement":
-      return evalNode((node as ExpressionStatement).expression, env, phi, budget);
+    case "ExpressionStatement": {
+      const r = evalNode((node as ExpressionStatement).expression, env, phi, budget);
+      // Object.assign(t, …) 语句位：表达式值被丢弃，目标绑定必须回写
+      //（B-path 引用语义就地写无需重绑；ast-eval 不可变 env 显式重绑，
+      // 与 B-path runtimeAssignObject 语句位可见性对齐）
+      const expr = (node as ExpressionStatement).expression as {
+        type?: string;
+        callee?: Node;
+        arguments?: Node[];
+      };
+      if (
+        expr.type === "CallExpression" &&
+        expr.callee?.type === "MemberExpression" &&
+        (expr.callee as { computed?: boolean }).computed !== true &&
+        (expr.callee as { object?: Node }).object?.type === "Identifier" &&
+        ((expr.callee as { object: Identifier }).object.name === "Object") &&
+        (expr.callee as { property?: Node }).property?.type === "Identifier" &&
+        ((expr.callee as { property: Identifier }).property.name === "assign") &&
+        expr.arguments?.[0]?.type === "Identifier"
+      ) {
+        const v = r.value;
+        if (v.shape.k === "obj" || v.shape.k === "tuple") {
+          return { value: v, phi: r.phi, env: withVar(r.env, (expr.arguments[0] as Identifier).name, v) };
+        }
+      }
+      return r;
+    }
     case "VariableDeclaration":
       return evalVarDecl(node as VariableDeclaration, env, phi, budget);
     case "UnaryExpression": {

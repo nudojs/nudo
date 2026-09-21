@@ -195,3 +195,58 @@ describe("ast-eval Object.assign non-object source parity", () => {
     expect(litValue(analyzeFn(`function f() { return Object.assign({a: 1}, null, undefined).a; }`, "f", []))).toBe(1);
   });
 });
+
+describe("B-path Object.assign statement position", () => {
+  // 语句位调用结果被丢弃——此前 assign 返回新容器但目标绑定不回写：
+  // const t = {a:1}; Object.assign(t, {b:2}); return t 折 {a:1}（假精确）。
+  it("writes through on obj target", () => {
+    expect(
+      litValue(call(`export function f() { const t = {a: 1}; Object.assign(t, {b: 2}); return t.b; }`).result),
+    ).toBe(2);
+  });
+
+  it("writes through with string/array sources", () => {
+    expect(
+      litValue(call(`export function f() { const t = {a: 1}; Object.assign(t, 'bc'); return t['0'] + t['1'] + t.a; }`).result),
+    ).toBe("bc1");
+    expect(
+      litValue(call(`export function f() { const t = [9,9]; Object.assign(t, 'xy'); return t[0] + t[1] + t.length; }`).result),
+    ).toBe("xy2");
+    expect(
+      litValue(call(`export function f() { const t = [9,9]; Object.assign(t, [7]); return t[0] * 10 + t[1]; }`).result),
+    ).toBe(79);
+  });
+
+  it("preserves aliasing (reference semantics)", () => {
+    expect(
+      litValue(call(`export function f() { const t = {a: 1}; const u = t; Object.assign(t, {b: 2}); return u.b; }`).result),
+    ).toBe(2);
+  });
+
+  it("length key on array target writes through", () => {
+    expect(
+      litValue(call(`export function f() { const t = [1,2,3]; Object.assign(t, {length: 0}); return t.length; }`).result),
+    ).toBe(0);
+  });
+
+  it("expression position still returns the merged value", () => {
+    expect(
+      litValue(call(`export function f() { const t = {a: 1}; return Object.assign(t, {b: 2}).b; }`).result),
+    ).toBe(2);
+    expect(litValue(call(`export function f() { const t = {a: 1}; return t.b; }`).result)).toBeUndefined();
+  });
+});
+
+describe("ast-eval Object.assign statement parity", () => {
+  it("statement position rebinds the target binding", () => {
+    expect(
+      litValue(analyzeFn(`function f() { const t = {a: 1}; Object.assign(t, {b: 2}); return t.b; }`, "f", [])),
+    ).toBe(2);
+    expect(
+      litValue(analyzeFn(`function f() { const t = {a: 1}; Object.assign(t, 'bc'); return t['0'] + t['1']; }`, "f", [])),
+    ).toBe("bc");
+    expect(
+      litValue(analyzeFn(`function f() { const t = [9,9]; Object.assign(t, 'xy'); return t[0] + t[1]; }`, "f", [])),
+    ).toBe("xy");
+  });
+});
