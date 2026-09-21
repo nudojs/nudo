@@ -399,6 +399,8 @@ function validateMockDirectives(
 ): void {
   for (const d of directives) {
     if (d.kind !== "mock" || !d.expression) continue;
+    // 已被 parser 识别为 arrow / sinon / nudoMock 形态 → 不是无法解析的表达式
+    if (d.arrowFn || d.sinonExpr || d.nudoMock) continue;
     const expr = d.expression.trim();
     // constraint builders / literals / structure are valid raw mock RHS
     const isTypeExpr =
@@ -414,8 +416,8 @@ function validateMockDirectives(
       ((expr.startsWith('"') && expr.endsWith('"')) || (expr.startsWith("'") && expr.endsWith("'"))) ||
       expr.startsWith("{") ||
       expr.startsWith("[");
-    if (expr.includes("(") && expr.includes(")") && !isTypeExpr && !expr.includes("=>")) {
-      // 已被 parser 识别为 nudoMock/sinon/arrow 时不会带 raw expression
+    const looksLikeCall = (expr.includes("(") && expr.includes(")")) || expr.includes("=>");
+    if (looksLikeCall && !isTypeExpr) {
       diagnostics.push({
         range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
         severity: "warning",

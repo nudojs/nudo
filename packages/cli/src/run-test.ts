@@ -49,10 +49,17 @@ export function buildTestReport(file: string, result: AnalysisResult): TestRepor
   const outcomes: CaseTestOutcome[] = [];
   const caseLines: string[] = [];
 
-  const emitFnCases = (fnName: string, cases: CaseResult[], skipped?: boolean): void => {
+  const emitFnCases = (
+    fnName: string,
+    cases: CaseResult[],
+    skipped?: boolean,
+    declared?: string,
+  ): void => {
     caseLines.push(`=== ${fnName} ===`);
     if (skipped) {
-      caseLines.push("  skipped (declared)");
+      caseLines.push(
+        declared ? `  skipped (declared): ${declared}` : "  skipped (no return type declared)",
+      );
       caseLines.push("");
       return;
     }
@@ -113,7 +120,12 @@ export function buildTestReport(file: string, result: AnalysisResult): TestRepor
   };
 
   for (const fn of result.functions) {
-    emitFnCases(fn.name, fn.cases, fn.skipped);
+    emitFnCases(
+      fn.name,
+      fn.cases,
+      fn.skipped,
+      fn.skipped && fn.combinedAbs ? formatShape(fn.combinedAbs) : undefined,
+    );
   }
   if (result.externalFunctions && result.externalFunctions.length > 0) {
     const byModule = new Map<string, typeof result.externalFunctions>();
@@ -126,7 +138,12 @@ export function buildTestReport(file: string, result: AnalysisResult): TestRepor
     for (const [mod, fns] of byModule) {
       caseLines.push(`--- ${mod} (imported) ---`);
       for (const fn of fns) {
-        emitFnCases(fn.name, fn.cases, fn.skipped);
+        emitFnCases(
+          fn.name,
+          fn.cases,
+          fn.skipped,
+          fn.skipped && fn.combinedAbs ? formatShape(fn.combinedAbs) : undefined,
+        );
       }
     }
   }

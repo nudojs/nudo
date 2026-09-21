@@ -29,6 +29,7 @@ import {
   findProjectConfig,
   interfaceConfig,
   checkConfig,
+  collectSkipReturns,
   isNudoTargetPath,
   sidecarDraftPath,
   writeInterfaceDraft,
@@ -407,6 +408,7 @@ export function checkTool(
       ...(autoBind === false ? { autoBind: false } : {}),
       entryThrows: cCfg.entryThrows,
       ...(cCfg.ignoreThrows.length > 0 ? { ignoreThrows: cCfg.ignoreThrows } : {}),
+      skips: collectSkipReturns(source),
     });
     const json = serializeCheckJson(report);
     if (params.format === "json") {

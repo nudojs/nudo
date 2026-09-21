@@ -130,7 +130,7 @@ Running `nudo test` on this file shows the harvested signature of `join` flowing
 ```text
 === buildKey ===
 
-call@L9: ("docs", "readme") => `${string}.md`
+  call@L9  ("docs", "readme") => `${string}.md`
 ```
 
 Path-based env files are loaded via dynamic import, so asynchronous consumers (`nudo check`/`nudo test`, `analyzeFileAsync`, the LSP validation path) preload them; the synchronous `analyzeFile` degrades when a file declares one. Async tooling should prefer [`analyzeFileAsync`](./service.md).

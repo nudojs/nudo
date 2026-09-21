@@ -30,7 +30,7 @@ Observation lives in the output of `check` / `test` and in IDE hover — not a s
 | Entry signatures / any / unknown / throws | `nudo check <path>` (prints `signatures` even on success) |
 | Per-call-site ground truth / narrowing | `nudo test <path>` (prints every case, including synthetic `call@` / `entry@`) |
 | Usage-site argument shapes | `nudo check` / `test` / `contract` `--from <paths…>` |
-| Algebra face term/pred/conf | `nudo check --abs` (or `test --abs`) |
+| Algebra face (shape + conf; `--generalize` adds term/pred α) | `nudo check --abs` (or `test --abs`) |
 | Machine-readable | `nudo check --json` / `nudo test --json` |
 | Interactive | IDE hover / inlay |
 
@@ -50,11 +50,19 @@ nudo check user.js
 ```
 
 ```text
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
 signatures
   getName(user: any) => any  throws TypeError
   subtract(a: any, b: any) => number
+
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or declare/catch throws
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
 Unconstrained entry parameters display as **`any`**. `unknown` means inference failed (engine debt) — it is never the default for an unconstrained entry parameter.
@@ -93,8 +101,9 @@ nudo test math.js
 === subtract ===
   call@L6  (5, 3) => 2
   call@L7  (1, 10) => -9
+
 assertions
-  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 2 synthetic case(s) printed above)
 ```
 
 - Synthetic `call@` / `entry@` cases **print by default** — that is the call-site observation surface.
@@ -122,11 +131,10 @@ nudo test file.js
 ```text
 === double ===
   debug "double"  (2) => 4
+
 assertions
   ✓ 1 passed · 0 failed · 0 unchecked
   [ok]   double  case "double" → 4
-assertions
-  ✓ 1 passed · 0 failed · 1 unchecked
 ```
 
 ---

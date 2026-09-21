@@ -13,7 +13,8 @@ analyzeFile(
   filePath: string,
   source: string,
   activeCases?: Map<string, number>,
-  externalCallRecords?: CallRecord[]
+  externalCallRecords?: CallRecord[],
+  loadModule?: LoadModule
 ): AnalysisResult
 ```
 
@@ -34,7 +35,8 @@ analyzeFileAsync(
   filePath: string,
   source: string,
   activeCases?: Map<string, number>,
-  externalCallRecords?: CallRecord[]
+  externalCallRecords?: CallRecord[],
+  loadModule?: LoadModule
 ): Promise<AnalysisResult>
 ```
 

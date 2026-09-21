@@ -63,7 +63,7 @@ Install `wmzy.nudo-vscode`. The extension bundles the server and registers `nudo
 ### Zed — minimal
 
 1. Install [nudojs/nudo-zed](https://github.com/nudojs/nudo-zed) as a dev/extension install, **or** point at a local server binary.
-2. Project `package.json`: `"devDependencies": { "@nudojs/lsp": "^0.8.0" }`.
+2. Project `package.json`: `"devDependencies": { "@nudojs/lsp": "^1.0.0" }`.
 3. `~/.config/zed/settings.json` (or project `.zed/settings.json`):
 
 ```json

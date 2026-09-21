@@ -28,6 +28,7 @@ import {
   computeDirtySet,
   topoSortDirty,
   collectCallRecords,
+  collectSkipReturns,
   stripGeneratedCaseDirectives,
   insertGeneratedCaseDirectives,
   unifiedDiff,
@@ -390,6 +391,7 @@ async function runCheck(
       ...(autoBind === false ? { autoBind: false } : {}),
       entryThrows,
       ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
+      skips: collectSkipReturns(source),
     });
   }
 
@@ -477,7 +479,7 @@ async function runAbsView(
   for (const a of opts.assume ?? []) {
     const m = /^([A-Za-z_$][\w$]*)\s*(>=|>)\s*(-?\d+(?:\.\d+)?)$/.exec(a.trim());
     if (!m) {
-      console.error(`无法解析 --assume: ${a}（支持 x>0 / x>=1）`);
+      console.error(`Cannot parse --assume: ${a} (supported forms: x>0 / x>=1)`);
       continue;
     }
     const id = m[1]!;
@@ -487,7 +489,7 @@ async function runAbsView(
   }
   const list = opts.fn ? [opts.fn] : algebra.listFunctionNames(source);
   if (list.length === 0) {
-    console.error(`未找到函数: ${basename(filePath)}`);
+    console.error(`Function not found: ${basename(filePath)}`);
     process.exitCode = 1;
     return;
   }

@@ -137,9 +137,9 @@ Narrowing refines values based on conditions. The engine supports these patterns
 | `Array.isArray(x)` | `x ∩ array` | `x - array` |
 | `x` (truthiness) | `x - null - undefined - lit(0) - lit("") - lit(false)` | complement |
 | `x instanceof C` | `x ∩ instance(C)` | `x - instance(C)` |
-| `"key" in x` | union members with `key` property | union members without `key` |
-| `x?.prop` | normal member access (short-circuits to `undefined` for nullish) | — |
-| `a ?? b` | `a` with null/undefined removed | — |
+| `"key" in x` | forks for object arguments; method results may widen to `unknown` | — |
+| `x?.prop` | shallow access on known properties folds; deep `?.` chains degrade to `unknown` | — |
+| `a ?? b` | shallow `??` on a known property folds to the value | — |
 | `switch(x) { case v: ... }` | `x ∩ lit(v)` per case | remaining after all cases |
 | `x.kind === "a"` (discriminated union) | union members where `kind` matches literal | union members where `kind` differs |
 

@@ -131,8 +131,20 @@ export function formatShape(a: Abs): string {
       return `${s.name}`;
     case "eff":
       return `${s.eff}<${formatShape(s.inner)}>`;
-    case "sum":
-      return s.members.map(formatShape).join(" | ");
+    case "sum": {
+      // 渲染去重：不同 term/pred 的成员可能渲染成同一形状（例如两条 number
+      // 路径）——formatShape 是有损外延视图，重复文本只留一次；formatAbs
+      // 仍保留全部成员（无损）。
+      const seen = new Set<string>();
+      const parts: string[] = [];
+      for (const m of s.members) {
+        const t = formatShape(m);
+        if (seen.has(t)) continue;
+        seen.add(t);
+        parts.push(t);
+      }
+      return parts.join(" | ");
+    }
     default:
       return "·";
   }

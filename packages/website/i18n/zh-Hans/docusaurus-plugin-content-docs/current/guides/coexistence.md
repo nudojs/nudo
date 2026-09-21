@@ -84,7 +84,7 @@ npx nudojs check packages/legacy-js/src
 ## 配方 3：渐进契约
 
 1. 先观察——`nudo check` / `nudo test`，不需要指令。
-2. 某个函数需要 CI 门禁时，在旁边加 `fn.nudo.js`。
+2. 某个函数需要 CI 门禁时，在旁边加一个 `<file>.nudo.js` 侧车。
 3. `nudo check` 只执法**手写**侧车；`@generated` 段是事实 + drift，不产生新义务。
 
 ## 配方：混合 JS/TS monorepo（避免双重错误风暴） {#recipe-mixed-js-ts-no-double-error-storm}

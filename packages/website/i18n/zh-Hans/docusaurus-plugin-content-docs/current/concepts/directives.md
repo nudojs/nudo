@@ -125,7 +125,7 @@ function add(a, b) {
 
 ## @nudo:skip — 跳过求值
 
-跳过抽象解释。引擎不求值函数体。没有返回类型表达式时，函数报告为 `Skipped (no return type declared)`；在指令后添加类型值表达式即可声明返回类型。
+跳过函数体的抽象解释：引擎不求值它，所以被跳过的函数不会产生引擎债（`nudo:unknown-inference`）噪声。没有返回类型表达式时，函数报告为 `skipped (no return type declared)`，且 `nudo check` 把它的返回值打印为 `any`（无约束——不是保留给推导失败的 `unknown`）；在指令后添加约束构造器表达式即可声明返回类型。
 
 ### 语法
 
@@ -135,6 +135,12 @@ function add(a, b) {
 ```
 
 - **returnsExpr**（可选）— 用作返回类型的类型值表达式。
+
+### 范围
+
+- **不求值函数体。** 声明的类型（或 `any`）成为签名返回值；被跳过的函数体不参与入口 may-throw（L2）求值。
+- **形参义务保留。** `@nudo:refine` 前置条件仍会门禁调用点，形参展示仍来自手写契约——对带 `@nudo:refine x positive` 的被跳过函数 `needsPositive`，`nudo check` 报告 `needsPositive(x: number) => any`。
+- **返回契约仍被检查。** `@nudo:refine return positive` 之下的 `@nudo:skip lit(0)` 会报告 `nudo:constraint-violated`。
 
 ### 示例
 
@@ -148,12 +154,11 @@ function heavyComputation(data) {
 }
 ```
 
-**推断输出：**
+**推断输出（`nudo test`）：**
 
 ```text
 === heavyComputation ===
-
-Skipped (no return type declared)
+  skipped (no return type declared)
 ```
 
 ```javascript
@@ -166,12 +171,11 @@ function unannotatedHeavy(x) {
 }
 ```
 
-**推断输出：**
+**推断输出（`nudo test`）：**
 
 ```text
 === unannotatedHeavy ===
-
-Skipped (declared): number
+  skipped (declared): number
 ```
 
 ---

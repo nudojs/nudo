@@ -30,7 +30,7 @@ nudo — JavaScript types, computed
 | 入口签名 / any / unknown / throws | `nudo check <path>`（成功也打印 `signatures`） |
 | 逐调用点真值 / 窄化结果 | `nudo test <path>`（打印全部 case，含合成 `call@` / `entry@`） |
 | 使用处实参形态 | `nudo check` / `test` / `contract` `--from <paths…>` |
-| 代数面 term/pred/conf | `nudo check --abs`（或 `test --abs`） |
+| 代数面（shape + conf；`--generalize` 附加 term/pred α） | `nudo check --abs`（或 `test --abs`） |
 | 机器可读 | `nudo check --json` / `nudo test --json` |
 | 交互 | IDE hover / inlay |
 
@@ -50,11 +50,19 @@ nudo check user.js
 ```
 
 ```text
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
 signatures
   getName(user: any) => any  throws TypeError
   subtract(a: any, b: any) => number
+
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or declare/catch throws
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
 无约束入口参数显示为 **`any`**。`unknown` 表示推导失败（引擎债）—— 绝不是无约束入口参数的默认值。
@@ -93,8 +101,9 @@ nudo test math.js
 === subtract ===
   call@L6  (5, 3) => 2
   call@L7  (1, 10) => -9
+
 assertions
-  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 2 synthetic case(s) printed above)
 ```
 
 - 合成 `call@` / `entry@` **默认打印** —— 这就是调用点观察面。
@@ -103,6 +112,30 @@ assertions
 - `--from <paths…>` 挖掘使用处调用形状。
 - `--freeze[=update]` 把合成用例固化为指令。
 - `--json` / `--abs` 与 `check` 对齐；`test --json` 含 `assertions` 摘要，声明断言失败仍 exit 1。
+
+### 带声明断言的示例
+
+```js
+/**
+ * @nudo:case "double" (2) => 4
+ */
+export function double(x) {
+  return x * 2;
+}
+```
+
+```bash
+nudo test file.js
+```
+
+```text
+=== double ===
+  debug "double"  (2) => 4
+
+assertions
+  ✓ 1 passed · 0 failed · 0 unchecked
+  [ok]   double  case "double" → 4
+```
 
 ---
 

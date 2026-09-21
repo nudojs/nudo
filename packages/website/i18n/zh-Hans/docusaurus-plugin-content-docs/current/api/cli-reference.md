@@ -54,7 +54,10 @@ nudo check <path> [options]
 | `--watch` / `-w` | 变更时重跑（旗标，不是动词） |
 | `--json` | 结构化诊断 + 签名 |
 | `--verbose` | 额外诊断细节 |
-| `--abs` | 打印 Abs 代数面（term / pred / conf） |
+| `--abs` | 每函数代数面（shape + conf）；`--generalize` 附加符号 term/pred α |
+| `--fn <name>` | 搭配 `--abs`：限定单个函数 |
+| `--assume <pred…>` | 搭配 `--abs`：假设约束，如 `x>0 y>=1` |
+| `--generalize` | 搭配 `--abs`：经符号执行得到多态签名 |
 | `--from <paths…>` | 使用处文件（tests/apps）；其调用记录并入分析 |
 | `--ignore-throws <names>` | 逗号分隔、可忽略的 L2 throws 类型（如 `TypeError,RangeError`）。不吞 L1 契约违例。 |
 | `--entry-throws error\|warning\|off` | L2 入口 may-throw 严重级别（默认 `error`） |
@@ -75,11 +78,19 @@ nudo check <path> [options]
 **输出格式：**
 
 ```text
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
 signatures
   getName(user: any) => any  throws TypeError
   subtract(a: any, b: any) => number
+
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or declare/catch throws
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
 - 无约束入口参数打印为 **`any`**，绝不打印 `unknown`。
@@ -140,8 +151,9 @@ nudo test <path> [options]
 === getName ===
   call@L42  ({ name: "Ada" }) => "Ada"
   debug "empty"  ({}) => undefined
+
 assertions
-  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 1 synthetic case(s) printed above)
 ```
 
 找不到使用处调用的入口导出时：
@@ -161,6 +173,18 @@ assertions
 
 ```bash
 nudo test math.js
+```
+
+```text
+=== subtract ===
+  call@L6  (5, 3) => 2
+  call@L7  (1, 10) => -9
+
+assertions
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 2 synthetic case(s) printed above)
+```
+
+```bash
 nudo test lib.js --from test.js --freeze=update
 ```
 
@@ -290,9 +314,11 @@ nudo health src/ --from tests/
 
 ```text
 src/lib.js
-  ✓ analysis ok
-  ✗ drift: 5 directive(s) changed (+3 new, -2 removed)
-    refresh with: nudo test lib.js --from test.js --freeze=update
+  · 1 function(s)
+  ✗ drift: 3 witness directive(s) changed (+2 new, -1 removed) — refresh: nudo test src/lib.js --from tests/ --freeze=update
+
+Summary: 1 file(s) · 1 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s)
+Result: FAIL (drift or errors found)
 ```
 
 **退出码：**
@@ -316,7 +342,7 @@ nudo env harvest <pkg> [options]
 
 | 选项 | 说明 |
 |------|------|
-| `--out <dir>` | 生成 env 文件的输出目录 |
+| `--out <file>` | 输出 env 文件路径（默认 `./nudo-harvest-<pkg>.ts`） |
 | `--auto` | 报告分析路径自动 harvest 状态 |
 
 **示例：**

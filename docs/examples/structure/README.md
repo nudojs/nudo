@@ -6,8 +6,8 @@
 
 | 文件 | 诊断 | 演示 |
 |------|------|------|
-| [`assign.js`](./assign.js) | `nudo:assign-mismatch` | 赋值 ⊭ 原有形状 |
-| [`arg-structure.js`](./arg-structure.js) | `nudo:constraint-violated` | 实参 ⊭ 显式 shape 契约 |
+| [`assign.js`](./assign.js) | `nudo:assign-mismatch` | 赋值 ⊭ 原有形状（`assignment ⊭ existing shape`） |
+| [`arg-structure.js`](./arg-structure.js) | `nudo:constraint-violated` | 实参 ⊭ 显式 shape 契约（`argument ⊭ precondition`） |
 
 > **契约模型（C0.1 + L2）**：无显式契约时**不**从 body 访问发明必填 slot。
 > 无契约 → 调用点事实 / **`any`**（不是 unknown）；有 L1 契约 → 按契约执法。
@@ -51,7 +51,7 @@ a = { x: 2, z: "s" };                // ok（宽度允许多余 key）
 
 ```
 issues
-  [ERROR L7 config] config: 赋值 ⊭ 原有形状  (nudo:assign-mismatch)
+  [ERROR L7 config] config: assignment ⊭ existing shape  (nudo:assign-mismatch)
       actual:   { host: "y" }  #exact
       expected: { host: "x", port: 1 }  #exact
       → missing slot port
@@ -76,9 +76,10 @@ readXY({ x: 1, y: 2, z: 9 }); // ok（宽度）
 
 ```
 issues
-  [ERROR L12 readXY] readXY[p]: 实参 ⊭ 前置  (nudo:constraint-violated)
+  [ERROR L23 readXY] readXY[p]: argument ⊭ precondition  (nudo:constraint-violated)
       actual:   { x: 1 }  #exact
-      expected: p ∈ shape({ x: number, y: number })
+      expected: missing field p.y
+      → add the missing field p.y
 ```
 
 要点：

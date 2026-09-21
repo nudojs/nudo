@@ -58,7 +58,7 @@ import {
   normPath,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
-import { boolLit, litValue, numLit, strLit } from "./abs.ts";
+import { anyAbs, boolLit, litValue, numLit, strLit } from "./abs.ts";
 import type { Abs } from "./abs.ts";
 import { abs } from "./abs.ts";
 import type { Phi, Pred } from "./pred.ts";
@@ -184,7 +184,19 @@ function checkMemoKey(
     identityOpts.autoBind === false ? "ab0" : "ab1",
     identityOpts.entryThrows ?? "error",
     (identityOpts.ignoreThrows ?? []).join(",") || "-",
+    // skips 必须进键：同 source 不同 skip 表（host 解析差异 / 测试注入）
+    // 不得回放另一档报告。
+    skipsKey(identityOpts.skips),
   ].join("|");
+}
+
+/** skip 表稳定键：名字 + 声明返回（null = 未声明）；排序保证与插入序无关 */
+function skipsKey(skips: ReadonlyMap<string, Abs | null> | undefined): string {
+  if (!skips || skips.size === 0) return "-";
+  return [...skips.entries()]
+    .map(([name, abs]) => `${name}:${abs ? formatAbs(abs) : "-"}`)
+    .sort()
+    .join(",");
 }
 
 function checkMemoGet(key: string): CheckReport | null {
@@ -238,6 +250,13 @@ export type CheckOptions = {
   entryThrows?: "error" | "warning" | "off";
   /** L2 --ignore-throws：按 throws 类型名过滤；不吞 L1 */
   ignoreThrows?: string[];
+  /**
+   * `@nudo:skip [returnsExpr]`（host 用 parser 解析后下传）：函数名 → 声明的
+   * 返回 Abs（null = 未声明）。命中函数不评估 body：签名按声明返回上屏
+   * （无声明 → any，不产生 unknown-inference 噪音）；返回契约仍按声明执法；
+   * 入口 may-throw（L2）不评估。调用点参数义务（scan）不受影响。
+   */
+  skips?: ReadonlyMap<string, Abs | null>;
 };
 
 /**
@@ -429,6 +448,62 @@ function checkSourceInner(
     return eff;
   };
   for (const name of names) {
+    // @nudo:skip [returnsExpr]：不评估 body（host 传解析结果）。
+    // 声明了返回类型 → 按声明上屏；未声明 → any（开发者主动退出推断，不是引擎债）。
+    // L1 调用点义务由文件级 scan 照常执行；L2 入口 may-throw 不评估。
+    if (opts.skips?.has(name)) {
+      const declared = opts.skips.get(name) ?? null;
+      const meta = extractFn(source, name, file);
+      const params = meta?.params ?? [];
+      const retAbs = declared ?? anyAbs;
+      const isEntryFn =
+        entryNames.has(name) ||
+        name === "default" ||
+        (entryNames.has("default") && isDefaultExportName(source, name));
+      // 参数位仍按手写契约展示（skip 只停止 body 求值，不解除参数义务）
+      const eff = effectiveInterfaceCached(name);
+      const contractParam = new Map<string, Abs>();
+      if (eff) {
+        for (const p of eff.params) {
+          contractParam.set(p.param, constraintToEntryAbs(p.constraint, p.param));
+        }
+      }
+      signatures.push({
+        name,
+        params,
+        paramTypes: params.map((p) => {
+          const a = contractParam.get(p);
+          return a ? formatShape(a) : "any";
+        }),
+        abs: retAbs,
+        display: formatAbs(retAbs),
+        detail: formatAbsMultiline(retAbs, name),
+        conf: retAbs.conf,
+        ...(isEntryFn ? { entry: true } : {}),
+      });
+      // 返回后置照常执法：声明了返回类型就对着契约查（未声明 = any → 不猜）
+      if (
+        declared &&
+        eff &&
+        eff.source === "handwritten" &&
+        eff.returns &&
+        !eff.conflict?.returns
+      ) {
+        const named = extractRefineReturnFromSource(source, name, {
+          loadModule: refineLoad,
+          fromFile: refineFrom,
+        });
+        issues.push(
+          ...checkReturnConstraint(
+            name,
+            named?.name ?? formatConstraint(eff.returns.constraint),
+            eff.returns.constraint,
+            declared,
+          ),
+        );
+      }
+      continue;
+    }
     const g = generalizeFromAst(name, source, {
       file,
       refine: {
@@ -494,8 +569,8 @@ function checkSourceInner(
       issues.push({
         severity: "warning",
         code: "nudo:no-signature",
-        message: `${name}: 无法归纳符号 Abs`,
-        suggestion: "补 @nudo:case 或让函数体可代数求值",
+        message: `${name}: could not generalize a symbolic Abs`,
+        suggestion: "add @nudo:case or make the body algebraically evaluable",
         fn: name,
       });
       continue;
@@ -573,7 +648,7 @@ function checkSourceInner(
         message: `${name}: signature has true unknown (inference failed)`,
         actual: where,
         expected: "computable Abs (any = unconstrained, unknown = engine debt)",
-        suggestion: "补 @nudo:case / env mock / refine，或确认 body 可代数求值",
+        suggestion: "add @nudo:case / env mock / refine, or confirm the body is algebraically evaluable",
         fn: name,
       });
     }
@@ -605,11 +680,11 @@ function checkSourceInner(
           issues.push({
             severity: "error",
             code: "nudo:interface-param-mismatch",
-            message: `${name}: 契约参数名不在形参表（${unknownParams.join(", ")}）`,
+            message: `${name}: contract parameter name(s) not in the formal parameter list (${unknownParams.join(", ")})`,
             actual: unknownParams.join(", "),
-            expected: surface || g.params.join(", ") || "(无参)",
-            suggestion: `把 @nudo:refine / 侧车绑定参数名改成形参之一：${
-              surface || g.params.join(", ") || "（函数无参）"
+            expected: surface || g.params.join(", ") || "(no params)",
+            suggestion: `rename the @nudo:refine / sidecar binding parameter to one of: ${
+              surface || g.params.join(", ") || "(function has no params)"
             }`,
             fn: name,
           });
@@ -620,8 +695,8 @@ function checkSourceInner(
           issues.push({
             severity: "error",
             code: "nudo:interface-conflict",
-            message: `${name}: 手写契约合取不可满足（${eff.conflict.params.join(", ")}）`,
-            suggestion: "检查源码 @nudo:refine 与侧车同名绑定的常数界是否矛盾",
+            message: `${name}: handwritten contract conjunction unsatisfiable (${eff.conflict.params.join(", ")})`,
+            suggestion: "check whether the source @nudo:refine and the same-name sidecar binding have contradictory constant bounds",
             fn: name,
           });
         }
@@ -629,9 +704,9 @@ function checkSourceInner(
           issues.push({
             severity: "error",
             code: "nudo:interface-conflict",
-            message: `${name}: 返回位手写契约合取不可满足`,
+            message: `${name}: handwritten contract conjunction unsatisfiable on the return slot`,
             suggestion:
-              "检查源码 @nudo:refine return 与侧车 fn() 返回约束是否矛盾（矛盾时返回位不执法）",
+              "check whether the source @nudo:refine return and the sidecar fn() return constraint are contradictory (the return slot is not enforced when they are)",
             fn: name,
           });
         }
@@ -675,8 +750,8 @@ function checkSourceInner(
           issues.push({
             severity: "info",
             code: "nudo:opaque-result",
-            message: `${name}(...): conf=opaque（路径未覆盖或 native）`,
-            suggestion: "补 @nudo:case 或调用点",
+            message: `${name}(...): conf=opaque (path not covered, or native)`,
+            suggestion: "add @nudo:case or a call site",
             fn: name,
           });
         }
@@ -684,7 +759,7 @@ function checkSourceInner(
         issues.push({
           severity: "error",
           code: "nudo:eval-error",
-          message: `${name}: 求值失败 — ${(e as Error).message}`,
+          message: `${name}: evaluation failed — ${(e as Error).message}`,
           fn: name,
         });
       }
@@ -696,7 +771,7 @@ function checkSourceInner(
       severity: "warning",
       code: "nudo:recursion-truncated",
       message: `Recursive evaluation of '${label}' was truncated (depth/size budget); result widened to unknown`,
-      suggestion: "收窄递归基例或改用显式 @nudo:refine return 契约",
+      suggestion: "narrow the recursion base case or declare an explicit @nudo:refine return contract",
       fn: label,
     });
   }
@@ -980,7 +1055,7 @@ function checkReturnConstraint(
     out.push({
       severity: "error",
       code: "nudo:constraint-violated",
-      message: `${fnName}: 返回值 ⊭ @nudo:refine return ${cName}`,
+      message: `${fnName}: return value ⊭ @nudo:refine return ${cName}`,
       actual,
       expected,
       suggestion,
@@ -996,7 +1071,7 @@ function checkReturnConstraint(
         : undefined;
     if (!slots) {
       if (ret.shape.k !== "never") {
-        push(formatAbs(ret), `object shape (${cName})`, `返回满足 ${cName} 形状的 object`);
+        push(formatAbs(ret), `object shape (${cName})`, `return an object satisfying the ${cName} shape`);
       }
       return out;
     }
@@ -1006,7 +1081,7 @@ function checkReturnConstraint(
       const slot = getSlot(slots, key);
       if (!slot) {
         if (!field.optional && !field.constraint.isOptional) {
-          push(formatAbs(ret), `missing field ${key}`, `返回值补全字段 ${key}`);
+          push(formatAbs(ret), `missing field ${key}`, `add the missing field ${key} to the return value`);
         }
         continue;
       }
@@ -1017,7 +1092,7 @@ function checkReturnConstraint(
           push(
             formatAbs(slot.value),
             `typeof ${key} = "${field.constraint.prim}"`,
-            `把返回值的 ${key} 改成 ${field.constraint.prim}`,
+            `change the return value's ${key} to ${field.constraint.prim}`,
           );
           continue;
         }
@@ -1044,7 +1119,7 @@ function checkReturnConstraint(
                 push(
                   formatAbs(slot.value),
                   `${key} ${opSym} ${n}`,
-                  `返回值的 ${key} 应满足 ${key} ${opSym} ${n}`,
+                  `the return value's ${key} should satisfy ${key} ${opSym} ${n}`,
                 );
               }
             }
@@ -1059,7 +1134,7 @@ function checkReturnConstraint(
   if (constraint.prim && ret.shape.k === "prim") {
     const actualPrim = (ret.shape as { type: string }).type;
     if (actualPrim !== constraint.prim) {
-      push(formatAbs(ret), `typeof return = "${constraint.prim}"`, `返回 ${constraint.prim}`);
+      push(formatAbs(ret), `typeof return = "${constraint.prim}"`, `return ${constraint.prim}`);
       return out;
     }
   }
@@ -1081,7 +1156,7 @@ function checkReturnConstraint(
           if (atom.op === "le") ok = lv <= n;
           if (!ok) {
             const opSym = { gt: ">", ge: "≥", lt: "<", le: "≤" }[atom.op];
-            push(formatAbs(ret), `return ${opSym} ${n}`, `返回满足 ${opSym} ${n} 的值`);
+            push(formatAbs(ret), `return ${opSym} ${n}`, `return a value satisfying ${opSym} ${n}`);
           }
         }
       }
@@ -1097,7 +1172,7 @@ function checkReturnConstraint(
       (typeof lv === "string" && constraint.preds.length > 0)) &&
     !literalMeetsConstraint(lv, constraint)
   ) {
-    push(formatAbs(ret), formatConstraint(constraint), `返回满足 ${formatConstraint(constraint)} 的值`);
+    push(formatAbs(ret), formatConstraint(constraint), `return a value satisfying ${formatConstraint(constraint)}`);
   }
   return out;
 }
@@ -1125,10 +1200,10 @@ function structuralAssignIssues(records: AbsAssignRecord[]): CheckIssue[] {
       out.push({
         severity: "error",
         code: "nudo:assign-mismatch",
-        message: `${r.name}: 赋值 ⊭ 原有形状`,
+        message: `${r.name}: assignment ⊭ existing shape`,
         actual: formatAbs(r.next),
         expected: formatAbs(r.prev),
-        suggestion: leq.reason ?? "改用兼容的值，或放宽绑定类型",
+        suggestion: leq.reason ?? "use a compatible value, or widen the binding type",
         fn: r.name,
         line: r.line,
         column: r.column,
@@ -1291,10 +1366,10 @@ function scanCaseInconsistency(
             out.push({
               severity: "error",
               code: "nudo:case-inconsistency",
-              message: `${fnName} case "${caseName}": 见证 ⊭ 契约`,
+              message: `${fnName} case "${caseName}": witness ⊭ contract`,
               actual: formatAbs(arg),
               expected: `missing field ${field}`,
-              suggestion: `case 实参补全字段 ${field}（契约位 ${paramName}）`,
+              suggestion: `add the missing field ${field} to the case argument (contract slot ${paramName})`,
               fn: fnName,
               line,
             });
@@ -1319,10 +1394,10 @@ function scanCaseInconsistency(
           out.push({
             severity: "error",
             code: "nudo:case-inconsistency",
-            message: `${fnName} case "${caseName}": 见证 ⊭ 契约`,
+            message: `${fnName} case "${caseName}": witness ⊭ contract`,
             actual: formatAbs(arg),
             expected: formatConstraint(entry.constraint),
-            suggestion: `改 case 实参，或放宽 ${paramName} 的 refine`,
+            suggestion: `change the case argument, or relax the refine on ${paramName}`,
             fn: fnName,
             line,
           });
@@ -1348,10 +1423,10 @@ function scanCaseInconsistency(
             out.push({
               severity: "error",
               code: "nudo:case-inconsistency",
-              message: `${fnName} case "${caseName}": 见证 ⊭ 契约`,
+              message: `${fnName} case "${caseName}": witness ⊭ contract`,
               actual: formatAbs(arg),
               expected: predToString(p),
-              suggestion: `改 case 实参，或放宽 ${paramName} 的 refine`,
+              suggestion: `change the case argument, or relax the refine on ${paramName}`,
               fn: fnName,
               line,
             });
@@ -1497,10 +1572,10 @@ function interfaceDriftIssues(
       out.push({
         severity: "warning",
         code: "nudo:interface-drift",
-        message: `${cand.fnName}[${param}]: 固化生成段 ≠ 今日调用点域`,
+        message: `${cand.fnName}[${param}]: persisted @generated segment ≠ today's call-site domain`,
         actual: formatAbs(today),
         expected: formatConstraint(constraint),
-        suggestion: `重跑 nudo contract --emit 刷新生成段，或核对 ${param} 的调用点`,
+        suggestion: `re-run nudo contract --emit to refresh the generated segment, or check the call sites of ${param}`,
         fn: cand.fnName,
         line: evidence[0]!.line,
       });
@@ -1524,10 +1599,10 @@ function interfaceDriftIssues(
     out.push({
       severity: "warning",
       code: "nudo:interface-drift",
-      message: `${cand.fnName}[return]: 固化生成段 ≠ 今日推断返回`,
+      message: `${cand.fnName}[return]: persisted @generated segment ≠ today's inferred return`,
       actual: formatAbs(today),
       expected: formatConstraint(retC),
-      suggestion: `重跑 nudo contract --emit 刷新生成段，或核对返回值`,
+      suggestion: `re-run nudo contract --emit to refresh the generated segment, or check the return value`,
       fn: cand.fnName,
       line: retEvidence[0]!.line,
     });

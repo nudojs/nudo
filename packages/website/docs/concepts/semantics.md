@@ -4,7 +4,7 @@ description: Learn the JavaScript semantics Nudo's evaluator models precisely to
 
 # Language Semantics
 
-Nudo infers types by *executing* your code with symbolic values, so the quality of inference is exactly the quality of the evaluator's JavaScript semantics. This guide lists the language behaviors the evaluator models precisely on the call-site path — every output block below is a real `nudo test` run of the code above it — followed by the constructs that still degrade to `unknown` (inference failed / engine debt, **not** the default for unconstrained entry params, which display as `any`) and should be verified before you rely on them. Precise semantics are also what make [call-site discovery](../guides/callsite-discovery.md) effective: harvested call shapes only pay off if the evaluator can actually follow them.
+Nudo infers types by *executing* your code with symbolic values, so the quality of inference is exactly the quality of the evaluator's JavaScript semantics. This guide lists the language behaviors the evaluator models precisely on the call-site path — every output block below is excerpted from a real `nudo test` run of the code above it (the `nudo test <file>` header and the assertions summary are elided) — followed by the constructs that still degrade to `unknown` (inference failed / engine debt, **not** the default for unconstrained entry params, which display as `any`) and should be verified before you rely on them. Precise semantics are also what make [call-site discovery](../guides/callsite-discovery.md) effective: harvested call shapes only pay off if the evaluator can actually follow them.
 
 ## Modeled Precisely
 
@@ -26,7 +26,7 @@ sli();                                // → "el"
 ```text
 === upper ===
 
-call@L2: () => "HELLO"
+  call@L2  () => "HELLO"
 ```
 
 `toUpperCase`, `toLowerCase`, `slice`, `.length`, and `split` (literal receiver and separator) produce exact results — `"a,b,c".split(",")` folds to `["a", "b", "c"]` at the call site, and a comma-free receiver like `"abc".split("b")` folds to `["a", "c"]` under an `@nudo:case` directive. The directive path cannot express a comma-containing receiver: the directive parser splits case arguments on commas, so `@nudo:case "split" ("a,b,c")` arrives as three `unknown` parameters rather than one string. Prefix/suffix/membership checks — `startsWith`, `endsWith`, `includes` — fold to a definite boolean on literal receivers. `indexOf` yields the `number` primitive without the literal index.
@@ -49,7 +49,7 @@ sumTo(5);
 ```text
 === sumTo ===
 
-call@L8: (5) => 10
+  call@L8  (5) => 10
 ```
 
 `for...of` over a concrete array evaluates the same way:
@@ -86,7 +86,7 @@ findBig();
 ```text
 === findBig ===
 
-call@L11: () => 3
+  call@L11  () => 3
 ```
 
 The result is the literal `3` — the value bound when the loop broke.
@@ -103,7 +103,7 @@ keysOf();
 ```text
 === keysOf ===
 
-call@L2: () => ["port", "host"]
+  call@L2  () => ["port", "host"]
 ```
 
 ### Math Methods
@@ -118,7 +118,7 @@ root(9);
 ```text
 === root ===
 
-call@L2: (9) => 3
+  call@L2  (9) => 3
 ```
 
 `sqrt`, `pow`, `abs`, `floor`, `ceil`, `round`, `sign`, `min`, and `max` all fold to their exact numeric result on literal arguments; symbolic arguments widen to `number`.
@@ -147,7 +147,7 @@ floatOf("3.14");                     // → 3.14
 ```text
 === strOf ===
 
-call@L2: (5) => "5"
+  call@L2  (5) => "5"
 ```
 
 `String(x)`, `Number(x)`, and `Boolean(x)` fold number/string/boolean literals to the exact coerced literal; `parseInt(s)` / `parseFloat(s)` fold string/number literals to the exact numeric prefix/parse. Symbolic arguments widen to the target primitive (`string` / `number` / `boolean`). Repo example (CI-pinned): [`docs/examples/algebra/l-primitive-conversion.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/l-primitive-conversion.js).
@@ -172,7 +172,7 @@ compute(5);
 ```text
 === compute ===
 
-call@L11: (5) => 25
+  call@L11  (5) => 25
 ```
 
 The directive path is equally precise when the argument is a literal (`@nudo:case "member" (5)` → `(5) => 25`); with an empty argument list (`()`) the parameter is `unknown`, so the result degrades to `unknown #partial`. The remaining gap is call-site *collection*, not evaluation: a bare top-level member call (`circle.area()` as a statement) produces no `call@` case — member callees are not collected as call sites. Wrap the member call in a function to see it.
@@ -195,14 +195,37 @@ walk(2);
 ```text
 === walk ===
 
-call@L6: (0) => 0
-call@L7: (1) => 1
-call@L8: (2) => 3
+  call@L6  (0) => 0
+  call@L7  (1) => 1
+  call@L8  (2) => 3
 
-Observed: 0 | 1 | 3
 ```
 
 More calls than the precise-case cap aggregate into a `call@symbolic` case with widened arguments instead.
+
+### Literal Equality, `JSON.parse`, Number Formatting, `**`
+
+More literal folds the evaluator performs on the call-site path and under `@nudo:case`:
+
+```js
+function eqCheck() { return 1 == "1"; }
+eqCheck();                            // → true
+
+function jp() { return JSON.parse('{"port": 3000}'); }
+jp();                                 // → { port: 3000 }
+
+function fixed(cents) { return (cents / 100).toFixed(2); }
+fixed(1050);                          // → "10.50"
+
+function pow(x) { return x ** 2; }
+pow(3);                               // → 9
+```
+
+- `==` / `!=` fold on literal operands (`1 == "1"` → `true`, `1 != "1"` → `false`).
+- `JSON.parse` on a literal string folds to the parsed object shape.
+- `toFixed` folds on literal receivers (`"10.50"`); symbolic receivers widen to `string`.
+- `**` folds on literal operands (`3 ** 2` → `9`); symbolic operands widen to `number`.
+- `try`/`catch` is **modeled**: `catch (err)` binds the thrown Abs, so `throw new Error("boom")` then `err.message` evaluates to `"boom"`.
 
 ### Narrowing Guards
 
@@ -214,19 +237,14 @@ These constructs currently evaluate to `unknown` (often with a `nudo:unknown-rec
 
 | Construct | Behavior today | Modeled alternative |
 |---|---|---|
-| `==` / `!=` literal folding | `1 == "1"` → `true` | Abstract Equality on double literals (C2.3) |
 | Primitive autoboxing | `"nudo".constructor` → `unknown` | `.length`, string methods above |
 | `Object.prototype` methods | `({}).hasOwnProperty("key")` → `unknown` | `Object.keys(...)` / shape checks |
 | `Symbol.iterator in x` | → `unknown` | `Array.isArray(x)` |
 | `for...of` over `Set` / `Map` | elements → `unknown` | arrays / `.map` callbacks |
 | Promise executor | `new Promise((r) => r("done"))` → `promise<unknown>` | `@nudo:mock` + `async` functions |
-| `try`/`catch` parameter | **modeled** — `catch (err)` binds thrown Abs; `new Error("boom")` → `err.message` is `"boom"` | use Error family / object / literal throws |
 | Per-iteration `let` closures | `fns[i]()` → `unknown` | direct iteration results |
 | `arguments` | → `unknown` (`nudo:builtin-unknown`) | named parameters |
-| `JSON.parse` | `JSON.parse('{"port": 3000}')` → `unknown` | object literals |
-| Number formatting methods | `(cents / 100).toFixed(2)` → `unknown` (`nudo:no-method`) | `Math.round` / arithmetic |
 | `String.fromCharCode` | → `unknown` | string literals |
-| Exponentiation `**` | → `unknown` | `x * x` |
 
 ## Mock boundary (still recommended)
 
@@ -252,4 +270,5 @@ Coverage baselines (`pnpm run coverage:env` → `docs/reports/env-coverage-basel
 | `break` | loop exit value | `3` |
 | `Object.keys` | concrete shape | `["port", "host"]` |
 | Recursion | `walk(2)` | `3` |
+| Literal folds | `1 == "1"` · `JSON.parse('{"port": 3000}')` · `3 ** 2` | `true` · `{ port: 3000 }` · `9` |
 | Narrowing | `typeof` / `===` / `Array.isArray` / `switch` | per-call-site precision |

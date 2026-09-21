@@ -59,7 +59,7 @@ npx nudojs check ./src/math.js
 
 ## 进阶 — Abs
 
-内部类型是 **Abs**（`shape × term × pred × conf`）：类型是可计算的值。`nudo check --abs` 会展示无损 Abs 面。日常开发很少需要直接接触。
+内部类型是 **Abs**（`shape × term × pred × conf`）：类型是可计算的值。`nudo check --abs` 展示逐函数的代数面（shape + conf）；`--generalize` 附加符号 term/pred α。日常开发很少需要直接接触。
 
 ## 下一步
 

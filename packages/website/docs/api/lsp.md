@@ -8,7 +8,7 @@ API reference for the Nudo Language Server Protocol package. `@nudojs/lsp` wraps
 
 ## Public API freeze surface (A1/A2)
 
-`@nudojs/lsp` is **0.8.0, pre-1.x**. The freeze inventory — what must stay stable when the package later cuts 1.0 — lives in the monorepo:
+`@nudojs/lsp` is **1.0.0**. The freeze inventory — what must stay stable across the 1.x line — lives in the monorepo:
 
 **[`packages/lsp/PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)**
 
@@ -229,7 +229,7 @@ Deletion is the one out-of-band event handled explicitly. A `workspace/didChange
 
 Dirty propagation needs the import graph over `knownFiles`, and rebuilding it used to mean re-reading and re-parsing every known file. `buildModuleGraph` (from `@nudojs/service`) now takes the session-level `moduleGraphCache`: each entry stores a file's `mtimeMs`, `size`, and extracted import edges as plain strings. A `stat`-only metadata check — `mtimeMs` **and** `size` exactly equal — is a hit and reuses the cached edges; a miss re-reads the file from disk and backfills the entry. Unchanged files therefore cost one `stat` per propagation: zero disk reads, zero parsing. The package tests pin this by making a dependency unreadable (`chmod 000`) — propagation still computes the correct dirty set from cached edges.
 
-Per-result work is bounded as well: a single `AnalysisResult` caps synthesized precise cases per function (`MAX_PRECISE_CALLSITE_CASES = 3`), folding the remaining call records into a symbolic aggregate instead of growing without limit.
+Per-result work is bounded as well: a single `AnalysisResult` caps synthesized precise cases per function (`callSiteBudget`, default `3`; configurable via `package.json#nudo.analysis.callSiteBudget`), folding the remaining call records into a symbolic aggregate instead of growing without limit.
 
 ### Evaluation guards
 

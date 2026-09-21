@@ -65,7 +65,7 @@ Nudo：       源代码  +  Abs     →  执行  →  类型 + 约束
 | **shape** | 结构种类：`any` / `unknown` / `prim` / `obj` / `arr` / `tuple` / `fn` / `brand` / `eff` / `sum` / `never` |
 | **term** | 值的符号身份：字面量、变量或应用（`x+1`） |
 | **pred** | 相对 term 的约束：`x>0`、合取等 |
-| **conf** | 置信度：`exact` / `path` / `widened` / `partial` / `opaque` |
+| **conf** | 置信度：`exact` / `path` / `widened` / `mock` / `partial` / `opaque` |
 
 `any` 表示「任意 JS 值」（无约束参数）；`unknown` 表示「分析拿不到信息」。二者不同。
 
@@ -227,7 +227,7 @@ for (let i = 0; i < arr.length; i++) {
 }
 ```
 
-具体边界逐元素累加得到字面量。抽象边界对前 `0…7` 次迭代求和并报告 `28 #exact`。
+具体边界逐元素累加得到字面量。抽象边界展开至上限为止，报告各次迭代的拓宽联合（数值累加器为 `number`）——这是终止守卫，而非不动点精化。
 
 ### 4.2 闭包与高阶函数
 
@@ -389,7 +389,12 @@ function calc(a, b) {
    - False：`a + b` → `number`
 4. 合并：`number`
 
-**组合：** `((1, 2) => 3) & ((number, number) => number)`
+**`nudo test` 渲染两个用例：**
+
+```text
+debug "concrete"  (1, 2) => 3
+debug "symbolic"  (number, number) => number
+```
 
 ---
 

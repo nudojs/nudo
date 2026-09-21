@@ -137,9 +137,9 @@ eval(CallExpression { callee: "foo", args })
 | `Array.isArray(x)` | `x ∩ array` | `x - array` |
 | `x`（真值检查） | `x - null - undefined - lit(0) - lit("") - lit(false)` | 补集 |
 | `x instanceof C` | `x ∩ instance(C)` | `x - instance(C)` |
-| `"key" in x` | 含有 `key` 属性的联合成员 | 不含 `key` 属性的联合成员 |
-| `x?.prop` | 正常成员访问（nullish 时短路为 `undefined`） | — |
-| `a ?? b` | 移除 null/undefined 后的 `a` | — |
+| `"key" in x` | 对象实参发生分叉；方法结果可能拓宽为 `unknown` | — |
+| `x?.prop` | 已知属性上的浅层访问折叠；深层 `?.` 链退化为 `unknown` | — |
+| `a ?? b` | 已知属性上的浅层 `??` 折叠为该值 | — |
 | `switch(x) { case v: ... }` | 每个 case 对应 `x ∩ lit(v)` | 所有 case 之外的剩余部分 |
 | `x.kind === "a"`（可辨识联合） | `kind` 匹配该字面量的联合成员 | `kind` 不同的联合成员 |
 

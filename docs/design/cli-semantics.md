@@ -279,10 +279,10 @@ signatures
   needsPositive(x: number) => number
 
 issues
-  [ERROR L12 needsPositive] needsPositive[x]: 实参 ⊭ 前置  (nudo:constraint-violated)
+  [ERROR L12 needsPositive] needsPositive[x]: argument ⊭ precondition  (nudo:constraint-violated)
       actual:   -1  #exact
       expected: x > 0
-      → 改用满足 x > 0 的值，或放宽 x 的前置
+      → use a value satisfying x > 0, or relax the precondition on x
 ```
 
 - **signatures**：默认一行摘要且**成功也打印**；`--verbose` 展开 `term:` / `pred:` / `conf:`；代数面用 `check --abs`

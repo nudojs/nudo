@@ -8,7 +8,7 @@ description: Nudo 实用示例 —— 调用点观察、侧车契约、字符串
 
 **产品路径优先。** 观察是 `nudo check` 签名（调用点是证据）。契约是 `*.nudo.js` / `@nudo:refine`。`@nudo:case` 仅是**调试见证** —— 可选，不是契约产品。
 
-下方每个输出块都是对上面代码的真实引擎运行。仓库内 CI 钉住的套件在 [`docs/examples/`](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md)（`pnpm run verify:examples`）；本指南按主题浏览同一引擎。
+下方每个输出块都摘录自对上面代码的真实引擎运行（`nudo check` / `nudo test` 头部行与 assertions 摘要按标注省略）。仓库内 CI 钉住的套件在 [`docs/examples/`](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md)（`pnpm run verify:examples`）；本指南按主题浏览同一引擎。
 
 在 [Playground](/playground) 试跑任意示例。
 
@@ -34,8 +34,14 @@ npx nudojs check subtract.js
 ```
 
 ```text
+nudo check  subtract.js
+OK
+  0 error · 0 warning · 0 info · 1 fn
+
 signatures
   subtract(a: any, b: any) => number
+
+(no issues)
 ```
 
 无约束入口参数显示为 **`any`**。有更丰富的调用证据（或侧车）时，Abs 会保留字面量与代数 —— 跑 `nudo check --abs` 或在 IDE 打开该文件。
@@ -44,8 +50,8 @@ signatures
 
 ```text
 === subtract ===
-  call@L4  (5, 3) => 2
-  call@L5  (1, 10) => -9
+  call@L5  (5, 3) => 2
+  call@L6  (1, 10) => -9
 ```
 
 ### 2. 侧车契约 —— Day 1 义务
@@ -75,13 +81,18 @@ npx nudojs check pricing.js
 ```
 
 ```text
+nudo check  pricing.js
+FAILED
+  1 error · 0 warning · 0 info · 1 fn
+
 signatures
-  lineTotal(price: any, qty: any) => number
+  lineTotal(price: number, qty: number) => number
+
 issues
-  [error] lineTotal: actual ⊭ expected  (nudo:constraint-violated)
-    call:     lineTotal(0, 2)
-    actual:   0  #exact
-    expected: price > 0
+  [ERROR L6 lineTotal] lineTotal[price]: argument ⊭ precondition  (nudo:constraint-violated)
+      actual:   0  #exact
+      expected: price > 0
+      → use a value satisfying price > 0, or relax the precondition on price
 ```
 
 `if` 守卫**不是**精化。义务来自侧车 / `@nudo:refine`。见[契约](./contract.md)与 [nudo check](./check.md)。
@@ -97,7 +108,7 @@ greet({ name: "Alice", age: 30 });
 
 ```text
 === greet ===
-  call@L4: ({ name: "Alice", age: 30 }) => "Alice is 30"
+  call@L4  ({ name: "Alice", age: 30 }) => "Alice is 30"
 ```
 
 拼接保留字面量结果 `"Alice is 30"` —— 不是被拍平的 `string`。参数解构目前不会同样拆开实参形状；属性访问是获得形状级精度的可靠路径。
@@ -112,8 +123,8 @@ mixin({ host: "localhost", port: 8080 }, { port: 3000, debug: true });
 ```
 
 ```text
-call@L4: ({ host: "localhost", port: 8080 }, { port: 3000, debug: true })
-  => { host: "localhost", port: 3000, debug: true }
+=== mixin ===
+  call@L9  ({ host: "localhost", port: 8080 }, { port: 3000, debug: true }) => { host: "localhost", port: 3000, debug: true }
 ```
 
 ---
@@ -132,7 +143,7 @@ coupon("vip");
 
 ```text
 === coupon ===
-  call@L5: ("vip") => "SAVE-VIP"
+  call@L5  ("vip") => "SAVE-VIP"
 ```
 
 TypeScript 通常把它拓宽为 `string`。Nudo 在调用点观察到具体的模板结果。对照[为什么选 Nudo](../why-nudo.md) 的表格与首页「超越声明类型」一节。
@@ -158,7 +169,7 @@ sumTo(5);
 
 ```text
 === sumTo ===
-  call@L6: (5) => 10
+  call@L6  (5) => 10
 ```
 
 边界具体时循环求和保持字面量 —— 同一套 Abs 代数支撑 `nudo check`。
@@ -228,7 +239,7 @@ export function scale(x) {
 
 ```text
 === scale ===
-  debug "double digits": (10) => 11
+  debug "double digits"  (10) => 11
 ```
 
 优先使用具体值或约束构建器（`number()`、`lit(42)`）。仅已声明 case 上的断言（`=> expected`）影响 `nudo test` 退出码 —— 合成 `call@` / `entry@` 绝不会让运行失败。

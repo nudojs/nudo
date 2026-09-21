@@ -11,7 +11,7 @@ description: 术语表 —— Abs、any vs unknown、L1/L2、contract vs case、
 | **shape** | 外延载体（`prim` / `obj` / `arr` / `fn` / `sum` / `any` / `unknown` / …）。 |
 | **term** | 抽象值身份：`lit` / `var` / `app`（如 `(x + 1)`）。 |
 | **pred** | 相对 term 的约束（如 `x > 0`）。 |
-| **conf** | 抽象置信度：`exact` / `path` / `widened` / `partial` / `opaque`。 |
+| **conf** | 抽象置信度：`exact` / `path` / `widened` / `mock` / `partial` / `opaque`。 |
 | **any** | 无约束的 JS 值并集 —— 无契约入口参数的默认。开发者负责细化。 |
 | **unknown** | 推导失败 / 引擎债 —— **不是** `any` 的同义词。 |
 | **contract** | 义务的产品术语：`*.nudo.js` 侧车 / `@nudo:refine`。 |

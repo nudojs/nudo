@@ -5,7 +5,7 @@
 // 逐 case 真值（infer 输出）：
 //   sum([1, 2, 3, 4, 5])        → 15      #exact（reduce 累加器单 pass）
 //   forEachSum([1, 2, 3, 4, 5]) → 15      #exact（forEach 回调副作用写回 s）
-//   someBig([1, 2, 3, 4, 5])    → boolean #exact（some 建模为 boolean）
+//   someBig([1, 2, 3, 4, 5])    → true    #exact（some 对字面量数组逐字面量精确）
 //
 // 边界形态（写算法前先查这张表，避免依赖未建模方法）：
 //   已建模：arr.map(cb) / arr.reduce(cb, init) / forEach 副作用 / some / every

@@ -100,7 +100,7 @@ Contracts are *.nudo.js / @nudo:refine. Do not invent body-AST obligations.
 signatures
   getName(user: any) => any  throws TypeError
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
 `any` = 无约束入口。`throws` = L2 域。诊断码：[诊断](../reference/diagnostics.md)。

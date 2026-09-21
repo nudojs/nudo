@@ -54,7 +54,10 @@ nudo check <path> [options]
 | `--watch` / `-w` | Re-run on file changes (flag, not a verb) |
 | `--json` | Structured diagnostics + signatures |
 | `--verbose` | Extra diagnosis detail |
-| `--abs` | Print the Abs algebra face (term / pred / conf) |
+| `--abs` | Per-function algebra face (shape + conf); `--generalize` adds the symbolic term/pred α |
+| `--fn <name>` | With `--abs`: restrict to one function |
+| `--assume <pred…>` | With `--abs`: assume constraints, e.g. `x>0 y>=1` |
+| `--generalize` | With `--abs`: polymorphic signatures via symbolic execution |
 | `--from <paths…>` | Usage-site files (tests/apps); their call records join the analysis |
 | `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (e.g. `TypeError,RangeError`). Does not swallow L1 contract violations. |
 | `--entry-throws error\|warning\|off` | Severity for L2 entry may-throw (default `error`) |
@@ -75,11 +78,19 @@ nudo check <path> [options]
 **Output format:**
 
 ```text
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
 signatures
   getName(user: any) => any  throws TypeError
   subtract(a: any, b: any) => number
+
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or declare/catch throws
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
 - Unconstrained entry parameters print as **`any`**, never `unknown`.
@@ -146,8 +157,9 @@ nudo test <path> [options]
 === getName ===
   call@L42  ({ name: "Ada" }) => "Ada"
   debug "empty"  ({}) => undefined
+
 assertions
-  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 1 synthetic case(s) printed above)
 ```
 
 When no usage-site call is found for an entry export:
@@ -173,8 +185,9 @@ nudo test math.js
 === subtract ===
   call@L6  (5, 3) => 2
   call@L7  (1, 10) => -9
+
 assertions
-  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 2 synthetic case(s) printed above)
 ```
 
 ```bash
@@ -316,9 +329,11 @@ nudo health src/ --from tests/
 
 ```text
 src/lib.js
-  ✓ analysis ok
-  ✗ drift: 5 directive(s) changed (+3 new, -2 removed)
-    refresh with: nudo test lib.js --from test.js --freeze=update
+  · 1 function(s)
+  ✗ drift: 3 witness directive(s) changed (+2 new, -1 removed) — refresh: nudo test src/lib.js --from tests/ --freeze=update
+
+Summary: 1 file(s) · 1 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s)
+Result: FAIL (drift or errors found)
 ```
 
 **Exit codes:**
@@ -342,7 +357,7 @@ nudo env harvest <pkg> [options]
 
 | Option | Description |
 |--------|-------------|
-| `--out <dir>` | Output directory for generated env files |
+| `--out <file>` | Output env file path (default `./nudo-harvest-<pkg>.ts`) |
 | `--auto` | Report analysis-path auto-harvest status |
 
 **Example:**

@@ -153,7 +153,7 @@ actual:   0  #exact     // 调用点观测到的 Abs
 expected: price > 0     // 来自契约的 Pred
 ```
 
-Abs 上的 conf 标记：`#exact` / `#path` / `#widened` / `#partial` / `#opaque` —— 见 [Abs](/docs/concepts/type-values)。
+Abs 上的 conf 标记：`#exact` / `#path` / `#widened` / `#mock` / `#partial` / `#opaque` —— 见 [Abs](/docs/concepts/type-values)。
 
 ## 影响诊断的配置
 

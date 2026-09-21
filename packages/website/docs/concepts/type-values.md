@@ -14,7 +14,7 @@ Abs values are symbolic sets of possible JavaScript values — instead of holdin
 - **shape** — the extensional carrier: what the value looks like. Kinds: `prim` (with a `lit` term for exact values), `obj`, `arr`, `tuple`, `fn`, `eff` (`promise<…>` / `generator<…>`), `brand` (nominal instances), `sum` (unions), `never`, `any` (unconstrained), `unknown` (inference failed — see [any vs unknown](#any-vs-unknown)).
 - **term** — abstract value identity: `lit` (concrete), `var` (symbolic α like `A1`), or `app` (an application like `(x + 2)`).
 - **pred** — constraints relative to the term: `(x + 2) > 3`.
-- **conf** — how exact the abstraction is: `exact` / `path` / `widened` / `partial` / `opaque`.
+- **conf** — how exact the abstraction is: `exact` / `path` / `widened` / `mock` / `partial` / `opaque`.
 
 See the [core API](../api/core.md) for constructors (`num()`, `strLit(…)`, `obj({…})`, …) and the core functions (`leqAbs`, `formatAbs`, `checkSource`, …).
 
@@ -94,7 +94,7 @@ These are **not** the same product concept and must never be collapsed in docs o
 | `lit(v)` | literal domain | `lit(42)` / `lit("ada")` / `lit(true)` |
 | `union(…)` | union of members | `union(lit(1), lit(2))` |
 | `shape({ … })` | object shape (fields recursive) | `shape({ id: number().gt(0) })` |
-| `array(…)` / `record(…)` | array / record domain | `array(number())` |
+| `array(…)` | array element constraint | `array(number())` |
 | `fn({ … }, …)` | function relation | `fn({ x: number().gt(0) }, number())` |
 | builders | `.gt/.gte/.lt/.lte/.shift/.int…` | `number().gt(0).int()` |
 | bare literals | parsed directly | `42`, `"abc"`, `true`, `[1, 2]` |
@@ -155,7 +155,7 @@ selfAdd(2);       // → 4  #exact
 // Observed: 2 | 4 — correlation kept, never 1+1 | 1+2 | 2+1 | 2+2
 ```
 
-With abstract arguments the result widens to the domain the algebra determines (`sum(number, string)` → `string #path`; `selfAdd(number)` → `number #widened`) — member-wise expansion only happens when an operator or method *must* distinguish members.
+With abstract arguments the result widens to the domain the algebra determines (`2 + x` with `x: number | string` → `number | string`; `selfAdd(number)` → `number #widened`) — member-wise expansion only happens when an operator or method *must* distinguish members.
 
 ### 4. Guard Narrowing
 

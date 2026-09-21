@@ -62,7 +62,7 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 ### Zed — 最小配置
 
 1. 安装 [nudojs/nudo-zed](https://github.com/nudojs/nudo-zed)，或直接指定本地 server 二进制。
-2. 项目 `package.json`：`"devDependencies": { "@nudojs/lsp": "^0.8.0" }`。
+2. 项目 `package.json`：`"devDependencies": { "@nudojs/lsp": "^1.0.0" }`。
 3. `~/.config/zed/settings.json`（或项目 `.zed/settings.json`）：
 
 ```json

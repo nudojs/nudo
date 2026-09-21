@@ -47,6 +47,24 @@ describe("nudo test — case as test", () => {
     expect(report.failed).toBe(0);
   });
 
+  it("@nudo:skip reports the declared return type (or its absence)", async () => {
+    const source = `
+      /**
+       * @nudo:skip
+       */
+      function bare(a) { return a; }
+
+      /**
+       * @nudo:skip number()
+       */
+      function declared(a) { return a; }
+    `;
+    const result = analyzeFile("/t/skip.js", source);
+    const text = formatTestReport(buildTestReport("/t/skip.js", result));
+    expect(text).toContain("skipped (no return type declared)");
+    expect(text).toContain("skipped (declared): number");
+  });
+
   it("prints synthetic entry@/call@ cases by default (observation)", async () => {
     const source = `
       function id(x) { return x; }

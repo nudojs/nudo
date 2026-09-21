@@ -15,7 +15,7 @@ Nudo is a pnpm monorepo that publishes **per-package** versions via [changesets]
 | `@nudojs/core` | **2.x** (2.1.0) | SemVer: breaking → major |
 | `@nudojs/service` | **4.x** (4.0.0) | SemVer: breaking → major |
 | `@nudojs/cli` | **3.x** (3.0.0) | SemVer: breaking → major |
-| `@nudojs/parser` | 0.x | **Minor may break** — read CHANGELOG |
+| `@nudojs/parser` | **1.x** (1.0.0) | SemVer: breaking → major |
 | `@nudojs/lsp` | **1.x** (1.0.0) | SemVer: breaking → major. Freeze inventory: `packages/lsp/PUBLIC_API.md` |
 | `@nudojs/env` / `@nudojs/harvester` | 0.x (0.4.1 / 0.2.7) | Minor may break; pin a minor for stable IDE/CI analysis. Handwritten env wins on overlapping modules/exports (`mergeHarvestUnderEnv`) |
 | `nudojs` (npm shell) | 0.x (0.3.2) | Prefer `@nudojs/cli` / `@nudojs/core` directly |
@@ -103,7 +103,7 @@ Pick packages + bump type, then write a short **who breaks / how to migrate** su
 
 ## IDE extensions
 
-VS Code (`wmxy.nudo-vscode`) and Zed (`nudojs/nudo-zed`) bundle or resolve `@nudojs/lsp`. Extension release notes are the source of truth for editor-facing changes; the language server follows the stable 1.x SemVer line above. VS Code packaging checklist: repo `packages/vscode/RELEASE_CHECKLIST.md`. LSP freeze inventory: repo `packages/lsp/PUBLIC_API.md`.
+VS Code (`wmzy.nudo-vscode`) and Zed (`nudojs/nudo-zed`) bundle or resolve `@nudojs/lsp`. Extension release notes are the source of truth for editor-facing changes; the language server follows the stable 1.x SemVer line above. VS Code packaging checklist: repo `packages/vscode/RELEASE_CHECKLIST.md`. LSP freeze inventory: repo `packages/lsp/PUBLIC_API.md`.
 
 ## See also
 

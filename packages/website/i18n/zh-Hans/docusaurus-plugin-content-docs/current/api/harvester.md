@@ -130,7 +130,7 @@ const key = buildKey("docs", "readme");
 ```text
 === buildKey ===
 
-call@L9: ("docs", "readme") => `${string}.md`
+  call@L9  ("docs", "readme") => `${string}.md`
 ```
 
 基于路径的 env 文件通过动态 import 加载，因此异步消费方（`nudo check`/`nudo test`、`analyzeFileAsync`、LSP 验证路径）会预加载它们；同步的 `analyzeFile` 在文件声明了路径 env 时会降级。异步工具链应优先使用 [`analyzeFileAsync`](./service.md)。

@@ -100,7 +100,7 @@ Install **nudo-vscode** (or Zed extension). Default analysis mode `"exports"`. S
 signatures
   getName(user: any) => any  throws TypeError
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
 `any` = unconstrained entry. `throws` = L2 domain. Codes: [Diagnostics](../reference/diagnostics.md).

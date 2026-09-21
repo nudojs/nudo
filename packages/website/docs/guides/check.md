@@ -39,11 +39,19 @@ nudo check user.js
 ```
 
 ```text
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
 signatures
   getName(user: any) => any  throws TypeError
   subtract(a: any, b: any) => number
+
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or declare/catch throws
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
 - Unconstrained entry parameters display as **`any`**.
@@ -68,7 +76,7 @@ issues
 | `nudo:opaque-result` | engine | warning | Evaluation returned opaque / uninformative Abs |
 | `nudo:eval-error` | engine | error | Body evaluation threw during analysis |
 | `nudo:recursion-truncated` | engine | warning | Recursion budget hit; result widened |
-| `nudo:unreachable` | info | info | Code after return/throw |
+| `nudo-unreachable` | info | info | Code after return/throw |
 
 ## L1 — explicit contracts
 
@@ -85,9 +93,10 @@ function needsPositive(x) {
 }
 
 needsPositive(-1);
-// [error] needsPositive[x]: actual ⊭ expected  (nudo:constraint-violated)
+// [ERROR L12 needsPositive] needsPositive[x]: argument ⊭ precondition  (nudo:constraint-violated)
 //   actual:   -1  #exact
 //   expected: x > 0
+//   → use a value satisfying x > 0, or relax the precondition on x
 ```
 
 **`if` is not a refinement.** Clamp-style guards accept out-of-range input when no refine is declared:
@@ -116,10 +125,18 @@ export function getName(user) {
 ```
 
 ```text
-[error] getName (export): may throw TypeError  (nudo:entry-may-throw)
-  cause:    property 'name' on any (unconstrained param `user`)
-  actual:   (user: any) => any    throws TypeError
-  expected: entry total, or declare/catch throws
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 1 fn
+
+signatures
+  getName(user: any) => any  throws TypeError
+
+issues
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or declare/catch throws
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
 ### What L2 gates
@@ -158,7 +175,7 @@ All flags and `package.json#nudo.check` config are specified once in the [CLI Re
 |--------|-------------|
 | `--watch` / `-w` | Re-run on changes (flag, not a verb) |
 | `--json` | Machine-readable signatures + diagnostics (single file) |
-| `--abs` | Print Abs algebra face (term / pred / conf) — observation, still gates L1/L2 |
+| `--abs` | Per-function algebra face (shape + conf; `--generalize` adds the symbolic term/pred α) — observation, still gates L1/L2 |
 | `--from <paths…>` | Usage-site files injecting call records |
 | `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (never swallows L1) |
 | `--entry-throws error\|warning\|off` | L2 severity (default `error`) |

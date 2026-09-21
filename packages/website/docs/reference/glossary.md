@@ -11,7 +11,7 @@ description: Glossary — Abs, any vs unknown, L1/L2, contract vs case, call@, c
 | **shape** | Extensional carrier (`prim` / `obj` / `arr` / `fn` / `sum` / `any` / `unknown` / …). |
 | **term** | Abstract value identity: `lit` / `var` / `app` (e.g. `(x + 1)`). |
 | **pred** | Constraint relative to the term (e.g. `x > 0`). |
-| **conf** | Abstraction confidence: `exact` / `path` / `widened` / `partial` / `opaque`. |
+| **conf** | Abstraction confidence: `exact` / `path` / `widened` / `mock` / `partial` / `opaque`. |
 | **any** | Unconstrained JS value union — default for entry params without contracts. Developer refines. |
 | **unknown** | Inference failed / engine debt — **not** the same as `any`. |
 | **contract** | Product term for obligations: `*.nudo.js` sidecar / `@nudo:refine`. |

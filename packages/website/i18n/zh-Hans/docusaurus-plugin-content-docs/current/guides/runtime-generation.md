@@ -54,7 +54,7 @@ nudo export src/api/users.js --format standard --out dist
 # 写入 dist/createUser.nudo.standard.ts
 ```
 
-生成的模块为每个参数导出一个校验器（`<fn>_<param>`），另有返回值校验器（`<fn>Return`）。**契约精化直接烘焙进校验器**——`age: number().ge(0)` 变成 `numBound { op: "ge", n: 0 }` 检查，`lit(42)` 契约则钉死确切值：
+生成的模块为每个参数导出一个校验器（`<fn>_<param>`），另有返回值校验器（`<fn>Output`）。**契约精化直接烘焙进校验器**——`age: number().ge(0)` 变成 `numBound { op: "ge", n: 0 }` 检查，`lit(42)` 契约则钉死确切值：
 
 ```ts
 // dist/createUser.nudo.standard.ts（节选）

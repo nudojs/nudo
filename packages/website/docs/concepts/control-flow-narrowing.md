@@ -4,9 +4,9 @@ description: See how Nudo narrows types per call site — equality guards, discr
 
 # Control Flow Narrowing
 
-Nudo narrows types when it can decide a condition for the **concrete argument of a call site**. Each `call@L… => …` line in the output reports the result of one call, evaluated with that call's exact argument — branches eliminated by narrowing never contribute to that case's result, and `Observed: ` is the union of all per-call results.
+Nudo narrows types when it can decide a condition for the **concrete argument of a call site**. Each `call@L… => …` line in the output reports the result of one call, evaluated with that call's exact argument — branches eliminated by narrowing never contribute to that case's result; the function's combined type is the union of all per-call results (visible in `nudo check` signatures and IDE hover).
 
-Narrowing is precise on the **call-site path** (functions called at the top level, reported as `call@` cases) and on `@nudo:case` directives with **concrete** arguments. Symbolic arguments (`number()`, `union(...)`) cannot decide a condition, so their branches join instead of narrowing. Every output block below is a real `nudo test` run of the code above it.
+Narrowing is precise on the **call-site path** (functions called at the top level, reported as `call@` cases) and on `@nudo:case` directives with **concrete** arguments. Symbolic arguments (`number()`, `union(...)`) cannot decide a condition, so their branches join instead of narrowing. Every output block below is excerpted from a real `nudo test` run of the code above it (`nudo test <file>` headers and the assertions summary are elided).
 
 ## Comparison Guards
 
@@ -24,10 +24,9 @@ pickAdult(12);
 ```text
 === pickAdult ===
 
-call@L5: (25) => 25
-call@L6: (12) => -1
+  call@L5  (25) => 25
+  call@L6  (12) => -1
 
-Observed: 25 | -1
 ```
 
 `pickAdult(25)` satisfies `age >= 18` and returns `25`; `pickAdult(12)` falls through to `-1`. The combined type keeps both literal results.
@@ -50,10 +49,9 @@ area({ kind: "square", side: 3 });
 ```text
 === area ===
 
-call@L7: ({ kind: "circle", radius: 2 }) => 6.28318
-call@L8: ({ kind: "square", side: 3 }) => 9
+  call@L7  ({ kind: "circle", radius: 2 }) => 6.28318
+  call@L8  ({ kind: "square", side: 3 }) => 9
 
-Observed: 6.28318 | 9
 ```
 
 The circle call takes the `if` branch and computes `6.28318`; the square call falls through to `side * side` and yields `9`.
@@ -76,11 +74,10 @@ len(5);
 ```text
 === len ===
 
-call@L7: ("abc") => 3
-call@L8: ([1, 2]) => 2
-call@L9: (5) => -1
+  call@L6  ("abc") => 3
+  call@L7  ([1, 2]) => 2
+  call@L8  (5) => -1
 
-Observed: 3 | 2 | -1
 ```
 
 The string call reaches `x.length` on a narrowed string (`3`), the array call on a narrowed array (`2`), and the number call falls through both guards to `-1`. The narrowed branch keeps the value itself: indexing a narrowed array (`x[0]`) resolves to its element type — a literal for a literal array, the element type for an abstract array — just like `.length` does.
@@ -109,12 +106,11 @@ function handleState(state) {
 ```text
 === handleState ===
 
-debug "idle": ({ status: "idle" }) => "Waiting..."
-debug "loading": ({ status: "loading", requestId: "abc" }) => "Loading abc..."
-debug "success": ({ status: "success", data: { name: "test" } }) => "test"
-debug "error": ({ status: "error", message: "fail" }) => "fail"
+  debug "idle"  ({ status: "idle" }) => "Waiting..."
+  debug "loading"  ({ status: "loading", requestId: "abc" }) => "Loading abc..."
+  debug "success"  ({ status: "success", data: { name: "test" } }) => "test"
+  debug "error"  ({ status: "error", message: "fail" }) => "fail"
 
-Observed: "Waiting..." | "Loading abc..." | "test" | "fail"
 ```
 
 Each clause receives its matching object shape, so `state.requestId` and `state.data.name` resolve inside their branches.

@@ -4,7 +4,7 @@ description: 了解 Nudo 如何按调用点收窄类型——比较守卫、判�
 
 # 控制流收窄
 
-当 Nudo 能对**某个调用点的具体实参**判定条件时，它就会收窄类型。输出中的每一行 `call@L… => …` 报告一次调用的结果，用该调用的精确实参求值——被收窄消除的分支不会进入该 case 的结果，`Observed: ` 是所有逐调用结果的并集。
+当 Nudo 能对**某个调用点的具体实参**判定条件时，它就会收窄类型。输出中的每一行 `call@L… => …` 报告一次调用的结果，用该调用的精确实参求值——被收窄消除的分支不会进入该 case 的结果；函数的合并类型是所有逐调用结果的并集（见 `nudo check` 签名与 IDE hover）。
 
 收窄在**调用点路径**（顶层调用、报告为 `call@` case）与带**具体**实参的 `@nudo:case` 指令上都精确。符号实参（`number()`、`union(...)`）无法判定条件，其分支会合并而非收窄。下方所有输出块都是对上面代码真实运行 `nudo test` 的结果。
 
@@ -24,10 +24,9 @@ pickAdult(12);
 ```text
 === pickAdult ===
 
-call@L5: (25) => 25
-call@L6: (12) => -1
+  call@L5  (25) => 25
+  call@L6  (12) => -1
 
-Observed: 25 | -1
 ```
 
 `pickAdult(25)` 满足 `age >= 18`，返回 `25`；`pickAdult(12)` 落到回退分支返回 `-1`。合并类型保留两个字面量结果。
@@ -50,10 +49,9 @@ area({ kind: "square", side: 3 });
 ```text
 === area ===
 
-call@L7: ({ kind: "circle", radius: 2 }) => 6.28318
-call@L8: ({ kind: "square", side: 3 }) => 9
+  call@L7  ({ kind: "circle", radius: 2 }) => 6.28318
+  call@L8  ({ kind: "square", side: 3 }) => 9
 
-Observed: 6.28318 | 9
 ```
 
 circle 调用走 `if` 分支算出 `6.28318`；square 调用落到 `side * side` 得到 `9`。
@@ -76,11 +74,10 @@ len(5);
 ```text
 === len ===
 
-call@L7: ("abc") => 3
-call@L8: ([1, 2]) => 2
-call@L9: (5) => -1
+  call@L6  ("abc") => 3
+  call@L7  ([1, 2]) => 2
+  call@L8  (5) => -1
 
-Observed: 3 | 2 | -1
 ```
 
 字符串调用在收窄后的字符串上访问 `x.length`（`3`），数组调用在收窄后的数组上（`2`），数字调用穿过两道守卫落到 `-1`。收窄分支保留的是值本身：对收窄后的数组做索引（`x[0]`）解析为元素类型——字面量数组得到字面量，抽象数组得到元素类型——与 `.length` 一样。
@@ -109,12 +106,11 @@ function handleState(state) {
 ```text
 === handleState ===
 
-debug "idle": ({ status: "idle" }) => "Waiting..."
-debug "loading": ({ status: "loading", requestId: "abc" }) => "Loading abc..."
-debug "success": ({ status: "success", data: { name: "test" } }) => "test"
-debug "error": ({ status: "error", message: "fail" }) => "fail"
+  debug "idle"  ({ status: "idle" }) => "Waiting..."
+  debug "loading"  ({ status: "loading", requestId: "abc" }) => "Loading abc..."
+  debug "success"  ({ status: "success", data: { name: "test" } }) => "test"
+  debug "error"  ({ status: "error", message: "fail" }) => "fail"
 
-Observed: "Waiting..." | "Loading abc..." | "test" | "fail"
 ```
 
 每个子句收到匹配的对象形状，因此 `state.requestId` 与 `state.data.name` 在各自分支内可以解析。

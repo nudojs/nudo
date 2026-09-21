@@ -42,8 +42,13 @@ nudo test lib/ --from test/
 Output:
 
 ```text
+nudo test  lib/slugify.js
+
 === slugify ===
-  call@L4  ("Hello World") => string
+  call@L4  ("Hello World") => "hello-world"
+
+assertions
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 1 synthetic case(s) printed above)
 ```
 
 The case was not written by anyone — it was harvested from line 4 of the test file, which is why it is named `call@L4`. Every recorded call site becomes one synthesized case; multiple call sites to the same function union into the combined type, exactly like hand-written `@nudo:case` directives do. Unconstrained entry params display as `any`. When a function has **no** call sites anywhere, the analyzer falls back to one `entry@L…` case instead (`(any) => any` for unconstrained params); when `call@` cases exist, no `entry@` is synthesized for that function.

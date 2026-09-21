@@ -84,7 +84,7 @@ Why these keys:
 ## Recipe 3: Gradual contracts
 
 1. Observe first — `nudo check` / `nudo test`; no directives required.
-2. When a function needs a CI gate, add `fn.nudo.js` next to it.
+2. When a function needs a CI gate, add a `<file>.nudo.js` sidecar next to it.
 3. `nudo check` enforces only **handwritten** sidecars; `@generated` segments are facts + drift, not new obligations.
 
 ## Recipe: mixed JS/TS monorepo (no double error storm) {#recipe-mixed-js-ts-no-double-error-storm}

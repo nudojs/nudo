@@ -127,7 +127,7 @@ function add(a, b) {
 
 ## @nudo:skip — Skip Evaluation
 
-Skip abstract interpretation. The engine does not evaluate the function body. Without a return type expression, the function is reported as `Skipped (no return type declared)`; add a constraint-builder expression after the directive to declare one.
+Skip abstract interpretation of the function body: the engine does not evaluate it, so a skipped function never produces engine-debt (`nudo:unknown-inference`) noise. Without a return type expression the function is reported as `skipped (no return type declared)` and `nudo check` prints its return as `any` (unconstrained — not `unknown`, which is reserved for inference failure); add a constraint-builder expression after the directive to declare one.
 
 ### Syntax
 
@@ -137,6 +137,12 @@ Skip abstract interpretation. The engine does not evaluate the function body. Wi
 ```
 
 - **returnsExpr** (optional) — A constraint-builder / concrete expression used as the return type.
+
+### Scope
+
+- **No body evaluation.** The declared type (or `any`) becomes the signature return; entry may-throw (L2) is not evaluated for a skipped body.
+- **Parameter obligations stay.** `@nudo:refine` preconditions still gate call sites, and the parameter display still comes from the handwritten contract — `nudo check` reports `needsPositive(x: number) => any` for a skipped `needsPositive` with `@nudo:refine x positive`.
+- **Return contracts still checked.** `@nudo:skip lit(0)` under `@nudo:refine return positive` reports `nudo:constraint-violated`.
 
 ### Examples
 
@@ -150,12 +156,11 @@ function heavyComputation(data) {
 }
 ```
 
-**Inferred output:**
+**Inferred output (`nudo test`):**
 
 ```text
 === heavyComputation ===
-
-Skipped (no return type declared)
+  skipped (no return type declared)
 ```
 
 ```javascript
@@ -168,12 +173,11 @@ function unannotatedHeavy(x) {
 }
 ```
 
-**Inferred output:**
+**Inferred output (`nudo test`):**
 
 ```text
 === unannotatedHeavy ===
-
-Skipped (declared): number
+  skipped (declared): number
 ```
 
 ---

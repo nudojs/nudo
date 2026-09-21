@@ -83,7 +83,7 @@ async function fetchUser(id) {
 ```text
 === fetchUser ===
 
-debug "user"  (1) => promise<{ id: 1, name: "Alice" }>
+  debug "user"  (1) => promise<{ id: 1, name: "Alice" }>
 ```
 
 A mock helper for resolved promises — `stub().resolves(value)` makes every call return `promise<value>`:
@@ -99,7 +99,7 @@ async function fetchUser(id) {
 }
 ```
 
-**Not the same result here:** the resolved object's closure slots are not bridged — `json` arrives body-less (`json: () => ?`), so `res.json()` evaluates to `unknown` and this example infers `promise<unknown>` (abs `promise<unknown> #partial`), not the arrow mock's `promise<{ id: 1, name: "Alice" }>`. `resolves` keeps full precision for plain data (`stub().resolves({ ok: true, id: 1 })` → `promise<{ ok: true, id: 1 }>`); when the mock result gets called, use the arrow-function form. A synchronous helper:
+**Same result as the arrow mock:** `stub().resolves(value)` wraps `value` in a promise and the object's closure slots are bridged, so this example infers `promise<{ id: 1, name: "Alice" }>` — including the callable `json` slot. Use whichever form reads better. A synchronous helper:
 
 ```javascript
 /**
@@ -116,7 +116,7 @@ function readPort() {
 ```text
 === readPort ===
 
-debug "default": () => 8080
+  debug "default"  () => 8080
 ```
 
 A constraint-builder expression binds the name to an abstract domain directly:
@@ -136,7 +136,7 @@ function plan() {
 ```text
 === plan ===
 
-debug "plan": () => number
+  debug "plan"  () => number
 ```
 
 From a module — the module must define a binding with the mocked name:
@@ -161,7 +161,7 @@ const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
 ```text
 === readConfig ===
 
-debug "read": (string) => unknown
+  debug "read"  (string) => unknown
 
 [warning] read-config.js:6:9 Built-in API "fs" is not covered by Nudo's type inference (nudo:builtin-unknown)
 ```

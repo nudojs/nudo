@@ -67,7 +67,7 @@ When Nudo executes `transform` on abstract string input, the engine propagates t
 | **shape** | Structural kind: `any` / `unknown` / `prim` / `obj` / `arr` / `tuple` / `fn` / `brand` / `eff` / `sum` / `never` |
 | **term** | Symbolic identity of the value: literal, variable, or application (`x+1`) |
 | **pred** | Constraint relative to the term: `x>0`, conjunctions, … |
-| **conf** | Confidence: `exact` / `path` / `widened` / `partial` / `opaque` |
+| **conf** | Confidence: `exact` / `path` / `widened` / `mock` / `partial` / `opaque` |
 
 `any` means "any JS value" (unconstrained parameter). `unknown` means "analysis has no information." They are not the same.
 
@@ -229,7 +229,7 @@ for (let i = 0; i < arr.length; i++) {
 }
 ```
 
-A concrete bound accumulates element-wise to a literal. An abstract bound sums the first `0…7` iterations and reports `28 #exact`.
+A concrete bound accumulates element-wise to a literal. An abstract bound unrolls up to the cap and reports the widened join of the iterations (`number` for a numeric accumulator) — a termination guard, not a fixed-point refinement.
 
 ### 4.2 Closures and Higher-Order Functions
 
@@ -391,7 +391,12 @@ function calc(a, b) {
    - False: `a + b` → `number`
 4. Merge: `number`
 
-**Observed: ** `((1, 2) => 3) & ((number, number) => number)`
+**`nudo test` renders both cases:**
+
+```text
+debug "concrete"  (1, 2) => 3
+debug "symbolic"  (number, number) => number
+```
 
 ---
 

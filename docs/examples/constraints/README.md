@@ -84,7 +84,7 @@ function inc(x) {
  * @nudo:refine return positive
  */
 function bad() {
-  return 0;      // error: 返回值 ⊭ positive
+  return 0;      // error: return value ⊭ positive
 }
 ```
 
