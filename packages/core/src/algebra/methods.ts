@@ -229,12 +229,27 @@ export function callAbsMethod(
             return strLit(name === "replaceAll" ? lit.replaceAll(pat as never, rv) : lit.replace(pat as never, rv));
           }
           // repl fn Abs：原生回调语义——逐命中桥接 Abs 回调（副作用真实执行）
+          // 参数布局：string 模式 (match, offset, string)；
+          // regex (match, ...pN, offset, string)；命名组时末尾多一个 groups 对象。
           if (repAbs.shape.k === "fn") {
             let anyUnknown = false;
             const replWrapper = (...caps: unknown[]): string => {
-              const groups = caps.slice(1, -2);
-              const offset = caps[caps.length - 2];
-              const whole = caps[caps.length - 1];
+              const last = caps[caps.length - 1];
+              const hasNamedGroups =
+                caps.length >= 4 &&
+                typeof last === "object" &&
+                last !== null &&
+                typeof caps[caps.length - 3] === "number" &&
+                typeof caps[caps.length - 2] === "string";
+              const groups: unknown[] = hasNamedGroups
+                ? caps.slice(1, caps.length - 3)
+                : caps.slice(1, -2);
+              const offset = hasNamedGroups
+                ? caps[caps.length - 3]
+                : caps[caps.length - 2];
+              const whole = hasNamedGroups
+                ? caps[caps.length - 2]
+                : caps[caps.length - 1];
               const callArgs: Abs[] = [
                 strLit(String(caps[0])),
                 ...groups.map((g) => (g === undefined ? undefAbs() : strLit(String(g)))),

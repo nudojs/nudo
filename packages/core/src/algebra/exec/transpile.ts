@@ -427,7 +427,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit, $rawThis } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit, $rawThis, $isBreakTo } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -2105,12 +2105,18 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     case "BreakStatement": {
       // switch 臂内无标签 break = 臂结束（fall-through 合并已按结构吸收）
       if (opts.inSwitchArm && !stmt.label) return `${pad}return;`;
+      // 带标签 break 可指向循环或 labeled block（`foo: { break foo; }`）；
+      // 统一生成 $loopBreak(label)，由同标签循环/标签块吸收
+      if (stmt.label) {
+        return `${pad}$loopBreak(${JSON.stringify(stmt.label.name)});`;
+      }
       if ((opts.inLoop ?? 0) > 0) {
-        return `${pad}$loopBreak(${stmt.label ? JSON.stringify(stmt.label.name) : ""});`;
+        return `${pad}$loopBreak();`;
       }
       return `${pad}/* skip break (outside loop) */`;
     }
     case "ContinueStatement": {
+      // continue 只能目标循环；labeled block 不可 continue
       if ((opts.inLoop ?? 0) > 0) {
         return `${pad}$loopContinue(${stmt.label ? JSON.stringify(stmt.label.name) : ""});`;
       }
@@ -2127,8 +2133,17 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       ) {
         return transpileStatement(stmt.body, depth, { ...opts, loopLabel: stmt.label.name });
       }
-      // 非循环标签块（break label 跳出块）不建模：按普通块转译，标签丢弃
-      return transpileStatement(stmt.body, depth, opts);
+      // 非循环标签块：break label 跳出本块——try 吸收同标签 break 信号
+      const bodySrc = transpileStatement(stmt.body, depth + 2, opts);
+      return [
+        `${pad}{`,
+        `${indent(depth + 1)}try {`,
+        bodySrc,
+        `${indent(depth + 1)}} catch (__e) {`,
+        `${indent(depth + 2)}if (!$isBreakTo(__e, ${JSON.stringify(stmt.label.name)})) throw __e;`,
+        `${indent(depth + 1)}}`,
+        `${pad}}`,
+      ].join("\n");
     }
     default:
       return `${pad}/* skip ${stmt.type} */`;

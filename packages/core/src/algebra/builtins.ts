@@ -84,12 +84,15 @@ export function setPropFlags(o: Abs, key: string, f: PropFlags): void {
   m.set(key, f);
 }
 
-/** 写路径产生新副本时迁移不变性侧表（同 migrateAccessors 模式） */
+/** 写路径产生新副本时迁移不变性侧表（同 migrateAccessors 模式）。
+ *  propFlags 深拷贝：fork/switch 的 $copy 副本不得与源共享可变 Map
+ *  （一臂 defineProperty 不得污染另一臂）。 */
 export function migrateInvariants(from: Abs, to: Abs): void {
+  if (to === from) return;
   const s = extStateTable.get(from);
   if (s !== undefined) extStateTable.set(to, s);
   const f = propFlagsTable.get(from);
-  if (f) propFlagsTable.set(to, f);
+  if (f) propFlagsTable.set(to, new Map(f));
 }
 
 /** Math.* — 字面量可折叠的返回精确值，否则 number */

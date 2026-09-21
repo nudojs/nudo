@@ -41,8 +41,27 @@ import {
   OBJECT_PROTO_NAMES,
 } from "./calls.ts";
 import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, recordMayThrow, type MayThrowEffect } from "./may-throw.ts";
-import { getBClass, classNameOfValue, markClassValue } from "./class-registry.ts";
+import { getBClass } from "./class-registry.ts";
+import { classNameOfValue, markClassValue } from "../class-mark.ts";
 import { $call } from "./call.ts";
+import { NudoThrow, isNudoThrow } from "./nudo-throw.ts";
+
+export { NudoThrow, isNudoThrow };
+
+/** 就地改写 shape/conf：Abs 身份不变（引用语义）；旧 term/pred 不再描述新值，必须清除 */
+function writeInPlace(target: Abs, next: Abs): Abs {
+  target.shape = next.shape;
+  target.conf = next.conf;
+  target.term = undefined;
+  target.pred = undefined;
+  return target;
+}
+
+/** 调用方已直接改 shape 时的 term/pred 清理 */
+function clearStaleTermPred(v: Abs): void {
+  v.term = undefined;
+  v.pred = undefined;
+}
 
 /** 当前路径前提 Φ（transpile 后的 fork 会压栈） */
 let phi: Phi = pTrue;
@@ -396,7 +415,8 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
     case "prim":
       return boolLit(false); // 原始值无装箱
     case "sum": {
-      const parts = left.shape.members.map((m) => $instanceof(m, rightName));
+      // 成员分发须带上 RHS 值：@@hasInstance 对 sum 成员同样适用
+      const parts = left.shape.members.map((m) => $instanceof(m, rightName, rightVal));
       let decided: boolean | undefined;
       let undecided = false;
       for (const p of parts) {
@@ -514,6 +534,7 @@ export function $del(o: Abs, key: Abs): Abs {
       am.delete(keyStr);
       if (am.size === 0) accessorTable.delete(o);
     }
+    clearStaleTermPred(o);
     return o;
   }
   if (o.shape.k === "tuple") {
@@ -522,6 +543,7 @@ export function $del(o: Abs, key: Abs): Abs {
     o.shape.elements[idx] = $lit(undefined);
     if (!o.shape.holes) o.shape.holes = [];
     if (!o.shape.holes.includes(idx)) o.shape.holes.push(idx);
+    clearStaleTermPred(o);
     return o;
   }
   if (o.shape.k === "arr") {
@@ -530,6 +552,7 @@ export function $del(o: Abs, key: Abs): Abs {
       element: joinAbs(o.shape.element, $lit(undefined)),
     };
     o.conf = "partial";
+    clearStaleTermPred(o);
     return o;
   }
   return o;
@@ -1304,8 +1327,10 @@ export function fillTuple(
  */
 export function $copy(a: Abs): Abs {
   const s = a.shape;
+  // 所有可能挂 extState/propFlags 的形状都必须迁移不变性侧表：
+  // fork/switch 用 $copy 做快照，副本丢失 frozen/sealed 会让臂内写不再硬抛
   if (s.k === "tuple") {
-    return abs(
+    const next = abs(
       {
         k: "tuple",
         elements: s.elements.map($copy),
@@ -1315,9 +1340,13 @@ export function $copy(a: Abs): Abs {
       a.pred,
       a.conf,
     );
+    migrateInvariants(a, next);
+    return next;
   }
   if (s.k === "arr") {
-    return abs({ k: "arr", element: $copy(s.element) }, a.term, a.pred, a.conf);
+    const next = abs({ k: "arr", element: $copy(s.element) }, a.term, a.pred, a.conf);
+    migrateInvariants(a, next);
+    return next;
   }
   if (s.k === "obj") {
     const slots: Record<string, Slot> = {};
@@ -1339,10 +1368,13 @@ export function $copy(a: Abs): Abs {
     const next = abs({ k: "brand", name: s.name, shape: inner }, a.term, a.pred, a.conf);
     const clsName = classNameOfValue(a as object);
     if (clsName) markClassValue(next as object, clsName);
+    migrateInvariants(a, next);
     return next;
   }
   if (s.k === "eff") {
-    return abs({ k: "eff", eff: s.eff, inner: $copy(s.inner) }, a.term, a.pred, a.conf);
+    const next = abs({ k: "eff", eff: s.eff, inner: $copy(s.inner) }, a.term, a.pred, a.conf);
+    migrateInvariants(a, next);
+    return next;
   }
   if (s.k === "sum") {
     return abs({ k: "sum", members: s.members.map($copy) }, a.term, a.pred, a.conf);
@@ -1369,12 +1401,9 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   const vals = args.map((a) => asAbsVal(a));
   const asArrEl = (els: Abs[]): Abs =>
     els.length > 0 ? els.reduce((x, y) => joinAbs(x, y)) : unknown;
-  // 就地写回：shape/conf 替换但 Abs 身份不变 → 别名（const b=a / 实参）同步
-  const writeBack = (next: Abs): Abs => {
-    arr.shape = next.shape;
-    arr.conf = next.conf;
-    return arr;
-  };
+  // 就地写回：shape/conf 替换但 Abs 身份不变 → 别名（const b=a / 实参）同步；
+  // 旧 term/pred 不再描述新 shape，一并清除
+  const writeBack = (next: Abs): Abs => writeInPlace(arr, next);
 
   if (method === "push" || method === "unshift") {
     if (shape.k === "tuple") {
@@ -1576,6 +1605,7 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     if (iv >= 4294967295) {
       a.shape = widenTupleToArr(a.shape.elements, a.shape.holes, value);
       a.conf = confJoin(a.conf, "path");
+      clearStaleTermPred(a);
       return a;
     }
     // 巨大合法下标：原生 length 增长到 iv+1 的稀疏数组；
@@ -1583,6 +1613,7 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     if (iv + 1 > TUPLE_MATERIALIZE_CAP) {
       a.shape = widenTupleToArr(a.shape.elements, a.shape.holes, value);
       a.conf = confJoin(a.conf, "path");
+      clearStaleTermPred(a);
       return a;
     }
     const els = [...a.shape.elements];
@@ -1597,6 +1628,7 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     if (hi >= 0) holes.splice(hi, 1);
     // 就地写回：别名（const b=a）同步（JS 引用语义）
     a.shape = { k: "tuple", elements: els, holes: holes.length > 0 ? holes : undefined };
+    clearStaleTermPred(a);
     return a;
   }
   return a;
@@ -2150,6 +2182,7 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
         }
         if (getPropFlags(o)?.get(key)?.writable === false) throwStrictWrite();
         inner.shape.slots[key] = { value: asAbsVal(value) };
+        clearStaleTermPred(o);
         return o;
       }
     }
@@ -2180,6 +2213,7 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
         // 合法但巨大：不物化巨 tuple
         o.shape = widenTupleToArr(o.shape.elements, o.shape.holes, undefined);
         o.conf = confJoin(o.conf, "path");
+        clearStaleTermPred(o);
         return o;
       }
       const els = o.shape.elements.slice(0, v);
@@ -2194,6 +2228,7 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
         elements: els,
         holes: holes.length > 0 ? holes : undefined,
       };
+      clearStaleTermPred(o);
       return o;
     }
     const joined =
@@ -2202,6 +2237,7 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
         : unknown;
     o.shape = { k: "arr", element: joinAbs(joined, $lit(undefined)) };
     o.conf = "partial";
+    clearStaleTermPred(o);
     return o;
   }
   if (o.shape.k === "arr" && key === "length") {
@@ -2211,6 +2247,7 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
       throw new NudoThrow(errorTypeAbs("RangeError"));
     }
     o.conf = "partial";
+    clearStaleTermPred(o);
     return o;
   }
   if (!isObj(o)) return $obj({ [key]: value });
@@ -2230,6 +2267,7 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
   // 就地写槽（引用语义：const b = o; b.x = v 对 o 可见）——Abs 身份不变
   shape.slots[key] = { value: asAbsVal(value) };
   o.conf = confJoin(o.conf, value.conf);
+  clearStaleTermPred(o);
   return o;
 }
 
@@ -2383,15 +2421,17 @@ export function isNudoContinue(e: unknown, label?: string): boolean {
   return e instanceof NudoLoopSignal && e.kind === "continue" && loopSignalMatches(e, label);
 }
 
+/** 非循环 labeled block：判断 break 信号是否指向本标签（transpile 生成代码用） */
+export function $isBreakTo(e: unknown, label: string): boolean {
+  return e instanceof NudoLoopSignal && e.kind === "break" && e.label === label;
+}
+
 /** catch 转译辅助：控制流信号透传（生成代码只注入 `$` 前缀符号） */
 export function $rethrowIfNudoReturn(e: unknown): void {
   if (isNudoReturn(e)) throw e;
 }
 
 // --- throws ---
-
-import { NudoThrow, isNudoThrow } from "./nudo-throw.ts";
-export { NudoThrow, isNudoThrow };
 
 /** transpile `throw x` → `$throw(x)` */
 export function $throw(v: Abs): never {
