@@ -25,17 +25,24 @@
 
 ## 2. 阶段
 
-### P0：差分 oracle 收编（前提，不可跳过）
-把差分 harness（transpile 执行 vs `vm.runInNewContext` strict native 对照）
-+ 历史语料（batch1–17）收进仓内 vitest suite，作为「双引擎互证」的替代品。
-- 产出：`packages/core/src/algebra/__tests__/differential/` 语料 + runner。
-- 门禁：语料全零 mismatch；harness 的 concrete() 盲区（open obj/undefined 元素）
-  用读层断言补齐。
+### P0：差分 oracle 收编（前提，不可跳过）✅ 已完成（2026-09-22，commit 见 git log）
+- 产出：`packages/core/src/algebra/__tests__/differential/`——
+  `harness.ts`（diff3 同源：B-path vs vm.runInNewContext strict native）、
+  `corpus/batch1-17`（24 个语料文件，~5200 条）、`batch18-readprobes`
+  （concrete() 盲区读层金丝雀）、3 个门禁测试文件（basic/edge/recent，
+  每段零 mismatch + total compared 下限哨兵）。
+- 验证：155 测试全绿（3.3s）；**oracle 敏感性实测**——临时删除 COMPOUND_OPS
+  的 `**=` 映射，recent 门禁精确报出 3 条 `x **= 3` 假精确 MISMATCH，恢复后清零。
+- 门禁：全语料零 mismatch + compared 下限（basic>150 / edge>200 / recent>300）。
 
 ### P1：模块图 B 化
 `evalAbsModuleGraph` 换 per-file transpile+exec 收集导出。
 - 必须重实现协议：ESM 环 partial 命名空间、CJS 导出失败 open+path 保守、
   mock-module 替换、harvest（@types→env）合并、seedVars/seedFns 注入。
+- **P0 后新发现的前置条件**：transpile 不覆盖 export specifier 面——
+  `export { a, b as c }`、`export { x } from "mod"`、`export * from "mod"`
+  全被跳过（transpile.ts:1252 `/* export specifiers skipped */`，ExportAll
+  无 case）。B-path 执行产不出完整 ESM 导出表，P1 必须先补转译器导出面。
 - 门禁：abs-modules-graph 全测试绿 + module-cycle/depth/missing 诊断不变 +
   real-package 零 FP。
 
