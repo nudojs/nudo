@@ -120,3 +120,78 @@ describe("ast-eval Object.assign to array parity", () => {
     ).toBe("caught");
   });
 });
+
+describe("B-path Object.assign non-object sources (string/array prims)", () => {
+  it("string literal source projects code-unit index props", () => {
+    // 原生：Object.assign({}, 'ab') === {'0':'a','1':'b'}——按码元（非码点）逐位
+    expect(litValue(call(`export function f() { return Object.assign({}, 'ab')['0']; }`).result)).toBe("a");
+    expect(litValue(call(`export function f() { return Object.assign({}, 'ab')['1']; }`).result)).toBe("b");
+    expect(
+      litValue(call(`export function f() { return Object.keys(Object.assign({}, 'ab')).length; }`).result),
+    ).toBe(2);
+    // 代理对拆两个码元键（spread 按码点合并，assign 按 [[OwnPropertyKeys]] 码元——勿混用）
+    expect(
+      litValue(call(`export function f() { return Object.assign({}, '\uD83D\uDE00')['0'] === '\uD83D'; }`).result),
+    ).toBe(true);
+    expect(
+      litValue(call(`export function f() { return Object.keys(Object.assign({}, '\uD83D\uDE00')).length; }`).result),
+    ).toBe(2);
+  });
+
+  it("array source projects numeric keys and skips holes", () => {
+    expect(litValue(call(`export function f() { return Object.assign({}, [7,,9])['0']; }`).result)).toBe(7);
+    expect(litValue(call(`export function f() { return Object.assign({}, [7,,9])['2']; }`).result)).toBe(9);
+    expect(
+      litValue(call(`export function f() { return Object.keys(Object.assign({}, [7,,9])).length; }`).result),
+    ).toBe(2);
+    expect(litValue(call(`export function f() { return Object.assign({x: 0}, 'xy', {x: 2})['0']; }`).result)).toBe("x");
+  });
+
+  it("array target × string/array source writes indices", () => {
+    expect(litValue(call(`export function f() { return Object.assign([1,2,3], 'a')[0]; }`).result)).toBe("a");
+    expect(litValue(call(`export function f() { return Object.assign([1,2,3], 'a')[1]; }`).result)).toBe(2);
+    expect(litValue(call(`export function f() { return Object.assign([9,9], 'xy')[1]; }`).result)).toBe("y");
+    expect(litValue(call(`export function f() { return Object.assign([1,2,3], [9])[0]; }`).result)).toBe(9);
+    expect(litValue(call(`export function f() { return Object.assign([1,2,3], [9]).length; }`).result)).toBe(3);
+    expect(litValue(call(`export function f() { return Object.assign([1,2], [7,,9])[2]; }`).result)).toBe(9);
+    expect(litValue(call(`export function f() { return Object.assign([1,2], [7,,9]).length; }`).result)).toBe(3);
+  });
+
+  it("nullish / number / boolean sources are ignored (no throw, no props)", () => {
+    expect(litValue(call(`export function f() { return Object.assign({a: 1}, null).a; }`).result)).toBe(1);
+    expect(litValue(call(`export function f() { return Object.assign({a: 1}, undefined, null, 5, true).a; }`).result)).toBe(1);
+    expect(
+      litValue(call(`export function f() { return Object.keys(Object.assign({a: 1}, null, 5)).length; }`).result),
+    ).toBe(1);
+  });
+});
+
+describe("ast-eval Object.assign non-object source parity", () => {
+  it("string source folds code-unit keys", () => {
+    expect(litValue(analyzeFn(`function f() { return Object.assign({}, 'ab')['0']; }`, "f", []))).toBe("a");
+    expect(
+      litValue(analyzeFn(`function f() { return Object.keys(Object.assign({}, 'ab')).length; }`, "f", [])),
+    ).toBe(2);
+  });
+
+  it("array source folds numeric keys", () => {
+    // hole 源键跳过依赖 ast-eval 数组字面量 hole 建模（单独批次修）——
+    // 此处用无 hole 字面量验证键投影本身
+    expect(litValue(analyzeFn(`function f() { return Object.assign({}, [7,8,9])['2']; }`, "f", []))).toBe(9);
+    expect(
+      litValue(analyzeFn(`function f() { return Object.keys(Object.assign({}, [7,8,9])).length; }`, "f", [])),
+    ).toBe(3);
+  });
+
+  it("array target × string/array source writes indices", () => {
+    expect(litValue(analyzeFn(`function f() { return Object.assign([1,2,3], 'a')[0]; }`, "f", []))).toBe("a");
+    expect(litValue(analyzeFn(`function f() { return Object.assign([1,2,3], [9])[0]; }`, "f", []))).toBe(9);
+    expect(
+      litValue(analyzeFn(`function f() { const t = Object.assign([1,2], [9]); return t.length + ':' + t[0]; }`, "f", [])),
+    ).toBe("2:9");
+  });
+
+  it("nullish sources are ignored", () => {
+    expect(litValue(analyzeFn(`function f() { return Object.assign({a: 1}, null, undefined).a; }`, "f", []))).toBe(1);
+  });
+});

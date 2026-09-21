@@ -4,12 +4,12 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { abs, unknown, confJoin, litValue, bool, boolLit, strLit, numLit } from "../abs.ts";
+import { abs, unknown, confJoin, litValue, bool, boolLit, str, strLit, numLit } from "../abs.ts";
 import { objOf, joinAbs, isObj, canonicalArrayIndex } from "../objects.ts";
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags, tryMakeRegexAbs, makeArrayCtorAbs } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots } from "../builtins.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid } from "../collections.ts";
 import { registerMatchIter } from "./match-iter.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
@@ -388,37 +388,66 @@ function runtimeAssignObject(args: Abs[]): Abs {
     }
     return unknown;
   }
+  const mergeObj = (accObj: Abs, srcAbs: Abs, st: "nonext" | "sealed" | "frozen" | undefined): Abs => {
+    const base = { ...(accObj.shape as Extract<Abs["shape"], { k: "obj" }>).slots };
+    const flags = getPropFlags(accObj);
+    for (const [k, s] of Object.entries((srcAbs.shape as Extract<Abs["shape"], { k: "obj" }>).slots)) {
+      // sealed/nonext 目标新键 / writable:false 键覆写：strict TypeError
+      if (
+        (st === "sealed" || st === "nonext") &&
+        !Object.prototype.hasOwnProperty.call(base, k)
+      ) {
+        throwStrictAssign();
+      }
+      if (flags?.get(k)?.writable === false) throwStrictAssign();
+      const a = lookupObjAccessor(srcAbs, k);
+      base[k] = a?.get ? { value: a.get(srcAbs) } : s;
+    }
+    return objOf(base, {
+      index: (accObj.shape as Extract<Abs["shape"], { k: "obj" }>).index,
+      open: (accObj.shape as Extract<Abs["shape"], { k: "obj" }>).open || (srcAbs.shape as Extract<Abs["shape"], { k: "obj" }>).open,
+    });
+  };
   let acc = args[0]!;
   for (let i = 1; i < args.length; i++) {
     acc = asAbsVal(acc);
     const st = extStateOf(acc);
     if (st === "frozen") throwStrictAssign(); // strict：assign 到 frozen 目标 TypeError
     const src = asAbsVal(args[i]!);
-    if (acc.shape.k === "obj" && src.shape.k === "obj") {
-      const base = { ...acc.shape.slots };
-      const flags = getPropFlags(acc);
-      for (const [k, s] of Object.entries(src.shape.slots)) {
-        // sealed/nonext 目标新键 / writable:false 键覆写：strict TypeError
-        if (
-          (st === "sealed" || st === "nonext") &&
-          !Object.prototype.hasOwnProperty.call(base, k)
-        ) {
-          throwStrictAssign();
-        }
-        if (flags?.get(k)?.writable === false) throwStrictAssign();
-        const a = lookupObjAccessor(src, k);
-        base[k] = a?.get ? { value: a.get(src) } : s;
+    if (src.shape.k === "obj") {
+      if (acc.shape.k === "obj") {
+        acc = mergeObj(acc, src, st);
+        acc.conf = confJoin(acc.conf, src.conf);
+      } else if (acc.shape.k === "tuple") {
+        // 数组 target：数字键按下标写（扩展 length）、"length" 键截断/延长
+        // （延长段 hole；非法 length 原生 RangeError）、非规范键 expando 忽略。
+        // 源键序 = 原生 [[OwnPropertyKeys]] 序（整数键升序 → 字符串插入序）。
+        acc = assignArrayTarget(acc, src, st);
       }
-      acc = objOf(base, {
-        index: acc.shape.index,
-        open: acc.shape.open || src.shape.open,
-      });
-      acc.conf = confJoin(acc.conf, src.conf);
-    } else if (acc.shape.k === "tuple" && src.shape.k === "obj") {
-      // 数组 target：数字键按下标写（扩展 length）、"length" 键截断/延长
-      // （延长段 hole；非法 length 原生 RangeError）、非规范键 expando 忽略。
-      // 源键序 = 原生 [[OwnPropertyKeys]] 序（整数键升序 → 字符串插入序）。
-      acc = assignArrayTarget(acc, src, st);
+      continue;
+    }
+    const srcSlots = assignSourceSlots(src);
+    if (srcSlots === undefined) {
+      // 键集未知（strPrim 非字面量 / arr / brand / sum / fn…）：保守降级，
+      // 不得折「无变化」假精确
+      if (acc.shape.k === "obj") {
+        acc = objOf({ ...acc.shape.slots }, { index: acc.shape.index, open: true });
+      } else if (acc.shape.k === "tuple") {
+        const els = acc.shape.elements;
+        const joined = els.length ? els.reduce((x, y) => joinAbs(x, y)) : str();
+        acc = abs({ k: "arr", element: joinAbs(joined, str()) }, undefined, undefined, "partial");
+      }
+      continue;
+    }
+    if (acc.shape.k === "obj" || acc.shape.k === "tuple") {
+      // tuple / 字符串字面量源：合成 obj 源走同一逐键写链（无 getter/length 键）
+      const srcObj = abs({ k: "obj", slots: srcSlots }, undefined, undefined, "exact");
+      if (acc.shape.k === "obj") {
+        acc = mergeObj(acc, srcObj, st);
+        acc.conf = confJoin(acc.conf, src.conf);
+      } else {
+        acc = assignArrayTarget(acc, srcObj, st);
+      }
     }
   }
   return acc;

@@ -39,7 +39,7 @@ function numPrim(conf: Abs["conf"] = "path"): Abs {
   return abs({ k: "prim", type: "number" }, undefined, undefined, conf);
 }
 
-function strPrim(conf: Abs["conf"] = "path"): Abs {
+function str(conf: Abs["conf"] = "path"): Abs {
   return abs({ k: "prim", type: "string" }, undefined, undefined, conf);
 }
 
@@ -147,6 +147,35 @@ export function evalMathMethod(name: string, args: Abs[]): Abs | undefined {
   }
 }
 
+/** Object.assign 非 obj 源的键投影（原生按源 [[OwnPropertyKeys]] 逐键复制
+ *  可枚举自有属性）：
+ *  - tuple（数组字面量）源：下标键（hole 无自有属性 → 跳过）
+ *  - 字符串字面量源：码元下标键（代理对拆两个键——spread 按码点、assign 按码元，勿混）
+ *  - number/boolean/bigint/nullish/其它 prim：无自有可枚举键 → 空（忽略，原生不抛）
+ *  - strPrim 非字面量 / arr / brand（含 String 包装）/ sum / fn / any：键集未知
+ *    → undefined（调用方保守降级，不得折「无变化」假精确）
+ */
+export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | undefined {
+  const s = src.shape;
+  if (s.k === "tuple") {
+    const holes = s.holes ?? [];
+    const slots: Record<string, { value: Abs }> = {};
+    for (let i = 0; i < s.elements.length; i++) {
+      if (!holes.includes(i)) slots[String(i)] = { value: s.elements[i]! };
+    }
+    return slots;
+  }
+  if (src.term?.op === "lit" && typeof src.term.value === "string") {
+    const v = src.term.value;
+    const slots: Record<string, { value: Abs }> = {};
+    for (let i = 0; i < v.length; i++) slots[String(i)] = { value: strLit(v[i]!) };
+    return slots;
+  }
+  if (s.k === "prim") return s.type === "string" ? undefined : {};
+  if (s.k === "eff" || s.k === "never") return {}; // Promise 无自有可枚举键
+  return undefined; // arr/brand/sum/fn/any/unknown…：键集未知
+}
+
 /** Object.keys/values/entries/assign + 不变性方法 */
 export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
   const a0 = args[0];
@@ -211,7 +240,7 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       if (a0?.term?.op === "lit" && typeof a0.term.value === "number") {
         return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
       }
-      return abs({ k: "arr", element: strPrim("path") }, undefined, undefined, "partial");
+      return abs({ k: "arr", element: str("path") }, undefined, undefined, "partial");
     }
     case "values": {
       if (a0 && a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined)) {
@@ -329,6 +358,50 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
           const base = (acc.shape as { slots: Record<string, { value: Abs }> }).slots;
           const over = (src.shape as { slots: Record<string, { value: Abs }> }).slots;
           acc = abs({ k: "obj", slots: { ...base, ...over } }, undefined, undefined, confJoin(acc.conf, src.conf));
+        } else if (src.shape.k !== "obj") {
+          // 非 obj 源：tuple（下标键、hole 跳过）/字符串字面量（码元键）/
+          // number/boolean/nullish（无键忽略）；键集未知 → 保守降级（与
+          // B-path runtimeAssignObject 同口径——此前整体忽略折假精确）
+          const srcSlots = assignSourceSlots(src);
+          if (srcSlots === undefined) {
+            if (acc.shape.k === "obj") {
+              const base = (acc.shape as { slots: Record<string, { value: Abs }> }).slots;
+              acc = abs({ k: "obj", slots: { ...base }, open: true }, undefined, undefined, acc.conf);
+            } else if (acc.shape.k === "tuple") {
+              const els = acc.shape.elements;
+              const joined = els.length ? els.reduce((x, y) => joinAbs(x, y)) : str();
+              acc = abs(
+                { k: "arr", element: joinAbs(joined, str()) },
+                undefined,
+                undefined,
+                "partial",
+              );
+            }
+          } else if (acc.shape.k === "obj") {
+            const base = (acc.shape as { slots: Record<string, { value: Abs }> }).slots;
+            acc = abs({ k: "obj", slots: { ...base, ...srcSlots } }, undefined, undefined, confJoin(acc.conf, src.conf));
+          } else if (acc.shape.k === "tuple") {
+            // 数组 target × tuple/字符串源：下标键按下标写（与 obj 源分支同口径；
+            // 无 length 键/getter，直接逐位写）
+            let elements = [...acc.shape.elements];
+            let holes = [...(acc.shape.holes ?? [])];
+            let len = elements.length;
+            for (const [k, s] of Object.entries(srcSlots)) {
+              const idx = canonicalArrayIndex(k);
+              if (idx === undefined) continue;
+              if (idx >= len) len = idx + 1;
+              if (idx >= elements.length) elements.length = idx + 1;
+              elements[idx] = s.value;
+              holes = holes.filter((h) => h !== idx);
+            }
+            elements.length = len;
+            acc = abs(
+              { k: "tuple", elements, holes: holes.length > 0 ? holes : undefined },
+              undefined,
+              undefined,
+              confJoin(acc.conf, src.conf),
+            );
+          }
         } else if (acc.shape.k === "tuple" && src.shape.k === "obj") {
           // 数组 target：与 B-path runtimeAssignObject 同口径——数字键按下标写
           // （扩展 length）、length 键截断/延长（延长段 hole、非法原生
@@ -613,20 +686,20 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
     const a0Abs = args[0];
     if (!a0Abs) return undefAbs();
     const v = absToJsonNative(a0Abs, new Set());
-    if (v === NOT_LITERAL) return strPrim("partial");
+    if (v === NOT_LITERAL) return str("partial");
     // replacer：数组字面量 → 白名单键；null/非数组非函数 → 原生忽略；
     // 函数 replacer / 抽象 → 保守（结果串不可判定）
     const replacerArg = args[1];
     let replacer: (string | number)[] | undefined;
     if (replacerArg) {
       const rv = absToJsonNative(replacerArg, new Set());
-      if (rv === NOT_LITERAL) return strPrim("partial");
+      if (rv === NOT_LITERAL) return str("partial");
       if (Array.isArray(rv)) {
         replacer = rv.filter(
           (x): x is string | number => typeof x === "string" || typeof x === "number",
         );
       } else if (typeof rv === "function") {
-        return strPrim("partial");
+        return str("partial");
       }
       // 其余（null/prim/对象）：原生忽略 replacer，照常序列化
     }
@@ -636,14 +709,14 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
     let space: number | string | undefined;
     if (spaceArg) {
       const t = spaceArg.term;
-      if (t?.op !== "lit") return strPrim("partial");
+      if (t?.op !== "lit") return str("partial");
       const sv = t.value;
       if (typeof sv === "number") {
         space = Number.isFinite(sv) ? Math.min(10, Math.max(0, Math.floor(sv))) : 0;
       } else if (typeof sv === "string") {
         space = sv;
       } else if (sv !== undefined && sv !== null) {
-        return strPrim("partial");
+        return str("partial");
       }
     }
     try {
@@ -747,7 +820,7 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       return numPrim();
     case "String":
       if (a0 !== undefined) return strLit(String(a0));
-      return strPrim();
+      return str();
     case "Boolean":
       if (a0 !== undefined) return boolLit(Boolean(a0));
       return boolPrim();
@@ -971,7 +1044,7 @@ export function evalDateMethod(name: string, _recv: Abs, _args: Abs[]): Abs | un
       return numPrim("path");
     case "toISOString":
     case "toString":
-      return strPrim("path");
+      return str("path");
     default:
       return undefined;
   }
@@ -1162,12 +1235,12 @@ function errorMessageSlot(messageArg: Abs | undefined): Abs {
     if (v === null) return strLit("null");
     if (v === undefined) return strLit(""); // new Error(undefined) → ""
     // symbol 等：原生 ToString 抛 TypeError——保守 unknown，不折精确值
-    return strPrim();
+    return str();
   }
   if (messageArg.shape.k === "prim" && messageArg.shape.type === "string") {
     return messageArg;
   }
-  return strPrim();
+  return str();
 }
 
 /**
