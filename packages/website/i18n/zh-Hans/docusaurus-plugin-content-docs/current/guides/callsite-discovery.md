@@ -1,5 +1,4 @@
 ---
-sidebar_position: 8
 description: "用 --from 从测试与应用中采集真实实参形状，合成 call@L 用例，并用 test --freeze 固化为指令。"
 ---
 
@@ -45,11 +44,10 @@ nudo test lib/ --from test/
 
 ```text
 === slugify ===
-  entry@L1  (any) => any
   call@L4  ("Hello World") => string
 ```
 
-这个 case 不是任何人写的——它采集自测试文件的第 4 行，因此被命名为 `call@L4`。每个被记录的调用点都会成为一个合成的 case；对同一函数的多个调用点会合并为联合类型（combined type），与手写 `@nudo:case` 指令的行为完全一致。无约束入口参数显示为 `any`。
+这个 case 不是任何人写的——它采集自测试文件的第 4 行，因此被命名为 `call@L4`。每个被记录的调用点都会成为一个合成的 case；对同一函数的多个调用点会合并为联合类型（combined type），与手写 `@nudo:case` 指令的行为完全一致。无约束入口参数显示为 `any`。当函数在**任何地方都没有**调用点时，分析器回退为单个 `entry@L…` case（无约束参数为 `(any) => any`）；存在 `call@` case 时，不再为该函数合成 `entry@`。
 
 ### 选项
 
@@ -135,7 +133,7 @@ nudo test lib/ --from test/ --freeze=update    # 重新同步已生成的指令
 - **只支持可序列化的形状。** 指令文本能表达原始类型（`number()`/`string()`/`boolean()`/`unknown`/`never`）、字面量、普通对象、数组、元组与联合。实参含函数、Promise、类实例、`bigint` 或 `symbol` 值的用例无法固化——会被跳过并报告 `no-serializable-cases`（函数其余可序列化的用例仍会写入）。
 - **`call@` 是保留前缀。** 名字以 `call@` 开头的 `@nudo:case` 一律视为生成物：`update` 可能改写或删除它。不要把手写用例命名为 `call@…`。
 
-端到端工作流示例（引导与漂移检测）见 [CLI 使用指南 —— 固化 case 指令](./cli.md#固化-case-指令)；基于这些函数的编程接口见 [service API —— 用例固化](../api/service.md#用例固化)。
+端到端工作流示例（引导与漂移检测）见 [CLI 使用指南 —— `nudo test`](./cli.md#nudo-test)；基于这些函数的编程接口见 [service API —— 用例固化](../api/service.md#用例固化)。
 
 要主动检测这种漂移——在 CI 中或发版前——运行 [`nudo health`](./cli.md#nudo-health)：它对你的文件重跑同一条重新固化链路，任一生成指令会变化即以退出码 `1` 结束。
 
@@ -162,5 +160,5 @@ const result = analyzeFile(filePath, source, activeCases, records);
 
 ## 下一步
 
-- **[语言语义](./semantics.md)** —— 求值器能对调用点发现交给它的形状做些什么：`this` 绑定、Promise、可迭代对象等。
+- **[语言语义](../concepts/semantics.md)** —— 求值器能对调用点发现交给它的形状做些什么：`this` 绑定、Promise、可迭代对象等。
 - **[CLI 使用指南](./cli.md)** —— 所有 `nudo check` / `nudo test` 选项。

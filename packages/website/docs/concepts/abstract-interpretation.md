@@ -1,11 +1,10 @@
 ---
-sidebar_position: 2
-description: Learn how Nudo executes code with symbolic type values — the abstract interpretation model behind its evaluation engine, narrowing, and merging.
+description: Learn how Nudo executes code on Abs (symbolic values) — the abstract interpretation model behind evaluation, narrowing, and merging.
 ---
 
 # Abstract Interpretation
 
-Abstract interpretation is the theoretical foundation of Nudo. Instead of running code with concrete values (like a test) or analyzing code without running it (like TypeScript), Nudo **executes code with symbolic type values** — and the execution itself produces types.
+Abstract interpretation is the theoretical foundation of Nudo. Instead of running code with concrete values (like a test) or analyzing code without running it (like TypeScript), Nudo **executes code on Abs** (symbolic shape × term × pred × conf values) — and the execution itself produces types.
 
 ## Three Approaches Compared
 
@@ -27,7 +26,7 @@ When Nudo executes `transform(string())`, the engine propagates `string()` throu
 │                                                     │
 │  ┌───────────┐   ┌────────────┐   ┌──────────────┐ │
 │  │  Parser   │──▶│ Directive  │──▶│  Evaluator   │ │
-│  │ (Babel)   │   │ Extractor  │   │ (AST Walker) │ │
+│  │ (Babel)   │   │ Extractor  │   │ (B-path/Abs) │ │
 │  └───────────┘   └────────────┘   └──────┬───────┘ │
 │                                          │         │
 │                  ┌───────────────────────┐│         │

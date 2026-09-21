@@ -1,5 +1,4 @@
 ---
-sidebar_position: 6
 description: "Connect AI coding agents to Nudo's language server: LSP→MCP bridges, native LSP clients, agent commands (check/test/contract/hover/whatIf/…), and pull diagnostics."
 ---
 

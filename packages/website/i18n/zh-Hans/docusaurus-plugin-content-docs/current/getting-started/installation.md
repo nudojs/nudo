@@ -1,5 +1,4 @@
 ---
-sidebar_position: 1
 description: 安装 Nudo 的 CLI、VS Code 扩展与 Vite 插件，支持 npm、pnpm、yarn——发布包要求 Node.js >= 20。
 ---
 
@@ -10,7 +9,7 @@ description: 安装 Nudo 的 CLI、VS Code 扩展与 Vite 插件，支持 npm、
 ## 前置要求
 
 - **运行发布版 CLI**：Node.js >= 20（各发布包 `engines`）
-- **开发本仓库**：Node.js >= 20（CI 使用 Node 24）
+- **开发本仓库**：Node.js >= 18（CI 使用 Node 24）
 
 发布包以编译后的 ESM `dist/` 发布（`files: ["dist"]`），不是 TypeScript 源码。
 
@@ -71,4 +70,4 @@ export default defineConfig({
 });
 ```
 
-构建过程中，插件按 `nudo.analysis.mode` 筛选文件（出厂默认 `"exports"`：含 `@nudo:*` / `export` / 侧车），并将 Nudo 诊断——求值器问题加精化门禁违例（`nudo:constraint-violated`、`nudo:assign-mismatch`、`nudo:arg-structure`）——报告为构建警告；设置 `failOnError` 后变为构建错误。参见 [Vite 插件指南](../guides/vite-plugin.md)。
+构建过程中，插件按 `nudo.analysis.mode` 筛选文件（出厂默认 `"exports"`），并将 Nudo 诊断——求值器问题加精化门禁违例（`nudo:constraint-violated`、`nudo:assign-mismatch`、`nudo:arg-structure`）——报告为构建警告；设置 `failOnError` 后变为构建错误。参见 [Vite 插件指南](../guides/vite-plugin.md)。

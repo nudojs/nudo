@@ -1,7 +1,4 @@
-<!-- DESIGN-CONFLICT:cli-semantics → docs/design/cli-semantics.md §2
-     C-ANY: unknown/any 同格（zh 镜像）。 -->
 ---
-sidebar_position: 1
 description: "@nudojs/core API —— Abs 类型体系（shape × term × pred × conf）、构造器、可赋值性与格式化、运算符语义、模板字符串、mock 帮助函数与 Environment。"
 ---
 
@@ -16,7 +13,7 @@ core 包提供 Abs 类型体系、运算符语义以及环境抽象，是 Nudo �
 - **shape**——外延载体：值长什么样（`prim`、`obj`、`arr`…）。
 - **term**——抽象值身份：`lit`（具体值）、`var`（符号 α，如 `A1`）或 `app`（应用表达式，如 `(x + 2)`）。约束因此能参与代数：`x > 0` ⇒ `x + 1 > 1`。
 - **pred**——相对 term 的约束（如 `(x + 2) > 3`），恒真时为 `undefined`。
-- **conf**——`Confidence`：`"exact" | "path" | "widened" | "mock" | "partial" | "opaque"`。
+- **conf**——`Confidence`：`"exact" | "path" | "widened" | "partial" | "opaque"`。
 
 ### Shape 种类
 
@@ -34,7 +31,7 @@ core 包提供 Abs 类型体系、运算符语义以及环境抽象，是 Nudo �
 | `any` | 无约束 JS 值并集 —— 未标注入口参数的默认；开发者负责细化 |
 | `unknown` | 推导失败 / 引擎无信息 —— **不是** `any` 的同义词；Nudo 负责修 |
 
-详见 [Type Values — any vs unknown](../concepts/type-values.md#any-vs-unknown)。
+详见 [Abs — any vs unknown](/docs/concepts/type-values#any-vs-unknown)。
 
 ---
 
@@ -123,7 +120,7 @@ isTemplateLike(a: Abs): boolean
 
 ## Mock 帮助函数
 
-`@nudo:mock` 表达式与 env 文件共享的类型安全 mock 构造器——`MockHelper` 是一个普通记录，其值字段为 **Abs**（TypeValue 退出后的真理源）。`@nudojs/parser` 经 `parseNudoMockExpr` 从 `@nudo:mock` 表达式构建它；`@nudojs/service` 的 `mockDirectivesToAbsSeeds` 将其转为 Abs mock 种子：
+`@nudo:mock` 表达式与 env 文件共享的类型安全 mock 构造器——`MockHelper` 是一个普通记录，其值字段为 **Abs**（唯一类型系统；分析从不读回投影）。`@nudojs/parser` 经 `parseNudoMockExpr` 从 `@nudo:mock` 表达式构建它；`@nudojs/service` 的 `mockDirectivesToAbsSeeds` 将其转为 Abs mock 种子：
 
 ```typescript
 type MockHelper = {

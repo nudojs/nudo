@@ -1,5 +1,4 @@
 ---
-sidebar_position: 1
 description: "Nudo 设计内幕：Abs = shape × term × pred × conf 作为唯一类型系统、外延投影用于展示、指令系统与抽象解释。"
 ---
 
@@ -211,15 +210,7 @@ eval(IfStatement { test, consequent, alternate }) →
 
 ### 3.3 窄化规则
 
-| 模式 | True 分支 | False 分支 |
-|---------|-------------|-------------|
-| `typeof x === "string"` | `x ∩ string` | `x - string` |
-| `typeof x === "number"` | `x ∩ number` | `x - number` |
-| `x === null` | `x ∩ null` | `x - null` |
-| `x === <literal>` | `x ∩ lit(v)` | `x - lit(v)` |
-| `Array.isArray(x)` | `x ∩ array` | `x - array` |
-| `x`（真值检查） | `x - null - undefined - falsy` | 补集 |
-| `x instanceof C` | `x ∩ instance(C)` | `x - instance(C)` |
+窄化基于条件精化值（`typeof` / `===` / `Array.isArray` / `instanceof` / 真值 / `in` / `?.` / `??` / `switch` / 判别字段）。完整模式表见 [抽象解释](../concepts/abstract-interpretation.md#窄化规则)；已验证模式走查见 [控制流收窄](../concepts/control-flow-narrowing.md)。
 
 ---
 

@@ -1,22 +1,18 @@
 ---
-sidebar_position: 4
 description: "nudo CLI 参考 —— check、test、contract、export、health、env harvest 的参数、选项、输出格式与退出码。"
 ---
 
 # CLI 参考
 
-`nudo` CLI 对 `.js` / `.mjs` / `.ts` 运行类型推断。全局安装或 `npx` 使用：
+`nudo` CLI 对 `.js` / `.mjs` / `.ts` 运行类型推断。安装方式见[安装](../getting-started/installation.md)。
 
 ```bash
-# 薄壳包（发布名为 `nudojs`；安装后得到 `nudo` 命令）
-npm install -g nudojs
-# 或完整 CLI 包
-npm install -g @nudojs/cli
-# 然后
 npx nudojs check ./src/utils.js
 # 全局安装后也可直接：
 nudo check ./src/utils.js
 ```
+
+本页是**旗标 / 选项 / 退出码的规范定义**。教程式走读见 [CLI 使用指南](../guides/cli.md)。
 
 ---
 
@@ -81,7 +77,7 @@ nudo check <path> [options]
 ```text
 signatures
   getName(user: any) => any  throws TypeError
-  subtract(a: any, b: any) => any
+  subtract(a: any, b: any) => number
 issues
   [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
@@ -95,7 +91,7 @@ issues
 
 | 层 | 来源 | 行为 |
 |----|------|------|
-| L1 显式 | `*.nudo.js` / `@nudo:refine` / `@nudo:interface` | 违例 → error |
+| L1 显式 | `*.nudo.js` / `@nudo:refine`（别名 `@nudo:interface`） | 违例 → error |
 | L2 默认 JS 契约 | **入口/导出**函数的运行时边界 | 未消化 may-throw → error（`nudo:entry-may-throw`）；`--ignore-throws` 过滤 |
 
 L2 **不**门禁内部 helper。`try`/`catch` 与 refine 可清除 L2。
@@ -189,7 +185,7 @@ nudo contract --draft <paths...> [--write] [--fn <name>] [--dry-run] [--from <pa
 
 **分层：**
 
-- `[handwritten]` —— 源码 `@nudo:refine` / `@nudo:interface` ∪ 侧车绑定
+- `[handwritten]` —— 源码 `@nudo:refine` / 侧车绑定（产品术语：**contract**）
 - `[generated]` —— 固化的 `@generated` 侧车段
 - `[implicit]` —— 调用点推断
 

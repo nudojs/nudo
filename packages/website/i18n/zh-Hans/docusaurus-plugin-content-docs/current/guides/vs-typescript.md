@@ -1,10 +1,11 @@
 ---
-sidebar_position: 9
 slug: /guides/vs-typescript
 description: Nudo 何时替代 TypeScript、何时不替代、以及两者如何共存——诚实定位。
 ---
 
 # Nudo vs TypeScript
+
+实操路径见：[从 TypeScript 迁移](./migrating-from-typescript.md) · 产品定位见：[为什么选 Nudo](../why-nudo.md)。
 
 **读完你能带走：** 何时 Nudo 可以替代 TypeScript 作为 JS 优先仓库的类型门禁、何时 TS 应当继续主导，以及两者如何共仓。
 
@@ -16,7 +17,7 @@ Nudo 的目标是：**在 JavaScript 优先的代码库里，替代 TypeScript �
 |---|---|---|
 | **主表面** | `.ts` + 类型标注 | 纯 `.js`（传入 `.ts` 会剥掉类型语法） |
 | **类型模型** | 声明式结构类型 | **Abs**（`shape × term × pred × conf`），可计算 |
-| **契约** | `interface` / `type` 语言 | `*.nudo.js` 构建器（`fn` / `shape` / `number().gt(0)`）+ 可选 `@nudo:refine` + L2 入口 throws |
+| **契约** | `interface` / `type` 语言 | `*.nudo.js` 构建器（`fn` / `shape` / `number().gt(0)`）+ 可选 `@nudo:refine`（别名 `@nudo:interface`） |
 | **推断** | 标注 + 局部推断 | **在符号 Abs 上执行代码**（B-path / ast-eval） |
 | **CI 门禁** | `tsc --noEmit` | `nudo check`（Abs 上的 `actual ⊭ expected`；成功也打印 signatures） |
 | **观察命令** | （无 —— hover） | 观察是 check/test/IDE 输出 |
@@ -66,7 +67,7 @@ Nudo 的目标是：**在 JavaScript 优先的代码库里，替代 TypeScript �
 | 入口 throws | L2 默认 error（`nudo:entry-may-throw`）；`--ignore-throws` 过滤 |
 | 生成事实 | `nudo contract --emit` → `@generated` 段（drift，不静默改写义务） |
 | npm / 编辑器类型 | `nudo export --format dts`——单向投影 |
-| 性能叙事 | `benchmark` CI gate（cold / warm / LS-invalidated） |
+| 性能叙事 | 仓库 `benchmark` + `benchmark:gate` —— 同一 case 集合规模；精确回归超过 1-case 抖动、unknown/error 计数上升、逐 case 顺序劣于基线、或均值 > 3.0× 基线时失败 |
 
 **不宣称**：大型 TS monorepo 一键迁移；以完整结构类型为主模型；第二套 IR。
 
@@ -113,6 +114,6 @@ Monorepo 里通常**按包拆分**，而不是在一个 TS 工程内部按特性
 ## 相关
 
 - **[概念分层](../concepts/layers.md)** — Day-0 / Day-1 / Abs
-- **[nudo check](./check.md)** — 诊断码与 interface 分档
-- **[语言语义](./semantics.md)** — 何处精确、何处降级为 `unknown`
+- **[nudo check](./check.md)** — 诊断码与契约分层
+- **[语言语义](../concepts/semantics.md)** — 何处精确、何处降级为 `unknown`
 - **[快速上手](../getting-started/quick-start.md)** — 30 分钟路径

@@ -1,5 +1,4 @@
 ---
-sidebar_position: 3
 description: "@nudojs/service API —— analyzeFile/analyzeFileAsync、调用记录采集、模块图与脏集合、语义 token、.d.ts/zod/守卫生成、用例固化。"
 ---
 

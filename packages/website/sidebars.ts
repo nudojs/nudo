@@ -3,30 +3,29 @@ import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
 const sidebars: SidebarsConfig = {
   docsSidebar: [
     "intro",
+    "why-nudo",
     {
       type: "category",
-      label: "Getting Started",
-      items: ["getting-started/installation", "getting-started/quick-start"],
-    },
-    {
-      type: "category",
-      label: "Core Concepts",
+      label: "Start",
       items: [
-        "concepts/layers",
-        "concepts/type-values",
-        "concepts/abstract-interpretation",
-        "concepts/directives",
+        "getting-started/installation",
+        "getting-started/quick-start",
+        "guides/recipes",
       ],
     },
     {
       type: "category",
-      label: "Workflows",
+      label: "How-to",
+      link: { type: "generated-index" },
       items: [
-        "guides/cli",
         "guides/check",
+        "guides/contract",
+        "guides/cli",
         "guides/callsite-discovery",
-        "guides/examples",
         "guides/runtime-generation",
+        "guides/health",
+        "guides/env-harvest",
+        "guides/examples",
       ],
     },
     {
@@ -35,17 +34,9 @@ const sidebars: SidebarsConfig = {
       items: [
         "guides/vscode",
         "guides/zed",
-        "guides/mcp-server",
+        "guides/agent-integration",
         "guides/lsp-clients",
         "guides/vite-plugin",
-      ],
-    },
-    {
-      type: "category",
-      label: "Semantics & Advanced",
-      items: [
-        "guides/semantics",
-        "guides/control-flow-narrowing",
       ],
     },
     {
@@ -53,6 +44,7 @@ const sidebars: SidebarsConfig = {
       label: "Migrating & Coexistence",
       items: [
         "guides/migrating-js",
+        "guides/migrating-from-typescript",
         "guides/vs-typescript",
         "guides/coexistence",
         "guides/versioning",
@@ -60,12 +52,30 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: "category",
-      label: "API Reference",
+      label: "Concepts",
       items: [
+        "concepts/layers",
+        "concepts/type-values",
+        "concepts/abstract-interpretation",
+        "concepts/semantics",
+        "concepts/control-flow-narrowing",
+        "concepts/directives",
+        "concepts/mocking",
+        "concepts/limits",
+      ],
+    },
+    {
+      type: "category",
+      label: "Reference",
+      link: { type: "generated-index" },
+      items: [
+        "reference/diagnostics",
+        "reference/glossary",
+        "reference/agents",
+        "api/cli-reference",
         "api/core",
         "api/parser",
         "api/service",
-        "api/cli-reference",
         "api/agent",
         "api/lsp",
         "api/harvester",

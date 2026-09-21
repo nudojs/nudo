@@ -1,5 +1,4 @@
 ---
-sidebar_position: 8
 slug: /guides/coexistence
 description: JS 用 Nudo、TS 包继续用 tsc——同一 monorepo 里互不打架的配方。
 ---

@@ -31,7 +31,8 @@
     "benchmark:gate": "node benchmark/src/gate.js",
     "benchmark:baseline": "node benchmark/src/baseline.js",
     "benchmark:ts": "node benchmark/src/typescript-runner.js",
-    "benchmark:compare": "node benchmark/src/compare.js"
+    "benchmark:compare": "node benchmark/src/compare.js",
+    "verify:docs": "bash scripts/verify-doc-examples.sh"
   },
   "devDependencies": {
     "@babel/parser": "^8.0.6",

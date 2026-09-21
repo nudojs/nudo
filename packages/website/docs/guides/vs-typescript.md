@@ -1,5 +1,4 @@
 ---
-sidebar_position: 9
 slug: /guides/vs-typescript
 description: Where Nudo replaces TypeScript, where it does not, and how the two coexist — honest positioning.
 ---
@@ -7,6 +6,8 @@ description: Where Nudo replaces TypeScript, where it does not, and how the two 
 # Nudo vs TypeScript
 
 **You'll leave with:** an honest map of when Nudo can replace TypeScript as a JS-first type gate, when TypeScript should stay primary, and how the two coexist in one repo.
+
+Practical migration steps: [Migrate from TypeScript](./migrating-from-typescript.md) · Product positioning: [Why Nudo](../why-nudo.md).
 
 Nudo is built to **replace TypeScript as the day-to-day type gate for JavaScript-first codebases** — not to reimplement the TypeScript compiler. This page is the honest map: when that replacement is real, when it is not, and how the two tools share a repo.
 
@@ -16,7 +17,7 @@ Nudo is built to **replace TypeScript as the day-to-day type gate for JavaScript
 |---|---|---|
 | **Primary surface** | `.ts` sources + annotations | Plain `.js` (type syntax stripped if you pass `.ts`) |
 | **Type model** | Declared structural types | **Abs** (`shape × term × pred × conf`) — computable types from abstract interpretation |
-| **Contracts** | `interface` / `type` language | `*.nudo.js` builders (`fn`, `shape`, `number().gt(0)`) + optional `@nudo:refine` |
+| **Contracts** | `interface` / `type` language | `*.nudo.js` builders (`fn`, `shape`, `number().gt(0)`) + optional `@nudo:refine` (alias `@nudo:interface`) |
 | **Inference** | From annotations + local inference | From **executing** code on symbolic Abs (B-path / ast-eval) |
 | **CI gate** | `tsc --noEmit` | `nudo check` (`actual ⊭ expected` on Abs) |
 | **Ecosystem exit** | `.d.ts` is the model | `.d.ts` is a **lossy projection** (`absToTSType`) — not the source of truth |
@@ -64,7 +65,7 @@ For a **JS package**, the serious-replacement checklist is:
 | Explicit contracts | `*.nudo.js` + `@nudo:refine`; handwritten = L1 obligation |
 | Generated facts | `nudo contract --emit` → `@generated` segments (drift, not silent rewrites of obligations) |
 | npm / editor types | `nudo export --format dts` — one-way projection only |
-| Performance story | `benchmark` + `benchmark:gate`：case 集规模一致；exact 回退超过 1-case 抖动 / unknown·error 上升 / 逐 case 顺序变差 / avg > 基线 3.0× → fail |
+| Performance story | Repo `benchmark` + `benchmark:gate` — same case-set size; fail on exact regressions beyond 1-case jitter, rising unknown/error counts, per-case order worse than baseline, or avg > 3.0× baseline |
 
 What is **not** claimed: one-click migration of a large TS monorepo; full structural typing as the primary model; a second IR.
 
@@ -112,5 +113,5 @@ Recipes (include/exclude globs, gradual contracts, CI snippets): **[Coexistence 
 
 - **[Concept layers](../concepts/layers.md)** — Day-0 / Day-1 / Abs
 - **[nudo check](./check.md)** — diagnostic codes and interface tiers
-- **[Language semantics](./semantics.md)** — what is precise, what degrades to `unknown`
+- **[Language semantics](../concepts/semantics.md)** — what is precise, what degrades to `unknown`
 - **[Quick start](../getting-started/quick-start.md)** — 30-minute path

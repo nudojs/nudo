@@ -1,11 +1,10 @@
 ---
-sidebar_position: 5
 description: "Agent API — nudo.* commands: check (Abs gate), test, contract, hover, whatIf, suggestCase, trace, selectCase, getActiveCases."
 ---
 
 # Agent API
 
-Reference for the agent-facing surface of `@nudojs/lsp`. All agent commands live inside the Nudo language server and are reached through standard `workspace/executeCommand` calls or custom LSP requests — there is no separate server process or protocol to install. For connection setup (LSP→MCP bridges, native LSP clients, VS Code), see the [Agent Integration Guide](../guides/mcp-server.md).
+Reference for the agent-facing surface of `@nudojs/lsp`. All agent commands live inside the Nudo language server and are reached through standard `workspace/executeCommand` calls or custom LSP requests — there is no separate server process or protocol to install. For connection setup (LSP→MCP bridges, native LSP clients, VS Code), see the [Agent Integration Guide](../guides/agent-integration.md).
 
 ## Commands
 
@@ -223,7 +222,7 @@ Interface product surface (same data sources as CLI):
 |---------|------|----------|
 | `nudo.contract` | `{ file, functionName?, source? }` | Print `fn  [handwritten\|generated\|implicit]  (params) → returns` + JSON |
 | `nudo.contract.draft` | `{ file, functionName?, source?, write?, dryRun? }` | Code-first draft module (`@nudo:draft`); `write: true` lands `*.nudo.draft.js` / `*.nudo.draft.ts` (never ambient-bound). Body-read fields appear as **suggestions only**. `write: true` is **fail-closed** without a project root (nudo config / `package.json` ancestor) — same as CLI `--draft --write` (override: `NUDO_DRAFT_FORCE=1`) |
-| `nudo.contract.emit` / `nudo.contract.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean }` | Persist call-site domains via `emitInterface`. `dryRun: true` previews without writing: same result shape (paths, would-change, unifiedDiff) with `[dry-run] would update …` text; no sidecar file is created or modified. VS Code Persist/CodeLens confirm sends `dryRun: true` first, then a real write on confirm |
+| `nudo.contract.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean }` | Persist call-site domains via `emitInterface`. `dryRun: true` previews without writing: same result shape (paths, would-change, unifiedDiff) with `[dry-run] would update …` text; no sidecar file is created or modified. VS Code Persist/CodeLens confirm sends `dryRun: true` first, then a real write on confirm |
 
 `loadModule` and effective `autoBind` are **server-injected** (buffer-aware sidecar loader + project `package.json#nudo.contract.autoBind` AND client request). They are not JSON-serializable request parameters — do not send them from agents.
 
@@ -263,4 +262,4 @@ The standalone `@nudojs/mcp` package is retired; its tools map onto the commands
 | `nudo-suggest-case` | `nudo.suggestCase` |
 | `nudo-trace` | `nudo.trace` |
 
-See the [migration section](../guides/mcp-server.md#migrating-from-the-mcp-server) of the guide for connection-level changes.
+See the [migration section](../guides/agent-integration.md#migrating-from-the-mcp-server) of the guide for connection-level changes.

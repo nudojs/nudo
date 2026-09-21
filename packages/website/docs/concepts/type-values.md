@@ -1,22 +1,20 @@
-<!-- DESIGN-CONFLICT:cli-semantics → docs/design/cli-semantics.md §2
-     C-ANY: 将 unknown/any 并为同一语义格与设计冲突。 -->
 ---
-sidebar_position: 1
-description: "Type values — symbolic sets of values as one computable system: the Abs algebra (shape × term × pred × conf), the directive constraint-builder grammar, and the four design principles."
+title: Abs
+description: "Abs — Nudo's only type system (shape × term × pred × conf): computable values with constraints that participate in algebra; projections are one-way and lossy."
 ---
 
-# Type Values
+# Abs — the type system
 
-Type values are symbolic representations of sets of possible JavaScript values — instead of holding a single concrete value like `42` or `"hello"`, a type value represents *all* values that share certain characteristics (e.g., "any number" or "the literal 1").
+Abs values are symbolic sets of possible JavaScript values — instead of holding a single concrete value like `42` or `"hello"`, an Abs represents *all* values that share certain characteristics (e.g., "any number" or "the literal 1").
 
-The type system is **Abs** — `{ shape, term?, pred?, conf }` — and it is the *only* type system: a computable value whose constraints participate in algebra (`x > 0` ⇒ `x + 1 > 1`). Analysis, display, and projections (`.d.ts` / zod / guards) all consume Abs directly; there is no separate IR and no lossy bridge.
+**Abs** (`shape × term × pred × conf`) is the *only* type system: a computable value whose constraints participate in algebra (`x > 0` ⇒ `x + 1 > 1`). Analysis, display, and projections (`.d.ts` / zod / guards) all consume Abs directly; there is no separate IR. Production analysis is Abs-native — nothing reads a projection back.
 
 ## The Four Components
 
 - **shape** — the extensional carrier: what the value looks like. Kinds: `prim` (with a `lit` term for exact values), `obj`, `arr`, `tuple`, `fn`, `eff` (`promise<…>` / `generator<…>`), `brand` (nominal instances), `sum` (unions), `never`, `any` (unconstrained), `unknown` (inference failed — see [any vs unknown](#any-vs-unknown)).
 - **term** — abstract value identity: `lit` (concrete), `var` (symbolic α like `A1`), or `app` (an application like `(x + 2)`).
 - **pred** — constraints relative to the term: `(x + 2) > 3`.
-- **conf** — how exact the abstraction is: `exact` / `path` / `widened` / `mock` / `partial` / `opaque`.
+- **conf** — how exact the abstraction is: `exact` / `path` / `widened` / `partial` / `opaque`.
 
 See the [core API](../api/core.md) for constructors (`num()`, `strLit(…)`, `obj({…})`, …) and the core functions (`leqAbs`, `formatAbs`, `checkSource`, …).
 

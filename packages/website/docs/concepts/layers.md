@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2
 slug: /concepts/layers
 description: Day-0 zero concepts, Day-1 sidecar contracts, advanced Abs — pick the layer you need.
 ---
@@ -23,7 +22,7 @@ npx nudojs test ./src/app.js    # every inferred case
 
 Open the same file in VS Code with the Nudo extension for hover and inlays.
 
-> **Default analysis mode:** `nudo.analysis.mode` defaults to `"exports"`. Files with `export` / sidecar / directives are analyzed by the IDE; set `"all"` for every target path or `"directives"` for the conservative gate. CLI `check`/`test` on a named path still analyzes any target file.
+> **Default analysis mode:** `nudo.analysis.mode` defaults to `"exports"` (files with `export` / sidecar / directives are analyzed by the IDE). Full gate semantics and when to use each mode: [Coexistence with TypeScript](../guides/coexistence.md#when-to-use-modedirectives-vs-modeexports). CLI `check`/`test` on a named path still analyzes any target file.
 
 **Day 0 takeaway:** read types from `check` signatures and `test` cases.
 
@@ -53,7 +52,7 @@ npx nudojs check ./src/math.js
 Sidecar **function** bindings must be first-class `fn({ … }, …)` contracts. Bare `number().gt(0)` is a **value-level template** (e.g. `export const positive = number().gt(0)` in a shared `*.nudo.js`) — used via `@nudo:refine` or as a parameter slot inside `fn`, never as a function export contract. Non-`fn` sidecar bindings for functions are rejected (`nudo:interface-load`).
 
 Explicit contracts come from:
-- sidecars (`*.nudo.js`) / `@nudo:refine` / `@nudo:interface`
+- sidecars (`*.nudo.js`) / `@nudo:refine` (alias `@nudo:interface`)
 - call-site facts observed by the analyzer (domain evidence)
 
 Without an explicit contract, the contract degrades to the JS runtime boundary: entry params are `any`, and export functions must not carry undigested may-throw (L2). Nudo does **not** invent required slots from body AST scans.

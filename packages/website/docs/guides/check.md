@@ -1,5 +1,4 @@
 ---
-sidebar_position: 8
 slug: /guides/check
 description: nudo check — L1 refinement gate + L2 entry throws on Abs; prints signatures; CI command.
 ---
@@ -8,7 +7,7 @@ description: nudo check — L1 refinement gate + L2 entry throws on Abs; prints 
 
 `nudo check` is Nudo's **gate on Abs**. It enforces:
 
-1. **L1 explicit contracts** — refinements from `@nudo:refine` / `*.nudo.js` / `@nudo:interface` (Pred implication on Abs)
+1. **L1 explicit contracts** — refinements from `*.nudo.js` / `@nudo:refine` (Pred implication on Abs; `@nudo:interface` is an exact alias)
 2. **L2 default JS contracts** — undigested may-throw on **entry/export** functions
 
 The report is **Nudo-native** (`actual ⊭ expected`), not a TypeScript diagnostic in disguise. On success **and** failure, `check` prints signatures — it is not silent.
@@ -25,7 +24,7 @@ nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
 
 ## Default output (signatures + issues)
 
-```js
+```js verify
 export function getName(user) {
   return user.name;
 }
@@ -42,7 +41,7 @@ nudo check user.js
 ```text
 signatures
   getName(user: any) => any  throws TypeError
-  subtract(a: any, b: any) => any
+  subtract(a: any, b: any) => number
 issues
   [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
@@ -57,7 +56,7 @@ issues
 |------|-------|----------|---------|
 | `nudo:constraint-violated` | L1 | error | Call/return ⊭ `@nudo:refine` (scalar bounds / shape fields) |
 | `nudo:assign-mismatch` | L1 | error | Assignment ⊭ previous binding shape (`leqAbs`) |
-| `nudo:arg-structure` | L1 | error | HOF: argument is not a callable `fn` / arity mismatch |
+| `nudo:arg-structure` | L1 | error (explicit contract) / warning (body-promote) | HOF: argument is not a callable `fn` / arity mismatch. Usage-driven body promotion is a **warning suggestion**; only explicit relation contracts make it an error |
 | `nudo:case-inconsistency` | L1 | error | `@nudo:case` witness ⊭ refine |
 | `nudo:interface-param-mismatch` | L1 | error | Handwritten contract param name is not on the formal surface |
 | `nudo:interface-conflict` | L1 | error | Handwritten contract conjunction unsatisfiable |
@@ -86,14 +85,14 @@ function needsPositive(x) {
 }
 
 needsPositive(-1);
-// [error] needsPositive[x]: 实参 ⊭ 前置  (nudo:constraint-violated)
+// [error] needsPositive[x]: actual ⊭ expected  (nudo:constraint-violated)
 //   actual:   -1  #exact
 //   expected: x > 0
 ```
 
 **`if` is not a refinement.** Clamp-style guards accept out-of-range input when no refine is declared:
 
-```js
+```js verify
 function clamp(n, lo, hi) {
   if (n < lo) return lo;
   if (n > hi) return hi;
@@ -139,24 +138,13 @@ nudo check src/ --entry-throws warning   # demote L2 while migrating
 nudo check src/ --entry-throws off
 ```
 
-`package.json`:
-
-```json
-{
-  "nudo": {
-    "check": {
-      "ignoreThrows": ["TypeError"],
-      "entryThrows": "error"
-    }
-  }
-}
-```
-
 Semantics:
 
 - `--ignore-throws` **only** filters L2 entry throws — never L1 contract violations.
 - Default: **do not ignore** any throws.
 - Filters the throws type/shape, not the whole check.
+
+Persist these in `package.json#nudo.check` — config block: [CLI Reference](../api/cli-reference.md#nudo-check).
 
 ### Node analogy
 
@@ -164,14 +152,15 @@ An uncaught exception makes a Node process exit non-zero. Likewise, undeclared/u
 
 ## Options
 
+All flags and `package.json#nudo.check` config are specified once in the [CLI Reference](../api/cli-reference.md#nudo-check). Highlights:
+
 | Option | Description |
 |--------|-------------|
 | `--watch` / `-w` | Re-run on changes (flag, not a verb) |
-| `--json` | Machine-readable signatures + diagnostics |
-| `--verbose` | Extra detail |
-| `--abs` | Print Abs algebra face (term / pred / conf) |
+| `--json` | Machine-readable signatures + diagnostics (single file) |
+| `--abs` | Print Abs algebra face (term / pred / conf) — observation, still gates L1/L2 |
 | `--from <paths…>` | Usage-site files injecting call records |
-| `--ignore-throws <names>` | Comma-separated L2 throw types to ignore |
+| `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (never swallows L1) |
 | `--entry-throws error\|warning\|off` | L2 severity (default `error`) |
 
 ## Interface diagnostics
@@ -199,5 +188,6 @@ nudo check src/lib.js --json
 ## Next
 
 - [CLI Usage](./cli.md) — all primary verbs
-- [Type Values](../concepts/type-values.md) — `any` vs `unknown`
+- [Abs](../concepts/type-values.md) — `any` vs `unknown`
+- [Diagnostics glossary](../reference/diagnostics.md) — stable codes and how to read them
 - [Concept Layers](../concepts/layers.md) — Day 0 / Day 1

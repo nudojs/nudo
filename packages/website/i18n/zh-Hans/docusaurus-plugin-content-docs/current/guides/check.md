@@ -1,5 +1,4 @@
 ---
-sidebar_position: 8
 slug: /guides/check
 description: nudo check —— Abs 上的 L1 显式契约门禁 + L2 入口 throws；打印 signatures；CI 命令。
 ---
@@ -8,7 +7,7 @@ description: nudo check —— Abs 上的 L1 显式契约门禁 + L2 入口 thro
 
 `nudo check` 是 Nudo 在 Abs 上的**门禁**。它执法：
 
-1. **L1 显式契约** —— 来自 `@nudo:refine` / `*.nudo.js` / `@nudo:interface` 的精化（Abs 上的 Pred 蕴含）
+1. **L1 显式契约** —— 来自 `*.nudo.js` / `@nudo:refine` 的精化（Abs 上的 Pred 蕴含；`@nudo:interface` 是精确别名）
 2. **L2 默认 JS 契约** —— **入口/导出**函数上未消化的 may-throw
 
 报告是 **Nudo 原生**的（`actual ⊭ expected`），不是 TypeScript 诊断的伪装。成功与失败都打印 signatures —— **不是静默**。
@@ -42,7 +41,7 @@ nudo check user.js
 ```text
 signatures
   getName(user: any) => any  throws TypeError
-  subtract(a: any, b: any) => any
+  subtract(a: any, b: any) => number
 issues
   [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
@@ -57,7 +56,7 @@ issues
 |----|----|----------|------|
 | `nudo:constraint-violated` | L1 | error | 调用/返回 ⊭ `@nudo:refine`（标量界 / shape 字段） |
 | `nudo:assign-mismatch` | L1 | error | 赋值 ⊭ 原绑定 shape（`leqAbs`） |
-| `nudo:arg-structure` | L1 | error | HOF：实参不是可调用 `fn` / 元数不匹配 |
+| `nudo:arg-structure` | L1 | error（显式契约）/ warning（body-promote） | HOF：实参不是可调用 `fn` / 元数不匹配。用法驱动的 body 提升是**警告建议**；只有显式关系契约才升级为 error |
 | `nudo:case-inconsistency` | L1 | error | `@nudo:case` 见证 ⊭ refine |
 | `nudo:interface-param-mismatch` | L1 | error | 手写契约参数名不在形式参数面上 |
 | `nudo:interface-conflict` | L1 | error | 手写契约合取不可满足 |
@@ -86,7 +85,7 @@ function needsPositive(x) {
 }
 
 needsPositive(-1);
-// [error] needsPositive[x]: 实参 ⊭ 前置  (nudo:constraint-violated)
+// [error] needsPositive[x]: actual ⊭ expected  (nudo:constraint-violated)
 //   actual:   -1  #exact
 //   expected: x > 0
 ```
@@ -199,5 +198,6 @@ nudo check src/lib.js --json
 ## 下一步
 
 - [CLI 使用指南](./cli.md) —— 全部一级动词
-- [Type Values](../concepts/type-values.md) —— `any` 与 `unknown`
+- [Abs](../concepts/type-values.md) —— `any` 与 `unknown`
+- [诊断术语表](../reference/diagnostics.md) —— 稳定诊断码及读法
 - [概念分层](../concepts/layers.md) —— Day 0 / Day 1

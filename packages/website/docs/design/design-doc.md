@@ -1,5 +1,4 @@
 ---
-sidebar_position: 1
 description: "Nudo by design: Abs = shape × term × pred × conf as the single type system, extensional projection for display, directives, and what executing code computes that a separate type language cannot."
 ---
 
@@ -213,15 +212,7 @@ eval(IfStatement { test, consequent, alternate }) →
 
 ### 3.3 Narrowing Rules
 
-| Pattern | True branch | False branch |
-|---------|-------------|--------------|
-| `typeof x === "string"` | `x ∩ string` | `x - string` |
-| `typeof x === "number"` | `x ∩ number` | `x - number` |
-| `x === null` | `x ∩ null` | `x - null` |
-| `x === <literal>` | `x ∩ lit(v)` | `x - lit(v)` |
-| `Array.isArray(x)` | `x ∩ array` | `x - array` |
-| `x` (truthiness) | `x - null - undefined - falsy` | complement |
-| `x instanceof C` | `x ∩ instance(C)` | `x - instance(C)` |
+Narrowing refines values based on conditions (`typeof` / `===` / `Array.isArray` / `instanceof` / truthiness / `in` / `?.` / `??` / `switch` / discriminant fields). The full pattern table lives in [Abstract Interpretation](../concepts/abstract-interpretation.md#narrowing-rules); the verified-patterns walkthrough is [Control Flow Narrowing](../concepts/control-flow-narrowing.md).
 
 ---
 

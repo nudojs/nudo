@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2
 description: "@nudojs/parser API —— 带类型剥除的 parse()、stripTypes、函数级/文件级/行内指令提取，以及指令类型定义。"
 ---
 

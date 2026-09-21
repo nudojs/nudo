@@ -1,5 +1,4 @@
 ---
-sidebar_position: 7
 description: "@nudojs/harvester API — harvestDts and emitEnvModule: convert @types .d.ts declarations into Nudo env definitions with Abs constructors."
 ---
 
@@ -174,4 +173,4 @@ Still **recommended** for handwritten mock (aligned with `docs/design/limitation
 - Dual-entry browser/node variants — call-site records do not cross files
 - Functions with **no call-site usage** — `entry@` fallback is an honest observation with **unconstrained `any`** params; entry may-throw on that surface is still L2 (`nudo:entry-may-throw`), not a free pass.
 
-See also [Language Semantics — mock boundary](../guides/semantics.md#mock-boundary-still-recommended).
+See also [Language Semantics — mock boundary](../concepts/semantics.md#mock-boundary-still-recommended).

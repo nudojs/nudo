@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2
 description: "在普通 JavaScript 上门禁签名与用例——npx nudojs check / test。"
 ---
 
@@ -37,15 +36,15 @@ npx nudojs test calc.js
 
 ```text
 signatures
-  formatName(first: any, last: any) => any
-  scale(x: any) => any
+  formatName(first: any, last: any) => number | string
+  scale(x: any) => number | string
 ```
 
 ```text
 === formatName ===
   call@L9  ("Ada", "Lovelace") => "Ada Lovelace"
 === scale ===
-  call@L12  (5) => 6
+  call@L10  (5) => 6
 ```
 
 Nudo 用实际看到的实参执行了这些函数。无约束入口参数显示为 **`any`**（不是 `unknown`）。观察 = `check` 签名 + `test` 用例 + IDE hover。
@@ -62,6 +61,14 @@ export const scale = fn({ x: number().gt(0) }, number());
 
 ## 4. 用 check 把关
 
+加一个违反侧车的调用：
+
+```javascript
+scale(0); // 违反侧车 —— x 必须 > 0
+```
+
+跑门禁：
+
 ```bash
 npx nudojs check calc.js
 ```
@@ -72,13 +79,9 @@ scale(0)  actual: 1  #exact
           nudo:constraint-violated   actual ⊭ expected
 ```
 
-加一个错误调用即可复现：
+违例按调用点上报。修正调用（或放宽契约）后 `check` 通过——仍会打印签名。
 
-```javascript
-scale(0); // 违反侧车 —— x 必须 > 0
-```
-
-`if` 守卫**不是** refinement。显式契约只来自侧车 / `@nudo:refine` / `@nudo:interface`。没有它们时，L2 仍门禁导出上的未消化 may-throw（入口参数为 `any`）。
+`if` 守卫**不是** refinement。显式契约只来自侧车 / `@nudo:refine`（别名 `@nudo:interface`）。没有它们时，L2 仍门禁导出上的未消化 may-throw（入口参数为 `any`）。
 
 ## 选项
 

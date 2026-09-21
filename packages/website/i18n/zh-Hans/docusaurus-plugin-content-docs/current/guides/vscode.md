@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2
 description: "安装 nudo-vscode 扩展：悬停类型、补全、用例切换 CodeLens、内联提示，以及由 Nudo 语言服务器驱动的诊断。"
 ---
 
@@ -23,21 +22,13 @@ code --install-extension wmzy.nudo-vscode
 
 打开 JavaScript 文件时扩展会激活。它使用 `@nudojs/lsp` 包运行 Language Server Protocol（LSP）服务器，提供所有编辑器功能。
 
-**文件检测**：语言服务器分析 `.js`、`.ts` 与 `.mjs` 文件。出厂默认 `nudo.analysis.mode = "exports"`（含 export / 侧车 / 指令）；可设 `"all"` 或 `"directives"`。契约写在 `*.nudo.js` 侧车与源内 `@nudo:refine` / `@nudo:interface`；`@nudo:case` 是调试 / `nudo test` 子层。完整语法见[指令参考](../concepts/directives.md)。跨编辑器能力对比：[LSP 客户端矩阵](./lsp-clients.md)。
+**文件检测**：语言服务器分析 `.js`、`.ts` 与 `.mjs` 文件。出厂默认 `nudo.analysis.mode = "exports"`（含 export / 侧车 / 指令）；可设 `"all"` 或 `"directives"`。契约写在 `*.nudo.js` 侧车与源内 `@nudo:refine`（别名 `@nudo:interface`）；`@nudo:case` 是调试 / 可选 `nudo test` 子层。完整语法见[指令参考](../concepts/directives.md)。跨编辑器能力对比：[LSP 客户端矩阵](./lsp-clients.md)。
 
 **激活 vs 分析门**：`activationEvents`（`onLanguage:javascript` / `onLanguage:typescript`）只负责*启动*客户端。缓冲区是否*被分析*由服务端 `shouldAnalyzeFile` 门决定（目标路径 + `nudo.analysis.mode`）。JSX/tsx 可激活扩展，但不是 Nudo 分析目标。
 
 ## 发布检查清单（维护者）
 
-完整清单：monorepo 内 [`packages/vscode/RELEASE_CHECKLIST.md`](https://github.com/nudojs/nudo/blob/main/packages/vscode/RELEASE_CHECKLIST.md)。每次 Marketplace / Open VS X 发布必须覆盖：
-
-1. **Bundled server 对齐** — 扩展经 `scripts/bundle-server.mjs` 将 `@nudojs/lsp` 的 `dist` 拷入 `server/server.js`。先构建 monorepo；在扩展 CHANGELOG 记录 bundled lsp 版本。vsix 自包含（运行时不读 monorepo 兄弟路径）。
-2. **分析默认 + 逃生舱** — 默认 `nudo.analysis.mode = "exports"`。项目 `package.json#nudo.analysis.mode`：`"directives"`（保守，诊断档 `errors`）或 `"all"`。发行说明必须写明该默认；会新增诊断的默认翻转按破坏性变更处理。
-3. **与 tsserver 共存** — Nudo 与内置 TS 服务器并存，不替代 tsc。混合仓库请收紧 `nudo.analysis.include` / `exclude`，见[共存指南](./coexistence.md)。
-4. **打包 dry-run** — `pnpm --filter nudo-vscode run build && pnpm --filter nudo-vscode run package`；本地安装 `.vsix`；在含 export 的 `.js` 上确认 hover/诊断；确认命令面板含 `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit`。
-5. **Marketplace / Open VS X 发行说明模板** — 扩展版本、bundled lsp 版本、分析默认、共存说明、协议表面指针（[PUBLIC_API](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)）、已知问题。
-
-Service 层日用冒烟（无需 live VS Code）：`packages/lsp/src/__tests__/ide-daily-smoke.test.ts`。公开冻结面：`@nudojs/lsp` [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) / [API 页](../api/lsp.md)。
+扩展打包与 Marketplace 发布步骤：[贡献指南 — 发布](../contributing.md)。
 
 ## 功能
 

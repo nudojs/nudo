@@ -1,5 +1,4 @@
 ---
-sidebar_position: 3
 description: "@nudojs/service API — analyzeFile/analyzeFileAsync, call-record collection, module graph and dirty set, semantic tokens, d.ts/zod/guard generation, case emission."
 ---
 

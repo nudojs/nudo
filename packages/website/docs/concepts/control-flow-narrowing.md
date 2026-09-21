@@ -1,5 +1,4 @@
 ---
-sidebar_position: 5
 description: See how Nudo narrows types per call site — equality guards, discriminated object shapes, typeof, Array.isArray, switch, and literal truthiness — plus the current limits of unknown-condition branches, in, and ?./??.
 ---
 

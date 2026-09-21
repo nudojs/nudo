@@ -198,21 +198,27 @@ const config: Config = {
         {
           title: "Docs",
           items: [
-            { label: "Core Concepts", to: "/docs/concepts/type-values" },
-            { label: "Nudo vs TypeScript", to: "/docs/guides/vs-typescript" },
+            { label: "Abs", to: "/docs/concepts/type-values" },
             { label: "nudo check", to: "/docs/guides/check" },
+            { label: "nudo contract", to: "/docs/guides/contract" },
+            { label: "Nudo vs TypeScript", to: "/docs/guides/vs-typescript" },
+            { label: "Diagnostics", to: "/docs/reference/diagnostics" },
+            { label: "Recipes", to: "/docs/guides/recipes" },
           ],
         },
         {
           title: "More",
           items: [
+            { label: "Agents", href: "https://nudojs.github.io/nudo/agents.md" },
+            { label: "llms.txt", href: "https://nudojs.github.io/nudo/llms.txt" },
             { label: "Blog", to: "/blog" },
             { label: "GitHub", href: "https://github.com/nudojs/nudo" },
+            { label: "Limits", to: "/docs/concepts/limits" },
             { label: "Design Document", to: "/docs/design/design-doc" },
           ],
         },
       ],
-      copyright: `欢迎重回 JS 世界. — Your JS stays JS; contracts sharper than types.<br/>Copyright © ${new Date().getFullYear()} Nudo Contributors. Built with Docusaurus.`,
+      copyright: `Welcome back to JavaScript. Your JS stays JS; contracts sharper than types.<br/>Copyright © ${new Date().getFullYear()} Nudo Contributors. Built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.github,

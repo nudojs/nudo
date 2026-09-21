@@ -1,5 +1,4 @@
 ---
-sidebar_position: 100
 description: Set up the Nudo monorepo and contribute — project structure, development workflow, operator semantics, directives, and docs.
 ---
 
@@ -11,8 +10,8 @@ Thank you for your interest in contributing to Nudo. This guide covers setup, pr
 
 ## Prerequisites
 
-- **Node.js** 20 or later
-- **pnpm** 8 or later
+- **Node.js** 18 or later (CI uses Node 24)
+- **pnpm** 9.1.0 (pinned in `packageManager`; later 9.x also works)
 
 ```bash
 npm install -g pnpm
@@ -41,7 +40,7 @@ The monorepo uses pnpm workspaces. Key packages:
 | `@nudojs/parser` | Babel parse, directive extraction, `parseCaseArgExpr` |
 | `@nudojs/cli` | CLI commands only (`check`, `test`, `contract`, `export`, `health`, `env harvest`) |
 | `@nudojs/service` | High-level API: `analyzeFile`, `getTypeAtPosition`, `getCompletionsAtPosition` |
-| `@nudojs/lsp` | Language Server Protocol implementation, including AI-agent `executeCommand`/custom requests (see the [Agent guide](./guides/mcp-server.md)) |
+| `@nudojs/lsp` | Language Server Protocol implementation, including AI-agent `executeCommand`/custom requests (see the [Agent guide](./guides/agent-integration.md)) |
 | `@nudojs/harvester` | Converts `@types/*.d.ts` declarations into Nudo env files (powers `nudo env harvest`) |
 | `@nudojs/env` | Built-in environment type definitions (`/// @nudo:env es\|web\|node`, subpath exports `/es` `/web` `/node`) |
 | `vite-plugin-nudo` | Vite plugin for type inference during dev |
@@ -121,6 +120,20 @@ Operator semantics live in the algebra, not a separate `Ops` layer:
 - Run `pnpm run build` and `pnpm run test` before submitting.
 - Update docs (e.g. `docs/concepts/directives.md`, API reference) when adding directives or public APIs.
 - **Docs drift rule**: when changing CLI commands/options, exported APIs, or directive syntax, update the documentation under `packages/website` in the same PR — both the English sources (`docs/`) and the Chinese mirrors (`i18n/zh-Hans/docusaurus-plugin-content-docs/current/`).
+
+---
+
+## Releases (VS Code extension)
+
+Full checklist: [`packages/vscode/RELEASE_CHECKLIST.md`](https://github.com/nudojs/nudo/blob/main/packages/vscode/RELEASE_CHECKLIST.md) in the monorepo. Summary of what every Marketplace / Open VS X release must cover:
+
+1. **Bundled server align** — extension ships `server/server.js` copied from `@nudojs/lsp` `dist` via `scripts/bundle-server.mjs`. Build the monorepo first; record the bundled lsp version in the extension CHANGELOG. The vsix is self-contained (no monorepo sibling path at runtime).
+2. **Analysis default + escape hatch** — default `nudo.analysis.mode = "exports"`. Escape hatch in project `package.json#nudo.analysis.mode`: `"directives"` (conservative; diagnostics tier `errors`) or `"all"`. Release notes must state this default; a flip that invents diagnostics is a breaking default change.
+3. **tsserver coexistence** — Nudo runs beside the built-in TS server. Mixed repos should scope `nudo.analysis.include` / `exclude` — see [Coexistence](./guides/coexistence.md). Do not point both tools at the same `.ts` sources with conflicting severities.
+4. **Packaging dry-run** — `pnpm --filter nudo-vscode run build && pnpm --filter nudo-vscode run package`; install the `.vsix` locally; confirm hover/diagnostics on an export-bearing `.js` without editing; confirm palette commands `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit`.
+5. **Marketplace / Open VS X notes template** — extension version, bundled lsp version, analysis default, coexistence blurb, protocol surface pointer ([PUBLIC_API](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)), known issues. Both targets in `release.yml` or an explicit skip.
+
+Service-level daily smoke (no live VS Code): `packages/lsp/src/__tests__/ide-daily-smoke.test.ts`. Public freeze inventory: `@nudojs/lsp` [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) / [API page](./api/lsp.md).
 
 ---
 

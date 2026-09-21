@@ -1,21 +1,20 @@
 ---
-sidebar_position: 2
-description: 解释 Nudo 如何用符号化类型值执行代码——求值引擎、窄化与合并背后的抽象解释模型。
+description: 解释 Nudo 如何在 Abs（符号值）上执行代码——求值引擎、窄化与合并背后的抽象解释模型。
 ---
 
 # 抽象解释
 
-抽象解释是 Nudo 的理论基础。与使用具体值运行代码（如单元测试）或不运行代码仅分析代码（如 TypeScript）不同，Nudo **使用符号化的类型值执行代码**——执行过程本身产生类型。
+抽象解释是 Nudo 的理论基础。与使用具体值运行代码（如单元测试）或不运行代码仅分析代码（如 TypeScript）不同，Nudo **在 Abs 上执行代码**（符号化的 `shape × term × pred × conf` 值）——执行过程本身产生类型。
 
 ## 三种方法对比
 
 | 方法 | 输入 | 输出 | 完备性 |
 |----------|-------|--------|--------------|
 | 单元测试 | 具体值（`1`、`"hello"`） | 具体结果 | 仅覆盖测试用例 |
-| Nudo | 类型值（`number()`、`string()`） | 类型值 | 类型集合中的所有值 |
+| Nudo | Abs（`number()`、`string()`） | Abs | 类型集合中的所有值 |
 | TypeScript | AST（不执行） | 类型 | 所有语法路径 |
 
-当 Nudo 执行 `transform(string())` 时，引擎会将 `string()` 在函数体中传播。在 `typeof x === "string"` 处，引擎知道该分支会被执行。在 `x.toUpperCase()` 处，引擎知道结果是 `string()`。结果不是具体值——而是**类型**。
+当 Nudo 执行 `transform(string())` 时，引擎会将 `string()` 在函数体中传播。在 `typeof x === "string"` 处，引擎知道该分支会被执行。在 `x.toUpperCase()` 处，引擎知道结果是 `string()`。结果不是具体值——而是**Abs**。
 
 ---
 
@@ -27,7 +26,7 @@ description: 解释 Nudo 如何用符号化类型值执行代码——求值引�
 │                                                     │
 │  ┌───────────┐   ┌────────────┐   ┌──────────────┐ │
 │  │  Parser   │──▶│ Directive  │──▶│  Evaluator   │ │
-│  │ (Babel)   │   │ Extractor  │   │ (AST Walker) │ │
+│  │ (Babel)   │   │ Extractor  │   │ (B-path/Abs) │ │
 │  └───────────┘   └────────────┘   └──────┬───────┘ │
 │                                          │         │
 │                  ┌───────────────────────┐│         │

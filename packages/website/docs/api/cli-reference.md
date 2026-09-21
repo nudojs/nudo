@@ -1,22 +1,18 @@
 ---
-sidebar_position: 4
 description: "Reference every nudo CLI command — check, test, contract, export, health, env harvest — with arguments, options, output formats, and exit codes."
 ---
 
 # CLI Reference
 
-The `nudo` CLI runs type inference on `.js`, `.mjs`, and `.ts` files. Install globally or run via `npx`:
+The `nudo` CLI runs type inference on `.js`, `.mjs`, and `.ts` files. Install it globally or run via `npx` — see [Installation](../getting-started/installation.md).
 
 ```bash
-# thin shell (published as `nudojs`; installs the `nudo` command)
-npm install -g nudojs
-# or the full CLI package
-npm install -g @nudojs/cli
-# then
 npx nudojs check ./src/utils.js
 # or, after global install:
 nudo check ./src/utils.js
 ```
+
+This page is the **canonical flag / option / exit-code specification**. Tutorial-style walkthroughs live in [CLI Usage](../guides/cli.md).
 
 ---
 
@@ -81,7 +77,7 @@ nudo check <path> [options]
 ```text
 signatures
   getName(user: any) => any  throws TypeError
-  subtract(a: any, b: any) => any
+  subtract(a: any, b: any) => number
 issues
   [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
@@ -95,7 +91,7 @@ issues
 
 | Layer | Source | Behavior |
 |-------|--------|----------|
-| L1 explicit | `*.nudo.js` / `@nudo:refine` / `@nudo:interface` | Violation → error |
+| L1 explicit | `*.nudo.js` / `@nudo:refine` (alias `@nudo:interface`) | Violation → error |
 | L2 default JS contract | Runtime boundary on **entry/export** functions | Undigested may-throw → error (`nudo:entry-may-throw`); filter with `--ignore-throws` |
 
 L2 does **not** gate internal helpers. `try`/`catch` and refine can clear L2.
@@ -206,7 +202,7 @@ nudo contract --draft <paths...> [--write] [--fn <name>] [--dry-run] [--from <pa
 
 **Layers:**
 
-- `[handwritten]` — source `@nudo:refine` / `@nudo:interface` ∪ sidecar binding
+- `[handwritten]` — source `@nudo:refine` / sidecar binding (product term: **contract**)
 - `[generated]` — persisted `@generated` sidecar segment
 - `[implicit]` — call-site inference
 

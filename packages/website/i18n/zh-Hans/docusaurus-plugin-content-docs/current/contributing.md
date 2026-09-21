@@ -1,5 +1,4 @@
 ---
-sidebar_position: 100
 description: 搭建 Nudo monorepo 开发环境并参与贡献——项目结构、开发流程、运算符语义、指令与文档。
 ---
 
@@ -11,8 +10,8 @@ description: 搭建 Nudo monorepo 开发环境并参与贡献——项目结构�
 
 ## 环境要求
 
-- **Node.js** 20 或更高
-- **pnpm** 8 或更高
+- **Node.js** 18 或更高（CI 使用 Node 24）
+- **pnpm** 9.1.0（由 `packageManager` 固定；后续 9.x 亦可）
 
 ```bash
 npm install -g pnpm
@@ -41,7 +40,7 @@ pnpm run build
 | `@nudojs/parser` | Babel 解析、指令提取、`parseCaseArgExpr` |
 | `@nudojs/cli` | 仅 CLI 命令（`check`、`test`、`contract`、`export`、`health`、`env harvest`） |
 | `@nudojs/service` | 高层 API：`analyzeFile`、`getTypeAtPosition`、`getCompletionsAtPosition` |
-| `@nudojs/lsp` | Language Server Protocol 实现，含面向 AI agent 的 executeCommand/自定义请求（见 [Agent 集成指南](./guides/mcp-server.md)） |
+| `@nudojs/lsp` | Language Server Protocol 实现，含面向 AI agent 的 executeCommand/自定义请求（见 [Agent 集成指南](./guides/agent-integration.md)） |
 | `@nudojs/harvester` | 把 `@types/*.d.ts` 声明转换为 Nudo env 文件（`nudo env harvest` 的底层引擎） |
 | `@nudojs/env` | 内置环境类型定义（`/// @nudo:env es\|web\|node`，子路径导出 `/es` `/web` `/node`） |
 | `vite-plugin-nudo` | 开发阶段的类型推断 Vite 插件 |
@@ -121,6 +120,20 @@ pnpm exec nudo test path/to/file.js
 - 提交前运行 `pnpm run build` 和 `pnpm run test`。
 - 添加指令或公开 API 时更新文档（如 `docs/concepts/directives.md`、API 参考）。
 - **文档防漂移规则**：修改 CLI 命令/选项、导出 API 或指令语法时，必须在同一个 PR 中同步更新 `packages/website` 下的文档 —— 英文源（`docs/`）与中文镜像（`i18n/zh-Hans/docusaurus-plugin-content-docs/current/`）都要改。
+
+---
+
+## 发布（VS Code 扩展）
+
+完整清单：monorepo 内 [`packages/vscode/RELEASE_CHECKLIST.md`](https://github.com/nudojs/nudo/blob/main/packages/vscode/RELEASE_CHECKLIST.md)。每次 Marketplace / Open VS X 发布必须覆盖的要点：
+
+1. **Bundled server 对齐** — 扩展打包 `server/server.js`（从 `@nudojs/lsp` `dist` 经 `scripts/bundle-server.mjs` 复制）。先构建 monorepo；在扩展 CHANGELOG 记录 bundled lsp 版本。vsix 自包含（运行时无 monorepo 兄弟路径）。
+2. **分析默认 + 逃生舱** — 默认 `nudo.analysis.mode = "exports"`。逃生舱在项目 `package.json#nudo.analysis.mode`：`"directives"`（保守；诊断层 `errors`）或 `"all"`。发布说明必须写明该默认值；会凭空产生诊断的翻转属于破坏性默认变更。
+3. **tsserver 共存** — Nudo 与内置 TS server 并跑。混合仓库应划定 `nudo.analysis.include` / `exclude`——见 [共存](./guides/coexistence.md)。不要让两个工具以冲突的 severity 指向同一批 `.ts` 源码。
+4. **打包演练** — `pnpm --filter nudo-vscode run build && pnpm --filter nudo-vscode run package`；本地安装 `.vsix`；在带导出的 `.js` 上不编辑即确认 hover/诊断；确认面板命令 `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit`。
+5. **Marketplace / Open VS X 说明模板** — 扩展版本、bundled lsp 版本、分析默认、共存说明、协议面指针（[PUBLIC_API](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)）、已知问题。两个目标都在 `release.yml` 或显式 skip。
+
+服务级日常冒烟（无需真实 VS Code）：`packages/lsp/src/__tests__/ide-daily-smoke.test.ts`。公开冻结清单：`@nudojs/lsp` [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) / [API 页](./api/lsp.md)。
 
 ---
 

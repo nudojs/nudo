@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2.5
 description: "在 Zed 中安装 Nudo 语言服务器：hover 类型、诊断、CodeLens case 切换、inlay hints。"
 ---
 
@@ -112,7 +111,7 @@ VS Code 扩展里 active case 的 decoration 在 Zed 无对应 API，请改用 C
 
 ## 文件检测
 
-分析目标为 `.js` / `.mjs` / `.ts`。指令模式偏保守；可用 `package.json#nudo.analysis.mode`（`exports` | `all`）打开无指令分析。CodeLens interface 档使用更宽的目标路径。
+分析目标为 `.js` / `.mjs` / `.ts`。`package.json#nudo.analysis.mode` 出厂默认 `"exports"`；模式语义与保守的 `"directives"` 门禁：[共存](./coexistence.md#何时用-modedirectives-vs-modeexports)。CodeLens interface 档使用更宽的目标路径。
 
 ## 构建 WASM 扩展
 
@@ -130,5 +129,5 @@ cargo build --target wasm32-wasip2 --release
 - [LSP 客户端矩阵](./lsp-clients.md)——跨编辑器能力对齐
 - [迁移已有 JS](./migrating-js.md)
 - [版本与发布](./versioning.md)
-- [Agent 集成](./mcp-server.md)——同一服务器服务 coding agent
+- [Agent 集成](./agent-integration.md)——同一服务器服务 coding agent
 - [@nudojs/lsp API](../api/lsp.md)

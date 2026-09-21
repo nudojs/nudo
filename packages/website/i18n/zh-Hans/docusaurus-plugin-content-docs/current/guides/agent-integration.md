@@ -1,5 +1,4 @@
 ---
-sidebar_position: 6
 description: "将 AI 编码代理接入 Nudo 语言服务器：LSP→MCP 桥、原生 LSP 客户端、五个 agent 命令与拉取式诊断。"
 ---
 

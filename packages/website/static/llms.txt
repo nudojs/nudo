@@ -1,0 +1,41 @@
+# Nudo
+
+> Welcome back to JavaScript. Nudo executes your JS on Abs (`shape × term × pred × conf`) so you can observe intermediates and gate contracts sharper than declared types. Your JS stays JS.
+
+Nudo docs are dual-locale (en + zh-Hans). Product face: Day0 `nudo check` · Day1 `nudo contract` + `check` · ecosystem `nudo export`. `nudo test` is optional debug case reporting. Contracts are `*.nudo.js` / `@nudo:refine` (alias `@nudo:interface`). `@nudo:case` is debug-only. Entry unconstrained params display as `any`; `unknown` means inference failed.
+
+## Docs (HTML)
+
+- https://nudojs.github.io/nudo/docs/intro
+- https://nudojs.github.io/nudo/docs/getting-started/quick-start
+- https://nudojs.github.io/nudo/docs/guides/check
+- https://nudojs.github.io/nudo/docs/guides/contract
+- https://nudojs.github.io/nudo/docs/guides/recipes
+- https://nudojs.github.io/nudo/docs/reference/diagnostics
+- https://nudojs.github.io/nudo/docs/reference/glossary
+- https://nudojs.github.io/nudo/docs/concepts/limits
+- https://nudojs.github.io/nudo/docs/concepts/type-values
+- https://nudojs.github.io/nudo/docs/guides/vs-typescript
+- https://nudojs.github.io/nudo/playground
+- https://nudojs.github.io/nudo/agents.md
+
+## Source markdown (monorepo)
+
+- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/intro.md
+- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/getting-started/quick-start.md
+- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/guides/check.md
+- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/guides/contract.md
+- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/guides/recipes.md
+- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/reference/diagnostics.md
+- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/reference/glossary.md
+- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/concepts/limits.md
+- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/api/cli-reference.md
+- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/concepts/directives.md
+- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/guides/agent-integration.md
+- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/api/agent.md
+- https://raw.githubusercontent.com/nudojs/nudo/main/docs/design/cli-semantics.md
+
+## Optional
+
+- zh-Hans mirror: https://nudojs.github.io/nudo/zh-Hans/docs/intro
+- Chinese raw docs under `packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/`

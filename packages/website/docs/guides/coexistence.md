@@ -1,5 +1,4 @@
 ---
-sidebar_position: 8
 slug: /guides/coexistence
 description: Run Nudo on JS while TypeScript stays on TS packages — monorepo recipes that do not fight.
 ---

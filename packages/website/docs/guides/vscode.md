@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2
 description: "Install the nudo-vscode extension for hover types, completions, case-switching CodeLens, inlay hints, and diagnostics powered by Nudo's language server."
 ---
 
@@ -23,21 +22,13 @@ code --install-extension wmzy.nudo-vscode
 
 The extension activates when you open JavaScript files. It uses the `@nudojs/lsp` package to run a Language Server Protocol (LSP) server that provides all editor features.
 
-**File detection**: The language server analyzes `.js`, `.ts`, and `.mjs` files. Shipped default is `nudo.analysis.mode = "exports"` (export / sidecar / directives); set `"all"` or `"directives"` to widen or tighten the gate. Contracts live in `*.nudo.js` sidecars and in-source `@nudo:refine` / `@nudo:interface`; `@nudo:case` is a debug / `nudo test` sub-layer. Full syntax: [Directives reference](../concepts/directives.md). Cross-editor capability comparison: [LSP Client Matrix](./lsp-clients.md).
+**File detection**: The language server analyzes `.js`, `.ts`, and `.mjs` files. Shipped default is `nudo.analysis.mode = "exports"` (export / sidecar / directives); see [Coexistence](./coexistence.md#when-to-use-modedirectives-vs-modeexports) for mode semantics. Contracts live in `*.nudo.js` sidecars and in-source `@nudo:refine` (alias `@nudo:interface`); `@nudo:case` is a debug / optional `nudo test` sub-layer. Full syntax: [Directives reference](../concepts/directives.md). Cross-editor capability comparison: [LSP Client Matrix](./lsp-clients.md).
 
 **Activation vs analysis gate**: `activationEvents` (`onLanguage:javascript` / `onLanguage:typescript`) only *starts* the client. Whether a buffer is *analyzed* is the server-side `shouldAnalyzeFile` gate (target path + `nudo.analysis.mode`). JSX/tsx languages may activate the extension but are not Nudo analysis targets.
 
 ## Release checklist (maintainers)
 
-Full checklist: [`packages/vscode/RELEASE_CHECKLIST.md`](https://github.com/nudojs/nudo/blob/main/packages/vscode/RELEASE_CHECKLIST.md) in the monorepo. Summary of what every Marketplace / Open VS X release must cover:
-
-1. **Bundled server align** — extension ships `server/server.js` copied from `@nudojs/lsp` `dist` via `scripts/bundle-server.mjs`. Build the monorepo first; record the bundled lsp version in the extension CHANGELOG. The vsix is self-contained (no monorepo sibling path at runtime).
-2. **Analysis default + escape hatch** — default `nudo.analysis.mode = "exports"`. Escape hatch in project `package.json#nudo.analysis.mode`: `"directives"` (conservative; diagnostics tier `errors`) or `"all"`. Release notes must state this default; a flip that invents diagnostics is a breaking default change.
-3. **tsserver coexistence** — Nudo runs beside the built-in TS server. Mixed repos should scope `nudo.analysis.include` / `exclude` — see [Coexistence](./coexistence.md). Do not point both tools at the same `.ts` sources with conflicting severities.
-4. **Packaging dry-run** — `pnpm --filter nudo-vscode run build && pnpm --filter nudo-vscode run package`; install the `.vsix` locally; confirm hover/diagnostics on an export-bearing `.js` without editing; confirm palette commands `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit`.
-5. **Marketplace / Open VS X notes template** — extension version, bundled lsp version, analysis default, coexistence blurb, protocol surface pointer ([PUBLIC_API](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)), known issues. Both targets in `release.yml` or an explicit skip.
-
-Service-level daily smoke (no live VS Code): `packages/lsp/src/__tests__/ide-daily-smoke.test.ts`. Public freeze inventory: `@nudojs/lsp` [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) / [API page](../api/lsp.md).
+Extension packaging and Marketplace release steps: [Contributing — Releases](../contributing.md).
 
 ## Features
 

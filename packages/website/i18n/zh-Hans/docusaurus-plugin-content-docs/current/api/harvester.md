@@ -1,5 +1,4 @@
 ---
-sidebar_position: 7
 description: "@nudojs/harvester API —— harvestDts 与 emitEnvModule：把 @types 的 .d.ts 声明转换为用 Abs 构造器重建类型的 Nudo env 定义。"
 ---
 
@@ -174,4 +173,4 @@ call@L9: ("docs", "readme") => `${string}.md`
 - browser/node 双入口变体——调用点记录不跨文件注入
 - **无调用现场**的函数—— `entry@` 兜底是诚实结果，不是缺陷
 
-另见[语言语义 — mock 边界](../guides/semantics.md#mock-边界仍建议)。
+另见[语言语义 — mock 边界](../concepts/semantics.md#mock-边界仍建议)。

@@ -1,5 +1,4 @@
 ---
-sidebar_position: 3
 description: "全部 @nudo: 指令（case、mock、pure、skip、sample、refine、import、env、mock-module、as、replace）的语法、约束与示例完整参考。"
 ---
 
@@ -7,7 +6,7 @@ description: "全部 @nudo: 指令（case、mock、pure、skip、sample、refine
 
 指令是控制 Nudo 如何分析代码的结构化注释。它们使用 `@nudo:` 命名空间以避免与 JSDoc 和其他工具冲突。将指令放在函数上方的块注释中。
 
-**interface 产品**（精化契约）主路径在侧车文件——`*.nudo.js` 模块自动绑定源码同名导出，`@nudo:refine` / `@nudo:interface` 是其兼容的源码内形态。见 [@nudo:refine](#nudorefine--refinement-contract) 与 [`nudo contract`](../guides/cli.md#nudo-contract) 命令。
+**契约产品**（精化义务）主路径在侧车文件——`*.nudo.js` 模块自动绑定源码同名导出，`@nudo:refine` 是其源码内形态（`@nudo:interface` 是精确别名）。见 [@nudo:refine](#nudorefine--refinement-contract) 与 [`nudo contract`](../guides/contract.md) 命令。
 
 ## 指令语法
 
@@ -36,13 +35,13 @@ async function fetchUser(id) {
 }
 ```
 
-两种形态解析完全一致——尤其是 mock 表达式的单行规则对两者都适用（见 [@nudo:mock](#nudo--mock-external-dependencies)）。当 `//` 前缀的指令可能被误读为被注释掉的代码时，优先使用块注释形态。
+两种形态解析完全一致——尤其是 mock 表达式的单行规则对两者都适用（见 [@nudo:mock](./mocking.md)）。当 `//` 前缀的指令可能被误读为被注释掉的代码时，优先使用块注释形态。
 
 ---
 
 ## @nudo:case — 调试见证
 
-case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它不是 interface 产品——精化契约住在 `*.nudo.js` 侧车（见 [@nudo:refine](#nudorefine--refinement-contract)）。`@nudo:case` 仍支持 `nudo test` 断言与 LSP 场景切换。case 实参使用具体值或约束构建器。
+case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它不是契约产品——精化契约住在 `*.nudo.js` 侧车 / `@nudo:refine`（见 [@nudo:refine](#nudorefine--refinement-contract)）。`@nudo:case` 仍支持 `nudo test` 断言与 LSP 场景切换。case 实参使用具体值或约束构建器。
 
 提供具名执行用例。每个用例定义**具体**输入，供 Nudo 调试场景执行函数时使用。
 
@@ -94,175 +93,15 @@ function lengthOf(s) {
 }
 ```
 
-## @nudo:mock — Mock 外部依赖 {#nudo--mock-external-dependencies}
+## @nudo:mock — Mock 外部依赖
 
-在求值期间将外部依赖替换为 mock 实现。适用于 `fetch`、文件系统 API 或其他 Nudo 无法直接执行的代码。
-
-### 语法
-
-支持五种形式。**所有内联表达式必须写在单行内**——见下方警告。
-
-**1. 单行箭头函数。** body 是普通 JavaScript；参数接收类型值：
-
-```text
-@nudo:mock name = (arg) => body
-```
-
-**2. Mock helper** — `stub()`、`spy()`、`mock()`，可链式调用 `.returns(...)`、`.resolves(...)`、`.rejects(...)`、`.withArgs(...)`、`.callsFake(...)`：
-
-```text
-@nudo:mock name = stub().returns(value)
-```
-
-**3. sinon 风格等价物** — `sinon.stub()` / `sinon.spy()`，支持相同链式调用：
-
-```text
-@nudo:mock name = sinon.stub().returns(value)
-```
-
-**4. 约束构建器表达式**（或具体值）：
-
-```text
-@nudo:mock name = number()
-@nudo:mock retries = 3
-```
-
-**5. 从模块导入** — 模块中必须定义与 mock 同名的绑定：
-
-```text
-@nudo:mock name from "path"
-```
-
-- **name** — 要 mock 的标识符（如 `fetch`、`fs`）。
-- **path** — 提供 mock 的模块路径。
-
-**警告：表达式必须单行。** 解析器只读取到行尾，多行表达式会在第一行被截断并报 `nudo:mock-invalid`。以下写法**不**可用：
-
-```text
-@nudo:mock fetch = (url) => ({ ok: true,
-  json: () => ({ id: 1 })
-})
-```
-
-截断行的真实诊断：
-
-```text
-[warning] example.js:0:0 Mock expression "(url) => ({ ok: true," could not be parsed as a known pattern (nudo:mock-invalid)
-[warning] example.js:10:9 Cannot resolve 'json' on unknown value (nudo:unknown-recv)
-```
-
-**警告：箭头函数 mock body 内不要写构建器调用。** 约束构建器只出现在指令类型表达式中（case 参数、`@nudo:skip`、`@nudo:as` 等）。mock body 内只能写普通 JavaScript——普通对象和闭包——或改用 `stub().returns(...)` / `stub().resolves(...)` helper。
-
-### 示例
-
-用箭头函数 mock `fetch`。body 是单行普通 JavaScript：
-
-```javascript
-/**
- * @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1, name: "Alice" }) })
- * @nudo:case "user" (1)
- */
-async function fetchUser(id) {
-  const res = await fetch(`/api/users/${id}`);
-  return res.json();
-}
-```
-
-**推断输出：**
-
-```text
-=== fetchUser ===
-
-debug "user": (1) => promise<{ id: 1, name: "Alice" }>
-```
-
-决议 Promise 的 mock helper——`stub().resolves(value)` 让每次调用返回 `promise<value>`：
-
-```javascript
-/**
- * @nudo:mock fetch = stub().resolves({ ok: true, json: () => ({ id: 1, name: "Alice" }) })
- * @nudo:case "user" (1)
- */
-async function fetchUser(id) {
-  const res = await fetch(`/api/users/${id}`);
-  return res.json();
-}
-```
-
-**这里并非同样结果：**resolved 对象的闭包槽位不被桥接——`json` 到达时无 body（`json: () => ?`），于是 `res.json()` 求值为 `unknown`，本例实际推断为 `promise<unknown>`（abs `promise<unknown> #partial`），而非箭头 mock 的 `promise<{ id: 1, name: "Alice" }>`。`resolves` 对纯数据保持完整精度（`stub().resolves({ ok: true, id: 1 })` → `promise<{ ok: true, id: 1 }>`）；mock 结果要被调用时，用箭头函数形态。同步 helper：
-
-```javascript
-/**
- * @nudo:mock getPort = stub().returns(8080)
- * @nudo:case "default" ()
- */
-function readPort() {
-  return getPort();
-}
-```
-
-**推断输出：**
-
-```text
-=== readPort ===
-
-debug "default": () => 8080
-```
-
-类型值表达式直接把名称绑定到类型值：
-
-```javascript
-/**
- * @nudo:mock retries = number()
- * @nudo:case "plan" ()
- */
-function plan() {
-  return retries + 1;
-}
-```
-
-**推断输出：**
-
-```text
-=== plan ===
-
-debug "plan": () => number
-```
-
-从模块导入——模块中必须定义与 mock 同名的绑定：
-
-```javascript
-/**
- * @nudo:mock fs from "./mocks/fs.js"
- * @nudo:case "read" (string())
- */
-function readConfig(path) {
-  return fs.readFileSync(path, "utf-8");
-}
-```
-
-```javascript
-// mocks/fs.js
-const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
-```
-
-**推断输出：**
-
-```text
-=== readConfig ===
-
-debug "read": (string) => unknown
-
-[warning] read-config.js:6:9 Built-in API "fs" is not covered by Nudo's type inference (nudo:builtin-unknown)
-```
-
-**当前限制：** `from` mock 未被注入 B 路径——而生产分析已 Abs 原生（TypeValue 求值路径已删除），该 mock 目前在所有路径上都会被丢弃：名称按未知全局求值（`nudo:builtin-unknown`），或对真实 Node 全局直接触达裸调用。单行箭头函数形态可正常生效；在 `from` 被注入 B 路径之前请优先使用它。
+在求值期间将外部依赖替换为 mock 实现——`fetch`、文件系统 API 或其他 Nudo 无法直接执行的代码。完整语法（五种形式）、单行规则、B-path 注意事项与可运行示例：[模拟外部依赖](./mocking.md)。
 
 ---
 
 ## @nudo:pure — 标记纯函数
 
-将函数标记为纯函数，使引擎可以记忆化结果。相同的 Abs 输入产生相同的输出，因此重复调用可以复用缓存的结果。
+将函数标记为纯函数。Abs `fn` 值携带标记（`_memoize = fn.name`），为未来的调用结果记忆化声明无副作用契约；目前求值器尚未消费该标记，加不加指令分析结果相同。在契约有意义处声明；在记忆化消费者落地前，该标记保持建议性质。
 
 ### 语法
 
@@ -355,7 +194,7 @@ Skipped (declared): number
 
 把精化契约挂到参数或返回值。约束以 Pred 进入 Abs，**参与代数**（`x>0` ⇒ `x+1>1`），不只是调用点挡板。
 
-`@nudo:interface` 是 `@nudo:refine` 的**完全等价别名**（解析为同一源码内精化）；CLI / LSP / 诊断中的产品名为 **interface**。
+`@nudo:interface` 是 `@nudo:refine` 的**精确别名**（解析为同一源码内精化）。**产品名**是 **contract**（侧车 `*.nudo.js` / `@nudo:refine`）；部分诊断码仍保留历史 `interface` 词元（`nudo:interface-param-mismatch` 等）。
 
 ### 主路径：侧车自动绑定
 
@@ -706,9 +545,9 @@ const result = a + b;
 
 | 指令 | 语法 | 用途 |
 |-----------|--------|---------|
-| `@nudo:case` | `"name" (args...)` 或 `"name" (args) => type` | 提供具名执行用例 |
+| `@nudo:case` | `"name" (args...)` 或 `"name" (args) => type` | 调试 / `nudo test` 见证（不是契约产品） |
 | `@nudo:mock` | `name = expr` 或 `name from "path"` | Mock 外部依赖 |
-| `@nudo:pure` | （无参数） | 标记纯函数以启用记忆化 |
+| `@nudo:pure` | （无参数） | 标记纯函数（记忆化尚未接入） |
 | `@nudo:skip` | `[returnsExpr]` | 跳过求值，使用已有类型信息 |
 | `@nudo:sample` | `N` | 保留的无效果指令（已解析，未消费） |
 | `@nudo:refine` / `@nudo:interface` | `param constraint` / `return constraint` | 源码内精化契约（别名对；主路径是 `*.nudo.js` 侧车自动绑定） |

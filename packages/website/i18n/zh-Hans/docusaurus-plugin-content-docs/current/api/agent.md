@@ -1,11 +1,10 @@
 ---
-sidebar_position: 5
 description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs 门禁）、test、contract、hover、whatIf、suggestCase、trace、selectCase、getActiveCases。"
 ---
 
 # Agent API
 
-`@nudojs/lsp` 面向 agent 的 API 参考。全部 agent 命令都内置于 Nudo 语言服务器，通过标准的 `workspace/executeCommand` 调用或自定义 LSP 请求访问——不需要安装独立的服务器进程或协议。连接方式（LSP→MCP 桥、原生 LSP 客户端、VS Code）见 [Agent 集成指南](../guides/mcp-server.md)。
+`@nudojs/lsp` 面向 agent 的 API 参考。全部 agent 命令都内置于 Nudo 语言服务器，通过标准的 `workspace/executeCommand` 调用或自定义 LSP 请求访问——不需要安装独立的服务器进程或协议。连接方式（LSP→MCP 桥、原生 LSP 客户端、VS Code）见 [Agent 集成指南](../guides/agent-integration.md)。
 
 ## 命令
 
@@ -13,11 +12,11 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 |---------|---------------------|---------|
 | `nudo.check` | `nudo/check` | 约束门禁 —— **CheckJson v1**（Abs 签名 + actual ⊭ expected） |
 | `nudo.test` | `nudo/test` | 全文件推断 —— **CaseJson v1**（intension 携带无损 Abs） |
-| `nudo.hover` | `nudo/hover` | 源码位置上的无损 Abs（可选 inlay / interface 档） |
+| `nudo.hover` | `nudo/hover` | 源码位置上的无损 Abs（可选 inlay / contract 分层） |
 | `nudo.whatIf` | `nudo/whatIf` | 对绑定应用类型假设，读取目标的推断类型 |
 | `nudo.suggestCase` | `nudo/suggestCase` | 检查函数的 `@nudo:case` 覆盖情况；用例全为合成时返回可直接粘贴的指令 |
 | `nudo.trace` | `nudo/trace` | 列出函数每个用例的参数类型 → 结果类型 |
-| `nudo.contract` | `nudo/contract` | 打印有效 interface 分层（handwritten / generated / implicit） |
+| `nudo.contract` | `nudo/contract` | 打印有效契约分层（handwritten / generated / implicit） |
 | `nudo.contract.draft` | `nudo/contract.draft` | **代码优先草稿**：从已有逻辑生成 `*.nudo.draft.js` / `*.nudo.draft.ts`（与 CLI `--draft` 同源） |
 | `nudo.contract.emit` | `nudo/contract.emit` | 把调用点域固化为侧车 `@generated` 段 |
 | `nudo.selectCase` | `nudo/selectCase` | 切换用于悬停/诊断的活动用例 |
@@ -50,7 +49,7 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 
 | Code | 含义 |
 |------|---------|
-| `nudo:constraint-violated` | 调用实参 ⊭ 前置条件 |
+| `nudo:constraint-violated` | 调用/返回不满足显式契约 Pred（`actual ⊭ expected`） |
 | `nudo:assign-mismatch` | 赋值 ⊭ 既有绑定形状 |
 | `nudo:arg-structure` | HOF：实参不是可调用 fn / arity 不匹配 |
 
@@ -213,7 +212,7 @@ Interface 产品面（与 CLI 同一数据源）：
 |---------|------|----------|
 | `nudo.contract` | `{ file, functionName?, source? }` | 打印 `fn  [handwritten\|generated\|implicit]  (params) → returns` + JSON |
 | `nudo.contract.draft` | `{ file, functionName?, source?, write?, dryRun? }` | 代码优先草稿模块（`@nudo:draft`）；`write: true` 落盘 `*.nudo.draft.js` / `*.nudo.draft.ts`（从不碰 ambient 绑定）。body 读字段仅作**建议**。`write: true` **无项目根时 fail-closed**（nudo 配置 / `package.json` 祖先）——与 CLI `--draft --write` 同口径（覆盖：`NUDO_DRAFT_FORCE=1`） |
-| `nudo.contract.emit` / `nudo.contract.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean }` | 通过 `emitInterface` 固化调用点域。`dryRun: true` 只预览不写盘：返回同形结果（路径、would-change、unifiedDiff）与 `[dry-run] would update …` 文本；不会新建/修改侧车文件。VS Code Persist/CodeLens 确认流程先发 `dryRun: true`，确认后再真实写盘 |
+| `nudo.contract.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean }` | 通过 `emitInterface` 固化调用点域。`dryRun: true` 只预览不写盘：返回同形结果（路径、would-change、unifiedDiff）与 `[dry-run] would update …` 文本；不会新建/修改侧车文件。VS Code Persist/CodeLens 确认流程先发 `dryRun: true`，确认后再真实写盘 |
 
 `loadModule` 与有效 `autoBind` 由**服务端注入**（buffer-aware 侧车装载 + 项目 `package.json#nudo.contract.autoBind` AND 客户端请求）。它们不是可 JSON 序列化的请求参数——agent 不要发送。
 
@@ -253,4 +252,4 @@ Interface 产品面（与 CLI 同一数据源）：
 | `nudo-suggest-case` | `nudo.suggestCase` |
 | `nudo-trace` | `nudo.trace` |
 
-连接层面的变化见指南的[从 MCP 服务器迁移](../guides/mcp-server.md#从-mcp-服务器迁移)一节。
+连接层面的变化见指南的[从 MCP 服务器迁移](../guides/agent-integration.md#从-mcp-服务器迁移)一节。

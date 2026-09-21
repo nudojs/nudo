@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2
 description: "@nudojs/parser API — parse() with TypeScript stripping, stripTypes, function/file/inline directive extraction, and directive type definitions."
 ---
 

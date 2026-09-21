@@ -1,5 +1,4 @@
 ---
-sidebar_position: 11
 description: "把已有 JavaScript 包迁到 Nudo：从逻辑生成契约草稿 → 审阅 → 落盘 → check/doctor 门禁。"
 ---
 

@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2.6
 description: "Capability matrix for Nudo's language server across VS Code, Zed, Neovim, Helix, and generic LSP clients — plus known gaps."
 ---
 
@@ -29,7 +28,7 @@ Declared on `initialize` (see [@nudojs/lsp API](../api/lsp.md)):
 | Custom requests | `nudo/…` | Same handlers as commands (E5); slash-form is the protocol contract |
 | Pull diagnostics | `diagnosticProvider` | `interFileDependencies: false` |
 
-**File detection (A1/A2):** targets are `.js` / `.mjs` / `.ts`. Shipped default is `nudo.analysis.mode = "exports"` — files with `export` / sidecar / directives are analyzed by the IDE; set `"all"` for every target path or `"directives"` to opt back into the conservative gate. CodeLens interface tier uses the broader target path even when diagnostics stay quiet for directive-less files.
+**File detection (A1/A2):** targets are `.js` / `.mjs` / `.ts`. Shipped default is `nudo.analysis.mode = "exports"` — full gate semantics: [Coexistence](../guides/coexistence.md#when-to-use-modedirectives-vs-modeexports). CodeLens interface tier uses the broader target path even when diagnostics stay quiet for directive-less files.
 
 ## Client support matrix
 
@@ -158,7 +157,7 @@ Helix renders diagnostics / hover / definitions / rename. **CodeLens is not in t
 
 ### Generic / agent bridges
 
-Any LSP client can `workspace/executeCommand` or send `nudo/<tool>` custom requests. Slash-form (`nudo/check`) is the protocol contract; dot-form (`nudo.check`) mirrors command names for MCP-style bridges. Both route to the same handlers (E5). See [Agent Integration](./mcp-server.md) and the freeze inventory in [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md).
+Any LSP client can `workspace/executeCommand` or send `nudo/<tool>` custom requests. Slash-form (`nudo/check`) is the protocol contract; dot-form (`nudo.check`) mirrors command names for MCP-style bridges. Both route to the same handlers (E5). See [Agent Integration](./agent-integration.md) and the freeze inventory in [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md).
 
 ## Known gaps
 
@@ -194,6 +193,6 @@ These surfaces always share one computation (pinned by tests):
 - [Zed Extension](./zed.md)
 - [Coexistence with TypeScript](./coexistence.md)
 - [Migrating existing JS](./migrating-js.md)
-- [Agent Integration](./mcp-server.md)
+- [Agent Integration](./agent-integration.md)
 - [Versioning & Releases](./versioning.md)
 - [@nudojs/lsp API](../api/lsp.md)

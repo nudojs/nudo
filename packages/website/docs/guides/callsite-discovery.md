@@ -1,5 +1,4 @@
 ---
-sidebar_position: 8
 description: "Harvest real argument shapes from your tests and apps with --from, synthesize call@L cases from them, and freeze them as directives with test --freeze."
 ---
 
@@ -44,11 +43,10 @@ Output:
 
 ```text
 === slugify ===
-  entry@L1  (any) => any
   call@L4  ("Hello World") => string
 ```
 
-The case was not written by anyone — it was harvested from line 4 of the test file, which is why it is named `call@L4`. Every recorded call site becomes one synthesized case; multiple call sites to the same function union into the combined type, exactly like hand-written `@nudo:case` directives do. Unconstrained entry params display as `any`.
+The case was not written by anyone — it was harvested from line 4 of the test file, which is why it is named `call@L4`. Every recorded call site becomes one synthesized case; multiple call sites to the same function union into the combined type, exactly like hand-written `@nudo:case` directives do. Unconstrained entry params display as `any`. When a function has **no** call sites anywhere, the analyzer falls back to one `entry@L…` case instead (`(any) => any` for unconstrained params); when `call@` cases exist, no `entry@` is synthesized for that function.
 
 ### Options
 
@@ -66,7 +64,7 @@ Call-site discovery runs in two phases.
 
 For each usage-site file, the evaluator runs the file's top-level statements and captures every call it can observe:
 
-- **Top-level evaluation** — `require` calls, setup code, and direct calls at module top level execute, so their argument values are captured as concrete type values.
+- **Top-level evaluation** — `require` calls, setup code, and direct calls at module top level execute, so their argument values are captured as concrete Abs observations.
 - **Test callback injection** — callbacks passed to `it`, `test`, and `describe` are invoked with `unknown` parameters, which executes the test body and captures the calls inside it. The callback bodies execute inside the evaluator — the test framework itself never runs. Only calls that resolve to functions in the analyzed targets are kept.
 - Each observed call produces a **CallRecord**: the callee name, the argument types, the result type, whether the call threw, and the call location.
 
@@ -161,5 +159,5 @@ See the [service API reference](../api/service.md) for the full `AnalysisResult`
 
 ## Next Steps
 
-- **[Language Semantics](./semantics.md)** — what the evaluator can do with the shapes call-site discovery hands it: literal string methods, concrete-bound loops, recursion, and narrowing guards (plus the constructs that still degrade to `unknown`).
+- **[Language Semantics](../concepts/semantics.md)** — what the evaluator can do with the shapes call-site discovery hands it: literal string methods, concrete-bound loops, recursion, and narrowing guards (plus the constructs that still degrade to `unknown`).
 - **[CLI Usage](./cli.md)** — all `nudo check` / `nudo test` options.

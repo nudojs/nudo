@@ -1,7 +1,4 @@
-<!-- DESIGN-CONFLICT:cli-semantics → docs/design/cli-semantics.md §2
-     C-ANY: unknown/any 同格「Universal set」与设计冲突。 -->
 ---
-sidebar_position: 1
 description: "@nudojs/core API — the Abs type system (shape × term × pred × conf), constructors, assignability and formatting, operator semantics, template strings, mock helpers, and Environment."
 ---
 
@@ -34,7 +31,7 @@ The core package provides the Abs type system, operator semantics, and environme
 | `any` | Unconstrained JS value union — default for unannotated entry params; developer refines |
 | `unknown` | Inference failed / engine has no information — **not** the same as `any`; Nudo owns the fix |
 
-See [Type Values — any vs unknown](../concepts/type-values.md#any-vs-unknown).
+See [Abs — any vs unknown](../concepts/type-values.md#any-vs-unknown).
 
 ---
 
@@ -123,7 +120,7 @@ Numeric ranges are not a type wrapper in the algebra — a narrowed bound is a *
 
 ## Mock Helpers
 
-Type-safe mock builders shared by `@nudo:mock` expressions and env files — a `MockHelper` is a plain record whose value fields are **Abs** (the source of truth after the TypeValue eviction). `@nudojs/parser` builds it from the `@nudo:mock` expression via `parseNudoMockExpr`; `@nudojs/service`'s `mockDirectivesToAbsSeeds` turns it into Abs mock seeds:
+Type-safe mock builders shared by `@nudo:mock` expressions and env files — a `MockHelper` is a plain record whose value fields are **Abs** (the sole type system; analysis never reads a projection back). `@nudojs/parser` builds it from the `@nudo:mock` expression via `parseNudoMockExpr`; `@nudojs/service`'s `mockDirectivesToAbsSeeds` turns it into Abs mock seeds:
 
 ```typescript
 type MockHelper = {

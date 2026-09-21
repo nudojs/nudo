@@ -56,7 +56,7 @@ type Preset = SinglePreset | CallsitePreset;
 const GROUP_CONTRACTS = 'Contracts & Observe';
 const GROUP_BASIC = 'Basic Examples';
 const GROUP_CALLSITE = 'Call-Site Discovery';
-const GROUP_SEMANTICS = 'New Semantics';
+const GROUP_SEMANTICS = 'Language Semantics';
 
 const presets: Preset[] = [
   {
@@ -639,7 +639,13 @@ function hoverToMarkdown(hover: HoverInfo, word?: string): string {
   const lines: string[] = [];
   if (word) lines.push(`**${word}**`);
   if (hover.interfaceSource) {
-    lines.push(`\`● interface / ${hover.interfaceSource}\``);
+    const contractLabel =
+      hover.interfaceSource === 'handwritten'
+        ? 'contract / handwritten'
+        : hover.interfaceSource === 'generated'
+          ? 'contract / generated'
+          : `contract / ${hover.interfaceSource}`;
+    lines.push(`\`● ${contractLabel}\``);
     if (hover.interfaceDisplay && hover.interfaceSource !== 'implicit') {
       lines.push('```nudo', hover.interfaceDisplay, '```');
     }
@@ -936,7 +942,7 @@ function PlaygroundApp() {
     }
   };
 
-  const runInference = () => {
+  const runObserve = () => {
     setIsRunning(true);
     try {
       if (preset.mode === 'callsite') {
@@ -1159,8 +1165,8 @@ function PlaygroundApp() {
     <div className="cs-playground">
         <h1>Nudo Playground</h1>
         <p className="cs-subtitle">
-          欢迎重回 JS 世界 — Nudo 不限制你的 JS 表达，只忠实反映中间量与结果，并提供比类型更精确的契约校验。
-          Hover for Abs + refine contracts.
+          Welcome back to JavaScript. Observe what your code computes on Abs, and gate contracts
+          sharper than declared types. Hover for term / pred / conf and sidecar contracts.
         </p>
 
         <div className="cs-controls">
@@ -1200,8 +1206,8 @@ function PlaygroundApp() {
             </button>
           )}
 
-          <button onClick={runInference} disabled={isRunning} className="run-button">
-            {isRunning ? 'Running...' : 'Run'}
+          <button onClick={runObserve} disabled={isRunning} className="run-button">
+            {isRunning ? 'Observing…' : 'Observe'}
           </button>
         </div>
 

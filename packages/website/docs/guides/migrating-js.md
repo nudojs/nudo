@@ -1,5 +1,4 @@
 ---
-sidebar_position: 11
 description: "Migrate an existing JavaScript package to Nudo: draft contracts from code, review, persist, then gate with check/health."
 ---
 

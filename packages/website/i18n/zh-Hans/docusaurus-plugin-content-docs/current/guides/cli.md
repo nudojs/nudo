@@ -1,20 +1,10 @@
 ---
-sidebar_position: 1
 description: "从终端驱动 Nudo：check 签名、test 用例、contract 契约、export 投影 —— 六个一级动词。"
 ---
 
 # CLI 使用指南
 
-`nudo` CLI 是对 `.js` / `.mjs` / `.ts` 运行类型推断的产品命令面。全局安装或通过 `npx` 使用：
-
-```bash
-# 薄壳包（发布名为 `nudojs`；安装后得到 `nudo` 命令）
-npm install -g nudojs
-# 或完整 CLI 包
-npm install -g @nudojs/cli
-# 或
-pnpm add -g @nudojs/cli
-```
+`nudo` CLI 是对 `.js` / `.mjs` / `.ts` 运行类型推断的产品命令面。全局安装或通过 `npx` 使用——见[安装](../getting-started/installation.md)。
 
 ## 一级动词
 
@@ -55,18 +45,6 @@ nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
            [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
 ```
 
-给定 `user.js`：
-
-```js
-export function getName(user) {
-  return user.name;
-}
-
-export function subtract(a, b) {
-  return a - b;
-}
-```
-
 ```bash
 nudo check user.js
 ```
@@ -74,50 +52,15 @@ nudo check user.js
 ```text
 signatures
   getName(user: any) => any  throws TypeError
-  subtract(a: any, b: any) => any
+  subtract(a: any, b: any) => number
 issues
   [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
 无约束入口参数显示为 **`any`**。`unknown` 表示推导失败（引擎债）—— 绝不是无约束入口参数的默认值。
 
-### 义务分层
-
-| 层 | 来源 | `check` 行为 |
-|----|------|--------------|
-| **L1 显式** | `*.nudo.js` / `@nudo:refine` / `@nudo:interface`；调用点证据可作 domain | 违例 → **error** |
-| **L2 默认 JS 契约** | 未收窄时的运行时边界语义 | **入口/导出**函数未消化 may-throw → **error**（`nudo:entry-may-throw`） |
-
-无显式契约时，契约退化为 JS 运行时边界：入口参数为 `any`，对 `any`/可空值的操作可能抛，导出函数不得静默携带未声明、未捕获的 throws。
-
-**L2 只门禁入口/导出函数。** 内部 helper 允许 throw；`check` 不因内部 may-throw 失败。`try`/`catch` 与 refine 可清除路径上的 L2。
-
-### 选项
-
-| 选项 | 说明 |
-|------|------|
-| `--watch` / `-w` | 变更时重跑（watch 是**旗标**，不是动词） |
-| `--json` | 机器可读诊断 + 签名 |
-| `--verbose` | 额外诊断细节 |
-| `--abs` | 打印 Abs 代数面（term / pred / conf） |
-| `--from <paths…>` | 使用处文件（测试/应用），注入调用记录 |
-| `--ignore-throws <names>` | 逗号分隔、可忽略的 L2 throws 类型（如 `TypeError`）；**不**吞 L1 契约违例 |
-| `--entry-throws error\|warning\|off` | L2 入口 may-throw 严重级别（默认 `error`） |
-
-`package.json` 配置：
-
-```json
-{
-  "nudo": {
-    "check": {
-      "ignoreThrows": ["TypeError"],
-      "entryThrows": "error"
-    }
-  }
-}
-```
-
-任一 error 级诊断（L1 或未 ignore 的 L2）时退出码为 `1`。
+- **语义**（L1 显式契约 / L2 入口 throws、退出码、过滤）：[nudo check](./check.md)
+- **选项与配置**（`--watch` / `--json` / `--abs` / `--from` / `--ignore-throws` / `--entry-throws`、`package.json#nudo.check`）：[CLI 参考](../api/cli-reference.md#nudo-check)
 
 `nudo check` 是 CI 门禁。
 
@@ -215,6 +158,8 @@ nudo export src/user.js --format all --out dist
 
 `.d.ts` 与 schema 都是**单向、有损投影** —— Abs 才是真理源。export 是一次性出货命令，不接受 `--watch`。
 
+逐格式语义与退出码：[CLI 参考](../api/cli-reference.md#nudo-export)。
+
 ---
 
 ## `nudo health`
@@ -299,27 +244,12 @@ nudo test src/ --watch
 
 ---
 
-## `any` 与 `unknown`
+## `any` 与 `unknown` {#any-vs-unknown}
 
-| | `any` | `unknown` |
-|---|-------|-----------|
-| 含义 | 无约束：JS 值的并集；**开发者**负责细化 | **推导失败** / 引擎无信息；**Nudo** 负责修 |
-| 来源 | 未标注入口参数、显式 `any()`、refine 解析失败回退 | 求值失败、native 未建模、截断、泄漏、opaque |
-| 展示 | `any`（可带 type-var 如 `A1`） | `unknown` + conf 标注 |
-| 产品话术 | 「未写契约 ⇒ 默认约束为 any + JS 运行时效果」 | 「Nudo 遇到无法处理的场景」 |
-
-**绝不**把无约束入口参数叙述为 `unknown`。详见 [Type Values](../concepts/type-values.md#any-vs-unknown)。
+无约束入口参数显示为 **`any`**；**`unknown`** 表示推导失败（引擎债），绝不能被叙述为无约束参数的默认值。完整契约（来源、运算、窄化、产品话术）见 [Abs — any vs unknown](../concepts/type-values.md#any-vs-unknown)。
 
 ---
 
 ## 退出码
 
-| 命令 | exit `1` |
-|------|----------|
-| `check` | 任一 error 级诊断（L1 或未 ignore 的 L2） |
-| `test` | 任一**已声明**断言失败（合成 `call@`/`entry@` 不挡 exit） |
-| `contract`（只读）/ `export` | 仅用法 / IO 错误 |
-| `contract --emit --exit-on-diff` | 将写盘且有 diff |
-| `health` | 漂移或分析错误 |
-
-CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。
+逐命令退出契约：[CLI 参考](../api/cli-reference.md)。CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。

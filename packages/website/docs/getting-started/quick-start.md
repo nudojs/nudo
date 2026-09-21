@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2
 description: "Gate signatures and cases on a plain JavaScript file — npx nudojs check / test."
 ---
 
@@ -13,7 +12,7 @@ Prefer the browser? Open the [Playground](/playground).
 
 Create `calc.js`:
 
-```javascript
+```javascript verify
 export function scale(x) {
   return x + 1;
 }
@@ -32,35 +31,44 @@ No annotations. Call sites are evidence.
 
 ```bash
 npx nudojs check calc.js
-npx nudojs test calc.js
 ```
 
 ```text
 signatures
-  formatName(first: any, last: any) => any
-  scale(x: any) => any
+  formatName(first: any, last: any) => number | string
+  scale(x: any) => number | string
 ```
+
+Optional debug cases (`nudo test` — not the product gate):
 
 ```text
 === formatName ===
   call@L9  ("Ada", "Lovelace") => "Ada Lovelace"
 === scale ===
-  call@L12  (5) => 6
+  call@L10  (5) => 6
 ```
 
-Nudo executed the functions with the arguments it actually saw. Unconstrained entry params display as **`any`** (not `unknown`). Observation is `check` signatures + `test` cases + IDE hover.
+Nudo executed the functions with the arguments it actually saw. Unconstrained entry params display as **`any`** (not `unknown`). Observation is `check` signatures + IDE hover; `nudo test` is an optional debug case reporter.
 
 ## 3. Add an explicit contract (Day 1)
 
 Create `calc.nudo.js` next to the source:
 
-```javascript
+```javascript verify-sidecar
 import { number, fn } from "@nudojs/core";
 
 export const scale = fn({ x: number().gt(0) }, number());
 ```
 
 ## 4. Gate with check
+
+Add a call that violates the sidecar:
+
+```javascript verify
+scale(0); // fails the sidecar — x must be > 0
+```
+
+Run the gate:
 
 ```bash
 npx nudojs check calc.js
@@ -72,13 +80,9 @@ scale(0)  actual: 1  #exact
           nudo:constraint-violated   actual ⊭ expected
 ```
 
-Add a bad call to see it:
+The violation is reported against the call site. Fix the call (or widen the contract), and `check` passes — still printing signatures.
 
-```javascript
-scale(0); // fails the sidecar — x must be > 0
-```
-
-`if` guards are **not** refinements. Explicit contracts come from sidecars / `@nudo:refine` / `@nudo:interface`. Without them, L2 still gates undigested may-throw on exports (entry params are `any`).
+`if` guards are **not** refinements. Explicit contracts come from sidecars / `@nudo:refine` (alias `@nudo:interface`). Without them, L2 still gates undigested may-throw on exports (entry params are `any`).
 
 ## Options
 
@@ -112,7 +116,9 @@ Prefer concrete values or constraint builders in cases.
 
 ## Next
 
-- [Concept Layers](../concepts/layers.md)
+- [How to use these docs](../intro.md)
 - [nudo check](../guides/check.md)
-- [Directives — refine / interface / sidecar](../concepts/directives.md)
+- [nudo contract](../guides/contract.md)
+- [Concept Layers](../concepts/layers.md)
+- [Recipes](../guides/recipes.md)
 - [Playground](/playground)

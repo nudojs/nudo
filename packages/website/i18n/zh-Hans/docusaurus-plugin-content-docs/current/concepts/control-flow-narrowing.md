@@ -1,5 +1,4 @@
 ---
-sidebar_position: 5
 description: 了解 Nudo 如何按调用点收窄类型——比较守卫、判别对象形状、typeof、Array.isArray、switch 与字面量真值判断——以及 unknown 条件分支、in 与 ?./?? 的当前局限。
 ---
 

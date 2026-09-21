@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2.6
 description: "Nudo 语言服务器在 VS Code、Zed、Neovim、Helix 及通用 LSP 客户端上的能力对齐表与已知缺口。"
 ---
 
@@ -29,7 +28,7 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 | Custom request | `nudo/…` | 与 command 同一 handler（E5）；协议契约用 slash 形式 |
 | Pull diagnostics | `diagnosticProvider` | `interFileDependencies: false` |
 
-**文件检测（A1/A2）：** 目标为 `.js` / `.mjs` / `.ts`。**出厂默认 `nudo.analysis.mode = "exports"`** — 含 `export` / 侧车 / 指令的文件进 IDE 分析；`"all"` 全量目标路径，`"directives"` 回到保守门禁。CodeLens interface 档使用更宽的目标路径——诊断可对无指令文件保持安静，档位仍可见。
+**文件检测（A1/A2）：** 目标为 `.js` / `.mjs` / `.ts`。**出厂默认 `nudo.analysis.mode = "exports"`** — 完整门禁语义：[共存](../guides/coexistence.md#何时用-modedirectives-vs-modeexports)。CodeLens interface 档使用更宽的目标路径——诊断可对无指令文件保持安静，档位仍可见。
 
 ## 客户端支持矩阵
 
@@ -157,7 +156,7 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 
 ### 通用 / agent 桥
 
-任意 LSP 客户端可 `workspace/executeCommand` 或发送 `nudo/<tool>` custom request。slash 形式（`nudo/check`）是协议契约；dot 形式（`nudo.check`）对齐 MCP 风格桥的 command 名。两者路由到同一 handler（E5）。见 [Agent 集成](./mcp-server.md) 与 [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)。
+任意 LSP 客户端可 `workspace/executeCommand` 或发送 `nudo/<tool>` custom request。slash 形式（`nudo/check`）是协议契约；dot 形式（`nudo.check`）对齐 MCP 风格桥的 command 名。两者路由到同一 handler（E5）。见 [Agent 集成](./agent-integration.md) 与 [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)。
 
 ## 已知缺口
 
@@ -193,6 +192,6 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 - [Zed 扩展](./zed.md)
 - [与 TypeScript 共存](./coexistence.md)
 - [迁移已有 JS](./migrating-js.md)
-- [Agent 集成](./mcp-server.md)
+- [Agent 集成](./agent-integration.md)
 - [版本与发布](./versioning.md)
 - [@nudojs/lsp API](../api/lsp.md)

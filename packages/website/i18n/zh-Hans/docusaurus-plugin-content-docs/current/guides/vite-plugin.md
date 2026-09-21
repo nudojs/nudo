@@ -1,11 +1,10 @@
 ---
-sidebar_position: 3
 description: "使用 vite-plugin-nudo 在 Vite 构建中分析 @nudo: 类型推断指令：支持 include/exclude glob 配置、构建警告与 failOnError 构建失败。"
 ---
 
 # Vite 插件
 
-**vite-plugin-nudo** 将 Nudo 的类型推断集成到 Vite 构建中。文件筛选与 LSP/CLI 同源：经 `nudo.analysis.mode`（`shouldAnalyzeFile`）门控；默认 `"exports"`（含 `@nudo:*` / `export` / 侧车的文件）。
+**vite-plugin-nudo** 将 Nudo 的类型推断集成到 Vite 构建中。文件筛选与 LSP/CLI 同源：经 `nudo.analysis.mode`（`shouldAnalyzeFile`）门控；默认 `"exports"`。模式语义：[共存](./coexistence.md#何时用-modedirectives-vs-modeexports)。
 
 ## 安装
 
@@ -63,7 +62,7 @@ glob 模式支持任意扩展名（`**/*.js`、`**/*.mjs`、`**/*.ts` 等）、�
 ## 行为
 
 - **文件匹配**：插件会处理匹配 `include` 且不匹配 `exclude` 的文件，`exclude` 总是优先。默认 `include` 为 `["**/*.js", "**/*.mjs", "**/*.ts"]`，与 `isNudoTargetPath` 一致（`.cjs`/`.cts`/`.mts`/`.tsx` 不是分析目标）。
-- **分析门控**：glob 之后经 `shouldAnalyzeFile`（`package.json#nudo.analysis.mode`）。默认 `"exports"` — 含 `@nudo:` / `export` / 侧车的文件；可配置 `"all"` / `"directives"`。
+- **分析门控**：glob 之后经 `shouldAnalyzeFile`（`package.json#nudo.analysis.mode`）。默认 `"exports"`；可配置 `"all"` / `"directives"`。
 - **分析**：匹配文件使用 `@nudojs/service` 的 `analyzeFileAsync` 运行类型推断。
 - **精化门禁**：匹配的文件同时会经过 Abs 精化门禁（`@nudojs/core` 的 `checkSource`）：`nudo:constraint-violated`、`nudo:assign-mismatch`、`nudo:arg-structure` 问题会并入同一条诊断管线，与求值器诊断一起报告。
 - **缓存**：分析结果按文件缓存。缓存在 `buildStart` 时清除。

@@ -1,20 +1,10 @@
 ---
-sidebar_position: 1
 description: "Drive Nudo from the terminal: check signatures, report cases, draft contracts, export projections — the six primary verbs."
 ---
 
 # CLI Usage
 
-The `nudo` CLI is the product surface for type inference on `.js`, `.mjs`, and `.ts` files. Install it globally or via `npx`:
-
-```bash
-# thin shell (published as `nudojs`; installs the `nudo` command)
-npm install -g nudojs
-# or the full CLI package
-npm install -g @nudojs/cli
-# or
-pnpm add -g @nudojs/cli
-```
+The `nudo` CLI is the product surface for type inference on `.js`, `.mjs`, and `.ts` files. Install it globally or via `npx` — see [Installation](../getting-started/installation.md).
 
 ## Primary verbs
 
@@ -55,18 +45,6 @@ nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
            [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
 ```
 
-Given `user.js`:
-
-```js
-export function getName(user) {
-  return user.name;
-}
-
-export function subtract(a, b) {
-  return a - b;
-}
-```
-
 ```bash
 nudo check user.js
 ```
@@ -74,50 +52,15 @@ nudo check user.js
 ```text
 signatures
   getName(user: any) => any  throws TypeError
-  subtract(a: any, b: any) => any
+  subtract(a: any, b: any) => number
 issues
   [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
 Unconstrained entry parameters display as **`any`**. `unknown` means inference failed (engine debt) — it is never the default for an unconstrained entry parameter.
 
-### Obligation layers
-
-| Layer | Source | `check` behavior |
-|-------|--------|------------------|
-| **L1 explicit** | `*.nudo.js` / `@nudo:refine` / `@nudo:interface`; call-site evidence can supply domain | Violation → **error** |
-| **L2 default JS contract** | Runtime boundary semantics when nothing is narrowed | Undigested may-throw on **entry/export** functions → **error** (`nudo:entry-may-throw`) |
-
-Without an explicit contract, the contract degrades to the JS runtime boundary: entry params are `any`, operations on `any`/nullish values may throw, and exported functions must not silently carry undeclared, uncaptured throws.
-
-**L2 only gates entry/export functions.** Internal helpers may throw; `check` does not fail the run for internal may-throw. `try`/`catch` and refine can clear L2 on a path.
-
-### Options
-
-| Option | Description |
-|--------|-------------|
-| `--watch` / `-w` | Re-run on file changes (watch is a **flag**, not a verb) |
-| `--json` | Machine-readable diagnostics + signatures |
-| `--verbose` | Extra detail for diagnosis |
-| `--abs` | Print the Abs algebra face (term / pred / conf) |
-| `--from <paths…>` | Usage-site files (tests/apps) that inject call records |
-| `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (e.g. `TypeError`); does **not** swallow L1 contract violations |
-| `--entry-throws error\|warning\|off` | Severity for L2 entry may-throw (default `error`) |
-
-`package.json` configuration:
-
-```json
-{
-  "nudo": {
-    "check": {
-      "ignoreThrows": ["TypeError"],
-      "entryThrows": "error"
-    }
-  }
-}
-```
-
-Exit code `1` on any error-level diagnostic (L1 or non-ignored L2).
+- **Semantics** (L1 explicit contracts / L2 entry throws, exit codes, filtering): [nudo check](./check.md)
+- **Options & config** (`--watch` / `--json` / `--abs` / `--from` / `--ignore-throws` / `--entry-throws`, `package.json#nudo.check`): [CLI Reference](../api/cli-reference.md#nudo-check)
 
 `nudo check` is the CI gate.
 
@@ -234,11 +177,7 @@ nudo export src/user.js --format all --out dist
 | `standard` | **Standard Schema v1** runtime modules (`~standard`, vendor `nudo`) → `<fn>.nudo.standard.ts` |
 | `all` | dts + guard + schema + standard |
 
-`--dialect` currently accepts `zod`. Constant numeric bounds / `int` / string length bounds from Abs preds are projected when expressible; unprojectable preds stay on the base shape and are listed under `dropped preds`.
-
-`standard` is the ecosystem interop path: generated modules implement [Standard Schema](https://standardschema.dev) `validate` without depending on Zod/Valibot. When a sidecar / `@nudo:refine` contract exists, parameter validators use **contract domains** (`<fn>_<param>` via `constraintToEntryAbs`); without a contract, args are the **join of observed call-site Abs** (not a single literal). It is a runtime gate — not a replacement for `nudo check`.
-
-`.d.ts` and schema projections are **one-way and lossy** — Abs is the source of truth. Export is a one-shot shipping command; it does not take `--watch`.
+Full per-format semantics and exit codes: [CLI Reference](../api/cli-reference.md#nudo-export).
 
 ---
 
@@ -326,25 +265,10 @@ nudo test src/ --watch
 
 ## `any` vs `unknown`
 
-| | `any` | `unknown` |
-|---|-------|-----------|
-| Meaning | Unconstrained: the union of JS values; **developer** refines | **Inference failed** / engine has no information; **Nudo** must fix |
-| Source | Unannotated entry params, explicit `any()`, refine parse fallback | Evaluation failure, unmodeled native, truncation, leak, opaque |
-| Display | `any` (optionally with a type-var like `A1`) | `unknown` + conf annotation |
-| Product story | “No written contract ⇒ default constraint is `any` + JS runtime effects” | “Nudo hit a case it cannot handle” |
-
-**Never** describe unconstrained entry params as `unknown`. See [Type Values](../concepts/type-values.md#any-vs-unknown).
+Unconstrained entry params display as **`any`**; **`unknown`** means inference failed (engine debt) and must never be described as the default for unconstrained params. The full contract (sources, operations, narrowing, product story) lives in [Abs — any vs unknown](../concepts/type-values.md#any-vs-unknown).
 
 ---
 
 ## Exit codes
 
-| Command | Exit `1` when |
-|---------|----------------|
-| `check` | Any error-level diagnostic (L1 or non-ignored L2) |
-| `test` | Any **declared** assertion fails (synthetic `call@`/`entry@` do not fail the run) |
-| `contract` (read-only) / `export` | Usage / IO errors only |
-| `contract --emit --exit-on-diff` | Write would happen and a diff exists |
-| `health` | Drift or analysis errors |
-
-CI gates only on `check` (plus `test` declared assertions and `health` drift).
+Per-command exit contracts: [CLI Reference](../api/cli-reference.md). CI gates only on `check` (plus `test` declared assertions and `health` drift).

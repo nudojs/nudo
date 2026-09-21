@@ -1,5 +1,4 @@
 ---
-sidebar_position: 1
 description: Install the Nudo CLI, VS Code extension, and Vite plugin via npm, pnpm, or yarn — published packages require Node.js >= 20.
 ---
 
@@ -10,7 +9,7 @@ Install Nudo tools via npm, pnpm, or yarn.
 ## Prerequisites
 
 - **Run the published CLI**: Node.js >= 20 (`engines` on all published packages)
-- **Develop this repo**: Node.js >= 20 (CI uses Node 24)
+- **Develop this repo**: Node.js >= 18 (CI uses Node 24)
 
 Packages ship compiled ESM in `dist/` (`files: ["dist"]`), not TypeScript source.
 
@@ -71,4 +70,4 @@ export default defineConfig({
 });
 ```
 
-During the build the plugin analyzes files that pass `nudo.analysis.mode` (shipped default `"exports"`: `@nudo:*`, `export`, or a sidecar) and reports Nudo diagnostics — evaluator issues plus refinement-gate violations (`nudo:constraint-violated`, `nudo:assign-mismatch`, `nudo:arg-structure`) — as build warnings, or as errors with `failOnError`. See the [Vite plugin guide](../guides/vite-plugin.md).
+During the build the plugin analyzes files that pass `nudo.analysis.mode` (shipped default `"exports"`) and reports Nudo diagnostics — evaluator issues plus refinement-gate violations (`nudo:constraint-violated`, `nudo:assign-mismatch`, `nudo:arg-structure`) — as build warnings, or as errors with `failOnError`. See the [Vite plugin guide](../guides/vite-plugin.md).

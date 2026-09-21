@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2.5
 description: "Install the Nudo language server in Zed: hover types, diagnostics, CodeLens case switching, inlay hints."
 ---
 
@@ -112,7 +111,7 @@ Full client comparison and known gaps: [LSP Client Matrix](./lsp-clients.md).
 
 ## File detection
 
-Analysis targets are `.js`, `.mjs`, and `.ts`. Directive-only mode is conservative; open whole-file analysis with `package.json#nudo.analysis.mode` (`exports` | `all`). CodeLens interface tier uses the broader target path.
+Analysis targets are `.js`, `.mjs`, and `.ts`. Shipped default `package.json#nudo.analysis.mode` is `"exports"`; mode semantics and the conservative `"directives"` gate: [Coexistence](./coexistence.md#when-to-use-modedirectives-vs-modeexports). CodeLens interface tier uses the broader target path.
 
 ## Building the WASM extension
 
@@ -130,5 +129,5 @@ cargo build --target wasm32-wasip2 --release
 - [LSP Client Matrix](./lsp-clients.md) — capability alignment across editors
 - [Migrating existing JS](./migrating-js.md) — draft → review → check
 - [Versioning & Releases](./versioning.md)
-- [Agent Integration](./mcp-server.md) — the same server, for coding agents
+- [Agent Integration](./agent-integration.md) — the same server, for coding agents
 - [@nudojs/lsp API](../api/lsp.md)

@@ -1,11 +1,10 @@
 ---
-sidebar_position: 9
 description: Learn the JavaScript semantics Nudo's evaluator models precisely today — string methods, for-of, break, Object.keys, recursion — and the constructs that still degrade to unknown.
 ---
 
 # Language Semantics
 
-Nudo infers types by *executing* your code with symbolic values, so the quality of inference is exactly the quality of the evaluator's JavaScript semantics. This guide lists the language behaviors the evaluator models precisely on the call-site path — every output block below is a real `nudo test` run of the code above it — followed by the constructs that still degrade to `unknown` (inference failed / engine debt, **not** the default for unconstrained entry params, which display as `any`) and should be verified before you rely on them. Precise semantics are also what make [call-site discovery](./callsite-discovery.md) effective: harvested call shapes only pay off if the evaluator can actually follow them.
+Nudo infers types by *executing* your code with symbolic values, so the quality of inference is exactly the quality of the evaluator's JavaScript semantics. This guide lists the language behaviors the evaluator models precisely on the call-site path — every output block below is a real `nudo test` run of the code above it — followed by the constructs that still degrade to `unknown` (inference failed / engine debt, **not** the default for unconstrained entry params, which display as `any`) and should be verified before you rely on them. Precise semantics are also what make [call-site discovery](../guides/callsite-discovery.md) effective: harvested call shapes only pay off if the evaluator can actually follow them.
 
 ## Modeled Precisely
 

@@ -1,92 +1,417 @@
+import { useState } from "react";
+import type { ReactNode } from "react";
 import Link from "@docusaurus/Link";
 import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
 import Layout from "@theme/Layout";
-import CodeBlock from "@theme/CodeBlock";
 import Translate, { translate } from "@docusaurus/Translate";
+import { Highlight, type PrismTheme } from "prism-react-renderer";
 
-const features = [
+/* ── Prism theme: Engineering Noir-friendly tokens ───────────────────────── */
+
+const nudoPrism: PrismTheme = {
+  plain: {
+    color: "var(--nudo-code-fg, #e8e4ff)",
+    backgroundColor: "transparent",
+  },
+  styles: [
+    {
+      types: ["comment", "prolog", "cdata"],
+      style: { color: "var(--nudo-code-comment, #8b849e)" },
+    },
+    {
+      types: ["punctuation", "operator"],
+      style: { color: "var(--nudo-code-punct, #9b94ad)" },
+    },
+    {
+      types: ["keyword", "builtin", "important"],
+      style: { color: "var(--nudo-code-kw, #a29bfe)" },
+    },
+    {
+      types: ["string", "char", "attr-value", "template-string"],
+      style: { color: "var(--nudo-code-str, #4ade80)" },
+    },
+    {
+      types: ["number", "boolean", "constant", "literal"],
+      style: { color: "var(--nudo-code-num, #fbbf24)" },
+    },
+    {
+      types: ["function", "title", "title function"],
+      style: { color: "var(--nudo-code-fn, #c4b5fd)" },
+    },
+    {
+      types: ["class-name", "maybe-class-name", "tag"],
+      style: { color: "var(--nudo-code-type, #fde68a)" },
+    },
+    {
+      types: ["attr-name", "property"],
+      style: { color: "var(--nudo-code-attr, #93c5fd)" },
+    },
+    {
+      types: ["deleted"],
+      style: { color: "#f87171" },
+    },
+  ],
+};
+
+/* ── Shared product example ────────────────────────────────────────────────
+   Inlays follow product semantics:
+   - Function body: algebraic Abs (sidecar vars / path preds). No concrete
+     case bindings unless a call-site / @nudo:case is in view.
+   - calls.js tab: concrete call-site facts + contract gate.
+   ------------------------------------------------------------------------ */
+
+/** Lines are 1-based; inlay = always-visible hint, detail = hover panel. */
+type LineHint = { line: number; inlay: string; detail: string };
+
+const sourceCode = `export function lineTotal(price, qty) {
+  return price * qty;
+}
+
+export function applyCoupon(order, code) {
+  const rate =
+    code === "VIP10" ? 0.1 :
+    code === "VIP20" ? 0.2 : 0;
+  return {
+    ...order,
+    total: order.subtotal * (1 - rate),
+    coupon: rate > 0 ? code : null,
+  };
+}`;
+
+/* Algebraic inlays — no case, no concrete "when" */
+const sourceHints: LineHint[] = [
   {
-    icon: "exec",
-    titleId: "homepage.feature.executeTitle",
-    titleDefault: "Execute, don't declare",
-    descId: "homepage.feature.executeDesc",
-    descDefault:
-      "Nudo runs your JavaScript with abstract values. Execution itself produces facts about parameters, returns, and every intermediate step.",
+    line: 1,
+    inlay: "price: number · price > 0",
+    detail:
+      "param  price\nshape  number\npred   price > 0     // sidecar\nconf   path\n\nqty    number · qty ≥ 1",
   },
   {
-    icon: "observe",
-    titleId: "homepage.feature.observeTitle",
-    titleDefault: "Observe intermediate values",
-    descId: "homepage.feature.observeDesc",
-    descDefault:
-      "See the algebra behind a result — terms like (x + 1), derived predicates like (x + 1) > 1, and confidence (exact / path / partial).",
+    line: 2,
+    inlay: "term (price × qty) · > 0",
+    detail:
+      "return\n  term  (price * qty)\n  pred  (price * qty) > 0\n        // price>0 ∧ qty≥1  ⇒  product > 0\n        // aligns with sidecar return number().gt(0)\n  conf  path\n\n(no concrete case — algebraic entry vars)",
   },
   {
-    icon: "contract",
-    titleId: "homepage.feature.contractsTitle",
-    titleDefault: "Contracts stricter than types",
-    descId: "homepage.feature.contractsDesc",
-    descDefault:
-      "Sidecar *.nudo.js and @nudo:refine / @nudo:interface gate parameters and returns. No contract? Stay honest with any / unknown — no invented fields.",
+    line: 5,
+    inlay: "order shape · code: string",
+    detail:
+      "param  order\n  shape  { subtotal ≥ 0; items ≥ 0 }\n  conf   path (sidecar)\nparam  code\n  shape  string\n  conf   path",
   },
   {
-    icon: "tools",
-    titleId: "homepage.feature.integrationsTitle",
-    titleDefault: "IDE inlays, CLI checks, AI context",
-    descId: "homepage.feature.integrationsDesc",
-    descDefault:
-      "Hover and inlay hints on intermediate values, nudo check in CI, LSP/MCP so agents see what the code actually computes.",
+    line: 8,
+    inlay: "rate ∈ {0, 0.1, 0.2}",
+    detail:
+      "term   rate\npred   rate = 0 ∨ rate = 0.1 ∨ rate = 0.2\n       // path-narrowed on code === …\nconf   path",
+  },
+  {
+    line: 12,
+    inlay: "term subtotal×(1−rate) · ≥ 0",
+    detail:
+      "field  total\n  term  order.subtotal * (1 - rate)\n  pred  total ≥ 0          // sidecar number().ge(0)\n  conf  path",
+  },
+  {
+    line: 13,
+    inlay: "coupon: string | null",
+    detail:
+      "field  coupon\n  term  rate>0 ? code : null\n  pred  string ∨ null\n  conf  path",
   },
 ];
 
-const proofSource = `// calc.js — plain JavaScript
-export function scale(x) {
-  return x + 1;
-}
+const contractCode = `import { number, fn, shape, string } from "@nudojs/core";
 
-export function formatName(first, last) {
-  return first + " " + last;
-}
+export const lineTotal = fn(
+  { price: number().gt(0), qty: number().ge(1) },
+  number().gt(0)
+);
 
-formatName("Ada", "Lovelace");
-scale(5);`;
+export const applyCoupon = fn(
+  {
+    order: shape({
+      subtotal: number().ge(0),
+      items: number().ge(0),
+    }),
+    code: string(),
+  },
+  shape({
+    subtotal: number(),
+    items: number(),
+    total: number().ge(0),
+    coupon: string(),
+  })
+);`;
 
-const proofContract = `// calc.nudo.js — explicit contract (sidecar)
-import { number, fn } from "@nudojs/core";
+/* Draft module format follows service/interface-draft.ts formatDraftModule */
+const draftOutput = `$ npx nudojs contract --draft pricing.js --from calls.js
+// @nudo:draft
+// Generated by \`nudo contract --draft\` from pricing.js
+// This pricing.nudo.draft.js file is NOT loaded as a sidecar contract.
+// Review each export, then copy it into pricing.nudo.js to accept.
+//
+// Evidence: callsite = observed args; body = fields the
+// implementation reads (suggestion only — never a check obligation);
+// symbolic = generalize; omitted = no evidence.
+// Handwritten contracts are never overwritten.
 
-export const scale = fn({ x: number().gt(0) }, number());`;
+import { fn, number, shape, string } from "@nudojs/core";
 
-const proofTest = `=== formatName ===
-  call@L11  ("Ada", "Lovelace") => "Ada Lovelace"
+// lineTotal — param: callsite, return: symbolic
+export const lineTotal = fn(
+  { price: number(), qty: number() },
+  number()
+);
 
-=== scale ===
-  call@L12  (5) => 6  #exact`;
+// applyCoupon — param: body, return: body
+//   order: /* body reads subtotal, items */
+//   code:  /* body reads — suggestion */
+export const applyCoupon = fn(
+  {
+    order: shape({ subtotal: number(), items: number() }),
+    code: string(),
+  },
+  shape({
+    subtotal: number(),
+    items: number(),
+    total: number(),
+    coupon: string(),
+  })
+);`;
 
-const proofObserve = `scale(5)
-  result : 6  #exact
-  term   : (x + 1)         where x = 5
-  pred   : (x + 1) > 1     #path
-  conf   : exact → path after generalization
+const draftHints: LineHint[] = [
+  {
+    line: 2,
+    inlay: "contract --draft",
+    detail:
+      "code-first draft from existing JS\nwrites *.nudo.draft.js only with --write\nnever ambient-loads as contract",
+  },
+  {
+    line: 7,
+    inlay: "evidence policy",
+    detail:
+      "callsite → best starting point\nbody    → suggestion only\nomit    → no evidence / TODO\ndraft does NOT invent check obligations",
+  },
+  {
+    line: 15,
+    inlay: "param: callsite",
+    detail:
+      "observed lineTotal(12, 3) projects number()\nnot lit(12) / lit(3) — review may tighten\nreturn symbolic generalize → number()",
+  },
+  {
+    line: 22,
+    inlay: "body · suggestion",
+    detail:
+      "implementation reads order.subtotal / items\ncode.toUpperCase() → string\nsuggestion only — human promotes real obligations",
+  },
+];
 
-formatName("Ada", "Lovelace")
-  result : "Ada Lovelace"  #exact
-  term   : lit("Ada Lovelace")`;
+/* Accepted sidecar after review — human-tightened preds */
+const contractHints: LineHint[] = [
+  {
+    line: 3,
+    inlay: "reviewed · price > 0 · qty ≥ 1",
+    detail:
+      "accepted into pricing.nudo.js\nhuman tightened number() → number().gt(0)\nreturn number().gt(0)\n\ndraft is a starting point — this is the gate",
+  },
+  {
+    line: 8,
+    inlay: "reviewed shape",
+    detail:
+      "promoted body-read fields to obligations\nonly after review — draft never auto-enforces",
+  },
+  {
+    line: 17,
+    inlay: "return shape · total ≥ 0",
+    detail: "L1 obligations live here after accept",
+  },
+];
 
-const proofCheck = `npx nudojs check calc.js
+/* Call sites live in their own tab — concrete facts + gate example */
+const callsCode = `// calls.js — call sites (evidence + one bad call)
+import { lineTotal, applyCoupon } from "./pricing.js";
 
-scale(0)  →  actual: 1  #exact
-            expected: x > 0
-            nudo:constraint-violated   actual ⊭ expected`;
+lineTotal(12, 3);
+applyCoupon({ subtotal: 100, items: 3 }, "VIP10");
 
-const proofIde = `// VS Code / LSP — inlay on intermediate values
-export function scale(x) {
-  return x + 1;
-  //     ^^^^^ term (x + 1)
-  //           pred (x + 1) > 1   #path
-}
+// parameter violates sidecar: price > 0
+lineTotal(0, 2);`;
 
-scale(5);  // => 6  #exact
-scale(0);  // ⊭ x > 0  (sidecar: number().gt(0))`;
+const callsHints: LineHint[] = [
+  {
+    line: 4,
+    inlay: "=> 36  #exact",
+    detail:
+      "call   lineTotal(12, 3)\nresult 36  #exact\nterm   (price * qty)  where price=12, qty=3\n\nConcrete values appear here — at the call site.",
+  },
+  {
+    line: 5,
+    inlay: "total 90 · coupon \"VIP10\"",
+    detail:
+      "call   applyCoupon({subtotal:100, items:3}, \"VIP10\")\nrate   0.1\ntotal  90\ncoupon \"VIP10\"  #exact",
+  },
+  {
+    line: 8,
+    inlay: "⊭ price > 0",
+    detail:
+      "call     lineTotal(0, 2)\nactual   0  #exact\nexpected price > 0   // sidecar\ngate     nudo:constraint-violated",
+  },
+];
+
+const checkOutput = `$ npx nudojs check pricing.js --from calls.js
+signatures
+  applyCoupon(order: any, code: any) => any
+  lineTotal(price: any, qty: any) => any
+issues
+  [error] lineTotal: actual ⊭ expected  (nudo:constraint-violated)
+    call:     lineTotal(0, 2)   // calls.js
+    actual:   0  #exact
+    expected: price > 0         // pricing.nudo.js`;
+
+const checkHints: LineHint[] = [
+  {
+    line: 3,
+    inlay: "entry any",
+    detail:
+      "signatures stay any on entry params\nuntil evidence/refinements say otherwise.\nunknown = inference failed — not this.",
+  },
+  {
+    line: 6,
+    inlay: "L1 gate",
+    detail:
+      "call-site from calls.js ⊭ sidecar pred\nactual ⊭ expected on Abs\nCI: nudo check exits 1",
+  },
+  {
+    line: 9,
+    inlay: "price > 0",
+    detail: "expected pred from pricing.nudo.js\nalgebraic — not a declared TS type",
+  },
+];
+
+const dtsOutput = `$ npx nudojs export pricing.js --format dts
+// === applyCoupon TypeScript Declarations ===
+/**
+ * @param order  - { subtotal: number; items: number }
+ * @param code   - string
+ * @returns { subtotal: number; items: number;
+ *            total: number; coupon: string | null }
+ */
+export declare function applyCoupon(
+  order: { subtotal: number; items: number },
+  code: string
+): {
+  subtotal: number;
+  items: number;
+  total: number;
+  coupon: string | null;
+};
+
+// === lineTotal TypeScript Declarations ===
+/**
+ * @param price - number
+ * @param qty   - number
+ * @returns number   // sidecar: number().gt(0)
+ */
+export declare function lineTotal(
+  price: number,
+  qty: number
+): number;`;
+
+const dtsHints: LineHint[] = [
+  {
+    line: 8,
+    inlay: "abs → .d.ts",
+    detail:
+      "one-way projection of Abs\nparams widened · return keeps structure\nCI gate remains nudo check",
+  },
+  {
+    line: 21,
+    inlay: "abs → .d.ts",
+    detail:
+      "export declare function lineTotal…\nTS surface is number; Abs/sidecar keep pred > 0\n(check / zod carry the bound)",
+  },
+];
+
+/* CLI stdout prints schema expressions as comments (copy-paste). Homepage
+   shows the assembled module — the form you actually ship. */
+const zodOutput = `// nudo export pricing.js --format schema --dialect zod
+// stdout lists expressions as comments — assembled module below
+
+import { z } from "zod";
+
+export const lineTotalInput = z.object({
+  price: z.number().gt(0),
+  qty: z.number().gte(1),
+});
+export const lineTotalOutput = z.number().gt(0);
+
+export const applyCouponInput = z.object({
+  order: z.object({
+    subtotal: z.number().gte(0),
+    items: z.number().gte(0),
+  }),
+  code: z.string(),
+});
+export const applyCouponOutput = z.object({
+  subtotal: z.number(),
+  items: z.number(),
+  total: z.number().gte(0),
+  coupon: z.string().nullable(),
+});`;
+
+const zodHints: LineHint[] = [
+  {
+    line: 7,
+    inlay: "pred → z.number().gt(0)",
+    detail:
+      "sidecar number().gt(0)\nprojects to zod bound\n(absToSchemaSource)",
+  },
+  {
+    line: 10,
+    inlay: "return → z.number().gt(0)",
+    detail:
+      "return contract number().gt(0)\n→ z.number().gt(0)\n// matches algebra on entry preds",
+  },
+  {
+    line: 22,
+    inlay: "total ≥ 0 → gte(0)",
+    detail:
+      "sidecar total: number().ge(0)\n→ z.number().gte(0)",
+  },
+];
+
+const day1Check = checkOutput;
+
+const day1CheckHints = checkHints;
+
+const absObserve = `$ npx nudojs check pricing.js --abs
+lineTotal
+  price  : number  where price > 0     #path
+  qty    : number  where qty ≥ 1       #path
+  return : number  where (price * qty) > 0  #path
+           // sidecar return number().gt(0)
+
+applyCoupon
+  rate   ∈ {0, 0.1, 0.2}               #path
+  total  : number  where total ≥ 0     #path
+  coupon : string | null                #path`;
+
+const absObserveHints: LineHint[] = [
+  {
+    line: 3,
+    inlay: "param Abs",
+    detail:
+      "price — algebraic entry var\npred from sidecar, not a case value",
+  },
+  {
+    line: 6,
+    inlay: "return Abs",
+    detail: "term (price * qty)\npred derived by arithmetic on entry preds",
+  },
+  {
+    line: 10,
+    inlay: "local Abs",
+    detail: "path-narrowed rate without binding code to a literal case",
+  },
+];
 
 const beyondExamples = [
   { code: `"0x" + id`, ts: "string", nudo: "`0x${string}`" },
@@ -95,49 +420,27 @@ const beyondExamples = [
   { code: `for (let i = 0; i < 5; i++) sum += i`, ts: "number", nudo: "10" },
 ];
 
-const nudoExample = `// Plain JS + sidecar obligation
-// calc.js
-export function scale(x) {
-  return x + 1;
-}
-
-// calc.nudo.js
-import { number, fn } from "@nudojs/core";
-export const scale = fn({ x: number().gt(0) }, number());
-
-// Call sites carry facts; check enforces the contract
-scale(5);   // => 6  #exact
-scale(0);   // ⊭ x > 0`;
-
-const tsExample = `// TypeScript — annotate the language surface
-interface ScaleInput { x: number }
-
-export function scale(x: number): number {
-  return x + 1;
-}
-
-// x > 0 is not expressible as a plain number type;
-// you need branded types / custom guards / runtime checks.`;
-
-const trialSteps = [
+const adoptSteps = [
   {
-    titleId: "homepage.trial.step1.title",
-    titleDefault: "Keep your JS",
-    descId: "homepage.trial.step1.desc",
-    descDefault: "No rewrite. No TypeScript migration. Your code stays as-is.",
+    tagId: "homepage.adopt.day0.tag",
+    tagDefault: "Logic first",
+    titleId: "homepage.adopt.day0.title",
+    titleDefault: "Draft contracts",
+    cmd: "npx nudojs contract --draft lib.js --from test/",
   },
   {
-    titleId: "homepage.trial.step2.title",
-    titleDefault: "Point at real usage",
-    descId: "homepage.trial.step2.desc",
-    descDefault: "Analyze the library together with its tests and call sites.",
+    tagId: "homepage.adopt.day1.tag",
+    tagDefault: "Contracts first",
+    titleId: "homepage.adopt.day1.title",
+    titleDefault: "Handwrite refine",
+    cmd: "lib.nudo.js  ·  @nudo:refine",
   },
   {
-    titleId: "homepage.trial.step3.title",
-    titleDefault: "Get signatures you can trust",
-    descId: "homepage.trial.step3.desc",
-    descDefault:
-      "Observed facts from actual calls. Add a sidecar contract only when you want a check gate.",
+    tagId: "homepage.adopt.eco.tag",
+    tagDefault: "Same validate",
+    titleId: "homepage.adopt.eco.title",
+    titleDefault: "check → export",
+    cmd: "npx nudojs check src/  ·  export dts|zod|schema",
   },
 ];
 
@@ -161,68 +464,197 @@ const trialStats = [
 
 const signatureCards = [
   {
-    fn: "formatName",
-    evidence: "from test.js call site",
-    before: "no evidence → unknown params",
-    after: '("Ada", "Lovelace") => "Ada Lovelace"',
+    fn: "coupon",
+    evidenceId: "homepage.trial.card.evidence1",
+    evidenceDefault: "from cart.js call site",
+    beforeId: "homepage.trial.card.before",
+    beforeDefault: "no call-site evidence → any",
+    after: '("vip") => "SAVE-VIP"',
   },
   {
     fn: "deepEqual",
-    evidence: "from @hapi/hoek usage",
-    before: "no evidence → unknown params",
+    evidenceId: "homepage.trial.card.evidence2",
+    evidenceDefault: "from @hapi/hoek usage",
+    beforeId: "homepage.trial.card.before",
+    beforeDefault: "no call-site evidence → any",
     after: "({a:1,b:{c:2}}, {a:1,b:{c:2}}) => boolean",
   },
   {
     fn: "flatten",
-    evidence: "from recursive + loop usage",
-    before: "no evidence → unknown",
+    evidenceId: "homepage.trial.card.evidence3",
+    evidenceDefault: "from recursive + loop usage",
+    beforeId: "homepage.trial.card.before",
+    beforeDefault: "no call-site evidence → any",
     after: "([1,[2,[3,4]]]) => [1,2,3,4]",
   },
 ];
 
-function FeatureIcon({ name }: { name: string }) {
-  const stroke = "currentColor";
-  if (name === "exec") {
-    return (
-      <svg className="feature-svg" viewBox="0 0 40 40" aria-hidden="true">
-        <rect x="4" y="8" width="32" height="24" rx="4" fill="none" stroke={stroke} strokeWidth="1.5" />
-        <path d="M12 20h8M20 16l6 4-6 4" fill="none" stroke={stroke} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  }
-  if (name === "observe") {
-    return (
-      <svg className="feature-svg" viewBox="0 0 40 40" aria-hidden="true">
-        <circle cx="20" cy="20" r="12" fill="none" stroke={stroke} strokeWidth="1.5" />
-        <circle cx="20" cy="20" r="3" fill={stroke} />
-        <path d="M20 8v4M20 28v4M8 20h4M28 20h4" stroke={stroke} strokeWidth="1.5" strokeLinecap="round" />
-      </svg>
-    );
-  }
-  if (name === "contract") {
-    return (
-      <svg className="feature-svg" viewBox="0 0 40 40" aria-hidden="true">
-        <path d="M12 8h16v24H12z" fill="none" stroke={stroke} strokeWidth="1.5" />
-        <path d="M16 16h8M16 21h8M16 26h5" stroke={stroke} strokeWidth="1.5" strokeLinecap="round" />
-        <path d="M25 26l2 2 4-4" fill="none" stroke={stroke} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  }
+/* ── UI primitives ───────────────────────────────────────────────────────── */
+
+/** Syntax-highlighted code with per-line Nudo inlays + hover observation panels. */
+function NudoCode({
+  code,
+  language = "javascript",
+  hints = [],
+  dense = false,
+}: {
+  code: string;
+  language?: string;
+  hints?: LineHint[];
+  dense?: boolean;
+}) {
+  const hintMap = new Map(hints.map((h) => [h.line, h]));
   return (
-    <svg className="feature-svg" viewBox="0 0 40 40" aria-hidden="true">
-      <rect x="6" y="10" width="12" height="20" rx="2" fill="none" stroke={stroke} strokeWidth="1.5" />
-      <rect x="22" y="10" width="12" height="12" rx="2" fill="none" stroke={stroke} strokeWidth="1.5" />
-      <path d="M22 28h12M25 24v8" stroke={stroke} strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
+    <div className={`nudo-code${dense ? " nudo-code-dense" : ""}`}>
+      <Highlight theme={nudoPrism} code={code.replace(/\n$/, "")} language={language}>
+        {({ className, style, tokens, getTokenProps }) => (
+          <pre
+            className={`nudo-code-pre ${className ?? ""}`}
+            style={{ ...style, background: "transparent", color: "var(--nudo-code-fg)" }}
+          >
+            {tokens.map((line, i) => {
+              const lineNo = i + 1;
+              const hint = hintMap.get(lineNo);
+              return (
+                <div key={i} className={`nudo-code-line${hint ? " has-hint" : ""}`}>
+                  <code className="nudo-code-line-text">
+                    {line.map((token, key) => (
+                      <span key={key} {...getTokenProps({ token })} />
+                    ))}
+                    {line.length === 0 ? " " : null}
+                  </code>
+                  {hint ? (
+                    <>
+                      <span className="nudo-inlay">{hint.inlay}</span>
+                      <span className="nudo-tooltip" role="tooltip">
+                        {hint.detail.split("\n").map((row, ri) => (
+                          <span key={ri} className="nudo-tooltip-row">
+                            {row}
+                          </span>
+                        ))}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="nudo-inlay nudo-inlay-empty" aria-hidden="true" />
+                  )}
+                </div>
+              );
+            })}
+          </pre>
+        )}
+      </Highlight>
+    </div>
   );
 }
+
+function CodePanel({
+  title,
+  tag,
+  tagClass,
+  code,
+  language = "javascript",
+  hints,
+  dense,
+}: {
+  title: string;
+  tag?: string;
+  tagClass?: string;
+  code: string;
+  language?: string;
+  hints?: LineHint[];
+  dense?: boolean;
+}) {
+  return (
+    <div className="term-panel">
+      <div className="term-panel-head">
+        <span className="term-panel-title">{title}</span>
+        {tag ? <span className={`term-tag ${tagClass ?? ""}`}>{tag}</span> : null}
+      </div>
+      <NudoCode code={code} language={language} hints={hints} dense={dense} />
+    </div>
+  );
+}
+
+function TabGroup({
+  tabs,
+  ariaLabel,
+}: {
+  tabs: { id: string; label: ReactNode; content: ReactNode }[];
+  ariaLabel: string;
+}) {
+  const [active, setActive] = useState(tabs[0]?.id);
+  return (
+    <div className="nudo-tabs">
+      <div className="nudo-tablist" role="tablist" aria-label={ariaLabel}>
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            id={`tab-${tab.id}`}
+            aria-selected={active === tab.id}
+            aria-controls={`panel-${tab.id}`}
+            className={`nudo-tab${active === tab.id ? " is-active" : ""}`}
+            onClick={() => setActive(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      {tabs.map((tab) => (
+        <div
+          key={tab.id}
+          role="tabpanel"
+          id={`panel-${tab.id}`}
+          aria-labelledby={`tab-${tab.id}`}
+          hidden={active !== tab.id}
+          className="nudo-tabpanel"
+        >
+          {active === tab.id ? tab.content : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CopyCommand({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="hero-cmd"
+      aria-label={translate({
+        id: "homepage.hero.cmdAria",
+        message: "Copy command",
+      })}
+      onClick={() => {
+        void navigator.clipboard?.writeText(text).then(() => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1600);
+        });
+      }}
+    >
+      <span className="hero-cmd-prompt">$</span>
+      <code className="hero-cmd-text">{text}</code>
+      <span className="hero-cmd-copy">
+        {copied
+          ? translate({ id: "homepage.hero.copied", message: "Copied" })
+          : translate({ id: "homepage.hero.copy", message: "Copy" })}
+      </span>
+    </button>
+  );
+}
+
+/* ── Sections ────────────────────────────────────────────────────────────── */
 
 function HeroSection() {
   return (
     <header className="hero-section">
       <div className="hero-grid" aria-hidden="true" />
       <div className="container hero-inner">
-        <p className="hero-kicker">Nudo · observable execution for JavaScript</p>
+        <p className="hero-kicker">
+          <Translate id="homepage.hero.kicker">Nudo</Translate>
+        </p>
         <h1 className="hero-title">
           <Translate id="homepage.hero.slogan">Welcome back to JavaScript.</Translate>
         </h1>
@@ -241,150 +673,442 @@ function HeroSection() {
           </Link>
         </div>
 
-        <div className="hero-story" role="img" aria-label="JavaScript function, sidecar contract, and Nudo observations">
-          <div className="hero-story-col">
-            <div className="hero-story-label">
-              <span>JS</span>
-              <Translate id="homepage.hero.storyJs">function</Translate>
-            </div>
-            <pre className="hero-story-code">
-              <code>{`export function scale(x) {\n  return x + 1;\n}`}</code>
-            </pre>
+        <CopyCommand text="npx nudojs check ./pricing.js" />
+
+        <div
+          className="hero-demo"
+          aria-label={translate({
+            id: "homepage.hero.demoAria",
+            message: "Nudo observing pricing.js with a sidecar contract",
+          })}
+        >
+          <div className="hero-demo-bar">
+            <span className="hero-demo-dot" />
+            <span className="hero-demo-dot" />
+            <span className="hero-demo-dot" />
+            <span className="hero-demo-bar-label">nudo · pricing.js + sidecar</span>
           </div>
-          <div className="hero-story-col">
-            <div className="hero-story-label">
-              <span>sidecar</span>
-              <Translate id="homepage.hero.storyContract">contract</Translate>
+          <div className="hero-demo-grid">
+            <div className="hero-demo-col">
+              <TabGroup
+                ariaLabel={translate({
+                  id: "homepage.demo.sourceTabsAria",
+                  message: "Source, sidecar, and call sites",
+                })}
+                tabs={[
+                  {
+                    id: "src",
+                    label: <Translate id="homepage.demo.tab.source">pricing.js</Translate>,
+                    content: (
+                      <NudoCode
+                        code={sourceCode}
+                        language="javascript"
+                        hints={sourceHints}
+                        dense
+                      />
+                    ),
+                  },
+                  {
+                    id: "sidecar",
+                    label: <Translate id="homepage.demo.tab.sidecar">pricing.nudo.js</Translate>,
+                    content: (
+                      <NudoCode
+                        code={contractCode}
+                        language="javascript"
+                        hints={contractHints}
+                        dense
+                      />
+                    ),
+                  },
+                  {
+                    id: "calls",
+                    label: <Translate id="homepage.demo.tab.calls">calls.js</Translate>,
+                    content: (
+                      <NudoCode
+                        code={callsCode}
+                        language="javascript"
+                        hints={callsHints}
+                        dense
+                      />
+                    ),
+                  },
+                ]}
+              />
             </div>
-            <pre className="hero-story-code">
-              <code>{`// scale.nudo.js\nfn({ x: number().gt(0) },\n   number())`}</code>
-            </pre>
-          </div>
-          <div className="hero-story-col hero-story-observe">
-            <div className="hero-story-label">
-              <span>nudo</span>
-              <Translate id="homepage.hero.storyObserve">observe + check</Translate>
+            <div className="hero-demo-col hero-demo-out">
+              <TabGroup
+                ariaLabel={translate({
+                  id: "homepage.hero.outTabsAria",
+                  message: "CLI projections",
+                })}
+                tabs={[
+                  {
+                    id: "check",
+                    label: "check",
+                    content: (
+                      <NudoCode code={checkOutput} language="bash" hints={checkHints} dense />
+                    ),
+                  },
+                  {
+                    id: "dts",
+                    label: "export · dts",
+                    content: (
+                      <NudoCode code={dtsOutput} language="typescript" hints={dtsHints} dense />
+                    ),
+                  },
+                  {
+                    id: "zod",
+                    label: "export · zod",
+                    content: (
+                      <NudoCode code={zodOutput} language="typescript" hints={zodHints} dense />
+                    ),
+                  },
+                ]}
+              />
             </div>
-            <pre className="hero-story-code">
-              <code>
-                {`scale(5) => 6  #exact\nterm (x + 1)  pred (x + 1) > 1\nscale(0) ⊭ x > 0`}
-              </code>
-            </pre>
           </div>
         </div>
+        <p className="hero-hint">
+          <Translate id="homepage.hero.hoverHint">
+            Hover a line — body inlays are algebraic Abs from the sidecar; call-site facts live
+            in calls.js.
+          </Translate>
+        </p>
       </div>
     </header>
   );
 }
 
-function ProofSection() {
+function ProofStrip() {
   return (
-    <section className="proof-section">
-      <div className="container">
-        <p className="section-eyebrow">
-          <Translate id="homepage.proof.eyebrow">From source to gate</Translate>
-        </p>
-        <h2 className="section-title">
-          <Translate id="homepage.proof.title">Watch a value move through the engine</Translate>
-        </h2>
-        <p className="section-lead">
-          <Translate id="homepage.proof.lead">
-            One module, four surfaces: the JS, the sidecar contract, `nudo test` call-site
-            cases, and what `nudo check` / the IDE show.
-          </Translate>
-        </p>
-
-        <div className="proof-grid proof-grid-2">
-          <div className="proof-panel">
-            <div className="proof-panel-head">
-              <span>calc.js</span>
-              <span className="proof-tag">JS</span>
-            </div>
-            <CodeBlock language="javascript">{proofSource}</CodeBlock>
+    <section
+      className="proof-strip"
+      aria-label={translate({
+        id: "homepage.proof.aria",
+        message: "Measured results on real packages",
+      })}
+    >
+      <div className="container proof-strip-inner">
+        {trialStats.map((stat) => (
+          <div className="proof-strip-item" key={stat.labelId}>
+            <span className="proof-strip-value">{stat.value}</span>
+            <span className="proof-strip-label">
+              <Translate id={stat.labelId}>{stat.labelDefault}</Translate>
+            </span>
           </div>
-          <div className="proof-panel">
-            <div className="proof-panel-head">
-              <span>calc.nudo.js</span>
-              <span className="proof-tag proof-tag-contract">contract</span>
-            </div>
-            <CodeBlock language="javascript">{proofContract}</CodeBlock>
-          </div>
-        </div>
-
-        <div className="proof-grid proof-grid-2">
-          <div className="proof-panel">
-            <div className="proof-panel-head">
-              <span>npx nudojs test</span>
-              <span className="proof-tag proof-tag-out">call sites</span>
-            </div>
-            <CodeBlock language="text">{proofTest}</CodeBlock>
-          </div>
-          <div className="proof-panel">
-            <div className="proof-panel-head">
-              <span>npx nudojs check --abs</span>
-              <span className="proof-tag proof-tag-out">Abs</span>
-            </div>
-            <CodeBlock language="text">{proofObserve}</CodeBlock>
-          </div>
-        </div>
-
-        <div className="proof-grid proof-grid-2">
-          <div className="proof-panel">
-            <div className="proof-panel-head">
-              <span>npx nudojs check</span>
-              <span className="proof-tag proof-tag-check">gate</span>
-            </div>
-            <CodeBlock language="text">{proofCheck}</CodeBlock>
-          </div>
-          <div className="proof-panel proof-panel-ide">
-            <div className="proof-panel-head">
-              <span>IDE inlay</span>
-              <span className="proof-tag">LSP</span>
-            </div>
-            <CodeBlock language="javascript">{proofIde}</CodeBlock>
-          </div>
-        </div>
-
-        <div className="proof-actions">
-          <code className="proof-cli">npx nudojs check calc.js</code>
-          <Link className="proof-link" to="/docs/getting-started/quick-start">
-            <Translate id="homepage.proof.quickStart">Full quick start →</Translate>
-          </Link>
-          <Link className="proof-link" to="/playground">
-            <Translate id="homepage.proof.playground">Try in Playground →</Translate>
-          </Link>
-        </div>
+        ))}
+        <Link className="proof-strip-link" to="/docs/guides/callsite-discovery">
+          <Translate id="homepage.trial.detail">How call-site discovery works →</Translate>
+        </Link>
       </div>
     </section>
   );
 }
 
-function FeaturesSection() {
+function FlowDiagram() {
   return (
-    <section className="features-section">
-      <div className="container">
-        <p className="section-eyebrow">
-          <Translate id="homepage.features.eyebrow">Why Nudo</Translate>
-        </p>
-        <h2 className="section-title">
-          <Translate id="homepage.features.title">
-            No rewrite of your JS. Faithful observations, and contracts sharper than types.
+    <div className="flow-panel">
+      <svg
+        className="flow-svg"
+        viewBox="0 0 920 480"
+        role="img"
+        aria-label={translate({
+          id: "homepage.flow.aria",
+          message:
+            "Logic-first and contracts-first meet on an Abs-centered contract face; check validates, export projects artifacts",
+        })}
+      >
+        <defs>
+          <marker
+            id="flow-arrow"
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path d="M0 0 L10 5 L0 10 z" className="flow-marker" />
+          </marker>
+        </defs>
+
+        <text x="36" y="34" className="flow-label flow-label-a">
+          <Translate id="homepage.flow.modeA">Logic first</Translate>
+        </text>
+        <text x="36" y="52" className="flow-node-c" textAnchor="start">
+          <Translate id="homepage.flow.modeACap">Write logic, then generate contracts</Translate>
+        </text>
+        <g className="flow-node">
+          <rect x="36" y="68" width="140" height="48" rx="8" />
+          <text x="106" y="97" className="flow-node-t">
+            <Translate id="homepage.flow.a1">Logic + calls</Translate>
+          </text>
+        </g>
+        <path d="M176 92 H214" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
+        <g className="flow-node flow-node-accent">
+          <rect x="218" y="68" width="150" height="48" rx="8" />
+          <text x="293" y="88" className="flow-node-t">
+            <Translate id="homepage.flow.a2">draft / generate</Translate>
+          </text>
+          <text x="293" y="104" className="flow-node-c">
+            <Translate id="homepage.flow.a2c">reviewable · optional</Translate>
+          </text>
+        </g>
+        <path d="M368 92 H410" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
+
+        <text x="36" y="170" className="flow-label flow-label-b">
+          <Translate id="homepage.flow.modeB">Contracts first</Translate>
+        </text>
+        <text x="36" y="188" className="flow-node-c" textAnchor="start">
+          <Translate id="homepage.flow.modeBCap">
+            Write contracts, then guide/constrain logic
           </Translate>
+        </text>
+        <g className="flow-node flow-node-signal">
+          <rect x="36" y="204" width="140" height="48" rx="8" />
+          <text x="106" y="225" className="flow-node-t">
+            <Translate id="homepage.flow.b1">Contract</Translate>
+          </text>
+          <text x="106" y="241" className="flow-node-c">*.nudo.js / refine</text>
+        </g>
+        <path d="M176 228 H214" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
+        <g className="flow-node">
+          <rect x="218" y="204" width="150" height="48" rx="8" />
+          <text x="293" y="225" className="flow-node-t">
+            <Translate id="homepage.flow.b2">Guide / constrain logic</Translate>
+          </text>
+          <text x="293" y="241" className="flow-node-c">
+            <Translate id="homepage.flow.b2c">same contract face</Translate>
+          </text>
+        </g>
+        <path d="M368 228 H410" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
+
+        <g className="flow-node flow-node-abs">
+          <rect x="420" y="118" width="200" height="120" rx="12" />
+          <text x="520" y="160" className="flow-node-t flow-node-lg">
+            <Translate id="homepage.flow.core">Abs · contract</Translate>
+          </text>
+          <text x="520" y="186" className="flow-node-c">
+            <Translate id="homepage.flow.coreAlg">shape × term × pred × conf</Translate>
+          </text>
+          <text x="520" y="208" className="flow-node-c">
+            <Translate id="homepage.flow.coreNote">source of truth · sidecar is JS too</Translate>
+          </text>
+        </g>
+        <path d="M410 92 H420" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
+        <path d="M410 228 H420" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
+
+        <path d="M620 150 H680" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
+        <g className="flow-node flow-node-gate">
+          <rect x="684" y="112" width="196" height="56" rx="8" />
+          <text x="782" y="136" className="flow-node-t">nudo check</text>
+          <text x="782" y="156" className="flow-node-c">
+            <Translate id="homepage.flow.checkRole">validate only · CI</Translate>
+          </text>
+        </g>
+        <path d="M620 206 H680" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
+        <g className="flow-node">
+          <rect x="684" y="186" width="196" height="56" rx="8" />
+          <text x="782" y="210" className="flow-node-t">nudo export</text>
+          <text x="782" y="230" className="flow-node-c">
+            <Translate id="homepage.flow.exportRole">project artifacts from Abs</Translate>
+          </text>
+        </g>
+
+        <text x="36" y="310" className="flow-label">
+          <Translate id="homepage.flow.outLabel">
+            Artifacts · ecosystem (export / read Abs)
+          </Translate>
+        </text>
+        <g className="flow-node flow-node-product">
+          <rect x="36" y="326" width="150" height="64" rx="8" />
+          <text x="111" y="354" className="flow-node-t">.d.ts</text>
+          <text x="111" y="374" className="flow-node-c">
+            <Translate id="homepage.flow.outDts">TS consumers</Translate>
+          </text>
+        </g>
+        <g className="flow-node flow-node-product">
+          <rect x="206" y="326" width="150" height="64" rx="8" />
+          <text x="281" y="354" className="flow-node-t">Zod / guards</text>
+          <text x="281" y="374" className="flow-node-c">
+            <Translate id="homepage.flow.outZod">runtime checks</Translate>
+          </text>
+        </g>
+        <g className="flow-node flow-node-product">
+          <rect x="376" y="326" width="160" height="64" rx="8" />
+          <text x="456" y="354" className="flow-node-t">JSON Schema</text>
+          <text x="456" y="374" className="flow-node-c">
+            <Translate id="homepage.flow.outJson">mocks · tooling</Translate>
+          </text>
+        </g>
+        <g className="flow-node flow-node-product">
+          <rect x="556" y="326" width="150" height="64" rx="8" />
+          <text x="631" y="354" className="flow-node-t">
+            <Translate id="homepage.flow.outIde">IDE / LSP</Translate>
+          </text>
+          <text x="631" y="374" className="flow-node-c">
+            <Translate id="homepage.flow.outIdeCap">hover · inlay</Translate>
+          </text>
+        </g>
+        <g className="flow-node flow-node-product">
+          <rect x="726" y="326" width="154" height="64" rx="8" />
+          <text x="803" y="354" className="flow-node-t">
+            <Translate id="homepage.flow.outAgent">Agent / MCP</Translate>
+          </text>
+          <text x="803" y="374" className="flow-node-c">
+            <Translate id="homepage.flow.outAgentCap">
+              LSP / MCP · same Abs
+            </Translate>
+          </text>
+        </g>
+
+        {/* spine: export → product rail */}
+        <path d="M782 242 V292" className="flow-edge flow-edge-dim" fill="none" markerEnd="url(#flow-arrow)" />
+        <path d="M111 292 H782" className="flow-edge flow-edge-dim" fill="none" />
+        <path d="M111 292 V326" className="flow-edge flow-edge-dim" fill="none" markerEnd="url(#flow-arrow)" />
+        <path d="M281 292 V326" className="flow-edge flow-edge-dim" fill="none" markerEnd="url(#flow-arrow)" />
+        <path d="M456 292 V326" className="flow-edge flow-edge-dim" fill="none" markerEnd="url(#flow-arrow)" />
+
+        {/* Abs → IDE / Agent (direct read) */}
+        <path d="M520 238 V300" className="flow-edge flow-edge-dim" fill="none" />
+        <path d="M631 300 V326" className="flow-edge flow-edge-dim" fill="none" markerEnd="url(#flow-arrow)" />
+        <path d="M803 300 V326" className="flow-edge flow-edge-dim" fill="none" markerEnd="url(#flow-arrow)" />
+        <path d="M631 300 H803" className="flow-edge flow-edge-dim" fill="none" />
+      </svg>
+    </div>
+  );
+}
+
+function DemoSection() {
+  return (
+    <section className="demo-section" id="flow">
+      <div className="container">
+        <h2 className="section-title">
+          <Translate id="homepage.demo.title">Work modes</Translate>
         </h2>
-        <div className="features-grid">
-          {features.map((feature) => (
-            <div key={feature.titleId} className="feature-card">
-              <div className="feature-icon">
-                <FeatureIcon name={feature.icon} />
-              </div>
-              <h3>
-                <Translate id={feature.titleId}>{feature.titleDefault}</Translate>
-              </h3>
+        <p className="section-lead">
+          <Translate id="homepage.demo.lead">
+            Logic first: write logic, then generate contracts. Contracts first: write contracts,
+            then guide or constrain logic. Both meet on the Abs contract face. `check` only
+            validates; `export` projects artifacts from Abs.
+          </Translate>
+        </p>
+
+        <FlowDiagram />
+
+        <div className="demo-panels demo-panels-2 flow-cards">
+          <article className="flow-card">
+            <span className="path-tag">
+              <Translate id="homepage.flow.modeA">Logic first</Translate>
+            </span>
+            <h3>
+              <Translate id="homepage.flow.cardA">Write logic, then generate contracts</Translate>
+            </h3>
+            <p>
+              <Translate id="homepage.flow.cardADesc">
+                Call sites are evidence. `contract --draft` can generate a reviewable contract
+                draft; accept into `*.nudo.js`. Drafts never become check obligations by
+                themselves.
+              </Translate>
+            </p>
+            <code className="path-cmd">npx nudojs contract --draft lib.js --from test/</code>
+          </article>
+          <article className="flow-card">
+            <span className="path-tag path-tag-b">
+              <Translate id="homepage.flow.modeB">Contracts first</Translate>
+            </span>
+            <h3>
+              <Translate id="homepage.flow.cardB">
+                Write contracts, then guide / constrain logic
+              </Translate>
+            </h3>
+            <p>
+              <Translate id="homepage.flow.cardBDesc">
+                Write `*.nudo.js` or `@nudo:refine` first. The same contract face guides
+                implementation and constrains logic in `check`.
+              </Translate>
+            </p>
+            <code className="path-cmd">npx nudojs check src/</code>
+          </article>
+        </div>
+
+        <div className="eco-block">
+          <h3 className="eco-heading">
+            <Translate id="homepage.eco.title">Validate vs. project</Translate>
+          </h3>
+          <p className="eco-lead">
+            <Translate id="homepage.eco.lead">
+              The flow is centered on the Abs contract face. `check` only validates. `export`
+              projects `.d.ts` / Zod / JSON Schema / guards from Abs; IDE and agents read Abs
+              directly.
+            </Translate>
+          </p>
+          <div className="eco-grid">
+            <div className="eco-item">
+              <h4>nudo check</h4>
               <p>
-                <Translate id={feature.descId}>{feature.descDefault}</Translate>
+                <Translate id="homepage.eco.check">
+                  Validation / CI only. Does not generate artifacts.
+                </Translate>
               </p>
             </div>
-          ))}
+            <div className="eco-item">
+              <h4>export · dts</h4>
+              <p>
+                <Translate id="homepage.eco.dts">
+                  `.d.ts` for TypeScript consumers. Lossy projection.
+                </Translate>
+              </p>
+            </div>
+            <div className="eco-item">
+              <h4>export · Zod / guards</h4>
+              <p>
+                <Translate id="homepage.eco.zod">
+                  Runtime validators from Abs. Not a substitute for `check`.
+                </Translate>
+              </p>
+            </div>
+            <div className="eco-item">
+              <h4>export · JSON Schema</h4>
+              <p>
+                <Translate id="homepage.eco.json">
+                  JSON Schema for mock generation and downstream tooling.
+                </Translate>
+              </p>
+            </div>
+            <div className="eco-item">
+              <h4>IDE / LSP</h4>
+              <p>
+                <Translate id="homepage.eco.ide">Hover / inlay read Abs directly.</Translate>
+              </p>
+            </div>
+            <div className="eco-item">
+              <h4>Agent / MCP</h4>
+              <p>
+                <Translate id="homepage.eco.agent">
+                  Coding agents read the same Abs via LSP / MCP — see the AI agents section.
+                </Translate>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="demo-actions">
+          <Link className="button button--primary" to="/docs/why-nudo">
+            <Translate id="homepage.demo.why">Why Nudo</Translate>
+          </Link>
+          <Link className="button button--secondary" to="/docs/guides/migrating-from-typescript">
+            <Translate id="homepage.demo.fromTs">From TypeScript</Translate>
+          </Link>
+          <Link className="button button--secondary" to="/docs/guides/migrating-js">
+            <Translate id="homepage.demo.migrate">Logic-first guide</Translate>
+          </Link>
+          <Link className="button button--secondary" to="/docs/guides/check">
+            <Translate id="homepage.demo.checkDocs">nudo check</Translate>
+          </Link>
+          <Link className="button button--secondary" to="/docs/reference/agents">
+            <Translate id="homepage.demo.agents">AI agents</Translate>
+          </Link>
         </div>
       </div>
     </section>
@@ -403,15 +1127,28 @@ function BeyondSection() {
         </h2>
         <p className="section-lead">
           <Translate id="homepage.beyond.lead">
-            Because Nudo evaluates on Abs, results track actual computation — literal strings,
-            splits, loop sums — not a declared upper bound.
+            Nudo evaluates on Abs, so results track actual computation — literal strings, splits,
+            loop sums — not a declared upper bound.
           </Translate>
         </p>
-        <div className="beyond-table" role="table" aria-label="Nudo versus TypeScript expression results">
+        <div
+          className="beyond-table"
+          role="table"
+          aria-label={translate({
+            id: "homepage.beyond.aria",
+            message: "Nudo versus TypeScript expression results",
+          })}
+        >
           <div className="beyond-row beyond-head" role="row">
-            <span role="columnheader">Expression</span>
-            <span role="columnheader">TypeScript</span>
-            <span role="columnheader">Nudo observes</span>
+            <span role="columnheader">
+              <Translate id="homepage.beyond.colExpr">Expression</Translate>
+            </span>
+            <span role="columnheader">
+              <Translate id="homepage.beyond.colTs">TypeScript</Translate>
+            </span>
+            <span role="columnheader">
+              <Translate id="homepage.beyond.colNudo">Nudo observes</Translate>
+            </span>
           </div>
           {beyondExamples.map((row) => (
             <div className="beyond-row" role="row" key={row.code}>
@@ -425,34 +1162,56 @@ function BeyondSection() {
             </div>
           ))}
         </div>
+        <p className="beyond-foot">
+          <Translate
+            id="homepage.beyond.foot"
+            values={{
+              tpl: <code key="tpl">`SAVE-${"{code.toUpperCase()}"}`</code>,
+              lit: <code key="lit">"SAVE-VIP"</code>,
+              call: <code key="call">coupon("vip")</code>,
+            }}
+          >
+            {
+              "The template {tpl} is not plain string — when the call site is {call}, Nudo observes {lit}."
+            }
+          </Translate>
+        </p>
       </div>
     </section>
   );
 }
 
-function ComparisonSection() {
+function AdoptStrip() {
   return (
-    <section className="comparison-section">
+    <section className="adopt-section">
       <div className="container">
-        <p className="section-eyebrow">
-          <Translate id="homepage.comparison.eyebrow">Side by side</Translate>
-        </p>
-        <h2 className="section-title">
-          <Translate id="homepage.comparison.title">JS stays JS. Obligations stay explicit.</Translate>
-        </h2>
-        <div className="comparison-grid">
-          <div className="comparison-panel comparison-panel-nudo">
-            <h3>
-              <Translate id="homepage.comparison.nudo">Nudo — JS + sidecar contract</Translate>
-            </h3>
-            <CodeBlock language="javascript">{nudoExample}</CodeBlock>
+        <div className="adopt-bar">
+          <div className="adopt-head">
+            <p className="section-eyebrow adopt-eyebrow">
+              <Translate id="homepage.adopt.eyebrow">Adopt in place</Translate>
+            </p>
+            <p className="adopt-lead">
+              <Translate id="homepage.adopt.lead">
+                Draft from logic, or handwrite contracts first — then one check gate. Project
+                artifacts into the ecosystem when you need them.
+              </Translate>
+            </p>
           </div>
-          <div className="comparison-panel comparison-panel-ts">
-            <h3>
-              <Translate id="homepage.comparison.typescript">TypeScript — language surface only</Translate>
-            </h3>
-            <CodeBlock language="typescript">{tsExample}</CodeBlock>
-          </div>
+          <ol className="adopt-list">
+            {adoptSteps.map((step) => (
+              <li key={step.tagId} className="adopt-item">
+                <div className="adopt-item-top">
+                  <span className="path-tag">
+                    <Translate id={step.tagId}>{step.tagDefault}</Translate>
+                  </span>
+                  <span className="adopt-item-title">
+                    <Translate id={step.titleId}>{step.titleDefault}</Translate>
+                  </span>
+                </div>
+                <code className="path-cmd">{step.cmd}</code>
+              </li>
+            ))}
+          </ol>
         </div>
       </div>
     </section>
@@ -467,63 +1226,40 @@ function TrialSection() {
           <Translate id="homepage.trial.eyebrow">Real code, real results</Translate>
         </p>
         <h2 className="section-title">
-          <Translate id="homepage.trial.title">Precise signatures without annotating anything</Translate>
+          <Translate id="homepage.trial.title">Call sites become signatures</Translate>
         </h2>
         <p className="rw-lead">
           <Translate id="homepage.trial.lead">
-            Point Nudo at real JavaScript and how it is used. It observes what the code actually
-            computes — no type annotations, no rewriting the library.
+            Day 0 check prints unconstrained params as any. Point Nudo at real usage — tests,
+            call sites — and the interpreter synthesizes precise signatures from evidence. No
+            type annotations. No library rewrite.
           </Translate>
         </p>
 
-        <div className="rw-steps">
-          {trialSteps.map((step, index) => (
-            <div className="rw-step" key={step.titleId}>
-              <span className="rw-step-num" aria-hidden="true">
-                {index + 1}
-              </span>
-              <div className="rw-step-body">
-                <h3 className="rw-step-title">
-                  <Translate id={step.titleId}>{step.titleDefault}</Translate>
-                </h3>
-                <p className="rw-step-desc">
-                  <Translate id={step.descId}>{step.descDefault}</Translate>
-                </p>
-                {index === 1 && (
-                  <code className="rw-step-cli">npx nudojs test lib/ --from test/</code>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="rw-stats">
-          {trialStats.map((stat) => (
-            <div className="rw-stat" key={stat.labelId}>
-              <span className="rw-stat-value">{stat.value}</span>
-              <span className="rw-stat-label">
-                <Translate id={stat.labelId}>{stat.labelDefault}</Translate>
-              </span>
-            </div>
-          ))}
-        </div>
-
         <h3 className="rw-cards-title">
-          <Translate id="homepage.trial.cardsTitle">What you get back</Translate>
+          <Translate id="homepage.trial.cardsTitle">What call-site discovery returns</Translate>
         </h3>
         <div className="rw-cards">
           {signatureCards.map((card) => (
             <div className="rw-card" key={card.fn}>
               <div className="rw-card-head">
                 <code className="rw-card-fn">{card.fn}</code>
-                <span className="rw-card-chip">{card.evidence}</span>
+                <span className="rw-card-chip">
+                  <Translate id={card.evidenceId}>{card.evidenceDefault}</Translate>
+                </span>
               </div>
               <div className="rw-sig rw-sig-before">
-                <span className="rw-sig-label">before</span>
-                <code>{card.before}</code>
+                <span className="rw-sig-label">
+                  <Translate id="homepage.trial.card.beforeLabel">before</Translate>
+                </span>
+                <code>
+                  <Translate id={card.beforeId}>{card.beforeDefault}</Translate>
+                </code>
               </div>
               <div className="rw-sig rw-sig-after">
-                <span className="rw-sig-label">nudo</span>
+                <span className="rw-sig-label">
+                  <Translate id="homepage.trial.card.afterLabel">nudo</Translate>
+                </span>
                 <code>{card.after}</code>
               </div>
             </div>
@@ -545,6 +1281,210 @@ function TrialSection() {
   );
 }
 
+function AgentSection() {
+  return (
+    <section className="agent-section" id="agents">
+      <div className="container">
+        <p className="section-eyebrow">
+          <Translate id="homepage.agent.eyebrow">AI agents</Translate>
+        </p>
+        <h2 className="section-title">
+          <Translate id="homepage.agent.title">
+            Agents that gate contracts — not invent types
+          </Translate>
+        </h2>
+        <p className="section-lead">
+          <Translate id="homepage.agent.lead">
+            Coding agents and editors read the same Abs face via LSP / MCP. They run `nudo check`,
+            respect sidecar contracts, and parse stable diagnostic IDs — not a second type
+            language.
+          </Translate>
+        </p>
+
+        <div className="agent-grid">
+          <article className="agent-card">
+            <h3>
+              <Translate id="homepage.agent.card1.title">Same Abs as the IDE</Translate>
+            </h3>
+            <p>
+              <Translate id="homepage.agent.card1.desc">
+                Hover / inlay and agent tools consume Abs directly. `export` projections stay
+                lossy; Abs remains the source of truth.
+              </Translate>
+            </p>
+            <code className="path-cmd">npx nudojs check src/ --json</code>
+          </article>
+          <article className="agent-card">
+            <h3>
+              <Translate id="homepage.agent.card2.title">LSP + MCP surface</Translate>
+            </h3>
+            <p>
+              <Translate id="homepage.agent.card2.desc">
+                `@nudojs/lsp` exposes agent `executeCommand` tools. Wire MCP for Cursor, Claude
+                Code, and other agent clients without a separate server protocol.
+              </Translate>
+            </p>
+            <code className="path-cmd">@nudojs/lsp · nudo.contract · nudo.whatIf</code>
+          </article>
+          <article className="agent-card">
+            <h3>
+              <Translate id="homepage.agent.card3.title">Stable product rules</Translate>
+            </h3>
+            <p>
+              <Translate id="homepage.agent.card3.desc">
+                Agents must not invent body-AST obligations or treat `@nudo:case` as contracts.
+                Entry `any` ≠ `unknown`. Day 0 is `check`; Day 1 is `contract` + `check`.
+              </Translate>
+            </p>
+            <code className="path-cmd">actual ⊭ expected · nudo:constraint-violated</code>
+          </article>
+          <article className="agent-card">
+            <h3>
+              <Translate id="homepage.agent.card4.title">Agent entrypoint</Translate>
+            </h3>
+            <p>
+              <Translate id="homepage.agent.card4.desc">
+                Publish `agents.md` + `llms.txt` so coding agents can set up Nudo without guessing
+                product nouns. Paste the setup block into your agent and go.
+              </Translate>
+            </p>
+            <code className="path-cmd">nudojs.github.io/nudo/agents.md</code>
+          </article>
+        </div>
+
+        <div className="agent-paste">
+          <div className="agent-paste-head">
+            <span className="term-panel-title">
+              <Translate id="homepage.agent.pasteTitle">Paste into your coding agent</Translate>
+            </span>
+          </div>
+          <pre className="agent-paste-pre">
+            <code>
+              {`Read https://nudojs.github.io/nudo/docs/reference/agents
+Primary gate: npx nudojs check <path>
+Contracts are *.nudo.js / @nudo:refine (alias @nudo:interface)
+Do not invent body-AST obligations. @nudo:case is debug-only.
+Entry params print as any; unknown = inference failed.`}
+            </code>
+          </pre>
+        </div>
+
+        <div className="demo-actions">
+          <Link className="button button--primary" to="/docs/reference/agents">
+            <Translate id="homepage.agent.ctaDocs">Agent docs</Translate>
+          </Link>
+          <Link className="button button--secondary" to="/docs/guides/agent-integration">
+            <Translate id="homepage.agent.ctaMcp">Agent integration</Translate>
+          </Link>
+          <Link className="button button--secondary" to="/docs/api/agent">
+            <Translate id="homepage.agent.ctaApi">LSP agent API</Translate>
+          </Link>
+          <a
+            className="button button--secondary"
+            href="https://nudojs.github.io/nudo/agents.md"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Translate id="homepage.agent.ctaAgentsMd">agents.md</Translate>
+          </a>
+          <a
+            className="button button--secondary"
+            href="https://nudojs.github.io/nudo/llms.txt"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Translate id="homepage.agent.ctaLlms">llms.txt</Translate>
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const PATHS: {
+  eyebrow: string;
+  title: string;
+  desc: string;
+  to: string;
+  cta: string;
+}[] = [
+  {
+    eyebrow: "homepage.paths.card1.eyebrow",
+    title: "homepage.paths.card1.title",
+    desc: "homepage.paths.card1.desc",
+    to: "/docs/getting-started/quick-start",
+    cta: "homepage.paths.card1.cta",
+  },
+  {
+    eyebrow: "homepage.paths.card2.eyebrow",
+    title: "homepage.paths.card2.title",
+    desc: "homepage.paths.card2.desc",
+    to: "/docs/guides/vs-typescript",
+    cta: "homepage.paths.card2.cta",
+  },
+  {
+    eyebrow: "homepage.paths.card3.eyebrow",
+    title: "homepage.paths.card3.title",
+    desc: "homepage.paths.card3.desc",
+    to: "/docs/guides/migrating-js",
+    cta: "homepage.paths.card3.cta",
+  },
+  {
+    eyebrow: "homepage.paths.card4.eyebrow",
+    title: "homepage.paths.card4.title",
+    desc: "homepage.paths.card4.desc",
+    to: "/docs/guides/recipes",
+    cta: "homepage.paths.card4.cta",
+  },
+  {
+    eyebrow: "homepage.paths.card5.eyebrow",
+    title: "homepage.paths.card5.title",
+    desc: "homepage.paths.card5.desc",
+    to: "/docs/reference/agents",
+    cta: "homepage.paths.card5.cta",
+  },
+];
+
+function PersonaSection() {
+  return (
+    <section className="paths-section" id="paths">
+      <div className="container">
+        <p className="section-eyebrow">
+          <Translate id="homepage.paths.eyebrow">Start by role</Translate>
+        </p>
+        <h2 className="section-title">
+          <Translate id="homepage.paths.title">Pick your entry path</Translate>
+        </h2>
+        <p className="section-lead">
+          <Translate id="homepage.paths.lead">
+            The docs are organized by audience. Choose the path that matches your situation —
+            every card lands on a runnable first step.
+          </Translate>
+        </p>
+        <div className="path-grid">
+          {PATHS.map((p) => (
+            <Link key={p.to} className="path-card" to={p.to}>
+              <span className="path-eyebrow">
+                <Translate id={p.eyebrow}>Role</Translate>
+              </span>
+              <h3>
+                <Translate id={p.title}>Path</Translate>
+              </h3>
+              <p>
+                <Translate id={p.desc}>Path description.</Translate>
+              </p>
+              <span className="path-cta">
+                <Translate id={p.cta}>Start</Translate>
+                <span aria-hidden="true"> →</span>
+              </span>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function CtaSection() {
   return (
     <section className="cta-section">
@@ -554,12 +1494,12 @@ function CtaSection() {
         </h2>
         <p className="cta-sub">
           <Translate id="homepage.cta.sub">
-            Your JS stays JS — observe intermediates in the browser, or enforce sharper contracts
-            on your own files with the CLI.
+            Observe intermediates in the browser, gate contracts on your own files with the CLI,
+            or point a coding agent at the same Abs face. Your JS stays JS.
           </Translate>
         </p>
         <div className="cta-cli">
-          <code>npx nudojs check ./src/app.js</code>
+          <code>npx nudojs check ./pricing.js</code>
         </div>
         <div className="hero-buttons">
           <Link className="button button--primary button--lg hero-btn-primary" to="/playground">
@@ -570,6 +1510,12 @@ function CtaSection() {
             to="/docs/getting-started/installation"
           >
             <Translate id="homepage.cta.install">Install</Translate>
+          </Link>
+          <Link
+            className="button button--secondary button--lg hero-btn-secondary"
+            to="/docs/reference/agents"
+          >
+            <Translate id="homepage.cta.agents">Agents</Translate>
           </Link>
         </div>
       </div>
@@ -586,11 +1532,13 @@ export default function Home(): JSX.Element {
     >
       <HeroSection />
       <main>
-        <ProofSection />
-        <FeaturesSection />
+        <ProofStrip />
+        <PersonaSection />
+        <DemoSection />
+        <AdoptStrip />
         <BeyondSection />
-        <ComparisonSection />
         <TrialSection />
+        <AgentSection />
         <CtaSection />
       </main>
     </Layout>
