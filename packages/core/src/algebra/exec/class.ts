@@ -625,10 +625,9 @@ export function $invoke(
   }
   // number 字面量：toString(radix)/toFixed/toExponential/toPrecision/valueOf
   // 精确折叠——字面量实参真执行（ToIntegerOrInfinity 截断、NaN→缺省等由原生
-  // 处理），非法参数硬抛 RangeError、符号实参硬抛 TypeError；抽象实参保守
+  // 处理），非法参数硬抛 RangeError、符号实参硬抛 TypeError；抽象实参保守。
+  // 未接管的其它方法不得在此 return——继续后续诊断路径（no-method）。
   if (thisVal.shape.k === "prim" && thisVal.shape.type === "number") {
-    const nv = litValue(thisVal);
-    if (typeof nv !== "number") return unknown;
     if (method === "valueOf") return thisVal;
     if (
       method === "toString" ||
