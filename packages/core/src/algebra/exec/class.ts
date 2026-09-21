@@ -926,32 +926,28 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   }
   if (method === "keys") {
     if (shape.k === "tuple") {
-      const holes = shape.holes ?? [];
+      // 原生数组迭代器：0..length-1 全下标（不跳过 hole），键是 number
+      // （自有属性键才是字符串——Object.keys / for-in 不受此影响）
       return abs(
         {
           k: "tuple",
-          elements: shape.elements
-            .map((el, i) => ({ el, i }))
-            .filter(({ i }) => !holes.includes(i))
-            .map(({ i }) => strLit(String(i))),
+          elements: shape.elements.map((_, i) => numLit(i)),
         },
         undefined,
         undefined,
         "exact",
       );
     }
-    return abs({ k: "arr", element: strLit("0") }, undefined, undefined, "partial");
+    return abs({ k: "arr", element: unknownIdx() }, undefined, undefined, "partial");
   }
   if (method === "values") {
     if (shape.k === "tuple") {
       const holes = shape.holes ?? [];
+      // 原生迭代器不跳过 hole：hole 位按 Get 语义产出 undefined
       return abs(
         {
           k: "tuple",
-          elements: shape.elements
-            .map((el, i) => ({ el, i }))
-            .filter(({ i }) => !holes.includes(i))
-            .map(({ el }) => el),
+          elements: shape.elements.map((el, i) => (holes.includes(i) ? undefAbs() : el)),
         },
         undefined,
         undefined,
@@ -966,12 +962,14 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       return abs(
         {
           k: "tuple",
-          elements: shape.elements
-            .map((el, i) => ({ el, i }))
-            .filter(({ i }) => !holes.includes(i))
-            .map(({ el, i }) =>
-              abs({ k: "tuple", elements: [strLit(String(i)), el] }, undefined, undefined, "exact"),
+          elements: shape.elements.map((el, i) =>
+            abs(
+              { k: "tuple", elements: [numLit(i), holes.includes(i) ? undefAbs() : el] },
+              undefined,
+              undefined,
+              "exact",
             ),
+          ),
         },
         undefined,
         undefined,
@@ -982,7 +980,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       {
         k: "arr",
         element: abs(
-          { k: "tuple", elements: [strLit("0"), shape.element] },
+          { k: "tuple", elements: [unknownIdx(), shape.element] },
           undefined,
           undefined,
           "partial",
