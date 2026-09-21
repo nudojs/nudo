@@ -138,6 +138,19 @@ describe("B-path JSON.stringify folding", () => {
     );
   });
 
+  it("reviver arg stays conservative (per-key transform unmodeled)", () => {
+    expect(
+      litValue(
+        call(
+          `export function f() { return JSON.parse('{"a":1}', (k,v) => k === 'a' ? 9 : v).a; }`,
+        ).result,
+      ),
+    ).toBe(undefined);
+    expect(
+      litValue(call(`export function f() { return JSON.parse('5', (k,v) => v + 1); }`).result),
+    ).toBe(undefined);
+  });
+
   it("skips non-enumerable slots (defineProperty descriptor honored)", () => {
     expect(
       litValue(

@@ -8,7 +8,7 @@ import { termToString } from "./term.ts";
 import type { Pred } from "./pred.ts";
 import { pTrue, predToString } from "./pred.ts";
 import type { Abs, Shape, Confidence } from "./abs.ts";
-import { abs, confJoin, litValue, unknown, never } from "./abs.ts";
+import { abs, confJoin, litValue, unknown, never, strLit } from "./abs.ts";
 import { noteDerivationJoin } from "./derivation.ts";
 
 export type Slot = { value: Abs; optional?: boolean; readonly?: boolean };
@@ -71,7 +71,34 @@ export function spread(base: Abs, over: Abs): Abs {
     return unknown;
   }
   if (!isObj(over)) {
-    // over 是 unknown：base 字段都可能被覆盖 → open
+    // 原生非对象源：{...'ab'} 按 code point 数字键展开、{...[1,2]} 按
+    // 下标键展开（hole 跳过）、prim 字面量（number/bool/null/undefined/
+    // bigint/symbol）忽略；抽象（未知长 arr/抽象字符串/brand 等）保守 open
+    const t = over.term;
+    if (t?.op === "lit") {
+      const v = t.value;
+      if (
+        v === null ||
+        v === undefined ||
+        typeof v === "number" ||
+        typeof v === "boolean" ||
+        typeof v === "bigint" ||
+        typeof v === "symbol"
+      ) {
+        // 忽略源：base 原样（无 base 的裸 spread 由调用方保证 base 非空）
+        if (!isObj(base)) return unknown;
+        return { shape: { ...base.shape }, conf: confJoin(base.conf, over.conf) };
+      }
+    }
+    const indexSlots = spreadIndexSlots(over);
+    if (indexSlots && isObj(base)) {
+      const slots: Record<string, Slot> = { ...base.shape.slots };
+      for (const [k, s] of Object.entries(indexSlots)) slots[k] = s;
+      const shape: ObjShape = { k: "obj", slots };
+      if (base.shape.open) shape.open = true;
+      return { shape, conf: confJoin(base.conf, over.conf) };
+    }
+    // 既有保守路径：over 不可判定 → open
     if (!isObj(base)) return unknown;
     return {
       shape: { ...base.shape, open: true },
@@ -95,6 +122,30 @@ export function spread(base: Abs, over: Abs): Abs {
     shape.index = over.shape.index ?? base.shape.index;
   }
   return { shape, conf: confJoin(base.conf, over.conf) };
+}
+
+/** {...str} / {...arr} 的数字键投影：可确定 → 槽表；不可 → undefined */
+function spreadIndexSlots(over: Abs): Record<string, Slot> | undefined {
+  const s = over.shape;
+  if (s.k === "tuple") {
+    const slots: Record<string, Slot> = {};
+    const holes = s.holes ?? [];
+    s.elements.forEach((el, i) => {
+      if (holes.includes(i)) return; // hole 不展开（原生跳过）
+      slots[String(i)] = { value: el };
+    });
+    return slots;
+  }
+  const sv =
+    over.term?.op === "lit" && typeof over.term.value === "string" ? over.term.value : undefined;
+  if (sv !== undefined) {
+    // code point 展开（surrogate pair 合并——for...of 即 code point）
+    const slots: Record<string, Slot> = {};
+    let i = 0;
+    for (const ch of sv) slots[String(i++)] = { value: strLit(ch) };
+    return slots;
+  }
+  return undefined;
 }
 
 /**

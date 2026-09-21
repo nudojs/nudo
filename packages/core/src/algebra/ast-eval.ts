@@ -1305,6 +1305,14 @@ function evalNodeInner(
           const slot = getSlot((obj.shape as { slots: Record<string, { value: Abs }> }).slots, kl);
           if (slot) return ok(slot.value, phi, env);
         }
+        // obj[0] ≡ obj["0"]（原生数字键规范化为字符串）
+        if (typeof kl === "number" && obj.shape.k === "obj") {
+          const slot = getSlot(
+            (obj.shape as { slots: Record<string, { value: Abs }> }).slots,
+            String(kl),
+          );
+          if (slot) return ok(slot.value, phi, env);
+        }
         // 数组/元组下标
         if (typeof kl === "number") {
           if (obj.shape.k === "tuple") {

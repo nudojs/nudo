@@ -426,6 +426,8 @@ function absToJsonNative(a: Abs, seen: Set<object>): unknown | typeof NOT_LITERA
     return out;
   }
   if (s.k === "obj") {
+    // open/带 index 的对象有未知键：序列化结果不确定
+    if (s.open || s.index) return NOT_LITERAL;
     seen.add(a as object);
     const out: Record<string, unknown> = {};
     const flags = getPropFlags(a);
@@ -463,6 +465,8 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
     // 无实参 ≡ 实参 undefined：原生 ToString(undefined)="undefined" → SyntaxError
     const a0Abs = args[0];
     if (!a0Abs) throw new NudoThrow(errorTypeAbs("SyntaxError"));
+    // reviver 实参：原生逐键变换——Abs 侧不建模，任何存在性都保守 unknown
+    if (args[1]) return unknown;
     const t = a0Abs.term;
     if (t?.op !== "lit") return unknown; // 抽象实参：保守
     const v = t.value;
