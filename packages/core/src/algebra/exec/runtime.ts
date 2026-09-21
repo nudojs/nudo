@@ -7,7 +7,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Abs } from "../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../abs.ts";
 import { lit } from "../term.ts";
-import { absFunction } from "../abs-fn.ts";
+import { absFunction, getFnImpl } from "../abs-fn.ts";
 import {
   beginCollectionFork,
   endCollectionFork,
@@ -16,7 +16,7 @@ import {
 } from "../collections.ts";
 import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs, isNullishLitAbs, definitelyNotNullishShape, bitandAbs, bitorAbs, bitxorAbs, bitnotAbs, shlAbs, shrAbs, ushrAbs, powAbs, toNumberAbs } from "../surface.ts";
-import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape, type Slot } from "../objects.ts";
+import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape, type Slot, isNullProtoObj, migrateNullProto, getSlot, canonicalArrayIndex } from "../objects.ts";
 import {
   isMapAbs,
   isSetAbs,
@@ -26,9 +26,10 @@ import {
   mapSizeAbs,
   setSizeAbs,
 } from "../collections.ts";
-import { shouldWidenArrayLiteral, widenedArrayConf } from "../containers.ts";
+import { shouldWidenArrayLiteral, widenedArrayConf, TUPLE_MATERIALIZE_CAP } from "../containers.ts";
+import { registerMatchIter, matchIterElements } from "./match-iter.ts";
 import { leqAbs } from "../leq.ts";
-import { evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants } from "../builtins.ts";
+import { evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants, regexBrandAbsFrom } from "../builtins.ts";
 import type { Phi } from "../pred.ts";
 import { pTrue } from "../pred.ts";
 import {
@@ -37,9 +38,30 @@ import {
   noteAnyMemberMayThrow,
   noteNullishMemberThrows,
   anyMemberResult,
+  OBJECT_PROTO_NAMES,
 } from "./calls.ts";
 import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, recordMayThrow, type MayThrowEffect } from "./may-throw.ts";
-import { getBClass, classNameOfValue, markClassValue } from "./class-registry.ts";
+import { getBClass } from "./class-registry.ts";
+import { classNameOfValue, markClassValue } from "../class-mark.ts";
+import { $call } from "./call.ts";
+import { NudoThrow, isNudoThrow } from "./nudo-throw.ts";
+
+export { NudoThrow, isNudoThrow };
+
+/** 就地改写 shape/conf：Abs 身份不变（引用语义）；旧 term/pred 不再描述新值，必须清除 */
+function writeInPlace(target: Abs, next: Abs): Abs {
+  target.shape = next.shape;
+  target.conf = next.conf;
+  target.term = undefined;
+  target.pred = undefined;
+  return target;
+}
+
+/** 调用方已直接改 shape 时的 term/pred 清理 */
+function clearStaleTermPred(v: Abs): void {
+  v.term = undefined;
+  v.pred = undefined;
+}
 
 /** 当前路径前提 Φ（transpile 后的 fork 会压栈） */
 let phi: Phi = pTrue;
@@ -199,30 +221,6 @@ export function $toNumber(a: Abs): Abs {
 
 // --- in / instanceof / delete（transpile 运算符路由；与 ast-eval 同口径） ---
 
-/** Object.prototype 上的恒有成员（`in` 判定：闭对象缺自有槽仍可能经原型命中） */
-const OBJECT_PROTO_NAMES = new Set([
-  "constructor",
-  "toString",
-  "valueOf",
-  "toLocaleString",
-  "hasOwnProperty",
-  "isPrototypeOf",
-  "propertyIsEnumerable",
-  "__proto__",
-]);
-
-/** ES 规范数组下标（无前导零、< 2^32-1）；非规范键返回 undefined */
-function canonicalArrayIndex(v: unknown): number | undefined {
-  if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 4294967295) {
-    return v;
-  }
-  if (typeof v === "string" && /^(0|[1-9]\d*)$/.test(v)) {
-    const n = Number(v);
-    if (n < 4294967295) return n;
-  }
-  return undefined;
-}
-
 /**
  * `key in obj`：闭形状精确判定（含 Object.prototype 名、数组下标/length、
  * class 方法/访问器与内建 brand 方法）；prim/nullish 接收者原生抛 TypeError →
@@ -244,7 +242,10 @@ export function $in(key: Abs, o: Abs): Abs {
   if (o.shape.k === "tuple") {
     if (kv === "length") return boolLit(true);
     const idx = canonicalArrayIndex(kv);
-    if (idx !== undefined) return boolLit(idx < o.shape.elements.length);
+    if (idx !== undefined) {
+      if (o.shape.holes?.includes(idx)) return boolLit(false);
+      return boolLit(idx < o.shape.elements.length);
+    }
     return boolLit(false);
   }
   if (o.shape.k === "arr") return bool(); // 抽象数组：索引域未知
@@ -259,9 +260,9 @@ export function $in(key: Abs, o: Abs): Abs {
           : undefined
         : o.shape;
     if (!objShape) return bool();
-    if (keyStr in objShape.slots) {
-      const slot = objShape.slots[keyStr];
-      if (!slot || slot.optional) return bool(); // optional 槽可能缺席
+    const slot = getSlot(objShape.slots, keyStr);
+    if (slot) {
+      if (slot.optional) return bool(); // optional 槽可能缺席
       return boolLit(true);
     }
     // class 实例：原型链上的方法/访问器/内建 brand 方法
@@ -269,6 +270,8 @@ export function $in(key: Abs, o: Abs): Abs {
       return boolLit(true);
     }
     if (objShape.open) return bool();
+    // Object.create(null)：无 Object.prototype 可回退，缺自有槽即缺席
+    if (o.shape.k === "obj" && isNullProtoObj(o)) return boolLit(false);
     return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
   }
   if (o.shape.k === "fn") {
@@ -279,6 +282,9 @@ export function $in(key: Abs, o: Abs): Abs {
     if (o.shape.eff === "promise" && PROMISE_PROTO_NAMES.has(keyStr)) return boolLit(true);
     return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
   }
+  // unknown/any：无信息，不得按 Object.prototype 成员误判（Object.create 未建模时
+  // "toString" in o 曾折 true）
+  if (o.shape.k === "unknown" || o.shape.k === "any") return bool();
   return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
 }
 
@@ -346,11 +352,35 @@ const BUILTIN_CTOR_NAMES = new Set([
  * `x instanceof Right`（Right 为标识符名）：按左值形状精确判定。
  * nullish 左侧原生抛 TypeError → unknown；未知用户构造器名 → boolean（不得 exact false）。
  */
-export function $instanceof(left: Abs, rightName: string): Abs {
+export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
   // null/undefined instanceof X：原生抛 TypeError
   if (isNullishLitAbs(left)) return unknown;
+  // 自定义 @@hasInstance：RHS 值带可调用槽则调用并布尔化结果
+  // （v instanceof o ≡ o[Symbol.hasInstance](v)）；槽在但不可调用 → 抽象
+  if (rightVal) {
+    const rv = asAbsVal(rightVal);
+    if (rv.shape.k === "obj") {
+      const slot = rv.shape.slots["@@hasInstance"];
+      if (slot && !slot.optional) {
+        // 槽在但不可调用 → 原生 TypeError；保守折抽象 boolean
+        if (slot.value.shape.k !== "fn" && getFnImpl(slot.value) === undefined) {
+          return bool();
+        }
+        // 与 $invoke bindThis 同口径：receiver 注入首参（impl 首参是 __this）
+        const r = $call(slot.value, [rv, left]);
+        const bv = litValue(r);
+        // 原生把返回值 ToBoolean（return 0 → false、'yes' → true）
+        if (bv !== undefined) return boolLit(Boolean(bv));
+        return bool();
+      }
+    }
+  }
   switch (left.shape.k) {
     case "brand":
+      // 类值本身是 constructor 函数：instanceof Function/Object 恒 true
+      if (classNameOfValue(left as object) !== undefined) {
+        return boolLit(rightName === "Function" || rightName === "Object");
+      }
       return boolLit(
         rightName === "Object" || bClassChain(left.shape.name).includes(rightName),
       );
@@ -360,6 +390,9 @@ export function $instanceof(left: Abs, rightName: string): Abs {
       if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
       return bool(); // 可能是 Array 子类
     case "obj":
+      // Object.create(null)：原型链 null 终止——任何构造器的 instanceof 恒 false
+      //（含 Object 与内建/自定义构造器）。标记随 $set/$del 迁移（objects.ts 侧表）。
+      if (isNullProtoObj(left)) return boolLit(false);
       if (rightName === "Object") return boolLit(true);
       if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
       return bool(); // Object.create(C.prototype)
@@ -382,7 +415,8 @@ export function $instanceof(left: Abs, rightName: string): Abs {
     case "prim":
       return boolLit(false); // 原始值无装箱
     case "sum": {
-      const parts = left.shape.members.map((m) => $instanceof(m, rightName));
+      // 成员分发须带上 RHS 值：@@hasInstance 对 sum 成员同样适用
+      const parts = left.shape.members.map((m) => $instanceof(m, rightName, rightVal));
       let decided: boolean | undefined;
       let undecided = false;
       for (const p of parts) {
@@ -434,8 +468,9 @@ export function $delRes(o: Abs, _key: Abs): Abs {
   const kv = litValue(_key);
   const flags =
     kv !== undefined ? getPropFlags(o)?.get(String(kv)) : undefined;
-  if (st === "frozen" || st === "sealed") return boolLit(false);
-  if (flags?.configurable === false) return boolLit(false);
+  // strict：frozen/sealed/non-configurable 删除 TypeError（表达式与语句同口径）
+  if (st === "frozen" || st === "sealed") throwStrictWrite();
+  if (flags?.configurable === false) throwStrictWrite();
   if (st === "nonext") return boolLit(true); // 属性仍可删（仅不可加）
   if (o.shape.k === "obj" || o.shape.k === "brand") {
     const objShape: ObjShape | undefined =
@@ -475,8 +510,8 @@ export function $del(o: Abs, key: Abs): Abs {
     );
   }
   const st = extStateOf(o);
-  // frozen/sealed：删静默失败（delete 返回 false，容器不变）
-  if (st === "frozen" || st === "sealed") return o;
+  // frozen/sealed：删除 TypeError（strict 硬抛；表达式 delete 走 $delRes 返回 false）
+  if (st === "frozen" || st === "sealed") throwStrictWrite();
   if (o.shape.k === "brand") {
     const inner = $del(o.shape.shape, key);
     if (inner === o.shape.shape) return o;
@@ -488,32 +523,37 @@ export function $del(o: Abs, key: Abs): Abs {
   const keyStr =
     typeof kv === "number" ? String(kv) : typeof kv === "string" ? kv : undefined;
   if (o.shape.k === "obj" && keyStr !== undefined) {
-    if (getPropFlags(o)?.get(keyStr)?.configurable === false) return o;
+    if (getPropFlags(o)?.get(keyStr)?.configurable === false) throwStrictWrite();
     if (o.shape.open) return o;
-    if (!(keyStr in o.shape.slots) && !lookupObjAccessor(o, keyStr)) return o; // 无此槽且无访问器：no-op
-    const slots: Record<string, Slot> = {};
-    for (const [k, slot] of Object.entries(o.shape.slots)) {
-      if (k !== keyStr) slots[k] = slot;
+    if (!getSlot(o.shape.slots, keyStr) && !lookupObjAccessor(o, keyStr)) return o; // 无此槽且无访问器：no-op
+    // 就地删槽（引用语义：别名同步）；identity 不变故侧表免迁移，
+    // 对象字面量自有访问器随键删除（原生 own accessor 是自有属性）
+    delete o.shape.slots[keyStr];
+    const am = accessorTable.get(o);
+    if (am) {
+      am.delete(keyStr);
+      if (am.size === 0) accessorTable.delete(o);
     }
-    const next = abs({ k: "obj", slots }, undefined, undefined, o.conf);
-    // 对象字面量自有访问器随 delete 移除（原生 own accessor 是自有属性）
-    migrateAccessors(o, next, keyStr);
-    migrateInvariants(o, next);
-    return next;
+    clearStaleTermPred(o);
+    return o;
   }
   if (o.shape.k === "tuple") {
     const idx = canonicalArrayIndex(kv);
-    if (idx === undefined) return o;
-    const els = o.shape.elements.map((e, i) => (i === idx ? $lit(undefined) : e));
-    return abs({ k: "tuple", elements: els }, undefined, undefined, o.conf);
+    if (idx === undefined || idx >= o.shape.elements.length) return o; // 越界 delete 不影响数组
+    o.shape.elements[idx] = $lit(undefined);
+    if (!o.shape.holes) o.shape.holes = [];
+    if (!o.shape.holes.includes(idx)) o.shape.holes.push(idx);
+    clearStaleTermPred(o);
+    return o;
   }
   if (o.shape.k === "arr") {
-    return abs(
-      { k: "arr", element: joinAbs(o.shape.element, $lit(undefined)) },
-      undefined,
-      undefined,
-      "partial",
-    );
+    o.shape = {
+      k: "arr",
+      element: joinAbs(o.shape.element, $lit(undefined)),
+    };
+    o.conf = "partial";
+    clearStaleTermPred(o);
+    return o;
   }
   return o;
 }
@@ -607,9 +647,35 @@ export function $fnVal(
 ): Abs {
   return absFunction(params, {
     body: noBody,
-    apply: (args) => callAtFunctionBoundary(() => impl(...args)),
+    // bindThis（对象方法）：receiver 走首参注入，无宿主 this；
+    // 非方法 fn：宿主 this 传递（call/apply/bind 的 thisArg 经 $rawThis 进入函数体）
+    apply: opts?.bindThis
+      ? (args) => callAtFunctionBoundary(() => impl(...args))
+      : (args, thisVal) => callAtFunctionBoundary(() => impl.apply(thisVal as never, args)),
     ...(opts?.bindThis ? { bindThis: true } : {}),
   });
+}
+
+/**
+ * 宿主 this → Abs：函数体 prologue 用它承接 call/apply/bind 传入的 thisArg。
+ * Abs 原样返回；宿主 undefined（普通调用/call 缺 thisArg）→ $lit(undefined)。
+ * B 路径产物是 new Function 拼接（sloppy），裸调用的宿主 this 泄漏为
+ * globalThis——归一到 $lit(undefined)（strict 模块语义下的 this）。
+ */
+export function $rawThis(v: unknown): Abs {
+  if (v === undefined || v === globalThis) return $lit(undefined);
+  if (v && typeof v === "object" && "shape" in (v as object)) return v as Abs;
+  return $lit(v as never);
+}
+
+/**
+ * strict 模块语义下写不可变目标（frozen/sealed 新键/nonext 新键/
+ * writable:false/getter-only/non-configurable 删）→ hard TypeError。
+ * 抛 NudoThrow 由 catch 转译吸收为 TypeError 绑定；无 catch 时函数中断
+ * （never + throws），callTranspiledExportFull 上报 L2 entry-may-throw。
+ */
+function throwStrictWrite(): never {
+  throw new NudoThrow(errorTypeAbs("TypeError"));
 }
 
 /** 字面量 → Abs（transpile 侧数字/字符串/布尔/null/undefined） */
@@ -942,8 +1008,17 @@ export function* $forIter(
       yield { state: s, test: t, afterBody: s };
       return;
     }
-    const afterBody = body(s);
+    let afterBody: Abs = s;
+    let broke = false;
+    try {
+      afterBody = body(s);
+    } catch (e) {
+      if (isNudoBreak(e)) broke = true;
+      else if (isNudoContinue(e)) afterBody = s; // 体提前结束
+      else throw e;
+    }
     yield { state: s, test: t, afterBody };
+    if (broke) return;
     s = step(afterBody);
   }
 }
@@ -961,6 +1036,8 @@ export function $for(
   opts?: {
     pack?: () => Abs;
     unpack?: (s: Abs) => void;
+    /** 标签循环（`outer: for …`）：仅吸收同标签 break/continue 信号 */
+    label?: string;
   },
 ): Abs {
   let state = init;
@@ -1000,8 +1077,23 @@ export function $for(
     try {
       afterBody = body(state);
     } catch (e) {
-      if (isNudoReturn(e) || isNudoThrow(e)) throw e;
-      throw e;
+      // break 吸收 → 本轮为最终态后退出；continue 吸收 → 体提前完成，
+      // 用 pack 收集已发生的绑定写（continue 前语句的副作用保留）
+      if (isNudoBreak(e, opts?.label)) {
+        snapCounter();
+        snapExt();
+        applyExtJoin();
+        return exitJoin ?? state;
+      }
+      if (isNudoContinue(e, opts?.label)) {
+        // 体未走完 return；循环变量已发生的写无法从调用点闭包读取
+        // （init 以字面量入参，JS 作用域无该绑定）——以 state 近似
+        afterBody = state;
+      } else if (isNudoReturn(e) || isNudoThrow(e)) {
+        throw e;
+      } else {
+        throw e;
+      }
     }
     const next = step(afterBody);
     // 抽象条件：本轮 body 完成后的绑定也是合法出口（下一轮 test 可能为假）
@@ -1051,6 +1143,16 @@ function tupleOrWiden(els: Abs[], conf: Confidence): Abs {
 /** 数组字面量 → ≤cap tuple（逐元素精确）/ >cap arr；策略与 ast-eval 同源（containers.ts） */
 export function $arr(items: Abs[]): Abs {
   return tupleOrWiden(items.map(asAbsVal), "exact");
+}
+
+/**
+ * 带空洞的数组字面量（[1,,3]）：hole 槽位置为 undefined 值但 `in` 判定 false。
+ * 超 cap 退化 arr 时丢弃 hole 精度（元素 join，长度语义已由 arr 承接）。
+ */
+export function $arrWithHoles(items: Abs[], holes: number[]): Abs {
+  const base = $arr(items);
+  if (holes.length === 0 || base.shape.k !== "tuple") return base;
+  return abs({ k: "tuple", elements: base.shape.elements, holes }, undefined, undefined, base.conf);
 }
 
 const ARR_MUTATORS = new Set([
@@ -1109,7 +1211,7 @@ function clampWindow(
 }
 
 function copyWithinTuple(
-  shape: { k: "tuple"; elements: Abs[] } | { k: "arr"; element: Abs },
+  shape: { k: "tuple"; elements: Abs[]; holes?: number[] } | { k: "arr"; element: Abs },
   vals: Abs[],
 ): Abs {
   const t = toIOI(vals[0]);
@@ -1125,27 +1227,54 @@ function copyWithinTuple(
     }
     const len = shape.elements.length;
     const win = clampWindow(len, t ?? 0, s ?? 0, e ?? len);
+    const origHoles = shape.holes ?? [];
     if (win) {
       const els = [...shape.elements];
+      const holesSet = new Set(origHoles);
       // 重叠且源在目标之后（s < t）：按规范倒序复制
       const backwards = (s ?? 0) < (t ?? 0) && win.s + (win.e - win.s) > win.t;
       const count = win.e - win.s;
-      if (backwards) {
-        for (let k = count - 1; k >= 0; k--) els[win.t + k] = els[win.s + k]!;
-      } else {
-        for (let k = 0; k < count; k++) els[win.t + k] = els[win.s + k]!;
+      // 源存在性按**原始** holes 快照判定（集合在循环中会变）
+      for (let kk = 0; kk < count; kk++) {
+        const k = backwards ? count - 1 - kk : kk;
+        const from = win.s + k;
+        const to = win.t + k;
+        const present = from < len && !origHoles.includes(from);
+        if (present) {
+          els[to] = els[from]!;
+          holesSet.delete(to);
+        } else {
+          // 源 hole/越界：删除目标槽（ES2023 DeletePropertyOrThrow）
+          els[to] = $lit(undefined);
+          holesSet.add(to);
+        }
       }
-      return abs({ k: "tuple", elements: els }, undefined, undefined, "path");
+      const holes = [...holesSet];
+      return abs(
+        { k: "tuple", elements: els, holes: holes.length > 0 ? holes : undefined },
+        undefined,
+        undefined,
+        "path",
+      );
     }
-    // 合法边界但 no-op（如 target≥len）：保持 tuple
-    return abs({ k: "tuple", elements: [...shape.elements] }, undefined, undefined, "path");
+    // 合法边界但 no-op（如 target≥len）：保持 tuple 与 holes
+    return abs(
+      {
+        k: "tuple",
+        elements: [...shape.elements],
+        holes: origHoles.length > 0 ? [...origHoles] : undefined,
+      },
+      undefined,
+      undefined,
+      "path",
+    );
   }
   // 抽象 arr：copyWithin 保持元素类型（sound）
   return abs({ k: "arr", element: shape.element }, undefined, undefined, "partial");
 }
 
-function fillTuple(
-  shape: { k: "tuple"; elements: Abs[] } | { k: "arr"; element: Abs },
+export function fillTuple(
+  shape: { k: "tuple"; elements: Abs[]; holes?: number[] } | { k: "arr"; element: Abs },
   vals: Abs[],
   arr: Abs,
 ): Abs {
@@ -1155,7 +1284,8 @@ function fillTuple(
   if (shape.k === "tuple") {
     const len = shape.elements.length;
     if (s === null || e === null) {
-      // 不可判定边界：任一槽可能被写 → 元素 join 回退（sound）
+      // 不可判定边界：任一槽可能被写 → 元素 join 回退；hole 可能被写实，
+      // 保守清空 holes（`in` 不得折 false 而原生已写实）
       return abs(
         { k: "tuple", elements: shape.elements.map((el) => joinAbs(el, v)) },
         undefined,
@@ -1165,11 +1295,22 @@ function fillTuple(
     }
     const start = Math.max(Math.min((s ?? 0) < 0 ? len + (s ?? 0) : (s ?? 0), len), 0);
     const end = Math.max(Math.min((e ?? len) < 0 ? len + (e ?? len) : (e ?? len), len), 0);
+    const holes = (shape.holes ?? []).filter((h) => h < start || h >= end);
     if (end <= start) {
-      return abs({ k: "tuple", elements: [...shape.elements] }, undefined, undefined, "path");
+      return abs(
+        { k: "tuple", elements: [...shape.elements], holes: holes.length > 0 ? holes : undefined },
+        undefined,
+        undefined,
+        "path",
+      );
     }
     const els = shape.elements.map((el, i) => (i >= start && i < end ? v : el));
-    return abs({ k: "tuple", elements: els }, undefined, undefined, "path");
+    return abs(
+      { k: "tuple", elements: els, holes: holes.length > 0 ? holes : undefined },
+      undefined,
+      undefined,
+      "path",
+    );
   }
   return abs(
     { k: "arr", element: joinAbs(shape.element, v) },
@@ -1179,22 +1320,90 @@ function fillTuple(
   );
 }
 
+/**
+ * 深拷贝可变容器（fork/switch 快照与循环 pack 用）。
+ * 容器写就地进行后（引用语义），分析分支/迭代的状态分离必须靠拷贝——
+ * 浅引用快照会让臂间/迭代间互相污染。
+ */
+export function $copy(a: Abs): Abs {
+  const s = a.shape;
+  // 所有可能挂 extState/propFlags 的形状都必须迁移不变性侧表：
+  // fork/switch 用 $copy 做快照，副本丢失 frozen/sealed 会让臂内写不再硬抛
+  if (s.k === "tuple") {
+    const next = abs(
+      {
+        k: "tuple",
+        elements: s.elements.map($copy),
+        holes: s.holes ? [...s.holes] : undefined,
+      },
+      a.term,
+      a.pred,
+      a.conf,
+    );
+    migrateInvariants(a, next);
+    return next;
+  }
+  if (s.k === "arr") {
+    const next = abs({ k: "arr", element: $copy(s.element) }, a.term, a.pred, a.conf);
+    migrateInvariants(a, next);
+    return next;
+  }
+  if (s.k === "obj") {
+    const slots: Record<string, Slot> = {};
+    for (const [k, v] of Object.entries(s.slots)) {
+      slots[k] = { ...v, value: $copy(v.value) };
+    }
+    const next = objOf(slots, {
+      index: s.index ? { key: $copy(s.index.key), value: $copy(s.index.value) } : undefined,
+      open: s.open,
+    });
+    next.conf = a.conf;
+    migrateAccessors(a, next);
+    migrateInvariants(a, next);
+    migrateNullProto(a, next);
+    return next;
+  }
+  if (s.k === "brand") {
+    const inner = $copy(s.shape);
+    const next = abs({ k: "brand", name: s.name, shape: inner }, a.term, a.pred, a.conf);
+    const clsName = classNameOfValue(a as object);
+    if (clsName) markClassValue(next as object, clsName);
+    migrateInvariants(a, next);
+    return next;
+  }
+  if (s.k === "eff") {
+    const next = abs({ k: "eff", eff: s.eff, inner: $copy(s.inner) }, a.term, a.pred, a.conf);
+    migrateInvariants(a, next);
+    return next;
+  }
+  if (s.k === "sum") {
+    return abs({ k: "sum", members: s.members.map($copy) }, a.term, a.pred, a.conf);
+  }
+  return a;
+}
+
+/** 数组/元组方法（push/pop/shift/unshift/splice/reverse/sort/copyWithin/fill）
+ *  的就地 mutator：Abs 身份不变（JS 引用语义——`const b = a; b.push(4)` 对 a
+ *  可见）；transpile 重绑 `a = $arrMutContainer(a, …)` 仍写回同一对象。 */
 export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   const shape = arr.shape;
   if (shape.k !== "tuple" && shape.k !== "arr") return arr;
   const st = extStateOf(arr);
-  // frozen：任何 mutator 静默失败（原生 push/pop 等抛 TypeError，值保持）；
-  // sealed/nonext：结构性扩展（push/unshift/splice 加元素）静默失败
-  if (st === "frozen") return arr;
+  // frozen：任何 mutator 原生 TypeError（strict 硬抛）；
+  // sealed/nonext：结构性扩展（push/unshift/splice 加元素）TypeError
+  if (st === "frozen") throwStrictWrite();
   if (
     (st === "sealed" || st === "nonext") &&
     (method === "push" || method === "unshift" || method === "splice")
   ) {
-    return arr;
+    throwStrictWrite();
   }
   const vals = args.map((a) => asAbsVal(a));
   const asArrEl = (els: Abs[]): Abs =>
     els.length > 0 ? els.reduce((x, y) => joinAbs(x, y)) : unknown;
+  // 就地写回：shape/conf 替换但 Abs 身份不变 → 别名（const b=a / 实参）同步；
+  // 旧 term/pred 不再描述新 shape，一并清除
+  const writeBack = (next: Abs): Abs => writeInPlace(arr, next);
 
   if (method === "push" || method === "unshift") {
     if (shape.k === "tuple") {
@@ -1202,28 +1411,38 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
         method === "push"
           ? [...shape.elements, ...vals]
           : [...vals, ...shape.elements];
+      // holes 迁移：push 原下标不变；unshift 整体右移 vals.length
+      const holes = shape.holes
+        ? shape.holes.map((h) => (method === "push" ? h : h + vals.length))
+        : undefined;
       const conf = vals.reduce(
         (acc, v) => confJoin(acc, v.conf),
         arr.conf as Confidence,
       );
-      return abs(
-        { k: "tuple", elements: els },
-        undefined,
-        undefined,
-        conf,
+      return writeBack(
+        abs({ k: "tuple", elements: els, holes }, undefined, undefined, conf),
       );
     }
     const el = vals.reduce((acc, v) => joinAbs(acc, v), shape.element);
-    return abs({ k: "arr", element: el }, undefined, undefined, confJoin(arr.conf, "path"));
+    return writeBack(
+      abs({ k: "arr", element: el }, undefined, undefined, confJoin(arr.conf, "path")),
+    );
   }
   if (method === "pop") {
     if (shape.k === "tuple") {
       if (shape.elements.length === 0) return arr;
-      return abs(
-        { k: "tuple", elements: shape.elements.slice(0, -1) },
-        undefined,
-        undefined,
-        arr.conf,
+      const newLen = shape.elements.length - 1;
+      // 弹出末槽：holes 截断到新长度（末位是 hole 则随之消失）
+      const holes = shape.holes
+        ? shape.holes.filter((h) => h < newLen)
+        : undefined;
+      return writeBack(
+        abs(
+          { k: "tuple", elements: shape.elements.slice(0, -1), holes: holes && holes.length > 0 ? holes : undefined },
+          undefined,
+          undefined,
+          arr.conf,
+        ),
       );
     }
     return arr;
@@ -1231,51 +1450,68 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   if (method === "shift") {
     if (shape.k === "tuple") {
       if (shape.elements.length === 0) return arr;
-      return abs(
-        { k: "tuple", elements: shape.elements.slice(1) },
-        undefined,
-        undefined,
-        arr.conf,
+      // 移除首槽：holes 整体左移 1（0 号 hole 随之消失）
+      const holes = shape.holes
+        ? shape.holes.map((h) => h - 1).filter((h) => h >= 0)
+        : undefined;
+      return writeBack(
+        abs(
+          { k: "tuple", elements: shape.elements.slice(1), holes: holes && holes.length > 0 ? holes : undefined },
+          undefined,
+          undefined,
+          arr.conf,
+        ),
       );
     }
     return arr;
   }
   if (method === "splice") {
     if (shape.k === "tuple") {
-      return abs(
-        { k: "arr", element: asArrEl(shape.elements) },
-        undefined,
-        undefined,
-        confJoin(arr.conf, "path"),
+      return writeBack(
+        abs(
+          { k: "arr", element: asArrEl(shape.elements) },
+          undefined,
+          undefined,
+          confJoin(arr.conf, "path"),
+        ),
       );
     }
     return arr;
   }
   if (method === "reverse") {
     if (shape.k === "tuple") {
-      return abs(
-        { k: "tuple", elements: [...shape.elements].reverse() },
-        undefined,
-        undefined,
-        arr.conf,
+      // holes 随元素镜像翻转：新下标 = len - 1 - 原下标
+      const len = shape.elements.length;
+      const holes = shape.holes
+        ? shape.holes.map((h) => len - 1 - h)
+        : undefined;
+      return writeBack(
+        abs(
+          { k: "tuple", elements: [...shape.elements].reverse(), holes },
+          undefined,
+          undefined,
+          arr.conf,
+        ),
       );
     }
     return arr;
   }
   if (method === "copyWithin") {
-    return copyWithinTuple(shape, vals);
+    return writeBack(copyWithinTuple(shape, vals));
   }
   if (method === "fill") {
-    return fillTuple(shape, vals, arr);
+    return writeBack(fillTuple(shape, vals, arr));
   }
   if (method === "sort") {
     // 顺序未建模：位次不可信，tuple 降为 arr（元素 join），避免 a[0] 假精确
     if (shape.k === "tuple") {
-      return abs(
-        { k: "arr", element: asArrEl(shape.elements) },
-        undefined,
-        undefined,
-        confJoin(arr.conf, "path"),
+      return writeBack(
+        abs(
+          { k: "arr", element: asArrEl(shape.elements) },
+          undefined,
+          undefined,
+          confJoin(arr.conf, "path"),
+        ),
       );
     }
     return arr;
@@ -1339,23 +1575,61 @@ export function $idx(a: Abs, i: Abs): Abs {
   return unknown;
 }
 
+/** 巨下标/巨 length 写入：不物化稀疏段（原生稀疏数组），就地降 arr 形状。
+ *  元素域 = 已知元素 ∪ undefined（hole/延长槽读 undefined）∪ 写入值。 */
+function widenTupleToArr(
+  els: Abs[],
+  holes: number[] | undefined,
+  value: Abs | undefined,
+): { k: "arr"; element: Abs } {
+  let joined: Abs = els.length > 0 ? els.reduce((x, y) => joinAbs(x, y)) : unknown;
+  if (holes && holes.length > 0) joined = joinAbs(joined, undef());
+  if (value !== undefined) joined = joinAbs(joined, value);
+  return { k: "arr", element: joined };
+}
+
 /** 下标写 a[i]=v → 新 tuple（越界写按 JS 语义增长，空洞为 undefined） */
 export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
   const iv = litValue(i);
   if (a.shape.k === "tuple" && typeof iv === "number" && Number.isInteger(iv) && iv >= 0) {
     const st = extStateOf(a);
-    if (st === "frozen") return a; // frozen 数组：下标写静默失败（sloppy）
+    if (st === "frozen") throwStrictWrite(); // frozen 数组：下标写 TypeError
     if (
       (st === "sealed" || st === "nonext") &&
       iv >= a.shape.elements.length
     ) {
-      return a; // 不可扩展：越界写（新下标）静默失败
+      throwStrictWrite(); // 不可扩展：越界写（新下标）TypeError
+    }
+    // i ≥ 2^32-1：非数组下标，原生是 expando 属性（length 不变、`i in a` 可见）。
+    // 数组模型无 expando 槽：就地降 arr（读/keys/in 全保守），不得假精确
+    if (iv >= 4294967295) {
+      a.shape = widenTupleToArr(a.shape.elements, a.shape.holes, value);
+      a.conf = confJoin(a.conf, "path");
+      clearStaleTermPred(a);
+      return a;
+    }
+    // 巨大合法下标：原生 length 增长到 iv+1 的稀疏数组；
+    // 分析不物化巨 tuple（OOM/DoS），就地降 arr
+    if (iv + 1 > TUPLE_MATERIALIZE_CAP) {
+      a.shape = widenTupleToArr(a.shape.elements, a.shape.holes, value);
+      a.conf = confJoin(a.conf, "path");
+      clearStaleTermPred(a);
+      return a;
     }
     const els = [...a.shape.elements];
-    while (els.length < iv) els.push(undef());
+    const holes = [...(a.shape.holes ?? [])];
+    while (els.length < iv) {
+      holes.push(els.length); // 越界写增长段是 hole（原生 [1].x=3 中间槽不存在）
+      els.push(undef());
+    }
     els[iv] = asAbsVal(value);
-    const next = abs({ k: "tuple", elements: els }, undefined, undefined, a.conf);
-    return next;
+    // 写 hole 位置：槽被填实，清除 hole 标记
+    const hi = holes.indexOf(iv);
+    if (hi >= 0) holes.splice(hi, 1);
+    // 就地写回：别名（const b=a）同步（JS 引用语义）
+    a.shape = { k: "tuple", elements: els, holes: holes.length > 0 ? holes : undefined };
+    clearStaleTermPred(a);
+    return a;
   }
   return a;
 }
@@ -1373,6 +1647,16 @@ export function $len(a: Abs): Abs {
   if (a.shape.k === "arr") {
     return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
   }
+  if (a.shape.k === "sum") {
+    // 全成员长度同字面量 → 折叠（fork join 后 a.length 常见场景）；
+    // 否则 number（成员长度可能不同）
+    const lens = a.shape.members.map((m) => $len(m));
+    const lits = lens.map(litValue);
+    if (lits.length > 0 && lits.every((v) => v !== undefined && v === lits[0])) {
+      return lens[0]!;
+    }
+    return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
+  }
   const sv = litValue(a);
   if (typeof sv === "string") {
     return abs(
@@ -1381,6 +1665,18 @@ export function $len(a: Abs): Abs {
       pTrue,
       "exact",
     );
+  }
+  // String 包装对象（Object('ab') / new String）：内层 length 槽
+  if (a.shape.k === "brand" && a.shape.name === "String") {
+    const inner = a.shape.shape;
+    if (inner.shape.k === "obj") {
+      const lenSlot = inner.shape.slots["length"];
+      if (lenSlot && !lenSlot.optional) return lenSlot.value;
+    }
+  }
+  // RegExpStringIterator（matchAll 结果）：无 length 属性 → undefined
+  if (a.shape.k === "brand" && a.shape.name === "RegExpMatchIterator") {
+    return undef();
   }
   return unknown;
 }
@@ -1459,6 +1755,15 @@ export function $arrRest(a: Abs, start: number): Abs {
 export function $concat(a: Abs, b: Abs): Abs {
   a = asAbsVal(a);
   b = asAbsVal(b);
+  // 字符串 spread：按 code points 拆（surrogate pair 合并；原生迭代语义）
+  const av = litValue(a);
+  if (typeof av === "string") {
+    return $concat($arr([...av].map((c) => $lit(c))), b);
+  }
+  const bv = litValue(b);
+  if (typeof bv === "string") {
+    return $concat(a, $arr([...bv].map((c) => $lit(c))));
+  }
   const as = a.shape;
   const bs = b.shape;
   if (as.k === "tuple" && bs.k === "tuple") {
@@ -1479,34 +1784,71 @@ export function $concat(a: Abs, b: Abs): Abs {
         : b;
     return abs({ k: "arr", element: joinAbs(ea, eb) }, undefined, undefined, "path");
   }
+  // 剩余：至少一侧非 tuple/arr/string 字面量。
+  // 字面量不可迭代值 spread → 原生 TypeError（[...5]/[...null]/[...true]）
+  const throwIfNonIterable = (x: Abs): void => {
+    if (x.term?.op !== "lit") return;
+    const v = x.term.value;
+    if (
+      typeof v === "number" ||
+      typeof v === "boolean" ||
+      typeof v === "bigint" ||
+      typeof v === "symbol" ||
+      v === null ||
+      v === undefined
+    ) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+  };
+  throwIfNonIterable(a);
+  throwIfNonIterable(b);
+  // Set/Map/matchAll 迭代器：条目精确展开（Map 是 entry 元组）；其余非容器
+  // （unknown/any/brand/obj/抽象字符串）长度未知——必须 arr join，不得折单元素
+  // tuple（[...x].length 假精确 1 的根因）
+  const expand = (x: Abs): Abs[] | null => {
+    if (isSetAbs(x)) return setElementsAbs(x);
+    if (isMapAbs(x)) return mapEntriesAbs(x);
+    const mi = matchIterElements(x);
+    if (mi) return mi;
+    return null;
+  };
   if (as.k === "tuple") {
-    // [...a, x]：非数组 x 作单元素
+    const be = expand(b);
+    if (be) {
+      return tupleOrWiden([...as.elements, ...be], confJoin(a.conf, b.conf));
+    }
+    // b 可能可迭代（元素域未知）：spread 并入的是 b 的元素而非 b 本身
     return abs(
-      { k: "tuple", elements: [...as.elements, b] },
+      { k: "arr", element: [...as.elements, unknown].reduce((x, y) => joinAbs(x, y)) },
       undefined,
       undefined,
-      confJoin(a.conf, b.conf),
+      "path",
     );
   }
-  if (bs.k === "tuple") {
-    return abs(
-      { k: "tuple", elements: [a, ...bs.elements] },
-      undefined,
-      undefined,
-      confJoin(a.conf, b.conf),
-    );
+  const ae = expand(a);
+  if (ae && bs.k === "tuple") {
+    return tupleOrWiden([...ae, ...bs.elements], confJoin(a.conf, b.conf));
   }
-  // 双侧皆非容器：元素 join
-  return abs({ k: "arr", element: joinAbs(a, b) }, undefined, undefined, "path");
+  // 双侧皆非精确容器：元素 join（Set∪Set / Set∪unknown / unknown∪unknown…）
+  return abs(
+    { k: "arr", element: joinAbs(ae ? ae.reduce((x, y) => joinAbs(x, y)) : unknown, expand(b) ? expand(b)!.reduce((x, y) => joinAbs(x, y)) : unknown) },
+    undefined,
+    undefined,
+    "path",
+  );
 }
 
-/** 元素列表（tuple 展开；arr 抽象；C1 Set/Map 逐条目）。
- *  Map 迭代语义是 entry `[key, value]` 元组，不是裸 value。 */
+/** 元素列表（tuple 展开；arr 抽象；C1 Set/Map 逐条目；matchAll 迭代器逐匹配项；
+ *  字符串按 code points）。Map 迭代语义是 entry `[key, value]` 元组，不是裸 value。 */
 export function $elems(a: Abs): Abs[] {
   if (a.shape.k === "tuple") return [...a.shape.elements];
   if (a.shape.k === "arr") return [a.shape.element];
   if (isSetAbs(a)) return setElementsAbs(a);
   if (isMapAbs(a)) return mapEntriesAbs(a);
+  const mi = matchIterElements(a);
+  if (mi) return mi;
+  const sv = litValue(a);
+  if (typeof sv === "string") return [...sv].map((c) => $lit(c));
   return [unknown];
 }
 
@@ -1516,6 +1858,51 @@ export function $elems(a: Abs): Abs[] {
  * - 具体空 tuple：体 0 次（不得用 `length || maxIters` 展开成 maxIters）
  * - 抽象 arr / 未知长度：0..maxIters 出口与 pack 状态 join
  */
+/**
+ * for-in 键序列：原生顺序为整数键升序 → 其余键按插入序；
+ * 数组 hole 槽不出键（读值为 undefined 但不可枚举）。仅自有可枚举键。
+ */
+export function $forInKeys(o: Abs): Abs {
+  const shape = o.shape;
+  if (shape.k === "sum") {
+    const members = shape.members.map((m) => $forInKeys(m));
+    return members.reduce((a, b) => joinAbs(a, b));
+  }
+  const isArrayIndexKey = (k: string): boolean => {
+    const n = Number(k);
+    return (
+      k !== "" &&
+      String(n) === k &&
+      Number.isInteger(n) &&
+      n >= 0 &&
+      n < 4294967295
+    );
+  };
+  if (shape.k === "obj") {
+    const keys = Object.keys(shape.slots);
+    const intKeys = keys.filter(isArrayIndexKey).sort((a, b) => Number(a) - Number(b));
+    const strKeys = keys.filter((k) => !isArrayIndexKey(k));
+    return $arr([...intKeys, ...strKeys].map((k) => $lit(k)));
+  }
+  if (shape.k === "tuple") {
+    const idxs: number[] = [];
+    for (let i = 0; i < shape.elements.length; i++) {
+      if (shape.holes?.includes(i)) continue;
+      idxs.push(i);
+    }
+    return $arr(idxs.map((i) => $lit(String(i))));
+  }
+  if (shape.k === "arr") {
+    // 抽象数组：索引域未知，单代表元素迭代（与 $forOf 抽象近似同口径）
+    return abs({ k: "arr", element: $lit("0") }, undefined, undefined, "partial");
+  }
+  const sv = litValue(o);
+  if (typeof sv === "string") {
+    return $arr(Array.from({ length: sv.length }, (_, i) => $lit(String(i))));
+  }
+  return $arr([]);
+}
+
 export function $forOf(
   iterable: Abs,
   body: (item: Abs, index: Abs) => void,
@@ -1523,6 +1910,8 @@ export function $forOf(
   opts?: {
     pack?: () => Abs;
     unpack?: (s: Abs) => void;
+    /** 标签循环：仅吸收同标签 break/continue 信号 */
+    label?: string;
   },
 ): void {
   const pack = opts?.pack;
@@ -1540,10 +1929,18 @@ export function $forOf(
 
   const shape = iterable.shape;
   const items = $elems(iterable);
-  // tuple / 确切 Set·Map 条目数 → 有界展开；抽象 arr 与 maybeAbsent 仍 0..max join
+  const sv = litValue(iterable);
+  // tuple / 确切 Set·Map 条目数 / 字符串字面量 code points → 有界展开；
+  // 抽象 arr 与 maybeAbsent 仍 0..max join
   const knownLen =
-    shape.k === "tuple" ? shape.elements.length : collectionExactLen(iterable);
-  // 非具体容器：长度未知（可能空、可能更长）→ 0..max 出口都 join
+    shape.k === "tuple"
+      ? shape.elements.length
+      : typeof sv === "string"
+        ? [...sv].length
+        : collectionExactLen(iterable);
+  // 非具体容器：长度未知（可能空、可能更长）→ 单代表元素只跑一次
+  // （同一元素重复 join 幂等，maxIters 次展开只会让索引假精确 + 大数组
+  // 反复深拷贝把分析拖死）；0 次出口由下方 snapExit join，保持 sound。
   const unbounded = knownLen === undefined;
 
   if (unbounded) snapExit();
@@ -1552,7 +1949,7 @@ export function $forOf(
     knownLen !== undefined
       ? Math.min(knownLen, maxIters)
       : items.length > 0
-        ? maxIters
+        ? 1
         : 0;
 
   for (let i = 0; i < n; i++) {
@@ -1561,14 +1958,21 @@ export function $forOf(
     try {
       body(
         item,
-        abs(
-          { k: "prim", type: "number" },
-          { op: "lit", value: i },
-          pTrue,
-          "exact",
-        ),
+        unbounded
+          ? abs({ k: "prim", type: "number" }, undefined, undefined, "partial")
+          : abs(
+              { k: "prim", type: "number" },
+              { op: "lit", value: i },
+              pTrue,
+              "exact",
+            ),
       );
     } catch (e) {
+      if (isNudoBreak(e, opts?.label)) {
+        applyExitJoin();
+        return;
+      }
+      if (isNudoContinue(e, opts?.label)) continue; // 下一个元素；已发生副作用保留
       if (isNudoReturn(e) || isNudoThrow(e)) throw e;
       throw e;
     }
@@ -1596,22 +2000,7 @@ export function namespaceNameOf(v: unknown): string | undefined {
 
 /** 正则字面量 → RegExp brand（source/flags/lastIndex 进 slots，供 exec/test 精确执行） */
 export function $regex(pattern: string, flags = ""): Abs {
-  const litStr = (v: string): Abs =>
-    abs({ k: "prim", type: "string" }, { op: "lit", value: v as never }, pTrue, "exact");
-  return abs(
-    {
-      k: "brand",
-      name: "RegExp",
-      shape: objOf({
-        source: { value: litStr(pattern) },
-        flags: { value: litStr(flags) },
-        lastIndex: { value: numLit(0) },
-      }),
-    },
-    undefined,
-    undefined,
-    "exact",
-  );
+  return regexBrandAbsFrom(pattern, flags);
 }
 
 /** 成员读：obj.slots[key]；缺失 → undefined 字面量；brand 解包内层 */
@@ -1640,10 +2029,17 @@ export function $get(
     return unknown;
   }
   if (o.shape.k === "brand") {
+    const isClassVal = classNameOfValue(o as object) === o.shape.name;
+    // 内建 brand 原型方法读取（typeof m.forEach / m[Symbol.iterator]）：
+    // 方法实现由 $invoke 派发，此处给可 typeof 的 fn 形状
+    // （class 声明值同名内建时不误伤：类方法走 registry）
+    const builtinM = BUILTIN_BRAND_METHODS[o.shape.name];
+    if (builtinM && !isClassVal && (key === "@@iterator" || builtinM.has(key))) {
+      return absFunction([], { body: noBody });
+    }
     // JS Map/Set 的 size 是属性不是方法；brand 内层为空 obj，须在 $get 委托
     if (key === "size" && o.shape.name === "Map") return mapSizeAbs(o);
     if (key === "size" && o.shape.name === "Set") return setSizeAbs(o);
-    const isClassVal = classNameOfValue(o as object) === o.shape.name;
     const inner = o.shape.shape;
     // 自有数据属性优先于原型访问器（原生属性查找：own → prototype）
     if (inner?.shape.k === "obj") {
@@ -1655,11 +2051,26 @@ export function $get(
       if (sacc) return sacc.get ? sacc.get(o) : undef();
       // 类值上读实例访问器键 → 原生 undefined
       if (findClassAccessor(o.shape.name, key)) return undef();
+      // 静态方法一等读取（typeof A.m / 高阶传递）：沿继承链在 registry 找
+      for (const n of bClassChain(o.shape.name)) {
+        if (getBClass(n)?.staticMethods?.[key]) return absFunction([], { body: noBody });
+      }
+      // 类值是 constructor 函数：prototype 对象与 Function.prototype 成员
+      if (key === "prototype") {
+        return abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+      }
+      if (key === "call" || key === "apply" || key === "bind") {
+        return absFunction([], { body: noBody });
+      }
     } else {
       const acc = findClassAccessor(o.shape.name, key);
       if (acc) return acc.get ? acc.get(o) : undef();
       // 实例上读静态访问器键 → 原生 undefined（属性在构造器上）
       if (findStaticClassAccessor(o.shape.name, key)) return undef();
+      // 实例方法读取（typeof a.m / 一等值）：沿继承链在 registry 找方法
+      for (const n of bClassChain(o.shape.name)) {
+        if (getBClass(n)?.methods?.[key]) return absFunction([], { body: noBody });
+      }
     }
     return $get(inner, key, opts);
   }
@@ -1709,10 +2120,46 @@ export function $get(
   return unknown;
 }
 
+/**
+ * Map/Set forEach：条目表逐条调用回调（value, key, recv）。
+ * 回调是 B 路径 JS 函数（transpile 内联箭头）直接调用；Abs fn 走 $call。
+ * 回调返回值丢弃；forEach 表达式值恒 undefined。
+ */
+export function $collectionForEach(recv: Abs, cb: unknown): Abs | undefined {
+  const invokeCb = (args: Abs[]): void => {
+    if (typeof cb === "function") {
+      callAtFunctionBoundary(() => {
+        (cb as (...a: Abs[]) => unknown)(...args);
+      });
+      return;
+    }
+    if (cb && typeof cb === "object" && "shape" in (cb as object)) {
+      $call(cb as Abs, args);
+    }
+  };
+  if (isMapAbs(recv)) {
+    for (const entry of mapEntriesAbs(recv)) {
+      if (entry.shape.k === "tuple" && entry.shape.elements.length >= 2) {
+        const key = entry.shape.elements[0]!;
+        const value = entry.shape.elements[1]!;
+        invokeCb([value, key, recv]);
+      }
+    }
+    return undef();
+  }
+  if (isSetAbs(recv)) {
+    for (const el of setElementsAbs(recv)) {
+      invokeCb([el, el, recv]);
+    }
+    return undef();
+  }
+  return undefined;
+}
+
 /** 成员写：返回新 obj/brand（不可变更新）；frozen/sealed/只读目标按 sloppy 静默失败 */
 export function $set(o: Abs, key: string, value: Abs): Abs {
   if (o.shape.k === "brand") {
-    if (extStateOf(o) === "frozen") return o; // frozen brand：全写静默失败
+    if (extStateOf(o) === "frozen") throwStrictWrite();
     const isClassVal = classNameOfValue(o as object) === o.shape.name;
     if (isClassVal) {
       const sacc = findStaticClassAccessor(o.shape.name, key);
@@ -1722,13 +2169,20 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
       const acc = findClassAccessor(o.shape.name, key);
       if (acc) {
         if (acc.set) return acc.set(o, value);
-        // getter-only：class 体在原生是 strict → TypeError；记录 soft may-throw，写不生效
-        recordMayThrow({
-          kind: "TypeError",
-          cause: `property '${key}' has only a getter`,
-          recv: o.shape.name,
-          name: key,
-        });
+        // getter-only：strict → TypeError（硬抛，catch 可吸收）
+        throwStrictWrite();
+      }
+      // 类实例字段就地突变：原生引用共享语义——方法内 this.n = v 对
+      // 调用点持有的同一实例 Abs 可见（不可变更新会只改局部绑定）
+      const inner = o.shape.shape;
+      if (inner.shape.k === "obj") {
+        const st = extStateOf(o);
+        if ((st === "sealed" || st === "nonext") && !getSlot(inner.shape.slots, key)) {
+          throwStrictWrite(); // 不可扩展：新键写 TypeError
+        }
+        if (getPropFlags(o)?.get(key)?.writable === false) throwStrictWrite();
+        inner.shape.slots[key] = { value: asAbsVal(value) };
+        clearStaleTermPred(o);
         return o;
       }
     }
@@ -1744,52 +2198,77 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     if (clsName) markClassValue(next as object, clsName);
     return next;
   }
-  // a.length = n：非负整数 < 2^32-1 就地截断/延长（延长槽读 undefined 对齐空洞）；
-  // 其余值按 sound 回退：元素与 undefined 取并、长度未知
+  // a.length = n：合法域是非负整数 ≤ 2^32-1（4294967295），其余原生 RangeError；
+  // 合法且巨大（原生稀疏数组）不物化——就地降 arr（元素 ∪ undefined、长度未知）。
+  // 抽象值按 sound 回退：元素与 undefined 取并、长度未知
   if (o.shape.k === "tuple" && key === "length") {
-    if (extStateOf(o) === "frozen") return o;
+    if (extStateOf(o) === "frozen") throwStrictWrite();
     const v = litValue(value);
-    if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 4294967295) {
+    if (typeof v === "number") {
+      // 负数/小数/NaN/Infinity/≥2^32：原生 hard RangeError（catch 可吸收）
+      if (!Number.isInteger(v) || v < 0 || v > 4294967295) {
+        throw new NudoThrow(errorTypeAbs("RangeError"));
+      }
+      if (v > TUPLE_MATERIALIZE_CAP) {
+        // 合法但巨大：不物化巨 tuple
+        o.shape = widenTupleToArr(o.shape.elements, o.shape.holes, undefined);
+        o.conf = confJoin(o.conf, "path");
+        clearStaleTermPred(o);
+        return o;
+      }
       const els = o.shape.elements.slice(0, v);
       while (els.length < v) els.push($lit(undefined));
-      return abs({ k: "tuple", elements: els }, undefined, undefined, o.conf);
+      // 截断过滤 + 延长新增：延长部分（[oldLen, v)）全是 hole
+      const oldLen = o.shape.elements.length;
+      const holes = (o.shape.holes ?? []).filter((h) => h < v);
+      for (let h = oldLen; h < v; h++) holes.push(h);
+      // 就地写回（引用语义：别名同步）
+      o.shape = {
+        k: "tuple",
+        elements: els,
+        holes: holes.length > 0 ? holes : undefined,
+      };
+      clearStaleTermPred(o);
+      return o;
     }
     const joined =
       o.shape.elements.length > 0
         ? o.shape.elements.reduce((a, b) => joinAbs(a, b))
         : unknown;
-    return abs(
-      { k: "arr", element: joinAbs(joined, $lit(undefined)) },
-      undefined,
-      undefined,
-      "partial",
-    );
+    o.shape = { k: "arr", element: joinAbs(joined, $lit(undefined)) };
+    o.conf = "partial";
+    clearStaleTermPred(o);
+    return o;
   }
   if (o.shape.k === "arr" && key === "length") {
-    return abs({ k: "arr", element: o.shape.element }, undefined, undefined, "partial");
+    const v = litValue(value);
+    // 抽象数组也是数组：非法 length 字面量同样原生 RangeError
+    if (typeof v === "number" && (!Number.isInteger(v) || v < 0 || v > 4294967295)) {
+      throw new NudoThrow(errorTypeAbs("RangeError"));
+    }
+    o.conf = "partial";
+    clearStaleTermPred(o);
+    return o;
   }
   if (!isObj(o)) return $obj({ [key]: value });
   const shape = o.shape as ObjShape;
   const st = extStateOf(o);
   const hasKey = Object.prototype.hasOwnProperty.call(shape.slots, key);
-  // frozen：全写静默失败；sealed/nonext：新键静默失败
-  if (st === "frozen") return o;
-  if ((st === "sealed" || st === "nonext") && !hasKey) return o;
-  // defineProperty writable:false：写静默失败
-  if (getPropFlags(o)?.get(key)?.writable === false) return o;
+  // frozen：全写 TypeError；sealed/nonext：新键 TypeError（strict 硬抛）
+  if (st === "frozen") throwStrictWrite();
+  if ((st === "sealed" || st === "nonext") && !hasKey) throwStrictWrite();
+  // defineProperty writable:false：写 TypeError
+  if (getPropFlags(o)?.get(key)?.writable === false) throwStrictWrite();
   const acc = lookupObjAccessor(o, key);
   if (acc) {
-    return acc.set ? acc.set(o, value) : o;
+    if (!acc.set) throwStrictWrite(); // getter-only：写 TypeError
+    return acc.set(o, value);
   }
-  const slots = { ...shape.slots, [key]: { value: asAbsVal(value) } };
-  const next = objOf(slots, {
-    index: shape.index,
-    open: shape.open,
-  });
-  next.conf = confJoin(o.conf, value.conf);
-  migrateAccessors(o, next);
-  migrateInvariants(o, next);
-  return next;
+  // 就地写槽（引用语义：const b = o; b.x = v 对 o 可见）——Abs 身份不变
+  shape.slots[key] = { value: asAbsVal(value) };
+  o.conf = confJoin(o.conf, value.conf);
+  clearStaleTermPred(o);
+  return o;
 }
 
 /**
@@ -1843,6 +2322,8 @@ export function $whileSeq(
     pack?: () => Abs;
     /** 把 join 后的状态写回绑定 */
     unpack?: (s: Abs) => void;
+    /** 标签循环：仅吸收同标签 break/continue 信号 */
+    label?: string;
   },
 ): void {
   const pack = opts?.pack;
@@ -1868,6 +2349,11 @@ export function $whileSeq(
     try {
       body();
     } catch (e) {
+      if (isNudoBreak(e, opts?.label)) {
+        applyExitJoin();
+        return;
+      }
+      if (isNudoContinue(e, opts?.label)) continue; // 体提前结束，副作用已在绑定
       if (isNudoReturn(e) || isNudoThrow(e)) throw e;
       throw e;
     }
@@ -1889,13 +2375,55 @@ export class NudoReturn extends Error {
   }
 }
 
+export function isNudoReturn(e: unknown): e is NudoReturn {
+  return e instanceof NudoReturn;
+}
+
 /** transpile `return x` inside for/while → `$loopReturn(x)` */
 export function $loopReturn(v: Abs): never {
   throw new NudoReturn(v);
 }
 
-export function isNudoReturn(e: unknown): e is NudoReturn {
-  return e instanceof NudoReturn;
+/**
+ * break/continue 信号：transpile 在循环体内生成 $loopBreak/$loopContinue，
+ * $for/$whileSeq/$forOf 在 body 调用点捕获。带标签信号只被同标签循环吸收，
+ * 不匹配继续冒泡到外层循环（`break outer` / `continue outer` 语义）。
+ */
+export class NudoLoopSignal extends Error {
+  readonly kind: "break" | "continue";
+  readonly label: string | undefined;
+  constructor(kind: "break" | "continue", label?: string) {
+    super("nudo:loop");
+    this.name = "NudoLoopSignal";
+    this.kind = kind;
+    this.label = label;
+  }
+}
+
+export function $loopBreak(label?: string): never {
+  throw new NudoLoopSignal("break", label || undefined);
+}
+
+export function $loopContinue(label?: string): never {
+  throw new NudoLoopSignal("continue", label || undefined);
+}
+
+/** 无标签信号匹配任何循环；带标签信号仅匹配同名循环 */
+function loopSignalMatches(e: NudoLoopSignal, label: string | undefined): boolean {
+  return e.label === undefined || e.label === label;
+}
+
+export function isNudoBreak(e: unknown, label?: string): boolean {
+  return e instanceof NudoLoopSignal && e.kind === "break" && loopSignalMatches(e, label);
+}
+
+export function isNudoContinue(e: unknown, label?: string): boolean {
+  return e instanceof NudoLoopSignal && e.kind === "continue" && loopSignalMatches(e, label);
+}
+
+/** 非循环 labeled block：判断 break 信号是否指向本标签（transpile 生成代码用） */
+export function $isBreakTo(e: unknown, label: string): boolean {
+  return e instanceof NudoLoopSignal && e.kind === "break" && e.label === label;
 }
 
 /** catch 转译辅助：控制流信号透传（生成代码只注入 `$` 前缀符号） */
@@ -1905,23 +2433,9 @@ export function $rethrowIfNudoReturn(e: unknown): void {
 
 // --- throws ---
 
-/** B 路径 throw 载荷：携带 Abs 抛出值 */
-export class NudoThrow extends Error {
-  readonly absValue: Abs;
-  constructor(absValue: Abs) {
-    super("nudo:throw");
-    this.name = "NudoThrow";
-    this.absValue = absValue;
-  }
-}
-
 /** transpile `throw x` → `$throw(x)` */
 export function $throw(v: Abs): never {
   throw new NudoThrow(v);
-}
-
-export function isNudoThrow(e: unknown): e is NudoThrow {
-  return e instanceof NudoThrow;
 }
 
 /**
@@ -2056,7 +2570,9 @@ export function $switch(
   if (dv !== undefined) {
     for (const c of cases) {
       const tv = litValue(c.test);
-      if (tv !== undefined && Object.is(tv, dv)) return asAbsVal(c.run());
+      // switch case 匹配是严格相等（===）：NaN 不匹配 NaN case；0 与 -0 互配。
+      // Object.is 是 SameValue（NaN 相等），会假匹配 NaN case（假精确）。
+      if (tv !== undefined && tv === dv) return asAbsVal(c.run());
     }
     return dflt ? asAbsVal(dflt()) : undef();
   }

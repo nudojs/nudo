@@ -12,6 +12,7 @@
 import type { Abs } from "../abs.ts";
 import { abs } from "../abs.ts";
 import { recordMayThrow } from "./may-throw.ts";
+import { isNullProtoObj } from "../objects.ts";
 
 export type BMemberDiag = {
   kind: "method" | "property";
@@ -216,6 +217,49 @@ export function noteMemberDispatchMiss(
 }
 
 // ---------------------------------------------------------------------------
+// 结构上确定不可调用的成员调用 → 原生 TypeError
+// ---------------------------------------------------------------------------
+
+/** Object.prototype 上的恒有成员（`in` 判定 / 不可调用判定共用） */
+export const OBJECT_PROTO_NAMES = new Set([
+  "constructor",
+  "toString",
+  "valueOf",
+  "toLocaleString",
+  "hasOwnProperty",
+  "isPrototypeOf",
+  "propertyIsEnumerable",
+  "__proto__",
+]);
+
+/**
+ * 结构上确定不可调用的成员调用（B-path $invoke 与 ast-eval 共用）：
+ * - null-proto 对象：无 Object.prototype 可回退，缺失自有槽即确定缺失
+ * - 闭 exact 对象：slots 是精确键集，非 OP 名缺失即确定缺失（OP 名经
+ *   Object.prototype 存在，未建模 → 保守不抛）
+ * - 槽存在但值是字面量（prim/null/undefined 非函数）→ 确定抛
+ * 保守边界：open 对象（spread/assign 产物）、非 exact conf（create(proto)
+ * 的 path 产物）、OP 原型名一律不判抛——避免假抛 false positive。
+ */
+export function definitelyUncallableMember(recv: Abs, name: string): boolean {
+  const s = recv.shape;
+  if (s.k !== "obj") return false;
+  const slots = s.slots as Record<string, { value: Abs }>;
+  const hasOwn = Object.prototype.hasOwnProperty.call(slots, name);
+  if (hasOwn) {
+    // 槽存在：值确定非可调用（字面量 prim/null/undefined）→ 抛；
+    // fn Abs/抽象值 → 调用链已处理或保守
+    const sv = slots[name]!.value;
+    return !!sv.term && sv.term.op === "lit";
+  }
+  if (isNullProtoObj(recv)) return true;
+  if (!s.open && !s.index && recv.conf === "exact" && !OBJECT_PROTO_NAMES.has(name)) {
+    return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // C0.5 — evaluation-driven missing-slot（默认 off）
 // ---------------------------------------------------------------------------
 // 进程级 fallback 仅兼容旧 set API；真正开关走 AsyncLocalStorage，
@@ -255,7 +299,7 @@ export function noteObjSlotMissing(
   if (!shape || shape.k !== "obj") return false;
   const obj = shape as { open?: boolean; slots?: Record<string, unknown> };
   if (obj.open) return false;
-  if (obj.slots && name in obj.slots) return false;
+  if (obj.slots && Object.prototype.hasOwnProperty.call(obj.slots, name)) return false;
   // opaque / widened conf：成员可能被藏住，不报
   const conf = recv?.conf;
   if (conf === "opaque" || conf === "widened") return false;

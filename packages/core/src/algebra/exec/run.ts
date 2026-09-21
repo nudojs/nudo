@@ -12,12 +12,13 @@ import * as runtime from "./runtime.ts";
 import * as classRt from "./class.ts";
 import * as callsRt from "./calls.ts";
 import type { Abs } from "../abs.ts";
-import { never, unknown } from "../abs.ts";
+import { never, unknown, abs } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
 import { transpile } from "./transpile.ts";
 import { $call } from "./call.ts";
 import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits } from "./runtime.ts";
+import { errorTypeAbs } from "./may-throw.ts";
 
 const rtAll = { ...runtime, ...classRt, ...callsRt } as Record<string, unknown>;
 // ensure control-flow helpers are present even if a re-export layer omits them
@@ -26,6 +27,7 @@ rtAll.isNudoThrow = isNudoThrow;
 rtAll.$isForkExit = $isForkExit;
 rtAll.runWithLoopExits = runWithLoopExits;
 rtAll.takeLoopExits = takeLoopExits;
+rtAll.$call = $call;
 
 export type RunTranspiledOptions = {
   /** 说明符 → 依赖导出（host 模块图或 runTranspiled 产物） */
@@ -195,17 +197,23 @@ function bindImport(
   return absCallable(v as Abs);
 }
 
+/**
+ * 命名空间 Abs（import * as ns / CJS require 绑定）：
+ * open + path——导出收集可能不全（CJS 收集失败等），缺失成员是分析
+ * 视图不完整，不得按「运行时缺失」判定（不可调用判定会假抛 TypeError）。
+ */
+function namespaceAbsOf(mod: AbsModuleExports): Abs {
+  const slots: Record<string, { value: Abs }> = {};
+  for (const [k, v] of Object.entries(mod.named)) slots[k] = { value: v };
+  if (mod.default) slots["default"] = { value: mod.default };
+  return abs({ k: "obj", slots, open: true }, undefined, undefined, "path");
+}
+
 /** `import * as ns`：整命名空间（named + default 槽）→ Abs 对象 */
 function bindNamespace(modules: RunTranspiledOptions["modules"], spec: string): Abs {
   const mod = modules?.[spec] as AbsModuleExports | undefined;
   if (!mod) return unknown;
-  if (mod.named) {
-    const { $obj } = rtAll as { $obj: (s: Record<string, Abs>) => Abs };
-    const slots: Record<string, Abs> = {};
-    for (const [k, v] of Object.entries(mod.named)) slots[k] = v;
-    if (mod.default) slots["default"] = mod.default;
-    return $obj(slots);
-  }
+  if (mod.named) return namespaceAbsOf(mod);
   return unknown;
 }
 
@@ -216,13 +224,7 @@ function requireFromModules(
 ): unknown {
   const mod = modules?.[spec] as AbsModuleExports | undefined;
   if (!mod) return unknown;
-  if (mod.named) {
-    const { $obj } = rtAll as { $obj: (s: Record<string, Abs>) => Abs };
-    const slots: Record<string, Abs> = {};
-    for (const [k, v] of Object.entries(mod.named)) slots[k] = v;
-    if (mod.default) slots["default"] = mod.default;
-    return $obj(slots);
-  }
+  if (mod.named) return namespaceAbsOf(mod);
   return mod;
 }
 
@@ -337,6 +339,13 @@ export function callTranspiledExportFull(
           const result = joinLoopExits(never);
           const throws = joinThrowExits(e.absValue);
           return { result, throws };
+        }
+        // 原生 ReferenceError：class TDZ / 未声明引用——原生必抛，记入 throws
+        if (e instanceof ReferenceError) {
+          return {
+            result: joinLoopExits(never),
+            throws: joinThrowExits(errorTypeAbs("ReferenceError")),
+          };
         }
         return joinControlExits(unknown);
       }

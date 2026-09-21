@@ -5,6 +5,7 @@
 
 import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, litValue, confJoin, num, bool, boolLit, strLit, bigintLit } from "./abs.ts";
+import { classNameOfValue } from "./class-mark.ts";
 import type { Term } from "./term.ts";
 import { lit, simplifyTerm, app } from "./term.ts";
 import type { Pred } from "./pred.ts";
@@ -215,6 +216,10 @@ export function typeofAbs(a: Abs): Abs {
   if (a.term?.op === "lit" && a.term.value === undefined) {
     return strLit("undefined");
   }
+  // class 声明值本身是 constructor 函数（标记见 class-mark.ts）
+  if ((a as object) && classNameOfValue(a as object) !== undefined) {
+    return strLit("function");
+  }
   if (a.shape.k === "any" || a.shape.k === "unknown") {
     // any/unknown：typeof 只能确定是 string，具体名未知
     return abs({ k: "prim", type: "string" }, undefined, undefined, "partial");
@@ -380,6 +385,12 @@ export function isNullishLitAbs(a: Abs): boolean {
  * 返回 undefined = 无法判定（交给 boolean + 调用方）。
  */
 export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
+  // 双字面量折叠必须先看 term.op === "lit"：litValue 无法区分
+  //「字面量 undefined」与「非字面量」（两者都返回 undefined），
+  // undefined === undefined / null === null 此前落无法判定。
+  if (a.term?.op === "lit" && b.term?.op === "lit") {
+    return a.term.value === b.term.value;
+  }
   const va = litValue(a);
   const vb = litValue(b);
   if (va !== undefined && vb !== undefined) return va === vb;

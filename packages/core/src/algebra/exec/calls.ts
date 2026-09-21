@@ -34,6 +34,8 @@ export {
   runWithEvalMissingSlot,
   tagAbsOrigin,
   getAbsOrigin,
+  OBJECT_PROTO_NAMES,
+  definitelyUncallableMember,
 } from "./member-diag.ts";
 export {
   setMayThrowCollector,
@@ -73,6 +75,9 @@ const GLOBAL_FNS = new Set([
   "Number",
   "String",
   "Boolean",
+  "Object",
+  "Array",
+  "eval",
 ]);
 
 export function setBCallCollector(

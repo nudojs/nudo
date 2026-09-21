@@ -30,6 +30,13 @@ export function shouldWidenArrayLiteral(n: number): boolean {
   return n > TUPLE_LITERAL_CAP;
 }
 
+/**
+ * tuple 物化的最大长度：new Array(n) / a[i]=v / a.length=n 超过此值就
+ * 不逐槽物化（原生是稀疏数组，物化 n 个槽会 OOM——a[4294967294]=1 曾把
+ * 差分 harness 打到 exit 137），就地降 arr 保 sound。
+ */
+export const TUPLE_MATERIALIZE_CAP = 4096;
+
 /** 降级后的 conf：路径已知但元素合并，不再逐位确定 */
 export function widenedArrayConf(): Confidence {
   return "path";

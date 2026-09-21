@@ -70,7 +70,7 @@ import {
 } from "./surface.ts";
 import { leakIfNeeded, defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { spread, joinAbs, getSlot } from "./objects.ts";
-import { shouldWidenArrayLiteral, widenedArrayConf } from "./containers.ts";
+import { shouldWidenArrayLiteral, widenedArrayConf, TUPLE_MATERIALIZE_CAP } from "./containers.ts";
 import { absFunction, attachFnImpl, getFnImpl } from "./abs-fn.ts";
 import {
   applyCallbackAbs,
@@ -94,6 +94,8 @@ import {
   evalNamespaceCall,
   evalBuiltinNew,
   evalBuiltinInstanceMethod,
+  errorBrandAbs,
+  regexBrandAbsFrom,
 } from "./builtins.ts";
 import { callAbsMethod, getAbsProperty } from "./methods.ts";
 import {
@@ -102,10 +104,11 @@ import {
   noteAnyMemberMayThrow,
   noteNullishMemberThrows,
   anyMemberResult,
+  definitelyUncallableMember,
 } from "./exec/member-diag.ts";
 import { errorTypeAbs, pushMayThrowFrame, popMayThrowFrame, orphanMayThrowEffects } from "./exec/may-throw.ts";
-import { NudoThrow } from "./exec/runtime.ts";
-import { registerBClass } from "./exec/class-registry.ts";
+import { NudoThrow, isNudoThrow } from "./exec/runtime.ts";
+import { registerBClass, markClassValue } from "./exec/class-registry.ts";
 import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
 import {
   defineClass,
@@ -689,6 +692,8 @@ function registerClassDecl(env: AstEnv, node: Node): void {
     undefined,
     "exact",
   );
+  // 类值本身是 constructor 函数：typeof/instanceof 按函数形态折
+  markClassValue(classVal as object, name);
   env.vars.set(name, classVal);
 }
 
@@ -860,6 +865,11 @@ function evalNodeInner(
       return ok(boolLit((node as BooleanLiteral).value), phi, env);
     case "BigIntLiteral":
       return ok(bigintLit((node as { value: bigint }).value), phi, env);
+    case "RegExpLiteral": {
+      // 正则字面量 → RegExp brand（source/flags 槽，test/exec/replace 折叠用）
+      const re = node as { pattern: string; flags?: string };
+      return ok(regexBrandAbsFrom(re.pattern, re.flags ?? ""), phi, env);
+    }
     case "NullLiteral":
       return ok(abs({ k: "unknown" }, lit(null), pTrue, "exact"), phi, env);
     case "Identifier": {
@@ -899,7 +909,15 @@ function evalNodeInner(
       const className = (ne.callee as Identifier).name;
       const args = ne.arguments.map((a) => evalNode(a, env, phi, budget).value);
       // 内置构造
-      const builtin = evalBuiltinNew(className, args);
+      let builtin: Abs | undefined;
+      try {
+        builtin = evalBuiltinNew(className, args);
+      } catch (e) {
+        // hard throw（RegExp 非法 pattern/flags、Map/Set 非法 iterable）：
+        // 吸收为 EvalResult{threw}，evalTry 把抛出 Abs 绑进 catch 形参
+        if (isNudoThrow(e)) return { value: e.absValue, phi, env, threw: true };
+        throw e;
+      }
       if (builtin) return ok(builtin, phi, env);
       const inst = instantiateClass(env, className, args, (ctor, cargs, thisVal, e) =>
         evalMethodBody(ctor, cargs, thisVal, e, phi, budget),
@@ -1069,6 +1087,43 @@ function evalNodeInner(
               undefined,
               undefined,
               prev.conf === "exact" ? "path" : prev.conf,
+            );
+            return { value: rhs, phi, env: withVar(env, root, updated) };
+          }
+          // tuple/arr 的 length 写：与 B-path $set 同口径——
+          // 非法值（负数/小数/NaN/Infinity/≥2^32）原生 hard RangeError；
+          // 合法巨大值不物化（稀疏数组），降 arr 保 sound
+          if (prev && key === "length" && (prev.shape.k === "tuple" || prev.shape.k === "arr")) {
+            const v = litValue(rhs);
+            if (typeof v === "number" && (!Number.isInteger(v) || v < 0 || v > 4294967295)) {
+              // threw 结果：evalTry 把 RangeError brand 绑进 catch 形参
+              return { value: errorBrandAbs("RangeError", []), phi, env, threw: true };
+            }
+            if (prev.shape.k === "tuple" && typeof v === "number" && v <= TUPLE_MATERIALIZE_CAP) {
+              const els = prev.shape.elements.slice(0, v);
+              while (els.length < v) els.push(undefAbs());
+              const holes = (prev.shape.holes ?? []).filter((h) => h < v);
+              for (let h = prev.shape.elements.length; h < v; h++) holes.push(h);
+              const updated = abs(
+                { k: "tuple", elements: els, holes: holes.length > 0 ? holes : undefined },
+                undefined,
+                undefined,
+                "path",
+              );
+              return { value: rhs, phi, env: withVar(env, root, updated) };
+            }
+            // 抽象/巨大：元素 ∪ undefined、长度未知（sound 回退）
+            const joined =
+              prev.shape.k === "tuple"
+                ? prev.shape.elements.length > 0
+                  ? prev.shape.elements.reduce((a, b) => joinAbs(a, b))
+                  : unknown
+                : prev.shape.element;
+            const updated = abs(
+              { k: "arr", element: joinAbs(joined, undefAbs()) },
+              undefined,
+              undefined,
+              "path",
             );
             return { value: rhs, phi, env: withVar(env, root, updated) };
           }
@@ -1250,6 +1305,14 @@ function evalNodeInner(
           const slot = getSlot((obj.shape as { slots: Record<string, { value: Abs }> }).slots, kl);
           if (slot) return ok(slot.value, phi, env);
         }
+        // obj[0] ≡ obj["0"]（原生数字键规范化为字符串）
+        if (typeof kl === "number" && obj.shape.k === "obj") {
+          const slot = getSlot(
+            (obj.shape as { slots: Record<string, { value: Abs }> }).slots,
+            String(kl),
+          );
+          if (slot) return ok(slot.value, phi, env);
+        }
         // 数组/元组下标
         if (typeof kl === "number") {
           if (obj.shape.k === "tuple") {
@@ -1327,6 +1390,8 @@ function evalNodeInner(
           let key: string | undefined;
           if (keyNode && keyNode.type === "Identifier") key = (keyNode as Identifier).name;
           if (keyNode && keyNode.type === "StringLiteral") key = (keyNode as StringLiteral).value;
+          // 数字键 {1: ...} → "1"（与 B-path staticKeyOf 同口径；此前被丢）
+          if (keyNode && keyNode.type === "NumericLiteral") key = String((keyNode as { value: number }).value);
           if (!key || !om.body) continue;
           const paramNames = (om.params ?? []).map((pp, i) =>
             pp.type === "Identifier" ? (pp as Identifier).name : `_a${i}`,
@@ -1352,6 +1417,8 @@ function evalNodeInner(
         let key: string | undefined;
         if (keyNode && keyNode.type === "Identifier") key = (keyNode as Identifier).name;
         if (keyNode && keyNode.type === "StringLiteral") key = (keyNode as StringLiteral).value;
+        // 数字键 {1: ...} → "1"（与 B-path staticKeyOf 同口径；此前被丢）
+        if (keyNode && keyNode.type === "NumericLiteral") key = String((keyNode as { value: number }).value);
         if (!key || !op.value) continue;
         pending[key] = { value: evalNode(op.value, env, phi, budget).value };
       }
@@ -1523,15 +1590,29 @@ function evalCall(
       if (m.object.type === "Identifier") {
         const ns = (m.object as Identifier).name;
         const margs = rawArgs.map((a) => evalNode(a, env, phi, budget).value);
-        const r = evalNamespaceCall(ns, method, margs);
-        if (r) return ok(r, phi, env);
+        try {
+          const r = evalNamespaceCall(ns, method, margs);
+          if (r) return ok(r, phi, env);
+        } catch (e) {
+          // hard throw（JSON.parse SyntaxError / JSON.stringify TypeError 等）：
+          // 吸收为 EvalResult{threw}，evalTry 把抛出 Abs 绑进 catch 形参
+          if (isNudoThrow(e)) return { value: e.absValue, phi, env, threw: true };
+          throw e;
+        }
       }
 
       // Abs 方法表（template startsWith 等）
       {
         const margs = rawArgs.map((a) => evalNode(a, env, phi, budget).value);
-        const viaTable = callAbsMethod(obj, method, margs);
-        if (viaTable) return ok(viaTable, phi, env);
+        try {
+          const viaTable = callAbsMethod(obj, method, margs);
+          if (viaTable) return ok(viaTable, phi, env);
+        } catch (e) {
+          // hard throw（replaceAll 非全局正则 TypeError 等）：吸收为
+          // EvalResult{threw}，evalTry 把抛出 Abs 绑进 catch 形参
+          if (isNudoThrow(e)) return { value: e.absValue, phi, env, threw: true };
+          throw e;
+        }
       }
 
       if (obj.shape.k === "brand") {
@@ -1564,7 +1645,7 @@ function evalCall(
         if (method === "then" || method === "catch" || method === "finally") {
           const fnNode = rawArgs[0];
           if (fnNode && method === "then") {
-            const inner = applyUnaryCallback(fnNode, obj.shape.inner, env, phi, budget);
+            const inner = applyUnaryCallback(fnNode, obj.shape.inner, undefAbs(), env, phi, budget);
             return ok(
               abs({ k: "eff", eff: "promise", inner }, undefined, undefined, confJoin(obj.conf, inner.conf)),
               phi,
@@ -1606,6 +1687,14 @@ function evalCall(
               if (typeof a0 === "number") return ok(strLit(sv.charAt(a0)), phi, env);
               break;
             case "slice": {
+              // 与 methods.ts 同口径：位置参数 number 字面量/缺省才折叠，
+              // Symbol/抽象实参原生 THROW → 保守 strPrim
+              const numOrMissing = (x: Abs | undefined): boolean =>
+                x === undefined ||
+                (x.term?.op === "lit" && (x.term.value === undefined || typeof x.term.value === "number"));
+              if (!numOrMissing(arg0) || !numOrMissing(rawArgs[1] ? evalNode(rawArgs[1], env, phi, budget).value : undefined)) {
+                return ok(abs({ k: "prim", type: "string" }, undefined, undefined, "path"), phi, env);
+              }
               const a1 = rawArgs[1] ? litValue(evalNode(rawArgs[1], env, phi, budget).value) : undefined;
               return ok(strLit(sv.slice(a0 as number | undefined, a1 as number | undefined)), phi, env);
             }
@@ -1619,8 +1708,13 @@ function evalCall(
             case "valueOf":
               return ok(strLit(sv), phi, env);
             case "concat": {
-              const rest = rawArgs.map((a) => litValue(evalNode(a, env, phi, budget).value));
-              return ok(strLit(sv + rest.map((x) => String(x)).join("")), phi, env);
+              // 与 methods.ts 同口径：全字面量且非 Symbol 才折叠
+              const restAbs = rawArgs.map((a) => evalNode(a, env, phi, budget).value);
+              if (restAbs.some((r) => r.term?.op !== "lit" || typeof r.term.value === "symbol")) {
+                return ok(abs({ k: "prim", type: "string" }, undefined, undefined, "path"), phi, env);
+              }
+              const rest = restAbs.map((r) => String(litValue(r)));
+              return ok(strLit(sv + rest.join("")), phi, env);
             }
           }
         }
@@ -1635,6 +1729,42 @@ function evalCall(
         }
         if (method === "charAt") {
           return ok(abs({ k: "prim", type: "string" }, undefined, undefined, "path"), phi, env);
+        }
+      }
+
+      // number prim 方法（与 exec/class $invoke number 分支同口径）：
+      // 字面量折叠 toString/toFixed/toExponential/toPrecision/valueOf，
+      // 非法参数硬抛 RangeError、符号实参硬抛 TypeError（吸收为 EvalResult{threw}）。
+      // 未接管的其它方法不得 return——继续后续诊断路径（no-method）。
+      if (obj.shape.k === "prim" && obj.shape.type === "number") {
+        if (method === "valueOf") return ok(obj, phi, env);
+        if (
+          method === "toString" ||
+          method === "toFixed" ||
+          method === "toExponential" ||
+          method === "toPrecision"
+        ) {
+          const nv = litValue(obj);
+          if (typeof nv !== "number") {
+            return ok(abs({ k: "prim", type: "string" }, undefined, undefined, "path"), phi, env);
+          }
+          const argAbs = rawArgs[0] ? evalNode(rawArgs[0], env, phi, budget).value : undefined;
+          if (argAbs !== undefined && argAbs.term?.op !== "lit") {
+            return ok(abs({ k: "prim", type: "string" }, undefined, undefined, "path"), phi, env);
+          }
+          const av = argAbs === undefined ? undefined : litValue(argAbs);
+          try {
+            const impl = Number.prototype as unknown as Record<string, (...a: unknown[]) => string>;
+            return ok(strLit(impl[method]!.call(nv, av)), phi, env);
+          } catch (e) {
+            if (e instanceof TypeError) {
+              return { value: errorTypeAbs("TypeError"), phi, env, threw: true };
+            }
+            if (e instanceof RangeError) {
+              return { value: errorTypeAbs("RangeError"), phi, env, threw: true };
+            }
+            return ok(abs({ k: "prim", type: "string" }, undefined, undefined, "path"), phi, env);
+          }
         }
       }
 
@@ -1662,6 +1792,20 @@ function evalCall(
         }
       }
 
+      // 数组回调方法公共口径（与 exec/class invokeArrMethod 同轨）：
+      // hole 跳过 + 索引实参 + some/every/find/findIndex 短路。
+      const arrHoles = obj.shape.k === "tuple" ? ((obj.shape as { holes?: number[] }).holes ?? []) : [];
+      const isArrHole = (i: number): boolean => arrHoles.includes(i);
+      const unknownIdx = (): Abs =>
+        abs({ k: "prim", type: "number" }, undefined, undefined, "path");
+      const cbTruth = (r: Abs): boolean | undefined => {
+        if (r.term?.op !== "lit") return undefined;
+        const v = litValue(r);
+        if (v === undefined || v === null || v === false || v === "" || (v as unknown) === 0n) return false;
+        if (typeof v === "number" && (v === 0 || Number.isNaN(v))) return false;
+        return true;
+      };
+
       if (method === "map" && rawArgs.length >= 1) {
         const fnNode = rawArgs[0]!;
         // 挂载点③：回调形参提升（receiver 已是 arr 时仍生效）
@@ -1677,13 +1821,22 @@ function evalCall(
             : undefined;
           tryPromoteHofCallback(env, (fnNode as Identifier).name, "map", [elem0], loc0);
         }
-        // tuple：逐元素 map，保精确
+        // tuple：逐元素 map，保精确；hole 跳过且输出保留 hole 位置
         if (obj.shape.k === "tuple") {
-          const mapped = obj.shape.elements.map((el) =>
-            applyUnaryCallback(fnNode, el, env, phi, budget),
+          const mapped = obj.shape.elements.map((el, i) =>
+            isArrHole(i) ? el : applyUnaryCallback(fnNode, el, numLit(i), env, phi, budget),
           );
           return ok(
-            abs({ k: "tuple", elements: mapped }, undefined, undefined, confJoin(obj.conf, "path")),
+            abs(
+              {
+                k: "tuple",
+                elements: mapped,
+                holes: arrHoles.length > 0 ? [...arrHoles] : undefined,
+              },
+              undefined,
+              undefined,
+              confJoin(obj.conf, "path"),
+            ),
             phi,
             env,
           );
@@ -1692,7 +1845,7 @@ function evalCall(
           obj.shape.k === "arr"
             ? (obj.shape as { element: Abs }).element
             : unknown;
-        const out0 = applyUnaryCallback(fnNode, elem, env, phi, budget);
+        const out0 = applyUnaryCallback(fnNode, elem, unknownIdx(), env, phi, budget);
         const cbAbs = fnNode.type === "Identifier"
           ? env.vars.get((fnNode as Identifier).name)
           : undefined;
@@ -1722,8 +1875,9 @@ function evalCall(
           tryPromoteHofCallback(env, (fnNode as Identifier).name, "reduce", [acc, item0], loc0);
         }
         if (obj.shape.k === "tuple") {
-          for (const el of obj.shape.elements) {
-            acc = applyBinaryCallback(fnNode, acc, el, env, phi, budget);
+          for (let i = 0; i < obj.shape.elements.length; i++) {
+            if (isArrHole(i)) continue;
+            acc = applyBinaryCallback(fnNode, acc, obj.shape.elements[i]!, numLit(i), env, phi, budget);
           }
           return ok(acc, phi, env);
         }
@@ -1742,13 +1896,31 @@ function evalCall(
         }
         // 不动点
         for (let i = 0; i < 6; i++) {
-          const next = applyBinaryCallback(fnNode, acc, item, env, phi, budget);
+          const next = applyBinaryCallback(fnNode, acc, item, unknownIdx(), env, phi, budget);
           if (absIdentical(acc, next)) {
             return ok(next, phi, env);
           }
           acc = joinAbs(acc, next);
         }
         return ok(acc, phi, env);
+      }
+
+      if (method === "reduceRight" && rawArgs.length >= 2) {
+        const fnNode = rawArgs[0]!;
+        let acc = evalNode(rawArgs[1]!, env, phi, budget).value;
+        if (obj.shape.k === "tuple") {
+          for (let i = obj.shape.elements.length - 1; i >= 0; i--) {
+            if (isArrHole(i)) continue;
+            acc = applyBinaryCallback(fnNode, acc, obj.shape.elements[i]!, numLit(i), env, phi, budget);
+          }
+          return ok(acc, phi, env);
+        }
+        const item =
+          obj.shape.k === "arr"
+            ? (obj.shape as { element: Abs }).element
+            : unknown;
+        const next = applyBinaryCallback(fnNode, acc, item, unknownIdx(), env, phi, budget);
+        return ok(next, phi, env);
       }
 
       if (method === "filter" && rawArgs.length >= 1) {
@@ -1769,13 +1941,13 @@ function evalCall(
         if (obj.shape.k === "tuple") {
           const kept: Abs[] = [];
           let anyUncertain = false;
-          for (const el of obj.shape.elements) {
-            const p = applyUnaryCallback(fnNode, el, env, phi, budget);
-            const lv = litValue(p);
-            if (lv === false) continue;
-            if (lv !== true) anyUncertain = true;
+          obj.shape.elements.forEach((el, i) => {
+            if (isArrHole(i)) return; // hole 跳过谓词且不进结果
+            const t = cbTruth(applyUnaryCallback(fnNode, el, numLit(i), env, phi, budget));
+            if (t === false) return;
+            if (t === undefined) anyUncertain = true;
             kept.push(el);
-          }
+          });
           if (kept.length === 0) {
             return ok(abs({ k: "arr", element: unknown }, undefined, undefined, "path"), phi, env);
           }
@@ -1815,8 +1987,10 @@ function evalCall(
           tryPromoteHofCallback(env, (fnNode as Identifier).name, "flatMap", [elem0], loc0);
         }
         if (obj.shape.k === "tuple") {
-          const mapped = obj.shape.elements.map((el) =>
-            applyUnaryCallback(fnNode, el, env, phi, budget),
+          const mapped = obj.shape.elements.map((el, i) =>
+            isArrHole(i)
+              ? abs({ k: "tuple", elements: [] }, undefined, undefined, "exact")
+              : applyUnaryCallback(fnNode, el, numLit(i), env, phi, budget),
           );
           return ok(projectFlatMapResult(obj.conf, mapped), phi, env);
         }
@@ -1824,51 +1998,117 @@ function evalCall(
           obj.shape.k === "arr"
             ? (obj.shape as { element: Abs }).element
             : unknown;
-        const out = applyUnaryCallback(fnNode, elem, env, phi, budget);
+        const out = applyUnaryCallback(fnNode, elem, unknownIdx(), env, phi, budget);
         return ok(projectFlatMapResult(obj.conf, [out]), phi, env);
       }
 
       if (method === "forEach" && rawArgs.length >= 1) {
         const fnNode = rawArgs[0]!;
         if (obj.shape.k === "tuple") {
-          for (const el of obj.shape.elements) {
-            applyUnaryCallback(fnNode, el, env, phi, budget);
-          }
+          obj.shape.elements.forEach((el, i) => {
+            if (!isArrHole(i)) applyUnaryCallback(fnNode, el, numLit(i), env, phi, budget);
+          });
         } else if (obj.shape.k === "arr") {
-          applyUnaryCallback(fnNode, (obj.shape as { element: Abs }).element, env, phi, budget);
+          applyUnaryCallback(
+            fnNode,
+            (obj.shape as { element: Abs }).element,
+            unknownIdx(),
+            env,
+            phi,
+            budget,
+          );
         }
         return ok(undefAbs(), phi, env);
       }
 
       if ((method === "some" || method === "every") && rawArgs.length >= 1) {
+        // 规范 some/every 检查 HasProperty：hole 位置跳过回调（与 find/findIndex 相反）
         const fnNode = rawArgs[0]!;
+        let undecided = false;
         if (obj.shape.k === "tuple") {
-          for (const el of obj.shape.elements) {
-            applyUnaryCallback(fnNode, el, env, phi, budget);
+          for (let i = 0; i < obj.shape.elements.length; i++) {
+            if (isArrHole(i)) continue;
+            const t = cbTruth(applyUnaryCallback(fnNode, obj.shape.elements[i]!, numLit(i), env, phi, budget));
+            if (t === undefined) {
+              undecided = true;
+              continue;
+            }
+            if (method === "some" && t) return ok(boolLit(true), phi, env);
+            if (method === "every" && !t) return ok(boolLit(false), phi, env);
           }
         } else if (obj.shape.k === "arr") {
-          applyUnaryCallback(fnNode, (obj.shape as { element: Abs }).element, env, phi, budget);
+          const t = cbTruth(
+            applyUnaryCallback(fnNode, (obj.shape as { element: Abs }).element, unknownIdx(), env, phi, budget),
+          );
+          // 抽象 arr 长度未知（可能空）：单代表元素无法下结论
+          if (t === undefined) return ok(bool(), phi, env);
+          if (method === "some" && t) return ok(boolLit(true), phi, env);
+          if (method === "every" && !t) return ok(boolLit(false), phi, env);
+          return ok(bool(), phi, env);
         }
-        return ok(bool(), phi, env);
+        if (undecided) return ok(bool(), phi, env);
+        return ok(boolLit(method === "some" ? false : true), phi, env);
       }
 
       if (method === "find" && rawArgs.length >= 1) {
-        // 不证明命中元素：tuple 只对首元素应用回调（副作用面偏窄）；结果 element ∪ undefined
+        // 逐位短路：具体 truthy 命中即返回该元素（原生首个命中）；
+        // 全 falsy → undefined；有不确定 → 元素 ∪ undefined
         const fnNode = rawArgs[0]!;
+        if (obj.shape.k === "tuple") {
+          let undecided = false;
+          for (let i = 0; i < obj.shape.elements.length; i++) {
+            const el = obj.shape.elements[i]!;
+            const t = cbTruth(applyUnaryCallback(fnNode, el, numLit(i), env, phi, budget));
+            if (t === true) return ok(el, phi, env);
+            if (t === undefined) undecided = true;
+          }
+          if (undecided) {
+            const joined = obj.shape.elements.reduce((a, b) => joinAbs(a, b));
+            return ok(joinAbs(joined, undefAbs()), phi, env);
+          }
+          return ok(undefAbs(), phi, env);
+        }
         const elem =
           obj.shape.k === "arr"
             ? (obj.shape as { element: Abs }).element
-            : obj.shape.k === "tuple"
-              ? (obj.shape.elements[0] ?? unknown)
-              : unknown;
-        applyUnaryCallback(fnNode, elem, env, phi, budget);
+            : unknown;
+        const t = cbTruth(applyUnaryCallback(fnNode, elem, unknownIdx(), env, phi, budget));
+        if (t === true) return ok(elem, phi, env);
+        if (t === false) return ok(undefAbs(), phi, env);
         return ok(joinAbs(elem, undefAbs()), phi, env);
       }
-      // 分派失败：prim/any/nullish/unknown 记账（design-cli-semantics §3.3）
+
+      if (method === "findIndex" && rawArgs.length >= 1) {
+        // 逐位短路：命中 → 具体索引；全 falsy → -1（原生语义）；不确定 → number ∪ -1
+        const fnNode = rawArgs[0]!;
+        if (obj.shape.k === "tuple") {
+          let undecided = false;
+          for (let i = 0; i < obj.shape.elements.length; i++) {
+            const t = cbTruth(applyUnaryCallback(fnNode, obj.shape.elements[i]!, numLit(i), env, phi, budget));
+            if (t === true) return ok(numLit(i), phi, env);
+            if (t === undefined) undecided = true;
+          }
+          if (undecided) return ok(joinAbs(unknownIdx(), numLit(-1)), phi, env);
+          return ok(numLit(-1), phi, env);
+        }
+        const elem =
+          obj.shape.k === "arr"
+            ? (obj.shape as { element: Abs }).element
+            : unknown;
+        const t = cbTruth(applyUnaryCallback(fnNode, elem, unknownIdx(), env, phi, budget));
+        if (t === true) return ok(unknownIdx(), phi, env);
+        if (t === false) return ok(numLit(-1), phi, env);
+        return ok(joinAbs(unknownIdx(), numLit(-1)), phi, env);
+      }
+      // 分派失败：结构上确定不可调用 → hard TypeError（与 B-path 同口径）；
+      // 其余 prim/any/nullish/unknown 记账（design-cli-semantics §3.3）
       {
         const loc = node.loc
           ? ([node.loc.start.line, node.loc.start.column] as [number, number])
           : undefined;
+        if (definitelyUncallableMember(obj, method)) {
+          return { value: errorTypeAbs("TypeError"), phi, env, threw: true };
+        }
         if (noteNullishMemberThrows(obj, method, "method", loc)) {
           return ok(unknown, phi, env);
         }
@@ -1895,7 +2135,15 @@ function evalCall(
   );
 
   // 全局函数 builtin
-  const g = evalGlobalFn(name, args);
+  let g: Abs | undefined;
+  try {
+    g = evalGlobalFn(name, args);
+  } catch (e) {
+    // hard throw（Array(1.5) RangeError 等）：吸收为 EvalResult{threw}，
+    // evalTry 把抛出 Abs 绑进 catch 形参
+    if (isNudoThrow(e)) return { value: e.absValue, phi, env, threw: true };
+    throw e;
+  }
   if (g) return ok(g, phi, env);
 
   // 变量上的 Abs 一等函数（含 relation-only / shape-only）
@@ -1942,11 +2190,12 @@ export function applyAbsFn(
   env: AstEnv,
   phi: Phi,
   budget: LeakBudget,
+  thisVal?: Abs,
 ): Abs {
   // 函数 union：对每个 member 按统一顺序求值后 join
   if (fnVal?.shape?.k === "sum") {
     const results = fnVal.shape.members.map((m) =>
-      applyAbsFn(m, args, env, phi, budget),
+      applyAbsFn(m, args, env, phi, budget, thisVal),
     );
     if (results.every((r) => r.shape.k === "unknown")) return unknown;
     return results.reduce((a, b) => joinAbs(a, b));
@@ -1970,7 +2219,7 @@ export function applyAbsFn(
     // B 路径 $fnVal / 泄漏 JS 函数的 apply 可能抛 NudoReturn — 调用边界收成返回值
     if (impl!.apply) {
       try {
-        return impl!.apply(args);
+        return impl!.apply(args, thisVal);
       } catch (e) {
         if (e && typeof e === "object" && (e as { name?: string }).name === "NudoReturn") {
           return (e as { absValue: Abs }).absValue;
@@ -2034,22 +2283,24 @@ setApplyCallbackHost((cb, args, env, phi, budget) => {
 function applyUnaryCallback(
   fnNode: Node,
   arg: Abs,
-  env: AstEnv,
-  phi: Phi,
-  budget: LeakBudget,
+  idxAbs: Abs = undefAbs(),
+  env?: AstEnv,
+  phi?: Phi,
+  budget?: LeakBudget,
 ): Abs {
-  return applyCallbackAbs(fnNode, [arg], env, phi, budget);
+  return applyCallbackAbs(fnNode, [arg, idxAbs], env, phi, budget);
 }
 
 function applyBinaryCallback(
   fnNode: Node,
   a: Abs,
   b: Abs,
-  env: AstEnv,
-  phi: Phi,
-  budget: LeakBudget,
+  idxAbs: Abs = undefAbs(),
+  env?: AstEnv,
+  phi?: Phi,
+  budget?: LeakBudget,
 ): Abs {
-  return applyCallbackAbs(fnNode, [a, b], env, phi, budget);
+  return applyCallbackAbs(fnNode, [a, b, idxAbs], env, phi, budget);
 }
 
 /** relation-only 回调（无 body/apply，有 relation 槽或 isRelFn） */
