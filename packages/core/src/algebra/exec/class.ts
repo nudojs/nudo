@@ -9,7 +9,7 @@ import { objOf, joinAbs, isObj, canonicalArrayIndex } from "../objects.ts";
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags, tryMakeRegexAbs } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags, tryMakeRegexAbs, makeArrayCtorAbs } from "../builtins.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid } from "../collections.ts";
 import { registerMatchIter } from "./match-iter.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
@@ -131,24 +131,11 @@ function findCtor(
 export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Abs {
   // JS 内建构造器（Error/Date/URL…）：直接 brand，避免 $call 对非 Abs 炸掉
   if (typeof cls === "function") {
-    // new Array(n) → n 元 tuple；new Array(a,b,c) → 字面量 tuple
+    // new Array(n) → n 元空洞 tuple；new Array(a,b,c) → 字面量 tuple；
+    // 非法 length（1.5/-1/NaN/超 2^32-1）→ RangeError（与 ast-eval 共用
+    // makeArrayCtorAbs 口径）
     if (cls === Array) {
-      if (args.length === 1) {
-        const n = litValue(args[0]!);
-        if (typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= TUPLE_MATERIALIZE_CAP) {
-          // new Array(n)：全空洞（无自有槽；读值 undefined、in 判定 false）
-          const els = Array.from({ length: n }, () => undefAbs());
-          const holes = Array.from({ length: n }, (_, i) => i);
-          return abs(
-            { k: "tuple", elements: els, holes: n > 0 ? holes : undefined },
-            undefined,
-            undefined,
-            "exact",
-          );
-        }
-        return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
-      }
-      return abs({ k: "tuple", elements: args.map((a) => asAbs(a) ?? unknown) }, undefined, undefined, "exact");
+      return makeArrayCtorAbs(args);
     }
     // new RegExp(pattern, flags)：字面量真构造验证——非法 pattern/flags 硬抛
     // SyntaxError/TypeError；合法折叠精确 brand；抽象/RegExp 实例保守（下方 path brand）

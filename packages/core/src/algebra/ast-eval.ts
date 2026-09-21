@@ -2131,7 +2131,15 @@ function evalCall(
   );
 
   // 全局函数 builtin
-  const g = evalGlobalFn(name, args);
+  let g: Abs | undefined;
+  try {
+    g = evalGlobalFn(name, args);
+  } catch (e) {
+    // hard throw（Array(1.5) RangeError 等）：吸收为 EvalResult{threw}，
+    // evalTry 把抛出 Abs 绑进 catch 形参
+    if (isNudoThrow(e)) return { value: e.absValue, phi, env, threw: true };
+    throw e;
+  }
   if (g) return ok(g, phi, env);
 
   // 变量上的 Abs 一等函数（含 relation-only / shape-only）

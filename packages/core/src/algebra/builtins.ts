@@ -27,7 +27,7 @@ import {
   mapEntriesAbs,
   ctorArgDefinitelyInvalid,
 } from "./collections.ts";
-import { applyCallbackValue, undefAbs } from "./hof.ts";
+import { applyCallbackValue, undefAbs, asAbs } from "./hof.ts";
 import { matchIterElements } from "./exec/match-iter.ts";
 import { NudoThrow } from "./exec/nudo-throw.ts";
 import { errorTypeAbs } from "./exec/may-throw.ts";
@@ -596,10 +596,13 @@ function isPrimLike(a: Abs | undefined): boolean {
   return false;
 }
 
-/** 全局 parseInt / parseFloat / isNaN / Number / String / Boolean / Object */
+/** 全局 parseInt / parseFloat / isNaN / Number / String / Boolean / Object / Array */
 export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
   const a0 = args[0] ? litValue(args[0]) : undefined;
   switch (name) {
+    case "Array":
+      // Array(n)/Array(a,b)/Array() 与 new Array 同语义（共享 makeArrayCtorAbs）
+      return makeArrayCtorAbs(args);
     case "parseInt":
       if (typeof a0 === "string" || typeof a0 === "number") {
         const radix = args[1] ? litValue(args[1]) : undefined;
@@ -678,6 +681,52 @@ function peelBrand(shape: Abs["shape"]): Abs["shape"] {
   let s = shape;
   while (s.k === "brand") s = s.shape.shape;
   return s;
+}
+
+/**
+ * new Array(n) / Array(n) 构造语义（B-path $new、evalGlobalFn、ast-eval
+ * evalBuiltinNew 共用）：
+ * - 无参 → []；
+ * - 单 number 字面量整数 0..2^32-1 → n 元空洞 tuple（超物化上限降 arr）、
+ *   非法 number（非整数/负数/NaN/超 2^32-1）→ NudoThrow(RangeError)；
+ * - 其余字面量单实参（字符串/null/bigint…）→ 单元素 tuple；
+ * - 多实参 → 字面量 tuple；抽象实参 → 保守 arr。
+ */
+export function makeArrayCtorAbs(args: Abs[]): Abs {
+  if (args.length === 0) {
+    return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
+  }
+  if (args.length >= 2) {
+    return abs(
+      { k: "tuple", elements: args.map((a) => asAbs(a) ?? unknown) },
+      undefined,
+      undefined,
+      "exact",
+    );
+  }
+  const a0 = args[0]!;
+  if (a0.term?.op !== "lit") {
+    return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
+  }
+  const n = litValue(a0);
+  if (typeof n === "number") {
+    if (!Number.isInteger(n) || n < 0 || n > 4294967295) {
+      throw new NudoThrow(errorTypeAbs("RangeError"));
+    }
+    if (n > TUPLE_MATERIALIZE_CAP) {
+      // 合法但巨大：不物化巨 tuple
+      return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
+    }
+    const els = Array.from({ length: n }, () => undefAbs());
+    const holes = Array.from({ length: n }, (_, i) => i);
+    return abs(
+      { k: "tuple", elements: els, holes: n > 0 ? holes : undefined },
+      undefined,
+      undefined,
+      "exact",
+    );
+  }
+  return abs({ k: "tuple", elements: [a0] }, undefined, undefined, "exact");
 }
 
 /** Array.isArray / Array.from / Array.of */
@@ -1043,6 +1092,8 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
       return evalRegExpCtor(args);
     case "Promise":
       return evalPromiseCtor(args);
+    case "Array":
+      return makeArrayCtorAbs(args);
     case "Map":
       // C1.1：可选 entry 元组列表填充字面量映射；
       // 确定非法实参（prim 条目/非可迭代）→ NudoThrow(TypeError)
