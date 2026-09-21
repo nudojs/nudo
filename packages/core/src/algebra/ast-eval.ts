@@ -103,6 +103,7 @@ import {
   noteAnyMemberMayThrow,
   noteNullishMemberThrows,
   anyMemberResult,
+  definitelyUncallableMember,
 } from "./exec/member-diag.ts";
 import { errorTypeAbs, pushMayThrowFrame, popMayThrowFrame, orphanMayThrowEffects } from "./exec/may-throw.ts";
 import { NudoThrow, isNudoThrow } from "./exec/runtime.ts";
@@ -2038,11 +2039,15 @@ function evalCall(
         if (t === false) return ok(numLit(-1), phi, env);
         return ok(joinAbs(unknownIdx(), numLit(-1)), phi, env);
       }
-      // 分派失败：prim/any/nullish/unknown 记账（design-cli-semantics §3.3）
+      // 分派失败：结构上确定不可调用 → hard TypeError（与 B-path 同口径）；
+      // 其余 prim/any/nullish/unknown 记账（design-cli-semantics §3.3）
       {
         const loc = node.loc
           ? ([node.loc.start.line, node.loc.start.column] as [number, number])
           : undefined;
+        if (definitelyUncallableMember(obj, method)) {
+          return { value: errorTypeAbs("TypeError"), phi, env, threw: true };
+        }
         if (noteNullishMemberThrows(obj, method, "method", loc)) {
           return ok(unknown, phi, env);
         }

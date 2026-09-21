@@ -31,6 +31,7 @@ import {
   noteAnyMemberMayThrow,
   noteNullishMemberThrows,
   anyMemberResult,
+  definitelyUncallableMember,
 } from "./calls.ts";
 import { errorTypeAbs } from "./may-throw.ts";
 import { NudoThrow, $collectionForEach } from "./runtime.ts";
@@ -602,6 +603,11 @@ export function $invoke(
     // 对象方法（ObjectMethod / 方法型 FunctionExpression）：注入 receiver
     if (impl.bindThis) return $call(prop as Abs, [thisVal, ...args]);
     return $call(prop as Abs, args);
+  }
+  // 结构上确定不可调用（null-proto 缺失名 / 闭 exact 对象非 OP 名缺失 /
+  // 字面量非函数槽）→ 原生 TypeError hard throw（catch 可吸收）
+  if (definitelyUncallableMember(thisVal, method)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   // prim 接收者上的未知方法 → no-method
   if (notePrimMemberMissing(thisVal, method, "method", loc)) return unknown;

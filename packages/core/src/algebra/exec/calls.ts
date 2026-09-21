@@ -34,6 +34,8 @@ export {
   runWithEvalMissingSlot,
   tagAbsOrigin,
   getAbsOrigin,
+  OBJECT_PROTO_NAMES,
+  definitelyUncallableMember,
 } from "./member-diag.ts";
 export {
   setMayThrowCollector,

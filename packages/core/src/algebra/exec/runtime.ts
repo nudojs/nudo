@@ -38,6 +38,7 @@ import {
   noteAnyMemberMayThrow,
   noteNullishMemberThrows,
   anyMemberResult,
+  OBJECT_PROTO_NAMES,
 } from "./calls.ts";
 import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, recordMayThrow, type MayThrowEffect } from "./may-throw.ts";
 import { getBClass, classNameOfValue, markClassValue } from "./class-registry.ts";
@@ -200,18 +201,6 @@ export function $toNumber(a: Abs): Abs {
 }
 
 // --- in / instanceof / delete（transpile 运算符路由；与 ast-eval 同口径） ---
-
-/** Object.prototype 上的恒有成员（`in` 判定：闭对象缺自有槽仍可能经原型命中） */
-const OBJECT_PROTO_NAMES = new Set([
-  "constructor",
-  "toString",
-  "valueOf",
-  "toLocaleString",
-  "hasOwnProperty",
-  "isPrototypeOf",
-  "propertyIsEnumerable",
-  "__proto__",
-]);
 
 /** ES 规范数组下标（无前导零、< 2^32-1）；非规范键返回 undefined */
 function canonicalArrayIndex(v: unknown): number | undefined {
