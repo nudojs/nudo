@@ -1249,7 +1249,29 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
   switch (stmt.type) {
     case "ExportNamedDeclaration": {
       const decl = stmt.declaration;
-      if (!decl) return `${pad}/* export specifiers skipped */`;
+      if (!decl) {
+        // 保留合法 ESM 形态：run.ts 后处理改写为 __nudoExport（modules 表
+        // 注入绑定）；真实 .mjs import 消费者直接吃标准 ESM 语义。
+        if (depth !== 0) return `${pad}/* nested export specifiers skipped */`;
+        const specs = stmt.specifiers
+          .filter(
+            (s): s is typeof s & {
+              local: { type?: string; name?: string; value?: string };
+              exported: { type?: string; name?: string; value?: string };
+            } => "local" in s,
+          )
+          .map((s) => {
+            const local = s.local.type === "Identifier" ? s.local.name : s.local.value;
+            const exported =
+              s.exported.type === "Identifier" ? s.exported.name : s.exported.value;
+            return local === exported ? local : `${local} as ${exported}`;
+          })
+          .join(", ");
+        if (stmt.source) {
+          return `${pad}export { ${specs} } from ${JSON.stringify(stmt.source.value)};`;
+        }
+        return `${pad}export { ${specs} };`;
+      }
       const inner = transpileStatement(decl as Statement, depth, opts);
       // 顶层 export const/let：保留 export 面（run.ts 收集进 exports，
       // 供 directive case 经 callTranspiledExport 求值）
@@ -1257,6 +1279,10 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         return `export ${inner}`;
       }
       return inner;
+    }
+    case "ExportAllDeclaration": {
+      if (depth !== 0) return `${pad}/* nested export * skipped */`;
+      return `${pad}export * from ${JSON.stringify(stmt.source.value)};`;
     }
     case "ImportDeclaration": {
       // 保留 import；run.ts 会改写为 __nudoBindImport
@@ -1280,8 +1306,14 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     case "ExportDefaultDeclaration": {
       const d = stmt.declaration;
       if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
-        const inner = transpileStatement(d as Statement, depth, opts);
-        return inner.replace(/^(\s*)export function /, "$1export default function ");
+        // 匿名默认函数/类合成名字（原 <anonymous fn skipped> 整条丢失）；
+        // 输出 `function X {}` + `export default X;`——真实 ESM 与 run.ts
+        // 后处理（→ __nudoExport("default", X)）都合法。
+        const name =
+          d.id?.name ?? (d.type === "FunctionDeclaration" ? "__nudoDefaultFn" : "__nudoDefaultClass");
+        const named = d.id ? d : ({ ...d, id: { type: "Identifier", name } } as Statement);
+        const inner = transpileStatement(named, depth + 1, opts);
+        return `${inner}\n${pad}export default ${name};`;
       }
       return `${pad}export default ${transpileExpression(d as Expression, opts)};`;
     }

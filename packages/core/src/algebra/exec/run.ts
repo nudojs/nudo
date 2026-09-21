@@ -130,11 +130,14 @@ function stripEffectfulTopLevel(js: string): string {
         i++;
         continue;
       }
-      // 其它未知全局调用（未走 $callNamed 的）
+      // 其它未知全局调用（未走 $callNamed 的）；__nudoExport/__nudoExportStar
+      // 是导出簿记（rewriteExportStatements 产物），非副作用，保留
       const callMatch = t.match(/^([A-Za-z_$][\w$]*)\s*\(/);
       if (
         callMatch &&
         !callMatch[1]!.startsWith("$") &&
+        callMatch[1] !== "__nudoExport" &&
+        callMatch[1] !== "__nudoExportStar" &&
         !declared.has(callMatch[1]!) &&
         !/^(const|let|var|function|export|import|return|if|for|while|switch|try|throw|class)\b/.test(t)
       ) {
@@ -228,6 +231,52 @@ function requireFromModules(
   return mod;
 }
 
+/** 导出语句后处理：specifier / re-export / star / default → __nudoExport 调用。
+ *  静态声明导出（export function/const/let）走既有正则扫描 + 返回对象；
+ *  冲突语义：显式导出压过 export *（ESM 早错保证 decl/specifier 不重名，
+ *  star×star 按源序后者覆盖——与 collectAbsExports 顺序口径一致）。 */
+function rewriteExportStatements(js: string): string {
+  // export { x as y } from "spec"：绑定经 modules 表注入
+  js = js.replace(
+    /^export\s*\{([^}]*)\}\s*from\s*["']([^"']+)["'];\s*$/gm,
+    (_all, names: string, spec: string) =>
+      names
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((p) => {
+          const [local, exported] = p.split(/\s+as\s+/).map((x) => x.trim().replace(/^"|"$/g, ""));
+          const exp = exported ?? local;
+          return `__nudoExport(${JSON.stringify(exp)}, __nudoBindImport(${JSON.stringify(spec)}, ${JSON.stringify(local)}));`;
+        })
+        .join("\n"),
+  );
+  // export * from "spec"：并入 named（不含 default，ESM 语义）
+  js = js.replace(
+    /^export\s*\*\s*from\s*["']([^"']+)["'];\s*$/gm,
+    (_all, spec: string) => `__nudoExportStar(${JSON.stringify(spec)});`,
+  );
+  // export { a, b as c }：本地绑定重命名导出
+  js = js.replace(
+    /^export\s*\{([^}]*)\};\s*$/gm,
+    (_all, names: string) =>
+      names
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((p) => {
+          const [local, exported] = p.split(/\s+as\s+/).map((x) => x.trim().replace(/^"|"$/g, ""));
+          return `__nudoExport(${JSON.stringify(exported ?? local)}, ${local});`;
+        })
+        .join("\n"),
+  );
+  // export default <expr>;（transpile 保证函数/类默认已展开成命名 + 标识符形态）
+  return js.replace(
+    /^export default (.+);\s*$/gm,
+    (_all, expr: string) => `__nudoExport("default", ${expr});`,
+  );
+}
+
 /**
  * 执行一段 B 路径程序，返回顶层 `export function` / `export const`。
  */
@@ -245,6 +294,7 @@ export function runTranspiled(
   });
   js = js.replace(RUNTIME_IMPORT_RE, "");
   js = rewriteUserImports(js);
+  js = rewriteExportStatements(js);
   if (opts.mode === "analyze") {
     js = stripEffectfulTopLevel(js);
   }
@@ -267,6 +317,7 @@ export function runTranspiled(
   js = js.replace(/^export (?:const|let) /gm, "let ");
 
   const names = [...new Set([...exportFns, ...exportConsts])];
+  const dynExports: Record<string, unknown> = {};
   const argNames = [
     ...runtimeArgNames(),
     "__nudoModules",
@@ -275,6 +326,9 @@ export function runTranspiled(
     "__nudoReplaces",
     "__nudoRequire",
     "__nudoEnv",
+    "__nudoExport",
+    "__nudoExportStar",
+    "__nudoExports",
   ];
   const args = argNames.map((n) => {
     if (n === "__nudoModules") return modules;
@@ -289,6 +343,22 @@ export function runTranspiled(
       return (spec: string) => requireFromModules(modules, spec);
     }
     if (n === "__nudoEnv") return opts.envGlobals ?? {};
+    if (n === "__nudoExport") {
+      return (name: string, value: unknown) => {
+        dynExports[name] = value;
+      };
+    }
+    if (n === "__nudoExportStar") {
+      return (spec: string) => {
+        const mod = modules?.[spec];
+        if (mod && "named" in (mod as object)) {
+          for (const [k, v] of Object.entries((mod as AbsModuleExports).named)) {
+            dynExports[k] = v;
+          }
+        }
+      };
+    }
+    if (n === "__nudoExports") return dynExports;
     return rtAll[n];
   });
 
@@ -300,7 +370,9 @@ export function runTranspiled(
     js = `${envBinds}\n${js}`;
   }
 
-  const ret = names.length > 0 ? `return { ${names.join(", ")} };` : "return {};";
+  // 动态导出（specifier/re-export/star/default）先展开，静态声明名后写：
+  // 显式导出压过 export *（ESM 语义；decl/specifier 重名是 ESM 早错）。
+  const ret = `return { ...__nudoExports, ${names.join(", ")} };`;
   const fn = new Function(...argNames, `${js}\n${ret}`);
   return fn(...args) as Record<string, unknown>;
 }
