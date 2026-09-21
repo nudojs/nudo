@@ -11,6 +11,7 @@ import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
 import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags } from "../builtins.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid } from "../collections.ts";
+import { registerMatchIter } from "./match-iter.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
 import {
   applyCallbackAbs,
@@ -367,7 +368,15 @@ function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs | undefi
     const els: Abs[] = m.map((g) => (g === undefined ? undefAbs() : strLit(g)));
     matchEls.push(abs({ k: "tuple", elements: els }, undefined, undefined, "exact"));
   }
-  return abs({ k: "tuple", elements: matchEls }, undefined, undefined, "exact");
+  // RegExpStringIterator 是对象：无 .length/下标；展开经侧表按匹配项精确迭代
+  const iter = abs(
+    { k: "brand", name: "RegExpMatchIterator", shape: objOf({}) },
+    undefined,
+    undefined,
+    "path",
+  );
+  registerMatchIter(iter, matchEls);
+  return iter;
 }
 
 /**

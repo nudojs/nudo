@@ -27,6 +27,7 @@ import {
   setSizeAbs,
 } from "../collections.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf, TUPLE_MATERIALIZE_CAP } from "../containers.ts";
+import { registerMatchIter, matchIterElements } from "./match-iter.ts";
 import { leqAbs } from "../leq.ts";
 import { evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants } from "../builtins.ts";
 import type { Phi } from "../pred.ts";
@@ -1644,6 +1645,10 @@ export function $len(a: Abs): Abs {
       if (lenSlot && !lenSlot.optional) return lenSlot.value;
     }
   }
+  // RegExpStringIterator（matchAll 结果）：无 length 属性 → undefined
+  if (a.shape.k === "brand" && a.shape.name === "RegExpMatchIterator") {
+    return undef();
+  }
   return unknown;
 }
 
@@ -1768,12 +1773,14 @@ export function $concat(a: Abs, b: Abs): Abs {
   };
   throwIfNonIterable(a);
   throwIfNonIterable(b);
-  // Set/Map：条目精确展开（Map 是 entry 元组）；其余非容器（unknown/any/
-  // brand/obj/抽象字符串）长度未知——必须 arr join，不得折单元素 tuple
-  // （[...x].length 假精确 1 的根因）
+  // Set/Map/matchAll 迭代器：条目精确展开（Map 是 entry 元组）；其余非容器
+  // （unknown/any/brand/obj/抽象字符串）长度未知——必须 arr join，不得折单元素
+  // tuple（[...x].length 假精确 1 的根因）
   const expand = (x: Abs): Abs[] | null => {
     if (isSetAbs(x)) return setElementsAbs(x);
     if (isMapAbs(x)) return mapEntriesAbs(x);
+    const mi = matchIterElements(x);
+    if (mi) return mi;
     return null;
   };
   if (as.k === "tuple") {
@@ -1802,13 +1809,15 @@ export function $concat(a: Abs, b: Abs): Abs {
   );
 }
 
-/** 元素列表（tuple 展开；arr 抽象；C1 Set/Map 逐条目；字符串按 code points）。
- *  Map 迭代语义是 entry `[key, value]` 元组，不是裸 value。 */
+/** 元素列表（tuple 展开；arr 抽象；C1 Set/Map 逐条目；matchAll 迭代器逐匹配项；
+ *  字符串按 code points）。Map 迭代语义是 entry `[key, value]` 元组，不是裸 value。 */
 export function $elems(a: Abs): Abs[] {
   if (a.shape.k === "tuple") return [...a.shape.elements];
   if (a.shape.k === "arr") return [a.shape.element];
   if (isSetAbs(a)) return setElementsAbs(a);
   if (isMapAbs(a)) return mapEntriesAbs(a);
+  const mi = matchIterElements(a);
+  if (mi) return mi;
   const sv = litValue(a);
   if (typeof sv === "string") return [...sv].map((c) => $lit(c));
   return [unknown];

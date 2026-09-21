@@ -82,4 +82,19 @@ describe("B-path string.matchAll", () => {
     const r = call(`export function f() { return [...'ab'.matchAll(/(?:)/g)].length; }`);
     expect(litValue(r.result)).toBe(3);
   });
+
+  // RegExpStringIterator 是迭代器对象：没有 .length（undefined），
+  // 只有 spread/Array.from/for-of 消费。此前折 tuple 暴露幽灵 length。
+  it("matchAll iterator has no length property", () => {
+    expect(litValue(call(`export function f() { return 'abcabc'.matchAll(/b/g).length ?? 'none'; }`).result)).toBe("none");
+    expect(litValue(call(`export function f() { return typeof 'abc'.matchAll(/b/g); }`).result)).toBe("object");
+  });
+
+  it("matchAll iterator stays spreadable and Array.from-able", () => {
+    expect(litValue(call(`export function f() { return [...'abcabc'.matchAll(/b/g)].length; }`).result)).toBe(2);
+    expect(litValue(call(`export function f() { return [...'abcabc'.matchAll(/b/g)][0][0]; }`).result)).toBe("b");
+    expect(litValue(call(`export function f() { return [...'abcabc'.matchAll(/b/g)][1][0]; }`).result)).toBe("b");
+    expect(litValue(call(`export function f() { let n = 0; Array.from('abcabc'.matchAll(/b/g), (m) => { n++; return m; }); return n; }`).result)).toBe(2);
+    expect(litValue(call(`export function f() { return [...'abc'.matchAll(/z/g)].length; }`).result)).toBe(0);
+  });
 });

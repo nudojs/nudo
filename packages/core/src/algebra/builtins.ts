@@ -27,6 +27,7 @@ import {
   ctorArgDefinitelyInvalid,
 } from "./collections.ts";
 import { applyCallbackValue, undefAbs } from "./hof.ts";
+import { matchIterElements } from "./exec/match-iter.ts";
 import { pTrue } from "./pred.ts";
 import { defaultLeakBudget } from "./leak.ts";
 import { emptyEnv } from "./ast-eval.ts";
@@ -539,6 +540,18 @@ export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
         let el = mapOne(els[0]!, numLit(0));
         for (let i = 1; i < els.length; i++) el = joinAbs(el, mapOne(els[i]!, numLit(i)));
         return abs({ k: "arr", element: el }, undefined, undefined, "path");
+      }
+      {
+        // matchAll 迭代器：逐匹配项展开
+        const mi = matchIterElements(a0);
+        if (mi) {
+          if (mi.length === 0) {
+            return abs({ k: "arr", element: unknown }, undefined, undefined, "path");
+          }
+          let el = mapOne(mi[0]!, numLit(0));
+          for (let i = 1; i < mi.length; i++) el = joinAbs(el, mapOne(mi[i]!, numLit(i)));
+          return abs({ k: "arr", element: el }, undefined, undefined, "path");
+        }
       }
       const k = a0.shape.k;
       if (k === "arr") {
