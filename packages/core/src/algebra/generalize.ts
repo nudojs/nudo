@@ -18,6 +18,7 @@ import type { Abs, Shape } from "./abs.ts";
 import { abs, unknown } from "./abs.ts";
 import type { AstEnv } from "./ast-env.ts";
 import { evalNode, emptyEnv } from "./ast-eval.ts";
+import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
 import { defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { formatShapeSlot } from "./format.ts";
 import { type RefineResolveOpts } from "./refine.ts";
@@ -39,21 +40,26 @@ import {
 } from "./load-deps-fp.ts";
 import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
 import { scanPromotions } from "./promote-scan.ts";
-import { tryRunTranspiled, callTranspiledExportFull } from "./exec/run.ts";
+import { tryRunTranspiled, callTranspiledExportFull, type RunTranspiledOptions } from "./exec/run.ts";
 
 /** generalize 的 B-path 模块执行缓存（按 source；run 不依赖实参） */
 const bRunMemo = new Map<string, Record<string, unknown>>();
-function bPathRunOf(source: string): Record<string, unknown> | undefined {
+function bPathRunOf(
+  source: string,
+  modules?: Record<string, AbsModuleExports | Record<string, unknown>>,
+  inject?: RunTranspiledOptions,
+): Record<string, unknown> | undefined {
+  const mKey = `${source}|${moduleMapId(modules)}|${moduleMapId(inject as object | undefined)}`;
   if (bRunMemo.size >= 256) {
     const oldest = bRunMemo.keys().next().value;
     if (oldest !== undefined) bRunMemo.delete(oldest);
   }
-  let run = bRunMemo.get(source);
+  let run = bRunMemo.get(mKey);
   if (run === undefined) {
-    const r = tryRunTranspiled(source, { mode: "analyze" });
+    const r = tryRunTranspiled(source, { mode: "analyze", modules, ...inject });
     if (r === undefined) return undefined;
     run = r;
-    bRunMemo.set(source, run);
+    bRunMemo.set(mKey, run);
   }
   return run;
 }
@@ -163,6 +169,19 @@ function refineDepsFingerprint(source: string, refine?: RefineResolveOpts): Load
   return loadModuleDepsFingerprint(source, refine.loadModule, refine.fromFile);
 }
 
+/** 模块表身份（WeakMap）——调用方同表对象跨调用 → 键稳定（与 loadModuleId 同信任模型） */
+const moduleMapIds = new WeakMap<object, number>();
+let moduleMapIdSeq = 0;
+function moduleMapId(m: object | undefined): string {
+  if (!m) return "-";
+  let id = moduleMapIds.get(m);
+  if (id === undefined) {
+    id = ++moduleMapIdSeq;
+    moduleMapIds.set(m, id);
+  }
+  return `m${id}`;
+}
+
 function generalizeMemoKey(
   fnName: string,
   source: string,
@@ -175,6 +194,11 @@ function generalizeMemoKey(
     depsFp?: LoadDepsFingerprint;
     /** checkSource 预计算：ambient 侧车闭包指纹（独立调用时现算） */
     sidecarFp?: string;
+    /** 宿主已求值的依赖导出表（specifier → AbsModuleExports） */
+    modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+    /** B run 注入包（modules/mocks/envGlobals/replacements/as）——透传
+     *  runTranspiled；对象身份进 memo 键（调用方同文件内复用同一对象） */
+    inject?: RunTranspiledOptions;
   },
 ): { key: string; depPaths: string[]; truncated: boolean } {
   const r = opts.refine;
@@ -201,6 +225,7 @@ function generalizeMemoKey(
     deps.fp,
     sc ?? "-",
     `${budget.maxDepth}/${budget.maxNodes}`,
+    moduleMapId(opts.modules),
   ].join("|");
   return {
     key,
@@ -811,6 +836,11 @@ export function generalizeFromAst(
     depsFp?: LoadDepsFingerprint;
     /** 预计算 ambient 侧车闭包指纹（checkSource 整文件一次） */
     sidecarFp?: string;
+    /** 宿主已求值的依赖导出表（specifier → AbsModuleExports） */
+    modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+    /** B run 注入包（modules/mocks/envGlobals/replacements/as）——透传
+     *  runTranspiled；对象身份进 memo 键（调用方同文件内复用同一对象） */
+    inject?: RunTranspiledOptions;
   } = {},
 ): PolyFn | undefined {
   const { key, depPaths, truncated } = generalizeMemoKey(fnName, source, opts);
@@ -838,6 +868,11 @@ function generalizeFromAstUncached(
     file?: ReturnType<typeof babelParse>;
     /** checkSource 预计算：ambient 侧车闭包指纹（独立调用时现算） */
     sidecarFp?: string;
+    /** 宿主已求值的依赖导出表（specifier → AbsModuleExports） */
+    modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+    /** B run 注入包（modules/mocks/envGlobals/replacements/as）——透传
+     *  runTranspiled；对象身份进 memo 键（调用方同文件内复用同一对象） */
+    inject?: RunTranspiledOptions;
   } = {},
 ): PolyFn | undefined {
   const extracted = extractFn(source, fnName, opts.file);
@@ -926,18 +961,37 @@ function generalizeFromAstUncached(
   //      opaque→不写关系契约保留）
   // 其余一律解释路径。B 失败回落。
   const fileAst = opts.file ?? babelParse(source);
-  const importLocals: string[] = [];
+  // import 按 spec 可解析性判定：body 引用的导入名其 spec 在注入表内 → B 可
+  // （绑定缺失名在 B 内 crash-and-swallow，解释路径的未绑定名处理更干净）；
+  // 未注入（调用方未传 modules）→ 与旧行为一致走解释路径。
+  const importSpecByLocal = new Map<string, string>();
   for (const stmt of fileAst.program.body) {
     if (stmt.type === "ImportDeclaration") {
-      for (const s of stmt.specifiers) importLocals.push(s.local.name);
+      for (const s of stmt.specifiers) {
+        importSpecByLocal.set(s.local.name, (stmt.source as { value?: string }).value ?? "");
+      }
     }
   }
-  const usesImports = importLocals.some((n) => bodyReferencesName(body, n));
+  const unresolvableImports = [...importSpecByLocal.keys()].some((n) => {
+    if (!bodyReferencesName(body, n)) return false;
+    const spec = importSpecByLocal.get(n);
+    return spec === undefined || !(opts.modules && Object.prototype.hasOwnProperty.call(opts.modules, spec));
+  });
+  // mock/env/replace 指令：注入包缺失时 B run 会执行真实宿主调用（裸 fetch
+  // 崩溃 / 未绑定名 ReferenceError 假 throws）——无注入则拦；注入齐备则放行
+  const inject = opts.inject;
+  const hasMocks = inject && Object.keys(inject.mocks ?? {}).length > 0;
+  const hasEnv = inject && Object.keys(inject.envGlobals ?? {}).length > 0;
+  const hasReps = inject && Object.keys(inject.replacements ?? {}).length > 0;
+  const mockGated = /@nudo:(mock|mock-module)\b/.test(source) && !hasMocks;
+  const envGated = /@nudo:env\b/.test(source) && !hasEnv;
+  const replaceGated = /@nudo:replace\b/.test(source) && !hasReps;
   const bEligible =
     !fnName.includes(".") &&
-    !usesImports &&
-    !/\brequire\s*\(/.test(source) &&
-    !/@nudo:(mock|env|replace|mock-module)\b/.test(source);
+    !unresolvableImports &&
+    !mockGated &&
+    !envGated &&
+    !replaceGated;
 
   const run = (args: Abs[], phi: Phi = pTrue): Abs => {
     const { key, varOrder } = instantiateMemoKey(args, phi);
@@ -948,7 +1002,7 @@ function generalizeFromAstUncached(
     let result: Abs | undefined;
     if (bEligible) {
       try {
-        const bRun = bPathRunOf(source);
+        const bRun = bPathRunOf(source, opts.modules, opts.inject);
         if (bRun && fnName in bRun) {
           // 提升形状预绑定到实参（B 无 env 预绑面；具体实参优先）
           const bArgs = args.map((a, i) => {
@@ -969,6 +1023,14 @@ function generalizeFromAstUncached(
         vars: new Map(env.vars),
         fns: env.fns,
       };
+      // 解释路径同源解析注入模块（与 B 侧 bindImport 对齐）
+      if (opts.modules) {
+        for (const stmt of fileAst.program.body) {
+          if (stmt.type === "ImportDeclaration") {
+            bindImports(stmt, local, opts.modules as Record<string, AbsModuleExports>);
+          }
+        }
+      }
       params.forEach((p, i) => {
         local.vars.set(p, args[i] ?? unknown);
       });

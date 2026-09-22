@@ -1327,9 +1327,9 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         return `${pad}export { ${specs} };`;
       }
       const inner = transpileStatement(decl as Statement, depth, opts);
-      // 顶层 export const/let：保留 export 面（run.ts 收集进 exports，
-      // 供 directive case 经 callTranspiledExport 求值）
-      if (depth === 0 && decl.type === "VariableDeclaration" && !pad) {
+      // 顶层 export const/let/class：保留 export 面（run.ts 收集进 exports，
+      // 供 directive case 经 callTranspiledExport 求值；模块图依赖此表）
+      if (depth === 0 && (decl.type === "VariableDeclaration" || decl.type === "ClassDeclaration") && !pad) {
         return `export ${inner}`;
       }
       return inner;

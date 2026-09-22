@@ -51,6 +51,8 @@ export type RunTranspiledOptions = {
   asOverrideTargets?: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
   /** @nudo:env 全局 Abs（JSON/Math/console…）→ 作用域绑定 */
   envGlobals?: Record<string, Abs>;
+  /** @nudo:mock 注入值：name → Abs（mockDirectivesToAbsSeeds 产物） */
+  mocks?: Record<string, Abs>;
 };
 
 export const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;

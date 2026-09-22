@@ -314,7 +314,7 @@ pin 'pnpm run check docs/examples/interface-derivation/add.js' \
   'add2(x: number) => number'
 pin 'pnpm run check docs/examples/interface-derivation/lib.js' \
   '0 error · 0 warning' \
-  'add4(x: number) => number | string'
+  'add4(x: number) => number'
 
 # interface-draft/ — code-first draft promises (F6). Primary verb: contract.
 pin 'pnpm run contract --draft docs/examples/interface-draft/greet.js' \

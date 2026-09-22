@@ -68,6 +68,7 @@ import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
 import { listTopFunctions, scanLiteralCalls } from "./scan.ts";
 import { analyzeFnFull } from "./ast-eval.ts";
+import type { AbsModuleExports } from "./abs-modules.ts";
 import { tryRunTranspiled, callTranspiledExportFull, bindingsOf, type TranspiledCallResult } from "./exec/run.ts";
 import { setBAssignCollector, setBCallCollector, type BCallRecord } from "./exec/calls.ts";
 import {
@@ -167,6 +168,19 @@ function cloneCheckReport(r: CheckReport): CheckReport {
   };
 }
 
+/** 模块表身份（与 loadModuleId 同信任模型） */
+const moduleMapIds = new WeakMap<object, number>();
+let moduleMapIdSeq = 0;
+function moduleMapId(m: object | undefined): string {
+  if (!m) return "-";
+  let id = moduleMapIds.get(m);
+  if (id === undefined) {
+    id = ++moduleMapIdSeq;
+    moduleMapIds.set(m, id);
+  }
+  return `m${id}`;
+}
+
 function checkMemoKey(
   filePath: string,
   source: string,
@@ -186,6 +200,7 @@ function checkMemoKey(
     identityOpts.autoBind === false ? "ab0" : "ab1",
     identityOpts.entryThrows ?? "error",
     (identityOpts.ignoreThrows ?? []).join(",") || "-",
+    moduleMapId(identityOpts.modules),
   ].join("|");
 }
 
@@ -240,6 +255,10 @@ export type CheckOptions = {
   entryThrows?: "error" | "warning" | "off";
   /** L2 --ignore-throws：按 throws 类型名过滤；不吞 L1 */
   ignoreThrows?: string[];
+  /** 宿主已求值的依赖导出表（specifier → AbsModuleExports）；
+   *  B 与解释路径共用——import/require 按表解析（CLI 经
+   *  evalAbsModuleGraph 计算后下传） */
+  modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
 };
 
 /**
@@ -440,6 +459,7 @@ function checkSourceInner(
       },
       depsFp,
       sidecarFp,
+      modules: opts.modules,
     });
     if (!g) {
       const isEntryCandidate =
@@ -672,7 +692,7 @@ function checkSourceInner(
     if (g.symbolic.conf === "opaque" || g.symbolic.conf === "partial") {
       const entryArgs = g.typeParams.map((t) => t.value);
       try {
-        const r = analyzeFn(source, name, entryArgs, phi, undefined, file);
+        const r = analyzeFn(source, name, entryArgs, phi, undefined, file, opts.modules as Record<string, AbsModuleExports> | undefined);
         if (r.conf === "opaque" && !truncated.has(name)) {
           issues.push({
             severity: "info",
@@ -742,7 +762,7 @@ function checkSourceInner(
   }
   if (bBindings === undefined) {
     try {
-      const { env } = evalProgramAbs(source, { file });
+      const { env } = evalProgramAbs(source, { file, modules: opts.modules as Record<string, AbsModuleExports> | undefined });
       for (const [k, v] of env.vars) varAbs.set(k, v);
     } catch {
       /* 求值失败：无赋值记录、无绑定表 */
@@ -786,6 +806,7 @@ function checkSourceInner(
       file,
       sidecarPresent: sidecarFp !== undefined,
       ...(autoBind !== undefined ? { autoBind } : {}),
+      modules: opts.modules,
     }),
   );
 
@@ -1220,6 +1241,8 @@ function scanCaseInconsistency(
     sidecarPresent?: boolean;
     /** 侧车 ambient 绑定开关（checkSource 的 package.json 配置下传） */
     autoBind?: boolean;
+    /** 宿主已求值的依赖导出表（generalize B/解释路径共用） */
+    modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
   },
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
@@ -1294,7 +1317,7 @@ function scanCaseInconsistency(
     args: string[],
     line: number | undefined,
   ): void => {
-    const g = generalizeFromAst(fnName, source, file ? { file } : {});
+    const g = generalizeFromAst(fnName, source, file ? { file, modules: opts.modules } : { modules: opts.modules });
     if (!g) return;
     const paramNames = g.params;
     // 有效契约单点读取：只执法 handwritten（generated/implicit 不执法）

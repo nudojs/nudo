@@ -36,7 +36,7 @@ function readServiceVersion(): string {
  * 带包版本：升级 @nudojs/* 后旧 CheckJson 不得继续命中。
  * 语义大改仍可手工再抬 major（`nudo-check-cache-v3`）。
  */
-export const ANALYSIS_ABI = `nudo-check-cache-v2+${readServiceVersion()}`;
+export const ANALYSIS_ABI = `nudo-check-cache-v3+${readServiceVersion()}`;
 
 export type DiskCacheOptions = {
   /** 缓存根目录；undefined = 禁用 */

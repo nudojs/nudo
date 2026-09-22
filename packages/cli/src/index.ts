@@ -44,6 +44,10 @@ import {
   formatInterfaceSurfaceLine,
   checkCacheKey,
   checkConfig,
+  evalAbsModuleGraph,
+  mockSeedsForSource,
+  collectBPathReplacements,
+  collectEnvGlobals,
   type CallRecord,
   type CaseResult,
   type AnalysisResult,
@@ -384,12 +388,36 @@ async function runCheck(
       summary: { ...cached.summary },
     } as Awaited<ReturnType<typeof checkSource>>;
   } else {
+    // B 注入包（模块图 + mocks + env 全局 + replace/as）——同文件内复用同一
+    // 对象（checkSource/generalize memo 键按对象身份）
+    let inject: Record<string, unknown> | undefined;
+    try {
+      const graph = evalAbsModuleGraph(source, filePath);
+      const reps = collectBPathReplacements(source);
+      const mocks = mockSeedsForSource(source);
+      const envGlobals = collectEnvGlobals(projectEnvNames);
+      const hasCycle = graph.issues.some((i) => i.kind === "cycle");
+      inject = {
+        ...(hasCycle ? {} : { modules: graph.modules }),
+        ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
+        ...(Object.keys(envGlobals).length > 0 ? { envGlobals } : {}),
+        ...(reps.targets.length > 0
+          ? { replacements: reps.values, replacementTargets: reps.targets }
+          : {}),
+        ...(reps.asTargets.length > 0
+          ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
+          : {}),
+      };
+    } catch {
+      /* 注入计算失败：不注入（旧语义，回落解释路径） */
+    }
     algebraReport = checkSource(filePath, source, pTrue, {
       loadModule,
       fromFile: filePath,
       ...(autoBind === false ? { autoBind: false } : {}),
       entryThrows,
       ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
+      ...(inject && Object.keys(inject).length > 0 ? { modules: inject.modules as never, inject } : {}),
     });
   }
 
