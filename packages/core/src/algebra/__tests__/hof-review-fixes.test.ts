@@ -108,6 +108,8 @@ describe("P2: truncated symbolic discards partial relations", () => {
     expect(g).toBeDefined();
     if (!g) return;
     // 截断后 symbolic 为 opaque → 不可缓存 → 不写半截关系
+    // （instantiate→B 实验已回退：B 的递归 partial 与 ast-eval opaque
+    // 语义不同——opaque 门保留，静态关系也随门一起走）
     expect(g.symbolic.conf).toBe("opaque");
     expect(g.fnRels).toBeUndefined();
     expect(g.entryShapes).toBeUndefined();

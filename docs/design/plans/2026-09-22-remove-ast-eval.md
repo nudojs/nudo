@@ -81,6 +81,7 @@ setBCallCollector 映射。LSP hover/bindings（collectAbsNodeTypes）为
 B 不可托管文件兜底，保持 ast-eval（收缩面）。
 
 ### P3.5：四个迁移件 ✅ 全部完成（2026-09-22）
+
 1. **提升前置化**（4d8c670）：promote-scan.ts 静态扫描替代求值期 8 处
    挂载点——generalize symbolic/instantiate 共用扫描决策，B 吃预提升
    实参即获同等精度；for-of 循环变量→元素 term 数据流作用域化追踪。
@@ -92,6 +93,37 @@ B 不可托管文件兜底，保持 ast-eval（收缩面）。
 4. **body 转译**（49783e4）：`$call` 对自包含 body 编译执行
    （free-identifier 扫描门：闭包/兄弟函数/递归回落解释路径保预算；
    apply 钩子优先；NudoThrow→never 契约不变）。
+
+### P3.6：instantiate→B 换引擎实验 ❌ 已回退（2026-09-22，实验结论存档·已修正）
+实验：generalize 的 run()（symbolic/instantiate 共用）phi===pTrue 面走
+runTranspiled + callTranspiledExportFull（提升形状预绑定到实参）。
+
+**修正后阻塞清单**（初版记录把两条实现缺陷误报为结构性阻塞，已复核）：
+
+1. **phi 分支收窄缺失（结构性，唯一真阻塞）**——同源码同实参实测：
+   ```
+   源码:    function f(x){ if (x>0) return x; return 0; }   // @nudo:refine x positive
+   转译:    return $fork($gt(x, $lit(0)), () => x, () => $lit(0));
+   ①ast-eval（Φ=x>0）: number  = x  where x > 0  #path   ← term/pred 保留
+   ②B-path（同实参，无 Φ 入口）: number  #path            ← 两臂 join 丢 term
+   ```
+   机制：`$gt(x-with-pred, $lit(0))` 实测返回 `boolean #partial`——比较不
+   消费操作数 pred；收窄来自 evalNode 的 Φ∧test 推理（refineAbsForRelTrue），
+   B 的 $fork 只吃三值测试 → 双臂 join。check 签名 verbose 的 term/pred
+   （D2 测试）即由此丢失。
+2. ~~对象字面量构造精度分叉~~ **实为实现缺陷**：隔离复现（类实例/箭头/
+   纯字面量三变体）两侧结果完全一致；真实差异来自 generalize 的裸
+   runTranspiled **没注入模块表**——ast-eval 把 `export { MemoryStore }`
+   的导出名做成名字桩解析，B run 无注入 → `$new(undefined)` → unknown。
+   修复前提 = 给 generalize 的 B run 线程 modules（analyzer 侧已有）。
+3. ~~async 执行崩溃~~ **实为实现缺陷（且为文档化行为）**：f-async-eff
+   示例头注释自己写明「@nudo:mock 必填——B 路径会执行真实 fetch，拿 Abs
+   当 URL 直接 ERR_INVALID_URL 崩溃」；swap 的裸 runTranspiled 无 mock
+   注入 → 命中该文档化失败模式。修复前提 = 线程 mock replacements。
+
+**结论**：回退成立，但理由收窄为 ①（phi 收窄——refine 约束入口是 check
+产品的核心用例，B 结构性缺失）；②③ 是可修的注入工程（若未来要做
+phi-free 切片，需先给 generalize 线程 modules+mocks）。
 
 ### P4：收缩 ✅ 定案（2026-09-22，替代「删除」）
 
