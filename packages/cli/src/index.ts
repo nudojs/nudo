@@ -537,9 +537,10 @@ async function runAbsView(
       continue;
     }
     const args = algebra.buildArgsFromAssume(source, name, assumeIds);
-    // B 优先（Φ 种子经 tryBPathCall）；类方法/求值失败回落解释路径
+    // fail-closed：B-only（Φ 种子经 tryBPathCall）；B 失败（类方法等）
+    // → unknown（显式无信息，ast-eval 兜底已删）
     const bResult = tryBPathCall(source, filePath, name, args, { phi });
-    const result = bResult ?? algebra.analyzeFn(source, name, args, phi);
+    const result = bResult ?? algebra.unknown;
     const label = `${name}(${args.map((a) => algebra.formatShape(a)).join(", ")})`;
     console.log(algebra.formatAbsMultiline(result, label));
     console.log("");

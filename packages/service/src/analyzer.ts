@@ -42,7 +42,6 @@ import {
   stableAnalyzeKeySource,
   fnFingerprints,
   type BCallRecord,
-  bindingsOf,
 } from "@nudojs/core";
 import { parse, extractDirectives, extractFileDirectives } from "@nudojs/parser";
 import type { FunctionWithDirectives, SinonExpression } from "@nudojs/parser";
@@ -65,7 +64,7 @@ import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks, mockSeedsForSource } fro
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
 import { noteEnvPathDeps } from "./env-path-deps.ts";
 import { loadModuleDepsFingerprint, hashSource } from "@nudojs/core";
-import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
+import { evalAbsModuleGraph, collectAbsBindingsFromGraph } from "./abs-modules-graph.ts";
 import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, mockSeedFingerprint, collectEnvGlobals, collectEnvModules, mergeHarvestUnderEnv, setEnvHarvestConflictCollector, type EnvHarvestConflict } from "./bpath-run.ts";
 import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
 import { setAbsTruncationCollector } from "@nudojs/core";
@@ -1492,14 +1491,12 @@ function analyzeFileUncachedInner(
   // 宿主已删。B 不可用 → 无补全（显式无信息）。
   if (isBPathCapable(source, envNames)) {
     try {
-      const bBindRun = tryRunBPath(source, filePath, {
-        envNames,
-        mocks: mockSeedsToAbsMocks(seeds),
+      // 绑定补全走 B 版 collectAbsBindingsFromGraph：recordBinding 顶层绑定
+      // + 导出桥 + import 局部名（静态解析依赖模块）——单一事实源
+      const absBinds = absBindsShared ?? collectAbsBindingsFromGraph(source, filePath, {
+        seedVars: seeds.seedVars,
+        seedFns: seeds.seedFns as never,
       });
-      const absBinds = (absBindsShared ??
-        (bBindRun ? bindingsOf(bBindRun.exports) : undefined)) as
-        | Map<string, Abs>
-        | undefined;
       if (!absBinds) {
         /* fail-closed：无绑定补全 */
       } else for (const [name, absVal0] of absBinds) {
