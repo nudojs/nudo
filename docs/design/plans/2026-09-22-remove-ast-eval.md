@@ -1,7 +1,7 @@
 # 移除 ast-eval：B-path 单引擎化计划
 
-> **状态**：草案（2026-09-22 讨论沉淀）。**未批准执行**——验证发现的范围事实见 §1，
-> 推荐路径是「收缩」而非「删除」（§5 风险点名）。
+> **状态**：执行中（2026-09-22）。路线已改判为「Φ-native B → 删除 ast-eval」
+> （P4 改判节），P5/P6 已落地，P7 进行中。
 > **真源**：求值架构与集合语义 → evaluator-paths.md；架构 → kernel-merge.md。
 
 ## 1. 范围事实（本次会话验证，逐条 grep/实测）
@@ -125,58 +125,73 @@ runTranspiled + callTranspiledExportFull（提升形状预绑定到实参）。
 产品的核心用例，B 结构性缺失）；②③ 是可修的注入工程（若未来要做
 phi-free 切片，需先给 generalize 线程 modules+mocks）。
 
-### P4：收缩 ✅ 定案（2026-09-22，替代「删除」）
+### P4：路线改判——收缩 → **删除**（2026-09-22 用户裁决，替代原「收缩」定案）
 
-**收缩契约（生产分工，四件迁移后）**：
+**改判依据（实证）**：ast-eval 模型本身不健全——函数式 env（callee 写不传播）
++ Φ 事实永不失效（term 未变）+ `implies(Φ,pred)` 剪枝，三者组合在「调用变更
+字段后重测」时剪掉可达路径。三案例实测（同源码同实参）：
 
-| 引擎 | 生产职责（收缩后） |
-|---|---|
-| B-path | 模块图（P1）、checkSource L2 throws + 记录通道（P2/P3.5-2）、derivation 求值（P3.5-3）、自包含 body 编译执行（P3.5-4）、B-hosted 诊断/nodeTypeMap、CJS 调用点发现、差分 oracle 对照物 |
-| ast-eval（收缩后） | ① generalize symbolic/instantiate（phi 线程 + α-rename memo——推导域核心）② 回调 body 解释（applyCallbackAbs，含闭包/递归）③ LSP 非 B-hosted hover 兜底 ④ 模块图 B 失败回落 ⑤ CLI assume ⑥ 差分 oracle 对照物 |
+| 案例 | 原生 | ast-eval | B-path |
+|---|---|---|---|
+| `clear(a){a.length=0}` 后重测 `a.length>0` | 2 | **1 ❌** | 2 ✓ |
+| `c.reset()` 后重测 `c.n>0` | 2 \| 3 | **1 \| 3 ❌** | 2 \| 3 ✓ |
+| `change(o){o.n=-1}` 后重测 `o.n>0` | 2 \| 3 | **1 \| 3 ❌** | 2 \| 3 ✓ |
 
-**收缩边界判据**（求值域可换 / 推导域保留——已全部验证落地）：
-- 求值域（实参直传、无 phi 收窄、无闭包）：全部切 B ✓（模块图/L2/记录/
-  derivation/自包含 body）
-- 推导域（symbolic scheme + phi 收窄 + HOF 提升 + α-rename memo + 闭包
-  回调解释）：保留 ast-eval——phi 线程收窄与回调闭包是解释语义。
+根因是**结构性**的：跨切不变量（每个事实在每次写后失效）在双世界模型里是
+程序性纪律，必然有泄漏点；B-path 的引用语义 + term 引用事实使失效自动化。
+**终局目标**：把 Φ 路径条件机制做进 B（Φ-native B），随后删除 ast-eval。
+差分盲区教训：oracle 只测 B-vs-native，ast-eval 从未入差分网——该 bug 因
+此长期存活于 check refine/符号路径。
 
-**目标达成判定**：单引擎主路径兑现——生产热点（模块加载、诊断、L2、
-记录、derivation、自包含 body 执行）全 B 化；ast-eval 剩余面 = 推导域
-（泛化/phi/闭包回调）+ 兜底。差分 oracle 永久保留（P0）。
+### P5：Φ-native B ✅ 落地（2026-09-22，7a0162e + 5eea6f4）
 
-## 3. 阶段门禁（每阶段共通）
+**关键发现**：runtime 的 Φ 脚手架早已存在但是死代码——`phi` 模块变量 +
+`withExecPhi`/`currentExecPhi` + `$gt`/`$add` 等运算符已把 phi 传给 algebra
+（`cmp` 的 `implies(phi,pred)` prover 直接可用）。唯一缺口：`$fork` 不把
+`Φ∧test` 压进臂作用域。
 
-- core 全量 + service/cli/parser 全量绿
-- 差分 suite 零 mismatch
-- gold gates：recall=precision=1.0；real-package 零 FP（L2 split 期望）
-- lint 绿；无新增 conservative 降级掩盖假精确
+- **7a0162e**：`$fork` Φ-aware——真臂 `withExecPhi(Φ∧test.pred)`、假臂
+  `Φ∧¬test.pred`（`falseConstraint` 否定）、definite 早退带 Φ。效果：嵌套
+  同测试折叠（`1|3`）、兄弟分支否定剪枝（`1|4`）、refine 契约剪枝且保
+  term/pred。健全性：变更案例引用语义自失效保持正确。
+- **5eea6f4**：`callTranspiledExportFull` 加 `opts.phi`（入口 Φ 种子）；
+  generalize 去 `phi===pTrue` 门 + import 门收窄为「body 引用导入名」。
+  **P3.6 阻塞 ① 解除**：refine 约束入口走 B，D2 形态符号
+  `number = x where x > 0` 保 term/pred 与 ast-eval 对齐；refine 约束的
+  变更案例输出 `2|3`（健全性 bug 产品级修复）。
 
-## 4. 决策点（每阶段完成时评估）
+### P6：回调闭包编译注入 ✅（2026-09-22，883380c，件 C）
 
-- P1 环语义重实现是否等价（这是模块图协议最脆弱处）
-- P2 性能回归：checkSource 从解释换成编译+执行，冷启动/缓存面需重测
-- P3 打点注入的代码膨胀与可维护性 vs 保留 ast-eval 子集
+`compiledBodyOf` 不再对自由标识符整体回落：逐个从 `impl.env` 解析注入——
+`vars` → Abs 值；`fns` → `absFunction` 包装（调用走 `$callNamed` →
+`applyAbsFn`，解释语义/递归预算保留）；任一不可解析（全局名/自递归名）→
+整体回落解释路径。trace 实测：sibling-const 注入编译；不可解析名无注入。
 
-## 5. 风险点名（执行前必须知情）
+### P7：B 回落面收缩（件 D 进行中）
 
-1. **check 门禁是产品红线**：checkSource 是 CI gate，当前**主实现**在
-   ast-eval。P2 是整个计划风险最高的阶段——任何签名/violation/drift 的
-   行为漂移都会直接漏报或误报给用户。gold 全绿只是必要非充分条件。
-2. **oracle 消失的顺序问题**：P4 删除之前，P0 的差分 suite 必须已被证明
-   能独立发现 B-path bug（以历史 18 批 bug 语料回归为准）；否则删除 =
-   单实现自证。
-3. **derivation 打点无 B 等价物**：若 P3 选择注入方案，transpile 输出将
-   为每个节点插入收集调用——膨胀与正确性风险未知；选择 (b) 则「移除」
-   降级为「收缩」，P4 删除不可行。
-4. **测试面 churn**：~60 文件的 parity describe 是当前差分方法论在仓内的
-   具体形态；批量改写本身会引入新测试 bug。
-5. **性能**：checkSource 现路径大量 memo（generalize PolyFn L0/L1、checkReport
-   memo）依赖 ast-eval 的确定性；换引擎需保 memo 键语义，否则缓存失效
-   性回归。
+- **3491fe2**：`import.meta` / 动态 `import()` 从抛 unsupported 改为
+  `$unknown()` 保守 lowering（与 ast-eval 同类表达式处理对齐；动态 import
+  原生返回 Promise，静默折 `$lit(undefined) #exact` 是假精确）——含
+  import.meta 的现代 ESM 依赖不再整体回落。
+- **残余 unsupported 清单**（transpile 5 处 throw 实测）：`top-level-this`
+  （真能力边界——CJS 风格 `this.x=1`，回落保持宽容处理）；`statement:*`/
+  `expression:*` default（实测不可达：with 被 parser strict 拒绝、嵌套类/
+  标签块/全解构形态含 rest/计算键/默认值/成员目标全部已 lower——JSX 是
+  唯一实际可达）；`assign-target`×2（实测不可达，防御性）。
+- **评估结论**：模块图兜底回落在实测中不可达（全语料零回落不变量 +
+  残余清单收窄至 top-level-this/JSX）。删除兜底的判定条件 = 这两类构造
+  的 B 语义裁决（ESM 下 `this.x=1` 原生 TypeError——B 可精确建模，但会
+  改变 CJS 风格依赖的分析结果，属产品语义决策，待用户拍板）。
 
-## 6. 推荐
+### P8：ast-eval 剩余面（删除前的完整清单）
 
-按 P0→P1→P2→P3 执行（每阶段独立合入、独立验证），P4 选**收缩**：
-生产主路径 B 化（用户提议的价值全部兑现——快、单引擎），ast-eval 保留为
-reference + derivation 打点 + 兜底，作为永久差分基准。若坚持删除，
-以 P0 语料收编 + P3 注入方案验证通过为前置条件。
+| 面 | 位置 | 状态 |
+|---|---|---|
+| generalize symbolic/instantiate 非 B-eligible | core/generalize.ts | 类方法名（.名）、自递归（opaque 契约）、require、@nudo:mock/env/replace、不可解析导入 |
+| 回调解释路径 | applyCallbackAbs → evalNode | B 内回调已走编译（$call）；ast-eval 内回调仍解释（仅非 eligible 泛化触发） |
+| LSP 非 B-hosted hover/bindings | service/lsp-surface.ts | collectAbsNodeTypes 兜底 |
+| 模块图 B-incapable 回落 | service/abs-modules-graph.ts | top-level-this / JSX 依赖 |
+| CLI assume | cli/index.ts | analyzeFn |
+| check 签名重跑/漂移返回位 | core/check.ts L673/L740 | 记录通道同源后可换 B |
+| 测试面 | ~60 文件 parity describe | 迁移=保留差分 oracle + 行为面重定向 |
+
