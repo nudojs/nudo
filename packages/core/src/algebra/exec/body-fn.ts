@@ -98,6 +98,9 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
     }
     const f = impl.env?.fns.get(name);
     if (f) {
+      // 自名（env 条目指向同一 body）：不注入——编译路径无递归预算，
+      // 交解释路径（applyAbsFn 的指纹守卫 + leak budget）
+      if (f.body === impl.body) return undefined;
       closureArgs.push(name);
       closureVals.push(absFunction(f.params, { body: f.body, async: f.async, env: impl.env }));
       continue;
