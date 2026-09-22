@@ -519,7 +519,7 @@ async function runAbsView(
     process.exitCode = 1;
     return;
   }
-  const { defaultLoadModule: loadModule } = await import("@nudojs/service");
+  const { defaultLoadModule: loadModule, tryBPathCall } = await import("@nudojs/service");
   console.log(`nudo check --abs  ${basename(filePath)}`);
   if (assumeIds.size > 0) {
     console.log(`assume: ${[...assumeIds].map((id) => `${id} > 0`).join(", ")}`);
@@ -537,7 +537,9 @@ async function runAbsView(
       continue;
     }
     const args = algebra.buildArgsFromAssume(source, name, assumeIds);
-    const result = algebra.analyzeFn(source, name, args, phi);
+    // B 优先（Φ 种子经 tryBPathCall）；类方法/求值失败回落解释路径
+    const bResult = tryBPathCall(source, filePath, name, args, { phi });
+    const result = bResult ?? algebra.analyzeFn(source, name, args, phi);
     const label = `${name}(${args.map((a) => algebra.formatShape(a)).join(", ")})`;
     console.log(algebra.formatAbsMultiline(result, label));
     console.log("");

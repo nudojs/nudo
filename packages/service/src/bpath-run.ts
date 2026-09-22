@@ -18,6 +18,7 @@ import {
   type TranspiledCallResult,
   type Abs,
   type AbsModuleExports,
+  type Phi,
   stableAnalyzeKeySource,
   formatAbs,
   hashSource,
@@ -512,6 +513,8 @@ export function tryBPathCallFull(
     collectMemberDiags?: boolean;
     envNames?: string[];
     mocks?: Record<string, Abs>;
+    /** 入口 Φ 种子（assume 约束——B 侧路径条件收窄） */
+    phi?: Phi;
   } = {},
 ): (TranspiledCallResult & {
   calls?: BCallRecord[];
@@ -531,7 +534,7 @@ export function tryBPathCallFull(
     setMemberDiagCollector((d) => memberDiags.push(d));
   }
   try {
-    const full = callTranspiledExportFull(run.exports, fnName, args);
+    const full = callTranspiledExportFull(run.exports, fnName, args, opts.phi ? { phi: opts.phi } : undefined);
     const all = [...(run.memberDiags ?? []), ...memberDiags];
     return {
       ...full,
@@ -552,7 +555,7 @@ export function tryBPathCall(
   filePath: string,
   fnName: string,
   args: Abs[],
-  opts: { envNames?: string[]; mocks?: Record<string, Abs> } = {},
+  opts: { envNames?: string[]; mocks?: Record<string, Abs>; phi?: Phi } = {},
 ): Abs | undefined {
   const full = tryBPathCallFull(source, filePath, fnName, args, opts);
   if (!full) return undefined;
