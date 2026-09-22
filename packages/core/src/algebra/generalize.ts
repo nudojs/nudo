@@ -917,17 +917,25 @@ function generalizeFromAstUncached(
     new Map(params.map((p, i) => [p, typeParams[i]!.value])),
   );
 
-  // phi-free 切片（P3.6 实验的收敛版）：B-path 仅当
-  //   ① phi === pTrue（无 refine 入口契约——Φ 收窄是解释语义）
-  //   ② 非类方法（.名，B 导出表只有顶层名）
-  //   ③ 源码自包含（无 import/require——B run 无模块注入；无 @nudo:mock/
-  //      env/replace 指令——B run 无 mock 注入，命中文档化的裸 fetch 崩溃）
+  // B-path 门（Φ-native 后约束入口可走 B——Φ 经 callTranspiledExportFull
+  // 种子注入）：
+  //   ① 非类方法（.名，B 导出表只有顶层名）
+  //   ② body 不引用导入名（B run 无模块注入；仅侧车/refine 用的 import 不阻断）
+  //   ③ 无 require、无 @nudo:mock/env/replace 指令（B run 无 mock 注入）
   //   ④ 非自递归（body 引用自身名——B 有界展开给 partial，ast-eval 的
   //      opaque→不写关系契约保留）
   // 其余一律解释路径。B 失败回落。
+  const fileAst = opts.file ?? babelParse(source);
+  const importLocals: string[] = [];
+  for (const stmt of fileAst.program.body) {
+    if (stmt.type === "ImportDeclaration") {
+      for (const s of stmt.specifiers) importLocals.push(s.local.name);
+    }
+  }
+  const usesImports = importLocals.some((n) => bodyReferencesName(body, n));
   const bEligible =
     !fnName.includes(".") &&
-    !/^\s*import\b/m.test(source) &&
+    !usesImports &&
     !/\brequire\s*\(/.test(source) &&
     !/@nudo:(mock|env|replace|mock-module)\b/.test(source) &&
     !bodyReferencesName(body, fnName);
@@ -939,7 +947,7 @@ function generalizeFromAstUncached(
       return alphaRenameResult(hit.result, hit.varOrder, varOrder);
     }
     let result: Abs | undefined;
-    if (bEligible && phi === pTrue) {
+    if (bEligible) {
       try {
         const bRun = bPathRunOf(source);
         if (bRun && fnName in bRun) {
@@ -951,7 +959,7 @@ function generalizeFromAstUncached(
             }
             return a;
           });
-          result = callTranspiledExportFull(bRun, fnName, bArgs).result;
+          result = callTranspiledExportFull(bRun, fnName, bArgs, { phi }).result;
         }
       } catch {
         /* B 失败回落解释 */

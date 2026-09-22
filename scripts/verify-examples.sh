@@ -288,7 +288,7 @@ pin 'pnpm run test:cli docs/examples/algebra/sample.js' \
 # sumAges 无约束 ages 实参 → L2 entry-may-throw（提升是假设、不消除危险）
 pin 'pnpm run check docs/examples/mini-repo/user-service.js' \
   '1 error' \
-  'sumAges(ages: any) => number | string | unknown  throws TypeError' \
+  'sumAges(ages: any) => number | string  throws TypeError' \
   'createService() => { store: MemoryStore, load: (id) => ? }'
 pin 'pnpm run test:cli docs/examples/mini-repo/user-service.js' \
   'debug "ages"  ([10, 20, 30]) => 60' \

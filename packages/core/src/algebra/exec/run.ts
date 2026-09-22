@@ -9,8 +9,10 @@
  */
 
 import { rtAllBindings } from "./rt.ts";
+import { withExecPhi } from "./runtime.ts";
 import { setBBindingSink } from "./calls.ts";
 import type { Abs } from "../abs.ts";
+import type { Phi } from "../pred.ts";
 import { never, unknown, abs } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
@@ -462,17 +464,20 @@ function isAbsVal(v: unknown): v is Abs {
   return !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);
 }
 
-/** 调用 runTranspiled 导出（捕获 $throw） */
+/** 调用 runTranspiled 导出（捕获 $throw）。opts.phi：入口 Φ 种子
+ *  （instantiate/symbolic 的约束入口——B 侧路径条件收窄）。 */
 export function callTranspiledExportFull(
   exports: Record<string, unknown>,
   name: string,
   args: Abs[],
+  opts?: { phi?: Phi },
 ): TranspiledCallResult {
   const fn = exports[name];
   if (typeof fn === "function") {
     return runWithLoopExits(() => {
       try {
-        const r = (fn as (...a: Abs[]) => unknown)(...args);
+        const invoke = () => (fn as (...a: Abs[]) => unknown)(...args);
+        const r = opts?.phi ? withExecPhi(opts.phi, invoke) : invoke();
         if (!isAbsVal(r)) return joinControlExits(unknown);
         // 抽象分支 early-return / throw 记入 exits，与正常出口 join
         return joinControlExits(r);
