@@ -7,7 +7,7 @@
  * 按 impl 对象 WeakMap memo（body AST 身份稳定）。
  */
 import type { Abs } from "../abs.ts";
-import type { AbsFnImpl } from "../abs-fn.ts";
+import { absFunction, type AbsFnImpl } from "../abs-fn.ts";
 import type { Node } from "@babel/types";
 import { transpileBodyNode, runtimeImportOf } from "./transpile.ts";
 import { rtAllBindings } from "./rt.ts";
@@ -75,16 +75,35 @@ function freeIdentifiers(body: Node, params: string[]): Set<string> {
 }
 
 /**
- * 编译 body → (args) => Abs。自由标识符存在（闭包/兄弟函数/递归）或
- * 编译失败 → undefined（调用方回落解释执行）。
+ * 编译 body → (args) => Abs。自由标识符（闭包）从 impl.env 解析注入：
+ * vars → Abs 值；fns → absFunction 包装（调用走 $callNamed → applyAbsFn，
+ * 解释语义/递归预算保留）。不可解析（全局名/自递归名）→ undefined
+ * （调用方回落解释执行）。
  */
 export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefined {
   if (!impl.body) return undefined;
   const implKey = impl as unknown as object;
   const hit = compiledByImpl.get(implKey);
   if (hit !== undefined) return hit;
-  // 递归（自由引用自身名）经解释路径保递归预算；兄弟函数/闭包同理
-  if (freeIdentifiers(impl.body, impl.params).size > 0) return undefined;
+  const free = freeIdentifiers(impl.body, impl.params);
+  // 闭包注入面：自由名逐个解析；任一不可解析 → 整体回落
+  const closureArgs: string[] = [];
+  const closureVals: unknown[] = [];
+  for (const name of free) {
+    const v = impl.env?.vars.get(name);
+    if (v) {
+      closureArgs.push(name);
+      closureVals.push(v);
+      continue;
+    }
+    const f = impl.env?.fns.get(name);
+    if (f) {
+      closureArgs.push(name);
+      closureVals.push(absFunction(f.params, { body: f.body, async: f.async, env: impl.env }));
+      continue;
+    }
+    return undefined;
+  }
   let runner: ((args: Abs[]) => Abs) | undefined;
   try {
     const bodySrc = transpileBodyNode(impl.body, {});
@@ -96,9 +115,9 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
       "return __body;",
     ].join("\n");
     const cleaned = js.replace(RUNTIME_IMPORT_RE, "");
-    const argNames = [...Object.keys(rtAllBindings())];
+    const argNames = [...Object.keys(rtAllBindings()), ...closureArgs];
     const factory = new Function(...argNames, cleaned) as (...vals: unknown[]) => (...a: Abs[]) => Abs;
-    const bodyFn = factory(...Object.values(rtAllBindings()));
+    const bodyFn = factory(...Object.values(rtAllBindings()), ...closureVals);
     runner = (args: Abs[]) => bodyFn(...args);
     compiledByImpl.set(implKey, runner);
   } catch (e) {
