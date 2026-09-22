@@ -37,6 +37,7 @@ import {
   noteObjSlotMissing,
   noteAnyMemberMayThrow,
   noteNullishMemberThrows,
+  isNullishAbs,
   anyMemberResult,
   OBJECT_PROTO_NAMES,
 } from "./calls.ts";
@@ -1667,6 +1668,38 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     clearStaleTermPred(a);
     return a;
   }
+  // 非（整数下标 tuple）目标：按目标种类分派（strict/ESM 语义；此前一律
+  // `return a` 静默——o[k]=v 计算键写对象假精确 no-op、空值/prim 不抛）
+  const sk = a.shape.k;
+  if (sk === "prim" || sk === "never" || isNullishAbs(a)) throwStrictWrite();
+  if (sk === "any") {
+    noteAnyMemberMayThrow(a, iv === undefined ? "<computed>" : String(iv), "property");
+    return a;
+  }
+  if (sk === "obj") {
+    if (iv === undefined) {
+      // 抽象键：无槽位模型——标记 open（缺失键读不再折 undefined 假精确）
+      a.shape = { ...a.shape, open: true };
+      a.conf = confJoin(a.conf, "path");
+      clearStaleTermPred(a);
+      return a;
+    }
+    return $set(a, String(iv), value);
+  }
+  if (sk === "brand") {
+    if (iv === undefined) return a;
+    // 仅用户类（注册表）委派 $set——内建 brand（TypedArray/String 包装等）
+    // 下标写语义未建模，保持保守不写（差分抓到：Uint8Array 截断被写穿假精确）
+    if (getBClass(a.shape.name)) return $set(a, String(iv), value);
+    return a;
+  }
+  if (sk === "tuple") {
+    // 非整数/抽象下标（expando 属性）：就地降 arr（长度/元素保持）
+    a.shape = widenTupleToArr(a.shape.elements, a.shape.holes, value);
+    a.conf = confJoin(a.conf, "path");
+    clearStaleTermPred(a);
+    return a;
+  }
   return a;
 }
 
@@ -2286,7 +2319,40 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     clearStaleTermPred(o);
     return o;
   }
-  if (!isObj(o)) return $obj({ [key]: value });
+  if (!isObj(o)) {
+    // strict/ESM 写语义：确定非对象目标原生 TypeError（硬抛，catch 可吸收）。
+    // 此前一律 `return $obj({...})` 伪造对象——prim/空值静默成功（L2 漏报）、
+    // 数组目标被整体替换为对象（最坏假精确）。
+    const sk = o.shape.k;
+    // nullish 字面量（$lit(null/undefined) 是 unknown+lit term）与 prim：原生必抛
+    if (sk === "prim" || sk === "never" || isNullishAbs(o)) throwStrictWrite();
+    // any：可能成功（对象）也可能 TypeError——软 may-throw，目标不变
+    if (sk === "any") {
+      noteAnyMemberMayThrow(o, key, "property");
+      return o;
+    }
+    if (sk === "unknown") {
+      noteUnknownMemberMissing(o, key, "property");
+      return o;
+    }
+    // 数组 expando 属性（a.x = 1）：无槽位模型——tuple 就地降 arr（长度/元素保持）
+    if (sk === "tuple") {
+      o.shape = widenTupleToArr(o.shape.elements, o.shape.holes, value);
+      o.conf = confJoin(o.conf, "path");
+      clearStaleTermPred(o);
+      return o;
+    }
+    // sum：成员含确定非对象 → 写可能 TypeError（软）；否则写成功但无槽位模型
+    if (sk === "sum" && o.shape.members.some((m) => m.shape.k === "prim" || m.shape.k === "never")) {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: `property '${key}' write on sum (non-object member)`,
+        recv: "sum",
+        name: key,
+      });
+    }
+    return o;
+  }
   const shape = o.shape as ObjShape;
   const st = extStateOf(o);
   const hasKey = Object.prototype.hasOwnProperty.call(shape.slots, key);

@@ -68,11 +68,20 @@ describe("B fallback observation (unsupported at transpile time)", () => {
     }
   });
 
-  it("top-level this throws unsupported (capability knowledge at transpile site)", () => {
+  it("top-level this.x write throws at module load (ESM strict TypeError, not a B fallback)", () => {
+    // ESM 语义：this === undefined → 写经 strict 写路径硬抛 TypeError。
+    // 这是模块装载失败（程序行为），不是 B 能力边界——tryRunTranspiled
+    // 仍返回 undefined（调用方回落），但不得记为 unsupported 回落。
     const src = `this.y = 1; export function f(x) { return x; }`;
     const { result, fallbacks } = withCollector(() => tryRunTranspiled(src, { mode: "analyze" }));
     expect(result).toBeUndefined();
-    expect(fallbacks[0]!.reason).toBe("unsupported:top-level-this");
+    expect(fallbacks.every((f) => !f.reason.startsWith("unsupported:top-level-this"))).toBe(true);
+    // 顶层 this 读（无写）不再回落：this === undefined
+    const { result: r2, fallbacks: f2 } = withCollector(() =>
+      tryRunTranspiled(`export const t = this; export function f(x) { return x; }`, { mode: "analyze" }),
+    );
+    expect(r2).toBeDefined();
+    expect(f2).toEqual([]);
   });
 
   it("in-function this and object-method this stay capable (no fallback)", () => {

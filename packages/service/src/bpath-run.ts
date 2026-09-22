@@ -287,16 +287,10 @@ export function collectBPathReplacements(source: string): {
  */
 export function isBPathCapable(source: string, envNames: string[] = []): boolean {
   void envNames;
-  // 顶层 this：memberPathOf 对无 thisParam 的 this 根返回 null（写入不可重绑）。
-  // 函数/方法体内的 this 由 transpile 处理（方法注入 thisParam，普通函数/箭头
-  // 降级为 $lit(undefined) + may-throw），不得关掉整文件的 B 路径。
-  try {
-    const ast = parse(source) as unknown as { program?: { body?: unknown[] } };
-    return !hasTopLevelThis(ast);
-  } catch {
-    // 语法错误交上层诊断，不额外关闭 B 路径（原正则在坏语法上恒真，保持）
-    return true;
-  }
+  void source;
+  // 顶层 this 已按 ESM 语义托管（this === undefined；写经 strict 写路径抛
+  // TypeError）——不再关整文件 B 路径。函数/方法体内 this 由 transpile 处理。
+  return true;
 }
 
 /** 函数/方法边界：其体内 this 由 transpile 处理（thisParam 注入 / $lit(undefined) 降级） */
