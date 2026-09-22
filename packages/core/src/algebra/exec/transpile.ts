@@ -6,6 +6,7 @@
 
 import type { File, Expression, Statement, Node } from "@babel/types";
 import { parseSource } from "../parse-source.ts";
+import { NudoUnsupportedError } from "./unsupported.ts";
 
 export type TranspileOptions = {
   /** 运行时 import 说明符 */
@@ -2257,8 +2258,15 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         `${pad}}`,
       ].join("\n");
     }
+    case "EmptyStatement":
+    case "DebuggerStatement":
+      // 良性无操作语句：显式 no-op（不得落 default throw）
+      return "";
     default:
-      return `${pad}/* skip ${stmt.type} */`;
+      throw new NudoUnsupportedError(
+        `statement:${stmt.type}`,
+        stmt.loc ? { line: stmt.loc.start.line, column: stmt.loc.start.column } : undefined,
+      );
   }
 }
 
@@ -2500,6 +2508,15 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (expr.name === "Infinity") return "$lit(Infinity)";
       return expr.name;
     case "ThisExpression":
+      // 顶层 this（无 thisParam 且不在函数体）：成员写不可重绑——
+      // 此前静默折 $lit(undefined)（isBPathCapable 带外拦截）；改为
+      // 转译时抛 unsupported，能力知识单一事实源
+      if (!opts.thisParam && !opts.inFunction) {
+        throw new NudoUnsupportedError(
+          "top-level-this",
+          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+        );
+      }
       return opts.thisParam ?? "$lit(undefined)";
     case "NewExpression": {
       const callee = expr.callee;
@@ -2967,7 +2984,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             return `((__v) => (($idxSet(${obj}, ${transpileExpression(k, opts)}, __v)), __v))(${right})`;
           }
         }
-        return `/* assign */ $lit(undefined)`;
+        throw new NudoUnsupportedError(
+          `assign-target`,
+          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+        );
       }
       if (expr.left.type === "Identifier") {
         const name = expr.left.name;
@@ -2985,7 +3005,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           : "";
         return `((__v) => { $assignRecord(${JSON.stringify(name)}, ${name}, __v, ${locLine}, ${locCol}, ${cond});${bindSrc} return ${name} = __v; })(${valSrc})`;
       }
-      return compoundFn ? `/* assign ${expr.operator} */ $lit(undefined)` : `/* assign */ $lit(undefined)`;
+      throw new NudoUnsupportedError(
+        `assign-target`,
+        expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+      );
     }
     case "CallExpression":
     case "OptionalCallExpression": {
@@ -3162,7 +3185,13 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return `$fnVal(${nameList}, (${paramParts.join(", ")}) => ${bodySrc})`;
     }
     default:
-      return `/* ${expr.type} */ $lit(undefined)`;
+      // 未 lowering 的表达式（动态 import / import.meta / JSX 等）：
+      // 静默折 $lit(undefined) 是假精确（如 import() 原生返回 Promise）——
+      // 抛 unsupported 交消费方回落解释路径
+      throw new NudoUnsupportedError(
+        `expression:${expr.type}`,
+        expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+      );
   }
 }
 

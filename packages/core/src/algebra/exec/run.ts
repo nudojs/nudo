@@ -15,6 +15,7 @@ import { never, unknown, abs } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
 import { transpile } from "./transpile.ts";
+import { NudoUnsupportedError } from "./unsupported.ts";
 import { errorTypeAbs } from "./may-throw.ts";
 import {
   isNudoThrow,
@@ -402,6 +403,52 @@ export function runTranspiled(
     return result;
   } finally {
     setBBindingSink(null);
+  }
+}
+
+/** B-path 回落事件（观测单一埋点；reason: unsupported:* = 能力边界，internal = B 自身缺陷） */
+export type BPathFallback = {
+  reason: string;
+  message: string;
+  loc?: { line: number; column: number };
+};
+
+let bFallbackCollector: ((f: BPathFallback) => void) | null = null;
+
+export function setBPathFallbackCollector(
+  collector: ((f: BPathFallback) => void) | null,
+): void {
+  bFallbackCollector = collector;
+}
+
+/** 记录一次 B 回落（body-fn 等非 runTranspiled 入口共用） */
+export function noteBPathFallback(e: unknown): void {
+  if (!bFallbackCollector) return;
+  const f: BPathFallback =
+    e instanceof NudoUnsupportedError
+      ? { reason: `unsupported:${e.reason}`, message: e.message, ...(e.loc ? { loc: e.loc } : {}) }
+      : { reason: "internal", message: e instanceof Error ? e.message : String(e) };
+  try {
+    bFallbackCollector(f);
+  } catch {
+    /* collector 不得打断 */
+  }
+}
+
+/**
+ * B 单一入口：runTranspiled + 类型化回落观测。
+ * unsupported:*（能力边界）/ internal（B 缺陷）都记录到收集器；
+ * 返回 undefined 表示调用方应走解释路径。
+ */
+export function tryRunTranspiled(
+  source: string,
+  opts: RunTranspiledOptions = {},
+): Record<string, unknown> | undefined {
+  try {
+    return runTranspiled(source, opts);
+  } catch (e) {
+    noteBPathFallback(e);
+    return undefined;
   }
 }
 

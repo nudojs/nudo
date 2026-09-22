@@ -68,7 +68,7 @@ import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
 import { listTopFunctions, scanLiteralCalls } from "./scan.ts";
 import { analyzeFnFull } from "./ast-eval.ts";
-import { runTranspiled, callTranspiledExportFull, bindingsOf, type TranspiledCallResult } from "./exec/run.ts";
+import { tryRunTranspiled, callTranspiledExportFull, bindingsOf, type TranspiledCallResult } from "./exec/run.ts";
 import { setBAssignCollector, setBCallCollector, type BCallRecord } from "./exec/calls.ts";
 import {
   setMayThrowCollector,
@@ -717,7 +717,8 @@ function checkSourceInner(
   setBCallCollector((r) => bCalls.push(r));
   let bBindings: Map<string, unknown> | undefined;
   try {
-    bBindings = bindingsOf(runTranspiled(source, { mode: "analyze" }));
+    const bRun = tryRunTranspiled(source, { mode: "analyze" });
+    bBindings = bRun ? bindingsOf(bRun) : undefined;
     if (bBindings) {
       for (const [k, v] of bBindings) {
         if (v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object)) {
@@ -999,13 +1000,15 @@ function bPathThrowsOf(
     const oldest = bPathRunMemo.keys().next().value;
     if (oldest !== undefined) bPathRunMemo.delete(oldest);
   }
+  let exports = bPathRunMemo.get(source);
+  if (exports === undefined) {
+    const run = tryRunTranspiled(source, { mode: "analyze" });
+    if (run === undefined) return undefined;
+    exports = run;
+    bPathRunMemo.set(source, exports);
+  }
+  if (!(fnName in exports)) return undefined;
   try {
-    let exports = bPathRunMemo.get(source);
-    if (!exports) {
-      exports = runTranspiled(source, { mode: "analyze" });
-      bPathRunMemo.set(source, exports);
-    }
-    if (!(fnName in exports)) return undefined;
     return callTranspiledExportFull(exports, fnName, args);
   } catch {
     return undefined;

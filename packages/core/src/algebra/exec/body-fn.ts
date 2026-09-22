@@ -11,6 +11,7 @@ import type { AbsFnImpl } from "../abs-fn.ts";
 import type { Node } from "@babel/types";
 import { transpileBodyNode, runtimeImportOf } from "./transpile.ts";
 import { rtAllBindings } from "./rt.ts";
+import { noteBPathFallback } from "./run.ts";
 
 const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
 
@@ -100,7 +101,9 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
     const bodyFn = factory(...Object.values(rtAllBindings()));
     runner = (args: Abs[]) => bodyFn(...args);
     compiledByImpl.set(implKey, runner);
-  } catch {
+  } catch (e) {
+    // 编译面回落：unsupported（body 含未 lowering 构造）/ internal 都记录
+    noteBPathFallback(e);
     return undefined;
   }
   return runner;

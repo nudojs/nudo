@@ -39,7 +39,7 @@ import {
 } from "./load-deps-fp.ts";
 import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
 import { scanPromotions } from "./promote-scan.ts";
-import { runTranspiled, callTranspiledExportFull } from "./exec/run.ts";
+import { tryRunTranspiled, callTranspiledExportFull } from "./exec/run.ts";
 
 /** generalize 的 B-path 模块执行缓存（按 source；run 不依赖实参） */
 const bRunMemo = new Map<string, Record<string, unknown>>();
@@ -48,16 +48,14 @@ function bPathRunOf(source: string): Record<string, unknown> | undefined {
     const oldest = bRunMemo.keys().next().value;
     if (oldest !== undefined) bRunMemo.delete(oldest);
   }
-  try {
-    let run = bRunMemo.get(source);
-    if (!run) {
-      run = runTranspiled(source, { mode: "analyze" });
-      bRunMemo.set(source, run);
-    }
-    return run;
-  } catch {
-    return undefined;
+  let run = bRunMemo.get(source);
+  if (run === undefined) {
+    const r = tryRunTranspiled(source, { mode: "analyze" });
+    if (r === undefined) return undefined;
+    run = r;
+    bRunMemo.set(source, run);
   }
+  return run;
 }
 
 /** body 是否引用指定标识符（自递归检测；非计算 property key 不计数） */

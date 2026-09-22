@@ -10,7 +10,7 @@ import {
   evalProgramAbs,
   collectAbsExports,
   absFunction,
-  runTranspiled,
+  tryRunTranspiled,
   callTranspiledExportFull,
   unknown,
   type Abs,
@@ -387,14 +387,13 @@ export function evalAbsModuleGraph(
       },
     );
     let exports: AbsModuleExports;
-    try {
-      const file = parse(source);
+    const bRun = tryRunTranspiled(source, { mode: "analyze", modules });
+    if (bRun) {
       // P1：B-path 优先——转译执行收集导出（specifier/re-export/star/default
-      // 全量进 __nudoExport 动态表）；失败回落 Abs 解释路径（保持既有
-      // 覆盖面：顶层 this 等 B 不可托管源仍产出导出）。
-      const run = runTranspiled(source, { mode: "analyze", modules });
-      exports = bPathExportsToModuleExports(run, file, `bpath:${absPath}`);
-    } catch {
+      // 全量进 __nudoExport 动态表）；unsupported/internal 回落见
+      // tryRunTranspiled（回落事件入收集器）。
+      exports = bPathExportsToModuleExports(bRun, parse(source), `bpath:${absPath}`);
+    } else {
       try {
         const file = parse(source);
         const { env } = evalProgramAbs(source, { file, modules });
@@ -402,9 +401,8 @@ export function evalAbsModuleGraph(
       } catch {
         exports = { named: {} };
       }
-    } finally {
-      loading.pop();
     }
+    loading.pop();
     cache.set(absPath, exports);
 
     let fingerprint: { mtimeMs: number; size: number } | undefined;
