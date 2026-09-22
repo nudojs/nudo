@@ -16,6 +16,8 @@ import { noteBPathFallback } from "./run.ts";
 const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
 
 const compiledByImpl = new WeakMap<object, (args: Abs[]) => Abs>();
+/** 自名注入的 Abs 按 body 对象缓存——$callNamed cycle 键（对象身份）可立即命中 */
+const selfAbsByBody = new WeakMap<object, Abs>();
 
 /** body 的自由标识符集合（参数/声明/嵌套函数参数之外引用的名字）。
  *  非计算 property key（o.x / {x: 1}）不计数。 */
@@ -86,7 +88,12 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
   const hit = compiledByImpl.get(implKey);
   if (hit !== undefined) return hit;
   const free = freeIdentifiers(impl.body, impl.params);
-  // 闭包注入面：自由名逐个解析；任一不可解析 → 整体回落
+  // 闭包注入面：env 可解析名注入（vars → Abs；fns → absFunction 包装）；
+  // 自名（env 条目指向同一 body）经 per-body 缓存的同一 Abs 注入——递归
+  // 走 $callNamed（B 调用预算：cycle 键按对象身份，同一 Abs → 立即截断，
+  // 深度 64 兜底）。其余自由名（Math/JSON 等全局）不注入——编译产物经
+  // new Function 全局作用域解析，与 B run 同语义（未定义名 ReferenceError
+  // = 原生奇偶；不再整体回落解释路径）。
   const closureArgs: string[] = [];
   const closureVals: unknown[] = [];
   for (const name of free) {
@@ -98,14 +105,20 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
     }
     const f = impl.env?.fns.get(name);
     if (f) {
-      // 自名（env 条目指向同一 body）：不注入——编译路径无递归预算，
-      // 交解释路径（applyAbsFn 的指纹守卫 + leak budget）
-      if (f.body === impl.body) return undefined;
       closureArgs.push(name);
-      closureVals.push(absFunction(f.params, { body: f.body, async: f.async, env: impl.env }));
+      if (f.body === impl.body) {
+        let selfAbs = selfAbsByBody.get(f.body);
+        if (selfAbs === undefined) {
+          selfAbs = absFunction(f.params, { body: f.body, async: f.async, env: impl.env });
+          selfAbsByBody.set(f.body, selfAbs);
+        }
+        closureVals.push(selfAbs);
+      } else {
+        closureVals.push(absFunction(f.params, { body: f.body, async: f.async, env: impl.env }));
+      }
       continue;
     }
-    return undefined;
+    // 全局名：留给编译产物的全局作用域（原生奇偶）
   }
   let runner: ((args: Abs[]) => Abs) | undefined;
   try {

@@ -8,6 +8,7 @@ import { $call } from "../exec/call.ts";
 import { absFunction, getFnImpl } from "../abs-fn.ts";
 import { litValue, numLit } from "@nudojs/core";
 import { parseSource } from "../parse-source.ts";
+import { emptyEnv } from "../ast-eval.ts";
 
 function fnOf(src: string, name = "f") {
   const file = parseSource(`function ${name}(x) { ${src} }`);
@@ -37,24 +38,31 @@ describe("body compiled execution ($call, 迁移件 4)", () => {
     expect(litValue($call(f, [numLit(0)]))).toBe(3);
   });
 
-  it("closure reference falls back to interpreter (recursion budget)", () => {
-    // 自由标识符 k → 不编译；解释路径行为不变
+  it("unresolvable free name compiles and throws ReferenceError (native parity)", () => {
+    // 自由名 k 不在 env（非闭包非兄弟）→ 编译产物全局作用域解析 →
+    // 未定义名 ReferenceError（原生奇偶；B run 同语义）
     const file = parseSource(`function f(x) { return x + k; }`);
     const decl = (file.program.body as Array<{ type: string; params: Array<{ name?: string }>; body: never; id?: { name: string } }>)[0]!;
     const f = absFunction(["x"], { body: decl.body, env: undefined });
-    expect(getFnImpl(f)?.body).toBeDefined();
-    // 解释路径：k 未绑定 → unknown 传播；不抛即可（假精确门由差分语料守）
-    const r = $call(f, [numLit(5)]);
-    expect(r).toBeDefined();
+    let threw = false;
+    try {
+      $call(f, [numLit(5)]);
+    } catch (e) {
+      threw = e instanceof ReferenceError;
+    }
+    expect(threw).toBe(true);
   });
 
-  it("recursive body keeps interpreter path (guarded)", () => {
+  it("self-recursive body compiles with budget (env carries self name)", () => {
+    // 生产形态：extractFn 的 env.fns 含自身 → 自名注入（per-body 缓存同
+    // 一 Abs → $callNamed cycle 键立即命中）→ 有界递归
     const file = parseSource(`function fac(n) { if (n <= 1) { return 1; } return n * fac(n - 1); }`);
     const decl = (file.program.body as Array<{ type: string; params: Array<{ name?: string }>; body: never; id?: { name: string } }>)[0]!;
-    const f = absFunction(["n"], { body: decl.body });
+    const env = emptyEnv();
+    env.fns.set("fac", { params: ["n"], body: decl.body, async: false });
+    const f = absFunction(["n"], { body: decl.body, env });
     const r = $call(f, [numLit(5)]);
-    // 自递归 → free identifier → 解释路径 + 递归预算（opaque 或精确皆可，不爆栈）
-    expect(r).toBeDefined();
+    expect(litValue(r)).toBe(120);
   });
 
   it("apply-hooked impl keeps apply priority", () => {

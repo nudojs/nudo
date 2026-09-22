@@ -261,7 +261,17 @@ export function $callNamed(
         }
       }
     } else if (fn && typeof fn === "object" && "shape" in (fn as object)) {
-      result = $call(fn as Abs, args);
+      // Abs fn 分支同口径预算（编译递归经 $call 会绕到此处——cycle/深度守卫）
+      const entered = bEnterCall(name, fn, args);
+      if (!entered.ok) {
+        result = bTruncatedAbs();
+      } else {
+        try {
+          result = $call(fn as Abs, args);
+        } finally {
+          bExitCall();
+        }
+      }
     }
   } catch (e) {
     threw = true;
