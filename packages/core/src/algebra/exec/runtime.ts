@@ -82,6 +82,12 @@ export function withExecPhi<T>(p: Phi, body: () => T): T {
 
 // --- 运算符重载面（transpile 目标）---
 
+/** 保守 unknown（import.meta / 动态 import 等未建模构造的 lowering 目标——
+ *  与 ast-eval 对同类表达式的保守处理对齐） */
+export function $unknown(): Abs {
+  return abs({ k: "unknown" }, undefined, undefined, "opaque");
+}
+
 export function $add(a: Abs, b: Abs): Abs {
   return add(a, b, phi);
 }

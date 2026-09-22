@@ -7,7 +7,7 @@
  *   （unsupported 也应为零——语料均为可托管形态）。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, tryRunTranspiled, setBPathFallbackCollector, type BPathFallback } from "@nudojs/core";
+import { runTranspiled, tryRunTranspiled, callTranspiledExportFull, setBPathFallbackCollector, litValue, type BPathFallback } from "@nudojs/core";
 import { formatAbs } from "../format.ts";
 import { analyzeFn } from "../ast-eval.ts";
 import { runCorpus } from "./differential/harness.ts";
@@ -53,15 +53,19 @@ function withCollector<T>(fn: () => T): { result: T; fallbacks: BPathFallback[] 
 }
 
 describe("B fallback observation (unsupported at transpile time)", () => {
-  it("dynamic import throws unsupported and falls back (was false-precision undefined)", () => {
-    const src = `export function f() { return import("./x.js"); }`;
-    // 转译面：类型化错误（此前静默折 $lit(undefined) #exact）
-    expect(() => runTranspiled(src, { mode: "analyze" })).toThrow(/nudo:unsupported expression:ImportExpression/);
-    const { result, fallbacks } = withCollector(() => tryRunTranspiled(src, { mode: "analyze" }));
-    expect(result).toBeUndefined();
-    expect(fallbacks.map((f) => f.reason)).toEqual(["unsupported:expression:ImportExpression"]);
-    // 解释路径保守（非假精确 undefined）
-    expect(formatAbs(analyzeFn(src, "f", [], undefined, undefined, undefined))).not.toBe("undefined");
+  it("dynamic import / import.meta lower conservatively (no fallback, no false precision)", () => {
+    for (const src of [
+      `export function f() { return import("./x.js"); }`,
+      `export function f() { return import.meta.url; }`,
+    ]) {
+      const { result, fallbacks } = withCollector(() => tryRunTranspiled(src, { mode: "analyze" }));
+      expect(result, src).toBeDefined();
+      expect(fallbacks, src).toEqual([]);
+      const r = callTranspiledExportFull(result!, "f", []);
+      // 保守 unknown（此前静默折 $lit(undefined) #exact 是假精确）
+      expect(formatAbs(r.result), src).toContain("unknown");
+      expect(litValue(r.result), src).toBeUndefined();
+    }
   });
 
   it("top-level this throws unsupported (capability knowledge at transpile site)", () => {
