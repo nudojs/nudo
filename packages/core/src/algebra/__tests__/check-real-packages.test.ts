@@ -99,10 +99,7 @@ function scanPackage(pkgName: string): ScanOutcome {
     let r;
     try {
       // L2 off：本套件只锁 L1 zero-FP（见文件头分层说明）
-      const __t0 = Date.now();
-      process.stderr.write(`[scan] ${label}\n`);
       r = checkSource(label, source, undefined, { entryThrows: "off" });
-      process.stderr.write(`[done ${Date.now() - __t0}ms] ${label}\n`);
     } catch (e) {
       errors.push(`${label}: checkSource 抛错 — ${(e as Error).message}`);
       continue;

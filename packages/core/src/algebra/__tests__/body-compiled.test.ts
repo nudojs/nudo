@@ -8,7 +8,7 @@ import { $call } from "../exec/call.ts";
 import { absFunction, getFnImpl } from "../abs-fn.ts";
 import { litValue, numLit } from "@nudojs/core";
 import { parseSource } from "../parse-source.ts";
-import { emptyEnv } from "../ast-eval.ts";
+import { emptyEnv } from "../ast-env.ts";
 
 function fnOf(src: string, name = "f") {
   const file = parseSource(`function ${name}(x) { ${src} }`);
