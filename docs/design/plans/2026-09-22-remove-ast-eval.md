@@ -183,28 +183,34 @@ phi-free 切片，需先给 generalize 线程 modules+mocks）。
   的 B 语义裁决（ESM 下 `this.x=1` 原生 TypeError——B 可精确建模，但会
   改变 CJS 风格依赖的分析结果，属产品语义决策，待用户拍板）。
 
-### P8：ast-eval 剩余面（2026-09-23 晚——编译路径完全化后）
+### P9：ast-eval 删除完成（2026-09-23）
 
-结构性工作已全部完成：Φ-native B、闭包编译注入、B 调用预算、写路径
-strict、top-level-this ESM、注入管线（模块/mock/env/replace）、类方法桥、
-CLI assume、collectCallRecords、**编译路径完全化**（全局名原生奇偶 + 自名
-注入 + Abs-fn 分支预算）——$call 不再需要 applyAbsFn 解释 body。
+**`ast-eval.ts` 已整文件删除**（commit 2d217e6）。保留面拆分：
+- `ast-env.ts`：AstEnv 类型 + emptyEnv/withVar
+- `ast-records.ts`：AbsCallRecord/AbsAssignRecord 类型（B 通道同形投影）
+- `call-budget.ts`：调用预算/截断观测（MAX_CALL_DEPTH/MAX_TOTAL_CALLS/
+  enterCall/exitCall/truncatedAbs + **MAX_B_TOTAL_FORKS=5000** fork 预算）
 
-ast-eval 现存角色 = **兜底**（B 失败/非导出类方法/历史语法时的保守回落）：
+**fail-closed 语义**（用户批准）：B-incapable/求值失败 → 显式无信息
+（unknown/空表），不再有解释兜底。涉及面：check 探针/绑定表、scan 表达式
+求值（换 B 编译执行 evalExprAbs）、generalize 解释分支、模块图 evalDep、
+LSP 节点表/case 重放、analyzer 记录通道（B 唯一源）、CLI assume。
 
-| 面 | 位置 | 删除动作 |
-|---|---|---|
-| check 兜底探针 | core/check.ts L675/L745/L773 | fail-closed：返回 unknown/空表 |
-| case 扫描 | core/scan.ts | 换 B（evalProgramAbs → runTranspiled 绑定表）或 fail-closed |
-| generalize 解释分支 | core/generalize.ts | 仅剩非导出类方法 + B 失败回落——fail-closed |
-| $call 非 body impl | hof.ts applyAbsFn | 关系面（relationFn）保留代数语义，删解释器 body 面 |
-| analyzer Abs 兜底 | service/analyzer.ts 等 | fail-closed |
-| 模块图 evalDep 回落 | abs-modules-graph.ts | fail-closed（JSX 等 B-incapable → 空导出） |
-| LSP 兜底 | lsp-surface.ts | fail-closed |
-| 测试面 | 39 文件 | 行为重定向（analyzeFn 调用 → runTranspiled 形态） |
+**删除暴露的两个隐藏耦合**（均已修）：
+1. **ast-eval 模块级 `setApplyCallbackHost` 注册**（数组回调解释宿主）随
+   文件消失 → forEach 回调不执行（副作用全丢，差分 7 mismatch）——
+   注册迁 `exec/call.ts`（B 宿主 = $call：Abs 编译/apply/关系面）。
+2. **分支爆炸性能回归**：Φ-native 的 Φ 逐层 and 累积（lodash
+   _baseFlatten 实测 50+ 项，每层 term 不同去重失效）→ implies 爆炸
+   （卡死 60s+，main 31ms）。修：boundedPhi 上限 24 + 调用预算 200k→20k
+   + fork 预算 5000 → 665ms；**core 全量从 830s+ 降到 12.85s**。
 
-**删除前最后一个产品决策（B）**：兜底面从「ast-eval 保守回落」改为
-「fail-closed（unknown/空导出）」——语义变化：B-incapable 文件（JSX、
-非导出类方法、历史语法）的分析结果从「部分覆盖」变为「显式无信息」。
-推荐 fail-closed：与 nudo 的「unknown = 引擎债、显式报告」原则一致，
-且删除后差分 oracle 仍是独立 bug 发现器（B-vs-native，不依赖 ast-eval）。
+**测试面**：执行器本体测试整删 11 文件 + parity 段 13 文件 + 行为测试
+换工具 13 文件（子代理批量）；契约更新（fail-closed 面）。
+
+**终局验证**：core 160 文件 1823 测试 12.85s 全绿；service/cli/parser/
+lsp/vite-plugin 853/854（唯一 lsp agent-interface-draft 为长期 baseline）；
+差分 155、gold 150、real-packages 10（3.17s）、examples 149、lint 全绿。
+
+**架构终态**：单引擎（B-path）——转译 + new Function 执行 + 代数层
+（Abs/term/pred/conf）；差分 oracle（B-vs-native）为独立 bug 发现器保留。
