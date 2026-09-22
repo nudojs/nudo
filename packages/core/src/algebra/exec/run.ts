@@ -426,9 +426,12 @@ export function setBPathFallbackCollector(
 /** 记录一次 B 回落（body-fn 等非 runTranspiled 入口共用） */
 export function noteBPathFallback(e: unknown): void {
   if (!bFallbackCollector) return;
-  const f: BPathFallback =
-    e instanceof NudoUnsupportedError
-      ? { reason: `unsupported:${e.reason}`, message: e.message, ...(e.loc ? { loc: e.loc } : {}) }
+  const f: BPathFallback = e instanceof NudoUnsupportedError
+    ? { reason: `unsupported:${e.reason}`, message: e.message, ...(e.loc ? { loc: e.loc } : {}) }
+    : isNudoThrow(e)
+      ? // NudoThrow：程序自身的抛（如顶层 this 写 / strict 写 TypeError）——
+        // 模块装载失败，不是 B 能力边界也不是 B 缺陷（catch 可吸收）
+        { reason: "module-throw", message: e instanceof Error ? e.message : String(e) }
       : { reason: "internal", message: e instanceof Error ? e.message : String(e) };
   try {
     bFallbackCollector(f);
