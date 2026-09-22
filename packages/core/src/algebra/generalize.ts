@@ -41,6 +41,8 @@ import {
 import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
 import { scanPromotions } from "./promote-scan.ts";
 import { tryRunTranspiled, callTranspiledExportFull, type RunTranspiledOptions } from "./exec/run.ts";
+import { withExecPhi } from "./exec/runtime.ts";
+import { $new, $invoke } from "./exec/class.ts";
 
 /** generalize 的 B-path 模块执行缓存（按 source；run 不依赖实参） */
 const bRunMemo = new Map<string, Record<string, unknown>>();
@@ -65,6 +67,32 @@ function bPathRunOf(
 }
 
 /** body 是否引用指定标识符（自递归检测；非计算 property key 不计数） */
+/** 类声明的构造器形参个数（类方法桥实例化用：无显式 ctor → 0） */
+function ctorParamCountOf(
+  fileAst: ReturnType<typeof babelParse>,
+  clsName: string,
+): number {
+  for (const stmt of fileAst.program.body) {
+    if (
+      (stmt.type === "ClassDeclaration" || stmt.type === "ExportNamedDeclaration") &&
+      "declaration" in (stmt as object)
+    ) {
+      const decl = stmt.type === "ExportNamedDeclaration"
+        ? (stmt as { declaration?: unknown }).declaration
+        : stmt;
+      const c = decl as { type?: string; id?: { name?: string }; body?: { body?: unknown[] } };
+      if (c.type === "ClassDeclaration" && c.id?.name === clsName) {
+        for (const m of c.body?.body ?? []) {
+          const mem = m as { kind?: string; params?: unknown[] };
+          if (mem.kind === "constructor") return mem.params?.length ?? 0;
+        }
+        return 0;
+      }
+    }
+  }
+  return 0;
+}
+
 function bodyReferencesName(body: Node, name: string): boolean {
   let found = false;
   const visit = (n: unknown): void => {
@@ -987,7 +1015,6 @@ function generalizeFromAstUncached(
   const envGated = /@nudo:env\b/.test(source) && !hasEnv;
   const replaceGated = /@nudo:replace\b/.test(source) && !hasReps;
   const bEligible =
-    !fnName.includes(".") &&
     !unresolvableImports &&
     !mockGated &&
     !envGated &&
@@ -1003,7 +1030,18 @@ function generalizeFromAstUncached(
     if (bEligible) {
       try {
         const bRun = bPathRunOf(source, opts.modules, opts.inject);
-        if (bRun && fnName in bRun) {
+        if (!bRun) {
+          /* B 失败回落解释 */
+        } else if (fnName.includes(".")) {
+          // 类方法桥：模块导出表取类 Abs → $new（构造参数 any）→ $invoke
+          const [clsName, methodName] = fnName.split(".", 2);
+          const clsAbs = bRun[clsName ?? ""];
+          if (clsAbs && typeof clsAbs === "object" && "shape" in (clsAbs as object)) {
+            const nCtor = ctorParamCountOf(fileAst, clsName ?? "");
+            const inst = $new(clsAbs as Abs, Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")));
+            result = withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
+          }
+        } else if (fnName in bRun) {
           // 提升形状预绑定到实参（B 无 env 预绑面；具体实参优先）
           const bArgs = args.map((a, i) => {
             const shape = promoteScan.promotedShapes.get(params[i]!);
