@@ -962,12 +962,8 @@ function bPathThrowsOf(
   args: Abs[],
 ): TranspiledCallResult | undefined {
   if (fnName.includes(".")) return undefined; // 类方法不在顶层导出表
-  // HOF 提升语义仅在 ast-eval：any/unknown 实参的数组方法调用会被提升建模
-  // 且不记 may-throw（gold 钉此口径）；B-path 无提升，$invoke 对 any 记
-  // TypeError → 假 L2。any/unknown 入口保持 ast-eval，约束入口才走 B。
-  if (args.some((a) => a.shape.k === "any" || a.shape.k === "unknown")) {
-    return undefined;
-  }
+  // L2 解耦后两引擎口径一致：any 实参的数组方法调用同样记 may-throw
+  //（提升是假设、不消除危险），约束与无约束入口都走 B。
   if (bPathRunMemo.size >= MAX_CHECK_MEMO) {
     const oldest = bPathRunMemo.keys().next().value;
     if (oldest !== undefined) bPathRunMemo.delete(oldest);

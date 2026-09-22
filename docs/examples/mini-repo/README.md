@@ -9,8 +9,11 @@
 | `user-service.js` | import、async、HOF |
 
 ```bash
-pnpm run verify:examples   # 验证本目录命令（见 [../README.md](../README.md) 命令矩阵，四个都 exit 0）
+pnpm run verify:examples   # 验证本目录命令（见 [../README.md](../README.md) 命令矩阵）
 ```
+
+user-service 的 `check` 行现在 exit 1：L2 entry-may-throw（`sumAges` 无约束 `ages`
+实参调数组方法——提升是使用意图假设、不消除危险，如实报 TypeError）。其余三行 exit 0。
 
 观察命令：`pnpm run check <file>`（签名）· `pnpm run test:cli <file>`（case 报告）。
 两个支持文件在矩阵里也有独立 test 行（与 `scripts/verify-examples.sh` 钉住的输出一致）：
@@ -23,7 +26,8 @@ pnpm run verify:examples   # 验证本目录命令（见 [../README.md](../READM
   的 `entry@` case（无调用点），**不是**「No functions with @nudo:case directives found.」。
 - `user-service.js`：`check` signatures 含 `createService() => { store: MemoryStore, load: (id) => ? }`——
   `MemoryStore` 形状经 import 图进入服务对象。`normalizeId` 可能带 `nudo:unknown-inference`
-  warning（真 unknown 返回 = 引擎债，不是 L2）。
+  warning（真 unknown 返回 = 引擎债，不是 L2）。`sumAges` 报 L2 `entry-may-throw`：
+  无约束 `ages` 实参可能非数组（提升建模不消除危险——design §3.3）。
 
 `test:cli` 亮点（每行都是逐调用点/逐 case 真值）：
 

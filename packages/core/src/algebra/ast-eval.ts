@@ -1648,6 +1648,19 @@ function evalCall(
       }
 
       const obj0 = evalNode(m.object, env, phi, budget).value;
+      // design §3.3 + B-path 对齐：nullish 字面量接收者的方法调用原生
+      // TypeError（hard，结果 never）——此前数组方法建模块用 unknown 元素
+      // 兜底「成功」处理（null.reduce 折 0，try/catch 假不抛）；
+      // any 接收者记软 may-throw（提升是假设、不消除危险），建模照常。
+      if (isNullishLitAbs(obj0)) {
+        return { value: errorTypeAbs("TypeError"), phi, env, threw: true };
+      }
+      if (obj0.shape.k === "any") {
+        const loc0 = node.loc
+          ? { line: node.loc.start.line, column: node.loc.start.column }
+          : undefined;
+        noteAnyMemberMayThrow(obj0, method, "method", loc0);
+      }
       let obj = obj0;
       // 挂载点①：形参 any 上的 HOF 方法 miss → 提升为 arr，再走正常分支
       if (

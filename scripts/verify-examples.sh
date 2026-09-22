@@ -262,7 +262,7 @@ pin 'pnpm run test:cli docs/examples/algebra/g-narrow-subtract.js' \
 pin 'pnpm run test:cli docs/examples/algebra/h-array-boundary.js' \
   'debug "reduce"  ([1, 2, 3, 4, 5]) => 15' \
   'debug "forEach"  ([1, 2, 3, 4, 5]) => 15' \
-  'debug "some"  ([1, 2, 3, 4, 5]) => boolean'
+  'debug "some"  ([1, 2, 3, 4, 5]) => true'
 pin 'pnpm run test:cli docs/examples/algebra/i-map-set.js' \
   'debug "map-get"  ("alice") => { id: "alice", name: "Alice" }' \
   'debug "set-forof"  ([1, 2, 2, 3]) => [1, 2, 3]'
@@ -279,14 +279,16 @@ pin 'pnpm run test:cli docs/examples/algebra/l-primitive-conversion.js' \
   'debug "float"  ("3.14") => 3.14'
 # sample.js — entry@ fallback; unconstrained params display as any (not unknown).
 pin 'pnpm run test:cli docs/examples/algebra/sample.js' \
-  'entry@' '(any, any) => unknown' \
+  'entry@' '(any, any) => number | string' \
   '(any) => number | string' \
   '{ host: "localhost", port: 8080, debug: false }'
 
 # mini-repo/ — pin the cross-file integration claims.
-# normalizeId may carry nudo:unknown-inference warning (true unknown return)
+# normalizeId may carry nudo:unknown-inference warning (true unknown return);
+# sumAges 无约束 ages 实参 → L2 entry-may-throw（提升是假设、不消除危险）
 pin 'pnpm run check docs/examples/mini-repo/user-service.js' \
-  '0 error' \
+  '1 error' \
+  'sumAges(ages: any) => number | string | unknown  throws TypeError' \
   'createService() => { store: MemoryStore, load: (id) => ? }'
 pin 'pnpm run test:cli docs/examples/mini-repo/user-service.js' \
   'debug "ages"  ([10, 20, 30]) => 60' \

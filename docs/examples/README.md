@@ -95,7 +95,7 @@ function score(x) { return x + 1; }
 | `pnpm run test:cli docs/examples/algebra/k-try-catch.js` | **0** | try/catch：确定性 return 折叠 / catch 形参绑定 Error.message |
 | `pnpm run test:cli docs/examples/algebra/l-primitive-conversion.js` | **0** | 原始值包装构造（String / Number / Boolean / parseInt / parseFloat 字面量折叠） |
 | `pnpm run test:cli docs/examples/algebra/sample.js` | **0** | 无调用点 → `entry@`；参数显示 **`any`** |
-| `pnpm run check docs/examples/mini-repo/user-service.js` | **0** | 多文件集成（check） |
+| `pnpm run check docs/examples/mini-repo/user-service.js` | **1** | 多文件集成（check）——L2：`sumAges` 无约束数组实参报 `entry-may-throw` |
 | `pnpm run test:cli docs/examples/mini-repo/user-service.js` | **0** | 多文件集成（test case 报告） |
 | `pnpm run check docs/examples/mini-repo/validators.js` | **0** | 支持文件 signatures：入口无约束参数 = any |
 | `pnpm run test:cli docs/examples/mini-repo/validators.js` | **0** | 支持文件独立 test：entry@ 签名（any） |

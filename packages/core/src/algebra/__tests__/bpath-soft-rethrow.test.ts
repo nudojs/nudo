@@ -20,6 +20,7 @@ import {
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../exec/may-throw.ts";
+import { analyzeFnFull } from "../ast-eval.ts";
 
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
 
@@ -91,6 +92,31 @@ describe("B-path soft may-throw rethrow", () => {
 
   it("plain may-throw without try still reports (collector path)", () => {
     const effects = collect(`export function f(u) { return u.name; }`);
+    expect(effects.map((e) => e.kind)).toContain("TypeError");
+  });
+});
+
+describe("any-recv promotion keeps L2 may-throw (decoupled from dispatch)", () => {
+  // design §3.3：any 危险操作记 may-throw。提升（挂载点①）是使用意图假设，
+  // 不消除危险——此前 dispatch 成功后 note 路径不执行，假设被静默隐藏；
+  // 现在提升成功后仍按原始 any 接收者记效果。两引擎口径一致。
+  const src = `export function sumAges(ages) { return ages.reduce((acc, a) => acc + a, 0); }`;
+
+  it("B-path records TypeError for any-recv array method", () => {
+    expect(collect(src, "sumAges").map((e) => e.kind)).toContain("TypeError");
+  });
+
+  it("ast-eval records TypeError after promotion", () => {
+    const effects: MayThrowEffect[] = [];
+    runWithMayThrowSession(() => {
+      setMayThrowCollector((e) => effects.push(e));
+      try {
+        analyzeFnFull(src, "sumAges", [anyAbs], {});
+      } catch {
+        /* probe 忽略 */
+      }
+      setMayThrowCollector(null);
+    });
     expect(effects.map((e) => e.kind)).toContain("TypeError");
   });
 });

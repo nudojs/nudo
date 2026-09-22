@@ -4,7 +4,7 @@
 //       pnpm run test:cli docs/examples/algebra/sample.js
 //
 // 输出（test:cli）：
-//   add          Case "entry@": (any, any) => any
+//   add          Case "entry@": (any, any) => number | string
 //     intension: add: (a: A1, b: A2) => number | string = (A1 + A2)
 //     abs: number | string  = (A1 + A2)  #partial
 //     —— 无契约时 + 跟真实 JS：number | string
