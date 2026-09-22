@@ -206,11 +206,6 @@ function bCallBudgetKey(name: string, fn: unknown, args: Abs[]): string {
 
 /** 进入命名调用：超限/cycle → 不执行，返回 opaque（并上报截断） */
 function bEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boolean; key?: string } {
-  if (bTotalCalls < 40) {
-    process.stderr.write(`[budget#${bTotalCalls}] d=${bCallDepth} ${name}\n`);
-  } else if (bTotalCalls % 50000 === 0) {
-    process.stderr.write(`[budget] total=${bTotalCalls} depth=${bCallDepth} fn=${name}\n`);
-  }
   const key = bCallBudgetKey(name, fn, args);
   if (
     bActiveCallKeys.includes(key) ||
