@@ -91,10 +91,9 @@ describe("P1c: filter/reduce/flatMap relation", () => {
     `;
     const f = relationFn([a1], b1);
     const r = analyzeExport(src, "walk", [arrA1, f]);
-    // no return → B 编译产物隐式返回 JS undefined → callTranspiledExportFull 折
-    // unknown（产品面同值：无 return 函数签名 => unknown + nudo:unknown-inference）。
-    // ast-eval 曾折 undefined lit——隐式 return 建模缺失是 B 已知退化，见迁移报告。
-    expect(r.shape.k).toBe("unknown");
+    // 隐式 return 建模：无 return 函数 → undefined lit（原生奇偶；
+    // transpile 尾部补 return $lit(undefined)）
+    expect(r.term?.op === "lit" && r.term.value === undefined).toBe(true);
   });
 
   it("some/every with relation → boolean", () => {

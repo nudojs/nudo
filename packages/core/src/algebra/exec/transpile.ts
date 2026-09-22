@@ -856,6 +856,13 @@ function stmtReturns(stmt: Statement): boolean {
  * 返回值丢掉（早退全部静默失效——compareVersions 类链式卫语句的坑）。
  * 余下语句递归同规则，链式卫语句逐层嵌套 else。
  */
+/** 块体无确定 return 时补隐式 return $lit(undefined)（原生无 return 函数 =
+ *  undefined；此前编译产物返回 JS undefined 被宿主折 unknown——精度退化） */
+function withImplicitReturn(body: Node, bodyStmts: string, depth: number): string {
+  if (stmtReturns(body as unknown as Statement)) return bodyStmts;
+  return `${bodyStmts}\n${indent(depth)}return $lit(undefined);`;
+}
+
 function transpileFnBodyStmts(stmts: Statement[], depth: number, opts: TranspileOptions): string {
   for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i]!;
@@ -1299,7 +1306,7 @@ export function transpileBodyNode(node: Node, opts: TranspileOptions): string {
   if (isExpression(node as { type: string })) {
     return `return ${transpileExpression(node as Expression, opts)};`;
   }
-  return transpileStatement(node as Statement, 1, opts);
+  return withImplicitReturn(node, transpileStatement(node as Statement, 1, opts), 1);
 }
 
 function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptions): string {
@@ -1399,9 +1406,13 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         : "";
       const bodyStmts =
         stmt.body.type === "BlockStatement"
-          ? [...prologue, thisPrologue, transpileFnBodyStmts(stmt.body.body, depth + 2, fnOpts)]
-              .filter(Boolean)
-              .join("\n")
+          ? withImplicitReturn(
+              stmt.body,
+              [...prologue, thisPrologue, transpileFnBodyStmts(stmt.body.body, depth + 2, fnOpts)]
+                .filter(Boolean)
+                .join("\n"),
+              depth + 2,
+            )
           : `${indent(depth + 2)}${thisPrologue.trim()}return ${transpileExpression(stmt.body as unknown as Expression, fnOpts)};`;
       const restBind = rest
         ? `${indent(depth + 1)}const ${rest} = arguments.length > ${named.length} ? $arr(Array.from(arguments).slice(${named.length})) : $arr([]);\n`
@@ -2361,12 +2372,24 @@ function transpileClass(
       target.set(mname, def);
       continue;
     }
+    // ctor 有显式 `return __this`（下方追加）——不得加隐式 return 抢行
+    const isCtor = m.kind === "constructor" || mname === "constructor";
     const bodyStmts =
       m.body?.type === "BlockStatement"
-        ? (m.body.body as Statement[])
-            .map((s) => transpileStatement(s, depth + 3, m.static ? opts : methodOpts))
-            .join("\n")
-        : "";
+        ? (isCtor
+            ? (m.body.body as Statement[])
+                .map((s) => transpileStatement(s, depth + 3, m.static ? opts : methodOpts))
+                .join("\n")
+            : withImplicitReturn(
+                m.body as unknown as Node,
+                (m.body.body as Statement[])
+                  .map((s) => transpileStatement(s, depth + 3, m.static ? opts : methodOpts))
+                  .join("\n"),
+                depth + 3,
+              ))
+        : isCtor
+          ? ""
+          : withImplicitReturn(m.body as unknown as Node, "", depth + 3);
     if (m.static) {
       staticMethodParts.push(
         `${indent(depth + 3)}${mname}: (${paramList}) => {`,
@@ -3142,7 +3165,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       const nameList = `[${sig.map((p) => JSON.stringify(p)).join(", ")}]`;
       const thisPrologue = hasThis ? [`const __this = $rawThis(this);`] : [];
       if (fn.body.type === "BlockStatement") {
-        const inner = [...prologue, ...thisPrologue, transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, fnBodyOpts)].join("\n");
+        const inner = withImplicitReturn(
+          fn.body,
+          [...prologue, ...thisPrologue, transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, fnBodyOpts)].join("\n"),
+          1,
+        );
         if (hasThis) {
           const wrap = fn.async
             ? `function (${paramParts.join(", ")}) { return $async(() => {\n${inner}\n}); }`
