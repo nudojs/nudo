@@ -68,6 +68,7 @@ import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
 import { listTopFunctions, scanLiteralCalls } from "./scan.ts";
 import { analyzeFnFull } from "./ast-eval.ts";
+import { runTranspiled, callTranspiledExportFull, type TranspiledCallResult } from "./exec/run.ts";
 import {
   setMayThrowCollector,
   runWithMayThrowSession,
@@ -930,7 +931,10 @@ function collectEntryMayThrows(
   return runWithMayThrowSession(() => {
     setMayThrowCollector((e) => effects.push(e));
     try {
-      const full = analyzeFnFull(source, fnName, entryArgs, { phi, file });
+      // P2-a：L2 throws 求值 B-path 优先（B-hosted 诊断同源；may-throw 效果
+      // 通道共享 recordMayThrow，B 执行同样落收集器）；类方法/转译失败
+      // 回落 ast-eval analyzeFnFull。
+      const full = bPathThrowsOf(source, fnName, entryArgs) ?? analyzeFnFull(source, fnName, entryArgs, { phi, file });
       // 显式 throw（未被 try 消化）也进 L2
       if (full.throws && full.throws.shape.k !== "never") {
         const tName = formatThrowsAbs(full.throws) ?? "Error";
@@ -948,6 +952,37 @@ function collectEntryMayThrows(
     }
     return effects;
   });
+}
+
+/** L2 throws 的 B-path 求值：顶层导出直调；类方法（.名）/失败 → undefined（回落） */
+const bPathRunMemo = new Map<string, Record<string, unknown>>();
+function bPathThrowsOf(
+  source: string,
+  fnName: string,
+  args: Abs[],
+): TranspiledCallResult | undefined {
+  if (fnName.includes(".")) return undefined; // 类方法不在顶层导出表
+  // HOF 提升语义仅在 ast-eval：any/unknown 实参的数组方法调用会被提升建模
+  // 且不记 may-throw（gold 钉此口径）；B-path 无提升，$invoke 对 any 记
+  // TypeError → 假 L2。any/unknown 入口保持 ast-eval，约束入口才走 B。
+  if (args.some((a) => a.shape.k === "any" || a.shape.k === "unknown")) {
+    return undefined;
+  }
+  if (bPathRunMemo.size >= MAX_CHECK_MEMO) {
+    const oldest = bPathRunMemo.keys().next().value;
+    if (oldest !== undefined) bPathRunMemo.delete(oldest);
+  }
+  try {
+    let exports = bPathRunMemo.get(source);
+    if (!exports) {
+      exports = runTranspiled(source, { mode: "analyze" });
+      bPathRunMemo.set(source, exports);
+    }
+    if (!(fnName in exports)) return undefined;
+    return callTranspiledExportFull(exports, fnName, args);
+  } catch {
+    return undefined;
+  }
 }
 
 function formatSigCached(absVal: Abs, name: string): { display: string; detail: string } {
