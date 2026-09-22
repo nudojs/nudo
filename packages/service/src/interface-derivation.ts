@@ -31,6 +31,9 @@ import {
   projectDerivationDsl,
   refineDiagCount,
   setAbsCallCollector,
+  runTranspiled,
+  callTranspiledExportFull,
+  setBCallCollector,
   sidecarPathOf,
   tagDerivationRoot,
   takeInterfaceDiagsSince,
@@ -38,6 +41,7 @@ import {
   unknown as unknownAbs,
   type Abs,
   type AbsCallRecord,
+  type BCallRecord,
   type DerivationNode,
   type NudoConstraint,
 } from "@nudojs/core";
@@ -569,13 +573,35 @@ function deriveOneRoot(
     }
 
     const calls: AbsCallRecord[] = [];
+    const bCalls: BCallRecord[] = [];
     const prevCallCollector = setAbsCallCollector((r) => calls.push(r));
+    setBCallCollector((r) => bCalls.push(r));
     try {
-      analyzeFn(source, plan.fnName, entryArgs, undefined, undefined, undefined, modules);
+      // B-path 优先（迁移件 3）：derivation 打点在共享代数层（arithmetic.add
+      // noteDerivationAdd / joinAbs noteDerivationJoin），$add/$join 执行
+      // 时自动打点——无需 transpile 插桩；类方法（.名）回落 analyzeFn。
+      if (plan.fnName.includes(".")) {
+        analyzeFn(source, plan.fnName, entryArgs, undefined, undefined, undefined, modules);
+      } else {
+        const run = runTranspiled(source, { mode: "analyze", modules });
+        if (plan.fnName in run) {
+          callTranspiledExportFull(run, plan.fnName, entryArgs);
+          calls.push(
+            ...bCalls.map((r) => ({
+              fnName: r.fnName,
+              args: r.args,
+              result: r.result,
+              callLoc: r.callLoc,
+              threw: r.threw,
+            })),
+          );
+        }
+      }
     } catch {
       return [];
     } finally {
       setAbsCallCollector(prevCallCollector);
+      setBCallCollector(null);
     }
 
     const byCallee = new Map<string, CallAgg>();
