@@ -18,7 +18,7 @@ Nudo 面向**逻辑写在 JavaScript 里**的团队：需要**诚实的观察**�
 | JS 仍是 JS | 逻辑是普通 JS；契约也是普通 JS 模块（`*.nudo.js`） |
 | 给 TypeScript / Zod / mock 用 | `nudo export` 从 Abs 单向投影 |
 
-`nudo check` **只负责校验**。`.d.ts`、Zod、JSON Schema、guards 等产物来自 **`export`**，不是校验器生成的。
+`nudo check` **只负责校验**。`.d.ts`、Zod、Standard Schema、guards 等产物来自 **`export`**，不是校验器生成的。
 
 ## 两种工作模式
 
@@ -57,7 +57,7 @@ npx nudojs check logic.js --from calls.js
 
 - 无约束入口参数显示为 **`any`**（不是 `unknown`）。
 - 违例在 Abs 上打印 **`actual ⊭ expected`**。
-- 之后可用 `export` 投影 `.d.ts` / Zod / JSON Schema——**有损视图**，Abs 仍是真源。
+- 之后可用 `export` 投影 `.d.ts` / Zod / Standard Schema——**有损视图**，Abs 仍是真源。
 
 诚实对比：[Nudo 与 TypeScript](./guides/vs-typescript.md)。
 
@@ -70,7 +70,7 @@ npx nudojs check logic.js --from calls.js
                                                   ▼
                          Abs（唯一真源）──► nudo export ──► .d.ts
                                                   │            Zod
-                                                  │            JSON Schema（mock 等）
+                                                  │            Standard Schema
                                                   └──► IDE / LSP · Agent / MCP
 ```
 

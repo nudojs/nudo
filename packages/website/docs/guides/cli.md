@@ -65,7 +65,7 @@ issues
       → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
-Unconstrained entry parameters display as **`any`**. `unknown` means inference failed (engine debt) — it is never the default for an unconstrained entry parameter. In `[ERROR L# name]`, `L#` is the **line number** of the offending call/declaration — not a contract layer (L1/L2 are the layers).
+Unconstrained entry parameters display as **`any`**. `unknown` means inference failed (engine debt) — it is never the default for an unconstrained entry parameter. In `[ERROR L# name]`, `L#` is the **line number** of the offending call/declaration — not a contract layer (L1/L2 are the layers). The sample above prints `L1` because `getName` is declared on line 1 of that file — its layer is L2.
 
 - **Semantics** (L1 explicit contracts / L2 entry throws, exit codes, filtering): [nudo check](./check.md)
 - **Options & config** (`--watch` / `--json` / `--abs` / `--from` / `--ignore-throws` / `--entry-throws`, `package.json#nudo.check`): [CLI Reference](../api/cli-reference.md#nudo-check)
@@ -228,7 +228,7 @@ nudo env harvest node
 Then reference the generated env from source:
 
 ```ts
-/// @nudo:env ./nudo-harvest-node.ts
+/// @nudo:env nudo-harvest-node.ts
 ```
 
 ---

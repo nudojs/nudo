@@ -93,6 +93,8 @@ issues
       → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
+> `L1` in the issue header is the **line number** (the function is declared on line 1 here) — the layer is L2.
+
 - Unconstrained entry parameters print as **`any`**, never `unknown`.
 - True `unknown` means inference failed (engine debt) and is annotated with conf.
 - The throws domain is always shown when present.
@@ -174,6 +176,19 @@ When no usage-site call is found for an entry export:
 - Only `@nudo:case` with `=> expected` enter pass/fail.
 - Failures of declared assertions set exit `1`; synthetic cases do not.
 - `test --json` includes an `assertions` summary (`passed` / `failed` / `unchecked`) and still exits 1 on declared assertion failure.
+
+A failing declared assertion (`nudo:case-expected`) renders as:
+
+```text
+=== double ===
+  debug "bad"  (2) => 4
+
+assertions
+  ✗ 0 passed · 1 failed · 0 unchecked
+  [FAIL] double  case "bad"
+         expected: 5
+         actual:   4
+```
 
 **Example:**
 
@@ -367,7 +382,7 @@ nudo env harvest node
 ```
 
 ```ts
-/// @nudo:env ./nudo-harvest-node.ts
+/// @nudo:env nudo-harvest-node.ts
 ```
 
 **Exit codes:**
@@ -385,7 +400,7 @@ nudo env harvest node
 
 - **check --json** — signatures (including `any` entry params and throws), diagnostics with codes such as `nudo:entry-may-throw`, and summary counts.
 - **test --json** — per-function cases (`entry@` / `call@` / directive), an `assertions` summary (`passed`/`failed`/`unchecked`), diagnostics, and optional Abs intension blocks. Declared assertion failures still exit 1.
-- **check --json** — single file only (`--json requires a single file` on directory targets).
+- **check --json** — single file only (directory targets error with `--json requires a single file, not multiple targets`); `test --json` errors with `--json requires a single file`.
 
 ---
 

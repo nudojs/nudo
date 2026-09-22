@@ -96,7 +96,7 @@ number | string       // 异构联合
 | `shape({ … })` | 对象形状（字段递归） | `shape({ id: number().gt(0) })` |
 | `array(…)` | 数组元素约束 | `array(number())` |
 | `fn({ … }, …)` | 函数关系 | `fn({ x: number().gt(0) }, number())` |
-| 构建器链 | `.gt/.gte/.lt/.lte/.shift/.int…` | `number().gt(0).int()` |
+| 构建器链 | `.gt/.ge/.lt/.le/.int/.min/.max/.length/.shift…` | `number().gt(0).int()` |
 | 裸字面量 | 直接解析 | `42`、`"abc"`、`true`、`[1, 2]` |
 
 指令类型表达式使用上面的约束构建器加具体字面量。`@nudo:mock` body 内写普通 JavaScript 值和闭包 —— 不要把构建器调用当作返回负载。

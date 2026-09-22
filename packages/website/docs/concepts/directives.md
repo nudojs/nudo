@@ -54,7 +54,7 @@ Provide named execution cases. Each case defines inputs (concrete or symbolic) f
 
 - **name** — A string identifier for the case (e.g. `"double digits"`).
 - **args** — Comma-separated **concrete** arguments (`5`, `"hello"`, `{…}`) or constraint-builder expressions.
-- **expected** (optional) — After `=>`, a concrete expected result used for validation.
+- **expected** (optional) — After `=>`, a type expression (a concrete literal or a constraint builder, same grammar as args) asserted against the inferred result by `nudo test`.
 
 ### Examples
 
@@ -253,7 +253,8 @@ Sidecars are real JS modules: they may import builders from `@nudojs/core` and c
 | `union(...cs)` | join of domains | `union(lit(42), lit("a"))` |
 | `fn(params, returns?, { throws? })` | first-class function interface | `fn({ x: number() }, number())` |
 | `.gt(n)` `.ge(n)` `.lt(n)` `.le(n)` `.int()` | numeric bounds (chained) | `number().gt(0).int()` |
-| `.min(n)` `.max(n)` | string length bounds (`length(s)` pred) | `string().min(1)` |
+| `.min(n)` `.max(n)` | length bounds — `length(s)` pred (strings/arrays) | `string().min(1)` |
+| `.length(n)` | length equality bound (`length(s) = n`) | `string().length(3)` |
 | `.shift(n)` | translate every constant bound by `+n` | `positive.shift(1)` |
 | `and(...cs)` | scalar conjunction (top-level function, not a chained method) | `and(positive, number().lt(10))` |
 | `partial(c)` / `pick(c, keys)` / `omit(c, keys)` | shape utilities | `partial(user)` |
@@ -469,7 +470,7 @@ Module mocks are declared per file with `@nudo:mock-module` — there is no proj
 
 ## @nudo:as — Type Assertion
 
-Override the type of the next statement's value. Similar to TypeScript's `as` keyword, but placed as a line comment above the statement. Affects `VariableDeclaration`, `ReturnStatement`, and `ExpressionStatement`.
+Override the type of the next statement's value. Similar to TypeScript's `as` keyword, but placed as a line comment above the statement. Applied on the B path to `VariableDeclaration` initializers and `ReturnStatement` values of the covered statement.
 
 ### Syntax
 

@@ -170,6 +170,32 @@ Field 'name' is missing on the evaluated object shape
 
 **Warning, default off.** C0.5: evaluation actually hit a closed object shape's missing field (opt in with `package.json#nudo.analysis.evalMissingSlot: "warning"`). It is **observation, not an obligation** — it never invents check errors; handwritten contracts still gate through `nudo:constraint-violated`.
 
+## Test assertions (`nudo test`)
+
+### `nudo:case-expected`
+
+```text
+debug "bad": expected 5, got 4. The inferred return type does not match the
+expected type declared in the @nudo:case witness
+```
+
+A declared `@nudo:case "name" (…) => expected` witness whose expected type does not match the inferred result. **Error in the test run** — a declared assertion failure sets `nudo test` exit `1`; synthetic `call@` / `entry@` cases never fail the run.
+
+The failure face in the report:
+
+```text
+=== double ===
+  debug "bad"  (2) => 4
+
+assertions
+  ✗ 0 passed · 1 failed · 0 unchecked
+  [FAIL] double  case "bad"
+         expected: 5
+         actual:   4
+```
+
+**Fix:** correct the witness expectation or the function body.
+
 ## Reading `actual ⊭ expected`
 
 ```text

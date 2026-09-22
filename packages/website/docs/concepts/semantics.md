@@ -123,6 +123,41 @@ root(9);
 
 `sqrt`, `pow`, `abs`, `floor`, `ceil`, `round`, `sign`, `min`, and `max` all fold to their exact numeric result on literal arguments; symbolic arguments widen to `number`.
 
+### Collections (Set / Map iteration, Symbol.iterator)
+
+`for...of` over a concrete `Set` / `Map` folds element-wise, and the `Symbol.iterator in x` protocol probe folds to a definite boolean on a known receiver:
+
+```js verify
+function firstSet() {
+  const seen = new Set(["a", "b"]);
+  for (const x of seen) return x;
+}
+firstSet();
+
+function firstMap() {
+  const m = new Map([["k", 1]]);
+  for (const [k, v] of m) return v;
+}
+firstMap();
+
+function hasIter(x) { return Symbol.iterator in x; }
+hasIter([1]);
+```
+
+```text
+=== firstSet ===
+
+  call@L5  () => "a"
+
+=== firstMap ===
+
+  call@L11  () => 1
+
+=== hasIter ===
+
+  call@L14  ([1]) => boolean
+```
+
 ### Primitive Conversions & Parsing
 
 The global coercion constructors and numeric parsers fold literals to exact results at the call site and under `@nudo:case` alike:
@@ -239,8 +274,6 @@ These constructs currently evaluate to `unknown` (often with a `nudo:unknown-rec
 |---|---|---|
 | Primitive autoboxing | `"nudo".constructor` → `unknown` | `.length`, string methods above |
 | `Object.prototype` methods | `({}).hasOwnProperty("key")` → `unknown` | `Object.keys(...)` / shape checks |
-| `Symbol.iterator in x` | → `unknown` | `Array.isArray(x)` |
-| `for...of` over `Set` / `Map` | elements → `unknown` | arrays / `.map` callbacks |
 | Promise executor | `new Promise((r) => r("done"))` → `promise<unknown>` | `@nudo:mock` + `async` functions |
 | Per-iteration `let` closures | `fns[i]()` → `unknown` | direct iteration results |
 | `arguments` | → `unknown` (`nudo:builtin-unknown`) | named parameters |

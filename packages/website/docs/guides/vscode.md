@@ -88,7 +88,7 @@ function process(data) {
 
 ### Find References
 
-Find all usages of a symbol across the current file. Press `Shift+F12` (or right-click → Find All References).
+Find all usages of a symbol — local plus cross-file (importers in other open / known files). Press `Shift+F12` (or right-click → Find All References).
 
 ### Rename Symbol
 

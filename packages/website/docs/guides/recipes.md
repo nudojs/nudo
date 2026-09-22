@@ -103,7 +103,7 @@ issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
-`any` = unconstrained entry. `throws` = L2 domain. Codes: [Diagnostics](../reference/diagnostics.md).
+`any` = unconstrained entry. `throws` = L2 domain. `L1` in the header is the **line number** (`getName` is declared on line 1 here) — the layer is L2. Codes: [Diagnostics](../reference/diagnostics.md).
 
 ---
 

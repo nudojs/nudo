@@ -65,7 +65,7 @@ Typical: monorepo with `apps/*` in TS and `packages/*` tools in JS.
    npx nudojs export packages/tool/src/index.js --format schema --dialect zod
    ```
 
-   JSON Schema / Zod projections support mocks and runtime checks; they do **not** replace `nudo check`.
+   Standard Schema / Zod projections support runtime checks and mocks; they do **not** replace `nudo check`.
 
 7. **IDE** — install the VS Code / Zed extension for hover, inlays, CodeLens draft/persist on JS files.
 

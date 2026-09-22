@@ -20,7 +20,7 @@ npx nudojs env harvest --auto src/
 Reference the generated env from source:
 
 ```ts
-/// @nudo:env ./nudo-harvest-node.ts
+/// @nudo:env nudo-harvest-node.ts
 ```
 
 Built-in `es` / `web` / `node` envs already cover a large slice of common APIs (`@nudojs/env`).

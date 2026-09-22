@@ -170,6 +170,32 @@ Field 'name' is missing on the evaluated object shape
 
 **Warning，默认 off。** C0.5：求值实际命中了闭对象 shape 的缺字段（用 `package.json#nudo.analysis.evalMissingSlot: "warning"` 打开）。它是**观察，不是义务**——不会凭空产生 check 错误；手写契约仍经 `nudo:constraint-violated` 门禁。
 
+## 测试断言（`nudo test`）
+
+### `nudo:case-expected`
+
+```text
+debug "bad": expected 5, got 4. The inferred return type does not match the
+expected type declared in the @nudo:case witness
+```
+
+声明的 `@nudo:case "name" (…) => expected` 见证的期望类型与推断结果不符。**在 test 运行中为 error** —— 声明断言失败会让 `nudo test` 以 `1` 退出；合成 `call@` / `entry@` case 永不导致运行失败。
+
+报告中的失败面：
+
+```text
+=== double ===
+  debug "bad"  (2) => 4
+
+assertions
+  ✗ 0 passed · 1 failed · 0 unchecked
+  [FAIL] double  case "bad"
+         expected: 5
+         actual:   4
+```
+
+**修复：** 改正见证期望或函数体。
+
 ## 读懂 `actual ⊭ expected`
 
 ```text

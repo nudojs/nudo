@@ -54,6 +54,8 @@ issues
       → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
+> `[ERROR L1 getName]` 里的 `L1` 是**行号**（此处函数声明在第 1 行）—— 该诊断的层是 L2（`nudo:entry-may-throw`）。`L#` 永远是位置，不是契约层。
+
 - 无约束入口参数显示为 **`any`**。
 - **`unknown` 表示推导失败**（引擎债）—— 绝不是无约束入口参数的默认值。
 - 存在 throws 时必须上屏。
@@ -74,7 +76,7 @@ issues
 | `nudo:unknown-inference` | 引擎债 | warning | 签名出现真 `unknown`（推导失败）——入口无约束参数是 `any`，不走此码 |
 | `nudo:unknown-recv` | 引擎债 | warning | `unknown` 接收者成员访问 —— **不得**替代 L2 throws 建模 |
 | `nudo:no-signature` | 引擎/L1 | warning | 函数无法泛化为符号 Abs（CJS/匿名形态仍走入口 fallback 执法 L2） |
-| `nudo:opaque-result` | 引擎 | warning | 求值返回 opaque / 无信息 Abs |
+| `nudo:opaque-result` | 引擎 | info | 求值返回 opaque / 无信息 Abs |
 | `nudo:eval-error` | 引擎 | error | 分析期间 body 求值抛出 |
 | `nudo:recursion-truncated` | 引擎 | warning | 递归预算用尽；结果拓宽 |
 | `nudo-unreachable` | info | info | return/throw 之后的代码 |
@@ -139,6 +141,8 @@ issues
       expected: entry total, or declare/catch throws
       → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
+
+> 提醒：报头里的 `L1` 是**行号** —— 该诊断的层是 L2。
 
 ### L2 门禁什么
 

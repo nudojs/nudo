@@ -111,7 +111,17 @@ greet({ name: "Alice", age: 30 });
   call@L4  ({ name: "Alice", age: 30 }) => "Alice is 30"
 ```
 
-Concatenation keeps the literal result `"Alice is 30"` — not a flattened `string`. Parameter destructuring does not yet unpack argument shapes the same way; property access is the reliable path for shape-based precision.
+Concatenation keeps the literal result `"Alice is 30"` — not a flattened `string`. Parameter destructuring folds argument shapes the same way:
+
+```js verify
+function addP({ x, y }) { return x + y; }
+addP({ x: 1, y: 2 });
+```
+
+```text
+=== addP ===
+  call@L2  ({ x: 1, y: 2 }) => 3
+```
 
 Shape merge through spread:
 
@@ -200,7 +210,7 @@ Each call site keeps its precise arm (`"HI"`, `42`, `null`). Symbolic `unknown` 
 
 ### 9. Optional chaining
 
-Shallow known properties fold precisely; deep `?.` chains may degrade to `unknown` (engine debt — not the same as entry `any`).
+Known-shape receivers fold at any depth (`a.b.c ?? 5` with `{ b: {} }` → `5`); on unconstrained (`any`) receivers the result stays `any` with `throws TypeError` (engine debt `unknown` does not apply — see [Control flow narrowing](../concepts/control-flow-narrowing.md)).
 
 ---
 

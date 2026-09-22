@@ -123,6 +123,41 @@ root(9);
 
 `sqrt`、`pow`、`abs`、`floor`、`ceil`、`round`、`sign`、`min`、`max` 都在字面量实参上折叠为精确数值结果；符号实参拓宽为 `number`。
 
+### 集合（Set / Map 迭代、Symbol.iterator）
+
+对具体 `Set` / `Map` 的 `for...of` 逐元素折叠；在已知接收者上，`Symbol.iterator in x` 协议探测折叠为确定布尔值：
+
+```js verify
+function firstSet() {
+  const seen = new Set(["a", "b"]);
+  for (const x of seen) return x;
+}
+firstSet();
+
+function firstMap() {
+  const m = new Map([["k", 1]]);
+  for (const [k, v] of m) return v;
+}
+firstMap();
+
+function hasIter(x) { return Symbol.iterator in x; }
+hasIter([1]);
+```
+
+```text
+=== firstSet ===
+
+  call@L5  () => "a"
+
+=== firstMap ===
+
+  call@L11  () => 1
+
+=== hasIter ===
+
+  call@L14  ([1]) => boolean
+```
+
 ### 原始值转换与解析
 
 全局强制转换构造器与数值解析器在字面量上折叠为精确结果——调用点与 `@nudo:case` 两条路径皆然：
@@ -239,8 +274,6 @@ pow(3);                               // → 9
 |---|---|---|
 | 原始值自动装箱 | `"nudo".constructor` → `unknown` | `.length`、上文的字符串方法 |
 | `Object.prototype` 方法 | `({}).hasOwnProperty("key")` → `unknown` | `Object.keys(...)` / 形状检查 |
-| `Symbol.iterator in x` | → `unknown` | `Array.isArray(x)` |
-| `Set` / `Map` 上的 `for...of` | 元素 → `unknown` | 数组 / `.map` 回调 |
 | Promise 执行器 | `new Promise((r) => r("done"))` → `promise<unknown>` | `@nudo:mock` + `async` 函数 |
 | 每迭代 `let` 闭包 | `fns[i]()` → `unknown` | 直接使用迭代结果 |
 | `arguments` | → `unknown`（`nudo:builtin-unknown`） | 具名参数 |

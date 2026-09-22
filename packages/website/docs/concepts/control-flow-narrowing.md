@@ -124,7 +124,36 @@ These patterns currently do **not** fork on the call-site path — each one degr
 | Ternary with an `unknown` condition | `flag ? "a" : "b"` with a symbolic condition joins both branches (`string`). Definite conditions fork precisely on both paths — `pick(true)` → `"a"`, `x === 5 ? "five" : "other"` with `5` → `"five"` — so no `if`-guard workaround is needed anymore. |
 | Symbolic inputs | `@nudo:case` with symbolic arguments (`number()`, `union(...)`) do not fork conditions — the branches join; concrete arguments narrow on both paths. |
 | `in` operator | `if ("toJSON" in value)` narrows for object arguments, but method results widen (`string` instead of the closure's `"serialized"`); non-object arguments also report `nudo:no-method`. |
-| `?.` / `??` | Shallow `config.port ?? 3000` with a known property yields `number`; deep chains and short-circuiting members degrade to `unknown`. |
+| `?.` / `??` | Folds on known receiver shapes — shallow (`config.port ?? 3000` → `number`) and deep (`a.b.c ?? 5` → `5`; `a?.b?.c` with `null` → `undefined`). On unconstrained (`any`) receivers the result stays `any` with `throws TypeError` — engine debt `unknown` does not apply here. |
+
+## Optional chaining & nullish coalescing
+
+Known-shape receivers fold at every depth; `any` receivers keep `any` semantics (plus the may-throw effect):
+
+```js verify
+function shallow(cfg) { return cfg.port ?? 3000; }
+shallow({});
+
+function deepchain(a) { return a.b.c ?? 5; }
+deepchain({ b: {} });
+
+function optchain(a) { return a?.b?.c; }
+optchain(null);
+```
+
+```text
+=== shallow ===
+
+  call@L2  ({  }) => 3000
+
+=== deepchain ===
+
+  call@L5  ({ b: {  } }) => 5
+
+=== optchain ===
+
+  call@L8  (unknown) => undefined
+```
 
 ## Summary
 
@@ -138,4 +167,4 @@ These patterns currently do **not** fork on the call-site path — each one degr
 | Truthiness | Yes (literal args) | `truthy(42)` → `"yes"`, `truthy(0)` → `"no"`; `undefined`/symbolic args join branches |
 | Ternary conditions | Yes (definite conditions) | `pick(true)` → `"a"`; unknown condition joins branches |
 | `in` | Partial | forks, member results widen |
-| `?.` / `??` | Partial | shallow `??` only |
+| `?.` / `??` | Yes (known shapes) | shallow + deep `??` / `?.` fold; `any` receivers stay `any` + `throws TypeError` |

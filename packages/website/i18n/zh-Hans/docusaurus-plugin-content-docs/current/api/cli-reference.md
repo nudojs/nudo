@@ -93,7 +93,9 @@ issues
       → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
-- 无约束入口参数打印为 **`any`**，绝不打印 `unknown`。
+> 报头里的 `L1` 是**行号**（此处函数声明在第 1 行）—— 该诊断的层是 L2。
+
+- 无约束入口参数打印为 **`any`**，绝不是 `unknown`。
 - 真 `unknown` 表示推导失败（引擎债），并带 conf 标注。
 - 存在 throws 时签名行必须上屏。
 - 成功也打印 `signatures` —— `check` 不是静默。
@@ -168,6 +170,19 @@ assertions
 - 仅 `@nudo:case` 且带 `=> expected` 的进入 pass/fail。
 - 声明断言失败 → exit `1`；合成用例不影响。
 - `test --json` 含 `assertions` 摘要（`passed`/`failed`/`unchecked`），声明断言失败仍 exit 1。
+
+声明断言失败（`nudo:case-expected`）呈现为：
+
+```text
+=== double ===
+  debug "bad"  (2) => 4
+
+assertions
+  ✗ 0 passed · 1 failed · 0 unchecked
+  [FAIL] double  case "bad"
+         expected: 5
+         actual:   4
+```
 
 **示例：**
 
@@ -352,7 +367,7 @@ nudo env harvest node
 ```
 
 ```ts
-/// @nudo:env ./nudo-harvest-node.ts
+/// @nudo:env nudo-harvest-node.ts
 ```
 
 **退出码：**
@@ -368,8 +383,9 @@ nudo env harvest node
 
 `check --json` 与 `test --json` 是机器可读面。
 
-- **check --json** —— 签名（含 `any` 入口参数与 throws）、诊断码（如 `nudo:entry-may-throw`）、汇总计数。仅支持单文件；`--abs` 仍门禁。
+- **check --json** —— 签名（含 `any` 入口参数与 throws）、诊断码（如 `nudo:entry-may-throw`）、汇总计数。
 - **test --json** —— 逐函数用例（`entry@` / `call@` / 指令）、`assertions` 摘要（`passed`/`failed`/`unchecked`）、诊断、可选 Abs intension 块；声明断言失败仍 exit 1。
+- **check --json** —— 仅支持单文件（目录目标报 `--json requires a single file, not multiple targets`）；`test --json` 报 `--json requires a single file`。
 
 ---
 

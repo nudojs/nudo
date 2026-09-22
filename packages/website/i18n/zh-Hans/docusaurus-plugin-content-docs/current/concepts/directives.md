@@ -54,7 +54,7 @@ case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它�
 
 - **name** — 用例的字符串标识符（如 `"double digits"`）。
 - **args** — 逗号分隔的**具体**参数（`5`、`"hello"`、`{…}`）。
-- **expected**（可选）— `=>` 之后的期望结果，用于校验。
+- **expected**（可选）— `=>` 之后的类型表达式（具体字面量或约束构建器，与 args 同一文法），由 `nudo test` 对推断结果断言。
 
 ### 示例
 
@@ -251,7 +251,8 @@ calc.js
 | `union(...cs)` | 域之并 | `union(lit(42), lit("a"))` |
 | `fn(params, returns?, { throws? })` | 一等函数接口 | `fn({ x: number() }, number())` |
 | `.gt(n)` `.ge(n)` `.lt(n)` `.le(n)` `.int()` | 数值界（链式） | `number().gt(0).int()` |
-| `.min(n)` `.max(n)` | 字符串长度界（`length(s)` pred） | `string().min(1)` |
+| `.min(n)` `.max(n)` | 长度界——`length(s)` pred（字符串/数组） | `string().min(1)` |
+| `.length(n)` | 长度等值界（`length(s) = n`） | `string().length(3)` |
 | `.shift(n)` | 每个常数界整体 `+n` 平移 | `positive.shift(1)` |
 | `and(...cs)` | 标量合取（顶层函数，不是链式方法） | `and(positive, number().lt(10))` |
 | `partial(c)` / `pick(c, keys)` / `omit(c, keys)` | 形状工具 | `partial(user)` |
@@ -467,7 +468,7 @@ import { debounce, throttle } from "lodash";
 
 ## @nudo:as — 类型断言
 
-覆盖下一条语句的值类型。类似 TypeScript 的 `as` 关键字，但以行注释的形式放在语句上方。影响 `VariableDeclaration`、`ReturnStatement` 和 `ExpressionStatement`。
+覆盖下一条语句的值类型。类似 TypeScript 的 `as` 关键字，但以行注释的形式放在语句上方。在 B 路径上作用于被覆盖语句的 `VariableDeclaration` 初始化值与 `ReturnStatement` 返回值。
 
 ### 语法
 

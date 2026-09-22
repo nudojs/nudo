@@ -124,7 +124,36 @@ function handleState(state) {
 | 条件为 unknown 的三元 | `flag ? "a" : "b"` 符号条件不分叉，两支合并（`string`）。确定条件在两条路径上都精确分叉——`pick(true)` → `"a"`、`x === 5 ? "five" : "other"` 传入 `5` → `"five"`——无需再改用 `if` 守卫。 |
 | 符号输入 | `@nudo:case` 里的符号实参（`number()`、`union(...)`）不会分叉条件——分支合并；具体实参在两条路径上都收窄。 |
 | `in` 运算符 | `if ("toJSON" in value)` 对对象实参收窄，但方法结果会拓宽（得到 `string` 而不是闭包的 `"serialized"`）；非对象实参还会报告 `nudo:no-method`。 |
-| `?.` / `??` | 已知属性上的浅层 `config.port ?? 3000` 得到 `number`；深层链与短路成员退化为 `unknown`。 |
+| `?.` / `??` | 已知接收者形状上折叠——浅层（`config.port ?? 3000` → `number`）与深层（`a.b.c ?? 5` → `5`；`a?.b?.c` 传 `null` → `undefined`）都折叠。无约束（`any`）接收者上结果保持 `any` 并带 `throws TypeError`——引擎债 `unknown` 不适用。 |
+
+## 可选链与空值合并
+
+已知形状的接收者在任意深度都折叠；`any` 接收者保持 `any` 语义（外加 may-throw 效果）：
+
+```js verify
+function shallow(cfg) { return cfg.port ?? 3000; }
+shallow({});
+
+function deepchain(a) { return a.b.c ?? 5; }
+deepchain({ b: {} });
+
+function optchain(a) { return a?.b?.c; }
+optchain(null);
+```
+
+```text
+=== shallow ===
+
+  call@L2  ({  }) => 3000
+
+=== deepchain ===
+
+  call@L5  ({ b: {  } }) => 5
+
+=== optchain ===
+
+  call@L8  (unknown) => undefined
+```
 
 ## 小结
 
@@ -138,4 +167,4 @@ function handleState(state) {
 | 真值判断 | 是（字面量实参） | `truthy(42)` → `"yes"`、`truthy(0)` → `"no"`；`undefined`/符号实参两支合并 |
 | 三元 | 是（确定条件） | `pick(true)` → `"a"`；unknown 条件两支合并 |
 | `in` | 部分 | 分叉，成员结果拓宽 |
-| `?.` / `??` | 部分 | 仅浅层 `??` |
+| `?.` / `??` | 是（已知形状） | 浅层 + 深层 `??` / `?.` 折叠；`any` 接收者保持 `any` + `throws TypeError` |

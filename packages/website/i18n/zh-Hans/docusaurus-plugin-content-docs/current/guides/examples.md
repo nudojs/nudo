@@ -111,7 +111,17 @@ greet({ name: "Alice", age: 30 });
   call@L4  ({ name: "Alice", age: 30 }) => "Alice is 30"
 ```
 
-拼接保留字面量结果 `"Alice is 30"` —— 不是被拍平的 `string`。参数解构目前不会同样拆开实参形状；属性访问是获得形状级精度的可靠路径。
+拼接保留字面量结果 `"Alice is 30"` —— 不是被拍平的 `string`。参数解构同样拆开实参形状：
+
+```js verify
+function addP({ x, y }) { return x + y; }
+addP({ x: 1, y: 2 });
+```
+
+```text
+=== addP ===
+  call@L2  ({ x: 1, y: 2 }) => 3
+```
 
 spread 合并 shape：
 
@@ -200,7 +210,7 @@ transform(null);
 
 ### 9. 可选链
 
-浅层已知属性精确折叠；深层 `?.` 链可能退化为 `unknown`（引擎债 —— 不是入口 `any`）。
+已知形状的接收者在任意深度折叠（`a.b.c ?? 5` 传 `{ b: {} }` → `5`）；无约束（`any`）接收者上结果保持 `any` 并带 `throws TypeError`（引擎债 `unknown` 不适用 —— 见[控制流收窄](../concepts/control-flow-narrowing.md)）。
 
 ---
 

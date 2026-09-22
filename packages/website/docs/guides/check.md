@@ -54,6 +54,8 @@ issues
       → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
+> `L1` in `[ERROR L1 getName]` is the **line number** (the function is declared on line 1 here) — the layer is L2 (`nudo:entry-may-throw`). `L#` is always a location, never a contract layer.
+
 - Unconstrained entry parameters display as **`any`**.
 - **`unknown` means inference failed** (engine debt) — never the default for unconstrained entry params.
 - Throws always appear on the signature line when present.
@@ -74,7 +76,7 @@ issues
 | `nudo:unknown-inference` | engine debt | warning | True `unknown` on a signature (inference failed) — unconstrained entry params are `any`, not this code |
 | `nudo:unknown-recv` | engine debt | warning | Member access on `unknown` receiver — does **not** replace L2 throws modeling |
 | `nudo:no-signature` | engine/L1 | warning | Function could not be generalized (CJS/anon forms still get L2 via entry fallback) |
-| `nudo:opaque-result` | engine | warning | Evaluation returned opaque / uninformative Abs |
+| `nudo:opaque-result` | engine | info | Evaluation returned opaque / uninformative Abs |
 | `nudo:eval-error` | engine | error | Body evaluation threw during analysis |
 | `nudo:recursion-truncated` | engine | warning | Recursion budget hit; result widened |
 | `nudo-unreachable` | info | info | Code after return/throw |
@@ -139,6 +141,8 @@ issues
       expected: entry total, or declare/catch throws
       → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
+
+> Reminder: `L1` in the header is the **line number** — this diagnostic's layer is L2.
 
 ### What L2 gates
 

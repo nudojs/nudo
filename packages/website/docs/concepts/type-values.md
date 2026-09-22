@@ -96,7 +96,7 @@ These are **not** the same product concept and must never be collapsed in docs o
 | `shape({ … })` | object shape (fields recursive) | `shape({ id: number().gt(0) })` |
 | `array(…)` | array element constraint | `array(number())` |
 | `fn({ … }, …)` | function relation | `fn({ x: number().gt(0) }, number())` |
-| builders | `.gt/.gte/.lt/.lte/.shift/.int…` | `number().gt(0).int()` |
+| builders | `.gt/.ge/.lt/.le/.int/.min/.max/.length/.shift…` | `number().gt(0).int()` |
 | bare literals | parsed directly | `42`, `"abc"`, `true`, `[1, 2]` |
 
 Directive type expressions use the constraint builders above plus concrete literals. Inside `@nudo:mock` bodies write plain JavaScript values and closures — not builder calls as return payloads.

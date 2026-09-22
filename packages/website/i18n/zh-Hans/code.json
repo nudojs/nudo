@@ -606,7 +606,7 @@
     "message": "校验与产物"
   },
   "homepage.eco.lead": {
-    "message": "流程以 Abs 契约为核心。check 只做校验；export 从 Abs 投影 .d.ts / Zod / JSON Schema / guards；IDE 与 Agent 直读 Abs。"
+    "message": "流程以 Abs 契约为核心。check 只做校验；export 从 Abs 投影 .d.ts / Zod / Standard Schema / guards；IDE 与 Agent 直读 Abs。"
   },
   "homepage.eco.check": {
     "message": "只校验 / CI。不生成产物。"
@@ -669,7 +669,7 @@
     "message": "Agent / MCP"
   },
   "homepage.eco.json": {
-    "message": "JSON Schema，可用于 mock 生成与下游工具链。"
+    "message": "Standard Schema 运行时校验器，可接入下游工具链。"
   },
   "homepage.eco.agent": {
     "message": "编码 agent 经 LSP / MCP 读同一套 Abs —— 见下方 AI Agents 专区。"

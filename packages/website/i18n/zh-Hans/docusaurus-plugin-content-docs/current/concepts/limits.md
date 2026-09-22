@@ -38,7 +38,7 @@ description: 诚实边界与非目标 —— Nudo 不宣称什么、调用点上
 
 ## 求值器缺口（摘要）
 
-部分构造仍会退化为 `unknown`（带引擎债诊断）。优先使用[语言语义](../concepts/semantics.md)中已建模的替代：例如 `Object.keys` 而非 `Object.prototype` 方法、数组 `for` / `.map` 而非未建模的 `Set` 迭代、对 `new Promise` 内部用 `@nudo:mock` + 异步包装。
+部分构造仍会退化为 `unknown`（带引擎债诊断）。优先使用[语言语义](../concepts/semantics.md)中已建模的替代：例如 `Object.keys` 而非 `Object.prototype` 方法、对 `new Promise` 内部用 `@nudo:mock` + 异步包装。
 
 Env harvest 覆盖率**不是**完备性承诺。
 

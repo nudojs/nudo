@@ -20,7 +20,7 @@ npx nudojs env harvest --auto src/
 在源码中引用生成的 env：
 
 ```ts
-/// @nudo:env ./nudo-harvest-node.ts
+/// @nudo:env nudo-harvest-node.ts
 ```
 
 内置 `es` / `web` / `node` 环境已覆盖大量常见 API（`@nudojs/env`）。

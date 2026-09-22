@@ -65,7 +65,7 @@ issues
       → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
-无约束入口参数显示为 **`any`**。`unknown` 表示推导失败（引擎债）—— 绝不是无约束入口参数的默认值。`[ERROR L# name]` 中 `L#` 是违规调用/声明的**行号**，不是契约层（L1/L2 才是层）。
+无约束入口参数显示为 **`any`**。`unknown` 表示推导失败（引擎债）—— 绝不是无约束入口参数的默认值。`[ERROR L# name]` 中 `L#` 是违规调用/声明的**行号**，不是契约层（L1/L2 才是层）。上方示例打印 `L1` 是因为该文件中 `getName` 声明在第 1 行 —— 其层是 L2。
 
 - **语义**（L1 显式契约 / L2 入口 throws、退出码、过滤）：[nudo check](./check.md)
 - **选项与配置**（`--watch` / `--json` / `--abs` / `--from` / `--ignore-throws` / `--entry-throws`、`package.json#nudo.check`）：[CLI 参考](../api/cli-reference.md#nudo-check)
@@ -234,7 +234,7 @@ nudo env harvest node
 在源码中引用生成的 env：
 
 ```ts
-/// @nudo:env ./nudo-harvest-node.ts
+/// @nudo:env nudo-harvest-node.ts
 ```
 
 ---

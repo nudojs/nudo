@@ -103,7 +103,7 @@ issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
-`any` = 无约束入口。`throws` = L2 域。诊断码：[诊断](../reference/diagnostics.md)。
+`any` = 无约束入口。`throws` = L2 域。报头里的 `L1` 是**行号**（此处 `getName` 声明在第 1 行）—— 层是 L2。诊断码：[诊断](../reference/diagnostics.md)。
 
 ---
 
