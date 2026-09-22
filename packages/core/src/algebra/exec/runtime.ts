@@ -814,11 +814,23 @@ export function $tryTakeSince(mark: number): Abs[] {
   return store.splice(Math.min(mark, store.length));
 }
 
-/** catch 入口：消化 try 内 soft may-throw（幂等；design §3.3） */
+/** catch 入口消化 try 内 soft may-throw（幂等；design §3.3） */
 export function $tryDigestSoftCatch(): void {
   const soft = softFrameActiveAls.getStore();
   if (!soft || soft.length === 0 || !soft[soft.length - 1]) return;
   $tryDigestSoft();
+  soft[soft.length - 1] = false;
+}
+
+/**
+ * 正常完成路径 + catch 可能 rethrow：soft 效果不得消化——假想 soft throw
+ * 经 catch rethrow 逃逸（try { u.name } catch (e) { throw e; } 的 L2）。
+ * 摘帧上浮（collector / 外层 try 帧可再消化），并清 soft 标记防二次释放。
+ */
+export function $tryReleaseSoftCatch(): void {
+  const soft = softFrameActiveAls.getStore();
+  if (!soft || soft.length === 0 || !soft[soft.length - 1]) return;
+  $tryReleaseSoft();
   soft[soft.length - 1] = false;
 }
 

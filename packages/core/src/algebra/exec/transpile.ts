@@ -39,6 +39,8 @@ export type TranspileOptions = {
   tryMarkName?: string;
   /** 当前 try 是否带 catch handler（soft may-throw digest/release 分支） */
   hasTryHandler?: boolean;
+  /** 当前 try 的 catch 体是否可能 rethrow（正常路径 soft 效果 release 而非 digest） */
+  tryRethrowCatch?: boolean;
 };
 
 function matchAsOverride(stmt: Node, opts: TranspileOptions): string | null {
@@ -1178,6 +1180,40 @@ function forkJoinBindings(names: string[], pad = ""): string[] {
  *   <always rebinds>;
  *   snapshot; $fork(__test, consArm, altArm); join bindings; return __r
  */
+/**
+ * catch 体是否可能 rethrow：任意深度语句位置出现 ThrowStatement 即视为
+ * 可能（条件 throw 保守按可能算，与 evalTry 的 catchR.threw 口径一致）；
+ * 不降入嵌套函数/箭头/类方法体（其 throw 不构成本 catch 的 rethrow）。
+ */
+function catchMayRethrow(handler: { body: Node }): boolean {
+  const visit = (n: unknown): boolean => {
+    if (!n || typeof n !== "object") return false;
+    const o = n as { type?: string; [k: string]: unknown };
+    if (o.type === "ThrowStatement") return true;
+    if (
+      o.type === "FunctionDeclaration" ||
+      o.type === "FunctionExpression" ||
+      o.type === "ArrowFunctionExpression" ||
+      o.type === "ClassMethod" ||
+      o.type === "ObjectMethod" ||
+      o.type === "ClassDeclaration"
+    ) {
+      return false;
+    }
+    for (const key of Object.keys(o)) {
+      if (key === "loc" || key === "start" || key === "end") continue;
+      const v = o[key];
+      if (Array.isArray(v)) {
+        for (const item of v) if (visit(item)) return true;
+      } else if (v && typeof v === "object") {
+        if (visit(v)) return true;
+      }
+    }
+    return false;
+  };
+  return visit(handler.body);
+}
+
 function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   alwaysNodes: Array<Node | null | undefined>;
   alwaysSrc: string;
@@ -1393,7 +1429,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
             `${indent(depth + 2)}$pushLoopExit(__nudoRet);`,
             `${indent(depth + 2)}$throw(__xs.reduce((a, b) => $join(a, b)));`,
             `${indent(depth + 1)}}`,
-            `${indent(depth + 1)}${opts.hasTryHandler === false ? "$tryReleaseSoftOut();" : "$tryDigestSoftCatch();"}`,
+            `${indent(depth + 1)}${opts.tryRethrowCatch ? "$tryReleaseSoftCatch();" : opts.hasTryHandler === false ? "$tryReleaseSoftOut();" : "$tryDigestSoftCatch();"}`,
             `${pad}}`,
             `${pad}${prefix}(__nudoRet);`,
           ].join("\n");
@@ -1903,6 +1939,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         inTry: (opts.inTry ?? 0) + 1,
         tryMarkName: markName,
         hasTryHandler: !!stmt.handler,
+        tryRethrowCatch: stmt.handler ? catchMayRethrow(stmt.handler) : false,
       };
       const tryBody =
         stmt.block.type === "BlockStatement"
@@ -1947,7 +1984,15 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         lines.push(`${indent(depth + 1)}$tryDiscardSoft(${softVar});`);
         lines.push(`${pad}}`);
       }
-      const softExit = stmt.handler ? "$tryDigestSoftCatch();" : "$tryReleaseSoftOut();";
+      // catch 体内（任意深度语句，不含嵌套函数/类体）出现 throw → 视为可能
+      // rethrow：正常完成路径的 soft 效果不得消化（假想 soft throw 经
+      // catch rethrow 逃逸——与 evalTry 的 catchR.threw 口径一致，含条件
+      // throw 的保守上浮）。
+      const softExit = !stmt.handler
+        ? "$tryReleaseSoftOut();"
+        : catchMayRethrow(stmt.handler)
+          ? "$tryReleaseSoftCatch();"
+          : "$tryDigestSoftCatch();";
       if (stmt.finalizer) {
         const finBody =
           stmt.finalizer.type === "BlockStatement"
