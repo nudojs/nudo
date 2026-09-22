@@ -183,25 +183,28 @@ phi-free 切片，需先给 generalize 线程 modules+mocks）。
   的 B 语义裁决（ESM 下 `this.x=1` 原生 TypeError——B 可精确建模，但会
   改变 CJS 风格依赖的分析结果，属产品语义决策，待用户拍板）。
 
-### P8：ast-eval 剩余面（2026-09-23 更新——注入管线落地后）
+### P8：ast-eval 剩余面（2026-09-23 晚——编译路径完全化后）
 
-已闭合全部 generalize 门：top-level this、自递归、回调闭包、import.meta、
-**注入管线（4435936）**——模块图/mocks/env/replace 线程进 B run（inject 包
-+ WeakMap 身份 memo 键），import 门 → spec 可解析性、require 门拆、mock/env/
-replace 门按注入存在性。顺带修 export class 丢 export 前缀（B 导出表无类 →
-模块图丢类导出）。产品收益：add4 → number（跨文件真解析）。
+结构性工作已全部完成：Φ-native B、闭包编译注入、B 调用预算、写路径
+strict、top-level-this ESM、注入管线（模块/mock/env/replace）、类方法桥、
+CLI assume、collectCallRecords、**编译路径完全化**（全局名原生奇偶 + 自名
+注入 + Abs-fn 分支预算）——$call 不再需要 applyAbsFn 解释 body。
 
-剩余面（删除前）：
+ast-eval 现存角色 = **兜底**（B 失败/非导出类方法/历史语法时的保守回落）：
 
-| 面 | 位置 | 状态 |
+| 面 | 位置 | 删除动作 |
 |---|---|---|
-| 类方法（.名）门 | core/generalize.ts | 保留——产品路径在 service（check 输出 `MemoryStore.set => true` 已如此） |
-| CLI assume | cli/index.ts | analyzeFn——待换 tryBPathCall |
-| check opaque 探针/绑定表兜底 | core/check.ts L673/L740 | B 失败面已收窄至类方法/JSX；评估后可换 |
-| LSP 兜底 | lsp-surface.ts | 仅 B 失败文件触达 |
-| 模块图回落 | abs-modules-graph.ts | 仅 JSX 可达 |
-| 测试面迁移 | ~60 文件 parity | 差分 oracle 保留 + 行为面重定向 |
+| check 兜底探针 | core/check.ts L675/L745/L773 | fail-closed：返回 unknown/空表 |
+| case 扫描 | core/scan.ts | 换 B（evalProgramAbs → runTranspiled 绑定表）或 fail-closed |
+| generalize 解释分支 | core/generalize.ts | 仅剩非导出类方法 + B 失败回落——fail-closed |
+| $call 非 body impl | hof.ts applyAbsFn | 关系面（relationFn）保留代数语义，删解释器 body 面 |
+| analyzer Abs 兜底 | service/analyzer.ts 等 | fail-closed |
+| 模块图 evalDep 回落 | abs-modules-graph.ts | fail-closed（JSX 等 B-incapable → 空导出） |
+| LSP 兜底 | lsp-surface.ts | fail-closed |
+| 测试面 | 39 文件 | 行为重定向（analyzeFn 调用 → runTranspiled 形态） |
 
-**下一里程碑**：CLI assume → tryBPathCall（小）→ ast-eval 删除评估（E）——
-删除前判定 = 差分 oracle 独立发现 B bug 的能力已证（18 批语料回归）+ 剩余
-消费面全部有 B 等价物。
+**删除前最后一个产品决策（B）**：兜底面从「ast-eval 保守回落」改为
+「fail-closed（unknown/空导出）」——语义变化：B-incapable 文件（JSX、
+非导出类方法、历史语法）的分析结果从「部分覆盖」变为「显式无信息」。
+推荐 fail-closed：与 nudo 的「unknown = 引擎债、显式报告」原则一致，
+且删除后差分 oracle 仍是独立 bug 发现器（B-vs-native，不依赖 ast-eval）。
