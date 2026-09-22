@@ -22,6 +22,10 @@ import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits
 import { errorTypeAbs } from "./may-throw.ts";
 
 const rtAll = { ...runtime, ...classRt, ...callsRt } as Record<string, unknown>;
+
+export function rtAllBindings(): Record<string, unknown> {
+  return rtAll;
+}
 // ensure control-flow helpers are present even if a re-export layer omits them
 rtAll.isNudoReturn = isNudoReturn;
 rtAll.isNudoThrow = isNudoThrow;
@@ -53,7 +57,7 @@ export type RunTranspiledOptions = {
   envGlobals?: Record<string, Abs>;
 };
 
-const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
+export const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
 
 /** 相对 import → 从注入 modules 取绑定（Abs fn 包成 JS 可调用） */
 function rewriteUserImports(js: string): string {

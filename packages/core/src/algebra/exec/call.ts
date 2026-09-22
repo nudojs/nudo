@@ -10,10 +10,31 @@
  */
 
 import type { Abs } from "../abs.ts";
+import { never } from "../abs.ts";
 import { applyAbsFn, emptyEnv } from "../ast-eval.ts";
+import { getFnImpl } from "../abs-fn.ts";
+import { compiledBodyOf } from "./body-fn.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { pTrue } from "../pred.ts";
+import { isNudoThrow } from "./runtime.ts";
 
 export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
+  // 迁移件 4：自包含 body 走编译执行（phi 恒 pTrue）。闭包/兄弟函数/
+  // 递归 body 由 free-identifier 扫描拦截 → 解释路径（递归预算生效）。
+  const impl = getFnImpl(fn);
+  if (impl?.body && !impl.apply) {
+    const compiled = compiledBodyOf(impl);
+    if (compiled) {
+      try {
+        return compiled(args);
+      } catch (e) {
+        // applyAbsFn 同口径：body 抛错 → never（不把中间值当返回值）
+        if (isNudoThrow(e)) {
+          return never;
+        }
+        throw e;
+      }
+    }
+  }
   return applyAbsFn(fn, args, emptyEnv(), pTrue, defaultLeakBudget, thisVal);
 }

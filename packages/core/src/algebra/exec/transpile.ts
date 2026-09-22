@@ -436,6 +436,11 @@ export function transpileSource(source: string, opts: TranspileOptions = {}): st
   return transpileFile(file, { ...opts, source: opts.source ?? source });
 }
 
+/** 运行时 import 行（body-fn 编译执行拼接用） */
+export function runtimeImportOf(runtime: string): string {
+  return `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $assignRecord, $recordBinding, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit, $rawThis, $isBreakTo } from ${JSON.stringify(runtime)};`;
+}
+
 export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
@@ -1282,6 +1287,14 @@ function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
     `  return __r;`,
     `})()`,
   ].join("\n");
+}
+
+/** 单语句/表达式体转译（body-fn 编译执行用；不入 run.ts 正则面） */
+export function transpileBodyNode(node: Node, opts: TranspileOptions): string {
+  if (isExpression(node as { type: string })) {
+    return `return ${transpileExpression(node as Expression, opts)};`;
+  }
+  return transpileStatement(node as Statement, 1, opts);
 }
 
 function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptions): string {
