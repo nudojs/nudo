@@ -17,7 +17,7 @@ import { pTrue, predToString } from "./pred.ts";
 import type { Abs, Shape } from "./abs.ts";
 import { abs, unknown } from "./abs.ts";
 import type { AstEnv } from "./ast-env.ts";
-import { emptyEnv } from "./ast-eval.ts";
+import { emptyEnv } from "./ast-env.ts";
 import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
 import { defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { formatShapeSlot } from "./format.ts";

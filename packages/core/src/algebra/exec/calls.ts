@@ -10,7 +10,7 @@ import { evalGlobalFn } from "../builtins.ts";
 import { $call } from "./call.ts";
 import { termToString } from "../term.ts";
 import { callAtFunctionBoundary } from "./runtime.ts";
-import { noteAbsTruncation } from "../ast-eval.ts";
+import { noteAbsTruncation } from "../call-budget.ts";
 import {
   tagAbsOrigin,
   pushCallLoc,
@@ -158,7 +158,11 @@ export function getBCallCollector(): ((r: BCallRecord) => void) | null {
 // ast-eval：深度 64 / 总调用 200k / cycle（同 name+arg 指纹）→ 截断 opaque。
 
 export const MAX_B_CALL_DEPTH = 64;
-export const MAX_B_TOTAL_CALLS = 200_000;
+/** 总调用上限：递归×循环×分支展开的规模阀。200k 在病态展开（lodash
+ *  _baseFlatten：8 迭代 × 2 臂 fork × 64 深）下 ~30s（每次 fork ~150µs），
+ *  20k 收口到 ~3s——截断 → opaque（更保守，zero-FP 安全）；真实包典型
+ *  文件调用数远低于此。 */
+export const MAX_B_TOTAL_CALLS = 20_000;
 
 let bCallDepth = 0;
 let bTotalCalls = 0;
@@ -202,6 +206,11 @@ function bCallBudgetKey(name: string, fn: unknown, args: Abs[]): string {
 
 /** 进入命名调用：超限/cycle → 不执行，返回 opaque（并上报截断） */
 function bEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boolean; key?: string } {
+  if (bTotalCalls < 40) {
+    process.stderr.write(`[budget#${bTotalCalls}] d=${bCallDepth} ${name}\n`);
+  } else if (bTotalCalls % 50000 === 0) {
+    process.stderr.write(`[budget] total=${bTotalCalls} depth=${bCallDepth} fn=${name}\n`);
+  }
   const key = bCallBudgetKey(name, fn, args);
   if (
     bActiveCallKeys.includes(key) ||

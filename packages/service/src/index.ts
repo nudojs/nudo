@@ -89,7 +89,6 @@ export {
 } from "./harvest-auto.ts";
 export {
   evalAbsModuleGraph,
-  evalProgramAbsWithModules,
   collectAbsBindingsFromGraph,
   defaultAbsLoadModule,
   clearAbsModuleCache,

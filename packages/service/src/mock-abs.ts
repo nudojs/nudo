@@ -1,6 +1,7 @@
 /**
- * @nudo:mock / sinon 指令 → Abs seed（供 evalProgramAbs）。
- * host 层：依赖 parser 指令形态；core 只吃 seedVars/seedFns。
+ * @nudo:mock / sinon 指令 → Abs seed（供 B 路径注入：runTranspiled
+ * envGlobals / mockSeedsToAbsMocks）。
+ * host 层：依赖 parser 指令形态；core 只吃 Abs 绑定。
  */
 
 import type { Node } from "@babel/types";

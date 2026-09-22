@@ -4,6 +4,7 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { bumpBForkBudget } from "../call-budget.ts";
 import type { Abs } from "../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../abs.ts";
 import { lit } from "../term.ts";
@@ -960,7 +961,20 @@ function settleForkArms(a: ForkArm, b: ForkArm, exits: Abs[] | undefined): Abs {
   return joinAbs(first.v, second.v);
 }
 
+/** Φ 规模上限：递归×循环下 Φ 逐层 and 累积（每层 term 不同 → 去重失效）→
+ *  cmp 的 implies(Φ,pred) 在巨大 Φ 上爆炸（real-packages lodash _baseFlatten
+ *  实测 50+ 项 → 60s+ 卡死；main 无 Φ-native 时 31ms）。超限丢弃新增项
+ *  （保留原 Φ）——剪枝更少 = 更保守，安全。 */
+const PHI_MAX_NODES = 24;
+function boundedPhi(p: Phi, q: Phi): Phi {
+  const r = and(p, q);
+  if (r.op !== "and") return r;
+  return r.args.length > PHI_MAX_NODES ? p : r;
+}
+
 export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs {
+  // 分支展开上限（递归×循环爆炸阀）：超限放弃分支 = unknown（最保守）
+  if (!bumpBForkBudget()) return unknown;
   // Φ-native：测试判定已由 cmp 消费 currentExecPhi（$gt 等传模块级 phi）；
   // 此处把 Φ∧test（真臂）/ Φ∧¬test（假臂）压进臂作用域——嵌套/兄弟分支的
   // 路径事实沿臂累积（外层已证 x>y ⇒ 内层同测试折叠）。
@@ -968,15 +982,15 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
   const tCons = test.pred;
   const tNeg = falseConstraint(test);
   if (isDefinitelyTrue(test)) {
-    return asAbsVal(withExecPhi(tCons ? and(p, tCons) : p, consequent));
+    return asAbsVal(withExecPhi(tCons ? boundedPhi(p, tCons) : p, consequent));
   }
   if (isDefinitelyFalse(test)) {
     return alternate
-      ? asAbsVal(withExecPhi(tNeg ? and(p, tNeg) : p, alternate))
+      ? asAbsVal(withExecPhi(tNeg ? boundedPhi(p, tNeg) : p, alternate))
       : undef();
   }
-  const phiTrue = tCons ? and(p, tCons) : p;
-  const phiFalse = tNeg ? and(p, tNeg) : p;
+  const phiTrue = tCons ? boundedPhi(p, tCons) : p;
+  const phiFalse = tNeg ? boundedPhi(p, tNeg) : p;
 
   const exits = loopExitsAls.getStore();
   // 集合 side-table：抽象分支各自 overlay，结束后 join（防身份污染）

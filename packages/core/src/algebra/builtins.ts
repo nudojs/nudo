@@ -33,7 +33,7 @@ import { NudoThrow } from "./exec/nudo-throw.ts";
 import { errorTypeAbs } from "./exec/may-throw.ts";
 import { pTrue } from "./pred.ts";
 import { defaultLeakBudget } from "./leak.ts";
-import { emptyEnv } from "./ast-eval.ts";
+import { emptyEnv } from "./ast-env.ts";
 
 function numPrim(conf: Abs["conf"] = "path"): Abs {
   return abs({ k: "prim", type: "number" }, undefined, undefined, conf);

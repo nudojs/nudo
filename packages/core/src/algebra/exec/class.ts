@@ -22,7 +22,7 @@ import {
   projectFlatMapResult,
   undefAbs,
 } from "../hof.ts";
-import { emptyEnv } from "../ast-eval.ts";
+import { emptyEnv } from "../ast-env.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { pTrue } from "../pred.ts";
 import {

@@ -30,6 +30,7 @@ export function resetAbsCallBudget(): void {
   _absCallDepth = 0;
   _absTotalCalls = 0;
   _activeCallKeys = [];
+  _bForkCount = 0;
 }
 
 /** 截断结果：分析无信息，conf=opaque（不是 any） */
@@ -83,4 +84,13 @@ export function enterCall(key: string, label: string): boolean {
 export function exitCall(): void {
   _absCallDepth--;
   _activeCallKeys.pop();
+}
+
+/** 分支展开上限：递归×循环下 $fork 数爆炸（lodash _baseFlatten 实测每次
+ *  fork ~150µs——集合 overlay/Φ 臂包裹成本；调用预算管不到 fork 数）。
+ *  超限返回 unknown（放弃该分支 = 最保守，安全）。 */
+export const MAX_B_TOTAL_FORKS = 5000;
+let _bForkCount = 0;
+export function bumpBForkBudget(): boolean {
+  return ++_bForkCount <= MAX_B_TOTAL_FORKS;
 }

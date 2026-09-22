@@ -12,13 +12,10 @@
 
 import { parseSource as parse } from "./parse-source.ts";
 import {
-  setAbsAssignCollector,
-  setAbsCallCollector,
   setAbsTruncationCollector,
   resetAbsCallBudget,
-  type AbsAssignRecord,
-  type AbsCallRecord,
-} from "./ast-eval.ts";
+} from "./call-budget.ts";
+import type { AbsAssignRecord, AbsCallRecord } from "./ast-records.ts";
 import { leqAbs } from "./leq.ts";
 import {
   extractRefineReturnFromSource,
@@ -715,8 +712,7 @@ function checkSourceInner(
   const records: AbsAssignRecord[] = [];
   const varAbs = new Map<string, Abs>();
   const callRecords: AbsCallRecord[] = [];
-  setAbsAssignCollector((r) => records.push(r));
-  const prevCallCollector = setAbsCallCollector((r) => callRecords.push(r));
+  // fail-closed：记录通道唯一源 = B（BCallRecord/$assignRecord）
   const bCalls: BCallRecord[] = [];
   setBAssignCollector((r) => records.push(r));
   setBCallCollector((r) => bCalls.push(r));
@@ -748,8 +744,6 @@ function checkSourceInner(
   // fail-closed：B 绑定表缺失（B-incapable 文件）→ 无绑定表（旧 ast-eval
   // 兜底已删——「部分覆盖」改为「显式无信息」，与 unknown=引擎债 原则一致）
   void bBindings;
-  setAbsAssignCollector(null);
-  setAbsCallCollector(prevCallCollector);
 
   const callIssues = canSkipLiteralCallScan(source, file)
     ? []

@@ -7,19 +7,18 @@ import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parse } from "@nudojs/parser";
 import {
-  evalProgramAbs,
-  collectAbsExports,
+  abs as makeAbs,
   absFunction,
+  bindingsOf,
   tryRunTranspiled,
   callTranspiledExportFull,
   unknown,
   type Abs,
   type AbsModuleExports,
-  type AstEnv,
-  type Phi,
 } from "@nudojs/core";
 import type { Node } from "@babel/types";
 import { bareSpecToAbsModules } from "./harvest-to-abs.ts";
+import { mockSeedsToAbsMocks } from "./mock-abs.ts";
 
 export type AbsLoadModule = (spec: string, fromFile: string) => string | undefined;
 
@@ -394,13 +393,9 @@ export function evalAbsModuleGraph(
       // tryRunTranspiled（回落事件入收集器）。
       exports = bPathExportsToModuleExports(bRun, parse(source), `bpath:${absPath}`);
     } else {
-      try {
-        const file = parse(source);
-        const { env } = evalProgramAbs(source, { file, modules });
-        exports = collectAbsExports(file, env, modules);
-      } catch {
-        exports = { named: {} };
-      }
+      // fail-closed：B 失败 = 无信息（空导出表）——ast-eval 兜底
+      // （evalProgramAbs + collectAbsExports）已删。
+      exports = { named: {} };
     }
     loading.pop();
     cache.set(absPath, exports);
@@ -441,24 +436,62 @@ export function evalAbsModuleGraph(
   return { modules, byPath: cache, issues };
 }
 
-/** 便捷：入口求值 + 依赖 Abs 注入 */
-export function evalProgramAbsWithModules(
+/** import 本地名 → 依赖模块导出（与 run.ts rewriteUserImports/__nudoBindImport 同语义） */
+function importLocalBindings(
   source: string,
-  entryFile: string,
-  opts: AbsGraphOptions & { file?: unknown } = {},
-): { env: AstEnv; last: Abs; phi: Phi } {
-  const { modules } = evalAbsModuleGraph(source, entryFile, opts);
-  return evalProgramAbs(source, {
-    file: opts.file as never,
-    modules,
-    seedVars: opts.seedVars,
-    seedFns: opts.seedFns,
-  });
+  modules: Record<string, AbsModuleExports>,
+): Map<string, Abs> {
+  const out = new Map<string, Abs>();
+  let file: Node;
+  try {
+    file = parse(source);
+  } catch {
+    return out;
+  }
+  const body = ((file as { program?: { body?: unknown[] } }).program?.body ?? []) as Array<{
+    type?: string;
+    source?: { value?: unknown };
+    specifiers?: Array<{
+      type?: string;
+      local?: { name?: string } | null;
+      imported?: { type?: string; name?: string; value?: string } | null;
+    }>;
+  }>;
+  for (const stmt of body) {
+    if (stmt.type !== "ImportDeclaration" || typeof stmt.source?.value !== "string") continue;
+    const mod = modules[stmt.source.value];
+    if (!mod) continue;
+    for (const sp of stmt.specifiers ?? []) {
+      const local = sp.local?.name;
+      if (!local) continue;
+      if (sp.type === "ImportNamespaceSpecifier") {
+        // 命名空间（named + default 槽）→ open obj Abs（与 bindNamespace 同口径）
+        const slots: Record<string, { value: Abs }> = {};
+        for (const [k, v] of Object.entries(mod.named)) slots[k] = { value: v };
+        if (mod.default) slots["default"] = { value: mod.default };
+        out.set(local, makeAbs({ k: "obj", slots, open: true }, undefined, undefined, "path"));
+      } else if (sp.type === "ImportDefaultSpecifier") {
+        if (mod.default) out.set(local, mod.default);
+      } else if (sp.type === "ImportSpecifier") {
+        const imported =
+          sp.imported?.type === "StringLiteral" ? sp.imported.value : sp.imported?.name;
+        if (imported === undefined) continue;
+        const absVal = imported === "default" ? mod.default : mod.named[imported];
+        if (absVal) out.set(local, absVal);
+      }
+    }
+  }
+  return out;
 }
 
 /**
  * 收集顶层绑定名 → Abs（含相对 import / 裸包 harvest 注入）。
  * 供 bindings / hover 从 Abs 投影，不必走 TypeValue evaluator。
+ *
+ * B-path fail-closed：绑定 = B run 绑定表（$recordBinding：顶层 const/let，
+ * arrow/function 表达式经 $fnVal 已是 Abs fn）+ 导出表桥接（export
+ * function/const）+ import 本地名（模块图解析）；B 失败 → 空 Map
+ * （显式无信息，不回落解释求值）。
  */
 export function collectAbsBindingsFromGraph(
   source: string,
@@ -467,17 +500,32 @@ export function collectAbsBindingsFromGraph(
 ): Map<string, Abs> {
   const out = new Map<string, Abs>();
   try {
-    const { env } = evalProgramAbsWithModules(source, filePath, opts);
-    for (const [k, v] of env.vars) {
-      out.set(k, v);
-    }
-    for (const [name, impl] of env.fns) {
-      if (!out.has(name)) {
-        out.set(
-          name,
-          absFunction(impl.params, { body: impl.body, async: impl.async, env }),
-        );
+    const { modules } = evalAbsModuleGraph(source, filePath, opts);
+    const mocks = mockSeedsToAbsMocks({
+      seedVars: opts.seedVars ?? {},
+      seedFns: opts.seedFns ?? {},
+    });
+    const run = tryRunTranspiled(source, {
+      mode: "analyze",
+      modules,
+      envGlobals: Object.keys(mocks).length ? mocks : undefined,
+    });
+    if (!run) return out;
+    // 顶层 const/let（$recordBinding 通道，Abs 值）
+    const binds = bindingsOf(run);
+    if (binds) {
+      for (const [name, v] of binds) {
+        if (isAbsVal(v)) out.set(name, v);
       }
+    }
+    // 导出名（export function/const + specifier/star/default）→ fn Abs 桥接
+    const exports = bPathExportsToModuleExports(run, parse(source), `bpath:bindings:${filePath}`);
+    for (const [name, v] of Object.entries(exports.named)) {
+      if (!out.has(name)) out.set(name, v);
+    }
+    // import 本地名 → 依赖模块导出
+    for (const [local, absVal] of importLocalBindings(source, modules)) {
+      if (!out.has(local)) out.set(local, absVal);
     }
   } catch {
     /* ignore */
