@@ -1,7 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { analyzeFile, clearBPathCache } from "@nudojs/service";
 import { formatShape } from "@nudojs/core";
-import { transpile, analyzeFn, generalizeFromAst, numLit, absToString } from "@nudojs/core";
+import {
+  transpile,
+  runTranspiled,
+  callTranspiledExportFull,
+  generalizeFromAst,
+  numLit,
+  absToString,
+} from "@nudojs/core";
 
 describe("directive case args in branch bodies", () => {
   const source = `
@@ -31,8 +38,11 @@ export function gradeFor(score) {
     expect(formatShape(a!.abs)).toBe('"A"');
   });
 
-  it("AST analyzeFn and generalize agree on early-return", () => {
-    expect(absToString(analyzeFn(source, "gradeFor", [numLit(92)]))).toContain('"A"');
+  it("B export call and generalize agree on early-return", () => {
+    const run = runTranspiled(source, { mode: "analyze" });
+    expect(
+      absToString(callTranspiledExportFull(run, "gradeFor", [numLit(92)]).result),
+    ).toContain('"A"');
     const g = generalizeFromAst("gradeFor", source);
     expect(g?.display).toBeDefined();
     // symbolic: both branches join → string, not the fall-through-only "F"
@@ -47,6 +57,9 @@ export function grade(score) {
   return "F";
 }
 `;
-    expect(absToString(analyzeFn(multi, "grade", [numLit(85)]))).toContain('"B"');
+    const runMulti = runTranspiled(multi, { mode: "analyze" });
+    expect(
+      absToString(callTranspiledExportFull(runMulti, "grade", [numLit(85)]).result),
+    ).toContain('"B"');
   });
 });

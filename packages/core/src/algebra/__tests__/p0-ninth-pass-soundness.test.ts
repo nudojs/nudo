@@ -5,7 +5,6 @@ import { describe, it, expect } from "vitest";
 import {
   runTranspiled,
   callTranspiledExportFull,
-  analyzeFn,
   $lit,
   litValue,
   formatAbs,
@@ -159,23 +158,23 @@ describe("P0 loop accumulator abstract not exact maxIters", () => {
   });
 });
 
-describe("P0 ast-eval env join (check path)", () => {
-  it("analyzeFn if/else assign then read enumerates arms", () => {
-    const r = analyzeFn(
-      `function f(flag) { let x = 0; if (flag) { x = 1; } else { x = 2; } return x; }`,
+describe("P0 env join via export call (check path)", () => {
+  it("export call if/else assign then read enumerates arms", () => {
+    const r = callAbs(
+      `export function f(flag) { let x = 0; if (flag) { x = 1; } else { x = 2; } return x; }`,
       "f",
       [absBool],
-    );
+    ).result;
     expect(r.shape.k).toBe("sum");
     expect(formatShape(r)).not.toBe("0");
   });
 
-  it("analyzeFn if without else keeps fall-through", () => {
-    const r = analyzeFn(
-      `function f(flag) { let x = 0; if (flag) { x = 1; } return x; }`,
+  it("export call if without else keeps fall-through", () => {
+    const r = callAbs(
+      `export function f(flag) { let x = 0; if (flag) { x = 1; } return x; }`,
       "f",
       [absBool],
-    );
+    ).result;
     expect(r.shape.k).toBe("sum");
     expect(formatShape(r)).not.toBe("1");
   });

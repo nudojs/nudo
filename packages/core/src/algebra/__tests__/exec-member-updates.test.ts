@@ -11,6 +11,8 @@ import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   transpile,
+  runTranspiled,
+  callTranspiledExportFull,
   litValue,
   formatShape,
   $lit,
@@ -19,7 +21,6 @@ import {
   num,
   type Abs,
 } from "@nudojs/core";
-import { analyzeFn } from "../index.ts";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -183,30 +184,35 @@ describe("B-path member update expressions", () => {
   });
 });
 
-describe("ast-eval compound assignment bitwise/shift/pow parity", () => {
-  // ast-eval applyBin 只折叠 + - * / %——位运算/移位/幂复合赋值落 unknown。
-  // 与 B-path COMPOUND_OPS 同轨修复后折叠。
+describe("runTranspiled compound assignment bitwise/shift/pow parity", () => {
+  // 与上面 execTranspiled（真实 ESM 入口）同轨：runTranspiled + 导出调用
+  // 的进程内 B 入口折叠同一批位运算/移位/幂复合赋值。
+  function callExport(src: string): Abs {
+    const run = runTranspiled(src, { mode: "analyze" });
+    return callTranspiledExportFull(run, "f", []).result;
+  }
+
   it("identifier targets fold", () => {
     expect(
-      litValue(analyzeFn(`function f() { let x = 7; x >>= 1; return x; }`, "f", [])),
+      litValue(callExport(`export function f() { let x = 7; x >>= 1; return x; }`)),
     ).toBe(3);
     expect(
-      litValue(analyzeFn(`function f() { let x = 2; x **= 10; return x; }`, "f", [])),
+      litValue(callExport(`export function f() { let x = 2; x **= 10; return x; }`)),
     ).toBe(1024);
     expect(
-      litValue(analyzeFn(`function f() { let x = -7; x >>>= 1; return x; }`, "f", [])),
+      litValue(callExport(`export function f() { let x = -7; x >>>= 1; return x; }`)),
     ).toBe(2147483644);
   });
 
   it("member targets fold", () => {
     expect(
-      litValue(analyzeFn(`function f() { const o = {n: 5}; o.n &= 3; return o.n; }`, "f", [])),
+      litValue(callExport(`export function f() { const o = {n: 5}; o.n &= 3; return o.n; }`)),
     ).toBe(1);
   });
 
   it("assignment expression value is the written value", () => {
     expect(
-      litValue(analyzeFn(`function f() { let x = 7; return (x <<= 2); }`, "f", [])),
+      litValue(callExport(`export function f() { let x = 7; return (x <<= 2); }`)),
     ).toBe(28);
   });
 });

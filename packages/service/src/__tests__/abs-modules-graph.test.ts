@@ -3,7 +3,18 @@ import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { evalAbsModuleGraph } from "@nudojs/service";
-import { analyzeFn, litValue, numLit } from "@nudojs/core";
+import { runTranspiled, callTranspiledExportFull, litValue, numLit, type Abs } from "@nudojs/core";
+
+/** B 路径驱动：runTranspiled（注入模块图）+ 导出调用（取代 analyzeFn 的求值面） */
+function analyzeExportWithModules(
+  src: string,
+  fnName: string,
+  args: Abs[],
+  modules: Record<string, unknown>,
+): Abs {
+  const run = runTranspiled(src, { mode: "analyze", modules: modules as never });
+  return callTranspiledExportFull(run, fnName, args).result;
+}
 
 const dirs: string[] = [];
 
@@ -42,15 +53,7 @@ export function run(n) { return double(n); }
     expect(modules["./math.js"]!.named.double).toBeDefined();
     expect(litValue(modules["./math.js"]!.named.answer!)).toBe(42);
 
-    const r = analyzeFn(
-      mainSrc,
-      "run",
-      [numLit(21)],
-      undefined,
-      undefined,
-      undefined,
-      modules,
-    );
+    const r = analyzeExportWithModules(mainSrc, "run", [numLit(21)], modules);
     expect(litValue(r)).toBe(42);
   });
 
@@ -70,15 +73,7 @@ export function go(x) { return twice(x); }
 export function go(x) { return twice(x); }
 `;
     const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
-    const result = analyzeFn(
-      mainSrc,
-      "go",
-      [numLit(0)],
-      undefined,
-      undefined,
-      undefined,
-      modules,
-    );
+    const result = analyzeExportWithModules(mainSrc, "go", [numLit(0)], modules);
     expect(litValue(result)).toBe(2);
   });
 
@@ -95,15 +90,7 @@ export function go(x) { return inc(inc(x)); }
 `;
     const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
     expect(modules["./inc.js"]!.default).toBeDefined();
-    const result = analyzeFn(
-      mainSrc,
-      "go",
-      [numLit(0)],
-      undefined,
-      undefined,
-      undefined,
-      modules,
-    );
+    const result = analyzeExportWithModules(mainSrc, "go", [numLit(0)], modules);
     expect(litValue(result)).toBe(2);
   });
 
@@ -126,15 +113,7 @@ export function go(x) { return inc(dec(x)); }
     const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
     expect(modules["./barrel.js"]!.named.inc).toBeDefined();
     expect(modules["./barrel.js"]!.default).toBeDefined();
-    const result = analyzeFn(
-      mainSrc,
-      "go",
-      [numLit(5)],
-      undefined,
-      undefined,
-      undefined,
-      modules,
-    );
+    const result = analyzeExportWithModules(mainSrc, "go", [numLit(5)], modules);
     // dec(5)=4, inc(4)=5
     expect(litValue(result)).toBe(5);
   });

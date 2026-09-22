@@ -6,7 +6,6 @@ import { describe, it, expect } from "vitest";
 import {
   runTranspiled,
   callTranspiledExportFull,
-  analyzeFn,
   $lit,
   litValue,
   formatAbs,
@@ -80,27 +79,27 @@ describe("P0 for-of empty / abstract accumulators", () => {
 });
 
 describe("P0 check-path compound / logical assignment", () => {
-  it("analyzeFn += concrete", () => {
-    const r = analyzeFn(`function f(a) { let x = 1; x += a; return x; }`, "f", [$lit(5)]);
+  it("export call += concrete", () => {
+    const r = callAbs(`export function f(a) { let x = 1; x += a; return x; }`, "f", [$lit(5)]).result;
     expect(formatAbs(r)).toBe("6  #exact");
   });
 
-  it("analyzeFn += abstract number", () => {
-    const r = analyzeFn(
-      `function f(a) { let x = 1; x += a; return x; }`,
+  it("export call += abstract number", () => {
+    const r = callAbs(
+      `export function f(a) { let x = 1; x += a; return x; }`,
       "f",
       [absNum],
-    );
+    ).result;
     expect(formatAbs(r)).not.toBe("1  #exact");
   });
 
-  it("analyzeFn ??= writes RHS when left null", () => {
-    const r = analyzeFn(`function f(a) { let x = null; x ??= a; return x; }`, "f", [$lit(7)]);
+  it("export call ??= writes RHS when left null", () => {
+    const r = callAbs(`export function f(a) { let x = null; x ??= a; return x; }`, "f", [$lit(7)]).result;
     expect(litValue(r)).toBe(7);
   });
 
-  it("analyzeFn ?? keeps non-nullish domain", () => {
-    const r = analyzeFn(`function f(a) { return a ?? "fb"; }`, "f", [absNum]);
+  it("export call ?? keeps non-nullish domain", () => {
+    const r = callAbs(`export function f(a) { return a ?? "fb"; }`, "f", [absNum]).result;
     expect(formatAbs(r)).not.toBe('"fb"');
     expect(formatShape(r)).toContain("number");
   });
@@ -112,12 +111,12 @@ describe("P0 do-while dual path", () => {
     expect(litValue(call(src, "f").result)).toBe(1);
   });
 
-  it("ast-eval do-while agrees", () => {
-    const r = analyzeFn(
-      `function f() { let s = 0; do { s = s + 1; } while (false); return s; }`,
+  it("export-call do-while agrees", () => {
+    const r = callAbs(
+      `export function f() { let s = 0; do { s = s + 1; } while (false); return s; }`,
       "f",
       [],
-    );
+    ).result;
     expect(formatAbs(r)).toBe("1  #exact");
   });
 });

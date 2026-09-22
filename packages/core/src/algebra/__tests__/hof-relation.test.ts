@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   abs,
   absFunction,
-  analyzeFn,
   anyVar,
   bool,
   confJoin,
@@ -20,9 +19,17 @@ import {
   str,
   substAbs,
   v,
+  runTranspiled,
+  callTranspiledExportFull,
   type Abs,
 } from "../index.ts";
 import { gt } from "../pred.ts";
+
+/** B 路径驱动：runTranspiled + 导出调用（取代 analyzeFn 的求值面） */
+function analyzeExport(src: string, fnName: string, args: Abs[]): Abs {
+  const run = runTranspiled(src, { mode: "analyze" });
+  return callTranspiledExportFull(run, fnName, args).result;
+}
 
 const a1 = anyVar("A1");
 const b1 = abs({ k: "any" }, v("B1"), undefined, "path");
@@ -278,13 +285,13 @@ describe("P1b: formatShape relation slots", () => {
 describe("P1b: map recognizes relation callbacks", () => {
   it("map with relationFn callback (D path) on arr", () => {
     const src = `
-      function mapAll(xs, transform) {
+      export function mapAll(xs, transform) {
         return xs.map(transform);
       }
     `;
     const arr = abs({ k: "arr", element: anyVar("A1") }, undefined, undefined, "path");
     const cb = relationFn([a1], b1);
-    const r = analyzeFn(src, "mapAll", [arr, cb]);
+    const r = analyzeExport(src, "mapAll", [arr, cb]);
     expect(r.shape.k).toBe("arr");
     if (r.shape.k !== "arr") return;
     expect(r.shape.element.term).toEqual(v("B1"));
@@ -292,13 +299,13 @@ describe("P1b: map recognizes relation callbacks", () => {
 
   it("map with shape-only callback (E path) on arr", () => {
     const src = `
-      function mapAll(xs, transform) {
+      export function mapAll(xs, transform) {
         return xs.map(transform);
       }
     `;
     const arr = abs({ k: "arr", element: anyVar("A1") }, undefined, undefined, "path");
     const cb = shapeOnlyFn([a1], b1);
-    const r = analyzeFn(src, "mapAll", [arr, cb]);
+    const r = analyzeExport(src, "mapAll", [arr, cb]);
     expect(r.shape.k).toBe("arr");
     if (r.shape.k !== "arr") return;
     expect(r.shape.element.term).toEqual(v("B1"));
@@ -307,7 +314,7 @@ describe("P1b: map recognizes relation callbacks", () => {
   it("map body wins over relation when both present", () => {
     // body 实现：x => x * 2；relation 写 string
     const src = `
-      function mapAll(xs, transform) {
+      export function mapAll(xs, transform) {
         return xs.map(transform);
       }
     `;
@@ -329,7 +336,7 @@ describe("P1b: map recognizes relation callbacks", () => {
     const impl = getFnImpl(cb)!;
     impl.relation = { paramTypes: [num()], returnType: str() };
 
-    const r = analyzeFn(src, "mapAll", [arr, cb]);
+    const r = analyzeExport(src, "mapAll", [arr, cb]);
     expect(r.shape.k).toBe("arr");
     if (r.shape.k !== "arr") return;
     // body: 3*2 = 6，不是 string
@@ -338,7 +345,7 @@ describe("P1b: map recognizes relation callbacks", () => {
 
   it("map on tuple keeps precision with inline arrow", () => {
     const src = `
-      function doubleAll(xs) {
+      export function doubleAll(xs) {
         return xs.map((x) => x * 2);
       }
     `;
@@ -348,7 +355,7 @@ describe("P1b: map recognizes relation callbacks", () => {
       undefined,
       "exact",
     );
-    const r = analyzeFn(src, "doubleAll", [tup]);
+    const r = analyzeExport(src, "doubleAll", [tup]);
     expect(r.shape.k).toBe("tuple");
     if (r.shape.k !== "tuple") return;
     expect(litValue(r.shape.elements[0]!)).toBe(2);
@@ -357,13 +364,13 @@ describe("P1b: map recognizes relation callbacks", () => {
 
   it("map bare fn without returnType stays unknown", () => {
     const src = `
-      function mapAll(xs, transform) {
+      export function mapAll(xs, transform) {
         return xs.map(transform);
       }
     `;
     const arr = abs({ k: "arr", element: a1 }, undefined, undefined, "path");
     const bare: Abs = { shape: { k: "fn", params: ["x"] }, conf: "path" };
-    const r = analyzeFn(src, "mapAll", [arr, bare]);
+    const r = analyzeExport(src, "mapAll", [arr, bare]);
     expect(r.shape.k).toBe("arr");
     if (r.shape.k !== "arr") return;
     expect(r.shape.element.shape.k).toBe("unknown");
@@ -371,7 +378,7 @@ describe("P1b: map recognizes relation callbacks", () => {
 
   it("map with function union callback joins member results", () => {
     const src = `
-      function mapAll(xs, transform) {
+      export function mapAll(xs, transform) {
         return xs.map(transform);
       }
     `;
@@ -379,7 +386,7 @@ describe("P1b: map recognizes relation callbacks", () => {
     const f1 = relationFn([a1], abs({ k: "prim", type: "number" }, v("B1"), undefined, "path"));
     const f2 = relationFn([a1], abs({ k: "prim", type: "string" }, v("C1"), undefined, "path"));
     const sum = abs({ k: "sum", members: [f1, f2] }, undefined, undefined, "path");
-    const r = analyzeFn(src, "mapAll", [arr, sum]);
+    const r = analyzeExport(src, "mapAll", [arr, sum]);
     expect(r.shape.k).toBe("arr");
     if (r.shape.k !== "arr") return;
     // applyCallbackAbs 对 sum：join(number, string)
@@ -388,23 +395,23 @@ describe("P1b: map recognizes relation callbacks", () => {
 
   it("direct call of relation-only param p(x) returns β", () => {
     const src = `
-      function applyFn(p, x) {
+      export function applyFn(p, x) {
         return p(x);
       }
     `;
     const cb = relationFn([a1], b1);
-    const r = analyzeFn(src, "applyFn", [cb, numLit(1)]);
+    const r = analyzeExport(src, "applyFn", [cb, numLit(1)]);
     expect(r.term).toEqual(v("B1"));
   });
 
   it("direct call of shape-only param p(x) returns β", () => {
     const src = `
-      function applyFn(p, x) {
+      export function applyFn(p, x) {
         return p(x);
       }
     `;
     const cb = shapeOnlyFn([a1], b1);
-    const r = analyzeFn(src, "applyFn", [cb, numLit(1)]);
+    const r = analyzeExport(src, "applyFn", [cb, numLit(1)]);
     expect(r.term).toEqual(v("B1"));
   });
 });
@@ -412,14 +419,14 @@ describe("P1b: map recognizes relation callbacks", () => {
 describe("P1b: processItems hand-crafted fixture", () => {
   it("filter (identity) + map with relation callbacks → arr(β)", () => {
     const src = `
-      function processItems(items, transform, filter) {
+      export function processItems(items, transform, filter) {
         return items.filter(filter).map(transform);
       }
     `;
     const items = abs({ k: "arr", element: a1 }, undefined, undefined, "path");
     const transform = relationFn([a1], b1);
     const filter = relationFn([a1], bool());
-    const r = analyzeFn(src, "processItems", [items, transform, filter]);
+    const r = analyzeExport(src, "processItems", [items, transform, filter]);
     expect(r.shape.k).toBe("arr");
     if (r.shape.k !== "arr") return;
     expect(r.shape.element.term).toEqual(v("B1"));

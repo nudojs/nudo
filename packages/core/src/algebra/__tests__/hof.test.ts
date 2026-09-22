@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  analyzeFn,
+  runTranspiled,
+  callTranspiledExportFull,
   numLit,
   strLit,
   numVar,
@@ -11,18 +12,25 @@ import {
   formatShape,
   abs,
   unknown,
+  type Abs,
 } from "../index.ts";
+
+/** B 路径驱动：runTranspiled + 导出调用（取代 analyzeFn 的求值面） */
+function analyzeExport(src: string, fnName: string, args: Abs[]): Abs {
+  const run = runTranspiled(src, { mode: "analyze" });
+  return callTranspiledExportFull(run, fnName, args).result;
+}
 
 describe("HOF map/reduce from real source", () => {
   it("map doubles literals: [1,2,3].map(x=>x*2) → number[] with joined elem", () => {
     const src = `
-      function doubleAll(xs) {
+      export function doubleAll(xs) {
         return xs.map((x) => x * 2);
       }
     `;
     // 实参数组：arr(number)
     const arr = abs({ k: "arr", element: numLit(1) }, undefined, undefined, "exact");
-    const r = analyzeFn(src, "doubleAll", [arr]);
+    const r = analyzeExport(src, "doubleAll", [arr]);
     expect(r.shape.k).toBe("arr");
     if (r.shape.k !== "arr") return;
     // x=1, x*2=2
@@ -39,11 +47,11 @@ describe("HOF map/reduce from real source", () => {
     };
     const arr = abs({ k: "arr", element: elem }, undefined, undefined, "path");
     const src = `
-      function incAll(xs) {
+      export function incAll(xs) {
         return xs.map((x) => x + 1);
       }
     `;
-    const r = analyzeFn(src, "incAll", [arr]);
+    const r = analyzeExport(src, "incAll", [arr]);
     expect(r.shape.k).toBe("arr");
     if (r.shape.k !== "arr") return;
     const el = r.shape.element;
@@ -53,12 +61,12 @@ describe("HOF map/reduce from real source", () => {
 
   it("reduce sum of literals: [1,2,3].reduce((acc,n)=>acc+n,0) on arr(1) keeps numeric domain", () => {
     const src = `
-      function sum(xs) {
+      export function sum(xs) {
         return xs.reduce((acc, n) => acc + n, 0);
       }
     `;
     const arr = abs({ k: "arr", element: numLit(1) }, undefined, undefined, "exact");
-    const r = analyzeFn(src, "sum", [arr]);
+    const r = analyzeExport(src, "sum", [arr]);
     // 抽象长度 arr：join 字面量枚举或收成 number；不得丢成 never/unknown
     if (r.shape.k === "prim") {
       expect(r.shape.type).toBe("number");
@@ -71,12 +79,12 @@ describe("HOF map/reduce from real source", () => {
 
   it("filter preserves element type", () => {
     const src = `
-      function keep(xs) {
+      export function keep(xs) {
         return xs.filter((x) => x > 0);
       }
     `;
     const arr = abs({ k: "arr", element: numLit(5) }, undefined, undefined, "exact");
-    const r = analyzeFn(src, "keep", [arr]);
+    const r = analyzeExport(src, "keep", [arr]);
     expect(r.shape.k).toBe("arr");
   });
 });

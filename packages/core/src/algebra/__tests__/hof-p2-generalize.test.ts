@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  analyzeFn,
   anyVar,
   formatShape,
   generalizeFromAst,
@@ -9,6 +8,8 @@ import {
   bool,
   abs,
   v,
+  runTranspiled,
+  callTranspiledExportFull,
   type Abs,
 } from "../index.ts";
 
@@ -143,13 +144,14 @@ describe("P2: generalize use-driven promotion", () => {
       function processItems(items, transform, filter) {
         return items.filter(filter).map(transform);
       }
-      function caller(items) {
+      export function caller(items) {
         return processItems(items, (x) => x * 2, (x) => x > 0);
       }
     `;
-    const r = analyzeFn(src, "caller", [
+    const run = runTranspiled(src, { mode: "analyze" });
+    const r = callTranspiledExportFull(run, "caller", [
       abs({ k: "arr", element: numLit(1) }, undefined, undefined, "exact"),
-    ]);
+    ]).result;
     expect(r.shape.k).toBe("arr");
     if (r.shape.k !== "arr") return;
     // x*2 on number element → number
