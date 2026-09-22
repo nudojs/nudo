@@ -54,12 +54,22 @@
   harvest-to-abs 全绿；环/深度/缺失诊断语义不变（原测试全过）；
   lint 绿；差分 suite 155 绿。
 
-### P2：checkSource 与 instantiate 换引擎
-- check.ts 三入口（signatures/violations/drift/L2 throws）→ runTranspiled
-  等价面；gold 断言不得改（recall=precision=1.0、assign-mismatch/constraint 金标）。
-- generalize.ts instantiate → tryBPathCall 等价面（α-替换语义对齐）。
-- 门禁：check-gold/check-recall-gold/check-real-packages 全绿；
-  check-interface-drift 两端口径（执行态调用记录）对齐。
+### P2：checkSource 与 instantiate 换引擎 🔶 部分完成（2026-09-22，29a1b7e + d09c777）
+- **前置 bug 修复（29a1b7e）**：B-path try/catch rethrow 丢软 may-throw
+  （`catch (e) { throw e; }` 正常路径 digest 吞掉假想 soft throw）——
+  catchMayRethrow 静态判定 + `$tryReleaseSoftCatch` 上浮。测试先行 2 红→7 绿。
+- **P2-a（d09c777）**：`collectEntryMayThrows` 换 `runTranspiled` +
+  `callTranspiledExportFull`（按 source memo）。**验证发现的范围修正**：
+  - HOF 提升语义仅在 ast-eval——any/unknown 实参的数组方法调用被提升建模
+    且不记 may-throw（mini-repo gold 钉此口径），B-path `$invoke` 对 any
+    记 TypeError 假 L2。→ any/unknown 入口 + 类方法回落 ast-eval，约束
+    入口才走 B。gold 全绿。
+- **P2 剩余（降级为 P3 一起决策）**：
+  - L673/L740 analyzeFn（签名重跑/漂移返回位）——记录通道与 emit 同源，
+    换引擎需 B 侧 assign/call 记录 instrumentation；
+  - **PolyFn.instantiate 不换**——symbolic/instantiate 与 phi 线程 + HOF
+    收集耦合（推导域核心），执行级替换等价于重写泛化器。按「收缩」路线
+    保留 ast-eval 为推导引擎。
 
 ### P3：derivation 与 LSP
 - derivation 节点打点：B-path 无等价物——两条路：(a) transpile 节点级
