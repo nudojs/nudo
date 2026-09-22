@@ -183,15 +183,28 @@ phi-free 切片，需先给 generalize 线程 modules+mocks）。
   的 B 语义裁决（ESM 下 `this.x=1` 原生 TypeError——B 可精确建模，但会
   改变 CJS 风格依赖的分析结果，属产品语义决策，待用户拍板）。
 
-### P8：ast-eval 剩余面（删除前的完整清单）
+### P8：ast-eval 剩余面（删除前的完整清单，2026-09-22 晚更新）
+
+已闭合：top-level this（ESM 语义 1885395）、自递归门（B 调用预算 40f70d9）、
+回调闭包（883380c）、import.meta/动态 import（3491fe2）。
 
 | 面 | 位置 | 状态 |
 |---|---|---|
-| generalize symbolic/instantiate 非 B-eligible | core/generalize.ts | 类方法名（.名）、自递归（opaque 契约）、require、@nudo:mock/env/replace、不可解析导入 |
-| 回调解释路径 | applyCallbackAbs → evalNode | B 内回调已走编译（$call）；ast-eval 内回调仍解释（仅非 eligible 泛化触发） |
-| LSP 非 B-hosted hover/bindings | service/lsp-surface.ts | collectAbsNodeTypes 兜底 |
-| 模块图 B-incapable 回落 | service/abs-modules-graph.ts | top-level-this / JSX 依赖 |
-| CLI assume | cli/index.ts | analyzeFn |
-| check 签名重跑/漂移返回位 | core/check.ts L673/L740 | 记录通道同源后可换 B |
-| 测试面 | ~60 文件 parity describe | 迁移=保留差分 oracle + 行为面重定向 |
+| generalize 类方法（.名） | core/generalize.ts | 保留——**产品路径在 service**（analyzer 枚举 + B-hosted 类注册，
+  check 输出 `MemoryStore.set(key, value) => true` 已如此）；core 的 dotted
+  门是接口推导面（interface.ts effectiveInterface），桥价值低 |
+| generalize require 门 | core/generalize.ts | 保留——B run 需模块注入（core 无 filePath/模块图上下文） |
+| generalize mock/env/replace 门 | core/generalize.ts | 保留——**core 无注入线程**：拆门会让未绑定宿主名（window.fetch、
+  fs.readFileSync、process.env）ReferenceError 被 callTranspiledExportFull
+  记成假 throws；需 checkSource 注入管线 + memo 键纳入指纹（下个里程碑） |
+| 不可解析导入门 | core/generalize.ts | 同模块注入缺失 |
+| 回调解释路径 | applyCallbackAbs | B 内回调已走编译（$call + 闭包注入）；仅非 eligible 泛化触发 |
+| LSP 兜底 | lsp-surface.ts | isBPathCapable 恒 true 后仅 B 失败文件触达（top-level-this 已托管） |
+| 模块图回落 | abs-modules-graph.ts | 仅 JSX（非 nudo 目标）可达 |
+| CLI assume | cli/index.ts | analyzeFn——待换 tryBPathCall |
+| check L673/L740 | core/check.ts | opaque 探针/绑定表兜底——B 失败面已收窄 |
+| 测试面 | ~60 文件 parity | 迁移 = 保留差分 oracle + 行为面重定向 |
 
+**结论**：剩余 generalize 门全部是「注入线程」类（service 层数据进 core
+run），不是结构性阻塞。下一步里程碑 = checkSource/generalize 的
+mock/replace/env/模块注入管线（memo 键纳指纹）。
