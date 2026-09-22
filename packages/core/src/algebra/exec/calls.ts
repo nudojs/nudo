@@ -5,10 +5,12 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { unknown } from "../abs.ts";
+import { abs, unknown } from "../abs.ts";
 import { evalGlobalFn } from "../builtins.ts";
 import { $call } from "./call.ts";
+import { termToString } from "../term.ts";
 import { callAtFunctionBoundary } from "./runtime.ts";
+import { noteAbsTruncation } from "../ast-eval.ts";
 import {
   tagAbsOrigin,
   pushCallLoc,
@@ -149,6 +151,77 @@ export function getBCallCollector(): ((r: BCallRecord) => void) | null {
  * loc: [line, column]（1-based line，0-based column，与 Babel 一致）
  * argLocs: 与 args 对齐的实参字面量源位置（provenance；无 loc 用 null）
  */
+// --- B 调用预算（与 ast-eval enterCall 同口径）--------------------------------
+// 命名调用（transpile 的 $callNamed 是 B run 全部标识符调用的派发点）此前无
+// 预算：直接自递归/互递归裸奔原生 JS 递归 → 栈溢出，RangeError 被
+// callTranspiledExportFull 兜底静默吞成 unknown+partial（假结果）。此处对齐
+// ast-eval：深度 64 / 总调用 200k / cycle（同 name+arg 指纹）→ 截断 opaque。
+
+export const MAX_B_CALL_DEPTH = 64;
+export const MAX_B_TOTAL_CALLS = 200_000;
+
+let bCallDepth = 0;
+let bTotalCalls = 0;
+let bActiveCallKeys: string[] = [];
+const bFnCallIds = new WeakMap<object, string>();
+let bFnCallIdSeq = 0;
+
+function bStableId(obj: object): string {
+  let id = bFnCallIds.get(obj);
+  if (id === undefined) {
+    id = `#${++bFnCallIdSeq}`;
+    bFnCallIds.set(obj, id);
+  }
+  return id;
+}
+
+/** 宿主入口（runTranspiled / callTranspiledExportFull）前重置 */
+export function resetBCallBudget(): void {
+  bCallDepth = 0;
+  bTotalCalls = 0;
+  bActiveCallKeys = [];
+}
+
+/** 截断结果：分析无信息，conf=opaque（与 ast-eval truncatedAbs 同） */
+function bTruncatedAbs(): Abs {
+  return abs({ k: "unknown" }, undefined, undefined, "opaque");
+}
+
+function bCallBudgetKey(name: string, fn: unknown, args: Abs[]): string {
+  // 实参可能是裸 JS 值（B run 里模块函数作实参传的就是 JS 函数）——不得读
+  // shape（undefined 崩溃会被吞成 unknown 假结果）
+  const parts = args.map((a) => {
+    const sh = (a as { shape?: { k?: string } } | null | undefined)?.shape;
+    if (!sh) return `js:${typeof a}`;
+    const term = (a as { term?: never }).term;
+    return `${sh.k}:${term ? termToString(term) : ""}`;
+  });
+  const id = fn && typeof fn === "object" ? bStableId(fn) : "prim";
+  return `${name}|${id}|${parts.join(",")}`;
+}
+
+/** 进入命名调用：超限/cycle → 不执行，返回 opaque（并上报截断） */
+function bEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boolean; key?: string } {
+  const key = bCallBudgetKey(name, fn, args);
+  if (
+    bActiveCallKeys.includes(key) ||
+    bCallDepth >= MAX_B_CALL_DEPTH ||
+    bTotalCalls >= MAX_B_TOTAL_CALLS
+  ) {
+    noteAbsTruncation(name);
+    return { ok: false };
+  }
+  bActiveCallKeys.push(key);
+  bCallDepth++;
+  bTotalCalls++;
+  return { ok: true, key };
+}
+
+function bExitCall(): void {
+  bCallDepth--;
+  bActiveCallKeys.pop();
+}
+
 export function $callNamed(
   name: string,
   fn: unknown,
@@ -172,8 +245,21 @@ export function $callNamed(
       const g = GLOBAL_FNS.has(name) && fn === (globalThis as Record<string, unknown>)[name]
         ? evalGlobalFn(name, args)
         : undefined;
-      // 嵌套 B 路径函数：调用边界收 NudoReturn，不得污染 caller
-      result = g ?? callAtFunctionBoundary(() => (fn as (...a: Abs[]) => Abs)(...args));
+      if (g !== undefined) {
+        result = g;
+      } else {
+        const entered = bEnterCall(name, fn, args);
+        if (!entered.ok) {
+          result = bTruncatedAbs();
+        } else {
+          try {
+            // 嵌套 B 路径函数：调用边界收 NudoReturn，不得污染 caller
+            result = callAtFunctionBoundary(() => (fn as (...a: Abs[]) => Abs)(...args));
+          } finally {
+            bExitCall();
+          }
+        }
+      }
     } else if (fn && typeof fn === "object" && "shape" in (fn as object)) {
       result = $call(fn as Abs, args);
     }

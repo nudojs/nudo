@@ -937,8 +937,7 @@ function generalizeFromAstUncached(
     !fnName.includes(".") &&
     !usesImports &&
     !/\brequire\s*\(/.test(source) &&
-    !/@nudo:(mock|env|replace|mock-module)\b/.test(source) &&
-    !bodyReferencesName(body, fnName);
+    !/@nudo:(mock|env|replace|mock-module)\b/.test(source);
 
   const run = (args: Abs[], phi: Phi = pTrue): Abs => {
     const { key, varOrder } = instantiateMemoKey(args, phi);

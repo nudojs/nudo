@@ -225,7 +225,7 @@ export function setAbsTruncationCollector(
   absTruncCollector = collector;
 }
 
-function noteTruncation(label: string): void {
+export function noteAbsTruncation(label: string): void {
   if (!absTruncCollector) return;
   try {
     absTruncCollector(label);
@@ -241,7 +241,7 @@ function enterCall(key: string, label: string): boolean {
     _absCallDepth >= MAX_CALL_DEPTH ||
     _absTotalCalls >= MAX_TOTAL_CALLS
   ) {
-    noteTruncation(label);
+    noteAbsTruncation(label);
     return false;
   }
   _activeCallKeys.push(key);

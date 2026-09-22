@@ -9,6 +9,7 @@
  */
 
 import { rtAllBindings } from "./rt.ts";
+import { resetBCallBudget } from "./calls.ts";
 import { withExecPhi } from "./runtime.ts";
 import { setBBindingSink } from "./calls.ts";
 import type { Abs } from "../abs.ts";
@@ -307,6 +308,7 @@ export function runTranspiled(
   source: string,
   opts: RunTranspiledOptions = {},
 ): Record<string, unknown> {
+  resetBCallBudget(); // 宿主入口重置（与 ast-eval resetAbsCallBudget 同口径）
   const modules = opts.modules ?? {};
   let js = transpile(source, {
     runtimeImport: "@nudojs/core/exec",
@@ -477,6 +479,7 @@ export function callTranspiledExportFull(
 ): TranspiledCallResult {
   const fn = exports[name];
   if (typeof fn === "function") {
+    resetBCallBudget(); // 每次具名调用独立预算（不跨调用累积 totalCalls）
     return runWithLoopExits(() => {
       try {
         const invoke = () => (fn as (...a: Abs[]) => unknown)(...args);
