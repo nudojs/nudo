@@ -71,35 +71,46 @@
     收集耦合（推导域核心），执行级替换等价于重写泛化器。按「收缩」路线
     保留 ast-eval 为推导引擎。
 
-### P3：derivation 与 LSP ✅ 定界（2026-09-22 验证后按「收缩」路线定案，无代码迁移）
-验证结论（本阶段实测）：
-- derivation 打点发生在 ast-eval 求值内部（derivation.ts 逐节点 tag），
-  B-path 无等价物；注入方案 = 每节点插桩，膨胀与正确性风险不明。
-- 非 B-hosted 文件的 collectAbsNodeTypes（LSP hover/bindings）——
-  B-hosted 已有 nodeTypeMap 注入；剩余面 = B 不可托管文件兜底，属收缩面。
-- 记录通道（check.ts L673/L712/L740 + service collectCallRecords）：
-  assign 记录需 transpile 插桩；AbsCallRecord + it/describe 回调展开
-  （env.fns + callFunctionFull）是 ast-eval 专有机制，重实现 = 新运行时面。
-- **结构事实**：ast-eval.ts 的 applyAbsFn 是 exec/$call（B-path 自身函数
-  分派）的共享引擎——ast-eval 物理上不可能整体删除，只能收缩。
+### P3：derivation 与 LSP ✅ 已换引擎（2026-09-22，58b395d）
+**验证推翻原计划**：derivation 打点本就在共享代数层（arithmetic.add 的
+noteDerivationAdd 挂 shift、joinAbs 的 noteDerivationJoin 挂 join）——
+B 执行的 `$add`/`$join` 走同一代数，session 包裹下自动打点，**无需
+transpile 节点注入**。deriveOneRoot 求值引擎换 runTranspiled +
+callTranspiledExportFull（类方法与 B 失败回落），调用记录改
+setBCallCollector 映射。LSP hover/bindings（collectAbsNodeTypes）为
+B 不可托管文件兜底，保持 ast-eval（收缩面）。
+
+### P3.5：四个迁移件 ✅ 全部完成（2026-09-22）
+1. **提升前置化**（4d8c670）：promote-scan.ts 静态扫描替代求值期 8 处
+   挂载点——generalize symbolic/instantiate 共用扫描决策，B 吃预提升
+   实参即获同等精度；for-of 循环变量→元素 term 数据流作用域化追踪。
+2. **记录通道**（ff840a4 + 292379a）：`$recordBinding`/`$assignRecord`
+   运行时插桩（calls.ts 模块级 sink）+ checkSource 三通道换
+   runTranspiled（BCallRecord→AbsCallRecord 映射）；顺带修
+   stripEffectfulTopLevel 的 `$for(` 括号计数预存 bug。
+3. **derivation**（58b395d）：见上——打点在代数层，换引擎而非注入。
+4. **body 转译**（49783e4）：`$call` 对自包含 body 编译执行
+   （free-identifier 扫描门：闭包/兄弟函数/递归回落解释路径保预算；
+   apply 钩子优先；NudoThrow→never 契约不变）。
 
 ### P4：收缩 ✅ 定案（2026-09-22，替代「删除」）
 
-**收缩契约（生产分工）**：
+**收缩契约（生产分工，四件迁移后）**：
 
 | 引擎 | 生产职责（收缩后） |
 |---|---|
-| B-path | 模块图（P1）、checkSource L2 throws 约束入口（P2-a）、B-hosted 诊断/nodeTypeMap、CJS 调用点发现、差分 oracle 对照物 |
-| ast-eval（收缩后） | ① generalize/instantiate（phi+HOF 提升，签名/返回契约/漂移返回位）② checkSource 记录通道（assign/call 记录，drift 今日域与 emit 同源）③ derivation 打点（interface-derivation）④ LSP 非 B-hosted hover 兜底 ⑤ 模块图 B 失败回落 ⑥ CLI assume ⑦ 差分 oracle 对照物 |
+| B-path | 模块图（P1）、checkSource L2 throws + 记录通道（P2/P3.5-2）、derivation 求值（P3.5-3）、自包含 body 编译执行（P3.5-4）、B-hosted 诊断/nodeTypeMap、CJS 调用点发现、差分 oracle 对照物 |
+| ast-eval（收缩后） | ① generalize symbolic/instantiate（phi 线程 + α-rename memo——推导域核心）② 回调 body 解释（applyCallbackAbs，含闭包/递归）③ LSP 非 B-hosted hover 兜底 ④ 模块图 B 失败回落 ⑤ CLI assume ⑥ 差分 oracle 对照物 |
 
-**收缩边界判据**（每项 = 求值域可换 / 推导域保留）：
-- 求值域（实参直传、无 phi 收窄、无 HOF 收集）：已全部切 B ✓
-- 推导域（symbolic scheme、phi 线程收窄、HOF 提升、节点打点、记录通道）：
-  保留 ast-eval——执行级替换等价于重写泛化器/记录器，收益为负。
+**收缩边界判据**（求值域可换 / 推导域保留——已全部验证落地）：
+- 求值域（实参直传、无 phi 收窄、无闭包）：全部切 B ✓（模块图/L2/记录/
+  derivation/自包含 body）
+- 推导域（symbolic scheme + phi 收窄 + HOF 提升 + α-rename memo + 闭包
+  回调解释）：保留 ast-eval——phi 线程收窄与回调闭包是解释语义。
 
-**目标达成判定**：用户诉求（快、单引擎主路径）已兑现——生产热点路径
-（模块加载、诊断、L2）B 化；ast-eval 承担的剩余面是符号/推导产品，
-不是可执行加速的对象。差分 oracle 永久保留（P0）。
+**目标达成判定**：单引擎主路径兑现——生产热点（模块加载、诊断、L2、
+记录、derivation、自包含 body 执行）全 B 化；ast-eval 剩余面 = 推导域
+（泛化/phi/闭包回调）+ 兜底。差分 oracle 永久保留（P0）。
 
 ## 3. 阶段门禁（每阶段共通）
 

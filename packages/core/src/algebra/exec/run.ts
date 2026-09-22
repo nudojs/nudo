@@ -8,31 +8,23 @@
  *   ——分析入口安全，不触发 fetch 等顶层副作用
  */
 
-import * as runtime from "./runtime.ts";
-import * as classRt from "./class.ts";
-import * as callsRt from "./calls.ts";
+import { rtAllBindings } from "./rt.ts";
 import { setBBindingSink } from "./calls.ts";
 import type { Abs } from "../abs.ts";
 import { never, unknown, abs } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
 import { transpile } from "./transpile.ts";
-import { $call } from "./call.ts";
-import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits } from "./runtime.ts";
 import { errorTypeAbs } from "./may-throw.ts";
-
-const rtAll = { ...runtime, ...classRt, ...callsRt } as Record<string, unknown>;
-
-export function rtAllBindings(): Record<string, unknown> {
-  return rtAll;
-}
-// ensure control-flow helpers are present even if a re-export layer omits them
-rtAll.isNudoReturn = isNudoReturn;
-rtAll.isNudoThrow = isNudoThrow;
-rtAll.$isForkExit = $isForkExit;
-rtAll.runWithLoopExits = runWithLoopExits;
-rtAll.takeLoopExits = takeLoopExits;
-rtAll.$call = $call;
+import {
+  isNudoThrow,
+  isNudoReturn,
+  $isForkExit,
+  runWithLoopExits,
+  takeLoopExits,
+  takeThrowExits,
+} from "./runtime.ts";
+import { $call } from "./call.ts";
 
 export type RunTranspiledOptions = {
   /** 说明符 → 依赖导出（host 模块图或 runTranspiled 产物） */
@@ -186,7 +178,7 @@ function stripEffectfulTopLevel(js: string): string {
 }
 
 function runtimeArgNames(): string[] {
-  return Object.keys(rtAll).filter((k) => k.startsWith("$"));
+  return Object.keys(rtAllBindings()).filter((k) => k.startsWith("$"));
 }
 
 function bindImport(
@@ -388,7 +380,7 @@ export function runTranspiled(
       };
     }
     if (n === "__nudoExports") return dynExports;
-    return rtAll[n];
+    return rtAllBindings()[n];
   });
 
   // @nudo:env 全局绑定

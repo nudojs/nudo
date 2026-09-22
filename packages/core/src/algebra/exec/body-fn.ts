@@ -10,7 +10,9 @@ import type { Abs } from "../abs.ts";
 import type { AbsFnImpl } from "../abs-fn.ts";
 import type { Node } from "@babel/types";
 import { transpileBodyNode, runtimeImportOf } from "./transpile.ts";
-import { rtAllBindings, RUNTIME_IMPORT_RE } from "./run.ts";
+import { rtAllBindings } from "./rt.ts";
+
+const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
 
 const compiledByImpl = new WeakMap<object, (args: Abs[]) => Abs>();
 
