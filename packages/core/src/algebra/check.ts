@@ -68,7 +68,8 @@ import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
 import { listTopFunctions, scanLiteralCalls } from "./scan.ts";
 import { analyzeFnFull } from "./ast-eval.ts";
-import { runTranspiled, callTranspiledExportFull, type TranspiledCallResult } from "./exec/run.ts";
+import { runTranspiled, callTranspiledExportFull, bindingsOf, type TranspiledCallResult } from "./exec/run.ts";
+import { setBAssignCollector, setBCallCollector, type BCallRecord } from "./exec/calls.ts";
 import {
   setMayThrowCollector,
   runWithMayThrowSession,
@@ -702,22 +703,52 @@ function checkSourceInner(
     });
   }
 
-  // 一次 evalProgramAbs：结构赋值记录 + 顶层绑定表（scanLiteralCalls 实参
-  // 解析用）+ 执行态调用记录（T10a drift 的今日域证据，与 emit 同源）
+  // 一次执行态求值：结构赋值记录 + 顶层绑定表（scanLiteralCalls 实参
+  // 解析用）+ 执行态调用记录（T10a drift 的今日域证据，与 emit 同源）。
+  // B-path 优先（迁移件 2：$recordBinding/$assignRecord 插桩 + $callNamed
+  // BCallRecord）；失败回落 Abs 全通道。
   const records: AbsAssignRecord[] = [];
   const varAbs = new Map<string, Abs>();
   const callRecords: AbsCallRecord[] = [];
   setAbsAssignCollector((r) => records.push(r));
   const prevCallCollector = setAbsCallCollector((r) => callRecords.push(r));
+  const bCalls: BCallRecord[] = [];
+  setBAssignCollector((r) => records.push(r));
+  setBCallCollector((r) => bCalls.push(r));
+  let bBindings: Map<string, unknown> | undefined;
   try {
-    const { env } = evalProgramAbs(source, { file });
-    for (const [k, v] of env.vars) varAbs.set(k, v);
+    bBindings = bindingsOf(runTranspiled(source, { mode: "analyze" }));
+    if (bBindings) {
+      for (const [k, v] of bBindings) {
+        if (v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object)) {
+          varAbs.set(k, v as Abs);
+        }
+      }
+      callRecords.push(
+        ...bCalls.map((r) => ({
+          fnName: r.fnName,
+          args: r.args,
+          result: r.result,
+          callLoc: r.callLoc,
+        })),
+      );
+    }
   } catch {
-    /* 求值失败：无赋值记录、无绑定表 */
+    /* B 失败回落 Abs */
   } finally {
-    setAbsAssignCollector(null);
-    setAbsCallCollector(prevCallCollector);
+    setBAssignCollector(null);
+    setBCallCollector(null);
   }
+  if (bBindings === undefined) {
+    try {
+      const { env } = evalProgramAbs(source, { file });
+      for (const [k, v] of env.vars) varAbs.set(k, v);
+    } catch {
+      /* 求值失败：无赋值记录、无绑定表 */
+    }
+  }
+  setAbsAssignCollector(null);
+  setAbsCallCollector(prevCallCollector);
 
   const callIssues = canSkipLiteralCallScan(source, file)
     ? []
