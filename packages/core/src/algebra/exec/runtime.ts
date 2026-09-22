@@ -14,7 +14,7 @@ import {
   popCollectionArm,
   pushCollectionArm,
 } from "../collections.ts";
-import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
+import { add, sub, mul, div, mod, cmp, falseConstraint } from "../arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs, isNullishLitAbs, definitelyNotNullishShape, bitandAbs, bitorAbs, bitxorAbs, bitnotAbs, shlAbs, shrAbs, ushrAbs, powAbs, toNumberAbs } from "../surface.ts";
 import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape, type Slot, isNullProtoObj, migrateNullProto, getSlot, canonicalArrayIndex } from "../objects.ts";
 import {
@@ -31,7 +31,7 @@ import { registerMatchIter, matchIterElements } from "./match-iter.ts";
 import { leqAbs } from "../leq.ts";
 import { evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants, regexBrandAbsFrom } from "../builtins.ts";
 import type { Phi } from "../pred.ts";
-import { pTrue } from "../pred.ts";
+import { pTrue, and } from "../pred.ts";
 import {
   noteUnknownMemberMissing,
   noteObjSlotMissing,
@@ -954,8 +954,22 @@ function settleForkArms(a: ForkArm, b: ForkArm, exits: Abs[] | undefined): Abs {
 }
 
 export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs {
-  if (isDefinitelyTrue(test)) return asAbsVal(consequent());
-  if (isDefinitelyFalse(test)) return alternate ? asAbsVal(alternate()) : undef();
+  // Φ-native：测试判定已由 cmp 消费 currentExecPhi（$gt 等传模块级 phi）；
+  // 此处把 Φ∧test（真臂）/ Φ∧¬test（假臂）压进臂作用域——嵌套/兄弟分支的
+  // 路径事实沿臂累积（外层已证 x>y ⇒ 内层同测试折叠）。
+  const p = currentExecPhi();
+  const tCons = test.pred;
+  const tNeg = falseConstraint(test);
+  if (isDefinitelyTrue(test)) {
+    return asAbsVal(withExecPhi(tCons ? and(p, tCons) : p, consequent));
+  }
+  if (isDefinitelyFalse(test)) {
+    return alternate
+      ? asAbsVal(withExecPhi(tNeg ? and(p, tNeg) : p, alternate))
+      : undef();
+  }
+  const phiTrue = tCons ? and(p, tCons) : p;
+  const phiFalse = tNeg ? and(p, tNeg) : p;
 
   const exits = loopExitsAls.getStore();
   // 集合 side-table：抽象分支各自 overlay，结束后 join（防身份污染）
@@ -967,7 +981,9 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
   try {
     pushCollectionArm();
     try {
-      const r = withIsolatedYields(() => runForkArm(consequent, exits));
+      const r = withExecPhi(phiTrue, () =>
+        withIsolatedYields(() => runForkArm(consequent, exits)),
+      );
       a = r.v;
       armYsList.push(r.ys);
     } finally {
@@ -976,7 +992,9 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
     if (alternate) {
       pushCollectionArm();
       try {
-        const r = withIsolatedYields(() => runForkArm(alternate, exits));
+        const r = withExecPhi(phiFalse, () =>
+          withIsolatedYields(() => runForkArm(alternate, exits)),
+        );
         b = r.v;
         armYsList.push(r.ys);
       } finally {
