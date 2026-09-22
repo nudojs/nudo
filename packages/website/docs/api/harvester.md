@@ -13,10 +13,10 @@ The package exports two functions and one type from `src/index.ts`.
 ### harvestDts
 
 ```typescript
-harvestDts(files: string[]): HarvestedEnv
+harvestDts(files: string[], opts?: { maxFileBytes?: number; maxMs?: number }): HarvestedEnv
 ```
 
-Reads the given `.d.ts` **file paths** from disk and parses them with the TypeScript compiler in two phases:
+Reads the given `.d.ts` **file paths** from disk and parses them with the TypeScript compiler in two phases. `opts.maxFileBytes` (default `1_500_000`) skips oversized files; `opts.maxMs` sets a deadline after which excess files count as `skipped`.
 
 1. **Collect** — walk every module/global declaration (`declare module "..."`, namespaces, interfaces, classes, type aliases, function overloads, `export =` / `export * from` re-exports) into a shared symbol table.
 2. **Materialize** — convert the collected symbols into Abs values (see [core](./core.md)). Because materialization runs only after the whole symbol table is populated, cross-file references resolve regardless of file order.

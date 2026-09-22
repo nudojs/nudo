@@ -87,22 +87,23 @@ eval(AssignmentExpression { left: "x", right: expr })
 
 ### 条件语句（if-else）
 
-这是引擎与普通解释器根本不同的地方。它不会选择单一分支，而可能**同时求值两个分支**，并使用窄化后的 Abs 值：
+这是引擎与普通解释器根本不同的地方。测试不可判定时它分叉执行——但注意：它**不窄化抽象值**。两个分支以**相同**绑定运行：
 
 ```text
 eval(IfStatement { test, consequent, alternate }) →
   condition = eval(test)
 
-  // Case 1: condition is a known literal
+  // Case 1: condition 确定真/假
   if isDefinitelyTrue(condition)   → eval(consequent)
   if isDefinitelyFalse(condition)  → eval(alternate)
 
-  // Case 2: condition is abstract → fork both branches
-  [envTrue, envFalse] = narrow(env, test)
-  resultTrue  = eval(consequent, envTrue)
-  resultFalse = eval(alternate, envFalse)
+  // Case 2: condition 抽象 → 同一 env 运行两个分支
+  resultTrue  = eval(consequent, env)
+  resultFalse = eval(alternate, env)
   return joinAbs(resultTrue, resultFalse)
 ```
+
+`isDefinitelyTrue/False` 正是逐调用点窄化的机制：具体实参常使测试折叠为字面量，于是该调用只跑一个分支。抽象实参无法折叠测试——两个分支都跑，结果 join。
 
 ### 函数声明
 
@@ -125,25 +126,19 @@ eval(CallExpression { callee: "foo", args })
 
 ## 窄化规则
 
-窄化根据条件细化值。引擎支持以下模式：
+窄化是**逐调用点**发生的：条件对**该调用的具体实参***确定*为真/假时，对应分支才运行。每条 `call@L…` case 用该调用的精确实参求值，匹配的分支运行，另一个被消除。**抽象**实参（`number()`、`union(...)`）无法判定条件——两个分支以相同值运行，结果 join。不存在抽象类型的交集/减法。
 
-| 模式 | True 分支 | False 分支 |
-|---------|-------------|--------------|
-| `typeof x === "string"` | `x ∩ string` | `x - string` |
-| `typeof x === "number"` | `x ∩ number` | `x - number` |
-| `x === null` | `x ∩ null` | `x - null` |
-| `x === undefined` | `x ∩ undefined` | `x - undefined` |
-| `x === <literal>` | `x ∩ lit(v)` | `x - lit(v)` |
-| `Array.isArray(x)` | `x ∩ array` | `x - array` |
-| `x`（真值检查） | `x - null - undefined - lit(0) - lit("") - lit(false)` | 补集 |
-| `x instanceof C` | `x ∩ instance(C)` | `x - instance(C)` |
-| `"key" in x` | 对象实参发生分叉；方法结果可能拓宽为 `unknown` | — |
-| `x?.prop` | 已知属性上的浅层访问折叠；深层 `?.` 链退化为 `unknown` | — |
-| `a ?? b` | 已知属性上的浅层 `??` 折叠为该值 | — |
-| `switch(x) { case v: ... }` | 每个 case 对应 `x ∩ lit(v)` | 所有 case 之外的剩余部分 |
-| `x.kind === "a"`（可辨识联合） | `kind` 匹配该字面量的联合成员 | `kind` 不同的联合成员 |
+| 模式 | 具体调用（逐调用点） | 抽象 / 符号实参 |
+|---------|-------------------------------|------------------------------|
+| `typeof x === "string"` | string 调用走该分支；`x.length` 折叠 | 分支 join |
+| `x === null` / `x === <literal>` | 匹配的调用分叉；另一个落空 | 分支 join |
+| `Array.isArray(x)` | array 调用分叉；`x.length` / `x[0]` 可解 | 分支 join |
+| 真值（`x`） | 字面量实参分叉 | 分支 join |
+| 判别对象（`x.kind === "a"`） | 匹配 shape 的分支为该调用运行 | 成员**不**被过滤；分支 join |
+| `switch(x) { case v: … }` | 具体判别值选中对应子句 | 分支 join |
+| `in` / `?.` / `??` | 部分支持：见下表 | 部分 |
 
-其中 `∩` 为类型交集，`-` 为类型减法。
+其他守卫（`instanceof`、自定义谓词）只有在测试对调用实参折叠为确定布尔时才分叉——它们不在上述已验证集合内。带真实 `nudo test` 输出的已验证逐模式走查：[控制流收窄](./control-flow-narrowing.md)。
 
 ---
 

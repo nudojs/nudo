@@ -54,10 +54,11 @@ nudo export src/api/users.js --format standard --out dist
 # 写入 dist/createUser.nudo.standard.ts
 ```
 
-生成的模块为每个参数导出一个校验器（`<fn>_<param>`），另有返回值校验器（`<fn>Output`）。**契约精化直接烘焙进校验器**——`age: number().ge(0)` 变成 `numBound { op: "ge", n: 0 }` 检查，`lit(42)` 契约则钉死确切值：
+生成的模块为每个参数导出一个校验器（`<fn>_<param>`），另有返回值校验器——存在返回契约时命名为 **`<fn>Return`**（仅当无契约或只有参数契约时才用 `<fn>Output`）。**契约精化直接烘焙进校验器**——`age: number().ge(0)` 变成 `numBound { op: "ge", n: 0 }` 检查，`lit(42)` 契约则钉死确切值：
 
 ```ts
 // dist/createUser.nudo.standard.ts（节选）
+// （另导出 createUserReturn —— 侧车返回 shape 校验器）
 export const createUser_input = {
   "~standard": {
     version: 1,
@@ -113,6 +114,9 @@ Schema 源码按 case 以注释形式打印——把片段组装进你自己的�
 
 ```bash
 nudo export src/api/inline.js --format schema --dialect zod
+# 或直接写盘：
+nudo export src/api/inline.js --format schema --dialect zod --out dist
+# 写入 dist/inline.nudo.schema.zod.ts
 ```
 
 ```js
@@ -143,6 +147,9 @@ const { register, handleSubmit } = useForm({ resolver: zodResolver(createUserInp
 
 ```bash
 nudo export src/api/inline.js --format guard
+# 或直接写盘：
+nudo export src/api/inline.js --format guard --out dist
+# 写入 dist/inline.nudo.guard.ts
 ```
 
 ```js

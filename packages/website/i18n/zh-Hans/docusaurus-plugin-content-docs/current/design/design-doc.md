@@ -100,13 +100,16 @@ selfAdd(2);  // → 4  #exact
 // 合并：2 | 4 —— 绝不是 1+1 | 1+2 | 2+1 | 2+2
 ```
 
-**原则 4：守卫窄化。** 类型守卫（`typeof`、`instanceof`、真值检查）在分支中窄化值。
+**原则 4：守卫窄化（逐调用点）。** 类型守卫（`typeof`、`instanceof`、真值检查）只在条件对**该调用的具体实参**确定可判定时分叉分支；抽象实参不窄化，两分支以相同值运行后合并。
 
 ```javascript
-function process(x) {          // x: number | string
+function len(x) {              // x: number | string（抽象联合）
   if (typeof x === "string") {
-    // 在此分支中，x 被窄化为 string
+    // 抽象实参下两分支都运行，x 不被窄化；
+    // 具体调用 len("abc") 才走此分支
+    return x.length;
   }
+  return -1;
 }
 ```
 
@@ -194,7 +197,7 @@ eval(Identifier "x")  →  env.lookup("x")
 eval(BinaryExpression { left, op, right })  →  arithmetic(op, eval(left), eval(right))
 ```
 
-**条件语句（if-else）：** 引擎可能**同时求值两个分支**，各自使用窄化后的值，再合并：
+**条件语句（if-else）：** 测试不可判定时引擎分叉两个分支——**不窄化**任一分支：
 
 ```text
 eval(IfStatement { test, consequent, alternate }) →
@@ -202,15 +205,15 @@ eval(IfStatement { test, consequent, alternate }) →
   if condition === lit(true)   → eval(consequent)
   if condition === lit(false)  → eval(alternate)
   else:
-    [envTrue, envFalse] = narrow(env, test)
-    resultTrue  = eval(consequent, envTrue)
-    resultFalse = eval(alternate, envFalse)
+    // 两分支以相同 env 运行；结果合并（无窄化）
+    resultTrue  = eval(consequent, env)
+    resultFalse = eval(alternate, env)
     return union(resultTrue, resultFalse)
 ```
 
 ### 3.3 窄化规则
 
-窄化基于条件精化值（`typeof` / `===` / `Array.isArray` / `instanceof` / 真值 / `in` / `?.` / `??` / `switch` / 判别字段）。完整模式表见 [抽象解释](../concepts/abstract-interpretation.md#窄化规则)；已验证模式走查见 [控制流收窄](../concepts/control-flow-narrowing.md)。
+窄化是**逐调用点**的：条件对该调用的具体实参求值为*确定*真/假时才选分支（`typeof` / `===` / `Array.isArray` / `switch` / 真值 / 判别字段）。抽象实参（`number()`、union）无法判定条件——两分支以相同值运行后合并；不存在抽象类型交集/减法。`in` / `?.` / `??` 仅部分支持。已验证走查：[控制流收窄](../concepts/control-flow-narrowing.md)。
 
 ---
 
@@ -408,9 +411,10 @@ debug "symbolic"  (number, number) => number
 - **精化 IR** — 模板/区间精化；源码契约 `@nudo:refine`。
 - **Abs 代数（单轨）** — Term/Pred/Abs、算术核、`leqAbs`、generalize、`nudo check` / `nudo test` / `nudo contract` / `nudo export`、CheckJson、金标（recall = precision = 1.0）。
 - **调用预算** — depth/cycle/total 守卫，递归 check 不再栈溢出。
+- **Emit 往返** — 生成的 `.d.ts` 通过 `tsc --noEmit --strict`（`emit-tsc-roundtrip.test.ts`）。
+- **Harvest 自动化** — `nudo env harvest --auto [dir]` 扫描裸 import，上报可自动 harvest 的 `@types` 包。
 
 ### 待做
-- emit 经 tsc 往返；harvest 自动化
 - esbuild / webpack 插件；错误定位 source map
 
 ---

@@ -157,23 +157,17 @@ selfAdd(2);       // → 4  #exact
 
 With abstract arguments the result widens to the domain the algebra determines (`2 + x` with `x: number | string` → `number | string`; `selfAdd(number)` → `number #widened`) — member-wise expansion only happens when an operator or method *must* distinguish members.
 
-### 4. Guard Narrowing
+### 4. Guard Narrowing (per call site)
 
-Type guards narrow values in branches. When you check `typeof x === "string"` or `x === null`, the engine narrows `x` in the `if` branch and excludes those values in the `else` branch.
+Type guards fork branches only when the guard test is **definitely** true or false for the **concrete argument of a call site**. Each `call@L…` case is evaluated with that call's exact argument, so the matching branch runs and the other is eliminated:
 
 ```javascript
-function process(x) {
-  if (typeof x === "string") {
-    // x is string here
-    return x.length;  // → number
-  }
-  if (x === null) {
-    // x is null here
-    return 0;
-  }
-  // x is narrowed (e.g. number if input was string | number | null)
-  return x;
+function len(x) {
+  if (typeof x === "string") return x.length;
+  return -1;
 }
+len("abc");  // → 3   (string call takes the branch)
+len(5);      // → -1  (number call falls through)
 ```
 
-Narrowing rules support `typeof`, `===`, `!==`, `instanceof`, `Array.isArray`, and truthiness checks.
+With **abstract** arguments (`number()`, `union(...)`), the condition cannot be decided — both branches run with the same value and their results join. There is no intersection/subtraction of abstract unions. Verified patterns and current limits: [Control Flow Narrowing](./control-flow-narrowing.md).

@@ -66,7 +66,7 @@ file_patterns = ["**/*.js", "**/*.mjs", "**/*.ts"]
 **[agent-lsp](https://github.com/blackwell-systems/agent-lsp)** — run `agent-lsp init`; it detects language servers on `PATH` and writes the MCP client configs for you, orchestrating them into agent-native workflows.
 
 :::note
-Bridges differ in what they forward. Standard LSP features (hover, diagnostics, definition) always come through; if a bridge does not pass `workspace/executeCommand` through to Nudo's five commands, use Option 2 instead.
+Bridges differ in what they forward. Standard LSP features (hover, diagnostics, definition) always come through; if a bridge does not pass `workspace/executeCommand` through to Nudo's eleven commands, use Option 2 instead.
 :::
 
 ### Option 2: a native LSP client

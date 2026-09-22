@@ -38,14 +38,14 @@ nudo check ./src/utils.js
 门禁契约（L1）与入口 throws（L2）。成功时也打印 signatures。
 
 ```bash
-nudo check <path> [options]
+nudo check <paths...> [options]
 ```
 
 **参数：**
 
 | 参数 | 说明 |
 |------|------|
-| `<path>` | `.js` / `.mjs` / `.ts` 文件或目录（递归扫描；排除 `.d.ts`）。TS 注解在解析层剥离，按 JS 语义分析。 |
+| `<paths...>` | 一个或多个 `.js` / `.mjs` / `.ts` 文件或目录（递归扫描；排除 `.d.ts`）。TS 注解在解析层剥离，按 JS 语义分析。`--json` 只支持单文件。 |
 
 **选项：**
 
@@ -130,7 +130,7 @@ nudo check src/lib.js --json
 报告全部推断用例（含合成 `call@` / `entry@`），并运行已声明断言。
 
 ```bash
-nudo test <path> [options]
+nudo test <paths...> [options]
 ```
 
 **选项：**
@@ -139,11 +139,11 @@ nudo test <path> [options]
 |------|------|
 | `--watch` / `-w` | 变更时重跑 |
 | `--from <paths…>` | 使用处文件，其调用合成为 `call@L` 用例 |
-| `--freeze[=update]` | 把合成用例写回为 `@nudo:case` 指令。`=update` 重新同步已生成指令。 |
+| `--freeze[=mode]` | 把合成用例写回为 `@nudo:case` 指令。模式：`update` 重新同步已生成指令；`omit`（或不给值）= add 模式，保留既有指令 |
 | `--json` | 结构化用例报告 |
 | `--abs` | 打印用例的 Abs 代数 |
 | `--dry-run` | 搭配 `--freeze`：打印 unified diff 而不写盘 |
-| `--exit-on-diff` | 搭配 `--dry-run`：diff 非空时退出 `1` |
+| `--exit-on-diff` | 搭配 `--freeze --dry-run`：diff 非空时退出 `1` |
 
 **输出格式：**
 
@@ -220,7 +220,7 @@ nudo contract --draft <paths...> [--write] [--fn <name>] [--dry-run] [--from <pa
 | `--emit` | 把推断域固化为侧车 `@generated` 段 |
 | `--draft` | 从已有逻辑生成可审阅契约草稿（代码优先 / 迁移） |
 | `--write` | 搭配 `--draft`：写入 `*.nudo.draft.js` |
-| `--fn <name>` | 限定单个函数（有手写根时可命名下游派生目标） |
+| `--fn <name>` | 限定单个函数（**可重复**；有手写根时可命名下游派生目标） |
 | `--all` | emit 所有合格函数 |
 | `--dry-run` | 打印 unified diff 而不写盘 |
 | `--exit-on-diff` | 搭配 `--emit --dry-run`：diff 非空时退出 `1` |
@@ -343,7 +343,7 @@ nudo env harvest <pkg> [options]
 | 选项 | 说明 |
 |------|------|
 | `--out <file>` | 输出 env 文件路径（默认 `./nudo-harvest-<pkg>.ts`） |
-| `--auto` | 报告分析路径自动 harvest 状态 |
+| `--auto [dir]` | 扫描目录中的裸 import，上报可自动 harvest 的 `@types` 包（带 `--auto` 时 `<pkg>` 可省略） |
 
 **示例：**
 

@@ -38,14 +38,14 @@ There is **no** observation verb. Observation is `check` signatures, `test` case
 Gate contracts (L1) and entry throws (L2). Prints signatures even when the run succeeds.
 
 ```bash
-nudo check <path> [options]
+nudo check <paths...> [options]
 ```
 
 **Arguments:**
 
 | Argument | Description |
 |----------|-------------|
-| `<path>` | A `.js`, `.mjs`, or `.ts` file or a directory (scanned recursively; `.d.ts` excluded). TypeScript annotations are stripped; analysis uses JS semantics. |
+| `<paths...>` | One or more `.js`, `.mjs`, or `.ts` files or directories (scanned recursively; `.d.ts` excluded). TypeScript annotations are stripped; analysis uses JS semantics. `--json` requires a single file. |
 
 **Options:**
 
@@ -136,7 +136,7 @@ nudo check src/lib.js --json
 Report every inferred case (including synthetic `call@` / `entry@`) and run declared assertions.
 
 ```bash
-nudo test <path> [options]
+nudo test <paths...> [options]
 ```
 
 **Options:**
@@ -145,11 +145,11 @@ nudo test <path> [options]
 |--------|-------------|
 | `--watch` / `-w` | Re-run on file changes |
 | `--from <paths…>` | Usage-site files whose calls become `call@L` cases |
-| `--freeze[=update]` | Write synthesized cases back as `@nudo:case` directives. `=update` re-synchronizes previously generated directives. |
+| `--freeze[=mode]` | Write synthesized cases back as `@nudo:case` directives. Mode: `update` re-synchronizes previously generated directives; `omit` (or no value) = add mode, keeps existing directives |
 | `--json` | Structured case report |
 | `--abs` | Print Abs algebra for cases |
 | `--dry-run` | With `--freeze`: print a unified diff instead of writing |
-| `--exit-on-diff` | With `--dry-run`: exit `1` when the diff is non-empty |
+| `--exit-on-diff` | With `--freeze --dry-run`: exit `1` when the diff is non-empty |
 
 **Output format:**
 
@@ -226,7 +226,7 @@ nudo contract --draft <paths...> [--write] [--fn <name>] [--dry-run] [--from <pa
 | `--emit` | Persist inferred domains as sidecar `@generated` segments |
 | `--draft` | Generate a reviewable contract draft from existing code (code-first / migration) |
 | `--write` | With `--draft`: write `*.nudo.draft.js` to disk |
-| `--fn <name>` | Restrict to one function (may name a downstream derivation target when a handwritten root exists) |
+| `--fn <name>` | Restrict to one function (**repeatable**; may name a downstream derivation target when a handwritten root exists) |
 | `--all` | Emit all eligible functions |
 | `--dry-run` | Print a unified diff instead of writing |
 | `--exit-on-diff` | With `--emit --dry-run`: exit `1` when the diff is non-empty |
@@ -358,7 +358,7 @@ nudo env harvest <pkg> [options]
 | Option | Description |
 |--------|-------------|
 | `--out <file>` | Output env file path (default `./nudo-harvest-<pkg>.ts`) |
-| `--auto` | Report analysis-path auto-harvest status |
+| `--auto [dir]` | Scan a directory for bare imports and report auto-harvestable `@types` packages (`<pkg>` is optional with `--auto`) |
 
 **Example:**
 

@@ -54,10 +54,11 @@ nudo export src/api/users.js --format standard --out dist
 # writes dist/createUser.nudo.standard.ts
 ```
 
-The generated module exposes one validator per parameter (`<fn>_<param>`) plus one for the return (`<fn>Output`). **Contract refinements are baked in** — `age: number().ge(0)` becomes a `numBound { op: "ge", n: 0 }` check, and a `lit(42)` contract pins the exact value:
+The generated module exposes one validator per parameter (`<fn>_<param>`) plus one for the return — named **`<fn>Return`** when a return contract exists (`<fn>Output` is used only when there is no contract, or only parameter contracts). **Contract refinements are baked in** — `age: number().ge(0)` becomes a `numBound { op: "ge", n: 0 }` check, and a `lit(42)` contract pins the exact value:
 
 ```ts
 // dist/createUser.nudo.standard.ts (excerpt)
+// (also exports createUserReturn — the return-shape validator from the sidecar)
 export const createUser_input = {
   "~standard": {
     version: 1,
@@ -113,6 +114,9 @@ Schema source is printed per case as comments — assemble the pieces into your 
 
 ```bash
 nudo export src/api/inline.js --format schema --dialect zod
+# or write it to disk directly:
+nudo export src/api/inline.js --format schema --dialect zod --out dist
+# writes dist/inline.nudo.schema.zod.ts
 ```
 
 ```js
@@ -143,6 +147,9 @@ Guards are plain `typeof` checks with no external imports and no schema interpre
 
 ```bash
 nudo export src/api/inline.js --format guard
+# or write it to disk directly:
+nudo export src/api/inline.js --format guard --out dist
+# writes dist/inline.nudo.guard.ts
 ```
 
 ```js

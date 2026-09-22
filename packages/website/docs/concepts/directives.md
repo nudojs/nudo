@@ -463,19 +463,7 @@ import { debounce, throttle } from "lodash";
 // debounce comes from the mock; throttle resolves normally
 ```
 
-### Project-Level Configuration
-
-```json
-{
-  "nudo": {
-    "mocks": {
-      "axios": "./nudo-mocks/axios.js"
-    }
-  }
-}
-```
-
-File-level `@nudo:mock-module` directives override project-level mocks for the same module.
+Module mocks are declared per file with `@nudo:mock-module` — there is no project-level mock configuration.
 
 ---
 

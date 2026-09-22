@@ -65,7 +65,7 @@ issues
       → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
-Unconstrained entry parameters display as **`any`**. `unknown` means inference failed (engine debt) — it is never the default for an unconstrained entry parameter.
+Unconstrained entry parameters display as **`any`**. `unknown` means inference failed (engine debt) — it is never the default for an unconstrained entry parameter. In `[ERROR L# name]`, `L#` is the **line number** of the offending call/declaration — not a contract layer (L1/L2 are the layers).
 
 - **Semantics** (L1 explicit contracts / L2 entry throws, exit codes, filtering): [nudo check](./check.md)
 - **Options & config** (`--watch` / `--json` / `--abs` / `--from` / `--ignore-throws` / `--entry-throws`, `package.json#nudo.check`): [CLI Reference](../api/cli-reference.md#nudo-check)
@@ -79,7 +79,7 @@ Unconstrained entry parameters display as **`any`**. `unknown` means inference f
 Report every inferred case and run declared `@nudo:case` assertions.
 
 ```bash
-nudo test <path> [--watch|-w] [--from paths…] [--freeze[=update]] [--json] [--abs]
+nudo test <path> [--watch|-w] [--from paths…] [--freeze[=mode]] [--dry-run] [--exit-on-diff] [--json] [--abs]
 ```
 
 Given `math.js`:
@@ -110,7 +110,8 @@ assertions
 - When usage-site `call@` cases exist, the analyzer does **not** also synthesize `entry@` for that function.
 - Only `@nudo:case` directives **with `=> expected`** enter pass/fail; failures affect the exit code.
 - `--from <paths…>` harvest usage-site call shapes.
-- `--freeze[=update]` solidifies synthesized cases as directives.
+- `--freeze[=mode]` solidifies synthesized cases as directives: `--freeze` (or `--freeze=omit`) adds new witnesses; `--freeze=update` re-synchronizes previously generated directives.
+- `--dry-run` (with `--freeze`) prints a unified diff instead of writing; `--exit-on-diff` (with `--freeze --dry-run`) exits 1 when the diff is non-empty.
 - `--json` / `--abs` mirror `check`; `test --json` also carries an `assertions` summary (`passed`/`failed`/`unchecked`) and still exits 1 when a declared assertion fails.
 
 ### Example with declared assertions
@@ -216,7 +217,8 @@ nudo test lib.js --from test.js --freeze=update
 Harvest `@types/<pkg>` into a Nudo env module.
 
 ```bash
-nudo env harvest <pkg> [--out dir]
+nudo env harvest <pkg> [--out file]   # --out is an output .ts file (default ./nudo-harvest-<pkg>.ts)
+nudo env harvest --auto [dir]         # scan a dir for bare imports, report auto-harvestable @types
 ```
 
 ```bash

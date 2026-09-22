@@ -65,8 +65,8 @@ glob 模式支持任意扩展名（`**/*.js`、`**/*.mjs`、`**/*.ts` 等）、�
 - **分析门控**：glob 之后经 `shouldAnalyzeFile`（`package.json#nudo.analysis.mode`）。默认 `"exports"`；可配置 `"all"` / `"directives"`。
 - **分析**：匹配文件使用 `@nudojs/service` 的 `analyzeFileAsync` 运行类型推断。
 - **精化门禁**：匹配的文件同时会经过 Abs 精化门禁（`@nudojs/core` 的 `checkSource`）：`nudo:constraint-violated`、`nudo:assign-mismatch`、`nudo:arg-structure` 问题会并入同一条诊断管线，与求值器诊断一起报告。
-- **缓存**：分析结果按文件缓存。缓存在 `buildStart` 时清除。
-- **诊断**：分析产生的错误和警告会作为 Vite 警告发出（当 `failOnError` 为 `true` 时为错误）。构建结束时，会输出摘要：`[nudo] Analysis complete: X error(s), Y warning(s)`。
+- **缓存**：分析结果按文件缓存。缓存在 `buildStart` 及每次 `watchChange`（dev server 文件变更）时清除。
+- **诊断**：分析诊断先经项目 `package.json#nudo.analysis.diagnostics` 档位过滤（默认档：error + warning 减噪码）再发出；幸存者作为 Vite 警告（`failOnError` 为 `true` 时为错误）发出。因此设置 `"diagnostics": "errors"` 会在构建期静音警告，`"off"` 则完全静音插件诊断输出。构建结束时输出摘要：`[nudo] Analysis complete: X error(s), Y warning(s)`。
 
 ## `failOnError`
 

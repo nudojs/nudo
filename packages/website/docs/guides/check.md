@@ -57,6 +57,7 @@ issues
 - Unconstrained entry parameters display as **`any`**.
 - **`unknown` means inference failed** (engine debt) — never the default for unconstrained entry params.
 - Throws always appear on the signature line when present.
+- `[ERROR L# name]` — `L#` is the **line number** of the offending call/declaration, not a contract layer (L1/L2 are the layers; `L#` is a location).
 
 ## What it checks
 
@@ -175,7 +176,11 @@ All flags and `package.json#nudo.check` config are specified once in the [CLI Re
 |--------|-------------|
 | `--watch` / `-w` | Re-run on changes (flag, not a verb) |
 | `--json` | Machine-readable signatures + diagnostics (single file) |
+| `--verbose` | Expand Abs signatures (term/pred/conf detail) |
 | `--abs` | Per-function algebra face (shape + conf; `--generalize` adds the symbolic term/pred α) — observation, still gates L1/L2 |
+| `--fn <name>` | With `--abs`: restrict to one function |
+| `--assume <pred…>` | With `--abs`: assume constraints on entry params (e.g. `x>0 y>=1`) |
+| `--generalize` | With `--abs`: polymorphic signatures via symbolic execution |
 | `--from <paths…>` | Usage-site files injecting call records |
 | `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (never swallows L1) |
 | `--entry-throws error\|warning\|off` | L2 severity (default `error`) |

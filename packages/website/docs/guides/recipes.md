@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: 22
       - run: npm i -g nudojs
-      - run: nudojs check src/
+      - run: npx nudojs check src/
 ```
 
 **Verify:** `npx nudojs check src/` exits `0` on a clean tree; `1` on L1/L2 errors.

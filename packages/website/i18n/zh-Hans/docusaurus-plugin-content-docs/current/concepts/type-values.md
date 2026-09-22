@@ -157,23 +157,17 @@ selfAdd(2);       // → 4  #exact
 
 抽象实参下结果拓宽到代数判定的域（`2 + x`，其中 `x: number | string` → `number | string`；`selfAdd(number)` → `number #widened`）—— 只有运算符或方法*必须*区分成员时才逐成员展开。
 
-### 4. 守卫窄化
+### 4. 守卫窄化（逐调用点）
 
-类型守卫在分支中窄化值。检查 `typeof x === "string"` 或 `x === null` 时，引擎在 `if` 分支窄化 `x`，在 `else` 分支排除这些值。
+类型守卫只有在守卫测试对**调用点的具体实参***确定*为真/假时分叉分支。每条 `call@L…` case 用该调用的精确实参求值，匹配的分支运行，另一个被消除：
 
 ```javascript
-function process(x) {
-  if (typeof x === "string") {
-    // 这里 x 是 string
-    return x.length;  // → number
-  }
-  if (x === null) {
-    // 这里 x 是 null
-    return 0;
-  }
-  // x 已窄化（如输入为 string | number | null 时是 number）
-  return x;
+function len(x) {
+  if (typeof x === "string") return x.length;
+  return -1;
 }
+len("abc");  // → 3   （string 调用走该分支）
+len(5);      // → -1  （number 调用落空）
 ```
 
-窄化规则支持 `typeof`、`===`、`!==`、`instanceof`、`Array.isArray` 与真值检查。
+**抽象**实参（`number()`、`union(...)`）无法判定条件——两个分支以相同值运行，结果 join。不存在抽象联合的交集/减法。已验证模式与当前边界：[控制流收窄](./control-flow-narrowing.md)。

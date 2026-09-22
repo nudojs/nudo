@@ -57,6 +57,7 @@ issues
 - 无约束入口参数显示为 **`any`**。
 - **`unknown` 表示推导失败**（引擎债）—— 绝不是无约束入口参数的默认值。
 - 存在 throws 时必须上屏。
+- `[ERROR L# name]` —— `L#` 是违规调用/声明的**行号**，不是契约层（L1/L2 才是层；`L#` 是位置）。
 
 ## 检查什么
 
@@ -175,6 +176,9 @@ nudo check src/ --entry-throws off
 | `--json` | 机器可读签名 + 诊断 |
 | `--verbose` | 额外细节 |
 | `--abs` | 逐函数代数面（shape + conf；`--generalize` 附加符号 term/pred α）——观察面，仍对 L1/L2 执法 |
+| `--fn <name>` | 搭配 `--abs`：限定单个函数 |
+| `--assume <pred…>` | 搭配 `--abs`：对入口参数假设约束（如 `x>0 y>=1`） |
+| `--generalize` | 搭配 `--abs`：符号执行的多态签名 |
 | `--from <paths…>` | 使用处文件注入调用记录 |
 | `--ignore-throws <names>` | 逗号分隔、可忽略的 L2 throws 类型 |
 | `--entry-throws error\|warning\|off` | L2 严重级别（默认 `error`） |

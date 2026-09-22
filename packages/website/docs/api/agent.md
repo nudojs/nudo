@@ -58,7 +58,7 @@ Constraint gate on **Abs** (type-as-computation). Same contract as CLI `nudo che
 | `nudo:interface-load` / `nudo:interface-cycle` | Sidecar load failure / cycle |
 | `nudo:interface-domain-exceeds` | Cross-file call evidence ⊄ handwritten contract |
 | `nudo:interface-name-clash` | Sidecar export name clashes with source export |
-| `nudo:interface-underivable` | Handwritten contract cannot be derived from source |
+| `nudo:interface-underivable` | Derived contract row cannot be derived from source evidence (**info**; handwritten contracts never trigger it) |
 | `nudo:interface-drift` | `@generated` segment ≠ recomputed (warning) |
 | `nudo:no-signature` | No symbolic Abs signature (**warning**; L2 may still apply via entry fallback) |
 | `nudo:opaque-result` / `nudo:eval-error` | Opaque evaluation / evaluation threw |

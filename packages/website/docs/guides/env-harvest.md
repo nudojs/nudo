@@ -8,9 +8,14 @@ description: nudo env harvest — convert @types declarations into Nudo env modu
 `nudo env harvest` converts `@types/<pkg>` declarations into a Nudo env module so `@nudo:env` can type Node/Web APIs during analysis.
 
 ```bash
-npx nudojs env harvest <pkg> [--out dir]
+npx nudojs env harvest <pkg> [--out file]
 npx nudojs env harvest node
+# auto-harvest: scan a directory for bare imports, report harvestable @types packages
+npx nudojs env harvest --auto .
+npx nudojs env harvest --auto src/
 ```
+
+`--out` takes an output **file** path (default `./nudo-harvest-<pkg>.ts`) — not a directory. `--auto [dir]` reports which `@types` packages in a directory tree are auto-harvestable (`<pkg>` is optional with `--auto`).
 
 Reference the generated env from source:
 

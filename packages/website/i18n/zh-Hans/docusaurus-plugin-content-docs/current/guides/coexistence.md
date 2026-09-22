@@ -21,7 +21,7 @@ packages/
 ```json
 {
   "nudo": {
-    "interface": { "autoBind": true },
+    "contract": { "autoBind": true },
     "analysis": { "mode": "exports", "diagnostics": "default" }
   }
 }

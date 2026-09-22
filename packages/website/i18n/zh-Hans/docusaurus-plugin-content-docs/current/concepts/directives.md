@@ -461,19 +461,7 @@ import { debounce, throttle } from "lodash";
 // debounce 来自 mock；throttle 正常解析
 ```
 
-### 项目级配置
-
-```json
-{
-  "nudo": {
-    "mocks": {
-      "axios": "./nudo-mocks/axios.js"
-    }
-  }
-}
-```
-
-文件级 `@nudo:mock-module` 指令会覆盖同一模块的项目级 mock。
+模块 mock 逐文件用 `@nudo:mock-module` 声明——不存在项目级 mock 配置。
 
 ---
 

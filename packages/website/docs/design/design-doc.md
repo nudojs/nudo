@@ -196,7 +196,7 @@ eval(Identifier "x")  →  env.lookup("x")
 eval(BinaryExpression { left, op, right })  →  arithmetic(op, eval(left), eval(right))
 ```
 
-**Conditional (if-else):** The engine may **evaluate both branches** with narrowed values and merge:
+**Conditional (if-else):** The engine forks both branches when the test is not decidable — without narrowing either arm:
 
 ```text
 eval(IfStatement { test, consequent, alternate }) →
@@ -204,15 +204,15 @@ eval(IfStatement { test, consequent, alternate }) →
   if condition === lit(true)   → eval(consequent)
   if condition === lit(false)  → eval(alternate)
   else:
-    [envTrue, envFalse] = narrow(env, test)
-    resultTrue  = eval(consequent, envTrue)
-    resultFalse = eval(alternate, envFalse)
+    // both branches run with the SAME env; results join (no narrowing)
+    resultTrue  = eval(consequent, env)
+    resultFalse = eval(alternate, env)
     return union(resultTrue, resultFalse)
 ```
 
 ### 3.3 Narrowing Rules
 
-Narrowing refines values based on conditions (`typeof` / `===` / `Array.isArray` / `instanceof` / truthiness / `in` / `?.` / `??` / `switch` / discriminant fields). The full pattern table lives in [Abstract Interpretation](../concepts/abstract-interpretation.md#narrowing-rules); the verified-patterns walkthrough is [Control Flow Narrowing](../concepts/control-flow-narrowing.md).
+Narrowing is **per call site**: a branch is taken when the condition evaluates to *definitely* true/false for the concrete argument of that call (`typeof` / `===` / `Array.isArray` / `switch` / truthiness / discriminated fields). Abstract arguments (`number()`, unions) cannot decide a condition — both branches run with the same value and their results join; there is no abstract type intersection/subtraction. `in` / `?.` / `??` are only partially supported. Verified walkthrough: [Control Flow Narrowing](../concepts/control-flow-narrowing.md).
 
 ---
 
@@ -410,9 +410,10 @@ debug "symbolic"  (number, number) => number
 - **Refined IR** — template/range refinements; source contracts via `@nudo:refine`.
 - **Abs algebra (single-track)** — Term/Pred/Abs, arithmetic kernel, `leqAbs`, generalize, `nudo check` / `nudo test` / `nudo contract` / `nudo export`, CheckJson, gold gates (recall = precision = 1.0).
 - **Call budget** — depth/cycle/total guards so recursive check never stack-overflows.
+- **Emit round-trip** — generated `.d.ts` passes `tsc --noEmit --strict` (`emit-tsc-roundtrip.test.ts`).
+- **Harvest automation** — `nudo env harvest --auto [dir]` scans bare imports and reports auto-harvestable `@types` packages.
 
 ### Open
-- emit round-trip through tsc; harvest automation
 - esbuild / webpack plugins; source maps for error locations
 
 ---
