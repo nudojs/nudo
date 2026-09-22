@@ -20,7 +20,6 @@ import {
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../exec/may-throw.ts";
-import { analyzeFnFull } from "../ast-eval.ts";
 
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
 
@@ -105,18 +104,5 @@ describe("any-recv promotion keeps L2 may-throw (decoupled from dispatch)", () =
   it("B-path records TypeError for any-recv array method", () => {
     expect(collect(src, "sumAges").map((e) => e.kind)).toContain("TypeError");
   });
-
-  it("ast-eval records TypeError after promotion", () => {
-    const effects: MayThrowEffect[] = [];
-    runWithMayThrowSession(() => {
-      setMayThrowCollector((e) => effects.push(e));
-      try {
-        analyzeFnFull(src, "sumAges", [anyAbs], {});
-      } catch {
-        /* probe 忽略 */
-      }
-      setMayThrowCollector(null);
-    });
-    expect(effects.map((e) => e.kind)).toContain("TypeError");
-  });
 });
+

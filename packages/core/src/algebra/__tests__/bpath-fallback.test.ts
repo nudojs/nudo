@@ -9,7 +9,6 @@
 import { describe, it, expect } from "vitest";
 import { runTranspiled, tryRunTranspiled, callTranspiledExportFull, setBPathFallbackCollector, litValue, type BPathFallback } from "@nudojs/core";
 import { formatAbs } from "../format.ts";
-import { analyzeFn } from "../ast-eval.ts";
 import { runCorpus } from "./differential/harness.ts";
 import * as b1 from "./differential/corpus/batch1.ts";
 import * as b2 from "./differential/corpus/batch2.ts";

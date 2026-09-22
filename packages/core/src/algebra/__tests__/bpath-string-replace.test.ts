@@ -10,7 +10,6 @@
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-import { analyzeFn } from "../index.ts";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
@@ -91,15 +90,3 @@ describe("B-path string replace folding", () => {
   });
 });
 
-describe("ast-eval replace parity", () => {
-  it("folds and throws like B-path", () => {
-    expect(litValue(analyzeFn(`function f() { return 'abc'.replace('b', 'X'); }`, "f", []))).toBe("aXc");
-    expect(
-      litValue(analyzeFn(`function f() { return 'a1b2'.replace(/\\d/g, (m, i) => m + '@' + i); }`, "f", [])),
-    ).toBe("a1@1b2@3");
-    // 回调副作用写回是 ast-eval 既有缺口（非本类）；折叠与 THROW 同 B-path
-    expect(
-      litValue(analyzeFn(`function f() { try { 'a-b'.replaceAll(/-/, 'X'); } catch(e) { return 'caught'; } return 'missed'; }`, "f", [])),
-    ).toBe("caught");
-  });
-});

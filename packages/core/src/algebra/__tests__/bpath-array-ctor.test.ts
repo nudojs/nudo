@@ -11,7 +11,6 @@
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-import { analyzeFn } from "../index.ts";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
@@ -89,23 +88,3 @@ describe("B-path Array constructor invalid length throws RangeError", () => {
   });
 });
 
-describe("ast-eval Array constructor", () => {
-  it("folds and throws on invalid length", () => {
-    expect(litValue(analyzeFn(`function f() { return new Array(3).length; }`, "f", []))).toBe(3);
-    expect(tupleEls(analyzeFn(`function f() { return new Array('a'); }`, "f", []))).toEqual(["a"]);
-    expect(isNever(analyzeFn(`function f() { return new Array(1.5); }`, "f", []))).toBe(true);
-    expect(isNever(analyzeFn(`function f() { return Array(1.5); }`, "f", []))).toBe(true);
-  });
-
-  it("caught by try/catch", () => {
-    expect(
-      litValue(
-        analyzeFn(
-          `function f() { try { new Array(1.5); } catch(e) { return 'caught'; } return 'missed'; }`,
-          "f",
-          [],
-        ),
-      ),
-    ).toBe("caught");
-  });
-});

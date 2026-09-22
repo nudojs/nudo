@@ -13,7 +13,6 @@
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-import { analyzeFn } from "../index.ts";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
@@ -75,24 +74,3 @@ describe("B-path new RegExp literal folding", () => {
   });
 });
 
-describe("ast-eval builtin ctor parity", () => {
-  it("RegExp invalid args are caught", () => {
-    expect(
-      litValue(analyzeFn(`function f() { try { new RegExp('['); } catch(e) { return 'caught'; } return 'missed'; }`, "f", [])),
-    ).toBe("caught");
-    expect(
-      litValue(analyzeFn(`function f() { try { new RegExp('a', 'z'); } catch(e) { return 'caught'; } return 'missed'; }`, "f", [])),
-    ).toBe("caught");
-    expect(litValue(analyzeFn(`function f() { return new RegExp().test('x'); }`, "f", []))).toBe(true);
-  });
-
-  it("Map/Set invalid iterables are caught (B-path parity)", () => {
-    expect(
-      litValue(analyzeFn(`function f() { try { new Map([1]); } catch(e) { return 'caught'; } return 'missed'; }`, "f", [])),
-    ).toBe("caught");
-    expect(
-      litValue(analyzeFn(`function f() { try { new Set(5); } catch(e) { return 'caught'; } return 'missed'; }`, "f", [])),
-    ).toBe("caught");
-    expect(litValue(analyzeFn(`function f() { return new Map([['a',1]]).get('a'); }`, "f", []))).toBe(1);
-  });
-});

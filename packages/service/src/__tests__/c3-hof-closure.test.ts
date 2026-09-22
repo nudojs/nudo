@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { analyzeFile } from "@nudojs/service";
-import { formatAbs, analyzeFn } from "@nudojs/core";
+import { formatAbs } from "@nudojs/core";
 
 describe("C3.1 named HOF callbacks", () => {
   it("processItems with local named fns does not collapse to unknown", () => {
@@ -42,13 +42,5 @@ createCounter();
     expect(display).toContain("increment");
     expect(display).toContain("getCount");
   });
-
-  it("ast-eval ObjectMethod yields fn Abs", () => {
-    const r = analyzeFn(
-      `function f() { return { m() { return 1; } }; }`,
-      "f",
-      [],
-    );
-    expect(formatAbs(r)).toContain("m");
-  });
 });
+

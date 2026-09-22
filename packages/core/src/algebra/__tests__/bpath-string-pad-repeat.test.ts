@@ -8,7 +8,6 @@
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-import { analyzeFn } from "../index.ts";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
@@ -100,25 +99,3 @@ describe("B-path string repeat/pad invalid args throw", () => {
   });
 });
 
-describe("ast-eval string repeat/pad", () => {
-  it("folds literal calls", () => {
-    expect(litValue(analyzeFn(`function f() { return 'a'.repeat(3); }`, "f", []))).toBe("aaa");
-    expect(litValue(analyzeFn(`function f() { return 'abc'.padStart(5, 'x'); }`, "f", []))).toBe("xxabc");
-  });
-
-  it("negative count interrupts with never", () => {
-    expect(isNever(analyzeFn(`function f() { return 'a'.repeat(-1); }`, "f", []))).toBe(true);
-  });
-
-  it("negative count caught by try/catch", () => {
-    expect(
-      litValue(
-        analyzeFn(
-          `function f() { try { 'a'.repeat(-1); } catch(e) { return 'caught'; } return 'missed'; }`,
-          "f",
-          [],
-        ),
-      ),
-    ).toBe("caught");
-  });
-});

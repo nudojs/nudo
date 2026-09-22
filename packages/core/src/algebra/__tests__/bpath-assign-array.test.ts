@@ -11,7 +11,6 @@
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-import { analyzeFn } from "../index.ts";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
@@ -102,25 +101,6 @@ describe("B-path Object.assign to array target", () => {
   });
 });
 
-describe("ast-eval Object.assign to array parity", () => {
-  it("numeric keys and length keys match B-path", () => {
-    // 注意：ast-eval 空数组字面量 [] 折 arr（未知长度）——空 target 不精确
-    // 是既有形状差异（保守不假精确）；非空数组走 tuple 分支与 B-path 同轨
-    expect(
-      litValue(analyzeFn(`function f() { const a = Object.assign([1,2], {1:'y'}); return a[1] + ':' + a.length; }`, "f", [])),
-    ).toBe("y:2");
-    expect(litValue(analyzeFn(`function f() { const a = Object.assign([1,2,3], {length: 0}); return a.length; }`, "f", []))).toBe(0);
-    expect(litValue(analyzeFn(`function f() { return Object.assign([1,2], {length: 5}).length; }`, "f", []))).toBe(5);
-    expect(litValue(analyzeFn(`function f() { return Object.assign([1], {2:'x'}).length; }`, "f", []))).toBe(3);
-  });
-
-  it("invalid length is caught", () => {
-    expect(
-      litValue(analyzeFn(`function f() { try { Object.assign([1], {length: -1}); } catch(e) { return 'caught'; } return 'missed'; }`, "f", [])),
-    ).toBe("caught");
-  });
-});
-
 describe("B-path Object.assign non-object sources (string/array prims)", () => {
   it("string literal source projects code-unit index props", () => {
     // 原生：Object.assign({}, 'ab') === {'0':'a','1':'b'}——按码元（非码点）逐位
@@ -166,36 +146,6 @@ describe("B-path Object.assign non-object sources (string/array prims)", () => {
   });
 });
 
-describe("ast-eval Object.assign non-object source parity", () => {
-  it("string source folds code-unit keys", () => {
-    expect(litValue(analyzeFn(`function f() { return Object.assign({}, 'ab')['0']; }`, "f", []))).toBe("a");
-    expect(
-      litValue(analyzeFn(`function f() { return Object.keys(Object.assign({}, 'ab')).length; }`, "f", [])),
-    ).toBe(2);
-  });
-
-  it("array source folds numeric keys", () => {
-    // hole 源键跳过依赖 ast-eval 数组字面量 hole 建模（单独批次修）——
-    // 此处用无 hole 字面量验证键投影本身
-    expect(litValue(analyzeFn(`function f() { return Object.assign({}, [7,8,9])['2']; }`, "f", []))).toBe(9);
-    expect(
-      litValue(analyzeFn(`function f() { return Object.keys(Object.assign({}, [7,8,9])).length; }`, "f", [])),
-    ).toBe(3);
-  });
-
-  it("array target × string/array source writes indices", () => {
-    expect(litValue(analyzeFn(`function f() { return Object.assign([1,2,3], 'a')[0]; }`, "f", []))).toBe("a");
-    expect(litValue(analyzeFn(`function f() { return Object.assign([1,2,3], [9])[0]; }`, "f", []))).toBe(9);
-    expect(
-      litValue(analyzeFn(`function f() { const t = Object.assign([1,2], [9]); return t.length + ':' + t[0]; }`, "f", [])),
-    ).toBe("2:9");
-  });
-
-  it("nullish sources are ignored", () => {
-    expect(litValue(analyzeFn(`function f() { return Object.assign({a: 1}, null, undefined).a; }`, "f", []))).toBe(1);
-  });
-});
-
 describe("B-path Object.assign statement position", () => {
   // 语句位调用结果被丢弃——此前 assign 返回新容器但目标绑定不回写：
   // const t = {a:1}; Object.assign(t, {b:2}); return t 折 {a:1}（假精确）。
@@ -237,16 +187,3 @@ describe("B-path Object.assign statement position", () => {
   });
 });
 
-describe("ast-eval Object.assign statement parity", () => {
-  it("statement position rebinds the target binding", () => {
-    expect(
-      litValue(analyzeFn(`function f() { const t = {a: 1}; Object.assign(t, {b: 2}); return t.b; }`, "f", [])),
-    ).toBe(2);
-    expect(
-      litValue(analyzeFn(`function f() { const t = {a: 1}; Object.assign(t, 'bc'); return t['0'] + t['1']; }`, "f", [])),
-    ).toBe("bc");
-    expect(
-      litValue(analyzeFn(`function f() { const t = [9,9]; Object.assign(t, 'xy'); return t[0] + t[1]; }`, "f", [])),
-    ).toBe("xy");
-  });
-});

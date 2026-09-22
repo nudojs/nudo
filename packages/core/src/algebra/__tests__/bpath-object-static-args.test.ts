@@ -15,7 +15,6 @@
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-import { analyzeFn } from "../index.ts";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
@@ -179,25 +178,3 @@ describe("B-path Object.create/assign/defineProperty nullish hard throw", () => 
   });
 });
 
-describe("ast-eval Object statics nullish hard throw", () => {
-  it("keys(null) interrupts with never", () => {
-    expect(isNever(analyzeFn(`function f() { return Object.keys(null); }`, "f", []))).toBe(true);
-  });
-
-  it("keys('abc') folds index keys", () => {
-    expect(tupleEls(analyzeFn(`function f() { return Object.keys('abc'); }`, "f", []))).toEqual(["0", "1", "2"]);
-  });
-
-  it("hasOwn folds and null target caught", () => {
-    expect(litValue(analyzeFn(`function f() { return Object.hasOwn({a:1}, 'a'); }`, "f", []))).toBe(true);
-    expect(
-      litValue(
-        analyzeFn(
-          `function f() { try { Object.hasOwn(null, 'a'); } catch(e) { return 'caught'; } return 'missed'; }`,
-          "f",
-          [],
-        ),
-      ),
-    ).toBe("caught");
-  });
-});
