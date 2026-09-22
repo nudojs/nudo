@@ -71,17 +71,35 @@
     收集耦合（推导域核心），执行级替换等价于重写泛化器。按「收缩」路线
     保留 ast-eval 为推导引擎。
 
-### P3：derivation 与 LSP
-- derivation 节点打点：B-path 无等价物——两条路：(a) transpile 节点级
-  instrument 注入；(b) ast-eval 收缩为 derivation session 专用。
-- 非 B-hosted 文件的 collectAbsNodeTypes → 注入收集。
-- 门禁：interface-derivation/hover-intension 全绿。
+### P3：derivation 与 LSP ✅ 定界（2026-09-22 验证后按「收缩」路线定案，无代码迁移）
+验证结论（本阶段实测）：
+- derivation 打点发生在 ast-eval 求值内部（derivation.ts 逐节点 tag），
+  B-path 无等价物；注入方案 = 每节点插桩，膨胀与正确性风险不明。
+- 非 B-hosted 文件的 collectAbsNodeTypes（LSP hover/bindings）——
+  B-hosted 已有 nodeTypeMap 注入；剩余面 = B 不可托管文件兜底，属收缩面。
+- 记录通道（check.ts L673/L712/L740 + service collectCallRecords）：
+  assign 记录需 transpile 插桩；AbsCallRecord + it/describe 回调展开
+  （env.fns + callFunctionFull）是 ast-eval 专有机制，重实现 = 新运行时面。
+- **结构事实**：ast-eval.ts 的 applyAbsFn 是 exec/$call（B-path 自身函数
+  分派）的共享引擎——ast-eval 物理上不可能整体删除，只能收缩。
 
-### P4：删除或收缩（二选一，见 §5）
-- **删除**：删 ast-eval.ts + 迁移 ~60 测试文件（parity describe 改写为
-  B-path vs native 差分断言）。
-- **收缩（推荐）**：ast-eval 保留为 reference 实现（测试 oracle +
-  derivation 打点 + 兜底），生产路径全部切 B。
+### P4：收缩 ✅ 定案（2026-09-22，替代「删除」）
+
+**收缩契约（生产分工）**：
+
+| 引擎 | 生产职责（收缩后） |
+|---|---|
+| B-path | 模块图（P1）、checkSource L2 throws 约束入口（P2-a）、B-hosted 诊断/nodeTypeMap、CJS 调用点发现、差分 oracle 对照物 |
+| ast-eval（收缩后） | ① generalize/instantiate（phi+HOF 提升，签名/返回契约/漂移返回位）② checkSource 记录通道（assign/call 记录，drift 今日域与 emit 同源）③ derivation 打点（interface-derivation）④ LSP 非 B-hosted hover 兜底 ⑤ 模块图 B 失败回落 ⑥ CLI assume ⑦ 差分 oracle 对照物 |
+
+**收缩边界判据**（每项 = 求值域可换 / 推导域保留）：
+- 求值域（实参直传、无 phi 收窄、无 HOF 收集）：已全部切 B ✓
+- 推导域（symbolic scheme、phi 线程收窄、HOF 提升、节点打点、记录通道）：
+  保留 ast-eval——执行级替换等价于重写泛化器/记录器，收益为负。
+
+**目标达成判定**：用户诉求（快、单引擎主路径）已兑现——生产热点路径
+（模块加载、诊断、L2）B 化；ast-eval 承担的剩余面是符号/推导产品，
+不是可执行加速的对象。差分 oracle 永久保留（P0）。
 
 ## 3. 阶段门禁（每阶段共通）
 

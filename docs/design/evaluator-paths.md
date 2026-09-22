@@ -81,6 +81,12 @@ B-hosted 诊断（service/bpath-diagnostics）是并行通道，**门禁判定�
 本结论修正「ast-eval 只是 fallback」的简化说法：ast-eval 是 check 的主实现，
 B-path 是精度更高的加速通道。
 
+> **2026-09-22 收缩契约（refactor/rm-ast-eval 分支）**：L2 throws 已切 B
+> （约束入口；any/unknown 入口因 HOF 提升语义保持 ast-eval）。剩余 ast-eval
+> 生产面 = generalize/instantiate（phi+HOF）、记录通道（assign/call 记录）、
+> derivation 打点、LSP 非 B-hosted hover 兜底、模块图 B 失败回落——均为
+> 推导域产品（详见 plans/2026-09-22-remove-ast-eval.md §P4）。
+
 ## 实测锚点（2026-09-22 探针）
 
 ```
