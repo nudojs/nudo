@@ -10,31 +10,68 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { never } from "../abs.ts";
-import { applyAbsFn, emptyEnv } from "../ast-eval.ts";
+import { never, unknown } from "../abs.ts";
 import { getFnImpl } from "../abs-fn.ts";
 import { compiledBodyOf } from "./body-fn.ts";
-import { defaultLeakBudget } from "../leak.ts";
-import { pTrue } from "../pred.ts";
+import { joinAbs } from "../objects.ts";
+import { termToString } from "../term.ts";
+import { instantiateReturn, isRelFn } from "../hof.ts";
 import { isNudoThrow } from "./runtime.ts";
+import {
+  enterCall,
+  exitCall,
+  truncatedAbs,
+} from "../call-budget.ts";
 
 export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
-  // 迁移件 4：自包含 body 走编译执行（phi 恒 pTrue）。闭包/兄弟函数/
-  // 递归 body 由 free-identifier 扫描拦截 → 解释路径（递归预算生效）。
+  // 函数 union：对每个 member 同序求值后 join
+  if (fn?.shape?.k === "sum") {
+    const results = fn.shape.members.map((m) => $call(m, args, thisVal));
+    if (results.every((r) => r.shape.k === "unknown")) return unknown;
+    return results.reduce((a, b) => joinAbs(a, b));
+  }
   const impl = getFnImpl(fn);
-  if (impl?.body && !impl.apply) {
-    const compiled = compiledBodyOf(impl);
-    if (compiled) {
+  // 关系面（relation/isRelFn）：无 body 无 apply → 实例化返回位
+  if (!impl?.body && !impl?.apply) {
+    if (impl?.relation || isRelFn(fn)) return instantiateReturn(fn, args);
+    return unknown;
+  }
+  // apply 钩子（mock withArgs / $fnVal / 桥接导出）：按实参派发
+  if (impl?.apply) {
+    const key = callBudgetKey("absfn", impl.fingerprint ?? `anon#${impl.params.length}`, args);
+    const label = (fn.shape as { name?: string }).name ?? "anonymous";
+    if (!enterCall(key, label)) return truncatedAbs();
+    try {
       try {
-        return compiled(args);
+        return impl.apply(args, thisVal);
       } catch (e) {
-        // applyAbsFn 同口径：body 抛错 → never（不把中间值当返回值）
-        if (isNudoThrow(e)) {
-          return never;
+        if (e && typeof e === "object" && (e as { name?: string }).name === "NudoReturn") {
+          return (e as { absValue: Abs }).absValue;
         }
         throw e;
       }
+    } finally {
+      exitCall();
     }
   }
-  return applyAbsFn(fn, args, emptyEnv(), pTrue, defaultLeakBudget, thisVal);
+  // body（无 apply）：编译执行；失败回落非 body 面（budget 已含编译调用点）
+  const compiled = compiledBodyOf(impl);
+  if (compiled) {
+    try {
+      return compiled(args);
+    } catch (e) {
+      // body 抛错 → never（不把中间值当返回值）
+      if (isNudoThrow(e)) {
+        return never;
+      }
+      throw e;
+    }
+  }
+  return unknown;
+}
+
+/** 预算键（与 ast-eval callBudgetKey 同口径） */
+function callBudgetKey(kind: string, id: string, args: Abs[]): string {
+  const parts = args.map((a) => `${a.shape.k}:${a.term ? termToString(a.term) : ""}`);
+  return `${kind}|${id}|${parts.join(",")}`;
 }

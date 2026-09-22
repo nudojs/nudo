@@ -12,8 +12,6 @@
 
 import { parseSource as parse } from "./parse-source.ts";
 import {
-  analyzeFn,
-  evalProgramAbs,
   setAbsAssignCollector,
   setAbsCallCollector,
   setAbsTruncationCollector,
@@ -60,15 +58,15 @@ import {
 } from "./load-deps-fp.ts";
 import { boolLit, litValue, numLit, strLit } from "./abs.ts";
 import type { Abs } from "./abs.ts";
-import { abs } from "./abs.ts";
+import { abs, never } from "./abs.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { pTrue, predToString } from "./pred.ts";
 import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
 import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
 import { listTopFunctions, scanLiteralCalls } from "./scan.ts";
-import { analyzeFnFull } from "./ast-eval.ts";
 import type { AbsModuleExports } from "./abs-modules.ts";
+import { $invoke, $staticInvoke, withExecPhi } from "./exec/index.ts";
 import { tryRunTranspiled, callTranspiledExportFull, bindingsOf, type TranspiledCallResult } from "./exec/run.ts";
 import { setBAssignCollector, setBCallCollector, type BCallRecord } from "./exec/calls.ts";
 import {
@@ -770,9 +768,24 @@ function checkSourceInner(
   // （在执行态调用记录就绪后跑：今日域证据与 emit 的 callsite case 同源）
   if (driftCandidates.length > 0) {
     issues.push(
-      // fail-closed：drift 今日重算在 B 记录通道已覆盖（callRecords）；无
-      // ast-eval 兜底重算
-      ...interfaceDriftIssues(driftCandidates, callRecords, () => undefined),
+      // 返回位今日重算经 B（fail-closed：B 失败/类方法 → undefined = 无证据，
+      // 宁缺勿滥不判 drift）——闭包缓存一次 run 避免逐调用点重编译
+      ...interfaceDriftIssues(driftCandidates, callRecords, (() => {
+        let driftRun: Record<string, unknown> | undefined;
+        let driftInit = false;
+        return (fnName, args) => {
+          try {
+            if (!driftInit) {
+              driftRun = tryRunTranspiled(source, { mode: "analyze" });
+              driftInit = true;
+            }
+            if (!driftRun || !(fnName in driftRun)) return undefined;
+            return callTranspiledExportFull(driftRun, fnName, args).result;
+          } catch {
+            return undefined;
+          }
+        };
+      })()),
     );
   }
 
@@ -962,10 +975,11 @@ function collectEntryMayThrows(
   return runWithMayThrowSession(() => {
     setMayThrowCollector((e) => effects.push(e));
     try {
-      // P2-a：L2 throws 求值 B-path 优先（B-hosted 诊断同源；may-throw 效果
-      // 通道共享 recordMayThrow，B 执行同样落收集器）；类方法/转译失败
-      // 回落 ast-eval analyzeFnFull。
-      const full = bPathThrowsOf(source, fnName, entryArgs) ?? analyzeFnFull(source, fnName, entryArgs, { phi, file });
+      // P2-a：L2 throws 求值 B-path 优先（may-throw 效果通道共享
+      // recordMayThrow）；fail-closed：B 失败（类方法/转译失败）→ 无 L2
+      // throws 证据（ast-eval analyzeFnFull 兜底已删）
+      const full = bPathThrowsOf(source, fnName, entryArgs);
+      if (!full) return effects;
       // 显式 throw（未被 try 消化）也进 L2
       if (full.throws && full.throws.shape.k !== "never") {
         const tName = formatThrowsAbs(full.throws) ?? "Error";
@@ -985,14 +999,14 @@ function collectEntryMayThrows(
   });
 }
 
-/** L2 throws 的 B-path 求值：顶层导出直调；类方法（.名）/失败 → undefined（回落） */
+/** L2 throws 的 B-path 求值：顶层导出直调 + default 别名 + CJS 对象方法 +
+ *  类静态方法桥；B 失败 → undefined（fail-closed：无 L2 证据）。 */
 const bPathRunMemo = new Map<string, Record<string, unknown>>();
 function bPathThrowsOf(
   source: string,
   fnName: string,
   args: Abs[],
 ): TranspiledCallResult | undefined {
-  if (fnName.includes(".")) return undefined; // 类方法不在顶层导出表
   // L2 解耦后两引擎口径一致：any 实参的数组方法调用同样记 may-throw
   //（提升是假设、不消除危险），约束与无约束入口都走 B。
   if (bPathRunMemo.size >= MAX_CHECK_MEMO) {
@@ -1006,9 +1020,39 @@ function bPathThrowsOf(
     exports = run;
     bPathRunMemo.set(source, exports);
   }
-  if (!(fnName in exports)) return undefined;
+  const isAbsVal = (v: unknown): v is Abs =>
+    !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);
+  const call = (name: string, callArgs: Abs[]): TranspiledCallResult | undefined => {
+    try {
+      return callTranspiledExportFull(exports, name, callArgs);
+    } catch {
+      return undefined;
+    }
+  };
   try {
-    return callTranspiledExportFull(exports, fnName, args);
+    if (fnName in exports) return call(fnName, args);
+    // 类静态方法桥（A.m → $staticInvoke 类值）
+    if (fnName.includes(".")) {
+      const [clsName, methodName] = fnName.split(".", 2);
+      const clsAbs = exports[clsName ?? ""];
+      if (isAbsVal(clsAbs)) {
+        return { result: withExecPhi(pTrue, () => $staticInvoke(clsAbs, methodName ?? "", args)), throws: never };
+      }
+      return undefined;
+    }
+    // default 别名（export default function X / CJS 单导出 default）
+    if ("default" in exports) {
+      const d = exports["default"];
+      if (typeof d === "function") return call("default", args);
+      if (isAbsVal(d)) {
+        if (d.shape.k === "fn") return call("default", args);
+        // CJS module.exports = { getName(user){...} }：对象方法桥
+        if (d.shape.k === "obj") {
+          return { result: withExecPhi(pTrue, () => $invoke(d, fnName, args)), throws: never };
+        }
+      }
+    }
+    return undefined;
   } catch {
     return undefined;
   }
