@@ -41,6 +41,10 @@ export type TranspileOptions = {
   hasTryHandler?: boolean;
   /** 当前 try 的 catch 体是否可能 rethrow（正常路径 soft 效果 release 而非 digest） */
   tryRethrowCatch?: boolean;
+  /** 分支/循环体内深度（赋值记录 conditional 标记；inLoop 也计入） */
+  conditionalFlow?: number;
+  /** 函数/箭头体内（顶层绑定表只收顶层作用域） */
+  inFunction?: boolean;
 };
 
 function matchAsOverride(stmt: Node, opts: TranspileOptions): string | null {
@@ -436,7 +440,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit, $rawThis, $isBreakTo } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $assignRecord, $recordBinding, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit, $rawThis, $isBreakTo } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -1361,6 +1365,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const fnOpts: TranspileOptions = {
         ...opts,
         inLoop: 0,
+        inFunction: true,
         ...(hasThis ? { thisParam: "__this" } : {}),
       };
       const { sig, rest, prologue } = emitParamBinding(
@@ -1516,6 +1521,10 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
               ? transpileExpression(d.init, opts)
               : "$lit(undefined)";
           lines.push(`${pad}${kw} ${d.id.name} = ${init};`);
+          // 顶层绑定表（checkSource varAbs / scanLiteralCalls 实参解析）
+          if (depth === 0) {
+            lines.push(`${pad}$recordBinding(${JSON.stringify(d.id.name)}, ${d.id.name});`);
+          }
           // P1：表达式位置 mutator（`const x = a.pop()`）同样重绑容器
           if (d.init && !asVar) {
             lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
@@ -1570,9 +1579,15 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
           `}`,
         ].join("\n");
       };
-      const consRaw = transpileBlockAsThunk(stmt.consequent, depth, opts);
+      const consRaw = transpileBlockAsThunk(stmt.consequent, depth, {
+        ...opts,
+        conditionalFlow: (opts.conditionalFlow ?? 0) + 1,
+      });
       const altRaw = stmt.alternate
-        ? transpileBlockAsThunk(stmt.alternate, depth, opts)
+        ? transpileBlockAsThunk(stmt.alternate, depth, {
+            ...opts,
+            conditionalFlow: (opts.conditionalFlow ?? 0) + 1,
+          })
         : "undefined";
       const cons = wrapArm(consRaw, "fk1_");
       const alt = names.length
@@ -2276,6 +2291,7 @@ function transpileClass(
     ...opts,
     inLoop: 0,
     inTry: 0,
+    inFunction: true,
     thisParam: "__this",
     className: name,
   };
@@ -2941,12 +2957,20 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         return `/* assign */ $lit(undefined)`;
       }
       if (expr.left.type === "Identifier") {
-        if (compoundFn) {
-          return `${expr.left.name} = ${compoundFn}(${expr.left.name}, ${right})`;
-        }
-        // P1：`x = a.pop()` 表达式位置 mutator — 由 VariableDeclaration/statement
-        // 侧 emitExprMutatorRebind 处理容器重绑；此处赋值本身只绑返回值。
-        return `${expr.left.name} = ${right}`;
+        const name = expr.left.name;
+        // 结构赋值记录（checkSource assign-mismatch 通道）：prev 读在写前；
+        // conditional = 分支/循环体内（与 ast-eval assignFlowDepth 同口径——
+        // structuralAssignIssues 跳过 conditional）。逻辑赋值（||= 等）短路
+        // 分支在前已处理，不记录（与 ast-eval 早期返回同口径）。
+        const cond = (opts.inLoop ?? 0) > 0 || (opts.conditionalFlow ?? 0) > 0;
+        const locLine = expr.loc?.start.line ?? 0;
+        const locCol = expr.loc?.start.column ?? 0;
+        const valSrc = compoundFn ? `${compoundFn}(${name}, ${right})` : right;
+        // 顶层绑定表跟重赋值（final 值语义；函数/箭头体不在顶层作用域）
+        const bindSrc = !opts.inFunction
+          ? ` $recordBinding(${JSON.stringify(name)}, __v);`
+          : "";
+        return `((__v) => { $assignRecord(${JSON.stringify(name)}, ${name}, __v, ${locLine}, ${locCol}, ${cond});${bindSrc} return ${name} = __v; })(${valSrc})`;
       }
       return compoundFn ? `/* assign ${expr.operator} */ $lit(undefined)` : `/* assign */ $lit(undefined)`;
     }
@@ -3072,6 +3096,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       const fnBodyOpts: TranspileOptions = {
         ...opts,
         inLoop: 0,
+        inFunction: true,
         ...(hasThis ? { thisParam: "__this" } : {}),
       };
       const paramParts = rest ? [...sig, `...${rest}`] : sig;

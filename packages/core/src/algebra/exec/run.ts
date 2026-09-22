@@ -11,6 +11,7 @@
 import * as runtime from "./runtime.ts";
 import * as classRt from "./class.ts";
 import * as callsRt from "./calls.ts";
+import { setBBindingSink } from "./calls.ts";
 import type { Abs } from "../abs.ts";
 import { never, unknown, abs } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
@@ -130,14 +131,17 @@ function stripEffectfulTopLevel(js: string): string {
         i++;
         continue;
       }
-      // 其它未知全局调用（未走 $callNamed 的）；__nudoExport/__nudoExportStar
-      // 是导出簿记（rewriteExportStatements 产物），非副作用，保留
+      // 其它未知全局调用（未走 $callNamed 的）；__nudoExport/__nudoExportStar/
+      // __nudoRecordBinding/__nudoRecordAssign 是簿记（rewrite/插桩产物），
+      // 非副作用，保留
       const callMatch = t.match(/^([A-Za-z_$][\w$]*)\s*\(/);
       if (
         callMatch &&
         !callMatch[1]!.startsWith("$") &&
         callMatch[1] !== "__nudoExport" &&
         callMatch[1] !== "__nudoExportStar" &&
+        callMatch[1] !== "__nudoRecordBinding" &&
+        callMatch[1] !== "__nudoRecordAssign" &&
         !declared.has(callMatch[1]!) &&
         !/^(const|let|var|function|export|import|return|if|for|while|switch|try|throw|class)\b/.test(t)
       ) {
@@ -148,12 +152,25 @@ function stripEffectfulTopLevel(js: string): string {
       // 顶层控制流
       if (/^(if\s*\(|for\s*\(|while\s*\(|\$fork\s*\(|\$for\s*\(|\$while)/.test(t)) {
         i++;
-        let depth = t.includes("{") ? 1 : 0;
-        while (i < lines.length && depth > 0) {
-          const l = lines[i]!;
-          depth += (l.match(/\{/g) || []).length;
-          depth -= (l.match(/\}/g) || []).length;
-          i++;
+        if (/^\$/.test(t)) {
+          // 运行时调用形态（$for/$fork/$while）：按括号平衡跳过整条调用
+          // （此前按大括号计数——$for( 首行无 { → 只删首行，参数悬空
+          // SyntaxError，analyze 模式顶层循环静默回落）
+          let depth = (t.match(/\(/g) || []).length - (t.match(/\)/g) || []).length;
+          while (i < lines.length && depth > 0) {
+            const l = lines[i]!;
+            depth += (l.match(/\(/g) || []).length;
+            depth -= (l.match(/\)/g) || []).length;
+            i++;
+          }
+        } else {
+          let depth = t.includes("{") ? 1 : 0;
+          while (i < lines.length && depth > 0) {
+            const l = lines[i]!;
+            depth += (l.match(/\{/g) || []).length;
+            depth -= (l.match(/\}/g) || []).length;
+            i++;
+          }
         }
         continue;
       }
@@ -277,6 +294,13 @@ function rewriteExportStatements(js: string): string {
   );
 }
 
+/** runTranspiled 顶层绑定表（checkSource varAbs 通道；WeakMap 不碰返回面） */
+const runBindings = new WeakMap<object, Map<string, unknown>>();
+
+export function bindingsOf(run: Record<string, unknown>): Map<string, unknown> | undefined {
+  return runBindings.get(run);
+}
+
 /**
  * 执行一段 B 路径程序，返回顶层 `export function` / `export const`。
  */
@@ -318,6 +342,7 @@ export function runTranspiled(
 
   const names = [...new Set([...exportFns, ...exportConsts])];
   const dynExports: Record<string, unknown> = {};
+  const bindings = new Map<string, unknown>();
   const argNames = [
     ...runtimeArgNames(),
     "__nudoModules",
@@ -374,7 +399,14 @@ export function runTranspiled(
   // 显式导出压过 export *（ESM 语义；decl/specifier 重名是 ESM 早错）。
   const ret = `return { ...__nudoExports, ${names.join(", ")} };`;
   const fn = new Function(...argNames, `${js}\n${ret}`);
-  return fn(...args) as Record<string, unknown>;
+  setBBindingSink(bindings);
+  try {
+    const result = fn(...args) as Record<string, unknown>;
+    runBindings.set(result, bindings);
+    return result;
+  } finally {
+    setBBindingSink(null);
+  }
 }
 
 export type TranspiledCallResult = {

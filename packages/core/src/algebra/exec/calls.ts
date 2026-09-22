@@ -66,6 +66,60 @@ export type BCallRecord = {
 
 let bCallCollector: ((r: BCallRecord) => void) | null = null;
 
+/** B 赋值记录（与 ast-eval AbsAssignRecord 同形；structuralAssignIssues 消费） */
+export type BAbsAssignRecord = {
+  name: string;
+  prev: Abs | undefined;
+  next: Abs;
+  line?: number;
+  column?: number;
+  conditional?: boolean;
+};
+
+let bAssignCollector: ((r: BAbsAssignRecord) => void) | null = null;
+
+export function setBAssignCollector(
+  collector: ((r: BAbsAssignRecord) => void) | null,
+): void {
+  bAssignCollector = collector;
+}
+
+/** 结构赋值记录（transpile 插桩调用；无收集器时 no-op） */
+export function $assignRecord(
+  name: string,
+  prev: Abs | undefined,
+  next: Abs,
+  line: number,
+  column: number,
+  conditional: boolean,
+): void {
+  if (!bAssignCollector) return;
+  try {
+    bAssignCollector({
+      name,
+      prev,
+      next,
+      line: line || undefined,
+      column: column || undefined,
+      conditional,
+    });
+  } catch {
+    /* collector 不得打断执行 */
+  }
+}
+
+/** 顶层绑定表收集 sink（run.ts 每次执行时安装；真实 ESM 路径 no-op） */
+let bindingSink: Map<string, unknown> | null = null;
+
+export function setBBindingSink(sink: Map<string, unknown> | null): void {
+  bindingSink = sink;
+}
+
+/** 顶层绑定记录（transpile 插桩调用） */
+export function $recordBinding(name: string, value: unknown): void {
+  if (bindingSink) bindingSink.set(name, value);
+}
+
 /** evalGlobalFn 覆盖的宿主全局函数名（身份校验后再派发） */
 const GLOBAL_FNS = new Set([
   "parseInt",
