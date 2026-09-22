@@ -17,7 +17,7 @@ import type { Phi } from "../pred.ts";
 import { never, unknown, abs } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
-import { transpile } from "./transpile.ts";
+import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
 import { errorTypeAbs } from "./may-throw.ts";
 import {
@@ -53,6 +53,8 @@ export type RunTranspiledOptions = {
   envGlobals?: Record<string, Abs>;
   /** @nudo:mock 注入值：name → Abs（mockDirectivesToAbsSeeds 产物） */
   mocks?: Record<string, Abs>;
+  /** 宽松全局（调用点发现 exec 采集：未声明全局调用保守 unknown 不中断） */
+  lenientGlobals?: boolean;
 };
 
 export const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
@@ -318,6 +320,7 @@ export function runTranspiled(
     source,
     replacements: opts.replacementTargets,
     asOverrides: opts.asOverrideTargets,
+    lenientGlobals: opts.lenientGlobals,
   });
   js = js.replace(RUNTIME_IMPORT_RE, "");
   js = rewriteUserImports(js);
@@ -398,9 +401,20 @@ export function runTranspiled(
     js = `${envBinds}\n${js}`;
   }
 
+  // CJS 面：exports.X = v / module.exports 命名空间建模（此前 exports 未绑定
+  // → ReferenceError → CJS 文件整体 B-incapable）。exports = 命名空间 obj Abs
+  // （$set 写槽）；module.exports 重赋值 → 单导出（default）。
+  const hasCjsExports = /\b(?:exports|module)\s*(?:\.|\[)/.test(source);
+  if (hasCjsExports) {
+    js = `let exports = $obj({});\nlet module = $obj({ exports });\nconst __nudoCjsOrig = exports;\n${js}`;
+  }
+
   // 动态导出（specifier/re-export/star/default）先展开，静态声明名后写：
   // 显式导出压过 export *（ESM 语义；decl/specifier 重名是 ESM 早错）。
-  const ret = `return { ...__nudoExports, ${names.join(", ")} };`;
+  const cjsMerge = hasCjsExports
+    ? `(() => { const me = $get(module, "exports"); if (me !== __nudoCjsOrig && me && typeof me === "object" && "shape" in me) { return { default: me }; } const out = {}; if (__nudoCjsOrig && __nudoCjsOrig.shape && __nudoCjsOrig.shape.k === "obj") { for (const k of Object.keys(__nudoCjsOrig.shape.slots)) out[k] = __nudoCjsOrig.shape.slots[k].value; } return out; })()`
+    : "{}";
+  const ret = `return { ...__nudoExports, ...${cjsMerge}, ${names.join(", ")} };`;
   const fn = new Function(...argNames, `${js}\n${ret}`);
   setBBindingSink(bindings);
   try {
@@ -425,6 +439,24 @@ export function setBPathFallbackCollector(
   collector: ((f: BPathFallback) => void) | null,
 ): void {
   bFallbackCollector = collector;
+}
+
+/** 表达式级求值（scan 的 case 字面量实参等静态求值面）：编译单表达式经
+ *  B 运行时执行。bindings：表达式自由标识符 → Abs（调用方按绑定表注入）。
+ *  编译失败抛错（调用方按需 catch）。 */
+export function evalExprAbs(
+  expr: import("@babel/types").Expression,
+  bindings: Record<string, Abs> = {},
+): Abs {
+  const src = transpileExpression(expr, {});
+  const js = [
+    runtimeImportOf("@nudojs/core/exec"),
+    `return (${src});`,
+  ].join("\n");
+  const cleaned = js.replace(RUNTIME_IMPORT_RE, "");
+  const names = [...Object.keys(rtAllBindings()), ...Object.keys(bindings)];
+  const factory = new Function(...names, cleaned) as (...vals: unknown[]) => Abs;
+  return factory(...Object.values(rtAllBindings()), ...Object.values(bindings));
 }
 
 /** 记录一次 B 回落（body-fn 等非 runTranspiled 入口共用） */

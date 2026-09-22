@@ -21,7 +21,7 @@ const selfAbsByBody = new WeakMap<object, Abs>();
 
 /** body 的自由标识符集合（参数/声明/嵌套函数参数之外引用的名字）。
  *  非计算 property key（o.x / {x: 1}）不计数。 */
-function freeIdentifiers(body: Node, params: string[]): Set<string> {
+export function freeIdentifiers(body: Node, params: string[]): Set<string> {
   const declared = new Set<string>(params);
   const free = new Set<string>();
   const visit = (n: unknown): void => {

@@ -9,9 +9,6 @@ import {
   generalizeFromAst,
   termToString,
   predToString,
-  analyzeFnFull,
-  evalProgramAbs,
-  callFunctionFull,
   setAbsCallCollector,
   setBCallCollector,
   getBCallCollector,
@@ -45,6 +42,7 @@ import {
   stableAnalyzeKeySource,
   fnFingerprints,
   type BCallRecord,
+  bindingsOf,
 } from "@nudojs/core";
 import { parse, extractDirectives, extractFileDirectives } from "@nudojs/parser";
 import type { FunctionWithDirectives, SinonExpression } from "@nudojs/parser";
@@ -67,7 +65,7 @@ import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks, mockSeedsForSource } fro
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
 import { noteEnvPathDeps } from "./env-path-deps.ts";
 import { loadModuleDepsFingerprint, hashSource } from "@nudojs/core";
-import { evalAbsModuleGraph, collectAbsBindingsFromGraph, evalProgramAbsWithModules } from "./abs-modules-graph.ts";
+import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
 import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, mockSeedFingerprint, collectEnvGlobals, collectEnvModules, mergeHarvestUnderEnv, setEnvHarvestConflictCollector, type EnvHarvestConflict } from "./bpath-run.ts";
 import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
 import { setAbsTruncationCollector } from "@nudojs/core";
@@ -590,8 +588,10 @@ function assignmentChainName(expr: Node): string | null {
  * entry@ evaluation; same-file `X(...)` calls after `exports.X = fn` are not
  * tracked either.
  */
-function collectTopLevelFunctions(ast: Node): { name: string; node: Node; stmt: Node; noDeclaration: boolean }[] {
-  const results: { name: string; node: Node; stmt: Node; noDeclaration: boolean }[] = [];
+function collectTopLevelFunctions(
+  ast: Node,
+): { name: string; node: Node; stmt: Node; noDeclaration: boolean; assignedName?: string }[] {
+  const results: { name: string; node: Node; stmt: Node; noDeclaration: boolean; assignedName?: string }[] = [];
   if (ast.type !== "File") return results;
   const body = (ast as any).program.body as Node[];
 
@@ -721,7 +721,12 @@ function collectTopLevelFunctions(ast: Node): { name: string; node: Node; stmt: 
       const fn = deepestAssignValue(expr);
       if (isFnExprValue(fn)) {
         const name = namedFnExprId(fn) ?? assignmentChainName(expr) ?? "default";
-        results.push({ name, node: fn, stmt, noDeclaration: true });
+        // 命名函数表达式 id（_apply）与导出槽名（applyToDefaults）不同时
+        // 记录槽名——B run 的 CJS 命名空间按槽名导出（entry@ 求值回退用）
+        const chain = assignmentChainName(expr);
+        const assignedName =
+          namedFnExprId(fn) && chain && chain !== name ? chain : undefined;
+        results.push({ name, node: fn, stmt, noDeclaration: true, ...(assignedName ? { assignedName } : {}) });
       }
     }
   }
@@ -946,6 +951,7 @@ export function collectCallRecords(filePath: string, source: string): CallRecord
       const mocks = mockSeedsForSource(source);
       const run = tryRunBPath(source, filePath, {
         mode: "exec",
+        lenientGlobals: true,
         ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
       });
       if (run?.calls?.length) {
@@ -953,81 +959,13 @@ export function collectCallRecords(filePath: string, source: string): CallRecord
         return expandTestCallbacks(run.calls).map((r) => callRecordFromAbsCall(r, importLocals));
       }
     } catch {
-      /* fall through to Abs path */
+      /* B 失败 fail-closed */
     }
   }
-
-  // 使用现场可能是老 CJS（八进制字面量等历史语法）——宽松恢复模式
-  let ast: ReturnType<typeof parse> | undefined;
-  try {
-    ast = parse(source, { errorRecovery: true });
-  } catch {
-    return [];
-  }
-  const absCalls: AbsCallRecord[] = [];
-  const prevCollector = setAbsCallCollector((r) => absCalls.push(r));
-  let importLocals: Map<string, { modulePath: string; exportName: string }> | undefined;
-  try {
-    importLocals = buildAbsImportLocalMap(source, filePath);
-    let modules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined;
-    try {
-      modules = evalAbsModuleGraph(source, filePath).modules;
-    } catch {
-      modules = undefined;
-    }
-    const { env } = evalProgramAbs(source, { file: ast as never, modules });
-    // 测试框架语义近似：it/describe/test 的回调在顶层求值中不会执行，
-    // 但它们的函数体正是真实调用点所在。以 unknown 参数手动执行每个
-    // 回调体；describe 回调体内嵌的 it(...) 继续展开（测试常嵌套）。
-    const runCallbacks = (statements: Node[]): void => {
-      for (const stmt of statements) {
-        if (stmt.type !== "ExpressionStatement" || !("expression" in stmt)) continue;
-        const expr = (stmt as { expression: Node }).expression;
-        if (expr.type !== "CallExpression") continue;
-        const callee = (expr as Node & { callee: Node }).callee;
-        if (callee.type !== "MemberExpression" && callee.type !== "Identifier") continue;
-        const name =
-          callee.type === "Identifier"
-            ? callee.name
-            : callee.property.type === "Identifier"
-              ? callee.property.name
-              : null;
-        if (!name || !TEST_CALLBACK_NAMES.has(name)) continue;
-        const args = (expr as { arguments: Node[] }).arguments;
-        const cb = args.find((a) => a.type === "ArrowFunctionExpression" || a.type === "FunctionExpression") as
-          | (Node & { body: Node; params?: Node[] })
-          | undefined;
-        if (!cb) continue;
-        try {
-          const params = (cb.params ?? []).map((p) =>
-            p.type === "Identifier" ? p.name : `_arg${Math.random().toString(36).slice(2, 6)}`,
-          );
-          const tmpName = `__nudo_test_cb_${absCalls.length}`;
-          env.fns.set(tmpName, {
-            params,
-            body: cb.body as never,
-            async: false,
-          });
-          callFunctionFull(env, tmpName, params.map(() => absUnknown));
-        } catch {
-          /* 单个回调失败不影响其余 */
-        }
-        // describe 回调体是语句列表——递归展开嵌套的 it/describe
-        if (name === "describe" && cb.body.type === "BlockStatement") {
-          runCallbacks((cb.body as unknown as { body: Node[] }).body);
-        }
-      }
-    };
-    runCallbacks(ast.program.body as unknown as Node[]);
-  } catch {
-    /* 收集尽力而为 */
-  } finally {
-    setAbsCallCollector(prevCollector);
-  }
-  return absCalls.map((r) => callRecordFromAbsCall(r, importLocals));
+  // fail-closed：B 失败（历史语法/B-incapable 构造）→ 无记录（旧 Abs 兜底已删）
+  return [];
 }
 
-/** 测试框架的回调注册函数：回调体里是真实调用点 */
 /** 测试回调展开：describe 队列展开（预算 + 对象去重防自注册死循环） */
 function expandTestCallbacks(calls: BCallRecord[]): BCallRecord[] {
   const out = [...calls];
@@ -1469,35 +1407,12 @@ function analyzeFileUncachedInner(
       }
     }
   }
-  if (selfContained || canAbsModules) {
-    // Abs 程序求值的递归截断（call@ 记录路径）；modules 已预计算时不再重跑模块图
-    setAbsTruncationCollector((label) => bTruncatedFns.add(label));
-    try {
-      absCallRecords = collectAbsCallRecords(source, seeds, filePath, absGraphModules, envNames, loadModule);
-    } finally {
-      setAbsTruncationCollector(null);
-    }
-  }
+  // fail-closed：Abs 调用记录通道已删（collectAbsCallRecords）——非 B-hosted
+  // 源的调用点仅来自 B 顶层记录（bTopCallRecords）
 
-  // B hosted：跳过 TypeValue evaluateProgram。一次 eval 同时产出 bindings + nodeTypes。
-  if (bHostedEval) {
-    try {
-      const collected = collectAbsBindsAndNodes(source, seeds, absGraphModules);
-      absBindsShared = collected.binds;
-      absNodesShared = collected.nodes;
-      for (const [name, absVal] of absBindsShared) {
-        if (absVal?.shape?.k === "fn") continue;
-        if (!globalEnv.has(name)) {
-          globalEnv.bind(name, absVal);
-        }
-      }
-      for (const [node, absVal] of absNodesShared) {
-        nodeAbsMap.set(node, absVal);
-      }
-    } catch {
-      /* Abs 补齐失败仍以 B 诊断为准 */
-    }
-  }
+  // fail-closed：bHostedEval 的 Abs bindings/nodeTypes 补齐已删
+  // （collectAbsBindsAndNodes）——B 侧的 nodeTypeMap/binding 通道是唯一源
+
   // TypeValue evaluateProgram / applyMocks 已删除：非 B-hosted 源不跑全程序求值；
   // 绑定/节点靠 Abs 宿主（collectAbsBindsAndNodes）。case 兜底 Abs-first。
 
@@ -1563,7 +1478,7 @@ function analyzeFileUncachedInner(
   // BindingInfo.abs / nodeAbsMap / hover / completions 不必等 B 成功。
   if (!absNodesShared && !bHostedEval && (selfContained || canAbsModules)) {
     try {
-      const collected = collectAbsBindsAndNodes(source, seeds, absGraphModules);
+      const collected = { binds: new Map<string, Abs>(), nodes: new Map<Node, Abs>() }; // fail-closed
       if (!absBindsShared) absBindsShared = collected.binds;
       absNodesShared = collected.nodes;
     } catch {
@@ -1573,16 +1488,22 @@ function analyzeFileUncachedInner(
 
   collectBindings(ast, globalEnv, bindings, absBindsShared);
 
-  // B 路径可分析：用 Abs 模块图补全/覆盖绑定（含相对 import）
+  // fail-closed：绑定补全仅来自 B run 的绑定表（bindingsOf）；Abs 模块图
+  // 宿主已删。B 不可用 → 无补全（显式无信息）。
   if (isBPathCapable(source, envNames)) {
     try {
-      const absBinds =
-        absBindsShared ??
-        collectAbsBindingsFromGraph(source, filePath, {
-          seedVars: seeds.seedVars,
-          seedFns: seeds.seedFns as never,
-        });
-      for (const [name, absVal] of absBinds) {
+      const bBindRun = tryRunBPath(source, filePath, {
+        envNames,
+        mocks: mockSeedsToAbsMocks(seeds),
+      });
+      const absBinds = (absBindsShared ??
+        (bBindRun ? bindingsOf(bBindRun.exports) : undefined)) as
+        | Map<string, Abs>
+        | undefined;
+      if (!absBinds) {
+        /* fail-closed：无绑定补全 */
+      } else for (const [name, absVal0] of absBinds) {
+        const absVal = absVal0 as Abs;
         const prev = bindings.get(name);
         bindings.set(name, {
           abs: absVal,
@@ -1594,7 +1515,7 @@ function analyzeFileUncachedInner(
     }
   }
 
-  const synthCandidates: { name: string; node: Node; analysis: FunctionAnalysis }[] = [];
+  const synthCandidates: { name: string; node: Node; analysis: FunctionAnalysis; assignedName?: string }[] = [];
 
   // 函数级指纹：body-edit 时未引用的兄弟函数可命中缓存
   let fnFpMap: Map<string, { own: string; deps: string }> | undefined;
@@ -1903,7 +1824,7 @@ function analyzeFileUncachedInner(
   // sites at all get a single entry evaluation with unknown parameters.
   const directiveFnNames = new Set(functions.map((f) => f.name));
   const directiveFnStmts = new Set(functions.map((f) => f.node));
-  for (const { name, node, stmt, noDeclaration } of collectTopLevelFunctions(ast)) {
+  for (const { name, node, stmt, noDeclaration, assignedName } of collectTopLevelFunctions(ast)) {
     if (directiveFnNames.has(name)) continue;
     // A statement carrying @nudo directives is already analyzed through the
     // directive path above (possibly under its "<anonymous>" name).
@@ -1911,7 +1832,7 @@ function analyzeFileUncachedInner(
     const analysis: FunctionAnalysis = { name, loc: locFromNode(node), paramNames: extractParamNames(node), cases: [] };
     if (noDeclaration) analysis.noDeclaration = true;
     functionResults.push(analysis);
-    synthCandidates.push({ name, node, analysis });
+    synthCandidates.push({ name, node, analysis, assignedName });
   }
 
   // 模块路匹配的前置量：本文件绝对路径（realpath 对齐符号链接后再比，
@@ -2165,13 +2086,20 @@ function analyzeFileUncachedInner(
     setMayThrowCollector((e) => entryEffects.push(e));
     try {
       if (isBPathCapable(source, envNames) && filePath) {
-        const bEntryFull = tryBPathCallFull(
-          source,
-          filePath,
-          candidate.analysis.name,
-          argAbsEntry,
-          { envNames, mocks: mockSeedsToAbsMocks(seeds), collectMemberDiags: true },
-        );
+        const bEntryFull =
+          tryBPathCallFull(
+            source,
+            filePath,
+            candidate.analysis.name,
+            argAbsEntry,
+            { envNames, mocks: mockSeedsToAbsMocks(seeds), collectMemberDiags: true },
+          ) ??
+          (candidate.assignedName
+            ? tryBPathCallFull(source, filePath, candidate.assignedName, argAbsEntry, {
+                envNames,
+                mocks: mockSeedsToAbsMocks(seeds),
+              })
+            : undefined);
         if (bEntryFull?.memberDiags?.length) {
           for (const d of bEntryFull.memberDiags) {
             pushBMemberDiag(d, candidate.analysis.loc.start.line);
@@ -2188,7 +2116,7 @@ function analyzeFileUncachedInner(
           entryAbs = absUnknown;
           entryThrowsAbs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
         } else {
-          const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, argAbsEntry, filePath, seeds.seedVars);
+          const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, argAbsEntry, filePath, seeds.seedVars, candidate.assignedName);
           if (absEntry) {
             // 任何成功求值（含 any 入参透传）都不回落 unknown（design §2）
             entryAbs = absEntry;
@@ -2404,99 +2332,8 @@ function absModulesOk(source: string, envNames: string[]): boolean {
   return true;
 }
 
-/**
- * Abs 程序级求值收集调用记录（类型即计算）。
- * filePath 存在时经模块图注入相对 import / 裸包 harvest；
- * import 局部名 → targetModule/targetExport（供 externalFunctions）。
- */
-function collectAbsCallRecords(
-  source: string,
-  seeds?: {
-    seedVars?: Record<string, Abs>;
-    seedFns?: Record<string, { params: string[]; body: Node; async?: boolean }>;
-  },
-  filePath?: string,
-  precomputedModules?: Record<string, import("@nudojs/core").AbsModuleExports>,
-  envNames: string[] = [],
-  loadModule?: AnalyzeLoadModule,
-): CallRecord[] {
-  const absCalls: AbsCallRecord[] = [];
-  let modules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined =
-    precomputedModules;
-  let importLocals = new Map<string, { modulePath: string; exportName: string }>();
-  if (filePath && absModulesOk(source, envNames)) {
-    if (!modules) {
-      try {
-        const graph = evalAbsModuleGraph(source, filePath, {
-          seedVars: seeds?.seedVars,
-          seedFns: seeds?.seedFns,
-          ...(loadModule ? { loadModule } : {}),
-        });
-        modules = graph.modules;
-      } catch {
-        modules = undefined;
-      }
-    }
-    // 无预计算 modules 时也要并入 env（@nudo:env node / es / web）。
-    // 手写 env wins over harvest/graph（B8）。
-    if (envNames.length > 0) {
-      modules = mergeHarvestUnderEnv(modules ?? {}, collectEnvModules(envNames));
-    }
-    try {
-      importLocals = buildAbsImportLocalMap(source, filePath);
-    } catch {
-      importLocals = new Map();
-    }
-  }
-  setAbsCallCollector((r) => absCalls.push(r));
-  try {
-    evalProgramAbs(source, { ...seeds, modules });
-  } catch {
-    // Abs 求值失败：交还 TypeValue 路径
-  } finally {
-    setAbsCallCollector(null);
-  }
-  return absCalls.map((r) => callRecordFromAbsCall(r, importLocals));
-}
 
-/**
- * 一次 evalProgramAbs 同时收集顶层绑定 + 节点 Abs（B-hosted 补齐 hover/bindings）。
- * modules 可预计算，避免再跑一遍模块图。
- */
-function collectAbsBindsAndNodes(
-  source: string,
-  seeds?: {
-    seedVars?: Record<string, Abs>;
-    seedFns?: Record<string, { params: string[]; body: Node; async?: boolean }>;
-  },
-  modules?: Record<string, import("@nudojs/core").AbsModuleExports>,
-): { binds: Map<string, Abs>; nodes: Map<Node, Abs> } {
-  const binds = new Map<string, Abs>();
-  const nodes = new Map<Node, Abs>();
-  setAbsNodeCollector((node, value) => {
-    nodes.set(node, value);
-  });
-  try {
-    const { env } = evalProgramAbs(source, {
-      ...seeds,
-      modules,
-    });
-    for (const [k, v] of env.vars) binds.set(k, v);
-    for (const [name, impl] of env.fns) {
-      if (!binds.has(name)) {
-        binds.set(
-          name,
-          absFunction(impl.params, { body: impl.body, async: impl.async, env }),
-        );
-      }
-    }
-  } catch {
-    /* ignore */
-  } finally {
-    setAbsNodeCollector(null);
-  }
-  return { binds, nodes };
-}
+
 
 /** 入口 import 局部绑定 → 解析后的模块路径 + 导出名 */
 function buildAbsImportLocalMap(
@@ -2578,8 +2415,9 @@ function tryEvalAbsRaw(
   args: Abs[],
   filePath?: string,
   mocks?: Record<string, Abs>,
+  assignedName?: string,
 ): Abs | undefined {
-  return tryEvalAbsFull(source, fnName, args, filePath, mocks)?.result;
+  return tryEvalAbsFull(source, fnName, args, filePath, mocks, assignedName)?.result;
 }
 
 /**
@@ -2592,48 +2430,25 @@ function tryEvalAbsFull(
   args: Abs[],
   filePath?: string,
   mocks?: Record<string, Abs>,
+  assignedName?: string,
 ): { result: Abs; throws: Abs; throwLoc?: { line: number; column: number } } | undefined {
   if (/\brequire\s*\(/.test(source)) return undefined;
+  // fail-closed：B-only（ast-eval analyzeFnFull 兜底已删——无 throwLoc 补充、
+  // 无 Abs 重求值；B 失败 → undefined）
   try {
-    const absArgs = args;
-
     if (filePath) {
-      const viaB = tryBPathCallFull(source, filePath, fnName, absArgs, { mocks });
+      const viaB =
+        tryBPathCallFull(source, filePath, fnName, args, { mocks }) ??
+        (assignedName ? tryBPathCallFull(source, filePath, assignedName, args, { mocks }) : undefined);
       if (viaB) {
         const r = viaB.result;
         if (r && !(r.shape.k === "unknown" && !r.term)) {
           const throws = viaB.throws ?? { shape: { k: "never" }, conf: "exact" };
-          // B 无 throwLoc：threw 时用 ast-eval 补 loc（不改 result/throws）
-          if (throws.shape.k !== "never") {
-            try {
-              let modules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined;
-              if (/\bimport\s*[{'"*]/.test(source)) {
-                modules = evalAbsModuleGraph(source, filePath).modules;
-              }
-              const viaAst = analyzeFnFull(source, fnName, absArgs, { modules });
-              return {
-                result: r,
-                throws,
-                ...(viaAst.throwLoc ? { throwLoc: viaAst.throwLoc } : {}),
-              };
-            } catch {
-              return { result: r, throws };
-            }
-          }
           return { result: r, throws };
         }
       }
     }
-
-    let modules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined;
-    if (filePath && /\bimport\s*[{'"*]/.test(source)) {
-      modules = evalAbsModuleGraph(source, filePath).modules;
-    }
-    const full = analyzeFnFull(source, fnName, absArgs, { modules });
-    if (full.result.shape.k === "unknown" && !full.result.term) {
-      return undefined;
-    }
-    return full;
+    return undefined;
   } catch {
     return undefined;
   }
@@ -2649,8 +2464,9 @@ function tryEvalEntryAbs(
   args: Abs[],
   filePath?: string,
   mocks?: Record<string, Abs>,
+  assignedName?: string,
 ): Abs | undefined {
-  return tryEvalAbsRaw(source, fnName, args, filePath, mocks);
+  return tryEvalAbsRaw(source, fnName, args, filePath, mocks, assignedName);
 }
 
 /**

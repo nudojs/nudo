@@ -687,29 +687,16 @@ function checkSourceInner(
       }
     }
 
-    // generalize 已用同一入口实参求过 body；conf 确信时跳过重复 analyzeFn
-    // （after-edit 下 L0 命中 → 这里是 O(1)，否则 400 函数会白跑 400 次）
-    if (g.symbolic.conf === "opaque" || g.symbolic.conf === "partial") {
-      const entryArgs = g.typeParams.map((t) => t.value);
-      try {
-        const r = analyzeFn(source, name, entryArgs, phi, undefined, file, opts.modules as Record<string, AbsModuleExports> | undefined);
-        if (r.conf === "opaque" && !truncated.has(name)) {
-          issues.push({
-            severity: "info",
-            code: "nudo:opaque-result",
-            message: `${name}(...): conf=opaque（路径未覆盖或 native）`,
-            suggestion: "补 @nudo:case 或调用点",
-            fn: name,
-          });
-        }
-      } catch (e) {
-        issues.push({
-          severity: "error",
-          code: "nudo:eval-error",
-          message: `${name}: 求值失败 — ${(e as Error).message}`,
-          fn: name,
-        });
-      }
+    // generalize 的 symbolic 已同源求过 body——opaque 判定直接用其 conf
+    // （fail-closed：不再重复 analyzeFn；求值失败面由 B 回落观测承担）
+    if (g.symbolic.conf === "opaque" && !truncated.has(name)) {
+      issues.push({
+        severity: "info",
+        code: "nudo:opaque-result",
+        message: `${name}(...): conf=opaque（路径未覆盖或 native）`,
+        suggestion: "补 @nudo:case 或调用点",
+        fn: name,
+      });
     }
   }
 
@@ -760,14 +747,9 @@ function checkSourceInner(
     setBAssignCollector(null);
     setBCallCollector(null);
   }
-  if (bBindings === undefined) {
-    try {
-      const { env } = evalProgramAbs(source, { file, modules: opts.modules as Record<string, AbsModuleExports> | undefined });
-      for (const [k, v] of env.vars) varAbs.set(k, v);
-    } catch {
-      /* 求值失败：无赋值记录、无绑定表 */
-    }
-  }
+  // fail-closed：B 绑定表缺失（B-incapable 文件）→ 无绑定表（旧 ast-eval
+  // 兜底已删——「部分覆盖」改为「显式无信息」，与 unknown=引擎债 原则一致）
+  void bBindings;
   setAbsAssignCollector(null);
   setAbsCallCollector(prevCallCollector);
 
@@ -788,13 +770,9 @@ function checkSourceInner(
   // （在执行态调用记录就绪后跑：今日域证据与 emit 的 callsite case 同源）
   if (driftCandidates.length > 0) {
     issues.push(
-      ...interfaceDriftIssues(driftCandidates, callRecords, (fnName, args) => {
-        try {
-          return analyzeFn(source, fnName, args, phi, undefined, file);
-        } catch {
-          return undefined;
-        }
-      }),
+      // fail-closed：drift 今日重算在 B 记录通道已覆盖（callRecords）；无
+      // ast-eval 兜底重算
+      ...interfaceDriftIssues(driftCandidates, callRecords, () => undefined),
     );
   }
 

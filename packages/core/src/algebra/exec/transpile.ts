@@ -34,6 +34,10 @@ export type TranspileOptions = {
   inSwitchArm?: boolean;
   /** 标签循环名（`outer: for …`）：传给 $for/$whileSeq/$forOf 供信号匹配 */
   loopLabel?: string;
+  /** 宽松全局：标识符调用 callee 未声明 → undefined（$callNamed 保守
+   *  unknown），模块不因 ReferenceError 中断——调用点发现的 exec 采集用
+   * （测试框架 it/describe/test 等未注入全局） */
+  lenientGlobals?: boolean;
   /** try 嵌套深度（>0 时 return 前 drain throwExits，使 catch 能吸收抽象 throw） */
   inTry?: number;
   /** 当前 try 的 mark 变量名（return drain 用；避免全局栈顶污染） */
@@ -3090,7 +3094,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         const loc = expr.loc;
         const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
         const argLocArg = loc ? `, [${argLocSrcs.join(", ")}]` : "";
-        return `$callNamed(${JSON.stringify(callee.name)}, ${callee.name}, [${argSrcs.join(", ")}]${locArg}${argLocArg})`;
+        const calleeRef = opts.lenientGlobals
+          ? `(typeof ${callee.name} !== "undefined" ? ${callee.name} : undefined)`
+          : callee.name;
+        return `$callNamed(${JSON.stringify(callee.name)}, ${calleeRef}, [${argSrcs.join(", ")}]${locArg}${argLocArg})`;
       }
       const args = expr.arguments
         .map((a) =>

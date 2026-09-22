@@ -10,7 +10,8 @@
 
 import { parseSource as parse } from "./parse-source.ts";
 import type { Node } from "@babel/types";
-import { emptyEnv, evalNode, evalProgramAbs } from "./ast-eval.ts";
+import { freeIdentifiers } from "./exec/body-fn.ts";
+import { evalExprAbs } from "./exec/run.ts";
 import { defaultLeakBudget } from "./leak.ts";
 import type { RefineEntry } from "./refine.ts";
 import {
@@ -273,20 +274,17 @@ function evalArgAbs(
     return lookupVar(node.name);
   }
   try {
-    const env = emptyEnv();
-    // 把文件级绑定表灌进 env，使 `{...base}` / `[x]` 等复合实参能解析标识符
+    // B 表达式编译执行（fail-closed：ast-eval evalNode 已删）；自由标识符
+    // 按绑定表注入（`{...base}` / `[x]` 等复合实参的标识符解析）
+    const free = freeIdentifiers(node as unknown as Node, []);
+    const bindings: Record<string, Abs> = {};
     if (lookupVar) {
-      // lookupVar 只支持按名查；用 Proxy 包一层 vars 不可行——改为在
-      // evalNode 前手工预绑定已知名。scanLiteralCalls 的 varAbs 通常很小。
-      // 这里通过包装 env.vars 的 get 实现按需注入。
-      const rawGet = env.vars.get.bind(env.vars);
-      env.vars.get = ((name: string) => {
-        const hit = rawGet(name);
-        if (hit !== undefined) return hit;
-        return lookupVar(name);
-      }) as typeof env.vars.get;
+      for (const name of free) {
+        const v = lookupVar(name);
+        if (v) bindings[name] = v;
+      }
     }
-    return evalNode(node as unknown as Node, env, pTrue, defaultLeakBudget).value;
+    return evalExprAbs(node as unknown as import("@babel/types").Expression, bindings);
   } catch {
     return undefined;
   }

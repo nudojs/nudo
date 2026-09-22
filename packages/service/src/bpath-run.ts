@@ -415,6 +415,8 @@ export function tryRunBPath(
     envNames?: string[];
     /** @nudo:mock → Abs，注入为全局绑定（防止顶层调用真 fetch 等） */
     mocks?: Record<string, Abs>;
+    /** 宽松全局（调用点发现 exec 采集） */
+    lenientGlobals?: boolean;
   } = {},
 ): BPathRunResult | undefined {
   if (!isBPathCapable(source, opts.envNames ?? [])) return undefined;
@@ -470,6 +472,7 @@ export function tryRunBPath(
         asOverrideTargets: asTargets.length ? asTargets : undefined,
         asOverrides: asTargets.length ? asValues : undefined,
         envGlobals: Object.keys(envGlobals).length ? envGlobals : undefined,
+        lenientGlobals: opts.lenientGlobals,
       });
       out = {
         exports,

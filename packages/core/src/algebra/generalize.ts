@@ -1057,29 +1057,9 @@ function generalizeFromAstUncached(
       }
     }
     if (result === undefined) {
-      const local: AstEnv = {
-        vars: new Map(env.vars),
-        fns: env.fns,
-      };
-      // 解释路径同源解析注入模块（与 B 侧 bindImport 对齐）
-      if (opts.modules) {
-        for (const stmt of fileAst.program.body) {
-          if (stmt.type === "ImportDeclaration") {
-            bindImports(stmt, local, opts.modules as Record<string, AbsModuleExports>);
-          }
-        }
-      }
-      params.forEach((p, i) => {
-        local.vars.set(p, args[i] ?? unknown);
-      });
-      // 求值前预绑定提升形状：实参仍是 any/unknown 才生效（具体实参优先）
-      for (const [p, shape] of promoteScan.promotedShapes) {
-        const cur = local.vars.get(p);
-        if (cur && (cur.shape.k === "any" || cur.shape.k === "unknown")) {
-          local.vars.set(p, { shape, term: cur.term, pred: cur.pred, conf: "path" });
-        }
-      }
-      result = evalNode(body, local, phi, budget).value;
+      // fail-closed：B 失败（B-incapable 构造）/ 非导出类方法等 →
+      // 显式无信息（unknown），不再 ast-eval 解释兜底
+      result = abs({ k: "unknown" }, undefined, undefined, "opaque");
     }
     // 截断/失败结果不缓存，避免固化过宽或不稳定结论
     if (isCacheableAbs(result)) {

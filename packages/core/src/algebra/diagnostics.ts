@@ -10,7 +10,7 @@ import { implies, predToString, pTrue, gt, ge, lt, le } from "./pred.ts";
 import type { Term } from "./term.ts";
 import { termToString, v as termVar, lit } from "./term.ts";
 import { generalizeFromAst, type PolyFn } from "./generalize.ts";
-import { analyzeFn } from "./ast-eval.ts";
+
 import { formatShape } from "./format.ts";
 
 export type Diagnostic = {
@@ -138,23 +138,14 @@ export function checkCall(
     if (d) diags.push({ ...d, fn: fnName, argIndex: i });
   });
 
-  // 尝试实际求值，捕获 partial 结果
-  try {
-    const result = analyzeFn(source, fnName, args, phi);
-    if (result.conf === "partial" || result.conf === "opaque") {
-      diags.push({
-        severity: "info",
-        code: "nudo:partial-result",
-        message: `${fnName}(...) 结果置信度 ${result.conf}`,
-        suggestion: "补充调用点或约束可提高精度",
-        fn: fnName,
-      });
-    }
-  } catch (e) {
+  // fail-closed：partial 置信度直接用 symbolic（generalize 已求值；不再
+  // 重复 analyzeFn 探针）
+  if (g.symbolic.conf === "partial" || g.symbolic.conf === "opaque") {
     diags.push({
-      severity: "error",
-      code: "nudo:eval-error",
-      message: `求值失败: ${(e as Error).message}`,
+      severity: "info",
+      code: "nudo:partial-result",
+      message: `${fnName}(...) 结果置信度 ${g.symbolic.conf}`,
+      suggestion: "补充调用点或约束可提高精度",
       fn: fnName,
     });
   }
