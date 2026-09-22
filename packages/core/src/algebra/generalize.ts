@@ -39,6 +39,53 @@ import {
 } from "./load-deps-fp.ts";
 import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
 import { scanPromotions } from "./promote-scan.ts";
+import { runTranspiled, callTranspiledExportFull } from "./exec/run.ts";
+
+/** generalize 的 B-path 模块执行缓存（按 source；run 不依赖实参） */
+const bRunMemo = new Map<string, Record<string, unknown>>();
+function bPathRunOf(source: string): Record<string, unknown> | undefined {
+  if (bRunMemo.size >= 256) {
+    const oldest = bRunMemo.keys().next().value;
+    if (oldest !== undefined) bRunMemo.delete(oldest);
+  }
+  try {
+    let run = bRunMemo.get(source);
+    if (!run) {
+      run = runTranspiled(source, { mode: "analyze" });
+      bRunMemo.set(source, run);
+    }
+    return run;
+  } catch {
+    return undefined;
+  }
+}
+
+/** body 是否引用指定标识符（自递归检测；非计算 property key 不计数） */
+function bodyReferencesName(body: Node, name: string): boolean {
+  let found = false;
+  const visit = (n: unknown): void => {
+    if (found || !n || typeof n !== "object") return;
+    const o = n as { type?: string; [k: string]: unknown };
+    if (o.type === "Identifier" && (o as { name?: unknown }).name === name) {
+      found = true;
+      return;
+    }
+    for (const key of Object.keys(o)) {
+      if (key === "loc" || key === "start" || key === "end" || key === "tokens") continue;
+      if (o.type === "MemberExpression" && key === "property" && (o as { computed?: boolean }).computed !== true) {
+        continue;
+      }
+      const v = o[key];
+      if (Array.isArray(v)) {
+        for (const item of v) if (item && typeof item === "object") visit(item);
+      } else if (v && typeof v === "object") {
+        visit(v);
+      }
+    }
+  };
+  visit(body);
+  return found;
+}
 
 /** 进程内 L0：同 (source, fn, refine 指纹, budget, label) 的 generalize 结果 */
 const generalizeMemo = new Map<string, PolyFn | undefined>();
@@ -872,27 +919,63 @@ function generalizeFromAstUncached(
     new Map(params.map((p, i) => [p, typeParams[i]!.value])),
   );
 
+  // phi-free 切片（P3.6 实验的收敛版）：B-path 仅当
+  //   ① phi === pTrue（无 refine 入口契约——Φ 收窄是解释语义）
+  //   ② 非类方法（.名，B 导出表只有顶层名）
+  //   ③ 源码自包含（无 import/require——B run 无模块注入；无 @nudo:mock/
+  //      env/replace 指令——B run 无 mock 注入，命中文档化的裸 fetch 崩溃）
+  //   ④ 非自递归（body 引用自身名——B 有界展开给 partial，ast-eval 的
+  //      opaque→不写关系契约保留）
+  // 其余一律解释路径。B 失败回落。
+  const bEligible =
+    !fnName.includes(".") &&
+    !/^\s*import\b/m.test(source) &&
+    !/\brequire\s*\(/.test(source) &&
+    !/@nudo:(mock|env|replace|mock-module)\b/.test(source) &&
+    !bodyReferencesName(body, fnName);
+
   const run = (args: Abs[], phi: Phi = pTrue): Abs => {
     const { key, varOrder } = instantiateMemoKey(args, phi);
     const hit = instMemo.get(key);
     if (hit !== undefined) {
       return alphaRenameResult(hit.result, hit.varOrder, varOrder);
     }
-    const local: AstEnv = {
-      vars: new Map(env.vars),
-      fns: env.fns,
-    };
-    params.forEach((p, i) => {
-      local.vars.set(p, args[i] ?? unknown);
-    });
-    // 求值前预绑定提升形状：实参仍是 any/unknown 才生效（具体实参优先）
-    for (const [p, shape] of promoteScan.promotedShapes) {
-      const cur = local.vars.get(p);
-      if (cur && (cur.shape.k === "any" || cur.shape.k === "unknown")) {
-        local.vars.set(p, { shape, term: cur.term, pred: cur.pred, conf: "path" });
+    let result: Abs | undefined;
+    if (bEligible && phi === pTrue) {
+      try {
+        const bRun = bPathRunOf(source);
+        if (bRun && fnName in bRun) {
+          // 提升形状预绑定到实参（B 无 env 预绑面；具体实参优先）
+          const bArgs = args.map((a, i) => {
+            const shape = promoteScan.promotedShapes.get(params[i]!);
+            if (shape && (a.shape.k === "any" || a.shape.k === "unknown")) {
+              return { shape, term: a.term, pred: a.pred, conf: "path" } as Abs;
+            }
+            return a;
+          });
+          result = callTranspiledExportFull(bRun, fnName, bArgs).result;
+        }
+      } catch {
+        /* B 失败回落解释 */
       }
     }
-    const result = evalNode(body, local, phi, budget).value;
+    if (result === undefined) {
+      const local: AstEnv = {
+        vars: new Map(env.vars),
+        fns: env.fns,
+      };
+      params.forEach((p, i) => {
+        local.vars.set(p, args[i] ?? unknown);
+      });
+      // 求值前预绑定提升形状：实参仍是 any/unknown 才生效（具体实参优先）
+      for (const [p, shape] of promoteScan.promotedShapes) {
+        const cur = local.vars.get(p);
+        if (cur && (cur.shape.k === "any" || cur.shape.k === "unknown")) {
+          local.vars.set(p, { shape, term: cur.term, pred: cur.pred, conf: "path" });
+        }
+      }
+      result = evalNode(body, local, phi, budget).value;
+    }
     // 截断/失败结果不缓存，避免固化过宽或不稳定结论
     if (isCacheableAbs(result)) {
       instMemo.set(key, { result, varOrder });
