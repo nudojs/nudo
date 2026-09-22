@@ -82,12 +82,6 @@ import {
   undefAbs,
 } from "./hof.ts";
 import type { AstEnv } from "./ast-env.ts";
-import {
-  tryPromoteDirectCall,
-  tryPromoteForOfIteratee,
-  tryPromoteHofCallback,
-  tryPromoteReceiverAsArr,
-} from "./hof.ts";
 import { concatString, isTemplateLike } from "./template.ts";
 import {
   evalGlobalFn,
@@ -1657,28 +1651,11 @@ function evalCall(
       }
       if (obj0.shape.k === "any") {
         const loc0 = node.loc
-          ? { line: node.loc.start.line, column: node.loc.start.column }
+          ? ([node.loc.start.line, node.loc.start.column] as [number, number])
           : undefined;
         noteAnyMemberMayThrow(obj0, method, "method", loc0);
       }
       let obj = obj0;
-      // 挂载点①：形参 any 上的 HOF 方法 miss → 提升为 arr，再走正常分支
-      if (
-        m.object.type === "Identifier" &&
-        env.hofCollect &&
-        (obj0.shape.k === "any" || obj0.shape.k === "unknown")
-      ) {
-        const loc0 = node.loc
-          ? { line: node.loc.start.line, column: node.loc.start.column }
-          : undefined;
-        const promoted = tryPromoteReceiverAsArr(
-          env,
-          (m.object as Identifier).name,
-          method,
-          loc0,
-        );
-        if (promoted) obj = promoted;
-      }
       const rawArgs = node.arguments.filter(
         (a): a is Exclude<typeof a, { type: "SpreadElement" }> => a.type !== "SpreadElement",
       );
@@ -1906,18 +1883,6 @@ function evalCall(
       if (method === "map" && rawArgs.length >= 1) {
         const fnNode = rawArgs[0]!;
         // 挂载点③：回调形参提升（receiver 已是 arr 时仍生效）
-        if (fnNode.type === "Identifier" && env.hofCollect) {
-          const elem0 =
-            obj.shape.k === "arr"
-              ? (obj.shape as { element: Abs }).element
-              : obj.shape.k === "tuple"
-                ? (obj.shape.elements[0] ?? unknown)
-                : unknown;
-          const loc0 = node.loc
-            ? { line: node.loc.start.line, column: node.loc.start.column }
-            : undefined;
-          tryPromoteHofCallback(env, (fnNode as Identifier).name, "map", [elem0], loc0);
-        }
         // tuple：逐元素 map，保精确；hole 跳过且输出保留 hole 位置
         if (obj.shape.k === "tuple") {
           const mapped = obj.shape.elements.map((el, i) =>
@@ -1959,18 +1924,6 @@ function evalCall(
         const fnNode = rawArgs[0]!;
         let acc = evalNode(rawArgs[1]!, env, phi, budget).value;
         // 挂载点③
-        if (fnNode.type === "Identifier" && env.hofCollect) {
-          const item0 =
-            obj.shape.k === "arr"
-              ? (obj.shape as { element: Abs }).element
-              : obj.shape.k === "tuple"
-                ? (obj.shape.elements[0] ?? unknown)
-                : unknown;
-          const loc0 = node.loc
-            ? { line: node.loc.start.line, column: node.loc.start.column }
-            : undefined;
-          tryPromoteHofCallback(env, (fnNode as Identifier).name, "reduce", [acc, item0], loc0);
-        }
         if (obj.shape.k === "tuple") {
           for (let i = 0; i < obj.shape.elements.length; i++) {
             if (isArrHole(i)) continue;
@@ -2023,18 +1976,6 @@ function evalCall(
       if (method === "filter" && rawArgs.length >= 1) {
         const fnNode = rawArgs[0]!;
         // 挂载点③
-        if (fnNode.type === "Identifier" && env.hofCollect) {
-          const elem0 =
-            obj.shape.k === "arr"
-              ? (obj.shape as { element: Abs }).element
-              : obj.shape.k === "tuple"
-                ? (obj.shape.elements[0] ?? unknown)
-                : unknown;
-          const loc0 = node.loc
-            ? { line: node.loc.start.line, column: node.loc.start.column }
-            : undefined;
-          tryPromoteHofCallback(env, (fnNode as Identifier).name, "filter", [elem0], loc0);
-        }
         if (obj.shape.k === "tuple") {
           const kept: Abs[] = [];
           let anyUncertain = false;
@@ -2071,18 +2012,6 @@ function evalCall(
       if (method === "flatMap" && rawArgs.length >= 1) {
         const fnNode = rawArgs[0]!;
         // 挂载点③
-        if (fnNode.type === "Identifier" && env.hofCollect) {
-          const elem0 =
-            obj.shape.k === "arr"
-              ? (obj.shape as { element: Abs }).element
-              : obj.shape.k === "tuple"
-                ? (obj.shape.elements[0] ?? unknown)
-                : unknown;
-          const loc0 = node.loc
-            ? { line: node.loc.start.line, column: node.loc.start.column }
-            : undefined;
-          tryPromoteHofCallback(env, (fnNode as Identifier).name, "flatMap", [elem0], loc0);
-        }
         if (obj.shape.k === "tuple") {
           const mapped = obj.shape.elements.map((el, i) =>
             isArrHole(i)
@@ -2245,18 +2174,6 @@ function evalCall(
 
   // 变量上的 Abs 一等函数（含 relation-only / shape-only）
   let bound = env.vars.get(name);
-  // 挂载点②：形参直接调用 p(x) —— 先提升再分派
-  if (
-    env.hofCollect?.paramNames.has(name) &&
-    bound &&
-    (bound.shape.k === "any" || bound.shape.k === "unknown")
-  ) {
-    const loc0 = node.loc
-      ? { line: node.loc.start.line, column: node.loc.start.column }
-      : undefined;
-    tryPromoteDirectCall(env, name, args, loc0);
-    bound = env.vars.get(name);
-  }
   if (bound && (getFnImpl(bound) || isRelFn(bound))) {
     const v = applyAbsFn(bound, args, env, phi, budget);
     const loc0 = node.loc;
@@ -2610,22 +2527,6 @@ function evalForOf(
     } else if (noteAnyMemberMayThrow(iterVal, "Symbol.iterator", "method", loc)) {
       // 仍继续按 any 元素分发
     }
-  }
-  // 挂载点（for-of）：形参 any 上的迭代 → 提升 arr，再按元素分发
-  if (
-    node.right.type === "Identifier" &&
-    env.hofCollect &&
-    (iterVal.shape.k === "any" || iterVal.shape.k === "unknown")
-  ) {
-    const loc0 = node.loc
-      ? { line: node.loc.start.line, column: node.loc.start.column }
-      : undefined;
-    const promoted = tryPromoteForOfIteratee(
-      env,
-      (node.right as Identifier).name,
-      loc0,
-    );
-    if (promoted) iterVal = promoted;
   }
   const shape = iterVal.shape;
   const isTuple = shape.k === "tuple";

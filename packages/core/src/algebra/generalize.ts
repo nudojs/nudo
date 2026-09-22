@@ -37,12 +37,8 @@ import {
   normPath,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
-import {
-  createHofCollectCtx,
-  snapshotAbs,
-  type RelSource,
-  type HofSite,
-} from "./hof.ts";
+import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
+import { scanPromotions } from "./promote-scan.ts";
 
 /** 进程内 L0：同 (source, fn, refine 指纹, budget, label) 的 generalize 结果 */
 const generalizeMemo = new Map<string, PolyFn | undefined>();
@@ -864,30 +860,38 @@ function generalizeFromAstUncached(
   // 随 L0 的 PolyFn 共享；resetGeneralizeMemo 一并丢弃。
   const instMemo = new Map<string, InstHit>();
 
-  const paramNames = new Set(params);
   const alphaIds = typeParams.map((t) => t.id);
 
-  const run = (
-    args: Abs[],
-    phi: Phi = pTrue,
-    collector?: import("./hof.ts").HofCollectCtx,
-  ): Abs => {
+  // 提升前置化：静态扫描替代求值期挂载点（§promote-scan）。
+  // symbolic/instantiate 共用同一决策；refine 形状（非 any typeParam）
+  // 到达优先拒绝提升（与运行时 promoteParamShape 同口径）。
+  const promoteScan = scanPromotions(
+    body,
+    params,
+    typeParams.map((t) => t.id),
+    new Map(params.map((p, i) => [p, typeParams[i]!.value])),
+  );
+
+  const run = (args: Abs[], phi: Phi = pTrue): Abs => {
     const { key, varOrder } = instantiateMemoKey(args, phi);
     const hit = instMemo.get(key);
     if (hit !== undefined) {
       return alphaRenameResult(hit.result, hit.varOrder, varOrder);
     }
-    // symbolic 传入 collector 以沉淀关系；instantiate 装 throwaway collector——
-    // 形状提升仍生效（§5.2.5），但 run 结束即丢，不写 PolyFn 共享状态。
-    const hc = collector ?? createHofCollectCtx(paramNames, alphaIds);
     const local: AstEnv = {
       vars: new Map(env.vars),
       fns: env.fns,
-      hofCollect: hc,
     };
     params.forEach((p, i) => {
       local.vars.set(p, args[i] ?? unknown);
     });
+    // 求值前预绑定提升形状：实参仍是 any/unknown 才生效（具体实参优先）
+    for (const [p, shape] of promoteScan.promotedShapes) {
+      const cur = local.vars.get(p);
+      if (cur && (cur.shape.k === "any" || cur.shape.k === "unknown")) {
+        local.vars.set(p, { shape, term: cur.term, pred: cur.pred, conf: "path" });
+      }
+    }
     const result = evalNode(body, local, phi, budget).value;
     // 截断/失败结果不缓存，避免固化过宽或不稳定结论
     if (isCacheableAbs(result)) {
@@ -895,9 +899,6 @@ function generalizeFromAstUncached(
     }
     return result;
   };
-
-  // symbolic 一次跑安装 collector 并沉淀；instantiate 不读其结果
-  const hofCollector = createHofCollectCtx(paramNames, alphaIds);
 
   const symbolic = run(
     typeParams.map((t) => t.value),
@@ -907,7 +908,6 @@ function generalizeFromAstUncached(
         ? entryReqs[0]!.pred
         : { op: "and", args: entryReqs.map((r) => r.pred) }
       : pTrue,
-    hofCollector,
   );
 
   // opaque = call-budget 截断/泄漏 → 不写关系；
@@ -927,18 +927,18 @@ function generalizeFromAstUncached(
         fnRels.set(param, { abs: snapshotAbs(rec.abs), source: rec.source });
       }
     }
-    for (const [param, rec] of hofCollector.fnRels) {
+    for (const [param, rec] of promoteScan.fnRels) {
       if (refineEntryShapes.has(param)) continue;
       if (!fnRels) fnRels = new Map();
       fnRels.set(param, { abs: snapshotAbs(rec.abs), source: rec.source });
     }
-    for (const [param, rec] of hofCollector.entryShapes) {
+    for (const [param, rec] of promoteScan.entryShapes) {
       if (refineEntryShapes.has(param)) continue;
       if (!entryShapes) entryShapes = new Map();
       entryShapes.set(param, { abs: snapshotAbs(rec.abs), source: rec.source });
     }
-    if (hofCollector.sites.length > 0) {
-      hofSites = hofCollector.sites.map((s) => ({
+    if (promoteScan.sites.length > 0) {
+      hofSites = promoteScan.sites.map((s) => ({
         ...s,
         argTerms: [...s.argTerms],
         result: snapshotAbs(s.result),
