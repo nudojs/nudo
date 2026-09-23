@@ -349,7 +349,7 @@ register({ id: 1 });             // error: missing u.name
 
 | 门禁 | 文件 | 要求 |
 |---|---|---|
-| **人工 recall** | `check-recall-gold.test.ts` | recall = precision = **1.0**（101 条人工标注，含 8 条已知 FN 用 `it.fails` 钉住不计门禁 + 15 条 require/ESM 跨文件） |
+| **人工 recall** | `check-recall-gold.test.ts` | recall = precision = **1.0**（144 条人工标注，含 require/ESM 跨文件；knownFn=0） |
 | **shape 精化** | `check-shape-gold.test.ts` | 字段 / 可选 / 边界 |
 | **case ⊆ refine** | `check-case-consistency.test.ts` | 见证 ⊆ 定义域 |
 | **真实包精度** | `check-real-commander.test.ts` / `check-real-packages.test.ts` | 10 个真实包上**零** error 级误报（`constraint-violated` / `assign-mismatch` / `arg-structure`） |

@@ -189,6 +189,20 @@ const KNOWN_GLOBALS = new Set([
   "isFinite",
 ]);
 
+/** require spec 可常量折叠成字符串（transpile 已接管，不报 builtin-unknown） */
+function isStaticStringExpr(node: unknown): boolean {
+  if (!node || typeof node !== "object") return false;
+  const n = node as { type?: string; expressions?: unknown[]; left?: unknown; right?: unknown; operator?: string };
+  if (n.type === "StringLiteral" || n.type === "NumericLiteral") return true;
+  if (n.type === "TemplateLiteral") {
+    return (n.expressions ?? []).every((e) => isStaticStringExpr(e));
+  }
+  if (n.type === "BinaryExpression" && n.operator === "+") {
+    return isStaticStringExpr(n.left) && isStaticStringExpr(n.right);
+  }
+  return false;
+}
+
 function isFreeUnknown(
   name: string,
   declared: Set<string>,
@@ -226,17 +240,36 @@ function walkBuiltinUnknown(
     }
   };
 
-  if (n.type === "CallExpression" && n.callee?.type === "Identifier") {
-    flag(n.callee, (n.callee as Identifier).name);
+  if (n.type === "CallExpression") {
+    const callee = n.callee as
+      | { type?: string; name?: string; object?: { type?: string; name?: string }; property?: { type?: string; name?: string } }
+      | undefined;
+    const args = (n as { arguments?: unknown[] }).arguments ?? [];
+    if (callee?.type === "Identifier" && callee.name === "require") {
+      // 静态 spec 由 transpile → __nudoRequire 接管；真动态才报
+      if (!isStaticStringExpr(args[0])) flag(n.callee!, "require");
+    } else if (
+      callee?.type === "MemberExpression" &&
+      callee.object?.type === "Identifier" &&
+      callee.object.name === "require"
+    ) {
+      // require.resolve(...)：静态 spec 不报；动态报在 require 名下
+      if (callee.property?.name === "resolve" && !isStaticStringExpr(args[0])) {
+        flag(callee.object as unknown as Node, "require");
+      }
+    } else if (callee?.type === "Identifier") {
+      flag(n.callee!, callee.name!);
+    }
   } else if (
     n.type === "Identifier" &&
     typeof n.name === "string" &&
+    n.name !== "require" &&
     parentKey !== "key" &&
     parentKey !== "property" &&
     parentKey !== "local" &&
     parentKey !== "id"
   ) {
-    // 裸标识符引用（如 return WeakRef）
+    // 裸标识符引用（如 return WeakRef）；require 由 CallExpression 分支专管
     flag(node as Node, n.name);
   }
 
