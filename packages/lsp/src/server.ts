@@ -85,6 +85,7 @@ import {
   contractPositionalArgs,
   contractEmitPositionalArgs,
   computeInterfaceLenses,
+  computeObservationLenses,
   type AgentToolDeps,
   type AgentToolResult,
 } from "./agent-tools.ts";
@@ -481,7 +482,7 @@ connection.onCodeLens((params) => {
             arguments: [params.textDocument.uri, lens.fn],
           },
         });
-      } else {
+      } else if (lens.kind === "case") {
         lenses.push({
           range,
           command: {
@@ -490,7 +491,31 @@ connection.onCodeLens((params) => {
             arguments: [params.textDocument.uri, lens.fn, lens.caseIndex, lens.caseName],
           },
         });
+      } else if (lens.kind === "callsite" || lens.kind === "entry") {
+        lenses.push({
+          range,
+          command: {
+            title: lens.title,
+            command: "nudo.trace",
+            arguments: [params.textDocument.uri, lens.fn],
+          },
+        });
       }
+    }
+
+    // 合成 call@ / entry@ 观察层（CLI `nudo test` 的源码内投影）
+    for (const lens of computeObservationLenses(source, filePath)) {
+      lenses.push({
+        range: {
+          start: { line: lens.line - 1, character: 0 },
+          end: { line: lens.line - 1, character: 0 },
+        },
+        command: {
+          title: lens.title,
+          command: "nudo.trace",
+          arguments: [params.textDocument.uri, lens.fn],
+        },
+      });
     }
 
     return lenses;

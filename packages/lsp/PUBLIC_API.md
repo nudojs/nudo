@@ -38,7 +38,7 @@ Declared in `connection.onInitialize` (`src/server.ts`). Keys are the freeze lis
 | `textDocumentSync` | `Full` |
 | `hoverProvider` | Abs / intension + interface tier on export fn names |
 | `completionProvider` | trigger `.`; `resolveProvider: false` |
-| `codeLensProvider` | `resolveProvider: false`; interface tier first |
+| `codeLensProvider` | `resolveProvider: false`; interface tier first; case debug layer; **synthetic `call@`/`entry@` observation lenses** (CLI test facts pinned to source; click → `nudo.trace`) |
 | `inlayHintProvider` | case + Abs param/return |
 | `definitionProvider` | local + cross-file + sidecar |
 | `referencesProvider` | |

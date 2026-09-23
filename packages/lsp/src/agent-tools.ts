@@ -1033,7 +1033,21 @@ export type CaseLens = {
   active: boolean;
 };
 
-export type NudoLens = InterfaceLens | CaseLens;
+/**
+ * 合成观察 lens（call@ / entry@）：把 `nudo test` 的调用点事实直接钉在
+ * 源码上。call@ 落在**调用点行**，entry@ 落在**函数声明行**。只读观察。
+ */
+export type ObservationLens = {
+  kind: "callsite" | "entry";
+  fn: string;
+  /** 1-based：call@=调用点行；entry@/symbolic=函数行 */
+  line: number;
+  caseName: string;
+  /** CLI test 同形标题：`call@L6  (5, 3) => 2` */
+  title: string;
+};
+
+export type NudoLens = InterfaceLens | CaseLens | ObservationLens;
 
 export type InterfaceLensDeps = {
   /** .nudo.js 侧车装载（effectiveInterface 同一通道）；缺省不加载侧车 */
@@ -1159,4 +1173,65 @@ export function computeInterfaceLenses(
   // lens 探测可能积累 interface-load 诊断——只排本次增量，防泄漏进 check 通道
   takeInterfaceDiagsSince(ifaceSince);
   return lenses;
+}
+
+/** `call@L6` / `entry@L2` → 行号；`call@symbolic` / `entry@` → undefined */
+function observationLineFromName(name: string): number | undefined {
+  const m = /@L(\d+)\s*$/.exec(name);
+  return m ? Number(m[1]) : undefined;
+}
+
+/**
+ * 合成 call@ / entry@ 观察 lens（CLI `nudo test` 的源码内投影）。
+ * - 跳过 `@nudo:case` 指令 case（已有 case 副层 lens）
+ * - call@ 挂调用点行；entry@ / call@symbolic 挂函数声明行
+ * - 标题与 test 报告同形：`call@L6  (5, 3) => 2`
+ */
+export function computeObservationLenses(source: string, filePath: string): ObservationLens[] {
+  let analysis: ReturnType<typeof analyzeFile>;
+  try {
+    analysis = analyzeFile(filePath, source);
+  } catch {
+    return [];
+  }
+  const out: ObservationLens[] = [];
+  for (const fn of analysis.functions) {
+    const fnLine = fn.loc.start.line;
+    for (const c of fn.cases) {
+      // 指令 case 由 case 副层负责；这里只钉合成观察
+      if (c.source === "directive") continue;
+      const isEntry = c.name.startsWith("entry@");
+      const isCall = c.name.startsWith("call@");
+      if (!isEntry && !isCall && c.source !== "callsite") continue;
+
+      const args = c.argAbs.map((a) => {
+        try {
+          return formatShape(a);
+        } catch {
+          return "unknown";
+        }
+      });
+      let result: string;
+      try {
+        result = formatShape(c.abs);
+      } catch {
+        result = "unknown";
+      }
+      const argsStr = args.join(", ");
+      const title = `${c.name}  (${argsStr}) => ${result}${c.throwsAbs && c.throwsAbs.shape.k !== "never" ? `  throws ${formatShape(c.throwsAbs)}` : ""}`;
+
+      const callLine = observationLineFromName(c.name);
+      const line = isEntry ? fnLine : (callLine ?? fnLine);
+      out.push({
+        kind: isEntry ? "entry" : "callsite",
+        fn: fn.name,
+        line,
+        caseName: c.name,
+        title,
+      });
+    }
+  }
+  // 稳定序：行号 → 函数名 → case 名
+  out.sort((a, b) => a.line - b.line || a.fn.localeCompare(b.fn) || a.caseName.localeCompare(b.caseName));
+  return out;
 }
