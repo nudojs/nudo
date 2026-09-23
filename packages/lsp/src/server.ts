@@ -39,7 +39,16 @@ import {
   isWatchRelevantPath,
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
-import { documentSymbols, findIdentifierAtPosition, resolveDefinition, resolveDefinitionLocations, resolveReferences, type DocumentSymbolItem } from "./symbols.ts";
+import {
+  documentSymbols,
+  findIdentifierAtPosition,
+  resolveDefinition,
+  resolveDefinitionLocations,
+  resolveReferences,
+  renameTargetAt,
+  buildRenameEdits,
+  type DocumentSymbolItem,
+} from "./symbols.ts";
 import { findFnContractInsertPos } from "./sidecar-insert.ts";
 import { TOKEN_TYPES, TOKEN_MODIFIERS } from "./semantic-tokens.ts";
 import {
@@ -134,7 +143,7 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
     inlayHintProvider: true,
     definitionProvider: true,
     referencesProvider: true,
-    renameProvider: true,
+    renameProvider: { prepareProvider: true },
     documentSymbolProvider: true,
     workspaceSymbolProvider: true,
     codeActionProvider: {
@@ -688,6 +697,7 @@ connection.onReferences((params) => {
     const refs = resolveReferences(filePath, source, identAtPos, {
       extraFiles: navigationExtraFiles(filePath),
       includeDeclaration: params.context?.includeDeclaration !== false,
+      at: { line, column },
     });
     return refs.map((ref) => ({
       uri: ref.uri ? filePathToUri(ref.uri) : params.textDocument.uri,
@@ -716,47 +726,53 @@ connection.onRenameRequest((params) => {
     const identAtPos = findIdentifierAtPosition(ast, line, column);
     if (!identAtPos) return null;
 
-    // 跨文件：definition + references 一起改
+    // 金标：属性名 / 非绑定不参与 rename
+    const target = renameTargetAt(source, line, column);
+    if (target && "error" in target) return null;
+
+    // 跨文件：definition + references 一起改（同绑定）
     const def = resolveDefinition(filePath, source, identAtPos);
     const refs = resolveReferences(filePath, source, identAtPos, {
       extraFiles: navigationExtraFiles(filePath),
+      at: { line, column },
     });
 
-    const changes: Record<string, Array<{ range: any; newText: string }>> = {};
-    const push = (uri: string, loc: { start: { line: number; column: number }; end: { line: number; column: number } }) => {
-      const list = (changes[uri] ??= []);
-      list.push({
-        range: {
-          start: { line: loc.start.line - 1, character: loc.start.column },
-          end: { line: loc.end.line - 1, character: loc.end.column },
-        },
-        newText: params.newName,
-      });
-    };
-
+    const locations: Array<{ uri: string; loc: { start: { line: number; column: number }; end: { line: number; column: number } } }> = [];
     if (def) {
-      push(filePathToUri(def.filePath), def.loc);
+      locations.push({ uri: filePathToUri(def.filePath), loc: def.loc });
     }
     for (const ref of refs) {
-      push(ref.uri ? filePathToUri(ref.uri) : params.textDocument.uri, ref.loc);
-    }
-
-    // 去重（同一 uri 下相同 range）
-    for (const uri of Object.keys(changes)) {
-      const seen = new Set<string>();
-      changes[uri] = changes[uri]!.filter((e) => {
-        const key = `${e.range.start.line}:${e.range.start.character}:${e.range.end.line}:${e.range.end.character}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
+      locations.push({
+        uri: ref.uri ? filePathToUri(ref.uri) : params.textDocument.uri,
+        loc: ref.loc,
       });
     }
-
+    const changes = buildRenameEdits(params.newName, locations);
     if (Object.keys(changes).length === 0) return null;
     return { changes };
   } catch {
     return null;
   }
+});
+
+connection.onPrepareRename((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return null;
+  if (!isNudoFile(params.textDocument.uri)) return null;
+  const source = document.getText();
+  const line = params.position.line + 1;
+  const column = params.position.character;
+  const target = renameTargetAt(source, line, column);
+  if (!target) return null;
+  // 非绑定：返回 null = 不可改名（property key / member prop 等）
+  if ("error" in target) return null;
+  return {
+    range: {
+      start: { line: target.loc.start.line - 1, character: target.loc.start.column },
+      end: { line: target.loc.end.line - 1, character: target.loc.end.column },
+    },
+    placeholder: target.name,
+  };
 });
 
 connection.onCodeAction((params) => {

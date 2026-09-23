@@ -21,6 +21,121 @@ function traverseFn(): typeof traverse {
   return (typeof traverse === "function" ? traverse : (traverse as any).default) as typeof traverse;
 }
 
+/**
+ * 绑定标识符判定：rename/references 只动**绑定**，不动属性名。
+ * 金标语义（refactor-gold）：
+ * - `obj.x` 非 computed 的 `x` 不是绑定
+ * - `{ x: 1 }` 非 shorthand 的 key 不是绑定；`{ x }` shorthand 是绑定
+ * - class/object method/property 非 computed 的 key 不是绑定
+ * - label 不是绑定
+ * - import local 是定义；`import { a as b }` 的 `a`（imported）不是
+ * - export `{ a as b }` 的 `b`（exported）不是本地绑定
+ */
+export function isBindingIdentifier(path: {
+  node: Node;
+  parent: Node | null;
+  parentPath?: unknown;
+  key?: string | number | null;
+}): boolean {
+  const node = path.node as { type: string; name?: string };
+  if (node.type !== "Identifier") return false;
+  const parent = path.parent as
+    | (Node & {
+        type: string;
+        key?: Node;
+        value?: Node;
+        property?: Node;
+        computed?: boolean;
+        shorthand?: boolean;
+        local?: Node;
+        imported?: Node;
+        exported?: Node;
+        label?: Node;
+      })
+    | null;
+  if (!parent) return true;
+
+  const isSelf = (n?: Node | null): boolean => n === path.node;
+
+  switch (parent.type) {
+    case "MemberExpression":
+    case "OptionalMemberExpression":
+      // obj.x — property 非 computed 不是绑定；obj[x] 的 x 是
+      if (isSelf(parent.property) && parent.computed !== true) return false;
+      return true;
+    case "ObjectProperty":
+    case "ObjectMethod":
+    case "ClassMethod":
+    case "ClassProperty":
+    case "ClassPrivateProperty":
+    case "ClassPrivateMethod":
+    case "TSDeclareMethod":
+      if (isSelf(parent.key) && parent.computed !== true) {
+        // shorthand `{ x }`：key 与 value 同名绑定，可改名
+        return parent.type === "ObjectProperty" && parent.shorthand === true;
+      }
+      return true;
+    case "LabeledStatement":
+    case "BreakStatement":
+    case "ContinueStatement":
+      return false;
+    case "ImportSpecifier":
+    case "ImportDefaultSpecifier":
+    case "ImportNamespaceSpecifier":
+      // 仅 local 是绑定定义
+      return isSelf((parent as { local?: Node }).local);
+    case "ExportSpecifier":
+      // export { local as exported } — 只有 local 是引用
+      return isSelf((parent as { local?: Node }).local);
+    case "ExportDefaultDeclaration":
+      return true;
+    case "FunctionDeclaration":
+    case "FunctionExpression":
+    case "ArrowFunctionExpression":
+    case "ClassDeclaration":
+    case "ClassExpression":
+      // id / params 在下层作为定义登记；这里放行进 references 由调用方去重
+      return true;
+    default:
+      return true;
+  }
+}
+
+function registerParam(
+  definitions: Map<string, SymbolInfo>,
+  param: Node | null | undefined,
+  uri: string,
+  kind: SymbolInfo["kind"] = "variable",
+): void {
+  if (!param) return;
+  const p = param as {
+    type: string;
+    name?: string;
+    id?: Node;
+    left?: Node;
+    properties?: Array<{ key?: Node; value?: Node; computed?: boolean; shorthand?: boolean }>;
+    elements?: Array<Node | null>;
+  };
+  if (p.type === "Identifier" && p.name) {
+    // 不覆盖已登记的同名顶层定义（遮蔽时保留外层 + 语义上以 scope 绑定为准）
+    if (!definitions.has(p.name)) {
+      definitions.set(p.name, { name: p.name, kind, loc: locFromNode(param), uri });
+    }
+  } else if (p.type === "AssignmentPattern") {
+    registerParam(definitions, p.left, uri, kind);
+  } else if (p.type === "RestElement") {
+    registerParam(definitions, (p as { argument?: Node }).argument, uri, kind);
+  } else if (p.type === "ObjectPattern") {
+    for (const prop of p.properties ?? []) {
+      registerParam(definitions, prop.value ?? prop.key, uri, kind);
+    }
+  } else if (p.type === "ArrayPattern") {
+    for (const el of p.elements ?? []) {
+      registerParam(definitions, el, uri, kind);
+    }
+  }
+}
+
 export function buildSymbolTable(ast: Node, uri: string): SymbolTable {
   const definitions = new Map<string, SymbolInfo>();
   const references: ReferenceInfo[] = [];
@@ -36,6 +151,23 @@ export function buildSymbolTable(ast: Node, uri: string): SymbolTable {
             uri,
           });
         }
+        for (const param of path.node.params ?? []) registerParam(definitions, param, uri);
+      },
+      FunctionExpression(path) {
+        if (path.node.id) {
+          if (!definitions.has(path.node.id.name)) {
+            definitions.set(path.node.id.name, {
+              name: path.node.id.name,
+              kind: "function",
+              loc: locFromNode(path.node.id),
+              uri,
+            });
+          }
+        }
+        for (const param of path.node.params ?? []) registerParam(definitions, param, uri);
+      },
+      ArrowFunctionExpression(path) {
+        for (const param of path.node.params ?? []) registerParam(definitions, param, uri);
       },
       VariableDeclarator(path) {
         if (path.node.id.type === "Identifier") {
@@ -45,6 +177,8 @@ export function buildSymbolTable(ast: Node, uri: string): SymbolTable {
             loc: locFromNode(path.node.id),
             uri,
           });
+        } else {
+          registerParam(definitions, path.node.id, uri);
         }
       },
       ClassDeclaration(path) {
@@ -57,10 +191,35 @@ export function buildSymbolTable(ast: Node, uri: string): SymbolTable {
           });
         }
       },
+      ClassExpression(path) {
+        if (path.node.id && !definitions.has(path.node.id.name)) {
+          definitions.set(path.node.id.name, {
+            name: path.node.id.name,
+            kind: "class",
+            loc: locFromNode(path.node.id),
+            uri,
+          });
+        }
+      },
+      ImportDeclaration(path) {
+        for (const spec of path.node.specifiers ?? []) {
+          definitions.set(spec.local.name, {
+            name: spec.local.name,
+            kind: "variable",
+            loc: locFromNode(spec.local),
+            uri,
+          });
+        }
+      },
       Identifier(path) {
+        // 定义位点不进 references（decl 由 resolveReferences/includeDeclaration 负责）
         if (path.parentPath?.node.type === "FunctionDeclaration" && path.parentPath.node.id === path.node) return;
+        if (path.parentPath?.node.type === "FunctionExpression" && path.parentPath.node.id === path.node) return;
         if (path.parentPath?.node.type === "VariableDeclarator" && path.parentPath.node.id === path.node) return;
         if (path.parentPath?.node.type === "ClassDeclaration" && path.parentPath.node.id === path.node) return;
+        if (path.parentPath?.node.type === "ClassExpression" && path.parentPath.node.id === path.node) return;
+
+        if (!isBindingIdentifier(path)) return;
 
         references.push({
           name: path.node.name,
@@ -74,6 +233,170 @@ export function buildSymbolTable(ast: Node, uri: string): SymbolTable {
   }
 
   return { definitions, references };
+}
+
+/**
+ * 作用域感知的同绑定引用（重构金标核心）：
+ * 从 (line, column) 处的标识符解析 babel binding，只收集**同一绑定**的
+ * 引用与声明。属性名/成员属性/遮蔽的同名绑定不会被带入。
+ */
+export function collectBindingReferences(
+  ast: Node,
+  name: string,
+  at: { line: number; column: number },
+  uri: string,
+): ReferenceInfo[] {
+  const out: ReferenceInfo[] = [];
+  const seen = new Set<string>();
+  const push = (node: Node): void => {
+    const loc = locFromNode(node);
+    const key = `${loc.start.line}:${loc.start.column}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ name, loc, uri });
+  };
+
+  try {
+    traverseFn()(ast, {
+      Program(path) {
+        // 定位触点 → binding
+        let target: { node: Node; scope: { getBinding(n: string): { identifier: Node; referencePaths: unknown[] } | undefined } } | null =
+          null;
+        path.traverse({
+          Identifier(p) {
+            const loc = p.node.loc;
+            if (!loc) return;
+            if (
+              loc.start.line === at.line &&
+              loc.start.column <= at.column &&
+              loc.end.column >= at.column &&
+              p.node.name === name
+            ) {
+              if (isBindingIdentifier(p)) {
+                target = { node: p.node, scope: p.scope };
+              }
+              p.stop();
+            }
+          },
+        });
+        if (!target) {
+          path.stop();
+          return;
+        }
+        const binding = (target as { scope: { getBinding(n: string): { identifier: Node; referencePaths: unknown[] } | undefined } })
+          .scope.getBinding(name);
+        if (!binding) {
+          // 未解析绑定（global / 部分语法）：退回名称匹配但已过滤属性键
+          path.traverse({
+            Identifier(p) {
+              if (p.node.name === name && isBindingIdentifier(p)) push(p.node);
+            },
+          });
+          path.stop();
+          return;
+        }
+        push(binding.identifier);
+        for (const ref of binding.referencePaths as Array<{ node: Node }>) {
+          if (ref?.node) push(ref.node);
+        }
+        // assignment / constant violation 也改名
+        const pv = binding as unknown as {
+          constantViolations?: Array<{ node: Node }>;
+        };
+        for (const v of pv.constantViolations ?? []) {
+          if (v?.node?.type === "Identifier") push(v.node);
+          else if (v?.node) {
+            // AssignmentExpression left
+            const left = (v.node as { left?: Node }).left;
+            if (left?.type === "Identifier") push(left);
+          }
+        }
+        path.stop();
+      },
+    });
+  } catch {
+    /* partial AST */
+  }
+  return out;
+}
+
+/** prepareRename：仅绑定标识符可改名（属性键/成员属性拒绝）。 */
+export function renameTargetAt(
+  source: string,
+  line: number,
+  column: number,
+): { name: string; loc: SourceLocation } | { error: string } | null {
+  let ast: Node;
+  try {
+    ast = parse(source);
+  } catch {
+    return { error: "parse error" };
+  }
+  let hit: { name: string; loc: SourceLocation; ok: boolean } | null = null;
+  try {
+    traverseFn()(ast, {
+      Identifier(path) {
+        const loc = path.node.loc;
+        if (!loc) return;
+        if (
+          loc.start.line === line &&
+          loc.start.column <= column &&
+          loc.end.column >= column
+        ) {
+          hit = {
+            name: path.node.name,
+            loc: locFromNode(path.node),
+            ok: isBindingIdentifier(path),
+          };
+          path.stop();
+        }
+      },
+    });
+  } catch {
+    return { error: "parse error" };
+  }
+  if (!hit) return null;
+  const h = hit as { name: string; loc: SourceLocation; ok: boolean };
+  if (!h.ok) {
+    return { error: `cannot rename '${h.name}' (property / non-binding identifier)` };
+  }
+  return { name: h.name, loc: h.loc };
+}
+
+export type RenameEdit = {
+  range: {
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
+  newText: string;
+};
+
+/** 纯函数：把 def+refs 转成 LSP WorkspaceEdit.changes（去重）。 */
+export function buildRenameEdits(
+  newName: string,
+  locations: Array<{ uri: string; loc: SourceLocation }>,
+): Record<string, RenameEdit[]> {
+  const changes: Record<string, RenameEdit[]> = {};
+  for (const { uri, loc } of locations) {
+    const list = (changes[uri] ??= []);
+    list.push({
+      range: {
+        start: { line: loc.start.line - 1, character: loc.start.column },
+        end: { line: loc.end.line - 1, character: loc.end.column },
+      },
+      newText: newName,
+    });
+  }
+  for (const uri of Object.keys(changes)) {
+    const seen = new Set<string>();
+    changes[uri] = changes[uri]!.filter((e) => {
+      const key = `${e.range.start.line}:${e.range.start.character}:${e.range.end.line}:${e.range.end.character}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+  return changes;
 }
 
 export function findDefinition(
@@ -533,10 +856,15 @@ export function resolveDefinitionLocations(
   const ast = parse(source);
   const table = buildSymbolTable(ast, fromFile);
   const local = findDefinition(table, ident);
-  if (local) out.push({ filePath: fromFile, loc: local.loc, name: local.name });
   const cross = findCrossFileDefinition(fromFile, source, ident);
-  if (cross && !out.some((d) => d.filePath === cross.filePath && d.loc === cross.loc)) {
+  // import 绑定：真实定义在目标导出；本地 import 说明符作次要位点（Peek）
+  if (cross) {
     out.push(cross);
+    if (local) {
+      out.push({ filePath: fromFile, loc: local.loc, name: local.name });
+    }
+  } else if (local) {
+    out.push({ filePath: fromFile, loc: local.loc, name: local.name });
   }
   const sidecar = findSidecarContractDefinition(fromFile, ident, options);
   if (sidecar && !out.some((d) => d.filePath === sidecar.filePath)) {
@@ -567,20 +895,78 @@ export function resolveDefinition(
 }
 
 /**
- * 统一 references：本地 + 跨文件（import 了定义文件的调用方）。
+ * 统一 references：本地（作用域绑定）+ 跨文件（import 了定义文件的调用方）。
  * includeDeclaration=true 时把定义位置也计入（LSP context.includeDeclaration）。
+ * `at` 提供时走 collectBindingReferences——同绑定、抗遮蔽、不碰属性名。
  */
 export function resolveReferences(
   fromFile: string,
   source: string,
   ident: string,
-  options: { extraFiles?: string[]; includeDeclaration?: boolean } = {},
+  options: {
+    extraFiles?: string[];
+    includeDeclaration?: boolean;
+    at?: { line: number; column: number };
+  } = {},
 ): ReferenceInfo[] {
   const includeDecl = options.includeDeclaration !== false;
   const ast = parse(source);
   const table = buildSymbolTable(ast, fromFile);
-  const localRefs = findReferences(table, ident);
+  const localRefs = options.at
+    ? collectBindingReferences(ast, ident, options.at, fromFile)
+    : findReferences(table, ident);
   const localDef = findDefinition(table, ident);
+
+  // import 绑定优先：localDef 可能是 import local（也是定义），必须走跨文件
+  const crossDefEarly = findCrossFileDefinition(fromFile, source, ident);
+  if (crossDefEarly) {
+    const defSource = readSourceIfExists(crossDefEarly.filePath) ?? "";
+    let defAst: Node | null = null;
+    try {
+      defAst = parse(defSource);
+    } catch {
+      defAst = null;
+    }
+    const defLocalRefs: ReferenceInfo[] = [];
+    let defDecl: ReferenceInfo[] = [];
+    if (defAst) {
+      if (options.at) {
+        // 目标文件：从定义位点收集同绑定
+        defLocalRefs.push(
+          ...collectBindingReferences(
+            defAst,
+            crossDefEarly.name,
+            {
+              line: crossDefEarly.loc.start.line,
+              column: crossDefEarly.loc.start.column,
+            },
+            crossDefEarly.filePath,
+          ),
+        );
+      } else {
+        const defTable = buildSymbolTable(defAst, crossDefEarly.filePath);
+        defLocalRefs.push(...findReferences(defTable, crossDefEarly.name));
+      }
+      const defTable = buildSymbolTable(defAst, crossDefEarly.filePath);
+      const d = findDefinition(defTable, crossDefEarly.name);
+      if (d && includeDecl) {
+        defDecl = [{ name: d.name, loc: d.loc, uri: crossDefEarly.filePath }];
+      }
+    }
+
+    const cross = findCrossFileReferences(crossDefEarly.filePath, crossDefEarly.name, {
+      extraFiles: [...(options.extraFiles ?? []), fromFile],
+    });
+    const seen = new Set<string>();
+    const all: ReferenceInfo[] = [];
+    for (const r of [...defDecl, ...defLocalRefs, ...localRefs, ...cross]) {
+      const key = `${r.uri ?? ""}:${r.loc.start.line}:${r.loc.start.column}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      all.push(r);
+    }
+    return all;
+  }
 
   // 本地定义：扫描 import 本文件的其它文件
   if (localDef) {

@@ -100,20 +100,21 @@ describe("cross-file definition", () => {
 });
 
 describe("workspace fallback definition", () => {
-  it("resolves DI-param usage to same-name export in sibling file when fallback enabled", () => {
+  it("DI-param usage resolves to the local param binding (rename-safe)", () => {
     const ast = parse(scanSrc);
     const ident = findIdentifierAtPosition(ast, 2, 9);
     expect(ident).toBe("computeScorecard");
+    // 形参是真实绑定：定义落在 scan.js 的 `{ computeScorecard }` 参数位
     const def = resolveDefinition(scanPath, scanSrc, ident!, { workspaceFallback: true });
     expect(def).not.toBeNull();
-    expect(def!.filePath).toBe(scorecardPath);
+    expect(def!.filePath).toBe(scanPath);
     expect(def!.name).toBe("computeScorecard");
-    expect(def!.loc.start.line).toBe(1);
   });
 
-  it("without fallback (rename path) DI-param usage stays unresolved", () => {
+  it("without fallback DI-param still resolves to local param (not workspace)", () => {
     const def = resolveDefinition(scanPath, scanSrc, "computeScorecard");
-    expect(def).toBeNull();
+    expect(def).not.toBeNull();
+    expect(def!.filePath).toBe(scanPath);
   });
 
   it("import binding wins over fallback", () => {
