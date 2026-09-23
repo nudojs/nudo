@@ -76,6 +76,72 @@ describe("formatShape brand/eff/fn", () => {
     expect(formatShape(a)).toBe("(...paths: string) => string");
   });
 
+  it("Map/Set brand shows type args from __key/__value/__elem", () => {
+    const strT = abs(str().shape, undefined, undefined, "exact");
+    const numT = abs(num().shape, undefined, undefined, "exact");
+    const map = abs(
+      {
+        k: "brand",
+        name: "Map",
+        shape: abs(
+          {
+            k: "obj",
+            slots: { __key: { value: strT }, __value: { value: numT } },
+          },
+          undefined,
+          undefined,
+          "exact",
+        ),
+      },
+      undefined,
+      undefined,
+      "exact",
+    );
+    expect(formatShape(map)).toBe("Map<string, number>");
+    const set = abs(
+      {
+        k: "brand",
+        name: "Set",
+        shape: abs(
+          { k: "obj", slots: { __elem: { value: numT } } },
+          undefined,
+          undefined,
+          "exact",
+        ),
+      },
+      undefined,
+      undefined,
+      "exact",
+    );
+    expect(formatShape(set)).toBe("Set<number>");
+    const bare = abs({ k: "brand", name: "Map", shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") }, undefined, undefined, "exact");
+    expect(formatShape(bare)).toBe("Map");
+  });
+
+  it("Map type vars render as α names", () => {
+    const K = abs({ k: "any" }, v("K"), undefined, "path");
+    const V = abs({ k: "any" }, v("V"), undefined, "path");
+    const map = abs(
+      {
+        k: "brand",
+        name: "Map",
+        shape: abs(
+          {
+            k: "obj",
+            slots: { __key: { value: K }, __value: { value: V } },
+          },
+          undefined,
+          undefined,
+          "path",
+        ),
+      },
+      undefined,
+      undefined,
+      "path",
+    );
+    expect(formatShape(map)).toBe("Map<K, V>");
+  });
+
   it("formatAbs still includes pred", () => {
     const a = abs(num().shape, v("x"), ge(v("x"), lit(0)), "path");
     expect(formatAbs(a)).toContain("0");

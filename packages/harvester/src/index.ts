@@ -135,13 +135,13 @@ function absPromise(inner: Abs): Abs {
   return absExact({ k: "eff", eff: "promise", inner });
 }
 
-/** Map/ReadonlyMap/WeakMap<K,V> → brand Map（__key/__value 供 α 合一） */
-function absMapType(key: Abs, value: Abs): Abs {
+/** Map/ReadonlyMap/WeakMap<K,V> → brand（__key/__value 供 α 合一） */
+function absMapType(name: string, key: Abs, value: Abs): Abs {
   // 不把 get/set 嵌进 brand：lodash 规模下 relationFn fingerprint 会 OOM。
   // 成员语义走 core collections / dispatchMethod；这里只保类型参。
   return absExact({
     k: "brand",
-    name: "Map",
+    name,
     shape: absObj({
       __key: key,
       __value: value,
@@ -149,11 +149,11 @@ function absMapType(key: Abs, value: Abs): Abs {
   });
 }
 
-/** Set/ReadonlySet<T> → brand Set（__elem 供 α 合一） */
-function absSetType(elem: Abs): Abs {
+/** Set/ReadonlySet<T> → brand（__elem 供 α 合一） */
+function absSetType(name: string, elem: Abs): Abs {
   return absExact({
     k: "brand",
-    name: "Set",
+    name,
     shape: absObj({
       __elem: elem,
     }),
@@ -893,10 +893,10 @@ function mapTypeRef(ctx: HarvestContext, node: ts.TypeReferenceNode, depth: numb
     (name === "Map" || name === "ReadonlyMap" || name === "WeakMap") &&
     args.length >= 2
   ) {
-    return absMapType(mapType(ctx, args[0], depth), mapType(ctx, args[1], depth));
+    return absMapType(name, mapType(ctx, args[0], depth), mapType(ctx, args[1], depth));
   }
   if ((name === "Set" || name === "ReadonlySet" || name === "WeakSet") && args.length >= 1) {
-    return absSetType(mapType(ctx, args[0], depth));
+    return absSetType(name, mapType(ctx, args[0], depth));
   }
   if (name === "Record") {
     // Index-signature objects are approximated as an open object type.

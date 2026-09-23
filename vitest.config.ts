@@ -5,11 +5,7 @@ export default defineConfig({
     include: ["packages/*/src/**/*.test.ts", "packages/*/tests/**/*.test.ts"],
     // lodash harvest + relationFn 图会顶爆默认 isolate 堆
     pool: "forks",
-    poolOptions: {
-      forks: {
-        execArgv: ["--max-old-space-size=8192"],
-      },
-    },
+    maxWorkers: 4,
     coverage: {
       provider: "v8",
       reporter: ["json"],

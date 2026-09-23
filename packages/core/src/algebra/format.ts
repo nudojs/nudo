@@ -127,8 +127,27 @@ export function formatShape(a: Abs): string {
       }
       return `(${labels.join(", ")}) => ${ret}`;
     }
-    case "brand":
+    case "brand": {
+      // Map/Set/WeakMap 泛型参数（harvest 的 __key/__value/__elem 槽）
+      const inner = s.shape as Abs;
+      const slots = inner && inner.shape && inner.shape.k === "obj" ? inner.shape.slots : undefined;
+      if (slots) {
+        const arg = (key: string): string | undefined => {
+          const sl = slots[key];
+          return sl ? formatShapeSlot(sl.value) : undefined;
+        };
+        if (s.name === "Map" || s.name === "ReadonlyMap" || s.name === "WeakMap") {
+          const k = arg("__key");
+          const v = arg("__value");
+          if (k !== undefined && v !== undefined) return `${s.name}<${k}, ${v}>`;
+        }
+        if (s.name === "Set" || s.name === "ReadonlySet" || s.name === "WeakSet") {
+          const el = arg("__elem");
+          if (el !== undefined) return `${s.name}<${el}>`;
+        }
+      }
       return `${s.name}`;
+    }
     case "eff":
       return `${s.eff}<${formatShape(s.inner)}>`;
     case "sum": {

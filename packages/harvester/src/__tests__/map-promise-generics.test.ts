@@ -41,7 +41,7 @@ export declare function save(m: Map<string, number>, v: number): void;
     const env = harvestDts(files);
     const load = env.globals.load!;
     const rel = getFnImpl(load)!.relation!;
-    expect(formatShape(rel.paramTypes[0]!)).toContain("Map");
+    expect(formatShape(rel.paramTypes[0]!)).toBe("Map<string, number>");
     const m = rel.paramTypes[0]!;
     expect(m.shape.k).toBe("brand");
     const inner = m.shape.k === "brand" ? (m.shape.shape as { shape?: { slots?: Record<string, { value: unknown }> }; slots?: Record<string, { value: unknown }> }) : undefined;
