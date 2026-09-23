@@ -7,7 +7,7 @@
   "include": [
     "packages/*/src/**/*.test.ts",
     "packages/*/tests/**/*.test.ts",
-    "packages/harvester/src/__tests__/generated-env.d.ts"
+    "packages/*/src/**/*.d.ts"
   ],
   "exclude": []
 }
