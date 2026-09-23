@@ -29,6 +29,7 @@ import { parse, extractInlineDirectives } from "@nudojs/parser";
 import { loadEnvs } from "./evaluator/evaluator-api.ts";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
 import { clearAnalysisFileCache } from "./analysis-file-cache.ts";
+import { getSessionCacheLimits } from "./session-cache-limits.ts";
 import { clearFnAnalysisCache } from "./fn-analysis-cache.ts";
 import { defaultLoadModule } from "./load-module.ts";
 
@@ -359,7 +360,6 @@ type BCacheEntry = {
   value: BPathRunResult | null;
 };
 const bRunByFile = new Map<string, BCacheEntry>();
-const MAX_B_RUN_CACHE = 32;
 
 /** disk dep fingerprint — null = fail-closed（截断/异常时禁止 B-path memo） */
 function bPathDepKey(source: string, filePath: string): string | null {
@@ -398,11 +398,24 @@ function bPathCacheSet(
   depKey: string,
   value: BPathRunResult | null,
 ): void {
-  if (bRunByFile.size >= MAX_B_RUN_CACHE && !bRunByFile.has(filePath)) {
+  const max = getSessionCacheLimits().maxBRuns;
+  if (max <= 0) return;
+  while (bRunByFile.size >= max && !bRunByFile.has(filePath)) {
     const oldest = bRunByFile.keys().next().value;
-    if (oldest !== undefined) bRunByFile.delete(oldest);
+    if (oldest === undefined) break;
+    bRunByFile.delete(oldest);
   }
   bRunByFile.set(filePath, { stableSource, mode, envKey, mockKey, depKey, value });
+}
+
+/** 立刻压到当前 maxBRuns（调低上限时收内存） */
+export function trimBPathCache(): void {
+  const max = getSessionCacheLimits().maxBRuns;
+  while (bRunByFile.size > max) {
+    const oldest = bRunByFile.keys().next().value;
+    if (oldest === undefined) break;
+    bRunByFile.delete(oldest);
+  }
 }
 
 /** 模块图 + runTranspiled（默认 analyze 模式） */

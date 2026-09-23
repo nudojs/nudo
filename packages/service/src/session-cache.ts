@@ -12,10 +12,24 @@ import {
   resetParseSourceCache,
 } from "@nudojs/core";
 import { clearAbsModuleCache, evictAbsModuleCacheFiles } from "./abs-modules-graph.ts";
-import { clearBPathCache, evictBPathCacheForFiles } from "./bpath-run.ts";
-import { clearAnalysisFileCache, evictAnalysisFileCacheForFiles } from "./analysis-file-cache.ts";
-import { clearFnAnalysisCache, evictFnAnalysisCacheForFiles } from "./fn-analysis-cache.ts";
+import { clearBPathCache, evictBPathCacheForFiles, trimBPathCache } from "./bpath-run.ts";
+import {
+  clearAnalysisFileCache,
+  evictAnalysisFileCacheForFiles,
+  trimAnalysisFileCache,
+} from "./analysis-file-cache.ts";
+import {
+  clearFnAnalysisCache,
+  evictFnAnalysisCacheForFiles,
+  trimFnAnalysisCache,
+} from "./fn-analysis-cache.ts";
 import { clearPathEnvCaches } from "./evaluator/env-loader.ts";
+import {
+  getSessionCacheLimits,
+  setSessionCacheFromProject,
+  type SessionCacheLimits,
+} from "./session-cache-limits.ts";
+import type { NudoConfig } from "./evaluator/config.ts";
 
 /**
  * 依赖内容变更后：按入口文件定向逐出 service 层缓存。
@@ -47,6 +61,19 @@ export function clearAnalysisSessionCaches(): void {
   resetGeneralizeMemo();
   resetCheckSourceMemo();
   resetNudoModuleExecCache();
+}
+
+/**
+ * 接线 package.json#nudo.sessionCache（进程内 LRU 上限）并立刻 trim。
+ * env `NUDO_CACHE_MAX_FILES|FNS|BRUNS` 仍优先（多项目内存封顶）。
+ */
+export function applySessionCacheConfig(config: NudoConfig | null | undefined): SessionCacheLimits {
+  setSessionCacheFromProject(config?.sessionCache);
+  const limits = getSessionCacheLimits();
+  trimAnalysisFileCache();
+  trimFnAnalysisCache();
+  trimBPathCache();
+  return limits;
 }
 
 /** 比 clearAnalysisSessionCaches 更彻底：再丢 AST LRU（测试 / 进程复用场景） */

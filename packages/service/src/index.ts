@@ -129,6 +129,7 @@ export {
   tryBPathCallFull,
   clearBPathCache,
   evictBPathCacheForFiles,
+  trimBPathCache,
   collectBPathReplacements,
   collectEnvGlobals,
   collectEnvModules,
@@ -143,16 +144,27 @@ export {
   clearAnalysisFileCache,
   getAnalysisFileCacheSize,
   evictAnalysisFileCacheForFiles,
+  trimAnalysisFileCache,
 } from "./analysis-file-cache.ts";
 export {
   clearFnAnalysisCache,
   evictFnAnalysisCacheForFiles,
+  trimFnAnalysisCache,
 } from "./fn-analysis-cache.ts";
 export {
   evictAnalysisCachesForFiles,
   clearAnalysisSessionCaches,
   resetAllAnalysisCaches,
+  applySessionCacheConfig,
 } from "./session-cache.ts";
+export {
+  getSessionCacheLimits,
+  setSessionCacheLimits,
+  setSessionCacheFromProject,
+  resetSessionCacheLimitState,
+  DEFAULT_SESSION_CACHE_LIMITS,
+  type SessionCacheLimits,
+} from "./session-cache-limits.ts";
 export {
   getAnalysisSession,
   setAnalysisSession,

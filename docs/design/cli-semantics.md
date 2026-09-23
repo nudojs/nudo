@@ -469,7 +469,9 @@ npx tsx scripts/scan-real-packages.ts commander
       // C0.5 可选：求值命中缺槽 warning（默认 off）
       "evalMissingSlot": "off",
       "callSiteBudget": 3
-    }
+    },
+    // 进程内会话 LRU（内存/速度）。0=关。env NUDO_CACHE_MAX_FILES|FNS|BRUNS 优先
+    "sessionCache": { "maxFiles": 64, "maxFns": 1024, "maxBRuns": 32 }
   }
 }
 ```
@@ -480,6 +482,7 @@ npx tsx scripts/scan-real-packages.ts commander
 | `nudo.contract.emit` | emit 写盘白名单 | 分析范围 |
 | `nudo.analysis.*` | **是否分析 + 诊断噪声 + C0.5** | 契约语义 |
 | `nudo.check.*` | L2 门禁过滤 | 分析范围 |
+| `nudo.sessionCache.*` | 会话 LRU 条数上限（多项目封内存） | 磁盘 `nudo.cache` |
 
 | 入口 | include/exclude | mode |
 |---|---|---|

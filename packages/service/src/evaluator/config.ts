@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, relative, sep } from "node:path";
+import { setSessionCacheFromProject } from "../session-cache-limits.ts";
 
 export type NudoConfig = {
   env?: string[];
@@ -28,6 +29,15 @@ export type NudoConfig = {
   };
   /** 磁盘缓存（B3）：true → `.nudo/cache`；字符串 → 自定义根；false/省略 → 关 */
   cache?: boolean | string;
+  /**
+   * 进程内会话 LRU 上限（内存/速度权衡）。多项目开 IDE 时调低封顶；
+   * 单大仓 warm 命中可调高。0 = 关闭该层。env `NUDO_CACHE_MAX_*` 优先。
+   */
+  sessionCache?: {
+    maxFiles?: number;
+    maxFns?: number;
+    maxBRuns?: number;
+  };
   /** check 门禁（design-cli-semantics §3） */
   check?: {
     /** L2 入口 may-throw：error | warning | off（默认 error） */
@@ -244,7 +254,10 @@ export function findProjectConfig(
       try {
         const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
         if (pkg.nudo) {
-          return { config: pkg.nudo as NudoConfig, projectDir: dir };
+          const nudo = pkg.nudo as NudoConfig;
+          // 会话 LRU 上限随项目配置接线（env 仍优先；见 session-cache-limits）
+          setSessionCacheFromProject(nudo.sessionCache);
+          return { config: nudo, projectDir: dir };
         }
       } catch {
         // ignore parse errors
