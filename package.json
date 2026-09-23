@@ -25,6 +25,7 @@
     "verify:links": "node scripts/verify-readme-links.mjs",
     "docs:gen": "node scripts/gen-releases.mjs",
     "learning-cost": "node scripts/learning-cost.mjs",
+    "dx-metrics": "node scripts/dx-metrics.mjs",
     "coverage:env": "tsx scripts/env-coverage-baseline.ts",
     "docs:dev": "pnpm --filter website run start",
     "docs:dev:zh": "pnpm --filter website run start:zh",
