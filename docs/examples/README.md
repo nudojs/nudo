@@ -12,6 +12,7 @@ Single entry point. Grouped by scenario, independent of implementation layout.
 | [`interface-derivation/`](./interface-derivation/) | Contract tier derivation (handwritten root → generated rows) |
 | [`interface-draft/`](./interface-draft/) | Code first: reviewable contract drafts from logic |
 | [`migrate/`](./migrate/) | **Retire the tsc boilerplate package** (one-way before/after gate) |
+| [`errors/`](./errors/) | **Top-10 error faces** (Nudo real output; side-by-side: [errors-vs-typescript](../errors-vs-typescript.md)) |
 
 Browse by theme on the website [Examples guide](https://nudojs.github.io/nudo/docs/guides/examples); this directory is the CI gate's source of truth (`pnpm run verify:examples`).
 
@@ -117,5 +118,15 @@ The single-line commands in each subdirectory README and example file header are
 | `pnpm run nudo -- migrate verify docs/examples/migrate/after/src/math.js` | **0** | migrate verify: `nudo check` passes |
 | `pnpm run nudo -- migrate retire docs/examples/migrate/before/package.json --dry-run` | **0** | migrate retire dry-run: drop typescript / tsc → nudo check (writes nothing) |
 | `pnpm run nudo -- contract --from-dts docs/examples/migrate/before/src/math.ts` | **0** | dts/TS → contract draft (`@nudo:draft`, not enforced until confirmed) |
+| `pnpm run check docs/examples/errors/01-constraint-gt.js` | **1** | Error face: `0 ⊭ ms > 0` |
+| `pnpm run check docs/examples/errors/02-shape-missing.js` | **1** | Error face: missing field u.name |
+| `pnpm run check docs/examples/errors/03-assign-missing.js` | **1** | Error face: missing slot port |
+| `pnpm run check docs/examples/errors/04-entry-throws.js` | **1** | Error face: entry-may-throw TypeError |
+| `pnpm run check docs/examples/errors/05-return-refine.js` | **1** | Error face: return ⊭ positive |
+| `pnpm run check docs/examples/errors/06-plus-truth.js` | **1** | Error face: real `+` + contract gate |
+| `pnpm run check docs/examples/errors/07-prim-assign.js` | **1** | Error face: string ⊭ number |
+| `pnpm run check docs/examples/errors/08-length-bound.js` | **1** | Error face: length ≥ 1 |
+| `pnpm run check docs/examples/errors/09-arg-shape.js` | **1** | Error face: missing field u.id |
+| `pnpm run check docs/examples/errors/10-fix-path.js` | **1** | Error face: dual violation + fix: contract --draft |
 
-> Negative-example files (check on constraints / structure / vs-ts) **exit non-zero on purpose** — the reported lines are what they demonstrate.
+> Negative-example files (check on constraints / structure / vs-ts / errors) **exit non-zero on purpose** — the reported lines are what they demonstrate.

@@ -230,6 +230,28 @@ pin 'pnpm run nudo -- migrate retire docs/examples/migrate/before/package.json -
   'dry-run' 'removed typescript' 'nudo check'
 pin 'pnpm run nudo -- contract --from-dts docs/examples/migrate/before/src/math.ts' \
   '@nudo:draft' 'NOT a sidecar contract' 'fn({ price: number(), qty: number() }, number())' 'export const lineTotal'
+
+# errors/ — top-10 Nudo error faces (see docs/errors-vs-typescript.md)
+pin 'pnpm run check docs/examples/errors/01-constraint-gt.js' \
+  'constraint-violated' 'ms > 0' 'actual:   0  #exact' 'nudo contract --draft'
+pin 'pnpm run check docs/examples/errors/02-shape-missing.js' \
+  'missing field u.name' 'actual:   { id: 2 }  #exact'
+pin 'pnpm run check docs/examples/errors/03-assign-missing.js' \
+  'assign-mismatch' 'missing slot port'
+pin 'pnpm run check docs/examples/errors/04-entry-throws.js' \
+  'entry-may-throw' 'throws TypeError' 'nudo contract --draft'
+pin 'pnpm run check docs/examples/errors/05-return-refine.js' \
+  'return value ⊭ @nudo:refine return positive' 'expected: return > 0'
+pin 'pnpm run check docs/examples/errors/06-plus-truth.js' \
+  'number | string' 'x > 0' 'actual:   -1  #exact'
+pin 'pnpm run check docs/examples/errors/07-prim-assign.js' \
+  'assign-mismatch' 'prim string ⊭ prim number'
+pin 'pnpm run check docs/examples/errors/08-length-bound.js' \
+  'length(s) ≥ 1' 'actual:   ""  #exact'
+pin 'pnpm run check docs/examples/errors/09-arg-shape.js' \
+  'missing field u.id'
+pin 'pnpm run check docs/examples/errors/10-fix-path.js' \
+  'ms > 0' 'x > 0' 'nudo contract --draft'
 pin 'pnpm run check docs/examples/vs-ts/structure/nudo.js' \
   '2 error · 0 warning' \
   'greet[u]' 'constraint-violated' \
