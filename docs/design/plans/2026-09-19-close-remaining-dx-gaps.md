@@ -12,7 +12,7 @@
 
 | ID | 项 | 缺口 |
 |----|----|------|
-| **A6** | IDE 日用冒烟 | service 层冒烟 7/7（`ide-daily-smoke.test.ts`）；**live editor + 中型目录延迟基线**未做（→ S1） |
+| **A6** | IDE 日用冒烟 | service 层冒烟 7/7（`ide-daily-smoke.test.ts`）；延迟证据见 S1 报告 live-editor 段（`docs/reports/s1-perf-baseline.md`） |
 
 > **B2 已完成**：HarvestJson 磁盘缓存 + harvest miss/fail 降级手写 `@nudojs/env` node 面（`harvest-node.ts` / `harvest-node-b2.test.ts`）。
 
@@ -24,7 +24,7 @@
 
 | ID | 项 | 重新拉起条件 |
 |----|----|--------------|
-| **S1** | 真实 monorepo cold/warm/edit 性能基线 | 采用卡在「性能无证据」时 |
+| **S1** | 真实 monorepo cold/warm/edit 性能基线 | ~~押后~~ **已落地**（`pnpm run benchmark:s1`；报告 `docs/reports/s1-perf-baseline.md`） |
 | **S2** | 近 strict 默认门禁档 / 官方契约模板 | 侧手写契约成本成为采用阻塞时 |
 | **S3** | 公开成功样板（真实 JS 包迁移故事） | 覆盖报告达标且有外部包愿意公开时 |
 | **S4** | `analysis.mode=all` 大仓 IDE 体验 | 有明确用户需要脚本级全量分析时 |

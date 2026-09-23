@@ -1,0 +1,124 @@
+{
+  "generatedAt": "2026-09-23T04:47:01.880Z",
+  "scale": {
+    "packages": 8,
+    "filesPerPackage": 15
+  },
+  "corpus": {
+    "files": 120,
+    "bytes": 63081,
+    "packages": 8,
+    "filesPerPackage": 15,
+    "importEdges": 368,
+    "dir": "benchmark/s1/.corpus (generated, gitignored)"
+  },
+  "graph": {
+    "cold": 25.55,
+    "warm": 12.27,
+    "warmCached": 0.32
+  },
+  "coldAnalyzeAll": {
+    "n": 3,
+    "median": 1311.65,
+    "min": 1302.93,
+    "max": 1481.15
+  },
+  "warmAnalyzeAll": {
+    "n": 5,
+    "median": 214.3,
+    "min": 205.71,
+    "max": 226.2
+  },
+  "warmCheckAll": {
+    "n": 3,
+    "median": 28.87,
+    "min": 28.82,
+    "max": 29.76
+  },
+  "edit": {
+    "leaf": {
+      "label": "leaf",
+      "target": "packages/pkg7-index/mod14.js",
+      "dirtyCount": 1,
+      "dirty": {
+        "n": 8,
+        "median": 3.93,
+        "min": 3.53,
+        "max": 4.35
+      },
+      "ideAnalyze": {
+        "n": 8,
+        "median": 0.46,
+        "min": 0.41,
+        "max": 0.49
+      },
+      "ideCheck": {
+        "n": 8,
+        "median": 0.95,
+        "min": 0.86,
+        "max": 1.28
+      }
+    },
+    "mid": {
+      "label": "mid",
+      "target": "packages/pkg2-store/mod0.js",
+      "dirtyCount": 61,
+      "dirty": {
+        "n": 8,
+        "median": 189,
+        "min": 180.05,
+        "max": 198.18
+      },
+      "ideAnalyze": {
+        "n": 8,
+        "median": 0.2,
+        "min": 0.17,
+        "max": 0.23
+      },
+      "ideCheck": {
+        "n": 8,
+        "median": 0.53,
+        "min": 0.47,
+        "max": 0.59
+      }
+    },
+    "hub": {
+      "label": "hub",
+      "target": "packages/pkg0-util/mod0.js",
+      "dirtyCount": 106,
+      "dirty": {
+        "n": 8,
+        "median": 262.55,
+        "min": 250.42,
+        "max": 267.19
+      },
+      "ideAnalyze": {
+        "n": 8,
+        "median": 0.48,
+        "min": 0.42,
+        "max": 0.52
+      },
+      "ideCheck": {
+        "n": 8,
+        "median": 0.2,
+        "min": 0.17,
+        "max": 0.26
+      }
+    }
+  },
+  "liveEditor": {
+    "analyzeOne": {
+      "n": 10,
+      "median": 0.22,
+      "min": 0.19,
+      "max": 1.02
+    },
+    "checkOne": {
+      "n": 10,
+      "median": 0.4,
+      "min": 0.35,
+      "max": 1.18
+    },
+    "target": "pkg2-store/mod0.js"
+  }
+}

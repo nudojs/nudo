@@ -32,6 +32,7 @@
     "benchmark:baseline": "node benchmark/src/baseline.js",
     "benchmark:ts": "node benchmark/src/typescript-runner.js",
     "benchmark:compare": "node benchmark/src/compare.js",
+    "benchmark:s1": "tsx benchmark/s1/bench-monorepo.mts",
     "verify:docs": "bash scripts/verify-doc-examples.sh"
   },
   "devDependencies": {
