@@ -24,6 +24,7 @@
 | 文档 | 内容 | 状态 |
 |------|------|------|
 | [design/limitations.md](./design/limitations.md) | **仍有效**的限制、诚实边界、未决（已解决行为以测试为准） | 现行 |
+| [design/lsp-client-gaps.md](./design/lsp-client-gaps.md) | LSP 客户端 UI 缺口跟踪（LSP-G1…）+ 关闭条件 | 现行 |
 | [design/refine-derivation.md](./design/refine-derivation.md) | 契约分层推导 / 侧车 / `contract --draft`·`--emit` | 摘要 |
 | [design/hof-relations.md](./design/hof-relations.md) | HOF 关系 Abs（非 TS 泛型语言） | 摘要 |
 | [design/persistent-cache.md](./design/persistent-cache.md) | 持久化分析缓存（`.nudo/cache`） | 摘要（L2 未实施） |

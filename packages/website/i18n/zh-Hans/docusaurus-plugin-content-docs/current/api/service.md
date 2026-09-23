@@ -133,7 +133,41 @@ getCasesForFile(filePath: string, source: string): {
 isNudoTargetPath(path: string): boolean
 ```
 
-CLI 收集器、监视模式与 LSP `isNudoFile` 判定共享的扩展名门：`.js`/`.mjs`/`.ts`（大小写不敏感）为推断目标；`.d.ts`、`.tsx` 及其余扩展名不是。
+CLI 收集器、监视模式与 LSP `isNudoFile` 判定共享的扩展名门。纯路径规则（文件无需存在）：
+
+| 路径 | 是否目标 |
+|------|----------|
+| `.js` / `.mjs` / `.ts`（大小写不敏感） | **是** |
+| `.d.ts`、`.tsx`、`.jsx`、`.cjs`、`.mts`、`.cts` 及其余扩展 | 否 |
+| `*.nudo.{js,mjs,ts}` 侧车 | 否（契约模块，非实现源码） |
+| `*.nudo.draft.{js,mjs,ts}` | 否（draft 产物） |
+
+---
+
+## shouldAnalyzeFile
+
+```typescript
+shouldAnalyzeFile(
+  filePath: string,
+  source: string | undefined,
+  config?: AnalysisConfig,
+): boolean
+```
+
+**自动路径**（LSP validate、watch、Vite 插件）是否应对该缓冲/文件跑分析。具名路径 CLI（`nudo check src/lib.js`）不受本门限制，直接分析所点名文件。
+
+门禁顺序：
+
+1. `isNudoTargetPath` —— 非目标路径恒不分析
+2. `nudo.analysis.exclude` / `include`（默认 exclude：`node_modules` / `dist` / `coverage`）
+3. `package.json#nudo.analysis.mode`（出厂默认 **`"exports"`**；`DEFAULT_ANALYSIS_MODE`）：
+   - `"directives"` —— 仅含 `@nudo:*` 指令的文件
+   - `"exports"`（默认）—— 指令 **或** 含 export（ESM/CJS）**或** 同名 `*.nudo.js` 侧车
+   - `"all"` —— 通过 include/exclude 的全部目标路径
+
+默认值真源：[`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) §7。模式语义：[共存](../guides/coexistence.md#何时用-modedirectives-vs-modeexports)。
+
+相关：`DEFAULT_ANALYSIS_MODE`（再导出常量，`"exports"`）、`filterDiagnosticsByLevel`、`diagnosticsLevelForFile`、`sourceHasNudoDirectives`。
 
 ---
 

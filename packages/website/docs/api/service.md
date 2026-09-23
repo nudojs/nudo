@@ -133,7 +133,41 @@ Lists all functions with `@nudo:case` directives and their case names/indices. U
 isNudoTargetPath(path: string): boolean
 ```
 
-Extension gate shared by the CLI collector, watch mode, and the LSP `isNudoFile` check: `.js`/`.mjs`/`.ts` (case-insensitive) are inference targets; `.d.ts`, `.tsx`, and everything else are not.
+Extension gate shared by the CLI collector, watch mode, and the LSP `isNudoFile` check. Pure path rule (the file need not exist):
+
+| Path | Target? |
+|------|---------|
+| `.js` / `.mjs` / `.ts` (case-insensitive) | **yes** |
+| `.d.ts`, `.tsx`, `.jsx`, `.cjs`, `.mts`, `.cts`, other extensions | no |
+| `*.nudo.{js,mjs,ts}` sidecars | no (contract modules, not implementation) |
+| `*.nudo.draft.{js,mjs,ts}` | no (draft artifacts) |
+
+---
+
+## shouldAnalyzeFile
+
+```typescript
+shouldAnalyzeFile(
+  filePath: string,
+  source: string | undefined,
+  config?: AnalysisConfig,
+): boolean
+```
+
+Whether an **automatic** path (LSP validate, watch, Vite plugin) should run analysis on this buffer/file. Named-path CLI commands (`nudo check src/lib.js`) ignore this gate and analyze the named file.
+
+Gate order:
+
+1. `isNudoTargetPath` — non-targets never analyze
+2. `nudo.analysis.exclude` / `include` (default exclude: `node_modules` / `dist` / `coverage`)
+3. `package.json#nudo.analysis.mode` (shipped default **`"exports"`**; `DEFAULT_ANALYSIS_MODE`):
+   - `"directives"` — only files with `@nudo:*` directives
+   - `"exports"` (default) — directives **or** export-bearing (ESM/CJS) **or** a same-stem `*.nudo.js` sidecar
+   - `"all"` — every target path that passes include/exclude
+
+Source of truth for defaults: [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) §7. Mode semantics: [Coexistence](../guides/coexistence.md#when-to-use-modedirectives-vs-modeexports).
+
+Related: `DEFAULT_ANALYSIS_MODE` (re-exported constant, `"exports"`), `filterDiagnosticsByLevel`, `diagnosticsLevelForFile`, `sourceHasNudoDirectives`.
 
 ---
 

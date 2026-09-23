@@ -1,4 +1,4 @@
-import React, {type ComponentProps, type ReactNode} from 'react';
+import {type ComponentProps, type ReactNode, type Ref} from 'react';
 import clsx from 'clsx';
 import {useCodeBlockContext} from '@docusaurus/theme-common/internal';
 import {usePrismTheme} from '@docusaurus/theme-common';
@@ -8,20 +8,18 @@ import Line from '@theme/CodeBlock/Line';
 
 import styles from './styles.module.css';
 
-// TODO Docusaurus v4: remove useless forwardRef
-const Pre = React.forwardRef<HTMLPreElement, ComponentProps<'pre'>>(
-  (props, ref) => {
-    return (
-      <pre
-        ref={ref}
-        /* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */
-        tabIndex={0}
-        {...props}
-        className={clsx(props.className, styles.codeBlock, 'thin-scrollbar')}
-      />
-    );
-  },
-);
+// React 19: function components accept `ref` as a prop (no forwardRef).
+function Pre({ref, ...props}: ComponentProps<'pre'> & {ref?: Ref<HTMLPreElement>}) {
+  return (
+    <pre
+      ref={ref}
+      /* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */
+      tabIndex={0}
+      {...props}
+      className={clsx(props.className, styles.codeBlock, 'thin-scrollbar')}
+    />
+  );
+}
 
 function Code(props: ComponentProps<'code'>) {
   const {metadata} = useCodeBlockContext();

@@ -160,17 +160,17 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 
 ## 已知缺口
 
-非 VS Code 客户端落地时关注这些。**服务器语义共享**；缺口几乎都在**客户端 UI**。每条均给出权宜 + 跟踪锚。
+非 VS Code 客户端落地时关注这些。**服务器语义共享**；缺口几乎都在**客户端 UI**。每条均给出权宜 + 跟踪 ID（仓内：[`docs/design/lsp-client-gaps.md`](https://github.com/nudojs/nudo/blob/main/docs/design/lsp-client-gaps.md)）。
 
 | 缺口 | 影响客户端 | 权宜 | 跟踪 |
 |------|------------|------|------|
-| Active-case 装饰（高亮当前 case 函数体） | Zed、Neovim、Helix | 客户端渲染 CodeLens 时仍可用 `●`/`○` 切换 case，hover 跟随；无 CodeLens UI 时用 CLI `nudo check` / agent `nudo.hover` | 客户端限制 — 无 tracking issue（Zed 无 decoration API；Neovim 需自写插件） |
-| 不渲染 CodeLens | Helix、部分精简 Neovim | CLI `nudo contract` / `nudo check`；agent `nudo.contract` / `nudo.contract.draft`；需要 UI 时用 VS Code / Zed | 客户端限制 — 无 tracking issue（Helix 无 CodeLens UI） |
-| Semantic tokens 默认关闭 | Zed、Neovim、Helix | 按上文 Setup notes 打开客户端设置（Zed `semantic_tokens: "combined"`；Neovim treesitter/semantic-tokens 插件；Helix `editor.semantic-tokens`） | 已按客户端记录在本页 — 无独立 issue |
-| 次要 server 诊断可能与 tsserver 噪声叠加 | 全部 | 收窄 `package.json#nudo.analysis.include` / `exclude`，或 `mode: "directives"` — 完整步骤见 [共存](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | 配置问题，非 bug — 跟踪文档即 [共存配方](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
-| 文档中的文件检测滞后于 analysis-mode 默认 | 文档 | 以 `package.json#nudo.analysis` + [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) 为准 | 文档同步 — 本页 + PUBLIC_API.md |
-| 部分客户端不用 pull diagnostics | 较旧客户端 | push 路径仍有效；didOpen 即 validate | 协议代差 — 无 tracking issue（服务器保留 push） |
-| 部分客户端补全触发 / signature help 偏弱 | Helix（视版本） | 用 hover + `nudo check` / `nudo test`（CLI）；signature help UI 用 VS Code / Zed | 客户端限制 — 无 tracking issue |
+| Active-case 装饰（高亮当前 case 函数体） | Zed、Neovim、Helix | 客户端渲染 CodeLens 时仍可用 `●`/`○` 切换 case，hover 跟随；无 CodeLens UI 时用 CLI `nudo check` / agent `nudo.hover` | **LSP-G1** — 客户端限制（Zed 无 decoration API；Neovim 需自写插件） |
+| 不渲染 CodeLens | Helix、部分精简 Neovim | CLI `nudo contract` / `nudo check`；agent `nudo.contract` / `nudo.contract.draft`；需要 UI 时用 VS Code / Zed | **LSP-G2** — 客户端限制（Helix 无 CodeLens UI） |
+| Semantic tokens 默认关闭 | Zed、Neovim、Helix | 按上文 Setup notes 打开客户端设置（Zed `semantic_tokens: "combined"`；Neovim treesitter/semantic-tokens 插件；Helix `editor.semantic-tokens`） | **LSP-G3** — 配置面；见上文 Setup notes |
+| 次要 server 诊断可能与 tsserver 噪声叠加 | 全部 | 收窄 `package.json#nudo.analysis.include` / `exclude`，或 `mode: "directives"` — 完整步骤见 [共存](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | **LSP-G4** — 配置面；[共存配方](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
+| 文件探测 / `analysis.mode` 文档 | 文档 | 真值：[`@nudojs/service` API](../api/service.md#shouldanalyzefile) + [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) §7 | **LSP-G5** — 已关闭（文档已对齐 `exports` 默认） |
+| 部分客户端不用 pull diagnostics | 较旧客户端 | push 路径仍有效；didOpen 即 validate | **LSP-G6** — 协议代差（服务器保留 push） |
+| 部分客户端补全触发 / signature help 偏弱 | Helix（视版本） | 用 hover + `nudo check` / `nudo test`（CLI）；signature help UI 用 VS Code / Zed | **LSP-G7** — 客户端限制 |
 
 ## 同源保证
 

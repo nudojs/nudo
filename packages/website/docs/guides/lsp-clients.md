@@ -161,17 +161,17 @@ Any LSP client can `workspace/executeCommand` or send `nudo/<tool>` custom reque
 
 ## Known gaps
 
-Track these when adopting a non-VS Code client. Server-side semantics are shared; gaps are almost always **client UI**. Every row has a workaround + tracking anchor.
+Track these when adopting a non-VS Code client. Server-side semantics are shared; gaps are almost always **client UI**. Every row has a workaround + tracking ID (monorepo: [`docs/design/lsp-client-gaps.md`](https://github.com/nudojs/nudo/blob/main/docs/design/lsp-client-gaps.md)).
 
 | Gap | Affected clients | Workaround | Tracking |
 |-----|------------------|------------|----------|
-| Active-case visual decoration (highlights the selected case body) | Zed, Neovim, Helix | CodeLens `●`/`○` still switches the active case when the client renders CodeLens; hover follows. Without CodeLens UI: CLI `nudo check` / agent `nudo.hover` after selectCase via custom request | Client limitation — no tracking issue (Zed has no decoration API; Neovim needs a custom plugin) |
-| CodeLens not rendered | Helix, some minimal Neovim setups | CLI `nudo contract` / `nudo check`; agent `nudo.contract` / `nudo.contract.draft`; VS Code/Zed for UI CodeLens | Client limitation — no tracking issue (Helix CodeLens UI absent) |
-| Semantic tokens off by default | Zed, Neovim, Helix | Set client settings from Setup notes above (Zed `semantic_tokens: "combined"`; Neovim treesitter/semantic-tokens plugin; Helix `editor.semantic-tokens`) | Documented per client on this page — no separate issue |
-| Secondary-server diagnostics may compete with tsserver noise | All | Scope `package.json#nudo.analysis.include` / `exclude`; or `mode: "directives"` — full recipe in [Coexistence](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | Config, not a bug — tracking doc: [coexistence recipe](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
-| File-detection docs lag analysis-mode default | Docs | Prefer `package.json#nudo.analysis` + [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) as the source of truth | Docs sync — this page + PUBLIC_API.md |
-| Pull diagnostics unused by some clients | Older clients | Push path still works; open/validate on didOpen; clients may ignore `diagnosticProvider` | Protocol age — no tracking issue (server keeps push) |
-| Completion trigger / signature help thin in some UIs | Helix (varies by build) | Use hover + `nudo.check` (CLI) / `nudo test` for full signatures; VS Code/Zed for signature help UI | Client limitation — no tracking issue |
+| Active-case visual decoration (highlights the selected case body) | Zed, Neovim, Helix | CodeLens `●`/`○` still switches the active case when the client renders CodeLens; hover follows. Without CodeLens UI: CLI `nudo check` / agent `nudo.hover` after selectCase via custom request | **LSP-G1** — client limitation (Zed has no decoration API; Neovim needs a custom plugin) |
+| CodeLens not rendered | Helix, some minimal Neovim setups | CLI `nudo contract` / `nudo check`; agent `nudo.contract` / `nudo.contract.draft`; VS Code/Zed for UI CodeLens | **LSP-G2** — client limitation (Helix CodeLens UI absent) |
+| Semantic tokens off by default | Zed, Neovim, Helix | Set client settings from Setup notes above (Zed `semantic_tokens: "combined"`; Neovim treesitter/semantic-tokens plugin; Helix `editor.semantic-tokens`) | **LSP-G3** — config; Setup notes above |
+| Secondary-server diagnostics may compete with tsserver noise | All | Scope `package.json#nudo.analysis.include` / `exclude`; or `mode: "directives"` — full recipe in [Coexistence](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | **LSP-G4** — config; [coexistence recipe](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
+| File detection / `analysis.mode` docs | Docs | Source of truth: [`@nudojs/service` API](../api/service.md#shouldanalyzefile) + [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) §7 | **LSP-G5** — closed (docs synced to `exports` default) |
+| Pull diagnostics unused by some clients | Older clients | Push path still works; open/validate on didOpen; clients may ignore `diagnosticProvider` | **LSP-G6** — protocol age (server keeps push) |
+| Completion trigger / signature help thin in some UIs | Helix (varies by build) | Use hover + `nudo.check` (CLI) / `nudo test` for full signatures; VS Code/Zed for signature help UI | **LSP-G7** — client limitation |
 
 ## Same-source guarantee
 
