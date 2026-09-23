@@ -103,7 +103,7 @@ assertions
 | `@hapi/hoek` | 9.3.0 (25 files, 42 functions) | 54.8% → **98.6%** | 291 → **0** |
 | `@discoveryjs/json-ext` | 0.5.7 | 77.8% → **91.8%** | 41 → **0** |
 
-这两个库都没有写任何指令——结果第二列里的每一个 case 都是由某个记录到的调用点合成的。
+这两个库都没有写任何指令——结果第二列里的每一个 case 都是由某个记录到的调用点合成的。零误归因一列之所以成立的完整故事（归属门禁）：[22 文件污染事件](/blog/2026/09/21/attribution-gate)。
 
 ## 已知边界
 
@@ -120,7 +120,7 @@ nudo test lib/ --from test/ --freeze           # 补齐尚无用例指令的函�
 nudo test lib/ --from test/ --freeze=update    # 重新同步已生成的指令
 ```
 
-默认 `freeze` 只补齐完全没有用例指令的函数。`=update` 更进一步：先剥离此前生成的 `call@` 指令，在剥离后的源码上重新分析，再回写刷新后的指令集——因此它还能暴露使用处的*漂移*。测试改了实参，就会以 diff 的形式显现；`--freeze=update --dry-run --exit-on-diff` 把它变成 CI 门禁——diff 非空即以 `1` 退出。两种模式都幂等（已同步的文件输出 `No changes.`）。
+默认 `freeze` 只补齐完全没有用例指令的函数。`=update` 更进一步：先剥离此前生成的 `call@` 指令，在剥离后的源码上重新分析，再回写刷新后的指令集——因此它还能暴露使用处的*漂移*。测试改了实参，就会以 diff 的形式显现；`--freeze=update --dry-run --exit-on-diff` 把它变成 CI 门禁——diff 非空即以 `1` 退出。两种模式都幂等（已同步的文件输出 `freeze: no changes.`）。
 
 ### 合并策略
 

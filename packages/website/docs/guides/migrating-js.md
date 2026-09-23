@@ -139,7 +139,7 @@ nudo health src/                         # uncovered fns, drift, analysis errors
 nudo test src/lib.js --from test/ --freeze=update
 ```
 
-Pin package versions per [Versioning & Releases](./versioning.md) (0.x minors may break; 1.x core/service/cli follow SemVer).
+Pin package versions per [Versioning & Releases](./versioning.md) (0.x minors may break; the stable-line core/service/cli — 2.x/4.x/3.x today — follow SemVer).
 
 ## What not to do
 

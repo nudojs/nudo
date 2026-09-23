@@ -61,6 +61,7 @@ parser ──▶ core
 | exact | 字面量 / 可精确求值 |
 | path | 依赖路径约束 |
 | widened | 丢失结构后的保守外延 |
+| mock | 来自 harvest/mock 声明而非观测求值 |
 | partial / opaque | 未知或不可投影 |
 
 外延投影丢 term/pred 时不得假装 exact。

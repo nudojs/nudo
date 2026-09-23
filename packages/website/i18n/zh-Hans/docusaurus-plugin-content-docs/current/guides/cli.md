@@ -110,7 +110,7 @@ assertions
 - 已有使用处 `call@` 时，分析器**不会**再合成 `entry@`。
 - 仅 `@nudo:case` 且带 `=> expected` 的进入 pass/fail；失败影响退出码。
 - `--from <paths…>` 挖掘使用处调用形状。
-- `--freeze[=mode]` 把合成用例固化为指令：`--freeze`（或 `--freeze=omit`）新增见证；`--freeze=update` 重同步此前生成的指令。
+- `--freeze[=mode]` 把合成用例固化为指令：`--freeze`（不给值，add 模式）新增见证；`--freeze=update` 重同步此前生成的指令。
 - `--dry-run`（配合 `--freeze`）打印 unified diff 而非写盘；`--exit-on-diff`（配合 `--freeze --dry-run`）在 diff 非空时 exit 1。
 - `--json` / `--abs` 与 `check` 对齐；`test --json` 含 `assertions` 摘要，声明断言失败仍 exit 1。
 

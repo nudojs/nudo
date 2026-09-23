@@ -119,7 +119,7 @@ function process(x) {          // x: number | string
 numLit(value)                 // Exact number literal
 strLit(value)                 // Exact string literal
 num() / str() / bool()        // Primitive domains
-never / unknown               // Empty set / universal set (constants)
+never / unknown               // Empty set / inference-failure marker (the universal set is `any`)
 obj({ key: { value, optional? } })  // Object shape
 abs(shape, term, pred, conf)  // General constructor
 absFunction(params, { body, env, apply })  // Function values

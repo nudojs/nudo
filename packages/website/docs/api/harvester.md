@@ -99,15 +99,17 @@ npx @nudojs/cli env harvest node
 
 ```text
 Harvested @types/node → nudo-harvest-node.ts
-  files:    80
-  symbols:  1671
-  skipped:  148
-
-Usage — add this directive at the top of your JS file:
-  /// @nudo:env nudo-harvest-node.ts
 ```
 
-By default the env file is written to `./nudo-harvest-<pkg>.ts`; pass `--out <file>` to change it. See the [CLI reference](./cli-reference.md) for the full command contract.
+The per-file/symbol statistics (`files` / `symbols` / `skipped`) are available programmatically on [`harvestDts`](#harvestdts)'s `stats` return and in the `--auto` scan summary — the direct command prints only the output path.
+
+By default the env file is written to `./nudo-harvest-<pkg>.ts`; pass `--out <file>` to change it. Then reference it from source with the path-based directive:
+
+```text
+/// @nudo:env nudo-harvest-node.ts
+```
+
+See the [CLI reference](./cli-reference.md) for the full command contract.
 
 ## Using the Harvested Env
 

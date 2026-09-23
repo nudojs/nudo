@@ -476,6 +476,7 @@ async function runAbsView(
   const source = readFileSync(filePath, "utf8");
   let phi = algebra.pTrue;
   const assumeIds = new Set<string>();
+  const assumeLines: string[] = [];
   for (const a of opts.assume ?? []) {
     const m = /^([A-Za-z_$][\w$]*)\s*(>=|>)\s*(-?\d+(?:\.\d+)?)$/.exec(a.trim());
     if (!m) {
@@ -486,6 +487,7 @@ async function runAbsView(
     const n = Number(m[3]);
     phi = algebra.gtNum(algebra.v(id), n);
     assumeIds.add(id);
+    assumeLines.push(`${id} ${m[2]} ${m[3]}`);
   }
   const list = opts.fn ? [opts.fn] : algebra.listFunctionNames(source);
   if (list.length === 0) {
@@ -495,8 +497,8 @@ async function runAbsView(
   }
   const { defaultLoadModule: loadModule } = await import("@nudojs/service");
   console.log(`nudo check --abs  ${basename(filePath)}`);
-  if (assumeIds.size > 0) {
-    console.log(`assume: ${[...assumeIds].map((id) => `${id} > 0`).join(", ")}`);
+  if (assumeLines.length > 0) {
+    console.log(`assume: ${assumeLines.join(", ")}`);
   }
   if (opts.generalize) console.log("mode: generalize (symbolic α)\n");
   else console.log("");
@@ -1312,7 +1314,7 @@ program
   .argument("<paths...>", "File(s) or directory(s)")
   .option("--watch, -w", "Watch files and re-run test on change")
   .option("--from <paths...>", "Usage-site files whose calls become synthesized cases")
-  .option("--freeze [mode]", "Solidify call-site witnesses as @nudo:case (mode: update | omit=add)")
+  .option("--freeze [mode]", "Solidify call-site witnesses as @nudo:case (mode: update | add; add is the default when the value is omitted)")
   .option("--dry-run", "With --freeze: print a unified diff instead of writing")
   .option("--exit-on-diff", "With --freeze --dry-run: exit 1 when the diff is non-empty")
   .option("--json", "Output case facts as JSON (single file)")
@@ -1346,7 +1348,7 @@ program
         if (opts.freeze === true) mode = "add";
         else if (opts.freeze === "update") mode = "update";
         else {
-          console.error(`Invalid --freeze value: ${opts.freeze} (expected: =update, or omit for add)`);
+          console.error(`Invalid --freeze value: ${opts.freeze} (expected: =update, or --freeze without a value for add)`);
           process.exitCode = 1;
           return;
         }

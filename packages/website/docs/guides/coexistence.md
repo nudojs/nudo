@@ -66,7 +66,7 @@ Why these keys:
 | `include` | Path whitelist relative to the project root. Empty (default) = every target path is eligible; in mixed repos **always scope** so tsserver owns `.ts` alone. |
 | `exclude` | Always keep `node_modules` / `dist` / `coverage`. Add `**/*.ts` / `**/*.tsx` / `**/*.d.ts` so opening a TS buffer does not schedule Nudo analysis. |
 | `mode` | `exports` (shipped default) analyzes export-bearing / sidecar / directive JS. See “When to use directives vs exports” below. |
-| `diagnostics` | Display tier for the IDE: `default` = error + warning minus noisy codes; `errors` = errors only; `off` silences the IDE display path (CLI `nudo check` still gates). |
+| `diagnostics` | Display tier for the IDE: `default` = error + warning minus noisy codes; `errors` = errors only; `verbose` = every diagnostic unfiltered; `off` silences the IDE display path (CLI `nudo check` still gates). |
 
 `.ts` files stay with tsc. Nudo LSP provides hover/inlays for opened `.js` files that match `include` **only when** `analysis.mode` is `exports` or `all`.
 

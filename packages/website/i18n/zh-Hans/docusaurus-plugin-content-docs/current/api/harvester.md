@@ -99,15 +99,17 @@ npx @nudojs/cli env harvest node
 
 ```text
 Harvested @types/node → nudo-harvest-node.ts
-  files:    80
-  symbols:  1671
-  skipped:  148
-
-Usage — add this directive at the top of your JS file:
-  /// @nudo:env nudo-harvest-node.ts
 ```
 
-env 文件默认写到 `./nudo-harvest-<pkg>.ts`；传入 `--out <file>` 可更改。完整命令契约见 [CLI 参考](./cli-reference.md)。
+逐文件/符号统计（`files` / `symbols` / `skipped`）可从 [`harvestDts`](#harvestdts) 的 `stats` 返回值程序化获取，也会出现在 `--auto` 扫描摘要里——直接命令只打印输出路径。
+
+env 文件默认写到 `./nudo-harvest-<pkg>.ts`；传入 `--out <file>` 可更改。然后在源码中用基于路径的指令引用：
+
+```text
+/// @nudo:env nudo-harvest-node.ts
+```
+
+完整命令契约见 [CLI 参考](./cli-reference.md)。
 
 ## 使用收割出的 env
 

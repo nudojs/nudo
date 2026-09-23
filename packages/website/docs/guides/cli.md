@@ -110,7 +110,7 @@ assertions
 - When usage-site `call@` cases exist, the analyzer does **not** also synthesize `entry@` for that function.
 - Only `@nudo:case` directives **with `=> expected`** enter pass/fail; failures affect the exit code.
 - `--from <paths…>` harvest usage-site call shapes.
-- `--freeze[=mode]` solidifies synthesized cases as directives: `--freeze` (or `--freeze=omit`) adds new witnesses; `--freeze=update` re-synchronizes previously generated directives.
+- `--freeze[=mode]` solidifies synthesized cases as directives: `--freeze` (no value, add mode) adds new witnesses; `--freeze=update` re-synchronizes previously generated directives.
 - `--dry-run` (with `--freeze`) prints a unified diff instead of writing; `--exit-on-diff` (with `--freeze --dry-run`) exits 1 when the diff is non-empty.
 - `--json` / `--abs` mirror `check`; `test --json` also carries an `assertions` summary (`passed`/`failed`/`unchecked`) and still exits 1 when a declared assertion fails.
 

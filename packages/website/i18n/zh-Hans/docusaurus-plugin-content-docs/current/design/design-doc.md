@@ -120,7 +120,7 @@ function len(x) {              // x: number | string（抽象联合）
 numLit(value)                 // 精确数值字面量
 strLit(value)                 // 精确字符串字面量
 num() / str() / bool()        // 基本类型域
-never / unknown               // 空集 / 全集（常量）
+never / unknown               // 空集 / 推导失败标记（全集是 `any`）
 obj({ key: { value, optional? } })  // 对象形状
 abs(shape, term, pred, conf)  // 通用构造器
 absFunction(params, { body, env, apply })  // 函数值

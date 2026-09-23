@@ -52,7 +52,7 @@ nudo check <paths...> [options]
 | Option | Description |
 |--------|-------------|
 | `--watch` / `-w` | Re-run on file changes (flag, not a verb) |
-| `--json` | Structured diagnostics + signatures |
+| `--json` | Structured diagnostics + signatures (single file; cannot combine with `--abs`) |
 | `--verbose` | Extra diagnosis detail |
 | `--abs` | Per-function algebra face (shape + conf); `--generalize` adds the symbolic term/pred α |
 | `--fn <name>` | With `--abs`: restrict to one function |
@@ -147,8 +147,8 @@ nudo test <paths...> [options]
 |--------|-------------|
 | `--watch` / `-w` | Re-run on file changes |
 | `--from <paths…>` | Usage-site files whose calls become `call@L` cases |
-| `--freeze[=mode]` | Write synthesized cases back as `@nudo:case` directives. Mode: `update` re-synchronizes previously generated directives; `omit` (or no value) = add mode, keeps existing directives |
-| `--json` | Structured case report |
+| `--freeze[=mode]` | Write synthesized cases back as `@nudo:case` directives. Mode: `update` re-synchronizes previously generated directives; no value = add mode, keeps existing directives |
+| `--json` | Structured case report (single file; cannot combine with `--abs` or `--freeze`) |
 | `--abs` | Print Abs algebra for cases |
 | `--dry-run` | With `--freeze`: print a unified diff instead of writing |
 | `--exit-on-diff` | With `--freeze --dry-run`: exit `1` when the diff is non-empty |

@@ -52,7 +52,7 @@ nudo check <paths...> [options]
 | 选项 | 说明 |
 |------|------|
 | `--watch` / `-w` | 变更时重跑（旗标，不是动词） |
-| `--json` | 结构化诊断 + 签名 |
+| `--json` | 结构化诊断 + 签名（单文件；不能与 `--abs` 组合） |
 | `--verbose` | 额外诊断细节 |
 | `--abs` | 每函数代数面（shape + conf）；`--generalize` 附加符号 term/pred α |
 | `--fn <name>` | 搭配 `--abs`：限定单个函数 |
@@ -141,8 +141,8 @@ nudo test <paths...> [options]
 |------|------|
 | `--watch` / `-w` | 变更时重跑 |
 | `--from <paths…>` | 使用处文件，其调用合成为 `call@L` 用例 |
-| `--freeze[=mode]` | 把合成用例写回为 `@nudo:case` 指令。模式：`update` 重新同步已生成指令；`omit`（或不给值）= add 模式，保留既有指令 |
-| `--json` | 结构化用例报告 |
+| `--freeze[=mode]` | 把合成用例写回为 `@nudo:case` 指令。模式：`update` 重新同步已生成指令；不给值 = add 模式，保留既有指令 |
+| `--json` | 结构化用例报告（单文件；不能与 `--abs` 或 `--freeze` 组合） |
 | `--abs` | 打印用例的 Abs 代数 |
 | `--dry-run` | 搭配 `--freeze`：打印 unified diff 而不写盘 |
 | `--exit-on-diff` | 搭配 `--freeze --dry-run`：diff 非空时退出 `1` |
