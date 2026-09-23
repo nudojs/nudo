@@ -7,6 +7,8 @@ import {
   type Abs,
   confJoin,
   absFunction,
+  getFnImpl,
+  instantiateReturn,
 } from "@nudojs/core";
 import type { AbsModuleExports } from "@nudojs/core";
 import { dirname } from "node:path";
@@ -18,11 +20,15 @@ function markMockConf(a: Abs): Abs {
   return a;
 }
 
-/** 单个 Abs 导出 → 可调用 mock（fn 槽 apply 返回声明返回类型） */
+/** 单个 Abs 导出 → 可调用 mock（fn 槽按 relation α 替换，或返回声明返回类型） */
 export function harvestedValueToAbs(a: Abs): Abs {
   if (a.shape.k === "fn") {
-    const ret = a.shape.returnType ?? { shape: { k: "unknown" }, conf: "mock" } as Abs;
-    const params = a.shape.params.length ? a.shape.params : a.shape.paramTypes?.map((_, i) => `_arg${i}`) ?? ["...args"];
+    const ret = a.shape.returnType ?? ({ shape: { k: "unknown" }, conf: "mock" } as Abs);
+    const relation = getFnImpl(a)?.relation;
+    const params =
+      a.shape.params.length > 0
+        ? a.shape.params
+        : (a.shape.paramTypes?.map((_, i) => `_arg${i}`) ?? ["...args"]);
     const dummyBody = {
       type: "BlockStatement",
       body: [],
@@ -31,7 +37,14 @@ export function harvestedValueToAbs(a: Abs): Abs {
     return markMockConf(
       absFunction(params, {
         body: dummyBody,
-        apply: () => markMockConf({ ...ret }),
+        apply: (args) => {
+          // 泛型：uniq(number[]) → number[]；无 relation 时退回声明返回
+          if (relation) {
+            return markMockConf(instantiateReturn(a, args));
+          }
+          return markMockConf({ ...ret });
+        },
+        ...(relation ? { relation } : {}),
       }),
     );
   }

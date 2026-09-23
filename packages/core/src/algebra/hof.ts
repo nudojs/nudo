@@ -688,8 +688,59 @@ export function substAbs(a: Abs, map: ReadonlyMap<string, Abs>): Abs {
 }
 
 /**
+ * 从 pattern（声明形参）与 arg（实参 Abs）做结构合一，绑定 α 变量。
+ * 首次绑定保留；只下钻 arr / obj / tuple / sum / fn 形参。
+ */
+function bindTypeVars(
+  pattern: Abs,
+  arg: Abs,
+  map: Map<string, Abs>,
+  depth = 0,
+): void {
+  if (depth > 6 || map.size > 16) return;
+  const pt = pattern.term;
+  if (pt?.op === "var") {
+    if (!map.has(pt.id)) map.set(pt.id, arg);
+    return;
+  }
+  const ps = pattern.shape;
+  const as = arg.shape;
+  if (ps.k === "arr" && as.k === "arr") {
+    bindTypeVars(ps.element, as.element, map, depth + 1);
+    return;
+  }
+  if (ps.k === "tuple" && as.k === "tuple") {
+    const n = Math.min(ps.elements.length, as.elements.length);
+    for (let i = 0; i < n; i++) bindTypeVars(ps.elements[i]!, as.elements[i]!, map, depth + 1);
+    return;
+  }
+  if (ps.k === "sum") {
+    // union 形参：在与实参成员最匹配的 pattern 成员上绑定（取首个能下钻的）
+    for (const m of ps.members) {
+      const before = map.size;
+      bindTypeVars(m, arg, map, depth + 1);
+      if (map.size > before) return;
+    }
+    return;
+  }
+  if (ps.k === "obj" && as.k === "obj") {
+    for (const [key, slot] of Object.entries(ps.slots)) {
+      const aSlot = as.slots[key];
+      if (aSlot) bindTypeVars(slot.value, aSlot.value, map, depth + 1);
+    }
+    return;
+  }
+  if (ps.k === "fn" && as.k === "fn" && ps.paramTypes && as.paramTypes) {
+    const n = Math.min(ps.paramTypes.length, as.paramTypes.length);
+    for (let i = 0; i < n; i++) bindTypeVars(ps.paramTypes[i]!, as.paramTypes[i]!, map, depth + 1);
+  }
+  // prim / brand / unknown：无 α 可绑
+}
+
+/**
  * relation-only / isRelFn 的应用：按 paramTypes 做 α 替换得到 returnType。
  * impl.relation 槽优先于 shape.returnType。重复 α 先绑定保留。
+ * **深度合一**：`T[]` 形参可从 `number[]` 实参绑出 T=number（lodash 泛型）。
  */
 export function instantiateReturn(fn: Abs, args: Abs[]): Abs {
   const shape = fn.shape;
@@ -700,10 +751,7 @@ export function instantiateReturn(fn: Abs, args: Abs[]): Abs {
   };
   const map = new Map<string, Abs>();
   src.paramTypes.forEach((p, i) => {
-    if (p.term?.op !== "var") return;
-    const id = p.term.id;
-    if (map.has(id)) return;
-    map.set(id, args[i] ?? unknown);
+    bindTypeVars(p, args[i] ?? unknown, map);
   });
   return substAbs(src.returnType, map);
 }

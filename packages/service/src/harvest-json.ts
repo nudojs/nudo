@@ -9,6 +9,8 @@ import {
   type Abs,
   abs,
   confJoin,
+  relationFn,
+  getFnImpl,
 } from "@nudojs/core";
 import type { HarvestedEnv } from "@nudojs/harvester";
 
@@ -26,13 +28,15 @@ export type HarvestSig =
   | { k: "sum"; members: HarvestSig[] }
   | { k: "promise"; value: HarvestSig }
   | { k: "generator"; value: HarvestSig }
-  | { k: "brand"; name: string; shape: HarvestSig };
+  | { k: "brand"; name: string; shape: HarvestSig }
+  /** 泛型形参（T）——α 替换用 */
+  | { k: "tvar"; name: string };
 
 /**
  * 磁盘 ABI / harvest 物化版本。**改动 Abs 投影或 interface 合并语义时必须 +1**，
  * 否则旧缓存会把提升前的空导出表当命中（lodash 场景）。
  */
-export const HARVEST_DISK_ABI = "nudo-harvest-disk-v2";
+export const HARVEST_DISK_ABI = "nudo-harvest-disk-v6";
 
 export type HarvestJson = {
   v: 1;
@@ -51,8 +55,11 @@ export function sha256Hex(data: string): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-/** Abs → 签名投影（丢 term/pred/conf；fn 只留参数名+类型面） */
+/** Abs → 签名投影（丢 pred/conf；fn 只留参数名+类型面；保留泛型 α） */
 export function absToHarvestSig(a: Abs): HarvestSig {
+  if (a.term?.op === "var") {
+    return { k: "tvar", name: a.term.id };
+  }
   const s = a.shape;
   switch (s.k) {
     case "prim":
@@ -78,14 +85,16 @@ export function absToHarvestSig(a: Abs): HarvestSig {
       return { k: "obj", slots };
     }
     case "fn": {
-      const paramTypes = (s.paramTypes ?? s.params.map(() => ({ shape: { k: "unknown" }, conf: "mock" } as Abs))).map(
-        absToHarvestSig,
-      );
+      // relation 槽是 α 替换真源（overload 合并可能只改 shape.returnType）
+      const rel = getFnImpl(a)?.relation;
+      const pts = rel?.paramTypes ?? s.paramTypes ?? s.params.map(() => ({ shape: { k: "unknown" }, conf: "mock" } as Abs));
+      const paramTypes = pts.map(absToHarvestSig);
+      const retSrc = rel?.returnType ?? s.returnType ?? ({ shape: { k: "unknown" }, conf: "mock" } as Abs);
       return {
         k: "fn",
         params: s.params,
         paramTypes,
-        returns: absToHarvestSig(s.returnType ?? ({ shape: { k: "unknown" }, conf: "mock" } as Abs)),
+        returns: absToHarvestSig(retSrc),
       };
     }
     case "sum":
@@ -166,20 +175,19 @@ export function harvestSigToAbs(sig: HarvestSig): Abs {
       }
       return mark(abs({ k: "obj", slots }, undefined, undefined, "mock"));
     }
-    case "fn":
+    case "tvar":
+      return mark(abs({ k: "any" }, { op: "var", id: sig.name }, undefined, "mock"));
+    case "fn": {
+      const paramTypes = sig.paramTypes.map(harvestSigToAbs);
+      const returnType = harvestSigToAbs(sig.returns);
+      // relationFn 双写 shape + impl.relation（磁盘回放后仍可 α 替换）
       return mark(
-        abs(
-          {
-            k: "fn",
-            params: sig.params,
-            paramTypes: sig.paramTypes.map(harvestSigToAbs),
-            returnType: harvestSigToAbs(sig.returns),
-          },
-          undefined,
-          undefined,
-          "mock",
-        ),
+        relationFn(paramTypes, returnType, {
+          params: sig.params,
+          conf: "mock",
+        }),
       );
+    }
     case "sum":
       return mark(
         abs({ k: "sum", members: sig.members.map(harvestSigToAbs) }, undefined, undefined, "mock"),

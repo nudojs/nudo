@@ -19,6 +19,7 @@ import {
   str,
   substAbs,
   v,
+  joinAbs,
   runTranspiled,
   callTranspiledExportFull,
   type Abs,
@@ -224,7 +225,31 @@ describe("P1a: instantiateReturn", () => {
     if (out.shape.k !== "arr") return;
     expect(out.shape.element.shape.k).toBe("unknown");
   });
+
+  it("deep α: T[] param binds T from number[] arg (lodash-style)", () => {
+    const T = abs({ k: "any" }, v("T"), undefined, "path");
+    const tArr = abs({ k: "arr", element: T }, undefined, undefined, "path");
+    // uniq<T>(array: T[] | null | undefined): T[]
+    const f = relationFn(
+      [absUnionForTest([tArr, abs({ k: "unknown" }, undefined, undefined, "path")])],
+      tArr,
+    );
+    const numArr = abs(
+      { k: "arr", element: abs({ k: "prim", type: "number" }, undefined, undefined, "exact") },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const out = instantiateReturn(f, [numArr]);
+    expect(out.shape.k).toBe("arr");
+    if (out.shape.k !== "arr") return;
+    expect(out.shape.element.shape).toEqual({ k: "prim", type: "number" });
+  });
 });
+
+function absUnionForTest(members: Abs[]): Abs {
+  return members.reduce((acc, m) => joinAbs(acc, m));
+}
 
 describe("P1a: fingerprint budget identity", () => {
   it("different relationFn with same returnType still get distinct fingerprints only via paramTypes", () => {

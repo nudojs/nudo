@@ -5,11 +5,14 @@ import {
   type Slot,
   abs as makeAbs,
   lit as termLit,
+  v as termVar,
   numLit,
   strLit,
   boolLit,
   objOf,
   joinAbs,
+  relationFn,
+  getFnImpl,
 } from "@nudojs/core";
 
 /**
@@ -57,6 +60,8 @@ interface HarvestContext {
   classes: Map<string, ts.ClassDeclaration>;
   instanceCache: Map<string, Abs>;
   expanding: Set<string>;
+  /** 当前签名作用域内的泛型形参名（T/U…）→ 映射为 var Abs */
+  typeParams: Set<string>;
   /** [aliasModule, targetModule] pairs from `export * from` / `export = x` forms */
   moduleAliases: Array<[alias: string, target: string]>;
   /** `import x = require("mod")` bindings, per scope key */
@@ -141,12 +146,16 @@ function absBrand(name: string, properties: Record<string, Abs>): Abs {
 }
 
 function absFnSig(paramTypes: Abs[], returnType: Abs): Abs {
-  return absExact({
-    k: "fn",
+  // relationFn 双写 shape + impl.relation → 调用点 instantiateReturn 做 α 替换
+  return relationFn(paramTypes, returnType, {
     params: paramTypes.map((_, i) => `_arg${i}`),
-    paramTypes,
-    returnType,
+    conf: "exact",
   });
+}
+
+/** 泛型形参（T）→ 可被 α 替换的 var Abs */
+function typeVarAbs(name: string): Abs {
+  return makeAbs({ k: "any" }, termVar(name), undefined, "path");
 }
 
 /** multi-member union via binary join (drops never, absorbs lit into prim) */
@@ -157,6 +166,22 @@ function absUnion(members: Abs[]): Abs {
 
 function isPlainUnknown(a: Abs): boolean {
   return a.shape.k === "unknown" && !(a.term?.op === "lit");
+}
+
+/** 含泛型 α（term var）——overload 合并时优先保留，避免 joinAbs 吞掉 T */
+function hasTypeVar(a: Abs, depth = 0): boolean {
+  if (depth > 6) return false;
+  if (a.term?.op === "var") return true;
+  const s = a.shape;
+  if (s.k === "arr") return hasTypeVar(s.element, depth + 1);
+  if (s.k === "tuple") return s.elements.some((e) => hasTypeVar(e, depth + 1));
+  if (s.k === "sum") return s.members.some((m) => hasTypeVar(m, depth + 1));
+  if (s.k === "obj") return Object.values(s.slots).some((sl) => hasTypeVar(sl.value, depth + 1));
+  if (s.k === "fn") {
+    return (s.paramTypes ?? []).some((p) => hasTypeVar(p, depth + 1)) ||
+      (s.returnType ? hasTypeVar(s.returnType, depth + 1) : false);
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +204,7 @@ export function harvestDts(
     classes: new Map(),
     instanceCache: new Map(),
     expanding: new Set(),
+    typeParams: new Set(),
     moduleAliases: [],
     importEquals: new Map(),
     declaredModules: new Set(),
@@ -615,18 +641,24 @@ function materialize(ctx: HarvestContext): void {
     const rec = recordFor(ctx, p.scope);
     if (p.t === "fn") {
       if (rec[p.name] !== undefined) continue; // same name already handled (first wins)
-      const value = signatureToFnSig(ctx, p.decls[0]!); // first overload's parameter list
-      const sig = value.shape.k === "fn" ? value.shape : undefined;
-      if (sig) {
-        // Merge return types across overloads; drop unknown members when a
-        // known one exists so unresolved references don't erase information.
+      // 多 overload：分别算签名（保留各自 typeParams），再 join 返回位
+      // ——禁止在 materialize 里二次 mapType（那时 typeParams 已清空，T→unknown）
+      const sigs = p.decls.map((d) => signatureToFnSig(ctx, d));
+      const value = sigs[0]!;
+      const shape0 = value.shape.k === "fn" ? value.shape : undefined;
+      if (shape0 && sigs.length > 1) {
         const returns: Abs[] = [];
-        for (const decl of p.decls) {
-          if (!decl.type) continue;
-          const ret = mapType(ctx, decl.type, 0);
-          if (!isPlainUnknown(ret)) returns.push(ret);
+        for (const s of sigs) {
+          if (s.shape.k !== "fn") continue;
+          const ret = s.shape.returnType;
+          if (ret && !isPlainUnknown(ret)) returns.push(ret);
         }
-        sig.returnType = returns.length > 0 ? absUnion(returns) : absUnknown();
+        const withVars = returns.filter((r) => hasTypeVar(r));
+        const pool = withVars.length > 0 ? withVars : returns;
+        const mergedRet = pool.length > 0 ? absUnion(pool) : absUnknown();
+        shape0.returnType = mergedRet;
+        const rel = getFnImpl(value)?.relation;
+        if (rel) rel.returnType = mergedRet;
       }
       rec[p.name] = value;
       continue;
@@ -741,19 +773,28 @@ function instanceFor(ctx: HarvestContext, key: string): Abs {
 }
 
 function signatureToFnSig(ctx: HarvestContext, sig: ts.SignatureDeclaration): Abs {
-  const paramTypes = sig.parameters.map((param) => {
-    let type: Abs;
-    if (param.dotDotDotToken) {
-      const inner = param.type && ts.isArrayTypeNode(param.type) ? param.type.elementType : param.type;
-      type = inner ? absArr(mapType(ctx, inner, 0)) : absUnknown();
-    } else {
-      type = param.type ? mapType(ctx, param.type, 0) : absUnknown();
-    }
-    if (param.questionToken && !param.dotDotDotToken) type = absUnion([type, absUndefLit()]);
-    return type;
-  });
-  const returnType = sig.type ? mapType(ctx, sig.type, 0) : absUnknown();
-  return absFnSig(paramTypes, returnType);
+  const savedTp = ctx.typeParams;
+  ctx.typeParams = new Set(savedTp);
+  for (const tp of sig.typeParameters ?? []) {
+    ctx.typeParams.add(tp.name.text);
+  }
+  try {
+    const paramTypes = sig.parameters.map((param) => {
+      let type: Abs;
+      if (param.dotDotDotToken) {
+        const inner = param.type && ts.isArrayTypeNode(param.type) ? param.type.elementType : param.type;
+        type = inner ? absArr(mapType(ctx, inner, 0)) : absUnknown();
+      } else {
+        type = param.type ? mapType(ctx, param.type, 0) : absUnknown();
+      }
+      if (param.questionToken && !param.dotDotDotToken) type = absUnion([type, absUndefLit()]);
+      return type;
+    });
+    const returnType = sig.type ? mapType(ctx, sig.type, 0) : absUnknown();
+    return absFnSig(paramTypes, returnType);
+  } finally {
+    ctx.typeParams = savedTp;
+  }
 }
 
 function mapTypeMembers(
@@ -782,7 +823,19 @@ function mapTypeMembers(
 function mapTypeRef(ctx: HarvestContext, node: ts.TypeReferenceNode, depth: number): Abs {
   const name = typeNameString(node.typeName);
   const args = node.typeArguments ?? [];
+  // 泛型形参 T → var Abs（供 relationFn α 替换）
+  if (ctx.typeParams.has(name) && args.length === 0) {
+    return typeVarAbs(name);
+  }
   if ((name === "Array" || name === "ReadonlyArray") && args.length >= 1) {
+    return absArr(mapType(ctx, args[0], depth));
+  }
+  // lodash List/ArrayLike/Collection/Many<T> 等未知容器：保 type arg 进 arr，供合一
+  if (
+    (name === "List" || name === "ArrayLike" || name === "Collection" || name === "Many" ||
+      name === "NumericDictionary" || name === "Dictionary") &&
+    args.length >= 1
+  ) {
     return absArr(mapType(ctx, args[0], depth));
   }
   if (name === "Promise" && args.length >= 1) {
