@@ -74,6 +74,74 @@ npx nudojs check file.js --json
 
 人类可读面使用 Abs 上的 `actual ⊭ expected`。稳定诊断码见 [诊断码词典](/docs/reference/diagnostics)。
 
+## 少样本修复对（该这么改，别那么改）
+
+最小 diff。优先消费 issue 上的 `actions[]`，再套用下表。
+
+### `nudo:constraint-violated` — 改调用点
+
+```js
+// 错 — actual: 0  #exact  ⊭  expected: ms > 0
+setDelay(0);
+
+// 对 — 同一契约，值满足 Pred
+setDelay(250);
+```
+
+仅当 `0` 合法时才**放宽**契约（编辑 `*.nudo.js`）：
+
+```js
+// 错
+export const setDelay = fn({ ms: number().gt(0) }, number());
+// 对
+export const setDelay = fn({ ms: number().ge(0) }, number());
+```
+
+### `nudo:entry-may-throw` — refine / 守卫 / 迁移开关
+
+```js
+// 错 — L2: property 'name' on any
+export function getName(user) {
+  return user.name;
+}
+
+// 对 — 声明入口形状
+export const getName = fn({ user: shape({ name: string() }) }, string());
+```
+
+迁移期逃生舱（不是类型修复）：`npx nudojs check --ignore-throws TypeError`。
+
+### `nudo:unknown-inference` / `nudo:opaque-result` — 钉住或证明，禁止编造
+
+```js
+// 对 — mock native 面（或补调用点证据）
+// @nudo:mock ms = (v, opts) => 1
+export function formatAge(durationMs) {
+  return ms(durationMs, { long: true });
+}
+```
+
+**不要**为了消掉 `unknown` 去写 `@returns string`。那正是 Nudo 拒绝的 TS 谎言。
+
+### `nudo:assign-mismatch` — 保住形状
+
+```js
+// 错 — 丢 port
+config = { host: "y" };
+// 对
+config = { host: "y", port: 8080 };
+```
+
+### draft→accept（新义务）
+
+```bash
+npx nudojs contract --draft src/app.js   # 仅审阅
+# 把选中的 export 抄进 app.nudo.js  ← accept 时 L1 才生效
+npx nudojs check src/app.js
+```
+
+不发明 body-AST 槽；不把 JS 改写成 TS「为了类型」。
+
 ## 工具面
 
 | 表面 | 文档 |

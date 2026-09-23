@@ -89,6 +89,82 @@ Each `issues[]` entry may carry **`actions[]`** (AI1) — prefer these over pars
 }
 ```
 
+## Few-shot fix pairs (do this, not that)
+
+Minimal diffs. Prefer `actions[]` on the issue, then apply the matching pair.
+
+### `nudo:constraint-violated` — fix the call site
+
+```js
+// bad — actual: 0  #exact  ⊭  expected: ms > 0
+setDelay(0);
+
+// good — same contract, value satisfies Pred
+setDelay(250);
+```
+
+Or **relax** only if `0` is legal product input (edit `*.nudo.js`):
+
+```js
+// bad
+export const setDelay = fn({ ms: number().gt(0) }, number());
+// good
+export const setDelay = fn({ ms: number().ge(0) }, number());
+```
+
+### `nudo:entry-may-throw` — refine / guard / migrate switch
+
+```js
+// bad — L2: property 'name' on any (unconstrained value)
+export function getName(user) {
+  return user.name;
+}
+
+// good — declare the entry shape (sidecar / refine)
+// file.nudo.js
+export const getName = fn({ user: shape({ name: string() }) }, string());
+```
+
+Migration-only escape (not a type fix): `npx nudojs check --ignore-throws TypeError`.
+
+### `nudo:unknown-inference` / `nudo:opaque-result` — pin or prove, never invent
+
+```js
+// bad — pretend the native returns string
+export function formatAge(ms) {
+  return ms(ms); // wrong anyway
+}
+
+// good — mock the native face (or add call-site evidence)
+// @nudo:mock ms = (v, opts) => 1
+export function formatAge(durationMs) {
+  return ms(durationMs, { long: true });
+}
+```
+
+Do **not** annotate `@returns string` to silence `unknown`. That is the TypeScript lie Nudo refuses.
+
+### `nudo:assign-missing` / `assign-mismatch` — keep the shape
+
+```js
+// bad — drops port
+export let config = { host: "localhost", port: 8080 };
+config = { host: "y" };
+
+// good
+config = { host: "y", port: 8080 };
+```
+
+### Draft-accept loop (new obligations)
+
+```bash
+npx nudojs contract --draft src/app.js   # review only
+# copy selected exports into app.nudo.js  ← that accept is when L1 goes live
+npx nudojs check src/app.js
+```
+
+Never invent body-AST slots. Never rewrite JS → TS “for types”.
+
 ## Tooling
 
 | Surface | Docs |

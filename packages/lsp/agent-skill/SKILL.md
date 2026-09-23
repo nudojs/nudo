@@ -22,6 +22,17 @@ nudo health [paths] [--from paths…] [--json]
 - **Observation** = `check` signatures (printed on success too) + `test` case report + IDE hover.
 - Unconstrained entry params display as **`any`**. `unknown` means inference failed (engine debt).
 - L2: undigested may-throw on **entry/export** functions is an error (`nudo:entry-may-throw`). Internal helpers are not gated. Filter with `--ignore-throws TypeError`.
+- `check --json` issues carry **`actions[]`** — follow those before parsing `suggestion` prose.
+
+## Few-shot fix pairs
+
+| Code | Do not | Do |
+|------|--------|-----|
+| `constraint-violated` (`actual: 0` ⊭ `ms > 0`) | Widen the contract to `number()` just to pass | `setDelay(250)` **or** consciously relax to `number().ge(0)` |
+| `entry-may-throw` | Annotate a fake return type | Sidecar `fn({ user: shape({ name: string() }) }, …)` / guard / `--ignore-throws` only while migrating |
+| `unknown-inference` | Invent `@returns string` | `@nudo:mock` the native **or** add call-site evidence |
+| `assign-mismatch` (missing `port`) | Delete the field | Reassign a full shape `{ host, port }` |
+| New obligation | Hand-write a long type | `nudo contract --draft` → review → copy into `*.nudo.js` |
 
 ## Install and connect
 
