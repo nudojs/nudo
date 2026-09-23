@@ -263,6 +263,16 @@ verify_check callsite-discovery packages/website/docs/guides/callsite-discovery.
   'nudo:entry-may-throw' \
   'slugify(title: any) => any  throws TypeError'
 
+# design-doc: the architecture document's own claims are executable — literal
+# preservation, guard-free folding, template prefixes, and the case grammar.
+verify_test design-doc packages/website/docs/design/design-doc.md \
+  'call@L2  (1) => 2' \
+  'call@L3  (2) => 4' \
+  'call@L12  (5, 0, 10) => 5' \
+  'call@L19  ("/x") => "https://api.example.com/x"' \
+  'debug "concrete"  (1, 2) => 3' \
+  'debug "symbolic"  (number, number) => number'
+
 printf -- '--------------------------------------------------------------\n'
 printf 'doc examples verified: %s checks passed, %s failed\n' "$pass" "$fail"
 
