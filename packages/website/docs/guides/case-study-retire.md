@@ -79,6 +79,10 @@ pnpm run verify:examples
 
 Every command above is CI-pinned in [`docs/examples/README.md`](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md).
 
+## Share this story
+
+Copy-ready blog / HN / release-notes text: [`docs/reports/retire-tsc-announcement.md`](https://github.com/nudojs/nudo/blob/main/docs/reports/retire-tsc-announcement.md).
+
 ## Next
 
 - [Migrate from TypeScript](./migrating-from-typescript) — the door itself
