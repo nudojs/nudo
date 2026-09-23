@@ -113,5 +113,6 @@ function score(x) { return x + 1; }
 | `pnpm run check docs/examples/migrate/after/src/cart.js` | **0** | retire 后门禁：cart 跨文件 |
 | `pnpm run nudo -- migrate verify docs/examples/migrate/after/src/math.js` | **0** | migrate verify：nudo check 通过 |
 | `pnpm run nudo -- migrate retire docs/examples/migrate/before/package.json --dry-run` | **0** | migrate retire dry-run：摘 typescript / tsc→nudo check（不写盘） |
+| `pnpm run nudo -- contract --from-dts docs/examples/migrate/before/src/math.ts` | **0** | dts/TS → 契约草稿（`@nudo:draft`，确认前不执法） |
 
 > 负例文件（constraints / structure / vs-ts 的 check）**故意 exit 非 0**——报错行就是它们演示的内容。

@@ -87,7 +87,7 @@ assertions
 |------|----------|
 | `nudo check` | Day 0 / CI 门禁；默认打印 signatures + L2 entry may-throw |
 | `nudo test` | case 报告 + 声明断言；`--from` 注入使用处；`--freeze` 固化见证 |
-| `nudo contract` | 打印 / `--draft` / `--emit` 侧车接口；`--from` 供域证据 |
+| `nudo contract` | 打印 / `--draft` / `--emit` 侧车接口；`--from` 供域证据；**`--from-dts`** 逆向 `.d.ts`/TS 注解 → `@nudo:draft`（**不执法**，审阅后复制进 `*.nudo.js` 才是 L1） |
 | `nudo export` | 一次性投影：`dts` / `guard` / `schema`（`--dialect zod`）/ `standard` / `all`；`--out` 写出目录 |
 | `nudo health` | 分析错误 + 固化漂移；`--watch` 可选 |
 | `nudo migrate` | **替代 TS 单向门**：`status` 审计 / `strip` 剥注解 + draft 侧车 / `verify`（唯一允许双跑 tsc）/ `retire` 从 package.json 摘除 tsc 并写 `.nudo/migrate-retired.json` |

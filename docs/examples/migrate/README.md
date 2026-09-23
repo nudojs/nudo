@@ -33,6 +33,11 @@ pnpm run nudo -- migrate verify docs/examples/migrate/after/src/math.js
 pnpm run nudo -- migrate retire docs/examples/migrate/before/package.json --dry-run
 #   dry-run  removed typescript  ·  typecheck: tsc --noEmit → nudo check .
 #   （真写盘去掉 --dry-run；after/ 即终态金标）
+
+# 5.（可选）把原 TS 注解逆向成契约草稿 —— 确认前不执法
+pnpm run nudo -- contract --from-dts docs/examples/migrate/before/src/math.ts
+#   → @nudo:draft  fn({ price: number(), qty: number() }, number())
+#   复制进 math.nudo.js 才成为 L1 义务；再用 number().gt(0) 等加强 Pred
 ```
 
 **纪律**：双跑只出现在 `verify --with-tsc`；产品出口是 **retire**。after/ 是可提交的终态金标。

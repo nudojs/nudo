@@ -228,6 +228,8 @@ pin 'pnpm run nudo -- migrate verify docs/examples/migrate/after/src/math.js' \
   'OK' 'math.js'
 pin 'pnpm run nudo -- migrate retire docs/examples/migrate/before/package.json --dry-run' \
   'dry-run' 'removed typescript' 'nudo check'
+pin 'pnpm run nudo -- contract --from-dts docs/examples/migrate/before/src/math.ts' \
+  '@nudo:draft' 'NOT a sidecar contract' 'fn({ price: number(), qty: number() }, number())' 'export const lineTotal'
 pin 'pnpm run check docs/examples/vs-ts/structure/nudo.js' \
   '2 error · 0 warning' \
   'greet[u]' 'constraint-violated' \

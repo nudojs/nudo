@@ -691,6 +691,92 @@ async function runContractPrint(file: string, records?: CallRecord[]): Promise<v
   console.log();
 }
 
+/**
+ * contract --from-dts：.d.ts / 包类型 → @nudo:draft 契约草稿。
+ * 不执法；人工复制进 *.nudo.js 后才成为 L1 义务。
+ */
+async function runContractFromDts(
+  paths: string[],
+  opts: { write: boolean; dryRun: boolean },
+): Promise<void> {
+  const { dtsPathToContractDraft, dtsToContractDraft } = await import("@nudojs/harvester");
+  const { harvestPackage } = await import("@nudojs/service");
+
+  if (paths.length === 0) {
+    console.error(
+      "Usage error: `nudo contract --from-dts` needs a .d.ts file, a directory, or an npm package name.",
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  let label = "dts";
+  let dtsFiles: string[] = [];
+  const fileLike = paths.filter((p) => existsSync(p));
+  const barePkgs = paths.filter((p) => !existsSync(p));
+
+  for (const p of fileLike) {
+    const abs = resolve(p);
+    if (statSync(abs).isDirectory()) {
+      const r = dtsPathToContractDraft(abs, basename(abs));
+      dtsFiles.push(...r.files);
+    } else if (/\.(d\.)?(m)?ts$/.test(abs) && !abs.endsWith(".d.ts.map")) {
+      // .d.ts 或带注解的 .ts 源（迁移：从原 TS 逆向契约）
+      dtsFiles.push(abs);
+    } else {
+      const sibling = abs.replace(/\.[cm]?[jt]sx?$/, ".d.ts");
+      if (existsSync(sibling)) dtsFiles.push(sibling);
+    }
+  }
+  for (const pkg of barePkgs) {
+    const h = harvestPackage(pkg, process.cwd());
+    if ("error" in h) {
+      console.error(h.error);
+      process.exitCode = 1;
+      return;
+    }
+    dtsFiles.push(...h.dtsFiles);
+    label = pkg;
+  }
+  dtsFiles = [...new Set(dtsFiles)];
+  if (dtsFiles.length === 0) {
+    console.error("error: no .d.ts files found for --from-dts");
+    process.exitCode = 1;
+    return;
+  }
+  if (label === "dts" && dtsFiles[0]) {
+    label = basename(dtsFiles[0]).replace(/\.d\.ts$/, "");
+  }
+
+  const draft = dtsToContractDraft(dtsFiles, label);
+  const base = label.replace(/\.d\.ts$|\.ts$|\.mts$/, "").replace(/[/\\]/g, "-");
+  const outName = `${base}.nudo.draft.js`;
+  const outPath = resolve(outName);
+
+  if (opts.write) {
+    if (opts.dryRun) {
+      console.log(`[dry-run] would write ${relative(process.cwd(), outPath) || outPath}`);
+      console.log(draft.draftSource);
+    } else {
+      writeFileSync(outPath, draft.draftSource, "utf-8");
+      console.log(
+        `wrote  ${relative(process.cwd(), outPath) || outPath}  (${draft.stats.exports} exports from ${draft.stats.files} d.ts)`,
+      );
+      console.log(
+        `next   review, then copy exports into a *.nudo.js sidecar to accept (not enforced until then)`,
+      );
+    }
+  } else {
+    console.log(draft.draftSource);
+    console.log(
+      `// ${draft.stats.exports} projectable exports · ${draft.stats.skipped} skipped · ${draft.stats.files} d.ts`,
+    );
+    console.log(
+      `// pass --write to save as ${outName}; copy into *.nudo.js to enforce`,
+    );
+  }
+}
+
 async function runContractDraft(
   file: string,
   opts: { fnNames: string[]; write: boolean; dryRun: boolean; records?: CallRecord[] },
@@ -1419,7 +1505,11 @@ program
   .argument("[paths...]", "File(s) or directory(s)")
   .option("--emit", "Write/update @generated sidecar segments (mode: update)")
   .option("--draft", "Generate a reviewable contract draft from existing code")
-  .option("--write", "With --draft: write <file>.nudo.draft.js|ts on disk")
+  .option(
+    "--from-dts",
+    "Reverse TypeScript .d.ts / package types into a reviewable contract draft (NOT enforced)",
+  )
+  .option("--write", "With --draft / --from-dts: write draft on disk")
   .option(
     "--fn <name>",
     "With --emit/--draft: only these export names (repeatable)",
@@ -1439,6 +1529,7 @@ program
       opts: {
         emit?: boolean;
         draft?: boolean;
+        fromDts?: boolean;
         write?: boolean;
         fn?: string[];
         all?: boolean;
@@ -1447,6 +1538,13 @@ program
         from?: string[];
       },
     ) => {
+      if (opts.fromDts) {
+        await runContractFromDts(paths, {
+          write: opts.write === true,
+          dryRun: opts.dryRun === true,
+        });
+        return;
+      }
       if (paths.length === 0) {
         console.error(
           "Usage error: `nudo contract` needs at least one path. " +

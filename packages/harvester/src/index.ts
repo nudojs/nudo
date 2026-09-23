@@ -899,3 +899,11 @@ function emitAbs(a: Abs, expanding: Set<string>): string {
       return "absUnknown";
   }
 }
+
+export {
+  dtsToContractDraft,
+  dtsPathToContractDraft,
+  formatDtsContractDraft,
+  type DtsContractDraft,
+  type DtsExportDraft,
+} from "./dts-contract-draft.ts";
