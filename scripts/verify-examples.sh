@@ -260,6 +260,15 @@ pin 'pnpm run check docs/examples/retire-real/after/src/age.js' \
   'formatAge' 'parseAge' '0 error'
 pin 'pnpm run nudo -- contract --from-dts docs/examples/retire-real/before/src/age.ts' \
   'fn({ durationMs: number() }, string())' 'fn({ text: string() }, number())'
+
+# retire-debug/ — real npm dep `debug` (visionmedia/debug)
+pin 'pnpm run check docs/examples/retire-debug/after/src/logger.js' \
+  'OK' '0 error' 'createLogger' 'logHello' 'nudo:unknown-inference'
+pin 'pnpm run nudo -- contract --from-dts docs/examples/retire-debug/before/src/logger.ts' \
+  'fn({ namespace: string() }, any())' 'fn({ name: string() }, any())'
+pin 'pnpm run nudo -- migrate status docs/examples/retire-debug/before/package.json' \
+  'migrate status' 'typescript dep: yes' 'tsc scripts: typecheck'
+
 pin 'pnpm run check docs/examples/vs-ts/structure/nudo.js' \
   '2 error · 0 warning' \
   'greet[u]' 'constraint-violated' \

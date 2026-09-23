@@ -1,0 +1,12 @@
+{
+  "name": "retire-debug-after",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Same consumer of real npm `debug` after nudo migrate retire (tsc removed)",
+  "scripts": {
+    "typecheck": "nudo check src"
+  },
+  "dependencies": {
+    "debug": "^4.3.4"
+  }
+}

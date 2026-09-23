@@ -1,0 +1,16 @@
+{
+  "name": "retire-debug-before",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Consumer of real npm package `debug` (visionmedia/debug) still gated by tsc",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "debug": "^4.3.4"
+  },
+  "devDependencies": {
+    "@types/debug": "^4.1.12",
+    "typescript": "^5.9.0"
+  }
+}

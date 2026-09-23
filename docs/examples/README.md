@@ -14,6 +14,7 @@ Single entry point. Grouped by scenario, independent of implementation layout.
 | [`migrate/`](./migrate/) | **Retire the tsc boilerplate package** (one-way before/after gate) |
 | [`errors/`](./errors/) | **Top-10 error faces** (Nudo real output; side-by-side: [errors-vs-typescript](../errors-vs-typescript.md)) |
 | [`retire-real/`](./retire-real/) | **Real-package `ms` retire-tsc case** (not a synthetic fixture) |
+| [`retire-debug/`](./retire-debug/) | **Real-package `debug` retire-tsc case** (visionmedia/debug) |
 
 Browse by theme on the website [Examples guide](https://nudojs.github.io/nudo/docs/guides/examples); this directory is the CI gate's source of truth (`pnpm run verify:examples`).
 
@@ -132,5 +133,8 @@ The single-line commands in each subdirectory README and example file header are
 | `pnpm run nudo -- migrate strip docs/examples/retire-real/before/src/age.ts` | **0** | Real package `ms`: strip dry-run |
 | `pnpm run check docs/examples/retire-real/after/src/age.js` | **0** | Real package `ms`: post-retire nudo gate |
 | `pnpm run nudo -- contract --from-dts docs/examples/retire-real/before/src/age.ts` | **0** | Real package `ms`: annotations → contract draft |
+| `pnpm run check docs/examples/retire-debug/after/src/logger.js` | **0** | Real package `debug`: post-retire nudo gate (native return honest unknown) |
+| `pnpm run nudo -- contract --from-dts docs/examples/retire-debug/before/src/logger.ts` | **0** | Real package `debug`: annotations → contract draft |
+| `pnpm run nudo -- migrate status docs/examples/retire-debug/before/package.json` | **0** | Real package `debug`: migrate status audit |
 
 > Negative-example files (check on constraints / structure / vs-ts / errors) **exit non-zero on purpose** — the reported lines are what they demonstrate.

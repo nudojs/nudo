@@ -47,6 +47,7 @@ const sidebars: SidebarsConfig = {
       items: [
         "guides/migrating-js",
         "guides/migrating-from-typescript",
+        "guides/case-study-retire",
         "guides/vs-typescript",
         "guides/coexistence",
         "guides/versioning",
