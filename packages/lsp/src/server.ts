@@ -89,6 +89,7 @@ import {
   type AgentToolDeps,
   type AgentToolResult,
 } from "./agent-tools.ts";
+import { extractToWorkspaceEdit, fullDocumentRange } from "./extract-function.ts";
 import { NUDO_EXECUTE_COMMANDS, NUDO_AGENT_TOOL_NAMES } from "./public-api.ts";
 
 const NUDO_COMMANDS = NUDO_EXECUTE_COMMANDS;
@@ -148,7 +149,7 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
     documentSymbolProvider: true,
     workspaceSymbolProvider: true,
     codeActionProvider: {
-      codeActionKinds: ["quickfix"],
+      codeActionKinds: ["quickfix", "refactor.extract"],
     },
     signatureHelpProvider: {
       triggerCharacters: ["(", ","],
@@ -809,6 +810,34 @@ connection.onCodeAction((params) => {
   const source = document.getText();
   const lines = source.split("\n");
   const filePath = uriToFilePath(params.textDocument.uri);
+
+  // Extract function（非空选区）
+  const sel = params.range;
+  const nonEmpty =
+    sel.start.line !== sel.end.line || sel.start.character !== sel.end.character;
+  if (nonEmpty) {
+    try {
+      const extracted = extractToWorkspaceEdit(source, sel, { name: "extracted" });
+      if (extracted.ok) {
+        actions.push({
+          title: extracted.title,
+          kind: "refactor.extract",
+          edit: {
+            changes: {
+              [params.textDocument.uri]: [
+                {
+                  range: fullDocumentRange(source),
+                  newText: extracted.newText,
+                },
+              ],
+            },
+          },
+        });
+      }
+    } catch {
+      /* extract is best-effort */
+    }
+  }
 
   for (const diag of params.context.diagnostics) {
     if (diag.code === "nudo-unreachable") {

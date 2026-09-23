@@ -45,7 +45,7 @@ Declared in `connection.onInitialize` (`src/server.ts`). Keys are the freeze lis
 | `renameProvider` | `prepareProvider: true` — 非绑定（属性键/成员属性）prepareRename 返回 null；同绑定 scope 改名（refactor-gold） |
 | `documentSymbolProvider` | |
 | `workspaceSymbolProvider` | |
-| `codeActionProvider` | `codeActionKinds: ["quickfix"]` |
+| `codeActionProvider` | `codeActionKinds: ["quickfix", "refactor.extract"]` — Extract Function on non-empty selection |
 | `signatureHelpProvider` | triggers `(`, `,` |
 | `semanticTokensProvider` | full; legend includes `contract` / `generated` / `derived` |
 | `executeCommandProvider` | commands = `NUDO_EXECUTE_COMMANDS` (dot form) |
