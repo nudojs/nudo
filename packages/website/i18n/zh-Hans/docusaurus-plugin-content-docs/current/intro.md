@@ -17,10 +17,10 @@ description: Nudo 执行 JavaScript，在 check 上打印签名，并门禁契�
 
 | 你是 | 从这里开始 |
 |---------|------------|
-| 评估类型/CI 门禁的 JS 工程师 | [快速开始](./getting-started/quick-start.md) → [nudo check](./guides/check.md) |
-| TypeScript 用户 | [Nudo vs TypeScript](./guides/vs-typescript.md) → [从 TS 迁移](./guides/migrating-from-typescript.md) |
+| 评估类型/CI 门禁的 JS 工程师 | [十分钟心智模型](./getting-started/mental-model.md) → [快速开始](./getting-started/quick-start.md) → [nudo check](./guides/check.md) |
+| TypeScript 用户 | [十分钟心智模型](./getting-started/mental-model.md) → [Nudo vs TypeScript](./guides/vs-typescript.md) → [从 TS 迁移](./guides/migrating-from-typescript.md) |
 | 现有 JS 包 | [迁移现有 JS](./guides/migrating-js.md) → [契约](./guides/contract.md) |
-| CI / 平台 | [Recipes](./guides/recipes.md) → [诊断](./reference/diagnostics.md) |
+| CI / 平台 | [Recipes](./guides/recipes.md) → [诊断](./reference/diagnostics.md) → [错误对照](./guides/error-faces.md) |
 | AI 编码 agent / 工具链 | [Agents](./reference/agents.md) → [Agent integration](./guides/agent-integration.md) → [API · agent](./api/agent.md) |
 
 非目标：Nudo **不是** TypeScript 编译器；不从 body AST 扫描发明必填槽；`@nudo:case` 仅调试，绝不是契约产品。见[边界](./concepts/limits.md)。

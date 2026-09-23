@@ -17,10 +17,10 @@ Write plain `.js`. Optional sidecar contracts (`*.nudo.js` / `@nudo:refine`) whe
 
 | You are | Start here |
 |---------|------------|
-| JS engineer evaluating a type/CI gate | [Quick Start](./getting-started/quick-start.md) → [nudo check](./guides/check.md) |
-| TypeScript user | [Nudo vs TypeScript](./guides/vs-typescript.md) → [Migrate from TS](./guides/migrating-from-typescript.md) |
+| JS engineer evaluating a type/CI gate | [Mental model](./getting-started/mental-model.md) → [Quick Start](./getting-started/quick-start.md) → [nudo check](./guides/check.md) |
+| TypeScript user | [Mental model](./getting-started/mental-model.md) → [Nudo vs TypeScript](./guides/vs-typescript.md) → [Migrate from TS](./guides/migrating-from-typescript.md) |
 | Existing JS package | [Migrating existing JS](./guides/migrating-js.md) → [Contracts](./guides/contract.md) |
-| CI / platform | [Recipes](./guides/recipes.md) → [Diagnostics](./reference/diagnostics.md) |
+| CI / platform | [Recipes](./guides/recipes.md) → [Diagnostics](./reference/diagnostics.md) → [Error faces](./guides/error-faces.md) |
 | AI coding agent / tooling | [Agents](./reference/agents.md) → [Agent integration](./guides/agent-integration.md) → [API · agent](./api/agent.md) |
 
 Non-goals: Nudo is **not** a TypeScript compiler; it does not invent required slots from body AST scans; `@nudo:case` is debug-only and never the contract product. See [Limits](./concepts/limits.md).
@@ -92,11 +92,14 @@ Honest comparison: [Nudo vs TypeScript](./guides/vs-typescript.md). Limits: [wha
 
 ## What's next
 
+- **[Mental model](./getting-started/mental-model.md)** — 10 minutes, no type language
 - **[Why Nudo](./why-nudo.md)** — work modes, Abs contract face, ecosystem
 - **[Installation](./getting-started/installation.md)** — CLI, VS Code extension, Vite plugin
 - **[Quick Start](./getting-started/quick-start.md)** — first check + first contract
+- **[Error faces](./guides/error-faces.md)** — violations next to `tsc`
 - **[Contracts](./guides/contract.md)** — draft / accept / `nudo contract`
 - **[nudo check](./guides/check.md)** — L1 + L2 gate on Abs
+- **[Migrate from TypeScript](./guides/migrating-from-typescript.md)** — retire `tsc`
 - **[Abs](./concepts/type-values.md)** — `shape × term × pred × conf`
 - **[Directives](./concepts/directives.md)** — `@nudo:refine` / sidecar grammar (reference)
 - **[Playground](/playground)** — browser observation

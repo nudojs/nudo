@@ -136,7 +136,10 @@ case 实参请用具体值或约束构建器。
 
 ## 下一步
 
+- [十分钟心智模型](./mental-model.md) —— 产品面
+- [错误对照](../guides/error-faces.md)
 - [概念分层](../concepts/layers.md)
 - [nudo check](../guides/check.md)
 - [指令 — refine / interface / 侧车](../concepts/directives.md)
+- [从 TypeScript 迁移](../guides/migrating-from-typescript.md) —— 退役 `tsc`
 - [Playground](/playground)

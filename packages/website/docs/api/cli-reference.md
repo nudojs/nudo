@@ -1,5 +1,5 @@
 ---
-description: "Reference every nudo CLI command — check, test, contract, export, health — with arguments, options, output formats, and exit codes."
+description: "Reference every nudo CLI command — check, test, contract, export, health, migrate — with arguments, options, output formats, and exit codes."
 ---
 
 # CLI Reference
@@ -25,10 +25,11 @@ This page is the **canonical flag / option / exit-code specification**. Tutorial
 | [`nudo contract`](#nudo-contract) | Print / draft / emit effective interfaces — `[handwritten]` / `[generated]` / `[implicit]` layers |
 | [`nudo export`](#nudo-export) | Project Abs into `dts` / `guard` / `schema` / `standard` artifacts |
 | [`nudo health`](#nudo-health) | Health-check files: analysis errors, call-site solidification drift |
+| [`nudo migrate`](#nudo-migrate) | One-way retire-tsc door: `status` / `strip` / `verify` / `retire` |
 
 There is **no** observation verb. Observation is `check` signatures, `test` case reports, and IDE hover.
 
-**Day 0:** `check` / `test`. **Day 1:** `contract` + `check`. **Ecosystem:** `export`.
+**Day 0:** `check` / `test`. **Day 1:** `contract` + `check`. **Ecosystem:** `export`. **Leaving tsc:** `migrate`.
 
 ---
 
@@ -359,6 +360,45 @@ Result: FAIL (drift or errors found)
 
 ---
 
+### nudo migrate
+
+One-way door off TypeScript: audit → strip annotations → gate with `nudo check` → retire `tsc`. Coexistence is a migration tactic; the exit is `retire`.
+
+```bash
+nudo migrate <status|strip|verify|retire> [paths...] [options]
+```
+
+| Action | Purpose |
+|--------|---------|
+| `status <pkg-or-dir>` | Audit `.ts`/`.tsx` counts, `tsconfig`, `typescript` dep, `tsc` scripts, and **blockers** |
+| `strip <paths...>` | `.ts` → `.js` (type annotations stripped; runtime stays). Dry-run by default |
+| `verify <paths...>` | Run `nudo check` on the JS surface — must pass before retire |
+| `retire <pkg-or-dir>` | Drop `typescript` dep, rewrite `tsc` scripts → `nudo check`, write `.nudo/migrate-retired.json` |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `strip --write` | Write stripped `.js` next to the source (default is dry-run print) |
+| `strip --no-draft` | Skip best-effort sidecar draft (draft is on with `--write`) |
+| `strip --backup` | Rename original `.ts` to `.ts.bak` after write |
+| `verify --with-tsc` | Also run `tsc --noEmit` baseline on `.ts` inputs (migration dual-run only) |
+| `retire --dry-run` | Print the rewrite plan without touching `package.json` |
+| `--json` | Machine-readable output |
+
+Convert annotations into reviewable contracts with [`contract --from-dts`](#nudo-contract) (`@nudo:draft` is **not** enforced until accepted into `*.nudo.js`).
+
+Samples: [`docs/examples/migrate/`](https://github.com/nudojs/nudo/tree/main/docs/examples/migrate) · [`docs/examples/retire-real/`](https://github.com/nudojs/nudo/tree/main/docs/examples/retire-real). Walkthrough: [Migrate from TypeScript](../guides/migrating-from-typescript.md).
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| `0` | Action completed (including dry-runs) |
+| `1` | Usage / IO errors; `verify` fails when `nudo check` fails |
+
+---
+
 ## JSON output
 
 `check --json` and `test --json` are the machine-readable faces.
@@ -378,3 +418,6 @@ Result: FAIL (drift or errors found)
 | `contract` / `export` (read-only) | Usage / IO errors |
 | `contract --emit --exit-on-diff` | Would write and a diff exists |
 | `health` | Drift or analysis errors |
+| `migrate verify` | `nudo check` fails on the target |
+| `migrate` (other) | Usage / IO errors |
+

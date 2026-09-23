@@ -9,6 +9,7 @@ const sidebars: SidebarsConfig = {
       label: "Start",
       items: [
         "getting-started/installation",
+        "getting-started/mental-model",
         "getting-started/quick-start",
         "guides/recipes",
       ],
@@ -26,6 +27,7 @@ const sidebars: SidebarsConfig = {
         "guides/health",
         "guides/env-harvest",
         "guides/examples",
+        "guides/error-faces",
       ],
     },
     {

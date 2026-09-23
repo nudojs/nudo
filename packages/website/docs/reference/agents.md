@@ -19,13 +19,15 @@ Primary gate: npx nudojs check <path>.
 Contracts are *.nudo.js / @nudo:refine (alias @nudo:interface).
 Do not invent body-AST obligations. @nudo:case is debug-only.
 Entry params print as any; unknown = inference failed.
+Leaving tsc: npx nudojs migrate status|strip|verify|retire (exit is retire).
 ```
+
 
 ## Product rules (must not violate)
 
 | Rule | Detail |
 |------|--------|
-| Verbs | `check` \| `test` \| `contract` \| `export` \| `health` only |
+| Verbs | `check` \| `test` \| `contract` \| `export` \| `health` \| `migrate` only |
 | No `infer` verb | Observation = check signatures + IDE |
 | Contracts | Sidecar / `@nudo:refine`; `@nudo:interface` is alias |
 | `@nudo:case` | Debug / `nudo test` / LSP only |
@@ -34,6 +36,7 @@ Entry params print as any; unknown = inference failed.
 | L1 / L2 | L1 contracts; L2 entry may-throw; ignoreThrows ≠ L1 |
 | No body-AST slot invention | Obligations come from contracts or call-site facts |
 | HOF promote ≠ check error | Body-usage promotion is a warning suggestion |
+| migrate is one-way | `status` → `strip` → `verify` → `retire` tsc; coexistence is not the end state |
 
 ## Day 0 / Day 1 commands
 
@@ -43,6 +46,8 @@ npx nudojs contract <path>
 npx nudojs contract --draft <path> [--write]
 npx nudojs export <path> --format dts --out dist/types
 npx nudojs health <path>
+npx nudojs migrate status <pkg>
+npx nudojs migrate retire <pkg> --dry-run
 ```
 
 `nudo test` is optional debug case reporting — not the primary product narrative.
@@ -85,5 +90,7 @@ Do not send server-injected fields (`loadModule`, effective `autoBind`) as JSON-
 - Do not rewrite JS into TS “for types”
 - Do not invent required object slots from body AST
 - Do not narrate unconstrained entry params as `unknown`
+- Do not present dual `tsc` + `nudo check` as a permanent end state — exit is `migrate retire`
 
-See [Limits](/docs/concepts/limits) · [Glossary](/docs/reference/glossary) · [Recipes](/docs/guides/recipes).
+See [Limits](/docs/concepts/limits) · [Glossary](/docs/reference/glossary) · [Recipes](/docs/guides/recipes) · [Migrate from TypeScript](/docs/guides/migrating-from-typescript).
+

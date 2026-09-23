@@ -79,14 +79,18 @@ Contracts first ──► *.nudo.js / refine ────────┘        
 - **JS-first packages** that do not want a full TS rewrite for a type gate
 - Teams that care about **runtime-shaped obligations** (bounds, shapes, entry throws) more than annotation style
 - Pipelines that need **mocks / schema** from the same facts CI checks
+- Teams ready to **retire `tsc`** on JS packages (`nudo migrate` one-way door)
 
 Who should stay on TypeScript as primary: annotation-first `.ts` codebases, heavy generic/conditional type programming, ecosystems built around `tsc` project references. See [vs TypeScript](./guides/vs-typescript.md).
 
 ## Next
 
+- [Mental model](./getting-started/mental-model.md) — 10 minutes
 - [Introduction](./intro.md) — product face + how to use these docs
 - [Quick Start](./getting-started/quick-start.md)
+- [Error faces](./guides/error-faces.md)
 - [nudo contract](./guides/contract.md)
+- [Migrate from TypeScript](./guides/migrating-from-typescript.md) — retire `tsc`
 - [Recipes](./guides/recipes.md)
 - [Limits](./concepts/limits.md)
 - [Migrate existing JS](./guides/migrating-js.md)

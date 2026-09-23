@@ -1,11 +1,17 @@
 ---
 slug: /guides/coexistence
-description: JS 用 Nudo、TS 包继续用 tsc——同一 monorepo 里互不打架的配方。
+description: 迁移期短暂双门禁，按包推进 —— 出口是 nudo migrate retire。
 ---
 
 # 与 TypeScript 共存
 
-Nudo 与 `tsc` 可以共享仓库。Nudo 面向 **JavaScript**（以及剥掉类型标注后的 `.ts` 源码）；它不替代 `.ts` 优先包上的 TypeScript 编译器。
+**共存是迁移战术，不是产品终态。** Nudo 与 `tsc` 只有在包还在 TS 上时才共享仓库。每个 JS 包的出口是 [`nudo migrate retire`](./migrating-from-typescript.md)。
+
+Nudo 面向 **JavaScript**（以及剥掉类型标注后的 `.ts` 源码）；对于产品*就是* TS 类型语言的包，它不替代 TypeScript 编译器。
+
+:::tip 终态
+每包一个门禁：**`nudo check`**。双跑 `tsc` + `nudo check` 只是暂时的 —— 排期 `migrate retire`。
+:::
 
 ## 配方 1：JS 包用 Nudo，TS 包用 tsc
 

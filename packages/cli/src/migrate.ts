@@ -156,12 +156,12 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
     };
     const retired = existsSync(join(r, ".nudo", "migrate-retired.json"));
     const blockers: string[] = [];
-    if (tsxFiles > 0) blockers.push(`${tsxFiles} .tsx (JSX migrate 需手工/后续)`);
-    if (tsFiles > 0 && tscScripts.length > 0) blockers.push("tsc 仍在 scripts");
+    if (tsxFiles > 0) blockers.push(`${tsxFiles} .tsx (JSX migrate is manual/later)`);
+    if (tsFiles > 0 && tscScripts.length > 0) blockers.push("tsc still in scripts");
     if (tsFiles > 0 && !nudoScripts.some((s) => /check|test/.test(s))) {
-      blockers.push("尚无 nudo check/test script");
+      blockers.push("no nudo check/test script yet");
     }
-    if (deps.typescript) blockers.push("typescript 仍在 dependencies");
+    if (deps.typescript) blockers.push("typescript still in dependencies");
     if (tsFiles === 0 && tsxFiles === 0 && !deps.typescript && tscScripts.length === 0) {
       blockers.push("—");
     }

@@ -273,6 +273,27 @@ verify_test design-doc packages/website/docs/design/design-doc.md \
   'debug "concrete"  (1, 2) => 3' \
   'debug "symbolic"  (number, number) => number'
 
+# mental-model: Day0 any face + Day1 contract gate on the same scale().
+verify_check mental-model packages/website/docs/getting-started/mental-model.md \
+  'scale(x: number) => number' \
+  'nudo:constraint-violated' \
+  'expected: x > 0' \
+  'actual:   0  #exact'
+
+# error-faces: five faces in one check — pred bound, return refine, length,
+# entry may-throw, assign-mismatch.
+verify_check error-faces packages/website/docs/guides/error-faces.md \
+  '5 error' \
+  'nudo:constraint-violated' \
+  'nudo:entry-may-throw' \
+  'nudo:assign-mismatch' \
+  'expected: ms > 0' \
+  'expected: return > 0' \
+  'expected: length(s) ≥ 1' \
+  'missing slot port' \
+  'getName(user: any) => any  throws TypeError' \
+  'nudo contract --draft'
+
 printf -- '--------------------------------------------------------------\n'
 printf 'doc examples verified: %s checks passed, %s failed\n' "$pass" "$fail"
 

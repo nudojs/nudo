@@ -136,9 +136,12 @@ Prefer concrete values or constraint builders in cases.
 
 ## Next
 
+- [Mental model](./mental-model.md) — 10-minute product face
 - [How to use these docs](../intro.md)
+- [Error faces](../guides/error-faces.md) — what violations look like
 - [nudo check](../guides/check.md)
 - [nudo contract](../guides/contract.md)
+- [Migrate from TypeScript](../guides/migrating-from-typescript.md) — retire `tsc`
 - [Concept Layers](../concepts/layers.md)
 - [Recipes](../guides/recipes.md)
 - [Playground](/playground)

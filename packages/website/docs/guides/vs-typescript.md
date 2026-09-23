@@ -1,15 +1,15 @@
 ---
 slug: /guides/vs-typescript
-description: Where Nudo replaces TypeScript, where it does not, and how the two coexist — honest positioning.
+description: Where Nudo replaces TypeScript, where it does not — and why dual gates are only a migration tactic.
 ---
 
 # Nudo vs TypeScript
 
-**You'll leave with:** an honest map of when Nudo can replace TypeScript as a JS-first type gate, when TypeScript should stay primary, and how the two coexist in one repo.
+**You'll leave with:** an honest map of when Nudo replaces TypeScript as a JS-first type gate, and when TypeScript should stay primary.
 
-Practical migration steps: [Migrate from TypeScript](./migrating-from-typescript.md) · Product positioning: [Why Nudo](../why-nudo.md).
+Practical migration: [Migrate from TypeScript](./migrating-from-typescript.md) · Error faces: [Error faces](./error-faces.md) · Product positioning: [Why Nudo](../why-nudo.md).
 
-Nudo is built to **replace TypeScript as the day-to-day type gate for JavaScript-first codebases** — not to reimplement the TypeScript compiler. This page is the honest map: when that replacement is real, when it is not, and how the two tools share a repo.
+Nudo is built to **replace TypeScript as the day-to-day type gate for JavaScript-first codebases** — not to reimplement the TypeScript compiler. Coexistence is a **migration tactic**; the exit is `nudo migrate retire`. This page is the honest map of when that replacement is real.
 
 ## Positioning
 
@@ -21,6 +21,7 @@ Nudo is built to **replace TypeScript as the day-to-day type gate for JavaScript
 | **Inference** | From annotations + local inference | From **executing** code on symbolic Abs (B-path) |
 | **CI gate** | `tsc --noEmit` | `nudo check` (`actual ⊭ expected` on Abs) |
 | **Ecosystem exit** | `.d.ts` is the model | `.d.ts` is a **lossy projection** (`absToTSType`) — not the source of truth |
+| **Leaving the other tool** | N/A | `nudo migrate` → **`retire` tsc** |
 
 The goal is not “TS syntax on JS.” The goal is: **JS stays JS**, obligations come from explicit contracts (L1) plus the JS runtime export boundary (L2 entry throws), and the engine reasons by evaluation rather than by a second type language.
 
@@ -30,6 +31,7 @@ The goal is not “TS syntax on JS.” The goal is: **JS stays JS**, obligations
 | `tsc --noEmit` | `nudo check` (still prints signatures on success) |
 | `any.prop` does not error | Dangerous ops on `any` at entry enter the **throws** domain; L2 can error |
 | No `tsc show` | Observation is check/test/IDE output |
+| “Not assignable to type …” | [`actual` / `expected` / `fix:`](./error-faces.md) |
 
 ## When Nudo is the right replacement
 
@@ -40,7 +42,7 @@ Prefer Nudo when **all** of these are true:
 3. **Contracts are product requirements.** You want `nudo check` in CI: L1 bounds/shape obligations from sidecars + L2 entry may-throw on exports — not body AST slot scans.
 4. **You refuse a second type language.** Contracts are JSON-like builders, not `interface` / mapped / conditional types.
 
-Typical fits: tooling CLIs, script layers, plugin hosts, data pipelines in plain JS, repos that already have rich tests (call-site mining works well there).
+Typical fits: tooling CLIs, script layers, plugin hosts, data pipelines in plain JS, repos that already have rich tests (call-site mining works well there). Then **retire `tsc`** on that package.
 
 ## When TypeScript should stay primary
 
@@ -51,7 +53,7 @@ Do **not** expect Nudo to replace `tsc` when:
 3. **Your ecosystem is typed packages.** Definitely-typed style APIs, declaration merging with third-party `.d.ts`, and `tsc` project references stay on the TS side.
 4. **The gate is “does this assign like TS.”** Nudo’s gate is Pred implication on Abs and `leqAbs` for some assignment shapes — not bit-for-bit TS assignability.
 
-Those cases are real. Pointing `nudo check` at a TS monorepo is not the product path.
+Those cases are real. Pointing `nudo check` at a TS monorepo is not the product path — and still, do not keep dual gates on JS packages “forever.”
 
 ## What “replace TypeScript” means here
 
@@ -65,6 +67,7 @@ For a **JS package**, the serious-replacement checklist is:
 | Explicit contracts | `*.nudo.js` + `@nudo:refine`; handwritten = L1 obligation |
 | Generated facts | `nudo contract --emit` → `@generated` segments (drift, not silent rewrites of obligations) |
 | npm / editor types | `nudo export --format dts` — one-way projection only |
+| **Retire tsc** | `nudo migrate status` → `strip` → `verify` → **`retire`** |
 | Performance story | Repo `benchmark` + `benchmark:gate` — same case-set size; fail on exact regressions beyond 1-case jitter, rising unknown/error counts, per-case order worse than baseline, or avg > 3.0× baseline |
 
 What is **not** claimed: one-click migration of a large TS monorepo; full structural typing as the primary model; a second IR.
@@ -98,20 +101,26 @@ needsPositive(-1);
 //   expected: x > 0
 ```
 
-TypeScript encodes intent in the signature. Nudo encodes the same obligation as a **computable** constraint and fails the call site. Both are valid; only one requires a type language.
+TypeScript encodes intent in the signature. Nudo encodes the same obligation as a **computable** constraint and fails the call site. Both are valid; only one requires a type language. More faces: [Error faces](./error-faces.md).
 
-## Coexistence
+## Migration, not permanent coexistence
 
-In a monorepo you usually **split by package**, not by feature inside one TS project:
+In a monorepo you migrate **package by package**, then retire:
 
-- JS packages → Nudo LSP + `nudo check`
-- TS packages → `tsc` / ts-node as today
+```bash
+npx nudojs migrate status packages/tool
+npx nudojs migrate strip packages/tool/src --write
+npx nudojs migrate verify packages/tool/src
+npx nudojs migrate retire packages/tool
+```
 
-Recipes (include/exclude globs, gradual contracts, CI snippets): **[Coexistence with TypeScript](./coexistence.md)**.
+While packages remain, short-lived dual jobs are a tactic — see [Coexistence](./coexistence.md). The product end state is **one gate: `nudo check`**.
 
 ## Related
 
+- **[Mental model](../getting-started/mental-model.md)** — 10 minutes
+- **[Error faces](./error-faces.md)** — `actual` / `expected` / `fix:`
 - **[Concept layers](../concepts/layers.md)** — Day-0 / Day-1 / Abs
 - **[nudo check](./check.md)** — diagnostic codes and interface tiers
 - **[Language semantics](../concepts/semantics.md)** — what is precise, what degrades to `unknown`
-- **[Quick start](../getting-started/quick-start.md)** — 30-minute path
+- **[Quick start](../getting-started/quick-start.md)** — first gate

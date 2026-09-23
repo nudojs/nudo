@@ -1,11 +1,18 @@
 ---
 slug: /guides/coexistence
-description: Run Nudo on JS while TypeScript stays on TS packages — monorepo recipes that do not fight.
+description: Short-lived dual gates while you migrate package by package — the exit is nudo migrate retire.
 ---
 
 # Coexistence with TypeScript
 
-Nudo and `tsc` can share a repo. Nudo targets **JavaScript** (and stripped `.ts` sources); it does not replace the TS compiler for `.ts`-first packages.
+**Coexistence is a migration tactic, not the product end state.** Nudo and `tsc` can share a repo only while packages are still on TypeScript. Each JS package’s exit is [`nudo migrate retire`](./migrating-from-typescript.md).
+
+Nudo targets **JavaScript** (and stripped `.ts` sources). It does not replace the TS compiler for packages whose product *is* the TS type language.
+
+:::tip End state
+One gate per package: **`nudo check`**. Dual `tsc` + `nudo check` is temporary — schedule `migrate retire`.
+:::
+
 
 ## Recipe 1: JS packages use Nudo, TS packages use tsc
 
