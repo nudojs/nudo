@@ -1,11 +1,12 @@
 /**
- * @nudo:mock / sinon 指令 → Abs seed（供 evalProgramAbs）。
- * host 层：依赖 parser 指令形态；core 只吃 seedVars/seedFns。
+ * @nudo:mock / sinon 指令 → Abs seed（供 B 路径注入：runTranspiled
+ * envGlobals / mockSeedsToAbsMocks）。
+ * host 层：依赖 parser 指令形态；core 只吃 Abs 绑定。
  */
 
 import type { Node } from "@babel/types";
-import type { FunctionWithDirectives } from "@nudojs/parser";
-import { parseCaseArgExpr } from "@nudojs/parser";
+import { extractDirectives, type FunctionWithDirectives } from "@nudojs/parser";
+import { parse, parseCaseArgExpr } from "@nudojs/parser";
 import type { MockHelper } from "@nudojs/core";
 import {
   type Abs,
@@ -277,4 +278,10 @@ export function mockDirectivesToAbsSeeds(
     }
   }
   return { seedVars, seedFns };
+}
+
+/** 便捷入口：源码 → @nudo:mock 的 B 注入 Abs 绑定（checkSource 注入管线用） */
+export function mockSeedsForSource(source: string): Record<string, Abs> {
+  const fns = extractDirectives(parse(source));
+  return mockSeedsToAbsMocks(mockDirectivesToAbsSeeds(fns));
 }

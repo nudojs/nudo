@@ -7,6 +7,10 @@ import { withStdImport, stdOpts } from "./nudo-constraints.ts";
  * `@nudo:skip [returnsExpr]`（host 解析后经 CheckOptions.skips 下传）：
  * body 不评估 → 不产生 unknown-inference 噪音；签名按声明返回上屏（无声明 any）；
  * 参数位/调用点 L1 义务不解除。
+ *
+ * body 用 `eval(data)`：B-path 下会折真 unknown（引擎债）。未定义调用
+ * （如 processData）在新引擎是精确 `never`（ReferenceError 必抛），不能
+ * 当作 unknown-inference 对照。
  */
 describe("nudo check — @nudo:skip", () => {
   const numAbs: Abs = { shape: { k: "prim", type: "number" }, conf: "exact" };
@@ -14,7 +18,7 @@ describe("nudo check — @nudo:skip", () => {
   it("skipped fn: no body evaluation, no engine-debt warning", () => {
     const src = `
 function heavy(data) {
-  return processData(data);
+  return eval(data);
 }
 `;
     const report = checkSource("t.js", src, pTrue, { skips: new Map([["heavy", null]]) });
@@ -28,7 +32,7 @@ function heavy(data) {
   it("without skips the same body reports unknown-inference (control)", () => {
     const src = `
 function heavy(data) {
-  return processData(data);
+  return eval(data);
 }
 `;
     const report = checkSource("t.js", src, pTrue, {});
@@ -40,7 +44,7 @@ function heavy(data) {
   it("declared return type is used as the signature return", () => {
     const src = `
 function heavy(data) {
-  return processData(data);
+  return eval(data);
 }
 `;
     const report = checkSource("t.js", src, pTrue, { skips: new Map([["heavy", numAbs]]) });

@@ -7,12 +7,11 @@ import {
   formatAbs,
   effectiveInterface,
   formatConstraint,
-  analyzeFnFull,
-  evalProgramAbs,
-  setAbsCallCollector,
+  runTranspiled,
+  callTranspiledExportFull,
+  setBCallCollector,
   abs as makeAbs,
   type Abs,
-  type AbsCallRecord,
   type AbsModuleExports,
 } from '@nudojs/core';
 import { analyzeFile, getHoverAtPosition, collectAbsInlays } from '@nudojs/service';
@@ -421,32 +420,31 @@ function discoverCallsites(
     return result;
   }
 
-  // Evaluate the library once, inject its exports under './util', then run the
-  // usage site with Abs call collection.
-  const records: AbsCallRecord[] = [];
+  // Evaluate the library once via the B run, inject its exports under './util',
+  // then run the usage site (exec + lenient globals) with B call collection.
+  const records: { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean }[] = [];
+  let libRun: Record<string, unknown> | undefined;
   try {
-    const libEnv = evalProgramAbs(libCode, { file: libProgram as never });
+    libRun = runTranspiled(libCode, { mode: "analyze" });
     const libExports: AbsModuleExports = { named: {} };
-    for (const [name, v] of libEnv.env.vars) libExports.named[name] = v;
-    for (const [name, impl] of libEnv.env.fns) {
-      if (!libExports.named[name]) {
-        libExports.named[name] = makeAbs(
-          { k: "fn", params: impl.params },
-          undefined,
-          undefined,
-          "exact",
-        );
+    for (const [name, v] of Object.entries(libRun)) {
+      if (v === undefined || v === null) continue;
+      if (v && typeof v === "object" && "shape" in (v as object)) {
+        libExports.named[name] = v as Abs;
+      } else {
+        // 裸 JS 函数导出：占位 fn 形状（导入绑定侧按 JS 函数直调）
+        libExports.named[name] = makeAbs({ k: "fn", params: [] }, undefined, undefined, "exact");
       }
     }
     const modules: Record<string, AbsModuleExports> = {
       './util': libExports,
       './util.js': libExports,
     };
-    const prev = setAbsCallCollector((r) => records.push(r));
+    const prev = setBCallCollector((r) => records.push(r));
     try {
-      evalProgramAbs(testCode, { file: testProgram as never, modules });
+      runTranspiled(testCode, { mode: "exec", modules, lenientGlobals: true });
     } finally {
-      setAbsCallCollector(prev);
+      setBCallCollector(prev);
     }
   } catch (e) {
     result.error = e instanceof Error ? e.message : String(e);
@@ -466,14 +464,16 @@ function discoverCallsites(
   // Signature synthesis: entry-only (all params unknown) vs the injection of
   // the first usage-site record's argument types.
   try {
-    result.before = analyzeFnFull(libCode, exportName, result.beforeArgs).result;
-    const topRecord = relevant.find(
-      (r) => r.callLoc?.line !== undefined && usageLines.has(r.callLoc.line),
-    );
-    if (topRecord) {
-      result.afterArgs = topRecord.args;
-      result.after = analyzeFnFull(libCode, exportName, topRecord.args).result;
-      result.afterSource = `call@test.js:${topRecord.callLoc?.line}`;
+    if (libRun) {
+      result.before = callTranspiledExportFull(libRun, exportName, result.beforeArgs).result;
+      const topRecord = relevant.find(
+        (r) => r.callLoc?.line !== undefined && usageLines.has(r.callLoc.line),
+      );
+      if (topRecord) {
+        result.afterArgs = topRecord.args;
+        result.after = callTranspiledExportFull(libRun, exportName, topRecord.args).result;
+        result.afterSource = `call@test.js:${topRecord.callLoc?.line}`;
+      }
     }
   } catch (e) {
     result.error = result.error ?? (e instanceof Error ? e.message : String(e));

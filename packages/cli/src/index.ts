@@ -45,6 +45,10 @@ import {
   formatInterfaceSurfaceLine,
   checkCacheKey,
   checkConfig,
+  evalAbsModuleGraph,
+  mockSeedsForSource,
+  collectBPathReplacements,
+  collectEnvGlobals,
   type CallRecord,
   type CaseResult,
   type AnalysisResult,
@@ -385,12 +389,38 @@ async function runCheck(
       summary: { ...cached.summary },
     } as Awaited<ReturnType<typeof checkSource>>;
   } else {
+    // B 注入包（模块图 + mocks + env 全局 + replace/as）——同文件内复用同一
+    // 对象（checkSource/generalize memo 键按对象身份）
+    let inject: import("@nudojs/core").RunTranspiledOptions | undefined;
+    try {
+      const graph = evalAbsModuleGraph(source, filePath);
+      const reps = collectBPathReplacements(source);
+      const mocks = mockSeedsForSource(source);
+      const envGlobals = collectEnvGlobals(projectEnvNames);
+      const hasCycle = graph.issues.some((i) => i.kind === "cycle");
+      inject = {
+        ...(hasCycle ? {} : { modules: graph.modules }),
+        ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
+        ...(Object.keys(envGlobals).length > 0 ? { envGlobals } : {}),
+        ...(reps.targets.length > 0
+          ? { replacements: reps.values, replacementTargets: reps.targets }
+          : {}),
+        ...(reps.asTargets.length > 0
+          ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
+          : {}),
+      };
+    } catch {
+      /* 注入计算失败：不注入（fail-closed，无解释兜底） */
+    }
     algebraReport = checkSource(filePath, source, pTrue, {
       loadModule,
       fromFile: filePath,
       ...(autoBind === false ? { autoBind: false } : {}),
       entryThrows,
       ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
+      ...(inject && Object.keys(inject).length > 0
+        ? { modules: inject.modules as never, inject }
+        : {}),
       skips: collectSkipReturns(source),
     });
   }
@@ -495,7 +525,7 @@ async function runAbsView(
     process.exitCode = 1;
     return;
   }
-  const { defaultLoadModule: loadModule } = await import("@nudojs/service");
+  const { defaultLoadModule: loadModule, tryBPathCall } = await import("@nudojs/service");
   console.log(`nudo check --abs  ${basename(filePath)}`);
   if (assumeLines.length > 0) {
     console.log(`assume: ${assumeLines.join(", ")}`);
@@ -513,7 +543,10 @@ async function runAbsView(
       continue;
     }
     const args = algebra.buildArgsFromAssume(source, name, assumeIds);
-    const result = algebra.analyzeFn(source, name, args, phi);
+    // fail-closed：B-only（Φ 种子经 tryBPathCall）；B 失败（类方法等）
+    // → unknown（显式无信息，ast-eval 兜底已删）
+    const bResult = tryBPathCall(source, filePath, name, args, { phi });
+    const result = bResult ?? algebra.unknown;
     const label = `${name}(${args.map((a) => algebra.formatShape(a)).join(", ")})`;
     console.log(algebra.formatAbsMultiline(result, label));
     console.log("");

@@ -18,6 +18,7 @@ import {
   type TranspiledCallResult,
   type Abs,
   type AbsModuleExports,
+  type Phi,
   stableAnalyzeKeySource,
   formatAbs,
   hashSource,
@@ -279,19 +280,18 @@ export function collectBPathReplacements(source: string): {
   return { targets, values, asTargets, asValues };
 }
 
-/** 可走 transpile+exec：env 经 loadEnvs（内置 + 已 preload 的路径型） */
+/**
+ * 可走 transpile+exec 的快速预判（env 经 loadEnvs 内置 + 已 preload 的路径型）。
+ * 注意：正确性不依赖本函数——转译点已抛 NudoUnsupportedError（顶层 this /
+ * 未 lowering 语句/表达式），tryRunTranspiled 捕获后回落并记录；本函数仅
+ * 是避免对明显不可托管文件做模块图装载的廉价前置闸。
+ */
 export function isBPathCapable(source: string, envNames: string[] = []): boolean {
   void envNames;
-  // 顶层 this：memberPathOf 对无 thisParam 的 this 根返回 null（写入不可重绑）。
-  // 函数/方法体内的 this 由 transpile 处理（方法注入 thisParam，普通函数/箭头
-  // 降级为 $lit(undefined) + may-throw），不得关掉整文件的 B 路径。
-  try {
-    const ast = parse(source) as unknown as { program?: { body?: unknown[] } };
-    return !hasTopLevelThis(ast);
-  } catch {
-    // 语法错误交上层诊断，不额外关闭 B 路径（原正则在坏语法上恒真，保持）
-    return true;
-  }
+  void source;
+  // 顶层 this 已按 ESM 语义托管（this === undefined；写经 strict 写路径抛
+  // TypeError）——不再关整文件 B 路径。函数/方法体内 this 由 transpile 处理。
+  return true;
 }
 
 /** 函数/方法边界：其体内 this 由 transpile 处理（thisParam 注入 / $lit(undefined) 降级） */
@@ -415,6 +415,8 @@ export function tryRunBPath(
     envNames?: string[];
     /** @nudo:mock → Abs，注入为全局绑定（防止顶层调用真 fetch 等） */
     mocks?: Record<string, Abs>;
+    /** 宽松全局（调用点发现 exec 采集） */
+    lenientGlobals?: boolean;
   } = {},
 ): BPathRunResult | undefined {
   if (!isBPathCapable(source, opts.envNames ?? [])) return undefined;
@@ -449,9 +451,9 @@ export function tryRunBPath(
     const truncated = new Set<string>();
     const topCalls: BCallRecord[] = [];
     // collector 先于模块图：import 函数体在 evalProgramAbs 内的 method-missing 也要收
-    setMemberDiagCollector((d) => memberDiags.push(d));
-    setAbsTruncationCollector((label) => truncated.add(label));
-    setBCallCollector((r) => topCalls.push(r));
+    const prevMember = setMemberDiagCollector((d) => memberDiags.push(d));
+    const prevTrunc = setAbsTruncationCollector((label) => truncated.add(label));
+    const prevCall = setBCallCollector((r) => topCalls.push(r));
     try {
       const { modules: graphMods, issues } = evalAbsModuleGraph(source, filePath);
       const envMods = collectEnvModules(opts.envNames ?? []);
@@ -470,6 +472,7 @@ export function tryRunBPath(
         asOverrideTargets: asTargets.length ? asTargets : undefined,
         asOverrides: asTargets.length ? asValues : undefined,
         envGlobals: Object.keys(envGlobals).length ? envGlobals : undefined,
+        lenientGlobals: opts.lenientGlobals,
       });
       out = {
         exports,
@@ -480,9 +483,9 @@ export function tryRunBPath(
         calls: topCalls.length ? topCalls : undefined,
       };
     } finally {
-      setMemberDiagCollector(null);
-      setAbsTruncationCollector(null);
-      setBCallCollector(null);
+      setMemberDiagCollector(prevMember);
+      setAbsTruncationCollector(prevTrunc);
+      setBCallCollector(prevCall);
     }
   } catch {
     out = null;
@@ -513,6 +516,8 @@ export function tryBPathCallFull(
     collectMemberDiags?: boolean;
     envNames?: string[];
     mocks?: Record<string, Abs>;
+    /** 入口 Φ 种子（assume 约束——B 侧路径条件收窄） */
+    phi?: Phi;
   } = {},
 ): (TranspiledCallResult & {
   calls?: BCallRecord[];
@@ -525,14 +530,15 @@ export function tryBPathCallFull(
   if (!(fnName in run.exports)) return undefined;
   const collected: BCallRecord[] = [];
   const memberDiags: BMemberDiag[] = [];
-  if (opts.collectCalls) {
-    setBCallCollector((r) => collected.push(r));
-  }
-  if (opts.collectMemberDiags ?? true) {
-    setMemberDiagCollector((d) => memberDiags.push(d));
-  }
+  const prevCall = opts.collectCalls
+    ? setBCallCollector((r) => collected.push(r))
+    : undefined;
+  const wantMember = opts.collectMemberDiags ?? true;
+  const prevMember = wantMember
+    ? setMemberDiagCollector((d) => memberDiags.push(d))
+    : undefined;
   try {
-    const full = callTranspiledExportFull(run.exports, fnName, args);
+    const full = callTranspiledExportFull(run.exports, fnName, args, opts.phi ? { phi: opts.phi } : undefined);
     const all = [...(run.memberDiags ?? []), ...memberDiags];
     return {
       ...full,
@@ -542,8 +548,8 @@ export function tryBPathCallFull(
       truncatedFns: run.truncatedFns,
     };
   } finally {
-    if (opts.collectCalls) setBCallCollector(null);
-    setMemberDiagCollector(null);
+    if (opts.collectCalls) setBCallCollector(prevCall ?? null);
+    if (wantMember) setMemberDiagCollector(prevMember ?? null);
   }
 }
 
@@ -553,7 +559,7 @@ export function tryBPathCall(
   filePath: string,
   fnName: string,
   args: Abs[],
-  opts: { envNames?: string[]; mocks?: Record<string, Abs> } = {},
+  opts: { envNames?: string[]; mocks?: Record<string, Abs>; phi?: Phi } = {},
 ): Abs | undefined {
   const full = tryBPathCallFull(source, filePath, fnName, args, opts);
   if (!full) return undefined;

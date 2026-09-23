@@ -4,14 +4,13 @@
  * 2. display 不再出现 arr(A1) = A1 噪音
  * 3. refine 契约优先、不重复提升
  * 4. symbolic 截断 → 不写半截 fnRels
- * 5. 双路径：同一 HOF 经 analyzeFn 与 $call 结果一致
+ * 5. 双路径：同一 HOF 经 B 导出调用与 $call 结果一致
  */
 import { describe, it, expect } from "vitest";
 import { parse } from "@babel/parser";
 import {
   abs,
   absFunction,
-  analyzeFn,
   anyVar,
   bool,
   checkSource,
@@ -21,10 +20,19 @@ import {
   numLit,
   pTrue,
   relationFn,
+  runTranspiled,
+  callTranspiledExportFull,
   type Abs,
 } from "../index.ts";
+
 import { $call } from "../exec/call.ts";
 import { withStdImport, stdOpts } from "./nudo-constraints.ts";
+
+/** B 路径驱动：runTranspiled + 导出调用（取代 analyzeFn 的求值面） */
+function analyzeExport(src: string, fnName: string, args: Abs[]): Abs {
+  const run = runTranspiled(src, { mode: "analyze" });
+  return callTranspiledExportFull(run, fnName, args).result;
+}
 
 const a1 = anyVar("A1");
 const arrA1 = abs({ k: "arr", element: a1 }, undefined, undefined, "path");
@@ -46,13 +54,13 @@ describe("regression: $call / applyAbsFn body throw → never", () => {
     expect(out.conf).toBe("exact");
   });
 
-  it("analyzeFn on throwing named fn also yields never result", () => {
+  it("B export call on throwing named fn also yields never result", () => {
     const src = `
-      function boom(x) {
+      export function boom(x) {
         throw "bad";
       }
     `;
-    const r = analyzeFn(src, "boom", [numLit(1)]);
+    const r = analyzeExport(src, "boom", [numLit(1)]);
     expect(r.shape.k).toBe("never");
   });
 });
@@ -60,7 +68,7 @@ describe("regression: $call / applyAbsFn body throw → never", () => {
 describe("regression: format display has no arr(A1) = A1 noise", () => {
   it("processItems display pins items: arr(A1) without outer α term", () => {
     const src = `
-      function processItems(items, transform, filter) {
+      export function processItems(items, transform, filter) {
         return items.filter(filter).map(transform);
       }
     `;
@@ -79,7 +87,7 @@ describe("P2: refine contract wins, no re-promotion", () => {
       /**
        * @nudo:refine items positives
        */
-      function processItems(items, transform, filter) {
+      export function processItems(items, transform, filter) {
         return items.filter(filter).map(transform);
       }
     `);
@@ -108,6 +116,8 @@ describe("P2: truncated symbolic discards partial relations", () => {
     expect(g).toBeDefined();
     if (!g) return;
     // 截断后 symbolic 为 opaque → 不可缓存 → 不写半截关系
+    // （instantiate→B 实验已回退：B 的递归 partial 与 ast-eval opaque
+    // 语义不同——opaque 门保留，静态关系也随门一起走）
     expect(g.symbolic.conf).toBe("opaque");
     expect(g.fnRels).toBeUndefined();
     expect(g.entryShapes).toBeUndefined();
@@ -116,9 +126,9 @@ describe("P2: truncated symbolic discards partial relations", () => {
 });
 
 describe("P1c: true dual-path consistency (same HOF, two hosts)", () => {
-  it("processItems via analyzeFn and via $call on relation callbacks agree on β", () => {
+  it("processItems via B export call and via $call on relation callbacks agree on β", () => {
     const src = `
-      function processItems(items, transform, filter) {
+      export function processItems(items, transform, filter) {
         return items.filter(filter).map(transform);
       }
     `;
@@ -127,7 +137,7 @@ describe("P1c: true dual-path consistency (same HOF, two hosts)", () => {
       abs({ k: "any" }, { op: "var", id: "B1" }, undefined, "path"),
     );
     const filter = relationFn([a1], bool());
-    const viaAst = analyzeFn(src, "processItems", [arrA1, transform, filter]);
+    const viaAst = analyzeExport(src, "processItems", [arrA1, transform, filter]);
     expect(viaAst.shape.k).toBe("arr");
     if (viaAst.shape.k !== "arr") return;
     expect(viaAst.shape.element.term).toEqual({ op: "var", id: "B1" });
@@ -139,11 +149,11 @@ describe("P1c: true dual-path consistency (same HOF, two hosts)", () => {
 
   it("$call body-bearing recursive fn truncates (call-budget, no hang)", () => {
     const src = `
-      function loop(n) {
+      export function loop(n) {
         return loop(n);
       }
     `;
-    const r = analyzeFn(src, "loop", [numLit(0)]);
+    const r = analyzeExport(src, "loop", [numLit(0)]);
     expect(r.shape.k).toBeDefined();
     expect(
       r.conf === "opaque" || r.shape.k === "unknown" || r.shape.k === "never",
@@ -156,7 +166,7 @@ describe("P4: promote source stays warning", () => {
     // constraint 语言目前无 fn 形状，refine→error 分支暂不可经 checkSource 触达；
     // 钉住 promote→warning，避免误升 error 破坏 commander 零误报门禁。
     const src = `
-      function processItems(items, transform, filter) {
+      export function processItems(items, transform, filter) {
         return items.filter(filter).map(transform);
       }
       function bad() {
@@ -175,7 +185,7 @@ describe("P4: promote source stays warning", () => {
 describe("instantiate: shape promotion still fires (throwaway collector)", () => {
   it("processItems instantiated with any args promotes items→arr, not stuck unknown", () => {
     const src = `
-      function processItems(items, transform, filter) {
+      export function processItems(items, transform, filter) {
         return items.filter(filter).map(transform);
       }
     `;
@@ -191,7 +201,7 @@ describe("instantiate: shape promotion still fires (throwaway collector)", () =>
 
   it("instantiate does not mutate typeParams / PolyFn fnRels identity", () => {
     const src = `
-      function processItems(items, transform, filter) {
+      export function processItems(items, transform, filter) {
         return items.filter(filter).map(transform);
       }
     `;

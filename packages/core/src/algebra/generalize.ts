@@ -17,7 +17,8 @@ import { pTrue, predToString } from "./pred.ts";
 import type { Abs, Shape } from "./abs.ts";
 import { abs, unknown } from "./abs.ts";
 import type { AstEnv } from "./ast-env.ts";
-import { evalNode, emptyEnv } from "./ast-eval.ts";
+import { emptyEnv } from "./ast-env.ts";
+import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
 import { defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { formatShapeSlot } from "./format.ts";
 import { type RefineResolveOpts } from "./refine.ts";
@@ -37,12 +38,93 @@ import {
   normPath,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
-import {
-  createHofCollectCtx,
-  snapshotAbs,
-  type RelSource,
-  type HofSite,
-} from "./hof.ts";
+import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
+import { scanPromotions } from "./promote-scan.ts";
+import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey, type RunTranspiledOptions } from "./exec/run.ts";
+import { withExecPhi } from "./exec/runtime.ts";
+import { $new, $invoke } from "./exec/class.ts";
+
+/** generalize 的 B-path 模块执行缓存（按 source；run 不依赖实参） */
+const bRunMemo = new Map<string, Record<string, unknown>>();
+function bPathRunOf(
+  source: string,
+  modules?: Record<string, AbsModuleExports | Record<string, unknown>>,
+  inject?: RunTranspiledOptions,
+): Record<string, unknown> | undefined {
+  // 内容指纹（CLI 每次新建 inject/modules 对象时身份键会 miss）
+  const mKey = `${source}|${runTranspiledOptionsMemoKey({ ...(inject ?? {}), ...(modules ? { modules } : {}) })}`;
+  if (bRunMemo.size >= 256) {
+    const oldest = bRunMemo.keys().next().value;
+    if (oldest !== undefined) bRunMemo.delete(oldest);
+  }
+  let run = bRunMemo.get(mKey);
+  if (run === undefined) {
+    // mode 恒为 analyze；modules 优先参数、缺则 inject.modules（与 bAnalyzeOpts 同口径）
+    const merged = modules ?? inject?.modules;
+    const r = tryRunTranspiled(source, {
+      ...(inject ?? {}),
+      mode: "analyze" as const,
+      ...(merged ? { modules: merged } : {}),
+    });
+    if (r === undefined) return undefined;
+    run = r;
+    bRunMemo.set(mKey, run);
+  }
+  return run;
+}
+
+/** body 是否引用指定标识符（自递归检测；非计算 property key 不计数） */
+/** 类声明的构造器形参个数（类方法桥实例化用：无显式 ctor → 0） */
+function ctorParamCountOf(
+  fileAst: ReturnType<typeof babelParse>,
+  clsName: string,
+): number {
+  for (const stmt of fileAst.program.body) {
+    if (
+      (stmt.type === "ClassDeclaration" || stmt.type === "ExportNamedDeclaration") &&
+      "declaration" in (stmt as object)
+    ) {
+      const decl = stmt.type === "ExportNamedDeclaration"
+        ? (stmt as { declaration?: unknown }).declaration
+        : stmt;
+      const c = decl as { type?: string; id?: { name?: string }; body?: { body?: unknown[] } };
+      if (c.type === "ClassDeclaration" && c.id?.name === clsName) {
+        for (const m of c.body?.body ?? []) {
+          const mem = m as { kind?: string; params?: unknown[] };
+          if (mem.kind === "constructor") return mem.params?.length ?? 0;
+        }
+        return 0;
+      }
+    }
+  }
+  return 0;
+}
+
+function bodyReferencesName(body: Node, name: string): boolean {
+  let found = false;
+  const visit = (n: unknown): void => {
+    if (found || !n || typeof n !== "object") return;
+    const o = n as { type?: string; [k: string]: unknown };
+    if (o.type === "Identifier" && (o as { name?: unknown }).name === name) {
+      found = true;
+      return;
+    }
+    for (const key of Object.keys(o)) {
+      if (key === "loc" || key === "start" || key === "end" || key === "tokens") continue;
+      if (o.type === "MemberExpression" && key === "property" && (o as { computed?: boolean }).computed !== true) {
+        continue;
+      }
+      const v = o[key];
+      if (Array.isArray(v)) {
+        for (const item of v) if (item && typeof item === "object") visit(item);
+      } else if (v && typeof v === "object") {
+        visit(v);
+      }
+    }
+  };
+  visit(body);
+  return found;
+}
 
 /** 进程内 L0：同 (source, fn, refine 指纹, budget, label) 的 generalize 结果 */
 const generalizeMemo = new Map<string, PolyFn | undefined>();
@@ -122,6 +204,19 @@ function refineDepsFingerprint(source: string, refine?: RefineResolveOpts): Load
   return loadModuleDepsFingerprint(source, refine.loadModule, refine.fromFile);
 }
 
+/** 模块表身份（WeakMap）——调用方同表对象跨调用 → 键稳定（与 loadModuleId 同信任模型） */
+const moduleMapIds = new WeakMap<object, number>();
+let moduleMapIdSeq = 0;
+function moduleMapId(m: object | undefined): string {
+  if (!m) return "-";
+  let id = moduleMapIds.get(m);
+  if (id === undefined) {
+    id = ++moduleMapIdSeq;
+    moduleMapIds.set(m, id);
+  }
+  return `m${id}`;
+}
+
 function generalizeMemoKey(
   fnName: string,
   source: string,
@@ -134,6 +229,11 @@ function generalizeMemoKey(
     depsFp?: LoadDepsFingerprint;
     /** checkSource 预计算：ambient 侧车闭包指纹（独立调用时现算） */
     sidecarFp?: string;
+    /** 宿主已求值的依赖导出表（specifier → AbsModuleExports） */
+    modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+    /** B run 注入包（modules/mocks/envGlobals/replacements/as）——透传
+     *  runTranspiled；内容指纹进 memo 键（CLI 每次新建同对象也可命中） */
+    inject?: RunTranspiledOptions;
   },
 ): { key: string; depPaths: string[]; truncated: boolean } {
   const r = opts.refine;
@@ -160,6 +260,8 @@ function generalizeMemoKey(
     deps.fp,
     sc ?? "-",
     `${budget.maxDepth}/${budget.maxNodes}`,
+    moduleMapId(opts.modules),
+    runTranspiledOptionsMemoKey(opts.inject),
   ].join("|");
   return {
     key,
@@ -770,6 +872,11 @@ export function generalizeFromAst(
     depsFp?: LoadDepsFingerprint;
     /** 预计算 ambient 侧车闭包指纹（checkSource 整文件一次） */
     sidecarFp?: string;
+    /** 宿主已求值的依赖导出表（specifier → AbsModuleExports） */
+    modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+    /** B run 注入包（modules/mocks/envGlobals/replacements/as）——透传
+     *  runTranspiled；对象身份进 memo 键（调用方同文件内复用同一对象） */
+    inject?: RunTranspiledOptions;
   } = {},
 ): PolyFn | undefined {
   const { key, depPaths, truncated } = generalizeMemoKey(fnName, source, opts);
@@ -797,6 +904,11 @@ function generalizeFromAstUncached(
     file?: ReturnType<typeof babelParse>;
     /** checkSource 预计算：ambient 侧车闭包指纹（独立调用时现算） */
     sidecarFp?: string;
+    /** 宿主已求值的依赖导出表（specifier → AbsModuleExports） */
+    modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+    /** B run 注入包（modules/mocks/envGlobals/replacements/as）——透传
+     *  runTranspiled；对象身份进 memo 键（调用方同文件内复用同一对象） */
+    inject?: RunTranspiledOptions;
   } = {},
 ): PolyFn | undefined {
   const extracted = extractFn(source, fnName, opts.file);
@@ -864,40 +976,105 @@ function generalizeFromAstUncached(
   // 随 L0 的 PolyFn 共享；resetGeneralizeMemo 一并丢弃。
   const instMemo = new Map<string, InstHit>();
 
-  const paramNames = new Set(params);
   const alphaIds = typeParams.map((t) => t.id);
 
-  const run = (
-    args: Abs[],
-    phi: Phi = pTrue,
-    collector?: import("./hof.ts").HofCollectCtx,
-  ): Abs => {
+  // 提升前置化：静态扫描替代求值期挂载点（§promote-scan）。
+  // symbolic/instantiate 共用同一决策；refine 形状（非 any typeParam）
+  // 到达优先拒绝提升（与运行时 promoteParamShape 同口径）。
+  const promoteScan = scanPromotions(
+    body,
+    params,
+    typeParams.map((t) => t.id),
+    new Map(params.map((p, i) => [p, typeParams[i]!.value])),
+  );
+
+  // B-path 门（Φ-native 后约束入口可走 B——Φ 经 callTranspiledExportFull
+  // 种子注入）：
+  //   ① 非类方法（.名，B 导出表只有顶层名）
+  //   ② body 不引用导入名（B run 无模块注入；仅侧车/refine 用的 import 不阻断）
+  //   ③ 无 require、无 @nudo:mock/env/replace 指令（B run 无 mock 注入）
+  //   ④ 非自递归（body 引用自身名——B 有界展开给 partial，ast-eval 的
+  //      opaque→不写关系契约保留）
+  // 其余一律解释路径。B 失败回落。
+  const fileAst = opts.file ?? babelParse(source);
+  // import 按 spec 可解析性判定：body 引用的导入名其 spec 在注入表内 → B 可
+  // （绑定缺失名在 B 内 crash-and-swallow，解释路径的未绑定名处理更干净）；
+  // 未注入（调用方未传 modules）→ 与旧行为一致走解释路径。
+  const importSpecByLocal = new Map<string, string>();
+  for (const stmt of fileAst.program.body) {
+    if (stmt.type === "ImportDeclaration") {
+      for (const s of stmt.specifiers) {
+        importSpecByLocal.set(s.local.name, (stmt.source as { value?: string }).value ?? "");
+      }
+    }
+  }
+  const unresolvableImports = [...importSpecByLocal.keys()].some((n) => {
+    if (!bodyReferencesName(body, n)) return false;
+    const spec = importSpecByLocal.get(n);
+    return spec === undefined || !(opts.modules && Object.prototype.hasOwnProperty.call(opts.modules, spec));
+  });
+  // mock/env/replace 指令：注入包缺失时 B run 会执行真实宿主调用（裸 fetch
+  // 崩溃 / 未绑定名 ReferenceError 假 throws）——无注入则拦；注入齐备则放行
+  const inject = opts.inject;
+  const hasMocks = inject && Object.keys(inject.mocks ?? {}).length > 0;
+  const hasEnv = inject && Object.keys(inject.envGlobals ?? {}).length > 0;
+  const hasReps = inject && Object.keys(inject.replacements ?? {}).length > 0;
+  const mockGated = /@nudo:(mock|mock-module)\b/.test(source) && !hasMocks;
+  const envGated = /@nudo:env\b/.test(source) && !hasEnv;
+  const replaceGated = /@nudo:replace\b/.test(source) && !hasReps;
+  const bEligible =
+    !unresolvableImports &&
+    !mockGated &&
+    !envGated &&
+    !replaceGated;
+
+  const run = (args: Abs[], phi: Phi = pTrue): Abs => {
     const { key, varOrder } = instantiateMemoKey(args, phi);
     const hit = instMemo.get(key);
     if (hit !== undefined) {
       return alphaRenameResult(hit.result, hit.varOrder, varOrder);
     }
-    // symbolic 传入 collector 以沉淀关系；instantiate 装 throwaway collector——
-    // 形状提升仍生效（§5.2.5），但 run 结束即丢，不写 PolyFn 共享状态。
-    const hc = collector ?? createHofCollectCtx(paramNames, alphaIds);
-    const local: AstEnv = {
-      vars: new Map(env.vars),
-      fns: env.fns,
-      hofCollect: hc,
-    };
-    params.forEach((p, i) => {
-      local.vars.set(p, args[i] ?? unknown);
-    });
-    const result = evalNode(body, local, phi, budget).value;
+    let result: Abs | undefined;
+    if (bEligible) {
+      try {
+        const bRun = bPathRunOf(source, opts.modules, opts.inject);
+        if (!bRun) {
+          /* B 失败 fail-closed */
+        } else if (fnName.includes(".")) {
+          // 类方法桥：模块导出表取类 Abs → $new（构造参数 any）→ $invoke
+          const [clsName, methodName] = fnName.split(".", 2);
+          const clsAbs = bRun[clsName ?? ""];
+          if (clsAbs && typeof clsAbs === "object" && "shape" in (clsAbs as object)) {
+            const nCtor = ctorParamCountOf(fileAst, clsName ?? "");
+            const inst = $new(clsAbs as Abs, Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")));
+            result = withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
+          }
+        } else if (fnName in bRun) {
+          // 提升形状预绑定到实参（B 无 env 预绑面；具体实参优先）
+          const bArgs = args.map((a, i) => {
+            const shape = promoteScan.promotedShapes.get(params[i]!);
+            if (shape && (a.shape.k === "any" || a.shape.k === "unknown")) {
+              return { shape, term: a.term, pred: a.pred, conf: "path" } as Abs;
+            }
+            return a;
+          });
+          result = callTranspiledExportFull(bRun, fnName, bArgs, { phi }).result;
+        }
+      } catch {
+        /* B 失败 fail-closed */
+      }
+    }
+    if (result === undefined) {
+      // fail-closed：B 失败（B-incapable 构造）/ 非导出类方法等 →
+      // 显式无信息（unknown），不再 ast-eval 解释兜底
+      result = abs({ k: "unknown" }, undefined, undefined, "opaque");
+    }
     // 截断/失败结果不缓存，避免固化过宽或不稳定结论
     if (isCacheableAbs(result)) {
       instMemo.set(key, { result, varOrder });
     }
     return result;
   };
-
-  // symbolic 一次跑安装 collector 并沉淀；instantiate 不读其结果
-  const hofCollector = createHofCollectCtx(paramNames, alphaIds);
 
   const symbolic = run(
     typeParams.map((t) => t.value),
@@ -907,7 +1084,6 @@ function generalizeFromAstUncached(
         ? entryReqs[0]!.pred
         : { op: "and", args: entryReqs.map((r) => r.pred) }
       : pTrue,
-    hofCollector,
   );
 
   // opaque = call-budget 截断/泄漏 → 不写关系；
@@ -927,18 +1103,18 @@ function generalizeFromAstUncached(
         fnRels.set(param, { abs: snapshotAbs(rec.abs), source: rec.source });
       }
     }
-    for (const [param, rec] of hofCollector.fnRels) {
+    for (const [param, rec] of promoteScan.fnRels) {
       if (refineEntryShapes.has(param)) continue;
       if (!fnRels) fnRels = new Map();
       fnRels.set(param, { abs: snapshotAbs(rec.abs), source: rec.source });
     }
-    for (const [param, rec] of hofCollector.entryShapes) {
+    for (const [param, rec] of promoteScan.entryShapes) {
       if (refineEntryShapes.has(param)) continue;
       if (!entryShapes) entryShapes = new Map();
       entryShapes.set(param, { abs: snapshotAbs(rec.abs), source: rec.source });
     }
-    if (hofCollector.sites.length > 0) {
-      hofSites = hofCollector.sites.map((s) => ({
+    if (promoteScan.sites.length > 0) {
+      hofSites = promoteScan.sites.map((s) => ({
         ...s,
         argTerms: [...s.argTerms],
         result: snapshotAbs(s.result),

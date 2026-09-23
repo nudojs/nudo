@@ -11,7 +11,6 @@
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-import { analyzeFn } from "../index.ts";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
@@ -126,30 +125,3 @@ describe("B-path definitely-uncallable member calls throw", () => {
   });
 });
 
-describe("ast-eval parity", () => {
-  it("null-proto and closed-object missing calls are caught", () => {
-    expect(
-      litValue(analyzeFn(`function f() { try { Object.create(null).toString(); } catch(e) { return 'caught'; } return 'missed'; }`, "f", [])),
-    ).toBe("caught");
-    expect(
-      litValue(analyzeFn(`function f() { try { ({}).foo(); } catch(e) { return 'caught'; } return 'missed'; }`, "f", [])),
-    ).toBe("caught");
-    expect(
-      litValue(analyzeFn(`function f() { try { const o = {f: 5}; o.f(); } catch(e) { return 'caught'; } return 'missed'; }`, "f", [])),
-    ).toBe("caught");
-  });
-
-  it("own-slot dispatch and OP conservatism match B-path", () => {
-    // 自有 fn 槽：不得假抛（ast-eval 不折叠调用是既有精度缺口，非本类）
-    expect(
-      litValue(
-        analyzeFn(
-          `function f() { let r = 'ok'; try { const o = Object.create(null); o.toString = () => 1; o.toString(); } catch(e) { r = 'caught'; } return r; }`,
-          "f",
-          [],
-        ),
-      ),
-    ).toBe("ok");
-    expect(litValue(analyzeFn(`function f() { return ({}).toString(); }`, "f", []))).toBe(undefined);
-  });
-});

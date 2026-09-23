@@ -2,16 +2,16 @@ import { describe, it, expect } from "vitest";
 import { hoverTool } from "../agent-tools.ts";
 
 describe("nudo.hover agent tool", () => {
-  it("returns lossless abs at position", () => {
+  it("hover on identifier resolves via binding table (node table removed)", () => {
     const src = `const x = 1 + 2;\n`;
-    // col of `2` is 14 (0-based)
+    // fail-closed：节点级 Abs 表已删——标识符 x（col 6）经绑定表
     const r = hoverTool(
-      { file: "/t/h.js", line: 1, column: 14, source: src },
+      { file: "/t/h.js", line: 1, column: 6, source: src },
       { readFile: () => src },
     );
     const payload = JSON.parse(r.content[0].text);
     expect(payload.abs).toBeDefined();
-    expect(payload.abs).toContain("2");
+    expect(payload.abs).toContain("3");
     expect(payload).toHaveProperty("ext");
   });
 

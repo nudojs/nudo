@@ -90,7 +90,6 @@ export {
 } from "./harvest-auto.ts";
 export {
   evalAbsModuleGraph,
-  evalProgramAbsWithModules,
   collectAbsBindingsFromGraph,
   defaultAbsLoadModule,
   clearAbsModuleCache,
@@ -220,7 +219,7 @@ export {
   type EmitResult,
 } from "./case-emitter.ts";
 
-export { mockDirectivesToAbsSeeds, type AbsMockSeeds } from "./mock-abs.ts";
+export { mockDirectivesToAbsSeeds, mockSeedsForSource, type AbsMockSeeds } from "./mock-abs.ts";
 
 export {
   interfaceSurface,

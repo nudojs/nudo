@@ -7,7 +7,6 @@
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-import { analyzeFn } from "../index.ts";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
@@ -37,8 +36,3 @@ describe("B-path eval is conservative unknown", () => {
   });
 });
 
-describe("ast-eval eval is conservative unknown", () => {
-  it("direct eval does not fold", () => {
-    expect(litValue(analyzeFn(`function f() { return eval('1+2'); }`, "f", []))).toBeUndefined();
-  });
-});

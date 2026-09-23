@@ -2,7 +2,17 @@ import { describe, it, expect, afterAll } from "vitest";
 import { writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { harvestedValueToAbs, bareSpecToAbsModules, evalAbsModuleGraph } from "@nudojs/service";
-import { analyzeFn, numLit, absToString, getFnImpl, relationFn, num, str } from "@nudojs/core";
+import {
+  runTranspiled,
+  callTranspiledExportFull,
+  numLit,
+  absToString,
+  getFnImpl,
+  relationFn,
+  num,
+  str,
+  type Abs,
+} from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -27,7 +37,7 @@ describe("harvest → Abs", () => {
     expect(Object.keys(mods!.named).length).toBeGreaterThan(0);
   });
 
-  it("module graph injects bare import into analyzeFn", () => {
+  it("module graph injects bare import into B export call", () => {
     // 放在 monorepo 内，harvest 才能找到 node_modules/@types/lodash
     const dir = join(process.cwd(), "packages/service/src/__tmp-bare-mod");
     mkdirSync(dir, { recursive: true });
@@ -39,7 +49,8 @@ export function go(x) { return chunk(x, 2); }
     writeFileSync(mainPath, main, "utf-8");
     const { modules } = evalAbsModuleGraph(main, mainPath);
     expect(modules["lodash"]).toBeDefined();
-    const r = analyzeFn(main, "go", [numLit(4)], undefined, undefined, undefined, modules);
+    const run = runTranspiled(main, { mode: "analyze", modules: modules as never });
+    const r = callTranspiledExportFull(run, "go", [numLit(4)]).result satisfies Abs;
     expect(r).toBeDefined();
     expect(["mock", "partial", "path", "exact", "widened", "opaque"]).toContain(r.conf);
   });

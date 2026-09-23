@@ -8,26 +8,28 @@
  *   ——分析入口安全，不触发 fetch 等顶层副作用
  */
 
-import * as runtime from "./runtime.ts";
-import * as classRt from "./class.ts";
-import * as callsRt from "./calls.ts";
+import { rtAllBindings } from "./rt.ts";
+import { resetBCallBudget } from "./calls.ts";
+import { withExecPhi } from "./runtime.ts";
+import { setBBindingSink } from "./calls.ts";
 import type { Abs } from "../abs.ts";
+import type { Phi } from "../pred.ts";
 import { never, unknown, abs } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
-import { transpile } from "./transpile.ts";
-import { $call } from "./call.ts";
-import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits } from "./runtime.ts";
+import { formatAbs } from "../format.ts";
+import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts";
+import { NudoUnsupportedError } from "./unsupported.ts";
 import { errorTypeAbs } from "./may-throw.ts";
-
-const rtAll = { ...runtime, ...classRt, ...callsRt } as Record<string, unknown>;
-// ensure control-flow helpers are present even if a re-export layer omits them
-rtAll.isNudoReturn = isNudoReturn;
-rtAll.isNudoThrow = isNudoThrow;
-rtAll.$isForkExit = $isForkExit;
-rtAll.runWithLoopExits = runWithLoopExits;
-rtAll.takeLoopExits = takeLoopExits;
-rtAll.$call = $call;
+import {
+  isNudoThrow,
+  isNudoReturn,
+  $isForkExit,
+  runWithLoopExits,
+  takeLoopExits,
+  takeThrowExits,
+} from "./runtime.ts";
+import { $call } from "./call.ts";
 
 export type RunTranspiledOptions = {
   /** 说明符 → 依赖导出（host 模块图或 runTranspiled 产物） */
@@ -50,9 +52,46 @@ export type RunTranspiledOptions = {
   asOverrideTargets?: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
   /** @nudo:env 全局 Abs（JSON/Math/console…）→ 作用域绑定 */
   envGlobals?: Record<string, Abs>;
+  /** @nudo:mock 注入值：name → Abs（mockDirectivesToAbsSeeds 产物） */
+  mocks?: Record<string, Abs>;
+  /** 宽松全局（调用点发现 exec 采集：未声明全局调用保守 unknown 不中断） */
+  lenientGlobals?: boolean;
 };
 
-const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
+/**
+ * inject/modules **内容**指纹（memo 键）。对象身份对「每次新建同内容」
+ * 的 CLI 注入不稳——同一语义的 inject 跨 checkSource 调用会 miss 缓存。
+ */
+export function runTranspiledOptionsMemoKey(
+  opts: RunTranspiledOptions | undefined,
+): string {
+  if (!opts) return "-";
+  const seen = new WeakSet<object>();
+  const fmt = (v: unknown): string => {
+    if (v === null || v === undefined) return String(v);
+    if (typeof v === "function") return "fn";
+    if (typeof v !== "object") return String(v);
+    const obj = v as object;
+    if (seen.has(obj)) return "@";
+    seen.add(obj);
+    if ("shape" in obj && "conf" in obj) {
+      try {
+        return formatAbs(obj as Abs);
+      } catch {
+        return "?abs";
+      }
+    }
+    if (Array.isArray(v)) return `[${v.map(fmt).join(",")}]`;
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o)
+      .sort()
+      .map((k) => `${k}:${fmt(o[k])}`)
+      .join(",")}}`;
+  };
+  return fmt(opts);
+}
+
+export const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
 
 /** 相对 import → 从注入 modules 取绑定（Abs fn 包成 JS 可调用） */
 function rewriteUserImports(js: string): string {
@@ -130,11 +169,17 @@ function stripEffectfulTopLevel(js: string): string {
         i++;
         continue;
       }
-      // 其它未知全局调用（未走 $callNamed 的）
+      // 其它未知全局调用（未走 $callNamed 的）；__nudoExport/__nudoExportStar/
+      // __nudoRecordBinding/__nudoRecordAssign 是簿记（rewrite/插桩产物），
+      // 非副作用，保留
       const callMatch = t.match(/^([A-Za-z_$][\w$]*)\s*\(/);
       if (
         callMatch &&
         !callMatch[1]!.startsWith("$") &&
+        callMatch[1] !== "__nudoExport" &&
+        callMatch[1] !== "__nudoExportStar" &&
+        callMatch[1] !== "__nudoRecordBinding" &&
+        callMatch[1] !== "__nudoRecordAssign" &&
         !declared.has(callMatch[1]!) &&
         !/^(const|let|var|function|export|import|return|if|for|while|switch|try|throw|class)\b/.test(t)
       ) {
@@ -145,12 +190,25 @@ function stripEffectfulTopLevel(js: string): string {
       // 顶层控制流
       if (/^(if\s*\(|for\s*\(|while\s*\(|\$fork\s*\(|\$for\s*\(|\$while)/.test(t)) {
         i++;
-        let depth = t.includes("{") ? 1 : 0;
-        while (i < lines.length && depth > 0) {
-          const l = lines[i]!;
-          depth += (l.match(/\{/g) || []).length;
-          depth -= (l.match(/\}/g) || []).length;
-          i++;
+        if (/^\$/.test(t)) {
+          // 运行时调用形态（$for/$fork/$while）：按括号平衡跳过整条调用
+          // （此前按大括号计数——$for( 首行无 { → 只删首行，参数悬空
+          // SyntaxError，analyze 模式顶层循环静默回落）
+          let depth = (t.match(/\(/g) || []).length - (t.match(/\)/g) || []).length;
+          while (i < lines.length && depth > 0) {
+            const l = lines[i]!;
+            depth += (l.match(/\(/g) || []).length;
+            depth -= (l.match(/\)/g) || []).length;
+            i++;
+          }
+        } else {
+          let depth = t.includes("{") ? 1 : 0;
+          while (i < lines.length && depth > 0) {
+            const l = lines[i]!;
+            depth += (l.match(/\{/g) || []).length;
+            depth -= (l.match(/\}/g) || []).length;
+            i++;
+          }
         }
         continue;
       }
@@ -162,7 +220,7 @@ function stripEffectfulTopLevel(js: string): string {
 }
 
 function runtimeArgNames(): string[] {
-  return Object.keys(rtAll).filter((k) => k.startsWith("$"));
+  return Object.keys(rtAllBindings()).filter((k) => k.startsWith("$"));
 }
 
 function bindImport(
@@ -228,6 +286,59 @@ function requireFromModules(
   return mod;
 }
 
+/** 导出语句后处理：specifier / re-export / star / default → __nudoExport 调用。
+ *  静态声明导出（export function/const/let）走既有正则扫描 + 返回对象；
+ *  冲突语义：显式导出压过 export *（ESM 早错保证 decl/specifier 不重名，
+ *  star×star 按源序后者覆盖——与 collectAbsExports 顺序口径一致）。 */
+function rewriteExportStatements(js: string): string {
+  // export { x as y } from "spec"：绑定经 modules 表注入
+  js = js.replace(
+    /^export\s*\{([^}]*)\}\s*from\s*["']([^"']+)["'];\s*$/gm,
+    (_all, names: string, spec: string) =>
+      names
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((p) => {
+          const [local, exported] = p.split(/\s+as\s+/).map((x) => x.trim().replace(/^"|"$/g, ""));
+          const exp = exported ?? local;
+          return `__nudoExport(${JSON.stringify(exp)}, __nudoBindImport(${JSON.stringify(spec)}, ${JSON.stringify(local)}));`;
+        })
+        .join("\n"),
+  );
+  // export * from "spec"：并入 named（不含 default，ESM 语义）
+  js = js.replace(
+    /^export\s*\*\s*from\s*["']([^"']+)["'];\s*$/gm,
+    (_all, spec: string) => `__nudoExportStar(${JSON.stringify(spec)});`,
+  );
+  // export { a, b as c }：本地绑定重命名导出
+  js = js.replace(
+    /^export\s*\{([^}]*)\};\s*$/gm,
+    (_all, names: string) =>
+      names
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((p) => {
+          const [local, exported] = p.split(/\s+as\s+/).map((x) => x.trim().replace(/^"|"$/g, ""));
+          return `__nudoExport(${JSON.stringify(exported ?? local)}, ${local});`;
+        })
+        .join("\n"),
+  );
+  // export default <expr>;（transpile 保证函数/类默认已展开成命名 + 标识符形态）
+  return js.replace(
+    /^export default (.+);\s*$/gm,
+    (_all, expr: string) => `__nudoExport("default", ${expr});`,
+  );
+}
+
+/** runTranspiled 顶层绑定表（checkSource varAbs 通道；WeakMap 不碰返回面） */
+const runBindings = new WeakMap<object, Map<string, unknown>>();
+
+export function bindingsOf(run: Record<string, unknown>): Map<string, unknown> | undefined {
+  return runBindings.get(run);
+}
+
 /**
  * 执行一段 B 路径程序，返回顶层 `export function` / `export const`。
  */
@@ -235,6 +346,7 @@ export function runTranspiled(
   source: string,
   opts: RunTranspiledOptions = {},
 ): Record<string, unknown> {
+  resetBCallBudget(); // 宿主入口重置（与 ast-eval resetAbsCallBudget 同口径）
   const modules = opts.modules ?? {};
   let js = transpile(source, {
     runtimeImport: "@nudojs/core/exec",
@@ -242,9 +354,11 @@ export function runTranspiled(
     source,
     replacements: opts.replacementTargets,
     asOverrides: opts.asOverrideTargets,
+    lenientGlobals: opts.lenientGlobals,
   });
   js = js.replace(RUNTIME_IMPORT_RE, "");
   js = rewriteUserImports(js);
+  js = rewriteExportStatements(js);
   if (opts.mode === "analyze") {
     js = stripEffectfulTopLevel(js);
   }
@@ -267,6 +381,8 @@ export function runTranspiled(
   js = js.replace(/^export (?:const|let) /gm, "let ");
 
   const names = [...new Set([...exportFns, ...exportConsts])];
+  const dynExports: Record<string, unknown> = {};
+  const bindings = new Map<string, unknown>();
   const argNames = [
     ...runtimeArgNames(),
     "__nudoModules",
@@ -275,6 +391,9 @@ export function runTranspiled(
     "__nudoReplaces",
     "__nudoRequire",
     "__nudoEnv",
+    "__nudoExport",
+    "__nudoExportStar",
+    "__nudoExports",
   ];
   const args = argNames.map((n) => {
     if (n === "__nudoModules") return modules;
@@ -289,7 +408,23 @@ export function runTranspiled(
       return (spec: string) => requireFromModules(modules, spec);
     }
     if (n === "__nudoEnv") return opts.envGlobals ?? {};
-    return rtAll[n];
+    if (n === "__nudoExport") {
+      return (name: string, value: unknown) => {
+        dynExports[name] = value;
+      };
+    }
+    if (n === "__nudoExportStar") {
+      return (spec: string) => {
+        const mod = modules?.[spec];
+        if (mod && "named" in (mod as object)) {
+          for (const [k, v] of Object.entries((mod as AbsModuleExports).named)) {
+            dynExports[k] = v;
+          }
+        }
+      };
+    }
+    if (n === "__nudoExports") return dynExports;
+    return rtAllBindings()[n];
   });
 
   // @nudo:env 全局绑定
@@ -300,9 +435,96 @@ export function runTranspiled(
     js = `${envBinds}\n${js}`;
   }
 
-  const ret = names.length > 0 ? `return { ${names.join(", ")} };` : "return {};";
+  // CJS 面：exports.X = v / module.exports 命名空间建模（此前 exports 未绑定
+  // → ReferenceError → CJS 文件整体 B-incapable）。exports = 命名空间 obj Abs
+  // （$set 写槽）；module.exports 重赋值 → 单导出（default）。
+  const hasCjsExports = /\b(?:exports|module)\s*(?:\.|\[)/.test(source);
+  if (hasCjsExports) {
+    js = `let exports = $obj({});\nlet module = $obj({ exports });\nconst __nudoCjsOrig = exports;\n${js}`;
+  }
+
+  // 动态导出（specifier/re-export/star/default）先展开，静态声明名后写：
+  // 显式导出压过 export *（ESM 语义；decl/specifier 重名是 ESM 早错）。
+  const cjsMerge = hasCjsExports
+    ? `(() => { const me = $get(module, "exports"); if (me !== __nudoCjsOrig && me && typeof me === "object" && "shape" in me) { return { default: me }; } const out = {}; if (__nudoCjsOrig && __nudoCjsOrig.shape && __nudoCjsOrig.shape.k === "obj") { for (const k of Object.keys(__nudoCjsOrig.shape.slots)) out[k] = __nudoCjsOrig.shape.slots[k].value; } return out; })()`
+    : "{}";
+  const ret = `return { ...__nudoExports, ...${cjsMerge}, ${names.join(", ")} };`;
   const fn = new Function(...argNames, `${js}\n${ret}`);
-  return fn(...args) as Record<string, unknown>;
+  setBBindingSink(bindings);
+  try {
+    const result = fn(...args) as Record<string, unknown>;
+    runBindings.set(result, bindings);
+    return result;
+  } finally {
+    setBBindingSink(null);
+  }
+}
+
+/** B-path 回落事件（观测单一埋点；reason: unsupported:* = 能力边界，internal = B 自身缺陷） */
+export type BPathFallback = {
+  reason: string;
+  message: string;
+  loc?: { line: number; column: number };
+};
+
+let bFallbackCollector: ((f: BPathFallback) => void) | null = null;
+
+export function setBPathFallbackCollector(
+  collector: ((f: BPathFallback) => void) | null,
+): void {
+  bFallbackCollector = collector;
+}
+
+/** 表达式级求值（scan 的 case 字面量实参等静态求值面）：编译单表达式经
+ *  B 运行时执行。bindings：表达式自由标识符 → Abs（调用方按绑定表注入）。
+ *  编译失败抛错（调用方按需 catch）。 */
+export function evalExprAbs(
+  expr: import("@babel/types").Expression,
+  bindings: Record<string, Abs> = {},
+): Abs {
+  const src = transpileExpression(expr, {});
+  const js = [
+    runtimeImportOf("@nudojs/core/exec"),
+    `return (${src});`,
+  ].join("\n");
+  const cleaned = js.replace(RUNTIME_IMPORT_RE, "");
+  const names = [...Object.keys(rtAllBindings()), ...Object.keys(bindings)];
+  const factory = new Function(...names, cleaned) as (...vals: unknown[]) => Abs;
+  return factory(...Object.values(rtAllBindings()), ...Object.values(bindings));
+}
+
+/** 记录一次 B 回落（body-fn 等非 runTranspiled 入口共用） */
+export function noteBPathFallback(e: unknown): void {
+  if (!bFallbackCollector) return;
+  const f: BPathFallback = e instanceof NudoUnsupportedError
+    ? { reason: `unsupported:${e.reason}`, message: e.message, ...(e.loc ? { loc: e.loc } : {}) }
+    : isNudoThrow(e)
+      ? // NudoThrow：程序自身的抛（如顶层 this 写 / strict 写 TypeError）——
+        // 模块装载失败，不是 B 能力边界也不是 B 缺陷（catch 可吸收）
+        { reason: "module-throw", message: e instanceof Error ? e.message : String(e) }
+      : { reason: "internal", message: e instanceof Error ? e.message : String(e) };
+  try {
+    bFallbackCollector(f);
+  } catch {
+    /* collector 不得打断 */
+  }
+}
+
+/**
+ * B 单一入口：runTranspiled + 类型化回落观测。
+ * unsupported:*（能力边界）/ internal（B 缺陷）都记录到收集器；
+ * 返回 undefined 表示调用方应走解释路径。
+ */
+export function tryRunTranspiled(
+  source: string,
+  opts: RunTranspiledOptions = {},
+): Record<string, unknown> | undefined {
+  try {
+    return runTranspiled(source, opts);
+  } catch (e) {
+    noteBPathFallback(e);
+    return undefined;
+  }
 }
 
 export type TranspiledCallResult = {
@@ -315,17 +537,21 @@ function isAbsVal(v: unknown): v is Abs {
   return !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);
 }
 
-/** 调用 runTranspiled 导出（捕获 $throw） */
+/** 调用 runTranspiled 导出（捕获 $throw）。opts.phi：入口 Φ 种子
+ *  （instantiate/symbolic 的约束入口——B 侧路径条件收窄）。 */
 export function callTranspiledExportFull(
   exports: Record<string, unknown>,
   name: string,
   args: Abs[],
+  opts?: { phi?: Phi },
 ): TranspiledCallResult {
   const fn = exports[name];
   if (typeof fn === "function") {
+    resetBCallBudget(); // 每次具名调用独立预算（不跨调用累积 totalCalls）
     return runWithLoopExits(() => {
       try {
-        const r = (fn as (...a: Abs[]) => unknown)(...args);
+        const invoke = () => (fn as (...a: Abs[]) => unknown)(...args);
+        const r = opts?.phi ? withExecPhi(opts.phi, invoke) : invoke();
         if (!isAbsVal(r)) return joinControlExits(unknown);
         // 抽象分支 early-return / throw 记入 exits，与正常出口 join
         return joinControlExits(r);

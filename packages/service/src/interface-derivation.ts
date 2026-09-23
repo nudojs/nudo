@@ -4,7 +4,7 @@
  * 对含手写契约根的文件（lib.nudo.js 绑定 add4）：
  *   1. 从侧车 AST 抽出参数约束的源表达式（`positive` ← `./std.nudo.js`）；
  *   2. constraintToEntryAbs + tagDerivationRoot；
- *   3. analyzeFn 求值 body（模块图注入下游），收集调用记录 + 推导打点；
+ *   3. B-path 求值 body（runTranspiled，模块图注入下游），收集调用记录 + 推导打点；
  *   4. 闭包内下游导出投影为组合式 DSL，禁止事后从 Abs 反编译链。
  *
  * check 分轨：每条 root 链独立；join 只用于工件聚合（多调用者）。
@@ -14,7 +14,6 @@ import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 
 import { basename, dirname, relative, resolve } from "node:path";
 import { parse } from "@nudojs/parser";
 import {
-  analyzeFn,
   beginDerivationSession,
   constraintToEntryAbs,
   derivationChain,
@@ -30,7 +29,9 @@ import {
   parseSource,
   projectDerivationDsl,
   refineDiagCount,
-  setAbsCallCollector,
+  runTranspiled,
+  callTranspiledExportFull,
+  setBCallCollector,
   sidecarPathOf,
   tagDerivationRoot,
   takeInterfaceDiagsSince,
@@ -38,6 +39,7 @@ import {
   unknown as unknownAbs,
   type Abs,
   type AbsCallRecord,
+  type BCallRecord,
   type DerivationNode,
   type NudoConstraint,
 } from "@nudojs/core";
@@ -569,13 +571,32 @@ function deriveOneRoot(
     }
 
     const calls: AbsCallRecord[] = [];
-    const prevCallCollector = setAbsCallCollector((r) => calls.push(r));
+    const bCalls: BCallRecord[] = [];
+    const prevCall = setBCallCollector((r) => bCalls.push(r));
     try {
-      analyzeFn(source, plan.fnName, entryArgs, undefined, undefined, undefined, modules);
+      // B-path 优先（迁移件 3）：derivation 打点在共享代数层（arithmetic.add
+      // noteDerivationAdd / joinAbs noteDerivationJoin），$add/$join 执行
+      // 时自动打点——无需 transpile 插桩。fail-closed：类方法（.名）的
+      // analyzeFn 解释已删——不收集调用记录（该 root 无推导链产出）。
+      if (!plan.fnName.includes(".")) {
+        const run = runTranspiled(source, { mode: "analyze", modules });
+        if (plan.fnName in run) {
+          callTranspiledExportFull(run, plan.fnName, entryArgs);
+          calls.push(
+            ...bCalls.map((r) => ({
+              fnName: r.fnName,
+              args: r.args,
+              result: r.result,
+              callLoc: r.callLoc,
+              threw: r.threw,
+            })),
+          );
+        }
+      }
     } catch {
       return [];
     } finally {
-      setAbsCallCollector(prevCallCollector);
+      setBCallCollector(prevCall);
     }
 
     const byCallee = new Map<string, CallAgg>();

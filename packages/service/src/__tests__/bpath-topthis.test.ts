@@ -35,9 +35,10 @@ describe("isBPathCapable: this. scoping", () => {
     expect(isBPathCapable("class A { get x() { return this._x; } }")).toBe(true);
   });
 
-  it("top-level this. still disables B-path", () => {
-    expect(isBPathCapable("this.x = 1;")).toBe(false);
-    expect(isBPathCapable("const y = this.x + 1;")).toBe(false);
+  it("top-level this no longer disables B-path (ESM semantics: this === undefined)", () => {
+    // this 读 → undefined；this 写经 strict 写路径抛 TypeError（模块装载失败）
+    expect(isBPathCapable("this.x = 1;")).toBe(true);
+    expect(isBPathCapable("const y = this.x + 1;")).toBe(true);
   });
 });
 
@@ -59,7 +60,7 @@ export function twice(n) { return n * 2; }
     expect(fn!.cases.length).toBeGreaterThan(0);
   });
 
-  it("top-level this still falls back to Abs host (nodeAbsMap populated)", () => {
+  it("top-level this.x write fails module load (ESM TypeError) → Abs host fallback, analysis survives", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-topthis-fb-"));
     dirs.push(dir);
     writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "t", version: "1.0.0" }));

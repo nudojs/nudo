@@ -22,10 +22,6 @@ import {
   formatAbs,
   formatAbsMultiline,
   formatShape,
-  collectAbsNodeTypes,
-  findAbsAtPosition,
-  evalSource,
-  setAbsNodeCollector,
   interfaceTierOf,
   type InterfaceSource,
   type InterfaceTierOpts,
@@ -125,16 +121,10 @@ function absFromBPath(
 ): Abs | null {
   if (!isBPathCapable(source, envNames)) return null;
   if (positionInsideCaseFunction(source, ast, line)) return null;
+  // fail-closed：节点级 Abs 收集（collectAbsNodeTypes/evalProgramAbs）已删；
+  // 仅标识符绑定面（B 版 collectAbsBindingsFromGraph）
   try {
     const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast));
-    const { modules } = evalAbsModuleGraph(source, filePath);
-    const absNodes = collectAbsNodeTypes(source, {
-      ...seeds,
-      modules,
-      file: ast as never,
-    });
-    const absAt = findAbsAtPosition(absNodes, line, column);
-    if (absAt) return absAt;
     const ident = findIdentNameAtPosition(source, line, column, ast);
     if (ident) {
       const binds = collectAbsBindingsFromGraph(source, filePath, {
@@ -151,56 +141,18 @@ function absFromBPath(
 }
 
 /**
- * 用例函数体内的 Abs 重放（T17）：按 activeCases 选中的 case 实参跑
- * evalSource + 节点收集，光标处取无损 Abs。不经 TypeValue evaluateFunctionFull。
- * 失败/空表 → undefined，调用方落 TypeValue 兜底。
+ * fail-closed：用例函数体的 Abs 重放（evalSource + 节点收集）已删——
+ * case 选中态的光标 Abs 不再有执行态重放（entry 态 Abs 由上层面提供）。
  */
 function absFromCaseReplay(
-  filePath: string,
-  source: string,
-  line: number,
-  column: number,
-  ast: ReturnType<typeof parse>,
-  activeCases?: Map<string, number>,
+  _filePath: string,
+  _source: string,
+  _line: number,
+  _column: number,
+  _ast: ReturnType<typeof parse>,
+  _activeCases?: Map<string, number>,
 ): Abs | null {
-  const functions = extractDirectives(ast);
-  const enclosingFn = findEnclosingFunction(functions, line);
-  if (!enclosingFn) return null;
-  const caseDirectives = enclosingFn.directives.filter((d) => d.kind === "case");
-  if (caseDirectives.length === 0) return null;
-  const caseIndex = activeCases?.get(enclosingFn.name) ?? 0;
-  const directive = caseDirectives[Math.min(caseIndex, caseDirectives.length - 1)];
-
-  // 约束表达式 argsAbs 主路径
-  const caseArgs: Abs[] = directive.argsAbs;
-
-  const map = new Map<Node, Abs>();
-  setAbsNodeCollector((node, value) => map.set(node, value));
-  try {
-    const seeds = mockDirectivesToAbsSeeds(functions);
-    let modules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined;
-    try {
-      modules = evalAbsModuleGraph(source, filePath).modules;
-    } catch {
-      modules = undefined;
-    }
-    evalSource(
-      source,
-      { fn: enclosingFn.name, args: caseArgs },
-      {
-        file: ast as never,
-        modules,
-        seedVars: seeds.seedVars,
-        seedFns: seeds.seedFns as never,
-      },
-    );
-  } catch {
-    /* 重放失败 → TypeValue 兜底 */
-  } finally {
-    setAbsNodeCollector(null);
-  }
-  if (map.size === 0) return null;
-  return findAbsAtPosition(map, line, column) ?? null;
+  return null;
 }
 
 /**
@@ -403,31 +355,8 @@ export function getHoverAtPosition(
     }
   }
 
-  // 任意表达式：Abs 节点表（无损）
-  try {
-    if (
-      !insideCaseFn &&
-      (isBPathCapable(source, []) || !/\brequire\s*\(|\bimport\s*[{'"*]/.test(source))
-    ) {
-      const seeds = mockDirectivesToAbsSeeds(
-        extractDirectives(file ?? parse(source)),
-      );
-      const { modules } = evalAbsModuleGraph(source, filePath);
-      const nodeTypes = collectAbsNodeTypes(source, {
-        ...seeds,
-        modules,
-        ...(file ? { file } : {}),
-      });
-      const absAt = findAbsAtPosition(nodeTypes, line, column);
-      if (absAt) {
-        const absLine = formatAbs(absAt);
-        const absMulti = formatAbsMultiline(absAt, undefined);
-        return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
-      }
-    }
-  } catch {
-    // ignore
-  }
+  // fail-closed：Abs 节点表（collectAbsNodeTypes）已删——任意表达式
+  // 光标 Abs 由标识符绑定面（absFromBPath）与 interface 档覆盖
 
   // 无类型结果时仍附 interface 档（函数名 hover 的同源保证）
   if (tier && gDisplay) {

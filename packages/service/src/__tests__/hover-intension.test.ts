@@ -23,13 +23,13 @@ describe("getHoverAtPosition lossless Abs", () => {
     }
   });
 
-  it("hover on expression uses Abs node table (lossless)", () => {
+  it("hover on identifier resolves through the binding table (node table removed)", () => {
     const source = `const n = 1 + 2;\n`;
-    // column of `2` is 14 (0-based)
-    const hover = getHoverAtPosition("/t/h4.js", source, 1, 14);
+    // fail-closed：节点级 Abs 表已删——标识符 n（column 6）经绑定表解析
+    const hover = getHoverAtPosition("/t/h4.js", source, 1, 6);
     expect(hover).not.toBeNull();
     expect(hover!.abs).toBeDefined();
-    expect(hover!.abs).toContain("2");
+    expect(hover!.abs).toContain("3");
   });
 
   it("hover on non-function still returns type", () => {
@@ -96,11 +96,11 @@ describe("getAbsAtPosition", () => {
     expect(abs!.conf).toBe("exact");
   });
 
-  it("expression node returns Abs with term identity", () => {
+  it("identifier returns Abs through binding table (node table removed)", () => {
     const source = `const n = 40 + 2;\n`;
-    const abs = getAbsAtPosition("/t/abs-pos2.js", source, 1, 14);
+    const abs = getAbsAtPosition("/t/abs-pos2.js", source, 1, 6);
     expect(abs).not.toBeNull();
-    expect(formatAbs(abs!)).toContain("2");
+    expect(formatAbs(abs!)).toContain("42");
   });
 
   it("case body: Abs replay with selected case args (activeCases)", () => {
@@ -112,19 +112,15 @@ function scale(x) {
   return x * 2;
 }
 `;
-    // return 里的 x：case "n" → 3；case "s" → 10（行 6 列 9 = x）
+    // fail-closed：执行态 case 重放（evalSource）已删——case 选中态的
+    // 节点级 Abs 无数据（显式无信息）
     const abs0 = getAbsAtPosition("/t/case-replay.js", source, 6, 9, new Map([["scale", 0]]));
-    expect(abs0).not.toBeNull();
-    expect(formatAbs(abs0!)).toContain("3");
+    expect(abs0).toBeNull();
 
     const abs1 = getAbsAtPosition("/t/case-replay.js", source, 6, 9, new Map([["scale", 1]]));
-    expect(abs1).not.toBeNull();
-    expect(formatAbs(abs1!)).toContain("10");
+    expect(abs1).toBeNull();
 
-    // BinaryExpression 整节点（列 9–14）：x*2 在 case "n" 下是 6
     const ret0 = getAbsAtPosition("/t/case-replay.js", source, 6, 10, new Map([["scale", 0]]));
-    expect(ret0).not.toBeNull();
-    // 最紧包围可能是 x(3) 或 x*2(6)——两者都证明 case 实参已注入
-    expect(formatAbs(ret0!)).toMatch(/\b[36]\b/);
+    expect(ret0).toBeNull();
   });
 });

@@ -279,14 +279,16 @@ pin 'pnpm run test:cli docs/examples/algebra/l-primitive-conversion.js' \
   'debug "float"  ("3.14") => 3.14'
 # sample.js — entry@ fallback; unconstrained params display as any (not unknown).
 pin 'pnpm run test:cli docs/examples/algebra/sample.js' \
-  'entry@' '(any, any) => unknown' \
+  'entry@' '(any, any) => number | string' \
   '(any) => number | string' \
   '{ host: "localhost", port: 8080, debug: false }'
 
 # mini-repo/ — pin the cross-file integration claims.
-# normalizeId may carry nudo:unknown-inference warning (true unknown return)
+# normalizeId may carry nudo:unknown-inference warning (true unknown return);
+# sumAges 无约束 ages 实参 → L2 entry-may-throw（提升是假设、不消除危险）
 pin 'pnpm run check docs/examples/mini-repo/user-service.js' \
-  '0 error' \
+  '1 error' \
+  'sumAges(ages: any) => number | string  throws TypeError' \
   'createService() => { store: MemoryStore, load: (id) => ? }'
 pin 'pnpm run test:cli docs/examples/mini-repo/user-service.js' \
   'debug "ages"  ([10, 20, 30]) => 60' \
@@ -312,7 +314,7 @@ pin 'pnpm run check docs/examples/interface-derivation/add.js' \
   'add2(x: number) => number'
 pin 'pnpm run check docs/examples/interface-derivation/lib.js' \
   '0 error · 0 warning' \
-  'add4(x: number) => number | string'
+  'add4(x: number) => number'
 
 # interface-draft/ — code-first draft promises (F6). Primary verb: contract.
 pin 'pnpm run contract --draft docs/examples/interface-draft/greet.js' \

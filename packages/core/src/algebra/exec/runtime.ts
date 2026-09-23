@@ -4,6 +4,7 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { bumpBForkBudget } from "../call-budget.ts";
 import type { Abs } from "../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../abs.ts";
 import { lit } from "../term.ts";
@@ -14,7 +15,7 @@ import {
   popCollectionArm,
   pushCollectionArm,
 } from "../collections.ts";
-import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
+import { add, sub, mul, div, mod, cmp, falseConstraint } from "../arithmetic.ts";
 import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs, isNullishLitAbs, definitelyNotNullishShape, bitandAbs, bitorAbs, bitxorAbs, bitnotAbs, shlAbs, shrAbs, ushrAbs, powAbs, toNumberAbs } from "../surface.ts";
 import { joinAbs, objOf, isObj, spread as spreadObj, type ObjShape, type Slot, isNullProtoObj, migrateNullProto, getSlot, canonicalArrayIndex } from "../objects.ts";
 import {
@@ -31,12 +32,13 @@ import { registerMatchIter, matchIterElements } from "./match-iter.ts";
 import { leqAbs } from "../leq.ts";
 import { evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants, regexBrandAbsFrom } from "../builtins.ts";
 import type { Phi } from "../pred.ts";
-import { pTrue } from "../pred.ts";
+import { pTrue, and } from "../pred.ts";
 import {
   noteUnknownMemberMissing,
   noteObjSlotMissing,
   noteAnyMemberMayThrow,
   noteNullishMemberThrows,
+  isNullishAbs,
   anyMemberResult,
   OBJECT_PROTO_NAMES,
 } from "./calls.ts";
@@ -58,7 +60,7 @@ function writeInPlace(target: Abs, next: Abs): Abs {
 }
 
 /** 调用方已直接改 shape 时的 term/pred 清理 */
-function clearStaleTermPred(v: Abs): void {
+export function clearStaleTermPred(v: Abs): void {
   v.term = undefined;
   v.pred = undefined;
 }
@@ -81,6 +83,12 @@ export function withExecPhi<T>(p: Phi, body: () => T): T {
 }
 
 // --- 运算符重载面（transpile 目标）---
+
+/** 保守 unknown（import.meta / 动态 import 等未建模构造的 lowering 目标——
+ *  与 ast-eval 对同类表达式的保守处理对齐） */
+export function $unknown(): Abs {
+  return abs({ k: "unknown" }, undefined, undefined, "opaque");
+}
 
 export function $add(a: Abs, b: Abs): Abs {
   return add(a, b, phi);
@@ -814,11 +822,23 @@ export function $tryTakeSince(mark: number): Abs[] {
   return store.splice(Math.min(mark, store.length));
 }
 
-/** catch 入口：消化 try 内 soft may-throw（幂等；design §3.3） */
+/** catch 入口消化 try 内 soft may-throw（幂等；design §3.3） */
 export function $tryDigestSoftCatch(): void {
   const soft = softFrameActiveAls.getStore();
   if (!soft || soft.length === 0 || !soft[soft.length - 1]) return;
   $tryDigestSoft();
+  soft[soft.length - 1] = false;
+}
+
+/**
+ * 正常完成路径 + catch 可能 rethrow：soft 效果不得消化——假想 soft throw
+ * 经 catch rethrow 逃逸（try { u.name } catch (e) { throw e; } 的 L2）。
+ * 摘帧上浮（collector / 外层 try 帧可再消化），并清 soft 标记防二次释放。
+ */
+export function $tryReleaseSoftCatch(): void {
+  const soft = softFrameActiveAls.getStore();
+  if (!soft || soft.length === 0 || !soft[soft.length - 1]) return;
+  $tryReleaseSoft();
   soft[soft.length - 1] = false;
 }
 
@@ -941,9 +961,36 @@ function settleForkArms(a: ForkArm, b: ForkArm, exits: Abs[] | undefined): Abs {
   return joinAbs(first.v, second.v);
 }
 
+/** Φ 规模上限：递归×循环下 Φ 逐层 and 累积（每层 term 不同 → 去重失效）→
+ *  cmp 的 implies(Φ,pred) 在巨大 Φ 上爆炸（real-packages lodash _baseFlatten
+ *  实测 50+ 项 → 60s+ 卡死；main 无 Φ-native 时 31ms）。超限丢弃新增项
+ *  （保留原 Φ）——剪枝更少 = 更保守，安全。 */
+const PHI_MAX_NODES = 24;
+function boundedPhi(p: Phi, q: Phi): Phi {
+  const r = and(p, q);
+  if (r.op !== "and") return r;
+  return r.args.length > PHI_MAX_NODES ? p : r;
+}
+
 export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs {
-  if (isDefinitelyTrue(test)) return asAbsVal(consequent());
-  if (isDefinitelyFalse(test)) return alternate ? asAbsVal(alternate()) : undef();
+  // 分支展开上限（递归×循环爆炸阀）：超限放弃分支 = unknown（最保守）
+  if (!bumpBForkBudget()) return unknown;
+  // Φ-native：测试判定已由 cmp 消费 currentExecPhi（$gt 等传模块级 phi）；
+  // 此处把 Φ∧test（真臂）/ Φ∧¬test（假臂）压进臂作用域——嵌套/兄弟分支的
+  // 路径事实沿臂累积（外层已证 x>y ⇒ 内层同测试折叠）。
+  const p = currentExecPhi();
+  const tCons = test.pred;
+  const tNeg = falseConstraint(test);
+  if (isDefinitelyTrue(test)) {
+    return asAbsVal(withExecPhi(tCons ? boundedPhi(p, tCons) : p, consequent));
+  }
+  if (isDefinitelyFalse(test)) {
+    return alternate
+      ? asAbsVal(withExecPhi(tNeg ? boundedPhi(p, tNeg) : p, alternate))
+      : undef();
+  }
+  const phiTrue = tCons ? boundedPhi(p, tCons) : p;
+  const phiFalse = tNeg ? boundedPhi(p, tNeg) : p;
 
   const exits = loopExitsAls.getStore();
   // 集合 side-table：抽象分支各自 overlay，结束后 join（防身份污染）
@@ -955,7 +1002,9 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
   try {
     pushCollectionArm();
     try {
-      const r = withIsolatedYields(() => runForkArm(consequent, exits));
+      const r = withExecPhi(phiTrue, () =>
+        withIsolatedYields(() => runForkArm(consequent, exits)),
+      );
       a = r.v;
       armYsList.push(r.ys);
     } finally {
@@ -964,7 +1013,9 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
     if (alternate) {
       pushCollectionArm();
       try {
-        const r = withIsolatedYields(() => runForkArm(alternate, exits));
+        const r = withExecPhi(phiFalse, () =>
+          withIsolatedYields(() => runForkArm(alternate, exits)),
+        );
         b = r.v;
         armYsList.push(r.ys);
       } finally {
@@ -1631,6 +1682,38 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     clearStaleTermPred(a);
     return a;
   }
+  // 非（整数下标 tuple）目标：按目标种类分派（strict/ESM 语义；此前一律
+  // `return a` 静默——o[k]=v 计算键写对象假精确 no-op、空值/prim 不抛）
+  const sk = a.shape.k;
+  if (sk === "prim" || sk === "never" || isNullishAbs(a)) throwStrictWrite();
+  if (sk === "any") {
+    noteAnyMemberMayThrow(a, iv === undefined ? "<computed>" : String(iv), "property");
+    return a;
+  }
+  if (sk === "obj") {
+    if (iv === undefined) {
+      // 抽象键：无槽位模型——标记 open（缺失键读不再折 undefined 假精确）
+      a.shape = { ...a.shape, open: true };
+      a.conf = confJoin(a.conf, "path");
+      clearStaleTermPred(a);
+      return a;
+    }
+    return $set(a, String(iv), value);
+  }
+  if (sk === "brand") {
+    if (iv === undefined) return a;
+    // 仅用户类（注册表）委派 $set——内建 brand（TypedArray/String 包装等）
+    // 下标写语义未建模，保持保守不写（差分抓到：Uint8Array 截断被写穿假精确）
+    if (getBClass(a.shape.name)) return $set(a, String(iv), value);
+    return a;
+  }
+  if (sk === "tuple") {
+    // 非整数/抽象下标（expando 属性）：就地降 arr（长度/元素保持）
+    a.shape = widenTupleToArr(a.shape.elements, a.shape.holes, value);
+    a.conf = confJoin(a.conf, "path");
+    clearStaleTermPred(a);
+    return a;
+  }
   return a;
 }
 
@@ -2250,7 +2333,40 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     clearStaleTermPred(o);
     return o;
   }
-  if (!isObj(o)) return $obj({ [key]: value });
+  if (!isObj(o)) {
+    // strict/ESM 写语义：确定非对象目标原生 TypeError（硬抛，catch 可吸收）。
+    // 此前一律 `return $obj({...})` 伪造对象——prim/空值静默成功（L2 漏报）、
+    // 数组目标被整体替换为对象（最坏假精确）。
+    const sk = o.shape.k;
+    // nullish 字面量（$lit(null/undefined) 是 unknown+lit term）与 prim：原生必抛
+    if (sk === "prim" || sk === "never" || isNullishAbs(o)) throwStrictWrite();
+    // any：可能成功（对象）也可能 TypeError——软 may-throw，目标不变
+    if (sk === "any") {
+      noteAnyMemberMayThrow(o, key, "property");
+      return o;
+    }
+    if (sk === "unknown") {
+      noteUnknownMemberMissing(o, key, "property");
+      return o;
+    }
+    // 数组 expando 属性（a.x = 1）：无槽位模型——tuple 就地降 arr（长度/元素保持）
+    if (sk === "tuple") {
+      o.shape = widenTupleToArr(o.shape.elements, o.shape.holes, value);
+      o.conf = confJoin(o.conf, "path");
+      clearStaleTermPred(o);
+      return o;
+    }
+    // sum：成员含确定非对象 → 写可能 TypeError（软）；否则写成功但无槽位模型
+    if (sk === "sum" && o.shape.members.some((m) => m.shape.k === "prim" || m.shape.k === "never")) {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: `property '${key}' write on sum (non-object member)`,
+        recv: "sum",
+        name: key,
+      });
+    }
+    return o;
+  }
   const shape = o.shape as ObjShape;
   const st = extStateOf(o);
   const hasKey = Object.prototype.hasOwnProperty.call(shape.slots, key);

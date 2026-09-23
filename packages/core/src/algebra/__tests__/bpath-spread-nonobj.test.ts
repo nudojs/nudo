@@ -9,7 +9,6 @@
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue, unknown } from "@nudojs/core";
-import { analyzeFn } from "../index.ts";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
@@ -61,10 +60,3 @@ describe("B-path object spread of non-object sources", () => {
   });
 });
 
-describe("ast-eval parity", () => {
-  it("spreads like B-path", () => {
-    expect(litValue(analyzeFn(`function f() { return ({...'ab'})['1']; }`, "f", []))).toBe("b");
-    expect(litValue(analyzeFn(`function f() { return ({...[1,2]})[0]; }`, "f", []))).toBe(1);
-    expect(litValue(analyzeFn(`function f() { return JSON.stringify({...5}); }`, "f", []))).toBe("{}");
-  });
-});

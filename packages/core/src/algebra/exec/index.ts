@@ -4,4 +4,5 @@ export * from "./call.ts";
 export * from "./class.ts";
 export * from "./calls.ts";
 export * from "./run.ts";
+export * from "./unsupported.ts";
 export * from "./may-throw.ts";

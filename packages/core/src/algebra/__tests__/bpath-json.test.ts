@@ -14,7 +14,6 @@
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-import { analyzeFn } from "../index.ts";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
@@ -185,17 +184,3 @@ describe("B-path JSON.stringify folding", () => {
   });
 });
 
-describe("ast-eval JSON parity", () => {
-  it("folds and throws like B-path", () => {
-    expect(litValue(analyzeFn(`function f() { return JSON.parse('{"a":1}').a; }`, "f", []))).toBe(1);
-    expect(litValue(analyzeFn(`function f() { return JSON.stringify({a:1}); }`, "f", []))).toBe(
-      '{"a":1}',
-    );
-    expect(
-      litValue(analyzeFn(`function f() { try { JSON.parse('{bad'); } catch(e) { return 'caught'; } return 'missed'; }`, "f", [])),
-    ).toBe("caught");
-    expect(
-      litValue(analyzeFn(`function f() { try { JSON.stringify(1n); } catch(e) { return 'caught'; } return 'missed'; }`, "f", [])),
-    ).toBe("caught");
-  });
-});

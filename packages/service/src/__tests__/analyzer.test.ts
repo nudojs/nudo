@@ -408,7 +408,8 @@ exports.applyToDefaults = function _apply(src, opts) {
     const fn = result.functions.find((f) => f.name === "_apply");
     expect(fn).toBeDefined();
     expect(fn!.noDeclaration).toBe(true);
-    // 入口无约束参数展示 any，不是 unknown（design-cli-semantics §2）
+    // 入口无约束参数展示 any，不是 unknown（design-cli-semantics §2）；
+    // CJS exports 赋值源经 B 的 exports 命名空间建模（run.ts CJS 面）
     expect(fn!.cases[0].abs.shape.k).toBe("any");
   });
 

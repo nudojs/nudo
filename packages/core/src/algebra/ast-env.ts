@@ -20,3 +20,14 @@ export type AstEnv = {
   /** P2：generalize symbolic 跑的 HOF collector（run 局部，不进 Φ） */
   hofCollect?: HofCollectCtx;
 };
+
+/** 空求值环境（分析宿主用：不带任何绑定） */
+export function emptyEnv(): AstEnv {
+  return { vars: new Map(), fns: new Map() };
+}
+
+export function withVar(env: AstEnv, name: string, value: Abs): AstEnv {
+  const vars = new Map(env.vars);
+  vars.set(name, value);
+  return { vars, fns: env.fns };
+}

@@ -107,7 +107,7 @@ describe("B-path huge array index/length assignment stays bounded", () => {
   });
 });
 
-describe("ast-eval length assignment (check signatures)", () => {
+describe("check signatures: length assignment", () => {
   function sigOf(src: string): string | undefined {
     const r = checkSource("/t/idx.js", withStdImport(src), pTrue, stdOpts);
     return r.signatures[0]?.display;

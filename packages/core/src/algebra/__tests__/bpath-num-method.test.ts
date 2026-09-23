@@ -9,7 +9,6 @@
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-import { analyzeFn } from "../index.ts";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
@@ -122,27 +121,3 @@ describe("B-path number instance method invalid args throw RangeError", () => {
   });
 });
 
-describe("ast-eval number instance methods", () => {
-  it("folds toFixed on literal receiver", () => {
-    expect(litValue(analyzeFn(`function f() { return (5).toFixed(2); }`, "f", []))).toBe("5.00");
-    expect(litValue(analyzeFn(`function f() { return (255).toString(16); }`, "f", []))).toBe("ff");
-    expect(litValue(analyzeFn(`function f() { return (5).toExponential(2); }`, "f", []))).toBe("5.00e+0");
-  });
-
-  it("invalid digits interrupt with never (RangeError)", () => {
-    expect(isNever(analyzeFn(`function f() { return (5).toFixed(-1); }`, "f", []))).toBe(true);
-    expect(isNever(analyzeFn(`function f() { return (5).toPrecision(101); }`, "f", []))).toBe(true);
-  });
-
-  it("invalid digits are caught by try/catch", () => {
-    expect(
-      litValue(
-        analyzeFn(
-          `function f() { try { (5).toFixed(-1); } catch(e) { return 'caught'; } return 'missed'; }`,
-          "f",
-          [],
-        ),
-      ),
-    ).toBe("caught");
-  });
-});

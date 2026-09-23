@@ -6,6 +6,7 @@
 
 import type { File, Expression, Statement, Node } from "@babel/types";
 import { parseSource } from "../parse-source.ts";
+import { NudoUnsupportedError } from "./unsupported.ts";
 
 export type TranspileOptions = {
   /** 运行时 import 说明符 */
@@ -33,12 +34,22 @@ export type TranspileOptions = {
   inSwitchArm?: boolean;
   /** 标签循环名（`outer: for …`）：传给 $for/$whileSeq/$forOf 供信号匹配 */
   loopLabel?: string;
+  /** 宽松全局：标识符调用 callee 未声明 → undefined（$callNamed 保守
+   *  unknown），模块不因 ReferenceError 中断——调用点发现的 exec 采集用
+   * （测试框架 it/describe/test 等未注入全局） */
+  lenientGlobals?: boolean;
   /** try 嵌套深度（>0 时 return 前 drain throwExits，使 catch 能吸收抽象 throw） */
   inTry?: number;
   /** 当前 try 的 mark 变量名（return drain 用；避免全局栈顶污染） */
   tryMarkName?: string;
   /** 当前 try 是否带 catch handler（soft may-throw digest/release 分支） */
   hasTryHandler?: boolean;
+  /** 当前 try 的 catch 体是否可能 rethrow（正常路径 soft 效果 release 而非 digest） */
+  tryRethrowCatch?: boolean;
+  /** 分支/循环体内深度（赋值记录 conditional 标记；inLoop 也计入） */
+  conditionalFlow?: number;
+  /** 函数/箭头体内（顶层绑定表只收顶层作用域） */
+  inFunction?: boolean;
 };
 
 function matchAsOverride(stmt: Node, opts: TranspileOptions): string | null {
@@ -133,6 +144,13 @@ const COMPOUND_OPS: Record<string, string> = {
   "*=": "$mul",
   "/=": "$div",
   "%=": "$mod",
+  "**=": "$pow",
+  "<<=": "$shl",
+  ">>=": "$shr",
+  ">>>=": "$ushr",
+  "&=": "$bitand",
+  "|=": "$bitor",
+  "^=": "$bitxor",
 };
 
 type MemberLayer = { get: (base: string) => string; set: (base: string, v: string) => string };
@@ -423,11 +441,16 @@ export function transpileSource(source: string, opts: TranspileOptions = {}): st
   return transpileFile(file, { ...opts, source: opts.source ?? source });
 }
 
+/** 运行时 import 行（body-fn 编译执行拼接用） */
+export function runtimeImportOf(runtime: string): string {
+  return `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $assignRecord, $recordBinding, $unknown, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit, $rawThis, $isBreakTo } from ${JSON.stringify(runtime)};`;
+}
+
 export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit, $rawThis, $isBreakTo } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $assignRecord, $recordBinding, $unknown, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit, $rawThis, $isBreakTo } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -833,6 +856,36 @@ function stmtReturns(stmt: Statement): boolean {
  * 返回值丢掉（早退全部静默失效——compareVersions 类链式卫语句的坑）。
  * 余下语句递归同规则，链式卫语句逐层嵌套 else。
  */
+/** 块体无确定 return 时补隐式 return $lit(undefined)（原生无 return 函数 =
+ *  undefined；此前编译产物返回 JS undefined 被宿主折 unknown——精度退化） */
+function withImplicitReturn(body: Node, bodyStmts: string, depth: number): string {
+  if (stmtReturns(body as unknown as Statement)) return bodyStmts;
+  return `${bodyStmts}\n${indent(depth)}return $lit(undefined);`;
+}
+
+/**
+ * 方法/函数体统一发射：早退 if 提升（transpileFnBodyStmts）+ 可选隐式 return。
+ * ObjectMethod / ClassMethod / 属性位 FunctionExpression 必须走本入口——
+ * 逐语句 map(transpileStatement) 会绕过提升，`if (c) return X; return Y`
+ * 的早退值被语句级 $fork thunk 吞掉（恒折 fall-through 值的假精确）。
+ */
+function emitFnBlockBody(
+  body: Node | undefined | null,
+  depth: number,
+  opts: TranspileOptions,
+  o: { implicitReturn?: boolean } = {},
+): string {
+  const implicitReturn = o.implicitReturn !== false;
+  if (!body) {
+    return implicitReturn ? `${indent(depth)}return $lit(undefined);` : "";
+  }
+  if (body.type !== "BlockStatement") {
+    return `${indent(depth)}return ${transpileExpression(body as Expression, opts)};`;
+  }
+  const stmts = transpileFnBodyStmts(body.body as Statement[], depth, opts);
+  return implicitReturn ? withImplicitReturn(body, stmts, depth) : stmts;
+}
+
 function transpileFnBodyStmts(stmts: Statement[], depth: number, opts: TranspileOptions): string {
   for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i]!;
@@ -1171,6 +1224,40 @@ function forkJoinBindings(names: string[], pad = ""): string[] {
  *   <always rebinds>;
  *   snapshot; $fork(__test, consArm, altArm); join bindings; return __r
  */
+/**
+ * catch 体是否可能 rethrow：任意深度语句位置出现 ThrowStatement 即视为
+ * 可能（条件 throw 保守按可能算，与 evalTry 的 catchR.threw 口径一致）；
+ * 不降入嵌套函数/箭头/类方法体（其 throw 不构成本 catch 的 rethrow）。
+ */
+function catchMayRethrow(handler: { body: Node }): boolean {
+  const visit = (n: unknown): boolean => {
+    if (!n || typeof n !== "object") return false;
+    const o = n as { type?: string; [k: string]: unknown };
+    if (o.type === "ThrowStatement") return true;
+    if (
+      o.type === "FunctionDeclaration" ||
+      o.type === "FunctionExpression" ||
+      o.type === "ArrowFunctionExpression" ||
+      o.type === "ClassMethod" ||
+      o.type === "ObjectMethod" ||
+      o.type === "ClassDeclaration"
+    ) {
+      return false;
+    }
+    for (const key of Object.keys(o)) {
+      if (key === "loc" || key === "start" || key === "end") continue;
+      const v = o[key];
+      if (Array.isArray(v)) {
+        for (const item of v) if (visit(item)) return true;
+      } else if (v && typeof v === "object") {
+        if (visit(v)) return true;
+      }
+    }
+    return false;
+  };
+  return visit(handler.body);
+}
+
 function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   alwaysNodes: Array<Node | null | undefined>;
   alwaysSrc: string;
@@ -1237,19 +1324,53 @@ function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   ].join("\n");
 }
 
+/** 单语句/表达式体转译（body-fn 编译执行用；不入 run.ts 正则面） */
+export function transpileBodyNode(node: Node, opts: TranspileOptions): string {
+  if (isExpression(node as { type: string })) {
+    return `return ${transpileExpression(node as Expression, opts)};`;
+  }
+  return withImplicitReturn(node, transpileStatement(node as Statement, 1, opts), 1);
+}
+
 function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptions): string {
   const pad = indent(depth);
   switch (stmt.type) {
     case "ExportNamedDeclaration": {
       const decl = stmt.declaration;
-      if (!decl) return `${pad}/* export specifiers skipped */`;
+      if (!decl) {
+        // 保留合法 ESM 形态：run.ts 后处理改写为 __nudoExport（modules 表
+        // 注入绑定）；真实 .mjs import 消费者直接吃标准 ESM 语义。
+        if (depth !== 0) return `${pad}/* nested export specifiers skipped */`;
+        const specs = stmt.specifiers
+          .filter(
+            (s): s is typeof s & {
+              local: { type?: string; name?: string; value?: string };
+              exported: { type?: string; name?: string; value?: string };
+            } => "local" in s,
+          )
+          .map((s) => {
+            const local = s.local.type === "Identifier" ? s.local.name : s.local.value;
+            const exported =
+              s.exported.type === "Identifier" ? s.exported.name : s.exported.value;
+            return local === exported ? local : `${local} as ${exported}`;
+          })
+          .join(", ");
+        if (stmt.source) {
+          return `${pad}export { ${specs} } from ${JSON.stringify(stmt.source.value)};`;
+        }
+        return `${pad}export { ${specs} };`;
+      }
       const inner = transpileStatement(decl as Statement, depth, opts);
-      // 顶层 export const/let：保留 export 面（run.ts 收集进 exports，
-      // 供 directive case 经 callTranspiledExport 求值）
-      if (depth === 0 && decl.type === "VariableDeclaration" && !pad) {
+      // 顶层 export const/let/class：保留 export 面（run.ts 收集进 exports，
+      // 供 directive case 经 callTranspiledExport 求值；模块图依赖此表）
+      if (depth === 0 && (decl.type === "VariableDeclaration" || decl.type === "ClassDeclaration") && !pad) {
         return `export ${inner}`;
       }
       return inner;
+    }
+    case "ExportAllDeclaration": {
+      if (depth !== 0) return `${pad}/* nested export * skipped */`;
+      return `${pad}export * from ${JSON.stringify(stmt.source.value)};`;
     }
     case "ImportDeclaration": {
       // 保留 import；run.ts 会改写为 __nudoBindImport
@@ -1273,8 +1394,14 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
     case "ExportDefaultDeclaration": {
       const d = stmt.declaration;
       if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
-        const inner = transpileStatement(d as Statement, depth, opts);
-        return inner.replace(/^(\s*)export function /, "$1export default function ");
+        // 匿名默认函数/类合成名字（原 <anonymous fn skipped> 整条丢失）；
+        // 输出 `function X {}` + `export default X;`——真实 ESM 与 run.ts
+        // 后处理（→ __nudoExport("default", X)）都合法。
+        const name =
+          d.id?.name ?? (d.type === "FunctionDeclaration" ? "__nudoDefaultFn" : "__nudoDefaultClass");
+        const named = d.id ? d : ({ ...d, id: { type: "Identifier", name } } as Statement);
+        const inner = transpileStatement(named, depth + 1, opts);
+        return `${inner}\n${pad}export default ${name};`;
       }
       return `${pad}export default ${transpileExpression(d as Expression, opts)};`;
     }
@@ -1286,6 +1413,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const fnOpts: TranspileOptions = {
         ...opts,
         inLoop: 0,
+        inFunction: true,
         ...(hasThis ? { thisParam: "__this" } : {}),
       };
       const { sig, rest, prologue } = emitParamBinding(
@@ -1301,9 +1429,13 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         : "";
       const bodyStmts =
         stmt.body.type === "BlockStatement"
-          ? [...prologue, thisPrologue, transpileFnBodyStmts(stmt.body.body, depth + 2, fnOpts)]
-              .filter(Boolean)
-              .join("\n")
+          ? withImplicitReturn(
+              stmt.body,
+              [...prologue, thisPrologue, transpileFnBodyStmts(stmt.body.body, depth + 2, fnOpts)]
+                .filter(Boolean)
+                .join("\n"),
+              depth + 2,
+            )
           : `${indent(depth + 2)}${thisPrologue.trim()}return ${transpileExpression(stmt.body as unknown as Expression, fnOpts)};`;
       const restBind = rest
         ? `${indent(depth + 1)}const ${rest} = arguments.length > ${named.length} ? $arr(Array.from(arguments).slice(${named.length})) : $arr([]);\n`
@@ -1354,7 +1486,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
             `${indent(depth + 2)}$pushLoopExit(__nudoRet);`,
             `${indent(depth + 2)}$throw(__xs.reduce((a, b) => $join(a, b)));`,
             `${indent(depth + 1)}}`,
-            `${indent(depth + 1)}${opts.hasTryHandler === false ? "$tryReleaseSoftOut();" : "$tryDigestSoftCatch();"}`,
+            `${indent(depth + 1)}${opts.tryRethrowCatch ? "$tryReleaseSoftCatch();" : opts.hasTryHandler === false ? "$tryReleaseSoftOut();" : "$tryDigestSoftCatch();"}`,
             `${pad}}`,
             `${pad}${prefix}(__nudoRet);`,
           ].join("\n");
@@ -1441,6 +1573,10 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
               ? transpileExpression(d.init, opts)
               : "$lit(undefined)";
           lines.push(`${pad}${kw} ${d.id.name} = ${init};`);
+          // 顶层绑定表（checkSource varAbs / scanLiteralCalls 实参解析）
+          if (depth === 0) {
+            lines.push(`${pad}$recordBinding(${JSON.stringify(d.id.name)}, ${d.id.name});`);
+          }
           // P1：表达式位置 mutator（`const x = a.pop()`）同样重绑容器
           if (d.init && !asVar) {
             lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
@@ -1495,9 +1631,15 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
           `}`,
         ].join("\n");
       };
-      const consRaw = transpileBlockAsThunk(stmt.consequent, depth, opts);
+      const consRaw = transpileBlockAsThunk(stmt.consequent, depth, {
+        ...opts,
+        conditionalFlow: (opts.conditionalFlow ?? 0) + 1,
+      });
       const altRaw = stmt.alternate
-        ? transpileBlockAsThunk(stmt.alternate, depth, opts)
+        ? transpileBlockAsThunk(stmt.alternate, depth, {
+            ...opts,
+            conditionalFlow: (opts.conditionalFlow ?? 0) + 1,
+          })
         : "undefined";
       const cons = wrapArm(consRaw, "fk1_");
       const alt = names.length
@@ -1864,6 +2006,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         inTry: (opts.inTry ?? 0) + 1,
         tryMarkName: markName,
         hasTryHandler: !!stmt.handler,
+        tryRethrowCatch: stmt.handler ? catchMayRethrow(stmt.handler) : false,
       };
       const tryBody =
         stmt.block.type === "BlockStatement"
@@ -1908,7 +2051,15 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         lines.push(`${indent(depth + 1)}$tryDiscardSoft(${softVar});`);
         lines.push(`${pad}}`);
       }
-      const softExit = stmt.handler ? "$tryDigestSoftCatch();" : "$tryReleaseSoftOut();";
+      // catch 体内（任意深度语句，不含嵌套函数/类体）出现 throw → 视为可能
+      // rethrow：正常完成路径的 soft 效果不得消化（假想 soft throw 经
+      // catch rethrow 逃逸——与 evalTry 的 catchR.threw 口径一致，含条件
+      // throw 的保守上浮）。
+      const softExit = !stmt.handler
+        ? "$tryReleaseSoftOut();"
+        : catchMayRethrow(stmt.handler)
+          ? "$tryReleaseSoftCatch();"
+          : "$tryDigestSoftCatch();";
       if (stmt.finalizer) {
         const finBody =
           stmt.finalizer.type === "BlockStatement"
@@ -2145,8 +2296,15 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         `${pad}}`,
       ].join("\n");
     }
+    case "EmptyStatement":
+    case "DebuggerStatement":
+      // 良性无操作语句：显式 no-op（不得落 default throw）
+      return "";
     default:
-      return `${pad}/* skip ${stmt.type} */`;
+      throw new NudoUnsupportedError(
+        `statement:${stmt.type}`,
+        stmt.loc ? { line: stmt.loc.start.line, column: stmt.loc.start.column } : undefined,
+      );
   }
 }
 
@@ -2192,6 +2350,7 @@ function transpileClass(
     ...opts,
     inLoop: 0,
     inTry: 0,
+    inFunction: true,
     thisParam: "__this",
     className: name,
   };
@@ -2219,29 +2378,29 @@ function transpileClass(
     // get/set 访问器：实例进 spec.accessors，静态进 spec.staticAccessors
     if (m.kind === "get" || m.kind === "set") {
       const accBodyOpts: TranspileOptions = { ...opts, inLoop: 0, inTry: 0, thisParam: "__this" };
-      const accBodyStmts =
-        m.body?.type === "BlockStatement"
-          ? (m.body.body as Statement[])
-              .map((s) => transpileStatement(s, depth + 3, accBodyOpts))
-              .join("\n")
-          : "";
+      const accBody = m.body as Node | undefined;
       const target = m.static ? staticAccessorDefs : accessorDefs;
       const def = target.get(mname) ?? {};
       if (m.kind === "get") {
+        const accBodyStmts = emitFnBlockBody(accBody, depth + 3, accBodyOpts);
         def.get = `(__this) => {\n${accBodyStmts}\n${indent(depth + 3)}}`;
       } else {
         const vname = params.length > 0 && params[0] !== "_" ? params[0]! : "__v";
-        def.set = `(__this, ${vname}) => {\n${accBodyStmts}\n${indent(depth + 4)}return __this;\n${indent(depth + 3)}}`;
+        // setter 尾部 return __this——implicitReturn 关闭
+        const setBody = emitFnBlockBody(accBody, depth + 3, accBodyOpts, { implicitReturn: false });
+        def.set = `(__this, ${vname}) => {\n${setBody}\n${indent(depth + 4)}return __this;\n${indent(depth + 3)}}`;
       }
       target.set(mname, def);
       continue;
     }
-    const bodyStmts =
-      m.body?.type === "BlockStatement"
-        ? (m.body.body as Statement[])
-            .map((s) => transpileStatement(s, depth + 3, m.static ? opts : methodOpts))
-            .join("\n")
-        : "";
+    // ctor 有显式 `return __this`（下方追加）——不得加隐式 return 抢行
+    const isCtor = m.kind === "constructor" || mname === "constructor";
+    const bodyStmts = emitFnBlockBody(
+      m.body as Node | undefined,
+      depth + 3,
+      m.static ? opts : methodOpts,
+      { implicitReturn: !isCtor },
+    );
     if (m.static) {
       staticMethodParts.push(
         `${indent(depth + 3)}${mname}: (${paramList}) => {`,
@@ -2387,6 +2546,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (expr.name === "Infinity") return "$lit(Infinity)";
       return expr.name;
     case "ThisExpression":
+      // 顶层 this（无 thisParam 且不在函数体）：ESM 语义 this === undefined。
+      // 读 → undefined；写（this.x = 1）经写路径 strict 语义硬抛 TypeError
+      // （模块装载失败，与原生一致）。函数体 this 由 thisParam/降级处理。
       return opts.thisParam ?? "$lit(undefined)";
     case "NewExpression": {
       const callee = expr.callee;
@@ -2594,25 +2756,20 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           if (prop.kind === "get" || prop.kind === "set") {
             // 占位槽保键存在性（'x' in o / keys / assign 拷贝目标）；读写在 $get/$set 层派发
             props.push(`${mkey}: $lit(undefined)`);
-            const bodySrc =
-              prop.body.type === "BlockStatement"
-                ? `{\n${prop.body.body.map((s) => transpileStatement(s, 1, methodOpts)).join("\n")}\n}`
-                : transpileExpression(prop.body as unknown as Expression, methodOpts);
             if (prop.kind === "get") {
+              const bodySrc = `{\n${emitFnBlockBody(prop.body, 1, methodOpts)}\n}`;
               accRegs.push({ key: mkey, get: `(__this) => ${bodySrc}` });
             } else {
+              // setter 尾部 return __this——implicitReturn 关闭
               const vname = paramNames.length > 0 && paramNames[0] !== "_a" ? paramNames[0]! : "__v";
               accRegs.push({
                 key: mkey,
-                set: `(__this, ${vname}) => {\n${bodySrc}\nreturn __this;\n}`,
+                set: `(__this, ${vname}) => {\n${emitFnBlockBody(prop.body, 1, methodOpts, { implicitReturn: false })}\nreturn __this;\n}`,
               });
             }
             continue;
           }
-          const bodySrc =
-            prop.body.type === "BlockStatement"
-              ? `{\n${prop.body.body.map((s) => transpileStatement(s, 1, methodOpts)).join("\n")}\n}`
-              : transpileExpression(prop.body as unknown as Expression, methodOpts);
+          const bodySrc = `{\n${emitFnBlockBody(prop.body, 1, methodOpts)}\n}`;
           const bindParams = ["__this", ...paramNames];
           const fnValSrc = `$fnVal([${paramNames.map((p) => JSON.stringify(p)).join(", ")}], (${bindParams.join(", ")}) => ${bodySrc}, { bindThis: true })`;
           props.push(`${mkey}: ${fnValSrc}`);
@@ -2653,10 +2810,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
               p.type === "Identifier" && p.name ? p.name : "_a",
             );
             const methodOpts: TranspileOptions = { ...opts, inLoop: 0, thisParam: "__this" };
-            const bodySrc =
-              fn.body.type === "BlockStatement"
-                ? `{\n${(fn.body as { body: Statement[] }).body.map((s) => transpileStatement(s, 1, methodOpts)).join("\n")}\n}`
-                : transpileExpression(fn.body as unknown as Expression, methodOpts);
+            const bodySrc = `{\n${emitFnBlockBody(fn.body, 1, methodOpts)}\n}`;
             const bindParams = ["__this", ...paramNames];
             props.push(
               `${key}: $fnVal([${paramNames.map((p) => JSON.stringify(p)).join(", ")}], (${bindParams.join(", ")}) => ${bodySrc}, { bindThis: true })`,
@@ -2854,17 +3008,31 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             return `((__v) => (($idxSet(${obj}, ${transpileExpression(k, opts)}, __v)), __v))(${right})`;
           }
         }
-        return `/* assign */ $lit(undefined)`;
+        throw new NudoUnsupportedError(
+          `assign-target`,
+          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+        );
       }
       if (expr.left.type === "Identifier") {
-        if (compoundFn) {
-          return `${expr.left.name} = ${compoundFn}(${expr.left.name}, ${right})`;
-        }
-        // P1：`x = a.pop()` 表达式位置 mutator — 由 VariableDeclaration/statement
-        // 侧 emitExprMutatorRebind 处理容器重绑；此处赋值本身只绑返回值。
-        return `${expr.left.name} = ${right}`;
+        const name = expr.left.name;
+        // 结构赋值记录（checkSource assign-mismatch 通道）：prev 读在写前；
+        // conditional = 分支/循环体内（与 ast-eval assignFlowDepth 同口径——
+        // structuralAssignIssues 跳过 conditional）。逻辑赋值（||= 等）短路
+        // 分支在前已处理，不记录（与 ast-eval 早期返回同口径）。
+        const cond = (opts.inLoop ?? 0) > 0 || (opts.conditionalFlow ?? 0) > 0;
+        const locLine = expr.loc?.start.line ?? 0;
+        const locCol = expr.loc?.start.column ?? 0;
+        const valSrc = compoundFn ? `${compoundFn}(${name}, ${right})` : right;
+        // 顶层绑定表跟重赋值（final 值语义；函数/箭头体不在顶层作用域）
+        const bindSrc = !opts.inFunction
+          ? ` $recordBinding(${JSON.stringify(name)}, __v);`
+          : "";
+        return `((__v) => { $assignRecord(${JSON.stringify(name)}, ${name}, __v, ${locLine}, ${locCol}, ${cond});${bindSrc} return ${name} = __v; })(${valSrc})`;
       }
-      return compoundFn ? `/* assign ${expr.operator} */ $lit(undefined)` : `/* assign */ $lit(undefined)`;
+      throw new NudoUnsupportedError(
+        `assign-target`,
+        expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+      );
     }
     case "CallExpression":
     case "OptionalCallExpression": {
@@ -2952,7 +3120,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         const loc = expr.loc;
         const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
         const argLocArg = loc ? `, [${argLocSrcs.join(", ")}]` : "";
-        return `$callNamed(${JSON.stringify(callee.name)}, ${callee.name}, [${argSrcs.join(", ")}]${locArg}${argLocArg})`;
+        const calleeRef = opts.lenientGlobals
+          ? `(typeof ${callee.name} !== "undefined" ? ${callee.name} : undefined)`
+          : callee.name;
+        return `$callNamed(${JSON.stringify(callee.name)}, ${calleeRef}, [${argSrcs.join(", ")}]${locArg}${argLocArg})`;
       }
       const args = expr.arguments
         .map((a) =>
@@ -2988,6 +3159,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       const fnBodyOpts: TranspileOptions = {
         ...opts,
         inLoop: 0,
+        inFunction: true,
         ...(hasThis ? { thisParam: "__this" } : {}),
       };
       const paramParts = rest ? [...sig, `...${rest}`] : sig;
@@ -2996,7 +3168,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       const nameList = `[${sig.map((p) => JSON.stringify(p)).join(", ")}]`;
       const thisPrologue = hasThis ? [`const __this = $rawThis(this);`] : [];
       if (fn.body.type === "BlockStatement") {
-        const inner = [...prologue, ...thisPrologue, transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, fnBodyOpts)].join("\n");
+        const inner = withImplicitReturn(
+          fn.body,
+          [...prologue, ...thisPrologue, transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, fnBodyOpts)].join("\n"),
+          1,
+        );
         if (hasThis) {
           const wrap = fn.async
             ? `function (${paramParts.join(", ")}) { return $async(() => {\n${inner}\n}); }`
@@ -3039,8 +3215,19 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       }
       return `$fnVal(${nameList}, (${paramParts.join(", ")}) => ${bodySrc})`;
     }
+    case "MetaProperty":
+    case "ImportExpression":
+      // import.meta / 动态 import()：原生语义未建模（Promise/URL 依赖宿主）——
+      // 保守 unknown（与 ast-eval 对同类表达式处理对齐；此前抛 unsupported
+      // 使含 import.meta 的 ESM 依赖整体回落解释路径）
+      return "$unknown()";
     default:
-      return `/* ${expr.type} */ $lit(undefined)`;
+      // 未 lowering 的表达式（JSX 等）：
+      // 静默折 $lit(undefined) 是假精确——抛 unsupported 交消费方回落
+      throw new NudoUnsupportedError(
+        `expression:${expr.type}`,
+        expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+      );
   }
 }
 

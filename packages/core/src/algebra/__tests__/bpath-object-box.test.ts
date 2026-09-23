@@ -52,3 +52,27 @@ describe("B-path Object() boxing", () => {
     expect(litValue(call(`export function f() { return typeof new Object(); }`).result)).toBe("object");
   });
 });
+
+describe("B-path new String() wrapper slots", () => {
+  // $new 通用 branch 折空 slots 包装——new String('ab')['0'] / .length
+  // 折 undefined（原生 'a' / 2），Object.assign({}, boxed) 折 {}。
+  it("new String(string) keeps length and index slots", () => {
+    expect(litValue(call(`export function f() { return new String('ab').length; }`).result)).toBe(2);
+    expect(litValue(call(`export function f() { return new String('ab')['0']; }`).result)).toBe("a");
+    expect(litValue(call(`export function f() { return new String('ab')['1']; }`).result)).toBe("b");
+    expect(litValue(call(`export function f() { return new String('ab')['2']; }`).result)).toBe(undefined);
+    expect(litValue(call(`export function f() { return typeof new String('ab'); }`).result)).toBe("object");
+  });
+
+  it("new String(string) is an assignable wrapper source", () => {
+    expect(litValue(call(`export function f() { return Object.assign({}, new String('ab'))['0']; }`).result)).toBe("a");
+    expect(
+      litValue(call(`export function f() { return Object.keys(Object.assign({}, new String('ab'))).length; }`).result),
+    ).toBe(2);
+  });
+
+  it("non-literal arg stays conservative", () => {
+    const r = call(`export function f(s) { return new String(s).length; }`);
+    expect(litValue(r.result)).toBeUndefined();
+  });
+});
