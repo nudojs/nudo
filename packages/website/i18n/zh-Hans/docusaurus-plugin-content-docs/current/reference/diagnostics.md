@@ -112,6 +112,10 @@ API 未被 env/推理覆盖（如未建模全局）。优先 `@nudo:env` / mock�
 
 递归预算用尽；结果拓宽。
 
+### `nudo:fork-truncated`
+
+分支展开预算（`$fork` 总次数）用尽；受影响结果拓宽。**warning**。可用 `NUDO_MAX_FORKS` 或 `package.json#nudo.analysis.maxForks` 调高（默认 5000）。
+
 ### `nudo:no-signature`
 
 函数无法泛化（CJS/匿名形态仍经入口 fallback 得到 L2）。

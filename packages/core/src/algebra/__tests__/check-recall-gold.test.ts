@@ -25,6 +25,12 @@ type Gold = {
   source: string;
   expect: Expect;
   note?: string;
+  /**
+   * 已知漏报（FN）：人工标注为 violation，引擎当前不报。
+   * it.fails 钉住——修好后 it.fails 会翻红，提醒摘掉本旗标并进主门禁。
+   * 禁止把标注改成 ok 来凑绿。
+   */
+  knownFn?: boolean;
 };
 
 /** 真实库惯用法金标（人工标注） */
@@ -689,6 +695,841 @@ wrap(0);
     expect: "violation",
     note: "经 wrapper 的字面量 0 仍须报 constraint-violated",
   },
+  // --- 可选字段：缺省 / 类型错 / 收窄后当必填 ---
+  {
+    id: "opt-field-omit-ok",
+    origin: "config 可选字段",
+    source: `
+/**
+ * @nudo:refine c configShape
+ */
+function setup(c) {
+  return c.retries;
+}
+setup({ retries: 3 });
+`,
+    expect: "ok",
+    note: "optional 省略合法",
+  },
+  {
+    id: "opt-field-wrong-type-violates",
+    origin: "config 可选字段",
+    source: `
+/**
+ * @nudo:refine c configShape
+ */
+function setup(c) {
+  return c.retries;
+}
+setup({ retries: 3, label: 9 });
+`,
+    expect: "violation",
+    note: "optional 出现则必须满足 string()",
+  },
+  {
+    id: "opt-field-present-ok",
+    origin: "config 可选字段",
+    source: `
+/**
+ * @nudo:refine c configShape
+ */
+function setup(c) {
+  return c.retries;
+}
+setup({ retries: 3, label: "ok" });
+`,
+    expect: "ok",
+  },
+  {
+    id: "opt-field-missing-as-required-known-fn",
+    origin: "optional → 显式契约实参",
+    source: `
+/**
+ * @nudo:refine s nonEmpty
+ */
+function needStr(s) {
+  return s;
+}
+/**
+ * @nudo:refine c configShape
+ */
+function setup(c) {
+  return needStr(c.label);
+}
+setup({ retries: 1 });
+`,
+    expect: "violation",
+    knownFn: true,
+    note: "已知 FN：optional 缺省（undefined）传入 nonEmpty 未报；应 constraint-violated",
+  },
+  // --- 数组方法返回值：find 可能 undefined ---
+  {
+    id: "find-no-refine-ok",
+    origin: "Array.find",
+    source: `
+function need(x) { return x; }
+const xs = [1, 2, 3];
+const found = xs.find((n) => n > 10);
+need(found);
+`,
+    expect: "ok",
+    note: "无显式契约不发明义务",
+  },
+  {
+    id: "find-hit-to-positive-ok",
+    origin: "Array.find",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const xs = [1, 2, 3];
+const found = xs.find((n) => n > 0);
+needPos(found);
+`,
+    expect: "ok",
+  },
+  {
+    id: "find-miss-to-positive-known-fn",
+    origin: "Array.find",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const xs = [1, 2, 3];
+const found = xs.find((n) => n > 10);
+needPos(found);
+`,
+    expect: "violation",
+    knownFn: true,
+    note: "已知 FN：find 未命中 → undefined ⊭ positive",
+  },
+  {
+    id: "find-hit-member-to-positive-ok",
+    origin: "Array.find + 成员",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const xs = [{ id: 5 }, { id: 7 }];
+const found = xs.find((x) => x.id > 0);
+needPos(found.id);
+`,
+    expect: "ok",
+  },
+  // --- 字典查找 map[k] 可能 undefined ---
+  {
+    id: "dict-hit-to-positive-ok",
+    origin: "字典查找",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const map = { a: 1, b: 2 };
+needPos(map["a"]);
+`,
+    expect: "ok",
+  },
+  {
+    id: "dict-var-key-any-ok",
+    origin: "字典查找·变量键",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const map = { a: 1, b: 2 };
+const k = "zz";
+needPos(map[k]);
+`,
+    expect: "ok",
+    note: "变量键结果为 any：any ≤ 任意目标，不报（≠ unknown）",
+  },
+  {
+    id: "dict-literal-miss-known-fn",
+    origin: "字典查找·字面量缺键",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const map = { a: 1, b: 2 };
+needPos(map["zz"]);
+`,
+    expect: "violation",
+    knownFn: true,
+    note: "已知 FN：map[\"zz\"] → undefined ⊭ positive",
+  },
+  // --- filter 后仍用宽类型 / 回调 ---
+  {
+    id: "filter-then-pos-ok",
+    origin: "Array.filter",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const xs = [-1, 2, 3];
+const pos = xs.filter((n) => n > 0);
+needPos(pos[0]);
+`,
+    expect: "ok",
+  },
+  {
+    id: "filter-source-lit-violates",
+    origin: "Array.filter·源侧字面量",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const xs = [-1, 2];
+const pos = xs.filter((n) => n > 0);
+needPos(-1);
+`,
+    expect: "violation",
+    note: "filter 不吞直接字面量违例",
+  },
+  {
+    id: "filter-map-doubled-ok",
+    origin: "Array.map",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const xs = [1, 2];
+const doubled = xs.map((n) => n * 2);
+needPos(doubled[0]);
+`,
+    expect: "ok",
+  },
+  // --- == vs === 与 null/undefined 折叠 ---
+  {
+    id: "eq-null-guard-ok",
+    origin: "== null 折叠",
+    source: `
+function pick(x) {
+  if (x == null) return 0;
+  return x;
+}
+pick(null);
+pick(1);
+`,
+    expect: "ok",
+    note: "== null 守卫不是前置，不得误报",
+  },
+  {
+    id: "triple-eq-null-guard-ok",
+    origin: "=== null/undefined",
+    source: `
+function pick(x) {
+  if (x === null || x === undefined) return 0;
+  return x;
+}
+pick(undefined);
+`,
+    expect: "ok",
+  },
+  {
+    id: "eq-null-not-precondition",
+    origin: "== null 折叠",
+    source: `
+function orZero(x) {
+  if (x == null) return 0;
+  return x;
+}
+orZero(undefined);
+orZero(null);
+orZero(5);
+`,
+    expect: "ok",
+  },
+  {
+    id: "wrap-null-guard-forward-ok",
+    origin: "== null 转发",
+    source: `
+/**
+ * @nudo:refine x positive
+ */
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+function wrap(n) {
+  if (n == null) return 0;
+  return needsPositive(n);
+}
+wrap(3);
+`,
+    expect: "ok",
+  },
+  {
+    id: "wrap-null-guard-bad-lit-known-fn",
+    origin: "== null 转发",
+    source: `
+/**
+ * @nudo:refine x positive
+ */
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+function wrap(n) {
+  if (n == null) return 0;
+  return needsPositive(n);
+}
+wrap(-1);
+`,
+    expect: "violation",
+    knownFn: true,
+    note: "已知 FN：null 守卫打断无条件转发，-1 仍到达 needsPositive 却未报",
+  },
+  // --- 数字边界：arr[i] ---
+  {
+    id: "arr-in-bounds-ok",
+    origin: "arr[i]",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const a = [1, 2, 3];
+needPos(a[0]);
+`,
+    expect: "ok",
+  },
+  {
+    id: "arr-oob-known-fn",
+    origin: "arr[i] 越界",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const a = [1, 2, 3];
+needPos(a[5]);
+`,
+    expect: "violation",
+    knownFn: true,
+    note: "已知 FN：a[5] → undefined ⊭ positive",
+  },
+  {
+    id: "tuple-idx-pos-ok",
+    origin: "元组下标",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const a = [7, 8, 9];
+needPos(a[0]);
+`,
+    expect: "ok",
+  },
+  {
+    id: "tuple-idx-neg-known-fn",
+    origin: "元组下标·负元素",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const a = [-7, 8, 9];
+needPos(a[0]);
+`,
+    expect: "violation",
+    knownFn: true,
+    note: "已知 FN：a[0] 字面量 -7 ⊭ positive 未跟到下标",
+  },
+  // --- push 返回 number 不是 arr ---
+  {
+    id: "push-ret-to-positives",
+    origin: "Array.push 返回值",
+    source: `
+/**
+ * @nudo:refine xs positives
+ */
+function takePositives(xs) {
+  return xs;
+}
+const a = [1];
+const n = a.push(2);
+takePositives(n);
+`,
+    expect: "violation",
+    note: "push 返回 length:number ⊭ array(positives)",
+  },
+  {
+    id: "push-ret-to-positive-ok",
+    origin: "Array.push 返回值",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const a = [1];
+const n = a.push(2);
+needPos(n);
+`,
+    expect: "ok",
+    note: "新 length ≥ 1，满足 positive 时不得 FP",
+  },
+  {
+    id: "push-inline-to-positives-known-fn",
+    origin: "Array.push 内联",
+    source: `
+/**
+ * @nudo:refine xs positives
+ */
+function takePositives(xs) {
+  return xs;
+}
+const a = [1];
+takePositives(a.push(2));
+`,
+    expect: "violation",
+    knownFn: true,
+    note: "已知 FN：内联 a.push(2) 表达式值（number）未作实参跟到 positives",
+  },
+  {
+    id: "array-literal-to-positives-ok",
+    origin: "数组字面量传参",
+    source: `
+/**
+ * @nudo:refine xs positives
+ */
+function takePositives(xs) {
+  return xs;
+}
+takePositives([1, 2, 3]);
+`,
+    expect: "ok",
+  },
+  // --- 显式 refine 边界：正例 + 相近合法 TN ---
+  {
+    id: "int-boundary-1-ok",
+    origin: "intId 边界",
+    source: `
+/**
+ * @nudo:refine n intId
+ */
+function takeId(n) {
+  return n;
+}
+takeId(1);
+`,
+    expect: "ok",
+  },
+  {
+    id: "int-boundary-zero-violates",
+    origin: "intId 边界",
+    source: `
+/**
+ * @nudo:refine n intId
+ */
+function takeId(n) {
+  return n;
+}
+takeId(0);
+`,
+    expect: "violation",
+  },
+  {
+    id: "int-boundary-nonint-violates",
+    origin: "intId 边界",
+    source: `
+/**
+ * @nudo:refine n intId
+ */
+function takeId(n) {
+  return n;
+}
+takeId(1.0001);
+`,
+    expect: "violation",
+  },
+  {
+    id: "shortName-1-ok",
+    origin: "shortName 边界",
+    source: `
+/**
+ * @nudo:refine s shortName
+ */
+function takeName(s) {
+  return s;
+}
+takeName("a");
+`,
+    expect: "ok",
+  },
+  {
+    id: "shortName-empty-violates",
+    origin: "shortName 边界",
+    source: `
+/**
+ * @nudo:refine s shortName
+ */
+function takeName(s) {
+  return s;
+}
+takeName("");
+`,
+    expect: "violation",
+  },
+  {
+    id: "shortName-too-long-violates",
+    origin: "shortName 边界",
+    source: `
+/**
+ * @nudo:refine s shortName
+ */
+function takeName(s) {
+  return s;
+}
+takeName("abcdefghijklmnopqrstu");
+`,
+    expect: "violation",
+    note: "21 字符 > max 20",
+  },
+  {
+    id: "percent-0-ok",
+    origin: "percent 边界",
+    source: `
+/**
+ * @nudo:refine n percent
+ */
+function pct(n) {
+  return n;
+}
+pct(0);
+`,
+    expect: "ok",
+  },
+  {
+    id: "percent-100-ok",
+    origin: "percent 边界",
+    source: `
+/**
+ * @nudo:refine n percent
+ */
+function pct(n) {
+  return n;
+}
+pct(100);
+`,
+    expect: "ok",
+  },
+  {
+    id: "percent-101-violates",
+    origin: "percent 边界",
+    source: `
+/**
+ * @nudo:refine n percent
+ */
+function pct(n) {
+  return n;
+}
+pct(101);
+`,
+    expect: "violation",
+  },
+  {
+    id: "port-1-ok",
+    origin: "port 边界",
+    source: `
+/**
+ * @nudo:refine p port
+ */
+function listen(p) {
+  return p;
+}
+listen(1);
+`,
+    expect: "ok",
+  },
+  {
+    id: "port-65535-ok",
+    origin: "port 边界",
+    source: `
+/**
+ * @nudo:refine p port
+ */
+function listen(p) {
+  return p;
+}
+listen(65535);
+`,
+    expect: "ok",
+  },
+  {
+    id: "port-65536-violates",
+    origin: "port 边界",
+    source: `
+/**
+ * @nudo:refine p port
+ */
+function listen(p) {
+  return p;
+}
+listen(65536);
+`,
+    expect: "violation",
+  },
+  {
+    id: "union-status-1-ok",
+    origin: "union(lit) 析取",
+    source: `
+/**
+ * @nudo:refine x status
+ */
+function setStatus(x) {
+  return x;
+}
+setStatus(1);
+`,
+    expect: "ok",
+  },
+  {
+    id: "union-status-99-violates",
+    origin: "union(lit) 析取",
+    source: `
+/**
+ * @nudo:refine x status
+ */
+function setStatus(x) {
+  return x;
+}
+setStatus(99);
+`,
+    expect: "violation",
+  },
+  // --- HOF arg-structure（refine 来源 → error） ---
+  {
+    id: "hof-non-callable-arg",
+    origin: "HOF 回调形态",
+    source: `
+/**
+ * @nudo:refine xs positives
+ * @nudo:refine transform mapper
+ */
+function mapPos(xs, transform) {
+  return xs.map(transform);
+}
+mapPos([1, 2], 42);
+`,
+    expect: "violation",
+    note: "refine 来源 fn 约束：非可调用实参 → arg-structure error",
+  },
+  {
+    id: "hof-callable-arg-ok",
+    origin: "HOF 回调形态",
+    source: `
+/**
+ * @nudo:refine xs positives
+ * @nudo:refine transform mapper
+ */
+function mapPos(xs, transform) {
+  return xs.map(transform);
+}
+mapPos([1, 2], (x) => x + 1);
+`,
+    expect: "ok",
+  },
+  // --- 可变绑定 assign：同 prim 拓宽 vs 改型 ---
+  {
+    id: "assign-num-lit-reassign-ok",
+    origin: "可变绑定重绑",
+    source: `
+let n = 1;
+n = 2;
+`,
+    expect: "ok",
+    note: "同 prim 字面量改值 = mutable 拓宽，与对象槽同口径",
+  },
+  {
+    id: "assign-str-lit-reassign-ok",
+    origin: "可变绑定重绑",
+    source: `
+let s = "a";
+s = "b";
+`,
+    expect: "ok",
+  },
+  {
+    id: "assign-tuple-diff-lits-ok",
+    origin: "数组字面量重绑",
+    source: `
+let xs = [1, 2];
+xs = [3, 4];
+`,
+    expect: "ok",
+  },
+  {
+    id: "assign-tuple-longer-ok",
+    origin: "数组长度变化",
+    source: `
+let xs = [1, 2];
+xs = [3, 4, 5];
+`,
+    expect: "ok",
+    note: "let 可变绑定长度变化合法（tuple→arr 拓宽）",
+  },
+  {
+    id: "assign-tuple-prim-mismatch-violates",
+    origin: "数组元素改型",
+    source: `
+let xs = [1, 2];
+xs = ["a", "b"];
+`,
+    expect: "violation",
+  },
+  {
+    id: "assign-push-ret-to-arr",
+    origin: "push 返回值重绑",
+    source: `
+let xs = [1, 2];
+const n = xs.push(3);
+xs = n;
+`,
+    expect: "violation",
+    note: "number ⊭ 既有数组形状",
+  },
+  // --- shape 显式契约边界 ---
+  {
+    id: "userShape-missing-name",
+    origin: "userShape 缺字段",
+    source: `
+/**
+ * @nudo:refine u userShape
+ */
+function register(u) {
+  return u.id;
+}
+register({ id: 1 });
+`,
+    expect: "violation",
+    note: "契约必填 name 缺失",
+  },
+  {
+    id: "userShape-full-ok",
+    origin: "userShape 完整",
+    source: `
+/**
+ * @nudo:refine u userShape
+ */
+function register(u) {
+  return u.id;
+}
+register({ id: 1, name: "a" });
+`,
+    expect: "ok",
+  },
+  {
+    id: "orderShape-nested-bad-id",
+    origin: "嵌套 shape",
+    source: `
+/**
+ * @nudo:refine o orderShape
+ */
+function place(o) {
+  return o.user.id;
+}
+place({ user: { id: -1, name: "a" }, tags: ["x"] });
+`,
+    expect: "violation",
+  },
+  // --- return 契约 ---
+  {
+    id: "return-positive-lit-0",
+    origin: "@nudo:refine return",
+    source: `
+/**
+ * @nudo:refine return positive
+ */
+function bad() {
+  return 0;
+}
+`,
+    expect: "violation",
+  },
+  {
+    id: "return-positive-from-param-ok",
+    origin: "@nudo:refine return",
+    source: `
+/**
+ * @nudo:refine x positive
+ * @nudo:refine return positive
+ */
+function keep(x) {
+  return x;
+}
+`,
+    expect: "ok",
+  },
+  {
+    id: "pop-empty-known-fn",
+    origin: "Array.pop 空数组",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const a = [];
+needPos(a.pop());
+`,
+    expect: "violation",
+    knownFn: true,
+    note: "已知 FN：pop 空数组 → undefined ⊭ positive",
+  },
+  {
+    id: "pop-hit-ok",
+    origin: "Array.pop 命中",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const a = [4];
+needPos(a.pop());
+`,
+    expect: "ok",
+  },
 ];
 
 /** require 金标：用 loadModule 喂外部源码 */
@@ -936,6 +1777,91 @@ function needsPositive(x) {
     expect: "violation",
     note: "barrel 只 re-export，约束在 v.js",
   },
+  // --- 跨文件：命名导出 + 真实库模式（default 绑定债未完，标注侧用 named） ---
+  {
+    id: "require-named-push-ret-violates",
+    source: `
+const { takePositives } = require("./v.js");
+const a = [1];
+const n = a.push(2);
+takePositives(n);
+`,
+    modules: {
+      "./v.js": `
+/// @nudo:import { positives } from "./std.nudo.js"
+/**
+ * @nudo:refine xs positives
+ */
+function takePositives(xs) {
+  return xs;
+}
+module.exports = { takePositives };
+`,
+    },
+    expect: "violation",
+    note: "push 返回 number ⊭ 跨文件 positives 契约",
+  },
+  {
+    id: "esm-named-opt-field-ok",
+    source: `
+import { setup } from "./v.js";
+setup({ retries: 1 });
+`,
+    modules: {
+      "./v.js": `
+export /// @nudo:import { configShape } from "./std.nudo.js"
+/**
+ * @nudo:refine c configShape
+ */
+function setup(c) {
+  return c.retries;
+}
+`,
+    },
+    expect: "ok",
+    note: "optional 省略经 ESM named 仍合法",
+  },
+  {
+    id: "esm-named-opt-field-wrong-type-violates",
+    source: `
+import { setup } from "./v.js";
+setup({ retries: 1, label: 9 });
+`,
+    modules: {
+      "./v.js": `
+export /// @nudo:import { configShape } from "./std.nudo.js"
+/**
+ * @nudo:refine c configShape
+ */
+function setup(c) {
+  return c.retries;
+}
+`,
+    },
+    expect: "violation",
+    note: "optional 类型错经 ESM named 必须报",
+  },
+  {
+    id: "require-named-int-boundary-violates",
+    source: `
+const { takeId } = require("./v.js");
+takeId(0);
+`,
+    modules: {
+      "./v.js": `
+/// @nudo:import { intId } from "./std.nudo.js"
+/**
+ * @nudo:refine n intId
+ */
+function takeId(n) {
+  return n;
+}
+module.exports = { takeId };
+`,
+    },
+    expect: "violation",
+    note: "intId 边界 0 经 require named",
+  },
 ];
 
 function run(g: Gold): CheckReport {
@@ -953,7 +1879,8 @@ describe("check gold recall (human-labeled)", () => {
   const failures: string[] = [];
 
   for (const g of GOLD) {
-    it(`${g.id} [${g.origin}] → ${g.expect}`, () => {
+    const runner = g.knownFn ? it.fails : it;
+    runner(`${g.id} [${g.origin}] → ${g.expect}${g.knownFn ? " (known FN)" : ""}`, () => {
       const r = run(g);
       const b = bucket(g, r);
       counts[b]++;
@@ -982,14 +1909,17 @@ describe("check gold recall (human-labeled)", () => {
     });
   }
 
-  it("recall = 1.0 and precision = 1.0 on this gold set", () => {
+  it("recall = 1.0 and precision = 1.0 on this gold set (known FN excluded from gate)", () => {
     // 本 it 只汇总；逐条 it 已失败则这里也会红
-    const recall = counts.TP + counts.FN === 0 ? 1 : counts.TP / (counts.TP + counts.FN);
-    const precision = counts.TP + counts.FP === 0 ? 1 : counts.TP / (counts.TP + counts.FP);
     // vitest 并行下 counts 可能未累完——用同步重算
-    let TP = 0, FN = 0, FP = 0, TN = 0;
+    let TP = 0, FN = 0, FP = 0, TN = 0, knownFn = 0;
     for (const g of GOLD) {
       const b = bucket(g, run(g));
+      if (g.knownFn) {
+        knownFn++;
+        // 已知 FN 不进门禁，但必须仍是漏报（修好后 it.fails 翻红提醒摘旗标）
+        continue;
+      }
       if (b === "TP") TP++;
       else if (b === "FN") FN++;
       else if (b === "FP") FP++;
@@ -997,10 +1927,14 @@ describe("check gold recall (human-labeled)", () => {
     }
     const rec = TP + FN === 0 ? 1 : TP / (TP + FN);
     const prec = TP + FP === 0 ? 1 : TP / (TP + FP);
-    const detail = `TP=${TP} FN=${FN} FP=${FP} TN=${TN} recall=${rec.toFixed(2)} precision=${prec.toFixed(2)}`;
+    const detail = `TP=${TP} FN=${FN} FP=${FP} TN=${TN} knownFn=${knownFn} recall=${rec.toFixed(2)} precision=${prec.toFixed(2)}`;
+    expect(FN, `unexpected FN (not marked knownFn): ${detail} ${failures.join(" | ")}`).toBe(0);
+    expect(FP, `unexpected FP: ${detail} ${failures.join(" | ")}`).toBe(0);
     expect(rec, `recall < 1: ${detail}`).toBe(1);
     expect(prec, `precision < 1: ${detail}`).toBe(1);
     expect(TP).toBeGreaterThan(5);
+    // 已知漏报必须显式成文，禁止静默丢弃或改标凑绿
+    expect(knownFn, `knownFn count changed — update notes: ${detail}`).toBe(8);
   });
 });
 
@@ -1030,6 +1964,7 @@ describe("check L2 entry may-throw gold", () => {
     expect: "entry-may-throw" | "ok";
     ignoreThrows?: string[];
     entryThrows?: "error" | "warning" | "off";
+    note?: string;
   }> = [
     {
       id: "export-any-member-throws",

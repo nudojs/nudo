@@ -6,7 +6,28 @@
 
 import type { File, Expression, Statement, Node } from "@babel/types";
 import { parseSource } from "../parse-source.ts";
+import { formalParamsFromNodes, formalParamDisplayNames } from "../param-surface.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
+
+/** AST 形参 → 用户可见展示名（shape.params / $fnVal nameList） */
+function paramDisplayNames(params: unknown[] | undefined): string[] {
+  return formalParamDisplayNames(formalParamsFromNodes(params as never));
+}
+
+/**
+ * ObjectMethod / 方法型 FunctionExpression 的宿主绑定名：
+ * Identifier / 默认参左名 / RestElement 直通；其余占位 `_a`。
+ * 与 emitParamBinding 的 sig 同精神，但保持方法简写路径轻量。
+ */
+function methodBindNames(params: unknown[] | undefined): string[] {
+  return (params ?? []).map((raw) => {
+    const p = raw as { type?: string; name?: string; left?: { type?: string; name?: string }; argument?: { type?: string; name?: string } };
+    if (p?.type === "Identifier" && p.name) return p.name;
+    if (p?.type === "AssignmentPattern" && p.left?.type === "Identifier" && p.left.name) return p.left.name;
+    if (p?.type === "RestElement" && p.argument?.type === "Identifier" && p.argument.name) return `...${p.argument.name}`;
+    return "_a";
+  });
+}
 
 export type TranspileOptions = {
   /** 运行时 import 说明符 */
@@ -2337,6 +2358,9 @@ function transpileClass(
   const methodParts: string[] = [];
   const staticMethodParts: string[] = [];
   const staticFieldParts: string[] = [];
+  /** 方法形参展示名（未调用方法槽 shape.params） */
+  const methodParamEntries: Array<[string, string[]]> = [];
+  const staticMethodParamEntries: Array<[string, string[]]> = [];
   const accessorDefs = new Map<string, { get?: string; set?: string }>();
   const staticAccessorDefs = new Map<string, { get?: string; set?: string }>();
 
@@ -2407,6 +2431,7 @@ function transpileClass(
         bodyStmts,
         `${indent(depth + 3)}},`,
       );
+      staticMethodParamEntries.push([mname, paramDisplayNames(m.params)]);
       continue;
     }
     if (m.kind === "constructor" || mname === "constructor") {
@@ -2424,12 +2449,14 @@ function transpileClass(
         `${indent(depth + 4)}});`,
         `${indent(depth + 3)}},`,
       );
+      methodParamEntries.push([mname, paramDisplayNames(m.params)]);
     } else {
       methodParts.push(
         `${indent(depth + 3)}${mname}: (__this, ${paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}},`,
       );
+      methodParamEntries.push([mname, paramDisplayNames(m.params)]);
     }
   }
 
@@ -2449,11 +2476,25 @@ function transpileClass(
       `${indent(depth + 2)}},`,
     );
   }
+  if (staticMethodParamEntries.length) {
+    specLines.push(`${indent(depth + 2)}staticMethodParams: {`);
+    for (const [k, names] of staticMethodParamEntries) {
+      specLines.push(`${indent(depth + 3)}${JSON.stringify(k)}: [${names.map((n) => JSON.stringify(n)).join(", ")}],`);
+    }
+    specLines.push(`${indent(depth + 2)}},`);
+  }
   if (ctorParts.length) {
     specLines.push(...ctorParts);
   }
   if (methodParts.length) {
     specLines.push(`${indent(depth + 2)}methods: {`, ...methodParts, `${indent(depth + 2)}},`);
+  }
+  if (methodParamEntries.length) {
+    specLines.push(`${indent(depth + 2)}methodParams: {`);
+    for (const [k, names] of methodParamEntries) {
+      specLines.push(`${indent(depth + 3)}${JSON.stringify(k)}: [${names.map((n) => JSON.stringify(n)).join(", ")}],`);
+    }
+    specLines.push(`${indent(depth + 2)}},`);
   }
   if (accessorDefs.size > 0) {
     const accParts: string[] = [];
@@ -2747,9 +2788,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             return symbolKeyOf(prop.key as never);
           })();
           if (mkey === null) continue;
-          const paramNames = (prop.params as Array<{ type: string; name?: string }>).map((p) =>
-            p.type === "Identifier" && p.name ? p.name : "_a",
-          );
+          const displayNames = paramDisplayNames(prop.params);
+          const bindNames = methodBindNames(prop.params);
           // 方法体是新的函数边界：inLoop/inTry 必须归零
           const methodOpts: TranspileOptions = { ...opts, inLoop: 0, inTry: 0, thisParam: "__this" };
           // get/set 访问器：注册进运行时侧表（$get/$set 派发；展开/assign 时调用）
@@ -2761,7 +2801,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
               accRegs.push({ key: mkey, get: `(__this) => ${bodySrc}` });
             } else {
               // setter 尾部 return __this——implicitReturn 关闭
-              const vname = paramNames.length > 0 && paramNames[0] !== "_a" ? paramNames[0]! : "__v";
+              const vname = bindNames.length > 0 && bindNames[0] !== "_a" ? bindNames[0]!.replace(/^\.\.\./, "") : "__v";
               accRegs.push({
                 key: mkey,
                 set: `(__this, ${vname}) => {\n${emitFnBlockBody(prop.body, 1, methodOpts, { implicitReturn: false })}\nreturn __this;\n}`,
@@ -2770,8 +2810,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             continue;
           }
           const bodySrc = `{\n${emitFnBlockBody(prop.body, 1, methodOpts)}\n}`;
-          const bindParams = ["__this", ...paramNames];
-          const fnValSrc = `$fnVal([${paramNames.map((p) => JSON.stringify(p)).join(", ")}], (${bindParams.join(", ")}) => ${bodySrc}, { bindThis: true })`;
+          const bindParams = ["__this", ...bindNames];
+          const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${bindParams.join(", ")}) => ${bodySrc}, { bindThis: true })`;
           props.push(`${mkey}: ${fnValSrc}`);
           continue;
         }
@@ -2806,14 +2846,13 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             generator?: boolean;
           };
           if (!fn.generator) {
-            const paramNames = fn.params.map((p) =>
-              p.type === "Identifier" && p.name ? p.name : "_a",
-            );
+            const displayNames = paramDisplayNames(fn.params);
+            const bindNames = methodBindNames(fn.params);
             const methodOpts: TranspileOptions = { ...opts, inLoop: 0, thisParam: "__this" };
             const bodySrc = `{\n${emitFnBlockBody(fn.body, 1, methodOpts)}\n}`;
-            const bindParams = ["__this", ...paramNames];
+            const bindParams = ["__this", ...bindNames];
             props.push(
-              `${key}: $fnVal([${paramNames.map((p) => JSON.stringify(p)).join(", ")}], (${bindParams.join(", ")}) => ${bodySrc}, { bindThis: true })`,
+              `${key}: $fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${bindParams.join(", ")}) => ${bodySrc}, { bindThis: true })`,
             );
             continue;
           }
@@ -3163,9 +3202,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         ...(hasThis ? { thisParam: "__this" } : {}),
       };
       const paramParts = rest ? [...sig, `...${rest}`] : sig;
-      // 一等 fn Abs：参数名进 shape（bridge/dts 可展示）；
+      // 一等 fn Abs：参数名进 shape（bridge/dts 可展示）——用展示名（含 rest/默认参），
+      // 不是宿主绑定 sig（默认参是 `_p{i}` 占位，rest 不在 sig 里）。
       // 异步 body 包 $async 保持 eff(promise) 语义（裸 JS async 会泄漏 Promise）。
-      const nameList = `[${sig.map((p) => JSON.stringify(p)).join(", ")}]`;
+      const nameList = `[${paramDisplayNames(fn.params).map((p) => JSON.stringify(p)).join(", ")}]`;
       const thisPrologue = hasThis ? [`const __this = $rawThis(this);`] : [];
       if (fn.body.type === "BlockStatement") {
         const inner = withImplicitReturn(

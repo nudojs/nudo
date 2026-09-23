@@ -9,6 +9,7 @@ const GOLDEN_DEFAULT = {
   diagnostics: "default" as const,
   callSiteBudget: 3,
   evalMissingSlot: "off" as const,
+  maxForks: 5000,
 };
 
 describe("analysisConfig A1/A8 default", () => {

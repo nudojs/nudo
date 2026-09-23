@@ -31,7 +31,7 @@ export function resetAbsCallBudget(): void {
   _absCallDepth = 0;
   _absTotalCalls = 0;
   _activeCallKeys = [];
-  _bForkCount = 0;
+  resetBForkBudget();
 }
 
 /** 截断结果：分析无信息，conf=opaque（不是 any） */
@@ -93,12 +93,74 @@ export function exitCall(): void {
   _activeCallKeys.pop();
 }
 
-/** 分支展开上限：递归×循环下 $fork 数爆炸（lodash _baseFlatten）。
- *  单次 fork 的集合 overlay / Φ 臂包裹已惰性化（无 Map/Set 写入时零堆分配）；
- *  此阀仍管「fork 次数本身」——调用预算管不到 fork 数。
- *  超限返回 unknown（放弃该分支 = 最保守，安全）。 */
+// --- B $fork 总次数预算 -------------------------------------------------------
+/**
+ * 为什么是「总次数」而不是「深度」：
+ * - 415d3ea 惰性化后单次 fork（集合 overlay / Φ 臂包裹）零堆分配、~0.15µs，
+ *   **单次已经便宜**；病态输入（lodash `_baseFlatten`：递归×循环）炸的是
+ *   **fork 次数本身**，不是嵌套深度——浅而宽的展开同样失控。
+ * - 与 MAX_TOTAL_CALLS 的分工：调用预算管「函数进入次数」（命名调用 /
+ *   递归展开），管不到 if/?:/&& 语义在 $fork 上的分支展开；两者独立计数、
+ *   独立封顶，任一超限都 fail-closed 成 unknown。
+ *
+ * 默认 5000：monorepo 语料（含 core/service 全量测试与 check 金门）下
+ * 正常函数远低于此；病态递归×循环能在秒级内兜住（对照 MAX_B_TOTAL_CALLS
+ * 从 200k 收到 20k 的先例）。可经 setBForkBudgetLimit / env NUDO_MAX_FORKS /
+ * package.json#nudo.analysis.maxForks 调节。
+ */
 export const MAX_B_TOTAL_FORKS = 5000;
+
+let _bForkBudgetLimit = MAX_B_TOTAL_FORKS;
 let _bForkCount = 0;
+/** 本轮是否已上报过 fork 截断（避免 collector 被同一轮刷屏） */
+let _bForkTruncNoted = false;
+
+/**
+ * 专用标签：fork 截断不是「某个递归函数被截断」，不能复用函数名 label
+ * （否则 check 会误报 nudo:recursion-truncated）。service/check 按此标签
+ * 映射为 `nudo:fork-truncated`（warning）。
+ */
+export const FORK_TRUNCATION_LABEL = "#fork-budget";
+
+/** fork 超限观测（service/LSP 映射 nudo:fork-truncated；与调用截断同 collector 管道） */
+export function noteBForkTruncation(): void {
+  noteAbsTruncation(FORK_TRUNCATION_LABEL);
+}
+
+/**
+ * 调整 fork 总次数上限。约定：n ≥ 1 的有限整数才生效（向下取整）；
+ * 非法值（0 / 负数 / NaN / Infinity / 非数）回默认 MAX_B_TOTAL_FORKS。
+ * 返回实际生效值。core 无 IO——env/package.json 由 service 读取后 set 进来。
+ */
+export function setBForkBudgetLimit(n: number): number {
+  if (typeof n === "number" && Number.isFinite(n) && n >= 1) {
+    _bForkBudgetLimit = Math.floor(n);
+  } else {
+    _bForkBudgetLimit = MAX_B_TOTAL_FORKS;
+  }
+  return _bForkBudgetLimit;
+}
+
+export function getBForkBudgetLimit(): number {
+  return _bForkBudgetLimit;
+}
+
+export function getBForkCount(): number {
+  return _bForkCount;
+}
+
+/** 宿主入口前重置 fork 计数（与 resetAbsCallBudget / resetBCallBudget 同口径） */
+export function resetBForkBudget(): void {
+  _bForkCount = 0;
+  _bForkTruncNoted = false;
+}
+
+/** $fork 入口：超限放弃该分支（调用方返回 unknown = 最保守，安全）。 */
 export function bumpBForkBudget(): boolean {
-  return ++_bForkCount <= MAX_B_TOTAL_FORKS;
+  if (++_bForkCount <= _bForkBudgetLimit) return true;
+  if (!_bForkTruncNoted) {
+    _bForkTruncNoted = true;
+    noteBForkTruncation();
+  }
+  return false;
 }

@@ -79,6 +79,7 @@ issues
 | `nudo:opaque-result` | engine | info | Evaluation returned opaque / uninformative Abs |
 | `nudo:eval-error` | engine | error | Body evaluation threw during analysis |
 | `nudo:recursion-truncated` | engine | warning | Recursion budget hit; result widened |
+| `nudo:fork-truncated` | engine | warning | Branch-expansion (`$fork`) budget hit; result widened |
 | `nudo-unreachable` | info | info | Code after return/throw |
 
 ## L1 — explicit contracts

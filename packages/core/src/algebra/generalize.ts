@@ -680,6 +680,11 @@ export function extractFn(
         async: decl.async === true,
       });
       formalsByName.set(decl.id.name, formals);
+      // export default function named：同时登记 "default"（与 localNamedExports C4.4 同口径）
+      if (stmt.type === "ExportDefaultDeclaration") {
+        env.fns.set("default", env.fns.get(decl.id.name)!);
+        formalsByName.set("default", formals);
+      }
     }
     if (decl.type === "ClassDeclaration" && (decl as { id?: { name?: string } }).id?.name) {
       // C4.2：导出 class 实例/静态方法 → `Class.method`
@@ -736,10 +741,12 @@ export function extractFn(
         }
       }
     }
-    // export default (…) => … / function (…)：本地键 default
+    // export default (…) => … / function (…) / 匿名 function 声明：本地键 default
     if (
       stmt.type === "ExportDefaultDeclaration" &&
-      (decl.type === "ArrowFunctionExpression" || decl.type === "FunctionExpression")
+      (decl.type === "ArrowFunctionExpression" ||
+        decl.type === "FunctionExpression" ||
+        (decl.type === "FunctionDeclaration" && !decl.id))
     ) {
       const init = decl as unknown as {
         params: unknown[];

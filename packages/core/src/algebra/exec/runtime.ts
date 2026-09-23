@@ -1017,7 +1017,8 @@ function boundedPhi(p: Phi, q: Phi): Phi {
 }
 
 export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs {
-  // 分支展开上限（递归×循环爆炸阀）：超限放弃分支 = unknown（最保守）
+  // 分支展开上限（递归×循环爆炸阀）：超限放弃分支 = unknown（最保守）。
+  // 截断已由 bumpBForkBudget → noteBForkTruncation 上报（nudo:fork-truncated）
   if (!bumpBForkBudget()) return unknown;
   // Φ-native：测试判定已由 cmp 消费 currentExecPhi（$gt 等传模块级 phi）；
   // 此处把 Φ∧test（真臂）/ Φ∧¬test（假臂）压进臂作用域——嵌套/兄弟分支的
@@ -2130,6 +2131,7 @@ export function namespaceNameOf(v: unknown): string | undefined {
   if (v === JSON) return "JSON";
   if (v === Object) return "Object";
   if (v === Array) return "Array";
+  if (v === String) return "String";
   if (v === Date) return "Date";
   if (v === Promise) return "Promise";
   return undefined;
@@ -2189,8 +2191,12 @@ export function $get(
       // 类值上读实例访问器键 → 原生 undefined
       if (findClassAccessor(o.shape.name, key)) return undef();
       // 静态方法一等读取（typeof A.m / 高阶传递）：沿继承链在 registry 找
+      // 未调用方法槽带 AST 形参展示名（不再假零参）
       for (const n of bClassChain(o.shape.name)) {
-        if (getBClass(n)?.staticMethods?.[key]) return absFunction([], { body: noBody });
+        const spec = getBClass(n);
+        if (spec?.staticMethods?.[key]) {
+          return absFunction(spec.staticMethodParams?.[key] ?? [], { body: noBody });
+        }
       }
       // 类值是 constructor 函数：prototype 对象与 Function.prototype 成员
       if (key === "prototype") {
@@ -2205,8 +2211,12 @@ export function $get(
       // 实例上读静态访问器键 → 原生 undefined（属性在构造器上）
       if (findStaticClassAccessor(o.shape.name, key)) return undef();
       // 实例方法读取（typeof a.m / 一等值）：沿继承链在 registry 找方法
+      // 未调用方法槽带 AST 形参展示名（不再假零参）
       for (const n of bClassChain(o.shape.name)) {
-        if (getBClass(n)?.methods?.[key]) return absFunction([], { body: noBody });
+        const spec = getBClass(n);
+        if (spec?.methods?.[key]) {
+          return absFunction(spec.methodParams?.[key] ?? [], { body: noBody });
+        }
       }
     }
     return $get(inner, key, opts);

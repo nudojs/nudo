@@ -28,12 +28,14 @@ export const orderShape = shape({
   user: shape({ id: number().gt(0), name: string() }),
   tags: array(string().min(1)),
 });
+export const status = union(lit(0), lit(1));
+export const mapper = fn({ x: number() }, number());
 `;
 
 /** 给无 import 的测试源补上标准 import 行 */
 export function withStdImport(source: string): string {
   if (source.includes("@nudo:import")) return source;
-  return `/// @nudo:import { positive, delay, nonNeg, percent, port, small, atLeast1, max100, intId, shortName, nonEmpty, positives, findings, userShape, configShape, orderShape } from "./std.nudo.js"\n${source}`;
+  return `/// @nudo:import { positive, delay, nonNeg, percent, port, small, atLeast1, max100, intId, shortName, nonEmpty, positives, findings, userShape, configShape, orderShape, status, mapper } from "./std.nudo.js"\n${source}`;
 }
 
 /** checkSource 用的 loadModule */

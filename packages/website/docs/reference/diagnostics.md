@@ -112,6 +112,10 @@ Body evaluation threw during analysis.
 
 Recursion budget hit; result widened.
 
+### `nudo:fork-truncated`
+
+Branch-expansion budget (`$fork` total count) hit; affected results widened. **Warning.** Raise via `NUDO_MAX_FORKS` or `package.json#nudo.analysis.maxForks` (default 5000).
+
 ### `nudo:no-signature`
 
 Function could not be generalized (CJS/anon forms still get L2 via entry fallback).

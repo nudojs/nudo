@@ -173,4 +173,47 @@ export function use() {
     expect(display).not.toMatch(/increment: \(\) => \?/);
     expect(display).not.toMatch(/getCount: \(\) => \?/);
   });
+
+  it("uncalled method with formals shows param names (not fake zero-arity)", () => {
+    const src = `
+function make() {
+  return {
+    add(n) { return n + 1; },
+    tag() { return 1; }
+  };
+}
+export function use() { const o = make(); return o; }
+`;
+    const r = analyzeFile("/tmp/t7-slot-params.js", src);
+    const use = r.functions.find((f) => f.name === "use");
+    const call = use?.cases.find((c) => c.name.startsWith("call@") || c.name.startsWith("entry@"));
+    const display = call ? formatAbs(call.abs) : "NO_CASE";
+    console.log("T7 display formals:", display);
+    // 有形参 → 展示形参名；returnType 仍诚实 `?`
+    expect(display).toMatch(/add: \(n\) => \?/);
+    // 真零参仍 `() => ?`（诚实）
+    expect(display).toMatch(/tag: \(\) => \?/);
+  });
+
+  it("uncalled class method extract shows param names", () => {
+    const src = `
+export class C {
+  add(n) { return n + 1; }
+  tag() { return 1; }
+  static make(a) { return new C(); }
+}
+export function use() {
+  const o = new C();
+  return { add: o.add, tag: o.tag, make: C.make };
+}
+`;
+    const r = analyzeFile("/tmp/t7-slot-class.js", src);
+    const use = r.functions.find((f) => f.name === "use");
+    const call = use?.cases.find((c) => c.name.startsWith("call@") || c.name.startsWith("entry@"));
+    const display = call ? formatAbs(call.abs) : "NO_CASE";
+    console.log("T7 display class extract:", display);
+    expect(display).toMatch(/add: \(n\) => \?/);
+    expect(display).toMatch(/tag: \(\) => \?/);
+    expect(display).toMatch(/make: \(a\) => \?/);
+  });
 });

@@ -10,7 +10,7 @@ import { evalGlobalFn } from "../builtins.ts";
 import { $call } from "./call.ts";
 import { callAtFunctionBoundary } from "./runtime.ts";
 import { pureFnNameOf } from "../abs-fn.ts";
-import { noteAbsTruncation, callBudgetKey } from "../call-budget.ts";
+import { noteAbsTruncation, callBudgetKey, resetBForkBudget } from "../call-budget.ts";
 import {
   tagAbsOrigin,
   pushCallLoc,
@@ -140,6 +140,7 @@ const GLOBAL_FNS = new Set([
   "Object",
   "Array",
   "eval",
+  "Symbol",
 ]);
 
 /** 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） */
@@ -202,6 +203,8 @@ export function resetBCallBudget(): void {
   bCallDepth = 0;
   bTotalCalls = 0;
   bActiveCallKeys = [];
+  // fork 总次数与调用预算同轮生命周期（不跨宿主入口累积）
+  resetBForkBudget();
 }
 
 /** 截断结果：分析无信息，conf=opaque（与 ast-eval truncatedAbs 同） */

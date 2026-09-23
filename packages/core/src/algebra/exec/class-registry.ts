@@ -19,7 +19,11 @@ export type BClassSpec = {
   superName?: string;
   ctor?: (thisVal: Abs, ...args: Abs[]) => Abs;
   methods?: Record<string, (thisVal: Abs, ...args: Abs[]) => Abs>;
+  /** 实例方法形参展示名（AST 形参名；未调用方法槽 `shape.params` 用） */
+  methodParams?: Record<string, string[]>;
   staticMethods?: Record<string, (...args: Abs[]) => Abs>;
+  /** 静态方法形参展示名 */
+  staticMethodParams?: Record<string, string[]>;
   statics?: Record<string, Abs>;
   /** 实例 get/set：get 无参返回 Abs；set 收到 (thisVal, v) 返回更新后的 thisVal */
   accessors?: Record<string, BClassAccessor>;

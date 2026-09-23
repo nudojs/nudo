@@ -267,6 +267,8 @@ export {
   checkConfig,
   diskCacheRoot,
   matchesEmitAllowlist,
+  applyBForkBudgetFromConfig,
+  currentBForkBudgetLimit,
   type NudoConfig,
   type InterfaceConfig,
   type AnalysisConfig,

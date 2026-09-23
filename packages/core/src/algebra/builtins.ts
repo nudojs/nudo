@@ -5,7 +5,8 @@
 
 import type { Abs } from "./abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown, confJoin, isExactLit } from "./abs.ts";
-import { joinAbs, objOf, markNullProtoObj, canonicalArrayIndex } from "./objects.ts";
+import { joinAbs, objOf, markNullProtoObj, canonicalArrayIndex, getSlot, isNullProtoObj } from "./objects.ts";
+import { absFunction } from "./abs-fn.ts";
 import { TUPLE_MATERIALIZE_CAP } from "./containers.ts";
 import {
   isMapAbs,
@@ -834,8 +835,16 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       if (typeof a0 === "boolean") return numLit(a0 ? 1 : 0);
       return numPrim();
     case "String":
-      if (a0 !== undefined) return strLit(String(a0));
+      // String(sym) → SymbolDescriptiveString（原生不抛）；其余 ToString
+      if (a0 !== undefined) {
+        const arg = args[0]!;
+        if (isSymbolAbs(arg)) return stringOfSymbol(arg);
+        return strLit(String(a0));
+      }
       return str();
+    case "Symbol":
+      // Symbol([desc])：非具体 unique symbol
+      return makeSymbolAbs(args[0]);
     case "Boolean":
       if (a0 !== undefined) return boolLit(Boolean(a0));
       return boolPrim();
@@ -1210,6 +1219,8 @@ export function evalNamespaceCall(
       return evalJsonMethod(method, args);
     case "Number":
       return evalNumberStatic(method, args);
+    case "String":
+      return evalStringStatic(method, args);
     case "Array":
       return evalArrayStatic(method, args);
     case "Date":
@@ -1372,5 +1383,367 @@ export function evalBuiltinInstanceMethod(
     }
   }
   return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// A. String.fromCharCode
+// ---------------------------------------------------------------------------
+
+/** JS ToUint16（fromCharCode 逐实参）：ToNumber 后截断并对 2^16 取模 */
+function toUint16(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  const int = Math.trunc(n);
+  return ((int % 65536) + 65536) % 65536;
+}
+
+/**
+ * String.fromCharCode(...)：
+ * - 全部字面量 → 按 ToUint16 折成精确字符串（含越界/非整数/数字字符串）
+ * - symbol 字面量 → TypeError（ToNumber 抛）
+ * - 任一抽象实参 → 抽象 string（不假精确）
+ */
+export function evalStringStatic(name: string, args: Abs[]): Abs | undefined {
+  if (name !== "fromCharCode") return undefined;
+  const codes: number[] = [];
+  for (const a of args) {
+    if (a.term?.op !== "lit") return str("path");
+    const v = a.term.value;
+    if (typeof v === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
+    if (typeof v === "number") {
+      codes.push(toUint16(v));
+      continue;
+    }
+    if (typeof v === "string" || typeof v === "boolean" || v === null) {
+      codes.push(toUint16(Number(v)));
+      continue;
+    }
+    if (typeof v === "bigint") throw new NudoThrow(errorTypeAbs("TypeError"));
+    // undefined / 其它：ToNumber(undefined)=NaN → 0
+    codes.push(0);
+  }
+  return strLit(String.fromCharCode(...codes));
+}
+
+// ---------------------------------------------------------------------------
+// C. Symbol() / Symbol("desc")
+// ---------------------------------------------------------------------------
+
+type SymbolMeta = { id: number; description: Abs };
+const symbolMeta = new WeakMap<object, SymbolMeta>();
+let symbolIdSeq = 0;
+
+function undefLit(): Abs {
+  return abs({ k: "unknown" }, { op: "lit", value: undefined as never }, pTrue, "exact");
+}
+
+/**
+ * Symbol([description])：非具体 unique symbol（prim type=symbol，无 term）。
+ * - 身份：侧表 id（两个 Symbol() 的 === 为 false；同 Abs 引用为 true）
+ * - .description：字面量 string 或 undefined
+ * - 不折成可比较的字面量身份（description 不作 identity）
+ */
+export function makeSymbolAbs(descArg?: Abs): Abs {
+  let description: Abs;
+  if (descArg === undefined) {
+    description = undefLit();
+  } else if (descArg.term?.op === "lit") {
+    const v = descArg.term.value;
+    if (v === undefined) description = undefLit();
+    else if (typeof v === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
+    else description = strLit(String(v));
+  } else {
+    // 抽象 description：ToString 结果未知（string 或 undefined）
+    description = abs({ k: "prim", type: "string" }, undefined, undefined, "partial");
+  }
+  const a: Abs = {
+    shape: { k: "prim", type: "symbol" },
+    conf: "path",
+  };
+  symbolMeta.set(a as object, { id: ++symbolIdSeq, description });
+  return a;
+}
+
+export function isSymbolAbs(a: Abs | undefined): boolean {
+  return !!a && a.shape.k === "prim" && a.shape.type === "symbol";
+}
+
+export function symbolIdOf(a: Abs): number | undefined {
+  return symbolMeta.get(a as object)?.id;
+}
+
+export function symbolDescriptionAbs(a: Abs): Abs | undefined {
+  return symbolMeta.get(a as object)?.description;
+}
+
+/** SymbolDescriptiveString：`Symbol()` / `Symbol(desc)` */
+function symbolDescriptiveString(a: Abs): string {
+  const d = symbolMeta.get(a as object)?.description;
+  const dv = d ? litValue(d) : undefined;
+  if (typeof dv === "string") return dv.length > 0 ? `Symbol(${dv})` : "Symbol()";
+  return "Symbol()";
+}
+
+/** 全局 Symbol([desc])（$callNamed 身份校验后派发） */
+export function evalSymbolCtor(args: Abs[]): Abs {
+  return makeSymbolAbs(args[0]);
+}
+
+/** String(sym) → SymbolDescriptiveString（原生不抛；隐式 ToString 才抛） */
+export function stringOfSymbol(a: Abs): Abs {
+  const d = symbolMeta.get(a as object)?.description;
+  if (d) {
+    const dv = litValue(d);
+    if (typeof dv === "string") return strLit(symbolDescriptiveString(a));
+  }
+  return str("path");
+}
+
+// ---------------------------------------------------------------------------
+// B. Object.prototype 方法
+// ---------------------------------------------------------------------------
+
+export const OBJECT_PROTO_METHOD_NAMES = new Set([
+  "hasOwnProperty",
+  "isPrototypeOf",
+  "propertyIsEnumerable",
+  "valueOf",
+  "toString",
+  "toLocaleString",
+]);
+
+/** Object.prototype 单例（$get(Object, "prototype") 与 host Object.prototype 共用） */
+export function objectProtoBrand(): Abs {
+  return abs(
+    { k: "brand", name: "Object.prototype", shape: objOf({}) },
+    undefined,
+    undefined,
+    "exact",
+  );
+}
+
+export function isObjectProtoBrand(a: Abs | undefined): boolean {
+  return !!a && a.shape.k === "brand" && a.shape.name === "Object.prototype";
+}
+
+/** ToPropertyKey：字面量 → 字符串键；抽象/symbol → 标记 */
+function toPropKey(a: Abs | undefined): string | "abstract" {
+  if (a === undefined) return "undefined";
+  const t = a.term;
+  if (t?.op !== "lit") return "abstract";
+  const v = t.value;
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean" || typeof v === "bigint") return String(v);
+  if (v === null) return "null";
+  if (v === undefined) return "undefined";
+  return "abstract"; // symbol
+}
+
+function boolPrimB(): Abs {
+  return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
+}
+
+function strPath(): Abs {
+  return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+}
+
+/** hasOwnProperty 判定（自有槽 / 下标 / length / holes） */
+function hasOwnDecision(recv: Abs, key: string): Abs {
+  const s = recv.shape;
+  if (s.k === "brand") {
+    const inner = s.shape;
+    // Number/Boolean/BigInt/Symbol 包装：无自有数据属性
+    if (s.name === "Number" || s.name === "Boolean" || s.name === "BigInt" || s.name === "Symbol") {
+      return boolLit(false);
+    }
+    if (inner.shape.k === "obj") {
+      const slot = getSlot(inner.shape.slots, key);
+      if (slot && !slot.optional) return boolLit(true);
+      if (slot?.optional) return boolPrimB();
+      if (!inner.shape.open) return boolLit(false);
+      return boolPrimB();
+    }
+    return boolPrimB();
+  }
+  if (s.k === "obj") {
+    const slot = getSlot(s.slots, key);
+    if (slot && !slot.optional) return boolLit(true);
+    if (slot?.optional) return boolPrimB();
+    if (!s.open && recv.conf === "exact") return boolLit(false);
+    return boolPrimB();
+  }
+  if (s.k === "tuple") {
+    if (key === "length") return boolLit(true);
+    const idx = canonicalArrayIndex(key);
+    if (idx !== undefined) {
+      if (s.holes?.includes(idx)) return boolLit(false);
+      return boolLit(idx < s.elements.length);
+    }
+    return boolLit(false);
+  }
+  if (s.k === "arr") {
+    if (key === "length") return boolLit(true);
+    return boolPrimB();
+  }
+  if (s.k === "prim") {
+    if (s.type === "string") {
+      if (key === "length") return boolLit(true);
+      const idx = canonicalArrayIndex(key);
+      if (idx !== undefined) {
+        const lit = litValue(recv);
+        if (typeof lit === "string") return boolLit(idx < lit.length);
+        return boolPrimB();
+      }
+      return boolLit(false);
+    }
+    // number/boolean/bigint/symbol 装箱：无自有数据属性
+    return boolLit(false);
+  }
+  if (s.k === "fn") {
+    if (key === "length" || key === "name") return boolLit(true);
+    return boolPrimB();
+  }
+  return boolPrimB();
+}
+
+/** propertyIsEnumerable：自有 + 可枚举（length 不可枚举；defineProperty enumerable:false） */
+function propertyIsEnumerableDecision(recv: Abs, key: string): Abs {
+  const own = hasOwnDecision(recv, key);
+  const ownV = litValue(own);
+  if (ownV === false) return boolLit(false);
+  // length 在数组/字符串包装上自有但不可枚举
+  if (key === "length") {
+    const s = recv.shape;
+    if (s.k === "tuple" || s.k === "arr") return boolLit(false);
+    if (s.k === "prim" && s.type === "string") return boolLit(false);
+    if (s.k === "brand" && (s.name === "String" || s.name === "Array")) return boolLit(false);
+  }
+  // defineProperty(enumerable:false) 侧表
+  const flags = getPropFlags(recv);
+  if (flags?.get(key)?.enumerable === false) return boolLit(false);
+  if (ownV === true) {
+    // 下标在数组/字符串上可枚举
+    return boolLit(true);
+  }
+  return boolPrimB();
+}
+
+function typeTagOf(recv: Abs): string {
+  if (recv.term?.op === "lit") {
+    const v = recv.term.value;
+    if (v === null) return "Null";
+    if (v === undefined) return "Undefined";
+    if (typeof v === "string") return "String";
+    if (typeof v === "number") return "Number";
+    if (typeof v === "boolean") return "Boolean";
+    if (typeof v === "bigint") return "BigInt";
+    if (typeof v === "symbol") return "Symbol";
+  }
+  const s = recv.shape;
+  if (s.k === "prim") {
+    const t = s.type;
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+  if (s.k === "arr" || s.k === "tuple") return "Array";
+  if (s.k === "fn") return "Function";
+  if (s.k === "eff") return s.eff === "promise" ? "Promise" : "Generator";
+  if (s.k === "brand") {
+    const inner = s.shape;
+    if (inner.shape.k === "obj") {
+      const tag = getSlot(inner.shape.slots, "@@toStringTag");
+      if (tag) {
+        const v = litValue(tag.value);
+        if (typeof v === "string") return v;
+      }
+    }
+    return s.name;
+  }
+  if (s.k === "obj") {
+    const tag = getSlot(s.slots, "@@toStringTag");
+    if (tag) {
+      const v = litValue(tag.value);
+      if (typeof v === "string") return v;
+    }
+    return "Object";
+  }
+  return "Object";
+}
+
+/**
+ * Object.prototype 方法语义（B-path $invoke 与 Object.prototype.X.call 共用）。
+ * null-proto 接收者无这些方法——返回 undefined（调用方走 TypeError 路径）。
+ * 返回 undefined = 未接管。
+ */
+export function evalObjectProtoMethod(
+  name: string,
+  thisVal: Abs,
+  args: Abs[],
+): Abs | undefined {
+  if (!OBJECT_PROTO_METHOD_NAMES.has(name)) return undefined;
+  if (thisVal && typeof thisVal === "object" && "shape" in thisVal && isNullProtoObj(thisVal)) {
+    return undefined;
+  }
+  // nullish this：ToObject 原生抛 TypeError
+  if (thisVal && thisVal.term?.op === "lit" && (thisVal.term.value === null || thisVal.term.value === undefined)) {
+    // Object.prototype.toString.call(null) 合法（返回 "[object Null]"）；
+    // hasOwnProperty / valueOf 等经 ToObject 抛
+    if (name !== "toString" && name !== "toLocaleString") {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+  }
+  switch (name) {
+    case "hasOwnProperty": {
+      const key = toPropKey(args[0]);
+      if (key === "abstract") return boolPrimB();
+      return hasOwnDecision(thisVal, key);
+    }
+    case "propertyIsEnumerable": {
+      const key = toPropKey(args[0]);
+      if (key === "abstract") return boolPrimB();
+      return propertyIsEnumerableDecision(thisVal, key);
+    }
+    case "isPrototypeOf": {
+      const v = args[0];
+      if (!v) return boolLit(false);
+      if (v.term?.op === "lit") {
+        const vv = v.term.value;
+        if (vv === null || vv === undefined || typeof vv !== "object") {
+          // 原始值：Type(V) 不是 Object → false
+          if (typeof vv !== "object" || vv === null) return boolLit(false);
+        }
+      }
+      const vk = v.shape.k;
+      const vObjLike = vk === "obj" || vk === "arr" || vk === "tuple" || vk === "brand" || vk === "fn" || vk === "eff";
+      if (!vObjLike && vk !== "sum" && vk !== "any" && vk !== "unknown") return boolLit(false);
+      if (vObjLike && isNullProtoObj(v)) return boolLit(false);
+      // Object.prototype.isPrototypeOf(普通对象) → true；其它接收者链未知 → boolean
+      if (isObjectProtoBrand(thisVal) || (typeof thisVal === "object" && "shape" in (thisVal as object) === false && (thisVal as unknown) === Object.prototype)) {
+        return vObjLike ? boolLit(true) : boolPrimB();
+      }
+      return boolPrimB();
+    }
+    case "valueOf": {
+      // Object.prototype.valueOf：对象恒等；prim 装箱非具体（差分不假精确）
+      const s = thisVal.shape;
+      if (s.k === "prim") return abs({ k: "unknown" }, undefined, undefined, "path");
+      return thisVal;
+    }
+    case "toString":
+    case "toLocaleString": {
+      return strLit(`[object ${typeTagOf(thisVal)}]`);
+    }
+  }
+  return undefined;
+}
+
+/** Object.prototype.X 一等函数（bindThis：call/apply 把 receiver 注入首参） */
+export function objectProtoMethodAbs(name: string): Abs {
+  return absFunction(["thisArg", "arg0"], {
+    body: noBody,
+    bindThis: true,
+    apply: (a) => {
+      const recv = a[0] ?? undefLit();
+      return evalObjectProtoMethod(name, recv, a.slice(1)) ?? unknown;
+    },
+  });
 }
 

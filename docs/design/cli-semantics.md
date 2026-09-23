@@ -259,6 +259,7 @@ pnpm run nudo -- check path/to/file.js
 | `nudo:no-signature` | 无法归纳符号 Abs |
 | `nudo:opaque-result` / `nudo:eval-error` | 求值不透明 / 求值抛错 |
 | `nudo:recursion-truncated` | 递归预算截断（结果 widen） |
+| `nudo:fork-truncated` | 分支展开（$fork 总次数）截断（**warning**）；结果 widen。上限可调：`NUDO_MAX_FORKS` / `nudo.analysis.maxForks` |
 | **`nudo:entry-may-throw`** | **L2：入口未消化 may-throw（默认 error）** |
 | `nudo:may-throw` / `nudo-unreachable` | 路径可能抛出（case 线索 / warning）/ 不可达代码 |
 | `nudo:unknown-inference` | 引擎债：出口或签名出现真 `unknown` |
@@ -348,7 +349,7 @@ register({ id: 1 });             // error: missing u.name
 
 | 门禁 | 文件 | 要求 |
 |---|---|---|
-| **人工 recall** | `check-recall-gold.test.ts` | recall = precision = **1.0**（45 条人工标注 + 11 条 require/ESM 跨文件） |
+| **人工 recall** | `check-recall-gold.test.ts` | recall = precision = **1.0**（101 条人工标注，含 8 条已知 FN 用 `it.fails` 钉住不计门禁 + 15 条 require/ESM 跨文件） |
 | **shape 精化** | `check-shape-gold.test.ts` | 字段 / 可选 / 边界 |
 | **case ⊆ refine** | `check-case-consistency.test.ts` | 见证 ⊆ 定义域 |
 | **真实包精度** | `check-real-commander.test.ts` / `check-real-packages.test.ts` | 10 个真实包上**零** error 级误报（`constraint-violated` / `assign-mismatch` / `arg-structure`） |
@@ -468,7 +469,9 @@ npx tsx scripts/scan-real-packages.ts commander
       "diagnostics": "default",
       // C0.5 可选：求值命中缺槽 warning（默认 off）
       "evalMissingSlot": "off",
-      "callSiteBudget": 3
+      "callSiteBudget": 3,
+      // B $fork 总次数上限（默认 5000）；env NUDO_MAX_FORKS 优先
+      "maxForks": 5000
     },
     // 进程内会话 LRU（内存/速度）。0=关。env NUDO_CACHE_MAX_FILES|FNS|BRUNS 优先
     "sessionCache": { "maxFiles": 64, "maxFns": 1024, "maxBRuns": 32 }

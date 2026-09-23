@@ -1,6 +1,11 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, relative, sep } from "node:path";
 import { setSessionCacheFromProject } from "../session-cache-limits.ts";
+import {
+  setBForkBudgetLimit,
+  getBForkBudgetLimit,
+  MAX_B_TOTAL_FORKS,
+} from "@nudojs/core";
 
 export type NudoConfig = {
   env?: string[];
@@ -26,6 +31,11 @@ export type NudoConfig = {
     callSiteBudget?: number;
     /** C0.5：求值命中闭对象缺字段 → nudo:missing-slot；默认 off */
     evalMissingSlot?: "off" | "warning";
+    /**
+     * B $fork 总次数上限（默认 5000）。env `NUDO_MAX_FORKS` 优先。
+     * n≥1 有限整数；非法值回默认。启动时 set 进 core（setBForkBudgetLimit）。
+     */
+    maxForks?: number;
   };
   /** 磁盘缓存（B3）：true → `.nudo/cache`；字符串 → 自定义根；false/省略 → 关 */
   cache?: boolean | string;
@@ -65,6 +75,8 @@ export type AnalysisConfig = {
   callSiteBudget: number;
   /** C0.5 evaluation-driven missing-slot；默认 off */
   evalMissingSlot: "off" | "warning";
+  /** B $fork 总次数上限（已归一化；非法值回 core 默认） */
+  maxForks: number;
 };
 
 export type CheckConfig = {
@@ -142,7 +154,36 @@ export function analysisConfig(config: NudoConfig | null | undefined): AnalysisC
     diagnostics,
     callSiteBudget,
     evalMissingSlot: raw?.evalMissingSlot === "warning" ? "warning" : "off",
+    maxForks: parseMaxForks(raw?.maxForks) ?? MAX_B_TOTAL_FORKS,
   };
+}
+
+/** n≥1 有限整数才生效（向下取整）；非法/缺省 → undefined（由上层回默认） */
+function parseMaxForks(raw: unknown): number | undefined {
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 1) return undefined;
+  return Math.floor(raw);
+}
+
+/**
+ * 把 fork 预算写进 core（core 保持无 IO）。
+ * 优先级：env `NUDO_MAX_FORKS` > `package.json#nudo.analysis.maxForks` > 默认 5000。
+ * 约定：n≥1 有限整数；非法值回默认。返回实际生效值。
+ * 由 findProjectConfig / 宿主启动时调用（与 setSessionCacheFromProject 同时机）。
+ */
+export function applyBForkBudgetFromConfig(
+  config: NudoConfig | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const fromEnv = parseMaxForks(
+    env.NUDO_MAX_FORKS === undefined ? undefined : Number(env.NUDO_MAX_FORKS),
+  );
+  const fromCfg = parseMaxForks(config?.analysis?.maxForks);
+  return setBForkBudgetLimit(fromEnv ?? fromCfg ?? MAX_B_TOTAL_FORKS);
+}
+
+/** 当前生效 fork 上限（调试/测试；与 core getBForkBudgetLimit 同源） */
+export function currentBForkBudgetLimit(): number {
+  return getBForkBudgetLimit();
 }
 
 /** 磁盘缓存根（B3）：config.cache / NUDO_CACHE_DIR / 默认关 */
@@ -257,6 +298,8 @@ export function findProjectConfig(
           const nudo = pkg.nudo as NudoConfig;
           // 会话 LRU 上限随项目配置接线（env 仍优先；见 session-cache-limits）
           setSessionCacheFromProject(nudo.sessionCache);
+          // fork 总次数预算：env NUDO_MAX_FORKS > nudo.analysis.maxForks > 默认
+          applyBForkBudgetFromConfig(nudo);
           return { config: nudo, projectDir: dir };
         }
       } catch {
@@ -268,5 +311,7 @@ export function findProjectConfig(
     dir = parent;
   }
 
+  // 无项目 nudo 配置：仍应用 env 层（NUDO_MAX_FORKS）
+  applyBForkBudgetFromConfig(null);
   return null;
 }

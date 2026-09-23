@@ -14,6 +14,7 @@ import { parseSource as parse } from "./parse-source.ts";
 import {
   setAbsTruncationCollector,
   resetAbsCallBudget,
+  FORK_TRUNCATION_LABEL,
 } from "./call-budget.ts";
 import type { AbsAssignRecord, AbsCallRecord } from "./ast-records.ts";
 import { leqAbs } from "./leq.ts";
@@ -44,7 +45,7 @@ import { absToConstraint, joinThenProject } from "./projection.ts";
 import { literalMeetsConstraint } from "./domain-membership.ts";
 import { extractFn, generalizeFromAst } from "./generalize.ts";
 import { contractParamNameSet, locateContractParam } from "./param-surface.ts";
-import { getSlot } from "./objects.ts";
+import { getSlot, joinAbs } from "./objects.ts";
 import { canSkipLiteralCallScan } from "./fn-fp.ts";
 import { stableAnalyzeKeySource } from "./stable-source-key.ts";
 import { hashSource, resetHashSourceCache } from "./hash-source.ts";
@@ -798,6 +799,17 @@ function checkSourceInner(
   }
 
   for (const label of truncated) {
+    // fork 总次数截断 ≠ 递归截断：专用标签映射专用码（warning，不升 error）
+    if (label === FORK_TRUNCATION_LABEL) {
+      issues.push({
+        severity: "warning",
+        code: "nudo:fork-truncated",
+        message: `Branch expansion was truncated (fork budget); affected results widened to unknown`,
+        suggestion:
+          "simplify branching under recursion/loops, or raise nudo.analysis.maxForks / NUDO_MAX_FORKS",
+      });
+      continue;
+    }
     issues.push({
       severity: "warning",
       code: "nudo:recursion-truncated",
@@ -1341,6 +1353,66 @@ function checkReturnConstraint(
 }
 
 /**
+ * assign 通道 mutable 拓宽：lit→prim、tuple→arr。
+ * 与对象槽同口径（leq.ts「同 prim 字面量视为可赋」）：
+ * `let n = 1; n = 2` / `let xs = [1,2]; xs = [3,4,5]` 是合法 JS 可变绑定。
+ * 契约字面量（eq pred / lit() 约束）不走本通道，P1-5 仍由 leqAbs 顶层钉住。
+ */
+function widenForAssign(a: Abs): Abs {
+  const s = a.shape;
+  if (s.k === "tuple") {
+    const holes = new Set(s.holes ?? []);
+    const els = s.elements.filter((_, i) => !holes.has(i));
+    let el: Abs = anyAbs;
+    if (els.length > 0) {
+      el = els.map(widenForAssign).reduce((x, y) => joinAbs(x, y));
+    } else if (s.rest) {
+      el = widenForAssign(s.rest);
+    }
+    return abs({ k: "arr", element: el }, undefined, undefined, a.conf);
+  }
+  if (s.k === "obj") {
+    const slots: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }> = {};
+    for (const [k, slot] of Object.entries(s.slots)) {
+      slots[k] = {
+        value: widenForAssign(slot.value),
+        ...(slot.optional ? { optional: true } : {}),
+        ...(slot.readonly ? { readonly: true } : {}),
+      };
+    }
+    return abs(
+      {
+        k: "obj",
+        slots,
+        ...(s.index
+          ? { index: { key: s.index.key, value: widenForAssign(s.index.value) } }
+          : {}),
+        ...(s.open ? { open: true } : {}),
+      },
+      undefined,
+      undefined,
+      a.conf,
+    );
+  }
+  const lv = litValue(a);
+  if (lv !== undefined && a.term?.op === "lit") {
+    if (typeof lv === "number") {
+      return abs({ k: "prim", type: "number" }, undefined, undefined, a.conf);
+    }
+    if (typeof lv === "string") {
+      return abs({ k: "prim", type: "string" }, undefined, undefined, a.conf);
+    }
+    if (typeof lv === "boolean") {
+      return abs({ k: "prim", type: "boolean" }, undefined, undefined, a.conf);
+    }
+    if (typeof lv === "bigint") {
+      return abs({ k: "prim", type: "bigint" }, undefined, undefined, a.conf);
+    }
+  }
+  return a;
+}
+
+/**
  * 结构可赋值：`let a = {x:1}; a = {y:2}` 应报 missing slot x；`let n = 1; n = "str"`
  * （无条件标量改型）报 violation（金标 assign-prim-mismatch-violates）。
  * 输入为 evalProgramAbs 收集的赋值记录（与 scanLiteralCalls 共享一次求值）。
@@ -1358,7 +1430,7 @@ function structuralAssignIssues(records: AbsAssignRecord[]): CheckIssue[] {
     // 跳过 unknown / never 源（无信息）
     if (r.next.shape.k === "unknown" && !r.next.term) continue;
     if (r.prev.shape.k === "unknown" && !r.prev.term) continue;
-    const leq = leqAbs(r.next, r.prev);
+    const leq = leqAbs(widenForAssign(r.next), widenForAssign(r.prev));
     if (!leq.ok) {
       out.push({
         severity: "error",

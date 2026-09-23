@@ -37,7 +37,7 @@ gt(x.add(1), 1)         // 集合间关系检查
 | Φ 路径条件 | `$fork` 压 `Φ∧test` 进臂作用域（Φ-native）；boundedPhi 上限 24 |
 | 差分 oracle | B-vs-native 独立 bug 发现器（`core/src/algebra/__tests__/differential/`），不依赖第二求值器 |
 
-预算：`MAX_CALL_DEPTH` / `MAX_TOTAL_CALLS`（20k）/ `MAX_B_TOTAL_FORKS`（5000）——截断观测见 `call-budget.ts`。
+预算：`MAX_CALL_DEPTH` / `MAX_TOTAL_CALLS`（20k）/ `MAX_B_TOTAL_FORKS`（默认 5000，可经 `NUDO_MAX_FORKS` / `nudo.analysis.maxForks` 调节）——截断观测见 `call-budget.ts`（调用截断 → `nudo:recursion-truncated`；fork 截断 → `nudo:fork-truncated`）。
 
 ## 传播机制：调用点实参集合重求值 callee body
 

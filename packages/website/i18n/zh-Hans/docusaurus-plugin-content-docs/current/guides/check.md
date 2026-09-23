@@ -79,6 +79,7 @@ issues
 | `nudo:opaque-result` | 引擎 | info | 求值返回 opaque / 无信息 Abs |
 | `nudo:eval-error` | 引擎 | error | 分析期间 body 求值抛出 |
 | `nudo:recursion-truncated` | 引擎 | warning | 递归预算用尽；结果拓宽 |
+| `nudo:fork-truncated` | 引擎 | warning | 分支展开（$fork）预算用尽；结果拓宽 |
 | `nudo-unreachable` | info | info | return/throw 之后的代码 |
 
 ## L1 —— 显式契约

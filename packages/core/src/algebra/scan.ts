@@ -531,8 +531,13 @@ function collectCallResolvers(
                   { source: modSrc, fnName: "", ...(from ? { fromFile: from } : {}) },
                 );
               }
+            } else if (sp.type === "ImportDefaultSpecifier") {
+              // 默认导出字面量名 "default"（与 interface/refine/generalize/abs-modules/check 同口径）
+              const local = sp.local as { type?: string; name?: string } | undefined;
+              if (local?.name) {
+                bindExternal(local.name, modSrc, "default", String(spec.value));
+              }
             }
-            // ImportDefaultSpecifier：默认导出名不定，暂不绑定
           }
         }
       }

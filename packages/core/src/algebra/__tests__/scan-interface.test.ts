@@ -144,6 +144,54 @@ const r = lib.needsPos(-1);
     });
     expect(issues.filter((i) => i.severity === "error")).toEqual([]);
   });
+
+  it("import default 导入 + 手写侧车违例 → 报（绑到 default 根）", () => {
+    const files = {
+      "/t/lib.js": `export default function needsPos(x) {\n  if (x > 0) return x;\n  return 0;\n}\n`,
+      "/t/lib.nudo.js": `export default fn({ x: number().gt(0) });\n`,
+    };
+    const { loadModule } = makeFiles(files);
+    const source = `import d from "./lib.js";\nconst r = d(-1);\n`;
+    const issues = scanLiteralCalls(source, [], pTrue, {
+      loadModule,
+      fromFile: "/t/main.js",
+    });
+    const err = issues.find((i) => i.code === "nudo:constraint-violated");
+    expect(err).toBeDefined();
+    expect(err!.severity).toBe("error");
+    // displayName 走 external.fnName = "default"
+    expect(err!.fn).toBe("default");
+  });
+
+  it("import default 具名 export default function + 违例 → 报", () => {
+    const files = {
+      "/t/lib.js": `export default (x) => (x > 0 ? x : 0);\n`,
+      "/t/lib.nudo.js": `export default fn({ x: number().gt(0) });\n`,
+    };
+    const { loadModule } = makeFiles(files);
+    const source = `import needsPos from "./lib.js";\nconst r = needsPos(-1);\n`;
+    const issues = scanLiteralCalls(source, [], pTrue, {
+      loadModule,
+      fromFile: "/t/main.js",
+    });
+    const err = issues.find((i) => i.code === "nudo:constraint-violated");
+    expect(err).toBeDefined();
+    expect(err!.expected).toContain("> 0");
+  });
+
+  it("import default 满足约束的调用不报", () => {
+    const files = {
+      "/t/lib.js": `export default function needsPos(x) {\n  return x;\n}\n`,
+      "/t/lib.nudo.js": `export default fn({ x: number().gt(0) });\n`,
+    };
+    const { loadModule } = makeFiles(files);
+    const source = `import d from "./lib.js";\nconst r = d(5);\n`;
+    const issues = scanLiteralCalls(source, [], pTrue, {
+      loadModule,
+      fromFile: "/t/main.js",
+    });
+    expect(issues.filter((i) => i.severity === "error")).toEqual([]);
+  });
 });
 
 describe("scan × effectiveInterface：fwd 转发（wrapper→target）", () => {

@@ -44,7 +44,7 @@
 
 | 项 | 状态 | 说明 |
 |----|------|------|
-| 闭包跨调用状态合流 | **已建模** | B-path 顺序调用共享闭包 `let`（`s5-closure-state.test.ts`：`c.increment(); c.getCount()` → 1/2）。残余：**未调用前**方法槽展示 `() => ?`；首次调用后 `returnType` 渐进 join 填入（`engine-precision-residuals.test.ts` T7） |
+| 闭包跨调用状态合流 | **已建模** | B-path 顺序调用共享闭包 `let`（`s5-closure-state.test.ts`：`c.increment(); c.getCount()` → 1/2）。残余：**未调用前**方法槽 `returnType` 诚实 `?`（形参名已展示，如 `(n) => ?`；零参才 `() => ?`）；首次调用后 `returnType` 渐进 join 填入（`engine-precision-residuals.test.ts` T7） |
 | HOF `constraint` 表达 fn 形状 | **已开** | `fn()` → entry Abs 落 `shape.fn`；refine→**error** 可测（`hof-refine-error.test.ts`）；promote 仍只 warning |
 | 调用点经验泛化（P3） | **明确不做** | 不入主路径（hof-relations） |
 | `.nudo/cache` L2 harvest 磁盘层 | **已落地** | HarvestJson 签名投影 + `~/.cache/nudo/deps`（`harvest-json.ts` / `harvest-disk.ts`）；见 [`persistent-cache.md`](./persistent-cache.md) |
