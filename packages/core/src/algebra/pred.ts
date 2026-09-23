@@ -5,6 +5,34 @@ import { termEquals, termToString, lit } from "./term.ts";
 
 export type PrimName = "number" | "string" | "boolean" | "bigint" | "symbol";
 
+/** JS `typeof` 完整结果域（8 标签）。Pred 的 typeof 节点用此域。 */
+export type TypeofName =
+  | "undefined"
+  | "object"
+  | "boolean"
+  | "number"
+  | "bigint"
+  | "string"
+  | "symbol"
+  | "function";
+
+/** typeof 标签全集（否定展开用；顺序稳定） */
+export const TYPEOF_NAMES: readonly TypeofName[] = [
+  "undefined",
+  "object",
+  "boolean",
+  "number",
+  "bigint",
+  "string",
+  "symbol",
+  "function",
+];
+
+/** abs prim 标签 → typeof 标签（恒等嵌入）。abs prim 仍是 PrimName 子集。 */
+export function primToTypeof(p: PrimName): TypeofName {
+  return p;
+}
+
 export type Pred =
   | { op: "true" }
   | { op: "false" }
@@ -17,7 +45,7 @@ export type Pred =
   | { op: "and"; args: Pred[] }
   | { op: "or"; args: Pred[] }
   | { op: "not"; arg: Pred }
-  | { op: "typeof"; t: Term; type: PrimName };
+  | { op: "typeof"; t: Term; type: TypeofName };
 
 export const pTrue: Pred = { op: "true" };
 export const pFalse: Pred = { op: "false" };
@@ -28,7 +56,7 @@ export const lt = (a: Term, b: Term): Pred => ({ op: "lt", a, b });
 export const le = (a: Term, b: Term): Pred => ({ op: "le", a, b });
 export const gt = (a: Term, b: Term): Pred => ({ op: "gt", a, b });
 export const ge = (a: Term, b: Term): Pred => ({ op: "ge", a, b });
-export const ptypeof = (t: Term, type: PrimName): Pred => ({
+export const ptypeof = (t: Term, type: TypeofName): Pred => ({
   op: "typeof",
   t,
   type,
@@ -79,8 +107,8 @@ export function not(p: Pred): Pred {
 
 /**
  * 逻辑否定（De Morgan）：¬(A∧B)=¬A∨¬B；¬(A∨B)=¬A∧¬B；双重否定消去。
- * typeof 否定保持 not 节点——PrimName 不含 undefined/object/function，
- * 展开成析取会不健全。
+ * typeof 否定展开为其余 TypeofName 标签的析取——8 标签域是 JS typeof 的
+ * 完整结果域，展开健全且相对完备。
  */
 export function negatePred(p: Pred): Pred {
   switch (p.op) {
@@ -107,7 +135,9 @@ export function negatePred(p: Pred): Pred {
     case "not":
       return p.arg;
     case "typeof":
-      return { op: "not", arg: p };
+      return or(
+        ...TYPEOF_NAMES.filter((u) => u !== p.type).map((u) => ptypeof(p.t, u)),
+      );
   }
 }
 
@@ -253,7 +283,7 @@ export function implies(phi: Phi, pred: Pred): boolean {
   // ¬P 目标：De Morgan / 双重否定展开为正向形式后再判
   if (pred.op === "not") {
     const expanded = negatePred(pred.arg);
-    // typeof 否定展开后仍是 not——不得递归回自己
+    // 展开结果若仍是 not（非 typeof 的残余形态）——不得递归回自己
     if (expanded.op !== "not") {
       return implies(phi, expanded);
     }
@@ -266,7 +296,7 @@ export function implies(phi: Phi, pred: Pred): boolean {
         if (c.op === "not" && implies(pred.arg, c.arg)) return true;
       }
     }
-    // Φ 已知 typeof t=U (U≠T) ⇒ ¬(typeof t=T)
+    // Φ 已知 typeof t=U (U≠T) ⇒ ¬(typeof t=T)（展开为 or 后的兜底）
     if (pred.arg.op === "typeof" && impliesNotTypeof(phi, pred.arg)) return true;
     return false;
   }
@@ -301,7 +331,7 @@ export function implies(phi: Phi, pred: Pred): boolean {
 /** Φ 含与 want 同项、不同 typeof 标签 → 蕴含 ¬want */
 function impliesNotTypeof(
   phi: Phi,
-  want: { t: Term; type: PrimName },
+  want: { t: Term; type: TypeofName },
 ): boolean {
   const conjs = phi.op === "and" ? phi.args : [phi];
   for (const c of conjs) {

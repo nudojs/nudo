@@ -14,6 +14,8 @@ import {
   pTrue,
   pFalse,
   predToString,
+  ptypeof,
+  TYPEOF_NAMES,
 } from "../pred.ts";
 import { v, lit } from "../term.ts";
 
@@ -75,11 +77,42 @@ describe("negatePred De Morgan", () => {
     expect(negatePred(lt(x, lit(1)))).toEqual(ge(x, lit(1)));
   });
 
-  it("typeof 否定保持 not（PrimName 域不全，不展开）", () => {
+  it("typeof 否定展开为其余 7 标签析取", () => {
     const x = v("x");
-    const p = { op: "typeof" as const, t: x, type: "number" as const };
-    const n = negatePred(p);
-    expect(n.op).toBe("not");
+    const n = negatePred(ptypeof(x, "number"));
+    expect(n.op).toBe("or");
+    if (n.op !== "or") throw new Error("unreachable");
+    expect(n.args).toHaveLength(7);
+    const tags = n.args.map((a) => (a as { type: string }).type);
+    expect(tags).toEqual([
+      "undefined",
+      "object",
+      "boolean",
+      "bigint",
+      "string",
+      "symbol",
+      "function",
+    ]);
+    expect(tags).not.toContain("number");
+  });
+
+  it("¬(typeof x=\"function\") 展开含 object/undefined 等其余标签", () => {
+    const x = v("x");
+    const n = negatePred(ptypeof(x, "function"));
+    expect(n.op).toBe("or");
+    if (n.op !== "or") throw new Error("unreachable");
+    expect(n.args).toHaveLength(7);
+    const tags = n.args.map((a) => (a as { type: string }).type);
+    expect(tags).toContain("object");
+    expect(tags).toContain("undefined");
+    expect(tags).toContain("number");
+    expect(tags).not.toContain("function");
+    // 展开完备：恰好是 TypeofName \ {function}
+    expect(tags.slice().sort()).toEqual(
+      TYPEOF_NAMES.filter((t) => t !== "function")
+        .slice()
+        .sort(),
+    );
   });
 });
 
@@ -114,22 +147,35 @@ describe("implies with De Morgan / not", () => {
 
   it("typeof 否定：已知 string ⇒ ¬number", () => {
     const x = v("x");
-    const phi = { op: "typeof" as const, t: x, type: "string" as const };
-    const goal = not({ op: "typeof" as const, t: x, type: "number" as const });
+    const phi = ptypeof(x, "string");
+    const goal = not(ptypeof(x, "number"));
     expect(implies(phi, goal)).toBe(true);
   });
 
   it("typeof 否定：已知 string ⇒ ¬boolean（同项不同标签）", () => {
     const x = v("x");
-    const phi = { op: "typeof" as const, t: x, type: "string" as const };
-    const goal = not({ op: "typeof" as const, t: x, type: "boolean" as const });
+    const phi = ptypeof(x, "string");
+    const goal = not(ptypeof(x, "boolean"));
     expect(implies(phi, goal)).toBe(true);
   });
 
   it("typeof：¬number ⊬ string（否定不能反推正标签）", () => {
     const x = v("x");
-    const phi = not({ op: "typeof" as const, t: x, type: "number" as const });
-    const goal = { op: "typeof" as const, t: x, type: "string" as const };
+    const phi = not(ptypeof(x, "number"));
+    const goal = ptypeof(x, "string");
     expect(implies(phi, goal)).toBe(false);
+  });
+
+  it("typeof 否定展开的析取可被 implies 消费：string ⊢ ¬number 的展开形", () => {
+    const x = v("x");
+    const phi = ptypeof(x, "string");
+    expect(implies(phi, negatePred(ptypeof(x, "number")))).toBe(true);
+  });
+
+  it("¬(typeof x=\"function\") 后已知 object 仍推不出 function", () => {
+    const x = v("x");
+    const phi = not(ptypeof(x, "function"));
+    expect(implies(phi, ptypeof(x, "object"))).toBe(false);
+    expect(implies(phi, ptypeof(x, "undefined"))).toBe(false);
   });
 });

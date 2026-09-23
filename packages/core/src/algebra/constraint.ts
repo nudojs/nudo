@@ -19,7 +19,18 @@
  */
 
 import type { Pred, PrimName } from "./pred.ts";
-import { and as pAnd, or, eq, gt, ge, lt, le, ptypeof, pTrue } from "./pred.ts";
+import {
+  and as pAnd,
+  or,
+  eq,
+  gt,
+  ge,
+  lt,
+  le,
+  primToTypeof,
+  ptypeof,
+  pTrue,
+} from "./pred.ts";
 import { v as termVar, lit as termLit, app as termApp, type Term } from "./term.ts";
 import type { Abs } from "./abs.ts";
 import { abs, unknown } from "./abs.ts";
@@ -462,7 +473,7 @@ export function instantiateConstraint(
       const fieldTerm = getTerm(termVar(paramName), key);
       parts.push(instantiateOnTerm(field.constraint, fieldTerm));
     }
-    if (c.prim) parts.push(ptypeof(termVar(paramName), c.prim));
+    if (c.prim) parts.push(ptypeof(termVar(paramName), primToTypeof(c.prim)));
     if (parts.length === 0) return { op: "true" };
     return parts.length === 1 ? parts[0]! : pAnd(...parts);
   }
@@ -486,7 +497,7 @@ export function instantiateConstraint(
   const preds = c.preds.map((p) => substPred(p, paramName));
   // prim 可作为 typeof 约束补上（optional）
   if (c.prim && c.preds.length === 0) {
-    return ptypeof(termVar(paramName), c.prim);
+    return ptypeof(termVar(paramName), primToTypeof(c.prim));
   }
   return preds.length === 0 ? { op: "true" } : preds.length === 1 ? preds[0]! : pAnd(...preds);
 }
@@ -536,7 +547,7 @@ function instantiateOnTerm(c: NudoConstraint, t: Term): Pred {
     return own.length === 0 ? pTrue : pAnd(...own);
   }
   const preds = c.preds.map(subst);
-  if (c.prim && c.preds.length === 0) return ptypeof(t, c.prim);
+  if (c.prim && c.preds.length === 0) return ptypeof(t, primToTypeof(c.prim));
   return preds.length === 0 ? { op: "true" } : preds.length === 1 ? preds[0]! : pAnd(...preds);
 }
 
@@ -654,7 +665,7 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
       c.members.every((m) => m.prim === (joined.shape as { type: unknown }).type)
     ) {
       const type = (joined.shape as { type: PrimName }).type;
-      return abs({ k: "prim", type }, t, ptypeof(t, type), "path");
+      return abs({ k: "prim", type }, t, ptypeof(t, primToTypeof(type)), "path");
     }
     return joined;
   }
