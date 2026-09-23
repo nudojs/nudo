@@ -91,6 +91,7 @@ import {
   type AgentToolResult,
 } from "./agent-tools.ts";
 import { extractToWorkspaceEdit, fullDocumentRange } from "./extract-function.ts";
+import { inlineVariableAt, makeParamOptionalAt } from "./refactor-b2.ts";
 import { NUDO_EXECUTE_COMMANDS, NUDO_AGENT_TOOL_NAMES } from "./public-api.ts";
 
 const NUDO_COMMANDS = NUDO_EXECUTE_COMMANDS;
@@ -150,7 +151,7 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
     documentSymbolProvider: true,
     workspaceSymbolProvider: true,
     codeActionProvider: {
-      codeActionKinds: ["quickfix", "refactor.extract"],
+      codeActionKinds: ["quickfix", "refactor.extract", "refactor.inline", "refactor.rewrite"],
     },
     signatureHelpProvider: {
       triggerCharacters: ["(", ","],
@@ -861,6 +862,30 @@ connection.onCodeAction((params) => {
     } catch {
       /* extract is best-effort */
     }
+  }
+
+  // B2：内联变量（光标落在声明/init）
+  try {
+    const line = params.range.start.line + 1;
+    const column = params.range.start.character;
+    const inl = inlineVariableAt(source, line, column);
+    if (inl && "edits" in inl) {
+      actions.push({
+        title: inl.title,
+        kind: "refactor.inline",
+        edit: { changes: { [params.textDocument.uri]: inl.edits } },
+      });
+    }
+    const sig = makeParamOptionalAt(source, line, column);
+    if (sig && "edits" in sig) {
+      actions.push({
+        title: sig.title,
+        kind: "refactor.rewrite",
+        edit: { changes: { [params.textDocument.uri]: sig.edits } },
+      });
+    }
+  } catch {
+    /* B2 is best-effort */
   }
 
   for (const diag of params.context.diagnostics) {

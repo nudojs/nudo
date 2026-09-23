@@ -48,6 +48,7 @@ Legend: **Y** = works with stock client + this server · **C** = needs a setting
 | Document symbols | Y | Y | Y | Y | Y |
 | Signature help | Y | Y | Y | C | Y |
 | Code actions / Quickfix | Y | Y | Y | Y | C |
+| Code actions — extract / **inline var** / **change signature** | Y | Y | Y | Y | C |
 | Semantic tokens | Y | C (`semantic_tokens: "combined"`) | C (treesitter/semantic tokens plugin) | C | C |
 | Active-case decoration | Y (extension) | N | N | N | N |
 | Agent commands (`nudo.check`, `nudo.hover`, …) | Y (executeCommand / MCP bridge) | Y (agent tooling / custom request) | Y (custom LSP request) | C | Y |
