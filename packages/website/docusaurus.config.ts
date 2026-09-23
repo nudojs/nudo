@@ -1,6 +1,6 @@
 import { themes as prismThemes } from "prism-react-renderer";
-import type { Config } from "@docusaurus/types";
-import type { Configuration, Plugin } from "webpack";
+import type { Config, Plugin } from "@docusaurus/types";
+import type { Configuration } from "webpack";
 import { DefinePlugin, NormalModuleReplacementPlugin } from "webpack";
 import type * as Preset from "@docusaurus/preset-classic";
 import { fileURLToPath } from "node:url";

@@ -2671,6 +2671,7 @@ describe("check L2 entry may-throw gold", () => {
     expect: "entry-may-throw" | "ok";
     ignoreThrows?: string[];
     entryThrows?: "error" | "warning" | "off";
+    /** 用例意图说明（仅文档性，不参与断言） */
     note?: string;
   }> = [
     {

@@ -1,6 +1,33 @@
 {
   "extends": "@docusaurus/tsconfig",
   "compilerOptions": {
-    "baseUrl": "."
-  }
+    "baseUrl": ".",
+    // Docusaurus 默认 jsx: "preserve"（转换交给 babel），但 React 19 的
+    // @types 已移除全局 JSX 命名空间 —— 类型检查必须用 react-jsx 走 React.JSX，
+    // 否则 JSX.Element 与 children 检查全部失效。noEmit 下不影响构建。
+    "jsx": "react-jsx",
+    // monorepo 源码内部用 .ts 后缀 import（allowImportingTsExtensions + noEmit）
+    "allowImportingTsExtensions": true,
+    // 与 tsconfig.base.json 对齐（@docusaurus/tsconfig 不开 strict，
+    // 混用会因 null 检查差异在被引用的包源码上产生假报错）
+    "strict": true,
+    // 与 docusaurus.config.ts 的 webpack alias、vitest 的 alias 保持一致：
+    // monorepo 内 @nudojs/* 指向源码，避免依赖 dist 是否已构建。
+    "paths": {
+      "@site/*": ["./*"],
+      "@nudojs/core": ["../core/src"],
+      "@nudojs/core/*": ["../core/src/*"],
+      "@nudojs/parser": ["../parser/src"],
+      "@nudojs/parser/*": ["../parser/src/*"],
+      "@nudojs/service": ["../service/src"],
+      "@nudojs/service/*": ["../service/src/*"],
+      "@nudojs/service/evaluator": ["../service/src/evaluator/evaluator-api.ts"],
+      "@nudojs/harvester": ["../harvester/src"],
+      "@nudojs/harvester/*": ["../harvester/src/*"],
+      "@nudojs/env/*": ["../env/src/*"]
+    }
+  },
+  // 默认 include 是 **/*，会把 build/ 与 .docusaurus/ 产物拖进类型检查
+  "include": ["src", "docusaurus.config.ts", "sidebars.ts", "tests"],
+  "exclude": ["build", ".docusaurus", "node_modules"]
 }

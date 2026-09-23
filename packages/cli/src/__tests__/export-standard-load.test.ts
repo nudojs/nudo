@@ -49,7 +49,7 @@ describe("export --format standard module is loadable", () => {
     const mod = await import(pathToFileURL(modPath).href);
     // 契约参数位：clampPos_x 应表达 number().gt(0)，而不是 call@ 的 lit 5
     const arg0 = mod.clampPos_x as {
-      "~standard": { validate: (v: unknown) => { value?: unknown; issues?: unknown[] } };
+      "~standard": { validate: (v: unknown) => { value?: unknown; issues?: Array<{ message?: string }> } };
     };
     expect(arg0).toBeDefined();
     expect(arg0["~standard"].validate(1).issues).toBeUndefined();
@@ -78,7 +78,7 @@ describe("export --format standard module is loadable", () => {
     expect(body).toContain('"k":"lit"');
     const mod = await import(pathToFileURL(join(out, "pin.nudo.standard.ts")).href);
     const pinX = mod.pin_x as {
-      "~standard": { validate: (v: unknown) => { value?: unknown; issues?: unknown[] } };
+      "~standard": { validate: (v: unknown) => { value?: unknown; issues?: Array<{ message?: string }> } };
     };
     expect(pinX["~standard"].validate(42).issues).toBeUndefined();
     expect(pinX["~standard"].validate(0).issues?.length).toBeGreaterThan(0);

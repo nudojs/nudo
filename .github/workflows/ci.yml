@@ -42,6 +42,10 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # 文档站 TSX 此前没有任何类型门禁（docusaurus build 走 babel，不检查类型）
+      - name: Lint website
+        run: npm run lint:website
+
       - name: Lint tests
         run: npm run lint:tests
 

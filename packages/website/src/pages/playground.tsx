@@ -1,4 +1,5 @@
 import React, { lazy, useRef, useState, useEffect, Suspense } from 'react';
+import type { JSX } from 'react';
 import Layout from '@theme/Layout';
 import BrowserOnly from '@docusaurus/BrowserOnly';
 import Translate, { translate } from '@docusaurus/Translate';
@@ -1122,7 +1123,8 @@ function PlaygroundApp() {
           for (const fn of analysis.functions) {
             for (const c of fn.cases) {
               if (!c.name) continue;
-              const line = caseLines.get(c.name) ?? c.line;
+              // 只有带 commentLine 的指令见证能定位到源码行；合成 call@ 用例无行号。
+              const line = caseLines.get(c.name);
               if (line === undefined) continue;
               const lineLength = model.getLineLength(line);
               hints.push({
@@ -1153,7 +1155,7 @@ function PlaygroundApp() {
     scrollBeyondLastLine: false,
     automaticLayout: true,
     readOnly,
-    inlayHints: { enabled: true },
+    inlayHints: { enabled: 'on' as const },
   });
 
   const renderCaseCard = (
@@ -1240,11 +1242,13 @@ function PlaygroundApp() {
         {isCallsiteMode && preset.mode === 'callsite' && (
           <>
             <div className="cs-explainer">
+              <strong>
+                <Translate id="playground.explainerLead">Call-Site Discovery.</Translate>
+              </strong>{' '}
               <Translate id="playground.explainer">
-                <strong>Call-Site Discovery.</strong> The library (left) ships without type
-                annotations. Nudo evaluates the usage site (right), records the argument and result
-                types of every real call, and re-synthesizes a precise signature — no inference-time
-                unknowns left.
+                The library (left) ships without type annotations. Nudo evaluates the usage site
+                (right), records the argument and result types of every real call, and
+                re-synthesizes a precise signature — no inference-time unknowns left.
               </Translate>
             </div>
 
@@ -1360,8 +1364,7 @@ function PlaygroundApp() {
                     id="playground.hint.noRecords"
                     values={{ exportName: preset.exportName }}
                   >
-                    {`No call records collected — make sure the usage site imports `}<code>./util</code>
-                    {` and calls `}<code>{preset.exportName}</code>.
+                    {`No call records collected — make sure the usage site imports ./util and calls {exportName}.`}
                   </Translate>
                 </div>
               )}

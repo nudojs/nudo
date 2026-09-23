@@ -39,7 +39,7 @@ async function execTranspiled(source: string, exportName = "run") {
 
 function brandAbs(name: string): Abs {
   return abs(
-    { k: "brand", name, shape: { k: "obj", slots: {} } },
+    { k: "brand", name, shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") },
     undefined,
     undefined,
     "exact",
@@ -100,7 +100,12 @@ describe("review-fix: instanceof non-ident / generator / unknown ctor", () => {
     const { $instanceof } = await import(
       pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "../exec/index.ts")).href
     );
-    const gen = abs({ k: "eff", eff: "generator" }, undefined, undefined, "path") as Abs;
+    const gen = abs(
+      { k: "eff", eff: "generator", inner: abs({ k: "any" }, undefined, undefined, "path") },
+      undefined,
+      undefined,
+      "path",
+    ) as Abs;
     const r = $instanceof(gen, "Generator");
     expect(litValue(r)).toBe(true);
   });

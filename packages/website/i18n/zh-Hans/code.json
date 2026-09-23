@@ -678,7 +678,7 @@
     "message": "观察"
   },
   "playground.explainer": {
-    "message": "<strong>调用点发现。</strong> 左侧库不带类型注解发布。Nudo 求值右侧使用处，记录每次真实调用的实参/结果类型，并重新合成精确签名——不留下任何推理期 unknown。"
+    "message": "左侧库不带类型注解发布。Nudo 求值右侧使用处，记录每次真实调用的实参/结果类型，并重新合成精确签名——不留下任何推理期 unknown。"
   },
   "playground.tag.libReadOnly": {
     "message": "库 · 只读"
@@ -745,5 +745,8 @@
   },
   "theme.DocItem.agent.hint": {
     "message": "面向 agent：每个页面都在同路径旁挂一份原始 markdown（URL 加 .md）。"
+  },
+  "playground.explainerLead": {
+    "message": "调用点发现。"
   }
 }
