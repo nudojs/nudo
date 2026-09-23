@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-23T08:53:34.783Z",
+  "generatedAt": "2026-09-23T09:18:13.340Z",
   "note": "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design/limitations.md §2 and website semantics mock-boundary section.",
   "budgets": {
     "harvestNodeTypes": {
@@ -41,15 +41,15 @@
   },
   "nodeProbes": {
     "counts": {
-      "resolved": 70,
+      "resolved": 75,
       "unknown": 0,
       "mock-required": 2
     },
     "leaf": {
-      "clean": 64,
+      "clean": 69,
       "mentionsUnknown": 6
     },
-    "total": 72,
+    "total": 77,
     "results": [
       {
         "id": "fs.readFileSync",
@@ -521,7 +521,7 @@
           "Readable"
         ],
         "status": "resolved",
-        "format": "(options?: { highWaterMark?: number, objectMode?: boolean, encoding?: string, autoDestroy?: boolean, emitClose?: boolean }) => Readable",
+        "format": "(options?: { highWaterMark?: number, objectMode?: boolean, encoding?: string, autoDestroy?: boolean, emitClose?: boolean, transform?: (string | Buffer, string, (error?: Error | null, data?: string | Buffer) => undefined) => undefined, flush?: ((error?: Error | null) => undefined) => undefined, read?: (number) => undefined, write?: (string | Buffer, string, (error?: Error | null) => undefined) => undefined, final?: ((error?: Error | null) => undefined) => undefined, construct?: (error?: Error | null) => undefined, destroy?: (Error | null, (error?: Error | null) => undefined) => undefined }) => Readable",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -532,7 +532,7 @@
           "Writable"
         ],
         "status": "resolved",
-        "format": "(options?: { highWaterMark?: number, objectMode?: boolean, encoding?: string, autoDestroy?: boolean, emitClose?: boolean }) => Writable",
+        "format": "(options?: { highWaterMark?: number, objectMode?: boolean, encoding?: string, autoDestroy?: boolean, emitClose?: boolean, transform?: (string | Buffer, string, (error?: Error | null, data?: string | Buffer) => undefined) => undefined, flush?: ((error?: Error | null) => undefined) => undefined, read?: (number) => undefined, write?: (string | Buffer, string, (error?: Error | null) => undefined) => undefined, final?: ((error?: Error | null) => undefined) => undefined, construct?: (error?: Error | null) => undefined, destroy?: (Error | null, (error?: Error | null) => undefined) => undefined }) => Writable",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -543,7 +543,7 @@
           "Duplex"
         ],
         "status": "resolved",
-        "format": "(options?: { highWaterMark?: number, objectMode?: boolean, encoding?: string, autoDestroy?: boolean, emitClose?: boolean }) => Duplex",
+        "format": "(options?: { highWaterMark?: number, objectMode?: boolean, encoding?: string, autoDestroy?: boolean, emitClose?: boolean, transform?: (string | Buffer, string, (error?: Error | null, data?: string | Buffer) => undefined) => undefined, flush?: ((error?: Error | null) => undefined) => undefined, read?: (number) => undefined, write?: (string | Buffer, string, (error?: Error | null) => undefined) => undefined, final?: ((error?: Error | null) => undefined) => undefined, construct?: (error?: Error | null) => undefined, destroy?: (Error | null, (error?: Error | null) => undefined) => undefined }) => Duplex",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -554,7 +554,7 @@
           "Transform"
         ],
         "status": "resolved",
-        "format": "(options?: { highWaterMark?: number, objectMode?: boolean, encoding?: string, autoDestroy?: boolean, emitClose?: boolean }) => Transform",
+        "format": "(options?: { highWaterMark?: number, objectMode?: boolean, encoding?: string, autoDestroy?: boolean, emitClose?: boolean, transform?: (string | Buffer, string, (error?: Error | null, data?: string | Buffer) => undefined) => undefined, flush?: ((error?: Error | null) => undefined) => undefined, read?: (number) => undefined, write?: (string | Buffer, string, (error?: Error | null) => undefined) => undefined, final?: ((error?: Error | null) => undefined) => undefined, construct?: (error?: Error | null) => undefined, destroy?: (Error | null, (error?: Error | null) => undefined) => undefined }) => Transform",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -570,16 +570,39 @@
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
       {
+        "id": "stream.finished",
+        "module": "stream",
+        "path": [
+          "finished"
+        ],
+        "status": "resolved",
+        "format": "(Stream, callback?: CallbackFn) => promise<undefined>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "stream.promises.pipeline",
+        "module": "stream",
+        "path": [
+          "promises",
+          "pipeline"
+        ],
+        "status": "resolved",
+        "format": "(...streams: Stream) => promise<undefined>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
         "id": "stream.machine-callbacks",
         "module": "stream",
         "path": [
           "Transform"
         ],
         "forceMock": true,
-        "note": "Node stream machine drives internal callbacks — limitations §2",
+        "note": "data/error events are machine-driven (limitations §2); transform/flush hooks are signature-level for refine",
         "status": "mock-required",
-        "format": "(options?: { highWaterMark?: number, objectMode?: boolean, encoding?: string, autoDestroy?: boolean, emitClose?: boolean }) => Transform",
-        "reason": "Node stream machine drives internal callbacks — limitations §2"
+        "format": "(options?: { highWaterMark?: number, objectMode?: boolean, encoding?: string, autoDestroy?: boolean, emitClose?: boolean, transform?: (string | Buffer, string, (error?: Error | null, data?: string | Buffer) => undefined) => undefined, flush?: ((error?: Error | null) => undefined) => undefined, read?: (number) => undefined, write?: (string | Buffer, string, (error?: Error | null) => undefined) => undefined, final?: ((error?: Error | null) => undefined) => undefined, construct?: (error?: Error | null) => undefined, destroy?: (Error | null, (error?: Error | null) => undefined) => undefined }) => Transform",
+        "reason": "data/error events are machine-driven (limitations §2); transform/flush hooks are signature-level for refine"
       },
       {
         "id": "querystring.parse",
@@ -835,16 +858,49 @@
         "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },
       {
+        "id": "child_process.spawn",
+        "module": "child_process",
+        "path": [
+          "spawn"
+        ],
+        "status": "resolved",
+        "format": "(string, string[], options?: { cwd?: string, env?: Record<string, string | undefined>, stdio?: string | string[], shell?: boolean | string, timeout?: number, killSignal?: string | number }) => ChildProcess",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "child_process.execFile",
+        "module": "child_process",
+        "path": [
+          "execFile"
+        ],
+        "status": "resolved",
+        "format": "(string, args?: string[], callback?: CallbackFn) => ChildProcess",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "child_process.spawnSync",
+        "module": "child_process",
+        "path": [
+          "spawnSync"
+        ],
+        "status": "resolved",
+        "format": "(string, string[], options?: { encoding?: string, timeout?: number, maxBuffer?: number, cwd?: string }) => { status: number | null, stdout: string | Buffer, stderr: string | Buffer, error: Error | undefined }",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
         "id": "child_process.spawn-native",
         "module": "child_process",
         "path": [
           "spawn"
         ],
         "forceMock": true,
-        "note": "native process spawn — mock or env signature only; no side-effect simulation",
+        "note": "native process spawn — no side-effect simulation; ChildProcess shape is signature-level",
         "status": "mock-required",
-        "format": "(string, string[], options?: { cwd?: string, env?: Record<string, string | undefined>, stdio?: string | string[] }) => ChildProcess",
-        "reason": "native process spawn — mock or env signature only; no side-effect simulation"
+        "format": "(string, string[], options?: { cwd?: string, env?: Record<string, string | undefined>, stdio?: string | string[], shell?: boolean | string, timeout?: number, killSignal?: string | number }) => ChildProcess",
+        "reason": "native process spawn — no side-effect simulation; ChildProcess shape is signature-level"
       }
     ]
   },

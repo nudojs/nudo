@@ -157,18 +157,20 @@ const NODE_PROBES: Probe[] = [
   { id: "util.inherits", module: "util", path: ["inherits"] },
   { id: "util.callbackify", module: "util", path: ["callbackify"] },
 
-  // stream (skeleton; machine callbacks stay mock-recommended)
+  // stream (instance + user hooks signature-level; data machine stays mock)
   { id: "stream.Readable", module: "stream", path: ["Readable"] },
   { id: "stream.Writable", module: "stream", path: ["Writable"] },
   { id: "stream.Duplex", module: "stream", path: ["Duplex"] },
   { id: "stream.Transform", module: "stream", path: ["Transform"] },
   { id: "stream.pipeline", module: "stream", path: ["pipeline"] },
+  { id: "stream.finished", module: "stream", path: ["finished"] },
+  { id: "stream.promises.pipeline", module: "stream", path: ["promises", "pipeline"] },
   {
     id: "stream.machine-callbacks",
     module: "stream",
     path: ["Transform"],
     forceMock: true,
-    note: "Node stream machine drives internal callbacks — limitations §2",
+    note: "data/error events are machine-driven (limitations §2); transform/flush hooks are signature-level for refine",
   },
 
   // querystring
@@ -198,13 +200,16 @@ const NODE_PROBES: Probe[] = [
   { id: "assert.strictEqual", module: "assert", path: ["strictEqual"] },
   { id: "assert.deepStrictEqual", module: "assert", path: ["deepStrictEqual"] },
 
-  // child_process / native boundary
+  // child_process: instance surface is signature-level; side effects stay mock
+  { id: "child_process.spawn", module: "child_process", path: ["spawn"] },
+  { id: "child_process.execFile", module: "child_process", path: ["execFile"] },
+  { id: "child_process.spawnSync", module: "child_process", path: ["spawnSync"] },
   {
     id: "child_process.spawn-native",
     module: "child_process",
     path: ["spawn"],
     forceMock: true,
-    note: "native process spawn — mock or env signature only; no side-effect simulation",
+    note: "native process spawn — no side-effect simulation; ChildProcess shape is signature-level",
   },
 ];
 

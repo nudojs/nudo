@@ -262,4 +262,40 @@ describe("node env high-frequency gaps (B3)", () => {
     expect(shapeOf(stream.Readable)).toContain("options?");
     expect(shapeOf(stream.Readable)).toContain("Readable");
   });
+
+  it("ChildProcess instance surface is signature-level (spawn returns typed brand)", () => {
+    const cp = lookupModule(env, "child_process");
+    const spawnFmt = shapeOf(cp.spawn);
+    expect(spawnFmt).toContain("=> ChildProcess");
+    expect(spawnFmt).toContain("options?");
+    // execFile 同轨
+    expect(shapeOf(cp.execFile)).toContain("ChildProcess");
+    // 实例槽：stdio 流 + on/kill/pid
+    const ret = (cp.spawn as { shape?: { returnType?: Abs } }).shape?.returnType;
+    expect(ret, "spawn returnType").toBeTruthy();
+    const pid = walk(ret!, "pid");
+    expect(shapeOf(pid)).toContain("number");
+    const stdout = walk(ret!, "stdout");
+    expect(shapeOf(stdout)).toContain("Readable");
+    const kill = walk(ret!, "kill");
+    expect(shapeOf(kill)).toContain("=>");
+    const on = walk(ret!, "on");
+    expect(shapeOf(on)).toContain("=>");
+  });
+
+  it("stream user hooks (transform/flush/read/write/final) are typed for refine", () => {
+    const stream = lookupModule(env, "stream");
+    const t = stream.Transform!;
+    const opt = (t as { shape?: { paramTypes?: Abs[] } }).shape?.paramTypes?.[0];
+    expect(opt, "Transform options").toBeTruthy();
+    const transform = walk(opt!, "transform");
+    // (chunk, encoding, callback) — 类型面可 refine；label 在 params
+    expect(shapeOf(transform), "transform hook").toContain("string | Buffer");
+    expect(shapeOf(transform), "transform hook").toContain("=>");
+    const flush = walk(opt!, "flush");
+    expect(shapeOf(flush)).toContain("=>");
+    // stream.promises.pipeline 存在
+    const promises = walk(stream.promises!, "pipeline");
+    expect(shapeOf(promises)).toContain("=>");
+  });
 });

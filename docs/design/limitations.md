@@ -73,6 +73,7 @@
 | 嵌套函数不归因 | 函数内定义的函数无模块栈定义位点；外部记录被归因门拒收（正确性优先） |
 | 双入口包变体 | browser/node 记录不跨文件注入 |
 | Native / 动态 `require` | env 可有签名、无副作用模拟；**字面量 / 常量折叠子集已解析**（StringLiteral / 无插值模板 / 插值与拼接全为字面量 / `require.resolve("lit")` / try-catch 双侧可折叠 → 优先成功侧）；其余诚实 `unknown` + 既有诊断（`nudo:builtin-unknown`），不假精确 |
+| stream / spawn 副作用 | **签名面已一等**（ChildProcess pid/stdio/kill、Transform `transform`/`flush` 等钩子可 refine）；**仍 mock-required**：流机器何时发 `data`、真起进程的副作用（`docs/reports/env-coverage-baseline.md`） |
 
 **env / harvest 不能替代 mock。** 详见 website `guides/semantics.md`「Mock boundary」与
 `api/harvester.md`。覆盖报告（`docs/reports/env-coverage-baseline.md`）的解析率

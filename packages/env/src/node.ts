@@ -23,6 +23,7 @@ import {
   undef,
   unionOf,
   prim,
+  type Slot,
 } from "./abs-helpers.ts";
 import { type EnvDefinition, defineEnv as defineEsEnv } from "./es.ts";
 import nodePath from "node:path";
@@ -138,18 +139,6 @@ export function defineEnv(): EnvDefinition {
     maxKeys: { value: prim.num(), optional: true },
   });
 
-  const streamOptions = objAbs({
-    highWaterMark: { value: prim.num(), optional: true },
-    objectMode: { value: prim.bool(), optional: true },
-    encoding: { value: prim.str(), optional: true },
-    autoDestroy: { value: prim.bool(), optional: true },
-    emitClose: { value: prim.bool(), optional: true },
-  });
-
-  const eventEmitterOptions = objAbs({
-    captureRejections: { value: prim.bool(), optional: true },
-  });
-
   /** 无约束参数：产品语义 = any（≠ unknown 推导失败） */
   const anyParam = prim.any();
 
@@ -158,6 +147,75 @@ export function defineEnv(): EnvDefinition {
     "CallbackFn",
     envFnVariadic(anyParam, undef(), { restName: "...args" }),
   );
+
+  const streamOptions = objAbs({
+    highWaterMark: { value: prim.num(), optional: true },
+    objectMode: { value: prim.bool(), optional: true },
+    encoding: { value: prim.str(), optional: true },
+    autoDestroy: { value: prim.bool(), optional: true },
+    emitClose: { value: prim.bool(), optional: true },
+  });
+  /** 流实例 I/O 方法（Readable/Writable/Duplex/Transform/ChildProcess.stdio 共用） */
+  const streamIoMethods = {
+    on: envFn([prim.str(), callbackFnBrand], brandOf("Stream")),
+    once: envFn([prim.str(), callbackFnBrand], brandOf("Stream")),
+    off: envFn([prim.str(), callbackFnBrand], brandOf("Stream")),
+    emit: envFn([prim.str(), anyParam], prim.bool(), undefined, {
+      params: ["event", "...args"],
+    }),
+    pipe: envFn([brandOf("Writable")], brandOf("Writable")),
+    destroy: envFn([errOrNull], undef(), undefined, { params: ["error?"] }),
+    read: envFn([prim.num()], unionOf(prim.str(), bufferBrand, nullLit())),
+    write: envFn([unionOf(prim.str(), bufferBrand)], prim.bool()),
+    end: envFn([unionOf(prim.str(), bufferBrand), callbackFnBrand], undef(), undefined, {
+      params: ["chunk?", "callback?"],
+    }),
+    pause: envFn([], brandOf("Stream")),
+    resume: envFn([], brandOf("Stream")),
+    setEncoding: envFn([prim.str()], brandOf("Stream")),
+  };
+  /**
+   * Transform/Duplex/Readable/Writable 用户钩子（options 或子类方法）。
+   * 机器何时调用仍是 limitations §2；形参表给到 refine 可执法。
+   */
+  const chunk = unionOf(prim.str(), bufferBrand);
+  const streamCallback = envFn([errOrNull], undef(), undefined, { params: ["error?"] });
+  const transformHook = envFn(
+    [chunk, prim.str(), envFn([errOrNull, chunk], undef(), undefined, { params: ["error?", "data?"] })],
+    undef(),
+    undefined,
+    { params: ["chunk", "encoding", "callback"] },
+  );
+  const writeHook = envFn(
+    [chunk, prim.str(), envFn([errOrNull], undef(), undefined, { params: ["error?"] })],
+    undef(),
+    undefined,
+    { params: ["chunk", "encoding", "callback"] },
+  );
+  const readHook = envFn([prim.num()], undef(), undefined, { params: ["size"] });
+  const finalHook = envFn([streamCallback], undef(), undefined, { params: ["callback"] });
+  const flushHook = envFn([streamCallback], undef(), undefined, { params: ["callback"] });
+  const streamBaseSlots: Record<string, Slot> = {
+    highWaterMark: { value: prim.num(), optional: true },
+    objectMode: { value: prim.bool(), optional: true },
+    encoding: { value: prim.str(), optional: true },
+    autoDestroy: { value: prim.bool(), optional: true },
+    emitClose: { value: prim.bool(), optional: true },
+  };
+  const streamHooks: Record<string, Slot> = {
+    transform: { value: transformHook, optional: true },
+    flush: { value: flushHook, optional: true },
+    read: { value: readHook, optional: true },
+    write: { value: writeHook, optional: true },
+    final: { value: finalHook, optional: true },
+    construct: { value: streamCallback, optional: true },
+    destroy: { value: envFn([errOrNull, streamCallback], undef(), undefined, { params: ["error", "callback"] }), optional: true },
+  };
+
+  const eventEmitterOptions = objAbs({
+    captureRejections: { value: prim.bool(), optional: true },
+  });
+
   const promiseFnBrand = brandOf(
     "PromiseFn",
     envFnVariadic(anyParam, promiseOf(anyParam), { restName: "...args" }),
@@ -741,6 +799,40 @@ export function defineEnv(): EnvDefinition {
     timingSafeEqual: envFn([bufferBrand, bufferBrand], prim.bool()),
   };
 
+  /**
+   * ChildProcess 实例面（签名级）：stdio 是流、on/kill/pid 可解。
+   * 副作用（真起进程 / 流上 data 何时到）仍 mock-required（limitations §2）。
+   */
+  const spawnOptions = objAbs({
+    cwd: { value: prim.str(), optional: true },
+    env: { value: openObjBrand("Record<string, string | undefined>", { key: prim.str(), value: unionOf(prim.str(), undef()) }), optional: true },
+    stdio: { value: unionOf(prim.str(), arrOf(prim.str())), optional: true },
+    shell: { value: unionOf(prim.bool(), prim.str()), optional: true },
+    timeout: { value: prim.num(), optional: true },
+    killSignal: { value: unionOf(prim.str(), prim.num()), optional: true },
+  });
+  const childProcessInstance = brandOf(
+    "ChildProcess",
+    objAbs({
+      pid: prim.num(),
+      connected: prim.bool(),
+      killed: prim.bool(),
+      exitCode: unionOf(prim.num(), nullLit()),
+      signalCode: unionOf(prim.str(), nullLit()),
+      stdin: brandOf("Writable", objAbs(streamIoMethods)),
+      stdout: brandOf("Readable", objAbs(streamIoMethods)),
+      stderr: brandOf("Readable", objAbs(streamIoMethods)),
+      on: envFn([prim.str(), callbackFnBrand], brandOf("ChildProcess")),
+      once: envFn([prim.str(), callbackFnBrand], brandOf("ChildProcess")),
+      off: envFn([prim.str(), callbackFnBrand], brandOf("ChildProcess")),
+      kill: envFn([unionOf(prim.str(), prim.num())], prim.bool(), undefined, {
+        params: ["signal?"],
+      }),
+      ref: envFn([], brandOf("ChildProcess")),
+      unref: envFn([], brandOf("ChildProcess")),
+    }),
+  );
+
   const childProcessModule: Record<string, Abs> = {
     execSync: envFn(
       [prim.str(), objAbs({
@@ -780,21 +872,16 @@ export function defineEnv(): EnvDefinition {
       undefined,
       { params: ["command", "args", "options?"] },
     ),
-    exec: envFn([prim.str(), callbackFnBrand], brandOf("ChildProcess"), undefined, {
+    exec: envFn([prim.str(), callbackFnBrand], childProcessInstance, undefined, {
       params: ["command", "callback?"],
     }),
-    spawn: envFn([prim.str(), arrOf(prim.str()), objAbs({
-      cwd: { value: prim.str(), optional: true },
-      env: { value: openObjBrand("Record<string, string | undefined>", { key: prim.str(), value: unionOf(prim.str(), undef()) }), optional: true },
-      stdio: { value: unionOf(prim.str(), arrOf(prim.str())), optional: true },
-    })], brandOf("ChildProcess"), undefined, {
+    execFile: envFn([prim.str(), arrOf(prim.str()), callbackFnBrand], childProcessInstance, undefined, {
+      params: ["file", "args?", "callback?"],
+    }),
+    spawn: envFn([prim.str(), arrOf(prim.str()), spawnOptions], childProcessInstance, undefined, {
       params: ["command", "args", "options?"],
     }),
-    fork: envFn([prim.str(), arrOf(prim.str()), objAbs({
-      cwd: { value: prim.str(), optional: true },
-      env: { value: openObjBrand("Record<string, string | undefined>", { key: prim.str(), value: unionOf(prim.str(), undef()) }), optional: true },
-      stdio: { value: unionOf(prim.str(), arrOf(prim.str())), optional: true },
-    })], brandOf("ChildProcess"), undefined, {
+    fork: envFn([prim.str(), arrOf(prim.str()), spawnOptions], childProcessInstance, undefined, {
       params: ["modulePath", "args", "options?"],
     }),
   };
@@ -909,33 +996,17 @@ export function defineEnv(): EnvDefinition {
     listenerCount: envFn([eventEmitterInstance, prim.str()], prim.num()),
   };
 
-  const streamIoMethods = {
-    on: envFn([prim.str(), callbackFnBrand], brandOf("Stream")),
-    once: envFn([prim.str(), callbackFnBrand], brandOf("Stream")),
-    off: envFn([prim.str(), callbackFnBrand], brandOf("Stream")),
-    emit: envFn([prim.str(), anyParam], prim.bool(), undefined, {
-      params: ["event", "...args"],
-    }),
-    pipe: envFn([brandOf("Writable")], brandOf("Writable")),
-    destroy: envFn([errOrNull], undef(), undefined, { params: ["error?"] }),
-    read: envFn([prim.num()], unionOf(prim.str(), bufferBrand, nullLit())),
-    write: envFn([unionOf(prim.str(), bufferBrand)], prim.bool()),
-    end: envFn([unionOf(prim.str(), bufferBrand), callbackFnBrand], undef(), undefined, {
-      params: ["chunk?", "callback?"],
-    }),
-    pause: envFn([], brandOf("Stream")),
-    resume: envFn([], brandOf("Stream")),
-    setEncoding: envFn([prim.str()], brandOf("Stream")),
-  };
-
   const streamCtor = (brandName: string): Abs =>
-    envFn([streamOptions], brandOf(brandName, objAbs(streamIoMethods)), undefined, {
-      params: ["options?"],
-    });
+    envFn(
+      [objAbs({ ...streamBaseSlots, ...streamHooks })],
+      brandOf(brandName, objAbs(streamIoMethods)),
+      undefined,
+      { params: ["options?"] },
+    );
 
   /**
-   * stream skeleton: brand + pipe/finished. Machine-driven callbacks remain
-   * mock-recommended (limitations §2).
+   * stream: 实例面 + 用户钩子（transform/flush/read/write/final）可 refine。
+   * 机器驱动 data 仍 mock-recommended（limitations §2）。
    */
   const streamModule: Record<string, Abs> = {
     Readable: streamCtor("Readable"),
@@ -947,6 +1018,12 @@ export function defineEnv(): EnvDefinition {
     }),
     finished: envFn([brandOf("Stream"), callbackFnBrand], promiseOf(undef()), undefined, {
       params: ["stream", "callback?"],
+    }),
+    promises: objAbs({
+      pipeline: envFnVariadic(brandOf("Stream"), promiseOf(undef()), {
+        restName: "...streams",
+      }),
+      finished: envFn([brandOf("Stream")], promiseOf(undef())),
     }),
   };
 
