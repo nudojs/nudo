@@ -77,6 +77,40 @@ export function not(p: Pred): Pred {
   return { op: "not", arg: p };
 }
 
+/**
+ * 逻辑否定（De Morgan）：¬(A∧B)=¬A∨¬B；¬(A∨B)=¬A∧¬B；双重否定消去。
+ * typeof 否定保持 not 节点——PrimName 不含 undefined/object/function，
+ * 展开成析取会不健全。
+ */
+export function negatePred(p: Pred): Pred {
+  switch (p.op) {
+    case "true":
+      return pFalse;
+    case "false":
+      return pTrue;
+    case "eq":
+      return ne(p.a, p.b);
+    case "ne":
+      return eq(p.a, p.b);
+    case "lt":
+      return ge(p.a, p.b);
+    case "le":
+      return gt(p.a, p.b);
+    case "gt":
+      return le(p.a, p.b);
+    case "ge":
+      return lt(p.a, p.b);
+    case "and":
+      return or(...p.args.map(negatePred));
+    case "or":
+      return and(...p.args.map(negatePred));
+    case "not":
+      return p.arg;
+    case "typeof":
+      return { op: "not", arg: p };
+  }
+}
+
 export function predEquals(a: Pred, b: Pred): boolean {
   if (a === b) return true;
   if (a.op !== b.op) return false;
@@ -216,6 +250,27 @@ export function implies(phi: Phi, pred: Pred): boolean {
   if (predEquals(phi, pred)) return true;
   if (phi.op === "and" && phi.args.some((c) => predEquals(c, pred))) return true;
 
+  // ¬P 目标：De Morgan / 双重否定展开为正向形式后再判
+  if (pred.op === "not") {
+    const expanded = negatePred(pred.arg);
+    // typeof 否定展开后仍是 not——不得递归回自己
+    if (expanded.op !== "not") {
+      return implies(phi, expanded);
+    }
+    // 逆否：¬P ⊢ ¬Q  iff  Q ⊢ P
+    if (phi.op === "not") {
+      return implies(pred.arg, phi.arg);
+    }
+    if (phi.op === "and") {
+      for (const c of phi.args) {
+        if (c.op === "not" && implies(pred.arg, c.arg)) return true;
+      }
+    }
+    // Φ 已知 typeof t=U (U≠T) ⇒ ¬(typeof t=T)
+    if (pred.arg.op === "typeof" && impliesNotTypeof(phi, pred.arg)) return true;
+    return false;
+  }
+
   // or 蕴含（字面量集 / 析取收窄）：
   //   or(A…) ⇒ P     iff 每个 A ⇒ P
   //   Φ ⇒ or(B…)     iff 存在 B 使 Φ ⇒ B
@@ -240,6 +295,20 @@ export function implies(phi: Phi, pred: Pred): boolean {
   // 字面量可判定
   const litAns = decideLiteralPred(pred);
   if (litAns !== undefined) return litAns;
+  return false;
+}
+
+/** Φ 含与 want 同项、不同 typeof 标签 → 蕴含 ¬want */
+function impliesNotTypeof(
+  phi: Phi,
+  want: { t: Term; type: PrimName },
+): boolean {
+  const conjs = phi.op === "and" ? phi.args : [phi];
+  for (const c of conjs) {
+    if (c.op === "typeof" && termEquals(c.t, want.t) && c.type !== want.type) {
+      return true;
+    }
+  }
   return false;
 }
 

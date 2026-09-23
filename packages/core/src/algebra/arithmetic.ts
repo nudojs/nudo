@@ -13,6 +13,7 @@ import {
   lt,
   le,
   implies,
+  negatePred,
   predToString,
   pTrue,
   ptypeof,
@@ -846,37 +847,6 @@ export function falseConstraint(c: Abs): Pred | undefined {
   if (c.term?.op === "lit" && c.term.value === true) return undefined;
   if (c.term?.op === "lit" && c.term.value === false) return pTrue;
   if (!c.pred) return undefined;
-  // 否定 pred
+  // 否定 pred（De Morgan 展开见 pred.negatePred）
   return negatePred(c.pred);
-}
-
-function negatePred(p: Pred): Pred {
-  switch (p.op) {
-    case "true":
-      return { op: "false" };
-    case "false":
-      return { op: "true" };
-    case "eq":
-      return { op: "ne", a: p.a, b: p.b };
-    case "ne":
-      return { op: "eq", a: p.a, b: p.b };
-    case "lt":
-      return ge(p.a, p.b);
-    case "le":
-      return gt(p.a, p.b);
-    case "gt":
-      return le(p.a, p.b);
-    case "ge":
-      return lt(p.a, p.b);
-    case "and":
-      // De Morgan：¬(A∧B) = ¬A ∨ ¬B —— Phase A 不展开 or，退回 unknown-ish
-      // 保守：返回一个 not 节点（implies 暂不处理）
-      return { op: "not", arg: p };
-    case "or":
-      return { op: "not", arg: p };
-    case "not":
-      return p.arg;
-    case "typeof":
-      return { op: "not", arg: p };
-  }
 }

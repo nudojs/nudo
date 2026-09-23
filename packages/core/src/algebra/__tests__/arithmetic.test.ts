@@ -17,6 +17,7 @@ import {
   geNum,
   ltNum,
   leNum,
+  or,
   lit,
   v,
   termToString,
@@ -191,6 +192,12 @@ describe("implies", () => {
   it("x>0 ⊬ x+1>2", () => {
     const phi = gtNum(v("x"), 0);
     expect(implies(phi, gtNum(app("+", [v("x"), lit(1)]), 2))).toBe(false);
+  });
+  it("De Morgan：x≤0 ∧ y≤0 ⊢ x≤0 ∨ y≤0", () => {
+    const x = v("x");
+    const y = v("y");
+    expect(implies(and(leNum(x, 0), leNum(y, 0)), or(leNum(x, 0), leNum(y, 0)))).toBe(true);
+    expect(implies(or(leNum(x, 0), leNum(y, 0)), leNum(x, 0))).toBe(false);
   });
 });
 
