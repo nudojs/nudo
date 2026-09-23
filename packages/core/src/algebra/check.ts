@@ -14,6 +14,7 @@ import { parseSource as parse } from "./parse-source.ts";
 import {
   setAbsTruncationCollector,
   resetAbsCallBudget,
+  getAbsCallBudgetStats,
   FORK_TRUNCATION_LABEL,
 } from "./call-budget.ts";
 import type { AbsAssignRecord, AbsCallRecord } from "./ast-records.ts";
@@ -170,6 +171,7 @@ function cloneCheckReport(r: CheckReport): CheckReport {
       ...(s.paramTypes ? { paramTypes: [...s.paramTypes] } : {}),
     })),
     summary: { ...r.summary },
+    ...(r.budget ? { budget: { ...r.budget } } : {}),
   };
 }
 
@@ -921,12 +923,22 @@ function checkSourceInner(
   const warnings = issues.filter((i) => i.severity === "warning").length;
   const infos = issues.filter((i) => i.severity === "info").length;
 
+  const budget = getAbsCallBudgetStats();
   return {
     file: filePath,
     issues,
     ok: errors === 0,
     signatures,
     summary: { errors, warnings, infos, functions: signatures.length },
+    budget: {
+      truncated: budget.truncated,
+      callTruncated: budget.callTruncated,
+      forkTruncated: budget.forkTruncated,
+      calls: budget.calls,
+      maxCalls: budget.maxCalls,
+      forks: budget.forks,
+      maxForks: budget.maxForks,
+    },
   };
 }
 

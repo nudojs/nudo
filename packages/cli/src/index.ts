@@ -1207,6 +1207,16 @@ type HealthReport = {
   uncovered: string[];
   drift?: { added: number; removed: number };
   interfaceDrift?: number;
+  /** A2：本轮分析预算/截断（truncated=true 时签名可能已 widen） */
+  budget?: {
+    truncated: boolean;
+    callTruncated: boolean;
+    forkTruncated: boolean;
+    calls: number;
+    maxCalls: number;
+    forks: number;
+    maxForks: number;
+  };
   error?: string;
 };
 
@@ -1238,6 +1248,19 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
     report.uncovered = result.functions
       .filter((fn) => fn.cases.length === 0 && !fn.skipped && !fn.entryOnly)
       .map((fn) => fn.name);
+    {
+      const { getAbsCallBudgetStats } = await import("@nudojs/core");
+      const b = getAbsCallBudgetStats();
+      report.budget = {
+        truncated: b.truncated,
+        callTruncated: b.callTruncated,
+        forkTruncated: b.forkTruncated,
+        calls: b.calls,
+        maxCalls: b.maxCalls,
+        forks: b.forks,
+        maxForks: b.maxForks,
+      };
+    }
     if (records) {
       const { emitOut, removed } = await reemitUpdate(filePath, source, records);
       if (emitOut.source !== source) {
@@ -1360,6 +1383,12 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
       if ((r.interfaceDrift ?? 0) > 0) {
         console.log(
           `  ✗ contract drift: ${r.interfaceDrift} @generated slot(s) ≠ today's recompute — refresh with: nudo contract --emit ${r.file} --fn <name>`,
+        );
+      }
+      if (r.budget?.truncated) {
+        console.log(
+          `  ⚠ budget truncated  calls ${r.budget.calls}/${r.budget.maxCalls} · forks ${r.budget.forks}/${r.budget.maxForks}` +
+            `${r.budget.callTruncated ? "  (calls)" : ""}${r.budget.forkTruncated ? "  (forks)" : ""} — some results widened to unknown`,
         );
       }
     }

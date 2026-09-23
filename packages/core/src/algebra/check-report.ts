@@ -54,6 +54,19 @@ export type CheckReport = {
     infos: number;
     functions: number;
   };
+  /**
+   * A2 预算/截断可观测（additive）。`truncated=true` 时部分结果可能已
+   * widen 成 unknown——不是契约失败，是引擎预算。
+   */
+  budget?: {
+    truncated: boolean;
+    callTruncated: boolean;
+    forkTruncated: boolean;
+    calls: number;
+    maxCalls: number;
+    forks: number;
+    maxForks: number;
+  };
 };
 
 /**
@@ -87,6 +100,8 @@ export type CheckJson = {
     expected?: string;
     suggestion?: string;
   }>;
+  /** A2：预算用量 / 是否截断（additive） */
+  budget?: CheckReport["budget"];
 };
 
 /** 多文件 `check --json` 信封（CI / monorepo）。单文件仍输出裸 CheckJson。 */
@@ -94,7 +109,8 @@ export type CheckJsonMulti = {
   version: 1;
   kind: "multi";
   ok: boolean;
-  summary: CheckReport["summary"] & { files: number };
+  summary: CheckReport["summary"] & { files: number; budgetTruncated?: boolean };
+  budget?: CheckReport["budget"];
   reports: CheckJson[];
 };
 
@@ -126,6 +142,7 @@ export function serializeCheckJson(r: CheckReport): CheckJson {
       ...(i.expected !== undefined ? { expected: i.expected } : {}),
       ...(i.suggestion !== undefined ? { suggestion: i.suggestion } : {}),
     })),
+    ...(r.budget ? { budget: { ...r.budget } } : {}),
   };
 }
 
@@ -138,17 +155,48 @@ export function serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti {
     functions: 0,
     files: reports.length,
   };
+  let calls = 0;
+  let forks = 0;
+  let maxCalls = 0;
+  let maxForks = 0;
+  let callTruncated = false;
+  let forkTruncated = false;
   for (const r of reports) {
     summary.errors += r.summary.errors;
     summary.warnings += r.summary.warnings;
     summary.infos += r.summary.infos;
     summary.functions += r.summary.functions;
+    if (r.budget) {
+      calls += r.budget.calls;
+      forks += r.budget.forks;
+      maxCalls = Math.max(maxCalls, r.budget.maxCalls);
+      maxForks = Math.max(maxForks, r.budget.maxForks);
+      callTruncated = callTruncated || r.budget.callTruncated;
+      forkTruncated = forkTruncated || r.budget.forkTruncated;
+    }
   }
+  const budgetTruncated = callTruncated || forkTruncated;
   return {
     version: 1,
     kind: "multi",
     ok: reports.every((r) => r.ok),
-    summary,
+    summary: {
+      ...summary,
+      ...(budgetTruncated ? { budgetTruncated: true } : {}),
+    },
+    ...(budgetTruncated || reports.some((r) => r.budget)
+      ? {
+          budget: {
+            truncated: budgetTruncated,
+            callTruncated,
+            forkTruncated,
+            calls,
+            maxCalls,
+            forks,
+            maxForks,
+          },
+        }
+      : {}),
     reports,
   };
 }
@@ -174,6 +222,19 @@ export function formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = 
   lines.push(
     `  ${r.summary.errors} error · ${r.summary.warnings} warning · ${r.summary.infos} info · ${r.summary.functions} fn`,
   );
+
+  // A2：预算截断必须上屏——用户要能知道结果何时被 widen
+  if (r.budget?.truncated) {
+    lines.push("");
+    lines.push("budget");
+    lines.push(
+      `  truncated  calls ${r.budget.calls}/${r.budget.maxCalls} · forks ${r.budget.forks}/${r.budget.maxForks}` +
+        `${r.budget.callTruncated ? "  (calls)" : ""}${r.budget.forkTruncated ? "  (forks)" : ""}`,
+    );
+    lines.push(
+      `  → some results widened to unknown (not a contract failure) — raise nudo.analysis.maxForks / simplify recursion`,
+    );
+  }
 
   // 签名始终上屏（成功也不静默）；入口 any 不得打成 unknown（design §1.1）
   if (r.signatures.length > 0) {

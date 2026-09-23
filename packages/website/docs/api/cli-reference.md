@@ -406,9 +406,9 @@ Samples: [`docs/examples/migrate/`](https://github.com/nudojs/nudo/tree/main/doc
 
 `check --json` and `test --json` are the machine-readable faces.
 
-- **check --json** — signatures (including `any` entry params and throws), diagnostics with codes such as `nudo:entry-may-throw`, and summary counts.
+- **check --json** — signatures (including `any` entry params and throws), diagnostics with codes such as `nudo:entry-may-throw`, summary counts, and **`budget`** (call/fork usage + `truncated` when analysis widened results).
 - **test --json** — per-function cases (`entry@` / `call@` / directive), an `assertions` summary (`passed`/`failed`/`unchecked`), diagnostics, and optional Abs intension blocks. Declared assertion failures still exit 1.
-- **check --json** — single file only (directory targets error with `--json requires a single file, not multiple targets`); `test --json` errors with `--json requires a single file`.
+- **check --json** — single file only (directory targets error with `--json requires a single file, not multiple targets`); `test --json` errors with `--json requires a single file`. Multi-file adds `kind:"multi"` + aggregate `budgetTruncated`.
 
 ---
 

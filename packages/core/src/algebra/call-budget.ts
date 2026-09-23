@@ -16,6 +16,41 @@ let _absTotalCalls = 0;
 let _activeCallKeys: string[] = [];
 const _fnCallIds = new WeakMap<object, string>();
 let _fnCallIdSeq = 0;
+/** 本轮是否发生调用预算截断（A2 可观测） */
+let _callTruncated = false;
+
+/** A2：预算/截断快照（check --json / health 上屏） */
+export type AbsBudgetStats = {
+  calls: number;
+  maxCalls: number;
+  forks: number;
+  maxForks: number;
+  callTruncated: boolean;
+  forkTruncated: boolean;
+  /** 任一预算截断 → true（结果可能已 widen 成 unknown） */
+  truncated: boolean;
+};
+
+export function getAbsCallBudgetStats(): AbsBudgetStats {
+  return {
+    calls: _absTotalCalls,
+    maxCalls: MAX_TOTAL_CALLS,
+    forks: _bForkCount,
+    maxForks: _bForkBudgetLimit,
+    callTruncated: _callTruncated,
+    forkTruncated: _bForkTruncNoted,
+    truncated: _callTruncated || _bForkTruncNoted,
+  };
+}
+
+/** 宿主入口（runTranspiled / callTranspiledExportFull / check）前重置 */
+export function resetAbsCallBudget(): void {
+  _absCallDepth = 0;
+  _absTotalCalls = 0;
+  _activeCallKeys = [];
+  _callTruncated = false;
+  resetBForkBudget();
+}
 
 export function stableCallId(obj: object): string {
   let id = _fnCallIds.get(obj);
@@ -24,14 +59,6 @@ export function stableCallId(obj: object): string {
     _fnCallIds.set(obj, id);
   }
   return id;
-}
-
-/** 宿主入口（runTranspiled / callTranspiledExportFull / check）前重置 */
-export function resetAbsCallBudget(): void {
-  _absCallDepth = 0;
-  _absTotalCalls = 0;
-  _activeCallKeys = [];
-  resetBForkBudget();
 }
 
 /** 截断结果：分析无信息，conf=opaque（不是 any） */
@@ -79,6 +106,7 @@ export function enterCall(key: string, label: string): boolean {
     _absCallDepth >= MAX_CALL_DEPTH ||
     _absTotalCalls >= MAX_TOTAL_CALLS
   ) {
+    _callTruncated = true;
     noteAbsTruncation(label);
     return false;
   }
