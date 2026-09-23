@@ -4,7 +4,7 @@
  */
 
 import type { Abs } from "./abs.ts";
-import { abs, litValue, numLit, strLit, boolLit, unknown, confJoin, isExactLit } from "./abs.ts";
+import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, confJoin, isExactLit } from "./abs.ts";
 import { joinAbs, objOf, markNullProtoObj, canonicalArrayIndex, getSlot, isNullProtoObj } from "./objects.ts";
 import { registerSymbolMeta, symbolIdOf, symbolDescriptionAbs, isSymbolAbs as isSymAbs } from "./symbol-id.ts";
 import { TUPLE_MATERIALIZE_CAP } from "./containers.ts";
@@ -29,7 +29,8 @@ import {
   ctorArgDefinitelyInvalid,
 } from "./collections.ts";
 import { applyCallbackValue, undefAbs, asAbs } from "./hof.ts";
-import { absFunction } from "./abs-fn.ts";
+import { absFunction, getFnImpl } from "./abs-fn.ts";
+import { markClassValue } from "./class-mark.ts";
 
 const noBody = { type: "BlockStatement", body: [], directives: [] } as never;
 import { matchIterElements } from "./exec/match-iter.ts";
@@ -355,8 +356,8 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       if (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined)) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
-      // 具体 prototype 对象建模成本高——值域保守 unknown，仅 nullish 硬抛
-      return unknown;
+      // 具体原型带 constructor 槽（.constructor.name 链可解）；不可判保持 unknown
+      return protoOfRecv(a0);
     }
     case "assign": {
       // Object.assign(a, b) ≈ spread
@@ -1169,14 +1170,380 @@ export function evalRegExpMethod(name: string, recv: Abs, args: Abs[]): Abs | un
   return undefined;
 }
 
-/** Promise：new Promise / Promise.resolve / reject / all */
-export function evalPromiseCtor(_args: Abs[]): Abs {
+// ---------------------------------------------------------------------------
+// 内建构造器 Abs（`.constructor` / `===` / `.name` 折叠共用）
+// ---------------------------------------------------------------------------
+
+const builtinCtorByName = new Map<string, Abs>();
+const builtinCtorByAbs = new WeakMap<object, string>();
+
+/**
+ * 内建构造器一等值（Number/String/…/Promise）。
+ * 与 GLOBAL_FNS 身份同一语义：`.name` 折叠字面量；`===` 与宿主同名构造器折 true。
+ * 不是可任意调用的 Function——调用仍走 evalGlobalFn / $new 名派发。
+ */
+export function builtinCtorAbs(name: string): Abs {
+  let a = builtinCtorByName.get(name);
+  if (!a) {
+    a = abs(
+      { k: "brand", name, shape: objOf({ name: { value: strLit(name) } }) },
+      undefined,
+      undefined,
+      "exact",
+    );
+    markClassValue(a as object, name);
+    builtinCtorByName.set(name, a);
+    builtinCtorByAbs.set(a as object, name);
+  }
+  return a;
+}
+
+/** Abs 侧内建构造器身份（与宿主构造器名对齐） */
+export function builtinCtorNameOf(v: unknown): string | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  return builtinCtorByAbs.get(v as object);
+}
+
+/** 宿主全局构造器身份（Number === (42).constructor 折叠用） */
+export function hostBuiltinCtorName(v: unknown): string | undefined {
+  if (typeof v !== "function") return undefined;
+  if (v === Number) return "Number";
+  if (v === String) return "String";
+  if (v === Boolean) return "Boolean";
+  if (v === BigInt) return "BigInt";
+  if (v === Symbol) return "Symbol";
+  if (v === Array) return "Array";
+  if (v === Object) return "Object";
+  if (v === Function) return "Function";
+  if (v === Promise) return "Promise";
+  if (v === Date) return "Date";
+  if (v === RegExp) return "RegExp";
+  if (v === Map) return "Map";
+  if (v === Set) return "Set";
+  if (v === WeakMap) return "WeakMap";
+  if (v === WeakSet) return "WeakSet";
+  if (v === Error) return "Error";
+  if (v === TypeError) return "TypeError";
+  if (v === RangeError) return "RangeError";
+  if (v === ReferenceError) return "ReferenceError";
+  if (v === SyntaxError) return "SyntaxError";
+  if (v === URIError) return "URIError";
+  if (v === EvalError) return "EvalError";
+  if (v === AggregateError) return "AggregateError";
+  return undefined;
+}
+
+/**
+ * 接收者 → 原型链 constructor 名（`.constructor` 折叠）。
+ * null-proto 无 Object.prototype.constructor → undefined（读侧走 undef）。
+ */
+export function ctorNameOfRecv(recv: Abs): string | undefined {
+  const s = recv.shape;
+  switch (s.k) {
+    case "prim":
+      return s.type === "number"
+        ? "Number"
+        : s.type === "string"
+          ? "String"
+          : s.type === "boolean"
+            ? "Boolean"
+            : s.type === "bigint"
+              ? "BigInt"
+              : s.type === "symbol"
+                ? "Symbol"
+                : undefined;
+    case "tuple":
+    case "arr":
+      return "Array";
+    case "obj":
+      return isNullProtoObj(recv) ? undefined : "Object";
+    case "fn":
+      return "Function";
+    case "eff":
+      return s.eff === "promise" ? "Promise" : "Generator";
+    case "brand": {
+      if (s.name === "Object.prototype") return "Object";
+      if (s.name.endsWith(".prototype")) return s.name.slice(0, -".prototype".length);
+      return s.name;
+    }
+    case "sum": {
+      let first: string | undefined;
+      for (const m of s.members) {
+        const n = ctorNameOfRecv(m);
+        if (n === undefined) return undefined;
+        if (first === undefined) first = n;
+        else if (first !== n) return undefined;
+      }
+      return first;
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** `X.prototype` 形态（getPrototypeOf 结果；带 constructor 槽） */
+export function protoBrandAbs(ctorName: string): Abs {
   return abs(
-    { k: "eff", eff: "promise", inner: unknown },
+    {
+      k: "brand",
+      name: `${ctorName}.prototype`,
+      shape: objOf({ constructor: { value: builtinCtorAbs(ctorName) } }),
+    },
     undefined,
     undefined,
-    "partial",
+    "exact",
   );
+}
+
+/**
+ * Object.getPrototypeOf 的具体原型投影（constructor 链可解）。
+ * null-proto → null 字面量；不可判形态 → unknown（不假装精确原型）。
+ */
+export function protoOfRecv(a: Abs): Abs {
+  const s = a.shape;
+  const nullProtoLit = abs(
+    { k: "unknown" },
+    { op: "lit", value: null as never },
+    pTrue,
+    "exact",
+  );
+  if (s.k === "tuple" || s.k === "arr") return protoBrandAbs("Array");
+  if (s.k === "prim") {
+    const ctor =
+      s.type === "number"
+        ? "Number"
+        : s.type === "string"
+          ? "String"
+          : s.type === "boolean"
+            ? "Boolean"
+            : s.type === "bigint"
+              ? "BigInt"
+              : s.type === "symbol"
+                ? "Symbol"
+                : undefined;
+    return ctor ? protoBrandAbs(ctor) : unknown;
+  }
+  if (s.k === "fn") return protoBrandAbs("Function");
+  if (s.k === "eff" && s.eff === "promise") return protoBrandAbs("Promise");
+  if (s.k === "brand") {
+    if (s.name === "Object.prototype") return nullProtoLit;
+    if (s.name.endsWith(".prototype")) return objectProtoBrand();
+    return protoBrandAbs(s.name);
+  }
+  if (s.k === "obj") {
+    if (isNullProtoObj(a)) return nullProtoLit;
+    return objectProtoBrand();
+  }
+  return unknown;
+}
+
+// ---------------------------------------------------------------------------
+// Promise：new Promise / Promise.resolve / reject / all / then
+// ---------------------------------------------------------------------------
+
+/** Promise executor 作用域：fork 计数（first-wins vs 路径 join） */
+const promiseExecStack: number[] = [];
+
+export function enterPromiseExecutorScope(): void {
+  promiseExecStack.push(0);
+}
+
+export function leavePromiseExecutorScope(): number {
+  return promiseExecStack.pop() ?? 0;
+}
+
+/** $fork 在 executor 内发生时打点（多臂 resolve 需 join，不得 first-wins 假精确） */
+export function notePromiseExecutorFork(): void {
+  if (promiseExecStack.length > 0) {
+    promiseExecStack[promiseExecStack.length - 1]!++;
+  }
+}
+
+function promiseAbs(inner: Abs, conf: Abs["conf"] = "path"): Abs {
+  return abs({ k: "eff", eff: "promise", inner }, undefined, undefined, conf);
+}
+
+function promiseUnknown(): Abs {
+  return promiseAbs(unknown, "partial");
+}
+
+/** resolve 实参是 thenable → 展开 inner（与 Promise.resolve 同口径） */
+function unwrapThenable(v: Abs): Abs {
+  if (v.shape.k === "eff" && v.shape.eff === "promise") return v.shape.inner;
+  return v;
+}
+
+/** JS 原始值 / null → Abs 字面量（resolveJs 等宿主回调桥） */
+function litFromJs(value: unknown): Abs {
+  if (value === undefined) return undefAbs();
+  if (value === null) {
+    return abs({ k: "unknown" }, { op: "lit", value: null as never }, pTrue, "exact");
+  }
+  if (typeof value === "number") return numLit(value);
+  if (typeof value === "string") return strLit(value);
+  if (typeof value === "boolean") return boolLit(value);
+  if (typeof value === "bigint") return bigintLit(value);
+  return unknown;
+}
+
+// then/catch 回调是微任务：不得在同步 then() 里跑（否则外层 return 前被写回）。
+// 在 callTranspiledExportFull 出口排空，对齐原生执行序。
+const promiseMicros: Array<() => void> = [];
+
+export function queuePromiseMicro(task: () => void): void {
+  promiseMicros.push(task);
+}
+
+export function drainPromiseMicros(): void {
+  while (promiseMicros.length > 0) {
+    const task = promiseMicros.shift()!;
+    try {
+      task();
+    } catch {
+      /* 微任务抛错不改写已计算的同步返回值 */
+    }
+  }
+}
+
+/**
+ * new Promise(executor)：调用 executor(resolve, reject)，收集 resolve 实参作为
+ * promise inner。原生只认第一次 settle——顺序双 resolve 取第一次；执行器内
+ * $fork 分叉时各臂 settle 值 join（路径敏感，不得 first-wins 假精确）。
+ * reject 不填 resolved 通道；永不 settle / 抽象 fn / 执行抛 → promise<unknown>。
+ */
+export function evalPromiseCtor(args: Abs[]): Abs {
+  const executor = args[0];
+  if (!executor) return promiseUnknown();
+
+  let hasSettle = false;
+  let hasResolve = false;
+  const resolveValues: Abs[] = [];
+
+  const onResolve = (value?: unknown): Abs => {
+    const raw = asAbs(value) ?? litFromJs(value);
+    const v = unwrapThenable(raw);
+    if (!hasSettle) {
+      hasSettle = true;
+      hasResolve = true;
+      resolveValues.push(v);
+    } else if (hasResolve) {
+      // 后续 resolve：顺序 no-op（first-wins）或另一 fork 臂（稍后 join）
+      resolveValues.push(v);
+    }
+    return undefAbs();
+  };
+  const onReject = (_reason?: unknown): Abs => {
+    if (!hasSettle) hasSettle = true;
+    return undefAbs();
+  };
+
+  // B 路径 $callNamed("r", r, …) 对 JS 函数直调；Abs fn 走 applyCallbackValue/$call
+  // 必须包成 Abs fn：裸 JS 函数当实参时 $call 认不出 apply，fork 臂里 r(1) 会掉成 unknown
+  const resolveAbs = absFunction(["value"], {
+    body: noBody,
+    apply: (args) => onResolve(args[0]),
+  });
+  const rejectAbs = absFunction(["reason"], {
+    body: noBody,
+    apply: (args) => onReject(args[0]),
+  });
+
+  enterPromiseExecutorScope();
+  try {
+    if (typeof executor === "function") {
+      (executor as (...a: unknown[]) => unknown)(
+        (value?: unknown) => onResolve(value),
+        (reason?: unknown) => onReject(reason),
+      );
+    } else if (executor && typeof executor === "object" && "shape" in (executor as object)) {
+      const impl = getFnImpl(executor as Abs);
+      const k = (executor as Abs).shape.k;
+      // 抽象 fn（无 body/apply）：不可执行，保持 promise<unknown>
+      if (!impl?.body && !impl?.apply && k === "fn" && !impl?.relation) {
+        return promiseUnknown();
+      }
+      applyCallbackValue(executor, [resolveAbs, rejectAbs], emptyEnv(), pTrue, defaultLeakBudget);
+    } else {
+      return promiseUnknown();
+    }
+  } catch {
+    // executor 抛出 → rejected promise；resolved 通道不假装 settle
+    return promiseUnknown();
+  }
+  const forks = leavePromiseExecutorScope();
+
+  if (!hasResolve || resolveValues.length === 0) return promiseUnknown();
+  // 无 fork：顺序双 resolve 取第一次（原生 no-op）；有 fork：各臂 join
+  const inner =
+    forks === 0 || resolveValues.length === 1
+      ? resolveValues[0]!
+      : resolveValues.reduce((a, b) => joinAbs(a, b));
+  return promiseAbs(inner, "path");
+}
+
+/** then/catch/finally：可映射回调 → 新 inner；做不到诚实 promise<unknown> */
+export function evalPromiseMethod(
+  name: string,
+  recv: Abs,
+  args: Abs[],
+): Abs | undefined {
+  if (recv.shape.k !== "eff" || recv.shape.eff !== "promise") return undefined;
+  const inner = recv.shape.inner;
+  switch (name) {
+    case "then": {
+      const onFulfilled = args[0];
+      if (!onFulfilled) return promiseAbs(inner, recv.conf === "exact" ? "path" : recv.conf);
+      // 先建 promise 占位，回调在微任务里填 inner（原生 then 不同步跑回调）
+      const resultPromise = promiseAbs(unknown, "path");
+      queuePromiseMicro(() => {
+        const mapped = applyCallbackValue(
+          onFulfilled,
+          [inner],
+          emptyEnv(),
+          pTrue,
+          defaultLeakBudget,
+        );
+        // 调用失败：无 term 的 unknown 单例。回调返回 undefined（undefAbs）合法。
+        const next =
+          !mapped || (mapped.shape.k === "unknown" && mapped.term === undefined)
+            ? unknown
+            : unwrapThenable(mapped);
+        (resultPromise.shape as { inner: Abs }).inner = next;
+      });
+      return resultPromise;
+    }
+    case "catch": {
+      // 只建模 resolved 通道：onRejected 映射 reject reason（unknown）→ 可能 resolve
+      // 回调同样进微任务，不污染同步返回路径
+      const onRejected = args[0];
+      if (!onRejected) return promiseAbs(inner, recv.conf === "exact" ? "path" : recv.conf);
+      const resultPromise = promiseAbs(inner, "path");
+      queuePromiseMicro(() => {
+        const recovered = applyCallbackValue(
+          onRejected,
+          [unknown],
+          emptyEnv(),
+          pTrue,
+          defaultLeakBudget,
+        );
+        if (!recovered || (recovered.shape.k === "unknown" && recovered.term === undefined)) {
+          (resultPromise.shape as { inner: Abs }).inner = unknown;
+          return;
+        }
+        (resultPromise.shape as { inner: Abs }).inner = joinAbs(
+          inner,
+          unwrapThenable(recovered),
+        );
+      });
+      return resultPromise;
+    }
+    case "finally": {
+      // finally 不改变 settled value（回调返回值丢弃）
+      return promiseAbs(inner, recv.conf === "exact" ? "path" : recv.conf);
+    }
+    default:
+      return undefined;
+  }
 }
 
 export function evalPromiseStatic(name: string, args: Abs[]): Abs | undefined {
@@ -1185,21 +1552,22 @@ export function evalPromiseStatic(name: string, args: Abs[]): Abs | undefined {
       const inner = args[0] ?? unknown;
       // Promise.resolve(thenable) 展开
       if (inner.shape.k === "eff" && inner.shape.eff === "promise") return inner;
-      return abs({ k: "eff", eff: "promise", inner }, undefined, undefined, "path");
+      return promiseAbs(inner, "path");
     }
     case "reject":
-      return abs({ k: "eff", eff: "promise", inner: unknown }, undefined, undefined, "partial");
+      return promiseUnknown();
     case "all": {
       const a0 = args[0];
       if (a0?.shape.k === "arr" && a0.shape.element.shape.k === "eff") {
-        return abs(
-          { k: "eff", eff: "promise", inner: abs({ k: "arr", element: a0.shape.element.shape.inner }, undefined, undefined, "path") },
-          undefined,
-          undefined,
+        return promiseAbs(
+          abs({ k: "arr", element: a0.shape.element.shape.inner }, undefined, undefined, "path"),
           "path",
         );
       }
-      return abs({ k: "eff", eff: "promise", inner: abs({ k: "arr", element: unknown }, undefined, undefined, "partial") }, undefined, undefined, "partial");
+      return promiseAbs(
+        abs({ k: "arr", element: unknown }, undefined, undefined, "partial"),
+        "partial",
+      );
     }
     default:
       return undefined;
@@ -1503,14 +1871,26 @@ export const OBJECT_PROTO_METHOD_NAMES = new Set([
   "toLocaleString",
 ]);
 
-/** Object.prototype 单例（$get(Object, "prototype") 与 host Object.prototype 共用） */
+let objectProtoSingleton: Abs | undefined;
+
+/** Object.prototype 单例（$get(Object, "prototype") 与 host Object.prototype 共用）。
+ *  带 constructor 槽（不可枚举）供 `.constructor` / `.constructor.name` 链折叠。 */
 export function objectProtoBrand(): Abs {
-  return abs(
-    { k: "brand", name: "Object.prototype", shape: objOf({}) },
-    undefined,
-    undefined,
-    "exact",
-  );
+  if (!objectProtoSingleton) {
+    const a = abs(
+      {
+        k: "brand",
+        name: "Object.prototype",
+        shape: objOf({ constructor: { value: builtinCtorAbs("Object") } }),
+      },
+      undefined,
+      undefined,
+      "exact",
+    );
+    setPropFlags(a, "constructor", { enumerable: false, writable: true, configurable: true });
+    objectProtoSingleton = a;
+  }
+  return objectProtoSingleton;
 }
 
 export function isObjectProtoBrand(a: Abs | undefined): boolean {
@@ -1619,7 +1999,7 @@ function propertyIsEnumerableDecision(recv: Abs, key: string): Abs {
   return boolPrimB();
 }
 
-function typeTagOf(recv: Abs): string {
+function typeTagOf(recv: Abs): string | undefined {
   if (recv.term?.op === "lit") {
     const v = recv.term.value;
     if (v === null) return "Null";
@@ -1639,6 +2019,14 @@ function typeTagOf(recv: Abs): string {
   if (s.k === "fn") return "Function";
   if (s.k === "eff") return s.eff === "promise" ? "Promise" : "Generator";
   if (s.k === "brand") {
+    // 只折叠标准 Object.prototype.toString 标签；未建模 brand（URLSearchParams
+    // 等）不得假精确折 [object X]——native 在无该全局时是 ReferenceError
+    const KNOWN_TAGS = new Set([
+      "Object", "Array", "String", "Number", "Boolean", "Function", "Promise",
+      "Date", "RegExp", "Error", "TypeError", "RangeError", "SyntaxError",
+      "ReferenceError", "URIError", "EvalError", "Map", "Set", "WeakMap", "WeakSet",
+      "Object.prototype",
+    ]);
     const inner = s.shape;
     if (inner.shape.k === "obj") {
       const tag = getSlot(inner.shape.slots, "@@toStringTag");
@@ -1647,7 +2035,10 @@ function typeTagOf(recv: Abs): string {
         if (typeof v === "string") return v;
       }
     }
-    return s.name;
+    if (KNOWN_TAGS.has(s.name) || s.name.endsWith("Error")) {
+      return s.name === "Object.prototype" ? "Object" : s.name;
+    }
+    return undefined;
   }
   if (s.k === "obj") {
     const tag = getSlot(s.slots, "@@toStringTag");
@@ -1719,7 +2110,9 @@ export function evalObjectProtoMethod(
     }
     case "toString":
     case "toLocaleString": {
-      return strLit(`[object ${typeTagOf(thisVal)}]`);
+      const tag = typeTagOf(thisVal);
+      if (tag === undefined) return str();
+      return strLit(`[object ${tag}]`);
     }
   }
   return undefined;

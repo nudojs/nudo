@@ -5,11 +5,11 @@
 
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, str, strLit, numLit } from "../abs.ts";
-import { objOf, joinAbs, isObj, canonicalArrayIndex } from "../objects.ts";
+import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot } from "../objects.ts";
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple, clearStaleTermPred } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf } from "../builtins.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid } from "../collections.ts";
 import { registerMatchIter } from "./match-iter.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
@@ -132,6 +132,20 @@ function findCtor(
 
 /** new C(...) → 空 brand 实例 + ctor 写字段；非类构造走 impl/$call */
 export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Abs {
+  // Abs 侧内建构造器（builtinCtorAbs / env fn）：按名派发 Error/Promise
+  if (cls && typeof cls === "object" && "shape" in (cls as object)) {
+    const cs = (cls as Abs).shape;
+    const ctorName =
+      cs.k === "brand"
+        ? cs.name
+        : builtinCtorNameOf(cls) ?? (cs.k === "fn" ? (cs.name ?? undefined) : undefined);
+    if (ctorName && isErrorCtorName(ctorName)) {
+      return errorBrandAbs(ctorName, args);
+    }
+    if (ctorName === "Promise") {
+      return evalPromiseCtor(args);
+    }
+  }
   // JS 内建构造器（Error/Date/URL…）：直接 brand，避免 $call 对非 Abs 炸掉
   if (typeof cls === "function") {
     // new Array(n) → n 元空洞 tuple；new Array(a,b,c) → 字面量 tuple；
@@ -168,6 +182,10 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     // new Symbol() 原生 TypeError（Symbol 只能当函数调用）
     if (clsName === "Symbol") {
       throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    // new Promise(executor)：调用 executor 收集 resolve 实参 → eff(promise)
+    if (clsName === "Promise") {
+      return evalPromiseCtor(args);
     }
     // new String(prim)：包装箱带 length/下标槽（与 evalGlobalFn Object 装箱
     // 同口径）——此前通用空箱 branch 折 new String('ab')['0'] === undefined、
@@ -642,6 +660,11 @@ export function $invoke(
       return runtimeAssignObject(args);
     }
     return (ns ? evalNamespaceCall(ns, method, args) : undefined) ?? unknown;
+  }
+  // Promise 实例方法（then/catch/finally）：映射 resolved 通道
+  if (thisVal.shape.k === "eff" && thisVal.shape.eff === "promise") {
+    const pr = evalPromiseMethod(method, thisVal, args);
+    if (pr !== undefined) return pr;
   }
   // union：只在「声称支持」该方法的成员上派发，再 join（string|Buffer.split
   // 不应因 Buffer 分支无 split 而整体 unknown）
@@ -1258,7 +1281,7 @@ export function $thisGet(thisVal: Abs, key: string): Abs {
   if (thisVal.shape.k === "brand") {
     const inner = thisVal.shape.shape;
     if (inner.shape.k === "obj") {
-      const slot = inner.shape.slots[key];
+      const slot = getSlot(inner.shape.slots, key);
       if (slot) return slot.value;
     }
   }

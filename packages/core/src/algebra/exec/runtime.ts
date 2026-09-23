@@ -30,7 +30,7 @@ import {
 import { shouldWidenArrayLiteral, widenedArrayConf, TUPLE_MATERIALIZE_CAP } from "../containers.ts";
 import { registerMatchIter, matchIterElements } from "./match-iter.ts";
 import { leqAbs } from "../leq.ts";
-import { evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants, regexBrandAbsFrom, evalObjectProtoMethod, objectProtoMethodAbs, isObjectProtoBrand, OBJECT_PROTO_METHOD_NAMES, isSymbolAbs, symbolDescriptionAbs, objectProtoBrand } from "../builtins.ts";
+import { evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants, regexBrandAbsFrom, evalObjectProtoMethod, objectProtoMethodAbs, isObjectProtoBrand, OBJECT_PROTO_METHOD_NAMES, isSymbolAbs, symbolDescriptionAbs, objectProtoBrand, builtinCtorAbs, ctorNameOfRecv, notePromiseExecutorFork } from "../builtins.ts";
 import type { Phi } from "../pred.ts";
 import { pTrue, and, predEquals } from "../pred.ts";
 import {
@@ -1017,6 +1017,10 @@ function boundedPhi(p: Phi, q: Phi): Phi {
 }
 
 export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs {
+  // Promise executor 内分叉：各臂 resolve 需 join（见 evalPromiseCtor）
+  notePromiseExecutorFork();
+  // 缺参/宿主裸值：先收成 Abs，否则 litTruth 读 .shape 炸掉、被 executor catch 成 unknown
+  const testAbs = asAbsVal(test);
   // 分支展开上限（递归×循环爆炸阀）：超限放弃分支 = unknown（最保守）。
   // 截断已由 bumpBForkBudget → noteBForkTruncation 上报（nudo:fork-truncated）
   if (!bumpBForkBudget()) return unknown;
@@ -1024,15 +1028,15 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
   // 此处把 Φ∧test（真臂）/ Φ∧¬test（假臂）压进臂作用域——嵌套/兄弟分支的
   // 路径事实沿臂累积（外层已证 x>y ⇒ 内层同测试折叠）。
   // 单次 litTruth：isDefinitelyTrue/False 各算一遍是纯浪费。
-  const truth = litTruth(test);
+  const truth = litTruth(testAbs);
   const p = currentExecPhi();
-  const tCons = test.pred;
+  const tCons = testAbs.pred;
   if (truth === true) {
     return asAbsVal(withExecPhi(tCons ? boundedPhi(p, tCons) : p, consequent));
   }
-  if (truth === false || test.shape.k === "never") {
+  if (truth === false || testAbs.shape.k === "never") {
     if (!alternate) return undef();
-    const tNeg = falseConstraint(test);
+    const tNeg = falseConstraint(testAbs);
     return asAbsVal(withExecPhi(tNeg ? boundedPhi(p, tNeg) : p, alternate));
   }
   const phiTrue = tCons ? boundedPhi(p, tCons) : p;
@@ -1040,7 +1044,7 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
   let phiFalse: Phi | undefined;
   const falsePhi = (): Phi => {
     if (phiFalse === undefined) {
-      const tNeg = falseConstraint(test);
+      const tNeg = falseConstraint(testAbs);
       phiFalse = tNeg ? boundedPhi(p, tNeg) : p;
     }
     return phiFalse;
@@ -1249,6 +1253,19 @@ function tupleOrWiden(els: Abs[], conf: Confidence): Abs {
 /** 数组字面量 → ≤cap tuple（逐元素精确）/ >cap arr；策略与 ast-eval 同源（containers.ts） */
 export function $arr(items: Abs[]): Abs {
   return tupleOrWiden(items.map(asAbsVal), "exact");
+}
+
+/**
+ * `arguments` 对象 → 类数组 tuple（$len/$idx 投影 length/下标；typeof 为 "object"）。
+ * strict/ESM 与形参**独立映射**：写 `arguments[i]` 不改形参，写形参不改 `arguments`。
+ * （sloppy 非严格是 mapped arguments object，二者互相写回——Nudo 分析按 ESM/strict。）
+ * 与 rest 绑定解耦：rest 仍从真实 `arguments`/rest 形参收集，本对象只服务用户写的 `arguments`。
+ */
+export function $arguments(items: ArrayLike<unknown>): Abs {
+  const n = typeof items?.length === "number" && items.length > 0 ? items.length : 0;
+  const els: Abs[] = new Array(n);
+  for (let i = 0; i < n; i++) els[i] = asAbsVal((items as ArrayLike<unknown>)[i]);
+  return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
 }
 
 /**
@@ -2181,6 +2198,12 @@ export function $get(
   if (isSymbolAbs(o) && key === "description") {
     return symbolDescriptionAbs(o) ?? unknown;
   }
+  // Promise 实例方法一等读取（typeof p.then）
+  if (o.shape.k === "eff" && o.shape.eff === "promise" && (key === "then" || key === "catch" || key === "finally")) {
+    return absFunction([key === "then" ? "onFulfilled" : key === "catch" ? "onRejected" : "onFinally"], {
+      body: noBody,
+    });
+  }
   if (o.shape.k === "brand") {
     const isClassVal = classNameOfValue(o as object) === o.shape.name;
     // 内建 brand 原型方法读取（typeof m.forEach / m[Symbol.iterator]）：
@@ -2195,8 +2218,9 @@ export function $get(
     if (key === "size" && o.shape.name === "Set") return setSizeAbs(o);
     const inner = o.shape.shape;
     // 自有数据属性优先于原型访问器（原生属性查找：own → prototype）
+    // 必须 getSlot：constructor/toString 等键裸读会踩宿主 Object.prototype
     if (inner?.shape.k === "obj") {
-      const slot = inner.shape.slots[key];
+      const slot = getSlot(inner.shape.slots, key);
       if (slot && !slot.optional) return slot.value;
     }
     if (isClassVal) {
@@ -2232,6 +2256,11 @@ export function $get(
           return absFunction(spec.methodParams?.[key] ?? [], { body: noBody });
         }
       }
+    }
+    // 原型链 constructor：内建 brand（Error/Date/…）→ 对应构造器 Abs
+    if (key === "constructor") {
+      const cn = ctorNameOfRecv(o);
+      if (cn) return builtinCtorAbs(cn);
     }
     return $get(inner, key, opts);
   }
@@ -2270,6 +2299,10 @@ export function $get(
       return objectProtoMethodAbs(key);
     }
     if ((o.shape as ObjShape).open) return unknown;
+    // Object.prototype.constructor（null-proto 无 → undef）
+    if (key === "constructor" && !isNullProtoObj(o)) {
+      return builtinCtorAbs("Object");
+    }
     // C0.5：闭 shape 缺槽且求值命中 → 可选 nudo:missing-slot（默认 off）
     noteObjSlotMissing(o, key);
     return undef();
@@ -2277,6 +2310,11 @@ export function $get(
   if (o.shape.k === "sum") {
     const parts = o.shape.members.map((m) => $get(m, key, opts));
     return parts.reduce((a, b) => joinAbs(a, b));
+  }
+  // prim / tuple / arr / fn / eff 的原型 constructor（上文未命中自有槽）
+  if (key === "constructor") {
+    const cn = ctorNameOfRecv(o);
+    if (cn) return builtinCtorAbs(cn);
   }
   if (!opts?.silent) {
     // nullish → may-throw TypeError（soft，不中断求值）

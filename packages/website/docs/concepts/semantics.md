@@ -277,8 +277,30 @@ These constructs currently evaluate to `unknown` (often with a `nudo:unknown-rec
 |---|---|---|
 | Primitive autoboxing | `"nudo".constructor` → `unknown` | `.length`, string methods above |
 | Promise executor | `new Promise((r) => r("done"))` → `promise<unknown>` | `@nudo:mock` + `async` functions |
-| Per-iteration `let` closures | `fns[i]()` → `unknown` | direct iteration results |
-| `arguments` | → `unknown` (`nudo:builtin-unknown`) | named parameters |
+| Arrow `arguments` without a direct outer reference | → `unknown` (see `arguments` below) | named parameters |
+
+### Modeled: `arguments` (strict/ESM)
+
+`arguments` is a **modeled** array-like object (tuple projection) inside non-arrow functions:
+
+| Pattern | Result |
+|---|---|
+| `arguments.length` | exact actual-argument count (defaults/rest do not inflate it) |
+| `arguments[i]` | i-th actual argument; out-of-range → `undefined` |
+| `typeof arguments` | `"object"` |
+| `[...arguments]` / `Array.from(arguments, mapFn)` | expands the actual argument list |
+| `Array.from(arguments).join(sep)` | expands; join folding stays abstract `string` (existing array-join model) |
+| Write `arguments[i] = v` | does **not** write formal parameters |
+| Write a formal parameter | does **not** write `arguments[i]` |
+| Arrow `() => arguments…` | inherits the enclosing non-arrow `arguments` when that function also references `arguments` directly; otherwise honest `unknown` |
+| Default params | `arguments.length` counts actual args only (`f()` + `f(a=1)` → `0`) |
+| Rest params | `arguments.length` is the actual count; rest binding is unchanged |
+
+Nudo analysis follows **ESM/strict** semantics: `arguments` and formal parameters are **independent** mappings. Sloppy-mode non-strict functions use a mapped `arguments` object (writes on either side are reflected on the other) — that is intentionally not modeled.
+
+### Modeled: per-iteration `let` closures
+
+`for (let i = …)` creates a **fresh binding per iteration**; closures capture that iteration's `i` (`fns.push(() => i)` then `fns[0]()` / `fns[1]()` / `fns[2]()` fold to `0` / `1` / `2`). `for (var i = …)` keeps a **shared** binding (all closures see the final value). `forEach((x) => …)` callback parameters are per-callback (unchanged). Abstract-bound loops still join conservatively at `$for` exits — no false-precise capture.
 
 ## Mock boundary (still recommended)
 

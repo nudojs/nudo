@@ -71,6 +71,11 @@ export type TranspileOptions = {
   conditionalFlow?: number;
   /** 函数/箭头体内（顶层绑定表只收顶层作用域） */
   inFunction?: boolean;
+  /**
+   * 当前词法作用域的 `arguments` 绑定名（非箭头函数 prologue 里 `$arguments(...)`）。
+   * 箭头沿外层继承；无绑定（模块顶层 / 仅嵌套箭头引用）→ Identifier 分支折 $unknown()。
+   */
+  argsBinding?: string;
 };
 
 function matchAsOverride(stmt: Node, opts: TranspileOptions): string | null {
@@ -94,6 +99,46 @@ function fnBodyHasThis(fn: { body?: Node | null }): boolean {
   const walk = (n: Node): boolean => {
     if (n.type === "ThisExpression") return true;
     if (n.type === "FunctionDeclaration" || n.type === "FunctionExpression") return false;
+    if (seen.has(n)) return false;
+    seen.add(n);
+    for (const [k, v] of Object.entries(n)) {
+      if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments") continue;
+      if (Array.isArray(v)) {
+        for (const item of v) {
+          if (item && typeof item === "object" && "type" in (item as object)) {
+            if (walk(item as Node)) return true;
+          }
+        }
+      } else if (v && typeof v === "object" && "type" in (v as object)) {
+        if (walk(v as Node)) return true;
+      }
+    }
+    return false;
+  };
+  return walk(body);
+}
+
+/**
+ * 函数体是否**直接**引用 `arguments`（不下降任何嵌套函数/箭头/方法）。
+ * 仅此时建立 argsBinding——嵌套箭头的 `arguments` 沿此绑定词法继承；
+ * 无绑定时 Identifier 折 $unknown()（差分 harness 外层是箭头 IIFE，
+ * native 为 ReferenceError；投影外层 arguments 会假精确）。
+ */
+function fnBodyHasOwnArguments(fn: { body?: Node | null }): boolean {
+  const body = fn.body;
+  if (!body) return false;
+  const seen = new Set<Node>();
+  const walk = (n: Node): boolean => {
+    if (n.type === "Identifier" && (n as { name?: string }).name === "arguments") return true;
+    if (
+      n.type === "FunctionDeclaration" ||
+      n.type === "FunctionExpression" ||
+      n.type === "ArrowFunctionExpression" ||
+      n.type === "ObjectMethod" ||
+      n.type === "ClassMethod"
+    ) {
+      return false;
+    }
     if (seen.has(n)) return false;
     seen.add(n);
     for (const [k, v] of Object.entries(n)) {
@@ -222,7 +267,13 @@ function memberPathOf(m: { object: Node; property: Node; computed: boolean }, op
     cur = mm.object;
   }
   if (cur.type === "Identifier") {
-    rootSrc = cur.name;
+    // `arguments` 写回根必须是 $arguments 槽（strict 独立映射）；无绑定不可重绑
+    if (cur.name === "arguments") {
+      if (!opts.argsBinding) return null;
+      rootSrc = opts.argsBinding;
+    } else {
+      rootSrc = cur.name;
+    }
   } else if (cur.type === "ThisExpression" && opts.thisParam) {
     rootSrc = opts.thisParam;
   } else {
@@ -464,14 +515,14 @@ export function transpileSource(source: string, opts: TranspileOptions = {}): st
 
 /** 运行时 import 行（body-fn 编译执行拼接用） */
 export function runtimeImportOf(runtime: string): string {
-  return `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $assignRecord, $recordBinding, $unknown, $importMeta, $dynamicImport, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit, $rawThis, $isBreakTo } from ${JSON.stringify(runtime)};`;
+  return `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $assignRecord, $recordBinding, $unknown, $importMeta, $dynamicImport, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $arguments, $isForkExit, $rawThis, $isBreakTo } from ${JSON.stringify(runtime)};`;
 }
 
 export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
     `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
-    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $assignRecord, $recordBinding, $unknown, $importMeta, $dynamicImport, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $isForkExit, $rawThis, $isBreakTo } from ${JSON.stringify(runtime)};`,
+    `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $assignRecord, $recordBinding, $unknown, $importMeta, $dynamicImport, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $arguments, $isForkExit, $rawThis, $isBreakTo } from ${JSON.stringify(runtime)};`,
     ``,
   ];
   for (const stmt of file.program.body) {
@@ -1132,6 +1183,58 @@ function emitParamBinding(
   return { sig, rest, prologue };
 }
 
+/**
+ * 从 `$arguments` 槽（`__nudoArgs`）绑定形参——FunctionExpression 走
+ * `(...__allArgs)` 收齐全量实参时用。Identifier/默认参/解构/rest 与
+ * emitParamBinding 同语义，但读 `$idx(__nudoArgs, i)` 而不是 JS 形参。
+ * 返回 rest 名与 prologue；namedCount 供 $arrRest 切片。
+ */
+function emitParamBindingFromArgs(
+  params: Node[],
+  pad: string,
+  opts: TranspileOptions,
+  argsSrc: string,
+): { prologue: string[]; rest?: string; namedCount: number } {
+  const prologue: string[] = [];
+  let rest: string | undefined;
+  let namedCount = 0;
+  params.forEach((p, i) => {
+    if (p.type === "RestElement") {
+      if (p.argument.type === "Identifier") {
+        rest = p.argument.name;
+      } else {
+        rest = `_rest${i}`;
+        emitDestructure(p.argument, rest, "const", pad, opts, prologue, { n: 0 });
+      }
+      return;
+    }
+    namedCount++;
+    const idxSrc = `$idx(${argsSrc}, $lit(${i}))`;
+    if (p.type === "Identifier") {
+      prologue.push(`${pad}let ${p.name} = ${idxSrc};`);
+      return;
+    }
+    if (p.type === "AssignmentPattern") {
+      const def = transpileExpression(p.right as Expression, opts);
+      if (p.left.type === "Identifier") {
+        prologue.push(`${pad}let ${p.left.name} = $orDefault(${idxSrc}, () => ${def});`);
+      } else {
+        const t = `_pd${i}`;
+        prologue.push(`${pad}let ${t} = $orDefault(${idxSrc}, () => ${def});`);
+        emitDestructure(p.left, t, "const", pad, opts, prologue, { n: 0 });
+      }
+      return;
+    }
+    if (p.type === "ObjectPattern" || p.type === "ArrayPattern") {
+      emitDestructure(p, idxSrc, "let", pad, opts, prologue, { n: 0 });
+    }
+  });
+  if (rest) {
+    prologue.push(`${pad}let ${rest} = $arrRest(${argsSrc}, ${namedCount});`);
+  }
+  return { prologue, rest, namedCount };
+}
+
 /** 收集语句/表达式里以 Identifier 为 receiver 的数组 mutator 名 */
 function collectArrMutatorReceivers(node: unknown, acc = new Set<string>()): Set<string> {
   if (!node || typeof node !== "object") return acc;
@@ -1431,11 +1534,14 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       // 嵌套函数声明不是 export 面；函数体是新边界，inLoop 必须归零
       const exportKw = depth === 0 ? "export " : "";
       const hasThis = fnBodyHasThis(stmt as { body?: Node | null });
+      // `arguments`：体直接引用时建独立 tuple 槽（strict 映射，见 $arguments）
+      const hasArgs = fnBodyHasOwnArguments(stmt as { body?: Node | null });
       const fnOpts: TranspileOptions = {
         ...opts,
         inLoop: 0,
         inFunction: true,
         ...(hasThis ? { thisParam: "__this" } : {}),
+        argsBinding: hasArgs ? "__nudoArgs" : undefined,
       };
       const { sig, rest, prologue } = emitParamBinding(
         stmt.params as Node[],
@@ -1448,16 +1554,20 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const thisPrologue = hasThis
         ? `${indent(depth + 2)}const __this = $rawThis(this);\n`
         : "";
+      // 真实 function 有宿主 arguments → 投成独立 tuple（不破坏下方 restBind）
+      const argsPrologue = hasArgs
+        ? `${indent(depth + 2)}let __nudoArgs = $arguments(arguments);\n`
+        : "";
       const bodyStmts =
         stmt.body.type === "BlockStatement"
           ? withImplicitReturn(
               stmt.body,
-              [...prologue, thisPrologue, transpileFnBodyStmts(stmt.body.body, depth + 2, fnOpts)]
+              [...prologue, thisPrologue, argsPrologue, transpileFnBodyStmts(stmt.body.body, depth + 2, fnOpts)]
                 .filter(Boolean)
                 .join("\n"),
               depth + 2,
             )
-          : `${indent(depth + 2)}${thisPrologue.trim()}return ${transpileExpression(stmt.body as unknown as Expression, fnOpts)};`;
+          : `${indent(depth + 2)}${thisPrologue.trim()}${argsPrologue.trim()}return ${transpileExpression(stmt.body as unknown as Expression, fnOpts)};`;
       const restBind = rest
         ? `${indent(depth + 1)}const ${rest} = arguments.length > ${named.length} ? $arr(Array.from(arguments).slice(${named.length})) : $arr([]);\n`
         : "";
@@ -2370,7 +2480,7 @@ function transpileClass(
       return id?.type === "Identifier" && id.name ? id.name : "_";
     });
 
-  const methodOpts: TranspileOptions = {
+  const methodOptsBase: TranspileOptions = {
     ...opts,
     inLoop: 0,
     inTry: 0,
@@ -2419,15 +2529,33 @@ function transpileClass(
     }
     // ctor 有显式 `return __this`（下方追加）——不得加隐式 return 抢行
     const isCtor = m.kind === "constructor" || mname === "constructor";
-    const bodyStmts = emitFnBlockBody(
+    const mHasArgs = fnBodyHasOwnArguments({ body: m.body as Node });
+    const methodOpts: TranspileOptions = {
+      ...methodOptsBase,
+      argsBinding: mHasArgs ? "__nudoArgs" : undefined,
+    };
+    let bodyStmts = emitFnBlockBody(
       m.body as Node | undefined,
       depth + 3,
-      m.static ? opts : methodOpts,
+      m.static ? { ...opts, argsBinding: mHasArgs ? "__nudoArgs" : undefined } : methodOpts,
       { implicitReturn: !isCtor },
     );
+    if (mHasArgs) {
+      const bound = emitParamBindingFromArgs(
+        (m.params ?? []) as Node[],
+        indent(depth + 4),
+        methodOpts,
+        "__nudoArgs",
+      );
+      bodyStmts = [
+        `${indent(depth + 4)}let __nudoArgs = $arguments(__margs);`,
+        ...bound.prologue,
+        bodyStmts,
+      ].join("\n");
+    }
     if (m.static) {
       staticMethodParts.push(
-        `${indent(depth + 3)}${mname}: (${paramList}) => {`,
+        `${indent(depth + 3)}${mname}: (${mHasArgs ? "...__margs" : paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}},`,
       );
@@ -2436,14 +2564,14 @@ function transpileClass(
     }
     if (m.kind === "constructor" || mname === "constructor") {
       ctorParts.push(
-        `${indent(depth + 2)}ctor: (__this, ${paramList}) => {`,
+        `${indent(depth + 2)}ctor: (__this, ${mHasArgs ? "...__margs" : paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}return __this;`,
         `${indent(depth + 2)}},`,
       );
     } else if (m.async) {
       methodParts.push(
-        `${indent(depth + 3)}${mname}: (__this, ${paramList}) => {`,
+        `${indent(depth + 3)}${mname}: (__this, ${mHasArgs ? "...__margs" : paramList}) => {`,
         `${indent(depth + 4)}return $async(() => {`,
         bodyStmts,
         `${indent(depth + 4)}});`,
@@ -2452,7 +2580,7 @@ function transpileClass(
       methodParamEntries.push([mname, paramDisplayNames(m.params)]);
     } else {
       methodParts.push(
-        `${indent(depth + 3)}${mname}: (__this, ${paramList}) => {`,
+        `${indent(depth + 3)}${mname}: (__this, ${mHasArgs ? "...__margs" : paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}},`,
       );
@@ -2552,6 +2680,9 @@ function transpileBlockAsThunk(stmt: Statement, depth: number, opts: TranspileOp
 
 function extractForInitName(init: Statement | Expression | null | undefined): string | null {
   if (!init || init.type !== "VariableDeclaration") return null;
+  // `var` 是函数作用域共享绑定——不得走每迭代参数槽（闭包会误做成 per-iteration）。
+  // 返回 null 路由到 fallback：init 就地发射，test/update/body 读真实绑定。
+  if (init.kind === "var") return null;
   const d = init.declarations[0];
   return d?.id.type === "Identifier" ? d.id.name : null;
 }
@@ -2585,6 +2716,13 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (expr.name === "undefined") return "$lit(undefined)";
       if (expr.name === "NaN") return "$lit(NaN)";
       if (expr.name === "Infinity") return "$lit(Infinity)";
+      if (expr.name === "arguments") {
+        // 词法外层 arguments：仅非箭头函数体**直接**引用时建 argsBinding；
+        // 箭头沿该绑定继承。无绑定（模块顶层 / 仅嵌套箭头引用）→ 诚实 unknown
+        // （差分 harness 外层是箭头 IIFE，native 为 ReferenceError；投影外层
+        // arguments 会假精确）。
+        return opts.argsBinding ?? "$unknown()";
+      }
       return expr.name;
     case "ThisExpression":
       // 顶层 this（无 thisParam 且不在函数体）：ESM 语义 this === undefined。
@@ -2790,8 +2928,15 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           if (mkey === null) continue;
           const displayNames = paramDisplayNames(prop.params);
           const bindNames = methodBindNames(prop.params);
-          // 方法体是新的函数边界：inLoop/inTry 必须归零
-          const methodOpts: TranspileOptions = { ...opts, inLoop: 0, inTry: 0, thisParam: "__this" };
+          // 方法体是新的函数边界：inLoop/inTry 必须归零；直接引用 arguments 时建槽
+          const mHasArgs = fnBodyHasOwnArguments({ body: prop.body as Node });
+          const methodOpts: TranspileOptions = {
+            ...opts,
+            inLoop: 0,
+            inTry: 0,
+            thisParam: "__this",
+            argsBinding: mHasArgs ? "__nudoArgs" : undefined,
+          };
           // get/set 访问器：注册进运行时侧表（$get/$set 派发；展开/assign 时调用）
           if (prop.kind === "get" || prop.kind === "set") {
             // 占位槽保键存在性（'x' in o / keys / assign 拷贝目标）；读写在 $get/$set 层派发
@@ -2809,9 +2954,19 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             }
             continue;
           }
-          const bodySrc = `{\n${emitFnBlockBody(prop.body, 1, methodOpts)}\n}`;
-          const bindParams = ["__this", ...bindNames];
-          const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${bindParams.join(", ")}) => ${bodySrc}, { bindThis: true })`;
+          let mBodyInner = emitFnBlockBody(prop.body, 1, methodOpts);
+          let mParams = ["__this", ...bindNames];
+          if (mHasArgs) {
+            const bound = emitParamBindingFromArgs(prop.params as Node[], "  ", methodOpts, "__nudoArgs");
+            mBodyInner = [
+              `  let __nudoArgs = $arguments(__margs);`,
+              ...bound.prologue,
+              mBodyInner,
+            ].join("\n");
+            mParams = ["__this", "...__margs"];
+          }
+          const bodySrc = `{\n${mBodyInner}\n}`;
+          const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true })`;
           props.push(`${mkey}: ${fnValSrc}`);
           continue;
         }
@@ -2848,11 +3003,27 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           if (!fn.generator) {
             const displayNames = paramDisplayNames(fn.params);
             const bindNames = methodBindNames(fn.params);
-            const methodOpts: TranspileOptions = { ...opts, inLoop: 0, thisParam: "__this" };
-            const bodySrc = `{\n${emitFnBlockBody(fn.body, 1, methodOpts)}\n}`;
-            const bindParams = ["__this", ...bindNames];
+            const mHasArgs = fnBodyHasOwnArguments({ body: fn.body });
+            const methodOpts: TranspileOptions = {
+              ...opts,
+              inLoop: 0,
+              thisParam: "__this",
+              argsBinding: mHasArgs ? "__nudoArgs" : undefined,
+            };
+            let mBodyInner = emitFnBlockBody(fn.body, 1, methodOpts);
+            let mParams = ["__this", ...bindNames];
+            if (mHasArgs) {
+              const bound = emitParamBindingFromArgs(fn.params as Node[], "  ", methodOpts, "__nudoArgs");
+              mBodyInner = [
+                `  let __nudoArgs = $arguments(__margs);`,
+                ...bound.prologue,
+                mBodyInner,
+              ].join("\n");
+              mParams = ["__this", "...__margs"];
+            }
+            const bodySrc = `{\n${mBodyInner}\n}`;
             props.push(
-              `${key}: $fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${bindParams.join(", ")}) => ${bodySrc}, { bindThis: true })`,
+              `${key}: $fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true })`,
             );
             continue;
           }
@@ -3193,13 +3364,17 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       // 函数声明/表达式有独立 this；箭头词法继承外层。仅非箭头且 body 含 this
       // 时注入宿主 this（$rawThis），并用 function 包装替代箭头（宿主 this 动态）
       const hasThis = !isArrow && fnBodyHasThis(fn);
+      // 非箭头且体直接引用 arguments：建独立 tuple 槽。箭头不建槽（沿外层
+      // argsBinding；无绑定 → $unknown()，见 Identifier 分支）。
+      const hasArgs = !isArrow && fnBodyHasOwnArguments(fn);
       const { sig, rest, prologue } = emitParamBinding(fn.params, indent(1), opts);
-      // 函数边界：return 不是循环提前返回
+      // 函数边界：return 不是循环提前返回；非箭头清掉外层 argsBinding
       const fnBodyOpts: TranspileOptions = {
         ...opts,
         inLoop: 0,
         inFunction: true,
         ...(hasThis ? { thisParam: "__this" } : {}),
+        ...(isArrow ? {} : { argsBinding: hasArgs ? "__nudoArgs" : undefined }),
       };
       const paramParts = rest ? [...sig, `...${rest}`] : sig;
       // 一等 fn Abs：参数名进 shape（bridge/dts 可展示）——用展示名（含 rest/默认参），
@@ -3207,38 +3382,53 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       // 异步 body 包 $async 保持 eff(promise) 语义（裸 JS async 会泄漏 Promise）。
       const nameList = `[${paramDisplayNames(fn.params).map((p) => JSON.stringify(p)).join(", ")}]`;
       const thisPrologue = hasThis ? [`const __this = $rawThis(this);`] : [];
+      // FunctionExpression 无宿主 this 时编成箭头（无真实 arguments）——需要
+      // arguments 时改收 `(...__allArgs)`，从 $arguments 槽绑定形参（strict 独立）。
+      const useArgsSlot = hasArgs && !hasThis;
+      let argsSlotPrologue: string[] = [];
+      let argsParamParts = paramParts;
+      if (useArgsSlot) {
+        const bound = emitParamBindingFromArgs(fn.params, "  ", fnBodyOpts, "__nudoArgs");
+        argsSlotPrologue = [`  let __nudoArgs = $arguments(__allArgs);`, ...bound.prologue];
+        argsParamParts = ["...__allArgs"];
+      } else if (hasArgs && hasThis) {
+        // 真实 function 包装：宿主 arguments 直接投影
+        argsSlotPrologue = [`  let __nudoArgs = $arguments(arguments);`];
+      }
+      const allPrologue = useArgsSlot
+        ? [...argsSlotPrologue, ...thisPrologue]
+        : [...prologue, ...thisPrologue, ...argsSlotPrologue];
       if (fn.body.type === "BlockStatement") {
         const inner = withImplicitReturn(
           fn.body,
-          [...prologue, ...thisPrologue, transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, fnBodyOpts)].join("\n"),
+          [...allPrologue, transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, fnBodyOpts)].join("\n"),
           1,
         );
         if (hasThis) {
           const wrap = fn.async
-            ? `function (${paramParts.join(", ")}) { return $async(() => {\n${inner}\n}); }`
-            : `function (${paramParts.join(", ")}) {\n${inner}\n}`;
+            ? `function (${argsParamParts.join(", ")}) { return $async(() => {\n${inner}\n}); }`
+            : `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           return `$fnVal(${nameList}, ${wrap})`;
         }
         if (fn.async) {
-          return `$fnVal(${nameList}, (${paramParts.join(", ")}) => $async(() => {\n${inner}\n}))`;
+          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => {\n${inner}\n}))`;
         }
-        return `$fnVal(${nameList}, (${paramParts.join(", ")}) => {\n${inner}\n})`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n})`;
       }
       const bodySrc = transpileExpression(fn.body as Expression, fnBodyOpts);
-      if (prologue.length > 0 || hasThis) {
+      if (allPrologue.length > 0 || hasThis) {
         // 表达式体 + 模式参数/this 注入：提升为块体以容纳 prologue
         const rebinds = emitArrMutatorRebinds(fn.body as Expression, fnBodyOpts, "  ");
         const inner = [
-          ...prologue,
-          ...thisPrologue,
+          ...allPrologue,
           ...rebinds.map((l) => `  ${l}`),
           `  return ${fn.async ? `$async(() => ${bodySrc})` : bodySrc};`,
         ].join("\n");
         if (hasThis) {
-          const wrap = `function (${paramParts.join(", ")}) {\n${inner}\n}`;
+          const wrap = `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           return `$fnVal(${nameList}, ${wrap})`;
         }
-        return `$fnVal(${nameList}, (${paramParts.join(", ")}) => {\n${inner}\n})`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n})`;
       }
       // 表达式体：块体包裹跑语句级 rebind pass——`()=>n++` / `()=>a.push(1)`
       // 的写回此前静默丢失（表达式上下文无语句级扫描）
@@ -3248,12 +3438,12 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           ...rebinds.map((l) => `  ${l}`),
           `  return ${fn.async ? `$async(() => ${bodySrc})` : bodySrc};`,
         ].join("\n");
-        return `$fnVal(${nameList}, (${paramParts.join(", ")}) => {\n${inner}\n})`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n})`;
       }
       if (fn.async) {
-        return `$fnVal(${nameList}, (${paramParts.join(", ")}) => $async(() => ${bodySrc}))`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => ${bodySrc}))`;
       }
-      return `$fnVal(${nameList}, (${paramParts.join(", ")}) => ${bodySrc})`;
+      return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${bodySrc})`;
     }
     case "MetaProperty":
       // import.meta → { url: string }（宿主 URL 非字面量）

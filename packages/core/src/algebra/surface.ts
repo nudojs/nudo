@@ -6,6 +6,7 @@
 import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, litValue, confJoin, num, bool, boolLit, strLit, bigintLit } from "./abs.ts";
 import { classNameOfValue } from "./class-mark.ts";
+import { builtinCtorNameOf, hostBuiltinCtorName } from "./builtins.ts";
 import { symbolIdOf } from "./symbol-id.ts";
 import type { Term } from "./term.ts";
 import { lit, simplifyTerm, app } from "./term.ts";
@@ -386,6 +387,19 @@ export function isNullishLitAbs(a: Abs): boolean {
  * 返回 undefined = 无法判定（交给 boolean + 调用方）。
  */
 export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
+  // 内建构造器身份：Abs ctor ↔ 宿主 Number/String/Promise… 按名折叠
+  // （(42).constructor === Number / Promise.resolve(1).constructor === Promise）
+  {
+    const an = builtinCtorNameOf(a) ?? hostBuiltinCtorName(a);
+    const bn = builtinCtorNameOf(b) ?? hostBuiltinCtorName(b);
+    if (an !== undefined && bn !== undefined) return an === bn;
+  }
+  // 宿主值泄漏进 ===（非 Abs）：同引用恒等，否则不可判——不得裸读 .shape
+  const aIsAbs = !!(a && typeof a === "object" && "shape" in (a as object));
+  const bIsAbs = !!(b && typeof b === "object" && "shape" in (b as object));
+  if (!aIsAbs || !bIsAbs) {
+    return a === b ? true : undefined;
+  }
   // 双字面量折叠必须先看 term.op === "lit"：litValue 无法区分
   //「字面量 undefined」与「非字面量」（两者都返回 undefined），
   // undefined === undefined / null === null 此前落无法判定。

@@ -277,8 +277,30 @@ pow(3);                               // → 9
 |---|---|---|
 | 原始值自动装箱 | `"nudo".constructor` → `unknown` | `.length`、上文的字符串方法 |
 | Promise 执行器 | `new Promise((r) => r("done"))` → `promise<unknown>` | `@nudo:mock` + `async` 函数 |
-| 每迭代 `let` 闭包 | `fns[i]()` → `unknown` | 直接使用迭代结果 |
-| `arguments` | → `unknown`（`nudo:builtin-unknown`） | 具名参数 |
+| 箭头 `arguments` 且外层无直接引用 | → `unknown`（见下文 `arguments`） | 具名参数 |
+
+### 已建模：`arguments`（strict/ESM）
+
+非箭头函数内的 `arguments` 是**已建模**的类数组对象（tuple 投影）：
+
+| 模式 | 结果 |
+|---|---|
+| `arguments.length` | 精确实参个数（默认参/rest 不抬高 length） |
+| `arguments[i]` | 第 i 个实参；越界 → `undefined` |
+| `typeof arguments` | `"object"` |
+| `[...arguments]` / `Array.from(arguments, mapFn)` | 展开实参列表 |
+| `Array.from(arguments).join(sep)` | 可展开；join 精确折叠仍为抽象 `string`（既有数组 join 模型） |
+| 写 `arguments[i] = v` | **不**写回形参 |
+| 写形参 | **不**写回 `arguments[i]` |
+| 箭头 `() => arguments…` | 外层非箭头函数也直接引用 `arguments` 时沿词法外层；否则诚实 `unknown` |
+| 默认参 | `arguments.length` 只计实参（`f()` + `f(a=1)` → `0`） |
+| rest 形参 | `arguments.length` 为实参个数；rest 绑定路径不变 |
+
+Nudo 分析按 **ESM/strict**：`arguments` 与形参是**独立映射**。sloppy 非严格是 mapped arguments object（两侧写回互通）——刻意不建模。
+
+### 已建模：每迭代 `let` 闭包
+
+`for (let i = …)` **每迭代独立绑定**——闭包捕获当次 `i`（`fns.push(() => i)` 后 `fns[0]()` / `fns[1]()` / `fns[2]()` 分别折 `0` / `1` / `2`）。`for (var i = …)` 仍是**共享绑定**（闭包读到最终值）。`forEach((x) => …)` 每回调参数语义保持。抽象边界循环在 `$for` 出口仍保守 join——不假装精确捕获。
 
 ## Mock 边界（仍建议）
 

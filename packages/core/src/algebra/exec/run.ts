@@ -21,6 +21,7 @@ import { formatAbs } from "../format.ts";
 import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
 import { errorTypeAbs } from "./may-throw.ts";
+import { drainPromiseMicros } from "../builtins.ts";
 import {
   isNudoThrow,
   isNudoReturn,
@@ -552,10 +553,13 @@ export function callTranspiledExportFull(
       try {
         const invoke = () => (fn as (...a: Abs[]) => unknown)(...args);
         const r = opts?.phi ? withExecPhi(opts.phi, invoke) : invoke();
+        // 微任务（then/catch 回调）在同步返回值算完后才跑
+        drainPromiseMicros();
         if (!isAbsVal(r)) return joinControlExits(unknown);
         // 抽象分支 early-return / throw 记入 exits，与正常出口 join
         return joinControlExits(r);
       } catch (e) {
+        drainPromiseMicros();
         // C2.1：循环体 $loopReturn → 函数返回值（与 exits join）
         if (isNudoReturn(e)) {
           return joinControlExits(e.absValue);
