@@ -36,7 +36,7 @@ export type HarvestSig =
  * 磁盘 ABI / harvest 物化版本。**改动 Abs 投影或 interface 合并语义时必须 +1**，
  * 否则旧缓存会把提升前的空导出表当命中（lodash 场景）。
  */
-export const HARVEST_DISK_ABI = "nudo-harvest-disk-v6";
+export const HARVEST_DISK_ABI = "nudo-harvest-disk-v7";
 
 export type HarvestJson = {
   v: 1;

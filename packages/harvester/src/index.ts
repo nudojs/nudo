@@ -13,6 +13,8 @@ import {
   joinAbs,
   relationFn,
   getFnImpl,
+  substAbs,
+  formatShape,
 } from "@nudojs/core";
 
 /**
@@ -131,6 +133,31 @@ function absTuple(elements: Abs[]): Abs {
 
 function absPromise(inner: Abs): Abs {
   return absExact({ k: "eff", eff: "promise", inner });
+}
+
+/** Map/ReadonlyMap/WeakMap<K,V> → brand Map（__key/__value 供 α 合一） */
+function absMapType(key: Abs, value: Abs): Abs {
+  // 不把 get/set 嵌进 brand：lodash 规模下 relationFn fingerprint 会 OOM。
+  // 成员语义走 core collections / dispatchMethod；这里只保类型参。
+  return absExact({
+    k: "brand",
+    name: "Map",
+    shape: absObj({
+      __key: key,
+      __value: value,
+    }),
+  });
+}
+
+/** Set/ReadonlySet<T> → brand Set（__elem 供 α 合一） */
+function absSetType(elem: Abs): Abs {
+  return absExact({
+    k: "brand",
+    name: "Set",
+    shape: absObj({
+      __elem: elem,
+    }),
+  });
 }
 
 function absObj(properties: Record<string, Abs>): Abs {
@@ -727,8 +754,11 @@ function memberName(node: { name?: ts.PropertyName }): string | undefined {
   return undefined; // computed / private names
 }
 
-function instanceFor(ctx: HarvestContext, key: string): Abs {
-  const cached = ctx.instanceCache.get(key);
+function instanceFor(ctx: HarvestContext, key: string, typeArgs?: Abs[]): Abs {
+  const cacheKey = typeArgs && typeArgs.length > 0
+    ? `${key}::${typeArgs.length}`
+    : key;
+  const cached = ctx.instanceCache.get(cacheKey);
   if (cached !== undefined) return cached;
   const decls = interfaceDeclsOf(ctx, key);
   const decl = decls[0];
@@ -738,6 +768,12 @@ function instanceFor(ctx: HarvestContext, key: string): Abs {
     return absBrand(decl.name?.text ?? key, {});
   }
   ctx.expanding.add(key);
+  // 接口自身泛型形参（Map<K,V> 的 K/V）进入 typeParams，成员签名才能映射成 var
+  const savedTp = ctx.typeParams;
+  ctx.typeParams = new Set(savedTp);
+  for (const d of decls) {
+    for (const tp of d.typeParameters ?? []) ctx.typeParams.add(tp.name.text);
+  }
   const properties: Record<string, Abs> = {};
   try {
     // 合并全部 augmentation 成员（lodash LoDashStatic 跨 common/*.d.ts）
@@ -765,10 +801,21 @@ function instanceFor(ctx: HarvestContext, key: string): Abs {
       }
     }
   } finally {
+    ctx.typeParams = savedTp;
     ctx.expanding.delete(key);
   }
-  const value = absBrand(decl.name?.text ?? key, properties);
-  ctx.instanceCache.set(key, value);
+  let value = absBrand(decl.name?.text ?? key, properties);
+  // 仅小接口做 α 实例化；LoDashStatic/Chain 等巨型接口 substAbs 会 OOM
+  if (typeArgs && typeArgs.length > 0 && Object.keys(properties).length <= 40) {
+    const map = new Map<string, Abs>();
+    const tps = decls[0]!.typeParameters ?? [];
+    tps.forEach((tp, i) => {
+      const arg = typeArgs[i];
+      if (arg) map.set(tp.name.text, arg);
+    });
+    if (map.size > 0) value = substAbs(value, map);
+  }
+  ctx.instanceCache.set(cacheKey, value);
   return value;
 }
 
@@ -841,12 +888,22 @@ function mapTypeRef(ctx: HarvestContext, node: ts.TypeReferenceNode, depth: numb
   if (name === "Promise" && args.length >= 1) {
     return absPromise(mapType(ctx, args[0], depth));
   }
+  // Map/Set 族：内建 brand（不依赖是否加载了 lib.es2015.collection）
+  if (
+    (name === "Map" || name === "ReadonlyMap" || name === "WeakMap") &&
+    args.length >= 2
+  ) {
+    return absMapType(mapType(ctx, args[0], depth), mapType(ctx, args[1], depth));
+  }
+  if ((name === "Set" || name === "ReadonlySet" || name === "WeakSet") && args.length >= 1) {
+    return absSetType(mapType(ctx, args[0], depth));
+  }
   if (name === "Record") {
     // Index-signature objects are approximated as an open object type.
     return absObj({});
   }
   if (ctx.interfaces.has(name) || ctx.qualifiedInterfaces.has(name)) {
-    return instanceFor(ctx, name);
+    return instanceFor(ctx, name, args.map((a) => mapType(ctx, a, depth)));
   }
   const aliases = ctx.aliases.get(name) ?? ctx.qualifiedAliases.get(name) ?? [];
   const alias = aliases[0];

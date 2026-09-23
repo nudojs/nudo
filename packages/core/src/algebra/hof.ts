@@ -733,8 +733,19 @@ function bindTypeVars(
   if (ps.k === "fn" && as.k === "fn" && ps.paramTypes && as.paramTypes) {
     const n = Math.min(ps.paramTypes.length, as.paramTypes.length);
     for (let i = 0; i < n; i++) bindTypeVars(ps.paramTypes[i]!, as.paramTypes[i]!, map, depth + 1);
+    return;
   }
-  // prim / brand / unknown：无 α 可绑
+  if (ps.k === "eff" && as.k === "eff" && ps.eff === as.eff) {
+    // Promise<T> / generator<T>
+    bindTypeVars(ps.inner, as.inner, map, depth + 1);
+    return;
+  }
+  if (ps.k === "brand" && as.k === "brand") {
+    // Map/Set 等：__key/__value/__elem 槽做 α 合一（名字一致才下钻）
+    if (ps.name === as.name) bindTypeVars(ps.shape, as.shape, map, depth + 1);
+    return;
+  }
+  // prim / unknown：无 α 可绑
 }
 
 /**
