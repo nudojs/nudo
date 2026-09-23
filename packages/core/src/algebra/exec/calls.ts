@@ -79,10 +79,13 @@ export type BAbsAssignRecord = {
 
 let bAssignCollector: ((r: BAbsAssignRecord) => void) | null = null;
 
+/** 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） */
 export function setBAssignCollector(
   collector: ((r: BAbsAssignRecord) => void) | null,
-): void {
+): ((r: BAbsAssignRecord) => void) | null {
+  const prev = bAssignCollector;
   bAssignCollector = collector;
+  return prev;
 }
 
 /** 结构赋值记录（transpile 插桩调用；无收集器时 no-op） */
@@ -135,10 +138,13 @@ const GLOBAL_FNS = new Set([
   "eval",
 ]);
 
+/** 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） */
 export function setBCallCollector(
   collector: ((r: BCallRecord) => void) | null,
-): void {
+): ((r: BCallRecord) => void) | null {
+  const prev = bCallCollector;
   bCallCollector = collector;
+  return prev;
 }
 
 export function getBCallCollector(): ((r: BCallRecord) => void) | null {
@@ -157,10 +163,9 @@ export function getBCallCollector(): ((r: BCallRecord) => void) | null {
 // ast-eval：深度 64 / 总调用 200k / cycle（同 name+arg 指纹）→ 截断 opaque。
 
 export const MAX_B_CALL_DEPTH = 64;
-/** 总调用上限：递归×循环×分支展开的规模阀。200k 在病态展开（lodash
- *  _baseFlatten：8 迭代 × 2 臂 fork × 64 深）下 ~30s（每次 fork ~150µs），
- *  20k 收口到 ~3s——截断 → opaque（更保守，zero-FP 安全）；真实包典型
- *  文件调用数远低于此。 */
+/** 总调用上限：与 call-budget.MAX_TOTAL_CALLS 同阀（递归×循环×分支展开的
+ *  规模阀）。200k 在病态展开（lodash _baseFlatten）下 ~30s，20k 收口到
+ *  ~3s——截断 → opaque（更保守，zero-FP 安全）。 */
 export const MAX_B_TOTAL_CALLS = 20_000;
 
 let bCallDepth = 0;

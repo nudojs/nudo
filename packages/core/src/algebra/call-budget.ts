@@ -8,7 +8,8 @@ import { abs } from "./abs.ts";
 import { termToString } from "./term.ts";
 
 export const MAX_CALL_DEPTH = 64;
-export const MAX_TOTAL_CALLS = 200_000;
+/** 与 B 命名调用（calls.ts MAX_B_TOTAL_CALLS）同阀：病态展开下 200k 级不可接受 */
+export const MAX_TOTAL_CALLS = 20_000;
 
 let _absCallDepth = 0;
 let _absTotalCalls = 0;
@@ -52,11 +53,14 @@ export function callBudgetKey(kind: string, id: string, args: unknown[]): string
 
 let absTruncCollector: ((fnLabel: string) => void) | null = null;
 
-/** 记录被截断的递归（service 可映射为 nudo:recursion-truncated） */
+/** 记录被截断的递归（service 可映射为 nudo:recursion-truncated）。
+ *  返回先前 collector，便于嵌套 save/restore。 */
 export function setAbsTruncationCollector(
   collector: ((fnLabel: string) => void) | null,
-): void {
+): ((fnLabel: string) => void) | null {
+  const prev = absTruncCollector;
   absTruncCollector = collector;
+  return prev;
 }
 
 export function noteAbsTruncation(label: string): void {

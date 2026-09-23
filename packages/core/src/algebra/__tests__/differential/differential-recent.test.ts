@@ -1,6 +1,7 @@
 /**
- * 差分语料门禁（P0 oracle 收编）：batch14–18——Promise/Date/JSON/RegExp
- * ctor/Map-Set/字符串数字数组边缘 + 第 18 批六类修复的读层金丝雀。
+ * 差分语料门禁（P0 oracle 收编）：batch14–19——Promise/Date/JSON/RegExp
+ * ctor/Map-Set/字符串数字数组边缘 + 第 18 批六类修复的读层金丝雀 +
+ * 第 19 批方法体早退 if 回归。
  */
 import { describe, it, expect } from "vitest";
 import { runCorpus, sectionsOf } from "./harness.ts";
@@ -21,6 +22,7 @@ import * as b16d from "./corpus/batch16d.ts";
 import * as b17a from "./corpus/batch17a.ts";
 import * as b17b from "./corpus/batch17b.ts";
 import * as b18 from "./corpus/batch18-readprobes.ts";
+import * as b19 from "./corpus/batch19-method-early-return.ts";
 
 const FILES: Array<[string, Record<string, unknown>]> = [
   ["batch14a", b14a],
@@ -40,6 +42,7 @@ const FILES: Array<[string, Record<string, unknown>]> = [
   ["batch17a", b17a],
   ["batch17b", b17b],
   ["batch18-readprobes", b18],
+  ["batch19-method-early-return", b19],
 ];
 
 let totalCompared = 0;
@@ -58,6 +61,6 @@ describe("differential corpus batch14-18", () => {
     }
   }
   it("total compared floor (corpus must not degrade into skips)", () => {
-    expect(totalCompared).toBeGreaterThan(300);
+    expect(totalCompared).toBeGreaterThan(320);
   });
 });

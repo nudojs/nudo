@@ -68,6 +68,7 @@ import {
   tryRunTranspiled,
   callTranspiledExportFull,
   bindingsOf,
+  runTranspiledOptionsMemoKey,
   type TranspiledCallResult,
   type RunTranspiledOptions,
 } from "./exec/run.ts";
@@ -204,7 +205,8 @@ function checkMemoKey(
     identityOpts.entryThrows ?? "error",
     (identityOpts.ignoreThrows ?? []).join(",") || "-",
     moduleMapId(identityOpts.modules),
-    moduleMapId(identityOpts.inject as object | undefined),
+    // inject 用内容指纹（CLI 每次新建同内容对象时身份键会 miss）
+    runTranspiledOptionsMemoKey(identityOpts.inject),
     // skips 必须进键：同 source 不同 skip 表（host 解析差异 / 测试注入）
     // 不得回放另一档报告。
     skipsKey(identityOpts.skips),
@@ -277,8 +279,8 @@ export type CheckOptions = {
   modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
   /**
    * B run 注入包（modules/mocks/envGlobals/replacements/as）——透传
-   * runTranspiled（generalize / L2 / 记录通道 / drift 同源）。对象身份进
-   * memo 键（调用方同文件内复用同一对象）。
+   * runTranspiled（generalize / L2 / 记录通道 / drift 同源）。memo 键按
+   * 内容指纹（非对象身份）。
    */
   inject?: RunTranspiledOptions;
   /**
@@ -369,7 +371,7 @@ export function checkSource(
   // 递归截断：与 TypeValue 的 nudo:recursion-truncated 对齐
   const truncated = new Set<string>();
   resetAbsCallBudget();
-  setAbsTruncationCollector((label) => truncated.add(label));
+  const prevTrunc = setAbsTruncationCollector((label) => truncated.add(label));
   try {
     const report = checkSourceInner(
       filePath,
@@ -408,7 +410,7 @@ export function checkSource(
     if (memoKey) checkMemoSet(memoKey, report, memoPaths);
     return cloneCheckReport(report);
   } finally {
-    setAbsTruncationCollector(null);
+    setAbsTruncationCollector(prevTrunc);
   }
 }
 
@@ -799,14 +801,14 @@ function checkSourceInner(
   // 一次执行态求值：结构赋值记录 + 顶层绑定表（scanLiteralCalls 实参
   // 解析用）+ 执行态调用记录（T10a drift 的今日域证据，与 emit 同源）。
   // B-path 优先（迁移件 2：$recordBinding/$assignRecord 插桩 + $callNamed
-  // BCallRecord）；失败回落 Abs 全通道。
+  // BCallRecord）；失败 fail-closed。
   const records: AbsAssignRecord[] = [];
   const varAbs = new Map<string, Abs>();
   const callRecords: AbsCallRecord[] = [];
   // fail-closed：记录通道唯一源 = B（BCallRecord/$assignRecord）
   const bCalls: BCallRecord[] = [];
-  setBAssignCollector((r) => records.push(r));
-  setBCallCollector((r) => bCalls.push(r));
+  const prevAssign = setBAssignCollector((r) => records.push(r));
+  const prevCall = setBCallCollector((r) => bCalls.push(r));
   let bBindings: Map<string, unknown> | undefined;
   const bAnalyze = bAnalyzeOpts(opts);
   try {
@@ -828,10 +830,10 @@ function checkSourceInner(
       );
     }
   } catch {
-    /* B 失败回落 Abs */
+    /* B 失败 fail-closed（无 Abs 兜底） */
   } finally {
-    setBAssignCollector(null);
-    setBCallCollector(null);
+    setBAssignCollector(prevAssign);
+    setBCallCollector(prevCall);
   }
   // fail-closed：B 绑定表缺失（B-incapable 文件）→ 无绑定表（旧 ast-eval
   // 兜底已删——「部分覆盖」改为「显式无信息」，与 unknown=引擎债 原则一致）
@@ -1066,7 +1068,7 @@ function collectEntryMayThrows(
       // P2-a：L2 throws 求值 B-path 优先（may-throw 效果通道共享
       // recordMayThrow）；fail-closed：B 失败（类方法/转译失败）→ 无 L2
       // throws 证据（ast-eval analyzeFnFull 兜底已删）
-      const full = bPathThrowsOf(source, fnName, entryArgs, opts);
+      const full = bPathThrowsOf(source, fnName, entryArgs, opts, phi);
       if (!full) return effects;
       // 显式 throw（未被 try 消化）也进 L2
       if (full.throws && full.throws.shape.k !== "never") {
@@ -1090,18 +1092,21 @@ function collectEntryMayThrows(
 /** L2 throws 的 B-path 求值：顶层导出直调 + default 别名 + CJS 对象方法 +
  *  类静态方法桥；B 失败 → undefined（fail-closed：无 L2 证据）。 */
 const bPathRunMemo = new Map<string, Record<string, unknown>>();
-/** B analyze 选项：inject（mocks/env/replace/modules）与 opts.modules 同源合并 */
+/** B analyze 选项：inject（mocks/env/replace/modules）与 opts.modules 同源合并。
+ *  mode 恒为 analyze（inject 不得覆盖）；modules 优先 opts.modules，缺则用 inject.modules。 */
 function bAnalyzeOpts(opts: CheckOptions): RunTranspiledOptions {
+  const inject = opts.inject ?? {};
+  const modules = opts.modules ?? inject.modules;
   return {
+    ...inject,
     mode: "analyze" as const,
-    ...(opts.inject ?? {}),
-    ...(opts.modules ? { modules: opts.modules } : {}),
+    ...(modules ? { modules } : {}),
   };
 }
 /** 桥接调用：NudoThrow/ReferenceError → throws Abs（与 callTranspiledExportFull 同口径） */
-function invokeAsThrows(fn: () => Abs): TranspiledCallResult {
+function invokeAsThrows(fn: () => Abs, phi: Phi = pTrue): TranspiledCallResult {
   try {
-    const result = withExecPhi(pTrue, fn);
+    const result = withExecPhi(phi, fn);
     return { result, throws: never };
   } catch (e) {
     if (isNudoThrow(e)) {
@@ -1118,10 +1123,11 @@ function bPathThrowsOf(
   fnName: string,
   args: Abs[],
   opts: CheckOptions = {},
+  phi: Phi = pTrue,
 ): TranspiledCallResult | undefined {
   // L2 解耦后两引擎口径一致：any 实参的数组方法调用同样记 may-throw
   //（提升是假设、不消除危险），约束与无约束入口都走 B。
-  const runKey = `${source}|${moduleMapId(opts.inject as object | undefined)}|${moduleMapId(opts.modules)}`;
+  const runKey = `${source}|${runTranspiledOptionsMemoKey(opts.inject)}|${runTranspiledOptionsMemoKey(opts.modules ? { modules: opts.modules } : undefined)}`;
   if (bPathRunMemo.size >= MAX_CHECK_MEMO) {
     const oldest = bPathRunMemo.keys().next().value;
     if (oldest !== undefined) bPathRunMemo.delete(oldest);
@@ -1137,7 +1143,7 @@ function bPathThrowsOf(
     !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);
   const call = (name: string, callArgs: Abs[]): TranspiledCallResult | undefined => {
     try {
-      return callTranspiledExportFull(exports, name, callArgs);
+      return callTranspiledExportFull(exports, name, callArgs, phi.op === "true" ? undefined : { phi });
     } catch {
       return undefined;
     }
@@ -1149,7 +1155,7 @@ function bPathThrowsOf(
       const [clsName, methodName] = fnName.split(".", 2);
       const clsAbs = exports[clsName ?? ""];
       if (isAbsVal(clsAbs)) {
-        return invokeAsThrows(() => $staticInvoke(clsAbs, methodName ?? "", args));
+        return invokeAsThrows(() => $staticInvoke(clsAbs, methodName ?? "", args), phi);
       }
       return undefined;
     }
@@ -1161,7 +1167,7 @@ function bPathThrowsOf(
         if (d.shape.k === "fn") return call("default", args);
         // CJS module.exports = { getName(user){...} }：对象方法桥
         if (d.shape.k === "obj") {
-          return invokeAsThrows(() => $invoke(d, fnName, args));
+          return invokeAsThrows(() => $invoke(d, fnName, args), phi);
         }
       }
     }

@@ -17,6 +17,7 @@ import type { Phi } from "../pred.ts";
 import { never, unknown, abs } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
+import { formatAbs } from "../format.ts";
 import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
 import { errorTypeAbs } from "./may-throw.ts";
@@ -56,6 +57,39 @@ export type RunTranspiledOptions = {
   /** 宽松全局（调用点发现 exec 采集：未声明全局调用保守 unknown 不中断） */
   lenientGlobals?: boolean;
 };
+
+/**
+ * inject/modules **内容**指纹（memo 键）。对象身份对「每次新建同内容」
+ * 的 CLI 注入不稳——同一语义的 inject 跨 checkSource 调用会 miss 缓存。
+ */
+export function runTranspiledOptionsMemoKey(
+  opts: RunTranspiledOptions | undefined,
+): string {
+  if (!opts) return "-";
+  const seen = new WeakSet<object>();
+  const fmt = (v: unknown): string => {
+    if (v === null || v === undefined) return String(v);
+    if (typeof v === "function") return "fn";
+    if (typeof v !== "object") return String(v);
+    const obj = v as object;
+    if (seen.has(obj)) return "@";
+    seen.add(obj);
+    if ("shape" in obj && "conf" in obj) {
+      try {
+        return formatAbs(obj as Abs);
+      } catch {
+        return "?abs";
+      }
+    }
+    if (Array.isArray(v)) return `[${v.map(fmt).join(",")}]`;
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o)
+      .sort()
+      .map((k) => `${k}:${fmt(o[k])}`)
+      .join(",")}}`;
+  };
+  return fmt(opts);
+}
 
 export const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
 

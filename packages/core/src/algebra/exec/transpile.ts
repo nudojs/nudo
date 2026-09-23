@@ -863,6 +863,29 @@ function withImplicitReturn(body: Node, bodyStmts: string, depth: number): strin
   return `${bodyStmts}\n${indent(depth)}return $lit(undefined);`;
 }
 
+/**
+ * 方法/函数体统一发射：早退 if 提升（transpileFnBodyStmts）+ 可选隐式 return。
+ * ObjectMethod / ClassMethod / 属性位 FunctionExpression 必须走本入口——
+ * 逐语句 map(transpileStatement) 会绕过提升，`if (c) return X; return Y`
+ * 的早退值被语句级 $fork thunk 吞掉（恒折 fall-through 值的假精确）。
+ */
+function emitFnBlockBody(
+  body: Node | undefined | null,
+  depth: number,
+  opts: TranspileOptions,
+  o: { implicitReturn?: boolean } = {},
+): string {
+  const implicitReturn = o.implicitReturn !== false;
+  if (!body) {
+    return implicitReturn ? `${indent(depth)}return $lit(undefined);` : "";
+  }
+  if (body.type !== "BlockStatement") {
+    return `${indent(depth)}return ${transpileExpression(body as Expression, opts)};`;
+  }
+  const stmts = transpileFnBodyStmts(body.body as Statement[], depth, opts);
+  return implicitReturn ? withImplicitReturn(body, stmts, depth) : stmts;
+}
+
 function transpileFnBodyStmts(stmts: Statement[], depth: number, opts: TranspileOptions): string {
   for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i]!;
@@ -2355,41 +2378,29 @@ function transpileClass(
     // get/set 访问器：实例进 spec.accessors，静态进 spec.staticAccessors
     if (m.kind === "get" || m.kind === "set") {
       const accBodyOpts: TranspileOptions = { ...opts, inLoop: 0, inTry: 0, thisParam: "__this" };
-      const accBodyStmts =
-        m.body?.type === "BlockStatement"
-          ? (m.body.body as Statement[])
-              .map((s) => transpileStatement(s, depth + 3, accBodyOpts))
-              .join("\n")
-          : "";
+      const accBody = m.body as Node | undefined;
       const target = m.static ? staticAccessorDefs : accessorDefs;
       const def = target.get(mname) ?? {};
       if (m.kind === "get") {
+        const accBodyStmts = emitFnBlockBody(accBody, depth + 3, accBodyOpts);
         def.get = `(__this) => {\n${accBodyStmts}\n${indent(depth + 3)}}`;
       } else {
         const vname = params.length > 0 && params[0] !== "_" ? params[0]! : "__v";
-        def.set = `(__this, ${vname}) => {\n${accBodyStmts}\n${indent(depth + 4)}return __this;\n${indent(depth + 3)}}`;
+        // setter 尾部 return __this——implicitReturn 关闭
+        const setBody = emitFnBlockBody(accBody, depth + 3, accBodyOpts, { implicitReturn: false });
+        def.set = `(__this, ${vname}) => {\n${setBody}\n${indent(depth + 4)}return __this;\n${indent(depth + 3)}}`;
       }
       target.set(mname, def);
       continue;
     }
     // ctor 有显式 `return __this`（下方追加）——不得加隐式 return 抢行
     const isCtor = m.kind === "constructor" || mname === "constructor";
-    const bodyStmts =
-      m.body?.type === "BlockStatement"
-        ? (isCtor
-            ? (m.body.body as Statement[])
-                .map((s) => transpileStatement(s, depth + 3, m.static ? opts : methodOpts))
-                .join("\n")
-            : withImplicitReturn(
-                m.body as unknown as Node,
-                (m.body.body as Statement[])
-                  .map((s) => transpileStatement(s, depth + 3, m.static ? opts : methodOpts))
-                  .join("\n"),
-                depth + 3,
-              ))
-        : isCtor
-          ? ""
-          : withImplicitReturn(m.body as unknown as Node, "", depth + 3);
+    const bodyStmts = emitFnBlockBody(
+      m.body as Node | undefined,
+      depth + 3,
+      m.static ? opts : methodOpts,
+      { implicitReturn: !isCtor },
+    );
     if (m.static) {
       staticMethodParts.push(
         `${indent(depth + 3)}${mname}: (${paramList}) => {`,
@@ -2745,25 +2756,20 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           if (prop.kind === "get" || prop.kind === "set") {
             // 占位槽保键存在性（'x' in o / keys / assign 拷贝目标）；读写在 $get/$set 层派发
             props.push(`${mkey}: $lit(undefined)`);
-            const bodySrc =
-              prop.body.type === "BlockStatement"
-                ? `{\n${prop.body.body.map((s) => transpileStatement(s, 1, methodOpts)).join("\n")}\n}`
-                : transpileExpression(prop.body as unknown as Expression, methodOpts);
             if (prop.kind === "get") {
+              const bodySrc = `{\n${emitFnBlockBody(prop.body, 1, methodOpts)}\n}`;
               accRegs.push({ key: mkey, get: `(__this) => ${bodySrc}` });
             } else {
+              // setter 尾部 return __this——implicitReturn 关闭
               const vname = paramNames.length > 0 && paramNames[0] !== "_a" ? paramNames[0]! : "__v";
               accRegs.push({
                 key: mkey,
-                set: `(__this, ${vname}) => {\n${bodySrc}\nreturn __this;\n}`,
+                set: `(__this, ${vname}) => {\n${emitFnBlockBody(prop.body, 1, methodOpts, { implicitReturn: false })}\nreturn __this;\n}`,
               });
             }
             continue;
           }
-          const bodySrc =
-            prop.body.type === "BlockStatement"
-              ? `{\n${prop.body.body.map((s) => transpileStatement(s, 1, methodOpts)).join("\n")}\n}`
-              : transpileExpression(prop.body as unknown as Expression, methodOpts);
+          const bodySrc = `{\n${emitFnBlockBody(prop.body, 1, methodOpts)}\n}`;
           const bindParams = ["__this", ...paramNames];
           const fnValSrc = `$fnVal([${paramNames.map((p) => JSON.stringify(p)).join(", ")}], (${bindParams.join(", ")}) => ${bodySrc}, { bindThis: true })`;
           props.push(`${mkey}: ${fnValSrc}`);
@@ -2804,10 +2810,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
               p.type === "Identifier" && p.name ? p.name : "_a",
             );
             const methodOpts: TranspileOptions = { ...opts, inLoop: 0, thisParam: "__this" };
-            const bodySrc =
-              fn.body.type === "BlockStatement"
-                ? `{\n${(fn.body as { body: Statement[] }).body.map((s) => transpileStatement(s, 1, methodOpts)).join("\n")}\n}`
-                : transpileExpression(fn.body as unknown as Expression, methodOpts);
+            const bodySrc = `{\n${emitFnBlockBody(fn.body, 1, methodOpts)}\n}`;
             const bindParams = ["__this", ...paramNames];
             props.push(
               `${key}: $fnVal([${paramNames.map((p) => JSON.stringify(p)).join(", ")}], (${bindParams.join(", ")}) => ${bodySrc}, { bindThis: true })`,

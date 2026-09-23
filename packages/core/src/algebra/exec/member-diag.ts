@@ -42,10 +42,13 @@ export function getAbsOrigin(a: Abs | undefined): { line: number; column: number
   return absOrigins.get(a);
 }
 
+/** 返回先前 collector，便于嵌套调用 save/restore */
 export function setMemberDiagCollector(
   c: ((d: BMemberDiag) => void) | null,
-): void {
+): ((d: BMemberDiag) => void) | null {
+  const prev = memberDiagCollector;
   memberDiagCollector = c;
+  return prev;
 }
 
 export function pushCallLoc(loc: { line: number; column: number }): void {

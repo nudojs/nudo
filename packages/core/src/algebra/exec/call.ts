@@ -23,6 +23,7 @@ import {
   enterCall,
   exitCall,
   truncatedAbs,
+  stableCallId,
 } from "../call-budget.ts";
 
 export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
@@ -38,9 +39,10 @@ export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
     if (impl?.relation || isRelFn(fn)) return instantiateReturn(fn, args);
     return unknown;
   }
-  // apply 钩子（mock withArgs / $fnVal / 桥接导出）：按实参派发
+  // apply 钩子（mock withArgs / $fnVal / 桥接导出）：按实参派发。
+  // 预算键用 fn 对象身份（anon#N 会把不同同元函数误判 cycle）。
   if (impl?.apply) {
-    const key = callBudgetKey("absfn", impl.fingerprint ?? `anon#${impl.params.length}`, args);
+    const key = callBudgetKey("absfn", impl.fingerprint ?? stableCallId(fn as object), args);
     const label = (fn.shape as { name?: string }).name ?? "anonymous";
     if (!enterCall(key, label)) return truncatedAbs();
     try {
@@ -56,19 +58,27 @@ export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
       exitCall();
     }
   }
-  // body（无 apply）：编译执行；失败回落非 body 面（budget 已含编译调用点）
+  // body（无 apply）：编译执行；失败回落非 body 面。编译路径与 apply 同口径
+  // 进预算（$invoke→$call 递归、回调 $call 递归不得裸奔栈溢出）。
   const compiled = compiledBodyOf(impl);
   if (compiled) {
+    const key = callBudgetKey("absbody", impl.fingerprint ?? stableCallId(fn as object), args);
+    const label = (fn.shape as { name?: string }).name ?? "anonymous";
+    if (!enterCall(key, label)) return truncatedAbs();
     try {
-      return compiled(args);
-    } catch (e) {
-      // body 抛错 → never（不把中间值当返回值）；throw 载荷进 throwExits
-      // 供 callTranspiledExportFull 的 L2 throws 收集
-      if (isNudoThrow(e)) {
-        pushThrowExit(e.absValue);
-        return never;
+      try {
+        return compiled(args);
+      } catch (e) {
+        // body 抛错 → never（不把中间值当返回值）；throw 载荷进 throwExits
+        // 供 callTranspiledExportFull 的 L2 throws 收集
+        if (isNudoThrow(e)) {
+          pushThrowExit(e.absValue);
+          return never;
+        }
+        throw e;
       }
-      throw e;
+    } finally {
+      exitCall();
     }
   }
   return unknown;

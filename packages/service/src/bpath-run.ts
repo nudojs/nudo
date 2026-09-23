@@ -451,9 +451,9 @@ export function tryRunBPath(
     const truncated = new Set<string>();
     const topCalls: BCallRecord[] = [];
     // collector 先于模块图：import 函数体在 evalProgramAbs 内的 method-missing 也要收
-    setMemberDiagCollector((d) => memberDiags.push(d));
-    setAbsTruncationCollector((label) => truncated.add(label));
-    setBCallCollector((r) => topCalls.push(r));
+    const prevMember = setMemberDiagCollector((d) => memberDiags.push(d));
+    const prevTrunc = setAbsTruncationCollector((label) => truncated.add(label));
+    const prevCall = setBCallCollector((r) => topCalls.push(r));
     try {
       const { modules: graphMods, issues } = evalAbsModuleGraph(source, filePath);
       const envMods = collectEnvModules(opts.envNames ?? []);
@@ -483,9 +483,9 @@ export function tryRunBPath(
         calls: topCalls.length ? topCalls : undefined,
       };
     } finally {
-      setMemberDiagCollector(null);
-      setAbsTruncationCollector(null);
-      setBCallCollector(null);
+      setMemberDiagCollector(prevMember);
+      setAbsTruncationCollector(prevTrunc);
+      setBCallCollector(prevCall);
     }
   } catch {
     out = null;
@@ -530,12 +530,13 @@ export function tryBPathCallFull(
   if (!(fnName in run.exports)) return undefined;
   const collected: BCallRecord[] = [];
   const memberDiags: BMemberDiag[] = [];
-  if (opts.collectCalls) {
-    setBCallCollector((r) => collected.push(r));
-  }
-  if (opts.collectMemberDiags ?? true) {
-    setMemberDiagCollector((d) => memberDiags.push(d));
-  }
+  const prevCall = opts.collectCalls
+    ? setBCallCollector((r) => collected.push(r))
+    : undefined;
+  const wantMember = opts.collectMemberDiags ?? true;
+  const prevMember = wantMember
+    ? setMemberDiagCollector((d) => memberDiags.push(d))
+    : undefined;
   try {
     const full = callTranspiledExportFull(run.exports, fnName, args, opts.phi ? { phi: opts.phi } : undefined);
     const all = [...(run.memberDiags ?? []), ...memberDiags];
@@ -547,8 +548,8 @@ export function tryBPathCallFull(
       truncatedFns: run.truncatedFns,
     };
   } finally {
-    if (opts.collectCalls) setBCallCollector(null);
-    setMemberDiagCollector(null);
+    if (opts.collectCalls) setBCallCollector(prevCall ?? null);
+    if (wantMember) setMemberDiagCollector(prevMember ?? null);
   }
 }
 

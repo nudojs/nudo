@@ -1,10 +1,11 @@
 /**
  * body 编译执行（迁移件 4）：自包含 Abs fn 的 body 转译成 JS 函数，
  * 调用时直接执行（替代 evalNode 解释）。语义门：
- * - body 无自由标识符（闭包/兄弟函数/自递归引用——property key 不算）
- *   → 可编译；否则 undefined（调用方回落 evalNode，递归预算仍生效）；
+ * - 自由名从 impl.env 注入（vars/fns）；全局名留给 new Function 全局作用域
+ *   （未定义名 ReferenceError = 原生奇偶，不再整体回落解释）；
  * - phi 由调用方 gate（phi 线程收窄是解释语义，B 执行不支持）。
  * 按 impl 对象 WeakMap memo（body AST 身份稳定）。
+ * 编译失败 → undefined（调用方回落非 body 面 / fail-closed）。
  */
 import type { Abs } from "../abs.ts";
 import { absFunction, type AbsFnImpl } from "../abs-fn.ts";
@@ -112,9 +113,9 @@ export function freeIdentifiers(body: Node, params: string[]): Set<string> {
 
 /**
  * 编译 body → (args) => Abs。自由标识符（闭包）从 impl.env 解析注入：
- * vars → Abs 值；fns → absFunction 包装（调用走 $callNamed → applyAbsFn，
- * 解释语义/递归预算保留）。不可解析（全局名/自递归名）→ undefined
- * （调用方回落解释执行）。
+ * vars → Abs 值；fns → absFunction 包装（调走 $callNamed → $call，递归预算保留）。
+ * 全局名不注入——编译产物经 new Function 全局作用域解析（未定义名
+ * ReferenceError = 原生奇偶）。编译失败 → undefined（调用方回落非 body 面）。
  */
 export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefined {
   if (!impl.body) return undefined;
@@ -127,7 +128,7 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
   // 走 $callNamed（B 调用预算：cycle 键按对象身份，同一 Abs → 立即截断，
   // 深度 64 兜底）。其余自由名（Math/JSON 等全局）不注入——编译产物经
   // new Function 全局作用域解析，与 B run 同语义（未定义名 ReferenceError
-  // = 原生奇偶；不再整体回落解释路径）。
+  // = 原生奇偶；不再整体回落）。
   const closureArgs: string[] = [];
   const closureVals: unknown[] = [];
   for (const name of free) {

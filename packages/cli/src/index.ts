@@ -410,7 +410,7 @@ async function runCheck(
           : {}),
       };
     } catch {
-      /* 注入计算失败：不注入（旧语义，回落解释路径） */
+      /* 注入计算失败：不注入（fail-closed，无解释兜底） */
     }
     algebraReport = checkSource(filePath, source, pTrue, {
       loadModule,

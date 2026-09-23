@@ -40,7 +40,7 @@ import {
 } from "./load-deps-fp.ts";
 import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
 import { scanPromotions } from "./promote-scan.ts";
-import { tryRunTranspiled, callTranspiledExportFull, type RunTranspiledOptions } from "./exec/run.ts";
+import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey, type RunTranspiledOptions } from "./exec/run.ts";
 import { withExecPhi } from "./exec/runtime.ts";
 import { $new, $invoke } from "./exec/class.ts";
 
@@ -51,14 +51,21 @@ function bPathRunOf(
   modules?: Record<string, AbsModuleExports | Record<string, unknown>>,
   inject?: RunTranspiledOptions,
 ): Record<string, unknown> | undefined {
-  const mKey = `${source}|${moduleMapId(modules)}|${moduleMapId(inject as object | undefined)}`;
+  // 内容指纹（CLI 每次新建 inject/modules 对象时身份键会 miss）
+  const mKey = `${source}|${runTranspiledOptionsMemoKey({ ...(inject ?? {}), ...(modules ? { modules } : {}) })}`;
   if (bRunMemo.size >= 256) {
     const oldest = bRunMemo.keys().next().value;
     if (oldest !== undefined) bRunMemo.delete(oldest);
   }
   let run = bRunMemo.get(mKey);
   if (run === undefined) {
-    const r = tryRunTranspiled(source, { mode: "analyze", modules, ...inject });
+    // mode 恒为 analyze；modules 优先参数、缺则 inject.modules（与 bAnalyzeOpts 同口径）
+    const merged = modules ?? inject?.modules;
+    const r = tryRunTranspiled(source, {
+      ...(inject ?? {}),
+      mode: "analyze" as const,
+      ...(merged ? { modules: merged } : {}),
+    });
     if (r === undefined) return undefined;
     run = r;
     bRunMemo.set(mKey, run);
@@ -225,7 +232,7 @@ function generalizeMemoKey(
     /** 宿主已求值的依赖导出表（specifier → AbsModuleExports） */
     modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
     /** B run 注入包（modules/mocks/envGlobals/replacements/as）——透传
-     *  runTranspiled；对象身份进 memo 键（调用方同文件内复用同一对象） */
+     *  runTranspiled；内容指纹进 memo 键（CLI 每次新建同对象也可命中） */
     inject?: RunTranspiledOptions;
   },
 ): { key: string; depPaths: string[]; truncated: boolean } {
@@ -254,7 +261,7 @@ function generalizeMemoKey(
     sc ?? "-",
     `${budget.maxDepth}/${budget.maxNodes}`,
     moduleMapId(opts.modules),
-    moduleMapId(opts.inject as object | undefined),
+    runTranspiledOptionsMemoKey(opts.inject),
   ].join("|");
   return {
     key,
@@ -1032,7 +1039,7 @@ function generalizeFromAstUncached(
       try {
         const bRun = bPathRunOf(source, opts.modules, opts.inject);
         if (!bRun) {
-          /* B 失败回落解释 */
+          /* B 失败 fail-closed */
         } else if (fnName.includes(".")) {
           // 类方法桥：模块导出表取类 Abs → $new（构造参数 any）→ $invoke
           const [clsName, methodName] = fnName.split(".", 2);
@@ -1054,7 +1061,7 @@ function generalizeFromAstUncached(
           result = callTranspiledExportFull(bRun, fnName, bArgs, { phi }).result;
         }
       } catch {
-        /* B 失败回落解释 */
+        /* B 失败 fail-closed */
       }
     }
     if (result === undefined) {

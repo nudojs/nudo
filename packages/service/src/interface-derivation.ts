@@ -572,7 +572,7 @@ function deriveOneRoot(
 
     const calls: AbsCallRecord[] = [];
     const bCalls: BCallRecord[] = [];
-    setBCallCollector((r) => bCalls.push(r));
+    const prevCall = setBCallCollector((r) => bCalls.push(r));
     try {
       // B-path 优先（迁移件 3）：derivation 打点在共享代数层（arithmetic.add
       // noteDerivationAdd / joinAbs noteDerivationJoin），$add/$join 执行
@@ -596,7 +596,7 @@ function deriveOneRoot(
     } catch {
       return [];
     } finally {
-      setBCallCollector(null);
+      setBCallCollector(prevCall);
     }
 
     const byCallee = new Map<string, CallAgg>();
