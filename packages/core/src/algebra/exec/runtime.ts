@@ -32,7 +32,7 @@ import { registerMatchIter, matchIterElements } from "./match-iter.ts";
 import { leqAbs } from "../leq.ts";
 import { evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants, regexBrandAbsFrom } from "../builtins.ts";
 import type { Phi } from "../pred.ts";
-import { pTrue, and } from "../pred.ts";
+import { pTrue, and, predEquals } from "../pred.ts";
 import {
   noteUnknownMemberMissing,
   noteObjSlotMissing,
@@ -910,6 +910,7 @@ let genJoinOverride: Abs | null = null;
 
 function withIsolatedYields<T>(fn: () => T): { v: T; ys: Abs[] | null } {
   const top = yieldStack[yieldStack.length - 1];
+  // 无收集器：不换槽、不建 armYs（fork 热路径常态）
   if (!top) return { v: fn(), ys: null };
   const armYs: Abs[] = [];
   yieldStack[yieldStack.length - 1] = armYs;
@@ -957,19 +958,21 @@ function runForkArm(arm: () => Abs, exits: Abs[] | undefined): ForkArm {
 }
 
 function settleForkArms(a: ForkArm, b: ForkArm, exits: Abs[] | undefined): Abs {
-  const throws = [a, b].filter((r): r is { kind: "throw"; v: Abs } => r.kind === "throw");
-  const nonThrow = [a, b].filter((r) => r.kind !== "throw");
-  if (nonThrow.length === 0) {
+  // 避开 filter 数组分配：两臂直判
+  const aThrow = a.kind === "throw";
+  const bThrow = b.kind === "throw";
+  if (aThrow && bThrow) {
     // 全 throw：兄弟臂已探索完，再抛 join（调用边界收成 throws）
-    throw new NudoThrow(throws.map((t) => t.v).reduce((x, y) => joinAbs(x, y)));
+    throw new NudoThrow(joinAbs(a.v, b.v));
   }
   // 混合 throw + val/ret：throws 已在 throwExits；继续处理非 throw 臂
-  const first = nonThrow[0]!;
-  const second = nonThrow[1] ?? first;
+  const first = aThrow ? b : a;
+  const second = aThrow ? a : b;
   if (first.kind === "ret" && second.kind === "ret") {
     throw new NudoReturn(joinAbs(first.v, second.v));
   }
-  if (nonThrow.length === 1) {
+  if (aThrow !== bThrow) {
+    // 恰一臂 throw：只携带非 throw 臂
     if (first.kind === "ret") {
       if (!exits) throw new NudoReturn(first.v);
       return undef();
@@ -992,7 +995,22 @@ function settleForkArms(a: ForkArm, b: ForkArm, exits: Abs[] | undefined): Abs {
  *  实测 50+ 项 → 60s+ 卡死；main 无 Φ-native 时 31ms）。超限丢弃新增项
  *  （保留原 Φ）——剪枝更少 = 更保守，安全。 */
 const PHI_MAX_NODES = 24;
+/** 单 pred 追加进 and 链：避开 and() 全量 flatten 的 O(n²) 去重。 */
 function boundedPhi(p: Phi, q: Phi): Phi {
+  if (q.op === "true") return p;
+  if (p.op === "true") return q.op === "and" && q.args.length > PHI_MAX_NODES ? p : q;
+  if (q.op !== "and") {
+    if (p.op === "and") {
+      if (p.args.length > PHI_MAX_NODES) return p;
+      for (let i = 0; i < p.args.length; i++) {
+        if (predEquals(p.args[i]!, q)) return p;
+      }
+      const args = p.args.slice();
+      args.push(q);
+      return { op: "and", args };
+    }
+    return predEquals(p, q) ? p : { op: "and", args: [p, q] };
+  }
   const r = and(p, q);
   if (r.op !== "and") return r;
   return r.args.length > PHI_MAX_NODES ? p : r;
@@ -1004,22 +1022,32 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
   // Φ-native：测试判定已由 cmp 消费 currentExecPhi（$gt 等传模块级 phi）；
   // 此处把 Φ∧test（真臂）/ Φ∧¬test（假臂）压进臂作用域——嵌套/兄弟分支的
   // 路径事实沿臂累积（外层已证 x>y ⇒ 内层同测试折叠）。
+  // 单次 litTruth：isDefinitelyTrue/False 各算一遍是纯浪费。
+  const truth = litTruth(test);
   const p = currentExecPhi();
   const tCons = test.pred;
-  const tNeg = falseConstraint(test);
-  if (isDefinitelyTrue(test)) {
+  if (truth === true) {
     return asAbsVal(withExecPhi(tCons ? boundedPhi(p, tCons) : p, consequent));
   }
-  if (isDefinitelyFalse(test)) {
-    return alternate
-      ? asAbsVal(withExecPhi(tNeg ? boundedPhi(p, tNeg) : p, alternate))
-      : undef();
+  if (truth === false || test.shape.k === "never") {
+    if (!alternate) return undef();
+    const tNeg = falseConstraint(test);
+    return asAbsVal(withExecPhi(tNeg ? boundedPhi(p, tNeg) : p, alternate));
   }
   const phiTrue = tCons ? boundedPhi(p, tCons) : p;
-  const phiFalse = tNeg ? boundedPhi(p, tNeg) : p;
+  // 假臂 Φ 惰性：隐式 else 不跑 body，用不到 ¬test
+  let phiFalse: Phi | undefined;
+  const falsePhi = (): Phi => {
+    if (phiFalse === undefined) {
+      const tNeg = falseConstraint(test);
+      phiFalse = tNeg ? boundedPhi(p, tNeg) : p;
+    }
+    return phiFalse;
+  };
 
   const exits = loopExitsAls.getStore();
   // 集合 side-table：抽象分支各自 overlay，结束后 join（防身份污染）
+  // overlay 本身惰性分配——无 Map/Set 写入时零堆分配
   beginCollectionFork();
   const arms: Array<ReturnType<typeof popCollectionArm>> = [];
   const armYsList: Array<Abs[] | null> = [];
@@ -1039,7 +1067,7 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
     if (alternate) {
       pushCollectionArm();
       try {
-        const r = withExecPhi(phiFalse, () =>
+        const r = withExecPhi(falsePhi(), () =>
           withIsolatedYields(() => runForkArm(alternate, exits)),
         );
         b = r.v;

@@ -31,16 +31,27 @@ type SetTable = {
 const mapTables = new WeakMap<object, MapTable>();
 const setTables = new WeakMap<object, SetTable>();
 
-/** $fork 抽象分支：每侧独立 overlay，避免身份表被另一侧 set 污染 */
+/** $fork 抽象分支：每侧独立 overlay，避免身份表被另一侧 set 污染。
+ *  惰性：无集合写入时不分配 WeakMap（fork 热路径上无 Map/Set 是常态）。 */
 type ArmOverlay = WeakMap<object, { map?: MapTable; set?: SetTable }>;
-let armOverlays: ArmOverlay[] = [];
+let armOverlays: (ArmOverlay | null)[] = [];
 
 export function pushCollectionArm(): void {
-  armOverlays.push(new WeakMap());
+  armOverlays.push(null);
 }
 
 export function popCollectionArm(): ArmOverlay | undefined {
-  return armOverlays.pop();
+  return armOverlays.pop() ?? undefined;
+}
+
+function topArmOverlay(): ArmOverlay {
+  const i = armOverlays.length - 1;
+  let top = armOverlays[i];
+  if (!top) {
+    top = new WeakMap();
+    armOverlays[i] = top;
+  }
+  return top;
 }
 
 function cloneMapTable(t: MapTable): MapTable {
@@ -74,42 +85,54 @@ function setAnyAbsent(t: SetTable | undefined): boolean {
  * 合并 fork 各臂 overlay → 全局表（由 endCollectionFork 实现）。
  * 保留导出名以免外部测试/调用点漂移。
  */
-export function mergeCollectionArms(arms: Array<ArmOverlay | undefined>): void {
+export function mergeCollectionArms(arms: Array<ArmOverlay | undefined | null>): void {
   endCollectionFork(arms);
 }
 
-/** $fork 用：记录本 fork 探索中被写过的 identity */
-let forkTouchedStack: Set<object>[] = [];
+/** $fork 用：记录本 fork 探索中被写过的 identity。
+ *  惰性：无写入时栈槽为 null（fork 常态），避免每 fork 分配 Set。 */
+let forkTouchedStack: (Set<object> | null)[] = [];
 
 export function beginCollectionFork(): void {
-  forkTouchedStack.push(new Set());
+  forkTouchedStack.push(null);
 }
 
 export function noteCollectionWrite(id: object): void {
-  const top = forkTouchedStack[forkTouchedStack.length - 1];
-  if (top) top.add(id);
+  const i = forkTouchedStack.length - 1;
+  if (i < 0) return;
+  let top = forkTouchedStack[i];
+  if (!top) {
+    top = new Set();
+    forkTouchedStack[i] = top;
+  }
+  top.add(id);
 }
 
-export function endCollectionFork(arms: Array<ArmOverlay | undefined>): void {
-  const touched = forkTouchedStack.pop() ?? new Set();
-  const live = arms.filter(Boolean) as ArmOverlay[];
-  if (live.length === 0) return;
+export function endCollectionFork(arms: Array<ArmOverlay | undefined | null>): void {
+  const touched = forkTouchedStack.pop();
+  // 无集合写入 → 零 merge（fork 热路径快出）
+  if (!touched || touched.size === 0) return;
+  // 空臂槽位必须计入 perArm.length（条件写入的 maybeAbsent 依赖臂计数）
+  if (arms.length === 0) return;
   // 嵌套 fork：外层臂 overlay 仍在栈上时，merge 结果只能写入当前臂，
   // 绝不能落盘全局——否则兄弟臂未写时会读到内层污染。
+  // 外层臂可能尚未 materialize（惰性 overlay）——commit 时再建，不能落全局。
   const nested = armOverlays.length > 0;
-  const outerArm = nested ? armOverlays[armOverlays.length - 1]! : undefined;
+  const outerArm = nested ? armOverlays[armOverlays.length - 1] : undefined;
   const commitMap = (id: object, merged: MapTable): void => {
-    if (outerArm) {
-      const e = outerArm.get(id) ?? {};
-      outerArm.set(id, { ...e, map: merged });
+    if (nested) {
+      const outer = topArmOverlay();
+      const e = outer.get(id) ?? {};
+      outer.set(id, { ...e, map: merged });
     } else {
       mapTables.set(id, merged);
     }
   };
   const commitSet = (id: object, merged: SetTable): void => {
-    if (outerArm) {
-      const e = outerArm.get(id) ?? {};
-      outerArm.set(id, { ...e, set: merged });
+    if (nested) {
+      const outer = topArmOverlay();
+      const e = outer.get(id) ?? {};
+      outer.set(id, { ...e, set: merged });
     } else {
       setTables.set(id, merged);
     }
@@ -119,8 +142,8 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined>): void {
     const armSetTables: Array<SetTable | undefined> = [];
     let anyMap = false;
     let anySet = false;
-    for (const arm of live) {
-      const e = arm.get(id);
+    for (const arm of arms) {
+      const e = arm?.get(id);
       if (e?.map) {
         anyMap = true;
         armTables.push(e.map);
@@ -137,9 +160,9 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined>): void {
     // 对齐各臂：未写入的臂用基表（嵌套时优先读外层 overlay，再读全局）
     if (anyMap || armTables.some(Boolean)) {
       const base =
-        (nested ? mapTableForReadBase(outerArm!, id) : mapTables.get(id)) ?? emptyMapTable();
-      const perArm: MapTable[] = live.map((arm) => {
-        const e = arm.get(id);
+        (nested ? mapTableForReadBase(outerArm, id) : mapTables.get(id)) ?? emptyMapTable();
+      const perArm: MapTable[] = arms.map((arm) => {
+        const e = arm?.get(id);
         return e?.map ?? cloneMapTable(base);
       });
       const merged: MapTable = { byLit: new Map(), shadowValues: [], maybeAbsent: new Set() };
@@ -166,9 +189,9 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined>): void {
     }
     if (anySet || armSetTables.some(Boolean)) {
       const base =
-        (nested ? setTableForReadBase(outerArm!, id) : setTables.get(id)) ?? emptySetTable();
-      const perArm: SetTable[] = live.map((arm) => {
-        const e = arm.get(id);
+        (nested ? setTableForReadBase(outerArm, id) : setTables.get(id)) ?? emptySetTable();
+      const perArm: SetTable[] = arms.map((arm) => {
+        const e = arm?.get(id);
         return e?.set ?? cloneSetTable(base);
       });
       const seen = new Set<LitKey>();
@@ -222,12 +245,12 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined>): void {
   }
 }
 
-function mapTableForReadBase(arm: ArmOverlay, id: object): MapTable | undefined {
-  return arm.get(id)?.map ?? mapTables.get(id);
+function mapTableForReadBase(arm: ArmOverlay | null | undefined, id: object): MapTable | undefined {
+  return arm?.get(id)?.map ?? mapTables.get(id);
 }
 
-function setTableForReadBase(arm: ArmOverlay, id: object): SetTable | undefined {
-  return arm.get(id)?.set ?? setTables.get(id);
+function setTableForReadBase(arm: ArmOverlay | null | undefined, id: object): SetTable | undefined {
+  return arm?.get(id)?.set ?? setTables.get(id);
 }
 
 function emptyMapTable(): MapTable {
@@ -379,11 +402,11 @@ function mapTableForWrite(a: Abs): MapTable {
   if (armOverlays.length > 0) {
     let base: MapTable | undefined;
     for (let i = 0; i < armOverlays.length; i++) {
-      const e = armOverlays[i]!.get(a as object);
+      const e = armOverlays[i]?.get(a as object);
       if (e?.map) base = e.map;
     }
     if (!base) base = mapTables.get(a as object);
-    const top = armOverlays[armOverlays.length - 1]!;
+    const top = topArmOverlay();
     let entry = top.get(a as object);
     if (!entry?.map) {
       const cloned = cloneMapTable(base ?? emptyMapTable());
@@ -398,7 +421,7 @@ function mapTableForWrite(a: Abs): MapTable {
 
 function mapTableForRead(a: Abs): MapTable | undefined {
   for (let i = armOverlays.length - 1; i >= 0; i--) {
-    const entry = armOverlays[i]!.get(a as object);
+    const entry = armOverlays[i]?.get(a as object);
     if (entry?.map) return entry.map;
   }
   return mapTables.get(a as object);
@@ -409,11 +432,11 @@ function setTableForWrite(a: Abs): SetTable {
   if (armOverlays.length > 0) {
     let base: SetTable | undefined;
     for (let i = 0; i < armOverlays.length; i++) {
-      const e = armOverlays[i]!.get(a as object);
+      const e = armOverlays[i]?.get(a as object);
       if (e?.set) base = e.set;
     }
     if (!base) base = setTables.get(a as object);
-    const top = armOverlays[armOverlays.length - 1]!;
+    const top = topArmOverlay();
     let entry = top.get(a as object);
     if (!entry?.set) {
       const cloned = cloneSetTable(base ?? emptySetTable());
@@ -428,7 +451,7 @@ function setTableForWrite(a: Abs): SetTable {
 
 function setTableForRead(a: Abs): SetTable | undefined {
   for (let i = armOverlays.length - 1; i >= 0; i--) {
-    const entry = armOverlays[i]!.get(a as object);
+    const entry = armOverlays[i]?.get(a as object);
     if (entry?.set) return entry.set;
   }
   return setTables.get(a as object);

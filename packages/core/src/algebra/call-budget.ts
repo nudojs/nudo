@@ -93,8 +93,9 @@ export function exitCall(): void {
   _activeCallKeys.pop();
 }
 
-/** 分支展开上限：递归×循环下 $fork 数爆炸（lodash _baseFlatten 实测每次
- *  fork ~150µs——集合 overlay/Φ 臂包裹成本；调用预算管不到 fork 数）。
+/** 分支展开上限：递归×循环下 $fork 数爆炸（lodash _baseFlatten）。
+ *  单次 fork 的集合 overlay / Φ 臂包裹已惰性化（无 Map/Set 写入时零堆分配）；
+ *  此阀仍管「fork 次数本身」——调用预算管不到 fork 数。
  *  超限返回 unknown（放弃该分支 = 最保守，安全）。 */
 export const MAX_B_TOTAL_FORKS = 5000;
 let _bForkCount = 0;

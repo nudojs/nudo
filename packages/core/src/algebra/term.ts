@@ -17,6 +17,7 @@ export const v = (id: string): Term => ({ op: "var", id });
 export const app = (fn: string, args: Term[]): Term => ({ op: "app", fn, args });
 
 export function termEquals(a: Term, b: Term): boolean {
+  if (a === b) return true;
   if (a.op !== b.op) return false;
   if (a.op === "lit" && b.op === "lit") return a.value === b.value;
   if (a.op === "var" && b.op === "var") return a.id === b.id;

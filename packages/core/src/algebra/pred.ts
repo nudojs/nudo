@@ -78,6 +78,7 @@ export function not(p: Pred): Pred {
 }
 
 export function predEquals(a: Pred, b: Pred): boolean {
+  if (a === b) return true;
   if (a.op !== b.op) return false;
   switch (a.op) {
     case "true":
