@@ -12,9 +12,10 @@
 
 | ID | 项 | 缺口 |
 |----|----|------|
-| **A3** | VS Code 扩展产品化 | 发布清单已写（`packages/vscode/RELEASE_CHECKLIST.md`）；**`vsce package` dry-run 须在 release 机执行**后才能标 `[x]` |
 | **A6** | IDE 日用冒烟 | service 层冒烟 7/7（`ide-daily-smoke.test.ts`）；**live editor + 中型目录延迟基线**未做（→ S1） |
 | **B2** | `@types/node` harvest 产品化 | 进程内缓存 + 有/无 `@types/node` 条件 hard-gate 已有；**磁盘缓存**与「harvest 失败自动注入手写 env」降级链路未做（手写 wins 已由 `mergeHarvestUnderEnv` 钉住） |
+
+> **A3 已完成**（2026-09 发布）：`nudo-vscode` 经 release CI `vsce package` + Marketplace + Open VS X 发出（run `35428825221`）；清单见 `packages/vscode/RELEASE_CHECKLIST.md`。
 
 ---
 
