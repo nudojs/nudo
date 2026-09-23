@@ -845,7 +845,13 @@ async function runContractFromDts(
 
 async function runContractDraft(
   file: string,
-  opts: { fnNames: string[]; write: boolean; dryRun: boolean; records?: CallRecord[] },
+  opts: {
+    fnNames: string[];
+    write: boolean;
+    dryRun: boolean;
+    json?: boolean;
+    records?: CallRecord[];
+  },
 ): Promise<void> {
   const { draftInterface, formatDraftSummary, writeInterfaceDraft, sidecarDraftPath } =
     await import("@nudojs/service");
@@ -856,6 +862,36 @@ async function runContractDraft(
     ...(opts.records ? { records: opts.records } : {}),
   });
   const draftRel = relative(process.cwd(), sidecarDraftPath(filePath)) || sidecarDraftPath(filePath);
+  // AI4：--json → draftSource + unified diff（审阅面）
+  if (opts.json) {
+    let prev = "";
+    try {
+      prev = readFileSync(sidecarDraftPath(filePath), "utf-8");
+    } catch {
+      /* no existing draft */
+    }
+    const diff = unifiedDiff(prev, result.draftSource, draftRel);
+    console.log(
+      JSON.stringify(
+        {
+          file: rel,
+          draftPath: draftRel,
+          draftSource: result.draftSource,
+          diff,
+          entries: result.entries.map((e) => ({
+            fn: e.fn,
+            dsl: e.dsl,
+            skipped: e.skipped,
+            paramEvidence: e.paramEvidence,
+            returnEvidence: e.returnEvidence,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
   if (opts.write) {
     const draftPath = sidecarDraftPath(filePath);
     if (/node_modules/.test(filePath) || /node_modules/.test(draftPath)) {
@@ -1427,6 +1463,11 @@ program
     "L2: ignore these entry may-throw type names (e.g. TypeError,RangeError)",
   )
   .option("--entry-throws <mode>", "L2: error | warning | off (default error)")
+  .option(
+    "--what-if <binding...>",
+    "AI3: assume `name:type` bindings (e.g. raw:string) and report --target",
+  )
+  .option("--target <name>", "With --what-if: binding name whose inferred type to print")
   .action(
     async (
       paths: string[],
@@ -1443,8 +1484,44 @@ program
         from?: string[];
         ignoreThrows?: string;
         entryThrows?: string;
+        whatIf?: string[];
+        target?: string;
       },
     ) => {
+      // AI3：what-if 与门禁分离——只回答「假设下 target 是什么」
+      if (opts.whatIf && opts.whatIf.length > 0) {
+        const targets: string[] = [];
+        for (const p of paths) targets.push(...resolveTargets(p));
+        const file = targets[0];
+        if (!file || !opts.target) {
+          console.error("error: --what-if needs one file and --target <name>");
+          process.exitCode = 1;
+          return;
+        }
+        const { injectBindings, analyzeFile, defaultLoadModule } = await import("@nudojs/service");
+        const { formatAbs } = await import("@nudojs/core");
+        const bindings = opts.whatIf.map((w) => {
+          const i = w.indexOf(":");
+          return i < 0
+            ? { name: w, type: "any" }
+            : { name: w.slice(0, i), type: w.slice(i + 1) };
+        });
+        const original = readFileSync(file, "utf-8");
+        const { source, applied, unapplied } = injectBindings(original, bindings);
+        const result = analyzeFile(file, source, undefined, undefined, defaultLoadModule);
+        const binding = result.bindings.get(opts.target);
+        const typeStr = binding ? formatAbs(binding.abs) : "unknown";
+        const notes: string[] = [];
+        if (applied.length > 0) notes.push(`Bindings applied: ${applied.join(", ")}`);
+        if (unapplied.length > 0) {
+          notes.push(
+            `Bindings not applied (no top-level declaration found): ${unapplied.join(", ")}`,
+          );
+        }
+        console.log(`Type of "${opts.target}": ${typeStr}`);
+        for (const n of notes) console.log(n);
+        return;
+      }
       const targets: string[] = [];
       for (const p of paths) targets.push(...resolveTargets(p));
       if (targets.length === 0) return;
@@ -1623,6 +1700,7 @@ program
   .option("--dry-run", "With --emit or --draft --write: print instead of writing")
   .option("--exit-on-diff", "With --emit + --dry-run: exit 1 when the sidecar would change")
   .option("--from <paths...>", "Usage-site files feeding domain evidence")
+  .option("--json", "With --draft: machine-readable draftSource + unified diff (AI4)")
   .action(
     async (
       paths: string[],
@@ -1636,6 +1714,7 @@ program
         dryRun?: boolean;
         exitOnDiff?: boolean;
         from?: string[];
+        json?: boolean;
       },
     ) => {
       if (opts.fromDts) {
@@ -1690,6 +1769,7 @@ program
               fnNames: opts.fn ?? [],
               write: opts.write === true,
               dryRun: opts.dryRun === true,
+              json: opts.json === true,
               records: externalRecords,
             });
           } else if (opts.emit) {

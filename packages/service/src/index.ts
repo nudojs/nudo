@@ -313,3 +313,10 @@ export {
   type RootDeriveOpts,
   type RootDeriveResult,
 } from "./interface-derivation.ts";
+
+// AI3：what-if 绑定注入（CLI / LSP 同构）
+export {
+  injectBindings,
+  typeExprToDirective,
+  type TypeBinding,
+} from "./what-if.ts";

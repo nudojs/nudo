@@ -61,6 +61,8 @@ nudo check <paths...> [options]
 | `--from <paths…>` | Usage-site files (tests/apps); their call records join the analysis |
 | `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (e.g. `TypeError,RangeError`). Does not swallow L1 contract violations. |
 | `--entry-throws error\|warning\|off` | Severity for L2 entry may-throw (default `error`) |
+| `--what-if <binding...>` | AI3: assume `name:type` bindings and report `--target` (same semantics as LSP `nudo.whatIf`) |
+| `--target <name>` | With `--what-if`: binding whose inferred type to print |
 
 **Configuration (`package.json`):**
 
@@ -225,7 +227,7 @@ Print, draft, or emit each function's effective interface with its source layer.
 ```bash
 nudo contract <paths...> [--from <paths...>]
 nudo contract --emit <paths...> [--fn <name>] [--all] [--dry-run] [--exit-on-diff] [--from <paths...>]
-nudo contract --draft <paths...> [--write] [--fn <name>] [--dry-run] [--from <paths...>]
+nudo contract --draft <paths...> [--write] [--json] [--fn <name>] [--dry-run] [--from <paths...>]
 ```
 
 **Layers:**
@@ -246,6 +248,7 @@ nudo contract --draft <paths...> [--write] [--fn <name>] [--dry-run] [--from <pa
 | `--dry-run` | Print a unified diff instead of writing |
 | `--exit-on-diff` | With `--emit --dry-run`: exit `1` when the diff is non-empty |
 | `--from <paths…>` | Usage-site evidence for domain projection |
+| `--json` | With `--draft`: `{ draftSource, diff, entries[] }` for agent review (AI4) |
 
 **Examples:**
 

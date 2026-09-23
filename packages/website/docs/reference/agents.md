@@ -42,8 +42,9 @@ Leaving tsc: npx nudojs migrate status|strip|verify|retire (exit is retire).
 
 ```bash
 npx nudojs check <path>
+npx nudojs check <path> --what-if raw=string --target size   # AI3: assume → observe
 npx nudojs contract <path>
-npx nudojs contract --draft <path> [--write]
+npx nudojs contract --draft <path> [--write] [--json]        # AI4: draftSource + unified diff
 npx nudojs export <path> --format dts --out dist/types
 npx nudojs health <path>
 npx nudojs migrate status <pkg>
