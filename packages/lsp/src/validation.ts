@@ -561,6 +561,7 @@ export function checkToLspDiagnostics(
       loadModule: loadModule ?? lspLoadModule,
       fromFile: filePath,
       ...(autoBind === false ? { autoBind: false } : {}),
+      ...(proj?.projectDir ? { projectDir: proj.projectDir } : {}),
       entryThrows: cCfg.entryThrows,
       ...(cCfg.ignoreThrows.length > 0 ? { ignoreThrows: cCfg.ignoreThrows } : {}),
       skips: collectSkipReturns(source),

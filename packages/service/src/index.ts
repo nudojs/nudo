@@ -89,6 +89,23 @@ export {
   clearHarvestCache,
 } from "./harvest-auto.ts";
 export {
+  depsCacheRoot,
+  dtsClosureHash,
+  harvestPackageWithDisk,
+  loadHarvestEnvFromDisk,
+  readHarvestDisk,
+  writeHarvestDisk,
+} from "./harvest-disk.ts";
+export {
+  absToHarvestSig,
+  harvestSigToAbs,
+  serializeHarvestJson,
+  materializeHarvestJson,
+  harvestCacheKey,
+  type HarvestJson,
+  type HarvestSig,
+} from "./harvest-json.ts";
+export {
   evalAbsModuleGraph,
   collectAbsBindingsFromGraph,
   defaultAbsLoadModule,

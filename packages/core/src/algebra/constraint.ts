@@ -543,7 +543,7 @@ function instantiateOnTerm(c: NudoConstraint, t: Term): Pred {
 /**
  * 契约 → 函数入口 param Abs（infer/hover 用）。
  * 标量：prim + pred；shape：obj slots 递归；union：成员 joinAbs；
- * fn 形态：退化 unknown（不是参数位标量值），逐参约束由 fnConstraintToEntryReqs 消费。
+ * fn 形态：一等 fn shape（paramTypes/returnType），供 refine→error / 展示。
  */
 export function constraintToEntryAbs(
   c: NudoConstraint,
@@ -658,10 +658,23 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
     }
     return joined;
   }
-  // fn 形态出现在参数位：无标量 entry 表达，退化 unknown（不 throw——
-  // entry@ 生成等入口会把任意约束喂进来；逐参约束由 fnConstraintToEntryReqs 消费）
+  // fn 形态 → 一等 fn shape（paramTypes/returnType 进外延槽）。
+  // refine→error 可测路径依赖 shape.k === "fn"（generalize 归入 fnRels[source=refine]）。
+  // 不 attachFnImpl（提升/refine 产物禁止挂 relation；apply 走 shape-only 路径）。
   if (c.fn) {
-    return unknown;
+    const paramNames = Object.keys(c.fn.params);
+    const paramTypes = paramNames.map((p, i) =>
+      constraintOnTermAbs(c.fn!.params[p]!, termVar(`x${i}`)),
+    );
+    const returnType = c.fn.returns
+      ? constraintOnTermAbs(c.fn.returns, termVar("ret"))
+      : unknown;
+    return abs(
+      { k: "fn", params: paramNames, paramTypes, returnType },
+      t,
+      undefined,
+      "path",
+    );
   }
   // array(item) → arr(element)；元素项独立，不继承外层 term
   if (c.element) {

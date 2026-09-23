@@ -208,7 +208,12 @@ export async function interfaceSurface(
       const hit = cachedTable!.fns[fn.name];
       eff = hit === null ? undefined : hit ? cachedToEffective(hit) : undefined;
     } else {
-      eff = effectiveInterface(source, fn.name, { loadModule, fromFile: abs, autoBind });
+      eff = effectiveInterface(source, fn.name, {
+        loadModule,
+        fromFile: abs,
+        autoBind,
+        ...(proj?.projectDir ? { projectDir: proj.projectDir } : {}),
+      });
       if (freshTable) {
         freshTable.fns[fn.name] = eff
           ? {

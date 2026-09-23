@@ -202,6 +202,7 @@ function checkMemoKey(
     deps.fp,
     sidecarFp ?? "-",
     identityOpts.autoBind === false ? "ab0" : "ab1",
+    identityOpts.projectDir ?? "-",
     identityOpts.entryThrows ?? "error",
     (identityOpts.ignoreThrows ?? []).join(",") || "-",
     moduleMapId(identityOpts.modules),
@@ -266,6 +267,11 @@ export type CheckOptions = {
    * （§2.2「整体关闭」承诺覆盖 CI 门禁，不只是打印路径）。
    */
   autoBind?: boolean;
+  /**
+   * 项目根（host 从 findProjectConfig 下传）：树外侧车不 ambient 绑定。
+   * undefined = 不限（node_modules 仍拦）。
+   */
+  projectDir?: string;
   /**
    * L2 入口 may-throw 执法档（design-cli-semantics §3）。
    * error（默认）| warning | off。仅作用于 export/default/CJS 入口函数。
@@ -464,6 +470,7 @@ function checkSourceInner(
   // autoBind（package.json#nudo.contract）统一透传：effectiveInterface /
   // generalize L0 / scan 执法 / case 对账同一开关口径
   const autoBind = opts.autoBind;
+  const projectDir = opts.projectDir;
   // effectiveInterface 文件内 memo：localNamedExports 走 errorRecovery 解析
   // 不进 parse LRU，逐函数重跑会 O(exports × reparse)
   const eiCache = new Map<string, EffectiveInterface | undefined>();
@@ -476,6 +483,7 @@ function checkSourceInner(
       loadModule: refineLoad,
       fromFile: refineFrom,
       ...(autoBind !== undefined ? { autoBind } : {}),
+      ...(projectDir !== undefined ? { projectDir } : {}),
     });
     eiCache.set(key, eff);
     return eff;
@@ -543,6 +551,7 @@ function checkSourceInner(
         loadModule: refineLoad,
         fromFile: refineFrom,
         ...(autoBind !== undefined ? { autoBind } : {}),
+        ...(projectDir !== undefined ? { projectDir } : {}),
       },
       depsFp,
       sidecarFp,
@@ -849,6 +858,7 @@ function checkSourceInner(
         file,
         varAbs,
         ...(autoBind !== undefined ? { autoBind } : {}),
+        ...(projectDir !== undefined ? { projectDir } : {}),
       });
   issues.push(...callIssues);
 
@@ -885,6 +895,7 @@ function checkSourceInner(
       file,
       sidecarPresent: sidecarFp !== undefined,
       ...(autoBind !== undefined ? { autoBind } : {}),
+      ...(projectDir !== undefined ? { projectDir } : {}),
       modules: opts.modules,
       ...(opts.inject ? { inject: opts.inject } : {}),
     }),
@@ -1382,6 +1393,8 @@ function scanCaseInconsistency(
     sidecarPresent?: boolean;
     /** 侧车 ambient 绑定开关（checkSource 的 package.json 配置下传） */
     autoBind?: boolean;
+    /** 项目根：树外侧车不 ambient 绑定 */
+    projectDir?: string;
     /** 宿主已求值的依赖导出表（generalize B/解释路径共用） */
     modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
     /** B run 注入包（与 CheckOptions.inject 同源） */
@@ -1472,6 +1485,7 @@ function scanCaseInconsistency(
       loadModule: opts.loadModule,
       fromFile: opts.fromFile ?? "",
       ...(opts.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+      ...(opts.projectDir !== undefined ? { projectDir: opts.projectDir } : {}),
     });
     if (!eff || eff.source !== "handwritten") return;
     const conflictParams = new Set(eff.conflict?.params ?? []);

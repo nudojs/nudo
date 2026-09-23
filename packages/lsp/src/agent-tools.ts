@@ -402,10 +402,12 @@ export function checkTool(
     const autoBind = resolveProjectAutoBind(filePath, params.autoBind);
     // 与 CLI runCheck 同源读取 package.json#nudo.check（L2）
     const cCfg = checkConfig(findProjectConfig(dirname(filePath))?.config);
+    const projectDir = resolveDraftProjectDir(filePath);
     const report = checkSource(filePath, source, pTrue, {
       loadModule: params.loadModule ?? deps.loadModule ?? lspLoadModule,
       fromFile: filePath,
       ...(autoBind === false ? { autoBind: false } : {}),
+      ...(projectDir ? { projectDir } : {}),
       entryThrows: cCfg.entryThrows,
       ...(cCfg.ignoreThrows.length > 0 ? { ignoreThrows: cCfg.ignoreThrows } : {}),
       skips: collectSkipReturns(source),
@@ -465,6 +467,9 @@ export function hoverTool(
     const hover = getHoverAtPosition(filePath, source, params.line, params.column, undefined, {
       loadModule,
       ...(autoBind === false ? { autoBind: false } : {}),
+      ...(resolveDraftProjectDir(filePath)
+        ? { projectDir: resolveDraftProjectDir(filePath)! }
+        : {}),
     });
     const payload: Record<string, unknown> = {
       file: filePath,

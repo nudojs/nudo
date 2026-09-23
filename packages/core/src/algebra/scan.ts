@@ -770,6 +770,8 @@ export function scanLiteralCalls(
     varAbs?: Map<string, Abs>;
     /** 侧车 ambient 绑定开关（checkSource 的 package.json 配置下传） */
     autoBind?: boolean;
+    /** 项目根：树外侧车不 ambient 绑定 */
+    projectDir?: string;
   },
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
@@ -796,7 +798,7 @@ export function scanLiteralCalls(
     eiOpts: EffectiveInterfaceOpts,
   ): EffectiveInterface | undefined => {
     // 等长不同内容不得串缓存（跨文件 checkExternalCall 场景）
-    const key = `${fnName}\u0000${eiOpts.fromFile ?? ""}\u0000${eiOpts.autoBind === false ? "0" : "1"}\u0000${hashSource(fnSource)}`;
+    const key = `${fnName}\u0000${eiOpts.fromFile ?? ""}\u0000${eiOpts.autoBind === false ? "0" : "1"}\u0000${eiOpts.projectDir ?? "-"}\u0000${hashSource(fnSource)}`;
     if (eiCache.has(key)) return eiCache.get(key);
     const r = effectiveInterface(fnSource, fnName, eiOpts);
     eiCache.set(key, r);
@@ -1465,6 +1467,7 @@ export function scanLiteralCalls(
         loadModule: opts?.loadModule,
         fromFile: opts?.fromFile ?? "",
         ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+        ...(opts?.projectDir !== undefined ? { projectDir: opts.projectDir } : {}),
       },
     });
     const paramNames = g?.params ?? [];
@@ -1472,6 +1475,7 @@ export function scanLiteralCalls(
       loadModule: opts?.loadModule,
       fromFile: opts?.fromFile ?? "",
       ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+      ...(opts?.projectDir !== undefined ? { projectDir: opts.projectDir } : {}),
     };
     const ownEi = effectiveInterfaceOf(fnName, source, optsR);
     // §3.3 执法分档：仅 handwritten 执法；generated 段是事实快照（drift 另报）
@@ -1533,6 +1537,7 @@ export function scanLiteralCalls(
         fromFile: ext.fromFile ?? opts?.fromFile ?? "",
         ...(ext.fromFile ? {} : { autoBind: false }),
         ...(ext.fromFile && opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+        ...(opts?.projectDir !== undefined ? { projectDir: opts.projectDir } : {}),
       };
       const ei = effectiveInterfaceOf(ext.fnName, ext.source, eiOpts);
       // §3.3 执法分档：仅 handwritten 执法；generated 段不执法
@@ -1637,7 +1642,19 @@ export function scanLiteralCalls(
       gFn = generalizeFromAst(
         fnName,
         fnSource,
-        sameFile && file ? { file } : {},
+        {
+          ...(sameFile && file ? { file } : {}),
+          // refine 侧车/源码契约必须进 generalize——否则 fnRels 只剩 promote，
+          // refine→error 路径永远打不开（source 永远是 warning）。
+          refine: {
+            loadModule: opts?.loadModule,
+            fromFile: opts?.fromFile ?? "",
+            ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+            ...(opts?.projectDir !== undefined
+              ? { projectDir: opts.projectDir }
+              : {}),
+          },
+        },
       );
     } catch (e) {
       out.push({
@@ -1707,6 +1724,8 @@ export type InjectedDomainEvidenceOpts = {
   fromFile?: string;
   /** 侧车 ambient 绑定开关（host 配置下传；默认 true） */
   autoBind?: boolean;
+  /** 项目根：树外侧车不 ambient 绑定 */
+  projectDir?: string;
   /** 报告定位：被调函数声明处。注入证据的 loc 在使用现场文件，不属于本文件 */
   loc?: { line: number; column: number };
 };
@@ -1761,6 +1780,7 @@ export function checkInjectedDomainEvidence(
       ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
       fromFile: opts.fromFile,
       ...(opts.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+      ...(opts.projectDir !== undefined ? { projectDir: opts.projectDir } : {}),
     });
   } catch (e) {
     return [

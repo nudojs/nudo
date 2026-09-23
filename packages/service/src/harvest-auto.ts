@@ -7,6 +7,7 @@ import { parse } from "@nudojs/parser";
 import type { Abs } from "@nudojs/core";
 import { collectDependencySpecs } from "./static-imports.ts";
 import { harvestPackage, type PackageHarvest } from "./harvest-package.ts";
+import { harvestPackageWithDisk } from "./harvest-disk.ts";
 
 /**
  * Node builtin module names (with or without `node:` prefix). Bare imports of
@@ -56,8 +57,8 @@ export function harvestPackageCached(pkg: string, fromDir: string): PackageHarve
   if (harvestCache.has(key)) return harvestCache.get(key)!;
   let result: PackageHarvest | null = null;
   try {
-    const h = harvestPackage(pkg, fromDir);
-    if (!("error" in h)) result = h;
+    // L2 磁盘投影 + L0 进程内（内部已回落 harvestPackage）
+    result = harvestPackageWithDisk(pkg, fromDir);
   } catch {
     result = null;
   }

@@ -17,8 +17,8 @@
  *
  * 自动绑定边界（§2.2）：只绑源文件**本地 named export**（re-export /
  * export default / 私有名不绑）；opts.autoBind === false 或侧车路径含
- * /node_modules/ → 不 ambient 加载（只看源码 refine）。「项目根内」检查属
- * 宿主层（core 无 projectDir 概念），Phase 1 不在此实现。
+ * /node_modules/ → 不 ambient 加载（只看源码 refine）。opts.projectDir
+ * 提供时，树外侧车不 ambient 绑定（host 从 findProjectConfig 下传）。
  *
  * 侧车绑定 Phase 1 只承诺 fn() 形态：非 fn 的标量/shape 绑定不消费，收集
  * nudo:interface-load 诊断（后续 Phase 再放开单参形态）。
@@ -398,6 +398,11 @@ function regionHasGeneratedMarker(
 export type EffectiveInterfaceOpts = RefineResolveOpts & {
   /** false（或谓词返回 false）→ 不 ambient 加载侧车；默认 true */
   autoBind?: boolean | ((sidecarPath: string) => boolean);
+  /**
+   * 项目根（host 从 findProjectConfig 下传）。提供时 ambient 绑定仅接受
+   * 树内侧车；树外 → 不加载。undefined = 不限（测试/脚本；node_modules 仍拦）。
+   */
+  projectDir?: string;
 };
 
 export type EffectiveInterface = {
@@ -413,12 +418,22 @@ export type EffectiveInterface = {
   conflict?: { params: string[]; returns?: boolean };
 };
 
-/** 自动绑定边界：node_modules 永不 ambient 加载；autoBind 可关（§2.2） */
+/** 路径是否落在 projectDir 内（含根本身）；分隔符归一后前缀比较 */
+function isUnderProjectRoot(sidecarPath: string, projectDir: string): boolean {
+  const norm = (p: string): string => p.split("\\").join("/").replace(/\/+$/, "");
+  const root = norm(projectDir);
+  const sc = norm(sidecarPath);
+  return sc === root || sc.startsWith(`${root}/`);
+}
+
+/** 自动绑定边界：node_modules / 树外侧车永不 ambient 加载；autoBind 可关（§2.2） */
 function sidecarAutoBindAllowed(
   sidecarPath: string,
   autoBind: boolean | ((sidecarPath: string) => boolean) | undefined,
+  projectDir?: string,
 ): boolean {
   if (isNodeModulesPath(sidecarPath)) return false;
+  if (projectDir && !isUnderProjectRoot(sidecarPath, projectDir)) return false;
   if (autoBind === undefined || autoBind === true) return true;
   if (typeof autoBind === "function") return autoBind(sidecarPath) === true;
   return false;
@@ -454,10 +469,10 @@ function loadSidecarBinding(
   fnName: string,
   opts: EffectiveInterfaceOpts,
 ): SidecarBinding {
-  const { loadModule, fromFile, autoBind } = opts;
+  const { loadModule, fromFile, autoBind, projectDir } = opts;
   if (!loadModule || !fromFile) return { ok: false };
   const sidecarPath = sidecarPathOf(fromFile);
-  if (!sidecarAutoBindAllowed(sidecarPath, autoBind)) return { ok: false };
+  if (!sidecarAutoBindAllowed(sidecarPath, autoBind, projectDir)) return { ok: false };
   if (!localNamedExports(source).has(fnName)) return { ok: false };
   const spec = `./${sidecarPath.slice(sidecarPath.lastIndexOf("/") + 1)}`;
   const sidecarSrc = loadModule(spec, fromFile);
@@ -801,10 +816,10 @@ export function sidecarClosureFingerprint(
   fromFile: string,
   opts: EffectiveInterfaceOpts,
 ): string | undefined {
-  const { loadModule, autoBind } = opts;
+  const { loadModule, autoBind, projectDir } = opts;
   if (!loadModule || !fromFile) return undefined;
   const sidecarPath = sidecarPathOf(fromFile);
-  if (!sidecarAutoBindAllowed(sidecarPath, autoBind)) return undefined;
+  if (!sidecarAutoBindAllowed(sidecarPath, autoBind, projectDir)) return undefined;
   const spec = `./${sidecarPath.slice(sidecarPath.lastIndexOf("/") + 1)}`;
   const sidecarSrc = loadModule(spec, fromFile);
   if (sidecarSrc === undefined) return undefined;

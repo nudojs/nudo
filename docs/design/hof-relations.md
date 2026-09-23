@@ -77,7 +77,7 @@ impl.apply → impl.body → impl.relation → isRelFn(shape-only) → unknown
 - 关系让签名更准：返回 `arr(β)` 而非 `unknown[]`，可证性只增不减；β 无约束时的残余假阴是诚实缺口。
 - HOF 实参 arity / shape 检查挂在调用执法旁：目标形状按 fn 槽比较；**零误报豁免**——`any`/`unknown`/无信息跳过；sum 任一 member 满足则通过；有真实 body 的 impl 跳过；`RelSource === "promote"` 只 **warning**。
 - 来源判定读 `RelSource`，禁止从 shape 是否含 var 反推。
-- constraint 语言目前**无法**表达 fn 形状的 `@nudo:refine`，因此「refine 违约 → error」的可测路径尚未打开；不得在发布说明里提前声称。
+- constraint 语言可表达 fn 形状（`fn({x}, ret)` → `shape.fn`）；**refine 违约 → error** 已可测。promote 仍只 warning。
 - `--json` / CaseJson 的 Abs 字段自动带上关系展示；`export` 与 schema 投影只消费外延，不回写关系。
 
 ---
@@ -106,7 +106,7 @@ impl.apply → impl.body → impl.relation → isRelFn(shape-only) → unknown
 
 - **调用点经验泛化（P3）**：anti-unification、样本停机、过拟合防护与 memo 交互未设计评审，**不实现**。
 - **跨文件 generalize 图**：范围外；`extractFn` 只收同文件顶层函数。
-- **constraint 表达 fn 形状**的文法与 refine→error 单测：待约束语言扩展后再补；在此之前只有 promote→warning 为已合入可测行为。
+- **constraint 表达 fn 形状**：**已开**——`fn()` → entry Abs `shape.fn`；refine→error 可测（`hof-refine-error.test.ts`）。promote→warning 纪律不变。
 - dts 泛型投影与 LSP hover 读 intension 的纪律以实现与测试为准；**权威关系源是 Abs / PolyFn**，不是外延投影。
 - 同签名 `relationFn` 共享 fingerprint → 共享 budget 键：已知限制，不为此加 identity 字段。
 

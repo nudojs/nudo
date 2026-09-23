@@ -44,11 +44,11 @@
 
 | 项 | 状态 | 说明 |
 |----|------|------|
-| 闭包跨调用状态合流 | **部分** | 返回对象方法槽已进 shape；`c.increment(); c.getCount()` 联动未建模（P2 / Backlog S5） |
-| HOF `constraint` 表达 fn 形状 | **未开** | refine→error 的可测路径未打开；此前只有 promote→warning |
+| 闭包跨调用状态合流 | **已建模** | B-path 顺序调用共享闭包 `let`（`s5-closure-state.test.ts`：`c.increment(); c.getCount()` → 1/2）。残余：工厂返回的方法槽展示仍 `() => ?`（未调用前无 returnType） |
+| HOF `constraint` 表达 fn 形状 | **已开** | `fn()` → entry Abs 落 `shape.fn`；refine→**error** 可测（`hof-refine-error.test.ts`）；promote 仍只 warning |
 | 调用点经验泛化（P3） | **明确不做** | 不入主路径（hof-relations） |
-| `.nudo/cache` L2 harvest 磁盘层 | **未实施** | 见 [`persistent-cache.md`](./persistent-cache.md) |
-| 项目根内自动绑定边界 | **未闭环** | core 无 projectDir 概念；emit/draft 写盘已 fail-closed 守根，ambient 绑定范围未收（refine-derivation 未决） |
+| `.nudo/cache` L2 harvest 磁盘层 | **已落地** | HarvestJson 签名投影 + `~/.cache/nudo/deps`（`harvest-json.ts` / `harvest-disk.ts`）；见 [`persistent-cache.md`](./persistent-cache.md) |
+| 项目根内自动绑定边界 | **已落地** | `projectDir` 树外侧车不 ambient 绑定（`sidecar-project-root.test.ts`）；node_modules 仍拦 |
 | `nudo:interface-entry-only` | 设计有名字，无稳定消费面 | refine-derivation 未决 |
 
 ---

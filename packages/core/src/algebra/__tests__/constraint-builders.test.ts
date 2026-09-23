@@ -257,10 +257,8 @@ describe("fn(params, returns?, { throws? })：一等函数约束", () => {
     });
   });
 
-  it("entry Abs 退化 unknown", () => {
-    expect(constraintToEntryAbs(fn({ x: number() }), "cb").shape.k).toBe(
-      "unknown",
-    );
+  it("entry Abs 落成 fn shape（refine→error 可测路径）", () => {
+    expect(constraintToEntryAbs(fn({ x: number() }), "cb").shape.k).toBe("fn");
   });
 
   it("fnConstraintToEntryReqs：拆逐参约束表", () => {

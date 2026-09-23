@@ -416,6 +416,7 @@ async function runCheck(
       loadModule,
       fromFile: filePath,
       ...(autoBind === false ? { autoBind: false } : {}),
+      ...(proj?.projectDir ? { projectDir: proj.projectDir } : {}),
       entryThrows,
       ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
       ...(inject && Object.keys(inject).length > 0
