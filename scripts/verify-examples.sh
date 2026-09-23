@@ -212,6 +212,22 @@ pin 'pnpm run check docs/examples/vs-ts/constraints/nudo.js' \
   '2 error · 0 warning' \
   'setDelay[ms]: argument ⊭ precondition' 'actual:   -50  #exact'
 pin_empty 'pnpm exec tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts'
+
+# migrate/ — public retire-tsc sample (before → after one-way door)
+pin 'pnpm run nudo -- migrate status docs/examples/migrate/before/package.json' \
+  'migrate status' 'typescript dep: yes' 'tsc scripts: typecheck, build'
+pin 'pnpm run nudo -- migrate strip docs/examples/migrate/before/src/math.ts' \
+  'dry' 'math.ts' 'math.js' 'none written'
+pin 'pnpm run nudo -- migrate strip docs/examples/migrate/before/src/cart.ts' \
+  'dry' 'cart.ts' 'cart.js'
+pin 'pnpm run check docs/examples/migrate/after/src/math.js' \
+  'lineTotal' 'applyCoupon' 'formatMoney'
+pin 'pnpm run check docs/examples/migrate/after/src/cart.js' \
+  'cartTotal' 'receipt'
+pin 'pnpm run nudo -- migrate verify docs/examples/migrate/after/src/math.js' \
+  'OK' 'math.js'
+pin 'pnpm run nudo -- migrate retire docs/examples/migrate/before/package.json --dry-run' \
+  'dry-run' 'removed typescript' 'nudo check'
 pin 'pnpm run check docs/examples/vs-ts/structure/nudo.js' \
   '2 error · 0 warning' \
   'greet[u]' 'constraint-violated' \

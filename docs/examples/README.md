@@ -11,6 +11,7 @@
 | [`algebra/`](./algebra/) | 类型即计算（spread / HOF / reduce / mixin） |
 | [`interface-derivation/`](./interface-derivation/) | 契约分层推导（手写根 → 下行生成段） |
 | [`interface-draft/`](./interface-draft/) | 代码优先：从逻辑生成可审阅契约草稿 |
+| [`migrate/`](./migrate/) | **retire tsc 样板包**（before/after 单向门） |
 
 主题式浏览（同一引擎）见网站 [Examples 指南](https://nudojs.github.io/nudo/docs/guides/examples)；本目录是 CI 门禁真值（`pnpm run verify:examples`）。
 
@@ -105,5 +106,12 @@ function score(x) { return x + 1; }
 | `pnpm run contract --draft docs/examples/interface-draft/greet.js` | **0** | 代码优先草稿：callsite 投影 + body-read 建议（不发明 check 义务） |
 | `pnpm run check docs/examples/l2-export-any.js` | **1** | L2：export any 成员访问 → `nudo:entry-may-throw` |
 | `pnpm run check docs/examples/l2-export-any.js --ignore-throws TypeError` | **0** | L2 迁移开关：ignore TypeError 后不挡 exit |
+| `pnpm run nudo -- migrate status docs/examples/migrate/before/package.json` | **0** | migrate status：审计 typescript 依赖 / tsc scripts / .ts 数量 |
+| `pnpm run nudo -- migrate strip docs/examples/migrate/before/src/math.ts` | **0** | migrate strip dry-run：.ts → .js（不写盘） |
+| `pnpm run nudo -- migrate strip docs/examples/migrate/before/src/cart.ts` | **0** | migrate strip dry-run：跨文件购物车（type Item 剥除） |
+| `pnpm run check docs/examples/migrate/after/src/math.js` | **0** | retire 后门禁：math 签名 |
+| `pnpm run check docs/examples/migrate/after/src/cart.js` | **0** | retire 后门禁：cart 跨文件 |
+| `pnpm run nudo -- migrate verify docs/examples/migrate/after/src/math.js` | **0** | migrate verify：nudo check 通过 |
+| `pnpm run nudo -- migrate retire docs/examples/migrate/before/package.json --dry-run` | **0** | migrate retire dry-run：摘 typescript / tsc→nudo check（不写盘） |
 
 > 负例文件（constraints / structure / vs-ts 的 check）**故意 exit 非 0**——报错行就是它们演示的内容。

@@ -60,6 +60,9 @@ import { buildTestReport, formatTestReport } from "./run-test.ts";
 
 const program = new Command();
 
+// pnpm run nudo -- <args> 会把 `--` 传进 argv；commander 会把其后旗标当位置参数
+const argv = process.argv.filter((a, i) => !(i >= 2 && a === "--"));
+
 function readPackageVersion(): string {
   const pkgPath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
   const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version?: string };
@@ -1688,7 +1691,7 @@ program
     },
   );
 
-program.parseAsync(process.argv).catch((err: unknown) => {
+program.parseAsync(argv).catch((err: unknown) => {
   console.error(err instanceof Error ? (process.env.NUDO_DEBUG ? err.stack : err.message) : err);
   process.exitCode = 1;
 });

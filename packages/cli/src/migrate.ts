@@ -132,7 +132,9 @@ function countExt(files: string[], exts: Set<string>): number {
 }
 
 export function migrateStatus(rootDir: string): MigrateStatusRow[] {
-  const root = resolve(rootDir);
+  const raw = resolve(rootDir);
+  // 允许传 package.json / 源文件：取所在目录
+  const root = existsSync(raw) && statSync(raw).isDirectory() ? raw : dirname(raw);
   const roots = packageRoots(root);
   const rows: MigrateStatusRow[] = [];
   for (const r of roots) {
@@ -342,7 +344,8 @@ export async function migrateVerify(
 }
 
 export function migrateRetire(rootDir: string, opts: { dryRun?: boolean } = {}): RetireResult {
-  const root = resolve(rootDir);
+  const raw = resolve(rootDir);
+  const root = existsSync(raw) && statSync(raw).isDirectory() ? raw : dirname(raw);
   const pkgPath = join(root, "package.json");
   const pkg = readJson(pkgPath);
   if (!pkg) throw new Error(`no package.json under ${rootDir}`);
