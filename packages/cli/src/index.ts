@@ -311,12 +311,17 @@ async function runCheck(
     absView?: { fn?: string; assume?: string[]; generalize?: boolean };
     ignoreThrows?: string[];
     entryThrows?: "error" | "warning" | "off";
+    /** GitHub Actions 行内注解（或 GITHUB_ACTIONS=true 自动） */
+    gha?: boolean;
+    /** GitLab Code Quality JSON（数组） */
+    gitlab?: boolean;
   } = {},
 ): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
 
-  const { checkSource, formatCheckReport, serializeCheckJson, pTrue } = await import("@nudojs/core");
+  const { checkSource, formatCheckReport, serializeCheckJson, formatGithubAnnotations, formatGitlabCodeQuality, pTrue } =
+    await import("@nudojs/core");
   const {
     defaultLoadModule: loadModule,
     findProjectConfig,
@@ -480,9 +485,31 @@ async function runCheck(
   }
 
   const checkJson = cachedJson ?? serializeCheckJson(algebraReport);
+  const wantGha =
+    opts.gha === true || (opts.gha !== false && process.env.GITHUB_ACTIONS === "true");
+  const workspaceRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  const emitCiAnnotations = (): void => {
+    if (opts.gitlab) {
+      const rows = formatGitlabCodeQuality(algebraReport, { workspaceRoot });
+      // GitLab 需要一份数组报告；单文件时直接打印
+      if (!opts.json) console.log(JSON.stringify(rows, null, 2));
+      else console.error(JSON.stringify(rows));
+      return;
+    }
+    if (!wantGha) return;
+    const ann = formatGithubAnnotations(algebraReport, { workspaceRoot });
+    if (ann.length === 0) return;
+    // --json 时注解走 stderr，stdout 保持机器契约
+    if (opts.json) console.error(ann);
+    else console.log(ann);
+  };
 
   if (opts.json && opts.jsonCollect) {
     opts.jsonCollect.push(checkJson);
+    if (wantGha) {
+      const ann = formatGithubAnnotations(algebraReport, { workspaceRoot });
+      if (ann) console.error(ann);
+    }
   } else if (opts.json) {
     if (opts.abs) {
       console.error("error: --json cannot be combined with --abs");
@@ -490,6 +517,13 @@ async function runCheck(
       return;
     }
     console.log(JSON.stringify(checkJson, null, 2));
+    emitCiAnnotations();
+  } else if (opts.gitlab) {
+    emitCiAnnotations();
+    if (!algebraReport.ok) {
+      // 仍打印简报，便于日志
+      console.error(formatCheckReport(algebraReport, { verbose: false }));
+    }
   } else if (opts.abs) {
     // 代数观察面（term/pred/conf）；门禁不因 --abs 关闭：L1/L2 error 仍 exit 1
     await runAbsView(filePath, opts.absView ?? {});
@@ -505,8 +539,10 @@ async function runCheck(
         `  ${algebraReport.summary.errors} error · ${algebraReport.summary.warnings} warning · ${algebraReport.summary.infos} info · ${algebraReport.summary.functions} fn`,
       );
     }
+    emitCiAnnotations();
   } else {
     console.log(formatCheckReport(algebraReport, { verbose: opts.verbose === true }));
+    emitCiAnnotations();
   }
 
   if (useDisk && cacheKey && !cached && !opts.abs) {
@@ -1315,10 +1351,9 @@ program
   .description("Gate contracts + entry throws; print signatures (CI). Day 0 observation lives here.")
   .argument("<paths...>", "File(s) or directory(s) to check")
   .option("--watch, -w", "Watch files and re-run check on change")
-  .option(
-    "--json",
-    "Emit stable CheckJson (1 file) or CheckJsonMulti envelope (N files) for CI / Agent",
-  )
+  .option("--json", "Emit stable CheckJson (1 file) or CheckJsonMulti envelope (N files) for CI / Agent")
+  .option("--gha", "GitHub Actions inline annotations (::error/::warning). Auto when GITHUB_ACTIONS=true")
+  .option("--gitlab", "GitLab Code Quality JSON array (write as gl-code-quality-report.json)")
   .option("--verbose", "Expand Abs signatures (term/pred/conf detail)")
   .option("--abs", "Algebra face: term/pred/conf per function")
   .option("--fn <name>", "With --abs: only this function")
@@ -1339,6 +1374,8 @@ program
       opts: {
         watch?: boolean;
         json?: boolean;
+        gha?: boolean;
+        gitlab?: boolean;
         verbose?: boolean;
         abs?: boolean;
         fn?: string;
@@ -1383,9 +1420,13 @@ program
         absView?: { fn?: string; assume?: string[]; generalize?: boolean };
         ignoreThrows?: string[];
         entryThrows?: "error" | "warning" | "off";
+        gha?: boolean;
+        gitlab?: boolean;
       } = {
         from: externalRecords,
         verbose: opts.verbose,
+        gha: opts.gha,
+        gitlab: opts.gitlab,
         ...(opts.abs
           ? {
               abs: true,

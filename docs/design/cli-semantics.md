@@ -114,6 +114,8 @@ CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。
 |------|------|
 | `--watch` / `-w` | 持续重跑（模式旗标，不是一级动词） |
 | `--json` | CheckJson v1；**多文件**输出 `CheckJsonMulti` 信封（`kind:"multi"` + `reports[]`） |
+| `--gha` | GitHub Actions 行内注解 `::error`/`::warning`（`GITHUB_ACTIONS=true` 时**自动**开；`--json` 下注解走 stderr） |
+| `--gitlab` | GitLab Code Quality JSON 数组（可写 `gl-code-quality-report.json`） |
 | `--verbose` | 展开 Abs 签名（term/pred/conf） |
 | `--abs` | 代数 term/pred/conf 观察 + L1/L2 门禁 |
 | `--fn` / `--assume` / `--generalize` | 与 `--abs` 配合的观察过滤 |

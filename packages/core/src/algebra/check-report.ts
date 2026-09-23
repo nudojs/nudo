@@ -4,6 +4,8 @@
  * 分析在 check.ts（Abs 优先的 Nudo 原生诊断），这里只投影：
  * - formatCheckReport → 人类可读文本
  * - serializeCheckJson → `nudo check --json` 稳定契约（CI / Agent，v1）
+ * - formatGithubAnnotations → PR 行内 `::error` / `::warning`（GHA）
+ * - formatGitlabCodeQuality → GitLab Code Quality JSON 数组
  */
 
 import type { Diagnostic } from "./diagnostics.ts";
@@ -225,4 +227,92 @@ export function formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = 
     }
   }
   return lines.join("\n");
+}
+
+/** GHA workflow command 转义：% → %25，\r → %0D，\n → %0A */
+function escapeGhaData(s: string): string {
+  return s.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+}
+
+function escapeGhaProp(s: string): string {
+  return escapeGhaData(s).replace(/:/g, "%3A").replace(/,/g, "%2C");
+}
+
+/**
+ * GitHub Actions 行内注解（PR Files changed 红/黄标）。
+ * 协议：`::error file=…,line=…,col=…,title=…::message`
+ * 详见 https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions
+ */
+export function formatGithubAnnotations(
+  r: CheckReport,
+  opts: { workspaceRoot?: string } = {},
+): string {
+  const lines: string[] = [];
+  let file = r.file;
+  if (opts.workspaceRoot && file.startsWith(opts.workspaceRoot)) {
+    file = file.slice(opts.workspaceRoot.length).replace(/^[/\\]/, "");
+  }
+  for (const i of r.issues) {
+    const level =
+      i.severity === "error" ? "error" : i.severity === "warning" ? "warning" : "notice";
+    const line = i.line ?? 1;
+    const col = (i.column ?? 0) + 1;
+    const title = escapeGhaProp(i.code);
+    const msgBits = [i.message];
+    if (i.actual && i.expected) msgBits.push(`${i.actual} ⊭ ${i.expected}`);
+    else if (i.suggestion) msgBits.push(i.suggestion);
+    if (CONTRACT_FIX_CODES.has(i.code)) {
+      msgBits.push(`fix: nudo contract --draft`);
+    }
+    const msg = escapeGhaData(msgBits.join(" · "));
+    const props = [
+      `file=${escapeGhaProp(file)}`,
+      `line=${line}`,
+      `col=${col}`,
+      `title=${title}`,
+    ].join(",");
+    lines.push(`::${level} ${props}::${msg}`);
+  }
+  return lines.join("\n");
+}
+
+export type GitlabCodeQualityIssue = {
+  description: string;
+  check_name: string;
+  fingerprint: string;
+  severity: "major" | "minor" | "info" | "blocker" | "critical";
+  location: { path: string; lines: { begin: number } };
+};
+
+/** GitLab Code Quality 报告数组（`--gitlab`；可写 gl-code-quality-report.json） */
+export function formatGitlabCodeQuality(
+  r: CheckReport,
+  opts: { workspaceRoot?: string } = {},
+): GitlabCodeQualityIssue[] {
+  let file = r.file;
+  if (opts.workspaceRoot && file.startsWith(opts.workspaceRoot)) {
+    file = file.slice(opts.workspaceRoot.length).replace(/^[/\\]/, "");
+  }
+  return r.issues.map((i) => {
+    const begin = i.line ?? 1;
+    const severity =
+      i.severity === "error"
+        ? "major"
+        : i.severity === "warning"
+          ? "minor"
+          : "info";
+    const description =
+      i.actual && i.expected
+        ? `${i.message} (${i.actual} ⊭ ${i.expected})`
+        : i.message;
+    // 稳定指纹：file + code + line + message（GitLab 用于去重/趋势）
+    const fingerprint = `${file}:${i.code}:${begin}:${i.message}`;
+    return {
+      description,
+      check_name: i.code,
+      fingerprint,
+      severity,
+      location: { path: file, lines: { begin } },
+    };
+  });
 }

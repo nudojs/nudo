@@ -11,8 +11,7 @@
 - run: pnpm run lint
 - run: pnpm run build
 - run: pnpm run check src/          # 门禁：有 error → exit 1
-# 或
-- run: pnpm run nudo -- check src/ --json
+# GITHUB_ACTIONS=true 时自动打 PR 行内注解（::error / ::warning）
 ```
 
 | 命令 | 用途 | exit 1 |
@@ -23,6 +22,50 @@
 | `pnpm run verify:examples` | 示例命令 × 退出码矩阵 | 矩阵不匹配 |
 
 CI 门禁**只认** `check`（及 `test` 的声明断言、`health` 的 drift）。
+
+## PR 行内注解（好过裸 tsc 日志）
+
+诊断会贴到 **Files changed** 对应行，而不是埋在 job log 里。
+
+### GitHub Actions（推荐默认）
+
+```yaml
+jobs:
+  nudo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pnpm install
+      # 自动注解：GITHUB_ACTIONS=true 即开；也可显式 --gha
+      - run: pnpm exec nudo check packages/*/src
+      # 要 JSON 留档时：stdout=CheckJson，注解仍进日志（stderr）
+      - run: pnpm exec nudo check packages/*/src --json > nudo-check.json
+```
+
+单文件/多文件都支持；`--json` 多文件是 `kind:"multi"` 信封。
+
+### GitLab Code Quality
+
+```yaml
+script:
+  - pnpm exec nudo check src --gitlab > gl-code-quality-report.json
+artifacts:
+  reports:
+    codequality: gl-code-quality-report.json
+```
+
+### pre-commit / 本地
+
+```bash
+pnpm exec nudo check src          # 人类可读 + exit 1
+# 不需要 GHA 注解时不要设 GITHUB_ACTIONS
+```
+
+| 旗标 | 作用 |
+|------|------|
+| `--gha` | 强制 GHA 注解（默认在 `GITHUB_ACTIONS=true` 自动开） |
+| `--gitlab` | GitLab Code Quality 数组 |
+| `--json` | CheckJson（机器契约）；与 `--gha` 同用时注解在 **stderr** |
 
 ## 消费方 monorepo 配方（不入库测试语料）
 
