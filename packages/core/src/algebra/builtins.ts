@@ -6,7 +6,7 @@
 import type { Abs } from "./abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown, confJoin, isExactLit } from "./abs.ts";
 import { joinAbs, objOf, markNullProtoObj, canonicalArrayIndex, getSlot, isNullProtoObj } from "./objects.ts";
-import { absFunction } from "./abs-fn.ts";
+import { registerSymbolMeta, symbolIdOf, symbolDescriptionAbs, isSymbolAbs as isSymAbs } from "./symbol-id.ts";
 import { TUPLE_MATERIALIZE_CAP } from "./containers.ts";
 import {
   isMapAbs,
@@ -29,6 +29,9 @@ import {
   ctorArgDefinitelyInvalid,
 } from "./collections.ts";
 import { applyCallbackValue, undefAbs, asAbs } from "./hof.ts";
+import { absFunction } from "./abs-fn.ts";
+
+const noBody = { type: "BlockStatement", body: [], directives: [] } as never;
 import { matchIterElements } from "./exec/match-iter.ts";
 import { NudoThrow } from "./exec/nudo-throw.ts";
 import { errorTypeAbs } from "./exec/may-throw.ts";
@@ -830,17 +833,16 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       if (typeof a0 === "number") return boolLit(Number.isNaN(a0));
       return boolPrim();
     case "Number":
+      // Number(sym) → TypeError（ToNumber 抛）
+      if (args[0] && isSymbolAbs(args[0])) throw new NudoThrow(errorTypeAbs("TypeError"));
       if (typeof a0 === "number") return numLit(a0);
       if (typeof a0 === "string") return numLit(Number(a0));
       if (typeof a0 === "boolean") return numLit(a0 ? 1 : 0);
       return numPrim();
     case "String":
       // String(sym) → SymbolDescriptiveString（原生不抛）；其余 ToString
-      if (a0 !== undefined) {
-        const arg = args[0]!;
-        if (isSymbolAbs(arg)) return stringOfSymbol(arg);
-        return strLit(String(a0));
-      }
+      if (args[0] && isSymbolAbs(args[0])) return stringOfSymbol(args[0]);
+      if (a0 !== undefined) return strLit(String(a0));
       return str();
     case "Symbol":
       // Symbol([desc])：非具体 unique symbol
@@ -1312,6 +1314,9 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
       return evalDateCtor(args);
     case "RegExp":
       return evalRegExpCtor(args);
+    case "Symbol":
+      // new Symbol() 原生 TypeError
+      throw new NudoThrow(errorTypeAbs("TypeError"));
     case "Promise":
       return evalPromiseCtor(args);
     case "Array":
@@ -1406,6 +1411,7 @@ export function evalStringStatic(name: string, args: Abs[]): Abs | undefined {
   if (name !== "fromCharCode") return undefined;
   const codes: number[] = [];
   for (const a of args) {
+    if (isSymbolAbs(a)) throw new NudoThrow(errorTypeAbs("TypeError"));
     if (a.term?.op !== "lit") return str("path");
     const v = a.term.value;
     if (typeof v === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -1427,10 +1433,6 @@ export function evalStringStatic(name: string, args: Abs[]): Abs | undefined {
 // ---------------------------------------------------------------------------
 // C. Symbol() / Symbol("desc")
 // ---------------------------------------------------------------------------
-
-type SymbolMeta = { id: number; description: Abs };
-const symbolMeta = new WeakMap<object, SymbolMeta>();
-let symbolIdSeq = 0;
 
 function undefLit(): Abs {
   return abs({ k: "unknown" }, { op: "lit", value: undefined as never }, pTrue, "exact");
@@ -1459,25 +1461,15 @@ export function makeSymbolAbs(descArg?: Abs): Abs {
     shape: { k: "prim", type: "symbol" },
     conf: "path",
   };
-  symbolMeta.set(a as object, { id: ++symbolIdSeq, description });
-  return a;
+  return registerSymbolMeta(a, description);
 }
 
-export function isSymbolAbs(a: Abs | undefined): boolean {
-  return !!a && a.shape.k === "prim" && a.shape.type === "symbol";
-}
-
-export function symbolIdOf(a: Abs): number | undefined {
-  return symbolMeta.get(a as object)?.id;
-}
-
-export function symbolDescriptionAbs(a: Abs): Abs | undefined {
-  return symbolMeta.get(a as object)?.description;
-}
+export const isSymbolAbs = isSymAbs;
+export { symbolIdOf, symbolDescriptionAbs };
 
 /** SymbolDescriptiveString：`Symbol()` / `Symbol(desc)` */
 function symbolDescriptiveString(a: Abs): string {
-  const d = symbolMeta.get(a as object)?.description;
+  const d = symbolDescriptionAbs(a);
   const dv = d ? litValue(d) : undefined;
   if (typeof dv === "string") return dv.length > 0 ? `Symbol(${dv})` : "Symbol()";
   return "Symbol()";
@@ -1490,10 +1482,10 @@ export function evalSymbolCtor(args: Abs[]): Abs {
 
 /** String(sym) → SymbolDescriptiveString（原生不抛；隐式 ToString 才抛） */
 export function stringOfSymbol(a: Abs): Abs {
-  const d = symbolMeta.get(a as object)?.description;
+  const d = symbolDescriptionAbs(a);
   if (d) {
-    const dv = litValue(d);
-    if (typeof dv === "string") return strLit(symbolDescriptiveString(a));
+    // description 槽在：undefined 字面量 → "Symbol()"；string 字面量 → Symbol(desc)
+    if (d.term?.op === "lit") return strLit(symbolDescriptiveString(a));
   }
   return str("path");
 }
@@ -1704,19 +1696,17 @@ export function evalObjectProtoMethod(
     case "isPrototypeOf": {
       const v = args[0];
       if (!v) return boolLit(false);
+      // 原始值 / nullish：Type(V) 不是 Object → false
       if (v.term?.op === "lit") {
         const vv = v.term.value;
-        if (vv === null || vv === undefined || typeof vv !== "object") {
-          // 原始值：Type(V) 不是 Object → false
-          if (typeof vv !== "object" || vv === null) return boolLit(false);
-        }
+        if (vv === null || vv === undefined || typeof vv !== "object") return boolLit(false);
       }
       const vk = v.shape.k;
       const vObjLike = vk === "obj" || vk === "arr" || vk === "tuple" || vk === "brand" || vk === "fn" || vk === "eff";
       if (!vObjLike && vk !== "sum" && vk !== "any" && vk !== "unknown") return boolLit(false);
       if (vObjLike && isNullProtoObj(v)) return boolLit(false);
-      // Object.prototype.isPrototypeOf(普通对象) → true；其它接收者链未知 → boolean
-      if (isObjectProtoBrand(thisVal) || (typeof thisVal === "object" && "shape" in (thisVal as object) === false && (thisVal as unknown) === Object.prototype)) {
+      // Object.prototype.isPrototypeOf(普通对象) → true
+      if (isObjectProtoBrand(thisVal)) {
         return vObjLike ? boolLit(true) : boolPrimB();
       }
       return boolPrimB();

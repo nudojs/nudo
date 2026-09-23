@@ -30,7 +30,7 @@ import {
 import { shouldWidenArrayLiteral, widenedArrayConf, TUPLE_MATERIALIZE_CAP } from "../containers.ts";
 import { registerMatchIter, matchIterElements } from "./match-iter.ts";
 import { leqAbs } from "../leq.ts";
-import { evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants, regexBrandAbsFrom } from "../builtins.ts";
+import { evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants, regexBrandAbsFrom, evalObjectProtoMethod, objectProtoMethodAbs, isObjectProtoBrand, OBJECT_PROTO_METHOD_NAMES, isSymbolAbs, symbolDescriptionAbs, objectProtoBrand } from "../builtins.ts";
 import type { Phi } from "../pred.ts";
 import { pTrue, and, predEquals } from "../pred.ts";
 import {
@@ -2150,7 +2150,13 @@ export function $get(
 ): Abs {
   // 宿主 JS 对象（Math/JSON…）：属性按命名空间/真值投影
   if (!o || typeof o !== "object" || !("shape" in (o as object))) {
+    // Object.prototype / Object.prototype.X（含 host 身份）
+    if (o === Object.prototype) {
+      if (OBJECT_PROTO_METHOD_NAMES.has(key)) return objectProtoMethodAbs(key);
+      return unknown;
+    }
     const ns = namespaceNameOf(o);
+    if (ns === "Object" && key === "prototype") return objectProtoBrand();
     if (ns) {
       try {
         const raw = (o as Record<string, unknown>)[key];
@@ -2166,6 +2172,14 @@ export function $get(
       }
     }
     return unknown;
+  }
+  // Object.prototype 品牌：方法读取
+  if (isObjectProtoBrand(o) && OBJECT_PROTO_METHOD_NAMES.has(key)) {
+    return objectProtoMethodAbs(key);
+  }
+  // Symbol：.description（字面量或 undefined）
+  if (isSymbolAbs(o) && key === "description") {
+    return symbolDescriptionAbs(o) ?? unknown;
   }
   if (o.shape.k === "brand") {
     const isClassVal = classNameOfValue(o as object) === o.shape.name;
@@ -2225,6 +2239,15 @@ export function $get(
   if ((o.shape.k === "tuple" || o.shape.k === "arr") && key === "length") {
     return $len(o);
   }
+  // 元组/数组/prim 上的 Object.prototype 方法读取
+  if (
+    (o.shape.k === "tuple" || o.shape.k === "arr" || o.shape.k === "prim") &&
+    OBJECT_PROTO_METHOD_NAMES.has(key) &&
+    !(o.shape.k === "prim" && o.shape.type === "string" && key === "toString")
+  ) {
+    // string.toString/valueOf 由 callAbsMethod 处理调用；一等读取仍给 OP 函数
+    return objectProtoMethodAbs(key);
+  }
   // any / nullish：throws 域（design-cli-semantics §3.3）
   if (noteNullishMemberThrows(o, key, "property")) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -2236,11 +2259,15 @@ export function $get(
   if (isObj(o)) {
     const acc = lookupObjAccessor(o, key);
     if (acc) return acc.get ? acc.get(o) : undef();
-    const slot = (o.shape as ObjShape).slots[key];
+    const slot = getSlot((o.shape as ObjShape).slots, key);
     if (slot) {
       // optional 槽在 JS 中可能缺席 → 读到 undefined，不能报 definite presence
       if (slot.optional) return joinAbs(slot.value, undef());
       return slot.value;
+    }
+    // Object.prototype 方法（非 null-proto）：一等函数读取
+    if (!isNullProtoObj(o) && OBJECT_PROTO_METHOD_NAMES.has(key)) {
+      return objectProtoMethodAbs(key);
     }
     if ((o.shape as ObjShape).open) return unknown;
     // C0.5：闭 shape 缺槽且求值命中 → 可选 nudo:missing-slot（默认 off）

@@ -261,6 +261,9 @@ pow(3);                               // → 9
 - `toFixed` 在字面量接收者上折叠（`"10.50"`）；符号接收者拓宽为 `string`。
 - `**` 在字面量操作数上折叠（`3 ** 2` → `9`）；符号操作数拓宽为 `number`。
 - `try`/`catch` **已建模**：`catch (err)` 绑定被抛出的 Abs，所以 `throw new Error("boom")` 之后 `err.message` 求值为 `"boom"`。
+- `String.fromCharCode(...)` 对字面量码点按 ToUint16 折叠（`String.fromCharCode(65, 66)` → `"AB"`）；抽象实参拓宽为 `string`。
+- `Object.prototype` 方法已建模：`hasOwnProperty` / `isPrototypeOf` / `propertyIsEnumerable` / `valueOf` / `toString` 在具体形状、元组、数组、字符串装箱上按自有槽/下标/`length`/holes 判定；`Object.prototype.hasOwnProperty.call(o, k)` 同语义；`Object.create(null)` 无这些方法（TypeError）。
+- `Symbol()` / `Symbol("desc")` 产生非具体 unique symbol：`typeof` 为 `"symbol"`，`.description` 为字面量或 `undefined`，两个 `Symbol()` 的 `===` 为 `false`、同引用为 `true`；`String(sym)` 给出 `Symbol(desc)`，隐式 ToString（`+` / 模板）抛 `TypeError`。
 
 ### 收窄守卫
 
@@ -273,11 +276,9 @@ pow(3);                               // → 9
 | 构造 | 当前行为 | 已建模替代 |
 |---|---|---|
 | 原始值自动装箱 | `"nudo".constructor` → `unknown` | `.length`、上文的字符串方法 |
-| `Object.prototype` 方法 | `({}).hasOwnProperty("key")` → `unknown` | `Object.keys(...)` / 形状检查 |
 | Promise 执行器 | `new Promise((r) => r("done"))` → `promise<unknown>` | `@nudo:mock` + `async` 函数 |
 | 每迭代 `let` 闭包 | `fns[i]()` → `unknown` | 直接使用迭代结果 |
 | `arguments` | → `unknown`（`nudo:builtin-unknown`） | 具名参数 |
-| `String.fromCharCode` | → `unknown` | 字符串字面量 |
 
 ## Mock 边界（仍建议）
 

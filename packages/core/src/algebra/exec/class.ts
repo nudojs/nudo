@@ -9,7 +9,7 @@ import { objOf, joinAbs, isObj, canonicalArrayIndex } from "../objects.ts";
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple, clearStaleTermPred } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol } from "../builtins.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid } from "../collections.ts";
 import { registerMatchIter } from "./match-iter.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
@@ -164,6 +164,10 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
       return makeSetAbs(args[0]);
+    }
+    // new Symbol() 原生 TypeError（Symbol 只能当函数调用）
+    if (clsName === "Symbol") {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
     }
     // new String(prim)：包装箱带 length/下标槽（与 evalGlobalFn Object 装箱
     // 同口径）——此前通用空箱 branch 折 new String('ab')['0'] === undefined、
@@ -740,8 +744,24 @@ export function $invoke(
   // 未接管的其它方法不得在此 return——继续后续诊断路径（no-method）。
   if (thisVal.shape.k === "prim" && thisVal.shape.type === "number") {
     if (method === "valueOf") return thisVal;
+    if (method === "toString" || method === "toLocaleString") {
+      const nv = litValue(thisVal);
+      if (typeof nv !== "number") return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+      const argAbs = args[0];
+      if (argAbs !== undefined && argAbs.term?.op !== "lit") {
+        return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+      }
+      const av = argAbs === undefined ? undefined : litValue(argAbs);
+      try {
+        const impl = Number.prototype as unknown as Record<string, (...a: unknown[]) => string>;
+        return strLit(impl[method === "toLocaleString" ? "toString" : method]!.call(nv, av));
+      } catch (e) {
+        if (e instanceof TypeError) throw new NudoThrow(errorTypeAbs("TypeError"));
+        if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
+        return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+      }
+    }
     if (
-      method === "toString" ||
       method === "toFixed" ||
       method === "toExponential" ||
       method === "toPrecision"
@@ -763,10 +783,24 @@ export function $invoke(
       }
     }
   }
+  // boolean 字面量：toString/valueOf
+  if (thisVal.shape.k === "prim" && thisVal.shape.type === "boolean") {
+    if (method === "valueOf") return thisVal;
+    if (method === "toString" || method === "toLocaleString") {
+      const bv = litValue(thisVal);
+      if (typeof bv === "boolean") return strLit(String(bv));
+      return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+    }
+  }
   // 数组/元组方法（与 ast-eval 口径对齐）
   if (thisVal.shape.k === "arr" || thisVal.shape.k === "tuple") {
     const arrR = invokeArrMethod(thisVal, method, args);
     if (arrR !== undefined) return arrR;
+  }
+  // Symbol：toString/valueOf（String(sym) 由 evalGlobalFn 处理；隐式 ToString 才抛）
+  if (isSymbolAbs(thisVal)) {
+    if (method === "toString") return stringOfSymbol(thisVal);
+    if (method === "valueOf") return thisVal;
   }
   // string.match(/re/) / string.search(/re/)（字面量 pattern 精确执行）
   {
@@ -1069,6 +1103,29 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     return joinAbs(unknownIdx(), $lit(-1));
   }
   if (method === "join") {
+    return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+  }
+  if (method === "toString" || method === "toLocaleString") {
+    // Array.prototype.toString = join(",")：全字面量元素折叠；含 symbol 元素 TypeError
+    if (shape.k === "tuple") {
+      const holes = shape.holes ?? [];
+      const parts: string[] = [];
+      for (let i = 0; i < shape.elements.length; i++) {
+        if (holes.includes(i)) {
+          parts.push("");
+          continue;
+        }
+        const el = shape.elements[i]!;
+        if (isSymbolAbs(el)) throw new NudoThrow(errorTypeAbs("TypeError"));
+        const t = el.term;
+        if (t?.op !== "lit") return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+        const v = t.value;
+        if (v === null || v === undefined) parts.push("");
+        else if (typeof v === "object") return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+        else parts.push(String(v));
+      }
+      return strLit(parts.join(","));
+    }
     return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
   }
   if (method === "keys") {

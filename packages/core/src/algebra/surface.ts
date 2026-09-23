@@ -6,6 +6,7 @@
 import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, litValue, confJoin, num, bool, boolLit, strLit, bigintLit } from "./abs.ts";
 import { classNameOfValue } from "./class-mark.ts";
+import { symbolIdOf } from "./symbol-id.ts";
 import type { Term } from "./term.ts";
 import { lit, simplifyTerm, app } from "./term.ts";
 import type { Pred } from "./pred.ts";
@@ -390,6 +391,25 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
   // undefined === undefined / null === null 此前落无法判定。
   if (a.term?.op === "lit" && b.term?.op === "lit") {
     return a.term.value === b.term.value;
+  }
+  // 同一 Abs 引用：对象/函数/Symbol 恒等（NaN 字面量例外——NaN !== NaN）。
+  // unknown/any 共享单例不得据此折 true（Object.getPrototypeOf 未建模时会假精确）。
+  if (a === b) {
+    if (a.term?.op === "lit" && typeof a.term.value === "number" && Number.isNaN(a.term.value)) {
+      return false;
+    }
+    const k = a.shape.k;
+    if (k === "obj" || k === "arr" || k === "tuple" || k === "fn" || k === "brand" || k === "eff") {
+      return true;
+    }
+    if (k === "prim" && a.shape.type === "symbol") return true;
+  }
+  // Symbol 身份：同 Abs 引用 → true；两个独立 Symbol() → false（侧表 id）
+  if (a.shape.k === "prim" && a.shape.type === "symbol" && b.shape.k === "prim" && b.shape.type === "symbol") {
+    const ia = symbolIdOf(a);
+    const ib = symbolIdOf(b);
+    if (ia !== undefined && ib !== undefined) return ia === ib;
+    return undefined;
   }
   const va = litValue(a);
   const vb = litValue(b);

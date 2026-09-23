@@ -261,6 +261,9 @@ pow(3);                               // → 9
 - `toFixed` folds on literal receivers (`"10.50"`); symbolic receivers widen to `string`.
 - `**` folds on literal operands (`3 ** 2` → `9`); symbolic operands widen to `number`.
 - `try`/`catch` is **modeled**: `catch (err)` binds the thrown Abs, so `throw new Error("boom")` then `err.message` evaluates to `"boom"`.
+- `String.fromCharCode(...)` folds literal code points via ToUint16 (`String.fromCharCode(65, 66)` → `"AB"`); symbolic arguments widen to `string`.
+- `Object.prototype` methods are **modeled**: `hasOwnProperty` / `isPrototypeOf` / `propertyIsEnumerable` / `valueOf` / `toString` decide own slots / indices / `length` / holes on concrete shapes, tuples, arrays, and string boxing; `Object.prototype.hasOwnProperty.call(o, k)` has the same semantics; `Object.create(null)` has none of these methods (`TypeError`).
+- `Symbol()` / `Symbol("desc")` produce non-concrete unique symbols: `typeof` is `"symbol"`, `.description` is a literal or `undefined`, two `Symbol()` values are not `===` while the same reference is; `String(sym)` yields `Symbol(desc)` and implicit `ToString` (`+` / template) throws `TypeError`.
 
 ### Narrowing Guards
 
@@ -273,11 +276,9 @@ These constructs currently evaluate to `unknown` (often with a `nudo:unknown-rec
 | Construct | Behavior today | Modeled alternative |
 |---|---|---|
 | Primitive autoboxing | `"nudo".constructor` → `unknown` | `.length`, string methods above |
-| `Object.prototype` methods | `({}).hasOwnProperty("key")` → `unknown` | `Object.keys(...)` / shape checks |
 | Promise executor | `new Promise((r) => r("done"))` → `promise<unknown>` | `@nudo:mock` + `async` functions |
 | Per-iteration `let` closures | `fns[i]()` → `unknown` | direct iteration results |
 | `arguments` | → `unknown` (`nudo:builtin-unknown`) | named parameters |
-| `String.fromCharCode` | → `unknown` | string literals |
 
 ## Mock boundary (still recommended)
 

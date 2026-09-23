@@ -100,11 +100,11 @@ describe("B-path definitely-uncallable member calls throw", () => {
     }
   });
 
-  it("Object.prototype names and open objects stay conservative (no throw)", () => {
-    // OP 名：原生经原型链存在，B-path 未建模 → 保守 unknown 不抛
+  it("Object.prototype names fold; open objects stay conservative (no throw)", () => {
+    // OP 名已建模：({}).toString() → "[object Object]"
     expect(
       litValue(call(`export function f() { return ({}).toString(); }`).result),
-    ).toBe(undefined);
+    ).toBe("[object Object]");
     // spread 产物 open 对象：运行时可能有方法 → 保守
     expect(
       litValue(call(`export function f() { const o = {...{x: 1}}; return o.foo(); }`).result),

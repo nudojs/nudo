@@ -38,6 +38,9 @@ import {
 import { concatString, isTemplateLike } from "./template.ts";
 import { makeSum, absShapeKey } from "./objects.ts";
 import { noteDerivationAdd } from "./derivation.ts";
+import { isSymbolAbs as isSym } from "./symbol-id.ts";
+import { NudoThrow } from "./exec/nudo-throw.ts";
+import { errorTypeAbs } from "./exec/may-throw.ts";
 
 /**
  * 抽象加法：eval(a + b) —— 跟真实 JS，不无根据地假定 number。
@@ -50,6 +53,10 @@ import { noteDerivationAdd } from "./derivation.ts";
  *    无契约的 score(x){return x+1}：score("x") 合法，不得钉成 number。
  */
 export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
+  // Symbol 参与 + / 模板：隐式 ToString 原生 TypeError（String(sym) 走 evalGlobalFn 不抛）
+  if (isSym(a) || isSym(b)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   // 字面量快速路径
   const va = litValue(a);
   const vb = litValue(b);
