@@ -76,6 +76,8 @@ jobs:
         run: |
           mkdir -p dist
           pnpm --filter nudo-vscode run build
+          # B3: language-client smoke must pass before we ship a .vsix
+          pnpm --filter nudo-vscode run smoke
           cd packages/vscode
           npx @vscode/vsce package --no-dependencies -o ../../dist/nudo-vscode.vsix
 
