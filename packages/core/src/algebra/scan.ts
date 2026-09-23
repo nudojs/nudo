@@ -12,6 +12,7 @@ import { parseSource as parse } from "./parse-source.ts";
 import type { Node } from "@babel/types";
 import { freeIdentifiers } from "./exec/body-fn.ts";
 import { evalExprAbs } from "./exec/run.ts";
+import { foldRequireSpecArg } from "./exec/transpile.ts";
 import { defaultLeakBudget } from "./leak.ts";
 import type { RefineEntry } from "./refine.ts";
 import {
@@ -265,9 +266,12 @@ export function absUnknown(): Abs {
   return { shape: { k: "unknown" }, conf: "partial" };
 }
 
-/** 确定 undefined 字面量（term lit undefined；区别于「无 lit」的 unknown） */
+/** 确定 undefined / null 字面量（term lit；区别于「无 lit」的 unknown） */
 function isExactUndef(a: Abs): boolean {
-  return a.term?.op === "lit" && (a.term.value as unknown) === undefined;
+  return (
+    a.term?.op === "lit" &&
+    ((a.term.value as unknown) === undefined || (a.term.value as unknown) === null)
+  );
 }
 
 /** 实参是否携带可执法信息（含确定 undefined；纯 unknown 不算） */
@@ -317,16 +321,12 @@ type CallResolve = {
 };
 
 function requireSpecOf(init: Record<string, unknown>): string | undefined {
-  // require('./x')
+  // require('./x') / require(`./x`) / require("./" + "x" + ".js")
   if (init.type === "CallExpression") {
     const callee = init.callee as { type?: string; name?: string } | undefined;
-    const args = init.arguments as Array<{ type?: string; value?: unknown }> | undefined;
-    if (
-      callee?.type === "Identifier" &&
-      callee.name === "require" &&
-      args?.[0]?.type === "StringLiteral"
-    ) {
-      return String(args[0].value);
+    const args = init.arguments as Array<Record<string, unknown>> | undefined;
+    if (callee?.type === "Identifier" && callee.name === "require" && args?.[0]) {
+      return foldRequireSpecArg(args[0]);
     }
   }
   // require('./x').fn
@@ -1120,6 +1120,21 @@ export function scanLiteralCalls(
             }
             continue;
           }
+          // boolean/null 不进数值域（includes/every/some 返回 boolean 误当收窄）
+          if (typeof lv === "boolean" || lv === null) {
+            out.push({
+              severity: "error",
+              code: "nudo:constraint-violated",
+              message: `${displayName}[${paramName}]: argument ⊭ precondition`,
+              actual: formatAbs(arg),
+              expected: predToString(p),
+              suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
+              fn: displayName,
+              line: loc?.start.line,
+              column: loc?.start.column,
+            });
+            continue;
+          }
           // 普通数值界
           if (isStr || typeof lv !== "number") continue;
           let ok = true;
@@ -1529,6 +1544,32 @@ export function scanLiteralCalls(
         const abs = evalArgAbs(a, (n) => varAbs.get(n));
         absArgs.push(abs ?? absUnknown());
         note(abs);
+      } else if (a.type === "SpreadElement") {
+        // 字面量数组 spread（`f(...[1, -2])`）：静态展开元素（字面量快路径）。
+        // 非字面量（`f(...args)`）不猜——B 通道实参回退。
+        const inner = (a as { argument?: Record<string, unknown> }).argument;
+        if (inner?.type === "ArrayExpression") {
+          for (const el of (inner.elements ?? []) as Array<Record<string, unknown> | null>) {
+            if (!el) continue;
+            if (el.type === "NumericLiteral" && typeof el.value === "number") {
+              absArgs.push(numLit(el.value));
+              hasInfo = true;
+            } else if (el.type === "StringLiteral" && typeof el.value === "string") {
+              absArgs.push({
+                shape: { k: "prim", type: "string" },
+                term: { op: "lit", value: el.value },
+                conf: "exact",
+              });
+              hasInfo = true;
+            } else {
+              const abs = evalArgAbs(el, (n) => varAbs.get(n));
+              absArgs.push(abs ?? absUnknown());
+              note(abs);
+            }
+          }
+        } else {
+          absArgs.push(absUnknown());
+        }
       } else if (a.type === "CallExpression") {
         // 内联调用（a.pop()/a.push(…)/xs.find(…)）：transpile 表达式位可能折
         // $lit(undefined) 假精确，静态不猜——交给 B 执行态实参回退。

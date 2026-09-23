@@ -309,7 +309,7 @@ env 模块与 `@types` harvester 覆盖了大量常见 Node/Web API，但**并�
 | 类别 | 为何 mock / 为何 unknown | 可用办法 |
 |---|---|---|
 | Native bindings | `child_process.spawn`、原生 addon —— env 可有签名，无副作用模拟 | `@nudo:mock`，或把返回值当 opaque |
-| 动态 `require` | 计算模块图无法静态解析 | `@nudo:mock-module` / 静态 import |
+| 动态 `require` | 字面量 / 常量折叠子集已解析；计算说明符诚实 `unknown` + `nudo:builtin-unknown` | `@nudo:mock-module` / 静态 import |
 | 流机器回调 | Node Transform 内部由运行时驱动，无调用点记录可 harvest | mock 流工厂；不要期望内部回调被推断 |
 | browser/node 双入口变体 | 调用点记录不跨文件（归因按文件） | 分析实际发布的入口；另一入口 mock |
 | 无调用现场的函数 | 测试未触达的内部 helper → `entry@` 兜底 | 补调用现场，或接受 `entry@` 为诚实结果 |

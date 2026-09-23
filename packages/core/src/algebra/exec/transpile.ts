@@ -535,6 +535,93 @@ function indent(n: number): string {
   return "  ".repeat(n);
 }
 
+/** 字面量 ToString（模板插值 / 字符串拼接）；非字面量 → undefined */
+function litToStringOf(node: unknown): string | undefined {
+  if (!node || typeof node !== "object") return undefined;
+  const n = node as { type?: string; value?: unknown; name?: string };
+  switch (n.type) {
+    case "StringLiteral":
+      return typeof n.value === "string" ? n.value : undefined;
+    case "NumericLiteral":
+    case "BooleanLiteral":
+      return String(n.value);
+    case "NullLiteral":
+      return "null";
+    case "Identifier":
+      return n.name === "undefined" ? "undefined" : undefined;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * 编译期常量字符串折叠（require 说明符子集）：
+ * - StringLiteral
+ * - TemplateLiteral（无插值 / 插值全为可 ToString 字面量）
+ * - `+` 字符串拼接（至少一侧为可折叠字符串，另一侧为字符串或字面量）
+ * 不能折叠 → undefined（诚实动态，不假精确）。
+ */
+export function foldStaticStringExpr(node: unknown): string | undefined {
+  if (!node || typeof node !== "object") return undefined;
+  const n = node as {
+    type?: string;
+    value?: unknown;
+    quasis?: Array<{ value: { cooked?: string | null; raw: string } }>;
+    expressions?: unknown[];
+    operator?: string;
+    left?: unknown;
+    right?: unknown;
+    expression?: unknown;
+  };
+  // ESTree 括号（Babel 通常无此节点，防御）
+  if (n.type === "ParenthesizedExpression") return foldStaticStringExpr(n.expression);
+  switch (n.type) {
+    case "StringLiteral":
+      return typeof n.value === "string" ? n.value : undefined;
+    case "TemplateLiteral": {
+      const quasis = n.quasis ?? [];
+      const exprs = n.expressions ?? [];
+      let out = "";
+      for (let i = 0; i < quasis.length; i++) {
+        out += quasis[i]!.value.cooked ?? quasis[i]!.value.raw;
+        if (i < exprs.length) {
+          const part = foldStaticStringExpr(exprs[i]) ?? litToStringOf(exprs[i]);
+          if (part === undefined) return undefined;
+          out += part;
+        }
+      }
+      return out;
+    }
+    case "BinaryExpression": {
+      if (n.operator !== "+") return undefined;
+      const ls = foldStaticStringExpr(n.left);
+      const rs = foldStaticStringExpr(n.right);
+      if (ls !== undefined && rs !== undefined) return ls + rs;
+      if (ls !== undefined) {
+        const r = litToStringOf(n.right);
+        if (r !== undefined) return ls + r;
+        return undefined;
+      }
+      if (rs !== undefined) {
+        const l = litToStringOf(n.left);
+        if (l !== undefined) return l + rs;
+        return undefined;
+      }
+      return undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** require(...) 第一个参数 → 可折叠说明符（StringLiteral / 模板 / 字面量拼接） */
+export function foldRequireSpecArg(arg: unknown): string | undefined {
+  if (!arg || typeof arg !== "object") return undefined;
+  const a = arg as { type?: string };
+  if (a.type === "SpreadElement") return undefined;
+  return foldStaticStringExpr(arg);
+}
+
 /** 对象键 → 字符串（Identifier/StringLiteral/NumericLiteral；其余 null）。
  *  { 10: "a" } 的键是 NumericLiteral，与 "10" 同键（原生 ToPropertyKey）。 */
 function staticKeyOf(key: { type?: string; name?: string; value?: unknown } | null | undefined): string | null {
@@ -1349,6 +1436,60 @@ function forkJoinBindings(names: string[], pad = ""): string[] {
  *   snapshot; $fork(__test, consArm, altArm); join bindings; return __r
  */
 /**
+ * 可选 require 模式：`try { m = require(A); } catch { m = require(B); }`
+ * 两侧说明符都可常量折叠时返回 [A, B]（优先成功侧）；否则 null（走诚实 try/catch）。
+ */
+function matchOptionalRequire(stmt: {
+  block?: unknown;
+  handler?: { body?: unknown } | null;
+}): { name: string; specs: [string, string]; locLine: number; locCol: number } | null {
+  const takeAssign = (bodyNode: unknown): { name: string; spec: string } | null => {
+    if (!bodyNode || typeof bodyNode !== "object") return null;
+    const b = bodyNode as { type?: string; body?: unknown[]; expression?: unknown };
+    let expr: unknown;
+    if (b.type === "BlockStatement") {
+      if (!Array.isArray(b.body) || b.body.length !== 1) return null;
+      const s = b.body[0] as { type?: string; expression?: unknown } | undefined;
+      if (!s || s.type !== "ExpressionStatement") return null;
+      expr = s.expression;
+    } else if (b.type === "ExpressionStatement") {
+      expr = b.expression;
+    } else {
+      return null;
+    }
+    const a = expr as {
+      type?: string;
+      operator?: string;
+      left?: { type?: string; name?: string };
+      right?: {
+        type?: string;
+        callee?: { type?: string; name?: string };
+        arguments?: unknown[];
+      };
+    } | null;
+    if (!a || a.type !== "AssignmentExpression" || a.operator !== "=") return null;
+    if (a.left?.type !== "Identifier" || !a.left.name) return null;
+    const call = a.right;
+    if (!call || call.type !== "CallExpression") return null;
+    if (call.callee?.type !== "Identifier" || call.callee.name !== "require") return null;
+    const spec = foldRequireSpecArg(call.arguments?.[0]);
+    if (spec === undefined) return null;
+    return { name: a.left.name, spec };
+  };
+  if (!stmt.block || !stmt.handler) return null;
+  const tryA = takeAssign(stmt.block);
+  const catchA = takeAssign(stmt.handler.body);
+  if (!tryA || !catchA || tryA.name !== catchA.name) return null;
+  const loc = (stmt as { loc?: { start: { line: number; column: number } } }).loc;
+  return {
+    name: tryA.name,
+    specs: [tryA.spec, catchA.spec],
+    locLine: loc?.start.line ?? 0,
+    locCol: loc?.start.column ?? 0,
+  };
+}
+
+/**
  * catch 体是否可能 rethrow：任意深度语句位置出现 ThrowStatement 即视为
  * 可能（条件 throw 保守按可能算，与 evalTry 的 catchR.threw 口径一致）；
  * 不降入嵌套函数/箭头/类方法体（其 throw 不构成本 catch 的 rethrow）。
@@ -2131,6 +2272,22 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
         .join("\n");
     }
     case "TryStatement": {
+      // 可选 require：两侧都可折叠 → 优先成功侧（__nudoRequireOptional）
+      const optReq = matchOptionalRequire(stmt as never);
+      if (optReq) {
+        const reqSrc = `__nudoRequireOptional(${JSON.stringify(optReq.specs)})`;
+        const cond = (opts.inLoop ?? 0) > 0 || (opts.conditionalFlow ?? 0) > 0;
+        const assignSrc = `((__v) => { $assignRecord(${JSON.stringify(optReq.name)}, ${optReq.name}, __v, ${optReq.locLine}, ${optReq.locCol}, ${cond});${!opts.inFunction ? ` $recordBinding(${JSON.stringify(optReq.name)}, __v);` : ""} return ${optReq.name} = __v; })(${reqSrc})`;
+        const lines = [`${pad}${assignSrc};`];
+        if (stmt.finalizer) {
+          const finBody =
+            stmt.finalizer.type === "BlockStatement"
+              ? stmt.finalizer.body.map((s) => transpileStatement(s, depth, opts)).join("\n")
+              : transpileStatement(stmt.finalizer as unknown as Statement, depth, opts);
+          lines.push(finBody);
+        }
+        return lines.join("\n");
+      }
       const markName = `__nudoTm_${stmt.loc?.start.line ?? 0}`;
       const tryOpts: TranspileOptions = {
         ...opts,
@@ -3275,6 +3432,28 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           .join(", ");
         return `$invokeSuper(${opts.thisParam}, ${JSON.stringify(opts.className)}, ${JSON.stringify(callee.property.name)}, [${args}])`;
       }
+      // require.resolve(spec) → 静态说明符字面量（模块身份；非宿主绝对路径）
+      // 必须在 obj.method $invoke 分支之前（否则 require.resolve 被吃成 $invoke）
+      if (
+        callee.type === "MemberExpression" &&
+        !callee.computed &&
+        callee.object.type === "Identifier" &&
+        callee.object.name === "require" &&
+        callee.property.type === "Identifier" &&
+        callee.property.name === "resolve"
+      ) {
+        const spec = foldRequireSpecArg(expr.arguments[0]);
+        if (spec !== undefined) return `$lit(${JSON.stringify(spec)})`;
+        // 动态 resolve：诚实 unknown（不假装某条路径）
+        return "$unknown()";
+      }
+      // require(spec)：可折叠说明符 → __nudoRequire；真动态 → 诚实 unknown
+      //（不走 $callNamed("require", …)——那会把未声明 require 当全局调用炸掉）
+      if (callee.type === "Identifier" && callee.name === "require") {
+        const spec = foldRequireSpecArg(expr.arguments[0]);
+        if (spec !== undefined) return `__nudoRequire(${JSON.stringify(spec)})`;
+        return "$unknown()";
+      }
       // obj.method(args) / obj?.method(args) → $invoke / $optionalInvoke
       if (
         (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") &&
@@ -3303,15 +3482,6 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         return opt
           ? `$optionalInvoke(${recv}, ${name}, [${args}])`
           : `$invoke(${recv}, ${name}, [${args}]${locArg})`;
-      }
-      // require("spec") → __nudoRequire("spec")
-      if (
-        callee.type === "Identifier" &&
-        callee.name === "require" &&
-        expr.arguments[0]?.type === "StringLiteral"
-      ) {
-        const spec = (expr.arguments[0] as { value: string }).value;
-        return `__nudoRequire(${JSON.stringify(spec)})`;
       }
       // 标识符调用 → $callNamed（可采集 call@ + 实参 provenance）
       if (callee.type === "Identifier" && callee.name !== "undefined") {

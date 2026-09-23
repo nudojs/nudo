@@ -13,7 +13,7 @@ import { parse } from "@nudojs/parser";
 import type { File, Node } from "@babel/types";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
-import { generalizeFromAst, type PolyFn } from "@nudojs/core";
+import { generalizeFromAst, foldStaticStringExpr, type PolyFn } from "@nudojs/core";
 
 export type ModuleExports = {
   path: string;
@@ -68,18 +68,33 @@ function collectRequires(node: Node, out: string[]): void {
     if (!n || typeof n !== "object") return;
     const obj = n as {
       type?: string;
-      callee?: { type?: string; name?: string };
-      arguments?: Array<{ type?: string; value?: unknown }>;
+      callee?: {
+        type?: string;
+        name?: string;
+        computed?: boolean;
+        object?: { type?: string; name?: string };
+        property?: { type?: string; name?: string };
+      };
+      arguments?: Array<unknown>;
       [k: string]: unknown;
     };
-    if (
-      obj.type === "CallExpression" &&
-      obj.callee?.type === "Identifier" &&
-      obj.callee.name === "require" &&
-      obj.arguments?.[0]?.type === "StringLiteral"
-    ) {
-      const spec = obj.arguments[0].value;
-      if (typeof spec === "string") out.push(spec);
+    if (obj.type === "CallExpression" && obj.callee) {
+      // require(spec) / require.resolve(spec)：可折叠说明符才进依赖图
+      const c = obj.callee;
+      let spec: string | undefined;
+      if (c.type === "Identifier" && c.name === "require") {
+        spec = foldStaticStringExpr(obj.arguments?.[0]);
+      } else if (
+        c.type === "MemberExpression" &&
+        !c.computed &&
+        c.object?.type === "Identifier" &&
+        c.object.name === "require" &&
+        c.property?.type === "Identifier" &&
+        c.property.name === "resolve"
+      ) {
+        spec = foldStaticStringExpr(obj.arguments?.[0]);
+      }
+      if (spec !== undefined) out.push(spec);
     }
     for (const key of Object.keys(obj)) {
       if (key === "loc" || key === "start" || key === "end") continue;

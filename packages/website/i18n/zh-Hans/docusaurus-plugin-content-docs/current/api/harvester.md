@@ -150,7 +150,7 @@ const key = buildKey("docs", "readme");
 仍**建议**手写 mock 的类别（与 `docs/design/limitations.md` §2 调用点天花板对齐）：
 
 - Native bindings（`child_process.spawn`、原生 addon）—— env 可有签名，无副作用模拟
-- 动态 `require` / 计算模块图
+- 动态 `require` / 计算模块图（字面量 / 常量折叠子集已解析；其余诚实 `unknown`）
 - 流机器回调（Node Transform 运行时驱动的内部回调）
 - browser/node 双入口变体——调用点记录不跨文件注入
 - **无调用现场**的函数—— `entry@` 兜底是诚实结果，不是缺陷

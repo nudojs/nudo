@@ -309,7 +309,7 @@ Env modules and the `@types` harvester cover a large slice of common Node/Web AP
 | Category | Why mock / why unknown | Workaround |
 |---|---|---|
 | Native bindings | `child_process.spawn`, native addons — env may hold a signature, not side effects | `@nudo:mock` or treat return as opaque |
-| Dynamic `require` | Computed module graphs are not statically resolved | `@nudo:mock-module` / static import |
+| Dynamic `require` | Literal / constant-folded specs resolve; computed specs stay honest `unknown` + `nudo:builtin-unknown` | `@nudo:mock-module` / static import |
 | Stream machine callbacks | Node Transform internals are driven by the runtime; no call-site record to harvest | Mock the stream factory; do not expect internal callbacks to infer |
 | Dual-entry browser/node variants | Call-site records do not cross files (attribution is file-scoped) | Analyze the entry you ship; mock the other |
 | No call-site functions | `entry@` fallback when tests never touch an internal helper | Add a call site, or accept `entry@` as the honest result |

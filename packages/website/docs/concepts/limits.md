@@ -33,7 +33,7 @@ Unconstrained entry params display as **`any`**; true **`unknown`** means infere
 | Functions never touched by tests | `entry@` (`any` params) — coverage gap, not inference failure |
 | Nested functions | Not attributed from outer call records (correctness first) |
 | Dual package entrypoints | browser/node records do not cross files |
-| Dynamic `require` / native | Env may type the name; side effects need mocks |
+| Dynamic `require` / native | Literal / constant-folded specs resolve; computed specs stay honest `unknown`. Env may type the name; side effects need mocks |
 
 ## Evaluator gaps (summary)
 

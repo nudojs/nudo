@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   analyzeFile,
   tryBPathCall,
+  tryBPathCallFull,
   isBPathCapable,
   clearBPathCache,
 } from "@nudojs/service";
@@ -62,5 +63,82 @@ function go(n) {
     expect(go).toBeDefined();
     const c = go!.cases.find((x) => x.name === "t");
     expect(formatShape(c!.abs)).toBe("2");
+  });
+
+  it("template / concat require specs resolve like string literals", () => {
+    clearBPathCache();
+    const dir = mkdtempSync(join(tmpdir(), "nudo-req3-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "math.js"), `export function double(x) { return x * 2; }\n`);
+    const main = `
+const a = require(\`./math.js\`);
+const b = require("./" + "math" + ".js");
+/**
+ * @nudo:case "t" (21)
+ */
+export function go(n) {
+  return a.double(n) + b.double(0);
+}
+`;
+    const p = join(dir, "main.js");
+    writeFileSync(p, main, "utf-8");
+    const r = tryBPathCall(main, p, "go", [$lit(21)]);
+    expect(r).toBeDefined();
+    expect(litValue(r!)).toBe(42);
+  });
+
+  it("dynamic require degrades to unknown without crashing", () => {
+    clearBPathCache();
+    const dir = mkdtempSync(join(tmpdir(), "nudo-req4-"));
+    dirs.push(dir);
+    const main = `
+/**
+ * @nudo:case "t" ("./x.js")
+ */
+export function go(spec) {
+  const m = require(spec);
+  return m;
+}
+`;
+    const p = join(dir, "main.js");
+    writeFileSync(p, main, "utf-8");
+    // tryBPathCall 对裸 unknown 会吞掉（undefined）——用 Full 看诚实结果
+    const full = tryBPathCallFull(main, p, "go", [$lit("./x.js")]);
+    expect(full).toBeDefined();
+    expect(formatShape(full!.result)).toBe("unknown");
+  });
+
+  it("optional require prefers the success side", () => {
+    clearBPathCache();
+    const dir = mkdtempSync(join(tmpdir(), "nudo-req5-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "a.js"), `export function tag() { return "from-a"; }\n`);
+    writeFileSync(join(dir, "b.js"), `export function tag() { return "from-b"; }\n`);
+    const main = `
+/**
+ * @nudo:case "t" (0)
+ */
+export function go(n) {
+  let m;
+  try { m = require("./missing.js"); } catch { m = require("./b.js"); }
+  return m.tag();
+}
+/**
+ * @nudo:case "t2" (0)
+ */
+export function go2(n) {
+  let m;
+  try { m = require("./a.js"); } catch { m = require("./b.js"); }
+  return m.tag();
+}
+`;
+    const p = join(dir, "main.js");
+    writeFileSync(p, main, "utf-8");
+    const r = tryBPathCall(main, p, "go", [$lit(0)]);
+    expect(r).toBeDefined();
+    expect(litValue(r!)).toBe("from-b");
+    const r2 = tryBPathCall(main, p, "go2", [$lit(0)]);
+    expect(r2).toBeDefined();
+    expect(litValue(r2!)).toBe("from-a");
   });
 });

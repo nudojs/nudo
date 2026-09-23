@@ -49,6 +49,7 @@
 | 调用点经验泛化（P3） | **明确不做** | 不入主路径（hof-relations） |
 | `.nudo/cache` L2 harvest 磁盘层 | **已落地** | HarvestJson 签名投影 + `~/.cache/nudo/deps`（`harvest-json.ts` / `harvest-disk.ts`）；见 [`persistent-cache.md`](./persistent-cache.md) |
 | `@types/node` harvest 产品化（B2） | **已落地** | 磁盘缓存 + miss/fail 降级手写 `@nudojs/env` node 面（`harvest-node.ts`） |
+| 手写 Node env leaf-clean | **已收窄** | 高频面 options/Date/null/Record 具体化；残余 `any` 仅真无约束参（`assert.*` value、`util.format` 混参、`util.types.*` 谓词入参）— 见 `docs/reports/env-coverage-baseline.md` |
 | 项目根内自动绑定边界 | **已落地** | `projectDir` 树外侧车不 ambient 绑定（`sidecar-project-root.test.ts`）；node_modules 仍拦 |
 | `nudo:interface-entry-only` | **已落地** | 导出无根且无域 → info（`analyzeFile` entry@ 合成路径） |
 | `ns.foo` 命名空间模板 | **已落地** | `@nudo:import * as ns` → `ns.exportName` refine 引用 |
@@ -71,7 +72,7 @@
 | 无使用现场的函数 | 测试未触达 → `entry@` 兜底（覆盖问题，非推断问题） |
 | 嵌套函数不归因 | 函数内定义的函数无模块栈定义位点；外部记录被归因门拒收（正确性优先） |
 | 双入口包变体 | browser/node 记录不跨文件注入 |
-| Native / 动态 `require` | env 可有签名、无副作用模拟；动态模块图无法静态解析 |
+| Native / 动态 `require` | env 可有签名、无副作用模拟；**字面量 / 常量折叠子集已解析**（StringLiteral / 无插值模板 / 插值与拼接全为字面量 / `require.resolve("lit")` / try-catch 双侧可折叠 → 优先成功侧）；其余诚实 `unknown` + 既有诊断（`nudo:builtin-unknown`），不假精确 |
 
 **env / harvest 不能替代 mock。** 详见 website `guides/semantics.md`「Mock boundary」与
 `api/harvester.md`。覆盖报告（`docs/reports/env-coverage-baseline.md`）的解析率

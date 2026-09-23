@@ -12,6 +12,7 @@ import {
   bindingsOf,
   tryRunTranspiled,
   callTranspiledExportFull,
+  foldStaticStringExpr,
   unknown,
   type Abs,
   type AbsModuleExports,
@@ -87,18 +88,33 @@ function collectRequireSpecs(node: unknown, out: string[]): void {
     if (!n || typeof n !== "object") return;
     const o = n as {
       type?: string;
-      callee?: { type?: string; name?: string };
-      arguments?: Array<{ type?: string; value?: unknown }>;
+      callee?: {
+        type?: string;
+        name?: string;
+        computed?: boolean;
+        object?: { type?: string; name?: string };
+        property?: { type?: string; name?: string };
+      };
+      arguments?: Array<unknown>;
       [k: string]: unknown;
     };
-    if (
-      o.type === "CallExpression" &&
-      o.callee?.type === "Identifier" &&
-      o.callee.name === "require" &&
-      o.arguments?.[0]?.type === "StringLiteral"
-    ) {
-      const spec = o.arguments[0].value;
-      if (typeof spec === "string") out.push(spec);
+    if (o.type === "CallExpression" && o.callee) {
+      // require(spec) / require.resolve(spec)：可折叠说明符才进依赖图
+      const c = o.callee;
+      let spec: string | undefined;
+      if (c.type === "Identifier" && c.name === "require") {
+        spec = foldStaticStringExpr(o.arguments?.[0]);
+      } else if (
+        c.type === "MemberExpression" &&
+        !c.computed &&
+        c.object?.type === "Identifier" &&
+        c.object.name === "require" &&
+        c.property?.type === "Identifier" &&
+        c.property.name === "resolve"
+      ) {
+        spec = foldStaticStringExpr(o.arguments?.[0]);
+      }
+      if (spec !== undefined) out.push(spec);
     }
     for (const key of Object.keys(o)) {
       if (key === "loc" || key === "start" || key === "end") continue;

@@ -276,15 +276,35 @@ function bindNamespace(modules: RunTranspiledOptions["modules"], spec: string): 
   return unknown;
 }
 
-/** CJS require：modules[spec] → 可 $get 的 namespace Abs */
+/** CJS require：modules[spec] → 可 $get 的 namespace Abs；缺失/非字符串 → unknown（不炸） */
 function requireFromModules(
   modules: RunTranspiledOptions["modules"],
   spec: string,
 ): unknown {
+  if (typeof spec !== "string") return unknown;
   const mod = modules?.[spec] as AbsModuleExports | undefined;
   if (!mod) return unknown;
   if (mod.named) return namespaceAbsOf(mod);
   return mod;
+}
+
+/**
+ * 可选 require（try/catch 双侧字面量）：优先成功侧——第一个能解析的 spec；
+ * 全不能解析 → unknown（诚实降级，不假装某模块）。
+ */
+function requireOptionalFromModules(
+  modules: RunTranspiledOptions["modules"],
+  specs: string[],
+): unknown {
+  if (!Array.isArray(specs)) return unknown;
+  for (const spec of specs) {
+    if (typeof spec !== "string") continue;
+    const mod = modules?.[spec] as AbsModuleExports | undefined;
+    if (!mod) continue;
+    if (mod.named) return namespaceAbsOf(mod);
+    return mod;
+  }
+  return unknown;
 }
 
 /** 导出语句后处理：specifier / re-export / star / default → __nudoExport 调用。
@@ -391,6 +411,7 @@ export function runTranspiled(
     "__nudoBindNamespace",
     "__nudoReplaces",
     "__nudoRequire",
+    "__nudoRequireOptional",
     "__nudoEnv",
     "__nudoExport",
     "__nudoExportStar",
@@ -407,6 +428,9 @@ export function runTranspiled(
     if (n === "__nudoReplaces") return allInject;
     if (n === "__nudoRequire") {
       return (spec: string) => requireFromModules(modules, spec);
+    }
+    if (n === "__nudoRequireOptional") {
+      return (specs: string[]) => requireOptionalFromModules(modules, specs);
     }
     if (n === "__nudoEnv") return opts.envGlobals ?? {};
     if (n === "__nudoExport") {

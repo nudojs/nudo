@@ -150,7 +150,7 @@ Coverage baseline (`resolved` / **leaf-clean** / `unknown` / `mock-required`) is
 Still **recommended** for handwritten mock (aligned with `docs/design/limitations.md` §2 call-site ceiling):
 
 - Native bindings (`child_process.spawn`, native addons) — env may hold a signature, not side effects
-- Dynamic `require` / computed module graphs
+- Dynamic `require` / computed module graphs (literal / constant-folded specs resolve; the rest stay honest `unknown`)
 - Stream machine callbacks (Node Transform internals driven by the runtime)
 - Dual-entry browser/node variants — call-site records do not cross files
 - Functions with **no call-site usage** — `entry@` fallback is an honest observation with **unconstrained `any`** params; entry may-throw on that surface is still L2 (`nudo:entry-may-throw`), not a free pass.

@@ -1522,6 +1522,721 @@ needPos(a.pop());
 `,
     expect: "ok",
   },
+  // --- 解构默认值 ---
+  {
+    id: "destructure-default-ok",
+    origin: "http/net options { port = 3000 } = {}",
+    source: `
+/**
+ * @nudo:refine port atLeast1
+ */
+function listen({ port = 3000 } = {}) {
+  return port;
+}
+listen({ port: 8080 });
+`,
+    expect: "ok",
+    note: "显式 port 合法",
+  },
+  {
+    id: "destructure-default-omit-ok",
+    origin: "http/net options { port = 3000 } = {}",
+    source: `
+/**
+ * @nudo:refine port atLeast1
+ */
+function listen({ port = 3000 } = {}) {
+  return port;
+}
+listen();
+`,
+    expect: "ok",
+    note: "缺省走默认 3000，不发明违例",
+  },
+  {
+    id: "destructure-default-violates",
+    origin: "http/net options { port = 3000 } = {}",
+    source: `
+/**
+ * @nudo:refine port atLeast1
+ */
+function listen({ port = 3000 } = {}) {
+  return port;
+}
+listen({ port: 0 });
+`,
+    expect: "violation",
+    note: "port=0 ⊭ ≥1",
+  },
+  // --- rest/spread 实参 ---
+  {
+    id: "spread-lit-ok",
+    origin: "fn(...args) 字面量 spread",
+    source: `
+/**
+ * @nudo:refine x positive
+ */
+function needPos(x) {
+  return x;
+}
+needPos(...[5]);
+`,
+    expect: "ok",
+  },
+  {
+    id: "spread-lit-violates",
+    origin: "fn(...args) 字面量 spread",
+    source: `
+/**
+ * @nudo:refine x positive
+ */
+function needPos(x) {
+  return x;
+}
+needPos(...[-1]);
+`,
+    expect: "violation",
+  },
+  {
+    id: "rest-index-ok",
+    origin: "fn(...args) 转发",
+    source: `
+/**
+ * @nudo:refine x positive
+ */
+function needPos(x) {
+  return x;
+}
+function wrap(...args) {
+  return needPos(args[0]);
+}
+wrap(7);
+`,
+    expect: "ok",
+  },
+  {
+    id: "rest-index-violates",
+    origin: "fn(...args) 转发",
+    source: `
+/**
+ * @nudo:refine x positive
+ */
+function needPos(x) {
+  return x;
+}
+function wrap(...args) {
+  return needPos(args[0]);
+}
+wrap(-7);
+`,
+    expect: "violation",
+  },
+  {
+    id: "mathmax-lit-ok",
+    origin: "Math.max",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+needPos(Math.max(1, 2));
+`,
+    expect: "ok",
+  },
+  {
+    id: "mathmax-lit-violates",
+    origin: "Math.max",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+needPos(Math.max(-1, -2));
+`,
+    expect: "violation",
+    note: "Math.max(-1,-2)=-1 ⊭ positive",
+  },
+  // --- 可选链 ---
+  {
+    id: "optchain-hit-ok",
+    origin: "a?.b?.c",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const a = { b: { c: 5 } };
+needPos(a?.b?.c);
+`,
+    expect: "ok",
+  },
+  {
+    id: "optchain-missing-violates",
+    origin: "a?.b?.c",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const a = { b: {} };
+needPos(a?.b?.c);
+`,
+    expect: "violation",
+    note: "缺键 → undefined ⊭ positive",
+  },
+  {
+    id: "optchain-null-base-violates",
+    origin: "a?.b",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const a = null;
+needPos(a?.b);
+`,
+    expect: "violation",
+  },
+  {
+    id: "optchain-trim-miss",
+    origin: "o.name?.trim()",
+    source: `
+/**
+ * @nudo:refine s shortName
+ */
+function needShort(s) {
+  return s;
+}
+const o = {};
+needShort(o.name?.trim());
+`,
+    expect: "violation",
+    note: "可选链缺省 ⊭ shortName",
+  },
+  {
+    id: "optchain-trim-hit-ok",
+    origin: "o.name?.trim()",
+    source: `
+/**
+ * @nudo:refine s shortName
+ */
+function needShort(s) {
+  return s;
+}
+const o = { name: "  hi  " };
+needShort(o.name?.trim());
+`,
+    expect: "ok",
+  },
+  // --- 空值合并 ---
+  {
+    id: "nullish-fallback-ok",
+    origin: "x ?? fallback",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const x = null;
+needPos(x ?? 10);
+`,
+    expect: "ok",
+    note: "fallback 非空保证",
+  },
+  {
+    id: "nullish-nonnull-ok",
+    origin: "x ?? fallback",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const x = 7;
+needPos(x ?? 0);
+`,
+    expect: "ok",
+    note: "左值非空，结果 7",
+  },
+  {
+    id: "nullish-bad-lit",
+    origin: "x ?? fallback",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+needPos(undefined ?? -1);
+`,
+    expect: "violation",
+  },
+  {
+    id: "nullish-both-nullish",
+    origin: "x ?? y",
+    source: `
+/**
+ * @nudo:refine s shortName
+ */
+function needShort(s) {
+  return s;
+}
+needShort(null ?? undefined);
+`,
+    expect: "violation",
+    note: "两侧皆空 → undefined ⊭ shortName",
+  },
+  // --- includes/every/some 返回 boolean 误当收窄 ---
+  {
+    id: "includes-bool-to-nonEmpty",
+    origin: "Array.includes",
+    source: `
+/**
+ * @nudo:refine s nonEmpty
+ */
+function needStr(s) {
+  return s;
+}
+needStr([1, 2].includes(1));
+`,
+    expect: "violation",
+    note: "boolean ⊭ string",
+  },
+  {
+    id: "every-guard-not-narrow",
+    origin: "Array.every 伪收窄",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+function f(xs) {
+  if (xs.every((n) => n > 0)) {
+    return needPos(xs[0]);
+  }
+  return 0;
+}
+f([-1, 2]);
+`,
+    expect: "ok",
+    note: "every 布尔不构成 xs[0] 的正数义务；且契约只在调用点执法",
+  },
+  {
+    id: "some-guard-residual-lit",
+    origin: "Array.some 伪收窄",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+function f(xs) {
+  if (xs.some((n) => n > 0)) {
+    return needPos(-1);
+  }
+  return 0;
+}
+f([1]);
+`,
+    expect: "violation",
+    note: "some 守卫不吞字面量 -1",
+  },
+  // --- 字符串方法返回新串 ---
+  {
+    id: "trim-hit-shortName-ok",
+    origin: "String.trim",
+    source: `
+/**
+ * @nudo:refine s shortName
+ */
+function needShort(s) {
+  return s;
+}
+needShort("  a  ".trim());
+`,
+    expect: "ok",
+  },
+  {
+    id: "trim-empty-shortName",
+    origin: "String.trim",
+    source: `
+/**
+ * @nudo:refine s shortName
+ */
+function needShort(s) {
+  return s;
+}
+needShort("   ".trim());
+`,
+    expect: "violation",
+    note: "trim 后空串 ⊭ min(1)",
+  },
+  {
+    id: "slice-empty-shortName",
+    origin: "String.slice",
+    source: `
+/**
+ * @nudo:refine s shortName
+ */
+function needShort(s) {
+  return s;
+}
+needShort("abc".slice(1, 1));
+`,
+    expect: "violation",
+  },
+  {
+    id: "slice-too-long-shortName",
+    origin: "String.slice",
+    source: `
+/**
+ * @nudo:refine s shortName
+ */
+function needShort(s) {
+  return s;
+}
+const long = "abcdefghijklmnopqrstuvwxyz";
+needShort(long.slice(0));
+`,
+    expect: "violation",
+    note: "len>20",
+  },
+  // --- Number / parseInt 边界 ---
+  {
+    id: "parseint-ok",
+    origin: "parseInt(x, 10)",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+needPos(parseInt("42", 10));
+`,
+    expect: "ok",
+  },
+  {
+    id: "parseint-nan",
+    origin: "parseInt(x, 10)",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+needPos(parseInt("abc", 10));
+`,
+    expect: "violation",
+    note: "NaN ⊭ positive",
+  },
+  {
+    id: "parseint-zero",
+    origin: "parseInt(x, 10)",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+needPos(parseInt("0", 10));
+`,
+    expect: "violation",
+  },
+  {
+    id: "number-nan",
+    origin: "Number(x)",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+needPos(Number("x"));
+`,
+    expect: "violation",
+  },
+  {
+    id: "number-ok",
+    origin: "Number(x)",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+needPos(Number("12"));
+`,
+    expect: "ok",
+  },
+  // --- JSON 往返 ---
+  {
+    id: "json-roundtrip-ok",
+    origin: "JSON.parse(JSON.stringify(o))",
+    source: `
+/**
+ * @nudo:refine u userShape
+ */
+function takeUser(u) {
+  return u;
+}
+const o = { id: 1, name: "a" };
+takeUser(JSON.parse(JSON.stringify(o)));
+`,
+    expect: "ok",
+  },
+  {
+    id: "json-roundtrip-missing",
+    origin: "JSON.parse(JSON.stringify(o))",
+    source: `
+/**
+ * @nudo:refine u userShape
+ */
+function takeUser(u) {
+  return u;
+}
+const o = { id: 1 };
+takeUser(JSON.parse(JSON.stringify(o)));
+`,
+    expect: "violation",
+    note: "缺 name",
+  },
+  {
+    id: "json-roundtrip-extra-ok",
+    origin: "JSON.parse(JSON.stringify(o))",
+    source: `
+/**
+ * @nudo:refine u userShape
+ */
+function takeUser(u) {
+  return u;
+}
+const o = { id: 1, name: "a", extra: true };
+takeUser(JSON.parse(JSON.stringify(o)));
+`,
+    expect: "ok",
+    note: "多余字段不构成违例",
+  },
+  // --- Promise.then 链 ---
+  {
+    id: "promise-then-lit-violates",
+    origin: "Promise.then",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const p = Promise.resolve(1);
+p.then((x) => needPos(-2));
+`,
+    expect: "violation",
+    note: "回调内字面量 -2 仍须报",
+  },
+  {
+    id: "promise-then-pos-ok",
+    origin: "Promise.then",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const p = Promise.resolve(5);
+p.then((x) => needPos(x));
+`,
+    expect: "ok",
+  },
+  // --- class 字段 ---
+  {
+    id: "class-field-uninit",
+    origin: "class this.x 未初始化",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+class C {
+  get() {
+    return needPos(this.x);
+  }
+}
+new C().get();
+`,
+    expect: "violation",
+    note: "this.x 未初始化 → undefined ⊭ positive",
+  },
+  {
+    id: "class-field-ok",
+    origin: "class this.x",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+class C {
+  constructor() {
+    this.x = 5;
+  }
+  get() {
+    return needPos(this.x);
+  }
+}
+new C().get();
+`,
+    expect: "ok",
+  },
+  {
+    id: "class-field-violates",
+    origin: "class this.x",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+class C {
+  constructor() {
+    this.x = -1;
+  }
+  get() {
+    return needPos(this.x);
+  }
+}
+new C().get();
+`,
+    expect: "violation",
+  },
+  // --- switch(true) / if 链收窄残余 ---
+  {
+    id: "switch-true-narrow-ok",
+    origin: "switch (true)",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+function f(x) {
+  switch (true) {
+    case x > 0:
+      return needPos(x);
+    default:
+      return 0;
+  }
+}
+f(5);
+`,
+    expect: "ok",
+  },
+  {
+    id: "switch-true-residual",
+    origin: "switch (true)",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+function f(x) {
+  switch (true) {
+    case x > 0:
+      return needPos(x);
+    default:
+      return needPos(x);
+  }
+}
+f(-3);
+`,
+    expect: "violation",
+    note: "default 残余路径 -3 仍到达 needPos",
+  },
+  {
+    id: "if-chain-narrow-ok",
+    origin: "if 链收窄",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+function f(x) {
+  if (x > 0) return needPos(x);
+  if (x === 0) return 1;
+  return needPos(2);
+}
+f(-1);
+`,
+    expect: "ok",
+  },
+  {
+    id: "if-chain-else-residual",
+    origin: "if/else 残余",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+function f(x) {
+  if (x > 0) return needPos(x);
+  else return needPos(0);
+}
+f(1);
+`,
+    expect: "violation",
+    note: "else 分支字面量 0 不因 if 收窄而消失",
+  },
+  // --- 变量键 map[k] = any（TN） ---
+  {
+    id: "trim-then-var-key-any",
+    origin: "字典查找·变量键",
+    source: `
+/**
+ * @nudo:refine n positive
+ */
+function needPos(n) {
+  return n;
+}
+const map = { a: "  x  ".trim(), b: 2 };
+const k = "a";
+needPos(map[k]);
+`,
+    expect: "ok",
+    note: "变量键结果 any，不报（≠ unknown）",
+  },
 ];
 
 /** require 金标：用 loadModule 喂外部源码 */

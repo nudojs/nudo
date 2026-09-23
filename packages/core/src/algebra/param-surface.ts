@@ -86,12 +86,15 @@ function collectPatternNames(
         else nested.push(keyName);
         if (propKey && depth === 0) propKey[keyName] = keyName;
       }
-      // 属性值是 Identifier → 本层绑定名；嵌套 pattern → depth+1
+      // 属性值是 Identifier → 本层绑定名；默认值（AssignmentPattern）不升层
+      // （`{ port = 3000 }` 的 port 仍是顶层契约面）；嵌套 pattern → depth+1
       if (v.type === "Identifier" && v.name) {
         if (depth === 0) {
           top.push(v.name);
           if (propKey && keyName) propKey[v.name] = keyName;
         } else nested.push(v.name);
+      } else if (v.type === "AssignmentPattern") {
+        collectPatternNames(v, top, nested, depth, propKey);
       } else {
         collectPatternNames(v, top, nested, depth + 1, propKey);
       }
@@ -104,6 +107,9 @@ function collectPatternNames(
       if (el.type === "Identifier" && el.name) {
         if (depth === 0) top.push(el.name);
         else nested.push(el.name);
+      } else if (el.type === "AssignmentPattern") {
+        // `[a = 1]` 的 a 仍是本层绑定名
+        collectPatternNames(el, top, nested, depth, propKey);
       } else {
         collectPatternNames(el, top, nested, depth + 1, propKey);
       }
