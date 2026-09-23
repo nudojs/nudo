@@ -834,6 +834,15 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
     case "isNaN":
       if (typeof a0 === "number") return boolLit(Number.isNaN(a0));
       return boolPrim();
+    case "isFinite": {
+      // 全局 isFinite：ToNumber 后判有限（与 Number.isFinite 不同，会强制转换）
+      if (a0 === undefined && args.length === 0) return boolLit(false);
+      if (typeof a0 === "number") return boolLit(Number.isFinite(a0));
+      if (typeof a0 === "boolean") return boolLit(true);
+      if (typeof a0 === "string") return boolLit(Number.isFinite(Number(a0)));
+      if (a0 === null) return boolLit(true);
+      return boolPrim();
+    }
     case "Number":
       // Number(sym) → TypeError（ToNumber 抛）
       if (args[0] && isSymbolAbs(args[0])) throw new NudoThrow(errorTypeAbs("TypeError"));

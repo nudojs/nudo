@@ -1045,7 +1045,62 @@ function emitFnBlockBody(
   return implicitReturn ? withImplicitReturn(body, stmts, depth) : stmts;
 }
 
-function transpileFnBodyStmts(stmts: Statement[], depth: number, opts: TranspileOptions): string {
+/** 终止语句：return / throw */
+function isTerminalStmt(s: Statement): boolean {
+  return s.type === "ReturnStatement" || s.type === "ThrowStatement";
+}
+
+/**
+ * 把 if/else-if 后的终止尾句收进缺失的最终 else：
+ *   if (A) return 1; else if (B) return 2; return 0;
+ * → if (A) return 1; else if (B) return 2; else return 0;
+ * 否则 return $fork 优化不触发，臂内 JS return 被 thunk 吞掉后
+ * 尾部 return 覆盖早退值（ms 的 else-if 数字分支即此形态）。
+ */
+function completeElseChain(ifStmt: Statement, tail: Statement[]): Statement | null {
+  if (ifStmt.type !== "IfStatement") return null;
+  if (!tail.every(isTerminalStmt)) return null;
+  const asBlock = (body: Statement): Statement =>
+    body.type === "BlockStatement"
+      ? body
+      : ({ type: "BlockStatement", body: [body] } as unknown as Statement);
+  if (ifStmt.alternate == null) {
+    return {
+      ...ifStmt,
+      alternate: {
+        type: "BlockStatement",
+        body: [...tail],
+      } as unknown as Statement,
+    } as unknown as Statement;
+  }
+  if (ifStmt.alternate.type === "IfStatement") {
+    const inner = completeElseChain(ifStmt.alternate, tail);
+    if (!inner) return null;
+    return { ...ifStmt, alternate: asBlock(inner) } as unknown as Statement;
+  }
+  return null;
+}
+
+function completeElseChains(stmts: Statement[]): Statement[] {
+  const out = stmts.map((s) => ({ ...s }) as unknown as Statement);
+  for (let i = 0; i < out.length; i++) {
+    const stmt = out[i]!;
+    if (stmt.type !== "IfStatement") continue;
+    // 仅早退 if：consequent 含 return/throw 时，尾句才是「未走 then」的续体
+    if (!stmtReturns(stmt.consequent)) continue;
+    const tail = out.slice(i + 1);
+    if (tail.length === 0) continue;
+    const fixed = completeElseChain(stmt, tail);
+    if (!fixed) continue;
+    out[i] = fixed;
+    out.length = i + 1;
+    break;
+  }
+  return out;
+}
+
+function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: TranspileOptions): string {
+  const stmts = completeElseChains(stmtsIn);
   for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i]!;
     if (stmt.type !== "IfStatement" || stmt.alternate != null) continue;
@@ -1923,6 +1978,7 @@ function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptio
       const applyJoin = names.length ? forkJoinBindings(names, padDecl).join("\n") : "";
       // 两分支都以 return/throw 退出时，$fork 即函数返回值
       // （循环/switch 臂内：用 $loopReturn 抛 NudoReturn，与早退语义一致）
+      // else-if 链经 completeElseChains 补全最终 else 后同样命中本路径。
       const inCtrl = (opts.inLoop ?? 0) > 0;
       const openBlock = names.length > 0 ? `${pad}{` : null;
       const closeBlock = names.length > 0 ? `${pad}}` : null;

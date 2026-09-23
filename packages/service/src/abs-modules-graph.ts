@@ -19,6 +19,7 @@ import {
 } from "@nudojs/core";
 import type { Node } from "@babel/types";
 import { bareSpecToAbsModules } from "./harvest-to-abs.ts";
+import { resolveNpmJsEntry } from "./evaluator/resolve-npm.ts";
 import { mockSeedsToAbsMocks } from "./mock-abs.ts";
 
 export type AbsLoadModule = (spec: string, fromFile: string) => string | undefined;
@@ -146,6 +147,16 @@ function buildModulesForFile(
       }
       modules[spec] = evalDep(childPath, spec, fromFile, depth + 1);
     } else if (!spec.startsWith("node:")) {
+      // A3：优先执行包入口 JS（ms/debug 等纯 JS 包返回面可折叠）；
+      // 无入口或求值失败再 harvest stub。
+      const entry = resolveNpmJsEntry(spec, dirname(fromFile));
+      if (entry) {
+        const executed = evalDep(entry, spec, fromFile, depth + 1);
+        if (executed && (executed.default !== undefined || Object.keys(executed.named ?? {}).length > 0)) {
+          modules[spec] = executed;
+          continue;
+        }
+      }
       const bare = bareSpecToAbsModules(spec, fromFile);
       if (bare) modules[spec] = bare;
       // 裸包 harvest 失败 ≠ 文件缺失（可能是未覆盖的包形态），不报 missing
@@ -371,7 +382,14 @@ export function evalAbsModuleGraph(
     cache.set(absPath, { named: {} });
     loading.push(absPath);
 
-    const source = load(spec, fromFile);
+    const source = load(spec, fromFile) ?? (() => {
+      // A3：裸包入口用已解析的绝对路径读源（load 只认 import 说明符）
+      try {
+        return readFileSync(absPath, "utf-8");
+      } catch {
+        return undefined;
+      }
+    })();
     if (source === undefined) {
       pushIssue(
         "missing",
