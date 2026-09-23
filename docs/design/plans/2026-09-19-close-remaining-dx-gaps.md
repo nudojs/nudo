@@ -13,7 +13,8 @@
 | ID | 项 | 缺口 |
 |----|----|------|
 | **A6** | IDE 日用冒烟 | service 层冒烟 7/7（`ide-daily-smoke.test.ts`）；**live editor + 中型目录延迟基线**未做（→ S1） |
-| **B2** | `@types/node` harvest 产品化 | 进程内缓存 + 有/无 `@types/node` 条件 hard-gate 已有；**磁盘缓存**与「harvest 失败自动注入手写 env」降级链路未做（手写 wins 已由 `mergeHarvestUnderEnv` 钉住） |
+
+> **B2 已完成**：HarvestJson 磁盘缓存 + harvest miss/fail 降级手写 `@nudojs/env` node 面（`harvest-node.ts` / `harvest-node-b2.test.ts`）。
 
 > **A3 已完成**（2026-09 发布）：`nudo-vscode` 经 release CI `vsce package` + Marketplace + Open VS X 发出（run `35428825221`）；清单见 `packages/vscode/RELEASE_CHECKLIST.md`。
 

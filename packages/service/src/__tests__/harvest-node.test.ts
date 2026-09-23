@@ -52,11 +52,9 @@ describe("harvest @types/node productization (B2)", () => {
     if (!hasTypesNode) {
       // Graceful skip path — @types/node not on this machine/CI image.
       const r = harvestNodeTypes(monorepoRoot);
-      expect(r.ok).toBe(false);
-      if (!r.ok) {
-        expect(r.reason).toBe("not-found");
-        expect(r.error).toContain("@types/node");
-      }
+      // B2：缺失时降级手写 env，不再 ok:false
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.degraded).toBe(true);
       console.info(
         "[harvest-node] SKIP hard path: @types/node not resolvable from worktree",
       );
@@ -78,7 +76,8 @@ describe("harvest @types/node productization (B2)", () => {
     expect(r.stats.files).toBe(r.files);
     expect(r.stats.symbols).toBeGreaterThan(0);
     expect(r.stats.skipped).toBeGreaterThanOrEqual(0);
-    expect(r.cached).toBe(false);
+    // B2：首调可命中磁盘缓存（跨进程）；只要不是 degraded 手写回落即可
+    expect(r.degraded).toBeFalsy();
 
     const s = summarizeNodeEnv(r.env);
     expect(s.symbolCount).toBeGreaterThan(0);
@@ -138,18 +137,20 @@ describe("harvest @types/node performance guardrails (B7)", () => {
     expect(r.files).toBeLessThanOrEqual(4);
   });
 
-  it("missing @types/node yields reason=not-found and caches the miss", () => {
+  it("missing @types/node degrades to handwritten env and caches (B2)", () => {
     const missDir = "/tmp/nudo-harvest-missing-xyz";
     const r = harvestNodeTypes(missDir);
-    expect(r.ok).toBe(false);
-    if (!r.ok) {
-      expect(r.reason).toBe("not-found");
-      expect(r.cached).toBeUndefined();
+    // B2 降级链：harvest 未命中 → 手写 node env（degraded）
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.degraded).toBe(true);
+      expect(r.root).toBe("@nudojs/env");
+      expect(r.cached).toBeFalsy();
     }
     const r2 = harvestNodeTypes(missDir);
-    expect(r2.ok).toBe(false);
-    if (!r2.ok) {
-      expect(r2.reason).toBe("not-found");
+    expect(r2.ok).toBe(true);
+    if (r2.ok) {
+      expect(r2.degraded).toBe(true);
       expect(r2.cached).toBe(true);
     }
   });

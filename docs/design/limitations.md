@@ -48,6 +48,7 @@
 | HOF `constraint` 表达 fn 形状 | **已开** | `fn()` → entry Abs 落 `shape.fn`；refine→**error** 可测（`hof-refine-error.test.ts`）；promote 仍只 warning |
 | 调用点经验泛化（P3） | **明确不做** | 不入主路径（hof-relations） |
 | `.nudo/cache` L2 harvest 磁盘层 | **已落地** | HarvestJson 签名投影 + `~/.cache/nudo/deps`（`harvest-json.ts` / `harvest-disk.ts`）；见 [`persistent-cache.md`](./persistent-cache.md) |
+| `@types/node` harvest 产品化（B2） | **已落地** | 磁盘缓存 + miss/fail 降级手写 `@nudojs/env` node 面（`harvest-node.ts`） |
 | 项目根内自动绑定边界 | **已落地** | `projectDir` 树外侧车不 ambient 绑定（`sidecar-project-root.test.ts`）；node_modules 仍拦 |
 | `nudo:interface-entry-only` | **已落地** | 导出无根且无域 → info（`analyzeFile` entry@ 合成路径） |
 | `ns.foo` 命名空间模板 | **已落地** | `@nudo:import * as ns` → `ns.exportName` refine 引用 |

@@ -179,6 +179,7 @@ export {
 } from "./bpath-diagnostics.ts";
 export {
   harvestNodeTypes,
+  handwrittenNodeEnv,
   summarizeNodeEnv,
   clearNodeHarvestCache,
   getNodeHarvestCacheSize,
