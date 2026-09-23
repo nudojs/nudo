@@ -30,6 +30,8 @@ Declared on `initialize` (see [@nudojs/lsp API](../api/lsp.md)):
 
 **File detection (A1/A2):** targets are `.js` / `.mjs` / `.ts`. Shipped default is `nudo.analysis.mode = "exports"` — full gate semantics: [Coexistence](../guides/coexistence.md#when-to-use-modedirectives-vs-modeexports). CodeLens interface tier uses the broader target path even when diagnostics stay quiet for directive-less files.
 
+**Zed / Nvim protocol smoke (B4):** `pnpm --filter @nudojs/lsp run smoke` exercises stdio `initialize` → `textDocument/hover` → `textDocument/publishDiagnostics` — the basic face those editors need. The VS Code package has its own `smoke` (bundled server + initialize).
+
 ## Client support matrix
 
 Legend: **Y** = works with stock client + this server · **C** = needs a setting / secondary-server config · **N** = not available in the client UI (server still serves the protocol) · **—** = not applicable
@@ -109,6 +111,8 @@ vim.lsp.inlay_hint.enable(true, { bufnr = 0 })
 
 -- optional: CodeLens UI via a plugin (e.g. glance / nvim-code-action-menu)
 ```
+
+Basic face check without an editor: `pnpm --filter @nudojs/lsp run smoke` (hover + push diagnostics over stdio).
 
 Legacy lspconfig form:
 

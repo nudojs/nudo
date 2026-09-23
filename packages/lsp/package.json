@@ -55,6 +55,7 @@
   },
   "scripts": {
     "build": "tsup",
-    "prepublishOnly": "tsup"
+    "prepublishOnly": "tsup",
+    "smoke": "node ./scripts/smoke-stdio.mjs"
   }
 }
