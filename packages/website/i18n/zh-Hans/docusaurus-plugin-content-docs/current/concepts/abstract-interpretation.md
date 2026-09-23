@@ -45,7 +45,7 @@ description: 解释 Nudo 如何在 Abs（符号值）上执行代码——求值
 |-----------|----------------|
 | **Parser** | 将 JS/TS 源码解析为 AST（委托给 Babel） |
 | **Directive Extractor** | 从注释中提取 `@nudo:*` 指令 |
-| **Evaluator** | B-path 转译+执行（ast-eval 回退）：用 Abs 求值每个节点 |
+| **Evaluator** | B-path 转译+执行（单引擎）：用 Abs 求值每个节点 |
 | **surface / arithmetic / abs-route** | 在 Abs 上定义算术、比较、一元、spread 的运算符语义 |
 | **Environment** | 管理变量作用域和绑定（name → Abs） |
 | **Branch Executor** | 处理条件分支：分叉、窄化、求值、合并 |
@@ -55,7 +55,7 @@ description: 解释 Nudo 如何在 Abs（符号值）上执行代码——求值
 
 ## 求值规则
 
-求值器用 **Abs** 值执行函数体。主 B 路径把源码转译后直接用 Abs 操作数运行；ast-eval 回退路径用同样的 Abs 规则直接遍历 AST。每种 AST 节点类型都有对应的求值规则。
+求值器用 **Abs** 值执行函数体。源码经 B-path 转译后直接用 Abs 操作数运行（单引擎）。每种 AST 节点类型都有对应的 lowering/求值规则。
 
 ### 字面量
 

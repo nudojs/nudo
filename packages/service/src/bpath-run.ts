@@ -282,9 +282,9 @@ export function collectBPathReplacements(source: string): {
 
 /**
  * 可走 transpile+exec 的快速预判（env 经 loadEnvs 内置 + 已 preload 的路径型）。
- * 注意：正确性不依赖本函数——转译点已抛 NudoUnsupportedError（顶层 this /
- * 未 lowering 语句/表达式），tryRunTranspiled 捕获后回落并记录；本函数仅
- * 是避免对明显不可托管文件做模块图装载的廉价前置闸。
+ * 注意：正确性不依赖本函数——未 lowering 的构造在转译点 fail-closed
+ * （unknown / 空导出），tryRunTranspiled 捕获后记录；本函数仅是廉价前置闸。
+ * 顶层 this 已按 ESM 托管，不再关 B 路径。
  */
 export function isBPathCapable(source: string, envNames: string[] = []): boolean {
   void envNames;

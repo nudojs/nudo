@@ -48,10 +48,10 @@ core → parser → service → cli → nudo (thin shell)
 
 | Package | Purpose |
 |---|---|
-| `packages/core` | **Type system**: algebra/Abs (term, pred, check, leq, ast-eval, surface, arithmetic), format (extensional rendering), environment, refinements, interface (sidecar/effectiveInterface/projection) |
+| `packages/core` | **Type system**: algebra/Abs (term, pred, check, leq, exec/transpile, surface, arithmetic), format (extensional rendering), environment, refinements, interface (sidecar/effectiveInterface/projection) |
 | `packages/parser` | Babel-based parser; extracts function-scoped `@nudo:` directives from JSDoc |
 | `packages/cli` | CLI commands only: check/test/contract/export/health/env harvest |
-| `packages/service` | Analyzer orchestration, Abs-native evaluator (B-path + ast-eval), dts-generator, harvest, case-json, interface emitter/surface/derivation |
+| `packages/service` | Analyzer orchestration, Abs-native evaluator (B-path), dts-generator, harvest, case-json, interface emitter/surface/derivation |
 | `packages/nudojs` | Thin npm shell `nudojs` (`nudo` bin) that re-exports `@nudojs/cli` |
 | `packages/lsp` | LSP server (check diagnostics, completions, code lens, inlay hints, agent tools) |
 | `packages/env` | ES / Web / Node API type definitions (`@nudojs/env`) |
@@ -62,15 +62,15 @@ core → parser → service → cli → nudo (thin shell)
 
 ## Architecture
 
-**Type system core** (`core/src/algebra`): Abs = shape × term × pred × conf. Term is abstract value identity (lit/var/app); Pred is constraint relative to term; conf is exact/path/widened/partial/opaque. Primary entrypoints: `checkSource` (refinement gate), `evalProgramAbs` / `analyzeFn` (native Abs evaluation), `leqAbs` (structural assignability), `generalizeFromAst` (symbolic α). See `docs/design/kernel-merge.md`.
+**Type system core** (`core/src/algebra`): Abs = shape × term × pred × conf. Term is abstract value identity (lit/var/app); Pred is constraint relative to term; conf is exact/path/widened/partial/opaque. Primary entrypoints: `checkSource` (refinement gate), `analyzeFn` / `runTranspiled` (Abs evaluation, B-path only), `leqAbs` (structural assignability), `generalizeFromAst` (symbolic α). See `docs/design/kernel-merge.md`.
 
 **Extensional rendering** (`core/src/algebra/format.ts`): `formatShape` (display strings), `formatAbs` (lossless). One-way projections: `absToTSType` / `absToSchemaSource` / `projectAbsToSchema` / guard generators consume Abs directly. Nothing reads a projection back.
 
 **Parser** (`parser`): Uses `@babel/parser` with TypeScript+JSX plugins. Extracts function/file directives: `@nudo:case` (debug witnesses), `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, `@nudo:replace`. Type expressions parse via `parseCaseArgExpr` only (constraint builders + concrete literals; no `T.*`). File-level `@nudo:import` and function-level `@nudo:refine` are parsed in **core** (`algebra/refine.ts`), not the parser package.
 
-**Evaluator** (`service/src/evaluator`): Abs-native production evaluation. Primary analysis path is **B-path** (`bpath-run.ts` + `core/algebra/exec`: transpile → `new Function` with Abs values); fallback is `ast-eval`/`evalProgramAbs`. Arithmetic/compare/unary/spread route through the algebra (`surface.ts`, `abs-route.ts`). `CallRecord` is Abs-only (`resultAbs`/`argsAbs`). Public API: `@nudojs/service/evaluator`.
+**Evaluator** (`service/src/evaluator`): Abs-native production evaluation. **Single engine = B-path** (`bpath-run.ts` + `core/algebra/exec`: transpile → `new Function` with Abs values). Arithmetic/compare/unary/spread route through the algebra (`surface.ts`, `abs-route.ts`). B-incapable / eval failure is **fail-closed** (unknown/empty exports). Top-level `this` follows ESM (read → undefined; write → TypeError). `CallRecord` is Abs-only (`resultAbs`/`argsAbs`). Public API: `@nudojs/service/evaluator`.
 
-**Service** (`service`): `analyzer.ts` orchestrates parse → directives → evaluate → diagnostics. Evaluation is **Abs-native**. **B-hosted** files (`tryRunBPath` succeeds) use transpile+exec for diagnostics, call@ synthesis, nodeTypeMap, and optional debug-witness evaluation; otherwise `ast-eval`/`evalProgramAbs` evaluate Abs directly. Modules via `evalAbsModuleGraph`（named/default/namespace、re-export/`export *`、require、harvest、@nudo:env）。Class bridge: Abs-eval `registerClassDecl` → `exec/class-registry` → B `$new`. `dts-generator.ts` projects Abs → TypeScript (`Case:` JSDoc rows are debug extensional notes, not the interface product). CLI `test` prints call@/entry@ cases and `debug "name"` witnesses; `check` prints signatures (always, even on success).
+**Service** (`service`): `analyzer.ts` orchestrates parse → directives → evaluate → diagnostics. Evaluation is **Abs-native, B-path only**. Modules via `evalAbsModuleGraph`（named/default/namespace、re-export/`export *`、require、harvest、@nudo:env）。Class bridge: `registerClassDecl` → `exec/class-registry` → B `$new`. `dts-generator.ts` projects Abs → TypeScript (`Case:` JSDoc rows are debug extensional notes, not the interface product). CLI `test` prints call@/entry@ cases and `debug "name"` witnesses; `check` prints signatures (always, even on success).
 
 **Check product**: `nudo check` is the CI gate — Pred implication on Abs, Nudo-native reports (`actual ⊭ expected`); L1 = explicit contracts (`*.nudo.js` / `@nudo:refine`); L2 = entry may-throw (`nudo:entry-may-throw`, default error; `--ignore-throws` / `package.json#nudo.check.ignoreThrows`). Signatures always printed; unconstrained entry params display as **`any`**, not `unknown`. Gold gates: recall=precision=1.0 and real-package zero-FP tests in `core/src/algebra/__tests__/` (L2 suites need split expectations when ignore is off).
 

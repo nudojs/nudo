@@ -1,6 +1,6 @@
 # Interface 分层推导与契约生成
 
-> **状态**：主体已实施——三层有效契约、侧车自动绑定、`contract` 打印/`--draft`/`--emit`、drift/domain 冲突码、隐式依赖边、组合式生成。宿主层「项目根内」边界、LSP open-buffer 侧车执行、`.nudo/cache` 跨会话缓存仍未闭环。
+> **状态**：主体已实施——三层有效契约、侧车自动绑定、`contract` 打印/`--draft`/`--emit`、drift/domain 冲突码、隐式依赖边、组合式生成、LSP open-buffer 侧车真值。项目根内 **ambient 绑定**边界、`.nudo/cache` 跨会话缓存仍未闭环。
 > **真源**：架构 → kernel-merge.md；命令面/any/unknown/check → cli-semantics.md
 >
 > 产品动词：`check` / `test` / `contract` / `export` / `health` / `env harvest`。
@@ -94,8 +94,8 @@
 
 ## 未决 / 未实施
 
-- **项目根内**自动绑定边界：core 无 projectDir 概念，属宿主层判定，未实现。
-- LSP **open-buffer** 侧车内容作为自动绑定真值：未实现；当前以磁盘为准。
+- **项目根内 ambient 绑定**边界：core 无 projectDir 概念，属宿主层判定，未实现（emit/draft **写盘**已守根；绑定范围本身未收）。
+- LSP **open-buffer** 侧车真值：**已落地**（`makeBufferAwareLoadModule` buffer 优先于磁盘，validate/hover/agent 同源；见 `sidecar-lsp.test.ts`）。
 - `.nudo/cache` 跨会话隐式契约缓存：仅部分（见 [`persistent-cache.md`](./persistent-cache.md)）；用户契约文件与引擎缓存严格分离。
 - `nudo:interface-entry-only`（导出无根且无域）诊断码：设计已命名，代码侧未形成稳定消费面。
 - 工件 join 后组合式曾退回展开式（已知降级）；分场景契约名仍是工件精度选项，非 check 正确性前置。

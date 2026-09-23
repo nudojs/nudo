@@ -6,7 +6,8 @@
 > 产品命令面 / any·unknown / check 门禁语义见
 > [`cli-semantics.md`](./cli-semantics.md)。
 >
-> **无第二套 IR**：生产求值 Abs 原生（B-path transpile+exec → ast-eval 回退）。
+> **无第二套 IR**：生产求值 Abs 原生、单引擎 **B-path**（transpile+exec）；
+> B-incapable / 求值失败 **fail-closed**（unknown/空导出），无解释兜底。
 > dts / schema / guard / LSP hover / 序列化都是 **Abs 的单向外延投影**
 > （`formatShape` / `absToTSType` / `absToSchemaSource` / 守卫生成器）。
 > 约束构建器（`number()` / `shape({...})` 等，`*.nudo.js` 模板）进入 Abs 作为 Pred。
@@ -24,7 +25,7 @@ parser ──▶ core
             └── refinements  ← *.nudo.js 约束构建器 → Pred
                  │
                  ▼
-            service/evaluator    ← Abs 原生：B-path（transpile+exec）→ ast-eval
+            service/evaluator    ← Abs 原生：B-path（transpile+exec）单引擎
                  │
                  ▼
             service / lsp / vscode / dts / schema

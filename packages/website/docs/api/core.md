@@ -85,7 +85,7 @@ Terms and predicates are first-class too: `lit(value)` / `v(id)` build terms, `e
 | `litValue(a)` | Extract the concrete literal value, if the Abs is exact. |
 | `confJoin(a, b)` | Join two confidences (the worse one wins). |
 | `checkSource(source, opts?)` | The CI gate: refinement/Pred implication over Abs — see [Check](../guides/check.md). |
-| `evalProgramAbs(source, opts?)` / `analyzeFn(…)` | Abs-native evaluation entrypoints (AST interpreter path). |
+| `runTranspiled` / `callTranspiledExportFull` / `analyzeFn(…)` | Abs-native evaluation entrypoints (B-path). |
 | `generalizeFromAst(…)` | Intensional signature extraction — the `intension:` lines and `A1` parameters. |
 
 ---
@@ -100,7 +100,7 @@ Operators are algebraic on Abs. Arithmetic, comparison, unary, and spread live i
 | `core/src/algebra/arithmetic.ts` | Binary arithmetic (`+` `-` `*` `/` `%`) and comparison |
 | `service/src/evaluator/abs-route.ts` | Union member-wise routing of binary/unary ops and object spread |
 
-The B path (`core/algebra/exec`: transpile → `new Function` with Abs values) is the primary evaluation route; `ast-eval`/`evalProgramAbs` is the AST-interpreter fallback.
+The single evaluation engine is B-path (`core/algebra/exec`: transpile → `new Function` with Abs values). B-incapable sources fail closed to `unknown` / empty exports.
 
 ---
 

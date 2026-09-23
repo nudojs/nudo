@@ -48,7 +48,7 @@
 | HOF `constraint` 表达 fn 形状 | **未开** | refine→error 的可测路径未打开；此前只有 promote→warning |
 | 调用点经验泛化（P3） | **明确不做** | 不入主路径（hof-relations） |
 | `.nudo/cache` L2 harvest 磁盘层 | **未实施** | 见 [`persistent-cache.md`](./persistent-cache.md) |
-| 项目根内自动绑定边界 / LSP open-buffer 侧车真值 | **未闭环** | 见 [`refine-derivation.md`](./refine-derivation.md) 未决 |
+| 项目根内自动绑定边界 | **未闭环** | core 无 projectDir 概念；emit/draft 写盘已 fail-closed 守根，ambient 绑定范围未收（refine-derivation 未决） |
 | `nudo:interface-entry-only` | 设计有名字，无稳定消费面 | refine-derivation 未决 |
 
 ---
@@ -81,6 +81,8 @@
 | 动态 key 投影 | 槽位并集（`$idx`）；`e-index-proj.js` |
 | HOF concrete 消费 / dts 投影 | `c3-hof-closure.test.ts` · `hof-dts-projection.test.ts` |
 | `this` / 全局标识符 / `==` 折叠 | B-path env + `looseEqAbs`；`bpath-env` / `loose-eq-fold` tests |
+| 顶层 `this.x=1` ESM TypeError | B 托管：读 undefined、写硬抛 TypeError（模块装载失败）；`bpath-topthis.test.ts` |
+| LSP open-buffer 侧车真值 | `makeBufferAwareLoadModule` buffer 优先于磁盘；`sidecar-lsp.test.ts` · `p0-fix-review-buffer-loader.test.ts` |
 | 确定条件三元 / 循环 return / catch 形参 | `$fork` / `$loopReturn` / `$catchVal`；loop/try-catch tests |
 | CLI class × 顶层调用栈溢出 | 已修复；`nudo test` / `check` 现 exit 0 |
 

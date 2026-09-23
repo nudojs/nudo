@@ -712,13 +712,13 @@ export function instantiateReturn(fn: Abs, args: Abs[]): Abs {
  * 回调统一入口（单点定义）。A–F + sum：
  * A Node inline | B apply | C body | D relation | E isRelFn | F unknown
  *
- * 实现委托 ast-eval 的 applyAbsFn（已含 sum / D / E / body 优先）。
+ * 实现委托 applyAbsFn（已含 sum / D / E / body 优先）。
  * Identifier 解析层：env.vars 有 Abs → B–E；env.fns 有 → callFunction；否则 unknown。
  *
- * 为避免 hof ↔ ast-eval 循环依赖，本函数由宿主在运行时绑定。
+ * 为避免 hof ↔ exec 循环依赖，本函数由宿主在运行时绑定。
  *
- * 依赖说明：宿主在 `ast-eval.ts` 模块加载时注册（副作用）。
- * 只 import hof.ts 而未加载 ast-eval 时，fallback 仅认 relation/isRelFn。
+ * 依赖说明：宿主在 `exec/call.ts`（B-path `$call` 宿主）加载时注册（副作用）。
+ * 只 import hof.ts 而未加载 exec/call 时，fallback 仅认 relation/isRelFn。
  * 与 §5.1 的「禁止全局 collector」不同——这里是无状态委托钩子，不是 run 局部状态。
  */
 type ApplyCallbackHost = (
@@ -732,10 +732,10 @@ type ApplyCallbackHost = (
 let applyCallbackHost: ApplyCallbackHost | undefined;
 
 /**
- * ast-eval 模块加载时注册（副作用）。
- * 必须经 `ast-eval.ts`（或其依赖方：exec/call、exec/class、generalize）加载，
+ * B-path 宿主 `exec/call.ts` 加载时注册（副作用）。
+ * 必须经 `exec/call.ts`（或其依赖方：exec/class、generalize）加载，
  * 才能启用 Identifier/env.fns/inline body 路径；只 import hof.ts 时 fallback
- * 仅认 relation/isRelFn。勿在多份 ast-eval 实例下各写各的——双包/双副本会覆盖。
+ * 仅认 relation/isRelFn。勿在多份实例下各写各的——双包/双副本会覆盖。
  */
 export function setApplyCallbackHost(fn: ApplyCallbackHost): void {
   applyCallbackHost = fn;

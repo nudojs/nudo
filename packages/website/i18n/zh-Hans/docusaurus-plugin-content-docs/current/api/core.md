@@ -85,7 +85,7 @@ term 与 pred 也是一等公民：`lit(value)` / `v(id)` 构造 term，`eq/ne/l
 | `litValue(a)` | 若 Abs 是精确字面量，取出具体值。 |
 | `confJoin(a, b)` | 连接两个置信度（取更差的）。 |
 | `checkSource(source, opts?)` | CI 门禁：Abs 上的精化/Pred 蕴含——见 [Check](../guides/check.md)。 |
-| `evalProgramAbs(source, opts?)` / `analyzeFn(…)` | Abs 原生求值入口（AST 解释器路径）。 |
+| `runTranspiled` / `callTranspiledExportFull` / `analyzeFn(…)` | Abs 原生求值入口（B-path）。 |
 | `generalizeFromAst(…)` | 内涵签名提取——`intension:` 行与 `A1` 形参的来源。 |
 
 ---
@@ -100,7 +100,7 @@ term 与 pred 也是一等公民：`lit(value)` / `v(id)` 构造 term，`eq/ne/l
 | `core/src/algebra/arithmetic.ts` | 二元算术（`+` `-` `*` `/` `%`）与比较 |
 | `service/src/evaluator/abs-route.ts` | 二元/一元运算与对象 spread 的 union 逐成员路由 |
 
-B 路径（`core/algebra/exec`：转译 → 以 Abs 值执行 `new Function`）是主求值路径；`ast-eval`/`evalProgramAbs` 是 AST 解释器回退。
+唯一求值引擎是 B-path（`core/algebra/exec`：转译 → 以 Abs 值执行 `new Function`）。B 不可托管源 fail-closed（`unknown` / 空导出）。
 
 ---
 

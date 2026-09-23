@@ -198,7 +198,7 @@ See [`docs/examples/`](./docs/examples/) for runnable examples.
 ## How It Works
 
 1. **Parse** — Babel parses your `.js` file and extracts `@nudo:` directives
-2. **Execute** — The evaluator runs each function with abstract interpretation, tracking **Abs values** through all code paths (production analysis is Abs-native via B-path transpile+exec / ast-eval)
+2. **Execute** — The evaluator runs each function with abstract interpretation, tracking **Abs values** through all code paths (production analysis is Abs-native via B-path transpile+exec)
 3. **Combine** — Results from multiple cases are merged into a unified type via union simplification
 4. **Report** — `nudo check` prints signatures + gate issues; `nudo test` prints case reports; `nudo export` projects dts / guard / schema / standard
 

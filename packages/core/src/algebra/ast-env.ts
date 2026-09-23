@@ -1,8 +1,7 @@
 /**
- * AstEnv：抽象求值环境类型。
+ * AstEnv：抽象求值环境类型（ast-eval 删除后保留的类型面）。
  * 独立成文件：hof/language/leq/abs-fn/abs-modules 等消费方只依赖此类型，
- * 不必再为拿一个类型 import ast-eval 巨石（TS 模块环）。
- * ast-eval.ts 对本类型做兼容 re-export，外部消费路径不变。
+ * 避免 TS 模块环。
  */
 
 import type { Node } from "@babel/types";

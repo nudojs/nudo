@@ -1,6 +1,7 @@
-# 求值引擎与集合语义（双引擎：ast-eval × B-path）
+# 求值引擎与集合语义（单引擎：B-path）
 
-> **状态**：2026-09-22 会话结论沉淀，全部结论经实测验证（探针输出见文末）。
+> **状态**：单引擎终态（2026-09-23 ast-eval 删除后）。历史双引擎对照与移除过程见
+> [`plans/2026-09-22-remove-ast-eval.md`](./plans/2026-09-22-remove-ast-eval.md)。
 > **真源**：架构 → kernel-merge.md；命令面 → cli-semantics.md；接口推导 → refine-derivation.md。
 
 ## 集合语义：Abs 就是值域集合
@@ -22,22 +23,21 @@ x.add(1)                // 集合映射：{v+1 | v ∈ x}
 gt(x.add(1), 1)         // 集合间关系检查
 ```
 
-转译产物（B-path）是同一门代数的编译形态：`$add(x, $lit(1))` 是集合映射；
-`$gt(x, $lit(0))` 是集合间比较，返回「一定真 / 一定假 / 不定」三值；
-`$fork` 处理「不定」时双臂展开 + join。
+## 单引擎：B-path（transpile → `new Function`）
 
-## 双引擎：同一门代数，两种执行方式
+生产分析 **只有** B-path：转译为 `$add` / `$gt` / `$fork` 等代数调用后编译执行。
+控制流与作用域交给 V8；代数层仍是同一门 Abs 运算。
 
-| | ast-eval | B-path |
-|---|---|---|
-| 形态 | AST 树遍历解释器 | transpile → `new Function` 编译执行 |
-| 速度 | 慢（每节点解释税 + 不可变 env 复制 + 预算簿记） | 快（控制流/作用域交给 V8） |
-| 语法覆盖 | 全部 | 全部（`runTranspiled` 可 exec 任意程序） |
-| 缺席条件 | 无 | `isBPathCapable`：顶层 `this`；注释字面 `this.` 误判；require 源码；依赖指纹 fail-closed |
-| 独有产品 | Phi 线程收窄、derivation 节点打点 | 真实执行语义（副作用/别名） |
+| 项 | 行为 |
+|---|---|
+| 形态 | transpile → `new Function` 编译执行（`runTranspiled` / `callTranspiledExportFull`） |
+| 语法覆盖 | 全语法可 exec；`import.meta` / 动态 `import()` → `$unknown()` 保守 lowering |
+| 顶层 `this` | **ESM 语义托管**：读 → `$lit(undefined)`；写（`this.x = 1`）经 strict 写路径硬抛 TypeError（模块装载失败，与原生一致）。见 `bpath-topthis.test.ts` |
+| JSX 等 B-incapable | **fail-closed**：显式无信息（unknown / 空导出），无解释兜底 |
+| Φ 路径条件 | `$fork` 压 `Φ∧test` 进臂作用域（Φ-native）；boundedPhi 上限 24 |
+| 差分 oracle | B-vs-native 独立 bug 发现器（`core/src/algebra/__tests__/differential/`），不依赖第二求值器 |
 
-**两引擎互为差分基准**：loop-fix 系列 18 批 bug 大多出在 B-path 转译/运行时，
-靠「两实现对照 + native vm 对照」挖出。这是双实现存在的方法论理由，不是能力理由。
+预算：`MAX_CALL_DEPTH` / `MAX_TOTAL_CALLS`（20k）/ `MAX_B_TOTAL_FORKS`（5000）——截断观测见 `call-budget.ts`。
 
 ## 传播机制：调用点实参集合重求值 callee body
 
@@ -51,8 +51,7 @@ const s = id("hi");   // 用 {"hi"} 重跑 → {"hi"}
 ```
 
 实现链：`generalizeFromAst` 语法归纳出 symbolic scheme（`(x: A1) => A1`）
-→ `PolyFn.instantiate(args, phi)` 用调用点实参 α-替换后重求值 body。
-**instantiate 的求值引擎当前是 ast-eval**（generalize.ts `run` → analyzeFn）。
+→ `PolyFn.instantiate(args, phi)` 用调用点实参 α-替换后重求值 body（B-path + 入口 Φ 种子）。
 
 `A1` 是**展示层**的类型参数（签名显示、泛化输出），不是传播必需品。
 `any` 是「无约束集合」；两者语义不同：`any` 实例化后仍是 any（毒化下游），
@@ -66,34 +65,27 @@ const s = id("hi");   // 用 {"hi"} 重跑 → {"hi"}
   「调真实的函数」在分析期不可能，因为分析的是运行之前（入口参数还没被传、
   IO 还没发生、分支还没被走）。
 
-## 模块图是 Abs-only
+## 模块图
 
-`evalAbsModuleGraph` → `evalProgramAbs`（依赖逐文件抽象执行，收集 Abs 导出），
-**没有 B 实现**。B-path 自己的依赖注入先跑它（bpath-run.ts 第一步），
-它产出的 `AbsModuleExports` 才是「模块加载」的真实含义：依赖导出抽象函数值，
-mock-module/harvest/环 partial 命名空间都在这层协议里。
+`evalAbsModuleGraph` 依赖求值步走 `runTranspiled`（B 优先）；JS 导出经
+`absFunction(apply)` 桥接成 Abs fn。B 失败 → **fail-closed**（空导出），
+不再解释回落。mock-module / harvest / 环 partial 命名空间仍在 `AbsModuleExports`
+协议层。
 
-## check 门禁本体是 ast-eval
+## check 门禁本体
 
-`checkSource`（core/check.ts）的执行面：`analyzeFn`（L673 签名重跑）、
-`evalProgramAbs`（L712 结构赋值记录 + 调用记录）、`analyzeFnFull`（L933 L2 throws）。
-B-hosted 诊断（service/bpath-diagnostics）是并行通道，**门禁判定在 ast-eval**。
-本结论修正「ast-eval 只是 fallback」的简化说法：ast-eval 是 check 的主实现，
-B-path 是精度更高的加速通道。
+`checkSource`（core/check.ts）执行面走 B-path（`runTranspiled` +
+`callTranspiledExportFull`）；记录通道经 `$recordBinding` / `$assignRecord`
+运行时插桩。门禁判定 = Pred 蕴含；B-incapable / 求值失败 → fail-closed
+（unknown / 空表），触发引擎债诊断而非静默通过。
 
-> **2026-09-22 收缩契约（refactor/rm-ast-eval 分支）**：L2 throws 已切 B
-> （约束入口；any/unknown 入口因 HOF 提升语义保持 ast-eval）。剩余 ast-eval
-> 生产面 = generalize/instantiate（phi+HOF）、记录通道（assign/call 记录）、
-> derivation 打点、LSP 非 B-hosted hover 兜底、模块图 B 失败回落——均为
-> 推导域产品（详见 plans/2026-09-22-remove-ast-eval.md §P4）。
-
-## 实测锚点（2026-09-22 探针）
+## 实测锚点（探针）
 
 ```
 // 直线体 + 入口 x>0
 analyzeFn: number  = (x + 1)  where (x + 1) > 1  #path
 
-// 分支体转译产物（无 JS if：条件是 Abs 布尔，$fork 双臂）
+// 分支体转译产物（无 JS if：条件是 Abs 布尔，$fork 双臂 + Φ）
 return $fork($gt(x, $lit(0)), () => $add(x, $lit(1)), () => $lit(0));
 
 // 泛化 vs 执行喂 unknown

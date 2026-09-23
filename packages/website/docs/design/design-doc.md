@@ -75,7 +75,7 @@ Operations on Abs are algebraic: monotonic arithmetic, comparison, `leq` assigna
 
 ### 2.2 Extensional projection (not a second type system)
 
-There is no second IR. dts (`Case:` JSDoc rows), the LSP hover surface, serialization, and the `*.nudo.js` template constraints all consume **Abs directly** — the extensional view is a rendering (`formatShape` for display, `absToTSType` / `absToSchemaSource` / `projectAbsToSchema` / guard generators for projections). Rendering is lossy by design (`formatShape` drops non-literal terms), but nothing round-trips: analysis never reads a projection back. Production analysis runs Abs natively (B-path transpile+exec, ast-eval fallback).
+There is no second IR. dts (`Case:` JSDoc rows), the LSP hover surface, serialization, and the `*.nudo.js` template constraints all consume **Abs directly** — the extensional view is a rendering (`formatShape` for display, `absToTSType` / `absToSchemaSource` / `projectAbsToSchema` / guard generators for projections). Rendering is lossy by design (`formatShape` drops non-literal terms), but nothing round-trips: analysis never reads a projection back. Production analysis runs Abs natively (single engine: B-path transpile+exec; fail-closed on B-incapable sources).
 
 ### 2.3 Design Principles
 
@@ -160,7 +160,7 @@ parser ──▶ core
             └── format       ← extensional rendering (dts / hover / serialization)
                  │
                  ▼
-            service/evaluator    ← Abs-native: B-path (transpile+exec) → ast-eval
+            service/evaluator    ← Abs-native: B-path (transpile+exec) single engine
                  │
                  ▼
             service / lsp / vite / dts
@@ -171,7 +171,7 @@ parser ──▶ core
 | **Parser** | Parse JS/TS source into AST (Babel) |
 | **Directive Extractor** | Extract `@nudo:*` from comments; refine/import parsed in core |
 | **algebra (Abs)** | Types as computation: eval, check, leq, generalize |
-| **Evaluator (Abs-native)** | B-path transpile+exec; ast-eval fallback for non-B-hosted files |
+| **Evaluator (Abs-native)** | B-path transpile+exec only; fail-closed for B-incapable sources |
 | **surface / arithmetic / abs-route** | Arithmetic, comparison, unary, spread routed through algebra |
 | **Environment** | Variable bindings (name → Abs) |
 

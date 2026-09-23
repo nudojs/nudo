@@ -94,7 +94,7 @@ impl.apply → impl.body → impl.relation → isRelFn(shape-only) → unknown
 8. **重复 α**（`paramTypes=[A1,A1]`）先绑定保留，不覆盖、不 join。
 9. **filter 不增强元素 pred**；改动须重开设计，不得顺手加。
 10. **函数 union 回调**在统一入口内逐 member 应用后 join，不得静默掉成 unknown。
-11. **Identifier 纪律**：ast-eval 保留既有 `env.fns` 路径；exec 宿主不强行新增 `env.fns`。
+11. **Identifier 纪律**：`env.fns` 解析注入走 `compiledBodyOf`（Abs 值 / `absFunction` 包装）；不可解析名（全局/自递归）整段回落解释路径保预算。
 12. **跨文件不自动归纳**；关系经 harvest / env / `relationFn` 进入。
 13. **形参别名不提升**；P3 调用点经验泛化不入主路径。
 14. **金标 / 零误报门禁不因关系展示而放松**；promote 来源只 warning。
@@ -116,7 +116,7 @@ impl.apply → impl.body → impl.relation → isRelFn(shape-only) → unknown
 
 - packages/core/src/algebra/hof.ts
 - packages/core/src/algebra/abs-fn.ts
-- packages/core/src/algebra/ast-eval.ts
+- packages/core/src/algebra/ast-env.ts · ast-records.ts · call-budget.ts
 - packages/core/src/algebra/exec/call.ts
 - packages/core/src/algebra/exec/class.ts
 - packages/core/src/algebra/generalize.ts

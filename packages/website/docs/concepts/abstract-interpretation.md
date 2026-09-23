@@ -45,7 +45,7 @@ When Nudo executes `transform(string())`, the engine propagates `string()` throu
 |-----------|----------------|
 | **Parser** | Parse JS/TS source into AST (delegates to Babel) |
 | **Directive Extractor** | Extract `@nudo:*` directives from comments |
-| **Evaluator** | B-path transpile+exec (ast-eval fallback): evaluate each node with Abs |
+| **Evaluator** | B-path transpile+exec (single engine): evaluate each node with Abs |
 | **surface / arithmetic / abs-route** | Operator semantics on Abs for arithmetic, comparison, unary, spread |
 | **Environment** | Manage variable scopes and bindings (name → Abs) |
 | **Branch Executor** | Handle conditional branches: fork, narrow, evaluate, merge |
@@ -55,7 +55,7 @@ When Nudo executes `transform(string())`, the engine propagates `string()` throu
 
 ## Evaluation Rules
 
-The evaluator executes the function body with **Abs** values. On the primary B path the source is transpiled and run with Abs operands; the ast-eval fallback walks the AST directly with the same Abs rules. For each AST node type there is a corresponding evaluation rule.
+The evaluator executes the function body with **Abs** values. Source is transpiled and run with Abs operands (single B-path engine). For each AST node type there is a corresponding lowering/evaluation rule.
 
 ### Literals
 

@@ -1,7 +1,7 @@
 # 移除 ast-eval：B-path 单引擎化计划
 
-> **状态**：执行中（2026-09-22）。路线已改判为「Φ-native B → 删除 ast-eval」
-> （P4 改判节），P5/P6 已落地，P7 进行中。
+> **状态**：**已完成**（2026-09-23 P9 ast-eval 删除）。路线：「Φ-native B → 删除 ast-eval」。
+> top-level-this 已按 ESM TypeError 托管（见 P7 复核）。
 > **真源**：求值架构与集合语义 → evaluator-paths.md；架构 → kernel-merge.md。
 
 ## 1. 范围事实（本次会话验证，逐条 grep/实测）
@@ -167,21 +167,22 @@ phi-free 切片，需先给 generalize 线程 modules+mocks）。
 `applyAbsFn`，解释语义/递归预算保留）；任一不可解析（全局名/自递归名）→
 整体回落解释路径。trace 实测：sibling-const 注入编译；不可解析名无注入。
 
-### P7：B 回落面收缩（件 D 进行中）
+### P7：B 回落面收缩（件 D）✅ 语义已裁决（2026-09-23 复核）
 
 - **3491fe2**：`import.meta` / 动态 `import()` 从抛 unsupported 改为
   `$unknown()` 保守 lowering（与 ast-eval 同类表达式处理对齐；动态 import
   原生返回 Promise，静默折 `$lit(undefined) #exact` 是假精确）——含
   import.meta 的现代 ESM 依赖不再整体回落。
-- **残余 unsupported 清单**（transpile 5 处 throw 实测）：`top-level-this`
-  （真能力边界——CJS 风格 `this.x=1`，回落保持宽容处理）；`statement:*`/
+- **top-level-this 语义裁决 ✅（ESM TypeError，已落地）**：B 按原生 ESM
+  建模——顶层 `this` 读 → `$lit(undefined)`；`this.x = 1` 经 strict 写路径
+  硬抛 TypeError（模块装载失败，catch 可吸收）。`isBPathCapable` 恒 true，
+  顶层 this 不再关整文件 B 路径。测试：`bpath-topthis.test.ts`。
+- **残余 unsupported 清单**（transpile throw 实测）：`statement:*`/
   `expression:*` default（实测不可达：with 被 parser strict 拒绝、嵌套类/
-  标签块/全解构形态含 rest/计算键/默认值/成员目标全部已 lower——JSX 是
-  唯一实际可达）；`assign-target`×2（实测不可达，防御性）。
-- **评估结论**：模块图兜底回落在实测中不可达（全语料零回落不变量 +
-  残余清单收窄至 top-level-this/JSX）。删除兜底的判定条件 = 这两类构造
-  的 B 语义裁决（ESM 下 `this.x=1` 原生 TypeError——B 可精确建模，但会
-  改变 CJS 风格依赖的分析结果，属产品语义决策，待用户拍板）。
+  标签块/全解构形态含 rest/计算键/默认值/成员目标全部已 lower——**JSX 是
+  唯一实际可达**）；`assign-target`×2（实测不可达，防御性）。
+- **评估结论**：模块图兜底在 P9 已删（fail-closed）。JSX 仍 B-incapable →
+  显式无信息（空导出），属诚实能力边界，非回落路径。
 
 ### P9：ast-eval 删除完成（2026-09-23）
 
@@ -209,7 +210,8 @@ LSP 节点表/case 重放、analyzer 记录通道（B 唯一源）、CLI assume�
 换工具 13 文件（子代理批量）；契约更新（fail-closed 面）。
 
 **终局验证**：core 160 文件 1823 测试 12.85s 全绿；service/cli/parser/
-lsp/vite-plugin 853/854（唯一 lsp agent-interface-draft 为长期 baseline）；
+lsp/vite-plugin 全绿（2026-09-23 曾记 853/854 + `agent-interface-draft`
+长期 baseline，**后续已绿**，复核 855/855 · 全仓 2718/2718 · 该文件 5 连跑）；
 差分 155、gold 150、real-packages 10（3.17s）、examples 149、lint 全绿。
 
 **架构终态**：单引擎（B-path）——转译 + new Function 执行 + 代数层

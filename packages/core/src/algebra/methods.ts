@@ -43,9 +43,9 @@ function strArr(conf: Abs["conf"] = "path"): Abs {
 }
 
 /**
- * replace 回调桥接的最小环境：宿主 applyCallbackHost 由 ast-eval 模块
- * 注册（B-path 经 ast-eval 的 emptyEnv import 已触发加载）；fn Abs 的
- * impl.env（闭包）优先，此 env 仅作 hofCollect 等字段兜底。
+ * replace 回调桥接的最小环境：宿主 applyCallbackHost 由 exec/call.ts
+ * 注册（B-path `$call` 宿主）；fn Abs 的 impl.env（闭包）优先，此 env
+ * 仅作 hofCollect 等字段兜底。
  */
 function callbackEnv(): unknown {
   return { vars: new Map(), fns: new Map(), hofCollect: undefined };

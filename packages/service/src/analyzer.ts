@@ -2076,7 +2076,7 @@ function analyzeFileUncachedInner(
     const fnNode = resolveFunctionNode(candidate.node);
     // 入口无约束参数 = any（design-cli-semantics §2）；不是 unknown（推导失败）
     const argAbsEntry = extractParamNames(fnNode).map(() => anyAbs);
-    // B 路径主求值（capable）；失败再 Abs ast-eval
+    // B-path 唯一求值；失败 fail-closed（entryAbs 保持 undefined）
     let entryAbs: Abs | undefined;
     let entryThrowsAbs: Abs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
     const entryEffects: MayThrowEffect[] = [];
@@ -2405,7 +2405,7 @@ function resolveImportAbs(spec: string, fromFile: string): string | null {
   return null;
 }
 
-/** Abs 原生重求值（无损）；B 路径 transpile+exec 优先，失败回退 ast-eval */
+/** Abs 原生重求值（无损）；B-path 唯一引擎，失败返回 undefined（fail-closed） */
 function tryEvalAbsRaw(
   source: string,
   fnName: string,
@@ -2418,8 +2418,8 @@ function tryEvalAbsRaw(
 }
 
 /**
- * Abs 原生重求值 + throws（T19）：B-path 已带 throws；ast-eval 走 analyzeFnFull。
- * 失败返回 undefined。require 源码不走 Abs。
+ * Abs 原生重求值 + throws（T19）：B-path 带 throws；失败返回 undefined。
+ * require 源码不走 Abs。
  */
 function tryEvalAbsFull(
   source: string,
@@ -2452,7 +2452,7 @@ function tryEvalAbsFull(
 }
 
 /**
- * entry@ 的 Abs 原生路径：自包含源码用 ast-eval（类型即计算）。
+ * entry@ 的 Abs 原生路径：自包含源码走 B-path（类型即计算）。
  * 含 import/require 或求值失败时返回 undefined。
  */
 function tryEvalEntryAbs(
