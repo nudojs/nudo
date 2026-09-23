@@ -178,7 +178,7 @@ Promise 建模为效果形状（`eff`）：
 
 Nudo 将异常视为函数类型的一等属性。每个函数的推断类型都同时包含 `returns` 和 `throws`：
 
-```javascript
+```javascript verify
 function divide(a, b) {
   if (b === 0) throw new Error("Division by zero");
   return a / b;

@@ -12,7 +12,7 @@ description: 了解 Nudo 如何按调用点收窄类型——比较守卫、判�
 
 与字面量的比较按调用点收窄实参：每个具体调用只走与实参匹配的分支。
 
-```js
+```js verify
 function pickAdult(age) {
   if (age >= 18) return age;
   return -1;
@@ -35,7 +35,7 @@ pickAdult(12);
 
 把属性与字符串字面量比较（`shape.kind === "circle"`）时，匹配调用的分支看到该调用实参的对象形状。
 
-```js
+```js verify
 function area(shape) {
   if (shape.kind === "circle") {
     return shape.radius * 3.14159;
@@ -60,7 +60,7 @@ circle 调用走 `if` 分支算出 `6.28318`；square 调用落到 `side * side`
 
 两类守卫都按具体调用分叉，收窄后的值在匹配分支中保持精确行为。
 
-```js
+```js verify
 function len(x) {
   if (typeof x === "string") return x.length;
   if (Array.isArray(x)) return x.length;
@@ -86,7 +86,7 @@ len(5);
 
 对判别字段的 `switch` 按 `case` 子句收窄——包括 `@nudo:case` 指令输入。
 
-```js
+```js verify
 /**
  * @nudo:case "idle" ({ status: "idle" })
  * @nudo:case "loading" ({ status: "loading", requestId: "abc" })

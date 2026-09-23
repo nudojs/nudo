@@ -36,7 +36,7 @@ Extension packaging and Marketplace release steps: [Contributing — Releases](.
 
 Hover over an expression to see its inferred type. The extension uses `getTypeAtPosition` to compute the type at the cursor and displays it in a hover tooltip.
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "test" (42)
  */

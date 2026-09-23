@@ -68,7 +68,7 @@ function subtract(a, b) {
 }
 ```
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "strings" ("hello")
  * @nudo:case "numbers" (42)
@@ -111,7 +111,7 @@ function lengthOf(s) {
 
 ### 示例
 
-```javascript
+```javascript verify
 /**
  * @nudo:pure
  * @nudo:case "add" (number(), number())
@@ -144,7 +144,7 @@ function add(a, b) {
 
 ### 示例
 
-```javascript
+```javascript verify
 /**
  * @nudo:skip
  */
@@ -161,7 +161,7 @@ function heavyComputation(data) {
   skipped (no return type declared)
 ```
 
-```javascript
+```javascript verify
 /**
  * @nudo:skip number()
  */

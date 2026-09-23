@@ -730,5 +730,20 @@
   },
   "playground.metaDescription": {
     "message": "Nudo Playground — 执行 JavaScript、观察中间值"
+  },
+  "theme.DocItem.agent.copyMarkdown": {
+    "message": "复制为 Markdown"
+  },
+  "theme.DocItem.agent.copied": {
+    "message": "已复制！"
+  },
+  "theme.DocItem.agent.openChatGPT": {
+    "message": "在 ChatGPT 打开"
+  },
+  "theme.DocItem.agent.openClaude": {
+    "message": "在 Claude 打开"
+  },
+  "theme.DocItem.agent.hint": {
+    "message": "面向 agent：每个页面都在同路径旁挂一份原始 markdown（URL 加 .md）。"
   }
 }

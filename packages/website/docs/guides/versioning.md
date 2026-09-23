@@ -76,6 +76,12 @@ npm i @nudojs/env@0.4.1
 # read node_modules/@nudojs/env/CHANGELOG.md for BREAKING bullets
 ```
 
+## Docs versioning
+
+The site documents **`main`** — the announcement bar shows which package versions that corresponds to (read from `packages/*/package.json` at build time), and the table above is generated from the same source. Per-package release history: [Releases](../releases.md) and each package's `CHANGELOG.md`.
+
+Versioned docs (`/docs/<version>/…` snapshots) are deliberately deferred until 1.0: today the CLI/service lines move together and a second copy would drift faster than it helps. Until then, pin package versions (table above) when you need bit-stable behaviour.
+
 ## Changesets (contributors)
 
 ```bash

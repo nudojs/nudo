@@ -117,7 +117,7 @@ file_patterns = ["**/*.js", "**/*.mjs", "**/*.ts"]
 
 ### 探索与 case
 
-```js
+```js verify
 function normalize(x) {
   const trimmed = x.trim();
   return Number(trimmed);

@@ -30,14 +30,14 @@ Open the same file in VS Code with the Nudo extension for hover and inlays.
 
 When you need *stronger obligations* (explicit contracts in CI), add a sidecar next to the source:
 
-```javascript
+```javascript verify
 // math.js
 export function add2(x) {
   return x + 2;
 }
 ```
 
-```javascript
+```javascript verify-sidecar
 // math.nudo.js — function binding must be fn({ params }, returns?)
 import { number, fn } from "@nudojs/core";
 

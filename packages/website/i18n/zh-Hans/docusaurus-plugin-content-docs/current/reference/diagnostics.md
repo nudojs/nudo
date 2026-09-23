@@ -150,7 +150,7 @@ assembled sidecar failed round-trip (path); refusing to write
 | **层** | L2 error（默认） |
 | **展示** | 签名行上的 `throws TypeError` |
 
-```javascript
+```javascript verify
 export function getName(user) {
   return user.name; // 任意接收者 → 可能抛
 }

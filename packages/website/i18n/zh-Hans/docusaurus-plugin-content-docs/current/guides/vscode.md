@@ -36,7 +36,7 @@ code --install-extension wmzy.nudo-vscode
 
 将鼠标悬停在表达式上可查看其推断类型。扩展通过 `getTypeAtPosition` 计算光标处的类型，并在悬停工具提示中显示。
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "test" (42)
  */

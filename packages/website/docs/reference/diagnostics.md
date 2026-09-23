@@ -150,7 +150,7 @@ The assembled sidecar source failed to re-parse to the derived interface. **Erro
 | **Layer** | L2 error (default) |
 | **Display** | `throws TypeError` on the signature line |
 
-```javascript
+```javascript verify
 export function getName(user) {
   return user.name; // any receiver → may throw
 }

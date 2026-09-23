@@ -30,14 +30,14 @@ npx nudojs test ./src/app.js    # 全部推断用例
 
 需要**更强义务**（CI 显式契约）时，在源文件旁加侧车：
 
-```javascript
+```javascript verify
 // math.js
 export function add2(x) {
   return x + 2;
 }
 ```
 
-```javascript
+```javascript verify-sidecar
 // math.nudo.js — 函数绑定必须是 fn({ 参数 }, 返回?)
 import { number, fn } from "@nudojs/core";
 

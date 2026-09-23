@@ -117,7 +117,7 @@ Each example is a complete `workspace/executeCommand` payload — copy, adjust t
 
 ### Exploration and cases
 
-```js
+```js verify
 function normalize(x) {
   const trimmed = x.trim();
   return Number(trimmed);

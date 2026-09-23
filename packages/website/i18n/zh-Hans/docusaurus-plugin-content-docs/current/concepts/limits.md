@@ -42,6 +42,18 @@ description: 诚实边界与非目标 —— Nudo 不宣称什么、调用点上
 
 Env harvest 覆盖率**不是**完备性承诺。
 
+**`/// @nudo:env <name>` 会让 `check` 面退化（已知缺口）。** 声明了 env 指令的文件当前会整体失去符号面：`nudo check` 对**每个**函数都打印 `unknown` + `nudo:unknown-inference`（包括完全不碰 env API 的函数），而同一文件上 `nudo test`（逐调用点求值）仍然精确：
+
+```text
+$ nudo check envfile.js        # /// @nudo:env node + home() { return process.cwd(); }
+  home() => unknown            # warning: signature has true unknown (inference failed)
+
+$ nudo test envfile.js
+  call@L7  () => string        # 逐调用点结果精确
+```
+
+符号面支持 env 注入之前的替代做法：含 env 的文件依赖 `nudo test` / IDE hover，或把 env 相关代码挪到被检查文件所 import 的模块边界之后。
+
 ## 何时应继续以 TypeScript 为主
 
 - 代码库是 `.ts`-first，标注/泛型就是产品

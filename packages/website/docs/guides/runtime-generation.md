@@ -32,14 +32,14 @@ Full option/exit-code spec: [CLI Reference](../api/cli-reference.md#nudo-export)
 
 The strongest workflow: declare the domain once in a sidecar, let `export` generate the runtime gate from it.
 
-```js
+```js verify
 // src/api/users.js
 export function createUser(input) {
   return { id: 123, name: input.name, age: input.age };
 }
 ```
 
-```js
+```js verify-sidecar
 // src/api/users.nudo.js — contract (also plain JS)
 import { number, string, shape, fn } from "@nudojs/core";
 
@@ -91,7 +91,7 @@ It is a runtime gate — **not** a replacement for `nudo check`. CI still gates 
 
 Without a sidecar, export projects **the join of observed call-site Abs** — what your code actually passes, not a hand-written type:
 
-```js verify
+```js
 // src/api/inline.js
 export function createUser(input) {
   return { id: 123, name: input.name, age: input.age };
@@ -152,7 +152,7 @@ nudo export src/api/inline.js --format guard --out dist
 # writes dist/inline.nudo.guard.ts
 ```
 
-```js
+```js verify
 // === createUser Type Guards ===
 export function iscreateUserOutput(data) {
   return typeof data === "object" && data !== null && data.id === 123 && data.name === "Ada" && data.age === 36;

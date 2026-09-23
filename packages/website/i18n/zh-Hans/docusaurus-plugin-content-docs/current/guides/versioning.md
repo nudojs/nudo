@@ -76,6 +76,12 @@ npm i @nudojs/env@0.4.1
 # 阅读 node_modules/@nudojs/env/CHANGELOG.md 中的 BREAKING 条目
 ```
 
+## 文档版本
+
+站点记录的是 **`main`** —— 顶部公告栏显示它对应的各包版本（构建期从 `packages/*/package.json` 读取），上表也由同一来源生成。按包的发布历史见 [Releases](../releases.md) 与各包 `CHANGELOG.md`。
+
+版本化文档（`/docs/<version>/…` 快照）**刻意推迟到 1.0**：当前 cli/service 版本线同步前进，第二份副本的漂移速度会快于它带来的收益。在那之前，需要逐位稳定的行为时请按上表锁定包版本。
+
 ## Changesets（贡献者）
 
 ```bash

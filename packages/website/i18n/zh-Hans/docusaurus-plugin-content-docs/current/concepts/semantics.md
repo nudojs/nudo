@@ -12,7 +12,7 @@ Nudo 通过*执行*你的代码来推断类型，所以推断质量正好等于�
 
 字面量接收者上的字符串方法在求值期折叠。
 
-```js
+```js verify
 function upper() { return "hello".toUpperCase(); }
 upper();                              // → "HELLO"
 
@@ -35,7 +35,7 @@ sli();                                // → "el"
 
 具体边界的 `for` 循环求值出精确结果。
 
-```js
+```js verify
 function sumTo(n) {
   let sum = 0;
   for (let i = 0; i < n; i++) {
@@ -54,7 +54,7 @@ sumTo(5);
 
 具体数组上的 `for...of` 同样精确：
 
-```js
+```js verify
 function sumArr(arr) {
   let s = 0;
   for (const x of arr) {
@@ -69,7 +69,7 @@ sumArr([1, 2, 3]);                    // → 6
 
 循环跳转是信号：跳出迭代中绑定的值被保留。
 
-```js
+```js verify
 function findBig() {
   let found;
   for (const x of [1, 2, 3, 4]) {
@@ -95,7 +95,7 @@ findBig();
 
 具体对象上的 `Object.keys` 返回精确的键元组。
 
-```js
+```js verify
 function keysOf() { return Object.keys({ port: 3000, host: "x" }); }
 keysOf();
 ```
@@ -110,7 +110,7 @@ keysOf();
 
 字面量数值实参上的 `Math` 方法在求值期折叠——调用点与 `@nudo:case` 两条路径皆然。
 
-```js
+```js verify
 function root(n) { return Math.sqrt(n); }
 root(9);
 ```
@@ -162,7 +162,7 @@ hasIter([1]);
 
 全局强制转换构造器与数值解析器在字面量上折叠为精确结果——调用点与 `@nudo:case` 两条路径皆然：
 
-```js
+```js verify
 function strOf(x) { return String(x); }
 strOf(5);                            // → "5"
 
@@ -191,7 +191,7 @@ floatOf("3.14");                     // → 3.14
 
 在函数体内进行的方法调用会把 `this` 绑定到 receiver——调用点与 `@nudo:case` 两条路径皆然。
 
-```js
+```js verify
 class Circle {
   constructor(r) { this.radius = r; }
   area() { return this.radius * this.radius; }
@@ -216,7 +216,7 @@ compute(5);
 
 递归函数按观测到的调用求值：每个顶层调用被完整展开，作为独立的 `call@` case 报告精确结果。
 
-```js
+```js verify
 function walk(n) {
   if (n <= 0) return 0;
   return n + walk(n - 1);
@@ -242,7 +242,7 @@ walk(2);
 
 求值器在调用点路径与 `@nudo:case` 下执行的更多字面量折叠：
 
-```js
+```js verify
 function eqCheck() { return 1 == "1"; }
 eqCheck();                            // → true
 

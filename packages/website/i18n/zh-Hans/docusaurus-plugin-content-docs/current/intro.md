@@ -27,7 +27,7 @@ description: Nudo 执行 JavaScript，在 check 上打印签名，并门禁契�
 
 ## 从源码到门禁
 
-```javascript
+```javascript verify
 // calc.js
 export function scale(x) {
   return x + 1;
@@ -36,7 +36,7 @@ export function scale(x) {
 scale(5);
 ```
 
-```javascript
+```javascript verify-sidecar
 // calc.nudo.js — 显式契约（义务）
 import { number, fn } from "@nudojs/core";
 export const scale = fn({ x: number().gt(0) }, number());

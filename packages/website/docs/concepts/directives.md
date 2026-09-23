@@ -68,7 +68,7 @@ function subtract(a, b) {
 }
 ```
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "strings" ("hello")
  * @nudo:case "numbers" (42)
@@ -113,7 +113,7 @@ Mark a function as pure. The Abs `fn` value carries a pure marker and the evalua
 
 ### Example
 
-```javascript
+```javascript verify
 /**
  * @nudo:pure
  * @nudo:case "add" (number(), number())
@@ -146,7 +146,7 @@ Skip abstract interpretation of the function body: the engine does not evaluate 
 
 ### Examples
 
-```javascript
+```javascript verify
 /**
  * @nudo:skip
  */
@@ -163,7 +163,7 @@ function heavyComputation(data) {
   skipped (no return type declared)
 ```
 
-```javascript
+```javascript verify
 /**
  * @nudo:skip number()
  */

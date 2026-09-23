@@ -20,7 +20,7 @@ description: Nudo 实用示例 —— 调用点观察、侧车契约、字符串
 
 普通 JS + 调用点。无注解。`nudo check` 打印签名；调用点提供证据。
 
-```javascript
+```javascript verify
 export function subtract(a, b) {
   return a - b;
 }
@@ -56,7 +56,7 @@ signatures
 
 ### 2. 侧车契约 —— Day 1 义务
 
-```javascript
+```javascript verify
 // pricing.js
 export function lineTotal(price, qty) {
   return price * qty;
@@ -66,7 +66,7 @@ lineTotal(12, 3);
 lineTotal(0, 2);
 ```
 
-```javascript
+```javascript verify-sidecar
 // pricing.nudo.js —— 契约（同样是普通 JS）
 import { number, fn } from "@nudojs/core";
 
@@ -99,7 +99,7 @@ issues
 
 ### 3. 来自调用点的对象 shape
 
-```javascript
+```javascript verify
 function greet(user) {
   return user.name + " is " + user.age;
 }
@@ -125,7 +125,7 @@ addP({ x: 1, y: 2 });
 
 spread 合并 shape：
 
-```js
+```js verify
 function mixin(base, ext) {
   return { ...base, ...ext };
 }
@@ -143,7 +143,7 @@ mixin({ host: "localhost", port: 8080 }, { port: 3000, debug: true });
 
 ### 4. 模板字符串 —— 超越声明类型
 
-```javascript
+```javascript verify
 export function coupon(code) {
   return `SAVE-${code.toUpperCase()}`;
 }
@@ -168,7 +168,7 @@ TypeScript 通常把它拓宽为 `string`。Nudo 在调用点观察到具体的�
 
 ### 6. 具体边界的循环
 
-```javascript
+```javascript verify
 function sumTo(n) {
   let sum = 0;
   for (let i = 0; i < n; i++) sum += i;
@@ -194,7 +194,7 @@ sumTo(5);
 
 ### 8. `typeof` 判别
 
-```javascript
+```javascript verify
 export function transform(x) {
   if (typeof x === "string") return x.toUpperCase();
   if (typeof x === "number") return x + 1;
@@ -218,7 +218,7 @@ transform(null);
 
 ### 10. 通过 `@nudo:env web` 使用 Web API
 
-```javascript
+```javascript verify
 /// @nudo:env web
 ```
 
@@ -226,7 +226,7 @@ transform(null);
 
 ### 11. Mock 外部依赖
 
-```javascript
+```javascript verify
 // @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) })
 ```
 
@@ -238,7 +238,7 @@ transform(null);
 
 `@nudo:case` 为 `nudo test` / LSP 用例切换注入场景输入。它**不**创建 CI 义务。
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "double digits" (10)
  */
