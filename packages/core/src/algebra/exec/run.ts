@@ -10,7 +10,7 @@
 
 import { rtAllBindings } from "./rt.ts";
 import { resetBCallBudget } from "./calls.ts";
-import { withExecPhi } from "./runtime.ts";
+import { withExecPhi, $copy } from "./runtime.ts";
 import { setBBindingSink } from "./calls.ts";
 import type { Abs } from "../abs.ts";
 import type { Phi } from "../pred.ts";
@@ -573,9 +573,13 @@ export function callTranspiledExportFull(
   const fn = exports[name];
   if (typeof fn === "function") {
     resetBCallBudget(); // 每次具名调用独立预算（不跨调用累积 totalCalls）
+    // D1：重跑/导入调用用副本——mutator 不得把入参态污染回调用方/记录
+    const callArgs = args.map((a) =>
+      a && typeof a === "object" && "shape" in (a as object) ? $copy(a) : a,
+    );
     return runWithLoopExits(() => {
       try {
-        const invoke = () => (fn as (...a: Abs[]) => unknown)(...args);
+        const invoke = () => (fn as (...a: Abs[]) => unknown)(...callArgs);
         const r = opts?.phi ? withExecPhi(opts.phi, invoke) : invoke();
         // 微任务（then/catch 回调）在同步返回值算完后才跑
         drainPromiseMicros();

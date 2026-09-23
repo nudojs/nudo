@@ -8,7 +8,7 @@ import type { Abs } from "../abs.ts";
 import { abs, unknown } from "../abs.ts";
 import { evalGlobalFn } from "../builtins.ts";
 import { $call } from "./call.ts";
-import { callAtFunctionBoundary } from "./runtime.ts";
+import { callAtFunctionBoundary, $copy } from "./runtime.ts";
 import { pureFnNameOf } from "../abs-fn.ts";
 import { noteAbsTruncation, callBudgetKey, resetBForkBudget } from "../call-budget.ts";
 import {
@@ -266,6 +266,10 @@ export function $callNamed(
       if (al) tagAbsOrigin(args[i]!, { line: al[0], column: al[1] });
     }
   }
+  // D1：调用前快照实参——mutator（pop/push）会就地改写，记录必须是入参态
+  const argsSnapshot = args.map((a) =>
+    a && typeof a === "object" && "shape" in (a as object) ? $copy(a) : (a as Abs),
+  );
   if (loc) pushCallLoc({ line: loc[0], column: loc[1] });
   try {
     if (typeof fn === "function") {
@@ -319,7 +323,7 @@ export function $callNamed(
       try {
         bCallCollector({
           fnName: name,
-          args,
+          args: argsSnapshot,
           result: threw ? unknown : result,
           callLoc: loc ? { line: loc[0], column: loc[1] } : undefined,
           threw,
