@@ -38,11 +38,14 @@ export function truncatedAbs(): Abs {
   return abs({ k: "unknown" }, undefined, undefined, "opaque");
 }
 
-/** 调用指纹：命名函数用 name+arg shapes；一等函数用对象身份 */
-export function callBudgetKey(kind: string, id: string, args: Abs[]): string {
+/** 调用指纹：命名函数用 name+arg shapes；一等函数用对象身份。
+ *  实参可能是裸 JS 值（B run 里模块函数作实参）——不得裸读 shape。 */
+export function callBudgetKey(kind: string, id: string, args: unknown[]): string {
   const parts = args.map((a) => {
-    const t = a.term ? termToString(a.term) : "";
-    return `${a.shape.k}:${t}`;
+    const sh = (a as { shape?: { k?: string }; term?: never } | null | undefined)?.shape;
+    if (!sh) return `js:${typeof a}`;
+    const t = (a as { term?: never }).term ? termToString((a as { term: never }).term) : "";
+    return `${sh.k}:${t}`;
   });
   return `${kind}|${id}|${parts.join(",")}`;
 }

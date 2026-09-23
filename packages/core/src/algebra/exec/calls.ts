@@ -8,9 +8,8 @@ import type { Abs } from "../abs.ts";
 import { abs, unknown } from "../abs.ts";
 import { evalGlobalFn } from "../builtins.ts";
 import { $call } from "./call.ts";
-import { termToString } from "../term.ts";
 import { callAtFunctionBoundary } from "./runtime.ts";
-import { noteAbsTruncation } from "../call-budget.ts";
+import { noteAbsTruncation, callBudgetKey } from "../call-budget.ts";
 import {
   tagAbsOrigin,
   pushCallLoc,
@@ -192,16 +191,10 @@ function bTruncatedAbs(): Abs {
 }
 
 function bCallBudgetKey(name: string, fn: unknown, args: Abs[]): string {
-  // 实参可能是裸 JS 值（B run 里模块函数作实参传的就是 JS 函数）——不得读
-  // shape（undefined 崩溃会被吞成 unknown 假结果）
-  const parts = args.map((a) => {
-    const sh = (a as { shape?: { k?: string } } | null | undefined)?.shape;
-    if (!sh) return `js:${typeof a}`;
-    const term = (a as { term?: never }).term;
-    return `${sh.k}:${term ? termToString(term) : ""}`;
-  });
+  // 实参可能是裸 JS 值（B run 里模块函数作实参传的就是 JS 函数）——统一走
+  // call-budget 的防御化键（不得裸读 shape）
   const id = fn && typeof fn === "object" ? bStableId(fn) : "prim";
-  return `${name}|${id}|${parts.join(",")}`;
+  return callBudgetKey(name, id, args);
 }
 
 /** 进入命名调用：超限/cycle → 不执行，返回 opaque（并上报截断） */

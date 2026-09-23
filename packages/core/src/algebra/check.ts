@@ -64,7 +64,15 @@ import type { PolyFn } from "./generalize.ts";
 import { listTopFunctions, scanLiteralCalls } from "./scan.ts";
 import type { AbsModuleExports } from "./abs-modules.ts";
 import { $invoke, $staticInvoke, withExecPhi } from "./exec/index.ts";
-import { tryRunTranspiled, callTranspiledExportFull, bindingsOf, type TranspiledCallResult } from "./exec/run.ts";
+import {
+  tryRunTranspiled,
+  callTranspiledExportFull,
+  bindingsOf,
+  type TranspiledCallResult,
+  type RunTranspiledOptions,
+} from "./exec/run.ts";
+import { isNudoThrow } from "./exec/nudo-throw.ts";
+import { errorTypeAbs } from "./exec/may-throw.ts";
 import { setBAssignCollector, setBCallCollector, type BCallRecord } from "./exec/calls.ts";
 import {
   setMayThrowCollector,
@@ -196,6 +204,7 @@ function checkMemoKey(
     identityOpts.entryThrows ?? "error",
     (identityOpts.ignoreThrows ?? []).join(",") || "-",
     moduleMapId(identityOpts.modules),
+    moduleMapId(identityOpts.inject as object | undefined),
     // skips 必须进键：同 source 不同 skip 表（host 解析差异 / 测试注入）
     // 不得回放另一档报告。
     skipsKey(identityOpts.skips),
@@ -266,6 +275,12 @@ export type CheckOptions = {
    *  B 与解释路径共用——import/require 按表解析（CLI 经
    *  evalAbsModuleGraph 计算后下传） */
   modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+  /**
+   * B run 注入包（modules/mocks/envGlobals/replacements/as）——透传
+   * runTranspiled（generalize / L2 / 记录通道 / drift 同源）。对象身份进
+   * memo 键（调用方同文件内复用同一对象）。
+   */
+  inject?: RunTranspiledOptions;
   /**
    * `@nudo:skip [returnsExpr]`（host 用 parser 解析后下传）：函数名 → 声明的
    * 返回 Abs（null = 未声明）。命中函数不评估 body：签名按声明返回上屏
@@ -530,6 +545,7 @@ function checkSourceInner(
       depsFp,
       sidecarFp,
       modules: opts.modules,
+      ...(opts.inject ? { inject: opts.inject } : {}),
     });
     if (!g) {
       const isEntryCandidate =
@@ -547,7 +563,7 @@ function checkSourceInner(
           symbolic: abs({ k: "any" }, undefined, undefined, "path"),
           formals: [],
         } as unknown as PolyFn;
-        const effects = collectEntryMayThrows(source, name, synthetic, file, phi);
+        const effects = collectEntryMayThrows(source, name, synthetic, file, phi, opts);
         const throwsDisplayFallback = formatThrowsAbs(mayThrowEffectsToAbs(effects));
         const remaining = filterIgnoredThrows(effects, ignoreThrows);
         const gateDisplay = formatThrowsAbs(mayThrowEffectsToAbs(remaining));
@@ -600,7 +616,7 @@ function checkSourceInner(
     // L2 入口 throws：any/nullish 危险操作的效果（design-cli-semantics §3）
     let throwsDisplay: string | undefined;
     if (isEntry && entryThrowsMode !== "off") {
-      const effects = collectEntryMayThrows(source, name, g, file, phi);
+      const effects = collectEntryMayThrows(source, name, g, file, phi, opts);
       // 展示层始终上屏未过滤 throws（门禁过滤 ≠ 藏事实）
       throwsDisplay = formatThrowsAbs(mayThrowEffectsToAbs(effects));
       const remaining = filterIgnoredThrows(effects, ignoreThrows);
@@ -624,7 +640,7 @@ function checkSourceInner(
       }
     } else if (isEntry) {
       // 展示层仍上屏 throws（off 只关执法，不藏事实）
-      const effects = collectEntryMayThrows(source, name, g, file, phi);
+      const effects = collectEntryMayThrows(source, name, g, file, phi, opts);
       throwsDisplay = formatThrowsAbs(mayThrowEffectsToAbs(effects));
     }
 
@@ -792,8 +808,9 @@ function checkSourceInner(
   setBAssignCollector((r) => records.push(r));
   setBCallCollector((r) => bCalls.push(r));
   let bBindings: Map<string, unknown> | undefined;
+  const bAnalyze = bAnalyzeOpts(opts);
   try {
-    const bRun = tryRunTranspiled(source, { mode: "analyze" });
+    const bRun = tryRunTranspiled(source, bAnalyze);
     bBindings = bRun ? bindingsOf(bRun) : undefined;
     if (bBindings) {
       for (const [k, v] of bBindings) {
@@ -845,7 +862,7 @@ function checkSourceInner(
         return (fnName, args) => {
           try {
             if (!driftInit) {
-              driftRun = tryRunTranspiled(source, { mode: "analyze" });
+              driftRun = tryRunTranspiled(source, bAnalyze);
               driftInit = true;
             }
             if (!driftRun || !(fnName in driftRun)) return undefined;
@@ -867,6 +884,7 @@ function checkSourceInner(
       sidecarPresent: sidecarFp !== undefined,
       ...(autoBind !== undefined ? { autoBind } : {}),
       modules: opts.modules,
+      ...(opts.inject ? { inject: opts.inject } : {}),
     }),
   );
 
@@ -1038,6 +1056,7 @@ function collectEntryMayThrows(
   g: PolyFn,
   file: ReturnType<typeof parse>,
   phi: Phi,
+  opts: CheckOptions = {},
 ): MayThrowEffect[] {
   const effects: MayThrowEffect[] = [];
   const entryArgs = g.typeParams.map((t) => t.value);
@@ -1047,7 +1066,7 @@ function collectEntryMayThrows(
       // P2-a：L2 throws 求值 B-path 优先（may-throw 效果通道共享
       // recordMayThrow）；fail-closed：B 失败（类方法/转译失败）→ 无 L2
       // throws 证据（ast-eval analyzeFnFull 兜底已删）
-      const full = bPathThrowsOf(source, fnName, entryArgs);
+      const full = bPathThrowsOf(source, fnName, entryArgs, opts);
       if (!full) return effects;
       // 显式 throw（未被 try 消化）也进 L2
       if (full.throws && full.throws.shape.k !== "never") {
@@ -1071,23 +1090,48 @@ function collectEntryMayThrows(
 /** L2 throws 的 B-path 求值：顶层导出直调 + default 别名 + CJS 对象方法 +
  *  类静态方法桥；B 失败 → undefined（fail-closed：无 L2 证据）。 */
 const bPathRunMemo = new Map<string, Record<string, unknown>>();
+/** B analyze 选项：inject（mocks/env/replace/modules）与 opts.modules 同源合并 */
+function bAnalyzeOpts(opts: CheckOptions): RunTranspiledOptions {
+  return {
+    mode: "analyze" as const,
+    ...(opts.inject ?? {}),
+    ...(opts.modules ? { modules: opts.modules } : {}),
+  };
+}
+/** 桥接调用：NudoThrow/ReferenceError → throws Abs（与 callTranspiledExportFull 同口径） */
+function invokeAsThrows(fn: () => Abs): TranspiledCallResult {
+  try {
+    const result = withExecPhi(pTrue, fn);
+    return { result, throws: never };
+  } catch (e) {
+    if (isNudoThrow(e)) {
+      return { result: never, throws: e.absValue };
+    }
+    if (e instanceof ReferenceError) {
+      return { result: never, throws: errorTypeAbs("ReferenceError") };
+    }
+    throw e;
+  }
+}
 function bPathThrowsOf(
   source: string,
   fnName: string,
   args: Abs[],
+  opts: CheckOptions = {},
 ): TranspiledCallResult | undefined {
   // L2 解耦后两引擎口径一致：any 实参的数组方法调用同样记 may-throw
   //（提升是假设、不消除危险），约束与无约束入口都走 B。
+  const runKey = `${source}|${moduleMapId(opts.inject as object | undefined)}|${moduleMapId(opts.modules)}`;
   if (bPathRunMemo.size >= MAX_CHECK_MEMO) {
     const oldest = bPathRunMemo.keys().next().value;
     if (oldest !== undefined) bPathRunMemo.delete(oldest);
   }
-  let exports = bPathRunMemo.get(source);
+  let exports = bPathRunMemo.get(runKey);
   if (exports === undefined) {
-    const run = tryRunTranspiled(source, { mode: "analyze" });
+    const run = tryRunTranspiled(source, bAnalyzeOpts(opts));
     if (run === undefined) return undefined;
     exports = run;
-    bPathRunMemo.set(source, exports);
+    bPathRunMemo.set(runKey, exports);
   }
   const isAbsVal = (v: unknown): v is Abs =>
     !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);
@@ -1105,7 +1149,7 @@ function bPathThrowsOf(
       const [clsName, methodName] = fnName.split(".", 2);
       const clsAbs = exports[clsName ?? ""];
       if (isAbsVal(clsAbs)) {
-        return { result: withExecPhi(pTrue, () => $staticInvoke(clsAbs, methodName ?? "", args)), throws: never };
+        return invokeAsThrows(() => $staticInvoke(clsAbs, methodName ?? "", args));
       }
       return undefined;
     }
@@ -1117,7 +1161,7 @@ function bPathThrowsOf(
         if (d.shape.k === "fn") return call("default", args);
         // CJS module.exports = { getName(user){...} }：对象方法桥
         if (d.shape.k === "obj") {
-          return { result: withExecPhi(pTrue, () => $invoke(d, fnName, args)), throws: never };
+          return invokeAsThrows(() => $invoke(d, fnName, args));
         }
       }
     }
@@ -1334,6 +1378,8 @@ function scanCaseInconsistency(
     autoBind?: boolean;
     /** 宿主已求值的依赖导出表（generalize B/解释路径共用） */
     modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+    /** B run 注入包（与 CheckOptions.inject 同源） */
+    inject?: RunTranspiledOptions;
   },
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
@@ -1408,7 +1454,11 @@ function scanCaseInconsistency(
     args: string[],
     line: number | undefined,
   ): void => {
-    const g = generalizeFromAst(fnName, source, file ? { file, modules: opts.modules } : { modules: opts.modules });
+    const g = generalizeFromAst(fnName, source, {
+      ...(file ? { file } : {}),
+      modules: opts.modules,
+      ...(opts.inject ? { inject: opts.inject } : {}),
+    });
     if (!g) return;
     const paramNames = g.params;
     // 有效契约单点读取：只执法 handwritten（generated/implicit 不执法）

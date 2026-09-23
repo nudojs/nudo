@@ -14,12 +14,12 @@ import { never, unknown } from "../abs.ts";
 import { getFnImpl } from "../abs-fn.ts";
 import { compiledBodyOf } from "./body-fn.ts";
 import { joinAbs } from "../objects.ts";
-import { termToString } from "../term.ts";
 import { instantiateReturn, isRelFn, setApplyCallbackHost } from "../hof.ts";
 import { absFunction } from "../abs-fn.ts";
 import type { AstEnv } from "../ast-env.ts";
-import { isNudoThrow } from "./runtime.ts";
+import { isNudoThrow, pushThrowExit } from "./runtime.ts";
 import {
+  callBudgetKey,
   enterCall,
   exitCall,
   truncatedAbs,
@@ -62,20 +62,16 @@ export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
     try {
       return compiled(args);
     } catch (e) {
-      // body 抛错 → never（不把中间值当返回值）
+      // body 抛错 → never（不把中间值当返回值）；throw 载荷进 throwExits
+      // 供 callTranspiledExportFull 的 L2 throws 收集
       if (isNudoThrow(e)) {
+        pushThrowExit(e.absValue);
         return never;
       }
       throw e;
     }
   }
   return unknown;
-}
-
-/** 预算键（与 ast-eval callBudgetKey 同口径） */
-function callBudgetKey(kind: string, id: string, args: Abs[]): string {
-  const parts = args.map((a) => `${a.shape.k}:${a.term ? termToString(a.term) : ""}`);
-  return `${kind}|${id}|${parts.join(",")}`;
 }
 
 // 注册到 hof.applyCallbackAbs（原 ast-eval 模块级副作用的 B 等价迁移）：

@@ -254,6 +254,7 @@ function generalizeMemoKey(
     sc ?? "-",
     `${budget.maxDepth}/${budget.maxNodes}`,
     moduleMapId(opts.modules),
+    moduleMapId(opts.inject as object | undefined),
   ].join("|");
   return {
     key,

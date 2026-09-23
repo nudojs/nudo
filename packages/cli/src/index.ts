@@ -391,7 +391,7 @@ async function runCheck(
   } else {
     // B 注入包（模块图 + mocks + env 全局 + replace/as）——同文件内复用同一
     // 对象（checkSource/generalize memo 键按对象身份）
-    let inject: Record<string, unknown> | undefined;
+    let inject: import("@nudojs/core").RunTranspiledOptions | undefined;
     try {
       const graph = evalAbsModuleGraph(source, filePath);
       const reps = collectBPathReplacements(source);
@@ -418,7 +418,9 @@ async function runCheck(
       ...(autoBind === false ? { autoBind: false } : {}),
       entryThrows,
       ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
-      ...(inject && Object.keys(inject).length > 0 ? { modules: inject.modules as never, inject } : {}),
+      ...(inject && Object.keys(inject).length > 0
+        ? { modules: inject.modules as never, inject }
+        : {}),
       skips: collectSkipReturns(source),
     });
   }

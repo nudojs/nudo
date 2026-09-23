@@ -19,51 +19,85 @@ const compiledByImpl = new WeakMap<object, (args: Abs[]) => Abs>();
 /** 自名注入的 Abs 按 body 对象缓存——$callNamed cycle 键（对象身份）可立即命中 */
 const selfAbsByBody = new WeakMap<object, Abs>();
 
-/** body 的自由标识符集合（参数/声明/嵌套函数参数之外引用的名字）。
- *  非计算 property key（o.x / {x: 1}）不计数。 */
+/** body 的自由标识符集合（参数/词法声明之外引用的名字）。
+ *  嵌套函数 params/声明只作用于其词法作用域（不污染外层）；
+ *  非计算 property key（o.x / {x: 1} / {x(){}}）不计数。 */
 export function freeIdentifiers(body: Node, params: string[]): Set<string> {
-  const declared = new Set<string>(params);
   const free = new Set<string>();
+  const scopes: Set<string>[] = [new Set(params)];
+  const declare = (name: string): void => {
+    scopes[scopes.length - 1]!.add(name);
+  };
+  const isDeclared = (name: string): boolean => {
+    for (let i = scopes.length - 1; i >= 0; i--) {
+      if (scopes[i]!.has(name)) return true;
+    }
+    return false;
+  };
   const visit = (n: unknown): void => {
     if (!n || typeof n !== "object") return;
     const o = n as { type?: string; [k: string]: unknown };
     if (o.type === "Identifier" && typeof (o as { name?: unknown }).name === "string") {
       const name = (o as { name: string }).name;
-      if (!declared.has(name)) free.add(name);
+      if (!isDeclared(name)) free.add(name);
       return;
     }
     if (o.type === "VariableDeclarator") {
       const id = o.id as { type?: string; name?: string } | undefined;
-      if (id?.type === "Identifier" && id.name) declared.add(id.name);
+      if (id?.type === "Identifier" && id.name) declare(id.name);
+      // 只扫 init：id 已按声明处理（解构 id 保守当引用，保持既有覆盖面）
+      if (o.init && typeof o.init === "object") visit(o.init);
+      return;
     }
-    if (o.type === "FunctionDeclaration") {
-      const id = o.id as { type?: string; name?: string } | undefined;
-      if (id?.type === "Identifier" && id.name) declared.add(id.name);
-    }
-    if (
+    const isFnLike =
       o.type === "ArrowFunctionExpression" ||
       o.type === "FunctionExpression" ||
+      o.type === "FunctionDeclaration" ||
       o.type === "ObjectMethod" ||
-      o.type === "ClassMethod"
-    ) {
-      for (const p of (o.params as Array<{ type?: string; name?: string }>) ?? []) {
-        if (p.type === "Identifier" && p.name) declared.add(p.name);
+      o.type === "ClassMethod";
+    if (o.type === "FunctionDeclaration") {
+      const id = o.id as { type?: string; name?: string } | undefined;
+      // 函数名进外层作用域（提升）
+      if (id?.type === "Identifier" && id.name) declare(id.name);
+    }
+    if (isFnLike) {
+      scopes.push(new Set());
+      try {
+        const rawParams = (o.params as Array<{ type?: string; name?: string; argument?: { type?: string; name?: string } }>) ?? [];
+        for (const p of rawParams) {
+          if (p.type === "Identifier" && p.name) declare(p.name);
+          if (p.type === "RestElement" && p.argument?.type === "Identifier" && p.argument.name) {
+            declare(p.argument.name);
+          }
+        }
+        for (const p of rawParams as unknown[]) {
+          if (!p || typeof p !== "object") continue;
+          const pe = p as { type?: string; right?: unknown; [k: string]: unknown };
+          if (pe.type === "AssignmentPattern") {
+            if (pe.right && typeof pe.right === "object") visit(pe.right);
+          } else if (pe.type !== "Identifier" && pe.type !== "RestElement") {
+            visit(p);
+          }
+        }
+        if (o.body && typeof o.body === "object") visit(o.body);
+      } finally {
+        scopes.pop();
       }
+      return;
     }
     for (const key of Object.keys(o)) {
       if (key === "loc" || key === "start" || key === "end" || key === "tokens") continue;
-      // 非计算 property key：不当作引用
-      if (
-        (o.type === "MemberExpression" || o.type === "ObjectProperty" || o.type === "ObjectMethod") &&
-        key === "property" &&
-        (o as { computed?: boolean }).computed !== true &&
-        o.type !== "ObjectMethod"
-      ) {
-        continue;
-      }
-      if (o.type === "MemberExpression" && key === "property" && (o as { computed?: boolean }).computed !== true) {
-        continue;
-      }
+      // 非计算 property key：不当作引用（MemberExpression.property /
+      // ObjectProperty|ObjectMethod|ClassMethod|ClassProperty.key）
+      const isNonComputedKey =
+        (key === "property" || key === "key") &&
+        (o.type === "MemberExpression" ||
+          o.type === "ObjectProperty" ||
+          o.type === "ObjectMethod" ||
+          o.type === "ClassMethod" ||
+          o.type === "ClassProperty") &&
+        (o as { computed?: boolean }).computed !== true;
+      if (isNonComputedKey) continue;
       const v = o[key];
       if (Array.isArray(v)) {
         for (const item of v) if (item && typeof item === "object") visit(item);
