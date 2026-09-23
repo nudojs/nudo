@@ -21,7 +21,7 @@ packages/
 ```json
 {
   "nudo": {
-    "interface": { "autoBind": true },
+    "contract": { "autoBind": true },
     "analysis": { "mode": "exports", "diagnostics": "default" }
   }
 }
@@ -66,7 +66,7 @@ npx nudojs check packages/legacy-js/src
 | `include` | 相对项目根的路径白名单。空（默认）= 所有目标路径都可分析；混合仓**务必收窄**，让 tsserver 独占 `.ts`。 |
 | `exclude` | 始终保留 `node_modules` / `dist` / `coverage`。再加 `**/*.ts` / `**/*.tsx` / `**/*.d.ts`，避免打开 TS buffer 时触发 Nudo 分析。 |
 | `mode` | `exports`（出厂默认）分析含 export / 侧车 / 指令的 JS。见下文「directives vs exports」。 |
-| `diagnostics` | IDE 展示档：`default` = error + warning（静音噪声码）；`errors` = 仅 error；`off` 静音 IDE 展示路径（CLI `nudo check` 仍执法）。 |
+| `diagnostics` | IDE 展示档：`default` = error + warning（静音噪声码）；`errors` = 仅 error；`verbose` = 全部诊断不过滤；`off` 静音 IDE 展示路径（CLI `nudo check` 仍执法）。 |
 
 `.ts` 文件交给 tsc。Nudo LSP 仍会对匹配 `include` 且 `analysis.mode` 为 `exports` / `all` 的已打开 `.js` 文件提供 hover/inlay。
 
@@ -84,7 +84,7 @@ npx nudojs check packages/legacy-js/src
 ## 配方 3：渐进契约
 
 1. 先观察——`nudo check` / `nudo test`，不需要指令。
-2. 某个函数需要 CI 门禁时，在旁边加 `fn.nudo.js`。
+2. 某个函数需要 CI 门禁时，在旁边加一个 `<file>.nudo.js` 侧车。
 3. `nudo check` 只执法**手写**侧车；`@generated` 段是事实 + drift，不产生新义务。
 
 ## 配方：混合 JS/TS monorepo（避免双重错误风暴） {#recipe-mixed-js-ts-no-double-error-storm}

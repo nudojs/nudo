@@ -48,6 +48,10 @@ jobs:
       - name: Verify docs examples
         run: pnpm run verify:examples
 
+      # website docs 打 verify 标签的代码块跑真实 CLI 对 pin —— 文档示例漂移在此变红
+      - name: Verify website doc examples
+        run: pnpm run verify:docs
+
       # B1 — fail when committed docs/reports baseline drifted from env sources
       - name: Env coverage baseline check
         run: pnpm run coverage:env -- --check

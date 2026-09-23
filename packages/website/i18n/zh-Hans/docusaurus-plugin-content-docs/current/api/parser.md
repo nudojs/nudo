@@ -36,7 +36,7 @@ stripTypes<T extends Node>(ast: T): T
 
 ## 指令类型
 
-指令从注释中提取，使用 `@nudo:` 命名空间。函数级指令来自顶层语句的前导**块**注释；文件级与行内指令来自**行**注释（见 [`extractFileDirectives`](#extractfiledirectives) / [`extractInlineDirectives`](#extractinlinedirectives)）。
+指令从注释中提取，使用 `@nudo:` 命名空间。函数级指令来自顶层语句的前导注释（块或行）；文件级与行内指令来自**行**注释（见 [`extractFileDirectives`](#extractfiledirectives) / [`extractInlineDirectives`](#extractinlinedirectives)）。
 
 `Directive` 联合类型涵盖五种函数级指令：
 
@@ -124,7 +124,7 @@ type SampleDirective = {
 
 ### FileDirective
 
-文件顶部（任何语句之前）的行注释，对文件内所有函数生效：
+文件内任意位置的行注释，对文件内所有函数生效：
 
 ```typescript
 type FileDirective = EnvDirective | MockModuleDirective;
@@ -183,7 +183,7 @@ type FunctionWithDirectives = {
 extractDirectives(ast: Node): FunctionWithDirectives[]
 ```
 
-从顶层语句的前导块注释中提取 `@nudo:*` 指令。仅包含至少有一条指令的语句。支持：
+从顶层语句的前导注释（块或行）中提取 `@nudo:*` 指令。仅包含至少有一条指令的语句。支持：
 
 - `FunctionDeclaration`
 - `ExportDefaultDeclaration`（内含 FunctionDeclaration）
@@ -199,7 +199,7 @@ extractDirectives(ast: Node): FunctionWithDirectives[]
 extractFileDirectives(ast: Node): FileDirective[]
 ```
 
-从 AST 的顶层**行注释**提取文件级指令：`/// @nudo:env`（一个或多个逗号分隔的 env）与 `/// @nudo:mock-module "source" from "path"`（部分 mock 可带 `{ a, b }` 名单）。非 `File` 节点返回空数组。
+从 AST 的**行注释**（任意位置）提取文件级指令：`/// @nudo:env`（一个或多个逗号分隔的 env）与 `/// @nudo:mock-module "source" from "path"`（部分 mock 可带 `{ a, b }` 名单）。非 `File` 节点返回空数组。
 
 **示例：**
 ```javascript
@@ -233,7 +233,7 @@ parseCaseArgExpr(expr: string): Abs
 把指令类型表达式解析为 Abs——产品文法是约束构建器 + 具体字面量 + 结构字面量。用于 `@nudo:case` 实参、`@nudo:as`/`@nudo:replace`、mock 返回值与 `@nudo:skip` 返回表达式。
 
 **支持形式（按优先级）：**
-- 约束表达式（主文法）：`number()`、`number().gt(0)`、`lit(...)`、`union(…)`、`shape({…})`、`array(…)`、`fn({…}, …)`、`and`、`partial`/`pick`/`omit`/`record`/`required`/`readonly`/`nonNullable`
+- 约束表达式（主文法）：`number()`、`number().gt(0)`、`lit(...)`、`union(…)`、`shape({…})`、`array(…)`、`fn({…}, …)`、`and`、`partial`/`pick`/`omit`
 - 裸字面量：`true`、`false`、`null`、`undefined`、数字、带引号字符串
 - 函数：箭头表达式（`(x) => x + 1`）与 `function(x) { ... }`——解析为真实的函数 Abs
 - JSON 风格：`{ "key": value }`、`[a, b, c]`

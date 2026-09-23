@@ -1,10 +1,10 @@
 ---
-description: "将 AI 编码代理接入 Nudo 语言服务器：LSP→MCP 桥、原生 LSP 客户端、五个 agent 命令与拉取式诊断。"
+description: "将 AI 编码代理接入 Nudo 语言服务器：LSP→MCP 桥、原生 LSP 客户端、十一个 agent 命令与拉取式诊断。"
 ---
 
 # Agent 集成指南
 
-AI 编码代理——Claude Code、Cursor、Copilot、Zed 等——通过 Nudo 的**语言服务器** [`@nudojs/lsp`](../api/lsp.md) 访问推断能力。驱动 VS Code 扩展的同一个服务器，同时通过标准的 `workspace/executeCommand` 调用暴露五个 agent 命令，外加拉取式诊断。不需要安装或维持独立的 MCP 服务器进程：一个服务器同时服务编辑器*和* agent。
+AI 编码代理——Claude Code、Cursor、Copilot、Zed 等——通过 Nudo 的**语言服务器** [`@nudojs/lsp`](../api/lsp.md) 访问推断能力。驱动 VS Code 扩展的同一个服务器，同时通过标准的 `workspace/executeCommand` 调用暴露十一个 agent 命令，外加拉取式诊断。不需要安装或维持独立的 MCP 服务器进程：一个服务器同时服务编辑器*和* agent。
 
 面向 agent 的 Abs-first 工具（wire 名本 major **协议冻结**，映射到 CLI 动词）：
 
@@ -66,7 +66,7 @@ file_patterns = ["**/*.js", "**/*.mjs", "**/*.ts"]
 **[agent-lsp](https://github.com/blackwell-systems/agent-lsp)** —— 运行 `agent-lsp init`；它会自动探测 `PATH` 上的语言服务器并替你写好 MCP 客户端配置，把多个服务器编排成 agent 原生的工作流。
 
 :::note
-各桥转发的能力不同。标准 LSP 功能（hover、诊断、定义跳转）总会透传；如果某个桥没有把 `workspace/executeCommand` 转发到 Nudo 的五个命令，请改用方式二。
+各桥转发的能力不同。标准 LSP 功能（hover、诊断、定义跳转）总会透传；如果某个桥没有把 `workspace/executeCommand` 转发到 Nudo 的十一个命令，请改用方式二。
 :::
 
 ### 方式二：原生 LSP 客户端
@@ -91,7 +91,7 @@ file_patterns = ["**/*.js", "**/*.mjs", "**/*.ts"]
 
 安装 `nudo-vscode` 扩展后，本指南的一切都已接好：扩展会启动 `@nudojs/lsp`，编辑器内的 agent 通过同一服务器获得悬停类型、诊断和用例切换 CodeLens。
 
-## 五个命令
+## 十一个命令
 
 每个示例都是完整的 `workspace/executeCommand` 载荷——复制、改路径、直接发送。以下命令共用示例文件 `src/app.js`（what-if 示例自带 `src/config.js`）：
 

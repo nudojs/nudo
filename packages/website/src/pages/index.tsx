@@ -936,7 +936,7 @@ function FlowDiagram() {
         </g>
         <g className="flow-node flow-node-product">
           <rect x="376" y="326" width="160" height="64" rx="8" />
-          <text x="456" y="354" className="flow-node-t">JSON Schema</text>
+          <text x="456" y="354" className="flow-node-t">Standard Schema</text>
           <text x="456" y="374" className="flow-node-c">
             <Translate id="homepage.flow.outJson">mocks · tooling</Translate>
           </text>
@@ -1039,7 +1039,7 @@ function DemoSection() {
           <p className="eco-lead">
             <Translate id="homepage.eco.lead">
               The flow is centered on the Abs contract face. `check` only validates. `export`
-              projects `.d.ts` / Zod / JSON Schema / guards from Abs; IDE and agents read Abs
+              projects `.d.ts` / Zod / Standard Schema / guards from Abs; IDE and agents read Abs
               directly.
             </Translate>
           </p>
@@ -1069,10 +1069,10 @@ function DemoSection() {
               </p>
             </div>
             <div className="eco-item">
-              <h4>export · JSON Schema</h4>
+              <h4>export · Standard Schema</h4>
               <p>
                 <Translate id="homepage.eco.json">
-                  JSON Schema for mock generation and downstream tooling.
+                  Standard Schema validators for runtime checks and downstream tooling.
                 </Translate>
               </p>
             </div>

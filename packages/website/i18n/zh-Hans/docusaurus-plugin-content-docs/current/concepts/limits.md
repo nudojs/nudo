@@ -13,6 +13,7 @@ description: 诚实边界与非目标 —— Nudo 不宣称什么、调用点上
 
 1. **不是 TypeScript 编译器。** Nudo 不重实现 `tsc` 的工程引用、声明合并或完整可赋值性。
 2. **不从 body-AST 发明槽位。** 义务来自显式契约（`*.nudo.js` / `@nudo:refine`）或调用点事实 —— 绝不通过扫描函数体「必填字段」产生 check 错误。
+   - **`nudo:missing-slot` 是观察，不是义务。** 打开 `analysis.evalMissingSlot: "warning"`（默认 `"off"`）时，求值实际命中已知 shape 缺字段只发 **warning** —— 绝不凭空产生 check 错误；契约仍经 `nudo:constraint-violated` 门禁。
 3. **`@nudo:case` 仅调试。** 它喂 `nudo test` / LSP 场景，不是契约产品。
 4. **`check` 只校验。** 产物（`.d.ts`、Zod、guards）来自 `nudo export` —— Abs 的单向有损投影。
 5. **HOF promote ≠ check 错误。** HOF 关系的 body 用法提升是 **warning**（建议）。只有显式 refine / relation 契约才是 L1 错误。
@@ -37,7 +38,7 @@ description: 诚实边界与非目标 —— Nudo 不宣称什么、调用点上
 
 ## 求值器缺口（摘要）
 
-部分构造仍会退化为 `unknown`（带引擎债诊断）。优先使用[语言语义](../concepts/semantics.md)中已建模的替代：例如 `Object.keys` 而非 `Object.prototype` 方法、数组 `for` / `.map` 而非未建模的 `Set` 迭代、对 `new Promise` 内部用 `@nudo:mock` + 异步包装。
+部分构造仍会退化为 `unknown`（带引擎债诊断）。优先使用[语言语义](../concepts/semantics.md)中已建模的替代：例如 `Object.keys` 而非 `Object.prototype` 方法、对 `new Promise` 内部用 `@nudo:mock` + 异步包装。
 
 Env harvest 覆盖率**不是**完备性承诺。
 

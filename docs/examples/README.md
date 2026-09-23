@@ -66,13 +66,13 @@ function score(x) { return x + 1; }
 
 | 命令 | 退出码 | 说明 |
 |------|--------|------|
-| `pnpm run check docs/examples/constraints/set-delay.js` | **1** | 负例：`setDelay[ms]: 实参 ⊭ 前置` / `needsPositive[x]: 实参 ⊭ 前置` |
+| `pnpm run check docs/examples/constraints/set-delay.js` | **1** | 负例：`setDelay[ms]: argument ⊭ precondition` / `needsPositive[x]: argument ⊭ precondition` |
 | `pnpm run check docs/examples/constraints/register.js` | **0** | 正例：user / config 形状精化（signatures 钉住） |
-| `pnpm run check docs/examples/constraints/return-contract.js` | **1** | 负例：`bad: 返回值 ⊭ @nudo:refine return positive` |
+| `pnpm run check docs/examples/constraints/return-contract.js` | **1** | 负例：`bad: return value ⊭ @nudo:refine return positive` |
 | `pnpm run check docs/examples/constraints/declared-vs-if.js` | **1** | 负例：if ≠ 精化 |
-| `pnpm run check docs/examples/constraints/add-pred.js` | **1** | 负例：`scale[x]: 实参 ⊭ 前置`（`actual: -1 #exact`） |
+| `pnpm run check docs/examples/constraints/add-pred.js` | **1** | 负例：`scale[x]: argument ⊭ precondition`（`actual: -1 #exact`） |
 | `pnpm run test:cli docs/examples/constraints/add-pred.js` | **0** | Pred 流入代数（test case 报告正例） |
-| `pnpm run check docs/examples/structure/assign.js` | **1** | 负例：`config: 赋值 ⊭ 原有形状`（缺 port） |
+| `pnpm run check docs/examples/structure/assign.js` | **1** | 负例：`config: assignment ⊭ existing shape`（缺 port） |
 | `pnpm run check docs/examples/structure/arg-structure.js` | **1** | 负例：shape 契约缺字段（`constraint-violated`，非 body 扫描） |
 | `pnpm run check docs/examples/vs-ts/constraints/nudo.js` | **1** | nudo 报，对照 tsc 不报 |
 | `pnpm exec tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts` | **0** | tsc 侧对照（不报） |

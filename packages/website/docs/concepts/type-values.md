@@ -14,7 +14,7 @@ Abs values are symbolic sets of possible JavaScript values — instead of holdin
 - **shape** — the extensional carrier: what the value looks like. Kinds: `prim` (with a `lit` term for exact values), `obj`, `arr`, `tuple`, `fn`, `eff` (`promise<…>` / `generator<…>`), `brand` (nominal instances), `sum` (unions), `never`, `any` (unconstrained), `unknown` (inference failed — see [any vs unknown](#any-vs-unknown)).
 - **term** — abstract value identity: `lit` (concrete), `var` (symbolic α like `A1`), or `app` (an application like `(x + 2)`).
 - **pred** — constraints relative to the term: `(x + 2) > 3`.
-- **conf** — how exact the abstraction is: `exact` / `path` / `widened` / `partial` / `opaque`.
+- **conf** — how exact the abstraction is: `exact` / `path` / `widened` / `mock` / `partial` / `opaque`.
 
 See the [core API](../api/core.md) for constructors (`num()`, `strLit(…)`, `obj({…})`, …) and the core functions (`leqAbs`, `formatAbs`, `checkSource`, …).
 
@@ -94,10 +94,11 @@ These are **not** the same product concept and must never be collapsed in docs o
 | `lit(v)` | literal domain | `lit(42)` / `lit("ada")` / `lit(true)` |
 | `union(…)` | union of members | `union(lit(1), lit(2))` |
 | `shape({ … })` | object shape (fields recursive) | `shape({ id: number().gt(0) })` |
-| `array(…)` / `record(…)` | array / record domain | `array(number())` |
+| `array(…)` | array element constraint | `array(number())` |
+| `any()` | unconstrained domain (same as an unannotated entry param) | `any()` |
 | `fn({ … }, …)` | function relation | `fn({ x: number().gt(0) }, number())` |
-| builders | `.gt/.gte/.lt/.lte/.shift/.int…` | `number().gt(0).int()` |
-| bare literals | parsed directly | `42`, `"abc"`, `true`, `[1, 2]` |
+| builders | `.gt/.ge/.lt/.le/.int/.min/.max/.length/.shift…` | `number().gt(0).int()` |
+| bare literals | parsed directly | `42`, `"abc"`, `true`, `[1, 2]`, `null`, `undefined`, `unknown`, `never` |
 
 Directive type expressions use the constraint builders above plus concrete literals. Inside `@nudo:mock` bodies write plain JavaScript values and closures — not builder calls as return payloads.
 
@@ -155,25 +156,19 @@ selfAdd(2);       // → 4  #exact
 // Observed: 2 | 4 — correlation kept, never 1+1 | 1+2 | 2+1 | 2+2
 ```
 
-With abstract arguments the result widens to the domain the algebra determines (`sum(number, string)` → `string #path`; `selfAdd(number)` → `number #widened`) — member-wise expansion only happens when an operator or method *must* distinguish members.
+With abstract arguments the result widens to the domain the algebra determines (`2 + x` with `x: number | string` → `number | string`; `selfAdd(number)` → `number #widened`) — member-wise expansion only happens when an operator or method *must* distinguish members.
 
-### 4. Guard Narrowing
+### 4. Guard Narrowing (per call site)
 
-Type guards narrow values in branches. When you check `typeof x === "string"` or `x === null`, the engine narrows `x` in the `if` branch and excludes those values in the `else` branch.
+Type guards fork branches only when the guard test is **definitely** true or false for the **concrete argument of a call site**. Each `call@L…` case is evaluated with that call's exact argument, so the matching branch runs and the other is eliminated:
 
 ```javascript
-function process(x) {
-  if (typeof x === "string") {
-    // x is string here
-    return x.length;  // → number
-  }
-  if (x === null) {
-    // x is null here
-    return 0;
-  }
-  // x is narrowed (e.g. number if input was string | number | null)
-  return x;
+function len(x) {
+  if (typeof x === "string") return x.length;
+  return -1;
 }
+len("abc");  // → 3   (string call takes the branch)
+len(5);      // → -1  (number call falls through)
 ```
 
-Narrowing rules support `typeof`, `===`, `!==`, `instanceof`, `Array.isArray`, and truthiness checks.
+With **abstract** arguments (`number()`, `union(...)`), the condition cannot be decided — both branches run with the same value and their results join. There is no intersection/subtraction of abstract unions. Verified patterns and current limits: [Control Flow Narrowing](./control-flow-narrowing.md).

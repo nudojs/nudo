@@ -169,9 +169,9 @@ function makeBuilder(
         if (!Number.isFinite(n))
           throw new Error("nudo shift(): offset must be a finite number");
         if (fields || element || members || fnSlot)
-          throw new Error("nudo shift(): 仅数值标量约束链合法（不支持 shape/array/union/fn）");
+          throw new Error("nudo shift(): only numeric scalar constraint chains are allowed (shape/array/union/fn are not supported)");
         if (prim !== undefined && prim !== "number")
-          throw new Error(`nudo shift(): 仅数值链合法（prim=${prim}）`);
+          throw new Error(`nudo shift(): only numeric chains are allowed (prim=${prim})`);
         return makeBuilder(prim, shiftBoundPreds(preds, n), extra);
       },
       optional: () => makeBuilder(prim, preds, { ...extra, optional: true }),
@@ -185,12 +185,12 @@ function makeBuilder(
 function shiftBoundPreds(preds: Pred[], n: number): Pred[] {
   return preds.map((p): Pred => {
     if (p.op !== "gt" && p.op !== "ge" && p.op !== "lt" && p.op !== "le")
-      throw new Error(`nudo shift(): 不支持 ${p.op} 谓词（仅 gt/ge/lt/le 常数界）`);
+      throw new Error(`nudo shift(): predicate ${p.op} is not supported (only gt/ge/lt/le constant bounds)`);
     const { a, b } = p;
     if (b.op !== "lit" || typeof b.value !== "number")
-      throw new Error("nudo shift(): 常数界右端须为数字字面量");
+      throw new Error("nudo shift(): the right-hand side of a constant bound must be a numeric literal");
     if (termHasApp(a, "length") || termHasApp(b, "length"))
-      throw new Error("nudo shift(): 不支持 length(...) 界");
+      throw new Error("nudo shift(): length(...) bounds are not supported");
     return { op: p.op, a, b: termLit(b.value + n) };
   });
 }
@@ -256,7 +256,7 @@ export function shape(
 /** 归一化为纯数据约束（剥掉 builder 方法——成员快照不可再链式改写） */
 function toPlainConstraint(c: NudoConstraint): NudoConstraint {
   if (!isConstraint(c))
-    throw new Error("nudo: 期望约束值（number()/string()/…或其组合子）");
+    throw new Error("nudo: expected a constraint value (number()/string()/… or a combinator)");
   return {
     __nudoConstraint: true,
     ...(c.prim ? { prim: c.prim } : {}),
@@ -297,7 +297,7 @@ function asNestedConstraint(x: unknown, ctx: string): NudoConstraint {
     return toPlainConstraint(lit(x));
   }
   throw new Error(
-    `nudo: ${ctx} 期望约束值（number()/string()/…）或具体字面量，收到非约束`,
+    `nudo: ${ctx} expects a constraint value (number()/string()/…) or a concrete literal; received a non-constraint`,
   );
 }
 
@@ -306,9 +306,9 @@ export function union(
   ...cs: (NudoConstraint | ConstraintBuilder | number | string | boolean | null | undefined)[]
 ): ConstraintBuilder {
   if (cs.length === 0)
-    throw new Error("nudo union(): 至少需要一个成员约束");
+    throw new Error("nudo union(): at least one member constraint is required");
   return makeBuilder(undefined, [], {
-    members: cs.map((c) => asNestedConstraint(c, "union 成员")),
+    members: cs.map((c) => asNestedConstraint(c, "union member")),
   });
 }
 
@@ -324,13 +324,13 @@ export function fn(
 ): ConstraintBuilder {
   const normalized: Record<string, NudoConstraint> = {};
   for (const [k, v] of Object.entries(params)) {
-    normalized[k] = asNestedConstraint(v, `fn 参数 '${k}'`);
+    normalized[k] = asNestedConstraint(v, `fn param '${k}'`);
   }
   return makeBuilder(undefined, [], {
     fn: {
       params: normalized,
       ...(returns !== undefined
-        ? { returns: asNestedConstraint(returns, "fn 返回值") }
+        ? { returns: asNestedConstraint(returns, "fn return value") }
         : {}),
       ...(opts?.throws !== undefined
         ? { throws: asNestedConstraint(opts.throws, "fn throws") }
@@ -348,19 +348,19 @@ export function and(
   ...cs: (NudoConstraint | ConstraintBuilder)[]
 ): ConstraintBuilder {
   if (cs.length === 0)
-    throw new Error("nudo and(): 至少需要一个约束");
+    throw new Error("nudo and(): at least one constraint is required");
   let prim: PrimName | undefined;
   let isInt = false;
   let allOptional = true;
   const preds: Pred[] = [];
   for (const c of cs) {
     if (!isConstraint(c))
-      throw new Error("nudo: 期望约束值（number()/string()/…或其组合子）");
+      throw new Error("nudo: expected a constraint value (number()/string()/… or a combinator)");
     if (c.fields || c.element || c.members || c.fn)
-      throw new Error("nudo and(): Phase 1 仅支持标量约束合取（不支持 shape/array/union/fn）");
+      throw new Error("nudo and(): Phase 1 supports scalar constraint conjunction only (shape/array/union/fn are not supported)");
     if (c.prim) {
       if (prim !== undefined && prim !== c.prim)
-        throw new Error(`nudo and(): prim 不一致（${prim} vs ${c.prim}）`);
+        throw new Error(`nudo and(): inconsistent prim (${prim} vs ${c.prim})`);
       prim = c.prim;
     }
     preds.push(...c.preds);
@@ -377,7 +377,7 @@ export function and(
 /** partial(c)：shape 全字段变可选；非 shape throw */
 export function partial(c: NudoConstraint | ConstraintBuilder): ConstraintBuilder {
   if (!isConstraint(c) || !c.fields)
-    throw new Error("nudo partial(): 仅接受 shape(...) 约束");
+    throw new Error("nudo partial(): only shape(...) constraints are accepted");
   const fields: Record<string, NudoField> = {};
   for (const [k, f] of Object.entries(c.fields)) {
     fields[k] = {
@@ -394,7 +394,7 @@ export function pick(
   keys: string[],
 ): ConstraintBuilder {
   if (!isConstraint(c) || !c.fields)
-    throw new Error("nudo pick(): 仅接受 shape(...) 约束");
+    throw new Error("nudo pick(): only shape(...) constraints are accepted");
   const fields: Record<string, NudoField> = {};
   for (const k of keys) {
     const f = c.fields[k];
@@ -409,7 +409,7 @@ export function omit(
   keys: string[],
 ): ConstraintBuilder {
   if (!isConstraint(c) || !c.fields)
-    throw new Error("nudo omit(): 仅接受 shape(...) 约束");
+    throw new Error("nudo omit(): only shape(...) constraints are accepted");
   const drop = new Set(keys);
   const fields: Record<string, NudoField> = {};
   for (const [k, f] of Object.entries(c.fields)) {
@@ -700,7 +700,7 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
 export function fnConstraintToEntryReqs(
   c: NudoConstraint,
 ): Array<{ param: string; constraint: NudoConstraint }> {
-  if (!c.fn) throw new Error("nudo fnConstraintToEntryReqs(): 约束不是 fn() 形态");
+  if (!c.fn) throw new Error("nudo fnConstraintToEntryReqs(): constraint is not in fn() form");
   return Object.entries(c.fn.params).map(([param, constraint]) => ({
     param,
     constraint,

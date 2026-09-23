@@ -38,23 +38,26 @@ nudo check ./src/utils.js
 门禁契约（L1）与入口 throws（L2）。成功时也打印 signatures。
 
 ```bash
-nudo check <path> [options]
+nudo check <paths...> [options]
 ```
 
 **参数：**
 
 | 参数 | 说明 |
 |------|------|
-| `<path>` | `.js` / `.mjs` / `.ts` 文件或目录（递归扫描；排除 `.d.ts`）。TS 注解在解析层剥离，按 JS 语义分析。 |
+| `<paths...>` | 一个或多个 `.js` / `.mjs` / `.ts` 文件或目录（递归扫描；排除 `.d.ts`）。TS 注解在解析层剥离，按 JS 语义分析。`--json` 只支持单文件。 |
 
 **选项：**
 
 | 选项 | 说明 |
 |------|------|
 | `--watch` / `-w` | 变更时重跑（旗标，不是动词） |
-| `--json` | 结构化诊断 + 签名 |
+| `--json` | 结构化诊断 + 签名（单文件；不能与 `--abs` 组合） |
 | `--verbose` | 额外诊断细节 |
-| `--abs` | 打印 Abs 代数面（term / pred / conf） |
+| `--abs` | 每函数代数面（shape + conf）；`--generalize` 附加符号 term/pred α |
+| `--fn <name>` | 搭配 `--abs`：限定单个函数 |
+| `--assume <pred…>` | 搭配 `--abs`：假设约束，如 `x>0 y>=1` |
+| `--generalize` | 搭配 `--abs`：经符号执行得到多态签名 |
 | `--from <paths…>` | 使用处文件（tests/apps）；其调用记录并入分析 |
 | `--ignore-throws <names>` | 逗号分隔、可忽略的 L2 throws 类型（如 `TypeError,RangeError`）。不吞 L1 契约违例。 |
 | `--entry-throws error\|warning\|off` | L2 入口 may-throw 严重级别（默认 `error`） |
@@ -75,14 +78,24 @@ nudo check <path> [options]
 **输出格式：**
 
 ```text
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
 signatures
   getName(user: any) => any  throws TypeError
   subtract(a: any, b: any) => number
+
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or declare/catch throws
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
-- 无约束入口参数打印为 **`any`**，绝不打印 `unknown`。
+> 报头里的 `L1` 是**行号**（此处函数声明在第 1 行）—— 该诊断的层是 L2。
+
+- 无约束入口参数打印为 **`any`**，绝不是 `unknown`。
 - 真 `unknown` 表示推导失败（引擎债），并带 conf 标注。
 - 存在 throws 时签名行必须上屏。
 - 成功也打印 `signatures` —— `check` 不是静默。
@@ -119,7 +132,7 @@ nudo check src/lib.js --json
 报告全部推断用例（含合成 `call@` / `entry@`），并运行已声明断言。
 
 ```bash
-nudo test <path> [options]
+nudo test <paths...> [options]
 ```
 
 **选项：**
@@ -128,11 +141,11 @@ nudo test <path> [options]
 |------|------|
 | `--watch` / `-w` | 变更时重跑 |
 | `--from <paths…>` | 使用处文件，其调用合成为 `call@L` 用例 |
-| `--freeze[=update]` | 把合成用例写回为 `@nudo:case` 指令。`=update` 重新同步已生成指令。 |
-| `--json` | 结构化用例报告 |
+| `--freeze[=mode]` | 把合成用例写回为 `@nudo:case` 指令。模式：`update` 重新同步已生成指令；不给值 = add 模式，保留既有指令 |
+| `--json` | 结构化用例报告（单文件；不能与 `--abs` 或 `--freeze` 组合） |
 | `--abs` | 打印用例的 Abs 代数 |
 | `--dry-run` | 搭配 `--freeze`：打印 unified diff 而不写盘 |
-| `--exit-on-diff` | 搭配 `--dry-run`：diff 非空时退出 `1` |
+| `--exit-on-diff` | 搭配 `--freeze --dry-run`：diff 非空时退出 `1` |
 
 **输出格式：**
 
@@ -140,8 +153,9 @@ nudo test <path> [options]
 === getName ===
   call@L42  ({ name: "Ada" }) => "Ada"
   debug "empty"  ({}) => undefined
+
 assertions
-  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 1 synthetic case(s) printed above)
 ```
 
 找不到使用处调用的入口导出时：
@@ -157,10 +171,35 @@ assertions
 - 声明断言失败 → exit `1`；合成用例不影响。
 - `test --json` 含 `assertions` 摘要（`passed`/`failed`/`unchecked`），声明断言失败仍 exit 1。
 
+声明断言失败（`nudo:case-expected`）呈现为：
+
+```text
+=== double ===
+  debug "bad"  (2) => 4
+
+assertions
+  ✗ 0 passed · 1 failed · 0 unchecked
+  [FAIL] double  case "bad"
+         expected: 5
+         actual:   4
+```
+
 **示例：**
 
 ```bash
 nudo test math.js
+```
+
+```text
+=== subtract ===
+  call@L6  (5, 3) => 2
+  call@L7  (1, 10) => -9
+
+assertions
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 2 synthetic case(s) printed above)
+```
+
+```bash
 nudo test lib.js --from test.js --freeze=update
 ```
 
@@ -196,7 +235,7 @@ nudo contract --draft <paths...> [--write] [--fn <name>] [--dry-run] [--from <pa
 | `--emit` | 把推断域固化为侧车 `@generated` 段 |
 | `--draft` | 从已有逻辑生成可审阅契约草稿（代码优先 / 迁移） |
 | `--write` | 搭配 `--draft`：写入 `*.nudo.draft.js` |
-| `--fn <name>` | 限定单个函数（有手写根时可命名下游派生目标） |
+| `--fn <name>` | 限定单个函数（**可重复**；有手写根时可命名下游派生目标） |
 | `--all` | emit 所有合格函数 |
 | `--dry-run` | 打印 unified diff 而不写盘 |
 | `--exit-on-diff` | 搭配 `--emit --dry-run`：diff 非空时退出 `1` |
@@ -290,9 +329,11 @@ nudo health src/ --from tests/
 
 ```text
 src/lib.js
-  ✓ analysis ok
-  ✗ drift: 5 directive(s) changed (+3 new, -2 removed)
-    refresh with: nudo test lib.js --from test.js --freeze=update
+  · 1 function(s)
+  ✗ drift: 3 witness directive(s) changed (+2 new, -1 removed) — refresh: nudo test src/lib.js --from tests/ --freeze=update
+
+Summary: 1 file(s) · 1 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s)
+Result: FAIL (drift or errors found)
 ```
 
 **退出码：**
@@ -316,8 +357,8 @@ nudo env harvest <pkg> [options]
 
 | 选项 | 说明 |
 |------|------|
-| `--out <dir>` | 生成 env 文件的输出目录 |
-| `--auto` | 报告分析路径自动 harvest 状态 |
+| `--out <file>` | 输出 env 文件路径（默认 `./nudo-harvest-<pkg>.ts`） |
+| `--auto [dir]` | 扫描目录中的裸 import，上报可自动 harvest 的 `@types` 包（带 `--auto` 时 `<pkg>` 可省略） |
 
 **示例：**
 
@@ -326,7 +367,7 @@ nudo env harvest node
 ```
 
 ```ts
-/// @nudo:env ./nudo-harvest-node.ts
+/// @nudo:env nudo-harvest-node.ts
 ```
 
 **退出码：**
@@ -342,8 +383,9 @@ nudo env harvest node
 
 `check --json` 与 `test --json` 是机器可读面。
 
-- **check --json** —— 签名（含 `any` 入口参数与 throws）、诊断码（如 `nudo:entry-may-throw`）、汇总计数。仅支持单文件；`--abs` 仍门禁。
+- **check --json** —— 签名（含 `any` 入口参数与 throws）、诊断码（如 `nudo:entry-may-throw`）、汇总计数。
 - **test --json** —— 逐函数用例（`entry@` / `call@` / 指令）、`assertions` 摘要（`passed`/`failed`/`unchecked`）、诊断、可选 Abs intension 块；声明断言失败仍 exit 1。
+- **check --json** —— 仅支持单文件（目录目标报 `--json requires a single file, not multiple targets`）；`test --json` 报 `--json requires a single file`。
 
 ---
 

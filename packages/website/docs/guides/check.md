@@ -39,16 +39,27 @@ nudo check user.js
 ```
 
 ```text
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
 signatures
   getName(user: any) => any  throws TypeError
   subtract(a: any, b: any) => number
+
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or declare/catch throws
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
+
+> `L1` in `[ERROR L1 getName]` is the **line number** (the function is declared on line 1 here) — the layer is L2 (`nudo:entry-may-throw`). `L#` is always a location, never a contract layer.
 
 - Unconstrained entry parameters display as **`any`**.
 - **`unknown` means inference failed** (engine debt) — never the default for unconstrained entry params.
 - Throws always appear on the signature line when present.
+- `[ERROR L# name]` — `L#` is the **line number** of the offending call/declaration, not a contract layer (L1/L2 are the layers; `L#` is a location).
 
 ## What it checks
 
@@ -65,10 +76,10 @@ issues
 | `nudo:unknown-inference` | engine debt | warning | True `unknown` on a signature (inference failed) — unconstrained entry params are `any`, not this code |
 | `nudo:unknown-recv` | engine debt | warning | Member access on `unknown` receiver — does **not** replace L2 throws modeling |
 | `nudo:no-signature` | engine/L1 | warning | Function could not be generalized (CJS/anon forms still get L2 via entry fallback) |
-| `nudo:opaque-result` | engine | warning | Evaluation returned opaque / uninformative Abs |
+| `nudo:opaque-result` | engine | info | Evaluation returned opaque / uninformative Abs |
 | `nudo:eval-error` | engine | error | Body evaluation threw during analysis |
 | `nudo:recursion-truncated` | engine | warning | Recursion budget hit; result widened |
-| `nudo:unreachable` | info | info | Code after return/throw |
+| `nudo-unreachable` | info | info | Code after return/throw |
 
 ## L1 — explicit contracts
 
@@ -85,9 +96,10 @@ function needsPositive(x) {
 }
 
 needsPositive(-1);
-// [error] needsPositive[x]: actual ⊭ expected  (nudo:constraint-violated)
+// [ERROR L12 needsPositive] needsPositive[x]: argument ⊭ precondition  (nudo:constraint-violated)
 //   actual:   -1  #exact
 //   expected: x > 0
+//   → use a value satisfying x > 0, or relax the precondition on x
 ```
 
 **`if` is not a refinement.** Clamp-style guards accept out-of-range input when no refine is declared:
@@ -116,11 +128,21 @@ export function getName(user) {
 ```
 
 ```text
-[error] getName (export): may throw TypeError  (nudo:entry-may-throw)
-  cause:    property 'name' on any (unconstrained param `user`)
-  actual:   (user: any) => any    throws TypeError
-  expected: entry total, or declare/catch throws
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 1 fn
+
+signatures
+  getName(user: any) => any  throws TypeError
+
+issues
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or declare/catch throws
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
+
+> Reminder: `L1` in the header is the **line number** — this diagnostic's layer is L2.
 
 ### What L2 gates
 
@@ -158,7 +180,11 @@ All flags and `package.json#nudo.check` config are specified once in the [CLI Re
 |--------|-------------|
 | `--watch` / `-w` | Re-run on changes (flag, not a verb) |
 | `--json` | Machine-readable signatures + diagnostics (single file) |
-| `--abs` | Print Abs algebra face (term / pred / conf) — observation, still gates L1/L2 |
+| `--verbose` | Expand Abs signatures (term/pred/conf detail) |
+| `--abs` | Per-function algebra face (shape + conf; `--generalize` adds the symbolic term/pred α) — observation, still gates L1/L2 |
+| `--fn <name>` | With `--abs`: restrict to one function |
+| `--assume <pred…>` | With `--abs`: assume constraints on entry params (e.g. `x>0 y>=1`) |
+| `--generalize` | With `--abs`: polymorphic signatures via symbolic execution |
 | `--from <paths…>` | Usage-site files injecting call records |
 | `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (never swallows L1) |
 | `--entry-throws error\|warning\|off` | L2 severity (default `error`) |

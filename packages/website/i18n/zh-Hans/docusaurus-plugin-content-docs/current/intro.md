@@ -48,16 +48,17 @@ npx nudojs check calc.js
 
 ```text
 signatures
-  scale(x: any) => number | string
+  scale(x: number) => number
 ```
 
 若有违例调用 `scale(0)`：
 
 ```text
 issues
-  [error] scale: actual ⊭ expected  (nudo:constraint-violated)
-    actual:   0  #exact
-    expected: x > 0
+  [ERROR L6 scale] scale[x]: argument ⊭ precondition  (nudo:constraint-violated)
+      actual:   0  #exact
+      expected: x > 0
+      → use a value satisfying x > 0, or relax the precondition on x
 ```
 
 [在 Playground 打开这个想法](/playground)。

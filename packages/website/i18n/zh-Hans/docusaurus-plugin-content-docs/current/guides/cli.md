@@ -30,7 +30,7 @@ nudo — JavaScript types, computed
 | 入口签名 / any / unknown / throws | `nudo check <path>`（成功也打印 `signatures`） |
 | 逐调用点真值 / 窄化结果 | `nudo test <path>`（打印全部 case，含合成 `call@` / `entry@`） |
 | 使用处实参形态 | `nudo check` / `test` / `contract` `--from <paths…>` |
-| 代数面 term/pred/conf | `nudo check --abs`（或 `test --abs`） |
+| 代数面（shape + conf；`--generalize` 附加 term/pred α） | `nudo check --abs`（或 `test --abs`） |
 | 机器可读 | `nudo check --json` / `nudo test --json` |
 | 交互 | IDE hover / inlay |
 
@@ -50,14 +50,22 @@ nudo check user.js
 ```
 
 ```text
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
 signatures
   getName(user: any) => any  throws TypeError
   subtract(a: any, b: any) => number
+
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or declare/catch throws
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
-无约束入口参数显示为 **`any`**。`unknown` 表示推导失败（引擎债）—— 绝不是无约束入口参数的默认值。
+无约束入口参数显示为 **`any`**。`unknown` 表示推导失败（引擎债）—— 绝不是无约束入口参数的默认值。`[ERROR L# name]` 中 `L#` 是违规调用/声明的**行号**，不是契约层（L1/L2 才是层）。上方示例打印 `L1` 是因为该文件中 `getName` 声明在第 1 行 —— 其层是 L2。
 
 - **语义**（L1 显式契约 / L2 入口 throws、退出码、过滤）：[nudo check](./check.md)
 - **选项与配置**（`--watch` / `--json` / `--abs` / `--from` / `--ignore-throws` / `--entry-throws`、`package.json#nudo.check`）：[CLI 参考](../api/cli-reference.md#nudo-check)
@@ -71,7 +79,7 @@ issues
 报告全部推断用例，并运行已声明的 `@nudo:case` 断言。
 
 ```bash
-nudo test <path> [--watch|-w] [--from paths…] [--freeze[=update]] [--json] [--abs]
+nudo test <path> [--watch|-w] [--from paths…] [--freeze[=mode]] [--dry-run] [--exit-on-diff] [--json] [--abs]
 ```
 
 给定 `math.js`：
@@ -93,16 +101,42 @@ nudo test math.js
 === subtract ===
   call@L6  (5, 3) => 2
   call@L7  (1, 10) => -9
+
 assertions
-  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 2 synthetic case(s) printed above)
 ```
 
 - 合成 `call@` / `entry@` **默认打印** —— 这就是调用点观察面。
 - 已有使用处 `call@` 时，分析器**不会**再合成 `entry@`。
 - 仅 `@nudo:case` 且带 `=> expected` 的进入 pass/fail；失败影响退出码。
 - `--from <paths…>` 挖掘使用处调用形状。
-- `--freeze[=update]` 把合成用例固化为指令。
+- `--freeze[=mode]` 把合成用例固化为指令：`--freeze`（不给值，add 模式）新增见证；`--freeze=update` 重同步此前生成的指令。
+- `--dry-run`（配合 `--freeze`）打印 unified diff 而非写盘；`--exit-on-diff`（配合 `--freeze --dry-run`）在 diff 非空时 exit 1。
 - `--json` / `--abs` 与 `check` 对齐；`test --json` 含 `assertions` 摘要，声明断言失败仍 exit 1。
+
+### 带声明断言的示例
+
+```js
+/**
+ * @nudo:case "double" (2) => 4
+ */
+export function double(x) {
+  return x * 2;
+}
+```
+
+```bash
+nudo test file.js
+```
+
+```text
+=== double ===
+  debug "double"  (2) => 4
+
+assertions
+  ✓ 1 passed · 0 failed · 0 unchecked
+  [ok]   double  case "double" → 4
+```
 
 ---
 
@@ -189,7 +223,8 @@ nudo test lib.js --from test.js --freeze=update
 把 `@types/<pkg>` 收割为 Nudo env 模块。
 
 ```bash
-nudo env harvest <pkg> [--out dir]
+nudo env harvest <pkg> [--out file]   # --out 是输出 .ts 文件（默认 ./nudo-harvest-<pkg>.ts）
+nudo env harvest --auto [dir]         # 扫描目录中的裸 import，上报可自动 harvest 的 @types
 ```
 
 ```bash
@@ -199,7 +234,7 @@ nudo env harvest node
 在源码中引用生成的 env：
 
 ```ts
-/// @nudo:env ./nudo-harvest-node.ts
+/// @nudo:env nudo-harvest-node.ts
 ```
 
 ---

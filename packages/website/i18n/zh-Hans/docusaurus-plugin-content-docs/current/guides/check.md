@@ -39,16 +39,27 @@ nudo check user.js
 ```
 
 ```text
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
 signatures
   getName(user: any) => any  throws TypeError
   subtract(a: any, b: any) => number
+
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or declare/catch throws
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
+
+> `[ERROR L1 getName]` 里的 `L1` 是**行号**（此处函数声明在第 1 行）—— 该诊断的层是 L2（`nudo:entry-may-throw`）。`L#` 永远是位置，不是契约层。
 
 - 无约束入口参数显示为 **`any`**。
 - **`unknown` 表示推导失败**（引擎债）—— 绝不是无约束入口参数的默认值。
 - 存在 throws 时必须上屏。
+- `[ERROR L# name]` —— `L#` 是违规调用/声明的**行号**，不是契约层（L1/L2 才是层；`L#` 是位置）。
 
 ## 检查什么
 
@@ -65,10 +76,10 @@ issues
 | `nudo:unknown-inference` | 引擎债 | warning | 签名出现真 `unknown`（推导失败）——入口无约束参数是 `any`，不走此码 |
 | `nudo:unknown-recv` | 引擎债 | warning | `unknown` 接收者成员访问 —— **不得**替代 L2 throws 建模 |
 | `nudo:no-signature` | 引擎/L1 | warning | 函数无法泛化为符号 Abs（CJS/匿名形态仍走入口 fallback 执法 L2） |
-| `nudo:opaque-result` | 引擎 | warning | 求值返回 opaque / 无信息 Abs |
+| `nudo:opaque-result` | 引擎 | info | 求值返回 opaque / 无信息 Abs |
 | `nudo:eval-error` | 引擎 | error | 分析期间 body 求值抛出 |
 | `nudo:recursion-truncated` | 引擎 | warning | 递归预算用尽；结果拓宽 |
-| `nudo:unreachable` | info | info | return/throw 之后的代码 |
+| `nudo-unreachable` | info | info | return/throw 之后的代码 |
 
 ## L1 —— 显式契约
 
@@ -85,9 +96,10 @@ function needsPositive(x) {
 }
 
 needsPositive(-1);
-// [error] needsPositive[x]: actual ⊭ expected  (nudo:constraint-violated)
+// [ERROR L12 needsPositive] needsPositive[x]: argument ⊭ precondition  (nudo:constraint-violated)
 //   actual:   -1  #exact
 //   expected: x > 0
+//   → use a value satisfying x > 0, or relax the precondition on x
 ```
 
 **`if` 不是精化。** 未声明 refine 时，clamp 式守卫接受越界输入：
@@ -116,11 +128,21 @@ export function getName(user) {
 ```
 
 ```text
-[error] getName (export): may throw TypeError  (nudo:entry-may-throw)
-  cause:    property 'name' on any (unconstrained param `user`)
-  actual:   (user: any) => any    throws TypeError
-  expected: entry total, or declare/catch throws
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 1 fn
+
+signatures
+  getName(user: any) => any  throws TypeError
+
+issues
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or declare/catch throws
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
+
+> 提醒：报头里的 `L1` 是**行号** —— 该诊断的层是 L2。
 
 ### L2 门禁什么
 
@@ -138,24 +160,13 @@ nudo check src/ --entry-throws warning   # 迁移期降级 L2
 nudo check src/ --entry-throws off
 ```
 
-`package.json`：
-
-```json
-{
-  "nudo": {
-    "check": {
-      "ignoreThrows": ["TypeError"],
-      "entryThrows": "error"
-    }
-  }
-}
-```
-
 语义：
 
 - `--ignore-throws` **只**过滤 L2 入口 throws —— 绝不吞 L1 契约违例。
 - 默认：**不忽略**任何 throws。
 - 过滤的是 throws 类型/形状，不是整个 check。
+
+把这些持久化到 `package.json#nudo.check` —— 配置块见 [CLI 参考](../api/cli-reference.md#nudo-check)。
 
 ### 与 Node 类比
 
@@ -168,7 +179,10 @@ nudo check src/ --entry-throws off
 | `--watch` / `-w` | 变更时重跑（旗标，不是动词） |
 | `--json` | 机器可读签名 + 诊断 |
 | `--verbose` | 额外细节 |
-| `--abs` | 打印 Abs 代数面（term / pred / conf） |
+| `--abs` | 逐函数代数面（shape + conf；`--generalize` 附加符号 term/pred α）——观察面，仍对 L1/L2 执法 |
+| `--fn <name>` | 搭配 `--abs`：限定单个函数 |
+| `--assume <pred…>` | 搭配 `--abs`：对入口参数假设约束（如 `x>0 y>=1`） |
+| `--generalize` | 搭配 `--abs`：符号执行的多态签名 |
 | `--from <paths…>` | 使用处文件注入调用记录 |
 | `--ignore-throws <names>` | 逗号分隔、可忽略的 L2 throws 类型 |
 | `--entry-throws error\|warning\|off` | L2 严重级别（默认 `error`） |

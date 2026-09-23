@@ -30,7 +30,7 @@ Observation lives in the output of `check` / `test` and in IDE hover — not a s
 | Entry signatures / any / unknown / throws | `nudo check <path>` (prints `signatures` even on success) |
 | Per-call-site ground truth / narrowing | `nudo test <path>` (prints every case, including synthetic `call@` / `entry@`) |
 | Usage-site argument shapes | `nudo check` / `test` / `contract` `--from <paths…>` |
-| Algebra face term/pred/conf | `nudo check --abs` (or `test --abs`) |
+| Algebra face (shape + conf; `--generalize` adds term/pred α) | `nudo check --abs` (or `test --abs`) |
 | Machine-readable | `nudo check --json` / `nudo test --json` |
 | Interactive | IDE hover / inlay |
 
@@ -50,14 +50,22 @@ nudo check user.js
 ```
 
 ```text
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
 signatures
   getName(user: any) => any  throws TypeError
   subtract(a: any, b: any) => number
+
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or declare/catch throws
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
-Unconstrained entry parameters display as **`any`**. `unknown` means inference failed (engine debt) — it is never the default for an unconstrained entry parameter.
+Unconstrained entry parameters display as **`any`**. `unknown` means inference failed (engine debt) — it is never the default for an unconstrained entry parameter. In `[ERROR L# name]`, `L#` is the **line number** of the offending call/declaration — not a contract layer (L1/L2 are the layers). The sample above prints `L1` because `getName` is declared on line 1 of that file — its layer is L2.
 
 - **Semantics** (L1 explicit contracts / L2 entry throws, exit codes, filtering): [nudo check](./check.md)
 - **Options & config** (`--watch` / `--json` / `--abs` / `--from` / `--ignore-throws` / `--entry-throws`, `package.json#nudo.check`): [CLI Reference](../api/cli-reference.md#nudo-check)
@@ -71,7 +79,7 @@ Unconstrained entry parameters display as **`any`**. `unknown` means inference f
 Report every inferred case and run declared `@nudo:case` assertions.
 
 ```bash
-nudo test <path> [--watch|-w] [--from paths…] [--freeze[=update]] [--json] [--abs]
+nudo test <path> [--watch|-w] [--from paths…] [--freeze[=mode]] [--dry-run] [--exit-on-diff] [--json] [--abs]
 ```
 
 Given `math.js`:
@@ -93,15 +101,17 @@ nudo test math.js
 === subtract ===
   call@L6  (5, 3) => 2
   call@L7  (1, 10) => -9
+
 assertions
-  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 2 synthetic case(s) printed above)
 ```
 
 - Synthetic `call@` / `entry@` cases **print by default** — that is the call-site observation surface.
 - When usage-site `call@` cases exist, the analyzer does **not** also synthesize `entry@` for that function.
 - Only `@nudo:case` directives **with `=> expected`** enter pass/fail; failures affect the exit code.
 - `--from <paths…>` harvest usage-site call shapes.
-- `--freeze[=update]` solidifies synthesized cases as directives.
+- `--freeze[=mode]` solidifies synthesized cases as directives: `--freeze` (no value, add mode) adds new witnesses; `--freeze=update` re-synchronizes previously generated directives.
+- `--dry-run` (with `--freeze`) prints a unified diff instead of writing; `--exit-on-diff` (with `--freeze --dry-run`) exits 1 when the diff is non-empty.
 - `--json` / `--abs` mirror `check`; `test --json` also carries an `assertions` summary (`passed`/`failed`/`unchecked`) and still exits 1 when a declared assertion fails.
 
 ### Example with declared assertions
@@ -122,11 +132,10 @@ nudo test file.js
 ```text
 === double ===
   debug "double"  (2) => 4
+
 assertions
   ✓ 1 passed · 0 failed · 0 unchecked
   [ok]   double  case "double" → 4
-assertions
-  ✓ 1 passed · 0 failed · 1 unchecked
 ```
 
 ---
@@ -208,7 +217,8 @@ nudo test lib.js --from test.js --freeze=update
 Harvest `@types/<pkg>` into a Nudo env module.
 
 ```bash
-nudo env harvest <pkg> [--out dir]
+nudo env harvest <pkg> [--out file]   # --out is an output .ts file (default ./nudo-harvest-<pkg>.ts)
+nudo env harvest --auto [dir]         # scan a dir for bare imports, report auto-harvestable @types
 ```
 
 ```bash
@@ -218,7 +228,7 @@ nudo env harvest node
 Then reference the generated env from source:
 
 ```ts
-/// @nudo:env ./nudo-harvest-node.ts
+/// @nudo:env nudo-harvest-node.ts
 ```
 
 ---

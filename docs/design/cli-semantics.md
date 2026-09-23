@@ -261,7 +261,7 @@ pnpm run nudo -- check path/to/file.js
 | `nudo:opaque-result` / `nudo:eval-error` | 求值不透明 / 求值抛错 |
 | `nudo:recursion-truncated` | 递归预算截断（结果 widen） |
 | **`nudo:entry-may-throw`** | **L2：入口未消化 may-throw（默认 error）** |
-| `nudo:may-throw` / `nudo:unreachable` | 路径可能抛出（case 线索 / warning）/ 不可达代码 |
+| `nudo:may-throw` / `nudo-unreachable` | 路径可能抛出（case 线索 / warning）/ 不可达代码 |
 | `nudo:unknown-inference` | 引擎债：出口或签名出现真 `unknown` |
 | `nudo:unknown-recv` | 引擎债：unknown 接收者成员访问；**不得**替代 L2 throws 建模 |
 | `nudo:missing-slot` | C0.5 可选：求值命中已知对象缺字段（默认 off，见 limitations §1.3） |
@@ -279,10 +279,10 @@ signatures
   needsPositive(x: number) => number
 
 issues
-  [ERROR L12 needsPositive] needsPositive[x]: 实参 ⊭ 前置  (nudo:constraint-violated)
+  [ERROR L12 needsPositive] needsPositive[x]: argument ⊭ precondition  (nudo:constraint-violated)
       actual:   -1  #exact
       expected: x > 0
-      → 改用满足 x > 0 的值，或放宽 x 的前置
+      → use a value satisfying x > 0, or relax the precondition on x
 ```
 
 - **signatures**：默认一行摘要且**成功也打印**；`--verbose` 展开 `term:` / `pred:` / `conf:`；代数面用 `check --abs`

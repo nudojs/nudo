@@ -37,8 +37,8 @@ export function checkArg(
     return {
       severity: "warning",
       code: "nudo:arg-opaque",
-      message: `实参类型 unknown，无法验证约束 ${predToString(expect)}`,
-      suggestion: "补充调用点、@nudo:case，或 --assume 提供前置条件",
+      message: `argument type is unknown; cannot verify constraint ${predToString(expect)}`,
+      suggestion: "add a call site or @nudo:case, or provide preconditions via --assume",
     };
   }
   // 若 Φ 与实参自身 pred 已蕴含 expect → OK
@@ -62,8 +62,8 @@ export function checkArg(
       return {
         severity: "error",
         code: "nudo:constraint-violated",
-        message: `实参 ${JSON.stringify(lv)} 不满足 ${predToString(expect)}`,
-        suggestion: `改用满足约束的值，或放宽函数前置条件`,
+        message: `argument ${JSON.stringify(lv)} does not satisfy ${predToString(expect)}`,
+        suggestion: `use a value satisfying the constraint, or relax the function precondition`,
       };
     }
   }
@@ -71,8 +71,8 @@ export function checkArg(
   return {
     severity: "warning",
     code: "nudo:constraint-unproven",
-    message: `无法证明实参满足 ${predToString(expect)}`,
-    suggestion: `已知信息不足；可 --assume 或补 case`,
+    message: `cannot prove the argument satisfies ${predToString(expect)}`,
+    suggestion: `not enough information; use --assume or add a case`,
   };
 }
 
@@ -113,7 +113,7 @@ export function checkCall(
     diags.push({
       severity: "error",
       code: "nudo:fn-not-found",
-      message: `未找到函数 ${fnName}`,
+      message: `function ${fnName} not found`,
     });
     return diags;
   }
@@ -123,7 +123,7 @@ export function checkCall(
     diags.push({
       severity: "error",
       code: "nudo:arg-count",
-      message: `${fnName} 期望 ${g.params.length} 个参数，实际 ${args.length}`,
+      message: `${fnName} expects ${g.params.length} argument(s), got ${args.length}`,
       fn: fnName,
     });
     return diags;
@@ -144,8 +144,8 @@ export function checkCall(
     diags.push({
       severity: "info",
       code: "nudo:partial-result",
-      message: `${fnName}(...) 结果置信度 ${g.symbolic.conf}`,
-      suggestion: "补充调用点或约束可提高精度",
+      message: `${fnName}(...) result confidence ${g.symbolic.conf}`,
+      suggestion: "add a call site or constraint to improve precision",
       fn: fnName,
     });
   }

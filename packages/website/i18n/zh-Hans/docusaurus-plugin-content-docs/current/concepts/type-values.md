@@ -14,7 +14,7 @@ Abs 值是 JavaScript 可能值的符号集合 —— 它不像具体值 `42` �
 - **shape** —— 外延载体：值长什么样。种类：`prim`（带 `lit` term 即精确值）、`obj`、`arr`、`tuple`、`fn`、`eff`（`promise<…>` / `generator<…>`）、`brand`（名义实例）、`sum`（联合）、`never`、`any`（无约束）、`unknown`（推导失败 —— 见 [any vs unknown](#any-vs-unknown)）。
 - **term** —— 抽象值身份：`lit`（具体）、`var`（符号 α，如 `A1`）或 `app`（应用表达式，如 `(x + 2)`）。
 - **pred** —— 相对 term 的约束：`(x + 2) > 3`。
-- **conf** —— 抽象的精确度：`exact` / `path` / `widened` / `partial` / `opaque`。
+- **conf** —— 抽象的精确度：`exact` / `path` / `widened` / `mock` / `partial` / `opaque`。
 
 构造器（`num()`、`strLit(…)`、`obj({…})`…）与核心函数（`leqAbs`、`formatAbs`、`checkSource`…）见 [core API](../api/core.md)。
 
@@ -94,10 +94,11 @@ number | string       // 异构联合
 | `lit(v)` | 字面量域 | `lit(42)` / `lit("ada")` / `lit(true)` |
 | `union(…)` | 成员联合 | `union(lit(1), lit(2))` |
 | `shape({ … })` | 对象形状（字段递归） | `shape({ id: number().gt(0) })` |
-| `array(…)` / `record(…)` | 数组 / 记录域 | `array(number())` |
+| `array(…)` | 数组元素约束 | `array(number())` |
+| `any()` | 无约束域（与未标注入口参数相同） | `any()` |
 | `fn({ … }, …)` | 函数关系 | `fn({ x: number().gt(0) }, number())` |
-| 构建器链 | `.gt/.gte/.lt/.lte/.shift/.int…` | `number().gt(0).int()` |
-| 裸字面量 | 直接解析 | `42`、`"abc"`、`true`、`[1, 2]` |
+| 构建器链 | `.gt/.ge/.lt/.le/.int/.min/.max/.length/.shift…` | `number().gt(0).int()` |
+| 裸字面量 | 直接解析 | `42`、`"abc"`、`true`、`[1, 2]`、`null`、`undefined`、`unknown`、`never` |
 
 指令类型表达式使用上面的约束构建器加具体字面量。`@nudo:mock` body 内写普通 JavaScript 值和闭包 —— 不要把构建器调用当作返回负载。
 
@@ -155,25 +156,19 @@ selfAdd(2);       // → 4  #exact
 // Observed: 2 | 4 —— 相关性保持，绝不会是 1+1 | 1+2 | 2+1 | 2+2
 ```
 
-抽象实参下结果拓宽到代数判定的域（`sum(number, string)` → `string #path`；`selfAdd(number)` → `number #widened`）—— 只有运算符或方法*必须*区分成员时才逐成员展开。
+抽象实参下结果拓宽到代数判定的域（`2 + x`，其中 `x: number | string` → `number | string`；`selfAdd(number)` → `number #widened`）—— 只有运算符或方法*必须*区分成员时才逐成员展开。
 
-### 4. 守卫窄化
+### 4. 守卫窄化（逐调用点）
 
-类型守卫在分支中窄化值。检查 `typeof x === "string"` 或 `x === null` 时，引擎在 `if` 分支窄化 `x`，在 `else` 分支排除这些值。
+类型守卫只有在守卫测试对**调用点的具体实参***确定*为真/假时分叉分支。每条 `call@L…` case 用该调用的精确实参求值，匹配的分支运行，另一个被消除：
 
 ```javascript
-function process(x) {
-  if (typeof x === "string") {
-    // 这里 x 是 string
-    return x.length;  // → number
-  }
-  if (x === null) {
-    // 这里 x 是 null
-    return 0;
-  }
-  // x 已窄化（如输入为 string | number | null 时是 number）
-  return x;
+function len(x) {
+  if (typeof x === "string") return x.length;
+  return -1;
 }
+len("abc");  // → 3   （string 调用走该分支）
+len(5);      // → -1  （number 调用落空）
 ```
 
-窄化规则支持 `typeof`、`===`、`!==`、`instanceof`、`Array.isArray` 与真值检查。
+**抽象**实参（`number()`、`union(...)`）无法判定条件——两个分支以相同值运行，结果 join。不存在抽象联合的交集/减法。已验证模式与当前边界：[控制流收窄](./control-flow-narrowing.md)。

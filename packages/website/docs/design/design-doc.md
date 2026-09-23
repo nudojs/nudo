@@ -67,7 +67,7 @@ When Nudo executes `transform` on abstract string input, the engine propagates t
 | **shape** | Structural kind: `any` / `unknown` / `prim` / `obj` / `arr` / `tuple` / `fn` / `brand` / `eff` / `sum` / `never` |
 | **term** | Symbolic identity of the value: literal, variable, or application (`x+1`) |
 | **pred** | Constraint relative to the term: `x>0`, conjunctions, … |
-| **conf** | Confidence: `exact` / `path` / `widened` / `partial` / `opaque` |
+| **conf** | Confidence: `exact` / `path` / `widened` / `mock` / `partial` / `opaque` |
 
 `any` means "any JS value" (unconstrained parameter). `unknown` means "analysis has no information." They are not the same.
 
@@ -119,7 +119,7 @@ function process(x) {          // x: number | string
 numLit(value)                 // Exact number literal
 strLit(value)                 // Exact string literal
 num() / str() / bool()        // Primitive domains
-never / unknown               // Empty set / universal set (constants)
+never / unknown               // Empty set / inference-failure marker (the universal set is `any`)
 obj({ key: { value, optional? } })  // Object shape
 abs(shape, term, pred, conf)  // General constructor
 absFunction(params, { body, env, apply })  // Function values
@@ -196,7 +196,7 @@ eval(Identifier "x")  →  env.lookup("x")
 eval(BinaryExpression { left, op, right })  →  arithmetic(op, eval(left), eval(right))
 ```
 
-**Conditional (if-else):** The engine may **evaluate both branches** with narrowed values and merge:
+**Conditional (if-else):** The engine forks both branches when the test is not decidable — without narrowing either arm:
 
 ```text
 eval(IfStatement { test, consequent, alternate }) →
@@ -204,15 +204,15 @@ eval(IfStatement { test, consequent, alternate }) →
   if condition === lit(true)   → eval(consequent)
   if condition === lit(false)  → eval(alternate)
   else:
-    [envTrue, envFalse] = narrow(env, test)
-    resultTrue  = eval(consequent, envTrue)
-    resultFalse = eval(alternate, envFalse)
+    // both branches run with the SAME env; results join (no narrowing)
+    resultTrue  = eval(consequent, env)
+    resultFalse = eval(alternate, env)
     return union(resultTrue, resultFalse)
 ```
 
 ### 3.3 Narrowing Rules
 
-Narrowing refines values based on conditions (`typeof` / `===` / `Array.isArray` / `instanceof` / truthiness / `in` / `?.` / `??` / `switch` / discriminant fields). The full pattern table lives in [Abstract Interpretation](../concepts/abstract-interpretation.md#narrowing-rules); the verified-patterns walkthrough is [Control Flow Narrowing](../concepts/control-flow-narrowing.md).
+Narrowing is **per call site**: a branch is taken when the condition evaluates to *definitely* true/false for the concrete argument of that call (`typeof` / `===` / `Array.isArray` / `switch` / truthiness / discriminated fields). Abstract arguments (`number()`, unions) cannot decide a condition — both branches run with the same value and their results join; there is no abstract type intersection/subtraction. `in` / `?.` / `??` are only partially supported. Verified walkthrough: [Control Flow Narrowing](../concepts/control-flow-narrowing.md).
 
 ---
 
@@ -229,7 +229,7 @@ for (let i = 0; i < arr.length; i++) {
 }
 ```
 
-A concrete bound accumulates element-wise to a literal. An abstract bound sums the first `0…7` iterations and reports `28 #exact`.
+A concrete bound accumulates element-wise to a literal. An abstract bound unrolls up to the cap and reports the widened join of the iterations (`number` for a numeric accumulator) — a termination guard, not a fixed-point refinement.
 
 ### 4.2 Closures and Higher-Order Functions
 
@@ -391,7 +391,12 @@ function calc(a, b) {
    - False: `a + b` → `number`
 4. Merge: `number`
 
-**Observed: ** `((1, 2) => 3) & ((number, number) => number)`
+**`nudo test` renders both cases:**
+
+```text
+debug "concrete"  (1, 2) => 3
+debug "symbolic"  (number, number) => number
+```
 
 ---
 
@@ -405,9 +410,10 @@ function calc(a, b) {
 - **Refined IR** — template/range refinements; source contracts via `@nudo:refine`.
 - **Abs algebra (single-track)** — Term/Pred/Abs, arithmetic kernel, `leqAbs`, generalize, `nudo check` / `nudo test` / `nudo contract` / `nudo export`, CheckJson, gold gates (recall = precision = 1.0).
 - **Call budget** — depth/cycle/total guards so recursive check never stack-overflows.
+- **Emit round-trip** — generated `.d.ts` passes `tsc --noEmit --strict` (`emit-tsc-roundtrip.test.ts`).
+- **Harvest automation** — `nudo env harvest --auto [dir]` scans bare imports and reports auto-harvestable `@types` packages.
 
 ### Open
-- emit round-trip through tsc; harvest automation
 - esbuild / webpack plugins; source maps for error locations
 
 ---

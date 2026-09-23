@@ -13,10 +13,10 @@ The package exports two functions and one type from `src/index.ts`.
 ### harvestDts
 
 ```typescript
-harvestDts(files: string[]): HarvestedEnv
+harvestDts(files: string[], opts?: { maxFileBytes?: number; maxMs?: number }): HarvestedEnv
 ```
 
-Reads the given `.d.ts` **file paths** from disk and parses them with the TypeScript compiler in two phases:
+Reads the given `.d.ts` **file paths** from disk and parses them with the TypeScript compiler in two phases. `opts.maxFileBytes` (default `1_500_000`) skips oversized files; `opts.maxMs` sets a deadline after which excess files count as `skipped`.
 
 1. **Collect** — walk every module/global declaration (`declare module "..."`, namespaces, interfaces, classes, type aliases, function overloads, `export =` / `export * from` re-exports) into a shared symbol table.
 2. **Materialize** — convert the collected symbols into Abs values (see [core](./core.md)). Because materialization runs only after the whole symbol table is populated, cross-file references resolve regardless of file order.
@@ -99,15 +99,17 @@ npx @nudojs/cli env harvest node
 
 ```text
 Harvested @types/node → nudo-harvest-node.ts
-  files:    80
-  symbols:  1671
-  skipped:  148
-
-Usage — add this directive at the top of your JS file:
-  /// @nudo:env nudo-harvest-node.ts
 ```
 
-By default the env file is written to `./nudo-harvest-<pkg>.ts`; pass `--out <file>` to change it. See the [CLI reference](./cli-reference.md) for the full command contract.
+The per-file/symbol statistics (`files` / `symbols` / `skipped`) are available programmatically on [`harvestDts`](#harvestdts)'s `stats` return and in the `--auto` scan summary — the direct command prints only the output path.
+
+By default the env file is written to `./nudo-harvest-<pkg>.ts`; pass `--out <file>` to change it. Then reference it from source with the path-based directive:
+
+```text
+/// @nudo:env nudo-harvest-node.ts
+```
+
+See the [CLI reference](./cli-reference.md) for the full command contract.
 
 ## Using the Harvested Env
 
@@ -130,7 +132,7 @@ Running `nudo test` on this file shows the harvested signature of `join` flowing
 ```text
 === buildKey ===
 
-call@L9: ("docs", "readme") => `${string}.md`
+  call@L9  ("docs", "readme") => `${string}.md`
 ```
 
 Path-based env files are loaded via dynamic import, so asynchronous consumers (`nudo check`/`nudo test`, `analyzeFileAsync`, the LSP validation path) preload them; the synchronous `analyzeFile` degrades when a file declares one. Async tooling should prefer [`analyzeFileAsync`](./service.md).

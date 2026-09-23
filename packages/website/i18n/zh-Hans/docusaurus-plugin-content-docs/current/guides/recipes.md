@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: 22
       - run: npm i -g nudojs
-      - run: nudojs check src/
+      - run: npx nudojs check src/
 ```
 
 **验证：** 干净树上 `npx nudojs check src/` 退出 `0`；L1/L2 错误时退出 `1`。
@@ -100,10 +100,10 @@ Contracts are *.nudo.js / @nudo:refine. Do not invent body-AST obligations.
 signatures
   getName(user: any) => any  throws TypeError
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
-`any` = 无约束入口。`throws` = L2 域。诊断码：[诊断](../reference/diagnostics.md)。
+`any` = 无约束入口。`throws` = L2 域。报头里的 `L1` 是**行号**（此处 `getName` 声明在第 1 行）—— 层是 L2。诊断码：[诊断](../reference/diagnostics.md)。
 
 ---
 

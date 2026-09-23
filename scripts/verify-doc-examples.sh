@@ -141,6 +141,22 @@ verify_export_standard runtime-generation packages/website/docs/guides/runtime-g
   'export const createUser_input' \
   '"k":"lit"'
 
+# semantics: Set/Map iteration + Symbol.iterator probe fold (formerly documented as unknown).
+verify_test semantics packages/website/docs/concepts/semantics.md \
+  '() => "a"' \
+  '() => 1' \
+  '([1]) => boolean'
+
+# control-flow-narrowing: optional chaining / ?? fold on known shapes at any depth.
+verify_test control-flow-narrowing packages/website/docs/concepts/control-flow-narrowing.md \
+  '=> 3000' \
+  '=> 5' \
+  '=> undefined'
+
+# examples: parameter destructuring folds argument shapes.
+verify_test examples packages/website/docs/guides/examples.md \
+  '({ x: 1, y: 2 }) => 3'
+
 printf -- '--------------------------------------------------------------\n'
 printf 'doc examples verified: %s checks passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

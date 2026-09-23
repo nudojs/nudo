@@ -18,7 +18,7 @@ Nudo is for teams whose **logic lives in JavaScript** and who need **honest obse
 | Keep JS as JS | Logic is plain JS; contracts are plain JS modules (`*.nudo.js`) |
 | Feed TypeScript / Zod / mocks | `nudo export` one-way projections from Abs |
 
-`nudo check` **only validates**. Artifacts (`.d.ts`, Zod, JSON Schema, guards) come from **`export`** — not from the checker.
+`nudo check` **only validates**. Artifacts (`.d.ts`, Zod, Standard Schema, guards) come from **`export`** — not from the checker.
 
 ## Two work modes
 
@@ -57,7 +57,7 @@ npx nudojs check logic.js --from calls.js
 
 - Unconstrained entry params display as **`any`** (not `unknown`).
 - Violations print **`actual ⊭ expected`** on Abs.
-- `export` can then project `.d.ts` / Zod / JSON Schema for the ecosystem — **lossy views**, Abs stays the truth.
+- `export` can then project `.d.ts` / Zod / Standard Schema for the ecosystem — **lossy views**, Abs stays the truth.
 
 Honest comparison: [Nudo vs TypeScript](./guides/vs-typescript.md).
 
@@ -70,7 +70,7 @@ Contracts first ──► *.nudo.js / refine ────────┘        
                                                           ▼
                          Abs (source of truth) ──► nudo export ──► .d.ts
                                                           │            Zod
-                                                          │            JSON Schema (mocks, …)
+                                                          │            Standard Schema
                                                           └──► IDE / LSP · Agent / MCP
 ```
 

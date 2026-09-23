@@ -65,8 +65,8 @@ Glob patterns support any file extension (`**/*.js`, `**/*.mjs`, `**/*.ts`, …)
 - **Analysis gate**: After globs, files pass `shouldAnalyzeFile` (`package.json#nudo.analysis.mode`). Shipped default is `"exports"` — files with `@nudo:*`, `export`, or a sidecar are analyzed. Set `"all"` for every target path, or `"directives"` for the conservative gate.
 - **Analysis**: Matching files use `analyzeFileAsync` from `@nudojs/service` to run type inference.
 - **Refinement gate**: Matching files also pass through the Abs refinement gate (`checkSource` from `@nudojs/core`): `nudo:constraint-violated`, `nudo:assign-mismatch`, and `nudo:arg-structure` issues are merged into the same diagnostics pipeline and reported alongside evaluator diagnostics.
-- **Caching**: Analysis results are cached per file. The cache is cleared at `buildStart`.
-- **Diagnostics**: Errors and warnings from analysis are emitted as Vite warnings (or errors when `failOnError` is `true`). At build end, a summary is logged: `[nudo] Analysis complete: X error(s), Y warning(s)`.
+- **Caching**: Analysis results are cached per file. The cache is cleared at `buildStart` and on every `watchChange` (dev-server file change).
+- **Diagnostics**: Analysis diagnostics are filtered through the project `package.json#nudo.analysis.diagnostics` tier (default tier: error + warning minus noisy codes) before emission; what survives is emitted as Vite warnings (or errors when `failOnError` is `true`). Setting `"diagnostics": "errors"` therefore silences warnings at build time, and `"off"` silences the plugin's diagnostic output entirely. At build end, a summary is logged: `[nudo] Analysis complete: X error(s), Y warning(s)`.
 
 ## `failOnError`
 

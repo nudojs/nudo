@@ -20,6 +20,7 @@ import {
   findProjectConfig,
   interfaceConfig,
   checkConfig,
+  collectSkipReturns,
   filterDiagnosticsByLevel,
   diagnosticsLevelForFile,
   isProjectConfigPath,
@@ -562,6 +563,7 @@ export function checkToLspDiagnostics(
       ...(autoBind === false ? { autoBind: false } : {}),
       entryThrows: cCfg.entryThrows,
       ...(cCfg.ignoreThrows.length > 0 ? { ignoreThrows: cCfg.ignoreThrows } : {}),
+      skips: collectSkipReturns(source),
     });
     return report.issues
       .filter((i) => i.severity === "error" || i.severity === "warning")

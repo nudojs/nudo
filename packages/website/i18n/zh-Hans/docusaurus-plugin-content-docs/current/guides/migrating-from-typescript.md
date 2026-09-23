@@ -65,7 +65,7 @@ Nudo 按 **JS 语义**分析。可以指向 `.ts` 文件，但会剥离标注—
    npx nudojs export packages/tool/src/index.js --format schema --dialect zod
    ```
 
-   JSON Schema / Zod 投影服务 mock 与运行时检查；它们**不能**替代 `nudo check`。
+   Standard Schema / Zod 投影服务运行时检查与 mock；它们**不能**替代 `nudo check`。
 
 7. **IDE** — 安装 VS Code / Zed 扩展，获得 JS 上的 hover、inlay、CodeLens 草稿/落盘。
 

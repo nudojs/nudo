@@ -8,14 +8,19 @@ description: nudo env harvest —— 把 @types 声明转为 Nudo env 模块。
 `nudo env harvest` 把 `@types/<pkg>` 声明转换为 Nudo env 模块，使 `@nudo:env` 能在分析中为 Node/Web API 提供类型。
 
 ```bash
-npx nudojs env harvest <pkg> [--out dir]
+npx nudojs env harvest <pkg> [--out file]
 npx nudojs env harvest node
+# 自动 harvest：扫描目录中的裸 import，上报可 harvest 的 @types 包
+npx nudojs env harvest --auto .
+npx nudojs env harvest --auto src/
 ```
+
+`--out` 接收输出**文件**路径（默认 `./nudo-harvest-<pkg>.ts`）——不是目录。`--auto [dir]` 上报目录树中可自动 harvest 的 `@types` 包（带 `--auto` 时 `<pkg>` 可省略）。
 
 在源码中引用生成的 env：
 
 ```ts
-/// @nudo:env ./nudo-harvest-node.ts
+/// @nudo:env nudo-harvest-node.ts
 ```
 
 内置 `es` / `web` / `node` 环境已覆盖大量常见 API（`@nudojs/env`）。

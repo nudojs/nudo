@@ -42,8 +42,13 @@ nudo test lib/ --from test/
 Output:
 
 ```text
+nudo test  lib/slugify.js
+
 === slugify ===
-  call@L4  ("Hello World") => string
+  call@L4  ("Hello World") => "hello-world"
+
+assertions
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 1 synthetic case(s) printed above)
 ```
 
 The case was not written by anyone — it was harvested from line 4 of the test file, which is why it is named `call@L4`. Every recorded call site becomes one synthesized case; multiple call sites to the same function union into the combined type, exactly like hand-written `@nudo:case` directives do. Unconstrained entry params display as `any`. When a function has **no** call sites anywhere, the analyzer falls back to one `entry@L…` case instead (`(any) => any` for unconstrained params); when `call@` cases exist, no `entry@` is synthesized for that function.
@@ -97,7 +102,7 @@ Run against two real libraries, with their own test suites as usage sites:
 | `@hapi/hoek` | 9.3.0 (25 files, 42 functions) | 54.8% → **98.6%** | 291 → **0** |
 | `@discoveryjs/json-ext` | 0.5.7 | 77.8% → **91.8%** | 41 → **0** |
 
-No directives were written for either library — every case in the second column of results is synthesized from a recorded call site.
+No directives were written for either library — every case in the second column of results is synthesized from a recorded call site. Full story of the attribution gate that made the zero-false-attribution column possible: [the 22-file smear](/blog/attribution-gate).
 
 ## Known Boundaries
 
@@ -114,7 +119,7 @@ nudo test lib/ --from test/ --freeze           # fill in functions that have no 
 nudo test lib/ --from test/ --freeze=update    # re-synchronize previously generated directives
 ```
 
-The default `freeze` mode only fills in functions with no case directives at all. `=update` goes further: it strips the previously generated `call@` directives, re-analyzes the stripped source, and writes the refreshed set back — which is why it also surfaces *drift* at the usage sites. A test that changed its arguments shows up as a diff; `--freeze=update --dry-run --exit-on-diff` turns that into a CI gate that exits `1` on any non-empty diff. Both modes are idempotent (`No changes.` on a synced file).
+The default `freeze` mode only fills in functions with no case directives at all. `=update` goes further: it strips the previously generated `call@` directives, re-analyzes the stripped source, and writes the refreshed set back — which is why it also surfaces *drift* at the usage sites. A test that changed its arguments shows up as a diff; `--freeze=update --dry-run --exit-on-diff` turns that into a CI gate that exits `1` on any non-empty diff. Both modes are idempotent (`freeze: no changes.` on a synced file).
 
 ### Merge policy
 

@@ -31,23 +31,34 @@ scale(5);
 
 ```bash
 npx nudojs check calc.js
-npx nudojs test calc.js
 ```
 
 ```text
+nudo check  calc.js
+OK
+  0 error · 0 warning · 0 info · 2 fn
+
 signatures
-  formatName(first: any, last: any) => number | string
   scale(x: any) => number | string
+  formatName(first: any, last: any) => number | string
+
+(no issues)
 ```
 
+可选调试用例（`nudo test` —— 不是产品门禁）：
+
 ```text
-=== formatName ===
-  call@L9  ("Ada", "Lovelace") => "Ada Lovelace"
 === scale ===
   call@L10  (5) => 6
+
+=== formatName ===
+  call@L9  ("Ada", "Lovelace") => "Ada Lovelace"
+
+assertions
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 2 synthetic case(s) printed above)
 ```
 
-Nudo 用实际看到的实参执行了这些函数。无约束入口参数显示为 **`any`**（不是 `unknown`）。观察 = `check` 签名 + `test` 用例 + IDE hover。
+Nudo 用实际看到的实参执行了这些函数。无约束入口参数显示为 **`any`**（不是 `unknown`）。观察 = `check` 签名 + IDE hover；`nudo test` 是可选的调试用例报告器。
 
 ## 3. 加上显式契约（Day 1）
 
@@ -74,9 +85,19 @@ npx nudojs check calc.js
 ```
 
 ```text
-scale(0)  actual: 1  #exact
-          expected: x > 0
-          nudo:constraint-violated   actual ⊭ expected
+nudo check  calc.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
+signatures
+  scale(x: number) => number
+  formatName(first: any, last: any) => number | string
+
+issues
+  [ERROR L12 scale] scale[x]: argument ⊭ precondition  (nudo:constraint-violated)
+      actual:   0  #exact
+      expected: x > 0
+      → use a value satisfying x > 0, or relax the precondition on x
 ```
 
 违例按调用点上报。修正调用（或放宽契约）后 `check` 通过——仍会打印签名。

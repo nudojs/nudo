@@ -22,9 +22,9 @@ npx nudojs check pricing.js
 
 ```text
 issues
-  [error] lineTotal: actual ⊭ expected  (nudo:constraint-violated)
-    actual:   0  #exact
-    expected: price > 0
+  [ERROR L5 lineTotal] lineTotal[price]: argument ⊭ precondition  (nudo:constraint-violated)
+      actual:   0  #exact
+      expected: price > 0
 ```
 
 <!-- truncate -->

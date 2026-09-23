@@ -24,7 +24,7 @@ function pct(n) {
  * @nudo:refine return positive
  */
 function bad() {
-  return 0; // error: 返回值 ⊭ @nudo:refine return positive
+  return 0; // error: return value ⊭ @nudo:refine return positive
 }
 
 inc(1);     // ok

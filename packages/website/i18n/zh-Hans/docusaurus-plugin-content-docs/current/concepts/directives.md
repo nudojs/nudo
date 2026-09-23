@@ -54,7 +54,7 @@ case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它�
 
 - **name** — 用例的字符串标识符（如 `"double digits"`）。
 - **args** — 逗号分隔的**具体**参数（`5`、`"hello"`、`{…}`）。
-- **expected**（可选）— `=>` 之后的期望结果，用于校验。
+- **expected**（可选）— `=>` 之后的类型表达式（具体字面量或约束构建器，与 args 同一文法），由 `nudo test` 对推断结果断言。
 
 ### 示例
 
@@ -125,7 +125,7 @@ function add(a, b) {
 
 ## @nudo:skip — 跳过求值
 
-跳过抽象解释。引擎不求值函数体。没有返回类型表达式时，函数报告为 `Skipped (no return type declared)`；在指令后添加类型值表达式即可声明返回类型。
+跳过函数体的抽象解释：引擎不求值它，所以被跳过的函数不会产生引擎债（`nudo:unknown-inference`）噪声。没有返回类型表达式时，函数报告为 `skipped (no return type declared)`，且 `nudo check` 把它的返回值打印为 `any`（无约束——不是保留给推导失败的 `unknown`）；在指令后添加约束构造器表达式即可声明返回类型。
 
 ### 语法
 
@@ -135,6 +135,12 @@ function add(a, b) {
 ```
 
 - **returnsExpr**（可选）— 用作返回类型的类型值表达式。
+
+### 范围
+
+- **不求值函数体。** 声明的类型（或 `any`）成为签名返回值；被跳过的函数体不参与入口 may-throw（L2）求值。
+- **形参义务保留。** `@nudo:refine` 前置条件仍会门禁调用点，形参展示仍来自手写契约——对带 `@nudo:refine x positive` 的被跳过函数 `needsPositive`，`nudo check` 报告 `needsPositive(x: number) => any`。
+- **返回契约仍被检查。** `@nudo:refine return positive` 之下的 `@nudo:skip lit(0)` 会报告 `nudo:constraint-violated`。
 
 ### 示例
 
@@ -148,12 +154,11 @@ function heavyComputation(data) {
 }
 ```
 
-**推断输出：**
+**推断输出（`nudo test`）：**
 
 ```text
 === heavyComputation ===
-
-Skipped (no return type declared)
+  skipped (no return type declared)
 ```
 
 ```javascript
@@ -166,12 +171,11 @@ function unannotatedHeavy(x) {
 }
 ```
 
-**推断输出：**
+**推断输出（`nudo test`）：**
 
 ```text
 === unannotatedHeavy ===
-
-Skipped (declared): number
+  skipped (declared): number
 ```
 
 ---
@@ -247,7 +251,8 @@ calc.js
 | `union(...cs)` | 域之并 | `union(lit(42), lit("a"))` |
 | `fn(params, returns?, { throws? })` | 一等函数接口 | `fn({ x: number() }, number())` |
 | `.gt(n)` `.ge(n)` `.lt(n)` `.le(n)` `.int()` | 数值界（链式） | `number().gt(0).int()` |
-| `.min(n)` `.max(n)` | 字符串长度界（`length(s)` pred） | `string().min(1)` |
+| `.min(n)` `.max(n)` | 长度界——`length(s)` pred（字符串/数组） | `string().min(1)` |
+| `.length(n)` | 长度等值界（`length(s) = n`） | `string().length(3)` |
 | `.shift(n)` | 每个常数界整体 `+n` 平移 | `positive.shift(1)` |
 | `and(...cs)` | 标量合取（顶层函数，不是链式方法） | `and(positive, number().lt(10))` |
 | `partial(c)` / `pick(c, keys)` / `omit(c, keys)` | 形状工具 | `partial(user)` |
@@ -457,25 +462,13 @@ import { debounce, throttle } from "lodash";
 // debounce 来自 mock；throttle 正常解析
 ```
 
-### 项目级配置
-
-```json
-{
-  "nudo": {
-    "mocks": {
-      "axios": "./nudo-mocks/axios.js"
-    }
-  }
-}
-```
-
-文件级 `@nudo:mock-module` 指令会覆盖同一模块的项目级 mock。
+模块 mock 逐文件用 `@nudo:mock-module` 声明——不存在项目级 mock 配置。
 
 ---
 
 ## @nudo:as — 类型断言
 
-覆盖下一条语句的值类型。类似 TypeScript 的 `as` 关键字，但以行注释的形式放在语句上方。影响 `VariableDeclaration`、`ReturnStatement` 和 `ExpressionStatement`。
+覆盖下一条语句的值类型。类似 TypeScript 的 `as` 关键字，但以行注释的形式放在语句上方。在 B 路径上作用于被覆盖语句的 `VariableDeclaration` 初始化值与 `ReturnStatement` 返回值。
 
 ### 语法
 

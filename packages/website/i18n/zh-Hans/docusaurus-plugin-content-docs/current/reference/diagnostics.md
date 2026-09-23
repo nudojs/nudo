@@ -52,6 +52,18 @@ HOF 实参不是可调用 `fn`，或元数与**显式** relation 契约不匹配
 
 侧车加载失败，或 emit 会覆盖手写绑定。手写始终优先。
 
+### `nudo:interface-cycle`
+
+侧车 `@nudo:import` 链成环。**Error。** 修复：打破侧车 import 环。
+
+### `nudo:interface-domain-exceeds`
+
+经 `nudo check --from` 注入的跨文件调用点证据不在手写契约域内（`⊄`）。**Error。** 修复：放宽契约，或修正使用处。
+
+### `nudo:interface-drift`
+
+固化的 `@generated` 侧车段 ≠ 今日重算的调用点域或返回。**Warning** —— 不挡 exit。
+
 ## 运行时边界（L2）
 
 ### `nudo:entry-may-throw`
@@ -100,9 +112,21 @@ API 未被 env/推理覆盖（如未建模全局）。优先 `@nudo:env` / mock�
 
 函数无法泛化（CJS/匿名形态仍经入口 fallback 得到 L2）。
 
-### `nudo:unreachable`
+### `nudo:no-method`
 
-`return`/`throw` 之后的代码 —— info 级。
+无法解析的成员访问：``Method 'x' does not exist on type 'T'`` / ``Property 'x' does not exist on type 'T'``。原始类型接收者（`number` / `boolean` / `bigint` / `symbol`）为 **error**，其余为 warning。与 `nudo:unknown-recv`（`unknown` 接收者）不同。
+
+### `nudo:mock-invalid`
+
+`@nudo:mock` 表达式无法解析为已知形态（stub/spy/mock 形式、箭头函数或类型表达式）。**Warning** —— 检查受支持形态。
+
+### `nudo:interface-underivable`
+
+**派生**契约行（root 驱动推导 / `nudo contract --draft`）无法从源码证据推导（opaque / 截断 / 无证据）。**Info** —— 该行被跳过；手写契约从不触发此码。
+
+### `nudo-unreachable`
+
+`return`/`throw` 之后的代码 —— info 级。注意连字符：这是唯一不带冒号的诊断 id。
 
 ### `nudo:may-throw`
 
@@ -146,6 +170,32 @@ Field 'name' is missing on the evaluated object shape
 
 **Warning，默认 off。** C0.5：求值实际命中了闭对象 shape 的缺字段（用 `package.json#nudo.analysis.evalMissingSlot: "warning"` 打开）。它是**观察，不是义务**——不会凭空产生 check 错误；手写契约仍经 `nudo:constraint-violated` 门禁。
 
+## 测试断言（`nudo test`）
+
+### `nudo:case-expected`
+
+```text
+debug "bad": expected 5, got 4. The inferred return type does not match the
+expected type declared in the @nudo:case witness
+```
+
+声明的 `@nudo:case "name" (…) => expected` 见证的期望类型与推断结果不符。**在 test 运行中为 error** —— 声明断言失败会让 `nudo test` 以 `1` 退出；合成 `call@` / `entry@` case 永不导致运行失败。
+
+报告中的失败面：
+
+```text
+=== double ===
+  debug "bad"  (2) => 4
+
+assertions
+  ✗ 0 passed · 1 failed · 0 unchecked
+  [FAIL] double  case "bad"
+         expected: 5
+         actual:   4
+```
+
+**修复：** 改正见证期望或函数体。
+
 ## 读懂 `actual ⊭ expected`
 
 ```text
@@ -153,7 +203,7 @@ actual:   0  #exact     // 调用点观测到的 Abs
 expected: price > 0     // 来自契约的 Pred
 ```
 
-Abs 上的 conf 标记：`#exact` / `#path` / `#widened` / `#partial` / `#opaque` —— 见 [Abs](/docs/concepts/type-values)。
+Abs 上的 conf 标记：`#exact` / `#path` / `#widened` / `#mock` / `#partial` / `#opaque` —— 见 [Abs](/docs/concepts/type-values)。
 
 ## 影响诊断的配置
 

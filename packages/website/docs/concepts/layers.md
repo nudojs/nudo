@@ -59,7 +59,7 @@ Without an explicit contract, the contract degrades to the JS runtime boundary: 
 
 ## Advanced — Abs
 
-The internal type is **Abs** (`shape × term × pred × conf`): types are computable values. `nudo check --abs` shows the lossless Abs face. You rarely need this for day-to-day work.
+The internal type is **Abs** (`shape × term × pred × conf`): types are computable values. `nudo check --abs` shows the per-function algebra face (shape + conf); `--generalize` adds the symbolic term/pred α. You rarely need this for day-to-day work.
 
 ## Next
 

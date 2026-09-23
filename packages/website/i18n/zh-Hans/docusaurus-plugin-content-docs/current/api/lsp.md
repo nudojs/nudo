@@ -8,7 +8,7 @@ Nudo 语言服务器协议（LSP）包的 API 参考。`@nudojs/lsp` 把[服务�
 
 ## Public API 冻结面（A1/A2）
 
-`@nudojs/lsp` 当前为 **0.8.0，pre-1.x**。1.0 之前必须保持稳定的清单在 monorepo：
+`@nudojs/lsp` 为 **1.0.0**。冻结清单 —— 1.x 全线必须保持稳定的内容 —— 在 monorepo：
 
 **[`packages/lsp/PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)**
 
@@ -228,7 +228,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 
 脏传播需要 `knownFiles` 上的 import 图，而重建它过去意味着重读并重解析每个已知文件。`buildModuleGraph`（来自 `@nudojs/service`）现在接收会话级的 `moduleGraphCache`：每个条目以纯字符串存储文件的 `mtimeMs`、`size` 与已抽取的 import 边。只做 `stat` 元数据比对 —— `mtimeMs` **和** `size` 均严格相等即命中，复用缓存的边；未命中则从磁盘重读该文件并回填条目。因此未变文件在每次传播中只花一次 `stat`：零磁盘读取、零解析。包内测试用 `chmod 000` 把依赖文件变为不可读来钉死这一行为 —— 传播仍能从缓存的边算出正确的脏集合。
 
-单条结果的工作量同样有封顶：单个 `AnalysisResult` 对每个函数的合成精确 case 数设上限（`MAX_PRECISE_CALLSITE_CASES = 3`），其余调用记录折叠为一个符号聚合，不会无限增长。
+单条结果的工作量同样有封顶：单个 `AnalysisResult` 对每个函数的合成精确 case 数设上限（`callSiteBudget`，默认 `3`；可经 `package.json#nudo.analysis.callSiteBudget` 配置），其余调用记录折叠为一个符号聚合，不会无限增长。
 
 ### 求值守卫
 

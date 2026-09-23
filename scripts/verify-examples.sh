@@ -180,18 +180,18 @@ done < <(find docs/examples -type f \( -name '*.js' -o -name '*.ts' \) | sort)
 # constraints/ — negative examples pin their diagnostic lines; register.js
 # (positive) pins its signatures so shape-refine drift also goes red.
 pin 'pnpm run check docs/examples/constraints/set-delay.js' \
-  'setDelay[ms]: 实参 ⊭ 前置' 'expected: ms > 0' \
-  'needsPositive[x]: 实参 ⊭ 前置' 'expected: x > 0'
+  'setDelay[ms]: argument ⊭ precondition' 'expected: ms > 0' \
+  'needsPositive[x]: argument ⊭ precondition' 'expected: x > 0'
 pin 'pnpm run check docs/examples/constraints/return-contract.js' \
-  'bad: 返回值 ⊭ @nudo:refine return positive' 'expected: return > 0'
+  'bad: return value ⊭ @nudo:refine return positive' 'expected: return > 0'
 pin 'pnpm run check docs/examples/constraints/declared-vs-if.js' \
-  'setDelay[ms]: 实参 ⊭ 前置'
+  'setDelay[ms]: argument ⊭ precondition'
 pin 'pnpm run check docs/examples/constraints/register.js' \
   '0 error · 0 warning' \
   'register(u: { id: number, name: string }) => string' \
   'setup(c: { retries: number, label?: string }) => number'
 pin 'pnpm run check docs/examples/constraints/add-pred.js' \
-  'scale[x]: 实参 ⊭ 前置' 'actual:   -1  #exact'
+  'scale[x]: argument ⊭ precondition' 'actual:   -1  #exact'
 pin 'pnpm run test:cli docs/examples/constraints/add-pred.js' \
   '(1, 3) => 4' '(100, 1) => 101' '(-1, 1) => 0'
 
@@ -201,7 +201,7 @@ pin 'pnpm run test:cli docs/examples/constraints/add-pred.js' \
 # count and goes red).
 pin 'pnpm run check docs/examples/structure/assign.js' \
   '1 error · 0 warning' \
-  'config: 赋值 ⊭ 原有形状' 'missing slot port'
+  'config: assignment ⊭ existing shape' 'missing slot port'
 pin 'pnpm run check docs/examples/structure/arg-structure.js' \
   '2 error · 0 warning' \
   'nudo:constraint-violated' 'missing field p.y'
@@ -209,12 +209,12 @@ pin 'pnpm run check docs/examples/structure/arg-structure.js' \
 # vs-ts/ — nudo side pins its diagnostics; tsc side pins its own.
 pin 'pnpm run check docs/examples/vs-ts/constraints/nudo.js' \
   '2 error · 0 warning' \
-  'setDelay[ms]: 实参 ⊭ 前置' 'actual:   -50  #exact'
+  'setDelay[ms]: argument ⊭ precondition' 'actual:   -50  #exact'
 pin_empty 'pnpm exec tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts'
 pin 'pnpm run check docs/examples/vs-ts/structure/nudo.js' \
   '2 error · 0 warning' \
   'greet[u]' 'constraint-violated' \
-  'config: 赋值 ⊭ 原有形状'
+  'config: assignment ⊭ existing shape'
 pin 'pnpm exec tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts' \
   'error TS2345' 'error TS2353' 'error TS2741'
 

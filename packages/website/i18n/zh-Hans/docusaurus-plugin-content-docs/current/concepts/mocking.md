@@ -83,7 +83,7 @@ async function fetchUser(id) {
 ```text
 === fetchUser ===
 
-debug "user": (1) => promise<{ id: 1, name: "Alice" }>
+  debug "user"  (1) => promise<{ id: 1, name: "Alice" }>
 ```
 
 解析 promise 的 mock 帮助函数——`stub().resolves(value)` 让每次调用返回 `promise<value>`：
@@ -99,7 +99,7 @@ async function fetchUser(id) {
 }
 ```
 
-**这里结果不同：** 被 resolve 对象的闭包槽不会桥接——`json` 到达时没有函数体（`json: () => ?`），所以 `res.json()` 求值为 `unknown`，本示例推断出 `promise<unknown>`（abs `promise<unknown> #partial`），而不是箭头 mock 的 `promise<{ id: 1, name: "Alice" }>`。`resolves` 对纯数据保持全精度（`stub().resolves({ ok: true, id: 1 })` → `promise<{ ok: true, id: 1 }>`）；当 mock 结果还要被调用时，用箭头函数形式。同步帮助函数：
+**与箭头 mock 结果相同：** `stub().resolves(value)` 把 `value` 包进 promise，且对象的闭包槽会被桥接，所以本示例推断出 `promise<{ id: 1, name: "Alice" }>`——包括可调用的 `json` 槽。哪种形式读起来更顺就用哪种。同步帮助函数：
 
 ```javascript
 /**
@@ -116,7 +116,7 @@ function readPort() {
 ```text
 === readPort ===
 
-debug "default": () => 8080
+  debug "default"  () => 8080
 ```
 
 约束构造器表达式直接把名称绑定到抽象域：
@@ -136,7 +136,7 @@ function plan() {
 ```text
 === plan ===
 
-debug "plan": () => number
+  debug "plan"  () => number
 ```
 
 从模块——模块必须定义与被 mock 名称相同的绑定：
@@ -161,7 +161,7 @@ const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
 ```text
 === readConfig ===
 
-debug "read": (string) => unknown
+  debug "read"  (string) => unknown
 
 [warning] read-config.js:6:9 Built-in API "fs" is not covered by Nudo's type inference (nudo:builtin-unknown)
 ```

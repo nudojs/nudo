@@ -93,7 +93,7 @@ function process(data) {
 
 ### 查找引用
 
-在当前文件中查找符号的所有使用。按 `Shift+F12`（或右键 -> Find All References）。
+查找符号的所有使用——本文件及跨文件（其他已打开/已知文件中的导入方）。按 `Shift+F12`（或右键 -> Find All References）。
 
 ### 重命名符号
 

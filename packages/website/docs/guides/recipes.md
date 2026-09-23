@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: 22
       - run: npm i -g nudojs
-      - run: nudojs check src/
+      - run: npx nudojs check src/
 ```
 
 **Verify:** `npx nudojs check src/` exits `0` on a clean tree; `1` on L1/L2 errors.
@@ -100,10 +100,10 @@ Install **nudo-vscode** (or Zed extension). Default analysis mode `"exports"`. S
 signatures
   getName(user: any) => any  throws TypeError
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
-`any` = unconstrained entry. `throws` = L2 domain. Codes: [Diagnostics](../reference/diagnostics.md).
+`any` = unconstrained entry. `throws` = L2 domain. `L1` in the header is the **line number** (`getName` is declared on line 1 here) — the layer is L2. Codes: [Diagnostics](../reference/diagnostics.md).
 
 ---
 

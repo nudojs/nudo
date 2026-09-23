@@ -54,7 +54,7 @@ Provide named execution cases. Each case defines inputs (concrete or symbolic) f
 
 - **name** — A string identifier for the case (e.g. `"double digits"`).
 - **args** — Comma-separated **concrete** arguments (`5`, `"hello"`, `{…}`) or constraint-builder expressions.
-- **expected** (optional) — After `=>`, a concrete expected result used for validation.
+- **expected** (optional) — After `=>`, a type expression (a concrete literal or a constraint builder, same grammar as args) asserted against the inferred result by `nudo test`.
 
 ### Examples
 
@@ -127,7 +127,7 @@ function add(a, b) {
 
 ## @nudo:skip — Skip Evaluation
 
-Skip abstract interpretation. The engine does not evaluate the function body. Without a return type expression, the function is reported as `Skipped (no return type declared)`; add a constraint-builder expression after the directive to declare one.
+Skip abstract interpretation of the function body: the engine does not evaluate it, so a skipped function never produces engine-debt (`nudo:unknown-inference`) noise. Without a return type expression the function is reported as `skipped (no return type declared)` and `nudo check` prints its return as `any` (unconstrained — not `unknown`, which is reserved for inference failure); add a constraint-builder expression after the directive to declare one.
 
 ### Syntax
 
@@ -137,6 +137,12 @@ Skip abstract interpretation. The engine does not evaluate the function body. Wi
 ```
 
 - **returnsExpr** (optional) — A constraint-builder / concrete expression used as the return type.
+
+### Scope
+
+- **No body evaluation.** The declared type (or `any`) becomes the signature return; entry may-throw (L2) is not evaluated for a skipped body.
+- **Parameter obligations stay.** `@nudo:refine` preconditions still gate call sites, and the parameter display still comes from the handwritten contract — `nudo check` reports `needsPositive(x: number) => any` for a skipped `needsPositive` with `@nudo:refine x positive`.
+- **Return contracts still checked.** `@nudo:skip lit(0)` under `@nudo:refine return positive` reports `nudo:constraint-violated`.
 
 ### Examples
 
@@ -150,12 +156,11 @@ function heavyComputation(data) {
 }
 ```
 
-**Inferred output:**
+**Inferred output (`nudo test`):**
 
 ```text
 === heavyComputation ===
-
-Skipped (no return type declared)
+  skipped (no return type declared)
 ```
 
 ```javascript
@@ -168,12 +173,11 @@ function unannotatedHeavy(x) {
 }
 ```
 
-**Inferred output:**
+**Inferred output (`nudo test`):**
 
 ```text
 === unannotatedHeavy ===
-
-Skipped (declared): number
+  skipped (declared): number
 ```
 
 ---
@@ -249,7 +253,8 @@ Sidecars are real JS modules: they may import builders from `@nudojs/core` and c
 | `union(...cs)` | join of domains | `union(lit(42), lit("a"))` |
 | `fn(params, returns?, { throws? })` | first-class function interface | `fn({ x: number() }, number())` |
 | `.gt(n)` `.ge(n)` `.lt(n)` `.le(n)` `.int()` | numeric bounds (chained) | `number().gt(0).int()` |
-| `.min(n)` `.max(n)` | string length bounds (`length(s)` pred) | `string().min(1)` |
+| `.min(n)` `.max(n)` | length bounds — `length(s)` pred (strings/arrays) | `string().min(1)` |
+| `.length(n)` | length equality bound (`length(s) = n`) | `string().length(3)` |
 | `.shift(n)` | translate every constant bound by `+n` | `positive.shift(1)` |
 | `and(...cs)` | scalar conjunction (top-level function, not a chained method) | `and(positive, number().lt(10))` |
 | `partial(c)` / `pick(c, keys)` / `omit(c, keys)` | shape utilities | `partial(user)` |
@@ -459,25 +464,13 @@ import { debounce, throttle } from "lodash";
 // debounce comes from the mock; throttle resolves normally
 ```
 
-### Project-Level Configuration
-
-```json
-{
-  "nudo": {
-    "mocks": {
-      "axios": "./nudo-mocks/axios.js"
-    }
-  }
-}
-```
-
-File-level `@nudo:mock-module` directives override project-level mocks for the same module.
+Module mocks are declared per file with `@nudo:mock-module` — there is no project-level mock configuration.
 
 ---
 
 ## @nudo:as — Type Assertion
 
-Override the type of the next statement's value. Similar to TypeScript's `as` keyword, but placed as a line comment above the statement. Affects `VariableDeclaration`, `ReturnStatement`, and `ExpressionStatement`.
+Override the type of the next statement's value. Similar to TypeScript's `as` keyword, but placed as a line comment above the statement. Applied on the B path to `VariableDeclaration` initializers and `ReturnStatement` values of the covered statement.
 
 ### Syntax
 

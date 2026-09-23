@@ -65,7 +65,7 @@ Nudo：       源代码  +  Abs     →  执行  →  类型 + 约束
 | **shape** | 结构种类：`any` / `unknown` / `prim` / `obj` / `arr` / `tuple` / `fn` / `brand` / `eff` / `sum` / `never` |
 | **term** | 值的符号身份：字面量、变量或应用（`x+1`） |
 | **pred** | 相对 term 的约束：`x>0`、合取等 |
-| **conf** | 置信度：`exact` / `path` / `widened` / `partial` / `opaque` |
+| **conf** | 置信度：`exact` / `path` / `widened` / `mock` / `partial` / `opaque` |
 
 `any` 表示「任意 JS 值」（无约束参数）；`unknown` 表示「分析拿不到信息」。二者不同。
 
@@ -100,13 +100,16 @@ selfAdd(2);  // → 4  #exact
 // 合并：2 | 4 —— 绝不是 1+1 | 1+2 | 2+1 | 2+2
 ```
 
-**原则 4：守卫窄化。** 类型守卫（`typeof`、`instanceof`、真值检查）在分支中窄化值。
+**原则 4：守卫窄化（逐调用点）。** 类型守卫（`typeof`、`instanceof`、真值检查）只在条件对**该调用的具体实参**确定可判定时分叉分支；抽象实参不窄化，两分支以相同值运行后合并。
 
 ```javascript
-function process(x) {          // x: number | string
+function len(x) {              // x: number | string（抽象联合）
   if (typeof x === "string") {
-    // 在此分支中，x 被窄化为 string
+    // 抽象实参下两分支都运行，x 不被窄化；
+    // 具体调用 len("abc") 才走此分支
+    return x.length;
   }
+  return -1;
 }
 ```
 
@@ -117,7 +120,7 @@ function process(x) {          // x: number | string
 numLit(value)                 // 精确数值字面量
 strLit(value)                 // 精确字符串字面量
 num() / str() / bool()        // 基本类型域
-never / unknown               // 空集 / 全集（常量）
+never / unknown               // 空集 / 推导失败标记（全集是 `any`）
 obj({ key: { value, optional? } })  // 对象形状
 abs(shape, term, pred, conf)  // 通用构造器
 absFunction(params, { body, env, apply })  // 函数值
@@ -194,7 +197,7 @@ eval(Identifier "x")  →  env.lookup("x")
 eval(BinaryExpression { left, op, right })  →  arithmetic(op, eval(left), eval(right))
 ```
 
-**条件语句（if-else）：** 引擎可能**同时求值两个分支**，各自使用窄化后的值，再合并：
+**条件语句（if-else）：** 测试不可判定时引擎分叉两个分支——**不窄化**任一分支：
 
 ```text
 eval(IfStatement { test, consequent, alternate }) →
@@ -202,15 +205,15 @@ eval(IfStatement { test, consequent, alternate }) →
   if condition === lit(true)   → eval(consequent)
   if condition === lit(false)  → eval(alternate)
   else:
-    [envTrue, envFalse] = narrow(env, test)
-    resultTrue  = eval(consequent, envTrue)
-    resultFalse = eval(alternate, envFalse)
+    // 两分支以相同 env 运行；结果合并（无窄化）
+    resultTrue  = eval(consequent, env)
+    resultFalse = eval(alternate, env)
     return union(resultTrue, resultFalse)
 ```
 
 ### 3.3 窄化规则
 
-窄化基于条件精化值（`typeof` / `===` / `Array.isArray` / `instanceof` / 真值 / `in` / `?.` / `??` / `switch` / 判别字段）。完整模式表见 [抽象解释](../concepts/abstract-interpretation.md#窄化规则)；已验证模式走查见 [控制流收窄](../concepts/control-flow-narrowing.md)。
+窄化是**逐调用点**的：条件对该调用的具体实参求值为*确定*真/假时才选分支（`typeof` / `===` / `Array.isArray` / `switch` / 真值 / 判别字段）。抽象实参（`number()`、union）无法判定条件——两分支以相同值运行后合并；不存在抽象类型交集/减法。`in` / `?.` / `??` 仅部分支持。已验证走查：[控制流收窄](../concepts/control-flow-narrowing.md)。
 
 ---
 
@@ -227,7 +230,7 @@ for (let i = 0; i < arr.length; i++) {
 }
 ```
 
-具体边界逐元素累加得到字面量。抽象边界对前 `0…7` 次迭代求和并报告 `28 #exact`。
+具体边界逐元素累加得到字面量。抽象边界展开至上限为止，报告各次迭代的拓宽联合（数值累加器为 `number`）——这是终止守卫，而非不动点精化。
 
 ### 4.2 闭包与高阶函数
 
@@ -389,7 +392,12 @@ function calc(a, b) {
    - False：`a + b` → `number`
 4. 合并：`number`
 
-**组合：** `((1, 2) => 3) & ((number, number) => number)`
+**`nudo test` 渲染两个用例：**
+
+```text
+debug "concrete"  (1, 2) => 3
+debug "symbolic"  (number, number) => number
+```
 
 ---
 
@@ -403,9 +411,10 @@ function calc(a, b) {
 - **精化 IR** — 模板/区间精化；源码契约 `@nudo:refine`。
 - **Abs 代数（单轨）** — Term/Pred/Abs、算术核、`leqAbs`、generalize、`nudo check` / `nudo test` / `nudo contract` / `nudo export`、CheckJson、金标（recall = precision = 1.0）。
 - **调用预算** — depth/cycle/total 守卫，递归 check 不再栈溢出。
+- **Emit 往返** — 生成的 `.d.ts` 通过 `tsc --noEmit --strict`（`emit-tsc-roundtrip.test.ts`）。
+- **Harvest 自动化** — `nudo env harvest --auto [dir]` 扫描裸 import，上报可自动 harvest 的 `@types` 包。
 
 ### 待做
-- emit 经 tsc 往返；harvest 自动化
 - esbuild / webpack 插件；错误定位 source map
 
 ---

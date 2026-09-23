@@ -34,18 +34,28 @@ npx nudojs check calc.js
 ```
 
 ```text
+nudo check  calc.js
+OK
+  0 error · 0 warning · 0 info · 2 fn
+
 signatures
-  formatName(first: any, last: any) => number | string
   scale(x: any) => number | string
+  formatName(first: any, last: any) => number | string
+
+(no issues)
 ```
 
 Optional debug cases (`nudo test` — not the product gate):
 
 ```text
-=== formatName ===
-  call@L9  ("Ada", "Lovelace") => "Ada Lovelace"
 === scale ===
   call@L10  (5) => 6
+
+=== formatName ===
+  call@L9  ("Ada", "Lovelace") => "Ada Lovelace"
+
+assertions
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 2 synthetic case(s) printed above)
 ```
 
 Nudo executed the functions with the arguments it actually saw. Unconstrained entry params display as **`any`** (not `unknown`). Observation is `check` signatures + IDE hover; `nudo test` is an optional debug case reporter.
@@ -75,9 +85,19 @@ npx nudojs check calc.js
 ```
 
 ```text
-scale(0)  actual: 1  #exact
-          expected: x > 0
-          nudo:constraint-violated   actual ⊭ expected
+nudo check  calc.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
+signatures
+  scale(x: number) => number
+  formatName(first: any, last: any) => number | string
+
+issues
+  [ERROR L12 scale] scale[x]: argument ⊭ precondition  (nudo:constraint-violated)
+      actual:   0  #exact
+      expected: x > 0
+      → use a value satisfying x > 0, or relax the precondition on x
 ```
 
 The violation is reported against the call site. Fix the call (or widen the contract), and `check` passes — still printing signatures.

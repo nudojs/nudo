@@ -38,23 +38,26 @@ There is **no** observation verb. Observation is `check` signatures, `test` case
 Gate contracts (L1) and entry throws (L2). Prints signatures even when the run succeeds.
 
 ```bash
-nudo check <path> [options]
+nudo check <paths...> [options]
 ```
 
 **Arguments:**
 
 | Argument | Description |
 |----------|-------------|
-| `<path>` | A `.js`, `.mjs`, or `.ts` file or a directory (scanned recursively; `.d.ts` excluded). TypeScript annotations are stripped; analysis uses JS semantics. |
+| `<paths...>` | One or more `.js`, `.mjs`, or `.ts` files or directories (scanned recursively; `.d.ts` excluded). TypeScript annotations are stripped; analysis uses JS semantics. `--json` requires a single file. |
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
 | `--watch` / `-w` | Re-run on file changes (flag, not a verb) |
-| `--json` | Structured diagnostics + signatures |
+| `--json` | Structured diagnostics + signatures (single file; cannot combine with `--abs`) |
 | `--verbose` | Extra diagnosis detail |
-| `--abs` | Print the Abs algebra face (term / pred / conf) |
+| `--abs` | Per-function algebra face (shape + conf); `--generalize` adds the symbolic term/pred α |
+| `--fn <name>` | With `--abs`: restrict to one function |
+| `--assume <pred…>` | With `--abs`: assume constraints, e.g. `x>0 y>=1` |
+| `--generalize` | With `--abs`: polymorphic signatures via symbolic execution |
 | `--from <paths…>` | Usage-site files (tests/apps); their call records join the analysis |
 | `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (e.g. `TypeError,RangeError`). Does not swallow L1 contract violations. |
 | `--entry-throws error\|warning\|off` | Severity for L2 entry may-throw (default `error`) |
@@ -75,12 +78,22 @@ nudo check <path> [options]
 **Output format:**
 
 ```text
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
 signatures
   getName(user: any) => any  throws TypeError
   subtract(a: any, b: any) => number
+
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or declare/catch throws
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
+
+> `L1` in the issue header is the **line number** (the function is declared on line 1 here) — the layer is L2.
 
 - Unconstrained entry parameters print as **`any`**, never `unknown`.
 - True `unknown` means inference failed (engine debt) and is annotated with conf.
@@ -125,7 +138,7 @@ nudo check src/lib.js --json
 Report every inferred case (including synthetic `call@` / `entry@`) and run declared assertions.
 
 ```bash
-nudo test <path> [options]
+nudo test <paths...> [options]
 ```
 
 **Options:**
@@ -134,11 +147,11 @@ nudo test <path> [options]
 |--------|-------------|
 | `--watch` / `-w` | Re-run on file changes |
 | `--from <paths…>` | Usage-site files whose calls become `call@L` cases |
-| `--freeze[=update]` | Write synthesized cases back as `@nudo:case` directives. `=update` re-synchronizes previously generated directives. |
-| `--json` | Structured case report |
+| `--freeze[=mode]` | Write synthesized cases back as `@nudo:case` directives. Mode: `update` re-synchronizes previously generated directives; no value = add mode, keeps existing directives |
+| `--json` | Structured case report (single file; cannot combine with `--abs` or `--freeze`) |
 | `--abs` | Print Abs algebra for cases |
 | `--dry-run` | With `--freeze`: print a unified diff instead of writing |
-| `--exit-on-diff` | With `--dry-run`: exit `1` when the diff is non-empty |
+| `--exit-on-diff` | With `--freeze --dry-run`: exit `1` when the diff is non-empty |
 
 **Output format:**
 
@@ -146,8 +159,9 @@ nudo test <path> [options]
 === getName ===
   call@L42  ({ name: "Ada" }) => "Ada"
   debug "empty"  ({}) => undefined
+
 assertions
-  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 1 synthetic case(s) printed above)
 ```
 
 When no usage-site call is found for an entry export:
@@ -163,6 +177,19 @@ When no usage-site call is found for an entry export:
 - Failures of declared assertions set exit `1`; synthetic cases do not.
 - `test --json` includes an `assertions` summary (`passed` / `failed` / `unchecked`) and still exits 1 on declared assertion failure.
 
+A failing declared assertion (`nudo:case-expected`) renders as:
+
+```text
+=== double ===
+  debug "bad"  (2) => 4
+
+assertions
+  ✗ 0 passed · 1 failed · 0 unchecked
+  [FAIL] double  case "bad"
+         expected: 5
+         actual:   4
+```
+
 **Example:**
 
 ```bash
@@ -173,8 +200,9 @@ nudo test math.js
 === subtract ===
   call@L6  (5, 3) => 2
   call@L7  (1, 10) => -9
+
 assertions
-  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 2 synthetic case(s) printed above)
 ```
 
 ```bash
@@ -213,7 +241,7 @@ nudo contract --draft <paths...> [--write] [--fn <name>] [--dry-run] [--from <pa
 | `--emit` | Persist inferred domains as sidecar `@generated` segments |
 | `--draft` | Generate a reviewable contract draft from existing code (code-first / migration) |
 | `--write` | With `--draft`: write `*.nudo.draft.js` to disk |
-| `--fn <name>` | Restrict to one function (may name a downstream derivation target when a handwritten root exists) |
+| `--fn <name>` | Restrict to one function (**repeatable**; may name a downstream derivation target when a handwritten root exists) |
 | `--all` | Emit all eligible functions |
 | `--dry-run` | Print a unified diff instead of writing |
 | `--exit-on-diff` | With `--emit --dry-run`: exit `1` when the diff is non-empty |
@@ -316,9 +344,11 @@ nudo health src/ --from tests/
 
 ```text
 src/lib.js
-  ✓ analysis ok
-  ✗ drift: 5 directive(s) changed (+3 new, -2 removed)
-    refresh with: nudo test lib.js --from test.js --freeze=update
+  · 1 function(s)
+  ✗ drift: 3 witness directive(s) changed (+2 new, -1 removed) — refresh: nudo test src/lib.js --from tests/ --freeze=update
+
+Summary: 1 file(s) · 1 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s)
+Result: FAIL (drift or errors found)
 ```
 
 **Exit codes:**
@@ -342,8 +372,8 @@ nudo env harvest <pkg> [options]
 
 | Option | Description |
 |--------|-------------|
-| `--out <dir>` | Output directory for generated env files |
-| `--auto` | Report analysis-path auto-harvest status |
+| `--out <file>` | Output env file path (default `./nudo-harvest-<pkg>.ts`) |
+| `--auto [dir]` | Scan a directory for bare imports and report auto-harvestable `@types` packages (`<pkg>` is optional with `--auto`) |
 
 **Example:**
 
@@ -352,7 +382,7 @@ nudo env harvest node
 ```
 
 ```ts
-/// @nudo:env ./nudo-harvest-node.ts
+/// @nudo:env nudo-harvest-node.ts
 ```
 
 **Exit codes:**
@@ -370,7 +400,7 @@ nudo env harvest node
 
 - **check --json** — signatures (including `any` entry params and throws), diagnostics with codes such as `nudo:entry-may-throw`, and summary counts.
 - **test --json** — per-function cases (`entry@` / `call@` / directive), an `assertions` summary (`passed`/`failed`/`unchecked`), diagnostics, and optional Abs intension blocks. Declared assertion failures still exit 1.
-- **check --json** — single file only (`--json requires a single file` on directory targets).
+- **check --json** — single file only (directory targets error with `--json requires a single file, not multiple targets`); `test --json` errors with `--json requires a single file`.
 
 ---
 

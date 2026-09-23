@@ -87,22 +87,23 @@ eval(AssignmentExpression { left: "x", right: expr })
 
 ### Conditional (if-else)
 
-This is where the engine differs fundamentally from a normal interpreter. Instead of choosing one branch, it may **evaluate both branches** with narrowed Abs values:
+This is where the engine differs fundamentally from a normal interpreter. Instead of always choosing one branch, it forks when the test is not decidable — but note: it does **not** narrow abstract values. Both arms run with the **same** bindings:
 
 ```text
 eval(IfStatement { test, consequent, alternate }) →
   condition = eval(test)
 
-  // Case 1: condition is a known literal
+  // Case 1: condition is definitely true/false
   if isDefinitelyTrue(condition)   → eval(consequent)
   if isDefinitelyFalse(condition)  → eval(alternate)
 
-  // Case 2: condition is abstract → fork both branches
-  [envTrue, envFalse] = narrow(env, test)
-  resultTrue  = eval(consequent, envTrue)
-  resultFalse = eval(alternate, envFalse)
+  // Case 2: condition is abstract → run both branches with the same env
+  resultTrue  = eval(consequent, env)
+  resultFalse = eval(alternate, env)
   return joinAbs(resultTrue, resultFalse)
 ```
+
+`isDefinitelyTrue/False` is what makes per-call-site narrowing possible: a concrete argument often makes the test fold to a literal, so only one branch runs for that call. An abstract argument cannot fold the test — both branches run and their results join.
 
 ### Function Declaration
 
@@ -125,25 +126,19 @@ eval(CallExpression { callee: "foo", args })
 
 ## Narrowing Rules
 
-Narrowing refines values based on conditions. The engine supports these patterns:
+Narrowing happens **per call site**: a branch runs when the condition is *definitely* true or false for the **concrete argument of that call**. Each `call@L…` case is evaluated with that call's exact argument, so the matching branch runs and the other is eliminated. With **abstract** arguments (`number()`, `union(...)`) the condition cannot be decided — both branches run with the same value and their results join. There is no intersection/subtraction of abstract types.
 
-| Pattern | True branch | False branch |
-|---------|-------------|--------------|
-| `typeof x === "string"` | `x ∩ string` | `x - string` |
-| `typeof x === "number"` | `x ∩ number` | `x - number` |
-| `x === null` | `x ∩ null` | `x - null` |
-| `x === undefined` | `x ∩ undefined` | `x - undefined` |
-| `x === <literal>` | `x ∩ lit(v)` | `x - lit(v)` |
-| `Array.isArray(x)` | `x ∩ array` | `x - array` |
-| `x` (truthiness) | `x - null - undefined - lit(0) - lit("") - lit(false)` | complement |
-| `x instanceof C` | `x ∩ instance(C)` | `x - instance(C)` |
-| `"key" in x` | union members with `key` property | union members without `key` |
-| `x?.prop` | normal member access (short-circuits to `undefined` for nullish) | — |
-| `a ?? b` | `a` with null/undefined removed | — |
-| `switch(x) { case v: ... }` | `x ∩ lit(v)` per case | remaining after all cases |
-| `x.kind === "a"` (discriminated union) | union members where `kind` matches literal | union members where `kind` differs |
+| Pattern | Concrete call (per call site) | Abstract / symbolic argument |
+|---------|-------------------------------|------------------------------|
+| `typeof x === "string"` | string call takes the branch; `x.length` folds | branches join |
+| `x === null` / `x === <literal>` | matching call forks; the other falls through | branches join |
+| `Array.isArray(x)` | array call forks; `x.length` / `x[0]` resolve | branches join |
+| truthiness (`x`) | literal arguments fork | branches join |
+| discriminated object (`x.kind === "a"`) | the matching shape's branch runs for that call | members are **not** filtered; branches join |
+| `switch(x) { case v: … }` | a concrete discriminant picks its clause | branches join |
+| `in` / `?.` / `??` | partial: see the table below | partial |
 
-Where `∩` is type intersection and `-` is type subtraction.
+Other guards (`instanceof`, custom predicates) fork only when the test folds to a definite boolean for the call's argument — they are not in the verified set above. The verified per-pattern walkthrough with real `nudo test` output: [Control Flow Narrowing](./control-flow-narrowing.md).
 
 ---
 

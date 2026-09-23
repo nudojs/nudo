@@ -64,6 +64,7 @@ export {
   diagnosticsLevelForFile,
 } from "./analysis-scope.ts";
 export { defaultLoadModule, type LoadModule } from "./load-module.ts";
+export { collectSkipReturns } from "./skip-directives.ts";
 export { clearPathEnvCaches } from "./evaluator/env-loader.ts";
 export { analysisFileCacheKey } from "./analyzer.ts";
 export {

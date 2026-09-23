@@ -36,7 +36,7 @@ What it removes or unwraps: type assertions (`as`, `satisfies`, `<T>x`, `x!`) ar
 
 ## Directive Types
 
-Directives are extracted from comments using the `@nudo:` namespace. Function-level directives come from leading **block** comments of top-level statements; file-level and inline directives come from **line** comments (see [`extractFileDirectives`](#extractfiledirectives) / [`extractInlineDirectives`](#extractinlinedirectives)).
+Directives are extracted from comments using the `@nudo:` namespace. Function-level directives come from the leading comments (block or line) of top-level statements; file-level and inline directives come from **line** comments (see [`extractFileDirectives`](#extractfiledirectives) / [`extractInlineDirectives`](#extractinlinedirectives)).
 
 The `Directive` union covers the five function-level kinds:
 
@@ -124,7 +124,7 @@ Requested loop iteration count. Parsed for source compatibility but not consumed
 
 ### FileDirective
 
-Line comments at the top of the file (before any statement), shared by every function in it:
+Line comments anywhere in the file, shared by every function in it:
 
 ```typescript
 type FileDirective = EnvDirective | MockModuleDirective;
@@ -183,7 +183,7 @@ A top-level function with its associated directives.
 extractDirectives(ast: Node): FunctionWithDirectives[]
 ```
 
-Extracts `@nudo:*` directives from leading block comments of top-level statements. Only statements with at least one directive are included. Supports:
+Extracts `@nudo:*` directives from the leading comments (block or line) of top-level statements. Only statements with at least one directive are included. Supports:
 
 - `FunctionDeclaration`
 - `ExportDefaultDeclaration` (with FunctionDeclaration)
@@ -199,7 +199,7 @@ Extracts `@nudo:*` directives from leading block comments of top-level statement
 extractFileDirectives(ast: Node): FileDirective[]
 ```
 
-Extracts file-level directives from the AST's top-level **line comments**: `/// @nudo:env` (one or more comma-separated envs) and `/// @nudo:mock-module "source" from "path"` (optionally with a `{ a, b }` names list for partial mocking). Non-`File` nodes return an empty array.
+Extracts file-level directives from the AST's **line comments** (any position): `/// @nudo:env` (one or more comma-separated envs) and `/// @nudo:mock-module "source" from "path"` (optionally with a `{ a, b }` names list for partial mocking). Non-`File` nodes return an empty array.
 
 **Example:**
 ```javascript
@@ -233,7 +233,7 @@ parseCaseArgExpr(expr: string): Abs
 Parses a directive type expression into an Abs — the product grammar is constraint builders + concrete literals + structural literals. Used for `@nudo:case` args, `@nudo:as`/`@nudo:replace`, mock return values, and `@nudo:skip` return expressions.
 
 **Supported forms (in precedence order):**
-- Constraint expressions (primary grammar): `number()`, `number().gt(0)`, `lit(...)`, `union(…)`, `shape({…})`, `array(…)`, `fn({…}, …)`, `and`, `partial`/`pick`/`omit`/`record`/`required`/`readonly`/`nonNullable`
+- Constraint expressions (primary grammar): `number()`, `number().gt(0)`, `lit(...)`, `union(…)`, `shape({…})`, `array(…)`, `fn({…}, …)`, `and`, `partial`/`pick`/`omit`
 - Bare literals: `true`, `false`, `null`, `undefined`, numbers, quoted strings
 - Functions: arrow expressions (`(x) => x + 1`) and `function(x) { ... }` — parsed into a real function Abs
 - JSON-like: `{ "key": value }`, `[a, b, c]`

@@ -13,10 +13,10 @@ Nudo 声明收割器（harvester）的 API 参考。`@nudojs/harvester` 把 Type
 ### harvestDts
 
 ```typescript
-harvestDts(files: string[]): HarvestedEnv
+harvestDts(files: string[], opts?: { maxFileBytes?: number; maxMs?: number }): HarvestedEnv
 ```
 
-从磁盘读取给定的 `.d.ts` **文件路径**，并用 TypeScript 编译器分两个阶段解析：
+从磁盘读取给定的 `.d.ts` **文件路径**，并用 TypeScript 编译器分两个阶段解析。`opts.maxFileBytes`（默认 `1_500_000`）跳过超大文件；`opts.maxMs` 设置截止时间，超限后剩余文件计入 `skipped`。
 
 1. **收集** —— 把每个模块/全局声明（`declare module "..."`、命名空间、interface、class、类型别名、函数重载、`export =` / `export * from` 再导出）收集进共享符号表。
 2. **物化** —— 把收集到的符号转换为 Abs 值（见 [core](./core.md)）。物化只在整张符号表填充完毕后运行，因此跨文件引用与文件顺序无关，均可解析。
@@ -99,15 +99,17 @@ npx @nudojs/cli env harvest node
 
 ```text
 Harvested @types/node → nudo-harvest-node.ts
-  files:    80
-  symbols:  1671
-  skipped:  148
-
-Usage — add this directive at the top of your JS file:
-  /// @nudo:env nudo-harvest-node.ts
 ```
 
-env 文件默认写到 `./nudo-harvest-<pkg>.ts`；传入 `--out <file>` 可更改。完整命令契约见 [CLI 参考](./cli-reference.md)。
+逐文件/符号统计（`files` / `symbols` / `skipped`）可从 [`harvestDts`](#harvestdts) 的 `stats` 返回值程序化获取，也会出现在 `--auto` 扫描摘要里——直接命令只打印输出路径。
+
+env 文件默认写到 `./nudo-harvest-<pkg>.ts`；传入 `--out <file>` 可更改。然后在源码中用基于路径的指令引用：
+
+```text
+/// @nudo:env nudo-harvest-node.ts
+```
+
+完整命令契约见 [CLI 参考](./cli-reference.md)。
 
 ## 使用收割出的 env
 
@@ -130,7 +132,7 @@ const key = buildKey("docs", "readme");
 ```text
 === buildKey ===
 
-call@L9: ("docs", "readme") => `${string}.md`
+  call@L9  ("docs", "readme") => `${string}.md`
 ```
 
 基于路径的 env 文件通过动态 import 加载，因此异步消费方（`nudo check`/`nudo test`、`analyzeFileAsync`、LSP 验证路径）会预加载它们；同步的 `analyzeFile` 在文件声明了路径 env 时会降级。异步工具链应优先使用 [`analyzeFileAsync`](./service.md)。

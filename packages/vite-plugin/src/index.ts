@@ -6,6 +6,7 @@ import {
   shouldAnalyzeFile,
   filterDiagnosticsByLevel,
   findProjectConfig,
+  collectSkipReturns,
   interfaceConfig,
   type AnalysisResult,
   type Diagnostic,
@@ -36,6 +37,7 @@ function checkIssuesToDiagnostics(id: string, code: string): Diagnostic[] {
       loadModule,
       fromFile: id,
       ...(autoBind === false ? { autoBind: false } : {}),
+      skips: collectSkipReturns(code),
     });
     return report.issues
       .filter((i) => i.severity === "error" || i.severity === "warning")

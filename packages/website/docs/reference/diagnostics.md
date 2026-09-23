@@ -52,6 +52,18 @@ Handwritten contract conjunction is unsatisfiable. Simplify the sidecar / refine
 
 Sidecar load failure, or emit would overwrite a handwritten binding. Handwritten always wins.
 
+### `nudo:interface-cycle`
+
+Sidecar `@nudo:import` chain forms a cycle. **Error.** Fix: break the sidecar import cycle.
+
+### `nudo:interface-domain-exceeds`
+
+Cross-file call-site evidence injected via `nudo check --from` is not within the handwritten contract domain (`⊄`). **Error.** Fix: widen the contract, or correct the usage site.
+
+### `nudo:interface-drift`
+
+Persisted `@generated` sidecar segment ≠ today's recomputed call-site domain or return. **Warning** — does not gate exit.
+
 ## Runtime boundary (L2)
 
 ### `nudo:entry-may-throw`
@@ -100,9 +112,21 @@ Recursion budget hit; result widened.
 
 Function could not be generalized (CJS/anon forms still get L2 via entry fallback).
 
-### `nudo:unreachable`
+### `nudo:no-method`
 
-Code after `return`/`throw` — info level.
+Member access that cannot resolve: ``Method 'x' does not exist on type 'T'`` / ``Property 'x' does not exist on type 'T'``. **Error** on primitive receivers (`number` / `boolean` / `bigint` / `symbol`), warning otherwise. Distinct from `nudo:unknown-recv` (which fires on an `unknown` receiver).
+
+### `nudo:mock-invalid`
+
+A `@nudo:mock` expression could not be parsed as a known pattern (stub/spy/mock forms, arrow functions, or type expressions). **Warning** — check the supported forms.
+
+### `nudo:interface-underivable`
+
+A **derived** contract row (root-driven derivation / `nudo contract --draft`) cannot be derived from source evidence (opaque / truncated / no evidence). **Info** — the row is skipped; handwritten contracts are never flagged by this code.
+
+### `nudo-unreachable`
+
+Code after `return`/`throw` — info level. Note the hyphen: this is the one diagnostic id without a colon.
 
 ### `nudo:may-throw`
 
@@ -146,6 +170,32 @@ Field 'name' is missing on the evaluated object shape
 
 **Warning, default off.** C0.5: evaluation actually hit a closed object shape's missing field (opt in with `package.json#nudo.analysis.evalMissingSlot: "warning"`). It is **observation, not an obligation** — it never invents check errors; handwritten contracts still gate through `nudo:constraint-violated`.
 
+## Test assertions (`nudo test`)
+
+### `nudo:case-expected`
+
+```text
+debug "bad": expected 5, got 4. The inferred return type does not match the
+expected type declared in the @nudo:case witness
+```
+
+A declared `@nudo:case "name" (…) => expected` witness whose expected type does not match the inferred result. **Error in the test run** — a declared assertion failure sets `nudo test` exit `1`; synthetic `call@` / `entry@` cases never fail the run.
+
+The failure face in the report:
+
+```text
+=== double ===
+  debug "bad"  (2) => 4
+
+assertions
+  ✗ 0 passed · 1 failed · 0 unchecked
+  [FAIL] double  case "bad"
+         expected: 5
+         actual:   4
+```
+
+**Fix:** correct the witness expectation or the function body.
+
 ## Reading `actual ⊭ expected`
 
 ```text
@@ -153,7 +203,7 @@ actual:   0  #exact     // Abs observed at the call
 expected: price > 0     // Pred from the contract
 ```
 
-Conf markers on Abs: `#exact` / `#path` / `#widened` / `#partial` / `#opaque` — see [Abs](/docs/concepts/type-values).
+Conf markers on Abs: `#exact` / `#path` / `#widened` / `#mock` / `#partial` / `#opaque` — see [Abs](/docs/concepts/type-values).
 
 ## Config that affects diagnostics
 

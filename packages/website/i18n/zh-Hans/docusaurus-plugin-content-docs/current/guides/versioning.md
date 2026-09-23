@@ -15,7 +15,7 @@ Nudo 是 pnpm monorepo，经 [changesets](https://github.com/changesets/changese
 | `@nudojs/core` | **2.x**（2.1.0） | SemVer：破坏性 → major |
 | `@nudojs/service` | **4.x**（4.0.0） | SemVer：破坏性 → major |
 | `@nudojs/cli` | **3.x**（3.0.0） | SemVer：破坏性 → major |
-| `@nudojs/parser` | 0.x | **minor 可能破坏** — 先读 CHANGELOG |
+| `@nudojs/parser` | **1.x**（1.0.0） | SemVer：破坏性 → major |
 | `@nudojs/lsp` | **1.x**（1.0.0） | SemVer：破坏性 → major。冻结清单：`packages/lsp/PUBLIC_API.md` |
 | `@nudojs/env` / `@nudojs/harvester` | 0.x（0.4.1 / 0.2.7） | minor 可能破坏；为 IDE/CI 分析稳定可锁 minor。手写 env 在重叠模块/导出上 wins（`mergeHarvestUnderEnv`） |
 | `nudojs`（npm 壳） | 0.x（0.3.2） | 优先直接依赖 `@nudojs/cli` / `@nudojs/core` |
@@ -103,7 +103,7 @@ pnpm exec changeset
 
 ## IDE 扩展
 
-VS Code（`wmxy.nudo-vscode`）与 Zed（`nudojs/nudo-zed`）捆绑或解析 `@nudojs/lsp`。编辑器侧变更以扩展发行说明为准；语言服务器遵循上表稳定 1.x SemVer 线。VS Code 打包清单：仓库 `packages/vscode/RELEASE_CHECKLIST.md`。LSP 冻结清单：仓库 `packages/lsp/PUBLIC_API.md`。
+VS Code（`wmzy.nudo-vscode`）与 Zed（`nudojs/nudo-zed`）捆绑或解析 `@nudojs/lsp`。编辑器侧变更以扩展发行说明为准；语言服务器遵循上表稳定 1.x SemVer 线。VS Code 打包清单：仓库 `packages/vscode/RELEASE_CHECKLIST.md`。LSP 冻结清单：仓库 `packages/lsp/PUBLIC_API.md`。
 
 ## 参见
 
