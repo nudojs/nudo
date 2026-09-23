@@ -53,7 +53,13 @@ export type RetireResult = {
   root: string;
   removedDeps: string[];
   rewrittenScripts: Array<{ name: string; from: string; to: string }>;
+  rewrittenWorkflows: Array<{ file: string; from: string; to: string }>;
   marker: string;
+};
+
+export type WorkflowRewrite = {
+  file: string;
+  changes: Array<{ from: string; to: string }>;
 };
 
 const TS_EXT = new Set([".ts", ".mts", ".cts"]);
@@ -131,11 +137,108 @@ function countExt(files: string[], exts: Set<string>): number {
   return n;
 }
 
+/** 单条 shell 命令里的 tsc → nudo check（A1：CI workflow 可改写） */
+export function rewriteTscCommand(cmd: string): { cmd: string; changed: boolean } {
+  const before = cmd;
+  let next = cmd;
+  // npx / pnpm exec / yarn tsc [--noEmit] [-p …]
+  next = next.replace(
+    /\b(?:npx |pnpm exec |pnpm dlx |yarn dlx |yarn )tsc\b(?:\s+--noEmit)?(?:\s+-p\s+[^\s;&|]+)?(?:\s+--pretty\s+\S+)?(?:\s+--skipLibCheck)?/g,
+    "npx nudojs check .",
+  );
+  // bare tsc
+  next = next.replace(
+    /(?<![\w./-])tsc\b(?:\s+--noEmit)?(?:\s+-p\s+[^\s;&|]+)?(?:\s+--pretty\s+\S+)?(?:\s+--skipLibCheck)?/g,
+    "nudo check .",
+  );
+  next = next.replace(/nudo check \.\s*&&\s*nudo check \./g, "nudo check .");
+  next = next.replace(/npx nudojs check \.\s*&&\s*npx nudojs check \./g, "npx nudojs check .");
+  return { cmd: next, changed: next !== before };
+}
+
+/** 是否像 shell 命令行（跳过 name:/注释/纯描述） */
+function looksLikeTscCommand(line: string): boolean {
+  if (/^\s*#/.test(line)) return false;
+  if (/^\s*-?\s*name\s*:/.test(line)) return false;
+  if (/^\s*if\s*:/.test(line)) return false;
+  return /(?:^|[\s;&|`"'-])(?:npx |pnpm exec |pnpm dlx |yarn dlx |yarn )?tsc(?:\s|$|-)/.test(line);
+}
+
+export function rewriteWorkflowText(text: string): {
+  text: string;
+  changes: Array<{ from: string; to: string }>;
+} {
+  const lines = text.split("\n");
+  const changes: Array<{ from: string; to: string }> = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!looksLikeTscCommand(line)) continue;
+    // 改写 run: 后的命令，或已是命令形态的整行
+    const run = line.match(/^(\s*-?\s*run:\s*)(.*)$/);
+    const target = run ? run[2]! : line;
+    const { cmd, changed } = rewriteTscCommand(target);
+    if (!changed) continue;
+    changes.push({ from: target.trim(), to: cmd.trim() });
+    lines[i] = run ? run[1]! + cmd : cmd;
+  }
+  return { text: lines.join("\n"), changes };
+}
+
+/** 自 package 根向上找 `.github/workflows`（monorepo 根） */
+export function findWorkflowDir(from: string): string | undefined {
+  let cur = resolve(from);
+  for (let i = 0; i < 6; i++) {
+    const wf = join(cur, ".github", "workflows");
+    if (existsSync(wf) && statSync(wf).isDirectory()) return wf;
+    const parent = dirname(cur);
+    if (parent === cur) break;
+    cur = parent;
+  }
+  return undefined;
+}
+
+export function listWorkflowTscLines(from: string): Array<{ file: string; line: string }> {
+  const wf = findWorkflowDir(from);
+  if (!wf) return [];
+  const out: Array<{ file: string; line: string }> = [];
+  for (const name of readdirSync(wf)) {
+    if (!/\.ya?ml$/i.test(name)) continue;
+    const p = join(wf, name);
+    const text = readFileSync(p, "utf-8");
+    for (const line of text.split("\n")) {
+      if (looksLikeTscCommand(line) && rewriteTscCommand(line).changed) {
+        out.push({ file: relative(process.cwd(), p), line: line.trim() });
+      }
+    }
+  }
+  return out;
+}
+
+export function rewriteWorkflowsNear(
+  from: string,
+  opts: { dryRun?: boolean } = {},
+): WorkflowRewrite[] {
+  const wf = findWorkflowDir(from);
+  if (!wf) return [];
+  const out: WorkflowRewrite[] = [];
+  for (const name of readdirSync(wf)) {
+    if (!/\.ya?ml$/i.test(name)) continue;
+    const p = join(wf, name);
+    const text = readFileSync(p, "utf-8");
+    const { text: next, changes } = rewriteWorkflowText(text);
+    if (changes.length === 0) continue;
+    if (!opts.dryRun) writeFileSync(p, next, "utf-8");
+    out.push({ file: relative(process.cwd(), p), changes });
+  }
+  return out;
+}
+
 export function migrateStatus(rootDir: string): MigrateStatusRow[] {
   const raw = resolve(rootDir);
   // 允许传 package.json / 源文件：取所在目录
   const root = existsSync(raw) && statSync(raw).isDirectory() ? raw : dirname(raw);
   const roots = packageRoots(root);
+  const workflowHits = listWorkflowTscLines(root);
   const rows: MigrateStatusRow[] = [];
   for (const r of roots) {
     const pkgPath = join(r, "package.json");
@@ -162,6 +265,9 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
       blockers.push("no nudo check/test script yet");
     }
     if (deps.typescript) blockers.push("typescript still in dependencies");
+    if (workflowHits.length > 0) {
+      blockers.push(`${workflowHits.length} tsc line(s) in .github/workflows`);
+    }
     if (tsFiles === 0 && tsxFiles === 0 && !deps.typescript && tscScripts.length === 0) {
       blockers.push("—");
     }
@@ -343,7 +449,10 @@ export async function migrateVerify(
   return results;
 }
 
-export function migrateRetire(rootDir: string, opts: { dryRun?: boolean } = {}): RetireResult {
+export function migrateRetire(
+  rootDir: string,
+  opts: { dryRun?: boolean; workflows?: boolean } = {},
+): RetireResult {
   const raw = resolve(rootDir);
   const root = existsSync(raw) && statSync(raw).isDirectory() ? raw : dirname(raw);
   const pkgPath = join(root, "package.json");
@@ -363,15 +472,12 @@ export function migrateRetire(rootDir: string, opts: { dryRun?: boolean } = {}):
   const scripts = (pkg.scripts ?? {}) as Record<string, string>;
   for (const [name, cmd] of Object.entries(scripts)) {
     if (!/\btsc\b/.test(cmd)) continue;
-    let next = cmd
-      .replace(/\btsc\s+--noEmit\b/g, "nudo check .")
-      .replace(/\btsc\s+-p\s+\S+/g, "nudo check .")
-      .replace(/\btsc\b/g, "nudo check .");
-    // collapse accidental doubles
-    next = next.replace(/nudo check \.\s*&&\s*nudo check \./g, "nudo check .");
-    if (next !== cmd) {
-      rewrittenScripts.push({ name, from: cmd, to: next });
-      scripts[name] = next;
+    const { cmd: next } = rewriteTscCommand(cmd);
+    // package.json scripts 用本地 bin 名
+    const local = next.replace(/npx nudojs check \./g, "nudo check .");
+    if (local !== cmd) {
+      rewrittenScripts.push({ name, from: cmd, to: local });
+      scripts[name] = local;
     }
   }
   if (!scripts["check:nudo"] && !Object.values(scripts).some((c) => c.includes("nudo check"))) {
@@ -380,12 +486,17 @@ export function migrateRetire(rootDir: string, opts: { dryRun?: boolean } = {}):
     rewrittenScripts.push({ name: "check:nudo", from: "(none)", to });
   }
 
+  // A1：CI workflow 里的 tsc 一并退役（默认开；--no-workflows 关）
+  const rewrittenWorkflows =
+    opts.workflows === false ? [] : rewriteWorkflowsNear(root, { dryRun: opts.dryRun === true });
+
   const markerDir = join(root, ".nudo");
   const marker = join(markerDir, "migrate-retired.json");
   const payload = {
     retiredAt: new Date().toISOString(),
     removedDeps,
     rewrittenScripts,
+    rewrittenWorkflows: rewrittenWorkflows.map((w) => w.file),
   };
 
   if (!opts.dryRun) {
@@ -398,8 +509,44 @@ export function migrateRetire(rootDir: string, opts: { dryRun?: boolean } = {}):
     root: relative(process.cwd(), root) || ".",
     removedDeps,
     rewrittenScripts,
+    rewrittenWorkflows: rewrittenWorkflows.flatMap((w) =>
+      w.changes.map((c) => ({ file: w.file, from: c.from, to: c.to })),
+    ),
     marker: relative(process.cwd(), marker),
   };
+}
+
+/** monorepo 批量：对仍带 tsc/typescript 的 workspace 包逐个 retire（A1） */
+export function migrateRetireAll(
+  rootDir: string,
+  opts: { dryRun?: boolean; workflows?: boolean } = {},
+): RetireResult[] {
+  const raw = resolve(rootDir);
+  const root = existsSync(raw) && statSync(raw).isDirectory() ? raw : dirname(raw);
+  const roots = packageRoots(root);
+  const results: RetireResult[] = [];
+  let workflowsDone = false;
+  for (const r of roots) {
+    const pkg = readJson(join(r, "package.json"));
+    if (!pkg) continue;
+    const deps = {
+      ...((pkg.dependencies ?? {}) as Record<string, string>),
+      ...((pkg.devDependencies ?? {}) as Record<string, string>),
+    };
+    const scripts = (pkg.scripts ?? {}) as Record<string, string>;
+    const hasTsc =
+      Boolean(deps.typescript) || Object.values(scripts).some((c) => /\btsc\b/.test(c));
+    if (!hasTsc) continue;
+    // workflow 只改写一次（monorepo 根共享 .github）
+    const doWf = opts.workflows !== false && !workflowsDone;
+    const result = migrateRetire(r, {
+      dryRun: opts.dryRun === true,
+      workflows: doWf,
+    });
+    if (result.rewrittenWorkflows.length > 0) workflowsDone = true;
+    results.push(result);
+  }
+  return results;
 }
 
 export function formatStatusTable(rows: MigrateStatusRow[]): string {

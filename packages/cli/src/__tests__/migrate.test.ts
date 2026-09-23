@@ -1,14 +1,17 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import {
   migrateStatus,
   migrateStrip,
   migrateVerify,
   migrateRetire,
+  migrateRetireAll,
   stripTsToJs,
+  rewriteTscCommand,
+  listWorkflowTscLines,
 } from "../migrate.ts";
 
 const dirs: string[] = [];
@@ -111,12 +114,99 @@ describe("nudo migrate", () => {
       }),
       "utf-8",
     );
-    const result = migrateRetire(dir);
+    const result = migrateRetire(dir, { workflows: false });
     expect(result.removedDeps).toContain("devDependencies");
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
     expect(pkg.devDependencies.typescript).toBeUndefined();
     expect(pkg.scripts.typecheck).toContain("nudo check");
     expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(true);
+  });
+
+  it("A1: rewrite tsc lines in .github/workflows on retire", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-wf-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "demo",
+        scripts: { typecheck: "tsc --noEmit" },
+        devDependencies: { typescript: "^5.0.0" },
+      }),
+      "utf-8",
+    );
+    const wfDir = join(dir, ".github", "workflows");
+    mkdirSync(wfDir, { recursive: true });
+    const wf = join(wfDir, "ci.yml");
+    writeFileSync(
+      wf,
+      [
+        "name: CI",
+        "jobs:",
+        "  check:",
+        "    name: Lint (tsc x2)",
+        "    steps:",
+        "      - run: npx tsc --noEmit",
+        "      - run: |",
+        "          pnpm exec tsc -p .",
+        "      - run: pnpm run typecheck",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    expect(listWorkflowTscLines(dir).length).toBeGreaterThan(0);
+
+    const dry = migrateRetire(dir, { dryRun: true });
+    expect(dry.rewrittenWorkflows.length).toBeGreaterThan(0);
+    // dry-run 不写盘
+    expect(readFileSync(wf, "utf-8")).toContain("npx tsc --noEmit");
+
+    const result = migrateRetire(dir);
+    expect(result.rewrittenWorkflows.some((w) => w.to.includes("nudojs check"))).toBe(true);
+    const text = readFileSync(wf, "utf-8");
+    expect(text).toContain("npx nudojs check .");
+    expect(text).toContain("- run: |");
+    // job name 不被误伤
+    expect(text).toContain("name: Lint (tsc x2)");
+    // 已是 nudo 的 script 调用不改
+    expect(text).toContain("pnpm run typecheck");
+  });
+
+  it("A1: migrateRetireAll batches workspace packages", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-all-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "root", private: true, workspaces: ["packages/*"] }),
+      "utf-8",
+    );
+    for (const name of ["a", "b"]) {
+      const p = join(dir, "packages", name);
+      mkdirSync(p, { recursive: true });
+      writeFileSync(
+        join(p, "package.json"),
+        JSON.stringify({
+          name,
+          scripts: { typecheck: "tsc --noEmit" },
+          devDependencies: { typescript: "^5.0.0" },
+        }),
+        "utf-8",
+      );
+    }
+    const results = migrateRetireAll(dir, { workflows: false });
+    expect(results).toHaveLength(2);
+    for (const r of results) {
+      expect(r.removedDeps.length).toBeGreaterThan(0);
+      // r.root 是相对 cwd 的路径
+      expect(existsSync(join(resolve(r.root), ".nudo", "migrate-retired.json"))).toBe(true);
+    }
+  });
+
+  it("rewriteTscCommand covers npx/pnpm/bare forms", () => {
+    expect(rewriteTscCommand("npx tsc --noEmit").cmd).toBe("npx nudojs check .");
+    expect(rewriteTscCommand("tsc --noEmit").cmd).toBe("nudo check .");
+    expect(rewriteTscCommand("pnpm exec tsc -p tsconfig.json").cmd).toBe("npx nudojs check .");
+    expect(rewriteTscCommand("pnpm run typecheck").changed).toBe(false);
   });
 
   it("CLI migrate status is wired", () => {

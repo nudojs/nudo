@@ -370,10 +370,11 @@ nudo migrate <status|strip|verify|retire> [paths...] [options]
 
 | Action | Purpose |
 |--------|---------|
-| `status <pkg-or-dir>` | Audit `.ts`/`.tsx` counts, `tsconfig`, `typescript` dep, `tsc` scripts, and **blockers** |
+| `status <pkg-or-dir>` | Audit `.ts`/`.tsx` counts, `tsconfig`, `typescript` dep, `tsc` scripts, **workflow tsc lines**, and **blockers** |
 | `strip <paths...>` | `.ts` → `.js` (type annotations stripped; runtime stays). Dry-run by default |
 | `verify <paths...>` | Run `nudo check` on the JS surface — must pass before retire |
-| `retire <pkg-or-dir>` | Drop `typescript` dep, rewrite `tsc` scripts → `nudo check`, write `.nudo/migrate-retired.json` |
+| `retire <pkg-or-dir>` | Drop `typescript` dep, rewrite `tsc` scripts → `nudo check`, rewrite `.github/workflows` tsc lines, write `.nudo/migrate-retired.json` |
+| `retire --all` | Every workspace package that still has `tsc` / `typescript` (monorepo batch) |
 
 **Options:**
 
@@ -383,7 +384,9 @@ nudo migrate <status|strip|verify|retire> [paths...] [options]
 | `strip --no-draft` | Skip best-effort sidecar draft (draft is on with `--write`) |
 | `strip --backup` | Rename original `.ts` to `.ts.bak` after write |
 | `verify --with-tsc` | Also run `tsc --noEmit` baseline on `.ts` inputs (migration dual-run only) |
-| `retire --dry-run` | Print the rewrite plan without touching `package.json` |
+| `retire --dry-run` | Print the rewrite plan without touching `package.json` / workflows |
+| `retire --all` | Batch every workspace package that still carries tsc/typescript |
+| `retire --no-workflows` | Leave `.github/workflows` untouched |
 | `--json` | Machine-readable output |
 
 Convert annotations into reviewable contracts with [`contract --from-dts`](#nudo-contract) (`@nudo:draft` is **not** enforced until accepted into `*.nudo.js`).

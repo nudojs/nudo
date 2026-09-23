@@ -54,10 +54,12 @@ npx nudojs migrate retire ./my-pkg          # add --dry-run first
 
 | Step | What it does | Exit when |
 |------|--------------|-----------|
-| `status` | Counts `.ts`/`.tsx`, finds `tsc` scripts and the `typescript` dep, lists **blockers** | You know the surface area |
+| `status` | Counts `.ts`/`.tsx`, finds `tsc` scripts and the `typescript` dep, lists **blockers** (including workflow tsc lines) | You know the surface area |
 | `strip` | `.ts` → `.js` (type annotations out; runtime semantics stay). `--write` emits files + best-effort sidecar draft (`--no-draft` skips) | Sources are plain JS |
 | `verify` | Runs `nudo check` on the stripped JS | Gate is green |
-| `retire` | Drops `typescript` from deps, rewrites `tsc` scripts → `nudo check`, writes `.nudo/migrate-retired.json` | **tsc is gone** |
+| `retire` | Drops `typescript` from deps, rewrites `tsc` scripts → `nudo check`, **rewrites `.github/workflows` tsc lines**, writes `.nudo/migrate-retired.json` | **tsc is gone** |
+
+Monorepo batch: `npx nudojs migrate retire ./repo --all` walks every workspace package that still carries `tsc` / `typescript`. `--no-workflows` leaves CI YAML alone.
 
 Sample `status` face:
 

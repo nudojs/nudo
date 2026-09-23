@@ -1753,6 +1753,8 @@ program
   .option("--no-draft", "strip: skip sidecar draft generation")
   .option("--with-tsc", "verify: also run tsc --noEmit baseline on .ts inputs")
   .option("--dry-run", "retire: print planned package.json edits without writing")
+  .option("--all", "retire: every workspace package that still has tsc/typescript")
+  .option("--no-workflows", "retire: do not rewrite .github/workflows tsc lines")
   .option("--json", "Machine-readable output")
   .action(
     async (
@@ -1764,6 +1766,8 @@ program
         draft?: boolean;
         withTsc?: boolean;
         dryRun?: boolean;
+        all?: boolean;
+        workflows?: boolean;
         json?: boolean;
       },
     ) => {
@@ -1772,6 +1776,7 @@ program
         migrateStrip,
         migrateVerify,
         migrateRetire,
+        migrateRetireAll,
         formatStatusTable,
       } = await import("./migrate.ts");
       const targets = paths.length > 0 ? paths : ["."];
@@ -1833,21 +1838,43 @@ program
           return;
         }
         if (action === "retire") {
-          const root = targets[0]!;
-          const result = migrateRetire(root, { dryRun: opts.dryRun === true });
+          const dryRun = opts.dryRun === true;
+          const wf = opts.workflows === false ? false : undefined;
+          const results =
+            opts.all === true
+              ? migrateRetireAll(targets[0]!, {
+                  dryRun,
+                  ...(wf === false ? { workflows: false } : {}),
+                })
+              : [
+                  migrateRetire(targets[0]!, {
+                    dryRun,
+                    ...(wf === false ? { workflows: false } : {}),
+                  }),
+                ];
           if (opts.json) {
-            console.log(JSON.stringify(result, null, 2));
+            console.log(JSON.stringify(results.length === 1 ? results[0] : results, null, 2));
           } else {
-            console.log(`${opts.dryRun ? "dry-run" : "retired"}  ${result.root}`);
-            if (result.removedDeps.length > 0) {
-              console.log(`  removed typescript from: ${result.removedDeps.join(", ")}`);
+            for (const result of results) {
+              console.log(`${dryRun ? "dry-run" : "retired"}  ${result.root}`);
+              if (result.removedDeps.length > 0) {
+                console.log(`  removed typescript from: ${result.removedDeps.join(", ")}`);
+              }
+              for (const s of result.rewrittenScripts) {
+                console.log(`  script ${s.name}:`);
+                console.log(`    - ${s.from}`);
+                console.log(`    + ${s.to}`);
+              }
+              for (const w of result.rewrittenWorkflows) {
+                console.log(`  workflow ${w.file}:`);
+                console.log(`    - ${w.from}`);
+                console.log(`    + ${w.to}`);
+              }
+              console.log(`  marker: ${result.marker}`);
             }
-            for (const s of result.rewrittenScripts) {
-              console.log(`  script ${s.name}:`);
-              console.log(`    - ${s.from}`);
-              console.log(`    + ${s.to}`);
+            if (results.length === 0) {
+              console.log("nothing to retire (no tsc/typescript in scope)");
             }
-            console.log(`  marker: ${result.marker}`);
           }
           return;
         }
