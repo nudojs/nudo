@@ -100,7 +100,7 @@ type ProbeResult = Probe & {
 };
 
 /**
- * High-frequency Node API probes (default priority from plan §3 B3).
+ * High-frequency Node API probes (default priority from plan §3 B3 + B-gap pass).
  * Library probes are inventory-only: they document import resolution path
  * (JS execution / @types harvest / mock) rather than env module slots.
  */
@@ -110,6 +110,9 @@ const NODE_PROBES: Probe[] = [
   { id: "fs.writeFileSync", module: "fs", path: ["writeFileSync"] },
   { id: "fs.existsSync", module: "fs", path: ["existsSync"] },
   { id: "fs.statSync", module: "fs", path: ["statSync"] },
+  { id: "fs.readdirSync", module: "fs", path: ["readdirSync"] },
+  { id: "fs.mkdirSync", module: "fs", path: ["mkdirSync"] },
+  { id: "fs.rmSync", module: "fs", path: ["rmSync"] },
   { id: "fs.readFile-callback", module: "fs", path: ["readFile"] },
   { id: "fs.promises.readFile", module: "fs/promises", path: ["readFile"] },
   { id: "fs.promises.writeFile", module: "fs/promises", path: ["writeFile"] },
@@ -130,6 +133,9 @@ const NODE_PROBES: Probe[] = [
   { id: "path.relative", module: "path", path: ["relative"] },
   { id: "path.parse", module: "path", path: ["parse"] },
   { id: "path.isAbsolute", module: "path", path: ["isAbsolute"] },
+  { id: "path.sep", module: "path", path: ["sep"] },
+  { id: "path.posix", module: "path", path: ["posix"] },
+  { id: "path.win32", module: "path", path: ["win32"] },
 
   // url
   { id: "url.URL", module: "url", path: ["URL"] },
@@ -148,6 +154,8 @@ const NODE_PROBES: Probe[] = [
   { id: "util.inspect", module: "util", path: ["inspect"] },
   { id: "util.format", module: "util", path: ["format"] },
   { id: "util.types.isDate", module: "util", path: ["types", "isDate"] },
+  { id: "util.inherits", module: "util", path: ["inherits"] },
+  { id: "util.callbackify", module: "util", path: ["callbackify"] },
 
   // stream (skeleton; machine callbacks stay mock-recommended)
   { id: "stream.Readable", module: "stream", path: ["Readable"] },
@@ -167,15 +175,28 @@ const NODE_PROBES: Probe[] = [
   { id: "querystring.parse", module: "querystring", path: ["parse"] },
   { id: "querystring.stringify", module: "querystring", path: ["stringify"] },
 
-  // crypto / process / os
+  // crypto / process / os / Buffer / assert
   { id: "crypto.randomUUID", module: "crypto", path: ["randomUUID"] },
   { id: "crypto.createHash", module: "crypto", path: ["createHash"] },
   { id: "crypto.randomBytes", module: "crypto", path: ["randomBytes"] },
   { id: "process.env", path: ["process", "env"] },
   { id: "process.cwd", path: ["process", "cwd"] },
   { id: "process.argv", path: ["process", "argv"] },
+  { id: "process.nextTick", path: ["process", "nextTick"] },
+  { id: "process.exitCode", path: ["process", "exitCode"] },
+  { id: "process.version", path: ["process", "version"] },
+  { id: "process.platform", path: ["process", "platform"] },
   { id: "os.platform", module: "os", path: ["platform"] },
+  { id: "os.homedir", module: "os", path: ["homedir"] },
+  { id: "os.tmpdir", module: "os", path: ["tmpdir"] },
+  { id: "os.EOL", module: "os", path: ["EOL"] },
+  { id: "os.cpus", module: "os", path: ["cpus"] },
   { id: "Buffer.from", path: ["Buffer", "from"] },
+  { id: "Buffer.alloc", path: ["Buffer", "alloc"] },
+  { id: "Buffer.concat", path: ["Buffer", "concat"] },
+  { id: "assert.ok", module: "assert", path: ["ok"] },
+  { id: "assert.strictEqual", module: "assert", path: ["strictEqual"] },
+  { id: "assert.deepStrictEqual", module: "assert", path: ["deepStrictEqual"] },
 
   // child_process / native boundary
   {
@@ -225,6 +246,11 @@ const LIB_PROBES: LibProbe[] = [
 function walkAbs(a: Abs | undefined, path: string[]): { found: Abs | undefined; format?: string } {
   let cur: Abs | undefined = a;
   for (const key of path) {
+    if (!cur) return { found: undefined };
+    // brand carries its payload as shape.shape (an Abs), not as obj slots
+    if (cur.shape.k === "brand") {
+      cur = cur.shape.shape as Abs | undefined;
+    }
     if (!cur || cur.shape.k !== "obj") return { found: undefined };
     const slot = cur.shape.slots[key];
     if (!slot) return { found: undefined };

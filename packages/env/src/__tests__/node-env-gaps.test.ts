@@ -20,6 +20,13 @@ function shapeOf(a: Abs | undefined): string {
   return formatShape(a!);
 }
 
+/** clean = format 串不含 unknown/any 叶子 token */
+function expectLeafClean(fmt: string, label: string): void {
+  expect(fmt, `${label} should not mention unknown/any`).not.toMatch(
+    /(^|[^\w])(unknown|any)([^\w]|$)/,
+  );
+}
+
 function walk(a: Abs, ...keys: string[]): Abs | undefined {
   let cur: Abs | undefined = a;
   for (const k of keys) {
@@ -52,6 +59,7 @@ describe("node env high-frequency gaps (B3)", () => {
     const ctor = events.EventEmitter!;
     const s = shapeOf(ctor);
     expect(s).toContain("EventEmitter");
+    expectLeafClean(s, "events.EventEmitter");
     // ctor is envFn → shape.k fn; return type is the brand
     expect(ctor.shape.k === "fn" || ctor.shape.k === "brand").toBe(true);
     if (ctor.shape.k === "fn" && ctor.shape.returnType) {
@@ -70,11 +78,18 @@ describe("node env high-frequency gaps (B3)", () => {
 
   it("util exposes promisify / inspect / format (+ types)", () => {
     const util = lookupModule(env, "util");
-    expect(shapeOf(util.promisify)).toContain("=>");
-    expect(shapeOf(util.inspect)).toContain("=>");
+    const promisifyFmt = shapeOf(util.promisify);
+    expect(promisifyFmt).toContain("=>");
+    expectLeafClean(promisifyFmt, "util.promisify");
+    // inspect options typed; value slot is product-any (honest)
+    expect(shapeOf(util.inspect)).toContain("options?");
     expect(shapeOf(util.format)).toContain("=>");
     const isDate = walk(util.types!, "isDate");
     expect(shapeOf(isDate)).toContain("bool");
+    const inheritsFmt = shapeOf(util.inherits);
+    expectLeafClean(inheritsFmt, "util.inherits");
+    const callbackifyFmt = shapeOf(util.callbackify);
+    expectLeafClean(callbackifyFmt, "util.callbackify");
   });
 
   it("stream skeleton brands + pipe exist", () => {
@@ -84,14 +99,19 @@ describe("node env high-frequency gaps (B3)", () => {
       expect(ctor, name).toBeTruthy();
       const s = shapeOf(ctor);
       expect(s).toContain(name);
+      expectLeafClean(s, `stream.${name}`);
+      expect(s).toContain("options?");
     }
     expect(stream.pipeline).toBeTruthy();
+    expectLeafClean(shapeOf(stream.pipeline), "stream.pipeline");
   });
 
-  it("querystring parse/stringify present", () => {
+  it("querystring parse/stringify present with typed options", () => {
     const qs = lookupModule(env, "querystring");
     expect(shapeOf(qs.parse)).toContain("ParsedQueryString");
+    expectLeafClean(shapeOf(qs.parse), "querystring.parse");
     expect(shapeOf(qs.stringify)).toContain("=>");
+    expectLeafClean(shapeOf(qs.stringify), "querystring.stringify");
     expect(shapeOf(qs.escape)).toContain("=>");
   });
 
@@ -102,6 +122,7 @@ describe("node env high-frequency gaps (B3)", () => {
     // callback-style async on fs: returns undefined, not promise
     expect(shapeOf(fs.readFile)).toContain("undefined");
     expect(shapeOf(fs.readFile)).not.toContain("promise");
+    expectLeafClean(shapeOf(fs.readFile), "fs.readFile");
     for (const mod of ["fs/promises", "node:fs/promises"] as const) {
       const promises = lookupModule(env, mod);
       for (const name of [
@@ -118,6 +139,24 @@ describe("node env high-frequency gaps (B3)", () => {
         expect(promises[name], `${mod}.${name}`).toBeTruthy();
         expect(shapeOf(promises[name]), `${mod}.${name}`).toContain("promise");
       }
+      expectLeafClean(shapeOf(promises.readFile), `${mod}.readFile`);
+      expectLeafClean(shapeOf(promises.mkdir), `${mod}.mkdir`);
+    }
+  });
+
+  it("fs.statSync times are Date brand; options typed", () => {
+    const fs = lookupModule(env, "fs");
+    const fmt = shapeOf(fs.statSync);
+    expectLeafClean(fmt, "fs.statSync");
+    expect(fmt).toContain("Date");
+    expect(fmt).not.toContain("mtime: unknown");
+    expect(fmt).toContain("options?");
+    const stat = fs.statSync!;
+    if (stat.shape.k === "fn" && stat.shape.returnType) {
+      const isFile = walk(stat.shape.returnType, "isFile");
+      expect(shapeOf(isFile)).toContain("bool");
+      const mtime = walk(stat.shape.returnType, "mtime");
+      expect(shapeOf(mtime)).toBe("Date");
     }
   });
 
@@ -132,15 +171,65 @@ describe("node env high-frequency gaps (B3)", () => {
     expect(resolveFmt).toContain("...paths");
     expect(path.parse).toBeTruthy();
     expect(shapeOf(path.parse)).toContain("{");
+    expectLeafClean(shapeOf(path.sep), "path.sep");
+    expectLeafClean(shapeOf(path.posix), "path.posix");
+    expectLeafClean(shapeOf(path.win32), "path.win32");
     const url = lookupModule(env, "url");
     expect(url.URL).toBeTruthy();
     expect(url.URLSearchParams).toBeTruthy();
+    const searchFmt = shapeOf(url.URLSearchParams);
+    expectLeafClean(searchFmt, "url.URLSearchParams");
+    expect(searchFmt).toContain("string | null");
     const crypto = lookupModule(env, "crypto");
     expect(shapeOf(crypto.randomUUID)).toContain("=>");
+    const hashFmt = shapeOf(crypto.createHash);
+    expectLeafClean(hashFmt, "crypto.createHash");
+    expect(hashFmt).toContain("Hash");
     const process = env.globals.process;
     expect(process).toBeTruthy();
     const cwd = walk(process!, "cwd");
     expect(shapeOf(cwd)).toContain("=>");
+  });
+
+  it("process.env is open string map; nextTick / exitCode / version typed", () => {
+    const process = env.globals.process!;
+    const envFmt = shapeOf(walk(process, "env"));
+    expectLeafClean(envFmt, "process.env");
+    expect(envFmt).toContain("string");
+    // empty `{  }` is not a leaf-clean Record semantics
+    expect(envFmt.replace(/\s+/g, " ").trim()).not.toBe("{  }");
+    const nextTickFmt = shapeOf(walk(process, "nextTick"));
+    expectLeafClean(nextTickFmt, "process.nextTick");
+    const exitCodeFmt = shapeOf(walk(process, "exitCode"));
+    expectLeafClean(exitCodeFmt, "process.exitCode");
+    expect(exitCodeFmt).toContain("number");
+    expectLeafClean(shapeOf(walk(process, "version")), "process.version");
+    expectLeafClean(shapeOf(walk(process, "platform")), "process.platform");
+  });
+
+  it("os / Buffer / assert high-frequency slots exist and are leaf-clean where possible", () => {
+    const os = lookupModule(env, "os");
+    for (const name of ["homedir", "tmpdir", "platform"] as const) {
+      expect(os[name], name).toBeTruthy();
+      expectLeafClean(shapeOf(os[name]), `os.${name}`);
+    }
+    expectLeafClean(shapeOf(os.EOL), "os.EOL");
+    expectLeafClean(shapeOf(os.cpus), "os.cpus");
+
+    const BufferCtor = env.globals.Buffer!;
+    const allocFmt = shapeOf(walk(BufferCtor, "alloc"));
+    expect(allocFmt).toContain("Buffer");
+    expectLeafClean(allocFmt, "Buffer.alloc");
+    expectLeafClean(shapeOf(walk(BufferCtor, "concat")), "Buffer.concat");
+    expectLeafClean(shapeOf(walk(BufferCtor, "from")), "Buffer.from");
+
+    const assertMod = lookupModule(env, "assert");
+    expect(assertMod.ok).toBeTruthy();
+    expect(assertMod.strictEqual).toBeTruthy();
+    expect(assertMod.deepStrictEqual).toBeTruthy();
+    // value 参数是产品 any — 不假装具体；返回 undefined 干净
+    expect(shapeOf(assertMod.strictEqual)).toContain("=>");
+    expect(shapeOf(assertMod.deepStrictEqual)).toContain("=>");
   });
 
   it("variadic/optional Node APIs declare required arity only + optional labels", () => {
@@ -150,10 +239,12 @@ describe("node env high-frequency gaps (B3)", () => {
     // basename: ext optional — typed label; required slot is path only
     expect(shapeOf(path.basename)).toBe("(string, ext?: string) => string");
     const util = lookupModule(env, "util");
-    // util.format() is valid with zero args in Node
-    expect(shapeOf(util.format)).toBe("(...args: unknown) => string");
+    // util.format() is valid with zero args in Node; mixed args are product-any
+    expect(shapeOf(util.format)).toBe("(...args: any) => string");
     const events = lookupModule(env, "events");
-    expect(shapeOf(events.EventEmitter)).toBe("(options?: unknown) => EventEmitter");
+    expect(shapeOf(events.EventEmitter)).toBe(
+      "(options?: { captureRejections?: boolean }) => EventEmitter",
+    );
     // required arity 0 via labels (paramTypes still carries the optional slot type)
     const ee = events.EventEmitter!;
     expect(ee.shape.k).toBe("fn");
@@ -165,9 +256,10 @@ describe("node env high-frequency gaps (B3)", () => {
     expect(shapeOf(url.URL)).toContain("base?: string");
     const qs = lookupModule(env, "querystring");
     expect(shapeOf(qs.parse)).toBe(
-      "(string, sep?: string, eq?: string, options?: unknown) => ParsedQueryString",
+      "(string, sep?: string, eq?: string, options?: { maxKeys?: number }) => ParsedQueryString",
     );
     const stream = lookupModule(env, "stream");
-    expect(shapeOf(stream.Readable)).toBe("(options?: unknown) => Readable");
+    expect(shapeOf(stream.Readable)).toContain("options?");
+    expect(shapeOf(stream.Readable)).toContain("Readable");
   });
 });

@@ -34,12 +34,50 @@ export function undef(): Abs {
   return makeAbs({ k: "unknown" }, termLit(undefined), undefined, "exact");
 }
 
+/**
+ * null 叶子：formatShape 对 `{k:"unknown"} + lit null` 会渲染 `unknown`
+ * （只特判 undefined）。用 brand `"null"` 让外延显示保持 `string | null`
+ * 而不是 `string | unknown` — 不假精确，也不把推导失败当成 null。
+ */
 export function nullLit(): Abs {
-  return makeAbs({ k: "unknown" }, termLit(null), undefined, "exact");
+  return makeAbs(
+    { k: "brand", name: "null", shape: makeAbs({ k: "unknown" }, termLit(null), undefined, "exact") },
+    termLit(null),
+    undefined,
+    "exact",
+  );
 }
 
 export function anyAbs(): Abs {
   return makeAbs({ k: "any" }, undefined, undefined, "path");
+}
+
+/** Date/时刻叶子：stats 时间戳等。shape 带 getTime，format 只显示 `Date`。 */
+export function dateAbs(): Abs {
+  return brandOf("Date", objAbs({
+    getTime: envFn([], num()),
+    valueOf: envFn([], num()),
+    toISOString: envFn([], str()),
+  }));
+}
+
+/**
+ * 开放对象（动态键映射，如 `process.env`）。
+ * formatShape 只渲染 slots，空 slots 会显示 `{  }`；外层套 brand 让
+ * leaf-clean 口径看见真实语义名，内部仍保留 open + index 值域。
+ */
+export function openObjBrand(
+  name: string,
+  index: { key: Abs; value: Abs },
+  entries: Record<string, Abs | Slot> = {},
+): Abs {
+  const shape = {
+    k: "obj" as const,
+    slots: slotsOf(entries),
+    open: true,
+    index,
+  };
+  return makeAbs({ k: "brand", name, shape: makeAbs(shape, undefined, undefined, "exact") }, undefined, undefined, "path");
 }
 
 export function arrOf(element: Abs): Abs {
