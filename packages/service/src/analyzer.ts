@@ -12,6 +12,7 @@ import {
   setBCallCollector,
   getBCallCollector,
   getFnImpl,
+  markPureFn,
   $call,
   unknown as absUnknown,
   anyAbs,
@@ -28,6 +29,8 @@ import {
   formatAbsMultiline,
   formatShape,
   leqAbs,
+  localNamedExports,
+  effectiveInterface,
   numLit,
   strLit,
   boolLit,
@@ -1630,8 +1633,8 @@ function analyzeFileUncachedInner(
 
     if (isPure) {
       const fnVal = globalEnv.has(fn.name) ? globalEnv.lookup(fn.name) : null;
-      if (fnVal && fnVal.shape.k === "fn") {
-        (fnVal as any)._memoize = fn.name;
+      if (fnVal && typeof fnVal === "object") {
+        markPureFn(fnVal as object, fn.name);
       }
     }
 
@@ -2156,6 +2159,36 @@ function analyzeFileUncachedInner(
     candidate.analysis.entryOnly = true;
     candidate.analysis.combinedAbs = entryAbs;
     attachHofSnapshot(candidate.analysis, source);
+    // nudo:interface-entry-only：导出无根且无域（无手写/生成契约 + 无调用点证据）
+    try {
+      const exportNames = localNamedExports(source);
+      const isEntry =
+        exportNames.has(candidate.analysis.name) ||
+        (candidate.assignedName !== undefined && exportNames.has(candidate.assignedName));
+      if (isEntry) {
+        const autoBind = interfaceConfig(
+          findProjectConfig(dirname(filePath))?.config,
+        ).autoBind;
+        const eff = effectiveInterface(source, candidate.analysis.name, {
+          loadModule: loadModule ?? defaultLoadModule,
+          fromFile: filePath,
+          ...(autoBind === false ? { autoBind: false } : {}),
+        });
+        if (!eff) {
+          diagnostics.push({
+            range: {
+              start: candidate.analysis.loc.start,
+              end: candidate.analysis.loc.start,
+            },
+            severity: "info",
+            message: `export '${candidate.analysis.name}' has no contract root and no call-site domain (entry-only)`,
+            code: "nudo:interface-entry-only",
+          });
+        }
+      }
+    } catch {
+      /* 诊断不得打断分析 */
+    }
   }
 
   if (!bHostedEval) {

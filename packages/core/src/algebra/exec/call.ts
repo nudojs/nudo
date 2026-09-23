@@ -11,11 +11,10 @@
 
 import type { Abs } from "../abs.ts";
 import { never, unknown } from "../abs.ts";
-import { getFnImpl } from "../abs-fn.ts";
+import { getFnImpl, absFunction, pureFnNameOf } from "../abs-fn.ts";
 import { compiledBodyOf } from "./body-fn.ts";
 import { joinAbs } from "../objects.ts";
 import { instantiateReturn, isRelFn, setApplyCallbackHost } from "../hof.ts";
-import { absFunction } from "../abs-fn.ts";
 import type { AstEnv } from "../ast-env.ts";
 import { isNudoThrow, pushThrowExit } from "./runtime.ts";
 import {
@@ -26,12 +25,27 @@ import {
   stableCallId,
 } from "../call-budget.ts";
 
+/** @nudo:pure 调用结果缓存（fn 对象身份 → args key → result） */
+const pureMemo = new WeakMap<object, Map<string, Abs>>();
+
+function pureMemoKey(args: Abs[]): string {
+  return callBudgetKey("pure", "", args);
+}
+
 export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
   // 函数 union：对每个 member 同序求值后 join
   if (fn?.shape?.k === "sum") {
     const results = fn.shape.members.map((m) => $call(m, args, thisVal));
     if (results.every((r) => r.shape.k === "unknown")) return unknown;
     return results.reduce((a, b) => joinAbs(a, b));
+  }
+  // @nudo:pure：同实参直接命中缓存（无副作用契约）
+  const pureName = pureFnNameOf(fn);
+  const fnObj = fn && typeof fn === "object" ? (fn as object) : undefined;
+  const pk = pureName && fnObj ? pureMemoKey(args) : undefined;
+  if (fnObj && pk !== undefined) {
+    const hit = pureMemo.get(fnObj)?.get(pk);
+    if (hit !== undefined) return hit;
   }
   const impl = getFnImpl(fn);
   // 关系面（relation/isRelFn）：无 body 无 apply → 实例化返回位
@@ -47,7 +61,16 @@ export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
     if (!enterCall(key, label)) return truncatedAbs();
     try {
       try {
-        return impl.apply(args, thisVal);
+        const r = impl.apply(args, thisVal);
+        if (fnObj && pk !== undefined) {
+          let m = pureMemo.get(fnObj);
+          if (!m) {
+            m = new Map();
+            pureMemo.set(fnObj, m);
+          }
+          m.set(pk, r);
+        }
+        return r;
       } catch (e) {
         if (e && typeof e === "object" && (e as { name?: string }).name === "NudoReturn") {
           return (e as { absValue: Abs }).absValue;
@@ -67,7 +90,16 @@ export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
     if (!enterCall(key, label)) return truncatedAbs();
     try {
       try {
-        return compiled(args);
+        const r = compiled(args);
+        if (fnObj && pk !== undefined) {
+          let m = pureMemo.get(fnObj);
+          if (!m) {
+            m = new Map();
+            pureMemo.set(fnObj, m);
+          }
+          m.set(pk, r);
+        }
+        return r;
       } catch (e) {
         // body 抛错 → never（不把中间值当返回值）；throw 载荷进 throwExits
         // 供 callTranspiledExportFull 的 L2 throws 收集

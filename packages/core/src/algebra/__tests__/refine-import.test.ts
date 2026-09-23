@@ -8,6 +8,7 @@ import {
   execNudoModule,
   extractNudoImports,
   extractRefinesFromSource,
+  extractRefineReturnFromSource,
   refineToIndexedFull,
 } from "../refine.ts";
 import { checkSource, pTrue } from "../index.ts";
@@ -105,5 +106,32 @@ function f(ms, n) {
       fromFile: "/t/f.js",
     });
     expect(idx.length).toBe(2);
+  });
+
+  it("namespace import expands ns.foo template refs", () => {
+    const src = `
+/// @nudo:import * as shapes from "./x.nudo.js"
+/**
+ * @nudo:refine ms shapes.delay
+ * @nudo:refine return shapes.percent
+ */
+function setDelay(ms) {
+  return ms;
+}
+`;
+    const reqs = extractRefinesFromSource(src, "setDelay", {
+      loadModule,
+      fromFile: "/t/ns.js",
+    });
+    expect(reqs.length).toBe(1);
+    expect(reqs[0]!.param).toBe("ms");
+    expect(predToString(reqs[0]!.pred)).toBe("ms > 0");
+
+    const ret = extractRefineReturnFromSource(src, "setDelay", {
+      loadModule,
+      fromFile: "/t/ns.js",
+    });
+    expect(ret?.name).toBe("shapes.percent");
+    expect(isNudoConstraint(ret!.constraint)).toBe(true);
   });
 });

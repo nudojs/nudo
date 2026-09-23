@@ -64,6 +64,10 @@ Cross-file call-site evidence injected via `nudo check --from` is not within the
 
 Persisted `@generated` sidecar segment ≠ today's recomputed call-site domain or return. **Warning** — does not gate exit.
 
+### `nudo:interface-entry-only`
+
+Exported function has **no contract root** (no handwritten / generated sidecar or `@nudo:refine`) **and no call-site domain** (only synthesized `entry@` with `any` params). **Info** — coverage/contract gap, not a gate failure. Fix: add a contract (`*.nudo.js` / `@nudo:refine`) or exercise the export from usage sites (`nudo check --from`).
+
 ## Runtime boundary (L2)
 
 ### `nudo:entry-may-throw`

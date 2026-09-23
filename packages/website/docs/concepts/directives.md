@@ -103,7 +103,7 @@ Replace external dependencies with mocks during evaluation — `fetch`, file sys
 
 ## @nudo:pure — Mark Pure Functions
 
-Mark a function as pure. The Abs `fn` value carries the marker (`_memoize = fn.name`), declaring a side-effect-free contract for future call-result memoization; today the evaluator does not yet consume it, so analysis results are the same with or without the directive. Declare it where the contract matters; expect the marker to stay advisory until the memoization consumer lands.
+Mark a function as pure. The Abs `fn` value carries a pure marker and the evaluator **memoizes call results by argument Abs** (same args → cached result). Declare it only for side-effect-free functions; analysis results stay correct with or without the directive.
 
 ### Syntax
 
@@ -335,7 +335,7 @@ Import constraint templates from a `*.nudo.js` module for use with `@nudo:refine
 ```
 
 - **named** — bind exported template names used by `@nudo:refine`
-- **namespace** — parsed; template expansion via `ns.foo` is not yet supported
+- **namespace** — `@nudo:import * as ns from "…"` expands to `ns.exportName` refs in `@nudo:refine`
 
 ### Example
 
@@ -542,7 +542,7 @@ const result = a + b;
 |-----------|--------|---------|
 | `@nudo:case` | `"name" (args...)` or `"name" (args) => type` | Debug / `nudo test` witnesses (not the contract product) |
 | `@nudo:mock` | `name = expr` or `name from "path"` | Mock external dependencies |
-| `@nudo:pure` | (no args) | Mark function as pure for memoization |
+| `@nudo:pure` | (no args) | Mark function pure — evaluator memoizes call results by args |
 | `@nudo:skip` | `[returnsExpr]` | Skip evaluation, use existing type info |
 | `@nudo:sample` | `N` | Reserved no-op (parsed, not consumed) |
 | `@nudo:refine` / `@nudo:interface` | `param constraint` / `return constraint` | In-source refinement contract (alias pair; main path is the `*.nudo.js` sidecar auto-binding) |

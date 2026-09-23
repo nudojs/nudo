@@ -759,7 +759,16 @@ function collectConstraints(
       continue;
     }
     for (const name of imp.names) {
-      if (name.startsWith("*")) continue; // namespace 暂不展开
+      // 命名空间：`@nudo:import * as ns` → 展开为 `ns.exportName` 供 refine 引用
+      if (name.startsWith("*")) {
+        const ns = name.slice(1);
+        for (const [expName, v] of Object.entries(exports)) {
+          if (isNudoConstraint(v)) {
+            map.set(`${ns}.${expName}`, v);
+          }
+        }
+        continue;
+      }
       const v = exports[name];
       if (isNudoConstraint(v)) {
         map.set(name, v);
@@ -832,7 +841,8 @@ export function extractRefinesFromSource(
   for (const line of extractRefineLines(source, fnName)) {
     const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);
     for (const part of parts) {
-      const m = part.match(/^(\w+)\s+(\w+)$/);
+      // 约束名支持 `ns.foo` 命名空间展开（@nudo:import * as ns）
+      const m = part.match(/^(\w+)\s+([\w.]+)$/);
       if (!m) continue;
       const [, param, cName] = m;
       // return 是后置目标，不进参数精化
@@ -879,7 +889,7 @@ export function extractRefineReturnFromSource(
   for (const line of extractRefineLines(source, fnName)) {
     const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);
     for (const part of parts) {
-      const m = part.match(/^return\s+(\w+)$/);
+      const m = part.match(/^return\s+([\w.]+)$/);
       if (!m) continue;
       const cName = m[1]!;
       const c = constraints.get(cName);

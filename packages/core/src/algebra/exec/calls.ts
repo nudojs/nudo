@@ -9,6 +9,7 @@ import { abs, unknown } from "../abs.ts";
 import { evalGlobalFn } from "../builtins.ts";
 import { $call } from "./call.ts";
 import { callAtFunctionBoundary } from "./runtime.ts";
+import { pureFnNameOf } from "../abs-fn.ts";
 import { noteAbsTruncation, callBudgetKey } from "../call-budget.ts";
 import {
   tagAbsOrigin,
@@ -64,6 +65,9 @@ export type BCallRecord = {
   callLoc?: { line: number; column: number };
   threw?: boolean;
 };
+
+/** @nudo:pure 宿主调用结果缓存（fn 对象身份 → args key → result） */
+const pureCallMemo = new WeakMap<object, Map<string, Abs>>();
 
 let bCallCollector: ((r: BCallRecord) => void) | null = null;
 
@@ -241,6 +245,16 @@ export function $callNamed(
   loc?: [number, number],
   argLocs?: Array<[number, number] | null | undefined>,
 ): Abs {
+  // @nudo:pure：宿主 JS 函数 / Abs 上的 `_memoize` 标记 → 同实参命中缓存
+  const pureName = pureFnNameOf(fn);
+  const fnObj = fn && (typeof fn === "object" || typeof fn === "function")
+    ? (fn as object)
+    : undefined;
+  const pk = pureName && fnObj ? callBudgetKey("pure", "", args) : undefined;
+  if (fnObj && pk !== undefined) {
+    const hit = pureCallMemo.get(fnObj)?.get(pk);
+    if (hit !== undefined) return hit;
+  }
   let result: Abs = unknown;
   let threw = false;
   if (argLocs) {
@@ -290,6 +304,14 @@ export function $callNamed(
     throw e;
   } finally {
     if (loc) popCallLoc();
+    if (fnObj && pk !== undefined && !threw) {
+      let m = pureCallMemo.get(fnObj);
+      if (!m) {
+        m = new Map();
+        pureCallMemo.set(fnObj, m);
+      }
+      m.set(pk, result);
+    }
     if (bCallCollector) {
       try {
         bCallCollector({

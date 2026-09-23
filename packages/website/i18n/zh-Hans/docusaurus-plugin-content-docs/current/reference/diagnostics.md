@@ -64,6 +64,10 @@ HOF 实参不是可调用 `fn`，或元数与**显式** relation 契约不匹配
 
 固化的 `@generated` 侧车段 ≠ 今日重算的调用点域或返回。**Warning** —— 不挡 exit。
 
+### `nudo:interface-entry-only`
+
+导出函数**无契约根**（无手写/生成侧车或 `@nudo:refine`）且**无调用点域**（仅合成 `entry@`、参数为 `any`）。**Info** —— 覆盖/契约缺口，不是门禁失败。修复：补契约（`*.nudo.js` / `@nudo:refine`），或从使用现场触达该导出（`nudo check --from`）。
+
 ## 运行时边界（L2）
 
 ### `nudo:entry-may-throw`

@@ -49,7 +49,9 @@
 | 调用点经验泛化（P3） | **明确不做** | 不入主路径（hof-relations） |
 | `.nudo/cache` L2 harvest 磁盘层 | **已落地** | HarvestJson 签名投影 + `~/.cache/nudo/deps`（`harvest-json.ts` / `harvest-disk.ts`）；见 [`persistent-cache.md`](./persistent-cache.md) |
 | 项目根内自动绑定边界 | **已落地** | `projectDir` 树外侧车不 ambient 绑定（`sidecar-project-root.test.ts`）；node_modules 仍拦 |
-| `nudo:interface-entry-only` | 设计有名字，无稳定消费面 | refine-derivation 未决 |
+| `nudo:interface-entry-only` | **已落地** | 导出无根且无域 → info（`analyzeFile` entry@ 合成路径） |
+| `ns.foo` 命名空间模板 | **已落地** | `@nudo:import * as ns` → `ns.exportName` refine 引用 |
+| `@nudo:pure` 记忆化 | **已落地** | `$call` / `$callNamed` 按实参 Abs 缓存 |
 | LSP 客户端 UI 缺口 | 跟踪表已建 | [`lsp-client-gaps.md`](./lsp-client-gaps.md)（LSP-G1…；文档同步 LSP-G5 已关） |
 
 ---

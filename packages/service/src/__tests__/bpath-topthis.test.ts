@@ -54,7 +54,8 @@ export function twice(n) { return n * 2; }
     writeFileSync(file, src);
     clearBPathCache();
     const r = analyzeFile(file, src);
-    expect(r.diagnostics).toHaveLength(0);
+    // 允许 info 级 nudo:interface-entry-only（导出无根且无域）；不得有 error/warning
+    expect(r.diagnostics.filter((d) => d.severity === "error" || d.severity === "warning")).toHaveLength(0);
     const fn = r.functions.find((f) => f.name === "twice");
     expect(fn).toBeDefined();
     expect(fn!.cases.length).toBeGreaterThan(0);

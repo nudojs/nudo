@@ -97,7 +97,7 @@
 - **项目根内 ambient 绑定**边界：**已落地**（`CheckOptions`/`EffectiveInterfaceOpts.projectDir`：树外侧车不 ambient 加载；CLI/LSP 从 findProjectConfig 下传）。
 - LSP **open-buffer** 侧车真值：**已落地**（`makeBufferAwareLoadModule` buffer 优先于磁盘，validate/hover/agent 同源；见 `sidecar-lsp.test.ts`）。
 - `.nudo/cache` 跨会话隐式契约缓存：L1 部分 + L2 harvest 磁盘（`harvest-disk.ts`）；用户契约文件与引擎缓存严格分离。
-- `nudo:interface-entry-only`（导出无根且无域）诊断码：设计已命名，代码侧未形成稳定消费面。
+- `nudo:interface-entry-only`（导出无根且无域）：**已落地**（analyzeFile entry@ 合成时 info；无手写/生成契约且无调用点域）。
 - 工件 join 后组合式曾退回展开式（已知降级）；分场景契约名仍是工件精度选项，非 check 正确性前置。
 - 形参名对齐 / rest·解构 / class 方法侧车键等文法缺口：按「名字对不上不静默错绑」原则收紧时，需同步评估既有静默跳过行为。
 

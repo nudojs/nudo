@@ -38,6 +38,8 @@ export type AbsFnImpl = {
   fingerprint?: string;
   /** 无 body 时，按 paramTypes 做 α 替换得到返回 */
   relation?: { paramTypes: Abs[]; returnType: Abs };
+  /** `@nudo:pure`：调用结果按实参记忆化（无副作用契约） */
+  pureName?: string;
 };
 
 const implByAbs = new WeakMap<object, AbsFnImpl>();
@@ -49,6 +51,22 @@ export function attachFnImpl(a: Abs, impl: AbsFnImpl): void {
 export function getFnImpl(a: Abs): AbsFnImpl | undefined {
   if (!a || typeof a !== "object") return undefined;
   return implByAbs.get(a as object);
+}
+
+/** 标记纯函数（@nudo:pure）：调用结果可按实参记忆化 */
+export function markPureFn(target: object, name: string): void {
+  if (!target || typeof target !== "object") return;
+  (target as { _memoize?: string })._memoize = name;
+  const impl = implByAbs.get(target);
+  if (impl) impl.pureName = name;
+}
+
+/** 读纯函数标记（Abs impl 或对象属性 `_memoize`） */
+export function pureFnNameOf(fn: unknown): string | undefined {
+  if (!fn || (typeof fn !== "object" && typeof fn !== "function")) return undefined;
+  const impl = implByAbs.get(fn as object);
+  if (impl?.pureName) return impl.pureName;
+  return (fn as { _memoize?: string })._memoize;
 }
 
 /** 造一个带实现的 Abs 函数值 */

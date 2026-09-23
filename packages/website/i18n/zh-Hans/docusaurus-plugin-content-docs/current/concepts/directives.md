@@ -101,7 +101,7 @@ function lengthOf(s) {
 
 ## @nudo:pure — 标记纯函数
 
-将函数标记为纯函数。Abs `fn` 值携带标记（`_memoize = fn.name`），为未来的调用结果记忆化声明无副作用契约；目前求值器尚未消费该标记，加不加指令分析结果相同。在契约有意义处声明；在记忆化消费者落地前，该标记保持建议性质。
+将函数标记为纯函数。Abs `fn` 值携带纯标记，求值器**按实参 Abs 记忆化调用结果**（同实参命中缓存）。仅用于无副作用函数；加不加指令分析结果都正确。
 
 ### 语法
 
@@ -333,7 +333,7 @@ function register(u) {
 ```
 
 - **具名** — 绑定 `@nudo:refine` 使用的导出模板名
-- **命名空间** — 可解析；经 `ns.foo` 展开模板暂不支持
+- **命名空间** — `@nudo:import * as ns from "…"` 展开为 `@nudo:refine` 中的 `ns.exportName` 引用
 
 ### 示例
 
@@ -540,7 +540,7 @@ const result = a + b;
 |-----------|--------|---------|
 | `@nudo:case` | `"name" (args...)` 或 `"name" (args) => type` | 调试 / `nudo test` 见证（不是契约产品） |
 | `@nudo:mock` | `name = expr` 或 `name from "path"` | Mock 外部依赖 |
-| `@nudo:pure` | （无参数） | 标记纯函数（记忆化尚未接入） |
+| `@nudo:pure` | （无参数） | 标记纯函数 —— 求值器按实参记忆化调用结果 |
 | `@nudo:skip` | `[returnsExpr]` | 跳过求值，使用已有类型信息 |
 | `@nudo:sample` | `N` | 保留的无效果指令（已解析，未消费） |
 | `@nudo:refine` / `@nudo:interface` | `param constraint` / `return constraint` | 源码内精化契约（别名对；主路径是 `*.nudo.js` 侧车自动绑定） |
