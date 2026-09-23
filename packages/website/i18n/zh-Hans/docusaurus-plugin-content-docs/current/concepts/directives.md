@@ -58,7 +58,7 @@ case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它�
 
 ### 示例
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "positive numbers" (5, 3)
  * @nudo:case "negative result" (1, 10)
@@ -68,7 +68,7 @@ function subtract(a, b) {
 }
 ```
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "strings" ("hello")
  * @nudo:case "numbers" (42)
@@ -83,7 +83,7 @@ function process(x) {
 
 带有预期结果：
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "basic" ("hello") => 5
  * @nudo:case "empty" ("") => 0
@@ -111,7 +111,7 @@ function lengthOf(s) {
 
 ### 示例
 
-```javascript
+```javascript verify
 /**
  * @nudo:pure
  * @nudo:case "add" (number(), number())
@@ -144,7 +144,7 @@ function add(a, b) {
 
 ### 示例
 
-```javascript
+```javascript verify
 /**
  * @nudo:skip
  */
@@ -161,7 +161,7 @@ function heavyComputation(data) {
   skipped (no return type declared)
 ```
 
-```javascript
+```javascript verify
 /**
  * @nudo:skip number()
  */

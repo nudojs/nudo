@@ -15,7 +15,7 @@ nudo check lib/ --from test/
 
 Given a small library:
 
-```js
+```js verify
 // lib/slugify.js
 export function slugify(title) {
   return title.toLowerCase().replace(/ /g, "-");

@@ -15,7 +15,7 @@ nudo test lib/ --from test/
 
 给定一个小库：
 
-```js
+```js verify
 // lib/slugify.js
 export function slugify(title) {
   return title.toLowerCase().replace(/ /g, "-");

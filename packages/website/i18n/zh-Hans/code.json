@@ -35,12 +35,6 @@
   "homepage.demo.sourceTabsAria": {
     "message": "源码、侧车与调用点切换"
   },
-  "homepage.demo.day0TabsAria": {
-    "message": "观测输出切换"
-  },
-  "homepage.demo.day1TabsAria": {
-    "message": "侧车与门禁输出切换"
-  },
   "homepage.demo.tab.source": {
     "message": "pricing.js"
   },
@@ -50,59 +44,11 @@
   "homepage.demo.lead": {
     "message": "逻辑优先：先写逻辑，再生成契约。契约优先：先写契约，再辅助/约束逻辑。两条路都汇到以 Abs 为核心的契约面。check 只校验；export 从 Abs 投影产物。"
   },
-  "homepage.demo.step1.desc": {
-    "message": "不用写标注，也先不用手写侧车。calls.js 里的调用，就是草稿要参考的证据。"
-  },
-  "homepage.demo.step2.desc": {
-    "message": "contract --draft 会输出 @nudo:draft 模块：按调用点投影参数，函数体读到的字段只作建议，并标明证据来源。草稿文件不会被当作契约加载，也不会替你发明 check 义务。"
-  },
-  "homepage.demo.step3.desc": {
-    "message": "把确认过的导出复制进 pricing.nudo.js，需要更强约束时再收紧（例如 number().gt(0)）。之后用 check --from calls.js 门禁；违例会在 Abs 上打印 actual ⊭ expected。手写契约不会被覆盖。"
-  },
   "homepage.title": {
     "message": "首页"
   },
-  "homepage.surfaces.eyebrow": {
-    "message": "产品界面"
-  },
-  "homepage.surfaces.title": {
-    "message": "三个界面，一台引擎。"
-  },
-  "homepage.surfaces.lead": {
-    "message": "观察不是另一条命令——它就是 check、export 与 IDE 已经打印的内容。义务只在你写下来时才出现。"
-  },
-  "homepage.surface.check.title": {
-    "message": "nudo check"
-  },
-  "homepage.surface.check.desc": {
-    "message": "Day 0 观察与 CI 门禁。成功也打印签名；侧车违例在 Abs 上打印 actual ⊭ expected。"
-  },
-  "homepage.surface.ide.title": {
-    "message": "IDE / LSP"
-  },
-  "homepage.surface.ide.desc": {
-    "message": "中间值的悬停与 inlay——term、pred、conf——与 CLI 打印的是同一套 Abs。"
-  },
-  "homepage.demo.eyebrow": {
-    "message": "工作模式"
-  },
   "homepage.demo.title": {
     "message": "工作模式"
-  },
-  "homepage.demo.step1.title": {
-    "message": "准备源码与调用点"
-  },
-  "homepage.demo.step2.title": {
-    "message": "一条命令生成草稿"
-  },
-  "homepage.demo.step3.title": {
-    "message": "审阅、落盘、门禁"
-  },
-  "homepage.demo.quickStart": {
-    "message": "完整快速开始"
-  },
-  "homepage.demo.playground": {
-    "message": "在 Playground 试"
   },
   "homepage.beyond.eyebrow": {
     "message": "超越声明式类型"
@@ -137,24 +83,6 @@
   "homepage.adopt.lead": {
     "message": "逻辑优先或契约优先；check 只校验，export 再投影产物。"
   },
-  "homepage.adopt.day0.tag": {
-    "message": "逻辑优先"
-  },
-  "homepage.adopt.day0.title": {
-    "message": "生成契约"
-  },
-  "homepage.adopt.day1.tag": {
-    "message": "契约优先"
-  },
-  "homepage.adopt.day1.title": {
-    "message": "辅助/约束逻辑"
-  },
-  "homepage.adopt.eco.tag": {
-    "message": "同一校验"
-  },
-  "homepage.adopt.eco.title": {
-    "message": "check → export"
-  },
   "homepage.trial.eyebrow": {
     "message": "真实代码上的效果"
   },
@@ -164,15 +92,6 @@
   "homepage.trial.lead": {
     "message": "Day 0 的 check 把无约束参数打印为 any。把 Nudo 指向真实用法——测试、调用点——解释器会从证据综合出精确签名。不改库、不补类型标注。"
   },
-  "homepage.trial.stat1": {
-    "message": "@hapi/hoek 精确签名覆盖"
-  },
-  "homepage.trial.stat2": {
-    "message": "需要手写的类型标注"
-  },
-  "homepage.trial.stat3": {
-    "message": "契约检查失败清零"
-  },
   "homepage.trial.cardsTitle": {
     "message": "调用点发现会返回什么"
   },
@@ -181,18 +100,6 @@
   },
   "homepage.trial.card.afterLabel": {
     "message": "nudo"
-  },
-  "homepage.trial.card.before": {
-    "message": "无调用点证据 → any"
-  },
-  "homepage.trial.card.evidence1": {
-    "message": "来自 cart.js 调用点"
-  },
-  "homepage.trial.card.evidence2": {
-    "message": "来自 @hapi/hoek 用法"
-  },
-  "homepage.trial.card.evidence3": {
-    "message": "来自递归 + 循环用法"
   },
   "homepage.trial.source": {
     "message": "实测于 @hapi/hoek v9.3.0 与 @discoveryjs/json-ext v0.5.7——签名全部来自 Nudo 抽象解释器，库内零标注。"
@@ -325,7 +232,7 @@
     "description": "The words used when the last updated date is displayed"
   },
   "theme.lastUpdated.byUser": {
-    "message": "由 {byUser} ",
+    "message": "由 {user} ",
     "description": "The words used when the last updated author is displayed"
   },
   "theme.lastUpdated.lastUpdatedAtDate": {
@@ -536,18 +443,6 @@
     "message": "标签",
     "description": "The title of the tag list page"
   },
-  "homepage.demo.exportTabsAria": {
-    "message": "导出格式切换"
-  },
-  "homepage.demo.testNote": {
-    "message": "相关能力：contract --emit 把已观察到的域固化成 @generated；export 投影 dts / zod。IDE 里的 ⚡ draft interface 与 CLI 草稿是同一条路径。"
-  },
-  "homepage.surface.export.title": {
-    "message": "nudo export"
-  },
-  "homepage.surface.export.desc": {
-    "message": "把 Abs 向外投影——.d.ts、Zod schema、guards。单向且有损；Abs 仍是真源。"
-  },
   "homepage.demo.tab.calls": {
     "message": "calls.js"
   },
@@ -566,26 +461,11 @@
   "homepage.flow.a2c": {
     "message": "可审阅 · 可选"
   },
-  "homepage.flow.a3": {
-    "message": "审阅 → 契约"
-  },
-  "homepage.flow.a3c": {
-    "message": "落盘后才是义务"
-  },
   "homepage.flow.b1": {
     "message": "契约"
   },
-  "homepage.flow.b1c": {
-    "message": "手写或既有契约"
-  },
   "homepage.flow.b2": {
     "message": "辅助 / 约束逻辑"
-  },
-  "homepage.flow.gate": {
-    "message": "nudo check"
-  },
-  "homepage.flow.gatec": {
-    "message": "只校验 · Abs 门禁"
   },
   "homepage.flow.outLabel": {
     "message": "产物 · 生态（export / 直读 Abs）"
@@ -620,20 +500,8 @@
   "homepage.eco.ide": {
     "message": "hover / inlay 直读 Abs。"
   },
-  "homepage.demo.exportDocs": {
-    "message": "export 产物"
-  },
   "homepage.demo.checkDocs": {
     "message": "nudo check"
-  },
-  "homepage.adopt.day0.desc": {
-    "message": "从调用点起草，审阅后落盘。"
-  },
-  "homepage.adopt.day1.desc": {
-    "message": "先锁 API 义务，再写实现。"
-  },
-  "homepage.adopt.eco.desc": {
-    "message": "Abs 门禁后，再投影 dts / zod 等。"
   },
   "homepage.flow.modeA": {
     "message": "逻辑优先"
@@ -641,17 +509,8 @@
   "homepage.flow.modeB": {
     "message": "契约优先"
   },
-  "homepage.flow.splitLabel": {
-    "message": "引擎真源 · 校验与产物分流"
-  },
-  "homepage.flow.truth": {
-    "message": "唯一真源"
-  },
   "homepage.flow.checkRole": {
     "message": "只校验 · CI"
-  },
-  "homepage.flow.exportLabel": {
-    "message": "export 投影 · check 不生成产物"
   },
   "homepage.flow.outDts": {
     "message": "TS 消费方"
@@ -734,9 +593,6 @@
   "homepage.flow.outAgentCap": {
     "message": "直读同一 Abs"
   },
-  "homepage.demo.contractDocs": {
-    "message": "契约 / refine"
-  },
   "homepage.flow.modeACap": {
     "message": "先写逻辑，再生成契约"
   },
@@ -776,66 +632,6 @@
   "homepage.paths.lead": {
     "message": "文档按读者身份组织。选择与你情况匹配的路径——每张卡都落在可直接运行的第一步上。"
   },
-  "homepage.paths.card1.eyebrow": {
-    "message": "JS 工程师"
-  },
-  "homepage.paths.card1.title": {
-    "message": "为现有 JS 加类型门禁"
-  },
-  "homepage.paths.card1.desc": {
-    "message": "15 分钟拿到签名、case 报告与一个可读的 check 失败。"
-  },
-  "homepage.paths.card1.cta": {
-    "message": "Quick Start"
-  },
-  "homepage.paths.card2.eyebrow": {
-    "message": "TypeScript 用户"
-  },
-  "homepage.paths.card2.title": {
-    "message": "与 TS 的差异在哪"
-  },
-  "homepage.paths.card2.desc": {
-    "message": "诚实的对照表与三条迁移路径。"
-  },
-  "homepage.paths.card2.cta": {
-    "message": "Nudo vs TypeScript"
-  },
-  "homepage.paths.card3.eyebrow": {
-    "message": "已有 JS 包"
-  },
-  "homepage.paths.card3.title": {
-    "message": "渐进迁移"
-  },
-  "homepage.paths.card3.desc": {
-    "message": "盘点 → 草稿 → 审查 → 门禁 → 固化，一步步来。"
-  },
-  "homepage.paths.card3.cta": {
-    "message": "Migrating existing JS"
-  },
-  "homepage.paths.card4.eyebrow": {
-    "message": "CI / 平台"
-  },
-  "homepage.paths.card4.title": {
-    "message": "接入门禁与导出"
-  },
-  "homepage.paths.card4.desc": {
-    "message": "exit-code 矩阵、GitHub Actions 配方与导出管线。"
-  },
-  "homepage.paths.card4.cta": {
-    "message": "Recipes"
-  },
-  "homepage.paths.card5.eyebrow": {
-    "message": "AI coding agent"
-  },
-  "homepage.paths.card5.title": {
-    "message": "给 agent 的产品规则"
-  },
-  "homepage.paths.card5.desc": {
-    "message": "agents.md / llms.txt / LSP agent API 与 MCP 桥。"
-  },
-  "homepage.paths.card5.cta": {
-    "message": "Agents"
-  },
   "theme.CodeBlock.runInPlayground": {
     "message": "在 Playground 中运行"
   },
@@ -850,5 +646,107 @@
   },
   "theme.DocItem.footer.feedback.no": {
     "message": "需要改进"
+  },
+  "playground.subtitle": {
+    "message": "欢迎重回 JS 世界。观察你的代码在 Abs 上计算出的结果，并用比声明类型更精确的契约做门禁。悬停查看 term / pred / conf 与侧车契约。"
+  },
+  "playground.group.contracts": {
+    "message": "契约与观察"
+  },
+  "playground.group.basic": {
+    "message": "基础示例"
+  },
+  "playground.group.callsite": {
+    "message": "调用点发现"
+  },
+  "playground.group.semantics": {
+    "message": "语言语义"
+  },
+  "playground.caseLabel": {
+    "message": "用例 {index}：\"{name}\"（{args}）"
+  },
+  "playground.copied": {
+    "message": "已复制！"
+  },
+  "playground.share": {
+    "message": "分享"
+  },
+  "playground.observing": {
+    "message": "观察中…"
+  },
+  "playground.observe": {
+    "message": "观察"
+  },
+  "playground.explainer": {
+    "message": "左侧库不带类型注解发布。Nudo 求值右侧使用处，记录每次真实调用的实参/结果类型，并重新合成精确签名——不留下任何推理期 unknown。"
+  },
+  "playground.tag.libReadOnly": {
+    "message": "库 · 只读"
+  },
+  "playground.tag.usageEditable": {
+    "message": "使用处 · 可编辑"
+  },
+  "playground.tag.editable": {
+    "message": "可编辑"
+  },
+  "playground.tag.clickObserve": {
+    "message": "点击 Observe"
+  },
+  "playground.loadingEditor": {
+    "message": "编辑器加载中…"
+  },
+  "playground.error": {
+    "message": "错误：{message}"
+  },
+  "playground.results.discovered": {
+    "message": "发现的调用记录"
+  },
+  "playground.results.synth": {
+    "message": "合成签名"
+  },
+  "playground.results.before": {
+    "message": "之前 · 仅入口分析"
+  },
+  "playground.results.after": {
+    "message": "之后 · 从 {source} 注入"
+  },
+  "playground.results.afterMissing": {
+    "message": "未找到使用处调用"
+  },
+  "playground.hint.noRecords": {
+    "message": "没有收集到调用记录——确认使用处 import 了 ./util 并调用了 {exportName}。"
+  },
+  "playground.hint.observe": {
+    "message": "点击 \"Observe\" 查看推断结果。"
+  },
+  "playground.hint.noCases": {
+    "message": "未找到调用点或用例。添加一个调用点，或选择「契约与观察」预设。"
+  },
+  "playground.results.caseResults": {
+    "message": "用例结果"
+  },
+  "playground.loading": {
+    "message": "Playground 加载中…"
+  },
+  "playground.metaDescription": {
+    "message": "Nudo Playground — 执行 JavaScript、观察中间值"
+  },
+  "theme.DocItem.agent.copyMarkdown": {
+    "message": "复制为 Markdown"
+  },
+  "theme.DocItem.agent.copied": {
+    "message": "已复制！"
+  },
+  "theme.DocItem.agent.openChatGPT": {
+    "message": "在 ChatGPT 打开"
+  },
+  "theme.DocItem.agent.openClaude": {
+    "message": "在 Claude 打开"
+  },
+  "theme.DocItem.agent.hint": {
+    "message": "面向 agent：每个页面都在同路径旁挂一份原始 markdown（URL 加 .md）。"
+  },
+  "playground.explainerLead": {
+    "message": "调用点发现。"
   }
 }

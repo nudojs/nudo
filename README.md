@@ -252,7 +252,7 @@ Full documentation is available at the [Nudo docs site](https://nudojs.github.io
 
 - [Getting Started](https://nudojs.github.io/nudo/docs/intro) — Welcome back to JavaScript
 - [Quick Start](https://nudojs.github.io/nudo/docs/getting-started/quick-start)
-- [Playground](https://nudojs.github.io/nudo/docs/playground)
+- [Playground](https://nudojs.github.io/nudo/playground)
 - [Core Concepts](https://nudojs.github.io/nudo/docs/concepts/type-values)
 - [API Reference](https://nudojs.github.io/nudo/docs/api/core)
 - [Design Document](https://nudojs.github.io/nudo/docs/design/design-doc)

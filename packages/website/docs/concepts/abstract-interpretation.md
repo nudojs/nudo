@@ -178,7 +178,7 @@ Promises are modeled as an effect shape (`eff`):
 
 Nudo treats exceptions as a first-class property of function types. Every function's inferred type includes both `returns` and `throws`:
 
-```javascript
+```javascript verify
 function divide(a, b) {
   if (b === 0) throw new Error("Division by zero");
   return a / b;

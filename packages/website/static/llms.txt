@@ -19,23 +19,34 @@ Nudo docs are dual-locale (en + zh-Hans). Product face: Day0 `nudo check` · Day
 - https://nudojs.github.io/nudo/playground
 - https://nudojs.github.io/nudo/agents.md
 
-## Source markdown (monorepo)
+## Per-page markdown (same route + `.md`)
 
-- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/intro.md
-- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/getting-started/quick-start.md
-- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/guides/check.md
-- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/guides/contract.md
-- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/guides/recipes.md
-- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/reference/diagnostics.md
-- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/reference/glossary.md
-- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/concepts/limits.md
-- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/api/cli-reference.md
-- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/concepts/directives.md
-- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/guides/agent-integration.md
-- https://raw.githubusercontent.com/nudojs/nudo/main/packages/website/docs/api/agent.md
-- https://raw.githubusercontent.com/nudojs/nudo/main/docs/design/cli-semantics.md
+Every docs page and blog post also ships as raw markdown — append `.md` to the URL. Examples:
+
+- https://nudojs.github.io/nudo/docs/intro.md
+- https://nudojs.github.io/nudo/docs/getting-started/quick-start.md
+- https://nudojs.github.io/nudo/docs/guides/check.md
+- https://nudojs.github.io/nudo/docs/guides/contract.md
+- https://nudojs.github.io/nudo/docs/guides/recipes.md
+- https://nudojs.github.io/nudo/docs/reference/diagnostics.md
+- https://nudojs.github.io/nudo/docs/reference/glossary.md
+- https://nudojs.github.io/nudo/docs/concepts/limits.md
+- https://nudojs.github.io/nudo/docs/concepts/type-values.md
+- https://nudojs.github.io/nudo/docs/api/cli-reference.md
+- https://nudojs.github.io/nudo/docs/concepts/directives.md
+- https://nudojs.github.io/nudo/docs/guides/agent-integration.md
+- https://nudojs.github.io/nudo/docs/api/agent.md
+- https://nudojs.github.io/nudo/docs/releases.md
+- zh-Hans mirror: https://nudojs.github.io/nudo/zh-Hans/docs/intro.md
+
+## Full text
+
+- https://nudojs.github.io/nudo/llms-full.txt — all en docs + blog posts, concatenated
+- https://nudojs.github.io/nudo/agents.md — agent bootstrap (rules + canonical links)
+- Generated at build time by `scripts/gen-llms.mjs` (source: `packages/website/docs/**`)
 
 ## Optional
 
+- Playground: https://nudojs.github.io/nudo/playground
 - zh-Hans mirror: https://nudojs.github.io/nudo/zh-Hans/docs/intro
 - Chinese raw docs under `packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/`

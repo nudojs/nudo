@@ -93,7 +93,7 @@ combine(5, 3)   // → 8  #exact，而非 number
 
 **原则 3：联合类型懒分配。** 联合类型作为整体传播，只在运算符**必须区分成员**时才展开。这避免了笛卡尔积导致的组合爆炸——并保留相关性（`a + a` 保持同一符号变量：`(A1 + A1)`，绝不会变成 `A1 + A1'`）。
 
-```javascript
+```javascript verify
 function selfAdd(a) { return a + a; }
 selfAdd(1);  // → 2  #exact
 selfAdd(2);  // → 4  #exact
@@ -293,7 +293,7 @@ Nudo 将异常作为函数类型的一等部分追踪。每个函数不仅有 `r
 
 Nudo 自然产生依赖类型（依赖值的类型），无需特殊语法：
 
-```javascript
+```javascript verify
 function clamp(value, min, max) {
   if (value < min) return min;
   if (value > max) return max;
@@ -301,13 +301,14 @@ function clamp(value, min, max) {
 }
 // clamp(5, 0, 10) → 5
 // clamp(number, 0, 10) → number
+clamp(5, 0, 10);
 ```
 
 ### 6.5 更精确的字符串拼接
 
 Nudo 在字符串拼接中保留结构，产生模板字符串类型：
 
-```javascript
+```javascript verify
 function apiUrl(path) {           // path: string
   return "https://api.example.com" + path;
 }
@@ -367,7 +368,7 @@ Pred 进入 Abs 并参与代数（`x>0` ⇒ `x+1>1`）。模板的约束构造�
 
 **源码：**
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "concrete" (1, 2)
  * @nudo:case "symbolic" (number(), number())

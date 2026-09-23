@@ -41,6 +41,18 @@ Some constructs still degrade (with honest shapes, not false precision): JSX →
 
 Env harvest coverage rates are **not** completeness promises.
 
+**`/// @nudo:env <name>` degrades the `check` face (known gap).** A file declaring an env directive currently loses the symbolic face entirely: `nudo check` prints `unknown` plus `nudo:unknown-inference` for every function — including ones that never touch env APIs — while `nudo test` (per-call-site evaluation) stays precise on the same file:
+
+```text
+$ nudo check envfile.js        # /// @nudo:env node + home() { return process.cwd(); }
+  home() => unknown            # warning: signature has true unknown (inference failed)
+
+$ nudo test envfile.js
+  call@L7  () => string        # per-call-site result is precise
+```
+
+Workaround while the symbolic path learns env injection: rely on `nudo test` / IDE hover for env-bearing files, or move env-dependent code behind a module boundary that the checked file imports.
+
 ## When TypeScript should stay primary
 
 - The codebase is `.ts`-first and annotations/generics are the product

@@ -95,7 +95,7 @@ combine(5, 3)   // → 8  #exact, not number
 
 **Principle 3: Lazy union distribution.** Unions propagate as a whole and are expanded only when an operator **must distinguish** members. This avoids combinatorial explosion from Cartesian products — and preserves correlation (`a + a` keeps one symbolic variable: `(A1 + A1)`, never `A1 + A1'`).
 
-```javascript
+```javascript verify
 function selfAdd(a) { return a + a; }
 selfAdd(1);  // → 2  #exact
 selfAdd(2);  // → 4  #exact
@@ -292,7 +292,7 @@ For libraries with JS source, Nudo can execute the code to derive types. For nat
 
 Nudo naturally produces dependent types (types that depend on values) without special syntax:
 
-```javascript
+```javascript verify
 function clamp(value, min, max) {
   if (value < min) return min;
   if (value > max) return max;
@@ -300,13 +300,14 @@ function clamp(value, min, max) {
 }
 // clamp(5, 0, 10) → 5
 // clamp(number, 0, 10) → number
+clamp(5, 0, 10);
 ```
 
 ### 6.5 Precise String Concatenation
 
 Nudo preserves string structure through concatenation, producing template string types:
 
-```javascript
+```javascript verify
 function apiUrl(path) {           // path: string
   return "https://api.example.com" + path;
 }
@@ -366,7 +367,7 @@ The Pred enters Abs and participates in algebra (`x>0` ⇒ `x+1>1`). The templat
 
 **Source:**
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "concrete" (1, 2)
  * @nudo:case "symbolic" (number(), number())

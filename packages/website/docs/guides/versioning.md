@@ -10,17 +10,19 @@ Nudo is a pnpm monorepo that publishes **per-package** versions via [changesets]
 
 > Versions below are the published lines at the time of writing — check `npm view <pkg> version` for the current one. The *line* (0.x vs 1.x+) is the stable part; the exact patch number will always move.
 
+<!-- NUDO-VERSIONS:BEGIN -->
 | Package | Line | Upgrade rule |
 |---------|------|----------------|
-| `@nudojs/core` | **2.x** (2.1.0) | SemVer: breaking → major |
-| `@nudojs/service` | **4.x** (4.0.0) | SemVer: breaking → major |
-| `@nudojs/cli` | **3.x** (3.0.0) | SemVer: breaking → major |
-| `@nudojs/parser` | **1.x** (1.0.0) | SemVer: breaking → major |
-| `@nudojs/lsp` | **1.x** (1.0.0) | SemVer: breaking → major. Freeze inventory: `packages/lsp/PUBLIC_API.md` |
-| `@nudojs/env` / `@nudojs/harvester` | 0.x (0.4.1 / 0.2.7) | Minor may break; pin a minor for stable IDE/CI analysis. Handwritten env wins on overlapping modules/exports (`mergeHarvestUnderEnv`) |
-| `nudojs` (npm shell) | 0.x (0.3.2) | Prefer `@nudojs/cli` / `@nudojs/core` directly |
-| `vite-plugin-nudo` | 0.x | Minor may break |
-| `nudo-vscode` | Marketplace | Follow extension release notes |
+| `@nudojs/core` | **2.x**（2.1.0） | SemVer: breaking → major |
+| `@nudojs/service` | **4.x**（4.0.0） | SemVer: breaking → major |
+| `@nudojs/cli` | **3.x**（3.0.0） | SemVer: breaking → major |
+| `@nudojs/parser` | **1.x**（1.0.0） | SemVer: breaking → major |
+| `@nudojs/lsp` | **1.x**（1.0.0） | SemVer: breaking → major. Freeze inventory: `packages/lsp/PUBLIC_API.md` |
+| `@nudojs/env` / `@nudojs/harvester` | 0.x（0.4.1 / 0.2.7） | Minor may break; pin a minor for stable IDE/CI analysis. Handwritten env wins on overlapping modules/exports (`mergeHarvestUnderEnv`) |
+| `nudojs`（npm shell） | 0.x（0.3.2） | Prefer `@nudojs/cli` / `@nudojs/core` directly |
+| `vite-plugin-nudo` | 0.x（0.4.2） | Minor may break |
+| `nudo-vscode` | Marketplace | Follow extension release notes; align bundled lsp before packaging (`packages/vscode/RELEASE_CHECKLIST.md`) |
+<!-- NUDO-VERSIONS:END -->
 
 ### 0.x in one sentence
 
@@ -36,10 +38,12 @@ Full policy (what Nudo treats as breaking): [`docs/versioning.md`](https://githu
 
 > Authoritative long form lives in repo `docs/versioning.md` § Ecosystem packages. This section is the consumer-facing summary.
 
+<!-- NUDO-ECOSYSTEM:BEGIN -->
 | Package | Current | Pin style | Notes |
 |---------|---------|-----------|-------|
 | `@nudojs/env` | 0.4.1 (pre-1.0) | workspace / `~0.4.0` for bit-stable IDE/CI analysis | New Abs modules (e.g. `events` / `stream` / `querystring`) ship as **minor**; signature display may change. Handwritten env **wins** over harvest on overlapping modules/exports. |
 | `@nudojs/harvester` | 0.2.7 (pre-1.0) | workspace / `~0.2.7` | Harvest is a **side channel** — not the type-system source of truth. Budget defaults: `maxFiles=12`, `maxMs=2500`, disable via `NUDO_HARVEST_NODE=off`. |
+<!-- NUDO-ECOSYSTEM:END -->
 
 Rules:
 
@@ -71,6 +75,12 @@ Example (`@nudojs/core` 2.0.0): evaluator subpath moved from `@nudojs/cli/evalua
 npm i @nudojs/env@0.4.1
 # read node_modules/@nudojs/env/CHANGELOG.md for BREAKING bullets
 ```
+
+## Docs versioning
+
+The site documents **`main`** — the announcement bar shows which package versions that corresponds to (read from `packages/*/package.json` at build time), and the table above is generated from the same source. Per-package release history: [Releases](../releases.md) and each package's `CHANGELOG.md`.
+
+Versioned docs (`/docs/<version>/…` snapshots) are deliberately deferred until 1.0: today the CLI/service lines move together and a second copy would drift faster than it helps. Until then, pin package versions (table above) when you need bit-stable behaviour.
 
 ## Changesets (contributors)
 

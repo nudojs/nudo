@@ -58,7 +58,7 @@ Provide named execution cases. Each case defines inputs (concrete or symbolic) f
 
 ### Examples
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "positive numbers" (5, 3)
  * @nudo:case "negative result" (1, 10)
@@ -68,7 +68,7 @@ function subtract(a, b) {
 }
 ```
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "strings" ("hello")
  * @nudo:case "numbers" (42)
@@ -83,9 +83,9 @@ function process(x) {
 
 With expected return type:
 
-```javascript
+```javascript verify
 /**
- * @nudo:case "basic" (string()) => number()
+ * @nudo:case "basic" ("abc") => number()
  * @nudo:case "empty" ("") => lit(0)
  */
 function len(s) {
@@ -113,7 +113,7 @@ Mark a function as pure. The Abs `fn` value carries a pure marker and the evalua
 
 ### Example
 
-```javascript
+```javascript verify
 /**
  * @nudo:pure
  * @nudo:case "add" (number(), number())
@@ -146,7 +146,7 @@ Skip abstract interpretation of the function body: the engine does not evaluate 
 
 ### Examples
 
-```javascript
+```javascript verify
 /**
  * @nudo:skip
  */
@@ -163,7 +163,7 @@ function heavyComputation(data) {
   skipped (no return type declared)
 ```
 
-```javascript
+```javascript verify
 /**
  * @nudo:skip number()
  */

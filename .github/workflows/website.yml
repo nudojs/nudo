@@ -2,13 +2,13 @@ name: Website
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, dev]
     paths:
       - 'packages/website/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
   pull_request:
-    branches: [main, ci]
+    branches: [main, dev, ci]
     paths:
       - 'packages/website/**'
       - 'package.json'
@@ -40,3 +40,19 @@ jobs:
 
       - name: Build docs
         run: pnpm --filter website run build
+
+      # PR 预览：把构建产物发布到 Cloudflare Pages 预览部署。
+      # 一次性配置（repo 设置，非 workflow 维护）：
+      #   1. `wrangler pages project create nudo-docs --production-branch main`
+      #   2. secrets: CLOUDFLARE_API_TOKEN（Pages 写权限）
+      #   3. vars: CLOUDFLARE_ACCOUNT_ID（账户 ID）
+      # 变量未配置时静默跳过；baseUrl 是 /nudo/ 路径，预览域名下无需改写。
+      - name: Publish PR preview (Cloudflare Pages)
+        if: github.event_name == 'pull_request' && vars.CLOUDFLARE_ACCOUNT_ID != ''
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: nudo-docs
+          directory: packages/website/build
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,79 @@
+name: Docs deploy
+
+# 文档站与 npm 发布解耦：main 上任何影响站点内容的提交都会触发部署。
+# 站点发布不再依赖 changeset 发版（历史问题：文档改动要等下一次 npm 发布才上线）。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/website/**'
+      - 'docs/**'
+      - 'README.md'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+  workflow_dispatch:
+
+concurrency:
+  group: docs-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    name: Build & deploy docs
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # showLastUpdateTime 需要全量 git 历史
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # 部署前必须全绿：文档示例在引擎行为漂移时不出版
+      - name: Verify docs examples
+        run: pnpm run verify:docs -- --report
+
+      # 生成文件（releases.md / versioning 版本表）与包版本对齐才可部署
+      - name: Docs generation drift gate
+        run: |
+          pnpm run docs:gen
+          git diff --exit-code -- \
+            packages/website/docs/releases.md \
+            packages/website/docs/guides/versioning.md \
+            packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/releases.md \
+            packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/guides/versioning.md
+
+      - name: Build docs
+        run: pnpm run docs:build
+
+      # agent 面：每页 .md + llms-full.txt（写入 build 产物目录）
+      - name: Generate agent markdown
+        run: node scripts/gen-llms.mjs
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: packages/website/build
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

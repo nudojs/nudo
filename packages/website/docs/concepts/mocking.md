@@ -101,7 +101,7 @@ async function fetchUser(id) {
 
 **Same result as the arrow mock:** `stub().resolves(value)` wraps `value` in a promise and the object's closure slots are bridged, so this example infers `promise<{ id: 1, name: "Alice" }>` — including the callable `json` slot. Use whichever form reads better. A synchronous helper:
 
-```javascript
+```javascript verify
 /**
  * @nudo:mock getPort = stub().returns(8080)
  * @nudo:case "default" ()
@@ -121,7 +121,7 @@ function readPort() {
 
 A constraint-builder expression binds the name to an abstract domain directly:
 
-```javascript
+```javascript verify
 /**
  * @nudo:mock retries = number()
  * @nudo:case "plan" ()
@@ -141,7 +141,7 @@ function plan() {
 
 From a module — the module must define a binding with the mocked name:
 
-```javascript
+```javascript verify
 /**
  * @nudo:mock fs from "./mocks/fs.js"
  * @nudo:case "read" (string())
@@ -151,7 +151,7 @@ function readConfig(path) {
 }
 ```
 
-```javascript
+```javascript verify
 // mocks/fs.js
 const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
 ```

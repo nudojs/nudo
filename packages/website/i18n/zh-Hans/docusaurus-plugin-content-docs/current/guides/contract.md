@@ -55,24 +55,31 @@ npx nudojs contract --draft --write src/lib.js --fn lineTotal
 
 先手写侧车，再在同一契约面下实现：
 
-```javascript
-// math.nudo.js
+```javascript verify-sidecar
+// contract.nudo.js
 import { number, fn } from "@nudojs/core";
+
+export const positive = number().gt(0);
 export const add2 = fn({ x: number().gt(0) }, number());
 ```
 
-侧车中的函数绑定**必须**是一等 `fn({ params }, returns?)`。裸的 `number().gt(0)` 是值级模板（供 `@nudo:refine` / 共享槽使用），不是函数导出契约。
+侧车中的函数绑定**必须**是一等 `fn({ params }, returns?)`。裸的 `number().gt(0)` 是值级模板（供 `@nudo:refine` / 共享槽使用），不是函数导出契约——上面 `positive` 是模板，`add2` 是绑定。
 
 源码内形态：
 
-```javascript
+```javascript verify
+/// @nudo:import { positive } from "./contract.nudo.js"
 /**
  * @nudo:refine x positive
  */
 export function needsPositive(x) {
   return x;
 }
+
+needsPositive(-1); // ⊭ x > 0 → nudo:constraint-violated
 ```
+
+`@nudo:refine` 引用的模板必须用 `@nudo:import` 引入 —— 侧车只自动绑定同名 `fn` 导出。
 
 `@nudo:interface` 是 `@nudo:refine` 的精确**别名**。产品名：**contract**。
 

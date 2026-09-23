@@ -97,7 +97,6 @@ export const Adder_add4 = fn({ x: positive }, positive4);
 `);
       const r = deriveFromRoot(join(dir, "lib.js"), {
         loadModule: defaultLoadModule,
-        projectDir: dir,
       });
       console.log("T6 roots:", r.roots, "hasRoot:", r.hasRoot, "derived:", r.derived.map((d) => d.fn));
       expect(r.hasRoot).toBe(true);

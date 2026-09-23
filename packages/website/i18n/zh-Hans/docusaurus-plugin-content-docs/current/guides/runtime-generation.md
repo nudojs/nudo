@@ -32,14 +32,14 @@ nudo export <file> [--format dts|guard|schema|standard|all] [--dialect zod] [--o
 
 最强的工作流：在侧车里声明一次域，让 `export` 从中生成运行时门禁。
 
-```js
+```js verify
 // src/api/users.js
 export function createUser(input) {
   return { id: 123, name: input.name, age: input.age };
 }
 ```
 
-```js
+```js verify-sidecar
 // src/api/users.nudo.js — 契约（同样是普通 JS）
 import { number, string, shape, fn } from "@nudojs/core";
 
@@ -152,7 +152,7 @@ nudo export src/api/inline.js --format guard --out dist
 # 写入 dist/inline.nudo.guard.ts
 ```
 
-```js
+```js verify
 // === createUser Type Guards ===
 export function iscreateUserOutput(data) {
   return typeof data === "object" && data !== null && data.id === 123 && data.name === "Ada" && data.age === 36;

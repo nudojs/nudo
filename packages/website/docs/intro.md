@@ -27,7 +27,7 @@ Non-goals: Nudo is **not** a TypeScript compiler; it does not invent required sl
 
 ## From source to gate
 
-```javascript
+```javascript verify
 // calc.js
 export function scale(x) {
   return x + 1;
@@ -36,7 +36,7 @@ export function scale(x) {
 scale(5);
 ```
 
-```javascript
+```javascript verify-sidecar
 // calc.nudo.js — explicit contract (obligation)
 import { number, fn } from "@nudojs/core";
 export const scale = fn({ x: number().gt(0) }, number());

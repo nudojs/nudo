@@ -20,7 +20,7 @@ Try any sample in the [Playground](/playground).
 
 Plain JS + call sites. No annotations. `nudo check` prints signatures; call sites supply evidence.
 
-```javascript
+```javascript verify
 export function subtract(a, b) {
   return a - b;
 }
@@ -56,7 +56,7 @@ Optional debug case report (`nudo test` — not required for the gate):
 
 ### 2. Sidecar contract — Day 1 obligation
 
-```javascript
+```javascript verify
 // pricing.js
 export function lineTotal(price, qty) {
   return price * qty;
@@ -66,7 +66,7 @@ lineTotal(12, 3);
 lineTotal(0, 2);
 ```
 
-```javascript
+```javascript verify-sidecar
 // pricing.nudo.js — contract (also plain JS)
 import { number, fn } from "@nudojs/core";
 
@@ -99,7 +99,7 @@ issues
 
 ### 3. Object shapes from call sites
 
-```javascript
+```javascript verify
 function greet(user) {
   return user.name + " is " + user.age;
 }
@@ -125,7 +125,7 @@ addP({ x: 1, y: 2 });
 
 Shape merge through spread:
 
-```js
+```js verify
 function mixin(base, ext) {
   return { ...base, ...ext };
 }
@@ -143,7 +143,7 @@ mixin({ host: "localhost", port: 8080 }, { port: 3000, debug: true });
 
 ### 4. Template strings — beyond declared types
 
-```javascript
+```javascript verify
 export function coupon(code) {
   return `SAVE-${code.toUpperCase()}`;
 }
@@ -168,7 +168,7 @@ TypeScript often widens this to `string`. Nudo observes the concrete template re
 
 ### 6. Concrete-bound loops
 
-```javascript
+```javascript verify
 function sumTo(n) {
   let sum = 0;
   for (let i = 0; i < n; i++) sum += i;
@@ -194,7 +194,7 @@ Path predicates narrow Abs inside branches (`x > 5` → range preds on the term)
 
 ### 8. Discriminated by `typeof`
 
-```javascript
+```javascript verify
 export function transform(x) {
   if (typeof x === "string") return x.toUpperCase();
   if (typeof x === "number") return x + 1;
@@ -218,7 +218,7 @@ Known-shape receivers fold at any depth (`a.b.c ?? 5` with `{ b: {} }` → `5`);
 
 ### 10. Web APIs via `@nudo:env web`
 
-```javascript
+```javascript verify
 /// @nudo:env web
 ```
 
@@ -226,7 +226,7 @@ Built-in `es` / `web` / `node` env modules type common APIs; third-party `@types
 
 ### 11. Mock external dependencies
 
-```javascript
+```javascript verify
 // @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) })
 ```
 
@@ -238,7 +238,7 @@ Prefer the single-line arrow mock form. Full syntax: [Mocking External Dependenc
 
 `@nudo:case` injects scenario inputs for `nudo test` / LSP case switching. It does **not** create CI obligations.
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "double digits" (10)
  */

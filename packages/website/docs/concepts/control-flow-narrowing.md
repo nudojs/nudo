@@ -12,7 +12,7 @@ Narrowing is precise on the **call-site path** (functions called at the top leve
 
 A comparison against a literal narrows the argument per call: each concrete call takes only the branch that matches.
 
-```js
+```js verify
 function pickAdult(age) {
   if (age >= 18) return age;
   return -1;
@@ -35,7 +35,7 @@ pickAdult(12);
 
 When you compare a property against a string literal (`shape.kind === "circle"`), the branch for a matching call sees the object shape of that call's argument.
 
-```js
+```js verify
 function area(shape) {
   if (shape.kind === "circle") {
     return shape.radius * 3.14159;
@@ -60,7 +60,7 @@ The circle call takes the `if` branch and computes `6.28318`; the square call fa
 
 Both guards fork per concrete call, and the narrowed value keeps its precise behavior in the matching branch.
 
-```js
+```js verify
 function len(x) {
   if (typeof x === "string") return x.length;
   if (Array.isArray(x)) return x.length;
@@ -86,7 +86,7 @@ The string call reaches `x.length` on a narrowed string (`3`), the array call on
 
 A `switch` on a discriminant narrows per `case` clause — including for `@nudo:case` directive inputs.
 
-```js
+```js verify
 /**
  * @nudo:case "idle" ({ status: "idle" })
  * @nudo:case "loading" ({ status: "loading", requestId: "abc" })

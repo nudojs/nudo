@@ -7,6 +7,7 @@
   "scripts": {
     "ci:version": "changeset version && node scripts/bump-vscode-version.mjs",
     "lint": "tsc --noEmit -p tsconfig.lint.json",
+    "lint:website": "tsc --noEmit -p packages/website/tsconfig.json",
     "lint:tests": "tsc --noEmit -p tsconfig.test-lint.json",
     "build": "pnpm run build:packages",
     "build:packages": "pnpm --filter @nudojs/core run build && pnpm --filter @nudojs/parser run build && pnpm --filter @nudojs/env run build && pnpm --filter @nudojs/harvester run build && pnpm --filter @nudojs/service run build && pnpm --filter @nudojs/cli run build && pnpm --filter @nudojs/lsp run build && pnpm --filter vite-plugin-nudo run build",
@@ -21,6 +22,8 @@
     "nudo": "tsx packages/cli/src/index.ts",
     "migrate-demo": "bash scripts/migrate-demo.sh",
     "verify:examples": "bash scripts/verify-examples.sh",
+    "verify:links": "node scripts/verify-readme-links.mjs",
+    "docs:gen": "node scripts/gen-releases.mjs",
     "learning-cost": "node scripts/learning-cost.mjs",
     "coverage:env": "tsx scripts/env-coverage-baseline.ts",
     "docs:dev": "pnpm --filter website run start",

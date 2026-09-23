@@ -83,7 +83,7 @@ nudo test <path> [--watch|-w] [--from paths…] [--freeze[=mode]] [--dry-run] [-
 
 Given `math.js`:
 
-```js
+```js verify
 export function subtract(a, b) {
   return a - b;
 }
@@ -98,8 +98,8 @@ nudo test math.js
 
 ```text
 === subtract ===
-  call@L6  (5, 3) => 2
-  call@L7  (1, 10) => -9
+  call@L5  (5, 3) => 2
+  call@L6  (1, 10) => -9
 
 assertions
   — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 2 synthetic case(s) printed above)
@@ -115,7 +115,7 @@ assertions
 
 ### Example with declared assertions
 
-```js
+```js verify
 /**
  * @nudo:case "double" (2) => 4
  */

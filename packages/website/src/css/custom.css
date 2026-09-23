@@ -2599,6 +2599,46 @@ main .cs-playground,
   text-decoration: none;
 }
 
+/* Agent-facing page actions (Copy as Markdown / Open in ChatGPT / Claude) */
+.doc-agent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.doc-agent-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.doc-agent-button:hover {
+  border-color: var(--nudo-voltage);
+  color: var(--nudo-voltage);
+  text-decoration: none;
+}
+
+[data-theme="dark"] .doc-agent-button:hover {
+  border-color: var(--nudo-voltage-lit);
+  color: var(--nudo-voltage-lit);
+}
+
+.doc-agent-hint {
+  color: var(--ifm-color-emphasis-600);
+  font-size: 0.75rem;
+}
+
 /* Doc page feedback widget */
 .doc-feedback {
   display: flex;

@@ -67,7 +67,7 @@ description: 求值期间模拟外部依赖——@nudo:mock 五种形式（箭�
 
 用箭头函数 mock `fetch`。函数体是单行普通 JavaScript：
 
-```javascript
+```javascript verify
 /**
  * @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1, name: "Alice" }) })
  * @nudo:case "user" (1)
@@ -101,7 +101,7 @@ async function fetchUser(id) {
 
 **与箭头 mock 结果相同：** `stub().resolves(value)` 把 `value` 包进 promise，且对象的闭包槽会被桥接，所以本示例推断出 `promise<{ id: 1, name: "Alice" }>`——包括可调用的 `json` 槽。哪种形式读起来更顺就用哪种。同步帮助函数：
 
-```javascript
+```javascript verify
 /**
  * @nudo:mock getPort = stub().returns(8080)
  * @nudo:case "default" ()
@@ -121,7 +121,7 @@ function readPort() {
 
 约束构造器表达式直接把名称绑定到抽象域：
 
-```javascript
+```javascript verify
 /**
  * @nudo:mock retries = number()
  * @nudo:case "plan" ()
@@ -141,7 +141,7 @@ function plan() {
 
 从模块——模块必须定义与被 mock 名称相同的绑定：
 
-```javascript
+```javascript verify
 /**
  * @nudo:mock fs from "./mocks/fs.js"
  * @nudo:case "read" (string())
@@ -151,7 +151,7 @@ function readConfig(path) {
 }
 ```
 
-```javascript
+```javascript verify
 // mocks/fs.js
 const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
 ```

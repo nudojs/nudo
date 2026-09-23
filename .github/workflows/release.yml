@@ -22,7 +22,6 @@ jobs:
       contents: write
       pull-requests: write
     outputs:
-      published: ${{ steps.changesets.outputs.hasChangesets == 'false' }}
       publishedPackages: ${{ steps.changesets.outputs.publishedPackages }}
     env:
       # secrets cannot appear in step `if`; expose at job level for gating.
@@ -70,15 +69,7 @@ jobs:
         env:
           NPM_CONFIG_PROVENANCE: true
 
-      - name: Build website
-        if: steps.changesets.outputs.hasChangesets == 'false'
-        run: pnpm --filter website run build
-
-      - name: Upload Website Build Artifact
-        if: steps.changesets.outputs.hasChangesets == 'false'
-        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa  # v3
-        with:
-          path: packages/website/build
+      # 文档站部署已解耦：docs-deploy.yml 在 main push 时独立构建部署
 
       - name: Package VSCode extension
         if: steps.changesets.outputs.hasChangesets == 'false'
@@ -112,18 +103,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  deploy:
-    name: Deploy to GitHub Pages
-    needs: release
-    if: needs.release.outputs.published == 'true'
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e  # v4
+

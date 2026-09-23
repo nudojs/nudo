@@ -12,7 +12,7 @@ Nudo infers types by *executing* your code with symbolic values, so the quality 
 
 String methods on literal receivers fold at evaluation time.
 
-```js
+```js verify
 function upper() { return "hello".toUpperCase(); }
 upper();                              // → "HELLO"
 
@@ -35,7 +35,7 @@ sli();                                // → "el"
 
 A `for` loop with a concrete bound evaluates to its exact result.
 
-```js
+```js verify
 function sumTo(n) {
   let sum = 0;
   for (let i = 0; i < n; i++) {
@@ -54,7 +54,7 @@ sumTo(5);
 
 `for...of` over a concrete array evaluates the same way:
 
-```js
+```js verify
 function sumArr(arr) {
   let s = 0;
   for (const x of arr) {
@@ -69,7 +69,7 @@ sumArr([1, 2, 3]);                    // → 6
 
 Loop jumps are signals: the value bound in the exiting iteration is preserved.
 
-```js
+```js verify
 function findBig() {
   let found;
   for (const x of [1, 2, 3, 4]) {
@@ -95,7 +95,7 @@ The result is the literal `3` — the value bound when the loop broke.
 
 `Object.keys` on a concrete object returns the exact key tuple.
 
-```js
+```js verify
 function keysOf() { return Object.keys({ port: 3000, host: "x" }); }
 keysOf();
 ```
@@ -110,7 +110,7 @@ keysOf();
 
 `Math` methods on literal numeric arguments fold at evaluation time — on both the call-site and `@nudo:case` paths.
 
-```js
+```js verify
 function root(n) { return Math.sqrt(n); }
 root(9);
 ```
@@ -162,7 +162,7 @@ hasIter([1]);
 
 The global coercion constructors and numeric parsers fold literals to exact results at the call site and under `@nudo:case` alike:
 
-```js
+```js verify
 function strOf(x) { return String(x); }
 strOf(5);                            // → "5"
 
@@ -191,7 +191,7 @@ floatOf("3.14");                     // → 3.14
 
 Method calls made inside an analyzed function bind `this` to the receiver — on both the call-site and `@nudo:case` paths.
 
-```js
+```js verify
 class Circle {
   constructor(r) { this.radius = r; }
   area() { return this.radius * this.radius; }
@@ -216,7 +216,7 @@ The directive path is equally precise when the argument is a literal (`@nudo:cas
 
 A recursive function is evaluated per observed call: each top-level call is fully unrolled and reported as its own `call@` case with the exact result.
 
-```js
+```js verify
 function walk(n) {
   if (n <= 0) return 0;
   return n + walk(n - 1);
@@ -242,7 +242,7 @@ More calls than the precise-case cap aggregate into a `call@symbolic` case with 
 
 More literal folds the evaluator performs on the call-site path and under `@nudo:case`:
 
-```js
+```js verify
 function eqCheck() { return 1 == "1"; }
 eqCheck();                            // → true
 

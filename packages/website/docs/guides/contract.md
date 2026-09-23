@@ -55,24 +55,31 @@ Human review tightens `number()` → `number().gt(0)` etc. Only the accepted sid
 
 Write the sidecar by hand, then implement under the same face:
 
-```javascript
-// math.nudo.js
+```javascript verify-sidecar
+// contract.nudo.js
 import { number, fn } from "@nudojs/core";
+
+export const positive = number().gt(0);
 export const add2 = fn({ x: number().gt(0) }, number());
 ```
 
-Function bindings in a sidecar **must** be first-class `fn({ params }, returns?)`. Bare `number().gt(0)` is a value-level template (for `@nudo:refine` / shared slots), not a function export contract.
+Function bindings in a sidecar **must** be first-class `fn({ params }, returns?)`. Bare `number().gt(0)` is a value-level template (for `@nudo:refine` / shared slots), not a function export contract — `positive` above is a template, `add2` is a binding.
 
 In-source form:
 
-```javascript
+```javascript verify
+/// @nudo:import { positive } from "./contract.nudo.js"
 /**
  * @nudo:refine x positive
  */
 export function needsPositive(x) {
   return x;
 }
+
+needsPositive(-1); // ⊭ x > 0 → nudo:constraint-violated
 ```
+
+Templates referenced by `@nudo:refine` must be imported with `@nudo:import` — the sidecar auto-binds only same-name `fn` exports.
 
 `@nudo:interface` is an exact **alias** of `@nudo:refine`. Product name: **contract**.
 

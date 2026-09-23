@@ -83,7 +83,7 @@ describe("T15 mixed + coarsens to number|string", () => {
   });
 
   it("number + open obj is number|string", () => {
-    const o = abs(objOf({}, { open: true }), undefined, undefined, "path");
+    const o = objOf({}, { open: true });
     const r = add(abs({ k: "prim", type: "number" }, undefined, undefined, "path"), o);
     expect(r.shape.k).toBe("sum");
     expect(formatAbs(r)).toContain("number");
@@ -166,7 +166,6 @@ export const add4b = fn({ x: positive }, positive4);
 `);
       const r = deriveFromRoot(join(dir, "lib.js"), {
         loadModule: defaultLoadModule,
-        projectDir: dir,
       });
       const add2 = r.derived.find((d) => d.fn === "add2");
       expect(add2).toBeDefined();
