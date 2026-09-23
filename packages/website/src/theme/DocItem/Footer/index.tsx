@@ -9,7 +9,7 @@ import EditMetaRow from '@theme/EditMetaRow';
 
 const FEEDBACK_KEY = 'nudo-doc-feedback';
 
-function FeedbackRow({editUrl}: {editUrl?: string}): ReactNode {
+function FeedbackRow({issueUrl}: {issueUrl: string}): ReactNode {
   const [vote, setVote] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     return window.localStorage.getItem(FEEDBACK_KEY);
@@ -44,13 +44,10 @@ function FeedbackRow({editUrl}: {editUrl?: string}): ReactNode {
           </button>
           <a
             className="doc-feedback-button doc-feedback-link"
-            href={
-              editUrl ??
-              'https://github.com/nudojs/nudo/issues/new?title=Docs%20feedback'
-            }
+            href={issueUrl}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label="No, this page needs work — open the edit page"
+            aria-label="No, this page needs work — report an issue"
             onClick={() => {
               window.localStorage.setItem(FEEDBACK_KEY, 'no');
               setVote('no');
@@ -70,6 +67,11 @@ export default function DocItemFooter(): ReactNode {
   const canDisplayTagsRow = tags.length > 0;
   const canDisplayEditMetaRow = !!(editUrl || lastUpdatedAt || lastUpdatedBy);
 
+  // 「No」不再跳编辑页：预填 issue（带页面路径与 locale），反馈能真正被收集。
+  const issueUrl = `https://github.com/nudojs/nudo/issues/new?title=${encodeURIComponent(
+    `Docs feedback: ${metadata.permalink ?? metadata.title ?? ""}`,
+  )}&labels=documentation`;
+
   return (
     <footer
       className={clsx(ThemeClassNames.docs.docFooter, 'docusaurus-mt-lg')}>
@@ -84,7 +86,7 @@ export default function DocItemFooter(): ReactNode {
           </div>
         </div>
       )}
-      <FeedbackRow editUrl={editUrl} />
+      <FeedbackRow issueUrl={issueUrl} />
       {canDisplayEditMetaRow && (
         <EditMetaRow
           className={clsx(

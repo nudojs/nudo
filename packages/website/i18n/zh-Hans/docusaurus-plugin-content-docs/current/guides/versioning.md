@@ -10,6 +10,7 @@ Nudo 是 pnpm monorepo，经 [changesets](https://github.com/changesets/changese
 
 > 下表版本为撰写时已发布的版本线——以 `npm view <pkg> version` 为准。**线**（0.x vs 1.x+）是稳定部分；精确补丁号总会前进。
 
+<!-- NUDO-VERSIONS:BEGIN -->
 | 包 | 版本线 | 升级规则 |
 |----|--------|----------|
 | `@nudojs/core` | **2.x**（2.1.0） | SemVer：破坏性 → major |
@@ -19,8 +20,9 @@ Nudo 是 pnpm monorepo，经 [changesets](https://github.com/changesets/changese
 | `@nudojs/lsp` | **1.x**（1.0.0） | SemVer：破坏性 → major。冻结清单：`packages/lsp/PUBLIC_API.md` |
 | `@nudojs/env` / `@nudojs/harvester` | 0.x（0.4.1 / 0.2.7） | minor 可能破坏；为 IDE/CI 分析稳定可锁 minor。手写 env 在重叠模块/导出上 wins（`mergeHarvestUnderEnv`） |
 | `nudojs`（npm 壳） | 0.x（0.3.2） | 优先直接依赖 `@nudojs/cli` / `@nudojs/core` |
-| `vite-plugin-nudo` | 0.x | minor 可能破坏 |
+| `vite-plugin-nudo` | 0.x（0.4.2） | minor 可能破坏 |
 | `nudo-vscode` | Marketplace | 以扩展发行说明为准；打包前对齐 bundled lsp 版本（见 `packages/vscode/RELEASE_CHECKLIST.md`） |
+<!-- NUDO-VERSIONS:END -->
 
 ### 0.x 一句话
 
@@ -36,10 +38,12 @@ patch 修健全性（结果可能变得*更正确*）；minor 增 API / 诊断�
 
 > 完整权威文本在仓库 `docs/versioning.md` § Ecosystem packages；本节是面向消费者的摘要。
 
+<!-- NUDO-ECOSYSTEM:BEGIN -->
 | 包 | 当前 | 锁定方式 | 说明 |
 |----|------|----------|------|
 | `@nudojs/env` | 0.4.1（pre-1.0） | workspace / IDE·CI 稳定可锁 `~0.4.0` | 新 Abs 模块（如 `events` / `stream` / `querystring`）以 **minor** 发布；签名展示可能变化。手写 env 在重叠模块/导出上 **wins**。 |
 | `@nudojs/harvester` | 0.2.7（pre-1.0） | workspace / `~0.2.7` | Harvest 是**旁路信道**，不是类型系统真理源。预算默认：`maxFiles=12`、`maxMs=2500`，`NUDO_HARVEST_NODE=off` 显式关闭。 |
+<!-- NUDO-ECOSYSTEM:END -->
 
 规则：
 

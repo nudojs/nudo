@@ -1,6 +1,7 @@
 import React, { lazy, useRef, useState, useEffect, Suspense } from 'react';
 import Layout from '@theme/Layout';
 import BrowserOnly from '@docusaurus/BrowserOnly';
+import Translate, { translate } from '@docusaurus/Translate';
 import { parse, extractDirectives, type CaseDirective } from '@nudojs/parser';
 import {
   formatShape,
@@ -56,6 +57,20 @@ const GROUP_CONTRACTS = 'Contracts & Observe';
 const GROUP_BASIC = 'Basic Examples';
 const GROUP_CALLSITE = 'Call-Site Discovery';
 const GROUP_SEMANTICS = 'Language Semantics';
+
+// 预设分组名 → 翻译 id（optgroup label 用）
+const GROUP_LABEL_IDS: Record<string, string> = {
+  [GROUP_CONTRACTS]: 'playground.group.contracts',
+  [GROUP_BASIC]: 'playground.group.basic',
+  [GROUP_CALLSITE]: 'playground.group.callsite',
+  [GROUP_SEMANTICS]: 'playground.group.semantics',
+};
+function tGroup(group: string): string {
+  const id = GROUP_LABEL_IDS[group];
+  return id
+    ? translate({ id, message: group })
+    : group;
+}
 
 const presets: Preset[] = [
   {
@@ -1165,8 +1180,10 @@ function PlaygroundApp() {
     <div className="cs-playground">
         <h1>Nudo Playground</h1>
         <p className="cs-subtitle">
-          Welcome back to JavaScript. Observe what your code computes on Abs, and gate contracts
-          sharper than declared types. Hover for term / pred / conf and sidecar contracts.
+          <Translate id="playground.subtitle">
+            Welcome back to JavaScript. Observe what your code computes on Abs, and gate contracts
+            sharper than declared types. Hover for term / pred / conf and sidecar contracts.
+          </Translate>
         </p>
 
         <div className="cs-controls">
@@ -1176,7 +1193,7 @@ function PlaygroundApp() {
             className="preset-select"
           >
             {[GROUP_CONTRACTS, GROUP_BASIC, GROUP_CALLSITE, GROUP_SEMANTICS].map((group) => (
-              <optgroup key={group} label={group}>
+              <optgroup key={group} label={tGroup(group)}>
                 {presets
                   .filter((p) => p.group === group)
                   .map((p) => (
@@ -1194,7 +1211,12 @@ function PlaygroundApp() {
             >
               {cases.map((c, i) => (
                 <option key={i} value={i}>
-                  Case {i + 1}: "{c.name}" ({c.args.map(a => formatShape(a)).join(', ')})
+                  <Translate
+                    id="playground.caseLabel"
+                    values={{ index: i + 1, name: c.name, args: c.args.map(a => formatShape(a)).join(', ') }}
+                  >
+                    {`Case {index}: "{name}" ({args})`}
+                  </Translate>
                 </option>
               ))}
             </select>
@@ -1202,31 +1224,37 @@ function PlaygroundApp() {
 
           {!isCallsiteMode && (
             <button onClick={shareUrl} className="share-button">
-              {copied ? 'Copied!' : 'Share'}
+              {copied
+                ? <Translate id="playground.copied">Copied!</Translate>
+                : <Translate id="playground.share">Share</Translate>}
             </button>
           )}
 
           <button onClick={runObserve} disabled={isRunning} className="run-button">
-            {isRunning ? 'Observing…' : 'Observe'}
+            {isRunning
+              ? <Translate id="playground.observing">Observing…</Translate>
+              : <Translate id="playground.observe">Observe</Translate>}
           </button>
         </div>
 
         {isCallsiteMode && preset.mode === 'callsite' && (
           <>
             <div className="cs-explainer">
-              <strong>Call-Site Discovery.</strong> The library (left) ships without type
-              annotations. Nudo evaluates the usage site (right), records the argument and result
-              types of every real call, and re-synthesizes a precise signature — no inference-time
-              unknowns left.
+              <Translate id="playground.explainer">
+                <strong>Call-Site Discovery.</strong> The library (left) ships without type
+                annotations. Nudo evaluates the usage site (right), records the argument and result
+                types of every real call, and re-synthesizes a precise signature — no inference-time
+                unknowns left.
+              </Translate>
             </div>
 
             <div className="cs-dual">
               <div className="cs-pane">
                 <div className="cs-pane-header">
                   <span className="cs-pane-file">{preset.libFile}</span>
-                  <span className="cs-pane-tag">library · read-only</span>
+                  <span className="cs-pane-tag"><Translate id="playground.tag.libReadOnly">library · read-only</Translate></span>
                 </div>
-                <Suspense fallback={<div className="editor-loading">Loading editor…</div>}>
+                <Suspense fallback={<div className="editor-loading"><Translate id="playground.loadingEditor">Loading editor…</Translate></div>}>
                   <MonacoEditor
                     height="min(420px, calc(100vh - 320px))"
                     defaultLanguage="nudo-js"
@@ -1240,9 +1268,9 @@ function PlaygroundApp() {
               <div className="cs-pane">
                 <div className="cs-pane-header">
                   <span className="cs-pane-file">{preset.testFile}</span>
-                  <span className="cs-pane-tag">usage site · editable</span>
+                  <span className="cs-pane-tag"><Translate id="playground.tag.usageEditable">usage site · editable</Translate></span>
                 </div>
-                <Suspense fallback={<div className="editor-loading">Loading editor…</div>}>
+                <Suspense fallback={<div className="editor-loading"><Translate id="playground.loadingEditor">Loading editor…</Translate></div>}>
                   <MonacoEditor
                     height="min(420px, calc(100vh - 320px))"
                     defaultLanguage="nudo-js"
@@ -1263,13 +1291,13 @@ function PlaygroundApp() {
 
             <div className="cs-results">
               {callsiteResult?.error && (
-                <div className="cs-error">Error: {callsiteResult.error}</div>
+                <div className="cs-error"><Translate id="playground.error" values={{ message: callsiteResult.error }}>{`Error: {message}`}</Translate></div>
               )}
 
               {callsiteResult && callsiteResult.records.length > 0 && (
                 <div className="cs-section">
                   <div className="cs-section-title">
-                    Discovered call records <span className="cs-count">{callsiteResult.records.length}</span>
+                    <Translate id="playground.results.discovered">Discovered call records</Translate> <span className="cs-count">{callsiteResult.records.length}</span>
                   </div>
                   {callsiteResult.records.map((r, i) =>
                     renderCaseCard(
@@ -1288,10 +1316,10 @@ function PlaygroundApp() {
 
               {callsiteResult && callsiteResult.before !== null && (
                 <div className="cs-section">
-                  <div className="cs-section-title">Synthesized signature</div>
+                  <div className="cs-section-title"><Translate id="playground.results.synth">Synthesized signature</Translate></div>
                   <div className="cs-synth">
                     <div className="cs-synth-card cs-unknown">
-                      <div className="cs-synth-label">Before · entry-only analysis</div>
+                      <div className="cs-synth-label"><Translate id="playground.results.before">Before · entry-only analysis</Translate></div>
                       {renderCaseCard(
                         'before',
                         preset.exportName,
@@ -1304,7 +1332,12 @@ function PlaygroundApp() {
                     <div className="cs-synth-arrow">&#10132;</div>
                     <div className="cs-synth-card cs-precise-frame">
                       <div className="cs-synth-label">
-                        After · injected from {callsiteResult.afterSource || 'call record'}
+                        <Translate
+                          id="playground.results.after"
+                          values={{ source: callsiteResult.afterSource || 'call record' }}
+                        >
+                          {`After · injected from {source}`}
+                        </Translate>
                       </div>
                       {callsiteResult.after !== null
                         ? renderCaseCard(
@@ -1315,7 +1348,7 @@ function PlaygroundApp() {
                             isPrecise(formatShape(callsiteResult.after)),
                             false,
                           )
-                        : <div className="cs-type-unknown">no usage-site call found</div>}
+                        : <div className="cs-type-unknown"><Translate id="playground.results.afterMissing">no usage-site call found</Translate></div>}
                     </div>
                   </div>
                 </div>
@@ -1323,8 +1356,13 @@ function PlaygroundApp() {
 
               {callsiteResult && !callsiteResult.error && callsiteResult.records.length === 0 && (
                 <div className="cs-hint">
-                  No call records collected — make sure the usage site imports{' '}
-                  <code>./util</code> and calls <code>{preset.exportName}</code>.
+                  <Translate
+                    id="playground.hint.noRecords"
+                    values={{ exportName: preset.exportName }}
+                  >
+                    {`No call records collected — make sure the usage site imports `}<code>./util</code>
+                    {` and calls `}<code>{preset.exportName}</code>.
+                  </Translate>
                 </div>
               )}
             </div>
@@ -1337,9 +1375,9 @@ function PlaygroundApp() {
               <div className="cs-pane">
                 <div className="cs-pane-header">
                   <span className="cs-pane-file">source.js</span>
-                  <span className="cs-pane-tag">editable</span>
+                  <span className="cs-pane-tag"><Translate id="playground.tag.editable">editable</Translate></span>
                 </div>
-                <Suspense fallback={<div className="editor-loading">Loading editor…</div>}>
+                <Suspense fallback={<div className="editor-loading"><Translate id="playground.loadingEditor">Loading editor…</Translate></div>}>
                   <MonacoEditor
                     height="min(640px, calc(100vh - 220px))"
                     defaultLanguage="nudo-js"
@@ -1355,22 +1393,24 @@ function PlaygroundApp() {
               <div className="cs-pane">
                 <div className="cs-pane-header">
                   <span className="cs-pane-file">results</span>
-                  <span className="cs-pane-tag">click Run</span>
+                  <span className="cs-pane-tag"><Translate id="playground.tag.clickObserve">click Observe</Translate></span>
                 </div>
                 <div className="cs-results-pane">
-                  {singleError && <div className="cs-error">Error: {singleError}</div>}
+                  {singleError && <div className="cs-error"><Translate id="playground.error" values={{ message: singleError }}>{`Error: {message}`}</Translate></div>}
                   {!singleError && !singleResults && (
-                    <div className="cs-hint">Click "Run" to see inference results.</div>
+                    <div className="cs-hint"><Translate id="playground.hint.observe">Click "Observe" to see inference results.</Translate></div>
                   )}
                   {!singleError && singleResults && singleResults.length === 0 && (
                     <div className="cs-hint">
-                      No call sites or cases found. Add a call site, or pick a Contracts & Observe preset.
+                      <Translate id="playground.hint.noCases">
+                        No call sites or cases found. Add a call site, or pick a Contracts &amp; Observe preset.
+                      </Translate>
                     </div>
                   )}
                   {!singleError && singleResults && singleResults.length > 0 && (
                     <div className="cs-section">
                       <div className="cs-section-title">
-                        Case results <span className="cs-count">{singleResults.length}</span>
+                        <Translate id="playground.results.caseResults">Case results</Translate> <span className="cs-count">{singleResults.length}</span>
                       </div>
                       {singleResults.map((r, i) =>
                         renderCaseCard(
@@ -1400,14 +1440,17 @@ export default function Playground(): JSX.Element {
   return (
     <Layout
       title="Playground"
-      description="Nudo Playground — execute JavaScript and observe intermediates"
+      description={translate({
+        id: "playground.metaDescription",
+        message: "Nudo Playground — execute JavaScript and observe intermediates",
+      })}
     >
       <BrowserOnly
         fallback={
           <div className="playground-container">
             <div className="playground-header">
               <h1>Nudo Playground</h1>
-              <p>Loading playground…</p>
+              <p><Translate id="playground.loading">Loading playground…</Translate></p>
             </div>
           </div>
         }

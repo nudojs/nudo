@@ -15,10 +15,15 @@
 # Pin strings must be the exact labels the CLI prints on this branch — same
 # discipline as scripts/verify-examples.sh: never invent golden strings.
 #
-# Run from anywhere:  pnpm run verify:docs
+# Run from anywhere:  pnpm run verify:docs [--report]
 set -u
 
 cd "$(dirname "$0")/.."
+
+REPORT_MODE=0
+for a in "$@"; do
+  [ "$a" = "--report" ] && REPORT_MODE=1
+done
 
 pass=0
 fail=0
@@ -157,6 +162,68 @@ verify_test control-flow-narrowing packages/website/docs/concepts/control-flow-n
 verify_test examples packages/website/docs/guides/examples.md \
   '({ x: 1, y: 2 }) => 3'
 
+# cli: subtract call sites + a declared @nudo:case assertion that passes.
+verify_test cli packages/website/docs/guides/cli.md \
+  'call@L5  (5, 3) => 2' \
+  'call@L6  (1, 10) => -9' \
+  'debug "double"  (2) => 4' \
+  '1 passed'
+
+# contract: @nudo:import template + refine + violating call gates check.
+verify_check contract packages/website/docs/guides/contract.md \
+  'nudo:constraint-violated' \
+  'expected: x > 0' \
+  'needsPositive(x: number) => number'
+
+# type-values: @nudo:case witnesses across concrete/symbolic/mixed args.
+verify_test type-values packages/website/docs/concepts/type-values.md \
+  'debug "concrete"  (5, 3) => 8' \
+  'debug "symbolic"  (number, number) => number' \
+  'debug "mixed"  (0, string) => string'
+
+# directives: case witnesses + expected-type assertions (2 pass).
+verify_test directives packages/website/docs/concepts/directives.md \
+  'debug "positive numbers"  (5, 3) => 2' \
+  'debug "negative result"  (1, 10) => -9' \
+  'debug "basic"  ("abc") => 3' \
+  'debug "empty"  ("") => 0' \
+  '2 passed'
+
 printf -- '--------------------------------------------------------------\n'
 printf 'doc examples verified: %s checks passed, %s failed\n' "$pass" "$fail"
+
+if [ "$REPORT_MODE" -eq 1 ]; then
+  # 覆盖率：js/javascript 围栏总数 vs 打 verify 标签并被真实执行的数量。
+  # 输出为 CI 友好行，便于后续作为阈值门禁的输入。
+  total_js=0
+  verified_js=0
+  pages_with_js=0
+  verified_pages=0
+  docs_dir="packages/website/docs"
+  for f in "$docs_dir"/**/*.md "$docs_dir"/*.md; do
+    [ -f "$f" ] || continue
+    has_js=0
+    has_verify=0
+    while IFS= read -r line; do
+      case "$line" in
+        '```js '*|'```js'|'```javascript '*|'```javascript')
+          has_js=1
+          total_js=$((total_js + 1))
+          ;;
+      esac
+      case "$line" in
+        '```js verify'|'```javascript verify'|'```js verify-sidecar'|'```javascript verify-sidecar')
+          has_verify=1
+          verified_js=$((verified_js + 1))
+          ;;
+      esac
+    done < "$f"
+    [ "$has_js" -eq 1 ] && pages_with_js=$((pages_with_js + 1))
+    [ "$has_verify" -eq 1 ] && verified_pages=$((verified_pages + 1))
+  done
+  printf 'doc verify coverage: %s/%s pages with js fences verified, %s/%s js fences executed (%.1f%%)\n' \
+    "$verified_pages" "$pages_with_js" "$verified_js" "$total_js" \
+    "$(awk -v a="$verified_js" -v b="$total_js" 'BEGIN { printf "%.1f", b ? 100 * a / b : 0 }')"
+fi
+
 [ "$fail" -eq 0 ]

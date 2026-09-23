@@ -102,7 +102,7 @@ These are **not** the same product concept and must never be collapsed in docs o
 
 Directive type expressions use the constraint builders above plus concrete literals. Inside `@nudo:mock` bodies write plain JavaScript values and closures — not builder calls as return payloads.
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "concrete" (5, 3)
  * @nudo:case "symbolic" (number(), number())

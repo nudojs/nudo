@@ -299,6 +299,27 @@ async function collectCheckDepContents(
   return collectLoadDepContents(filePath, source, loadModule);
 }
 
+// 诊断 → 文档深链：问题码映射到 reference/diagnostics.md 的显式锚点。
+// 锚点 id 规则 = code.replaceAll(":", "-")；诊断码覆盖测试
+// （packages/website/tests/docs-coverage.test.ts）保证每个上屏码都有锚点。
+const DOCS_DIAGNOSTICS =
+  "https://nudojs.github.io/nudo/docs/reference/diagnostics";
+function printDocsLinks(issues: Array<{ code?: string }>): void {
+  const codes = [
+    ...new Set(
+      issues
+        .map((i) => i.code)
+        .filter((c): c is string => !!c && /^nudo[\w:-]+$/.test(c)),
+    ),
+  ];
+  if (codes.length === 0) return;
+  console.log("");
+  console.log("docs");
+  for (const code of codes) {
+    console.log(`  ${code} → ${DOCS_DIAGNOSTICS}#${code.replaceAll(":", "-")}`);
+  }
+}
+
 async function runCheck(
   file: string,
   opts: {
@@ -543,6 +564,15 @@ async function runCheck(
   } else {
     console.log(formatCheckReport(algebraReport, { verbose: opts.verbose === true }));
     emitCiAnnotations();
+  }
+
+  // 诊断 → 文档深链（仅终端面；CheckJson 契约不变）
+  if (
+    !opts.json &&
+    algebraReport.issues.length > 0 &&
+    (!opts.abs || !algebraReport.ok)
+  ) {
+    printDocsLinks(algebraReport.issues);
   }
 
   if (useDisk && cacheKey && !cached && !opts.abs) {

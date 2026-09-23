@@ -102,7 +102,7 @@ number | string       // 异构联合
 
 指令类型表达式使用上面的约束构建器加具体字面量。`@nudo:mock` body 内写普通 JavaScript 值和闭包 —— 不要把构建器调用当作返回负载。
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "concrete" (5, 3)
  * @nudo:case "symbolic" (number(), number())

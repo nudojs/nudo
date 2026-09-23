@@ -58,7 +58,7 @@ Provide named execution cases. Each case defines inputs (concrete or symbolic) f
 
 ### Examples
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "positive numbers" (5, 3)
  * @nudo:case "negative result" (1, 10)
@@ -83,9 +83,9 @@ function process(x) {
 
 With expected return type:
 
-```javascript
+```javascript verify
 /**
- * @nudo:case "basic" (string()) => number()
+ * @nudo:case "basic" ("abc") => number()
  * @nudo:case "empty" ("") => lit(0)
  */
 function len(s) {

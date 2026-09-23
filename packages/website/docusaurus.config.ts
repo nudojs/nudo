@@ -5,9 +5,17 @@ import { DefinePlugin, NormalModuleReplacementPlugin } from "webpack";
 import type * as Preset from "@docusaurus/preset-classic";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { readFileSync } from "node:fs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const websiteRoot = resolve(dirname(fileURLToPath(import.meta.url)));
+
+// 站点追踪的包版本（构建期从 package.json 读取 —— 永不手改，随发布自动前进）
+const pkgVersion = (p: string): string =>
+  JSON.parse(
+    readFileSync(resolve(repoRoot, `packages/${p}/package.json`), "utf8"),
+  ).version as string;
+const DOCS_TRACK = `Docs track main · @nudojs/cli ${pkgVersion("cli")} · @nudojs/core ${pkgVersion("core")} · @nudojs/env ${pkgVersion("env")}`;
 
 const config: Config = {
   title: "Nudo",
@@ -22,10 +30,11 @@ const config: Config = {
   projectName: "nudo",
 
   onBrokenLinks: "throw",
+  onBrokenAnchors: "throw",
 
   markdown: {
     hooks: {
-      onBrokenMarkdownLinks: "warn",
+      onBrokenMarkdownLinks: "throw",
     },
   },
 
@@ -41,6 +50,8 @@ const config: Config = {
         docs: {
           sidebarPath: "./sidebars.ts",
           editUrl: "https://github.com/nudojs/nudo/tree/main/packages/website/",
+          showLastUpdateTime: true,
+          showLastUpdateAuthor: true,
         },
         blog: {
           showReadingTime: true,
@@ -58,6 +69,24 @@ const config: Config = {
   // os/module/url）带进浏览器 bundle——浏览器里不可达（loadEnvs 只在
   // Node CLI 用），alias 成空模块。
   plugins: [
+    // 旧 IA 路由 → 新路由（guides/ → concepts/、mcp-server → agent-integration）。
+    // 线上旧 URL 仍被搜索引擎 / README / 旧链接引用，直接消失会 404。
+    [
+      "@docusaurus/plugin-client-redirects",
+      {
+        redirects: [
+          {
+            to: "/docs/concepts/control-flow-narrowing",
+            from: "/docs/guides/control-flow-narrowing",
+          },
+          { to: "/docs/concepts/semantics", from: "/docs/guides/semantics" },
+          {
+            to: "/docs/guides/agent-integration",
+            from: "/docs/guides/mcp-server",
+          },
+        ],
+      },
+    ],
     // 离线全文搜索（中英分词，无 Algolia 外部依赖）
     [
       "@easyops-cn/docusaurus-search-local",
@@ -150,7 +179,12 @@ const config: Config = {
   ],
 
   themeConfig: {
-    image: "img/nudo-og.svg",
+    image: "img/nudo-og.png",
+    announcementBar: {
+      id: "docs-track",
+      content: DOCS_TRACK,
+      isCloseable: true,
+    },
     colorMode: {
       respectPrefersColorScheme: true,
     },

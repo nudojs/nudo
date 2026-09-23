@@ -71,6 +71,7 @@ const sidebars: SidebarsConfig = {
       items: [
         "reference/diagnostics",
         "reference/glossary",
+        "releases",
         "reference/agents",
         "api/cli-reference",
         "api/core",

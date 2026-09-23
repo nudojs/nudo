@@ -1,118 +1,121 @@
 # Nudo Examples
 
-单一入口。按场景分组，与实现目录无关。
+Single entry point. Grouped by scenario, independent of implementation layout.
 
-| 目录 | 场景 |
-|------|------|
-| [`constraints/`](./constraints/) | `@nudo:refine` × Pred：标量 / shape / 返回精化 |
-| [`structure/`](./structure/) | Abs `leq`：赋值 / 传参结构 |
-| [`vs-ts/`](./vs-ts/) | 与 TypeScript 同逻辑对照 |
-| [`mini-repo/`](./mini-repo/) | 多文件集成（ESM + class + async） |
-| [`algebra/`](./algebra/) | 类型即计算（spread / HOF / reduce / mixin） |
-| [`interface-derivation/`](./interface-derivation/) | 契约分层推导（手写根 → 下行生成段） |
-| [`interface-draft/`](./interface-draft/) | 代码优先：从逻辑生成可审阅契约草稿 |
-| [`migrate/`](./migrate/) | **retire tsc 样板包**（before/after 单向门） |
+| Directory | Scenario |
+|-----------|----------|
+| [`constraints/`](./constraints/) | `@nudo:refine` × Pred: scalars / shapes / return refinement |
+| [`structure/`](./structure/) | Abs `leq`: assignment / argument structure |
+| [`vs-ts/`](./vs-ts/) | Same logic, side by side with TypeScript |
+| [`mini-repo/`](./mini-repo/) | Multi-file integration (ESM + class + async) |
+| [`algebra/`](./algebra/) | Types as computation (spread / HOF / reduce / mixin) |
+| [`interface-derivation/`](./interface-derivation/) | Contract tier derivation (handwritten root → generated rows) |
+| [`interface-draft/`](./interface-draft/) | Code first: reviewable contract drafts from logic |
+| [`migrate/`](./migrate/) | **Retire the tsc boilerplate package** (one-way before/after gate) |
 
-主题式浏览（同一引擎）见网站 [Examples 指南](https://nudojs.github.io/nudo/docs/guides/examples)；本目录是 CI 门禁真值（`pnpm run verify:examples`）。
+Browse by theme on the website [Examples guide](https://nudojs.github.io/nudo/docs/guides/examples); this directory is the CI gate's source of truth (`pnpm run verify:examples`).
 
-## 产品命令面
+## Product command face
 
-- **Day 0**：`pnpm run check <file>`（门禁 + 签名）· `pnpm run test:cli <file>`（逐 case 报告）
-- **Day 1**：`pnpm run contract` / `pnpm run nudo -- contract` · 继续 `check`
-- **Ecosystem**：`pnpm run export:nudo … --format dts|guard|schema|standard|all`（schema 用 `--dialect zod`）
+- **Day 0**: `pnpm run check <file>` (gate + signatures) · `pnpm run test:cli <file>` (per-case report)
+- **Day 1**: `pnpm run contract` / `pnpm run nudo -- contract` · keep running `check`
+- **Ecosystem**: `pnpm run export:nudo … --format dts|guard|schema|standard|all` (`--dialect zod` for schema)
 
-## 精化模型
+## Refinement model
 
-契约不是类型注解，是 **进入 Abs 的 Pred**，会参与代数运算（`x>0` ⇒ `x+1>1`）。
+Contracts are not type annotations — they are **Preds entering Abs**, and they participate in algebra (`x>0` ⇒ `x+1>1`).
 
-- 精化只来自 **声明**（`.nudo.js` 导出的模板），`if` 分支不是精化
-- 唯一形态：`@nudo:refine <param|return> <constraint>`；object 形状用 `shape({...})`，无需 interface / type
-- 模板写法、返回精化、与 `@nudo:case` 的对照见 [`constraints/README.md`](./constraints/README.md)（本目录教程）
+- Refinement comes only from **declarations** (templates exported by `.nudo.js`); an `if` branch is not a refinement
+- One form: `@nudo:refine <param|return> <constraint>`; object shapes use `shape({...})` — no `interface` / `type` needed
+- Template syntax, return refinement, and the contrast with `@nudo:case`: [`constraints/README.md`](./constraints/README.md) (tutorial in this directory)
 
-## 无契约时跟真实 JS
+## Without contracts, follow real JS
 
 ```js
 function score(x) { return x + 1; }
 // check signatures: score(x: any) => number | string
-// score("x") 合法，返回 "x1"；不报 shape 错
+// score("x") is legal and returns "x1"; no shape error
 ```
 
-- **`any`** = 入口无约束参数的默认契约（JS 值并集；开发者负责细化）
-- **`unknown`** = 推导失败 / 引擎无信息（Nudo 负责修）
+- **`any`** = the default contract for unconstrained entry params (union of JS values; the developer refines it)
+- **`unknown`** = inference failed / engine has no information (Nudo must fix it)
 
-二者不是一回事；CLI **不会**把入口无约束参数打印成 `unknown`。
-入口对 `any` 的危险操作可能触发 L2 `nudo:entry-may-throw`（默认 error）。
+These are not the same thing; the CLI **never** prints unconstrained entry params as `unknown`.
+Dangerous operations on entry `any` may surface as L2 `nudo:entry-may-throw` (error by default).
 
-## 怎么跑
+## How to run
 
-所有示例命令与期望退出码的**唯一真值**在下面这张矩阵；一条命令验证全部：
-`pnpm run verify:examples`（CI 门禁，见 `scripts/verify-examples.sh`）。
+The **single source of truth** for every example command and its expected exit code is the matrix below; one command verifies all of it:
+`pnpm run verify:examples` (CI gate, see `scripts/verify-examples.sh`).
 
-- **命令与退出码**：只改矩阵——门禁脚本从本表解析命令 × 退出码，新增 /
-  删除示例或改期望退出码 = 改这一张表，脚本自动跟随。
-- **文件双向校验**：脚本交叉校验矩阵 ↔ 磁盘——每行命令的目标文件必须存在
-  （负例行路径打错会以 exit 1 静默通过，此校验拦住）；`docs/examples` 下每个
-  可运行的 `.js` / `.ts` 文件必须出现在至少一行矩阵（`*.nudo.js` 模板除外，
-  它们经 `@nudo:import` 引入；`*.d.ts` 是 `export --format dts` 生成的声明产物，同样除外）。
-  目标文件取命令里 `docs/examples/` 之后的
-  第一个空白分隔 token，CLI 选项（如 `--assume "x>0"`）跟在它后面。
-  新增示例文件 = 加一行矩阵，否则 CI 红。
-- **输出承诺**：示例文件头注释与子目录 README 声称的输出行由脚本逐条钉住
-  （固定串匹配，脚本 pins 段——命令 stdout 用 `pin`；`export --format dts`
-  默认打印声明到 stdout，`--out <dir>` 时才写文件，可用 `pin_file`）。
-  引擎精度变化导致输出漂移时 CI 会红——
-  需同步更新示例文件注释/README 与脚本 pins。
+- **Commands and exit codes**: edit the matrix only — the gate parses commands × exit
+  codes from this table, so adding/removing an example or changing a promised exit
+  code means editing this one table and the script follows.
+- **Two-way file cross-check**: the script cross-checks matrix ↔ disk — every row's
+  target file must exist (a typo'd path on a negative-example row would otherwise pass
+  as exit 1), and every runnable `.js` / `.ts` under `docs/examples` must appear in at
+  least one row (`*.nudo.js` templates are excluded — they are pulled in via
+  `@nudo:import`; `*.d.ts` are declarations produced by `export --format dts`, also
+  excluded). The target is the first whitespace-separated token after `docs/examples/`
+  in the command; CLI options (e.g. `--assume "x>0"`) follow it.
+  Adding an example file = adding a matrix row, or CI goes red.
+- **Output promises**: output lines promised by example file headers and subdirectory
+  READMEs are pinned line by line (fixed-string match, the script's `pins` section —
+  `pin` for command stdout; `export --format dts` prints declarations to stdout and only
+  writes files with `--out <dir>`, where `pin_file` applies). When engine precision
+  changes an output, CI goes red — update the example file comments/READMEs and the
+  script pins together.
 
-每个子目录 README 与示例文件头注释里的单行命令只是就近提示。
+The single-line commands in each subdirectory README and example file header are local hints only.
 
-| 命令 | 退出码 | 说明 |
-|------|--------|------|
-| `pnpm run check docs/examples/constraints/set-delay.js` | **1** | 负例：`setDelay[ms]: argument ⊭ precondition` / `needsPositive[x]: argument ⊭ precondition` |
-| `pnpm run check docs/examples/constraints/register.js` | **0** | 正例：user / config 形状精化（signatures 钉住） |
-| `pnpm run check docs/examples/constraints/return-contract.js` | **1** | 负例：`bad: return value ⊭ @nudo:refine return positive` |
-| `pnpm run check docs/examples/constraints/declared-vs-if.js` | **1** | 负例：if ≠ 精化 |
-| `pnpm run check docs/examples/constraints/add-pred.js` | **1** | 负例：`scale[x]: argument ⊭ precondition`（`actual: -1 #exact`） |
-| `pnpm run test:cli docs/examples/constraints/add-pred.js` | **0** | Pred 流入代数（test case 报告正例） |
-| `pnpm run check docs/examples/structure/assign.js` | **1** | 负例：`config: assignment ⊭ existing shape`（缺 port） |
-| `pnpm run check docs/examples/structure/arg-structure.js` | **1** | 负例：shape 契约缺字段（`constraint-violated`，非 body 扫描） |
-| `pnpm run check docs/examples/vs-ts/constraints/nudo.js` | **1** | nudo 报，对照 tsc 不报 |
-| `pnpm exec tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts` | **0** | tsc 侧对照（不报） |
-| `pnpm run check docs/examples/vs-ts/structure/nudo.js` | **1** | nudo 报（契约缺 name / 赋值缺 port） |
-| `pnpm exec tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts` | **2** | tsc 报 3 处（缺 name / excess / 缺 port） |
-| `pnpm run check docs/examples/algebra/0-add-intensional.js` | **0** | 签名（check；`--verbose`/`--abs` 才展开 term/pred/conf） |
-| `pnpm run test:cli docs/examples/algebra/0-add-intensional.js` | **0** | 字面量 case（`call@` / `debug`） |
-| `pnpm run check docs/examples/algebra/0-add-intensional.js --abs --assume "x>0"` | **0** | 代数视图（term/pred/conf，`--assume`） |
-| `pnpm run test:cli docs/examples/algebra/a-spread-optional.js` | **0** | spread 配置对象 |
-| `pnpm run export:nudo docs/examples/algebra/a-spread-optional.js --format dts` | **0** | dts 投影：单一拓宽签名 + 字面量并返回（stdout 钉住签名） |
-| `pnpm run test:cli docs/examples/algebra/b-hof-map.js` | **0** | HOF 回调传播 |
-| `pnpm run test:cli docs/examples/algebra/c-reduce-sum.js` | **0** | reduce 单 pass 累加 |
-| `pnpm run test:cli docs/examples/algebra/d-mixin-meet.js` | **0** | spread 形状 meet |
-| `pnpm run test:cli docs/examples/algebra/e-index-proj.js` | **0** | 索引投影（字面量精确 / 动态 key 并集） |
+| Command | Exit | Notes |
+|---------|------|-------|
+| `pnpm run check docs/examples/constraints/set-delay.js` | **1** | Negative: `setDelay[ms]: argument ⊭ precondition` / `needsPositive[x]: argument ⊭ precondition` |
+| `pnpm run check docs/examples/constraints/register.js` | **0** | Positive: user / config shape refinement (signatures pinned) |
+| `pnpm run check docs/examples/constraints/return-contract.js` | **1** | Negative: `bad: return value ⊭ @nudo:refine return positive` |
+| `pnpm run check docs/examples/constraints/declared-vs-if.js` | **1** | Negative: `if` ≠ refinement |
+| `pnpm run check docs/examples/constraints/add-pred.js` | **1** | Negative: `scale[x]: argument ⊭ precondition` (`actual: -1 #exact`) |
+| `pnpm run test:cli docs/examples/constraints/add-pred.js` | **0** | Pred flows into algebra (test case report, positive) |
+| `pnpm run check docs/examples/structure/assign.js` | **1** | Negative: `config: assignment ⊭ existing shape` (missing port) |
+| `pnpm run check docs/examples/structure/arg-structure.js` | **1** | Negative: shape contract missing field (`constraint-violated`, not a body scan) |
+| `pnpm run check docs/examples/vs-ts/constraints/nudo.js` | **1** | Nudo reports; tsc does not |
+| `pnpm exec tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts` | **0** | tsc side of the contrast (clean) |
+| `pnpm run check docs/examples/vs-ts/structure/nudo.js` | **1** | Nudo reports (contract missing name / assignment missing port) |
+| `pnpm exec tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts` | **2** | tsc reports 3 sites (missing name / excess / missing port) |
+| `pnpm run check docs/examples/algebra/0-add-intensional.js` | **0** | Signatures (check; term/pred/conf need `--verbose`/`--abs`) |
+| `pnpm run test:cli docs/examples/algebra/0-add-intensional.js` | **0** | Literal cases (`call@` / `debug`) |
+| `pnpm run check docs/examples/algebra/0-add-intensional.js --abs --assume "x>0"` | **0** | Algebra view (term/pred/conf, `--assume`) |
+| `pnpm run test:cli docs/examples/algebra/a-spread-optional.js` | **0** | Spread config object |
+| `pnpm run export:nudo docs/examples/algebra/a-spread-optional.js --format dts` | **0** | dts projection: one widened signature + literal union (signature pinned on stdout) |
+| `pnpm run test:cli docs/examples/algebra/b-hof-map.js` | **0** | HOF callback propagation |
+| `pnpm run test:cli docs/examples/algebra/c-reduce-sum.js` | **0** | reduce single-pass accumulation |
+| `pnpm run test:cli docs/examples/algebra/d-mixin-meet.js` | **0** | Spread shape meet |
+| `pnpm run test:cli docs/examples/algebra/e-index-proj.js` | **0** | Index projection (literal exact / dynamic keys unioned) |
 | `pnpm run test:cli docs/examples/algebra/f-async-eff.js` | **0** | async × `@nudo:mock` |
-| `pnpm run test:cli docs/examples/algebra/g-narrow-subtract.js` | **0** | 守卫窄化 |
-| `pnpm run test:cli docs/examples/algebra/h-array-boundary.js` | **0** | 数组方法精度边界（reduce / forEach / some 均精确） |
-| `pnpm run test:cli docs/examples/algebra/i-map-set.js` | **0** | Map / Set 字面量条目追踪（get 回查 / for-of 元素） |
-| `pnpm run test:cli docs/examples/algebra/j-this-binding.js` | **0** | this 绑定：成员调用 receiver 注入精确（`compute(5)` → `25`） |
-| `pnpm run test:cli docs/examples/algebra/k-try-catch.js` | **0** | try/catch：确定性 return 折叠 / catch 形参绑定 Error.message |
-| `pnpm run test:cli docs/examples/algebra/l-primitive-conversion.js` | **0** | 原始值包装构造（String / Number / Boolean / parseInt / parseFloat 字面量折叠） |
-| `pnpm run test:cli docs/examples/algebra/sample.js` | **0** | 无调用点 → `entry@`；参数显示 **`any`** |
-| `pnpm run check docs/examples/mini-repo/user-service.js` | **1** | 多文件集成（check）——L2：`sumAges` 无约束数组实参报 `entry-may-throw` |
-| `pnpm run test:cli docs/examples/mini-repo/user-service.js` | **0** | 多文件集成（test case 报告） |
-| `pnpm run check docs/examples/mini-repo/validators.js` | **0** | 支持文件 signatures：入口无约束参数 = any |
-| `pnpm run test:cli docs/examples/mini-repo/validators.js` | **0** | 支持文件独立 test：entry@ 签名（any） |
-| `pnpm run test:cli docs/examples/mini-repo/store.js` | **0** | class 方法经 analyzer 枚举：无调用点 → `entry@` |
-| `pnpm run check docs/examples/interface-derivation/lib.js` | **0** | 根契约（lib.nudo.js 手写 add4）加载 |
-| `pnpm run check docs/examples/interface-derivation/add.js` | **0** | 下行推导契约（add.nudo.js generated）执法 |
-| `pnpm run contract --draft docs/examples/interface-draft/greet.js` | **0** | 代码优先草稿：callsite 投影 + body-read 建议（不发明 check 义务） |
-| `pnpm run check docs/examples/l2-export-any.js` | **1** | L2：export any 成员访问 → `nudo:entry-may-throw` |
-| `pnpm run check docs/examples/l2-export-any.js --ignore-throws TypeError` | **0** | L2 迁移开关：ignore TypeError 后不挡 exit |
-| `pnpm run nudo -- migrate status docs/examples/migrate/before/package.json` | **0** | migrate status：审计 typescript 依赖 / tsc scripts / .ts 数量 |
-| `pnpm run nudo -- migrate strip docs/examples/migrate/before/src/math.ts` | **0** | migrate strip dry-run：.ts → .js（不写盘） |
-| `pnpm run nudo -- migrate strip docs/examples/migrate/before/src/cart.ts` | **0** | migrate strip dry-run：跨文件购物车（type Item 剥除） |
-| `pnpm run check docs/examples/migrate/after/src/math.js` | **0** | retire 后门禁：math 签名 |
-| `pnpm run check docs/examples/migrate/after/src/cart.js` | **0** | retire 后门禁：cart 跨文件 |
-| `pnpm run nudo -- migrate verify docs/examples/migrate/after/src/math.js` | **0** | migrate verify：nudo check 通过 |
-| `pnpm run nudo -- migrate retire docs/examples/migrate/before/package.json --dry-run` | **0** | migrate retire dry-run：摘 typescript / tsc→nudo check（不写盘） |
-| `pnpm run nudo -- contract --from-dts docs/examples/migrate/before/src/math.ts` | **0** | dts/TS → 契约草稿（`@nudo:draft`，确认前不执法） |
+| `pnpm run test:cli docs/examples/algebra/g-narrow-subtract.js` | **0** | Guard narrowing |
+| `pnpm run test:cli docs/examples/algebra/h-array-boundary.js` | **0** | Array method precision boundary (reduce / forEach / some all exact) |
+| `pnpm run test:cli docs/examples/algebra/i-map-set.js` | **0** | Map / Set literal entry tracking (get lookup / for-of elements) |
+| `pnpm run test:cli docs/examples/algebra/j-this-binding.js` | **0** | `this` binding: member-call receiver injection exact (`compute(5)` → `25`) |
+| `pnpm run test:cli docs/examples/algebra/k-try-catch.js` | **0** | try/catch: deterministic return fold / catch param bound to Error.message |
+| `pnpm run test:cli docs/examples/algebra/l-primitive-conversion.js` | **0** | Primitive wrapper construction (String / Number / Boolean / parseInt / parseFloat literal folds) |
+| `pnpm run test:cli docs/examples/algebra/sample.js` | **0** | No call sites → `entry@`; params display as **`any`** |
+| `pnpm run check docs/examples/mini-repo/user-service.js` | **1** | Multi-file integration (check) — L2: unconstrained array arg to `sumAges` reports `entry-may-throw` |
+| `pnpm run test:cli docs/examples/mini-repo/user-service.js` | **0** | Multi-file integration (test case report) |
+| `pnpm run check docs/examples/mini-repo/validators.js` | **0** | Support-file signatures: unconstrained entry params = any |
+| `pnpm run test:cli docs/examples/mini-repo/validators.js` | **0** | Support file on its own: `entry@` signatures (any) |
+| `pnpm run test:cli docs/examples/mini-repo/store.js` | **0** | Class methods enumerated by the analyzer: no call sites → `entry@` |
+| `pnpm run check docs/examples/interface-derivation/lib.js` | **0** | Root contract (handwritten `lib.nudo.js` add4) loads |
+| `pnpm run check docs/examples/interface-derivation/add.js` | **0** | Downstream derived contract (`add.nudo.js` generated) enforces |
+| `pnpm run contract --draft docs/examples/interface-draft/greet.js` | **0** | Code-first draft: callsite projection + body-read suggestions (no invented check obligations) |
+| `pnpm run check docs/examples/l2-export-any.js` | **1** | L2: export `any` member access → `nudo:entry-may-throw` |
+| `pnpm run check docs/examples/l2-export-any.js --ignore-throws TypeError` | **0** | L2 migration switch: ignoring TypeError stops gating exit |
+| `pnpm run nudo -- migrate status docs/examples/migrate/before/package.json` | **0** | migrate status: audit typescript deps / tsc scripts / `.ts` count |
+| `pnpm run nudo -- migrate strip docs/examples/migrate/before/src/math.ts` | **0** | migrate strip dry-run: `.ts` → `.js` (writes nothing) |
+| `pnpm run nudo -- migrate strip docs/examples/migrate/before/src/cart.ts` | **0** | migrate strip dry-run: cross-file cart (`type Item` stripped) |
+| `pnpm run check docs/examples/migrate/after/src/math.js` | **0** | Post-retire gate: math signatures |
+| `pnpm run check docs/examples/migrate/after/src/cart.js` | **0** | Post-retire gate: cart across files |
+| `pnpm run nudo -- migrate verify docs/examples/migrate/after/src/math.js` | **0** | migrate verify: `nudo check` passes |
+| `pnpm run nudo -- migrate retire docs/examples/migrate/before/package.json --dry-run` | **0** | migrate retire dry-run: drop typescript / tsc → nudo check (writes nothing) |
+| `pnpm run nudo -- contract --from-dts docs/examples/migrate/before/src/math.ts` | **0** | dts/TS → contract draft (`@nudo:draft`, not enforced until confirmed) |
 
-> 负例文件（constraints / structure / vs-ts 的 check）**故意 exit 非 0**——报错行就是它们演示的内容。
+> Negative-example files (check on constraints / structure / vs-ts) **exit non-zero on purpose** — the reported lines are what they demonstrate.
