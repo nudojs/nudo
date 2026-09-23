@@ -494,6 +494,8 @@ npx tsx scripts/scan-real-packages.ts commander
 
 **C0.5 `evalMissingSlot`**：默认 `off`。`"warning"` 时对**求值命中**的已知对象缺字段发 `nudo:missing-slot` warning。禁止 body AST 预扫描发明义务；草稿产品路径仍是 `nudo contract --draft`。详见 [`limitations.md`](./limitations.md)。
 
+**惰性 `@nudo:case`**：`analyzeFile(..., caseMode)` 三档——`none`（check / LSP validate / vite：不跑 case，有 case 的函数也走 `entry@` 出签名）/ `all`（`nudo test` / CaseJson / freeze / agent `nudo.test`）/ `selected`（LSP `selectCase` 后只跑选中）。库默认 `all` 保兼容；产品宿主必须显式 `none`。case 是 debug 见证，不是接口产品（CLAUDE.md）。
+
 ---
 
 ## 8. 一级 help

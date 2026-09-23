@@ -188,7 +188,7 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): any {
 
       try {
         // async 以便 path 型 @nudo:env 预加载（与 LSP analyzeFileAsync 对齐）
-        const result = await analyzeFileAsync(id, code);
+        const result = await analyzeFileAsync(id, code, undefined, undefined, undefined, "none");
         const checkDiags = checkIssuesToDiagnostics(id, code);
         const level = viteDiagnosticsLevel(id);
         const merged = {

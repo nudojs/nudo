@@ -409,7 +409,10 @@ export function getCachedOrAnalyze(
     return cached.result;
   }
   // E5/A4：与 validateText 同源——buffer-aware loadModule 传入 analyzeFile
-  const result = analyzeFile(filePath, source, activeCases, undefined, loadModule);
+  // 惰性 case：默认不跑 @nudo:case；selectCase 后只跑选中
+  const caseMode =
+    activeCases && activeCases.size > 0 ? ("selected" as const) : ("none" as const);
+  const result = analyzeFile(filePath, source, activeCases, undefined, loadModule, caseMode);
   analysisCache.set(filePath, {
     version,
     result,
@@ -659,8 +662,17 @@ export async function validateText(
   } else {
     try {
       // E5：deps.loadModule（buffer-aware）传入 analyzeFileAsync——未保存
-      // 侧车与 validate/hover/check 同源可见
-      result = await analyzeFileAsync(filePath, text, activeCases, undefined, deps.loadModule);
+      // 侧车与 validate/hover/check 同源可见。惰性 case：默认 none / selectCase 后 selected
+      const caseMode =
+        activeCases && activeCases.size > 0 ? ("selected" as const) : ("none" as const);
+      result = await analyzeFileAsync(
+        filePath,
+        text,
+        activeCases,
+        undefined,
+        deps.loadModule,
+        caseMode,
+      );
     } catch (err) {
       if (!stillCurrent()) return;
       deps.sendDiagnostics({

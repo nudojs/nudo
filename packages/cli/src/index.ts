@@ -94,7 +94,14 @@ async function reemitUpdate(
   from?: CallRecord[],
 ): Promise<{ result: AnalysisResult; emitOut: EmitResult; removed: string[] }> {
   const stripped = stripGeneratedCaseDirectives(source);
-  const result = await analyzeFileAsync(filePath, stripped.source, undefined, from);
+  const result = await analyzeFileAsync(
+    filePath,
+    stripped.source,
+    undefined,
+    from,
+    undefined,
+    "all",
+  );
   const emitOut = insertGeneratedCaseDirectives(stripped.source, result);
   return { result, emitOut, removed: stripped.removed };
 }
@@ -426,7 +433,14 @@ async function runCheck(
   }
 
   if (opts.from && opts.from.length > 0) {
-    const analysis = await analyzeFileAsync(filePath, source, undefined, opts.from);
+    const analysis = await analyzeFileAsync(
+      filePath,
+      source,
+      undefined,
+      opts.from,
+      undefined,
+      "none",
+    );
     const domainIssues = analysis.diagnostics
       .filter((d) => d.code === "nudo:interface-domain-exceeds")
       .map((d) => {
@@ -568,7 +582,7 @@ async function runTest(
 ): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
-  let result = await analyzeFileAsync(filePath, source, undefined, opts.from);
+  let result = await analyzeFileAsync(filePath, source, undefined, opts.from, undefined, "all");
 
   let emitOut: EmitResult | undefined;
   if (opts.freeze) {
@@ -866,7 +880,7 @@ async function runExport(
 ): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
-  const result = await analyzeFileAsync(filePath, source);
+  const result = await analyzeFileAsync(filePath, source, undefined, undefined, undefined, "none");
   const functions = result.functions.filter((f) => f.cases.length > 0);
 
   if (functions.length === 0) {
@@ -1048,7 +1062,14 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
     return report;
   }
   try {
-    const result = await analyzeFileAsync(filePath, source, undefined, records);
+    const result = await analyzeFileAsync(
+      filePath,
+      source,
+      undefined,
+      records,
+      undefined,
+      "none",
+    );
     report.functions = result.functions.length;
     report.entryOnly = result.functions.filter((fn) => fn.entryOnly).length;
     report.uncovered = result.functions

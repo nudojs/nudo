@@ -922,6 +922,8 @@ export async function analyzeFileAsync(
   activeCases?: Map<string, number>,
   externalCallRecords?: CallRecord[],
   loadModule?: AnalyzeLoadModule,
+  /** 默认 all（库/测试兼容）；check/IDE 宿主应传 none（惰性 case） */
+  caseMode: DirectiveCaseMode = "all",
 ): Promise<AnalysisResult> {
   const envNames = collectEnvNames(filePath, source, true);
   // path-based @nudo:env / mock-module 反向边（watch 失效）
@@ -929,7 +931,7 @@ export async function analyzeFileAsync(
   if (envNames.length > 0) {
     await preloadPathEnvs(envNames, dirname(filePath));
   }
-  return analyzeFile(filePath, source, activeCases, externalCallRecords, loadModule);
+  return analyzeFile(filePath, source, activeCases, externalCallRecords, loadModule, caseMode);
 }
 
 /**
@@ -1010,6 +1012,14 @@ const TEST_CALLBACK_NAMES = new Set(["it", "test", "describe"]);
 const externalRecordIds = new WeakMap<object, number>();
 let nextExternalRecordId = 1;
 
+/**
+ * `@nudo:case` 求值档：
+ * - `none`（默认）：不跑 case；有 case 的函数也走 entry@ 出签名（check / IDE）
+ * - `all`：逐 case 真跑（`nudo test` / CaseJson / freeze）
+ * - `selected`：只跑 `activeCases` 选中的那条（LSP selectCase）
+ */
+export type DirectiveCaseMode = "none" | "all" | "selected";
+
 export function analysisFileCacheKey(
   filePath: string,
   source: string,
@@ -1020,6 +1030,7 @@ export function analysisFileCacheKey(
   projectEnvNames?: string[],
   /** ambient 侧车绑定：变更必须 miss（dep 指纹故意不编码 autoBind） */
   autoBind?: boolean,
+  caseMode: DirectiveCaseMode = "all",
 ): { filePath: string; source: string; auxKey: string; noCache?: boolean } {
   let cases = "-";
   if (activeCases && activeCases.size > 0) {
@@ -1069,7 +1080,7 @@ export function analysisFileCacheKey(
     filePath,
     // 尾部无 @nudo 注释/空行不进键：comment-only 编辑命中 AnalysisResult
     source: stableAnalyzeKeySource(source),
-    auxKey: `${cases}\0${ext}\0${cfg}\0${lm}\0${envSeg}\0${abSeg}\0${depSeg}`,
+    auxKey: `${cases}\0${ext}\0${cfg}\0${lm}\0${envSeg}\0${abSeg}\0${depSeg}\0cm=${caseMode}`,
     noCache,
   };
 }
@@ -1157,6 +1168,7 @@ export function analyzeFile(
   activeCases?: Map<string, number>,
   externalCallRecords?: CallRecord[],
   loadModule?: AnalyzeLoadModule,
+  caseMode: DirectiveCaseMode = "all",
 ): AnalysisResult {
   const projectConfig = findProjectConfig(dirname(filePath));
   const cfg = analysisConfig(projectConfig?.config);
@@ -1171,6 +1183,7 @@ export function analyzeFile(
     loadModule,
     projectEnvNames,
     autoBind !== false,
+    caseMode,
   );
   if (!k.noCache) {
     const hit = analysisCacheGet<AnalysisResult>(k.filePath, k.source, k.auxKey);
@@ -1178,7 +1191,14 @@ export function analyzeFile(
       return cloneAnalysisResult(hit);
     }
   }
-  const result = analyzeFileUncached(filePath, source, activeCases, externalCallRecords, loadModule);
+  const result = analyzeFileUncached(
+    filePath,
+    source,
+    activeCases,
+    externalCallRecords,
+    loadModule,
+    caseMode,
+  );
   if (!k.noCache) {
     analysisCacheSet(k.filePath, k.source, k.auxKey, result);
   }
@@ -1191,12 +1211,20 @@ function analyzeFileUncached(
   activeCases?: Map<string, number>,
   externalCallRecords?: CallRecord[],
   loadModule?: AnalyzeLoadModule,
+  caseMode: DirectiveCaseMode = "all",
 ): AnalysisResult {
   // C0.5：per-analysis 作用域（ALS），禁止分析间 flag 粘滞 / 并发串档
   const projectConfig = findProjectConfig(dirname(filePath));
   const missingSlotOn = analysisConfig(projectConfig?.config).evalMissingSlot === "warning";
   return runWithEvalMissingSlot(missingSlotOn, () =>
-    analyzeFileUncachedInner(filePath, source, activeCases, externalCallRecords, loadModule),
+    analyzeFileUncachedInner(
+      filePath,
+      source,
+      activeCases,
+      externalCallRecords,
+      loadModule,
+      caseMode,
+    ),
   );
 }
 
@@ -1229,6 +1257,7 @@ function analyzeFileUncachedInner(
   activeCases?: Map<string, number>,
   externalCallRecords?: CallRecord[],
   loadModule?: AnalyzeLoadModule,
+  caseMode: DirectiveCaseMode = "all",
 ): AnalysisResult {
   const ast = parse(source);
   const functions = extractDirectives(ast);
@@ -1553,6 +1582,15 @@ function analyzeFileUncachedInner(
 
     const caseDirectives = fn.directives.filter((d) => d.kind === "case");
     const activeCaseIdx = activeCases?.get(fn.name) ?? 0;
+    // 惰性 case：默认不跑 @nudo:case（check/IDE）；test 全跑；selectCase 只跑选中
+    const caseIdxsToRun: number[] =
+      caseMode === "none" || caseDirectives.length === 0
+        ? []
+        : caseMode === "all"
+          ? caseDirectives.map((_, i) => i)
+          : activeCases?.has(fn.name)
+            ? [Math.min(activeCaseIdx, caseDirectives.length - 1)]
+            : [];
 
     // Per-fn cache is intentionally case-scoped: synthesized cases (no
     // @nudo:case) are built from whole-file call records observed while
@@ -1592,6 +1630,7 @@ function analyzeFileUncachedInner(
             mockKeyFn,
             analysisFnKey,
             fnDepSeg ?? "-",
+            `cm=${caseMode}`,
           ].join("\0")
         : undefined;
     const dLen0 = diagnostics.length;
@@ -1641,12 +1680,13 @@ function analyzeFileUncachedInner(
     const sampleDirective = fn.directives.find((d) => d.kind === "sample");
     void sampleDirective; // TypeValue setSampleCount 已删
 
-    if (caseDirectives.length === 0) {
+    // 无 case，或本轮不求值 case（none / selected 未命中）→ entry@ 出签名
+    if (caseIdxsToRun.length === 0) {
       synthCandidates.push({ name: fn.name, node: fn.node, analysis });
     }
 
-    for (let ci = 0; ci < caseDirectives.length; ci++) {
-      const directive = caseDirectives[ci];
+    for (const ci of caseIdxsToRun) {
+      const directive = caseDirectives[ci]!;
 
       let caseAbs: Abs | undefined;
       let caseThrowsAbs: Abs | undefined;

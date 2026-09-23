@@ -529,6 +529,7 @@ export function testTool(
       undefined,
       undefined,
       params.loadModule ?? deps.loadModule ?? lspLoadModule,
+      "all",
     );
     let json = serializeCaseJson(result, filePath);
     if (params.functions && params.functions.length > 0) {
@@ -636,6 +637,7 @@ export function suggestCase(params: FunctionToolParams, deps: AgentToolDeps = {}
       undefined,
       undefined,
       params.loadModule ?? deps.loadModule ?? lspLoadModule,
+      "all",
     );
     const fn = result.functions.find((f) => f.name === params.functionName);
 
@@ -687,6 +689,7 @@ export function trace(params: FunctionToolParams, deps: AgentToolDeps = {}): Age
       undefined,
       undefined,
       params.loadModule ?? deps.loadModule ?? lspLoadModule,
+      "all",
     );
     const fn = result.functions.find((f) => f.name === params.functionName);
 

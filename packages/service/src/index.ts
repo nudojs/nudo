@@ -18,6 +18,7 @@ export {
   type CallRecord,
   buildModuleGraph,
   type ModuleGraphCache,
+  type DirectiveCaseMode,
   computeDirtySet,
   topoSortDirty,
 } from "./analyzer.ts";
