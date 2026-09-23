@@ -28,12 +28,18 @@ export type HarvestSig =
   | { k: "generator"; value: HarvestSig }
   | { k: "brand"; name: string; shape: HarvestSig };
 
+/**
+ * 磁盘 ABI / harvest 物化版本。**改动 Abs 投影或 interface 合并语义时必须 +1**，
+ * 否则旧缓存会把提升前的空导出表当命中（lodash 场景）。
+ */
+export const HARVEST_DISK_ABI = "nudo-harvest-disk-v2";
+
 export type HarvestJson = {
   v: 1;
   pkg: string;
   pkgVersion?: string;
   /** harvest 旋钮（maxFiles 等）进键 */
-  knobs: { maxFiles: number };
+  knobs: { maxFiles: number; abi: string };
   /** 全部 dts 内容 sha256（不只入口） */
   dtsHash: string;
   modules: Record<string, Record<string, HarvestSig>>;
@@ -223,7 +229,7 @@ export function serializeHarvestJson(
     v: 1,
     pkg,
     ...(meta.pkgVersion ? { pkgVersion: meta.pkgVersion } : {}),
-    knobs: { maxFiles: meta.maxFiles },
+    knobs: { maxFiles: meta.maxFiles, abi: HARVEST_DISK_ABI },
     dtsHash: meta.dtsHash,
     modules,
     globals,
@@ -236,6 +242,8 @@ export function materializeHarvestJson(j: unknown): HarvestedEnv | null {
   if (!j || typeof j !== "object") return null;
   const h = j as HarvestJson;
   if (h.v !== 1) return null;
+  // 旧 ABI（无 abi 字段或版本不符）→ 当 miss，避免空导出表命中
+  if (h.knobs?.abi !== HARVEST_DISK_ABI) return null;
   if (!h.modules || typeof h.modules !== "object") return null;
   try {
     const modules: Record<string, Record<string, Abs>> = {};
@@ -264,7 +272,7 @@ export function harvestCacheKey(
   meta: { dtsHash: string; maxFiles: number; pkgVersion?: string },
 ): string {
   const raw = [
-    "nudo-harvest-v1",
+    HARVEST_DISK_ABI,
     pkg,
     meta.pkgVersion ?? "-",
     String(meta.maxFiles),

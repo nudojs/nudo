@@ -156,7 +156,7 @@ export function collectDtsFromEntry(entry: string, maxFiles = 200): string[] {
 export function harvestPackage(
   pkg: string,
   fromDir?: string,
-  maxFiles = 8,
+  maxFiles = 24,
 ): PackageHarvest | { error: string } {
   const root = resolvePackageRoot(pkg, fromDir);
   if (!root) return { error: `package not found: ${pkg}` };

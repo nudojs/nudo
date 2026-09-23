@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { rmSync, writeFileSync } from "node:fs";
-import nodePath from "node:path";
+import { rmSync, writeFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import nodePath, { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { harvestDts, emitEnvModule, type HarvestedEnv } from "../index.ts";
 
@@ -27,6 +28,45 @@ beforeAll(() => {
   env = harvestDts(files);
   code = emitEnvModule(env, "@types/node");
 }, 120_000);
+
+describe("interface augmentation merge (lodash LoDashStatic)", () => {
+  it("expands merged interface members from declare module blocks", () => {
+    const files = [
+      writeTemp(
+        "idx.d.ts",
+        `export = _;
+export as namespace _;
+declare const _: _.LoDashStatic;
+declare namespace _ {
+  interface LoDashStatic {}
+}
+`,
+      ),
+      writeTemp(
+        "aug.d.ts",
+        `declare module "idx" {
+  interface LoDashStatic {
+    uniq(xs: number[]): number[];
+    chunk(xs: number[], n: number): number[][];
+  }
+}
+`,
+      ),
+    ];
+    const env = harvestDts(files);
+    const g = env.globals;
+    expect(g["uniq"]).toBeDefined();
+    expect(g["chunk"]).toBeDefined();
+    expect(env.stats.symbols).toBeGreaterThan(2);
+  });
+});
+
+function writeTemp(name: string, content: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "nudo-harvest-aug-"));
+  const p = join(dir, name);
+  writeFileSync(p, content, "utf-8");
+  return p;
+}
 
 describe("harvestDts", () => {
   it("registers both node:-prefixed and bare module keys", () => {

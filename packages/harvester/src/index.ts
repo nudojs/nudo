@@ -34,19 +34,25 @@ type PendingSymbol =
   | { t: "var"; scope: Scope; name: string; typeNode?: ts.TypeNode }
   /** class / value-position interface re-export; `lookup` is the symbol-table name when the exported name differs */
   | { t: "value"; scope: Scope; name: string; lookup?: string }
-  | { t: "enum"; scope: Scope; name: string };
+  | { t: "enum"; scope: Scope; name: string }
+  /**
+   * 值位置接口展开（lodash `const _: _.LoDashStatic` 等）。
+   * **推迟到 materialize**：interface 会跨文件 augmentation，
+   * collect 期展开会只看到空的首个声明。
+   */
+  | { t: "iface-expand"; scope: Scope; localName: string; typeRefName: string };
 
 interface HarvestContext {
   globals: Record<string, Abs>;
   modules: Record<string, Record<string, Abs>>;
-  /** simple name → interface/class declaration (first wins) */
-  interfaces: Map<string, NamedTypeDecl>;
-  /** dotted name ("NodeJS.Process") → declaration (first wins) */
-  qualifiedInterfaces: Map<string, NamedTypeDecl>;
-  /** simple name → type alias declaration (first wins) */
-  aliases: Map<string, ts.TypeAliasDeclaration>;
-  /** dotted name → type alias declaration (first wins) */
-  qualifiedAliases: Map<string, ts.TypeAliasDeclaration>;
+  /** simple name → interface/class declarations (merged across augmentations) */
+  interfaces: Map<string, NamedTypeDecl[]>;
+  /** dotted name ("NodeJS.Process") → declarations (merged) */
+  qualifiedInterfaces: Map<string, NamedTypeDecl[]>;
+  /** simple name → type alias declarations (merged) */
+  aliases: Map<string, ts.TypeAliasDeclaration[]>;
+  /** dotted name → type alias declarations (merged) */
+  qualifiedAliases: Map<string, ts.TypeAliasDeclaration[]>;
   /** simple name → class declaration (runtime values, for `export { X }` re-exports) */
   classes: Map<string, ts.ClassDeclaration>;
   instanceCache: Map<string, Abs>;
@@ -337,9 +343,21 @@ function collectStatement(ctx: HarvestContext, stmt: ts.Statement, scope: Scope)
       // `const path: path.PlatformPath`——接口成员提升为模块级符号
       // （方法签名 → fn、属性签名 → var）。@types/node 25 起这些成员是
       // 模块级 FunctionDeclaration，两代声明形态都要 harvest。
-      const iface = decl.type ? interfaceDeclOf(ctx, decl.type) : undefined;
-      if (iface) {
-        expandInterfaceAsModuleMembers(ctx, scope, iface);
+      const ifaceName = decl.type && ts.isTypeReferenceNode(decl.type)
+        ? typeNameString(decl.type.typeName)
+        : undefined;
+      if (ifaceName && (ctx.interfaces.has(ifaceName) || ctx.qualifiedInterfaces.has(ifaceName) || true)) {
+        // 推迟展开：先记 pending，materialize 时 interface 已合并 augmentation
+        ctx.pending.push({
+          t: "iface-expand",
+          scope,
+          localName: decl.name.text,
+          typeRefName: ifaceName,
+        });
+        ctx.symbols++;
+        // 同时保留 var 本体（default/namespace 消费 `_`）
+        ctx.pending.push({ t: "var", scope, name: decl.name.text, typeNode: decl.type });
+        ctx.symbols++;
         continue;
       }
       ctx.pending.push({ t: "var", scope, name: decl.name.text, typeNode: decl.type });
@@ -460,12 +478,47 @@ function collectStatement(ctx: HarvestContext, stmt: ts.Statement, scope: Scope)
 }
 
 function registerTypeDecl(ctx: HarvestContext, scope: Scope, name: string, decl: NamedTypeDecl): void {
-  if (!ctx.interfaces.has(name)) ctx.interfaces.set(name, decl);
-  if (ts.isClassDeclaration(decl)) return; // classes register only their simple name
+  const push = (map: Map<string, NamedTypeDecl[]>, key: string): void => {
+    const list = map.get(key);
+    if (list) {
+      if (!list.includes(decl)) list.push(decl);
+    } else {
+      map.set(key, [decl]);
+    }
+  };
+  push(ctx.interfaces, name);
+  if (ts.isClassDeclaration(decl)) return;
   const qualified = [...scope.ns, name].join(".");
-  if (qualified !== name && !ctx.qualifiedInterfaces.has(qualified)) {
-    ctx.qualifiedInterfaces.set(qualified, decl);
+  if (qualified !== name) push(ctx.qualifiedInterfaces, qualified);
+}
+
+/** TypeReference → 已登记 interface 声明列表（含 augmentation 合并） */
+function interfaceDeclsOf(
+  ctx: HarvestContext,
+  typeNode: ts.TypeNode | string,
+): ts.InterfaceDeclaration[] {
+  const name = typeof typeNode === "string" ? typeNode : ts.isTypeReferenceNode(typeNode)
+    ? typeNameString(typeNode.typeName)
+    : undefined;
+  if (!name) return [];
+  // lodash：`_.LoDashStatic` 经 namespace 限定，成员却常在 `declare module "../index"`
+  // 下以 simple name 登记——短名与全名都要查。
+  const short = name.includes(".") ? name.split(".").pop()! : name;
+  const keys = name === short ? [name] : [name, short];
+  const seen = new Set<ts.InterfaceDeclaration>();
+  const out: ts.InterfaceDeclaration[] = [];
+  for (const key of keys) {
+    for (const d of [
+      ...(ctx.interfaces.get(key) ?? []),
+      ...(ctx.qualifiedInterfaces.get(key) ?? []),
+    ]) {
+      if (ts.isInterfaceDeclaration(d) && !seen.has(d)) {
+        seen.add(d);
+        out.push(d);
+      }
+    }
   }
+  return out;
 }
 
 /** TypeReference → 已登记的 interface 声明（simple 或 namespace-qualified）；class 不适用 */
@@ -473,53 +526,61 @@ function interfaceDeclOf(
   ctx: HarvestContext,
   typeNode: ts.TypeNode,
 ): ts.InterfaceDeclaration | undefined {
-  if (!ts.isTypeReferenceNode(typeNode)) return undefined;
-  const name = typeNameString(typeNode.typeName);
-  const d = ctx.interfaces.get(name) ?? ctx.qualifiedInterfaces.get(name);
-  return d && ts.isInterfaceDeclaration(d) ? d : undefined;
+  return interfaceDeclsOf(ctx, typeNode)[0];
 }
 
 /**
- * 值位置接口暴露的成员提升（@types/node 24 path 形态）：
+ * 值位置接口暴露的成员提升（@types/node 24 path 形态、lodash LoDashStatic）：
  * 方法签名 → 模块级 fn（同名重载并入同一 pending）；属性签名 → 模块级 var。
- * 直接成员一层，不递归（嵌套接口经 mapTypeRef 映射为实例形状）。
+ * **在 materialize 调用**（interface augmentation 已合并）。
  */
 function expandInterfaceAsModuleMembers(
   ctx: HarvestContext,
   scope: Scope,
-  iface: ts.InterfaceDeclaration,
+  ifaces: ts.InterfaceDeclaration[],
 ): void {
-  for (const member of iface.members) {
-    if (ts.isMethodSignature(member)) {
-      const name = memberName(member);
-      if (name === undefined) continue;
-      const existing = ctx.pending.find(
-        (p) => p.t === "fn" && p.name === name && scopeKey(p.scope) === scopeKey(scope),
-      );
-      if (existing && existing.t === "fn") {
-        existing.decls.push(member); // overload
+  for (const iface of ifaces) {
+    for (const member of iface.members) {
+      if (ts.isMethodSignature(member)) {
+        const name = memberName(member);
+        if (name === undefined) continue;
+        const existing = ctx.pending.find(
+          (p) => p.t === "fn" && p.name === name && scopeKey(p.scope) === scopeKey(scope),
+        );
+        if (existing && existing.t === "fn") {
+          existing.decls.push(member); // overload
+          continue;
+        }
+        ctx.pending.push({ t: "fn", scope, name, decls: [member] });
+        ctx.symbols++;
         continue;
       }
-      ctx.pending.push({ t: "fn", scope, name, decls: [member] });
-      ctx.symbols++;
-      continue;
-    }
-    if (ts.isPropertySignature(member)) {
-      const name = memberName(member);
-      if (name === undefined) continue;
-      ctx.pending.push({ t: "var", scope, name, typeNode: member.type });
-      ctx.symbols++;
+      if (ts.isPropertySignature(member)) {
+        const name = memberName(member);
+        if (name === undefined) continue;
+        if (ctx.pending.some((p) => p.t === "var" && p.name === name && scopeKey(p.scope) === scopeKey(scope))) {
+          continue;
+        }
+        ctx.pending.push({ t: "var", scope, name, typeNode: member.type });
+        ctx.symbols++;
+      }
     }
   }
 }
 
 function registerAlias(ctx: HarvestContext, scope: Scope, stmt: ts.TypeAliasDeclaration): void {
   const name = stmt.name.text;
-  if (!ctx.aliases.has(name)) ctx.aliases.set(name, stmt);
+  const push = (map: Map<string, ts.TypeAliasDeclaration[]>, key: string): void => {
+    const list = map.get(key);
+    if (list) {
+      if (!list.includes(stmt)) list.push(stmt);
+    } else {
+      map.set(key, [stmt]);
+    }
+  };
+  push(ctx.aliases, name);
   const qualified = [...scope.ns, name].join(".");
-  if (qualified !== name && !ctx.qualifiedAliases.has(qualified)) {
-    ctx.qualifiedAliases.set(qualified, stmt);
-  }
+  if (qualified !== name) push(ctx.qualifiedAliases, qualified);
 }
 
 // ---------------------------------------------------------------------------
@@ -527,7 +588,30 @@ function registerAlias(ctx: HarvestContext, scope: Scope, stmt: ts.TypeAliasDecl
 // ---------------------------------------------------------------------------
 
 function materialize(ctx: HarvestContext): void {
+  // 0) 先展开 iface-expand（此时 interface augmentation 已全部登记）
+  const expanded: PendingSymbol[] = [];
   for (const p of ctx.pending) {
+    if (p.t !== "iface-expand") {
+      expanded.push(p);
+      continue;
+    }
+    const ifaces = interfaceDeclsOf(ctx, p.typeRefName);
+    if (ifaces.length === 0) {
+      // 保留 var 本体即可
+      continue;
+    }
+    const before = ctx.pending.length;
+    expandInterfaceAsModuleMembers(ctx, p.scope, ifaces);
+    // expandInterfaceAsModuleMembers 只 append；收集新增的 fn/var
+    for (let i = before; i < ctx.pending.length; i++) {
+      const n = ctx.pending[i]!;
+      if (n.t === "fn" || n.t === "var") expanded.push(n);
+    }
+  }
+  ctx.pending = expanded;
+
+  for (const p of ctx.pending) {
+    if (p.t === "iface-expand") continue;
     const rec = recordFor(ctx, p.scope);
     if (p.t === "fn") {
       if (rec[p.name] !== undefined) continue; // same name already handled (first wins)
@@ -614,7 +698,8 @@ function memberName(node: { name?: ts.PropertyName }): string | undefined {
 function instanceFor(ctx: HarvestContext, key: string): Abs {
   const cached = ctx.instanceCache.get(key);
   if (cached !== undefined) return cached;
-  const decl = ctx.interfaces.get(key) ?? ctx.qualifiedInterfaces.get(key);
+  const decls = interfaceDeclsOf(ctx, key);
+  const decl = decls[0];
   if (!decl) return absUnknown();
   if (ctx.expanding.has(key)) {
     // Recursion guard: reference by name without expanding members.
@@ -623,26 +708,29 @@ function instanceFor(ctx: HarvestContext, key: string): Abs {
   ctx.expanding.add(key);
   const properties: Record<string, Abs> = {};
   try {
-    const members = decl.members as readonly (ts.TypeElement | ts.ClassElement)[];
-    for (const member of members) {
-      const modifiers = (member as { modifiers?: readonly { kind: ts.SyntaxKind }[] }).modifiers;
-      if (modifiers?.some((mod) => mod.kind === ts.SyntaxKind.StaticKeyword)) continue;
-      if (ts.isPropertySignature(member) || ts.isPropertyDeclaration(member)) {
-        const name = memberName(member);
-        if (name === undefined) continue;
-        let type = member.type ? mapType(ctx, member.type, 0) : absUnknown();
-        if (member.questionToken) type = absUnion([type, absUndefLit()]);
-        properties[name] = type;
-      } else if (ts.isMethodSignature(member) || ts.isMethodDeclaration(member)) {
-        const name = memberName(member);
-        if (name === undefined || properties[name] !== undefined) continue; // first overload wins
-        properties[name] = signatureToFnSig(ctx, member);
-      } else if (ts.isGetAccessorDeclaration(member) || ts.isSetAccessorDeclaration(member)) {
-        const name = memberName(member);
-        if (name === undefined || properties[name] !== undefined || !member.type) continue;
-        properties[name] = mapType(ctx, member.type, 0);
+    // 合并全部 augmentation 成员（lodash LoDashStatic 跨 common/*.d.ts）
+    for (const d of decls) {
+      const members = d.members as readonly (ts.TypeElement | ts.ClassElement)[];
+      for (const member of members) {
+        const modifiers = (member as { modifiers?: readonly { kind: ts.SyntaxKind }[] }).modifiers;
+        if (modifiers?.some((mod) => mod.kind === ts.SyntaxKind.StaticKeyword)) continue;
+        if (ts.isPropertySignature(member) || ts.isPropertyDeclaration(member)) {
+          const name = memberName(member);
+          if (name === undefined) continue;
+          let type = member.type ? mapType(ctx, member.type, 0) : absUnknown();
+          if (member.questionToken) type = absUnion([type, absUndefLit()]);
+          properties[name] = type;
+        } else if (ts.isMethodSignature(member) || ts.isMethodDeclaration(member)) {
+          const name = memberName(member);
+          if (name === undefined || properties[name] !== undefined) continue; // first overload wins
+          properties[name] = signatureToFnSig(ctx, member);
+        } else if (ts.isGetAccessorDeclaration(member) || ts.isSetAccessorDeclaration(member)) {
+          const name = memberName(member);
+          if (name === undefined || properties[name] !== undefined || !member.type) continue;
+          properties[name] = mapType(ctx, member.type, 0);
+        }
+        // call / construct / index signatures are not representable — skipped.
       }
-      // call / construct / index signatures are not representable — skipped.
     }
   } finally {
     ctx.expanding.delete(key);
@@ -707,7 +795,8 @@ function mapTypeRef(ctx: HarvestContext, node: ts.TypeReferenceNode, depth: numb
   if (ctx.interfaces.has(name) || ctx.qualifiedInterfaces.has(name)) {
     return instanceFor(ctx, name);
   }
-  const alias = ctx.aliases.get(name) ?? ctx.qualifiedAliases.get(name);
+  const aliases = ctx.aliases.get(name) ?? ctx.qualifiedAliases.get(name) ?? [];
+  const alias = aliases[0];
   if (alias) return mapType(ctx, alias.type, depth + 1);
   return absUnknown();
 }

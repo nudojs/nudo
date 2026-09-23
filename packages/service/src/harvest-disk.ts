@@ -10,11 +10,18 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import type { HarvestedEnv } from "@nudojs/harvester";
-import { harvestPackage, type PackageHarvest } from "./harvest-package.ts";
+import {
+  harvestPackage,
+  resolvePackageRoot,
+  collectDtsFiles,
+  collectDtsFromEntry,
+  type PackageHarvest,
+} from "./harvest-package.ts";
 import {
   harvestCacheKey,
   materializeHarvestJson,
   serializeHarvestJson,
+  HARVEST_DISK_ABI,
   type HarvestJson,
 } from "./harvest-json.ts";
 
@@ -64,7 +71,7 @@ export function readHarvestDisk(root: string, key: string): HarvestJson | undefi
     const p = diskPath(root, key);
     if (!existsSync(p)) return undefined;
     const parsed = JSON.parse(readFileSync(p, "utf8")) as { abi?: string; value?: HarvestJson };
-    if (parsed?.abi !== "nudo-harvest-disk-v1") return undefined;
+    if (parsed?.abi !== HARVEST_DISK_ABI) return undefined;
     return parsed.value;
   } catch {
     return undefined;
@@ -75,23 +82,72 @@ export function writeHarvestDisk(root: string, key: string, value: HarvestJson):
   try {
     const p = diskPath(root, key);
     mkdirSync(dirname(p), { recursive: true });
-    writeFileSync(p, JSON.stringify({ abi: "nudo-harvest-disk-v1", value }), "utf8");
+    writeFileSync(p, JSON.stringify({ abi: HARVEST_DISK_ABI, value }), "utf8");
   } catch {
     // fail-open
   }
 }
 
+/** 列包 dts 闭包（不解析）；供磁盘键与 miss 路径复用 */
+export function listPackageDts(
+  pkg: string,
+  fromDir: string,
+  maxFiles: number,
+): { root: string; dtsFiles: string[]; pkgVersion?: string } | null {
+  const root = resolvePackageRoot(pkg, fromDir);
+  if (!root) return null;
+  const entry = (() => {
+    try {
+      const raw = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+        types?: string;
+        typings?: string;
+      };
+      const e = raw.types ?? raw.typings;
+      return typeof e === "string" && e.endsWith(".d.ts") ? join(root, e) : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  let dtsFiles =
+    entry && existsSync(entry) ? collectDtsFromEntry(entry, Math.max(maxFiles, 24)) : [];
+  if (dtsFiles.length === 0) {
+    const collected = collectDtsFiles(root, maxFiles);
+    dtsFiles =
+      entry && existsSync(entry) && !collected.includes(entry)
+        ? [entry, ...collected.filter((f) => f !== entry)].slice(0, maxFiles)
+        : collected;
+  }
+  if (dtsFiles.length === 0) return null;
+  return { root, dtsFiles, pkgVersion: readPkgVersion(root) };
+}
+
 /**
- * L2 + L0：磁盘 HarvestJson → 进程内 PackageHarvest。
- * miss / 损坏 → 重新 harvest 并写盘（若磁盘层开启）。
+ * L2 + L0：**磁盘优先**（跳过 harvestDts 解析），miss 再 harvest 并写盘。
  */
 export function harvestPackageWithDisk(
   pkg: string,
   fromDir: string,
-  maxFiles = 8,
+  maxFiles = 24,
 ): PackageHarvest | null {
-  const root = depsCacheRoot();
-  // 先解析包根（要 version + dts 列表做键）
+  const cacheRoot = depsCacheRoot();
+  const listed = listPackageDts(pkg, fromDir, maxFiles);
+  if (!listed) return null;
+  const key = harvestCacheKey(pkg, {
+    dtsHash: dtsClosureHash(listed.dtsFiles),
+    maxFiles,
+    pkgVersion: listed.pkgVersion,
+  });
+
+  if (cacheRoot) {
+    const hit = readHarvestDisk(cacheRoot, key);
+    if (hit) {
+      const env = materializeHarvestJson(hit);
+      if (env) {
+        return { pkg, root: listed.root, dtsFiles: listed.dtsFiles, env };
+      }
+    }
+  }
+
   let h: PackageHarvest | null = null;
   try {
     const raw = harvestPackage(pkg, fromDir, maxFiles);
@@ -101,31 +157,17 @@ export function harvestPackageWithDisk(
   }
   if (!h) return null;
 
-  const key = harvestCacheKey(pkg, {
-    dtsHash: dtsClosureHash(h.dtsFiles),
-    maxFiles,
-    pkgVersion: readPkgVersion(h.root),
-  });
-
-  if (!root) return h;
-
-  const hit = readHarvestDisk(root, key);
-  if (hit) {
-    const env = materializeHarvestJson(hit);
-    if (env) {
-      return { pkg, root: h.root, dtsFiles: h.dtsFiles, env };
-    }
+  if (cacheRoot) {
+    writeHarvestDisk(
+      cacheRoot,
+      key,
+      serializeHarvestJson(pkg, h.env, {
+        dtsHash: dtsClosureHash(h.dtsFiles),
+        maxFiles,
+        pkgVersion: listed.pkgVersion,
+      }),
+    );
   }
-
-  writeHarvestDisk(
-    root,
-    key,
-    serializeHarvestJson(pkg, h.env, {
-      dtsHash: dtsClosureHash(h.dtsFiles),
-      maxFiles,
-      pkgVersion: readPkgVersion(h.root),
-    }),
-  );
   return h;
 }
 
