@@ -741,7 +741,7 @@ setup({ retries: 3, label: "ok" });
     expect: "ok",
   },
   {
-    id: "opt-field-missing-as-required-known-fn",
+    id: "opt-field-missing-as-required",
     origin: "optional → 显式契约实参",
     source: `
 /**
@@ -759,8 +759,7 @@ function setup(c) {
 setup({ retries: 1 });
 `,
     expect: "violation",
-    knownFn: true,
-    note: "已知 FN：optional 缺省（undefined）传入 nonEmpty 未报；应 constraint-violated",
+    note: "optional 缺省（undefined）传入 nonEmpty 应 constraint-violated",
   },
   // --- 数组方法返回值：find 可能 undefined ---
   {
@@ -792,7 +791,7 @@ needPos(found);
     expect: "ok",
   },
   {
-    id: "find-miss-to-positive-known-fn",
+    id: "find-miss-to-positive",
     origin: "Array.find",
     source: `
 /**
@@ -806,8 +805,7 @@ const found = xs.find((n) => n > 10);
 needPos(found);
 `,
     expect: "violation",
-    knownFn: true,
-    note: "已知 FN：find 未命中 → undefined ⊭ positive",
+    note: "find 未命中 → undefined ⊭ positive",
   },
   {
     id: "find-hit-member-to-positive-ok",
@@ -859,7 +857,7 @@ needPos(map[k]);
     note: "变量键结果为 any：any ≤ 任意目标，不报（≠ unknown）",
   },
   {
-    id: "dict-literal-miss-known-fn",
+    id: "dict-literal-miss",
     origin: "字典查找·字面量缺键",
     source: `
 /**
@@ -872,8 +870,7 @@ const map = { a: 1, b: 2 };
 needPos(map["zz"]);
 `,
     expect: "violation",
-    knownFn: true,
-    note: "已知 FN：map[\"zz\"] → undefined ⊭ positive",
+    note: "map[\"zz\"] → undefined ⊭ positive",
   },
   // --- filter 后仍用宽类型 / 回调 ---
   {
@@ -986,7 +983,7 @@ wrap(3);
     expect: "ok",
   },
   {
-    id: "wrap-null-guard-bad-lit-known-fn",
+    id: "wrap-null-guard-bad-lit",
     origin: "== null 转发",
     source: `
 /**
@@ -1003,8 +1000,7 @@ function wrap(n) {
 wrap(-1);
 `,
     expect: "violation",
-    knownFn: true,
-    note: "已知 FN：null 守卫打断无条件转发，-1 仍到达 needsPositive 却未报",
+    note: "null 守卫不吞非空实参：-1 仍到达 needsPositive 应报",
   },
   // --- 数字边界：arr[i] ---
   {
@@ -1023,7 +1019,7 @@ needPos(a[0]);
     expect: "ok",
   },
   {
-    id: "arr-oob-known-fn",
+    id: "arr-oob",
     origin: "arr[i] 越界",
     source: `
 /**
@@ -1036,8 +1032,7 @@ const a = [1, 2, 3];
 needPos(a[5]);
 `,
     expect: "violation",
-    knownFn: true,
-    note: "已知 FN：a[5] → undefined ⊭ positive",
+    note: "a[5] → undefined ⊭ positive",
   },
   {
     id: "tuple-idx-pos-ok",
@@ -1055,7 +1050,7 @@ needPos(a[0]);
     expect: "ok",
   },
   {
-    id: "tuple-idx-neg-known-fn",
+    id: "tuple-idx-neg",
     origin: "元组下标·负元素",
     source: `
 /**
@@ -1068,8 +1063,7 @@ const a = [-7, 8, 9];
 needPos(a[0]);
 `,
     expect: "violation",
-    knownFn: true,
-    note: "已知 FN：a[0] 字面量 -7 ⊭ positive 未跟到下标",
+    note: "a[0] 字面量 -7 ⊭ positive 须跟到下标",
   },
   // --- push 返回 number 不是 arr ---
   {
@@ -1107,7 +1101,7 @@ needPos(n);
     note: "新 length ≥ 1，满足 positive 时不得 FP",
   },
   {
-    id: "push-inline-to-positives-known-fn",
+    id: "push-inline-to-positives",
     origin: "Array.push 内联",
     source: `
 /**
@@ -1120,8 +1114,7 @@ const a = [1];
 takePositives(a.push(2));
 `,
     expect: "violation",
-    knownFn: true,
-    note: "已知 FN：内联 a.push(2) 表达式值（number）未作实参跟到 positives",
+    note: "内联 a.push(2) 表达式值（number）作实参须跟到 positives",
   },
   {
     id: "array-literal-to-positives-ok",
@@ -1499,7 +1492,7 @@ function keep(x) {
     expect: "ok",
   },
   {
-    id: "pop-empty-known-fn",
+    id: "pop-empty",
     origin: "Array.pop 空数组",
     source: `
 /**
@@ -1512,8 +1505,7 @@ const a = [];
 needPos(a.pop());
 `,
     expect: "violation",
-    knownFn: true,
-    note: "已知 FN：pop 空数组 → undefined ⊭ positive",
+    note: "pop 空数组 → undefined ⊭ positive",
   },
   {
     id: "pop-hit-ok",
@@ -1934,7 +1926,7 @@ describe("check gold recall (human-labeled)", () => {
     expect(prec, `precision < 1: ${detail}`).toBe(1);
     expect(TP).toBeGreaterThan(5);
     // 已知漏报必须显式成文，禁止静默丢弃或改标凑绿
-    expect(knownFn, `knownFn count changed — update notes: ${detail}`).toBe(8);
+    expect(knownFn, `knownFn count changed — update notes: ${detail}`).toBe(0);
   });
 });
 

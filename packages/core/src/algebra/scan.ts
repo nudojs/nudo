@@ -30,7 +30,7 @@ import { literalMeetsConstraint } from "./domain-membership.ts";
 import { resolveDepPath } from "./load-deps-fp.ts";
 import { generalizeFromAst, type PolyFn } from "./generalize.ts";
 import { locateContractParam, type FormalParam } from "./param-surface.ts";
-import { numLit, litValue } from "./abs.ts";
+import { numLit, litValue, anyAbs } from "./abs.ts";
 import type { Abs } from "./abs.ts";
 import { hashSource } from "./hash-source.ts";
 import type { Phi, Pred } from "./pred.ts";
@@ -263,6 +263,17 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
 
 export function absUnknown(): Abs {
   return { shape: { k: "unknown" }, conf: "partial" };
+}
+
+/** 确定 undefined 字面量（term lit undefined；区别于「无 lit」的 unknown） */
+function isExactUndef(a: Abs): boolean {
+  return a.term?.op === "lit" && (a.term.value as unknown) === undefined;
+}
+
+/** 实参是否携带可执法信息（含确定 undefined；纯 unknown 不算） */
+function isInformativeArg(a: Abs): boolean {
+  if (a.term?.op === "lit") return true;
+  return a.shape.k !== "unknown";
 }
 
 /** 静态求值实参节点 → Abs（标识符走绑定表；对象/数组字面量内的标识符也走绑定表） */
@@ -773,6 +784,15 @@ export function scanLiteralCalls(
     file?: ReturnType<typeof parse>;
     /** 顶层绑定表（与结构赋值共享的 evalProgramAbs 结果） */
     varAbs?: Map<string, Abs>;
+    /**
+     * B 路径执行态调用记录（值流回退）：静态实参无信息时按 fnName@line 取
+     * 执行态实参。变量键查找已折 any（hasInfo），不会误触发本回退。
+     */
+    bCalls?: Array<{
+      fnName: string;
+      args: Abs[];
+      callLoc?: { line: number; column: number };
+    }>;
     /** 侧车 ambient 绑定开关（checkSource 的 package.json 配置下传） */
     autoBind?: boolean;
     /** 项目根：树外侧车不 ambient 绑定 */
@@ -785,6 +805,21 @@ export function scanLiteralCalls(
   const resolve = collectCallResolvers(source, knownFns, opts);
   const forwards = collectForwarders(source, knownSet, resolve, file);
   const varAbs = opts?.varAbs ?? new Map<string, Abs>();
+  /** fnName@line → 执行态实参表（同名同行多调用按序消费） */
+  const bCallIndex = new Map<string, Array<Abs[]>>();
+  for (const r of opts?.bCalls ?? []) {
+    if (!r.callLoc) continue;
+    const key = `${r.fnName}\u0000${r.callLoc.line}`;
+    const list = bCallIndex.get(key) ?? [];
+    list.push(r.args);
+    bCallIndex.set(key, list);
+  }
+  const takeBCallArgs = (fnName: string, line: number | undefined): Abs[] | undefined => {
+    if (line === undefined) return undefined;
+    const list = bCallIndex.get(`${fnName}\u0000${line}`);
+    if (!list || list.length === 0) return undefined;
+    return list.shift();
+  };
 
   const flattenPred = (p: Pred): Pred[] =>
     p.op === "and" ? p.args.flatMap(flattenPred) : p.op === "true" ? [] : [p];
@@ -949,6 +984,8 @@ export function scanLiteralCalls(
       const lv = litValue(arg);
       const isStr = arg.shape.k === "prim" && (arg.shape as { type: string }).type === "string";
       const strLen = typeof lv === "string" ? lv.length : undefined;
+      // 确定 undefined：不进 positive/nonEmpty 等 typed 域（any 仍放行）
+      const argIsUndef = isExactUndef(arg);
       for (const p of flattenPred(pred)) {
         // typeof 约束（string() / number() / boolean() 裸 prim）
         // 只检查挂在参数自身上的 typeof；字段访问（u.name）交给 shape 路径
@@ -962,7 +999,9 @@ export function scanLiteralCalls(
                 ? "object"
                 : arg.shape.k === "fn"
                   ? "function"
-                  : undefined;
+                  : argIsUndef
+                    ? "undefined"
+                    : undefined;
           // 只在有确定 prim 信息且不匹配时拦截；unknown/any 不猜
           if (actualPrim !== undefined && actualPrim !== expected) {
             out.push({
@@ -972,6 +1011,30 @@ export function scanLiteralCalls(
               actual: formatAbs(arg),
               expected: `typeof ${paramName} = "${expected}"`,
               suggestion: `use a value of type ${expected}, or relax the refine on ${paramName}`,
+              fn: displayName,
+              line: loc?.start.line,
+              column: loc?.start.column,
+            });
+          }
+          continue;
+        }
+        // 确定 undefined 对数值界 / eq / or 同样不满足（undefined ⊭ positive）
+        if (argIsUndef) {
+          if (
+            p.op === "gt" ||
+            p.op === "ge" ||
+            p.op === "lt" ||
+            p.op === "le" ||
+            p.op === "eq" ||
+            p.op === "or"
+          ) {
+            out.push({
+              severity: "error",
+              code: "nudo:constraint-violated",
+              message: `${displayName}[${paramName}]: argument ⊭ precondition`,
+              actual: formatAbs(arg),
+              expected: predToString(p),
+              suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
               fn: displayName,
               line: loc?.start.line,
               column: loc?.start.column,
@@ -1376,7 +1439,10 @@ export function scanLiteralCalls(
               loc,
             );
           });
-        } else if (arg.shape.k !== "unknown" && arg.shape.k !== "any") {
+        } else if (
+          isExactUndef(arg) ||
+          (arg.shape.k !== "unknown" && arg.shape.k !== "any")
+        ) {
           out.push({
             severity: "error",
             code: "nudo:constraint-violated",
@@ -1415,6 +1481,9 @@ export function scanLiteralCalls(
   ): { absArgs: Abs[]; hasInfo: boolean } => {
     const absArgs: Abs[] = [];
     let hasInfo = false;
+    const note = (abs: Abs | undefined): void => {
+      if (abs && isInformativeArg(abs)) hasInfo = true;
+    };
     for (const a of args ?? []) {
       if (a.type === "NumericLiteral" && typeof a.value === "number") {
         absArgs.push(numLit(a.value));
@@ -1430,11 +1499,11 @@ export function scanLiteralCalls(
       } else if (a.type === "ObjectExpression") {
         const abs = evalArgAbs(a, (n) => varAbs.get(n));
         absArgs.push(abs ?? absUnknown());
-        if (abs && abs.shape.k === "obj") hasInfo = true;
+        note(abs);
       } else if (a.type === "ArrayExpression") {
         const abs = evalArgAbs(a, (n) => varAbs.get(n));
         absArgs.push(abs ?? absUnknown());
-        if (abs && (abs.shape.k === "arr" || abs.shape.k === "tuple")) hasInfo = true;
+        note(abs);
       } else if (a.type === "StringLiteral" && typeof a.value === "string") {
         absArgs.push({
           shape: { k: "prim", type: "string" },
@@ -1445,7 +1514,25 @@ export function scanLiteralCalls(
       } else if (a.type === "Identifier" && typeof a.name === "string") {
         const abs = varAbs.get(a.name);
         absArgs.push(abs ?? absUnknown());
-        if (abs && abs.shape.k !== "unknown") hasInfo = true;
+        note(abs);
+      } else if (a.type === "MemberExpression") {
+        // 变量键查找（map[k]）→ any（any ≤ 任意目标；≠ unknown 不发明义务）
+        const computed = (a as { computed?: boolean }).computed === true;
+        const prop = (a as { property?: Record<string, unknown> }).property;
+        const litKey =
+          prop?.type === "StringLiteral" || prop?.type === "NumericLiteral";
+        if (computed && !litKey) {
+          absArgs.push(anyAbs);
+          hasInfo = true;
+          continue;
+        }
+        const abs = evalArgAbs(a, (n) => varAbs.get(n));
+        absArgs.push(abs ?? absUnknown());
+        note(abs);
+      } else if (a.type === "CallExpression") {
+        // 内联调用（a.pop()/a.push(…)/xs.find(…)）：transpile 表达式位可能折
+        // $lit(undefined) 假精确，静态不猜——交给 B 执行态实参回退。
+        absArgs.push(absUnknown());
       } else {
         absArgs.push(absUnknown());
       }
@@ -1463,7 +1550,18 @@ export function scanLiteralCalls(
     // 传参结构：实参字面量 Abs ≤ 形参必填 slot
     checkArgStructures(fnName, source, args, loc);
 
-    const { absArgs, hasInfo } = parseCallArgs(args);
+    const parsed = parseCallArgs(args);
+    let absArgs = parsed.absArgs;
+    let hasInfo = parsed.hasInfo;
+    // 值流回退：静态实参无信息（嵌套调用形参 / 复杂表达式）时按执行态实参执法。
+    // 变量键查找已折 any（hasInfo），不会走到这里。
+    if (!hasInfo) {
+      const bArgs = takeBCallArgs(fnName, loc?.start.line);
+      if (bArgs && bArgs.length > 0) {
+        absArgs = bArgs;
+        hasInfo = bArgs.some(isInformativeArg);
+      }
+    }
     if (!hasInfo || absArgs.length === 0) return;
 
     const g = generalizeFromAst(fnName, source, {
@@ -1529,7 +1627,16 @@ export function scanLiteralCalls(
     loc?: { start: { line: number; column: number } },
   ): void => {
     checkArgStructures(ext.fnName, ext.source, args, loc, displayName, ext.fromFile);
-    const { absArgs, hasInfo } = parseCallArgs(args);
+    const parsedExt = parseCallArgs(args);
+    let absArgs = parsedExt.absArgs;
+    let hasInfo = parsedExt.hasInfo;
+    if (!hasInfo) {
+      const bArgs = takeBCallArgs(ext.fnName, loc?.start.line);
+      if (bArgs && bArgs.length > 0) {
+        absArgs = bArgs;
+        hasInfo = bArgs.some(isInformativeArg);
+      }
+    }
     if (!hasInfo || absArgs.length === 0) return;
     let full: Array<[number, RefineEntry, string | undefined]> = [];
     let paramNames: string[] = [];

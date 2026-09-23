@@ -869,6 +869,7 @@ function checkSourceInner(
         fromFile: refineFrom,
         file,
         varAbs,
+        bCalls,
         ...(autoBind !== undefined ? { autoBind } : {}),
         ...(projectDir !== undefined ? { projectDir } : {}),
       });
