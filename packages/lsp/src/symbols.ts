@@ -320,19 +320,107 @@ export function collectBindingReferences(
   return out;
 }
 
-/** prepareRename：仅绑定标识符可改名（属性键/成员属性拒绝）。 */
+/** prepareRename 目标：绑定标识符，或 class/object 方法 / getter / setter 键 */
+export type RenameTarget = {
+  name: string;
+  loc: SourceLocation;
+  kind: "binding" | "method";
+};
+
+/** 文件内是否存在同名方法定义（class/object method / get / set） */
+export function hasMethodNamed(ast: Node, name: string): boolean {
+  let found = false;
+  try {
+    traverseFn()(ast, {
+      ClassMethod(p) {
+        if (!p.node.computed && p.node.key?.type === "Identifier" && p.node.key.name === name) {
+          found = true;
+          p.stop();
+        }
+      },
+      ObjectMethod(p) {
+        if (!p.node.computed && p.node.key?.type === "Identifier" && p.node.key.name === name) {
+          found = true;
+          p.stop();
+        }
+      },
+    });
+  } catch {
+    /* partial AST */
+  }
+  return found;
+}
+
+/**
+ * B1：方法 / getter / setter 可改名（文件内同名定义 + 成员访问）。
+ * 数据属性成员（无同名 method 定义）仍拒绝——保持「属性名不是绑定」金标。
+ */
+export function collectMethodReferences(
+  ast: Node,
+  name: string,
+): Array<{ loc: SourceLocation; kind: "key" | "member" }> {
+  const out: Array<{ loc: SourceLocation; kind: "key" | "member" }> = [];
+  try {
+    traverseFn()(ast, {
+      ClassMethod(p) {
+        if (!p.node.computed && p.node.key?.type === "Identifier" && p.node.key.name === name) {
+          out.push({ loc: locFromNode(p.node.key), kind: "key" });
+        }
+      },
+      ObjectMethod(p) {
+        if (!p.node.computed && p.node.key?.type === "Identifier" && p.node.key.name === name) {
+          out.push({ loc: locFromNode(p.node.key), kind: "key" });
+        }
+      },
+      ClassProperty(p) {
+        // getter/setter 以外的字段不参与 method rename
+        void p;
+      },
+      MemberExpression(p) {
+        if (
+          p.node.computed !== true &&
+          p.node.property?.type === "Identifier" &&
+          p.node.property.name === name
+        ) {
+          out.push({ loc: locFromNode(p.node.property), kind: "member" });
+        }
+      },
+      OptionalMemberExpression(p) {
+        if (
+          p.node.computed !== true &&
+          p.node.property?.type === "Identifier" &&
+          p.node.property.name === name
+        ) {
+          out.push({ loc: locFromNode(p.node.property), kind: "member" });
+        }
+      },
+    });
+  } catch {
+    /* partial AST */
+  }
+  return out;
+}
+
+/** prepareRename：绑定标识符，或方法/getter/setter（含调用点 `.name`）。 */
 export function renameTargetAt(
   source: string,
   line: number,
   column: number,
-): { name: string; loc: SourceLocation } | { error: string } | null {
+): RenameTarget | { error: string } | null {
   let ast: Node;
   try {
     ast = parse(source);
   } catch {
     return { error: "parse error" };
   }
-  let hit: { name: string; loc: SourceLocation; ok: boolean } | null = null;
+  type Hit = {
+    name: string;
+    loc: SourceLocation;
+    ok: boolean;
+    methodKey: boolean;
+    memberProp: boolean;
+  };
+  let hit: Hit | null = null;
   try {
     traverseFn()(ast, {
       Identifier(path) {
@@ -343,10 +431,26 @@ export function renameTargetAt(
           loc.start.column <= column &&
           loc.end.column >= column
         ) {
+          const parent = path.parent as Node & { type: string; key?: Node; computed?: boolean } | null;
+          const isSelfKey =
+            parent &&
+            (parent.type === "ClassMethod" ||
+              parent.type === "ObjectMethod" ||
+              parent.type === "ClassPrivateMethod") &&
+            parent.key === path.node &&
+            parent.computed !== true;
+          const isMemberProp =
+            parent &&
+            (parent.type === "MemberExpression" ||
+              parent.type === "OptionalMemberExpression") &&
+            (parent as { property?: Node }).property === path.node &&
+            (parent as { computed?: boolean }).computed !== true;
           hit = {
             name: path.node.name,
             loc: locFromNode(path.node),
             ok: isBindingIdentifier(path),
+            methodKey: Boolean(isSelfKey),
+            memberProp: Boolean(isMemberProp),
           };
           path.stop();
         }
@@ -356,11 +460,21 @@ export function renameTargetAt(
     return { error: "parse error" };
   }
   if (!hit) return null;
-  const h = hit as { name: string; loc: SourceLocation; ok: boolean };
+  const h = hit as Hit;
+  if (h.methodKey) {
+    return { name: h.name, loc: h.loc, kind: "method" };
+  }
+  // 成员属性：仅当文件内有同名 method/get/set 定义时按方法改名
+  if (h.memberProp) {
+    if (hasMethodNamed(ast, h.name)) {
+      return { name: h.name, loc: h.loc, kind: "method" };
+    }
+    return { error: `cannot rename '${h.name}' (property / non-binding identifier)` };
+  }
   if (!h.ok) {
     return { error: `cannot rename '${h.name}' (property / non-binding identifier)` };
   }
-  return { name: h.name, loc: h.loc };
+  return { name: h.name, loc: h.loc, kind: "binding" };
 }
 
 export type RenameEdit = {

@@ -15,6 +15,7 @@ import {
   buildSymbolTable,
   findReferences,
   collectBindingReferences,
+  collectMethodReferences,
   renameTargetAt,
   buildRenameEdits,
   resolveReferences,
@@ -160,6 +161,55 @@ describe("refactor gold — cross-file export rename", () => {
         expect(e.newText).toBe("grade");
       }
     }
+  });
+});
+
+describe("refactor gold — B1 method / getter / destructuring default", () => {
+  it("class method key is renameable and collects call-site member props", () => {
+    const s = `class A {\n  score(n) {\n    return n;\n  }\n}\nconst a = new A();\na.score(1);\n`;
+    // method key `score` line 2, column 2
+    const t = renameTargetAt(s, 2, 2);
+    expect(t && "kind" in t ? t.kind : null).toBe("method");
+    const ast = parse(s);
+    const hits = collectMethodReferences(ast, "score");
+    // def key + a.score
+    expect(hits.length).toBeGreaterThanOrEqual(2);
+    expect(hits.some((h) => h.kind === "key")).toBe(true);
+    expect(hits.some((h) => h.kind === "member")).toBe(true);
+  });
+
+  it("getter key is renameable", () => {
+    const s = `const o = {\n  get value() {\n    return 1;\n  }\n};\no.value;\n`;
+    // `value` in `get value` — line 2, column 6
+    const t = renameTargetAt(s, 2, 6);
+    expect(t && "kind" in t ? t.kind : null).toBe("method");
+    const hits = collectMethodReferences(parse(s), "value");
+    expect(hits.some((h) => h.kind === "key")).toBe(true);
+    expect(hits.some((h) => h.kind === "member")).toBe(true);
+  });
+
+  it("member prop without a method def stays non-renamable (data property)", () => {
+    const s = `const obj = { x: 1 };\nconst z = obj.x;\n`;
+    const t = renameTargetAt(s, 2, 14);
+    expect(t && "error" in t).toBe(true);
+  });
+
+  it("member prop with a same-name method def is renameable from the call site", () => {
+    const s = `class A {\n  run() {\n    return 1;\n  }\n}\nnew A().run();\n`;
+    // `run` in `.run()` — line 6, column 8
+    const t = renameTargetAt(s, 6, 8);
+    expect(t && "kind" in t ? t.kind : null).toBe("method");
+  });
+
+  it("destructuring default { x = 1 } is a binding", () => {
+    const s = `function f({ x = 1 }) {\n  return x;\n}\nf({});\n`;
+    // `{ x = 1 }` — x at column 13
+    const t = renameTargetAt(s, 1, 13);
+    expect(t && "kind" in t ? t.kind : null).toBe("binding");
+    const ast = parse(s);
+    const refs = collectBindingReferences(ast, "x", { line: 1, column: 13 }, "file:///dd.js");
+    // pattern binding + body use
+    expect(refs.length).toBeGreaterThanOrEqual(2);
   });
 });
 

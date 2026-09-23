@@ -46,6 +46,7 @@ import {
   resolveDefinitionLocations,
   resolveReferences,
   renameTargetAt,
+  collectMethodReferences,
   buildRenameEdits,
   type DocumentSymbolItem,
 } from "./symbols.ts";
@@ -752,9 +753,32 @@ connection.onRenameRequest((params) => {
     const identAtPos = findIdentifierAtPosition(ast, line, column);
     if (!identAtPos) return null;
 
-    // 金标：属性名 / 非绑定不参与 rename
     const target = renameTargetAt(source, line, column);
     if (target && "error" in target) return null;
+
+    // B1：方法 / getter / setter —— 文件内同名 key + 成员访问
+    if (target && "kind" in target && target.kind === "method") {
+      const hits = collectMethodReferences(ast, target.name);
+      const locations = hits.map((h) => ({
+        uri: params.textDocument.uri,
+        loc: h.loc,
+      }));
+      // 跨文件：extraFiles 里同名 method 定义/成员也改（name-based）
+      for (const extra of navigationExtraFiles(filePath)) {
+        try {
+          const extraSrc = readFileSync(extra, "utf-8");
+          const extraAst = parse(extraSrc);
+          for (const h of collectMethodReferences(extraAst, target.name)) {
+            locations.push({ uri: filePathToUri(extra), loc: h.loc });
+          }
+        } catch {
+          /* skip unreadable */
+        }
+      }
+      const changes = buildRenameEdits(params.newName, locations);
+      if (Object.keys(changes).length === 0) return null;
+      return { changes };
+    }
 
     // 跨文件：definition + references 一起改（同绑定）
     const def = resolveDefinition(filePath, source, identAtPos);
