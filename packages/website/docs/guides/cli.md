@@ -1,5 +1,5 @@
 ---
-description: "Drive Nudo from the terminal: check signatures, report cases, draft contracts, export projections — the six primary verbs."
+description: "Drive Nudo from the terminal: check signatures, report cases, draft contracts, export projections — the five primary verbs."
 ---
 
 # CLI Usage
@@ -16,7 +16,6 @@ nudo — JavaScript types, computed
   nudo contract <path>             # draft / emit interfaces
   nudo export <path>               # project dts / guard / schema / standard
   nudo health [paths]              # project health & drift
-  nudo env harvest <pkg>           # harvest @types into an env
 ```
 
 Observation lives in the output of `check` / `test` and in IDE hover — not a separate primary command.
@@ -208,27 +207,6 @@ When generated `call@` directives would change, health reports drift and suggest
 
 ```text
 nudo test lib.js --from test.js --freeze=update
-```
-
----
-
-## `nudo env harvest`
-
-Harvest `@types/<pkg>` into a Nudo env module.
-
-```bash
-nudo env harvest <pkg> [--out file]   # --out is an output .ts file (default ./nudo-harvest-<pkg>.ts)
-nudo env harvest --auto [dir]         # scan a dir for bare imports, report auto-harvestable @types
-```
-
-```bash
-nudo env harvest node
-```
-
-Then reference the generated env from source:
-
-```ts
-/// @nudo:env nudo-harvest-node.ts
 ```
 
 ---

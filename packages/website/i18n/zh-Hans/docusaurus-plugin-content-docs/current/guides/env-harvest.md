@@ -1,33 +1,42 @@
 ---
 slug: /guides/env-harvest
-description: nudo env harvest —— 把 @types 声明转为 Nudo env 模块。
+description: 依赖类型从哪来 —— 固定 es/web/node env、@types 分析期静默补洞，以及何时该 mock。
 ---
 
-# nudo env harvest
+# 依赖类型
 
-`nudo env harvest` 把 `@types/<pkg>` 声明转换为 Nudo env 模块，使 `@nudo:env` 能在分析中为 Node/Web API 提供类型。
+Nudo 不为用户提供 harvest 命令。产品 env 是**固定集合**（`@nudojs/env` 的 `es` / `web` / `node`）；其余要么分析期静默补洞，要么你自己 mock。
 
-```bash
-npx nudojs env harvest <pkg> [--out file]
-npx nudojs env harvest node
-# 自动 harvest：扫描目录中的裸 import，上报可 harvest 的 @types 包
-npx nudojs env harvest --auto .
-npx nudojs env harvest --auto src/
+## 类型如何到达
+
+| import 目标 | 发生什么 |
+|---|---|
+| 内建 API（`path`、`fs`、DOM…） | 手写 `@nudojs/env`（`es` / `web` / `node`） |
+| 有可用 `.js`/`.mjs` 的 JS 源码包 | 分析**执行**源码（Abs 求值器） |
+| `@types/*` 或包自带 `.d.ts` | 分析**自动 harvest** 声明进 env 模块 —— 无需 CLI 步骤 |
+| 两者皆无 | 空 modules → 用 `@nudo:mock` 或路径 `/// @nudo:env` |
+
+Harvest **不是**产品动词。第三方 `@types` 在 `nudo check` / `nudo test` / LSP 分析时自动注入；手写 `@nudojs/env` 在重叠模块键与导出名上 wins。
+
+## 具名 env vs 路径 env
+
+具名环境是固定的：
+
+```javascript
+/// @nudo:env node
 ```
 
-`--out` 接收输出**文件**路径（默认 `./nudo-harvest-<pkg>.ts`）——不是目录。`--auto [dir]` 上报目录树中可自动 harvest 的 `@types` 包（带 `--auto` 时 `<pkg>` 可省略）。
+需要自定义类型面（领域包、手调签名）时，自己写或生成 env 模块，按路径引用：
 
-在源码中引用生成的 env：
-
-```ts
-/// @nudo:env nudo-harvest-node.ts
+```javascript
+/// @nudo:env ./my-env.ts
 ```
 
-内置 `es` / `web` / `node` 环境已覆盖大量常见 API（`@nudojs/env`）。
+路径 env 导出 `defineEnv()`，用 `@nudojs/core` 的 Abs 构造器。`@nudojs/harvester` 可为 **env 包作者**从 `.d.ts` 生成该形态——它是库辅助，不是终端用户命令。
 
 ## 诚实边界
 
-**Env / harvest 不能替代 mock。** 原生运行时回调、动态 `require` 与未建模的原生仍可能以 `unknown` / `entry@` 结果出现。覆盖率基线**不是**完备性承诺。见[边界](../concepts/limits.md)与[语言语义](../concepts/semantics.md)。
+**Env / 自动 harvest 不能替代 mock。** 原生运行时回调、动态 `require` 与未建模的原生仍可能以 `unknown` / `entry@` 结果出现。覆盖率基线**不是**完备性承诺。见[边界](../concepts/limits.md)与[语言语义](../concepts/semantics.md)。
 
 当 API 进程本地或高度动态时，改用 mock：
 
@@ -38,5 +47,5 @@ npx nudojs env harvest --auto src/
 ## 下一步
 
 - [指令 —— `@nudo:env`](../concepts/directives.md)
-- [API · harvester](../api/harvester.md)
+- [API · harvester](../api/harvester.md)（env 编写库）
 - [Recipes](./recipes.md)

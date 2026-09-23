@@ -34,7 +34,7 @@ npx nudojs test path/to/file.js    # 调用点 case 报告
 # 若已全局安装，命令就是 `nudo`
 ```
 
-一级动词：`check` / `test` / `contract` / `export` / `health` / `env harvest`。**没有** `infer` 动词——观察来自 `check` 签名、`test` 用例与 IDE hover。
+一级动词：`check` / `test` / `contract` / `export` / `health`。**没有** `infer` 动词——观察来自 `check` 签名、`test` 用例与 IDE hover。
 
 ## VS Code 扩展
 

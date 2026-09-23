@@ -25,7 +25,7 @@ Entry params print as any; unknown = inference failed.
 
 | Rule | Detail |
 |------|--------|
-| Verbs | `check` \| `test` \| `contract` \| `export` \| `health` \| `env harvest` only |
+| Verbs | `check` \| `test` \| `contract` \| `export` \| `health` only |
 | No `infer` verb | Observation = check signatures + IDE |
 | Contracts | Sidecar / `@nudo:refine`; `@nudo:interface` is alias |
 | `@nudo:case` | Debug / `nudo test` / LSP only |

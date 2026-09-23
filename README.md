@@ -1,4 +1,4 @@
-<!-- CLI semantics: docs/design/cli-semantics.md — verbs check/test/contract/export/health/env harvest. -->
+<!-- CLI semantics: docs/design/cli-semantics.md — verbs check/test/contract/export/health. Harvest is not a product verb. -->
 # Nudo
 
 > **欢迎重回 JS 世界.** — Nudo 不限制你的 JS 表达，只忠实反映中间量与结果，并提供比类型更精确的契约校验。  
@@ -129,7 +129,7 @@ processItems(["a"], (s) => s.toUpperCase());
 nudo contract src/          # print / --draft / --emit sidecar contracts
 nudo export math.js --format dts --out dist/   # dts | guard | schema | standard | all
 nudo health src/            # analysis errors + contract drift
-nudo env harvest node       # @types → env module
+nudo health                 # analysis errors + drift
 nudo check src/ --watch     # watch is a flag, not a verb
 ```
 
@@ -150,7 +150,7 @@ This is a monorepo managed with [pnpm workspaces](https://pnpm.io/workspaces).
 |---|---|
 | [`@nudojs/core`](./packages/core) | Abs type system (`shape × term × pred × conf`) |
 | [`@nudojs/parser`](./packages/parser) | Babel-based parser and directive extraction |
-| [`@nudojs/cli`](./packages/cli) | CLI tool and evaluator API (check / test / contract / export / health / env harvest) |
+| [`@nudojs/cli`](./packages/cli) | CLI tool and evaluator API (check / test / contract / export / health) |
 | [`@nudojs/service`](./packages/service) | Shared inference service for IDE integrations |
 | [`@nudojs/lsp`](./packages/lsp) | Language Server Protocol server, with AI-agent `executeCommand` support |
 | [`@nudojs/env`](./packages/env) | Built-in API environments (ES globals, Node, Web) loaded by `@nudo:env` |

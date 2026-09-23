@@ -222,7 +222,7 @@ Known-shape receivers fold at any depth (`a.b.c ?? 5` with `{ b: {} }` → `5`);
 /// @nudo:env web
 ```
 
-Built-in `es` / `web` / `node` env modules type common APIs. Harvest `@types` → env with [`nudo env harvest`](./env-harvest.md). **Env/harvest is not a substitute for mocks** on native runtime callbacks — see [Limits](../concepts/limits.md).
+Built-in `es` / `web` / `node` env modules type common APIs; third-party `@types` fill in automatically at analysis time. See [Dependency types](./env-harvest.md). **Env/harvest is not a substitute for mocks** on native runtime callbacks — see [Limits](../concepts/limits.md).
 
 ### 11. Mock external dependencies
 

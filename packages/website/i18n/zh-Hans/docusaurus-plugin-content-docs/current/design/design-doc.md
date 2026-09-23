@@ -412,7 +412,7 @@ debug "symbolic"  (number, number) => number
 - **Abs 代数（单轨）** — Term/Pred/Abs、算术核、`leqAbs`、generalize、`nudo check` / `nudo test` / `nudo contract` / `nudo export`、CheckJson、金标（recall = precision = 1.0）。
 - **调用预算** — depth/cycle/total 守卫，递归 check 不再栈溢出。
 - **Emit 往返** — 生成的 `.d.ts` 通过 `tsc --noEmit --strict`（`emit-tsc-roundtrip.test.ts`）。
-- **Harvest 自动化** — `nudo env harvest --auto [dir]` 扫描裸 import，上报可自动 harvest 的 `@types` 包。
+- **Harvest 内部化** —— 分析经 `bareSpecToAbsModules` 自动补洞 `@types`；env 包生成用 `@nudojs/harvester`。不是产品 CLI 动词。
 
 ### 待做
 - esbuild / webpack 插件；错误定位 source map

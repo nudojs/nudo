@@ -38,10 +38,10 @@ pnpm run build
 |---------|-------------|
 | `@nudojs/core` | 类型系统（Abs 代数）、外延渲染（format）、Environment |
 | `@nudojs/parser` | Babel 解析、指令提取、`parseCaseArgExpr` |
-| `@nudojs/cli` | 仅 CLI 命令（`check`、`test`、`contract`、`export`、`health`、`env harvest`） |
+| `@nudojs/cli` | 仅 CLI 命令（`check`、`test`、`contract`、`export`、`health`） |
 | `@nudojs/service` | 高层 API：`analyzeFile`、`getTypeAtPosition`、`getCompletionsAtPosition` |
 | `@nudojs/lsp` | Language Server Protocol 实现，含面向 AI agent 的 executeCommand/自定义请求（见 [Agent 集成指南](./guides/agent-integration.md)） |
-| `@nudojs/harvester` | 把 `@types/*.d.ts` 声明转换为 Nudo env 文件（`nudo env harvest` 的底层引擎） |
+| `@nudojs/harvester` | 把 `@types/*.d.ts` 转为 Abs env 定义，服务 env 包编写与分析自动补洞（不是产品 CLI 动词） |
 | `@nudojs/env` | 内置环境类型定义（`/// @nudo:env es\|web\|node`，子路径导出 `/es` `/web` `/node`） |
 | `vite-plugin-nudo` | 开发阶段的类型推断 Vite 插件 |
 | `nudo-vscode` | VS Code / Cursor 扩展 |

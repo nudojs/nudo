@@ -1,5 +1,5 @@
 ---
-description: "Reference every nudo CLI command — check, test, contract, export, health, env harvest — with arguments, options, output formats, and exit codes."
+description: "Reference every nudo CLI command — check, test, contract, export, health — with arguments, options, output formats, and exit codes."
 ---
 
 # CLI Reference
@@ -25,7 +25,6 @@ This page is the **canonical flag / option / exit-code specification**. Tutorial
 | [`nudo contract`](#nudo-contract) | Print / draft / emit effective interfaces — `[handwritten]` / `[generated]` / `[implicit]` layers |
 | [`nudo export`](#nudo-export) | Project Abs into `dts` / `guard` / `schema` / `standard` artifacts |
 | [`nudo health`](#nudo-health) | Health-check files: analysis errors, call-site solidification drift |
-| [`nudo env harvest`](#nudo-env-harvest) | Convert `@types/<pkg>` declarations into a Nudo env file |
 
 There is **no** observation verb. Observation is `check` signatures, `test` case reports, and IDE hover.
 
@@ -360,40 +359,6 @@ Result: FAIL (drift or errors found)
 
 ---
 
-### nudo env harvest
-
-Convert `@types/<pkg>` declarations into a Nudo env module.
-
-```bash
-nudo env harvest <pkg> [options]
-```
-
-**Options:**
-
-| Option | Description |
-|--------|-------------|
-| `--out <file>` | Output env file path (default `./nudo-harvest-<pkg>.ts`) |
-| `--auto [dir]` | Scan a directory for bare imports and report auto-harvestable `@types` packages (`<pkg>` is optional with `--auto`) |
-
-**Example:**
-
-```bash
-nudo env harvest node
-```
-
-```ts
-/// @nudo:env nudo-harvest-node.ts
-```
-
-**Exit codes:**
-
-| Code | Meaning |
-|------|---------|
-| `0` | Env file written / status reported |
-| `1` | `@types/<pkg>` not installed, or no `.d.ts` files found |
-
----
-
 ## JSON output
 
 `check --json` and `test --json` are the machine-readable faces.
@@ -413,4 +378,3 @@ nudo env harvest node
 | `contract` / `export` (read-only) | Usage / IO errors |
 | `contract --emit --exit-on-diff` | Would write and a diff exists |
 | `health` | Drift or analysis errors |
-| `env harvest` | Missing `@types` package or no declarations |

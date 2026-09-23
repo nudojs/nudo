@@ -75,7 +75,7 @@ npx nudojs export src/api.js --format schema --dialect zod --out dist/schema
 // @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) })
 ```
 
-需要包形 API 时收割：`npx nudojs env harvest <pkg>`。Env 不是 mock 的替代品。见 [env-harvest](./env-harvest.md) · [边界](../concepts/limits.md)。
+需要包形 API 时，`@types` 会在分析期自动补洞。Env 不是 mock 的替代品。见 [依赖类型](./env-harvest.md) · [边界](../concepts/limits.md)。
 
 ## 6. 教 AI agent 认识这个仓库
 

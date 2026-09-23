@@ -1,7 +1,8 @@
 # cli-semantics — CLI 产品命令面与 any/unknown/入口 throws 语义
 
 > Status: **landed** — product CLI verbs, L2 entry-may-throw, any≠unknown display, test case reports, check JSON.
-> Primary verbs: `check` / `test` / `contract` / `export` / `health` / `env harvest`.
+> Primary verbs: `check` / `test` / `contract` / `export` / `health`.
+> Harvest is **not** a product verb — analysis auto-fills `@types` modules; env-package generation uses `@nudojs/harvester`.
 > Product flags: `--from`, `test --freeze`, `export --format dts|guard|schema|standard|all` + `--dialect zod` + `export --out`.
 > Abs 架构真源：[`kernel-merge.md`](./kernel-merge.md)。
 > 限制与路线图：[`limitations.md`](./limitations.md)。
@@ -35,7 +36,6 @@ nudo — JavaScript types, computed
   nudo contract <path>             # 契约：打印 / draft / emit 侧车接口
   nudo export <path>               # 投影：dts | guard | schema | standard | all
   nudo health [paths] [--watch]    # 体检：分析错误 + 固化漂移
-  nudo env harvest <pkg>           # 环境：@types → env 模块
 ```
 
 `watch` 是模式不是任务：对应 `tsc --watch`。仅挂在有持续重跑意义的子命令上（`check` / `test`，`health` 可选）；**不**挂在 `export`（出货一次性投影）与 `contract --emit`（写盘）。
@@ -89,7 +89,6 @@ assertions
 | `nudo contract` | 打印 / `--draft` / `--emit` 侧车接口；`--from` 供域证据 |
 | `nudo export` | 一次性投影：`dts` / `guard` / `schema`（`--dialect zod`）/ `standard` / `all`；`--out` 写出目录 |
 | `nudo health` | 分析错误 + 固化漂移；`--watch` 可选 |
-| `nudo env harvest` | `@types` → env 模块 |
 
 ### 1.3 exit code 契约
 
@@ -502,7 +501,6 @@ nudo test <path> [--watch]   Report every inferred case; assert declared expecta
 nudo contract <path>         Draft / emit interfaces
 nudo export <path>           Project dts / guard / schema / standard
 nudo health [paths]          Project health & drift
-nudo env harvest pkg         Harvest @types into an env
 
 Day 0   check（读签名）/ test（看 case） · Day 1   contract + check · Ecosystem   export
 ```
@@ -517,6 +515,7 @@ Day 0   check（读签名）/ test（看 case） · Day 1   contract + check · 
 - 不在本设计中重写 Abs 代数；只约束产品语义与执法面。
 - 不做 `check --cases` / 独立观察动词。
 - 不做独立 `.nudorc` / `nudo.config.js`。
+- 不做用户级 `env harvest` 动词：`@types` 补洞是分析自动路径；env 包生成是 `@nudojs/harvester` 维护能力。
 
 ---
 

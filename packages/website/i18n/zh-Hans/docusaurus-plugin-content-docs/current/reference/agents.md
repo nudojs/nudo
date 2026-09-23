@@ -25,7 +25,7 @@ Entry params print as any; unknown = inference failed.
 
 | 规则 | 说明 |
 |------|------|
-| 动词 | 仅 `check` \| `test` \| `contract` \| `export` \| `health` \| `env harvest` |
+| 动词 | 仅 `check` \| `test` \| `contract` \| `export` \| `health` |
 | 无 `infer` 动词 | 观察 = check 签名 + IDE |
 | 契约 | sidecar / `@nudo:refine`；`@nudo:interface` 只是别名 |
 | `@nudo:case` | 仅调试 / `nudo test` / LSP |

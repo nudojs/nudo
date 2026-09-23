@@ -90,7 +90,7 @@ Leaf-clean ratio (format has no unknown/any token / total): **51%**
 |---|---|---|---|---|
 | `commander` | js-source | yes | resolved | JS source present — analysis via execution / checkSource, not d.ts harvest |
 | `ms` | js-source | yes | resolved | JS source — infer/check without handwritten mock |
-| `@types/node` | types | yes | resolved | .d.ts harvest via harvestNodeTypes / nudo env harvest node |
+| `@types/node` | types | yes | resolved | .d.ts harvest via harvestNodeTypes (analysis auto-fill) |
 | `left-pad` | none | no | absent | if installed without types and no JS eval path → mock/hint required |
 
 ### Three-state harvest rule

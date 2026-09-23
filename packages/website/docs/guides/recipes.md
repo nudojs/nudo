@@ -75,7 +75,7 @@ Projections are **lossy**; Abs + `nudo check` remain the truth. Guide: [runtime 
 // @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) })
 ```
 
-Harvest when you need package-shaped APIs: `npx nudojs env harvest <pkg>`. Env is not a mock substitute. See [env-harvest](./env-harvest.md) · [Limits](../concepts/limits.md).
+Package-shaped APIs from `@types` are auto-filled at analysis time. Env is not a mock substitute. See [Dependency types](./env-harvest.md) · [Limits](../concepts/limits.md).
 
 ## 6. Teaching an AI agent this repo
 

@@ -16,11 +16,11 @@ nudo test file.js
 npx nudojs check file.js
 ```
 
-Primary verbs: `check` · `test` · `contract` · `export` · `health` · `env harvest`.
+Primary verbs: `check` · `test` · `contract` · `export` · `health`.
 
 Nudo infers types by **executing** your code on Abs (`shape × term × pred × conf`) — see the monorepo packages for the actual engine:
 
-- [`@nudojs/cli`](https://github.com/nudojs/nudo/tree/main/packages/cli) — CLI (`check`, `test`, `contract`, `export`, `health`, `env harvest`)
+- [`@nudojs/cli`](https://github.com/nudojs/nudo/tree/main/packages/cli) — CLI (`check`, `test`, `contract`, `export`, `health`)
 - [`@nudojs/core`](https://github.com/nudojs/nudo/tree/main/packages/core) — the Abs type system (shape × term × pred × conf)
 - [`@nudojs/parser`](https://github.com/nudojs/nudo/tree/main/packages/parser) — Babel-based parser and `@nudo:` directive extraction
 - [`@nudojs/service`](https://github.com/nudojs/nudo/tree/main/packages/service) — analyzer orchestration, Abs-native evaluator API (`@nudojs/service/evaluator`), dts generation, harvest

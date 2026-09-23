@@ -3,7 +3,7 @@
 > **状态**：**已落地**——L1 磁盘基建 + L2 harvest HarvestJson 磁盘层（`harvest-json.ts` / `harvest-disk.ts`，`~/.cache/nudo/deps` / `NUDO_DEPS_CACHE_DIR`）。CheckJson 默认关（投毒面）。
 > **真源**：架构 → kernel-merge.md；命令面/any/unknown/check → cli-semantics.md
 >
-> 产品动词：`check` / `test` / `contract` / `export` / `health` / `env harvest`。
+> 产品动词：`check` / `test` / `contract` / `export` / `health`。
 > 相关配置：`package.json#nudo.cache.*`、`package.json#nudo.contract.*`、`package.json#nudo.check.*`；env `NUDO_CACHE*`。
 > 使用现场观察用 **`--from`**；`test --freeze` 与接口固化无关。
 
@@ -124,7 +124,7 @@ L1 check   : prefix + relFile + stableSrcSha256 + diskDepsFp + sidecarFp + autoB
 ## 未决 / 未实施
 
 - ~~L2 harvest 磁盘层~~ **已落地**：HarvestJson 签名投影 + materialize mock Abs；键 = pkg+version+knobs+dtsClosureHash；`harvestPackageCached` 自动走 L2。
-- L2 与 `env harvest` 产品 CLI 路径的 round-trip 验收、`typescript` 版本进 ABI 的完整 CI 策略。
+- L2 与 env 包生成路径（`@nudojs/harvester`）的 round-trip 验收、`typescript` 版本进 ABI 的完整 CI 策略。
 - `.nudo/cache` 与契约侧「隐式 refine 跨会话缓存」的用户文档边界：契约文件进 git，缓存不进——已定原则。
 - 精确依赖反向逐出、远程缓存、跨 ABI 迁移器：**明确不做**。
 

@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-<!-- CLI semantics: docs/design/cli-semantics.md — primary verbs check/test/contract/export/health/env harvest only. -->
+<!-- CLI semantics: docs/design/cli-semantics.md — primary verbs check/test/contract/export/health only. Harvest is not a product verb. -->
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -22,14 +22,14 @@ pnpm run test:watch     # Run tests in watch mode
 pnpm run lint           # Type-check all packages (tsc --noEmit -p tsconfig.lint.json)
 pnpm run check <file>   # gate + signatures (Day 0 / CI)
 pnpm run test:cli <file>  # case reports (call@/entry@ + debug witnesses)
-pnpm run nudo -- <args>  # full CLI (contract / export / health / env harvest / …)
+pnpm run nudo -- <args>  # full CLI (contract / export / health / …)
 pnpm run docs:dev       # Docs dev (en) — http://localhost:3000/nudo/
 pnpm run docs:dev:zh    # Docs dev (zh-Hans) — http://localhost:3000/nudo/zh-Hans/
 pnpm run docs:build     # Docs production build (en + zh-Hans)
 pnpm run docs:serve     # Serve production build (both locales)
 ```
 
-> `pnpm run test` is **vitest** (package tests), not the CLI case reporter — that is `test:cli`. Product CLI surface: `check` / `test:cli` / `nudo -- contract|export|health|env harvest`.
+> `pnpm run test` is **vitest** (package tests), not the CLI case reporter — that is `test:cli`. Product CLI surface: `check` / `test:cli` / `nudo -- contract|export|health`.
 >
 > Docusaurus `start` serves **one locale per process**. Default `docs:dev` is English only, so `/nudo/zh-Hans/` will 404 until you run `docs:dev:zh` (or `docs:build` + `docs:serve`).
 
@@ -50,12 +50,12 @@ core → parser → service → cli → nudo (thin shell)
 |---|---|
 | `packages/core` | **Type system**: algebra/Abs (term, pred, check, leq, exec/transpile, surface, arithmetic), format (extensional rendering), environment, refinements, interface (sidecar/effectiveInterface/projection) |
 | `packages/parser` | Babel-based parser; extracts function-scoped `@nudo:` directives from JSDoc |
-| `packages/cli` | CLI commands only: check/test/contract/export/health/env harvest |
+| `packages/cli` | CLI commands only: check/test/contract/export/health |
 | `packages/service` | Analyzer orchestration, Abs-native evaluator (B-path), dts-generator, harvest, case-json, interface emitter/surface/derivation |
 | `packages/nudojs` | Thin npm shell `nudojs` (`nudo` bin) that re-exports `@nudojs/cli` |
 | `packages/lsp` | LSP server (check diagnostics, completions, code lens, inlay hints, agent tools) |
 | `packages/env` | ES / Web / Node API type definitions (`@nudojs/env`) |
-| `packages/harvester` | Harvest `@types` → env modules |
+| `packages/harvester` | Harvest `@types` → Abs env (env-package authoring + analysis auto-fill; not a CLI verb) |
 | `packages/vite-plugin` | Vite plugin for build-time inference |
 | `packages/vscode` | VS Code extension (private, launches LSP server) |
 | `packages/website` | Docusaurus docs site (private) |

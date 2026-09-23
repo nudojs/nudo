@@ -1,5 +1,5 @@
 ---
-description: "从终端驱动 Nudo：check 签名、test 用例、contract 契约、export 投影 —— 六个一级动词。"
+description: "从终端驱动 Nudo：check 签名、test 用例、contract 契约、export 投影 —— 五个一级动词。"
 ---
 
 # CLI 使用指南
@@ -16,7 +16,6 @@ nudo — JavaScript types, computed
   nudo contract <path>             # 契约：打印 / draft / emit 侧车接口
   nudo export <path>               # 投影：dts / guard / schema / standard
   nudo health [paths]              # 体检：分析错误 + 固化漂移
-  nudo env harvest <pkg>           # 环境：@types → env 模块
 ```
 
 观察落在 `check` / `test` 的输出与 IDE hover，不设独立观察动词。
@@ -214,27 +213,6 @@ nudo health src/ --from tests/
 
 ```text
 nudo test lib.js --from test.js --freeze=update
-```
-
----
-
-## `nudo env harvest`
-
-把 `@types/<pkg>` 收割为 Nudo env 模块。
-
-```bash
-nudo env harvest <pkg> [--out file]   # --out 是输出 .ts 文件（默认 ./nudo-harvest-<pkg>.ts）
-nudo env harvest --auto [dir]         # 扫描目录中的裸 import，上报可自动 harvest 的 @types
-```
-
-```bash
-nudo env harvest node
-```
-
-在源码中引用生成的 env：
-
-```ts
-/// @nudo:env nudo-harvest-node.ts
 ```
 
 ---

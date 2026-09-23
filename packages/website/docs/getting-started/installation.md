@@ -34,7 +34,7 @@ npx nudojs test path/to/file.js    # call-site case reports
 # after a global install, the command is simply `nudo`
 ```
 
-Primary verbs: `check` / `test` / `contract` / `export` / `health` / `env harvest`. There is no `infer` verb — observation is `check` signatures, `test` cases, and IDE hover.
+Primary verbs: `check` / `test` / `contract` / `export` / `health`. There is no `infer` verb — observation is `check` signatures, `test` cases, and IDE hover.
 
 ## VS Code Extension
 

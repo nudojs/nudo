@@ -22,7 +22,7 @@ Entry params print as any; unknown = inference failed.
 
 ## Non-negotiable rules (full set on the canonical page)
 
-1. **CLI verbs only:** `check` | `test` | `contract` | `export` | `health` | `env harvest`. There is no `infer` verb.
+1. **CLI verbs only:** `check` | `test` | `contract` | `export` | `health`. There is no `infer` verb.
 2. **Contracts are the product surface:** sidecar `*.nudo.js` auto-binding + in-source `@nudo:refine` (alias `@nudo:interface`).
 3. **`@nudo:case` is debug only** — never present it as the interface product.
 4. **`any` vs `unknown`:** unconstrained entry params print as **`any`**; **`unknown` means inference failed**.

@@ -411,7 +411,7 @@ debug "symbolic"  (number, number) => number
 - **Abs algebra (single-track)** — Term/Pred/Abs, arithmetic kernel, `leqAbs`, generalize, `nudo check` / `nudo test` / `nudo contract` / `nudo export`, CheckJson, gold gates (recall = precision = 1.0).
 - **Call budget** — depth/cycle/total guards so recursive check never stack-overflows.
 - **Emit round-trip** — generated `.d.ts` passes `tsc --noEmit --strict` (`emit-tsc-roundtrip.test.ts`).
-- **Harvest automation** — `nudo env harvest --auto [dir]` scans bare imports and reports auto-harvestable `@types` packages.
+- **Harvest is internal** — analysis auto-fills `@types` modules via `bareSpecToAbsModules`; env-package generation uses `@nudojs/harvester`. Not a product CLI verb.
 
 ### Open
 - esbuild / webpack plugins; source maps for error locations

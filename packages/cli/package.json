@@ -46,8 +46,7 @@
     "@nudojs/core": "workspace:*",
     "@nudojs/parser": "workspace:*",
     "@nudojs/service": "workspace:*",
-    "@nudojs/env": "workspace:*",
-    "@nudojs/harvester": "workspace:*"
+    "@nudojs/env": "workspace:*"
   },
   "scripts": {
     "build": "tsup",

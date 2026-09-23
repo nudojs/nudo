@@ -222,7 +222,7 @@ transform(null);
 /// @nudo:env web
 ```
 
-内置 `es` / `web` / `node` env 模块为常见 API 提供类型。用 [`nudo env harvest`](./env-harvest.md) 把 `@types` 收割为 env。**Env/harvest 不是 mock 的替代品**（尤其原生运行时回调）—— 见[边界](../concepts/limits.md)。
+内置 `es` / `web` / `node` env 模块为常见 API 提供类型；第三方 `@types` 在分析期自动补洞。见[依赖类型](./env-harvest.md)。**Env/harvest 不是 mock 的替代品**（尤其原生运行时回调）—— 见[边界](../concepts/limits.md)。
 
 ### 11. Mock 外部依赖
 

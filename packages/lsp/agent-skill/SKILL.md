@@ -17,7 +17,6 @@ nudo test <path> [--json] [--from paths…] [--freeze[=update]]
 nudo contract <path> [--emit] [--draft] [--write] [--fn name]
 nudo export <path> [--format dts|guard|schema|standard|all] [--dialect zod] [--out dir]
 nudo health [paths] [--from paths…] [--json]
-nudo env harvest <pkg>
 ```
 
 - **Observation** = `check` signatures (printed on success too) + `test` case report + IDE hover.

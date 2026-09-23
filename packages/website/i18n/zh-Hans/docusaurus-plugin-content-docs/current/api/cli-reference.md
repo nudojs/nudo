@@ -1,5 +1,5 @@
 ---
-description: "nudo CLI 参考 —— check、test、contract、export、health、env harvest 的参数、选项、输出格式与退出码。"
+description: "nudo CLI 参考 —— check、test、contract、export、health 的参数、选项、输出格式与退出码。"
 ---
 
 # CLI 参考
@@ -25,7 +25,6 @@ nudo check ./src/utils.js
 | [`nudo contract`](#nudo-contract) | 打印 / draft / emit 有效接口 —— `[handwritten]` / `[generated]` / `[implicit]` 分层 |
 | [`nudo export`](#nudo-export) | 把 Abs 投影为 `dts` / `guard` / `schema` / `standard` |
 | [`nudo health`](#nudo-health) | 健康检查：分析错误、调用点固化漂移 |
-| [`nudo env harvest`](#nudo-env-harvest) | 把 `@types/<pkg>` 声明转为 Nudo env 文件 |
 
 观察 = `check` 签名 + `test` 用例报告 + IDE hover。
 
@@ -345,40 +344,6 @@ Result: FAIL (drift or errors found)
 
 ---
 
-### nudo env harvest
-
-把 `@types/<pkg>` 声明转换为 Nudo env 模块。
-
-```bash
-nudo env harvest <pkg> [options]
-```
-
-**选项：**
-
-| 选项 | 说明 |
-|------|------|
-| `--out <file>` | 输出 env 文件路径（默认 `./nudo-harvest-<pkg>.ts`） |
-| `--auto [dir]` | 扫描目录中的裸 import，上报可自动 harvest 的 `@types` 包（带 `--auto` 时 `<pkg>` 可省略） |
-
-**示例：**
-
-```bash
-nudo env harvest node
-```
-
-```ts
-/// @nudo:env nudo-harvest-node.ts
-```
-
-**退出码：**
-
-| 码 | 含义 |
-|----|------|
-| `0` | env 文件已写入 / 状态已报告 |
-| `1` | `@types/<pkg>` 未安装，或其中无 `.d.ts` |
-
----
-
 ## JSON 输出
 
 `check --json` 与 `test --json` 是机器可读面。
@@ -398,4 +363,3 @@ nudo env harvest node
 | `contract` / `export`（只读） | 用法 / IO 错误 |
 | `contract --emit --exit-on-diff` | 将写盘且有 diff |
 | `health` | 漂移或分析错误 |
-| `env harvest` | 缺少 `@types` 包或无声明 |

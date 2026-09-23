@@ -38,10 +38,10 @@ The monorepo uses pnpm workspaces. Key packages:
 |---------|-------------|
 | `@nudojs/core` | Type system (Abs algebra), extensional rendering (format), Environment |
 | `@nudojs/parser` | Babel parse, directive extraction, `parseCaseArgExpr` |
-| `@nudojs/cli` | CLI commands only (`check`, `test`, `contract`, `export`, `health`, `env harvest`) |
+| `@nudojs/cli` | CLI commands only (`check`, `test`, `contract`, `export`, `health`) |
 | `@nudojs/service` | High-level API: `analyzeFile`, `getTypeAtPosition`, `getCompletionsAtPosition` |
 | `@nudojs/lsp` | Language Server Protocol implementation, including AI-agent `executeCommand`/custom requests (see the [Agent guide](./guides/agent-integration.md)) |
-| `@nudojs/harvester` | Converts `@types/*.d.ts` declarations into Nudo env files (powers `nudo env harvest`) |
+| `@nudojs/harvester` | Converts `@types/*.d.ts` into Abs env definitions for `@nudojs/env` authoring and analysis auto-fill (not a product CLI verb) |
 | `@nudojs/env` | Built-in environment type definitions (`/// @nudo:env es\|web\|node`, subpath exports `/es` `/web` `/node`) |
 | `vite-plugin-nudo` | Vite plugin for type inference during dev |
 | `nudo-vscode` | VS Code / Cursor extension |

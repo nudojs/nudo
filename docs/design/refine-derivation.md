@@ -3,7 +3,7 @@
 > **状态**：主体已实施——三层有效契约、侧车自动绑定、`contract` 打印/`--draft`/`--emit`、drift/domain 冲突码、隐式依赖边、组合式生成、LSP open-buffer 侧车真值、**项目根 ambient 绑定边界**。`.nudo/cache` 跨会话缓存部分（L2 harvest 已落盘）。
 > **真源**：架构 → kernel-merge.md；命令面/any/unknown/check → cli-semantics.md
 >
-> 产品动词：`check` / `test` / `contract` / `export` / `health` / `env harvest`。
+> 产品动词：`check` / `test` / `contract` / `export` / `health`。
 > 配置键：`package.json#nudo.contract.*`（`autoBind` / `emit`）。
 > 相关 flags：`--from`；`test --freeze` 仅 debug 见证固化；`export --format` / `--dialect zod` / `--out`。
 > 序列化 API：`CaseJson`（test 报告面）/ `absToSchemaSource`（schema 投影）。

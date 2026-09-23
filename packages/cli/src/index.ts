@@ -2,8 +2,9 @@
 /**
  * nudo CLI — 命令面按 design-cli-semantics.md §1。
  *
- * 正门：check / test / contract / export / health / env harvest
+ * 正门：check / test / contract / export / health
  * 观察是 check signatures + test case 报告 + IDE，不是一级动词。
+ * harvest 不是产品动词：@types 补洞走分析自动路径，env 包生成用 @nudojs/harvester。
  */
 import { readFileSync, existsSync, watch, readdirSync, statSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
 import { resolve, dirname, relative, join, basename, isAbsolute } from "node:path";
@@ -39,7 +40,6 @@ import {
   ambientSourcesOfSidecar,
   envPathDependents,
   isEnvTemplatePath,
-  collectDtsFromEntry,
   getAnalysisSession,
   formatEmitSummary,
   formatInterfaceSurfaceLine,
@@ -54,7 +54,6 @@ import {
   type AnalysisResult,
   type EmitResult,
 } from "@nudojs/service";
-import { harvestDts, emitEnvModule } from "@nudojs/harvester";
 import { buildTestReport, formatTestReport } from "./run-test.ts";
 // extractDirectives retained for export-path parity comments; unused runtime import removed
 
@@ -77,7 +76,7 @@ Day 0   nudo check <path>   (signatures + L1/L2 gate)
         nudo test <path>    (every inferred case)
 Day 1   nudo contract + check
 Ecosystem  nudo export (dts / guard / schema / standard)
-Ops     nudo health [paths] · nudo env harvest <pkg>
+Ops     nudo health [paths]
 
 No observation verb: signatures come from check, cases from test, hover from IDE.
 `,
@@ -1189,63 +1188,6 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
   if (failed) process.exitCode = 1;
 }
 
-// ---------------------------------------------------------------------------
-// env harvest
-// ---------------------------------------------------------------------------
-
-const HARVEST_MAX_FILES = 200;
-
-function runHarvest(pkg: string, outOpt?: string): void {
-  const typesDir = resolve(process.cwd(), "node_modules", "@types", pkg);
-  if (!existsSync(typesDir)) {
-    console.error(`Error: ${relative(process.cwd(), typesDir)} not found.`);
-    console.error(`Install the package first, e.g. pnpm add -D @types/${pkg}`);
-    process.exitCode = 1;
-    return;
-  }
-
-  let entry = join(typesDir, "index.d.ts");
-  const pkgJsonPath = join(typesDir, "package.json");
-  if (existsSync(pkgJsonPath)) {
-    try {
-      const pkgJson = JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as { types?: string; typings?: string };
-      const declared = pkgJson.types ?? pkgJson.typings;
-      if (typeof declared === "string") {
-        const candidate = resolve(typesDir, declared);
-        if (existsSync(candidate)) entry = candidate;
-      }
-    } catch {
-      /* fallback */
-    }
-  }
-  if (!existsSync(entry)) {
-    console.error(`Error: no .d.ts entry found in ${relative(process.cwd(), typesDir)} (tried ${basename(entry)}).`);
-    process.exitCode = 1;
-    return;
-  }
-
-  const files = collectDtsFromEntry(entry, HARVEST_MAX_FILES);
-  if (files.length === 0) {
-    console.error(`Error: no .d.ts files collected from ${relative(process.cwd(), entry)}.`);
-    process.exitCode = 1;
-    return;
-  }
-
-  const env = harvestDts(files);
-  const code = emitEnvModule(env, `@types/${pkg}`);
-  const out = resolve(outOpt ?? `nudo-harvest-${pkg}.ts`);
-  writeFileSync(out, code, "utf-8");
-
-  console.log(`Harvested @types/${pkg} → ${relative(process.cwd(), out) || out}`);
-  console.log(`  files:    ${env.stats.files}`);
-  console.log(`  symbols:  ${env.stats.symbols}`);
-  console.log(`  skipped:  ${env.stats.skipped}`);
-  console.log(`\nUsage — add this directive at the top of your JS file:`);
-  const outDir = dirname(out);
-  const hintPath = resolve(process.cwd()) === outDir ? basename(out) : out;
-  console.log(`  /// @nudo:env ${hintPath}`);
-}
-
 // ===========================================================================
 // PRIMARY COMMANDS
 // ===========================================================================
@@ -1575,61 +1517,6 @@ program
       return;
     }
     await runOneDir();
-  });
-
-const env = program.command("env").description("Environment: harvest @types into env modules");
-env
-  .command("harvest")
-  .description("Convert @types/<pkg> .d.ts into a Nudo env file (constraint builders)")
-  .argument("[pkg]", "Package name under @types (e.g. node)")
-  .option("--out <file>", "Output .ts env file (default: ./nudo-harvest-<pkg>.ts)")
-  .option("--auto [dir]", "Scan directory for bare imports and report auto-harvestable @types packages")
-  .action(async (pkg: string | undefined, opts: { out?: string; auto?: boolean | string }) => {
-    if (opts.auto !== undefined) {
-      const dir = resolve(typeof opts.auto === "string" ? opts.auto : ".");
-      const files = existsSync(dir) && statSync(dir).isDirectory()
-        ? collectNudoFiles(dir)
-        : existsSync(dir)
-          ? [dir]
-          : [];
-      if (files.length === 0) {
-        console.error(`No analysis targets under ${dir}`);
-        process.exitCode = 1;
-        return;
-      }
-      const { collectBarePackages, harvestPackageCached, formatHarvestSummary } = await import("@nudojs/service");
-      const seen = new Set<string>();
-      const report: string[] = [];
-      for (const f of files) {
-        let src: string;
-        try {
-          src = readFileSync(f, "utf-8");
-        } catch {
-          continue;
-        }
-        for (const p of collectBarePackages(src)) {
-          if (seen.has(p)) continue;
-          seen.add(p);
-          const h = harvestPackageCached(p, dirname(f));
-          if (h) report.push(formatHarvestSummary(h));
-          else report.push(`${p}: no .d.ts / @types (skipped)`);
-        }
-      }
-      if (report.length === 0) {
-        console.log("No bare imports found (or nothing to harvest).");
-        return;
-      }
-      console.log(`auto harvest candidates under ${relative(process.cwd(), dir) || "."}:\n`);
-      for (const line of report) console.log(line);
-      console.log(`\nAnalysis injects these automatically; use \`nudo env harvest <pkg>\` to write a persistent env file.`);
-      return;
-    }
-    if (!pkg) {
-      console.error("Error: <pkg> is required (or use --auto).");
-      process.exitCode = 1;
-      return;
-    }
-    runHarvest(pkg, opts.out);
   });
 
 program.parseAsync(process.argv).catch((err: unknown) => {
