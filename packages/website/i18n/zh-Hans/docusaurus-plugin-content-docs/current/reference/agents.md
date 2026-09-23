@@ -111,17 +111,22 @@ export const getName = fn({ user: shape({ name: string() }) }, string());
 
 迁移期逃生舱（不是类型修复）：`npx nudojs check --ignore-throws TypeError`。
 
-### `nudo:unknown-inference` / `nudo:opaque-result` — 钉住或证明，禁止编造
+### `nudo:unknown-inference` / `nudo:opaque-result` — 让返回面可计算，禁止编造
 
 ```js
-// 对 — mock native 面（或补调用点证据）
-// @nudo:mock ms = (v, opts) => 1
-export function formatAge(durationMs) {
-  return ms(durationMs, { long: true });
+// 错 — 调进未建模 native，返回面是 true unknown
+export function fmt(v) {
+  return __nudoMissingNative(v);
+}
+
+// 对 — 可计算函数体（或补调用点证据）
+export function fmt(v) {
+  return String(v);
 }
 ```
 
-**不要**为了消掉 `unknown` 去写 `@returns string`。那正是 Nudo 拒绝的 TS 谎言。
+**不要**为了消掉 `unknown` 去写 `@returns string`。那正是 Nudo 拒绝的 TS 谎言。  
+`@nudo:mock` 面向**导入模块**面（对自由全局仍不稳——优先可计算函数体或真实证据）。
 
 ### `nudo:assign-mismatch` — 保住形状
 

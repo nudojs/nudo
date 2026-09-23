@@ -127,22 +127,22 @@ export const getName = fn({ user: shape({ name: string() }) }, string());
 
 Migration-only escape (not a type fix): `npx nudojs check --ignore-throws TypeError`.
 
-### `nudo:unknown-inference` / `nudo:opaque-result` — pin or prove, never invent
+### `nudo:unknown-inference` / `nudo:opaque-result` — make the face computable, never invent
 
 ```js
-// bad — pretend the native returns string
-export function formatAge(ms) {
-  return ms(ms); // wrong anyway
+// bad — call into an unmodeled native; return face is true unknown
+export function fmt(v) {
+  return __nudoMissingNative(v);
 }
 
-// good — mock the native face (or add call-site evidence)
-// @nudo:mock ms = (v, opts) => 1
-export function formatAge(durationMs) {
-  return ms(durationMs, { long: true });
+// good — computable body (or add call-site evidence)
+export function fmt(v) {
+  return String(v);
 }
 ```
 
-Do **not** annotate `@returns string` to silence `unknown`. That is the TypeScript lie Nudo refuses.
+Do **not** annotate `@returns string` to silence `unknown`. That is the TypeScript lie Nudo refuses.  
+`@nudo:mock` is for **imported module** faces (and is still uneven on free globals — prefer a computable body or real evidence).
 
 ### `nudo:assign-missing` / `assign-mismatch` — keep the shape
 
