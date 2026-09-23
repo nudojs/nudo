@@ -32,6 +32,7 @@ import {
   noteNullishMemberThrows,
   anyMemberResult,
   definitelyUncallableMember,
+  noteBCallRecord,
 } from "./calls.ts";
 import { errorTypeAbs } from "./may-throw.ts";
 import { NudoThrow, $collectionForEach } from "./runtime.ts";
@@ -662,10 +663,53 @@ export function $invoke(
       }
     }
     const m = findMethod(brandName, method);
-    if (m) return m(thisVal, ...args);
+    if (m) {
+      // 类实例方法调用点收集（T5）：`Class.method`
+      let result: Abs = unknown;
+      let threw = false;
+      try {
+        result = m(thisVal, ...args);
+        return result;
+      } catch (e) {
+        threw = true;
+        result = e && typeof e === "object" && "absValue" in (e as object)
+          ? ((e as { absValue: Abs }).absValue)
+          : unknown;
+        throw e;
+      } finally {
+        noteBCallRecord({
+          fnName: `${brandName}.${method}`,
+          args,
+          result,
+          callLoc: loc ? { line: loc[0], column: loc[1] } : undefined,
+          threw,
+        });
+      }
+    }
     const spec = getBClass(brandName);
     const sm = spec?.staticMethods?.[method];
-    if (sm) return sm(...args);
+    if (sm) {
+      let result: Abs = unknown;
+      let threw = false;
+      try {
+        result = sm(...args);
+        return result;
+      } catch (e) {
+        threw = true;
+        result = e && typeof e === "object" && "absValue" in (e as object)
+          ? ((e as { absValue: Abs }).absValue)
+          : unknown;
+        throw e;
+      } finally {
+        noteBCallRecord({
+          fnName: `${brandName}.${method}`,
+          args,
+          result,
+          callLoc: loc ? { line: loc[0], column: loc[1] } : undefined,
+          threw,
+        });
+      }
+    }
   }
   // bigint 字面量：toString(radix)/valueOf 精确折叠——字面量实参真执行，
   // 非法 radix 原生 RangeError / 符号实参 TypeError 硬抛（catch 可吸收）
@@ -739,8 +783,33 @@ export function $invoke(
     : undefined;
   if (impl) {
     // 对象方法（ObjectMethod / 方法型 FunctionExpression）：注入 receiver
-    if (impl.bindThis) return $call(prop as Abs, [thisVal, ...args]);
-    return $call(prop as Abs, args);
+    const brand = thisVal.shape.k === "brand" ? thisVal.shape.name : undefined;
+    // 调用点收集（T5）：`Class.method` / 裸 `method`，供 call@ 合成
+    const recordName = brand ? `${brand}.${method}` : method;
+    let result: Abs = unknown;
+    let threw = false;
+    try {
+      result = impl.bindThis
+        ? $call(prop as Abs, [thisVal, ...args])
+        : $call(prop as Abs, args);
+      return result;
+    } catch (e) {
+      threw = true;
+      result = e && typeof e === "object" && "absValue" in (e as object)
+        ? ((e as { absValue: Abs }).absValue)
+        : unknown;
+      throw e;
+    } finally {
+      noteBCallRecord({
+        fnName: recordName,
+        args,
+        result,
+        callLoc: loc ? { line: loc[0], column: loc[1] } : undefined,
+        threw,
+      });
+      // 方法槽 returnType 渐进填入（未调用前展示 `() => ?` 的残余）
+      refineFnReturnType(prop as Abs, result);
+    }
   }
   // 结构上确定不可调用（null-proto 缺失名 / 闭 exact 对象非 OP 名缺失 /
   // 字面量非函数槽）→ 原生 TypeError hard throw（catch 可吸收）
@@ -759,6 +828,22 @@ export function $invoke(
   // unknown（推导失败）→ unknown-recv 引擎债
   noteUnknownMemberMissing(thisVal, method, "method", loc);
   return unknown;
+}
+
+/** 首次/后续方法调用后，把观测结果 join 进 fn.returnType 槽（展示用，不回写分析） */
+function refineFnReturnType(fn: Abs, result: Abs): void {
+  if (!fn || typeof fn !== "object" || !("shape" in fn)) return;
+  const s = fn.shape as { k?: string; returnType?: Abs };
+  if (s.k !== "fn") return;
+  if (s.returnType === undefined) {
+    s.returnType = result;
+    return;
+  }
+  try {
+    s.returnType = joinAbs(s.returnType, result);
+  } catch {
+    /* join 失败保持原槽 */
+  }
 }
 
 /** union 成员是否可能持有该方法（避免 Buffer 无 split 拖垮 string 分支） */
@@ -1212,7 +1297,22 @@ export function $staticInvoke(cls: Abs, method: string, args: Abs[]): Abs {
   const spec = specOf(cls);
   const m = spec?.staticMethods?.[method];
   if (!m) return unknown;
-  return m(...args);
+  const className = spec?.name ?? (cls.shape.k === "brand" ? cls.shape.name : undefined);
+  const recordName = className ? `${className}.${method}` : method;
+  let result: Abs = unknown;
+  let threw = false;
+  try {
+    result = m(...args);
+    return result;
+  } catch (e) {
+    threw = true;
+    result = e && typeof e === "object" && "absValue" in (e as object)
+      ? ((e as { absValue: Abs }).absValue)
+      : unknown;
+    throw e;
+  } finally {
+    noteBCallRecord({ fnName: recordName, args, result, threw });
+  }
 }
 
 /** 计算属性写：o[kAbs] = v。非字面量 key → open + index join（不得写成字面槽 "?"） */

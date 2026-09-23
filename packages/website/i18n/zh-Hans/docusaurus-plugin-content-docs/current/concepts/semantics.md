@@ -210,7 +210,7 @@ compute(5);
   call@L11  (5) => 25
 ```
 
-指令路径在实参为字面量时同样精确（对 `compute` 写 `@nudo:case "member" (5)` → `(5) => 25`）；空实参表 `()` 时形参是 `unknown`，结果退化为 `unknown #partial`。剩下的缺口在调用点**采集**而非求值：顶层裸成员调用（`circle.area()` 作语句）不产生 `call@` case——成员被调者不会被采集为调用点。把成员调用包进函数里即可看到。
+指令路径在实参为字面量时同样精确（对 `compute` 写 `@nudo:case "member" (5)` → `(5) => 25`）；空实参表 `()` 时形参是 `unknown`，结果退化为 `unknown #partial`。成员调用（`circle.area()`、`obj.method()`）会作为调用点采集（`Class.method` / 裸 `method`），与具名调用一样合成 `call@` case。
 
 ### 递归按调用点展开
 

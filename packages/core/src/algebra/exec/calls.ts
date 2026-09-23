@@ -139,6 +139,16 @@ const GLOBAL_FNS = new Set([
 ]);
 
 /** 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） */
+/** 成员/方法调用点打点（$invoke 等；无收集器时 no-op）。不进 $callNamed 预算。 */
+export function noteBCallRecord(r: BCallRecord): void {
+  if (!bCallCollector) return;
+  try {
+    bCallCollector(r);
+  } catch {
+    /* collector 不得打断 */
+  }
+}
+
 export function setBCallCollector(
   collector: ((r: BCallRecord) => void) | null,
 ): ((r: BCallRecord) => void) | null {

@@ -5,9 +5,8 @@
  * 指令路径带字面量实参同样精确（case "member" (5) → (5) => 25）；空实参表
  * 时形参 unknown → unknown #partial（见 guides/semantics.md）。
  *
- * 剩余缺口是调用点"采集"而非求值：顶层裸成员调用（circle.area() 作语句）
- * 不产生 call@ case——成员被调者不进调用点记录。要演示精度，必须把成员
- * 调用包进函数（如 compute）。
+ * 成员调用（circle.area()）作为调用点采集（Class.method / 裸 method），
+ * 与具名调用一样合成 call@ case。
  */
 
 class Circle {

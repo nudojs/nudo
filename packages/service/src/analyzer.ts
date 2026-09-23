@@ -582,10 +582,8 @@ function assignmentChainName(expr: Node): string | null {
  * `module.exports = fn` becomes "default" (ESM default-export analogue).
  * Collected non-declaration entries carry `noDeclaration` — see FunctionAnalysis.
  *
- * v1 limitation: `internals.clone()`-style member calls go through method
- * dispatch and never produce call records, so such functions fall back to the
- * entry@ evaluation; same-file `X(...)` calls after `exports.X = fn` are not
- * tracked either.
+ * Member / class-method calls are recorded as `Class.method` / bare `method`
+ * (see `$invoke` noteBCallRecord) and synthesize `call@` the same way.
  */
 function collectTopLevelFunctions(
   ast: Node,
@@ -808,9 +806,9 @@ function locFromCallLoc(loc: { line: number; column: number } | undefined): Sour
  * FunctionAnalysis entries — no re-evaluation needed, each CallRecord already
  * carries the resultAbs/throwsAbs computed when this file was evaluated.
  *
- * v1 limitation: only named-import direct calls are recorded by the
- * evaluator; `import * as ns` member calls go through the method path and
- * never reach this synthesis.
+ * Named-import direct calls and member calls (`obj.fn` / `Class.method`,
+ * including `import * as ns` members via dotted name resolution) reach this
+ * synthesis.
  */
 function synthesizeExternalFunctions(
   records: CallRecord[],
@@ -2358,6 +2356,10 @@ function buildAbsImportLocalMap(
             out.set(s.local.name, { modulePath, exportName: imported });
           } else if (s.type === "ImportDefaultSpecifier") {
             out.set(s.local.name, { modulePath, exportName: "default" });
+          } else if (s.type === "ImportNamespaceSpecifier") {
+            // `import * as ns`：成员调用 `ns.helper` 由 callRecordFromAbsCall
+            // 按 `ns.helper` / 点号拆分解析到 targetExport=helper
+            out.set(s.local.name, { modulePath, exportName: "*" });
           }
         }
         continue;
@@ -2588,7 +2590,19 @@ function callRecordFromAbsCall(
     throwsAbs: threw ? thrownOrResult : neverAbs,
     callLoc: r.callLoc,
   };
-  const imp = impMap?.get(r.fnName);
+  const imp =
+    impMap?.get(r.fnName) ??
+    // `ns.helper` / `Class.method`：先整名，再按首段点号拆命名空间成员
+    (() => {
+      const dot = r.fnName.indexOf(".");
+      if (dot <= 0) return undefined;
+      const base = impMap?.get(r.fnName.slice(0, dot));
+      if (!base || base.exportName !== "*") return undefined;
+      return {
+        modulePath: base.modulePath,
+        exportName: r.fnName.slice(dot + 1),
+      };
+    })();
   if (imp) {
     rec.targetModule = imp.modulePath;
     rec.targetExport = imp.exportName;

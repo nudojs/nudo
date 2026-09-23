@@ -32,6 +32,9 @@ import {
   runTranspiled,
   callTranspiledExportFull,
   setBCallCollector,
+  listTopFunctions,
+  $new,
+  $invoke,
   sidecarPathOf,
   tagDerivationRoot,
   takeInterfaceDiagsSince,
@@ -199,10 +202,52 @@ export function extractFnConstraintSources(
   return out;
 }
 
-/** 形参名（函数声明 / const 箭头；export 包裹） */
+/** 形参名（函数声明 / const 箭头 / Class.method；export 包裹） */
 export function functionParamNames(source: string, fnName: string): string[] {
   try {
     const ast = parse(source);
+    // C4.2：`Class.method` → class 成员形参（跳过 ctor/get/set）
+    if (fnName.includes(".")) {
+      const [clsName, methodName] = fnName.split(".", 2);
+      for (const stmt of ast.program.body) {
+        let decl: unknown =
+          stmt.type === "ExportNamedDeclaration"
+            ? (stmt as { declaration?: unknown }).declaration
+            : stmt;
+        if (!decl) continue;
+        if ((decl as { type?: string }).type === "ExportDefaultDeclaration") {
+          decl = (decl as { declaration?: unknown }).declaration;
+        }
+        const c = decl as {
+          type?: string;
+          id?: { name?: string };
+          body?: { body?: unknown[] };
+        };
+        if (c.type !== "ClassDeclaration" || c.id?.name !== clsName) continue;
+        for (const m of c.body?.body ?? []) {
+          const mem = m as {
+            type?: string;
+            kind?: string;
+            static?: boolean;
+            key?: { type?: string; name?: string };
+            params?: unknown[];
+          };
+          const isMethod =
+            mem.type === "MethodDefinition" ||
+            mem.type === "ClassMethod" ||
+            mem.type === "ClassPrivateMethod";
+          if (!isMethod) continue;
+          if (mem.kind && mem.kind !== "method") continue;
+          const keyName = mem.key?.type === "Identifier" ? mem.key.name : undefined;
+          if (keyName === methodName) {
+            return ((mem.params as Array<{ type: string; name?: string; left?: { type: string; name?: string } }>) ?? []).map(
+              paramNameOf,
+            );
+          }
+        }
+      }
+      return [];
+    }
     for (const stmt of ast.program.body) {
       const d =
         stmt.type === "ExportNamedDeclaration" ? (stmt.declaration ?? undefined) : stmt;
@@ -239,31 +284,12 @@ function paramNameOf(p: { type: string; name?: string; left?: { type: string; na
 }
 
 function topLevelFnNames(source: string): string[] {
-  const out: string[] = [];
+  // 与 core scan.listTopFunctions 对齐：含 C4.2 导出 class 的 `Class.method`
   try {
-    const ast = parse(source);
-    for (const stmt of ast.program.body) {
-      const d =
-        stmt.type === "ExportNamedDeclaration" ? (stmt.declaration ?? undefined) : stmt;
-      if (!d) continue;
-      if (d.type === "FunctionDeclaration" && d.id) out.push(d.id.name);
-      if (d.type === "VariableDeclaration") {
-        for (const decl of d.declarations) {
-          if (
-            decl.id.type === "Identifier" &&
-            decl.init &&
-            (decl.init.type === "ArrowFunctionExpression" ||
-              decl.init.type === "FunctionExpression")
-          ) {
-            out.push(decl.id.name);
-          }
-        }
-      }
-    }
+    return listTopFunctions(source);
   } catch {
-    /* ignore */
+    return [];
   }
-  return out;
 }
 
 function importLocalMap(
@@ -576,22 +602,30 @@ function deriveOneRoot(
     try {
       // B-path 优先（迁移件 3）：derivation 打点在共享代数层（arithmetic.add
       // noteDerivationAdd / joinAbs noteDerivationJoin），$add/$join 执行
-      // 时自动打点——无需 transpile 插桩。fail-closed：类方法（.名）的
-      // analyzeFn 解释已删——不收集调用记录（该 root 无推导链产出）。
-      if (!plan.fnName.includes(".")) {
+      // 时自动打点——无需 transpile 插桩。类方法（.名）走类方法桥
+      // （与 generalize 同轨：$new + $invoke），不再 fail-closed 跳过。
+      {
         const run = runTranspiled(source, { mode: "analyze", modules });
-        if (plan.fnName in run) {
+        if (plan.fnName.includes(".")) {
+          const [clsName, methodName] = plan.fnName.split(".", 2);
+          const clsAbs = run[clsName ?? ""];
+          if (clsAbs && typeof clsAbs === "object" && "shape" in (clsAbs as object)) {
+            // ctor 形参个数对推导不敏感：统一 any 占位（generalize 同口径精神）
+            const inst = $new(clsAbs as Abs, []);
+            $invoke(inst, methodName ?? "", entryArgs);
+          }
+        } else if (plan.fnName in run) {
           callTranspiledExportFull(run, plan.fnName, entryArgs);
-          calls.push(
-            ...bCalls.map((r) => ({
-              fnName: r.fnName,
-              args: r.args,
-              result: r.result,
-              callLoc: r.callLoc,
-              threw: r.threw,
-            })),
-          );
         }
+        calls.push(
+          ...bCalls.map((r) => ({
+            fnName: r.fnName,
+            args: r.args,
+            result: r.result,
+            callLoc: r.callLoc,
+            threw: r.threw,
+          })),
+        );
       }
     } catch {
       return [];
