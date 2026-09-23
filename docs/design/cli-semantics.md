@@ -36,6 +36,7 @@ nudo — JavaScript types, computed
   nudo contract <path>             # 契约：打印 / draft / emit 侧车接口
   nudo export <path>               # 投影：dts | guard | schema | standard | all
   nudo health [paths] [--watch]    # 体检：分析错误 + 固化漂移
+  nudo migrate <action> [paths]    # 替代 TS 单向门：status|strip|verify|retire
 ```
 
 `watch` 是模式不是任务：对应 `tsc --watch`。仅挂在有持续重跑意义的子命令上（`check` / `test`，`health` 可选）；**不**挂在 `export`（出货一次性投影）与 `contract --emit`（写盘）。
@@ -89,6 +90,9 @@ assertions
 | `nudo contract` | 打印 / `--draft` / `--emit` 侧车接口；`--from` 供域证据 |
 | `nudo export` | 一次性投影：`dts` / `guard` / `schema`（`--dialect zod`）/ `standard` / `all`；`--out` 写出目录 |
 | `nudo health` | 分析错误 + 固化漂移；`--watch` 可选 |
+| `nudo migrate` | **替代 TS 单向门**：`status` 审计 / `strip` 剥注解 + draft 侧车 / `verify`（唯一允许双跑 tsc）/ `retire` 从 package.json 摘除 tsc 并写 `.nudo/migrate-retired.json` |
+
+**migrate 纪律**：产品终局是 `retire tsc`。`verify --with-tsc` 是迁移期对照，不得写成产品共存终态；`strip` 用 Nudo TS 剥除语义（enum 有风险，见 `strip-types` 注释）。
 
 ### 1.3 exit code 契约
 
@@ -98,6 +102,8 @@ assertions
 | `check`（含 `--abs` / `--json`） | 任一 error 级诊断（L1 或未 ignore 的 L2）；`--abs` 是观察面，**不是**关 CI 的旁路 |
 | `test`（含 `--json` / `--abs`） | 任一**声明断言**失败（合成 case / entry@ 不挡 exit） |
 | `health` | drift 或 analysis error |
+| `migrate verify` | 任一文件 `nudo check` 不 ok（tsc 基线仅对照，不单独挡 exit） |
+| `migrate strip|retire` | 用法 / IO 错误（`retire --dry-run` 不写盘） |
 | `contract --emit --exit-on-diff` | 将写盘且有 diff（须同时 `--dry-run`；无 dry-run 时为 usage error） |
 
 CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。

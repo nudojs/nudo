@@ -51,15 +51,18 @@ importers:
 
   packages/cli:
     dependencies:
+      '@babel/generator':
+        specifier: ^7.29.8
+        version: 7.29.8
+      '@babel/types':
+        specifier: ^8.0.6
+        version: 8.0.6
       '@nudojs/core':
         specifier: workspace:*
         version: link:../core
       '@nudojs/env':
         specifier: workspace:*
         version: link:../env
-      '@nudojs/harvester':
-        specifier: workspace:*
-        version: link:../harvester
       '@nudojs/parser':
         specifier: workspace:*
         version: link:../parser

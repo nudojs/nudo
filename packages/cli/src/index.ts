@@ -2,9 +2,10 @@
 /**
  * nudo CLI — 命令面按 design-cli-semantics.md §1。
  *
- * 正门：check / test / contract / export / health
+ * 正门：check / test / contract / export / health / migrate
  * 观察是 check signatures + test case 报告 + IDE，不是一级动词。
  * harvest 不是产品动词：@types 补洞走分析自动路径，env 包生成用 @nudojs/harvester。
+ * migrate 是替代 TS 的单向门（status/strip/verify/retire）；双跑仅 verify。
  */
 import { readFileSync, existsSync, watch, readdirSync, statSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
 import { resolve, dirname, relative, join, basename, isAbsolute } from "node:path";
@@ -67,7 +68,7 @@ function readPackageVersion(): string {
 
 program
   .name("nudo")
-  .description("JavaScript types, computed — check / test / contract / export / health")
+  .description("JavaScript types, computed — check / test / contract / export / health / migrate")
   .version(readPackageVersion())
   .addHelpText(
     "after",
@@ -77,6 +78,7 @@ Day 0   nudo check <path>   (signatures + L1/L2 gate)
 Day 1   nudo contract + check
 Ecosystem  nudo export (dts / guard / schema / standard)
 Ops     nudo health [paths]
+Migrate nudo migrate status|strip|verify|retire  (exit is retire tsc)
 
 No observation verb: signatures come from check, cases from test, hover from IDE.
 `,
@@ -1568,6 +1570,123 @@ program
     }
     await runOneDir();
   });
+
+program
+  .command("migrate")
+  .description("Retire TypeScript one-way: status / strip / verify / retire (dual-run only in verify)")
+  .argument("<action>", "status | strip | verify | retire")
+  .argument("[paths...]", "Files, directories, or package root (default: .)")
+  .option("--write", "strip: write .js outputs (and best-effort sidecar draft)")
+  .option("--backup", "strip: rename original .ts to .ts.bak after write")
+  .option("--no-draft", "strip: skip sidecar draft generation")
+  .option("--with-tsc", "verify: also run tsc --noEmit baseline on .ts inputs")
+  .option("--dry-run", "retire: print planned package.json edits without writing")
+  .option("--json", "Machine-readable output")
+  .action(
+    async (
+      action: string,
+      paths: string[],
+      opts: {
+        write?: boolean;
+        backup?: boolean;
+        draft?: boolean;
+        withTsc?: boolean;
+        dryRun?: boolean;
+        json?: boolean;
+      },
+    ) => {
+      const {
+        migrateStatus,
+        migrateStrip,
+        migrateVerify,
+        migrateRetire,
+        formatStatusTable,
+      } = await import("./migrate.ts");
+      const targets = paths.length > 0 ? paths : ["."];
+      try {
+        if (action === "status") {
+          const rows = migrateStatus(targets[0]!);
+          if (opts.json) console.log(JSON.stringify(rows, null, 2));
+          else console.log(formatStatusTable(rows));
+          return;
+        }
+        if (action === "strip") {
+          const results = await migrateStrip(targets, {
+            write: opts.write === true,
+            backup: opts.backup === true,
+            draft: opts.draft !== false,
+          });
+          if (opts.json) {
+            console.log(JSON.stringify(results, null, 2));
+          } else {
+            for (const r of results) {
+              const mode = opts.write ? "wrote" : "dry";
+              console.log(`${mode}  ${r.file} → ${r.outFile}`);
+              if (r.sidecarDraft) console.log(`      draft  ${r.sidecarDraft}`);
+              for (const n of r.notes) console.log(`      note: ${n}`);
+            }
+            if (!opts.write) {
+              console.log("\n(none written — pass --write to emit .js + sidecar draft)");
+            }
+          }
+          return;
+        }
+        if (action === "verify") {
+          const results = await migrateVerify(targets, {
+            withTsc: opts.withTsc === true,
+          });
+          if (opts.json) {
+            console.log(JSON.stringify(results, null, 2));
+          } else {
+            for (const r of results) {
+              console.log(
+                `${r.nudoOk ? "OK  " : "FAIL"}  ${r.file}  (${r.nudoSummary})`,
+              );
+              if (r.tsc) {
+                console.log(`      tsc: ${r.tsc.ok ? "ok" : "diagnostics"}`);
+                if (!r.tsc.ok && r.tsc.output) {
+                  console.log(
+                    r.tsc.output
+                      .split("\n")
+                      .slice(0, 8)
+                      .map((l) => `        ${l}`)
+                      .join("\n"),
+                  );
+                }
+              }
+            }
+          }
+          const anyFail = results.some((r) => !r.nudoOk);
+          if (anyFail) process.exitCode = 1;
+          return;
+        }
+        if (action === "retire") {
+          const root = targets[0]!;
+          const result = migrateRetire(root, { dryRun: opts.dryRun === true });
+          if (opts.json) {
+            console.log(JSON.stringify(result, null, 2));
+          } else {
+            console.log(`${opts.dryRun ? "dry-run" : "retired"}  ${result.root}`);
+            if (result.removedDeps.length > 0) {
+              console.log(`  removed typescript from: ${result.removedDeps.join(", ")}`);
+            }
+            for (const s of result.rewrittenScripts) {
+              console.log(`  script ${s.name}:`);
+              console.log(`    - ${s.from}`);
+              console.log(`    + ${s.to}`);
+            }
+            console.log(`  marker: ${result.marker}`);
+          }
+          return;
+        }
+        console.error(`Unknown migrate action: ${action} (expected status | strip | verify | retire)`);
+        process.exitCode = 1;
+      } catch (err) {
+        console.error(`migrate ${action}: ${(err as Error).message}`);
+        process.exitCode = 1;
+      }
+    },
+  );
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   console.error(err instanceof Error ? (process.env.NUDO_DEBUG ? err.stack : err.message) : err);

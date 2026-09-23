@@ -11,7 +11,7 @@
 
 Nudo does not restrict how you write JavaScript. It executes your code on Abs (`shape × term × pred × conf`) so you can **faithfully observe** intermediate values and results — and **validate** them with explicit contracts sharper than ordinary TypeScript types.
 
-TypeScript sources are also accepted: annotations are stripped and the code is analyzed with plain JS semantics.
+TypeScript sources are also accepted: annotations are stripped and the code is analyzed with plain JS semantics. Use `nudo migrate` (`status|strip|verify|retire`) to retire `tsc` one-way — dual-run only during `verify`.
 
 ## Why Nudo?
 

@@ -42,11 +42,13 @@
     "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
-    "commander": "^15.0.0",
+    "@babel/generator": "^7.29.8",
+    "@babel/types": "^8.0.6",
     "@nudojs/core": "workspace:*",
+    "@nudojs/env": "workspace:*",
     "@nudojs/parser": "workspace:*",
     "@nudojs/service": "workspace:*",
-    "@nudojs/env": "workspace:*"
+    "commander": "^15.0.0"
   },
   "scripts": {
     "build": "tsup",
