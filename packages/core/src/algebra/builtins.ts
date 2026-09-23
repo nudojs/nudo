@@ -30,6 +30,7 @@ import {
 } from "./collections.ts";
 import { applyCallbackValue, undefAbs, asAbs } from "./hof.ts";
 import { absFunction, getFnImpl } from "./abs-fn.ts";
+import { instantiateReturn } from "./hof.ts";
 import { markClassValue } from "./class-mark.ts";
 
 const noBody = { type: "BlockStatement", body: [], directives: [] } as never;
@@ -1493,6 +1494,12 @@ export function evalPromiseMethod(
     case "then": {
       const onFulfilled = args[0];
       if (!onFulfilled) return promiseAbs(inner, recv.conf === "exact" ? "path" : recv.conf);
+      // 纯 relation 回调：同步收窄 inner（analyze 路径立刻可读）
+      const rel = getFnImpl(onFulfilled)?.relation;
+      if (rel && !getFnImpl(onFulfilled)?.body && !getFnImpl(onFulfilled)?.apply) {
+        const mapped = instantiateReturn(onFulfilled, [inner]);
+        return promiseAbs(unwrapThenable(mapped), recv.conf === "exact" ? "path" : recv.conf);
+      }
       // 先建 promise 占位，回调在微任务里填 inner（原生 then 不同步跑回调）
       const resultPromise = promiseAbs(unknown, "path");
       queuePromiseMicro(() => {

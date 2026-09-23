@@ -756,7 +756,8 @@ function bindTypeVars(
 export function instantiateReturn(fn: Abs, args: Abs[]): Abs {
   const shape = fn.shape;
   if (!shape || shape.k !== "fn") return unknown;
-  const src = getFnImpl(fn)?.relation ?? {
+  const impl = getFnImpl(fn);
+  const src = impl?.relation ?? {
     paramTypes: shape.paramTypes ?? [],
     returnType: shape.returnType ?? unknown,
   };
@@ -764,6 +765,17 @@ export function instantiateReturn(fn: Abs, args: Abs[]): Abs {
   src.paramTypes.forEach((p, i) => {
     bindTypeVars(p, args[i] ?? unknown, map);
   });
+  // 条件类型 infer：T 绑定后投出 E/U；extends 不成立 → fallback 支
+  if (src.inferFrom) {
+    const bound = map.get(src.inferFrom.fromVar);
+    if (src.inferFrom.via === "arr" && bound?.shape.k === "arr") {
+      map.set(src.inferFrom.inferVar, bound.shape.element);
+    } else if (src.inferFrom.via === "promise" && bound?.shape.k === "eff" && bound.shape.eff === "promise") {
+      map.set(src.inferFrom.inferVar, bound.shape.inner);
+    } else if (src.condFallback) {
+      return substAbs(src.condFallback, map);
+    }
+  }
   return substAbs(src.returnType, map);
 }
 

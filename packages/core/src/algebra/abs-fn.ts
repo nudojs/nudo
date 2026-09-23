@@ -37,7 +37,17 @@ export type AbsFnImpl = {
    */
   fingerprint?: string;
   /** 无 body 时，按 paramTypes 做 α 替换得到返回 */
-  relation?: { paramTypes: Abs[]; returnType: Abs };
+  relation?: {
+    paramTypes: Abs[];
+    returnType: Abs;
+    /**
+     * 条件类型 infer：绑定 fromVar 后从 via 投出 inferVar
+     * （`T extends (infer E)[]` → via: "arr"；`T extends Promise<infer U>` → "promise"）。
+     */
+    inferFrom?: { fromVar: string; via: "arr" | "promise"; inferVar: string };
+    /** extends 不成立时的假分支（如 never） */
+    condFallback?: Abs;
+  };
   /** `@nudo:pure`：调用结果按实参记忆化（无副作用契约） */
   pureName?: string;
 };
@@ -188,7 +198,13 @@ export function relationFingerprint(
 export function relationFn(
   paramTypes: Abs[],
   returnType: Abs,
-  opts?: { params?: string[]; conf?: Confidence; fingerprint?: string },
+  opts?: {
+    params?: string[];
+    conf?: Confidence;
+    fingerprint?: string;
+    inferFrom?: { fromVar: string; via: "arr" | "promise"; inferVar: string };
+    condFallback?: Abs;
+  },
 ): Abs {
   const params = opts?.params ?? paramTypes.map((_, i) => `x${i}`);
   const conf = opts?.conf ?? "path";
@@ -205,7 +221,12 @@ export function relationFn(
   };
   attachFnImpl(a, {
     params,
-    relation: { paramTypes, returnType },
+    relation: {
+      paramTypes,
+      returnType,
+      ...(opts?.inferFrom ? { inferFrom: opts.inferFrom } : {}),
+      ...(opts?.condFallback ? { condFallback: opts.condFallback } : {}),
+    },
     fingerprint,
   });
   return a;

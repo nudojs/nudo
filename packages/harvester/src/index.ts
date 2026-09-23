@@ -64,6 +64,8 @@ interface HarvestContext {
   expanding: Set<string>;
   /** 当前签名作用域内的泛型形参名（T/U…）→ 映射为 var Abs */
   typeParams: Set<string>;
+  /** 未决条件类型元数据（signatureToFnSig 挂到 relation） */
+  pendingCond?: CondMeta;
   /** [aliasModule, targetModule] pairs from `export * from` / `export = x` forms */
   moduleAliases: Array<[alias: string, target: string]>;
   /** `import x = require("mod")` bindings, per scope key */
@@ -172,11 +174,19 @@ function absBrand(name: string, properties: Record<string, Abs>): Abs {
   return absExact({ k: "brand", name, shape: absObj(properties) });
 }
 
-function absFnSig(paramTypes: Abs[], returnType: Abs): Abs {
+function absFnSig(
+  paramTypes: Abs[],
+  returnType: Abs,
+  extra?: {
+    inferFrom?: { fromVar: string; via: "arr" | "promise"; inferVar: string };
+    condFallback?: Abs;
+  },
+): Abs {
   // relationFn 双写 shape + impl.relation → 调用点 instantiateReturn 做 α 替换
   return relationFn(paramTypes, returnType, {
     params: paramTypes.map((_, i) => `_arg${i}`),
     conf: "exact",
+    ...(extra ?? {}),
   });
 }
 
@@ -838,7 +848,14 @@ function signatureToFnSig(ctx: HarvestContext, sig: ts.SignatureDeclaration): Ab
       return type;
     });
     const returnType = sig.type ? mapType(ctx, sig.type, 0) : absUnknown();
-    return absFnSig(paramTypes, returnType);
+    const cond = ctx.pendingCond;
+    ctx.pendingCond = undefined;
+    return absFnSig(paramTypes, returnType, cond
+      ? {
+          inferFrom: { fromVar: cond.fromVar, via: cond.via, inferVar: cond.inferVar },
+          condFallback: cond.fallback,
+        }
+      : undefined);
   } finally {
     ctx.typeParams = savedTp;
   }
@@ -1026,6 +1043,10 @@ function mapConditionalType(ctx: HarvestContext, node: ts.ConditionalTypeNode, d
   const extAbs = mapType(ctx, node.extendsType, depth + 1);
   const absMatch = astMatch !== "unknown" ? astMatch : absExtends(check, extAbs);
 
+  // check 是 α 且 extends 是 (infer E)[] / Promise<infer U>：
+  // 记在 ctx.pendingCond，供 signatureToFnSig 挂到 relation.inferFrom
+  const condMeta = analyzeCondPattern(ctx, node, check);
+
   const savedTp = ctx.typeParams;
   ctx.typeParams = new Set(savedTp);
   for (const n of inferNames) ctx.typeParams.add(n);
@@ -1035,10 +1056,42 @@ function mapConditionalType(ctx: HarvestContext, node: ts.ConditionalTypeNode, d
     const falseAbs = mapType(ctx, node.falseType, depth + 1);
     if (absMatch === "true") return trueAbs;
     if (absMatch === "false") return falseAbs;
+    // 未决：真支作 returnType（α=infer 名），假支进 condFallback
+    if (condMeta && check.term?.op === "var") {
+      ctx.pendingCond = { ...condMeta, fallback: falseAbs };
+      return typeVarAbs(condMeta.inferVar);
+    }
     return absUnion([trueAbs, falseAbs]);
   } finally {
     ctx.typeParams = savedTp;
   }
+}
+
+type CondMeta = { fromVar: string; via: "arr" | "promise"; inferVar: string; fallback: Abs };
+
+/** 识别 `T extends (infer E)[]` / `T extends Promise<infer U>` 形态 */
+function analyzeCondPattern(
+  _ctx: HarvestContext,
+  node: ts.ConditionalTypeNode,
+  check: Abs,
+): { fromVar: string; via: "arr" | "promise"; inferVar: string } | undefined {
+  if (check.term?.op !== "var") return undefined;
+  const fromVar = check.term.id;
+  const ext = node.extendsType;
+  const names = collectInferNames(ext);
+  const inferVar = [...names][0];
+  if (!inferVar) return undefined;
+  if (ts.isArrayTypeNode(ext)) {
+    return { fromVar, via: "arr", inferVar };
+  }
+  if (ts.isTypeReferenceNode(ext)) {
+    const n = typeNameString(ext.typeName);
+    if (n === "Promise" || n === "PromiseLike") return { fromVar, via: "promise", inferVar };
+    if (n === "Array" || n === "ReadonlyArray" || n === "List" || n === "ArrayLike") {
+      return { fromVar, via: "arr", inferVar };
+    }
+  }
+  return undefined;
 }
 
 function mapType(ctx: HarvestContext, node: ts.TypeNode | undefined, depth: number): Abs {
