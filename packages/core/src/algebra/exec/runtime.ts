@@ -84,10 +84,36 @@ export function withExecPhi<T>(p: Phi, body: () => T): T {
 
 // --- 运算符重载面（transpile 目标）---
 
-/** 保守 unknown（import.meta / 动态 import 等未建模构造的 lowering 目标——
- *  与 ast-eval 对同类表达式的保守处理对齐） */
+/** 保守 unknown（JSX 等未建模构造的 lowering 目标——文件其余部分保持 B-hosted） */
 export function $unknown(): Abs {
   return abs({ k: "unknown" }, undefined, undefined, "opaque");
+}
+
+/** `import.meta` → `{ url: string }`（宿主 URL 非字面量，不假精确） */
+export function $importMeta(): Abs {
+  return abs(
+    {
+      k: "obj",
+      slots: {
+        url: { value: abs({ k: "prim", type: "string" }, undefined, undefined, "path") },
+      },
+      open: true,
+    },
+    undefined,
+    undefined,
+    "path",
+  );
+}
+
+/** `import(spec)` → Promise&lt;开放模块命名空间&gt;（动态模块图不静态解析） */
+export function $dynamicImport(_spec: Abs): Abs {
+  const ns = abs(
+    { k: "obj", slots: {}, open: true },
+    undefined,
+    undefined,
+    "path",
+  );
+  return abs({ k: "eff", eff: "promise", inner: ns }, undefined, undefined, "path");
 }
 
 export function $add(a: Abs, b: Abs): Abs {

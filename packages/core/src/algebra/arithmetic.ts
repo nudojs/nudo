@@ -128,6 +128,25 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     return abs({ k: "sum", members: uniq }, term, undefined, "partial");
   }
 
+  // 混合/无法判定：JS + 经 ToPrimitive 可能 number 或 string
+  // （obj/unknown/fn 与 number 拼接等）——诚实并集，不折纯 unknown
+  if (
+    isNumPrim(a) ||
+    isNumPrim(b) ||
+    isBigPrim(a) ||
+    isBigPrim(b) ||
+    a.shape.k === "unknown" ||
+    b.shape.k === "unknown" ||
+    a.shape.k === "obj" ||
+    b.shape.k === "obj" ||
+    a.shape.k === "fn" ||
+    b.shape.k === "fn" ||
+    a.shape.k === "brand" ||
+    b.shape.k === "brand"
+  ) {
+    return abs({ k: "sum", members: [num(), str()] }, undefined, undefined, "partial");
+  }
+
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 

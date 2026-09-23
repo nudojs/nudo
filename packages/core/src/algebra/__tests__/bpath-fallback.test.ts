@@ -53,16 +53,24 @@ function withCollector<T>(fn: () => T): { result: T; fallbacks: BPathFallback[] 
 
 describe("B fallback observation (unsupported at transpile time)", () => {
   it("dynamic import / import.meta lower conservatively (no fallback, no false precision)", () => {
-    for (const src of [
-      `export function f() { return import("./x.js"); }`,
-      `export function f() { return import.meta.url; }`,
-    ]) {
+    // import() → Promise<open obj>；import.meta.url → string（非字面量 URL）
+    {
+      const src = `export function f() { return import("./x.js"); }`;
       const { result, fallbacks } = withCollector(() => tryRunTranspiled(src, { mode: "analyze" }));
       expect(result, src).toBeDefined();
       expect(fallbacks, src).toEqual([]);
       const r = callTranspiledExportFull(result!, "f", []);
-      // 保守 unknown（此前静默折 $lit(undefined) #exact 是假精确）
-      expect(formatAbs(r.result), src).toContain("unknown");
+      expect(formatAbs(r.result), src).toContain("promise");
+      // 不假精确 undefined / 字面量
+      expect(litValue(r.result), src).toBeUndefined();
+    }
+    {
+      const src = `export function f() { return import.meta.url; }`;
+      const { result, fallbacks } = withCollector(() => tryRunTranspiled(src, { mode: "analyze" }));
+      expect(result, src).toBeDefined();
+      expect(fallbacks, src).toEqual([]);
+      const r = callTranspiledExportFull(result!, "f", []);
+      expect(formatAbs(r.result), src).toContain("string");
       expect(litValue(r.result), src).toBeUndefined();
     }
   });

@@ -508,6 +508,18 @@ function loadSidecarBinding(
         binding = (bag as Record<string, unknown>)[method!];
       }
     }
+    // 侧车键近失配：只有裸 `method` 而目标是 `Class.method`——报而非静默不绑
+    if (
+      binding === undefined &&
+      method !== undefined &&
+      exports[method] !== undefined
+    ) {
+      collectDiag({
+        code: "nudo:interface-load",
+        message: `sidecar key '${method}' does not bind '${fnName}' — use '${cls}.${method}', '${cls}_${method}', or nested { ${cls}: { ${method}: … } }`,
+        file: sidecarPath,
+      });
+    }
   }
   if (binding === undefined) return { ok: false };
   if (!isNudoConstraint(binding)) {

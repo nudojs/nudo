@@ -31,9 +31,9 @@ gt(x.add(1), 1)         // 集合间关系检查
 | 项 | 行为 |
 |---|---|
 | 形态 | transpile → `new Function` 编译执行（`runTranspiled` / `callTranspiledExportFull`） |
-| 语法覆盖 | 全语法可 exec；`import.meta` / 动态 `import()` → `$unknown()` 保守 lowering |
+| 语法覆盖 | 全语法可 exec；`import.meta` → `$importMeta()`（`{url:string}`）；动态 `import()` → `$dynamicImport()`（`Promise<open obj>`）；JSX → `$unknown()`（不整文件 fail-closed） |
 | 顶层 `this` | **ESM 语义托管**：读 → `$lit(undefined)`；写（`this.x = 1`）经 strict 写路径硬抛 TypeError（模块装载失败，与原生一致）。见 `bpath-topthis.test.ts` |
-| JSX 等 B-incapable | **fail-closed**：显式无信息（unknown / 空导出），无解释兜底 |
+| JSX | **表达式级** `$unknown()`（诚实无信息），文件其余构造保持 B-hosted |
 | Φ 路径条件 | `$fork` 压 `Φ∧test` 进臂作用域（Φ-native）；boundedPhi 上限 24 |
 | 差分 oracle | B-vs-native 独立 bug 发现器（`core/src/algebra/__tests__/differential/`），不依赖第二求值器 |
 

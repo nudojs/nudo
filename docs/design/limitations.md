@@ -52,6 +52,10 @@
 | `nudo:interface-entry-only` | **已落地** | 导出无根且无域 → info（`analyzeFile` entry@ 合成路径） |
 | `ns.foo` 命名空间模板 | **已落地** | `@nudo:import * as ns` → `ns.exportName` refine 引用 |
 | `@nudo:pure` 记忆化 | **已落地** | `$call` / `$callNamed` 按实参 Abs 缓存 |
+| JSX / import.meta / 动态 import | **已落地** | JSX→`$unknown`（文件保持 B-hosted）；`import.meta`→`{url:string}`；`import()`→`Promise<open obj>` |
+| 混合 `+` 粗化 | **已收窄** | number⊗obj/unknown 等 → `number\|string`（不再纯 unknown） |
+| 侧车键近失配 | **已落地** | `Class.method` vs 裸 `method` 报 load 提示，不静默不绑 |
+| 工件 join 组合式 | **已恢复** | 多调用点同 root 纯 shift 链 → `union(shift…)` 组合式 |
 | LSP 客户端 UI 缺口 | 跟踪表已建 | [`lsp-client-gaps.md`](./lsp-client-gaps.md)（LSP-G1…；文档同步 LSP-G5 已关） |
 
 ---

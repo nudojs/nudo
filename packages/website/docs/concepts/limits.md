@@ -37,7 +37,7 @@ Unconstrained entry params display as **`any`**; true **`unknown`** means infere
 
 ## Evaluator gaps (summary)
 
-Some constructs still degrade to `unknown` (with engine-debt diagnostics). Prefer the modeled alternatives in [Language semantics](../concepts/semantics.md): e.g. `Object.keys` over `Object.prototype` methods, `@nudo:mock` + async wrappers for `new Promise` internals.
+Some constructs still degrade (with honest shapes, not false precision): JSX → `unknown`; `import.meta` → `{ url: string }`; `import()` → `Promise` of an open module namespace; mixed `+` that cannot decide number vs concat → `number | string`. Prefer the modeled alternatives in [Language semantics](../concepts/semantics.md).
 
 Env harvest coverage rates are **not** completeness promises.
 

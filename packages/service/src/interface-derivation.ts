@@ -374,6 +374,47 @@ function projectParamSlot(
       }
     }
   }
+  // 多调用点 join：各链均可组合式且同一 root → 保持组合式（union(shift…)）
+  if (absList.length > 1) {
+    const nodes = absList.map((a) => getDerivation(a));
+    const projs = nodes.map((n) => (n ? projectDerivationDsl(n, paramName) : undefined));
+    const roots = nodes.map((n) => {
+      if (!n) return undefined;
+      const chain = derivationChain(n);
+      return chain[chain.length - 1];
+    });
+    const root0 = roots[0];
+    const sameRoot =
+      root0 !== undefined &&
+      root0.kind === "root" &&
+      roots.every((r) => r !== undefined && r.id === root0.id && r.kind === "root");
+    if (sameRoot && projs.every((p) => p !== undefined)) {
+      const exprs = [...new Set(projs.map((p) => p!.expr))];
+      const prelude: string[] = [];
+      const imports: Array<{ name: string; from: string }> = [];
+      for (const p of projs) {
+        for (const line of p!.prelude) if (!prelude.includes(line)) prelude.push(line);
+        for (const imp of p!.imports) {
+          if (!imports.some((i) => i.name === imp.name && i.from === imp.from)) {
+            imports.push(imp);
+          }
+        }
+      }
+      const dsl = exprs.length === 1 ? exprs[0]! : `union(${exprs.join(", ")})`;
+      const shiftCounts = nodes.map((n) =>
+        derivationChain(n!).filter((x) => x.kind === "shift").length,
+      );
+      return {
+        constraint,
+        dsl,
+        prelude,
+        imports,
+        compositional: true,
+        rootNodeId: root0.id,
+        shiftCount: Math.max(...shiftCounts),
+      };
+    }
+  }
   return {
     constraint,
     dsl: formatConstraint(constraint),
