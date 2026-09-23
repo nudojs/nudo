@@ -5,13 +5,13 @@ follow this checklist + extension release notes, not npm semver for consumers.
 See also [`docs/versioning.md`](../../docs/versioning.md) and
 [`packages/lsp/PUBLIC_API.md`](../lsp/PUBLIC_API.md).
 
-Current package: `0.3.5` (private). Version bumps come from
+Current package: see `packages/vscode/package.json` (private). Version bumps come from
 `scripts/bump-vscode-version.mjs` during `changeset version` on `main`.
 
 ## 1. Bundled server version align
 
 - [ ] `packages/lsp/package.json` version is the server you intend to ship
-      (today **0.8.0**; do not invent a bump just to package the extension).
+      (today **1.0.0**; do not invent a bump just to package the extension).
 - [ ] Monorepo build produced a fresh LSP dist:
       `pnpm run build` (or `pnpm --filter @nudojs/lsp run build`).
 - [ ] Bundle step ran: `packages/vscode/scripts/bundle-server.mjs` copies
@@ -19,7 +19,7 @@ Current package: `0.3.5` (private). Version bumps come from
 - [ ] Extension launches **bundled** `server/server.js` over IPC
       (`src/extension.ts` — not tsx / not a monorepo sibling path at runtime).
 - [ ] Record the bundled lsp version in extension `CHANGELOG.md`
-      (example: “bundled `@nudojs/lsp@0.8.0`”).
+      (example: “bundled `@nudojs/lsp@1.0.0`”).
 - [ ] VS Code `activationEvents` still cover the languages you document
       (`onLanguage:javascript`, `onLanguage:typescript`).
 - [ ] `documentSelector` matches Nudo target paths (js/ts/mjs are analyzed by
@@ -58,7 +58,7 @@ Copy into Marketplace / Open VSX release notes (adapt wording):
 > Nudo runs **next to** the built-in TypeScript server, not instead of it.
 > Keep `tsserver` / `vtsls` for `.ts`; point Nudo at JS packages via
 > `package.json#nudo.analysis.include` / `exclude`. Recommended mixed-repo
-> recipe: [Coexistence with TypeScript](https://nudojs.dev/guides/coexistence)
+> recipe: [Coexistence with TypeScript](https://nudojs.github.io/nudo/docs/guides/coexistence)
 > (or repo `packages/website/docs/guides/coexistence.md`).
 > If you see a “double error storm”, scope include to `src/**/*.js` and exclude
 > `**/*.ts`, `**/node_modules/**`, `**/dist/**` before widening mode.

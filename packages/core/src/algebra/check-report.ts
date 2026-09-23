@@ -87,6 +87,15 @@ export type CheckJson = {
   }>;
 };
 
+/** 多文件 `check --json` 信封（CI / monorepo）。单文件仍输出裸 CheckJson。 */
+export type CheckJsonMulti = {
+  version: 1;
+  kind: "multi";
+  ok: boolean;
+  summary: CheckReport["summary"] & { files: number };
+  reports: CheckJson[];
+};
+
 export function serializeCheckJson(r: CheckReport): CheckJson {
   return {
     version: 1,
@@ -117,6 +126,40 @@ export function serializeCheckJson(r: CheckReport): CheckJson {
     })),
   };
 }
+
+/** 多文件信封：汇总 summary，`ok` = 全部文件 ok。 */
+export function serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti {
+  const summary = {
+    errors: 0,
+    warnings: 0,
+    infos: 0,
+    functions: 0,
+    files: reports.length,
+  };
+  for (const r of reports) {
+    summary.errors += r.summary.errors;
+    summary.warnings += r.summary.warnings;
+    summary.infos += r.summary.infos;
+    summary.functions += r.summary.functions;
+  }
+  return {
+    version: 1,
+    kind: "multi",
+    ok: reports.every((r) => r.ok),
+    summary,
+    reports,
+  };
+}
+
+/** 契约/门禁类诊断：终端应给出可执行修复路径（draft 侧车 / refine）。 */
+const CONTRACT_FIX_CODES = new Set([
+  "nudo:constraint-violated",
+  "nudo:assign-mismatch",
+  "nudo:arg-structure",
+  "nudo:interface-domain-exceeds",
+  "nudo:entry-may-throw",
+  "nudo:missing-slot",
+]);
 
 /**
  * Nudo 原生报告：Abs 签名表 + actual ⊭ expected。
@@ -171,7 +214,14 @@ export function formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = 
       lines.push(`  [${head}] ${i.message}  (${i.code})`);
       if (i.actual) lines.push(`      actual:   ${i.actual}`);
       if (i.expected) lines.push(`      expected: ${i.expected}`);
-      if (i.suggestion) lines.push(`      → ${i.suggestion}`);
+      if (i.suggestion) {
+        lines.push(`      → ${i.suggestion}`);
+      } else if (CONTRACT_FIX_CODES.has(i.code)) {
+        lines.push(`      → add a refine / sidecar contract, or fix the call-site value`);
+      }
+      if (CONTRACT_FIX_CODES.has(i.code)) {
+        lines.push(`      fix:  nudo contract --draft  (emit a sidecar draft you can edit)`);
+      }
     }
   }
   return lines.join("\n");

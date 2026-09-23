@@ -72,13 +72,13 @@ npx tsx scripts/scan-npm-package.ts commander
 > 作为 **JS 库的内涵类型事实源** 可用。  
 > 替换 `tsc` 仍卡在：大包 harvest 性能、Node API env、以及「错误金标」召回率。
 
-**错误金标进展（人工标注）：** `check-recall-gold.test.ts` 已扩至 101 条单文件 + 15 条跨文件人工标注（可选字段 / find·pop·push 返回值 / 字典查找 / filter 回调 / `==null` 折叠 / 数组下标边界 / refine 边界邻域 / HOF arg-structure / 可变绑定 assign / shape·return·union）。门禁 recall=precision=1.0（8 条已知 FN 以 `it.fails` 钉住并成文，不计入门禁、禁止改标凑绿）。真实包 zero-FP 仍绿。残余漏报集中在：optional/undefined 传入显式契约、`find`/`pop`/缺键 未命中值、元组下标字面量跟丢、内联 `push` 表达式实参、null 守卫打断无条件转发。
+**错误金标进展（人工标注）：** `check-recall-gold.test.ts` 门禁 **recall=precision=1.0、knownFn=0**（历史 8 条 FN 已关闭；禁止改标凑绿）。真实包 zero-FP 仍绿（L2 off 基线）。值流残差类（optional/undefined 进契约、find/pop 未命中、元组下标、内联 push、null 守卫转发）以金标/测试持续收口，不在此保留过期计数。
 
 **下一步（若继续替换）：**
 
-1. 消掉 8 条已知 FN（值流：optional/undefined、find/pop 未命中、下标、内联 push、守卫转发）  
-2. `@types/node` harvest 预置  
-3. `nudo check` 接入 CI 示例  
+1. 值流残差类持续收口（见金标与 `engine-precision-residuals`）  
+2. `@types/node` harvest 预置（已落地磁盘缓存 + 降级 env）  
+3. `nudo check` CI 多文件 JSON（见 `docs/ci-nudo-check.md`）  
 
 ---
 

@@ -183,7 +183,8 @@ pin 'pnpm run check docs/examples/constraints/set-delay.js' \
   'setDelay[ms]: argument ⊭ precondition' 'expected: ms > 0' \
   'needsPositive[x]: argument ⊭ precondition' 'expected: x > 0'
 pin 'pnpm run check docs/examples/constraints/return-contract.js' \
-  'bad: return value ⊭ @nudo:refine return positive' 'expected: return > 0'
+  'bad: return value ⊭ @nudo:refine return positive' 'expected: return > 0' \
+  'nudo contract --draft'
 pin 'pnpm run check docs/examples/constraints/declared-vs-if.js' \
   'setDelay[ms]: argument ⊭ precondition'
 pin 'pnpm run check docs/examples/constraints/register.js' \

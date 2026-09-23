@@ -223,7 +223,7 @@ Production analysis is **Abs-native**. Extensional TS/schema/dts projections (`f
 
 ### Prerequisites
 
-- To **run the published CLI** (`npm install -g @nudojs/cli`): Node.js >= 20（packages ship as source `.ts` and run via native type stripping on supported Node）
+- To **run the published CLI** (`npm install -g @nudojs/cli`): Node.js >= 20（published packages ship compiled `dist/` ESM）
 - To **develop this repo**: Node.js >= 18 and pnpm 9.1.0 (pinned in `packageManager`)
 
 ### Setup

@@ -213,10 +213,24 @@ describe("CLI flag contract", () => {
     expect(r.status).toBe(1);
   });
 
-  it("check --json rejects multi-file targets", () => {
+  it("check --json multi-file emits CheckJsonMulti envelope", () => {
     const a = write("mj-a.js", "export function id(x){ return x; }\n");
-    const r = runCli(["check", a, a, "--json"]);
-    expect(r.stderr + r.stdout).toContain("single file");
-    expect(r.status).toBe(1);
+    const b = write("mj-b.js", "export function id(x){ return x; }\n");
+    const r = runCli(["check", a, b, "--json"]);
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.kind).toBe("multi");
+    expect(parsed.version).toBe(1);
+    expect(parsed.reports).toHaveLength(2);
+    expect(parsed.summary.files).toBe(2);
+  });
+
+  it("check --json single file stays bare CheckJson", () => {
+    const a = write("sj-a.js", "export function id(x){ return x; }\n");
+    const r = runCli(["check", a, "--json"]);
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.kind).toBeUndefined();
+    expect(parsed.file).toContain("sj-a.js");
   });
 });

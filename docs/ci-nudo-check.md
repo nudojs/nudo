@@ -39,6 +39,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - run: pnpm install
       # L1：显式契约门禁（默认 L2 error，见下）
+      # 目录/多文件 → CheckJsonMulti 信封（kind:"multi" + reports[]）
       - run: pnpm exec nudo check packages/*/src --json > nudo-check.json
       # 可选：把 signatures 贴进 PR comment / artifact
       - uses: actions/upload-artifact@v4

@@ -107,7 +107,7 @@ CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。
 | 旗标 | 作用 |
 |------|------|
 | `--watch` / `-w` | 持续重跑（模式旗标，不是一级动词） |
-| `--json` | CheckJson v1（单文件） |
+| `--json` | CheckJson v1；**多文件**输出 `CheckJsonMulti` 信封（`kind:"multi"` + `reports[]`） |
 | `--verbose` | 展开 Abs 签名（term/pred/conf） |
 | `--abs` | 代数 term/pred/conf 观察 + L1/L2 门禁 |
 | `--fn` / `--assume` / `--generalize` | 与 `--abs` 配合的观察过滤 |

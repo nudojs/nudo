@@ -298,6 +298,8 @@ async function runCheck(
   file: string,
   opts: {
     json?: boolean;
+    /** 多文件 --json：收集 CheckJson，不在本函数内打印 / 设 exit */
+    jsonCollect?: Array<import("@nudojs/core").CheckJson>;
     from?: CallRecord[];
     verbose?: boolean;
     abs?: boolean;
@@ -472,13 +474,17 @@ async function runCheck(
     }
   }
 
-  if (opts.json) {
+  const checkJson = cachedJson ?? serializeCheckJson(algebraReport);
+
+  if (opts.json && opts.jsonCollect) {
+    opts.jsonCollect.push(checkJson);
+  } else if (opts.json) {
     if (opts.abs) {
       console.error("error: --json cannot be combined with --abs");
       process.exitCode = 1;
       return;
     }
-    console.log(JSON.stringify(cachedJson ?? serializeCheckJson(algebraReport), null, 2));
+    console.log(JSON.stringify(checkJson, null, 2));
   } else if (opts.abs) {
     // 代数观察面（term/pred/conf）；门禁不因 --abs 关闭：L1/L2 error 仍 exit 1
     await runAbsView(filePath, opts.absView ?? {});
@@ -506,7 +512,7 @@ async function runCheck(
     }
   }
 
-  if (!algebraReport.ok) {
+  if (!opts.jsonCollect && !algebraReport.ok) {
     process.exitCode = 1;
   }
 }
@@ -1218,7 +1224,10 @@ program
   .description("Gate contracts + entry throws; print signatures (CI). Day 0 observation lives here.")
   .argument("<paths...>", "File(s) or directory(s) to check")
   .option("--watch, -w", "Watch files and re-run check on change")
-  .option("--json", "Emit stable CheckJson (CI / Agent; single file only)")
+  .option(
+    "--json",
+    "Emit stable CheckJson (1 file) or CheckJsonMulti envelope (N files) for CI / Agent",
+  )
   .option("--verbose", "Expand Abs signatures (term/pred/conf detail)")
   .option("--abs", "Algebra face: term/pred/conf per function")
   .option("--fn <name>", "With --abs: only this function")
@@ -1252,8 +1261,8 @@ program
       const targets: string[] = [];
       for (const p of paths) targets.push(...resolveTargets(p));
       if (targets.length === 0) return;
-      if (opts.json && targets.length > 1) {
-        console.error("--json requires a single file, not multiple targets");
+      if (opts.json && opts.abs) {
+        console.error("error: --json cannot be combined with --abs");
         process.exitCode = 1;
         return;
       }
@@ -1276,25 +1285,45 @@ program
           ? opts.entryThrows
           : undefined;
 
+      const shared: {
+        from?: CallRecord[];
+        verbose?: boolean;
+        abs?: boolean;
+        absView?: { fn?: string; assume?: string[]; generalize?: boolean };
+        ignoreThrows?: string[];
+        entryThrows?: "error" | "warning" | "off";
+      } = {
+        from: externalRecords,
+        verbose: opts.verbose,
+        ...(opts.abs
+          ? {
+              abs: true,
+              absView: {
+                ...(opts.fn ? { fn: opts.fn } : {}),
+                assume: opts.assume ?? [],
+                generalize: opts.generalize === true,
+              },
+            }
+          : {}),
+        ...(ignoreThrows ? { ignoreThrows } : {}),
+        ...(entryThrows ? { entryThrows } : {}),
+      };
+
+      if (opts.json && targets.length > 1) {
+        const collected: Array<import("@nudojs/core").CheckJson> = [];
+        for (const t of targets) {
+          await runCheck(t, { ...shared, json: true, jsonCollect: collected });
+        }
+        const { serializeCheckJsonMulti: multi } = await import("@nudojs/core");
+        const envelope = multi(collected);
+        console.log(JSON.stringify(envelope, null, 2));
+        if (!envelope.ok) process.exitCode = 1;
+        return;
+      }
+
       const runOne = async (t: string): Promise<void> => {
         // --abs 仍走 runCheck：代数观察 + L1/L2 门禁（design §1.3）
-        await runCheck(t, {
-          json: opts.json,
-          from: externalRecords,
-          verbose: opts.verbose,
-          ...(opts.abs
-            ? {
-                abs: true,
-                absView: {
-                  ...(opts.fn ? { fn: opts.fn } : {}),
-                  assume: opts.assume ?? [],
-                  generalize: opts.generalize === true,
-                },
-              }
-            : {}),
-          ...(ignoreThrows ? { ignoreThrows } : {}),
-          ...(entryThrows ? { entryThrows } : {}),
-        });
+        await runCheck(t, { ...shared, json: opts.json });
       };
 
       if (opts.watch) {

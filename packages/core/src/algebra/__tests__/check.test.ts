@@ -65,6 +65,7 @@ f(-1);
     expect(text).toContain("signatures");
     expect(text).toContain("actual:");
     expect(text).toContain("expected:");
+    expect(text).toContain("nudo contract --draft");
   });
 
   it("formatCheckReport default omits term/pred/conf detail (D2)", () => {

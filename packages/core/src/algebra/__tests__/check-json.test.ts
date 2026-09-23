@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { checkSource, serializeCheckJson, pTrue } from "../index.ts";
+import {
+  checkSource,
+  formatCheckReport,
+  serializeCheckJson,
+  serializeCheckJsonMulti,
+  pTrue,
+} from "../index.ts";
 import { withStdImport, stdOpts } from "./nudo-constraints.ts";
 
 describe("CheckJson contract v1", () => {
@@ -53,5 +59,27 @@ needsPositive(-1);
     );
     expect(j.ok).toBe(true);
     expect(j.issues.filter((i) => i.severity === "error")).toEqual([]);
+  });
+
+  it("formatCheckReport shows actual/expected and contract draft fix", () => {
+    const bad = checkSource("c.js", withStdImport(src), pTrue, stdOpts);
+    const text = formatCheckReport(bad);
+    expect(text).toContain("actual:");
+    expect(text).toContain("expected:");
+    expect(text).toContain("nudo contract --draft");
+  });
+
+  it("serializeCheckJsonMulti aggregates multi-file envelope", () => {
+    const j1 = serializeCheckJson(checkSource("a.js", withStdImport(src), pTrue, stdOpts));
+    const j2 = serializeCheckJson(
+      checkSource("ok.js", `function f(x){ return x+1; }\nf(1);\n`, pTrue, stdOpts),
+    );
+    const multi = serializeCheckJsonMulti([j1, j2]);
+    expect(multi.kind).toBe("multi");
+    expect(multi.version).toBe(1);
+    expect(multi.ok).toBe(false);
+    expect(multi.summary.files).toBe(2);
+    expect(multi.summary.errors).toBe(j1.summary.errors + j2.summary.errors);
+    expect(multi.reports).toHaveLength(2);
   });
 });

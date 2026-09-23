@@ -33,7 +33,7 @@ jobs:
       - name: Build packages
         run: npm run build
 
-      # 跑分 + 硬门禁：exact/unknown/error 回退或 >1.5x 性能回退即失败。
+      # 跑分 + 硬门禁：exact/unknown/error 回退或 >3.0x 性能回退即失败（见 benchmark/src/gate.js）。
       # runner 本身崩溃（引擎回归）同样失败；有意变更走 pnpm run benchmark:baseline。
       - name: Run benchmark
         run: npm run benchmark

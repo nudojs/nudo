@@ -4,7 +4,7 @@
   "engines": {
     "node": ">=20"
   },
-  "description": "Nudo type system: type-as-computation (Abs) with TypeValue evaluation IR",
+  "description": "Nudo type system: type-as-computation (Abs = shape × term × pred × conf)",
   "type": "module",
   "license": "MIT",
   "keywords": [

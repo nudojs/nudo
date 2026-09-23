@@ -1,6 +1,6 @@
 # @nudojs/lsp — Public API Freeze Inventory
 
-> **Status (A1/A2):** `@nudojs/lsp` is **0.8.0, pre-1.x**. This file is the freeze
+> **Status:** `@nudojs/lsp` is **1.0.0**. This file is the freeze
 > observation inventory: what the package exposes today, and what counts as
 > **stable** vs **experimental** once the package cuts 1.0. Freezing does **not**
 > auto-bump `package.json`; 1.0 is gated on ≥1 minor cycle with no unplanned

@@ -55,6 +55,7 @@ issues
       actual:   { host: "y" }  #exact
       expected: { host: "x", port: 1 }  #exact
       → missing slot port
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 ```
 
 左值首次赋值**建立**形状；之后的赋值必须 leq 于它。多余 key 不破坏合同。
@@ -80,6 +81,7 @@ issues
       actual:   { x: 1 }  #exact
       expected: missing field p.y
       → add the missing field p.y
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 ```
 
 要点：
