@@ -74,6 +74,21 @@ npx nudojs check file.js --json
 
 Human face uses `actual ⊭ expected` on Abs. Stable codes: [Diagnostics glossary](/docs/reference/diagnostics).
 
+Each `issues[]` entry may carry **`actions[]`** (AI1) — prefer these over parsing `suggestion` prose:
+
+```json
+{
+  "code": "nudo:constraint-violated",
+  "actual": "0  #exact",
+  "expected": "ms > 0",
+  "actions": [
+    { "kind": "callsite", "label": "use a value satisfying the constraint", "hint": "ms > 0" },
+    { "kind": "relax", "label": "relax the precondition (edit *.nudo.js / @nudo:refine)" },
+    { "kind": "draft", "command": "nudo contract --draft", "label": "emit a sidecar draft you can edit" }
+  ]
+}
+```
+
 ## Tooling
 
 | Surface | Docs |
