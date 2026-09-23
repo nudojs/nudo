@@ -2,13 +2,13 @@ name: Website
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, dev]
     paths:
       - 'packages/website/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
   pull_request:
-    branches: [main, ci]
+    branches: [main, dev, ci]
     paths:
       - 'packages/website/**'
       - 'package.json'
