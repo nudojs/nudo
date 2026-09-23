@@ -911,6 +911,136 @@ function mapTypeRef(ctx: HarvestContext, node: ts.TypeReferenceNode, depth: numb
   return absUnknown();
 }
 
+// ---------------------------------------------------------------------------
+// Conditional types（T extends U ? X : Y / infer）
+// ---------------------------------------------------------------------------
+
+function collectInferNames(node: ts.TypeNode, out = new Set<string>()): Set<string> {
+  const visit = (n: ts.Node | undefined): void => {
+    if (!n) return;
+    if (ts.isInferTypeNode(n)) {
+      out.add(n.typeParameter.name.text);
+      visit(n.typeParameter.constraint);
+      return;
+    }
+    n.forEachChild(visit);
+  };
+  visit(node);
+  return out;
+}
+
+type ExtendsResult = "true" | "false" | "unknown";
+
+/** Abs 层 extends 判定（保守） */
+function absExtends(check: Abs, ext: Abs): ExtendsResult {
+  if (check.term?.op === "var") return "unknown";
+  // 字面量 null/undefined 类型：只有同类字面量 extends
+  if (ext.term?.op === "lit" && (ext.term.value === null || ext.term.value === undefined)) {
+    if (check.term?.op === "lit") {
+      return check.term.value === ext.term.value ? "true" : "false";
+    }
+    if (check.shape.k === "prim" || check.shape.k === "arr" || check.shape.k === "obj" ||
+        check.shape.k === "fn" || check.shape.k === "brand" || check.shape.k === "eff") {
+      return "false";
+    }
+    return "unknown";
+  }
+  if (ext.shape.k === "unknown") return "true"; // extends unknown
+  if (ext.shape.k === "any") return "true";
+  const cs = check.shape;
+  const es = ext.shape;
+  if (es.k === "prim" && cs.k === "prim") {
+    return cs.type === es.type ? "true" : "false";
+  }
+  if (es.k === "sum") {
+    const flags = es.members.map((m) => absExtends(check, m));
+    if (flags.some((f) => f === "true")) return "true";
+    if (flags.every((f) => f === "false")) return "false";
+    return "unknown";
+  }
+  if (cs.k === "sum") {
+    const flags = cs.members.map((m) => absExtends(m, ext));
+    if (flags.every((f) => f === "true")) return "true";
+    if (flags.every((f) => f === "false")) return "false";
+    return "unknown";
+  }
+  if (cs.k === "arr" && es.k === "arr") {
+    return absExtends(cs.element, es.element);
+  }
+  if (cs.k === "eff" && es.k === "eff" && cs.eff === es.eff) {
+    return absExtends(cs.inner, es.inner);
+  }
+  if (cs.k === "brand" && es.k === "brand") {
+    return cs.name === es.name ? "true" : "false";
+  }
+  if (cs.k === "never") return "true";
+  return "unknown";
+}
+
+/** extends 模式 vs 实参：绑定 infer（E[] / Promise<U> 等） */
+function matchExtendsInfer(
+  pattern: ts.TypeNode,
+  actual: Abs,
+  inferMap: Map<string, Abs>,
+  depth = 0,
+): ExtendsResult {
+  if (depth > 6) return "unknown";
+  if (ts.isInferTypeNode(pattern)) {
+    const name = pattern.typeParameter.name.text;
+    if (!inferMap.has(name)) inferMap.set(name, actual);
+    return "true";
+  }
+  if (ts.isArrayTypeNode(pattern) && actual.shape.k === "arr") {
+    return matchExtendsInfer(pattern.elementType, actual.shape.element, inferMap, depth + 1);
+  }
+  if (ts.isTypeReferenceNode(pattern)) {
+    const name = typeNameString(pattern.typeName);
+    const args = pattern.typeArguments ?? [];
+    if (
+      (name === "Array" || name === "ReadonlyArray" || name === "List" || name === "ArrayLike") &&
+      args[0] &&
+      actual.shape.k === "arr"
+    ) {
+      return matchExtendsInfer(args[0], actual.shape.element, inferMap, depth + 1);
+    }
+    if (name === "Promise" && args[0] && actual.shape.k === "eff" && actual.shape.eff === "promise") {
+      return matchExtendsInfer(args[0], actual.shape.inner, inferMap, depth + 1);
+    }
+    return "unknown";
+  }
+  if (ts.isUnionTypeNode(pattern)) {
+    const flags = pattern.types.map((t) => matchExtendsInfer(t, actual, inferMap, depth + 1));
+    if (flags.some((f) => f === "true")) return "true";
+    if (flags.every((f) => f === "false")) return "false";
+    return "unknown";
+  }
+  return "unknown";
+}
+
+function mapConditionalType(ctx: HarvestContext, node: ts.ConditionalTypeNode, depth: number): Abs {
+  const inferMap = new Map<string, Abs>();
+  const inferNames = collectInferNames(node.extendsType);
+
+  const check = mapType(ctx, node.checkType, depth + 1);
+  const astMatch = matchExtendsInfer(node.extendsType, check, inferMap);
+  const extAbs = mapType(ctx, node.extendsType, depth + 1);
+  const absMatch = astMatch !== "unknown" ? astMatch : absExtends(check, extAbs);
+
+  const savedTp = ctx.typeParams;
+  ctx.typeParams = new Set(savedTp);
+  for (const n of inferNames) ctx.typeParams.add(n);
+
+  try {
+    const trueAbs = inferMap.size > 0 ? substAbs(mapType(ctx, node.trueType, depth + 1), inferMap) : mapType(ctx, node.trueType, depth + 1);
+    const falseAbs = mapType(ctx, node.falseType, depth + 1);
+    if (absMatch === "true") return trueAbs;
+    if (absMatch === "false") return falseAbs;
+    return absUnion([trueAbs, falseAbs]);
+  } finally {
+    ctx.typeParams = savedTp;
+  }
+}
+
 function mapType(ctx: HarvestContext, node: ts.TypeNode | undefined, depth: number): Abs {
   if (!node || depth > MAX_ALIAS_DEPTH) return absUnknown();
 
@@ -927,7 +1057,14 @@ function mapType(ctx: HarvestContext, node: ts.TypeNode | undefined, depth: numb
   }
 
   if (ts.isUnionTypeNode(node)) {
-    return absUnion(node.types.map((t) => mapType(ctx, t, depth)));
+    const members = node.types.map((t) => mapType(ctx, t, depth));
+    // 字面量并集（null | undefined）保留 sum：joinAbs 会塌成 unknown，
+    // 导致 `number extends null|undefined` 误判为 true。
+    const hasLit = members.some((m) => m.term?.op === "lit");
+    if (hasLit && members.length > 1) {
+      return absExact({ k: "sum", members });
+    }
+    return absUnion(members);
   }
 
   if (ts.isIntersectionTypeNode(node)) {
@@ -951,6 +1088,7 @@ function mapType(ctx: HarvestContext, node: ts.TypeNode | undefined, depth: numb
     if (ts.isNumericLiteral(lit)) return absLit(Number(lit.text));
     if (lit.kind === ts.SyntaxKind.TrueKeyword) return absLit(true);
     if (lit.kind === ts.SyntaxKind.FalseKeyword) return absLit(false);
+    if (lit.kind === ts.SyntaxKind.NullKeyword) return absNullLit();
     if (
       ts.isPrefixUnaryExpression(lit) &&
       lit.operator === ts.SyntaxKind.MinusToken &&
@@ -981,6 +1119,15 @@ function mapType(ctx: HarvestContext, node: ts.TypeNode | undefined, depth: numb
 
   if (ts.isTypeOperatorNode(node)) {
     return node.operator === ts.SyntaxKind.ReadonlyKeyword ? mapType(ctx, node.type, depth) : absUnknown();
+  }
+
+  if (ts.isConditionalTypeNode(node)) {
+    return mapConditionalType(ctx, node, depth);
+  }
+
+  if (ts.isInferTypeNode(node)) {
+    // 裸 infer U：由 matchExtends 填入；落到这里当 unknown
+    return typeVarAbs(node.typeParameter.name.text);
   }
 
   switch (node.kind) {

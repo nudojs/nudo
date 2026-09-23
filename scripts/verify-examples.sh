@@ -252,6 +252,14 @@ pin 'pnpm run check docs/examples/errors/09-arg-shape.js' \
   'missing field u.id'
 pin 'pnpm run check docs/examples/errors/10-fix-path.js' \
   'ms > 0' 'x > 0' 'nudo contract --draft'
+
+# retire-real/ — real npm dep `ms` (vercel/ms)
+pin 'pnpm run nudo -- migrate strip docs/examples/retire-real/before/src/age.ts' \
+  'dry' 'age.ts' 'age.js'
+pin 'pnpm run check docs/examples/retire-real/after/src/age.js' \
+  'formatAge' 'parseAge' '0 error'
+pin 'pnpm run nudo -- contract --from-dts docs/examples/retire-real/before/src/age.ts' \
+  'fn({ durationMs: number() }, string())' 'fn({ text: string() }, number())'
 pin 'pnpm run check docs/examples/vs-ts/structure/nudo.js' \
   '2 error · 0 warning' \
   'greet[u]' 'constraint-violated' \

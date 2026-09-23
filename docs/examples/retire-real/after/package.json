@@ -1,0 +1,13 @@
+{
+  "name": "retire-real-after",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Same consumer of real npm `ms` after nudo migrate retire (tsc removed)",
+  "scripts": {
+    "check:nudo": "nudo check src",
+    "typecheck": "nudo check src"
+  },
+  "dependencies": {
+    "ms": "^2.1.3"
+  }
+}
