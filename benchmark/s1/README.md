@@ -18,4 +18,5 @@ pnpm run benchmark:s1 -- --regen   # 强制重建语料
 | edit leaf/mid/hub | 小编辑 → dirty 集重析（LSP/watch） |
 | live editor 1 | 内存 buffer 编辑后单文件 analyze/check |
 
-单文件合成负载与 tsc 对照见 `benchmark/micro/`。
+单文件合成负载与 tsc 对照见 `benchmark/micro/`。  
+**真实 OSS 包**（非合成）冷分析 / check / hub-edit / L1 零误报见 [`../oss/`](../oss/)。

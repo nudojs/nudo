@@ -275,9 +275,11 @@ function isExactUndef(a: Abs): boolean {
 }
 
 /** 实参是否携带可执法信息（含确定 undefined；纯 unknown 不算） */
-function isInformativeArg(a: Abs): boolean {
+function isInformativeArg(a: Abs | undefined | null): boolean {
+  // B 执行态 args 可能有空洞（稀疏调用/可选实参）——fail-closed 当无信息
+  if (!a || typeof a !== "object") return false;
   if (a.term?.op === "lit") return true;
-  return a.shape.k !== "unknown";
+  return a.shape?.k !== "unknown" && a.shape !== undefined;
 }
 
 /** 静态求值实参节点 → Abs（标识符走绑定表；对象/数组字面量内的标识符也走绑定表） */

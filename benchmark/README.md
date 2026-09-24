@@ -9,6 +9,7 @@
 | **check gold** (in `packages/core`) | Can `nudo check` classify known violations? | 178 hand-labeled rows, **recall=precision=1.0** | **Yes** (CI) | `pnpm vitest run packages/core/src/algebra/__tests__/check-recall-gold.test.ts` |
 | **real-package zero-FP** | Does `check` stay quiet on real OSS JS? | 0 error on commander / lodash / … | **Yes** (CI) | `check-real-packages.test.ts` |
 | **S1 monorepo** | Cold / warm / edit latency at repo scale | wall-clock (synthetic 120-file corpus) | No (baseline report) | `pnpm run benchmark:s1` → `docs/reports/s1-perf-baseline.md` |
+| **OSS real packages** | Cold / check / hub-edit + **L1 zero-FP** on real code | wall-clock + FP count (commander / yargs / semver) | **Regression gate** | `pnpm run benchmark:oss` / `benchmark:oss:gate` → `docs/reports/oss-perf-baseline.md` |
 | **micro vs tsc** | Single-file analyze vs `tsc` program cost | median ms | No | `benchmark/micro/` |
 | **agent-dx** | Agent red→green loops Nudo vs TS | detectRate / silentGreen / rounds / tokens | No (DX ops metric) | `pnpm run agent-dx` |
 | **legacy infer** (`results/`) | *Old* “infer type string” accuracy on 24 synth cases | exact% against type-string expected | **No — different oracle** | `pnpm run benchmark` → `benchmark/results/latest.json` |
@@ -38,7 +39,8 @@ benchmark/
   baseline.json      ← legacy infer baseline (see above)
   results/           ← legacy infer outputs (latest.json = last run)
   src/               ← legacy infer runner / gate / compare
-  s1/                ← monorepo cold/warm/edit
+  s1/                ← monorepo cold/warm/edit (synthetic)
+  oss/               ← real OSS packages (commander/yargs/semver) + regression gate
   micro/             ← micro benches (incl. vs tsc)
   agent-dx/          ← Nudo vs TS agent repair loops
   lsp-rounds/        ← OSS bug-repair / PRD race harness outputs

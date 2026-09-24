@@ -39,6 +39,8 @@
     "benchmark:ts": "node benchmark/src/typescript-runner.js",
     "benchmark:compare": "node benchmark/src/compare.js",
     "benchmark:s1": "tsx benchmark/s1/bench-monorepo.mts",
+    "benchmark:oss": "tsx benchmark/oss/bench-oss.mts",
+    "benchmark:oss:gate": "node benchmark/oss/gate.mjs",
     "verify:docs": "bash scripts/verify-doc-examples.sh"
   },
   "devDependencies": {
