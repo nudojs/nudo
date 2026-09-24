@@ -1,0 +1,37 @@
+{
+  "side": "nudo",
+  "model": "sn0/sensenova-6.8-flash-lite",
+  "seed": 1,
+  "metrics": {
+    "tokenIn": 519479,
+    "tokenOut": 49568,
+    "tokenTotal": 569047,
+    "rounds": 45,
+    "toolCalls": 81,
+    "ctxAvg": 53778,
+    "ctxPeak": 73635,
+    "offscriptToolCalls": 0,
+    "offscriptSamples": [],
+    "wallMs": 932255,
+    "repairLoops": 16
+  },
+  "gate": {
+    "exit": 0,
+    "ok": true
+  },
+  "testExit": 0,
+  "detectRate": 6,
+  "bugDetail": {
+    "bug#1": "pass",
+    "bug#2": "pass",
+    "bug#3": "pass",
+    "bug#4": "pass",
+    "bug#5": "pass",
+    "bug#6": "pass"
+  },
+  "silentGreen": false,
+  "ompExit": 0,
+  "timedOut": false,
+  "workDir": "/var/folders/2d/97ysh5nn3pnb4gr6zq01k18m0000gp/T/oss-semver-nudo-yBdPCg",
+  "sessionDir": "/var/folders/2d/97ysh5nn3pnb4gr6zq01k18m0000gp/T/oss-semver-nudo-yBdPCg/.omp-session"
+}

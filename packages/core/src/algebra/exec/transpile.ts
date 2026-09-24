@@ -749,6 +749,38 @@ function collectPatternNames(id: unknown, acc: Set<string>): void {
 }
 
 /**
+ * 收集子树内 **词法声明** 名（let/const/function/class；不含 var——函数作用域）。
+ * 不进入嵌套函数（那些绑定属于内层作用域）。
+ * 用于 fork 协议：臂内声明不是「自由写」，不得 `$copy(未定义名)`。
+ */
+function collectLexicalDeclNames(node: unknown, acc: Set<string>): void {
+  if (!node || typeof node !== "object") return;
+  const n = node as {
+    type?: string;
+    kind?: string;
+    id?: unknown;
+    declarations?: Array<{ id?: unknown }>;
+    [k: string]: unknown;
+  };
+  if (FUNCTION_SCOPE_TYPES.has(n.type as string) && n.type !== "BlockStatement") {
+    // 函数本体的词法名属于内层；只收函数名（若 FunctionDeclaration）
+    if (n.type === "FunctionDeclaration") collectPatternNames(n.id, acc);
+    return;
+  }
+  if (n.type === "VariableDeclaration" && n.kind !== "var") {
+    for (const d of n.declarations ?? []) collectPatternNames(d.id, acc);
+  } else if (n.type === "FunctionDeclaration" || n.type === "ClassDeclaration") {
+    collectPatternNames(n.id, acc);
+  }
+  for (const key of Object.keys(n)) {
+    if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
+    const child = n[key];
+    if (Array.isArray(child)) child.forEach((c) => collectLexicalDeclNames(c, acc));
+    else if (child && typeof child === "object") collectLexicalDeclNames(child, acc);
+  }
+}
+
+/**
  * 臂内「自由写」绑定：赋值/mutator 标识符在赋值点未被臂内声明遮蔽。
  * 嵌套函数参数 / for-of 绑定 / catch 参数不得把外层自由写从 fork
  * 协议里剔除（P0-1）。
@@ -779,6 +811,10 @@ function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
   const markFree = (name: string | undefined, shadowed: Set<string>): void => {
     if (name && name !== "undefined" && !shadowed.has(name)) free.add(name);
   };
+  // 同批节点内的词法声明（let/const/function）遮蔽本批自由写——
+  // 臂内 `let shares = []; shares.push` 不得进外层 fork 协议（$copy(TDZ)）。
+  const batchDecl = new Set<string>();
+  for (const node of nodes) collectLexicalDeclNames(node, batchDecl);
   const walk = (node: unknown, shadowed: Set<string>): void => {
     if (!node || typeof node !== "object") return;
     const n = node as {
@@ -817,6 +853,18 @@ function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
       collectPatternNames(n.id, bound);
       for (const p of n.params ?? []) collectPatternNames(p, bound);
       pushShadow(bound);
+    } else if (n.type === "BlockStatement") {
+      const bound = new Set<string>();
+      for (const stmt of (n.body as unknown[] | undefined) ?? []) {
+        collectLexicalDeclNames(stmt, bound);
+      }
+      pushShadow(bound);
+    } else if (n.type === "VariableDeclaration") {
+      if (n.kind !== "var") {
+        const bound = new Set<string>();
+        for (const d of n.declarations ?? []) collectPatternNames(d.id, bound);
+        pushShadow(bound);
+      }
     } else if (n.type === "CatchClause") {
       const bound = new Set<string>();
       collectPatternNames(n.param, bound);
@@ -832,6 +880,18 @@ function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
         collectPatternNames(left, bound);
       }
       pushShadow(bound);
+    } else if (n.type === "ForStatement") {
+      // `for (let i = …)` / `for (const i = …)`：init 名是循环内绑定，
+      // 不得进 fork 协议（否则臂外 `$copy(i)` → ReferenceError）。
+      // `var` 是函数作用域——仍作自由写（与 extractForInitName 口径一致）。
+      const init = n.init as
+        | { type?: string; kind?: string; declarations?: Array<{ id?: unknown }> }
+        | undefined;
+      if (init?.type === "VariableDeclaration" && init.kind !== "var") {
+        const bound = new Set<string>();
+        for (const d of init.declarations ?? []) collectPatternNames(d.id, bound);
+        pushShadow(bound);
+      }
     }
 
     if (n.type === "AssignmentExpression") {
@@ -929,12 +989,14 @@ function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
   };
 
   for (const node of pending) {
-    walk(node, new Set());
+    walk(node, new Set(batchDecl));
   }
-  const computed = [...free];
+  const computed = [...free].filter((n) => !batchDecl.has(n));
   for (const node of pending) freeAssignedCache.set(node, computed);
   const merged = new Set<string>(computed);
-  for (const p of cachedParts) for (const n of p) merged.add(n);
+  for (const p of cachedParts) for (const n of p) {
+    if (!batchDecl.has(n)) merged.add(n);
+  }
   return [...merged];
 }
 
@@ -1116,7 +1178,7 @@ function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: Transpi
     const recvSet = new Set<string>([
       ...collectForkBindingNames(stmt.consequent),
       ...collectForkBindingNames(stmt.test),
-      ...rest.flatMap((r) => collectForkBindingNames(r)),
+      ...collectForkBindingNames(...rest),
     ]);
     const names = [...recvSet];
     const pad = indent(depth);

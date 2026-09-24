@@ -21,6 +21,7 @@ import type { AbsAssignRecord, AbsCallRecord } from "./ast-records.ts";
 import { leqAbs } from "./leq.ts";
 import {
   extractRefineReturnFromSource,
+  extractDeclaredThrows,
   refineDiagCount,
   setRefineDiagCollector,
   takeRefineDiagsSince,
@@ -80,9 +81,10 @@ import { setBAssignCollector, setBCallCollector, type BCallRecord } from "./exec
 import {
   setMayThrowCollector,
   runWithMayThrowSession,
-  filterIgnoredThrows,
+  filterGateThrows,
   mayThrowEffectsToAbs,
   formatThrowsAbs,
+  throwAbsToKinds,
   type MayThrowEffect,
 } from "./exec/may-throw.ts";
 
@@ -579,7 +581,10 @@ function checkSourceInner(
         } as unknown as PolyFn;
         const effects = collectEntryMayThrows(source, name, synthetic, file, phi, opts);
         const throwsDisplayFallback = formatThrowsAbs(mayThrowEffectsToAbs(effects));
-        const remaining = filterIgnoredThrows(effects, ignoreThrows);
+        const declared =
+          extractDeclaredThrows(source, name) ??
+          effectiveInterfaceCached(name)?.throws?.kinds;
+        const remaining = filterGateThrows(effects, declared, ignoreThrows);
         const gateDisplay = formatThrowsAbs(mayThrowEffectsToAbs(remaining));
         if (gateDisplay && remaining.length > 0) {
           const first = remaining[0]!;
@@ -589,10 +594,12 @@ function checkSourceInner(
             code: "nudo:entry-may-throw",
             message: `${name} (export): may throw ${gateDisplay}`,
             actual: `${name}(…)    throws ${gateDisplay}`,
-            expected: "entry total, or declare/catch throws",
+            expected: "entry total, or @nudo:throws / try-catch",
             suggestion: first.cause
-              ? `${first.cause} → refine / guard / try-catch / --ignore-throws ${first.kind}`
-              : `refine / guard / try-catch / --ignore-throws ${first.kind}`,
+              ? `${first.cause} → ${first.kind === "ReferenceError" ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError" : `@nudo:throws ${first.kind} / refine / guard / try-catch`}`
+              : first.kind === "ReferenceError"
+                ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError"
+                : `@nudo:throws ${first.kind} / refine / guard / try-catch`,
             fn: name,
             ...(loc.line !== undefined ? { line: loc.line } : {}),
             ...(loc.column !== undefined ? { column: loc.column } : {}),
@@ -633,7 +640,10 @@ function checkSourceInner(
       const effects = collectEntryMayThrows(source, name, g, file, phi, opts);
       // 展示层始终上屏未过滤 throws（门禁过滤 ≠ 藏事实）
       throwsDisplay = formatThrowsAbs(mayThrowEffectsToAbs(effects));
-      const remaining = filterIgnoredThrows(effects, ignoreThrows);
+      const declared =
+        extractDeclaredThrows(source, name) ??
+        effectiveInterfaceCached(name)?.throws?.kinds;
+      const remaining = filterGateThrows(effects, declared, ignoreThrows);
       const gateDisplay = formatThrowsAbs(mayThrowEffectsToAbs(remaining));
       if (gateDisplay && remaining.length > 0) {
         const first = remaining[0]!;
@@ -643,10 +653,12 @@ function checkSourceInner(
           code: "nudo:entry-may-throw",
           message: `${name} (export): may throw ${gateDisplay}`,
           actual: `${formatEntrySigLine(name, g, gateDisplay)}`,
-          expected: "entry total, or declare/catch throws",
+          expected: "entry total, or @nudo:throws / try-catch",
           suggestion: first.cause
-            ? `${first.cause} → refine / guard / try-catch / --ignore-throws ${first.kind}`
-            : `refine / guard / try-catch / --ignore-throws ${first.kind}`,
+            ? `${first.cause} → ${first.kind === "ReferenceError" ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError" : `@nudo:throws ${first.kind} / refine / guard / try-catch`}`
+            : first.kind === "ReferenceError"
+              ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError"
+              : `@nudo:throws ${first.kind} / refine / guard / try-catch`,
           fn: name,
           ...(loc.line !== undefined ? { line: loc.line } : {}),
           ...(loc.column !== undefined ? { column: loc.column } : {}),
@@ -680,11 +692,18 @@ function checkSourceInner(
       ...(isEntry ? { entry: true } : {}),
     });
 
-    // 真 unknown = 推导失败（design §2 / §5）：返回位或参数位都要报引擎债
+    // 真 unknown = 推导失败（design §2 / §5）：返回位或参数位都要报引擎债。
+    // **预算截断不是推导失败**：已有 nudo:recursion-truncated / fork-truncated，
+    // 不得再叠 nudo:unknown-inference（否则 agent 会去修不存在的引擎债）。
     const unknownParamIdx = g.typeParams.findIndex(
       (t) => t.value && t.value.shape.k === "unknown",
     );
-    if (g.symbolic?.shape?.k === "unknown" || unknownParamIdx >= 0) {
+    const budgetExplained =
+      truncated.has(name) ||
+      g.symbolic?.conf === "opaque" ||
+      (g.symbolic?.shape?.k === "sum" &&
+        g.symbolic.shape.members.every((m) => m.shape.k === "unknown" || m.shape.k === "any"));
+    if ((g.symbolic?.shape?.k === "unknown" || unknownParamIdx >= 0) && !budgetExplained) {
       const where =
         g.symbolic?.shape?.k === "unknown"
           ? `${name} => unknown`
@@ -801,21 +820,21 @@ function checkSourceInner(
   }
 
   for (const label of truncated) {
-    // fork 总次数截断 ≠ 递归截断：专用标签映射专用码（warning，不升 error）
+    // fork/递归截断 = **预算观测**（A2），不是质量失败——降为 info，避免 agent 绿后空转
     if (label === FORK_TRUNCATION_LABEL) {
       issues.push({
-        severity: "warning",
+        severity: "info",
         code: "nudo:fork-truncated",
-        message: `Branch expansion was truncated (fork budget); affected results widened to unknown`,
+        message: `Branch expansion was truncated (fork budget); affected results widened to unknown#opaque (budget)`,
         suggestion:
-          "simplify branching under recursion/loops, or raise nudo.analysis.maxForks / NUDO_MAX_FORKS",
+          "optional: simplify branching or raise nudo.analysis.maxForks — non-blocking",
       });
       continue;
     }
     issues.push({
-      severity: "warning",
+      severity: "info",
       code: "nudo:recursion-truncated",
-      message: `Recursive evaluation of '${label}' was truncated (depth/size budget); result widened to unknown`,
+      message: `Recursive evaluation of '${label}' was truncated (depth/size budget); result widened to unknown#opaque (budget — not inference debt)`,
       suggestion: "narrow the recursion base case or declare an explicit @nudo:refine return contract",
       fn: label,
     });
@@ -1108,12 +1127,14 @@ function collectEntryMayThrows(
       if (!full) return effects;
       // 显式 throw（未被 try 消化）也进 L2
       if (full.throws && full.throws.shape.k !== "never") {
-        const tName = formatThrowsAbs(full.throws) ?? "Error";
-        if (!effects.some((e) => e.kind === tName && e.cause.startsWith("throw"))) {
-          effects.push({
-            kind: tName === "Error" && full.throws.term?.op === "lit" ? "Error" : tName,
-            cause: `throw ${formatShape(full.throws)}`,
-          });
+        // sum 拆成多个 kind——禁止 `kind: "TypeError | Error"` 假单名
+        for (const tName of throwAbsToKinds(full.throws)) {
+          if (!effects.some((e) => e.kind === tName && e.cause.startsWith("throw"))) {
+            effects.push({
+              kind: tName,
+              cause: `throw ${formatShape(full.throws)}`,
+            });
+          }
         }
       }
     } catch {

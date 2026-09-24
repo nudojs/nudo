@@ -19,9 +19,9 @@ Write plain `.js`. Optional sidecar contracts (`*.nudo.js` / `@nudo:refine`) whe
 |---------|------------|
 | JS engineer evaluating a type/CI gate | [Mental model](./getting-started/mental-model.md) → [Quick Start](./getting-started/quick-start.md) → [nudo check](./guides/check.md) |
 | TypeScript user | [Mental model](./getting-started/mental-model.md) → [Nudo vs TypeScript](./guides/vs-typescript.md) → [Migrate from TS](./guides/migrating-from-typescript.md) |
+| **AI coding agent / tooling** | **[AI-native DX](./guides/ai-native-dx.md)** → [Agents](./reference/agents.md) → [Agent integration](./guides/agent-integration.md) |
 | Existing JS package | [Migrating existing JS](./guides/migrating-js.md) → [Contracts](./guides/contract.md) |
 | CI / platform | [Recipes](./guides/recipes.md) → [Diagnostics](./reference/diagnostics.md) → [Error faces](./guides/error-faces.md) |
-| AI coding agent / tooling | [Agents](./reference/agents.md) → [Agent integration](./guides/agent-integration.md) → [API · agent](./api/agent.md) |
 
 Non-goals: Nudo is **not** a TypeScript compiler; it does not invent required slots from body AST scans; `@nudo:case` is debug-only and never the contract product. See [Limits](./concepts/limits.md).
 

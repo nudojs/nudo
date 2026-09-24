@@ -1644,6 +1644,8 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
 
 /** 下标读 a[i]；字面量 i 走 tuple 精确投影，否则并所有元素；string[i] → 单字符 */
 export function $idx(a: Abs, i: Abs): Abs {
+  // any 下标：无约束读（any ≠ unknown）
+  if (a?.shape?.k === "any") return anyMemberResult();
   const iv = litValue(i);
   if (a.shape.k === "tuple") {
     const els = a.shape.elements;
@@ -1791,6 +1793,8 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
 
 /** 数组/字符串长度 */
 export function $len(a: Abs): Abs {
+  // any 上的 .length：无约束成员（any ≠ unknown——不得报引擎债）
+  if (a?.shape?.k === "any") return anyMemberResult();
   if (a.shape.k === "tuple") {
     return abs(
       { k: "prim", type: "number" },
@@ -1863,7 +1867,17 @@ export function $spread(a: Abs, b: Abs): Abs {
       bb = abs({ k: "obj", slots }, undefined, undefined, bb.conf);
     }
   }
-  return spreadObj(asAbsVal(a), bb);
+  // any 展开：无约束键 → open obj（不是空 {} / unknown）
+  const aa = asAbsVal(a);
+  const b0 = asAbsVal(b);
+  if (aa?.shape?.k === "any" || b0?.shape?.k === "any") {
+    const base = spreadObj(
+      aa?.shape?.k === "any" ? abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial") : aa,
+      b0?.shape?.k === "any" ? abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial") : b0,
+    );
+    return base;
+  }
+  return spreadObj(aa, b0);
 }
 
 /**
@@ -1877,7 +1891,14 @@ export function $objRest(o: Abs, keys: string[]): Abs {
       .map((m) => $objRest(m, keys))
       .reduce((a, b) => joinAbs(a, b));
   }
-  if (!isObj(o)) return unknown;
+  if (!isObj(o)) {
+    // any 解构 rest：无约束对象面（open），不是 unknown
+    if (o.shape.k === "any") {
+      const shape: Abs["shape"] = { k: "obj", slots: {}, open: true };
+      return { shape, conf: "partial" };
+    }
+    return unknown;
+  }
   const drop = new Set(keys);
   const slots: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }> = {};
   let openRest = o.shape.open === true;
@@ -1903,6 +1924,7 @@ export function $arrRest(a: Abs, start: number): Abs {
     return tupleOrWiden(a.shape.elements.slice(start), a.conf);
   }
   if (a.shape.k === "arr") return a;
+  if (a.shape.k === "any") return abs({ k: "arr", element: anyMemberResult() }, undefined, undefined, "path");
   return unknown;
 }
 
@@ -1972,9 +1994,11 @@ export function $concat(a: Abs, b: Abs): Abs {
     if (be) {
       return tupleOrWiden([...as.elements, ...be], confJoin(a.conf, b.conf));
     }
-    // b 可能可迭代（元素域未知）：spread 并入的是 b 的元素而非 b 本身
+    // b 可能可迭代：spread 并入的是 b 的元素而非 b 本身。
+    // any 的元素域是 any（无约束），不是 unknown（引擎债）。
+    const bEl = b?.shape?.k === "any" ? anyMemberResult() : unknown;
     return abs(
-      { k: "arr", element: [...as.elements, unknown].reduce((x, y) => joinAbs(x, y)) },
+      { k: "arr", element: [...as.elements, bEl].reduce((x, y) => joinAbs(x, y)) },
       undefined,
       undefined,
       "path",
@@ -1984,9 +2008,19 @@ export function $concat(a: Abs, b: Abs): Abs {
   if (ae && bs.k === "tuple") {
     return tupleOrWiden([...ae, ...bs.elements], confJoin(a.conf, b.conf));
   }
-  // 双侧皆非精确容器：元素 join（Set∪Set / Set∪unknown / unknown∪unknown…）
+  // 双侧皆非精确容器：元素 join（any → any；空 tuple 不贡献元素）
+  const sideEl = (x: Abs, expanded: Abs[] | null): Abs => {
+    if (expanded) return expanded.reduce((u, y) => joinAbs(u, y));
+    if (x?.shape?.k === "any") return anyMemberResult();
+    if (x?.shape?.k === "tuple") {
+      const els = x.shape.elements;
+      // 空 tuple spread 不贡献元素 → never；join(never, any) = any
+      return els.length ? els.reduce((u, y) => joinAbs(u, y)) : abs({ k: "never" }, undefined, undefined, "exact");
+    }
+    return unknown;
+  };
   return abs(
-    { k: "arr", element: joinAbs(ae ? ae.reduce((x, y) => joinAbs(x, y)) : unknown, expand(b) ? expand(b)!.reduce((x, y) => joinAbs(x, y)) : unknown) },
+    { k: "arr", element: joinAbs(sideEl(a, ae), sideEl(b, expand(b))) },
     undefined,
     undefined,
     "path",

@@ -1,0 +1,24 @@
+{
+  "name": "prd-race",
+  "version": 3,
+  "driver": "omp",
+  "ompBin": "omp",
+  "model": "sensenova-6.8-flash-lite",
+  "models": {
+    "nudo": "sn0/sensenova-6.8-flash-lite",
+    "typescript": "sn1/sensenova-6.8-flash-lite"
+  },
+  "modelNote": "same model, different provider accounts (sn0 / sn1) — rate-limit isolation",
+  "temperature": 0,
+  "seed": 1,
+  "flags": ["-p", "--mode", "json", "--auto-approve", "--no-prewalk"],
+  "lsp": {
+    "nudo": "starters/nudo/lsp.yml",
+    "typescript": "starters/typescript/lsp.yml"
+  },
+  "runCommands": {
+    "nudo": { "gate": ["npm", "run", "gate"], "test": ["npm", "test"] },
+    "typescript": { "gate": ["npm", "run", "gate"], "test": ["npm", "test"] }
+  },
+  "notes": "Tokens only — no price. LSP per-side via project lsp.yml. Same weights, different accounts."
+}

@@ -730,3 +730,36 @@ export function fnConstraintToEntryReqs(
     constraint,
   }));
 }
+
+/**
+ * fn(..., { throws }) / throws 约束 → 申报的 throws 类型名。
+ * `"Error"` / `lit("Error")` / brand / union 成员 / `*` 全收。
+ */
+export function throwConstraintToKinds(
+  c: NudoConstraint | undefined,
+): string[] | "*" | undefined {
+  if (!c) return undefined;
+  const out = new Set<string>();
+  let any = false;
+  const note = (s: string): void => {
+    if (s === "*" || s === "any") any = true;
+    else if (s) out.add(s);
+  };
+  const walk = (x: NudoConstraint): void => {
+    if (x.members) {
+      for (const m of x.members) walk(m);
+      return;
+    }
+    // `"Error"` / lit("Error") → eq(self, lit)；从 preds 抠字面量名
+    for (const p of x.preds) {
+      if (p.op !== "eq" && p.op !== "ne") continue;
+      for (const side of [p.a, p.b] as const) {
+        if (side.op === "lit" && typeof side.value === "string") note(side.value);
+      }
+    }
+  };
+  walk(c);
+  if (any) return "*";
+  if (out.size > 0) return [...out];
+  return undefined;
+}

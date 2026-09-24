@@ -38,6 +38,7 @@ import {
   type NudoConstraint,
   isNudoConstraint,
   fnConstraintToEntryReqs,
+  throwConstraintToKinds,
   and,
   isIntFlag,
 } from "./constraint.ts";
@@ -46,6 +47,7 @@ import {
   NudoSidecarError,
   extractRefinesFromSource,
   extractRefineReturnFromSource,
+  extractDeclaredThrows,
   refineDiagCount,
   takeRefineDiagsSince,
   type RefineResolveOpts,
@@ -409,6 +411,8 @@ export type EffectiveInterface = {
   fnName: string;
   params: Array<{ param: string; constraint: NudoConstraint }>;
   returns?: { constraint: NudoConstraint };
+  /** 申报式抛错（@nudo:throws / case !! throws / sidecar fn.throws） */
+  throws?: { kinds: string[] | "*" };
   source: InterfaceSource;
   /**
    * 合取不可满足标记：params = 常数界交叉矛盾（或 prim 矛盾等 and() 不可
@@ -686,6 +690,7 @@ export function effectiveInterface(
   const refineSince = refineDiagCount();
   const sourceEntries = extractRefinesFromSource(source, fnName, opts);
   const sourceReturn = extractRefineReturnFromSource(source, fnName, opts);
+  const sourceThrows = extractDeclaredThrows(source, fnName);
 
   // 手写来源 ② ∪ 生成段：侧车同名自动绑定
   const sidecar = loadSidecarBinding(source, fnName, opts);
@@ -696,6 +701,13 @@ export function effectiveInterface(
   const sidecarGenerated = sidecar.ok && sidecar.generated;
   const sidecarParams = sidecarFn ? fnConstraintToEntryReqs(sidecarFn) : [];
   const sidecarReturns = sidecarFn?.fn.returns;
+  const sidecarThrowsKinds = throwConstraintToKinds(sidecarFn?.fn.throws);
+  /** 源码申报 ∪ 侧车 fn.throws（`*` 优先） */
+  const mergedThrows: string[] | "*" | undefined = ((): string[] | "*" | undefined => {
+    if (sourceThrows === "*" || sidecarThrowsKinds === "*") return "*";
+    const set = new Set<string>([...(sourceThrows ?? []), ...(sidecarThrowsKinds ?? [])]);
+    return set.size > 0 ? [...set] : undefined;
+  })();
 
   const hasHandwritten =
     sourceEntries.length > 0 ||
@@ -709,6 +721,7 @@ export function effectiveInterface(
         fnName,
         params: sidecarParams,
         ...(sidecarReturns !== undefined ? { returns: { constraint: sidecarReturns } } : {}),
+        ...(mergedThrows !== undefined ? { throws: { kinds: mergedThrows } } : {}),
         source: "generated",
       };
     }
@@ -774,6 +787,7 @@ export function effectiveInterface(
     fnName,
     params: [...params.entries()].map(([param, constraint]) => ({ param, constraint })),
     ...(returnsC !== undefined ? { returns: { constraint: returnsC } } : {}),
+    ...(mergedThrows !== undefined ? { throws: { kinds: mergedThrows } } : {}),
     source: "handwritten",
     ...(conflictParams.length > 0 || conflictReturns
       ? {

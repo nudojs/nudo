@@ -207,7 +207,7 @@ export function getName(user) {
 [error] getName (export): may throw TypeError
   cause:    property 'name' on any (unconstrained param `user`)
   actual:   (user: any) => any    throws TypeError
-  expected: entry total, or declare/catch throws
+  expected: entry total, or @nudo:throws / try-catch
   → refine user / guard / try-catch / --ignore-throws TypeError
 ```
 

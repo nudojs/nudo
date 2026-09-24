@@ -137,6 +137,7 @@ Coexistence with `tsc` is a **migration tactic only**. The exit is `retire`. Wal
 
 - [Quick Start](./quick-start.md) — same path with more output
 - [Error faces](../guides/error-faces.md) — what violations look like next to `tsc`
+- [AI-native DX](../guides/ai-native-dx.md) — agent loops, tokens · rounds · bugs
 - [Nudo vs TypeScript](../guides/vs-typescript.md) — replace / not-replace map
 - [Migrate from TypeScript](../guides/migrating-from-typescript.md) — retire `tsc`
 - [Playground](/playground)

@@ -28,6 +28,7 @@ const sidebars: SidebarsConfig = {
         "guides/env-harvest",
         "guides/examples",
         "guides/error-faces",
+        "guides/ai-native-dx",
       ],
     },
     {

@@ -899,3 +899,75 @@ export function extractRefineReturnFromSource(
   }
   return undefined;
 }
+
+/**
+ * 申报式抛错（declare throws — L2 豁免）：
+ *   @nudo:throws Error
+ *   @nudo:throws Error, TypeError
+ *   @nudo:throws *
+ *   @nudo:case "neg" (0) !! throws          → 申报任意 throw
+ *   @nudo:case "neg" (0) !! throws Error    → 申报 Error
+ *
+ * 与 refine 同扫函数前注释块。返回 `*` = 申报任意；数组 = 按名申报；
+ * undefined = 无申报（L2 照常执法）。
+ */
+export function extractDeclaredThrows(
+  source: string,
+  fnName: string,
+): string[] | "*" | undefined {
+  if (!source.includes("@nudo:throws") && !source.includes("!! throws")) {
+    return undefined;
+  }
+  const kinds = new Set<string>();
+  let any = false;
+  // 与 extractRefineLines 同路径扫函数前注释块（throws/case 不在 refine 行文法里）
+  const escaped = fnName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const fnRe = new RegExp(
+    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}\\b|const\\s+${escaped}\\s*=)`,
+  );
+  const m = source.match(fnRe);
+  if (!m || m.index === undefined) return undefined;
+  const before = source.slice(0, m.index);
+  const lines = before.split("\n");
+  let seenComment = false;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!.trim();
+    // 先吃 export 前的尾部空行；一旦进入注释块，再遇空行 = 块边界
+    if (line === "") {
+      if (seenComment) break;
+      continue;
+    }
+    if (line === "*/") continue;
+    if (line.startsWith("*") || line.startsWith("/*") || line.startsWith("//")) {
+      seenComment = true;
+      const body = line.replace(/^[*/\s]+/, "").replace(/\*\/$/, "").trim();
+      const th = body.match(/@nudo:throws\s+(.+)$/i);
+      if (th) {
+        const spec = th[1]!.trim();
+        if (spec === "*") any = true;
+        else {
+          for (const k of spec.split(/[,\s|]+/).map((s) => s.trim()).filter(Boolean)) {
+            if (k === "*") any = true;
+            else kinds.add(k);
+          }
+        }
+      }
+      const cs = body.match(/!!\s*throws(?:\s+([A-Za-z*][\w*|,\s]*))?/i);
+      if (cs) {
+        const spec = (cs[1] ?? "*").trim();
+        if (spec === "" || spec === "*") any = true;
+        else {
+          for (const k of spec.split(/[,\s|]+/).map((s) => s.trim()).filter(Boolean)) {
+            if (k === "*") any = true;
+            else kinds.add(k);
+          }
+        }
+      }
+      continue;
+    }
+    break;
+  }
+  if (any) return "*";
+  if (kinds.size > 0) return [...kinds];
+  return undefined;
+}

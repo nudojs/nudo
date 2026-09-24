@@ -1,5 +1,5 @@
 /**
- * check 观测面：fork 超限 → nudo:fork-truncated（warning，不升 error）。
+ * check 观测面：fork 超限 → nudo:fork-truncated（**info**，预算观测非质量失败）。
  * 与 nudo:recursion-truncated 同 collector 管道，但专用码/专用标签。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -27,7 +27,7 @@ export function abs(n) {
     expect(r.issues.filter((i) => i.code === "nudo:fork-truncated")).toHaveLength(0);
   });
 
-  it("fork budget exhausted → nudo:fork-truncated warning (not error, not recursion-truncated)", () => {
+  it("fork budget exhausted → nudo:fork-truncated info (not error, not recursion-truncated)", () => {
     setBForkBudgetLimit(1);
     const src = `
 export function branchy(n) {
@@ -40,7 +40,7 @@ export function branchy(n) {
     const forks = r.issues.filter((i) => i.code === "nudo:fork-truncated");
     expect(forks.length).toBeGreaterThanOrEqual(1);
     for (const f of forks) {
-      expect(f.severity).toBe("warning");
+      expect(f.severity).toBe("info");
     }
     // 不得把 fork 截断误报成递归截断
     expect(r.issues.filter((i) => i.code === "nudo:recursion-truncated")).toHaveLength(0);

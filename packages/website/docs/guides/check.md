@@ -50,7 +50,7 @@ signatures
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
       actual:   getName(user: any) => any    throws TypeError
-      expected: entry total, or declare/catch throws
+      expected: entry total, or @nudo:throws / try-catch
       → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
@@ -139,7 +139,7 @@ signatures
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
       actual:   getName(user: any) => any    throws TypeError
-      expected: entry total, or declare/catch throws
+      expected: entry total, or @nudo:throws / try-catch
       → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 

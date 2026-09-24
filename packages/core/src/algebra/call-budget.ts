@@ -61,7 +61,11 @@ export function stableCallId(obj: object): string {
   return id;
 }
 
-/** 截断结果：分析无信息，conf=opaque（不是 any） */
+/**
+ * 截断结果：分析无信息，conf=opaque。
+ * shape=unknown 表示「没有可计算面」，但 **不是** nudo:unknown-inference
+ * （那是真推导失败）——截断走 nudo:recursion-truncated / fork-truncated。
+ */
 export function truncatedAbs(): Abs {
   return abs({ k: "unknown" }, undefined, undefined, "opaque");
 }

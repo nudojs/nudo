@@ -207,7 +207,7 @@ export function resetBCallBudget(): void {
   resetBForkBudget();
 }
 
-/** 截断结果：分析无信息，conf=opaque（与 ast-eval truncatedAbs 同） */
+/** 截断结果：unknown#opaque——预算截断，不触发 unknown-inference */
 function bTruncatedAbs(): Abs {
   return abs({ k: "unknown" }, undefined, undefined, "opaque");
 }

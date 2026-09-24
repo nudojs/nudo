@@ -1,0 +1,46 @@
+{
+  "side": "typescript",
+  "model": "sn1/sensenova-6.8-flash-lite",
+  "seed": 1,
+  "metrics": {
+    "tokenIn": 910408,
+    "tokenOut": 82794,
+    "tokenTotal": 993202,
+    "rounds": 63,
+    "toolCalls": 88,
+    "ctxAvg": 58954,
+    "ctxPeak": 78280,
+    "offscriptToolCalls": 0,
+    "offscriptSamples": [],
+    "wallMs": 1385549,
+    "repairLoops": 21
+  },
+  "gate": {
+    "exit": 0,
+    "ok": true,
+    "maxRssKb": 0
+  },
+  "testExit": 0,
+  "detectRate": 6,
+  "bugDetail": {
+    "bug#1": "pass",
+    "bug#2": "pass",
+    "bug#3": "pass",
+    "bug#4": "pass",
+    "bug#5": "pass",
+    "bug#6": "pass"
+  },
+  "silentGreen": false,
+  "ompExit": 0,
+  "timedOut": false,
+  "mem": {
+    "lspPeakRssKb": 558464,
+    "nodePeakRssKb": 558464,
+    "sysTreePeakRssKb": 35304640,
+    "gatePeakRssKb": 0,
+    "samples": 692,
+    "lspCmd": "/Users/lot/.n/bin/node /var/folders/2d/97ysh5nn3pnb4gr6zq01k18m0000gp/T/oss-semver-typescript-riMfgh/node_modules/typescript/lib/tsserver.js --useInferredProjec"
+  },
+  "workDir": "/var/folders/2d/97ysh5nn3pnb4gr6zq01k18m0000gp/T/oss-semver-typescript-riMfgh",
+  "sessionDir": "/var/folders/2d/97ysh5nn3pnb4gr6zq01k18m0000gp/T/oss-semver-typescript-riMfgh/.omp-session"
+}

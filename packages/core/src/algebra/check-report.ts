@@ -163,8 +163,12 @@ export function actionsForIssue(i: {
       return [
         {
           kind: "relax",
-          label: "refine / guard / try-catch the entry",
+          label: "declare intentional fail-fast: @nudo:throws Error (or case `!! throws`)",
           ...(i.fn ? { hint: i.fn } : {}),
+        },
+        {
+          kind: "info",
+          label: "or refine / guard / try-catch the entry so it is total",
         },
         {
           kind: "ignore-throws",
@@ -384,8 +388,10 @@ export function formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = 
       const loc = i.line != null ? `L${i.line}` : "";
       const head = [i.severity.toUpperCase(), loc, i.fn].filter(Boolean).join(" ");
       lines.push(`  [${head}] ${i.message}  (${i.code})`);
-      if (i.actual) lines.push(`      actual:   ${i.actual}`);
-      if (i.expected) lines.push(`      expected: ${i.expected}`);
+      // slim 默认：error 保 actual/expected 产品面；warning/info 单行（细节走 --json）
+      const showDetail = i.severity === "error" || opts.verbose;
+      if (showDetail && i.actual) lines.push(`      actual:   ${i.actual}`);
+      if (showDetail && i.expected) lines.push(`      expected: ${i.expected}`);
       if (i.suggestion) {
         lines.push(`      → ${i.suggestion}`);
       } else if (CONTRACT_FIX_CODES.has(i.code)) {

@@ -17,8 +17,11 @@ Nudo is for teams whose **logic lives in JavaScript** and who need **honest obse
 | Gate API obligations in CI | Sidecar contracts → `nudo check` (`actual ⊭ expected`) |
 | Keep JS as JS | Logic is plain JS; contracts are plain JS modules (`*.nudo.js`) |
 | Feed TypeScript / Zod / mocks | `nudo export` one-way projections from Abs |
+| **Agent repair loops** | **`check --json` + `actions[]`** — values and commands, not type-name riddles |
 
 `nudo check` **only validates**. Artifacts (`.d.ts`, Zod, Standard Schema, guards) come from **`export`** — not from the checker.
+
+**AI-native DX** (tokens · rounds · bugs, measured): [AI-native DX](./guides/ai-native-dx.md).
 
 ## Two work modes
 
