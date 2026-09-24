@@ -449,6 +449,8 @@ export type OpenDocumentLike = {
   getText(): string;
 };
 
+export type { LspDiagnostic };
+
 export type ValidateTextDeps = {
   sendDiagnostics: (params: { uri: string; diagnostics: LspDiagnostic[] }) => void;
   /** Nudo-file gate; when omitted every uri is validated. */

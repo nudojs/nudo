@@ -2,8 +2,9 @@ import React, {isValidElement, useMemo, type ReactNode} from 'react';
 import useIsBrowser from '@docusaurus/useIsBrowser';
 import useBaseUrl from '@docusaurus/useBaseUrl';
 import Translate from '@docusaurus/Translate';
-import ElementContent from '@theme/CodeBlock/Content/Element';
-import StringContent from '@theme/CodeBlock/Content/String';
+// LSP-G8：经根级 shim 导入——Docusaurus v4 若上提 Content/*，只改 shim
+import ElementContent from './Element';
+import StringContent from './String';
 import type {Props} from '@theme/CodeBlock';
 
 /**

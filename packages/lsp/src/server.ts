@@ -139,7 +139,8 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
     textDocumentSync: TextDocumentSyncKind.Full,
     hoverProvider: true,
     completionProvider: {
-      triggerCharacters: ["."],
+      // `.` 成员；`@` 指令（Helix 等弱 UI 也可在注释里触发）
+      triggerCharacters: [".", "@"],
       resolveProvider: false,
     },
     codeLensProvider: {
@@ -406,6 +407,22 @@ connection.onHover((params) => {
   }
 });
 
+/** LSP-G7：`@nudo:` 指令补全（注释上下文 / `@` 触发） */
+const NUDO_DIRECTIVE_COMPLETIONS: Array<{ label: string; detail: string; insert?: string }> = [
+  { label: "@nudo:refine", detail: "L1 contract — param / return refinement", insert: "@nudo:refine " },
+  { label: "@nudo:interface", detail: "Alias of @nudo:refine", insert: "@nudo:interface " },
+  { label: "@nudo:case", detail: "Debug witness (nudo test / LSP only)", insert: '@nudo:case "' },
+  { label: "@nudo:as", detail: "Override next statement type", insert: "@nudo:as " },
+  { label: "@nudo:replace", detail: "Replace sub-expression type", insert: "@nudo:replace " },
+  { label: "@nudo:mock", detail: "Mock dependency implementation", insert: "@nudo:mock " },
+  { label: "@nudo:mock-module", detail: "Replace imported module with mocks", insert: "@nudo:mock-module " },
+  { label: "@nudo:pure", detail: "Memoize pure function evaluation", insert: "@nudo:pure" },
+  { label: "@nudo:skip", detail: "Skip inference; use declared type", insert: "@nudo:skip " },
+  { label: "@nudo:sample", detail: "Control loop iteration sampling", insert: "@nudo:sample " },
+  { label: "@nudo:import", detail: "Import constraint templates from *.nudo.js", insert: "@nudo:import " },
+  { label: "@nudo:env", detail: "Declare runtime env (es / web / node)", insert: "@nudo:env " },
+];
+
 connection.onCompletion((params) => {
   const document = documents.get(params.textDocument.uri);
   if (!document) return [];
@@ -415,6 +432,21 @@ connection.onCompletion((params) => {
   const source = document.getText();
   const line = params.position.line + 1;
   const column = params.position.character;
+
+  // 指令面优先：光标在注释 / `@nudo` 前缀内
+  const curLine = source.split("\n")[params.position.line] ?? "";
+  const before = curLine.slice(0, params.position.character);
+  if (/(\/\/|\/\*|\*|\/\*\*)\s*@?n?u?d?o?:?$/.test(before) || /@nudo:?[\w-]*$/.test(before)) {
+    const prefix = /@nudo:?[\w-]*$/.exec(before)?.[0] ?? "";
+    return NUDO_DIRECTIVE_COMPLETIONS.filter(
+      (d) => !prefix || d.label.startsWith(prefix) || d.label.includes(prefix),
+    ).map((d): LspCompletionItem => ({
+      label: d.label,
+      kind: CompletionItemKind.Keyword,
+      detail: d.detail,
+      insertText: d.insert ?? d.label,
+    }));
+  }
 
   try {
     const items = getCompletionsAtPosition(filePath, source, line, column);
@@ -584,6 +616,29 @@ connection.languages.inlayHint.on((params) => {
       }
     } catch {
       // Abs inlay 失败不影响 caseHints
+    }
+
+    // LSP-G2：CodeLens 不可见的客户端（Helix 等）用 inlay 投影同源 interface 档
+    // （`● interface / handwritten|generated|implicit`，与 CodeLens 同 computeInterfaceLenses）
+    try {
+      for (const lens of computeInterfaceLenses(source, filePath, {
+        loadModule: activeLoadModule,
+        activeCases: cases,
+        ...(autoBind === false ? { autoBind: false } : {}),
+      })) {
+        if (lens.kind !== "interface") continue;
+        const lineIdx = lens.line - 1;
+        if (lineIdx < 0 || lineIdx >= lines.length) continue;
+        const lineLen = (lines[lineIdx] ?? "").length;
+        hints.push({
+          position: { line: lineIdx, character: lineLen },
+          label: `  ● interface / ${lens.source}`,
+          kind: InlayHintKind.Type,
+          paddingLeft: true,
+        });
+      }
+    } catch {
+      // interface inlay 失败不影响 case/Abs inlay
     }
 
     return hints;
