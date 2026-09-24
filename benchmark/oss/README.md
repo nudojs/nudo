@@ -22,6 +22,9 @@ pnpm run benchmark:oss:gate     # regression gate (fails only when worse)
 | Check-all wall-clock | Yes (envelope) |
 | Hub-edit dirty-set median | Yes (envelope) |
 | File count floor | Yes (`minFiles`) |
+| **tsc createProgram + diagnostics** (same .js set, `allowJs+checkJs`) | **No — reference column only** |
+
+tsc comparison answers “how long does the TypeScript compiler take on the same files”, not “which checker is better”. Different product questions (assignability vs Abs+Pred).
 
 ## Policy
 

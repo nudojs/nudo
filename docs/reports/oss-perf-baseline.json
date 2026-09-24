@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-24T19:37:13.253Z",
+  "generatedAt": "2026-09-24T19:42:23.445Z",
   "node": "v24.19.0",
   "kind": "oss-real-packages",
   "totals": {
@@ -8,8 +8,9 @@
     "bytes": 361224,
     "fpCount": 0,
     "scanned": 79,
-    "coldAnalyzeMs": 2143.13,
-    "checkAllMs": 564.75
+    "coldAnalyzeMs": 2238.14,
+    "checkAllMs": 604.13,
+    "tscTotalMs": 658.01
   },
   "packages": [
     {
@@ -21,19 +22,26 @@
       "scanErrors": [],
       "falsePositives": [],
       "fpCount": 0,
-      "coldAnalyzeMs": 735.07,
+      "coldAnalyzeMs": 757.24,
       "warmAnalyzeMs": {
         "n": 5,
-        "median": 5.02,
-        "min": 4.83,
-        "max": 5.62
+        "median": 5.2,
+        "min": 4.95,
+        "max": 5.39
       },
-      "checkAllMs": 165.16,
+      "checkAllMs": 171.61,
+      "tsc": {
+        "createProgramMs": 123.29,
+        "diagnosticsMs": 139.57,
+        "totalMs": 262.86,
+        "diagnostics": 30,
+        "note": "tsc createProgram+diagnostics on same .js set (allowJs+checkJs). Reference only — different question than Nudo Abs analysis."
+      },
       "hub": {
         "file": "commander/lib/error.js",
         "dependents": 4,
         "dirtyCount": 6,
-        "dirtyMedianMs": 675.98,
+        "dirtyMedianMs": 685.93,
         "ideAnalyzeMedianMs": 0.17
       },
       "leaf": {
@@ -51,20 +59,27 @@
       "scanErrors": [],
       "falsePositives": [],
       "fpCount": 0,
-      "coldAnalyzeMs": 1141.93,
+      "coldAnalyzeMs": 1181.42,
       "warmAnalyzeMs": {
         "n": 5,
-        "median": 12.72,
-        "min": 12.56,
-        "max": 13.57
+        "median": 13.44,
+        "min": 12.93,
+        "max": 14.08
       },
-      "checkAllMs": 239.6,
+      "checkAllMs": 252.64,
+      "tsc": {
+        "createProgramMs": 99.11,
+        "diagnosticsMs": 147.88,
+        "totalMs": 246.99,
+        "diagnostics": 41,
+        "note": "tsc createProgram+diagnostics on same .js set (allowJs+checkJs). Reference only — different question than Nudo Abs analysis."
+      },
       "hub": {
         "file": "yargs/build/lib/utils/is-promise.js",
         "dependents": 5,
         "dirtyCount": 8,
-        "dirtyMedianMs": 952.28,
-        "ideAnalyzeMedianMs": 0.09
+        "dirtyMedianMs": 1015.22,
+        "ideAnalyzeMedianMs": 0.12
       },
       "leaf": {
         "file": "yargs/browser.mjs",
@@ -81,20 +96,27 @@
       "scanErrors": [],
       "falsePositives": [],
       "fpCount": 0,
-      "coldAnalyzeMs": 266.13,
+      "coldAnalyzeMs": 299.48,
       "warmAnalyzeMs": {
         "n": 5,
-        "median": 37.64,
-        "min": 35.27,
-        "max": 39.11
+        "median": 41.9,
+        "min": 40.28,
+        "max": 45.11
       },
-      "checkAllMs": 159.99,
+      "checkAllMs": 179.88,
+      "tsc": {
+        "createProgramMs": 74.04,
+        "diagnosticsMs": 74.13,
+        "totalMs": 148.16,
+        "diagnostics": 16,
+        "note": "tsc createProgram+diagnostics on same .js set (allowJs+checkJs). Reference only — different question than Nudo Abs analysis."
+      },
       "hub": {
         "file": "semver/bin/semver.js",
         "dependents": 0,
         "dirtyCount": 1,
-        "dirtyMedianMs": 20.98,
-        "ideAnalyzeMedianMs": 0.84
+        "dirtyMedianMs": 19.69,
+        "ideAnalyzeMedianMs": 0.81
       },
       "leaf": {
         "file": "semver/classes/comparator.js",

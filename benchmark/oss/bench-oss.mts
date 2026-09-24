@@ -10,9 +10,10 @@
  *   node --import tsx benchmark/oss/bench-oss.mts
  *   pnpm run benchmark:oss
  */
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readFileSync as readFs } from "node:fs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
+import ts from "typescript";
 import { loadOssPackages, type OssPackage, type OssFile } from "./packages.mts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
@@ -31,6 +32,47 @@ const ERROR_CODES = [
   "nudo:interface-domain-exceeds",
   "nudo:interface-name-clash",
 ] as const;
+
+/**
+ * tsc 对照（参考，不进 gate）：同一批 .js 文件上的 createProgram + 诊断。
+ * 口径：allowJs + checkJs + noEmit + skipLibCheck（与 micro/vs-tsc 同族）。
+ */
+function measureTsc(files: OssFile[]): {
+  createProgramMs: number;
+  diagnosticsMs: number;
+  totalMs: number;
+  diagnostics: number;
+  note: string;
+} {
+  const rootNames = files.map((f) => f.path);
+  const options: ts.CompilerOptions = {
+    allowJs: true,
+    checkJs: true,
+    noEmit: true,
+    skipLibCheck: true,
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.CommonJS,
+    moduleResolution: ts.ModuleResolutionKind.Node10,
+    types: [],
+  };
+  const host = ts.createCompilerHost(options, true);
+  const t0 = performance.now();
+  const program = ts.createProgram(rootNames, options, host);
+  const tCreate = performance.now() - t0;
+  const t1 = performance.now();
+  const diags = [
+    ...program.getSyntacticDiagnostics(),
+    ...program.getSemanticDiagnostics(),
+  ];
+  const tDiag = performance.now() - t1;
+  return {
+    createProgramMs: +tCreate.toFixed(2),
+    diagnosticsMs: +tDiag.toFixed(2),
+    totalMs: +(tCreate + tDiag).toFixed(2),
+    diagnostics: diags.length,
+    note: "tsc createProgram+diagnostics on same .js set (allowJs+checkJs). Reference only — different question than Nudo Abs analysis.",
+  };
+}
 
 function med(xs: number[]): number {
   const s = [...xs].sort((a, b) => a - b);
@@ -189,6 +231,8 @@ async function main() {
       hubIde.push(performance.now() - t);
     }
 
+    const tsc = measureTsc(pkg.files);
+
     packageResults.push({
       name: pkg.name,
       files: pkg.files.length,
@@ -201,6 +245,7 @@ async function main() {
       coldAnalyzeMs: +cold.toFixed(2),
       warmAnalyzeMs: warm,
       checkAllMs: +checkMs.toFixed(2),
+      tsc,
       hub: {
         file: hub.label,
         dependents: hubDependents,
@@ -224,6 +269,7 @@ async function main() {
     scanned: packageResults.reduce((s, p) => s + (p as { scanned: number }).scanned, 0),
     coldAnalyzeMs: +packageResults.reduce((s, p) => s + (p as { coldAnalyzeMs: number }).coldAnalyzeMs, 0).toFixed(2),
     checkAllMs: +packageResults.reduce((s, p) => s + (p as { checkAllMs: number }).checkAllMs, 0).toFixed(2),
+    tscTotalMs: +packageResults.reduce((s, p) => s + (p as { tsc: { totalMs: number } }).tsc.totalMs, 0).toFixed(2),
   };
 
   const payload = {
@@ -246,9 +292,24 @@ async function main() {
         fpCount: number;
         coldAnalyzeMs: number;
         checkAllMs: number;
+        tsc: { totalMs: number; diagnostics: number };
         hub: { file: string; dirtyCount: number; dirtyMedianMs: number; dependents: number };
       };
-      return `| \`${pr.name}\` | ${pr.files} | ${pr.scanned} | **${pr.fpCount}** | ${pr.coldAnalyzeMs} | ${pr.checkAllMs} | ${pr.hub.dirtyCount} (${pr.hub.dependents} deps) | ${pr.hub.dirtyMedianMs} |`;
+      return `| \`${pr.name}\` | ${pr.files} | ${pr.scanned} | **${pr.fpCount}** | ${pr.coldAnalyzeMs} | ${pr.checkAllMs} | ${pr.tsc.totalMs} | ${pr.hub.dirtyCount} (${pr.hub.dependents} deps) | ${pr.hub.dirtyMedianMs} |`;
+    })
+    .join("\n");
+
+  const tscRows = packageResults
+    .map((p) => {
+      const pr = p as {
+        name: string;
+        coldAnalyzeMs: number;
+        checkAllMs: number;
+        tsc: { createProgramMs: number; diagnosticsMs: number; totalMs: number; diagnostics: number };
+      };
+      const ratio =
+        pr.tsc.totalMs > 0 ? (pr.checkAllMs / pr.tsc.totalMs).toFixed(2) : "—";
+      return `| \`${pr.name}\` | ${pr.coldAnalyzeMs} | ${pr.checkAllMs} | ${pr.tsc.createProgramMs} | ${pr.tsc.diagnosticsMs} | **${pr.tsc.totalMs}** | ${pr.tsc.diagnostics} | ${ratio} |`;
     })
     .join("\n");
 
@@ -262,19 +323,30 @@ async function main() {
 
 - Generated at: ${payload.generatedAt}
 - Node: ${nodeV}
+- TypeScript: ${ts.version} (reference column only)
 - Scale: ${totals.packages} packages · **${totals.files} JS files** · ${(totals.bytes / 1024).toFixed(0)} KB source
 
 ## Summary
 
-| Package | Files | Scanned | **L1 FP** | Cold analyze (ms) | Check all (ms) | Hub dirty set | Hub edit (ms) |
-|---|---:|---:|---:|---:|---:|---:|---:|
+| Package | Files | Scanned | **L1 FP** | Nudo cold (ms) | Nudo check (ms) | **tsc total (ms)** | Hub dirty | Hub edit (ms) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
 ${rows}
 
-| Total | Files | Scanned | **L1 FP** | Cold analyze | Check all |
-|---|---:|---:|---:|---:|---:|
-| | ${totals.files} | ${totals.scanned} | **${totals.fpCount}** | ${totals.coldAnalyzeMs} | ${totals.checkAllMs} |
+| Total | Files | Scanned | **L1 FP** | Nudo cold | Nudo check | **tsc total** |
+|---|---:|---:|---:|---:|---:|---:|
+| | ${totals.files} | ${totals.scanned} | **${totals.fpCount}** | ${totals.coldAnalyzeMs} | ${totals.checkAllMs} | ${totals.tscTotalMs} |
 
-## What is pinned
+## Nudo vs tsc (same .js file set)
+
+> **Reference only — not a gate.** Different questions: tsc = assignability on \`allowJs+checkJs\`;
+> Nudo = Abs abstract interpretation + Pred contracts. Compare **latency**, not algorithm constants.
+> tsc \`createProgram\` is cold per package (no LanguageService reuse).
+
+| Package | Nudo cold | Nudo check | tsc createProgram | tsc diagnostics | **tsc total** | tsc diags count | check/tsc |
+|---|---:|---:|---:|---:|---:|---:|---:|
+${tscRows}
+
+## What is pinned (gate)
 
 | Metric | Meaning |
 |--------|---------|
@@ -283,6 +355,8 @@ ${rows}
 | Check all | \`checkSource\` gate path over the same files |
 | Hub dirty set | Import-graph hub edit → dirty-set re-analyze (LSP/watch path) |
 | Hub edit | Median wall-clock of dirty-set re-analyze after touching hub |
+
+tsc numbers are **reported but not gated** (host/tooling sensitive; different product question).
 
 ## Honest boundaries
 
@@ -336,9 +410,14 @@ ${rows}
   console.log(`L1 FP total   : ${totals.fpCount}`);
   console.log(`cold analyze  : ${totals.coldAnalyzeMs} ms`);
   console.log(`check all     : ${totals.checkAllMs} ms`);
+  console.log(`tsc total     : ${totals.tscTotalMs} ms  (ts ${ts.version}, reference)`);
   for (const p of packageResults) {
-    const pr = p as { name: string; hub: { file: string; dirtyCount: number; dirtyMedianMs: number } };
-    console.log(`  ${pr.name} hub-edit dirty=${pr.hub.dirtyCount} → ${pr.hub.dirtyMedianMs} ms (${pr.hub.file})`);
+    const pr = p as {
+      name: string;
+      tsc: { totalMs: number };
+      hub: { file: string; dirtyCount: number; dirtyMedianMs: number };
+    };
+    console.log(`  ${pr.name} tsc=${pr.tsc.totalMs}ms  hub-edit dirty=${pr.hub.dirtyCount} → ${pr.hub.dirtyMedianMs} ms`);
   }
   console.log(`report → docs/reports/oss-perf-baseline.md`);
 }
