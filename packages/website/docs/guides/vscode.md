@@ -38,6 +38,14 @@ Extension packaging and Marketplace release steps: [Contributing — Releases](.
 
 Hover over an expression to see its inferred type. The extension uses `getTypeAtPosition` to compute the type at the cursor and displays it in a hover tooltip.
 
+### Active-case decoration (LSP-G1)
+
+Selecting a `@nudo:case` via CodeLens highlights the **whole function body** plus the case comment line (not only the comment). Server-side signature help also projects real `paramTypes` / return shapes.
+
+### Coexistence with tsserver (LSP-G4)
+
+Command palette → **Nudo: Apply coexistence settings (vs tsserver)** writes workspace `javascript.validate.enable=false` after confirmation (never silent). Full recipes: [Coexistence](./coexistence.md).
+
 ```javascript verify
 /**
  * @nudo:case "test" (42)

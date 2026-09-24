@@ -51,6 +51,7 @@ import {
   type DocumentSymbolItem,
 } from "./symbols.ts";
 import { findFnContractInsertPos } from "./sidecar-insert.ts";
+import { buildSignatureHelp } from "./signature-help.ts";
 import { TOKEN_TYPES, TOKEN_MODIFIERS } from "./semantic-tokens.ts";
 import {
   analysisCache,
@@ -1084,20 +1085,7 @@ connection.onSignatureHelp((params) => {
     if (!callInfo) return null;
 
     const fnAbs = getTypeAtPosition(filePath, source, callInfo.calleeLine, callInfo.calleeCol, cases);
-    if (!fnAbs || fnAbs.shape.k !== "fn") return null;
-
-    const paramLabels = fnAbs.shape.params.map((p) => `${p}: unknown`);
-    const activeParam = callInfo.currentParamIndex;
-
-    return {
-      signatures: [{
-        label: `(${paramLabels.join(", ")}) => unknown`,
-        parameters: paramLabels.map((label) => ({ label })),
-        activeParameter: activeParam,
-      }],
-      activeSignature: 0,
-      activeParameter: activeParam,
-    };
+    return fnAbs ? buildSignatureHelp(fnAbs, callInfo.currentParamIndex) : null;
   } catch {
     return null;
   }

@@ -24,12 +24,12 @@ Gap themes (full table + workarounds below; tracking IDs live in the design sour
 
 | Theme | IDs | Who feels it |
 |-------|-----|--------------|
-| Active-case decoration | **LSP-G1** | Zed / Neovim / Helix (client has no decoration API, or needs a plugin) |
+| Active-case decoration | **LSP-G1** | Closed on **VS Code** (function-body + case-line decorations). Zed / Neovim / Helix still open (client has no decoration API, or needs a plugin) |
 | CodeLens not rendered | **LSP-G2** | Helix, some minimal Neovim setups |
-| Semantic tokens off by default | **LSP-G3** | Zed / Neovim / Helix (config; enable per Setup notes) |
-| Secondary-server noise next to tsserver | **LSP-G4** | All clients (config: `nudo.analysis.include` / `exclude`, or `mode: "directives"`) |
+| Semantic tokens off by default | **LSP-G3** | **VS Code** can paint (`semanticTokenScopes`). Zed / Neovim / Helix: enable per Setup notes |
+| Secondary-server noise next to tsserver | **LSP-G4** | All clients (config: `nudo.analysis.include` / `exclude`, or `mode: "directives"`). VS Code: command `Nudo: Apply coexistence settings` |
 | Pull diagnostics unused | **LSP-G6** | Older clients (push path still works) |
-| Thin completion / signature help UI | **LSP-G7** | Helix (varies by build) |
+| Thin completion / signature help UI | **LSP-G7** | Server projects real `paramTypes` / return into signature help. Helix UI still varies by build |
 
 **Rule of thumb:** if the protocol serves it but the editor does not draw it, that is a **client limitation** — fall back to `nudo check` / `nudo contract` or the agent tools. Server-side semantics stay identical across editors.
 
@@ -46,7 +46,7 @@ Declared on `initialize` (see [@nudojs/lsp API](../api/lsp.md)):
 | Inlay hints | `languages.inlayHint` | Case hints + Abs param/return (`derived` mark on implicit exports) |
 | Definition / References / Rename | standard LSP | Sidecar binding names included (A5) |
 | Document / workspace symbols | standard LSP | |
-| Signature help | `onSignatureHelp` | Triggers `(`, `,` |
+| Signature help | `onSignatureHelp` | Triggers `(`, `,`; projects real `paramTypes` / return via `formatShape` (G7) |
 | Code actions (`quickfix`) | `onCodeAction` | Unreachable cleanup; contract/param fixes (A6) |
 | Semantic tokens (full) | `languages.semanticTokens` | Legend includes `contract` / `generated` / `derived` interface modifiers (A7) |
 | Execute command | `nudo.*` | `selectCase`, `contract`, `contract.draft`, `contract.emit`, agent tools |
@@ -195,13 +195,13 @@ Detail behind the [read-first summary](#known-gaps--which-limits-are-client-side
 
 | Gap | Affected clients | Workaround | Tracking |
 |-----|------------------|------------|----------|
-| Active-case visual decoration (highlights the selected case body) | Zed, Neovim, Helix | CodeLens `●`/`○` still switches the active case when the client renders CodeLens; hover follows. Without CodeLens UI: CLI `nudo check` / agent `nudo.hover` after selectCase via custom request | **LSP-G1** — client limitation (Zed has no decoration API; Neovim needs a custom plugin) |
+| Active-case visual decoration (highlights the selected case **function body**) | Zed, Neovim, Helix (**VS Code closed**) | VS Code extension highlights the whole function body + case line. Elsewhere: CodeLens `●`/`○` still switches the active case when the client renders CodeLens; hover follows. Without CodeLens UI: CLI `nudo check` / agent `nudo.hover` after selectCase via custom request | **LSP-G1** — closed on VS Code; client limitation elsewhere (Zed has no decoration API; Neovim needs a custom plugin) |
 | CodeLens not rendered | Helix, some minimal Neovim setups | CLI `nudo contract` / `nudo check`; agent `nudo.contract` / `nudo.contract.draft`; VS Code/Zed for UI CodeLens | **LSP-G2** — client limitation (Helix CodeLens UI absent) |
-| Semantic tokens off by default | Zed, Neovim, Helix | Set client settings from Setup notes above (Zed `semantic_tokens: "combined"`; Neovim treesitter/semantic-tokens plugin; Helix `editor.semantic-tokens`) | **LSP-G3** — config; Setup notes above |
-| Secondary-server diagnostics may compete with tsserver noise | All | Scope `package.json#nudo.analysis.include` / `exclude`; or `mode: "directives"` — full recipe in [Coexistence](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | **LSP-G4** — config; [coexistence recipe](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
+| Semantic tokens off by default | Zed, Neovim, Helix (**VS Code can paint**) | VS Code ships `semanticTokenScopes`. Elsewhere set client settings from Setup notes (Zed `semantic_tokens: "combined"`; Neovim treesitter/semantic-tokens plugin; Helix `editor.semantic-tokens`) | **LSP-G3** — VS Code ok; config debt on other clients |
+| Secondary-server diagnostics may compete with tsserver noise | All | VS Code: command `Nudo: Apply coexistence settings`. Or scope `package.json#nudo.analysis.include` / `exclude`; or `mode: "directives"` — full recipe in [Coexistence](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | **LSP-G4** — config; VS Code self-serve + [coexistence recipe](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
 | File detection / `analysis.mode` docs | Docs | Source of truth: [`@nudojs/service` API](../api/service.md#shouldanalyzefile) + [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) §7 | **LSP-G5** — closed (docs synced to `exports` default) |
 | Pull diagnostics unused by some clients | Older clients | Push path still works; open/validate on didOpen; clients may ignore `diagnosticProvider` | **LSP-G6** — protocol age (server keeps push) |
-| Completion trigger / signature help thin in some UIs | Helix (varies by build) | Use hover + `nudo.check` (CLI) / `nudo test` for full signatures; VS Code/Zed for signature help UI | **LSP-G7** — client limitation |
+| Completion trigger / signature help thin in some UIs | Helix (varies by build) | Server signature help now shows real param/return shapes (not `unknown` placeholders). If the UI is still thin: hover + `nudo.check` (CLI) / `nudo test` | **LSP-G7** — server face improved; Helix UI still client-limited |
 
 ## Same-source guarantee
 

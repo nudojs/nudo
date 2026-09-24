@@ -9,6 +9,7 @@ import {
   Range,
   Position,
   type OutputChannel,
+  ConfigurationTarget,
 } from "vscode";
 import {
   LanguageClient,
@@ -204,6 +205,34 @@ export function activate(context: ExtensionContext): void {
     window.onDidChangeActiveTextEditor(() => updateHighlights()),
   );
 
+  // LSP-G4：共存配方一键写入 workspace settings（不静默改用户配置）
+  context.subscriptions.push(
+    commands.registerCommand("nudo.coexistence.apply", async () => {
+      const pick = await window.showInformationMessage(
+        "Nudo coexistence: mute built-in JS validation on nudo-managed workspaces to avoid stacked tsserver diagnostics?",
+        "Apply to workspace",
+        "Open coexistence guide",
+        "Dismiss",
+      );
+      if (pick === "Apply to workspace") {
+        const cfg = workspace.getConfiguration();
+        await cfg.update(
+          "javascript.validate.enable",
+          false,
+          ConfigurationTarget.Workspace,
+        );
+        void window.showInformationMessage(
+          "Nudo: javascript.validate.enable=false (workspace). Re-enable if you still want tsserver on plain JS.",
+        );
+      } else if (pick === "Open coexistence guide") {
+        void commands.executeCommand(
+          "vscode.open",
+          "https://nudojs.github.io/nudo/docs/guides/coexistence",
+        );
+      }
+    }),
+  );
+
   client.start();
 }
 
@@ -238,21 +267,54 @@ function findCaseCommentDecorations(
   const lines = text.split("\n");
   const decorations: DecorationOptions[] = [];
 
-  type FnBlock = { functionName: string; caseLines: { name: string; lineIndex: number }[] };
+  type FnBlock = {
+    functionName: string;
+    caseLines: { name: string; lineIndex: number }[];
+    bodyStart: number;
+    bodyEnd: number;
+  };
   const fnBlocks: FnBlock[] = [];
   let pendingCases: { name: string; lineIndex: number }[] = [];
 
+  const fnHeader = (line: string): string | undefined => {
+    let m = line.match(/(?:export\s+)?(?:async\s+)?function\s+(\w+)/);
+    if (m) return m[1];
+    m = line.match(/(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?(?:function\s*\(|\([^)]*\)\s*=>|[A-Za-z_]\w*\s*=>)/);
+    if (m) return m[1];
+    m = line.match(/(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s+)?function\b/);
+    return m?.[1];
+  };
+
+  /** 从函数声明行找 body 的 [start, end]（支持 `{}` 与 `=> {`） */
+  const findBodyRange = (start: number): { bodyStart: number; bodyEnd: number } => {
+    let depth = 0;
+    let seen = false;
+    for (let i = start; i < lines.length; i++) {
+      for (const ch of lines[i] ?? "") {
+        if (ch === "{") {
+          depth++;
+          seen = true;
+        } else if (ch === "}") {
+          depth--;
+          if (seen && depth === 0) return { bodyStart: start, bodyEnd: i };
+        }
+      }
+    }
+    return { bodyStart: start, bodyEnd: lines.length - 1 };
+  };
+
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i] ?? "";
     const caseMatch = line.match(/@nudo:case\s+"([^"]+)"/);
     if (caseMatch) {
-      pendingCases.push({ name: caseMatch[1], lineIndex: i });
+      pendingCases.push({ name: caseMatch[1]!, lineIndex: i });
       continue;
     }
 
-    const fnMatch = line.match(/(?:async\s+)?function\s+(\w+)/);
-    if (fnMatch && pendingCases.length > 0) {
-      fnBlocks.push({ functionName: fnMatch[1], caseLines: pendingCases });
+    const name = fnHeader(line);
+    if (name && pendingCases.length > 0) {
+      const { bodyStart, bodyEnd } = findBodyRange(i);
+      fnBlocks.push({ functionName: name, caseLines: pendingCases, bodyStart, bodyEnd });
       pendingCases = [];
     } else if (!line.match(/^\s*\*/) && !line.match(/^\s*\/\//) && line.trim() !== "") {
       pendingCases = [];
@@ -263,9 +325,18 @@ function findCaseCommentDecorations(
     const state = fileState.get(block.functionName);
     if (!state) continue;
 
+    // G1：选中 case → 高亮整个函数体（含签名到 `}`），case 注释行加亮
+    const endLine = lines[block.bodyEnd] ?? "";
+    decorations.push({
+      range: new Range(
+        new Position(block.bodyStart, 0),
+        new Position(block.bodyEnd, endLine.length),
+      ),
+    });
+
     for (const cl of block.caseLines) {
       if (cl.name === state.caseName) {
-        const line = lines[cl.lineIndex];
+        const line = lines[cl.lineIndex] ?? "";
         decorations.push({
           range: new Range(new Position(cl.lineIndex, 0), new Position(cl.lineIndex, line.length)),
         });
