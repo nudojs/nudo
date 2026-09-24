@@ -7,7 +7,7 @@ description: 十分钟建立 Nudo 心智模型 —— 纯 JS、check、契约、
 
 **读完你会知道：** Nudo 如何看待 JavaScript、第一天真正需要的三个产品动词，以及迁移离 `tsc` 的终点长什么样。
 
-本页**不**引入 Abs 代数。会读 JS、会跑 CLI，十分钟够了。
+本页**不**以 Abs 代数开头——Day 0 是 signatures 与 cases。会读 JS、会跑 CLI，十分钟够了。Abs 细节放在折叠框里，等你想用 `--abs` 时再打开。
 
 ## 一句话模型
 
@@ -21,7 +21,14 @@ Nudo 在抽象值上**执行**你的 JavaScript，报告代码真实计算出什
 
 **没有第二套类型语言。** 契约就是普通 JS 模块 + `number().gt(0)` 这类构造器。
 
-## 0–3 分钟 —— Day 0：只跑 check
+## 0–3 分钟 —— Day 0：读 signatures 与 cases
+
+Day 0 有**两张脸**。先读这两张——不是 Abs 代数。
+
+| 脸 | 命令 | 你读到什么 |
+|----|------|------------|
+| **Signatures** | `nudo check` | 每个导出计算出什么（参数 / 返回 / may-throw） |
+| **Cases** | `nudo test`*（可选调试）* | 逐调用 `call@` / entry 见证——仍不是 CI 义务 |
 
 创建 `calc.js`：
 
@@ -47,8 +54,35 @@ signatures
 1. 照常写 JS。
 2. 留下调用点（`scale(5)`）—— 它们是**证据**。
 3. 跑 `nudo check`。成功时也打印签名。
+4. （可选）`nudo test` 看用例见证——`@nudo:case` 仅调试。
 
 无约束参数显示为 **`any`**（尚无义务）。这里的返回是真实 JS `+` 面（`number | string`）。**`unknown`** 表示推导失败 —— 引擎债，不是你的标注风格。
+
+<details>
+<summary><strong>之后 / 进阶 —— 这些脸由什么构成（Abs）</strong></summary>
+
+完成 Day 0 或 Day 1 **不需要**本段。signatures 与 cases 是产品脸；Abs 是底下的计算。
+
+**Abs** = `shape × term × pred × conf` —— 可计算类型，其约束参与代数（`x>0` ⇒ `x+1>1`）。
+
+| 组件 | Day-0 名字 | 它是什么 |
+|------|------------|----------|
+| **shape** | 你已经在读的签名脸 | `prim` / `obj` / `arr` / `fn` / `sum` / … |
+| **term** | 值身份 | `lit`（精确 `42`）、`var`（符号 `A1`）、`app`（`x+1`） |
+| **pred** | 违例里的 `expected:` 行 | term 上的约束（`x > 0`） |
+| **conf** | `#exact` / `#path` 标记 | 抽象有多精确 |
+
+**CLI 入口（想用时）：**
+
+```bash
+nudo check calc.js --abs              # algebra face (shape + conf)
+nudo check calc.js --abs --generalize # adds symbolic term/pred α
+nudo check calc.js --abs --assume "x>0"
+```
+
+深潜：[Abs](../concepts/type-values.md) · 分层笔记：[进阶 — Abs](../concepts/layers.md#advanced--abs)。
+
+</details>
 
 ## 3–6 分钟 —— Day 1：声明一条义务
 
@@ -98,7 +132,7 @@ issues
 | **生态** | `nudo export` | `.d.ts` / Zod / Standard Schema（有损视图） |
 | **离开 tsc** | `nudo migrate` | 单向门：`status` → `strip` → `verify` → `retire` |
 
-观察 = **check 签名 + IDE hover**。`nudo test` 是可选调试用例报告器 —— 不是主路径。没有 `infer` 动词。
+观察 = **check 签名（+ 可选 cases）+ IDE hover**。`nudo test` 是可选调试用例报告器 —— 不是主路径。没有 `infer` 动词。
 
 ## 8–10 分钟 —— 替代 TypeScript，不是永久共存
 
@@ -129,7 +163,7 @@ npx nudojs migrate retire ./my-pkg
 
 ## 现在可以先不管
 
-- Abs（`shape × term × pred × conf`）—— 之后：[Abs](../concepts/type-values.md)
+- Abs（`shape × term × pred × conf`）—— 只在想用 `--abs` 时打开上面的**之后 / 进阶**折叠框；深页：[Abs](../concepts/type-values.md)
 - Harvest / env 内部 —— 之后：[依赖类型](../guides/env-harvest.md)
 - 导出方言 —— 只在消费方要 `.d.ts` 或校验器时再看
 

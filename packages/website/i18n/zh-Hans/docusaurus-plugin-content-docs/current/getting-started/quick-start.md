@@ -119,6 +119,22 @@ issues
   npx nudojs test src/ --watch
   ```
 
+## Export bridge + adoption profile（Day 1 → 生态）
+
+check 变绿之后（或迁移进行中），把 Abs 向外投影——编辑器要的 `.d.ts`，边界代码要的 Zod / Standard Schema / 守卫：
+
+```bash
+npx nudojs export calc.js --format all --out dist
+```
+
+schema 管边界数据；Nudo 管内部算出来的事实。完整故事：[Export：通向生态的桥](../guides/export-ecosystem.md)。
+
+遗留 JS 在 L2 下太吵？用命名的迁移门禁档位——L1 契约违例保持 **error**，只有入口 may-throw 降到 warning：
+
+```bash
+npx nudojs check calc.js --profile adoption
+```
+
 ## 调试见证（可选）
 
 `@nudo:case` 用于**场景调试**（`nudo test`、LSP 用例切换）——不是契约产品：

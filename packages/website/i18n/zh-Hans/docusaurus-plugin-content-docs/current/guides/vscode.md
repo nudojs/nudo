@@ -6,6 +6,8 @@ description: "安装 nudo-vscode 扩展：悬停类型、补全、用例切换 C
 
 **nudo-vscode** 扩展将 Nudo 的类型推断带入编辑器，提供悬停类型、补全、CodeLens 和内联提示。
 
+**定位（诚实）：** VS Code 是 Nudo 的**旗舰 IDE 路径**——`@nudojs/lsp` 上最完整的客户端面。**门禁路径**仍是 CLI / Agent：CI 里的 `nudo check --json`，以及给 agent 的 `nudo.check` / MCP 工具。IDE 是跑在同一服务器上的尽力而为观察面；它不替代门禁。其他编辑器：[LSP 客户端矩阵](./lsp-clients.md)。
+
 ## 安装
 
 1. 打开扩展视图（`Cmd+Shift+X` / `Ctrl+Shift+X`）

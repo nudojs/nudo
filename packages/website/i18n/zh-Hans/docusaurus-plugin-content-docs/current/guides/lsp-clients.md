@@ -8,6 +8,31 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 
 服务器按设计与 `tsserver` / `vtsls` **并存**，而不是替代它们。
 
+## Known gaps / 哪些限制在客户端侧（先读） {#known-gaps--which-limits-are-client-side-read-first}
+
+**诚实定位。** 产品门禁是 `nudo check --json` 加上 Agent/MCP 工具。IDE 是跑在同一服务器上的**尽力而为观察面**——不是门禁。服务器能力绝不会为了迁就更弱的客户端而降级；下面几乎每条缺口都是**客户端 UI 或客户端配置**。
+
+| 客户端 | 角色 | 预期 |
+|--------|------|------|
+| **VS Code**（`wmzy.nudo-vscode`） | **旗舰** IDE 客户端 | 完整功能面：hover、CodeLens interface 档 + case 切换、inlay hints、装饰、agent 桥 |
+| **Zed** | 尽力而为 | 核心面可用（diagnostics / hover / rename）。CodeLens 需 `code_lens: "on"`；无 active-case 装饰 API |
+| **Helix** | 尽力而为 | Diagnostics / hover / definition / rename。**无 CodeLens UI**——同一数据请用 CLI `nudo contract` / `nudo check` |
+| **Neovim** | 尽力而为 | 核心面可用；CodeLens / semantic tokens / 装饰取决于插件 |
+| 通用 stdio / agent 桥 | 协议 | `workspace/executeCommand` + `nudo/…` 自定义请求始终可用 |
+
+缺口主题（完整表与 workaround 见下；跟踪 ID 在设计源 [`docs/design/lsp-client-gaps.md`](https://github.com/nudojs/nudo/blob/main/docs/design/lsp-client-gaps.md)）：
+
+| 主题 | ID | 谁会碰到 |
+|------|----|----------|
+| Active-case 装饰 | **LSP-G1** | Zed / Neovim / Helix（客户端无装饰 API，或需要插件） |
+| CodeLens 不渲染 | **LSP-G2** | Helix、部分极简 Neovim 配置 |
+| Semantic tokens 默认关闭 | **LSP-G3** | Zed / Neovim / Helix（配置；按 Setup 说明打开） |
+| 与 tsserver 并存的次要服务器噪音 | **LSP-G4** | 所有客户端（配置：`nudo.analysis.include` / `exclude`，或 `mode: "directives"`） |
+| Pull diagnostics 未被使用 | **LSP-G6** | 较老客户端（push 路径仍可用） |
+| 补全 / signature help UI 太薄 | **LSP-G7** | Helix（视构建而异） |
+
+**经验法则：** 如果协议提供了、编辑器却画不出来，那是**客户端限制**——退回 `nudo check` / `nudo contract` 或 agent 工具。服务器端语义在各编辑器间保持一致。
+
 ## 服务器能力
 
 在 `initialize` 时声明（详见 [@nudojs/lsp API](../api/lsp.md)）：
@@ -160,7 +185,7 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 
 ## 已知缺口
 
-非 VS Code 客户端落地时关注这些。**服务器语义共享**；缺口几乎都在**客户端 UI**。每条均给出权宜 + 跟踪 ID（仓内：[`docs/design/lsp-client-gaps.md`](https://github.com/nudojs/nudo/blob/main/docs/design/lsp-client-gaps.md)）。
+[先读摘要](#known-gaps--which-limits-are-client-side-read-first)背后的细节。采用非 VS Code 客户端时关注这些。**服务器语义共享**；缺口几乎都在**客户端 UI**。每条均给出权宜 + 跟踪 ID（仓内真值：[`docs/design/lsp-client-gaps.md`](https://github.com/nudojs/nudo/blob/main/docs/design/lsp-client-gaps.md) —— 先在那里关掉缺口，再同步本表）。
 
 | 缺口 | 影响客户端 | 权宜 | 跟踪 |
 |------|------------|------|------|

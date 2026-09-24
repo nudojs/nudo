@@ -25,12 +25,23 @@ Nudo 的目标是：**在 JavaScript 优先的代码库里，替代 TypeScript �
 
 目标不是「在 JS 上写 TS 语法」，而是：**JS 保持 JS**；义务来自显式契约（L1）加上 JS 运行时导出边界（L2 入口 throws）；引擎用求值推理，而不是第二门类型语言。
 
+### TypeScript Design Goals（non-goals）
+
+Microsoft 自己的 [TypeScript Design Goals](https://github.com/microsoft/TypeScript/wiki/TypeScript-Design-Goals) 列出两条 non-goals，正落在 Nudo 的主轴上：
+
+> Apply a sound or "provably correct" type system. Instead, strike a balance between correctness and productivity.
+
+> Add or rely on run-time type information in programs, or emit different code based on the results of the type system. Instead, encourage programming patterns that do not require run-time metadata.
+
+所以 **throws** 轴（L2 入口 may-throw）与 **Pred** 轴（Abs 上的约束蕴含）按设计就不在 TypeScript 的路线图上——这是有意的范围选择。Nudo 取互补的范围。相对 Flow、Hegel、schema 库与 refinement types 的完整地图：[竞争格局](./competitive-landscape.md)。
+
 | TS | Nudo |
 |----|------|
 | 类型写在源里 / IDE hover | Day 0：`nudo check` 打印 signatures；`nudo test` 打印用例 |
 | `tsc --noEmit` | `nudo check`（成功时仍打印 signatures） |
 | `any.prop` 不报错 | 入口上对 `any` 的危险操作进入 **throws 域**；L2 可 error |
 | 无 `tsc show` | 观察是 check/test/IDE 输出 |
+| “Not assignable to type …” | [`actual` / `expected` / `fix:`](./error-faces.md) |
 
 ## 何时 Nudo 是正确的替代
 
