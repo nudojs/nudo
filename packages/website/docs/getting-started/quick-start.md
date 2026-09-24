@@ -119,6 +119,22 @@ The violation is reported against the call site. Fix the call (or widen the cont
   npx nudojs test src/ --watch
   ```
 
+## Export bridge + adoption profile (Day 1 → ecosystem)
+
+Once check is green (or while you are still migrating), project Abs outward — `.d.ts` for editors, Zod / Standard Schema / guards for boundary code:
+
+```bash
+npx nudojs export calc.js --format all --out dist
+```
+
+Schemas manage data at the boundary; Nudo manages facts computed inside. Full story: [Export: bridge to the ecosystem](../guides/export-ecosystem.md).
+
+Legacy JS too noisy under L2? Use the named migration gate profile — L1 contract violations stay **error**, only entry may-throw drops to warning:
+
+```bash
+npx nudojs check calc.js --profile adoption
+```
+
 ## Debug witnesses (optional)
 
 `@nudo:case` is for **scenario debugging** (`nudo test`, LSP case switching) — not the contract product:

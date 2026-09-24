@@ -1,4 +1,7 @@
-# 单元测试覆盖反思
+# 单元测试覆盖反思（legacy infer suite）
+
+> **Scope:** bugs found by the old `benchmark/results` type-string harness — **not** check gold.
+> Suite map: [`./README.md`](./README.md).
 
 ## 为什么单元测试没有覆盖到这些 Bug？
 

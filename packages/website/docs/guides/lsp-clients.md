@@ -8,6 +8,31 @@ Nudo ships **one** language server (`@nudojs/lsp`). Editors differ only in how t
 
 The server is designed to run **next to** `tsserver` / `vtsls`, not instead of them.
 
+## Known gaps / which limits are client-side (read first)
+
+**Honest positioning.** The product gate is `nudo check --json` plus Agent/MCP tools. The IDE is a **best-effort observation surface** on the same server — not the gate. Server capabilities are never degraded to match a weaker client; almost every gap below is **client UI or client config**.
+
+| Client | Role | Expectation |
+|--------|------|-------------|
+| **VS Code** (`wmzy.nudo-vscode`) | **Flagship** IDE client | Full feature face: hover, CodeLens interface tier + case switch, inlay hints, decorations, agent bridge |
+| **Zed** | Best-effort | Core face works (diagnostics / hover / rename). CodeLens needs `code_lens: "on"`; no active-case decoration API |
+| **Helix** | Best-effort | Diagnostics / hover / definition / rename. **No CodeLens UI** — use CLI `nudo contract` / `nudo check` for the same data |
+| **Neovim** | Best-effort | Core face works; CodeLens / semantic tokens / decorations depend on plugins |
+| Generic stdio / agent bridges | Protocol | `workspace/executeCommand` + `nudo/…` custom requests always available |
+
+Gap themes (full table + workarounds below; tracking IDs live in the design source of truth [`docs/design/lsp-client-gaps.md`](https://github.com/nudojs/nudo/blob/main/docs/design/lsp-client-gaps.md)):
+
+| Theme | IDs | Who feels it |
+|-------|-----|--------------|
+| Active-case decoration | **LSP-G1** | Zed / Neovim / Helix (client has no decoration API, or needs a plugin) |
+| CodeLens not rendered | **LSP-G2** | Helix, some minimal Neovim setups |
+| Semantic tokens off by default | **LSP-G3** | Zed / Neovim / Helix (config; enable per Setup notes) |
+| Secondary-server noise next to tsserver | **LSP-G4** | All clients (config: `nudo.analysis.include` / `exclude`, or `mode: "directives"`) |
+| Pull diagnostics unused | **LSP-G6** | Older clients (push path still works) |
+| Thin completion / signature help UI | **LSP-G7** | Helix (varies by build) |
+
+**Rule of thumb:** if the protocol serves it but the editor does not draw it, that is a **client limitation** — fall back to `nudo check` / `nudo contract` or the agent tools. Server-side semantics stay identical across editors.
+
 ## Server capabilities
 
 Declared on `initialize` (see [@nudojs/lsp API](../api/lsp.md)):
@@ -166,7 +191,7 @@ Any LSP client can `workspace/executeCommand` or send `nudo/<tool>` custom reque
 
 ## Known gaps
 
-Track these when adopting a non-VS Code client. Server-side semantics are shared; gaps are almost always **client UI**. Every row has a workaround + tracking ID (monorepo: [`docs/design/lsp-client-gaps.md`](https://github.com/nudojs/nudo/blob/main/docs/design/lsp-client-gaps.md)).
+Detail behind the [read-first summary](#known-gaps--which-limits-are-client-side-read-first). Track these when adopting a non-VS Code client. Server-side semantics are shared; gaps are almost always **client UI**. Every row has a workaround + tracking ID (monorepo truth: [`docs/design/lsp-client-gaps.md`](https://github.com/nudojs/nudo/blob/main/docs/design/lsp-client-gaps.md) — close a gap there first, then sync this table).
 
 | Gap | Affected clients | Workaround | Tracking |
 |-----|------------------|------------|----------|

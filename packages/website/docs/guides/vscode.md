@@ -6,6 +6,8 @@ description: "Install the nudo-vscode extension for hover types, completions, ca
 
 The **nudo-vscode** extension brings Nudo's type inference into your editor with hover types, completions, CodeLens, and inlay hints.
 
+**Positioning (honest):** VS Code is Nudo's **flagship IDE path** — the fullest client face on `@nudojs/lsp`. The **gate path** is still CLI / Agent: `nudo check --json` in CI and `nudo.check` / MCP tools for agents. The IDE is best-effort observation on the same server; it does not replace the gate. Other editors: [LSP Client Matrix](./lsp-clients.md).
+
 ## Installation
 
 1. Open the Extensions view (`Cmd+Shift+X` / `Ctrl+Shift+X`)

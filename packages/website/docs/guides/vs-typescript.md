@@ -25,6 +25,16 @@ Nudo is built to **replace TypeScript as the day-to-day type gate for JavaScript
 
 The goal is not “TS syntax on JS.” The goal is: **JS stays JS**, obligations come from explicit contracts (L1) plus the JS runtime export boundary (L2 entry throws), and the engine reasons by evaluation rather than by a second type language.
 
+### TypeScript Design Goals (non-goals)
+
+Microsoft’s own [TypeScript Design Goals](https://github.com/microsoft/TypeScript/wiki/TypeScript-Design-Goals) list two non-goals that sit on Nudo’s main axes:
+
+> Apply a sound or "provably correct" type system. Instead, strike a balance between correctness and productivity.
+
+> Add or rely on run-time type information in programs, or emit different code based on the results of the type system. Instead, encourage programming patterns that do not require run-time metadata.
+
+So the **throws** axis (L2 entry may-throw) and the **Pred** axis (constraint implication on Abs) are not on TypeScript’s roadmap — by design. Nudo takes that complementary scope. Full map against Flow, Hegel, schema libraries, and refinement types: [Competitive landscape](./competitive-landscape.md).
+
 | TS | Nudo |
 |----|------|
 | Types written in source / IDE hover | Day 0: `nudo check` prints signatures; `nudo test` prints cases |

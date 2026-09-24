@@ -7,7 +7,7 @@ description: Ten minutes to a working Nudo mental model — plain JS, check, con
 
 **You'll leave with:** how Nudo thinks about JavaScript, the three product verbs you need on day one, and how a migration off `tsc` ends.
 
-This page does **not** introduce Abs algebra. If you can read JS and run a CLI, you can finish it in ten minutes.
+This page does **not** lead with Abs algebra — Day 0 is signatures and cases. If you can read JS and run a CLI, you can finish it in ten minutes. Abs details wait in a collapsed box until you want `--abs`.
 
 ## The one-sentence model
 
@@ -21,7 +21,14 @@ Nudo **executes** your JavaScript on abstract values and reports what the code a
 
 There is **no second type language**. Contracts are ordinary JS modules with builders like `number().gt(0)`.
 
-## Minutes 0–3 — Day 0: just run check
+## Minutes 0–3 — Day 0: read signatures and cases
+
+Day 0 has **two faces**. Read those first — not Abs algebra.
+
+| Face | Command | What you read |
+|------|---------|---------------|
+| **Signatures** | `nudo check` | What each export computes (params / return / may-throw) |
+| **Cases** | `nudo test` *(optional debug)* | Per-call `call@` / entry witnesses — still not a CI obligation |
 
 Create `calc.js`:
 
@@ -47,8 +54,35 @@ That is the whole Day 0 loop:
 1. Write JS the way you already do.
 2. Keep call sites (`scale(5)`) — they are **evidence**.
 3. Run `nudo check`. It prints signatures even when everything passes.
+4. (Optional) `nudo test` to see case witnesses — `@nudo:case` is debug-only.
 
 Unconstrained parameters print as **`any`** (no obligation yet). The return here is the real JS `+` face (`number | string`). **`unknown`** means inference failed — engine debt, not your typing style.
+
+<details>
+<summary><strong>Later / Advanced — what those faces are made of (Abs)</strong></summary>
+
+You do **not** need this paragraph to finish Day 0 or Day 1. Signatures and cases are the product face; Abs is the computation underneath.
+
+**Abs** = `shape × term × pred × conf` — a computable type whose constraints participate in algebra (`x>0` ⇒ `x+1>1`).
+
+| Component | Day-0 name | What it is |
+|-----------|------------|------------|
+| **shape** | the signature face you already read | `prim` / `obj` / `arr` / `fn` / `sum` / … |
+| **term** | value identity | `lit` (exact `42`), `var` (symbolic `A1`), `app` (`x+1`) |
+| **pred** | the `expected:` line in a violation | constraints on the term (`x > 0`) |
+| **conf** | the `#exact` / `#path` marks | how exact the abstraction is |
+
+**CLI entry (when you want it):**
+
+```bash
+nudo check calc.js --abs              # algebra face (shape + conf)
+nudo check calc.js --abs --generalize # adds symbolic term/pred α
+nudo check calc.js --abs --assume "x>0"
+```
+
+Deep dive: [Abs](../concepts/type-values.md) · layers note: [Advanced — Abs](../concepts/layers.md#advanced--abs).
+
+</details>
 
 ## Minutes 3–6 — Day 1: declare one obligation
 
@@ -98,7 +132,7 @@ Every violation answers three questions:
 | **Ecosystem** | `nudo export` | `.d.ts` / Zod / Standard Schema (lossy views) |
 | **Leaving tsc** | `nudo migrate` | One-way door: `status` → `strip` → `verify` → `retire` |
 
-Observation is **check signatures + IDE hover**. `nudo test` is an optional debug case reporter — not the main path. There is no `infer` verb.
+Observation is **check signatures (+ optional cases) + IDE hover**. `nudo test` is an optional debug case reporter — not the main path. There is no `infer` verb.
 
 ## Minutes 8–10 — replace TypeScript, not sit beside it
 
@@ -129,7 +163,7 @@ Coexistence with `tsc` is a **migration tactic only**. The exit is `retire`. Wal
 
 ## What you can ignore for now
 
-- Abs (`shape × term × pred conf`) — later: [Abs](../concepts/type-values.md)
+- Abs (`shape × term × pred × conf`) — open the **Later / Advanced** box above only when you want `--abs`; deep page: [Abs](../concepts/type-values.md)
 - Harvest / env internals — later: [Dependency types](../guides/env-harvest.md)
 - Export dialects — only when a consumer needs `.d.ts` or validators
 

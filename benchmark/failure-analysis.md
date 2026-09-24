@@ -1,4 +1,7 @@
-# Benchmark Failure Analysis
+# Benchmark Failure Analysis (legacy infer suite)
+
+> **Scope:** the old `benchmark/results` type-string harness only — **not** `nudo check` gold.
+> Suite map: [`./README.md`](./README.md).
 
 ## 逐个失败用例分析
 

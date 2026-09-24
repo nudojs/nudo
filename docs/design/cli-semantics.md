@@ -121,13 +121,26 @@ CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。
 | `--fn` / `--assume` / `--generalize` | 与 `--abs` 配合的观察过滤 |
 | `--from <paths…>` | 使用处调用记录 |
 | `--ignore-throws <names>` | L2：忽略这些入口 may-throw 类型名（`TypeError,RangeError`） |
-| `--entry-throws <mode>` | L2：`error` \| `warning` \| `off`（默认 `error`） |
+| `--entry-throws <mode>` | L2：`error` \| `warning` \| `off`（默认 `error`；**显式值压过** `--profile`） |
+| `--profile <adoption\|strict>` | 门禁**命名档**（默认 `strict`）。`adoption` ≡ L2 `entryThrows: warning`（迁移档）；`strict` ≡ 今日默认。**不吞 L1**：契约违例始终 error |
 
 `--ignore-throws` / `package.json#nudo.check.ignoreThrows` **只**作用于 L2 入口 throws，**不**吞 L1 契约违例。
 
+`--profile` / `package.json#nudo.check.profile` 同理：`adoption` 只把 L2 entry may-throw 降为 **warning**，L1 显式契约违例仍是 **error**。profile 是 L2 预设，不是关闭门禁。
+
+L2 `entryThrows` 解析顺序：
+
+1. CLI `--entry-throws`（显式，压过 profile）
+2. CLI `--profile`（`adoption`→`warning` / `strict`→`error`）
+3. `package.json#nudo.check.entryThrows`
+4. `package.json#nudo.check.profile`
+5. 默认 `strict`（`error`）
+
 ```jsonc
 // package.json
-"nudo": { "check": { "ignoreThrows": ["TypeError"], "entryThrows": "error" } }
+"nudo": { "check": { "ignoreThrows": ["TypeError"], "entryThrows": "error", "profile": "strict" } }
+// 迁移档：L2 降 warning，L1 仍 error
+"nudo": { "check": { "profile": "adoption" } }
 ```
 
 ---
@@ -467,7 +480,7 @@ npx tsx scripts/scan-real-packages.ts commander
 {
   "nudo": {
     "contract": { "autoBind": true, "emit": [] },
-    "check": { "ignoreThrows": [], "entryThrows": "error" },
+    "check": { "ignoreThrows": [], "entryThrows": "error", "profile": "strict" },
     "analysis": {
       "include": [],
       "exclude": ["**/node_modules/**", "**/dist/**", "**/coverage/**"],
@@ -492,7 +505,9 @@ npx tsx scripts/scan-real-packages.ts commander
 | `nudo.contract.autoBind` | 侧车 ambient 执行 | 是否分析该文件 |
 | `nudo.contract.emit` | emit 写盘白名单 | 分析范围 |
 | `nudo.analysis.*` | **是否分析 + 诊断噪声 + C0.5** | 契约语义 |
-| `nudo.check.*` | L2 门禁过滤 | 分析范围 |
+| `nudo.check.ignoreThrows` | L2 入口 throws 类型名过滤 | L1 / 分析范围 |
+| `nudo.check.entryThrows` | L2 入口 throws 严重级（`error`\|`warning`\|`off`） | L1 |
+| `nudo.check.profile` | 门禁命名档（`adoption`\|`strict`，默认 `strict`）；`adoption` ≡ L2 `entryThrows: warning`。**不吞 L1** | 分析范围 / L1 |
 | `nudo.sessionCache.*` | 会话 LRU 条数上限（多项目封内存） | 磁盘 `nudo.cache` |
 
 | 入口 | include/exclude | mode |

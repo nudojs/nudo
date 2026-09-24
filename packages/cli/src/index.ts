@@ -175,6 +175,65 @@ function parseIgnoreThrows(raw?: string | string[]): string[] | undefined {
   return out.length > 0 ? out : undefined;
 }
 
+/** check 门禁命名档：strict（默认）= L2 entry may-throw error；adoption = L2 降 warning。L1 始终 error */
+type GateProfile = "adoption" | "strict";
+type EntryThrowsMode = "error" | "warning" | "off";
+
+function isGateProfile(raw: string | undefined): raw is GateProfile {
+  return raw === "adoption" || raw === "strict";
+}
+
+function isEntryThrowsMode(raw: string | undefined): raw is EntryThrowsMode {
+  return raw === "error" || raw === "warning" || raw === "off";
+}
+
+/** profile 是 L2 预设；不吞 L1 */
+function profileEntryThrows(profile: GateProfile): EntryThrowsMode {
+  return profile === "adoption" ? "warning" : "error";
+}
+
+/**
+ * package.json#nudo.check.profile / entryThrows 原始读取（区分「未设置」）。
+ * CLI 配置层组合；不改 service checkConfig。
+ */
+function checkGateFromConfig(config: { check?: unknown } | null | undefined): {
+  profile?: GateProfile;
+  entryThrows?: EntryThrowsMode;
+} {
+  const raw = config?.check as { profile?: unknown; entryThrows?: unknown } | undefined;
+  const rawProfile = typeof raw?.profile === "string" ? raw.profile : undefined;
+  const rawEntry = typeof raw?.entryThrows === "string" ? raw.entryThrows : undefined;
+  const profile = isGateProfile(rawProfile) ? rawProfile : undefined;
+  const entryThrows = isEntryThrowsMode(rawEntry) ? rawEntry : undefined;
+  return {
+    ...(profile ? { profile } : {}),
+    ...(entryThrows ? { entryThrows } : {}),
+  };
+}
+
+/**
+ * L2 entryThrows 解析顺序（design-cli-semantics §1.4）：
+ * 1. CLI `--entry-throws`（显式，压过 profile）
+ * 2. CLI `--profile` 预设（adoption→warning / strict→error）
+ * 3. `package.json#nudo.check.entryThrows`
+ * 4. `package.json#nudo.check.profile` 预设
+ * 5. 默认 strict（error）
+ * L1 契约违例不受 profile 影响，始终 error。
+ */
+function resolveEntryThrows(
+  opts: { entryThrows?: EntryThrowsMode; profile?: GateProfile },
+  pkg: { profile?: GateProfile; entryThrows?: EntryThrowsMode },
+  pkgEntryNormalized: EntryThrowsMode,
+): EntryThrowsMode {
+  return (
+    opts.entryThrows ??
+    (opts.profile ? profileEntryThrows(opts.profile) : undefined) ??
+    pkg.entryThrows ??
+    (pkg.profile ? profileEntryThrows(pkg.profile) : undefined) ??
+    pkgEntryNormalized
+  );
+}
+
 // ---------------------------------------------------------------------------
 // watch mode (flag, not verb)
 // ---------------------------------------------------------------------------
@@ -332,6 +391,8 @@ async function runCheck(
     absView?: { fn?: string; assume?: string[]; generalize?: boolean };
     ignoreThrows?: string[];
     entryThrows?: "error" | "warning" | "off";
+    /** 门禁命名档（CLI --profile）；与 entryThrows 在 runCheck 内组合 */
+    profile?: GateProfile;
     /** GitHub Actions 行内注解（或 GITHUB_ACTIONS=true 自动） */
     gha?: boolean;
     /** GitLab Code Quality JSON（数组） */
@@ -356,7 +417,8 @@ async function runCheck(
   const autoBind = interfaceConfig(proj?.config).autoBind;
   const aCfg = analysisConfig(proj?.config);
   const cCfg = checkConfig(proj?.config);
-  const entryThrows = opts.entryThrows ?? cCfg.entryThrows;
+  const gate = checkGateFromConfig(proj?.config);
+  const entryThrows = resolveEntryThrows(opts, gate, cCfg.entryThrows);
   // CLI 列表与 package.json 合并（加法）；避免 CLI 覆盖导致无法在项目配置上收紧/扩展
   const ignoreThrows =
     opts.ignoreThrows && opts.ignoreThrows.length > 0
@@ -1462,7 +1524,14 @@ program
     "--ignore-throws <names>",
     "L2: ignore these entry may-throw type names (e.g. TypeError,RangeError)",
   )
-  .option("--entry-throws <mode>", "L2: error | warning | off (default error)")
+  .option(
+    "--entry-throws <mode>",
+    "L2: error | warning | off (default error; explicit value overrides --profile)",
+  )
+  .option(
+    "--profile <profile>",
+    "Gate profile: adoption | strict (default strict). adoption = L2 entry may-throw → warning; L1 stays error. --entry-throws overrides",
+  )
   .option(
     "--what-if <binding...>",
     "AI3: assume `name:type` bindings (e.g. raw:string) and report --target",
@@ -1484,6 +1553,7 @@ program
         from?: string[];
         ignoreThrows?: string;
         entryThrows?: string;
+        profile?: string;
         whatIf?: string[];
         target?: string;
       },
@@ -1534,9 +1604,7 @@ program
       const ignoreThrows = parseIgnoreThrows(opts.ignoreThrows);
       if (
         opts.entryThrows !== undefined &&
-        opts.entryThrows !== "off" &&
-        opts.entryThrows !== "warning" &&
-        opts.entryThrows !== "error"
+        !isEntryThrowsMode(opts.entryThrows)
       ) {
         console.error(
           `Invalid --entry-throws value: ${opts.entryThrows} (expected: error | warning | off)`,
@@ -1544,10 +1612,17 @@ program
         process.exitCode = 1;
         return;
       }
-      const entryThrows =
-        opts.entryThrows === "off" || opts.entryThrows === "warning" || opts.entryThrows === "error"
-          ? opts.entryThrows
-          : undefined;
+      if (opts.profile !== undefined && !isGateProfile(opts.profile)) {
+        console.error(
+          `Invalid --profile value: ${opts.profile} (expected: adoption | strict)`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const entryThrows = isEntryThrowsMode(opts.entryThrows)
+        ? opts.entryThrows
+        : undefined;
+      const profile = isGateProfile(opts.profile) ? opts.profile : undefined;
 
       const shared: {
         from?: CallRecord[];
@@ -1556,6 +1631,7 @@ program
         absView?: { fn?: string; assume?: string[]; generalize?: boolean };
         ignoreThrows?: string[];
         entryThrows?: "error" | "warning" | "off";
+        profile?: GateProfile;
         gha?: boolean;
         gitlab?: boolean;
       } = {
@@ -1575,6 +1651,7 @@ program
           : {}),
         ...(ignoreThrows ? { ignoreThrows } : {}),
         ...(entryThrows ? { entryThrows } : {}),
+        ...(profile ? { profile } : {}),
       };
 
       if (opts.json && targets.length > 1) {
