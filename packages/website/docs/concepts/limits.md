@@ -53,6 +53,33 @@ $ nudo test envfile.js
 
 Workaround while the symbolic path learns env injection: rely on `nudo test` / IDE hover for env-bearing files, or move env-dependent code behind a module boundary that the checked file imports.
 
+## Predicate implication (bounded)
+
+`nudo check`’s L1 gate is Pred implication on Abs (`actual ⊭ expected`). The built-in prover is deliberately bounded — it covers the linear fragment and equality-class goals, not all of arithmetic:
+
+| Fragment | Built-in |
+|----------|----------|
+| Linear forms (`+` / `-` / `*const`), cross-term interval synthesis | yes |
+| Equality-class (`x = y`), `ne` tightened to strict bounds | yes |
+| Conjunction targets; and/or commutative equality | yes |
+| Nonlinear (`x * y`, powers) / quantifiers | **incomplete by design** — fail-closed |
+
+When the built-in side cannot discharge a goal, the goal is simply not promoted. An optional escape hatch exists for embedders:
+
+```js
+import { setImplicationOracle, getImplicationOracle } from "@nudojs/core";
+
+// ImplicationOracle = (phi, pred) => boolean | undefined
+// true → lift the goal; false / undefined → stay fail-closed
+setImplicationOracle((phi, pred) => mySolverImplies(phi, pred));
+```
+
+- **Off by default.** Nudo ships with no solver dependency; the built-in fragment is the product gate. The oracle is consulted only when the built-in side cannot prove a goal, and only a `true` answer lifts it.
+- **Power feature, not the product face.** Outwardly Nudo is a JS engineering gate — not a theorem prover / SMT product. No proof certificates, no “verified” claims.
+- **Fail-closed either way.** Without an oracle (or when it returns `false` / `undefined`), an unprovable goal stays unproven.
+
+The algebra this gate sits on: [Abs](./type-values.md). Why this is not a prover: [Competitive landscape](../guides/competitive-landscape.md).
+
 ## When TypeScript should stay primary
 
 - The codebase is `.ts`-first and annotations/generics are the product

@@ -54,6 +54,33 @@ $ nudo test envfile.js
 
 符号面支持 env 注入之前的替代做法：含 env 的文件依赖 `nudo test` / IDE hover，或把 env 相关代码挪到被检查文件所 import 的模块边界之后。
 
+## Pred 蕴含（有界）
+
+`nudo check` 的 L1 门禁是 Abs 上的 Pred 蕴含（`actual ⊭ expected`）。内建判定**故意有界** —— 覆盖线性片段与等式类目标，不是全部算术：
+
+| 片段 | 内建 |
+|----------|----------|
+| 线性形（`+` / `-` / `*const`）、跨项区间合成 | 是 |
+| 等式类（`x = y`）、`ne` 收紧为严格界 | 是 |
+| 合取目标；and/or 交换律相等 | 是 |
+| 非线性（`x * y`、幂）/ 量词 | **故意不完整** —— fail-closed |
+
+内建证不出时，目标直接不抬升。嵌入方可选外接：
+
+```js
+import { setImplicationOracle, getImplicationOracle } from "@nudojs/core";
+
+// ImplicationOracle = (phi, pred) => boolean | undefined
+// true → 抬升目标；false / undefined → 保持 fail-closed
+setImplicationOracle((phi, pred) => mySolverImplies(phi, pred));
+```
+
+- **默认关闭。** Nudo 不带 solver 依赖；内建片段才是产品门禁。仅当内建证不出时才调 oracle，且只有返回 `true` 才抬升。
+- **Power feature，不是对外产品面。** 对外 Nudo 是一道 JS 工程门禁 —— 不是定理证明器 / SMT 产品。没有证明证书，没有「已验证」宣称。
+- **两边都 fail-closed。** 没有 oracle（或返回 `false` / `undefined`）时，证不出的目标就保持未证。
+
+这道门禁所在的代数：[Abs](./type-values.md)。为什么这不是 prover：[竞争格局](../guides/competitive-landscape.md)。
+
 ## 何时应继续以 TypeScript 为主
 
 - 代码库是 `.ts`-first，标注/泛型就是产品

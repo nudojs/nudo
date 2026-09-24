@@ -469,6 +469,9 @@ function checkSourceInner(
   const ignoreThrows = opts.ignoreThrows;
   // T10a：generated 事实快照的 drift 候选（每函数级，统一在拿到 varAbs 后判定）
   const driftCandidates: DriftCandidate[] = [];
+  // 返回后置：符号返回（body  widen）之外，B 执行态调用点 result 也要对账
+  // （循环累加等 body 面常被 widen 成 number，调用点 $arr 具体元组却能精确）
+  const returnContracts = new Map<string, { display: string; constraint: NudoConstraint }>();
   // generalize L0 用调用方原始 loadModule 身份；opts 可能是 per-call I/O wrapper
   const refineLoad = identityOpts.loadModule ?? opts.loadModule;
   const refineFrom = identityOpts.fromFile ?? opts.fromFile ?? filePath;
@@ -539,10 +542,12 @@ function checkSourceInner(
           loadModule: refineLoad,
           fromFile: refineFrom,
         });
+        const display = named?.name ?? formatConstraint(eff.returns.constraint);
+        returnContracts.set(name, { display, constraint: eff.returns.constraint });
         issues.push(
           ...checkReturnConstraint(
             name,
-            named?.name ?? formatConstraint(eff.returns.constraint),
+            display,
             eff.returns.constraint,
             declared,
           ),
@@ -791,6 +796,7 @@ function checkSourceInner(
           fromFile: refineFrom,
         });
         const display = named?.name ?? formatConstraint(eff.returns.constraint);
+        returnContracts.set(name, { display, constraint: eff.returns.constraint });
         issues.push(
           ...checkReturnConstraint(name, display, eff.returns.constraint, g.symbolic),
         );
@@ -895,6 +901,22 @@ function checkSourceInner(
         ...(projectDir !== undefined ? { projectDir } : {}),
       });
   issues.push(...callIssues);
+
+  // 调用点 result 对 return 后置再对账（B 执行态精确值 ⊭ 声明）。
+  // 符号返回常被循环/抽象参数 widen——这里补上「有具体调用点」时的确定违例。
+  if (returnContracts.size > 0 && callRecords.length > 0) {
+    const seenRet = new Set<string>();
+    for (const rec of callRecords) {
+      const rc = returnContracts.get(rec.fnName);
+      if (!rc) continue;
+      const k = `${rec.fnName}\0${formatAbs(rec.result)}`;
+      if (seenRet.has(k)) continue;
+      seenRet.add(k);
+      issues.push(
+        ...checkReturnConstraint(rec.fnName, rc.display, rc.constraint, rec.result),
+      );
+    }
+  }
 
   // T10a：固化生成段 drift——generated 快照 ≠ 今日重算 → warning
   // （在执行态调用记录就绪后跑：今日域证据与 emit 的 callsite case 同源）

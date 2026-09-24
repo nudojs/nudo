@@ -720,7 +720,7 @@ export function $lit(v: unknown): Abs {
   return litAbsFromJs(v);
 }
 
-function litAbsFromJs(v: unknown): Abs {
+function litAbsFromJs(v: unknown, depth = 0): Abs {
   if (v === null || v === undefined) {
     return abs({ k: "unknown" }, { op: "lit", value: v as never }, pTrue, "exact");
   }
@@ -732,6 +732,23 @@ function litAbsFromJs(v: unknown): Abs {
       pTrue,
       "exact",
     );
+  }
+  // JS 数组/纯对象字面量 → tuple/obj（与源码 $arr/$obj 同构）；
+  // 循环引用/过深/非 plain 对象（Date/Map/Set/RegExp…）诚实 unknown。
+  if (depth < 8) {
+    if (Array.isArray(v)) {
+      return $arr(v.map((x) => litAbsFromJs(x, depth + 1)));
+    }
+    if (t === "object") {
+      const proto = Object.getPrototypeOf(v);
+      if (proto === Object.prototype || proto === null) {
+        const slots: Record<string, Abs> = {};
+        for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+          slots[k] = litAbsFromJs(val, depth + 1);
+        }
+        return $obj(slots);
+      }
+    }
   }
   return unknown;
 }
@@ -1858,7 +1875,8 @@ export function $spread(a: Abs, b: Abs): Abs {
     let changed = false;
     const slots = { ...(bb.shape as ObjShape).slots };
     for (const [k, fn] of acc) {
-      if (fn.get && slots[k]) {
+      // 纯 getter（无同名数据槽）也要求值拷入——{ get x(){return 5} } 展开后 .x===5
+      if (fn.get) {
         slots[k] = { value: fn.get(bb) };
         changed = true;
       }
@@ -1869,7 +1887,8 @@ export function $spread(a: Abs, b: Abs): Abs {
   }
   // any 展开：无约束键 → open obj（不是空 {} / unknown）
   const aa = asAbsVal(a);
-  const b0 = asAbsVal(b);
+  // 必须用 getter 求值后的 bb（不是原始 b0）——否则展开丢掉访问器结果
+  const b0 = bb;
   if (aa?.shape?.k === "any" || b0?.shape?.k === "any") {
     const base = spreadObj(
       aa?.shape?.k === "any" ? abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial") : aa,

@@ -44,7 +44,7 @@
 
 | 项 | 状态 | 说明 |
 |----|------|------|
-| Pred 蕴含（D2） | **已扩展** | 线性形（`+`/`-`/`*const`）· 跨项区间合成 · 等式类（`x=y`）· `ne` 收紧为严格界 · 合取目标分解 · and/or 交换律相等。非线性 / 量词仍故意不完整；可选 `setImplicationOracle` 外接 SMT（默认无依赖） |
+| Pred 蕴含（D2） | **已扩展** | 线性形（`+`/`-`/`*const`）· 跨项区间合成 · 等式类（`x=y`）· `ne` 收紧为严格界 · 合取目标分解 · and/or 交换律相等。非线性 / 量词仍故意不完整；可选 `setImplicationOracle` 外接 SMT（默认无依赖，仅内建证不出时调用、返回 `true` 才抬升，fail-closed）。Map 字面量 key 跟踪已落地（collections `mapGetEntry`：字面量命中精确、miss=`undefined`）；复合赋值循环累加在已知长度 tuple 上精确（`total += n` → 15）；旧 infer 套件对应限制已关闭 |
 | 闭包跨调用状态合流 | **已建模** | B-path 顺序调用共享闭包 `let`（`s5-closure-state.test.ts`：`c.increment(); c.getCount()` → 1/2）。残余：**未调用前**方法槽 `returnType` 诚实 `?`（形参名已展示，如 `(n) => ?`；零参才 `() => ?`）；首次调用后 `returnType` 渐进 join 填入（`engine-precision-residuals.test.ts` T7） |
 | HOF `constraint` 表达 fn 形状 | **已开** | `fn()` → entry Abs 落 `shape.fn`；refine→**error** 可测（`hof-refine-error.test.ts`）；promote 仍只 warning |
 | 调用点经验泛化（P3） | **明确不做** | 不入主路径（hof-relations） |
