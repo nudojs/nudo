@@ -1,6 +1,8 @@
 # OSS real-package baseline (S1 upgrade)
 
-Real `node_modules` packages — **not** the synthetic S1 corpus.
+Real `node_modules` **JavaScript** packages — not the synthetic S1 corpus.
+
+This suite is **Nudo’s JS product face**: precision (L1 zero-FP) + latency on real code.
 
 ```bash
 pnpm run benchmark:oss          # measure + write docs/reports/oss-perf-baseline.*
@@ -13,7 +15,7 @@ pnpm run benchmark:oss:gate     # regression gate (fails only when worse)
 | `yargs` | Larger CLI surface, more import edges (hub-edit interesting) |
 | `semver` | Mid-size utility with internal graph |
 
-## Metrics
+## Metrics (gated)
 
 | Metric | Gate? |
 |--------|-------|
@@ -22,9 +24,16 @@ pnpm run benchmark:oss:gate     # regression gate (fails only when worse)
 | Check-all wall-clock | Yes (envelope) |
 | Hub-edit dirty-set median | Yes (envelope) |
 | File count floor | Yes (`minFiles`) |
-| **tsc createProgram + diagnostics** (same .js set, `allowJs+checkJs`) | **No — reference column only** |
 
-tsc comparison answers “how long does the TypeScript compiler take on the same files”, not “which checker is better”. Different product questions (assignability vs Abs+Pred).
+## Not a “Nudo vs TypeScript” suite
+
+Corpus is **unannotated pure JS**. tsc only enters weak `allowJs+checkJs` here — that is **not** its product surface. The tooling-load appendix in the report is host noise, not a product score.
+
+| Real TS comparison | Suite |
+|--------------------|-------|
+| Same-bug detect / silentGreen / rounds | `benchmark/agent-dx` |
+| Synthetic latency (analyzeFile vs createProgram/LS) | `benchmark/micro/bench-vs-tsc.mts` |
+| OSS bug-repair pairs | `benchmark/lsp-rounds` |
 
 ## Policy
 
@@ -37,5 +46,5 @@ tsc comparison answers “how long does the TypeScript compiler take on the same
 | Suite | Corpus | Question |
 |-------|--------|----------|
 | `benchmark/s1` | synthetic monorepo | scale curve / edit cost |
-| **`benchmark/oss`** | **real OSS packages** | **real-code perf + zero-FP** |
+| **`benchmark/oss`** | **real OSS JS packages** | **real-code perf + zero-FP** |
 | `check-real-packages.test.ts` | same packages | CI precision unit gate |

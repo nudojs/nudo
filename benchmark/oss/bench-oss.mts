@@ -34,10 +34,15 @@ const ERROR_CODES = [
 ] as const;
 
 /**
- * tsc 对照（参考，不进 gate）：同一批 .js 文件上的 createProgram + 诊断。
- * 口径：allowJs + checkJs + noEmit + skipLibCheck（与 micro/vs-tsc 同族）。
+ * tsc **工具链载入**参考（不进 gate、不进产品对比）。
+ *
+ * 语料是**无注解纯 JS**——tsc 只能走 `allowJs+checkJs` 弱模式，
+ * 与 Nudo 的 Abs/Pred 产品面不是同一问题。此处只记「同一批字节的
+ * createProgram+诊断墙钟」，**不得**写成 Nudo vs TS 产品胜负。
+ * 产品级 TS 对照见 `benchmark/agent-dx`（同 bug 的 detect/silentGreen）；
+ * 合成延迟对照见 `benchmark/micro/bench-vs-tsc.mts`。
  */
-function measureTsc(files: OssFile[]): {
+function measureTscLoadOnly(files: OssFile[]): {
   createProgramMs: number;
   diagnosticsMs: number;
   totalMs: number;
@@ -70,7 +75,7 @@ function measureTsc(files: OssFile[]): {
     diagnosticsMs: +tDiag.toFixed(2),
     totalMs: +(tCreate + tDiag).toFixed(2),
     diagnostics: diags.length,
-    note: "tsc createProgram+diagnostics on same .js set (allowJs+checkJs). Reference only — different question than Nudo Abs analysis.",
+    note: "UNANNOTATED JS — tsc is in weak checkJs mode. Tooling-load reference only, NOT a Nudo-vs-TS product comparison.",
   };
 }
 
@@ -231,7 +236,7 @@ async function main() {
       hubIde.push(performance.now() - t);
     }
 
-    const tsc = measureTsc(pkg.files);
+    const tsc = measureTscLoadOnly(pkg.files);
 
     packageResults.push({
       name: pkg.name,
@@ -292,10 +297,9 @@ async function main() {
         fpCount: number;
         coldAnalyzeMs: number;
         checkAllMs: number;
-        tsc: { totalMs: number; diagnostics: number };
         hub: { file: string; dirtyCount: number; dirtyMedianMs: number; dependents: number };
       };
-      return `| \`${pr.name}\` | ${pr.files} | ${pr.scanned} | **${pr.fpCount}** | ${pr.coldAnalyzeMs} | ${pr.checkAllMs} | ${pr.tsc.totalMs} | ${pr.hub.dirtyCount} (${pr.hub.dependents} deps) | ${pr.hub.dirtyMedianMs} |`;
+      return `| \`${pr.name}\` | ${pr.files} | ${pr.scanned} | **${pr.fpCount}** | ${pr.coldAnalyzeMs} | ${pr.checkAllMs} | ${pr.hub.dirtyCount} (${pr.hub.dependents} deps) | ${pr.hub.dirtyMedianMs} |`;
     })
     .join("\n");
 
@@ -303,48 +307,56 @@ async function main() {
     .map((p) => {
       const pr = p as {
         name: string;
-        coldAnalyzeMs: number;
-        checkAllMs: number;
-        tsc: { createProgramMs: number; diagnosticsMs: number; totalMs: number; diagnostics: number };
+        tsc: { totalMs: number; diagnostics: number };
       };
-      const ratio =
-        pr.tsc.totalMs > 0 ? (pr.checkAllMs / pr.tsc.totalMs).toFixed(2) : "—";
-      return `| \`${pr.name}\` | ${pr.coldAnalyzeMs} | ${pr.checkAllMs} | ${pr.tsc.createProgramMs} | ${pr.tsc.diagnosticsMs} | **${pr.tsc.totalMs}** | ${pr.tsc.diagnostics} | ${ratio} |`;
+      return `| \`${pr.name}\` | ${pr.tsc.totalMs} | ${pr.tsc.diagnostics} |`;
     })
     .join("\n");
 
-  const md = `# OSS package performance & precision baseline (real packages)
+  const md = `# OSS package performance & precision baseline (real JS packages)
 
 > **Generated** by \`benchmark/oss/bench-oss.mts\` (\`pnpm run benchmark:oss\`).
 > Do not hand-edit numbers — regenerate.
 >
-> **Corpus:** real \`node_modules\` packages (**${packages.map((p) => p.name).join(" / ")}**), not synthetic.
-> Regression gate: \`node benchmark/oss/gate.mjs\` (blocks only worse-than-baseline / new FP).
+> **Corpus:** real \`node_modules\` **JavaScript** packages (**${packages.map((p) => p.name).join(" / ")}**).
+> This baseline is **Nudo’s product face** (JS-first analysis + L1 zero-FP). Regression gate: \`pnpm run benchmark:oss:gate\`.
 
 - Generated at: ${payload.generatedAt}
 - Node: ${nodeV}
-- TypeScript: ${ts.version} (reference column only)
 - Scale: ${totals.packages} packages · **${totals.files} JS files** · ${(totals.bytes / 1024).toFixed(0)} KB source
 
-## Summary
+## Summary (Nudo product metrics — gated)
 
-| Package | Files | Scanned | **L1 FP** | Nudo cold (ms) | Nudo check (ms) | **tsc total (ms)** | Hub dirty | Hub edit (ms) |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Package | Files | Scanned | **L1 FP** | Cold analyze (ms) | Check all (ms) | Hub dirty | Hub edit (ms) |
+|---|---:|---:|---:|---:|---:|---:|---:|
 ${rows}
 
-| Total | Files | Scanned | **L1 FP** | Nudo cold | Nudo check | **tsc total** |
-|---|---:|---:|---:|---:|---:|---:|
-| | ${totals.files} | ${totals.scanned} | **${totals.fpCount}** | ${totals.coldAnalyzeMs} | ${totals.checkAllMs} | ${totals.tscTotalMs} |
+| Total | Files | Scanned | **L1 FP** | Cold analyze | Check all |
+|---|---:|---:|---:|---:|---:|
+| | ${totals.files} | ${totals.scanned} | **${totals.fpCount}** | ${totals.coldAnalyzeMs} | ${totals.checkAllMs} |
 
-## Nudo vs tsc (same .js file set)
+## Why this is **not** a “Nudo vs TypeScript” table
 
-> **Reference only — not a gate.** Different questions: tsc = assignability on \`allowJs+checkJs\`;
-> Nudo = Abs abstract interpretation + Pred contracts. Compare **latency**, not algorithm constants.
-> tsc \`createProgram\` is cold per package (no LanguageService reuse).
+Corpus is **unannotated pure JS**. tsc can only enter weak \`allowJs+checkJs\` mode here —
+it is not running on its product surface (typed sources, project references, assignability).
 
-| Package | Nudo cold | Nudo check | tsc createProgram | tsc diagnostics | **tsc total** | tsc diags count | check/tsc |
-|---|---:|---:|---:|---:|---:|---:|---:|
+**Do not read the tooling-load numbers below as a product comparison.**
+
+| Where a real TS comparison lives | What it measures |
+|----------------------------------|------------------|
+| \`benchmark/agent-dx\` | Same bugs, Nudo gate vs \`tsc --noEmit\`: detectRate / silentGreen / rounds |
+| \`benchmark/micro/bench-vs-tsc.mts\` | Synthetic workload latency (analyzeFile vs createProgram / LS) |
+| \`benchmark/lsp-rounds\` | OSS bug-repair / PRD race with TS pair harness |
+
+### Tooling-load appendix (not gated, not product)
+
+Same bytes through tsc \`createProgram\` + diagnostics (\`allowJs+checkJs\`, no LanguageService reuse):
+
+| Package | tsc total (ms) | tsc diagnostic count |
+|---|---:|---:|
 ${tscRows}
+
+Total tsc load: **${totals.tscTotalMs} ms** (ts ${ts.version}) — host/tooling sensitive.
 
 ## What is pinned (gate)
 
@@ -355,8 +367,6 @@ ${tscRows}
 | Check all | \`checkSource\` gate path over the same files |
 | Hub dirty set | Import-graph hub edit → dirty-set re-analyze (LSP/watch path) |
 | Hub edit | Median wall-clock of dirty-set re-analyze after touching hub |
-
-tsc numbers are **reported but not gated** (host/tooling sensitive; different product question).
 
 ## Honest boundaries
 
@@ -410,14 +420,14 @@ tsc numbers are **reported but not gated** (host/tooling sensitive; different pr
   console.log(`L1 FP total   : ${totals.fpCount}`);
   console.log(`cold analyze  : ${totals.coldAnalyzeMs} ms`);
   console.log(`check all     : ${totals.checkAllMs} ms`);
-  console.log(`tsc total     : ${totals.tscTotalMs} ms  (ts ${ts.version}, reference)`);
+  console.log(`tsc load (ref): ${totals.tscTotalMs} ms  — unannotated JS, NOT product vs TS`);
   for (const p of packageResults) {
     const pr = p as {
       name: string;
       tsc: { totalMs: number };
       hub: { file: string; dirtyCount: number; dirtyMedianMs: number };
     };
-    console.log(`  ${pr.name} tsc=${pr.tsc.totalMs}ms  hub-edit dirty=${pr.hub.dirtyCount} → ${pr.hub.dirtyMedianMs} ms`);
+    console.log(`  ${pr.name} tsc-load=${pr.tsc.totalMs}ms  hub-edit dirty=${pr.hub.dirtyCount} → ${pr.hub.dirtyMedianMs} ms`);
   }
   console.log(`report → docs/reports/oss-perf-baseline.md`);
 }

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-24T19:42:23.445Z",
+  "generatedAt": "2026-09-24T19:49:47.730Z",
   "node": "v24.19.0",
   "kind": "oss-real-packages",
   "totals": {
@@ -8,9 +8,9 @@
     "bytes": 361224,
     "fpCount": 0,
     "scanned": 79,
-    "coldAnalyzeMs": 2238.14,
-    "checkAllMs": 604.13,
-    "tscTotalMs": 658.01
+    "coldAnalyzeMs": 2275.14,
+    "checkAllMs": 610.69,
+    "tscTotalMs": 653.75
   },
   "packages": [
     {
@@ -22,27 +22,27 @@
       "scanErrors": [],
       "falsePositives": [],
       "fpCount": 0,
-      "coldAnalyzeMs": 757.24,
+      "coldAnalyzeMs": 766.46,
       "warmAnalyzeMs": {
         "n": 5,
-        "median": 5.2,
-        "min": 4.95,
-        "max": 5.39
+        "median": 5.6,
+        "min": 5.13,
+        "max": 6.11
       },
-      "checkAllMs": 171.61,
+      "checkAllMs": 178.88,
       "tsc": {
-        "createProgramMs": 123.29,
-        "diagnosticsMs": 139.57,
-        "totalMs": 262.86,
+        "createProgramMs": 133.93,
+        "diagnosticsMs": 136.65,
+        "totalMs": 270.58,
         "diagnostics": 30,
-        "note": "tsc createProgram+diagnostics on same .js set (allowJs+checkJs). Reference only — different question than Nudo Abs analysis."
+        "note": "UNANNOTATED JS — tsc is in weak checkJs mode. Tooling-load reference only, NOT a Nudo-vs-TS product comparison."
       },
       "hub": {
         "file": "commander/lib/error.js",
         "dependents": 4,
         "dirtyCount": 6,
-        "dirtyMedianMs": 685.93,
-        "ideAnalyzeMedianMs": 0.17
+        "dirtyMedianMs": 700.88,
+        "ideAnalyzeMedianMs": 0.19
       },
       "leaf": {
         "file": "commander/index.js",
@@ -59,27 +59,27 @@
       "scanErrors": [],
       "falsePositives": [],
       "fpCount": 0,
-      "coldAnalyzeMs": 1181.42,
+      "coldAnalyzeMs": 1239.24,
       "warmAnalyzeMs": {
         "n": 5,
-        "median": 13.44,
-        "min": 12.93,
-        "max": 14.08
+        "median": 12.9,
+        "min": 12.8,
+        "max": 13.58
       },
-      "checkAllMs": 252.64,
+      "checkAllMs": 259.54,
       "tsc": {
-        "createProgramMs": 99.11,
-        "diagnosticsMs": 147.88,
-        "totalMs": 246.99,
+        "createProgramMs": 96.51,
+        "diagnosticsMs": 147.1,
+        "totalMs": 243.61,
         "diagnostics": 41,
-        "note": "tsc createProgram+diagnostics on same .js set (allowJs+checkJs). Reference only — different question than Nudo Abs analysis."
+        "note": "UNANNOTATED JS — tsc is in weak checkJs mode. Tooling-load reference only, NOT a Nudo-vs-TS product comparison."
       },
       "hub": {
         "file": "yargs/build/lib/utils/is-promise.js",
         "dependents": 5,
         "dirtyCount": 8,
-        "dirtyMedianMs": 1015.22,
-        "ideAnalyzeMedianMs": 0.12
+        "dirtyMedianMs": 983.77,
+        "ideAnalyzeMedianMs": 0.1
       },
       "leaf": {
         "file": "yargs/browser.mjs",
@@ -96,27 +96,27 @@
       "scanErrors": [],
       "falsePositives": [],
       "fpCount": 0,
-      "coldAnalyzeMs": 299.48,
+      "coldAnalyzeMs": 269.44,
       "warmAnalyzeMs": {
         "n": 5,
-        "median": 41.9,
-        "min": 40.28,
-        "max": 45.11
+        "median": 36.52,
+        "min": 34.42,
+        "max": 41.31
       },
-      "checkAllMs": 179.88,
+      "checkAllMs": 172.27,
       "tsc": {
-        "createProgramMs": 74.04,
-        "diagnosticsMs": 74.13,
-        "totalMs": 148.16,
+        "createProgramMs": 70.17,
+        "diagnosticsMs": 69.39,
+        "totalMs": 139.56,
         "diagnostics": 16,
-        "note": "tsc createProgram+diagnostics on same .js set (allowJs+checkJs). Reference only — different question than Nudo Abs analysis."
+        "note": "UNANNOTATED JS — tsc is in weak checkJs mode. Tooling-load reference only, NOT a Nudo-vs-TS product comparison."
       },
       "hub": {
         "file": "semver/bin/semver.js",
         "dependents": 0,
         "dirtyCount": 1,
-        "dirtyMedianMs": 19.69,
-        "ideAnalyzeMedianMs": 0.81
+        "dirtyMedianMs": 22.88,
+        "ideAnalyzeMedianMs": 1.04
       },
       "leaf": {
         "file": "semver/classes/comparator.js",
