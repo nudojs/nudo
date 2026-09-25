@@ -19,7 +19,7 @@ import ts from "typescript";
 import { writeFixtures, OUT_DIR, w3Nudo, w3Tsc, w4Nudo, w4Tsc } from "./fixtures.mjs";
 
 const ROOT = join(import.meta.dirname, "..", "..");
-const CLI = join(ROOT, "packages/cli/src/index.ts");
+const CLI = join(ROOT, "packages/nudojs/src/index.ts");
 const TSC = join(ROOT, "node_modules/typescript/lib/tsc.js");
 const TSX = join(ROOT, "node_modules/.bin/tsx");
 

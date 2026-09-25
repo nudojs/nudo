@@ -6,7 +6,7 @@ import { execSync } from "child_process";
 import { writeFileSync, mkdirSync } from "fs";
 import { cases } from "./cases.js";
 
-const NUDO_CLI = "packages/cli/src/index.ts";
+const NUDO_CLI = "packages/nudojs/src/index.ts";
 const RESULTS_DIR = "./benchmark/results";
 
 mkdirSync(RESULTS_DIR, { recursive: true });
@@ -28,16 +28,18 @@ ${caseItem.code}
 
   const start = performance.now();
   try {
-    const output = execSync(`pnpm run infer "${tempFile}"`, {
-      encoding: "utf-8",
-      timeout: 10000,
-      cwd: process.cwd()
-    });
+    // Product face is `nudo test` (the `infer` verb was removed). JSON carries
+    // each declared case's result string — that is the benchmark's "inferred type".
+    const output = execSync(
+      `pnpm exec tsx ${NUDO_CLI} test "${tempFile}" --json`,
+      { encoding: "utf-8", timeout: 10000, cwd: process.cwd() },
+    );
     const duration = performance.now() - start;
-
-    // Parse the output to extract the inferred type
-    const match = output.match(/Case "test": \(([^)]*)\) => (.+)/);
-    const inferredType = match ? match[2].trim() : "unknown";
+    const json = JSON.parse(output);
+    const fns = json.functions || json.entries || [];
+    const first = fns[0];
+    const c = first?.cases?.find((x) => x.name === "test") || first?.cases?.[0];
+    const inferredType = c?.result ?? first?.combined ?? "unknown";
 
     return {
       success: true,

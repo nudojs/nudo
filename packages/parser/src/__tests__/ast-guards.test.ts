@@ -78,7 +78,9 @@ describe("identifier / expression narrowers", () => {
     const [s] = stmts("a = 1;");
     const expr = getExpressionStatementExpression(s)!;
     expect(asAssignmentExpression(expr)?.type).toBe("AssignmentExpression");
-    expect(asAssignmentExpression(expr?.right)).toBeUndefined();
+    const assign = asAssignmentExpression(expr);
+    expect(assign?.type).toBe("AssignmentExpression");
+    expect(asAssignmentExpression(assign?.right)).toBeUndefined();
   });
 
   it("asMemberExpression narrows member access", () => {

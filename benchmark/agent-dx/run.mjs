@@ -21,7 +21,7 @@ function tokensOf(s) {
 function nudoCheck(file, extra = []) {
   const r = spawnSync(
     "pnpm",
-    ["exec", "tsx", "packages/cli/src/index.ts", "check", file, ...extra],
+    ["exec", "tsx", "packages/nudojs/src/index.ts", "check", file, ...extra],
     { cwd: root, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
   );
   return { code: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };

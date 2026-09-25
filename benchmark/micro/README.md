@@ -12,7 +12,7 @@ npx tsx benchmark/micro/run.mts
 | 名称 | 含义 |
 |---|---|
 | cold tsx empty | `tsx -e` 空脚本进程成本 |
-| cold CLI infer | `tsx packages/cli/src/index.ts infer` 全链路 |
+| cold CLI infer | `tsx packages/nudojs/src/index.ts infer` 全链路 |
 | cold import first analyze | 进程已起 + 首次 `analyzeFile` |
 | nudo warm | 同进程反复 `analyzeFile`（稳态） |
 | tsc CLI | 每次新进程 `tsc --noEmit`（含编译器加载） |
