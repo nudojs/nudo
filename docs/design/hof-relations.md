@@ -66,7 +66,7 @@ impl.apply → impl.body → impl.relation → isRelFn(shape-only) → unknown
 - 挂载点至少：方法 miss + CallExpression callee + HOF 回调实参（+ for-of）；同 pass 串联，不二次重跑。
 - `αOf` 白名单：仅复用本次 typeParams 的 var；否则 fresh α——局部字面量不得冻进签名。
 - 写入：**替换** `env.vars[param]` 新对象，term 身份不变，conf=`path`；禁止 mutate 共享 Abs；禁止给提升产物挂 `impl.relation`。
-- `@nudo:refine` 契约形状优先，不重复提升（`entryShapes` 可记 `source="refine"`）。
+- `@nudo:contract` 契约形状优先，不重复提升（`entryShapes` 可记 `source="refine"`）。
 - 裁决 **arrival-first**：先 eval 到的形状定型；冲突拒绝新观测，**禁止**按 loc 回滚。
 - 截断门：`conf === "opaque"` → `fnRels` / `entryShapes` / `hofSites` 均不落 PolyFn；`partial` **不是**截断，关系保留。
 - 返回侧共享输出变量 `B:${param}`；同一形参多观测不改该 β id。

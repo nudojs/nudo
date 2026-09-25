@@ -5,7 +5,7 @@ description: nudo contract —— 打印 / 草稿 / 固化侧车契约。Day-1 �
 
 # nudo contract
 
-`nudo contract` 管理**契约表面**（`*.nudo.js` 侧车 + 源码内 `@nudo:refine`）。它不替代 `nudo check` —— check 是 CI 门禁；contract 负责打印、起草与固化义务。
+`nudo contract` 管理**契约表面**（`*.nudo.js` 侧车 + 源码内 `@nudo:contract`）。它不替代 `nudo check` —— check 是 CI 门禁；contract 负责打印、起草与固化义务。
 
 ```bash
 npx nudojs contract <paths…> [--from paths…]
@@ -19,7 +19,7 @@ npx nudojs contract --emit <paths…> [--fn name] [--all] [--dry-run]
 
 | 层 | 来源 | 迁移动作 |
 |------|--------|------------------|
-| `handwritten` | `*.nudo.js` / `@nudo:refine` | 保留；用 `nudo check` 执法 |
+| `handwritten` | `*.nudo.js` / `@nudo:contract` | 保留；用 `nudo check` 执法 |
 | `generated` | 调用点域固化进 `@generated` | 使用变化时用 `--emit` 刷新 |
 | `implicit` | 仅推断 —— 展示用 | 草稿候选 |
 
@@ -63,14 +63,14 @@ export const positive = number().gt(0);
 export const add2 = fn({ x: number().gt(0) }, number());
 ```
 
-侧车中的函数绑定**必须**是一等 `fn({ params }, returns?)`。裸的 `number().gt(0)` 是值级模板（供 `@nudo:refine` / 共享槽使用），不是函数导出契约——上面 `positive` 是模板，`add2` 是绑定。
+侧车中的函数绑定**必须**是一等 `fn({ params }, returns?)`。裸的 `number().gt(0)` 是值级模板（供 `@nudo:contract` / 共享槽使用），不是函数导出契约——上面 `positive` 是模板，`add2` 是绑定。
 
 源码内形态：
 
 ```javascript verify
 /// @nudo:import { positive } from "./contract.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function needsPositive(x) {
   return x;
@@ -79,9 +79,9 @@ export function needsPositive(x) {
 needsPositive(-1); // ⊭ x > 0 → nudo:constraint-violated
 ```
 
-`@nudo:refine` 引用的模板必须用 `@nudo:import` 引入 —— 侧车只自动绑定同名 `fn` 导出。
+`@nudo:contract` 引用的模板必须用 `@nudo:import` 引入 —— 侧车只自动绑定同名 `fn` 导出。
 
-`@nudo:interface` 是 `@nudo:refine` 的精确**别名**。产品名：**contract**。
+产品名：**contract**。
 
 ## 固化生成段
 
@@ -110,5 +110,5 @@ npx nudojs check src/
 
 - [迁移现有 JS](./migrating-js.md) —— 完整 draft → accept → CI 路径
 - [Recipes](./recipes.md) —— 渐进契约、monorepo
-- [指令](../concepts/directives.md) —— `@nudo:refine` 文法
+- [指令](../concepts/directives.md) —— `@nudo:contract` 文法
 - [边界](../concepts/limits.md) —— promote ≠ 义务；诚实边界

@@ -34,7 +34,7 @@ export const SEMANTIC_TOKEN_MODIFIERS = [
   "readonly",
   "deprecated",
   "unreachable",
-  /** handwritten：显式契约（侧车手写 / @nudo:refine） */
+  /** handwritten：显式契约（侧车手写 / @nudo:contract） */
   "contract",
   /** generated：侧车 @generated 段 */
   "generated",

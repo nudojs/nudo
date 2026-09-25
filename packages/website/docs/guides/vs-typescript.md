@@ -17,7 +17,7 @@ Nudo is built to **replace TypeScript as the day-to-day type gate for JavaScript
 |---|---|---|
 | **Primary surface** | `.ts` sources + annotations | Plain `.js` (type syntax stripped if you pass `.ts`) |
 | **Type model** | Declared structural types | **Abs** (`shape × term × pred × conf`) — computable types from abstract interpretation |
-| **Contracts** | `interface` / `type` language | `*.nudo.js` builders (`fn`, `shape`, `number().gt(0)`) + optional `@nudo:refine` (alias `@nudo:interface`) |
+| **Contracts** | `interface` / `type` language | `*.nudo.js` builders (`fn`, `shape`, `number().gt(0)`) + optional `@nudo:contract` |
 | **Inference** | From annotations + local inference | From **executing** code on symbolic Abs (B-path) |
 | **CI gate** | `tsc --noEmit` | `nudo check` (`actual ⊭ expected` on Abs) |
 | **Ecosystem exit** | `.d.ts` is the model | `.d.ts` is a **lossy projection** (`absToTSType`) — not the source of truth |
@@ -74,7 +74,7 @@ For a **JS package**, the serious-replacement checklist is:
 | Open a normal `.js` file, get hover / inlay | LSP + `package.json#nudo.analysis.mode` (default `exports`; `all` / `directives` available) |
 | Day-0 observation | `nudo check` signatures + `nudo test` cases (no `infer` verb) |
 | CI type gate | `nudo check` — exit 1 on error issues (L1 + non-ignored L2) |
-| Explicit contracts | `*.nudo.js` + `@nudo:refine`; handwritten = L1 obligation |
+| Explicit contracts | `*.nudo.js` + `@nudo:contract`; handwritten = L1 obligation |
 | Generated facts | `nudo contract --emit` → `@generated` segments (drift, not silent rewrites of obligations) |
 | npm / editor types | `nudo export --format dts` — one-way projection only |
 | **Retire tsc** | `nudo migrate status` → `strip` → `verify` → **`retire`** |
@@ -99,7 +99,7 @@ needsPositive(-1); // allowed by tsc
 /// @nudo:import { positive } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function needsPositive(x) {
   return x > 0 ? x : 0;

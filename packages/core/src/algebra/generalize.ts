@@ -635,7 +635,7 @@ export type PolyFn = {
   instantiate: (args: Abs[], phi?: Phi) => Abs;
   symbolic: Abs;
   display: string;
-  /** 入口契约（@nudo:refine），供签名/inlay 展示 */
+  /** 入口契约（@nudo:contract），供签名/inlay 展示 */
   entryReqs?: Array<{ param: string; pred: import("./pred.ts").Pred }>;
   /**
    * 形参表面（C4.1）：默认/rest/解构的契约可绑定名。
@@ -872,7 +872,7 @@ export function generalizeFromAst(
   opts: {
     budget?: LeakBudget;
     label?: string;
-    /** 传入则把 @nudo:refine 挂到入口 param Abs */
+    /** 传入则把 @nudo:contract 挂到入口 param Abs */
     refine?: EffectiveInterfaceOpts;
     /** 预解析 AST，避免 check 批量场景重复 parse */
     file?: ReturnType<typeof babelParse>;
@@ -943,7 +943,7 @@ function generalizeFromAstUncached(
       // 入口面，非执法）。无源码指令且无 ambient 侧车时保持旧快路径行为。
       const r = opts.refine;
       const hasDirective =
-        source.includes("@nudo:refine") || source.includes("@nudo:interface");
+        source.includes("@nudo:contract") || source.includes("@nudo:contract");
       const sc =
         opts.sidecarFp ??
         (r.loadModule && r.fromFile

@@ -2,19 +2,19 @@
 // 运行：pnpm run check docs/examples/structure/arg-structure.js
 //
 // 无契约时 readXY({x:1}) 合法（调用点事实 / any）；
-// 声明 @nudo:refine p xy 后，缺 y 由契约门禁拦截。
+// 声明 @nudo:contract p xy 后，缺 y 由契约门禁拦截。
 
 /// @nudo:import { xy } from "./xy.nudo.js"
 
 /**
- * @nudo:refine p xy
+ * @nudo:contract p xy
  */
 function readXY(p) {
   return p.x + p.y;
 }
 
 /**
- * @nudo:refine p xy
+ * @nudo:contract p xy
  */
 function readX(p) {
   return p.x;

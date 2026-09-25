@@ -162,7 +162,7 @@ describe("compound assignment check-path gold", () => {
       "gold-compound-sum.js",
       withStdImport(`
 /**
- * @nudo:refine return positive
+ * @nudo:contract return positive
  */
 function sum(xs) {
   let total = 0;
@@ -182,7 +182,7 @@ sum([1, 2, 3, 4, 5]);
       "gold-compound-sum-neg.js",
       withStdImport(`
 /**
- * @nudo:refine return positive
+ * @nudo:contract return positive
  */
 function sum(xs) {
   let total = 0;

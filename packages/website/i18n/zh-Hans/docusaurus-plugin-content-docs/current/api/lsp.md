@@ -236,7 +236,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 
 ### `interFileDependencies: false`
 
-`initialize` 声明 `diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false }`：每个文件的诊断对该文件独立正确，契约来自 `*.nudo.js` 侧车与 `@nudo:refine`（别名 `@nudo:interface`）。`@nudo:case` 是调试 / 可选 `nudo test` 子层，不是契约产品。这是与 `tsserver` 的结构性差异：tsserver 的全 `Program` 常驻是结构化类型所迫 —— 任何跨文件形状都可能改变任何决策，因此一切都必须保持加载且最新。Nudo 用单文件正确性换取有界内存 —— 这正是两台服务器能在同一编辑器里并排运行的原因。Nudo 不以替代 `tsserver` 为目标。
+`initialize` 声明 `diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false }`：每个文件的诊断对该文件独立正确，契约来自 `*.nudo.js` 侧车与 `@nudo:contract`。`@nudo:case` 是调试 / 可选 `nudo test` 子层，不是契约产品。这是与 `tsserver` 的结构性差异：tsserver 的全 `Program` 常驻是结构化类型所迫 —— 任何跨文件形状都可能改变任何决策，因此一切都必须保持加载且最新。Nudo 用单文件正确性换取有界内存 —— 这正是两台服务器能在同一编辑器里并排运行的原因。Nudo 不以替代 `tsserver` 为目标。
 
 ## 与编辑器扩展的关系
 

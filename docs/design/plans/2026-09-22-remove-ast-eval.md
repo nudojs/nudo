@@ -102,7 +102,7 @@ runTranspiled + callTranspiledExportFull（提升形状预绑定到实参）。
 
 1. **phi 分支收窄缺失（结构性，唯一真阻塞）**——同源码同实参实测：
    ```
-   源码:    function f(x){ if (x>0) return x; return 0; }   // @nudo:refine x positive
+   源码:    function f(x){ if (x>0) return x; return 0; }   // @nudo:contract x positive
    转译:    return $fork($gt(x, $lit(0)), () => x, () => $lit(0));
    ①ast-eval（Φ=x>0）: number  = x  where x > 0  #path   ← term/pred 保留
    ②B-path（同实参，无 Φ 入口）: number  #path            ← 两臂 join 丢 term

@@ -42,7 +42,7 @@ describe("*.nudo.js watched-file → targeted eviction + parent revalidate", () 
     writeFileSync(dep, "export const positive = number().gt(0);\n");
     const parentSrc = `/// @nudo:import { positive } from "./shapes.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   return x;

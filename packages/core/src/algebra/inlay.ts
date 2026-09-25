@@ -2,7 +2,7 @@
  * Abs inlay hint：把无损约束内联到源码位置。
  * 不是 TS 风格 type annotation 复读，而是 term/pred/conf 的计算结果。
  *
- * 参数侧只展示显式 `@nudo:refine` 契约（entryReqs）——
+ * 参数侧只展示显式 `@nudo:contract` 契约（entryReqs）——
  * 不从函数体 `if` 反推前置条件（那是控制流，不是对外契约）。
  *
  * A7（design-refine-derivation §8）：default 走 symbolic + entryReqs；
@@ -137,7 +137,7 @@ function formatReturnDisplay(g: PolyFn): string {
 
 /**
  * 收集源码中函数签名的 Abs inlay：
- * - 参数后：仅 `@nudo:refine` / 侧车显式契约（entryReqs）
+ * - 参数后：仅 `@nudo:contract` / 侧车显式契约（entryReqs）
  * - `{` 前：返回计算形（`x | x * 2`），无 term 时退回 shape
  * - interface 档：导出函数带 `interfaceSource`；implicit 返回标 `derived`
  */

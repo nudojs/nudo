@@ -283,7 +283,7 @@ function hasModuleSyntax(file: File): boolean {
  * 只认顶层 ExpressionStatement 会漏报约束违规。
  */
 export function canSkipLiteralCallScan(source: string, file: File): boolean {
-  if (source.includes("@nudo:refine")) return false;
+  if (source.includes("@nudo:contract")) return false;
   if (hasModuleSyntax(file)) return false;
   if (hasAnyCallLike(file)) return false;
   const fps = fnFingerprints(source, file);

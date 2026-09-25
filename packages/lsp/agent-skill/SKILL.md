@@ -5,7 +5,7 @@ description: Query precise JavaScript types by abstract interpretation — use w
 
 # Nudo — type inference for JavaScript
 
-Nudo is a comment-driven type inference engine for plain JavaScript. The type system is **Abs** (`shape × term × pred × conf`); production analysis is Abs-native. It derives types by **executing** observed call sites under abstract interpretation (whole-program inference). Contracts live in `*.nudo.js` sidecars and `@nudo:refine` / contract modules (constraint builders such as `number()`, `lit(42)`, `shape({...})`). `@nudo:case` is debug / `nudo test` only — not the contract product.
+Nudo is a comment-driven type inference engine for plain JavaScript. The type system is **Abs** (`shape × term × pred × conf`); production analysis is Abs-native. It derives types by **executing** observed call sites under abstract interpretation (whole-program inference). Contracts live in `*.nudo.js` sidecars and `@nudo:contract` / contract modules (constraint builders such as `number()`, `lit(42)`, `shape({...})`). `@nudo:case` is debug / `nudo test` only — not the contract product.
 
 ## CLI verbs agents should use
 
@@ -72,7 +72,7 @@ All commands are available as `workspace/executeCommand` (dot form) and as custo
 | `nudo.contract.draft` (`nudo/contract.draft`) | `{ "file": "src/lib.js", "functionName": "add4"? }` | Draft summary — same as CLI `nudo contract --draft` |
 | `nudo.contract.emit` (`nudo/contract.emit`) | `{ "file": "src/lib.js", "functionName": "add4", "mode": "update" }` | Persist the inferred contract as an `@generated` segment in `*.nudo.js` — same as CLI `nudo contract --emit` |
 
-Diagnostics (failed `@nudo:refine` assertions, L2 entry may-throw, unreachable code, …) are available as LSP diagnostics — push (`textDocument/publishDiagnostics`) and pull (`textDocument/diagnostic`). Persisted-contract drift surfaces as `nudo:interface-drift` warnings.
+Diagnostics (failed `@nudo:contract` assertions, L2 entry may-throw, unreachable code, …) are available as LSP diagnostics — push (`textDocument/publishDiagnostics`) and pull (`textDocument/diagnostic`). Persisted-contract drift surfaces as `nudo:interface-drift` warnings.
 
 ## Contract sidecars (`*.nudo.js`)
 

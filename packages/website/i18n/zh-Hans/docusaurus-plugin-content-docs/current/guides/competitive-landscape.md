@@ -55,7 +55,7 @@ Flow 仍在活跃（近期 0.333.x 线、Rust 实现工作、带 `component` / `
 
 Hegel（GitHub 上的 `JSMonk/hegel`）曾是概念上最近的邻居：**无标注的强推断**，外加 Typed Errors 的想法。**它已于 2024-01-29 归档**；其 README 声明开发已停止。
 
-这留下一个真实的空洞：「为无类型 JS 推断一道类型门禁、又不要求作者写一套类型语言」这个生态位，**没有活跃维护的工具占据**。Nudo 用不同的重心占据这个空洞——Abs 代数、显式侧车契约（`*.nudo.js` / `@nudo:refine`），以及一道打印签名与用例的 CI 门禁。
+这留下一个真实的空洞：「为无类型 JS 推断一道类型门禁、又不要求作者写一套类型语言」这个生态位，**没有活跃维护的工具占据**。Nudo 用不同的重心占据这个空洞——Abs 代数、显式侧车契约（`*.nudo.js` / `@nudo:contract`），以及一道打印签名与用例的 CI 门禁。
 
 ## vs schema 库（Zod、ArkType、TypeBox、Valibot）
 
@@ -102,7 +102,7 @@ LiquidHaskell 及相关系统使用由 SMT 求解器 discharge 的**谓词精化
 
 LLM 类型推断研究（例如 SCAM 2026）适合**混合**回路，而不是替代确定性门禁：
 
-1. **LLM 起草** —— 从代码或散文生成契约（`*.nudo.js`）、`@nudo:refine`，或 `@nudo:case` 场景。
+1. **LLM 起草** —— 从代码或散文生成契约（`*.nudo.js`）、`@nudo:contract`，或 `@nudo:case` 场景。
 2. **Nudo 检查** —— `nudo check` / `nudo test` 用 Abs 代数做决定（CI 时刻不做采样）。
 3. **修复** —— 机器可读的 `check --json`（`actual` / `expected` / `fix:` / `actions[]`）喂给下一轮草稿。
 

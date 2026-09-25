@@ -36,7 +36,7 @@ description: AI-native DX —— 为什么 agent 在 Nudo 上更少噪音地红�
   "expected": "ms > 0",
   "actions": [
     { "kind": "callsite", "label": "use a value satisfying the constraint", "hint": "ms > 0" },
-    { "kind": "relax", "label": "relax the precondition (edit *.nudo.js / @nudo:refine)" },
+    { "kind": "relax", "label": "relax the precondition (edit *.nudo.js / @nudo:contract)" },
     { "kind": "draft", "command": "nudo contract --draft", "label": "emit a sidecar draft you can edit" }
   ]
 }

@@ -102,7 +102,7 @@ issues
 
 The violation is reported against the call site. Fix the call (or widen the contract), and `check` passes — still printing signatures.
 
-`if` guards are **not** refinements. Explicit contracts come from sidecars / `@nudo:refine` (alias `@nudo:interface`). Without them, L2 still gates undigested may-throw on exports (entry params are `any`).
+`if` guards are **not** refinements. Explicit contracts come from sidecars / `@nudo:contract`. Without them, L2 still gates undigested may-throw on exports (entry params are `any`).
 
 ## Options
 

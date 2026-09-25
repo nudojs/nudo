@@ -50,8 +50,8 @@
 **Nudo 常规优势（用满）**
 - **推断**为主：裸 JS，靠参数谓词 + 调用点/case **推断**返回结构；不要模仿 TS 注解文体。
 - **有意 fail-fast**：函数上 **`@nudo:throws Error`** 一行申报（勿用 `_probe` 摸 guard）。
-- **源级契约**只写谓词：`@nudo:refine` + `*.nudo.js` builder（从 `@nudojs/core` 导入）。语法见 `PRD-TEST-READ.md`。
-- **`@nudo:case`** 是 debug 见证；义务只来自侧车 / `@nudo:refine` / `@nudo:throws`。
+- **源级契约**只写谓词：`@nudo:contract` + `*.nudo.js` builder（从 `@nudojs/core` 导入）。语法见 `PRD-TEST-READ.md`。
+- **`@nudo:case`** 是 debug 见证；义务只来自侧车 / `@nudo:contract` / `@nudo:throws`。
 - 复杂域（金额、时间、状态机）写契约，让 typechecker 蕴含规则。
 
 ## 产出判据（双侧同一条）

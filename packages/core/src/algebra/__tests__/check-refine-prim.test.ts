@@ -18,7 +18,7 @@ describe("array() refine", () => {
   it("ok: valid array of positives", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine items positives
+ * @nudo:contract items positives
  */
 function sumPos(items) { return items; }
 sumPos([1, 2, 3]);
@@ -29,7 +29,7 @@ sumPos([1, 2, 3]);
   it("error: element violates number().gt(0)", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine items positives
+ * @nudo:contract items positives
  */
 function sumPos(items) { return items; }
 sumPos([-1, 2]);
@@ -43,7 +43,7 @@ sumPos([-1, 2]);
   it("error: non-array arg", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine items positives
+ * @nudo:contract items positives
  */
 function sumPos(items) { return items; }
 sumPos("nope");
@@ -54,7 +54,7 @@ sumPos("nope");
   it("does not invent {some} from findings.some when refine is array()", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine findings findings
+ * @nudo:contract findings findings
  */
 function report(findings) {
   return findings.some(f => f.severity);
@@ -70,7 +70,7 @@ describe("string() refine", () => {
   it("error: number arg against string()", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine s nonEmpty
+ * @nudo:contract s nonEmpty
  */
 function greet(s) { return "hi " + s; }
 greet(42);
@@ -84,7 +84,7 @@ greet(42);
   it("error: empty string against string().min(1)", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine n shortName
+ * @nudo:contract n shortName
  */
 function nick(n) { return n; }
 nick("");
@@ -95,7 +95,7 @@ nick("");
   it("ok: valid string", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine s nonEmpty
+ * @nudo:contract s nonEmpty
  */
 function greet(s) { return "hi " + s; }
 greet("ada");
@@ -112,7 +112,7 @@ greet("ada");
       "export const first = (s) => s[0];",
     ]) {
       const bad = issuesOf(`/// @nudo:import { nonEmpty } from "./std.nudo.js"
-/** @nudo:refine s nonEmpty */
+/** @nudo:contract s nonEmpty */
 ${decl}
 first(42);
 `);
@@ -122,7 +122,7 @@ first(42);
       expect(err!.expected).toContain("string");
 
       const good = issuesOf(`/// @nudo:import { nonEmpty } from "./std.nudo.js"
-/** @nudo:refine s nonEmpty */
+/** @nudo:contract s nonEmpty */
 ${decl}
 first("abc");
 `);
@@ -135,7 +135,7 @@ describe("structural gate vs refine priority", () => {
   it("shape() call site still checks fields", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine u userShape
+ * @nudo:contract u userShape
  */
 function register(u) { return u.name; }
 register({ id: -1, name: "a" });
@@ -156,7 +156,7 @@ take([1, 2, 3]);
   it("wrapper→target refine propagates across same-file calls", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine u userShape
+ * @nudo:contract u userShape
  */
 function register(u) { return u.name; }
 function wrapper(u) { return register(u); }

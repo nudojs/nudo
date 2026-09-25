@@ -78,12 +78,12 @@ const presets: Preset[] = [
     mode: 'single',
     group: GROUP_CONTRACTS,
     id: 'refine-positive',
-    name: 'Refine — @nudo:refine positive',
+    name: 'Refine — @nudo:contract positive',
     code: `/// @nudo:import { positive } from "./shapes.nudo.js"
 // virtual template: positive = number().gt(0)
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function needsPositive(x) {
   return x;
@@ -576,7 +576,7 @@ const KNOWN_TEMPLATE_DISPLAY: Record<string, string> = {
 
 function contractMarkdownForWord(source: string, word: string): string[] {
   const raw = [
-    ...source.matchAll(/@nudo:(?:refine|interface)\s+(\w+)\s+([\w.]+)/g),
+    ...source.matchAll(/@nudo:contract\s+(\w+)\s+([\w.]+)/g),
   ].filter((m) => m[1] === word);
 
   for (const m of raw) {
@@ -584,7 +584,7 @@ function contractMarkdownForWord(source: string, word: string): string[] {
     const display = KNOWN_TEMPLATE_DISPLAY[cName];
     if (display) {
       return [
-        `**contract** · \`@nudo:refine\` · virtual template \`${cName}\``,
+        `**contract** · \`@nudo:contract\` · virtual template \`${cName}\``,
         '```nudo',
         `${word}: ${display}`,
         '```',
@@ -606,7 +606,7 @@ function contractMarkdownForWord(source: string, word: string): string[] {
           '```nudo',
           `${word}: ${formatConstraint(hit.constraint)}`,
           '```',
-          '_obligation from `@nudo:refine` / sidecar — not the last call-site value_',
+          '_obligation from `@nudo:contract` / sidecar — not the last call-site value_',
         ];
       }
     }
@@ -616,7 +616,7 @@ function contractMarkdownForWord(source: string, word: string): string[] {
 
   if (raw.length) {
     return [
-      `**contract** · \`@nudo:refine\``,
+      `**contract** · \`@nudo:contract\``,
       ...raw.map((m) => `- \`${m[1]}\` ← template \`${m[2]}\``),
     ];
   }

@@ -29,7 +29,7 @@ Nudo analyzes **JS semantics**. Pointing it at `.ts` strips annotations — use 
 |------------------|------------------|
 | Annotate params/returns in source | Day 0: `nudo check` prints signatures (`any` until evidence/contracts) |
 | `tsc --noEmit` in CI | `nudo check` in CI (still prints signatures on success) |
-| `interface` / mapped types as obligations | Sidecar `*.nudo.js` builders (`fn`, `shape`, `number().gt(0)`) + optional `@nudo:refine` |
+| `interface` / mapped types as obligations | Sidecar `*.nudo.js` builders (`fn`, `shape`, `number().gt(0)`) + optional `@nudo:contract` |
 | Hover shows declared type | Hover / inlay show Abs facts (term / pred / conf) |
 | `.d.ts` is the model | `.d.ts` is a **lossy export**; Abs is the model |
 | Refactors change annotations | Refactors change **evidence** (call sites) and/or **contracts** |
@@ -105,7 +105,7 @@ Typical monorepo: `apps/*` in TS, `packages/*` tools you want off `tsc`.
 
 1. **Scope** — one package (CLI, worker, script layer). Not the whole monorepo on day one.
 2. **Observe (Day 0)** — `npx nudojs check packages/tool/src`. Read signatures; unconstrained entries are **`any`**.
-3. **Contracts** — logic first (`contract --draft --from tests/`) or contracts first (sidecar / `@nudo:refine`).
+3. **Contracts** — logic first (`contract --draft --from tests/`) or contracts first (sidecar / `@nudo:contract`).
 4. **CI** — `nudo check` for that package path.
 5. **Retire that package** — `migrate status` / `strip` / `verify` / `retire` on it. Do not leave `tsc` as a second permanent gate.
 6. **Ecosystem** — if other packages still consume types:

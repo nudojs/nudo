@@ -6,7 +6,7 @@ Welcome back to JavaScript. This file is the bootstrap entrypoint for the Nudo d
 
 ```text
 Read https://nudojs.github.io/nudo/agents.md and set up Nudo in this project.
-Primary gate: npx nudojs check <path>. Contracts are *.nudo.js / @nudo:refine.
+Primary gate: npx nudojs check <path>. Contracts are *.nudo.js / @nudo:contract.
 Do not invent body-AST obligations. @nudo:case is debug-only.
 ```
 
@@ -15,7 +15,7 @@ Do not invent body-AST obligations. @nudo:case is debug-only.
 ```text
 Read https://nudojs.github.io/nudo/docs/reference/agents
 Primary gate: npx nudojs check <path>
-Contracts are *.nudo.js / @nudo:refine (alias @nudo:interface)
+Contracts are *.nudo.js / @nudo:contract
 Do not invent body-AST obligations. @nudo:case is debug-only.
 Entry params print as any; unknown = inference failed.
 ```
@@ -23,7 +23,7 @@ Entry params print as any; unknown = inference failed.
 ## Non-negotiable rules (full set on the canonical page)
 
 1. **CLI verbs only:** `check` | `test` | `contract` | `export` | `health`. There is no `infer` verb.
-2. **Contracts are the product surface:** sidecar `*.nudo.js` auto-binding + in-source `@nudo:refine` (alias `@nudo:interface`).
+2. **Contracts are the product surface:** sidecar `*.nudo.js` auto-binding + in-source `@nudo:contract`.
 3. **`@nudo:case` is debug only** — never present it as the interface product.
 4. **`any` vs `unknown`:** unconstrained entry params print as **`any`**; **`unknown` means inference failed**.
 5. **`check` validates; `export` projects** one-way lossy dts/zod/guards.

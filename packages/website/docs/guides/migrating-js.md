@@ -42,7 +42,7 @@ Prints every top-level export with its tier:
 
 | Tier | Meaning | Migration action |
 |------|---------|------------------|
-| `handwritten` | Already contracted (sidecar / `@nudo:refine`) | Leave; enforce with `check` |
+| `handwritten` | Already contracted (sidecar / `@nudo:contract`) | Leave; enforce with `check` |
 | `generated` | Call-site domains frozen into `@generated` | Refresh with `--emit` when usage changes |
 | `implicit` | Inference only — display | **Draft candidates** |
 

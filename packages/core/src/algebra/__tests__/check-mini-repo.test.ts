@@ -41,7 +41,7 @@ describe("mini-repo check gold", () => {
     // isPositive 是谓词（无 if-return-param 前置）；真正门禁用 refine
     const src = `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;

@@ -131,7 +131,7 @@ formatAbs(a)                  // 无损：shape、= term、where pred、#conf
 leqAbs(src, tgt)              // 可赋值性（代数的子类型检查）
 ```
 
-源码级契约用 `@nudo:refine` + `*.nudo.js` 模板（约束构造器）声明，不用裸构造器。
+源码级契约用 `@nudo:contract` + `*.nudo.js` 模板（约束构造器）声明，不用裸构造器。
 
 ### 2.5 运算符语义（Abs 原生表面）
 
@@ -265,7 +265,7 @@ Nudo 将异常作为函数类型的一等部分追踪。每个函数不仅有 `r
 | `@nudo:pure` | 标记函数为纯函数，启用记忆化 |
 | `@nudo:skip` | 跳过求值；可选的约束构建器表达式直接声明返回类型（如 `@nudo:skip number()`） |
 | `@nudo:sample` | 保留的无效果指令（已解析，未消费） |
-| `@nudo:refine` | 精化契约：`@nudo:refine param name` / `@nudo:refine return name`（Pred 进入 Abs） |
+| `@nudo:contract` | 契约：`@nudo:contract param name` / `@nudo:contract return name`（Pred 进入 Abs） |
 | `@nudo:env` | 声明运行时环境 API（文件级 `///` 注释） |
 | `@nudo:mock-module` | 用 mock 文件替换导入的模块（文件级 `///` 注释） |
 | `@nudo:as` | 覆盖下一条语句的值类型（行注释 `//`） |
@@ -339,9 +339,9 @@ for (let i = 0; i < 5; i++) sum += i;
 // Nudo: sum → 10 | TS: number
 ```
 
-### 6.8 声明式精化（无需类型语法）
+### 6.8 声明式契约（无需类型语法）
 
-用户侧契约用 `@nudo:refine` 和 `*.nudo.js` 模板声明——不是 `interface` / `type`：
+用户侧契约用 `@nudo:contract` 和 `*.nudo.js` 模板声明——不是 `interface` / `type`：
 
 ```javascript
 // shapes.nudo.js
@@ -352,8 +352,8 @@ export const user = shape({ id: number().gt(0), name: string() });
 /// @nudo:import { positive, user } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
- * @nudo:refine return positive
+ * @nudo:contract x positive
+ * @nudo:contract return positive
  */
 function inc(x) {
   return x + 1;
@@ -409,7 +409,7 @@ debug "symbolic"  (number, number) => number
 - **对象/数组** — 对象、数组、元组、Array 方法、`@nudo:mock`。
 - **高级语言特性** — 闭包、递归预算、async/Promise、try-catch、类。
 - **工具链** — LSP、watch、`.d.ts`、Vite 插件、VS Code 扩展。
-- **精化 IR** — 模板/区间精化；源码契约 `@nudo:refine`。
+- **契约 IR** — 模板/区间契约；源码契约 `@nudo:contract`。
 - **Abs 代数（单轨）** — Term/Pred/Abs、算术核、`leqAbs`、generalize、`nudo check` / `nudo test` / `nudo contract` / `nudo export`、CheckJson、金标（recall = precision = 1.0）。
 - **调用预算** — depth/cycle/total 守卫，递归 check 不再栈溢出。
 - **Emit 往返** — 生成的 `.d.ts` 通过 `tsc --noEmit --strict`（`emit-tsc-roundtrip.test.ts`）。

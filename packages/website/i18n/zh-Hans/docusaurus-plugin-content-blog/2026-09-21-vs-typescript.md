@@ -9,7 +9,7 @@ tags: [nudo, typescript, type-inference]
 | | TypeScript | Nudo |
 |---|---|---|
 | 主要表面 | `.ts` + 标注 | 纯 `.js` |
-| 契约 | 类型语言 | `*.nudo.js` 构造器 + `@nudo:refine` |
+| 契约 | 类型语言 | `*.nudo.js` 构造器 + `@nudo:contract` |
 | 推断 | 来自标注 | 来自**执行**代码于 Abs 之上 |
 | CI 门禁 | `tsc --noEmit` | `nudo check` |
 | `.d.ts` | 模型本身 | Abs 的**有损投影** |

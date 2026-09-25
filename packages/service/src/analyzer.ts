@@ -1520,7 +1520,7 @@ function analyzeFileUncachedInner(
         code: "nudo:builtin-unknown",
         suggestions: [
           `Use @nudo:mock to define the type: @nudo:mock ${b.name} = stub().returns(...)`,
-          `Or use @nudo:refine return <constraint> to declare the return contract`,
+          `Or use @nudo:contract return <constraint> to declare the return contract`,
         ],
       });
     }
@@ -1849,7 +1849,7 @@ function analyzeFileUncachedInner(
           diagnostics.push({
             range: throwRange,
             severity: "warning",
-            message: `Function "${fn.name}" case "${directive.name}" may throw: ${formatShape(caseThrowsAbs)}. Consider adding a try-catch block or using @nudo:refine return <constraint>`,
+            message: `Function "${fn.name}" case "${directive.name}" may throw: ${formatShape(caseThrowsAbs)}. Consider adding a try-catch block or using @nudo:contract return <constraint>`,
             code: "nudo:may-throw",
           });
         }

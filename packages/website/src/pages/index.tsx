@@ -434,7 +434,7 @@ const adoptSteps = [
     tagDefault: "Contracts first",
     titleId: "homepage.adopt.day1.title",
     titleDefault: "Handwrite refine",
-    cmd: "lib.nudo.js  ·  @nudo:refine",
+    cmd: "lib.nudo.js  ·  @nudo:contract",
   },
   {
     tagId: "homepage.adopt.eco.tag",
@@ -1025,7 +1025,7 @@ function DemoSection() {
             </h3>
             <p>
               <Translate id="homepage.flow.cardBDesc">
-                Write `*.nudo.js` or `@nudo:refine` first. The same contract face guides
+                Write `*.nudo.js` or `@nudo:contract` first. The same contract face guides
                 implementation and constrains logic in `check`.
               </Translate>
             </p>
@@ -1363,7 +1363,7 @@ function AgentSection() {
             <code>
               {`Read https://nudojs.github.io/nudo/docs/reference/agents
 Primary gate: npx nudojs check <path>
-Contracts are *.nudo.js / @nudo:refine (alias @nudo:interface)
+Contracts are *.nudo.js / @nudo:contract
 Do not invent body-AST obligations. @nudo:case is debug-only.
 Entry params print as any; unknown = inference failed.`}
             </code>

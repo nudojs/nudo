@@ -30,7 +30,7 @@ Nudo does not force a single style of process:
 | Mode | Order | Typical fit |
 |------|--------|-------------|
 | **Logic first** | Write logic + call sites → optionally `contract --draft` → review → accept into `*.nudo.js` | Existing JS packages, migration, rich tests |
-| **Contracts first** | Write contract / `@nudo:refine` → implement under the same contract face | New APIs, public surfaces you want locked early |
+| **Contracts first** | Write contract / `@nudo:contract` → implement under the same contract face | New APIs, public surfaces you want locked early |
 
 Both modes meet on the **same Abs contract face** (`shape × term × pred × conf`). The checker validates that face; it does not invent types for you.
 

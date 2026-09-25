@@ -9,7 +9,7 @@ Honest positioning: Nudo is built to **replace TypeScript as the day-to-day type
 | | TypeScript | Nudo |
 |---|---|---|
 | Primary surface | `.ts` + annotations | Plain `.js` |
-| Contracts | Type language | `*.nudo.js` builders + `@nudo:refine` |
+| Contracts | Type language | `*.nudo.js` builders + `@nudo:contract` |
 | Inference | From annotations | From **executing** code on Abs |
 | CI gate | `tsc --noEmit` | `nudo check` |
 | `.d.ts` | The model | A **lossy projection** of Abs |

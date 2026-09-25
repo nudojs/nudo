@@ -132,7 +132,7 @@ pnpm run ci:version   # only on a throwaway branch — rewrites package.json ver
 | `@nudojs/cli/evaluator` removed | `import { … } from "@nudojs/service/evaluator"` |
 | TypeValue evaluator IR removed from production analysis | Consume Abs (`shape × term × pred × conf`); do not reintroduce TypeValue as a second IR |
 | `CallRecord` is Abs-only (`argAbs` / `resultAbs` / `throwsAbs`) | Stop reading `argTypes` TypeValue fields |
-| Body-slot “implicit shape” obligations removed (C0) | No evidence → `any` / call-site facts. **L1** contracts from `*.nudo.js` / `@nudo:refine` / call sites; **L2** entry may-throw still gates export boundaries |
+| Body-slot “implicit shape” obligations removed (C0) | No evidence → `any` / call-site facts. **L1** contracts from `*.nudo.js` / `@nudo:contract` / call sites; **L2** entry may-throw still gates export boundaries |
 | Interface tiers | `handwritten` = obligation · `generated` = fact + drift · `implicit` = display only |
 | **CLI verbs** | Current product surface: `check` (signatures/gate), `test` (cases), `contract` (print/draft/emit), `export` (`dts|guard|schema|standard|all`), `health`. Flags: `--from`, `test --freeze`, `export --out`, schema `--dialect zod`. |
 | Entry display | Unconstrained params = **`any`**; `unknown` = inference failure (not the unconstrained default) |
@@ -143,7 +143,7 @@ pnpm run ci:version   # only on a throwaway branch — rewrites package.json ver
 | Change | Migration |
 |--------|-----------|
 | **`T.*` directive grammar removed (breaking)** | Use constraint builders (`number()`, `lit(42)`, `shape({...})`, `union(...)`, …) or concrete literals in `@nudo:case` / `@nudo:as` / `@nudo:replace` / `@nudo:mock` / `@nudo:skip`. `parseTypeValueExpr` export removed — use `parseCaseArgExpr`. `serializeCaseArg` emits builders, not `T.*`. |
-| `@nudo:case` product role | **Debug / `nudo test` / LSP scenario only.** Contracts live in `*.nudo.js` / `@nudo:refine`. CLI **`test`** prints call-site observations (`call@L…`) and `debug "name"` witnesses — not `Case "…"` as the type product. |
+| `@nudo:case` product role | **Debug / `nudo test` / LSP scenario only.** Contracts live in `*.nudo.js` / `@nudo:contract`. CLI **`test`** prints call-site observations (`call@L…`) and `debug "name"` witnesses — not `Case "…"` as the type product. |
 | Class methods / CJS / `export default` sidecar keys | Use `Class.method` (**local declaration name**, not export alias), `Class_method`, nested objects, or local export names — `export { Local as Public }` binds `Local.method`, not `Public.method`. See `design-refine-derivation.md` |
 | Contract product name | **`nudo contract`** is the primary verb (print / `--draft` / `--emit`). |
 

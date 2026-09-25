@@ -84,7 +84,7 @@ term 与 pred 也是一等公民：`lit(value)` / `v(id)` 构造 term，`eq/ne/l
 | `absToString(a)` / `shapeToString(s)` | 调试渲染，含 `term=`。 |
 | `litValue(a)` | 若 Abs 是精确字面量，取出具体值。 |
 | `confJoin(a, b)` | 连接两个置信度（取更差的）。 |
-| `checkSource(source, opts?)` | CI 门禁：Abs 上的精化/Pred 蕴含——见 [Check](../guides/check.md)。 |
+| `checkSource(source, opts?)` | CI 门禁：Abs 上的契约/Pred 蕴含——见 [Check](../guides/check.md)。 |
 | `runTranspiled` / `callTranspiledExportFull` / `analyzeFn(…)` | Abs 原生求值入口（B-path）。 |
 | `generalizeFromAst(…)` | 内涵签名提取——`intension:` 行与 `A1` 形参的来源。 |
 

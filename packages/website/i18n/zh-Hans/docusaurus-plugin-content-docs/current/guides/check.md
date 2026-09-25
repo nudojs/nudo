@@ -7,7 +7,7 @@ description: nudo check —— Abs 上的 L1 显式契约门禁 + L2 入口 thro
 
 `nudo check` 是 Nudo 在 Abs 上的**门禁**。它执法：
 
-1. **L1 显式契约** —— 来自 `*.nudo.js` / `@nudo:refine` 的精化（Abs 上的 Pred 蕴含；`@nudo:interface` 是精确别名）
+1. **L1 显式契约** —— 来自 `*.nudo.js` / `@nudo:contract` 的约束（Abs 上的 Pred 蕴含）
 2. **L2 默认 JS 契约** —— **入口/导出**函数上未消化的 may-throw
 
 报告是 **Nudo 原生**的（`actual ⊭ expected`），不是 TypeScript 诊断的伪装。成功与失败都打印 signatures —— **不是静默**。
@@ -65,7 +65,7 @@ issues
 
 | 码 | 层 | 严重级别 | 含义 |
 |----|----|----------|------|
-| `nudo:constraint-violated` | L1 | error | 调用/返回 ⊭ `@nudo:refine`（标量界 / shape 字段） |
+| `nudo:constraint-violated` | L1 | error | 调用/返回 ⊭ `@nudo:contract`（标量界 / shape 字段） |
 | `nudo:assign-mismatch` | L1 | error | 赋值 ⊭ 原绑定 shape（`leqAbs`） |
 | `nudo:arg-structure` | L1 | error（显式契约）/ warning（body-promote） | HOF：实参不是可调用 `fn` / 元数不匹配。用法驱动的 body 提升是**警告建议**；只有显式关系契约才升级为 error |
 | `nudo:case-inconsistency` | L1 | error | `@nudo:case` 见证 ⊭ refine |
@@ -84,13 +84,13 @@ issues
 
 ## L1 —— 显式契约
 
-精化由 `@nudo:refine` 声明 —— 进入 Abs、参与代数的 Pred。
+契约由 `@nudo:contract` 声明 —— 进入 Abs、参与代数的 Pred。
 
 ```js
 /// @nudo:import { positive } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   return x;
@@ -103,7 +103,7 @@ needsPositive(-1);
 //   → use a value satisfying x > 0, or relax the precondition on x
 ```
 
-**`if` 不是精化。** 未声明 refine 时，clamp 式守卫接受越界输入：
+**`if` 不是契约。** 未声明 refine 时，clamp 式守卫接受越界输入：
 
 ```js
 function clamp(n, lo, hi) {
@@ -111,7 +111,7 @@ function clamp(n, lo, hi) {
   if (n > hi) return hi;
   return n;
 }
-clamp(-5, 0, 10);  // OK — 未声明 @nudo:refine
+clamp(-5, 0, 10);  // OK — 未声明 @nudo:contract
 ```
 
 Nudo **不**从 body AST 扫描发明必填 slot。

@@ -5,14 +5,14 @@
 import ms from "ms";
 
 /**
- * @nudo:refine return string
+ * @nudo:contract return string
  */
 export function formatAge(durationMs) {
   return ms(durationMs, { long: true });
 }
 
 /**
- * @nudo:refine return number
+ * @nudo:contract return number
  */
 export function parseAge(text) {
   return ms(text);

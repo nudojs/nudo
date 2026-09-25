@@ -2,7 +2,7 @@
 
 > Welcome back to JavaScript. Nudo executes your JS on Abs (`shape × term × pred × conf`) so you can observe intermediates and gate contracts sharper than declared types. Your JS stays JS.
 
-Nudo docs are dual-locale (en + zh-Hans). Product face: Day0 `nudo check` · Day1 `nudo contract` + `check` · ecosystem `nudo export`. `nudo test` is optional debug case reporting. Contracts are `*.nudo.js` / `@nudo:refine` (alias `@nudo:interface`). `@nudo:case` is debug-only. Entry unconstrained params display as `any`; `unknown` means inference failed.
+Nudo docs are dual-locale (en + zh-Hans). Product face: Day0 `nudo check` · Day1 `nudo contract` + `check` · ecosystem `nudo export`. `nudo test` is optional debug case reporting. Contracts are `*.nudo.js` / `@nudo:contract`. `@nudo:case` is debug-only. Entry unconstrained params display as `any`; `unknown` means inference failed.
 
 ## Docs (HTML)
 

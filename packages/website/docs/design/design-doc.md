@@ -130,7 +130,7 @@ formatAbs(a)                  // Lossless: shape, = term, where pred, #conf
 leqAbs(src, tgt)              // Assignability (the algebra's subtype check)
 ```
 
-Source-level contracts use `@nudo:refine` + `*.nudo.js` templates (constraint builders), not raw constructors.
+Source-level contracts use `@nudo:contract` + `*.nudo.js` templates (constraint builders), not raw constructors.
 
 ### 2.5 Operator Semantics (Abs-native surface)
 
@@ -264,7 +264,7 @@ Directives are structured comments that guide the engine. They use the `@nudo:` 
 | `@nudo:pure` | Mark function as pure for memoization |
 | `@nudo:skip` | Skip evaluation; an optional constraint-builder expression declares the return type (e.g. `@nudo:skip number()`) |
 | `@nudo:sample` | Reserved no-op (parsed, not consumed) |
-| `@nudo:refine` | Refinement contract: `@nudo:refine param name` / `@nudo:refine return name` (Pred enters Abs) |
+| `@nudo:contract` | Refinement contract: `@nudo:contract param name` / `@nudo:contract return name` (Pred enters Abs) |
 | `@nudo:env` | Declare runtime environment APIs (file-level `///` comment) |
 | `@nudo:mock-module` | Replace imported modules with mock files (file-level `///` comment) |
 | `@nudo:as` | Override the next statement's value type (line comment `//`) |
@@ -340,7 +340,7 @@ for (let i = 0; i < 5; i++) sum += i;
 
 ### 6.8 Declared Refinements (no type syntax)
 
-User-facing contracts are declared with `@nudo:refine` and `*.nudo.js` templates — not `interface` / `type`:
+User-facing contracts are declared with `@nudo:contract` and `*.nudo.js` templates — not `interface` / `type`:
 
 ```javascript
 // shapes.nudo.js
@@ -351,8 +351,8 @@ export const user = shape({ id: number().gt(0), name: string() });
 /// @nudo:import { positive, user } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
- * @nudo:refine return positive
+ * @nudo:contract x positive
+ * @nudo:contract return positive
  */
 function inc(x) {
   return x + 1;
@@ -408,7 +408,7 @@ debug "symbolic"  (number, number) => number
 - **Objects/arrays** — objects, arrays, tuples, Array methods, `@nudo:mock`.
 - **Advanced language** — closures, recursion budget, async/Promise, try-catch, classes.
 - **Tooling** — LSP, watch, `.d.ts`, Vite plugin, VS Code extension.
-- **Refined IR** — template/range refinements; source contracts via `@nudo:refine`.
+- **Refined IR** — template/range refinements; source contracts via `@nudo:contract`.
 - **Abs algebra (single-track)** — Term/Pred/Abs, arithmetic kernel, `leqAbs`, generalize, `nudo check` / `nudo test` / `nudo contract` / `nudo export`, CheckJson, gold gates (recall = precision = 1.0).
 - **Call budget** — depth/cycle/total guards so recursive check never stack-overflows.
 - **Emit round-trip** — generated `.d.ts` passes `tsc --noEmit --strict` (`emit-tsc-roundtrip.test.ts`).

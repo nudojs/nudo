@@ -5,7 +5,7 @@
 /// @nudo:import { name1 } from "./delay.nudo.js"
 
 /**
- * @nudo:refine s name1
+ * @nudo:contract s name1
  */
 export function tag(s) {
   return "[" + s + "]";

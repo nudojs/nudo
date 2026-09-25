@@ -103,7 +103,7 @@ issues
 
 | 层 | 来源 | 行为 |
 |----|------|------|
-| L1 显式 | `*.nudo.js` / `@nudo:refine`（别名 `@nudo:interface`） | 违例 → error |
+| L1 显式 | `*.nudo.js` / `@nudo:contract` | 违例 → error |
 | L2 默认 JS 契约 | **入口/导出**函数的运行时边界 | 未消化 may-throw → error（`nudo:entry-may-throw`）；`--ignore-throws` 过滤 |
 
 L2 **不**门禁内部 helper。`try`/`catch` 与 refine 可清除 L2。
@@ -223,7 +223,7 @@ nudo contract --draft <paths...> [--write] [--fn <name>] [--dry-run] [--from <pa
 
 **分层：**
 
-- `[handwritten]` —— 源码 `@nudo:refine` / 侧车绑定（产品术语：**contract**）
+- `[handwritten]` —— 源码 `@nudo:contract` / 侧车绑定（产品术语：**contract**）
 - `[generated]` —— 固化的 `@generated` 侧车段
 - `[implicit]` —— 调用点推断
 

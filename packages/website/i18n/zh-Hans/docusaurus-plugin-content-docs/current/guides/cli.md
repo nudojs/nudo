@@ -187,7 +187,7 @@ nudo export src/user.js --format all --out dist
 
 `--dialect` 当前接受 `zod`。Abs 上可表达的常数界 / `int` / 字符串长度界会落入 schema；落不了的 pred 保留在基类型上，并列在 `dropped preds` 注释里。
 
-`standard` 是生态互操作出口：生成模块实现 [Standard Schema](https://standardschema.dev) 的 `validate`，不依赖 Zod/Valibot。存在侧车 / `@nudo:refine` 契约时，参数校验器使用**契约域**（`<fn>_<param>`）；无契约时参数位取各调用点 Abs 的 **join**（不钉死单次字面量）。它是运行时挡板，**不能**替代 `nudo check`。
+`standard` 是生态互操作出口：生成模块实现 [Standard Schema](https://standardschema.dev) 的 `validate`，不依赖 Zod/Valibot。存在侧车 / `@nudo:contract` 契约时，参数校验器使用**契约域**（`<fn>_<param>`）；无契约时参数位取各调用点 Abs 的 **join**（不钉死单次字面量）。它是运行时挡板，**不能**替代 `nudo check`。
 
 `.d.ts` 与 schema 都是**单向、有损投影** —— Abs 才是真理源。export 是一次性出货命令，不接受 `--watch`。
 

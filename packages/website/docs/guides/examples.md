@@ -6,7 +6,7 @@ description: Practical Nudo examples — call-site observation, sidecar contract
 
 **You'll leave with:** how Nudo observes real call sites, how sidecar contracts gate obligations, and what still degrades to `unknown`.
 
-**Product path first.** Observation is `nudo check` signatures (call sites are evidence). Contracts are `*.nudo.js` / `@nudo:refine`. `@nudo:case` is a **debug witness** only — optional, not the contract product.
+**Product path first.** Observation is `nudo check` signatures (call sites are evidence). Contracts are `*.nudo.js` / `@nudo:contract`. `@nudo:case` is a **debug witness** only — optional, not the contract product.
 
 Every output block below is excerpted from a real engine run of the code above it (`nudo check` / `nudo test` header lines and the assertions summary are elided where noted). The repo's CI-pinned suite lives in [`docs/examples/`](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md) (`pnpm run verify:examples`); this guide browses the same engine by theme.
 
@@ -95,7 +95,7 @@ issues
       → use a value satisfying price > 0, or relax the precondition on price
 ```
 
-`if` guards are **not** refinements. Obligations come from the sidecar / `@nudo:refine`. See [Contracts](./contract.md) and [nudo check](./check.md).
+`if` guards are **not** refinements. Obligations come from the sidecar / `@nudo:contract`. See [Contracts](./contract.md) and [nudo check](./check.md).
 
 ### 3. Object shapes from call sites
 
@@ -269,6 +269,6 @@ Prefer concrete values or constraint builders (`number()`, `lit(42)`). Assertion
 | Directive | Role in this guide |
 |-----------|-------------------|
 | Call sites | Day 0 evidence (primary) |
-| `*.nudo.js` / `@nudo:refine` | Day 1 contracts (primary) |
+| `*.nudo.js` / `@nudo:contract` | Day 1 contracts (primary) |
 | `@nudo:env` / `@nudo:mock` | Environment & boundaries |
 | `@nudo:case` | Optional debug witnesses only |

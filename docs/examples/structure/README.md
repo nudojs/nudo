@@ -1,7 +1,7 @@
 # Structure — Abs leq
 
 结构检查来自**推断的 Abs 形状**（赋值）与**显式 shape 契约**（传参）。
-与 [`../constraints/`](../constraints/) 的精化互补：refine 管「值满足约束」，
+与 [`../constraints/`](../constraints/) 的契约互补：contract 管「值满足约束」，
 本目录管「形状可赋值 / 可传参」（Abs `leq` + 契约字段）。
 
 | 文件 | 诊断 | 演示 |
@@ -23,7 +23,7 @@
 
 - 右值 / 实参**多余 slot 合法**——只要合同需要的 slot 都齐；
 - **缺 slot 报错**——「需要什么」由**显式来源**给出：赋值看左值既有形状，
-  传参看 `@nudo:refine` / 侧车 shape。
+  传参看 `@nudo:contract` / 侧车 shape。
 
 | 形态 | 例 | nudo |
 |------|-----|------|
@@ -66,7 +66,7 @@ issues
 /// @nudo:import { xy } from "./xy.nudo.js"
 
 /**
- * @nudo:refine p xy
+ * @nudo:contract p xy
  */
 function readXY(p) { return p.x + p.y; }
 
@@ -86,14 +86,14 @@ issues
 
 要点：
 
-- **L1 shape 义务只来自声明**（`@nudo:refine` / 侧车），不是 body AST 扫描；
+- **L1 shape 义务只来自声明**（`@nudo:contract` / 侧车），不是 body AST 扫描；
 - **无契约不发明 shape 义务**：`readXY({x:1})` 在无 refine 时合法（调用点事实 / `any`）；
 - **L2 仍可能执法**：export 入口对 `any` 的危险操作可报 `nudo:entry-may-throw`；
 - **宽度子类型**：契约外的多余字段放行。
 
 ## 关联文档
 
-- 精化契约（值约束）：[`../constraints/README.md`](../constraints/README.md)
+- 契约（值约束）：[`../constraints/README.md`](../constraints/README.md)
 - `nudo check` 全貌：[`../../design/cli-semantics.md`](../../design/cli-semantics.md)
 - tsc 同逻辑对照：[`../vs-ts/README.md`](../vs-ts/README.md)
 - 契约模型（C0：义务只来自显式契约或调用点事实）：[`../../design/cli-semantics.md`](../../design/cli-semantics.md) §3

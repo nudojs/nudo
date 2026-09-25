@@ -1,19 +1,19 @@
-// 返回值契约：@nudo:refine return <constraint>
-// 与 @nudo:refine（前置）对偶；契约仍来自 .nudo.js 模板
+// 返回值契约：@nudo:contract return <constraint>
+// 与 @nudo:contract（前置）对偶；契约仍来自 .nudo.js 模板
 // 运行：pnpm run check docs/examples/constraints/return-contract.js
 
 /// @nudo:import { positive, percent } from "./delay.nudo.js"
 
 /**
- * @nudo:refine x positive
- * @nudo:refine return positive
+ * @nudo:contract x positive
+ * @nudo:contract return positive
  */
 function inc(x) {
   return x + 1;
 }
 
 /**
- * @nudo:refine return percent
+ * @nudo:contract return percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
@@ -21,10 +21,10 @@ function pct(n) {
 }
 
 /**
- * @nudo:refine return positive
+ * @nudo:contract return positive
  */
 function bad() {
-  return 0; // error: return value ⊭ @nudo:refine return positive
+  return 0; // error: return value ⊭ @nudo:contract return positive
 }
 
 inc(1);     // ok

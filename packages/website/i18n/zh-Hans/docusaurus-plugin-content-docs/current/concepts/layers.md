@@ -49,10 +49,10 @@ npx nudojs contract --draft ./src/math.js   # 可选：代码优先草稿
 npx nudojs check ./src/math.js
 ```
 
-侧车**函数**绑定必须是一等 `fn({ … }, …)` 契约。裸的 `number().gt(0)` 是**值级模板**（例如共享 `*.nudo.js` 里的 `export const positive = number().gt(0)`）——经 `@nudo:refine` 引用，或作为 `fn` 的参数槽；不能直接当函数契约导出。非 `fn` 形态的函数侧车绑定会被拒绝（`nudo:interface-load`）。
+侧车**函数**绑定必须是一等 `fn({ … }, …)` 契约。裸的 `number().gt(0)` 是**值级模板**（例如共享 `*.nudo.js` 里的 `export const positive = number().gt(0)`）——经 `@nudo:contract` 引用，或作为 `fn` 的参数槽；不能直接当函数契约导出。非 `fn` 形态的函数侧车绑定会被拒绝（`nudo:interface-load`）。
 
 显式契约只来自：
-- 侧车（`*.nudo.js`）/ `@nudo:refine`（别名 `@nudo:interface`）
+- 侧车（`*.nudo.js`）/ `@nudo:contract`
 - 分析器观察到的调用点事实（域证据）
 
 无显式契约时，契约退化为 JS 运行时边界：入口参数为 `any`，导出函数不得携带未消化 may-throw（L2）。Nudo **不会**从 body AST 扫描发明必填 slot。

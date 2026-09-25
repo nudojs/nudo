@@ -14,9 +14,9 @@ description: Glossary — Abs, any vs unknown, L1/L2, contract vs case, call@, c
 | **conf** | Abstraction confidence: `exact` / `path` / `widened` / `mock` / `partial` / `opaque`. |
 | **any** | Unconstrained JS value union — default for entry params without contracts. Developer refines. |
 | **unknown** | Inference failed / engine debt — **not** the same as `any`. |
-| **contract** | Product term for obligations: `*.nudo.js` sidecar / `@nudo:refine`. |
-| **`@nudo:refine`** | In-source refinement contract; constraint enters Abs as Pred. |
-| **`@nudo:interface`** | Exact alias of `@nudo:refine`. Not a separate product surface. |
+| **contract** | Product term for obligations: `*.nudo.js` sidecar / `@nudo:contract`. |
+| **`@nudo:contract`** | In-source refinement contract; constraint enters Abs as Pred. |
+| **`@nudo:contract`** | In-source contract; constraints enter Abs as Preds. |
 | **`@nudo:case`** | Debug witness for `nudo test` / LSP scenarios — **not** the contract product. |
 | **L1** | Explicit contract obligations (`actual ⊭ expected` → error). |
 | **L2** | Default JS runtime boundary: entry/export undigested may-throw (`nudo:entry-may-throw`). |

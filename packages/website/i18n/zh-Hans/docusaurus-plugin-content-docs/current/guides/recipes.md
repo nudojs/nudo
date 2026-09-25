@@ -84,7 +84,7 @@ npx nudojs export src/api.js --format schema --dialect zod --out dist/schema
 ```text
 Read https://nudojs.github.io/nudo/docs/reference/agents
 Then: npx nudojs check src/
-Contracts are *.nudo.js / @nudo:refine. Do not invent body-AST obligations.
+Contracts are *.nudo.js / @nudo:contract. Do not invent body-AST obligations.
 @nudo:case is debug-only.
 ```
 

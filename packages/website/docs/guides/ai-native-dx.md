@@ -36,7 +36,7 @@ Nudge for agents: **do not trust declarations. Run `nudo check --json`. The `act
   "expected": "ms > 0",
   "actions": [
     { "kind": "callsite", "label": "use a value satisfying the constraint", "hint": "ms > 0" },
-    { "kind": "relax", "label": "relax the precondition (edit *.nudo.js / @nudo:refine)" },
+    { "kind": "relax", "label": "relax the precondition (edit *.nudo.js / @nudo:contract)" },
     { "kind": "draft", "command": "nudo contract --draft", "label": "emit a sidecar draft you can edit" }
   ]
 }

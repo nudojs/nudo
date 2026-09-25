@@ -5,7 +5,7 @@
  *   唯一读取口，来源标注（handwritten / generated / implicit）随值返回。
  *
  * 来源三层（合并序 handwritten > generated > implicit，§4/§11）：
- * - handwritten：源码 `@nudo:refine`/`@nudo:interface` 行（复用 refine.ts 的
+ * - handwritten：源码 `@nudo:contract`/`@nudo:contract` 行（复用 refine.ts 的
  *   extractRefinesFromSource / extractRefineReturnFromSource）∪ 侧车同名**手写**
  *   fn() 绑定。同名同参取合取 and()（§2.1：侧车 x>0 + 源码 x>1 → 有效契约
  *   取合取）；常数界交叉矛盾（x>0 ∧ x<0）→ conflict 标记，由调用方报

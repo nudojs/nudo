@@ -145,7 +145,7 @@ export function actionsForIssue(i: {
         },
         {
           kind: "relax",
-          label: "relax the precondition (edit *.nudo.js / @nudo:refine)",
+          label: "relax the precondition (edit *.nudo.js / @nudo:contract)",
           ...(i.expected ? { hint: i.expected } : {}),
         },
         draft,

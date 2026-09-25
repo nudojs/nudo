@@ -17,7 +17,7 @@ Nudo 的目标是：**在 JavaScript 优先的代码库里，替代 TypeScript �
 |---|---|---|
 | **主表面** | `.ts` + 类型标注 | 纯 `.js`（传入 `.ts` 会剥掉类型语法） |
 | **类型模型** | 声明式结构类型 | **Abs**（`shape × term × pred × conf`），可计算 |
-| **契约** | `interface` / `type` 语言 | `*.nudo.js` 构建器（`fn` / `shape` / `number().gt(0)`）+ 可选 `@nudo:refine`（别名 `@nudo:interface`） |
+| **契约** | `interface` / `type` 语言 | `*.nudo.js` 构建器（`fn` / `shape` / `number().gt(0)`）+ 可选 `@nudo:contract` |
 | **推断** | 标注 + 局部推断 | **在符号 Abs 上执行代码**（B-path） |
 | **CI 门禁** | `tsc --noEmit` | `nudo check`（Abs 上的 `actual ⊭ expected`；成功也打印 signatures） |
 | **观察命令** | （无 —— hover） | 观察是 check/test/IDE 输出 |
@@ -48,7 +48,7 @@ Microsoft 自己的 [TypeScript Design Goals](https://github.com/microsoft/TypeS
 以下条件**同时**成立时，优先 Nudo：
 
 1. **包是 JS 优先**，不想为了类型再养第二套 IR（`.ts` + 标注）。
-2. **行为比声明形状更重要**：分支、字符串代数、循环、精化比「结构是否匹配 interface」更关键。
+2. **行为比声明形状更重要**：分支、字符串代数、循环、契约比「结构是否匹配 interface」更关键。
 3. **契约是产品要求**：CI 要 `nudo check`——侧车 L1 界/shape 义务 + 导出上 L2 入口 may-throw，而不是 body AST 扫描。
 4. **拒绝第二门类型语言**：契约是类 JSON 的构建器，不是 `interface` / 映射 / 条件类型。
 
@@ -74,7 +74,7 @@ Microsoft 自己的 [TypeScript Design Goals](https://github.com/microsoft/TypeS
 | 打开普通 `.js` 即有 hover / inlay | LSP + `package.json#nudo.analysis.mode`（默认 `exports`；可 `all` / `directives`） |
 | Day-0 观察 | `nudo check` 签名 + `nudo test` 用例（无 `infer` 动词） |
 | CI 类型门禁 | `nudo check`——error 级诊断即退出码 1（L1 + 未 ignore 的 L2） |
-| 显式契约 | `*.nudo.js` + `@nudo:refine`；手写 = L1 义务 |
+| 显式契约 | `*.nudo.js` + `@nudo:contract`；手写 = L1 义务 |
 | 入口 throws | L2 默认 error（`nudo:entry-may-throw`）；`--ignore-throws` 过滤 |
 | 生成事实 | `nudo contract --emit` → `@generated` 段（drift，不静默改写义务） |
 | npm / 编辑器类型 | `nudo export --format dts`——单向投影 |
@@ -99,7 +99,7 @@ needsPositive(-1); // tsc 允许
 /// @nudo:import { positive } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function needsPositive(x) {
   return x > 0 ? x : 0;

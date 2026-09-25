@@ -54,12 +54,12 @@
 
 样例：`04-entry-throws.js` · `l2-export-any.js`
 
-## 5. 返回精化 — `return 0` under `positive`
+## 5. 返回契约 — `return 0` under `positive`
 
 | | |
 |---|---|
 | **TS** | 返回 `number` 即过；`0` 合法 |
-| **Nudo** | `return value ⊭ @nudo:refine return positive` · `actual: 0` · `expected: return > 0` |
+| **Nudo** | `return value ⊭ @nudo:contract return positive` · `actual: 0` · `expected: return > 0` |
 | **为何好修** | 前置/返回对偶，同一套 Pred 语言 |
 
 样例：`05-return-refine.js`

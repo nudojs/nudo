@@ -14,9 +14,8 @@ description: 术语表 —— Abs、any vs unknown、L1/L2、contract vs case、
 | **conf** | 抽象置信度：`exact` / `path` / `widened` / `mock` / `partial` / `opaque`。 |
 | **any** | 无约束的 JS 值并集 —— 无契约入口参数的默认。开发者负责细化。 |
 | **unknown** | 推导失败 / 引擎债 —— **不是** `any` 的同义词。 |
-| **contract** | 义务的产品术语：`*.nudo.js` 侧车 / `@nudo:refine`。 |
-| **`@nudo:refine`** | 源码内精化契约；约束以 Pred 进入 Abs。 |
-| **`@nudo:interface`** | `@nudo:refine` 的精确别名。不是独立产品面。 |
+| **contract** | 义务的产品术语：`*.nudo.js` 侧车 / `@nudo:contract`。 |
+| **`@nudo:contract`** | 源码内契约；约束以 Pred 进入 Abs。 |
 | **`@nudo:case`** | `nudo test` / LSP 场景的调试见证 —— **不是**契约产品。 |
 | **L1** | 显式契约义务（`actual ⊭ expected` → error）。 |
 | **L2** | 默认 JS 运行时边界：入口/导出未消化 may-throw（`nudo:entry-may-throw`）。 |

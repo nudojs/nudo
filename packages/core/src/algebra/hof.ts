@@ -18,7 +18,7 @@ import type { AstEnv } from "./ast-env.ts";
 /**
  * 关系来源标记：P4 豁免与 diagnostics 依赖它，禁止隐式猜。
  * - promote：使用驱动提升（generalize symbolic / instantiate 局部）
- * - refine：@nudo:refine 契约
+ * - refine：@nudo:contract 契约
  * - relationFn：harvest/mock/测试直接写入 fnRels 时的预留来源（P4 error 路径）
  */
 export type RelSource = "promote" | "refine" | "relationFn";

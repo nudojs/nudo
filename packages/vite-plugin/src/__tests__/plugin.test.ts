@@ -16,7 +16,7 @@ describe("vite-plugin-nudo", () => {
     expect(result).toBeNull();
   });
 
-  it("analyzes files that only declare @nudo:refine (gate aligned with LSP)", async () => {
+  it("analyzes files that only declare @nudo:contract (gate aligned with LSP)", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-"));
     try {
       writeFileSync(
@@ -27,7 +27,7 @@ describe("vite-plugin-nudo", () => {
       const source = `/// @nudo:import { positive } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   return x;

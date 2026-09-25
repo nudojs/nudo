@@ -243,7 +243,7 @@ Constraint-builder forms (`number()`, `lit(...)`, `shape({...})`, `union(...)`, 
 
 ## Diagnostics
 
-Type errors (failed `@nudo:refine` assertions, unreachable code, …) are available as LSP diagnostics in both directions:
+Type errors (failed `@nudo:contract` assertions, unreachable code, …) are available as LSP diagnostics in both directions:
 
 - **Push**: `textDocument/publishDiagnostics` after each analysis
 - **Pull**: `textDocument/diagnostic` on demand

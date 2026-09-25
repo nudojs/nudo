@@ -409,8 +409,7 @@ connection.onHover((params) => {
 
 /** LSP-G7：`@nudo:` 指令补全（注释上下文 / `@` 触发） */
 const NUDO_DIRECTIVE_COMPLETIONS: Array<{ label: string; detail: string; insert?: string }> = [
-  { label: "@nudo:refine", detail: "L1 contract — param / return refinement", insert: "@nudo:refine " },
-  { label: "@nudo:interface", detail: "Alias of @nudo:refine", insert: "@nudo:interface " },
+  { label: "@nudo:contract", detail: "L1 contract — param / return obligation", insert: "@nudo:contract " },
   { label: "@nudo:case", detail: "Debug witness (nudo test / LSP only)", insert: '@nudo:case "' },
   { label: "@nudo:as", detail: "Override next statement type", insert: "@nudo:as " },
   { label: "@nudo:replace", detail: "Replace sub-expression type", insert: "@nudo:replace " },
@@ -1051,18 +1050,17 @@ connection.onCodeAction((params) => {
         }
       }
 
-      // A6：refine 违例 → 放宽侧车契约（仅 constraint 类诊断 + suggestion 命中）
+      // A6：契约违例 → 放宽侧车契约（仅 constraint 类诊断 + suggestion 命中）
       const sug = data.suggestions?.[0] ?? "";
       const loosen = sug.match(
         /Loosen the handwritten contract for\s+(\w+)\s*\((\w+):\s*([^)]+)\)/i,
       ) ?? sug.match(/放宽\s+(\w+)\s*的前置/) ?? sug.match(/改用满足\s+(.+?)\s*的/);
       const relaxableCodes = new Set([
         "nudo:constraint-violated",
-        "nudo:refine-violated",
         "nudo:domain-exceeds",
         "nudo:interface-domain-exceeds",
         "constraint-violated",
-        "refine",
+        "contract",
       ]);
       // missing-slot 只补字段，不挂「放宽侧车」——避免剥掉无关数值谓词
       const codeStr = String(diag.code ?? "");

@@ -16,7 +16,7 @@ Nudo 在抽象值上**执行**你的 JavaScript，报告代码真实计算出什
 | 你写 | Nudo 做 |
 |------|---------|
 | 普通 `.js` + 调用点 | 观察真实行为并打印签名 |
-| 可选 `*.nudo.js` / `@nudo:refine` | 门禁义务（`actual ⊭ expected`） |
+| 可选 `*.nudo.js` / `@nudo:contract` | 门禁义务（`actual ⊭ expected`） |
 | 什么都不写 | 仍门禁导出 may-throw（L2） |
 
 **没有第二套类型语言。** 契约就是普通 JS 模块 + `number().gt(0)` 这类构造器。
@@ -86,7 +86,7 @@ nudo check calc.js --abs --assume "x>0"
 
 ## 3–6 分钟 —— Day 1：声明一条义务
 
-契约写在源码旁的侧车（`calc.nudo.js`）或函数上的 `@nudo:refine`。只有一种形态，构造器：
+契约写在源码旁的侧车（`calc.nudo.js`）或函数上的 `@nudo:contract`。只有一种形态，构造器：
 
 ```javascript verify-sidecar
 import { number, fn } from "@nudojs/core";
@@ -121,7 +121,7 @@ issues
 | `expected:` | 契约 Pred（不是类型名） |
 | `fix:` | 一条可执行的下一步命令 |
 
-`if` **不是**精化。义务只来自你接受的声明。
+`if` **不是**契约。义务只来自你接受的声明。
 
 ## 6–8 分钟 —— 产品命令面
 

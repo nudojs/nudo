@@ -102,7 +102,7 @@ issues
 
 违例按调用点上报。修正调用（或放宽契约）后 `check` 通过——仍会打印签名。
 
-`if` 守卫**不是** refinement。显式契约只来自侧车 / `@nudo:refine`（别名 `@nudo:interface`）。没有它们时，L2 仍门禁导出上的未消化 may-throw（入口参数为 `any`）。
+`if` 守卫**不是** refinement。显式契约只来自侧车 / `@nudo:contract`。没有它们时，L2 仍门禁导出上的未消化 may-throw（入口参数为 `any`）。
 
 ## 选项
 

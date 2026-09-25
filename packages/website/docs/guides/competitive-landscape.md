@@ -55,7 +55,7 @@ If you want Flow's dialect and its safety defaults, use Flow. If you want JS tha
 
 Hegel (`JSMonk/hegel` on GitHub) was the closest conceptual neighbor: **strong inference without annotations**, plus a Typed Errors idea. **It was archived on 2024-01-29**; its README states development has stopped.
 
-That leaves a real hole: the “infer a type gate for untyped JS without asking authors to write a type language” niche is **unfilled by an actively maintained tool**. Nudo occupies that hole with a different center of gravity — Abs algebra, explicit sidecar contracts (`*.nudo.js` / `@nudo:refine`), and a CI gate that prints signatures and cases.
+That leaves a real hole: the “infer a type gate for untyped JS without asking authors to write a type language” niche is **unfilled by an actively maintained tool**. Nudo occupies that hole with a different center of gravity — Abs algebra, explicit sidecar contracts (`*.nudo.js` / `@nudo:contract`), and a CI gate that prints signatures and cases.
 
 ## vs schema libraries (Zod, ArkType, TypeBox, Valibot)
 
@@ -102,7 +102,7 @@ Stay elsewhere when **any** of these dominates:
 
 LLM type-inference research (e.g. SCAM 2026) fits a **hybrid** loop, not a replacement for a deterministic gate:
 
-1. **LLM drafts** — contracts (`*.nudo.js`), `@nudo:refine`, or `@nudo:case` scenarios from code or prose.
+1. **LLM drafts** — contracts (`*.nudo.js`), `@nudo:contract`, or `@nudo:case` scenarios from code or prose.
 2. **Nudo checks** — `nudo check` / `nudo test` decide with the Abs algebra (no sampling at CI time).
 3. **Repair** — machine-readable `check --json` (`actual` / `expected` / `fix:` / `actions[]`) feeds the next draft round.
 

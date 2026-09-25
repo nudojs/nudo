@@ -52,7 +52,7 @@ export function diagnosticsLevelForFile(filePath: string): DiagnosticsLevel {
 }
 
 export function hasNudoDirectives(source: string): boolean {
-  return /@nudo:(case|mock|pure|skip|sample|refine|interface|import|env|mock-module|as|replace)\b/.test(source);
+  return /@nudo:(case|mock|pure|skip|sample|contract|import|env|mock-module|as|replace)\b/.test(source);
 }
 
 /** 去掉注释与字符串字面量，避免 `// export …` 等散文触发 exports 门禁 */

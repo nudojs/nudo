@@ -16,7 +16,7 @@ Nudo is designed to be **agent-actionable**: stable verbs, stable diagnostic IDs
 ```text
 Read https://nudojs.github.io/nudo/agents.md and set up Nudo in this project.
 Primary gate: npx nudojs check <path>.
-Contracts are *.nudo.js / @nudo:refine (alias @nudo:interface).
+Contracts are *.nudo.js / @nudo:contract.
 Do not invent body-AST obligations. @nudo:case is debug-only.
 Entry params print as any; unknown = inference failed.
 Leaving tsc: npx nudojs migrate status|strip|verify|retire (exit is retire).
@@ -29,7 +29,7 @@ Leaving tsc: npx nudojs migrate status|strip|verify|retire (exit is retire).
 |------|--------|
 | Verbs | `check` \| `test` \| `contract` \| `export` \| `health` \| `migrate` only |
 | No `infer` verb | Observation = check signatures + IDE |
-| Contracts | Sidecar / `@nudo:refine`; `@nudo:interface` is alias |
+| Contracts | Sidecar / `@nudo:contract`; `@nudo:contract` is alias |
 | `@nudo:case` | Debug / `nudo test` / LSP only |
 | any vs unknown | Entry `any`; `unknown` = inference failed |
 | check vs export | check validates; export projects (lossy) |
@@ -84,7 +84,7 @@ Each `issues[]` entry may carry **`actions[]`** (AI1) — prefer these over pars
   "expected": "ms > 0",
   "actions": [
     { "kind": "callsite", "label": "use a value satisfying the constraint", "hint": "ms > 0" },
-    { "kind": "relax", "label": "relax the precondition (edit *.nudo.js / @nudo:refine)" },
+    { "kind": "relax", "label": "relax the precondition (edit *.nudo.js / @nudo:contract)" },
     { "kind": "draft", "command": "nudo contract --draft", "label": "emit a sidecar draft you can edit" }
   ]
 }

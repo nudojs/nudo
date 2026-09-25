@@ -17,10 +17,10 @@ Machine-readable face: `nudo check --json`. Agents: see [Agents](/docs/reference
 |--|--|
 | **Meaning** | Call/return does not satisfy an explicit contract Pred |
 | **Layer** | L1 error |
-| **Source** | `*.nudo.js` / `@nudo:refine` |
+| **Source** | `*.nudo.js` / `@nudo:contract` |
 
 ```javascript
-// needsPositive with @nudo:refine x positive
+// needsPositive with @nudo:contract x positive
 needsPositive(-1);
 // actual:   -1  #exact
 // expected: x > 0
@@ -114,7 +114,7 @@ Persisted `@generated` sidecar segment ≠ today's recomputed call-site domain o
 
 ### `nudo:interface-entry-only` {#nudo-interface-entry-only}
 
-Exported function has **no contract root** (no handwritten / generated sidecar or `@nudo:refine`) **and no call-site domain** (only synthesized `entry@` with `any` params). **Info** — coverage/contract gap, not a gate failure. Fix: add a contract (`*.nudo.js` / `@nudo:refine`) or exercise the export from usage sites (`nudo check --from`).
+Exported function has **no contract root** (no handwritten / generated sidecar or `@nudo:contract`) **and no call-site domain** (only synthesized `entry@` with `any` params). **Info** — coverage/contract gap, not a gate failure. Fix: add a contract (`*.nudo.js` / `@nudo:contract`) or exercise the export from usage sites (`nudo check --from`).
 
 ### `nudo:dual-entry` {#nudo-dual-entry}
 

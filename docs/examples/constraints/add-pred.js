@@ -1,5 +1,5 @@
 // Pred 如何流入代数（add × refine）
-// 形态：@nudo:refine <param> <constraint>
+// 形态：@nudo:contract <param> <constraint>
 // 运行：
 //   pnpm run check docs/examples/constraints/add-pred.js
 //   pnpm run check docs/examples/constraints/add-pred.js
@@ -10,7 +10,7 @@
 const add = (a, b) => a + b;
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function scale(x) {
   // x 带 Pred: self>0 实例化到 x → x>0
@@ -19,7 +19,7 @@ function scale(x) {
 }
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function twice(x) {
   const c = add(x, 1); // c ↦ x+1, c>1

@@ -2,7 +2,7 @@
  * nudo:interface-domain-exceeds 端到端（T10b）：
  *
  * - analyzer 注入消费区接线：externalCallRecords → 归属守卫 → 手写契约
- *   （源码 @nudo:refine / 侧车同名绑定，defaultLoadModule 真实读盘）→
+ *   （源码 @nudo:contract / 侧车同名绑定，defaultLoadModule 真实读盘）→
  *   字面量域证据执法；恰一条 error 诊断，range 落在被调函数声明处
  * - generated / 无契约 / 证据合规 / 非本文件归属记录 → 零新诊断
  * - real-package zero-FP：真实包（ms / kleur）注入记录回灌 analyzeFile，
@@ -64,7 +64,7 @@ describe("nudo:interface-domain-exceeds（analyzer 注入消费区接线）", ()
     }
   });
 
-  it("源码 @nudo:refine 手写契约（std 侧车经 defaultLoadModule 读盘）→ 执法", () => {
+  it("源码 @nudo:contract 手写契约（std 侧车经 defaultLoadModule 读盘）→ 执法", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-dom-"));
     try {
       writeFileSync(
@@ -73,7 +73,7 @@ describe("nudo:interface-domain-exceeds（analyzer 注入消费区接线）", ()
       );
       const libSrc = `/// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function area(x) {
   return x;

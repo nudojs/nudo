@@ -31,4 +31,4 @@ TypeScript 的默认叙事是「先标注」。Nudo 的默认叙事是**先观�
 
 ## 下一步
 
-Day 1 是契约：`*.nudo.js` / `@nudo:refine`，然后是 `nudo check` 的 L1 门禁（`actual ⊭ expected`）。见 [nudo contract](/docs/guides/contract)。
+Day 1 是契约：`*.nudo.js` / `@nudo:contract`，然后是 `nudo check` 的 L1 门禁（`actual ⊭ expected`）。见 [nudo contract](/docs/guides/contract)。

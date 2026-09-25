@@ -6,7 +6,7 @@ description: "Syntax reference for all @nudo: directives — case, mock, pure, s
 
 Directives are structured comments that control how Nudo analyzes your code. They use the `@nudo:` namespace to avoid conflicts with JSDoc and other tools. Place directives in block comments immediately above the function they apply to.
 
-The **contract product** (refinement obligations) lives primarily in sidecar files — `*.nudo.js` modules auto-bound to same-name exports of your source file — with `@nudo:refine` as the in-source form (`@nudo:interface` is an exact alias). See [@nudo:refine](#nudorefine--refinement-contract) and the [`nudo contract`](../guides/contract.md) command.
+The **contract product** (refinement obligations) lives primarily in sidecar files — `*.nudo.js` modules auto-bound to same-name exports of your source file — with `@nudo:contract` as the in-source form. See [@nudo:contract](#nudocontract--source-contract) and the [`nudo contract`](../guides/contract.md) command.
 
 ## Directive Syntax
 
@@ -41,7 +41,7 @@ Both forms are parsed identically — in particular, the single-line rule for mo
 
 ## @nudo:case — Debug Witnesses
 
-Cases are **debug witnesses**: concrete inputs Nudo executes the function with for scenario runs. They are **not** the contract product — obligations live in `*.nudo.js` sidecars / `@nudo:refine` (see [@nudo:refine](#nudorefine--refinement-contract)). `@nudo:case` remains supported for optional `nudo test` assertions and LSP scenario switching. Cases use concrete arguments or constraint builders.
+Cases are **debug witnesses**: concrete inputs Nudo executes the function with for scenario runs. They are **not** the contract product — obligations live in `*.nudo.js` sidecars / `@nudo:contract` (see [@nudo:contract](#nudocontract--source-contract)). `@nudo:case` remains supported for optional `nudo test` assertions and LSP scenario switching. Cases use concrete arguments or constraint builders.
 
 Provide named execution cases. Each case defines inputs (concrete or symbolic) for Nudo to run the function with.
 
@@ -141,8 +141,8 @@ Skip abstract interpretation of the function body: the engine does not evaluate 
 ### Scope
 
 - **No body evaluation.** The declared type (or `any`) becomes the signature return; entry may-throw (L2) is not evaluated for a skipped body.
-- **Parameter obligations stay.** `@nudo:refine` preconditions still gate call sites, and the parameter display still comes from the handwritten contract — `nudo check` reports `needsPositive(x: number) => any` for a skipped `needsPositive` with `@nudo:refine x positive`.
-- **Return contracts still checked.** `@nudo:skip lit(0)` under `@nudo:refine return positive` reports `nudo:constraint-violated`.
+- **Parameter obligations stay.** `@nudo:contract` preconditions still gate call sites, and the parameter display still comes from the handwritten contract — `nudo check` reports `needsPositive(x: number) => any` for a skipped `needsPositive` with `@nudo:contract x positive`.
+- **Return contracts still checked.** `@nudo:skip lit(0)` under `@nudo:contract return positive` reports `nudo:constraint-violated`.
 
 ### Examples
 
@@ -196,11 +196,11 @@ function unannotatedHeavy(x) {
 
 ---
 
-## @nudo:refine — Refinement Contract {#nudorefine--refinement-contract}
+## @nudo:contract — Source Contract {#nudocontract--source-contract}
 
 Attach a refinement contract to a parameter or the return value. The constraint enters Abs as a Pred and **participates in algebra** (`x>0` ⇒ `x+1>1`) — it is not just a call-site gate.
 
-`@nudo:interface` is an **exact alias** of `@nudo:refine` (both parse to the same in-source refinement). The **product name** is **contract** (sidecar `*.nudo.js` / `@nudo:refine`); some diagnostic codes still carry the historical `interface` token (`nudo:interface-param-mismatch`, …).
+The **product name** is **contract** (sidecar `*.nudo.js` / `@nudo:contract`); some diagnostic codes still carry the historical `interface` token (`nudo:interface-param-mismatch`, …).
 
 ### Main path: sidecar auto-binding
 
@@ -271,9 +271,8 @@ Sidecars are real JS modules: they may import builders from `@nudojs/core` and c
 ### In-source form
 
 ```text
-@nudo:refine <param> <constraint>
-@nudo:refine return <constraint>
-@nudo:interface <param> <constraint>   // alias
+@nudo:contract <param> <constraint>
+@nudo:contract return <constraint>
 ```
 
 - **param** — Parameter name, or the literal `return` for the postcondition
@@ -285,15 +284,15 @@ Sidecars are real JS modules: they may import builders from `@nudojs/core` and c
 /// @nudo:import { positive, delay } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
- * @nudo:refine return positive
+ * @nudo:contract x positive
+ * @nudo:contract return positive
  */
 function inc(x) {
   return x + 1;
 }
 
 /**
- * @nudo:refine ms delay
+ * @nudo:contract ms delay
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -314,7 +313,7 @@ export const user = shape({
 });
 
 /**
- * @nudo:refine u user
+ * @nudo:contract u user
  */
 function register(u) {
   return `${u.id}:${u.name}`;
@@ -325,7 +324,7 @@ function register(u) {
 
 ## @nudo:import — Constraint Templates
 
-Import constraint templates from a `*.nudo.js` module for use with `@nudo:refine`. This is a **file-level** directive using triple-slash comments.
+Import constraint templates from a `*.nudo.js` module for use with `@nudo:contract`. This is a **file-level** directive using triple-slash comments.
 
 ### Syntax
 
@@ -334,8 +333,8 @@ Import constraint templates from a `*.nudo.js` module for use with `@nudo:refine
 /// @nudo:import * as ns from "./shapes.nudo.js"
 ```
 
-- **named** — bind exported template names used by `@nudo:refine`
-- **namespace** — `@nudo:import * as ns from "…"` expands to `ns.exportName` refs in `@nudo:refine`
+- **named** — bind exported template names used by `@nudo:contract`
+- **namespace** — `@nudo:import * as ns from "…"` expands to `ns.exportName` refs in `@nudo:contract`
 
 ### Example
 
@@ -343,7 +342,7 @@ Import constraint templates from a `*.nudo.js` module for use with `@nudo:refine
 /// @nudo:import { positive } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function inc(x) {
   return x + 1;
@@ -545,8 +544,8 @@ const result = a + b;
 | `@nudo:pure` | (no args) | Mark function pure — evaluator memoizes call results by args |
 | `@nudo:skip` | `[returnsExpr]` | Skip evaluation, use existing type info |
 | `@nudo:sample` | `N` | Reserved no-op (parsed, not consumed) |
-| `@nudo:refine` / `@nudo:interface` | `param constraint` / `return constraint` | In-source refinement contract (alias pair; main path is the `*.nudo.js` sidecar auto-binding) |
-| `@nudo:import` | `{ name } from "spec"` (file-level `///`) | Import `*.nudo.js` constraint templates for `@nudo:refine` |
+| `@nudo:contract` | `param constraint` / `return constraint` | In-source contract (main path is the `*.nudo.js` sidecar auto-binding) |
+| `@nudo:import` | `{ name } from "spec"` (file-level `///`) | Import `*.nudo.js` constraint templates for `@nudo:contract` |
 | `@nudo:env` | `name1, name2` (file-level `///`) | Declare runtime environment APIs |
 | `@nudo:mock-module` | `"module" from "path"` (file-level `///`) | Replace imported modules with mocks |
 | `@nudo:as` | `typeValueExpr` (line comment `//`) | Override next statement's value type |

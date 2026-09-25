@@ -13,7 +13,7 @@ function add(a, b) {
   return a + b;
 }
 function needsPositive(x) {
-  /** @nudo:refine x positive */
+  /** @nudo:contract x positive */
   return x + 1;
 }
 `;
@@ -39,7 +39,7 @@ describe("checkSource whole-file memo", () => {
     const src = `
 /// @nudo:import { positive } from "./shapes.nudo.js"
 function needsPositive(x) {
-  /** @nudo:refine x positive */
+  /** @nudo:contract x positive */
   return x + 1;
 }
 `;
@@ -67,7 +67,7 @@ function needsPositive(x) {
       spec.includes("std") ? STD_NUDO_SRC : undefined;
     const src = `${withStdImport(`
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -84,7 +84,7 @@ const bad = needsPositive(-1);
       spec.includes("std") ? STD_NUDO_SRC : undefined;
     const src = `${withStdImport(`
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;

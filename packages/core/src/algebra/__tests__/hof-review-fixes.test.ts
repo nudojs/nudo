@@ -85,7 +85,7 @@ describe("P2: refine contract wins, no re-promotion", () => {
   it("items refined as array → entryShapes source=refine, not promote", () => {
     const src = withStdImport(`
       /**
-       * @nudo:refine items positives
+       * @nudo:contract items positives
        */
       export function processItems(items, transform, filter) {
         return items.filter(filter).map(transform);

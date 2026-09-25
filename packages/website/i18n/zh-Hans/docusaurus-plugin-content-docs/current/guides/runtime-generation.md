@@ -22,7 +22,7 @@ nudo export <file> [--format dts|guard|schema|standard|all] [--dialect zod] [--o
 
 | 格式 | 产物 | 投影输入 |
 |------|------|----------|
-| `standard` | `<fn>.nudo.standard.ts` — Standard Schema v1 模块（不依赖 Zod） | **侧车 / `@nudo:refine` 契约域**，否则为观测调用点 Abs 的 join |
+| `standard` | `<fn>.nudo.standard.ts` — Standard Schema v1 模块（不依赖 Zod） | **侧车 / `@nudo:contract` 契约域**，否则为观测调用点 Abs 的 join |
 | `dts` | TypeScript 声明（默认格式） | 调用点 case：参数放宽，返回保持精度 |
 | `guard` | 零依赖 `typeof` 守卫函数 | 调用点 Abs 的 join |
 | `schema` | `--dialect`（目前 `zod`）的 schema 源码注释 | 逐 case Abs（`call@L…` / `entry@L…`） |
@@ -54,7 +54,7 @@ nudo export src/api/users.js --format standard --out dist
 # 写入 dist/createUser.nudo.standard.ts
 ```
 
-生成的模块为每个参数导出一个校验器（`<fn>_<param>`），另有返回值校验器——存在返回契约时命名为 **`<fn>Return`**（仅当无契约或只有参数契约时才用 `<fn>Output`）。**契约精化直接烘焙进校验器**——`age: number().ge(0)` 变成 `numBound { op: "ge", n: 0 }` 检查，`lit(42)` 契约则钉死确切值：
+生成的模块为每个参数导出一个校验器（`<fn>_<param>`），另有返回值校验器——存在返回契约时命名为 **`<fn>Return`**（仅当无契约或只有参数契约时才用 `<fn>Output`）。**契约约束直接烘焙进校验器**——`age: number().ge(0)` 变成 `numBound { op: "ge", n: 0 }` 检查，`lit(42)` 契约则钉死确切值：
 
 ```ts
 // dist/createUser.nudo.standard.ts（节选）

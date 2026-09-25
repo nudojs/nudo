@@ -50,7 +50,7 @@ function makeFiles(files: Record<string, string>) {
 const POS_SRC = `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function area(x) {
   return x;
@@ -277,8 +277,8 @@ export function apply(f) {
     const src = `
 /// @nudo:import { positive, nonEmpty } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
- * @nudo:refine y nonEmpty
+ * @nudo:contract x positive
+ * @nudo:contract y nonEmpty
  */
 export function pair(x, y) {
   return y.length + (x > 0 ? x : 0);
@@ -330,7 +330,7 @@ describe("来源分流铁律：本文件内调用点违例仍走 constraint-viol
     const src = `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function area(x) {
   if (x > 0) return x;
@@ -351,7 +351,7 @@ const r = area(-1);
       "./v.js": `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;

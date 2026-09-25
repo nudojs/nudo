@@ -1,6 +1,6 @@
 /**
  * 测试用标准约束库（*.nudo.js 形态）。
- * 金标统一：@nudo:refine <param> <name>
+ * 金标统一：@nudo:contract <param> <name>
  */
 export const STD_NUDO_SRC = `
 export const positive = number().gt(0);

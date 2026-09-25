@@ -144,7 +144,7 @@ describe("C4.1 sidecar binds default / rest / destructure names", () => {
     const bad = `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine y positive
+ * @nudo:contract y positive
  */
 export function f(x = 1) {
   return x;
@@ -161,7 +161,7 @@ export function f(x = 1) {
     const ok = `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function f(x = 1) {
   return x > 0 ? x : 0;

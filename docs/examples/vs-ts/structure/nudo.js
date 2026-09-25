@@ -1,12 +1,12 @@
 // 结构场景 — Nudo 侧
 // 运行：pnpm run check docs/examples/vs-ts/structure/nudo.js
 //
-// 契约来自侧车 user.nudo.js（@nudo:refine user user），不是 body 扫描。
+// 契约来自侧车 user.nudo.js（@nudo:contract user user），不是 body 扫描。
 
 /// @nudo:import { user } from "./user.nudo.js"
 
 /**
- * @nudo:refine u user
+ * @nudo:contract u user
  */
 function greet(u) {
   return "hi " + u.id + " " + u.name;

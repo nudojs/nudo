@@ -4,7 +4,7 @@ authors: [default]
 tags: [nudo, contracts, check]
 ---
 
-Nudo 的契约产品**不是**第二套类型语言。契约是普通 JavaScript 模块：自动绑定同名导出的侧车 `*.nudo.js`，或源码内 `@nudo:refine`。
+Nudo 的契约产品**不是**第二套类型语言。契约是普通 JavaScript 模块：自动绑定同名导出的侧车 `*.nudo.js`，或源码内 `@nudo:contract`。
 
 ```javascript
 // pricing.nudo.js
@@ -33,7 +33,7 @@ issues
 
 | 规则 | 含义 |
 |------|------|
-| 契约面 | `*.nudo.js` / `@nudo:refine`（`@nudo:interface` 是别名） |
+| 契约面 | `*.nudo.js` / `@nudo:contract`（`@nudo:contract` 是别名） |
 | `@nudo:case` | 仅调试见证——绝不是契约产品 |
 | 草稿 | `nudo contract --draft` 可审查；从不自动绑定 |
 | check vs export | `check` 校验 Abs；`export` 有损投影 dts/zod/guards |

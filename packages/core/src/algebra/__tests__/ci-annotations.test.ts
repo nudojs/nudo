@@ -9,7 +9,7 @@ import { withStdImport, stdOpts } from "./nudo-constraints.ts";
 
 const badSrc = `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;

@@ -177,7 +177,7 @@ L2 `entryThrows` 解析顺序：
 
 | 层 | 来源 | check 行为 |
 |----|------|------------|
-| **L1 显式契约** | `*.nudo.js` / `@nudo:refine`；调用点证据可作 domain | 违例 → **error** |
+| **L1 显式契约** | `*.nudo.js` / `@nudo:contract`；调用点证据可作 domain | 违例 → **error** |
 | **L2 默认 JS 契约** | 未显式收窄时的运行时语义；对**入口/导出**函数 | 未消化的 may-throw → **error**（可用 ignore 过滤） |
 
 「无显式契约」的正确叙述：
@@ -235,7 +235,7 @@ export function getName(user) {
 开发者将 `any` 收窄的方式（产品主路径）：
 
 1. **代码内条件**（零注解）：`typeof` / `===` / `Array.isArray` / `switch` / 真值 / 判别字段 —— 求值器已支持（具体调用点精确；符号 `any` 可能 join，属精度债，记入 unknown 类引擎问题）。
-2. **显式契约**（Day 1）：`@nudo:refine` / `*.nudo.js` 把入口 `any` 收成 shape/pred。
+2. **显式契约**（Day 1）：`@nudo:contract` / `*.nudo.js` 把入口 `any` 收成 shape/pred。
 3. **env / mock**：补外部 API，消除因未建模产生的 `unknown`。
 
 `contract` / `--draft` / `--emit` 是路径 2 的命令面。
@@ -250,7 +250,7 @@ export function getName(user) {
 ### 5.1 check 做什么
 
 1. 每个顶层函数归纳**符号 Abs**（shape × term × pred × conf）
-2. **L1**：扫描调用点 / 返回值，检查是否满足 `@nudo:refine` / 侧车声明
+2. **L1**：扫描调用点 / 返回值，检查是否满足 `@nudo:contract` / 侧车声明
 3. **L2**：入口（export / CJS 导出）函数上未消化的 may-throw → 默认 **error**
 4. 输出 **Nudo 原生报告**：`signatures`（成功也打印）+ `actual ⊭ expected`
 
@@ -324,13 +324,13 @@ issues
 | 动态 import | `const { fn } = await import('./m')` |
 | barrel 一跳 | `export { fn } from './v.js'` 跟到定义 |
 
-### 5.5 什么是精化，什么不是
+### 5.5 什么是契约，什么不是
 
-精化 **只来自声明**，唯一形态 `@nudo:refine <param> <constraint>`；  
-返回精化用 `@nudo:refine return <constraint>`。
+契约 **只来自声明**，唯一形态 `@nudo:contract <param> <constraint>`；  
+返回契约用 `@nudo:contract return <constraint>`。
 
 不用 JSDoc `@param`/`@return`：那是类型注解。  
-不叫 requires：那只是「校验挡板」；refine 表示 Pred 进入 Abs，参与代数（x>0 ⇒ x+1>1）。
+不叫 requires：那只是「校验挡板」；contract 表示 Pred 进入 Abs，参与代数（x>0 ⇒ x+1>1）。
 
 约束模板在 `*.nudo.js`（constraint builders）：
 
@@ -344,7 +344,7 @@ export const user = shape({ id: number().gt(0), name: string() });
 /// @nudo:import { delay, user } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine ms delay
+ * @nudo:contract ms delay
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -354,7 +354,7 @@ setDelay(0);        // error: 0 ⊭ delay
 setDelay(100);      // ok
 
 /**
- * @nudo:refine u user
+ * @nudo:contract u user
  */
 function register(u) {
   return `${u.id}:${u.name}`;
@@ -371,7 +371,7 @@ register({ id: 1 });             // error: missing u.name
 | 门禁 | 文件 | 要求 |
 |---|---|---|
 | **人工 recall** | `check-recall-gold.test.ts` | recall = precision = **1.0**（144 条人工标注，含 require/ESM 跨文件；knownFn=0） |
-| **shape 精化** | `check-shape-gold.test.ts` | 字段 / 可选 / 边界 |
+| **shape 契约** | `check-shape-gold.test.ts` | 字段 / 可选 / 边界 |
 | **case ⊆ refine** | `check-case-consistency.test.ts` | 见证 ⊆ 定义域 |
 | **真实包精度** | `check-real-commander.test.ts` / `check-real-packages.test.ts` | 10 个真实包上**零** error 级误报（`constraint-violated` / `assign-mismatch` / `arg-structure`） |
 

@@ -480,7 +480,7 @@
     "message": "先写契约，再辅助/约束逻辑"
   },
   "homepage.flow.cardBDesc": {
-    "message": "先写 *.nudo.js 或 @nudo:refine，用同一契约面辅助实现，并在 check 中约束逻辑。"
+    "message": "先写 *.nudo.js 或 @nudo:contract，用同一契约面辅助实现，并在 check 中约束逻辑。"
   },
   "homepage.eco.title": {
     "message": "校验与产物"

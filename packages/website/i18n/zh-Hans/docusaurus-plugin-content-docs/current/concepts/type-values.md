@@ -86,7 +86,7 @@ number | string       // 异构联合
 
 ## 指令中的类型表达式
 
-`@nudo:case` / `@nudo:mock` / `@nudo:refine` 的实参用**约束表达式文法**书写 —— 与 `*.nudo.js` 模板相同的构建器：
+`@nudo:case` / `@nudo:mock` / `@nudo:contract` 的实参用**约束表达式文法**书写 —— 与 `*.nudo.js` 模板相同的构建器：
 
 | 表达式 | 含义 | 示例 |
 |-----|-------------|-------------|

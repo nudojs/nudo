@@ -192,7 +192,7 @@ Instead of the old `nudo-check` tool, request diagnostics with the standard LSP 
 {"jsonrpc":"2.0","id":3,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":"file:///home/you/project/src/app.js"}}}
 ```
 
-Error-severity entries (failed `@nudo:refine` assertions, unreachable code, …) come back in `items` with `source: "nudo"`. Push diagnostics (`textDocument/publishDiagnostics`) are emitted too if your client prefers them.
+Error-severity entries (failed `@nudo:contract` assertions, unreachable code, …) come back in `items` with `source: "nudo"`. Push diagnostics (`textDocument/publishDiagnostics`) are emitted too if your client prefers them.
 
 ## Migrating from the MCP server
 

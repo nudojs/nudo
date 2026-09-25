@@ -16,7 +16,7 @@ Nudo **executes** your JavaScript on abstract values and reports what the code a
 | You write | Nudo does |
 |-----------|-----------|
 | Plain `.js` + call sites | Observes real behavior and prints signatures |
-| Optional `*.nudo.js` / `@nudo:refine` | Gates obligations (`actual ⊭ expected`) |
+| Optional `*.nudo.js` / `@nudo:contract` | Gates obligations (`actual ⊭ expected`) |
 | Nothing extra | Still gates export may-throw (L2) in CI |
 
 There is **no second type language**. Contracts are ordinary JS modules with builders like `number().gt(0)`.
@@ -86,7 +86,7 @@ Deep dive: [Abs](../concepts/type-values.md) · layers note: [Advanced — Abs](
 
 ## Minutes 3–6 — Day 1: declare one obligation
 
-Contracts live in a sidecar next to the source (`calc.nudo.js`) or as `@nudo:refine` on a function. One form, builders only:
+Contracts live in a sidecar next to the source (`calc.nudo.js`) or as `@nudo:contract` on a function. One form, builders only:
 
 ```javascript verify-sidecar
 import { number, fn } from "@nudojs/core";

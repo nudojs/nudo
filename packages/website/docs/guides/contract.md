@@ -5,7 +5,7 @@ description: nudo contract — print / draft / emit sidecar contracts. Day-1 pro
 
 # nudo contract
 
-`nudo contract` manages the **contract surface** (`*.nudo.js` sidecars + in-source `@nudo:refine`). It does not replace `nudo check` — check is the CI gate; contract is how obligations are printed, drafted, and emitted.
+`nudo contract` manages the **contract surface** (`*.nudo.js` sidecars + in-source `@nudo:contract`). It does not replace `nudo check` — check is the CI gate; contract is how obligations are printed, drafted, and emitted.
 
 ```bash
 npx nudojs contract <paths…> [--from paths…]
@@ -19,7 +19,7 @@ npx nudojs contract --emit <paths…> [--fn name] [--all] [--dry-run]
 
 | Tier | Source | Migration action |
 |------|--------|------------------|
-| `handwritten` | `*.nudo.js` / `@nudo:refine` | Leave; enforce with `nudo check` |
+| `handwritten` | `*.nudo.js` / `@nudo:contract` | Leave; enforce with `nudo check` |
 | `generated` | Call-site domains frozen into `@generated` | Refresh with `--emit` when usage changes |
 | `implicit` | Inference only — display | Draft candidates |
 
@@ -63,14 +63,14 @@ export const positive = number().gt(0);
 export const add2 = fn({ x: number().gt(0) }, number());
 ```
 
-Function bindings in a sidecar **must** be first-class `fn({ params }, returns?)`. Bare `number().gt(0)` is a value-level template (for `@nudo:refine` / shared slots), not a function export contract — `positive` above is a template, `add2` is a binding.
+Function bindings in a sidecar **must** be first-class `fn({ params }, returns?)`. Bare `number().gt(0)` is a value-level template (for `@nudo:contract` / shared slots), not a function export contract — `positive` above is a template, `add2` is a binding.
 
 In-source form:
 
 ```javascript verify
 /// @nudo:import { positive } from "./contract.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function needsPositive(x) {
   return x;
@@ -79,9 +79,9 @@ export function needsPositive(x) {
 needsPositive(-1); // ⊭ x > 0 → nudo:constraint-violated
 ```
 
-Templates referenced by `@nudo:refine` must be imported with `@nudo:import` — the sidecar auto-binds only same-name `fn` exports.
+Templates referenced by `@nudo:contract` must be imported with `@nudo:import` — the sidecar auto-binds only same-name `fn` exports.
 
-`@nudo:interface` is an exact **alias** of `@nudo:refine`. Product name: **contract**.
+`@nudo:contract` is an exact **alias** of `@nudo:contract`. Product name: **contract**.
 
 ## Emit generated segments
 
@@ -110,5 +110,5 @@ See [nudo check](./check.md) and the [diagnostics glossary](../reference/diagnos
 
 - [Migrating existing JS](./migrating-js.md) — full draft → accept → CI path
 - [Recipes](./recipes.md) — gradual contracts, monorepo
-- [Directives](/docs/concepts/directives) — `@nudo:refine` grammar
+- [Directives](/docs/concepts/directives) — `@nudo:contract` grammar
 - [Limits](/docs/concepts/limits) — promote ≠ obligation; honest boundaries

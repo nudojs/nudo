@@ -6,7 +6,7 @@ description: Nudo 实用示例 —— 调用点观察、侧车契约、字符串
 
 **读完你能带走：** Nudo 如何观察真实调用点、侧车契约如何门禁义务，以及哪些仍会退化为 `unknown`。
 
-**产品路径优先。** 观察是 `nudo check` 签名（调用点是证据）。契约是 `*.nudo.js` / `@nudo:refine`。`@nudo:case` 仅是**调试见证** —— 可选，不是契约产品。
+**产品路径优先。** 观察是 `nudo check` 签名（调用点是证据）。契约是 `*.nudo.js` / `@nudo:contract`。`@nudo:case` 仅是**调试见证** —— 可选，不是契约产品。
 
 下方每个输出块都摘录自对上面代码的真实引擎运行（`nudo check` / `nudo test` 头部行与 assertions 摘要按标注省略）。仓库内 CI 钉住的套件在 [`docs/examples/`](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md)（`pnpm run verify:examples`）；本指南按主题浏览同一引擎。
 
@@ -95,7 +95,7 @@ issues
       → use a value satisfying price > 0, or relax the precondition on price
 ```
 
-`if` 守卫**不是**精化。义务来自侧车 / `@nudo:refine`。见[契约](./contract.md)与 [nudo check](./check.md)。
+`if` 守卫**不是**契约。义务来自侧车 / `@nudo:contract`。见[契约](./contract.md)与 [nudo check](./check.md)。
 
 ### 3. 来自调用点的对象 shape
 
@@ -269,6 +269,6 @@ export function scale(x) {
 | 指令 | 在本指南中的角色 |
 |-----------|-------------------|
 | 调用点 | Day 0 证据（主要） |
-| `*.nudo.js` / `@nudo:refine` | Day 1 契约（主要） |
+| `*.nudo.js` / `@nudo:contract` | Day 1 契约（主要） |
 | `@nudo:env` / `@nudo:mock` | 环境与边界 |
 | `@nudo:case` | 仅可选调试见证 |

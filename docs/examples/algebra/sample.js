@@ -1,4 +1,4 @@
-// 示例 S：最小合集（无调用点、无 @nudo:case / @nudo:refine）
+// 示例 S：最小合集（无调用点、无 @nudo:case / @nudo:contract）
 // 考察：entry@ 回退——无调用点的函数参数默认 any（无约束）；unknown = 推导失败
 // 运行：pnpm run check docs/examples/algebra/sample.js
 //       pnpm run test:cli docs/examples/algebra/sample.js

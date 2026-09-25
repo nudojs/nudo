@@ -9,7 +9,7 @@ description: Nudo executes JavaScript, prints signatures on check, and gates con
 
 Your JS stays JS. **Nudo** does not restrict how you write JavaScript — it faithfully observes intermediate values and results, and enforces **contracts** sharper than ordinary TypeScript types.
 
-Write plain `.js`. Optional sidecar contracts (`*.nudo.js` / `@nudo:refine`) when you need obligations. Even without explicit contracts, export boundary may-throw is gated (L2). Entry unconstrained params display as **`any`**; true **`unknown`** means inference failed.
+Write plain `.js`. Optional sidecar contracts (`*.nudo.js` / `@nudo:contract`) when you need obligations. Even without explicit contracts, export boundary may-throw is gated (L2). Entry unconstrained params display as **`any`**; true **`unknown`** means inference failed.
 
 **Product face:** Day 0 = `nudo check` (signatures + gate). Day 1 = `nudo contract` + `nudo check`. Ecosystem = `nudo export`. Observation is check signatures + IDE hover — there is **no** observation verb. `nudo test` is an optional debug case reporter, not the main path.
 
@@ -70,7 +70,7 @@ In the IDE, the same Abs surfaces as inlay hints on intermediates — not only a
 | Layer | What you write | What you get |
 |-------|----------------|--------------|
 | **Day 0** | Plain JS + call sites | `nudo check` signatures + L2 entry may-throw |
-| **Day 1** | `*.nudo.js` / `@nudo:refine` | `nudo check` L1 obligations (`actual ⊭ expected`) |
+| **Day 1** | `*.nudo.js` / `@nudo:contract` | `nudo check` L1 obligations (`actual ⊭ expected`) |
 | **Ecosystem** | nothing extra | `nudo export` dts / guard / schema (lossy Abs projections) |
 | **Advanced** | Abs algebra, envs, mocks | String/number algebra, HOFs, module graphs |
 
@@ -81,12 +81,12 @@ In the IDE, the same Abs surfaces as inlay hints on intermediates — not only a
 | | TypeScript | Nudo |
 |---|---|---|
 | Primary artifact | Declared types on `.ts` | Observed Abs from executing `.js` |
-| Contracts | Type language + assignability | Sidecar `*.nudo.js` / `@nudo:refine` + L2 entry throws |
+| Contracts | Type language + assignability | Sidecar `*.nudo.js` / `@nudo:contract` + L2 entry throws |
 | Precision | Often widens (`string`, `number`) | Can keep literals, template structure, loop sums |
 | Observation | Hover shows declared type | `check` signatures / IDE hover show term / pred / conf |
 | CI gate | `tsc --noEmit` | `nudo check` (prints signatures on success too) |
 
-`"a,b,c".split(",")` → `["a", "b", "c"]`. With `@nudo:refine x positive`, `scale` carries `(x + 1) > 1`. That is validation + observability, not a second type language.
+`"a,b,c".split(",")` → `["a", "b", "c"]`. With `@nudo:contract x positive`, `scale` carries `(x + 1) > 1`. That is validation + observability, not a second type language.
 
 Honest comparison: [Nudo vs TypeScript](./guides/vs-typescript.md). Limits: [what Nudo does not claim](./concepts/limits.md).
 
@@ -101,7 +101,7 @@ Honest comparison: [Nudo vs TypeScript](./guides/vs-typescript.md). Limits: [wha
 - **[nudo check](./guides/check.md)** — L1 + L2 gate on Abs
 - **[Migrate from TypeScript](./guides/migrating-from-typescript.md)** — retire `tsc`
 - **[Abs](./concepts/type-values.md)** — `shape × term × pred × conf`
-- **[Directives](./concepts/directives.md)** — `@nudo:refine` / sidecar grammar (reference)
+- **[Directives](./concepts/directives.md)** — `@nudo:contract` / sidecar grammar (reference)
 - **[Playground](/playground)** — browser observation
 - **[Recipes](./guides/recipes.md)** — CI, monorepo, export
 - **[Diagnostics](./reference/diagnostics.md)** — stable codes

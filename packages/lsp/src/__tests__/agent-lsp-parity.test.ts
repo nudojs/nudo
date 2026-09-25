@@ -50,7 +50,7 @@ const ADD_SRC = `export function add(x) {\n  return x + 2;\n}\n`;
 const CHECK_SRC = `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;

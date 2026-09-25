@@ -86,7 +86,7 @@ These are **not** the same product concept and must never be collapsed in docs o
 
 ## Type Expressions in Directives
 
-`@nudo:case` / `@nudo:mock` / `@nudo:refine` arguments are written in the **constraint-expression grammar** — the same builders as `*.nudo.js` templates:
+`@nudo:case` / `@nudo:mock` / `@nudo:contract` arguments are written in the **constraint-expression grammar** — the same builders as `*.nudo.js` templates:
 
 | Expression | Meaning | Example |
 |-----|-------------|-------------|

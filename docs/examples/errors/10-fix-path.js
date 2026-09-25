@@ -5,14 +5,14 @@
 /// @nudo:import { delay, positive } from "./delay.nudo.js"
 
 /**
- * @nudo:refine ms delay
+ * @nudo:contract ms delay
  */
 export function arm(ms) {
   return ms;
 }
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function bump(x) {
   return x + 1;

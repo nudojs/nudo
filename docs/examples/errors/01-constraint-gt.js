@@ -5,7 +5,7 @@
 /// @nudo:import { delay } from "./delay.nudo.js"
 
 /**
- * @nudo:refine ms delay
+ * @nudo:contract ms delay
  */
 export function setDelay(ms) {
   return ms;

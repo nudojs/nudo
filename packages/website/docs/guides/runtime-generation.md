@@ -22,7 +22,7 @@ Full option/exit-code spec: [CLI Reference](../api/cli-reference.md#nudo-export)
 
 | Format | Artifact | Inputs projected |
 |--------|----------|------------------|
-| `standard` | `<fn>.nudo.standard.ts` — Standard Schema v1 modules (no Zod dependency) | **Sidecar / `@nudo:refine` contract domains**, else join of observed call-site Abs |
+| `standard` | `<fn>.nudo.standard.ts` — Standard Schema v1 modules (no Zod dependency) | **Sidecar / `@nudo:contract` contract domains**, else join of observed call-site Abs |
 | `dts` | TypeScript declarations (default format) | Call-site cases: params widened, returns keep precision |
 | `guard` | Zero-dependency `typeof` guard functions | Joined call-site Abs |
 | `schema` | Schema source comments for `--dialect` (currently `zod`) | Per-case Abs (`call@L…` / `entry@L…`) |

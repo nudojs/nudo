@@ -46,7 +46,7 @@ pnpm run nudo -- contract --from-dts docs/examples/migrate/before/src/math.ts
 
 1. **注解消失**：`lineTotal(price: number, qty: number): number` → `lineTotal(price, qty)`
 2. **`type Item` 类型别名删除**（TS-only；运行时不存在）
-3. **契约不自动发明**：若需要义务，用 `@nudo:refine` / `*.nudo.js`（见 `../constraints/`）
+3. **契约不自动发明**：若需要义务，用 `@nudo:contract` / `*.nudo.js`（见 `../constraints/`）
 4. **CI 一行换主**：`tsc --noEmit` → `nudo check src`（多文件 JSON 见 `docs/ci-nudo-check.md`）
 
 ## 怎么跑

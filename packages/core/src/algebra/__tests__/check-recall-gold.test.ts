@@ -41,7 +41,7 @@ const GOLD: Gold[] = [
     origin: "ms / setTimeout delay",
     source: `
 /**
- * @nudo:refine ms positive
+ * @nudo:contract ms positive
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -57,7 +57,7 @@ setDelay(100);
     origin: "ms / setTimeout delay",
     source: `
 /**
- * @nudo:refine ms positive
+ * @nudo:contract ms positive
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -73,7 +73,7 @@ setDelay(0);
     origin: "ms / setTimeout delay",
     source: `
 /**
- * @nudo:refine ms positive
+ * @nudo:contract ms positive
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -89,7 +89,7 @@ setDelay(-50);
     origin: "progress / opacity",
     source: `
 /**
- * @nudo:refine n percent
+ * @nudo:contract n percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
@@ -104,7 +104,7 @@ pct(50);
     origin: "progress / opacity",
     source: `
 /**
- * @nudo:refine n percent
+ * @nudo:contract n percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
@@ -120,7 +120,7 @@ pct(150);
     origin: "progress / opacity",
     source: `
 /**
- * @nudo:refine n percent
+ * @nudo:contract n percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
@@ -137,7 +137,7 @@ pct(-1);
     origin: "net / listen port",
     source: `
 /**
- * @nudo:refine port atLeast1 && port <= 65535
+ * @nudo:contract port atLeast1 && port <= 65535
  */
 function listen(port) {
   if (port >= 1 && port <= 65535) return port;
@@ -152,7 +152,7 @@ listen(8080);
     origin: "net / listen port",
     source: `
 /**
- * @nudo:refine port atLeast1 && port <= 65535
+ * @nudo:contract port atLeast1 && port <= 65535
  */
 function listen(port) {
   if (port >= 1 && port <= 65535) return port;
@@ -167,7 +167,7 @@ listen(0);
     origin: "array index",
     source: `
 /**
- * @nudo:refine i nonNeg
+ * @nudo:contract i nonNeg
  */
 function at(i) {
   if (i >= 0) return i;
@@ -182,7 +182,7 @@ at(3);
     origin: "array index",
     source: `
 /**
- * @nudo:refine i nonNeg
+ * @nudo:contract i nonNeg
  */
 function at(i) {
   if (i >= 0) return i;
@@ -226,7 +226,7 @@ clamp(99, 0, 10);
     origin: "buffer / pageSize",
     source: `
 /**
- * @nudo:refine n max100
+ * @nudo:contract n max100
  */
 function pageSize(n) {
   if (n <= 100) return n;
@@ -241,7 +241,7 @@ pageSize(20);
     origin: "buffer / pageSize",
     source: `
 /**
- * @nudo:refine n max100
+ * @nudo:contract n max100
  */
 function pageSize(n) {
   if (n <= 100) return n;
@@ -257,7 +257,7 @@ pageSize(1000);
     origin: "模块导出箭头",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 const needsPositive = (x) => {
   if (x > 0) return x;
@@ -272,7 +272,7 @@ needsPositive(-2);
     origin: "export default",
     source: `
 export default /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -319,7 +319,7 @@ onlyZero(5);
     origin: "内部转发",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -338,7 +338,7 @@ wrapper(3);
     origin: "内部转发",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -357,7 +357,7 @@ wrapper(-1);
     origin: "箭头转发",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -373,7 +373,7 @@ wrap(0);
     origin: "带守卫的转发",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -393,7 +393,7 @@ safeWrap(-1);
     origin: "内部转发",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -409,7 +409,7 @@ needsPositive(-3);
     origin: "obj.method(-1)",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -426,7 +426,7 @@ api.needsPositive(-1);
     origin: "{ key: fn }",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -442,7 +442,7 @@ api.check(-1);
     origin: "const f = fn; f(-1)",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -458,7 +458,7 @@ f(-1);
     origin: "const f = fn; f(5)",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -474,7 +474,7 @@ f(5);
     origin: "obj.method(5)",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -634,7 +634,7 @@ const e = isEven(4);
     origin: "递归·有 return 契约",
     source: `
 /**
- * @nudo:refine return positive
+ * @nudo:contract return positive
  */
 function sumTo(n) {
   if (n <= 1) return 1;
@@ -663,7 +663,7 @@ id("a");
     origin: "any·源侧放行",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needsPos(n) {
   if (n > 0) return n;
@@ -681,7 +681,7 @@ function wrap(v) {
     origin: "any·不吞字面量违例",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needsPos(n) {
   if (n > 0) return n;
@@ -701,7 +701,7 @@ wrap(0);
     origin: "config 可选字段",
     source: `
 /**
- * @nudo:refine c configShape
+ * @nudo:contract c configShape
  */
 function setup(c) {
   return c.retries;
@@ -716,7 +716,7 @@ setup({ retries: 3 });
     origin: "config 可选字段",
     source: `
 /**
- * @nudo:refine c configShape
+ * @nudo:contract c configShape
  */
 function setup(c) {
   return c.retries;
@@ -731,7 +731,7 @@ setup({ retries: 3, label: 9 });
     origin: "config 可选字段",
     source: `
 /**
- * @nudo:refine c configShape
+ * @nudo:contract c configShape
  */
 function setup(c) {
   return c.retries;
@@ -745,13 +745,13 @@ setup({ retries: 3, label: "ok" });
     origin: "optional → 显式契约实参",
     source: `
 /**
- * @nudo:refine s nonEmpty
+ * @nudo:contract s nonEmpty
  */
 function needStr(s) {
   return s;
 }
 /**
- * @nudo:refine c configShape
+ * @nudo:contract c configShape
  */
 function setup(c) {
   return needStr(c.label);
@@ -779,7 +779,7 @@ need(found);
     origin: "Array.find",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -795,7 +795,7 @@ needPos(found);
     origin: "Array.find",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -812,7 +812,7 @@ needPos(found);
     origin: "Array.find + 成员",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -829,7 +829,7 @@ needPos(found.id);
     origin: "字典查找",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -844,7 +844,7 @@ needPos(map["a"]);
     origin: "字典查找·变量键",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -861,7 +861,7 @@ needPos(map[k]);
     origin: "字典查找·字面量缺键",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -878,7 +878,7 @@ needPos(map["zz"]);
     origin: "Array.filter",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -894,7 +894,7 @@ needPos(pos[0]);
     origin: "Array.filter·源侧字面量",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -911,7 +911,7 @@ needPos(-1);
     origin: "Array.map",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -968,7 +968,7 @@ orZero(5);
     origin: "== null 转发",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -987,7 +987,7 @@ wrap(3);
     origin: "== null 转发",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -1008,7 +1008,7 @@ wrap(-1);
     origin: "arr[i]",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1023,7 +1023,7 @@ needPos(a[0]);
     origin: "arr[i] 越界",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1039,7 +1039,7 @@ needPos(a[5]);
     origin: "元组下标",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1054,7 +1054,7 @@ needPos(a[0]);
     origin: "元组下标·负元素",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1071,7 +1071,7 @@ needPos(a[0]);
     origin: "Array.push 返回值",
     source: `
 /**
- * @nudo:refine xs positives
+ * @nudo:contract xs positives
  */
 function takePositives(xs) {
   return xs;
@@ -1088,7 +1088,7 @@ takePositives(n);
     origin: "Array.push 返回值",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1105,7 +1105,7 @@ needPos(n);
     origin: "Array.push 内联",
     source: `
 /**
- * @nudo:refine xs positives
+ * @nudo:contract xs positives
  */
 function takePositives(xs) {
   return xs;
@@ -1121,7 +1121,7 @@ takePositives(a.push(2));
     origin: "数组字面量传参",
     source: `
 /**
- * @nudo:refine xs positives
+ * @nudo:contract xs positives
  */
 function takePositives(xs) {
   return xs;
@@ -1136,7 +1136,7 @@ takePositives([1, 2, 3]);
     origin: "intId 边界",
     source: `
 /**
- * @nudo:refine n intId
+ * @nudo:contract n intId
  */
 function takeId(n) {
   return n;
@@ -1150,7 +1150,7 @@ takeId(1);
     origin: "intId 边界",
     source: `
 /**
- * @nudo:refine n intId
+ * @nudo:contract n intId
  */
 function takeId(n) {
   return n;
@@ -1164,7 +1164,7 @@ takeId(0);
     origin: "intId 边界",
     source: `
 /**
- * @nudo:refine n intId
+ * @nudo:contract n intId
  */
 function takeId(n) {
   return n;
@@ -1178,7 +1178,7 @@ takeId(1.0001);
     origin: "shortName 边界",
     source: `
 /**
- * @nudo:refine s shortName
+ * @nudo:contract s shortName
  */
 function takeName(s) {
   return s;
@@ -1192,7 +1192,7 @@ takeName("a");
     origin: "shortName 边界",
     source: `
 /**
- * @nudo:refine s shortName
+ * @nudo:contract s shortName
  */
 function takeName(s) {
   return s;
@@ -1206,7 +1206,7 @@ takeName("");
     origin: "shortName 边界",
     source: `
 /**
- * @nudo:refine s shortName
+ * @nudo:contract s shortName
  */
 function takeName(s) {
   return s;
@@ -1221,7 +1221,7 @@ takeName("abcdefghijklmnopqrstu");
     origin: "percent 边界",
     source: `
 /**
- * @nudo:refine n percent
+ * @nudo:contract n percent
  */
 function pct(n) {
   return n;
@@ -1235,7 +1235,7 @@ pct(0);
     origin: "percent 边界",
     source: `
 /**
- * @nudo:refine n percent
+ * @nudo:contract n percent
  */
 function pct(n) {
   return n;
@@ -1249,7 +1249,7 @@ pct(100);
     origin: "percent 边界",
     source: `
 /**
- * @nudo:refine n percent
+ * @nudo:contract n percent
  */
 function pct(n) {
   return n;
@@ -1263,7 +1263,7 @@ pct(101);
     origin: "port 边界",
     source: `
 /**
- * @nudo:refine p port
+ * @nudo:contract p port
  */
 function listen(p) {
   return p;
@@ -1277,7 +1277,7 @@ listen(1);
     origin: "port 边界",
     source: `
 /**
- * @nudo:refine p port
+ * @nudo:contract p port
  */
 function listen(p) {
   return p;
@@ -1291,7 +1291,7 @@ listen(65535);
     origin: "port 边界",
     source: `
 /**
- * @nudo:refine p port
+ * @nudo:contract p port
  */
 function listen(p) {
   return p;
@@ -1305,7 +1305,7 @@ listen(65536);
     origin: "union(lit) 析取",
     source: `
 /**
- * @nudo:refine x status
+ * @nudo:contract x status
  */
 function setStatus(x) {
   return x;
@@ -1319,7 +1319,7 @@ setStatus(1);
     origin: "union(lit) 析取",
     source: `
 /**
- * @nudo:refine x status
+ * @nudo:contract x status
  */
 function setStatus(x) {
   return x;
@@ -1334,8 +1334,8 @@ setStatus(99);
     origin: "HOF 回调形态",
     source: `
 /**
- * @nudo:refine xs positives
- * @nudo:refine transform mapper
+ * @nudo:contract xs positives
+ * @nudo:contract transform mapper
  */
 function mapPos(xs, transform) {
   return xs.map(transform);
@@ -1350,8 +1350,8 @@ mapPos([1, 2], 42);
     origin: "HOF 回调形态",
     source: `
 /**
- * @nudo:refine xs positives
- * @nudo:refine transform mapper
+ * @nudo:contract xs positives
+ * @nudo:contract transform mapper
  */
 function mapPos(xs, transform) {
   return xs.map(transform);
@@ -1425,7 +1425,7 @@ xs = n;
     origin: "userShape 缺字段",
     source: `
 /**
- * @nudo:refine u userShape
+ * @nudo:contract u userShape
  */
 function register(u) {
   return u.id;
@@ -1440,7 +1440,7 @@ register({ id: 1 });
     origin: "userShape 完整",
     source: `
 /**
- * @nudo:refine u userShape
+ * @nudo:contract u userShape
  */
 function register(u) {
   return u.id;
@@ -1454,7 +1454,7 @@ register({ id: 1, name: "a" });
     origin: "嵌套 shape",
     source: `
 /**
- * @nudo:refine o orderShape
+ * @nudo:contract o orderShape
  */
 function place(o) {
   return o.user.id;
@@ -1466,10 +1466,10 @@ place({ user: { id: -1, name: "a" }, tags: ["x"] });
   // --- return 契约 ---
   {
     id: "return-positive-lit-0",
-    origin: "@nudo:refine return",
+    origin: "@nudo:contract return",
     source: `
 /**
- * @nudo:refine return positive
+ * @nudo:contract return positive
  */
 function bad() {
   return 0;
@@ -1479,11 +1479,11 @@ function bad() {
   },
   {
     id: "return-positive-from-param-ok",
-    origin: "@nudo:refine return",
+    origin: "@nudo:contract return",
     source: `
 /**
- * @nudo:refine x positive
- * @nudo:refine return positive
+ * @nudo:contract x positive
+ * @nudo:contract return positive
  */
 function keep(x) {
   return x;
@@ -1496,7 +1496,7 @@ function keep(x) {
     origin: "Array.pop 空数组",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1512,7 +1512,7 @@ needPos(a.pop());
     origin: "Array.pop 命中",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1528,7 +1528,7 @@ needPos(a.pop());
     origin: "http/net options { port = 3000 } = {}",
     source: `
 /**
- * @nudo:refine port atLeast1
+ * @nudo:contract port atLeast1
  */
 function listen({ port = 3000 } = {}) {
   return port;
@@ -1543,7 +1543,7 @@ listen({ port: 8080 });
     origin: "http/net options { port = 3000 } = {}",
     source: `
 /**
- * @nudo:refine port atLeast1
+ * @nudo:contract port atLeast1
  */
 function listen({ port = 3000 } = {}) {
   return port;
@@ -1558,7 +1558,7 @@ listen();
     origin: "http/net options { port = 3000 } = {}",
     source: `
 /**
- * @nudo:refine port atLeast1
+ * @nudo:contract port atLeast1
  */
 function listen({ port = 3000 } = {}) {
   return port;
@@ -1574,7 +1574,7 @@ listen({ port: 0 });
     origin: "fn(...args) 字面量 spread",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needPos(x) {
   return x;
@@ -1588,7 +1588,7 @@ needPos(...[5]);
     origin: "fn(...args) 字面量 spread",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needPos(x) {
   return x;
@@ -1602,7 +1602,7 @@ needPos(...[-1]);
     origin: "fn(...args) 转发",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needPos(x) {
   return x;
@@ -1619,7 +1619,7 @@ wrap(7);
     origin: "fn(...args) 转发",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needPos(x) {
   return x;
@@ -1636,7 +1636,7 @@ wrap(-7);
     origin: "Math.max",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1650,7 +1650,7 @@ needPos(Math.max(1, 2));
     origin: "Math.max",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1666,7 +1666,7 @@ needPos(Math.max(-1, -2));
     origin: "a?.b?.c",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1681,7 +1681,7 @@ needPos(a?.b?.c);
     origin: "a?.b?.c",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1697,7 +1697,7 @@ needPos(a?.b?.c);
     origin: "a?.b",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1712,7 +1712,7 @@ needPos(a?.b);
     origin: "o.name?.trim()",
     source: `
 /**
- * @nudo:refine s shortName
+ * @nudo:contract s shortName
  */
 function needShort(s) {
   return s;
@@ -1728,7 +1728,7 @@ needShort(o.name?.trim());
     origin: "o.name?.trim()",
     source: `
 /**
- * @nudo:refine s shortName
+ * @nudo:contract s shortName
  */
 function needShort(s) {
   return s;
@@ -1744,7 +1744,7 @@ needShort(o.name?.trim());
     origin: "x ?? fallback",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1760,7 +1760,7 @@ needPos(x ?? 10);
     origin: "x ?? fallback",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1776,7 +1776,7 @@ needPos(x ?? 0);
     origin: "x ?? fallback",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1790,7 +1790,7 @@ needPos(undefined ?? -1);
     origin: "x ?? y",
     source: `
 /**
- * @nudo:refine s shortName
+ * @nudo:contract s shortName
  */
 function needShort(s) {
   return s;
@@ -1806,7 +1806,7 @@ needShort(null ?? undefined);
     origin: "Array.includes",
     source: `
 /**
- * @nudo:refine s nonEmpty
+ * @nudo:contract s nonEmpty
  */
 function needStr(s) {
   return s;
@@ -1821,7 +1821,7 @@ needStr([1, 2].includes(1));
     origin: "Array.every 伪收窄",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1842,7 +1842,7 @@ f([-1, 2]);
     origin: "Array.some 伪收窄",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1864,7 +1864,7 @@ f([1]);
     origin: "String.trim",
     source: `
 /**
- * @nudo:refine s shortName
+ * @nudo:contract s shortName
  */
 function needShort(s) {
   return s;
@@ -1878,7 +1878,7 @@ needShort("  a  ".trim());
     origin: "String.trim",
     source: `
 /**
- * @nudo:refine s shortName
+ * @nudo:contract s shortName
  */
 function needShort(s) {
   return s;
@@ -1893,7 +1893,7 @@ needShort("   ".trim());
     origin: "String.slice",
     source: `
 /**
- * @nudo:refine s shortName
+ * @nudo:contract s shortName
  */
 function needShort(s) {
   return s;
@@ -1907,7 +1907,7 @@ needShort("abc".slice(1, 1));
     origin: "String.slice",
     source: `
 /**
- * @nudo:refine s shortName
+ * @nudo:contract s shortName
  */
 function needShort(s) {
   return s;
@@ -1924,7 +1924,7 @@ needShort(long.slice(0));
     origin: "parseInt(x, 10)",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1938,7 +1938,7 @@ needPos(parseInt("42", 10));
     origin: "parseInt(x, 10)",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1953,7 +1953,7 @@ needPos(parseInt("abc", 10));
     origin: "parseInt(x, 10)",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1967,7 +1967,7 @@ needPos(parseInt("0", 10));
     origin: "Number(x)",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1981,7 +1981,7 @@ needPos(Number("x"));
     origin: "Number(x)",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -1996,7 +1996,7 @@ needPos(Number("12"));
     origin: "JSON.parse(JSON.stringify(o))",
     source: `
 /**
- * @nudo:refine u userShape
+ * @nudo:contract u userShape
  */
 function takeUser(u) {
   return u;
@@ -2011,7 +2011,7 @@ takeUser(JSON.parse(JSON.stringify(o)));
     origin: "JSON.parse(JSON.stringify(o))",
     source: `
 /**
- * @nudo:refine u userShape
+ * @nudo:contract u userShape
  */
 function takeUser(u) {
   return u;
@@ -2027,7 +2027,7 @@ takeUser(JSON.parse(JSON.stringify(o)));
     origin: "JSON.parse(JSON.stringify(o))",
     source: `
 /**
- * @nudo:refine u userShape
+ * @nudo:contract u userShape
  */
 function takeUser(u) {
   return u;
@@ -2044,7 +2044,7 @@ takeUser(JSON.parse(JSON.stringify(o)));
     origin: "Promise.then",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -2060,7 +2060,7 @@ p.then((x) => needPos(-2));
     origin: "Promise.then",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -2076,7 +2076,7 @@ p.then((x) => needPos(x));
     origin: "class this.x 未初始化",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -2096,7 +2096,7 @@ new C().get();
     origin: "class this.x",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -2118,7 +2118,7 @@ new C().get();
     origin: "class this.x",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -2141,7 +2141,7 @@ new C().get();
     origin: "switch (true)",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -2163,7 +2163,7 @@ f(5);
     origin: "switch (true)",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -2186,7 +2186,7 @@ f(-3);
     origin: "if 链收窄",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -2205,7 +2205,7 @@ f(-1);
     origin: "if/else 残余",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -2225,7 +2225,7 @@ f(1);
     origin: "字典查找·变量键",
     source: `
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 function needPos(n) {
   return n;
@@ -2262,7 +2262,7 @@ needsPositive(-1);
       "./v.js": `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -2283,7 +2283,7 @@ needsPositive(5);
       "./v.js": `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -2304,7 +2304,7 @@ v.needsPositive(0);
       "./v.js": `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -2325,7 +2325,7 @@ needsPositive(-3);
       "./v.js": `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -2346,7 +2346,7 @@ needsPositive(-1);
       "./v.js": `
 export /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -2366,7 +2366,7 @@ np(0);
       "./v.js": `
 export /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -2386,7 +2386,7 @@ v.needsPositive(-2);
       "./v.js": `
 export /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -2406,7 +2406,7 @@ needsPositive(10);
       "./v.js": `
 export /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -2429,7 +2429,7 @@ main();
       "./v.js": `
 export /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -2452,7 +2452,7 @@ main();
       "./v.js": `
 export /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -2473,7 +2473,7 @@ needsPositive(-1);
       "./v.js": `
 export /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -2497,7 +2497,7 @@ takePositives(n);
       "./v.js": `
 /// @nudo:import { positives } from "./std.nudo.js"
 /**
- * @nudo:refine xs positives
+ * @nudo:contract xs positives
  */
 function takePositives(xs) {
   return xs;
@@ -2518,7 +2518,7 @@ setup({ retries: 1 });
       "./v.js": `
 export /// @nudo:import { configShape } from "./std.nudo.js"
 /**
- * @nudo:refine c configShape
+ * @nudo:contract c configShape
  */
 function setup(c) {
   return c.retries;
@@ -2538,7 +2538,7 @@ setup({ retries: 1, label: 9 });
       "./v.js": `
 export /// @nudo:import { configShape } from "./std.nudo.js"
 /**
- * @nudo:refine c configShape
+ * @nudo:contract c configShape
  */
 function setup(c) {
   return c.retries;
@@ -2558,7 +2558,7 @@ takeId(0);
       "./v.js": `
 /// @nudo:import { intId } from "./std.nudo.js"
 /**
- * @nudo:refine n intId
+ * @nudo:contract n intId
  */
 function takeId(n) {
   return n;
@@ -2807,7 +2807,7 @@ export function boom() {
       id: "export-refine-shape-pending-l2-suppress",
       source: `
 /**
- * @nudo:refine user shape(name)
+ * @nudo:contract user shape(name)
  */
 export function getName(user) {
   return user.name;
@@ -2861,7 +2861,7 @@ export function id(x) {
       id: "ignore-throws-does-not-swallow-l1",
       source: withStdImport(`
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function needsPositive(x) {
   if (x > 0) return x;
@@ -2907,7 +2907,7 @@ needsPositive(-1);
   it("ignoreThrows does not swallow L1 constraint errors", () => {
     const src = withStdImport(`
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;

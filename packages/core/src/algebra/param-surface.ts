@@ -1,6 +1,6 @@
 /**
  * C4.1：函数形参表面（contract surface）——
- * 侧车 `fn({…})` / `@nudo:refine` 参数名与求值形参的对齐基线。
+ * 侧车 `fn({…})` / `@nudo:contract` 参数名与求值形参的对齐基线。
  *
  * - Identifier / 默认参（AssignmentPattern left）→ 绑定名
  * - RestElement → 契约名用裸名（`args`），展示名 `...args`

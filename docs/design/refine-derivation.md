@@ -16,7 +16,7 @@
 
 | 层 | 来源 | check 执法 | 产品观察 |
 |---|---|---|---|
-| **handwritten** | `*.nudo.js` 同名导出 / `@nudo:refine` | **义务**：调用或返回 ⊭ → error | `nudo contract` 默认可打印 |
+| **handwritten** | `*.nudo.js` 同名导出 / `@nudo:contract` | **义务**：调用或返回 ⊭ → error | `nudo contract` 默认可打印 |
 | **generated** | root 契约下行 / `--emit` 写入的 `@generated` 段 | **事实快照**：不执法，只 drift | 打印 + IDE hover |
 | **implicit** | 分析会话内推导（未落盘） | 参与判定，不要求已落盘 | `nudo contract` / hover |
 
@@ -28,7 +28,7 @@
 - 绑定集合 = 该文件本地导出；**私有函数不绑定、不落盘**。
 - `export default`：本地名 + `"default"` 双登记；re-export/barrel 不参与绑定（契约跟定义文件）。
 - CJS 静态 `module.exports` / `exports.x` 参与绑定；动态导出名不猜。
-- 源码 `@nudo:refine` 仍支持（全量，不限 exported）；与侧车并存时**合取**，不可满足报冲突码。
+- 源码 `@nudo:contract` 仍支持（全量，不限 exported）；与侧车并存时**合取**，不可满足报冲突码。
 - 加载路径：`loadModule` → 受控 `execNudoModule`（真 parser 改写 import/export，注入构建器）；**不**走用户 `node_modules` 的 Node require。
 - 执行边界：`node_modules` 下 `.nudo.js` **永不**自动加载；`package.json#nudo.contract.autoBind`（默认 `true`）可整体关闭，并透传到 `check` 与 LSP 执法路径。
 

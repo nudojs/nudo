@@ -14,7 +14,7 @@
 
 ### 1.1 C0 / L2 契约模型（不得回退）
 
-- **义务只来自**显式契约（`*.nudo.js` / `@nudo:refine`）或调用点事实。
+- **义务只来自**显式契约（`*.nudo.js` / `@nudo:contract`）或调用点事实。
 - **不**从 body AST 预扫描发明必填 slot。
 - **L2** 入口 may-throw 是运行时效果门禁（`nudo:entry-may-throw`，默认 error），不是 shape 必填。
 - 入口无约束参数显示 **`any`**；**`unknown` = 推导失败**（见 cli-semantics §2）。

@@ -9,7 +9,7 @@ function inc(x) {
 }
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function incPositive(x) {
   return x + 1;

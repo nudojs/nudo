@@ -24,7 +24,7 @@ const golds: Gold[] = [
     name: "valid positive call",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -38,7 +38,7 @@ const r = needsPositive(5);
     name: "negative call violates x>0",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -112,7 +112,7 @@ export function main() { return new Counter(1).get(); }
     name: "zero violates x>0",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -127,7 +127,7 @@ needsPositive(0);
     name: "unary negative call",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -142,7 +142,7 @@ needsPositive(-3);
     name: "x>=1 rejects 0",
     source: `
 /**
- * @nudo:refine i atLeast1
+ * @nudo:contract i atLeast1
  */
 function idx(i) {
   if (i >= 1) return i;
@@ -157,7 +157,7 @@ idx(0);
     name: "upper bound x<10 rejects 10",
     source: `
 /**
- * @nudo:refine n small
+ * @nudo:contract n small
  */
 function small(n) {
   if (n < 10) return n;
@@ -216,7 +216,7 @@ needsPositive(1);
     name: "arrow function constraint",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 const needsPositive = (x) => {
   if (x > 0) return x;
@@ -231,7 +231,7 @@ needsPositive(-2);
     name: "export default function",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export default function needsPositive(x) {
   if (x > 0) return x;
@@ -246,7 +246,7 @@ needsPositive(-1);
     name: "both bounds mid valid",
     source: `
 /**
- * @nudo:refine n percent
+ * @nudo:contract n percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
@@ -260,7 +260,7 @@ pct(50);
     name: "both bounds high invalid",
     source: `
 /**
- * @nudo:refine n percent
+ * @nudo:contract n percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
@@ -309,7 +309,7 @@ area(-2);
     name: "handwritten contract same scenario enforces not drift",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function area(x) {
   return x;
@@ -325,7 +325,7 @@ area(-1);
     name: "non-int literal against positive (no int flag) is silent",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function needsPos(x) {
   return x + 1;
@@ -339,7 +339,7 @@ needsPos(1.5);
     name: "non-int literal against intId still violates",
     source: `
 /**
- * @nudo:refine x intId
+ * @nudo:contract x intId
  */
 export function needsInt(x) {
   return x + 1;
@@ -407,7 +407,7 @@ const domainGolds: DomainGold[] = [
     name: "injected \"a\" evidence exceeds handwritten positive contract",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function area(x) {
   return x;
@@ -423,7 +423,7 @@ area(5);
     name: "injected evidence within handwritten contract is silent",
     source: `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function area(x) {
   return x;

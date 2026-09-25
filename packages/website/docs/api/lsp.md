@@ -237,7 +237,7 @@ Validation shares the evaluator with the CLI, and module loading there is guarde
 
 ### `interFileDependencies: false`
 
-`initialize` declares `diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false }`: each file's diagnostics are correct for that file alone, and contracts come from `*.nudo.js` sidecars / `@nudo:refine` (alias `@nudo:interface`). `@nudo:case` is a debug / optional `nudo test` sub-layer, not the contract product. This is the structural difference from `tsserver`, whose whole-`Program` residency is forced by structural typing: any cross-file shape can change any decision, so everything must stay loaded and current. Nudo trades that for single-file correctness with bounded memory — which is precisely what lets both servers run side by side in the same editor. Nudo does not aim to replace `tsserver`.
+`initialize` declares `diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false }`: each file's diagnostics are correct for that file alone, and contracts come from `*.nudo.js` sidecars / `@nudo:contract`. `@nudo:case` is a debug / optional `nudo test` sub-layer, not the contract product. This is the structural difference from `tsserver`, whose whole-`Program` residency is forced by structural typing: any cross-file shape can change any decision, so everything must stay loaded and current. Nudo trades that for single-file correctness with bounded memory — which is precisely what lets both servers run side by side in the same editor. Nudo does not aim to replace `tsserver`.
 
 ## Relation to Editor Extensions
 

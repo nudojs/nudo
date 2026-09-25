@@ -31,4 +31,4 @@ That matches codebases that are JavaScript-first — tooling CLIs, script layers
 
 ## Next
 
-Day 1 is contracts: `*.nudo.js` / `@nudo:refine`, then `nudo check` L1 gates (`actual ⊭ expected`). See [nudo contract](/docs/guides/contract).
+Day 1 is contracts: `*.nudo.js` / `@nudo:contract`, then `nudo check` L1 gates (`actual ⊭ expected`). See [nudo contract](/docs/guides/contract).

@@ -1,7 +1,7 @@
 # Algebra — 类型即计算
 
 定义性示例：Abs 上的算术、结构与控制流。  
-与 `constraints/` 的精化互补——这里看 **推断本身**，不是门禁。
+与 `constraints/` 的契约互补——这里看 **推断本身**，不是门禁。
 
 Day 0 观察：`pnpm run test:cli <file>`（逐 case）· `pnpm run check <file>`（签名）。
 | 文件 | 考察点 |
@@ -23,4 +23,4 @@ Day 0 观察：`pnpm run test:cli <file>`（逐 case）· `pnpm run check <file>
 
 运行命令与期望退出码见 [../README.md](../README.md) 的命令矩阵；`pnpm run verify:examples` 一次验证全部。
 
-无契约时 `+` 跟真实 JS：`number | string`；有 `@nudo:refine` 才走数值路径。
+无契约时 `+` 跟真实 JS：`number | string`；有 `@nudo:contract` 才走数值路径。

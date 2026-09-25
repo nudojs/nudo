@@ -106,7 +106,7 @@ issues
 
 | Layer | Source | Behavior |
 |-------|--------|----------|
-| L1 explicit | `*.nudo.js` / `@nudo:refine` (alias `@nudo:interface`) | Violation → error |
+| L1 explicit | `*.nudo.js` / `@nudo:contract` | Violation → error |
 | L2 default JS contract | Runtime boundary on **entry/export** functions | Undigested may-throw → error (`nudo:entry-may-throw`); filter with `--ignore-throws` |
 
 L2 does **not** gate internal helpers. `try`/`catch` and refine can clear L2.
@@ -232,7 +232,7 @@ nudo contract --draft <paths...> [--write] [--json] [--fn <name>] [--dry-run] [-
 
 **Layers:**
 
-- `[handwritten]` — source `@nudo:refine` / sidecar binding (product term: **contract**)
+- `[handwritten]` — source `@nudo:contract` / sidecar binding (product term: **contract**)
 - `[generated]` — persisted `@generated` sidecar segment
 - `[implicit]` — call-site inference
 

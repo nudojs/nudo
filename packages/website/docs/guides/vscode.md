@@ -24,7 +24,7 @@ code --install-extension wmzy.nudo-vscode
 
 The extension activates when you open JavaScript files. It uses the `@nudojs/lsp` package to run a Language Server Protocol (LSP) server that provides all editor features.
 
-**File detection**: The language server analyzes `.js`, `.ts`, and `.mjs` files. Shipped default is `nudo.analysis.mode = "exports"` (export / sidecar / directives); see [Coexistence](./coexistence.md#when-to-use-modedirectives-vs-modeexports) for mode semantics. Contracts live in `*.nudo.js` sidecars and in-source `@nudo:refine` (alias `@nudo:interface`); `@nudo:case` is a debug / optional `nudo test` sub-layer. Full syntax: [Directives reference](../concepts/directives.md). Cross-editor capability comparison: [LSP Client Matrix](./lsp-clients.md).
+**File detection**: The language server analyzes `.js`, `.ts`, and `.mjs` files. Shipped default is `nudo.analysis.mode = "exports"` (export / sidecar / directives); see [Coexistence](./coexistence.md#when-to-use-modedirectives-vs-modeexports) for mode semantics. Contracts live in `*.nudo.js` sidecars and in-source `@nudo:contract`; `@nudo:case` is a debug / optional `nudo test` sub-layer. Full syntax: [Directives reference](../concepts/directives.md). Cross-editor capability comparison: [LSP Client Matrix](./lsp-clients.md).
 
 **Activation vs analysis gate**: `activationEvents` (`onLanguage:javascript` / `onLanguage:typescript`) only *starts* the client. Whether a buffer is *analyzed* is the server-side `shouldAnalyzeFile` gate (target path + `nudo.analysis.mode`). JSX/tsx languages may activate the extension but are not Nudo analysis targets.
 

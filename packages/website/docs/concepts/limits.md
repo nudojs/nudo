@@ -12,7 +12,7 @@ Young tools earn trust by being explicit. This page is the user-facing extract o
 ## Non-goals
 
 1. **Not a TypeScript compiler.** Nudo does not reimplement `tsc` project references, declaration merging, or full assignability.
-2. **No body-AST slot invention.** Obligations come from explicit contracts (`*.nudo.js` / `@nudo:refine`) or call-site facts — never from scanning the function body for “required fields” as check errors.
+2. **No body-AST slot invention.** Obligations come from explicit contracts (`*.nudo.js` / `@nudo:contract`) or call-site facts — never from scanning the function body for “required fields” as check errors.
    - **`nudo:missing-slot` is observation, not obligation.** With `analysis.evalMissingSlot: "warning"` (default `"off"`), evaluation that actually hits a missing field on a known shape emits a **warning** — it never invents check errors; contracts still gate through `nudo:constraint-violated`.
 3. **`@nudo:case` is debug only.** It feeds `nudo test` / LSP scenarios, not the contract product.
 4. **`check` only validates.** Artifacts (`.d.ts`, Zod, guards) come from `nudo export` — one-way, lossy projections of Abs.

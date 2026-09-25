@@ -236,7 +236,7 @@ describe("scan × effectiveInterface：conflict 与结构推断优先级", () =>
     const source = `
 /// @nudo:import { positive, negative } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function needsPos(x) {
   if (x > 0) return x;

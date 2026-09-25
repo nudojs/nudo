@@ -56,7 +56,7 @@ function heavy(data) {
   it("call-site L1 obligation stays enforced for skipped fns", () => {
     const src = `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   return heavyNative(x);

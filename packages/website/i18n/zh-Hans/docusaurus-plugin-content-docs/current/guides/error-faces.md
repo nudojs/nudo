@@ -30,21 +30,21 @@ description: Nudo 与 TypeScript 的错误对照 —— 真值、Pred、下一�
 /// @nudo:import { delay, positive, nonEmpty } from "./error-faces.nudo.js"
 
 /**
- * @nudo:refine ms delay
+ * @nudo:contract ms delay
  */
 export function setDelay(ms) {
   return ms;
 }
 
 /**
- * @nudo:refine return positive
+ * @nudo:contract return positive
  */
 export function bad() {
   return 0;
 }
 
 /**
- * @nudo:refine s nonEmpty
+ * @nudo:contract s nonEmpty
  */
 export function tag(s) {
   return "[" + s + "]";
@@ -86,7 +86,7 @@ signatures
   getName(user: any) => any  throws TypeError
 
 issues
-  [ERROR bad] bad: return value ⊭ @nudo:refine return positive  (nudo:constraint-violated)
+  [ERROR bad] bad: return value ⊭ @nudo:contract return positive  (nudo:constraint-violated)
       actual:   0  #exact
       expected: return > 0
       → return a value satisfying > 0

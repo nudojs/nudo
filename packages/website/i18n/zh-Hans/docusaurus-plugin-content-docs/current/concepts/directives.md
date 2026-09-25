@@ -6,7 +6,7 @@ description: "全部 @nudo: 指令（case、mock、pure、skip、sample、refine
 
 指令是控制 Nudo 如何分析代码的结构化注释。它们使用 `@nudo:` 命名空间以避免与 JSDoc 和其他工具冲突。将指令放在函数上方的块注释中。
 
-**契约产品**（精化义务）主路径在侧车文件——`*.nudo.js` 模块自动绑定源码同名导出，`@nudo:refine` 是其源码内形态（`@nudo:interface` 是精确别名）。见 [@nudo:refine](#nudorefine--refinement-contract) 与 [`nudo contract`](../guides/contract.md) 命令。
+**契约产品**主路径在侧车文件——`*.nudo.js` 模块自动绑定源码同名导出，`@nudo:contract` 是其源码内形态。见 [@nudo:contract](#nudocontract--source-contract) 与 [`nudo contract`](../guides/contract.md) 命令。
 
 ## 指令语法
 
@@ -41,7 +41,7 @@ async function fetchUser(id) {
 
 ## @nudo:case — 调试见证
 
-case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它不是契约产品——精化契约住在 `*.nudo.js` 侧车 / `@nudo:refine`（见 [@nudo:refine](#nudorefine--refinement-contract)）。`@nudo:case` 仍支持 `nudo test` 断言与 LSP 场景切换。case 实参使用具体值或约束构建器。
+case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它不是契约产品——契约住在 `*.nudo.js` 侧车 / `@nudo:contract`（见 [@nudo:contract](#nudocontract--source-contract)）。`@nudo:case` 仍支持 `nudo test` 断言与 LSP 场景切换。case 实参使用具体值或约束构建器。
 
 提供具名执行用例。每个用例定义**具体**输入，供 Nudo 调试场景执行函数时使用。
 
@@ -139,8 +139,8 @@ function add(a, b) {
 ### 范围
 
 - **不求值函数体。** 声明的类型（或 `any`）成为签名返回值；被跳过的函数体不参与入口 may-throw（L2）求值。
-- **形参义务保留。** `@nudo:refine` 前置条件仍会门禁调用点，形参展示仍来自手写契约——对带 `@nudo:refine x positive` 的被跳过函数 `needsPositive`，`nudo check` 报告 `needsPositive(x: number) => any`。
-- **返回契约仍被检查。** `@nudo:refine return positive` 之下的 `@nudo:skip lit(0)` 会报告 `nudo:constraint-violated`。
+- **形参义务保留。** `@nudo:contract` 前置条件仍会门禁调用点，形参展示仍来自手写契约——对带 `@nudo:contract x positive` 的被跳过函数 `needsPositive`，`nudo check` 报告 `needsPositive(x: number) => any`。
+- **返回契约仍被检查。** `@nudo:contract return positive` 之下的 `@nudo:skip lit(0)` 会报告 `nudo:constraint-violated`。
 
 ### 示例
 
@@ -194,11 +194,11 @@ function unannotatedHeavy(x) {
 
 ---
 
-## @nudo:refine — 精化契约 {#nudorefine--refinement-contract}
+## @nudo:contract — 源内契约 {#nudocontract--source-contract}
 
-把精化契约挂到参数或返回值。约束以 Pred 进入 Abs，**参与代数**（`x>0` ⇒ `x+1>1`），不只是调用点挡板。
+把契约挂到参数或返回值。约束以 Pred 进入 Abs，**参与代数**（`x>0` ⇒ `x+1>1`），不只是调用点挡板。
 
-`@nudo:interface` 是 `@nudo:refine` 的**精确别名**（解析为同一源码内精化）。**产品名**是 **contract**（侧车 `*.nudo.js` / `@nudo:refine`）；部分诊断码仍保留历史 `interface` 词元（`nudo:interface-param-mismatch` 等）。
+产品名：**contract**（侧车 `*.nudo.js` / `@nudo:contract`）；部分诊断码仍保留历史 `interface` 词元（`nudo:interface-param-mismatch` 等）。
 
 ### 主路径：侧车自动绑定
 
@@ -269,9 +269,9 @@ calc.js
 ### 源码内形态
 
 ```text
-@nudo:refine <param> <constraint>
-@nudo:refine return <constraint>
-@nudo:interface <param> <constraint>   // 别名
+@nudo:contract <param> <constraint>
+@nudo:contract return <constraint>
+@nudo:contract <param> <constraint>   // 别名
 ```
 
 - **param** — 参数名，或字面量 `return` 表示后置
@@ -283,15 +283,15 @@ calc.js
 /// @nudo:import { positive, delay } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
- * @nudo:refine return positive
+ * @nudo:contract x positive
+ * @nudo:contract return positive
  */
 function inc(x) {
   return x + 1;
 }
 
 /**
- * @nudo:refine ms delay
+ * @nudo:contract ms delay
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -312,7 +312,7 @@ export const user = shape({
 });
 
 /**
- * @nudo:refine u user
+ * @nudo:contract u user
  */
 function register(u) {
   return `${u.id}:${u.name}`;
@@ -323,7 +323,7 @@ function register(u) {
 
 ## @nudo:import — 约束模板引入
 
-为 `@nudo:refine` 从 `*.nudo.js` 模块引入约束模板。**文件级**指令，三斜线注释。
+为 `@nudo:contract` 从 `*.nudo.js` 模块引入约束模板。**文件级**指令，三斜线注释。
 
 ### 语法
 
@@ -332,8 +332,8 @@ function register(u) {
 /// @nudo:import * as ns from "./shapes.nudo.js"
 ```
 
-- **具名** — 绑定 `@nudo:refine` 使用的导出模板名
-- **命名空间** — `@nudo:import * as ns from "…"` 展开为 `@nudo:refine` 中的 `ns.exportName` 引用
+- **具名** — 绑定 `@nudo:contract` 使用的导出模板名
+- **命名空间** — `@nudo:import * as ns from "…"` 展开为 `@nudo:contract` 中的 `ns.exportName` 引用
 
 ### 示例
 
@@ -341,7 +341,7 @@ function register(u) {
 /// @nudo:import { positive } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function inc(x) {
   return x + 1;
@@ -543,8 +543,8 @@ const result = a + b;
 | `@nudo:pure` | （无参数） | 标记纯函数 —— 求值器按实参记忆化调用结果 |
 | `@nudo:skip` | `[returnsExpr]` | 跳过求值，使用已有类型信息 |
 | `@nudo:sample` | `N` | 保留的无效果指令（已解析，未消费） |
-| `@nudo:refine` / `@nudo:interface` | `param constraint` / `return constraint` | 源码内精化契约（别名对；主路径是 `*.nudo.js` 侧车自动绑定） |
-| `@nudo:import` | `{ name } from "spec"`（文件级 `///`） | 为 `@nudo:refine` 引入 `*.nudo.js` 约束模板 |
+| `@nudo:contract` | `param constraint` / `return constraint` | 源码内契约（主路径是 `*.nudo.js` 侧车自动绑定） |
+| `@nudo:import` | `{ name } from "spec"`（文件级 `///`） | 为 `@nudo:contract` 引入 `*.nudo.js` 约束模板 |
 | `@nudo:env` | `name1, name2`（文件级 `///`） | 声明运行时环境 API |
 | `@nudo:mock-module` | `"module" from "path"`（文件级 `///`） | 替换导入的模块为 mock |
 | `@nudo:as` | `typeValueExpr`（行注释 `//`） | 覆盖下一条语句的值类型 |

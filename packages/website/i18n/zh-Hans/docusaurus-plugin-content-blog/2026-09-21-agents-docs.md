@@ -12,7 +12,7 @@ Nudo 的观察输出本来就是结构化的。Agent 还需要一份稳定的产
 
 ```text
 Primary gate: npx nudojs check <path>
-Contracts: *.nudo.js / @nudo:refine (alias @nudo:interface)
+Contracts: *.nudo.js / @nudo:contract
 @nudo:case is debug-only — not the contract product
 Entry params print as any; unknown = inference failed
 check validates; export projects (lossy)

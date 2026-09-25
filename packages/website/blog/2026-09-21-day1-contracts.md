@@ -4,7 +4,7 @@ authors: [default]
 tags: [nudo, contracts, check]
 ---
 
-Nudo’s contract product is **not** a second type language. Contracts are ordinary JavaScript modules: sidecar `*.nudo.js` files that auto-bind to same-name exports, or in-source `@nudo:refine`.
+Nudo’s contract product is **not** a second type language. Contracts are ordinary JavaScript modules: sidecar `*.nudo.js` files that auto-bind to same-name exports, or in-source `@nudo:contract`.
 
 ```javascript
 // pricing.nudo.js
@@ -33,7 +33,7 @@ issues
 
 | Rule | Meaning |
 |------|---------|
-| Contract surface | `*.nudo.js` / `@nudo:refine` (`@nudo:interface` is an alias) |
+| Contract surface | `*.nudo.js` / `@nudo:contract` (`@nudo:contract` is an alias) |
 | `@nudo:case` | Debug witnesses only — never the contract product |
 | Drafts | `nudo contract --draft` is reviewable; never auto-bound |
 | check vs export | `check` validates Abs; `export` projects lossy dts/zod/guards |

@@ -18,7 +18,7 @@ We retired `tsc` on our JavaScript packages — and the gate got sharper
 大多数团队留着 `tsc --noEmit`，不是因为喜欢写注解，而是因为没有别的 CI 门禁。Nudo 的答案不是「再写一套类型语言」，而是：
 
 1. **JS 保持 JS** —— 不改运行时，不发明第二 IR。  
-2. **契约按需** —— `*.nudo.js` / `@nudo:refine`，义务只来自你接受的声明。  
+2. **契约按需** —— `*.nudo.js` / `@nudo:contract`，义务只来自你接受的声明。  
 3. **单向门** —— `nudo migrate status → strip → verify → retire`。出口是 **retire tsc**，不是双跑。
 
 我们用三个可运行样例钉住了故事：

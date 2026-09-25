@@ -17,7 +17,7 @@ TypeScript sources are also accepted: annotations are stripped and the code is a
 
 | | TypeScript | Nudo |
 |---|---|---|
-| Type annotations | Required everywhere | Optional — `*.nudo.js` contracts / `@nudo:refine` when you want obligations; call-site facts otherwise |
+| Type annotations | Required everywhere | Optional — `*.nudo.js` contracts / `@nudo:contract` when you want obligations; call-site facts otherwise |
 | Separate type system | Yes (structural) | No — types derived from execution |
 | Build step | `tsc` compilation | None — works on plain `.js` |
 | Type accuracy | Depends on annotations | Follows actual runtime semantics |
@@ -75,7 +75,7 @@ assertions
   — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
 ```
 
-Call-site facts (`call@<line>`) are the ground truth from execution. Optional contracts live in sidecars (`*.nudo.js`) or `@nudo:refine` — that is the interface product. Optional `@nudo:case` witnesses are **debug / `nudo test` only** (concrete args or constraint builders such as `number()` / `lit(42)`).
+Call-site facts (`call@<line>`) are the ground truth from execution. Optional contracts live in sidecars (`*.nudo.js`) or `@nudo:contract` — that is the interface product. Optional `@nudo:case` witnesses are **debug / `nudo test` only** (concrete args or constraint builders such as `number()` / `lit(42)`).
 
 ### Whole-program analysis (no directives needed)
 
@@ -175,7 +175,7 @@ Nudo uses structured JSDoc comments to guide analysis. Contracts are the product
 
 | Directive | Purpose |
 |---|---|
-| `@nudo:refine` | Attach a refinement / interface contract (`@nudo:refine x positive`) — main path is `*.nudo.js` sidecar binding |
+| `@nudo:contract` | Attach a source contract (`@nudo:contract x positive`) — main path is `*.nudo.js` sidecar binding |
 | `@nudo:as` | Override the next statement's inferred type (`// @nudo:as shape({ port: number() })`) |
 | `@nudo:replace` | Replace a sub-expression's type (`// @nudo:replace JSON.parse(x) shape({ id: number() })`) |
 | `@nudo:mock` | Provide mock implementations for external dependencies (plain JS / `stub().returns(...)` / constraint builders) |
@@ -213,7 +213,7 @@ scale(x)  number  = (x + 1)  where (x + 1) > 1  #path
     conf: path          -- exact / path / widened / partial / opaque
 ```
 
-With `@nudo:refine x positive`, `scale` gets the term `(x + 1)` **and** the derived predicate `(x + 1) > 1` — `x > 0` propagates through `x + 1`, not just through call-site gates. Assignability is structural (`leqAbs`); `nudo check` reports implication failures (`actual ⊭ expected`).
+With `@nudo:contract x positive`, `scale` gets the term `(x + 1)` **and** the derived predicate `(x + 1) > 1` — `x > 0` propagates through `x + 1`, not just through call-site gates. Assignability is structural (`leqAbs`); `nudo check` reports implication failures (`actual ⊭ expected`).
 
 ### Abs projections
 

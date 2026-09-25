@@ -24,21 +24,21 @@ const add = (a, b) => a + b;
 add(1, 3);
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  * @nudo:case "symbolic" (number())
  */
 function scale(x) {
-  // 前置条件：x > 0（来自 @nudo:refine）
+  // 前置条件：x > 0（来自 @nudo:contract）
   // add(x, 1) → term=x+1, pred: (x+1)>1
   return add(x, 1);
 }
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  * @nudo:case "symbolic" (number())
  */
 function twice(x) {
-  // 前置条件：x > 0（来自 @nudo:refine）
+  // 前置条件：x > 0（来自 @nudo:contract）
   const c = add(x, 1); // c ↦ x+1, c>1
   return add(c, 1);    // (x+1)+1, >2
 }

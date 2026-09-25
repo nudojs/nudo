@@ -7,7 +7,7 @@ description: nudo check — L1 refinement gate + L2 entry throws on Abs; prints 
 
 `nudo check` is Nudo's **gate on Abs**. It enforces:
 
-1. **L1 explicit contracts** — refinements from `*.nudo.js` / `@nudo:refine` (Pred implication on Abs; `@nudo:interface` is an exact alias)
+1. **L1 explicit contracts** — refinements from `*.nudo.js` / `@nudo:contract` (Pred implication on Abs)
 2. **L2 default JS contracts** — undigested may-throw on **entry/export** functions
 
 The report is **Nudo-native** (`actual ⊭ expected`), not a TypeScript diagnostic in disguise. On success **and** failure, `check` prints signatures — it is not silent.
@@ -65,7 +65,7 @@ issues
 
 | Code | Layer | Severity | Meaning |
 |------|-------|----------|---------|
-| `nudo:constraint-violated` | L1 | error | Call/return ⊭ `@nudo:refine` (scalar bounds / shape fields) |
+| `nudo:constraint-violated` | L1 | error | Call/return ⊭ `@nudo:contract` (scalar bounds / shape fields) |
 | `nudo:assign-mismatch` | L1 | error | Assignment ⊭ previous binding shape (`leqAbs`) |
 | `nudo:arg-structure` | L1 | error (explicit contract) / warning (body-promote) | HOF: argument is not a callable `fn` / arity mismatch. Usage-driven body promotion is a **warning suggestion**; only explicit relation contracts make it an error |
 | `nudo:case-inconsistency` | L1 | error | `@nudo:case` witness ⊭ refine |
@@ -84,13 +84,13 @@ issues
 
 ## L1 — explicit contracts
 
-Refinements are declared with `@nudo:refine` — Preds that enter Abs and participate in algebra.
+Refinements are declared with `@nudo:contract` — Preds that enter Abs and participate in algebra.
 
 ```js
 /// @nudo:import { positive } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   return x;
@@ -111,7 +111,7 @@ function clamp(n, lo, hi) {
   if (n > hi) return hi;
   return n;
 }
-clamp(-5, 0, 10);  // OK — no @nudo:refine declared
+clamp(-5, 0, 10);  // OK — no @nudo:contract declared
 ```
 
 Nudo does **not** invent required slots from body AST scans.

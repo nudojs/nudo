@@ -9,7 +9,7 @@ description: Nudo 执行 JavaScript，在 check 上打印签名，并门禁契�
 
 你的 JS 仍是 JS。**Nudo** 不限制你如何写 JavaScript —— 它忠实观察中间值与结果，并执法比普通 TypeScript 类型更精确的**契约**。
 
-写普通 `.js`。需要义务时再补侧车契约（`*.nudo.js` / `@nudo:refine`）。即便没有显式契约，导出边界 may-throw 仍会被门禁（L2）。入口无约束参数显示为 **`any`**；真 **`unknown`** 表示推导失败。
+写普通 `.js`。需要义务时再补侧车契约（`*.nudo.js` / `@nudo:contract`）。即便没有显式契约，导出边界 may-throw 仍会被门禁（L2）。入口无约束参数显示为 **`any`**；真 **`unknown`** 表示推导失败。
 
 **产品面：** Day 0 = `nudo check`（签名 + 门禁）。Day 1 = `nudo contract` + `nudo check`。生态 = `nudo export`。观察是 check 签名 + IDE hover —— **没有**观察动词。`nudo test` 是可选的调试用例报告器，不是主路径。
 
@@ -70,7 +70,7 @@ issues
 | 层级 | 你写什么 | 你得到什么 |
 |-------|----------------|--------------|
 | **Day 0** | 普通 JS + 调用点 | `nudo check` 签名 + L2 入口 may-throw |
-| **Day 1** | `*.nudo.js` / `@nudo:refine` | `nudo check` L1 义务（`actual ⊭ expected`） |
+| **Day 1** | `*.nudo.js` / `@nudo:contract` | `nudo check` L1 义务（`actual ⊭ expected`） |
 | **生态** | 无需额外 | `nudo export` dts / guard / schema（Abs 的有损投影） |
 | **进阶** | Abs 代数、env、mock | 字符串/数字代数、高阶函数、模块图 |
 
@@ -81,12 +81,12 @@ issues
 | | TypeScript | Nudo |
 |---|---|---|
 | 主产物 | `.ts` 上的声明类型 | 执行 `.js` 得到的观测 Abs |
-| 契约 | 类型语言 + 可赋值性 | 侧车 `*.nudo.js` / `@nudo:refine` + L2 入口 throws |
+| 契约 | 类型语言 + 可赋值性 | 侧车 `*.nudo.js` / `@nudo:contract` + L2 入口 throws |
 | 精度 | 常被拓宽（`string`、`number`） | 可保留字面量、模板结构、循环求和 |
 | 观察 | hover 显示声明类型 | `check` 签名 / IDE hover 显示 term / pred / conf |
 | CI 门禁 | `tsc --noEmit` | `nudo check`（成功时也打印 signatures） |
 
-`"a,b,c".split(",")` → `["a", "b", "c"]`。有了 `@nudo:refine x positive`，`scale` 会带上 `(x + 1) > 1`。这是校验 + 可观测，不是第二套类型语言。
+`"a,b,c".split(",")` → `["a", "b", "c"]`。有了 `@nudo:contract x positive`，`scale` 会带上 `(x + 1) > 1`。这是校验 + 可观测，不是第二套类型语言。
 
 诚实对比：[Nudo vs TypeScript](./guides/vs-typescript.md)。边界：[Nudo 不宣称什么](./concepts/limits.md)。
 
@@ -98,7 +98,7 @@ issues
 - **[契约](./guides/contract.md)** — 草稿 / 接受 / `nudo contract`
 - **[nudo check](./guides/check.md)** — Abs 上的 L1 + L2 门禁
 - **[Abs](./concepts/type-values.md)** — `shape × term × pred × conf`
-- **[指令](./concepts/directives.md)** — `@nudo:refine` / 侧车文法（参考）
+- **[指令](./concepts/directives.md)** — `@nudo:contract` / 侧车文法（参考）
 - **[Playground](/playground)** — 浏览器观察
 - **[Recipes](./guides/recipes.md)** — CI、monorepo、export
 - **[诊断](./reference/diagnostics.md)** — 稳定诊断码

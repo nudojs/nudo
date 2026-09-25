@@ -5,7 +5,7 @@
 /// @nudo:import { user } from "./user.nudo.js"
 
 /**
- * @nudo:refine u user
+ * @nudo:contract u user
  */
 export function idOf(u) {
   return u.id;

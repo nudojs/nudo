@@ -34,7 +34,7 @@ nudo check src/
 
 | 档位 | 含义 | 迁移动作 |
 |------|------|----------|
-| `handwritten` | 已有契约（侧车 / `@nudo:refine`） | 保留；用 `check` 执法 |
+| `handwritten` | 已有契约（侧车 / `@nudo:contract`） | 保留；用 `check` 执法 |
 | `generated` | 调用点域已固化 `@generated` | 用法变化时 `--emit` 刷新 |
 | `implicit` | 仅推断展示 | **草稿候选** |
 

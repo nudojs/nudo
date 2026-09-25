@@ -894,7 +894,7 @@ export function scanLiteralCalls(
   };
 
   // nudo:interface-conflict 只在 check.ts fn 级报告（权威面）：conflict 必然
-  // 蕴含源文件含 @nudo:refine/@nudo:interface，fn 级门恒开且必然已报——
+  // 蕴含源文件含 @nudo:contract/@nudo:contract，fn 级门恒开且必然已报——
   // 调用点级再报一次只会双报两种消息形态（此处历史上曾重复，已收口）。
 
   /** eq(var, lit) / eq(lit, var) 的标量字面量端；非该形态 → undefined */

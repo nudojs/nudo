@@ -16,7 +16,7 @@ Nudo 面向 **agent 可执行**：稳定动词、稳定诊断码，并提供机�
 ```text
 Read https://nudojs.github.io/nudo/agents.md and set up Nudo in this project.
 Primary gate: npx nudojs check <path>.
-Contracts are *.nudo.js / @nudo:refine (alias @nudo:interface).
+Contracts are *.nudo.js / @nudo:contract.
 Do not invent body-AST obligations. @nudo:case is debug-only.
 Entry params print as any; unknown = inference failed.
 Leaving tsc: npx nudojs migrate status|strip|verify|retire (exit is retire).
@@ -28,7 +28,7 @@ Leaving tsc: npx nudojs migrate status|strip|verify|retire (exit is retire).
 |------|------|
 | 动词 | 仅 `check` \| `test` \| `contract` \| `export` \| `health` \| `migrate` |
 | 无 `infer` 动词 | 观察 = check 签名 + IDE |
-| 契约 | sidecar / `@nudo:refine`；`@nudo:interface` 只是别名 |
+| 契约 | sidecar / `@nudo:contract` |
 | `@nudo:case` | 仅调试 / `nudo test` / LSP |
 | any vs unknown | 入口 `any`；`unknown` = 推导失败 |
 | check vs export | check 校验；export 有损投影 |

@@ -183,7 +183,7 @@ pin 'pnpm run check docs/examples/constraints/set-delay.js' \
   'setDelay[ms]: argument ⊭ precondition' 'expected: ms > 0' \
   'needsPositive[x]: argument ⊭ precondition' 'expected: x > 0'
 pin 'pnpm run check docs/examples/constraints/return-contract.js' \
-  'bad: return value ⊭ @nudo:refine return positive' 'expected: return > 0' \
+  'bad: return value ⊭ @nudo:contract return positive' 'expected: return > 0' \
   'nudo contract --draft'
 pin 'pnpm run check docs/examples/constraints/declared-vs-if.js' \
   'setDelay[ms]: argument ⊭ precondition'
@@ -241,7 +241,7 @@ pin 'pnpm run check docs/examples/errors/03-assign-missing.js' \
 pin 'pnpm run check docs/examples/errors/04-entry-throws.js' \
   'entry-may-throw' 'throws TypeError' 'nudo contract --draft'
 pin 'pnpm run check docs/examples/errors/05-return-refine.js' \
-  'return value ⊭ @nudo:refine return positive' 'expected: return > 0'
+  'return value ⊭ @nudo:contract return positive' 'expected: return > 0'
 pin 'pnpm run check docs/examples/errors/06-plus-truth.js' \
   'number | string' 'x > 0' 'actual:   -1  #exact'
 pin 'pnpm run check docs/examples/errors/07-prim-assign.js' \

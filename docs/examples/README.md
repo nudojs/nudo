@@ -4,7 +4,7 @@ Single entry point. Grouped by scenario, independent of implementation layout.
 
 | Directory | Scenario |
 |-----------|----------|
-| [`constraints/`](./constraints/) | `@nudo:refine` × Pred: scalars / shapes / return refinement |
+| [`constraints/`](./constraints/) | `@nudo:contract` × Pred: scalars / shapes / return refinement |
 | [`structure/`](./structure/) | Abs `leq`: assignment / argument structure |
 | [`vs-ts/`](./vs-ts/) | Same logic, side by side with TypeScript |
 | [`mini-repo/`](./mini-repo/) | Multi-file integration (ESM + class + async) |
@@ -29,7 +29,7 @@ Browse by theme on the website [Examples guide](https://nudojs.github.io/nudo/do
 Contracts are not type annotations — they are **Preds entering Abs**, and they participate in algebra (`x>0` ⇒ `x+1>1`).
 
 - Refinement comes only from **declarations** (templates exported by `.nudo.js`); an `if` branch is not a refinement
-- One form: `@nudo:refine <param|return> <constraint>`; object shapes use `shape({...})` — no `interface` / `type` needed
+- One form: `@nudo:contract <param|return> <constraint>`; object shapes use `shape({...})` — no `interface` / `type` needed
 - Template syntax, return refinement, and the contrast with `@nudo:case`: [`constraints/README.md`](./constraints/README.md) (tutorial in this directory)
 
 ## Without contracts, follow real JS
@@ -75,7 +75,7 @@ The single-line commands in each subdirectory README and example file header are
 |---------|------|-------|
 | `pnpm run check docs/examples/constraints/set-delay.js` | **1** | Negative: `setDelay[ms]: argument ⊭ precondition` / `needsPositive[x]: argument ⊭ precondition` |
 | `pnpm run check docs/examples/constraints/register.js` | **0** | Positive: user / config shape refinement (signatures pinned) |
-| `pnpm run check docs/examples/constraints/return-contract.js` | **1** | Negative: `bad: return value ⊭ @nudo:refine return positive` |
+| `pnpm run check docs/examples/constraints/return-contract.js` | **1** | Negative: `bad: return value ⊭ @nudo:contract return positive` |
 | `pnpm run check docs/examples/constraints/declared-vs-if.js` | **1** | Negative: `if` ≠ refinement |
 | `pnpm run check docs/examples/constraints/add-pred.js` | **1** | Negative: `scale[x]: argument ⊭ precondition` (`actual: -1 #exact`) |
 | `pnpm run test:cli docs/examples/constraints/add-pred.js` | **0** | Pred flows into algebra (test case report, positive) |

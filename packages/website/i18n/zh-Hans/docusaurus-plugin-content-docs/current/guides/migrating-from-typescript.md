@@ -29,7 +29,7 @@ Nudo 按 **JS 语义**分析。指向 `.ts` 会剥注解 —— 用 `migrate str
 |---------|-----------|
 | 在源码里标注参数/返回 | Day 0：`nudo check` 打印签名（无证据/契约前为 `any`） |
 | CI 里 `tsc --noEmit` | CI 里 `nudo check`（成功也打印 signatures） |
-| `interface` / mapped 当义务 | 侧车 `*.nudo.js` 构造器 + 可选 `@nudo:refine` |
+| `interface` / mapped 当义务 | 侧车 `*.nudo.js` 构造器 + 可选 `@nudo:contract` |
 | Hover 显示声明类型 | Hover / inlay 显示 Abs 事实（term / pred / conf） |
 | `.d.ts` 是模型 | `.d.ts` 是**有损导出**；Abs 是模型 |
 | 重构改注解 | 重构改**证据**（调用点）和/或**契约** |

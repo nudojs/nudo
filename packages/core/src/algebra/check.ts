@@ -459,7 +459,7 @@ function checkSourceInner(
 ): CheckReport {
   // 整文件一次判定，避免 per-function includes 全文扫
   const hasRefineDirective =
-    source.includes("@nudo:refine") || source.includes("@nudo:interface");
+    source.includes("@nudo:contract") || source.includes("@nudo:contract");
   // ambient 侧车存在时预取本地导出表（一次 parse）：侧车同名绑定只落本地 named export
   const exportedNames =
     sidecarFp !== undefined ? localNamedExports(source) : undefined;
@@ -724,7 +724,7 @@ function checkSourceInner(
       });
     }
 
-    // 有效契约（源码 @nudo:refine/@nudo:interface ∪ 侧车同名手写绑定）：
+    // 有效契约（源码 @nudo:contract/@nudo:contract ∪ 侧车同名手写绑定）：
     // - conflict（常数界交叉矛盾）→ nudo:interface-conflict，fn 级一次
     // - 参数名对不上形参表 → nudo:interface-param-mismatch（C4.5；不再静默跳过）
     // - 返回后置仅 handwritten 执法（generated = 事实快照，drift 另行）
@@ -754,7 +754,7 @@ function checkSourceInner(
             message: `${name}: contract parameter name(s) not in the formal parameter list (${unknownParams.join(", ")})`,
             actual: unknownParams.join(", "),
             expected: surface || g.params.join(", ") || "(no params)",
-            suggestion: `rename the @nudo:refine / sidecar binding parameter to one of: ${
+            suggestion: `rename the @nudo:contract / sidecar binding parameter to one of: ${
               surface || g.params.join(", ") || "(function has no params)"
             }`,
             fn: name,
@@ -767,7 +767,7 @@ function checkSourceInner(
             severity: "error",
             code: "nudo:interface-conflict",
             message: `${name}: handwritten contract conjunction unsatisfiable (${eff.conflict.params.join(", ")})`,
-            suggestion: "check whether the source @nudo:refine and the same-name sidecar binding have contradictory constant bounds",
+            suggestion: "check whether the source @nudo:contract and the same-name sidecar binding have contradictory constant bounds",
             fn: name,
           });
         }
@@ -777,7 +777,7 @@ function checkSourceInner(
             code: "nudo:interface-conflict",
             message: `${name}: handwritten contract conjunction unsatisfiable on the return slot`,
             suggestion:
-              "check whether the source @nudo:refine return and the sidecar fn() return constraint are contradictory (the return slot is not enforced when they are)",
+              "check whether the source @nudo:contract return and the sidecar fn() return constraint are contradictory (the return slot is not enforced when they are)",
             fn: name,
           });
         }
@@ -841,7 +841,7 @@ function checkSourceInner(
       severity: "info",
       code: "nudo:recursion-truncated",
       message: `Recursive evaluation of '${label}' was truncated (depth/size budget); result widened to unknown#opaque (budget — not inference debt)`,
-      suggestion: "narrow the recursion base case or declare an explicit @nudo:refine return contract",
+      suggestion: "narrow the recursion base case or declare an explicit @nudo:contract return contract",
       fn: label,
     });
   }
@@ -1268,7 +1268,7 @@ function formatSigCached(absVal: Abs, name: string): { display: string; detail: 
 }
 
 /**
- * 后置契约：推断返回 Abs ⊭ @nudo:refine return 声明。
+ * 后置契约：推断返回 Abs ⊭ @nudo:contract return 声明。
  * 只在有确定信息时报（字面量界 / prim 类型 / shape 缺字段）。
  */
 function checkReturnConstraint(
@@ -1286,7 +1286,7 @@ function checkReturnConstraint(
     out.push({
       severity: "error",
       code: "nudo:constraint-violated",
-      message: `${fnName}: return value ⊭ @nudo:refine return ${cName}`,
+      message: `${fnName}: return value ⊭ @nudo:contract return ${cName}`,
       actual,
       expected,
       suggestion,
@@ -1533,8 +1533,8 @@ function scanCaseInconsistency(
   // 快路径：无 case 指令则免整树 walk；无契约来源时 case 不可能 ⊄ 契约
   if (!source.includes("@nudo:case")) return out;
   const hasContractOrigin =
-    source.includes("@nudo:refine") ||
-    source.includes("@nudo:interface") ||
+    source.includes("@nudo:contract") ||
+    source.includes("@nudo:contract") ||
     opts.sidecarPresent === true;
   if (!hasContractOrigin) return out;
   const file = opts.file ?? parse(source);

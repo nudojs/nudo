@@ -17,10 +17,10 @@ description: 稳定的 Nudo 诊断码 —— 含义、最小复现、Abs 视图�
 |--|--|
 | **含义** | 调用/返回不满足显式契约 Pred |
 | **层** | L1 error |
-| **来源** | `*.nudo.js` / `@nudo:refine` |
+| **来源** | `*.nudo.js` / `@nudo:contract` |
 
 ```javascript
-// needsPositive with @nudo:refine x positive
+// needsPositive with @nudo:contract x positive
 needsPositive(-1);
 // actual:   -1  #exact
 // expected: x > 0
@@ -114,7 +114,7 @@ f(...) result confidence partial
 
 ### `nudo:interface-entry-only` {#nudo-interface-entry-only}
 
-导出函数**无契约根**（无手写/生成侧车或 `@nudo:refine`）且**无调用点域**（仅合成 `entry@`、参数为 `any`）。**Info** —— 覆盖/契约缺口，不是门禁失败。修复：补契约（`*.nudo.js` / `@nudo:refine`），或从使用现场触达该导出（`nudo check --from`）。
+导出函数**无契约根**（无手写/生成侧车或 `@nudo:contract`）且**无调用点域**（仅合成 `entry@`、参数为 `any`）。**Info** —— 覆盖/契约缺口，不是门禁失败。修复：补契约（`*.nudo.js` / `@nudo:contract`），或从使用现场触达该导出（`nudo check --from`）。
 
 ### `nudo:dual-entry` {#nudo-dual-entry}
 

@@ -531,7 +531,7 @@ npm run ci
 
 ## 各自类型面（用满，禁止互仿文体）
 
-- **Nudo**：裸 JS 推断；fail-fast 用 \`@nudo:throws Error\`；源级契约用 \`@nudo:refine\` +
+- **Nudo**：裸 JS 推断；fail-fast 用 \`@nudo:throws Error\`；源级契约用 \`@nudo:contract\` +
   \`*.nudo.js\`（builder 从 \`@nudojs/core\` 导入）。**不要**写 TS 注解 / 当 type checker 用。
 - **TypeScript**：\`.ts\` 注解 / \`checkJs\` + JSDoc / \`@ts-check\` / \`.d.ts\`。
   **不要**用 \`@nudo:\` 指令。
