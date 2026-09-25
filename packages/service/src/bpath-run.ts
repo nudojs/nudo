@@ -28,6 +28,7 @@ import {
 import { parse, extractInlineDirectives } from "@nudojs/parser";
 import { loadEnvs } from "./evaluator/evaluator-api.ts";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
+import { applyMockModuleDirectivesFromSource } from "./mock-module.ts";
 import { clearAnalysisFileCache } from "./analysis-file-cache.ts";
 import { getSessionCacheLimits } from "./session-cache-limits.ts";
 import { clearFnAnalysisCache } from "./fn-analysis-cache.ts";
@@ -470,7 +471,10 @@ export function tryRunBPath(
     try {
       const { modules: graphMods, issues } = evalAbsModuleGraph(source, filePath);
       const envMods = collectEnvModules(opts.envNames ?? []);
-      const modules = mergeHarvestUnderEnv(graphMods, envMods);
+      let modules = mergeHarvestUnderEnv(graphMods, envMods);
+      // @nudo:mock-module 覆盖（与 analyzer 同口径）
+      const mm = applyMockModuleDirectivesFromSource(source, modules, { fromFile: filePath });
+      modules = mm.modules;
       const { targets, values, asTargets, asValues } = collectBPathReplacements(source);
       const envGlobals = {
         ...collectEnvGlobals(opts.envNames ?? []),

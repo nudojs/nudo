@@ -1029,7 +1029,14 @@ function generalizeFromAstUncached(
   const hasMocks = inject && Object.keys(inject.mocks ?? {}).length > 0;
   const hasEnv = inject && Object.keys(inject.envGlobals ?? {}).length > 0;
   const hasReps = inject && Object.keys(inject.replacements ?? {}).length > 0;
-  const mockGated = /@nudo:(mock|mock-module)\b/.test(source) && !hasMocks;
+  // 函数 mock 与模块 mock 分门：mock-module 的注入面是 modules（导出表覆盖），
+  // 不是 inject.mocks——混用会把仅有 mock-module 的文件误门成 fail-closed。
+  const hasFnMockDirective = /@nudo:mock\s+\w+\s*(?:=|from\b)/.test(source);
+  const hasModMockDirective = /@nudo:mock-module\b/.test(source);
+  const hasModInject =
+    inject && inject.modules && Object.keys(inject.modules).length > 0;
+  const mockGated =
+    (hasFnMockDirective && !hasMocks) || (hasModMockDirective && !hasModInject);
   const envGatedSource = /@nudo:env\b/.test(source) && !hasEnv;
   // 自由标识符分析用词法绑定名（formals），非展示名（rest 的 "...args" 不匹配
   // AST 标识符 args）；pattern 取 bound 顶层名。

@@ -266,6 +266,12 @@ export {
 } from "./mock-abs.ts";
 
 export {
+  applyMockModuleDirectives,
+  applyMockModuleDirectivesFromSource,
+  type MockModuleApplyResult,
+} from "./mock-module.ts";
+
+export {
   interfaceSurface,
   formatInterfaceSurfaceLine,
   type InterfaceSurfaceEntry,

@@ -279,7 +279,7 @@ function topLevelFnParams(file: Node): Map<string, string[]> {
  * apply 优先于 body 派发（callFunctionUnchecked 第三路径），跨边界调用
  * 由 callTranspiledExportFull 回进 B-path 函数执行。
  */
-function bPathExportsToModuleExports(
+export function bPathExportsToModuleExports(
   run: Record<string, unknown>,
   file: Node,
   fingerprintPrefix: string,

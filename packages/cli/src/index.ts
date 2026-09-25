@@ -519,10 +519,20 @@ async function runCheck(
       const hasCycle = graph.issues.some((i) => i.kind === "cycle");
       // env modules（fs/path/node:*…）并入模块图：与 test 路径
       // mergeHarvestUnderEnv 同口径，check 的 import/require 才能解析 env 模块
-      const mergedMods = {
+      let mergedMods = {
         ...graph.modules,
         ...(Object.keys(envMods).length > 0 ? envMods : {}),
       };
+      // @nudo:mock-module：覆盖 import 说明符导出（全量/局部）
+      const { applyMockModuleDirectivesFromSource } = await import("@nudojs/service");
+      const mm = applyMockModuleDirectivesFromSource(source, mergedMods, {
+        fromFile: filePath,
+      });
+      mergedMods = mm.modules;
+      mockFromErrors = [
+        ...mockFromErrors,
+        ...mm.errors.map((e) => ({ name: e.name, fromPath: e.fromPath, message: e.message })),
+      ];
       inject = {
         ...(hasCycle
           ? (Object.keys(envMods).length > 0 ? { modules: envMods } : {})

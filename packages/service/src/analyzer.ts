@@ -62,6 +62,7 @@ import { loadEnvs, preloadPathEnvs } from "./evaluator/env-loader.ts";
 import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
 import { resolveNpmNudo } from "./evaluator/resolve-npm.ts";
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks, mockSeedsForSource } from "./mock-abs.ts";
+import { applyMockModuleDirectives } from "./mock-module.ts";
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
 import { noteEnvPathDeps } from "./env-path-deps.ts";
 import { loadModuleDepsFingerprint, hashSource } from "@nudojs/core";
@@ -1429,6 +1430,20 @@ function analyzeFileUncachedInner(
       // 模块图只处理相对 import 与 harvest 裸包（跳过 node: 前缀）。
       // 手写 env 在重叠模块/导出上 wins（B8）；harvest 只补洞。
       absGraphModules = mergeHarvestUnderEnv(g.modules, collectEnvModules(envNames));
+      // @nudo:mock-module：覆盖 import 说明符的导出表（全量/局部）
+      const mm = applyMockModuleDirectives(absGraphModules, fileDirectives, {
+        fromFile: filePath,
+        ...(loadModule ? { loadModule } : {}),
+      });
+      absGraphModules = mm.modules;
+      for (const fe of mm.errors) {
+        diagnostics.push({
+          range: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
+          severity: "error",
+          message: fe.message,
+          code: "nudo:module-missing",
+        });
+      }
       pushBModuleIssues(g.issues);
     } catch {
       /* 模块图失败交还 TypeValue */
