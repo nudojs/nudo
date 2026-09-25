@@ -21,7 +21,7 @@ nudo export <path> [--format dts|guard|schema|standard|all] [--dialect zod] [--o
 |---|---|
 | `dts` | TypeScript declarations (default) — one-way npm/editor bridge |
 | `guard` | Zero-dependency runtime type-guard functions |
-| `schema` | Schema source for `--dialect` (currently `zod`) → `*.nudo.schema.zod.ts` |
+| `schema` | Zod JS module (`import { z } from "zod"`) for `--dialect` (currently `zod`) → `*.nudo.schema.zod.ts` |
 | `standard` | [Standard Schema](https://standardschema.dev) v1 modules (`~standard`, vendor `nudo`) |
 | `all` | dts + guard + schema + standard |
 

@@ -288,7 +288,7 @@ nudo export <path> [--format dts|guard|schema|standard|all] [--dialect zod] [--o
 |------|------|
 | `dts` | TypeScript 声明 —— 每函数一条拓宽签名；case 精度保留在 JSDoc |
 | `guard` | 运行时类型守卫（有无损 Abs 路径时优先） |
-| `schema` | `--dialect` 对应的 schema 源码 → `*.nudo.schema.<dialect>.ts` |
+| `schema` | `--dialect` 对应的 zod JS 模块 → `*.nudo.schema.<dialect>.ts` |
 | `standard` | Standard Schema v1 模块（`~standard`，vendor `nudo`）→ `<fn>.nudo.standard.ts` |
 | `all` | dts + guard + schema + standard |
 

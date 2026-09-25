@@ -298,7 +298,7 @@ nudo export <path> [--format dts|guard|schema|standard|all] [--dialect zod] [--o
 |--------|----------|
 | `dts` | TypeScript declarations — one widened signature per function; case precision preserved in JSDoc |
 | `guard` | Runtime type-guards (prefer lossless Abs path when available) |
-| `schema` | Schema source for `--dialect` (default zod) → `*.nudo.schema.<dialect>.ts` |
+| `schema` | Zod JS module for `--dialect` (default zod) → `*.nudo.schema.<dialect>.ts` |
 | `standard` | Standard Schema v1 modules (`~standard`, vendor `nudo`) → `<fn>.nudo.standard.ts` |
 | `all` | dts + guard + schema + standard |
 

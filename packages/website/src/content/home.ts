@@ -283,10 +283,8 @@ export const dtsHints: LineHint[] = [
   },
 ];
 
-/* CLI stdout prints schema expressions as comments (copy-paste). Homepage
-   shows the assembled module — the form you actually ship. */
+/* CLI export --format schema writes a ready-to-import zod JS module. */
 export const zodOutput = `// nudo export pricing.js --format schema --dialect zod
-// stdout lists expressions as comments — assembled module below
 
 import { z } from "zod";
 

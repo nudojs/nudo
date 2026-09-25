@@ -9,11 +9,12 @@ import {
   effectiveInterface,
   constraintToEntryAbs,
   joinAbs,
+  obj,
   type Abs,
 } from "@nudojs/core";
 import {
-  projectAbsToSchema,
   absToStandardSchemaModule,
+  absToZodSchemaModule,
   type SchemaDialect,
   generateGuardFunctionFromAbs,
   generateFunctionDtsLines,
@@ -56,7 +57,7 @@ async function runExport(
   }
 
   const effectiveDialect = schemaDialectOf(format, dialect);
-  const schemaChunks: string[] = [];
+  const schemaExports: Record<string, Abs> = {};
   const standardChunks: string[] = [];
   const guardChunks: string[] = [];
   const dtsChunks: string[] = [];
@@ -66,39 +67,51 @@ async function runExport(
     const caseResults: CaseResult[] = fn.cases;
     const baseName = fn.name;
 
-    if (wantsSchema(format)) {
-      const lines: string[] = [
-        `\n// === ${baseName} Schema (${effectiveDialect}) ===`,
-      ];
-      for (const c of caseResults) {
-        const inputParts: string[] = [];
-        const outputProj = projectAbsToSchema(c.abs, { dialect: effectiveDialect });
-        for (const [i, a] of c.argAbs.entries()) {
-          const p = projectAbsToSchema(a, { dialect: effectiveDialect });
-          inputParts.push(`arg${i}: ${p.source}`);
-          for (const note of p.dropped) {
-            droppedNotes.push(`${baseName} arg${i}: ${note}`);
-          }
-        }
-        for (const note of outputProj.dropped) {
-          droppedNotes.push(`${baseName} output: ${note}`);
-        }
-        const label = c.name.startsWith("call@") || c.name.startsWith("entry@")
-          ? c.name
-          : `debug "${c.name}"`;
-        lines.push(`// ${label}:`);
-        lines.push(`// Input: { ${inputParts.join(", ")} }`);
-        lines.push(`// Output: ${outputProj.source}`);
+    // 运行时校验器应尽量反映**契约域**，而不是单次调用点字面量。
+    const eff = effectiveInterface(source, baseName, {
+      loadModule: defaultLoadModule,
+      fromFile: filePath,
+    });
+    const paramExps: Array<{ name: string; abs: Abs }> = [];
+    let outputAbs: Abs | undefined;
+    if (eff) {
+      for (const p of eff.params) {
+        paramExps.push({
+          name: p.param,
+          abs: constraintToEntryAbs(p.constraint, p.param),
+        });
       }
-      schemaChunks.push(lines.join("\n"));
+      if (eff.returns) {
+        outputAbs = constraintToEntryAbs(eff.returns.constraint, "return");
+      }
+    }
+    if (paramExps.length === 0) {
+      // 无显式参数契约：对各 case 同槽 argAbs 做 join
+      const arity = Math.max(0, ...caseResults.map((c) => c.argAbs.length));
+      for (let i = 0; i < arity; i++) {
+        const parts = caseResults.map((c) => c.argAbs[i]).filter((a): a is Abs => !!a);
+        if (parts.length === 0) continue;
+        const joined = parts.reduce((a, b) => joinAbs(a, b));
+        paramExps.push({ name: fn.paramNames[i] ?? `arg${i}`, abs: joined });
+      }
+    }
+    if (!outputAbs) {
+      outputAbs = fn.combinedAbs ?? caseResults[0]?.abs;
+    }
+
+    if (wantsSchema(format)) {
+      // 一个可 import 的 zod 模块：`<fn>Input`（参数对象）+ `<fn>Output`
+      const inputSlots: Record<string, { value: Abs; optional?: boolean }> = {};
+      for (const p of paramExps) {
+        inputSlots[p.name] = { value: p.abs };
+      }
+      schemaExports[`${baseName}Input`] = obj(inputSlots);
+      if (outputAbs) {
+        schemaExports[`${baseName}Output`] = outputAbs;
+      }
     }
 
     if (wantsStandard(format)) {
-      // 运行时校验器应尽量反映**契约域**，而不是单次调用点字面量。
-      const eff = effectiveInterface(source, baseName, {
-        loadModule: defaultLoadModule,
-        fromFile: filePath,
-      });
       const exports: Record<string, Abs> = {};
       if (eff) {
         for (const p of eff.params) {
@@ -110,20 +123,13 @@ async function runExport(
       }
       if (Object.keys(exports).length === 0) {
         // 无显式契约：输出用 combinedAbs；参数位对各 case 同槽 argAbs 做 join
-        const outAbs = fn.combinedAbs ?? caseResults[0]?.abs;
-        if (outAbs) exports[`${baseName}Output`] = outAbs;
-        const arity = Math.max(0, ...caseResults.map((c) => c.argAbs.length));
-        for (let i = 0; i < arity; i++) {
-          const parts = caseResults.map((c) => c.argAbs[i]).filter((a): a is Abs => !!a);
-          if (parts.length === 0) continue;
-          const joined = parts.reduce((a, b) => joinAbs(a, b));
-          const name = fn.paramNames[i] ?? `arg${i}`;
-          exports[`${baseName}_${name}`] = joined;
+        if (outputAbs) exports[`${baseName}Output`] = outputAbs;
+        for (const p of paramExps) {
+          exports[`${baseName}_${p.name}`] = p.abs;
         }
       } else if (!exports[`${baseName}Return`]) {
         // 仅有参数契约、无返回契约时，用观察 combined 作 Output
-        const outAbs = fn.combinedAbs ?? caseResults[0]?.abs;
-        if (outAbs) exports[`${baseName}Output`] = outAbs;
+        if (outputAbs) exports[`${baseName}Output`] = outputAbs;
       }
       if (Object.keys(exports).length > 0) {
         const mod = absToStandardSchemaModule(exports);
@@ -149,18 +155,18 @@ async function runExport(
   }
 
   const stem = basename(filePath).replace(/\.[cm]?[jt]s$/, "");
+  const schemaModule =
+    Object.keys(schemaExports).length > 0
+      ? absToZodSchemaModule(schemaExports)
+      : undefined;
+
   if (output) {
     const outDir = resolve(output);
     mkdirSync(outDir, { recursive: true });
     const written: string[] = [];
-    if (schemaChunks.length > 0) {
+    if (schemaModule) {
       const p = join(outDir, schemaFileName(stem, effectiveDialect));
-      let body = schemaChunks.join("\n") + "\n";
-      if (droppedNotes.length > 0 && !wantsStandard(format)) {
-        body += `\n// dropped preds (not projected into ${effectiveDialect}):\n`;
-        body += droppedNotes.map((n) => `//   ${n}`).join("\n") + "\n";
-      }
-      writeFileSync(p, body, "utf-8");
+      writeFileSync(p, schemaModule.source, "utf-8");
       written.push(p);
     }
     if (standardChunks.length > 0) {
@@ -191,7 +197,10 @@ async function runExport(
     return;
   }
 
-  for (const chunk of [...schemaChunks, ...standardChunks, ...guardChunks, ...dtsChunks]) {
+  const chunks: string[] = [];
+  if (schemaModule) chunks.push(schemaModule.source);
+  chunks.push(...standardChunks, ...guardChunks, ...dtsChunks);
+  for (const chunk of chunks) {
     console.log(chunk);
   }
   if (droppedNotes.length > 0) {

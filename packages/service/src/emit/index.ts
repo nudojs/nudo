@@ -69,6 +69,7 @@ export {
 export {
   absToSchemaSource,
   absToSchemaNode,
+  absToZodSchemaModule,
   constraintToSchemaNode,
   projectAbsToSchema,
   schemaNodeToZod,
@@ -76,6 +77,7 @@ export {
   type SchemaNode,
   type SchemaProjection,
   type SchemaRefinement,
+  type ZodModuleProjection,
 } from "./schema-generator.ts";
 
 export {

@@ -21,7 +21,7 @@ nudo export <path> [--format dts|guard|schema|standard|all] [--dialect zod] [--o
 |---|---|
 | `dts` | TypeScript 声明（默认）—— 单向 npm / 编辑器桥 |
 | `guard` | 零依赖运行时类型守卫函数 |
-| `schema` | `--dialect` 的 schema 源码（目前 `zod`）→ `*.nudo.schema.zod.ts` |
+| `schema` | `--dialect` 的 zod JS 模块（`import { z } from "zod"`，目前 `zod`）→ `*.nudo.schema.zod.ts` |
 | `standard` | [Standard Schema](https://standardschema.dev) v1 模块（`~standard`，vendor `nudo`） |
 | `all` | dts + guard + schema + standard |
 
