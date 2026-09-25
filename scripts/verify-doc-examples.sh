@@ -30,7 +30,7 @@ fail=0
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-cli() { pnpm exec tsx packages/cli/src/index.ts "$@"; }
+cli() { pnpm exec tsx packages/nudojs/src/index.ts "$@"; }
 
 # fences <page> <tag> <outfile> — extract fenced js blocks tagged <tag>.
 fences() {

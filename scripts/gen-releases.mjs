@@ -14,12 +14,11 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const PKGS = [
   { dir: "core", name: "@nudojs/core" },
   { dir: "service", name: "@nudojs/service" },
-  { dir: "cli", name: "nudo CLI (@nudojs/cli)" },
+  { dir: "nudojs", name: "nudojs (CLI)" },
   { dir: "parser", name: "@nudojs/parser" },
   { dir: "lsp", name: "@nudojs/lsp" },
   { dir: "env", name: "@nudojs/env" },
   { dir: "harvester", name: "@nudojs/harvester" },
-  { dir: "nudojs", name: "nudojs (npm shell)" },
   { dir: "vite-plugin", name: "vite-plugin-nudo" },
   { dir: "vscode", name: "nudo-vscode" },
 ];
@@ -99,7 +98,6 @@ const RULES_EN = {
   stable: "SemVer: breaking → major",
   lsp: "SemVer: breaking → major. Freeze inventory: `packages/lsp/PUBLIC_API.md`",
   env: "Minor may break; pin a minor for stable IDE/CI analysis. Handwritten env wins on overlapping modules/exports (`mergeHarvestUnderEnv`)",
-  shell: "Prefer `@nudojs/cli` / `@nudojs/core` directly",
   minor: "Minor may break",
   vscode: "Follow extension release notes; align bundled lsp before packaging (`packages/vscode/RELEASE_CHECKLIST.md`)",
 };
@@ -107,7 +105,6 @@ const RULES_ZH = {
   stable: "SemVer：破坏性 → major",
   lsp: "SemVer：破坏性 → major。冻结清单：`packages/lsp/PUBLIC_API.md`",
   env: "minor 可能破坏；为 IDE/CI 分析稳定可锁 minor。手写 env 在重叠模块/导出上 wins（`mergeHarvestUnderEnv`）",
-  shell: "优先直接依赖 `@nudojs/cli` / `@nudojs/core`",
   minor: "minor 可能破坏",
   vscode: "以扩展发行说明为准；打包前对齐 bundled lsp 版本（见 `packages/vscode/RELEASE_CHECKLIST.md`）",
 };
@@ -124,11 +121,10 @@ function versionTable(lang) {
   const rows = [
     `| \`@nudojs/core\` | **${lineOf(versionOf("core"))}**（${versionOf("core")}） | ${R.stable} |`,
     `| \`@nudojs/service\` | **${lineOf(versionOf("service"))}**（${versionOf("service")}） | ${R.stable} |`,
-    `| \`@nudojs/cli\` | **${lineOf(versionOf("cli"))}**（${versionOf("cli")}） | ${R.stable} |`,
+    `| \`nudojs\` | **${lineOf(versionOf("nudojs"))}**（${versionOf("nudojs")}） | ${R.stable} |`,
     `| \`@nudojs/parser\` | **${lineOf(versionOf("parser"))}**（${versionOf("parser")}） | ${R.stable} |`,
     `| \`@nudojs/lsp\` | **${lineOf(versionOf("lsp"))}**（${versionOf("lsp")}） | ${R.lsp} |`,
     `| \`@nudojs/env\` / \`@nudojs/harvester\` | 0.x（${envVersions}） | ${R.env} |`,
-    `| \`nudojs\`（${lang === "zh" ? "npm 壳" : "npm shell"}） | 0.x（${versionOf("nudojs")}） | ${R.shell} |`,
     `| \`vite-plugin-nudo\` | 0.x（${versionOf("vite-plugin")}） | ${R.minor} |`,
     `| \`nudo-vscode\` | Marketplace | ${R.vscode} |`,
   ];

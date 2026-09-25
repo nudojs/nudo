@@ -20,7 +20,7 @@ const agg = {
 for (const file of files) {
   const t0 = performance.now();
   try {
-    const args = ["packages/cli/src/index.ts", "test", file, "--json"];
+    const args = ["packages/nudojs/src/index.ts", "test", file, "--json"];
     if (process.env.TRIAL_FROM) args.push("--from", process.env.TRIAL_FROM);
     const out = execFileSync("node_modules/.bin/tsx", args, { encoding: "utf8", timeout: 60000, maxBuffer: 128 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
     const wall = performance.now() - t0;

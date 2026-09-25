@@ -51,24 +51,9 @@ importers:
 
   packages/cli:
     dependencies:
-      '@babel/generator':
-        specifier: ^8.0.6
-        version: 8.0.6
-      '@babel/types':
-        specifier: ^8.0.6
-        version: 8.0.6
-      '@nudojs/core':
+      nudojs:
         specifier: workspace:*
-        version: link:../core
-      '@nudojs/parser':
-        specifier: workspace:*
-        version: link:../parser
-      '@nudojs/service':
-        specifier: workspace:*
-        version: link:../service
-      commander:
-        specifier: ^15.0.0
-        version: 15.0.0
+        version: link:../nudojs
 
   packages/core:
     dependencies:
@@ -151,9 +136,24 @@ importers:
 
   packages/nudojs:
     dependencies:
-      '@nudojs/cli':
+      '@babel/generator':
+        specifier: ^8.0.6
+        version: 8.0.6
+      '@babel/types':
+        specifier: ^8.0.6
+        version: 8.0.6
+      '@nudojs/core':
         specifier: workspace:*
-        version: link:../cli
+        version: link:../core
+      '@nudojs/parser':
+        specifier: workspace:*
+        version: link:../parser
+      '@nudojs/service':
+        specifier: workspace:*
+        version: link:../service
+      commander:
+        specifier: ^15.0.0
+        version: 15.0.0
 
   packages/parser:
     dependencies:

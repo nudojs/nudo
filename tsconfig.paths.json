@@ -3,12 +3,6 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@nudojs/cli": [
-        "packages/cli/src"
-      ],
-      "@nudojs/cli/*": [
-        "packages/cli/src/*"
-      ],
       "@nudojs/core": [
         "packages/core/src"
       ],
@@ -62,6 +56,12 @@
       ],
       "@nudojs/service/evaluator": [
         "packages/service/src/evaluator/evaluator-api.ts"
+      ],
+      "nudojs": [
+        "packages/nudojs/src"
+      ],
+      "nudojs/*": [
+        "packages/nudojs/src/*"
       ]
     }
   }

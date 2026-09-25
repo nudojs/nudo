@@ -7,7 +7,7 @@
       "@nudojs/core/exec": ["packages/core/src/algebra/exec/index.ts"],
       "@nudojs/core/internal": ["packages/core/src/internal.ts"],
       "@nudojs/parser": ["packages/parser/src"],
-      "@nudojs/cli": ["packages/cli/src"],
+      "nudojs": ["packages/nudojs/src"],
       "@nudojs/service": ["packages/service/src"],
       "@nudojs/service/evaluator": ["packages/service/src/evaluator/evaluator-api.ts"],
       "@nudojs/harvester": ["packages/harvester/src"],
@@ -20,7 +20,7 @@
   "references": [
     { "path": "packages/core" },
     { "path": "packages/parser" },
-    { "path": "packages/cli" },
+    { "path": "packages/nudojs" },
     { "path": "packages/service" }
   ]
 }

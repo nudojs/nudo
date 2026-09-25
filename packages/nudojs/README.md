@@ -1,13 +1,9 @@
 # nudojs
 
-> 壳包版本 ≠ 引擎版本：`nudojs` 只是安装壳，真正引擎在 `@nudojs/cli` / `@nudojs/core`；`nudo --version` 会同屏打印三者版本。
-
-> **欢迎重回 JS 世界.** — Nudo 不限制你的 JS 表达，只忠实反映中间量与结果，并提供比类型更精确的契约校验。  
+> **欢迎重回 JS 世界.** — Nudo 不限制你的 JS 表达，只忠实反映中间量与结果，并提供比类型更精确的契约校验。
 > Welcome back to JavaScript. Your JS stays JS — observe intermediates, enforce contracts sharper than types.
 
-Thin installer shell for the **`nudo`** command — it exists so that `npm i -g nudojs` (or `npx nudojs`) gives you the `nudo` CLI directly. Everything is delegated to [`@nudojs/cli`](https://www.npmjs.com/package/@nudojs/cli), the CLI of the Nudo type inference engine for JavaScript.
-
-> The bare npm name `nudo` was unavailable, so this package is published as **`nudojs`**. The installed command is still `nudo`.
+The **`nudo`** CLI of the Nudo type inference engine for JavaScript.
 
 ```bash
 npm i -g nudojs
@@ -18,19 +14,13 @@ nudo test file.js
 npx nudojs check file.js
 ```
 
-Primary verbs: `check` · `test` · `contract` · `export` · `health`.
+Primary verbs: `check` · `test` · `contract` · `export` · `health`. `migrate` is the one-way TypeScript retirement gate.
 
-> **Version heads-up.** `nudojs` is a thin installer shell — **its version number is not the engine version.** `nudojs@0.x` wraps `@nudojs/cli@3.x`; engine packages (`@nudojs/core`, …) version independently. Run `nudo --version` to see the engine CLI you actually have. Full policy: [docs/versioning.md](https://github.com/nudojs/nudo/blob/main/docs/versioning.md).
+```text
+nudojs <version>
+@nudojs/core <version>   # when resolvable
+```
 
-Nudo infers types by **executing** your code on Abs (`shape × term × pred × conf`) — see the monorepo packages for the actual engine:
+> **Migration:** `@nudojs/cli` is a deprecated stub that forwards here. Install `nudojs` only.
 
-- [`@nudojs/cli`](https://github.com/nudojs/nudo/tree/main/packages/cli) — CLI (`check`, `test`, `contract`, `export`, `health`)
-- [`@nudojs/core`](https://github.com/nudojs/nudo/tree/main/packages/core) — the Abs type system (shape × term × pred × conf)
-- [`@nudojs/parser`](https://github.com/nudojs/nudo/tree/main/packages/parser) — Babel-based parser and `@nudo:` directive extraction
-- [`@nudojs/service`](https://github.com/nudojs/nudo/tree/main/packages/service) — analyzer orchestration, Abs-native evaluator API (`@nudojs/service/evaluator`), dts generation, harvest
-- [`@nudojs/env`](https://github.com/nudojs/nudo/tree/main/packages/env) — ES / Web / Node API type definitions
-
-> Installing both `nudojs` and `@nudojs/cli` globally is redundant; pick one. This package only re-exports the CLI entry under the short `nudo` bin.
-
-Full documentation (English + 中文): <https://nudojs.github.io/nudo/><br/>
-Playground: <https://nudojs.github.io/nudo/playground>
+Full documentation: <https://nudojs.github.io/nudo/>

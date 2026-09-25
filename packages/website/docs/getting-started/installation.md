@@ -19,11 +19,11 @@ Packages ship compiled ESM in `dist/` (`files: ["dist"]`), not TypeScript source
 # thin shell (published as `nudojs`; installs the `nudo` command)
 npm install -g nudojs
 # or the full CLI package
-npm install @nudojs/cli
+npm install nudojs
 # or
-pnpm add @nudojs/cli
+pnpm add nudojs
 # or
-yarn add @nudojs/cli
+yarn add nudojs
 ```
 
 Then observe and gate your code:

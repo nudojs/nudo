@@ -13,7 +13,7 @@ existing JS  →  contract --draft  →  human review  →  *.nudo.js  →  chec
 ## 0. Prerequisites
 
 ```bash
-pnpm add -D @nudojs/cli @nudojs/lsp   # or npx @nudojs/cli
+pnpm add -D nudojs @nudojs/lsp   # or npx nudojs
 # optional project config in package.json
 {
   "nudo": {

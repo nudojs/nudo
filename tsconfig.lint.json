@@ -7,7 +7,7 @@
   "include": [
     "packages/core/src",
     "packages/parser/src",
-    "packages/cli/src",
+    "packages/nudojs/src",
     "packages/service/src",
     "packages/lsp/src",
     "packages/vite-plugin/src",

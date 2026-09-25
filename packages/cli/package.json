@@ -4,37 +4,28 @@
   "engines": {
     "node": ">=20"
   },
-  "description": "Command-line interface for the Nudo type inference engine",
+  "description": "DEPRECATED — use `nudojs` (the `nudo` CLI). This package only forwards to nudojs for migration.",
   "type": "module",
+  "deprecated": "Use `nudojs` instead. `@nudojs/cli` is a migration stub and will be unpublished.",
   "license": "MIT",
   "keywords": [
     "nudo",
-    "type-inference",
-    "javascript",
-    "cli",
-    "dts",
-    "abstract-interpretation"
+    "nudojs",
+    "deprecated"
   ],
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
-  },
+  "main": "./bin/forward.mjs",
   "bin": {
-    "nudo": "./dist/index.js"
+    "nudo": "./bin/forward.mjs"
   },
   "files": [
-    "dist"
+    "bin"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nudojs/nudo.git",
     "directory": "packages/cli"
   },
-  "homepage": "https://github.com/nudojs/nudo/tree/main/packages/cli",
+  "homepage": "https://github.com/nudojs/nudo",
   "bugs": "https://github.com/nudojs/nudo/issues",
   "publishConfig": {
     "access": "public",
@@ -42,15 +33,6 @@
     "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
-    "@babel/generator": "^8.0.6",
-    "@babel/types": "^8.0.6",
-    "@nudojs/core": "workspace:*",
-    "@nudojs/parser": "workspace:*",
-    "@nudojs/service": "workspace:*",
-    "commander": "^15.0.0"
-  },
-  "scripts": {
-    "build": "tsup",
-    "prepublishOnly": "tsup"
+    "nudojs": "workspace:*"
   }
 }

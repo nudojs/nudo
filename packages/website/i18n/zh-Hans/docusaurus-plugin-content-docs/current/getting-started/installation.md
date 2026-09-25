@@ -19,11 +19,11 @@ description: 安装 Nudo 的 CLI、VS Code 扩展与 Vite 插件，支持 npm、
 # 薄壳包（发布名为 `nudojs`；安装后得到 `nudo` 命令）
 npm install -g nudojs
 # 或完整 CLI 包
-npm install @nudojs/cli
+npm install nudojs
 # 或
-pnpm add @nudojs/cli
+pnpm add nudojs
 # 或
-yarn add @nudojs/cli
+yarn add nudojs
 ```
 
 然后观察并门禁你的代码：

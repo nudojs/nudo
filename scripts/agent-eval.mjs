@@ -23,7 +23,7 @@ const dir = mkdtempSync(join(tmpdir(), "nudo-agent-eval-"));
 function nudoCheck(file) {
   const r = spawnSync(
     "pnpm",
-    ["exec", "tsx", "packages/cli/src/index.ts", "check", file],
+    ["exec", "tsx", "packages/nudojs/src/index.ts", "check", file],
     { cwd: root, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
   );
   return { code: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
@@ -150,7 +150,7 @@ for (const t of TASKS) {
   if (t.checkArgsGreen) {
     const r = spawnSync(
       "pnpm",
-      ["exec", "tsx", "packages/cli/src/index.ts", "check", js, ...t.checkArgsGreen],
+      ["exec", "tsx", "packages/nudojs/src/index.ts", "check", js, ...t.checkArgsGreen],
       { cwd: root, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
     );
     green = { code: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };

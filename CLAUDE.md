@@ -53,9 +53,9 @@ core ─┬→ parser ──┐
 |---|---|
 | `packages/core` | **Type system**: algebra/Abs (term, pred, check, leq, exec/transpile, surface, arithmetic), format (extensional rendering), environment, refinements, interface (sidecar/effectiveInterface/projection) |
 | `packages/parser` | Babel-based parser; extracts function-scoped `@nudo:` directives from JSDoc |
-| `packages/cli` | CLI commands only: check/test/contract/export/health/migrate |
+| `packages/cli` | Deprecated stub for `@nudojs/cli` → forwards to `nudojs` |
 | `packages/service` | Analyzer orchestration, Abs-native evaluator (B-path), dts-generator, harvest, case-json, interface emitter/surface/derivation |
-| `packages/nudojs` | Thin npm shell `nudojs` (`nudo` bin) that re-exports `@nudojs/cli` |
+| `packages/nudojs` | The `nudo` CLI (check/test/contract/export/health/migrate), published as `nudojs` |
 | `packages/lsp` | LSP server (check diagnostics, completions, code lens, inlay hints, agent tools) |
 | `packages/env` | ES / Web / Node API type definitions (`@nudojs/env`) |
 | `packages/harvester` | Harvest `@types` → Abs env (env-package authoring + analysis auto-fill; not a CLI verb) |

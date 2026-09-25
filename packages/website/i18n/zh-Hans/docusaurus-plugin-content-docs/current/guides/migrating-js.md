@@ -13,7 +13,7 @@ Nudo **不要求**先写注解。迁移路径是**代码优先**：保留实现�
 ## 0. 前置
 
 ```bash
-pnpm add -D @nudojs/cli @nudojs/lsp
+pnpm add -D nudojs @nudojs/lsp
 # package.json 可选配置
 {
   "nudo": {

@@ -4,7 +4,7 @@
   "engines": {
     "node": ">=20"
   },
-  "description": "Thin installer shell for the `nudo` command — delegates to @nudojs/cli, the CLI of the Nudo type inference engine",
+  "description": "Nudo type inference engine CLI for JavaScript — check / test / contract / export / health / migrate",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -17,18 +17,26 @@
     "dts",
     "abstract-interpretation"
   ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "bin": {
-    "nudo": "./bin/nudo.mjs"
+    "nudo": "./dist/index.js"
   },
   "files": [
-    "bin"
+    "dist"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nudojs/nudo.git",
     "directory": "packages/nudojs"
   },
-  "homepage": "https://github.com/nudojs/nudo/tree/main/packages/nudojs",
+  "homepage": "https://github.com/nudojs/nudo",
   "bugs": "https://github.com/nudojs/nudo/issues",
   "publishConfig": {
     "access": "public",
@@ -36,6 +44,15 @@
     "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
-    "@nudojs/cli": "workspace:*"
+    "@babel/generator": "^8.0.6",
+    "@babel/types": "^8.0.6",
+    "@nudojs/core": "workspace:*",
+    "@nudojs/parser": "workspace:*",
+    "@nudojs/service": "workspace:*",
+    "commander": "^15.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "tsup"
   }
 }

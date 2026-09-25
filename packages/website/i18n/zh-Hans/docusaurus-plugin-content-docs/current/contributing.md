@@ -67,7 +67,7 @@ pnpm run build
 ### 本地运行 CLI
 
 ```bash
-pnpm exec tsx packages/cli/src/index.ts check path/to/file.js
+pnpm exec tsx packages/nudojs/src/index.ts check path/to/file.js
 # 或
 pnpm exec nudo check path/to/file.js
 pnpm exec nudo test path/to/file.js
@@ -104,7 +104,7 @@ pnpm exec nudo test path/to/file.js
    ```
 
 3. **在求值器或 service 中使用指令：**
-   - `packages/cli/src/index.ts` 或 `packages/service/src/analyzer.ts` 中实现分析行为。
+   - `packages/nudojs/src/index.ts` 或 `packages/service/src/analyzer.ts` 中实现分析行为。
    - 用 `d.kind === "my"` 过滤 `fn.directives` 并应用你的逻辑。
 
 4. 若指令接收类型表达式参数，需**更新 `parseCaseArgExpr`**。

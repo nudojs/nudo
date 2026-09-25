@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../../..", import.meta.url));
-const cli = join(root, "packages/cli/src/index.ts");
+const cli = join(root, "packages/nudojs/src/index.ts");
 const tsx = join(root, "node_modules/.bin/tsx");
 
 function runCli(
@@ -153,7 +153,7 @@ describe("package.json#nudo.check config", () => {
       JSON.stringify({ name: "t", nudo: { check: { ignoreThrows: ["TypeError"] } } }),
     );
     writeFileSync(join(dir, "a.js"), "export function getName(user){ return user.name; }\n");
-    // cwd 保持 monorepo root（tsx 从 packages/cli 解析 workspace dist）；
+    // cwd 保持 monorepo root（tsx 从 packages/nudojs 解析 workspace dist）；
     // findProjectConfig 按**文件路径**向上找 package.json#nudo.check
     const r = runCli(["check", join(dir, "a.js")]);
     expect(r.stdout + r.stderr, `status=${r.status}\n${r.stdout}\n${r.stderr}`).not.toContain(

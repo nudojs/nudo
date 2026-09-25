@@ -116,7 +116,7 @@ jobs:
       # 薄壳 bin 冒烟：走 workspace 链接 → @nudojs/cli dist。用户唯一入口，
       # 「build 后 bin 不能跑」类回归在此兜住（发布面卫生另由 npm-safe 管）。
       - name: Smoke nudo bin
-        run: node packages/nudojs/bin/nudo.mjs --version
+        run: node packages/nudojs/dist/index.js --version
 
   test:
     name: Test & Coverage

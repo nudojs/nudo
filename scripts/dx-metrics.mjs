@@ -29,7 +29,7 @@ export const setDelay = fn({ ms: number().gt(0) }, number());
 function runCheck(file) {
   const r = spawnSync(
     "pnpm",
-    ["exec", "tsx", "packages/cli/src/index.ts", "check", file],
+    ["exec", "tsx", "packages/nudojs/src/index.ts", "check", file],
     { cwd: root, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
   );
   return {

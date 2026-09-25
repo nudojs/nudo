@@ -23,7 +23,7 @@ function cli(args: string[]): { status: number; stdout: string; stderr: string }
   try {
     const stdout = execFileSync(
       "pnpm",
-      ["exec", "tsx", "packages/cli/src/index.ts", ...args],
+      ["exec", "tsx", "packages/nudojs/src/index.ts", ...args],
       { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], cwd: process.cwd() },
     );
     return { status: 0, stdout, stderr: "" };

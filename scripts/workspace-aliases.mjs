@@ -14,7 +14,7 @@
 export const packageRoots = {
   "@nudojs/core": "packages/core/src",
   "@nudojs/parser": "packages/parser/src",
-  "@nudojs/cli": "packages/cli/src",
+  "nudojs": "packages/nudojs/src",
   "@nudojs/service": "packages/service/src",
   "@nudojs/lsp": "packages/lsp/src",
   "@nudojs/harvester": "packages/harvester/src",

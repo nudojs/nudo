@@ -18,7 +18,7 @@ if [ "${1:-}" = "--keep" ]; then KEEP=1; fi
 
 NUDO_RUN() {
   # Prefer workspace CLI so draft/check share the same build as tests.
-  pnpm exec tsx packages/cli/src/index.ts "$@"
+  pnpm exec tsx packages/nudojs/src/index.ts "$@"
 }
 
 dir=$(mktemp -d)

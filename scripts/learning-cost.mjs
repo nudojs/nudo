@@ -46,7 +46,7 @@ function runCli(args, _cwd) {
   const started = process.hrtime.bigint();
   const r = spawnSync(
     "pnpm",
-    ["exec", "tsx", join(root, "packages/cli/src/index.ts"), ...args],
+    ["exec", "tsx", join(root, "packages/nudojs/src/index.ts"), ...args],
     { cwd: root, encoding: "utf-8", env: process.env },
   );
   const ms = Number(process.hrtime.bigint() - started) / 1e6;

@@ -15,7 +15,7 @@ const pkgVersion = (p: string): string =>
   JSON.parse(
     readFileSync(resolve(repoRoot, `packages/${p}/package.json`), "utf8"),
   ).version as string;
-const DOCS_TRACK = `Docs track main · @nudojs/cli ${pkgVersion("cli")} · @nudojs/core ${pkgVersion("core")} · @nudojs/env ${pkgVersion("env")}`;
+const DOCS_TRACK = `Docs track main · nudojs ${pkgVersion("nudojs")} · @nudojs/core ${pkgVersion("core")} · @nudojs/env ${pkgVersion("env")}`;
 
 const config: Config = {
   title: "Nudo",

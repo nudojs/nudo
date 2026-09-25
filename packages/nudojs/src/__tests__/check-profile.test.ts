@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../../..", import.meta.url));
-const cli = join(root, "packages/cli/src/index.ts");
+const cli = join(root, "packages/nudojs/src/index.ts");
 const tsx = join(root, "node_modules/.bin/tsx");
 
 function runCli(

@@ -13,7 +13,7 @@ How Nudo packages are versioned, what counts as a breaking change, and how to fo
 > 2. **A1:** `analysis.mode` shipped default flipped `directives` → `exports` (`DEFAULT_ANALYSIS_MODE` in `@nudojs/service`). Escape hatch: `package.json#nudo.analysis.mode = "directives"` (old silence) or `"all"` (every target path). On **1.x** packages this is a **default-behavior flip that can invent diagnostics** on previously unanalyzed export-bearing files → treat as **major** in changesets/release notes unless the team ships a documented minor with the escape hatch called out.
 > 3. **CLI semantics:** primary verbs are `check` / `test` / `contract` / `export` / `health`. Observation is check signatures + test case reports + IDE hover; `watch` is `--watch` on check/test. Flags: `--from`, `test --freeze`, `export --format dts|guard|schema|standard|all` with `--dialect zod` for schema, `export --out`. Entry unconstrained params display as **`any`**; true `unknown` = inference failure. Harvest is **not** a product verb (`@types` auto-fill is analysis-internal; env-package generation uses `@nudojs/harvester`).
 >
-> `@nudojs/core` / `@nudojs/service` / `@nudojs/cli` / `@nudojs/parser` / `@nudojs/lsp` are on the **stable SemVer 1.x+ line** (each package’s major may differ — see package.json). The monorepo root version is private and is not a publish unit.
+> `@nudojs/core` / `@nudojs/service` / `nudojs` / `@nudojs/parser` / `@nudojs/lsp` are on the **stable SemVer 1.x+ line** (each package’s major may differ — see package.json). The monorepo root version is private and is not a publish unit.
 >
 > **Do not pin exact versions in this policy doc.** Authoritative numbers live in each `packages/*/package.json` and the consumer-facing table in website `guides/versioning.md` (`NUDO-VERSIONS` block). This file states **lines and rules only**.
 
@@ -21,7 +21,7 @@ How Nudo packages are versioned, what counts as a breaking change, and how to fo
 |---------|------|--------|
 | `@nudojs/core` | stable 1.x+ | SemVer — breaking = **major** |
 | `@nudojs/service` | stable 1.x+ | SemVer — breaking = **major** |
-| `@nudojs/cli` | stable 1.x+ | SemVer — breaking = **major** |
+| `nudojs` | stable 1.x+ | SemVer — breaking = **major** |
 | `@nudojs/parser` | stable 1.x+ | SemVer — breaking = **major** |
 | `@nudojs/lsp` | stable 1.x+ | SemVer — breaking = **major**. Freeze inventory: [`packages/lsp/PUBLIC_API.md`](../packages/lsp/PUBLIC_API.md) |
 | `@nudojs/env` | pre-1.0 | Minor may break. Policy authority: [Ecosystem packages](#ecosystem-packages-env--harvester) |

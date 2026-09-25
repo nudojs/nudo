@@ -20,7 +20,7 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-const SRC_DIRS = ["core", "service", "cli", "lsp", "parser"].map((p) =>
+const SRC_DIRS = ["core", "service", "nudojs", "lsp", "parser"].map((p) =>
   join(repoRoot, "packages", p, "src"),
 );
 const EN_DOCS = join(repoRoot, "packages/website/docs");

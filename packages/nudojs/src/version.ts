@@ -1,7 +1,6 @@
 /**
- * `--version` 心智：壳包（nudojs）≠ 引擎（@nudojs/cli）。
- * 同屏打印 shell 包版本、@nudojs/cli 版本、以及可解析到的 @nudojs/core 版本。
- * 解析失败的包省略该行，不抛错。
+ * `--version`：产品包是 `nudojs`（CLI），引擎包 `@nudojs/core` 可解析时附带一行。
+ * 解析失败的行省略，不抛错。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -20,14 +19,14 @@ function readVersionAt(pkgPath: string): string | undefined {
 }
 
 function findOwnPackageVersion(): string {
-  // src/version.ts → packages/cli/package.json；bundled dist/index.js 同理
+  // src/version.ts → packages/nudojs/package.json；bundled dist/index.js 同理
   let dir = dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 6; i++) {
     const pkgPath = join(dir, "package.json");
     if (existsSync(pkgPath)) {
       try {
         const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { name?: string; version?: string };
-        if (pkg.name === "@nudojs/cli" && typeof pkg.version === "string") return pkg.version;
+        if (pkg.name === "nudojs" && typeof pkg.version === "string") return pkg.version;
       } catch {
         /* keep walking */
       }
@@ -39,14 +38,14 @@ function findOwnPackageVersion(): string {
   return "0.0.0";
 }
 
-function cliPackageDir(): string {
+function ownPackageDir(): string {
   let dir = dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 6; i++) {
     const pkgPath = join(dir, "package.json");
     if (existsSync(pkgPath)) {
       try {
         const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { name?: string };
-        if (pkg.name === "@nudojs/cli") return dir;
+        if (pkg.name === "nudojs") return dir;
       } catch {
         /* keep walking */
       }
@@ -82,31 +81,10 @@ function versionFromResolvedEntry(name: string): string | undefined {
   return undefined;
 }
 
-function shellPackageVersion(): string | undefined {
-  // 1) monorepo workspace: packages/cli → packages/nudojs
-  // 2) npm layout: node_modules/nudojs/node_modules/@nudojs/cli → node_modules/nudojs
-  // 3) npm hoisted: node_modules/@nudojs/cli → node_modules/nudojs
-  const root = cliPackageDir();
-  const candidates = [
-    join(root, "..", "nudojs", "package.json"),
-    join(root, "..", "..", "..", "nudojs", "package.json"),
-    join(root, "..", "..", "nudojs", "package.json"),
-  ];
-  for (const p of candidates) {
-    const v = readVersionAt(p);
-    if (v) return v;
-  }
-  try {
-    return readVersionAt(require.resolve("nudojs/package.json"));
-  } catch {
-    return undefined;
-  }
-}
-
 function corePackageVersion(): string | undefined {
   const viaEntry = versionFromResolvedEntry("@nudojs/core");
   if (viaEntry) return viaEntry;
-  const root = cliPackageDir();
+  const root = ownPackageDir();
   const candidates = [
     join(root, "..", "core", "package.json"),
     join(root, "node_modules", "@nudojs", "core", "package.json"),
@@ -119,14 +97,11 @@ function corePackageVersion(): string | undefined {
   return undefined;
 }
 
-/** `nudo --version` 多行输出：shell 包（nudojs）+ @nudojs/cli + core（可解析时省略失败行）。 */
+/** `nudo --version`：`nudojs <ver>` + 可解析时 `@nudojs/core <ver>`。 */
 export function formatVersionOutput(): string {
-  const cli = findOwnPackageVersion();
-  const shell = shellPackageVersion();
+  const self = findOwnPackageVersion();
   const core = corePackageVersion();
-  const lines: string[] = [];
-  if (shell) lines.push("nudojs " + shell);
-  lines.push("@nudojs/cli " + cli);
+  const lines: string[] = ["nudojs " + self];
   if (core) lines.push("@nudojs/core " + core);
   return lines.join("\n");
 }

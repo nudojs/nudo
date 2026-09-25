@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../../..", import.meta.url));
-const cli = join(root, "packages/cli/src/index.ts");
+const cli = join(root, "packages/nudojs/src/index.ts");
 const tsx = join(root, "node_modules/.bin/tsx");
 
 function runCli(
@@ -153,11 +153,11 @@ describe("migrate — status golden", () => {
 });
 
 describe("--version — shell + engine + core", () => {
-  it("prints nudojs shell version and @nudojs/cli; core optional", () => {
+  it("prints nudojs version; core optional", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-e2e-version-"));
     const r = runCli(["--version"], { cwd: dir });
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("@nudojs/cli ");
+    expect(r.stdout).toContain("nudojs ");
     // 壳包版本与引擎版本同屏；core 可解析时也在
     expect(r.stdout).toMatch(/nudojs \d+\.\d+\.\d+/);
     expect(r.stdout).toMatch(/@nudojs\/core \d+\.\d+\.\d+/);

@@ -31,7 +31,7 @@ Beyond what TypeScript can express: `"0x" + id` → `` `0x${string}` ``, `"a,b,c
 ## Quick Start
 
 ```bash
-npm install -g @nudojs/cli
+npm install -g nudojs
 # or via the thin `nudojs` shell package:
 npm install -g nudojs
 # or without installing:
@@ -206,7 +206,7 @@ This is a monorepo managed with [pnpm workspaces](https://pnpm.io/workspaces).
 |---|---|---|
 | [`@nudojs/core`](./packages/core) | Abs type system (`shape × term × pred × conf`) | stable |
 | [`@nudojs/parser`](./packages/parser) | Babel-based parser and directive extraction | stable |
-| [`@nudojs/cli`](./packages/cli) | CLI tool (check / test / contract / export / health / migrate) | stable |
+| [`nudojs`](./packages/nudojs) | CLI tool (check / test / contract / export / health / migrate) | stable |
 | [`@nudojs/service`](./packages/service) | Shared inference service for IDE integrations | stable |
 | [`@nudojs/lsp`](./packages/lsp) | Language Server Protocol server, with AI-agent `executeCommand` support | stable |
 | [`@nudojs/env`](./packages/env) | Built-in API environments (ES globals, Node, Web) loaded by `@nudo:env` | growing |
@@ -293,7 +293,7 @@ Execution model & trust boundary (source of truth): [`docs/design/kernel-merge.m
 
 ### Prerequisites
 
-- To **run the published CLI** (`npm install -g @nudojs/cli`): Node.js >= 20（published packages ship compiled `dist/` ESM; `engines` is `>=20`）
+- To **run the published CLI** (`npm install -g nudojs`): Node.js >= 20（published packages ship compiled `dist/` ESM; `engines` is `>=20`）
 - To **develop this repo**: Node.js >= 20 and pnpm 9.1.0 (pinned in `packageManager`) — package `engines` fields all require >= 20
 
 ### Setup

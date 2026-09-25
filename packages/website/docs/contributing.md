@@ -67,7 +67,7 @@ pnpm run build
 ### Run CLI locally
 
 ```bash
-pnpm exec tsx packages/cli/src/index.ts check path/to/file.js
+pnpm exec tsx packages/nudojs/src/index.ts check path/to/file.js
 # or
 pnpm exec nudo check path/to/file.js
 pnpm exec nudo test path/to/file.js
@@ -104,7 +104,7 @@ Operator semantics live in the algebra, not a separate `Ops` layer:
    ```
 
 3. **Use the directive** in the evaluator or service:
-   - `packages/cli/src/index.ts` or `packages/service/src/analyzer.ts` for analysis behavior.
+   - `packages/nudojs/src/index.ts` or `packages/service/src/analyzer.ts` for analysis behavior.
    - Filter `fn.directives` by `d.kind === "my"` and apply your logic.
 
 4. **Update `parseCaseArgExpr`** if the directive takes type-expression arguments.
