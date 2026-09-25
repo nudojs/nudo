@@ -1,17 +1,15 @@
 /**
  * 容器字面量策略 —— 单一真理源。
  *
- * 同一数组字面量在两条求值引擎下必须得到同一 shape：
- * - ast-eval（ArrayExpression 分支：A 路径调用点收集 / ast-eval 求值）
- * - B 路径 runtime（transpile 目标算子 $arr/$concat）
+ * 数组字面量的 shape 由唯一求值引擎（B 路径 runtime：transpile 目标算子
+ * $arr/$concat）经本策略产生；不存在第二条引擎需要对齐。
  *
- * 不变式（源自 ast-eval 既有 >cap 降级语义，两引擎共享）：
+ * 不变式（>cap 降级语义）：
  * - 元素数 ≤ cap → tuple，conf=exact（逐元素精确，map/reduce 可展开）
  * - 元素数 > cap → arr，元素 = 逐位 join，conf=widenedArrayConf()
  *   （字面量路径已知但元素被合并，不再逐位确定）
  *
- * 注意：空数组字面量不归本策略管辖——ast-eval 给 arr<unknown>（exact），
- * B 路径 $arr([]) 给 0 元 tuple，属两引擎已知的既有差异（本文件不收敛）。
+ * 空数组字面量同样归本策略管辖：`$arr([])` → 0 元 tuple（exact）。
  * 策略调整只改本文件。
  */
 

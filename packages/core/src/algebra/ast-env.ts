@@ -1,24 +1,13 @@
 /**
  * AstEnv：抽象求值环境类型（ast-eval 删除后保留的类型面）。
- * 独立成文件：hof/language/leq/abs-fn/abs-modules 等消费方只依赖此类型，
- * 避免 TS 模块环。
+ * 类型定义在 hof-types.ts（打破 ast-env ↔ hof ↔ abs-fn 类型环）；
+ * 本文件保留空环境 / withVar 的便捷构造并重导出 AstEnv 供稳定路径导入。
  */
 
-import type { Node } from "@babel/types";
 import type { Abs } from "./abs.ts";
-import type { HofCollectCtx } from "./hof.ts";
+import type { AstEnv } from "./hof-types.ts";
 
-export type AstEnv = {
-  vars: Map<string, Abs>;
-  /** 用户函数：name → { params, body } */
-  fns: Map<string, { params: string[]; body: Node; async?: boolean; kind?: string }>;
-  /** class 表（旁路，withVar 必须保留） */
-  classes?: Map<string, unknown>;
-  /** 当前正在求值的方法所属类名（super.x() 从它的父类派发） */
-  currentOwner?: string;
-  /** P2：generalize symbolic 跑的 HOF collector（run 局部，不进 Φ） */
-  hofCollect?: HofCollectCtx;
-};
+export type { AstEnv } from "./hof-types.ts";
 
 /** 空求值环境（分析宿主用：不带任何绑定） */
 export function emptyEnv(): AstEnv {

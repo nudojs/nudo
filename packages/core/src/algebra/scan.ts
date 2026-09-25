@@ -41,6 +41,10 @@ import type { CheckIssue } from "./check-report.ts";
 import { getFnImpl } from "./abs-fn.ts";
 import { getSlot } from "./objects.ts";
 
+// ---------------------------------------------------------------------------
+// 顶层函数清单（listTopFunctions）
+// ---------------------------------------------------------------------------
+
 /**
  * HOF 实参是否满足目标 fn 形状。
  * 自定义放宽比较：JS 允许多余实参（src.params.length >= tgt.params.length）。
@@ -262,6 +266,10 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
   return names;
 }
 
+// ---------------------------------------------------------------------------
+// 静态实参求值辅助（absUnknown / evalArgAbs）
+// ---------------------------------------------------------------------------
+
 export function absUnknown(): Abs {
   return { shape: { k: "unknown" }, conf: "partial" };
 }
@@ -306,6 +314,10 @@ function evalArgAbs(
     return undefined;
   }
 }
+
+// ---------------------------------------------------------------------------
+// 调用图收集（别名 / 对象属性 / require / 动态 import / 无条件转发）
+// ---------------------------------------------------------------------------
 
 /** 外部模块函数：源码 + 导出名 + 定义文件虚拟路径（interface 侧车解析基；不可得 → 省略） */
 type ExternalFnRef = { source: string; fnName: string; fromFile?: string };
@@ -775,6 +787,10 @@ function collectForwarders(
   return forwards;
 }
 
+// ---------------------------------------------------------------------------
+// 字面量调用点违例扫描（scanLiteralCalls）
+// ---------------------------------------------------------------------------
+
 /** 找 `name(literalArgs)` / `alias(lit)` / `obj.fn(lit)` / require 导入，检查约束 */
 export function scanLiteralCalls(
   source: string,
@@ -784,7 +800,7 @@ export function scanLiteralCalls(
     loadModule?: (spec: string, fromFile: string) => string | undefined;
     fromFile?: string;
     file?: ReturnType<typeof parse>;
-    /** 顶层绑定表（与结构赋值共享的 evalProgramAbs 结果） */
+    /** 顶层绑定表（与结构赋值共享一次执行态求值结果） */
     varAbs?: Map<string, Abs>;
     /**
      * B 路径执行态调用记录（值流回退）：静态实参无信息时按 fnName@line 取
@@ -1860,143 +1876,11 @@ export function scanLiteralCalls(
 
 // ---------------------------------------------------------------------------
 // T10b：跨文件注入调用点域证据 ⊄ 手写契约（nudo:interface-domain-exceeds）
+// 实现见 scan-injected-domain.ts；此处 re-export 保持 scan.ts 对外形状不变。
 // ---------------------------------------------------------------------------
 
-/**
- * 注入记录的最小结构面。Abs 为唯一真理源。
- */
-export type InjectedDomainRecord = {
-  /** 无损参数 Abs（必填；domain 证据唯一来源） */
-  argAbs?: Abs[];
-  resultAbs?: Abs;
-  throwsAbs?: Abs;
-};
-
-export type InjectedDomainEvidenceOpts = {
-  /** 被调函数形参名（位置序）；契约按参数名对齐证据位 */
-  paramNames: string[];
-  loadModule?: (spec: string, fromFile: string) => string | undefined;
-  fromFile?: string;
-  /** 侧车 ambient 绑定开关（host 配置下传；默认 true） */
-  autoBind?: boolean;
-  /** 项目根：树外侧车不 ambient 绑定 */
-  projectDir?: string;
-  /** 报告定位：被调函数声明处。注入证据的 loc 在使用现场文件，不属于本文件 */
-  loc?: { line: number; column: number };
-};
-
-/** 字面量证据展示：字符串带引号，number/boolean 原样 */
-function evidenceToString(v: number | string | boolean): string {
-  return typeof v === "string" ? JSON.stringify(v) : String(v);
-}
-
-/**
- * 跨文件注入的调用点域证据 vs 手写契约（设计稿 §3.3/§6 对账矩阵第一行）。
- *
- * 来源分流铁律：写在被分析文件里的调用点违例（含 scanLiteralCalls 的
- * checkExternalCall 跨文件被调路径）维持 `nudo:constraint-violated` 原码
- * 原语义——本函数**只**消费经 externalCallRecords 注入的跨文件记录（analyzer
- * 消费区已做归属守卫），该路径此前不查契约，是纯增量。
- *
- * 证据门槛（§6）：
- * - 只有 plain literal 实参构成证据：union/unknown/primitive/refined 形态
- *   无法归因到确定值，不参与。Abs 路径直接读 `litValue` + conf
- *   ∈ {exact, path}。
- * - null 证据预过滤（T4 caveat：lit(null) 编码 prim undefined + eq(self,
- *   null)，对任何约束恒不满足，不过滤必 FP）；undefined/bigint/symbol
- *   不在字面量证据域内，一并跳过；
- * - resultType=never ∧ throws=never 是求值中断泄漏（analyzer 注入消费区
- *   同款过滤；有 resultAbs/throwsAbs 时同口径）。CallRecord 上没有截断字段
- *   （查证于 evaluator.ts CallRecord 声明）——递归截断走
- *   nudo:recursion-truncated 诊断通道且只 widen 结果，不产生新字面量证据；
- * - fn/shape/array 参数位 Phase 1 不执法（§3.3 HOF 豁免：
- *   literalMeetsConstraint 对这些形态恒 false，直接查必 FP）。
- *
- * 每函数每参数位最多一条 issue（多证据并列在 actual 里，去重）。
- */
-export function checkInjectedDomainEvidence(
-  fnName: string,
-  source: string,
-  records: InjectedDomainRecord[],
-  opts: InjectedDomainEvidenceOpts,
-): CheckIssue[] {
-  const isLeaked = (r: InjectedDomainRecord): boolean => {
-    if (r.resultAbs && r.throwsAbs) {
-      return r.resultAbs.shape.k === "never" && r.throwsAbs.shape.k === "never";
-    }
-    return false;
-  };
-  const usable = records.filter((r) => !isLeaked(r));
-  if (usable.length === 0) return [];
-
-  let ei: EffectiveInterface | undefined;
-  try {
-    ei = effectiveInterface(source, fnName, {
-      ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
-      fromFile: opts.fromFile,
-      ...(opts.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
-      ...(opts.projectDir !== undefined ? { projectDir: opts.projectDir } : {}),
-    });
-  } catch (e) {
-    return [
-      {
-        severity: "warning",
-        code: "nudo:interface-load",
-        message: `${fnName}: effective interface load failed (${e instanceof Error ? e.message : String(e)}); skipping domain-exceeds check`,
-        fn: fnName,
-        line: opts.loc?.line,
-        column: opts.loc?.column,
-      },
-    ];
-  }
-  // §3.3 执法分档：仅手写契约执法。generated 段是事实快照（过期由
-  // nudo:interface-drift 覆盖）；implicit 无契约。
-  if (!ei || ei.source !== "handwritten") return [];
-
-  const out: CheckIssue[] = [];
-  for (const { param, constraint } of ei.params) {
-    if (constraint.fields || constraint.element || constraint.fn) continue;
-    const idx = opts.paramNames.indexOf(param);
-    // 形参名对不上（解构/rest/改名）：证据无法归位，跳过不猜
-    if (idx < 0) continue;
-    const failures: Array<number | string | boolean> = [];
-    for (const rec of usable) {
-      const lit = extractLiteralEvidence(rec, idx);
-      if (lit === undefined) continue;
-      if (!literalMeetsConstraint(lit, constraint)) failures.push(lit);
-    }
-    if (failures.length === 0) continue;
-    const shown = [...new Set(failures)].map(evidenceToString).join(", ");
-    out.push({
-      severity: "error",
-      code: "nudo:interface-domain-exceeds",
-      message: `${fnName}[${param}]: cross-file call-site domain evidence ${shown} exceeds handwritten contract`,
-      actual: shown,
-      expected: formatConstraint(constraint),
-      suggestion: `Loosen the handwritten contract for ${fnName} (${param}: ${formatConstraint(constraint)}), or fix the caller's values`,
-      fn: fnName,
-      line: opts.loc?.line,
-      column: opts.loc?.column,
-    });
-  }
-  return out;
-}
-
-/**
- * 单条记录在参数位 idx 的字面量证据。
- * Abs 无损 lit + conf 门槛。
- * 非字面量 / conf 门槛不过 / null·undefined·bigint·symbol → undefined。
- */
-function extractLiteralEvidence(
-  rec: InjectedDomainRecord,
-  idx: number,
-): number | string | boolean | undefined {
-  const absArg = rec.argAbs?.[idx];
-  if (!absArg) return undefined;
-  if (absArg.conf !== "exact" && absArg.conf !== "path") return undefined;
-  const lv = litValue(absArg);
-  if (typeof lv === "number" || typeof lv === "string" || typeof lv === "boolean") {
-    return lv;
-  }
-  return undefined;
-}
+export {
+  checkInjectedDomainEvidence,
+  type InjectedDomainRecord,
+  type InjectedDomainEvidenceOpts,
+} from "./scan-injected-domain.ts";

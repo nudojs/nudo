@@ -11,45 +11,11 @@ import type { Pred } from "./pred.ts";
 import { and, pTrue, pFalse, substPred } from "./pred.ts";
 import { getFnImpl } from "./abs-fn.ts";
 import { joinAbs } from "./objects.ts";
-import type { AstEnv } from "./ast-env.ts";
+import type { AstEnv, HofCollectCtx, HofSite, RelSource } from "./hof-types.ts";
 
-// --- P2 types ---
+// --- P2 types（定义在 hof-types.ts，重导出保持稳定导入路径）---
 
-/**
- * 关系来源标记：P4 豁免与 diagnostics 依赖它，禁止隐式猜。
- * - promote：使用驱动提升（generalize symbolic / instantiate 局部）
- * - refine：@nudo:contract 契约
- * - relationFn：harvest/mock/测试直接写入 fnRels 时的预留来源（P4 error 路径）
- */
-export type RelSource = "promote" | "refine" | "relationFn";
-
-export type HofSite = {
-  /** 形参名（函数形参） */
-  param: string;
-  /** 输入侧 term：实参的 term（element 的 var/lit/app）；map 1 个、reduce 2 个 */
-  argTerms: Term[];
-  /** 输出侧：归纳出的返回 Abs */
-  result: Abs;
-  /** 源位置，便于 diagnostics */
-  loc?: { line: number; column: number };
-};
-
-/**
- * run 局部 collector（与 Phi 并列，不进 Φ 合并）。
- * symbolic 一次跑：安装并沉淀到 PolyFn；instantiate 重跑：装 throwaway
- * 副本——形状提升仍生效，结果不写回共享状态（见 generalize.ts run()）。
- */
-export type HofCollectCtx = {
-  /** 本次归纳的形参名集合（身份判定用） */
-  paramNames: ReadonlySet<string>;
-  /** 本次 typeParams 的 α id 集合（term 复用白名单） */
-  alphaIds: Set<string>;
-  /** fresh α 计数 */
-  freshSeq: { n: number };
-  sites: HofSite[];
-  fnRels: Map<string, { abs: Abs; source: RelSource }>;
-  entryShapes: Map<string, { abs: Abs; source: RelSource }>;
-};
+export type { RelSource, HofSite, HofCollectCtx } from "./hof-types.ts";
 
 export function createHofCollectCtx(
   paramNames: ReadonlySet<string>,

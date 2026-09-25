@@ -20,6 +20,7 @@ import type { AbsModuleExports } from "../abs-modules.ts";
 import { formatAbs } from "../format.ts";
 import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
+import { stripStaticExportDecls } from "./export-names.ts";
 import { errorTypeAbs } from "./may-throw.ts";
 import { drainPromiseMicros } from "../builtins.ts";
 import {
@@ -396,12 +397,8 @@ export function runTranspiled(
     js = `${binds}\n${js}`;
   }
 
-  const exportFns = [...js.matchAll(/^export function (\w+)/gm)].map((m) => m[1]!);
-  js = js.replace(/^export function /gm, "function ");
-  const exportConsts = [...js.matchAll(/^export (?:const|let) (\w+)/gm)].map((m) => m[1]!);
-  js = js.replace(/^export (?:const|let) /gm, "let ");
-
-  const names = [...new Set([...exportFns, ...exportConsts])];
+  const { names, js: stripped } = stripStaticExportDecls(js);
+  js = stripped;
   const dynExports: Record<string, unknown> = {};
   const bindings = new Map<string, unknown>();
   const argNames = [

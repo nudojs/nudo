@@ -43,7 +43,7 @@ import {
   type NudoConstraint,
   type NudoField,
 } from "./constraint.ts";
-import { absToConstraint, joinThenProject } from "./projection.ts";
+import { absToConstraint } from "./projection.ts";
 import { literalMeetsConstraint } from "./domain-membership.ts";
 import { extractFn, generalizeFromAst } from "./generalize.ts";
 import { contractParamNameSet, locateContractParam } from "./param-surface.ts";
@@ -65,6 +65,10 @@ import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
 import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
 import { listTopFunctions, scanLiteralCalls } from "./scan.ts";
+import {
+  interfaceDriftIssues,
+  type DriftCandidate,
+} from "./check-interface-drift.ts";
 import type { AbsModuleExports } from "./abs-modules.ts";
 import { $invoke, $staticInvoke, withExecPhi } from "./exec/index.ts";
 import {
@@ -261,6 +265,10 @@ function checkMemoSet(key: string, value: CheckReport, depPaths: string[]): void
 /**
  * check 选项：core 不碰 fs；host 用 loadModule 喂 require 目标源码。
  */
+// ---------------------------------------------------------------------------
+// 公共入口（CheckOptions / checkSource）
+// ---------------------------------------------------------------------------
+
 export type CheckOptions = {
   /** 相对/绝对 require 说明符 → 模块源码；undefined = 解析失败 */
   loadModule?: (spec: string, fromFile: string) => string | undefined;
@@ -429,6 +437,10 @@ export function checkSource(
  * refine/interface 侧车诊断 → CheckIssue（全部 error；code+message 去重，
  * 同一失败侧车会在 generalize / 返回后置 / case 对账多处被重复探测）。
  */
+// ---------------------------------------------------------------------------
+// 门禁编排（sidecar 诊断收集 + checkSourceInner：L0 签名 / L1 契约 / L2 throws）
+// ---------------------------------------------------------------------------
+
 function sidecarDiagIssues(
   diags: Array<{ code: string; message: string; file?: string }>,
 ): CheckIssue[] {
@@ -997,6 +1009,10 @@ function checkSourceInner(
   };
 }
 
+// ---------------------------------------------------------------------------
+// L2 入口 may-throw（entry 求值 / throws 域 / 签名上屏）
+// ---------------------------------------------------------------------------
+
 /** L0 命中的 symbolic 对象稳定：display/detail 按 Abs 身份缓存 */
 const sigFormatCache = new WeakMap<Abs, { display: string; detail: string }>();
 
@@ -1285,6 +1301,10 @@ function formatSigCached(absVal: Abs, name: string): { display: string; detail: 
  * 后置契约：推断返回 Abs ⊭ @nudo:contract return 声明。
  * 只在有确定信息时报（字面量界 / prim 类型 / shape 缺字段）。
  */
+// ---------------------------------------------------------------------------
+// L1 返回约束对账（声明 returns vs 推断返回 Abs）
+// ---------------------------------------------------------------------------
+
 function checkReturnConstraint(
   fnName: string,
   cName: string,
@@ -1428,6 +1448,10 @@ function checkReturnConstraint(
  * `let n = 1; n = 2` / `let xs = [1,2]; xs = [3,4,5]` 是合法 JS 可变绑定。
  * 契约字面量（eq pred / lit() 约束）不走本通道，P1-5 仍由 leqAbs 顶层钉住。
  */
+// ---------------------------------------------------------------------------
+// 赋值一致性（widenForAssign / structuralAssignIssues）
+// ---------------------------------------------------------------------------
+
 function widenForAssign(a: Abs): Abs {
   const s = a.shape;
   if (s.k === "tuple") {
@@ -1485,11 +1509,11 @@ function widenForAssign(a: Abs): Abs {
 /**
  * 结构可赋值：`let a = {x:1}; a = {y:2}` 应报 missing slot x；`let n = 1; n = "str"`
  * （无条件标量改型）报 violation（金标 assign-prim-mismatch-violates）。
- * 输入为 evalProgramAbs 收集的赋值记录（与 scanLiteralCalls 共享一次求值）。
+ * 输入为执行态收集的赋值记录 AbsAssignRecord（与 scanLiteralCalls 共享一次求值）。
  *
  * 分支/循环体内的重赋值不参与：可变绑定在路径上取并集是合法 JS
  * （特性检测 `if (!x.__proto__) flag = false` 是常见模式），conditional
- * 记录已在 ast-eval 侧标记。
+ * 记录已在 B 通道 $assignRecord 侧标记。
  */
 function structuralAssignIssues(records: AbsAssignRecord[]): CheckIssue[] {
   const out: CheckIssue[] = [];
@@ -1524,6 +1548,10 @@ function structuralAssignIssues(records: AbsAssignRecord[]): CheckIssue[] {
  * 有效契约走 effectiveInterface：只执法 handwritten（generated 段 = 事实
  * 快照不执法）；conflict 参数已由 fn 级 nudo:interface-conflict 覆盖，跳过。
  */
+// ---------------------------------------------------------------------------
+// @nudo:case 见证不一致（scanCaseInconsistency）
+// ---------------------------------------------------------------------------
+
 function scanCaseInconsistency(
   source: string,
   knownFns: string[],
@@ -1804,125 +1832,7 @@ function scanCaseInconsistency(
 
 // ---------------------------------------------------------------------------
 // T10a：nudo:interface-drift（固化生成段 ≠ 今日重算，warning）
-//
-// generated 段是 emit 时刻的固化事实快照（不执法）；本检查把它与「今日
-// 重算」做语义对比（§6 证据门槛：conf∈{exact,path} 且无截断标记，无证据
-// 不判——real-package zero-FP 红线）：
-// - 参数位：今日 = 该函数**执行态**调用点实参域（evalProgramAbs 的
-//   AbsCallRecord，joinThenProject 投影归一；与 emit 的 callsite case 同源）；
-// - 返回位：今日 = 逐调用点结果域（全证据实参 analyzeFn 重跑，与 emit 的
-//   case-result 投影同源；无结果证据不判）。
-// 语义相等 = 双方经 constraintToEntryAbs 进 entry Abs 后 leqAbs(a,b) &&
-// leqAbs(b,a)（不比字符串；两侧同构归一是关键——裸 numLit 域不带 pred，
-// 直接与 entry Abs 比 leq 会因 typeof/eq 锚定 pred 恒失败）。每 fn 每位
-// （参数名 / return）最多一条。
+// 实现见 check-interface-drift.ts；checkSourceInner 收集 DriftCandidate 后
+// 统一调用 interfaceDriftIssues。
 // ---------------------------------------------------------------------------
-
-/** drift 候选：generated 有效契约 + 今日入口签名（checkSourceInner 每函数级收集） */
-type DriftCandidate = {
-  fnName: string;
-  /** generalize 形参名表（eff.params 的参数名 → 调用点实参位） */
-  paramNames: string[];
-  eff: EffectiveInterface;
-};
-
-/** §6 证据门槛：conf∈{exact,path} 且非 unknown/any。截断求值会被宽化为
- *  partial/opaque（或退化为 unknown），自然出局——无需另查截断标记。 */
-function driftEvidence(a: Abs | undefined): a is Abs {
-  if (!a) return false;
-  if (a.conf !== "exact" && a.conf !== "path") return false;
-  return a.shape.k !== "unknown" && a.shape.k !== "any";
-}
-
-/**
- * 每函数逐调用点实参表——**执行态**通道（evalProgramAbs 的 AbsCallRecord，
- * 与 emit 的 callsite case 同源：只有真正执行了的调用才产证据）。
- * 语法全树扫描会把「兄弟函数体内从未执行的调用」也算进今日域，fresh
- * emit 后立即误报 drift 且重跑 emit 无法消除——两端口径必须一致。
- */
-function driftCallsites(
-  records: AbsCallRecord[],
-  wanted: Set<string>,
-): Map<string, Array<{ args: Abs[]; line?: number }>> {
-  const out = new Map<string, Array<{ args: Abs[]; line?: number }>>();
-  for (const r of records) {
-    if (!wanted.has(r.fnName)) continue;
-    const list = out.get(r.fnName) ?? [];
-    list.push({ args: r.args, line: r.callLoc?.line });
-    out.set(r.fnName, list);
-  }
-  return out;
-}
-
-/** generated 快照 vs 今日重算（参数位 + 返回位），每 fn 每位最多一条。
- *  callRecords：evalProgramAbs 的执行态调用记录（今日域证据，与 emit 的
- *  callsite case 同源——analyzeFn 以全证据实参重跑返回位；语法扫描会把
- *  未执行的调用算进今日域，fresh emit 恒误报）。 */
-function interfaceDriftIssues(
-  candidates: DriftCandidate[],
-  callRecords: AbsCallRecord[],
-  evalResult: (fnName: string, args: Abs[]) => Abs | undefined,
-): CheckIssue[] {
-  const out: CheckIssue[] = [];
-  const wanted = new Set(candidates.map((c) => c.fnName));
-  const callsites = driftCallsites(callRecords, wanted);
-
-  for (const cand of candidates) {
-    const sites = callsites.get(cand.fnName) ?? [];
-
-    // 参数位：今日域 = 逐调用点实参（证据门槛过滤）→ joinThenProject 投影
-    for (const { param, constraint } of cand.eff.params) {
-      const idx = cand.paramNames.indexOf(param);
-      if (idx < 0) continue; // 快照参数名已不在今日签名：无位置可对账
-      const evidence: Array<{ abs: Abs; line?: number }> = [];
-      for (const s of sites) {
-        const a = s.args[idx];
-        if (driftEvidence(a)) evidence.push({ abs: a, line: s.line });
-      }
-      if (evidence.length === 0) continue; // 无证据 → 不判 drift（宁缺勿滥）
-      const todayC = joinThenProject(evidence.map((e) => e.abs));
-      if (!todayC) continue; // 域不可表达（ widened/partial 混入等）→ 不比
-      const today = constraintToEntryAbs(todayC, param);
-      const expected = constraintToEntryAbs(constraint, param);
-      if (leqAbs(today, expected).ok && leqAbs(expected, today).ok) continue;
-      out.push({
-        severity: "warning",
-        code: "nudo:interface-drift",
-        message: `${cand.fnName}[${param}]: persisted @generated segment ≠ today's call-site domain`,
-        actual: formatAbs(today),
-        expected: formatConstraint(constraint),
-        suggestion: `re-run nudo contract --emit to refresh the generated segment, or check the call sites of ${param}`,
-        fn: cand.fnName,
-        line: evidence[0]!.line,
-      });
-    }
-
-    // 返回位：今日 = 逐调用点结果域（与 emit 同源；generated 无 returns 声明 → 只查参数位）
-    const retC = cand.eff.returns?.constraint;
-    if (!retC) continue;
-    const retEvidence: Array<{ abs: Abs; line?: number }> = [];
-    for (const s of sites) {
-      if (s.args.some((a) => !driftEvidence(a))) continue; // 全参证据才重跑（与 case 合成同口径）
-      const r = evalResult(cand.fnName, s.args as Abs[]);
-      if (driftEvidence(r)) retEvidence.push({ abs: r, line: s.line });
-    }
-    if (retEvidence.length === 0) continue; // 无结果证据 → 不判 drift（宁缺勿滥）
-    const todayRetC = joinThenProject(retEvidence.map((e) => e.abs));
-    if (!todayRetC) continue;
-    const today = constraintToEntryAbs(todayRetC, "return");
-    const expected = constraintToEntryAbs(retC, "return");
-    if (leqAbs(today, expected).ok && leqAbs(expected, today).ok) continue;
-    out.push({
-      severity: "warning",
-      code: "nudo:interface-drift",
-      message: `${cand.fnName}[return]: persisted @generated segment ≠ today's inferred return`,
-      actual: formatAbs(today),
-      expected: formatConstraint(retC),
-      suggestion: `re-run nudo contract --emit to refresh the generated segment, or check the return value`,
-      fn: cand.fnName,
-      line: retEvidence[0]!.line,
-    });
-  }
-  return out;
-}
 

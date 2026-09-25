@@ -8,7 +8,7 @@ import type { Abs, Confidence, Shape } from "./abs.ts";
 import { abs } from "./abs.ts";
 import type { Term } from "./term.ts";
 import type { Pred } from "./pred.ts";
-import type { AstEnv } from "./ast-env.ts";
+import type { AstEnv } from "./hof-types.ts";
 
 /** Abs 原生 env/builtin 实现（B-path 优先） */
 export type AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs | undefined;
