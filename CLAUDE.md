@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-<!-- CLI semantics: docs/design/cli-semantics.md — primary verbs check/test/contract/export/health only. Harvest is not a product verb. -->
+<!-- CLI semantics: docs/design/cli-semantics.md — primary verbs check/test/contract/export/health. migrate = one-way TypeScript retirement gate (status|strip|verify|retire), not a primary verb. Harvest is not a product verb. -->
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -10,7 +10,7 @@ Nudo is a type inference engine for JavaScript powered by abstract interpretatio
 
 Users annotate JS with `@nudo:` directives. Source-level contracts use `@nudo:contract` + `*.nudo.js` templates (constraint-builder grammar: `number()`, `lit()`, `shape()`, `union()`, …). `@nudo:case` is debug / `nudo test` / LSP scenario only — not the interface product. Case args use concrete values or constraint builders.
 
-Product CLI face (`docs/design/cli-semantics.md`): Day0 = `check` + `test`; Day1 = `contract` + `check`; ecosystem = `export`. Observation is check signatures + test case reports + IDE. Entry unconstrained params display as **`any`**; true **`unknown`** means inference failure.
+Product CLI face (`docs/design/cli-semantics.md`): primary verbs are `check` / `test` / `contract` / `export` / `health` — Day0 = `check` + `test`; Day1 = `contract` + `check`; ecosystem = `export`. `migrate` is a one-way TypeScript retirement gate (`status|strip|verify|retire`), not a primary verb. Observation is check signatures + test case reports + IDE. Entry unconstrained params display as **`any`**; true **`unknown`** means inference failure.
 
 ## Development Commands
 
@@ -22,14 +22,16 @@ pnpm run test:watch     # Run tests in watch mode
 pnpm run lint           # Type-check all packages (tsc --noEmit -p tsconfig.lint.json)
 pnpm run check <file>   # gate + signatures (Day 0 / CI)
 pnpm run test:cli <file>  # case reports (call@/entry@ + debug witnesses)
-pnpm run nudo -- <args>  # full CLI (contract / export / health / …)
+pnpm run nudo -- <args>  # full CLI (contract / export / health / migrate / …)
 pnpm run docs:dev       # Docs dev (en) — http://localhost:3000/nudo/
 pnpm run docs:dev:zh    # Docs dev (zh-Hans) — http://localhost:3000/nudo/zh-Hans/
 pnpm run docs:build     # Docs production build (en + zh-Hans)
 pnpm run docs:serve     # Serve production build (both locales)
 ```
 
-> `pnpm run test` is **vitest** (package tests), not the CLI case reporter — that is `test:cli`. Product CLI surface: `check` / `test:cli` / `nudo -- contract|export|health`.
+> **Build before test.** Always `pnpm run build` before `pnpm run test` (CI does the same). Vitest aliases packages to `src`, but `@nudo:env` dynamic imports resolve `@nudojs/*` through package.json `exports` to `dist/` — without a build those imports fail.
+>
+> `pnpm run test` is **vitest** (package tests), not the CLI case reporter — that is `test:cli`. Product CLI surface: `check` / `test:cli` / `nudo -- contract|export|health|migrate`.
 >
 > Docusaurus `start` serves **one locale per process**. Default `docs:dev` is English only, so `/nudo/zh-Hans/` will 404 until you run `docs:dev:zh` (or `docs:build` + `docs:serve`).
 
@@ -40,17 +42,18 @@ Run a single test file: `pnpm vitest run packages/core/src/algebra/__tests__/che
 pnpm workspaces monorepo. Dependency graph (arrows mean "depends on"):
 
 ```
-core → parser → service → cli → nudo (thin shell)
-                 │
-                 ├→ lsp
-                 └→ vite-plugin
+core ─┬→ parser ──┐
+      ├→ env ─────┼→ service → cli → nudojs (thin shell)
+      └→ harvester┘      │
+                         ├→ lsp
+                         └→ vite-plugin
 ```
 
 | Package | Purpose |
 |---|---|
 | `packages/core` | **Type system**: algebra/Abs (term, pred, check, leq, exec/transpile, surface, arithmetic), format (extensional rendering), environment, refinements, interface (sidecar/effectiveInterface/projection) |
 | `packages/parser` | Babel-based parser; extracts function-scoped `@nudo:` directives from JSDoc |
-| `packages/cli` | CLI commands only: check/test/contract/export/health |
+| `packages/cli` | CLI commands only: check/test/contract/export/health/migrate |
 | `packages/service` | Analyzer orchestration, Abs-native evaluator (B-path), dts-generator, harvest, case-json, interface emitter/surface/derivation |
 | `packages/nudojs` | Thin npm shell `nudojs` (`nudo` bin) that re-exports `@nudojs/cli` |
 | `packages/lsp` | LSP server (check diagnostics, completions, code lens, inlay hints, agent tools) |

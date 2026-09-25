@@ -10,6 +10,8 @@
 > 执行模型与信任边界：[`kernel-merge.md`](./kernel-merge.md)「执行模型与信任边界」。
 > 现行计划未闭环项：[`plans/2026-09-19-close-remaining-dx-gaps.md`](./plans/2026-09-19-close-remaining-dx-gaps.md)。
 
+> **Executive summary (EN).** This document is the honesty ledger for still-binding design limits and open issues — not a tutorial and not a changelog. It governs what Nudo must **not** claim: L1 obligations come only from explicit contracts (`*.nudo.js` / `@nudo:contract`) or call-site facts; body-AST slot invention is forbidden (C0); HOF `promote` is warning-only, never a check error; entry unconstrained params display as **`any`** (`unknown` = inference failure); env/harvest never replaces mocks. Resolved items are one-line anchors in `../reports/limits-resolved.md`. Product CLI face and L1/L2: `cli-semantics.md`. Trust boundary: `kernel-merge.md`.
+
 ---
 
 ## 1. 仍有效的纪律与限制

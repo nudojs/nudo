@@ -14,6 +14,8 @@
 >
 > 无 `NUDO_KERNEL` 开关、无 `packages/kernel`、无双矩阵。
 
+> **Executive summary (EN).** This document is the single source of truth for the Abs architecture: `Abs = shape × term × pred × conf` (types as computation). There is one IR and one evaluation engine (B-path: transpile + `new Function`); failures fail closed (unknown / empty exports) — no interpreter fallback. dts / schema / guard / LSP hover / serialization are **one-way lossy projections** of Abs and are never read back. Constraint builders (`number()`, `shape({…})`, …) enter Abs as Preds and participate in algebra. Trust boundary: analysis **executes** target code in-process — treat `nudo check` / `nudo test` like running the code; sidecar `*.nudo.js` and mocks are ordinary JS inside that boundary. Cross-product invariants are listed near the end of this document; product CLI face lives in `cli-semantics.md`.
+
 ---
 
 ## 分层

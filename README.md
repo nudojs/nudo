@@ -1,4 +1,4 @@
-<!-- CLI semantics: docs/design/cli-semantics.md — verbs check/test/contract/export/health. Harvest is not a product verb. -->
+<!-- CLI semantics: docs/design/cli-semantics.md — primary verbs check/test/contract/export/health. migrate = one-way TypeScript retirement gate (status|strip|verify|retire), not a primary verb. Harvest is not a product verb. -->
 # Nudo
 
 > **欢迎重回 JS 世界.** — Nudo 不限制你的 JS 表达，只忠实反映中间量与结果，并提供比类型更精确的契约校验。  
@@ -7,7 +7,7 @@
 [![Docs](https://img.shields.io/badge/docs-nudojs.github.io%2Fnudo-5b4bd4)](https://nudojs.github.io/nudo/)
 [![Playground](https://img.shields.io/badge/playground-try%20online-a29bfe)](https://nudojs.github.io/nudo/playground)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org)
 
 Nudo does not restrict how you write JavaScript. It executes your code on Abs (`shape × term × pred × conf`) so you can **faithfully observe** intermediate values and results — and **validate** them with explicit contracts sharper than ordinary TypeScript types.
 
@@ -26,7 +26,7 @@ TypeScript sources are also accepted: annotations are stripped and the code is a
 
 Beyond what TypeScript can express: `"0x" + id` → `` `0x${string}` ``, `"a,b,c".split(",")` → `["a", "b", "c"]`, loop sums stay literal — same Abs algebra powers `nudo check`.
 
-**Product CLI face**: Day0 = `check` + `test`; Day1 = `contract` + `check`; ecosystem = `export`. Observation is check signatures + test cases + IDE. Entry unconstrained params display as **`any`**; true **`unknown`** means inference failure.
+**Product CLI face**: primary verbs are `check` / `test` / `contract` / `export` / `health` — Day0 = `check` + `test`; Day1 = `contract` + `check`; ecosystem = `export`. `migrate` is a one-way TypeScript retirement gate (`status|strip|verify|retire`), not a primary verb. Observation is check signatures + test cases + IDE. Entry unconstrained params display as **`any`**; true **`unknown`** means inference failure.
 
 ## Quick Start
 
@@ -39,7 +39,7 @@ npx nudojs check math.js
 npx nudojs test math.js
 ```
 
-> **Version heads-up.** The `nudojs` npm package is a thin installer shell — its version number is **not** the engine version. `nudojs@0.x` wraps `@nudojs/cli@3.x` (and `@nudojs/core@2.x`). Run `nudo --version` to see the engine CLI you actually have.
+> **Version heads-up.** The `nudojs` npm package is a thin installer shell — its version number is **not** the engine version. `nudojs@0.x` wraps `@nudojs/cli@3.x` (and `@nudojs/core@3.x`). Run `nudo --version` to see the engine CLI you actually have.
 
 Write plain JavaScript. Call sites are evidence:
 
@@ -131,9 +131,18 @@ processItems(["a"], (s) => s.toUpperCase());
 nudo contract src/          # print / --draft / --emit sidecar contracts
 nudo export math.js --format dts --out dist/   # dts | guard | schema | standard | all
 nudo health src/            # analysis errors + contract drift
-nudo health                 # analysis errors + drift
 nudo check src/ --watch     # watch is a flag, not a verb
+nudo migrate status src/    # TS retirement gate: status | strip | verify | retire
 ```
+
+Common flags (full matrix: [`docs/design/cli-semantics.md`](./docs/design/cli-semantics.md)):
+
+| Flag | Purpose |
+|---|---|
+| `--from <paths…>` | inject use-site call records (`check` / `test` / `contract`) |
+| `--watch` / `-w` | re-run on change (`check` / `test`; optional on `health`) |
+| `--json` | machine-readable reports |
+| `export --format` | `dts` \| `guard` \| `schema` \| `standard` \| `all` |
 
 Ignore specific entry may-throws when intentional:
 
@@ -144,31 +153,76 @@ nudo check src/ --ignore-throws TypeError
 
 Try the same ideas in the browser: [Playground](https://nudojs.github.io/nudo/playground).
 
+## First contract in 5 minutes
+
+Day 0 needs no annotations. When you want an **obligation**, add a tiny sidecar — constraint builders become Abs Preds and gate call sites.
+
+**`math.js`**
+
+```javascript
+export function square(n) {
+  return n * n;
+}
+
+square(3);
+square(0);
+```
+
+**`math.nudo.js`** (same directory; binds by export name)
+
+```javascript
+import { fn, number } from "@nudojs/core";
+
+export const square = fn({ n: number().gt(0) }, number());
+```
+
+```bash
+nudo check math.js
+```
+
+```text
+signatures
+  square(n: number) => number
+
+issues
+  [ERROR L6 square] square[n]: argument ⊭ precondition  (nudo:constraint-violated)
+      actual:   0  #exact
+      expected: n > 0
+      → use a value satisfying n > 0, or relax the precondition on n
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+```
+
+Drop `square(0)` (or pass a positive) and `nudo check` exits 0. That is the Day-1 loop: `*.nudo.js` templates (`number().gt(0)`, `shape({…})`, …) or `@nudo:contract` turn call-site facts into L1 obligations.
+
+Runnable samples: [`docs/examples/constraints/`](./docs/examples/constraints/) · [`docs/examples/errors/01-constraint-gt.js`](./docs/examples/errors/01-constraint-gt.js). Timed newcomer path (internal baseline, not a CI gate): `pnpm run learning-cost`.
+
 ## Packages
 
 This is a monorepo managed with [pnpm workspaces](https://pnpm.io/workspaces).
 
-| Package | Description |
-|---|---|
-| [`@nudojs/core`](./packages/core) | Abs type system (`shape × term × pred × conf`) |
-| [`@nudojs/parser`](./packages/parser) | Babel-based parser and directive extraction |
-| [`@nudojs/cli`](./packages/cli) | CLI tool and evaluator API (check / test / contract / export / health) |
-| [`@nudojs/service`](./packages/service) | Shared inference service for IDE integrations |
-| [`@nudojs/lsp`](./packages/lsp) | Language Server Protocol server, with AI-agent `executeCommand` support |
-| [`@nudojs/env`](./packages/env) | Built-in API environments (ES globals, Node, Web) loaded by `@nudo:env` |
-| [`@nudojs/harvester`](./packages/harvester) | Harvests `.d.ts` declarations into Nudo env modules |
-| [`vite-plugin-nudo`](./packages/vite-plugin) | Vite plugin for build-time inference |
-| [`nudo-vscode`](./packages/vscode) | VS Code / Cursor extension |
-| [nudo-zed](https://github.com/nudojs/nudo-zed) | Zed extension (standalone repo; secondary language server) |
-| [`website`](./packages/website) | Documentation site (Docusaurus) |
+| Package | Description | Maturity |
+|---|---|---|
+| [`@nudojs/core`](./packages/core) | Abs type system (`shape × term × pred × conf`) | stable |
+| [`@nudojs/parser`](./packages/parser) | Babel-based parser and directive extraction | stable |
+| [`@nudojs/cli`](./packages/cli) | CLI tool (check / test / contract / export / health / migrate) | stable |
+| [`@nudojs/service`](./packages/service) | Shared inference service for IDE integrations | stable |
+| [`@nudojs/lsp`](./packages/lsp) | Language Server Protocol server, with AI-agent `executeCommand` support | stable |
+| [`@nudojs/env`](./packages/env) | Built-in API environments (ES globals, Node, Web) loaded by `@nudo:env` | growing |
+| [`@nudojs/harvester`](./packages/harvester) | Harvests `.d.ts` declarations into Nudo env modules | growing |
+| [`vite-plugin-nudo`](./packages/vite-plugin) | Vite plugin for build-time inference | thin |
+| [`nudo-vscode`](./packages/vscode) | VS Code / Cursor extension | thin launcher |
+| [`nudojs`](./packages/nudojs) | Thin installer shell for the `nudo` bin | thin shell |
+| [nudo-zed](https://github.com/nudojs/nudo-zed) | Zed extension (standalone repo; secondary language server) | external |
+| [`website`](./packages/website) | Documentation site (Docusaurus) | docs |
 
 ### Dependency Graph
 
 ```
-core → parser → service → cli → nudojs
-                 │
-                 ├→ lsp
-                 └→ vite-plugin
+core ─┬→ parser ──┐
+      ├→ env ─────┼→ service → cli → nudojs
+      └→ harvester┘      │
+                         ├→ lsp
+                         └→ vite-plugin
 ```
 
 ## Directives
@@ -237,8 +291,8 @@ Execution model & trust boundary (source of truth): [`docs/design/kernel-merge.m
 
 ### Prerequisites
 
-- To **run the published CLI** (`npm install -g @nudojs/cli`): Node.js >= 20（published packages ship compiled `dist/` ESM）
-- To **develop this repo**: Node.js >= 18 and pnpm 9.1.0 (pinned in `packageManager`)
+- To **run the published CLI** (`npm install -g @nudojs/cli`): Node.js >= 20（published packages ship compiled `dist/` ESM; `engines` is `>=20`）
+- To **develop this repo**: Node.js >= 20 and pnpm 9.1.0 (pinned in `packageManager`) — package `engines` fields all require >= 20
 
 ### Setup
 
@@ -255,7 +309,7 @@ pnpm run test:watch     # vitest watch mode
 pnpm run build          # Build all packages
 pnpm run check <file>   # CLI: gate + signatures
 pnpm run test:cli <file> # CLI: case reports
-pnpm run nudo -- <args> # Full CLI (contract / export / health / …)
+pnpm run nudo -- <args> # Full CLI (contract / export / health / migrate / …)
 pnpm run docs:dev       # Start docs dev server
 pnpm run docs:build     # Build docs for production
 ```
