@@ -60,9 +60,6 @@ importers:
       '@nudojs/core':
         specifier: workspace:*
         version: link:../core
-      '@nudojs/env':
-        specifier: workspace:*
-        version: link:../env
       '@nudojs/parser':
         specifier: workspace:*
         version: link:../parser
