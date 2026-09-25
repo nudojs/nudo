@@ -1,4 +1,5 @@
 ---
+slug: day0-observe
 title: Day 0 —— 不改写就观察 JavaScript
 authors: [default]
 tags: [nudo, type-inference, check]

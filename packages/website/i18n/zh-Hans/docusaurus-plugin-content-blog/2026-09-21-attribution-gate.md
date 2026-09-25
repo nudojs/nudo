@@ -1,4 +1,5 @@
 ---
+slug: attribution-gate
 title: 22 个文件被涂抹——调用点归因如何险些把假精度当成真发布
 authors: [default]
 tags: [engineering, callsite-discovery]

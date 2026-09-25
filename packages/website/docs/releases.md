@@ -19,7 +19,9 @@ slug: /releases
 | `vite-plugin-nudo` | 0.4.3-beta.0 |
 | `nudo-vscode` | 0.3.7 |
 
-## @nudojs/core 3.0.0-beta.0
+**Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
+
+## @nudojs/core 3.0.0-beta.0 {#pkg-core}
 
 ## 3.0.0-beta.0
 
@@ -88,6 +90,9 @@ slug: /releases
   - **@nudojs/service**: `interface-derivation` / `analyzer-orchestrate` split into cohesion modules with stable facades.
   - Docs: trust-boundary note in Quick Start, version narrative consistency, env mock-boundary checklist, CheckJson `actions[]` field table.
   - vite-plugin: named `logAnalysisSummary` helper (logging surface unchanged).
+
+<details>
+<summary>Version history (10)</summary>
 
 ## 2.1.0
 
@@ -288,7 +293,9 @@ slug: /releases
 
 - Conceptual design and basic implementation.
 
-## @nudojs/service 5.0.0-beta.0
+</details>
+
+## @nudojs/service 5.0.0-beta.0 {#pkg-service}
 
 ## 5.0.0-beta.0
 
@@ -372,6 +379,9 @@ slug: /releases
   - @nudojs/parser@1.1.0-beta.0
   - @nudojs/env@0.4.2-beta.0
   - @nudojs/harvester@0.2.8-beta.0
+
+<details>
+<summary>Version history (11)</summary>
 
 ## 4.0.0
 
@@ -641,7 +651,9 @@ slug: /releases
   - @nudojs/core@0.1.0
   - @nudojs/parser@0.1.0
 
-## nudojs (CLI) 1.0.0-beta.1
+</details>
+
+## nudojs (CLI) 1.0.0-beta.1 {#pkg-nudojs}
 
 ## 1.0.0-beta.1
 
@@ -661,6 +673,9 @@ slug: /releases
   ```
   
   `import "@nudojs/cli"` / `npx @nudojs/cli` keep working via the stub for one beta cycle.
+
+<details>
+<summary>Version history (7)</summary>
 
 ## 1.0.0-beta.0
 
@@ -774,7 +789,9 @@ slug: /releases
 - Updated dependencies [de47d84]
   - @nudojs/cli@1.0.0
 
-## @nudojs/parser 1.1.0-beta.0
+</details>
+
+## @nudojs/parser 1.1.0-beta.0 {#pkg-parser}
 
 ## 1.1.0-beta.0
 
@@ -798,6 +815,9 @@ slug: /releases
 - Updated dependencies
 - Updated dependencies [279d73a]
   - @nudojs/core@3.0.0-beta.0
+
+<details>
+<summary>Version history (10)</summary>
 
 ## 1.0.0
 
@@ -930,7 +950,9 @@ slug: /releases
 - Updated dependencies
   - @nudojs/core@0.1.0
 
-## @nudojs/lsp 2.0.0-beta.0
+</details>
+
+## @nudojs/lsp 2.0.0-beta.0 {#pkg-lsp}
 
 ## 2.0.0-beta.0
 
@@ -999,6 +1021,9 @@ slug: /releases
   - @nudojs/core@3.0.0-beta.0
   - @nudojs/service@5.0.0-beta.0
   - @nudojs/parser@1.1.0-beta.0
+
+<details>
+<summary>Version history (12)</summary>
 
 ## 1.0.0
 
@@ -1243,7 +1268,9 @@ slug: /releases
   - @nudojs/core@0.1.0
   - @nudojs/service@0.1.0
 
-## @nudojs/env 0.4.2-beta.0
+</details>
+
+## @nudojs/env 0.4.2-beta.0 {#pkg-env}
 
 ## 0.4.2-beta.0
 
@@ -1255,6 +1282,9 @@ slug: /releases
 - Updated dependencies
 - Updated dependencies [279d73a]
   - @nudojs/core@3.0.0-beta.0
+
+<details>
+<summary>Version history (9)</summary>
 
 ## 0.4.1
 
@@ -1374,7 +1404,9 @@ slug: /releases
 
   Move agent-facing tools from the standalone MCP server into the language server: `@nudojs/mcp` is removed. `@nudojs/lsp` now exposes `nudo.whatIf`, `nudo.suggestCase`, `nudo.trace`, `nudo.selectCase`, and `nudo.getActiveCases` via `workspace/executeCommand` (custom-request aliases `nudo/whatIf` etc. included), adds pull-mode diagnostics, and works on files that are not open in the editor (disk fallback). `nudo.whatIf` now actually applies the given type bindings — previously they were ignored. AI agents connect through any LSP↔MCP bridge (cclsp, mcpls, agent-lsp) or a native LSP client; an installable agent skill ships at `packages/lsp/agent-skill/SKILL.md`.
 
-## @nudojs/harvester 0.2.8-beta.0
+</details>
+
+## @nudojs/harvester 0.2.8-beta.0 {#pkg-harvester}
 
 ## 0.2.8-beta.0
 
@@ -1386,6 +1418,9 @@ slug: /releases
 - Updated dependencies
 - Updated dependencies [279d73a]
   - @nudojs/core@3.0.0-beta.0
+
+<details>
+<summary>Version history (8)</summary>
 
 ## 0.2.7
 
@@ -1475,7 +1510,9 @@ slug: /releases
 - Updated dependencies [5786fa5]
   - @nudojs/core@0.3.0
 
-## vite-plugin-nudo 0.4.3-beta.0
+</details>
+
+## vite-plugin-nudo 0.4.3-beta.0 {#pkg-vite-plugin}
 
 ## 0.4.3-beta.0
 
@@ -1498,6 +1535,9 @@ slug: /releases
 - Updated dependencies [5a5e167]
   - @nudojs/core@3.0.0-beta.0
   - @nudojs/service@5.0.0-beta.0
+
+<details>
+<summary>Version history (11)</summary>
 
 ## 0.4.2
 
@@ -1631,9 +1671,14 @@ slug: /releases
 - Updated dependencies
   - @nudojs/service@0.1.0
 
-## nudo-vscode 0.3.7
+</details>
+
+## nudo-vscode 0.3.7 {#pkg-vscode}
 
 ## Unreleased
+
+<details>
+<summary>Version history (3)</summary>
 
 ## 0.3.7
 
@@ -1655,3 +1700,5 @@ slug: /releases
 - 6c38283: docs and ci
 - 9f7f819: fix pkg info
 - c175f71: version
+
+</details>

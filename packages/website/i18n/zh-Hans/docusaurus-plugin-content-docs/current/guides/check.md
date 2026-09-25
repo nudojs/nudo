@@ -22,6 +22,10 @@ nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
            [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
 ```
 
+![check 校验 vs export 投影](/img/check-vs-export.svg)
+
+*`check` 校验 Abs（实线）；`export` 单向有损投影 dts/guard/schema（虚线）。没有东西读回投影。*
+
 ## 默认输出（signatures + issues）
 
 ```js

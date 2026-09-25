@@ -9,6 +9,16 @@ description: Day-0 zero concepts, Day-1 sidecar contracts, advanced Abs — pick
 
 Nudo is designed so you only learn what you need.
 
+## Which layer do you need?
+
+| You want | Layer | Start here |
+|---|---|---|
+| See inferred types, no annotations | **Day 0** | `npx nudojs check` / `test` signatures |
+| CI obligations — contracts that fail a build | **Day 1** | `*.nudo.js` sidecar + `nudo check` |
+| The algebra itself — symbolic terms, preds, `--abs` | **Advanced** | Abs (`shape × term × pred × conf`) |
+
+Rule of thumb: if you only want to *read* types, stop at Day 0. If you need CI to *enforce* something, add Day 1. Open the Advanced layer only when you are debugging inference or building on the kernel.
+
 ## Day 0 — Zero concepts
 
 Write plain JavaScript. Run the two Day-0 commands:
@@ -24,7 +34,7 @@ Open the same file in VS Code with the Nudo extension for hover and inlays.
 
 > **Default analysis mode:** `nudo.analysis.mode` defaults to `"exports"` (files with `export` / sidecar / directives are analyzed by the IDE). Full gate semantics and when to use each mode: [Coexistence with TypeScript](../guides/coexistence.md#when-to-use-modedirectives-vs-modeexports). CLI `check`/`test` on a named path still analyzes any target file.
 
-**Day 0 takeaway:** read types from `check` signatures and `test` cases.
+**Day 0 takeaway:** read types from `check` signatures and `test` cases. `any` on an unconstrained entry param is honest — the alternative, `unknown`, means inference failed (see [Abs — any vs unknown](./type-values.md#any-vs-unknown)).
 
 ## Day 1 — Sidecar contracts
 
@@ -57,13 +67,24 @@ Explicit contracts come from:
 
 Without an explicit contract, the contract degrades to the JS runtime boundary: entry params are `any`, and export functions must not carry undigested may-throw (L2). Nudo does **not** invent required slots from body AST scans.
 
-## Advanced — Abs
+**Day 1 takeaway:** the sidecar is the contract product. `nudo check` enforces L1 (explicit contracts) and L2 (entry may-throw). `@nudo:case` is debug / `nudo test` only — not the interface.
+
+## Advanced — Abs {#advanced-abs}
 
 The internal type is **Abs** (`shape × term × pred × conf`): types are computable values. `nudo check --abs` shows the per-function algebra face (shape + conf); `--generalize` adds the symbolic term/pred α. You rarely need this for day-to-day work.
 
+Reach for Advanced when:
+- a signature looks wrong and you want the intensional face, not the display string
+- you are reasoning about refinements in algebra (`x>0` ⇒ `x+1>1`)
+- you are building tooling on `@nudojs/core`
+
+Deeper reading: [Abs — the type system](./type-values.md) · [Abstract interpretation](./abstract-interpretation.md).
+
 ## Next
 
-- [Quick start](../getting-started/quick-start)
-- [Check guide](../guides/check)
-- [VS Code](../guides/vscode)
-- [Coexistence with TypeScript](../guides/coexistence)
+- [Quick start](../getting-started/quick-start.md)
+- [Check guide](../guides/check.md)
+- [Contract guide](../guides/contract.md)
+- [Abs — the type system](./type-values.md)
+- [VS Code](../guides/vscode.md)
+- [Coexistence with TypeScript](../guides/coexistence.md)

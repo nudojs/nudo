@@ -74,6 +74,10 @@ issues
 | **生态** | 无需额外 | `nudo export` dts / guard / schema（Abs 的有损投影） |
 | **进阶** | Abs 代数、env、mock | 字符串/数字代数、高阶函数、模块图 |
 
+![Day 0 → Day 1 → Ecosystem](/img/day0-day1-ecosystem.svg)
+
+*Day 0 → Day 1 → 生态 —— 义务递增；`any` 是无约束，`unknown` 是推导失败。*
+
 `@nudo:case` 仍可作为场景执行的**调试见证**（`nudo test`、LSP 用例切换）—— 它不是契约产品。
 
 ## 为什么不只是「就用 TypeScript」

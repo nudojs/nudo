@@ -1,4 +1,5 @@
 ---
+slug: vs-typescript
 title: Nudo vs TypeScript — when a JS-first gate is the right tool
 authors: [default]
 tags: [nudo, typescript, type-inference]

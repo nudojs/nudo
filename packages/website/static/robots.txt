@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /nudo/search
+Disallow: /nudo/zh-Hans/search
+Disallow: /nudo/playground
+Disallow: /nudo/zh-Hans/playground
+
+Sitemap: https://nudojs.github.io/nudo/sitemap.xml
+Sitemap: https://nudojs.github.io/nudo/zh-Hans/sitemap.xml

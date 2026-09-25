@@ -11,25 +11,46 @@ const sidebars: SidebarsConfig = {
         "getting-started/installation",
         "getting-started/mental-model",
         "getting-started/quick-start",
-        "guides/recipes",
       ],
     },
     {
       type: "category",
       label: "How-to",
-      link: { type: "generated-index" },
+      link: {
+        type: "generated-index",
+        description:
+          "Task-oriented guides for working with Nudo: run gates and diagnose failures, author contracts and harnesses, integrate with the toolchain, and grab cookbook recipes.",
+      },
       items: [
-        "guides/check",
-        "guides/contract",
-        "guides/cli",
-        "guides/callsite-discovery",
-        "guides/runtime-generation",
-        "guides/export-ecosystem",
-        "guides/health",
-        "guides/env-harvest",
-        "guides/examples",
-        "guides/error-faces",
-        "guides/ai-native-dx",
+        {
+          type: "category",
+          label: "Gate",
+          items: ["guides/check", "guides/health", "guides/error-faces"],
+        },
+        {
+          type: "category",
+          label: "Contracts",
+          items: [
+            "guides/contract",
+            "guides/env-harvest",
+            "guides/runtime-generation",
+          ],
+        },
+        {
+          type: "category",
+          label: "Ecosystem",
+          items: [
+            "guides/cli",
+            "guides/export-ecosystem",
+            "guides/callsite-discovery",
+            "guides/examples",
+          ],
+        },
+        {
+          type: "category",
+          label: "Cookbook",
+          items: ["guides/recipes"],
+        },
       ],
     },
     {
@@ -41,6 +62,7 @@ const sidebars: SidebarsConfig = {
         "guides/agent-integration",
         "guides/lsp-clients",
         "guides/vite-plugin",
+        "guides/ai-native-dx",
       ],
     },
     {
@@ -51,7 +73,6 @@ const sidebars: SidebarsConfig = {
         "guides/migrating-from-typescript",
         "guides/case-study-retire",
         "guides/vs-typescript",
-        "guides/competitive-landscape",
         "guides/coexistence",
         "guides/versioning",
       ],
@@ -73,27 +94,42 @@ const sidebars: SidebarsConfig = {
     {
       type: "category",
       label: "Reference",
-      link: { type: "generated-index" },
+      link: {
+        type: "generated-index",
+        description:
+          "Authoritative lookups: CLI commands and diagnostics, the glossary, agent surfaces, and per-package API reference for core, parser, service, agent, lsp, and harvester.",
+      },
       items: [
-        "reference/diagnostics",
-        "reference/glossary",
-        "releases",
+        {
+          type: "category",
+          label: "CLI & Diagnostics",
+          items: [
+            "api/cli-reference",
+            "reference/diagnostics",
+            "reference/glossary",
+          ],
+        },
+        {
+          type: "category",
+          label: "Package APIs",
+          items: [
+            "api/core",
+            "api/parser",
+            "api/service",
+            "api/agent",
+            "api/lsp",
+            "api/harvester",
+          ],
+        },
         "reference/agents",
-        "api/cli-reference",
-        "api/core",
-        "api/parser",
-        "api/service",
-        "api/agent",
-        "api/lsp",
-        "api/harvester",
+        "releases",
       ],
     },
     {
       type: "category",
       label: "Design",
-      items: ["design/design-doc"],
+      items: ["design/design-doc", "guides/competitive-landscape", "contributing"],
     },
-    "contributing",
   ],
 };
 

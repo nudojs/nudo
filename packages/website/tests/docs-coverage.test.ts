@@ -4,6 +4,8 @@
 // 2. 术语表每个 nudo:* 标题都带显式 {#…} 锚点，且 id 符合上述规则。
 // 3. zh 文档页集合 == en 文档页集合（页面级 i18n 对齐）。
 // 4. sidebars.ts 的每个 category label 在 zh current.json 有翻译。
+// 5. docusaurus.config.ts 的 navbar/footer label、footer title 都在 zh navbar.json / footer.json 有翻译；
+//    footer.json 不得残留 config 里已不存在的 stale key。
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -113,5 +115,63 @@ describe("zh docs mirror en docs", () => {
       (l) => !(`sidebar.docsSidebar.category.${l}` in current),
     );
     expect(missing, `untranslated sidebar labels: ${missing.join(", ")}`).toEqual([]);
+  });
+});
+
+describe("zh navbar/footer i18n coverage", () => {
+  const config = readFileSync(join(repoRoot, "packages/website/docusaurus.config.ts"), "utf8");
+  const navbar = JSON.parse(
+    readFileSync(join(repoRoot, "packages/website/i18n/zh-Hans/docusaurus-theme-classic/navbar.json"), "utf8"),
+  );
+  const footer = JSON.parse(
+    readFileSync(join(repoRoot, "packages/website/i18n/zh-Hans/docusaurus-theme-classic/footer.json"), "utf8"),
+  );
+
+  // Slice the themeConfig into navbar / footer regions so labels are scoped.
+  const navbarSrc = config.slice(config.indexOf("navbar: {"), config.indexOf("footer: {"));
+  const footerSrc = config.slice(config.indexOf("footer: {"), config.indexOf("prism: {"));
+  const navbarLabels = [...navbarSrc.matchAll(/label:\s*"([^"]+)"/g)].map((m) => m[1]);
+  const footerLabels = [...footerSrc.matchAll(/label:\s*"([^"]+)"/g)].map((m) => m[1]);
+  const footerTitles = [...footerSrc.matchAll(/title:\s*"([^"]+)"/g)].map((m) => m[1]);
+
+  it("config navbar/footer sections yield labels and titles", () => {
+    expect(navbarLabels.length).toBeGreaterThan(0);
+    expect(footerLabels.length).toBeGreaterThan(0);
+    expect(footerTitles.length).toBeGreaterThan(0);
+  });
+
+  it("every navbar label has a zh key", () => {
+    const missing = navbarLabels.filter((l) => !(`item.label.${l}` in navbar));
+    expect(missing, `missing navbar i18n keys: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("every footer label has a zh key", () => {
+    const missing = footerLabels.filter((l) => !(`link.item.label.${l}` in footer));
+    expect(missing, `missing footer label keys: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("every footer title has a zh key", () => {
+    const missing = footerTitles.filter((t) => !(`link.title.${t}` in footer));
+    expect(missing, `missing footer title keys: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("footer.json has no stale link.item.label keys", () => {
+    const known = new Set(footerLabels);
+    const stale = Object.keys(footer)
+      .filter((k) => k.startsWith("link.item.label."))
+      .map((k) => k.slice("link.item.label.".length))
+      .filter((l) => !known.has(l))
+      .sort();
+    expect(stale, `stale footer i18n keys: ${stale.join(", ")}`).toEqual([]);
+  });
+
+  it("navbar.json has no stale item.label keys", () => {
+    const known = new Set(navbarLabels);
+    const stale = Object.keys(navbar)
+      .filter((k) => k.startsWith("item.label."))
+      .map((k) => k.slice("item.label.".length))
+      .filter((l) => !known.has(l))
+      .sort();
+    expect(stale, `stale navbar i18n keys: ${stale.join(", ")}`).toEqual([]);
   });
 });

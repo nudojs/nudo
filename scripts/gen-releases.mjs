@@ -41,12 +41,30 @@ const GEN_NOTICE_EN =
 const GEN_NOTICE_ZH =
   "> 由 `pnpm run docs:gen` 从 `packages/*/CHANGELOG.md` 生成 —— 请勿手改。破坏性条目带 `**BREAKING**` 与一行迁移说明。";
 
+/** Split a changelog body on `## version` headings; first block is the latest. */
+function splitVersions(cl) {
+  const re = /^## (?!@)(\S[^\n]*)\n/gm;
+  const marks = [...cl.matchAll(re)];
+  if (marks.length === 0) return [{ version: null, body: cl }];
+  const out = [];
+  for (let i = 0; i < marks.length; i++) {
+    const start = marks[i].index;
+    const end = i + 1 < marks.length ? marks[i + 1].index : cl.length;
+    out.push({ version: marks[i][1].trim(), body: cl.slice(start, end).trimEnd() });
+  }
+  return out;
+}
+
 function buildReleases(lang) {
   const notice = lang === "zh" ? GEN_NOTICE_ZH : GEN_NOTICE_EN;
   const heading = lang === "zh" ? "发布记录" : "Releases";
   const pkgTable = lang === "zh"
     ? ["| 包 | 当前版本 |", "|----|----------|"]
     : ["| Package | Current version |", "|----------|-----------------|"];
+  const historyLabel = lang === "zh" ? "历史版本" : "Version history";
+  const jumpLabel = lang === "zh" ? "按包跳转" : "Jump to package";
+  // Explicit anchors — heading slugs differ across GH/Docusaurus and `@scope/pkg` is messy.
+  const anchorOf = (dir) => `pkg-${dir}`;
   const parts = [
     "---",
     `description: ${
@@ -64,12 +82,29 @@ function buildReleases(lang) {
     ...pkgTable,
     ...PKGS.map((p) => `| \`${p.name}\` | ${versionOf(p.dir)} |`),
     "",
+    `**${jumpLabel}:** ${PKGS.map((p) => `[\`${p.name}\`](#${anchorOf(p.dir)})`).join(" · ")}`,
+    "",
   ];
   for (const p of PKGS) {
     const cl = changelogOf(p.dir);
-    parts.push(`## ${p.name} ${versionOf(p.dir)}`, "");
+    // Heading custom id — Docusaurus onBrokenAnchors tracks heading ids, not raw HTML <a id>.
+    parts.push(`## ${p.name} ${versionOf(p.dir)} {#${anchorOf(p.dir)}}`, "");
     if (cl) {
-      parts.push(cl);
+      const blocks = splitVersions(cl);
+      // Latest release stays expanded; older versions collapse so the page is scannable.
+      const [latest, ...older] = blocks;
+      parts.push(latest.body, "");
+      if (older.length > 0) {
+        parts.push(
+          `<details>`,
+          `<summary>${historyLabel} (${older.length})</summary>`,
+          "",
+          older.map((b) => b.body).join("\n\n"),
+          "",
+          `</details>`,
+          "",
+        );
+      }
     } else {
       parts.push(
         lang === "zh"

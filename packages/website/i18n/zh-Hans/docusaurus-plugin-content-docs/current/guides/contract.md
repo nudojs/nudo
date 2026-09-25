@@ -100,6 +100,10 @@ npx nudojs contract --emit src/lib.js --all --dry-run
 
 ## 用 check 门禁
 
+![侧车自动绑定](/img/sidecar-bind.svg)
+
+*同名侧车 `*.nudo.js` 自动绑定到 `calc.js` 导出，作为 L1 进入 `nudo check`。*
+
 ```bash
 npx nudojs check src/
 ```

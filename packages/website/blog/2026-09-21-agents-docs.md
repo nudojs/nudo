@@ -1,4 +1,5 @@
 ---
+slug: agents-docs
 title: Nudo for coding agents — agents.md, agent integration, stable diagnostics
 authors: [default]
 tags: [ai, mcp, nudo, agents]

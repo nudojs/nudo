@@ -74,6 +74,10 @@ In the IDE, the same Abs surfaces as inlay hints on intermediates — not only a
 | **Ecosystem** | nothing extra | `nudo export` dts / guard / schema (lossy Abs projections) |
 | **Advanced** | Abs algebra, envs, mocks | String/number algebra, HOFs, module graphs |
 
+![Day 0 → Day 1 → Ecosystem](/img/day0-day1-ecosystem.svg)
+
+*Day 0 → Day 1 → Ecosystem — obligation increases; `any` is unconstrained, `unknown` is inference failure.*
+
 `@nudo:case` remains available as a **debug witness** for scenario runs (`nudo test`, LSP case switching) — it is not the contract product.
 
 ## Why not “just TypeScript”

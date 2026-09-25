@@ -35,6 +35,71 @@ nudo export src/api.js --format all --out dist
 
 各格式的输入与示例：[运行时生成](./runtime-generation.md)。Flag / 退出码契约：[CLI 参考](../api/cli-reference.md#nudo-export)。
 
+## 每种格式用在哪
+
+| 格式 | 何时用 | 投影自 | 示例消费者 |
+|---|---|---|---|
+| `dts` | JS 包给 TS 编辑器 / npm 的类型 | 调用点用例（参数加宽，返回保精度） | `tsc`、IDE 跳转 |
+| `guard` | 内联运行时检查、零依赖 | 合并后的调用点 Abs | `if (!isUserOutput(x)) …` |
+| `schema` | 自己组装 Zod（或方言）模块 | 逐用例 Abs（`call@L…` / `entry@L…`） | Zod / resolver 生态 |
+| `standard` | 接入任何 Standard Schema 库 | 侧车 / `@nudo:contract` 域，否则合并调用点 Abs | `~standard.validate` |
+
+### dts —— 给 TS 消费者的声明
+
+```bash
+nudo export src/api.js --format dts --out dist/types
+```
+
+每个函数一份加宽签名；用例精度留在 JSDoc `Case:` 行里（调试用外延笔记，不是接口产品）。适合 JS 包需要 `.d.ts` 面、又不想上 TypeScript 的场景。
+
+### guard —— 零依赖类型守卫
+
+```bash
+nudo export src/api.js --format guard --out dist
+```
+
+纯 `typeof` 检查，每个导出一个函数（`is<Fn>Output`）。适合不想引入 schema 库的运行时代码：
+
+```js
+export function iscreateUserOutput(data) {
+  return typeof data === "object" && data !== null && data.id === 123 && data.name === "Ada" && data.age === 36;
+}
+```
+
+### schema —— Zod 方言源码
+
+```bash
+nudo export src/api.js --format schema --dialect zod --out dist
+# 写出 dist/*.nudo.schema.zod.ts
+```
+
+按用例打印 schema 表达式（注释或文件）。常数数值界 / `int` / 字符串长度 pred 在可表达时被投影；无法投影的 pred 出现在 `dropped preds` 下。组装进你自己的模块，交给 resolver（React Hook Form 等）。
+
+### standard —— Standard Schema 校验器
+
+```bash
+nudo export src/api.js --format standard --out dist
+# 写出 <fn>.nudo.standard.ts
+```
+
+每个参数一个校验器（`<fn>_<param>`），外加返回值（存在返回契约时为 `<fn>Return`）。契约精化被烘进去（`number().ge(0)` → `numBound { op: "ge", n: 0 }`）。在任何支持 Standard Schema 的地方消费 —— 无需 Zod 依赖：
+
+```js
+const r = createUser_input["~standard"].validate(body);
+if (r.issues) return Response.json({ errors: r.issues }, { status: 400 });
+```
+
+## 校验 vs 投影
+
+| | `nudo check` | `nudo export` |
+|---|---|---|
+| 角色 | Abs 上的静态蕴含门禁 | Abs 的单向投影 |
+| 方向 | 读源码 + 契约 | 写产物；没人把它们读回来 |
+| 失败形态 | L1/L2 错误退出 `1` | 仅 usage / IO 错误退出 `1` |
+| watch | 支持 `--watch` | 一次性出货命令 |
+
+Abs 只算一次；`check` 门禁它，`export` 出货它的视图。绝不把投影当作第二套类型语言 —— 改源码契约或代码，再重新 export。
+
 ## 分工
 
 | | Zod / ArkType / TypeBox / Valibot | Nudo |
@@ -50,6 +115,28 @@ nudo export src/api.js --format all --out dist
 - 当你希望产物能接进任何符合规范的库、又不想引入 Zod 依赖时，优先 **Standard Schema** 输出。
 
 Nudo 的诚实边界（以及什么时候*不要*用它）：[竞争格局](./competitive-landscape.md)。
+
+## CI 集成
+
+先门禁、再出货产物 —— export 在绿树上是确定性的：
+
+```yaml
+# .github/workflows/nudo.yml
+jobs:
+  nudo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm i -g nudojs
+      - run: npx nudojs check src/
+      - run: npx nudojs export src/api.js --format all --out dist
+      # 随你的包发布 dist/
+```
+
+`export` 成功退出 `0`、usage / IO 错误退出 `1` —— 它不会重跑契约门禁。与 `check` 配对（固化了 `call@` 用例时可再加 `health`）。配方：[Recipes](./recipes.md)。
 
 ## 迁移备注
 

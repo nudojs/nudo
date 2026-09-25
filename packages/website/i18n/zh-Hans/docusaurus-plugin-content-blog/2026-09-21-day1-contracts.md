@@ -1,4 +1,5 @@
 ---
+slug: day1-contracts
 title: 契约就是 JS —— Day 1 与侧车 *.nudo.js
 authors: [default]
 tags: [nudo, contracts, check]

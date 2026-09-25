@@ -9,6 +9,16 @@ description: Day-0 零概念、Day-1 侧车契约、进阶 Abs——按需选层
 
 Nudo 的设计是：你只学当下需要的那一层。
 
+## 你需要哪一层？
+
+| 你想要 | 层 | 从这开始 |
+|---|---|---|
+| 看推断类型，不加注解 | **Day 0** | `npx nudojs check` / `test` 签名 |
+| CI 义务——能构建失败的契约 | **Day 1** | `*.nudo.js` 侧车 + `nudo check` |
+| 代数本身——符号项、pred、`--abs` | **进阶** | Abs（`shape × term × pred × conf`） |
+
+经验法则：只要*读*类型，停在 Day 0。需要 CI *强制*什么，再加 Day 1。只有在调试推断或基于内核做工具时，才打开进阶层。
+
 ## Day 0 — 零概念
 
 写普通 JavaScript，跑 Day-0 两条命令：
@@ -22,9 +32,9 @@ npx nudojs test ./src/app.js    # 全部推断用例
 
 用装了 Nudo 扩展的 VS Code 打开同一文件，可获得 hover 与 inlay。
 
-**Day 0 要点：** 从 `check` 签名与 `test` 用例读类型。
+> **默认分析模式：** `nudo.analysis.mode` 出厂默认 `"exports"`（含 export / 侧车 / 指令的文件进 IDE 分析）。完整门禁语义与各模式何时用：[与 TypeScript 共存](../guides/coexistence.md#何时用-modedirectives-vs-modeexports)。CLI 对指定路径的 `check`/`test` 仍会分析目标文件。
 
-> 项目级可把 `package.json#nudo.analysis.mode` 设为 `all` 或 `directives`；**出厂默认是 `exports`**（含 export / 侧车 / 指令的文件进 IDE 分析）。
+**Day 0 要点：** 从 `check` 签名与 `test` 用例读类型。无约束入口参数上的 `any` 是诚实的——它的反面 `unknown` 意味着推断失败（见 [Abs —— any vs unknown](./type-values.md#any-vs-unknown)）。
 
 ## Day 1 — 侧车契约
 
@@ -57,13 +67,24 @@ npx nudojs check ./src/math.js
 
 无显式契约时，契约退化为 JS 运行时边界：入口参数为 `any`，导出函数不得携带未消化 may-throw（L2）。Nudo **不会**从 body AST 扫描发明必填 slot。
 
-## 进阶 — Abs
+**Day 1 要点：** 侧车就是契约产品。`nudo check` 强制 L1（显式契约）与 L2（入口 may-throw）。`@nudo:case` 仅调试 / `nudo test` 用——不是接口。
+
+## 进阶 — Abs {#advanced-abs}
 
 内部类型是 **Abs**（`shape × term × pred × conf`）：类型是可计算的值。`nudo check --abs` 展示逐函数的代数面（shape + conf）；`--generalize` 附加符号 term/pred α。日常开发很少需要直接接触。
+
+何时该动用进阶：
+- 签名看起来不对，你想看意向面而不是显示字符串
+- 你在用代数推理精化（`x>0` ⇒ `x+1>1`）
+- 你在基于 `@nudojs/core` 做工具
+
+深入阅读：[Abs —— 类型系统](./type-values.md) · [抽象解释](./abstract-interpretation.md)。
 
 ## 下一步
 
 - [快速开始](../getting-started/quick-start.md)
 - [check 指南](../guides/check.md)
+- [contract 指南](../guides/contract.md)
+- [Abs —— 类型系统](./type-values.md)
 - [VS Code](../guides/vscode.md)
-- [与 TypeScript 共存](../guides/coexistence.md#何时用-modedirectives-vs-modeexports)
+- [与 TypeScript 共存](../guides/coexistence.md)

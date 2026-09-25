@@ -16,6 +16,10 @@ Abs 值是 JavaScript 可能值的符号集合 —— 它不像具体值 `42` �
 - **pred** —— 相对 term 的约束：`(x + 2) > 3`。
 - **conf** —— 抽象的精确度：`exact` / `path` / `widened` / `mock` / `partial` / `opaque`。
 
+![Abs 解剖 —— shape × term × pred × conf](/img/abs-anatomy.svg)
+
+*Abs 解剖 —— 四个分量与一组示例（`x + 1` / `number` / `> 1` / `path`）。*
+
 构造器（`num()`、`strLit(…)`、`obj({…})`…）与核心函数（`leqAbs`、`formatAbs`、`checkSource`…）见 [core API](../api/core.md)。
 
 ### 字面量

@@ -16,6 +16,10 @@ Abs values are symbolic sets of possible JavaScript values — instead of holdin
 - **pred** — constraints relative to the term: `(x + 2) > 3`.
 - **conf** — how exact the abstraction is: `exact` / `path` / `widened` / `mock` / `partial` / `opaque`.
 
+![Abs anatomy — shape × term × pred × conf](/img/abs-anatomy.svg)
+
+*Abs anatomy — four components, one example (`x + 1` / `number` / `> 1` / `path`).*
+
 See the [core API](../api/core.md) for constructors (`num()`, `strLit(…)`, `obj({…})`, …) and the core functions (`leqAbs`, `formatAbs`, `checkSource`, …).
 
 ### Literals

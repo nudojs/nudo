@@ -22,6 +22,10 @@ nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
            [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
 ```
 
+![check validate vs export project](/img/check-vs-export.svg)
+
+*`check` validates Abs (solid); `export` projects dts/guard/schema one-way and lossy (dashed). Nothing reads a projection back.*
+
 ## Default output (signatures + issues)
 
 ```js verify

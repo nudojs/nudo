@@ -11,6 +11,22 @@
     "message": "操作指南",
     "description": "The label for category How-to in sidebar docsSidebar"
   },
+  "sidebar.docsSidebar.category.Gate": {
+    "message": "门禁",
+    "description": "The label for category Gate in sidebar docsSidebar"
+  },
+  "sidebar.docsSidebar.category.Contracts": {
+    "message": "契约",
+    "description": "The label for category Contracts in sidebar docsSidebar"
+  },
+  "sidebar.docsSidebar.category.Ecosystem": {
+    "message": "生态",
+    "description": "The label for category Ecosystem in sidebar docsSidebar"
+  },
+  "sidebar.docsSidebar.category.Cookbook": {
+    "message": "食谱",
+    "description": "The label for category Cookbook in sidebar docsSidebar"
+  },
   "sidebar.docsSidebar.category.Editors & Agents": {
     "message": "编辑器与 Agent",
     "description": "The label for category Editors & Agents in sidebar docsSidebar"
@@ -26,6 +42,14 @@
   "sidebar.docsSidebar.category.Reference": {
     "message": "参考",
     "description": "The label for category Reference in sidebar docsSidebar"
+  },
+  "sidebar.docsSidebar.category.CLI & Diagnostics": {
+    "message": "CLI 与诊断",
+    "description": "The label for category CLI & Diagnostics in sidebar docsSidebar"
+  },
+  "sidebar.docsSidebar.category.Package APIs": {
+    "message": "包 API",
+    "description": "The label for category Package APIs in sidebar docsSidebar"
   },
   "sidebar.docsSidebar.category.Design": {
     "message": "设计",

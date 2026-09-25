@@ -1,4 +1,5 @@
 ---
+slug: agents-docs
 title: 面向 coding agent 的 Nudo —— agents.md、agent 集成与稳定诊断码
 authors: [default]
 tags: [ai, mcp, nudo, agents]

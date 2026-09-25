@@ -80,7 +80,7 @@ nudo check calc.js --abs --generalize # adds symbolic term/pred α
 nudo check calc.js --abs --assume "x>0"
 ```
 
-Deep dive: [Abs](../concepts/type-values.md) · layers note: [Advanced — Abs](../concepts/layers.md#advanced--abs).
+Deep dive: [Abs](../concepts/type-values.md) · layers note: [Advanced — Abs](../concepts/layers.md#advanced-abs).
 
 </details>
 

@@ -100,6 +100,10 @@ Handwritten bindings always win (`nudo:interface-name-clash` if emit would overw
 
 ## Gate with check
 
+![sidecar auto-bind](/img/sidecar-bind.svg)
+
+*Same-name sidecar `*.nudo.js` auto-binds to `calc.js` exports and enters `nudo check` as L1.*
+
 ```bash
 npx nudojs check src/
 ```

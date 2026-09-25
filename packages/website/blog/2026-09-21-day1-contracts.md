@@ -1,4 +1,5 @@
 ---
+slug: day1-contracts
 title: Contracts are JS — Day 1 with sidecar *.nudo.js
 authors: [default]
 tags: [nudo, contracts, check]

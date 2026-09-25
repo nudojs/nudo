@@ -6,18 +6,83 @@ Nudo docs are dual-locale (en + zh-Hans). Product face: Day0 `nudo check` · Day
 
 ## Docs (HTML)
 
+Base: https://nudojs.github.io/nudo
+
+### Getting started
+
 - https://nudojs.github.io/nudo/docs/intro
+- https://nudojs.github.io/nudo/docs/why-nudo
+- https://nudojs.github.io/nudo/docs/getting-started/installation
+- https://nudojs.github.io/nudo/docs/getting-started/mental-model
 - https://nudojs.github.io/nudo/docs/getting-started/quick-start
+
+### How-to (guides)
+
 - https://nudojs.github.io/nudo/docs/guides/check
 - https://nudojs.github.io/nudo/docs/guides/contract
+- https://nudojs.github.io/nudo/docs/guides/cli
 - https://nudojs.github.io/nudo/docs/guides/recipes
+- https://nudojs.github.io/nudo/docs/guides/examples
+- https://nudojs.github.io/nudo/docs/guides/error-faces
+- https://nudojs.github.io/nudo/docs/guides/export-ecosystem
+- https://nudojs.github.io/nudo/docs/guides/health
+- https://nudojs.github.io/nudo/docs/guides/env-harvest
+- https://nudojs.github.io/nudo/docs/guides/callsite-discovery
+- https://nudojs.github.io/nudo/docs/guides/migrating-js
+- https://nudojs.github.io/nudo/docs/guides/migrating-from-typescript
+- https://nudojs.github.io/nudo/docs/guides/coexistence
+- https://nudojs.github.io/nudo/docs/guides/case-study-retire
+- https://nudojs.github.io/nudo/docs/guides/versioning
+- https://nudojs.github.io/nudo/docs/guides/runtime-generation
+- https://nudojs.github.io/nudo/docs/guides/competitive-landscape
+- https://nudojs.github.io/nudo/docs/guides/vs-typescript
+- https://nudojs.github.io/nudo/docs/guides/ai-native-dx
+- https://nudojs.github.io/nudo/docs/guides/agent-integration
+- https://nudojs.github.io/nudo/docs/guides/lsp-clients
+- https://nudojs.github.io/nudo/docs/guides/vscode
+- https://nudojs.github.io/nudo/docs/guides/zed
+- https://nudojs.github.io/nudo/docs/guides/vite-plugin
+
+### Concepts
+
+- https://nudojs.github.io/nudo/docs/concepts/type-values
+- https://nudojs.github.io/nudo/docs/concepts/abstract-interpretation
+- https://nudojs.github.io/nudo/docs/concepts/semantics
+- https://nudojs.github.io/nudo/docs/concepts/directives
+- https://nudojs.github.io/nudo/docs/concepts/control-flow-narrowing
+- https://nudojs.github.io/nudo/docs/concepts/mocking
+- https://nudojs.github.io/nudo/docs/concepts/layers
+- https://nudojs.github.io/nudo/docs/concepts/limits
+
+### Reference
+
 - https://nudojs.github.io/nudo/docs/reference/diagnostics
 - https://nudojs.github.io/nudo/docs/reference/glossary
-- https://nudojs.github.io/nudo/docs/concepts/limits
-- https://nudojs.github.io/nudo/docs/concepts/type-values
-- https://nudojs.github.io/nudo/docs/guides/vs-typescript
-- https://nudojs.github.io/nudo/playground
-- https://nudojs.github.io/nudo/agents.md
+- https://nudojs.github.io/nudo/docs/reference/agents
+
+### API
+
+- https://nudojs.github.io/nudo/docs/api/cli-reference
+- https://nudojs.github.io/nudo/docs/api/core
+- https://nudojs.github.io/nudo/docs/api/parser
+- https://nudojs.github.io/nudo/docs/api/service
+- https://nudojs.github.io/nudo/docs/api/harvester
+- https://nudojs.github.io/nudo/docs/api/lsp
+- https://nudojs.github.io/nudo/docs/api/agent
+
+### Design & meta
+
+- https://nudojs.github.io/nudo/docs/design/design-doc
+- https://nudojs.github.io/nudo/docs/contributing
+- https://nudojs.github.io/nudo/docs/releases
+
+### Blog (short slugs)
+
+- https://nudojs.github.io/nudo/blog/day0-observe
+- https://nudojs.github.io/nudo/blog/day1-contracts
+- https://nudojs.github.io/nudo/blog/vs-typescript
+- https://nudojs.github.io/nudo/blog/attribution-gate
+- https://nudojs.github.io/nudo/blog/agents-docs
 
 ## Per-page markdown (same route + `.md`)
 
@@ -37,7 +102,18 @@ Every docs page and blog post also ships as raw markdown — append `.md` to the
 - https://nudojs.github.io/nudo/docs/guides/agent-integration.md
 - https://nudojs.github.io/nudo/docs/api/agent.md
 - https://nudojs.github.io/nudo/docs/releases.md
-- zh-Hans mirror: https://nudojs.github.io/nudo/zh-Hans/docs/intro.md
+
+## zh-Hans mirror
+
+Chinese pages live under the `/zh-Hans/` prefix — same path after the locale segment:
+
+- https://nudojs.github.io/nudo/zh-Hans/docs/intro
+- https://nudojs.github.io/nudo/zh-Hans/docs/getting-started/quick-start
+- https://nudojs.github.io/nudo/zh-Hans/docs/guides/check
+- https://nudojs.github.io/nudo/zh-Hans/docs/concepts/type-values
+- https://nudojs.github.io/nudo/zh-Hans/blog/day0-observe
+
+Raw markdown for the mirror follows the same pattern: append `.md` under `/zh-Hans/…` (e.g. `https://nudojs.github.io/nudo/zh-Hans/docs/intro.md`). Source files live in `packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/` and `…-blog/`.
 
 ## Full text
 
@@ -48,5 +124,3 @@ Every docs page and blog post also ships as raw markdown — append `.md` to the
 ## Optional
 
 - Playground: https://nudojs.github.io/nudo/playground
-- zh-Hans mirror: https://nudojs.github.io/nudo/zh-Hans/docs/intro
-- Chinese raw docs under `packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/`

@@ -59,7 +59,10 @@ const blogDir = join(root, "packages/website/blog");
 for (const f of walk(blogDir).filter((f) => f.endsWith(".md"))) {
   const m = /^(\d{4})-(\d{2})-(\d{2})-(.+)\.md$/.exec(basename(f));
   if (!m) continue;
-  const route = `/blog/${m[1]}/${m[2]}/${m[3]}/${m[4]}`;
+  const customSlug = slugOf(f);
+  const route = customSlug
+    ? `/blog/${customSlug.replace(/^\//, "")}`
+    : `/blog/${m[1]}/${m[2]}/${m[3]}/${m[4]}`;
   const body = stripFrontmatter(readFileSync(f, "utf8"));
   const out = join(buildDir, route + ".md");
   mkdirSync(dirname(out), { recursive: true });

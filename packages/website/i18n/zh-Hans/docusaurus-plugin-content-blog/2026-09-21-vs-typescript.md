@@ -1,4 +1,5 @@
 ---
+slug: vs-typescript
 title: Nudo vs TypeScript —— 何时该选 JS-first 门禁
 authors: [default]
 tags: [nudo, typescript, type-inference]
