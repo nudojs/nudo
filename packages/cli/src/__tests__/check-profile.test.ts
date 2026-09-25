@@ -23,7 +23,7 @@ function runCli(
   const r = spawnSync(tsx, [cli, ...args], {
     cwd: opts.cwd ?? root,
     encoding: "utf8",
-    env: { ...process.env, NO_COLOR: "1" },
+    env: { ...process.env, NO_COLOR: "1", GITHUB_ACTIONS: "false" },
   });
   return {
     status: r.status ?? 1,

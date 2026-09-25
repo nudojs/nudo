@@ -18,7 +18,7 @@ function runCli(args: string[]): { stdout: string; stderr: string; status: numbe
     {
       cwd: repoRoot,
       encoding: "utf-8",
-      env: { ...process.env, NO_COLOR: "1" },
+      env: { ...process.env, NO_COLOR: "1", GITHUB_ACTIONS: "false" },
     },
   );
   return { stdout: r.stdout ?? "", stderr: r.stderr ?? "", status: r.status ?? 1 };

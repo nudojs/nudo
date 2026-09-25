@@ -76,21 +76,23 @@ function loadSnapshot(): Snapshot {
 }
 
 describe("public-api freeze — export name snapshot", () => {
-  it("src/algebra/index.ts export names match the snapshot", () => {
+  // Each collectExports builds a full TS program; CI runners under 4 workers
+  // routinely exceed the default 5s.
+  it("src/algebra/index.ts export names match the snapshot", { timeout: 60_000 }, () => {
     const snap = loadSnapshot();
     const actual = collectExports("src/algebra/index.ts");
     expect(actual.values).toEqual(snap.algebra.values);
     expect(actual.types).toEqual(snap.algebra.types);
   });
 
-  it("src/index.ts export names match the snapshot", () => {
+  it("src/index.ts export names match the snapshot", { timeout: 60_000 }, () => {
     const snap = loadSnapshot();
     const actual = collectExports("src/index.ts");
     expect(actual.values).toEqual(snap.core.values);
     expect(actual.types).toEqual(snap.core.types);
   });
 
-  it("src/internal.ts export names match the snapshot", () => {
+  it("src/internal.ts export names match the snapshot", { timeout: 60_000 }, () => {
     const snap = loadSnapshot();
     const actual = collectExports("src/internal.ts");
     expect(actual.values).toEqual(snap.internal.values);

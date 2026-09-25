@@ -17,7 +17,7 @@ function runCli(args: string[]): { stdout: string; stderr: string; status: numbe
   const r = spawnSync(
     process.execPath,
     [join(repoRoot, "node_modules/tsx/dist/cli.mjs"), cliEntry, ...args],
-    { cwd: repoRoot, encoding: "utf-8", env: { ...process.env, NO_COLOR: "1" } },
+    { cwd: repoRoot, encoding: "utf-8", env: { ...process.env, NO_COLOR: "1", GITHUB_ACTIONS: "false" } },
   );
   return { stdout: r.stdout ?? "", stderr: r.stderr ?? "", status: r.status ?? 1 };
 }

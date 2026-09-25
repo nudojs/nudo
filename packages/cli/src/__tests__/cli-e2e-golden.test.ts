@@ -21,7 +21,9 @@ function runCli(
   const r = spawnSync(tsx, [cli, ...args], {
     cwd: opts.cwd,
     encoding: "utf8",
-    env: { ...process.env, NO_COLOR: "1" },
+    // Force a stable face: CI runners set GITHUB_ACTIONS=true, which would
+    // append `::error` / `::warning` annotations and desync the snapshot.
+    env: { ...process.env, NO_COLOR: "1", GITHUB_ACTIONS: "false" },
   });
   return {
     status: r.status ?? 1,

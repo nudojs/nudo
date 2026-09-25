@@ -123,43 +123,43 @@ function expectNoFalsePositives(pkgName: string, minFiles: number): void {
 }
 
 describe("real package precision", () => {
-  it("commander: no false-positive errors", () => {
+  it("commander: no false-positive errors", { timeout: 60_000 }, () => {
     expectNoFalsePositives("commander", 3);
   });
 
-  it("escape-string-regexp: no false-positive errors", () => {
+  it("escape-string-regexp: no false-positive errors", { timeout: 60_000 }, () => {
     expectNoFalsePositives("escape-string-regexp", 0);
   });
 
-  it("is-plain-obj: no false-positive errors", () => {
+  it("is-plain-obj: no false-positive errors", { timeout: 60_000 }, () => {
     expectNoFalsePositives("is-plain-obj", 0);
   });
 
-  it("debug: no false-positive errors", () => {
+  it("debug: no false-positive errors", { timeout: 60_000 }, () => {
     expectNoFalsePositives("debug", 0);
   });
 
-  it("yocto-queue (class): no false-positive errors", () => {
+  it("yocto-queue (class): no false-positive errors", { timeout: 60_000 }, () => {
     expectNoFalsePositives("yocto-queue", 0);
   });
 
-  it("p-limit: no false-positive errors", () => {
+  it("p-limit: no false-positive errors", { timeout: 60_000 }, () => {
     expectNoFalsePositives("p-limit", 0);
   });
 
-  it("kleur: no false-positive errors", () => {
+  it("kleur: no false-positive errors", { timeout: 60_000 }, () => {
     expectNoFalsePositives("kleur", 0);
   });
 
-  it("eventemitter3: no false-positive errors", () => {
+  it("eventemitter3: no false-positive errors", { timeout: 60_000 }, () => {
     expectNoFalsePositives("eventemitter3", 0);
   });
 
-  it("ms: no false-positive errors", () => {
+  it("ms: no false-positive errors", { timeout: 60_000 }, () => {
     expectNoFalsePositives("ms", 0);
   });
 
-  it("lodash: no false-positive errors", () => {
+  it("lodash: no false-positive errors", { timeout: 120_000 }, () => {
     // lodash 体积大：至少扫到一批入口文件
     expectNoFalsePositives("lodash", 5);
   });
