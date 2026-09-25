@@ -11,7 +11,7 @@ slug: /releases
 |----------|-----------------|
 | `@nudojs/core` | 3.0.0-beta.0 |
 | `@nudojs/service` | 5.0.0-beta.0 |
-| `nudojs (CLI)` | 1.0.0-beta.0 |
+| `nudojs (CLI)` | 1.0.0-beta.1 |
 | `@nudojs/parser` | 1.1.0-beta.0 |
 | `@nudojs/lsp` | 2.0.0-beta.0 |
 | `@nudojs/env` | 0.4.2-beta.0 |
@@ -641,7 +641,26 @@ slug: /releases
   - @nudojs/core@0.1.0
   - @nudojs/parser@0.1.0
 
-## nudojs (CLI) 1.0.0-beta.0
+## nudojs (CLI) 1.0.0-beta.1
+
+## 1.0.0-beta.1
+
+### Major Changes
+
+- e29ceac: **BREAKING**: merge `@nudojs/cli` into `nudojs` — one install unit for the `nudo` command.
+  
+  - **`nudojs` is now the full CLI** (`check` / `test` / `contract` / `export` / `health` / `migrate`), with `bin: nudo` and the previous `@nudojs/cli` dependencies. `nudo --version` prints `nudojs <ver>` (+ `@nudojs/core <ver>` when resolvable).
+  - **`@nudojs/cli` is a deprecated migration stub** that forwards `nudo` and the module entry to `nudojs` and prints a deprecation line on stderr. Prefer `npm i -g nudojs`. The stub will be unpublished.
+  - No more "shell ≠ engine" version heads-up: the package you install is the product version.
+  
+  Migration:
+  
+  ```bash
+  npm rm @nudojs/cli
+  npm i -g nudojs   # same `nudo` bin
+  ```
+  
+  `import "@nudojs/cli"` / `npx @nudojs/cli` keep working via the stub for one beta cycle.
 
 ## 1.0.0-beta.0
 
