@@ -1,5 +1,12 @@
 # nudo
 
+## 4.0.0-beta.2
+
+### Patch Changes
+
+- Updated dependencies [4305674]
+  - nudojs@1.0.0-beta.2
+
 ## 4.0.0-beta.1
 
 ### Major Changes
