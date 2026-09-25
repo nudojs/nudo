@@ -35,18 +35,20 @@ export const subpathAliases = {
 };
 
 /**
- * TypeScript `compilerOptions.paths` (relative targets, baseUrl = repo root).
+ * TypeScript `compilerOptions.paths` (relative to the tsconfig that declares them).
+ * Values must be `./`-prefixed so they work without `baseUrl` (TS 6+).
  * Package roots also get a `/*` wildcard so deep imports keep working.
  */
 export function tsPaths() {
   /** @type {Record<string, string[]>} */
   const paths = {};
   for (const [name, rel] of Object.entries(packageRoots)) {
-    paths[name] = [rel];
-    paths[`${name}/*`] = [`${rel}/*`];
+    const target = `./${rel}`;
+    paths[name] = [target];
+    paths[`${name}/*`] = [`${target}/*`];
   }
   for (const [name, rel] of Object.entries(subpathAliases)) {
-    paths[name] = [rel];
+    paths[name] = [`./${rel}`];
   }
   return paths;
 }

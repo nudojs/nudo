@@ -37,6 +37,9 @@
     "@nudojs/parser": "workspace:*",
     "@nudojs/env": "workspace:*",
     "@babel/types": "^8.0.6",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2"
   }
 }

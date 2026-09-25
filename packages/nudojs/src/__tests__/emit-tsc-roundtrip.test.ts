@@ -14,7 +14,7 @@ afterAll(() => {
 
 function tscNoEmit(file: string): { ok: boolean; stderr: string } {
   try {
-    execFileSync("pnpm", ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", file], {
+    execFileSync("pnpm", ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", file], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
     });

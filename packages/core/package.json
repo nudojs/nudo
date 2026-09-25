@@ -63,6 +63,7 @@
     "lodash": "^4.18.1",
     "ms": "^2.1.3",
     "p-limit": "^7.3.3",
-    "yocto-queue": "^1.2.2"
+    "yocto-queue": "^1.2.2",
+    "@types/node": "^26.6.2"
   }
 }

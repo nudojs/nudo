@@ -54,12 +54,15 @@
     "@nudojs/parser": "workspace:*",
     "@babel/traverse": "^8.0.6",
     "@babel/types": "^8.0.6",
-    "vscode-languageserver": "^10.1.1",
-    "vscode-languageserver-textdocument": "^1.0.14"
+    "vscode-languageserver": "^10.1.2",
+    "vscode-languageserver-textdocument": "^1.0.15"
   },
   "scripts": {
     "build": "tsup",
     "prepublishOnly": "tsup",
     "smoke": "node ./scripts/smoke-stdio.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2"
   }
 }

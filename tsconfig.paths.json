@@ -1,67 +1,66 @@
 {
   "//": "GENERATED from scripts/workspace-aliases.mjs — do not edit by hand. Run: node scripts/check-aliases.mjs --write",
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@nudojs/core": [
-        "packages/core/src"
+        "./packages/core/src"
       ],
       "@nudojs/core/*": [
-        "packages/core/src/*"
+        "./packages/core/src/*"
       ],
       "@nudojs/core/exec": [
-        "packages/core/src/algebra/exec/index.ts"
+        "./packages/core/src/algebra/exec/index.ts"
       ],
       "@nudojs/core/internal": [
-        "packages/core/src/internal.ts"
+        "./packages/core/src/internal.ts"
       ],
       "@nudojs/env": [
-        "packages/env/src"
+        "./packages/env/src"
       ],
       "@nudojs/env/*": [
-        "packages/env/src/*"
+        "./packages/env/src/*"
       ],
       "@nudojs/env/es": [
-        "packages/env/src/es.ts"
+        "./packages/env/src/es.ts"
       ],
       "@nudojs/env/node": [
-        "packages/env/src/node.ts"
+        "./packages/env/src/node.ts"
       ],
       "@nudojs/env/web": [
-        "packages/env/src/web.ts"
+        "./packages/env/src/web.ts"
       ],
       "@nudojs/harvester": [
-        "packages/harvester/src"
+        "./packages/harvester/src"
       ],
       "@nudojs/harvester/*": [
-        "packages/harvester/src/*"
+        "./packages/harvester/src/*"
       ],
       "@nudojs/lsp": [
-        "packages/lsp/src"
+        "./packages/lsp/src"
       ],
       "@nudojs/lsp/*": [
-        "packages/lsp/src/*"
+        "./packages/lsp/src/*"
       ],
       "@nudojs/parser": [
-        "packages/parser/src"
+        "./packages/parser/src"
       ],
       "@nudojs/parser/*": [
-        "packages/parser/src/*"
+        "./packages/parser/src/*"
       ],
       "@nudojs/service": [
-        "packages/service/src"
+        "./packages/service/src"
       ],
       "@nudojs/service/*": [
-        "packages/service/src/*"
+        "./packages/service/src/*"
       ],
       "@nudojs/service/evaluator": [
-        "packages/service/src/evaluator/evaluator-api.ts"
+        "./packages/service/src/evaluator/evaluator-api.ts"
       ],
       "nudojs": [
-        "packages/nudojs/src"
+        "./packages/nudojs/src"
       ],
       "nudojs/*": [
-        "packages/nudojs/src/*"
+        "./packages/nudojs/src/*"
       ]
     }
   }

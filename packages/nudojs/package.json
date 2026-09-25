@@ -55,5 +55,8 @@
   "scripts": {
     "build": "tsup",
     "prepublishOnly": "tsup"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2"
   }
 }

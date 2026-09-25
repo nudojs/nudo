@@ -61,5 +61,8 @@
   "scripts": {
     "build": "tsup src/index.ts src/analysis.ts src/evaluator/evaluator-api.ts src/emit/index.ts --format esm --dts",
     "prepublishOnly": "tsup src/index.ts src/analysis.ts src/evaluator/evaluator-api.ts src/emit/index.ts --format esm --dts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2"
   }
 }

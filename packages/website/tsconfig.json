@@ -1,7 +1,8 @@
 {
   "extends": "@docusaurus/tsconfig",
   "compilerOptions": {
-    "baseUrl": ".",
+    // @docusaurus/tsconfig 仍带已弃用的 baseUrl；TS 6 下需显式忽略
+    "ignoreDeprecations": "6.0",
     // Docusaurus 默认 jsx: "preserve"（转换交给 babel），但 React 19 的
     // @types 已移除全局 JSX 命名空间 —— 类型检查必须用 react-jsx 走 React.JSX，
     // 否则 JSX.Element 与 children 检查全部失效。noEmit 下不影响构建。

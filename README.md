@@ -299,7 +299,7 @@ Execution model & trust boundary (source of truth): [`docs/design/kernel-merge.m
 ### Prerequisites
 
 - To **run the published CLI** (`npm install -g nudojs`): Node.js >= 20（published packages ship compiled `dist/` ESM; `engines` is `>=20`）
-- To **develop this repo**: Node.js >= 20 and pnpm 9.1.0 (pinned in `packageManager`) — package `engines` fields all require >= 20
+- To **develop this repo**: Node.js >= 20 and pnpm 11.28.0 (pinned in `packageManager`) — package `engines` fields all require >= 20
 
 ### Setup
 

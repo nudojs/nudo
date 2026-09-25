@@ -38,7 +38,6 @@ function renderPathsJson(paths) {
       {
         "//": "GENERATED from scripts/workspace-aliases.mjs — do not edit by hand. Run: node scripts/check-aliases.mjs --write",
         compilerOptions: {
-          baseUrl: ".",
           paths,
         },
       },

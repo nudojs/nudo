@@ -21,7 +21,7 @@ function tscNoEmit(dts: string): { ok: boolean; stderr: string } {
   try {
     execFileSync(
       "pnpm",
-      ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", p],
+      ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", p],
       { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
     );
     return { ok: true, stderr: "" };

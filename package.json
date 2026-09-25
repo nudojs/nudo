@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@9.1.0",
+  "packageManager": "pnpm@11.28.0",
   "scripts": {
     "ci:version": "changeset version && node scripts/bump-vscode-version.mjs",
     "lint": "tsc --noEmit -p tsconfig.lint.json",
@@ -53,13 +53,13 @@
     "@babel/types": "^8.0.6",
     "@types/lodash": "^4.17.25",
     "@types/node": "^26.6.2",
-    "@vitest/coverage-v8": "^5.0.1",
+    "@vitest/coverage-v8": "^5.0.2",
     "lodash": "^4.18.1",
     "ms": "^2.1.3",
     "tsup": "^8.5.1",
-    "tsx": "^4.23.13",
-    "typescript": "^5.9.3",
-    "vitest": "^5.0.1"
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.2"
   },
   "dependencies": {
     "@changesets/cli": "^3.0.3"
