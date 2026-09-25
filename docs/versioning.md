@@ -116,6 +116,23 @@ Migration: `old` → `new`.
 
 Do **not** hand-edit published `CHANGELOG.md` history on `main`; fix forward with a new changeset.
 
+### Beta (CI) — `dev` is the beta train
+
+`release-beta.yml` on **`dev` push** (same `NPM_TOKEN` Trusted Publishing environment):
+
+1. lint + `test:coverage` (same bar as stable — no untested publishes)
+2. If `.changeset/*.md` are pending **and** `.changeset/pre.json` is in pre mode → `changeset version` + push `[skip ci]` version commit
+3. `changeset publish` — dist-tag comes from `.changeset/pre.json` (`beta` today); already-published versions are skipped
+
+| Step | Command |
+|------|---------|
+| Enter beta | `npx changeset pre enter beta` (commit `pre.json`) |
+| Land a beta | add changeset → merge/push `dev` → CI versions + publishes `x.y.z-beta.n` under tag `beta` |
+| Install beta | `npm i pkg@beta` / `nudojs@beta` |
+| Cut stable | `npx changeset pre exit` → merge `dev` → `main` → `release.yml` (stable `latest`) |
+
+VS Code Marketplace / Open VS X / GitHub Release stay on `main` only. Local publish is discouraged (no OIDC); use CI.
+
 ### Local dry-run
 
 ```bash

@@ -53,6 +53,7 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 ### Commits and release
 
 - Versioning uses @changesets (`main` is the base branch). Include a changeset when a published package's behavior or API changes.
+- **Beta:** `dev` is the beta train. Push to `dev` runs `release-beta.yml` (lint/test → version if needed → publish `x.y.z-beta.n` under npm tag `beta`). Enter/exit with `npx changeset pre enter beta` / `pre exit`. Stable stays on `main` (`release.yml`).
 
 ## Where things live
 
