@@ -41,7 +41,8 @@
     "benchmark:s1": "tsx benchmark/s1/bench-monorepo.mts",
     "benchmark:oss": "tsx benchmark/oss/bench-oss.mts",
     "benchmark:oss:gate": "node benchmark/oss/gate.mjs",
-    "verify:docs": "bash scripts/verify-doc-examples.sh"
+    "verify:docs": "bash scripts/verify-doc-examples.sh",
+    "check:aliases": "node scripts/check-aliases.mjs"
   },
   "devDependencies": {
     "@babel/parser": "^8.0.6",

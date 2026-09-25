@@ -1,0 +1,68 @@
+{
+  "//": "GENERATED from scripts/workspace-aliases.mjs — do not edit by hand. Run: node scripts/check-aliases.mjs --write",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@nudojs/cli": [
+        "packages/cli/src"
+      ],
+      "@nudojs/cli/*": [
+        "packages/cli/src/*"
+      ],
+      "@nudojs/core": [
+        "packages/core/src"
+      ],
+      "@nudojs/core/*": [
+        "packages/core/src/*"
+      ],
+      "@nudojs/core/exec": [
+        "packages/core/src/algebra/exec/index.ts"
+      ],
+      "@nudojs/core/internal": [
+        "packages/core/src/internal.ts"
+      ],
+      "@nudojs/env": [
+        "packages/env/src"
+      ],
+      "@nudojs/env/*": [
+        "packages/env/src/*"
+      ],
+      "@nudojs/env/es": [
+        "packages/env/src/es.ts"
+      ],
+      "@nudojs/env/node": [
+        "packages/env/src/node.ts"
+      ],
+      "@nudojs/env/web": [
+        "packages/env/src/web.ts"
+      ],
+      "@nudojs/harvester": [
+        "packages/harvester/src"
+      ],
+      "@nudojs/harvester/*": [
+        "packages/harvester/src/*"
+      ],
+      "@nudojs/lsp": [
+        "packages/lsp/src"
+      ],
+      "@nudojs/lsp/*": [
+        "packages/lsp/src/*"
+      ],
+      "@nudojs/parser": [
+        "packages/parser/src"
+      ],
+      "@nudojs/parser/*": [
+        "packages/parser/src/*"
+      ],
+      "@nudojs/service": [
+        "packages/service/src"
+      ],
+      "@nudojs/service/*": [
+        "packages/service/src/*"
+      ],
+      "@nudojs/service/evaluator": [
+        "packages/service/src/evaluator/evaluator-api.ts"
+      ]
+    }
+  }
+}
