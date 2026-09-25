@@ -116,6 +116,17 @@ Persisted `@generated` sidecar segment ≠ today's recomputed call-site domain o
 
 Exported function has **no contract root** (no handwritten / generated sidecar or `@nudo:refine`) **and no call-site domain** (only synthesized `entry@` with `any` params). **Info** — coverage/contract gap, not a gate failure. Fix: add a contract (`*.nudo.js` / `@nudo:refine`) or exercise the export from usage sites (`nudo check --from`).
 
+### `nudo:dual-entry` {#nudo-dual-entry}
+
+```text
+dual-entry package "lib": browser (./browser.js) and node (./node.js) call-site
+records do not cross files — analysis observes only the browser entry variant
+```
+
+The package ships **browser/node dual entrypoints** (package.json `exports` conditions or a `browser` field pointing at a different file than `main`/`node`), and this analysis ran on one variant. Call-site records are file-scoped: evidence collected against the other entry does **not** inject here. **Info** — observation, not a gate failure. Never fires on single-entry packages or on shared helpers that are not an entry target.
+
+**Fix:** analyze the entry you ship and mock or skip the other variant; do not expect `--from` records to merge across the two faces. Still a ceiling — see [Limits](/docs/concepts/limits).
+
 ### `nudo:interface-emit-denied` {#nudo-interface-emit-denied}
 
 ```text

@@ -68,6 +68,7 @@ import { loadModuleDepsFingerprint, hashSource } from "@nudojs/core";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph } from "./abs-modules-graph.ts";
 import { tryBPathCall, tryBPathCallFull, tryRunBPath, isBPathCapable, mockSeedFingerprint, collectEnvGlobals, collectEnvModules, mergeHarvestUnderEnv, setEnvHarvestConflictCollector, type EnvHarvestConflict } from "./bpath-run.ts";
 import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
+import { dualEntryForFile, dualEntryMessage, dualEntrySuggestion } from "./dual-entry.ts";
 import { setAbsTruncationCollector } from "@nudojs/core";
 import {
   analysisCacheGet,
@@ -950,7 +951,9 @@ export function collectCallRecords(filePath: string, source: string): CallRecord
   // describe 嵌套）。Abs 通道仅兜底（B 失败/历史语法）。
   if (filePath) {
     try {
-      const mocks = mockSeedsForSource(source);
+      const mocks = mockSeedsForSource(source, {
+        fromFile: filePath || undefined,
+      });
       const run = tryRunBPath(source, filePath, {
         mode: "exec",
         lenientGlobals: true,
@@ -1388,7 +1391,23 @@ function analyzeFileUncachedInner(
     }
   };
 
-  const seeds = mockDirectivesToAbsSeeds(functions);
+  const seeds = mockDirectivesToAbsSeeds(functions, {
+    fromFile: filePath || undefined,
+    ...(loadModule ? { loadModule } : {}),
+  });
+  // @nudo:mock name from "path" 解析失败 → 明确诊断（缺文件/缺绑定/求值失败），不静默丢弃
+  for (const fe of seeds.fromErrors ?? []) {
+    diagnostics.push({
+      range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
+      severity: "error",
+      message: fe.message,
+      code: "nudo:module-missing",
+      suggestions: [
+        `Create the mock file or fix the path in @nudo:mock ${fe.name} from "${fe.fromPath}"`,
+        "The mock module must define a binding with the same name as the mock",
+      ],
+    });
+  }
   let absCallRecords: CallRecord[] = [];
   /** B 顶层 $callNamed 记录（call@ 合成；TypeValue skip 后的主源） */
   let bTopCallRecords: CallRecord[] = [];
@@ -2262,6 +2281,23 @@ function analyzeFileUncachedInner(
         `harvest only fills missing slots (B8). code=nudo:env-harvest-conflict`,
       code: "nudo:env-harvest-conflict",
     });
+  }
+
+  // nudo:dual-entry：browser/node 双入口变体之一被分析 → 记录不跨文件注入，
+  // 观察面只覆盖本入口（info，不是门禁；单入口包零误报）。
+  try {
+    const dual = dualEntryForFile(filePath);
+    if (dual) {
+      diagnostics.push({
+        range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
+        severity: "info",
+        message: dualEntryMessage(dual),
+        code: "nudo:dual-entry",
+        suggestions: [dualEntrySuggestion()],
+      });
+    }
+  } catch {
+    /* 诊断不得打断分析 */
   }
 
   return {

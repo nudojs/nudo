@@ -57,6 +57,10 @@ export function f(x) { return double(x); }
     const r = checkSource("/t/mock-on.js", mockSrc, pTrue, { inject });
     const sig = r.signatures.find((s) => s.name === "f");
     expect(sig).toBeDefined();
+    // 不是 fail-closed unknown，也不是未绑定 mock 名的 ReferenceError→never
+    expect(sig!.abs.shape.k).not.toBe("unknown");
+    expect(sig!.abs.shape.k).not.toBe("never");
+    expect(sig!.throws == null || sig!.throws === "").toBe(true);
     expect(formatAbs(sig!.abs)).not.toContain("unknown");
   });
 

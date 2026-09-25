@@ -32,7 +32,7 @@ Unconstrained entry params display as **`any`**; true **`unknown`** means infere
 | Runtime / native callbacks | No call records → `entry@` fallback |
 | Functions never touched by tests | `entry@` (`any` params) — coverage gap, not inference failure |
 | Nested functions | Not attributed from outer call records (correctness first) |
-| Dual package entrypoints | browser/node records do not cross files |
+| Dual package entrypoints | browser/node records do not cross files. **Now signaled** — analyzing/checking one entry variant emits `nudo:dual-entry` (info; zero false-positives on single-entry packages). Still a ceiling, just no longer silent |
 | Dynamic `require` / native | Literal / constant-folded specs resolve; computed specs stay honest `unknown`. Env may type the name; side effects need mocks |
 
 ## Evaluator gaps (summary)
@@ -41,17 +41,7 @@ Some constructs still degrade (with honest shapes, not false precision): JSX →
 
 Env harvest coverage rates are **not** completeness promises.
 
-**`/// @nudo:env <name>` degrades the `check` face (known gap).** A file declaring an env directive currently loses the symbolic face entirely: `nudo check` prints `unknown` plus `nudo:unknown-inference` for every function — including ones that never touch env APIs — while `nudo test` (per-call-site evaluation) stays precise on the same file:
-
-```text
-$ nudo check envfile.js        # /// @nudo:env node + home() { return process.cwd(); }
-  home() => unknown            # warning: signature has true unknown (inference failed)
-
-$ nudo test envfile.js
-  call@L7  () => string        # per-call-site result is precise
-```
-
-Workaround while the symbolic path learns env injection: rely on `nudo test` / IDE hover for env-bearing files, or move env-dependent code behind a module boundary that the checked file imports.
+**`/// @nudo:env <name>` loads named envs into both `check` and `test`.** Named envs (`es` / `web` / `node`) are injected into the symbolic path so `nudo check` prints the same signatures as `nudo test`. Functions that never touch env APIs are not collateral-degraded. When an env cannot be resolved (e.g. a path-based `@nudo:env ./missing.ts`), only the functions that actually reference free identifiers (env-provided globals) fail-closed to `unknown` — pure functions stay precise.
 
 ## Predicate implication (bounded)
 

@@ -48,7 +48,7 @@
 | 闭包跨调用状态合流 | **已建模** | B-path 顺序调用共享闭包 `let`（`s5-closure-state.test.ts`：`c.increment(); c.getCount()` → 1/2）。残余：**未调用前**方法槽 `returnType` 诚实 `?`（形参名已展示，如 `(n) => ?`；零参才 `() => ?`）；首次调用后 `returnType` 渐进 join 填入（`engine-precision-residuals.test.ts` T7） |
 | HOF `constraint` 表达 fn 形状 | **已开** | `fn()` → entry Abs 落 `shape.fn`；refine→**error** 可测（`hof-refine-error.test.ts`）；promote 仍只 warning |
 | 调用点经验泛化（P3） | **明确不做** | 不入主路径（hof-relations） |
-| `.nudo/cache` L2 harvest 磁盘层 | **已落地** | HarvestJson 签名投影 + `~/.cache/nudo/deps`（`harvest-json.ts` / `harvest-disk.ts`）；见 [`persistent-cache.md`](./persistent-cache.md) |
+| L2 harvest 磁盘层（`~/.cache/nudo/deps`） | **已落地** | HarvestJson 签名投影（`harvest-json.ts` / `harvest-disk.ts`）；见 [`persistent-cache.md`](./persistent-cache.md) |
 | `@types/node` harvest 产品化（B2） | **已落地** | 磁盘缓存 + miss/fail 降级手写 `@nudojs/env` node 面（`harvest-node.ts`） |
 | 手写 Node env leaf-clean | **已收窄** | 高频面 options/Date/null/Record 具体化；残余 `any` 仅真无约束参（`assert.*` value、`util.format` 混参、`util.types.*` 谓词入参）— 见 `docs/reports/env-coverage-baseline.md` |
 | 项目根内自动绑定边界 | **已落地** | `projectDir` 树外侧车不 ambient 绑定（`sidecar-project-root.test.ts`）；node_modules 仍拦 |
@@ -72,7 +72,7 @@
 | 运行时机制回调 | Node Transform 等 native 内部回调无调用记录 → `entry@` |
 | 无使用现场的函数 | 测试未触达 → `entry@` 兜底（覆盖问题，非推断问题） |
 | 嵌套函数不归因 | 函数内定义的函数无模块栈定义位点；外部记录被归因门拒收（正确性优先） |
-| 双入口包变体 | browser/node 记录不跨文件注入 |
+| 双入口包变体 | browser/node 记录不跨文件注入。**已上信号**：分析/`check` 命中双入口变体之一时发 `nudo:dual-entry`（info，单入口零误报）——仍是天花板，只是不再静默 |
 | Native / 动态 `require` | env 可有签名、无副作用模拟；**字面量 / 常量折叠子集已解析**（StringLiteral / 无插值模板 / 插值与拼接全为字面量 / `require.resolve("lit")` / try-catch 双侧可折叠 → 优先成功侧）；其余诚实 `unknown` + 既有诊断（`nudo:builtin-unknown`），不假精确 |
 | stream / spawn 副作用 | **签名面已一等**（ChildProcess pid/stdio/kill、Transform `transform`/`flush` 等钩子可 refine）；**仍 mock-required**：流机器何时发 `data`、真起进程的副作用（`docs/reports/env-coverage-baseline.md`） |
 

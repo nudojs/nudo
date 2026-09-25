@@ -124,7 +124,7 @@ function absFromBPath(
   // fail-closed：节点级 Abs 收集（collectAbsNodeTypes/evalProgramAbs）已删；
   // 仅标识符绑定面（B 版 collectAbsBindingsFromGraph）
   try {
-    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast));
+    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), { fromFile: filePath });
     const ident = findIdentNameAtPosition(source, line, column, ast);
     if (ident) {
       const binds = collectAbsBindingsFromGraph(source, filePath, {
@@ -338,7 +338,9 @@ export function getHoverAtPosition(
     try {
       // 经模块图（相对 + 裸包）求 Abs 绑定
       if (isBPathCapable(source, []) || !/\brequire\s*\(/.test(source)) {
-        const seeds = mockDirectivesToAbsSeeds(extractDirectives(file ?? parse(source)));
+        const seeds = mockDirectivesToAbsSeeds(extractDirectives(file ?? parse(source)), {
+          fromFile: filePath,
+        });
         const absBinds = collectAbsBindingsFromGraph(source, filePath, {
           seedVars: seeds.seedVars,
           seedFns: seeds.seedFns as never,
@@ -498,7 +500,7 @@ export function getCompletionsAtPosition(
   // Abs 接收者优先：模块图绑定无损，不经 TypeValue evaluateProgram。
   // 空结果（unknown/never/fn 无属性）再落 TypeValue 兜底。
   try {
-    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast));
+    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), { fromFile: filePath });
     const binds = collectAbsBindingsFromGraph(source, filePath, {
       seedVars: seeds.seedVars,
       seedFns: seeds.seedFns as never,
@@ -531,7 +533,7 @@ function getVariableCompletions(filePath: string, source: string): CompletionIte
 
   // Abs 模块图绑定优先（无损；detail 经外延桥保持既有文案）
   try {
-    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast));
+    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), { fromFile: filePath });
     const binds = collectAbsBindingsFromGraph(source, filePath, {
       seedVars: seeds.seedVars,
       seedFns: seeds.seedFns as never,

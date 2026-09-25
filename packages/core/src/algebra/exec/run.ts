@@ -432,7 +432,9 @@ export function runTranspiled(
     if (n === "__nudoRequireOptional") {
       return (specs: string[]) => requireOptionalFromModules(modules, specs);
     }
-    if (n === "__nudoEnv") return opts.envGlobals ?? {};
+    // mock 与 env 同通道绑定（service bpath-run 同口径）：check/generalize
+    // 的 inject.mocks 若不进自由标识符作用域，函数体调用会 ReferenceError。
+    if (n === "__nudoEnv") return { ...(opts.envGlobals ?? {}), ...(opts.mocks ?? {}) };
     if (n === "__nudoExport") {
       return (name: string, value: unknown) => {
         dynExports[name] = value;
@@ -452,9 +454,10 @@ export function runTranspiled(
     return rtAllBindings()[n];
   });
 
-  // @nudo:env 全局绑定
-  if (opts.envGlobals && Object.keys(opts.envGlobals).length > 0) {
-    const envBinds = Object.keys(opts.envGlobals)
+  // @nudo:env 全局 + @nudo:mock 绑定（与 __nudoEnv 合并表一致）
+  const envAndMocks = { ...(opts.envGlobals ?? {}), ...(opts.mocks ?? {}) };
+  if (Object.keys(envAndMocks).length > 0) {
+    const envBinds = Object.keys(envAndMocks)
       .map((k) => `const ${k} = __nudoEnv[${JSON.stringify(k)}];`)
       .join("\n");
     js = `${envBinds}\n${js}`;

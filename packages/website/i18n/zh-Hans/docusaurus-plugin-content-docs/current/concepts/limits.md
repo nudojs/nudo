@@ -33,7 +33,7 @@ description: 诚实边界与非目标 —— Nudo 不宣称什么、调用点上
 | 运行时 / 原生回调 | 无调用记录 → `entry@` 回退 |
 | 测试从未触及的函数 | `entry@`（`any` 参数）—— 覆盖缺口，不是推导失败 |
 | 嵌套函数 | 不从外层调用记录归因（正确性优先） |
-| 双入口包 | browser/node 记录不跨文件 |
+| 双入口包 | browser/node 记录不跨文件。**现已上信号** —— 分析/check 其一入口变体时发 `nudo:dual-entry`（info；单入口包零误报）。仍是天花板，只是不再静默 |
 | 动态 `require` / 原生 | 字面量 / 常量折叠子集已解析；计算说明符诚实 `unknown`。Env 可为名称提供类型；副作用需要 mock |
 
 ## 求值器缺口（摘要）
@@ -42,17 +42,7 @@ description: 诚实边界与非目标 —— Nudo 不宣称什么、调用点上
 
 Env harvest 覆盖率**不是**完备性承诺。
 
-**`/// @nudo:env <name>` 会让 `check` 面退化（已知缺口）。** 声明了 env 指令的文件当前会整体失去符号面：`nudo check` 对**每个**函数都打印 `unknown` + `nudo:unknown-inference`（包括完全不碰 env API 的函数），而同一文件上 `nudo test`（逐调用点求值）仍然精确：
-
-```text
-$ nudo check envfile.js        # /// @nudo:env node + home() { return process.cwd(); }
-  home() => unknown            # warning: signature has true unknown (inference failed)
-
-$ nudo test envfile.js
-  call@L7  () => string        # 逐调用点结果精确
-```
-
-符号面支持 env 注入之前的替代做法：含 env 的文件依赖 `nudo test` / IDE hover，或把 env 相关代码挪到被检查文件所 import 的模块边界之后。
+**`/// @nudo:env <name>` 命名 env 会同时注入 `check` 与 `test` 路径。** 命名 env（`es` / `web` / `node`）注入符号面，`nudo check` 与 `nudo test` 打印一致的签名。不碰 env API 的函数不受牵连。当 env 无法解析（例如 path 型 `@nudo:env ./missing.ts`）时，只有实际引用自由标识符（env 提供的全局名）的函数 fail-closed 为 `unknown`——纯函数保持精确。
 
 ## Pred 蕴含（有界）
 

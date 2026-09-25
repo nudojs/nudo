@@ -50,6 +50,7 @@ import {
   mockSeedsForSource,
   collectBPathReplacements,
   collectEnvGlobals,
+  collectEnvModules,
   type CallRecord,
   type CaseResult,
   type AnalysisResult,
@@ -425,6 +426,14 @@ async function runCheck(
       ? [...new Set([...(cCfg.ignoreThrows ?? []), ...opts.ignoreThrows])]
       : cCfg.ignoreThrows;
   const projectEnvNames = proj?.config.env ?? [];
+  // 文件级 @nudo:env 命名 env（es/node/web）与项目配置合并——check 的
+  // 符号面必须与 test 同口径注入，否则 @nudo:env 文件整体退化 unknown。
+  // path 型 @nudo:env（./custom.env.ts）由 preloadPathEnvs 在 test 路径
+  // 预载；check 同步路径只收命名 env（collectEnvGlobals 对未知名安全跳过）。
+  const fileEnvNames = [...source.matchAll(/@nudo:env\s+([^\n*]+)/g)].flatMap(
+    (m) => m[1]!.split(",").map((s) => s.trim().replace(/^['"]|['"]$/g, "")).filter(Boolean),
+  );
+  const allEnvNames = [...new Set([...projectEnvNames, ...fileEnvNames])];
   const cacheRoot = diskCacheRoot(proj?.config, proj?.projectDir);
   const disk = new DiskCache({ root: cacheRoot, namespace: "check" });
   const dep = await collectCheckDepContents(filePath, source, loadModule);
@@ -446,7 +455,7 @@ async function runCheck(
           projectDir: proj?.projectDir,
           sidecarContent,
           depContents: dep.depContents,
-          projectEnvNames,
+          projectEnvNames: allEnvNames,
           analysisCfg: {
             mode: aCfg.mode,
             evalMissingSlot: aCfg.evalMissingSlot,
@@ -459,6 +468,7 @@ async function runCheck(
   const cached = cacheKey ? disk.get<ReturnType<typeof serializeCheckJson>>(cacheKey) : undefined;
   let cachedJson: ReturnType<typeof serializeCheckJson> | undefined;
   let algebraReport;
+  let mockFromErrors: Array<{ name: string; fromPath: string; message: string }> = [];
   if (cached) {
     cachedJson = cached;
     algebraReport = {
@@ -496,11 +506,27 @@ async function runCheck(
     try {
       const graph = evalAbsModuleGraph(source, filePath);
       const reps = collectBPathReplacements(source);
-      const mocks = mockSeedsForSource(source);
-      const envGlobals = collectEnvGlobals(projectEnvNames);
+      const { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } = await import("@nudojs/service");
+      const { extractDirectives } = await import("@nudojs/parser");
+      const { parse } = await import("@nudojs/parser");
+      const seedPkg = mockDirectivesToAbsSeeds(extractDirectives(parse(source)), {
+        fromFile: filePath,
+      });
+      mockFromErrors = seedPkg.fromErrors ?? [];
+      const mocks = mockSeedsToAbsMocks(seedPkg);
+      const envGlobals = collectEnvGlobals(allEnvNames);
+      const envMods = collectEnvModules(allEnvNames);
       const hasCycle = graph.issues.some((i) => i.kind === "cycle");
+      // env modules（fs/path/node:*…）并入模块图：与 test 路径
+      // mergeHarvestUnderEnv 同口径，check 的 import/require 才能解析 env 模块
+      const mergedMods = {
+        ...graph.modules,
+        ...(Object.keys(envMods).length > 0 ? envMods : {}),
+      };
       inject = {
-        ...(hasCycle ? {} : { modules: graph.modules }),
+        ...(hasCycle
+          ? (Object.keys(envMods).length > 0 ? { modules: envMods } : {})
+          : { modules: mergedMods }),
         ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
         ...(Object.keys(envGlobals).length > 0 ? { envGlobals } : {}),
         ...(reps.targets.length > 0
@@ -525,6 +551,25 @@ async function runCheck(
         : {}),
       skips: collectSkipReturns(source),
     });
+  }
+
+  // @nudo:mock name from "path" 解析失败 → check 明确报错（缺文件/缺绑定/求值失败）
+  if (mockFromErrors.length > 0) {
+    const fromIssues = mockFromErrors.map((fe) => ({
+      severity: "error" as const,
+      code: "nudo:module-missing" as const,
+      message: fe.message,
+      suggestion: `Create the mock file or fix the path in @nudo:mock ${fe.name} from "${fe.fromPath}"`,
+    }));
+    algebraReport = {
+      ...algebraReport,
+      issues: [...algebraReport.issues, ...fromIssues],
+      ok: false,
+      summary: {
+        ...algebraReport.summary,
+        errors: algebraReport.summary.errors + fromIssues.length,
+      },
+    };
   }
 
   if (opts.from && opts.from.length > 0) {
@@ -564,6 +609,51 @@ async function runCheck(
           warnings: algebraReport.summary.warnings + warnings,
         },
       };
+    }
+  }
+
+  // nudo:dual-entry（T4）：browser/node 双入口变体之一被 check → 观察面只覆盖
+  // 本入口（info，单入口零误报）。在缓存之后注入，保证缓存命中也上屏。
+  {
+    const { dualEntryIssueForFile } = await import("@nudojs/service");
+    const dual = dualEntryIssueForFile(filePath);
+    if (dual) {
+      const dualIssue: import("@nudojs/core").CheckIssue = {
+        severity: "info",
+        code: "nudo:dual-entry",
+        message: dual.message,
+        line: dual.line,
+        column: dual.column,
+        suggestion: dual.suggestion,
+      };
+      algebraReport = {
+        ...algebraReport,
+        issues: [...algebraReport.issues, dualIssue],
+        summary: {
+          ...algebraReport.summary,
+          infos: algebraReport.summary.infos + 1,
+        },
+      };
+      if (cachedJson) {
+        cachedJson = {
+          ...cachedJson,
+          issues: [
+            ...cachedJson.issues,
+            {
+              severity: "info",
+              code: "nudo:dual-entry",
+              message: dual.message,
+              line: dual.line,
+              column: dual.column,
+              suggestion: dual.suggestion,
+            },
+          ],
+          summary: {
+            ...cachedJson.summary,
+            infos: cachedJson.summary.infos + 1,
+          },
+        };
+      }
     }
   }
 

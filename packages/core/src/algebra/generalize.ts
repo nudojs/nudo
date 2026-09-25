@@ -41,6 +41,7 @@ import {
 import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
 import { scanPromotions } from "./promote-scan.ts";
 import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey, type RunTranspiledOptions } from "./exec/run.ts";
+import { freeIdentifiers } from "./exec/body-fn.ts";
 import { withExecPhi } from "./exec/runtime.ts";
 import { $new, $invoke } from "./exec/class.ts";
 
@@ -1021,13 +1022,21 @@ function generalizeFromAstUncached(
     return spec === undefined || !(opts.modules && Object.prototype.hasOwnProperty.call(opts.modules, spec));
   });
   // mock/env/replace 指令：注入包缺失时 B run 会执行真实宿主调用（裸 fetch
-  // 崩溃 / 未绑定名 ReferenceError 假 throws）——无注入则拦；注入齐备则放行
+  // 崩溃 / 未绑定名 ReferenceError 假 throws）——无注入则拦；注入齐备则放行。
+  // env 门按函数体自由标识符粒度：不引用外部名的纯函数（pureAdd）不受
+  // @nudo:env 牵连；引用 process/JSON 等外部名的函数在注入缺失时 fail-closed。
   const inject = opts.inject;
   const hasMocks = inject && Object.keys(inject.mocks ?? {}).length > 0;
   const hasEnv = inject && Object.keys(inject.envGlobals ?? {}).length > 0;
   const hasReps = inject && Object.keys(inject.replacements ?? {}).length > 0;
   const mockGated = /@nudo:(mock|mock-module)\b/.test(source) && !hasMocks;
-  const envGated = /@nudo:env\b/.test(source) && !hasEnv;
+  const envGatedSource = /@nudo:env\b/.test(source) && !hasEnv;
+  // 自由标识符分析用词法绑定名（formals），非展示名（rest 的 "...args" 不匹配
+  // AST 标识符 args）；pattern 取 bound 顶层名。
+  const boundNames = formals.flatMap((f) =>
+    f.kind === "pattern" ? f.bound : [f.name],
+  );
+  const envGated = envGatedSource && freeIdentifiers(body, boundNames).size > 0;
   const replaceGated = /@nudo:replace\b/.test(source) && !hasReps;
   const bEligible =
     !unresolvableImports &&

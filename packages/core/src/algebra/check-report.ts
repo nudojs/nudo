@@ -206,6 +206,14 @@ export function actionsForIssue(i: {
           label: "refresh the @generated segment",
         },
       ];
+    case "nudo:dual-entry":
+      return [
+        {
+          kind: "info",
+          label:
+            "browser/node records do not cross files — analyze the entry you ship; mock or skip the other variant",
+        },
+      ];
     default:
       return i.suggestion
         ? [{ kind: "info", label: i.suggestion }]

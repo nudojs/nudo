@@ -116,6 +116,17 @@ f(...) result confidence partial
 
 导出函数**无契约根**（无手写/生成侧车或 `@nudo:refine`）且**无调用点域**（仅合成 `entry@`、参数为 `any`）。**Info** —— 覆盖/契约缺口，不是门禁失败。修复：补契约（`*.nudo.js` / `@nudo:refine`），或从使用现场触达该导出（`nudo check --from`）。
 
+### `nudo:dual-entry` {#nudo-dual-entry}
+
+```text
+dual-entry package "lib": browser (./browser.js) and node (./node.js) call-site
+records do not cross files — analysis observes only the browser entry variant
+```
+
+该包发布 **browser/node 双入口**（package.json `exports` 条件或 `browser` 字段指向与 `main`/`node` 不同的文件），且本次分析跑在其中一个变体上。调用点记录按文件归因：另一入口上的证据**不会**注入到这里。**Info** —— 观察信号，不是门禁失败。单入口包、以及不是入口目标的共享 helper 上**绝不**触发。
+
+**修复：** 分析你实际发布的入口，另一变体 mock 或跳过；不要期望 `--from` 记录跨两个面合并。这仍是天花板 —— 见[边界与非目标](/docs/concepts/limits)。
+
 ### `nudo:interface-emit-denied` {#nudo-interface-emit-denied}
 
 ```text

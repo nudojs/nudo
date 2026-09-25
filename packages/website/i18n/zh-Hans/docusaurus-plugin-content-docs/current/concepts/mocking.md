@@ -44,6 +44,8 @@ description: 求值期间模拟外部依赖——@nudo:mock 五种形式（箭�
 - **name** — 要 mock 的标识符（如 `fetch`、`fs`）。
 - **path** — 提供 mock 的模块路径。
 
+mock 模块会像普通依赖一样被装载求值；其中与 mock 同名的绑定被种入求值作为该 mock。若文件缺失、mock 模块求值失败、或不存在同名绑定，`nudo check` 报 `nudo:module-missing` 错误，而不是静默丢弃 mock。
+
 **警告：表达式必须单行。** 解析器只读到行尾，多行表达式会在第一行截断并报 `nudo:mock-invalid`。下面这种写法**不**生效：
 
 ```text
@@ -161,9 +163,5 @@ const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
 ```text
 === readConfig ===
 
-  debug "read"  (string) => unknown
-
-[warning] read-config.js:6:9 Built-in API "fs" is not covered by Nudo's type inference (nudo:builtin-unknown)
+  debug "read"  (string) => "{ \"port\": 3000 }"
 ```
-
-**当前局限：** `from` mock 尚未种入 B 路径——而生产分析是 Abs 原生的（没有第二套求值 IR），所以该 mock 目前在所有地方都被丢弃：名称求值为未知全局量（`nudo:builtin-unknown`），对真实 Node 全局量则直接触达裸调用。上面的单行箭头函数形式可用；在 `from` 种入 B 路径之前请优先使用它。

@@ -66,6 +66,14 @@ export {
 } from "./analysis-scope.ts";
 export { defaultLoadModule, type LoadModule } from "./load-module.ts";
 export { collectSkipReturns } from "./skip-directives.ts";
+export {
+  detectDualEntryFromPackageJson,
+  dualEntryForFile,
+  dualEntryIssueForFile,
+  findOwningPackage,
+  type DualEntryInfo,
+  type DualEntryIssue,
+} from "./dual-entry.ts";
 export { clearPathEnvCaches } from "./evaluator/env-loader.ts";
 export { analysisFileCacheKey } from "./analyzer.ts";
 export {
@@ -250,7 +258,12 @@ export {
   type EmitResult,
 } from "./case-emitter.ts";
 
-export { mockDirectivesToAbsSeeds, mockSeedsForSource, type AbsMockSeeds } from "./mock-abs.ts";
+export {
+  mockDirectivesToAbsSeeds,
+  mockSeedsToAbsMocks,
+  mockSeedsForSource,
+  type AbsMockSeeds,
+} from "./mock-abs.ts";
 
 export {
   interfaceSurface,

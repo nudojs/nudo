@@ -44,6 +44,8 @@ Five forms are supported. **Every inline expression must fit on a single line** 
 - **name** — The identifier to mock (e.g. `fetch`, `fs`).
 - **path** — Path to a module that provides the mock.
 
+The mock module is loaded and evaluated like any other dependency; its binding with the matching name is seeded into evaluation as the mock. If the file is missing, the mock module fails to evaluate, or no binding with that name exists, `nudo check` reports a `nudo:module-missing` error instead of silently dropping the mock.
+
 **Warning: the expression must be a single line.** The parser only reads up to the end of the line, so a multi-line expression is truncated at its first line and reported as `nudo:mock-invalid`. The following does **not** work:
 
 ```text
@@ -161,9 +163,5 @@ const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
 ```text
 === readConfig ===
 
-  debug "read"  (string) => unknown
-
-[warning] read-config.js:6:9 Built-in API "fs" is not covered by Nudo's type inference (nudo:builtin-unknown)
+  debug "read"  (string) => "{ \"port\": 3000 }"
 ```
-
-**Current limitation:** `from` mocks are not seeded into the B path — and since production analysis is Abs-native (there is no second evaluation IR), the mock is currently dropped everywhere: the name evaluates as an unknown global (`nudo:builtin-unknown`) or, for real Node globals, the bare call is reached directly. The single-line arrow-function form above works; prefer it until `from` is seeded into the B path.

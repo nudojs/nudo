@@ -23,7 +23,7 @@
 
 加速边界（诚实声明）：
 
-- 服务的是：`contract` **打印/契约读取**冷启动、opt-in 的 `check` 冷路径、以及（设计中的）harvest 依赖层。
+- 服务的是：`contract` **打印/契约读取**冷启动、opt-in 的 `check` 冷路径、以及 harvest 依赖层（L2 已落地）。
 - **不**加速：`test` / `contract --emit` / `health` 的完整 B-path 分析；`export` 整条投影链。
 - Abs 本体、AST、PolyFn、AnalysisResult、截断/opaque/mock 改道的**分析**结果——**不进磁盘**。
 
@@ -44,7 +44,7 @@
 
 ### 目标
 
-1. **依赖包层收益最大（L2，未实施）**：`node_modules` / `@types` 的 harvest 投影跨项目复用。
+1. **依赖包层收益最大（L2，已落地）**：`node_modules` / `@types` 的 harvest 投影跨项目复用。
 2. **check 冷路径可复用（L1，opt-in）**：未变更文件走磁盘 `CheckJson`。
 3. **契约读取可复用（L1）**：整文件 interface 表服务打印 / surface。
 4. **绝不陈旧命中**：键漏维度 = 错诊断；宁可 miss 重算。
@@ -67,7 +67,7 @@
 ```text
 L0 内存（现有）  generalize / check memo / fn analysis   ← 热路径
 L1 项目磁盘      .nudo/cache/   本仓库投影结果            ← 冷启动（部分落地）
-L2 依赖磁盘      ~/.cache/nudo/deps/   node_modules 投影  ← 跨项目（未实施）
+L2 依赖磁盘      ~/.cache/nudo/deps/   node_modules 投影  ← 跨项目（已落地）
 ```
 
 | 层 | 缓存什么（值形态） | 默认 |
@@ -75,9 +75,22 @@ L2 依赖磁盘      ~/.cache/nudo/deps/   node_modules 投影  ← 跨项目（
 | L1 iface | 整文件 `fns` 表 + implicit 负缓存（plain JSON） | 随 `nudo.cache` 开启 |
 | L1 derive | 导出约束投影（无 Abs） | 设计已列，随 L1 基建 |
 | L1 check | `CheckJson`（`serializeCheckJson`） | **`false`**，需显式开 |
-| L2 harvest | **HarvestJson**（纯 JSON 签名投影；读回 materialize 为 mock Abs 导出表） | **未实施** |
+| L2 harvest | **HarvestJson**（纯 JSON 签名投影；读回 materialize 为 mock Abs 导出表） | **已落地**（harvest 路径默认走盘） |
 
-前提（L2 开工门槛，仍有效）：harvest 出口稳定为可 JSON 化签名表；磁盘层只缓存签名投影，不缓存 Abs 本体。
+L2 harvest 落地形态（与实现对齐）：
+
+| 面 | 现实 |
+|---|---|
+| 落地范围 | `@types/node`（`harvest-node.ts` B2）+ 通用包 harvest（`harvestPackageWithDisk`）；`harvest-json.ts` / `harvest-disk.ts` |
+| 默认 | **开**——harvest 路径自动读写盘（区别于 L1 CheckJson 默认关） |
+| 位置 | `~/.cache/nudo/deps`；`NUDO_DEPS_CACHE_DIR` 覆盖；`off`/`0` 关闭 |
+| 键 | `HARVEST_DISK_ABI` + pkg + pkgVersion + knobs(`maxFiles`) + `dtsClosureHash`（每个实际读到的 `.d.ts` 内容 sha256）→ `sha256Hex` |
+| 值 | `HarvestJson` 签名投影（modules/globals → `HarvestSig`）；读回 `materializeHarvestJson` → mock Abs 导出表（丢 pred/conf） |
+| 降级链（B2） | 磁盘 miss / harvest 失败 / `@types/node` 缺失 → 手写 `@nudojs/env` node 面，结果标 **`degraded: true`**；重叠处手写 wins（`mergeHarvestUnderEnv`） |
+| 进程内缓存 | 成功 + 终态失败（`not-found`/`no-dts`/`failed`）都进 L0 Map，防重试风暴；`disabled`（`NUDO_HARVEST_NODE=off`）**从不缓存** |
+| 仍不进盘 | 降级/失败结果只在进程内（不写 HarvestJson）；Abs 本体 / AST / B-path / AnalysisResult；`test`/`export` 整条链 |
+
+前提（L2 不变式，仍有效）：harvest 出口稳定为可 JSON 化签名表；磁盘层只缓存签名投影，不缓存 Abs 本体。
 
 ---
 
@@ -134,6 +147,11 @@ L1 check   : prefix + relFile + stableSrcSha256 + diskDepsFp + sidecarFp + autoB
 
 - packages/service/src/disk-cache.ts
 - packages/service/src/__tests__/disk-cache.test.ts
+- packages/service/src/harvest-json.ts
+- packages/service/src/harvest-disk.ts
+- packages/service/src/harvest-node.ts
+- packages/service/src/__tests__/harvest-disk.test.ts
+- packages/service/src/__tests__/harvest-node-b2.test.ts
 - packages/service/src/interface-surface.ts
 - packages/service/src/evaluator/config.ts
 - packages/service/src/case-json.ts
