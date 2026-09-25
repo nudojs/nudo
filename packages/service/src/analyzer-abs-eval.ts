@@ -52,7 +52,7 @@ export function absIsBetter(next: Abs, prev: Abs): boolean {
 }
 /**
  * 自包含 = 无 import/require、无 @nudo:env。
- * @nudo:mock 不阻断 Abs：已编译为 seedVars/seedFns 注入 evalProgramAbs。
+ * @nudo:mock 不阻断 Abs：已编译为 seedVars/seedFns 注入 evalAbsModuleGraph。
  * 相对 import 经 Abs 模块图注入后，也不再阻断 Abs 路径。
  */
 export function isSelfContainedSource(source: string, envNames: string[]): boolean {

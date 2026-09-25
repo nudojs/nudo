@@ -22,6 +22,30 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./analysis": {
+      "types": "./dist/analysis.d.ts",
+      "default": "./dist/analysis.js"
+    },
+    "./interface": {
+      "types": "./dist/interface.d.ts",
+      "default": "./dist/interface.js"
+    },
+    "./dts": {
+      "types": "./dist/dts.d.ts",
+      "default": "./dist/dts.js"
+    },
+    "./case": {
+      "types": "./dist/case.d.ts",
+      "default": "./dist/case.js"
+    },
+    "./lsp": {
+      "types": "./dist/lsp.d.ts",
+      "default": "./dist/lsp.js"
+    },
+    "./harvest": {
+      "types": "./dist/harvest.d.ts",
+      "default": "./dist/harvest.js"
+    },
     "./evaluator": {
       "types": "./dist/evaluator/evaluator-api.d.ts",
       "default": "./dist/evaluator/evaluator-api.js"
@@ -51,7 +75,7 @@
     "@babel/types": "^8.0.6"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/evaluator/evaluator-api.ts --format esm --dts",
-    "prepublishOnly": "tsup src/index.ts src/evaluator/evaluator-api.ts --format esm --dts"
+    "build": "tsup src/index.ts src/analysis.ts src/interface.ts src/dts.ts src/case.ts src/lsp.ts src/harvest.ts src/evaluator/evaluator-api.ts --format esm --dts",
+    "prepublishOnly": "tsup src/index.ts src/analysis.ts src/interface.ts src/dts.ts src/case.ts src/lsp.ts src/harvest.ts src/evaluator/evaluator-api.ts --format esm --dts"
   }
 }

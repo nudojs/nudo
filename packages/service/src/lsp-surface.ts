@@ -122,7 +122,7 @@ function absFromBPath(
   if (!isBPathCapable(source, envNames)) return null;
   if (positionInsideCaseFunction(source, ast, line)) return null;
   // fail-closed：节点级 Abs 收集（collectAbsNodeTypes/evalProgramAbs）已删；
-  // 仅标识符绑定面（B 版 collectAbsBindingsFromGraph）
+  // 仅标识符绑定面（evalAbsModuleGraph 的 collectAbsBindingsFromGraph）
   try {
     const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), { fromFile: filePath });
     const ident = findIdentNameAtPosition(source, line, column, ast);
@@ -353,7 +353,7 @@ export function getHoverAtPosition(
         }
       }
     } catch {
-      // ignore
+      // fail-closed：绑定面求值失败 → 不产出 Abs（不拖垮 hover）
     }
   }
 

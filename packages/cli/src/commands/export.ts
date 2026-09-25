@@ -1,5 +1,5 @@
 /**
- * nudo export — 投影：dts | guard | schema (dialect) | standard。
+ * nudo export — 投影：dts | guard | schema (dialect) | standard | all。
  * 从 index.ts 原样迁出，行为不变。
  */
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -23,7 +23,7 @@ import {
 } from "@nudojs/service";
 
 // ---------------------------------------------------------------------------
-// export — 投影：dts | guard | schema (dialect) | standard
+// export — 投影：dts | guard | schema (dialect) | standard | all
 // ---------------------------------------------------------------------------
 
 type ExportFormat = "schema" | "standard" | "guard" | "dts" | "all";
@@ -219,7 +219,7 @@ async function runExport(
 export function registerExportCommand(program: Command): void {
   program
     .command("export")
-    .description("Project inferred types: dts | guard | schema | standard")
+    .description("Project inferred types: dts | guard | schema | standard | all")
     .argument("<file>", "JavaScript/TypeScript file to analyze")
     .option(
       "--format <format>",

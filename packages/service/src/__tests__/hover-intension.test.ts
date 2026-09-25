@@ -15,7 +15,7 @@ describe("getHoverAtPosition lossless Abs", () => {
     expect(hover!.absMultiline).toBeDefined();
   });
 
-  it("hover on binding shows Abs from evalProgramAbs", () => {
+  it("hover on binding shows Abs from evalAbsModuleGraph bindings", () => {
     const source = `const x = 1 + 2;\n`;
     const hover = getHoverAtPosition("/t/h3.js", source, 1, 7);
     if (hover?.abs) {

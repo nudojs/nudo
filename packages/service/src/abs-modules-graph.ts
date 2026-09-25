@@ -452,8 +452,8 @@ export function evalAbsModuleGraph(
       // tryRunTranspiled（回落事件入收集器）。
       exports = bPathExportsToModuleExports(bRun, parse(source), `bpath:${absPath}`);
     } else {
-      // fail-closed：B 失败 = 无信息（空导出表）——ast-eval 兜底
-      // （evalProgramAbs + collectAbsExports）已删。
+      // fail-closed：B 失败 = 无信息（空导出表）——旧 ast-eval 兜底
+      // （evalProgramAbs + collectAbsExports）已删，无第二求值路径。
       exports = { named: {} };
     }
     loading.pop();

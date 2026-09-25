@@ -451,7 +451,7 @@ export function tryRunBPath(
     const memberDiags: BMemberDiag[] = [];
     const truncated = new Set<string>();
     const topCalls: BCallRecord[] = [];
-    // collector 先于模块图：import 函数体在 evalProgramAbs 内的 method-missing 也要收
+    // collector 先于模块图：import 函数体在 evalAbsModuleGraph 内的 method-missing 也要收
     const prevMember = setMemberDiagCollector((d) => memberDiags.push(d));
     const prevTrunc = setAbsTruncationCollector((label) => truncated.add(label));
     const prevCall = setBCallCollector((r) => topCalls.push(r));

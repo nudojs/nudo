@@ -135,7 +135,7 @@ export async function analyzeFileAsync(
  * 真实的实参类型与结果类型——后续 analyzeFile 将其注入合成 case，
  * 使被使用方从 entry-only（参数全 unknown）升级为真实调用形态。
  *
- * Abs 路径（TypeValue evaluateProgram 已删）：evalProgramAbs + AbsCallRecord。
+ * Abs 路径（TypeValue evaluateProgram 已删）：evalAbsModuleGraph + AbsCallRecord。
  * 只做求值与记录，不产出诊断；求值异常不抛出（使用现场文件可能
  * 依赖未 mock 的全局，收集不到就收集不到，不能拖垮主分析）。
  */
@@ -439,7 +439,7 @@ export function analyzeFileUncachedInner(
   let absCallRecords: CallRecord[] = [];
   /** B 顶层 $callNamed 记录（call@ 合成；TypeValue skip 后的主源） */
   let bTopCallRecords: CallRecord[] = [];
-  /** 一次模块图 + 一次 evalProgramAbs 的共享产物（避免 B 路径 4+ 次重求值） */
+  /** 一次 evalAbsModuleGraph（模块图求值）的共享产物（避免 B 路径 4+ 次重求值） */
   let absGraphModules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined;
   let absBindsShared: Map<string, Abs> | undefined;
   let absNodesShared: Map<Node, Abs> | undefined;

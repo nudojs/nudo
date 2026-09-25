@@ -33,7 +33,7 @@ program
 Day 0   nudo check <path>   (signatures + L1/L2 gate)
         nudo test <path>    (every inferred case)
 Day 1   nudo contract + check
-Ecosystem  nudo export (dts / guard / schema / standard)
+Ecosystem  nudo export (dts / guard / schema / standard / all)
 Ops     nudo health [paths]
 Migrate nudo migrate status|strip|verify|retire  (exit is retire tsc)
 
