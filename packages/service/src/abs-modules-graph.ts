@@ -20,7 +20,21 @@ import {
 import type { Node } from "@babel/types";
 import { bareSpecToAbsModules } from "./harvest-to-abs.ts";
 import { resolveNpmJsEntry } from "./evaluator/resolve-npm.ts";
-import { mockSeedsToAbsMocks } from "./mock-abs.ts";
+
+/** seedFns → Abs fn（本地副本，避免 mock-abs ↔ 本模块循环依赖） */
+function seedFnsToMocks(
+  seedVars: Record<string, Abs>,
+  seedFns: Record<string, { params: string[]; body: unknown; async?: boolean }>,
+): Record<string, Abs> {
+  const out: Record<string, Abs> = { ...seedVars };
+  for (const [name, fn] of Object.entries(seedFns)) {
+    out[name] = absFunction(fn.params, {
+      body: fn.body as never,
+      async: fn.async ?? false,
+    });
+  }
+  return out;
+}
 
 export type AbsLoadModule = (spec: string, fromFile: string) => string | undefined;
 
@@ -535,10 +549,7 @@ export function collectAbsBindingsFromGraph(
   const out = new Map<string, Abs>();
   try {
     const { modules } = evalAbsModuleGraph(source, filePath, opts);
-    const mocks = mockSeedsToAbsMocks({
-      seedVars: opts.seedVars ?? {},
-      seedFns: opts.seedFns ?? {},
-    });
+    const mocks = seedFnsToMocks(opts.seedVars ?? {}, opts.seedFns ?? {});
     const run = tryRunTranspiled(source, {
       mode: "analyze",
       modules,

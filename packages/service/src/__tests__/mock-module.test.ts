@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { applyMockModuleDirectivesFromSource } from "../mock-module.ts";
 import type { AbsModuleExports } from "@nudojs/core";
-import { formatAbs } from "@nudojs/core";
+import { formatAbs, $call } from "@nudojs/core";
 
 let dir: string;
 
@@ -87,5 +87,25 @@ describe("applyMockModuleDirectivesFromSource", () => {
     expect(r.applied).toBe(false);
     expect(r.errors).toHaveLength(0);
     expect(r.modules).toEqual({});
+  });
+
+  it("mock file with relative imports resolves via the abs module graph", () => {
+    write("lib/config.js", `export function portLabel() { return "3000"; }\n`);
+    write(
+      "mocks/api.js",
+      `import { portLabel } from "../lib/config.js";\nexport function readConfig() { return portLabel(); }\n`,
+    );
+    const src = `/// @nudo:mock-module "axios" from "./mocks/api.js"\nimport axios from "axios";\nexport function go() { return axios.readConfig(); }\n`;
+    const r = applyMockModuleDirectivesFromSource(src, {}, {
+      fromFile: join(dir, "app.js"),
+    });
+    expect(r.applied).toBe(true);
+    expect(r.errors).toHaveLength(0);
+    const fn = r.modules.axios!.named.readConfig!;
+    expect(fn).toBeDefined();
+    expect(fn.shape.k).toBe("fn");
+    // invoke the bridged export — result must come from the relative-import dep
+    const applied = $call(fn, []);
+    expect(formatAbs(applied)).toContain("3000");
   });
 });

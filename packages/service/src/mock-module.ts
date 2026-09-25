@@ -9,12 +9,10 @@
 
 import { extractFileDirectives, parse, type FileDirective } from "@nudojs/parser";
 import type { AbsModuleExports } from "@nudojs/core";
-import { tryRunTranspiled, obj as absObj, type Abs } from "@nudojs/core";
-import { defaultLoadModule, type LoadModule } from "./load-module.ts";
-import {
-  evalAbsModuleGraph,
-  bPathExportsToModuleExports,
-} from "./abs-modules-graph.ts";
+import { obj as absObj, type Abs } from "@nudojs/core";
+import type { LoadModule } from "./load-module.ts";
+import { bPathExportsToModuleExports } from "./abs-modules-graph.ts";
+import { evalMockFileWithDeps } from "./mock-file.ts";
 import type { FromMockError } from "./mock-abs.ts";
 
 export type MockModuleApplyResult = {
@@ -29,28 +27,16 @@ function loadMockModuleExports(
   fromFile: string,
   loadModule: LoadModule | undefined,
 ): { exports?: AbsModuleExports; error?: string } {
-  const load = loadModule ?? defaultLoadModule;
-  let source: string | undefined;
-  try {
-    source = load(fromPath, fromFile);
-  } catch {
-    source = undefined;
+  // mock 文件相对 import：evalMockFileWithDeps 以绝对路径为模块图入口
+  const evaled = evalMockFileWithDeps(fromPath, fromFile, loadModule);
+  if (!evaled.ok) {
+    return {
+      error: evaled.error.includes("not found")
+        ? `Mock module not found (from "${fromPath}")`
+        : evaled.error,
+    };
   }
-  if (source === undefined) {
-    return { error: `Mock module not found (from "${fromPath}")` };
-  }
-  // mock 文件自身的相对依赖走同一模块图；B 失败 → fail-closed
-  let deps: Record<string, AbsModuleExports> = {};
-  try {
-    deps = evalAbsModuleGraph(source, fromPath, { loadModule }).modules;
-  } catch {
-    deps = {};
-  }
-  const run = tryRunTranspiled(source, { mode: "exec", modules: deps as never });
-  if (!run) {
-    return { error: `Mock module "${fromPath}" failed to evaluate` };
-  }
-  const exports = bPathExportsToModuleExports(run, parse(source), `mock-module:${fromPath}`);
+  const exports = bPathExportsToModuleExports(evaled.run, parse(evaled.source), `mock-module:${fromPath}`);
   // CJS/文档示例友好：仅有 named 时合成 default 命名空间，支持
   // `import axios from "axios"` 后 `axios.get(...)`。
   if (exports.default === undefined && Object.keys(exports.named).length > 0) {

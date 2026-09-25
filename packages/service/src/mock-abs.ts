@@ -23,6 +23,7 @@ import {
   callTranspiledExportFull,
 } from "@nudojs/core";
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
+import { evalMockFileWithDeps } from "./mock-file.ts";
 
 /**
  * mock 依赖结果 conf 不得高于 mock。
@@ -257,27 +258,17 @@ function loadFromMockBinding(
   fromFile: string | undefined,
   loadModule: LoadModule | undefined,
 ): { abs?: Abs; error?: string } {
-  const load = loadModule ?? defaultLoadModule;
   const base = fromFile ?? `${process.cwd()}/<mock-from>`;
-  let source: string | undefined;
-  try {
-    source = load(fromPath, base);
-  } catch {
-    source = undefined;
+  // mock 文件自身相对 import：走 abs 模块图（绝对路径入口），不是裸 exec
+  const evaled = evalMockFileWithDeps(fromPath, base, loadModule);
+  if (!evaled.ok) {
+    return {
+      error: evaled.error.includes("not found")
+        ? `Mock file not found for '${name}' (from "${fromPath}")`
+        : evaled.error,
+    };
   }
-  if (source === undefined) {
-    return { error: `Mock file not found for '${name}' (from "${fromPath}")` };
-  }
-  let run: Record<string, unknown> | undefined;
-  try {
-    // exec 模式：mock 文件需完整求值顶层绑定/导出（analyze 会剥掉非纯顶层）
-    run = tryRunTranspiled(source, { mode: "exec" });
-  } catch {
-    run = undefined;
-  }
-  if (!run) {
-    return { error: `Mock file "${fromPath}" failed to evaluate` };
-  }
+  const run = evaled.run;
   let val: unknown = run[name];
   if (val === undefined) {
     const binds = bindingsOf(run);

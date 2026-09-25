@@ -171,4 +171,32 @@ function plan() {
     const seeds = seedsOf(source, "/tmp/inline.js");
     expect(seeds.seedVars.retries).toBeDefined();
   });
+
+  it("from-mock file with relative imports resolves via the abs module graph", () => {
+    const dir = tmpProject({
+      "lib/config.js": `export function portLabel() { return "3000"; }\n`,
+      "mocks/fs.js": `import { portLabel } from "../lib/config.js";\nexport function readConfig() { return portLabel(); }\n`,
+      "app.js": `/**
+ * @nudo:mock readConfig from "./mocks/fs.js"
+ */
+export function load() { return readConfig(); }
+`,
+    });
+    const source = `/**
+ * @nudo:mock readConfig from "./mocks/fs.js"
+ */
+export function load() { return readConfig(); }
+`;
+    const seeds = seedsOf(source, join(dir, "app.js"));
+    expect(seeds.fromErrors).toBeUndefined();
+    const mocks = mockSeedsToAbsMocks(seeds);
+    const r = tryBPathCallFull(
+      `export function load() { return readConfig(); }\n`,
+      join(dir, "app.js"),
+      "load",
+      [],
+      { mocks },
+    );
+    expect(formatAbs(r.result)).toContain("3000");
+  });
 });
