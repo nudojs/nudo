@@ -44,6 +44,21 @@ Harvest **不是**产品动词。第三方 `@types` 在 `nudo check` / `nudo tes
 // @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) })
 ```
 
+### Mock 边界清单
+
+来源：[env / Node 覆盖率基线](https://github.com/nudojs/nudo/blob/main/docs/reports/env-coverage-baseline.md)（解析率**不是**完备性承诺）。下列叶节点目前仍偏薄或必须 mock——分析质量重要时请 mock：
+
+| 类别 / probe | 为何偏薄 | 做法 |
+|---|---|---|
+| `child_process.spawn*` / 原生进程 spawn | 无副作用模拟；`ChildProcess` 仅签名级 | `@nudo:mock` 该调用，或接受声明形状 |
+| 流机器回调（Transform 内部） | `data` / `error` 事件由机器驱动（见[边界](../concepts/limits.md)） | mock 你依赖的载荷 |
+| 动态 `require` / 计算模块图 | 模块图不静态 | `@nudo:mock-module` 或路径 `/// @nudo:env` |
+| 原生 addon / binding | 不会被求值 | mock 该 binding 面 |
+| 浏览器/Node 双入口变体 | 调用点记录不跨文件 | mock 另一入口，或两侧分开分析 |
+| 签名级 `any` 叶（`util.format`、`util.inspect`、`util.types.isDate`、`assert.*`） | 已解析，但 format 仍含 `any` | 接受该叶，或 mock 换更紧的面 |
+
+无调用点的函数回落到 `entry@`（诚实的 `any`）——优先补调用点或契约，而不是 mock。
+
 ## 下一步
 
 - [指令 —— `@nudo:env`](../concepts/directives.md)

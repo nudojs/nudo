@@ -39,7 +39,9 @@ npx nudojs check math.js
 npx nudojs test math.js
 ```
 
-> **Version heads-up.** The `nudojs` npm package is a thin installer shell — its version number is **not** the engine version. `nudojs@0.x` wraps `@nudojs/cli@3.x` (and `@nudojs/core@3.x`). Run `nudo --version` to see the engine CLI you actually have.
+> **Version heads-up.** The `nudojs` npm package is a thin installer shell — its version number is **not** the engine version. `nudojs@0.x` wraps `@nudojs/cli@3.x`; engine packages (`@nudojs/core`, …) version independently. Run `nudo --version` to see the engine CLI you actually have. Policy: [`docs/versioning.md`](./docs/versioning.md).
+
+> **Trust boundary.** Nudo analyzes by **executing** the target code (Abs semantics, in-process evaluation). Do not run `nudo check` / `nudo test` on untrusted code — in CI this is the same trust as running the project's tests. Details: [Security](#security).
 
 Write plain JavaScript. Call sites are evidence:
 

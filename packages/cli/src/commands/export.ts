@@ -21,39 +21,21 @@ import {
   analyzeFileAsync,
   type CaseResult,
 } from "@nudojs/service";
+import {
+  EXPORT_FORMATS,
+  SCHEMA_DIALECTS,
+  normalizeDialect,
+  normalizeExportFormat,
+  schemaDialectOf,
+  schemaFileName,
+  wantsSchema,
+  wantsStandard,
+  type ExportFormat,
+} from "../export-format.ts";
 
 // ---------------------------------------------------------------------------
 // export — 投影：dts | guard | schema (dialect) | standard | all
 // ---------------------------------------------------------------------------
-
-type ExportFormat = "schema" | "standard" | "guard" | "dts" | "all";
-const EXPORT_FORMATS: ExportFormat[] = ["schema", "standard", "guard", "dts", "all"];
-const SCHEMA_DIALECTS: SchemaDialect[] = ["zod"];
-
-function normalizeExportFormat(raw: string): ExportFormat | undefined {
-  return EXPORT_FORMATS.includes(raw as ExportFormat) ? (raw as ExportFormat) : undefined;
-}
-
-function normalizeDialect(raw: string | undefined): SchemaDialect | undefined {
-  if (raw === undefined) return undefined;
-  return SCHEMA_DIALECTS.includes(raw as SchemaDialect) ? (raw as SchemaDialect) : undefined;
-}
-
-function wantsSchema(format: ExportFormat): boolean {
-  return format === "schema" || format === "all";
-}
-
-function wantsStandard(format: ExportFormat): boolean {
-  return format === "standard" || format === "all";
-}
-
-function schemaDialectOf(_format: ExportFormat, dialect: SchemaDialect | undefined): SchemaDialect {
-  return dialect ?? "zod";
-}
-
-function schemaFileName(stem: string, dialect: SchemaDialect): string {
-  return `${stem}.nudo.schema.${dialect}.ts`;
-}
 
 async function runExport(
   file: string,

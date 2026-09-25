@@ -17,8 +17,7 @@ import {
   type AbsModuleExports,
 } from '@nudojs/core';
 import { analyzeFile, getHoverAtPosition, collectAbsInlays } from '@nudojs/service';
-import type { HoverInfo } from '@nudojs/service';
-import type { AbsInlay } from '@nudojs/core';
+import type { HoverInfo, AbsInlay } from '@nudojs/service';
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react'));
 

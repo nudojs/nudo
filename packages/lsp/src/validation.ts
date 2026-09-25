@@ -13,6 +13,7 @@ import {
   computeDirtySet,
   defaultLoadModule,
   clearAnalysisSessionCaches,
+  clearPathEnvCaches,
   evictAbsModuleCacheFiles,
   evictBPathCacheForFiles,
   evictAnalysisFileCacheForFiles,
@@ -301,6 +302,8 @@ export async function handleNudoDepFileChanged(
   evictBPathCacheForFiles(parentList);
   evictAnalysisFileCacheForFiles(parentList);
   evictFnAnalysisCacheForFiles(parentList);
+  // path-env factory 进程全局；定向逐出若不清它，新 dep-hash 键会被旧 defineEnv 投毒
+  clearPathEnvCaches();
   for (const parent of parentList) {
     // LSP 本地 analysisCache 按 sourceHash 短路：侧车/dep 变更时源码未变，
     // 必须清掉并 force 重算，否则 hover/inlay/evaluator 诊断仍吃旧结果
@@ -725,6 +728,9 @@ export async function validateText(
     evictBPathCacheForFiles([dirtyPath]);
     evictAnalysisFileCacheForFiles([dirtyPath]);
     evictFnAnalysisCacheForFiles([dirtyPath]);
+    // path-env 全局工厂 + abs-module mtime/size 孔：见 docs/design/cache-invalidation.md
+    clearPathEnvCaches();
+    evictAbsModuleCacheFiles([filePath]);
     await validateText(dirtyPath, doc.uri, doc.getText(), doc.version, deps, false, true);
   }
 }

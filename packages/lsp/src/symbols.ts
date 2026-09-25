@@ -2,9 +2,24 @@
  * 文档符号 + 跨文件导航（definition / references / rename）。
  * 本文件只做 AST 静态扫描；fs 解析走 service 的相对路径规则。
  */
-import type { Node, File } from "@babel/types";
+import type { Node, Identifier, FunctionDeclaration, FunctionExpression, ArrowFunctionExpression, ClassMethod, ObjectMethod, TSDeclareMethod } from "@babel/types";
 import traverse from "@babel/traverse";
-import { parse } from "@nudojs/parser";
+import {
+  parse,
+  programBody,
+  unwrapExport,
+  unwrapDefaultExport,
+  getDeclarations,
+  getDeclaratorId,
+  getDeclaratorInit,
+  fnOrClassIdName,
+  getClassMembers,
+  classMemberKeyName,
+  classMemberKey,
+  paramDisplayName,
+  exportSpecifierExportedName,
+  nameOrStringValue,
+} from "@nudojs/parser";
 import type { SymbolInfo, ReferenceInfo, SymbolTable, SourceLocation } from "@nudojs/service";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -18,7 +33,7 @@ function locFromNode(node: Node): SourceLocation {
 }
 
 function traverseFn(): typeof traverse {
-  return (typeof traverse === "function" ? traverse : (traverse as any).default) as typeof traverse;
+  return unwrapDefaultExport(traverse);
 }
 
 /**
@@ -587,16 +602,22 @@ function rangeOfNode(node: Node): DocumentSymbolItem["range"] {
 /** 顶层函数 / 类 / 变量 → DocumentSymbol（方法作为 children） */
 export function documentSymbols(ast: Node): DocumentSymbolItem[] {
   const out: DocumentSymbolItem[] = [];
-  const program = (ast as File).program ?? (ast as any);
-  const body: Node[] = program.body ?? [];
+  const body = programBody(ast);
 
-  const pushFn = (fnNode: any, idNode: any, exported: boolean): void => {
+  type FnLike =
+    | FunctionDeclaration
+    | FunctionExpression
+    | ArrowFunctionExpression
+    | ClassMethod
+    | ObjectMethod
+    | TSDeclareMethod;
+  const pushFn = (fnNode: FnLike, idNode: Identifier | null | undefined, exported: boolean): void => {
     if (!idNode?.name) return;
     const range = rangeOfNode(fnNode);
     const selection = rangeOfNode(idNode);
     const children: DocumentSymbolItem[] = [];
     const params: string[] = (fnNode.params ?? [])
-      .map((p: any) => (p?.name ?? (p?.type === "RestElement" ? `...${p.argument?.name}` : "_")))
+      .map((p) => paramDisplayName(p))
       .filter(Boolean);
     out.push({
       name: idNode.name,
@@ -609,53 +630,47 @@ export function documentSymbols(ast: Node): DocumentSymbolItem[] {
   };
 
   for (const stmt of body) {
-    let decl: any = stmt;
-    let exported = false;
-    if ((stmt as any).type === "ExportNamedDeclaration" && (stmt as any).declaration) {
-      decl = (stmt as any).declaration;
-      exported = true;
-    } else if ((stmt as any).type === "ExportDefaultDeclaration") {
-      decl = (stmt as any).declaration;
-      exported = true;
-    }
+    const { declaration: decl, exported } = unwrapExport(stmt);
 
-    if (decl?.type === "FunctionDeclaration") {
+    if (decl.type === "FunctionDeclaration") {
       pushFn(decl, decl.id, exported);
       continue;
     }
-    if (decl?.type === "ClassDeclaration" && decl.id) {
+    if (decl.type === "ClassDeclaration" && decl.id) {
       out.push({
         name: decl.id.name,
         detail: exported ? "export class" : "class",
         kind: SymbolKind.Class,
         range: rangeOfNode(decl),
         selectionRange: rangeOfNode(decl.id),
-        children: (decl.body?.body ?? []).flatMap((m: any) => {
-          const key = m.key?.name ?? m.key?.value;
-          if (!key || m.type !== "ClassMethod" && m.type !== "ClassProperty") return [];
+        children: getClassMembers(decl).flatMap((m) => {
+          const key = classMemberKeyName(m);
+          const keyNode = classMemberKey(m);
+          if (!key || !keyNode || (m.type !== "ClassMethod" && m.type !== "ClassProperty")) return [];
           return [{
             name: String(key),
             kind: m.type === "ClassMethod" ? SymbolKind.Method : SymbolKind.Property,
             range: rangeOfNode(m),
-            selectionRange: rangeOfNode(m.key),
+            selectionRange: rangeOfNode(keyNode),
           }];
         }),
       });
       continue;
     }
-    if (decl?.type === "VariableDeclaration") {
-      for (const d of decl.declarations ?? []) {
-        if (d.id?.type !== "Identifier") continue;
-        const init = d.init;
+    if (decl.type === "VariableDeclaration") {
+      for (const d of getDeclarations(decl)) {
+        const id = getDeclaratorId(d);
+        if (!id) continue;
+        const init = getDeclaratorInit(d);
         const isFn =
           init &&
           (init.type === "ArrowFunctionExpression" || init.type === "FunctionExpression");
         out.push({
-          name: d.id.name,
+          name: id.name,
           detail: exported ? "export const" : "const",
           kind: isFn ? SymbolKind.Function : SymbolKind.Variable,
           range: rangeOfNode(d),
-          selectionRange: rangeOfNode(d.id),
+          selectionRange: rangeOfNode(id),
         });
       }
     }
@@ -682,8 +697,7 @@ export function collectImportBindings(
   fromFile: string,
 ): Map<string, ImportBinding> {
   const map = new Map<string, ImportBinding>();
-  const program = (ast as File).program ?? (ast as any);
-  for (const stmt of program.body ?? []) {
+  for (const stmt of programBody(ast)) {
     if (stmt.type !== "ImportDeclaration") continue;
     const spec = stmt.source.value as string;
     const resolvedPath = resolveRelativeModule(spec, fromFile);
@@ -746,9 +760,8 @@ export function findExportDefinition(
   } catch {
     return null;
   }
-  const program = (ast as File).program ?? (ast as any);
-  for (const stmt of program.body ?? []) {
-    let decl: any = stmt;
+  for (const stmt of programBody(ast)) {
+    let decl: Node = stmt;
     if (stmt.type === "ExportNamedDeclaration" && stmt.declaration) {
       decl = stmt.declaration;
     } else if (stmt.type === "ExportDefaultDeclaration") {
@@ -775,9 +788,10 @@ export function findExportDefinition(
       return { name: decl.id.name, kind: "class", loc: locFromNode(decl.id) };
     }
     if (decl?.type === "VariableDeclaration") {
-      for (const d of decl.declarations ?? []) {
-        if (d.id?.type === "Identifier" && d.id.name === exportName) {
-          return { name: d.id.name, kind: "variable", loc: locFromNode(d.id) };
+      for (const d of getDeclarations(decl)) {
+        const id = getDeclaratorId(d);
+        if (id && id.name === exportName) {
+          return { name: id.name, kind: "variable", loc: locFromNode(id) };
         }
       }
     }
@@ -785,9 +799,10 @@ export function findExportDefinition(
     if (stmt.type === "ExportNamedDeclaration" && !stmt.declaration && stmt.specifiers) {
       for (const s of stmt.specifiers) {
         if (s.type !== "ExportSpecifier") continue;
-        const exported = s.exported.type === "Identifier" ? s.exported.name : String(s.exported.value);
+        const exported = exportSpecifierExportedName(s);
         if (exported !== exportName) continue;
-        const local = s.local.type === "Identifier" ? s.local.name : String((s.local as any).value);
+        const local = nameOrStringValue(s.local);
+        if (!local) continue;
         const table = buildSymbolTable(ast, "");
         const def = table.definitions.get(local);
         if (def) return { name: local, kind: def.kind, loc: def.loc };
@@ -1132,28 +1147,28 @@ export function resolveReferences(
 }
 
 function isExportedName(ast: Node, name: string): boolean {
-  const program = (ast as File).program ?? (ast as any);
-  for (const stmt of program.body ?? []) {
+  for (const stmt of programBody(ast)) {
     if (stmt.type === "ExportNamedDeclaration") {
       if (stmt.declaration) {
-        const d: any = stmt.declaration;
+        const d: Node = stmt.declaration;
         if (d.type === "FunctionDeclaration" && d.id?.name === name) return true;
         if (d.type === "ClassDeclaration" && d.id?.name === name) return true;
         if (d.type === "VariableDeclaration") {
-          for (const dec of d.declarations ?? []) {
-            if (dec.id?.type === "Identifier" && dec.id.name === name) return true;
+          for (const dec of getDeclarations(d)) {
+            const id = getDeclaratorId(dec);
+            if (id?.name === name) return true;
           }
         }
       }
       for (const s of stmt.specifiers ?? []) {
         if (s.type !== "ExportSpecifier") continue;
-        const exported = s.exported.type === "Identifier" ? s.exported.name : String(s.exported.value);
+        const exported = exportSpecifierExportedName(s);
         if (exported === name) return true;
       }
     }
     if (stmt.type === "ExportDefaultDeclaration") {
-      const d: any = stmt.declaration;
-      if (d?.id?.name === name) return true;
+      const d: Node = stmt.declaration;
+      if (fnOrClassIdName(d) === name) return true;
       if (d?.type === "Identifier" && d.name === name) return true;
     }
   }

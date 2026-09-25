@@ -97,6 +97,11 @@ const DEFAULT_EXCLUDE = ["**/node_modules/**", "**/*.d.ts"];
 
 type Matcher = (id: string) => boolean;
 
+/** Single named sink for the build-summary line (keeps it greppable / swappable). */
+function logAnalysisSummary(errorCount: number, warnCount: number): void {
+  console.log(`[nudo] Analysis complete: ${errorCount} error(s), ${warnCount} warning(s)`);
+}
+
 const REGEX_SPECIALS = /[\\^$.|?*+(){}\[\]]/;
 
 function escapeRegExpChar(ch: string): string {
@@ -228,7 +233,7 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): any {
         const errorCount = Array.from(analysisCache.values())
           .reduce((sum, r) => sum + r.diagnostics.filter((d) => d.severity === "error").length, 0);
         const warnCount = totalDiags - errorCount;
-        console.log(`[nudo] Analysis complete: ${errorCount} error(s), ${warnCount} warning(s)`);
+        logAnalysisSummary(errorCount, warnCount);
       }
     },
   };

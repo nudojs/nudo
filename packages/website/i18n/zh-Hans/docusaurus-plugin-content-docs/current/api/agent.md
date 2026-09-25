@@ -53,6 +53,15 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 | `nudo:assign-mismatch` | 赋值 ⊭ 既有绑定形状 |
 | `nudo:arg-structure` | HOF：实参不是可调用 fn / arity 不匹配 |
 
+**`actions[]`（只增字段）。** 每条 `issues[]` 可携带结构化下一步。Agent 应优先消费 `actions[]`，不要解析 `suggestion` 散文：
+
+| 字段 | 描述 |
+|------|------|
+| `actions[].kind` | `draft` \| `relax` \| `callsite` \| `assume` \| `mock` \| `emit` \| `ignore-throws` \| `info` |
+| `actions[].command` | 可选的可执行命令（如 `nudo contract --draft`）；省略则只读 label/hint |
+| `actions[].label` | 一行说明（与 `suggestion` 同源，通常更短） |
+| `actions[].hint` | 可选：目标 Pred / 字段名等，供程序化改写 |
+
 ```json
 {
   "command": "nudo.check",

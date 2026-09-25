@@ -1,8 +1,10 @@
 /**
  * 会话缓存失效入口（宿主契约的唯一接线点）。
+ * 契约文档：docs/design/cache-invalidation.md；测试锚 cache-invalidation-contract.test.ts。
  *
- * analyzeFile / tryRunBPath / generalize L0 的键都不含「依赖模块内容」——
- * 入口 source 未变但 dep 变了时，必须由宿主主动逐出，否则会命中陈旧结果。
+ * 内容指纹已进 analysisFileCacheKey / bpath depKey / fnDepSeg（常规编辑自然 miss）；
+ * 宿主主动逐出仍是义务——path-env 进程全局须清、abs-module 的 mtime+size 指纹
+ * 盖不住「同 size + 同 mtime」编辑、自定义 loader / 截断指纹需要安全网。
  * LSP 走定向逐出；CLI watch / vite-plugin 走这里。
  */
 import {
@@ -35,6 +37,8 @@ import type { NudoConfig } from "./evaluator/config.ts";
  * 依赖内容变更后：按入口文件定向逐出 service 层缓存。
  * 调用方应传「以这些文件为入口」的路径（脏集里的 dependents），
  * 而不是变更的 dep 文件本身——dep 自己 source 变了会自然 miss。
+ * 残余缺口：absModuleCache 按 dep 路径 + mtime/size 键控；「同 size + 同 mtime」
+ * 编辑需再 evictAbsModuleCacheFiles([depPath]) 或 clearAnalysisSessionCaches。
  */
 export function evictAnalysisCachesForFiles(files: string[]): void {
   if (files.length === 0) return;

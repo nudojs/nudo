@@ -16,6 +16,8 @@
 
 ## 1. 仍有效的纪律与限制
 
+> 宿主缓存失效契约（依赖变更后会话缓存逐出，非产品 API）：[`cache-invalidation.md`](./cache-invalidation.md)。
+
 ### 1.1 C0 / L2 契约模型（不得回退）
 
 - **义务只来自**显式契约（`*.nudo.js` / `@nudo:contract`）或调用点事实。

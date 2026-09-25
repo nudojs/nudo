@@ -8,6 +8,8 @@ description: "Gate signatures and cases on a plain JavaScript file — npx nudoj
 
 Prefer the browser? Open the [Playground](/playground).
 
+> **Trust boundary.** Nudo analyzes by **executing** the target code (Abs semantics, in-process evaluation). Do not run `nudo check` / `nudo test` on untrusted code; in CI this is the same trust as running the project's tests.
+
 ## 1. Write plain JavaScript
 
 Create `calc.js`:

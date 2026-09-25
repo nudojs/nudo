@@ -22,76 +22,33 @@ import {
   startWatch,
   runAbsView,
 } from "./shared.ts";
-
-
-function parseIgnoreThrows(raw?: string | string[]): string[] | undefined {
-  if (raw === undefined) return undefined;
-  const parts = Array.isArray(raw) ? raw : [raw];
-  const out = parts
-    .flatMap((s) => s.split(","))
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-  return out.length > 0 ? out : undefined;
-}
-
-/** check 门禁命名档：strict（默认）= L2 entry may-throw error；adoption = L2 降 warning。L1 始终 error */
-type GateProfile = "adoption" | "strict";
-type EntryThrowsMode = "error" | "warning" | "off";
-
-function isGateProfile(raw: string | undefined): raw is GateProfile {
-  return raw === "adoption" || raw === "strict";
-}
-
-function isEntryThrowsMode(raw: string | undefined): raw is EntryThrowsMode {
-  return raw === "error" || raw === "warning" || raw === "off";
-}
-
-/** profile 是 L2 预设；不吞 L1 */
-function profileEntryThrows(profile: GateProfile): EntryThrowsMode {
-  return profile === "adoption" ? "warning" : "error";
-}
-
-/**
- * package.json#nudo.check.profile / entryThrows 原始读取（区分「未设置」）。
- * CLI 配置层组合；不改 service checkConfig。
- */
-function checkGateFromConfig(config: { check?: unknown } | null | undefined): {
-  profile?: GateProfile;
-  entryThrows?: EntryThrowsMode;
-} {
-  const raw = config?.check as { profile?: unknown; entryThrows?: unknown } | undefined;
-  const rawProfile = typeof raw?.profile === "string" ? raw.profile : undefined;
-  const rawEntry = typeof raw?.entryThrows === "string" ? raw.entryThrows : undefined;
-  const profile = isGateProfile(rawProfile) ? rawProfile : undefined;
-  const entryThrows = isEntryThrowsMode(rawEntry) ? rawEntry : undefined;
-  return {
-    ...(profile ? { profile } : {}),
-    ...(entryThrows ? { entryThrows } : {}),
-  };
-}
-
-/**
- * L2 entryThrows 解析顺序（design-cli-semantics §1.4）：
- * 1. CLI `--entry-throws`（显式，压过 profile）
- * 2. CLI `--profile` 预设（adoption→warning / strict→error）
- * 3. `package.json#nudo.check.entryThrows`
- * 4. `package.json#nudo.check.profile` 预设
- * 5. 默认 strict（error）
- * L1 契约违例不受 profile 影响，始终 error。
- */
-function resolveEntryThrows(
-  opts: { entryThrows?: EntryThrowsMode; profile?: GateProfile },
-  pkg: { profile?: GateProfile; entryThrows?: EntryThrowsMode },
-  pkgEntryNormalized: EntryThrowsMode,
-): EntryThrowsMode {
-  return (
-    opts.entryThrows ??
-    (opts.profile ? profileEntryThrows(opts.profile) : undefined) ??
-    pkg.entryThrows ??
-    (pkg.profile ? profileEntryThrows(pkg.profile) : undefined) ??
-    pkgEntryNormalized
-  );
-}
+import {
+  checkGateFromConfig,
+  isEntryThrowsMode,
+  isGateProfile,
+  mergeIgnoreThrows,
+  parseIgnoreThrows,
+  parseWhatIfBindings,
+  resolveEntryThrows,
+  validateGateFlags,
+  type EntryThrowsMode,
+  type GateProfile,
+} from "../check-gate-config.ts";
+import {
+  docsDiagnosticCodes,
+  domainIssuesFromDiagnostics,
+  dualEntryIssue,
+  mergeCheckIssues,
+  mergeJsonIssues,
+  mockFromErrorIssues,
+  reportFromCachedJson,
+} from "../check-json-map.ts";
+import {
+  shouldComputeCacheKey,
+  shouldEmitGha,
+  shouldPrintDocsLinks,
+  shouldUseDiskCache,
+} from "../check-ci-flags.ts";
 
 // ---------------------------------------------------------------------------
 // check — 门禁 + 签名表（Day 0 / CI）
@@ -112,13 +69,7 @@ async function collectCheckDepContents(
 const DOCS_DIAGNOSTICS =
   "https://nudojs.github.io/nudo/docs/reference/diagnostics";
 function printDocsLinks(issues: Array<{ code?: string }>): void {
-  const codes = [
-    ...new Set(
-      issues
-        .map((i) => i.code)
-        .filter((c): c is string => !!c && /^nudo[\w:-]+$/.test(c)),
-    ),
-  ];
+  const codes = docsDiagnosticCodes(issues);
   if (codes.length === 0) return;
   console.log("");
   console.log("docs");
@@ -167,11 +118,7 @@ async function runCheck(
   const cCfg = checkConfig(proj?.config);
   const gate = checkGateFromConfig(proj?.config);
   const entryThrows = resolveEntryThrows(opts, gate, cCfg.entryThrows);
-  // CLI 列表与 package.json 合并（加法）；避免 CLI 覆盖导致无法在项目配置上收紧/扩展
-  const ignoreThrows =
-    opts.ignoreThrows && opts.ignoreThrows.length > 0
-      ? [...new Set([...(cCfg.ignoreThrows ?? []), ...opts.ignoreThrows])]
-      : cCfg.ignoreThrows;
+  const ignoreThrows = mergeIgnoreThrows(opts.ignoreThrows, cCfg.ignoreThrows);
   const projectEnvNames = proj?.config.env ?? [];
   // 文件级 @nudo:env 命名 env（es/node/web）与项目配置合并——check 的
   // 符号面必须与 test 同口径注入，否则 @nudo:env 文件整体退化 unknown。
@@ -185,7 +132,12 @@ async function runCheck(
   const disk = new DiskCache({ root: cacheRoot, namespace: "check" });
   const dep = await collectCheckDepContents(filePath, source, loadModule);
   const hasBareMiss = (dep.depContents ?? []).some((d) => d.content == null);
-  const useDisk = disk.enabled && !opts.from && !dep.truncated && !hasBareMiss;
+  const useDisk = shouldUseDiskCache({
+    diskEnabled: disk.enabled,
+    hasFrom: !!opts.from,
+    depTruncated: dep.truncated,
+    hasBareMiss,
+  });
   let sidecarContent: string | null = null;
   if (autoBind !== false) {
     try {
@@ -195,9 +147,12 @@ async function runCheck(
       sidecarContent = null;
     }
   }
-  const cacheKey =
-    useDisk && !opts.verbose && !opts.abs
-      ? checkCacheKey(filePath, source, {
+  const cacheKey = shouldComputeCacheKey({
+    useDisk,
+    verbose: opts.verbose,
+    abs: opts.abs,
+  })
+    ? checkCacheKey(filePath, source, {
           autoBind,
           projectDir: proj?.projectDir,
           sidecarContent,
@@ -211,41 +166,14 @@ async function runCheck(
             ignoreThrows: ignoreThrows.join(","),
           },
         })
-      : undefined;
+    : undefined;
   const cached = cacheKey ? disk.get<ReturnType<typeof serializeCheckJson>>(cacheKey) : undefined;
   let cachedJson: ReturnType<typeof serializeCheckJson> | undefined;
   let algebraReport;
   let mockFromErrors: Array<{ name: string; fromPath: string; message: string }> = [];
   if (cached) {
     cachedJson = cached;
-    algebraReport = {
-      file: cached.file,
-      issues: cached.issues.map((i) => ({
-        severity: i.severity as "error" | "warning" | "info",
-        code: i.code,
-        message: i.message,
-        ...(i.fn !== undefined ? { fn: i.fn } : {}),
-        ...(i.line !== undefined ? { line: i.line } : {}),
-        ...(i.column !== undefined ? { column: i.column } : {}),
-        ...(i.actual !== undefined ? { actual: i.actual } : {}),
-        ...(i.expected !== undefined ? { expected: i.expected } : {}),
-        ...(i.suggestion !== undefined ? { suggestion: i.suggestion } : {}),
-      })),
-      ok: cached.ok,
-      signatures: cached.signatures.map((s) => ({
-        name: s.name,
-        params: s.params,
-        ...(s.paramTypes ? { paramTypes: s.paramTypes } : {}),
-        // CheckJson abs 是 formatAbs 字符串；重建时不要伪造成 unknown（§2）
-        abs: { shape: { k: "any" as const }, conf: s.conf as never },
-        display: s.display,
-        detail: s.detail,
-        conf: s.conf as never,
-        ...(s.throws ? { throws: s.throws } : {}),
-        ...(s.entry ? { entry: true } : {}),
-      })),
-      summary: { ...cached.summary },
-    } as Awaited<ReturnType<typeof checkSource>>;
+    algebraReport = reportFromCachedJson(cached) as Awaited<ReturnType<typeof checkSource>>;
   } else {
     // B 注入包（模块图 + mocks + env 全局 + replace/as）——同文件内复用同一
     // 对象（checkSource/generalize memo 键按对象身份）
@@ -312,21 +240,10 @@ async function runCheck(
 
   // @nudo:mock name from "path" 解析失败 → check 明确报错（缺文件/缺绑定/求值失败）
   if (mockFromErrors.length > 0) {
-    const fromIssues = mockFromErrors.map((fe) => ({
-      severity: "error" as const,
-      code: "nudo:module-missing" as const,
-      message: fe.message,
-      suggestion: `Create the mock file or fix the path in @nudo:mock ${fe.name} from "${fe.fromPath}"`,
-    }));
-    algebraReport = {
-      ...algebraReport,
-      issues: [...algebraReport.issues, ...fromIssues],
-      ok: false,
-      summary: {
-        ...algebraReport.summary,
-        errors: algebraReport.summary.errors + fromIssues.length,
-      },
-    };
+    algebraReport = mergeCheckIssues(
+      algebraReport,
+      mockFromErrorIssues(mockFromErrors),
+    ) as typeof algebraReport;
   }
 
   if (opts.from && opts.from.length > 0) {
@@ -338,34 +255,12 @@ async function runCheck(
       undefined,
       "none",
     );
-    const domainIssues = analysis.diagnostics
-      .filter((d) => d.code === "nudo:interface-domain-exceeds")
-      .map((d) => {
-        const data = (d.data ?? {}) as { actual?: unknown; expected?: unknown };
-        return {
-          severity: d.severity === "error" ? ("error" as const) : ("warning" as const),
-          code: "nudo:interface-domain-exceeds" as const,
-          message: d.message,
-          line: d.range.start.line,
-          column: d.range.start.column,
-          actual: typeof data.actual === "string" ? data.actual : undefined,
-          expected: typeof data.expected === "string" ? data.expected : undefined,
-          suggestion: d.suggestions?.[0],
-        };
-      });
+    const domainIssues = domainIssuesFromDiagnostics(analysis.diagnostics);
     if (domainIssues.length > 0) {
-      const errors = domainIssues.filter((i) => i.severity === "error").length;
-      const warnings = domainIssues.filter((i) => i.severity === "warning").length;
-      algebraReport = {
-        ...algebraReport,
-        issues: [...algebraReport.issues, ...domainIssues],
-        ok: algebraReport.ok && errors === 0,
-        summary: {
-          ...algebraReport.summary,
-          errors: algebraReport.summary.errors + errors,
-          warnings: algebraReport.summary.warnings + warnings,
-        },
-      };
+      algebraReport = mergeCheckIssues(
+        algebraReport,
+        domainIssues,
+      ) as typeof algebraReport;
     }
   }
 
@@ -375,48 +270,16 @@ async function runCheck(
     const { dualEntryIssueForFile } = await import("@nudojs/service");
     const dual = dualEntryIssueForFile(filePath);
     if (dual) {
-      const dualIssue: import("@nudojs/core").CheckIssue = {
-        severity: "info",
-        code: "nudo:dual-entry",
-        message: dual.message,
-        line: dual.line,
-        column: dual.column,
-        suggestion: dual.suggestion,
-      };
-      algebraReport = {
-        ...algebraReport,
-        issues: [...algebraReport.issues, dualIssue],
-        summary: {
-          ...algebraReport.summary,
-          infos: algebraReport.summary.infos + 1,
-        },
-      };
+      const dualIssue = dualEntryIssue(dual);
+      algebraReport = mergeCheckIssues(algebraReport, [dualIssue]) as typeof algebraReport;
       if (cachedJson) {
-        cachedJson = {
-          ...cachedJson,
-          issues: [
-            ...cachedJson.issues,
-            {
-              severity: "info",
-              code: "nudo:dual-entry",
-              message: dual.message,
-              line: dual.line,
-              column: dual.column,
-              suggestion: dual.suggestion,
-            },
-          ],
-          summary: {
-            ...cachedJson.summary,
-            infos: cachedJson.summary.infos + 1,
-          },
-        };
+        cachedJson = mergeJsonIssues(cachedJson, [dualIssue]);
       }
     }
   }
 
   const checkJson = cachedJson ?? serializeCheckJson(algebraReport);
-  const wantGha =
-    opts.gha === true || (opts.gha !== false && process.env.GITHUB_ACTIONS === "true");
+  const wantGha = shouldEmitGha(opts.gha, process.env.GITHUB_ACTIONS);
   const workspaceRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
   const emitCiAnnotations = (): void => {
     if (opts.gitlab) {
@@ -477,9 +340,12 @@ async function runCheck(
 
   // 诊断 → 文档深链（仅终端面；CheckJson 契约不变）
   if (
-    !opts.json &&
-    algebraReport.issues.length > 0 &&
-    (!opts.abs || !algebraReport.ok)
+    shouldPrintDocsLinks({
+      json: opts.json,
+      abs: opts.abs,
+      issueCount: algebraReport.issues.length,
+      reportOk: algebraReport.ok,
+    })
   ) {
     printDocsLinks(algebraReport.issues);
   }
@@ -565,12 +431,7 @@ export function registerCheckCommand(program: Command): void {
           }
           const { injectBindings, analyzeFile, defaultLoadModule } = await import("@nudojs/service");
           const { formatAbs } = await import("@nudojs/core");
-          const bindings = opts.whatIf.map((w) => {
-            const i = w.indexOf(":");
-            return i < 0
-              ? { name: w, type: "any" }
-              : { name: w.slice(0, i), type: w.slice(i + 1) };
-          });
+          const bindings = parseWhatIfBindings(opts.whatIf);
           const original = readFileSync(file, "utf-8");
           const { source, applied, unapplied } = injectBindings(original, bindings);
           const result = analyzeFile(file, source, undefined, undefined, defaultLoadModule);
@@ -597,20 +458,9 @@ export function registerCheckCommand(program: Command): void {
         }
         const externalRecords = opts.from?.length ? collectExternalRecords(opts.from) : undefined;
         const ignoreThrows = parseIgnoreThrows(opts.ignoreThrows);
-        if (
-          opts.entryThrows !== undefined &&
-          !isEntryThrowsMode(opts.entryThrows)
-        ) {
-          console.error(
-            `Invalid --entry-throws value: ${opts.entryThrows} (expected: error | warning | off)`,
-          );
-          process.exitCode = 1;
-          return;
-        }
-        if (opts.profile !== undefined && !isGateProfile(opts.profile)) {
-          console.error(
-            `Invalid --profile value: ${opts.profile} (expected: adoption | strict)`,
-          );
+        const gateErr = validateGateFlags(opts);
+        if (gateErr) {
+          console.error(gateErr);
           process.exitCode = 1;
           return;
         }

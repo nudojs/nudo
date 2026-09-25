@@ -8,6 +8,8 @@ description: "在普通 JavaScript 上门禁签名与用例——npx nudojs chec
 
 更想在浏览器里试？打开 [Playground](/playground)。
 
+> **信任边界。** Nudo 通过**执行**目标代码来分析（Abs 语义，进程内求值）。不要对不可信代码运行 `nudo check` / `nudo test`；在 CI 里这与跑项目测试是同一信任级别。
+
 ## 1. 写普通 JavaScript
 
 创建 `calc.js`：

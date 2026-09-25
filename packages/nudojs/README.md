@@ -20,7 +20,7 @@ npx nudojs check file.js
 
 Primary verbs: `check` · `test` · `contract` · `export` · `health`.
 
-> **Version heads-up.** `nudojs` is a thin installer shell — **its version number is not the engine version.** `nudojs@0.x` wraps `@nudojs/cli@3.x` (and `@nudojs/core@2.x`); the two version lines move independently. Run `nudo --version` to see the engine CLI you actually have. Full policy: [docs/versioning.md](https://github.com/nudojs/nudo/blob/main/docs/versioning.md).
+> **Version heads-up.** `nudojs` is a thin installer shell — **its version number is not the engine version.** `nudojs@0.x` wraps `@nudojs/cli@3.x`; engine packages (`@nudojs/core`, …) version independently. Run `nudo --version` to see the engine CLI you actually have. Full policy: [docs/versioning.md](https://github.com/nudojs/nudo/blob/main/docs/versioning.md).
 
 Nudo infers types by **executing** your code on Abs (`shape × term × pred × conf`) — see the monorepo packages for the actual engine:
 

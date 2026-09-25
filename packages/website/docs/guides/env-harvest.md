@@ -44,6 +44,21 @@ Mock instead when the API is process-local or heavily dynamic:
 // @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) })
 ```
 
+### Mock boundary checklist
+
+Source: [env / Node coverage baseline](https://github.com/nudojs/nudo/blob/main/docs/reports/env-coverage-baseline.md) (resolution rate is **not** a soundness guarantee). These leaves stay thin or mock-required today — mock them when analysis quality matters:
+
+| Category / probe | Why it is thin | What to do |
+|---|---|---|
+| `child_process.spawn*` / native process spawn | No side-effect simulation; `ChildProcess` is signature-level | `@nudo:mock` the call, or accept the declared shape |
+| Stream machine callbacks (Transform internals) | `data` / `error` events are machine-driven ([limits](../concepts/limits.md)) | Mock the payloads you depend on |
+| Dynamic `require` / computed module graphs | Module graph is not static | `@nudo:mock-module` or a path `/// @nudo:env` |
+| Native addons / bindings | Not evaluated | Mock the binding surface |
+| Dual-entry browser/node variants | Call-site records do not cross files | Mock the other entry, or analyze each side separately |
+| Signature-level `any` leaves (`util.format`, `util.inspect`, `util.types.isDate`, `assert.*`) | Resolved, but the format still mentions `any` | Accept the leaf, or mock for a tighter face |
+
+Functions with no call-site usage fall back to `entry@` (honest `any`) — prefer call sites or a contract over a mock.
+
 ## Next
 
 - [Directives — `@nudo:env`](../concepts/directives.md)

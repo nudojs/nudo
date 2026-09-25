@@ -22,7 +22,8 @@ export default defineConfig({
       //   harvester  82/78/70/88   floors 75/70/62/80
       //   vite-plugin 86/85/72/81 floors 78/78/65/72
       //   parser     89/85/74/90   floors 80/78/68/82
-      //   cli        21/20/16/22   floors 18/18/14/20（命令面经子进程测，in-process 偏低）
+      //   cli        25/24/26/45   floors 22/21/23/42（纯决策模块抽出后 in-process 覆盖；
+      //     命令面仍经子进程 e2e 测。实测 24.56/23.87/25.51/44.57，floor=baseline−3）
       // nudojs 无 packages/nudojs/src/**（仅 bin/），不设 floor。
       thresholds: {
         lines: 70,
@@ -54,10 +55,10 @@ export default defineConfig({
           statements: 78,
         },
         "packages/cli/**": {
-          lines: 18,
-          functions: 20,
-          branches: 14,
-          statements: 18,
+          lines: 22,
+          functions: 42,
+          branches: 23,
+          statements: 21,
         },
       },
     },

@@ -63,6 +63,15 @@ Constraint gate on **Abs** (type-as-computation). Same contract as CLI `nudo che
 | `nudo:no-signature` | No symbolic Abs signature (**warning**; L2 may still apply via entry fallback) |
 | `nudo:opaque-result` / `nudo:eval-error` | Opaque evaluation / evaluation threw |
 
+**`actions[]` (additive).** Each `issues[]` entry may carry structured next steps. Agents should prefer `actions[]` over parsing `suggestion` prose:
+
+| Field | Description |
+|-------|-------------|
+| `actions[].kind` | `draft` \| `relax` \| `callsite` \| `assume` \| `mock` \| `emit` \| `ignore-throws` \| `info` |
+| `actions[].command` | Optional executable command (e.g. `nudo contract --draft`); omit → label/hint only |
+| `actions[].label` | One-line instruction (same source as `suggestion`, often shorter) |
+| `actions[].hint` | Optional target Pred / field name for programmatic rewrites |
+
 ```json
 {
   "command": "nudo.check",

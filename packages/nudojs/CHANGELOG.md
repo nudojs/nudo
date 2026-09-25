@@ -1,5 +1,44 @@
 # nudojs
 
+## 1.0.0-beta.0
+
+### Major Changes
+
+- 0e1432a: feat!: source contract directive is `@nudo:contract` only
+  
+  `@nudo:refine` and `@nudo:interface` are deleted with no alias layer. The product word is **contract** end to end (sidecar `*.nudo.js`, `@nudo:contract`, `nudo contract`, `package.json#nudo.contract.*`).
+  
+  - **BREAKING:** replace every `@nudo:refine` / `@nudo:interface` with `@nudo:contract` (including `@nudo:contract return <constraint>`). Grammar is unchanged: `@nudo:contract <param> <constraint>`.
+  - Constraints still enter Abs as Preds and participate in algebra (`x>0` ⇒ `x+1>1`) — this is not a call-site validation gate.
+  - Diagnostic codes `nudo:interface-*` are unchanged in this release.
+  - Chinese product copy uses 契约, not 精化.
+- 8db7320: feat!: remove `env harvest` from the product CLI face
+  
+  Harvest is not a user task. Product verbs are `check` / `test` / `contract` / `export` / `health`.
+  
+  - **BREAKING:** `nudo env harvest` (and the `env` command group) is removed. Third-party `@types` still auto-fill during analysis via module-graph harvest; env-package generation stays available as the `@nudojs/harvester` library.
+  - Handwritten `@nudojs/env` remains the fixed product env (`es` / `web` / `node`) and still wins over harvest on overlapping modules/exports.
+  - Scripts that called `nudo env harvest` should either rely on analysis auto-fill or call `harvestDts` / `emitEnvModule` from `@nudojs/harvester` directly.
+
+### Patch Changes
+
+- P1–P3 engineering hardening (review follow-ups) — no product-face breaks
+  
+  - **@nudojs/parser**: export typed Babel AST narrowers (`ast-guards.ts`); service `analyzer-ast` / lsp `symbols` no longer use `as any` on nodes.
+  - **@nudojs/cli**: extract pure decision modules (`check-gate-config`, `check-json-map`, `check-ci-flags`, `export-format`) and cover them with in-process unit tests; per-package coverage floors raised.
+  - **@nudojs/service**: host cache-invalidation contract documented (`docs/design/cache-invalidation.md`) + C1–C8 regression tests; LSP targeted eviction now clears path-env and abs-module cache for changed deps.
+  - **@nudojs/lsp**: `server.ts` split into watch/commands/navigation/code-actions/ide modules (public API unchanged); path-env clear on dependent eviction.
+  - **@nudojs/service**: `interface-derivation` / `analyzer-orchestrate` split into cohesion modules with stable facades.
+  - Docs: trust-boundary note in Quick Start, version narrative consistency, env mock-boundary checklist, CheckJson `actions[]` field table.
+  - vite-plugin: named `logAnalysisSummary` helper (logging surface unchanged).
+- Updated dependencies [22baf33]
+- Updated dependencies [0e1432a]
+- Updated dependencies
+- Updated dependencies [279d73a]
+- Updated dependencies [8db7320]
+- Updated dependencies [5a5e167]
+  - @nudojs/cli@4.0.0-beta.0
+
 ## 0.3.2
 
 ### Patch Changes
